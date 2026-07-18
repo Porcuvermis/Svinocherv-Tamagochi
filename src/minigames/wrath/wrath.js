@@ -10,59 +10,136 @@ function drawWormFigure(canvas, opts) {
     const { hue, segCount, thick, eyeMult, dir } = opts;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.translate(w / 2, h * 0.16);
+    
+    const markers = {
+        head: { x: 0, y: 0 },
+        belly: { x: 0, y: 0 },
+        tail: { x: 0, y: 0 }
+    };
 
-    const scale = h / 300;
+    const baseOriginY = h * 0.25;
+    const scale = (h / 300) * 1.65;
 
-    // Тело — вертикальная цепочка сегментов вниз
+    const bellyIndex = Math.floor(segCount / 2);
+    const tailIndex = segCount;
+
+    // 1. ОТРИСОВКА СЕГМЕНТОВ ТЕЛА И ХВОСТА
     for (let i = segCount; i > 0; i--) {
-        const segY = i * 22 * scale;
-        const segX = Math.sin(i * 0.7) * 10 * dir * thick * scale;
-        const r = (22 - i * 1.4) * thick * scale;
-        ctx.beginPath();
-        ctx.arc(segX, segY, Math.max(6 * scale, r), 0, Math.PI * 2);
+        const segY = baseOriginY + (i * 19 * scale);
+        
+        // Сложная S-образная траектория: основная дуга + обратный изгиб на хвосте
+        // Множитель (i * 0.5) заставляет хвост в самом низу уходить обратно к краю
+        const wave = Math.sin(i * 0.65) - Math.sin(i * 0.15) * 0.4;
+        const segX = (w / 2) - (wave * 8 * dir * thick * scale);
+        
+        const r = (20 - i * 1.1) * thick * scale;
+        const finalR = Math.max(7 * scale, r);
+
+        // Сохраняем маркеры целей
+        if (i === bellyIndex) {
+            markers.belly.x = segX;
+            markers.belly.y = segY;
+        }
+        if (i === tailIndex) {
+            markers.tail.x = segX;
+            markers.tail.y = segY;
+        }
+
         ctx.fillStyle = `hsl(${hue}, ${60 - i * 3}%, ${50 - i}%)`;
-        ctx.fill();
         ctx.strokeStyle = '#2a0a10';
         ctx.lineWidth = 2;
-        ctx.stroke();
+
+        // Если это САМЫЙ последний сегмент (кончик хвоста) — делаем его вытянутым конусом
+        if (i === segCount) {
+            ctx.save();
+            ctx.translate(segX, segY);
+            // Слегка поворачиваем кончик в сторону от центра (в зависимости от dir)
+            ctx.rotate(-0.25 * dir);
+
+            ctx.beginPath();
+            // Начинаем с левого бока сегмента
+            ctx.moveTo(-finalR, 0);
+            
+            // Левая сторона конуса идет вниз к вытянутой точке
+            // Точка смещена вниз на finalR * 1.6, создавая удлинение
+            ctx.bezierCurveTo(-finalR, finalR * 0.8, -finalR * 0.4, finalR * 1.6, 0, finalR * 1.6);
+            
+            // Правая сторона конуса возвращается наверх к правому боку
+            ctx.bezierCurveTo(finalR * 0.4, finalR * 1.6, finalR, finalR * 0.8, finalR, 0);
+            
+            // Закругляем верхушку, чтобы она плавно входила в предыдущий сегмент
+            ctx.arc(0, 0, finalR, 0, Math.PI, true);
+            
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        } else {
+            // Обычные круглые сегменты тела
+            ctx.beginPath();
+            ctx.arc(segX, segY, finalR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
     }
 
-    // Голова
+    // 2. ОТРИСОВКА ГОЛОВЫ
+    ctx.save();
+    ctx.translate(w / 2, baseOriginY);
+    ctx.rotate(0.12 * dir);
+
+    markers.head.x = w / 2;
+    markers.head.y = baseOriginY;
+
     ctx.beginPath();
-    ctx.arc(0, 0, 34 * thick * scale, 0, Math.PI * 2);
+    ctx.arc(0, 0, 32 * thick * scale, 0, Math.PI * 2);
     ctx.fillStyle = `hsl(${hue}, 70%, 82%)`;
     ctx.fill();
     ctx.strokeStyle = `hsl(${hue}, 50%, 60%)`;
     ctx.lineWidth = 3;
     ctx.stroke();
 
+    // Левое ухо
     ctx.beginPath();
-    ctx.moveTo(-20 * scale, -20 * scale); ctx.lineTo(-32 * scale, -44 * scale); ctx.lineTo(-6 * scale, -28 * scale);
+    ctx.moveTo(-18 * scale, -18 * scale); ctx.lineTo(-28 * scale, -42 * scale); ctx.lineTo(-4 * scale, -26 * scale);
     ctx.closePath(); ctx.fillStyle = `hsl(${hue}, 70%, 82%)`; ctx.fill(); ctx.stroke();
 
+    // Правое ухо
     ctx.beginPath();
-    ctx.moveTo(12 * scale, -26 * scale); ctx.lineTo(20 * scale, -48 * scale); ctx.lineTo(26 * scale, -16 * scale);
+    ctx.moveTo(10 * scale, -24 * scale); ctx.lineTo(18 * scale, -45 * scale); ctx.lineTo(24 * scale, -14 * scale);
     ctx.closePath(); ctx.fillStyle = `hsl(${hue}, 65%, 78%)`; ctx.fill(); ctx.stroke();
 
-    const eyeR = 6.5 * eyeMult * scale;
+    // Глаза
+    const eyeR = 7 * eyeMult * scale;
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(-13 * scale, -7 * scale, eyeR, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(13 * scale, -7 * scale, eyeR, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.arc(-12 * scale, -7 * scale, eyeR * 0.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(14 * scale, -7 * scale, eyeR * 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-12 * scale, -6 * scale, eyeR, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(14 * scale, -6 * scale, eyeR, 0, Math.PI * 2); ctx.fill();
 
-    ctx.beginPath(); ctx.ellipse(0, 11 * scale, 14 * scale, 10 * scale, 0, 0, Math.PI * 2);
+    // Зрачки
+    ctx.fillStyle = '#000';
+    const pupilLookOffset = 2.5 * scale * dir;
+    ctx.beginPath(); ctx.arc((-12 * scale) + pupilLookOffset, -5 * scale, eyeR * 0.45, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc((14 * scale) + pupilLookOffset, -5 * scale, eyeR * 0.45, 0, Math.PI * 2); ctx.fill();
+
+    // Брови
+    ctx.strokeStyle = '#2a0a10';
+    ctx.lineWidth = 2.5 * scale;
+    ctx.beginPath(); ctx.moveTo(-21 * scale, -13 * scale); ctx.lineTo(-4 * scale, -8 * scale); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6 * scale, -8 * scale); ctx.lineTo(23 * scale, -13 * scale); ctx.stroke();
+
+    // Пятачок
+    ctx.beginPath(); ctx.ellipse(0, 11 * scale, 13 * scale, 9 * scale, 0, 0, Math.PI * 2);
     ctx.fillStyle = `hsl(${hue}, 60%, 70%)`; ctx.fill();
     ctx.strokeStyle = `hsl(${hue}, 40%, 50%)`; ctx.lineWidth = 2; ctx.stroke();
 
+    // Ноздри
     ctx.fillStyle = `hsl(${hue}, 40%, 30%)`;
-    ctx.beginPath(); ctx.arc(-4 * scale, 11 * scale, 2.2 * scale, 0, Math.PI * 2);
-    ctx.arc(4 * scale, 11 * scale, 2.2 * scale, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-4 * scale, 11 * scale, 2 * scale, 0, Math.PI * 2);
+    ctx.arc(4 * scale, 11 * scale, 2 * scale, 0, Math.PI * 2); ctx.fill();
 
     ctx.restore();
+
+    return markers;
 }
 
 const WrathMinigame = {
@@ -111,7 +188,6 @@ const WrathMinigame = {
         if (this.restartBtn) {
             this.restartBtn.onclick = (e) => { 
                 e.stopPropagation(); 
-                // Кнопка "заебись" закрывает игру, кнопка рестарта перезапускает матч
                 if (this.fightOver && this.playerHP > 0 && this.enemyHP <= 0) {
                     this.close();
                 } else {
@@ -124,6 +200,12 @@ const WrathMinigame = {
         });
         this.enemyZones.forEach(z => {
             z.onclick = (e) => { e.stopPropagation(); this.selectAttack(z.dataset.zone, z); };
+        });
+
+        window.addEventListener('resize', () => {
+            if (this.screenElement && this.screenElement.classList.contains('active')) {
+                this.drawFighters();
+            }
         });
     },
 
@@ -169,16 +251,29 @@ const WrathMinigame = {
     generateEnemy() {
         this.enemyParams = {
             hue: Math.floor(Math.random() * 360),
-            segCount: 4 + Math.floor(Math.random() * 5),
-            thick: 0.8 + Math.random() * 0.5,
-            eyeMult: 0.8 + Math.random() * 0.5,
+            segCount: 6, 
+            thick: 1.0,
+            eyeMult: 1.0,
             dir: -1
         };
     },
 
     drawFighters() {
-        drawWormFigure(this.playerCanvas, { hue: 340, segCount: 6, thick: 1, eyeMult: 1, dir: 1 });
-        drawWormFigure(this.enemyCanvas, this.enemyParams);
+        const playerMarkers = drawWormFigure(this.playerCanvas, { hue: 340, segCount: 6, thick: 1, eyeMult: 1, dir: 1 });
+        const enemyMarkers = drawWormFigure(this.enemyCanvas, this.enemyParams);
+
+        this.repositionZones(this.playerZones, playerMarkers);
+        this.repositionZones(this.enemyZones, enemyMarkers);
+    },
+
+    repositionZones(zonesArray, markers) {
+        zonesArray.forEach(zoneEl => {
+            const zoneName = zoneEl.dataset.zone;
+            if (markers && markers[zoneName]) {
+                zoneEl.style.left = `${markers[zoneName].x}px`;
+                zoneEl.style.top = `${markers[zoneName].y}px`;
+            }
+        });
     },
 
     selectDefense(zone, el) {
@@ -265,7 +360,6 @@ const WrathMinigame = {
         if (this.daggerBtn) this.daggerBtn.classList.add('disabled');
 
         if (this.playerHP <= 0 && this.enemyHP <= 0) {
-            // НИЧЬЯ
             this.setResult('НИЧЬЯ');
             if (this.overlayText) {
                 this.overlayText.textContent = 'НИЧЬЯ';
@@ -282,7 +376,6 @@ const WrathMinigame = {
                 GameManager.updateUI();
             }
         } else if (this.enemyHP <= 0 && this.playerHP > 0) {
-            // ПОБЕДА
             this.setResult('ПОБЕДА! 🤬');
             if (this.overlayText) {
                 this.overlayText.textContent = 'ПОБЕДА!';
@@ -302,7 +395,6 @@ const WrathMinigame = {
                 GameManager.updateUI();
             }
         } else {
-            // ПОРАЖЕНИЕ
             this.setResult('ПОРАЖЕНИЕ...');
             if (this.overlayText) {
                 this.overlayText.textContent = 'ПОРАЖЕНИЕ...';

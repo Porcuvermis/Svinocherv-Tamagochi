@@ -35,7 +35,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 14px 6px;
+    padding: 60px 0 14px 0; /* Отступ сверху под новый HUD */
     box-sizing: border-box;
     overflow: hidden;
     transform: scale(0.85);
@@ -46,10 +46,70 @@
     transform: scale(1);
 }
 
+/* ============ НОВЫЙ ФАЙТИНГ HUD (ХП-БАРЫ И КРЕСТИК) ============ */
+.fighting-hud {
+    position: absolute;
+    top: 16px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    box-sizing: border-box;
+    z-index: 40;
+}
+
+.fighter-hp-box {
+    position: relative;
+    flex: 1;
+    height: 20px;
+}
+
+.fighter-hp-box.player-side { margin-right: 22px; }
+.fighter-hp-box.enemy-side { margin-left: 22px; }
+
+.fighting-hud .hp-bar-container {
+    width: 100%;
+    height: 100%;
+    background: #222;
+    border: 2px solid #555;
+    overflow: hidden;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.8);
+}
+
+/* Агрессивный наклон полосок */
+.player-side .hp-bar-container {
+    transform: skewX(-15deg);
+    border-right: none;
+}
+.enemy-side .hp-bar-container {
+    transform: skewX(15deg);
+    border-left: none;
+}
+
+.fighting-hud .hp-bar {
+    height: 100%;
+    width: 100%;
+    transition: width 0.2s ease-out;
+}
+
+.player-side .hp-bar {
+    background: linear-gradient(to left, #4CAF50, #8bc34a);
+    float: right; /* Убывает к внешнему краю */
+}
+
+.enemy-side .hp-bar {
+    background: linear-gradient(to right, #ff3b30, #ff6b62);
+    float: left; /* Убывает к внешнему краю */
+}
+
+/* Центрированный крестик */
 .wrath-close-btn {
     position: absolute;
-    top: 12px;
-    right: 16px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     background: #ff4444;
     border: 2px solid #fff;
     color: white;
@@ -60,20 +120,12 @@
     line-height: 26px;
     text-align: center;
     cursor: pointer;
-    z-index: 30;
+    z-index: 50;
     flex-shrink: 0;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
 }
 
-.wrath-close-btn:active { transform: scale(0.9); }
-
-.wrath-header {
-    font-size: 20px;
-    font-weight: 900;
-    color: #ff3b30;
-    letter-spacing: 2px;
-    margin-bottom: 2px;
-    flex-shrink: 0;
-}
+.wrath-close-btn:active { transform: translate(-50%, -50%) scale(0.9); }
 
 .wrath-result {
     font-size: 14px;
@@ -83,6 +135,7 @@
     text-align: center;
     flex-shrink: 0;
     text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+    margin-top: 5px;
 }
 
 /* ============ АРЕНА ============ */
@@ -94,56 +147,65 @@
     justify-content: space-between;
     align-items: center;
     min-height: 0;
+    padding: 0;
+    box-sizing: border-box;
+    background: transparent;
 }
 
 .worm-wrap {
-    width: 48%;
+    width: 58%;
     height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    background: transparent !important;
+}
+
+.worm-player { 
+    margin-right: auto; 
+    margin-left: -14%; 
+}
+.worm-enemy { 
+    margin-left: auto; 
+    margin-right: -14%; 
 }
 
 .canvas-box {
     position: relative;
     width: 100%;
-    height: 80%;
+    height: 95%;
+    background: transparent !important;
 }
 
 .canvas-box canvas {
     display: block;
     width: 100%;
     height: 100%;
-    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.6));
+    background: transparent !important;
+    filter: drop-shadow(0 8px 12px rgba(0,0,0,0.7));
 }
 
-/* Зона выбора — вращающийся пунктирный круг прямо на теле червя */
+/* Зоны выбора целей */
 .zone-hit {
     position: absolute;
-    left: 50%;
-    width: 46px;
-    height: 46px;
-    margin-left: -23px;
-    margin-top: -23px;
+    width: 56px;
+    height: 56px;
+    transform: translate(-50%, -50%);
     border-radius: 50%;
     border: 3px dashed #d4ff2b;
     box-sizing: border-box;
     cursor: pointer;
-    animation: zone-spin 3s linear infinite;
-    opacity: 0.75;
-    z-index: 5;
+    opacity: 0.85;
+    z-index: 20;
     pointer-events: auto;
+    animation: zone-spin 4s linear infinite;
 }
 
-.zone-hit[data-zone="head"]  { top: 14%; }
-.zone-hit[data-zone="belly"] { top: 50%; }
-.zone-hit[data-zone="tail"]  { top: 84%; }
-
 @keyframes zone-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 .worm-player .zone-hit.selected {
@@ -151,7 +213,6 @@
     border-color: #4CAF50;
     background: rgba(76, 175, 80, 0.3);
     box-shadow: 0 0 14px #4CAF50;
-    animation: zone-selected-pulse 0.8s ease-in-out infinite;
     opacity: 1;
 }
 
@@ -160,23 +221,17 @@
     border-color: #ff3b30;
     background: rgba(255, 59, 48, 0.3);
     box-shadow: 0 0 14px #ff3b30;
-    animation: zone-selected-pulse 0.8s ease-in-out infinite;
     opacity: 1;
 }
 
-@keyframes zone-selected-pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.1); }
-}
-
-/* ============ КНОПКА БОЯ (СКРЕЩЕННЫЕ КИНЖАЛЫ) ============ */
+/* ============ КНОПКА БОЯ ============ */
 .dagger-btn {
     position: absolute;
     left: 50%;
-    top: 50%;
+    top: 55%;
     transform: translate(-50%, -50%);
-    width: 100px;
-    height: 100px;
+    width: 90px;
+    height: 90px;
     z-index: 15;
     cursor: pointer;
 }
@@ -190,10 +245,10 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 88px;
-    height: 30px;
-    margin-left: -44px;
-    margin-top: -15px;
+    width: 80px;
+    height: 26px;
+    margin-left: -40px;
+    margin-top: -13px;
     border-radius: 8px;
     background: linear-gradient(90deg, #444 0%, #999 50%, #444 100%);
     background-size: 200% 100%;
@@ -205,11 +260,6 @@
     font-size: 20px;
     animation: dagger-shine 2s linear infinite;
     transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
-}
-
-@keyframes dagger-shine {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
 }
 
 .dagger-defense {
@@ -236,73 +286,41 @@
     box-shadow: 0 0 14px #4CAF50;
 }
 
-.dagger.filled.dagger-defense {
-    animation: dagger-pop-defense 0.3s ease;
-}
-
-.dagger.filled.dagger-attack {
-    animation: dagger-pop-attack 0.3s ease;
-}
+.dagger.filled.dagger-defense { animation: dagger-pop-defense 0.3s ease; }
+.dagger.filled.dagger-attack { animation: dagger-pop-attack 0.3s ease; }
 
 @keyframes dagger-pop-defense {
     0% { transform: rotate(-45deg) scale(1.5); }
     100% { transform: rotate(-45deg) scale(1); }
 }
-
 @keyframes dagger-pop-attack {
     0% { transform: rotate(45deg) scale(1.5); }
     100% { transform: rotate(45deg) scale(1); }
 }
 
-/* ============ HP (над головой) ============ */
-.hp-wrap {
-    position: relative;
-    width: 74%;
-    margin-bottom: 6px;
-    flex-shrink: 0;
-}
-
-.hp-bar-container {
-    width: 100%;
-    height: 12px;
-    background: #111;
-    border-radius: 6px;
-    overflow: hidden;
-    border: 1px solid #333;
-}
-
-.hp-bar {
-    height: 100%;
-    width: 100%;
-    background: #ff3b30;
-    transition: width 0.3s ease;
-}
-
-.worm-player .hp-bar { background: #4CAF50; }
-
 .dmg-popup {
     position: absolute;
-    left: 50%;
-    top: -4px;
-    transform: translate(-50%, 0);
-    font-size: 16px;
+    top: 24px;
+    font-size: 18px;
     font-weight: 900;
     color: #ff5545;
     text-shadow: 0 0 6px #000;
     pointer-events: none;
     opacity: 0;
 }
+.player-side .dmg-popup { left: 10px; }
+.enemy-side .dmg-popup { right: 10px; }
 
 .dmg-popup.show {
     animation: dmg-float 1.4s ease-out forwards;
 }
 
 @keyframes dmg-float {
-    0% { opacity: 1; transform: translate(-50%, 0); }
-    100% { opacity: 0; transform: translate(-50%, -34px); }
+    0% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(30px); }
 }
 
-/* ============ ОВЕРЛЕЙ РЕЗУЛЬТАТА БОЯ ============ */
+/* ============ ОВЕРЛЕЙ РЕЗУЛЬТАТА ============ */
 .wrath-result-overlay {
     position: absolute;
     top: 0; left: 0;
@@ -312,7 +330,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    z-index: 25;
+    z-index: 60;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.5s ease;
@@ -321,16 +339,6 @@
 .wrath-result-overlay.active {
     opacity: 1;
     pointer-events: auto;
-}
-
-.wrath-result-overlay.fade-out {
-    animation: overlayFadeOut 2s ease forwards;
-}
-
-@keyframes overlayFadeOut {
-    0% { opacity: 1; }
-    80% { opacity: 1; }
-    100% { opacity: 0; pointer-events: none; }
 }
 
 .wrath-overlay-text {
@@ -362,6 +370,4 @@
     transition: transform 0.1s ease, box-shadow 0.2s ease;
 }
 
-.wrath-restart-btn:active {
-    transform: scale(0.95);
-}
+.wrath-restart-btn:active { transform: scale(0.95); }

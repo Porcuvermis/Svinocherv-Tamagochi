@@ -82,16 +82,29 @@
 
     <div id="wrath-game" class="minigame-screen">
         <div class="wrath-modal">
-            <button id="wrath-close-btn" class="wrath-close-btn">&times;</button>
-            <div class="wrath-header">ГНЕВ</div>
+            <!-- Верхний HUD в стиле файтингов -->
+            <div class="fighting-hud">
+                <div class="fighter-hp-box player-side">
+                    <div class="hp-bar-container">
+                        <div class="hp-bar" id="player-hp-bar"></div>
+                    </div>
+                    <div class="dmg-popup" id="player-dmg-popup"></div>
+                </div>
+
+                <button id="wrath-close-btn" class="wrath-close-btn">&times;</button>
+
+                <div class="fighter-hp-box enemy-side">
+                    <div class="hp-bar-container">
+                        <div class="hp-bar" id="enemy-hp-bar"></div>
+                    </div>
+                    <div class="dmg-popup" id="enemy-dmg-popup"></div>
+                </div>
+            </div>
+            
             <div class="wrath-result" id="wrath-result"></div>
 
             <div class="battle-arena">
                 <div class="worm-wrap worm-player">
-                    <div class="hp-wrap">
-                        <div class="hp-bar-container"><div class="hp-bar" id="player-hp-bar"></div></div>
-                        <div class="dmg-popup" id="player-dmg-popup"></div>
-                    </div>
                     <div class="canvas-box">
                         <canvas id="player-canvas"></canvas>
                         <div class="zone-hit" data-zone="head"></div>
@@ -106,10 +119,6 @@
                 </div>
 
                 <div class="worm-wrap worm-enemy">
-                    <div class="hp-wrap">
-                        <div class="hp-bar-container"><div class="hp-bar" id="enemy-hp-bar"></div></div>
-                        <div class="dmg-popup" id="enemy-dmg-popup"></div>
-                    </div>
                     <div class="canvas-box">
                         <canvas id="enemy-canvas"></canvas>
                         <div class="zone-hit" data-zone="head"></div>
