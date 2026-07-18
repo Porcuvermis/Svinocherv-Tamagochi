@@ -118,6 +118,11 @@
                     </div>
                 </div>
             </div>
+
+            <div class="wrath-result-overlay" id="wrath-result-overlay">
+                <div class="wrath-overlay-text" id="wrath-overlay-text">ПОРАЖЕНИЕ...</div>
+                <button class="wrath-restart-btn" id="wrath-restart-btn">Начать заново</button>
+            </div>
         </div>
     </div>
 
@@ -216,11 +221,6 @@
                     <rect id="lust-lid-right" x="197" y="118" width="56" height="0" fill="#f2b8d6"/>
                 </svg>
 
-                <!-- Внутри #lust-tail ничего не описываем вручную: реальную SVG-форму
-                     хвоста (единый контур + блик) вставляет lust.js через innerHTML.
-                     Раньше здесь лежала старая разметка (tail-tip/tail-cuff/tail-seg/
-                     tail-base) — она больше не нужна и убрана, так как JS всё равно
-                     полностью её перезаписывал при каждом открытии. -->
                 <div class="lust-tail-zone" id="lust-tail-zone">
                     <div class="lust-tail" id="lust-tail"></div>
                 </div>

@@ -76,6 +76,9 @@ const WrathMinigame = {
     playerZones: [],
     enemyZones: [],
     enemyParams: null,
+    resultOverlay: null,
+    overlayText: null,
+    restartBtn: null,
 
     playerHP: 10,
     enemyHP: 10,
@@ -95,12 +98,26 @@ const WrathMinigame = {
         this.enemyCanvas = document.getElementById('enemy-canvas');
         this.playerZones = Array.from(document.querySelectorAll('.worm-player .zone-hit'));
         this.enemyZones = Array.from(document.querySelectorAll('.worm-enemy .zone-hit'));
+        this.resultOverlay = document.getElementById('wrath-result-overlay');
+        this.overlayText = document.getElementById('wrath-overlay-text');
+        this.restartBtn = document.getElementById('wrath-restart-btn');
 
         if (this.closeBtn) {
             this.closeBtn.onclick = (e) => { e.stopPropagation(); this.close(); };
         }
         if (this.daggerBtn) {
             this.daggerBtn.onclick = (e) => { e.stopPropagation(); this.handleDaggerClick(); };
+        }
+        if (this.restartBtn) {
+            this.restartBtn.onclick = (e) => { 
+                e.stopPropagation(); 
+                // Кнопка "заебись" закрывает игру, кнопка рестарта перезапускает матч
+                if (this.fightOver && this.playerHP > 0 && this.enemyHP <= 0) {
+                    this.close();
+                } else {
+                    this.restartFight(); 
+                }
+            };
         }
         this.playerZones.forEach(z => {
             z.onclick = (e) => { e.stopPropagation(); this.selectDefense(z.dataset.zone, z); };
@@ -113,7 +130,22 @@ const WrathMinigame = {
     open() {
         if (!this.screenElement) this.init();
         this.screenElement.classList.add('active');
+        this.restartFight();
+    },
 
+    close() {
+        if (this.screenElement) this.screenElement.classList.remove('active');
+        if (typeof GameManager !== 'undefined' && typeof GameManager.updateUI === 'function') {
+            const fullMenu = document.getElementById('full-menu');
+            const miniHud = document.getElementById('mini-hud');
+            if (fullMenu && !fullMenu.classList.contains('active') && miniHud) {
+                miniHud.style.opacity = '1';
+                miniHud.style.pointerEvents = 'auto';
+            }
+        }
+    },
+
+    restartFight() {
         this.generateEnemy();
         this.playerHP = this.maxHP;
         this.enemyHP = this.maxHP;
@@ -121,14 +153,17 @@ const WrathMinigame = {
         this.fightOver = false;
         this.resetSelections();
 
+        if (this.restartBtn) this.restartBtn.textContent = 'Начать заново';
         this.updateHPBars();
         this.setResult('');
+        
+        if (this.resultOverlay) {
+            this.resultOverlay.classList.remove('active', 'fade-out');
+        }
+        if (this.daggerBtn) {
+            this.daggerBtn.classList.remove('disabled');
+        }
         this.drawFighters();
-        if (this.daggerBtn) this.daggerBtn.classList.remove('disabled');
-    },
-
-    close() {
-        if (this.screenElement) this.screenElement.classList.remove('active');
     },
 
     generateEnemy() {
@@ -229,14 +264,56 @@ const WrathMinigame = {
         this.fightOver = true;
         if (this.daggerBtn) this.daggerBtn.classList.add('disabled');
 
-        if (this.enemyHP <= 0 && this.playerHP > 0) {
+        if (this.playerHP <= 0 && this.enemyHP <= 0) {
+            // НИЧЬЯ
+            this.setResult('НИЧЬЯ');
+            if (this.overlayText) {
+                this.overlayText.textContent = 'НИЧЬЯ';
+                this.overlayText.style.color = '#ffd700';
+                this.overlayText.style.textShadow = '0 0 15px rgba(255, 215, 0, 0.6)';
+            }
+            if (this.restartBtn) this.restartBtn.style.display = 'block';
+            if (this.resultOverlay) {
+                this.resultOverlay.classList.remove('fade-out');
+                this.resultOverlay.classList.add('active');
+            }
+            if (typeof GameManager !== 'undefined') {
+                GameManager.sins.wrath.value = Math.min(100, GameManager.sins.wrath.value + 10);
+                GameManager.updateUI();
+            }
+        } else if (this.enemyHP <= 0 && this.playerHP > 0) {
+            // ПОБЕДА
             this.setResult('ПОБЕДА! 🤬');
+            if (this.overlayText) {
+                this.overlayText.textContent = 'ПОБЕДА!';
+                this.overlayText.style.color = '#4CAF50';
+                this.overlayText.style.textShadow = '0 0 15px rgba(76, 175, 80, 0.6)';
+            }
+            if (this.restartBtn) {
+                this.restartBtn.textContent = 'заебись';
+                this.restartBtn.style.display = 'block';
+            }
+            if (this.resultOverlay) {
+                this.resultOverlay.classList.remove('fade-out');
+                this.resultOverlay.classList.add('active');
+            }
             if (typeof GameManager !== 'undefined') {
                 GameManager.sins.wrath.value = 100;
                 GameManager.updateUI();
             }
         } else {
+            // ПОРАЖЕНИЕ
             this.setResult('ПОРАЖЕНИЕ...');
+            if (this.overlayText) {
+                this.overlayText.textContent = 'ПОРАЖЕНИЕ...';
+                this.overlayText.style.color = '#ff3b30';
+                this.overlayText.style.textShadow = '0 0 15px rgba(255, 59, 48, 0.6)';
+            }
+            if (this.restartBtn) this.restartBtn.style.display = 'block';
+            if (this.resultOverlay) {
+                this.resultOverlay.classList.remove('fade-out');
+                this.resultOverlay.classList.add('active');
+            }
             if (typeof GameManager !== 'undefined') {
                 GameManager.sins.wrath.value = Math.min(100, GameManager.sins.wrath.value + 20);
                 GameManager.updateUI();
@@ -258,7 +335,7 @@ const WrathMinigame = {
         if (!popup) return;
         popup.textContent = `-${amount}`;
         popup.classList.remove('show');
-        void popup.offsetWidth; // рестарт анимации
+        void popup.offsetWidth;
         popup.classList.add('show');
     },
 
