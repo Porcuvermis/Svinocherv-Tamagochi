@@ -1,0 +1,378 @@
+/* ================= САД: ОВЕРЛЕЙ ================= */
+#sloth-game {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 999999 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+#sloth-game.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sloth-modal {
+    position: relative;
+    width: 92vw;
+    max-width: 380px;
+    height: 80vh;
+    max-height: 620px;
+    background: #14180f;
+    border: 3px solid #8E8E93;
+    border-radius: 28px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 10px;
+    box-sizing: border-box;
+    overflow: hidden;
+    transform: scale(0.85);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#sloth-game.active .sloth-modal {
+    transform: scale(1);
+}
+
+.sloth-close-btn {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: #ff4444;
+    border: 2px solid #fff;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 26px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 30;
+    flex-shrink: 0;
+}
+
+.sloth-close-btn:active { transform: scale(0.9); }
+
+.sloth-header {
+    font-size: 20px;
+    font-weight: 900;
+    color: #b3b3b6;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.sloth-footer {
+    font-size: 11px;
+    color: #9aa08e;
+    letter-spacing: 1px;
+    text-align: center;
+    min-height: 16px;
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+
+/* ================= СЦЕНА САДА ================= */
+.garden-scene {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    border-radius: 18px;
+    overflow: hidden;
+    z-index: 0;
+}
+
+.garden-sky {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: linear-gradient(180deg, #cfe4e8 0%, #e8f0d8 55%, #8a9f5e 100%);
+    z-index: 0;
+}
+
+.garden-sun {
+    position: absolute;
+    top: 8%;
+    right: 10%;
+    width: 15%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: radial-gradient(circle, #f5f3c0 0%, #e9e59a 100%);
+    box-shadow: 0 0 20px rgba(245, 243, 192, 0.6);
+    z-index: 1;
+}
+
+.garden-hill {
+    position: absolute;
+    left: -10%;
+    width: 120%;
+    height: 60%;
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+
+.hill-back {
+    bottom: 28%;
+    background: #6f9457;
+    opacity: 0.85;
+    z-index: 1;
+}
+
+.hill-front {
+    bottom: 0%;
+    height: 45%;
+    background: #4a3826;
+    z-index: 2;
+}
+
+/* ================= ИНСТРУМЕНТЫ ================= */
+.tools-row {
+    position: absolute;
+    top: 8%;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-end;
+    z-index: 10;
+}
+
+.tool-slot {
+    width: 22%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tool {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    opacity: 0.3;
+    filter: grayscale(0.6);
+    pointer-events: none;
+    transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+.tool svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.tool.active {
+    opacity: 1;
+    filter: grayscale(0) drop-shadow(0 0 8px #ffe08a);
+    pointer-events: auto;
+    cursor: grab;
+    animation: tool-pulse 1.2s ease-in-out infinite;
+}
+
+.tool.dragging {
+    animation: none;
+    position: fixed;
+    z-index: 1000000;
+    filter: grayscale(0) drop-shadow(0 0 14px #ffe08a);
+    transition: none;
+    cursor: grabbing;
+    width: 60px;
+    height: 60px;
+}
+
+.tool.returning {
+    transition: left 0.3s ease, top 0.3s ease;
+}
+
+@keyframes tool-pulse {
+    0%, 100% { filter: grayscale(0) drop-shadow(0 0 6px #ffe08a); }
+    50% { filter: grayscale(0) drop-shadow(0 0 14px #fff3c0); }
+}
+
+/* ================= ГОРШОК (ЧИСТЫЙ CSS, БЕЗ SVG) ================= */
+.pot-wrap {
+    position: absolute;
+    bottom: 6%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 46%;
+    height: 60%;
+    z-index: 5;
+}
+
+/* Тело горшка — трапеция */
+.pot-body {
+    position: absolute;
+    top: 38%;
+    left: 8%;
+    width: 84%;
+    height: 62%;
+    background: linear-gradient(180deg, #c98a63 0%, #8a5636 100%);
+    border: 3px solid #6e3f24;
+    border-top: none;
+    clip-path: polygon(0% 0%, 100% 0%, 82% 100%, 18% 100%);
+    box-sizing: border-box;
+    z-index: 1;
+}
+
+/* Верхний ободок горшка */
+.pot-rim {
+    position: absolute;
+    top: 33%;
+    left: 0%;
+    width: 100%;
+    height: 14%;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #e6ac7d 0%, #b06a44 100%);
+    border: 3px solid #7a4a2e;
+    box-sizing: border-box;
+    z-index: 2;
+}
+
+/* Земля внутри горшка */
+.pot-soil {
+    position: absolute;
+    top: 35%;
+    left: 16%;
+    width: 68%;
+    height: 9%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 35%, #4a3020 0%, #1c1108 100%);
+    z-index: 3;
+}
+
+/* Канвас растения — поверх горшка, фон обязательно прозрачный */
+#plant-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    background: none !important;
+    z-index: 4;
+}
+
+.weeds-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.weed {
+    position: absolute;
+    width: 16px;
+    height: 24px;
+    transform: translate(-50%, -85%);
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.weed.shown {
+    opacity: 1;
+}
+
+.weed.removing {
+    opacity: 0;
+    transform: translate(-50%, -85%) scale(0.3) rotate(25deg);
+}
+
+/* ================= ПЛОД ================= */
+.fruit-spot {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    line-height: 1;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.5), rgba(0,0,0,0));
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 6;
+}
+
+.fruit-spot.ready {
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: auto;
+    cursor: pointer;
+    animation: fruit-glow 1s ease-in-out infinite;
+}
+
+@keyframes fruit-glow {
+    0%, 100% { filter: drop-shadow(0 0 6px #ffd700); }
+    50% { filter: drop-shadow(0 0 16px #fff3a0); }
+}
+
+.fruit-spot.picked {
+    transform: translate(-50%, -50%) scale(0);
+}
+
+/* ================= АНИМАЦИЯ ПОЛИВА ================= */
+.water-drop {
+    position: absolute;
+    width: 6px;
+    height: 10px;
+    border-radius: 50% 50% 50% 0;
+    background: #7ec8e3;
+    opacity: 0.85;
+    animation: drop-fall 0.5s ease-in forwards;
+    pointer-events: none;
+    z-index: 7;
+}
+
+@keyframes drop-fall {
+    0% { transform: translateY(-10px); opacity: 0.9; }
+    100% { transform: translateY(40px); opacity: 0; }
+}
+
+/* ================= ПОБЕДА ================= */
+.sloth-win-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+}
+
+.sloth-win-overlay.show { opacity: 1; }
+
+.sloth-win-text {
+    font-size: 26px;
+    font-weight: 900;
+    color: #d4ff2b;
+    text-shadow: 0 0 10px #4a3826, 0 0 20px #8E8E93;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.sloth-win-overlay.show .sloth-win-text {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.sloth-win-overlay.fade-out .sloth-win-text {
+    opacity: 0;
+    transition: opacity 1s ease;
+}

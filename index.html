@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Свиночервь Тамагочи</title>
+    <link rel="stylesheet" href="style.css?v=12">
+    <link rel="stylesheet" href="src/minigames/greed/greed.css?v=6">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=1">
+    <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=2">
+    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=1">
+</head>
+<body>
+
+<div id="game-container">
+    
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="mini-hud"></div>
+
+    <div id="full-menu">
+        <div id="close-menu-area">▲ ▲ ▲ ▲ ▲</div>
+        <div id="sins-container"></div>
+    </div>
+
+    <div id="slots-game" class="minigame-screen">
+        <div class="slots-modal">
+            <button id="slots-close-btn" class="slots-close-btn">&times;</button>
+            
+            <div class="slots-header">АЛЧНОСТЬ</div>
+
+            <div class="machine-container">
+                <svg class="machine-svg" viewBox="0 0 300 400">
+                    <defs>
+                        <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#ffe066" />
+                            <stop offset="50%" stop-color="#f5b041" />
+                            <stop offset="100%" stop-color="#9a7d0a" />
+                        </linearGradient>
+                        <linearGradient id="body-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#2c0c0c" />
+                            <stop offset="100%" stop-color="#150505" />
+                        </linearGradient>
+                    </defs>
+
+                    <rect x="10" y="10" width="280" height="380" rx="20" fill="url(#body-grad)" stroke="url(#gold-grad)" stroke-width="4" />
+                    
+                    <rect x="25" y="60" width="250" height="180" rx="12" fill="#0f0f0f" stroke="#444" stroke-width="2" />
+                    
+                    <circle cx="25" cy="25" r="5" fill="#f5b041" />
+                    <circle cx="275" cy="25" r="5" fill="#f5b041" />
+                    <circle cx="25" cy="375" r="5" fill="#f5b041" />
+                    <circle cx="275" cy="375" r="5" fill="#f5b041" />
+
+                    <rect x="235" y="270" width="14" height="80" rx="7" fill="#000" />
+                    
+                    <g id="lever-arm" class="lever-idle">
+                        <line x1="242" y1="270" x2="242" y2="210" stroke="#85929e" stroke-width="8" stroke-linecap="round" id="lever-shaft" />
+                        <circle cx="242" cy="200" r="14" fill="#e74c3c" id="lever-ball" />
+                    </g>
+                </svg>
+
+                <div class="reels-overlay">
+                    <div class="reel-window" id="reel-0">💎</div>
+                    <div class="reel-window" id="reel-1">💀</div>
+                    <div class="reel-window" id="reel-2">❌</div>
+                </div>
+
+                <div class="lever-trigger-zone" id="lever-trigger"></div>
+
+                <div class="win-overlay" id="win-overlay">
+                    <div class="fireworks" id="fireworks"></div>
+                    <div class="win-text" id="win-text">Нагрешил!</div>
+                </div>
+            </div>
+
+            <div class="slots-footer">НАЖМИ НА РЫЧАГ ИЛИ НА КОРПУС</div>
+        </div>
+    </div>
+
+    <div id="wrath-game" class="minigame-screen">
+        <div class="wrath-modal">
+            <button id="wrath-close-btn" class="wrath-close-btn">&times;</button>
+            <div class="wrath-header">ГНЕВ</div>
+            <div class="wrath-result" id="wrath-result"></div>
+
+            <div class="battle-arena">
+                <div class="worm-wrap worm-player">
+                    <div class="hp-wrap">
+                        <div class="hp-bar-container"><div class="hp-bar" id="player-hp-bar"></div></div>
+                        <div class="dmg-popup" id="player-dmg-popup"></div>
+                    </div>
+                    <div class="canvas-box">
+                        <canvas id="player-canvas"></canvas>
+                        <div class="zone-hit" data-zone="head"></div>
+                        <div class="zone-hit" data-zone="belly"></div>
+                        <div class="zone-hit" data-zone="tail"></div>
+                    </div>
+                </div>
+
+                <div class="dagger-btn" id="dagger-btn">
+                    <div class="dagger dagger-defense" id="dagger-defense"></div>
+                    <div class="dagger dagger-attack" id="dagger-attack"></div>
+                </div>
+
+                <div class="worm-wrap worm-enemy">
+                    <div class="hp-wrap">
+                        <div class="hp-bar-container"><div class="hp-bar" id="enemy-hp-bar"></div></div>
+                        <div class="dmg-popup" id="enemy-dmg-popup"></div>
+                    </div>
+                    <div class="canvas-box">
+                        <canvas id="enemy-canvas"></canvas>
+                        <div class="zone-hit" data-zone="head"></div>
+                        <div class="zone-hit" data-zone="belly"></div>
+                        <div class="zone-hit" data-zone="tail"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sloth-game" class="minigame-screen">
+        <div class="sloth-modal">
+            <button id="sloth-close-btn" class="sloth-close-btn">&times;</button>
+            <div class="sloth-header">ЛЕНЬ</div>
+
+            <div class="garden-scene">
+                <div class="garden-sky"></div>
+                <div class="garden-sun"></div>
+                <div class="garden-hill hill-back"></div>
+                <div class="garden-hill hill-front"></div>
+
+                <div class="tools-row">
+                    <div class="tool-slot" id="slot-seed">
+                        <div class="tool" id="tool-seed">
+                            <svg viewBox="0 0 60 60">
+                                <rect x="8" y="16" width="44" height="38" rx="4" fill="#eee" stroke="#999" stroke-width="2"/>
+                                <rect x="8" y="12" width="44" height="8" rx="2" fill="#ddd" stroke="#999" stroke-width="2"/>
+                                <line x1="14" y1="27" x2="46" y2="27" stroke="#e07b6b" stroke-width="2"/>
+                                <line x1="14" y1="32" x2="46" y2="32" stroke="#e07b6b" stroke-width="2"/>
+                                <ellipse cx="30" cy="45" rx="10" ry="7" fill="#e9c46a" stroke="#b5892e" stroke-width="1.5"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="tool-slot" id="slot-water">
+                        <div class="tool" id="tool-can">
+                            <svg viewBox="0 0 70 60">
+                                <ellipse cx="30" cy="46" rx="20" ry="9" fill="#cfd3d6" stroke="#8a8f93" stroke-width="2"/>
+                                <path d="M12 46 L12 28 Q12 18 30 18 Q48 18 48 28 L48 46" fill="#dfe3e6" stroke="#8a8f93" stroke-width="2"/>
+                                <path d="M48 30 L64 20" stroke="#8a8f93" stroke-width="4" stroke-linecap="round"/>
+                                <circle cx="65" cy="19" r="3" fill="#8a8f93"/>
+                                <path d="M20 18 Q26 6 34 12" fill="none" stroke="#8a8f93" stroke-width="3"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="tool-slot" id="slot-fert">
+                        <div class="tool" id="tool-fert">
+                            <svg viewBox="0 0 60 66">
+                                <path d="M14 20 Q10 40 14 58 Q30 66 46 58 Q50 40 46 20 Q30 26 14 20Z" fill="#c9a26a" stroke="#8a6c3f" stroke-width="2"/>
+                                <path d="M18 18 L26 8 L40 14 L44 20" fill="#c9a26a" stroke="#8a6c3f" stroke-width="2"/>
+                                <path d="M24 40 q4 -6 8 0 q4 6 8 0" fill="none" stroke="#4f7942" stroke-width="2"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="tool-slot" id="slot-rake">
+                        <div class="tool" id="tool-rake">
+                            <svg viewBox="0 0 40 70">
+                                <line x1="20" y1="4" x2="20" y2="46" stroke="#7a5230" stroke-width="5" stroke-linecap="round"/>
+                                <path d="M8 46 L32 46 L28 62 L12 62 Z" fill="#a9adb0" stroke="#6e7275" stroke-width="2"/>
+                                <line x1="14" y1="46" x2="12" y2="62" stroke="#6e7275" stroke-width="2"/>
+                                <line x1="20" y1="46" x2="20" y2="62" stroke="#6e7275" stroke-width="2"/>
+                                <line x1="26" y1="46" x2="28" y2="62" stroke="#6e7275" stroke-width="2"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pot-wrap" id="pot-wrap">
+                    <div class="pot-body"></div>
+                    <div class="pot-rim"></div>
+                    <div class="pot-soil"></div>
+                    <div class="weeds-layer" id="weeds-layer"></div>
+                    <canvas id="plant-canvas"></canvas>
+                    <div class="fruit-spot" id="fruit-spot"><span id="fruit-emoji"></span></div>
+                </div>
+            </div>
+
+            <div class="sloth-footer" id="sloth-footer">ПЕРЕТАЩИ ПАКЕТИК С СЕМЕНЕМ НА ГОРШОК</div>
+        </div>
+    </div>
+
+    <div id="lust-game" class="minigame-screen">
+        <div class="lust-modal">
+            <button id="lust-close-btn" class="lust-close-btn">&times;</button>
+            <div class="lust-header">ПОХОТЬ</div>
+
+            <div class="lust-scene">
+                <svg class="lust-worm" id="lust-worm-svg" viewBox="0 0 300 400">
+                    <ellipse cx="190" cy="330" rx="70" ry="55" fill="#f2b8d6"/>
+                    <ellipse cx="185" cy="255" rx="78" ry="60" fill="#f2b8d6"/>
+                    <circle cx="190" cy="150" r="95" fill="#f2b8d6"/>
+
+                    <ellipse cx="150" cy="140" rx="26" ry="16" fill="#fff"/>
+                    <circle id="lust-pupil-left" cx="150" cy="140" r="10" fill="#2a2a2a"/>
+                    <ellipse cx="225" cy="140" rx="26" ry="16" fill="#fff"/>
+                    <circle id="lust-pupil-right" cx="225" cy="140" r="10" fill="#2a2a2a"/>
+
+                    <path d="M150 190 Q190 215 230 188" stroke="#d68fb0" stroke-width="5" fill="none" stroke-linecap="round"/>
+
+                    <rect id="lust-lid-left" x="122" y="118" width="56" height="0" fill="#f2b8d6"/>
+                    <rect id="lust-lid-right" x="197" y="118" width="56" height="0" fill="#f2b8d6"/>
+                </svg>
+
+                <!-- Внутри #lust-tail ничего не описываем вручную: реальную SVG-форму
+                     хвоста (единый контур + блик) вставляет lust.js через innerHTML.
+                     Раньше здесь лежала старая разметка (tail-tip/tail-cuff/tail-seg/
+                     tail-base) — она больше не нужна и убрана, так как JS всё равно
+                     полностью её перезаписывал при каждом открытии. -->
+                <div class="lust-tail-zone" id="lust-tail-zone">
+                    <div class="lust-tail" id="lust-tail"></div>
+                </div>
+
+                <div class="lust-splash-layer" id="lust-splash-layer"></div>
+
+                <div class="lust-win-overlay" id="lust-win-overlay">
+                    <div class="lust-win-text">Нагрешил!</div>
+                </div>
+            </div>
+
+            <div class="lust-gauge-wrap">
+                <div class="lust-gauge-bar" id="lust-gauge-bar"></div>
+            </div>
+            <div class="lust-footer" id="lust-footer">СВАЙПАЙ ХВОСТ ВВЕРХ-ВНИЗ</div>
+        </div>
+    </div>
+
+
+<script src="src/core/worm.js?v=5"></script>
+<script src="main.js?v=10"></script>
+<script src="src/minigames/greed/greed.js?v=6"></script>
+<script src="src/minigames/wrath/wrath.js?v=5"></script>
+<script src="src/minigames/sloth/sloth.js?v=4"></script>
+<script src="src/minigames/lust/lust.js?v=2"></script>
+
+</body>
+</html>

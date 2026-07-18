@@ -1,0 +1,230 @@
+/* Всплывающее окно-оверлей поверх игры (70% масштаба) */
+#slots-game {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 999999 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+#slots-game.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Карточка окна */
+.slots-modal {
+    position: relative;
+    width: 90vw;
+    max-width: 340px;
+    height: 72vh;
+    max-height: 540px;
+    background: #1c0505;
+    border: 3px solid #f5b041;
+    border-radius: 28px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 10px;
+    box-sizing: border-box;
+    transform: scale(0.85);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#slots-game.active .slots-modal {
+    transform: scale(1);
+}
+
+/* Кнопка «Закрыть» */
+.slots-close-btn {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: #ff4444;
+    border: 2px solid #fff;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 26px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    z-index: 10;
+}
+
+.slots-close-btn:active {
+    transform: scale(0.9);
+}
+
+/* Шапка и подвал */
+.slots-header {
+    font-size: 24px;
+    font-weight: 900;
+    color: #f5b041;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-family: sans-serif;
+}
+
+.slots-footer {
+    font-size: 11px;
+    color: #888;
+    letter-spacing: 1px;
+    text-align: center;
+}
+
+/* Контейнер автомата */
+.machine-container {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 10px 0;
+}
+
+.machine-svg {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+}
+
+/* Сетка барабанов поверх экрана автомата */
+.reels-overlay {
+    position: absolute;
+    top: 19%;
+    left: 12%;
+    width: 63%;
+    height: 34%;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.reel-window {
+    width: 28%;
+    height: 80%;
+    background: #ffffff;
+    border: 2px solid #ccc;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: min(8vw, 36px);
+    box-shadow: inset 0 4px 10px rgba(0,0,0,0.2);
+    box-sizing: border-box;
+    transition: transform 0.15s ease;
+}
+
+/* CSS-Анимации "Встряски" барабанов */
+@keyframes spin-bounce {
+    0% { transform: translateY(0); }
+    25% { transform: translateY(-15px) scaleY(1.1); }
+    50% { transform: translateY(15px) scaleY(0.9); }
+    75% { transform: translateY(-8px); }
+    100% { transform: translateY(0); }
+}
+
+.reel-window.spinning {
+    animation: spin-bounce 0.15s infinite ease-in-out;
+}
+
+/* Анимация рычага с помощью CSS-трансформаций SVG-группы */
+#lever-arm {
+    transform-origin: 242px 270px;
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Положение рычага при нажатии */
+#lever-arm.pulled {
+    transform: rotateX(180deg) scaleY(0.4) translateY(-100px);
+}
+
+/* Невидимый триггер поверх рычага для простого нажатия */
+.lever-trigger-zone {
+    position: absolute;
+    right: 5%;
+    top: 40%;
+    width: 22%;
+    height: 45%;
+    cursor: pointer;
+    z-index: 5;
+}
+
+/* ================= АНИМАЦИЯ ПОБЕДЫ (ФЕЙЕРВЕРК + НАДПИСЬ) ================= */
+.win-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+}
+
+.win-overlay.show {
+    opacity: 1;
+}
+
+.win-text {
+    font-size: 30px;
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow: 0 0 10px #ff4444, 0 0 20px #f5b041;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.win-overlay.show .win-text {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.win-overlay.fade-out .win-text {
+    opacity: 0;
+    transition: opacity 1s ease;
+}
+
+.fireworks {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+.spark {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    animation: spark-fly 0.8s ease-out forwards;
+}
+
+@keyframes spark-fly {
+    to {
+        transform: translate(var(--tx), var(--ty)) scale(0);
+        opacity: 0;
+    }
+}
