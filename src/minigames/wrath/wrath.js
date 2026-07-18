@@ -1,6 +1,6 @@
 // ================= МОДУЛЬ МИНИ-ИГРЫ ГРЕХ ГНЕВА (БОЙ) =================
 
-function drawWormFigure(canvas, opts) {
+function drawWormFigure(canvas, opts, shake) {
     const w = canvas.clientWidth || 150;
     const h = canvas.clientHeight || 320;
     canvas.width = w;
@@ -10,7 +10,7 @@ function drawWormFigure(canvas, opts) {
     const { hue, segCount, thick, eyeMult, dir } = opts;
 
     ctx.clearRect(0, 0, w, h);
-    
+
     const markers = {
         head: { x: 0, y: 0 },
         belly: { x: 0, y: 0 },
@@ -23,19 +23,20 @@ function drawWormFigure(canvas, opts) {
     const bellyIndex = Math.floor(segCount / 2);
     const tailIndex = segCount;
 
+    const shk = shake || null;
+
     // 1. ОТРИСОВКА СЕГМЕНТОВ ТЕЛА И ХВОСТА
     for (let i = segCount; i > 0; i--) {
         const segY = baseOriginY + (i * 19 * scale);
-        
-        // Сложная S-образная траектория: основная дуга + обратный изгиб на хвосте
-        // Множитель (i * 0.5) заставляет хвост в самом низу уходить обратно к краю
-        const wave = Math.sin(i * -0.65) - Math.sin(i * 0.15) * 0.4;
+
+        const wave = Math.sin(i * 0.65) - Math.sin(i * 0.15) * 0.4;
         const segX = (w / 2) + (wave * 8 * dir * thick * scale);
-        
+
         const r = (20 - i * 1.1) * thick * scale;
         const finalR = Math.max(7 * scale, r);
 
-        // Сохраняем маркеры целей
+        // Маркеры целей всегда берём БАЗОВЫЕ координаты (без тряски),
+        // чтобы зоны-мишени не прыгали вместе с анимацией удара.
         if (i === bellyIndex) {
             markers.belly.x = segX;
             markers.belly.y = segY;
@@ -45,48 +46,58 @@ function drawWormFigure(canvas, opts) {
             markers.tail.y = segY;
         }
 
+        // Точечное смещение ТОЛЬКО для той зоны, что затронута ударом:
+        // хвост — последний сегмент + сосед; живот — средний сегмент + 2 соседа.
+        let drawX = segX, drawY = segY, segRot = 0;
+        if (shk) {
+            if (shk.zone === 'tail' && (i === tailIndex || i === tailIndex - 1)) {
+                drawX += shk.dx;
+                drawY += shk.dy;
+                segRot = shk.rot;
+            } else if (shk.zone === 'belly' && (i === bellyIndex || i === bellyIndex - 1 || i === bellyIndex + 1)) {
+                drawX += shk.dx;
+                drawY += shk.dy;
+                segRot = shk.rot * 0.6;
+            }
+        }
+
         ctx.fillStyle = `hsl(${hue}, ${60 - i * 3}%, ${50 - i}%)`;
         ctx.strokeStyle = '#2a0a10';
         ctx.lineWidth = 2;
 
-        // Если это САМЫЙ последний сегмент (кончик хвоста) — делаем его вытянутым конусом
         if (i === segCount) {
             ctx.save();
-            ctx.translate(segX, segY);
-            // Слегка поворачиваем кончик в сторону от центра (в зависимости от dir)
-            ctx.rotate(0.25 * dir);
+            ctx.translate(drawX, drawY);
+            ctx.rotate(0.25 * dir + segRot);
 
             ctx.beginPath();
-            // Начинаем с левого бока сегмента
             ctx.moveTo(-finalR, 0);
-            
-            // Левая сторона конуса идет вниз к вытянутой точке
-            // Точка смещена вниз на finalR * 1.6, создавая удлинение
             ctx.bezierCurveTo(-finalR, finalR * 0.8, -finalR * 0.4, finalR * 1.6, 0, finalR * 1.6);
-            
-            // Правая сторона конуса возвращается наверх к правому боку
             ctx.bezierCurveTo(finalR * 0.4, finalR * 1.6, finalR, finalR * 0.8, finalR, 0);
-            
-            // Закругляем верхушку, чтобы она плавно входила в предыдущий сегмент
             ctx.arc(0, 0, finalR, 0, Math.PI, true);
-            
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
             ctx.restore();
         } else {
-            // Обычные круглые сегменты тела
             ctx.beginPath();
-            ctx.arc(segX, segY, finalR, 0, Math.PI * 2);
+            ctx.arc(drawX, drawY, finalR, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
         }
     }
 
     // 2. ОТРИСОВКА ГОЛОВЫ
+    let headDx = 0, headDy = 0, headRot = 0;
+    if (shk && shk.zone === 'head') {
+        headDx = shk.dx;
+        headDy = shk.dy;
+        headRot = shk.rot;
+    }
+
     ctx.save();
-    ctx.translate(w / 2, baseOriginY);
-    ctx.rotate(0.12 * dir);
+    ctx.translate(w / 2 + headDx, baseOriginY + headDy);
+    ctx.rotate(0.12 * dir + headRot);
 
     markers.head.x = w / 2;
     markers.head.y = baseOriginY;
@@ -99,40 +110,33 @@ function drawWormFigure(canvas, opts) {
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    // Левое ухо
     ctx.beginPath();
     ctx.moveTo(-18 * scale, -18 * scale); ctx.lineTo(-28 * scale, -42 * scale); ctx.lineTo(-4 * scale, -26 * scale);
     ctx.closePath(); ctx.fillStyle = `hsl(${hue}, 70%, 82%)`; ctx.fill(); ctx.stroke();
 
-    // Правое ухо
     ctx.beginPath();
     ctx.moveTo(10 * scale, -24 * scale); ctx.lineTo(18 * scale, -45 * scale); ctx.lineTo(24 * scale, -14 * scale);
     ctx.closePath(); ctx.fillStyle = `hsl(${hue}, 65%, 78%)`; ctx.fill(); ctx.stroke();
 
-    // Глаза
     const eyeR = 7 * eyeMult * scale;
     ctx.fillStyle = '#fff';
     ctx.beginPath(); ctx.arc(-12 * scale, -6 * scale, eyeR, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(14 * scale, -6 * scale, eyeR, 0, Math.PI * 2); ctx.fill();
 
-    // Зрачки
     ctx.fillStyle = '#000';
     const pupilLookOffset = 2.5 * scale * dir;
     ctx.beginPath(); ctx.arc((-12 * scale) + pupilLookOffset, -5 * scale, eyeR * 0.45, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc((14 * scale) + pupilLookOffset, -5 * scale, eyeR * 0.45, 0, Math.PI * 2); ctx.fill();
 
-    // Брови
     ctx.strokeStyle = '#2a0a10';
     ctx.lineWidth = 2.5 * scale;
     ctx.beginPath(); ctx.moveTo(-21 * scale, -13 * scale); ctx.lineTo(-4 * scale, -8 * scale); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(6 * scale, -8 * scale); ctx.lineTo(23 * scale, -13 * scale); ctx.stroke();
 
-    // Пятачок
     ctx.beginPath(); ctx.ellipse(0, 11 * scale, 13 * scale, 9 * scale, 0, 0, Math.PI * 2);
     ctx.fillStyle = `hsl(${hue}, 60%, 70%)`; ctx.fill();
     ctx.strokeStyle = `hsl(${hue}, 40%, 50%)`; ctx.lineWidth = 2; ctx.stroke();
 
-    // Ноздри
     ctx.fillStyle = `hsl(${hue}, 40%, 30%)`;
     ctx.beginPath(); ctx.arc(-4 * scale, 11 * scale, 2 * scale, 0, Math.PI * 2);
     ctx.arc(4 * scale, 11 * scale, 2 * scale, 0, Math.PI * 2); ctx.fill();
@@ -152,7 +156,10 @@ const WrathMinigame = {
     enemyCanvas: null,
     playerZones: [],
     enemyZones: [],
+    playerOpts: null,
     enemyParams: null,
+    playerShakeRaf: null,
+    enemyShakeRaf: null,
     resultOverlay: null,
     overlayText: null,
     restartBtn: null,
@@ -179,6 +186,8 @@ const WrathMinigame = {
         this.overlayText = document.getElementById('wrath-overlay-text');
         this.restartBtn = document.getElementById('wrath-restart-btn');
 
+        this.playerOpts = { hue: 340, segCount: 6, thick: 1, eyeMult: 1, dir: 1 };
+
         if (this.closeBtn) {
             this.closeBtn.onclick = (e) => { e.stopPropagation(); this.close(); };
         }
@@ -186,12 +195,12 @@ const WrathMinigame = {
             this.daggerBtn.onclick = (e) => { e.stopPropagation(); this.handleDaggerClick(); };
         }
         if (this.restartBtn) {
-            this.restartBtn.onclick = (e) => { 
-                e.stopPropagation(); 
+            this.restartBtn.onclick = (e) => {
+                e.stopPropagation();
                 if (this.fightOver && this.playerHP > 0 && this.enemyHP <= 0) {
                     this.close();
                 } else {
-                    this.restartFight(); 
+                    this.restartFight();
                 }
             };
         }
@@ -217,6 +226,8 @@ const WrathMinigame = {
 
     close() {
         if (this.screenElement) this.screenElement.classList.remove('active');
+        this.stopShake('player');
+        this.stopShake('enemy');
         if (typeof GameManager !== 'undefined' && typeof GameManager.updateUI === 'function') {
             const fullMenu = document.getElementById('full-menu');
             const miniHud = document.getElementById('mini-hud');
@@ -228,6 +239,8 @@ const WrathMinigame = {
     },
 
     restartFight() {
+        this.stopShake('player');
+        this.stopShake('enemy');
         this.generateEnemy();
         this.playerHP = this.maxHP;
         this.enemyHP = this.maxHP;
@@ -238,7 +251,7 @@ const WrathMinigame = {
         if (this.restartBtn) this.restartBtn.textContent = 'Начать заново';
         this.updateHPBars();
         this.setResult('');
-        
+
         if (this.resultOverlay) {
             this.resultOverlay.classList.remove('active', 'fade-out');
         }
@@ -251,7 +264,7 @@ const WrathMinigame = {
     generateEnemy() {
         this.enemyParams = {
             hue: Math.floor(Math.random() * 360),
-            segCount: 6, 
+            segCount: 6,
             thick: 1.0,
             eyeMult: 1.0,
             dir: -1
@@ -259,8 +272,8 @@ const WrathMinigame = {
     },
 
     drawFighters() {
-        const playerMarkers = drawWormFigure(this.playerCanvas, { hue: 340, segCount: 6, thick: 1, eyeMult: 1, dir: 1 });
-        const enemyMarkers = drawWormFigure(this.enemyCanvas, this.enemyParams);
+        const playerMarkers = drawWormFigure(this.playerCanvas, this.playerOpts, null);
+        const enemyMarkers = drawWormFigure(this.enemyCanvas, this.enemyParams, null);
 
         this.repositionZones(this.playerZones, playerMarkers);
         this.repositionZones(this.enemyZones, enemyMarkers);
@@ -367,21 +380,55 @@ const WrathMinigame = {
         const x = zoneEl.style.left;
         const y = zoneEl.style.top;
 
-        this.shakeZone(canvasBox, zone);
-
         if (type === 'hit') {
+            // Трясётся ТОЛЬКО задетая часть тела, никакого блока при этом нет.
+            this.runShake(side, zone);
             this.spawnFlash(canvasBox, x, y);
         } else {
+            // Блок — тряски нет вообще, только щит и отскок искры.
             this.spawnShield(canvasBox, x, y, side);
         }
     },
 
-    shakeZone(canvasBox, zone) {
-        const shakeClass = `shake-${zone}`;
-        ['shake-head', 'shake-belly', 'shake-tail'].forEach(c => canvasBox.classList.remove(c));
-        void canvasBox.offsetWidth;
-        canvasBox.classList.add(shakeClass);
-        setTimeout(() => canvasBox.classList.remove(shakeClass), 520);
+    // Покадровая тряска конкретного сегмента тела через переотрисовку canvas
+    runShake(side, zone) {
+        const canvas = side === 'player' ? this.playerCanvas : this.enemyCanvas;
+        const opts = side === 'player' ? this.playerOpts : this.enemyParams;
+        const rafKey = side === 'player' ? 'playerShakeRaf' : 'enemyShakeRaf';
+
+        if (this[rafKey]) cancelAnimationFrame(this[rafKey]);
+
+        const duration = zone === 'tail' ? 620 : zone === 'head' ? 440 : 500;
+        const ampPx = zone === 'tail' ? 24 : zone === 'head' ? 14 : 19;
+        const freq = zone === 'tail' ? 15 : zone === 'head' ? 28 : 21;
+        const start = performance.now();
+
+        const step = (now) => {
+            const elapsed = now - start;
+            const t = Math.min(1, elapsed / duration);
+            const decay = 1 - t;
+            const dx = Math.sin(elapsed * 0.001 * freq) * ampPx * decay;
+            const dy = Math.cos(elapsed * 0.001 * freq * 0.7) * ampPx * 0.35 * decay;
+            const rot = Math.sin(elapsed * 0.001 * freq) * 0.2 * decay * (zone === 'tail' ? 1.7 : 1);
+
+            drawWormFigure(canvas, opts, { zone, dx, dy, rot });
+
+            if (t < 1) {
+                this[rafKey] = requestAnimationFrame(step);
+            } else {
+                drawWormFigure(canvas, opts, null);
+                this[rafKey] = null;
+            }
+        };
+        this[rafKey] = requestAnimationFrame(step);
+    },
+
+    stopShake(side) {
+        const rafKey = side === 'player' ? 'playerShakeRaf' : 'enemyShakeRaf';
+        if (this[rafKey]) {
+            cancelAnimationFrame(this[rafKey]);
+            this[rafKey] = null;
+        }
     },
 
     spawnFlash(canvasBox, x, y) {
@@ -390,7 +437,19 @@ const WrathMinigame = {
         flash.style.left = x;
         flash.style.top = y;
         canvasBox.appendChild(flash);
-        setTimeout(() => flash.remove(), 480);
+        setTimeout(() => flash.remove(), 780);
+
+        // Лучи-разлёт вокруг точки удара — «комиксовый» POW-эффект
+        const rayCount = 8;
+        for (let i = 0; i < rayCount; i++) {
+            const ray = document.createElement('div');
+            ray.className = 'impact-ray';
+            ray.style.left = x;
+            ray.style.top = y;
+            ray.style.setProperty('--ray-rot', `${(360 / rayCount) * i + (Math.random() * 12 - 6)}deg`);
+            canvasBox.appendChild(ray);
+            setTimeout(() => ray.remove(), 560);
+        }
     },
 
     spawnShield(canvasBox, x, y, side) {
@@ -400,20 +459,35 @@ const WrathMinigame = {
         shield.style.top = y;
         shield.innerHTML = `<svg viewBox="0 0 64 64" width="100%" height="100%">
             <path d="M32 2 L58 12 L58 30 C58 46 46 58 32 62 C18 58 6 46 6 30 L6 12 Z"
-                  fill="rgba(90,210,255,0.35)" stroke="#8fe9ff" stroke-width="4"/>
+                  fill="rgba(90,210,255,0.4)" stroke="#8fe9ff" stroke-width="4"/>
         </svg>`;
         canvasBox.appendChild(shield);
-        setTimeout(() => shield.remove(), 520);
+        setTimeout(() => shield.remove(), 760);
 
-        const spark = document.createElement('div');
-        spark.className = 'deflect-spark';
-        spark.style.left = x;
-        spark.style.top = y;
-        const dir = side === 'player' ? -1 : 1;
-        spark.style.setProperty('--tx', `${dir * (60 + Math.random() * 30)}px`);
-        spark.style.setProperty('--ty', `${(Math.random() - 0.5) * 40}px`);
-        canvasBox.appendChild(spark);
-        setTimeout(() => spark.remove(), 420);
+        const ring = document.createElement('div');
+        ring.className = 'shield-ring';
+        ring.style.left = x;
+        ring.style.top = y;
+        canvasBox.appendChild(ring);
+        setTimeout(() => ring.remove(), 600);
+
+        const dirSign = side === 'player' ? -1 : 1;
+        const sparkAngles = [-16, 0, 16];
+        sparkAngles.forEach(angleDeg => {
+            const spark = document.createElement('div');
+            spark.className = 'deflect-spark';
+            spark.style.left = x;
+            spark.style.top = y;
+            const dist = 95 + Math.random() * 45;
+            const angleRad = (angleDeg * Math.PI) / 180;
+            const tx = dirSign * dist * Math.cos(angleRad);
+            const ty = dist * Math.sin(angleRad) * 0.6;
+            spark.style.setProperty('--tx', `${tx}px`);
+            spark.style.setProperty('--ty', `${ty}px`);
+            spark.style.setProperty('--rot', `${dirSign * (angleDeg + 90)}deg`);
+            canvasBox.appendChild(spark);
+            setTimeout(() => spark.remove(), 620);
+        });
     },
 
     resetSelections() {
