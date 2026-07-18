@@ -29,8 +29,8 @@ function drawWormFigure(canvas, opts) {
         
         // Сложная S-образная траектория: основная дуга + обратный изгиб на хвосте
         // Множитель (i * 0.5) заставляет хвост в самом низу уходить обратно к краю
-        const wave = Math.sin(i * 0.65) - Math.sin(i * 0.15) * 0.4;
-        const segX = (w / 2) - (wave * 8 * dir * thick * scale);
+        const wave = Math.sin(i * -0.65) - Math.sin(i * 0.15) * 0.4;
+        const segX = (w / 2) + (wave * 8 * dir * thick * scale);
         
         const r = (20 - i * 1.1) * thick * scale;
         const finalR = Math.max(7 * scale, r);
@@ -54,7 +54,7 @@ function drawWormFigure(canvas, opts) {
             ctx.save();
             ctx.translate(segX, segY);
             // Слегка поворачиваем кончик в сторону от центра (в зависимости от dir)
-            ctx.rotate(-0.25 * dir);
+            ctx.rotate(0.25 * dir);
 
             ctx.beginPath();
             // Начинаем с левого бока сегмента
@@ -328,12 +328,18 @@ const WrathMinigame = {
             const dmg = 1 + Math.floor(Math.random() * 3);
             this.enemyHP = Math.max(0, this.enemyHP - dmg);
             this.showDamage('enemy', dmg);
+            this.triggerImpact('enemy', playerAttack, 'hit');
+        } else {
+            this.triggerImpact('enemy', playerAttack, 'block');
         }
 
         if (enemyAttack !== playerDefense) {
             const dmg = 1 + Math.floor(Math.random() * 3);
             this.playerHP = Math.max(0, this.playerHP - dmg);
             this.showDamage('player', dmg);
+            this.triggerImpact('player', enemyAttack, 'hit');
+        } else {
+            this.triggerImpact('player', enemyAttack, 'block');
         }
 
         this.updateHPBars();
@@ -344,6 +350,70 @@ const WrathMinigame = {
             this.isFighting = false;
             this.resetSelections();
         }
+    },
+
+    // ---------- ЭФФЕКТЫ ПОПАДАНИЯ / БЛОКА ----------
+    getZoneElement(side, zone) {
+        const arr = side === 'player' ? this.playerZones : this.enemyZones;
+        return arr.find(z => z.dataset.zone === zone);
+    },
+
+    triggerImpact(side, zone, type) {
+        const zoneEl = this.getZoneElement(side, zone);
+        if (!zoneEl) return;
+        const canvasBox = zoneEl.closest('.canvas-box');
+        if (!canvasBox) return;
+
+        const x = zoneEl.style.left;
+        const y = zoneEl.style.top;
+
+        this.shakeZone(canvasBox, zone);
+
+        if (type === 'hit') {
+            this.spawnFlash(canvasBox, x, y);
+        } else {
+            this.spawnShield(canvasBox, x, y, side);
+        }
+    },
+
+    shakeZone(canvasBox, zone) {
+        const shakeClass = `shake-${zone}`;
+        ['shake-head', 'shake-belly', 'shake-tail'].forEach(c => canvasBox.classList.remove(c));
+        void canvasBox.offsetWidth;
+        canvasBox.classList.add(shakeClass);
+        setTimeout(() => canvasBox.classList.remove(shakeClass), 520);
+    },
+
+    spawnFlash(canvasBox, x, y) {
+        const flash = document.createElement('div');
+        flash.className = 'zone-flash';
+        flash.style.left = x;
+        flash.style.top = y;
+        canvasBox.appendChild(flash);
+        setTimeout(() => flash.remove(), 480);
+    },
+
+    spawnShield(canvasBox, x, y, side) {
+        const shield = document.createElement('div');
+        shield.className = 'zone-shield';
+        shield.style.left = x;
+        shield.style.top = y;
+        shield.innerHTML = `<svg viewBox="0 0 64 64" width="100%" height="100%">
+            <path d="M32 2 L58 12 L58 30 C58 46 46 58 32 62 C18 58 6 46 6 30 L6 12 Z"
+                  fill="rgba(90,210,255,0.35)" stroke="#8fe9ff" stroke-width="4"/>
+        </svg>`;
+        canvasBox.appendChild(shield);
+        setTimeout(() => shield.remove(), 520);
+
+        const spark = document.createElement('div');
+        spark.className = 'deflect-spark';
+        spark.style.left = x;
+        spark.style.top = y;
+        const dir = side === 'player' ? -1 : 1;
+        spark.style.setProperty('--tx', `${dir * (60 + Math.random() * 30)}px`);
+        spark.style.setProperty('--ty', `${(Math.random() - 0.5) * 40}px`);
+        canvasBox.appendChild(spark);
+        setTimeout(() => spark.remove(), 420);
     },
 
     resetSelections() {
