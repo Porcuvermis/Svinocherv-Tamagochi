@@ -9,6 +9,7 @@ const GluttonyMinigame = {
     nextTableBtn: null,
 
     stageBucket: null,
+    bucketBody: null,
     lidWrap: null,
     lidEl: null,
     lidHint: null,
@@ -39,7 +40,10 @@ const GluttonyMinigame = {
 
     // ---------- НАСТРОЙКИ ПЕРЕМЕШИВАНИЯ ----------
     MIX_SWINGS_NEEDED: 5,
-    MIX_GAIN: 20,
+    // Насколько сильно "поджимаем" зону срабатывания к центру ведра:
+    // 0.15 значит, что край засчитывается уже на 15% ширины ведра
+    // от его настоящего края, а не у самого физического края.
+    MIX_EDGE_INSET: 0.18,
 
     // ---------- НАСТРОЙКИ КОРМЛЕНИЯ ----------
     MAX_DY: 90,          // px наклона до максимума
@@ -77,6 +81,7 @@ const GluttonyMinigame = {
         this.nextTableBtn = document.getElementById('glut-next-table');
 
         this.stageBucket = document.getElementById('glut-stage-bucket');
+        this.bucketBody = document.getElementById('glut-bucket-body');
         this.lidWrap = document.getElementById('glut-lid-wrap');
         this.lidEl = document.getElementById('glut-lid');
         this.lidHint = document.getElementById('glut-lid-hint');
@@ -217,6 +222,7 @@ const GluttonyMinigame = {
         if (this.fallZone) this.fallZone.innerHTML = '';
         if (this.spoonEl) {
             this.spoonEl.classList.remove('show', 'fly-away');
+            this.spoonEl.style.left = '50%';
         }
         if (this.nextBucketBtn) {
             this.nextBucketBtn.onclick = (e) => {
@@ -296,13 +302,24 @@ const GluttonyMinigame = {
         if (!this.spoonEl.classList.contains('show') || this.mixSwings >= this.MIX_SWINGS_NEEDED) return;
         this.mixDragging = true;
         try { this.spoonEl.setPointerCapture(e.pointerId); } catch (err) {}
-        this.mixDragRect = this.stageBucket.getBoundingClientRect();
+
+        // Диапазон свайпа считаем от самого ведра (а не от всей сцены
+        // с рамками и стрелкой) — так засчитать край можно, не утыкаясь
+        // пальцем в самый физический угол экрана.
+        this.mixDragRect = this.bucketBody.getBoundingClientRect();
+
         this.onMixMove(e);
     },
 
     onMixMove(e) {
-        if (!this.mixDragging || !this.mixDragRect) return;
-        const frac = (e.clientX - this.mixDragRect.left) / this.mixDragRect.width;
+        if (!this.mixDragging || !this.mixDragRect || this.mixDragRect.width <= 0) return;
+
+        const rect = this.mixDragRect;
+        const inset = rect.width * this.MIX_EDGE_INSET;
+        const usableLeft = rect.left + inset;
+        const usableWidth = rect.width - inset * 2;
+
+        const frac = (e.clientX - usableLeft) / usableWidth;
         this.applyMixPos(frac);
     },
 
@@ -313,7 +330,7 @@ const GluttonyMinigame = {
 
     applyMixPos(rawFraction) {
         this.mixPos = Math.min(1, Math.max(0, rawFraction));
-        const offsetPct = (this.mixPos - 0.5) * 60; // визуальное смещение ложки
+        const offsetPct = (this.mixPos - 0.5) * 70; // визуальное смещение ложки
         this.spoonEl.style.left = `calc(50% + ${offsetPct}%)`;
         this.checkMixExtreme();
     },
@@ -353,6 +370,8 @@ const GluttonyMinigame = {
     },
 
     finishMixing() {
+        this.mixDragging = false;
+        this.mixDragRect = null;
         this.spoonEl.classList.add('fly-away');
         setTimeout(() => {
             this.spoonEl.classList.remove('show', 'fly-away');
