@@ -117,11 +117,6 @@ const GameManager = {
             if (typeof LustMinigame !== 'undefined') {
                 LustMinigame.open();
             }
-                } else if (sinKey === 'gluttony') {
-            this.closeMenuBeforeMinigame();
-            if (typeof GluttonyMinigame !== 'undefined') {
-                GluttonyMinigame.open();
-            }
         } else {
             // Заглушка для остальных грехов
             this.sins[sinKey].value = Math.min(100, this.sins[sinKey].value + 30);
