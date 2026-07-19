@@ -1,0 +1,360 @@
+#gluttony-game {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 999999 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+#gluttony-game.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.glut-modal {
+    position: relative;
+    width: 92vw;
+    max-width: 380px;
+    height: 82vh;
+    max-height: 640px;
+    background: #1a140f;
+    border: 3px solid #ff9500;
+    border-radius: 28px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 10px;
+    box-sizing: border-box;
+    overflow: hidden;
+    transform: scale(0.85);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#gluttony-game.active .glut-modal {
+    transform: scale(1);
+}
+
+.glut-close-btn {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: #ff4444;
+    border: 2px solid #fff;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 26px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 50;
+    flex-shrink: 0;
+}
+
+.glut-close-btn:active { transform: scale(0.9); }
+
+/* ============ ЗАТЕМНЕНИЕ МЕЖДУ ЭТАПАМИ ============ */
+.glut-fade {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 40;
+    transition: opacity 0.22s ease;
+}
+
+.glut-fade.show { opacity: 1; }
+
+/* ============ ОБЩЕЕ ДЛЯ ЭТАПОВ ============ */
+.glut-stage {
+    position: absolute;
+    top: 16px; left: 10px; right: 10px; bottom: 16px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+}
+
+.glut-stage.active { display: flex; }
+
+.glut-next-arrow {
+    margin-top: 8px;
+    font-size: 26px;
+    color: #ff9500;
+    text-shadow: 0 0 10px rgba(255, 149, 0, 0.6);
+    opacity: 0.25;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.2s ease;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.glut-next-arrow.enabled {
+    opacity: 1;
+    pointer-events: auto;
+    animation: glut-arrow-bounce 1.1s ease-in-out infinite;
+}
+
+.glut-next-arrow.enabled:active { transform: scale(0.85); }
+
+@keyframes glut-arrow-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(6px); }
+}
+
+/* ============ ЭТАП 1: СТОЛ ============ */
+.glut-table {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    border-radius: 18px;
+    background: radial-gradient(ellipse at 50% 50%, #6b4a2e 0%, #3d2a18 100%);
+    overflow: hidden;
+}
+
+.glut-item {
+    position: absolute;
+    width: 15%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: min(9vw, 34px);
+    cursor: pointer;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.glut-item.selected {
+    background: rgba(255, 149, 0, 0.25);
+    border-color: #ff9500;
+    animation: glut-jiggle 0.5s ease-in-out infinite;
+}
+
+@keyframes glut-jiggle {
+    0%, 100% { transform: translate(-50%, -50%) rotate(-8deg) scale(1.05); }
+    50% { transform: translate(-50%, -50%) rotate(8deg) scale(1.05); }
+}
+
+/* ============ ЭТАП 2: ВЕДРО ============ */
+.glut-bucket-scene {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.glut-bucket {
+    position: relative;
+    width: 55%;
+    aspect-ratio: 0.9;
+    background: linear-gradient(180deg, #d9d9d9 0%, #9a9a9a 60%, #7a7a7a 100%);
+    border: 3px solid #5a5a5a;
+    border-radius: 14px 14px 26px 26px / 14px 14px 40px 40px;
+    box-shadow: inset 0 -10px 20px rgba(0,0,0,0.3);
+    overflow: visible;
+}
+
+.glut-bucket-fall-zone {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+}
+
+.glut-lid-wrap {
+    position: absolute;
+    top: -6%;
+    width: 60%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    touch-action: none;
+}
+
+.glut-lid-hint {
+    font-size: 20px;
+    color: #ffe066;
+    text-shadow: 0 0 8px rgba(255, 224, 102, 0.7);
+    animation: glut-hint-fly 1.6s ease-in infinite;
+}
+
+@keyframes glut-hint-fly {
+    0% { transform: translateY(10px); opacity: 0; }
+    20% { opacity: 1; }
+    100% { transform: translateY(-40px); opacity: 0; }
+}
+
+.glut-lid {
+    font-size: min(14vw, 56px);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.glut-lid.dragging { cursor: grabbing; transition: none; }
+.glut-lid.returning { transition: transform 0.25s ease, opacity 0.25s ease; }
+.glut-lid.removed { transition: transform 0.4s ease-in, opacity 0.4s ease-in; }
+
+.glut-fall-item {
+    position: absolute;
+    top: -40px;
+    font-size: 28px;
+    opacity: 0;
+    animation: glut-fall-in 0.55s ease-in forwards;
+}
+
+@keyframes glut-fall-in {
+    0% { transform: translateY(-20px) rotate(0deg); opacity: 0; }
+    20% { opacity: 1; }
+    100% { transform: translateY(150px) rotate(60deg); opacity: 0.9; }
+}
+
+.glut-spoon {
+    position: absolute;
+    left: 50%;
+    top: 30%;
+    font-size: 42px;
+    transform: translate(-50%, -50%) scale(0) rotate(0deg);
+    opacity: 0;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+    touch-action: none;
+    cursor: grab;
+    z-index: 10;
+}
+
+.glut-spoon.show {
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    opacity: 1;
+}
+
+.glut-spoon.fly-away {
+    transform: translate(-50%, -160%) scale(0.3) rotate(180deg);
+    opacity: 0;
+}
+
+/* ============ ЭТАП 3: КОРМЛЕНИЕ ============ */
+.glut-feed-scene {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    border-radius: 18px;
+    overflow: hidden;
+    background: linear-gradient(180deg, #cfe0e8 0%, #f0e6cf 100%);
+}
+
+.glut-worm-lying {
+    position: absolute;
+    left: 50%;
+    bottom: 6%;
+    width: 78%;
+    transform: translateX(-50%);
+    z-index: 2;
+}
+
+.glut-tilt-bucket {
+    position: absolute;
+    top: 6%;
+    left: 34%;
+    font-size: min(14vw, 58px);
+    transform-origin: top center;
+    touch-action: none;
+    cursor: grab;
+    z-index: 5;
+}
+
+.glut-tilt-bucket.returning {
+    transition: transform 0.35s ease-out;
+}
+
+.glut-pour-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.glut-drop {
+    position: absolute;
+    width: 7px;
+    height: 11px;
+    border-radius: 50% 50% 50% 0;
+    background: #b5893f;
+    opacity: 0.9;
+    animation: glut-drop-fall 0.5s ease-in forwards;
+}
+
+@keyframes glut-drop-fall {
+    0% { transform: translateY(-6px); opacity: 0.9; }
+    100% { transform: translateY(60px); opacity: 0; }
+}
+
+.glut-gauge-wrap {
+    width: 86%;
+    height: 20px;
+    background: #150a10;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid #3a2c1f;
+    margin-top: 10px;
+    flex-shrink: 0;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
+}
+
+.glut-gauge-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ff9500, #ffc266);
+    border-radius: 10px;
+    transition: width 0.12s linear;
+}
+
+/* ============ ПОБЕДА ============ */
+.glut-win-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 60;
+    opacity: 0;
+}
+
+.glut-win-overlay.show { opacity: 1; }
+
+.glut-win-text {
+    font-size: 28px;
+    font-weight: 900;
+    color: #ff9500;
+    text-shadow: 0 0 10px #fff, 0 0 20px #ff9500;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.glut-win-overlay.show .glut-win-text {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.glut-win-overlay.fade-out .glut-win-text {
+    opacity: 0;
+    transition: opacity 1s ease;
+}
