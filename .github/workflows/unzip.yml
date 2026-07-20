@@ -3,7 +3,7 @@ name: Unzip Mobile Build
 on:
   push:
     branches:
-      - phone-dev
+      - Phone-dev
     paths:
       - 'project.zip'
 
@@ -14,7 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: phone-dev
+          ref: Phone-dev
           fetch-depth: 0
 
       - name: Unzip archive
@@ -30,4 +30,4 @@ jobs:
           git config --global user.email "actions@github.com"
           git add -A
           # Проверяем, есть ли изменения, чтобы скрипт не падал с ошибкой
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-unpacked build from iPhone" && git push origin phone-dev)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-unpacked build from iPhone" && git push origin Phone-dev)
