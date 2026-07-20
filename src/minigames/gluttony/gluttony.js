@@ -15,6 +15,7 @@ const GluttonyMinigame = {
     lidHint: null,
     fallZone: null,
     spoonEl: null,
+    spoonHit: null,
     nextBucketBtn: null,
 
     stageFeed: null,
@@ -44,6 +45,8 @@ const GluttonyMinigame = {
     // 0.15 значит, что край засчитывается уже на 15% ширины ведра
     // от его настоящего края, а не у самого физического края.
     MIX_EDGE_INSET: 0.18,
+    // Максимальный угол наклона ручки ложки в каждую сторону (градусы)
+    MIX_MAX_ANGLE: 34,
 
     // ---------- НАСТРОЙКИ КОРМЛЕНИЯ ----------
     MAX_DY: 90,          // px наклона до максимума
@@ -87,6 +90,7 @@ const GluttonyMinigame = {
         this.lidHint = document.getElementById('glut-lid-hint');
         this.fallZone = document.getElementById('glut-fall-zone');
         this.spoonEl = document.getElementById('glut-spoon');
+        this.spoonHit = document.getElementById('glut-spoon-hit');
         this.nextBucketBtn = document.getElementById('glut-next-bucket');
 
         this.stageFeed = document.getElementById('glut-stage-feed');
@@ -110,11 +114,11 @@ const GluttonyMinigame = {
         if (this.lidEl) {
             this.lidEl.addEventListener('pointerdown', (e) => this.startLidDrag(e));
         }
-        if (this.spoonEl) {
-            this.spoonEl.addEventListener('pointerdown', (e) => this.startMixDrag(e));
-            this.spoonEl.addEventListener('pointermove', (e) => this.onMixMove(e));
-            this.spoonEl.addEventListener('pointerup', (e) => this.onMixUp(e));
-            this.spoonEl.addEventListener('pointercancel', (e) => this.onMixUp(e));
+        if (this.spoonHit) {
+            this.spoonHit.addEventListener('pointerdown', (e) => this.startMixDrag(e));
+            this.spoonHit.addEventListener('pointermove', (e) => this.onMixMove(e));
+            this.spoonHit.addEventListener('pointerup', (e) => this.onMixUp(e));
+            this.spoonHit.addEventListener('pointercancel', (e) => this.onMixUp(e));
         }
         if (this.tiltBucket) {
             this.tiltBucket.addEventListener('pointerdown', (e) => this.startFeedDrag(e));
@@ -222,7 +226,7 @@ const GluttonyMinigame = {
         if (this.fallZone) this.fallZone.innerHTML = '';
         if (this.spoonEl) {
             this.spoonEl.classList.remove('show', 'fly-away');
-            this.spoonEl.style.left = '50%';
+            this.spoonEl.style.setProperty('--spoon-rot', '0deg');
         }
         if (this.nextBucketBtn) {
             this.nextBucketBtn.onclick = (e) => {
@@ -293,6 +297,7 @@ const GluttonyMinigame = {
 
     spawnSpoon() {
         if (!this.spoonEl) return;
+        this.spoonEl.style.setProperty('--spoon-rot', '0deg');
         this.spoonEl.classList.add('show');
         this.mixPos = 0.5;
         this.mixSwings = 0;
@@ -301,7 +306,7 @@ const GluttonyMinigame = {
     startMixDrag(e) {
         if (!this.spoonEl.classList.contains('show') || this.mixSwings >= this.MIX_SWINGS_NEEDED) return;
         this.mixDragging = true;
-        try { this.spoonEl.setPointerCapture(e.pointerId); } catch (err) {}
+        try { this.spoonHit.setPointerCapture(e.pointerId); } catch (err) {}
 
         // Диапазон свайпа считаем от самого ведра (а не от всей сцены
         // с рамками и стрелкой) — так засчитать край можно, не утыкаясь
@@ -330,8 +335,8 @@ const GluttonyMinigame = {
 
     applyMixPos(rawFraction) {
         this.mixPos = Math.min(1, Math.max(0, rawFraction));
-        const offsetPct = (this.mixPos - 0.5) * 70; // визуальное смещение ложки
-        this.spoonEl.style.left = `calc(50% + ${offsetPct}%)`;
+        const angle = (this.mixPos - 0.5) * 2 * this.MIX_MAX_ANGLE; // -MAX..+MAX градусов
+        this.spoonEl.style.setProperty('--spoon-rot', `${angle.toFixed(1)}deg`);
         this.checkMixExtreme();
     },
 
@@ -375,7 +380,7 @@ const GluttonyMinigame = {
         this.spoonEl.classList.add('fly-away');
         setTimeout(() => {
             this.spoonEl.classList.remove('show', 'fly-away');
-            this.spoonEl.style.left = '50%';
+            this.spoonEl.style.setProperty('--spoon-rot', '0deg');
             if (this.nextBucketBtn) {
                 this.nextBucketBtn.style.display = 'block';
                 this.nextBucketBtn.classList.add('enabled');

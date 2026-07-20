@@ -259,28 +259,63 @@
     100% { transform: translateY(150px) rotate(60deg); opacity: 0.9; }
 }
 
+/* Ложка — рукоятка, торчащая из ведра. Общая высота элемента включает
+   как видимую часть (ручка над ведром), так и невидимую (уходит в
+   жижу внутри ведра). Нижняя часть обрезается clip-path у SVG, а
+   точка вращения (transform-origin) стоит ровно на границе обрезки —
+   то есть глубоко внутри ведра, невидимо. Из-за этого ложка визуально
+   ведёт себя как маятник, закреплённый где-то на дне, а наружу
+   торчит и качается только сама ручка.
+   Кликабельная зона (сам .glut-spoon) значительно шире, чем узкая
+   палка внутри — чтобы было легко попасть пальцем. */
 .glut-spoon {
     position: absolute;
     left: 50%;
-    top: 30%;
-    font-size: 42px;
-    transform: translate(-50%, -50%) scale(0) rotate(0deg);
+    top: -86px;
+    width: 84px;
+    height: 120px;
+    transform: translateX(-50%) rotate(var(--spoon-rot, 0deg));
+    transform-origin: 50% 100%;
     opacity: 0;
-    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease, left 0.05s linear;
-    touch-action: none;
+    pointer-events: none;
     cursor: grab;
-    z-index: 10;
+    touch-action: none;
+    transition: opacity 0.3s ease;
+    z-index: 8;
 }
 
+.glut-spoon:active { cursor: grabbing; }
+
 .glut-spoon.show {
-    transform: translate(-50%, -50%) scale(1) rotate(0deg);
     opacity: 1;
+    pointer-events: auto;
+    animation: glut-spoon-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes glut-spoon-pop {
+    0%   { transform: translateX(-50%) translateY(22px) scale(0.55) rotate(0deg); }
+    100% { transform: translateX(-50%) translateY(0) scale(1) rotate(var(--spoon-rot, 0deg)); }
 }
 
 .glut-spoon.fly-away {
-    transform: translate(-50%, -160%) scale(0.3) rotate(180deg);
+    animation: none;
+    transition: transform 0.4s ease-in, opacity 0.4s ease-in;
+    transform: translateX(-50%) translateY(-30px) scale(0.3) rotate(0deg);
     opacity: 0;
 }
+
+.glut-spoon-svg {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 28px;
+    height: 100%;
+    transform: translateX(-50%);
+    /* Обрезаем нижние 34px — та часть, что "внутри ведра" и видна быть не должна */
+    clip-path: inset(0 0 34px 0);
+    pointer-events: none;
+}
+
 
 /* ============ ЭТАП 3: КОРМЛЕНИЕ ============ */
 .glut-feed-scene {
