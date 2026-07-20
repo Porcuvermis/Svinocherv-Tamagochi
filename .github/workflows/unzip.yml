@@ -1,0 +1,33 @@
+name: Unzip Mobile Build
+
+on:
+  push:
+    branches:
+      - phone-dev
+    paths:
+      - 'project.zip'
+
+jobs:
+  unzip-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: phone-dev
+          fetch-depth: 0
+
+      - name: Unzip archive
+        run: |
+          # Распаковываем архив поверх существующих файлов, не удаляя скрытую папку .git
+          unzip -o project.zip
+          # Удаляем сам архив, чтобы он не захламлял репо
+          rm project.zip
+
+      - name: Commit and Push cleaned code
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "actions@github.com"
+          git add -A
+          # Проверяем, есть ли изменения, чтобы скрипт не падал с ошибкой
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-unpacked build from iPhone" && git push origin phone-dev)
