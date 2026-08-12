@@ -117,10 +117,15 @@ const GameManager = {
             if (typeof LustMinigame !== 'undefined') {
                 LustMinigame.open();
             }
-                } else if (sinKey === 'gluttony') {
+        } else if (sinKey === 'gluttony') {
             this.closeMenuBeforeMinigame();
             if (typeof GluttonyMinigame !== 'undefined') {
                 GluttonyMinigame.open();
+            }
+        } else if (sinKey === 'pride') {
+            this.closeMenuBeforeMinigame();
+            if (typeof PrideMinigame !== 'undefined') {
+                PrideMinigame.open();
             }
         } else {
             // Заглушка для остальных грехов

@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=2">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=1">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=1">
+    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=2">
 </head>
 <body>
 
@@ -321,14 +322,41 @@
         </div>
     </div>
 
+    <div id="pride-game" class="minigame-screen">
+        <div class="pride-modal">
+            <button id="pride-close-btn" class="pride-close-btn">&times;</button>
+            <div class="pride-title">ТЩЕСЛАВИЕ</div>
+            <div class="pride-hint">ПОСТАВЬ МАТ ИЛИ ИГРАЙ В КАРТЫ / КОСТИ</div>
+
+            <div class="pride-board-wrap">
+                <div class="pride-board-bg" id="pride-board-bg"></div>
+                <div class="pride-pieces-layer" id="pride-pieces-layer"></div>
+            </div>
+
+            <div class="pride-bottom-row">
+                <div class="pride-cards-fan" id="pride-cards-fan"></div>
+                <div class="pride-dice-zone" id="pride-dice-zone"></div>
+            </div>
+
+            <div class="pride-win-overlay" id="pride-win-overlay">
+                <div class="pride-win-flash"></div>
+                <div class="pride-win-text">ВЕЛИКОЛЕПНО!</div>
+                <div class="pride-win-sub">Победа за тобой!</div>
+            </div>
+        </div>
+    </div>
+
+</div>
 
 <script src="src/core/worm.js?v=5"></script>
-<script src="main.js?v=10"></script>
+<script src="main.js?v=11"></script>
 <script src="src/minigames/greed/greed.js?v=6"></script>
 <script src="src/minigames/wrath/wrath.js?v=5"></script>
 <script src="src/minigames/sloth/sloth.js?v=4"></script>
 <script src="src/minigames/lust/lust.js?v=2"></script>
 <script src="src/minigames/gluttony/gluttony.js?v=1"></script>
+<script src="src/minigames/pride/pride.js?v=2"></script>
 
 </body>
 </html>
+
