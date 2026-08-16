@@ -171,6 +171,7 @@ const WrathMinigame = {
     chosenAttack: null,
     isFighting: false,
     fightOver: false,
+    endFightTimeoutId: null,
 
     init() {
         this.screenElement = document.getElementById('wrath-game');
@@ -228,6 +229,17 @@ const WrathMinigame = {
         if (this.screenElement) this.screenElement.classList.remove('active');
         this.stopShake('player');
         this.stopShake('enemy');
+        // Отменяем отложенный показ результата боя, если он ещё не
+        // сработал, и на всякий случай принудительно прячем сам оверлей —
+        // это гарантирует, что невидимый кликабельный слой не переживёт
+        // закрытие мини-игры (см. комментарий у setTimeout в doRound).
+        if (this.endFightTimeoutId) {
+            clearTimeout(this.endFightTimeoutId);
+            this.endFightTimeoutId = null;
+        }
+        if (this.resultOverlay) {
+            this.resultOverlay.classList.remove('active', 'fade-out');
+        }
         if (typeof GameManager !== 'undefined' && typeof GameManager.updateUI === 'function') {
             const fullMenu = document.getElementById('full-menu');
             const miniHud = document.getElementById('mini-hud');
@@ -241,6 +253,10 @@ const WrathMinigame = {
     restartFight() {
         this.stopShake('player');
         this.stopShake('enemy');
+        if (this.endFightTimeoutId) {
+            clearTimeout(this.endFightTimeoutId);
+            this.endFightTimeoutId = null;
+        }
         this.generateEnemy();
         this.playerHP = this.maxHP;
         this.enemyHP = this.maxHP;
@@ -358,7 +374,18 @@ const WrathMinigame = {
         this.updateHPBars();
 
         if (this.enemyHP <= 0 || this.playerHP <= 0) {
-            setTimeout(() => this.endFight(), 700);
+            // ВАЖНО: id таймера сохраняем, чтобы close() мог его отменить.
+            // Раньше, если игрок закрывал мини-игру в эти 700мс (после
+            // добивающего удара, но до показа результата), этот таймер
+            // всё равно срабатывал позже и вешал .active на
+            // .wrath-result-overlay — НЕВИДИМЫЙ (родитель #wrath-game
+            // скрыт) слой на весь модал (94vw×86vh), который из-за
+            // pointer-events:auto перехватывал клики по другим кнопкам
+            // экрана (в т.ч. по кнопкам других мини-игр в меню грехов).
+            this.endFightTimeoutId = setTimeout(() => {
+                this.endFightTimeoutId = null;
+                this.endFight();
+            }, 700);
         } else {
             this.isFighting = false;
             this.resetSelections();

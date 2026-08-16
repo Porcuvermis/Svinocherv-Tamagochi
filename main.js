@@ -36,7 +36,7 @@ const GameManager = {
 
         Object.keys(this.sins).forEach(key => {
             const sin = this.sins[key];
-            
+
             // Кружок в верхнем HUD
             const circleHtml = `
                 <div class="stat-circle" id="mini-${key}">
@@ -117,10 +117,20 @@ const GameManager = {
             if (typeof LustMinigame !== 'undefined') {
                 LustMinigame.open();
             }
-                } else if (sinKey === 'gluttony') {
+        } else if (sinKey === 'gluttony') {
             this.closeMenuBeforeMinigame();
             if (typeof GluttonyMinigame !== 'undefined') {
                 GluttonyMinigame.open();
+            }
+        } else if (sinKey === 'pride') {
+            this.closeMenuBeforeMinigame();
+            if (typeof PrideMinigame !== 'undefined') {
+                PrideMinigame.open();
+            }
+        } else if (sinKey === 'envy') {
+            this.closeMenuBeforeMinigame();
+            if (typeof EnvyMinigame !== 'undefined') {
+                EnvyMinigame.open();
             }
         } else {
             // Заглушка для остальных грехов

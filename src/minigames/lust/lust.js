@@ -14,6 +14,7 @@ const LustMinigame = {
     lidRight: null,
     pupilLeft: null,
     pupilRight: null,
+    debugLayer: null,
 
     // Настройки геймплея
     SWING_GAIN: 5,      // % за одну засчитанную "качель" (20 качелей = 100%)
@@ -88,6 +89,7 @@ const LustMinigame = {
         this.lidRight = document.getElementById('lust-lid-right');
         this.pupilLeft = document.getElementById('lust-pupil-left');
         this.pupilRight = document.getElementById('lust-pupil-right');
+        this.debugLayer = document.getElementById('lust-debug-layer');
 
         if (this.tailEl) {
             this.tailEl.innerHTML = this.TAIL_SVG;
@@ -163,7 +165,40 @@ const LustMinigame = {
                 this.updateGauge();
             }
         }
+        this.renderDebug();
         this.rafId = requestAnimationFrame((t) => this.tick(t));
+    },
+
+    // ---------- DEBUG-ВИЗУАЛИЗАЦИЯ ХИТБОКСА ХВОСТА ----------
+    renderDebug() {
+        if (!this.debugLayer) return;
+        const on = typeof DebugMode !== 'undefined' && DebugMode.enabled;
+        if (!on) {
+            if (this.debugLayer.classList.contains('show')) {
+                this.debugLayer.classList.remove('show');
+                this.debugLayer.innerHTML = '';
+            }
+            return;
+        }
+        if (!this.tailPath) return;
+        const layerRect = this.debugLayer.getBoundingClientRect();
+        const rect = this.tailPath.getBoundingClientRect();
+        if (rect.height <= 0) return;
+        const relTop = rect.top - layerRect.top;
+        const relLeft = rect.left - layerRect.left;
+        const markerY = relTop + (1 - this.pos) * rect.height;
+        this.debugLayer.classList.add('show');
+        this.debugLayer.innerHTML = `
+            <div class="lust-debug-rect" style="left:${relLeft}px; top:${relTop}px; width:${rect.width}px; height:${rect.height}px;"></div>
+            <div class="lust-debug-line ${this.atTop ? 'triggered' : ''}" style="left:${relLeft}px; top:${relTop}px; width:${rect.width}px;">
+                <span>pos=1 (верх)</span>
+            </div>
+            <div class="lust-debug-line ${this.atBottom ? 'triggered' : ''}" style="left:${relLeft}px; top:${relTop + rect.height}px; width:${rect.width}px;">
+                <span>pos=0 (низ)</span>
+            </div>
+            <div class="lust-debug-marker" style="left:${relLeft}px; top:${markerY}px; width:${rect.width}px;"></div>
+            <div class="lust-debug-readout" style="left:${relLeft + rect.width + 8}px; top:${markerY - 8}px;">pos=${this.pos.toFixed(2)}</div>
+        `;
     },
 
     // ---------- ДРАГ ХВОСТА ----------

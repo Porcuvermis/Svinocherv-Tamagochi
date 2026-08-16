@@ -1,99 +1,72 @@
+// ================= ГЛАВНЫЙ ЭКРАН: МОНТАЖ СВИНОЧЕРВЯ =================
+// Раньше здесь была вся отрисовка на Canvas. Теперь вся отрисовка живёт в
+// WormRenderer (src/core/worm-renderer.js) и работает с общей моделью
+// персонажа (src/core/worm-model.js) — тем же кодом, что используют и
+// мини-игры. Этот файл только загружает модель игрока и монтирует рендерер
+// в контейнер главного экрана.
+
+let MainWormHandle = null;
+
 function initWorm() {
-    const canvas = document.getElementById('gameCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    try {
+        // Без этих двух файлов (и соответствующих <script> в index.html)
+        // рендерер персонажа работать не может — сообщаем об этом явно
+        // через alert(), раз консоль недоступна (iPhone/Safari).
+        if (!window.WormModelAPI) {
+            alert('Свиночервь: не найден src/core/worm-model.js — проверь, что файл добавлен в репозиторий и подключён в index.html до worm.js.');
+            return;
+        }
+        if (!window.WormRenderer) {
+            alert('Свиночервь: не найден src/core/worm-renderer.js — проверь, что файл добавлен в репозиторий и подключён в index.html до worm.js.');
+            return;
+        }
 
-    function resizeCanvas() {
-        canvas.width = window.innerWidth * window.devicePixelRatio;
-        canvas.height = window.innerHeight * window.devicePixelRatio;
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        let container = document.getElementById('worm-stage');
+
+        // Совместимость: если разметка ещё не обновлена и в HTML остался
+        // старый <canvas id="gameCanvas">, сами подменяем его на
+        // div-контейнер — ничего вручную в index.html менять не обязательно.
+        if (!container) {
+            const legacyCanvas = document.getElementById('gameCanvas');
+            if (legacyCanvas) {
+                container = document.createElement('div');
+                container.id = 'worm-stage';
+                legacyCanvas.replaceWith(container);
+            }
+        }
+        if (!container) {
+            alert('Свиночервь: не найден контейнер #worm-stage (и старого #gameCanvas тоже нет) — проверь разметку index.html внутри #game-container.');
+            return;
+        }
+
+        // Критичные для видимости стили выставляем прямо здесь, а не
+        // полагаемся только на style.css — так персонаж не пропадёт, даже
+        // если CSS-файл ещё не подтянул правило под #worm-stage.
+        container.style.position = 'absolute';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        if (!container.style.zIndex) container.style.zIndex = '1';
+        if (!container.style.background) {
+            container.style.background = 'radial-gradient(circle, #3a3a3a 0%, #1a1a1a 100%)';
+        }
+
+        const model = window.WormModelAPI.loadWormModel();
+
+        MainWormHandle = window.WormRenderer.mount(container, model, {
+            context: 'main',
+            wander: true,
+            blink: true,
+            anchorX: 0.5,
+            anchorY: 0.55
+        });
+
+        window.MainWormHandle = MainWormHandle;
+    } catch (err) {
+        // Любая другая ошибка внутри рендера — тоже наружу через alert(),
+        // чтобы можно было прочитать текст без доступа к консоли браузера.
+        alert('Свиночервь: ошибка при отрисовке — ' + (err && err.message ? err.message : err));
+        console.error(err);
     }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
-    let wormX = window.innerWidth / 2;
-    let wormY = window.innerHeight / 2 + 50;
-    let targetX = wormX;
-    let targetY = wormY;
-    let animTime = 0;
-    let blinkTimer = 0;
-    let isBlinking = false;
-
-    setInterval(() => {
-        targetX = (window.innerWidth * 0.2) + Math.random() * (window.innerWidth * 0.6);
-        targetY = (window.innerHeight * 0.4) + Math.random() * (window.innerHeight * 0.3);
-    }, 3000);
-
-    function drawWorm() {
-        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        animTime += 0.05;
-        blinkTimer += 1;
-
-        if (blinkTimer > 120) {
-            isBlinking = true;
-            if (blinkTimer > 130) { isBlinking = false; blinkTimer = 0; }
-        }
-
-        wormX += (targetX - wormX) * 0.02;
-        wormY += (targetY - wormY) * 0.02;
-        const wave = Math.sin(animTime) * 8;
-        
-        ctx.save();
-        ctx.translate(wormX, wormY);
-
-        for (let i = 6; i > 0; i--) {
-            const segX = -i * 18;
-            const segY = Math.sin(animTime + i * 0.6) * 12 + (i * 4);
-            ctx.beginPath();
-            ctx.arc(segX, segY, 25 - (i * 2), 0, Math.PI * 2);
-            ctx.fillStyle = `hsl(340, ${60 - i * 4}%, ${50 - i * 2}%)`;
-            ctx.fill();
-            ctx.strokeStyle = '#4a1220';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
-
-        ctx.beginPath();
-        ctx.arc(0, wave, 40, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffb6c1';
-        ctx.fill();
-        ctx.strokeStyle = '#e07b8d';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(-25, wave - 25); ctx.lineTo(-40, wave - 50); ctx.lineTo(-10, wave - 35);
-        ctx.closePath(); ctx.fillStyle = '#ffb6c1'; ctx.fill(); ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(15, wave - 30); ctx.lineTo(25, wave - 55); ctx.lineTo(30, wave - 20);
-        ctx.closePath(); ctx.fillStyle = '#ffa0b4'; ctx.fill(); ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.arc(-15, wave - 10, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(15, wave - 10, 8, 0, Math.PI * 2); ctx.fill();
-
-        ctx.fillStyle = '#000000';
-        if (!isBlinking) {
-            ctx.beginPath(); ctx.arc(-14, wave - 10, 4, 0, Math.PI * 2);
-            ctx.arc(16, wave - 10, 4, 0, Math.PI * 2); ctx.fill();
-        } else {
-            ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.beginPath();
-            ctx.moveTo(-22, wave - 10); ctx.lineTo(-8, wave - 10);
-            ctx.moveTo(8, wave - 10); ctx.lineTo(22, wave - 10); 
-            ctx.stroke();
-        }
-
-        ctx.beginPath(); ctx.ellipse(0, wave + 10, 16, 12, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff8093'; ctx.fill(); ctx.strokeStyle = '#d6566b'; ctx.lineWidth = 2; ctx.stroke();
-
-        ctx.fillStyle = '#631d27';
-        ctx.beginPath(); ctx.arc(-5, wave + 10, 3, 0, Math.PI * 2);
-        ctx.arc(5, wave + 10, 3, 0, Math.PI * 2); ctx.fill();
-
-        ctx.restore();
-        requestAnimationFrame(drawWorm);
-    }
-
-    drawWorm();
 }

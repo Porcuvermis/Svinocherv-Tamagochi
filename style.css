@@ -54,7 +54,7 @@ canvas {
     -webkit-backdrop-filter: blur(8px);
     border-radius: 20px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    z-index: 99999 !important; 
+    z-index: 99999 !important;
     pointer-events: auto !important;
     cursor: pointer;
     transition: transform 0.1s ease, opacity 0.3s ease;
@@ -107,7 +107,7 @@ canvas {
     background-color: rgba(15, 15, 15, 0.97);
     display: flex;
     flex-direction: column;
-    z-index: 100000 !important; 
+    z-index: 100000 !important;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease-out;
@@ -205,4 +205,34 @@ canvas {
     font-weight: bold;
     font-size: 13px;
     cursor: pointer;
+}
+
+/* ============ DEBUG-РЕЖИМ (глобальная кнопка) ============ */
+.debug-toggle-btn {
+    position: fixed;
+    left: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    background: rgba(40, 40, 40, 0.75);
+    color: #aaa;
+    font-size: 16px;
+    line-height: 30px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 9999999 !important;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.debug-toggle-btn:active { transform: scale(0.9); }
+
+.debug-toggle-btn.active {
+    background: rgba(212, 255, 43, 0.25);
+    border-color: #d4ff2b;
+    color: #d4ff2b;
+    box-shadow: 0 0 10px rgba(212, 255, 43, 0.5);
 }

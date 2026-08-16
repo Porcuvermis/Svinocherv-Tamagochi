@@ -47,6 +47,12 @@
 }
 
 /* ============ НОВЫЙ ФАЙТИНГ HUD (ХП-БАРЫ И КРЕСТИК) ============ */
+/* z-index поднят с 40 до 65: .fighting-hud — позиционированный элемент
+   со СВОИМ z-index, поэтому он создаёт новый stacking context. Крестик
+   .wrath-close-btn внутри сравнивается по z-index только с соседями
+   внутри этого контекста, а не с .wrath-result-overlay (z-index:60)
+   снаружи. Поднимать z-index только у самого крестика бесполезно —
+   нужно поднимать именно этого z-indexed родителя. */
 .fighting-hud {
     position: absolute;
     top: 16px;
@@ -57,7 +63,7 @@
     justify-content: space-between;
     padding: 0 10px;
     box-sizing: border-box;
-    z-index: 40;
+    z-index: 65;
 }
 
 .fighter-hp-box {
@@ -120,7 +126,7 @@
     line-height: 26px;
     text-align: center;
     cursor: pointer;
-    z-index: 50;
+    z-index: 65;
     flex-shrink: 0;
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
 }
@@ -163,13 +169,13 @@
     background: transparent !important;
 }
 
-.worm-player { 
-    margin-right: auto; 
-    margin-left: -14%; 
+.worm-player {
+    margin-right: auto;
+    margin-left: -14%;
 }
-.worm-enemy { 
-    margin-left: auto; 
-    margin-right: -14%; 
+.worm-enemy {
+    margin-left: auto;
+    margin-right: -14%;
 }
 
 .canvas-box {

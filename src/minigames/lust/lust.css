@@ -104,13 +104,20 @@
 }
 
 /* ============ ХВОСТ ============ */
-/* Зона раскладки — только позиционирование, кликов не ловит. */
+/* Зона раскладки — только позиционирование, кликов не ловит.
+   ВАЖНО: раньше зона была выше 100% (top:8% + height:112% = низ
+   зоны на 120%, то есть на 20% НИЖЕ реального нижнего края окна
+   мини-игры). align-items:flex-end и transform-origin:bottom у
+   .lust-tail цеплялись именно за этот съехавший вниз-за-экран
+   якорь — поэтому нижняя точка срабатывания ("насос" pos=0)
+   физически была не там, где казалось. Теперь низ зоны стоит
+   ровно на границе окна (top:8% + height:92% = 100%). */
 .lust-tail-zone {
     position: absolute;
     left: 18%;
     top: 8%;
     width: 54%;
-    height: 112%;
+    height: 92%;
     z-index: 5;
     pointer-events: none;
     display: flex;
@@ -120,11 +127,14 @@
 
 /* Сам блок хвоста и его SVG — тоже НЕ ловят клики.
    Иначе прямоугольный bbox (который заметно больше и выше
-   реального рисунка хвоста) перехватывал бы касания мимо спрайта. */
+   реального рисунка хвоста) перехватывал бы касания мимо спрайта.
+   Высота увеличена со 92% (компенсация уменьшенной зоны выше),
+   чтобы визуальный размер хвоста остался прежним — меняется только
+   точка привязки, не масштаб. */
 .lust-tail {
     position: relative;
     width: 62%;
-    height: 92%;
+    height: 112%;
     transform-origin: bottom center;
     transform:
         scale(calc(0.68 + var(--growth, 0) * 0.55))
@@ -292,4 +302,82 @@
     background: rgba(255, 255, 255, 0.35);
     border-radius: 8px;
     pointer-events: none;
+}
+/* ============ DEBUG-СЛОЙ (НЕВИДИМЫЙ "НАСОС" ХВОСТА) ============ */
+/* Показывает реальный хитбокс drag-зоны хвоста (тот самый invisible
+   dragRect из lust.js), верхнюю/нижнюю точки срабатывания и текущее
+   положение "фейдера" — включается глобальной debug-кнопкой. */
+.lust-debug-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 90;
+    display: none;
+}
+
+.lust-debug-layer.show {
+    display: block;
+}
+
+.lust-debug-rect {
+    position: absolute;
+    border: 2px dashed #00e5ff;
+    background: rgba(0, 229, 255, 0.08);
+    box-sizing: border-box;
+}
+
+.lust-debug-line {
+    position: absolute;
+    height: 0;
+    border-top: 2px solid #ffd700;
+    transform: translateY(-1px);
+}
+
+.lust-debug-line span {
+    position: absolute;
+    top: -16px;
+    left: 2px;
+    font-size: 9px;
+    font-weight: bold;
+    color: #ffd700;
+    text-shadow: 0 0 3px #000;
+    white-space: nowrap;
+}
+
+.lust-debug-line.triggered {
+    border-top-color: #4CAF50;
+}
+
+.lust-debug-line.triggered span {
+    color: #4CAF50;
+}
+
+.lust-debug-marker {
+    position: absolute;
+    height: 0;
+    border-top: 2px solid #ff2e8f;
+    transform: translateY(-1px);
+}
+
+.lust-debug-marker::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: -4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff2e8f;
+    box-shadow: 0 0 6px #ff2e8f;
+}
+
+.lust-debug-readout {
+    position: absolute;
+    font-size: 10px;
+    font-weight: bold;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 2px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
 }

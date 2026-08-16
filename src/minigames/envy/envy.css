@@ -1,0 +1,168 @@
+/* ================= МИНИ-ИГРА ГРЕХ ЗАВИСТИ (ЛУЧ В ТЕМНОТЕ) ================= */
+
+#envy-game {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #000;
+    z-index: 999999 !important;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+#envy-game.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Игровое поле практически во весь экран — без карточки/рамки,
+   в отличие от остальных мини-игр: тут сама тьма и есть интерфейс. */
+.envy-modal {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    overflow: hidden;
+}
+
+#envy-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+    background: #000;
+}
+
+/* ============ КРЕСТИК ЗАКРЫТИЯ ============ */
+.envy-close-btn {
+    position: absolute;
+    top: max(15px, env(safe-area-inset-top));
+    right: 16px;
+    background: rgba(255, 68, 68, 0.85);
+    border: 2px solid #fff;
+    color: white;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 28px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 45; /* выше .envy-win-overlay (40), чтобы белая вспышка победы не перекрывала крестик */
+    flex-shrink: 0;
+}
+
+.envy-close-btn:active { transform: scale(0.9); }
+
+/* ============ ШКАЛА ЗАВИСТИ ============ */
+.envy-gauge-wrap {
+    position: absolute;
+    left: 7%;
+    right: 7%;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    height: 18px;
+    background: #0a0f0a;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid #1f3a24;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.6);
+    z-index: 20;
+}
+
+.envy-gauge-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1f8a45, #3ddc73);
+    border-radius: 10px;
+    transition: width 0.25s ease-out;
+}
+
+/* ============ ПОБЕДА ============ */
+.envy-win-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 40;
+    opacity: 0;
+    background: #fff;
+}
+
+.envy-win-overlay.show {
+    opacity: 1;
+    transition: opacity 0.15s ease;
+}
+
+.envy-win-overlay .envy-win-text {
+    font-size: 30px;
+    font-weight: 900;
+    color: #14361f;
+    text-shadow: 0 0 10px rgba(61, 220, 115, 0.6);
+    opacity: 0;
+    transform: scale(0.6);
+    transition: opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s;
+}
+
+.envy-win-overlay.show .envy-win-text {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* ============ ПОДТВЕРЖДЕНИЕ ВЫХОДА ============ */
+.envy-confirm-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.82);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.envy-confirm-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.envy-confirm-text {
+    font-size: 16px;
+    color: #eee;
+    text-align: center;
+    padding: 0 30px;
+}
+
+.envy-confirm-buttons {
+    display: flex;
+    gap: 14px;
+}
+
+.envy-confirm-btn {
+    padding: 12px 20px;
+    border-radius: 12px;
+    border: none;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.envy-confirm-btn.stay {
+    background: #3ddc73;
+    color: #0a2412;
+}
+
+.envy-confirm-btn.leave {
+    background: #2a2a2a;
+    color: #ccc;
+    border: 1px solid #444;
+}
+
+.envy-confirm-btn:active { transform: scale(0.95); }

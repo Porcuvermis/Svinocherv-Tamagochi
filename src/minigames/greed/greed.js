@@ -12,13 +12,14 @@ const GreedMinigame = {
     spinCount: 0,
     targetWinSpin: 3,
     hasWon: false,
+    spinTimers: [], // id всех текущих setInterval/setTimeout прокрутки барабанов
 
     init() {
         this.screenElement = document.getElementById('slots-game');
         this.closeBtn = document.getElementById('slots-close-btn');
         this.leverTrigger = document.getElementById('lever-trigger');
         this.leverArm = document.getElementById('lever-arm');
-        
+
         this.reels = [
             document.getElementById('reel-0'),
             document.getElementById('reel-1'),
@@ -53,11 +54,13 @@ const GreedMinigame = {
 
     open() {
         if (!this.screenElement) this.init();
-        
+
         if (this.screenElement) {
             this.screenElement.classList.add('active');
         }
 
+        this.clearSpinTimers();
+        this.isSpinning = false;
         this.spinCount = 0;
         this.hasWon = false;
         this.targetWinSpin = Math.floor(Math.random() * 3) + 3; // Победа на 3-5 ход
@@ -66,12 +69,26 @@ const GreedMinigame = {
         if (this.reels[0]) this.reels[0].textContent = '💎';
         if (this.reels[1]) this.reels[1].textContent = '💀';
         if (this.reels[2]) this.reels[2].textContent = '❌';
+        this.reels.forEach(r => r && r.classList.remove('spinning'));
     },
 
     close() {
         if (this.screenElement) {
             this.screenElement.classList.remove('active');
         }
+        // Если закрыть автомат посреди прокрутки, незавершённые
+        // setInterval/setTimeout раньше продолжали тикать в фоне и
+        // сбрасывали isSpinning только через ~1 сек — до этого момента
+        // рычаг в переоткрытой игре не реагировал на клики (казалось,
+        // что мини-игра "не запускается"). Плюс просроченный колбэк мог
+        // задним числом засчитать победу уже в новой сессии.
+        this.clearSpinTimers();
+        this.isSpinning = false;
+    },
+
+    clearSpinTimers() {
+        this.spinTimers.forEach(id => { clearInterval(id); clearTimeout(id); });
+        this.spinTimers = [];
     },
 
     // Анимация победы: фейерверк из частиц + надпись "Нагрешил!"
@@ -136,16 +153,17 @@ const GreedMinigame = {
         // 2. Запуск анимации барабанов с задержкой остановки (каскадом)
         this.reels.forEach((reel, index) => {
             if (!reel) return;
-            
+
             reel.classList.add('spinning');
 
             // Интервал быстрой подмены иконок во время прокрутки
             let cycleInterval = setInterval(() => {
                 reel.textContent = this.symbols[Math.floor(Math.random() * this.symbols.length)];
             }, 35);
+            this.spinTimers.push(cycleInterval);
 
             // Остановка каждого барабана в разное время
-            setTimeout(() => {
+            const stopTimeout = setTimeout(() => {
                 clearInterval(cycleInterval);
                 reel.classList.remove('spinning');
                 reel.textContent = finalSymbols[index];
@@ -163,6 +181,7 @@ const GreedMinigame = {
                     }
                 }
             }, 500 + index * 200);
+            this.spinTimers.push(stopTimeout);
         });
     }
 };

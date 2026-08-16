@@ -18,10 +18,18 @@ const GluttonyMinigame = {
     nextBucketBtn: null,
 
     stageFeed: null,
+    feedSceneEl: null,
     tiltBucket: null,
+    potEl: null,
     pourLayer: null,
-    bellyEl: null,
     gaugeBar: null,
+
+    // Персонаж на этапе кормления теперь — общая моделька игрока через
+    // WormRenderer, а не отдельный хардкод-SVG. Монтируется один раз при
+    // первом входе в этот этап (когда контейнер уже видим — иначе он
+    // измерит нулевые размеры).
+    wormStageEl: null,
+    wormHandle: null,
 
     winOverlay: null,
 
@@ -44,6 +52,8 @@ const GluttonyMinigame = {
     // 0.15 значит, что край засчитывается уже на 15% ширины ведра
     // от его настоящего края, а не у самого физического края.
     MIX_EDGE_INSET: 0.18,
+    // Максимальный угол наклона ручки ложки в каждую сторону (градусы)
+    MIX_MAX_ANGLE: 34,
 
     // ---------- НАСТРОЙКИ КОРМЛЕНИЯ ----------
     MAX_DY: 90,          // px наклона до максимума
@@ -90,9 +100,11 @@ const GluttonyMinigame = {
         this.nextBucketBtn = document.getElementById('glut-next-bucket');
 
         this.stageFeed = document.getElementById('glut-stage-feed');
+        this.feedSceneEl = this.stageFeed ? this.stageFeed.querySelector('.glut-feed-scene') : null;
         this.tiltBucket = document.getElementById('glut-tilt-bucket');
+        this.potEl = document.getElementById('glut-pot-body');
         this.pourLayer = document.getElementById('glut-pour-layer');
-        this.bellyEl = document.getElementById('glut-belly');
+        this.wormStageEl = document.getElementById('glut-worm-stage');
         this.gaugeBar = document.getElementById('glut-gauge-bar');
 
         this.winOverlay = document.getElementById('glut-win-overlay');
@@ -222,7 +234,7 @@ const GluttonyMinigame = {
         if (this.fallZone) this.fallZone.innerHTML = '';
         if (this.spoonEl) {
             this.spoonEl.classList.remove('show', 'fly-away');
-            this.spoonEl.style.left = '50%';
+            this.spoonEl.style.setProperty('--spoon-rot', '0deg');
         }
         if (this.nextBucketBtn) {
             this.nextBucketBtn.onclick = (e) => {
@@ -293,6 +305,7 @@ const GluttonyMinigame = {
 
     spawnSpoon() {
         if (!this.spoonEl) return;
+        this.spoonEl.style.setProperty('--spoon-rot', '0deg');
         this.spoonEl.classList.add('show');
         this.mixPos = 0.5;
         this.mixSwings = 0;
@@ -330,8 +343,8 @@ const GluttonyMinigame = {
 
     applyMixPos(rawFraction) {
         this.mixPos = Math.min(1, Math.max(0, rawFraction));
-        const offsetPct = (this.mixPos - 0.5) * 70; // визуальное смещение ложки
-        this.spoonEl.style.left = `calc(50% + ${offsetPct}%)`;
+        const angle = (this.mixPos - 0.5) * 2 * this.MIX_MAX_ANGLE; // -MAX..+MAX градусов
+        this.spoonEl.style.setProperty('--spoon-rot', `${angle.toFixed(1)}deg`);
         this.checkMixExtreme();
     },
 
@@ -375,7 +388,7 @@ const GluttonyMinigame = {
         this.spoonEl.classList.add('fly-away');
         setTimeout(() => {
             this.spoonEl.classList.remove('show', 'fly-away');
-            this.spoonEl.style.left = '50%';
+            this.spoonEl.style.setProperty('--spoon-rot', '0deg');
             if (this.nextBucketBtn) {
                 this.nextBucketBtn.style.display = 'block';
                 this.nextBucketBtn.classList.add('enabled');
@@ -384,18 +397,151 @@ const GluttonyMinigame = {
     },
 
     // ---------- ЭТАП 3: КОРМЛЕНИЕ ----------
+
+    // Кастрюля и контейнер персонажа на этапе кормления собираются прямо
+    // здесь, через JS, а не через правки index.html/gluttony.css — по
+    // опыту эти правки вручную не применяются, а разметка в репозитории
+    // остаётся старой (старый SVG-червь + эмодзи-ведро 🪣). Метод
+    // идемпотентен: при повторном входе на этап ничего не пересоздаёт.
+    ensureFeedMarkup() {
+        if (this.feedMarkupReady) return;
+        if (!this.feedSceneEl) return;
+
+        // Старая захардкоженная иллюстрация червя (ещё до перехода на
+        // общую модельку) — прячем, если она осталась в разметке.
+        const legacySvg = document.getElementById('glut-worm-lying');
+        if (legacySvg) legacySvg.style.display = 'none';
+
+        // Контейнер для WormRenderer (общая модель персонажа).
+        this.wormStageEl = document.getElementById('glut-worm-stage');
+        if (!this.wormStageEl) {
+            this.wormStageEl = document.createElement('div');
+            this.wormStageEl.id = 'glut-worm-stage';
+            this.feedSceneEl.insertBefore(this.wormStageEl, this.feedSceneEl.firstChild);
+        }
+        Object.assign(this.wormStageEl.style, {
+            position: 'absolute',
+            left: '0', top: '0', width: '100%', height: '100%',
+            zIndex: '2',
+            pointerEvents: 'none'
+        });
+
+        // Ведро на этапе кормления должно выглядеть ТОЧНО так же, как
+        // ведро на этапе замешивания (.glut-bucket / #glut-bucket-body) —
+        // тот самый серый металлический градиент с окантовкой, а не
+        // эмодзи и не отдельно нарисованная форма. Копируем стиль прямо
+        // из рабочего варианта (см. .glut-bucket в gluttony.css) сюда,
+        // инлайново, чтобы это больше не зависело от разметки index.html.
+        this.tiltBucket = document.getElementById('glut-tilt-bucket');
+        if (this.tiltBucket) {
+            this.tiltBucket.textContent = '';
+            Object.assign(this.tiltBucket.style, {
+                position: 'absolute',
+                top: '4%',
+                left: '10%',
+                width: '30%',
+                maxWidth: '120px',
+                fontSize: '0',
+                transformOrigin: 'top center',
+                touchAction: 'none',
+                cursor: 'grab',
+                zIndex: '5'
+            });
+
+            this.potEl = document.getElementById('glut-pot-body');
+            if (!this.potEl) {
+                this.potEl = document.createElement('div');
+                this.potEl.id = 'glut-pot-body';
+                this.tiltBucket.appendChild(this.potEl);
+            }
+            Object.assign(this.potEl.style, {
+                position: 'relative',
+                width: '100%',
+                aspectRatio: '0.9',
+                boxSizing: 'border-box',
+                background: 'linear-gradient(180deg, #d9d9d9 0%, #9a9a9a 60%, #7a7a7a 100%)',
+                border: '3px solid #5a5a5a',
+                borderRadius: '14px 14px 26px 26px / 14px 14px 40px 40px',
+                boxShadow: 'inset 0 -10px 20px rgba(0,0,0,0.3)'
+            });
+        }
+
+        this.feedMarkupReady = true;
+    },
+
     setupFeedStage() {
         this.feedProgress = 0;
         this.feedFinished = false;
         this.feedDragging = false;
         this.feedDy = 0;
         this.feedLastDropTime = 0;
+        this.ensureFeedMarkup();
         if (this.tiltBucket) {
             this.tiltBucket.classList.remove('returning');
             this.tiltBucket.style.transform = 'rotate(0deg)';
         }
+
+        // Персонаж — общая моделька игрока, не своя отрисовка. Монтируем
+        // (один раз за сессию) именно здесь, когда .glut-stage-feed уже
+        // получил класс .active и контейнер видим — иначе рендерер
+        // измерит нулевые размеры контейнера.
+        //
+        // Раскладка этапа: персонаж лежит вдоль низа сцены, головой к
+        // левому краю (flip — тело растёт вправо от головы), тело
+        // неподвижно (idleWave:false — никакого шевеления/покачивания,
+        // просто лежит), живот раздувается только вверх, от нижней
+        // границы (bellyGrowthAnchor:'bottom') — как и просили: живот не
+        // растёт "в сторону спины".
+        if (!window.WormModelAPI || !window.WormRenderer) {
+            alert('Чревоугодие: не найден WormModelAPI/WormRenderer — проверь, что src/core/worm-model.js и src/core/worm-renderer.js подключены в index.html до gluttony.js.');
+        } else if (this.wormStageEl) try {
+            const model = window.WormModelAPI.loadWormModel();
+            if (!this.wormHandle) {
+                this.wormHandle = window.WormRenderer.mount(this.wormStageEl, model, {
+                    context: 'gluttony',
+                    wander: false,
+                    blink: true,
+                    idleWave: false,
+                    flip: true,
+                    bellyGrowthAnchor: 'bottom',
+                    anchorX: 0.16,
+                    anchorY: 0.8
+                });
+            } else {
+                // На случай, если базовая модель поменялась где-то ещё
+                // (например, отредактирована на главном экране) — всегда
+                // подтягиваем актуальную версию при входе на этот этап.
+                this.wormHandle.update(model);
+            }
+            // Живот сбрасывается к стандартному размеру на входе в этап —
+            // раздувать его будет сама механика кормления ниже. Рот —
+            // открытый на весь этап кормления (не своя отрисовка, а
+            // оверрайд поверх той же модели).
+            this.wormHandle.setLivePose({ bellyScale: 1 });
+            this.wormHandle.setOverride({ head: { mouth: { openness: 1 } } });
+            this.alignPotToMouth();
+        } catch (err) {
+            alert('Чревоугодие: ошибка при отрисовке персонажа — ' + (err && err.message ? err.message : err));
+            console.error(err);
+        }
+
         this.updateFeedUI();
         if (!this.feedRafId) this.feedRafId = requestAnimationFrame((t) => this.feedTick(t));
+    },
+
+    // Кастрюля должна литься точно в рот — вместо того чтобы гадать с
+    // процентными координатами, читаем реальное положение рта на экране
+    // (тот самый <g data-part="mouth"> из WormRenderer) и подгоняем left
+    // кастрюли под него один раз при входе на этот этап.
+    alignPotToMouth() {
+        if (!this.wormHandle || !this.tiltBucket || !this.feedSceneEl) return;
+        const mouthEl = this.wormHandle.svgRoot.querySelector('[data-part="mouth"]');
+        if (!mouthEl) return;
+        const mouthRect = mouthEl.getBoundingClientRect();
+        const sceneRect = this.feedSceneEl.getBoundingClientRect();
+        const potWidth = this.tiltBucket.getBoundingClientRect().width;
+        const targetLeft = (mouthRect.left + mouthRect.width / 2) - sceneRect.left - potWidth / 2;
+        this.tiltBucket.style.left = `${targetLeft}px`;
     },
 
     stopFeedTick() {
@@ -459,13 +605,18 @@ const GluttonyMinigame = {
     },
 
     spawnDrop() {
-        if (!this.pourLayer) return;
+        if (!this.pourLayer || !this.potEl) return;
         const drop = document.createElement('div');
         drop.className = 'glut-drop';
-        const bucketRect = this.tiltBucket.getBoundingClientRect();
+        // Берём границы самой кастрюли (не всей поворотной обёртки), причём
+        // не центр, а передний/нижний край её текущего (уже повёрнутого)
+        // прямоугольника — getBoundingClientRect() после rotate() возвращает
+        // именно повёрнутый bbox, так что right/bottom — это и есть "носик"
+        // наклонённой кастрюли, а не геометрический центр.
+        const potRect = this.potEl.getBoundingClientRect();
         const layerRect = this.pourLayer.getBoundingClientRect();
-        drop.style.left = `${bucketRect.left + bucketRect.width * 0.3 - layerRect.left}px`;
-        drop.style.top = `${bucketRect.bottom - layerRect.top - 10}px`;
+        drop.style.left = `${potRect.right - layerRect.left - 6}px`;
+        drop.style.top = `${potRect.bottom - layerRect.top - 4}px`;
         this.pourLayer.appendChild(drop);
         setTimeout(() => drop.remove(), 550);
     },
@@ -473,7 +624,9 @@ const GluttonyMinigame = {
     updateFeedUI() {
         const t = this.feedProgress / 100;
         if (this.gaugeBar) this.gaugeBar.style.width = `${this.feedProgress}%`;
-        if (this.bellyEl) this.bellyEl.setAttribute('transform', `scale(${1 + t * 0.9})`);
+        // Живот раздувается прямо на общей модельке персонажа через
+        // "горячий" канал рендерера — без пересборки SVG на каждый кадр.
+        if (this.wormHandle) this.wormHandle.setLivePose({ bellyScale: 1 + t * 0.9 });
     },
 
     finishFeeding() {
