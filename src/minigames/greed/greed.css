@@ -1,17 +1,12 @@
-/* Всплывающее окно-оверлей поверх игры (70% масштаба) */
+/* ================= МИНИ-ИГРА ГРЕХ АЛЧНОСТИ (СЛОТ-МАШИНА) ================= */
+
 #slots-game {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     z-index: 999999 !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -22,194 +17,459 @@
     pointer-events: auto;
 }
 
-/* Карточка окна */
+/* Окно мини-игры — почти во весь экран, тот же формат, что и у остальных
+   крупных мини-игр (см. .pride-modal): inset:5% от уже растянутого на весь
+   экран #slots-game, а не vw/vh напрямую (надёжнее в разных вебвью). */
 .slots-modal {
-    position: relative;
-    width: 90vw;
-    max-width: 340px;
-    height: 72vh;
-    max-height: 540px;
-    background: #1c0505;
-    border: 3px solid #f5b041;
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    right: 5%;
+    bottom: 5%;
+    background: radial-gradient(120% 90% at 50% 0%, #241009 0%, #150806 45%, #0a0403 100%);
+    border: 3px solid #caa042;
     border-radius: 28px;
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8), inset 0 0 60px rgba(0, 0, 0, 0.5);
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    padding: 20px 10px;
+    padding: max(14px, env(safe-area-inset-top)) 10px max(14px, env(safe-area-inset-bottom));
     box-sizing: border-box;
     transform: scale(0.85);
+    transform-origin: center center;
     transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    overflow: hidden;
 }
 
 #slots-game.active .slots-modal {
     transform: scale(1);
 }
 
-/* Кнопка «Закрыть» */
+.slots-modal.shake {
+    animation: slots-modal-shake 0.35s ease-in-out;
+}
+
+@keyframes slots-modal-shake {
+    0%, 100% { transform: scale(1) translate(0, 0); }
+    20% { transform: scale(1) translate(-3px, 1px); }
+    40% { transform: scale(1) translate(3px, -1px); }
+    60% { transform: scale(1) translate(-2px, 1px); }
+    80% { transform: scale(1) translate(2px, 0); }
+}
+
+/* ============ КРЕСТИК ЗАКРЫТИЯ ============ */
 .slots-close-btn {
     position: absolute;
-    top: 12px;
+    top: max(12px, env(safe-area-inset-top));
     right: 16px;
     background: #ff4444;
     border: 2px solid #fff;
     color: white;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     font-size: 20px;
-    line-height: 26px;
+    line-height: 28px;
     text-align: center;
     cursor: pointer;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    z-index: 30;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    z-index: 95;
+    flex-shrink: 0;
 }
 
 .slots-close-btn:active {
     transform: scale(0.9);
 }
 
-/* Шапка и подвал */
-.slots-header {
-    font-size: 24px;
+/* ============ ЗАГОЛОВОК ============ */
+.slots-title {
+    font-size: 15px;
     font-weight: 900;
-    color: #f5b041;
     letter-spacing: 2px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    color: #f7d465;
+    text-shadow: 0 0 8px rgba(247, 212, 101, 0.5);
+    margin: 4px 0 10px 0;
+    flex-shrink: 0;
     font-family: sans-serif;
 }
 
-.slots-footer {
-    font-size: 11px;
-    color: #888;
-    letter-spacing: 1px;
-    text-align: center;
-}
-
-/* Контейнер автомата */
-.machine-container {
+/* ============ СЦЕНА КАЗИНО (ФОН) ============ */
+.machine-stage {
     position: relative;
     width: 100%;
     flex: 1;
+    min-height: 0;
+    border-radius: 20px;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 10px 0;
+}
+
+.casino-bg {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(120% 80% at 50% 30%, #241512 0%, #150c0a 55%, #050302 100%);
+}
+
+.casino-vignette {
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 90px 30px rgba(0, 0, 0, 0.85);
+}
+
+.casino-spotlight {
+    position: absolute;
+    left: 50%;
+    top: -10%;
+    width: 140%;
+    height: 70%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at 50% 0%, rgba(255, 214, 130, 0.16) 0%, rgba(255, 214, 130, 0) 65%);
+    pointer-events: none;
+}
+
+.casino-curtain {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 16%;
+    opacity: 0.55;
+    background:
+        repeating-linear-gradient(90deg,
+            rgba(0, 0, 0, 0.35) 0px,
+            rgba(120, 20, 20, 0.55) 6px,
+            rgba(0, 0, 0, 0.35) 12px);
+    filter: blur(1px);
+    pointer-events: none;
+}
+
+.curtain-left {
+    left: 0;
+    -webkit-mask-image: linear-gradient(90deg, #000 40%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 40%, transparent 100%);
+}
+
+.curtain-right {
+    right: 0;
+    -webkit-mask-image: linear-gradient(270deg, #000 40%, transparent 100%);
+    mask-image: linear-gradient(270deg, #000 40%, transparent 100%);
+}
+
+.casino-floor {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 22%;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.55) 100%);
+    pointer-events: none;
+}
+
+.casino-glow {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 200, 90, 0.35) 0%, rgba(255, 200, 90, 0) 70%);
+    filter: blur(4px);
+    animation: casino-glow-pulse 4.5s ease-in-out infinite;
+    pointer-events: none;
+}
+
+.casino-glow.p1 { left: 8%; top: 20%; animation-delay: 0s; }
+.casino-glow.p2 { right: 10%; top: 55%; width: 70px; height: 70px; animation-delay: 1.5s; }
+.casino-glow.p3 { left: 14%; bottom: 10%; width: 60px; height: 60px; animation-delay: 3s; }
+
+@keyframes casino-glow-pulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.9); }
+    50% { opacity: 0.8; transform: scale(1.15); }
+}
+
+/* ============ КОНТЕЙНЕР АВТОМАТА ============ */
+/* Точный размер (px) выставляет JS (fitMachineStage() в greed.js) под
+   реальные пропорции viewBox SVG (350x480) — это гарантирует, что
+   .reels-overlay (позиционируется в % от контейнера) идеально совпадает с
+   окном экрана автомата, отрисованным внутри SVG, при любом размере
+   экрана/модалки. Тот же принцип точного измерения layout'а, что и в
+   pride.js/gluttony.js. */
+.machine-container {
+    position: relative;
 }
 
 .machine-svg {
     width: 100%;
     height: 100%;
-    max-height: 100%;
+    display: block;
+    filter: drop-shadow(0 10px 25px rgba(0, 0, 0, 0.6));
 }
 
-/* Сетка барабанов поверх экрана автомата */
+/* Лампочки на маркизе — мягкая пульсация в простое, быстрый "бегущий огонь"
+   во время прокрутки/выигрыша (см. .spin-lights/.win-lights ниже). */
+.bulb {
+    fill: #fff2b0;
+    filter: drop-shadow(0 0 3px #ffdc73);
+    animation: bulb-idle 2.2s ease-in-out infinite;
+    animation-delay: calc(var(--i) * 0.15s);
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes bulb-idle {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+@keyframes bulb-chase {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 1; }
+}
+
+#machine-container.spin-lights .bulb {
+    animation: bulb-chase 0.5s linear infinite;
+    animation-delay: calc(var(--i) * 0.05s);
+}
+
+#machine-container.win-lights .bulb {
+    animation: bulb-chase 0.16s linear infinite;
+    animation-delay: calc(var(--i) * 0.03s);
+    fill: #fff8d8;
+}
+
+/* ============ РЫЧАГ ============ */
+/* Пивот совпадает с центром крепления в SVG (282,268) — см. slots-fragment
+   разметку. Углы поворота подобраны так, чтобы шар рычага (радиус 15,
+   плечо 48 units) при максимальном перехлёсте (58°) не выходил за пределы
+   viewBox (350 units шириной) — иначе на некоторых экранах шар "улетал"
+   за рамку автомата и пропадал (SVG обрезает контент по viewBox). */
+#lever-arm {
+    transform-origin: 282px 268px;
+}
+
+#lever-arm.pulled {
+    animation: lever-pull 0.85s cubic-bezier(0.22, 0.75, 0.2, 1) 1;
+}
+
+@keyframes lever-pull {
+    0%   { transform: rotate(0deg); }
+    22%  { transform: rotate(47deg); }
+    38%  { transform: rotate(58deg); }
+    52%  { transform: rotate(50deg); }
+    68%  { transform: rotate(55deg); }
+    100% { transform: rotate(0deg); }
+}
+
+/* ============ ОКНО БАРАБАНОВ ============ */
 .reels-overlay {
     position: absolute;
-    top: 19%;
-    left: 12%;
-    width: 63%;
-    height: 34%;
+    left: 16.571%;
+    top: 32.9166%;
+    width: 58.286%;
+    height: 30.8333%;
     display: flex;
-    justify-content: space-around;
+    justify-content: space-between;
     align-items: center;
     box-sizing: border-box;
+    z-index: 5;
+    /* Чисто декоративный слой поверх SVG-корпуса — клики должны проходить
+       сквозь него к .lever-trigger-zone (иначе тап по барабанам не дёргал
+       бы рычаг, хотя по дизайну весь автомат кликабелен). */
+    pointer-events: none;
 }
 
 .reel-window {
-    width: 28%;
-    height: 80%;
-    background: #ffffff;
-    border: 2px solid #ccc;
-    border-radius: 12px;
+    position: relative;
+    width: 30%;
+    height: 92%;
+    background: linear-gradient(165deg, #fdf6e3 0%, #e9d9ae 55%, #cbb27e 100%);
+    border: 2px solid #6b4a1e;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.35), inset 0 -3px 6px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+}
+
+.reel-strip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    will-change: transform;
+}
+
+.reel-strip.blur {
+    filter: blur(3px);
+}
+
+/* Каждый барабан показывает сразу 3 ряда символов (верх/центр/низ) — окно
+   барабана достаточно большое, чтобы одинокий ряд смотрелся пусто.
+   Игровой результат — только средний ряд (совпадает с золотой линией
+   payline, см. .payline ниже); верхний и нижний — декоративные (см.
+   greed.js randomRowTriples()/avoidTripleMatch() — гарантированно никогда
+   не складываются в "три одинаковых подряд"). */
+.reel-strip .reel-cell {
+    width: 100%;
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: min(8vw, 36px);
-    box-shadow: inset 0 4px 10px rgba(0,0,0,0.2);
-    box-sizing: border-box;
-    transition: transform 0.15s ease;
+    font-size: min(6.2vw, 28px);
+    line-height: 1;
 }
 
-/* CSS-Анимации "Встряски" барабанов */
-@keyframes spin-bounce {
-    0% { transform: translateY(0); }
-    25% { transform: translateY(-15px) scaleY(1.1); }
-    50% { transform: translateY(15px) scaleY(0.9); }
-    75% { transform: translateY(-8px); }
-    100% { transform: translateY(0); }
+/* Средний (игровой) ряд — полная чёткость/размер. Верхний и нижний —
+   слегка притушены и чуть меньше, чтобы взгляд сразу читал, какой ряд
+   реально играет, как на классических автоматах с несколькими линиями. */
+.reel-strip .reel-cell-mid {
+    font-size: min(7.4vw, 34px);
+    filter: none;
 }
 
-.reel-window.spinning {
-    animation: spin-bounce 0.15s infinite ease-in-out;
+.reel-strip .reel-cell-side {
+    opacity: 0.55;
+    filter: saturate(0.7);
 }
 
-/* Анимация рычага с помощью CSS-трансформаций SVG-группы */
-#lever-arm {
-    transform-origin: 242px 270px;
-    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+/* Короткий "механический" отскок символа в момент остановки барабана.
+   ВАЖНО: анимация висит на самом СИМВОЛЕ (.reel-cell), а не на рамке окна
+   (.reel-window) — раньше squash/translate применялись к .reel-window
+   целиком (вместе с золотой рамкой и фоном), из-за чего сама белая рамка
+   барабана визуально "прыгала"/на мгновение уменьшалась — это читалось
+   как баг/глюк, а не как приятный отскок. Рамка теперь всегда статична;
+   "приземляется" только картинка символа внутри неё. */
+.reel-cell.stop-bounce {
+    animation: reel-cell-bounce 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: center;
 }
 
-/* Положение рычага при нажатии */
-#lever-arm.pulled {
-    transform: rotateX(180deg) scaleY(0.4) translateY(-100px);
+@keyframes reel-cell-bounce {
+    0%   { transform: scaleY(1); }
+    35%  { transform: scaleY(0.86); }
+    100% { transform: scaleY(1); }
 }
 
-/* Триггер дёрганья рычага — раньше был маленькой зоной справа
-   (right:5%; top:40%; width:22%; height:45%), не совпадавшей с
-   визуальным положением рычага на разных экранах. Теперь зона
-   покрывает весь автомат — клик в любом месте машины дёргает рычаг. */
+.payline {
+    position: absolute;
+    left: 2%;
+    right: 2%;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, rgba(247, 212, 101, 0) 0%, rgba(247, 212, 101, 0.85) 20%, rgba(247, 212, 101, 0.85) 80%, rgba(247, 212, 101, 0) 100%);
+    box-shadow: 0 0 6px rgba(247, 212, 101, 0.6);
+    z-index: 7;
+    pointer-events: none;
+}
+
+.reel-glass {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 18%, rgba(255, 255, 255, 0) 82%, rgba(255, 255, 255, 0.18) 100%);
+    pointer-events: none;
+    z-index: 8;
+}
+
+/* Триггер дёрганья рычага — зона покрывает весь автомат, клик в любом
+   месте машины дёргает рычаг. */
 .lever-trigger-zone {
     position: absolute;
     inset: 0;
     cursor: pointer;
-    z-index: 5;
+    z-index: 4;
 }
 
-/* ================= АНИМАЦИЯ ПОБЕДЫ (ФЕЙЕРВЕРК + НАДПИСЬ) ================= */
+/* ================= АНИМАЦИЯ ПОБЕДЫ ================= */
 .win-overlay {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    z-index: 20;
+    z-index: 30;
     opacity: 0;
+    overflow: hidden;
+    border-radius: 6px;
 }
 
 .win-overlay.show {
     opacity: 1;
 }
 
+.win-flash {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle, rgba(255, 214, 90, 0.45) 0%, rgba(255, 214, 90, 0) 68%);
+    opacity: 0;
+}
+
+.win-overlay.show .win-flash {
+    animation: win-flash-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes win-flash-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.85; }
+}
+
 .win-text {
+    position: relative;
     font-size: 30px;
     font-weight: 900;
-    color: #ffd700;
-    text-shadow: 0 0 10px #ff4444, 0 0 20px #f5b041;
+    color: #ffe066;
+    text-shadow: 0 0 10px #ff8a3d, 0 0 22px #f7d465, 0 2px 2px rgba(0, 0, 0, 0.6);
     opacity: 0;
-    transform: scale(0.5);
-    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: scale(0.4) rotate(-6deg);
+    transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 2;
 }
 
 .win-overlay.show .win-text {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
 }
 
 .win-overlay.fade-out .win-text {
     opacity: 0;
-    transition: opacity 1s ease;
+    transform: scale(1.15) rotate(2deg);
+    transition: opacity 0.9s ease, transform 0.9s ease;
 }
 
+/* Дождь монет */
+.coin-rain {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.coin {
+    position: absolute;
+    top: -30px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff6d2 0%, #f7d465 35%, #b8860b 75%, #6b4a05 100%);
+    box-shadow: 0 0 4px rgba(255, 214, 90, 0.7);
+    animation-name: coin-fall;
+    animation-timing-function: cubic-bezier(0.4, 0.0, 0.7, 1);
+    animation-fill-mode: forwards;
+}
+
+@keyframes coin-fall {
+    0% { transform: translate(0, -30px) rotate(0deg); opacity: 1; }
+    85% { opacity: 1; }
+    100% { transform: translate(var(--drift, 0px), 340px) rotate(540deg); opacity: 0; }
+}
+
+/* Фейерверк-искры */
 .fireworks {
     position: absolute;
-    width: 100%;
-    height: 100%;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
 }
 
 .spark {
@@ -219,7 +479,7 @@
     border-radius: 50%;
     top: 50%;
     left: 50%;
-    animation: spark-fly 0.8s ease-out forwards;
+    animation: spark-fly 0.9s ease-out forwards;
 }
 
 @keyframes spark-fly {

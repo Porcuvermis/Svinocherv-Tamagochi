@@ -75,6 +75,13 @@ const GluttonyMinigame = {
     feedDragging: false,
     feedStartY: 0,
     feedDy: 0,
+    // feedAngle — реальный, плавно анимируемый угол наклона кастрюли.
+    // feedTargetAngle — куда он должен прийти (задаётся драгом пальца, либо
+    // 0 при отпускании). Единое значение читают И визуальный поворот
+    // кастрюли, И открытие рта персонажа (см. feedTick) — поэтому они
+    // никогда не рассинхронизируются.
+    feedAngle: 0,
+    feedTargetAngle: 0,
     feedProgress: 0,
     feedFinished: false,
     feedLastDropTime: 0,
@@ -467,6 +474,16 @@ const GluttonyMinigame = {
         }
 
         this.feedMarkupReady = true;
+
+        // Правка 17: раскладка (положение персонажа + кастрюли) зависит от
+        // РЕАЛЬНОГО размера сцены — на смену ориентации/поворот экрана
+        // пересчитываем её так же, как при входе на этап.
+        if (!this._feedResizeHandlerBound) {
+            this._feedResizeHandlerBound = true;
+            window.addEventListener('resize', () => {
+                if (this.stageFeed && this.stageFeed.classList.contains('active')) this.layoutFeedStage();
+            });
+        }
     },
 
     setupFeedStage() {
@@ -474,10 +491,11 @@ const GluttonyMinigame = {
         this.feedFinished = false;
         this.feedDragging = false;
         this.feedDy = 0;
+        this.feedAngle = 0;
+        this.feedTargetAngle = 0;
         this.feedLastDropTime = 0;
         this.ensureFeedMarkup();
         if (this.tiltBucket) {
-            this.tiltBucket.classList.remove('returning');
             this.tiltBucket.style.transform = 'rotate(0deg)';
         }
 
@@ -499,13 +517,22 @@ const GluttonyMinigame = {
             if (!this.wormHandle) {
                 this.wormHandle = window.WormRenderer.mount(this.wormStageEl, model, {
                     context: 'gluttony',
+                    // pose явно не задаём — берётся дефолтная 'standing'
+                    // (та же поза, что и на главном экране): персонаж
+                    // кормится стоя, а не лёжа плашмя, как было раньше.
                     wander: false,
                     blink: true,
                     idleWave: false,
                     flip: true,
                     bellyGrowthAnchor: 'bottom',
-                    anchorX: 0.16,
-                    anchorY: 0.8
+                    // Стартовый анкор — просто разумная точка по
+                    // умолчанию (совпадает с дефолтом самого рендерера).
+                    // Точную позицию, при которой персонаж целиком
+                    // помещается в сцену, а кастрюля стоит над головой,
+                    // выставляет layoutFeedStage() сразу после монтажа —
+                    // см. вызов ниже.
+                    anchorX: 0.5,
+                    anchorY: 0.55
                 });
             } else {
                 // На случай, если базовая модель поменялась где-то ещё
@@ -514,12 +541,23 @@ const GluttonyMinigame = {
                 this.wormHandle.update(model);
             }
             // Живот сбрасывается к стандартному размеру на входе в этап —
-            // раздувать его будет сама механика кормления ниже. Рот —
-            // открытый на весь этап кормления (не своя отрисовка, а
-            // оверрайд поверх той же модели).
-            this.wormHandle.setLivePose({ bellyScale: 1 });
-            this.wormHandle.setOverride({ head: { mouth: { openness: 1 } } });
-            this.alignPotToMouth();
+            // раздувать его будет сама механика кормления ниже. Рот: только
+            // ОТКРЫТОСТЬ (mouthOpenness) — "живой" параметр, который тут
+            // анимируется вслед за наклоном ведра (см. feedTick()). Кривизну
+            // (mouthCurve) НЕ трогаем и не переопределяем — она приходит из
+            // той же базовой модели, что и на главном экране, без изменений:
+            // если персонаж улыбается/грустит там, ровно то же самое видно и
+            // здесь, в мини-игре. Раньше здесь стоял принудительный сброс к
+            // нейтральной кривизне (mouthCurve:0) — убран по фидбеку: не
+            // должно быть отдельного "состояния рта" для мини-игры, только
+            // общая модель + живое открытие.
+            this.wormHandle.setLivePose({ bellyScale: 1, mouthOpenness: 0 });
+            // Раскладка (позиция персонажа + кастрюли над его головой)
+            // требует реальных, уже отрисованных габаритов SVG — сегменты
+            // напольной цепи получают свои transform только в первом тике
+            // рендерера (requestAnimationFrame), не в момент mount()/update().
+            // Двойной rAF — гарантированно ПОСЛЕ этого первого тика.
+            requestAnimationFrame(() => requestAnimationFrame(() => this.layoutFeedStage()));
         } catch (err) {
             alert('Чревоугодие: ошибка при отрисовке персонажа — ' + (err && err.message ? err.message : err));
             console.error(err);
@@ -529,19 +567,100 @@ const GluttonyMinigame = {
         if (!this.feedRafId) this.feedRafId = requestAnimationFrame((t) => this.feedTick(t));
     },
 
-    // Кастрюля должна литься точно в рот — вместо того чтобы гадать с
-    // процентными координатами, читаем реальное положение рта на экране
-    // (тот самый <g data-part="mouth"> из WormRenderer) и подгоняем left
-    // кастрюли под него один раз при входе на этот этап.
-    alignPotToMouth() {
-        if (!this.wormHandle || !this.tiltBucket || !this.feedSceneEl) return;
-        const mouthEl = this.wormHandle.svgRoot.querySelector('[data-part="mouth"]');
-        if (!mouthEl) return;
-        const mouthRect = mouthEl.getBoundingClientRect();
-        const sceneRect = this.feedSceneEl.getBoundingClientRect();
-        const potWidth = this.tiltBucket.getBoundingClientRect().width;
-        const targetLeft = (mouthRect.left + mouthRect.width / 2) - sceneRect.left - potWidth / 2;
-        this.tiltBucket.style.left = `${targetLeft}px`;
+    // Правка 17: раньше здесь была alignPotToMouth() — подгоняла только
+    // ГОРИЗОНТАЛЬ кастрюли под рот, а сама позиция персонажа была
+    // захардкожена (anchorX/anchorY), из-за чего он частично не влезал в
+    // сцену. Теперь одна функция решает обе задачи сразу и делает это не
+    // "на глаз" числами, а по РЕАЛЬНЫМ измеренным габаритам уже
+    // отрисованного персонажа (getBoundingClientRect его SVG) — это
+    // единственный способ, который сам собой продолжит работать и после
+    // появления взросления (новые сегменты, другой размер тела): силуэт
+    // персонажа просто станет больше/другим, а раскладка пересчитается от
+    // него заново, без правки констант.
+    //
+    // Логика:
+    // 1) меряем фактический bbox всего персонажа (bodyRect) и его головы
+    //    (headRect) — они дают "сколько места нужно" в каждую сторону от
+    //    ЦЕНТРА головы (up/down/left/right extent);
+    // 2) выбираем новую точку стояния головы (wormX/wormY) так, чтобы весь
+    //    силуэт был центрирован по горизонтали и стоял чуть ниже центра
+    //    сцены по вертикали, но целиком помещался в видимую область и
+    //    оставлял сверху место под кастрюлю;
+    // 3) переставляем персонажа туда через WormRenderer.setPosition();
+    // 4) ставим кастрюлю строго над новым положением головы (центр по X
+    //    совпадает с центром головы, дно — на небольшом зазоре над
+    //    макушкой) — поэтому кастрюля "над головой" гарантированно, где бы
+    //    голова ни оказалась.
+    layoutFeedStage() {
+        if (!this.wormHandle || !this.wormStageEl || !this.feedSceneEl || !this.tiltBucket) return;
+
+        const stageRect = this.wormStageEl.getBoundingClientRect();
+        if (stageRect.width < 1 || stageRect.height < 1) return;
+
+        const headEl = this.wormHandle.svgRoot.querySelector('[data-part="head"]');
+        // ВАЖНО: bbox мерим по группе .worm-root (тот <g>, что реально
+        // содержит и двигает персонажа), а НЕ по this.wormHandle.svgRoot —
+        // svgRoot это сам внешний <svg>, его getBoundingClientRect() равен
+        // размеру КОНТЕЙНЕРА (он растянут на всю сцену через viewBox), а
+        // не силуэту персонажа внутри него.
+        const bodyGroup = this.wormHandle.svgRoot.querySelector('.worm-root');
+        if (!headEl || !bodyGroup) return;
+        const bodyRect = bodyGroup.getBoundingClientRect();
+        const headRect = headEl.getBoundingClientRect();
+        if (bodyRect.width < 1 || bodyRect.height < 1 || headRect.width < 1) return;
+
+        const headCenterX = headRect.left + headRect.width / 2;
+        const headCenterY = headRect.top + headRect.height / 2;
+
+        // Сколько персонаж реально занимает в каждую сторону от центра
+        // головы — хвостовая часть тянется в одну сторону намного дальше,
+        // чем что-либо в другую, поэтому все четыре отступа разные.
+        const upExtent = headCenterY - bodyRect.top;
+        const downExtent = bodyRect.bottom - headCenterY;
+        const leftExtent = headCenterX - bodyRect.left;
+        const rightExtent = bodyRect.right - headCenterX;
+
+        const potRect = this.tiltBucket.getBoundingClientRect();
+        const potWidth = potRect.width || stageRect.width * 0.3;
+        const potHeight = potRect.height || potWidth / 0.9;
+
+        const MARGIN = 10;   // отступ от краёв сцены
+        const POT_GAP = 6;   // зазор между дном кастрюли и макушкой головы
+
+        // По горизонтали центрируем весь силуэт (не саму голову — у неё
+        // разные "плечи" из-за хвоста), с зажимом в границы сцены.
+        let targetHeadX = stageRect.width / 2 + (leftExtent - rightExtent) / 2;
+        targetHeadX = Math.min(Math.max(targetHeadX, MARGIN + leftExtent), stageRect.width - MARGIN - rightExtent);
+
+        // По вертикали — чуть ниже центра сцены (экран портретный, а поза
+        // персонажа высокая), но обязательно так, чтобы снизу тело влезало
+        // целиком, а сверху оставалось место под кастрюлю.
+        const minHeadY = MARGIN + potHeight + POT_GAP + upExtent;
+        const maxHeadY = stageRect.height - MARGIN - downExtent;
+        let targetHeadY = stageRect.height * 0.58;
+        if (minHeadY <= maxHeadY) {
+            targetHeadY = Math.min(Math.max(targetHeadY, minHeadY), maxHeadY);
+        } else {
+            // Сцена слишком тесная для идеальной раскладки — приоритет
+            // месту под кастрюлю и полной видимости головы/верха тела.
+            targetHeadY = minHeadY;
+        }
+
+        // headRect/bodyRect — во ВЬЮПОРТЕ; переводим их через уже
+        // известную ТЕКУЩУЮ позицию головы (getPosition) в систему
+        // координат сцены (= системе координат SVG персонажа, см.
+        // syncViewportSize — viewBox 1:1 с CSS-пикселями контейнера).
+        const currentPos = this.wormHandle.getPosition();
+        const currentHeadX = headCenterX - stageRect.left;
+        const currentHeadY = headCenterY - stageRect.top;
+        const dx = targetHeadX - currentHeadX;
+        const dy = targetHeadY - currentHeadY;
+        this.wormHandle.setPosition(currentPos.x + dx, currentPos.y + dy);
+
+        // Кастрюля — центр по X на центре головы, дно на POT_GAP выше
+        // макушки в её НОВОМ положении.
+        this.tiltBucket.style.left = `${targetHeadX - potWidth / 2}px`;
+        this.tiltBucket.style.top = `${targetHeadY - upExtent - POT_GAP - potHeight}px`;
     },
 
     stopFeedTick() {
@@ -556,24 +675,24 @@ const GluttonyMinigame = {
         if (this.feedFinished) return;
         this.feedDragging = true;
         this.feedStartY = e.clientY;
-        this.tiltBucket.classList.remove('returning');
         try { this.tiltBucket.setPointerCapture(e.pointerId); } catch (err) {}
 
         const onMove = (ev) => {
             if (!this.feedDragging) return;
             const dy = Math.min(this.MAX_DY, Math.max(0, ev.clientY - this.feedStartY));
             this.feedDy = dy;
-            const angle = (dy / this.MAX_DY) * this.MAX_ANGLE;
-            this.tiltBucket.style.transform = `rotate(${angle}deg)`;
+            // Только ЦЕЛЬ — сам наклон кастрюли и открытие рта плавно едут
+            // к ней каждый кадр в feedTick() одним и тем же значением угла,
+            // чтобы кастрюля и рот не могли разъехаться между собой.
+            this.feedTargetAngle = (dy / this.MAX_DY) * this.MAX_ANGLE;
         };
         const onUp = () => {
             this.feedDragging = false;
             this.feedDy = 0;
+            this.feedTargetAngle = 0;
             this.tiltBucket.removeEventListener('pointermove', onMove);
             this.tiltBucket.removeEventListener('pointerup', onUp);
             this.tiltBucket.removeEventListener('pointercancel', onUp);
-            this.tiltBucket.classList.add('returning');
-            this.tiltBucket.style.transform = 'rotate(0deg)';
         };
 
         this.tiltBucket.addEventListener('pointermove', onMove);
@@ -586,9 +705,28 @@ const GluttonyMinigame = {
         const dt = (now - this.feedLastTick) / 1000;
         this.feedLastTick = now;
 
+        // Плавно подводим текущий угол наклона кастрюли к целевому —
+        // экспоненциальное сглаживание, не зависящее от частоты кадров
+        // (dt-корректное). Быстро (доходит за ~150-200мс), но без единого
+        // резкого скачка — и это же значение сразу двигает рот персонажа.
+        const smoothing = Math.min(1, 1 - Math.pow(0.0005, dt));
+        this.feedAngle += (this.feedTargetAngle - this.feedAngle) * smoothing;
+        if (Math.abs(this.feedTargetAngle - this.feedAngle) < 0.05) this.feedAngle = this.feedTargetAngle;
+
+        if (this.tiltBucket) {
+            this.tiltBucket.style.transform = `rotate(${this.feedAngle.toFixed(1)}deg)`;
+        }
+        if (this.wormHandle) {
+            // Наклон ведра 0° → рот закрыт (0), наклон MAX_ANGLE → рот
+            // открыт полностью (1) — прямое пропорциональное соответствие,
+            // как и просили: "ведро наклонено полностью = рот открыт
+            // полностью", в любой промежуточный момент тоже верно.
+            const openness = Math.max(0, Math.min(1, this.feedAngle / this.MAX_ANGLE));
+            this.wormHandle.setLivePose({ mouthOpenness: openness });
+        }
+
         if (!this.feedFinished && this.feedDragging) {
-            const angle = (this.feedDy / this.MAX_DY) * this.MAX_ANGLE;
-            if (angle >= this.POUR_THRESHOLD_ANGLE) {
+            if (this.feedAngle >= this.POUR_THRESHOLD_ANGLE) {
                 this.feedProgress = Math.min(100, this.feedProgress + this.FEED_RATE_PER_SEC * dt);
                 this.updateFeedUI();
                 if (now - this.feedLastDropTime > this.DROP_INTERVAL) {

@@ -1,15 +1,12 @@
-/* ================= САД: ОВЕРЛЕЙ ================= */
+/* ================= МИНИ-ИГРА ГРЕХ ЛЕНИ (САД) ================= */
+
 #sloth-game {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
+    inset: 0;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     z-index: 999999 !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -20,23 +17,27 @@
     pointer-events: auto;
 }
 
+/* Окно мини-игры — почти во весь экран, тот же формат, что и у остальных
+   крупных мини-игр (см. .pride-modal/.slots-modal): inset:5% от уже
+   растянутого на весь экран #sloth-game, а не vw/vh напрямую. */
 .sloth-modal {
-    position: relative;
-    width: 92vw;
-    max-width: 380px;
-    height: 80vh;
-    max-height: 620px;
-    background: #14180f;
-    border: 3px solid #8E8E93;
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    right: 5%;
+    bottom: 5%;
+    background: radial-gradient(120% 90% at 50% 0%, #202b18 0%, #141c0f 45%, #0c120a 100%);
+    border: 3px solid #a4894f;
     border-radius: 28px;
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8), inset 0 0 60px rgba(0, 0, 0, 0.4);
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 16px 10px;
+    padding: max(14px, env(safe-area-inset-top)) 10px max(14px, env(safe-area-inset-bottom));
     box-sizing: border-box;
     overflow: hidden;
     transform: scale(0.85);
+    transform-origin: center center;
     transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -46,18 +47,19 @@
 
 .sloth-close-btn {
     position: absolute;
-    top: 12px;
+    top: max(12px, env(safe-area-inset-top));
     right: 16px;
     background: #ff4444;
     border: 2px solid #fff;
     color: white;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     font-size: 20px;
-    line-height: 26px;
+    line-height: 28px;
     text-align: center;
     cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
     z-index: 30;
     flex-shrink: 0;
 }
@@ -65,22 +67,24 @@
 .sloth-close-btn:active { transform: scale(0.9); }
 
 .sloth-header {
-    font-size: 20px;
+    font-size: 15px;
     font-weight: 900;
-    color: #b3b3b6;
+    color: #cfe0a8;
     letter-spacing: 2px;
-    margin-bottom: 4px;
+    text-shadow: 0 0 8px rgba(207, 224, 168, 0.4);
+    margin: 4px 0 10px 0;
     flex-shrink: 0;
+    font-family: sans-serif;
 }
 
 .sloth-footer {
     font-size: 11px;
-    color: #9aa08e;
+    color: #a9b593;
     letter-spacing: 1px;
     text-align: center;
     min-height: 16px;
     flex-shrink: 0;
-    margin-top: 6px;
+    margin-top: 8px;
 }
 
 /* ================= СЦЕНА САДА ================= */
@@ -88,73 +92,225 @@
     position: relative;
     width: 100%;
     flex: 1;
-    border-radius: 18px;
+    min-height: 0;
+    border-radius: 20px;
     overflow: hidden;
     z-index: 0;
 }
 
 .garden-sky {
     position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: linear-gradient(180deg, #cfe4e8 0%, #e8f0d8 55%, #8a9f5e 100%);
+    inset: 0;
+    background: linear-gradient(180deg, #a9d4dd 0%, #cfe4c4 42%, #e6edb8 62%, #8a9f5e 100%);
     z-index: 0;
+}
+
+.garden-sky-glow {
+    position: absolute;
+    left: 55%;
+    top: -10%;
+    width: 90%;
+    height: 60%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at 50% 20%, rgba(255, 250, 210, 0.55) 0%, rgba(255, 250, 210, 0) 65%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.garden-cloud {
+    position: absolute;
+    width: 26%;
+    height: 9%;
+    top: 12%;
+    opacity: 0.6;
+    filter: blur(1px);
+    background:
+        radial-gradient(circle at 30% 65%, #fff 0 42%, transparent 43%),
+        radial-gradient(circle at 55% 35%, #fff 0 55%, transparent 56%),
+        radial-gradient(circle at 78% 60%, #fff 0 38%, transparent 39%);
+    pointer-events: none;
+    z-index: 1;
+    animation: cloud-drift linear infinite;
+}
+
+.cloud-1 { left: -30%; top: 10%; width: 30%; height: 8%; animation-duration: 48s; animation-delay: 0s; }
+.cloud-2 { left: -20%; top: 22%; width: 20%; height: 6%; opacity: 0.45; animation-duration: 62s; animation-delay: -20s; }
+.cloud-3 { left: -25%; top: 6%; width: 22%; height: 6%; opacity: 0.4; animation-duration: 70s; animation-delay: -45s; }
+
+@keyframes cloud-drift {
+    from { transform: translateX(0); }
+    to   { transform: translateX(420%); }
 }
 
 .garden-sun {
     position: absolute;
-    top: 8%;
+    top: 7%;
     right: 10%;
     width: 15%;
     aspect-ratio: 1;
     border-radius: 50%;
-    background: radial-gradient(circle, #f5f3c0 0%, #e9e59a 100%);
-    box-shadow: 0 0 20px rgba(245, 243, 192, 0.6);
-    z-index: 1;
+    background: radial-gradient(circle at 35% 30%, #fffef0 0%, #f5f3c0 45%, #e9e59a 100%);
+    box-shadow: 0 0 20px rgba(245, 243, 192, 0.7), 0 0 46px rgba(245, 243, 192, 0.35);
+    z-index: 2;
+    animation: sun-pulse 5s ease-in-out infinite;
+}
+
+@keyframes sun-pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.12); }
 }
 
 .garden-hill {
     position: absolute;
     left: -10%;
     width: 120%;
-    height: 60%;
     border-radius: 50% 50% 0 0 / 100% 100% 0 0;
 }
 
-.hill-back {
-    bottom: 28%;
-    background: #6f9457;
-    opacity: 0.85;
+.hill-far {
+    bottom: 34%;
+    height: 46%;
+    background: #7fa869;
+    opacity: 0.55;
     z-index: 1;
+}
+
+.hill-back {
+    bottom: 26%;
+    height: 55%;
+    background: #6f9457;
+    opacity: 0.9;
+    z-index: 2;
+    box-shadow: inset 0 6px 0 rgba(255, 255, 255, 0.12);
 }
 
 .hill-front {
     bottom: 0%;
-    height: 45%;
-    background: #4a3826;
-    z-index: 2;
+    height: 42%;
+    background: #46351f;
+    background-image:
+        linear-gradient(180deg, #4a3826 0%, #3a2b1a 60%, #2d2013 100%),
+        repeating-radial-gradient(circle at 12% 14%, rgba(255, 255, 255, 0.05) 0 2px, transparent 3px 16px);
+    background-blend-mode: normal, overlay;
+    box-shadow: inset 0 4px 0 rgba(140, 176, 96, 0.55), inset 0 6px 10px rgba(0, 0, 0, 0.35);
+    z-index: 3;
+}
+
+.garden-vignette {
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 60px 18px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    z-index: 9;
 }
 
 /* ================= ИНСТРУМЕНТЫ ================= */
-.tools-row {
+/* Небольшой натюрморт вместо плоского ряда одинаковых иконок:
+   деревянная полка на двух кронштейнах (.shelf-plank/.shelf-bracket-*),
+   у каждого предмета — своя мягкая контактная тень на полке
+   (.tool-shadow, ОТДЕЛЬНЫЙ элемент, не часть SVG — см. ниже почему), и
+   сами предметы (.tool-seed/-can/-fert/-rake) перерисованы гораздо
+   детальнее: многослойные градиенты вместо плоской заливки, блики,
+   мелкие декоративные детали (росток на пакетике, дырочки лейки-розы,
+   бечёвка на мешке, заклёпки на грабельках) — тот же уровень подхода,
+   что и в переработке автомата Алчности и растения Лени.
+
+   Сам наклон предмета задаётся на .tool (НЕ на .tool-slot!) — если
+   повернуть transform у .tool-slot, он станет "transformed ancestor" и
+   сломает position:fixed у .tool.dragging (по спецификации CSS такой
+   предок создаёт для fixed-потомков новый containing block вместо
+   viewport) — поэтому вращаем сам .tool и сбрасываем поворот в 0 на
+   время перетаскивания (см. .tool.dragging ниже).
+
+   Контактная тень (.tool-shadow) — СОСЕДНИЙ элемент с .tool, а не
+   нарисована внутри самого SVG: если бы тень была частью SVG, она бы
+   вращалась вместе с наклоном предмета и "отрывалась" от плоскости
+   полки; как отдельный элемент без наклона она всегда лежит на полке,
+   как и положено тени, независимо от того, как наклонён сам предмет.
+
+   .tools-shelf сам по себе pointer-events:none — кликабельны только
+   активные инструменты внутри (см. .tool.active ниже). Полка держится
+   ЦЕЛИКОМ в самом верху сцены (top+height не заходит ниже ~19% высоты
+   сцены), намеренно ВЫШЕ максимально возможной верхушки полностью
+   выросшего растения (~21-22% от верха сцены при heightFrac=1 — см.
+   getStemGeometry()/topPadding в sloth.js) — инструменты никогда не
+   перекрываются стеблём/цветком и сами не перекрывают его. */
+.tools-shelf {
     position: absolute;
-    top: 8%;
-    left: 0;
-    width: 100%;
-    display: flex;
-    justify-content: space-around;
-    align-items: flex-end;
+    top: 2%;
+    left: 3%;
+    width: 70%;
+    height: 17%;
     z-index: 10;
+    pointer-events: none;
+}
+
+.shelf-plank {
+    position: absolute;
+    left: -5%;
+    width: 116%;
+    bottom: 5%;
+    height: 9%;
+    border-radius: 4px;
+    background:
+        repeating-linear-gradient(96deg, rgba(255, 255, 255, 0.12) 0 2px, rgba(0, 0, 0, 0.07) 2px 5px, transparent 5px 15px),
+        linear-gradient(180deg, #bd8a58 0%, #9a6c40 42%, #7a5230 78%, #5c3c20 100%);
+    box-shadow: 0 7px 12px rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 0 -3px 5px rgba(0, 0, 0, 0.35);
+    transform: rotate(-1.2deg);
+    z-index: 0;
+}
+
+.shelf-bracket {
+    position: absolute;
+    bottom: 0%;
+    width: 4.5%;
+    height: 12%;
+    background: linear-gradient(180deg, #7a5230 0%, #46301a 100%);
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.4);
+    z-index: -1;
+}
+
+.shelf-bracket-left {
+    left: 6%;
+    clip-path: polygon(0 0, 100% 35%, 100% 100%, 0 100%);
+    transform: rotate(-1.2deg);
+}
+
+.shelf-bracket-right {
+    left: 88%;
+    clip-path: polygon(100% 0, 0 35%, 0 100%, 100% 100%);
+    transform: rotate(-1.2deg);
 }
 
 .tool-slot {
-    width: 22%;
-    aspect-ratio: 1;
+    position: absolute;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
+#slot-seed  { left: 0%;  top: 6%;   width: 26%; aspect-ratio: 64 / 74; z-index: 2; }
+#slot-water { left: 26%; top: 28%;  width: 46%; aspect-ratio: 96 / 76; z-index: 4; }
+#slot-fert  { left: 59%; top: 18%;  width: 29%; aspect-ratio: 64 / 74; z-index: 3; }
+#slot-rake  { left: 79%; top: -10%; width: 21%; aspect-ratio: 46 / 84; z-index: 5; }
+
+/* Контактная тень под каждым предметом — "приземляет" его на полку.
+   Смещена ближе к нижнему краю слота (где предмет физически "стоит"),
+   не наклоняется вместе с .tool (см. пояснение выше). */
+.tool-shadow {
+    position: absolute;
+    left: 50%;
+    bottom: -8%;
+    width: 74%;
+    height: 22%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at 50% 50%, rgba(15, 10, 5, 0.5) 0%, rgba(15, 10, 5, 0) 72%);
+    z-index: 0;
+    pointer-events: none;
+}
+
 .tool {
+    position: relative;
     width: 100%;
     height: 100%;
     display: flex;
@@ -165,12 +321,21 @@
     filter: grayscale(0.6);
     pointer-events: none;
     transition: opacity 0.25s ease, filter 0.25s ease;
+    z-index: 1;
 }
+
+/* Индивидуальный наклон каждого предмета "как он реально лежит" — часть
+   натюрморта, а не ровный ряд одинаковых иконок. */
+#tool-seed { transform: rotate(-10deg); }
+#tool-can  { transform: rotate(2deg); }
+#tool-fert { transform: rotate(12deg); }
+#tool-rake { transform: rotate(21deg); }
 
 .tool svg {
     width: 100%;
     height: 100%;
     overflow: visible;
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.35));
 }
 
 .tool.active {
@@ -190,6 +355,10 @@
     cursor: grabbing;
     width: 60px;
     height: 60px;
+    /* Сбрасываем "лежачий" наклон (#tool-seed/#tool-can/...) на время
+       переноса — предмет визуально "берут в руки" ровно, наклон был
+       частью композиции на полке, а не самого предмета. */
+    transform: none;
 }
 
 .tool.returning {
@@ -201,33 +370,96 @@
     50% { filter: grayscale(0) drop-shadow(0 0 14px #fff3c0); }
 }
 
-/* ================= ГОРШОК (ЧИСТЫЙ CSS, БЕЗ SVG) ================= */
+/* ================= ГОРШОК ================= */
+/* .pot-wrap — это ВЫСОКАЯ И ШИРОКАЯ "сцена роста": канвас растения
+   (#plant-canvas) и слой сорняков занимают её целиком. Раньше эта сцена
+   была узкой (42% ширины), ровно по ширине самого горшка — из-за этого
+   при наклоне/изгибе стебля часть растения выходила за пиксельные
+   границы canvas и просто не попадала в кадр (визуально "пропадала" за
+   резкой вертикальной границей). Теперь сцена значительно шире (78%),
+   чтобы стеблю и листьям было куда физически поместиться при любом
+   наклоне — а сам керамический горшок (.pot-visual) сделан уже сцены и
+   отцентрован, чтобы визуально остаться тех же размеров/пропорций, что
+   и раньше (не превратиться в "вазу" — при живом измерении раньше
+   набиралось соотношение сторон 1:1.97, после подгонки ~1:1.27). */
 .pot-wrap {
     position: absolute;
-    bottom: 6%;
+    bottom: 4%;
     left: 50%;
     transform: translateX(-50%);
-    width: 46%;
-    height: 60%;
+    width: 78%;
+    height: 80%;
     z-index: 5;
 }
 
-/* Тело горшка — трапеция */
+/* Сам горшок — небольшая коробка внизу .pot-wrap с обычными,
+   "не-вазными" пропорциями. Ширина здесь пересчитана так, чтобы при
+   расширенной .pot-wrap (78% вместо прежних 42%) АБСОЛЮТНАЯ ширина
+   горшка на экране осталась прежней: 42/78 ≈ 54%, отцентровано
+   (left: 23%). Все проценты у pot-body/pot-rim/pot-soil/pot-band/
+   pot-shine/pot-shadow ниже по-прежнему считаются от НЕЁ. */
+.pot-visual {
+    position: absolute;
+    left: 23%;
+    bottom: 0;
+    width: 54%;
+    height: 44%;
+}
+
+/* Мягкая тень на земле под горшком — "приземляет" его на холм. */
+.pot-shadow {
+    position: absolute;
+    top: 96%;
+    left: 10%;
+    width: 80%;
+    height: 10%;
+    background: radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 72%);
+    z-index: 0;
+}
+
+/* Тело горшка — трапеция, керамический градиент вместо плоской заливки */
 .pot-body {
     position: absolute;
     top: 38%;
     left: 8%;
     width: 84%;
     height: 62%;
-    background: linear-gradient(180deg, #c98a63 0%, #8a5636 100%);
-    border: 3px solid #6e3f24;
+    background: linear-gradient(180deg, #d99a70 0%, #c07f4f 30%, #8a5636 78%, #6e3f24 100%);
+    border: 3px solid #5c3620;
     border-top: none;
     clip-path: polygon(0% 0%, 100% 0%, 82% 100%, 18% 100%);
     box-sizing: border-box;
     z-index: 1;
 }
 
-/* Верхний ободок горшка */
+/* Декоративный поясок-ободок примерно на трети высоты горшка. */
+.pot-band {
+    position: absolute;
+    top: 56%;
+    left: 12%;
+    width: 76%;
+    height: 6%;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(0, 0, 0, 0.22) 100%);
+    clip-path: polygon(2% 0%, 98% 0%, 94% 100%, 6% 100%);
+    z-index: 2;
+    pointer-events: none;
+}
+
+/* Глянцевый блик слева на горшке — та же трапеция, что и pot-body, чтобы
+   блик не вылезал за границы силуэта. */
+.pot-shine {
+    position: absolute;
+    top: 38%;
+    left: 8%;
+    width: 84%;
+    height: 62%;
+    background: linear-gradient(100deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 26%, rgba(255, 255, 255, 0) 100%);
+    clip-path: polygon(0% 0%, 100% 0%, 82% 100%, 18% 100%);
+    z-index: 2;
+    pointer-events: none;
+}
+
+/* Верхний ободок горшка — с фаской (внутренняя подсветка сверху + тень снизу) */
 .pot-rim {
     position: absolute;
     top: 33%;
@@ -235,13 +467,14 @@
     width: 100%;
     height: 14%;
     border-radius: 50%;
-    background: linear-gradient(180deg, #e6ac7d 0%, #b06a44 100%);
-    border: 3px solid #7a4a2e;
+    background: linear-gradient(180deg, #f0bc8d 0%, #d38f5c 45%, #b06a44 100%);
+    border: 3px solid #6e3f24;
+    box-shadow: inset 0 3px 4px rgba(255, 255, 255, 0.4), inset 0 -4px 6px rgba(0, 0, 0, 0.3);
     box-sizing: border-box;
-    z-index: 2;
+    z-index: 3;
 }
 
-/* Земля внутри горшка */
+/* Земля внутри горшка — с лёгкой зернистой текстурой */
 .pot-soil {
     position: absolute;
     top: 35%;
@@ -249,8 +482,11 @@
     width: 68%;
     height: 9%;
     border-radius: 50%;
-    background: radial-gradient(ellipse at 50% 35%, #4a3020 0%, #1c1108 100%);
-    z-index: 3;
+    background:
+        radial-gradient(ellipse at 50% 35%, #4a3020 0%, #1c1108 100%),
+        repeating-radial-gradient(circle at 20% 30%, rgba(0, 0, 0, 0.35) 0 1px, transparent 2px 7px);
+    box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.5);
+    z-index: 4;
 }
 
 /* Канвас растения — поверх горшка, фон обязательно прозрачный */
