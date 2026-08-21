@@ -54,7 +54,7 @@ canvas {
     -webkit-backdrop-filter: blur(8px);
     border-radius: 20px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    z-index: 99999 !important;
+    z-index: 99999 !important; 
     pointer-events: auto !important;
     cursor: pointer;
     transition: transform 0.1s ease, opacity 0.3s ease;
@@ -107,7 +107,7 @@ canvas {
     background-color: rgba(15, 15, 15, 0.97);
     display: flex;
     flex-direction: column;
-    z-index: 100000 !important;
+    z-index: 100000 !important; 
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease-out;

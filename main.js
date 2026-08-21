@@ -36,7 +36,7 @@ const GameManager = {
 
         Object.keys(this.sins).forEach(key => {
             const sin = this.sins[key];
-
+            
             // Кружок в верхнем HUD
             const circleHtml = `
                 <div class="stat-circle" id="mini-${key}">

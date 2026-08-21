@@ -169,13 +169,13 @@
     background: transparent !important;
 }
 
-.worm-player {
-    margin-right: auto;
-    margin-left: -14%;
+.worm-player { 
+    margin-right: auto; 
+    margin-left: -14%; 
 }
-.worm-enemy {
-    margin-left: auto;
-    margin-right: -14%;
+.worm-enemy { 
+    margin-left: auto; 
+    margin-right: -14%; 
 }
 
 .canvas-box {
