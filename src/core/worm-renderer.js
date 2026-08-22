@@ -25,6 +25,35 @@
 // т.п.), продолжают работать без правок.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// ---------- ПАЛИТРА ----------
+// Единый источник цвета — src/core/palette.js. Здесь только короткие алиасы,
+// чтобы не таскать PALETTE.flesh[500] через весь файл. Захардкоженных hex в
+// этом файле быть не должно: правило и его причины — docs/art-direction.md.
+const P_ = (typeof PALETTE !== 'undefined') ? PALETTE : window.PALETTE;
+const INK = P_.ink;          // замена чёрному: тёмный холодный сливовый
+const FLESH = P_.flesh;      // рампа мяса 900(тень) → 100(свет)
+const VISCERA = P_.viscera;  // анатомия живой ткани: пасть, дёсны, капилляры
+const BILE = P_.bile;        // грязь, налёт, зубы
+const SCLERA = P_.sclera;    // белок глаза — костяной, не белый
+const SPEC = P_.flesh[100];  // блик на МАТОВОЙ коже — тёплый, не белый
+const ACID = P_.acid[200];   // АКЦЕНТ-ирокез: блик на слизи. Только на влажном
+const ACID_DEEP = P_.acid[600]; // тёмная кислота — для БОЛЬШИХ мокрых площадей
+// Лестница толщин линий. Значений вне лестницы в файле быть не должно —
+// причины в docs/art-direction.md §4.4.
+const SW = (typeof STROKE !== 'undefined') ? STROKE : window.STROKE;
+// Внутренние черты (брови, губа) берут осветлённый контурный тон, а не сам
+// INK: внешний контур обязан оставаться самой тёмной линией в кадре.
+// Считается ЛЕНИВО: mixColor опирается на кэш разбора цвета, объявленный
+// ниже по файлу, поэтому на верхнем уровне его вызывать нельзя (TDZ).
+let _inkSoftCache = null;
+function inkSoftColor() {
+    if (_inkSoftCache == null) {
+        const fn = (typeof inkSoft !== 'undefined') ? inkSoft : window.inkSoft;
+        _inkSoftCache = fn(mixColor);
+    }
+    return _inkSoftCache;
+}
 // Доп. отступ всей телесной цепочки от центра головы, чтобы сегмент-1
 // не прятался почти целиком под головой, а минимум наполовину торчал из-под неё.
 // Было 24, затем увеличено до 34 — оказалось уже СЛИШКОМ много; 29 —
@@ -135,6 +164,216 @@ const WORM_TAIL_TIP_RATIO = 0.35;
 // У вертикальной части СВОЁ расстояние, независимое от напольной цепи
 // (плоская константа здесь корректна: у всех трёх сегментов один радиус).
 const WORM_VERTICAL_SPACING = 26;
+// Боковой снос позвоночника в стоящей позе. Все сегменты колонны стояли
+// строго по x=0, а напольная часть уходила строго влево — фигура складывалась
+// в букву «Г». Прямой угол читается мебелью, у животного должна быть одна
+// сквозная дуга (art-direction.md §4.2). Живот уводится влево относительно
+// головы, поэтому дуга с пола продолжается вверх, а голова оказывается
+// вынесенной вправо — тело противовесит хвосту, и поза становится живой.
+// ============================================================================
+//                       КОМНАТА: ПОЛ В ПЕРСПЕКТИВЕ (2.5D)
+// ============================================================================
+// Главный экран был плоским: персонаж ползал по однородному тёмному фону, и
+// его размер не менялся, куда бы он ни шёл. Комната даёт сцене третье
+// измерение, не превращая проект в 3D.
+//
+// Вся геометрия выводится из ЧЕТЫРЁХ чисел, и это не случайность: пол,
+// границы блуждания и масштаб персонажа обязаны считаться из одного
+// источника, иначе персонаж рано или поздно окажется по колено в полу или
+// вырастет не в том месте.
+//
+// Модель — честное перспективное деление, а не линейная интерполяция:
+//   scale(d) = 1 / (1 + d*k),  где k подобрано так, что scale(1) = minScale.
+// Отсюда сразу всё остальное: экранная высота точки пола, ширина пола на
+// этой глубине и размер персонажа — это одно и то же число scale(d).
+// Линейная интерполяция дала бы «складной» пол: у камеры шаг вглубь съедал
+// бы столько же пикселей, сколько у дальней стены, и глубина бы не читалась.
+const ROOM = {
+    horizonRatio: 0.16,    // точка схода — доля высоты сцены
+    floorFrontRatio: 1.0,  // передний край пола (у нижней кромки кадра)
+    frontHalfRatio: 0.8,   // полуширина пола у переднего края (доля ширины)
+    // Сила перспективы: scale(d) = 1 / (1 + d*depthK).
+    depthK: 0.42,
+    // Пол нарисован ГЛУБЖЕ, чем ходит червь. Иначе полоса пола выходит
+    // узкой, стена съедает больше половины кадра, и персонаж жмётся к нижней
+    // кромке — прямое нарушение «персонаж главный в кадре» (§6).
+    farDepth: 4.6,         // до какой глубины НАРИСОВАН пол
+    wanderNear: 0.15,      // ближняя граница блуждания
+    wanderFar: 3.2,        // дальняя граница блуждания (не до самой стены)
+    wanderInsetU: 0.72,    // насколько близко к боковым стенам подходит червь
+    // ---------- ПРИГЛУШЕНИЕ МАСШТАБА ПЕРСОНАЖА ----------
+    // Пол считается по ЧЕСТНОЙ перспективе, а размер персонажа — нет, и это
+    // осознанное расхождение.
+    //
+    // Если дать персонажу полный перспективный масштаб, у дальней стены он
+    // ужмётся вдвое: это читается не «отошёл вглубь», а «провалился в яму»,
+    // и мелкую мимику становится не разглядеть. Если же приглушить саму
+    // перспективу пола, комната станет плоской.
+    //
+    // Поэтому глубина у них общая, а сила отклика разная: пол — 1.0,
+    // персонаж — вот столько. Так комната остаётся глубокой, а размер
+    // меняется заметно, но не пугающе.
+    charScaleStrength: 0.45
+};
+
+function roomGeometry(w, h) {
+    return {
+        w, h, cx: w / 2,
+        horizonY: h * ROOM.horizonRatio,
+        frontY: h * ROOM.floorFrontRatio,
+        frontHalf: w * ROOM.frontHalfRatio
+    };
+}
+// Геометрический масштаб на глубине d (0 = у самой камеры).
+function roomScaleAt(d) {
+    return 1 / (1 + Math.max(0, d) * ROOM.depthK);
+}
+// Масштаб ПЕРСОНАЖА на той же глубине — приглушённый, см. charScaleStrength.
+function roomCharScaleAt(d) {
+    return 1 + (roomScaleAt(d) - 1) * ROOM.charScaleStrength;
+}
+function roomYAt(g, d) { return g.horizonY + (g.frontY - g.horizonY) * roomScaleAt(d); }
+function roomHalfAt(g, d) { return g.frontHalf * roomScaleAt(d); }
+// Обратная задача: по экранной высоте — глубина. Нужна, чтобы масштабировать
+// персонажа и след слизи, зная только их положение на полу.
+function roomDepthAt(g, y) {
+    const s = (y - g.horizonY) / Math.max(1e-6, g.frontY - g.horizonY);
+    return Math.max(0, (1 / Math.max(1e-4, s) - 1) / ROOM.depthK);
+}
+
+// Отрисовка комнаты. Намеренно скупая: по формуле стиля интерьер — это
+// «смокинг», он не имеет права спорить с персонажем за внимание
+// (docs/art-direction.md §1.2, §5). Поэтому только плоскости, одна линия
+// стыка и несколько очень слабых линий схода — самый дешёвый признак
+// глубины из существующих.
+function buildRoom(layer, g) {
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    const backY = roomYAt(g, ROOM.farDepth);
+    const backHalf = roomHalfAt(g, ROOM.farDepth);
+    // Пол светлее и ТЕПЛЕЕ холодной стены. Разрыв по светлоте обязателен:
+    // на одинаковых тонах комната читается одним тёмным полем, а не двумя
+    // плоскостями. Горизонтальная поверхность и правда ловит верхний свет
+    // лучше вертикальной (art-direction.md §3).
+    const floorFill = mixColor(P_.void[700], P_.bile[200], 0.13);
+
+    // Задняя стена. Не плоская заливка: свет в проекте один, сверху-слева,
+    // и вертикальная плоскость обязана это показывать, иначе стена читается
+    // дырой, а не поверхностью.
+    const wallGradId = 'worm-room-wall-grad';
+    const wdefs = svgEl('defs');
+    const wgrad = svgEl('radialGradient', { id: wallGradId, cx: '28%', cy: '18%', r: '95%' });
+    wgrad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': mixColor(P_.void[900], P_.void[700], 0.85) }));
+    wgrad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900] }));
+    wdefs.appendChild(wgrad);
+    layer.appendChild(wdefs);
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: 0, width: g.w, height: backY.toFixed(1), fill: `url(#${wallGradId})`
+    }));
+    // Пол — трапеция от дальнего края к переднему. Он светлее стены: свет
+    // падает сверху, и горизонтальная плоскость ловит его лучше вертикальной.
+    layer.appendChild(svgEl('path', {
+        d: `M ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} ` +
+           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} Z`,
+        fill: floorFill
+    }));
+    // Боковые «отвалы» пола до краёв кадра: без них по бокам от трапеции
+    // остаётся цвет стены, и пол выглядит ковром, лежащим в пустоте.
+    layer.appendChild(svgEl('path', {
+        d: `M 0,${backY.toFixed(1)} L ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L 0,${g.frontY.toFixed(1)} Z ` +
+           `M ${g.w},${backY.toFixed(1)} L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L ${g.w},${g.frontY.toFixed(1)} Z`,
+        fill: floorFill, opacity: 0.55
+    }));
+    // Пол ниже переднего края — ближний план, ещё чуть светлее.
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: g.frontY.toFixed(1), width: g.w, height: Math.max(0, g.h - g.frontY).toFixed(1),
+        fill: floorFill
+    }));
+    // Линии схода: сходятся к точке горизонта, поэтому глубина читается даже
+    // на неподвижном кадре. Держатся на грани заметности.
+    for (let i = -3; i <= 3; i++) {
+        if (i === 0) continue;
+        const u = i / 3.2;
+        layer.appendChild(svgEl('line', {
+            x1: (g.cx + u * g.frontHalf).toFixed(1), y1: g.frontY.toFixed(1),
+            x2: (g.cx + u * backHalf).toFixed(1), y2: backY.toFixed(1),
+            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.16
+        }));
+    }
+    // Плинтус: узкая полоса по низу стены. Самая дешёвая деталь, которая
+    // превращает две плоскости в комнату — без неё стык читается обрывом.
+    const plinthH = Math.max(3, g.h * 0.018);
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: (backY - plinthH).toFixed(1), width: g.w, height: plinthH.toFixed(1),
+        fill: mixColor(P_.void[900], floorFill, 0.45)
+    }));
+    layer.appendChild(svgEl('line', {
+        x1: 0, y1: (backY - plinthH).toFixed(1), x2: g.w, y2: (backY - plinthH).toFixed(1),
+        stroke: P_.ink, 'stroke-width': SW.detail, opacity: 0.6
+    }));
+
+    // Стык стены и пола — самая тёмная линия сцены после контура персонажа.
+    layer.appendChild(svgEl('line', {
+        x1: 0, y1: backY.toFixed(1), x2: g.w, y2: backY.toFixed(1),
+        stroke: P_.ink, 'stroke-width': SW.structure, opacity: 0.85
+    }));
+    // Мягкая тень у стыка: пол уходит в темноту вдали, а не обрывается.
+    const gradId = 'worm-room-depth-grad';
+    if (!layer.ownerDocument.getElementById(gradId)) {
+        const defs = svgEl('defs');
+        const grad = svgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
+        // Тёмный тон здесь НЕЙТРАЛЬНЫЙ, а не контурный ink: сливовый ink
+        // давал полу отчётливый лиловый налёт у дальней стены.
+        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.9' }));
+        grad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900], 'stop-opacity': '0' }));
+        defs.appendChild(grad);
+        layer.appendChild(defs);
+    }
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: backY.toFixed(1), width: g.w,
+        height: Math.max(1, (g.frontY - backY) * 0.5).toFixed(1),
+        fill: `url(#${gradId})`
+    }));
+}
+
+// ---------- ОРИЕНТАЦИЯ ТЕЛА ПО НАПРАВЛЕНИЮ ДВИЖЕНИЯ ----------
+// Напольная цепь строилась под ЖЁСТКИМ углом 180°: тело всегда уходило влево
+// от головы, куда бы червь ни полз. Существо не может ползти в одну сторону,
+// держа хвост перед собой.
+//
+// Теперь есть tailAngle — экранный угол, вдоль которого лежит хвостовая часть.
+// Он доворачивается к направлению, ПРОТИВОПОЛОЖНОМУ движению, и делает это
+// плавно: мгновенный переброс хвоста читался бы телепортом, а не поворотом.
+const WORM_TAIL_TURN_BASE = 0.015;   // 1 - base^dt: меньше = быстрее доворот
+// Пол показан в перспективе, а не сверху: шаг вглубь комнаты даёт на экране
+// меньше пикселей, чем такой же шаг вбок. Хвост лежит на полу, поэтому его
+// вертикальная составляющая сжимается тем же множителем — иначе при движении
+// вглубь тело встанет на дыбы вместо того, чтобы уйти в перспективу.
+const WORM_FLOOR_PERSPECTIVE = 0.45;
+// Насколько сильно голова доворачивается вслед за направлением ползания.
+// 0.5 совпадает с именованными позами left/right — то есть автоповорот
+// использует те же настроенные крайние значения, а не свои.
+const WORM_HEAD_YAW_FOLLOW = 0.5;
+// Скорость подъезда головы к целевому повороту (формула 1 - base^dt):
+// МЕНЬШЕ значение = БЫСТРЕЕ. 0.0009 даёт поворот примерно за четверть
+// секунды — читается щелчком, но остаётся плавным.
+const WORM_HEAD_YAW_BASE = 0.0009;
+const WORM_HEAD_YAW_EPS = 0.004;
+const WORM_SPINE_LEAN = 16;
+// Показатель степени: >1 держит шею почти прямой, а изгиб собирает внизу, у
+// живота. Линейный снос дал бы равномерный завал всей колонны — это чтение
+// «падает», а не «изогнулся».
+const WORM_SPINE_LEAN_POW = 1.6;
+// Снос сегмента колонны по его положению t (0 = шея у головы, 1 = живот).
+// Возвращает МОДУЛЬ сноса; сторону задаёт вызывающий по углу хвоста —
+// колонна обязана заваливаться в ту же сторону, куда лежит тело, иначе при
+// развороте дуга сломается пополам.
+function spineLeanMag(t) {
+    return WORM_SPINE_LEAN * Math.pow(Math.max(0, Math.min(1, t)), WORM_SPINE_LEAN_POW);
+}
 
 // Насколько мост единого силуэта уже соседних кругов — глубина перетяжки
 // между секциями тела. 0 = ровная труба, ~0.2 = выраженные "сосисочные"
@@ -164,7 +403,24 @@ const WORM_BREATH_RATIO = { 'belly': 1, 'segment-2': 0.7, 'segment-1': 0.3 };
 const WORM_SLIME_FADE_MS = 15000;
 const WORM_SLIME_WIDTH = 15;
 const WORM_SLIME_MIN_STEP = 4;
-const WORM_SLIME_COLOR = 'rgba(92,102,48,0.42)';
+// След слизи на полу. Раньше это был один непрозрачный оливковый штрих
+// шириной 15px с круглыми концами — на экране он читался палкой, а не
+// слизью. Теперь след состоит из двух штрихов: широкой тёмной мокрой
+// кляксы и тонкой яркой сердцевины (свежая слизь блестит).
+//
+// Почему тёмная ступень кислоты, а не яркая: след — БОЛЬШАЯ площадь, а
+// акцент по правилу дозировки большим быть не может (art-direction.md §1.2).
+// Яркая кислота остаётся только на узкой сердцевине.
+const WORM_SLIME_SMEAR_ALPHA = 0.5;
+// Яркая кислота в следе живёт ОТДЕЛЬНЫМИ КАПЛЯМИ, а не непрерывной линией.
+// Проверено: тонкая яркая сердцевина вдоль всего следа читается зелёным
+// кабелем — та же ошибка "акцент большой площадью", что и широкая заливка,
+// только вытянутая. Капли дают кислотность, оставаясь точками.
+const WORM_SLIME_DROP_ALPHA = 0.72;
+const WORM_SLIME_DROP_EVERY = 4;   // капля на каждую N-ю точку следа
+const WORM_SLIME_DROP_R = 2.1;
+// На сколько должен измениться масштаб глубины, чтобы начать новый отрезок следа.
+const WORM_SLIME_DEPTH_STEP = 0.1;
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
@@ -232,8 +488,8 @@ function withAlpha(css, alpha) {
 // Грязно-оливковый (не чисто чёрный) для теней и болезненно-желтоватый (не
 // чисто белый) для бликов — объёмный градиент читается как немытая кожа, а
 // не глянцевая игрушка, без единого лишнего пятна/полоски поверх заливки.
-const GRIME_SHADOW = '#241d10';
-const GRIME_HIGHLIGHT = '#e9dfae';
+const GRIME_SHADOW = INK;
+const GRIME_HIGHLIGHT = BILE[200];
 
 // Радиальный градиент "блик сверху-слева → тень снизу-справа" — придаёт
 // плоским SVG-эллипсам ощущение объёма без утяжеления разметки. Каждой части
@@ -243,12 +499,22 @@ function ensureVolumeGradient(defs, id, colorCss, opts) {
     opts = opts || {};
     const highlightAmt = opts.highlight != null ? opts.highlight : 0.3;
     const shadowAmt = opts.shadow != null ? opts.shadow : -0.3;
-    const highlightTarget = opts.highlightTint || '#ffffff';
-    const shadowTarget = opts.shadowTint || '#000000';
+    const highlightTarget = opts.highlightTint || SPEC;
+    const shadowTarget = opts.shadowTint || INK;
     const highlight = highlightAmt === 0 ? colorCss : mixColor(colorCss, highlightTarget, Math.abs(highlightAmt));
     const shadow = shadowAmt === 0 ? colorCss : mixColor(colorCss, shadowTarget, Math.abs(shadowAmt));
+    // ЕДИНЫЙ ИСТОЧНИК СВЕТА. Раньше каждый вызов передавал СВОИ cx/cy, из-за
+    // чего каждая часть тела была освещена собственной лампочкой и выглядела
+    // самостоятельным глянцевым шариком — отсюда вид "гирлянда из пластика".
+    // Теперь направление света берётся из LIGHT и одинаково для всех частей,
+    // поэтому блики выстраиваются в одну линию и фигура читается единым
+    // объёмом. Индивидуальные cx/cy намеренно ИГНОРИРУЮТСЯ — см.
+    // docs/art-direction.md §3. Управлять размытием (r) по-прежнему можно.
     const grad = svgEl('radialGradient', {
-        id, cx: opts.cx || '35%', cy: opts.cy || '30%', r: opts.r || '75%'
+        id,
+        cx: (50 + LIGHT.dirX * 50).toFixed(1) + '%',
+        cy: (50 + LIGHT.dirY * 50).toFixed(1) + '%',
+        r: opts.r || '75%'
     });
     grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': highlight }));
     grad.appendChild(svgEl('stop', { offset: '55%', 'stop-color': colorCss }));
@@ -466,7 +732,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
     const y = plan.cy * halfThick;
 
     if (plan.kind === 'gut') {
-        const color = palette.gut || '#7d2f3e';
+        const color = palette.gut || VISCERA[700];
         const L = plan.len * halfLen;
         const w = Math.max(2.2, plan.thick * halfThick);
         const bend = (plan.bend || 0.3) * halfThick * 0.9;
@@ -501,14 +767,14 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         // ореол свечения → тело → чёткий ободок → яркое ядро с бликом.
         // Свечение сделано вложенными градиентами с падающей прозрачностью —
         // визуально это то же, что размытие, но без единого фильтра.
-        const color = palette.sac || '#6c7a33';
+        const color = palette.sac || BILE[600];
         const glow = (ctx.anatomy.organs && ctx.anatomy.organs.glow != null) ? ctx.anatomy.organs.glow : 0.6;
         const rx = plan.len * halfLen;
         const ry = plan.thick * halfThick;
         const gid = `worm-organ-sac-${ctx.instanceId}-${idKey}`;
         const fill = ensureSoftGradient(ctx, gid, color, 1);
         const shadowGid = `worm-organ-shadow-${ctx.instanceId}`;
-        const coreColor = mixColor(color, '#fff3b0', 0.62);
+        const coreColor = mixColor(color, BILE[200], 0.62);
 
         group.appendChild(svgEl('ellipse', {
             cx: 0, cy: 0, rx: (rx * 1.35).toFixed(1), ry: (ry * 1.35).toFixed(1),
@@ -529,7 +795,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         group.appendChild(svgEl('ellipse', {
             cx: 0, cy: 0, rx: rx.toFixed(1), ry: ry.toFixed(1),
             fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.45),
-            'stroke-width': 1.2, opacity: 0.75
+            'stroke-width': SW.detail, opacity: 0.75
         }));
         group.appendChild(svgEl('ellipse', {
             cx: (-rx * 0.12).toFixed(1), cy: (-ry * 0.12).toFixed(1),
@@ -539,13 +805,13 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         group.appendChild(svgEl('ellipse', {
             cx: (-rx * 0.3).toFixed(1), cy: (-ry * 0.34).toFixed(1),
             rx: (rx * 0.16).toFixed(1), ry: (ry * 0.13).toFixed(1),
-            fill: '#ffffff', opacity: 0.4
+            fill: SPEC, opacity: 0.4
         }));
 
         // Сосуды от капсулы — 3-5 стволов в разные стороны.
         const vrng = anatRng(ctx.anatomy, idKey, 'vessels');
         const vGroup = svgEl('g', { class: 'worm-organ-vessels' });
-        const vColor = mixColor(color, palette.vessel || '#4a131e', 0.45);
+        const vColor = mixColor(color, palette.vessel || VISCERA[700], 0.45);
         const trunks = 3 + Math.floor(vrng() * 3);
         for (let i = 0; i < trunks; i++) {
             const a = (i / trunks) * Math.PI * 2 + vrng() * 0.6;
@@ -555,7 +821,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         }
         group.insertBefore(vGroup, group.firstChild ? group.firstChild.nextSibling : null);
     } else if (plan.kind === 'node') {
-        const color = palette.node || '#a8703f';
+        const color = palette.node || BILE[400];
         const rng = anatRng(ctx.anatomy, idKey, 'node');
         const base = plan.thick * halfThick;
         for (let i = 0; i < 3; i++) {
@@ -565,11 +831,11 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
             group.appendChild(svgEl('circle', {
                 cx: nx.toFixed(1), cy: ny.toFixed(1), r: r.toFixed(1),
                 fill: color, opacity: 0.75,
-                stroke: mixColor(color, GRIME_SHADOW, 0.45), 'stroke-width': 0.8
+                stroke: mixColor(color, GRIME_SHADOW, 0.45), 'stroke-width': SW.hairline
             }));
             group.appendChild(svgEl('circle', {
                 cx: (nx - r * 0.2).toFixed(1), cy: (ny - r * 0.2).toFixed(1), r: (r * 0.42).toFixed(1),
-                fill: mixColor(color, '#ffe9a8', 0.55), opacity: 0.6
+                fill: mixColor(color, BILE[200], 0.55), opacity: 0.6
             }));
         }
     }
@@ -681,11 +947,11 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
             const curve = halfLen * 0.22 * (x > 0 ? 1 : -1);
             const d = `M ${x.toFixed(1)},${(-h).toFixed(1)} Q ${(x + curve).toFixed(1)},0 ${x.toFixed(1)},${h.toFixed(1)}`;
             group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 1.2,
+                d, fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
                 opacity: (0.16 * rings).toFixed(3), 'stroke-linecap': 'round'
             }));
             group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': 0.8,
+                d, fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': SW.hairline,
                 opacity: (0.1 * rings).toFixed(3), 'stroke-linecap': 'round',
                 transform: 'translate(1.8,0)'
             }));
@@ -706,7 +972,7 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
         [-w, w].forEach(edge => {
             group.appendChild(svgEl('path', {
                 d: `M ${edge.toFixed(1)},${(-halfThick * 0.92).toFixed(1)} Q ${(edge * 1.12).toFixed(1)},0 ${edge.toFixed(1)},${(halfThick * 0.92).toFixed(1)}`,
-                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 1.4,
+                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
                 opacity: (0.3 * strength).toFixed(3), 'stroke-linecap': 'round'
             }));
         });
@@ -726,11 +992,11 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
             const len = halfThick * (0.24 + rng() * 0.12);
             const d = `M ${x.toFixed(1)},${y0.toFixed(1)} q ${(halfLen * 0.08).toFixed(1)},${(len * 0.5).toFixed(1)} ${(-halfLen * 0.02).toFixed(1)},${len.toFixed(1)}`;
             group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 1.3,
+                d, fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
                 opacity: (0.16 * strength).toFixed(3), 'stroke-linecap': 'round'
             }));
             group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': 0.9,
+                d, fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': SW.hairline,
                 opacity: (0.1 * strength).toFixed(3), 'stroke-linecap': 'round',
                 transform: 'translate(-1.2,0)'
             }));
@@ -755,7 +1021,7 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
             const len = 1.6 + rng() * 1.8;
             group.appendChild(svgEl('path', {
                 d: `M ${bx.toFixed(1)},${by.toFixed(1)} l ${(Math.cos(ang) * len).toFixed(1)},${(Math.sin(ang) * len * 1.2).toFixed(1)}`,
-                stroke: GRIME_SHADOW, 'stroke-width': 0.55, fill: 'none',
+                stroke: GRIME_SHADOW, 'stroke-width': SW.hairline, fill: 'none',
                 opacity: (0.32 * strength).toFixed(3), 'stroke-linecap': 'round'
             }));
             empty = false;
@@ -771,7 +1037,7 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
         const y = -halfThick * 0.55;
         group.appendChild(svgEl('path', {
             d: `M ${(-halfLen * 0.9).toFixed(1)},${y.toFixed(1)} Q 0,${(y - halfThick * 0.12).toFixed(1)} ${(halfLen * 0.9).toFixed(1)},${y.toFixed(1)}`,
-            fill: 'none', stroke: palette.vessel || '#4a131e', 'stroke-width': 1.8,
+            fill: 'none', stroke: palette.vessel || VISCERA[700], 'stroke-width': SW.detail,
             opacity: (0.5 * strength).toFixed(3), 'stroke-linecap': 'round'
         }));
         empty = false;
@@ -832,13 +1098,26 @@ function buildSurfaceLayer(ctx, partName, rx, ry, features) {
         const p = (ang, k) => `${(Math.cos(ang) * rx * R * k).toFixed(1)},${(Math.sin(ang) * ry * R * k).toFixed(1)}`;
         const mid = (a0 + a1) / 2;
         const d = `M ${p(a0, 1)} Q ${p(mid, 1.13)} ${p(a1, 1)} Q ${p(mid, 0.9)} ${p(a0, 1)} Z`;
-        group.appendChild(svgEl('path', { d, fill: '#ffffff', opacity: (0.34 * gloss).toFixed(3) }));
-        // Вторая, совсем маленькая капля слизи — сбоку, чтобы блеск не
-        // выглядел одним симметричным штампом на каждом сегменте.
+        // Широкий серп — это ОТРАЖЁННЫЙ СВЕТ на влажной коже, а не сама
+        // слизь, поэтому он тёплый, а не кислотный: блик перенимает цвет
+        // источника света, а не вещества. Кислоту сюда класть нельзя ещё и
+        // физически — полупрозрачная заливка не может быть насыщеннее смеси
+        // с подложкой, кислотная зелень на розовом даёт хаки, и акцент
+        // умирает, размазанный по большой площади.
+        group.appendChild(svgEl('path', { d, fill: SPEC, opacity: (0.3 * gloss).toFixed(3) }));
+        // А вот это — САМА слизь: маленькая, почти непрозрачная капля.
+        // Акцент работает малой площадью и высокой плотностью, ровно
+        // наоборот к широкому блику (docs/art-direction.md §2.5).
         group.appendChild(svgEl('ellipse', {
             cx: (rx * 0.34).toFixed(1), cy: (-ry * 0.34).toFixed(1),
-            rx: (rx * 0.09).toFixed(1), ry: (ry * 0.07).toFixed(1),
-            fill: '#ffffff', opacity: (0.24 * gloss).toFixed(3)
+            rx: (rx * 0.11).toFixed(1), ry: (ry * 0.085).toFixed(1),
+            fill: ACID, opacity: (0.88 * gloss).toFixed(3)
+        }));
+        // Блик на самой капле — она выпуклая и мокрая.
+        group.appendChild(svgEl('ellipse', {
+            cx: (rx * 0.32).toFixed(1), cy: (-ry * 0.36).toFixed(1),
+            rx: (rx * 0.04).toFixed(1), ry: (ry * 0.03).toFixed(1),
+            fill: SPEC, opacity: (0.7 * gloss).toFixed(3)
         }));
         empty = false;
     }
@@ -934,28 +1213,128 @@ function buildAnatomyStack(ctx, partName, opts) {
     return { group: outer, organs, muscleGroup: layers.muscle || null };
 }
 
+// ============================================================================
+//                     ПОВОРОТ ГОЛОВЫ (YAW, «ТРИ ЧЕТВЕРТИ»)
+// ============================================================================
+// Голова была строго анфас, а тело — в профиль. Смешанная проекция — самый
+// заметный признак детского рисунка: ровно так дети рисуют человека, лицо
+// анфас и ноги вбок (art-direction.md §4.3).
+//
+// Ключевое решение: это НЕ «перерисованная в три четверти голова», а ОСЬ
+// ПОВОРОТА. При yaw = 0 всё встаёт ровно туда, где стояло раньше, а
+// значение по умолчанию просто сдвинуто в три четверти. Побочная выгода
+// параметрического подхода: голову теперь можно ПОВОРАЧИВАТЬ на ходу —
+// проводить взглядом, отворачиваться, коситься.
+//
+// Модель: череп приближается сферой радиуса rx, и каждая черта лица сидит на
+// её поверхности под азимутом phi (0 = точно спереди, плюс — к правому уху
+// зрителя). Поворот головы просто прибавляется к азимуту, а экранное
+// положение черты — rx*sin(phi + theta). Одна формула даёт сразу всё:
+//   • дальний глаз уезжает к краю лица и сплющивается;
+//   • ближний глаз выходит к середине;
+//   • дальнее ухо прячется за череп (проекция уходит в минус);
+//   • ближнее ухо разворачивается к зрителю.
+// Горизонтальное сжатие черты — cos(phi + theta): то самое ракурсное
+// сокращение, из-за которого дальняя половина лица «уже» ближней.
+//
+// Азимуты НЕ выдуманы, а посчитаны из нынешних анфасных отступов
+// (phi = asin(offset / rx)), поэтому yaw = 0 воспроизводит сегодняшнюю
+// голову с точностью до пикселя, и правка безопасна.
+const YAW_MAX_DEG = 42;   // сколько градусов даёт yaw = 1
+
+// ---------- ИМЕНОВАННЫЕ ПОЗЫ ГОЛОВЫ ----------
+// Ось непрерывная — это механизм. Позы — словарь: код игры говорит
+// «смотрит влево», а не «yaw = -0.5». Три значения настраиваются один раз и
+// дальше гарантированно хороши, а у любой анимации поворота появляются
+// определённые ключи. Левая и правая — честное зеркало друг друга: проверено
+// замером, все черты сходятся с точностью 0.00 px (расходятся только
+// веснушки и складки, они раскладываются сеянным генератором и на сторонах
+// разные — такая асимметрия как раз нужна).
+//
+// Важно: это НЕ зеркальная копия картинки. У отражённого спрайта вместе с ним
+// отразился бы и свет — блик перепрыгнул бы на другую скулу, и персонаж
+// выглядел бы освещённым разными лампами в разных позах. Здесь источник
+// света остаётся на месте (art-direction.md §3), а шрам не перескакивает с
+// щеки на щеку.
+const WORM_HEAD_POSES = { left: -0.5, center: 0, right: 0.5 };
+
+// Черты, которые ВЫСТУПАЮТ вперёд (пятачок, морда), при повороте уезжают в
+// сторону сильнее, чем лежащие на поверхности: они дальше от оси вращения.
+// Это и есть главный признак ракурса — нос уходит с центра лица.
+function yawProject(rx, phiDeg, yaw, protrude) {
+    const theta = yaw * YAW_MAX_DEG;
+    const a = (phiDeg + theta) * Math.PI / 180;
+    const reach = rx * (1 + (protrude || 0));
+    // Сжатие НОРМИРОВАНО на своё же значение при нулевом повороте.
+    //
+    // Без нормировки squash = cos(phi) уже при анфасе: у глаза на азимуте
+    // 40° это 0.77, у уха на 73° — 0.29. То есть черты оказывались
+    // сплющены В САМОМ АНФАСЕ, и обещание «yaw = 0 воспроизводит прежнюю
+    // голову» держалось только для позиций, но не для ширин. Замер это и
+    // показал: оба уха выходили одинаково узкими даже в центральной позе.
+    //
+    // Нас интересует не абсолютный ракурс черты, а ИЗМЕНЕНИЕ ракурса от
+    // поворота головы. Отсюда деление на cos(phi).
+    const base = Math.cos(phiDeg * Math.PI / 180);
+    const rel = Math.abs(base) > 1e-3 ? Math.cos(a) / base : Math.cos(a);
+    return {
+        x: reach * Math.sin(a),
+        // Верхний предел: ближняя черта при повороте к зрителю честно
+        // становится шире, но раздувать её сверх меры незачем.
+        squash: Math.min(1.08, rel),
+        front: rel > 0.08
+    };
+}
+
+// Азимут черты, стоящей при анфасе на расстоянии offset от центра лица.
+function yawAzimuth(offset, rx) {
+    return Math.asin(Math.max(-1, Math.min(1, offset / rx))) * 180 / Math.PI;
+}
+
 // ---------- ЛОКАЛЬНЫЕ ФОРМЫ (до позиционирования) ----------
 function earPathData(mirror) {
-    // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления к
-    // голове. Свиное ухо — не лепесток, а крупный треугольник с мясистым
-    // основанием и мягко скруглённой вершиной, слегка завёрнутой вперёд.
+    // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления.
+    //
+    // Тест «залей силуэт чёрным» показывал кошку: ухо было тонким шипом с
+    // узким основанием и острой вершиной вверх. Свинья узнавалась только по
+    // пятачку ВНУТРИ контура — то есть опознавательный признак сидел не там,
+    // где его читает глаз (art-direction.md §4.1).
+    //
+    // Разница кошка/свинья в силуэте — это ПРОПОРЦИИ КЛИНА, а не скругления:
+    //   • кошка: основание узкое, ухо заметно выше своей ширины, тонкий шип;
+    //   • свинья: основание широченное (почти половина ширины черепа), ухо
+    //     примерно квадратное в габаритах, это тяжёлый мясистый клин.
+    // Плюс кончик: у кошки это остриё в зенит, у свиньи вершина
+    // перекатывается и уходит НАРУЖУ, а задняя кромка провисает вниз.
+    // Ключ к прочтению — ПРЯМЫЕ РЁБРА И УГОЛ. Выпуклая дуга по задней кромке
+    // читается шариком независимо от габаритов; прямая кромка с изломом у
+    // основания читается клином. Плюс ухо должно ВЫХОДИТЬ за череп: пока оно
+    // сидит внутри купола, наружу торчит только скруглённая макушка и вся
+    // работа над формой пропадает.
     const s = mirror;
-    return `M ${(-s * 11).toFixed(1)},5 ` +
-        `C ${(-s * 12).toFixed(1)},-6 ${(-s * 6).toFixed(1)},-16 ${(s * 3).toFixed(1)},-23 ` +
-        `C ${(s * 9).toFixed(1)},-28 ${(s * 17).toFixed(1)},-28 ${(s * 18).toFixed(1)},-21 ` +
-        `C ${(s * 19).toFixed(1)},-14 ${(s * 17).toFixed(1)},-5 ${(s * 14).toFixed(1)},2 ` +
-        `C ${(s * 11).toFixed(1)},8 ${(s * 2).toFixed(1)},9 ${(-s * 11).toFixed(1)},5 Z`;
+    return `M ${(-s * 19).toFixed(1)},11 ` +
+        // передняя кромка — длинная и почти прямая
+        `C ${(-s * 18).toFixed(1)},-3 ${(-s * 12).toFixed(1)},-18 ${(-s * 3).toFixed(1)},-27 ` +
+        // короткий перекат через вершину, наружу
+        `C ${(s * 4).toFixed(1)},-34 ${(s * 14).toFixed(1)},-36 ${(s * 19).toFixed(1)},-32 ` +
+        // задняя кромка — почти прямая, идёт вниз-наружу до излома
+        `C ${(s * 23).toFixed(1)},-24 ${(s * 26).toFixed(1)},-13 ${(s * 27).toFixed(1)},-3 ` +
+        // излом у основания: угол, а не скругление
+        `C ${(s * 27).toFixed(1)},5 ${(s * 20).toFixed(1)},11 ${(s * 12).toFixed(1)},12 ` +
+        // широкое мясистое основание
+        `C ${(s * 2).toFixed(1)},13 ${(-s * 10).toFixed(1)},13 ${(-s * 19).toFixed(1)},11 Z`;
 }
 
 // Раковина — углублённая часть уха: повторяет внешний контур с отступом
 // внутрь, за счёт чего у уха появляется толщина, а не плоская заливка.
 function earInnerPathData(mirror) {
     const s = mirror;
-    return `M ${(-s * 4).toFixed(1)},2 ` +
-        `C ${(-s * 5).toFixed(1)},-6 ${(-s * 1).toFixed(1)},-15 ${(s * 6).toFixed(1)},-22 ` +
-        `C ${(s * 9).toFixed(1)},-26 ${(s * 13).toFixed(1)},-26 ${(s * 13).toFixed(1)},-21 ` +
-        `C ${(s * 13).toFixed(1)},-16 ${(s * 11).toFixed(1)},-7 ${(s * 9).toFixed(1)},0 ` +
-        `C ${(s * 7).toFixed(1)},3 ${(s * 1).toFixed(1)},4 ${(-s * 4).toFixed(1)},2 Z`;
+    return `M ${(-s * 11).toFixed(1)},7 ` +
+        `C ${(-s * 10).toFixed(1)},-3 ${(-s * 6).toFixed(1)},-15 ${(s * 1).toFixed(1)},-22 ` +
+        `C ${(s * 6).toFixed(1)},-27 ${(s * 13).toFixed(1)},-28 ${(s * 16).toFixed(1)},-25 ` +
+        `C ${(s * 19).toFixed(1)},-19 ${(s * 21).toFixed(1)},-10 ${(s * 21).toFixed(1)},-3 ` +
+        `C ${(s * 21).toFixed(1)},3 ${(s * 16).toFixed(1)},7 ${(s * 9).toFixed(1)},8 ` +
+        `C ${(s * 1).toFixed(1)},9 ${(-s * 5).toFixed(1)},9 ${(-s * 11).toFixed(1)},7 Z`;
 }
 
 // Сосудики внутри уха: у свиньи ухо — самая тонкая кожа на всём теле, оно
@@ -977,7 +1356,7 @@ function buildEarVessels(ctx, mirror, side) {
         const ey = -6 - t * 14 - rng() * 3;
         group.appendChild(svgEl('path', {
             d: `M ${(s * 2).toFixed(1)},-2 Q ${(ex * 0.55).toFixed(1)},${(ey * 0.5).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
-            fill: 'none', stroke: palette.vessel || '#4a131e',
+            fill: 'none', stroke: palette.vessel || VISCERA[700],
             'stroke-width': (0.9 - i * 0.15).toFixed(2), opacity: 0.55, 'stroke-linecap': 'round'
         }));
     }
@@ -1002,7 +1381,7 @@ function buildEyeVeins(seedKey, rx, ry) {
         const my = Math.sin(midAngle) * midR * ratio;
         const vein = svgEl('path', {
             d: `M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${mx.toFixed(1)},${my.toFixed(1)} 0,0`,
-            fill: 'none', stroke: '#b23a3a', 'stroke-width': 0.7, opacity: 0.4, 'stroke-linecap': 'round'
+            fill: 'none', stroke: VISCERA[300], 'stroke-width': SW.hairline, opacity: 0.4, 'stroke-linecap': 'round'
         });
         group.appendChild(vein);
     }
@@ -1061,7 +1440,7 @@ function buildSegmentNode(partName, seg, ctx, opts) {
     const shine = svgEl('ellipse', {
         cx: (-baseRx * 0.25).toFixed(2), cy: (-baseRy * 0.4).toFixed(2),
         rx: (baseRx * 0.38).toFixed(2), ry: (baseRy * 0.22).toFixed(2),
-        fill: '#ffffff', opacity: 0.16
+        fill: SPEC, opacity: 0.16
     });
     group.appendChild(shine);
 
@@ -1111,7 +1490,7 @@ function buildTailNode(tail, ctx, attachRadius) {
         highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
         shadow: -0.32, shadowTint: GRIME_SHADOW
     });
-    const path = svgEl('path', { d, fill: fillUrl, stroke: tail.stroke, 'stroke-width': 2 });
+    const path = svgEl('path', { d, fill: fillUrl, stroke: tail.stroke, 'stroke-width': SW.contour });
 
     // Внутренняя группа для "живого" изгиба хвоста — вращается вокруг точки
     // крепления (0,0), не требует пересборки SVG, обновляется напрямую через
@@ -1141,38 +1520,63 @@ function buildTailNode(tail, ctx, attachRadius) {
 }
 
 // ---------- ПОСТРОЕНИЕ ОДНОГО ГЛАЗА (склера, радужка, зрачок, веко-шторка) ----------
-function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
-    const x = eye.offsetX * mirror;
+function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
+    // Возвращает, помимо узлов, всё нужное для ЖИВОГО пересчёта поворота.
+    // yawCtx: { yaw, headRx } — при yaw = 0 всё сходится к прежнему x.
+    const yaw = yawCtx ? yawCtx.yaw : 0;
+    // ВАЖНО: радиус берётся не полный, а поверхности черепа НА ВЫСОТЕ ГЛАЗ —
+    // там голова уже, чем в самом широком месте. С полным радиусом дальний
+    // глаз при повороте вылезал за контур лица.
+    const headRx = yawCtx ? yawCtx.headRx : (eye.offsetX / 0.55);
+    const phi = yawAzimuth(eye.offsetX * mirror, headRx);
+    const proj = yawProject(headRx, phi, yaw, 0);
     const y = eye.offsetY;
-    const group = svgEl('g', {
-        'data-part': `eye-${eyeKey}`,
-        transform: `translate(${x},${y})`,
-        visibility: eye.visible ? 'visible' : 'hidden'
-    });
+    // Ракурсное сокращение: дальний глаз сплющивается по горизонтали.
+    // Ограничено снизу — полностью схлопнутый глаз читается дефектом,
+    // а не поворотом.
+    // Нижний предел сжатия. 0.42 давал дальний глаз-щёлочку, которая
+    // читалась дефектом отрисовки, а не ракурсом: у стилизованного персонажа
+    // глаз обязан остаться глазом. Ракурс здесь уступает читаемости.
+    const yawSquash = Math.max(0.58, Math.abs(proj.squash));
 
+    // Сжатие НЕ запекается в rx: иначе при живом повороте пришлось бы
+    // пересобирать всю внутреннюю геометрию глаза (склера, радужка, веко,
+    // clipPath) каждый кадр. Оно живёт в scale() группы — там его можно
+    // переставить одним атрибутом.
     const rx = 8 * eye.stretchX * eye.scale;
     const ry = 8 * eye.stretchY * eye.scale;
+    // Страховка: даже на правильной поверхности глаз со своей шириной может
+    // задеть контур. Держим его целиком внутри лица — наполовину срезанный
+    // глаз читается браком отрисовки, а не ракурсом.
+    const xLimit = (yawCtx && yawCtx.maxAbsX != null) ? Math.max(0, yawCtx.maxAbsX - rx * yawSquash * 1.12) : Infinity;
+    const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), xLimit);
+
+    const group = svgEl('g', {
+        'data-part': `eye-${eyeKey}`,
+        transform: `translate(${x.toFixed(2)},${y}) scale(${yawSquash.toFixed(3)},1)`,
+        visibility: eye.visible ? 'visible' : 'hidden'
+    });
 
     // Глазница — тень вокруг глаза, "усаживает" его в морду и вместе с
     // веком-шторкой ниже создаёт усталый, нездоровый взгляд.
     const socket = svgEl('ellipse', {
         cx: 0, cy: (-ry * 0.1).toFixed(2),
         rx: (rx * 1.45).toFixed(2), ry: (ry * 1.4).toFixed(2),
-        fill: withAlpha('#000000', 0.13)
+        fill: withAlpha(INK, 0.13)
     });
     // Тень от нависающего верхнего века: без неё глаз выглядит наклеенным
     // кружком, а не сидящим в глазнице.
     const browShadow = svgEl('ellipse', {
         cx: 0, cy: (-ry * 0.72).toFixed(2),
         rx: (rx * 1.2).toFixed(2), ry: (ry * 0.6).toFixed(2),
-        fill: withAlpha('#4a2018', 0.22)
+        fill: withAlpha(FLESH[900], 0.22)
     });
 
     const scleraGradId = `worm-eye-sclera-${instanceId}-${eyeKey}`;
-    const scleraFill = ensureVolumeGradient(defs, scleraGradId, '#eae2d6', { cx: '40%', cy: '35%', r: '75%', highlight: 0.05, shadow: -0.1 });
+    const scleraFill = ensureVolumeGradient(defs, scleraGradId, SCLERA, { cx: '40%', cy: '35%', r: '75%', highlight: 0.05, shadow: -0.1 });
     const sclera = svgEl('ellipse', {
         cx: 0, cy: 0, rx: rx.toFixed(2), ry: ry.toFixed(2),
-        fill: scleraFill, stroke: withAlpha('#000000', 0.2), 'stroke-width': 0.6
+        fill: scleraFill, stroke: withAlpha(INK, 0.2), 'stroke-width': SW.hairline
     });
 
     // Лопнувшие сосудики вместо ресничек/румян — не милота, а нездоровый вид.
@@ -1187,28 +1591,91 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     // склерой и взгляд выглядит нарисованным.
     const limbus = svgEl('circle', {
         cx: 0, cy: 0, r: (irisR * 0.94).toFixed(2), fill: 'none',
-        stroke: mixColor(eye.color, '#000000', 0.55), 'stroke-width': (irisR * 0.22).toFixed(2), opacity: 0.55
+        stroke: mixColor(eye.color, INK, 0.55), 'stroke-width': (irisR * 0.22).toFixed(2), opacity: 0.55
     });
-    const pupil = svgEl('circle', { cx: 0, cy: 0, r: (irisR * 0.62).toFixed(2), fill: '#0e0405' });
+    const pupil = svgEl('circle', { cx: 0, cy: 0, r: (irisR * 0.62).toFixed(2), fill: INK });
 
     // Один скромный блик (не два "искрящихся", как у милого зверька).
     const highlight = svgEl('ellipse', {
         cx: (-irisR * 0.3).toFixed(2), cy: (-irisR * 0.32).toFixed(2),
         rx: (irisR * 0.22).toFixed(2), ry: (irisR * 0.16).toFixed(2),
-        fill: '#ffffff', opacity: 0.5
+        fill: SPEC, opacity: 0.5
     });
 
-    // Бровь — дугой (Q), а не прямой палочкой.
+    // ---------- БРОВЬ ----------
+    // Была дугой равномерной толщины (stroke-width 3.2, круглые колпачки,
+    // чистый INK) — то есть жирным чёрным мазком одинаковой ширины по всей
+    // длине. Такая линия не бывает у нарисованного от руки персонажа: у
+    // живого штриха толщина МЕНЯЕТСЯ по длине, и именно это отличает
+    // рисунок от клипарта. Плюс чистый INK делал бровь такой же тёмной, как
+    // внешний контур, и она спорила с силуэтом за внимание.
+    //
+    // Теперь бровь — не обводка, а ЗАЛИТАЯ ФОРМА с сужением: толстая у носа,
+    // сходящая в остриё к виску (так растёт настоящая бровь). Цвет —
+    // осветлённый контурный тон, на ступень светлее силуэта.
     const browGroup = svgEl('g', {
         'data-part': `brow-${eyeKey}`,
         transform: `translate(0,${(-ry - 7).toFixed(2)}) rotate(${eye.brow.angle * mirror})`,
         visibility: eye.brow.visible ? 'visible' : 'hidden'
     });
+    // s = 1 указывает НАРУЖУ (к виску), -s — к носу.
+    const s = mirror;
+    const bIn = -s * rx * 1.12;   // конец у носа — толстый
+    const bOut = s * rx * 1.02;   // конец у виска — остриё
+    const bArc = -rx * 0.5;       // высота подъёма дуги
+    const bT = 3.6;               // толщина у носового конца
+    // Верхняя кромка брови как квадратичная кривая — её же потом
+    // используем, чтобы САЖАТЬ щетинки точно на край, а не рядом.
+    const bp0 = { x: bIn, y: 2.0 - bT * 0.5 };
+    const bc  = { x: 0,   y: bArc - bT * 0.35 };
+    const bp1 = { x: bOut, y: 1.0 };
+    const browTop = (t) => {
+        const u = 1 - t;
+        return { x: u * u * bp0.x + 2 * u * t * bc.x + t * t * bp1.x,
+                 y: u * u * bp0.y + 2 * u * t * bc.y + t * t * bp1.y };
+    };
+    // Касательная к той же кривой — нужна, чтобы волосок торчал ПОПЕРЁК
+    // кромки, а не в случайную сторону.
+    const browTangent = (t) => {
+        const u = 1 - t;
+        return { x: 2 * u * (bc.x - bp0.x) + 2 * t * (bp1.x - bc.x),
+                 y: 2 * u * (bc.y - bp0.y) + 2 * t * (bp1.y - bc.y) };
+    };
+    // Носовой конец не обрублен вертикально: срез скруглён небольшой дугой,
+    // выпуклой наружу. Прямой срез читается обрезком ленты, а не волосом.
+    const capBulge = -s * bT * 0.55;
     const browShape = svgEl('path', {
-        d: `M ${(-rx * 1.1).toFixed(2)},1.5 Q 0,${(-rx * 0.55).toFixed(2)} ${(rx * 1.1).toFixed(2)},1.5`,
-        fill: 'none', stroke: '#2a0d14', 'stroke-width': 3.2, 'stroke-linecap': 'round'
+        d: `M ${bp0.x.toFixed(2)},${bp0.y.toFixed(2)} ` +
+           `Q ${bc.x.toFixed(2)},${bc.y.toFixed(2)} ${bp1.x.toFixed(2)},${bp1.y.toFixed(2)} ` +
+           `Q 0,${(bArc + bT * 0.6).toFixed(2)} ${bIn.toFixed(2)},${(2.0 + bT * 0.5).toFixed(2)} ` +
+           `Q ${(bIn + capBulge).toFixed(2)},${(2.0).toFixed(2)} ${bp0.x.toFixed(2)},${bp0.y.toFixed(2)} Z`,
+        fill: inkSoftColor()
     });
     browGroup.appendChild(browShape);
+    // Отдельные жёсткие волоски. Они РАСТУТ ИЗ кромки брови: точка посадки
+    // берётся с самой кривой, направление — по нормали к ней, поэтому
+    // волосок читается продолжением брови, а не царапиной рядом с ней.
+    // Работают на образ: редкая грубая щетина неприятна сама по себе —
+    // мерзость в детали при сохранённом милом силуэте (art-direction.md §1.3).
+    const browRng = mulberry32(hashStringSeed(`brow-${instanceId}-${eyeKey}`));
+    for (let i = 0; i < 3; i++) {
+        const t = 0.2 + i * 0.28 + (browRng() - 0.5) * 0.12;
+        const pt = browTop(t);
+        const tg = browTangent(t);
+        const len = Math.hypot(tg.x, tg.y) || 1;
+        // Нормаль, развёрнутая вверх (от тела брови наружу).
+        let nx = tg.y / len, ny = -tg.x / len;
+        if (ny > 0) { nx = -nx; ny = -ny; }
+        const hair = 2.4 + browRng() * 2.6;
+        // Лёгкий завал вдоль кромки, чтобы волоски не стояли частоколом.
+        const skew = (browRng() - 0.5) * 0.5;
+        browGroup.appendChild(svgEl('path', {
+            d: `M ${pt.x.toFixed(2)},${(pt.y + 0.3).toFixed(2)} ` +
+               `l ${((nx + tg.x / len * skew) * hair).toFixed(2)},${((ny + tg.y / len * skew) * hair).toFixed(2)}`,
+            stroke: inkSoftColor(), 'stroke-width': SW.hairline,
+            'stroke-linecap': 'round', fill: 'none'
+        }));
+    }
 
     // ---------- ВЕКО КАК ШТОРКА, ЖИВУЩАЯ ВНУТРИ ГЛАЗА ----------
     // Веко — не отдельный "нарост" сверху, а пластина, которая ЕДЕТ
@@ -1218,7 +1685,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
 
     const lidHeight = ry * 2 + 6;
     const lidGradId = `worm-eyelid-grad-${instanceId}-${eyeKey}`;
-    const lidFill = ensureVolumeGradient(defs, lidGradId, '#c98a7f', {
+    const lidFill = ensureVolumeGradient(defs, lidGradId, FLESH[300], {
         cx: '50%', cy: '0%', r: '100%',
         highlight: 0.08, highlightTint: GRIME_HIGHLIGHT,
         shadow: -0.2, shadowTint: GRIME_SHADOW
@@ -1242,7 +1709,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     });
     const lidCrease = svgEl('line', {
         x1: (-rx).toFixed(2), y1: (lidHeight / 2).toFixed(2), x2: rx.toFixed(2), y2: (lidHeight / 2).toFixed(2),
-        stroke: withAlpha('#3a1218', 0.5), 'stroke-width': 1
+        stroke: withAlpha(FLESH[900], 0.5), 'stroke-width': SW.detail
     });
     lidTrack.appendChild(lid);
     lidTrack.appendChild(lidCrease);
@@ -1256,7 +1723,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
         const ly = -Math.sqrt(Math.max(0, 1 - (lx / rx) * (lx / rx))) * ry;
         lashes.appendChild(svgEl('path', {
             d: `M ${lx.toFixed(1)},${ly.toFixed(1)} l ${(lx * 0.12).toFixed(1)},${(-1.8 - i % 2).toFixed(1)}`,
-            stroke: '#3a1c12', 'stroke-width': 0.8, fill: 'none', opacity: 0.5, 'stroke-linecap': 'round'
+            stroke: FLESH[900], 'stroke-width': SW.hairline, fill: 'none', opacity: 0.5, 'stroke-linecap': 'round'
         }));
     }
 
@@ -1266,13 +1733,13 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     eyeFolds.appendChild(svgEl('path', {
         d: `M ${(-rx * 1.15).toFixed(1)},${(-ry * 0.85).toFixed(1)} ` +
            `Q 0,${(-ry * 1.7).toFixed(1)} ${(rx * 1.15).toFixed(1)},${(-ry * 0.85).toFixed(1)}`,
-        fill: 'none', stroke: withAlpha('#5a2430', 0.4), 'stroke-width': 1.4, 'stroke-linecap': 'round'
+        fill: 'none', stroke: withAlpha(FLESH[700], 0.4), 'stroke-width': SW.detail, 'stroke-linecap': 'round'
     }));
     for (let i = 0; i < 2; i++) {
         const sx = mirror * rx * (1.15 + i * 0.16);
         eyeFolds.appendChild(svgEl('path', {
             d: `M ${sx.toFixed(1)},${(ry * (0.1 + i * 0.28)).toFixed(1)} l ${(mirror * 3.2).toFixed(1)},${(1.6 + i * 1.4).toFixed(1)}`,
-            fill: 'none', stroke: withAlpha('#5a2430', 0.3), 'stroke-width': 0.9, 'stroke-linecap': 'round'
+            fill: 'none', stroke: withAlpha(FLESH[700], 0.3), 'stroke-width': SW.hairline, 'stroke-linecap': 'round'
         }));
     }
 
@@ -1298,14 +1765,17 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     group.appendChild(gazeGroup);
     group.appendChild(svgEl('ellipse', {
         cx: 0, cy: (-ry * 1.05).toFixed(2), rx: (rx * 1.05).toFixed(2), ry: (ry * 0.75).toFixed(2),
-        fill: withAlpha('#2b1008', 0.3), 'clip-path': `url(#worm-eye-clip-${instanceId}-${eyeKey})`
+        fill: withAlpha(INK, 0.3), 'clip-path': `url(#worm-eye-clip-${instanceId}-${eyeKey})`
     }));
     group.appendChild(lidClipGroup);
     group.appendChild(lashes);
     group.appendChild(eyeFolds);
     group.appendChild(browGroup);
 
-    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, rx, ry, lidHeight };
+    // phi/offsetY/xLimitBase нужны, чтобы пересчитать посадку глаза при
+    // ЖИВОМ повороте головы, не пересобирая его внутренности.
+    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, rx, ry, lidHeight,
+             yawPhi: phi, offsetY: y, baseRx: rx };
 }
 
 // ---------- ПОСТРОЕНИЕ РТА: ЕДИНАЯ ПРОЦЕДУРНАЯ ФОРМА, ЖИВАЯ КАЖДЫЙ КАДР ----------
@@ -1318,7 +1788,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
     const mouthShape = svgEl('path', {
-        d: '', fill: '#3d0e14', stroke: mouth.color, 'stroke-width': 1.8, 'stroke-linejoin': 'round'
+        d: '', fill: VISCERA[700], stroke: mouth.color, 'stroke-width': SW.structure, 'stroke-linejoin': 'round'
     });
     mouthAnchor.appendChild(mouthShape);
 
@@ -1339,7 +1809,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
         const jitter = (toothRng() - 0.5) * 2.4;
         const hBase = 4 + toothRng() * 2;
         const tw = 2.2 + toothRng() * 1.2;
-        const toothEl = svgEl('path', { d: '', fill: '#d8cf9a' });
+        const toothEl = svgEl('path', { d: '', fill: BILE[200] });
         teethGroup.appendChild(toothEl);
         teeth.push({ el: toothEl, tx, jitter, hBase, tw });
     }
@@ -1480,12 +1950,12 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
             const shift = (rng() - 0.5) * rx * 0.12;
             group.appendChild(svgEl('path', {
                 d: `M ${(-w + shift).toFixed(1)},${y.toFixed(1)} Q ${shift.toFixed(1)},${(y - ry * 0.09).toFixed(1)} ${(w + shift).toFixed(1)},${y.toFixed(1)}`,
-                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 1.3,
+                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
                 opacity: (0.14 * folds).toFixed(3), 'stroke-linecap': 'round'
             }));
             group.appendChild(svgEl('path', {
                 d: `M ${(-w + shift).toFixed(1)},${(y + 1.6).toFixed(1)} Q ${shift.toFixed(1)},${(y - ry * 0.09 + 1.6).toFixed(1)} ${(w + shift).toFixed(1)},${(y + 1.6).toFixed(1)}`,
-                fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': 0.9,
+                fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': SW.hairline,
                 opacity: (0.1 * folds).toFixed(3), 'stroke-linecap': 'round'
             }));
         }
@@ -1507,7 +1977,7 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
                 const up = -ry * (0.04 + rng() * 0.1);
                 group.appendChild(svgEl('path', {
                     d: `M ${x0.toFixed(1)},${y0.toFixed(1)} Q ${(x0 + side * len * 0.6).toFixed(1)},${(y0 + up * 0.6).toFixed(1)} ${(x0 + side * len).toFixed(1)},${(y0 + up).toFixed(1)}`,
-                    fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 0.7,
+                    fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.hairline,
                     opacity: (0.15 * bristle).toFixed(3), 'stroke-linecap': 'round'
                 }));
             }
@@ -1525,18 +1995,38 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
 // кубическими кривыми и симметрична; все пропорции — параметры модели
 // (`head.skull`), а не числа в коде, поэтому череп можно менять под возраст,
 // породу или настроение, не трогая рендерер.
-function skullPathData(rx, ry, p) {
+function skullPathData(rx, ry, p, yaw) {
     const brow = (p.browWidth != null ? p.browWidth : 0.62) * rx;   // ширина свода у макушки
     const temple = (p.templeWidth != null ? p.templeWidth : 0.97) * rx;
     const cheek = (p.cheekWidth != null ? p.cheekWidth : 1) * rx;   // самое широкое место
     const jaw = (p.jawWidth != null ? p.jawWidth : 0.78) * rx;
     const muzzle = (p.muzzleWidth != null ? p.muzzleWidth : 0.46) * rx;
     const chin = (p.chinDrop != null ? p.chinDrop : 1.04) * ry;
+
+    // ---------- АСИММЕТРИЯ ЧЕРЕПА ПРИ ПОВОРОТЕ ----------
+    // Без неё поворот читается наполовину: черты уезжают вбок по СИММЕТРИЧНОЙ
+    // маске, и лицо выглядит не повёрнутым, а съехавшим.
+    //
+    // Что происходит при развороте на реальной голове:
+    //   • сторона, КУДА смотрит лицо: свод виден с ребра и оптически уже,
+    //     зато на этот край выходит морда — низ становится шире;
+    //   • затылочная сторона: наоборот, купол разворачивается к зрителю и
+    //     становится полнее, а низ подбирается.
+    // Знак yaw соответствует стороне, куда уезжает пятачок (см. yawProject).
+    const yw = yaw || 0;
+    const faceSide = yw >= 0 ? 1 : -1;
+    const t = Math.abs(yw);
+    const kTopFace = 1 - 0.13 * t, kLowFace = 1 + 0.17 * t;
+    const kTopBack = 1 + 0.11 * t, kLowBack = 1 - 0.12 * t;
+
     const half = (side) => {
         const k = side;
-        return `C ${(k * brow).toFixed(1)},${(-ry * 0.99).toFixed(1)} ${(k * temple).toFixed(1)},${(-ry * 0.72).toFixed(1)} ${(k * cheek).toFixed(1)},${(-ry * 0.08).toFixed(1)} ` +
-               `C ${(k * cheek * 0.99).toFixed(1)},${(ry * 0.3).toFixed(1)} ${(k * jaw).toFixed(1)},${(ry * 0.56).toFixed(1)} ${(k * muzzle).toFixed(1)},${(ry * 0.84).toFixed(1)} ` +
-               `C ${(k * muzzle * 0.92).toFixed(1)},${(chin * 0.97).toFixed(1)} ${(k * muzzle * 0.45).toFixed(1)},${chin.toFixed(1)} 0,${chin.toFixed(1)}`;
+        const isFace = side === faceSide;
+        const up = isFace ? kTopFace : kTopBack;   // свод, виски, скулы
+        const lo = isFace ? kLowFace : kLowBack;   // челюсть, морда, подбородок
+        return `C ${(k * brow * up).toFixed(1)},${(-ry * 0.99).toFixed(1)} ${(k * temple * up).toFixed(1)},${(-ry * 0.72).toFixed(1)} ${(k * cheek * up).toFixed(1)},${(-ry * 0.08).toFixed(1)} ` +
+               `C ${(k * cheek * 0.99 * lo).toFixed(1)},${(ry * 0.3).toFixed(1)} ${(k * jaw * lo).toFixed(1)},${(ry * 0.56).toFixed(1)} ${(k * muzzle * lo).toFixed(1)},${(ry * 0.84).toFixed(1)} ` +
+               `C ${(k * muzzle * 0.92 * lo).toFixed(1)},${(chin * 0.97).toFixed(1)} ${(k * muzzle * 0.45 * lo).toFixed(1)},${chin.toFixed(1)} 0,${chin.toFixed(1)}`;
     };
     // Вниз по правой стороне, потом обратно вверх по левой.
     return `M 0,${(-ry).toFixed(1)} ${half(1)} ` +
@@ -1569,6 +2059,13 @@ function buildHeadNode(model, ctx) {
     const head = model.head;
     const anatomy = ctx.anatomy;
     const skullCfg = head.skull || {};
+    // Поворот головы. 0 = анфас (прежнее поведение до пикселя),
+    // 1 = YAW_MAX_DEG градусов вправо. См. блок «ПОВОРОТ ГОЛОВЫ» выше.
+    const headYaw = Math.max(-1, Math.min(1, head.yaw != null ? head.yaw : 0));
+    // Насколько пятачок и морда выступают вперёд относительно черепа —
+    // объявлено здесь, потому что морда строится раньше пятачка, а обе
+    // черты обязаны ехать по одному и тому же выступу.
+    const SNOUT_PROTRUDE = 0.34;
     // Группа наклона: весь набор частей головы висит в ней, чтобы мимический
     // наклон (livePose.headTilt) поворачивал голову целиком вокруг основания
     // шеи, а не каждую деталь по отдельности.
@@ -1579,7 +2076,7 @@ function buildHeadNode(model, ctx) {
     const R = 40 * head.scale;
     const rx = R * head.stretchX;
     const ry = R * head.stretchY;
-    const skullD = skullPathData(rx, ry, skullCfg);
+    const skullD = skullPathData(rx, ry, skullCfg, headYaw);
 
     const headGradId = `worm-head-grad-${ctx.instanceId}`;
     const headFill = ensureVolumeGradient(ctx.defs, headGradId, head.fill, {
@@ -1587,22 +2084,29 @@ function buildHeadNode(model, ctx) {
         highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
         shadow: -0.34, shadowTint: GRIME_SHADOW
     });
-    const skull = svgEl('path', { d: skullD, fill: headFill, stroke: head.stroke, 'stroke-width': 3, 'stroke-linejoin': 'round' });
+    const skull = svgEl('path', { d: skullD, fill: headFill, stroke: head.stroke, 'stroke-width': SW.contour, 'stroke-linejoin': 'round' });
 
     // Клип по РЕАЛЬНОЙ форме черепа: все слои кожи, складки и щетина
     // обрезаются силуэтом головы, а не вписанным эллипсом.
     const skullClipId = `worm-skull-clip-${ctx.instanceId}`;
+    // Ссылку на путь клипа держим: при живом повороте череп становится
+    // асимметричным, и обрезка обязана ехать вместе с ним — иначе слои кожи
+    // и рот будут обрезаться по форме, которой на экране уже нет.
+    let skullClipShape = null;
     if (!ctx.gradCache[skullClipId]) {
         const clip = svgEl('clipPath', { id: skullClipId });
-        clip.appendChild(svgEl('path', { d: skullD }));
+        skullClipShape = svgEl('path', { d: skullD });
+        clip.appendChild(skullClipShape);
         ctx.defs.appendChild(clip);
-        ctx.gradCache[skullClipId] = true;
+        ctx.gradCache[skullClipId] = skullClipShape;
+    } else if (ctx.gradCache[skullClipId] instanceof Object) {
+        skullClipShape = ctx.gradCache[skullClipId];
     }
 
     const headShine = svgEl('ellipse', {
         cx: (-rx * 0.28).toFixed(2), cy: (-ry * 0.52).toFixed(2),
         rx: (rx * 0.3).toFixed(2), ry: (ry * 0.16).toFixed(2),
-        fill: '#ffffff', opacity: 0.16
+        fill: SPEC, opacity: 0.16
     });
 
     // ---------- УШИ ----------
@@ -1610,19 +2114,56 @@ function buildHeadNode(model, ctx) {
     // у свиньи уши стоят домиком, а не торчат строго вверх. Базовый разворот
     // живёт в рендерере, а `ear.rotation` из модели прибавляется к нему —
     // так прижатые уши (отрицательный угол) остаются рабочим состоянием.
-    const EAR_BASE_TILT = 27;
+    // Наклон посадки. Было 27° — уши вставали торчком в стороны и вместе с
+    // узкой треугольной формой давали кошачий силуэт.
+    const EAR_BASE_TILT = 30;
+    // Отдельная ручка габарита уха: форму задаёт earPathData, размер — здесь.
+    //
+    // История значения важна, чтобы его случайно не «починили» обратно.
+    // Стояло 0.82 — я уменьшил ухо, посчитав, что клин перелетел в летучую
+    // мышь. Но это значение НИКОГДА не доезжало до экрана: tick() каждый
+    // кадр пересобирал трансформ уха из earRefs, где лежал только
+    // ear.scale*stretchX, и калибровка терялась через кадр после сборки.
+    // То есть согласованный размер уха — это размер БЕЗ калибровки.
+    // Баг с потерей трансформа исправлен, а множитель приведён к тому, что
+    // реально было на экране и было одобрено.
+    const EAR_FORM_SCALE = 1;
     const earsGroup = svgEl('g', { 'data-part': 'ears' });
     const earRefs = {};
     ['left', 'right'].forEach(side => {
         const mirror = side === 'left' ? -1 : 1;
         const ear = head.ears[side];
-        const anchorX = mirror * rx * 0.62;
-        const anchorY = -ry * 0.52;
+        // Ухо сидит НА ЗАТЫЛОЧНОЙ стороне сферы: азимут считается от его
+        // анфасного отступа, но с добавкой, отодвигающей ухо назад. Поэтому
+        // при повороте дальнее ухо честно уезжает за череп, а ближнее
+        // разворачивается к зрителю.
+        // Насколько ухо отнесено назад от плоскости лица. Было 22°, что
+        // вместе с собственным отступом ставило ухо на азимут ~73° — почти
+        // у края сферы, где производная проекции максимальна: ближнее ухо
+        // раздувалось, дальнее превращалось в лезвие. 12° делает реакцию
+        // на поворот заметной, но не взрывной.
+        const EAR_PHI_BACK = 12;
+        const earPhi = yawAzimuth(mirror * rx * 0.78, rx) + mirror * EAR_PHI_BACK;
+        const earProj = yawProject(rx, earPhi, headYaw, 0);
+        const anchorX = earProj.x;
+        const anchorY = -ry * 0.66;
+        // Ракурс уха: дальнее сплющивается, ближнее — почти нет.
+        // Уху, наоборот, сокращаться можно сильно: у него нет внутренней
+        // структуры, которую сплющивание сделало бы нечитаемой, а сильный
+        // ракурс дальнего уха — самый дешёвый признак повёрнутой головы.
+        const earYawSquash = Math.max(0.42, Math.abs(earProj.squash));
         const baseAngle = mirror * EAR_BASE_TILT + ear.rotation;
+        // Группа уха масштабируется, а значит масштабируется и её обводка.
+        // Без компенсации контур уха уехал бы с лестницы толщин (2.6 * 0.82
+        // = 2.13) и силуэт получил бы разную толщину линии на разных
+        // участках — ровно тот дефект, который чинили в прошлый заход.
+        const earSx = ear.scale * ear.stretchX * EAR_FORM_SCALE * earYawSquash;
+        const earSy = ear.scale * ear.stretchY * EAR_FORM_SCALE;
+        const earStrokeK = 2 / (Math.abs(earSx) + Math.abs(earSy) || 1);
         const earGroup = svgEl('g', {
             'data-part': `ear-${side}`,
             'data-anchor': `ear-${side}`,
-            transform: `translate(${anchorX.toFixed(2)},${anchorY.toFixed(2)}) rotate(${baseAngle.toFixed(1)}) scale(${(ear.scale * ear.stretchX).toFixed(3)},${(ear.scale * ear.stretchY).toFixed(3)})`,
+            transform: `translate(${anchorX.toFixed(2)},${anchorY.toFixed(2)}) rotate(${baseAngle.toFixed(1)}) scale(${(ear.scale * ear.stretchX * EAR_FORM_SCALE).toFixed(3)},${(ear.scale * ear.stretchY * EAR_FORM_SCALE).toFixed(3)})`,
             visibility: ear.visible ? 'visible' : 'hidden'
         });
         const earGradId = `worm-ear-grad-${ctx.instanceId}-${side}`;
@@ -1631,11 +2172,11 @@ function buildHeadNode(model, ctx) {
             highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
             shadow: -0.32, shadowTint: GRIME_SHADOW
         });
-        const earShape = svgEl('path', { d: earPathData(mirror), fill: earFill, stroke: ear.stroke, 'stroke-width': 2, 'stroke-linejoin': 'round' });
+        const earShape = svgEl('path', { d: earPathData(mirror), fill: earFill, stroke: ear.stroke, 'stroke-width': (SW.contour * earStrokeK).toFixed(2), 'stroke-linejoin': 'round' });
         const earInner = svgEl('path', { d: earInnerPathData(mirror), fill: mixColor(ear.fill, GRIME_SHADOW, 0.32), opacity: 0.6 });
         const earRidge = svgEl('path', {
             d: earInnerPathData(mirror), fill: 'none',
-            stroke: mixColor(ear.fill, GRIME_HIGHLIGHT, 0.55), 'stroke-width': 1.1, opacity: 0.45
+            stroke: mixColor(ear.fill, GRIME_HIGHLIGHT, 0.55), 'stroke-width': (SW.detail * earStrokeK).toFixed(2), opacity: 0.45
         });
         earGroup.appendChild(earShape);
         earGroup.appendChild(earInner);
@@ -1651,18 +2192,34 @@ function buildHeadNode(model, ctx) {
             // завязаны раскладки мини-игр.
             for (let i = 0; i < 5; i++) {
                 const t = i / 4;
+                // Разброс по длине и завалу: ровный частокол одинаковых
+                // штрихов читается хирургическим швом, а не щетиной.
                 const bx = mirror * (-7 + t * 18), by = 1 - t * 19;
                 const len = 1.6 + brng() * 2;
                 fringe.appendChild(svgEl('path', {
                     d: `M ${bx.toFixed(1)},${by.toFixed(1)} l ${(-mirror * len * 0.6).toFixed(1)},${(-len).toFixed(1)}`,
-                    stroke: GRIME_SHADOW, 'stroke-width': 0.6, fill: 'none',
+                    stroke: GRIME_SHADOW, 'stroke-width': SW.hairline, fill: 'none',
                     opacity: (0.3 * anatomy.coat.bristle).toFixed(3), 'stroke-linecap': 'round'
                 }));
             }
             earGroup.appendChild(fringe);
         }
         earsGroup.appendChild(earGroup);
-        earRefs[side] = { group: earGroup, shape: earShape, inner: earInner, anchorX, anchorY, baseAngle, scaleX: ear.scale * ear.stretchX, scaleY: ear.scale * ear.stretchY };
+        // ВАЖНО: в refs кладётся ПОЛНЫЙ масштаб — с калибровкой формы и с
+        // ракурсным сжатием. Раньше тут лежал только ear.scale*stretchX, а
+        // tick() каждый кадр переписывает этот трансформ целиком, поэтому
+        // и калибровка, и сжатие терялись через кадр после сборки: на
+        // замерах дальнее и ближнее ухо выходили одинаковой ширины при
+        // явно повёрнутой голове.
+        earRefs[side] = {
+            group: earGroup, shape: earShape, inner: earInner,
+            anchorX, anchorY, baseAngle,
+            yawPhi: earPhi,
+            baseScaleX: ear.scale * ear.stretchX * EAR_FORM_SCALE,
+            baseScaleY: ear.scale * ear.stretchY * EAR_FORM_SCALE,
+            scaleX: ear.scale * ear.stretchX * EAR_FORM_SCALE * earYawSquash,
+            scaleY: ear.scale * ear.stretchY * EAR_FORM_SCALE
+        };
     });
 
     // ---------- СЛОИ КОЖИ ГОЛОВЫ ----------
@@ -1727,7 +2284,13 @@ function buildHeadNode(model, ctx) {
     const muzzleW = (skullCfg.muzzleWidth != null ? skullCfg.muzzleWidth : 0.46) * rx;
     const muzzleTop = ry * 0.05;
     const muzzleBottom = ry * 0.95;
-    const muzzleGroup = svgEl('g', { 'data-part': 'muzzle', 'clip-path': `url(#${skullClipId})` });
+    // Морда — тот же выступающий объём, что и пятачок, и уезжает вместе с ним,
+    // иначе пятак «отклеится» от своей опоры.
+    const muzzleProj = yawProject(rx, 0, headYaw, SNOUT_PROTRUDE * 0.7);
+    const muzzleGroup = svgEl('g', {
+        'data-part': 'muzzle', 'clip-path': `url(#${skullClipId})`,
+        transform: `translate(${muzzleProj.x.toFixed(2)},0)`
+    });
     const muzzleGradId = `worm-muzzle-grad-${ctx.instanceId}`;
     const muzzleFill = ensureVolumeGradient(ctx.defs, muzzleGradId, mixColor(head.fill, GRIME_HIGHLIGHT, 0.12), {
         cx: '42%', cy: '22%', r: '80%',
@@ -1780,7 +2343,7 @@ function buildHeadNode(model, ctx) {
     const lipColor = mixColor(head.mouth.color, head.fill, 0.35);
     const lowerLip = svgEl('path', {
         d: `M ${(-muzzleW * 0.78).toFixed(1)},${(ry * 1.02).toFixed(1)} Q 0,${(ry * 1.1).toFixed(1)} ${(muzzleW * 0.78).toFixed(1)},${(ry * 1.02).toFixed(1)}`,
-        fill: 'none', stroke: lipColor, 'stroke-width': 2, opacity: 0.5, 'stroke-linecap': 'round'
+        fill: 'none', stroke: lipColor, 'stroke-width': SW.structure, opacity: 0.5, 'stroke-linecap': 'round'
     });
     jawGroup.appendChild(lowerLip);
 
@@ -1788,10 +2351,15 @@ function buildHeadNode(model, ctx) {
     const snout = head.snout;
     const snoutY = ry * 0.6;
     const snoutRx = 14.5, snoutRy = 10.5;
+    // Пятачок сидит на оси лица (азимут 0), но заметно ВЫСТУПАЕТ вперёд,
+    // поэтому при повороте уезжает в сторону сильнее любой другой черты.
+    // Именно ушедший с центра нос и сообщает глазу «это ракурс».
+    const snoutProj = yawProject(rx, 0, headYaw, SNOUT_PROTRUDE);
+    const snoutYawSquash = Math.max(0.55, Math.abs(snoutProj.squash));
     const snoutGroup = svgEl('g', {
         'data-part': 'snout',
         'data-anchor': 'snout',
-        transform: `translate(0,${snoutY.toFixed(2)}) scale(${(snout.scale * snout.stretchX).toFixed(3)},${(snout.scale * snout.stretchY).toFixed(3)})`
+        transform: `translate(${snoutProj.x.toFixed(2)},${snoutY.toFixed(2)}) scale(${(snout.scale * snout.stretchX * snoutYawSquash).toFixed(3)},${(snout.scale * snout.stretchY).toFixed(3)})`
     });
     const snoutGradId = `worm-snout-grad-${ctx.instanceId}`;
     const snoutFill = ensureVolumeGradient(ctx.defs, snoutGradId, snout.fill, {
@@ -1805,10 +2373,10 @@ function buildHeadNode(model, ctx) {
         cx: 0, cy: (snoutRy * 0.42).toFixed(1), rx: (snoutRx * 1.05).toFixed(1), ry: (snoutRy * 0.8).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-snout-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1), opacity: 0.4
     }));
-    const snoutShape = svgEl('ellipse', { cx: 0, cy: 0, rx: snoutRx, ry: snoutRy, fill: snoutFill, stroke: snout.stroke, 'stroke-width': 2 });
-    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: '#631d27', transform: 'rotate(-14 -4.8 0)' });
-    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: '#631d27', transform: 'rotate(14 4.8 0)' });
-    const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: '#ffffff', opacity: 0.32 });
+    const snoutShape = svgEl('ellipse', { cx: 0, cy: 0, rx: snoutRx, ry: snoutRy, fill: snoutFill, stroke: snout.stroke, 'stroke-width': SW.structure });
+    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VISCERA[700], transform: 'rotate(-14 -4.8 0)' });
+    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VISCERA[700], transform: 'rotate(14 4.8 0)' });
+    const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: SPEC, opacity: 0.32 });
     const poreGroup = svgEl('g', { class: 'worm-snout-pores' });
     const poreRng = mulberry32(hashStringSeed(`${ctx.instanceId}-snout-pores`));
     for (let i = 0; i < 14; i++) {
@@ -1824,7 +2392,7 @@ function buildHeadNode(model, ctx) {
     const nostrilShade = svgEl('g');
     [[-4.8, -14], [4.8, 14]].forEach(([nx, rot]) => {
         nostrilShade.appendChild(svgEl('ellipse', {
-            cx: nx, cy: 1, rx: 1.6, ry: 2.2, fill: '#2d0a11', opacity: 0.75,
+            cx: nx, cy: 1, rx: 1.6, ry: 2.2, fill: INK, opacity: 0.75,
             transform: `rotate(${rot} ${nx} 0)`
         }));
     });
@@ -1832,7 +2400,7 @@ function buildHeadNode(model, ctx) {
     // читается как порода, а не как абстрактный кружок.
     const philtrum = svgEl('path', {
         d: `M 0,${(-snoutRy * 0.25).toFixed(1)} L 0,${(snoutRy * 0.95).toFixed(1)}`,
-        stroke: mixColor(snout.fill, GRIME_SHADOW, 0.5), 'stroke-width': 1.2, opacity: 0.5, fill: 'none'
+        stroke: mixColor(snout.fill, GRIME_SHADOW, 0.5), 'stroke-width': SW.detail, opacity: 0.5, fill: 'none'
     });
     snoutGroup.appendChild(snoutShape);
     snoutGroup.appendChild(poreGroup);
@@ -1851,7 +2419,7 @@ function buildHeadNode(model, ctx) {
             wrinkles.appendChild(svgEl('path', {
                 d: `M ${(Math.cos(a) * r0).toFixed(1)},${(Math.sin(a) * r0 * 0.72).toFixed(1)} ` +
                    `L ${(Math.cos(a) * r1).toFixed(1)},${(Math.sin(a) * r1 * 0.72).toFixed(1)}`,
-                stroke: GRIME_SHADOW, 'stroke-width': 0.8, fill: 'none',
+                stroke: GRIME_SHADOW, 'stroke-width': SW.hairline, fill: 'none',
                 opacity: (0.26 * anatomy.coat.folds).toFixed(3), 'stroke-linecap': 'round'
             }));
         }
@@ -1860,18 +2428,43 @@ function buildHeadNode(model, ctx) {
 
     // ---------- РОТ ----------
     const mouth = head.mouth;
+    // Рот едет по той же выступающей морде, но его выступ МЕНЬШЕ, чем у
+    // пятачка: пятачок — самая передняя точка, рот сидит под ним и ближе к
+    // черепу. Плюс жёсткий ограничитель: на полном выступе линия рта
+    // вылезала вбок за контур челюсти и висела в воздухе.
+    const MOUTH_PROTRUDE = 0.08;
+    const mouthProj = yawProject(rx, 0, headYaw, MOUTH_PROTRUDE);
+    const mouthMaxX = rx * (skullCfg.muzzleWidth != null ? skullCfg.muzzleWidth : 0.46) * 0.45;
+    const mouthYawX = Math.sign(mouthProj.x) * Math.min(Math.abs(mouthProj.x), mouthMaxX);
+    const mouthYawSquash = Math.max(0.62, Math.abs(mouthProj.squash));
     const mouthAnchor = svgEl('g', {
         'data-part': 'mouth',
         'data-anchor': 'mouth',
-        transform: `translate(0,${(ry * 1.0).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
+        // Обрезка по черепу вместо подбора «правильного» ограничителя:
+        // при любом повороте дальний конец губы честно уходит за скулу,
+        // как и положено в ракурсе, вместо того чтобы висеть в воздухе
+        // за контуром челюсти.
+        'clip-path': `url(#${skullClipId})`,
+        // Рот сидит ПОД ПЯТАКОМ, а не на самой нижней кромке черепа: на ry*1.0 он
+        // сливался с контуром подбородка и просто исчезал из морды.
+        transform: `translate(${mouthYawX.toFixed(2)},${(ry * 0.9).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX * mouthYawSquash).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
     });
     const mouthBuilt = buildMouthShapes(mouthAnchor, mouth, ctx.instanceId);
     updateMouthGeometry(mouthBuilt, mouthBendFromCurve(mouth.curve), mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
 
     // ---------- ГЛАЗА ----------
     const eyesGroup = svgEl('g', { 'data-part': 'eyes' });
-    const eyeLeft = buildEyeNode(model.eyes.left, -1, ctx.instanceId, 'left', ctx.defs);
-    const eyeRight = buildEyeNode(model.eyes.right, 1, ctx.instanceId, 'right', ctx.defs);
+    // Полуширина черепа на высоте глаз (между виском и скулой) и с поправкой
+    // на сужение повёрнутой стороны — она же служит ограничителем.
+    const EYE_SURFACE_K = 0.86;
+    const eyeSurfaceRx = rx * EYE_SURFACE_K;
+    const yawCtx = {
+        yaw: headYaw,
+        headRx: eyeSurfaceRx,
+        maxAbsX: eyeSurfaceRx * (1 - 0.13 * Math.abs(headYaw))
+    };
+    const eyeLeft = buildEyeNode(model.eyes.left, -1, ctx.instanceId, 'left', ctx.defs, yawCtx);
+    const eyeRight = buildEyeNode(model.eyes.right, 1, ctx.instanceId, 'right', ctx.defs, yawCtx);
     eyesGroup.appendChild(eyeLeft.group);
     eyesGroup.appendChild(eyeRight.group);
 
@@ -1901,12 +2494,101 @@ function buildHeadNode(model, ctx) {
     const scarLayer = svgEl('g', { 'data-anchor': 'head-scars', class: 'worm-scar-layer' });
     tiltGroup.appendChild(scarLayer);
 
-    return {
+    const headRef = {
         group, tiltGroup, skull, ears: earRefs, snoutGroup, muzzleGroup, jawGroup,
-        mouth: mouthBuilt, eyes: { left: eyeLeft, right: eyeRight },
+        mouth: mouthBuilt, mouthAnchor, skullClipShape, eyes: { left: eyeLeft, right: eyeRight },
         scarLayer, rx, ry, snoutY, anat: headAnat,
-        fillColor: ctx.neckColor || head.fill
+        fillColor: ctx.neckColor || head.fill,
+        // ---------- ДАННЫЕ ДЛЯ ЖИВОГО ПОВОРОТА ----------
+        // Всё, что нужно, чтобы пересчитать ракурс без пересборки головы.
+        skullCfg,
+        yaw: headYaw,
+        eyeSurfaceRx,
+        snoutProtrude: SNOUT_PROTRUDE,
+        mouthProtrude: MOUTH_PROTRUDE,
+        // Базовые (без ракурса) значения, от которых считается пересчёт.
+        snoutX: snoutProj.x,
+        snoutSquash: snoutYawSquash,
+        muzzleX: muzzleProj.x,
+        mouthX: mouthYawX,
+        mouthSquash: mouthYawSquash,
+        mouthBaseScale: { x: mouth.scale * mouth.stretchX, y: mouth.scale * mouth.stretchY }
     };
+    return headRef;
+}
+
+// ---------- ЖИВОЙ ПЕРЕСЧЁТ ПОВОРОТА ГОЛОВЫ ----------
+// Тот же расчёт, что и при сборке, но переставляет атрибуты УЖЕ созданных
+// узлов — ни одного нового элемента. Это обязательное условие, чтобы поворот
+// можно было анимировать: setOverride пересобирает всю голову заново и для
+// покадровой анимации не годится.
+//
+// Пересчитывать нужно ровно шесть вещей: путь черепа (он асимметричен),
+// трансформы двух глаз, двух ушей, пятачка с мордой и рта.
+function applyHeadYaw(headRef, yaw) {
+    if (!headRef || headRef.yaw === yaw) return;
+    headRef.yaw = yaw;
+    const rx = headRef.rx, ry = headRef.ry;
+
+    // Череп — единственная строка пути, которую приходится пересобирать.
+    // Она короткая (шесть кривых), в отличие от пути кишечного тракта.
+    if (headRef.skull) {
+        const d = skullPathData(rx, ry, headRef.skullCfg, yaw);
+        headRef.skull.setAttribute('d', d);
+        if (headRef.skullClipShape) headRef.skullClipShape.setAttribute('d', d);
+    }
+
+    // Глаза: посадка по поверхности + ракурсное сжатие через scale группы.
+    const maxAbsX = headRef.eyeSurfaceRx * (1 - 0.13 * Math.abs(yaw));
+    ['left', 'right'].forEach(side => {
+        const e = headRef.eyes[side];
+        if (!e) return;
+        const proj = yawProject(headRef.eyeSurfaceRx, e.yawPhi, yaw, 0);
+        const squash = Math.max(0.58, Math.abs(proj.squash));
+        const limit = Math.max(0, maxAbsX - e.baseRx * squash * 1.12);
+        const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), limit);
+        e.group.setAttribute('transform',
+            `translate(${x.toFixed(2)},${e.offsetY}) scale(${squash.toFixed(3)},1)`);
+    });
+
+    // Уши: пересчитываем якорь и сжатие, но САМ трансформ не пишем — его
+    // каждый кадр собирает tick() вместе с наклоном уха. Пишем в refs,
+    // откуда tick его и берёт.
+    ['left', 'right'].forEach(side => {
+        const ear = headRef.ears[side];
+        if (!ear) return;
+        const proj = yawProject(rx, ear.yawPhi, yaw, 0);
+        ear.anchorX = proj.x;
+        ear.scaleX = ear.baseScaleX * Math.max(0.42, Math.abs(proj.squash));
+        ear.group.setAttribute('transform',
+            `translate(${ear.anchorX.toFixed(2)},${ear.anchorY.toFixed(2)}) ` +
+            `rotate(${ear.baseAngle.toFixed(1)}) ` +
+            `scale(${ear.scaleX.toFixed(3)},${ear.scaleY.toFixed(3)})`);
+    });
+
+    // Пятачок и морда: выступающие черты, уезжают сильнее прочих. Сам
+    // трансформ пятачка тоже собирает tick() (принюхивание), поэтому здесь
+    // только обновляем базовые значения в refs.
+    const snoutProj = yawProject(rx, 0, yaw, headRef.snoutProtrude);
+    headRef.snoutX = snoutProj.x;
+    headRef.snoutSquash = Math.max(0.55, Math.abs(snoutProj.squash));
+    if (headRef.muzzleGroup) {
+        const mz = yawProject(rx, 0, yaw, headRef.snoutProtrude * 0.7);
+        headRef.muzzleX = mz.x;
+        headRef.muzzleGroup.setAttribute('transform', `translate(${mz.x.toFixed(2)},0)`);
+    }
+
+    // Рот: тот же выступ, но с ограничителем по ширине морды.
+    if (headRef.mouthAnchor) {
+        const mp = yawProject(rx, 0, yaw, headRef.mouthProtrude);
+        const maxX = rx * (headRef.skullCfg.muzzleWidth != null ? headRef.skullCfg.muzzleWidth : 0.46) * 0.45;
+        headRef.mouthX = Math.sign(mp.x) * Math.min(Math.abs(mp.x), maxX);
+        headRef.mouthSquash = Math.max(0.62, Math.abs(mp.squash));
+        const mo = headRef.mouthBaseScale || { x: 1, y: 1 };
+        headRef.mouthAnchor.setAttribute('transform',
+            `translate(${headRef.mouthX.toFixed(2)},${(ry * 0.9).toFixed(2)}) ` +
+            `scale(${(mo.x * headRef.mouthSquash).toFixed(3)},${mo.y.toFixed(3)})`);
+    }
 }
 
 // ---------- ШРАМЫ ----------
@@ -1926,7 +2608,7 @@ function buildScarNode(scar, hostRadius) {
         const stitchCount = 3;
         for (let i = 0; i < stitchCount; i++) {
             const sx = -size + (i + 0.5) * (size * 2 / stitchCount);
-            group.appendChild(svgEl('line', { x1: sx, y1: -size * 0.4, x2: sx, y2: size * 0.4, stroke: scar.color, 'stroke-width': 1 }));
+            group.appendChild(svgEl('line', { x1: sx, y1: -size * 0.4, x2: sx, y2: size * 0.4, stroke: scar.color, 'stroke-width': SW.detail }));
         }
     } else {
         const rx = size, ry = size * 0.5;
@@ -2183,7 +2865,7 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
 function createGutTract(ctx) {
     const anatomy = ctx.anatomy;
     const palette = (anatomy.organs && anatomy.organs.palette) || {};
-    const color = palette.gut || '#63212f';
+    const color = palette.gut || FLESH[700];
     const group = svgEl('g', {
         class: 'worm-gut-tract',
         'clip-path': `url(#worm-hull-clip-${ctx.instanceId})`
@@ -2194,11 +2876,11 @@ function createGutTract(ctx) {
     // обводка самой трубы.
     const tube = svgEl('path', {
         d: '', fill: color, stroke: mixColor(color, GRIME_SHADOW, 0.55),
-        'stroke-width': 3, 'stroke-linejoin': 'round', opacity: 0.95
+        'stroke-width': SW.structure, 'stroke-linejoin': 'round', opacity: 0.95
     });
     const coreLine = svgEl('path', {
         d: '', fill: 'none', stroke: mixColor(color, GRIME_HIGHLIGHT, 0.5),
-        'stroke-width': 1.6, 'stroke-linecap': 'round', opacity: 0.3
+        'stroke-width': SW.detail, 'stroke-linecap': 'round', opacity: 0.3
     });
     group.appendChild(tube);
     group.appendChild(coreLine);
@@ -2398,13 +3080,13 @@ function buildWormSVGGroup(model, instanceId) {
     // без стыка) → сегменты → живот → растущие → основание хвоста.
     const hullCount = 1 + model.fixedSegments.length + 1 + model.growingSegments.length + 1;
     const outlineColor = mixColor(model.belly.stroke, GRIME_SHADOW, 0.25);
-    const hull = createHullLayers(ctx, hullCount, outlineColor, 2.4);
+    const hull = createHullLayers(ctx, hullCount, outlineColor, SW.contour);
     const rings = createRingLayers(ctx, Math.max(0, hullCount - 2));
 
     // Падающая тень на "полу" — тело перестаёт висеть в пустоте.
     const floorShadow = svgEl('ellipse', {
         class: 'worm-floor-shadow', cx: 0, cy: 0, rx: 0, ry: 0,
-        fill: ensureSoftGradient(ctx, `worm-floor-shadow-${instanceId}`, '#000000', 1),
+        fill: ensureSoftGradient(ctx, `worm-floor-shadow-${instanceId}`, INK, 1),
         opacity: 0.34
     });
     root.appendChild(floorShadow);
@@ -2493,6 +3175,10 @@ const WormRenderer = {
     mount(container, model, opts) {
         opts = Object.assign({
             context: 'main',
+            // Рисовать комнату с полом в перспективе и масштабировать
+            // персонажа по глубине. Только для главного экрана: мини-игры
+            // ставят свои сцены сами.
+            room: false,
             wander: false,
             blink: true,
             anchorX: 0.5,
@@ -2522,8 +3208,11 @@ const WormRenderer = {
 
         // Два постоянных слоя внутри svg, которые НЕ трогает rebuild():
         // slimeLayer (след слизи, под персонажем) и charLayer (сам персонаж).
+        // roomLayer — интерьер, лежит ПОД следом слизи и персонажем.
+        const roomLayer = svgEl('g', { class: 'worm-room-layer' });
         const slimeLayer = svgEl('g', { class: 'worm-slime-layer' });
         const charLayer = svgEl('g', { class: 'worm-char-layer' });
+        if (opts.room) svg.appendChild(roomLayer);
         svg.appendChild(slimeLayer);
         svg.appendChild(charLayer);
 
@@ -2555,6 +3244,25 @@ const WormRenderer = {
             organPhase: 0,
             gutPhase: 0,
             gutSkipFrame: false,
+            // ---------- ПЛАВНЫЙ ПОВОРОТ ГОЛОВЫ ----------
+            // headYawCurrent — то, что реально нарисовано сейчас;
+            // headYawTarget — куда едем. Ось непрерывная (механизм), а
+            // именованные позы (словарь) просто задают цель. Так остаются
+            // открыты обе двери: и щелчок между тремя позами, и плавное
+            // слежение головой за чем-нибудь.
+            headYawCurrent: null,
+            headYawTarget: null,
+            // Экранный угол хвостовой части. 180° = хвост влево, как было
+            // всегда до появления ориентации; это же значение и стартовое,
+            // поэтому неподвижный червь выглядит ровно как раньше.
+            tailAngle: 180,
+            room: null,
+            depthScale: 1,
+            floorLocalY: 0,
+            // Голова по умолчанию сама следит за направлением ползания.
+            // setHeadPose() перехватывает управление, setHeadPose('auto')
+            // возвращает автоматику.
+            headYawAuto: true,
             activeSlimeTrail: null,
             slimeTrails: [],
             // "Горячий" канал для непрерывных обновлений от мини-игр — не
@@ -2578,6 +3286,10 @@ const WormRenderer = {
                 // Всё опционально: null = "не вмешиваюсь, работает
                 // собственная жизнь персонажа" (см. idle-мимику в tick).
                 headTilt: null,      // градусы наклона головы вокруг основания шеи
+                // Поворот головы. null = брать из модели. Живой канал, а не
+                // setOverride: setOverride пересобирает всю голову заново и
+                // для покадровой анимации не годится.
+                headYaw: null,
                 gazeX: null,         // -1..1 — куда смотрит (доля от размера глаза)
                 gazeY: null,
                 browRaise: null,     // -1..1 — брови вниз (хмурится) / вверх (удивлён)
@@ -2599,6 +3311,14 @@ const WormRenderer = {
             const w = Math.max(1, rect.width);
             const h = Math.max(1, rect.height);
             svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            if (opts.room) {
+                state.room = roomGeometry(w, h);
+                buildRoom(roomLayer, state.room);
+                // Стартовая точка — на полу, а не в произвольной доле высоты:
+                // иначе персонаж при запуске стоит в воздухе или в стене.
+                if (!state.wormX) state.wormX = state.room.cx;
+                if (!state.wormY) state.wormY = roomYAt(state.room, 1.1);
+            }
             state.wormX = state.wormX || w * opts.anchorX;
             state.wormY = state.wormY || h * opts.anchorY;
             state.targetX = state.wormX;
@@ -2607,7 +3327,18 @@ const WormRenderer = {
 
         function rootTransform() {
             const flipPart = opts.flip ? ' scale(-1,1)' : '';
-            return `translate(${state.wormX.toFixed(1)},${state.wormY.toFixed(1)})${flipPart}`;
+            const sc = state.depthScale;
+            if (!opts.room || Math.abs(sc - 1) < 0.001) {
+                return `translate(${state.wormX.toFixed(1)},${state.wormY.toFixed(1)})${flipPart}`;
+            }
+            // Масштабировать надо ВОКРУГ ТОЧКИ КАСАНИЯ ПОЛА, а не вокруг
+            // начала координат (оно в голове). При масштабировании от головы
+            // тело подтягивается к ней, и уменьшенный персонаж повисает над
+            // полом вместо того, чтобы уйти вглубь комнаты.
+            const F = state.floorLocalY;
+            const shift = F * (1 - sc);
+            return `translate(${state.wormX.toFixed(1)},${(state.wormY + shift).toFixed(1)}) ` +
+                   `scale(${sc.toFixed(4)})${flipPart}`;
         }
 
         function rebuild() {
@@ -2640,17 +3371,25 @@ const WormRenderer = {
 
         function startSlimeTrail(x, y) {
             const g = svgEl('g', { class: 'worm-slime-trail' });
+            // След лежит НА ПОЛУ, значит подчиняется той же перспективе, что
+            // и всё остальное: у дальней стены он должен быть уже.
+            const trailScale = opts.room ? state.depthScale : 1;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
-            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55), fill: WORM_SLIME_COLOR });
+            const smearColor = withAlpha(ACID_DEEP, WORM_SLIME_SMEAR_ALPHA);
+            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55 * trailScale), fill: smearColor });
+            // Широкая тёмная клякса — само мокрое пятно, оно и есть след.
             const stroke = svgEl('path', {
                 d: `M ${x.toFixed(1)},${y.toFixed(1)}`,
-                fill: 'none', stroke: WORM_SLIME_COLOR, 'stroke-width': WORM_SLIME_WIDTH,
+                fill: 'none', stroke: smearColor, 'stroke-width': (WORM_SLIME_WIDTH * trailScale).toFixed(2),
                 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
             });
+            // Слой для ярких капель — они добавляются по мере движения.
+            const drops = svgEl('g', { class: 'worm-slime-drops' });
             g.appendChild(blot);
             g.appendChild(stroke);
+            g.appendChild(drops);
             slimeLayer.appendChild(g);
-            state.slimeTrails.push({ g, stroke, points: [{ x, y }], finishedAt: null });
+            state.slimeTrails.push({ g, stroke, drops, rng, scale: trailScale, points: [{ x, y }], finishedAt: null });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
         }
 
@@ -2662,10 +3401,34 @@ const WormRenderer = {
             trail.points.push({ x, y });
             const d = trail.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
             trail.stroke.setAttribute('d', d);
+            // Капля свежей слизи — не на каждом шаге и со случайным сносом
+            // поперёк следа, иначе капли выстроятся ровной пунктирной линией
+            // по центру и получится разметка шоссе, а не слизь.
+            if (trail.points.length % WORM_SLIME_DROP_EVERY !== 0) return;
+            const ts = trail.scale || 1;
+            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3 * ts;
+            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3 * ts;
+            const r = WORM_SLIME_DROP_R * (0.6 + trail.rng() * 0.8) * ts;
+            trail.drops.appendChild(svgEl('ellipse', {
+                cx: (x + jx).toFixed(1), cy: (y + jy).toFixed(1),
+                rx: r.toFixed(2), ry: (r * (0.55 + trail.rng() * 0.4)).toFixed(2),
+                fill: withAlpha(P_.acid[400], WORM_SLIME_DROP_ALPHA)
+            }));
         }
 
         function updateSlimeTrail(now, isMoving, anchor) {
             if (isMoving && anchor) {
+                // Ширина отрезка следа задаётся один раз, на его старте:
+                // это обычный stroke, сузить его по длине нельзя. Поэтому
+                // когда червь заметно меняет глубину, текущий отрезок
+                // закрывается и начинается новый, уже своей ширины. Отрезки
+                // перекрываются, стык не виден, а след честно сужается,
+                // уходя вглубь комнаты.
+                const act = state.activeSlimeTrail;
+                if (act && opts.room && Math.abs(state.depthScale / (act.scale || 1) - 1) > WORM_SLIME_DEPTH_STEP) {
+                    act.finishedAt = now;
+                    state.activeSlimeTrail = null;
+                }
                 if (!state.activeSlimeTrail) startSlimeTrail(anchor.x, anchor.y);
                 else extendSlimeTrail(anchor.x, anchor.y);
             } else if (state.activeSlimeTrail) {
@@ -2713,12 +3476,47 @@ const WormRenderer = {
                 } else if (state.nextMoveAt == null) {
                     state.nextMoveAt = now + WORM_IDLE_PAUSE_MIN + Math.random() * (WORM_IDLE_PAUSE_MAX - WORM_IDLE_PAUSE_MIN);
                 } else if (now >= state.nextMoveAt) {
-                    const rect = container.getBoundingClientRect();
-                    state.targetX = rect.width * 0.2 + Math.random() * (rect.width * 0.6);
-                    state.targetY = rect.height * 0.4 + Math.random() * (rect.height * 0.3);
+                    if (state.room) {
+                        // Цель выбирается в координатах ПОЛА (глубина + сдвиг
+                        // поперёк), а не в долях экрана: только так персонаж
+                        // гарантированно остаётся на полу и не заходит в
+                        // стену, какой бы ни была форма трапеции.
+                        const g = state.room;
+                        const d = ROOM.wanderNear + Math.random() * (ROOM.wanderFar - ROOM.wanderNear);
+                        const u = (Math.random() * 2 - 1) * ROOM.wanderInsetU;
+                        state.targetX = g.cx + u * roomHalfAt(g, d);
+                        state.targetY = roomYAt(g, d);
+                    } else {
+                        const rect = container.getBoundingClientRect();
+                        state.targetX = rect.width * 0.2 + Math.random() * (rect.width * 0.6);
+                        state.targetY = rect.height * 0.4 + Math.random() * (rect.height * 0.3);
+                    }
                     state.nextMoveAt = null;
                 }
             }
+            // ---------- ДОВОРОТ ХВОСТА ЗА ДВИЖЕНИЕМ ----------
+            // Целевой угол — строго противоположный движению: хвост тянется
+            // СЗАДИ. Вертикаль сжата перспективой пола.
+            if (opts.wander && isMoving) {
+                const mdx = state.targetX - state.wormX;
+                const mdy = (state.targetY - state.wormY) * WORM_FLOOR_PERSPECTIVE;
+                if (Math.hypot(mdx, mdy) > 0.001) {
+                    const want = Math.atan2(-mdy, -mdx) * 180 / Math.PI;
+                    // Кратчайшая дуга: без неё доворот с 179° на -179° поехал
+                    // бы через весь круг, и хвост картинно обнёс бы червя.
+                    let delta = ((want - state.tailAngle + 540) % 360) - 180;
+                    state.tailAngle += delta * (1 - Math.pow(WORM_TAIL_TURN_BASE, dtSec));
+                    state.tailAngle = ((state.tailAngle % 360) + 360) % 360;
+                }
+            }
+
+            // ---------- ГЛУБИНА → РАЗМЕР ----------
+            // Персонаж на полу: его экранная высота однозначно задаёт, как
+            // далеко он от камеры. Ближе — крупнее, вглубь — мельче.
+            if (opts.room && state.room) {
+                state.depthScale = roomCharScaleAt(roomDepthAt(state.room, state.wormY));
+            }
+
             const intensityFactor = 1 - Math.pow(WORM_MOVE_INTENSITY_SMOOTH_BASE, dtSec);
             state.moveIntensity += ((isMoving ? 1 : 0) - state.moveIntensity) * intensityFactor;
 
@@ -2786,6 +3584,14 @@ const WormRenderer = {
                     state.built.head.group.setAttribute('transform', 'translate(0,0)');
 
                     const floorY = bellyIdx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
+                    // Запоминаем для rootTransform: масштаб по глубине берёт
+                    // эту точку за неподвижную, иначе персонаж всплывает.
+                    state.floorLocalY = floorY;
+                    // Сторона завала колонны = сторона, куда лежит хвост.
+                    // cos угла хвоста даёт и знак, и естественное затухание
+                    // завала, когда червь ползёт строго вглубь комнаты: там
+                    // тело уходит от камеры, а не вбок, и заваливаться некуда.
+                    const leanDir = Math.cos(state.tailAngle * Math.PI / 180);
 
                     // Однополярная волна дыхания: стартует с 0 (стандартный
                     // радиус), поднимается до 1 и возвращается к 0.
@@ -2794,8 +3600,9 @@ const WormRenderer = {
                     state.built.segments.forEach(seg => {
                         if (seg.idx > bellyIdx) return;
                         const vy = seg.idx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
-                        seg.group.setAttribute('transform', `translate(0,${vy.toFixed(1)})`);
-                        hullCircles[seg.idx] = { x: 0, y: vy, r: seg.baseRx, color: seg.fillColor };
+                        const vx = spineLeanMag(bellyIdx > 0 ? seg.idx / bellyIdx : 0) * leanDir;
+                        seg.group.setAttribute('transform', `translate(${vx.toFixed(1)},${vy.toFixed(1)})`);
+                        hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor };
                         const breathRatio = WORM_BREATH_RATIO[seg.name];
                         if (breathRatio != null) {
                             const breathFactor = 1 + breathWave * WORM_BREATH_AMP * breathRatio;
@@ -2829,13 +3636,16 @@ const WormRenderer = {
                         .filter(seg => seg.idx > bellyIdx)
                         .sort((a, b) => a.idx - b.idx);
 
-                    let chainX = -bellyPushGap;
+                    // Стартуем от РЕАЛЬНОГО положения живота: он уехал вбок
+                    // вместе с колонной, и цепь обязана продолжаться от него.
+                    // Сдвиг живота на раздутие тоже идёт в сторону хвоста.
+                    let chainX = spineLeanMag(1) * leanDir + bellyPushGap * leanDir;
                     let chainY = floorY;
                     let prevRadius = bellySeg ? bellySeg.baseRx : 15;
                     floorSegments.forEach(seg => {
                         const stepsFromBelly = seg.idx - bellyIdx;
                         const wiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + stepsFromBelly * WORM_CHAIN_PHASE_STEP) * wiggleAmpDeg : 0;
-                        const angleRad = (180 + wiggleDeg) * DEG2RAD;
+                        const angleRad = (state.tailAngle + wiggleDeg) * DEG2RAD;
                         const linkLength = floorLinkBaseLength(prevRadius, seg.baseRx) + moveStretch;
                         chainX += linkLength * Math.cos(angleRad);
                         chainY += linkLength * Math.sin(angleRad);
@@ -2850,7 +3660,7 @@ const WormRenderer = {
                     // Хвост — последнее звено той же цепи.
                     const tailStepsFromBelly = state.built.tail.idx - bellyIdx;
                     const tailWiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + tailStepsFromBelly * WORM_CHAIN_PHASE_STEP) * wiggleAmpDeg : 0;
-                    const tailAngleDeg = 180 + tailWiggleDeg;
+                    const tailAngleDeg = state.tailAngle + tailWiggleDeg;
                     const tailAngleRad = tailAngleDeg * DEG2RAD;
                     const tailLinkLength = floorLinkBaseLength(prevRadius, state.built.tail.baseRadius) + moveStretch;
                     chainX += tailLinkLength * Math.cos(tailAngleRad);
@@ -2867,9 +3677,16 @@ const WormRenderer = {
 
                     if (opts.wander) {
                         const flip = opts.flip;
+                        // Точка выхода следа задана в ЛОКАЛЬНЫХ координатах
+                        // персонажа, а он теперь масштабируется по глубине —
+                        // значит и смещение надо считать по тем же правилам,
+                        // что и корневой трансформ, иначе след будет
+                        // отставать от хвоста тем сильнее, чем дальше червь.
+                        const sc = state.depthScale;
+                        const shiftY = state.floorLocalY * (1 - sc);
                         const anchorWorld = lastGrowLocal ? {
-                            x: state.wormX + (flip ? -lastGrowLocal.x : lastGrowLocal.x),
-                            y: state.wormY + lastGrowLocal.y
+                            x: state.wormX + (flip ? -lastGrowLocal.x : lastGrowLocal.x) * sc,
+                            y: state.wormY + shiftY + lastGrowLocal.y * sc
                         } : null;
                         updateSlimeTrail(now, isMoving, anchorWorld);
                     }
@@ -3017,6 +3834,51 @@ const WormRenderer = {
                     const sniffPos = state.faceClock % sniffCycle;
                     const sniffImpulse = sniffPos < 560 ? Math.abs(Math.sin((sniffPos / 560) * Math.PI * 3)) : 0;
 
+                    // ---------- ПОВОРОТ ГОЛОВЫ ----------
+                    // Цель берётся из живого канала, иначе из модели.
+                    // Подъезд к ней — framerate-независимый, по той же
+                    // формуле 1 - base^dt, что и остальное сглаживание в
+                    // файле. База МАЛЕНЬКАЯ (быстрая сходимость): поворот
+                    // должен читаться щелчком, а не медленным морфом, но
+                    // при этом не щёлкать буквально — иначе головой нельзя
+                    // будет плавно вести за целью.
+                    // ---------- КУДА СМОТРИТ ГОЛОВА ----------
+                    // Приоритет: явный живой канал → явная поза → автоматика
+                    // по направлению ползания → значение из модели.
+                    //
+                    // Автоматика: голова смотрит ТУДА, КУДА ползёт, то есть в
+                    // сторону, противоположную хвосту. Отсюда -cos(угла
+                    // хвоста): при хвосте слева (180°) выходит +1, то есть
+                    // взгляд вправо; при хвосте справа (0°) — -1, взгляд
+                    // влево.
+                    //
+                    // Разворот через анфас получается САМ и не требует
+                    // отдельного кода: пока червь поворачивает, угол хвоста
+                    // проходит через «строго вглубь комнаты» (90°/270°), а
+                    // там косинус равен нулю — голова в этот момент смотрит
+                    // ровно в камеру. Ровно то поведение, которое нужно:
+                    // сначала повернулась вперёд, потом в новую сторону.
+                    let yawTarget;
+                    if (state.livePose.headYaw != null) {
+                        yawTarget = state.livePose.headYaw;
+                    } else if (!state.headYawAuto && state.headYawTarget != null) {
+                        yawTarget = state.headYawTarget;
+                    } else if (state.headYawAuto && opts.wander) {
+                        yawTarget = WORM_HEAD_YAW_FOLLOW * -Math.cos(state.tailAngle * Math.PI / 180);
+                    } else {
+                        yawTarget = mm.head.yaw != null ? mm.head.yaw : 0;
+                    }
+                    if (state.headYawCurrent == null) state.headYawCurrent = yawTarget;
+                    const yawK = 1 - Math.pow(WORM_HEAD_YAW_BASE, dtSec);
+                    state.headYawCurrent += (yawTarget - state.headYawCurrent) * yawK;
+                    // Ниже порога дотягиваем до цели: экспонента математически
+                    // никогда не долетает, а «почти повёрнутая» голова —
+                    // это просто чуть кривое лицо.
+                    if (Math.abs(yawTarget - state.headYawCurrent) < WORM_HEAD_YAW_EPS) {
+                        state.headYawCurrent = yawTarget;
+                    }
+                    applyHeadYaw(headRef, +state.headYawCurrent.toFixed(4));
+
                     // Наклон головы — вокруг основания шеи, а не центра черепа:
                     // иначе голова "съезжает" с тела.
                     const tilt = state.livePose.headTilt != null ? state.livePose.headTilt : 0;
@@ -3048,8 +3910,12 @@ const WormRenderer = {
                         const sn = mm.head.snout;
                         const sx = sn.scale * sn.stretchX * (1 + 0.05 * twitch);
                         const sy = sn.scale * sn.stretchY * (1 - 0.07 * twitch);
+                        // Ракурс входит сюда множителем: tick переписывает
+                        // трансформ целиком, и без него поворот пятачка
+                        // терялся бы через кадр после сборки.
                         headRef.snoutGroup.setAttribute('transform',
-                            `translate(0,${(headRef.snoutY - 1.6 * twitch).toFixed(2)}) scale(${sx.toFixed(3)},${sy.toFixed(3)})`);
+                            `translate(${(headRef.snoutX || 0).toFixed(2)},${(headRef.snoutY - 1.6 * twitch).toFixed(2)}) ` +
+                            `scale(${(sx * (headRef.snoutSquash != null ? headRef.snoutSquash : 1)).toFixed(3)},${sy.toFixed(3)})`);
                     }
 
                     // Челюсть следует за ртом: рот открывается — низ морды
@@ -3136,6 +4002,34 @@ const WormRenderer = {
             },
             setPose(name) {
                 svg.setAttribute('data-pose', name || '');
+            },
+            // Повернуть голову в именованную позу: 'left' | 'center' | 'right'.
+            // Голова доедет туда сама, за кадры — без пересборки SVG.
+            // Можно передать и число (-1..1), если нужна произвольная точка
+            // оси, например слежение за курсором.
+            setHeadPose(pose, opts) {
+                // 'auto' — вернуть управление автоматике (голова снова
+                // следит за направлением ползания).
+                if (pose === 'auto' || pose == null) {
+                    state.headYawAuto = true;
+                    state.headYawTarget = null;
+                    return;
+                }
+                const v = typeof pose === 'number'
+                    ? Math.max(-1, Math.min(1, pose))
+                    : (WORM_HEAD_POSES[pose] != null ? WORM_HEAD_POSES[pose] : 0);
+                state.headYawAuto = false;
+                state.headYawTarget = v;
+                state.livePose.headYaw = null; // именованная поза перебивает ручной канал
+                // instant: встать в позу без переходной анимации.
+                if (opts && opts.instant) state.headYawCurrent = v;
+            },
+            getHeadPose() {
+                return {
+                    current: state.headYawCurrent,
+                    target: state.headYawTarget,
+                    poses: Object.assign({}, WORM_HEAD_POSES)
+                };
             },
             setLivePose(patch) {
                 Object.assign(state.livePose, patch);

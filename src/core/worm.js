@@ -57,6 +57,8 @@ function initWorm() {
         MainWormHandle = window.WormRenderer.mount(container, model, {
             context: 'main',
             wander: true,
+            // Главный экран — комната с полом в перспективе.
+            room: true,
             blink: true,
             anchorX: 0.5,
             anchorY: 0.55

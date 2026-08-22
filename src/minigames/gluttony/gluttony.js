@@ -657,9 +657,20 @@ const GluttonyMinigame = {
         const dy = targetHeadY - currentHeadY;
         this.wormHandle.setPosition(currentPos.x + dx, currentPos.y + dy);
 
-        // Кастрюля — центр по X на центре головы, дно на POT_GAP выше
-        // макушки в её НОВОМ положении.
-        this.tiltBucket.style.left = `${targetHeadX - potWidth / 2}px`;
+        // Кастрюля целится в РОТ, а не в центр головы. Пока голова была
+        // строго анфас, это было одно и то же; с появлением поворота
+        // (head.yaw) рот уезжает вбок на полтора десятка пикселей, и еда
+        // лилась бы мимо. Смещение считаем относительно центра головы,
+        // потому что вся раскладка ниже уже построена от него.
+        const mouthEl = this.wormHandle.svgRoot.querySelector('[data-anchor="mouth"]');
+        let mouthOffsetX = 0;
+        if (mouthEl) {
+            const mouthRect = mouthEl.getBoundingClientRect();
+            if (mouthRect.width > 0) {
+                mouthOffsetX = (mouthRect.left + mouthRect.width / 2) - headCenterX;
+            }
+        }
+        this.tiltBucket.style.left = `${targetHeadX + mouthOffsetX - potWidth / 2}px`;
         this.tiltBucket.style.top = `${targetHeadY - upExtent - POT_GAP - potHeight}px`;
     },
 
