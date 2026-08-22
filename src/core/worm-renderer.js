@@ -164,6 +164,21 @@ const WORM_TAIL_TIP_RATIO = 0.35;
 // У вертикальной части СВОЁ расстояние, независимое от напольной цепи
 // (плоская константа здесь корректна: у всех трёх сегментов один радиус).
 const WORM_VERTICAL_SPACING = 26;
+// Боковой снос позвоночника в стоящей позе. Все сегменты колонны стояли
+// строго по x=0, а напольная часть уходила строго влево — фигура складывалась
+// в букву «Г». Прямой угол читается мебелью, у животного должна быть одна
+// сквозная дуга (art-direction.md §4.2). Живот уводится влево относительно
+// головы, поэтому дуга с пола продолжается вверх, а голова оказывается
+// вынесенной вправо — тело противовесит хвосту, и поза становится живой.
+const WORM_SPINE_LEAN = 16;
+// Показатель степени: >1 держит шею почти прямой, а изгиб собирает внизу, у
+// живота. Линейный снос дал бы равномерный завал всей колонны — это чтение
+// «падает», а не «изогнулся».
+const WORM_SPINE_LEAN_POW = 1.6;
+// Снос сегмента колонны по его положению t (0 = шея у головы, 1 = живот).
+function spineLeanX(t) {
+    return -WORM_SPINE_LEAN * Math.pow(Math.max(0, Math.min(1, t)), WORM_SPINE_LEAN_POW);
+}
 
 // Насколько мост единого силуэта уже соседних кругов — глубина перетяжки
 // между секциями тела. 0 = ровная труба, ~0.2 = выраженные "сосисочные"
@@ -1003,26 +1018,48 @@ function buildAnatomyStack(ctx, partName, opts) {
 
 // ---------- ЛОКАЛЬНЫЕ ФОРМЫ (до позиционирования) ----------
 function earPathData(mirror) {
-    // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления к
-    // голове. Свиное ухо — не лепесток, а крупный треугольник с мясистым
-    // основанием и мягко скруглённой вершиной, слегка завёрнутой вперёд.
+    // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления.
+    //
+    // Тест «залей силуэт чёрным» показывал кошку: ухо было тонким шипом с
+    // узким основанием и острой вершиной вверх. Свинья узнавалась только по
+    // пятачку ВНУТРИ контура — то есть опознавательный признак сидел не там,
+    // где его читает глаз (art-direction.md §4.1).
+    //
+    // Разница кошка/свинья в силуэте — это ПРОПОРЦИИ КЛИНА, а не скругления:
+    //   • кошка: основание узкое, ухо заметно выше своей ширины, тонкий шип;
+    //   • свинья: основание широченное (почти половина ширины черепа), ухо
+    //     примерно квадратное в габаритах, это тяжёлый мясистый клин.
+    // Плюс кончик: у кошки это остриё в зенит, у свиньи вершина
+    // перекатывается и уходит НАРУЖУ, а задняя кромка провисает вниз.
+    // Ключ к прочтению — ПРЯМЫЕ РЁБРА И УГОЛ. Выпуклая дуга по задней кромке
+    // читается шариком независимо от габаритов; прямая кромка с изломом у
+    // основания читается клином. Плюс ухо должно ВЫХОДИТЬ за череп: пока оно
+    // сидит внутри купола, наружу торчит только скруглённая макушка и вся
+    // работа над формой пропадает.
     const s = mirror;
-    return `M ${(-s * 11).toFixed(1)},5 ` +
-        `C ${(-s * 12).toFixed(1)},-6 ${(-s * 6).toFixed(1)},-16 ${(s * 3).toFixed(1)},-23 ` +
-        `C ${(s * 9).toFixed(1)},-28 ${(s * 17).toFixed(1)},-28 ${(s * 18).toFixed(1)},-21 ` +
-        `C ${(s * 19).toFixed(1)},-14 ${(s * 17).toFixed(1)},-5 ${(s * 14).toFixed(1)},2 ` +
-        `C ${(s * 11).toFixed(1)},8 ${(s * 2).toFixed(1)},9 ${(-s * 11).toFixed(1)},5 Z`;
+    return `M ${(-s * 19).toFixed(1)},11 ` +
+        // передняя кромка — длинная и почти прямая
+        `C ${(-s * 18).toFixed(1)},-3 ${(-s * 12).toFixed(1)},-18 ${(-s * 3).toFixed(1)},-27 ` +
+        // короткий перекат через вершину, наружу
+        `C ${(s * 4).toFixed(1)},-34 ${(s * 14).toFixed(1)},-36 ${(s * 19).toFixed(1)},-32 ` +
+        // задняя кромка — почти прямая, идёт вниз-наружу до излома
+        `C ${(s * 23).toFixed(1)},-24 ${(s * 26).toFixed(1)},-13 ${(s * 27).toFixed(1)},-3 ` +
+        // излом у основания: угол, а не скругление
+        `C ${(s * 27).toFixed(1)},5 ${(s * 20).toFixed(1)},11 ${(s * 12).toFixed(1)},12 ` +
+        // широкое мясистое основание
+        `C ${(s * 2).toFixed(1)},13 ${(-s * 10).toFixed(1)},13 ${(-s * 19).toFixed(1)},11 Z`;
 }
 
 // Раковина — углублённая часть уха: повторяет внешний контур с отступом
 // внутрь, за счёт чего у уха появляется толщина, а не плоская заливка.
 function earInnerPathData(mirror) {
     const s = mirror;
-    return `M ${(-s * 4).toFixed(1)},2 ` +
-        `C ${(-s * 5).toFixed(1)},-6 ${(-s * 1).toFixed(1)},-15 ${(s * 6).toFixed(1)},-22 ` +
-        `C ${(s * 9).toFixed(1)},-26 ${(s * 13).toFixed(1)},-26 ${(s * 13).toFixed(1)},-21 ` +
-        `C ${(s * 13).toFixed(1)},-16 ${(s * 11).toFixed(1)},-7 ${(s * 9).toFixed(1)},0 ` +
-        `C ${(s * 7).toFixed(1)},3 ${(s * 1).toFixed(1)},4 ${(-s * 4).toFixed(1)},2 Z`;
+    return `M ${(-s * 11).toFixed(1)},7 ` +
+        `C ${(-s * 10).toFixed(1)},-3 ${(-s * 6).toFixed(1)},-15 ${(s * 1).toFixed(1)},-22 ` +
+        `C ${(s * 6).toFixed(1)},-27 ${(s * 13).toFixed(1)},-28 ${(s * 16).toFixed(1)},-25 ` +
+        `C ${(s * 19).toFixed(1)},-19 ${(s * 21).toFixed(1)},-10 ${(s * 21).toFixed(1)},-3 ` +
+        `C ${(s * 21).toFixed(1)},3 ${(s * 16).toFixed(1)},7 ${(s * 9).toFixed(1)},8 ` +
+        `C ${(s * 1).toFixed(1)},9 ${(-s * 5).toFixed(1)},9 ${(-s * 11).toFixed(1)},7 Z`;
 }
 
 // Сосудики внутри уха: у свиньи ухо — самая тонкая кожа на всём теле, оно
@@ -1740,19 +1777,33 @@ function buildHeadNode(model, ctx) {
     // у свиньи уши стоят домиком, а не торчат строго вверх. Базовый разворот
     // живёт в рендерере, а `ear.rotation` из модели прибавляется к нему —
     // так прижатые уши (отрицательный угол) остаются рабочим состоянием.
-    const EAR_BASE_TILT = 27;
+    // Наклон посадки. Было 27° — уши вставали торчком в стороны и вместе с
+    // узкой треугольной формой давали кошачий силуэт.
+    const EAR_BASE_TILT = 30;
+    // Калибровка габарита. Форму уха задаёт earPathData, а этот множитель —
+    // отдельная ручка размера: на полной величине клин перелетал в летучую
+    // мышь и начинал спорить с головой за внимание. Свиное ухо крупное, но
+    // голова всё-таки главнее.
+    const EAR_FORM_SCALE = 0.82;
     const earsGroup = svgEl('g', { 'data-part': 'ears' });
     const earRefs = {};
     ['left', 'right'].forEach(side => {
         const mirror = side === 'left' ? -1 : 1;
         const ear = head.ears[side];
-        const anchorX = mirror * rx * 0.62;
-        const anchorY = -ry * 0.52;
+        const anchorX = mirror * rx * 0.78;
+        const anchorY = -ry * 0.66;
         const baseAngle = mirror * EAR_BASE_TILT + ear.rotation;
+        // Группа уха масштабируется, а значит масштабируется и её обводка.
+        // Без компенсации контур уха уехал бы с лестницы толщин (2.6 * 0.82
+        // = 2.13) и силуэт получил бы разную толщину линии на разных
+        // участках — ровно тот дефект, который чинили в прошлый заход.
+        const earSx = ear.scale * ear.stretchX * EAR_FORM_SCALE;
+        const earSy = ear.scale * ear.stretchY * EAR_FORM_SCALE;
+        const earStrokeK = 2 / (Math.abs(earSx) + Math.abs(earSy) || 1);
         const earGroup = svgEl('g', {
             'data-part': `ear-${side}`,
             'data-anchor': `ear-${side}`,
-            transform: `translate(${anchorX.toFixed(2)},${anchorY.toFixed(2)}) rotate(${baseAngle.toFixed(1)}) scale(${(ear.scale * ear.stretchX).toFixed(3)},${(ear.scale * ear.stretchY).toFixed(3)})`,
+            transform: `translate(${anchorX.toFixed(2)},${anchorY.toFixed(2)}) rotate(${baseAngle.toFixed(1)}) scale(${(ear.scale * ear.stretchX * EAR_FORM_SCALE).toFixed(3)},${(ear.scale * ear.stretchY * EAR_FORM_SCALE).toFixed(3)})`,
             visibility: ear.visible ? 'visible' : 'hidden'
         });
         const earGradId = `worm-ear-grad-${ctx.instanceId}-${side}`;
@@ -1761,11 +1812,11 @@ function buildHeadNode(model, ctx) {
             highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
             shadow: -0.32, shadowTint: GRIME_SHADOW
         });
-        const earShape = svgEl('path', { d: earPathData(mirror), fill: earFill, stroke: ear.stroke, 'stroke-width': SW.contour, 'stroke-linejoin': 'round' });
+        const earShape = svgEl('path', { d: earPathData(mirror), fill: earFill, stroke: ear.stroke, 'stroke-width': (SW.contour * earStrokeK).toFixed(2), 'stroke-linejoin': 'round' });
         const earInner = svgEl('path', { d: earInnerPathData(mirror), fill: mixColor(ear.fill, GRIME_SHADOW, 0.32), opacity: 0.6 });
         const earRidge = svgEl('path', {
             d: earInnerPathData(mirror), fill: 'none',
-            stroke: mixColor(ear.fill, GRIME_HIGHLIGHT, 0.55), 'stroke-width': SW.detail, opacity: 0.45
+            stroke: mixColor(ear.fill, GRIME_HIGHLIGHT, 0.55), 'stroke-width': (SW.detail * earStrokeK).toFixed(2), opacity: 0.45
         });
         earGroup.appendChild(earShape);
         earGroup.appendChild(earInner);
@@ -1781,6 +1832,8 @@ function buildHeadNode(model, ctx) {
             // завязаны раскладки мини-игр.
             for (let i = 0; i < 5; i++) {
                 const t = i / 4;
+                // Разброс по длине и завалу: ровный частокол одинаковых
+                // штрихов читается хирургическим швом, а не щетиной.
                 const bx = mirror * (-7 + t * 18), by = 1 - t * 19;
                 const len = 1.6 + brng() * 2;
                 fringe.appendChild(svgEl('path', {
@@ -1993,7 +2046,9 @@ function buildHeadNode(model, ctx) {
     const mouthAnchor = svgEl('g', {
         'data-part': 'mouth',
         'data-anchor': 'mouth',
-        transform: `translate(0,${(ry * 1.0).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
+        // Рот сидит ПОД ПЯТАКОМ, а не на самой нижней кромке черепа: на ry*1.0 он
+        // сливался с контуром подбородка и просто исчезал из морды.
+        transform: `translate(0,${(ry * 0.9).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
     });
     const mouthBuilt = buildMouthShapes(mouthAnchor, mouth, ctx.instanceId);
     updateMouthGeometry(mouthBuilt, mouthBendFromCurve(mouth.curve), mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
@@ -2941,8 +2996,9 @@ const WormRenderer = {
                     state.built.segments.forEach(seg => {
                         if (seg.idx > bellyIdx) return;
                         const vy = seg.idx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
-                        seg.group.setAttribute('transform', `translate(0,${vy.toFixed(1)})`);
-                        hullCircles[seg.idx] = { x: 0, y: vy, r: seg.baseRx, color: seg.fillColor };
+                        const vx = spineLeanX(bellyIdx > 0 ? seg.idx / bellyIdx : 0);
+                        seg.group.setAttribute('transform', `translate(${vx.toFixed(1)},${vy.toFixed(1)})`);
+                        hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor };
                         const breathRatio = WORM_BREATH_RATIO[seg.name];
                         if (breathRatio != null) {
                             const breathFactor = 1 + breathWave * WORM_BREATH_AMP * breathRatio;
@@ -2976,7 +3032,9 @@ const WormRenderer = {
                         .filter(seg => seg.idx > bellyIdx)
                         .sort((a, b) => a.idx - b.idx);
 
-                    let chainX = -bellyPushGap;
+                    // Стартуем от РЕАЛЬНОГО положения живота: он уехал вбок
+                    // вместе с колонной, и цепь обязана продолжаться от него.
+                    let chainX = spineLeanX(1) - bellyPushGap;
                     let chainY = floorY;
                     let prevRadius = bellySeg ? bellySeg.baseRx : 15;
                     floorSegments.forEach(seg => {
