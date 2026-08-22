@@ -1,0 +1,70 @@
+name: Deploy to GitHub Pages
+
+# Каждый пуш в main выкладывает игру на GitHub Pages. Никакой ручной
+# пересборки: телефону достаточно открыть ссылку.
+#
+# Через "Run workflow" можно выложить и любую другую ветку — удобно
+# проверить эксперимент с айфона, не вливая его в main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Параллельные деплои Pages конфликтуют друг с другом, но уже начатый
+# докатываем: иначе быстрый второй пуш оставит сайт в промежуточном виде.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Собрать сайт и проставить версию сборки
+        run: |
+          set -e
+          BUILD="$(date -u +%Y%m%d-%H%M)-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          echo "Сборка: $BUILD"
+
+          mkdir -p _site
+          tar -cf - \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./tools' \
+            --exclude='./_site' \
+            . | tar -xf - -C _site
+
+          # Главное здесь. Раньше версии ассетов правились руками
+          # (style.css?v=13, worm-renderer.js?v=32 и так пятнадцать штук):
+          # забыл поднять номер — айфон молча показывает вчерашний код.
+          # Теперь все ?v=... получают один общий номер сборки, и любой
+          # изменённый файл автоматически едет по новому URL.
+          sed -i -E "s/\?v=[A-Za-z0-9._-]+/?v=$BUILD/g" _site/index.html
+          sed -i "s/__BUILD__/$BUILD/g" _site/index.html _site/sw.js
+
+          # Чтобы версию можно было проверить, не открывая игру:
+          # <адрес сайта>/build.txt
+          echo "$BUILD" > _site/build.txt
+
+          echo "--- проверка ---"
+          grep -c "?v=$BUILD" _site/index.html
+          grep -n "app-build" _site/index.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
