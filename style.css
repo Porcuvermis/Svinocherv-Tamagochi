@@ -236,3 +236,25 @@ canvas {
     color: #d4ff2b;
     box-shadow: 0 0 10px rgba(212, 255, 43, 0.5);
 }
+
+/* ---------- ШТАМП СБОРКИ ----------
+   Какая версия сейчас на экране. Постоянно висеть не должен — вылезает
+   только вместе с debug-режимом (кнопка 🐞). */
+#build-stamp {
+    position: absolute;
+    left: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    z-index: 900;
+    display: none;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.75);
+    font: 11px/1.2 monospace;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+}
+
+body.debug-mode #build-stamp {
+    display: block;
+}
