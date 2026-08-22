@@ -889,8 +889,17 @@ function buildAnatomyStack(ctx, partName, opts) {
     layers.tone = buildSkinToneLayer(ctx, partName, halfLen, halfThick);
 
     if ((anatomy.skin && (anatomy.skin.dorsalDarkening || anatomy.skin.ventralLightening))) {
+        // Единственный слой стопки с ЖЁСТКИМ краем (сплошная заливка, а не
+        // растворяющееся пятно), поэтому он обязан ПЕРЕКРЫВАТЬ силуэт, а не
+        // совпадать с ним. Когда клип задан произвольным контуром
+        // (opts.clipPathData — череп), контур может быть шире номинального
+        // эллипса: у свиной головы скулы идут на 1.04*rx, и край эллипса
+        // rx×ry обрывался внутри силуэта — вдоль щёк шла отчётливая полоса,
+        // из-за которой низ лица читался наклеенной панелью. Клип всё лишнее
+        // срежет, поэтому перекрытие безопасно.
+        const cover = opts.cover != null ? opts.cover : 1;
         const dv = svgEl('ellipse', {
-            cx: 0, cy: 0, rx: halfLen.toFixed(2), ry: halfThick.toFixed(2),
+            cx: 0, cy: 0, rx: (halfLen * cover).toFixed(2), ry: (halfThick * cover).toFixed(2),
             fill: ensureDorsoVentralGradient(ctx)
         });
         layers.dorsoventral = dv;
@@ -942,23 +951,26 @@ function earPathData(mirror) {
     // сходилась в почти собачью точку, теперь верхний край — пологая дуга
     // между двумя контрольными точками, разнесёнными по ширине. Именно
     // острый, узкий, "вздёрнутый назад" силуэт читался как собачье ухо.
+    // Силуэт — скруглённый ТРЕУГОЛЬНИК: широкое мясистое основание, заметно
+    // более узкая (но не острая) вершина, отклонённая наружу. Совсем круглая
+    // лопасть уводит образ к медвежонку, а острый угол — обратно к собаке.
     const s = mirror;
-    return `M ${(-s * 7).toFixed(1)},8 ` +
-        `C ${(-s * 11).toFixed(1)},-2 ${(-s * 8).toFixed(1)},-16 ${(-s * 1).toFixed(1)},-23 ` +
-        `C ${(s * 6).toFixed(1)},-29 ${(s * 17).toFixed(1)},-29 ${(s * 22).toFixed(1)},-21 ` +
-        `C ${(s * 26).toFixed(1)},-14 ${(s * 24).toFixed(1)},-4 ${(s * 19).toFixed(1)},4 ` +
-        `C ${(s * 15).toFixed(1)},11 ${(s * 3).toFixed(1)},13 ${(-s * 7).toFixed(1)},8 Z`;
+    return `M ${(-s * 9).toFixed(1)},7 ` +
+        `C ${(-s * 12).toFixed(1)},-4 ${(-s * 9).toFixed(1)},-18 ${(-s * 2).toFixed(1)},-26 ` +
+        `C ${(s * 4).toFixed(1)},-32 ${(s * 13).toFixed(1)},-31 ${(s * 16).toFixed(1)},-24 ` +
+        `C ${(s * 20).toFixed(1)},-15 ${(s * 19).toFixed(1)},-3 ${(s * 15).toFixed(1)},5 ` +
+        `C ${(s * 11).toFixed(1)},11 ${(s * 1).toFixed(1)},12 ${(-s * 9).toFixed(1)},7 Z`;
 }
 
 // Раковина — углублённая часть уха: повторяет внешний контур с отступом
 // внутрь, за счёт чего у уха появляется толщина, а не плоская заливка.
 function earInnerPathData(mirror) {
     const s = mirror;
-    return `M ${(-s * 2).toFixed(1)},4 ` +
-        `C ${(-s * 5).toFixed(1)},-4 ${(-s * 3).toFixed(1)},-14 ${(s * 2).toFixed(1)},-20 ` +
-        `C ${(s * 7).toFixed(1)},-25 ${(s * 14).toFixed(1)},-25 ${(s * 17).toFixed(1)},-19 ` +
-        `C ${(s * 19).toFixed(1)},-13 ${(s * 17).toFixed(1)},-6 ${(s * 13).toFixed(1)},1 ` +
-        `C ${(s * 10).toFixed(1)},6 ${(s * 2).toFixed(1)},7 ${(-s * 2).toFixed(1)},4 Z`;
+    return `M ${(-s * 4).toFixed(1)},4 ` +
+        `C ${(-s * 6).toFixed(1)},-4 ${(-s * 4).toFixed(1)},-16 ${(s * 1).toFixed(1)},-22 ` +
+        `C ${(s * 5).toFixed(1)},-26 ${(s * 11).toFixed(1)},-25 ${(s * 13).toFixed(1)},-20 ` +
+        `C ${(s * 15).toFixed(1)},-13 ${(s * 14).toFixed(1)},-4 ${(s * 11).toFixed(1)},2 ` +
+        `C ${(s * 8).toFixed(1)},6 ${(s * 1).toFixed(1)},7 ${(-s * 4).toFixed(1)},4 Z`;
 }
 
 // Сосудики внутри уха: у свиньи ухо — самая тонкая кожа на всём теле, оно
@@ -971,17 +983,25 @@ function buildEarVessels(ctx, mirror, side) {
     const vis = clamp01((anatomy.organs && anatomy.organs.visibility != null ? anatomy.organs.visibility : 0.55));
     if (vis <= 0.02) return null;
     const rng = anatRng(anatomy, `ear-${side}`, 'vessel');
-    const group = svgEl('g', { class: 'worm-ear-vessels', opacity: (0.5 * vis + 0.15).toFixed(3) });
+    // Сосуды заметно бледнее и тоньше, чем были, и расходятся ВЕЕРОМ от
+    // основания с разными углами. Раньше это были 2-3 длинных почти
+    // параллельных штриха через всё ухо на непрозрачности 0.55 — на крупном
+    // ухе они сливались в одну диагональную линию и читались царапиной, а не
+    // просвечивающей веной.
+    const group = svgEl('g', { class: 'worm-ear-vessels', opacity: (0.34 * vis + 0.1).toFixed(3) });
     const s = mirror;
-    const branches = 2 + Math.floor(rng() * 2);
+    const branches = 3;
     for (let i = 0; i < branches; i++) {
         const t = (i + 1) / (branches + 1);
-        const ex = s * (5 + t * 8 + rng() * 2);
-        const ey = -6 - t * 14 - rng() * 3;
+        // Каждая вена короче предыдущей и уходит под своим углом — вместе это
+        // ветвление, а не пучок параллельных линий.
+        const reach = 0.5 + t * 0.42;
+        const ex = s * (3 + t * 9 + rng() * 1.5) * reach * 1.4;
+        const ey = (-5 - t * 13 - rng() * 2) * reach * 1.5;
         group.appendChild(svgEl('path', {
-            d: `M ${(s * 2).toFixed(1)},-2 Q ${(ex * 0.55).toFixed(1)},${(ey * 0.5).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
+            d: `M ${(s * 1).toFixed(1)},0 Q ${(ex * 0.4).toFixed(1)},${(ey * 0.62).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
             fill: 'none', stroke: palette.vessel || '#4a131e',
-            'stroke-width': (0.9 - i * 0.15).toFixed(2), opacity: 0.55, 'stroke-linecap': 'round'
+            'stroke-width': (0.55 - i * 0.08).toFixed(2), opacity: 0.32, 'stroke-linecap': 'round'
         }));
     }
     return group;
@@ -1181,7 +1201,10 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     // Лопнувшие сосудики вместо ресничек/румян — не милота, а нездоровый вид.
     const veins = buildEyeVeins(`${instanceId}-${eyeKey}`, rx, ry);
 
-    const irisR = rx * 0.6;
+    // Радужка занимает бóльшую часть глазной щели: у свиньи глаз тёмный, и
+    // белок виден лишь узкими уголками. Широкое белое кольцо вокруг мелкой
+    // радужки (было 0.6) давало «мультяшно-собачий» выпученный взгляд.
+    const irisR = rx * 0.78;
     const irisGradId = `worm-eye-iris-${instanceId}-${eyeKey}`;
     const irisFill = ensureVolumeGradient(defs, irisGradId, eye.color, { cx: '40%', cy: '35%', r: '80%', highlight: 0.4, shadow: -0.35 });
     const iris = svgEl('circle', { cx: 0, cy: 0, r: irisR.toFixed(2), fill: irisFill });
@@ -1207,9 +1230,13 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     // читалась как насупленная собачья бровь ("грустный пёс") — сила
     // изгиба, толщина и контраст цвета уменьшены, длина укорочена, и
     // бровь придвинута ближе к глазу.
+    // Базовое смещение брови хранится в переменной и уезжает в ref: tick()
+    // пересчитывает эту же позицию при browRaise, и если бы там осталось
+    // своё зашитое число, бровь при поднятии прыгала бы на старое место.
+    const browBaseY = -ry - 4.5;
     const browGroup = svgEl('g', {
         'data-part': `brow-${eyeKey}`,
-        transform: `translate(0,${(-ry - 4.5).toFixed(2)}) rotate(${eye.brow.angle * mirror})`,
+        transform: `translate(0,${browBaseY.toFixed(2)}) rotate(${eye.brow.angle * mirror})`,
         visibility: eye.brow.visible ? 'visible' : 'hidden'
     });
     const browShape = svgEl('path', {
@@ -1274,15 +1301,12 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     eyeFolds.appendChild(svgEl('path', {
         d: `M ${(-rx * 1.15).toFixed(1)},${(-ry * 0.85).toFixed(1)} ` +
            `Q 0,${(-ry * 1.7).toFixed(1)} ${(rx * 1.15).toFixed(1)},${(-ry * 0.85).toFixed(1)}`,
-        fill: 'none', stroke: withAlpha('#5a2430', 0.4), 'stroke-width': 1.4, 'stroke-linecap': 'round'
+        fill: 'none', stroke: withAlpha('#5a2430', 0.32), 'stroke-width': 1.2, 'stroke-linecap': 'round'
     }));
-    for (let i = 0; i < 2; i++) {
-        const sx = mirror * rx * (1.15 + i * 0.16);
-        eyeFolds.appendChild(svgEl('path', {
-            d: `M ${sx.toFixed(1)},${(ry * (0.1 + i * 0.28)).toFixed(1)} l ${(mirror * 3.2).toFixed(1)},${(1.6 + i * 1.4).toFixed(1)}`,
-            fill: 'none', stroke: withAlpha('#5a2430', 0.3), 'stroke-width': 0.9, 'stroke-linecap': 'round'
-        }));
-    }
+    // Морщинок-«гусиных лапок», расходящихся от внешнего уголка наружу, тут
+    // больше нет. На мелком свином глазу два косых штриха у каждого уголка
+    // читались не как возрастная складка, а как очередная пара УСОВ — та же
+    // ошибка, что была с вибриссами на щеках и лучами вокруг пятачка.
 
     // Радужка, лимб, зрачок и блик — в одной группе: взгляд двигается
     // переносом ЭТОЙ группы, а не четырёх элементов по отдельности (и не
@@ -1313,7 +1337,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     group.appendChild(eyeFolds);
     group.appendChild(browGroup);
 
-    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, rx, ry, lidHeight };
+    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, browBaseY, rx, ry, lidHeight };
 }
 
 // ---------- ПОСТРОЕНИЕ РТА: ЕДИНАЯ ПРОЦЕДУРНАЯ ФОРМА, ЖИВАЯ КАЖДЫЙ КАДР ----------
@@ -1407,8 +1431,8 @@ function updateMouthGeometry(mouthBuilt, bend, gap) {
 //   4) червячные признаки убывают вверх: кольцевые бороздки идут по всему
 //      телу, у шеи слабеют, а поясок-клителлум на сегменте-2 работает
 //      "воротником" — естественной границей между двумя типами кожи.
-// Пятачок при этом читается как передний конец ЧЕРВЯ (радиальные морщинки
-// вокруг него — как у ротового конца), а не как приклеенная деталь свиньи.
+// Пятачок при этом держится на широком основании морды и читается как
+// продолжение черепа, а не как приклеенная деталь.
 function buildHeadNeckTransition(ctx, headRx, headRy, neckColor) {
     const anatomy = ctx.anatomy;
     if (!anatomy.enabled) return null;
@@ -1425,29 +1449,28 @@ function buildHeadNeckTransition(ctx, headRx, headRy, neckColor) {
         ctx.gradCache[clipId] = true;
     }
     const group = svgEl('g', { class: 'worm-neck-blend', 'clip-path': `url(#${clipId})` });
-    const gid = `worm-neck-grad-${ctx.instanceId}`;
-    if (!ctx.gradCache[gid]) {
-        const grad = svgEl('linearGradient', { id: gid, x1: '0', y1: '0', x2: '0', y2: '1' });
-        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': neckColor, 'stop-opacity': '0' }));
-        grad.appendChild(svgEl('stop', { offset: '55%', 'stop-color': neckColor, 'stop-opacity': '0.35' }));
-        grad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': neckColor, 'stop-opacity': '0.8' }));
-        ctx.defs.appendChild(grad);
-        ctx.gradCache[gid] = true;
-    }
-    // Габариты юбки заведомо внутри черепа (низ на 0.93*ry): clip-path
-    // Chromium'ом в getBoundingClientRect() НЕ учитывается, поэтому одного
-    // клипа мало — геометрия тоже должна помещаться внутрь головы, иначе
-    // измеренный bbox головы вырастет, даже если визуально всё обрезано.
+    // Юбка сделана МЯГКИМ пятном (прозрачность падает до нуля к краю), а не
+    // эллипсом с вертикальным линейным градиентом. У прежнего варианта
+    // прозрачность гасла только сверху вниз, поэтому левый и правый края
+    // самого эллипса обрывались на середине непрозрачности — вдоль щёк шла
+    // чёткая граница, и нижняя половина лица читалась наклеенной светлой
+    // панелью поверх головы.
+    const gid = `worm-neck-soft-${ctx.instanceId}`;
+    // Габариты юбки заведомо внутри черепа: clip-path Chromium'ом в
+    // getBoundingClientRect() НЕ учитывается, поэтому одного клипа мало —
+    // геометрия тоже должна помещаться внутрь головы, иначе измеренный bbox
+    // головы вырастет, даже если визуально всё обрезано.
     group.appendChild(svgEl('ellipse', {
-        cx: 0, cy: (headRy * 0.48).toFixed(1),
-        rx: (headRx * 0.86).toFixed(1), ry: (headRy * 0.45).toFixed(1),
-        fill: `url(#${gid})`
+        cx: 0, cy: (headRy * 0.66).toFixed(1),
+        rx: (headRx * 0.78).toFixed(1), ry: (headRy * 0.32).toFixed(1),
+        fill: ensureSoftGradient(ctx, gid, neckColor, 1), opacity: 0.7
     }));
     return group;
 }
 
 // ---------- ДЕТАЛИЗАЦИЯ МОРДЫ ----------
-// Складки лба, вибриссы, тень у основания ушей. Всё внутри клипа по черепу:
+// Складки лба, брыли, морщина переносицы, щетина макушки и тень у основания
+// ушей — никаких вибрисс. Всё внутри клипа по черепу:
 // ни одна деталь не имеет права выйти за габарит головы, потому что по её
 // bbox Чревоугодие ставит кастрюлю над макушкой.
 function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
@@ -1474,8 +1497,8 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
     const shadeFill = ensureSoftGradient(ctx, `worm-head-earshade-${ctx.instanceId}`, GRIME_SHADOW, 1);
     [-1, 1].forEach(side => {
         group.appendChild(svgEl('ellipse', {
-            cx: (side * rx * 0.58).toFixed(1), cy: (-ry * 0.56).toFixed(1),
-            rx: (rx * 0.28).toFixed(1), ry: (ry * 0.18).toFixed(1),
+            cx: (side * rx * 0.54).toFixed(1), cy: (-ry * 0.74).toFixed(1),
+            rx: (rx * 0.28).toFixed(1), ry: (ry * 0.16).toFixed(1),
             fill: shadeFill, opacity: 0.35
         }));
     });
@@ -1499,27 +1522,55 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
         }
     }
 
-    // Вибриссы: длинные редкие волоски по щекам и над бровями. Держатся
-    // внутри силуэта — торчащие наружу увеличили бы bbox головы.
-    if (bristle > 0.01) {
-        // Ровно по паре с каждой стороны и близко к краю щеки: вибриссы —
-        // редкая деталь. Пять длинных волосков через всю морду мгновенно
-        // превращают свинью в кота.
-        const whiskers = 2;
+    // НИКАКИХ ВИБРИСС. Здесь раньше рисовались длинные волоски по щекам —
+    // по паре с каждой стороны, ровно на уровне пятачка. Вместе с
+    // радиальными морщинками вокруг самого пятачка они читались как
+    // кошачье-собачьи УСЫ и были главной причиной, по которой морда
+    // упорно оставалась псиной. У свиньи усов нет вообще: щёку от морды
+    // отделяет мягкая БРЫЛЬ (складка), а поперёк переносицы идёт
+    // горизонтальная морщина — их и рисуем вместо волосков.
+    if (folds > 0.01) {
+        // Брыль: дуга, отделяющая щёку от морды, обращённая выпуклостью
+        // наружу. Симметрично с обеих сторон — асимметричные штрихи на лице
+        // читаются шрамом, а не анатомией.
         [-1, 1].forEach(side => {
-            for (let i = 0; i < whiskers; i++) {
-                const t = i / Math.max(1, whiskers - 1);
-                const x0 = side * rx * (0.4 + t * 0.08);
-                const y0 = ry * (0.3 + t * 0.18);
-                const len = rx * (0.16 + rng() * 0.12);
-                const up = -ry * (0.04 + rng() * 0.1);
-                group.appendChild(svgEl('path', {
-                    d: `M ${x0.toFixed(1)},${y0.toFixed(1)} Q ${(x0 + side * len * 0.6).toFixed(1)},${(y0 + up * 0.6).toFixed(1)} ${(x0 + side * len).toFixed(1)},${(y0 + up).toFixed(1)}`,
-                    fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 0.7,
-                    opacity: (0.15 * bristle).toFixed(3), 'stroke-linecap': 'round'
-                }));
-            }
+            const x0 = side * rx * 0.30, y0 = ry * 0.20;
+            const x1 = side * rx * 0.50, y1 = ry * 0.62;
+            group.appendChild(svgEl('path', {
+                d: `M ${x0.toFixed(1)},${y0.toFixed(1)} Q ${(side * rx * 0.52).toFixed(1)},${(ry * 0.40).toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`,
+                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 1.3,
+                opacity: (0.16 * folds).toFixed(3), 'stroke-linecap': 'round'
+            }));
+            group.appendChild(svgEl('path', {
+                d: `M ${(x0 - side * 1.5).toFixed(1)},${y0.toFixed(1)} Q ${(side * rx * 0.52 - side * 1.5).toFixed(1)},${(ry * 0.40).toFixed(1)} ${(x1 - side * 1.5).toFixed(1)},${y1.toFixed(1)}`,
+                fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': 0.9,
+                opacity: (0.09 * folds).toFixed(3), 'stroke-linecap': 'round'
+            }));
         });
+        // Поперечная морщина на переносице, сразу над пятачком — свинья
+        // постоянно «морщит нос», это её характерная деталь.
+        group.appendChild(svgEl('path', {
+            d: `M ${(-rx * 0.26).toFixed(1)},${(ry * 0.12).toFixed(1)} Q 0,${(ry * 0.03).toFixed(1)} ${(rx * 0.26).toFixed(1)},${(ry * 0.12).toFixed(1)}`,
+            fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 1.2,
+            opacity: (0.15 * folds).toFixed(3), 'stroke-linecap': 'round'
+        }));
+    }
+
+    // Щетина на макушке — единственное место, где волос у свиньи реально
+    // заметен. Короткие редкие штрихи ВВЕРХУ черепа, далеко от пятачка.
+    if (bristle > 0.01) {
+        const count = 6;
+        for (let i = 0; i < count; i++) {
+            const t = i / (count - 1);
+            const bx = (-0.42 + t * 0.84) * rx + (rng() - 0.5) * rx * 0.06;
+            const by = -ry * (0.80 + rng() * 0.06);
+            const len = 2.4 + rng() * 2.2;
+            group.appendChild(svgEl('path', {
+                d: `M ${bx.toFixed(1)},${by.toFixed(1)} l ${((rng() - 0.5) * 1.6).toFixed(1)},${(-len).toFixed(1)}`,
+                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': 0.65,
+                opacity: (0.3 * bristle).toFixed(3), 'stroke-linecap': 'round'
+            }));
+        }
     }
 
     return group;
@@ -1628,8 +1679,11 @@ function buildHeadNode(model, ctx) {
     ['left', 'right'].forEach(side => {
         const mirror = side === 'left' ? -1 : 1;
         const ear = head.ears[side];
-        const anchorX = mirror * rx * 0.62;
-        const anchorY = -ry * 0.52;
+        // Уши свиньи растут на МАКУШКЕ, а не на висках: посаженные на
+        // половине высоты головы (было -ry*0.52) они читались как боковые
+        // собачьи уши. Подняты почти к своду черепа и чуть сведены к центру.
+        const anchorX = mirror * rx * 0.56;
+        const anchorY = -ry * 0.72;
         const baseAngle = mirror * EAR_BASE_TILT + ear.rotation;
         const earGroup = svgEl('g', {
             'data-part': `ear-${side}`,
@@ -1661,14 +1715,23 @@ function buildHeadNode(model, ctx) {
             // Бахрома растёт ВНУТРЬ контура уха: любая деталь, торчащая
             // наружу, увеличивает измеримый габарит персонажа, а на него
             // завязаны раскладки мини-игр.
+            // Волоски идут КОРОТКИМИ штрихами вдоль внутреннего края
+            // раковины. Раньше они были длинными и шли наискось через всё
+            // ухо — на просвет это читалось царапинами по коже, а не опушкой.
+            // Засечки ставятся вдоль ВНУТРЕННЕГО края уха и намеренно
+            // разрежены с разбросом по позиции: выстроенные по ровной линии
+            // с одинаковым наклоном штрихи зрительно сливались в одну
+            // длинную диагональ и читались как царапина через всё ухо.
             for (let i = 0; i < 5; i++) {
                 const t = i / 4;
-                const bx = mirror * (-7 + t * 18), by = 1 - t * 19;
-                const len = 1.6 + brng() * 2;
+                const bx = mirror * (-6 + t * 13) + (brng() - 0.5) * 2.4;
+                const by = 2 - t * 22 + (brng() - 0.5) * 2.4;
+                const len = 1 + brng() * 0.9;
+                const ang = -1.1 + brng() * 0.5;
                 fringe.appendChild(svgEl('path', {
-                    d: `M ${bx.toFixed(1)},${by.toFixed(1)} l ${(-mirror * len * 0.6).toFixed(1)},${(-len).toFixed(1)}`,
-                    stroke: GRIME_SHADOW, 'stroke-width': 0.6, fill: 'none',
-                    opacity: (0.3 * anatomy.coat.bristle).toFixed(3), 'stroke-linecap': 'round'
+                    d: `M ${bx.toFixed(1)},${by.toFixed(1)} l ${(-mirror * len * Math.cos(ang)).toFixed(1)},${(len * Math.sin(ang)).toFixed(1)}`,
+                    stroke: GRIME_SHADOW, 'stroke-width': 0.45, fill: 'none',
+                    opacity: (0.2 * anatomy.coat.bristle).toFixed(3), 'stroke-linecap': 'round'
                 }));
             }
             earGroup.appendChild(fringe);
@@ -1683,7 +1746,15 @@ function buildHeadNode(model, ctx) {
         organZone: null,
         muscle: false,
         clipPathData: skullD,
-        coat: { rings: false, folds: true, bristle: true }
+        // Череп шире номинального эллипса (скулы, широкая челюсть) — слои с
+        // жёстким краем растягиваем с запасом, клип обрежет по силуэту.
+        cover: 1.12,
+        // Складки и щетина для ГОЛОВЫ рисуются не здесь, а в
+        // buildHeadDetailLayer — там они расставлены по лицевой анатомии
+        // (брыли, переносица, макушка). Универсальная раскладка coat-слоя
+        // сеет короткие штрихи по краю силуэта и однобокие дуги слева: на
+        // теле это кожа, а на морде читалось царапинами и усами.
+        coat: { rings: false, folds: false, bristle: false }
     });
 
     // ---------- РЕЛЬЕФ ЧЕРЕПА ----------
@@ -1737,7 +1808,9 @@ function buildHeadNode(model, ctx) {
     // плоское лицо. Собственная светлая грань сверху, тени по бокам и
     // контактная тень в месте, где морда выходит из черепа.
     const muzzleW = (skullCfg.muzzleWidth != null ? skullCfg.muzzleWidth : 0.46) * rx;
-    const muzzleTop = ry * 0.05;
+    // Морда начинается НИЖЕ глаз: подтянутая к ним переносица — собачья
+    // черта, у свиньи между глазами и пятачком плоский широкий лоб.
+    const muzzleTop = ry * 0.14;
     const muzzleBottom = ry * 0.95;
     const muzzleGroup = svgEl('g', { 'data-part': 'muzzle', 'clip-path': `url(#${skullClipId})` });
     const muzzleGradId = `worm-muzzle-grad-${ctx.instanceId}`;
@@ -1754,12 +1827,17 @@ function buildHeadNode(model, ctx) {
     // Морда не должна иметь резкой верхней границы — она не накладка, а
     // продолжение черепа: заливка приглушена, а стык с лицом растворяется
     // мягким пятном (см. следующий слой).
-    muzzleGroup.appendChild(svgEl('path', { d: muzzleD, fill: muzzleFill, opacity: 0.5 }));
+    // Заливка морды намеренно ЕЛЕ ЗАМЕТНА (было 0.5): при широком свином
+    // основании эта фигура занимает почти всё лицо, и на половинной
+    // прозрачности её край читался как наклеенная светлая панель с чёткой
+    // границей вокруг пятачка. Объём морде дают тени по бокам и светлая
+    // грань ниже, а не сама заливка.
+    muzzleGroup.appendChild(svgEl('path', { d: muzzleD, fill: muzzleFill, opacity: 0.22 }));
     muzzleGroup.appendChild(svgEl('ellipse', {
-        cx: 0, cy: (ry * 0.06).toFixed(1),
-        rx: (muzzleW * 1.5).toFixed(1), ry: (ry * 0.26).toFixed(1),
+        cx: 0, cy: (ry * 0.12).toFixed(1),
+        rx: (muzzleW * 1.05).toFixed(1), ry: (ry * 0.22).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-muzzle-blend-${ctx.instanceId}`, mixColor(head.fill, GRIME_HIGHLIGHT, 0.12), 1),
-        opacity: 0.5
+        opacity: 0.4
     }));
     // Тени по бокам морды — она отделяется от щёк.
     [-1, 1].forEach(side => {
@@ -1783,23 +1861,32 @@ function buildHeadNode(model, ctx) {
     // опускается (см. tick), и морда открывается как челюсть, а не как дырка
     // в неподвижной коже.
     const jawGroup = svgEl('g', { 'data-part': 'jaw', 'clip-path': `url(#${skullClipId})` });
+    // Низ морды привязан к РЕАЛЬНОМУ подбородку (chinDrop), а не к жёстким
+    // ry*1.0: подбородок поднялся вместе с укорочением морды, и рот с губой
+    // должны были подняться вместе с ним, иначе они повисли бы под черепом.
+    const chinY = (skullCfg.chinDrop != null ? skullCfg.chinDrop : 0.98) * ry;
     const jawFill = ensureSoftGradient(ctx, `worm-jaw-shade-${ctx.instanceId}`, GRIME_SHADOW, 1);
     jawGroup.appendChild(svgEl('ellipse', {
-        cx: 0, cy: (ry * 1.0).toFixed(1),
-        rx: (muzzleW * 0.95).toFixed(1), ry: (ry * 0.16).toFixed(1),
+        cx: 0, cy: (chinY * 0.96).toFixed(1),
+        rx: (muzzleW * 0.8).toFixed(1), ry: (ry * 0.16).toFixed(1),
         fill: jawFill, opacity: 0.3
     }));
     const lipColor = mixColor(head.mouth.color, head.fill, 0.35);
     const lowerLip = svgEl('path', {
-        d: `M ${(-muzzleW * 0.78).toFixed(1)},${(ry * 1.02).toFixed(1)} Q 0,${(ry * 1.1).toFixed(1)} ${(muzzleW * 0.78).toFixed(1)},${(ry * 1.02).toFixed(1)}`,
+        d: `M ${(-muzzleW * 0.62).toFixed(1)},${(chinY * 0.98).toFixed(1)} Q 0,${(chinY * 1.06).toFixed(1)} ${(muzzleW * 0.62).toFixed(1)},${(chinY * 0.98).toFixed(1)}`,
         fill: 'none', stroke: lipColor, 'stroke-width': 2, opacity: 0.5, 'stroke-linecap': 'round'
     });
     jawGroup.appendChild(lowerLip);
 
     // ---------- ПЯТАЧОК ----------
+    // Главная опознавательная деталь свиньи и единственная, которую нельзя
+    // делать скромной: на рисованных свиных мордах пятачок — ДОМИНАНТА лица,
+    // крупный диск примерно в половину ширины головы, а не аккуратная
+    // пуговица. Пока он был мелким (14.5 против rx=40), взгляд цеплялся за
+    // глаза и вытянутую морду — то есть за собачью схему лица.
     const snout = head.snout;
-    const snoutY = ry * 0.6;
-    const snoutRx = 14.5, snoutRy = 10.5;
+    const snoutY = ry * 0.52;
+    const snoutRx = 19.5, snoutRy = 14;
     const snoutGroup = svgEl('g', {
         'data-part': 'snout',
         'data-anchor': 'snout',
@@ -1817,65 +1904,88 @@ function buildHeadNode(model, ctx) {
         cx: 0, cy: (snoutRy * 0.42).toFixed(1), rx: (snoutRx * 1.05).toFixed(1), ry: (snoutRy * 0.8).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-snout-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1), opacity: 0.4
     }));
-    const snoutShape = svgEl('ellipse', { cx: 0, cy: 0, rx: snoutRx, ry: snoutRy, fill: snoutFill, stroke: snout.stroke, 'stroke-width': 2 });
-    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: '#631d27', transform: 'rotate(-14 -4.8 0)' });
-    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: '#631d27', transform: 'rotate(14 4.8 0)' });
-    const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: '#ffffff', opacity: 0.32 });
+    // Форма диска — не ровный эллипс, а «скруглённая D»: купол сверху и
+    // заметно более плоский низ. Именно так пятачок рисуют на референсах, и
+    // именно плоский низ отличает его от круглого собачьего носа.
+    const snoutD = `M ${(-snoutRx).toFixed(1)},${(-snoutRy * 0.24).toFixed(1)} ` +
+        `C ${(-snoutRx).toFixed(1)},${(-snoutRy * 1.02).toFixed(1)} ${snoutRx.toFixed(1)},${(-snoutRy * 1.02).toFixed(1)} ${snoutRx.toFixed(1)},${(-snoutRy * 0.24).toFixed(1)} ` +
+        `C ${snoutRx.toFixed(1)},${(snoutRy * 0.64).toFixed(1)} ${(snoutRx * 0.58).toFixed(1)},${snoutRy.toFixed(1)} 0,${snoutRy.toFixed(1)} ` +
+        `C ${(-snoutRx * 0.58).toFixed(1)},${snoutRy.toFixed(1)} ${(-snoutRx).toFixed(1)},${(snoutRy * 0.64).toFixed(1)} ${(-snoutRx).toFixed(1)},${(-snoutRy * 0.24).toFixed(1)} Z`;
+    const snoutShape = svgEl('path', { d: snoutD, fill: snoutFill, stroke: snout.stroke, 'stroke-width': 2, 'stroke-linejoin': 'round' });
+    // Ободок диска: пятачок — мясистая пластина с приподнятым краем. Тонкая
+    // внутренняя светлая линия по верху и тень по низу дают эту толщину.
+    const snoutRim = svgEl('g', { class: 'worm-snout-rim' });
+    snoutRim.appendChild(svgEl('path', {
+        d: `M ${(-snoutRx * 0.9).toFixed(1)},${(-snoutRy * 0.42).toFixed(1)} ` +
+           `C ${(-snoutRx * 0.86).toFixed(1)},${(-snoutRy * 0.9).toFixed(1)} ${(snoutRx * 0.86).toFixed(1)},${(-snoutRy * 0.9).toFixed(1)} ${(snoutRx * 0.9).toFixed(1)},${(-snoutRy * 0.42).toFixed(1)}`,
+        fill: 'none', stroke: mixColor(snout.fill, GRIME_HIGHLIGHT, 0.6),
+        'stroke-width': 1.6, opacity: 0.4, 'stroke-linecap': 'round'
+    }));
+    snoutRim.appendChild(svgEl('path', {
+        d: `M ${(-snoutRx * 0.82).toFixed(1)},${(snoutRy * 0.52).toFixed(1)} ` +
+           `C ${(-snoutRx * 0.6).toFixed(1)},${(snoutRy * 0.92).toFixed(1)} ${(snoutRx * 0.6).toFixed(1)},${(snoutRy * 0.92).toFixed(1)} ${(snoutRx * 0.82).toFixed(1)},${(snoutRy * 0.52).toFixed(1)}`,
+        fill: 'none', stroke: mixColor(snout.fill, GRIME_SHADOW, 0.5),
+        'stroke-width': 1.4, opacity: 0.35, 'stroke-linecap': 'round'
+    }));
+    // Ноздри — крупные, широко расставленные, слегка наклонённые «фасолины».
+    // На мелком пятачке они читались двумя точками; на крупном именно они
+    // делают его пятачком, а не пуговицей.
+    const nostrilDX = snoutRx * 0.34;
+    const nostrilL = svgEl('ellipse', { cx: (-nostrilDX).toFixed(1), cy: (snoutRy * 0.06).toFixed(1), rx: 3.1, ry: 4.5, fill: '#631d27', transform: `rotate(-13 ${(-nostrilDX).toFixed(1)} 0)` });
+    const nostrilR = svgEl('ellipse', { cx: nostrilDX.toFixed(1), cy: (snoutRy * 0.06).toFixed(1), rx: 3.1, ry: 4.5, fill: '#631d27', transform: `rotate(13 ${nostrilDX.toFixed(1)} 0)` });
+    const snoutShine = svgEl('ellipse', {
+        cx: (-snoutRx * 0.3).toFixed(1), cy: (-snoutRy * 0.5).toFixed(1),
+        rx: (snoutRx * 0.32).toFixed(1), ry: (snoutRy * 0.17).toFixed(1),
+        fill: '#ffffff', opacity: 0.3
+    });
     const poreGroup = svgEl('g', { class: 'worm-snout-pores' });
     const poreRng = mulberry32(hashStringSeed(`${ctx.instanceId}-snout-pores`));
     for (let i = 0; i < 14; i++) {
         const a = poreRng() * Math.PI * 2;
         const rr = Math.sqrt(poreRng()) * 0.86;
         const px = Math.cos(a) * snoutRx * rr, py = Math.sin(a) * snoutRy * rr;
-        if (Math.abs(px) < 8 && Math.abs(py) < 4.5) continue;
+        if (Math.abs(px) < nostrilDX + 4.5 && Math.abs(py) < 6) continue;
         poreGroup.appendChild(svgEl('circle', {
             cx: px.toFixed(1), cy: py.toFixed(1), r: (0.5 + poreRng() * 0.6).toFixed(2),
             fill: mixColor(snout.fill, GRIME_SHADOW, 0.55), opacity: 0.42
         }));
     }
     const nostrilShade = svgEl('g');
-    [[-4.8, -14], [4.8, 14]].forEach(([nx, rot]) => {
+    [[-nostrilDX, -13], [nostrilDX, 13]].forEach(([nx, rot]) => {
         nostrilShade.appendChild(svgEl('ellipse', {
-            cx: nx, cy: 1, rx: 1.6, ry: 2.2, fill: '#2d0a11', opacity: 0.75,
-            transform: `rotate(${rot} ${nx} 0)`
+            cx: nx.toFixed(1), cy: (snoutRy * 0.06 + 1.2).toFixed(1), rx: 2.1, ry: 2.9, fill: '#2d0a11', opacity: 0.75,
+            transform: `rotate(${rot} ${nx.toFixed(1)} 0)`
         }));
     });
     // Вертикальная бороздка (philtrum) — она есть у каждой свиньи и сразу
     // читается как порода, а не как абстрактный кружок.
     const philtrum = svgEl('path', {
-        d: `M 0,${(-snoutRy * 0.25).toFixed(1)} L 0,${(snoutRy * 0.95).toFixed(1)}`,
+        d: `M 0,${(-snoutRy * 0.2).toFixed(1)} L 0,${(snoutRy * 0.9).toFixed(1)}`,
         stroke: mixColor(snout.fill, GRIME_SHADOW, 0.5), 'stroke-width': 1.2, opacity: 0.5, fill: 'none'
     });
     snoutGroup.appendChild(snoutShape);
     snoutGroup.appendChild(poreGroup);
+    snoutGroup.appendChild(snoutRim);
     snoutGroup.appendChild(snoutShine);
     snoutGroup.appendChild(nostrilL);
     snoutGroup.appendChild(nostrilR);
     snoutGroup.appendChild(nostrilShade);
     snoutGroup.appendChild(philtrum);
-    if (anatomy.enabled && (anatomy.coat && (anatomy.coat.folds || 0) > 0.01)) {
-        const rng = anatRng(anatomy, 'snout', 'radial');
-        const wrinkles = svgEl('g', { class: 'worm-snout-wrinkles' });
-        const count = 6 + Math.floor(rng() * 3);
-        for (let i = 0; i < count; i++) {
-            const a = (i / count) * Math.PI * 2 + rng() * 0.2;
-            const r0 = snoutRx * 1.05, r1 = r0 + 2 + rng() * 2.2;
-            wrinkles.appendChild(svgEl('path', {
-                d: `M ${(Math.cos(a) * r0).toFixed(1)},${(Math.sin(a) * r0 * 0.72).toFixed(1)} ` +
-                   `L ${(Math.cos(a) * r1).toFixed(1)},${(Math.sin(a) * r1 * 0.72).toFixed(1)}`,
-                stroke: GRIME_SHADOW, 'stroke-width': 0.8, fill: 'none',
-                opacity: (0.26 * anatomy.coat.folds).toFixed(3), 'stroke-linecap': 'round'
-            }));
-        }
-        snoutGroup.appendChild(wrinkles);
-    }
+    // ВАЖНО: здесь НЕ должно появляться радиальных штрихов, расходящихся от
+    // пятачка наружу. Раньше тут рисовались «морщинки» лучами по кругу — на
+    // морде они читались ровно как собачьи УСЫ и в одиночку тянули весь
+    // образ обратно к псу. Складки кожи свиньи идут поперёк переносицы (см.
+    // buildHeadDetailLayer), а не лучами от носа.
 
     // ---------- РОТ ----------
     const mouth = head.mouth;
+    // Рот сидит сразу под пятачком, в промежутке между ним и подбородком —
+    // ровно как на рисованных свиных мордах.
+    const mouthY = chinY * 0.94;
     const mouthAnchor = svgEl('g', {
         'data-part': 'mouth',
         'data-anchor': 'mouth',
-        transform: `translate(0,${(ry * 1.0).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
+        transform: `translate(0,${mouthY.toFixed(2)}) scale(${(mouth.scale * mouth.stretchX).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
     });
     const mouthBuilt = buildMouthShapes(mouthAnchor, mouth, ctx.instanceId);
     updateMouthGeometry(mouthBuilt, mouthBendFromCurve(mouth.curve), mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
@@ -3099,7 +3209,7 @@ const WormRenderer = {
                             const lift = -browRaise * 4;
                             const angle = eyeModel.brow.angle * mirror - browRaise * 6 * mirror;
                             eyeRef.browGroup.setAttribute('transform',
-                                `translate(0,${(-eyeRef.ry - 7 + lift).toFixed(2)}) rotate(${angle.toFixed(2)})`);
+                                `translate(0,${((eyeRef.browBaseY != null ? eyeRef.browBaseY : -eyeRef.ry - 4.5) + lift).toFixed(2)}) rotate(${angle.toFixed(2)})`);
                         }
                     });
                 }
