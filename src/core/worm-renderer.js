@@ -937,25 +937,28 @@ function buildAnatomyStack(ctx, partName, opts) {
 // ---------- ЛОКАЛЬНЫЕ ФОРМЫ (до позиционирования) ----------
 function earPathData(mirror) {
     // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления к
-    // голове. Свиное ухо — не лепесток, а крупный треугольник с мясистым
-    // основанием и мягко скруглённой вершиной, слегка завёрнутой вперёд.
+    // голове. Свиное ухо — крупная широкая лопасть с мясистым основанием и
+    // ШИРОКО ЗАКРУГЛЁННОЙ (не острой!) вершиной: там, где раньше вершина
+    // сходилась в почти собачью точку, теперь верхний край — пологая дуга
+    // между двумя контрольными точками, разнесёнными по ширине. Именно
+    // острый, узкий, "вздёрнутый назад" силуэт читался как собачье ухо.
     const s = mirror;
-    return `M ${(-s * 11).toFixed(1)},5 ` +
-        `C ${(-s * 12).toFixed(1)},-6 ${(-s * 6).toFixed(1)},-16 ${(s * 3).toFixed(1)},-23 ` +
-        `C ${(s * 9).toFixed(1)},-28 ${(s * 17).toFixed(1)},-28 ${(s * 18).toFixed(1)},-21 ` +
-        `C ${(s * 19).toFixed(1)},-14 ${(s * 17).toFixed(1)},-5 ${(s * 14).toFixed(1)},2 ` +
-        `C ${(s * 11).toFixed(1)},8 ${(s * 2).toFixed(1)},9 ${(-s * 11).toFixed(1)},5 Z`;
+    return `M ${(-s * 7).toFixed(1)},8 ` +
+        `C ${(-s * 11).toFixed(1)},-2 ${(-s * 8).toFixed(1)},-16 ${(-s * 1).toFixed(1)},-23 ` +
+        `C ${(s * 6).toFixed(1)},-29 ${(s * 17).toFixed(1)},-29 ${(s * 22).toFixed(1)},-21 ` +
+        `C ${(s * 26).toFixed(1)},-14 ${(s * 24).toFixed(1)},-4 ${(s * 19).toFixed(1)},4 ` +
+        `C ${(s * 15).toFixed(1)},11 ${(s * 3).toFixed(1)},13 ${(-s * 7).toFixed(1)},8 Z`;
 }
 
 // Раковина — углублённая часть уха: повторяет внешний контур с отступом
 // внутрь, за счёт чего у уха появляется толщина, а не плоская заливка.
 function earInnerPathData(mirror) {
     const s = mirror;
-    return `M ${(-s * 4).toFixed(1)},2 ` +
-        `C ${(-s * 5).toFixed(1)},-6 ${(-s * 1).toFixed(1)},-15 ${(s * 6).toFixed(1)},-22 ` +
-        `C ${(s * 9).toFixed(1)},-26 ${(s * 13).toFixed(1)},-26 ${(s * 13).toFixed(1)},-21 ` +
-        `C ${(s * 13).toFixed(1)},-16 ${(s * 11).toFixed(1)},-7 ${(s * 9).toFixed(1)},0 ` +
-        `C ${(s * 7).toFixed(1)},3 ${(s * 1).toFixed(1)},4 ${(-s * 4).toFixed(1)},2 Z`;
+    return `M ${(-s * 2).toFixed(1)},4 ` +
+        `C ${(-s * 5).toFixed(1)},-4 ${(-s * 3).toFixed(1)},-14 ${(s * 2).toFixed(1)},-20 ` +
+        `C ${(s * 7).toFixed(1)},-25 ${(s * 14).toFixed(1)},-25 ${(s * 17).toFixed(1)},-19 ` +
+        `C ${(s * 19).toFixed(1)},-13 ${(s * 17).toFixed(1)},-6 ${(s * 13).toFixed(1)},1 ` +
+        `C ${(s * 10).toFixed(1)},6 ${(s * 2).toFixed(1)},7 ${(-s * 2).toFixed(1)},4 Z`;
 }
 
 // Сосудики внутри уха: у свиньи ухо — самая тонкая кожа на всём теле, оно
@@ -1198,15 +1201,20 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
         fill: '#ffffff', opacity: 0.5
     });
 
-    // Бровь — дугой (Q), а не прямой палочкой.
+    // Бровь — короткая и почти плоская складка над глазом, а не выгнутая
+    // "домиком" дуга: у свиньи нет мимической брови, есть лишь едва
+    // заметный кожный валик. Раньше толстая тёмная дуга с сильным изгибом
+    // читалась как насупленная собачья бровь ("грустный пёс") — сила
+    // изгиба, толщина и контраст цвета уменьшены, длина укорочена, и
+    // бровь придвинута ближе к глазу.
     const browGroup = svgEl('g', {
         'data-part': `brow-${eyeKey}`,
-        transform: `translate(0,${(-ry - 7).toFixed(2)}) rotate(${eye.brow.angle * mirror})`,
+        transform: `translate(0,${(-ry - 4.5).toFixed(2)}) rotate(${eye.brow.angle * mirror})`,
         visibility: eye.brow.visible ? 'visible' : 'hidden'
     });
     const browShape = svgEl('path', {
-        d: `M ${(-rx * 1.1).toFixed(2)},1.5 Q 0,${(-rx * 0.55).toFixed(2)} ${(rx * 1.1).toFixed(2)},1.5`,
-        fill: 'none', stroke: '#2a0d14', 'stroke-width': 3.2, 'stroke-linecap': 'round'
+        d: `M ${(-rx * 0.85).toFixed(2)},1 Q 0,${(-rx * 0.22).toFixed(2)} ${(rx * 0.85).toFixed(2)},1`,
+        fill: 'none', stroke: withAlpha('#4a2018', 0.55), 'stroke-width': 2, 'stroke-linecap': 'round'
     });
     browGroup.appendChild(browShape);
 
@@ -1610,7 +1618,11 @@ function buildHeadNode(model, ctx) {
     // у свиньи уши стоят домиком, а не торчат строго вверх. Базовый разворот
     // живёт в рендерере, а `ear.rotation` из модели прибавляется к нему —
     // так прижатые уши (отрицательный угол) остаются рабочим состоянием.
-    const EAR_BASE_TILT = 27;
+    // Было 27 — вместе со старым узким остроконечным ухом это давало
+    // посадку "домиком, вздёрнутым назад", как у настороженной собаки.
+    // Широкое закруглённое ухо + меньший разворот наружу читаются как
+    // отвисающее свиное ухо, а не стоячее собачье.
+    const EAR_BASE_TILT = 16;
     const earsGroup = svgEl('g', { 'data-part': 'ears' });
     const earRefs = {};
     ['left', 'right'].forEach(side => {
