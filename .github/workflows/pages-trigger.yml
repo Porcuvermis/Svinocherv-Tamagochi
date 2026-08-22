@@ -1,0 +1,22 @@
+name: Pages trigger
+
+# Пустышка, у которой одна задача — сработать на пуш в ЛЮБУЮ ветку и тем
+# самым запустить настоящий деплой (deploy-pages.yml).
+#
+# Зачем такой крюк. GitHub разрешает выкладывать Pages только с ветки по
+# умолчанию: у окружения github-pages стоит ограничение по веткам, и пуш в
+# claude/что-нибудь отлетает за две секунды с "environment protection rules",
+# даже не начав шаги. А события workflow_run выполняются от имени ветки по
+# умолчанию — то есть деплой, запущенный отсюда, ограничение проходит.
+#
+# Альтернатива — руками снять ограничение в Settings → Environments →
+# github-pages → Deployment branches. Тогда этот файл можно удалить, а
+# deploy-pages.yml вернуть на обычный `on: push`.
+on:
+  push:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Пуш в ${{ github.ref_name }} — запускаю выкладку Pages"

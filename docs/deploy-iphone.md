@@ -106,6 +106,14 @@ https://porcuvermis.github.io/Svinocherv-Tamagochi/?sw=off
 
 * Сайт у Pages один, поэтому каждый деплой пересобирает его целиком:
   свежий `main` в корень плюс превью десяти последних по времени веток.
+* Выкладку запускают два workflow, а не один. GitHub разрешает публиковать
+  Pages только с ветки по умолчанию: пуш в любую другую ветку отлетает с
+  «environment protection rules», не начав работу. Поэтому пуш ловит
+  пустышка `pages-trigger.yml`, а она через `workflow_run` запускает
+  `deploy-pages.yml` — событие `workflow_run` выполняется от имени ветки по
+  умолчанию и ограничение проходит. Если снять ограничение руками
+  (Settings → Environments → github-pages → Deployment branches), пустышку
+  можно удалить, а деплою вернуть обычный `on: push`.
 * Удалил ветку — её превью пропадает при следующем деплое само.
 * Ветка без `index.html` в превью не попадает.
 * На домашний экран имеет смысл вешать только основную версию: превью
@@ -120,6 +128,7 @@ https://porcuvermis.github.io/Svinocherv-Tamagochi/?sw=off
 
 | Файл | Зачем |
 |---|---|
+| `.github/workflows/pages-trigger.yml` | Ловит пуш в любую ветку и запускает выкладку |
 | `.github/workflows/deploy-pages.yml` | Собирает и выкладывает на Pages, подставляет номер сборки |
 | `boot.js` | Определяет версию, регистрирует service worker, аварийный `?sw=off` |
 | `sw.js` | Network-first кеш: свежесть в приоритете, офлайн как страховка |

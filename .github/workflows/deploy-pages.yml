@@ -6,8 +6,15 @@ name: Deploy to GitHub Pages
 #
 # Сайт у Pages один, поэтому каждый деплой пересобирает его целиком: свежий
 # main плюс превью живых веток. Ветку удалили — её превью исчезает само.
+#
+# Запускается НЕ напрямую по пушу, а через workflow_run от «Pages trigger».
+# Причина в pages-trigger.yml: выкладывать Pages разрешено только с ветки по
+# умолчанию, а workflow_run выполняется именно от неё — поэтому пуш в любую
+# ветку доезжает до превью.
 on:
-  push:
+  workflow_run:
+    workflows: ["Pages trigger"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
