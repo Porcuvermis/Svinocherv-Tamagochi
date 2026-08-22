@@ -1,13 +1,13 @@
 name: Deploy to GitHub Pages
 
-# Каждый пуш в main выкладывает игру на GitHub Pages. Никакой ручной
-# пересборки: телефону достаточно открыть ссылку.
+# Любой пуш в любую ветку выкладывает игру на GitHub Pages:
+#   main             → в корень сайта (то, что открывается с домашнего экрана)
+#   остальные ветки  → в /preview/<ветка>/ (посмотреть, не вливая в main)
 #
-# Через "Run workflow" можно выложить и любую другую ветку — удобно
-# проверить эксперимент с айфона, не вливая его в main.
+# Сайт у Pages один, поэтому каждый деплой пересобирает его целиком: свежий
+# main плюс превью живых веток. Ветку удалили — её превью исчезает само.
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -29,36 +29,89 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Нужны все ветки: превью собираются из них же.
+          fetch-depth: 0
 
-      - name: Собрать сайт и проставить версию сборки
+      - name: Собрать сайт (main в корень, ветки в /preview/)
+        id: build
         run: |
           set -e
-          BUILD="$(date -u +%Y%m%d-%H%M)-$(echo "$GITHUB_SHA" | cut -c1-7)"
-          echo "Сборка: $BUILD"
 
+          # Собирает одну ветку в указанную папку и проставляет ей версию.
+          # $1 — git-ссылка, $2 — папка назначения, $3 — метка сборки.
+          build_into() {
+            ref="$1"; dest="$2"; label="$3"
+            mkdir -p "$dest"
+            git archive "$ref" | tar -x -C "$dest"
+            rm -rf "$dest/.github" "$dest/tools"
+
+            if [ ! -f "$dest/index.html" ]; then
+              echo "  пропуск: в ветке нет index.html"
+              rm -rf "$dest"
+              return 1
+            fi
+
+            # Главное здесь. Раньше версии ассетов правились руками
+            # (style.css?v=13, worm-renderer.js?v=32 и так пятнадцать штук):
+            # забыл поднять номер — айфон молча показывает вчерашний код.
+            # Теперь все ?v=... получают общую метку сборки, и любой
+            # изменённый файл автоматически едет по новому URL.
+            #
+            # vendor/ — исключение: библиотека прибита к своей версии
+            # (three.min.js?v=r128) и не должна перекачиваться на каждой
+            # правке игры, иначе это 600 КБ мобильного трафика впустую.
+            sed -i -E "/vendor\//! s/\?v=[A-Za-z0-9._-]+/?v=$label/g" "$dest/index.html"
+            sed -i "s/__BUILD__/$label/g" "$dest/index.html"
+            # У старых веток sw.js может не быть — это не повод падать.
+            if [ -f "$dest/sw.js" ]; then
+              sed -i "s/__BUILD__/$label/g" "$dest/sw.js"
+            fi
+
+            # Чтобы версию можно было проверить, не открывая игру:
+            # <адрес сборки>/build.txt
+            echo "$label" > "$dest/build.txt"
+            return 0
+          }
+
+          STAMP="$(date -u +%Y%m%d-%H%M)"
           mkdir -p _site
-          tar -cf - \
-            --exclude='./.git' \
-            --exclude='./.github' \
-            --exclude='./tools' \
-            --exclude='./_site' \
-            . | tar -xf - -C _site
 
-          # Главное здесь. Раньше версии ассетов правились руками
-          # (style.css?v=13, worm-renderer.js?v=32 и так пятнадцать штук):
-          # забыл поднять номер — айфон молча показывает вчерашний код.
-          # Теперь все ?v=... получают один общий номер сборки, и любой
-          # изменённый файл автоматически едет по новому URL.
-          sed -i -E "s/\?v=[A-Za-z0-9._-]+/?v=$BUILD/g" _site/index.html
-          sed -i "s/__BUILD__/$BUILD/g" _site/index.html _site/sw.js
+          echo "=== main → / ==="
+          MAIN_LABEL="$STAMP-$(git rev-parse --short=7 origin/main)"
+          build_into origin/main _site "$MAIN_LABEL"
+          echo "  сборка: $MAIN_LABEL"
+          grep -c "?v=$MAIN_LABEL" _site/index.html
 
-          # Чтобы версию можно было проверить, не открывая игру:
-          # <адрес сайта>/build.txt
-          echo "$BUILD" > _site/build.txt
+          # Превью: десять последних по времени веток, кроме main.
+          echo "=== ветки → /preview/ ==="
+          mkdir -p _site/preview
+          ROWS=""
+          # Полные refname, а не короткие: у refs/remotes/origin/HEAD короткое
+          # имя — просто "origin", и по нему main уехал бы ещё и в превью.
+          for ref in $(git for-each-ref --sort=-committerdate \
+                         --format='%(refname)' refs/remotes/origin \
+                       | grep -vE '/(HEAD|main)$' | head -10); do
+            branch="${ref#refs/remotes/origin/}"
+            slug="$(echo "$branch" | tr '/_' '--' | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-')"
+            label="$STAMP-$(git rev-parse --short=7 "$ref")"
+            echo "$branch → /preview/$slug/"
+            if build_into "$ref" "_site/preview/$slug" "$label"; then
+              when="$(git log -1 --format='%cd' --date=format:'%d.%m %H:%M' "$ref")"
+              subj="$(git log -1 --format='%s' "$ref" | cut -c1-80 \
+                      | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
+              ROWS="$ROWS<li><a href=\"$slug/\">$branch</a><span>$when — $subj</span></li>"
+            fi
+          done
 
-          echo "--- проверка ---"
-          grep -c "?v=$BUILD" _site/index.html
-          grep -n "app-build" _site/index.html
+          # Страница со списком сборок: с телефона удобнее тыкать по
+          # ссылкам, чем набирать имена веток руками. Вёрстка лежит
+          # в tools/preview-index.sh.
+          STAMP="$STAMP" MAIN_LABEL="$MAIN_LABEL" ROWS="$ROWS" \
+            bash tools/preview-index.sh > _site/preview/index.html
+
+          echo "=== итог ==="
+          ls _site/preview
 
       - uses: actions/configure-pages@v5
 
