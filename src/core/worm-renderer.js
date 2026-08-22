@@ -170,6 +170,175 @@ const WORM_VERTICAL_SPACING = 26;
 // сквозная дуга (art-direction.md §4.2). Живот уводится влево относительно
 // головы, поэтому дуга с пола продолжается вверх, а голова оказывается
 // вынесенной вправо — тело противовесит хвосту, и поза становится живой.
+// ============================================================================
+//                       КОМНАТА: ПОЛ В ПЕРСПЕКТИВЕ (2.5D)
+// ============================================================================
+// Главный экран был плоским: персонаж ползал по однородному тёмному фону, и
+// его размер не менялся, куда бы он ни шёл. Комната даёт сцене третье
+// измерение, не превращая проект в 3D.
+//
+// Вся геометрия выводится из ЧЕТЫРЁХ чисел, и это не случайность: пол,
+// границы блуждания и масштаб персонажа обязаны считаться из одного
+// источника, иначе персонаж рано или поздно окажется по колено в полу или
+// вырастет не в том месте.
+//
+// Модель — честное перспективное деление, а не линейная интерполяция:
+//   scale(d) = 1 / (1 + d*k),  где k подобрано так, что scale(1) = minScale.
+// Отсюда сразу всё остальное: экранная высота точки пола, ширина пола на
+// этой глубине и размер персонажа — это одно и то же число scale(d).
+// Линейная интерполяция дала бы «складной» пол: у камеры шаг вглубь съедал
+// бы столько же пикселей, сколько у дальней стены, и глубина бы не читалась.
+const ROOM = {
+    horizonRatio: 0.16,    // точка схода — доля высоты сцены
+    floorFrontRatio: 1.0,  // передний край пола (у нижней кромки кадра)
+    frontHalfRatio: 0.8,   // полуширина пола у переднего края (доля ширины)
+    // Сила перспективы: scale(d) = 1 / (1 + d*depthK).
+    depthK: 0.42,
+    // Пол нарисован ГЛУБЖЕ, чем ходит червь. Иначе полоса пола выходит
+    // узкой, стена съедает больше половины кадра, и персонаж жмётся к нижней
+    // кромке — прямое нарушение «персонаж главный в кадре» (§6).
+    farDepth: 4.6,         // до какой глубины НАРИСОВАН пол
+    wanderNear: 0.15,      // ближняя граница блуждания
+    wanderFar: 3.2,        // дальняя граница блуждания (не до самой стены)
+    wanderInsetU: 0.72,    // насколько близко к боковым стенам подходит червь
+    // ---------- ПРИГЛУШЕНИЕ МАСШТАБА ПЕРСОНАЖА ----------
+    // Пол считается по ЧЕСТНОЙ перспективе, а размер персонажа — нет, и это
+    // осознанное расхождение.
+    //
+    // Если дать персонажу полный перспективный масштаб, у дальней стены он
+    // ужмётся вдвое: это читается не «отошёл вглубь», а «провалился в яму»,
+    // и мелкую мимику становится не разглядеть. Если же приглушить саму
+    // перспективу пола, комната станет плоской.
+    //
+    // Поэтому глубина у них общая, а сила отклика разная: пол — 1.0,
+    // персонаж — вот столько. Так комната остаётся глубокой, а размер
+    // меняется заметно, но не пугающе.
+    charScaleStrength: 0.45
+};
+
+function roomGeometry(w, h) {
+    return {
+        w, h, cx: w / 2,
+        horizonY: h * ROOM.horizonRatio,
+        frontY: h * ROOM.floorFrontRatio,
+        frontHalf: w * ROOM.frontHalfRatio
+    };
+}
+// Геометрический масштаб на глубине d (0 = у самой камеры).
+function roomScaleAt(d) {
+    return 1 / (1 + Math.max(0, d) * ROOM.depthK);
+}
+// Масштаб ПЕРСОНАЖА на той же глубине — приглушённый, см. charScaleStrength.
+function roomCharScaleAt(d) {
+    return 1 + (roomScaleAt(d) - 1) * ROOM.charScaleStrength;
+}
+function roomYAt(g, d) { return g.horizonY + (g.frontY - g.horizonY) * roomScaleAt(d); }
+function roomHalfAt(g, d) { return g.frontHalf * roomScaleAt(d); }
+// Обратная задача: по экранной высоте — глубина. Нужна, чтобы масштабировать
+// персонажа и след слизи, зная только их положение на полу.
+function roomDepthAt(g, y) {
+    const s = (y - g.horizonY) / Math.max(1e-6, g.frontY - g.horizonY);
+    return Math.max(0, (1 / Math.max(1e-4, s) - 1) / ROOM.depthK);
+}
+
+// Отрисовка комнаты. Намеренно скупая: по формуле стиля интерьер — это
+// «смокинг», он не имеет права спорить с персонажем за внимание
+// (docs/art-direction.md §1.2, §5). Поэтому только плоскости, одна линия
+// стыка и несколько очень слабых линий схода — самый дешёвый признак
+// глубины из существующих.
+function buildRoom(layer, g) {
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    const backY = roomYAt(g, ROOM.farDepth);
+    const backHalf = roomHalfAt(g, ROOM.farDepth);
+    // Пол светлее и ТЕПЛЕЕ холодной стены. Разрыв по светлоте обязателен:
+    // на одинаковых тонах комната читается одним тёмным полем, а не двумя
+    // плоскостями. Горизонтальная поверхность и правда ловит верхний свет
+    // лучше вертикальной (art-direction.md §3).
+    const floorFill = mixColor(P_.void[700], P_.bile[200], 0.13);
+
+    // Задняя стена. Не плоская заливка: свет в проекте один, сверху-слева,
+    // и вертикальная плоскость обязана это показывать, иначе стена читается
+    // дырой, а не поверхностью.
+    const wallGradId = 'worm-room-wall-grad';
+    const wdefs = svgEl('defs');
+    const wgrad = svgEl('radialGradient', { id: wallGradId, cx: '28%', cy: '18%', r: '95%' });
+    wgrad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': mixColor(P_.void[900], P_.void[700], 0.85) }));
+    wgrad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900] }));
+    wdefs.appendChild(wgrad);
+    layer.appendChild(wdefs);
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: 0, width: g.w, height: backY.toFixed(1), fill: `url(#${wallGradId})`
+    }));
+    // Пол — трапеция от дальнего края к переднему. Он светлее стены: свет
+    // падает сверху, и горизонтальная плоскость ловит его лучше вертикальной.
+    layer.appendChild(svgEl('path', {
+        d: `M ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} ` +
+           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} Z`,
+        fill: floorFill
+    }));
+    // Боковые «отвалы» пола до краёв кадра: без них по бокам от трапеции
+    // остаётся цвет стены, и пол выглядит ковром, лежащим в пустоте.
+    layer.appendChild(svgEl('path', {
+        d: `M 0,${backY.toFixed(1)} L ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L 0,${g.frontY.toFixed(1)} Z ` +
+           `M ${g.w},${backY.toFixed(1)} L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
+           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L ${g.w},${g.frontY.toFixed(1)} Z`,
+        fill: floorFill, opacity: 0.55
+    }));
+    // Пол ниже переднего края — ближний план, ещё чуть светлее.
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: g.frontY.toFixed(1), width: g.w, height: Math.max(0, g.h - g.frontY).toFixed(1),
+        fill: floorFill
+    }));
+    // Линии схода: сходятся к точке горизонта, поэтому глубина читается даже
+    // на неподвижном кадре. Держатся на грани заметности.
+    for (let i = -3; i <= 3; i++) {
+        if (i === 0) continue;
+        const u = i / 3.2;
+        layer.appendChild(svgEl('line', {
+            x1: (g.cx + u * g.frontHalf).toFixed(1), y1: g.frontY.toFixed(1),
+            x2: (g.cx + u * backHalf).toFixed(1), y2: backY.toFixed(1),
+            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.16
+        }));
+    }
+    // Плинтус: узкая полоса по низу стены. Самая дешёвая деталь, которая
+    // превращает две плоскости в комнату — без неё стык читается обрывом.
+    const plinthH = Math.max(3, g.h * 0.018);
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: (backY - plinthH).toFixed(1), width: g.w, height: plinthH.toFixed(1),
+        fill: mixColor(P_.void[900], floorFill, 0.45)
+    }));
+    layer.appendChild(svgEl('line', {
+        x1: 0, y1: (backY - plinthH).toFixed(1), x2: g.w, y2: (backY - plinthH).toFixed(1),
+        stroke: P_.ink, 'stroke-width': SW.detail, opacity: 0.6
+    }));
+
+    // Стык стены и пола — самая тёмная линия сцены после контура персонажа.
+    layer.appendChild(svgEl('line', {
+        x1: 0, y1: backY.toFixed(1), x2: g.w, y2: backY.toFixed(1),
+        stroke: P_.ink, 'stroke-width': SW.structure, opacity: 0.85
+    }));
+    // Мягкая тень у стыка: пол уходит в темноту вдали, а не обрывается.
+    const gradId = 'worm-room-depth-grad';
+    if (!layer.ownerDocument.getElementById(gradId)) {
+        const defs = svgEl('defs');
+        const grad = svgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
+        // Тёмный тон здесь НЕЙТРАЛЬНЫЙ, а не контурный ink: сливовый ink
+        // давал полу отчётливый лиловый налёт у дальней стены.
+        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.9' }));
+        grad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900], 'stop-opacity': '0' }));
+        defs.appendChild(grad);
+        layer.appendChild(defs);
+    }
+    layer.appendChild(svgEl('rect', {
+        x: 0, y: backY.toFixed(1), width: g.w,
+        height: Math.max(1, (g.frontY - backY) * 0.5).toFixed(1),
+        fill: `url(#${gradId})`
+    }));
+}
+
 // ---------- ОРИЕНТАЦИЯ ТЕЛА ПО НАПРАВЛЕНИЮ ДВИЖЕНИЯ ----------
 // Напольная цепь строилась под ЖЁСТКИМ углом 180°: тело всегда уходило влево
 // от головы, куда бы червь ни полз. Существо не может ползти в одну сторону,
@@ -250,6 +419,8 @@ const WORM_SLIME_SMEAR_ALPHA = 0.5;
 const WORM_SLIME_DROP_ALPHA = 0.72;
 const WORM_SLIME_DROP_EVERY = 4;   // капля на каждую N-ю точку следа
 const WORM_SLIME_DROP_R = 2.1;
+// На сколько должен измениться масштаб глубины, чтобы начать новый отрезок следа.
+const WORM_SLIME_DEPTH_STEP = 0.1;
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
@@ -3004,6 +3175,10 @@ const WormRenderer = {
     mount(container, model, opts) {
         opts = Object.assign({
             context: 'main',
+            // Рисовать комнату с полом в перспективе и масштабировать
+            // персонажа по глубине. Только для главного экрана: мини-игры
+            // ставят свои сцены сами.
+            room: false,
             wander: false,
             blink: true,
             anchorX: 0.5,
@@ -3033,8 +3208,11 @@ const WormRenderer = {
 
         // Два постоянных слоя внутри svg, которые НЕ трогает rebuild():
         // slimeLayer (след слизи, под персонажем) и charLayer (сам персонаж).
+        // roomLayer — интерьер, лежит ПОД следом слизи и персонажем.
+        const roomLayer = svgEl('g', { class: 'worm-room-layer' });
         const slimeLayer = svgEl('g', { class: 'worm-slime-layer' });
         const charLayer = svgEl('g', { class: 'worm-char-layer' });
+        if (opts.room) svg.appendChild(roomLayer);
         svg.appendChild(slimeLayer);
         svg.appendChild(charLayer);
 
@@ -3078,6 +3256,9 @@ const WormRenderer = {
             // всегда до появления ориентации; это же значение и стартовое,
             // поэтому неподвижный червь выглядит ровно как раньше.
             tailAngle: 180,
+            room: null,
+            depthScale: 1,
+            floorLocalY: 0,
             // Голова по умолчанию сама следит за направлением ползания.
             // setHeadPose() перехватывает управление, setHeadPose('auto')
             // возвращает автоматику.
@@ -3130,6 +3311,14 @@ const WormRenderer = {
             const w = Math.max(1, rect.width);
             const h = Math.max(1, rect.height);
             svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            if (opts.room) {
+                state.room = roomGeometry(w, h);
+                buildRoom(roomLayer, state.room);
+                // Стартовая точка — на полу, а не в произвольной доле высоты:
+                // иначе персонаж при запуске стоит в воздухе или в стене.
+                if (!state.wormX) state.wormX = state.room.cx;
+                if (!state.wormY) state.wormY = roomYAt(state.room, 1.1);
+            }
             state.wormX = state.wormX || w * opts.anchorX;
             state.wormY = state.wormY || h * opts.anchorY;
             state.targetX = state.wormX;
@@ -3138,7 +3327,18 @@ const WormRenderer = {
 
         function rootTransform() {
             const flipPart = opts.flip ? ' scale(-1,1)' : '';
-            return `translate(${state.wormX.toFixed(1)},${state.wormY.toFixed(1)})${flipPart}`;
+            const sc = state.depthScale;
+            if (!opts.room || Math.abs(sc - 1) < 0.001) {
+                return `translate(${state.wormX.toFixed(1)},${state.wormY.toFixed(1)})${flipPart}`;
+            }
+            // Масштабировать надо ВОКРУГ ТОЧКИ КАСАНИЯ ПОЛА, а не вокруг
+            // начала координат (оно в голове). При масштабировании от головы
+            // тело подтягивается к ней, и уменьшенный персонаж повисает над
+            // полом вместо того, чтобы уйти вглубь комнаты.
+            const F = state.floorLocalY;
+            const shift = F * (1 - sc);
+            return `translate(${state.wormX.toFixed(1)},${(state.wormY + shift).toFixed(1)}) ` +
+                   `scale(${sc.toFixed(4)})${flipPart}`;
         }
 
         function rebuild() {
@@ -3171,13 +3371,16 @@ const WormRenderer = {
 
         function startSlimeTrail(x, y) {
             const g = svgEl('g', { class: 'worm-slime-trail' });
+            // След лежит НА ПОЛУ, значит подчиняется той же перспективе, что
+            // и всё остальное: у дальней стены он должен быть уже.
+            const trailScale = opts.room ? state.depthScale : 1;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
             const smearColor = withAlpha(ACID_DEEP, WORM_SLIME_SMEAR_ALPHA);
-            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55), fill: smearColor });
+            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55 * trailScale), fill: smearColor });
             // Широкая тёмная клякса — само мокрое пятно, оно и есть след.
             const stroke = svgEl('path', {
                 d: `M ${x.toFixed(1)},${y.toFixed(1)}`,
-                fill: 'none', stroke: smearColor, 'stroke-width': WORM_SLIME_WIDTH,
+                fill: 'none', stroke: smearColor, 'stroke-width': (WORM_SLIME_WIDTH * trailScale).toFixed(2),
                 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
             });
             // Слой для ярких капель — они добавляются по мере движения.
@@ -3186,7 +3389,7 @@ const WormRenderer = {
             g.appendChild(stroke);
             g.appendChild(drops);
             slimeLayer.appendChild(g);
-            state.slimeTrails.push({ g, stroke, drops, rng, points: [{ x, y }], finishedAt: null });
+            state.slimeTrails.push({ g, stroke, drops, rng, scale: trailScale, points: [{ x, y }], finishedAt: null });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
         }
 
@@ -3202,9 +3405,10 @@ const WormRenderer = {
             // поперёк следа, иначе капли выстроятся ровной пунктирной линией
             // по центру и получится разметка шоссе, а не слизь.
             if (trail.points.length % WORM_SLIME_DROP_EVERY !== 0) return;
-            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3;
-            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3;
-            const r = WORM_SLIME_DROP_R * (0.6 + trail.rng() * 0.8);
+            const ts = trail.scale || 1;
+            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3 * ts;
+            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3 * ts;
+            const r = WORM_SLIME_DROP_R * (0.6 + trail.rng() * 0.8) * ts;
             trail.drops.appendChild(svgEl('ellipse', {
                 cx: (x + jx).toFixed(1), cy: (y + jy).toFixed(1),
                 rx: r.toFixed(2), ry: (r * (0.55 + trail.rng() * 0.4)).toFixed(2),
@@ -3214,6 +3418,17 @@ const WormRenderer = {
 
         function updateSlimeTrail(now, isMoving, anchor) {
             if (isMoving && anchor) {
+                // Ширина отрезка следа задаётся один раз, на его старте:
+                // это обычный stroke, сузить его по длине нельзя. Поэтому
+                // когда червь заметно меняет глубину, текущий отрезок
+                // закрывается и начинается новый, уже своей ширины. Отрезки
+                // перекрываются, стык не виден, а след честно сужается,
+                // уходя вглубь комнаты.
+                const act = state.activeSlimeTrail;
+                if (act && opts.room && Math.abs(state.depthScale / (act.scale || 1) - 1) > WORM_SLIME_DEPTH_STEP) {
+                    act.finishedAt = now;
+                    state.activeSlimeTrail = null;
+                }
                 if (!state.activeSlimeTrail) startSlimeTrail(anchor.x, anchor.y);
                 else extendSlimeTrail(anchor.x, anchor.y);
             } else if (state.activeSlimeTrail) {
@@ -3261,9 +3476,21 @@ const WormRenderer = {
                 } else if (state.nextMoveAt == null) {
                     state.nextMoveAt = now + WORM_IDLE_PAUSE_MIN + Math.random() * (WORM_IDLE_PAUSE_MAX - WORM_IDLE_PAUSE_MIN);
                 } else if (now >= state.nextMoveAt) {
-                    const rect = container.getBoundingClientRect();
-                    state.targetX = rect.width * 0.2 + Math.random() * (rect.width * 0.6);
-                    state.targetY = rect.height * 0.4 + Math.random() * (rect.height * 0.3);
+                    if (state.room) {
+                        // Цель выбирается в координатах ПОЛА (глубина + сдвиг
+                        // поперёк), а не в долях экрана: только так персонаж
+                        // гарантированно остаётся на полу и не заходит в
+                        // стену, какой бы ни была форма трапеции.
+                        const g = state.room;
+                        const d = ROOM.wanderNear + Math.random() * (ROOM.wanderFar - ROOM.wanderNear);
+                        const u = (Math.random() * 2 - 1) * ROOM.wanderInsetU;
+                        state.targetX = g.cx + u * roomHalfAt(g, d);
+                        state.targetY = roomYAt(g, d);
+                    } else {
+                        const rect = container.getBoundingClientRect();
+                        state.targetX = rect.width * 0.2 + Math.random() * (rect.width * 0.6);
+                        state.targetY = rect.height * 0.4 + Math.random() * (rect.height * 0.3);
+                    }
                     state.nextMoveAt = null;
                 }
             }
@@ -3281,6 +3508,13 @@ const WormRenderer = {
                     state.tailAngle += delta * (1 - Math.pow(WORM_TAIL_TURN_BASE, dtSec));
                     state.tailAngle = ((state.tailAngle % 360) + 360) % 360;
                 }
+            }
+
+            // ---------- ГЛУБИНА → РАЗМЕР ----------
+            // Персонаж на полу: его экранная высота однозначно задаёт, как
+            // далеко он от камеры. Ближе — крупнее, вглубь — мельче.
+            if (opts.room && state.room) {
+                state.depthScale = roomCharScaleAt(roomDepthAt(state.room, state.wormY));
             }
 
             const intensityFactor = 1 - Math.pow(WORM_MOVE_INTENSITY_SMOOTH_BASE, dtSec);
@@ -3350,6 +3584,9 @@ const WormRenderer = {
                     state.built.head.group.setAttribute('transform', 'translate(0,0)');
 
                     const floorY = bellyIdx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
+                    // Запоминаем для rootTransform: масштаб по глубине берёт
+                    // эту точку за неподвижную, иначе персонаж всплывает.
+                    state.floorLocalY = floorY;
                     // Сторона завала колонны = сторона, куда лежит хвост.
                     // cos угла хвоста даёт и знак, и естественное затухание
                     // завала, когда червь ползёт строго вглубь комнаты: там
@@ -3440,9 +3677,16 @@ const WormRenderer = {
 
                     if (opts.wander) {
                         const flip = opts.flip;
+                        // Точка выхода следа задана в ЛОКАЛЬНЫХ координатах
+                        // персонажа, а он теперь масштабируется по глубине —
+                        // значит и смещение надо считать по тем же правилам,
+                        // что и корневой трансформ, иначе след будет
+                        // отставать от хвоста тем сильнее, чем дальше червь.
+                        const sc = state.depthScale;
+                        const shiftY = state.floorLocalY * (1 - sc);
                         const anchorWorld = lastGrowLocal ? {
-                            x: state.wormX + (flip ? -lastGrowLocal.x : lastGrowLocal.x),
-                            y: state.wormY + lastGrowLocal.y
+                            x: state.wormX + (flip ? -lastGrowLocal.x : lastGrowLocal.x) * sc,
+                            y: state.wormY + shiftY + lastGrowLocal.y * sc
                         } : null;
                         updateSlimeTrail(now, isMoving, anchorWorld);
                     }
