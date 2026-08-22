@@ -170,6 +170,11 @@ const WORM_VERTICAL_SPACING = 26;
 // сквозная дуга (art-direction.md §4.2). Живот уводится влево относительно
 // головы, поэтому дуга с пола продолжается вверх, а голова оказывается
 // вынесенной вправо — тело противовесит хвосту, и поза становится живой.
+// Скорость подъезда головы к целевому повороту (формула 1 - base^dt):
+// МЕНЬШЕ значение = БЫСТРЕЕ. 0.0009 даёт поворот примерно за четверть
+// секунды — читается щелчком, но остаётся плавным.
+const WORM_HEAD_YAW_BASE = 0.0009;
+const WORM_HEAD_YAW_EPS = 0.004;
 const WORM_SPINE_LEAN = 16;
 // Показатель степени: >1 держит шею почти прямой, а изгиб собирает внизу, у
 // живота. Линейный снос дал бы равномерный завал всей колонны — это чтение
@@ -1045,6 +1050,22 @@ function buildAnatomyStack(ctx, partName, opts) {
 // голову с точностью до пикселя, и правка безопасна.
 const YAW_MAX_DEG = 42;   // сколько градусов даёт yaw = 1
 
+// ---------- ИМЕНОВАННЫЕ ПОЗЫ ГОЛОВЫ ----------
+// Ось непрерывная — это механизм. Позы — словарь: код игры говорит
+// «смотрит влево», а не «yaw = -0.5». Три значения настраиваются один раз и
+// дальше гарантированно хороши, а у любой анимации поворота появляются
+// определённые ключи. Левая и правая — честное зеркало друг друга: проверено
+// замером, все черты сходятся с точностью 0.00 px (расходятся только
+// веснушки и складки, они раскладываются сеянным генератором и на сторонах
+// разные — такая асимметрия как раз нужна).
+//
+// Важно: это НЕ зеркальная копия картинки. У отражённого спрайта вместе с ним
+// отразился бы и свет — блик перепрыгнул бы на другую скулу, и персонаж
+// выглядел бы освещённым разными лампами в разных позах. Здесь источник
+// света остаётся на месте (art-direction.md §3), а шрам не перескакивает с
+// щеки на щеку.
+const WORM_HEAD_POSES = { left: -0.5, center: 0, right: 0.5 };
+
 // Черты, которые ВЫСТУПАЮТ вперёд (пятачок, морда), при повороте уезжают в
 // сторону сильнее, чем лежащие на поверхности: они дальше от оси вращения.
 // Это и есть главный признак ракурса — нос уходит с центра лица.
@@ -1052,10 +1073,24 @@ function yawProject(rx, phiDeg, yaw, protrude) {
     const theta = yaw * YAW_MAX_DEG;
     const a = (phiDeg + theta) * Math.PI / 180;
     const reach = rx * (1 + (protrude || 0));
+    // Сжатие НОРМИРОВАНО на своё же значение при нулевом повороте.
+    //
+    // Без нормировки squash = cos(phi) уже при анфасе: у глаза на азимуте
+    // 40° это 0.77, у уха на 73° — 0.29. То есть черты оказывались
+    // сплющены В САМОМ АНФАСЕ, и обещание «yaw = 0 воспроизводит прежнюю
+    // голову» держалось только для позиций, но не для ширин. Замер это и
+    // показал: оба уха выходили одинаково узкими даже в центральной позе.
+    //
+    // Нас интересует не абсолютный ракурс черты, а ИЗМЕНЕНИЕ ракурса от
+    // поворота головы. Отсюда деление на cos(phi).
+    const base = Math.cos(phiDeg * Math.PI / 180);
+    const rel = Math.abs(base) > 1e-3 ? Math.cos(a) / base : Math.cos(a);
     return {
         x: reach * Math.sin(a),
-        squash: Math.cos(a),          // <= 0 значит черта ушла за череп
-        front: Math.cos(a) > 0.08     // видна ли она вообще
+        // Верхний предел: ближняя черта при повороте к зрителю честно
+        // становится шире, но раздувать её сверх меры незачем.
+        squash: Math.min(1.08, rel),
+        front: rel > 0.08
     };
 }
 
@@ -1294,6 +1329,7 @@ function buildTailNode(tail, ctx, attachRadius) {
 
 // ---------- ПОСТРОЕНИЕ ОДНОГО ГЛАЗА (склера, радужка, зрачок, веко-шторка) ----------
 function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
+    // Возвращает, помимо узлов, всё нужное для ЖИВОГО пересчёта поворота.
     // yawCtx: { yaw, headRx } — при yaw = 0 всё сходится к прежнему x.
     const yaw = yawCtx ? yawCtx.yaw : 0;
     // ВАЖНО: радиус берётся не полный, а поверхности черепа НА ВЫСОТЕ ГЛАЗ —
@@ -1311,17 +1347,21 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     // глаз обязан остаться глазом. Ракурс здесь уступает читаемости.
     const yawSquash = Math.max(0.58, Math.abs(proj.squash));
 
-    const rx = 8 * eye.stretchX * eye.scale * yawSquash;
+    // Сжатие НЕ запекается в rx: иначе при живом повороте пришлось бы
+    // пересобирать всю внутреннюю геометрию глаза (склера, радужка, веко,
+    // clipPath) каждый кадр. Оно живёт в scale() группы — там его можно
+    // переставить одним атрибутом.
+    const rx = 8 * eye.stretchX * eye.scale;
     const ry = 8 * eye.stretchY * eye.scale;
     // Страховка: даже на правильной поверхности глаз со своей шириной может
     // задеть контур. Держим его целиком внутри лица — наполовину срезанный
     // глаз читается браком отрисовки, а не ракурсом.
-    const xLimit = (yawCtx && yawCtx.maxAbsX != null) ? Math.max(0, yawCtx.maxAbsX - rx * 1.12) : Infinity;
+    const xLimit = (yawCtx && yawCtx.maxAbsX != null) ? Math.max(0, yawCtx.maxAbsX - rx * yawSquash * 1.12) : Infinity;
     const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), xLimit);
 
     const group = svgEl('g', {
         'data-part': `eye-${eyeKey}`,
-        transform: `translate(${x.toFixed(2)},${y})`,
+        transform: `translate(${x.toFixed(2)},${y}) scale(${yawSquash.toFixed(3)},1)`,
         visibility: eye.visible ? 'visible' : 'hidden'
     });
 
@@ -1540,7 +1580,10 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     group.appendChild(eyeFolds);
     group.appendChild(browGroup);
 
-    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, rx, ry, lidHeight };
+    // phi/offsetY/xLimitBase нужны, чтобы пересчитать посадку глаза при
+    // ЖИВОМ повороте головы, не пересобирая его внутренности.
+    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, rx, ry, lidHeight,
+             yawPhi: phi, offsetY: y, baseRx: rx };
 }
 
 // ---------- ПОСТРОЕНИЕ РТА: ЕДИНАЯ ПРОЦЕДУРНАЯ ФОРМА, ЖИВАЯ КАЖДЫЙ КАДР ----------
@@ -1854,11 +1897,18 @@ function buildHeadNode(model, ctx) {
     // Клип по РЕАЛЬНОЙ форме черепа: все слои кожи, складки и щетина
     // обрезаются силуэтом головы, а не вписанным эллипсом.
     const skullClipId = `worm-skull-clip-${ctx.instanceId}`;
+    // Ссылку на путь клипа держим: при живом повороте череп становится
+    // асимметричным, и обрезка обязана ехать вместе с ним — иначе слои кожи
+    // и рот будут обрезаться по форме, которой на экране уже нет.
+    let skullClipShape = null;
     if (!ctx.gradCache[skullClipId]) {
         const clip = svgEl('clipPath', { id: skullClipId });
-        clip.appendChild(svgEl('path', { d: skullD }));
+        skullClipShape = svgEl('path', { d: skullD });
+        clip.appendChild(skullClipShape);
         ctx.defs.appendChild(clip);
-        ctx.gradCache[skullClipId] = true;
+        ctx.gradCache[skullClipId] = skullClipShape;
+    } else if (ctx.gradCache[skullClipId] instanceof Object) {
+        skullClipShape = ctx.gradCache[skullClipId];
     }
 
     const headShine = svgEl('ellipse', {
@@ -1875,11 +1925,17 @@ function buildHeadNode(model, ctx) {
     // Наклон посадки. Было 27° — уши вставали торчком в стороны и вместе с
     // узкой треугольной формой давали кошачий силуэт.
     const EAR_BASE_TILT = 30;
-    // Калибровка габарита. Форму уха задаёт earPathData, а этот множитель —
-    // отдельная ручка размера: на полной величине клин перелетал в летучую
-    // мышь и начинал спорить с головой за внимание. Свиное ухо крупное, но
-    // голова всё-таки главнее.
-    const EAR_FORM_SCALE = 0.82;
+    // Отдельная ручка габарита уха: форму задаёт earPathData, размер — здесь.
+    //
+    // История значения важна, чтобы его случайно не «починили» обратно.
+    // Стояло 0.82 — я уменьшил ухо, посчитав, что клин перелетел в летучую
+    // мышь. Но это значение НИКОГДА не доезжало до экрана: tick() каждый
+    // кадр пересобирал трансформ уха из earRefs, где лежал только
+    // ear.scale*stretchX, и калибровка терялась через кадр после сборки.
+    // То есть согласованный размер уха — это размер БЕЗ калибровки.
+    // Баг с потерей трансформа исправлен, а множитель приведён к тому, что
+    // реально было на экране и было одобрено.
+    const EAR_FORM_SCALE = 1;
     const earsGroup = svgEl('g', { 'data-part': 'ears' });
     const earRefs = {};
     ['left', 'right'].forEach(side => {
@@ -1889,7 +1945,12 @@ function buildHeadNode(model, ctx) {
         // анфасного отступа, но с добавкой, отодвигающей ухо назад. Поэтому
         // при повороте дальнее ухо честно уезжает за череп, а ближнее
         // разворачивается к зрителю.
-        const EAR_PHI_BACK = 22; // насколько ухо отнесено назад от плоскости лица
+        // Насколько ухо отнесено назад от плоскости лица. Было 22°, что
+        // вместе с собственным отступом ставило ухо на азимут ~73° — почти
+        // у края сферы, где производная проекции максимальна: ближнее ухо
+        // раздувалось, дальнее превращалось в лезвие. 12° делает реакцию
+        // на поворот заметной, но не взрывной.
+        const EAR_PHI_BACK = 12;
         const earPhi = yawAzimuth(mirror * rx * 0.78, rx) + mirror * EAR_PHI_BACK;
         const earProj = yawProject(rx, earPhi, headYaw, 0);
         const anchorX = earProj.x;
@@ -1898,7 +1959,7 @@ function buildHeadNode(model, ctx) {
         // Уху, наоборот, сокращаться можно сильно: у него нет внутренней
         // структуры, которую сплющивание сделало бы нечитаемой, а сильный
         // ракурс дальнего уха — самый дешёвый признак повёрнутой головы.
-        const earYawSquash = Math.max(0.34, Math.abs(earProj.squash));
+        const earYawSquash = Math.max(0.42, Math.abs(earProj.squash));
         const baseAngle = mirror * EAR_BASE_TILT + ear.rotation;
         // Группа уха масштабируется, а значит масштабируется и её обводка.
         // Без компенсации контур уха уехал бы с лестницы толщин (2.6 * 0.82
@@ -1952,7 +2013,21 @@ function buildHeadNode(model, ctx) {
             earGroup.appendChild(fringe);
         }
         earsGroup.appendChild(earGroup);
-        earRefs[side] = { group: earGroup, shape: earShape, inner: earInner, anchorX, anchorY, baseAngle, scaleX: ear.scale * ear.stretchX, scaleY: ear.scale * ear.stretchY };
+        // ВАЖНО: в refs кладётся ПОЛНЫЙ масштаб — с калибровкой формы и с
+        // ракурсным сжатием. Раньше тут лежал только ear.scale*stretchX, а
+        // tick() каждый кадр переписывает этот трансформ целиком, поэтому
+        // и калибровка, и сжатие терялись через кадр после сборки: на
+        // замерах дальнее и ближнее ухо выходили одинаковой ширины при
+        // явно повёрнутой голове.
+        earRefs[side] = {
+            group: earGroup, shape: earShape, inner: earInner,
+            anchorX, anchorY, baseAngle,
+            yawPhi: earPhi,
+            baseScaleX: ear.scale * ear.stretchX * EAR_FORM_SCALE,
+            baseScaleY: ear.scale * ear.stretchY * EAR_FORM_SCALE,
+            scaleX: ear.scale * ear.stretchX * EAR_FORM_SCALE * earYawSquash,
+            scaleY: ear.scale * ear.stretchY * EAR_FORM_SCALE
+        };
     });
 
     // ---------- СЛОИ КОЖИ ГОЛОВЫ ----------
@@ -2227,12 +2302,101 @@ function buildHeadNode(model, ctx) {
     const scarLayer = svgEl('g', { 'data-anchor': 'head-scars', class: 'worm-scar-layer' });
     tiltGroup.appendChild(scarLayer);
 
-    return {
+    const headRef = {
         group, tiltGroup, skull, ears: earRefs, snoutGroup, muzzleGroup, jawGroup,
-        mouth: mouthBuilt, eyes: { left: eyeLeft, right: eyeRight },
+        mouth: mouthBuilt, mouthAnchor, skullClipShape, eyes: { left: eyeLeft, right: eyeRight },
         scarLayer, rx, ry, snoutY, anat: headAnat,
-        fillColor: ctx.neckColor || head.fill
+        fillColor: ctx.neckColor || head.fill,
+        // ---------- ДАННЫЕ ДЛЯ ЖИВОГО ПОВОРОТА ----------
+        // Всё, что нужно, чтобы пересчитать ракурс без пересборки головы.
+        skullCfg,
+        yaw: headYaw,
+        eyeSurfaceRx,
+        snoutProtrude: SNOUT_PROTRUDE,
+        mouthProtrude: MOUTH_PROTRUDE,
+        // Базовые (без ракурса) значения, от которых считается пересчёт.
+        snoutX: snoutProj.x,
+        snoutSquash: snoutYawSquash,
+        muzzleX: muzzleProj.x,
+        mouthX: mouthYawX,
+        mouthSquash: mouthYawSquash,
+        mouthBaseScale: { x: mouth.scale * mouth.stretchX, y: mouth.scale * mouth.stretchY }
     };
+    return headRef;
+}
+
+// ---------- ЖИВОЙ ПЕРЕСЧЁТ ПОВОРОТА ГОЛОВЫ ----------
+// Тот же расчёт, что и при сборке, но переставляет атрибуты УЖЕ созданных
+// узлов — ни одного нового элемента. Это обязательное условие, чтобы поворот
+// можно было анимировать: setOverride пересобирает всю голову заново и для
+// покадровой анимации не годится.
+//
+// Пересчитывать нужно ровно шесть вещей: путь черепа (он асимметричен),
+// трансформы двух глаз, двух ушей, пятачка с мордой и рта.
+function applyHeadYaw(headRef, yaw) {
+    if (!headRef || headRef.yaw === yaw) return;
+    headRef.yaw = yaw;
+    const rx = headRef.rx, ry = headRef.ry;
+
+    // Череп — единственная строка пути, которую приходится пересобирать.
+    // Она короткая (шесть кривых), в отличие от пути кишечного тракта.
+    if (headRef.skull) {
+        const d = skullPathData(rx, ry, headRef.skullCfg, yaw);
+        headRef.skull.setAttribute('d', d);
+        if (headRef.skullClipShape) headRef.skullClipShape.setAttribute('d', d);
+    }
+
+    // Глаза: посадка по поверхности + ракурсное сжатие через scale группы.
+    const maxAbsX = headRef.eyeSurfaceRx * (1 - 0.13 * Math.abs(yaw));
+    ['left', 'right'].forEach(side => {
+        const e = headRef.eyes[side];
+        if (!e) return;
+        const proj = yawProject(headRef.eyeSurfaceRx, e.yawPhi, yaw, 0);
+        const squash = Math.max(0.58, Math.abs(proj.squash));
+        const limit = Math.max(0, maxAbsX - e.baseRx * squash * 1.12);
+        const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), limit);
+        e.group.setAttribute('transform',
+            `translate(${x.toFixed(2)},${e.offsetY}) scale(${squash.toFixed(3)},1)`);
+    });
+
+    // Уши: пересчитываем якорь и сжатие, но САМ трансформ не пишем — его
+    // каждый кадр собирает tick() вместе с наклоном уха. Пишем в refs,
+    // откуда tick его и берёт.
+    ['left', 'right'].forEach(side => {
+        const ear = headRef.ears[side];
+        if (!ear) return;
+        const proj = yawProject(rx, ear.yawPhi, yaw, 0);
+        ear.anchorX = proj.x;
+        ear.scaleX = ear.baseScaleX * Math.max(0.42, Math.abs(proj.squash));
+        ear.group.setAttribute('transform',
+            `translate(${ear.anchorX.toFixed(2)},${ear.anchorY.toFixed(2)}) ` +
+            `rotate(${ear.baseAngle.toFixed(1)}) ` +
+            `scale(${ear.scaleX.toFixed(3)},${ear.scaleY.toFixed(3)})`);
+    });
+
+    // Пятачок и морда: выступающие черты, уезжают сильнее прочих. Сам
+    // трансформ пятачка тоже собирает tick() (принюхивание), поэтому здесь
+    // только обновляем базовые значения в refs.
+    const snoutProj = yawProject(rx, 0, yaw, headRef.snoutProtrude);
+    headRef.snoutX = snoutProj.x;
+    headRef.snoutSquash = Math.max(0.55, Math.abs(snoutProj.squash));
+    if (headRef.muzzleGroup) {
+        const mz = yawProject(rx, 0, yaw, headRef.snoutProtrude * 0.7);
+        headRef.muzzleX = mz.x;
+        headRef.muzzleGroup.setAttribute('transform', `translate(${mz.x.toFixed(2)},0)`);
+    }
+
+    // Рот: тот же выступ, но с ограничителем по ширине морды.
+    if (headRef.mouthAnchor) {
+        const mp = yawProject(rx, 0, yaw, headRef.mouthProtrude);
+        const maxX = rx * (headRef.skullCfg.muzzleWidth != null ? headRef.skullCfg.muzzleWidth : 0.46) * 0.45;
+        headRef.mouthX = Math.sign(mp.x) * Math.min(Math.abs(mp.x), maxX);
+        headRef.mouthSquash = Math.max(0.62, Math.abs(mp.squash));
+        const mo = headRef.mouthBaseScale || { x: 1, y: 1 };
+        headRef.mouthAnchor.setAttribute('transform',
+            `translate(${headRef.mouthX.toFixed(2)},${(ry * 0.9).toFixed(2)}) ` +
+            `scale(${(mo.x * headRef.mouthSquash).toFixed(3)},${mo.y.toFixed(3)})`);
+    }
 }
 
 // ---------- ШРАМЫ ----------
@@ -2881,6 +3045,14 @@ const WormRenderer = {
             organPhase: 0,
             gutPhase: 0,
             gutSkipFrame: false,
+            // ---------- ПЛАВНЫЙ ПОВОРОТ ГОЛОВЫ ----------
+            // headYawCurrent — то, что реально нарисовано сейчас;
+            // headYawTarget — куда едем. Ось непрерывная (механизм), а
+            // именованные позы (словарь) просто задают цель. Так остаются
+            // открыты обе двери: и щелчок между тремя позами, и плавное
+            // слежение головой за чем-нибудь.
+            headYawCurrent: null,
+            headYawTarget: null,
             activeSlimeTrail: null,
             slimeTrails: [],
             // "Горячий" канал для непрерывных обновлений от мини-игр — не
@@ -2904,6 +3076,10 @@ const WormRenderer = {
                 // Всё опционально: null = "не вмешиваюсь, работает
                 // собственная жизнь персонажа" (см. idle-мимику в tick).
                 headTilt: null,      // градусы наклона головы вокруг основания шеи
+                // Поворот головы. null = брать из модели. Живой канал, а не
+                // setOverride: setOverride пересобирает всю голову заново и
+                // для покадровой анимации не годится.
+                headYaw: null,
                 gazeX: null,         // -1..1 — куда смотрит (доля от размера глаза)
                 gazeY: null,
                 browRaise: null,     // -1..1 — брови вниз (хмурится) / вверх (удивлён)
@@ -3363,6 +3539,29 @@ const WormRenderer = {
                     const sniffPos = state.faceClock % sniffCycle;
                     const sniffImpulse = sniffPos < 560 ? Math.abs(Math.sin((sniffPos / 560) * Math.PI * 3)) : 0;
 
+                    // ---------- ПОВОРОТ ГОЛОВЫ ----------
+                    // Цель берётся из живого канала, иначе из модели.
+                    // Подъезд к ней — framerate-независимый, по той же
+                    // формуле 1 - base^dt, что и остальное сглаживание в
+                    // файле. База МАЛЕНЬКАЯ (быстрая сходимость): поворот
+                    // должен читаться щелчком, а не медленным морфом, но
+                    // при этом не щёлкать буквально — иначе головой нельзя
+                    // будет плавно вести за целью.
+                    const yawTarget = state.livePose.headYaw != null
+                        ? state.livePose.headYaw
+                        : (state.headYawTarget != null ? state.headYawTarget
+                           : (mm.head.yaw != null ? mm.head.yaw : 0));
+                    if (state.headYawCurrent == null) state.headYawCurrent = yawTarget;
+                    const yawK = 1 - Math.pow(WORM_HEAD_YAW_BASE, dtSec);
+                    state.headYawCurrent += (yawTarget - state.headYawCurrent) * yawK;
+                    // Ниже порога дотягиваем до цели: экспонента математически
+                    // никогда не долетает, а «почти повёрнутая» голова —
+                    // это просто чуть кривое лицо.
+                    if (Math.abs(yawTarget - state.headYawCurrent) < WORM_HEAD_YAW_EPS) {
+                        state.headYawCurrent = yawTarget;
+                    }
+                    applyHeadYaw(headRef, +state.headYawCurrent.toFixed(4));
+
                     // Наклон головы — вокруг основания шеи, а не центра черепа:
                     // иначе голова "съезжает" с тела.
                     const tilt = state.livePose.headTilt != null ? state.livePose.headTilt : 0;
@@ -3394,8 +3593,12 @@ const WormRenderer = {
                         const sn = mm.head.snout;
                         const sx = sn.scale * sn.stretchX * (1 + 0.05 * twitch);
                         const sy = sn.scale * sn.stretchY * (1 - 0.07 * twitch);
+                        // Ракурс входит сюда множителем: tick переписывает
+                        // трансформ целиком, и без него поворот пятачка
+                        // терялся бы через кадр после сборки.
                         headRef.snoutGroup.setAttribute('transform',
-                            `translate(0,${(headRef.snoutY - 1.6 * twitch).toFixed(2)}) scale(${sx.toFixed(3)},${sy.toFixed(3)})`);
+                            `translate(${(headRef.snoutX || 0).toFixed(2)},${(headRef.snoutY - 1.6 * twitch).toFixed(2)}) ` +
+                            `scale(${(sx * (headRef.snoutSquash != null ? headRef.snoutSquash : 1)).toFixed(3)},${sy.toFixed(3)})`);
                     }
 
                     // Челюсть следует за ртом: рот открывается — низ морды
@@ -3482,6 +3685,26 @@ const WormRenderer = {
             },
             setPose(name) {
                 svg.setAttribute('data-pose', name || '');
+            },
+            // Повернуть голову в именованную позу: 'left' | 'center' | 'right'.
+            // Голова доедет туда сама, за кадры — без пересборки SVG.
+            // Можно передать и число (-1..1), если нужна произвольная точка
+            // оси, например слежение за курсором.
+            setHeadPose(pose, opts) {
+                const v = typeof pose === 'number'
+                    ? Math.max(-1, Math.min(1, pose))
+                    : (WORM_HEAD_POSES[pose] != null ? WORM_HEAD_POSES[pose] : 0);
+                state.headYawTarget = v;
+                state.livePose.headYaw = null; // именованная поза перебивает ручной канал
+                // instant: встать в позу без переходной анимации.
+                if (opts && opts.instant) state.headYawCurrent = v;
+            },
+            getHeadPose() {
+                return {
+                    current: state.headYawCurrent,
+                    target: state.headYawTarget,
+                    poses: Object.assign({}, WORM_HEAD_POSES)
+                };
             },
             setLivePose(patch) {
                 Object.assign(state.livePose, patch);
