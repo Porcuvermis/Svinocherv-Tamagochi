@@ -170,6 +170,24 @@ const WORM_VERTICAL_SPACING = 26;
 // сквозная дуга (art-direction.md §4.2). Живот уводится влево относительно
 // головы, поэтому дуга с пола продолжается вверх, а голова оказывается
 // вынесенной вправо — тело противовесит хвосту, и поза становится живой.
+// ---------- ОРИЕНТАЦИЯ ТЕЛА ПО НАПРАВЛЕНИЮ ДВИЖЕНИЯ ----------
+// Напольная цепь строилась под ЖЁСТКИМ углом 180°: тело всегда уходило влево
+// от головы, куда бы червь ни полз. Существо не может ползти в одну сторону,
+// держа хвост перед собой.
+//
+// Теперь есть tailAngle — экранный угол, вдоль которого лежит хвостовая часть.
+// Он доворачивается к направлению, ПРОТИВОПОЛОЖНОМУ движению, и делает это
+// плавно: мгновенный переброс хвоста читался бы телепортом, а не поворотом.
+const WORM_TAIL_TURN_BASE = 0.015;   // 1 - base^dt: меньше = быстрее доворот
+// Пол показан в перспективе, а не сверху: шаг вглубь комнаты даёт на экране
+// меньше пикселей, чем такой же шаг вбок. Хвост лежит на полу, поэтому его
+// вертикальная составляющая сжимается тем же множителем — иначе при движении
+// вглубь тело встанет на дыбы вместо того, чтобы уйти в перспективу.
+const WORM_FLOOR_PERSPECTIVE = 0.45;
+// Насколько сильно голова доворачивается вслед за направлением ползания.
+// 0.5 совпадает с именованными позами left/right — то есть автоповорот
+// использует те же настроенные крайние значения, а не свои.
+const WORM_HEAD_YAW_FOLLOW = 0.5;
 // Скорость подъезда головы к целевому повороту (формула 1 - base^dt):
 // МЕНЬШЕ значение = БЫСТРЕЕ. 0.0009 даёт поворот примерно за четверть
 // секунды — читается щелчком, но остаётся плавным.
@@ -181,8 +199,11 @@ const WORM_SPINE_LEAN = 16;
 // «падает», а не «изогнулся».
 const WORM_SPINE_LEAN_POW = 1.6;
 // Снос сегмента колонны по его положению t (0 = шея у головы, 1 = живот).
-function spineLeanX(t) {
-    return -WORM_SPINE_LEAN * Math.pow(Math.max(0, Math.min(1, t)), WORM_SPINE_LEAN_POW);
+// Возвращает МОДУЛЬ сноса; сторону задаёт вызывающий по углу хвоста —
+// колонна обязана заваливаться в ту же сторону, куда лежит тело, иначе при
+// развороте дуга сломается пополам.
+function spineLeanMag(t) {
+    return WORM_SPINE_LEAN * Math.pow(Math.max(0, Math.min(1, t)), WORM_SPINE_LEAN_POW);
 }
 
 // Насколько мост единого силуэта уже соседних кругов — глубина перетяжки
@@ -3053,6 +3074,14 @@ const WormRenderer = {
             // слежение головой за чем-нибудь.
             headYawCurrent: null,
             headYawTarget: null,
+            // Экранный угол хвостовой части. 180° = хвост влево, как было
+            // всегда до появления ориентации; это же значение и стартовое,
+            // поэтому неподвижный червь выглядит ровно как раньше.
+            tailAngle: 180,
+            // Голова по умолчанию сама следит за направлением ползания.
+            // setHeadPose() перехватывает управление, setHeadPose('auto')
+            // возвращает автоматику.
+            headYawAuto: true,
             activeSlimeTrail: null,
             slimeTrails: [],
             // "Горячий" канал для непрерывных обновлений от мини-игр — не
@@ -3238,6 +3267,22 @@ const WormRenderer = {
                     state.nextMoveAt = null;
                 }
             }
+            // ---------- ДОВОРОТ ХВОСТА ЗА ДВИЖЕНИЕМ ----------
+            // Целевой угол — строго противоположный движению: хвост тянется
+            // СЗАДИ. Вертикаль сжата перспективой пола.
+            if (opts.wander && isMoving) {
+                const mdx = state.targetX - state.wormX;
+                const mdy = (state.targetY - state.wormY) * WORM_FLOOR_PERSPECTIVE;
+                if (Math.hypot(mdx, mdy) > 0.001) {
+                    const want = Math.atan2(-mdy, -mdx) * 180 / Math.PI;
+                    // Кратчайшая дуга: без неё доворот с 179° на -179° поехал
+                    // бы через весь круг, и хвост картинно обнёс бы червя.
+                    let delta = ((want - state.tailAngle + 540) % 360) - 180;
+                    state.tailAngle += delta * (1 - Math.pow(WORM_TAIL_TURN_BASE, dtSec));
+                    state.tailAngle = ((state.tailAngle % 360) + 360) % 360;
+                }
+            }
+
             const intensityFactor = 1 - Math.pow(WORM_MOVE_INTENSITY_SMOOTH_BASE, dtSec);
             state.moveIntensity += ((isMoving ? 1 : 0) - state.moveIntensity) * intensityFactor;
 
@@ -3305,6 +3350,11 @@ const WormRenderer = {
                     state.built.head.group.setAttribute('transform', 'translate(0,0)');
 
                     const floorY = bellyIdx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
+                    // Сторона завала колонны = сторона, куда лежит хвост.
+                    // cos угла хвоста даёт и знак, и естественное затухание
+                    // завала, когда червь ползёт строго вглубь комнаты: там
+                    // тело уходит от камеры, а не вбок, и заваливаться некуда.
+                    const leanDir = Math.cos(state.tailAngle * Math.PI / 180);
 
                     // Однополярная волна дыхания: стартует с 0 (стандартный
                     // радиус), поднимается до 1 и возвращается к 0.
@@ -3313,7 +3363,7 @@ const WormRenderer = {
                     state.built.segments.forEach(seg => {
                         if (seg.idx > bellyIdx) return;
                         const vy = seg.idx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
-                        const vx = spineLeanX(bellyIdx > 0 ? seg.idx / bellyIdx : 0);
+                        const vx = spineLeanMag(bellyIdx > 0 ? seg.idx / bellyIdx : 0) * leanDir;
                         seg.group.setAttribute('transform', `translate(${vx.toFixed(1)},${vy.toFixed(1)})`);
                         hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor };
                         const breathRatio = WORM_BREATH_RATIO[seg.name];
@@ -3351,13 +3401,14 @@ const WormRenderer = {
 
                     // Стартуем от РЕАЛЬНОГО положения живота: он уехал вбок
                     // вместе с колонной, и цепь обязана продолжаться от него.
-                    let chainX = spineLeanX(1) - bellyPushGap;
+                    // Сдвиг живота на раздутие тоже идёт в сторону хвоста.
+                    let chainX = spineLeanMag(1) * leanDir + bellyPushGap * leanDir;
                     let chainY = floorY;
                     let prevRadius = bellySeg ? bellySeg.baseRx : 15;
                     floorSegments.forEach(seg => {
                         const stepsFromBelly = seg.idx - bellyIdx;
                         const wiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + stepsFromBelly * WORM_CHAIN_PHASE_STEP) * wiggleAmpDeg : 0;
-                        const angleRad = (180 + wiggleDeg) * DEG2RAD;
+                        const angleRad = (state.tailAngle + wiggleDeg) * DEG2RAD;
                         const linkLength = floorLinkBaseLength(prevRadius, seg.baseRx) + moveStretch;
                         chainX += linkLength * Math.cos(angleRad);
                         chainY += linkLength * Math.sin(angleRad);
@@ -3372,7 +3423,7 @@ const WormRenderer = {
                     // Хвост — последнее звено той же цепи.
                     const tailStepsFromBelly = state.built.tail.idx - bellyIdx;
                     const tailWiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + tailStepsFromBelly * WORM_CHAIN_PHASE_STEP) * wiggleAmpDeg : 0;
-                    const tailAngleDeg = 180 + tailWiggleDeg;
+                    const tailAngleDeg = state.tailAngle + tailWiggleDeg;
                     const tailAngleRad = tailAngleDeg * DEG2RAD;
                     const tailLinkLength = floorLinkBaseLength(prevRadius, state.built.tail.baseRadius) + moveStretch;
                     chainX += tailLinkLength * Math.cos(tailAngleRad);
@@ -3547,10 +3598,32 @@ const WormRenderer = {
                     // должен читаться щелчком, а не медленным морфом, но
                     // при этом не щёлкать буквально — иначе головой нельзя
                     // будет плавно вести за целью.
-                    const yawTarget = state.livePose.headYaw != null
-                        ? state.livePose.headYaw
-                        : (state.headYawTarget != null ? state.headYawTarget
-                           : (mm.head.yaw != null ? mm.head.yaw : 0));
+                    // ---------- КУДА СМОТРИТ ГОЛОВА ----------
+                    // Приоритет: явный живой канал → явная поза → автоматика
+                    // по направлению ползания → значение из модели.
+                    //
+                    // Автоматика: голова смотрит ТУДА, КУДА ползёт, то есть в
+                    // сторону, противоположную хвосту. Отсюда -cos(угла
+                    // хвоста): при хвосте слева (180°) выходит +1, то есть
+                    // взгляд вправо; при хвосте справа (0°) — -1, взгляд
+                    // влево.
+                    //
+                    // Разворот через анфас получается САМ и не требует
+                    // отдельного кода: пока червь поворачивает, угол хвоста
+                    // проходит через «строго вглубь комнаты» (90°/270°), а
+                    // там косинус равен нулю — голова в этот момент смотрит
+                    // ровно в камеру. Ровно то поведение, которое нужно:
+                    // сначала повернулась вперёд, потом в новую сторону.
+                    let yawTarget;
+                    if (state.livePose.headYaw != null) {
+                        yawTarget = state.livePose.headYaw;
+                    } else if (!state.headYawAuto && state.headYawTarget != null) {
+                        yawTarget = state.headYawTarget;
+                    } else if (state.headYawAuto && opts.wander) {
+                        yawTarget = WORM_HEAD_YAW_FOLLOW * -Math.cos(state.tailAngle * Math.PI / 180);
+                    } else {
+                        yawTarget = mm.head.yaw != null ? mm.head.yaw : 0;
+                    }
                     if (state.headYawCurrent == null) state.headYawCurrent = yawTarget;
                     const yawK = 1 - Math.pow(WORM_HEAD_YAW_BASE, dtSec);
                     state.headYawCurrent += (yawTarget - state.headYawCurrent) * yawK;
@@ -3691,9 +3764,17 @@ const WormRenderer = {
             // Можно передать и число (-1..1), если нужна произвольная точка
             // оси, например слежение за курсором.
             setHeadPose(pose, opts) {
+                // 'auto' — вернуть управление автоматике (голова снова
+                // следит за направлением ползания).
+                if (pose === 'auto' || pose == null) {
+                    state.headYawAuto = true;
+                    state.headYawTarget = null;
+                    return;
+                }
                 const v = typeof pose === 'number'
                     ? Math.max(-1, Math.min(1, pose))
                     : (WORM_HEAD_POSES[pose] != null ? WORM_HEAD_POSES[pose] : 0);
+                state.headYawAuto = false;
                 state.headYawTarget = v;
                 state.livePose.headYaw = null; // именованная поза перебивает ручной канал
                 // instant: встать в позу без переходной анимации.
