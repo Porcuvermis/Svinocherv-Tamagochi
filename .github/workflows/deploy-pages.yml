@@ -1,11 +1,15 @@
 name: Deploy to GitHub Pages
 
 # Любой пуш в любую ветку выкладывает игру на GitHub Pages:
-#   main             → в корень сайта (то, что открывается с домашнего экрана)
-#   остальные ветки  → в /preview/<ветка>/ (посмотреть, не вливая в main)
+#   САМАЯ СВЕЖАЯ ветка → в корень сайта (иконка на домашнем экране)
+#   все ветки, включая main → в /preview/<ветка>/ (вернуться к конкретной)
 #
-# Сайт у Pages один, поэтому каждый деплой пересобирает его целиком: свежий
-# main плюс превью живых веток. Ветку удалили — её превью исчезает само.
+# Корень — это «последнее, что сделали», а не «то, что влито в main». Так
+# задумано: смотреть правки с телефона надо сразу, а мерж — это отдельное
+# решение «оставляем», которое принимается уже ПОСЛЕ того, как посмотрел.
+#
+# Сайт у Pages один, поэтому каждый деплой пересобирает его целиком: свежая
+# сборка в корень плюс превью живых веток. Ветку удалили — превью исчезает.
 #
 # Запускается НЕ напрямую по пушу, а через workflow_run от «Pages trigger».
 # Причина в pages-trigger.yml: выкладывать Pages разрешено только с ветки по
@@ -40,15 +44,16 @@ jobs:
           # Нужны все ветки: превью собираются из них же.
           fetch-depth: 0
 
-      - name: Собрать сайт (main в корень, ветки в /preview/)
+      - name: Собрать сайт (свежая ветка в корень, все ветки в /preview/)
         id: build
         run: |
           set -e
 
           # Собирает одну ветку в указанную папку и проставляет ей версию.
-          # $1 — git-ссылка, $2 — папка назначения, $3 — метка сборки.
+          # $1 — git-ссылка, $2 — папка назначения, $3 — метка сборки,
+          # $4 — имя ветки (его видно в игре по кнопке debug).
           build_into() {
-            ref="$1"; dest="$2"; label="$3"
+            ref="$1"; dest="$2"; label="$3"; branch="$4"
             mkdir -p "$dest"
             git archive "$ref" | tar -x -C "$dest"
             rm -rf "$dest/.github" "$dest/tools"
@@ -70,6 +75,8 @@ jobs:
             # правке игры, иначе это 600 КБ мобильного трафика впустую.
             sed -i -E "/vendor\//! s/\?v=[A-Za-z0-9._-]+/?v=$label/g" "$dest/index.html"
             sed -i "s/__BUILD__/$label/g" "$dest/index.html"
+            # В имени ветки есть слэши, поэтому разделитель у sed не '/'.
+            sed -i "s|__BRANCH__|$branch|g" "$dest/index.html"
             # У старых веток sw.js может не быть — это не повод падать.
             if [ -f "$dest/sw.js" ]; then
               sed -i "s/__BUILD__/$label/g" "$dest/sw.js"
@@ -77,44 +84,57 @@ jobs:
 
             # Чтобы версию можно было проверить, не открывая игру:
             # <адрес сборки>/build.txt
-            echo "$label" > "$dest/build.txt"
+            printf '%s\n%s\n' "$label" "$branch" > "$dest/build.txt"
             return 0
           }
 
           STAMP="$(date -u +%Y%m%d-%H%M)"
           mkdir -p _site
 
-          echo "=== main → / ==="
-          MAIN_LABEL="$STAMP-$(git rev-parse --short=7 origin/main)"
-          build_into origin/main _site "$MAIN_LABEL"
-          echo "  сборка: $MAIN_LABEL"
-          grep -c "?v=$MAIN_LABEL" _site/index.html
+          # Полные refname, а не короткие: у refs/remotes/origin/HEAD короткое
+          # имя — просто "origin", и он бы уехал в список отдельной веткой.
+          BRANCHES="$(git for-each-ref --sort=-committerdate \
+                        --format='%(refname)' refs/remotes/origin \
+                      | grep -vE '/HEAD$')"
 
-          # Превью: десять последних по времени веток, кроме main.
+          # В корень — та ветка, в которую коммитили последней. Именно её
+          # открывает иконка с домашнего экрана.
+          echo "=== свежая ветка → / ==="
+          TOP_REF="$(echo "$BRANCHES" | head -1)"
+          TOP_BRANCH="${TOP_REF#refs/remotes/origin/}"
+          TOP_LABEL="$STAMP-$(git rev-parse --short=7 "$TOP_REF")"
+          build_into "$TOP_REF" _site "$TOP_LABEL" "$TOP_BRANCH"
+          echo "  ветка: $TOP_BRANCH, сборка: $TOP_LABEL"
+          grep -c "?v=$TOP_LABEL" _site/index.html
+
+          # Превью: десять последних по времени веток, включая main, — чтобы
+          # можно было вернуться к конкретной, а не только к самой свежей.
           echo "=== ветки → /preview/ ==="
           mkdir -p _site/preview
           ROWS=""
-          # Полные refname, а не короткие: у refs/remotes/origin/HEAD короткое
-          # имя — просто "origin", и по нему main уехал бы ещё и в превью.
-          for ref in $(git for-each-ref --sort=-committerdate \
-                         --format='%(refname)' refs/remotes/origin \
-                       | grep -vE '/(HEAD|main)$' | head -10); do
+          for ref in $(echo "$BRANCHES" | head -10); do
             branch="${ref#refs/remotes/origin/}"
             slug="$(echo "$branch" | tr '/_' '--' | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-')"
             label="$STAMP-$(git rev-parse --short=7 "$ref")"
             echo "$branch → /preview/$slug/"
-            if build_into "$ref" "_site/preview/$slug" "$label"; then
-              when="$(git log -1 --format='%cd' --date=format:'%d.%m %H:%M' "$ref")"
+            if build_into "$ref" "_site/preview/$slug" "$label" "$branch"; then
+              # Время коммита — unix-меткой: страница переведёт его в часовой
+              # пояс телефона и покажет «5 минут назад». Готовая строка из git
+              # была бы в поясе автора коммита, и соседние ветки показывали бы
+              # время вразнобой.
+              ts="$(git log -1 --format='%ct' "$ref")"
               subj="$(git log -1 --format='%s' "$ref" | cut -c1-80 \
                       | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
-              ROWS="$ROWS<li><a href=\"$slug/\">$branch</a><span>$when — $subj</span></li>"
+              mark=""
+              [ "$branch" = "$TOP_BRANCH" ] && mark=" — сейчас в приложении"
+              ROWS="$ROWS<li><a href=\"$slug/\">$branch$mark</a><span><time data-ts=\"$ts\"></time> — $subj</span></li>"
             fi
           done
 
           # Страница со списком сборок: с телефона удобнее тыкать по
           # ссылкам, чем набирать имена веток руками. Вёрстка лежит
           # в tools/preview-index.sh.
-          STAMP="$STAMP" MAIN_LABEL="$MAIN_LABEL" ROWS="$ROWS" \
+          STAMP="$STAMP" TOP_BRANCH="$TOP_BRANCH" TOP_LABEL="$TOP_LABEL" ROWS="$ROWS" \
             bash tools/preview-index.sh > _site/preview/index.html
 
           echo "=== итог ==="

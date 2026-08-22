@@ -10,18 +10,24 @@
 //      worker и все кеши. Нужен ровно на случай, когда обновление где-то
 //      застряло, а под рукой только айфон и никакого devtools.
 (function () {
-    const meta = document.querySelector('meta[name="app-build"]');
-    const raw = meta ? meta.getAttribute('content') : '';
-    // '__BUILD__' остаётся неподставленным, если файл открыт не с Pages
-    // (локально из Koder, через file:// и т.п.).
-    const build = (!raw || raw === '__BUILD__') ? 'dev' : raw;
+    // Значения подставляются при деплое. Если подстановки не было, значит
+    // файл открыт не с Pages (локально из Koder, через file:// и т.п.).
+    const readMeta = (name, fallback) => {
+        const meta = document.querySelector('meta[name="' + name + '"]');
+        const value = meta ? meta.getAttribute('content') : '';
+        return (!value || value.indexOf('__') === 0) ? fallback : value;
+    };
+
+    const build = readMeta('app-build', 'dev');
+    const branch = readMeta('app-branch', 'локально');
 
     window.APP_BUILD = build;
-    console.log('[Свиночервь] сборка:', build);
+    window.APP_BRANCH = branch;
+    console.log('[Свиночервь] сборка:', build, '| ветка:', branch);
 
     document.addEventListener('DOMContentLoaded', () => {
         const stamp = document.getElementById('build-stamp');
-        if (stamp) stamp.textContent = 'build: ' + build;
+        if (stamp) stamp.textContent = branch + ' · ' + build;
     });
 
     if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
