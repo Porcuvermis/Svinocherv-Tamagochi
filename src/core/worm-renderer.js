@@ -33,11 +33,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const P_ = (typeof PALETTE !== 'undefined') ? PALETTE : window.PALETTE;
 const INK = P_.ink;          // замена чёрному: тёмный холодный сливовый
 const FLESH = P_.flesh;      // рампа мяса 900(тень) → 100(свет)
-const VIOLET = P_.violet;    // акцент: всё внутреннее и больное
+const VISCERA = P_.viscera;  // анатомия живой ткани: пасть, дёсны, капилляры
 const BILE = P_.bile;        // грязь, налёт, зубы
 const SCLERA = P_.sclera;    // белок глаза — костяной, не белый
 const SPEC = P_.flesh[100];  // блик на МАТОВОЙ коже — тёплый, не белый
-const WET = P_.violet[200];  // блик на ВЛАЖНОМ (слизь, слюна, дёсны)
+const ACID = P_.acid[200];   // АКЦЕНТ-ирокез: блик на слизи. Только на влажном
+const ACID_DEEP = P_.acid[600]; // тёмная кислота — для БОЛЬШИХ мокрых площадей
 // Доп. отступ всей телесной цепочки от центра головы, чтобы сегмент-1
 // не прятался почти целиком под головой, а минимум наполовину торчал из-под неё.
 // Было 24, затем увеличено до 34 — оказалось уже СЛИШКОМ много; 29 —
@@ -177,7 +178,22 @@ const WORM_BREATH_RATIO = { 'belly': 1, 'segment-2': 0.7, 'segment-1': 0.3 };
 const WORM_SLIME_FADE_MS = 15000;
 const WORM_SLIME_WIDTH = 15;
 const WORM_SLIME_MIN_STEP = 4;
-const WORM_SLIME_COLOR = 'rgba(92,102,48,0.42)';
+// След слизи на полу. Раньше это был один непрозрачный оливковый штрих
+// шириной 15px с круглыми концами — на экране он читался палкой, а не
+// слизью. Теперь след состоит из двух штрихов: широкой тёмной мокрой
+// кляксы и тонкой яркой сердцевины (свежая слизь блестит).
+//
+// Почему тёмная ступень кислоты, а не яркая: след — БОЛЬШАЯ площадь, а
+// акцент по правилу дозировки большим быть не может (art-direction.md §1.2).
+// Яркая кислота остаётся только на узкой сердцевине.
+const WORM_SLIME_SMEAR_ALPHA = 0.5;
+// Яркая кислота в следе живёт ОТДЕЛЬНЫМИ КАПЛЯМИ, а не непрерывной линией.
+// Проверено: тонкая яркая сердцевина вдоль всего следа читается зелёным
+// кабелем — та же ошибка "акцент большой площадью", что и широкая заливка,
+// только вытянутая. Капли дают кислотность, оставаясь точками.
+const WORM_SLIME_DROP_ALPHA = 0.72;
+const WORM_SLIME_DROP_EVERY = 4;   // капля на каждую N-ю точку следа
+const WORM_SLIME_DROP_R = 2.1;
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
@@ -489,7 +505,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
     const y = plan.cy * halfThick;
 
     if (plan.kind === 'gut') {
-        const color = palette.gut || VIOLET[600];
+        const color = palette.gut || VISCERA[700];
         const L = plan.len * halfLen;
         const w = Math.max(2.2, plan.thick * halfThick);
         const bend = (plan.bend || 0.3) * halfThick * 0.9;
@@ -568,7 +584,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         // Сосуды от капсулы — 3-5 стволов в разные стороны.
         const vrng = anatRng(ctx.anatomy, idKey, 'vessels');
         const vGroup = svgEl('g', { class: 'worm-organ-vessels' });
-        const vColor = mixColor(color, palette.vessel || VIOLET[600], 0.45);
+        const vColor = mixColor(color, palette.vessel || VISCERA[700], 0.45);
         const trunks = 3 + Math.floor(vrng() * 3);
         for (let i = 0; i < trunks; i++) {
             const a = (i / trunks) * Math.PI * 2 + vrng() * 0.6;
@@ -794,7 +810,7 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
         const y = -halfThick * 0.55;
         group.appendChild(svgEl('path', {
             d: `M ${(-halfLen * 0.9).toFixed(1)},${y.toFixed(1)} Q 0,${(y - halfThick * 0.12).toFixed(1)} ${(halfLen * 0.9).toFixed(1)},${y.toFixed(1)}`,
-            fill: 'none', stroke: palette.vessel || VIOLET[600], 'stroke-width': 1.8,
+            fill: 'none', stroke: palette.vessel || VISCERA[700], 'stroke-width': 1.8,
             opacity: (0.5 * strength).toFixed(3), 'stroke-linecap': 'round'
         }));
         empty = false;
@@ -855,13 +871,26 @@ function buildSurfaceLayer(ctx, partName, rx, ry, features) {
         const p = (ang, k) => `${(Math.cos(ang) * rx * R * k).toFixed(1)},${(Math.sin(ang) * ry * R * k).toFixed(1)}`;
         const mid = (a0 + a1) / 2;
         const d = `M ${p(a0, 1)} Q ${p(mid, 1.13)} ${p(a1, 1)} Q ${p(mid, 0.9)} ${p(a0, 1)} Z`;
-        group.appendChild(svgEl('path', { d, fill: WET, opacity: (0.34 * gloss).toFixed(3) }));
-        // Вторая, совсем маленькая капля слизи — сбоку, чтобы блеск не
-        // выглядел одним симметричным штампом на каждом сегменте.
+        // Широкий серп — это ОТРАЖЁННЫЙ СВЕТ на влажной коже, а не сама
+        // слизь, поэтому он тёплый, а не кислотный: блик перенимает цвет
+        // источника света, а не вещества. Кислоту сюда класть нельзя ещё и
+        // физически — полупрозрачная заливка не может быть насыщеннее смеси
+        // с подложкой, кислотная зелень на розовом даёт хаки, и акцент
+        // умирает, размазанный по большой площади.
+        group.appendChild(svgEl('path', { d, fill: SPEC, opacity: (0.3 * gloss).toFixed(3) }));
+        // А вот это — САМА слизь: маленькая, почти непрозрачная капля.
+        // Акцент работает малой площадью и высокой плотностью, ровно
+        // наоборот к широкому блику (docs/art-direction.md §2.5).
         group.appendChild(svgEl('ellipse', {
             cx: (rx * 0.34).toFixed(1), cy: (-ry * 0.34).toFixed(1),
-            rx: (rx * 0.09).toFixed(1), ry: (ry * 0.07).toFixed(1),
-            fill: WET, opacity: (0.24 * gloss).toFixed(3)
+            rx: (rx * 0.11).toFixed(1), ry: (ry * 0.085).toFixed(1),
+            fill: ACID, opacity: (0.88 * gloss).toFixed(3)
+        }));
+        // Блик на самой капле — она выпуклая и мокрая.
+        group.appendChild(svgEl('ellipse', {
+            cx: (rx * 0.32).toFixed(1), cy: (-ry * 0.36).toFixed(1),
+            rx: (rx * 0.04).toFixed(1), ry: (ry * 0.03).toFixed(1),
+            fill: SPEC, opacity: (0.7 * gloss).toFixed(3)
         }));
         empty = false;
     }
@@ -1000,7 +1029,7 @@ function buildEarVessels(ctx, mirror, side) {
         const ey = -6 - t * 14 - rng() * 3;
         group.appendChild(svgEl('path', {
             d: `M ${(s * 2).toFixed(1)},-2 Q ${(ex * 0.55).toFixed(1)},${(ey * 0.5).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
-            fill: 'none', stroke: palette.vessel || VIOLET[600],
+            fill: 'none', stroke: palette.vessel || VISCERA[700],
             'stroke-width': (0.9 - i * 0.15).toFixed(2), opacity: 0.55, 'stroke-linecap': 'round'
         }));
     }
@@ -1025,7 +1054,7 @@ function buildEyeVeins(seedKey, rx, ry) {
         const my = Math.sin(midAngle) * midR * ratio;
         const vein = svgEl('path', {
             d: `M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${mx.toFixed(1)},${my.toFixed(1)} 0,0`,
-            fill: 'none', stroke: VIOLET[400], 'stroke-width': 0.7, opacity: 0.4, 'stroke-linecap': 'round'
+            fill: 'none', stroke: VISCERA[300], 'stroke-width': 0.7, opacity: 0.4, 'stroke-linecap': 'round'
         });
         group.appendChild(vein);
     }
@@ -1341,7 +1370,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
     const mouthShape = svgEl('path', {
-        d: '', fill: VIOLET[600], stroke: mouth.color, 'stroke-width': 1.8, 'stroke-linejoin': 'round'
+        d: '', fill: VISCERA[700], stroke: mouth.color, 'stroke-width': 1.8, 'stroke-linejoin': 'round'
     });
     mouthAnchor.appendChild(mouthShape);
 
@@ -1829,8 +1858,8 @@ function buildHeadNode(model, ctx) {
         fill: ensureSoftGradient(ctx, `worm-snout-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1), opacity: 0.4
     }));
     const snoutShape = svgEl('ellipse', { cx: 0, cy: 0, rx: snoutRx, ry: snoutRy, fill: snoutFill, stroke: snout.stroke, 'stroke-width': 2 });
-    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VIOLET[600], transform: 'rotate(-14 -4.8 0)' });
-    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VIOLET[600], transform: 'rotate(14 4.8 0)' });
+    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VISCERA[700], transform: 'rotate(-14 -4.8 0)' });
+    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VISCERA[700], transform: 'rotate(14 4.8 0)' });
     const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: SPEC, opacity: 0.32 });
     const poreGroup = svgEl('g', { class: 'worm-snout-pores' });
     const poreRng = mulberry32(hashStringSeed(`${ctx.instanceId}-snout-pores`));
@@ -2664,16 +2693,21 @@ const WormRenderer = {
         function startSlimeTrail(x, y) {
             const g = svgEl('g', { class: 'worm-slime-trail' });
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
-            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55), fill: WORM_SLIME_COLOR });
+            const smearColor = withAlpha(ACID_DEEP, WORM_SLIME_SMEAR_ALPHA);
+            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55), fill: smearColor });
+            // Широкая тёмная клякса — само мокрое пятно, оно и есть след.
             const stroke = svgEl('path', {
                 d: `M ${x.toFixed(1)},${y.toFixed(1)}`,
-                fill: 'none', stroke: WORM_SLIME_COLOR, 'stroke-width': WORM_SLIME_WIDTH,
+                fill: 'none', stroke: smearColor, 'stroke-width': WORM_SLIME_WIDTH,
                 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
             });
+            // Слой для ярких капель — они добавляются по мере движения.
+            const drops = svgEl('g', { class: 'worm-slime-drops' });
             g.appendChild(blot);
             g.appendChild(stroke);
+            g.appendChild(drops);
             slimeLayer.appendChild(g);
-            state.slimeTrails.push({ g, stroke, points: [{ x, y }], finishedAt: null });
+            state.slimeTrails.push({ g, stroke, drops, rng, points: [{ x, y }], finishedAt: null });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
         }
 
@@ -2685,6 +2719,18 @@ const WormRenderer = {
             trail.points.push({ x, y });
             const d = trail.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
             trail.stroke.setAttribute('d', d);
+            // Капля свежей слизи — не на каждом шаге и со случайным сносом
+            // поперёк следа, иначе капли выстроятся ровной пунктирной линией
+            // по центру и получится разметка шоссе, а не слизь.
+            if (trail.points.length % WORM_SLIME_DROP_EVERY !== 0) return;
+            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3;
+            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3;
+            const r = WORM_SLIME_DROP_R * (0.6 + trail.rng() * 0.8);
+            trail.drops.appendChild(svgEl('ellipse', {
+                cx: (x + jx).toFixed(1), cy: (y + jy).toFixed(1),
+                rx: r.toFixed(2), ry: (r * (0.55 + trail.rng() * 0.4)).toFixed(2),
+                fill: withAlpha(P_.acid[400], WORM_SLIME_DROP_ALPHA)
+            }));
         }
 
         function updateSlimeTrail(now, isMoving, anchor) {
