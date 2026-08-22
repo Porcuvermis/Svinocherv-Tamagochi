@@ -11,6 +11,9 @@ const WORM_MODEL_STORAGE_KEY = 'svinocherv_worm_model_v1';
 // Версия 2: сегмент-1, сегмент-2 и живот теперь ОДНОГО радиуса (были
 // 23/21/19 — "три одинаковых в ряд" по просьбе, сужение начинается только
 // ПОСЛЕ живота, на растущих сегментах).
+// Версия 5: цвета переведены на единую палитру проекта (src/core/palette.js)
+// вместо розовой hsl-крутилки. Бамп обязателен: цвета лежат в сохранённой
+// модели, иначе у игрока осталась бы старая палитра на новом свете.
 // Версия 4: голова перестала быть кругом — добавлен блок `head.skull`
 // (пропорции черепа), глаза переставлены под новую форму морды, у уха
 // появился базовый разворот. Версия бампнута, чтобы сохранённые персонажи
@@ -21,7 +24,7 @@ const WORM_MODEL_STORAGE_KEY = 'svinocherv_worm_model_v1';
 // localStorage состояние, загрузился новый дефолт (loadWormModel сбрасывает
 // на createDefaultWormModel(), если версия не совпадает) — иначе новый блок
 // просто отсутствовал бы в старом сохранении.
-const WORM_MODEL_VERSION = 4;
+const WORM_MODEL_VERSION = 5;
 
 // ---------- ДЕФОЛТНЫЕ ЦВЕТА ПО ЗВЕНЬЯМ ЦЕПОЧКИ ----------
 // Порядок: сегмент-1 (фикс.), сегмент-2 (фикс.), живот, растущий-1,
@@ -29,13 +32,20 @@ const WORM_MODEL_VERSION = 4;
 // Сегмент-1/сегмент-2/живот — намеренно ОДИНАКОВОГО радиуса (23): это
 // вертикальная "стойка" тела, сужение цепочки начинается только у растущих
 // сегментов (и далее к хвосту), см. WORM_TAIL_BASE_RATIO в worm-renderer.js.
+// Цвета берутся ИСКЛЮЧИТЕЛЬНО из палитры (src/core/palette.js). Ступени
+// рампы идут сверху вниз по цепочке: часть, что ближе к источнику света
+// (сверху-слева), светлее, дальняя — темнее. Раньше здесь была одна и та же
+// розовая hsl-крутилка с шагом в пару процентов, из-за чего вся фигура
+// оказывалась одного тона и не имела структуры светлоты — см.
+// docs/art-direction.md §3 (единый источник света) и §2.2 (сдвиг тона).
+const WORM_PAL = (typeof PALETTE !== 'undefined') ? PALETTE : window.PALETTE;
 const WORM_DEFAULT_CHAIN_STYLE = [
-    { radius: 23, fill: 'hsl(340, 56%, 48%)', stroke: '#4a1220' }, // segment-1
-    { radius: 23, fill: 'hsl(340, 52%, 46%)', stroke: '#4a1220' }, // segment-2
-    { radius: 23, fill: 'hsl(340, 48%, 44%)', stroke: '#4a1220' }, // belly
-    { radius: 17, fill: 'hsl(340, 44%, 42%)', stroke: '#4a1220' }, // growing-1
-    { radius: 15, fill: 'hsl(340, 40%, 40%)', stroke: '#4a1220' }, // growing-2
-    { radius: 13, fill: 'hsl(340, 36%, 38%)', stroke: '#4a1220' }  // tail
+    { radius: 23, fill: WORM_PAL.flesh[300], stroke: WORM_PAL.ink }, // segment-1 — выше всех, светлее
+    { radius: 23, fill: WORM_PAL.flesh[500], stroke: WORM_PAL.ink }, // segment-2
+    { radius: 23, fill: WORM_PAL.flesh[500], stroke: WORM_PAL.ink }, // belly
+    { radius: 17, fill: WORM_PAL.flesh[700], stroke: WORM_PAL.ink }, // growing-1 — на полу, темнее
+    { radius: 15, fill: WORM_PAL.flesh[700], stroke: WORM_PAL.ink }, // growing-2
+    { radius: 13, fill: WORM_PAL.flesh[900], stroke: WORM_PAL.ink }  // tail — дальше всего от света
 ];
 
 // ---------- ДЕТЕРМИНИРОВАННЫЙ ГЕНЕРАТОР (для вариаций особи) ----------
@@ -79,7 +89,7 @@ function createDefaultEye() {
         stretchY: 0.9,
         scale: 0.95,
         visible: true,
-        color: '#2a1710',
+        color: WORM_PAL.flesh[900],
         brow: { angle: 0, visible: true },
         // 0 = веко полностью поднято (не видно), 1 = глаз полностью закрыт
         eyelid: { level: 0 }
@@ -98,8 +108,8 @@ function createDefaultEar() {
         scale: 0.95,
         // 0 = остриём вверх (стандарт). Прижатое ухо — отрицательный угол.
         rotation: 0,
-        fill: '#ffb6c1',
-        stroke: '#e07b8d',
+        fill: WORM_PAL.flesh[300],
+        stroke: WORM_PAL.ink,
         visible: true
     };
 }
@@ -195,10 +205,10 @@ function createDefaultAnatomy() {
                 amp: 0.07    // амплитуда пульсации (доля размера)
             },
             palette: {
-                gut: '#63212f',    // кишка — вытянутая трубка
-                sac: '#6c7a33',    // орган-мешочек — компактный, болезненно-оливковый
-                node: '#a8703f',   // гроздь узелков
-                vessel: '#4a131e'  // спинной сосуд — тёмная линия под кожей
+                gut: WORM_PAL.subskin.gut,    // видно сквозь кожу → приглушено
+                sac: WORM_PAL.subskin.sac,    // орган-мешочек
+                node: WORM_PAL.subskin.node,  // гроздь узелков
+                vessel: WORM_PAL.subskin.vessel // спинной сосуд
             }
         },
 
@@ -267,8 +277,8 @@ function createDefaultWormModel() {
             scale: 1,
             stretchX: 1,
             stretchY: 1,
-            fill: '#ffb6c1',
-            stroke: '#e07b8d',
+            fill: WORM_PAL.flesh[300],
+            stroke: WORM_PAL.ink,
 
             // ---------- ПРОПОРЦИИ ЧЕРЕПА ----------
             // Форма головы собирается кривыми по этим долям (от rx/ry), а не
@@ -293,8 +303,8 @@ function createDefaultWormModel() {
                 stretchX: 1,
                 stretchY: 1,
                 scale: 1,
-                fill: '#ff8093',
-                stroke: '#d6566b'
+                fill: WORM_PAL.flesh[500],
+                stroke: WORM_PAL.ink
             },
             mouth: {
                 stretchX: 1,
@@ -302,7 +312,7 @@ function createDefaultWormModel() {
                 scale: 1,
                 // 0 = прямая линия, положительное = улыбка, отрицательное = грусть
                 curve: 0.28,
-                color: '#7a2233',
+                color: WORM_PAL.ink,
                 // 0 = рот закрыт (видна только кривая линия), 1 = полностью
                 // открыт (овал) — используется в контекстных оверрайдах,
                 // например при кормлении.

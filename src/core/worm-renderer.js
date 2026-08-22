@@ -25,6 +25,19 @@
 // т.п.), продолжают работать без правок.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// ---------- ПАЛИТРА ----------
+// Единый источник цвета — src/core/palette.js. Здесь только короткие алиасы,
+// чтобы не таскать PALETTE.flesh[500] через весь файл. Захардкоженных hex в
+// этом файле быть не должно: правило и его причины — docs/art-direction.md.
+const P_ = (typeof PALETTE !== 'undefined') ? PALETTE : window.PALETTE;
+const INK = P_.ink;          // замена чёрному: тёмный холодный сливовый
+const FLESH = P_.flesh;      // рампа мяса 900(тень) → 100(свет)
+const VIOLET = P_.violet;    // акцент: всё внутреннее и больное
+const BILE = P_.bile;        // грязь, налёт, зубы
+const SCLERA = P_.sclera;    // белок глаза — костяной, не белый
+const SPEC = P_.flesh[100];  // блик на МАТОВОЙ коже — тёплый, не белый
+const WET = P_.violet[200];  // блик на ВЛАЖНОМ (слизь, слюна, дёсны)
 // Доп. отступ всей телесной цепочки от центра головы, чтобы сегмент-1
 // не прятался почти целиком под головой, а минимум наполовину торчал из-под неё.
 // Было 24, затем увеличено до 34 — оказалось уже СЛИШКОМ много; 29 —
@@ -232,8 +245,8 @@ function withAlpha(css, alpha) {
 // Грязно-оливковый (не чисто чёрный) для теней и болезненно-желтоватый (не
 // чисто белый) для бликов — объёмный градиент читается как немытая кожа, а
 // не глянцевая игрушка, без единого лишнего пятна/полоски поверх заливки.
-const GRIME_SHADOW = '#241d10';
-const GRIME_HIGHLIGHT = '#e9dfae';
+const GRIME_SHADOW = INK;
+const GRIME_HIGHLIGHT = BILE[200];
 
 // Радиальный градиент "блик сверху-слева → тень снизу-справа" — придаёт
 // плоским SVG-эллипсам ощущение объёма без утяжеления разметки. Каждой части
@@ -243,12 +256,22 @@ function ensureVolumeGradient(defs, id, colorCss, opts) {
     opts = opts || {};
     const highlightAmt = opts.highlight != null ? opts.highlight : 0.3;
     const shadowAmt = opts.shadow != null ? opts.shadow : -0.3;
-    const highlightTarget = opts.highlightTint || '#ffffff';
-    const shadowTarget = opts.shadowTint || '#000000';
+    const highlightTarget = opts.highlightTint || SPEC;
+    const shadowTarget = opts.shadowTint || INK;
     const highlight = highlightAmt === 0 ? colorCss : mixColor(colorCss, highlightTarget, Math.abs(highlightAmt));
     const shadow = shadowAmt === 0 ? colorCss : mixColor(colorCss, shadowTarget, Math.abs(shadowAmt));
+    // ЕДИНЫЙ ИСТОЧНИК СВЕТА. Раньше каждый вызов передавал СВОИ cx/cy, из-за
+    // чего каждая часть тела была освещена собственной лампочкой и выглядела
+    // самостоятельным глянцевым шариком — отсюда вид "гирлянда из пластика".
+    // Теперь направление света берётся из LIGHT и одинаково для всех частей,
+    // поэтому блики выстраиваются в одну линию и фигура читается единым
+    // объёмом. Индивидуальные cx/cy намеренно ИГНОРИРУЮТСЯ — см.
+    // docs/art-direction.md §3. Управлять размытием (r) по-прежнему можно.
     const grad = svgEl('radialGradient', {
-        id, cx: opts.cx || '35%', cy: opts.cy || '30%', r: opts.r || '75%'
+        id,
+        cx: (50 + LIGHT.dirX * 50).toFixed(1) + '%',
+        cy: (50 + LIGHT.dirY * 50).toFixed(1) + '%',
+        r: opts.r || '75%'
     });
     grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': highlight }));
     grad.appendChild(svgEl('stop', { offset: '55%', 'stop-color': colorCss }));
@@ -466,7 +489,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
     const y = plan.cy * halfThick;
 
     if (plan.kind === 'gut') {
-        const color = palette.gut || '#7d2f3e';
+        const color = palette.gut || VIOLET[600];
         const L = plan.len * halfLen;
         const w = Math.max(2.2, plan.thick * halfThick);
         const bend = (plan.bend || 0.3) * halfThick * 0.9;
@@ -501,14 +524,14 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         // ореол свечения → тело → чёткий ободок → яркое ядро с бликом.
         // Свечение сделано вложенными градиентами с падающей прозрачностью —
         // визуально это то же, что размытие, но без единого фильтра.
-        const color = palette.sac || '#6c7a33';
+        const color = palette.sac || BILE[600];
         const glow = (ctx.anatomy.organs && ctx.anatomy.organs.glow != null) ? ctx.anatomy.organs.glow : 0.6;
         const rx = plan.len * halfLen;
         const ry = plan.thick * halfThick;
         const gid = `worm-organ-sac-${ctx.instanceId}-${idKey}`;
         const fill = ensureSoftGradient(ctx, gid, color, 1);
         const shadowGid = `worm-organ-shadow-${ctx.instanceId}`;
-        const coreColor = mixColor(color, '#fff3b0', 0.62);
+        const coreColor = mixColor(color, BILE[200], 0.62);
 
         group.appendChild(svgEl('ellipse', {
             cx: 0, cy: 0, rx: (rx * 1.35).toFixed(1), ry: (ry * 1.35).toFixed(1),
@@ -539,13 +562,13 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         group.appendChild(svgEl('ellipse', {
             cx: (-rx * 0.3).toFixed(1), cy: (-ry * 0.34).toFixed(1),
             rx: (rx * 0.16).toFixed(1), ry: (ry * 0.13).toFixed(1),
-            fill: '#ffffff', opacity: 0.4
+            fill: SPEC, opacity: 0.4
         }));
 
         // Сосуды от капсулы — 3-5 стволов в разные стороны.
         const vrng = anatRng(ctx.anatomy, idKey, 'vessels');
         const vGroup = svgEl('g', { class: 'worm-organ-vessels' });
-        const vColor = mixColor(color, palette.vessel || '#4a131e', 0.45);
+        const vColor = mixColor(color, palette.vessel || VIOLET[600], 0.45);
         const trunks = 3 + Math.floor(vrng() * 3);
         for (let i = 0; i < trunks; i++) {
             const a = (i / trunks) * Math.PI * 2 + vrng() * 0.6;
@@ -555,7 +578,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         }
         group.insertBefore(vGroup, group.firstChild ? group.firstChild.nextSibling : null);
     } else if (plan.kind === 'node') {
-        const color = palette.node || '#a8703f';
+        const color = palette.node || BILE[400];
         const rng = anatRng(ctx.anatomy, idKey, 'node');
         const base = plan.thick * halfThick;
         for (let i = 0; i < 3; i++) {
@@ -569,7 +592,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
             }));
             group.appendChild(svgEl('circle', {
                 cx: (nx - r * 0.2).toFixed(1), cy: (ny - r * 0.2).toFixed(1), r: (r * 0.42).toFixed(1),
-                fill: mixColor(color, '#ffe9a8', 0.55), opacity: 0.6
+                fill: mixColor(color, BILE[200], 0.55), opacity: 0.6
             }));
         }
     }
@@ -771,7 +794,7 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
         const y = -halfThick * 0.55;
         group.appendChild(svgEl('path', {
             d: `M ${(-halfLen * 0.9).toFixed(1)},${y.toFixed(1)} Q 0,${(y - halfThick * 0.12).toFixed(1)} ${(halfLen * 0.9).toFixed(1)},${y.toFixed(1)}`,
-            fill: 'none', stroke: palette.vessel || '#4a131e', 'stroke-width': 1.8,
+            fill: 'none', stroke: palette.vessel || VIOLET[600], 'stroke-width': 1.8,
             opacity: (0.5 * strength).toFixed(3), 'stroke-linecap': 'round'
         }));
         empty = false;
@@ -832,13 +855,13 @@ function buildSurfaceLayer(ctx, partName, rx, ry, features) {
         const p = (ang, k) => `${(Math.cos(ang) * rx * R * k).toFixed(1)},${(Math.sin(ang) * ry * R * k).toFixed(1)}`;
         const mid = (a0 + a1) / 2;
         const d = `M ${p(a0, 1)} Q ${p(mid, 1.13)} ${p(a1, 1)} Q ${p(mid, 0.9)} ${p(a0, 1)} Z`;
-        group.appendChild(svgEl('path', { d, fill: '#ffffff', opacity: (0.34 * gloss).toFixed(3) }));
+        group.appendChild(svgEl('path', { d, fill: WET, opacity: (0.34 * gloss).toFixed(3) }));
         // Вторая, совсем маленькая капля слизи — сбоку, чтобы блеск не
         // выглядел одним симметричным штампом на каждом сегменте.
         group.appendChild(svgEl('ellipse', {
             cx: (rx * 0.34).toFixed(1), cy: (-ry * 0.34).toFixed(1),
             rx: (rx * 0.09).toFixed(1), ry: (ry * 0.07).toFixed(1),
-            fill: '#ffffff', opacity: (0.24 * gloss).toFixed(3)
+            fill: WET, opacity: (0.24 * gloss).toFixed(3)
         }));
         empty = false;
     }
@@ -977,7 +1000,7 @@ function buildEarVessels(ctx, mirror, side) {
         const ey = -6 - t * 14 - rng() * 3;
         group.appendChild(svgEl('path', {
             d: `M ${(s * 2).toFixed(1)},-2 Q ${(ex * 0.55).toFixed(1)},${(ey * 0.5).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
-            fill: 'none', stroke: palette.vessel || '#4a131e',
+            fill: 'none', stroke: palette.vessel || VIOLET[600],
             'stroke-width': (0.9 - i * 0.15).toFixed(2), opacity: 0.55, 'stroke-linecap': 'round'
         }));
     }
@@ -1002,7 +1025,7 @@ function buildEyeVeins(seedKey, rx, ry) {
         const my = Math.sin(midAngle) * midR * ratio;
         const vein = svgEl('path', {
             d: `M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${mx.toFixed(1)},${my.toFixed(1)} 0,0`,
-            fill: 'none', stroke: '#b23a3a', 'stroke-width': 0.7, opacity: 0.4, 'stroke-linecap': 'round'
+            fill: 'none', stroke: VIOLET[400], 'stroke-width': 0.7, opacity: 0.4, 'stroke-linecap': 'round'
         });
         group.appendChild(vein);
     }
@@ -1061,7 +1084,7 @@ function buildSegmentNode(partName, seg, ctx, opts) {
     const shine = svgEl('ellipse', {
         cx: (-baseRx * 0.25).toFixed(2), cy: (-baseRy * 0.4).toFixed(2),
         rx: (baseRx * 0.38).toFixed(2), ry: (baseRy * 0.22).toFixed(2),
-        fill: '#ffffff', opacity: 0.16
+        fill: SPEC, opacity: 0.16
     });
     group.appendChild(shine);
 
@@ -1158,21 +1181,21 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     const socket = svgEl('ellipse', {
         cx: 0, cy: (-ry * 0.1).toFixed(2),
         rx: (rx * 1.45).toFixed(2), ry: (ry * 1.4).toFixed(2),
-        fill: withAlpha('#000000', 0.13)
+        fill: withAlpha(INK, 0.13)
     });
     // Тень от нависающего верхнего века: без неё глаз выглядит наклеенным
     // кружком, а не сидящим в глазнице.
     const browShadow = svgEl('ellipse', {
         cx: 0, cy: (-ry * 0.72).toFixed(2),
         rx: (rx * 1.2).toFixed(2), ry: (ry * 0.6).toFixed(2),
-        fill: withAlpha('#4a2018', 0.22)
+        fill: withAlpha(FLESH[900], 0.22)
     });
 
     const scleraGradId = `worm-eye-sclera-${instanceId}-${eyeKey}`;
-    const scleraFill = ensureVolumeGradient(defs, scleraGradId, '#eae2d6', { cx: '40%', cy: '35%', r: '75%', highlight: 0.05, shadow: -0.1 });
+    const scleraFill = ensureVolumeGradient(defs, scleraGradId, SCLERA, { cx: '40%', cy: '35%', r: '75%', highlight: 0.05, shadow: -0.1 });
     const sclera = svgEl('ellipse', {
         cx: 0, cy: 0, rx: rx.toFixed(2), ry: ry.toFixed(2),
-        fill: scleraFill, stroke: withAlpha('#000000', 0.2), 'stroke-width': 0.6
+        fill: scleraFill, stroke: withAlpha(INK, 0.2), 'stroke-width': 0.6
     });
 
     // Лопнувшие сосудики вместо ресничек/румян — не милота, а нездоровый вид.
@@ -1187,15 +1210,15 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     // склерой и взгляд выглядит нарисованным.
     const limbus = svgEl('circle', {
         cx: 0, cy: 0, r: (irisR * 0.94).toFixed(2), fill: 'none',
-        stroke: mixColor(eye.color, '#000000', 0.55), 'stroke-width': (irisR * 0.22).toFixed(2), opacity: 0.55
+        stroke: mixColor(eye.color, INK, 0.55), 'stroke-width': (irisR * 0.22).toFixed(2), opacity: 0.55
     });
-    const pupil = svgEl('circle', { cx: 0, cy: 0, r: (irisR * 0.62).toFixed(2), fill: '#0e0405' });
+    const pupil = svgEl('circle', { cx: 0, cy: 0, r: (irisR * 0.62).toFixed(2), fill: INK });
 
     // Один скромный блик (не два "искрящихся", как у милого зверька).
     const highlight = svgEl('ellipse', {
         cx: (-irisR * 0.3).toFixed(2), cy: (-irisR * 0.32).toFixed(2),
         rx: (irisR * 0.22).toFixed(2), ry: (irisR * 0.16).toFixed(2),
-        fill: '#ffffff', opacity: 0.5
+        fill: SPEC, opacity: 0.5
     });
 
     // Бровь — дугой (Q), а не прямой палочкой.
@@ -1206,7 +1229,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     });
     const browShape = svgEl('path', {
         d: `M ${(-rx * 1.1).toFixed(2)},1.5 Q 0,${(-rx * 0.55).toFixed(2)} ${(rx * 1.1).toFixed(2)},1.5`,
-        fill: 'none', stroke: '#2a0d14', 'stroke-width': 3.2, 'stroke-linecap': 'round'
+        fill: 'none', stroke: INK, 'stroke-width': 3.2, 'stroke-linecap': 'round'
     });
     browGroup.appendChild(browShape);
 
@@ -1218,7 +1241,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
 
     const lidHeight = ry * 2 + 6;
     const lidGradId = `worm-eyelid-grad-${instanceId}-${eyeKey}`;
-    const lidFill = ensureVolumeGradient(defs, lidGradId, '#c98a7f', {
+    const lidFill = ensureVolumeGradient(defs, lidGradId, FLESH[300], {
         cx: '50%', cy: '0%', r: '100%',
         highlight: 0.08, highlightTint: GRIME_HIGHLIGHT,
         shadow: -0.2, shadowTint: GRIME_SHADOW
@@ -1242,7 +1265,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     });
     const lidCrease = svgEl('line', {
         x1: (-rx).toFixed(2), y1: (lidHeight / 2).toFixed(2), x2: rx.toFixed(2), y2: (lidHeight / 2).toFixed(2),
-        stroke: withAlpha('#3a1218', 0.5), 'stroke-width': 1
+        stroke: withAlpha(FLESH[900], 0.5), 'stroke-width': 1
     });
     lidTrack.appendChild(lid);
     lidTrack.appendChild(lidCrease);
@@ -1256,7 +1279,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
         const ly = -Math.sqrt(Math.max(0, 1 - (lx / rx) * (lx / rx))) * ry;
         lashes.appendChild(svgEl('path', {
             d: `M ${lx.toFixed(1)},${ly.toFixed(1)} l ${(lx * 0.12).toFixed(1)},${(-1.8 - i % 2).toFixed(1)}`,
-            stroke: '#3a1c12', 'stroke-width': 0.8, fill: 'none', opacity: 0.5, 'stroke-linecap': 'round'
+            stroke: FLESH[900], 'stroke-width': 0.8, fill: 'none', opacity: 0.5, 'stroke-linecap': 'round'
         }));
     }
 
@@ -1266,13 +1289,13 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     eyeFolds.appendChild(svgEl('path', {
         d: `M ${(-rx * 1.15).toFixed(1)},${(-ry * 0.85).toFixed(1)} ` +
            `Q 0,${(-ry * 1.7).toFixed(1)} ${(rx * 1.15).toFixed(1)},${(-ry * 0.85).toFixed(1)}`,
-        fill: 'none', stroke: withAlpha('#5a2430', 0.4), 'stroke-width': 1.4, 'stroke-linecap': 'round'
+        fill: 'none', stroke: withAlpha(FLESH[700], 0.4), 'stroke-width': 1.4, 'stroke-linecap': 'round'
     }));
     for (let i = 0; i < 2; i++) {
         const sx = mirror * rx * (1.15 + i * 0.16);
         eyeFolds.appendChild(svgEl('path', {
             d: `M ${sx.toFixed(1)},${(ry * (0.1 + i * 0.28)).toFixed(1)} l ${(mirror * 3.2).toFixed(1)},${(1.6 + i * 1.4).toFixed(1)}`,
-            fill: 'none', stroke: withAlpha('#5a2430', 0.3), 'stroke-width': 0.9, 'stroke-linecap': 'round'
+            fill: 'none', stroke: withAlpha(FLESH[700], 0.3), 'stroke-width': 0.9, 'stroke-linecap': 'round'
         }));
     }
 
@@ -1298,7 +1321,7 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs) {
     group.appendChild(gazeGroup);
     group.appendChild(svgEl('ellipse', {
         cx: 0, cy: (-ry * 1.05).toFixed(2), rx: (rx * 1.05).toFixed(2), ry: (ry * 0.75).toFixed(2),
-        fill: withAlpha('#2b1008', 0.3), 'clip-path': `url(#worm-eye-clip-${instanceId}-${eyeKey})`
+        fill: withAlpha(INK, 0.3), 'clip-path': `url(#worm-eye-clip-${instanceId}-${eyeKey})`
     }));
     group.appendChild(lidClipGroup);
     group.appendChild(lashes);
@@ -1318,7 +1341,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
     const mouthShape = svgEl('path', {
-        d: '', fill: '#3d0e14', stroke: mouth.color, 'stroke-width': 1.8, 'stroke-linejoin': 'round'
+        d: '', fill: VIOLET[600], stroke: mouth.color, 'stroke-width': 1.8, 'stroke-linejoin': 'round'
     });
     mouthAnchor.appendChild(mouthShape);
 
@@ -1339,7 +1362,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
         const jitter = (toothRng() - 0.5) * 2.4;
         const hBase = 4 + toothRng() * 2;
         const tw = 2.2 + toothRng() * 1.2;
-        const toothEl = svgEl('path', { d: '', fill: '#d8cf9a' });
+        const toothEl = svgEl('path', { d: '', fill: BILE[200] });
         teethGroup.appendChild(toothEl);
         teeth.push({ el: toothEl, tx, jitter, hBase, tw });
     }
@@ -1602,7 +1625,7 @@ function buildHeadNode(model, ctx) {
     const headShine = svgEl('ellipse', {
         cx: (-rx * 0.28).toFixed(2), cy: (-ry * 0.52).toFixed(2),
         rx: (rx * 0.3).toFixed(2), ry: (ry * 0.16).toFixed(2),
-        fill: '#ffffff', opacity: 0.16
+        fill: SPEC, opacity: 0.16
     });
 
     // ---------- УШИ ----------
@@ -1806,9 +1829,9 @@ function buildHeadNode(model, ctx) {
         fill: ensureSoftGradient(ctx, `worm-snout-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1), opacity: 0.4
     }));
     const snoutShape = svgEl('ellipse', { cx: 0, cy: 0, rx: snoutRx, ry: snoutRy, fill: snoutFill, stroke: snout.stroke, 'stroke-width': 2 });
-    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: '#631d27', transform: 'rotate(-14 -4.8 0)' });
-    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: '#631d27', transform: 'rotate(14 4.8 0)' });
-    const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: '#ffffff', opacity: 0.32 });
+    const nostrilL = svgEl('ellipse', { cx: -4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VIOLET[600], transform: 'rotate(-14 -4.8 0)' });
+    const nostrilR = svgEl('ellipse', { cx: 4.8, cy: 0, rx: 2.3, ry: 3.4, fill: VIOLET[600], transform: 'rotate(14 4.8 0)' });
+    const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: SPEC, opacity: 0.32 });
     const poreGroup = svgEl('g', { class: 'worm-snout-pores' });
     const poreRng = mulberry32(hashStringSeed(`${ctx.instanceId}-snout-pores`));
     for (let i = 0; i < 14; i++) {
@@ -1824,7 +1847,7 @@ function buildHeadNode(model, ctx) {
     const nostrilShade = svgEl('g');
     [[-4.8, -14], [4.8, 14]].forEach(([nx, rot]) => {
         nostrilShade.appendChild(svgEl('ellipse', {
-            cx: nx, cy: 1, rx: 1.6, ry: 2.2, fill: '#2d0a11', opacity: 0.75,
+            cx: nx, cy: 1, rx: 1.6, ry: 2.2, fill: INK, opacity: 0.75,
             transform: `rotate(${rot} ${nx} 0)`
         }));
     });
@@ -2183,7 +2206,7 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
 function createGutTract(ctx) {
     const anatomy = ctx.anatomy;
     const palette = (anatomy.organs && anatomy.organs.palette) || {};
-    const color = palette.gut || '#63212f';
+    const color = palette.gut || FLESH[700];
     const group = svgEl('g', {
         class: 'worm-gut-tract',
         'clip-path': `url(#worm-hull-clip-${ctx.instanceId})`
@@ -2404,7 +2427,7 @@ function buildWormSVGGroup(model, instanceId) {
     // Падающая тень на "полу" — тело перестаёт висеть в пустоте.
     const floorShadow = svgEl('ellipse', {
         class: 'worm-floor-shadow', cx: 0, cy: 0, rx: 0, ry: 0,
-        fill: ensureSoftGradient(ctx, `worm-floor-shadow-${instanceId}`, '#000000', 1),
+        fill: ensureSoftGradient(ctx, `worm-floor-shadow-${instanceId}`, INK, 1),
         opacity: 0.34
     });
     root.appendChild(floorShadow);
