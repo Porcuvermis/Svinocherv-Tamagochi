@@ -910,6 +910,18 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
             d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.5),
             'stroke-width': SW.detail, opacity: 0.75
         }));
+        // Содержимое: пока пусто, наполняется при кормёжке. Отдельным
+        // элементом, а не перекраской желудка: желудок должен оставаться
+        // собой, просто с комком внутри.
+        const content = svgEl('ellipse', {
+            class: 'worm-stomach-content',
+            cx: (-rx * 0.08).toFixed(1), cy: (ry * 0.12).toFixed(1),
+            rx: 0, ry: 0, fill: mixColor(color, BILE[400], 0.5), opacity: 0.85
+        });
+        content.setAttribute('data-full-rx', (rx * 0.52).toFixed(1));
+        content.setAttribute('data-full-ry', (ry * 0.46).toFixed(1));
+        group.appendChild(content);
+
         // Складки на своде — стенка желудка не гладкий шар.
         const srng = anatRng(ctx.anatomy, idKey, 'stomach-folds');
         for (let i = 0; i < 3; i++) {
@@ -2796,6 +2808,55 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
     return group;
 }
 
+// ---------- КУЧКА НА ПОЛУ ----------
+// Результат пищеварения. Форма детерминированная от сида: две-три спирали
+// друг на друге, каждая следующая мельче. Цвет — из палитры (жёлчная линия
+// плюс чернота), а не подобранный на глаз коричневый.
+function buildPoopNode(obj, depthScale) {
+    const scale = depthScale || 1;
+    const rng = mulberry32(hashStringSeed(String(obj.seed || obj.id || 'poop')));
+    const base = 7 * scale;
+    const group = svgEl('g', {
+        class: 'worm-poop',
+        transform: `translate(${obj.x.toFixed(1)},${obj.y.toFixed(1)})`
+    });
+
+    const body = mixColor(BILE[600], P_.ink, 0.42);
+    const light = mixColor(body, GRIME_HIGHLIGHT, 0.35);
+
+    // Тень на полу: без неё кучка висит над полом.
+    group.appendChild(svgEl('ellipse', {
+        cx: 0, cy: (base * 0.15).toFixed(1),
+        rx: (base * 1.5).toFixed(1), ry: (base * 0.5).toFixed(1),
+        fill: P_.ink, opacity: 0.3
+    }));
+
+    const layers = 3;
+    for (let i = 0; i < layers; i++) {
+        const k = i / (layers - 1);
+        const rx = base * (1.25 - k * 0.55) * (0.9 + rng() * 0.2);
+        const ry = base * (0.5 - k * 0.14);
+        const cy = -i * base * 0.42;
+        const cx = (rng() - 0.5) * base * 0.3;
+        group.appendChild(svgEl('ellipse', {
+            cx: cx.toFixed(1), cy: cy.toFixed(1), rx: rx.toFixed(1), ry: ry.toFixed(1),
+            fill: body, stroke: P_.ink, 'stroke-width': SW.detail
+        }));
+        group.appendChild(svgEl('ellipse', {
+            cx: (cx - rx * 0.25).toFixed(1), cy: (cy - ry * 0.3).toFixed(1),
+            rx: (rx * 0.35).toFixed(1), ry: (ry * 0.3).toFixed(1),
+            fill: light, opacity: 0.4
+        }));
+    }
+    // Кончик сверху — узнаваемый силуэт кучки.
+    group.appendChild(svgEl('path', {
+        d: `M ${(-base * 0.22).toFixed(1)},${(-layers * base * 0.42 + base * 0.1).toFixed(1)} ` +
+           `Q 0,${(-layers * base * 0.42 - base * 0.5).toFixed(1)} ${(base * 0.22).toFixed(1)},${(-layers * base * 0.42 + base * 0.1).toFixed(1)} Z`,
+        fill: body, stroke: P_.ink, 'stroke-width': SW.hairline
+    }));
+    return group;
+}
+
 // ---------- СБОРКА ВСЕЙ ЦЕПОЧКИ ТЕЛА ----------
 // ============================================================================
 //                   ЕДИНЫЙ СИЛУЭТ ТЕЛА (BODY HULL)
@@ -3040,7 +3101,10 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
     // Кромки собираются КРИВЫМИ, а не отрезками: ломаная на витках кишечника
     // мгновенно читается как зигзаг из палок, а не как мягкая трубка.
     const ribbon = smoothPolyline(left, false) + ' ' + smoothPolyline(right.slice().reverse(), true) + ' Z';
-    return { ribbon, core: smoothPolyline(core, false) };
+    // corePts — сырые точки осевой линии. Нужны, чтобы ставить куски еды на
+    // тракт арифметикой, а не промером SVG-пути: строка пути переписывается
+    // каждый кадр, и getTotalLength каждый раз меряет её заново.
+    return { ribbon, core: smoothPolyline(core, false), corePts: core };
 }
 
 // Узлы тракта: тень под трубой → сама труба с контуром → светлая жила.
@@ -3093,7 +3157,15 @@ function createGutTract(ctx, thinByIdx) {
     });
     group.appendChild(tube);
     group.appendChild(coreLine);
-    return { group, tube, coreLine, maskCircles };
+
+    // Куски еды едут ВНУТРИ группы тракта, значит подчиняются той же маске:
+    // у головы и хвоста кожа плотная — и комок там не виден, как и кишка.
+    // Ровно то поведение, которое нужно: еда «появляется» из головы, когда
+    // доезжает до просвечивающей части, и пропадает у хвоста.
+    const foodLayer = svgEl('g', { class: 'worm-food-layer' });
+    group.appendChild(foodLayer);
+
+    return { group, tube, coreLine, maskCircles, foodLayer, foodNodes: [] };
 }
 
 // Пересчёт всех трёх копий силуэта + перетяжек + отражённого света + тени.
@@ -4008,6 +4080,7 @@ const WormRenderer = {
                         });
                         state.built.gutTract.tube.setAttribute('d', geom.ribbon);
                         state.built.gutTract.coreLine.setAttribute('d', geom.core);
+                        state.built.gutTract.corePts = geom.corePts;
                         const liveVis = state.livePose.organVisibility;
                         const baseVis = liveVis != null ? liveVis : (organs.visibility != null ? organs.visibility : 0.6);
                         state.built.gutTract.group.setAttribute('opacity',
@@ -4313,6 +4386,137 @@ const WormRenderer = {
             },
             getPosition() {
                 return { x: state.wormX, y: state.wormY };
+            },
+
+            // Где сейчас конкретная часть тела — в координатах сцены.
+            // Нужно тому, кто кладёт что-то рядом с червём: «под хвостом»
+            // нельзя посчитать снаружи, потому что тело поворачивается по
+            // ходу движения, а хвост уезжает за ним.
+            getPartPoint(partName) {
+                const el = svg.querySelector(`[data-part="${partName}"]`);
+                if (!el || !el.getScreenCTM || !svg.getScreenCTM) {
+                    return { x: state.wormX, y: state.wormY };
+                }
+                try {
+                    const box = el.getBBox();
+                    const pt = svg.createSVGPoint();
+                    pt.x = box.x + box.width / 2;
+                    pt.y = box.y + box.height / 2;
+                    const local = pt.matrixTransform(el.getScreenCTM().multiply(svg.getScreenCTM().inverse()));
+                    return { x: local.x, y: local.y };
+                } catch (err) {
+                    return { x: state.wormX, y: state.wormY };
+                }
+            },
+
+            // ---------- ПИЩЕВАРЕНИЕ ----------
+            // Рендерер не считает время и не знает про еду ничего, кроме
+            // «нарисуй комки вот в этих точках тракта». Куда они доехали —
+            // считает вызывающий по метке времени кормёжки (worm.js).
+            //
+            //   boluses    — [{ s: 0..1 вдоль тракта, size: доля толщины }]
+            //   stomachFill — 0..1, насколько наполнен желудок
+            setDigestion(data) {
+                const d = data || {};
+                const tract = state.built && state.built.gutTract;
+                if (tract && tract.foodLayer) {
+                    const list = d.boluses || [];
+                    const pts = tract.corePts || [];
+
+                    // Узлы переиспользуются: комков три-четыре, создавать их
+                    // заново каждый кадр незачем.
+                    while (tract.foodNodes.length < list.length) {
+                        const node = svgEl('ellipse', { class: 'worm-food', rx: 0, ry: 0, cx: 0, cy: 0 });
+                        tract.foodLayer.appendChild(node);
+                        tract.foodNodes.push(node);
+                    }
+                    tract.foodNodes.forEach((node, i) => {
+                        const b = list[i];
+                        if (!b || pts.length < 2) { node.setAttribute('rx', 0); node.setAttribute('ry', 0); return; }
+                        // Позиция считается по точкам осевой линии — сложение
+                        // и умножение вместо промера пути.
+                        const fs = Math.max(0, Math.min(1, b.s)) * (pts.length - 1);
+                        const i0 = Math.min(pts.length - 2, Math.floor(fs));
+                        const k = fs - i0;
+                        const a = pts[i0], c = pts[i0 + 1];
+                        const pt = { x: a[0] + (c[0] - a[0]) * k, y: a[1] + (c[1] - a[1]) * k };
+                        // Направление в этой точке — комок вытянут вдоль кишки,
+                        // а не поперёк: он её растягивает, а не лежит поперёк.
+                        const ang = Math.atan2(c[1] - a[1], c[0] - a[0]) * 180 / Math.PI;
+                        const size = (b.size || 1) * (d.scale || 7);
+                        node.setAttribute('cx', 0);
+                        node.setAttribute('cy', 0);
+                        node.setAttribute('rx', (size * 1.35).toFixed(1));
+                        node.setAttribute('ry', size.toFixed(1));
+                        node.setAttribute('fill', b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35));
+                        node.setAttribute('opacity', b.opacity != null ? b.opacity : 0.9);
+                        node.setAttribute('transform',
+                            `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+                    });
+                }
+
+                // Наполненный желудок слегка раздувается — но остаётся
+                // желудком, а не превращается в шар.
+                const fill = Math.max(0, Math.min(1, d.stomachFill || 0));
+                const content = state.built && state.built.root
+                    ? state.built.root.querySelector('.worm-stomach-content') : null;
+                if (content) {
+                    const fx = parseFloat(content.getAttribute('data-full-rx')) || 0;
+                    const fy = parseFloat(content.getAttribute('data-full-ry')) || 0;
+                    content.setAttribute('rx', (fx * fill).toFixed(1));
+                    content.setAttribute('ry', (fy * fill).toFixed(1));
+                }
+            },
+
+            // ---------- ЧТО ЛЕЖИТ НА ПОЛУ ----------
+            // Комната принадлежит рендереру, поэтому и предметы в ней рисует
+            // он: тогда они живут в тех же координатах и получают ту же
+            // перспективу, что и персонаж.
+            setRoomObjects(list) {
+                if (!roomLayer) return;
+                let layer = roomLayer.querySelector('.worm-room-objects');
+                if (!layer) {
+                    layer = svgEl('g', { class: 'worm-room-objects' });
+                    roomLayer.appendChild(layer);
+                }
+                while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+                state.roomObjects = (list || []).filter(o => o.x != null && o.y != null);
+                state.roomObjects.forEach(obj => {
+                    const depthScale = (opts.room && state.room)
+                        ? roomCharScaleAt(roomDepthAt(state.room, obj.y)) : 1;
+                    const g = buildPoopNode(obj, depthScale);
+                    g.setAttribute('data-poop-id', obj.id);
+                    layer.appendChild(g);
+                });
+
+                // Попадание считается по координатам, а не вешается на сам
+                // элемент. Причина: кучка лежит на полу, то есть ПОД
+                // персонажем, и когда червь стоит над ней, все клики
+                // достаются ему — обработчик на элементе просто не получает
+                // события. Хит-тест по расстоянию от этого не зависит.
+                if (!state.roomTapBound) {
+                    state.roomTapBound = true;
+                    svg.addEventListener('pointerdown', (e) => {
+                        if (typeof opts.onRoomObjectTap !== 'function') return;
+                        const objs = state.roomObjects || [];
+                        if (!objs.length) return;
+                        const pt = svg.createSVGPoint();
+                        pt.x = e.clientX; pt.y = e.clientY;
+                        const local = pt.matrixTransform(svg.getScreenCTM().inverse());
+                        let best = null, bestD = Infinity;
+                        objs.forEach(o => {
+                            const d = Math.hypot(local.x - o.x, local.y - o.y);
+                            if (d < bestD) { bestD = d; best = o; }
+                        });
+                        // Радиус попадания щедрый: пальцем по маленькой кучке
+                        // на телефоне иначе не попасть.
+                        if (best && bestD < 26) {
+                            e.stopPropagation();
+                            opts.onRoomObjectTap(best.id);
+                        }
+                    });
+                }
             },
             // Прямой доступ к SVG для точечных вещей (хит-тест по конкретной
             // части, разовая подстройка стиля мини-игрой). Ищи части по

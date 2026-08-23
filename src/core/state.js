@@ -44,6 +44,11 @@ const GameState = {
             unlocks: {},
             daily_counters: {},
             runs: {},
+            // Пищеварение: одна метка времени, всё остальное считается от неё.
+            digestion: { fed_at: null },
+            // Комната: то, что лежит на полу. Пока только то, что червь
+            // произвёл сам.
+            room: { poops: [] },
             ledger: [],
             requests: []
         };
@@ -138,6 +143,10 @@ const GameState = {
             d.player.timezone_offset = GameTime.localTimezoneOffset();
         }
 
+        if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null };
+        if (!d.room || typeof d.room !== 'object') d.room = {};
+        if (!Array.isArray(d.room.poops)) d.room.poops = [];
+
         ['currencies', 'inventory', 'unlocks', 'daily_counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
@@ -208,6 +217,32 @@ const GameState = {
     counter(counterKey) {
         const day = this.data.daily_counters[this.dayKey()];
         return (day && day[counterKey]) || 0;
+    },
+
+    // Фаза пищеварения на текущий момент. Ничего не хранится, кроме метки
+    // времени: где именно едет комок — вычисляется, как и всё остальное.
+    //
+    // Фазы: 'idle' — не кормлен; 'swallow' — куски идут к желудку;
+    // 'stomach' — переваривается; 'bowel' — комок идёт к хвосту;
+    // 'done' — пора какать (это состояние разруливает Backend).
+    digestion() {
+        const cfg = ECONOMY.digestion;
+        const fedAt = this.data && this.data.digestion ? this.data.digestion.fed_at : null;
+        if (!fedAt) return { phase: 'idle', progress: 0, elapsed: 0 };
+
+        const elapsed = GameTime.secondsSince(fedAt);
+        const swallow = cfg.swallowSeconds + cfg.biteGapSeconds * Math.max(0, cfg.bites - 1);
+        const stomachEnd = swallow + cfg.stomachMinutes * 60;
+        const bowelEnd = stomachEnd + cfg.bowelMinutes * 60;
+
+        if (elapsed < swallow) return { phase: 'swallow', progress: elapsed / swallow, elapsed };
+        if (elapsed < stomachEnd) {
+            return { phase: 'stomach', progress: (elapsed - swallow) / (stomachEnd - swallow), elapsed };
+        }
+        if (elapsed < bowelEnd) {
+            return { phase: 'bowel', progress: (elapsed - stomachEnd) / (bowelEnd - stomachEnd), elapsed };
+        }
+        return { phase: 'done', progress: 1, elapsed };
     },
 
     // ---------- ЗАПИСЬ ----------

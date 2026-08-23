@@ -56,6 +56,7 @@ const DebugState = {
             <button data-act="shift">−8 ч</button>
             <button data-act="fill">Полные</button>
             <button data-act="scar">Шрам</button>
+            <button data-act="feed">Покормить</button>
             <button data-act="reset">Сброс</button>
             <span id="debug-fps">— fps</span>
         `;
@@ -111,6 +112,14 @@ const DebugState = {
             Object.keys(GameState.data.sins).forEach(key => {
                 GameState.data.sins[key].updated_at -= hours * 3600 * 1000;
             });
+            // Пищеварение отматывается вместе со шкалами: цикл длиной в час,
+            // и ждать его вживую ради проверки — то же самое, что ждать
+            // падения шкал.
+            if (GameState.data.digestion && GameState.data.digestion.fed_at) {
+                GameState.data.digestion.fed_at -= hours * 3600 * 1000;
+            }
+        } else if (act === 'feed') {
+            Backend.feed();
         } else if (act === 'fill') {
             Object.keys(GameState.data.sins).forEach(key => {
                 GameState.setSinValue(key, GameState.maxValue(key));
