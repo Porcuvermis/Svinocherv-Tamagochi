@@ -3530,16 +3530,28 @@ const WormRenderer = {
         svg.style.overflow = 'visible';
         container.appendChild(svg);
 
-        // Два постоянных слоя внутри svg, которые НЕ трогает rebuild():
-        // slimeLayer (след слизи, под персонажем) и charLayer (сам персонаж).
-        // roomLayer — интерьер, лежит ПОД следом слизи и персонажем.
+        // Постоянные слои внутри svg, которые НЕ трогает rebuild():
+        //   roomLayer   — интерьер (пол, стены), самый низ;
+        //   slimeLayer  — след слизи;
+        //   objectLayer — то, что лежит на полу (кучки);
+        //   charLayer   — сам персонаж, поверх всего.
+        //
+        // Предметы лежат ВЫШЕ слизи: след — это то, что червь размазал по
+        // полу, он физически не может оказаться поверх кучки.
+        //
+        // И это отдельный слой, а не часть roomLayer: комната перестраивается
+        // при смене размера окна, а buildRoom вычищает свой слой целиком —
+        // предметы уезжали вместе с ней и пропадали с экрана, оставаясь в
+        // состоянии. Именно так кучка и превращалась в невидимую.
         const roomLayer = svgEl('g', { class: 'worm-room-layer' });
-        // След слизи тянется через полкомнаты и тоже не должен ловить тапы:
+        // След слизи тянется через полкомнаты и тапы ловить не должен:
         // он не тело, а то, что тело за собой оставило.
         const slimeLayer = svgEl('g', { class: 'worm-slime-layer', 'pointer-events': 'none' });
+        const objectLayer = svgEl('g', { class: 'worm-room-objects' });
         const charLayer = svgEl('g', { class: 'worm-char-layer' });
         if (opts.room) svg.appendChild(roomLayer);
         svg.appendChild(slimeLayer);
+        svg.appendChild(objectLayer);
         svg.appendChild(charLayer);
 
         const state = {
@@ -4478,12 +4490,8 @@ const WormRenderer = {
             // он: тогда они живут в тех же координатах и получают ту же
             // перспективу, что и персонаж.
             setRoomObjects(list) {
-                if (!roomLayer) return;
-                let layer = roomLayer.querySelector('.worm-room-objects');
-                if (!layer) {
-                    layer = svgEl('g', { class: 'worm-room-objects' });
-                    roomLayer.appendChild(layer);
-                }
+                const layer = objectLayer;
+                if (!layer) return;
                 while (layer.firstChild) layer.removeChild(layer.firstChild);
 
                 state.roomObjects = (list || []).filter(o => o.x != null && o.y != null);

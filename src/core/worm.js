@@ -222,10 +222,13 @@ function initWorm() {
             // добавится там же, а не в обработчике тапа.
             onRoomObjectTap: (id) => {
                 if (typeof Backend === 'undefined') return;
-                if (Backend.removePoop(id)) {
-                    WormDigestion.poopsKey = '';   // список изменился — перерисовать
-                    WormDigestion.placePoops();
-                }
+                Backend.removePoop(id);
+                // Перерисовываем в любом случае. Если тапнули по кучке,
+                // которой в состоянии уже нет (узел устарел), то без этого
+                // он останется на экране навсегда и будет молча съедать
+                // тапы — ровно та «какашка, которая ни на что не реагирует».
+                WormDigestion.poopsKey = '';
+                WormDigestion.placePoops();
             },
             wander: true,
             // Главный экран — комната с полом в перспективе.
