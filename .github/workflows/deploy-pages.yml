@@ -56,7 +56,10 @@ jobs:
             ref="$1"; dest="$2"; label="$3"; branch="$4"
             mkdir -p "$dest"
             git archive "$ref" | tar -x -C "$dest"
-            rm -rf "$dest/.github" "$dest/tools"
+            # На сайт едет только то, что нужно игре. docs/ весит больше
+            # самой игры (там pdf плана), а копий сайта делается до
+            # одиннадцати — по одной на ветку.
+            rm -rf "$dest/.github" "$dest/tools" "$dest/docs"
 
             if [ ! -f "$dest/index.html" ]; then
               echo "  пропуск: в ветке нет index.html"
