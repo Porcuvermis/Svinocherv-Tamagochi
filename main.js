@@ -49,7 +49,8 @@ const GameManager = {
         }
 
         this.initUI();
-        this.updateUI();
+        this.cacheElements();
+        this.updateUI(true);
         this.setupEvents();
         this.listenMinigames();
         this.startUiClock();
@@ -99,23 +100,67 @@ const GameManager = {
         });
     },
 
+    // Ссылки на элементы шкал. Ищутся один раз при сборке HUD: искать их
+    // заново на каждой перерисовке — это семь querySelector в секунду по
+    // документу, в котором лежит здоровенный SVG персонажа.
+    _els: null,
+
+    cacheElements() {
+        this._els = {};
+        ECONOMY.sinOrder.forEach(key => {
+            this._els[key] = {
+                bar: document.getElementById(`bar-${key}`),
+                val: document.getElementById(`val-${key}`),
+                circle: document.querySelector(`#mini-${key} .progress`),
+                // Что уже нарисовано. Отдельно для кружка и для полоски: они
+                // видны в разное время, и расходятся тоже.
+                shownCircle: null,
+                shownBar: null
+            };
+        });
+    },
+
     // Показывает то, что в состоянии. Источник данных — GameState, а не поле
     // в этом объекте: значение считается на момент обращения.
-    updateUI() {
+    //
+    // ---------- ПОЧЕМУ ЗДЕСЬ ПРОВЕРКИ, А НЕ ПРОСТО ЗАПИСЬ ----------
+    // Шкала теперь теряет около трёх ТЫСЯЧНЫХ процента в секунду. Записывать
+    // такое изменение в стиль бессмысленно и недёшево: каждая запись — это
+    // пересчёт стилей и раскладки всего документа, а вместе с CSS-переходом
+    // ещё и работа в каждом кадре, пока переход идёт. Пиксель при этом не
+    // сдвигается: 0.003% не видно.
+    //
+    // Поэтому пишем, только когда изменилась хотя бы десятая доля процента, и
+    // не трогаем полоски меню, пока меню закрыто.
+    updateUI(force) {
         if (!GameState.data) return;
+        if (!this._els) this.cacheElements();
+
+        const fullMenu = document.getElementById('full-menu');
+        const menuOpen = !!fullMenu && fullMenu.classList.contains('active');
 
         ECONOMY.sinOrder.forEach(key => {
-            const value = GameState.sinValue(key);
+            const els = this._els[key];
+            if (!els) return;
+
             const max = GameState.maxValue(key) || 1;
-            const percent = Math.max(0, Math.min(100, (value / max) * 100));
+            const percent = Math.max(0, Math.min(100, (GameState.sinValue(key) / max) * 100));
+            const shown = Math.round(percent * 10) / 10;
 
-            const bar = document.getElementById(`bar-${key}`);
-            const valText = document.getElementById(`val-${key}`);
-            if (bar) bar.style.width = `${percent}%`;
-            if (valText) valText.textContent = `${Math.round(percent)}%`;
+            if (els.circle && (force || els.shownCircle !== shown)) {
+                els.circle.style.strokeDashoffset = 100 - shown;
+                els.shownCircle = shown;
+            }
 
-            const miniCircle = document.querySelector(`#mini-${key} .progress`);
-            if (miniCircle) miniCircle.style.strokeDashoffset = 100 - percent;
+            // Меню закрыто — его полоски не видит никто, а раскладку они
+            // пересчитывают наравне с видимыми. Отметка о нарисованном при
+            // этом НЕ ставится, поэтому при следующем открытии меню полоски
+            // подтянутся сами, даже если никто не позвал перерисовку.
+            if ((menuOpen || force) && (force || els.shownBar !== shown)) {
+                if (els.bar) els.bar.style.width = `${shown}%`;
+                if (els.val) els.val.textContent = `${Math.round(shown)}%`;
+                els.shownBar = shown;
+            }
         });
     },
 
@@ -202,6 +247,8 @@ const GameManager = {
                 fullMenu.classList.add('active');
                 miniHud.style.opacity = '0';
                 miniHud.style.pointerEvents = 'none';
+                // Пока меню было закрыто, его полоски не обновлялись.
+                this.updateUI(true);
             };
         }
 

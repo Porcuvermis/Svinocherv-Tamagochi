@@ -56,6 +56,7 @@ const DebugState = {
             <button data-act="shift">−8 ч</button>
             <button data-act="fill">Полные</button>
             <button data-act="reset">Сброс</button>
+            <span id="debug-fps">— fps</span>
         `;
         this.panel.addEventListener('click', (e) => {
             const act = e.target && e.target.getAttribute('data-act');
@@ -67,8 +68,38 @@ const DebugState = {
         const container = document.getElementById('game-container') || document.body;
         container.appendChild(this.panel);
 
+        this.fpsEl = this.panel.querySelector('#debug-fps');
+
         DebugMode.onChange(() => this.render());
         this.render();
+    },
+
+    // ---------- СЧЁТЧИК КАДРОВ ----------
+    // Чтобы разговор о плавности шёл числами, а не ощущениями: «стало хуже»
+    // невозможно ни подтвердить, ни опровергнуть, а «было 58, стало 41» —
+    // можно. Считает только когда debug включён: сам счётчик тоже стоит
+    // кадров, пусть и немного.
+    startFps() {
+        if (this.fpsRaf) return;
+        let frames = 0;
+        let last = performance.now();
+        const tick = (now) => {
+            this.fpsRaf = requestAnimationFrame(tick);
+            frames += 1;
+            if (now - last < 1000) return;
+            const fps = Math.round(frames * 1000 / (now - last));
+            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps';
+            frames = 0;
+            last = now;
+        };
+        this.fpsRaf = requestAnimationFrame(tick);
+    },
+
+    stopFps() {
+        if (!this.fpsRaf) return;
+        cancelAnimationFrame(this.fpsRaf);
+        this.fpsRaf = null;
+        if (this.fpsEl) this.fpsEl.textContent = '— fps';
     },
 
     run(act) {
@@ -94,6 +125,7 @@ const DebugState = {
 
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
+        if (DebugMode.enabled) this.startFps(); else this.stopFps();
     }
 };
 
