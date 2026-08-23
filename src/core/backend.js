@@ -79,7 +79,7 @@ const LocalBackend = {
         }
 
         const reward = this.resolveReward(sin, mode, outcome);
-        const awarded = { sin, mode, outcome, sinValue: null, currencies: {} };
+        const awarded = { sin, mode, outcome, sinValue: null, currencies: {}, mark: null };
 
         if (reward.sinFill === 'full') {
             GameState.setSinValue(sin, GameState.maxValue(sin));
@@ -103,6 +103,13 @@ const LocalBackend = {
             });
         }
 
+        // Отметина на теле, если конфиг её обещал за такой исход.
+        if (reward.mark && Math.random() < (reward.mark.chance || 0)) {
+            const zone = (request.meta && request.meta.lastHitZone) || null;
+            const mark = this.grantMark(reward.mark.kind, zone);
+            if (mark) awarded.mark = mark;
+        }
+
         // Счётчик исходов за сутки. Пока никем не используется, но именно на
         // нём стоит убывающая доходность золота из плана (1–5 побед за сутки
         // дают 100%, 6–15 — половину, дальше — 10%). Считать его надо с
@@ -114,6 +121,35 @@ const LocalBackend = {
         GameState.save();
 
         return Promise.resolve({ state: GameState.data, awarded });
+    },
+
+    // Выдать отметину на тело. Решение принимает эта сторона, а не
+    // мини-игра: на сервере оно тем более будет серверным, иначе «шанс 30%»
+    // превращается в «сколько захочу» (docs/plan/01-architecture.md, 3.3).
+    //
+    // Зона — из данных боя (куда прилетело), иначе от сида. Место внутри
+    // зоны ищет WormMarks: рядом с существующим шрамом новый не встанет,
+    // иначе они слипаются в пятно.
+    grantMark(kind, zone, seed) {
+        const marks = GameState.data.scars;
+        const useSeed = (typeof seed === 'number') ? seed : Math.floor(Math.random() * 1e9);
+        const useZone = WormMarks.ZONES.indexOf(zone) !== -1
+            ? zone
+            : WormMarks.ZONES[useSeed % WormMarks.ZONES.length];
+
+        const t = WormMarks.pickSpot(marks, useZone, useSeed);
+        if (t === null) return null;   // зона забита — это нормальный ответ
+
+        const mark = {
+            id: 'mark-' + useSeed.toString(36) + '-' + marks.length,
+            kind: kind || 'scar',
+            zone: useZone,
+            t,
+            seed: useSeed,
+            created_at: GameTime.now()
+        };
+        marks.push(mark);
+        return mark;
     },
 
     // rewards[грех][режим][исход], иначе общее правило.

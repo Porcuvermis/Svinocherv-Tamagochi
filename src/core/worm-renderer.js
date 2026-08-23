@@ -2595,25 +2595,68 @@ function applyHeadYaw(headRef, yaw) {
 // Процедурно генерируемая метка на конкретном сегменте. Размер намеренно
 // ограничен долей от радиуса сегмента-хозяина, чтобы не вылезать за его
 // пределы.
-function buildScarNode(scar, hostRadius) {
-    const maxSize = hostRadius * 0.35;
-    const size = Math.max(3, Math.min(maxSize, (scar.seed % 100) / 100 * maxSize));
-    const group = svgEl('g', {
-        transform: `translate(${(scar.x * hostRadius).toFixed(2)},${(scar.y * hostRadius).toFixed(2)}) rotate(${scar.rotation})`,
-        class: `worm-scar worm-scar-${scar.type || 'organic'}`
+// ---------- ОТМЕТИНА НА ТЕЛЕ ----------
+// Форма выводится из сида (WormMarks.geometry), цвет — сдвиг от тона кожи
+// хозяина (WormMarks.color). Ни то, ни другое не хранится: отметина в данных
+// это несколько чисел, а не список точек и не hex.
+//
+// Раньше здесь была ровная горизонтальная эллипса цвета scar.color. Ровный
+// эллипс читается как наклейка: у шрама неровный край и он изогнут, потому
+// что кожа при заживлении стягивается. Отсюда рваный контур и дуга.
+function buildMarkNode(mark, place, hostRadius, skinColor) {
+    const geo = WormMarks.geometry(mark.seed, mark.kind);
+    const color = WormMarks.color(skinColor || FLESH[500], mark.kind);
+    const rng = WormMarks.rng(mark.seed || 0, 'draw');
+
+    const half = Math.max(2.5, geo.length * hostRadius * 0.5);
+    const wide = Math.max(0.9, geo.width * hostRadius);
+    const bend = geo.curve * half * 0.5;
+
+    // Осевая линия шрама — дуга, а не отрезок.
+    const axisAt = (u) => ({          // u: -1..1
+        x: u * half,
+        y: bend * (1 - u * u)
     });
-    if (scar.type === 'stitched') {
-        const line = svgEl('line', { x1: -size, y1: 0, x2: size, y2: 0, stroke: scar.color, 'stroke-width': Math.max(1, size * 0.2) });
-        group.appendChild(line);
-        const stitchCount = 3;
-        for (let i = 0; i < stitchCount; i++) {
-            const sx = -size + (i + 0.5) * (size * 2 / stitchCount);
-            group.appendChild(svgEl('line', { x1: sx, y1: -size * 0.4, x2: sx, y2: size * 0.4, stroke: scar.color, 'stroke-width': SW.detail }));
+
+    // Обходим фигуру по одной стороне и возвращаемся по другой, дёргая
+    // ширину на каждом шаге: получается неровный край.
+    const steps = 5 + geo.notches * 2;
+    const side = (dir) => {
+        const pts = [];
+        for (let i = 0; i <= steps; i++) {
+            const u = dir > 0 ? (-1 + (2 * i) / steps) : (1 - (2 * i) / steps);
+            const p = axisAt(u);
+            // К концам шрам сходит на нет, в середине шире всего.
+            const taper = Math.pow(1 - u * u, 0.6);
+            const jitter = 1 - geo.ragged * rng() * 0.55;
+            const w = wide * taper * jitter * dir;
+            pts.push(`${p.x.toFixed(2)},${(p.y + w).toFixed(2)}`);
         }
-    } else {
-        const rx = size, ry = size * 0.5;
-        group.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: rx.toFixed(2), ry: ry.toFixed(2), fill: scar.color, opacity: 0.85 }));
+        return pts;
+    };
+
+    const d = 'M ' + side(1).join(' L ') + ' L ' + side(-1).join(' L ') + ' Z';
+
+    const group = svgEl('g', {
+        transform: `translate(${(place.x * hostRadius).toFixed(2)},${(place.y * hostRadius).toFixed(2)}) rotate(${place.rotation.toFixed(1)})`,
+        class: `worm-mark worm-mark-${mark.kind || 'scar'}`
+    });
+    group.appendChild(svgEl('path', { d, fill: color, opacity: 0.9 }));
+
+    // Тонкая светлая жилка вдоль шрама: рубцовая ткань блестит сильнее кожи.
+    const shine = [];
+    for (let i = 0; i <= steps; i++) {
+        const p = axisAt(-1 + (2 * i) / steps);
+        shine.push(`${p.x.toFixed(2)},${p.y.toFixed(2)}`);
     }
+    group.appendChild(svgEl('polyline', {
+        points: shine.join(' '),
+        fill: 'none',
+        stroke: WormMarks.color(skinColor || FLESH[500], 'fat'),
+        'stroke-width': Math.max(0.4, wide * 0.2).toFixed(2),
+        'stroke-linecap': 'round',
+        opacity: 0.32
+    }));
     return group;
 }
 
@@ -3144,17 +3187,29 @@ function buildWormSVGGroup(model, instanceId) {
     const headBuilt = buildHeadNode(model, ctx);
     root.appendChild(headBuilt.group);
 
-    // Шрамы — монтируются как дети scarLayer конкретного сегмента-хозяина,
-    // поэтому автоматически наследуют его текущий transform/scale.
+    // Отметины — монтируются как дети scarLayer конкретной части, поэтому
+    // автоматически наследуют её текущий transform/scale: тело шевелится,
+    // шрамы шевелятся вместе с ним, без единой строчки в анимации.
+    //
+    // Где именно сидит отметина, решает WormMarks по зоне и позиции вдоль
+    // неё — не по имени сегмента. Имена растущих сегментов меняются при
+    // взрослении, а «середина хвостовой части» остаётся собой.
     const scarHostByPart = { head: headBuilt.scarLayer, tail: tailBuilt.scarLayer };
-    segmentRefs.forEach(seg => { scarHostByPart[seg.name] = seg.scarLayer; });
-    (model.scars || []).forEach(scar => {
-        const host = scarHostByPart[scar.part];
-        if (!host) return;
-        const hostRadius = scar.part === 'tail' ? tailBuilt.baseRadius :
-            scar.part === 'head' ? headBuilt.rx :
-            (segmentRefs.find(s => s.name === scar.part) || {}).radius || 15;
-        host.appendChild(buildScarNode(scar, hostRadius));
+    const radiusByPart = { head: headBuilt.rx, tail: tailBuilt.baseRadius };
+    const skinByPart = { head: model.head.fill, tail: model.tail.fill };
+    segmentRefs.forEach(seg => {
+        scarHostByPart[seg.name] = seg.scarLayer;
+        radiusByPart[seg.name] = seg.radius;
+        skinByPart[seg.name] = seg.fillColor;
+    });
+
+    WormMarks.ZONES.forEach(zone => {
+        WormMarks.visible(model.scars, zone).forEach(mark => {
+            const place = WormMarks.resolve(model, mark);
+            const host = scarHostByPart[place.part];
+            if (!host) return;
+            host.appendChild(buildMarkNode(mark, place, radiusByPart[place.part] || 15, skinByPart[place.part]));
+        });
     });
 
     return {

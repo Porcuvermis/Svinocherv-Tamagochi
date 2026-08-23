@@ -198,6 +198,10 @@ const GameManager = {
                 .then((answer) => {
                     if (answer && answer.awarded) {
                         console.log('[Игра] начислено', answer.awarded);
+                        // Новая отметина на теле — червя надо перерисовать.
+                        if (answer.awarded.mark && typeof refreshWormMarks === 'function') {
+                            refreshWormMarks();
+                        }
                     }
                     this.updateUI();
                 })

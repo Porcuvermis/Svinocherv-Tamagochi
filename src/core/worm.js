@@ -7,6 +7,21 @@
 
 let MainWormHandle = null;
 
+// Отметины из состояния игрока. Состояния может не быть вовсе (мини-игра
+// монтирует червя у себя, отдельный экран) — тогда просто пустой список.
+function wormMarksFromState() {
+    if (typeof GameState === 'undefined' || !GameState.data) return [];
+    return GameState.data.scars || [];
+}
+
+// Перерисовать червя с актуальными отметинами. Дёргается, когда появилась
+// новая: пересборка SVG — вещь недешёвая, поэтому по событию, а не по
+// таймеру и не на каждое сохранение состояния.
+function refreshWormMarks() {
+    if (!MainWormHandle) return;
+    MainWormHandle.setOverride({ scars: wormMarksFromState() });
+}
+
 function initWorm() {
     try {
         // Без этих двух файлов (и соответствующих <script> в index.html)
@@ -53,6 +68,12 @@ function initWorm() {
         }
 
         const model = window.WormModelAPI.loadWormModel();
+
+        // Внешность червя (модель) и его летопись (отметины) — разные вещи и
+        // хранятся раздельно: модель это «как он устроен», отметины — «что с
+        // ним было». Правда об отметинах живёт в состоянии игрока, а сюда
+        // они попадают только на время отрисовки.
+        model.scars = wormMarksFromState();
 
         MainWormHandle = window.WormRenderer.mount(container, model, {
             context: 'main',

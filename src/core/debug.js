@@ -55,6 +55,7 @@ const DebugState = {
             <button data-act="hour">−1 ч</button>
             <button data-act="shift">−8 ч</button>
             <button data-act="fill">Полные</button>
+            <button data-act="scar">Шрам</button>
             <button data-act="reset">Сброс</button>
             <span id="debug-fps">— fps</span>
         `;
@@ -114,9 +115,20 @@ const DebugState = {
             Object.keys(GameState.data.sins).forEach(key => {
                 GameState.setSinValue(key, GameState.maxValue(key));
             });
+        } else if (act === 'scar') {
+            // Шрамы выпадают за поражения в гневе с шансом 30% — ждать их
+            // ради проверки внешнего вида бессмысленно. Выдаём через ту же
+            // дверь, что и игра: правила отметин живут в Backend.
+            const mark = Backend.grantMark('scar');
+            if (!mark) {
+                alert('Свободного места под шрам не осталось.');
+                return;
+            }
+            if (typeof refreshWormMarks === 'function') refreshWormMarks();
         } else if (act === 'reset') {
             if (!confirm('Стереть весь прогресс: шкалы, кошелёк, счётчики?')) return;
             GameState.reset();
+            if (typeof refreshWormMarks === 'function') refreshWormMarks();
         }
 
         GameState.save();
