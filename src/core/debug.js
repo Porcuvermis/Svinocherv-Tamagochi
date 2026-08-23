@@ -90,7 +90,12 @@ const DebugState = {
             frames += 1;
             if (now - last < 1000) return;
             const fps = Math.round(frames * 1000 / (now - last));
-            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps';
+            // Рядом с кадрами — сколько кучек на полу. Мелочь, но когда
+            // «кучка не убирается», первым делом надо знать, сколько их на
+            // самом деле: две в одной точке выглядят как одна.
+            const poops = (typeof GameState !== 'undefined' && GameState.data && GameState.data.room)
+                ? GameState.data.room.poops.length : 0;
+            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops;
             frames = 0;
             last = now;
         };
