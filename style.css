@@ -23,11 +23,24 @@ body, html {
     color: var(--text-color);
 }
 
+/* ---------- ХОЛСТ ПОСТОЯННОГО РАЗМЕРА ----------
+   Вся игра живёт внутри прямоугольника STAGE_W × STAGE_H (см. stage.js) и
+   целиком масштабируется под окно. Раскладка от формы окна не зависит: ни
+   поворот телефона, ни растянутое окно браузера её не трогают.
+
+   Экраны мини-игр внутри — position: fixed; inset: 0. Трансформация делает
+   этот контейнер их системой отсчёта, поэтому они масштабируются вместе с
+   ним, а не разъезжаются по настоящему окну. */
 #game-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--stage-w, 390px);
+    height: var(--stage-h, 844px);
+    transform: translate(-50%, -50%) scale(var(--stage-scale, 1));
+    transform-origin: center center;
     display: block;
+    overflow: hidden;
 }
 
 canvas {
@@ -302,4 +315,46 @@ body.debug-mode #build-stamp {
     color: rgba(255, 255, 255, 0.7);
     font: 11px/1 monospace;
     white-space: nowrap;
+}
+
+
+/* ---------- «ПОВЕРНИ ТЕЛЕФОН» ----------
+   Показывается только когда телефон лежит боком. На компьютере широкое окно
+   нормально: игра просто вписывается в него и остаётся играбельной. */
+#rotate-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: #14100f;
+    text-align: center;
+}
+
+#rotate-overlay.visible {
+    display: flex;
+}
+
+.rotate-icon {
+    font-size: 46px;
+    margin-bottom: 14px;
+    animation: rotate-hint 2.4s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+    0%, 55%, 100% { transform: rotate(-90deg); }
+    75%, 95%      { transform: rotate(0deg); }
+}
+
+.rotate-text {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.rotate-sub {
+    margin-top: 6px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.45);
 }

@@ -15,7 +15,7 @@
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="apple-touch-icon" href="icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-    <link rel="stylesheet" href="style.css?v=15">
+    <link rel="stylesheet" href="style.css?v=16">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10">
     <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=2">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4">
@@ -25,6 +25,16 @@
     <link rel="stylesheet" href="src/minigames/envy/envy.css?v=1">
 </head>
 <body>
+
+<!-- Просьба перевернуть телефон. Лежит СНАРУЖИ холста: холст масштабируется
+     и центрируется, а это сообщение должно накрывать весь экран целиком. -->
+<div id="rotate-overlay">
+    <div class="rotate-inner">
+        <div class="rotate-icon">📱</div>
+        <div class="rotate-text">Поверни телефон</div>
+        <div class="rotate-sub">Свиночервь живёт вертикально</div>
+    </div>
+</div>
 
 <div id="game-container">
 
@@ -646,6 +656,7 @@
 
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
+<script src="src/core/stage.js?v=2"></script>
 <script src="src/config/economy.js?v=2"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
@@ -655,7 +666,7 @@
 <script src="src/core/palette.js?v=4"></script>
 <script src="src/core/worm-model.js?v=9"></script>
 <script src="src/core/worm-marks.js?v=3"></script>
-<script src="src/core/worm-renderer.js?v=39"></script>
+<script src="src/core/worm-renderer.js?v=40"></script>
 <script src="src/core/worm.js?v=11"></script>
 <script src="src/core/debug.js?v=6"></script>
 <script src="main.js?v=14"></script>

@@ -189,18 +189,38 @@ const WORM_VERTICAL_SPACING = 26;
 // Линейная интерполяция дала бы «складной» пол: у камеры шаг вглубь съедал
 // бы столько же пикселей, сколько у дальней стены, и глубина бы не читалась.
 const ROOM = {
-    horizonRatio: 0.16,    // точка схода — доля высоты сцены
-    floorFrontRatio: 1.0,  // передний край пола (у нижней кромки кадра)
-    frontHalfRatio: 0.8,   // полуширина пола у переднего края (доля ширины)
+    // ---------- КОМНАТА — КОРОБКА ВНУТРИ КАДРА ----------
+    // Раньше пол уходил за нижнюю кромку экрана и за боковые края: комната
+    // была не помещением, а «полом до горизонта». Персонаж от этого регулярно
+    // оказывался наполовину за экраном.
+    //
+    // Теперь у комнаты видны все четыре края: передний край пола, две боковые
+    // стены и задняя. Червю физически некуда выйти из кадра — он ходит по
+    // ограниченному полу, и границы выгула считаются из той же геометрии, что
+    // и сам пол.
+    // Пол почти квадратный: на вертикальном экране глубокий пол читается
+    // коридором, а не комнатой. Недостающую высоту добирают стены.
+    floorFrontRatio: 0.82,  // передний край пола (доля высоты сцены)
+    floorBackRatio: 0.40,   // стык пола с задней стеной
+    frontHalfRatio: 0.46,   // полуширина пола у переднего края (доля ширины)
+    wallHeightRatio: 0.75,  // высота стен как доля ПОЛНОЙ ширины пола спереди
     // Сила перспективы: scale(d) = 1 / (1 + d*depthK).
-    depthK: 0.42,
-    // Пол нарисован ГЛУБЖЕ, чем ходит червь. Иначе полоса пола выходит
-    // узкой, стена съедает больше половины кадра, и персонаж жмётся к нижней
-    // кромке — прямое нарушение «персонаж главный в кадре» (§6).
-    farDepth: 4.6,         // до какой глубины НАРИСОВАН пол
-    wanderNear: 0.15,      // ближняя граница блуждания
-    wanderFar: 3.2,        // дальняя граница блуждания (не до самой стены)
-    wanderInsetU: 0.72,    // насколько близко к боковым стенам подходит червь
+    //
+    // Была 0.42 — при закрытой коробке это превращало комнату в длинный
+    // тоннель: дальняя стена втрое уже передней. Комната у тамагочи — не
+    // коридор, она должна читаться помещением почти сразу, поэтому схождение
+    // слабое: дальняя грань уже передней примерно в полтора раза.
+    depthK: 0.16,
+    farDepth: 4.6,         // глубина дальней стены
+    // Червь ходит НЕ по всей глубине: у дальней стены он мельче, а стена там
+    // ниже него, и голова начинала бы торчать над комнатой.
+    wanderNear: 0.3,       // ближняя граница блуждания
+    wanderFar: 2.0,        // дальняя граница блуждания
+    wanderInsetU: 0.9,     // доля свободной ширины пола, доступная червю
+    // Половина «следа» персонажа на полу в условных единицах холста: тело
+    // лежит вдоль пола и занимает место. Граница выгула считается с учётом
+    // этого, иначе хвост заезжает в боковую стену.
+    bodyHalf: 78,
     // ---------- ПРИГЛУШЕНИЕ МАСШТАБА ПЕРСОНАЖА ----------
     // Пол считается по ЧЕСТНОЙ перспективе, а размер персонажа — нет, и это
     // осознанное расхождение.
@@ -217,11 +237,23 @@ const ROOM = {
 };
 
 function roomGeometry(w, h) {
+    const frontY = h * ROOM.floorFrontRatio;
+    const backY = h * ROOM.floorBackRatio;
+    const frontHalf = w * ROOM.frontHalfRatio;
+    const farScale = roomScaleAt(ROOM.farDepth);
+    // Точка схода не задаётся числом, а ВЫВОДИТСЯ из того, где должны
+    // оказаться передний и дальний края пола. Иначе перспектива и границы
+    // комнаты живут отдельными жизнями: подвинул край — пол перестал в него
+    // упираться.
+    const horizonY = (backY - farScale * frontY) / (1 - farScale);
     return {
         w, h, cx: w / 2,
-        horizonY: h * ROOM.horizonRatio,
-        frontY: h * ROOM.floorFrontRatio,
-        frontHalf: w * ROOM.frontHalfRatio
+        horizonY, frontY, frontHalf,
+        backY, backHalf: frontHalf * farScale,
+        // Высота стены у переднего края; у дальней она во столько же раз
+        // меньше, во сколько уже пол.
+        wallH: frontHalf * 2 * ROOM.wallHeightRatio,
+        farScale
     };
 }
 // Геометрический масштаб на глубине d (0 = у самой камеры).
@@ -248,95 +280,103 @@ function roomDepthAt(g, y) {
 // глубины из существующих.
 function buildRoom(layer, g) {
     while (layer.firstChild) layer.removeChild(layer.firstChild);
-    const backY = roomYAt(g, ROOM.farDepth);
-    const backHalf = roomHalfAt(g, ROOM.farDepth);
+
+    const backY = g.backY, backHalf = g.backHalf;
+    const wallH = g.wallH, backWallH = wallH * g.farScale;
+    const L = g.cx - g.frontHalf, R = g.cx + g.frontHalf;   // передние углы пола
+    const bl = g.cx - backHalf, br = g.cx + backHalf;       // дальние углы пола
+    const topFront = g.frontY - wallH;                      // верх стены у камеры
+    const topBack = backY - backWallH;                      // верх стены у дальней грани
+
     // Пол светлее и ТЕПЛЕЕ холодной стены. Разрыв по светлоте обязателен:
-    // на одинаковых тонах комната читается одним тёмным полем, а не двумя
-    // плоскостями. Горизонтальная поверхность и правда ловит верхний свет
+    // на одинаковых тонах комната читается одним тёмным полем, а не набором
+    // плоскостей. Горизонтальная поверхность и правда ловит верхний свет
     // лучше вертикальной (art-direction.md §3).
     const floorFill = mixColor(P_.void[700], P_.bile[200], 0.13);
+    const wallBack = mixColor(P_.void[900], P_.void[700], 0.5);
+    // Свет один и он сверху-слева, значит внутренние грани освещены
+    // по-разному: правая ловит его, левая остаётся в тени. Без этой разницы
+    // коробка читается плоской раскраской, а не объёмом.
+    const wallLit = mixColor(wallBack, P_.bile[200], 0.1);
+    const wallShade = mixColor(wallBack, P_.ink, 0.4);
 
-    // Задняя стена. Не плоская заливка: свет в проекте один, сверху-слева,
-    // и вертикальная плоскость обязана это показывать, иначе стена читается
-    // дырой, а не поверхностью.
-    const wallGradId = 'worm-room-wall-grad';
-    const wdefs = svgEl('defs');
-    const wgrad = svgEl('radialGradient', { id: wallGradId, cx: '28%', cy: '18%', r: '95%' });
-    wgrad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': mixColor(P_.void[900], P_.void[700], 0.85) }));
-    wgrad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900] }));
-    wdefs.appendChild(wgrad);
-    layer.appendChild(wdefs);
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: 0, width: g.w, height: backY.toFixed(1), fill: `url(#${wallGradId})`
-    }));
-    // Пол — трапеция от дальнего края к переднему. Он светлее стены: свет
-    // падает сверху, и горизонтальная плоскость ловит его лучше вертикальной.
-    layer.appendChild(svgEl('path', {
-        d: `M ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} ` +
-           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} Z`,
-        fill: floorFill
-    }));
-    // Боковые «отвалы» пола до краёв кадра: без них по бокам от трапеции
-    // остаётся цвет стены, и пол выглядит ковром, лежащим в пустоте.
-    layer.appendChild(svgEl('path', {
-        d: `M 0,${backY.toFixed(1)} L ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L 0,${g.frontY.toFixed(1)} Z ` +
-           `M ${g.w},${backY.toFixed(1)} L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L ${g.w},${g.frontY.toFixed(1)} Z`,
-        fill: floorFill, opacity: 0.55
-    }));
-    // Пол ниже переднего края — ближний план, ещё чуть светлее.
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: g.frontY.toFixed(1), width: g.w, height: Math.max(0, g.h - g.frontY).toFixed(1),
-        fill: floorFill
-    }));
-    // Линии схода: сходятся к точке горизонта, поэтому глубина читается даже
-    // на неподвижном кадре. Держатся на грани заметности.
-    for (let i = -3; i <= 3; i++) {
+    const poly = (pts, fill, opacity) => {
+        const d = 'M ' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L ') + ' Z';
+        const el = svgEl('path', { d, fill });
+        if (opacity != null) el.setAttribute('opacity', opacity);
+        layer.appendChild(el);
+        return el;
+    };
+
+    // Пустота вокруг коробки. Тот же тон, что у полей за пределами холста, —
+    // тогда поля на нетипичном экране не читаются обрезкой, а выглядят
+    // продолжением темноты вокруг комнаты.
+    layer.appendChild(svgEl('rect', { x: 0, y: 0, width: g.w, height: g.h, fill: P_.void[900] }));
+
+    // Боковые стены: от передних углов пола к дальним, вверх на высоту стены.
+    poly([[L, g.frontY], [bl, backY], [bl, topBack], [L, topFront]], wallShade);
+    poly([[R, g.frontY], [br, backY], [br, topBack], [R, topFront]], wallLit);
+
+    // Задняя стена.
+    poly([[bl, backY], [br, backY], [br, topBack], [bl, topBack]], wallBack);
+
+    // Пол — трапеция между передними и дальними углами.
+    poly([[L, g.frontY], [R, g.frontY], [br, backY], [bl, backY]], floorFill);
+
+    // Линии схода на полу: сходятся к точке схода, поэтому глубина читается
+    // даже на неподвижном кадре. Держатся на грани заметности.
+    for (let i = -2; i <= 2; i++) {
         if (i === 0) continue;
-        const u = i / 3.2;
+        const u = i / 2.6;
         layer.appendChild(svgEl('line', {
             x1: (g.cx + u * g.frontHalf).toFixed(1), y1: g.frontY.toFixed(1),
             x2: (g.cx + u * backHalf).toFixed(1), y2: backY.toFixed(1),
-            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.16
+            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.14
         }));
     }
-    // Плинтус: узкая полоса по низу стены. Самая дешёвая деталь, которая
-    // превращает две плоскости в комнату — без неё стык читается обрывом.
-    const plinthH = Math.max(3, g.h * 0.018);
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: (backY - plinthH).toFixed(1), width: g.w, height: plinthH.toFixed(1),
-        fill: mixColor(P_.void[900], floorFill, 0.45)
-    }));
-    layer.appendChild(svgEl('line', {
-        x1: 0, y1: (backY - plinthH).toFixed(1), x2: g.w, y2: (backY - plinthH).toFixed(1),
-        stroke: P_.ink, 'stroke-width': SW.detail, opacity: 0.6
-    }));
 
-    // Стык стены и пола — самая тёмная линия сцены после контура персонажа.
-    layer.appendChild(svgEl('line', {
-        x1: 0, y1: backY.toFixed(1), x2: g.w, y2: backY.toFixed(1),
-        stroke: P_.ink, 'stroke-width': SW.structure, opacity: 0.85
-    }));
-    // Мягкая тень у стыка: пол уходит в темноту вдали, а не обрывается.
+    // Плинтус по низу задней стены — самая дешёвая деталь, превращающая две
+    // плоскости в комнату: без неё стык читается обрывом.
+    const plinthH = Math.max(2, backWallH * 0.14);
+    poly([[bl, backY], [br, backY], [br, backY - plinthH], [bl, backY - plinthH]],
+         mixColor(wallBack, floorFill, 0.45));
+
+    // Рёбра коробки. Самые тёмные линии сцены после контура персонажа:
+    // именно они делают комнату комнатой, а не набором пятен.
+    const edge = (x1, y1, x2, y2, opacity, width) => {
+        layer.appendChild(svgEl('line', {
+            x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
+            stroke: P_.ink, 'stroke-width': width || SW.structure, opacity: opacity
+        }));
+    };
+    edge(bl, backY, br, backY, 0.85);                    // стык задней стены с полом
+    edge(L, g.frontY, bl, backY, 0.6);                   // стык левой стены с полом
+    edge(R, g.frontY, br, backY, 0.6);                   // стык правой стены с полом
+    edge(bl, backY, bl, topBack, 0.5, SW.detail);        // дальние вертикальные рёбра
+    edge(br, backY, br, topBack, 0.5, SW.detail);
+    edge(L, topFront, bl, topBack, 0.45, SW.detail);     // верхние кромки стен
+    edge(R, topFront, br, topBack, 0.45, SW.detail);
+    edge(bl, topBack, br, topBack, 0.45, SW.detail);
+    // Передний край пола — нижняя кромка коробки.
+    edge(L, g.frontY, R, g.frontY, 0.7);
+
+    // Мягкая тень у дальнего стыка: пол уходит в темноту вдали, а не
+    // обрывается ступенькой.
     const gradId = 'worm-room-depth-grad';
-    if (!layer.ownerDocument.getElementById(gradId)) {
+    if (!layer.querySelector('#' + gradId)) {
         const defs = svgEl('defs');
         const grad = svgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
         // Тёмный тон здесь НЕЙТРАЛЬНЫЙ, а не контурный ink: сливовый ink
         // давал полу отчётливый лиловый налёт у дальней стены.
-        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.9' }));
+        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.75' }));
         grad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900], 'stop-opacity': '0' }));
         defs.appendChild(grad);
         layer.appendChild(defs);
     }
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: backY.toFixed(1), width: g.w,
-        height: Math.max(1, (g.frontY - backY) * 0.5).toFixed(1),
-        fill: `url(#${gradId})`
-    }));
+    poly([[bl, backY], [br, backY],
+          [g.cx + (g.frontHalf + backHalf) * 0.5, (backY + g.frontY) * 0.5],
+          [g.cx - (g.frontHalf + backHalf) * 0.5, (backY + g.frontY) * 0.5]],
+         `url(#${gradId})`);
 }
 
 // ---------- ОРИЕНТАЦИЯ ТЕЛА ПО НАПРАВЛЕНИЮ ДВИЖЕНИЯ ----------
@@ -3645,9 +3685,15 @@ const WormRenderer = {
         }
 
         function syncViewportSize() {
-            const rect = container.getBoundingClientRect();
-            const w = Math.max(1, rect.width);
-            const h = Math.max(1, rect.height);
+            // Размер БЕЗ учёта трансформаций (clientWidth, а не
+            // getBoundingClientRect): вся игра живёт в холсте постоянного
+            // размера, который масштабируется одной CSS-трансформацией
+            // (src/core/stage.js). Меряя экранные пиксели, рендерер получал
+            // бы разные числа на каждом экране и пересобирал бы комнату при
+            // любом изменении масштаба — ради картинки, которая всё равно
+            // отличается только увеличением.
+            const w = Math.max(1, container.clientWidth || container.getBoundingClientRect().width);
+            const h = Math.max(1, container.clientHeight || container.getBoundingClientRect().height);
             svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
             if (opts.room) {
                 state.room = roomGeometry(w, h);
@@ -3655,7 +3701,7 @@ const WormRenderer = {
                 // Стартовая точка — на полу, а не в произвольной доле высоты:
                 // иначе персонаж при запуске стоит в воздухе или в стене.
                 if (!state.wormX) state.wormX = state.room.cx;
-                if (!state.wormY) state.wormY = roomYAt(state.room, 1.1);
+                if (!state.wormY) state.wormY = roomYAt(state.room, 1.1) - state.floorLocalY;
             }
             state.wormX = state.wormX || w * opts.anchorX;
             state.wormY = state.wormY || h * opts.anchorY;
@@ -3821,13 +3867,25 @@ const WormRenderer = {
                         // стену, какой бы ни была форма трапеции.
                         const g = state.room;
                         const d = ROOM.wanderNear + Math.random() * (ROOM.wanderFar - ROOM.wanderNear);
-                        const u = (Math.random() * 2 - 1) * ROOM.wanderInsetU;
-                        state.targetX = g.cx + u * roomHalfAt(g, d);
-                        state.targetY = roomYAt(g, d);
+                        // Свободная ширина считается с учётом самого червя:
+                        // тело лежит вдоль пола и занимает место, поэтому от
+                        // стены надо отступить на его половину, уменьшенную
+                        // перспективой. Иначе хвост заезжает в боковую стену
+                        // ровно тогда, когда червь уходит вглубь.
+                        const room = roomHalfAt(g, d) - ROOM.bodyHalf * roomCharScaleAt(d);
+                        const free = Math.max(0, room) * ROOM.wanderInsetU;
+                        state.targetX = g.cx + (Math.random() * 2 - 1) * free;
+                        // Минус floorLocalY: на полу должна оказаться точка
+                        // касания, а не голова. Без этой поправки червь
+                        // «стоял» головой на полу, а всё тело свисало ниже —
+                        // и на переднем крае комнаты уезжало за нижнюю кромку
+                        // экрана. Именно это и выглядело как «уходит вниз».
+                        state.targetY = roomYAt(g, d) - state.floorLocalY;
                     } else {
-                        const rect = container.getBoundingClientRect();
-                        state.targetX = rect.width * 0.2 + Math.random() * (rect.width * 0.6);
-                        state.targetY = rect.height * 0.4 + Math.random() * (rect.height * 0.3);
+                        const rw = container.clientWidth || container.getBoundingClientRect().width;
+                        const rh = container.clientHeight || container.getBoundingClientRect().height;
+                        state.targetX = rw * 0.2 + Math.random() * (rw * 0.6);
+                        state.targetY = rh * 0.4 + Math.random() * (rh * 0.3);
                     }
                     state.nextMoveAt = null;
                 }
@@ -3852,7 +3910,12 @@ const WormRenderer = {
             // Персонаж на полу: его экранная высота однозначно задаёт, как
             // далеко он от камеры. Ближе — крупнее, вглубь — мельче.
             if (opts.room && state.room) {
-                state.depthScale = roomCharScaleAt(roomDepthAt(state.room, state.wormY));
+                // Глубина берётся по ТОЧКЕ КАСАНИЯ ПОЛА, а не по началу
+                // координат персонажа: начало координат — это голова, а стоит
+                // он ногами. Разница между ними — почти двести условных
+                // единиц, то есть треть комнаты.
+                state.depthScale = roomCharScaleAt(
+                    roomDepthAt(state.room, state.wormY + state.floorLocalY));
             }
 
             const intensityFactor = 1 - Math.pow(WORM_MOVE_INTENSITY_SMOOTH_BASE, dtSec);
