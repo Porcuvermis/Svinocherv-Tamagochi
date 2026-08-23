@@ -3389,7 +3389,10 @@ function buildWormSVGGroup(model, instanceId) {
     const floorShadow = svgEl('ellipse', {
         class: 'worm-floor-shadow', cx: 0, cy: 0, rx: 0, ry: 0,
         fill: ensureSoftGradient(ctx, `worm-floor-shadow-${instanceId}`, INK, 1),
-        opacity: 0.34
+        opacity: 0.34,
+        // Тень загораживать пол не должна: тело — да, его тень — нет.
+        // Иначе радиус «мёртвой зоны» вокруг червя вдвое больше него самого.
+        'pointer-events': 'none'
     });
     root.appendChild(floorShadow);
     root.appendChild(hull.outline);
@@ -3531,7 +3534,9 @@ const WormRenderer = {
         // slimeLayer (след слизи, под персонажем) и charLayer (сам персонаж).
         // roomLayer — интерьер, лежит ПОД следом слизи и персонажем.
         const roomLayer = svgEl('g', { class: 'worm-room-layer' });
-        const slimeLayer = svgEl('g', { class: 'worm-slime-layer' });
+        // След слизи тянется через полкомнаты и тоже не должен ловить тапы:
+        // он не тело, а то, что тело за собой оставило.
+        const slimeLayer = svgEl('g', { class: 'worm-slime-layer', 'pointer-events': 'none' });
         const charLayer = svgEl('g', { class: 'worm-char-layer' });
         if (opts.room) svg.appendChild(roomLayer);
         svg.appendChild(slimeLayer);
@@ -4487,36 +4492,20 @@ const WormRenderer = {
                         ? roomCharScaleAt(roomDepthAt(state.room, obj.y)) : 1;
                     const g = buildPoopNode(obj, depthScale);
                     g.setAttribute('data-poop-id', obj.id);
+                    g.style.cursor = 'pointer';
+
+                    // Обработчик висит на самом предмете, а не считает
+                    // попадание по координатам. Разница видна, когда червь
+                    // стоит над кучкой: событие достаётся ему, и убрать
+                    // кучку нельзя, пока он не отойдёт. Так и задумано —
+                    // тело физически загораживает пол, а тап по самому
+                    // червю в будущем станет способом с ним повозиться.
+                    g.addEventListener('pointerdown', (e) => {
+                        e.stopPropagation();
+                        if (typeof opts.onRoomObjectTap === 'function') opts.onRoomObjectTap(obj.id);
+                    });
                     layer.appendChild(g);
                 });
-
-                // Попадание считается по координатам, а не вешается на сам
-                // элемент. Причина: кучка лежит на полу, то есть ПОД
-                // персонажем, и когда червь стоит над ней, все клики
-                // достаются ему — обработчик на элементе просто не получает
-                // события. Хит-тест по расстоянию от этого не зависит.
-                if (!state.roomTapBound) {
-                    state.roomTapBound = true;
-                    svg.addEventListener('pointerdown', (e) => {
-                        if (typeof opts.onRoomObjectTap !== 'function') return;
-                        const objs = state.roomObjects || [];
-                        if (!objs.length) return;
-                        const pt = svg.createSVGPoint();
-                        pt.x = e.clientX; pt.y = e.clientY;
-                        const local = pt.matrixTransform(svg.getScreenCTM().inverse());
-                        let best = null, bestD = Infinity;
-                        objs.forEach(o => {
-                            const d = Math.hypot(local.x - o.x, local.y - o.y);
-                            if (d < bestD) { bestD = d; best = o; }
-                        });
-                        // Радиус попадания щедрый: пальцем по маленькой кучке
-                        // на телефоне иначе не попасть.
-                        if (best && bestD < 26) {
-                            e.stopPropagation();
-                            opts.onRoomObjectTap(best.id);
-                        }
-                    });
-                }
             },
             // Прямой доступ к SVG для точечных вещей (хит-тест по конкретной
             // части, разовая подстройка стиля мини-игрой). Ищи части по
