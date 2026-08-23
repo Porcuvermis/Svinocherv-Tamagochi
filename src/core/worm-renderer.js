@@ -597,11 +597,23 @@ function getAnatomy(model) {
 // Локальная прозрачность кожи по зоне тела. Ключ 'growing' покрывает все
 // растущие сегменты сразу (их количество меняется со взрослением, поэтому
 // перечислять их поимённо в модели нельзя).
-function anatThinness(anatomy, partName) {
+function anatThinness(anatomy, partName, growingCount) {
     const t = (anatomy.skin && anatomy.skin.thinness) || {};
-    if (t[partName] != null) return t[partName];
-    if (partName.indexOf('growing-') === 0 && t.growing != null) return t.growing;
-    return 0.4;
+    const raw = t[partName];
+    if (raw != null && !Array.isArray(raw)) return raw;
+
+    if (partName && partName.indexOf('growing-') === 0) {
+        const ramp = t.growing;
+        if (ramp == null) return 1;
+        if (!Array.isArray(ramp)) return ramp;
+        // Растущие сегменты идут от живота к хвосту: первый просвечивает
+        // почти как живот, последний почти как хвост.
+        const idx = parseInt(partName.slice('growing-'.length), 10) || 1;
+        const count = Math.max(1, growingCount || idx);
+        const k = count > 1 ? (idx - 1) / (count - 1) : 0;
+        return ramp[0] + (ramp[1] - ramp[0]) * k;
+    }
+    return raw != null ? raw : 1;
 }
 
 // Сид анатомии берётся из МОДЕЛИ (anatomy.seed), а не из instanceId — иначе
@@ -1183,7 +1195,7 @@ function buildAnatomyStack(ctx, partName, opts) {
     const organs = [];
     const zone = opts.organZone;
     if (zone && anatomy.organs && (anatomy.organs.visibility || 0) > 0.01) {
-        const thin = anatThinness(anatomy, partName);
+        const thin = anatThinness(anatomy, partName, ctx.growingCount);
         const alpha = clamp01(anatomy.organs.visibility * thin);
         if (alpha > 0.02) {
             const rng = anatRng(anatomy, partName, 'organs');
@@ -2652,7 +2664,7 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
     group.appendChild(svgEl('polyline', {
         points: shine.join(' '),
         fill: 'none',
-        stroke: WormMarks.color(skinColor || FLESH[500], 'fat'),
+        stroke: WormMarks.color(skinColor || FLESH[500], 'shine'),
         'stroke-width': Math.max(0.4, wide * 0.2).toFixed(2),
         'stroke-linecap': 'round',
         opacity: 0.32
@@ -2905,7 +2917,17 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
 
 // Узлы тракта: тень под трубой → сама труба с контуром → светлая жила.
 // Создаются один раз, в tick() у них меняется только атрибут d.
-function createGutTract(ctx) {
+// thinByIdx — плотность кожи по звеньям цепи (0 = кожа непрозрачная).
+//
+// Тракт — одна неразрывная труба на всё тело, поэтому «сколько его видно»
+// нельзя задать послойно, как у остальных органов. Вместо этого на него
+// вешается маска из мягких кругов по звеньям тела: где кожа плотная (голова,
+// хвост), круг почти чёрный и кишка не видна вовсе; где тонкая (живот) —
+// белый, и труба просвечивает целиком.
+//
+// Это ровно то же правило, что и у органов, просто выраженное маской:
+// органы всегда нарисованы, вопрос только в том, сколько кожи над ними.
+function createGutTract(ctx, thinByIdx) {
     const anatomy = ctx.anatomy;
     const palette = (anatomy.organs && anatomy.organs.palette) || {};
     const color = palette.gut || FLESH[700];
@@ -2913,6 +2935,22 @@ function createGutTract(ctx) {
         class: 'worm-gut-tract',
         'clip-path': `url(#worm-hull-clip-${ctx.instanceId})`
     });
+
+    const maskId = `worm-gut-mask-${ctx.instanceId}`;
+    const mask = svgEl('mask', { id: maskId, maskUnits: 'userSpaceOnUse' });
+    const softWhite = ensureSoftGradient(ctx, `worm-gut-soft-${ctx.instanceId}`, '#ffffff', 1);
+    const maskCircles = (thinByIdx || []).map(thin => {
+        const c = svgEl('circle', {
+            cx: 0, cy: 0, r: 0, fill: softWhite,
+            opacity: Math.max(0, Math.min(1, thin)).toFixed(3)
+        });
+        mask.appendChild(c);
+        return c;
+    });
+    if (maskCircles.length) {
+        ctx.defs.appendChild(mask);
+        group.setAttribute('mask', `url(#${maskId})`);
+    }
     // Отдельного узла-тени нет намеренно: строка пути тракта длинная (~3 КБ),
     // и переставлять её дважды за кадр — самая дорогая операция во всём
     // рендере. Роль тени и контура одновременно играет широкая тёмная
@@ -2927,7 +2965,7 @@ function createGutTract(ctx) {
     });
     group.appendChild(tube);
     group.appendChild(coreLine);
-    return { group, tube, coreLine };
+    return { group, tube, coreLine, maskCircles };
 }
 
 // Пересчёт всех трёх копий силуэта + перетяжек + отражённого света + тени.
@@ -2945,6 +2983,24 @@ function updateBodyHull(built, circles) {
         oc.setAttribute('cx', c.x.toFixed(1)); oc.setAttribute('cy', c.y.toFixed(1)); oc.setAttribute('r', (c.r + W).toFixed(1));
         rc.setAttribute('cx', c.x.toFixed(1)); rc.setAttribute('cy', c.y.toFixed(1)); rc.setAttribute('r', (c.r + W * 0.45).toFixed(1));
         cc.setAttribute('cx', c.x.toFixed(1)); cc.setAttribute('cy', c.y.toFixed(1)); cc.setAttribute('r', c.r.toFixed(1));
+    }
+
+    // Маска кишечного тракта ходит вместе с телом: круги стоят на тех же
+    // местах, что и звенья силуэта, и обновляются в том же цикле, чтобы
+    // «сколько видно кишку» не отставало от движения на кадр.
+    const gutMask = built.gutTract && built.gutTract.maskCircles;
+    if (gutMask) {
+        for (let i = 0; i < gutMask.length; i++) {
+            const c = circles[i];
+            const mc = gutMask[i];
+            if (!mc) continue;
+            if (!c || !(c.r > 0)) { mc.setAttribute('r', 0); continue; }
+            mc.setAttribute('cx', c.x.toFixed(1));
+            mc.setAttribute('cy', c.y.toFixed(1));
+            // Чуть шире звена: соседние круги должны перекрываться, иначе на
+            // стыках появятся тёмные перехваты — кишка будет «пунктиром».
+            mc.setAttribute('r', (c.r * 1.5).toFixed(1));
+        }
     }
 
     for (let i = 0; i < hull.bridgeShapes.length; i++) {
@@ -3019,6 +3075,9 @@ function buildWormSVGGroup(model, instanceId) {
     // Контекст инстанса: всё, что нужно любому строителю слоя. Передаётся
     // одним объектом, чтобы не тащить 5 аргументов через каждую функцию.
     const ctx = { defs, instanceId, anatomy, gradCache: Object.create(null), neckColor: null,
+                  // Сколько растущих сегментов у этой особи: от этого зависит
+                  // рампа прозрачности кожи вдоль тела.
+                  growingCount: (model.growingSegments || []).length,
                   // база для отражённого света: тёплый оттенок самой кожи,
                   // а не производная от тёмного контура (иначе кайма выходит
                   // грязно-бежевой и читается как ореол, а не как свет)
@@ -3174,7 +3233,14 @@ function buildWormSVGGroup(model, instanceId) {
     // сегментов: иначе его невозможно сделать неразрывным.
     let gutTract = null;
     if (anatomy.enabled && anatomy.organs && (anatomy.organs.visibility || 0) > 0.01) {
-        gutTract = createGutTract(ctx);
+        // Плотность кожи по звеньям цепи: 0 — голова, дальше сегменты по
+        // своим индексам, последним хвост. Маска тракта строится по ней.
+        const thinByIdx = new Array(tailIdx + 1).fill(0);
+        thinByIdx[0] = anatThinness(anatomy, 'head', ctx.growingCount);
+        allParts.forEach(part => {
+            thinByIdx[part.idx] = anatThinness(anatomy, part.name, ctx.growingCount);
+        });
+        gutTract = createGutTract(ctx, thinByIdx);
         root.appendChild(gutTract.group);
     }
 
@@ -4100,7 +4166,8 @@ const WormRenderer = {
                     for (let i = 0; i < layers.length; i++) {
                         const host = layers[i].closest('[data-anat]');
                         const partName = host ? host.getAttribute('data-anat') : null;
-                        const thin = partName && m.anatomy ? anatThinness(m.anatomy, partName) : 1;
+                        const thin = partName && m.anatomy
+                            ? anatThinness(m.anatomy, partName, (m.growingSegments || []).length) : 1;
                         const vis = patch.organVisibility != null ? patch.organVisibility : base;
                         layers[i].setAttribute('opacity', clamp01(vis * thin).toFixed(3));
                     }
