@@ -681,25 +681,38 @@ function organPlanForZone(zone, rng, density) {
     // собой в принципе — на каждом стыке был разрыв. Здесь остаются только
     // локальные органы: мешочки и грозди узелков.
     if (zone === 'core') {
-        // Орган-мешочек — компактный, с собственным ритмом.
+        // ---------- ЖИВОТ: УЗНАВАЕМЫЕ ОРГАНЫ ----------
+        // Раньше здесь лежали абстрактные "мешочек" и "гроздь узелков". Через
+        // тонкую кожу живота это читалось как набор пятен: понятно, что
+        // внутри что-то есть, непонятно что. Свиночервь — существо с
+        // характером, и внутренности у него должны опознаваться: сердце как
+        // сердце, желудок как желудок.
+        //
+        // Позиции слегка гуляют от сида, но НЕ произвольно: сердце всегда
+        // выше и ближе к голове, желудок ниже и к хвосту от него. Анатомия у
+        // особей одна, разными их делает мелочь, а не перестановка органов.
+        // Сердце и желудок сидят в ВЕРХНЕЙ половине живота: петли кишечника
+        // занимают низ, и органы, положенные по центру, тонули в них.
         plan.push({
-            kind: 'sac', cx: 0.3 + rng() * 0.16, cy: -0.16 - rng() * 0.12, len: 0.28, thick: 0.34,
-            rot: rng() * 30 - 15, speedMul: 1.55, ampMul: 1.35, phase: rng() * 6.28
+            kind: 'heart', cx: 0.32 + rng() * 0.08, cy: -0.44 - rng() * 0.06, len: 0.34, thick: 0.38,
+            rot: rng() * 16 - 8, speedMul: 2.1, ampMul: 1.8, phase: rng() * 6.28
         });
-        // Гроздь узелков.
-        if (maybe(0.9)) {
-            plan.push({
-                kind: 'node', cx: -0.42 + rng() * 0.14, cy: -0.1 + rng() * 0.3, len: 0.2, thick: 0.24,
-                rot: rng() * 40 - 20, speedMul: 1.05, ampMul: 0.8, phase: rng() * 6.28
-            });
-        }
+        plan.push({
+            kind: 'stomach', cx: -0.22 + rng() * 0.08, cy: -0.3 + rng() * 0.06, len: 0.46, thick: 0.42,
+            rot: rng() * 14 - 7, speedMul: 0.75, ampMul: 0.9, phase: rng() * 6.28
+        });
+        // Рёбра идут последними: они обнимают органы снаружи, значит и
+        // рисуются поверх них — ближе к коже.
+        plan.push({
+            kind: 'ribs', cx: 0, cy: 0, len: 0.92, thick: 0.86, count: 5,
+            rot: 0, speedMul: 0.5, ampMul: 0.35, phase: rng() * 6.28
+        });
     } else if (zone === 'neck') {
-        if (maybe(0.5)) {
-            plan.push({
-                kind: 'sac', cx: -0.3 + rng() * 0.2, cy: -0.2, len: 0.2, thick: 0.22,
-                rot: rng() * 24 - 12, speedMul: 1.4, ampMul: 1, phase: rng() * 6.28
-            });
-        }
+        // В сегменте перед животом рёбер меньше — грудная клетка сходит на нет.
+        plan.push({
+            kind: 'ribs', cx: 0, cy: 0, len: 0.8, thick: 0.78, count: 3,
+            rot: 0, speedMul: 0.5, ampMul: 0.3, phase: rng() * 6.28
+        });
     } else if (zone === 'floor') {
         if (maybe(0.65)) {
             plan.push({
@@ -832,6 +845,117 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
                 Math.max(rx, ry) * (0.7 + vrng() * 0.6), 3, vColor, 1.1);
         }
         group.insertBefore(vGroup, group.firstChild ? group.firstChild.nextSibling : null);
+    } else if (plan.kind === 'heart') {
+        // ---------- СЕРДЦЕ ----------
+        // Силуэт узнаваемый, детализация минимальная: сквозь кожу видно
+        // пятно, и всё, что от него требуется — читаться как сердце с
+        // первого взгляда. Анатомически достоверное сердце в этом размере
+        // превратится в кляксу.
+        const color = palette.heart || VISCERA[700];
+        const rx = plan.len * halfLen;
+        const ry = plan.thick * halfThick;
+        // Классический силуэт: две доли сверху, острие вниз.
+        const d = `M 0,${(-ry * 0.32).toFixed(1)} ` +
+                  `C ${(-rx * 0.52).toFixed(1)},${(-ry * 1.15).toFixed(1)} ` +
+                  `${(-rx * 1.18).toFixed(1)},${(-ry * 0.1).toFixed(1)} ` +
+                  `0,${(ry * 0.98).toFixed(1)} ` +
+                  `C ${(rx * 1.18).toFixed(1)},${(-ry * 0.1).toFixed(1)} ` +
+                  `${(rx * 0.52).toFixed(1)},${(-ry * 1.15).toFixed(1)} ` +
+                  `0,${(-ry * 0.32).toFixed(1)} Z`;
+
+        group.appendChild(svgEl('path', {
+            d, fill: ensureSoftGradient(ctx, `worm-organ-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1),
+            opacity: 0.3, transform: 'scale(1.25)'
+        }));
+        group.appendChild(svgEl('path', { d, fill: color, opacity: 0.95 }));
+        group.appendChild(svgEl('path', {
+            d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.5),
+            'stroke-width': SW.detail, opacity: 0.8
+        }));
+        // Блик на левой доле — объём.
+        group.appendChild(svgEl('ellipse', {
+            cx: (-rx * 0.34).toFixed(1), cy: (-ry * 0.34).toFixed(1),
+            rx: (rx * 0.22).toFixed(1), ry: (ry * 0.18).toFixed(1),
+            fill: mixColor(color, GRIME_HIGHLIGHT, 0.5), opacity: 0.45
+        }));
+        // Пара крупных сосудов сверху: без них сердце висит само по себе.
+        const hrng = anatRng(ctx.anatomy, idKey, 'heart-vessels');
+        const vColor = mixColor(color, palette.vessel || VISCERA[700], 0.5);
+        buildVesselTree(group, hrng, -rx * 0.3, -ry * 0.75, -1.9, Math.max(rx, ry) * 0.9, 2, vColor, 1.3);
+        buildVesselTree(group, hrng, rx * 0.25, -ry * 0.8, -1.2, Math.max(rx, ry) * 0.8, 2, vColor, 1.1);
+    } else if (plan.kind === 'stomach') {
+        // ---------- ЖЕЛУДОК ----------
+        // Мешок-фасолина: широкий свод слева-сверху, сужается к выходу
+        // справа-снизу. Именно этот изгиб и делает силуэт узнаваемым.
+        const color = palette.stomach || VISCERA[700];
+        const rx = plan.len * halfLen;
+        const ry = plan.thick * halfThick;
+        const d = `M ${(-rx * 0.75).toFixed(1)},${(-ry * 0.2).toFixed(1)} ` +
+                  `C ${(-rx * 0.7).toFixed(1)},${(-ry * 1.05).toFixed(1)} ` +
+                  `${(rx * 0.45).toFixed(1)},${(-ry * 1.1).toFixed(1)} ` +
+                  `${(rx * 0.62).toFixed(1)},${(-ry * 0.3).toFixed(1)} ` +
+                  `C ${(rx * 0.78).toFixed(1)},${(ry * 0.45).toFixed(1)} ` +
+                  `${(rx * 0.2).toFixed(1)},${(ry * 1.02).toFixed(1)} ` +
+                  `${(-rx * 0.28).toFixed(1)},${(ry * 0.82).toFixed(1)} ` +
+                  `C ${(-rx * 0.72).toFixed(1)},${(ry * 0.66).toFixed(1)} ` +
+                  `${(-rx * 0.92).toFixed(1)},${(ry * 0.2).toFixed(1)} ` +
+                  `${(-rx * 0.75).toFixed(1)},${(-ry * 0.2).toFixed(1)} Z`;
+
+        group.appendChild(svgEl('path', {
+            d, fill: ensureSoftGradient(ctx, `worm-organ-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1),
+            opacity: 0.26, transform: 'scale(1.2)'
+        }));
+        group.appendChild(svgEl('path', { d, fill: color, opacity: 0.92 }));
+        group.appendChild(svgEl('path', {
+            d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.5),
+            'stroke-width': SW.detail, opacity: 0.75
+        }));
+        // Складки на своде — стенка желудка не гладкий шар.
+        const srng = anatRng(ctx.anatomy, idKey, 'stomach-folds');
+        for (let i = 0; i < 3; i++) {
+            const fy = -ry * (0.45 - i * 0.3) + (srng() - 0.5) * ry * 0.12;
+            group.appendChild(svgEl('path', {
+                d: `M ${(-rx * 0.5).toFixed(1)},${fy.toFixed(1)} Q 0,${(fy + ry * 0.22).toFixed(1)} ${(rx * 0.42).toFixed(1)},${(fy + ry * 0.05).toFixed(1)}`,
+                fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.35),
+                'stroke-width': SW.hairline, opacity: 0.5
+            }));
+        }
+    } else if (plan.kind === 'ribs') {
+        // ---------- РЁБРА ----------
+        // Червю рёбра не полагаются, но это и не червь: свиночервю они нужны
+        // для образа — грудная клетка сразу превращает «мешок с органами» в
+        // существо. Дуги обнимают внутренности, поэтому и рисуются поверх
+        // них, ближе к коже.
+        const color = palette.bone || BILE[200];
+        const count = plan.count || 5;
+        const halfSpan = plan.len * halfLen;
+        const reach = plan.thick * halfThick;
+        const rrng = anatRng(ctx.anatomy, idKey, 'ribs');
+        for (let i = 0; i < count; i++) {
+            const k = count > 1 ? i / (count - 1) : 0.5;
+            const cx = (k * 2 - 1) * halfSpan * 0.72;
+            // Крайние рёбра короче: клетка сужается к концам.
+            const shrink = 0.72 + 0.28 * Math.sin(Math.PI * k);
+            const drop = reach * shrink;
+            // Рёбра расходятся веером от середины, а не стоят параллельно:
+            // параллельные дуги читаются как решётка радиатора, а не как
+            // грудная клетка. Верхний конец ребра клонится к центру, нижний
+            // уходит наружу.
+            const side = (k * 2 - 1);
+            const lean = side * halfSpan * 0.16;
+            const bow = drop * (0.5 + rrng() * 0.12) * (side >= 0 ? 1 : -1);
+            const d = `M ${(cx - lean).toFixed(1)},${(-drop).toFixed(1)} ` +
+                      `Q ${(cx + bow).toFixed(1)},0 ${(cx + lean * 0.6).toFixed(1)},${(drop * 0.84).toFixed(1)}`;
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.55),
+                'stroke-width': (SW.structure * 1.1).toFixed(2), 'stroke-linecap': 'round', opacity: 0.32
+            }));
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: color,
+                'stroke-width': SW.structure,
+                'stroke-linecap': 'round', opacity: 0.55
+            }));
+        }
     } else if (plan.kind === 'node') {
         const color = palette.node || BILE[400];
         const rng = anatRng(ctx.anatomy, idKey, 'node');
@@ -2892,6 +3016,10 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
         // не может прижаться к стенке или вылезти наружу.
         let amp = p.r * lerp(cfg.wave, cfg.bellyWave, belly);
         const off0 = Math.sin(phase);
+        // Смещение петель вниз внутри живота. Кишечник занимает низ брюшной
+        // полости, а верх оставляет желудку и сердцу — иначе петли ложатся
+        // прямо на них, и вместо органов видно штриховку.
+        const bias = p.r * (cfg.bellyBias || 0) * belly;
 
         // Толщина: толще в животе, сходит на нет к голове и кончику хвоста,
         // иначе труба выглядит обрубленной.
@@ -2903,7 +3031,7 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
         amp = Math.min(amp, Math.max(0, p.r * 0.72 - w));
         const off = off0 * amp;
 
-        const cx = p.x + p.nx * off, cy = p.y + p.ny * off;
+        const cx = p.x + p.nx * (off + bias), cy = p.y + p.ny * (off + bias);
         left.push([cx + p.nx * w, cy + p.ny * w]);
         right.push([cx - p.nx * w, cy - p.ny * w]);
         core.push([cx, cy]);
