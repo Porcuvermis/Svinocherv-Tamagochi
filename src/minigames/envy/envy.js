@@ -365,10 +365,9 @@ const EnvyMinigame = {
         this.winProgress = 0;
         this.pointerDown = false;
 
-        if (typeof GameManager !== 'undefined') {
-            GameManager.sins.envy.value = 100;
-            GameManager.updateUI();
-        }
+        // Мини-игра не начисляет сама: сообщает результат, а что за него
+        // дать, решает конфиг наград (src/config/economy.js).
+        GameEvents.emit('minigame:result', { sin: 'envy', mode: 'stare', outcome: 'win' });
     },
 
     updateWinSequence(dt) {

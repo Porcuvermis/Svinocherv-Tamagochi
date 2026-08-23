@@ -319,10 +319,9 @@ const LustMinigame = {
         this.showWinText();
         this.runSplashSequence();
 
-        if (typeof GameManager !== 'undefined') {
-            GameManager.sins.lust.value = 100;
-            GameManager.updateUI();
-        }
+        // Мини-игра не начисляет сама: сообщает результат, а что за него
+        // дать, решает конфиг наград (src/config/economy.js).
+        GameEvents.emit('minigame:result', { sin: 'lust', mode: 'kiss', outcome: 'win' });
     },
 
     showWinText() {

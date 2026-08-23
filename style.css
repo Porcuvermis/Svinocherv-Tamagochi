@@ -183,7 +183,10 @@ canvas {
 .sin-bar {
     height: 100%;
     width: 100%;
-    transition: width 0.1s linear;
+    /* Значение теперь пересчитывается раз в секунду, а не 60 раз, поэтому
+       переход отвечает за две вещи сразу: сглаживает секундные шаги падения
+       и красиво поднимает полоску после пройденной мини-игры. */
+    transition: width 0.45s ease-out;
 }
 
 .sin-value {
@@ -241,10 +244,13 @@ canvas {
    Какая версия сейчас на экране. Постоянно висеть не должен — вылезает
    только вместе с debug-режимом (кнопка 🐞). */
 #build-stamp {
-    position: absolute;
-    left: 8px;
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    z-index: 900;
+    /* fixed и выше меню грехов: смотреть версию и крутить время нужно как
+       раз тогда, когда открыты шкалы, а меню накрывает весь экран.
+       Отступ слева — чтобы не залезать на кнопку 🐞. */
+    position: fixed;
+    left: 52px;
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    z-index: 9999998;
     display: none;
     padding: 3px 7px;
     border-radius: 5px;
@@ -257,4 +263,34 @@ canvas {
 
 body.debug-mode #build-stamp {
     display: block;
+}
+
+/* ---------- DEBUG-ПАНЕЛЬ СОСТОЯНИЯ ----------
+   Машина времени для шкал: они падают за 8–48 часов, и без отмотки увидеть
+   падение вживую невозможно. Показывается только в debug-режиме (кнопка 🐞). */
+#debug-state-panel {
+    position: fixed;
+    left: 10px;
+    bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 42px);
+    z-index: 9999998;
+    display: none;
+    gap: 6px;
+}
+
+#debug-state-panel.visible {
+    display: flex;
+}
+
+#debug-state-panel button {
+    padding: 5px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65);
+    color: rgba(255, 255, 255, 0.85);
+    font: 11px/1 monospace;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#debug-state-panel button:active {
+    background: rgba(255, 255, 255, 0.2);
 }
