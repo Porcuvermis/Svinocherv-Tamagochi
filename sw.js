@@ -11,7 +11,20 @@
 // BUILD подставляется workflow'ом при деплое (.github/workflows/deploy-pages.yml).
 // В репозитории здесь всегда 'dev' — это признак «файл открыт не с Pages».
 const BUILD = '__BUILD__';
-const CACHE = 'svinocherv-' + BUILD;
+
+// Имя кеша содержит и адрес сборки, и её версию. Адрес важен потому, что на
+// одном домене живут и основная версия (/), и превью веток (/preview/…/):
+// кеши у них общие на весь домен, и без разделения по scope соседняя сборка
+// затирала бы кеш предыдущей на каждом запуске.
+const SCOPE = new URL(self.registration.scope).pathname;
+const CACHE_PREFIX = 'svinocherv:' + SCOPE + ':';
+const CACHE = CACHE_PREFIX + BUILD;
+
+// Отдельный кеш для vendor/ — он НЕ привязан к номеру сборки и переживает
+// деплои. three.min.js весит 600 КБ и прибит к своей версии прямо в URL
+// (?v=r128): перекачивать его при каждой правке игры незачем.
+const VENDOR_CACHE = 'svinocherv-vendor';
+const VENDOR = /\/vendor\//;
 
 // Сколько ждём сеть, прежде чем показать кеш. Мобильный интернет умеет не
 // отвечать вовсе, а не отдавать ошибку: без таймаута игра просто висит.
@@ -25,8 +38,11 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
     event.waitUntil((async () => {
+        // Чистим только свои прошлые сборки: чужие scope и общий кеш
+        // библиотек не трогаем.
         const names = await caches.keys();
-        await Promise.all(names.map((n) => (n === CACHE ? null : caches.delete(n))));
+        const stale = names.filter((n) => n.startsWith(CACHE_PREFIX) && n !== CACHE);
+        await Promise.all(stale.map((n) => caches.delete(n)));
         await self.clients.claim();
     })());
 });
@@ -59,7 +75,7 @@ async function networkFirst(request) {
 }
 
 async function cacheFirst(request) {
-    const cache = await caches.open(CACHE);
+    const cache = await caches.open(VENDOR_CACHE);
     const cached = await cache.match(request);
     if (cached) return cached;
     const response = await fetch(request);
@@ -72,12 +88,20 @@ self.addEventListener('fetch', (event) => {
     if (request.method !== 'GET') return;
 
     const url = new URL(request.url);
-    if (url.origin === self.location.origin) {
+    if (url.origin !== self.location.origin) return;   // чужие хосты не трогаем
+
+    // Каждая сборка отвечает только за свою папку.
+    if (!url.pathname.startsWith(SCOPE)) return;
+    // Отдельно: scope корневой сборки — '/', то есть формально накрывает и
+    // превью веток. Лезть в них она не должна, у каждого превью свой
+    // service worker и свой кеш в своей папке.
+    if (SCOPE === '/' && url.pathname.startsWith('/preview/')) return;
+
+    if (VENDOR.test(url.pathname)) {
+        // Библиотека не меняется в пределах своей версии — сеть дёргать незачем.
+        event.respondWith(cacheFirst(request));
+    } else {
         // Свой код — всегда пробуем сеть: это и есть «актуальная сборка».
         event.respondWith(networkFirst(request));
-    } else {
-        // Чужая статика с CDN (three.js) прибита к версии в URL и не меняется —
-        // её можно держать в кеше и не дёргать сеть на каждом запуске.
-        event.respondWith(cacheFirst(request));
     }
 });

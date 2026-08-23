@@ -1,13 +1,24 @@
 name: Deploy to GitHub Pages
 
-# Каждый пуш в main выкладывает игру на GitHub Pages. Никакой ручной
-# пересборки: телефону достаточно открыть ссылку.
+# Любой пуш в любую ветку выкладывает игру на GitHub Pages:
+#   САМАЯ СВЕЖАЯ ветка → в корень сайта (иконка на домашнем экране)
+#   все ветки, включая main → в /preview/<ветка>/ (вернуться к конкретной)
 #
-# Через "Run workflow" можно выложить и любую другую ветку — удобно
-# проверить эксперимент с айфона, не вливая его в main.
+# Корень — это «последнее, что сделали», а не «то, что влито в main». Так
+# задумано: смотреть правки с телефона надо сразу, а мерж — это отдельное
+# решение «оставляем», которое принимается уже ПОСЛЕ того, как посмотрел.
+#
+# Сайт у Pages один, поэтому каждый деплой пересобирает его целиком: свежая
+# сборка в корень плюс превью живых веток. Ветку удалили — превью исчезает.
+#
+# Запускается НЕ напрямую по пушу, а через workflow_run от «Pages trigger».
+# Причина в pages-trigger.yml: выкладывать Pages разрешено только с ветки по
+# умолчанию, а workflow_run выполняется именно от неё — поэтому пуш в любую
+# ветку доезжает до превью.
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["Pages trigger"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -29,36 +40,108 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Нужны все ветки: превью собираются из них же.
+          fetch-depth: 0
 
-      - name: Собрать сайт и проставить версию сборки
+      - name: Собрать сайт (свежая ветка в корень, все ветки в /preview/)
+        id: build
         run: |
           set -e
-          BUILD="$(date -u +%Y%m%d-%H%M)-$(echo "$GITHUB_SHA" | cut -c1-7)"
-          echo "Сборка: $BUILD"
 
+          # Собирает одну ветку в указанную папку и проставляет ей версию.
+          # $1 — git-ссылка, $2 — папка назначения, $3 — метка сборки,
+          # $4 — имя ветки (его видно в игре по кнопке debug).
+          build_into() {
+            ref="$1"; dest="$2"; label="$3"; branch="$4"
+            mkdir -p "$dest"
+            git archive "$ref" | tar -x -C "$dest"
+            # На сайт едет только то, что нужно игре. docs/ весит больше
+            # самой игры (там pdf плана), а копий сайта делается до
+            # одиннадцати — по одной на ветку.
+            rm -rf "$dest/.github" "$dest/tools" "$dest/docs"
+
+            if [ ! -f "$dest/index.html" ]; then
+              echo "  пропуск: в ветке нет index.html"
+              rm -rf "$dest"
+              return 1
+            fi
+
+            # Главное здесь. Раньше версии ассетов правились руками
+            # (style.css?v=13, worm-renderer.js?v=32 и так пятнадцать штук):
+            # забыл поднять номер — айфон молча показывает вчерашний код.
+            # Теперь все ?v=... получают общую метку сборки, и любой
+            # изменённый файл автоматически едет по новому URL.
+            #
+            # vendor/ — исключение: библиотека прибита к своей версии
+            # (three.min.js?v=r128) и не должна перекачиваться на каждой
+            # правке игры, иначе это 600 КБ мобильного трафика впустую.
+            sed -i -E "/vendor\//! s/\?v=[A-Za-z0-9._-]+/?v=$label/g" "$dest/index.html"
+            sed -i "s/__BUILD__/$label/g" "$dest/index.html"
+            # В имени ветки есть слэши, поэтому разделитель у sed не '/'.
+            sed -i "s|__BRANCH__|$branch|g" "$dest/index.html"
+            # У старых веток sw.js может не быть — это не повод падать.
+            if [ -f "$dest/sw.js" ]; then
+              sed -i "s/__BUILD__/$label/g" "$dest/sw.js"
+            fi
+
+            # Чтобы версию можно было проверить, не открывая игру:
+            # <адрес сборки>/build.txt
+            printf '%s\n%s\n' "$label" "$branch" > "$dest/build.txt"
+            return 0
+          }
+
+          STAMP="$(date -u +%Y%m%d-%H%M)"
           mkdir -p _site
-          tar -cf - \
-            --exclude='./.git' \
-            --exclude='./.github' \
-            --exclude='./tools' \
-            --exclude='./_site' \
-            . | tar -xf - -C _site
 
-          # Главное здесь. Раньше версии ассетов правились руками
-          # (style.css?v=13, worm-renderer.js?v=32 и так пятнадцать штук):
-          # забыл поднять номер — айфон молча показывает вчерашний код.
-          # Теперь все ?v=... получают один общий номер сборки, и любой
-          # изменённый файл автоматически едет по новому URL.
-          sed -i -E "s/\?v=[A-Za-z0-9._-]+/?v=$BUILD/g" _site/index.html
-          sed -i "s/__BUILD__/$BUILD/g" _site/index.html _site/sw.js
+          # Полные refname, а не короткие: у refs/remotes/origin/HEAD короткое
+          # имя — просто "origin", и он бы уехал в список отдельной веткой.
+          BRANCHES="$(git for-each-ref --sort=-committerdate \
+                        --format='%(refname)' refs/remotes/origin \
+                      | grep -vE '/HEAD$')"
 
-          # Чтобы версию можно было проверить, не открывая игру:
-          # <адрес сайта>/build.txt
-          echo "$BUILD" > _site/build.txt
+          # В корень — та ветка, в которую коммитили последней. Именно её
+          # открывает иконка с домашнего экрана.
+          echo "=== свежая ветка → / ==="
+          TOP_REF="$(echo "$BRANCHES" | head -1)"
+          TOP_BRANCH="${TOP_REF#refs/remotes/origin/}"
+          TOP_LABEL="$STAMP-$(git rev-parse --short=7 "$TOP_REF")"
+          build_into "$TOP_REF" _site "$TOP_LABEL" "$TOP_BRANCH"
+          echo "  ветка: $TOP_BRANCH, сборка: $TOP_LABEL"
+          grep -c "?v=$TOP_LABEL" _site/index.html
 
-          echo "--- проверка ---"
-          grep -c "?v=$BUILD" _site/index.html
-          grep -n "app-build" _site/index.html
+          # Превью: десять последних по времени веток, включая main, — чтобы
+          # можно было вернуться к конкретной, а не только к самой свежей.
+          echo "=== ветки → /preview/ ==="
+          mkdir -p _site/preview
+          ROWS=""
+          for ref in $(echo "$BRANCHES" | head -10); do
+            branch="${ref#refs/remotes/origin/}"
+            slug="$(echo "$branch" | tr '/_' '--' | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-')"
+            label="$STAMP-$(git rev-parse --short=7 "$ref")"
+            echo "$branch → /preview/$slug/"
+            if build_into "$ref" "_site/preview/$slug" "$label" "$branch"; then
+              # Время коммита — unix-меткой: страница переведёт его в часовой
+              # пояс телефона и покажет «5 минут назад». Готовая строка из git
+              # была бы в поясе автора коммита, и соседние ветки показывали бы
+              # время вразнобой.
+              ts="$(git log -1 --format='%ct' "$ref")"
+              subj="$(git log -1 --format='%s' "$ref" | cut -c1-80 \
+                      | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
+              mark=""
+              [ "$branch" = "$TOP_BRANCH" ] && mark=" — сейчас в приложении"
+              ROWS="$ROWS<li><a href=\"$slug/\">$branch$mark</a><span><time data-ts=\"$ts\"></time> — $subj</span></li>"
+            fi
+          done
+
+          # Страница со списком сборок: с телефона удобнее тыкать по
+          # ссылкам, чем набирать имена веток руками. Вёрстка лежит
+          # в tools/preview-index.sh.
+          STAMP="$STAMP" TOP_BRANCH="$TOP_BRANCH" TOP_LABEL="$TOP_LABEL" ROWS="$ROWS" \
+            bash tools/preview-index.sh > _site/preview/index.html
+
+          echo "=== итог ==="
+          ls _site/preview
 
       - uses: actions/configure-pages@v5
 

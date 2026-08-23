@@ -1,31 +1,65 @@
 // ================= ГЛОБАЛЬНЫЙ МЕНЕДЖЕР ИГРЫ (GAMEMANAGER) =================
+// Теперь это только интерфейс: собрать HUD, показать значения, открыть нужную
+// мини-игру. Состояния он не хранит и ничего не начисляет.
+//
+// Что изменилось и почему (docs/plan/05-next-steps.md):
+//
+//   • Шкалы больше не живут в этом файле. Они в GameState, а их актуальное
+//     значение вычисляется формулой от метки времени — поэтому падают и при
+//     закрытом приложении, как и положено тамагочи.
+//
+//   • Убран setInterval(decaySins). Раньше он был источником данных: шкала
+//     существовала только пока крутится таймер. Теперь таймер здесь остался
+//     ровно один и только для показа — раз в секунду перерисовать полоски.
+//
+//   • Мини-игры больше не пишут в шкалы. Они бросают событие с результатом,
+//     а что за это дать, решает конфиг наград через Backend.
 const GameManager = {
-    // Состояние шкал Смертных Грехов
-    sins: {
-        pride: { name: 'Гордыня', emoji: '👑', color: '#FFD700', value: 100, decay: 0.5 },
-        greed: { name: 'Алчность', emoji: '💰', color: '#4CAF50', value: 100, decay: 0.7 },
-        envy: { name: 'Зависть', emoji: '🍏', color: '#00FF7F', value: 100, decay: 0.4 },
-        wrath: { name: 'Гнев', emoji: '🤬', color: '#FF3B30', value: 100, decay: 0.9 },
-        lust: { name: 'Похоть', emoji: '💋', color: '#FF69B4', value: 100, decay: 0.8 },
-        gluttony: { name: 'Чревоугодие', emoji: '🍖', color: '#FF9500', value: 100, decay: 1.2 },
-        sloth: { name: 'Лень', emoji: '🦥', color: '#8E8E93', value: 100, decay: 0.3 }
+
+    // Какая мини-игра открывается по кнопке «Утолить». Раньше это была
+    // лестница из семи if-else, отличавшихся только именем объекта.
+    //
+    // Функции, а не строки с именами: мини-игры объявлены через `const`, а
+    // такие объявления НЕ попадают в window — искать их там (window['GreedMinigame'])
+    // означает всегда получать undefined и молча не открывать игру. Обращение
+    // по имени внутри функции резолвится по области видимости и работает.
+    minigames: {
+        pride:    () => (typeof PrideMinigame    !== 'undefined') ? PrideMinigame    : null,
+        greed:    () => (typeof GreedMinigame    !== 'undefined') ? GreedMinigame    : null,
+        envy:     () => (typeof EnvyMinigame     !== 'undefined') ? EnvyMinigame     : null,
+        wrath:    () => (typeof WrathMinigame    !== 'undefined') ? WrathMinigame    : null,
+        lust:     () => (typeof LustMinigame     !== 'undefined') ? LustMinigame     : null,
+        gluttony: () => (typeof GluttonyMinigame !== 'undefined') ? GluttonyMinigame : null,
+        sloth:    () => (typeof SlothMinigame    !== 'undefined') ? SlothMinigame    : null
     },
 
-    init() {
+    _uiTimer: null,
+
+    async init() {
+        try {
+            // Форма вызовов — будущий API. Сейчас за ним локальная
+            // реализация, потом встанет сервер, здесь ничего не изменится.
+            await Backend.auth();
+            await Backend.getState();
+        } catch (err) {
+            // Интерфейс должен подняться в любом случае: без состояния игрок
+            // хотя бы увидит игру, а не чёрный экран.
+            console.error('[Игра] не удалось получить состояние', err);
+            if (!GameState.data) GameState.load();
+        }
+
         this.initUI();
         this.updateUI();
         this.setupEvents();
+        this.listenMinigames();
+        this.startUiClock();
 
-        // Запуск персонажа (Свиночервя)
         if (typeof initWorm === 'function') {
             initWorm();
         }
-
-        // Запуск ежесекундного падения шкал
-        setInterval(() => this.decaySins(), 500);
     },
 
-    // Генерация шкал в HUD и в меню «Грехи»
+    // ---------- ИНТЕРФЕЙС ----------
     initUI() {
         const miniHud = document.getElementById('mini-hud');
         const sinsContainer = document.getElementById('sins-container');
@@ -34,11 +68,12 @@ const GameManager = {
         miniHud.innerHTML = '';
         sinsContainer.innerHTML = '';
 
-        Object.keys(this.sins).forEach(key => {
-            const sin = this.sins[key];
-            
+        ECONOMY.sinOrder.forEach(key => {
+            const sin = ECONOMY.sins[key];
+            if (!sin) return;
+
             // Кружок в верхнем HUD
-            const circleHtml = `
+            miniHud.insertAdjacentHTML('beforeend', `
                 <div class="stat-circle" id="mini-${key}">
                     <svg viewBox="0 0 36 36">
                         <circle class="bg" cx="18" cy="18" r="16"></circle>
@@ -46,45 +81,89 @@ const GameManager = {
                     </svg>
                     <div class="emoji">${sin.emoji}</div>
                 </div>
-            `;
-            miniHud.insertAdjacentHTML('beforeend', circleHtml);
+            `);
 
             // Строка в полноэкранном меню
-            const rowHtml = `
+            sinsContainer.insertAdjacentHTML('beforeend', `
                 <div class="sin-row">
                     <div class="sin-info">
                         <div class="sin-name"><span>${sin.emoji} ${sin.name}</span></div>
                         <div class="sin-bar-container">
                             <div class="sin-bar" id="bar-${key}" style="background-color: ${sin.color}"></div>
-                            <div class="sin-value" id="val-${key}">100%</div>
+                            <div class="sin-value" id="val-${key}">0%</div>
                         </div>
                     </div>
                     <button class="sin-btn" style="background-color: ${sin.color}" onclick="GameManager.handleSinAction('${key}')">Утолить</button>
                 </div>
-            `;
-            sinsContainer.insertAdjacentHTML('beforeend', rowHtml);
+            `);
         });
     },
 
-    // Синхронизация данных шкал с интерфейсом
+    // Показывает то, что в состоянии. Источник данных — GameState, а не поле
+    // в этом объекте: значение считается на момент обращения.
     updateUI() {
-        Object.keys(this.sins).forEach(key => {
-            const sin = this.sins[key];
-            const roundedVal = Math.round(sin.value);
+        if (!GameState.data) return;
+
+        ECONOMY.sinOrder.forEach(key => {
+            const value = GameState.sinValue(key);
+            const max = GameState.maxValue(key) || 1;
+            const percent = Math.max(0, Math.min(100, (value / max) * 100));
 
             const bar = document.getElementById(`bar-${key}`);
             const valText = document.getElementById(`val-${key}`);
-            if (bar) bar.style.width = `${sin.value}%`;
-            if (valText) valText.textContent = `${roundedVal}%`;
+            if (bar) bar.style.width = `${percent}%`;
+            if (valText) valText.textContent = `${Math.round(percent)}%`;
 
             const miniCircle = document.querySelector(`#mini-${key} .progress`);
-            if (miniCircle) {
-                miniCircle.style.strokeDashoffset = 100 - sin.value;
-            }
+            if (miniCircle) miniCircle.style.strokeDashoffset = 100 - percent;
         });
     },
 
-    // Закрытие полноэкранного меню грехов и возврат HUD (общая логика для всех мини-игр)
+    // Единственный таймер в игре — и он ничего не считает, только
+    // перерисовывает. Раз в секунду хватает: самая быстрая шкала теряет
+    // процент за пять минут.
+    startUiClock() {
+        if (this._uiTimer) return;
+        let last = 0;
+        const tick = (now) => {
+            this._uiTimer = requestAnimationFrame(tick);
+            // Вкладка в фоне — рисовать некому и незачем: значения всё равно
+            // вычисляются от времени, а не накапливаются.
+            if (document.hidden) return;
+            if (now - last < 1000) return;
+            last = now;
+            this.updateUI();
+        };
+        this._uiTimer = requestAnimationFrame(tick);
+
+        // Возврат из фона — момент, когда на сервере надо будет спросить
+        // правду. Пока просто пересчитываем и обновляем last_seen_at.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            Backend.getState().then(() => this.updateUI()).catch(() => this.updateUI());
+        });
+    },
+
+    // ---------- РЕЗУЛЬТАТЫ МИНИ-ИГР ----------
+    // Мини-игра сообщает, что произошло. Сколько это стоит — не её дело.
+    listenMinigames() {
+        GameEvents.on('minigame:result', (result) => {
+            const payload = Object.assign({ client_request_id: newRequestId() }, result);
+            Backend.minigameResult(payload)
+                .then((answer) => {
+                    if (answer && answer.awarded) {
+                        console.log('[Игра] начислено', answer.awarded);
+                    }
+                    this.updateUI();
+                })
+                .catch((err) => {
+                    console.error('[Игра] результат мини-игры не доехал', err);
+                    this.updateUI();
+                });
+        });
+    },
+
+    // ---------- ЭКРАНЫ ----------
     closeMenuBeforeMinigame() {
         const fullMenu = document.getElementById('full-menu');
         const miniHud = document.getElementById('mini-hud');
@@ -95,59 +174,22 @@ const GameManager = {
         }
     },
 
-    // Обработка нажатий на кнопки "Утолить"
     handleSinAction(sinKey) {
-        if (sinKey === 'greed') {
-            this.closeMenuBeforeMinigame();
-            if (typeof GreedMinigame !== 'undefined') {
-                GreedMinigame.open();
-            }
-        } else if (sinKey === 'sloth') {
-            this.closeMenuBeforeMinigame();
-            if (typeof SlothMinigame !== 'undefined') {
-                SlothMinigame.open();
-            }
-        } else if (sinKey === 'wrath') {
-            this.closeMenuBeforeMinigame();
-            if (typeof WrathMinigame !== 'undefined') {
-                WrathMinigame.open();
-            }
-        } else if (sinKey === 'lust') {
-            this.closeMenuBeforeMinigame();
-            if (typeof LustMinigame !== 'undefined') {
-                LustMinigame.open();
-            }
-        } else if (sinKey === 'gluttony') {
-            this.closeMenuBeforeMinigame();
-            if (typeof GluttonyMinigame !== 'undefined') {
-                GluttonyMinigame.open();
-            }
-        } else if (sinKey === 'pride') {
-            this.closeMenuBeforeMinigame();
-            if (typeof PrideMinigame !== 'undefined') {
-                PrideMinigame.open();
-            }
-        } else if (sinKey === 'envy') {
-            this.closeMenuBeforeMinigame();
-            if (typeof EnvyMinigame !== 'undefined') {
-                EnvyMinigame.open();
-            }
-        } else {
-            // Заглушка для остальных грехов
-            this.sins[sinKey].value = Math.min(100, this.sins[sinKey].value + 30);
-            this.updateUI();
+        const resolve = this.minigames[sinKey];
+        const minigame = resolve ? resolve() : null;
+
+        if (!minigame || typeof minigame.open !== 'function') {
+            // Раньше здесь была заглушка, добавлявшая +30 к шкале. Теперь
+            // начисляет только Backend, а «утолить без мини-игры» — это не
+            // фича, а отсутствующая мини-игра.
+            console.warn('[Игра] нет мини-игры для греха:', sinKey);
+            return;
         }
+
+        this.closeMenuBeforeMinigame();
+        minigame.open();
     },
 
-    // Понижение шкал со временем
-    decaySins() {
-        Object.keys(this.sins).forEach(key => {
-            this.sins[key].value = Math.max(0, this.sins[key].value - (this.sins[key].decay * 0.5));
-        });
-        this.updateUI();
-    },
-
-    // Навешивание событий на шторку меню
     setupEvents() {
         const closeMenuArea = document.getElementById('close-menu-area');
         const fullMenu = document.getElementById('full-menu');
@@ -159,7 +201,7 @@ const GameManager = {
                 e.stopPropagation(); // Не даем клику уйти на игровой Canvas
                 fullMenu.classList.add('active');
                 miniHud.style.opacity = '0';
-                miniHud.style.pointerEvents = 'none'; // Полностью отключаем кликабельность скрытого HUD
+                miniHud.style.pointerEvents = 'none';
             };
         }
 
@@ -169,7 +211,7 @@ const GameManager = {
                 e.stopPropagation();
                 fullMenu.classList.remove('active');
                 miniHud.style.opacity = '1';
-                miniHud.style.pointerEvents = 'auto'; // Снова разрешаем клики
+                miniHud.style.pointerEvents = 'auto';
             };
         }
     }

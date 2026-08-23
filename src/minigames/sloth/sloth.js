@@ -763,10 +763,9 @@ const SlothMinigame = {
 
         this.showWinAnimation();
 
-        if (typeof GameManager !== 'undefined') {
-            GameManager.sins.sloth.value = 100;
-            GameManager.updateUI();
-        }
+        // Мини-игра не начисляет сама: сообщает результат, а что за него
+        // дать, решает конфиг наград (src/config/economy.js).
+        GameEvents.emit('minigame:result', { sin: 'sloth', mode: 'garden', outcome: 'win' });
 
         setTimeout(() => this.close(), 2200);
     },

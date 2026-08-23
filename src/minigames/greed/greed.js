@@ -382,10 +382,8 @@ const GreedMinigame = {
                     if (shouldWin) {
                         this.hasWon = true;
                         this.showWinAnimation();
-                        if (typeof GameManager !== 'undefined') {
-                            GameManager.sins.greed.value = 100;
-                            GameManager.updateUI();
-                        }
+                        // Результат уходит в ядро, начислением занимается оно.
+                        GameEvents.emit('minigame:result', { sin: 'greed', mode: 'slots', outcome: 'win' });
                     }
                 }
             });

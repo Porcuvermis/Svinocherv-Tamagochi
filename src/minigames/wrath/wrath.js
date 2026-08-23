@@ -542,10 +542,10 @@ const WrathMinigame = {
                 this.resultOverlay.classList.remove('fade-out');
                 this.resultOverlay.classList.add('active');
             }
-            if (typeof GameManager !== 'undefined') {
-                GameManager.sins.wrath.value = Math.min(100, GameManager.sins.wrath.value + 10);
-                GameManager.updateUI();
-            }
+            // Ничья. Сколько это стоит — написано в конфиге наград, а не
+            // здесь: в плане у гнева три исхода с разной ценой, и крутить их
+            // придётся ещё не раз.
+            GameEvents.emit('minigame:result', { sin: 'wrath', mode: 'duel', outcome: 'draw' });
         } else if (this.enemyHP <= 0 && this.playerHP > 0) {
             this.setResult('ПОБЕДА! 🤬');
             if (this.overlayText) {
@@ -561,10 +561,7 @@ const WrathMinigame = {
                 this.resultOverlay.classList.remove('fade-out');
                 this.resultOverlay.classList.add('active');
             }
-            if (typeof GameManager !== 'undefined') {
-                GameManager.sins.wrath.value = 100;
-                GameManager.updateUI();
-            }
+            GameEvents.emit('minigame:result', { sin: 'wrath', mode: 'duel', outcome: 'win' });
         } else {
             this.setResult('ПОРАЖЕНИЕ...');
             if (this.overlayText) {
@@ -577,10 +574,7 @@ const WrathMinigame = {
                 this.resultOverlay.classList.remove('fade-out');
                 this.resultOverlay.classList.add('active');
             }
-            if (typeof GameManager !== 'undefined') {
-                GameManager.sins.wrath.value = Math.min(100, GameManager.sins.wrath.value + 20);
-                GameManager.updateUI();
-            }
+            GameEvents.emit('minigame:result', { sin: 'wrath', mode: 'duel', outcome: 'lose' });
         }
         this.isFighting = false;
     },

@@ -782,10 +782,9 @@ const GluttonyMinigame = {
         this.feedFinished = true;
         this.showWinText();
 
-        if (typeof GameManager !== 'undefined') {
-            GameManager.sins.gluttony.value = 100;
-            GameManager.updateUI();
-        }
+        // Мини-игра не начисляет сама: сообщает результат, а что за него
+        // дать, решает конфиг наград (src/config/economy.js).
+        GameEvents.emit('minigame:result', { sin: 'gluttony', mode: 'feast', outcome: 'win' });
     },
 
     showWinText() {
