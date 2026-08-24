@@ -84,92 +84,190 @@ const ENVY_IMAGES = [
         // хромированный бампер, колёса. Три четверти, а не строго сбоку, — так
         // силуэт плотнее набивает круг наклейки.
         draw(ctx, tone) {
-            // Пропорции приземистые, около 1.5:1. Более длинный кузов честнее
-            // для купе, но круг наклейки вписывает фигуру по дальней точке —
-            // вытянутая машина ужимается и болтается мелкой в большом круге.
-            //
-            // Колёса рисуются ПЕРВЫМИ и заходят под кузов: так между аркой и
-            // шиной не остаётся щели, а кузов ложится на колёса, а не рядом.
-            const wheels = [[0.302, 0.688, 0.128], [0.726, 0.700, 0.120]];
-            wheels.forEach(([x, y, r]) => ink(ctx, circle(x, y, r), ENVY_TYRE, 0.026));
+            const dark = darken(tone, 0.26);
+            const deep = darken(tone, 0.50);
+            const nose = lighten(tone, 0.30);      // передняя панель развёрнута к свету
+            const T = { hull: 0.023, panel: 0.014, detail: 0.009 };
 
+            // Машина стоит в три четверти: слева борт, уходящий вдаль, справа
+            // передняя панель, развёрнутая к зрителю. Это две РАЗНЫЕ плоскости,
+            // и между ними идёт ребро крыла — вся глубина рисунка держится на
+            // нём. Прошлые версии рисовали строгий профиль и приклеивали фары
+            // сбоку: в профиле передней панели не видно вовсе, оттого передок и
+            // выходил кашей.
+            ctx.translate(0.5, 0.5);
+            ctx.rotate(-0.10);
+            ctx.translate(-0.5, -0.5);
+
+            // ---------- ШИНЫ ----------
+            // Целиком и ДО кузова: кузов накрывает их арками, и щели между
+            // аркой и шиной не остаётся.
+            const wheels = [[0.302, 0.596, 0.084], [0.706, 0.634, 0.098]];
+            wheels.forEach(([x, y, r]) => ink(ctx, circle(x, y, r), darken(ENVY_TYRE, 0.28), T.hull));
+
+            // ---------- СИЛУЭТ ----------
             const body = P(p => {
-                p.moveTo(0.098, 0.606);                                       // корма
-                p.bezierCurveTo(0.086, 0.508, 0.118, 0.452, 0.188, 0.428);
-                p.bezierCurveTo(0.228, 0.330, 0.298, 0.272, 0.404, 0.256);    // задняя стойка
-                p.bezierCurveTo(0.496, 0.242, 0.574, 0.264, 0.632, 0.310);    // крыша
-                p.lineTo(0.720, 0.392);                                        // лобовая стойка
-                p.bezierCurveTo(0.804, 0.410, 0.868, 0.444, 0.908, 0.498);
-                p.bezierCurveTo(0.934, 0.534, 0.938, 0.582, 0.922, 0.626);    // нос
-                p.bezierCurveTo(0.870, 0.680, 0.690, 0.694, 0.520, 0.684);
-                p.bezierCurveTo(0.340, 0.674, 0.178, 0.678, 0.118, 0.672);
+                p.moveTo(0.062, 0.470);                                     // корма
+                p.bezierCurveTo(0.070, 0.396, 0.116, 0.344, 0.204, 0.318);
+                p.bezierCurveTo(0.320, 0.276, 0.396, 0.252, 0.486, 0.254);  // крыша
+                p.bezierCurveTo(0.552, 0.256, 0.594, 0.278, 0.626, 0.320);
+                p.lineTo(0.694, 0.372);                                      // лобовая стойка
+                p.bezierCurveTo(0.786, 0.372, 0.874, 0.402, 0.930, 0.448);   // капот
+                p.bezierCurveTo(0.966, 0.478, 0.978, 0.520, 0.972, 0.572);   // правый борт панели
+                p.bezierCurveTo(0.966, 0.612, 0.930, 0.642, 0.862, 0.648);
+                p.lineTo(0.816, 0.650);
+                p.bezierCurveTo(0.808, 0.532, 0.604, 0.526, 0.596, 0.642);   // арка переднего
+                p.lineTo(0.416, 0.620);
+                p.bezierCurveTo(0.410, 0.510, 0.200, 0.506, 0.194, 0.598);   // арка заднего
+                p.bezierCurveTo(0.120, 0.586, 0.062, 0.544, 0.062, 0.470);
                 p.closePath();
             });
 
-            ink(ctx, body, tone, 0.026);
-
-            // тёмный низ борта и блик по молдингу — от них кузов читается объёмным
+            ink(ctx, body, tone, 0);
             ctx.save();
             ctx.clip(body);
-            ctx.fillStyle = darken(tone, 0.32);
+
+            // Передняя панель — отдельная плоскость, светлее борта.
+            ctx.fillStyle = nose;
             ctx.fill(P(p => {
-                p.moveTo(0.060, 0.596);
-                p.bezierCurveTo(0.320, 0.652, 0.700, 0.664, 0.968, 0.596);
-                p.lineTo(0.968, 0.760); p.lineTo(0.060, 0.760); p.closePath();
+                p.moveTo(0.716, 0.368);
+                p.lineTo(0.990, 0.420);
+                p.lineTo(0.990, 0.700);
+                p.lineTo(0.700, 0.700);
+                p.bezierCurveTo(0.742, 0.600, 0.744, 0.470, 0.716, 0.368);
+                p.closePath();
             }));
-            ctx.fillStyle = lighten(tone, 0.48);
+
+            // Тень под молдингом и тёмный порог по борту.
+            ctx.fillStyle = dark;
             ctx.fill(P(p => {
-                p.moveTo(0.120, 0.512);
-                p.bezierCurveTo(0.360, 0.470, 0.700, 0.500, 0.930, 0.560);
-                p.bezierCurveTo(0.700, 0.534, 0.360, 0.508, 0.120, 0.544);
+                p.moveTo(0.050, 0.446);
+                p.bezierCurveTo(0.280, 0.404, 0.560, 0.410, 0.720, 0.442);
+                p.lineTo(0.720, 0.486);
+                p.bezierCurveTo(0.560, 0.454, 0.280, 0.450, 0.050, 0.492);
+                p.closePath();
+            }));
+            ctx.fillStyle = deep;
+            ctx.fill(P(p => {
+                p.moveTo(0.050, 0.540);
+                p.bezierCurveTo(0.300, 0.590, 0.560, 0.606, 0.720, 0.606);
+                p.lineTo(0.720, 0.700); p.lineTo(0.050, 0.700); p.closePath();
+            }));
+
+            // Блик по кромке крыла.
+            ctx.fillStyle = lighten(tone, 0.64);
+            ctx.fill(P(p => {
+                p.moveTo(0.150, 0.350);
+                p.bezierCurveTo(0.340, 0.300, 0.560, 0.302, 0.700, 0.352);
+                p.bezierCurveTo(0.560, 0.334, 0.340, 0.332, 0.158, 0.376);
                 p.closePath();
             }));
             ctx.restore();
-            ctx.strokeStyle = ENVY_LINE; ctx.lineWidth = 0.026; ctx.stroke(body);
+            ctx.strokeStyle = ENVY_LINE; ctx.lineWidth = T.hull; ctx.stroke(body);
 
-            // стёкла: боковое и лобовое, между ними стойка кузова
-            ink(ctx, P(p => {
-                p.moveTo(0.266, 0.398);
-                p.bezierCurveTo(0.302, 0.318, 0.352, 0.290, 0.428, 0.282);
-                p.lineTo(0.428, 0.406);
-                p.closePath();
-            }), ENVY_GLASS, 0.020);
-            ink(ctx, P(p => {
-                p.moveTo(0.458, 0.282);
-                p.bezierCurveTo(0.540, 0.280, 0.596, 0.302, 0.640, 0.342);
-                p.lineTo(0.684, 0.414);
-                p.lineTo(0.458, 0.410);
-                p.closePath();
-            }), ENVY_GLASS, 0.020);
-
-            // хромированный молдинг по борту
-            ctx.strokeStyle = ENVY_CHROME; ctx.lineWidth = 0.020;
+            // Ребро крыла: граница борта и передней панели.
+            ctx.strokeStyle = ENVY_LINE; ctx.lineWidth = T.panel; ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(0.138, 0.540);
-            ctx.bezierCurveTo(0.380, 0.494, 0.690, 0.524, 0.900, 0.582);
+            ctx.moveTo(0.706, 0.372);
+            ctx.bezierCurveTo(0.744, 0.470, 0.742, 0.590, 0.700, 0.668);
             ctx.stroke();
 
-            // фара с бликом, решётка, бампер
-            ink(ctx, circle(0.858, 0.552, 0.056, 0.060), ENVY_WHITE, 0.022);
-            ctx.fillStyle = ENVY_GLASS; ctx.fill(circle(0.858, 0.552, 0.029, 0.031));
-            ctx.fillStyle = ENVY_WHITE; ctx.fill(circle(0.845, 0.537, 0.013));
-            ink(ctx, P(p => {
-                p.moveTo(0.632, 0.590); p.lineTo(0.784, 0.610);
-                p.lineTo(0.782, 0.656); p.lineTo(0.630, 0.638); p.closePath();
-            }), ENVY_GOLD, 0.020);
-            ink(ctx, P(p => {
-                p.moveTo(0.586, 0.656);
-                p.bezierCurveTo(0.740, 0.684, 0.862, 0.678, 0.914, 0.626);
-                p.lineTo(0.926, 0.670);
-                p.bezierCurveTo(0.862, 0.730, 0.726, 0.732, 0.580, 0.704);
+            // ---------- ОКНА ----------
+            const glass = (path) => {
+                ink(ctx, path, ENVY_GLASS, T.panel);
+                ctx.save();
+                ctx.clip(path);
+                ctx.globalAlpha = 0.6;
+                ctx.fillStyle = ENVY_WHITE;
+                ctx.fill(P(p => {
+                    p.moveTo(0.08, 0.10); p.lineTo(0.22, 0.10);
+                    p.lineTo(0.00, 0.60); p.lineTo(-0.14, 0.60); p.closePath();
+                }));
+                ctx.globalAlpha = 1;
+                ctx.restore();
+            };
+            glass(P(p => {
+                p.moveTo(0.266, 0.336);
+                p.bezierCurveTo(0.318, 0.298, 0.378, 0.278, 0.444, 0.276);
+                p.lineTo(0.444, 0.344);
                 p.closePath();
-            }), ENVY_CHROME, 0.022);
+            }));
+            glass(P(p => {
+                p.moveTo(0.470, 0.276);
+                p.bezierCurveTo(0.530, 0.278, 0.570, 0.294, 0.600, 0.322);
+                p.lineTo(0.628, 0.352);
+                p.lineTo(0.470, 0.348);
+                p.closePath();
+            }));
 
-            // диски поверх шин
+            // ---------- МОЛДИНГ ----------
+            // Двойная линия: светлая полоса и тонкая тёмная под ней. Одна
+            // читается царапиной, две — хромированной накладкой.
+            ctx.strokeStyle = ENVY_CHROME; ctx.lineWidth = 0.016;
+            ctx.beginPath();
+            ctx.moveTo(0.082, 0.456);
+            ctx.bezierCurveTo(0.300, 0.414, 0.560, 0.420, 0.706, 0.452);
+            ctx.stroke();
+            ctx.strokeStyle = ENVY_LINE; ctx.lineWidth = T.detail;
+            ctx.beginPath();
+            ctx.moveTo(0.082, 0.466);
+            ctx.bezierCurveTo(0.300, 0.424, 0.560, 0.430, 0.706, 0.462);
+            ctx.stroke();
+
+            // ---------- ПЕРЕДНЯЯ ПАНЕЛЬ ----------
+            // Фары по краям, решётка между ними, бампер понизу — всё на одной
+            // плоскости, поэтому передок и читается передком.
+            ink(ctx, P(p => {
+                p.moveTo(0.762, 0.502);
+                p.bezierCurveTo(0.836, 0.508, 0.906, 0.522, 0.948, 0.540);
+                p.lineTo(0.944, 0.596);
+                p.bezierCurveTo(0.902, 0.578, 0.834, 0.564, 0.760, 0.558);
+                p.closePath();
+            }), ENVY_GOLD, T.panel);
+            // Полосы решётки — ГОРИЗОНТАЛЬНЫЕ. Вертикальные читались зубами, и
+            // передок скалился.
+            ctx.strokeStyle = darken(ENVY_GOLD, 0.30); ctx.lineWidth = T.detail;
+            [0.34, 0.66].forEach(t => {
+                ctx.beginPath();
+                ctx.moveTo(0.768, 0.508 + t * 0.046);
+                ctx.bezierCurveTo(0.836, 0.514 + t * 0.046, 0.900, 0.528 + t * 0.046,
+                                  0.942, 0.546 + t * 0.046);
+                ctx.stroke();
+            });
+
+            const lamp = (x, y, r) => {
+                ink(ctx, circle(x, y, r), ENVY_CHROME, T.panel);
+                ink(ctx, circle(x, y, r * 0.74), ENVY_WHITE, T.detail);
+                ctx.fillStyle = ENVY_GLASS; ctx.fill(circle(x, y, r * 0.52));
+                ctx.fillStyle = ENVY_WHITE; ctx.fill(circle(x - r * 0.24, y - r * 0.26, r * 0.22));
+            };
+            lamp(0.740, 0.452, 0.044);
+            lamp(0.936, 0.486, 0.040);
+
+            // Бампер: труба поперёк панели, с загибом за угол кузова.
+            ink(ctx, P(p => {
+                p.moveTo(0.700, 0.612);
+                p.bezierCurveTo(0.800, 0.626, 0.900, 0.634, 0.964, 0.618);
+                p.bezierCurveTo(0.974, 0.646, 0.970, 0.668, 0.956, 0.680);
+                p.bezierCurveTo(0.890, 0.700, 0.790, 0.688, 0.694, 0.672);
+                p.closePath();
+            }), ENVY_CHROME, T.panel);
+
+            // Мелочь, которой рисунок отличается от иконки.
+            ctx.strokeStyle = ENVY_LINE; ctx.lineWidth = T.detail;
+            ctx.beginPath();
+            ctx.moveTo(0.452, 0.344);
+            ctx.bezierCurveTo(0.446, 0.412, 0.448, 0.462, 0.454, 0.500);
+            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0.468, 0.392); ctx.lineTo(0.512, 0.396); ctx.stroke();
+            ink(ctx, circle(0.652, 0.336, 0.021, 0.015), dark, T.detail);
+
+            // ---------- ДИСКИ ----------
             wheels.forEach(([x, y, r]) => {
-                ink(ctx, circle(x, y, r * 0.56), ENVY_CHROME, 0.020);
-                ctx.fillStyle = lighten(ENVY_TYRE, 0.25);
-                ctx.fill(circle(x, y, r * 0.20));
+                ink(ctx, circle(x, y, r * 0.60), ENVY_CHROME, T.panel);
+                ctx.fillStyle = lighten(ENVY_CHROME, 0.50);
+                ctx.fill(circle(x - r * 0.14, y - r * 0.16, r * 0.20));
+                ink(ctx, circle(x, y, r * 0.17), darken(ENVY_CHROME, 0.38), 0);
             });
         }
     },
