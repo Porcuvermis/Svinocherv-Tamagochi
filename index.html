@@ -9,7 +9,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Свиночервь">
-    <meta name="theme-color" content="#1a1a1a">
+    <meta name="theme-color" content="#000000">
+    <!-- Браузер до разбора страницы рисует свой «холст», и по умолчанию он
+         СВЕТЛЫЙ — отсюда белая вспышка на тёмном сайте. color-scheme —
+         единственный способ сказать про это заранее, ещё до стилей: холст
+         становится тёмным. Мета-тег, а не только CSS, потому что читается
+         он раньше всего остального. -->
+    <meta name="color-scheme" content="dark">
     <!-- BUILD подставляется при деплое (.github/workflows/deploy-pages.yml).
          В репозитории всегда 'dev': значит файл открыт не с Pages. -->
     <meta name="app-build" content="__BUILD__">
@@ -29,6 +35,10 @@
          Логика (когда открывать, чего ждать) — в src/core/boot-screen.js,
          он подключён в конце <body> и первый кадр уже не задерживает. -->
     <style>
+        /* То же самое, что мета-тег выше, но уже для стилей: тёмные
+           умолчания браузера вместо светлых. */
+        :root { color-scheme: dark; }
+
         html.boot-veil, html.boot-veil body { background: #000; }
 
         /* Игра обрезана в точку и не видна, но живёт: считает, строит HUD,
