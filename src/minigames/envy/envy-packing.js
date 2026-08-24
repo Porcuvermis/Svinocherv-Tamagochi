@@ -144,10 +144,17 @@ const ENVY_PACKING = {
         this.relax(real, bounds, iterations === undefined ? 2 : iterations, ghosts);
 
         const all = real.concat(ghosts);
-        return real.map((p, i) => {
+        const out = [];
+        real.forEach((p, i) => {
             const poly = this.cellOf(all, i, ext);
-            return { x: p.x, y: p.y, cell: poly, radius: this.radiusOf(p, poly) };
+            let gap = Infinity;
+            for (let j = 0; j < all.length; j++) {
+                if (j === i) continue;
+                gap = Math.min(gap, Math.hypot(all[j].x - p.x, all[j].y - p.y));
+            }
+            out.push({ x: p.x, y: p.y, cell: poly, radius: this.radiusOf(p, poly), gap });
         });
+        return out;
     }
 };
 
