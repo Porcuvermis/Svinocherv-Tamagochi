@@ -204,6 +204,16 @@
 </head>
 <body>
 
+<!-- Просьба перевернуть телефон. Лежит СНАРУЖИ холста: холст масштабируется
+     и центрируется, а это сообщение должно накрывать весь экран целиком. -->
+<div id="rotate-overlay">
+    <div class="rotate-inner">
+        <div class="rotate-icon">📱</div>
+        <div class="rotate-text">Поверни телефон</div>
+        <div class="rotate-sub">Свиночервь живёт вертикально</div>
+    </div>
+</div>
+
 <div id="game-container">
 
     <canvas id="gameCanvas"></canvas>
@@ -831,18 +841,20 @@
 
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
-<script src="src/config/economy.js?v=1"></script>
+<script src="src/core/stage.js?v=2"></script>
+<script src="src/config/economy.js?v=2"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
-<script src="src/core/state.js?v=1"></script>
-<script src="src/core/backend.js?v=1"></script>
+<script src="src/core/state.js?v=2"></script>
+<script src="src/core/backend.js?v=2"></script>
 
-<script src="src/core/palette.js?v=3"></script>
-<script src="src/core/worm-model.js?v=6"></script>
-<script src="src/core/worm-renderer.js?v=32"></script>
-<script src="src/core/worm.js?v=6"></script>
-<script src="src/core/debug.js?v=2"></script>
-<script src="main.js?v=12"></script>
+<script src="src/core/palette.js?v=4"></script>
+<script src="src/core/worm-model.js?v=9"></script>
+<script src="src/core/worm-marks.js?v=3"></script>
+<script src="src/core/worm-renderer.js?v=40"></script>
+<script src="src/core/worm.js?v=11"></script>
+<script src="src/core/debug.js?v=6"></script>
+<script src="main.js?v=14"></script>
 <script src="src/minigames/greed/greed.js?v=9"></script>
 <script src="src/minigames/wrath/wrath.js?v=5"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>

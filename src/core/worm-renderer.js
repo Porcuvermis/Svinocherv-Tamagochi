@@ -189,18 +189,38 @@ const WORM_VERTICAL_SPACING = 26;
 // Линейная интерполяция дала бы «складной» пол: у камеры шаг вглубь съедал
 // бы столько же пикселей, сколько у дальней стены, и глубина бы не читалась.
 const ROOM = {
-    horizonRatio: 0.16,    // точка схода — доля высоты сцены
-    floorFrontRatio: 1.0,  // передний край пола (у нижней кромки кадра)
-    frontHalfRatio: 0.8,   // полуширина пола у переднего края (доля ширины)
+    // ---------- КОМНАТА — КОРОБКА ВНУТРИ КАДРА ----------
+    // Раньше пол уходил за нижнюю кромку экрана и за боковые края: комната
+    // была не помещением, а «полом до горизонта». Персонаж от этого регулярно
+    // оказывался наполовину за экраном.
+    //
+    // Теперь у комнаты видны все четыре края: передний край пола, две боковые
+    // стены и задняя. Червю физически некуда выйти из кадра — он ходит по
+    // ограниченному полу, и границы выгула считаются из той же геометрии, что
+    // и сам пол.
+    // Пол почти квадратный: на вертикальном экране глубокий пол читается
+    // коридором, а не комнатой. Недостающую высоту добирают стены.
+    floorFrontRatio: 0.82,  // передний край пола (доля высоты сцены)
+    floorBackRatio: 0.40,   // стык пола с задней стеной
+    frontHalfRatio: 0.46,   // полуширина пола у переднего края (доля ширины)
+    wallHeightRatio: 0.75,  // высота стен как доля ПОЛНОЙ ширины пола спереди
     // Сила перспективы: scale(d) = 1 / (1 + d*depthK).
-    depthK: 0.42,
-    // Пол нарисован ГЛУБЖЕ, чем ходит червь. Иначе полоса пола выходит
-    // узкой, стена съедает больше половины кадра, и персонаж жмётся к нижней
-    // кромке — прямое нарушение «персонаж главный в кадре» (§6).
-    farDepth: 4.6,         // до какой глубины НАРИСОВАН пол
-    wanderNear: 0.15,      // ближняя граница блуждания
-    wanderFar: 3.2,        // дальняя граница блуждания (не до самой стены)
-    wanderInsetU: 0.72,    // насколько близко к боковым стенам подходит червь
+    //
+    // Была 0.42 — при закрытой коробке это превращало комнату в длинный
+    // тоннель: дальняя стена втрое уже передней. Комната у тамагочи — не
+    // коридор, она должна читаться помещением почти сразу, поэтому схождение
+    // слабое: дальняя грань уже передней примерно в полтора раза.
+    depthK: 0.16,
+    farDepth: 4.6,         // глубина дальней стены
+    // Червь ходит НЕ по всей глубине: у дальней стены он мельче, а стена там
+    // ниже него, и голова начинала бы торчать над комнатой.
+    wanderNear: 0.3,       // ближняя граница блуждания
+    wanderFar: 2.0,        // дальняя граница блуждания
+    wanderInsetU: 0.9,     // доля свободной ширины пола, доступная червю
+    // Половина «следа» персонажа на полу в условных единицах холста: тело
+    // лежит вдоль пола и занимает место. Граница выгула считается с учётом
+    // этого, иначе хвост заезжает в боковую стену.
+    bodyHalf: 78,
     // ---------- ПРИГЛУШЕНИЕ МАСШТАБА ПЕРСОНАЖА ----------
     // Пол считается по ЧЕСТНОЙ перспективе, а размер персонажа — нет, и это
     // осознанное расхождение.
@@ -217,11 +237,23 @@ const ROOM = {
 };
 
 function roomGeometry(w, h) {
+    const frontY = h * ROOM.floorFrontRatio;
+    const backY = h * ROOM.floorBackRatio;
+    const frontHalf = w * ROOM.frontHalfRatio;
+    const farScale = roomScaleAt(ROOM.farDepth);
+    // Точка схода не задаётся числом, а ВЫВОДИТСЯ из того, где должны
+    // оказаться передний и дальний края пола. Иначе перспектива и границы
+    // комнаты живут отдельными жизнями: подвинул край — пол перестал в него
+    // упираться.
+    const horizonY = (backY - farScale * frontY) / (1 - farScale);
     return {
         w, h, cx: w / 2,
-        horizonY: h * ROOM.horizonRatio,
-        frontY: h * ROOM.floorFrontRatio,
-        frontHalf: w * ROOM.frontHalfRatio
+        horizonY, frontY, frontHalf,
+        backY, backHalf: frontHalf * farScale,
+        // Высота стены у переднего края; у дальней она во столько же раз
+        // меньше, во сколько уже пол.
+        wallH: frontHalf * 2 * ROOM.wallHeightRatio,
+        farScale
     };
 }
 // Геометрический масштаб на глубине d (0 = у самой камеры).
@@ -248,95 +280,103 @@ function roomDepthAt(g, y) {
 // глубины из существующих.
 function buildRoom(layer, g) {
     while (layer.firstChild) layer.removeChild(layer.firstChild);
-    const backY = roomYAt(g, ROOM.farDepth);
-    const backHalf = roomHalfAt(g, ROOM.farDepth);
+
+    const backY = g.backY, backHalf = g.backHalf;
+    const wallH = g.wallH, backWallH = wallH * g.farScale;
+    const L = g.cx - g.frontHalf, R = g.cx + g.frontHalf;   // передние углы пола
+    const bl = g.cx - backHalf, br = g.cx + backHalf;       // дальние углы пола
+    const topFront = g.frontY - wallH;                      // верх стены у камеры
+    const topBack = backY - backWallH;                      // верх стены у дальней грани
+
     // Пол светлее и ТЕПЛЕЕ холодной стены. Разрыв по светлоте обязателен:
-    // на одинаковых тонах комната читается одним тёмным полем, а не двумя
-    // плоскостями. Горизонтальная поверхность и правда ловит верхний свет
+    // на одинаковых тонах комната читается одним тёмным полем, а не набором
+    // плоскостей. Горизонтальная поверхность и правда ловит верхний свет
     // лучше вертикальной (art-direction.md §3).
     const floorFill = mixColor(P_.void[700], P_.bile[200], 0.13);
+    const wallBack = mixColor(P_.void[900], P_.void[700], 0.5);
+    // Свет один и он сверху-слева, значит внутренние грани освещены
+    // по-разному: правая ловит его, левая остаётся в тени. Без этой разницы
+    // коробка читается плоской раскраской, а не объёмом.
+    const wallLit = mixColor(wallBack, P_.bile[200], 0.1);
+    const wallShade = mixColor(wallBack, P_.ink, 0.4);
 
-    // Задняя стена. Не плоская заливка: свет в проекте один, сверху-слева,
-    // и вертикальная плоскость обязана это показывать, иначе стена читается
-    // дырой, а не поверхностью.
-    const wallGradId = 'worm-room-wall-grad';
-    const wdefs = svgEl('defs');
-    const wgrad = svgEl('radialGradient', { id: wallGradId, cx: '28%', cy: '18%', r: '95%' });
-    wgrad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': mixColor(P_.void[900], P_.void[700], 0.85) }));
-    wgrad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900] }));
-    wdefs.appendChild(wgrad);
-    layer.appendChild(wdefs);
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: 0, width: g.w, height: backY.toFixed(1), fill: `url(#${wallGradId})`
-    }));
-    // Пол — трапеция от дальнего края к переднему. Он светлее стены: свет
-    // падает сверху, и горизонтальная плоскость ловит его лучше вертикальной.
-    layer.appendChild(svgEl('path', {
-        d: `M ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} ` +
-           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} Z`,
-        fill: floorFill
-    }));
-    // Боковые «отвалы» пола до краёв кадра: без них по бокам от трапеции
-    // остаётся цвет стены, и пол выглядит ковром, лежащим в пустоте.
-    layer.appendChild(svgEl('path', {
-        d: `M 0,${backY.toFixed(1)} L ${(g.cx - backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx - g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L 0,${g.frontY.toFixed(1)} Z ` +
-           `M ${g.w},${backY.toFixed(1)} L ${(g.cx + backHalf).toFixed(1)},${backY.toFixed(1)} ` +
-           `L ${(g.cx + g.frontHalf).toFixed(1)},${g.frontY.toFixed(1)} L ${g.w},${g.frontY.toFixed(1)} Z`,
-        fill: floorFill, opacity: 0.55
-    }));
-    // Пол ниже переднего края — ближний план, ещё чуть светлее.
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: g.frontY.toFixed(1), width: g.w, height: Math.max(0, g.h - g.frontY).toFixed(1),
-        fill: floorFill
-    }));
-    // Линии схода: сходятся к точке горизонта, поэтому глубина читается даже
-    // на неподвижном кадре. Держатся на грани заметности.
-    for (let i = -3; i <= 3; i++) {
+    const poly = (pts, fill, opacity) => {
+        const d = 'M ' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L ') + ' Z';
+        const el = svgEl('path', { d, fill });
+        if (opacity != null) el.setAttribute('opacity', opacity);
+        layer.appendChild(el);
+        return el;
+    };
+
+    // Пустота вокруг коробки. Тот же тон, что у полей за пределами холста, —
+    // тогда поля на нетипичном экране не читаются обрезкой, а выглядят
+    // продолжением темноты вокруг комнаты.
+    layer.appendChild(svgEl('rect', { x: 0, y: 0, width: g.w, height: g.h, fill: P_.void[900] }));
+
+    // Боковые стены: от передних углов пола к дальним, вверх на высоту стены.
+    poly([[L, g.frontY], [bl, backY], [bl, topBack], [L, topFront]], wallShade);
+    poly([[R, g.frontY], [br, backY], [br, topBack], [R, topFront]], wallLit);
+
+    // Задняя стена.
+    poly([[bl, backY], [br, backY], [br, topBack], [bl, topBack]], wallBack);
+
+    // Пол — трапеция между передними и дальними углами.
+    poly([[L, g.frontY], [R, g.frontY], [br, backY], [bl, backY]], floorFill);
+
+    // Линии схода на полу: сходятся к точке схода, поэтому глубина читается
+    // даже на неподвижном кадре. Держатся на грани заметности.
+    for (let i = -2; i <= 2; i++) {
         if (i === 0) continue;
-        const u = i / 3.2;
+        const u = i / 2.6;
         layer.appendChild(svgEl('line', {
             x1: (g.cx + u * g.frontHalf).toFixed(1), y1: g.frontY.toFixed(1),
             x2: (g.cx + u * backHalf).toFixed(1), y2: backY.toFixed(1),
-            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.16
+            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.14
         }));
     }
-    // Плинтус: узкая полоса по низу стены. Самая дешёвая деталь, которая
-    // превращает две плоскости в комнату — без неё стык читается обрывом.
-    const plinthH = Math.max(3, g.h * 0.018);
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: (backY - plinthH).toFixed(1), width: g.w, height: plinthH.toFixed(1),
-        fill: mixColor(P_.void[900], floorFill, 0.45)
-    }));
-    layer.appendChild(svgEl('line', {
-        x1: 0, y1: (backY - plinthH).toFixed(1), x2: g.w, y2: (backY - plinthH).toFixed(1),
-        stroke: P_.ink, 'stroke-width': SW.detail, opacity: 0.6
-    }));
 
-    // Стык стены и пола — самая тёмная линия сцены после контура персонажа.
-    layer.appendChild(svgEl('line', {
-        x1: 0, y1: backY.toFixed(1), x2: g.w, y2: backY.toFixed(1),
-        stroke: P_.ink, 'stroke-width': SW.structure, opacity: 0.85
-    }));
-    // Мягкая тень у стыка: пол уходит в темноту вдали, а не обрывается.
+    // Плинтус по низу задней стены — самая дешёвая деталь, превращающая две
+    // плоскости в комнату: без неё стык читается обрывом.
+    const plinthH = Math.max(2, backWallH * 0.14);
+    poly([[bl, backY], [br, backY], [br, backY - plinthH], [bl, backY - plinthH]],
+         mixColor(wallBack, floorFill, 0.45));
+
+    // Рёбра коробки. Самые тёмные линии сцены после контура персонажа:
+    // именно они делают комнату комнатой, а не набором пятен.
+    const edge = (x1, y1, x2, y2, opacity, width) => {
+        layer.appendChild(svgEl('line', {
+            x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
+            stroke: P_.ink, 'stroke-width': width || SW.structure, opacity: opacity
+        }));
+    };
+    edge(bl, backY, br, backY, 0.85);                    // стык задней стены с полом
+    edge(L, g.frontY, bl, backY, 0.6);                   // стык левой стены с полом
+    edge(R, g.frontY, br, backY, 0.6);                   // стык правой стены с полом
+    edge(bl, backY, bl, topBack, 0.5, SW.detail);        // дальние вертикальные рёбра
+    edge(br, backY, br, topBack, 0.5, SW.detail);
+    edge(L, topFront, bl, topBack, 0.45, SW.detail);     // верхние кромки стен
+    edge(R, topFront, br, topBack, 0.45, SW.detail);
+    edge(bl, topBack, br, topBack, 0.45, SW.detail);
+    // Передний край пола — нижняя кромка коробки.
+    edge(L, g.frontY, R, g.frontY, 0.7);
+
+    // Мягкая тень у дальнего стыка: пол уходит в темноту вдали, а не
+    // обрывается ступенькой.
     const gradId = 'worm-room-depth-grad';
-    if (!layer.ownerDocument.getElementById(gradId)) {
+    if (!layer.querySelector('#' + gradId)) {
         const defs = svgEl('defs');
         const grad = svgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
         // Тёмный тон здесь НЕЙТРАЛЬНЫЙ, а не контурный ink: сливовый ink
         // давал полу отчётливый лиловый налёт у дальней стены.
-        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.9' }));
+        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.75' }));
         grad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900], 'stop-opacity': '0' }));
         defs.appendChild(grad);
         layer.appendChild(defs);
     }
-    layer.appendChild(svgEl('rect', {
-        x: 0, y: backY.toFixed(1), width: g.w,
-        height: Math.max(1, (g.frontY - backY) * 0.5).toFixed(1),
-        fill: `url(#${gradId})`
-    }));
+    poly([[bl, backY], [br, backY],
+          [g.cx + (g.frontHalf + backHalf) * 0.5, (backY + g.frontY) * 0.5],
+          [g.cx - (g.frontHalf + backHalf) * 0.5, (backY + g.frontY) * 0.5]],
+         `url(#${gradId})`);
 }
 
 // ---------- ОРИЕНТАЦИЯ ТЕЛА ПО НАПРАВЛЕНИЮ ДВИЖЕНИЯ ----------
@@ -597,11 +637,23 @@ function getAnatomy(model) {
 // Локальная прозрачность кожи по зоне тела. Ключ 'growing' покрывает все
 // растущие сегменты сразу (их количество меняется со взрослением, поэтому
 // перечислять их поимённо в модели нельзя).
-function anatThinness(anatomy, partName) {
+function anatThinness(anatomy, partName, growingCount) {
     const t = (anatomy.skin && anatomy.skin.thinness) || {};
-    if (t[partName] != null) return t[partName];
-    if (partName.indexOf('growing-') === 0 && t.growing != null) return t.growing;
-    return 0.4;
+    const raw = t[partName];
+    if (raw != null && !Array.isArray(raw)) return raw;
+
+    if (partName && partName.indexOf('growing-') === 0) {
+        const ramp = t.growing;
+        if (ramp == null) return 1;
+        if (!Array.isArray(ramp)) return ramp;
+        // Растущие сегменты идут от живота к хвосту: первый просвечивает
+        // почти как живот, последний почти как хвост.
+        const idx = parseInt(partName.slice('growing-'.length), 10) || 1;
+        const count = Math.max(1, growingCount || idx);
+        const k = count > 1 ? (idx - 1) / (count - 1) : 0;
+        return ramp[0] + (ramp[1] - ramp[0]) * k;
+    }
+    return raw != null ? raw : 1;
 }
 
 // Сид анатомии берётся из МОДЕЛИ (anatomy.seed), а не из instanceId — иначе
@@ -669,25 +721,38 @@ function organPlanForZone(zone, rng, density) {
     // собой в принципе — на каждом стыке был разрыв. Здесь остаются только
     // локальные органы: мешочки и грозди узелков.
     if (zone === 'core') {
-        // Орган-мешочек — компактный, с собственным ритмом.
+        // ---------- ЖИВОТ: УЗНАВАЕМЫЕ ОРГАНЫ ----------
+        // Раньше здесь лежали абстрактные "мешочек" и "гроздь узелков". Через
+        // тонкую кожу живота это читалось как набор пятен: понятно, что
+        // внутри что-то есть, непонятно что. Свиночервь — существо с
+        // характером, и внутренности у него должны опознаваться: сердце как
+        // сердце, желудок как желудок.
+        //
+        // Позиции слегка гуляют от сида, но НЕ произвольно: сердце всегда
+        // выше и ближе к голове, желудок ниже и к хвосту от него. Анатомия у
+        // особей одна, разными их делает мелочь, а не перестановка органов.
+        // Сердце и желудок сидят в ВЕРХНЕЙ половине живота: петли кишечника
+        // занимают низ, и органы, положенные по центру, тонули в них.
         plan.push({
-            kind: 'sac', cx: 0.3 + rng() * 0.16, cy: -0.16 - rng() * 0.12, len: 0.28, thick: 0.34,
-            rot: rng() * 30 - 15, speedMul: 1.55, ampMul: 1.35, phase: rng() * 6.28
+            kind: 'heart', cx: 0.32 + rng() * 0.08, cy: -0.44 - rng() * 0.06, len: 0.34, thick: 0.38,
+            rot: rng() * 16 - 8, speedMul: 2.1, ampMul: 1.8, phase: rng() * 6.28
         });
-        // Гроздь узелков.
-        if (maybe(0.9)) {
-            plan.push({
-                kind: 'node', cx: -0.42 + rng() * 0.14, cy: -0.1 + rng() * 0.3, len: 0.2, thick: 0.24,
-                rot: rng() * 40 - 20, speedMul: 1.05, ampMul: 0.8, phase: rng() * 6.28
-            });
-        }
+        plan.push({
+            kind: 'stomach', cx: -0.22 + rng() * 0.08, cy: -0.3 + rng() * 0.06, len: 0.46, thick: 0.42,
+            rot: rng() * 14 - 7, speedMul: 0.75, ampMul: 0.9, phase: rng() * 6.28
+        });
+        // Рёбра идут последними: они обнимают органы снаружи, значит и
+        // рисуются поверх них — ближе к коже.
+        plan.push({
+            kind: 'ribs', cx: 0, cy: 0, len: 0.92, thick: 0.86, count: 5,
+            rot: 0, speedMul: 0.5, ampMul: 0.35, phase: rng() * 6.28
+        });
     } else if (zone === 'neck') {
-        if (maybe(0.5)) {
-            plan.push({
-                kind: 'sac', cx: -0.3 + rng() * 0.2, cy: -0.2, len: 0.2, thick: 0.22,
-                rot: rng() * 24 - 12, speedMul: 1.4, ampMul: 1, phase: rng() * 6.28
-            });
-        }
+        // В сегменте перед животом рёбер меньше — грудная клетка сходит на нет.
+        plan.push({
+            kind: 'ribs', cx: 0, cy: 0, len: 0.8, thick: 0.78, count: 3,
+            rot: 0, speedMul: 0.5, ampMul: 0.3, phase: rng() * 6.28
+        });
     } else if (zone === 'floor') {
         if (maybe(0.65)) {
             plan.push({
@@ -820,6 +885,129 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
                 Math.max(rx, ry) * (0.7 + vrng() * 0.6), 3, vColor, 1.1);
         }
         group.insertBefore(vGroup, group.firstChild ? group.firstChild.nextSibling : null);
+    } else if (plan.kind === 'heart') {
+        // ---------- СЕРДЦЕ ----------
+        // Силуэт узнаваемый, детализация минимальная: сквозь кожу видно
+        // пятно, и всё, что от него требуется — читаться как сердце с
+        // первого взгляда. Анатомически достоверное сердце в этом размере
+        // превратится в кляксу.
+        const color = palette.heart || VISCERA[700];
+        const rx = plan.len * halfLen;
+        const ry = plan.thick * halfThick;
+        // Классический силуэт: две доли сверху, острие вниз.
+        const d = `M 0,${(-ry * 0.32).toFixed(1)} ` +
+                  `C ${(-rx * 0.52).toFixed(1)},${(-ry * 1.15).toFixed(1)} ` +
+                  `${(-rx * 1.18).toFixed(1)},${(-ry * 0.1).toFixed(1)} ` +
+                  `0,${(ry * 0.98).toFixed(1)} ` +
+                  `C ${(rx * 1.18).toFixed(1)},${(-ry * 0.1).toFixed(1)} ` +
+                  `${(rx * 0.52).toFixed(1)},${(-ry * 1.15).toFixed(1)} ` +
+                  `0,${(-ry * 0.32).toFixed(1)} Z`;
+
+        group.appendChild(svgEl('path', {
+            d, fill: ensureSoftGradient(ctx, `worm-organ-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1),
+            opacity: 0.3, transform: 'scale(1.25)'
+        }));
+        group.appendChild(svgEl('path', { d, fill: color, opacity: 0.95 }));
+        group.appendChild(svgEl('path', {
+            d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.5),
+            'stroke-width': SW.detail, opacity: 0.8
+        }));
+        // Блик на левой доле — объём.
+        group.appendChild(svgEl('ellipse', {
+            cx: (-rx * 0.34).toFixed(1), cy: (-ry * 0.34).toFixed(1),
+            rx: (rx * 0.22).toFixed(1), ry: (ry * 0.18).toFixed(1),
+            fill: mixColor(color, GRIME_HIGHLIGHT, 0.5), opacity: 0.45
+        }));
+        // Пара крупных сосудов сверху: без них сердце висит само по себе.
+        const hrng = anatRng(ctx.anatomy, idKey, 'heart-vessels');
+        const vColor = mixColor(color, palette.vessel || VISCERA[700], 0.5);
+        buildVesselTree(group, hrng, -rx * 0.3, -ry * 0.75, -1.9, Math.max(rx, ry) * 0.9, 2, vColor, 1.3);
+        buildVesselTree(group, hrng, rx * 0.25, -ry * 0.8, -1.2, Math.max(rx, ry) * 0.8, 2, vColor, 1.1);
+    } else if (plan.kind === 'stomach') {
+        // ---------- ЖЕЛУДОК ----------
+        // Мешок-фасолина: широкий свод слева-сверху, сужается к выходу
+        // справа-снизу. Именно этот изгиб и делает силуэт узнаваемым.
+        const color = palette.stomach || VISCERA[700];
+        const rx = plan.len * halfLen;
+        const ry = plan.thick * halfThick;
+        const d = `M ${(-rx * 0.75).toFixed(1)},${(-ry * 0.2).toFixed(1)} ` +
+                  `C ${(-rx * 0.7).toFixed(1)},${(-ry * 1.05).toFixed(1)} ` +
+                  `${(rx * 0.45).toFixed(1)},${(-ry * 1.1).toFixed(1)} ` +
+                  `${(rx * 0.62).toFixed(1)},${(-ry * 0.3).toFixed(1)} ` +
+                  `C ${(rx * 0.78).toFixed(1)},${(ry * 0.45).toFixed(1)} ` +
+                  `${(rx * 0.2).toFixed(1)},${(ry * 1.02).toFixed(1)} ` +
+                  `${(-rx * 0.28).toFixed(1)},${(ry * 0.82).toFixed(1)} ` +
+                  `C ${(-rx * 0.72).toFixed(1)},${(ry * 0.66).toFixed(1)} ` +
+                  `${(-rx * 0.92).toFixed(1)},${(ry * 0.2).toFixed(1)} ` +
+                  `${(-rx * 0.75).toFixed(1)},${(-ry * 0.2).toFixed(1)} Z`;
+
+        group.appendChild(svgEl('path', {
+            d, fill: ensureSoftGradient(ctx, `worm-organ-shadow-${ctx.instanceId}`, GRIME_SHADOW, 1),
+            opacity: 0.26, transform: 'scale(1.2)'
+        }));
+        group.appendChild(svgEl('path', { d, fill: color, opacity: 0.92 }));
+        group.appendChild(svgEl('path', {
+            d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.5),
+            'stroke-width': SW.detail, opacity: 0.75
+        }));
+        // Содержимое: пока пусто, наполняется при кормёжке. Отдельным
+        // элементом, а не перекраской желудка: желудок должен оставаться
+        // собой, просто с комком внутри.
+        const content = svgEl('ellipse', {
+            class: 'worm-stomach-content',
+            cx: (-rx * 0.08).toFixed(1), cy: (ry * 0.12).toFixed(1),
+            rx: 0, ry: 0, fill: mixColor(color, BILE[400], 0.5), opacity: 0.85
+        });
+        content.setAttribute('data-full-rx', (rx * 0.52).toFixed(1));
+        content.setAttribute('data-full-ry', (ry * 0.46).toFixed(1));
+        group.appendChild(content);
+
+        // Складки на своде — стенка желудка не гладкий шар.
+        const srng = anatRng(ctx.anatomy, idKey, 'stomach-folds');
+        for (let i = 0; i < 3; i++) {
+            const fy = -ry * (0.45 - i * 0.3) + (srng() - 0.5) * ry * 0.12;
+            group.appendChild(svgEl('path', {
+                d: `M ${(-rx * 0.5).toFixed(1)},${fy.toFixed(1)} Q 0,${(fy + ry * 0.22).toFixed(1)} ${(rx * 0.42).toFixed(1)},${(fy + ry * 0.05).toFixed(1)}`,
+                fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.35),
+                'stroke-width': SW.hairline, opacity: 0.5
+            }));
+        }
+    } else if (plan.kind === 'ribs') {
+        // ---------- РЁБРА ----------
+        // Червю рёбра не полагаются, но это и не червь: свиночервю они нужны
+        // для образа — грудная клетка сразу превращает «мешок с органами» в
+        // существо. Дуги обнимают внутренности, поэтому и рисуются поверх
+        // них, ближе к коже.
+        const color = palette.bone || BILE[200];
+        const count = plan.count || 5;
+        const halfSpan = plan.len * halfLen;
+        const reach = plan.thick * halfThick;
+        const rrng = anatRng(ctx.anatomy, idKey, 'ribs');
+        for (let i = 0; i < count; i++) {
+            const k = count > 1 ? i / (count - 1) : 0.5;
+            const cx = (k * 2 - 1) * halfSpan * 0.72;
+            // Крайние рёбра короче: клетка сужается к концам.
+            const shrink = 0.72 + 0.28 * Math.sin(Math.PI * k);
+            const drop = reach * shrink;
+            // Рёбра расходятся веером от середины, а не стоят параллельно:
+            // параллельные дуги читаются как решётка радиатора, а не как
+            // грудная клетка. Верхний конец ребра клонится к центру, нижний
+            // уходит наружу.
+            const side = (k * 2 - 1);
+            const lean = side * halfSpan * 0.16;
+            const bow = drop * (0.5 + rrng() * 0.12) * (side >= 0 ? 1 : -1);
+            const d = `M ${(cx - lean).toFixed(1)},${(-drop).toFixed(1)} ` +
+                      `Q ${(cx + bow).toFixed(1)},0 ${(cx + lean * 0.6).toFixed(1)},${(drop * 0.84).toFixed(1)}`;
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.55),
+                'stroke-width': (SW.structure * 1.1).toFixed(2), 'stroke-linecap': 'round', opacity: 0.32
+            }));
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: color,
+                'stroke-width': SW.structure,
+                'stroke-linecap': 'round', opacity: 0.55
+            }));
+        }
     } else if (plan.kind === 'node') {
         const color = palette.node || BILE[400];
         const rng = anatRng(ctx.anatomy, idKey, 'node');
@@ -1183,7 +1371,7 @@ function buildAnatomyStack(ctx, partName, opts) {
     const organs = [];
     const zone = opts.organZone;
     if (zone && anatomy.organs && (anatomy.organs.visibility || 0) > 0.01) {
-        const thin = anatThinness(anatomy, partName);
+        const thin = anatThinness(anatomy, partName, ctx.growingCount);
         const alpha = clamp01(anatomy.organs.visibility * thin);
         if (alpha > 0.02) {
             const rng = anatRng(anatomy, partName, 'organs');
@@ -2595,25 +2783,117 @@ function applyHeadYaw(headRef, yaw) {
 // Процедурно генерируемая метка на конкретном сегменте. Размер намеренно
 // ограничен долей от радиуса сегмента-хозяина, чтобы не вылезать за его
 // пределы.
-function buildScarNode(scar, hostRadius) {
-    const maxSize = hostRadius * 0.35;
-    const size = Math.max(3, Math.min(maxSize, (scar.seed % 100) / 100 * maxSize));
-    const group = svgEl('g', {
-        transform: `translate(${(scar.x * hostRadius).toFixed(2)},${(scar.y * hostRadius).toFixed(2)}) rotate(${scar.rotation})`,
-        class: `worm-scar worm-scar-${scar.type || 'organic'}`
+// ---------- ОТМЕТИНА НА ТЕЛЕ ----------
+// Форма выводится из сида (WormMarks.geometry), цвет — сдвиг от тона кожи
+// хозяина (WormMarks.color). Ни то, ни другое не хранится: отметина в данных
+// это несколько чисел, а не список точек и не hex.
+//
+// Раньше здесь была ровная горизонтальная эллипса цвета scar.color. Ровный
+// эллипс читается как наклейка: у шрама неровный край и он изогнут, потому
+// что кожа при заживлении стягивается. Отсюда рваный контур и дуга.
+function buildMarkNode(mark, place, hostRadius, skinColor) {
+    const geo = WormMarks.geometry(mark.seed, mark.kind);
+    const color = WormMarks.color(skinColor || FLESH[500], mark.kind);
+    const rng = WormMarks.rng(mark.seed || 0, 'draw');
+
+    const half = Math.max(2.5, geo.length * hostRadius * 0.5);
+    const wide = Math.max(0.9, geo.width * hostRadius);
+    const bend = geo.curve * half * 0.5;
+
+    // Осевая линия шрама — дуга, а не отрезок.
+    const axisAt = (u) => ({          // u: -1..1
+        x: u * half,
+        y: bend * (1 - u * u)
     });
-    if (scar.type === 'stitched') {
-        const line = svgEl('line', { x1: -size, y1: 0, x2: size, y2: 0, stroke: scar.color, 'stroke-width': Math.max(1, size * 0.2) });
-        group.appendChild(line);
-        const stitchCount = 3;
-        for (let i = 0; i < stitchCount; i++) {
-            const sx = -size + (i + 0.5) * (size * 2 / stitchCount);
-            group.appendChild(svgEl('line', { x1: sx, y1: -size * 0.4, x2: sx, y2: size * 0.4, stroke: scar.color, 'stroke-width': SW.detail }));
+
+    // Обходим фигуру по одной стороне и возвращаемся по другой, дёргая
+    // ширину на каждом шаге: получается неровный край.
+    const steps = 5 + geo.notches * 2;
+    const side = (dir) => {
+        const pts = [];
+        for (let i = 0; i <= steps; i++) {
+            const u = dir > 0 ? (-1 + (2 * i) / steps) : (1 - (2 * i) / steps);
+            const p = axisAt(u);
+            // К концам шрам сходит на нет, в середине шире всего.
+            const taper = Math.pow(1 - u * u, 0.6);
+            const jitter = 1 - geo.ragged * rng() * 0.55;
+            const w = wide * taper * jitter * dir;
+            pts.push(`${p.x.toFixed(2)},${(p.y + w).toFixed(2)}`);
         }
-    } else {
-        const rx = size, ry = size * 0.5;
-        group.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: rx.toFixed(2), ry: ry.toFixed(2), fill: scar.color, opacity: 0.85 }));
+        return pts;
+    };
+
+    const d = 'M ' + side(1).join(' L ') + ' L ' + side(-1).join(' L ') + ' Z';
+
+    const group = svgEl('g', {
+        transform: `translate(${(place.x * hostRadius).toFixed(2)},${(place.y * hostRadius).toFixed(2)}) rotate(${place.rotation.toFixed(1)})`,
+        class: `worm-mark worm-mark-${mark.kind || 'scar'}`
+    });
+    group.appendChild(svgEl('path', { d, fill: color, opacity: 0.9 }));
+
+    // Тонкая светлая жилка вдоль шрама: рубцовая ткань блестит сильнее кожи.
+    const shine = [];
+    for (let i = 0; i <= steps; i++) {
+        const p = axisAt(-1 + (2 * i) / steps);
+        shine.push(`${p.x.toFixed(2)},${p.y.toFixed(2)}`);
     }
+    group.appendChild(svgEl('polyline', {
+        points: shine.join(' '),
+        fill: 'none',
+        stroke: WormMarks.color(skinColor || FLESH[500], 'shine'),
+        'stroke-width': Math.max(0.4, wide * 0.2).toFixed(2),
+        'stroke-linecap': 'round',
+        opacity: 0.32
+    }));
+    return group;
+}
+
+// ---------- КУЧКА НА ПОЛУ ----------
+// Результат пищеварения. Форма детерминированная от сида: две-три спирали
+// друг на друге, каждая следующая мельче. Цвет — из палитры (жёлчная линия
+// плюс чернота), а не подобранный на глаз коричневый.
+function buildPoopNode(obj, depthScale) {
+    const scale = depthScale || 1;
+    const rng = mulberry32(hashStringSeed(String(obj.seed || obj.id || 'poop')));
+    const base = 7 * scale;
+    const group = svgEl('g', {
+        class: 'worm-poop',
+        transform: `translate(${obj.x.toFixed(1)},${obj.y.toFixed(1)})`
+    });
+
+    const body = mixColor(BILE[600], P_.ink, 0.42);
+    const light = mixColor(body, GRIME_HIGHLIGHT, 0.35);
+
+    // Тень на полу: без неё кучка висит над полом.
+    group.appendChild(svgEl('ellipse', {
+        cx: 0, cy: (base * 0.15).toFixed(1),
+        rx: (base * 1.5).toFixed(1), ry: (base * 0.5).toFixed(1),
+        fill: P_.ink, opacity: 0.3
+    }));
+
+    const layers = 3;
+    for (let i = 0; i < layers; i++) {
+        const k = i / (layers - 1);
+        const rx = base * (1.25 - k * 0.55) * (0.9 + rng() * 0.2);
+        const ry = base * (0.5 - k * 0.14);
+        const cy = -i * base * 0.42;
+        const cx = (rng() - 0.5) * base * 0.3;
+        group.appendChild(svgEl('ellipse', {
+            cx: cx.toFixed(1), cy: cy.toFixed(1), rx: rx.toFixed(1), ry: ry.toFixed(1),
+            fill: body, stroke: P_.ink, 'stroke-width': SW.detail
+        }));
+        group.appendChild(svgEl('ellipse', {
+            cx: (cx - rx * 0.25).toFixed(1), cy: (cy - ry * 0.3).toFixed(1),
+            rx: (rx * 0.35).toFixed(1), ry: (ry * 0.3).toFixed(1),
+            fill: light, opacity: 0.4
+        }));
+    }
+    // Кончик сверху — узнаваемый силуэт кучки.
+    group.appendChild(svgEl('path', {
+        d: `M ${(-base * 0.22).toFixed(1)},${(-layers * base * 0.42 + base * 0.1).toFixed(1)} ` +
+           `Q 0,${(-layers * base * 0.42 - base * 0.5).toFixed(1)} ${(base * 0.22).toFixed(1)},${(-layers * base * 0.42 + base * 0.1).toFixed(1)} Z`,
+        fill: body, stroke: P_.ink, 'stroke-width': SW.hairline
+    }));
     return group;
 }
 
@@ -2837,6 +3117,10 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
         // не может прижаться к стенке или вылезти наружу.
         let amp = p.r * lerp(cfg.wave, cfg.bellyWave, belly);
         const off0 = Math.sin(phase);
+        // Смещение петель вниз внутри живота. Кишечник занимает низ брюшной
+        // полости, а верх оставляет желудку и сердцу — иначе петли ложатся
+        // прямо на них, и вместо органов видно штриховку.
+        const bias = p.r * (cfg.bellyBias || 0) * belly;
 
         // Толщина: толще в животе, сходит на нет к голове и кончику хвоста,
         // иначе труба выглядит обрубленной.
@@ -2848,7 +3132,7 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
         amp = Math.min(amp, Math.max(0, p.r * 0.72 - w));
         const off = off0 * amp;
 
-        const cx = p.x + p.nx * off, cy = p.y + p.ny * off;
+        const cx = p.x + p.nx * (off + bias), cy = p.y + p.ny * (off + bias);
         left.push([cx + p.nx * w, cy + p.ny * w]);
         right.push([cx - p.nx * w, cy - p.ny * w]);
         core.push([cx, cy]);
@@ -2857,12 +3141,25 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
     // Кромки собираются КРИВЫМИ, а не отрезками: ломаная на витках кишечника
     // мгновенно читается как зигзаг из палок, а не как мягкая трубка.
     const ribbon = smoothPolyline(left, false) + ' ' + smoothPolyline(right.slice().reverse(), true) + ' Z';
-    return { ribbon, core: smoothPolyline(core, false) };
+    // corePts — сырые точки осевой линии. Нужны, чтобы ставить куски еды на
+    // тракт арифметикой, а не промером SVG-пути: строка пути переписывается
+    // каждый кадр, и getTotalLength каждый раз меряет её заново.
+    return { ribbon, core: smoothPolyline(core, false), corePts: core };
 }
 
 // Узлы тракта: тень под трубой → сама труба с контуром → светлая жила.
 // Создаются один раз, в tick() у них меняется только атрибут d.
-function createGutTract(ctx) {
+// thinByIdx — плотность кожи по звеньям цепи (0 = кожа непрозрачная).
+//
+// Тракт — одна неразрывная труба на всё тело, поэтому «сколько его видно»
+// нельзя задать послойно, как у остальных органов. Вместо этого на него
+// вешается маска из мягких кругов по звеньям тела: где кожа плотная (голова,
+// хвост), круг почти чёрный и кишка не видна вовсе; где тонкая (живот) —
+// белый, и труба просвечивает целиком.
+//
+// Это ровно то же правило, что и у органов, просто выраженное маской:
+// органы всегда нарисованы, вопрос только в том, сколько кожи над ними.
+function createGutTract(ctx, thinByIdx) {
     const anatomy = ctx.anatomy;
     const palette = (anatomy.organs && anatomy.organs.palette) || {};
     const color = palette.gut || FLESH[700];
@@ -2870,6 +3167,22 @@ function createGutTract(ctx) {
         class: 'worm-gut-tract',
         'clip-path': `url(#worm-hull-clip-${ctx.instanceId})`
     });
+
+    const maskId = `worm-gut-mask-${ctx.instanceId}`;
+    const mask = svgEl('mask', { id: maskId, maskUnits: 'userSpaceOnUse' });
+    const softWhite = ensureSoftGradient(ctx, `worm-gut-soft-${ctx.instanceId}`, '#ffffff', 1);
+    const maskCircles = (thinByIdx || []).map(thin => {
+        const c = svgEl('circle', {
+            cx: 0, cy: 0, r: 0, fill: softWhite,
+            opacity: Math.max(0, Math.min(1, thin)).toFixed(3)
+        });
+        mask.appendChild(c);
+        return c;
+    });
+    if (maskCircles.length) {
+        ctx.defs.appendChild(mask);
+        group.setAttribute('mask', `url(#${maskId})`);
+    }
     // Отдельного узла-тени нет намеренно: строка пути тракта длинная (~3 КБ),
     // и переставлять её дважды за кадр — самая дорогая операция во всём
     // рендере. Роль тени и контура одновременно играет широкая тёмная
@@ -2884,7 +3197,15 @@ function createGutTract(ctx) {
     });
     group.appendChild(tube);
     group.appendChild(coreLine);
-    return { group, tube, coreLine };
+
+    // Куски еды едут ВНУТРИ группы тракта, значит подчиняются той же маске:
+    // у головы и хвоста кожа плотная — и комок там не виден, как и кишка.
+    // Ровно то поведение, которое нужно: еда «появляется» из головы, когда
+    // доезжает до просвечивающей части, и пропадает у хвоста.
+    const foodLayer = svgEl('g', { class: 'worm-food-layer' });
+    group.appendChild(foodLayer);
+
+    return { group, tube, coreLine, maskCircles, foodLayer, foodNodes: [] };
 }
 
 // Пересчёт всех трёх копий силуэта + перетяжек + отражённого света + тени.
@@ -2902,6 +3223,24 @@ function updateBodyHull(built, circles) {
         oc.setAttribute('cx', c.x.toFixed(1)); oc.setAttribute('cy', c.y.toFixed(1)); oc.setAttribute('r', (c.r + W).toFixed(1));
         rc.setAttribute('cx', c.x.toFixed(1)); rc.setAttribute('cy', c.y.toFixed(1)); rc.setAttribute('r', (c.r + W * 0.45).toFixed(1));
         cc.setAttribute('cx', c.x.toFixed(1)); cc.setAttribute('cy', c.y.toFixed(1)); cc.setAttribute('r', c.r.toFixed(1));
+    }
+
+    // Маска кишечного тракта ходит вместе с телом: круги стоят на тех же
+    // местах, что и звенья силуэта, и обновляются в том же цикле, чтобы
+    // «сколько видно кишку» не отставало от движения на кадр.
+    const gutMask = built.gutTract && built.gutTract.maskCircles;
+    if (gutMask) {
+        for (let i = 0; i < gutMask.length; i++) {
+            const c = circles[i];
+            const mc = gutMask[i];
+            if (!mc) continue;
+            if (!c || !(c.r > 0)) { mc.setAttribute('r', 0); continue; }
+            mc.setAttribute('cx', c.x.toFixed(1));
+            mc.setAttribute('cy', c.y.toFixed(1));
+            // Чуть шире звена: соседние круги должны перекрываться, иначе на
+            // стыках появятся тёмные перехваты — кишка будет «пунктиром».
+            mc.setAttribute('r', (c.r * 1.5).toFixed(1));
+        }
     }
 
     for (let i = 0; i < hull.bridgeShapes.length; i++) {
@@ -2976,6 +3315,9 @@ function buildWormSVGGroup(model, instanceId) {
     // Контекст инстанса: всё, что нужно любому строителю слоя. Передаётся
     // одним объектом, чтобы не тащить 5 аргументов через каждую функцию.
     const ctx = { defs, instanceId, anatomy, gradCache: Object.create(null), neckColor: null,
+                  // Сколько растущих сегментов у этой особи: от этого зависит
+                  // рампа прозрачности кожи вдоль тела.
+                  growingCount: (model.growingSegments || []).length,
                   // база для отражённого света: тёплый оттенок самой кожи,
                   // а не производная от тёмного контура (иначе кайма выходит
                   // грязно-бежевой и читается как ореол, а не как свет)
@@ -3087,7 +3429,10 @@ function buildWormSVGGroup(model, instanceId) {
     const floorShadow = svgEl('ellipse', {
         class: 'worm-floor-shadow', cx: 0, cy: 0, rx: 0, ry: 0,
         fill: ensureSoftGradient(ctx, `worm-floor-shadow-${instanceId}`, INK, 1),
-        opacity: 0.34
+        opacity: 0.34,
+        // Тень загораживать пол не должна: тело — да, его тень — нет.
+        // Иначе радиус «мёртвой зоны» вокруг червя вдвое больше него самого.
+        'pointer-events': 'none'
     });
     root.appendChild(floorShadow);
     root.appendChild(hull.outline);
@@ -3131,7 +3476,14 @@ function buildWormSVGGroup(model, instanceId) {
     // сегментов: иначе его невозможно сделать неразрывным.
     let gutTract = null;
     if (anatomy.enabled && anatomy.organs && (anatomy.organs.visibility || 0) > 0.01) {
-        gutTract = createGutTract(ctx);
+        // Плотность кожи по звеньям цепи: 0 — голова, дальше сегменты по
+        // своим индексам, последним хвост. Маска тракта строится по ней.
+        const thinByIdx = new Array(tailIdx + 1).fill(0);
+        thinByIdx[0] = anatThinness(anatomy, 'head', ctx.growingCount);
+        allParts.forEach(part => {
+            thinByIdx[part.idx] = anatThinness(anatomy, part.name, ctx.growingCount);
+        });
+        gutTract = createGutTract(ctx, thinByIdx);
         root.appendChild(gutTract.group);
     }
 
@@ -3144,17 +3496,29 @@ function buildWormSVGGroup(model, instanceId) {
     const headBuilt = buildHeadNode(model, ctx);
     root.appendChild(headBuilt.group);
 
-    // Шрамы — монтируются как дети scarLayer конкретного сегмента-хозяина,
-    // поэтому автоматически наследуют его текущий transform/scale.
+    // Отметины — монтируются как дети scarLayer конкретной части, поэтому
+    // автоматически наследуют её текущий transform/scale: тело шевелится,
+    // шрамы шевелятся вместе с ним, без единой строчки в анимации.
+    //
+    // Где именно сидит отметина, решает WormMarks по зоне и позиции вдоль
+    // неё — не по имени сегмента. Имена растущих сегментов меняются при
+    // взрослении, а «середина хвостовой части» остаётся собой.
     const scarHostByPart = { head: headBuilt.scarLayer, tail: tailBuilt.scarLayer };
-    segmentRefs.forEach(seg => { scarHostByPart[seg.name] = seg.scarLayer; });
-    (model.scars || []).forEach(scar => {
-        const host = scarHostByPart[scar.part];
-        if (!host) return;
-        const hostRadius = scar.part === 'tail' ? tailBuilt.baseRadius :
-            scar.part === 'head' ? headBuilt.rx :
-            (segmentRefs.find(s => s.name === scar.part) || {}).radius || 15;
-        host.appendChild(buildScarNode(scar, hostRadius));
+    const radiusByPart = { head: headBuilt.rx, tail: tailBuilt.baseRadius };
+    const skinByPart = { head: model.head.fill, tail: model.tail.fill };
+    segmentRefs.forEach(seg => {
+        scarHostByPart[seg.name] = seg.scarLayer;
+        radiusByPart[seg.name] = seg.radius;
+        skinByPart[seg.name] = seg.fillColor;
+    });
+
+    WormMarks.ZONES.forEach(zone => {
+        WormMarks.visible(model.scars, zone).forEach(mark => {
+            const place = WormMarks.resolve(model, mark);
+            const host = scarHostByPart[place.part];
+            if (!host) return;
+            host.appendChild(buildMarkNode(mark, place, radiusByPart[place.part] || 15, skinByPart[place.part]));
+        });
     });
 
     return {
@@ -3206,14 +3570,28 @@ const WormRenderer = {
         svg.style.overflow = 'visible';
         container.appendChild(svg);
 
-        // Два постоянных слоя внутри svg, которые НЕ трогает rebuild():
-        // slimeLayer (след слизи, под персонажем) и charLayer (сам персонаж).
-        // roomLayer — интерьер, лежит ПОД следом слизи и персонажем.
+        // Постоянные слои внутри svg, которые НЕ трогает rebuild():
+        //   roomLayer   — интерьер (пол, стены), самый низ;
+        //   slimeLayer  — след слизи;
+        //   objectLayer — то, что лежит на полу (кучки);
+        //   charLayer   — сам персонаж, поверх всего.
+        //
+        // Предметы лежат ВЫШЕ слизи: след — это то, что червь размазал по
+        // полу, он физически не может оказаться поверх кучки.
+        //
+        // И это отдельный слой, а не часть roomLayer: комната перестраивается
+        // при смене размера окна, а buildRoom вычищает свой слой целиком —
+        // предметы уезжали вместе с ней и пропадали с экрана, оставаясь в
+        // состоянии. Именно так кучка и превращалась в невидимую.
         const roomLayer = svgEl('g', { class: 'worm-room-layer' });
-        const slimeLayer = svgEl('g', { class: 'worm-slime-layer' });
+        // След слизи тянется через полкомнаты и тапы ловить не должен:
+        // он не тело, а то, что тело за собой оставило.
+        const slimeLayer = svgEl('g', { class: 'worm-slime-layer', 'pointer-events': 'none' });
+        const objectLayer = svgEl('g', { class: 'worm-room-objects' });
         const charLayer = svgEl('g', { class: 'worm-char-layer' });
         if (opts.room) svg.appendChild(roomLayer);
         svg.appendChild(slimeLayer);
+        svg.appendChild(objectLayer);
         svg.appendChild(charLayer);
 
         const state = {
@@ -3307,9 +3685,15 @@ const WormRenderer = {
         }
 
         function syncViewportSize() {
-            const rect = container.getBoundingClientRect();
-            const w = Math.max(1, rect.width);
-            const h = Math.max(1, rect.height);
+            // Размер БЕЗ учёта трансформаций (clientWidth, а не
+            // getBoundingClientRect): вся игра живёт в холсте постоянного
+            // размера, который масштабируется одной CSS-трансформацией
+            // (src/core/stage.js). Меряя экранные пиксели, рендерер получал
+            // бы разные числа на каждом экране и пересобирал бы комнату при
+            // любом изменении масштаба — ради картинки, которая всё равно
+            // отличается только увеличением.
+            const w = Math.max(1, container.clientWidth || container.getBoundingClientRect().width);
+            const h = Math.max(1, container.clientHeight || container.getBoundingClientRect().height);
             svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
             if (opts.room) {
                 state.room = roomGeometry(w, h);
@@ -3317,7 +3701,7 @@ const WormRenderer = {
                 // Стартовая точка — на полу, а не в произвольной доле высоты:
                 // иначе персонаж при запуске стоит в воздухе или в стене.
                 if (!state.wormX) state.wormX = state.room.cx;
-                if (!state.wormY) state.wormY = roomYAt(state.room, 1.1);
+                if (!state.wormY) state.wormY = roomYAt(state.room, 1.1) - state.floorLocalY;
             }
             state.wormX = state.wormX || w * opts.anchorX;
             state.wormY = state.wormY || h * opts.anchorY;
@@ -3483,13 +3867,25 @@ const WormRenderer = {
                         // стену, какой бы ни была форма трапеции.
                         const g = state.room;
                         const d = ROOM.wanderNear + Math.random() * (ROOM.wanderFar - ROOM.wanderNear);
-                        const u = (Math.random() * 2 - 1) * ROOM.wanderInsetU;
-                        state.targetX = g.cx + u * roomHalfAt(g, d);
-                        state.targetY = roomYAt(g, d);
+                        // Свободная ширина считается с учётом самого червя:
+                        // тело лежит вдоль пола и занимает место, поэтому от
+                        // стены надо отступить на его половину, уменьшенную
+                        // перспективой. Иначе хвост заезжает в боковую стену
+                        // ровно тогда, когда червь уходит вглубь.
+                        const room = roomHalfAt(g, d) - ROOM.bodyHalf * roomCharScaleAt(d);
+                        const free = Math.max(0, room) * ROOM.wanderInsetU;
+                        state.targetX = g.cx + (Math.random() * 2 - 1) * free;
+                        // Минус floorLocalY: на полу должна оказаться точка
+                        // касания, а не голова. Без этой поправки червь
+                        // «стоял» головой на полу, а всё тело свисало ниже —
+                        // и на переднем крае комнаты уезжало за нижнюю кромку
+                        // экрана. Именно это и выглядело как «уходит вниз».
+                        state.targetY = roomYAt(g, d) - state.floorLocalY;
                     } else {
-                        const rect = container.getBoundingClientRect();
-                        state.targetX = rect.width * 0.2 + Math.random() * (rect.width * 0.6);
-                        state.targetY = rect.height * 0.4 + Math.random() * (rect.height * 0.3);
+                        const rw = container.clientWidth || container.getBoundingClientRect().width;
+                        const rh = container.clientHeight || container.getBoundingClientRect().height;
+                        state.targetX = rw * 0.2 + Math.random() * (rw * 0.6);
+                        state.targetY = rh * 0.4 + Math.random() * (rh * 0.3);
                     }
                     state.nextMoveAt = null;
                 }
@@ -3514,7 +3910,12 @@ const WormRenderer = {
             // Персонаж на полу: его экранная высота однозначно задаёт, как
             // далеко он от камеры. Ближе — крупнее, вглубь — мельче.
             if (opts.room && state.room) {
-                state.depthScale = roomCharScaleAt(roomDepthAt(state.room, state.wormY));
+                // Глубина берётся по ТОЧКЕ КАСАНИЯ ПОЛА, а не по началу
+                // координат персонажа: начало координат — это голова, а стоит
+                // он ногами. Разница между ними — почти двести условных
+                // единиц, то есть треть комнаты.
+                state.depthScale = roomCharScaleAt(
+                    roomDepthAt(state.room, state.wormY + state.floorLocalY));
             }
 
             const intensityFactor = 1 - Math.pow(WORM_MOVE_INTENSITY_SMOOTH_BASE, dtSec);
@@ -3759,6 +4160,7 @@ const WormRenderer = {
                         });
                         state.built.gutTract.tube.setAttribute('d', geom.ribbon);
                         state.built.gutTract.coreLine.setAttribute('d', geom.core);
+                        state.built.gutTract.corePts = geom.corePts;
                         const liveVis = state.livePose.organVisibility;
                         const baseVis = liveVis != null ? liveVis : (organs.visibility != null ? organs.visibility : 0.6);
                         state.built.gutTract.group.setAttribute('opacity',
@@ -4045,7 +4447,8 @@ const WormRenderer = {
                     for (let i = 0; i < layers.length; i++) {
                         const host = layers[i].closest('[data-anat]');
                         const partName = host ? host.getAttribute('data-anat') : null;
-                        const thin = partName && m.anatomy ? anatThinness(m.anatomy, partName) : 1;
+                        const thin = partName && m.anatomy
+                            ? anatThinness(m.anatomy, partName, (m.growingSegments || []).length) : 1;
                         const vis = patch.organVisibility != null ? patch.organVisibility : base;
                         layers[i].setAttribute('opacity', clamp01(vis * thin).toFixed(3));
                     }
@@ -4063,6 +4466,117 @@ const WormRenderer = {
             },
             getPosition() {
                 return { x: state.wormX, y: state.wormY };
+            },
+
+            // Где сейчас конкретная часть тела — в координатах сцены.
+            // Нужно тому, кто кладёт что-то рядом с червём: «под хвостом»
+            // нельзя посчитать снаружи, потому что тело поворачивается по
+            // ходу движения, а хвост уезжает за ним.
+            getPartPoint(partName) {
+                const el = svg.querySelector(`[data-part="${partName}"]`);
+                if (!el || !el.getScreenCTM || !svg.getScreenCTM) {
+                    return { x: state.wormX, y: state.wormY };
+                }
+                try {
+                    const box = el.getBBox();
+                    const pt = svg.createSVGPoint();
+                    pt.x = box.x + box.width / 2;
+                    pt.y = box.y + box.height / 2;
+                    const local = pt.matrixTransform(el.getScreenCTM().multiply(svg.getScreenCTM().inverse()));
+                    return { x: local.x, y: local.y };
+                } catch (err) {
+                    return { x: state.wormX, y: state.wormY };
+                }
+            },
+
+            // ---------- ПИЩЕВАРЕНИЕ ----------
+            // Рендерер не считает время и не знает про еду ничего, кроме
+            // «нарисуй комки вот в этих точках тракта». Куда они доехали —
+            // считает вызывающий по метке времени кормёжки (worm.js).
+            //
+            //   boluses    — [{ s: 0..1 вдоль тракта, size: доля толщины }]
+            //   stomachFill — 0..1, насколько наполнен желудок
+            setDigestion(data) {
+                const d = data || {};
+                const tract = state.built && state.built.gutTract;
+                if (tract && tract.foodLayer) {
+                    const list = d.boluses || [];
+                    const pts = tract.corePts || [];
+
+                    // Узлы переиспользуются: комков три-четыре, создавать их
+                    // заново каждый кадр незачем.
+                    while (tract.foodNodes.length < list.length) {
+                        const node = svgEl('ellipse', { class: 'worm-food', rx: 0, ry: 0, cx: 0, cy: 0 });
+                        tract.foodLayer.appendChild(node);
+                        tract.foodNodes.push(node);
+                    }
+                    tract.foodNodes.forEach((node, i) => {
+                        const b = list[i];
+                        if (!b || pts.length < 2) { node.setAttribute('rx', 0); node.setAttribute('ry', 0); return; }
+                        // Позиция считается по точкам осевой линии — сложение
+                        // и умножение вместо промера пути.
+                        const fs = Math.max(0, Math.min(1, b.s)) * (pts.length - 1);
+                        const i0 = Math.min(pts.length - 2, Math.floor(fs));
+                        const k = fs - i0;
+                        const a = pts[i0], c = pts[i0 + 1];
+                        const pt = { x: a[0] + (c[0] - a[0]) * k, y: a[1] + (c[1] - a[1]) * k };
+                        // Направление в этой точке — комок вытянут вдоль кишки,
+                        // а не поперёк: он её растягивает, а не лежит поперёк.
+                        const ang = Math.atan2(c[1] - a[1], c[0] - a[0]) * 180 / Math.PI;
+                        const size = (b.size || 1) * (d.scale || 7);
+                        node.setAttribute('cx', 0);
+                        node.setAttribute('cy', 0);
+                        node.setAttribute('rx', (size * 1.35).toFixed(1));
+                        node.setAttribute('ry', size.toFixed(1));
+                        node.setAttribute('fill', b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35));
+                        node.setAttribute('opacity', b.opacity != null ? b.opacity : 0.9);
+                        node.setAttribute('transform',
+                            `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+                    });
+                }
+
+                // Наполненный желудок слегка раздувается — но остаётся
+                // желудком, а не превращается в шар.
+                const fill = Math.max(0, Math.min(1, d.stomachFill || 0));
+                const content = state.built && state.built.root
+                    ? state.built.root.querySelector('.worm-stomach-content') : null;
+                if (content) {
+                    const fx = parseFloat(content.getAttribute('data-full-rx')) || 0;
+                    const fy = parseFloat(content.getAttribute('data-full-ry')) || 0;
+                    content.setAttribute('rx', (fx * fill).toFixed(1));
+                    content.setAttribute('ry', (fy * fill).toFixed(1));
+                }
+            },
+
+            // ---------- ЧТО ЛЕЖИТ НА ПОЛУ ----------
+            // Комната принадлежит рендереру, поэтому и предметы в ней рисует
+            // он: тогда они живут в тех же координатах и получают ту же
+            // перспективу, что и персонаж.
+            setRoomObjects(list) {
+                const layer = objectLayer;
+                if (!layer) return;
+                while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+                state.roomObjects = (list || []).filter(o => o.x != null && o.y != null);
+                state.roomObjects.forEach(obj => {
+                    const depthScale = (opts.room && state.room)
+                        ? roomCharScaleAt(roomDepthAt(state.room, obj.y)) : 1;
+                    const g = buildPoopNode(obj, depthScale);
+                    g.setAttribute('data-poop-id', obj.id);
+                    g.style.cursor = 'pointer';
+
+                    // Обработчик висит на самом предмете, а не считает
+                    // попадание по координатам. Разница видна, когда червь
+                    // стоит над кучкой: событие достаётся ему, и убрать
+                    // кучку нельзя, пока он не отойдёт. Так и задумано —
+                    // тело физически загораживает пол, а тап по самому
+                    // червю в будущем станет способом с ним повозиться.
+                    g.addEventListener('pointerdown', (e) => {
+                        e.stopPropagation();
+                        if (typeof opts.onRoomObjectTap === 'function') opts.onRoomObjectTap(obj.id);
+                    });
+                    layer.appendChild(g);
+                });
             },
             // Прямой доступ к SVG для точечных вещей (хит-тест по конкретной
             // части, разовая подстройка стиля мини-игрой). Ищи части по

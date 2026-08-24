@@ -50,6 +50,8 @@ const LocalBackend = {
     // Аналог GET /state.
     getState() {
         if (!GameState.data) GameState.load();
+        // Пищеварение могло дойти до конца, пока игра была закрыта.
+        this.settleDigestion();
         GameState.touch();
         GameState.save();
         return Promise.resolve({
@@ -79,7 +81,7 @@ const LocalBackend = {
         }
 
         const reward = this.resolveReward(sin, mode, outcome);
-        const awarded = { sin, mode, outcome, sinValue: null, currencies: {} };
+        const awarded = { sin, mode, outcome, sinValue: null, currencies: {}, mark: null };
 
         if (reward.sinFill === 'full') {
             GameState.setSinValue(sin, GameState.maxValue(sin));
@@ -103,6 +105,19 @@ const LocalBackend = {
             });
         }
 
+        // Червя покормили — запускается пищеварение.
+        if (reward.feeds) {
+            this.feed();
+            awarded.fed = true;
+        }
+
+        // Отметина на теле, если конфиг её обещал за такой исход.
+        if (reward.mark && Math.random() < (reward.mark.chance || 0)) {
+            const zone = (request.meta && request.meta.lastHitZone) || null;
+            const mark = this.grantMark(reward.mark.kind, zone);
+            if (mark) awarded.mark = mark;
+        }
+
         // Счётчик исходов за сутки. Пока никем не используется, но именно на
         // нём стоит убывающая доходность золота из плана (1–5 побед за сутки
         // дают 100%, 6–15 — половину, дальше — 10%). Считать его надо с
@@ -114,6 +129,79 @@ const LocalBackend = {
         GameState.save();
 
         return Promise.resolve({ state: GameState.data, awarded });
+    },
+
+    // Выдать отметину на тело. Решение принимает эта сторона, а не
+    // мини-игра: на сервере оно тем более будет серверным, иначе «шанс 30%»
+    // превращается в «сколько захочу» (docs/plan/01-architecture.md, 3.3).
+    //
+    // Зона — из данных боя (куда прилетело), иначе от сида. Место внутри
+    // зоны ищет WormMarks: рядом с существующим шрамом новый не встанет,
+    // иначе они слипаются в пятно.
+    grantMark(kind, zone, seed) {
+        const marks = GameState.data.scars;
+        const useSeed = (typeof seed === 'number') ? seed : Math.floor(Math.random() * 1e9);
+        const useZone = WormMarks.ZONES.indexOf(zone) !== -1
+            ? zone
+            : WormMarks.ZONES[useSeed % WormMarks.ZONES.length];
+
+        const t = WormMarks.pickSpot(marks, useZone, useSeed);
+        if (t === null) return null;   // зона забита — это нормальный ответ
+
+        const mark = {
+            id: 'mark-' + useSeed.toString(36) + '-' + marks.length,
+            kind: kind || 'scar',
+            zone: useZone,
+            t,
+            seed: useSeed,
+            created_at: GameTime.now()
+        };
+        marks.push(mark);
+        return mark;
+    },
+
+    // ---------- ПИЩЕВАРЕНИЕ ----------
+    // Покормить: ставится одна метка времени. Всё остальное — куда доехал
+    // комок, пора ли какать — считается от неё.
+    feed() {
+        GameState.data.digestion.fed_at = GameTime.now();
+        GameState.save();
+        return GameState.data.digestion;
+    },
+
+    // Довести пищеварение до текущего момента. Дёргается при каждом чтении
+    // состояния и раз в секунду из интерфейса: цикл длиннее часа, и червь
+    // обязан покакать даже если в этот момент приложение было закрыто —
+    // тогда игрок увидит результат при следующем заходе.
+    settleDigestion() {
+        const d = GameState.digestion();
+        if (d.phase !== 'done') return null;
+
+        const at = GameTime.now();
+        const poop = {
+            id: 'poop-' + at.toString(36),
+            created_at: at,
+            // Где именно лежит — решает интерфейс в момент появления (червь
+            // ходит по комнате). Пока не знаем — кладём по центру.
+            x: null,
+            y: null,
+            seed: Math.floor(Math.random() * 1e9)
+        };
+        GameState.data.room.poops.push(poop);
+        GameState.data.digestion.fed_at = null;
+        GameState.save();
+        return poop;
+    },
+
+    // Убрать с пола. Пока просто исчезает; станет ресурсом — начисление
+    // добавится здесь же, а не в обработчике тапа.
+    removePoop(id) {
+        const list = GameState.data.room.poops;
+        const i = list.findIndex(p => p.id === id);
+        if (i === -1) return false;
+        list.splice(i, 1);
+        GameState.save();
+        return true;
     },
 
     // rewards[грех][режим][исход], иначе общее правило.

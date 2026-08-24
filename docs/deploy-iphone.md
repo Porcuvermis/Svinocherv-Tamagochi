@@ -213,4 +213,3 @@ https://porcuvermis.github.io/Svinocherv-Tamagochi/?sw=off
 | `manifest.webmanifest` | Имя, иконка и полноэкранный режим на домашнем экране |
 | `icons/*.png` | Иконки; пересобираются `python3 tools/make-icons.py` |
 | `tools/preview-index.sh` | Вёрстка страницы со списком сборок |
-| `vendor/three.min.js` | three.js r128 локально: без него «Зависть» зависела бы от чужого CDN |

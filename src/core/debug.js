@@ -55,7 +55,10 @@ const DebugState = {
             <button data-act="hour">−1 ч</button>
             <button data-act="shift">−8 ч</button>
             <button data-act="fill">Полные</button>
+            <button data-act="scar">Шрам</button>
+            <button data-act="feed">Покормить</button>
             <button data-act="reset">Сброс</button>
+            <span id="debug-fps">— fps</span>
         `;
         this.panel.addEventListener('click', (e) => {
             const act = e.target && e.target.getAttribute('data-act');
@@ -67,8 +70,43 @@ const DebugState = {
         const container = document.getElementById('game-container') || document.body;
         container.appendChild(this.panel);
 
+        this.fpsEl = this.panel.querySelector('#debug-fps');
+
         DebugMode.onChange(() => this.render());
         this.render();
+    },
+
+    // ---------- СЧЁТЧИК КАДРОВ ----------
+    // Чтобы разговор о плавности шёл числами, а не ощущениями: «стало хуже»
+    // невозможно ни подтвердить, ни опровергнуть, а «было 58, стало 41» —
+    // можно. Считает только когда debug включён: сам счётчик тоже стоит
+    // кадров, пусть и немного.
+    startFps() {
+        if (this.fpsRaf) return;
+        let frames = 0;
+        let last = performance.now();
+        const tick = (now) => {
+            this.fpsRaf = requestAnimationFrame(tick);
+            frames += 1;
+            if (now - last < 1000) return;
+            const fps = Math.round(frames * 1000 / (now - last));
+            // Рядом с кадрами — сколько кучек на полу. Мелочь, но когда
+            // «кучка не убирается», первым делом надо знать, сколько их на
+            // самом деле: две в одной точке выглядят как одна.
+            const poops = (typeof GameState !== 'undefined' && GameState.data && GameState.data.room)
+                ? GameState.data.room.poops.length : 0;
+            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops;
+            frames = 0;
+            last = now;
+        };
+        this.fpsRaf = requestAnimationFrame(tick);
+    },
+
+    stopFps() {
+        if (!this.fpsRaf) return;
+        cancelAnimationFrame(this.fpsRaf);
+        this.fpsRaf = null;
+        if (this.fpsEl) this.fpsEl.textContent = '— fps';
     },
 
     run(act) {
@@ -79,13 +117,32 @@ const DebugState = {
             Object.keys(GameState.data.sins).forEach(key => {
                 GameState.data.sins[key].updated_at -= hours * 3600 * 1000;
             });
+            // Пищеварение отматывается вместе со шкалами: цикл длиной в час,
+            // и ждать его вживую ради проверки — то же самое, что ждать
+            // падения шкал.
+            if (GameState.data.digestion && GameState.data.digestion.fed_at) {
+                GameState.data.digestion.fed_at -= hours * 3600 * 1000;
+            }
+        } else if (act === 'feed') {
+            Backend.feed();
         } else if (act === 'fill') {
             Object.keys(GameState.data.sins).forEach(key => {
                 GameState.setSinValue(key, GameState.maxValue(key));
             });
+        } else if (act === 'scar') {
+            // Шрамы выпадают за поражения в гневе с шансом 30% — ждать их
+            // ради проверки внешнего вида бессмысленно. Выдаём через ту же
+            // дверь, что и игра: правила отметин живут в Backend.
+            const mark = Backend.grantMark('scar');
+            if (!mark) {
+                alert('Свободного места под шрам не осталось.');
+                return;
+            }
+            if (typeof refreshWormMarks === 'function') refreshWormMarks();
         } else if (act === 'reset') {
             if (!confirm('Стереть весь прогресс: шкалы, кошелёк, счётчики?')) return;
             GameState.reset();
+            if (typeof refreshWormMarks === 'function') refreshWormMarks();
         }
 
         GameState.save();
@@ -94,6 +151,7 @@ const DebugState = {
 
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
+        if (DebugMode.enabled) this.startFps(); else this.stopFps();
     }
 };
 
