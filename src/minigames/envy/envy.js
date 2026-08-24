@@ -511,9 +511,6 @@ const EnvyMinigame = {
         group.position.z = originZ;
         this.scene.add(group);
 
-        const palette = (typeof PALETTE !== 'undefined' && PALETTE.envyImages) ? PALETTE.envyImages
-            : ['#e04f4f', '#e8823c', '#e0b342', '#6dbf5a', '#3fa8c6', '#6d6fd6', '#c455bd'];
-
         // Каждому образу свой слой глубины: облако должно быть кучей наклеек,
         // а не аккуратными рядами. Порядок слоёв перемешивается.
         const layers = Array.from({ length: L.total }, (_, i) => i);
@@ -542,10 +539,13 @@ const EnvyMinigame = {
             // считается для каждой наклейки от своей.
             const size = spot.radius / image.core;
 
-            const colorHex = palette[Math.floor(Math.random() * palette.length)];
+            // Тон уже вписан в текстуру: рисунок многоцветный, одним
+            // множителем его не покрасить. material.color остаётся белым и
+            // работает только на подсветку волной.
+            const variant = image.variants[Math.floor(Math.random() * image.variants.length)];
             const material = new THREE.MeshBasicMaterial({
-                map: image.texture,
-                color: new THREE.Color(colorHex),
+                map: variant,
+                color: new THREE.Color(0xffffff),
                 transparent: true,
                 // Отсекает только сглаженную кромку текстуры: образы больше
                 // не растворяются поштучно, их гасит ореол.
@@ -564,7 +564,7 @@ const EnvyMinigame = {
             tiles.push({
                 mesh,
                 mat: material,
-                baseColor: new THREE.Color(colorHex),
+                baseColor: new THREE.Color(0xffffff),
                 bx: spot.x,
                 by: spot.y,
                 size,
