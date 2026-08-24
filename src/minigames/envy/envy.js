@@ -37,6 +37,7 @@ const ENVY_SCENE = {
     TILT: 0.22,              // наклон наклейки, рад: кренит, но не переворачивает
     HALO_CELLS: 1.5,         // радиус ореола под пальцем, в шагах сетки
     HALO_MARGIN: 1.25,       // запас ореола поверх габарита самой крупной наклейки
+    CELL_FILL: 0.75,         // какую долю своей ячейки накрывает наклейка
     CELL_SPREAD_MIN: 0.92,   // насколько наклейка может быть мельче медианной
     CELL_SPREAD_MAX: 1.10,   // и насколько крупнее: шире — полотно разнокалиберное
     HALO_CORE: 0.55,         // до какой доли радиуса прозрачность полная
@@ -528,13 +529,6 @@ const EnvyMinigame = {
         group.position.z = originZ;
         this.scene.add(group);
 
-        // Каждому образу свой слой глубины: облако должно быть кучей наклеек,
-        // а не аккуратными рядами. Порядок слоёв перемешивается.
-        const layers = Array.from({ length: L.total }, (_, i) => i);
-        for (let i = layers.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [layers[i], layers[j]] = [layers[j], layers[i]];
-        }
 
         // Места и ячейки. Наклейке достаётся радиус её ячейки — ровно столько
         // она обязана накрыть собой, чтобы полотно сомкнулось.
@@ -554,6 +548,16 @@ const EnvyMinigame = {
         const lo = median * ENVY_SCENE.CELL_SPREAD_MIN;
         const hi = median * ENVY_SCENE.CELL_SPREAD_MAX;
 
+        // Слои раздаются НЕ случайно, а черепицей: чем ниже наклейка на
+        // экране, тем ближе она к камере. При случайных слоях кому-то не
+        // везло — образ оказывался под всеми соседями разом, и от него
+        // выглядывало пять процентов. В черепице каждая наклейка закрыта
+        // только теми, что лежат ниже неё, и только снизу: верх с рисунком
+        // остаётся на виду.
+        const order = spots.map((_, i) => i).sort((a, b) => spots[a].y - spots[b].y);
+        const depthOf = new Array(spots.length);
+        order.forEach((idx, k) => { depthOf[idx] = k * ENVY_SCENE.LAYER_STEP; });
+
         const tiles = [];
         const meshes = [];
         const pool = this.imagePool;
@@ -565,7 +569,11 @@ const EnvyMinigame = {
             // Круг наклейки сажается ровно на ячейку — этим полотно и
             // смыкается. Ячейки Вороного разного размера, поэтому размер
             // считается для каждой наклейки от своей.
-            const size = radius / image.core;
+            // CELL_FILL — прямой размен «перекрытие против щелей». При 1.0
+            // наклейка накрывает свою ячейку целиком и щелей нет по
+            // построению, но соседей она заслоняет наполовину. Ниже —
+            // просторнее, ценой просветов в самых острых углах ячеек.
+            const size = radius * ENVY_SCENE.CELL_FILL / image.core;
 
             // Тон уже вписан в текстуру: рисунок многоцветный, одним
             // множителем его не покрасить. material.color остаётся белым и
@@ -598,7 +606,7 @@ const EnvyMinigame = {
                 size,
                 mask: image.mask,
                 image,
-                depth: layers[index] * ENVY_SCENE.LAYER_STEP,
+                depth: depthOf[index],
                 rot: mesh.rotation.z,
                 seed: Math.random() * 10,
                 driftPhase: Math.random() * Math.PI * 2,
