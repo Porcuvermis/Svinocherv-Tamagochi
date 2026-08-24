@@ -57,6 +57,16 @@ const GameManager = {
         if (typeof initWorm === 'function') {
             initWorm();
         }
+
+        // Экран загрузки открывается только теперь: HUD собран, персонаж
+        // смонтирован. Два кадра ожидания — чтобы под пеленой успел
+        // отрисоваться ПЕРВЫЙ кадр свиночервя, иначе круг раскроется на
+        // пустую комнату и червь появится в ней уже на глазах.
+        if (window.BootScreen) {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                window.BootScreen.release('game');
+            }));
+        }
     },
 
     // ---------- ИНТЕРФЕЙС ----------

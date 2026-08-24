@@ -12,6 +12,11 @@
     <meta name="app-build" content="__BUILD__">
     <meta name="app-branch" content="__BRANCH__">
     <title>Свиночервь Тамагочи</title>
+
+    <!-- Экран загрузки. Подключён ДО стилей и раньше всего остального:
+         чёрная пелена обязана накрыть самый первый кадр, иначе игрок успеет
+         увидеть недособранный интерфейс и перезагрузку под новую сборку. -->
+    <script src="src/core/boot-screen.js?v=1"></script>
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="apple-touch-icon" href="icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
