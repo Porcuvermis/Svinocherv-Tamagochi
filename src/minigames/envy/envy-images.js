@@ -33,9 +33,36 @@ const ENVY_WHITE = '#ffffff';
 // равномерно, намеряла 37% наползания вместо обещанных десяти. Круг с
 // выступами держится ближе к пределу, а выступы (крыша машины, уши кошки,
 // горловина мешка) оставляют наклейке характер формы.
-const ENVY_CORE = 0.40;    // радиус круга наклейки, в долях спрайта
-const ENVY_BULGE = 1.18;   // насколько рисунку позволено торчать за круг
+// Подложка занимает лишь треть спрайта, а рисунок — полтора её радиуса: так
+// силуэт крупнее подложки в полтора раза и форму наклейки задаёт он, а не она.
+// Выше поднимать нельзя — при CORE*BULGE + RIM > 0.5 рисунок упирается в край
+// спрайта и обрезается.
+const ENVY_CORE = 0.345;   // МИНИМАЛЬНЫЙ радиус подложки: им и накрывается ячейка
+const ENVY_BULGE = 1.35;   // насколько рисунку позволено торчать за подложку
 const ENVY_RIM = 0.030;    // белый кант, в долях спрайта
+const ENVY_WOBBLE = 0.13;  // насколько подложку «ведёт» от круга
+
+// Подложка наклейки — не круг, а слегка неправильная замкнутая кривая: своя
+// у каждого образа. Ровный круг у всех подряд читается плашкой, а не вырезанной
+// наклейкой, и полотно из одинаковых кружков выглядит машинным.
+//
+// Радиус гуляет ВОКРУГ БОЛЬШЕГО значения так, чтобы минимум остался равен
+// ENVY_CORE: именно минимальный радиус накрывает ячейку, и покрытие полотна от
+// неровности не страдает.
+function envyBlobPath(S, phase) {
+    const p = new Path2D();
+    const steps = 64;
+    for (let i = 0; i <= steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        const r = ENVY_CORE * (1 + ENVY_WOBBLE * (1 + Math.sin(a * 3 + phase)) / 2
+                                 + ENVY_WOBBLE * 0.4 * Math.sin(a * 5 - phase * 1.7)) * S;
+        const x = S / 2 + Math.cos(a) * r;
+        const y = S / 2 + Math.sin(a) * r;
+        if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
+    }
+    p.closePath();
+    return p;
+}
 
 // ---------- ВСПОМОГАТЕЛЬНОЕ ----------
 const envyMix = (hex, target, k) => {
@@ -90,10 +117,11 @@ const ENVY_IMAGES = [
         // повышенный bulge разрешает торчать за круг сильнее прочих: у машины
         // выпирают только нос и корма, площади это почти не прибавляет.
         tilt: -0.20,
-        bulge: 1.52
+        phase: 0.0
     },
     {
         key: 'cat',
+        phase: 1.1,
         title: 'кошка',
         // Голова анфас. Уши широкие у основания: узкие давали бы тонкие
         // отростки, которые кант раздувает в бесформенные рожки.
@@ -132,6 +160,7 @@ const ENVY_IMAGES = [
     },
     {
         key: 'dog',
+        phase: 2.3,
         title: 'собака',
         // Висячие уши по бокам добирают силуэт до круга — пёс ложится в
         // полотно плотнее кошки, у которой уши торчат вверх.
@@ -165,6 +194,7 @@ const ENVY_IMAGES = [
     },
     {
         key: 'money',
+        phase: 3.6,
         title: 'мешок денег',
         draw(ctx, tone) {
             const bag = P(p => {
@@ -225,6 +255,7 @@ const ENVY_IMAGES = [
     },
     {
         key: 'smokes',
+        phase: 4.9,
         title: 'пачка сигарет',
         // Именно пачка, а не сигарета: коробка почти квадратная и потому
         // ложится в полотно без разросшегося канта.
@@ -260,7 +291,8 @@ const ENVY_IMAGE_POOL = {
     // Во сколько раз габарит наклейки больше радиуса её ячейки. Круг накрывает
     // ячейку ровно, а сверх него торчат выступы рисунка и белый кант — на это
     // и закладывается поле по краям полотна.
-    span: (ENVY_CORE * Math.max(ENVY_BULGE, ...ENVY_IMAGES.map(d => d.bulge || 0)) + ENVY_RIM) / ENVY_CORE,
+    span: (ENVY_CORE * (1 + ENVY_WOBBLE * 1.4) * Math.max(ENVY_BULGE,
+        ...ENVY_IMAGES.map(d => d.bulge || 0)) + ENVY_RIM) / ENVY_CORE,
 
     // Шесть тонов, разнесённых по кругу: каждый третий из палитры давал
     // подряд два красноватых, и полотно уходило в один цвет. Больше тонов —
@@ -436,21 +468,22 @@ const ENVY_IMAGE_POOL = {
             }
         });
 
+        const blob = envyBlobPath(S, def.phase || 0);
         ctx.fillStyle = ENVY_WHITE;
-        ctx.beginPath();
-        ctx.arc(S / 2, S / 2, ENVY_CORE * S + rimPx, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.strokeStyle = ENVY_WHITE;
+        ctx.lineWidth = 2 * rimPx;
+        ctx.lineJoin = 'round';
+        ctx.stroke(blob);
+        ctx.fill(blob);
 
         // 2. Круг ячейки: подложка стикера, она же гарантия смыкания полотна.
         // Сильно светлее тона — рисунок написан этим же тоном и на равной по
         // светлоте подложке пропадал.
         ctx.fillStyle = lighten(tone, 0.46);
-        ctx.beginPath();
-        ctx.arc(S / 2, S / 2, ENVY_CORE * S, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fill(blob);
         ctx.strokeStyle = ENVY_LINE;
         ctx.lineWidth = 0.014 * S;
-        ctx.stroke();
+        ctx.stroke(blob);
 
         // 3. Рисунок поверх.
         placed(() => ctx.drawImage(art, 0, 0));
@@ -510,15 +543,23 @@ const ENVY_IMAGE_POOL = {
             }
         }
 
-        let best = 0, bx = N / 2, by = N / 2;
+        let best = 0;
+        for (let i = 0; i < N * N; i++) if (dist[i] < INF) best = Math.max(best, dist[i]);
+
+        // Центр наклейки — середина ГАБАРИТОВ рисунка. Раньше брался центр
+        // вписанного круга: у машины он попадает в кузов, и она садилась в
+        // наклейку боком, вырываясь за край носом.
+        let x0 = N, y0 = N, x1 = -1, y1 = -1;
         for (let y = 0; y < N; y++) {
             for (let x = 0; x < N; x++) {
-                const d = dist[y * N + x];
-                if (d > best && d < INF) { best = d; bx = x + 0.5; by = y + 0.5; }
+                if (data[(y * N + x) * 4 + 3] <= 110) continue;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
             }
         }
-
-        const cx = bx / N, cy = by / N;
+        const cx = (x0 + x1 + 1) / 2 / N, cy = (y0 + y1 + 1) / 2 / N;
         let outRadius = 0;
         for (let y = 0; y < N; y++) {
             for (let x = 0; x < N; x++) {
