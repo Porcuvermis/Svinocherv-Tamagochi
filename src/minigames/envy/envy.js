@@ -29,9 +29,14 @@ const ENVY_SCENE = {
     FOV: 45,
     CAM_DIST: 34,            // расстояние от камеры до переднего плана облака в покое
     MAX_TILES: 104,          // потолок по числу образов в облаке (телефон)
-    SPRITE_MULT: 1.55,       // спрайт крупнее шага сетки — образы наезжают друг на друга
+    FIELD_X: 0.88,           // какую долю ширины экрана занимает облако
+    FIELD_Y: 0.84,           // и высоты: по краям остаётся поле под рамку
+    COLS_ACROSS: 5,          // сколько образов укладывается по короткой стороне поля
+    SPRITE_MULT: 1.18,       // спрайт чуть крупнее шага — образы едва задевают соседей
+    JITTER: 0.12,            // разброс внутри клетки, в долях шага: чтобы не читалась сетка
     ROW_SQUASH: 0.95,        // шаг по вертикали относительно шага по горизонтали
     HOLE_SCALE: 1.15,        // дыра чуть больше самого образа — она ест и соседей
+    SIG_HOLE_SCALE: 1.45,    // ореол вокруг значимого образа: расчищает ему место
     LAYER_STEP: 5.2,         // глубина между соседними слоями
     CLOUD_GAP: 55,           // пустота между задом облака и передом следующего
     FLY_MS: 1700,
@@ -46,7 +51,8 @@ const ENVY_SCENE = {
     WAVE_DECAY_MS: 620,      // затухание качания по времени после прохода фронта
     WAVE_FREQ: 12,           // частота качания, рад/с
     WAVE_LIFE_MS: 2200,
-    WIN_MS: 1900,            // длительность победного разгона в белое
+    WIN_MS: 1300,            // за сколько победная вспышка накрывает экран
+    FLASH_SIZE: 40,          // базовый диаметр вспышки в CSS, px (её растит scale)
     HINT_GREEN: '#3ddc73',
     HINT_RED: '#ff3b30',
 };
@@ -286,6 +292,7 @@ const EnvyMinigame = {
         this.canvas = document.getElementById('envy-canvas');
         this.gaugeBar = document.getElementById('envy-gauge-bar');
         this.winOverlay = document.getElementById('envy-win-overlay');
+        this.flashEl = document.getElementById('envy-win-flash');
         this.confirmOverlay = document.getElementById('envy-confirm-overlay');
         this.confirmStayBtn = document.getElementById('envy-confirm-stay');
         this.confirmLeaveBtn = document.getElementById('envy-confirm-leave');
@@ -336,6 +343,10 @@ const EnvyMinigame = {
         if (this.winOverlay) {
             this.winOverlay.classList.remove('show');
             this.winOverlay.style.opacity = '';
+        }
+        if (this.flashEl) {
+            this.flashEl.classList.remove('show');
+            this.flashEl.style.transform = 'translate(-50%, -50%) scale(0)';
         }
 
         this.ensureThree();
@@ -525,33 +536,44 @@ const EnvyMinigame = {
         const viewH = 2 * ENVY_SCENE.CAM_DIST * Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180);
         const viewW = viewH * aspect;
 
-        // Колонки набираются вверх, пока облако помещается в потолок: считать
-        // от фиксированного числа колонок нельзя — на широком экране (поворот
-        // телефона) то же число колонок давало вдвое меньше образов, и поле
-        // вырождалось в десяток огромных фигур.
-        const measure = (cols) => {
-            const cell = viewW / cols;
-            const rows = Math.ceil(viewH / (cell * ENVY_SCENE.ROW_SQUASH)) + 2;
-            return { cols, cell, rows, total: rows * (cols + 2) };
-        };
+        // Облако занимает не весь экран, а поле внутри него: по краям остаётся
+        // рант, куда потом ляжет рамка. Раньше сетка строилась с запасом ЗА
+        // край, и половина образов уезжала под обрез — фигура, наполовину
+        // срезанная краем, не читается как образ.
+        const fieldW = viewW * ENVY_SCENE.FIELD_X;
+        const fieldH = viewH * ENVY_SCENE.FIELD_Y;
 
-        let best = measure(3);
-        for (let cols = 4; cols <= 24; cols++) {
-            const m = measure(cols);
-            if (m.total > ENVY_SCENE.MAX_TILES) break;
-            best = m;
+        // Всё поле раскладывается так, чтобы крайние образы вставали ВНУТРЬ
+        // целиком: (cols-1) шагов + спрайт + разброс = ширина поля.
+        const span = (n) => n - 1 + ENVY_SCENE.SPRITE_MULT + 2 * ENVY_SCENE.JITTER;
+
+        // Размер образа задаётся от КОРОТКОЙ стороны поля, иначе при повороте
+        // телефона те же колонки дают фигуры вдвое крупнее или мельче.
+        const pad = ENVY_SCENE.SPRITE_MULT + 2 * ENVY_SCENE.JITTER - 1;   // «лишние» полклетки по краям
+
+        let cols, cell, rowStep, rows, total;
+        for (let across = ENVY_SCENE.COLS_ACROSS; across >= 3; across--) {
+            const target = Math.min(fieldW, fieldH) / across;   // желаемый шаг сетки
+            cols = Math.max(3, Math.round(fieldW / target - pad));
+            cell = fieldW / span(cols);
+            rowStep = cell * ENVY_SCENE.ROW_SQUASH;
+            rows = Math.max(3, Math.floor((fieldH - cell * (ENVY_SCENE.SPRITE_MULT + 2 * ENVY_SCENE.JITTER)) / rowStep) + 1);
+            // В нечётных рядах на один образ меньше — они сдвинуты на полклетки.
+            total = Math.ceil(rows / 2) * cols + Math.floor(rows / 2) * (cols - 1);
+            if (total <= ENVY_SCENE.MAX_TILES) break;
         }
-        const { cols, cell, rows, total } = best;
 
         this.layout = {
-            cols: cols + 2,               // +по колонке с каждой стороны за край экрана
+            cols,
             rows,
             cell,
-            rowStep: cell * ENVY_SCENE.ROW_SQUASH,
+            rowStep,
             sprite: cell * ENVY_SCENE.SPRITE_MULT,
             total,
             viewW,
             viewH,
+            fieldW,
+            fieldH,
             depthSpan: (total - 1) * ENVY_SCENE.LAYER_STEP,
             spacing: (total - 1) * ENVY_SCENE.LAYER_STEP + ENVY_SCENE.CAM_DIST + ENVY_SCENE.CLOUD_GAP
         };
@@ -573,11 +595,20 @@ const EnvyMinigame = {
         this.clouds.cur = this.buildCloud(0, this.wrongCountFor(this.fillThirds));
         this.clouds.next = this.buildCloud(-s, this.wrongCountFor(this.fillThirds + 1));
         this.clouds.prev = this.buildCloud(s, this.wrongCountFor(this.fillThirds - 1));
-        this.clouds.prev.group.visible = false;   // оно за спиной, показывается только на откате
+        this.hideNeighbours();
 
         this.camera.position.z = ENVY_SCENE.CAM_DIST;
         this.activeTile = null;
         this.waves = [];
+    },
+
+    // Пока камера стоит, соседние облака не рисуются. Предыдущее и так за
+    // спиной, а следующее в покое видно крошечным пятном через просветы между
+    // образами — оно читается грязью, а не «облаком вдалеке». Показывается
+    // ровно в тот момент, когда камера трогается к нему.
+    hideNeighbours() {
+        if (this.clouds.prev) this.clouds.prev.group.visible = false;
+        if (this.clouds.next) this.clouds.next.group.visible = false;
     },
 
     buildCloud(originZ, wrongCount) {
@@ -599,14 +630,16 @@ const EnvyMinigame = {
 
         const tiles = [];
         const meshes = [];
-        const totalW = L.cols * L.cell;
-        const totalH = L.rows * L.rowStep;
+        const jitter = L.cell * ENVY_SCENE.JITTER;
         let index = 0;
 
         for (let r = 0; r < L.rows; r++) {
-            for (let c = 0; c < L.cols; c++) {
-                const bx = c * L.cell + (r % 2) * (L.cell / 2) - totalW / 2 + L.cell / 2;
-                const by = r * L.rowStep - totalH / 2 + L.rowStep / 2;
+            // Нечётный ряд короче на образ и потому оказывается сдвинут на
+            // полклетки — соты получаются сами, и ни один ряд не вылезает вбок.
+            const count = (r % 2) ? L.cols - 1 : L.cols;
+            for (let c = 0; c < count; c++) {
+                const bx = (c - (count - 1) / 2) * L.cell + (Math.random() - 0.5) * 2 * jitter;
+                const by = (r - (L.rows - 1) / 2) * L.rowStep + (Math.random() - 0.5) * 2 * jitter;
 
                 const shape = Math.floor(Math.random() * ENVY_SHAPES.length);
                 const colorHex = palette[Math.floor(Math.random() * palette.length)];
@@ -666,12 +699,7 @@ const EnvyMinigame = {
     // него, недоступен пальцем, и раунд становится непроходимым.
     assignSignificant(tiles, wrongCount) {
         const L = this.layout;
-        const marginX = L.cell * 0.7;
-        const marginY = L.cell * 1.0;
-        const pool = tiles.filter(t =>
-            Math.abs(t.bx) <= L.viewW / 2 - marginX &&
-            Math.abs(t.by) <= L.viewH / 2 - marginY
-        );
+        const pool = tiles.slice();   // всё облако внутри поля, отбирать нечего
         const minDist = this.layout.cell * 1.6;
         const chosen = [];
         let need = wrongCount + 1;
@@ -796,13 +824,39 @@ const EnvyMinigame = {
         }
 
         for (const tile of cloud.tiles) {
-            if (tile.kind === 'empty') tile.target = touched.has(tile) ? 1 : 0;
-            if (tile !== active && tile.kind !== 'empty') {
+            if (tile === active) {
+                // Значимый образ под пальцем сам не тает, но ореол вокруг себя
+                // рвёт: иначе фигуру, лежащую под чужими, не видно целиком —
+                // ни силуэта, ни того, что она дрожит от удержания.
+                tile.target = 1;
+                continue;
+            }
+            tile.target = (tile.kind === 'empty' && touched.has(tile)) ? 1 : 0;
+            if (tile.kind !== 'empty') {
                 tile.heldMs = 0;
                 tile.hinted = false;
             }
         }
         this.activeTile = active;
+    },
+
+    // Прозрачность живёт отдельно от хода игры: дыра обязана закрыться и
+    // тогда, когда игра уже ушла в пролёт, иначе разрыв висит на всё время
+    // полёта и тянет за собой лишние проходы рендера.
+    updateIntensities(dt) {
+        const cloud = this.clouds.cur;
+        if (!cloud) return;
+        const step = dt / ENVY_SCENE.OPEN_MS;
+
+        for (const t of cloud.tiles) {
+            // Раньше здесь стоял тернарник без проверки равенства, и по
+            // достижении цели значение каждый кадр откатывалось на шаг назад,
+            // а следующим кадром возвращалось. Дыра из-за этого мигала.
+            if (t.intensity < t.target) t.intensity = Math.min(t.target, t.intensity + step);
+            else if (t.intensity > t.target) t.intensity = Math.max(t.target, t.intensity - step);
+
+            if (t.kind === 'empty') t.mat.opacity = 1 - t.intensity;
+        }
     },
 
     // ================= ХОД ИГРЫ =================
@@ -814,17 +868,6 @@ const EnvyMinigame = {
         else this.activeTile = null;
 
         const b = this.balance();
-
-        for (const t of cloud.tiles) {
-            if (t.kind === 'empty') {
-                const step = dt / ENVY_SCENE.OPEN_MS;
-                t.intensity = t.intensity < t.target
-                    ? Math.min(1, t.intensity + step)
-                    : Math.max(0, t.intensity - step);
-                t.mat.opacity = 1 - t.intensity;
-            }
-        }
-
         const active = this.activeTile;
         if (!active) return;
 
@@ -870,27 +913,53 @@ const EnvyMinigame = {
         this.resolveMs = 0;
         this.resolveRight = right;
         this.resolveWin = right && this.fillThirds >= b.rounds;
+        this.winTile = this.resolveWin ? tile : null;
     },
 
     updateResolving(dt) {
         this.resolveMs += dt;
         if (this.resolveMs < ENVY_SCENE.RESOLVE_DELAY_MS) return;
 
+        // Шкала заполнена — лететь больше некуда. Последний правильный образ
+        // сам разгорается и заливает экран белым: пролёт к облаку, в котором
+        // уже нечего искать, был бы обещанием следующего раунда.
         if (this.resolveWin) {
             this.state = 'winning';
             this.winMs = 0;
-            this.flyFrom = this.camera.position.z;
+            this.startWinFlash(this.winTile);
             GameEvents.emit('minigame:result', { sin: 'envy', mode: 'cloud', outcome: 'win' });
         } else {
             this.startFlight(this.resolveRight ? -1 : 1);
         }
     },
 
+    startWinFlash(tile) {
+        const rect = this.canvas.getBoundingClientRect();
+        this.flashScale = 0;
+        this.flashMax = 1;
+
+        if (!this.flashEl) return;
+        if (tile) {
+            const world = this.scratchVec;
+            tile.mesh.getWorldPosition(world);
+            world.project(this.camera);
+            this.flashEl.style.left = `${(world.x + 1) / 2 * rect.width}px`;
+            this.flashEl.style.top = `${(1 - world.y) / 2 * rect.height}px`;
+        } else {
+            this.flashEl.style.left = '50%';
+            this.flashEl.style.top = '50%';
+        }
+        // Вспышка должна накрыть самый дальний угол от точки образа.
+        this.flashMax = (Math.hypot(rect.width, rect.height) * 2) / ENVY_SCENE.FLASH_SIZE;
+        this.flashEl.style.transform = 'translate(-50%, -50%) scale(0)';
+        this.flashEl.classList.add('show');
+    },
+
     // dir = -1 — вперёд, к следующему облаку; +1 — назад, к предыдущему.
     startFlight(dir) {
         const target = dir < 0 ? this.clouds.next : this.clouds.prev;
         if (!target) return;
-        if (dir > 0) target.group.visible = true;
+        target.group.visible = true;
 
         this.state = 'flying';
         this.flyDir = dir;
@@ -925,29 +994,27 @@ const EnvyMinigame = {
         this.clouds.cur = keep;
         this.clouds.next = this.buildCloud(-s, this.wrongCountFor(this.fillThirds + 1));
         this.clouds.prev = this.buildCloud(s, this.wrongCountFor(this.fillThirds - 1));
-        this.clouds.prev.group.visible = false;
+        this.hideNeighbours();
 
         this.waves = [];
         this.activeTile = null;
         this.state = 'play';
     },
 
-    // Победа — тот же пролёт вперёд, но без торможения: камера уходит сквозь
-    // облака, экран выбеливается.
+    // Победа: камера стоит там, где стояла, а последний правильный образ
+    // разрастается белым светом на весь экран.
     updateWinning(dt) {
         this.winMs += dt;
         const p = Math.min(1, this.winMs / ENVY_SCENE.WIN_MS);
-        const e = p * p;
-        this.camera.position.z = this.flyFrom - this.layout.spacing * 2.4 * e;
+        const e = Math.pow(p, 1.8);   // сначала разгорается, потом накрывает разом
 
-        if (this.winOverlay) {
-            if (p < 1) {
-                this.winOverlay.style.opacity = String(Math.max(0, (p - 0.35) / 0.65));
-            } else if (!this.hasWon) {
-                this.hasWon = true;
-                this.winOverlay.style.opacity = '';
-                this.winOverlay.classList.add('show');
-            }
+        if (this.flashEl) {
+            this.flashEl.style.transform = `translate(-50%, -50%) scale(${(this.flashMax * e).toFixed(3)})`;
+        }
+
+        if (p >= 1 && !this.hasWon) {
+            this.hasWon = true;
+            if (this.winOverlay) this.winOverlay.classList.add('show');
         }
     },
 
@@ -1038,7 +1105,7 @@ const EnvyMinigame = {
         if (!cloud) { u.uCount.value = 0; return; }
 
         const open = cloud.tiles
-            .filter(t => t.kind === 'empty' && t.intensity > 0.001)
+            .filter(t => t.intensity > 0.001)
             .sort((a, b) => b.intensity - a.intensity)
             .slice(0, ENVY_SCENE.MAX_HOLES);
 
@@ -1056,7 +1123,10 @@ const EnvyMinigame = {
             u.uShapeTypes.value[i] = t.shape;
             u.uRotations.value[i] = t.mesh.rotation.z;
             // Радиус в долях высоты экрана: 0.469 — доля фигуры в спрайте.
-            u.uRadii.value[i] = (t.mesh.scale.x * 0.469 * ENVY_SCENE.HOLE_SCALE) / (2 * halfTan * dist);
+            // Вокруг значимого образа ореол шире: он расчищает соседей, чтобы
+            // сам образ читался целиком, а не куском из-под чужих слоёв.
+            const scale = t.kind === 'empty' ? ENVY_SCENE.HOLE_SCALE : ENVY_SCENE.SIG_HOLE_SCALE;
+            u.uRadii.value[i] = (t.mesh.scale.x * 0.469 * scale) / (2 * halfTan * dist);
         });
 
         u.uCount.value = open.length;
@@ -1073,6 +1143,7 @@ const EnvyMinigame = {
         else if (this.state === 'flying') this.updateFlying(dt);
         else if (this.state === 'winning') this.updateWinning(dt);
 
+        this.updateIntensities(dt);
         this.updateWaves(dt);
         this.updateDisturbance(ts / 1000);
 
@@ -1120,16 +1191,21 @@ const EnvyMinigame = {
             r.render(this.scene, this.camera);
 
             // Проход цвета: только значимые, глубина уже занята соседями.
+            // Удерживаемый образ — единственный, кто идёт поверх глубины: он
+            // расчистил вокруг себя ореол, и прятать его за теми, кого этот
+            // ореол уже съел, значит показать в дыре пустоту вместо образа.
             cloud.tiles.forEach(t => {
                 t.mesh.visible = (t.kind !== 'empty');
                 t.mat.colorWrite = true;
                 t.mat.depthWrite = false;
+                t.mat.depthTest = (t !== this.activeTile);
             });
             r.render(this.scene, this.camera);
 
             cloud.tiles.forEach(t => {
                 t.mesh.visible = true;
                 t.mat.depthWrite = true;
+                t.mat.depthTest = true;
             });
             if (nextVisible) this.clouds.next.group.visible = true;
             if (prevVisible) this.clouds.prev.group.visible = true;
