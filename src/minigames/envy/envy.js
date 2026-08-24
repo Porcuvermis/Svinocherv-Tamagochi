@@ -31,9 +31,10 @@ const ENVY_SCENE = {
     MAX_TILES: 104,          // потолок по числу образов в облаке (телефон)
     FIELD_X: 0.88,           // какую долю ширины экрана занимает облако
     FIELD_Y: 0.84,           // и высоты: по краям остаётся поле под рамку
-    COLS_ACROSS: 5,          // сколько образов укладывается по короткой стороне поля
-    COVER_PAD: 0.04,         // запас покрытия ячейки: страховка от щели на стыке трёх
-    JITTER: 0.05,            // разброс внутри клетки, в долях шага: чтобы не читалась сетка
+    COLS_ACROSS: 6,          // сколько образов укладывается по короткой стороне поля
+    JITTER: 0.07,            // разброс мест перед релаксацией, в долях шага
+    RELAX_STEPS: 4,          // итераций Ллойда: ровнее ячейки — меньше наползание
+    TILT: 0.22,              // наклон наклейки, рад: кренит, но не переворачивает
     HALO_CELLS: 1.5,         // радиус ореола под пальцем, в шагах сетки
     HALO_CORE: 0.55,         // до какой доли радиуса прозрачность полная
     HALO_FADE_MS: 220,       // за сколько ореол разгорается и гаснет
@@ -115,75 +116,7 @@ const EnvyTearShader = {
     `
 };
 
-// Геометрия образов. Форма описана один раз и используется трижды: для
-// отрисовки в текстуру, для попадания пальцем и для расчёта упаковки.
-// Разъедься они — палец начнёт цеплять пустой угол спрайта.
-//
-// cover — радиус ВПИСАННОГО в силуэт круга, в долях спрайта. Это и есть та
-// величина, которая решает, сомкнётся полотно или нет: образ обязан накрыть
-// собой всю свою ячейку, а гарантирует это только вписанный круг. Отсюда же
-// видно, почему из набора ушёл треугольник: его вписанный круг вдвое меньше
-// описанного, и чтобы накрыть ту же ячейку, треугольник пришлось бы раздуть
-// вдвое — вместо просветов получили бы наползание в половину фигуры.
 const ENVY_SQRT3_2 = Math.sqrt(3) / 2;
-
-const ENVY_SHAPES = [
-    {   // 0 — круг
-        cover: 0.469,
-        draw(ctx, s) {
-            ctx.beginPath();
-            ctx.arc(s * 0.5, s * 0.5, s * 0.469, 0, Math.PI * 2);
-            ctx.fill();
-        },
-        hit(x, y) { // x,y в долях спрайта от центра (-0.5..0.5)
-            return x * x + y * y <= 0.469 * 0.469;
-        }
-    },
-    {   // 1 — квадрат со скруглением
-        cover: 0.441,
-        draw(ctx, s) {
-            const half = s * 0.441;
-            const r = s * 0.06;
-            const x0 = s * 0.5 - half, x1 = s * 0.5 + half;
-            const y0 = s * 0.5 - half, y1 = s * 0.5 + half;
-            ctx.beginPath();
-            ctx.moveTo(x0 + r, y0);
-            ctx.arcTo(x1, y0, x1, y1, r);
-            ctx.arcTo(x1, y1, x0, y1, r);
-            ctx.arcTo(x0, y1, x0, y0, r);
-            ctx.arcTo(x0, y0, x1, y0, r);
-            ctx.closePath();
-            ctx.fill();
-        },
-        hit(x, y) {
-            return Math.abs(x) <= 0.441 && Math.abs(y) <= 0.441;
-        }
-    },
-    {   // 2 — шестиугольник (вершины слева и справа)
-        cover: 0.49 * ENVY_SQRT3_2,
-        draw(ctx, s) {
-            const R = s * 0.49;
-            const cx = s * 0.5, cy = s * 0.5;
-            ctx.beginPath();
-            for (let i = 0; i < 6; i++) {
-                const a = i * Math.PI / 3;
-                const px = cx + Math.cos(a) * R;
-                const py = cy + Math.sin(a) * R;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-            ctx.fill();
-        },
-        hit(x, y) {
-            // Шестиугольник — пересечение трёх полос: точка внутри, если её
-            // проекция на каждую из трёх нормалей не длиннее вписанного радиуса.
-            const inr = 0.49 * ENVY_SQRT3_2;
-            return Math.abs(x * ENVY_SQRT3_2 + y * 0.5) <= inr
-                && Math.abs(y) <= inr
-                && Math.abs(x * ENVY_SQRT3_2 - y * 0.5) <= inr;
-        }
-    }
-];
 
 const EnvyMinigame = {
     // ---------- DOM ----------
@@ -207,7 +140,7 @@ const EnvyMinigame = {
     postScene: null,
     postMaterial: null,
     tileGeometry: null,
-    shapeTextures: null,
+    imagePool: null,
     scratchVec: null,
     hintColors: null,
 
@@ -383,28 +316,10 @@ const EnvyMinigame = {
         };
 
         this.tileGeometry = new THREE.PlaneGeometry(1, 1);
-        this.shapeTextures = ENVY_SHAPES.map((_, i) => this.createShapeTexture(i));
+        this.imagePool = ENVY_IMAGE_POOL.build(THREE);
 
         this.buildBackground();
         this.buildPostChain();
-    },
-
-    // Форма рисуется белой маской, а цвет берётся material.color. Так на всё
-    // облако хватает трёх текстур вместо сотни: раньше каждая фигура тащила
-    // свою SVG-текстуру 256×256, и это были мегабайты видеопамяти на ровном месте.
-    createShapeTexture(shapeIndex) {
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ENVY_SHAPES[shapeIndex].draw(ctx, size);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.generateMipmaps = false;
-        return texture;
     },
 
     buildBackground() {
@@ -522,26 +437,21 @@ const EnvyMinigame = {
         const fieldH = viewH * ENVY_SCENE.FIELD_Y;
 
         // ---------- УПАКОВКА ----------
-        // Образы стоят в треугольной (сотовой) решётке — из всех решёток она
-        // требует наименьшего запаса, чтобы одинаковые фигуры сомкнулись без
-        // просветов. Ячейка каждого образа — правильный шестиугольник с
-        // описанным радиусом cell/√3; образ обязан накрыть его целиком, иначе
-        // на стыке трёх соседей открывается фон.
+        // Шаг сетки задаётся от КОРОТКОЙ стороны поля: иначе при повороте
+        // телефона наклейки выходят вдвое крупнее или мельче. Сами места
+        // расставляет ENVY_PACKING — здесь только размер сетки.
         //
-        // Отсюда размер каждого образа: cell/√3 / cover(форма). Он получается
-        // РАЗНЫМ для разных форм — ровно настолько, чтобы каждая накрыла свою
-        // ячейку, и ни на волос больше. Это и есть минимально возможное
-        // наползание при сомкнутом полотне.
-        const need = (shape) => (1 + ENVY_SCENE.COVER_PAD) / Math.sqrt(3) / shape.cover + ENVY_SCENE.JITTER;
-        const worst = Math.max(...ENVY_SHAPES.map(need));   // самая «неудобная» форма задаёт поля
+        // Габарит наклейки в долях шага: ячейка сотовой решётки — cell/√3, а
+        // наклейка крупнее ячейки на выступы силуэта и кант.
+        const span = ENVY_IMAGE_POOL.span / Math.sqrt(3);
 
         let cols, cell, rowStep, rows, total;
         for (let across = ENVY_SCENE.COLS_ACROSS; across >= 3; across--) {
             const target = Math.min(fieldW, fieldH) / across;
-            cols = Math.max(3, Math.round(fieldW / target - (worst - 1)));
-            cell = fieldW / (cols - 1 + worst);
+            cols = Math.max(3, Math.round(fieldW / target - 2 * span + 1));
+            cell = fieldW / (cols - 1 + 2 * span);
             rowStep = cell * ENVY_SQRT3_2;                  // ряды сотовой решётки
-            rows = Math.max(3, Math.floor((fieldH - cell * worst) / rowStep) + 1);
+            rows = Math.max(3, Math.floor((fieldH - cell * 2 * span) / rowStep) + 1);
             // В нечётных рядах на образ меньше — они сдвинуты на полклетки.
             total = Math.ceil(rows / 2) * cols + Math.floor(rows / 2) * (cols - 1);
             if (total <= ENVY_SCENE.MAX_TILES) break;
@@ -552,8 +462,7 @@ const EnvyMinigame = {
             rows,
             cell,
             rowStep,
-            cellRadius: cell * (1 + ENVY_SCENE.COVER_PAD) / Math.sqrt(3),
-            sprite: cell * worst,     // габарит самой крупной формы: поля и запас глубины
+            sprite: cell * 2 * span,   // габарит наклейки с окантовкой: поля и запас
             total,
             viewW,
             viewH,
@@ -605,7 +514,7 @@ const EnvyMinigame = {
         const palette = (typeof PALETTE !== 'undefined' && PALETTE.envyImages) ? PALETTE.envyImages
             : ['#e04f4f', '#e8823c', '#e0b342', '#6dbf5a', '#3fa8c6', '#6d6fd6', '#c455bd'];
 
-        // Каждому образу свой слой глубины: облако должно быть кучей листвы,
+        // Каждому образу свой слой глубины: облако должно быть кучей наклеек,
         // а не аккуратными рядами. Порядок слоёв перемешивается.
         const layers = Array.from({ length: L.total }, (_, i) => i);
         for (let i = layers.length - 1; i > 0; i--) {
@@ -613,63 +522,63 @@ const EnvyMinigame = {
             [layers[i], layers[j]] = [layers[j], layers[i]];
         }
 
+        // Места и ячейки. Наклейке достаётся радиус её ячейки — ровно столько
+        // она обязана накрыть собой, чтобы полотно сомкнулось.
+        const spots = ENVY_PACKING.build(
+            L.cols, L.rows, L.cell, L.rowStep, L.cell * ENVY_SCENE.JITTER,
+            { x0: -L.fieldW / 2, y0: -L.fieldH / 2, x1: L.fieldW / 2, y1: L.fieldH / 2 },
+            ENVY_SCENE.RELAX_STEPS
+        );
+
         const tiles = [];
         const meshes = [];
-        const jitter = L.cell * ENVY_SCENE.JITTER;
-        let index = 0;
+        const pool = this.imagePool;
 
-        for (let r = 0; r < L.rows; r++) {
-            // Нечётный ряд короче на образ и потому оказывается сдвинут на
-            // полклетки — соты получаются сами, и ни один ряд не вылезает вбок.
-            const count = (r % 2) ? L.cols - 1 : L.cols;
-            for (let c = 0; c < count; c++) {
-                const bx = (c - (count - 1) / 2) * L.cell + (Math.random() - 0.5) * 2 * jitter;
-                const by = (r - (L.rows - 1) / 2) * L.rowStep + (Math.random() - 0.5) * 2 * jitter;
+        spots.forEach((spot, index) => {
+            const image = pool[Math.floor(Math.random() * pool.length)];
 
-                const shape = Math.floor(Math.random() * ENVY_SHAPES.length);
-                // Размер — не «на глаз одинаковый», а ровно такой, чтобы эта
-                // форма накрыла свою ячейку. Круг и шестиугольник выходят почти
-                // одного габарита, квадрат чуть крупнее.
-                const size = L.cellRadius / ENVY_SHAPES[shape].cover;
-                const colorHex = palette[Math.floor(Math.random() * palette.length)];
-                const material = new THREE.MeshBasicMaterial({
-                    map: this.shapeTextures[shape],
-                    color: new THREE.Color(colorHex),
-                    transparent: true,
-                    // Отсекает только сглаженную кромку текстуры: образы
-                    // больше не растворяются поштучно, их гасит ореол.
-                    alphaTest: 0.5,
-                    depthTest: true,
-                    depthWrite: true
-                });
+            // Круг наклейки сажается ровно на ячейку — этим полотно и
+            // смыкается. Ячейки Вороного разного размера, поэтому размер
+            // считается для каждой наклейки от своей.
+            const size = spot.radius / image.core;
 
-                const mesh = new THREE.Mesh(this.tileGeometry, material);
-                // Круг и шестиугольник можно вертеть как угодно, квадрат —
-                // тоже: вписанный круг от поворота не меняется, а значит и
-                // покрытие ячейки держится при любом угле.
-                mesh.rotation.z = Math.random() * Math.PI * 2;
-                group.add(mesh);
-                meshes.push(mesh);
+            const colorHex = palette[Math.floor(Math.random() * palette.length)];
+            const material = new THREE.MeshBasicMaterial({
+                map: image.texture,
+                color: new THREE.Color(colorHex),
+                transparent: true,
+                // Отсекает только сглаженную кромку текстуры: образы больше
+                // не растворяются поштучно, их гасит ореол.
+                alphaTest: 0.5,
+                depthTest: true,
+                depthWrite: true
+            });
 
-                const tile = {
-                    mesh,
-                    mat: material,
-                    baseColor: new THREE.Color(colorHex),
-                    bx, by,
-                    size,
-                    depth: layers[index] * ENVY_SCENE.LAYER_STEP,
-                    shape,
-                    rot: mesh.rotation.z,
-                    seed: Math.random() * 10,
-                    driftPhase: Math.random() * Math.PI * 2,
-                    kind: 'empty',
-                    heldMs: 0,
-                    hinted: false
-                };
-                tiles.push(tile);
-                index++;
-            }
-        }
+            const mesh = new THREE.Mesh(this.tileGeometry, material);
+            // Наклейку слегка кренит, но не крутит: перевёрнутая вверх ногами
+            // кошка перестаёт быть кошкой, а образ должен читаться сразу.
+            mesh.rotation.z = (Math.random() * 2 - 1) * ENVY_SCENE.TILT;
+            group.add(mesh);
+            meshes.push(mesh);
+
+            tiles.push({
+                mesh,
+                mat: material,
+                baseColor: new THREE.Color(colorHex),
+                bx: spot.x,
+                by: spot.y,
+                size,
+                mask: image.mask,
+                image,
+                depth: layers[index] * ENVY_SCENE.LAYER_STEP,
+                rot: mesh.rotation.z,
+                seed: Math.random() * 10,
+                driftPhase: Math.random() * Math.PI * 2,
+                kind: 'empty',
+                heldMs: 0,
+                hinted: false
+            });
+        });
 
         this.assignSignificant(tiles, wrongCount);
 
@@ -805,12 +714,21 @@ const EnvyMinigame = {
             const sizePx = (t.size * f) / (2 * halfH) * rect.height;
             if (sizePx < 0.001) continue;
 
-            // В систему координат образа: сдвиг, масштаб, обратный поворот.
+            // В систему координат наклейки: сдвиг, масштаб, обратный поворот.
             const ux = (px - sx) / sizePx;
             const uy = (py - sy) / sizePx;
             const cos = Math.cos(-t.rot), sin = Math.sin(-t.rot);
             // Экранный y растёт вниз, поворот меша — против часовой в мире.
-            if (ENVY_SHAPES[t.shape].hit(ux * cos + uy * sin, -ux * sin + uy * cos)) found.push(t);
+            const lx = ux * cos + uy * sin + 0.5;
+            const ly = -ux * sin + uy * cos + 0.5;
+            if (lx < 0 || ly < 0 || lx >= 1 || ly >= 1) continue;
+
+            // Силуэт у наклейки произвольный, формулой его не описать —
+            // ловим по той же альфа-маске, из которой сделана её текстура.
+            const m = t.mask;
+            const mx = Math.min(m.size - 1, Math.floor(lx * m.size));
+            const my = Math.min(m.size - 1, Math.floor(ly * m.size));
+            if (m.bits[my * m.size + mx]) found.push(t);
         }
 
         found.sort((a, b) => a.depth - b.depth);    // ближний слой первым
