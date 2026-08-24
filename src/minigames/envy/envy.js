@@ -566,16 +566,8 @@ const EnvyMinigame = {
         }
         const depthOf = layers.map(l => l * ENVY_SCENE.LAYER_STEP);
 
-        // ...но у случайности есть патология: изредка наклейка оказывается
-        // глубже ВСЕХ своих соседей разом и тонет под ними — от неё остаётся
-        // выглядывать пятая часть. Черепица это лечила, но ценой самого
-        // облака: упорядоченные по экрану слои превращают пролёт камеры в
-        // проход сквозь наклонную плоскость вместо роя.
-        //
-        // Поэтому слои не выстраиваются, а ОБМЕНИВАЮТСЯ: утонувшая меняется
-        // глубиной с самым ближним из соседей. Набор глубин при этом тот же —
-        // это перестановка, — так что вразнобой облако и остаётся, а тонуть
-        // в нём больше некому.
+        // Соседи каждой наклейки — по ним раздаются образы, чтобы одинаковые
+        // не оказались рядом.
         const near = spots.map((s, i) => {
             const list = [];
             for (let j = 0; j < spots.length; j++) {
@@ -584,30 +576,45 @@ const EnvyMinigame = {
             }
             return list;
         });
-        for (let pass = 0; pass < ENVY_SCENE.DEPTH_PASSES; pass++) {
-            let swapped = false;
-            for (let i = 0; i < spots.length; i++) {
-                const ns = near[i];
-                if (!ns.length) continue;
-                // Тонет не только тот, кто под ВСЕМИ соседями: хватает и того,
-                // что поверх лежит их подавляющее большинство.
-                const above = ns.filter(j => depthOf[j] < depthOf[i]).length;
-                if (above <= ns.length * ENVY_SCENE.DEPTH_SUNK) continue;
-                let top = ns[0];
-                for (const j of ns) if (depthOf[j] < depthOf[top]) top = j;
-                const tmp = depthOf[i]; depthOf[i] = depthOf[top]; depthOf[top] = tmp;
-                swapped = true;
-            }
-            if (!swapped) break;
-        }
-
         const tiles = [];
         const meshes = [];
         const pool = this.imagePool;
 
+        // Образы раздаются КОЛОДОЙ, а не жребием на каждую наклейку: пул
+        // тасуется и раздаётся по одному, и пока колода не кончится, двух
+        // одинаковых образов на полотне не будет. Кончится — тасуется заново,
+        // так что при пуле меньше числа наклеек повторы идут ровными кругами,
+        // а не сбиваются в кучу, как это выходило при случайном выборе.
+        //
+        // Когда образов наберётся больше, чем наклеек в облаке (сейчас их 35),
+        // повторов не станет вовсе — код для этого уже готов, дело за
+        // картинками.
+        let deck = [];
+        const chosen = [];
+        const deal = (index) => {
+            for (let attempt = 0; attempt < 3; attempt++) {
+                if (!deck.length) {
+                    deck = pool.slice();
+                    for (let i = deck.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [deck[i], deck[j]] = [deck[j], deck[i]];
+                    }
+                }
+                const image = deck.pop();
+                // Один и тот же образ рядом с собой читается ошибкой генерации,
+                // поэтому у соседей он уступает место следующему из колоды.
+                const clash = near[index].some(j => chosen[j] === image);
+                if (!clash || deck.length === 0) { chosen[index] = image; return image; }
+                deck.unshift(image);
+            }
+            const image = deck.pop() || pool[0];
+            chosen[index] = image;
+            return image;
+        };
+
         spots.forEach((spot, index) => {
             const radius = Math.max(lo, Math.min(hi, spot.radius));
-            const image = pool[Math.floor(Math.random() * pool.length)];
+            const image = deal(index);
 
             // Круг наклейки сажается ровно на ячейку — этим полотно и
             // смыкается. Ячейки Вороного разного размера, поэтому размер
