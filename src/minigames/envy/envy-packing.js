@@ -92,9 +92,13 @@ const ENVY_PACKING = {
         return { x: cx / (3 * area), y: cy / (3 * area) };
     },
 
-    relax(points, bounds, iterations) {
+    // Двигаются только реальные точки; призраки стоят на месте и лишь
+    // участвуют в построении ячеек.
+    relax(points, bounds, iterations, ghosts) {
+        const fixed = ghosts || [];
         for (let it = 0; it < iterations; it++) {
-            const moved = points.map((p, i) => this.centroid(this.cellOf(points, i, bounds), p));
+            const all = points.concat(fixed);
+            const moved = points.map((p, i) => this.centroid(this.cellOf(all, i, bounds), p));
             for (let i = 0; i < points.length; i++) points[i] = moved[i];
         }
         return points;
@@ -103,22 +107,46 @@ const ENVY_PACKING = {
     // Радиус ячейки — расстояние до самой дальней её вершины. Именно его
     // наклейка обязана накрыть: накроешь дальнюю вершину — накроешь всю
     // выпуклую ячейку.
-    radiusOf(poly, point) {
+    radiusOf(point, poly) {
         let r = 0;
         for (const v of poly) r = Math.max(r, Math.hypot(v.x - point.x, v.y - point.y));
         return r;
     },
 
     // Точки, их ячейки и радиусы — всё, что нужно для раскладки облака.
+    //
+    // Вокруг поля ставится кольцо запасных точек, а в облако идут только
+    // внутренние. Без него краевые ячейки обрезались прямоугольником поля и
+    // выходили вдвое крупнее прочих: одна и та же наклейка попадалась то
+    // крохотной, то огромной, а самые большие переставали помещаться в ореол
+    // под пальцем. Теперь каждая ячейка ограничена соседями со всех сторон.
     build(cols, rows, cell, rowStep, jitter, bounds, iterations) {
-        const points = this.relax(
-            this.seed(cols, rows, cell, rowStep, jitter),
-            bounds,
-            iterations === undefined ? 2 : iterations
-        );
-        return points.map((p, i) => {
-            const poly = this.cellOf(points, i, bounds);
-            return { x: p.x, y: p.y, cell: poly, radius: this.radiusOf(poly, p) };
+        const ext = {
+            x0: bounds.x0 - cell, y0: bounds.y0 - rowStep,
+            x1: bounds.x1 + cell, y1: bounds.y1 + rowStep
+        };
+
+        // Кольцо неподвижных точек-соседей ЗА полем. Оно не даёт наклеек само,
+        // но ограничивает крайние ячейки: без него их обрезал прямоугольник
+        // поля, углы уходили далеко, и краевые наклейки выходили вдвое крупнее
+        // прочих. Ставить вместо этого лишние ряды внутрь поля нельзя —
+        // релаксация растащит их по расширенной области, и полотно отойдёт от
+        // краёв, оставив пустые поля сверху и снизу.
+        const ghosts = [];
+        for (let x = ext.x0; x <= ext.x1 + 1e-6; x += cell) {
+            ghosts.push({ x, y: ext.y0 }, { x, y: ext.y1 });
+        }
+        for (let y = ext.y0 + rowStep; y < ext.y1 - 1e-6; y += rowStep) {
+            ghosts.push({ x: ext.x0, y }, { x: ext.x1, y });
+        }
+
+        const real = this.seed(cols, rows, cell, rowStep, jitter);
+        this.relax(real, bounds, iterations === undefined ? 2 : iterations, ghosts);
+
+        const all = real.concat(ghosts);
+        return real.map((p, i) => {
+            const poly = this.cellOf(all, i, ext);
+            return { x: p.x, y: p.y, cell: poly, radius: this.radiusOf(p, poly) };
         });
     }
 };

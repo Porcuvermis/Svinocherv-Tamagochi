@@ -36,6 +36,9 @@ const ENVY_SCENE = {
     RELAX_STEPS: 4,          // итераций Ллойда: ровнее ячейки — меньше наползание
     TILT: 0.22,              // наклон наклейки, рад: кренит, но не переворачивает
     HALO_CELLS: 1.5,         // радиус ореола под пальцем, в шагах сетки
+    HALO_MARGIN: 1.25,       // запас ореола поверх габарита самой крупной наклейки
+    CELL_SPREAD_MIN: 0.92,   // насколько наклейка может быть мельче медианной
+    CELL_SPREAD_MAX: 1.10,   // и насколько крупнее: шире — полотно разнокалиберное
     HALO_CORE: 0.55,         // до какой доли радиуса прозрачность полная
     HALO_FADE_MS: 220,       // за сколько ореол разгорается и гаснет
     HALO_FOLLOW_MS: 70,      // насколько ореол отстаёт от пальца (плавность)
@@ -396,12 +399,17 @@ const EnvyMinigame = {
             ? Math.min(1, halo.intensity + step)
             : Math.max(0, halo.intensity - step);
 
-        // Радиус привязан к шагу сетки: сколько бы образов ни поместилось на
-        // экран, фонарь накрывает примерно один с небольшим.
+        // Радиус привязан к шагу сетки — фонарь накрывает примерно одну
+        // наклейку с небольшим. Но наклейки крупнее шага, и самая большая в
+        // такой фонарь не помещалась: её край оставался непогашенным и торчал
+        // из пятна обрубком. Поэтому радиус ещё и не меньше габарита
+        // крупнейшей наклейки в облаке, с запасом.
         const halfH = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180) * ENVY_SCENE.CAM_DIST;
+        const cloud = this.clouds.cur;
+        const biggest = cloud ? cloud.maxSize * 0.5 * ENVY_SCENE.HALO_MARGIN : 0;
         const u = this.postMaterial.uniforms;
         u.uHalo.value.set(halo.x, halo.y);
-        u.uHaloR.value = (this.layout.cell * ENVY_SCENE.HALO_CELLS) / (2 * halfH);
+        u.uHaloR.value = Math.max(this.layout.cell * ENVY_SCENE.HALO_CELLS, biggest) / (2 * halfH);
         u.uHaloI.value = halo.intensity;
     },
 
@@ -536,17 +544,28 @@ const EnvyMinigame = {
             ENVY_SCENE.RELAX_STEPS
         );
 
+        // Ячейки Вороного даже после релаксации расходятся по размеру почти
+        // вдвое, и одна и та же наклейка попадалась то крохотной, то огромной.
+        // Радиусы поджимаются к медиане: наклейка крупнее своей ячейки в
+        // ENVY_BULGE раз, и этого запаса хватает, чтобы урезанная всё равно
+        // ячейку накрыла — щелей в полотне не появляется.
+        const radii = spots.map(s => s.radius).sort((a, b) => a - b);
+        const median = radii[Math.floor(radii.length / 2)] || 1;
+        const lo = median * ENVY_SCENE.CELL_SPREAD_MIN;
+        const hi = median * ENVY_SCENE.CELL_SPREAD_MAX;
+
         const tiles = [];
         const meshes = [];
         const pool = this.imagePool;
 
         spots.forEach((spot, index) => {
+            const radius = Math.max(lo, Math.min(hi, spot.radius));
             const image = pool[Math.floor(Math.random() * pool.length)];
 
             // Круг наклейки сажается ровно на ячейку — этим полотно и
             // смыкается. Ячейки Вороного разного размера, поэтому размер
             // считается для каждой наклейки от своей.
-            const size = spot.radius / image.core;
+            const size = radius / image.core;
 
             // Тон уже вписан в текстуру: рисунок многоцветный, одним
             // множителем его не покрасить. material.color остаётся белым и
@@ -591,7 +610,12 @@ const EnvyMinigame = {
 
         this.assignSignificant(tiles, wrongCount);
 
-        const cloud = { group, tiles, meshes, lastV: null };
+        // Габарит самой крупной наклейки: по нему меряется ореол, иначе
+        // крупные образы в него не влезают.
+        const cloud = {
+            group, tiles, meshes, lastV: null,
+            maxSize: tiles.reduce((m, t) => Math.max(m, t.size), 0)
+        };
         this.cloudCompensate(cloud, true);
         return cloud;
     },
