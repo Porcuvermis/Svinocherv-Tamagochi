@@ -97,9 +97,87 @@ const DebugState = {
     }
 };
 
+// ================= ЗАМЕР ЗАПУСКА =================
+// Белая вспышка на старте видна глазами, но по ней невозможно понять, чья
+// она — страницы или системы. Отличить можно только числами, и числами
+// именно С ТЕЛЕФОНА: на десктопе в браузере этой вспышки нет вовсе.
+//
+// Здесь собирается вся дорога от запуска до картинки:
+//   sw     — сколько ушло на старт service worker'а до того, как он взялся
+//            за запрос страницы (на телефоне он спит и его надо разбудить);
+//   html   — когда страница пришла целиком;
+//   кадр   — первая отрисовка (то есть когда экран стал чёрным);
+//   пелена — когда она снялась и игра открылась.
+//
+// Читается так: если «кадр» — это единицы-десятки миллисекунд, страница
+// невиновна, и белое показывает система ДО неё. Если сотни — виновата
+// страница, и надо смотреть, что именно её держит.
+const DebugTiming = {
+    el: null,
+    revealedAt: null,
+
+    init(panel) {
+        if (!panel) return;
+        this.el = document.createElement('div');
+        this.el.id = 'debug-timing';
+        panel.appendChild(this.el);
+
+        document.addEventListener('boot:revealed', () => {
+            this.revealedAt = this.now();
+            this.render();
+        });
+
+        this.render();
+    },
+
+    now() {
+        return (window.performance && performance.now) ? Math.round(performance.now()) : null;
+    },
+
+    render() {
+        if (!this.el) return;
+
+        const ms = (v) => (v == null || v < 0) ? '—' : Math.round(v) + '';
+        const nav = (window.performance && performance.getEntriesByType)
+            ? performance.getEntriesByType('navigation')[0]
+            : null;
+
+        const paint = (window.performance && performance.getEntriesByType)
+            ? performance.getEntriesByType('paint').find(p => p.name === 'first-contentful-paint')
+            : null;
+
+        // workerStart — момент, когда за запрос взялся service worker. Ноль
+        // означает, что запрос через него не шёл вовсе.
+        const sw = (nav && nav.workerStart) ? (nav.responseStart - nav.workerStart) : null;
+        const wake = (nav && nav.workerStart) ? nav.workerStart : null;
+
+        // transferSize = 0 — ответ пришёл не из сети (кеш service worker'а
+        // или HTTP-кеш браузера).
+        const source = nav ? (nav.transferSize === 0 ? 'из кеша' : 'из сети') : '';
+
+        // Первый показанный кадр — из отметки, поставленной инлайном в
+        // <head>: браузерная метрика тут не годится (см. комментарий там).
+        const firstFrame = (window.__bootMarks || {}).firstFrame;
+
+        // Тип навигации: 'reload' означает, что этот запуск уже был
+        // перезагружен под новую сборку, и числа относятся ко второму
+        // заходу, а не к тому, что игрок увидел при открытии иконки.
+        const kind = nav ? nav.type : '';
+
+        this.el.textContent =
+            kind + ' · sw: старт ' + ms(wake) + ', ответ ' + ms(sw) +
+            ' · html ' + ms(nav && nav.responseEnd) +
+            ' · чёрный кадр ' + ms(firstFrame) +
+            ' · fcp ' + ms(paint && paint.startTime) +
+            ' · пелена ' + ms(this.revealedAt) +
+            ' мс · ' + source;
+    }
+};
+
 function initDebugModules() {
     DebugMode.init();
     DebugState.init();
+    DebugTiming.init(DebugState.panel);
 }
 
 if (document.readyState === 'loading') {
