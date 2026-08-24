@@ -245,11 +245,19 @@ const EnvyMinigame = {
         }
 
         this.ensureThree();
-        this.resize();          // считает раскладку и строит все три облака
 
-        this.lastTs = null;
-        if (this.rafId) cancelAnimationFrame(this.rafId);
-        this.rafId = requestAnimationFrame((ts) => this.loop(ts));
+        // Векторные образы грузятся картинками, поэтому пул готовится
+        // асинхронно. Первый заход ждёт его доли секунды, дальше пул уже
+        // собран и промис отдаёт готовое немедленно.
+        this.poolReady.then(images => {
+            if (!this.screenElement.classList.contains('active')) return;
+            this.imagePool = images;
+            this.resize();      // считает раскладку и строит все три облака
+
+            this.lastTs = null;
+            if (this.rafId) cancelAnimationFrame(this.rafId);
+            this.rafId = requestAnimationFrame((ts) => this.loop(ts));
+        });
     },
 
     close() {
@@ -316,7 +324,7 @@ const EnvyMinigame = {
         };
 
         this.tileGeometry = new THREE.PlaneGeometry(1, 1);
-        this.imagePool = ENVY_IMAGE_POOL.build(THREE);
+        this.poolReady = ENVY_IMAGE_POOL.build(THREE);
 
         this.buildBackground();
         this.buildPostChain();
@@ -398,6 +406,7 @@ const EnvyMinigame = {
     },
 
     resize() {
+        if (!this.imagePool) return;     // пул ещё грузится, строить нечего
         const w = this.canvas.clientWidth || window.innerWidth;
         const h = this.canvas.clientHeight || window.innerHeight;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
