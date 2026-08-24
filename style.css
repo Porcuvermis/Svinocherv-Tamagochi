@@ -294,3 +294,20 @@ body.debug-mode #build-stamp {
 #debug-state-panel button:active {
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* Строка замера запуска: её задача — быть прочитанной со скриншота с
+   телефона, поэтому она не помещается в ряд кнопок, а лежит под ними. */
+#debug-state-panel {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 20px);
+}
+
+#debug-timing {
+    flex-basis: 100%;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65);
+    color: rgba(255, 255, 255, 0.75);
+    font: 10px/1.35 monospace;
+    word-break: break-word;
+}
