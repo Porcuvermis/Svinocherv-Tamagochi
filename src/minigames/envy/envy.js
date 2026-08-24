@@ -32,18 +32,16 @@ const ENVY_SCENE = {
     FIELD_X: 0.88,           // какую долю ширины экрана занимает облако
     FIELD_Y: 0.84,           // и высоты: по краям остаётся поле под рамку
     COLS_ACROSS: 5,          // сколько образов укладывается по короткой стороне поля
-    SPRITE_MULT: 1.18,       // спрайт чуть крупнее шага — образы едва задевают соседей
-    JITTER: 0.12,            // разброс внутри клетки, в долях шага: чтобы не читалась сетка
-    ROW_SQUASH: 0.95,        // шаг по вертикали относительно шага по горизонтали
-    HOLE_SCALE: 1.15,        // дыра чуть больше самого образа — она ест и соседей
-    SIG_HOLE_SCALE: 1.45,    // ореол вокруг значимого образа: расчищает ему место
+    COVER_PAD: 0.04,         // запас покрытия ячейки: страховка от щели на стыке трёх
+    JITTER: 0.05,            // разброс внутри клетки, в долях шага: чтобы не читалась сетка
+    HALO_CELLS: 1.5,         // радиус ореола под пальцем, в шагах сетки
+    HALO_CORE: 0.55,         // до какой доли радиуса прозрачность полная
+    HALO_FADE_MS: 220,       // за сколько ореол разгорается и гаснет
+    HALO_FOLLOW_MS: 70,      // насколько ореол отстаёт от пальца (плавность)
     LAYER_STEP: 5.2,         // глубина между соседними слоями
     CLOUD_GAP: 55,           // пустота между задом облака и передом следующего
     FLY_MS: 1700,
     RESOLVE_DELAY_MS: 320,   // пауза после срабатывания образа, чтобы увидеть волну
-    OPEN_MS: 260,            // за сколько пустышка растворяется под пальцем
-    DRILL_AT: 0.8,           // с какой прозрачности палец проваливается глубже
-    MAX_HOLES: 10,           // столько же, сколько слотов в шейдере
     TREMBLE: 0.16,           // амплитуда дрожи значимого образа, в долях клетки
     WAVE_SPEED: 46,          // скорость фронта волны, мировых единиц в секунду
     WAVE_AMP: 0.3,           // амплитуда качания, в долях клетки
@@ -57,10 +55,15 @@ const ENVY_SCENE = {
     HINT_RED: '#ff3b30',
 };
 
-// Шейдер разрыва: сцена пришла текстурой, в ней вырезаются дыры точной формы
-// образа (SDF), с бегущей по силуэту волной и мягким градиентом наружу.
-// Радиус приходит уже посчитанным в долях ВЫСОТЫ экрана — иначе дыра не
-// совпадает с фигурой, когда та меняет экранный размер при пролёте.
+// Шейдер разрыва. Ореол прозрачности — ОДИН, и он привязан к пальцу, а не к
+// образам. Раньше дыры вырезались по силуэту каждой фигуры, до которой
+// дотянулся палец, и при ведении по полотну они вспыхивали и гасли поштучно,
+// как перегорающие лампочки. Теперь это фонарь: круглое пятно, которое плавно
+// едет за пальцем и гасит всё, что под него попало.
+//
+// Приходят две картинки: полное облако (tScene) и отдельно значимые образы
+// (tSig). Внутри пятна показываются только значимые — за это и держится вся
+// механика поиска: гаснет всё, кроме того, что искали.
 const EnvyTearShader = {
     vertexShader: `
         varying vec2 vUv;
@@ -70,105 +73,63 @@ const EnvyTearShader = {
         }
     `,
     fragmentShader: `
-        #define MAX_EFFECTS 10
-
-        uniform sampler2D tDiffuse;
+        uniform sampler2D tScene;
+        uniform sampler2D tSig;
         uniform float uAspect;
         uniform float uTime;
-        uniform int uCount;
-        uniform vec2 uCenters[MAX_EFFECTS];
-        uniform float uIntensities[MAX_EFFECTS];
-        uniform float uSeeds[MAX_EFFECTS];
-        uniform int uShapeTypes[MAX_EFFECTS];
-        uniform float uRotations[MAX_EFFECTS];
-        uniform float uRadii[MAX_EFFECTS];
+        uniform vec2 uHalo;        // центр ореола в UV
+        uniform float uHaloR;      // радиус в долях высоты экрана
+        uniform float uHaloCore;   // доля радиуса с полной прозрачностью
+        uniform float uHaloI;      // 0..1 — насколько ореол разгорелся
 
         varying vec2 vUv;
 
-        float sdCircle(vec2 p, float r) {
-            return length(p) - r;
-        }
-
-        float sdBox(vec2 p, vec2 b) {
-            vec2 d = abs(p) - b;
-            return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
-        }
-
-        float sdEquilateralTriangle(vec2 p, float r) {
-            const float k = sqrt(3.0);
-            p.x = abs(p.x) - r;
-            p.y = p.y + r / k;
-            if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
-            p.x -= clamp(p.x, -2.0 * r, 0.0);
-            return -length(p) * sign(p.y);
-        }
-
-        vec2 rotateVec(vec2 v, float angle) {
-            float s = sin(angle);
-            float c = cos(angle);
-            return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
-        }
-
         void main() {
-            vec4 sceneColor = texture2D(tDiffuse, vUv);
+            vec4 sceneColor = texture2D(tScene, vUv);
 
-            if (uCount == 0) {
+            if (uHaloI <= 0.001) {
                 gl_FragColor = sceneColor;
                 return;
             }
 
-            float finalAlphaFactor = 1.0;
+            vec2 pos = vUv - uHalo;
+            pos.x *= uAspect;
 
-            for (int i = 0; i < MAX_EFFECTS; i++) {
-                if (i >= uCount) break;
+            // Край рваный и живой, а не циркульный: радиус слегка гуляет по
+            // полярному углу и во времени.
+            float angle = atan(pos.y, pos.x);
+            float wobble = sin(angle * 4.0 - uTime * 2.2) * 0.06
+                         + cos(angle * 3.0 + uTime * 1.6) * 0.045;
+            float r = uHaloR * (1.0 + wobble);
 
-                float intensity = uIntensities[i];
-                if (intensity <= 0.001) continue;
+            float mask = smoothstep(r * uHaloCore, r, length(pos));
+            mask = mix(1.0, mask, uHaloI);
 
-                vec2 pos = vUv - uCenters[i];
-                pos.x *= uAspect;
-                pos = rotateVec(pos, -uRotations[i]);
-
-                float baseSize = uRadii[i];
-                float baseDist = 0.0;
-
-                if (uShapeTypes[i] == 0) {
-                    baseDist = sdCircle(pos, baseSize);
-                } else if (uShapeTypes[i] == 1) {
-                    baseDist = sdBox(pos, vec2(baseSize * 0.94));
-                } else {
-                    baseDist = sdEquilateralTriangle(pos, baseSize * 1.15);
-                }
-
-                // Полярный угол — по нему бежит волна, из-за неё край дыры
-                // рваный и живой, а не циркульный.
-                float angle = atan(pos.y, pos.x);
-                float wave = sin((angle - uTime * 2.5 + uSeeds[i]) * 4.0) * 0.10
-                           + cos((angle + uTime * 1.8 - uSeeds[i]) * 3.0) * 0.07;
-
-                float distWithWave = baseDist - (wave * baseSize * intensity);
-
-                float edgeSoftness = max(0.004, baseSize * 0.28) * intensity;
-                float maskAlpha = smoothstep(-0.001, edgeSoftness, distWithWave);
-
-                finalAlphaFactor = min(finalAlphaFactor, mix(1.0, maskAlpha, intensity));
-            }
-
-            // Текстура пришла из render target с обычным блендингом, то есть
-            // уже premultiplied: гасить надо И цвет, И альфу, иначе по краю
-            // дыры остаётся светлая кайма.
-            gl_FragColor = sceneColor * finalAlphaFactor;
+            // Внутри пятна остаются только значимые образы. Обе картинки
+            // пришли из render target с обычным блендингом, то есть уже
+            // premultiplied — гасить надо и цвет, и альфу, иначе по краю
+            // ореола остаётся светлая кайма.
+            vec4 sigColor = texture2D(tSig, vUv);
+            gl_FragColor = sceneColor * mask + sigColor * (1.0 - mask);
         }
     `
 };
 
-// Геометрия образов. Форма описана один раз и используется дважды: для
-// отрисовки в текстуру и для попадания пальцем. Разъедься они — палец начнёт
-// цеплять пустой угол спрайта.
+// Геометрия образов. Форма описана один раз и используется трижды: для
+// отрисовки в текстуру, для попадания пальцем и для расчёта упаковки.
+// Разъедься они — палец начнёт цеплять пустой угол спрайта.
+//
+// cover — радиус ВПИСАННОГО в силуэт круга, в долях спрайта. Это и есть та
+// величина, которая решает, сомкнётся полотно или нет: образ обязан накрыть
+// собой всю свою ячейку, а гарантирует это только вписанный круг. Отсюда же
+// видно, почему из набора ушёл треугольник: его вписанный круг вдвое меньше
+// описанного, и чтобы накрыть ту же ячейку, треугольник пришлось бы раздуть
+// вдвое — вместо просветов получили бы наползание в половину фигуры.
 const ENVY_SQRT3_2 = Math.sqrt(3) / 2;
 
 const ENVY_SHAPES = [
     {   // 0 — круг
+        cover: 0.469,
         draw(ctx, s) {
             ctx.beginPath();
             ctx.arc(s * 0.5, s * 0.5, s * 0.469, 0, Math.PI * 2);
@@ -179,6 +140,7 @@ const ENVY_SHAPES = [
         }
     },
     {   // 1 — квадрат со скруглением
+        cover: 0.441,
         draw(ctx, s) {
             const half = s * 0.441;
             const r = s * 0.06;
@@ -197,25 +159,28 @@ const ENVY_SHAPES = [
             return Math.abs(x) <= 0.441 && Math.abs(y) <= 0.441;
         }
     },
-    {   // 2 — равносторонний треугольник вершиной вверх
+    {   // 2 — шестиугольник (вершины слева и справа)
+        cover: 0.49 * ENVY_SQRT3_2,
         draw(ctx, s) {
-            const side = s * 0.98;
-            const h = side * ENVY_SQRT3_2;
+            const R = s * 0.49;
             const cx = s * 0.5, cy = s * 0.5;
             ctx.beginPath();
-            ctx.moveTo(cx, cy - h * (2 / 3));
-            ctx.lineTo(cx + side / 2, cy + h / 3);
-            ctx.lineTo(cx - side / 2, cy + h / 3);
+            for (let i = 0; i < 6; i++) {
+                const a = i * Math.PI / 3;
+                const px = cx + Math.cos(a) * R;
+                const py = cy + Math.sin(a) * R;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
             ctx.closePath();
             ctx.fill();
         },
         hit(x, y) {
-            // y вниз, как на канве. Внутри треугольника: ниже вершины,
-            // выше основания и между двумя боковыми сторонами.
-            const h = 0.98 * ENVY_SQRT3_2;
-            if (y > h / 3 || y < -h * (2 / 3)) return false;
-            const halfAt = (y + h * (2 / 3)) / h * 0.49;
-            return Math.abs(x) <= halfAt;
+            // Шестиугольник — пересечение трёх полос: точка внутри, если её
+            // проекция на каждую из трёх нормалей не длиннее вписанного радиуса.
+            const inr = 0.49 * ENVY_SQRT3_2;
+            return Math.abs(x * ENVY_SQRT3_2 + y * 0.5) <= inr
+                && Math.abs(y) <= inr
+                && Math.abs(x * ENVY_SQRT3_2 - y * 0.5) <= inr;
         }
     }
 ];
@@ -241,12 +206,8 @@ const EnvyMinigame = {
     rtSig: null,
     postScene: null,
     postMaterial: null,
-    sigScene: null,
-    sigMaterial: null,
     tileGeometry: null,
     shapeTextures: null,
-    raycaster: null,
-    pointerNdc: null,
     scratchVec: null,
     hintColors: null,
 
@@ -254,6 +215,7 @@ const EnvyMinigame = {
     layout: null,
     clouds: { cur: null, next: null, prev: null },
     waves: [],
+    halo: { x: 0.5, y: 0.5, intensity: 0 },
     activeTile: null,
     pointerDown: false,
     pointerX: 0,
@@ -414,8 +376,6 @@ const EnvyMinigame = {
 
         this.flatCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-        this.raycaster = new THREE.Raycaster();
-        this.pointerNdc = new THREE.Vector2();
         this.scratchVec = new THREE.Vector3();
         this.hintColors = {
             right: new THREE.Color(ENVY_SCENE.HINT_GREEN),
@@ -469,16 +429,14 @@ const EnvyMinigame = {
 
     buildPostChain() {
         const uniforms = {
-            tDiffuse: { value: null },
+            tScene: { value: null },
+            tSig: { value: null },
             uAspect: { value: 1 },
             uTime: { value: 0 },
-            uCount: { value: 0 },
-            uCenters: { value: Array.from({ length: ENVY_SCENE.MAX_HOLES }, () => new THREE.Vector2(-9999, -9999)) },
-            uIntensities: { value: new Float32Array(ENVY_SCENE.MAX_HOLES) },
-            uSeeds: { value: new Float32Array(ENVY_SCENE.MAX_HOLES) },
-            uShapeTypes: { value: new Int32Array(ENVY_SCENE.MAX_HOLES) },
-            uRotations: { value: new Float32Array(ENVY_SCENE.MAX_HOLES) },
-            uRadii: { value: new Float32Array(ENVY_SCENE.MAX_HOLES) }
+            uHalo: { value: new THREE.Vector2(0.5, 0.5) },
+            uHaloR: { value: 0.12 },
+            uHaloCore: { value: ENVY_SCENE.HALO_CORE },
+            uHaloI: { value: 0 }
         };
 
         this.postMaterial = new THREE.ShaderMaterial({
@@ -492,15 +450,36 @@ const EnvyMinigame = {
         });
         this.postScene = new THREE.Scene();
         this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMaterial));
+    },
 
-        this.sigMaterial = new THREE.MeshBasicMaterial({
-            transparent: true,
-            premultipliedAlpha: true,
-            depthTest: false,
-            depthWrite: false
-        });
-        this.sigScene = new THREE.Scene();
-        this.sigScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.sigMaterial));
+    // Ореол догоняет палец, а не прыгает за ним: экспоненциальное сближение,
+    // одинаковое при любой частоте кадров.
+    updateHalo(dt) {
+        const halo = this.halo;
+        const rect = this.canvas.getBoundingClientRect();
+        const lit = (this.state === 'play' && this.pointerDown);
+
+        if (lit) {
+            const tx = this.pointerX / rect.width;
+            const ty = 1 - this.pointerY / rect.height;
+            if (halo.intensity <= 0.001) { halo.x = tx; halo.y = ty; }   // зажёгся сразу под пальцем
+            const k = 1 - Math.exp(-dt / ENVY_SCENE.HALO_FOLLOW_MS);
+            halo.x += (tx - halo.x) * k;
+            halo.y += (ty - halo.y) * k;
+        }
+
+        const step = dt / ENVY_SCENE.HALO_FADE_MS;
+        halo.intensity = lit
+            ? Math.min(1, halo.intensity + step)
+            : Math.max(0, halo.intensity - step);
+
+        // Радиус привязан к шагу сетки: сколько бы образов ни поместилось на
+        // экран, фонарь накрывает примерно один с небольшим.
+        const halfH = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180) * ENVY_SCENE.CAM_DIST;
+        const u = this.postMaterial.uniforms;
+        u.uHalo.value.set(halo.x, halo.y);
+        u.uHaloR.value = (this.layout.cell * ENVY_SCENE.HALO_CELLS) / (2 * halfH);
+        u.uHaloI.value = halo.intensity;
     },
 
     resize() {
@@ -516,7 +495,6 @@ const EnvyMinigame = {
         if (!this.rtAll) {
             this.rtAll = new THREE.WebGLRenderTarget(w * dpr, h * dpr, targetOpts);
             this.rtSig = new THREE.WebGLRenderTarget(w * dpr, h * dpr, targetOpts);
-            this.sigMaterial.map = this.rtSig.texture;
         } else {
             this.rtAll.setSize(w * dpr, h * dpr);
             this.rtSig.setSize(w * dpr, h * dpr);
@@ -543,22 +521,28 @@ const EnvyMinigame = {
         const fieldW = viewW * ENVY_SCENE.FIELD_X;
         const fieldH = viewH * ENVY_SCENE.FIELD_Y;
 
-        // Всё поле раскладывается так, чтобы крайние образы вставали ВНУТРЬ
-        // целиком: (cols-1) шагов + спрайт + разброс = ширина поля.
-        const span = (n) => n - 1 + ENVY_SCENE.SPRITE_MULT + 2 * ENVY_SCENE.JITTER;
-
-        // Размер образа задаётся от КОРОТКОЙ стороны поля, иначе при повороте
-        // телефона те же колонки дают фигуры вдвое крупнее или мельче.
-        const pad = ENVY_SCENE.SPRITE_MULT + 2 * ENVY_SCENE.JITTER - 1;   // «лишние» полклетки по краям
+        // ---------- УПАКОВКА ----------
+        // Образы стоят в треугольной (сотовой) решётке — из всех решёток она
+        // требует наименьшего запаса, чтобы одинаковые фигуры сомкнулись без
+        // просветов. Ячейка каждого образа — правильный шестиугольник с
+        // описанным радиусом cell/√3; образ обязан накрыть его целиком, иначе
+        // на стыке трёх соседей открывается фон.
+        //
+        // Отсюда размер каждого образа: cell/√3 / cover(форма). Он получается
+        // РАЗНЫМ для разных форм — ровно настолько, чтобы каждая накрыла свою
+        // ячейку, и ни на волос больше. Это и есть минимально возможное
+        // наползание при сомкнутом полотне.
+        const need = (shape) => (1 + ENVY_SCENE.COVER_PAD) / Math.sqrt(3) / shape.cover + ENVY_SCENE.JITTER;
+        const worst = Math.max(...ENVY_SHAPES.map(need));   // самая «неудобная» форма задаёт поля
 
         let cols, cell, rowStep, rows, total;
         for (let across = ENVY_SCENE.COLS_ACROSS; across >= 3; across--) {
-            const target = Math.min(fieldW, fieldH) / across;   // желаемый шаг сетки
-            cols = Math.max(3, Math.round(fieldW / target - pad));
-            cell = fieldW / span(cols);
-            rowStep = cell * ENVY_SCENE.ROW_SQUASH;
-            rows = Math.max(3, Math.floor((fieldH - cell * (ENVY_SCENE.SPRITE_MULT + 2 * ENVY_SCENE.JITTER)) / rowStep) + 1);
-            // В нечётных рядах на один образ меньше — они сдвинуты на полклетки.
+            const target = Math.min(fieldW, fieldH) / across;
+            cols = Math.max(3, Math.round(fieldW / target - (worst - 1)));
+            cell = fieldW / (cols - 1 + worst);
+            rowStep = cell * ENVY_SQRT3_2;                  // ряды сотовой решётки
+            rows = Math.max(3, Math.floor((fieldH - cell * worst) / rowStep) + 1);
+            // В нечётных рядах на образ меньше — они сдвинуты на полклетки.
             total = Math.ceil(rows / 2) * cols + Math.floor(rows / 2) * (cols - 1);
             if (total <= ENVY_SCENE.MAX_TILES) break;
         }
@@ -568,7 +552,8 @@ const EnvyMinigame = {
             rows,
             cell,
             rowStep,
-            sprite: cell * ENVY_SCENE.SPRITE_MULT,
+            cellRadius: cell * (1 + ENVY_SCENE.COVER_PAD) / Math.sqrt(3),
+            sprite: cell * worst,     // габарит самой крупной формы: поля и запас глубины
             total,
             viewW,
             viewH,
@@ -642,22 +627,27 @@ const EnvyMinigame = {
                 const by = (r - (L.rows - 1) / 2) * L.rowStep + (Math.random() - 0.5) * 2 * jitter;
 
                 const shape = Math.floor(Math.random() * ENVY_SHAPES.length);
+                // Размер — не «на глаз одинаковый», а ровно такой, чтобы эта
+                // форма накрыла свою ячейку. Круг и шестиугольник выходят почти
+                // одного габарита, квадрат чуть крупнее.
+                const size = L.cellRadius / ENVY_SHAPES[shape].cover;
                 const colorHex = palette[Math.floor(Math.random() * palette.length)];
                 const material = new THREE.MeshBasicMaterial({
                     map: this.shapeTextures[shape],
                     color: new THREE.Color(colorHex),
                     transparent: true,
-                    // Порог согласован с DRILL_AT: растворяющаяся пустышка
-                    // перестаёт писать глубину примерно тогда же, когда палец
-                    // проваливается сквозь неё. Иначе она ещё держит собой
-                    // образ, который под ней уже должен показаться.
-                    alphaTest: 1 - ENVY_SCENE.DRILL_AT,
+                    // Отсекает только сглаженную кромку текстуры: образы
+                    // больше не растворяются поштучно, их гасит ореол.
+                    alphaTest: 0.5,
                     depthTest: true,
                     depthWrite: true
                 });
 
                 const mesh = new THREE.Mesh(this.tileGeometry, material);
-                mesh.rotation.z = (Math.random() * 40 - 20) * Math.PI / 180;
+                // Круг и шестиугольник можно вертеть как угодно, квадрат —
+                // тоже: вписанный круг от поворота не меняется, а значит и
+                // покрытие ячейки держится при любом угле.
+                mesh.rotation.z = Math.random() * Math.PI * 2;
                 group.add(mesh);
                 meshes.push(mesh);
 
@@ -666,19 +656,16 @@ const EnvyMinigame = {
                     mat: material,
                     baseColor: new THREE.Color(colorHex),
                     bx, by,
+                    size,
                     depth: layers[index] * ENVY_SCENE.LAYER_STEP,
-                    sizeMul: 0.92 + Math.random() * 0.16,
                     shape,
                     rot: mesh.rotation.z,
                     seed: Math.random() * 10,
                     driftPhase: Math.random() * Math.PI * 2,
                     kind: 'empty',
-                    intensity: 0,
-                    target: 0,
                     heldMs: 0,
                     hinted: false
                 };
-                mesh.userData.tile = tile;   // чтобы не искать по индексу на каждом луче
                 tiles.push(tile);
                 index++;
             }
@@ -745,7 +732,7 @@ const EnvyMinigame = {
 
         for (const t of cloud.tiles) {
             const f = (V + t.depth) / V;
-            const size = this.layout.sprite * t.sizeMul * (t.swayScale || 1) * f;
+            const size = t.size * (t.swayScale || 1) * f;
             t.mesh.position.set((t.bx + (t.offX || 0)) * f, (t.by + (t.offY || 0)) * f, -t.depth);
             t.mesh.scale.set(size, size, 1);
             t.mesh.rotation.z = t.rot + (t.swayRot || 0);
@@ -786,12 +773,48 @@ const EnvyMinigame = {
         const cloud = this.clouds.cur;
         if (cloud) {
             cloud.tiles.forEach(t => {
-                t.target = 0;
                 t.heldMs = 0;
                 t.hinted = false;
             });
         }
         this.activeTile = null;
+    },
+
+    // Какие образы лежат под пальцем, от ближнего к дальнему.
+    //
+    // Считается от БАЗОВОЙ позиции образа, а не от его меша. Меш дрожит и
+    // качается на волне, и пока попадание проверялось лучом по мешам, сильно
+    // раскачанный образ уезжал из-под неподвижного пальца сам — удержание
+    // срывалось и начиналось заново. Дрожит только картинка; место, за
+    // которое образ держат, стоит неподвижно.
+    pickTiles(px, py) {
+        const cloud = this.clouds.cur;
+        const rect = this.canvas.getBoundingClientRect();
+        const V = Math.max(ENVY_SCENE.CAM_DIST, this.camera.position.z - cloud.group.position.z);
+        const halfTan = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180);
+        const found = [];
+
+        for (const t of cloud.tiles) {
+            const dist = V + t.depth;               // расстояние от камеры до слоя
+            const halfH = halfTan * dist;
+            const halfW = halfH * (rect.width / rect.height);
+            const f = dist / V;                     // та же компенсация, что и у меша
+
+            const sx = (t.bx * f / halfW * 0.5 + 0.5) * rect.width;
+            const sy = (0.5 - t.by * f / halfH * 0.5) * rect.height;
+            const sizePx = (t.size * f) / (2 * halfH) * rect.height;
+            if (sizePx < 0.001) continue;
+
+            // В систему координат образа: сдвиг, масштаб, обратный поворот.
+            const ux = (px - sx) / sizePx;
+            const uy = (py - sy) / sizePx;
+            const cos = Math.cos(-t.rot), sin = Math.sin(-t.rot);
+            // Экранный y растёт вниз, поворот меша — против часовой в мире.
+            if (ENVY_SHAPES[t.shape].hit(ux * cos + uy * sin, -ux * sin + uy * cos)) found.push(t);
+        }
+
+        found.sort((a, b) => a.depth - b.depth);    // ближний слой первым
+        return found;
     },
 
     // Палец растворяет пустышки под собой и проваливается глубже, пока не
@@ -801,62 +824,19 @@ const EnvyMinigame = {
         const cloud = this.clouds.cur;
         if (!cloud) return;
 
-        const rect = this.canvas.getBoundingClientRect();
-        this.pointerNdc.x = (this.pointerX / rect.width) * 2 - 1;
-        this.pointerNdc.y = -(this.pointerY / rect.height) * 2 + 1;
-        this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-
-        const hits = this.raycaster.intersectObjects(cloud.meshes, false);
-        const touched = new Set();
-        let active = null;
-
-        for (const hit of hits) {
-            const tile = hit.object.userData.tile;
-            if (!tile || !hit.uv) continue;
-            // Спрайт квадратный, а образ внутри него — нет. По углам не ловим.
-            if (!ENVY_SHAPES[tile.shape].hit(hit.uv.x - 0.5, 0.5 - hit.uv.y)) continue;
-
-            if (tile.kind !== 'empty') { active = tile; break; }
-
-            touched.add(tile);
-            if (tile.intensity < ENVY_SCENE.DRILL_AT) break;  // ещё не растворилась — глубже не пускаем
-            if (touched.size >= ENVY_SCENE.MAX_HOLES) break;
-        }
+        // Пустышки под пальцем больше не растворяются поштучно — их гасит
+        // ореол. Значит и «прогрызать» слои незачем: держат тот значимый
+        // образ, который лежит под пальцем, кто бы ни лежал поверх него.
+        const active = this.pickTiles(this.pointerX, this.pointerY)
+            .find(t => t.kind !== 'empty') || null;
 
         for (const tile of cloud.tiles) {
-            if (tile === active) {
-                // Значимый образ под пальцем сам не тает, но ореол вокруг себя
-                // рвёт: иначе фигуру, лежащую под чужими, не видно целиком —
-                // ни силуэта, ни того, что она дрожит от удержания.
-                tile.target = 1;
-                continue;
-            }
-            tile.target = (tile.kind === 'empty' && touched.has(tile)) ? 1 : 0;
-            if (tile.kind !== 'empty') {
+            if (tile !== active && tile.kind !== 'empty') {
                 tile.heldMs = 0;
                 tile.hinted = false;
             }
         }
         this.activeTile = active;
-    },
-
-    // Прозрачность живёт отдельно от хода игры: дыра обязана закрыться и
-    // тогда, когда игра уже ушла в пролёт, иначе разрыв висит на всё время
-    // полёта и тянет за собой лишние проходы рендера.
-    updateIntensities(dt) {
-        const cloud = this.clouds.cur;
-        if (!cloud) return;
-        const step = dt / ENVY_SCENE.OPEN_MS;
-
-        for (const t of cloud.tiles) {
-            // Раньше здесь стоял тернарник без проверки равенства, и по
-            // достижении цели значение каждый кадр откатывалось на шаг назад,
-            // а следующим кадром возвращалось. Дыра из-за этого мигала.
-            if (t.intensity < t.target) t.intensity = Math.min(t.target, t.intensity + step);
-            else if (t.intensity > t.target) t.intensity = Math.max(t.target, t.intensity - step);
-
-            if (t.kind === 'empty') t.mat.opacity = 1 - t.intensity;
-        }
     },
 
     // ================= ХОД ИГРЫ =================
@@ -1098,40 +1078,6 @@ const EnvyMinigame = {
         }
     },
 
-    // ================= ДЫРЫ В СЦЕНЕ =================
-    collectHoles() {
-        const cloud = this.clouds.cur;
-        const u = this.postMaterial.uniforms;
-        if (!cloud) { u.uCount.value = 0; return; }
-
-        const open = cloud.tiles
-            .filter(t => t.intensity > 0.001)
-            .sort((a, b) => b.intensity - a.intensity)
-            .slice(0, ENVY_SCENE.MAX_HOLES);
-
-        const halfTan = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180);
-
-        open.forEach((t, i) => {
-            const world = this.scratchVec;
-            t.mesh.getWorldPosition(world);
-            const dist = Math.max(0.001, this.camera.position.z - world.z);
-            world.project(this.camera);
-
-            u.uCenters.value[i].set((world.x + 1) / 2, (world.y + 1) / 2);
-            u.uIntensities.value[i] = t.intensity;
-            u.uSeeds.value[i] = t.seed;
-            u.uShapeTypes.value[i] = t.shape;
-            u.uRotations.value[i] = t.mesh.rotation.z;
-            // Радиус в долях высоты экрана: 0.469 — доля фигуры в спрайте.
-            // Вокруг значимого образа ореол шире: он расчищает соседей, чтобы
-            // сам образ читался целиком, а не куском из-под чужих слоёв.
-            const scale = t.kind === 'empty' ? ENVY_SCENE.HOLE_SCALE : ENVY_SCENE.SIG_HOLE_SCALE;
-            u.uRadii.value[i] = (t.mesh.scale.x * 0.469 * scale) / (2 * halfTan * dist);
-        });
-
-        u.uCount.value = open.length;
-    },
-
     // ================= ЦИКЛ И ОТРИСОВКА =================
     loop(ts) {
         if (!this.lastTs) this.lastTs = ts;
@@ -1143,7 +1089,7 @@ const EnvyMinigame = {
         else if (this.state === 'flying') this.updateFlying(dt);
         else if (this.state === 'winning') this.updateWinning(dt);
 
-        this.updateIntensities(dt);
+        this.updateHalo(dt);
         this.updateWaves(dt);
         this.updateDisturbance(ts / 1000);
 
@@ -1151,62 +1097,45 @@ const EnvyMinigame = {
         if (this.clouds.next) this.cloudCompensate(this.clouds.next, false);
         if (this.clouds.prev && this.clouds.prev.group.visible) this.cloudCompensate(this.clouds.prev, false);
 
-        this.collectHoles();
         this.postMaterial.uniforms.uTime.value = ts * 0.001;
 
         this.render();
         this.rafId = requestAnimationFrame((t) => this.loop(t));
     },
 
-    // Два прохода не от хорошей жизни: значимые образы обязаны пережить дыру,
-    // которую рвёт вокруг себя соседняя пустышка. Поэтому сначала рендерится
-    // всё облако (его и рвёт шейдер), а потом отдельно — только значимые
-    // образы, поверх. Чтобы они при этом честно прятались за непрозрачными
-    // соседями, перед ними в тот же буфер пишется глубина пустышек.
+    // Значимые образы рисуются вторым, отдельным кадром, чтобы шейдер мог
+    // показать их внутри ореола — там, где всё остальное погашено. Снаружи
+    // ореола этот кадр не участвует: значимый образ подчиняется общему порядку
+    // глубины и ничем себя не выдаёт.
     render() {
         const r = this.renderer;
+        const cloud = this.clouds.cur;
 
         r.setRenderTarget(this.rtAll);
         r.clear(true, true, false);
         r.render(this.scene, this.camera);
 
-        // Пока в облаке нет ни одной дыры, спасать значимые образы не от чего:
-        // в rtAll они уже нарисованы правильно. Два лишних прохода по сотне
-        // спрайтов каждый кадр телефон замечает, поэтому платим за них только
-        // в те секунды, когда палец действительно рвёт облако.
-        const cloud = this.postMaterial.uniforms.uCount.value > 0 ? this.clouds.cur : null;
-        if (cloud) {
-            r.setRenderTarget(this.rtSig);
-            r.clear(true, true, false);
+        r.setRenderTarget(this.rtSig);
+        r.clear(true, true, false);
+        if (cloud && this.postMaterial.uniforms.uHaloI.value > 0.001) {
             const nextVisible = this.clouds.next && this.clouds.next.group.visible;
             const prevVisible = this.clouds.prev && this.clouds.prev.group.visible;
             if (nextVisible) this.clouds.next.group.visible = false;
             if (prevVisible) this.clouds.prev.group.visible = false;
 
-            // Проход глубины: только пустышки, цвет не пишем.
-            cloud.tiles.forEach(t => {
-                t.mesh.visible = (t.kind === 'empty');
-                t.mat.colorWrite = false;
-            });
-            r.render(this.scene, this.camera);
-
-            // Проход цвета: только значимые, глубина уже занята соседями.
-            // Удерживаемый образ — единственный, кто идёт поверх глубины: он
-            // расчистил вокруг себя ореол, и прятать его за теми, кого этот
-            // ореол уже съел, значит показать в дыре пустоту вместо образа.
+            // Значимых на облако единицы, поэтому проход почти бесплатный.
+            // Глубина им тут не нужна: всё, что могло их перекрыть, ореол
+            // уже погасил.
             cloud.tiles.forEach(t => {
                 t.mesh.visible = (t.kind !== 'empty');
-                t.mat.colorWrite = true;
-                t.mat.depthWrite = false;
-                t.mat.depthTest = (t !== this.activeTile);
+                t.mat.depthTest = false;
             });
             r.render(this.scene, this.camera);
-
             cloud.tiles.forEach(t => {
                 t.mesh.visible = true;
-                t.mat.depthWrite = true;
                 t.mat.depthTest = true;
             });
+
             if (nextVisible) this.clouds.next.group.visible = true;
             if (prevVisible) this.clouds.prev.group.visible = true;
         }
@@ -1215,9 +1144,9 @@ const EnvyMinigame = {
         r.clear(true, true, false);
         r.render(this.bgScene, this.flatCamera);
 
-        this.postMaterial.uniforms.tDiffuse.value = this.rtAll.texture;
+        this.postMaterial.uniforms.tScene.value = this.rtAll.texture;
+        this.postMaterial.uniforms.tSig.value = this.rtSig.texture;
         r.render(this.postScene, this.flatCamera);
-        if (cloud) r.render(this.sigScene, this.flatCamera);
     },
 };
 
