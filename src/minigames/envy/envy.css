@@ -78,6 +78,26 @@
 }
 
 /* ============ ПОБЕДА ============ */
+
+/* Вспышка растёт из точки последнего правильного образа. Диаметр меняется
+   через transform: scale — единственное свойство, которое телефон тянет
+   покадрово, не пересчитывая раскладку. Базовый размер (40px) продублирован
+   в envy.js как FLASH_SIZE: от него считается нужный масштаб. */
+.envy-win-flash {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 30px 12px rgba(255, 255, 255, 0.85);
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 38;   /* ниже .envy-win-overlay (40) и крестика (45) */
+}
+
+.envy-win-flash.show { opacity: 1; }
+
 .envy-win-overlay {
     position: absolute;
     top: 0; left: 0;

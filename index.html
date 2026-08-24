@@ -804,6 +804,9 @@
                 <div class="envy-gauge-bar" id="envy-gauge-bar"></div>
             </div>
 
+            <!-- Победная вспышка: разрастается из последнего правильного образа -->
+            <div class="envy-win-flash" id="envy-win-flash"></div>
+
             <div class="envy-win-overlay" id="envy-win-overlay">
                 <div class="envy-win-text">Назавидовал</div>
             </div>
@@ -850,6 +853,11 @@
 <!-- three.js лежит в репозитории, а не на CDN: игра должна открываться
      без сети с первого раза, и внешний хост не должен её ронять. -->
 <script src="vendor/three.min.js?v=r128"></script>
+<!-- Пул образов и упаковка полотна — до самой мини-игры: она берёт оттуда
+     текстуры наклеек и раскладку при первом открытии. -->
+<script src="src/minigames/envy/envy-art.js?v=1"></script>
+<script src="src/minigames/envy/envy-images.js?v=1"></script>
+<script src="src/minigames/envy/envy-packing.js?v=1"></script>
 <script src="src/minigames/envy/envy.js?v=2"></script>
 
 </body>
