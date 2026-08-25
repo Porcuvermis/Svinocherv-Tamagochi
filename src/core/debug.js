@@ -57,6 +57,7 @@ const DebugState = {
             <button data-act="fill">Полные</button>
             <button data-act="scar">Шрам</button>
             <button data-act="feed">Покормить</button>
+            <button data-act="room">Комната</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -153,6 +154,17 @@ const DebugState = {
                 return;
             }
             if (typeof refreshWormMarks === 'function') refreshWormMarks();
+        } else if (act === 'room') {
+            // Перебор локаций по кругу. Пока она одна и кнопка ничего не
+            // меняет — это нормально: она проверяет саму механику смены, и
+            // станет рабочей ровно в тот момент, когда в rooms.js добавят
+            // вторую запись, без единой правки здесь.
+            if (typeof RoomLocations === 'undefined') return;
+            const keys = RoomLocations.keys();
+            const cur = GameState.data.room.location;
+            const next = keys[(Math.max(0, keys.indexOf(cur)) + 1) % keys.length];
+            Backend.setLocation(next);
+            if (MainWormHandle && MainWormHandle.setLocation) MainWormHandle.setLocation(next);
         } else if (act === 'kill') {
             // Смерть наступает через сутки ПОСЛЕ обнуления последней шкалы,
             // то есть вживую её ждать трое суток. Обнуляем всё и отматываем

@@ -51,9 +51,9 @@ const GameState = {
             // воскрешение: оно обрывает прошлое голодание, иначе поднятый
             // червь умирал бы снова в ту же секунду.
             worm: { revived_at: null },
-            // Комната: то, что лежит на полу. Пока только то, что червь
-            // произвёл сам.
-            room: { poops: [] },
+            // Комната: где червь живёт и что лежит на полу. Локация — такая
+            // же косметика, как будущие шапки: список в src/core/rooms.js.
+            room: { location: 'home', poops: [] },
             ledger: [],
             requests: []
         };
@@ -152,6 +152,14 @@ const GameState = {
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
+        // Ключ локации проверяется по реестру, а не просто на «непусто»:
+        // сборка могла откатиться, а в сейве остался ключ локации, которой в
+        // ней уже нет. Тогда комната не нарисовалась бы вовсе.
+        if (typeof RoomLocations !== 'undefined') {
+            if (!RoomLocations.has(d.room.location)) d.room.location = RoomLocations.DEFAULT;
+        } else if (!d.room.location) {
+            d.room.location = 'home';
+        }
 
         ['currencies', 'inventory', 'unlocks', 'daily_counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};

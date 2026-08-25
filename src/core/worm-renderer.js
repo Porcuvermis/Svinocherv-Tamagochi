@@ -278,8 +278,107 @@ function roomDepthAt(g, y) {
 // (docs/art-direction.md §1.2, §5). Поэтому только плоскости, одна линия
 // стыка и несколько очень слабых линий схода — самый дешёвый признак
 // глубины из существующих.
-function buildRoom(layer, g) {
+// ---------- РИСУНОК ПОЛА ----------
+// Паркет в перспективе. Доски лежат ВДОЛЬ взгляда, поэтому их края — это те
+// же линии схода, что раньше изображали глубину: рисунок пола и признак
+// глубины здесь одно и то же, и платить за них дважды не нужно.
+//
+// Поперёк идут торцы досок. Их шаг обязан сжиматься с глубиной по той же
+// формуле, что и всё остальное в комнате (roomYAt), иначе пол выглядит
+// наклеенной текстурой, а не уходящей поверхностью. Шаг по глубине берётся
+// равномерным, а перспектива сама сгущает дальние ряды.
+//
+// Торцы вразбежку: у соседних рядов они смещены на полдоски. Ровная сетка
+// стык-в-стык читается кафелем, а не паркетом, — вразбежку и кладут.
+function buildFloorPattern(layer, g, loc) {
+    if (loc.pattern !== 'planks') return;
+
+    const PLANKS = 9;          // досок по ширине комнаты
+    const ROW_DEPTH = 0.62;    // шаг торцов по глубине (в единицах глубины комнаты)
+
+    // Ряды торцов: доли глубины, на которых доски стыкуются. Считаем один раз
+    // и пользуемся в обоих проходах.
+    const rows = [{ d: 0, y: g.frontY, half: g.frontHalf }];
+    for (let d = ROW_DEPTH; d < ROOM.farDepth; d += ROW_DEPTH) {
+        const y = roomYAt(g, d);
+        if (y <= g.backY + 0.5) break;
+        rows.push({ d, y, half: roomHalfAt(g, d) });
+    }
+    rows.push({ d: ROOM.farDepth, y: g.backY, half: g.backHalf });
+
+    const xAt = (u, half) => g.cx + u * half;
+
+    // ---------- ПРОХОД 1: заливки ----------
+    // Тон меняется ПО ДОСКЕ и остаётся постоянным вдоль всей её длины.
+    //
+    // Первая версия меняла тон по клеткам «доска × ряд» — и пол получился
+    // шахматкой, то есть крупной плиткой, а не паркетом. Разница
+    // принципиальная: доска — цельный кусок дерева, у неё один тон от начала
+    // до конца, и именно это отличает дощатый пол от кафеля. Разбежку даёт не
+    // цвет, а короткие торцевые швы ниже.
+    //
+    // Тон берётся от номера доски синусом: нужен разброс без «через одну»
+    // (полосатый пол читается зеброй) и без случайности (комната
+    // перестраивается при каждом изменении размера окна, и пол не должен
+    // перекрашиваться на глазах).
+    const front = rows[0], back = rows[rows.length - 1];
+    for (let i = 0; i < PLANKS; i++) {
+        const shade = Math.sin(i * 2.399) * 0.5 + 0.5;    // 0..1, вразнобой
+        const u0 = (i / PLANKS) * 2 - 1;
+        const u1 = ((i + 1) / PLANKS) * 2 - 1;
+        layer.appendChild(svgEl('path', {
+            d: 'M ' + xAt(u0, front.half).toFixed(1) + ',' + front.y.toFixed(1) +
+               ' L ' + xAt(u1, front.half).toFixed(1) + ',' + front.y.toFixed(1) +
+               ' L ' + xAt(u1, back.half).toFixed(1) + ',' + back.y.toFixed(1) +
+               ' L ' + xAt(u0, back.half).toFixed(1) + ',' + back.y.toFixed(1) + ' Z',
+            fill: shade > 0.5 ? loc.floor.light : loc.floor.seam,
+            opacity: (Math.abs(shade - 0.5) * 0.34).toFixed(3)
+        }));
+    }
+
+    const line = (x1, y1, x2, y2, opacity) => {
+        layer.appendChild(svgEl('line', {
+            x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
+            stroke: loc.floor.seam, 'stroke-width': SW.hairline, opacity
+        }));
+    };
+
+    // ---------- ПРОХОД 2: швы ----------
+    // Продольные — от переднего края к дальнему. Они же и есть линии схода:
+    // рисунок пола и признак глубины здесь одно и то же.
+    for (let i = 1; i < PLANKS; i++) {
+        const u = (i / PLANKS) * 2 - 1;
+        line(xAt(u, g.frontHalf), g.frontY, xAt(u, g.backHalf), g.backY, 0.5);
+    }
+
+    // Торцы — стыки двух досок в длину. Рисуются коротким отрезком в пределах
+    // ОДНОЙ доски: сплошная линия через всю комнату превратила бы пол в кафель.
+    //
+    // И они редкие. Доска длинная, на видимом куске пола её стык попадается
+    // не в каждом ряду; если ставить торец через одну, стыки выстраиваются в
+    // регулярную сетку — снова кафель. Признак берётся хешем от номера доски
+    // и ряда: разброс есть, но он один и тот же при каждой перестройке.
+    for (let r = 1; r < rows.length - 1; r++) {
+        const row = rows[r];
+        for (let i = 0; i < PLANKS; i++) {
+            if ((Math.sin(i * 12.9898 + r * 78.233) * 43758.5453 % 1 + 1) % 1 > 0.34) continue;
+            const u0 = (i / PLANKS) * 2 - 1;
+            const u1 = ((i + 1) / PLANKS) * 2 - 1;
+            line(xAt(u0, row.half), row.y, xAt(u1, row.half), row.y, 0.42);
+        }
+    }
+}
+
+function buildRoom(layer, g, locationKey) {
     while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+    // Облик берётся из таблицы локаций (src/core/rooms.js), а не задаётся
+    // здесь: комната — косметика, её будут менять на подвал, церковь, пещеру.
+    // Отрисовка обязана уметь нарисовать любую, не зная, какая именно.
+    const loc = (typeof RoomLocations !== 'undefined')
+        ? RoomLocations.get(locationKey)
+        : null;
+    if (!loc) return;   // rooms.js не подключён — рисовать нечего
 
     const backY = g.backY, backHalf = g.backHalf;
     const wallH = g.wallH, backWallH = wallH * g.farScale;
@@ -288,17 +387,10 @@ function buildRoom(layer, g) {
     const topFront = g.frontY - wallH;                      // верх стены у камеры
     const topBack = backY - backWallH;                      // верх стены у дальней грани
 
-    // Пол светлее и ТЕПЛЕЕ холодной стены. Разрыв по светлоте обязателен:
-    // на одинаковых тонах комната читается одним тёмным полем, а не набором
-    // плоскостей. Горизонтальная поверхность и правда ловит верхний свет
-    // лучше вертикальной (art-direction.md §3).
-    const floorFill = mixColor(P_.void[700], P_.bile[200], 0.13);
-    const wallBack = mixColor(P_.void[900], P_.void[700], 0.5);
-    // Свет один и он сверху-слева, значит внутренние грани освещены
-    // по-разному: правая ловит его, левая остаётся в тени. Без этой разницы
-    // коробка читается плоской раскраской, а не объёмом.
-    const wallLit = mixColor(wallBack, P_.bile[200], 0.1);
-    const wallShade = mixColor(wallBack, P_.ink, 0.4);
+    const floorFill = loc.floor.base;
+    const wallBack = loc.walls.back;
+    const wallLit = loc.walls.lit;
+    const wallShade = loc.walls.shade;
 
     const poly = (pts, fill, opacity) => {
         const d = 'M ' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L ') + ' Z';
@@ -311,7 +403,7 @@ function buildRoom(layer, g) {
     // Пустота вокруг коробки. Тот же тон, что у полей за пределами холста, —
     // тогда поля на нетипичном экране не читаются обрезкой, а выглядят
     // продолжением темноты вокруг комнаты.
-    layer.appendChild(svgEl('rect', { x: 0, y: 0, width: g.w, height: g.h, fill: P_.void[900] }));
+    layer.appendChild(svgEl('rect', { x: 0, y: 0, width: g.w, height: g.h, fill: loc.surround }));
 
     // Боковые стены: от передних углов пола к дальним, вверх на высоту стены.
     poly([[L, g.frontY], [bl, backY], [bl, topBack], [L, topFront]], wallShade);
@@ -323,30 +415,39 @@ function buildRoom(layer, g) {
     // Пол — трапеция между передними и дальними углами.
     poly([[L, g.frontY], [R, g.frontY], [br, backY], [bl, backY]], floorFill);
 
-    // Линии схода на полу: сходятся к точке схода, поэтому глубина читается
-    // даже на неподвижном кадре. Держатся на грани заметности.
-    for (let i = -2; i <= 2; i++) {
-        if (i === 0) continue;
-        const u = i / 2.6;
-        layer.appendChild(svgEl('line', {
-            x1: (g.cx + u * g.frontHalf).toFixed(1), y1: g.frontY.toFixed(1),
-            x2: (g.cx + u * backHalf).toFixed(1), y2: backY.toFixed(1),
-            stroke: P_.ink, 'stroke-width': SW.hairline, opacity: 0.14
-        }));
-    }
+    // Рисунок пола. Единственное место, где локация требует не цвета, а кода:
+    // доски, камень и земля рисуются по-разному.
+    buildFloorPattern(layer, g, loc);
 
     // Плинтус по низу задней стены — самая дешёвая деталь, превращающая две
     // плоскости в комнату: без неё стык читается обрывом.
     const plinthH = Math.max(2, backWallH * 0.14);
     poly([[bl, backY], [br, backY], [br, backY - plinthH], [bl, backY - plinthH]],
-         mixColor(wallBack, floorFill, 0.45));
+         loc.plinth);
+
+    // Плинтус по БОКОВЫМ стенам. Он уходит в перспективу вместе с ними,
+    // поэтому у камеры выше, чем у дальней стены — во столько же раз, во
+    // сколько сама стена. Без него плинтус задней стены обрывался в воздухе
+    // на стыке углов, и было видно, что комната сделана из трёх отдельных
+    // плоскостей, а не из стен.
+    const plinthFront = plinthH / g.farScale;
+    poly([[L, g.frontY], [bl, backY], [bl, backY - plinthH], [L, g.frontY - plinthFront]],
+         mixColor(loc.plinth, P_.ink, 0.28));                  // левая — в тени
+    poly([[R, g.frontY], [br, backY], [br, backY - plinthH], [R, g.frontY - plinthFront]],
+         loc.plinth);
 
     // Рёбра коробки. Самые тёмные линии сцены после контура персонажа:
     // именно они делают комнату комнатой, а не набором пятен.
+    // Прозрачности рёбер заданы относительно локации: в СВЕТЛОЙ комнате та же
+    // контурная линия бьёт в глаза куда сильнее, чем в тёмной, и комната
+    // начинает спорить с персонажем за внимание. Множитель локации убавляет
+    // их все разом, не трогая соотношение между ними.
+    const edgeK = loc.edges.opacity / 0.85;
     const edge = (x1, y1, x2, y2, opacity, width) => {
         layer.appendChild(svgEl('line', {
             x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1),
-            stroke: P_.ink, 'stroke-width': width || SW.structure, opacity: opacity
+            stroke: loc.edges.ink, 'stroke-width': width || SW.structure,
+            opacity: (opacity * edgeK).toFixed(3)
         }));
     };
     edge(bl, backY, br, backY, 0.85);                    // стык задней стены с полом
@@ -366,10 +467,15 @@ function buildRoom(layer, g) {
     if (!layer.querySelector('#' + gradId)) {
         const defs = svgEl('defs');
         const grad = svgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
-        // Тёмный тон здесь НЕЙТРАЛЬНЫЙ, а не контурный ink: сливовый ink
-        // давал полу отчётливый лиловый налёт у дальней стены.
-        grad.appendChild(svgEl('stop', { offset: '0%', 'stop-color': P_.void[900], 'stop-opacity': '0.75' }));
-        grad.appendChild(svgEl('stop', { offset: '100%', 'stop-color': P_.void[900], 'stop-opacity': '0' }));
+        // Тон притемнения задаёт локация. Он НЕ контурный ink: сливовый ink
+        // давал полу отчётливый лиловый налёт у дальней стены. У деревянного
+        // пола это тёмное дерево — угол комнаты уходит в тень, а не в грязь.
+        grad.appendChild(svgEl('stop', {
+            offset: '0%', 'stop-color': loc.depth.color, 'stop-opacity': String(loc.depth.opacity)
+        }));
+        grad.appendChild(svgEl('stop', {
+            offset: '100%', 'stop-color': loc.depth.color, 'stop-opacity': '0'
+        }));
         defs.appendChild(grad);
         layer.appendChild(defs);
     }
@@ -3595,6 +3701,10 @@ const WormRenderer = {
         svg.appendChild(charLayer);
 
         const state = {
+            // Какая локация нарисована. Живёт в state, а не в opts: её меняют
+            // на ходу (setLocation), а opts — то, с чем смонтировали.
+            location: opts.location || (typeof RoomLocations !== 'undefined'
+                ? RoomLocations.DEFAULT : null),
             baseModel: model,
             override: null,
             built: null,
@@ -3697,7 +3807,7 @@ const WormRenderer = {
             svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
             if (opts.room) {
                 state.room = roomGeometry(w, h);
-                buildRoom(roomLayer, state.room);
+                buildRoom(roomLayer, state.room, state.location);
                 // Стартовая точка — на полу, а не в произвольной доле высоты:
                 // иначе персонаж при запуске стоит в воздухе или в стене.
                 if (!state.wormX) state.wormX = state.room.cx;
@@ -4461,6 +4571,20 @@ const WormRenderer = {
             // достаточно их подменить.
             setOptions(patch) {
                 Object.assign(opts, patch);
+            },
+            // Сменить локацию. Перестраивается ТОЛЬКО слой комнаты: персонаж,
+            // след слизи и предметы на полу к ней не привязаны, а геометрия
+            // коробки у всех локаций общая — значит червь остаётся стоять
+            // ровно там же, где стоял, и заново собирать его незачем.
+            setLocation(key) {
+                if (!opts.room || !state.room) return false;
+                if (typeof RoomLocations === 'undefined' || !RoomLocations.has(key)) return false;
+                state.location = key;
+                buildRoom(roomLayer, state.room, key);
+                return true;
+            },
+            getLocation() {
+                return state.location;
             },
             // Точечная перестановка "точки стояния" персонажа уже ПОСЛЕ
             // монтирования — нужна мини-играм, где раскладку нельзя выразить
