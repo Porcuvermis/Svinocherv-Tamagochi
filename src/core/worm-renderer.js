@@ -4165,7 +4165,11 @@ const WormRenderer = {
             if (!d || e.pointerId !== d.id) return;
             state.drag = null;
             try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* уже отпущен */ }
-            if (d.moved || !d.tappable) return;   // панорама либо тап по червю/кучке
+            // Панорама либо тап по червю/кучке. ЗДЕСЬ будущий крючок реакций:
+            // к этому моменту уже известно, что это именно тап (не свайп) и
+            // что он пришёлся по телу, а какую часть задели — скажет
+            // e.target.closest('[data-part]'). См. docs/stage-and-room.md.
+            if (d.moved || !d.tappable) return;
 
             const p = toRoom(e);
             if (!p) return;
