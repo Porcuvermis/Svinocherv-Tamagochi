@@ -1709,6 +1709,73 @@ function yawAzimuth(offset, rx) {
     return Math.asin(Math.max(-1, Math.min(1, offset / rx))) * 180 / Math.PI;
 }
 
+// ---------- ПОСАДКА УШЕЙ ----------
+// Высота корня уха (доля ry, вверх — отрицательно).
+const EAR_Y_RATIO = 0.66;
+// Насколько сильно ухо может сократиться в ширину, встав к зрителю ребром.
+const EAR_SQUASH_MIN = 0.42;
+// Насколько распрямляется разворот уха наружу, когда оно встаёт ребром.
+// Узкое ухо под тем же углом 30° читается лезвием, воткнутым сбоку в голову:
+// оно топорщится в сторону ровно тогда, когда меньше всего похоже на ухо.
+// Повёрнутое ухо должно уходить ЗА голову, а не отставать от неё, — уши и
+// рисуются первыми, до черепа, так что подобранное ухо честно им закрывается.
+const EAR_EDGE_STRAIGHTEN = 0.55;
+
+// Полуширина черепа на заданной высоте (yNorm — доля ry).
+//
+// Понадобилась ушам, и вот почему. Корень уха считался проекцией точки на
+// ЭКВАТОРИАЛЬНОМ круге радиуса rx, хотя ухо сидит на макушке, где череп вдвое
+// уже своей самой широкой части (browWidth 0.42 против cheekWidth 0.97).
+// Круга такого радиуса на этой высоте головы просто нет. Пока ухо было
+// широким, разрыв закрывало его мясистое основание; при повороте якорь ехал
+// НАРУЖУ (35.7 → 40), контур черепа на той же высоте — ВНУТРЬ (26.9 → 23.4),
+// а ухо в этот момент сжималось до 40% ширины и перекрывать разрыв ему было
+// уже нечем. Отсюда и «ухо отрывается от головы, когда становится узким».
+function skullHalfAtY(rx, p, yNorm) {
+    // Верхняя дуга контура из skullPathData: (0,-1) → свод → виски → скулы.
+    const xs = [0, (p.browWidth != null ? p.browWidth : 0.62),
+        (p.templeWidth != null ? p.templeWidth : 0.97),
+        (p.cheekWidth != null ? p.cheekWidth : 1)];
+    const ys = [-1, -0.99, -0.72, -0.08];
+    const bez = (a, t) => {
+        const u = 1 - t;
+        return u * u * u * a[0] + 3 * u * u * t * a[1] + 3 * u * t * t * a[2] + t * t * t * a[3];
+    };
+    // По y дуга монотонна, поэтому параметр ищется делением пополам: два
+    // десятка итераций дешевле и надёжнее, чем решать кубическое уравнение.
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 24; i++) {
+        const m = (lo + hi) / 2;
+        if (bez(ys, m) < yNorm) lo = m; else hi = m;
+    }
+    return rx * bez(xs, (lo + hi) / 2);
+}
+
+// Где корень уха при данном повороте головы и насколько ухо сплющено.
+//
+// Одна функция и на сборку, и на живой пересчёт. Это не вкусовщина: тут уже
+// один раз разъехались два места, считавшие одно и то же, и калибровка
+// размера уха месяц не доезжала до экрана (см. EAR_FORM_SCALE).
+function earPlacement(ref, yaw) {
+    const proj = yawProject(ref.latR, ref.yawPhi, yaw, 0);
+    const squash = Math.max(EAR_SQUASH_MIN, Math.abs(proj.squash));
+    // Череп при повороте несимметричен (см. skullPathData): свод со стороны
+    // лица оптически уже, затылочный — полнее. Корень обязан ехать по ТОМУ
+    // контуру, который реально нарисован, иначе ухо повисает рядом с головой.
+    const t = Math.abs(yaw || 0);
+    const faceSide = (yaw || 0) >= 0 ? 1 : -1;
+    const widen = ref.mirror === faceSide ? (1 - 0.13 * t) : (1 + 0.11 * t);
+    // Вылет корня наружу от контура — это собственная плоть уха, и при
+    // развороте она сокращается вместе с ухом. Постоянный вылет как раз и
+    // отрывал ухо: ракурс сжимал полотно, а точку крепления — нет.
+    return {
+        x: proj.x * widen + ref.rootOut * squash,
+        squash,
+        // 0 — ухо анфас, 1 — стоит ребром.
+        edge: clamp01((1 - squash) / (1 - EAR_SQUASH_MIN))
+    };
+}
+
 // ---------- ЛОКАЛЬНЫЕ ФОРМЫ (до позиционирования) ----------
 function earPathData(mirror) {
     // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления.
@@ -2632,15 +2699,23 @@ function buildHeadNode(model, ctx) {
         // на поворот заметной, но не взрывной.
         const EAR_PHI_BACK = 12;
         const earPhi = yawAzimuth(mirror * rx * 0.78, rx) + mirror * EAR_PHI_BACK;
-        const earProj = yawProject(rx, earPhi, headYaw, 0);
-        const anchorX = earProj.x;
-        const anchorY = -ry * 0.66;
+        const anchorY = -ry * EAR_Y_RATIO;
+        // Радиус ГОРИЗОНТАЛЬНОГО СЕЧЕНИЯ черепа на высоте уха — по нему и
+        // ездит корень при повороте (почему не по rx — см. skullHalfAtY).
+        const earLatR = skullHalfAtY(rx, skullCfg, -EAR_Y_RATIO);
+        // Вылет корня наружу от этого сечения подобран так, чтобы АНФАС не
+        // сдвинулся ни на единицу: раньше якорь считался по rx, и (rx - latR)
+        // — ровно та разница. Меняется только поведение при повороте.
+        const earRootOut = (rx - earLatR) * Math.sin(earPhi * Math.PI / 180);
         // Ракурс уха: дальнее сплющивается, ближнее — почти нет.
         // Уху, наоборот, сокращаться можно сильно: у него нет внутренней
         // структуры, которую сплющивание сделало бы нечитаемой, а сильный
         // ракурс дальнего уха — самый дешёвый признак повёрнутой головы.
-        const earYawSquash = Math.max(0.42, Math.abs(earProj.squash));
-        const baseAngle = mirror * EAR_BASE_TILT + ear.rotation;
+        const earPlace = earPlacement({ latR: earLatR, yawPhi: earPhi, rootOut: earRootOut, mirror }, headYaw);
+        const anchorX = earPlace.x;
+        const earYawSquash = earPlace.squash;
+        const earBaseTilt = mirror * EAR_BASE_TILT;
+        const baseAngle = earBaseTilt * (1 - EAR_EDGE_STRAIGHTEN * earPlace.edge) + ear.rotation;
         // Группа уха масштабируется, а значит масштабируется и её обводка.
         // Без компенсации контур уха уехал бы с лестницы толщин (2.6 * 0.82
         // = 2.13) и силуэт получил бы разную толщину линии на разных
@@ -2651,7 +2726,7 @@ function buildHeadNode(model, ctx) {
         const earGroup = svgEl('g', {
             'data-part': `ear-${side}`,
             'data-anchor': `ear-${side}`,
-            transform: `translate(${anchorX.toFixed(2)},${anchorY.toFixed(2)}) rotate(${baseAngle.toFixed(1)}) scale(${(ear.scale * ear.stretchX * EAR_FORM_SCALE).toFixed(3)},${(ear.scale * ear.stretchY * EAR_FORM_SCALE).toFixed(3)})`,
+            transform: `translate(${anchorX.toFixed(2)},${anchorY.toFixed(2)}) rotate(${baseAngle.toFixed(1)}) scale(${earSx.toFixed(3)},${earSy.toFixed(3)})`,
             visibility: ear.visible ? 'visible' : 'hidden'
         });
         const earGradId = `worm-ear-grad-${ctx.instanceId}-${side}`;
@@ -2702,11 +2777,15 @@ function buildHeadNode(model, ctx) {
         earRefs[side] = {
             group: earGroup, shape: earShape, inner: earInner,
             anchorX, anchorY, baseAngle,
-            yawPhi: earPhi,
+            // Всё, что нужно earPlacement, чтобы пересчитать посадку на
+            // повороте, лежит здесь: живой пересчёт обязан получить ровно те
+            // же числа, из которых собрана исходная поза.
+            yawPhi: earPhi, latR: earLatR, rootOut: earRootOut, mirror,
+            baseTilt: earBaseTilt, ownRotation: ear.rotation,
             baseScaleX: ear.scale * ear.stretchX * EAR_FORM_SCALE,
             baseScaleY: ear.scale * ear.stretchY * EAR_FORM_SCALE,
-            scaleX: ear.scale * ear.stretchX * EAR_FORM_SCALE * earYawSquash,
-            scaleY: ear.scale * ear.stretchY * EAR_FORM_SCALE
+            scaleX: earSx,
+            scaleY: earSy
         };
     });
 
@@ -3082,9 +3161,12 @@ function applyHeadYaw(headRef, yaw) {
     ['left', 'right'].forEach(side => {
         const ear = headRef.ears[side];
         if (!ear) return;
-        const proj = yawProject(rx, ear.yawPhi, yaw, 0);
-        ear.anchorX = proj.x;
-        ear.scaleX = ear.baseScaleX * Math.max(0.42, Math.abs(proj.squash));
+        const place = earPlacement(ear, yaw);
+        ear.anchorX = place.x;
+        ear.scaleX = ear.baseScaleX * place.squash;
+        // Разворот наружу тоже зависит от ракурса — ухо, вставшее ребром,
+        // подбирается за голову вместо того, чтобы торчать вбок.
+        ear.baseAngle = ear.baseTilt * (1 - EAR_EDGE_STRAIGHTEN * place.edge) + ear.ownRotation;
         ear.group.setAttribute('transform',
             `translate(${ear.anchorX.toFixed(2)},${ear.anchorY.toFixed(2)}) ` +
             `rotate(${ear.baseAngle.toFixed(1)}) ` +
