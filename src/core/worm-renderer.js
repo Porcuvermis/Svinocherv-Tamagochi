@@ -121,6 +121,22 @@ const WORM_TURN_RATE = 2.4;
 // скоростью читается заносом. 0 = стоп на развороте, 1 = скорость не зависит
 // от угла.
 const WORM_TURN_SLOWDOWN = 0.45;
+
+// ---------- КАМЕРА ----------
+// Свайп короче этого (в единицах холста) — это тап «иди сюда», а не панорама.
+// Палец никогда не стоит на месте идеально, поэтому без порога любой тап
+// сдвигал бы камеру на пару единиц и заодно отменял сам себя.
+const CAM_DRAG_THRESHOLD = 8;
+// Мёртвая зона слежения: доля ширины окна от края, внутри которой камера
+// НЕ едет. Без неё камера подрагивает вслед за каждым шагом червя, и
+// комната мелко трясётся всё время.
+const CAM_DEAD_ZONE = 0.28;
+// Скорость доводки камеры (формула 1 - base^dt): МЕНЬШЕ = БЫСТРЕЕ.
+const CAM_FOLLOW_BASE = 0.02;
+// Сколько камера не лезет обратно после ручного свайпа. Игрок отвёл взгляд
+// на угол комнаты — пусть смотрит, а не борется со слежением. По истечении
+// срока камера снова подхватывает червя, иначе он потеряется за краем окна.
+const CAM_MANUAL_HOLD_MS = 4000;
 // Насколько быстро "интенсивность движения" (0..1) сходится к цели —
 // подставляется в framerate-независимую формулу 1 - base^dtSec: МЕНЬШЕ
 // значение = БЫСТРЕЕ сходимость. Задаёт амплитуду/скорость покачивания
@@ -246,10 +262,24 @@ const ROOM = {
     // (примерно 1:1.3) уже помещение, а не проход. Недостающий верх добирают
     // стены — их высота дешевле, она не превращает комнату в тоннель.
     floorBackRatio: 0.40,   // стык пола с задней стеной
-    // Ровно половина ширины: передние углы пола ложатся на боковые кромки
-    // экрана, и зазора между стеной и краем не остаётся.
+    // ---------- КОМНАТА ШИРЕ ЭКРАНА ----------
+    // Ширина комнаты в долях ширины ЭКРАНА. Экран — окно в неё, вбок оно
+    // ездит свайпом.
+    //
+    // Зачем: ширина упиралась в 390 единиц экрана, а размах тела червя — 258.
+    // Из этого не выкрутиться отступами: он физически занимал две трети
+    // комнаты, и «не касаться стен» означало «стоять в середине». Плюс пол
+    // 390×506 читался коридором. При 1.9 пол становится 741×506 — уже
+    // помещение, у червя втрое больше места вбок, и остаётся куда ставить
+    // мебель.
+    widthRatio: 1.9,
+    // Ровно половина ширины КОМНАТЫ: передние углы пола ложатся на её края,
+    // и зазора между стеной и краем мира не остаётся.
     frontHalfRatio: 0.5,
-    wallHeightRatio: 0.78,  // высота стен как доля ПОЛНОЙ ширины пола спереди
+    // Высота стен считается от ширины ЭКРАНА, а не комнаты. Иначе расширение
+    // мира задирало бы стены вместе с ним, и вся вертикальная композиция,
+    // подобранная выше, поехала бы.
+    wallHeightRatio: 0.78,
     // Сила перспективы: scale(d) = 1 / (1 + d*depthK).
     //
     // Была 0.42 — при закрытой коробке это превращало комнату в длинный
@@ -278,7 +308,7 @@ const ROOM = {
     // ГАБАРИТА ТЕЛА, а не от точки касания: тело лежит вдоль пола и занимает
     // место, поэтому «касание внутри пола» ещё не значит, что хвост не заехал
     // в стену.
-    wanderMargin: 6,
+    wanderMargin: 12,
     // Сколько места вбок должно остаться на глубине, чтобы она вообще
     // считалась пригодной. Без этого условия дальняя часть комнаты
     // формально проходима, но полоса там уже тела: червь оказывается
@@ -300,10 +330,13 @@ const ROOM = {
     charScaleStrength: 0.45
 };
 
+// w — ширина ЭКРАНА (окна), h — его высота. Сама комната шире: её ширина
+// возвращается в g.roomW, и все координаты пола/стен считаются в ней.
 function roomGeometry(w, h) {
+    const roomW = w * ROOM.widthRatio;
     const frontY = h * ROOM.floorFrontRatio;
     const backY = h * ROOM.floorBackRatio;
-    const frontHalf = w * ROOM.frontHalfRatio;
+    const frontHalf = roomW * ROOM.frontHalfRatio;
     const farScale = roomScaleAt(ROOM.farDepth);
     // Точка схода не задаётся числом, а ВЫВОДИТСЯ из того, где должны
     // оказаться передний и дальний края пола. Иначе перспектива и границы
@@ -311,12 +344,18 @@ function roomGeometry(w, h) {
     // упираться.
     const horizonY = (backY - farScale * frontY) / (1 - farScale);
     return {
-        w, h, cx: w / 2,
+        // w/h — ОКНО (экран), roomW — сама комната. Центр по комнате, а не по
+        // экрану: вся геометрия пола и стен живёт в координатах комнаты.
+        w, h, roomW, cx: roomW / 2,
+        // Насколько далеко камера может уехать вбок: от левого края комнаты
+        // до правого минус окно.
+        panMax: Math.max(0, roomW - w),
         horizonY, frontY, frontHalf,
         backY, backHalf: frontHalf * farScale,
         // Высота стены у переднего края; у дальней она во столько же раз
-        // меньше, во сколько уже пол.
-        wallH: frontHalf * 2 * ROOM.wallHeightRatio,
+        // меньше, во сколько уже пол. Считается от ширины ЭКРАНА — см.
+        // wallHeightRatio.
+        wallH: w * ROOM.wallHeightRatio,
         farScale
     };
 }
@@ -467,7 +506,7 @@ function buildRoom(layer, g, locationKey) {
     // Пустота вокруг коробки. Тот же тон, что у полей за пределами холста, —
     // тогда поля на нетипичном экране не читаются обрезкой, а выглядят
     // продолжением темноты вокруг комнаты.
-    layer.appendChild(svgEl('rect', { x: 0, y: 0, width: g.w, height: g.h, fill: loc.surround }));
+    layer.appendChild(svgEl('rect', { x: 0, y: 0, width: g.roomW, height: g.h, fill: loc.surround }));
 
     // Боковые стены: от передних углов пола к дальним, вверх на высоту стены.
     poly([[L, g.frontY], [bl, backY], [bl, topBack], [L, topFront]], wallShade);
@@ -3759,10 +3798,20 @@ const WormRenderer = {
         const slimeLayer = svgEl('g', { class: 'worm-slime-layer', 'pointer-events': 'none' });
         const objectLayer = svgEl('g', { class: 'worm-room-objects' });
         const charLayer = svgEl('g', { class: 'worm-char-layer' });
-        if (opts.room) svg.appendChild(roomLayer);
-        svg.appendChild(slimeLayer);
-        svg.appendChild(objectLayer);
-        svg.appendChild(charLayer);
+        // Все слои мира лежат в общей обёртке, и двигает её КАМЕРА. Комната
+        // шире экрана (см. ROOM.widthRatio), экран — окно в неё.
+        //
+        // Одна обёртка, а не сдвиг координат в каждом слое: комната, слизь,
+        // предметы и персонаж обязаны ехать СТРОГО вместе, иначе кучка
+        // «отстанет» от пола на полкадра при быстром свайпе. Заодно это
+        // единственное место, где вообще существует камера: вся остальная
+        // математика живёт в координатах комнаты и про неё не знает.
+        const worldLayer = svgEl('g', { class: 'worm-world-layer' });
+        if (opts.room) worldLayer.appendChild(roomLayer);
+        worldLayer.appendChild(slimeLayer);
+        worldLayer.appendChild(objectLayer);
+        worldLayer.appendChild(charLayer);
+        svg.appendChild(worldLayer);
 
         const state = {
             // Какая локация нарисована. Живёт в state, а не в opts: её меняют
@@ -3781,6 +3830,10 @@ const WormRenderer = {
             // направления на цель: именно расхождение между ними и даёт дугу
             // при смене цели на ходу.
             heading: null,
+            // Камера: на сколько единиц комнаты окно сдвинуто вправо.
+            camX: 0,
+            camManualUntil: 0,   // до этого момента слежение молчит
+            drag: null,          // текущий свайп
             // Измеренный габарит тела и допустимый диапазон глубин. null =
             // «пересчитать»: сбрасывается при пересборке тела и смене размера.
             bodyBox: null,
@@ -3890,6 +3943,13 @@ const WormRenderer = {
             state.wormY = state.wormY || h * opts.anchorY;
             state.targetX = state.wormX;
             state.targetY = state.wormY;
+
+            // Камера: держим червя в окне и не даём ей уехать за края комнаты
+            // (размер окна изменился — прежний сдвиг мог стать недопустимым).
+            if (opts.room && state.room) {
+                setCam(state.camX || (state.wormX - state.room.w / 2));
+                worldLayer.setAttribute('transform', `translate(${(-state.camX).toFixed(1)},0)`);
+            }
         }
 
         function rootTransform() {
@@ -4015,38 +4075,109 @@ const WormRenderer = {
             return { x, y: roomYAt(g, d) };
         }
 
-        // ---------- ТАП ПО ПОЛУ: ИДИ СЮДА ----------
-        // Висит на всём svg, а не на полигоне пола: пол закрыт слоями слизи,
-        // предметов и самим червём, и попадание по нему «как по фигуре» ловилось
-        // бы только на чистых участках между ними.
+        // ---------- КАМЕРА ----------
+        // Комната шире экрана, экран — окно в неё. Здесь единственное место,
+        // где камера вообще существует: вся остальная математика живёт в
+        // координатах комнаты и про окно не знает.
+        function setCam(x) {
+            const g = state.room;
+            if (!g) return;
+            const next = Math.min(Math.max(x, 0), g.panMax);
+            if (Math.abs(next - state.camX) < 0.01) return;
+            state.camX = next;
+            worldLayer.setAttribute('transform', `translate(${(-next).toFixed(1)},0)`);
+        }
+
+        // Слежение за червём с мёртвой зоной. Камера стоит, пока он гуляет по
+        // середине окна, и подъезжает, только когда он подходит к краю.
+        // Иначе комната мелко трясётся вслед за каждым его шагом.
+        function followCam(dtSec, now) {
+            const g = state.room;
+            if (!g || !g.panMax || now < state.camManualUntil || state.drag) return;
+
+            const dead = g.w * CAM_DEAD_ZONE;
+            const rel = state.wormX - state.camX;          // положение червя в окне
+            let want = state.camX;
+            if (rel < dead) want = state.wormX - dead;
+            else if (rel > g.w - dead) want = state.wormX - (g.w - dead);
+            want = Math.min(Math.max(want, 0), g.panMax);
+
+            if (Math.abs(want - state.camX) < 0.5) return;
+            setCam(state.camX + (want - state.camX) * (1 - Math.pow(CAM_FOLLOW_BASE, dtSec)));
+        }
+
+        // Экранные координаты → единицы КОМНАТЫ. Через getBoundingClientRect,
+        // а не через clientWidth: вся игра живёт в холсте постоянного размера,
+        // который масштабируется CSS-трансформацией, и без этого деления тап
+        // уезжал бы тем сильнее, чем крупнее экран. Плюс сдвиг камеры: экран
+        // показывает не начало комнаты, а её кусок.
+        function toRoom(e) {
+            const r = svg.getBoundingClientRect();
+            if (!r.width || !r.height || !state.room) return null;
+            return {
+                x: (e.clientX - r.left) / r.width * state.room.w + state.camX,
+                y: (e.clientY - r.top) / r.height * state.room.h
+            };
+        }
+
+        // ---------- СВАЙП ИЛИ ТАП ----------
+        // Одно касание значит одно из двух, и различает их только пройденное
+        // расстояние: увёл палец вбок — панорама, отпустил на месте — «иди
+        // сюда». Порог обязателен: палец никогда не стоит идеально, и без него
+        // каждый тап заодно сдвигал бы камеру и сам себя отменял.
         //
         // Что тапом НЕ является:
         //   • предметы на полу — у них свой обработчик со stopPropagation
         //     (кучку убирают, а не идут к ней);
         //   • сам червь — тап по нему остаётся свободным под будущее «повозиться».
-        function onStageTap(e) {
+        function onStageDown(e) {
             if (!opts.tapToWalk || !opts.wander || !state.room) return;
+            // Панорама начинается ОТКУДА УГОДНО, включая самого червя: палец
+            // ложится куда пришёлся, и запрещать свайп с его спины значило бы
+            // ловить «камера не двигается» на ровном месте. А вот «иди сюда»
+            // с червя или с кучки не считается — у них своя роль.
             const t = e.target;
-            if (t && t.closest && (t.closest('.worm-char-layer') || t.closest('.worm-room-objects'))) return;
+            const onBusy = !!(t && t.closest &&
+                (t.closest('.worm-char-layer') || t.closest('.worm-room-objects')));
+            state.drag = {
+                id: e.pointerId, startX: e.clientX, camAt: state.camX,
+                moved: false, tappable: !onBusy
+            };
+            try { svg.setPointerCapture(e.pointerId); } catch (err) { /* мышь без захвата */ }
+        }
 
-            // Экранные координаты → единицы холста. Через getBoundingClientRect,
-            // а не через clientWidth: вся игра живёт в холсте постоянного
-            // размера, который масштабируется CSS-трансформацией, и без этого
-            // деления тап уезжал бы тем сильнее, чем крупнее экран.
+        function onStageMove(e) {
+            const d = state.drag;
+            if (!d || e.pointerId !== d.id || !state.room) return;
             const r = svg.getBoundingClientRect();
-            if (!r.width || !r.height) return;
-            const x = (e.clientX - r.left) / r.width * state.room.w;
-            const y = (e.clientY - r.top) / r.height * state.room.h;
+            if (!r.width) return;
+            // Экранный сдвиг пальца → сдвиг в единицах комнаты.
+            const dx = (e.clientX - d.startX) / r.width * state.room.w;
+            if (!d.moved && Math.abs(dx) < CAM_DRAG_THRESHOLD) return;
+            d.moved = true;
+            // Комната едет ЗА пальцем: тянешь влево — открывается правая часть.
+            setCam(d.camAt - dx);
+            state.camManualUntil = performance.now() + CAM_MANUAL_HOLD_MS;
+        }
 
+        function onStageUp(e) {
+            const d = state.drag;
+            if (!d || e.pointerId !== d.id) return;
+            state.drag = null;
+            try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* уже отпущен */ }
+            if (d.moved || !d.tappable) return;   // панорама либо тап по червю/кучке
+
+            const p = toRoom(e);
+            if (!p) return;
             // Считается только попадание В ПОЛ. Тап по стене или по темноте
             // вокруг коробки не должен никуда его отправлять: иначе «идёт
             // куда сказали» превращается в «дёргается от любого касания
             // экрана», и промах мимо кнопки сдвигает червя.
             const g = state.room;
-            if (y < g.backY || y > g.frontY) return;
-            if (Math.abs(x - g.cx) > roomHalfAt(g, roomDepthAt(g, y))) return;
+            if (p.y < g.backY || p.y > g.frontY) return;
+            if (Math.abs(p.x - g.cx) > roomHalfAt(g, roomDepthAt(g, p.y))) return;
 
-            walkTo(x, y);
+            walkTo(p.x, p.y);
         }
 
         // Идти в точку пола. Точка вписывается в допустимую область, поэтому
@@ -4062,7 +4193,10 @@ const WormRenderer = {
             state.nextMoveAt = null;
         }
 
-        svg.addEventListener('pointerdown', onStageTap);
+        svg.addEventListener('pointerdown', onStageDown);
+        svg.addEventListener('pointermove', onStageMove);
+        svg.addEventListener('pointerup', onStageUp);
+        svg.addEventListener('pointercancel', onStageUp);
 
         function rebuild() {
             const m = mergedModel();
@@ -4295,6 +4429,10 @@ const WormRenderer = {
                     state.nextMoveAt = null;
                 }
             }
+            // Камера подтягивается к червю — после движения, чтобы за кадр не
+            // отставать от него на шаг.
+            if (opts.room) followCam(dtSec, now);
+
             // ---------- ДОВОРОТ ХВОСТА ЗА ДВИЖЕНИЕМ ----------
             // Целевой угол — строго противоположный движению: хвост тянется
             // СЗАДИ. Вертикаль сжата перспективой пола.
@@ -5016,7 +5154,10 @@ const WormRenderer = {
             destroy() {
                 if (state.rafId) cancelAnimationFrame(state.rafId);
                 window.removeEventListener('resize', onResize);
-                svg.removeEventListener('pointerdown', onStageTap);
+                svg.removeEventListener('pointerdown', onStageDown);
+                svg.removeEventListener('pointermove', onStageMove);
+                svg.removeEventListener('pointerup', onStageUp);
+                svg.removeEventListener('pointercancel', onStageUp);
                 container.innerHTML = '';
             }
         };
