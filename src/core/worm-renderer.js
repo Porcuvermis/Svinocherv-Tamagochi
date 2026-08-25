@@ -70,11 +70,23 @@ const WORM_BLINK_DURATION = 220;
 // без видимых заломов. EGG_TOP/BOTTOM — лёгкая асимметрия "как яйцо" (верх
 // чуть уже, низ чуть шире), а не идеально круглая форма.
 const MOUTH_ARC_K = 0.5522847498;
-// Где рот сидит на морде, в долях полувысоты головы. Был 0.9 — рот стоял
-// почти на самом подбородке, далеко от пятачка, и морда выглядела пустой
-// посередине. Поднят к пятачку: так рот попадает в ту же зону лица, что
-// глаза и нос, и читается как её часть, а не как отдельная деталь внизу.
-const MOUTH_Y = 0.74;
+// ---------- ВЫСОТЫ ЧЕРТ ЛИЦА ----------
+// В долях полувысоты головы (ry). Держатся ВМЕСТЕ и только здесь: пятачок,
+// рот и «морда» (светлый выступающий объём вокруг них) — одна связка, и
+// подвинуть что-то одно, не подвинув остальное, нельзя.
+//
+// Именно это уже случилось. Числа стояли вразброс по коду, рот с пятачком
+// подняли, а морда осталась на прежнем месте — и её нижняя треть повисла
+// пустым светлым пятном под ртом. Хуже того, Y рта был зашит ВТОРОЙ РАЗ в
+// живом пересчёте поворота головы, поэтому при повороте рот прыгал обратно
+// на старое место.
+const SNOUT_Y = 0.36;
+const MOUTH_Y = 0.68;
+// Границы «морды» выводятся из них же, а не задаются отдельно: сверху она
+// начинается заметно выше пятачка (переход к переносице), снизу закрывает
+// рот с небольшим запасом на подбородок.
+const MUZZLE_TOP = SNOUT_Y - 0.32;
+const MUZZLE_BOTTOM = MOUTH_Y + 0.14;
 const MOUTH_EGG_TOP = 0.85;
 const MOUTH_EGG_BOTTOM = 1.12;
 
@@ -2155,14 +2167,26 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     lidClipGroup.appendChild(smileTrack);
 
     // Короткие редкие ресницы по верхнему веку — свиные, не кукольные.
+    //
+    // Длина считается ОТ РАЗМЕРА ГЛАЗА, а не абсолютным числом, и это не
+    // придирка. Стояло 1.8–2.8 единицы, подобранных при глазе scale 0.95;
+    // потом глаз уменьшили до 0.68 («мелкие глаза — признак свиньи, а не
+    // собаки»), а ресницы остались прежними и стали занимать почти половину
+    // его высоты. На морде это читалось не ресницами, а тёмными штрихами
+    // поперёк глаза — то самое «полоски какие-то непонятные».
+    //
+    // Мораль общая: у детали, посаженной на часть тела, размер обязан быть
+    // долей от этой части. Иначе первая же правка пропорций её ломает, причём
+    // молча.
     const lashes = svgEl('g', { class: 'worm-eye-lashes' });
     for (let i = 0; i < 4; i++) {
         const t = i / 3;
         const lx = (-0.85 + t * 1.7) * rx;
         const ly = -Math.sqrt(Math.max(0, 1 - (lx / rx) * (lx / rx))) * ry;
+        const len = ry * (0.3 + 0.1 * (i % 2));
         lashes.appendChild(svgEl('path', {
-            d: `M ${lx.toFixed(1)},${ly.toFixed(1)} l ${(lx * 0.12).toFixed(1)},${(-1.8 - i % 2).toFixed(1)}`,
-            stroke: FLESH[900], 'stroke-width': SW.hairline, fill: 'none', opacity: 0.5, 'stroke-linecap': 'round'
+            d: `M ${lx.toFixed(1)},${ly.toFixed(1)} l ${(lx * 0.12).toFixed(1)},${(-len).toFixed(2)}`,
+            stroke: FLESH[900], 'stroke-width': SW.hairline, fill: 'none', opacity: 0.45, 'stroke-linecap': 'round'
         }));
     }
 
@@ -2761,8 +2785,12 @@ function buildHeadNode(model, ctx) {
     // плоское лицо. Собственная светлая грань сверху, тени по бокам и
     // контактная тень в месте, где морда выходит из черепа.
     const muzzleW = (skullCfg.muzzleWidth != null ? skullCfg.muzzleWidth : 0.46) * rx;
-    const muzzleTop = ry * 0.05;
-    const muzzleBottom = ry * 0.95;
+    const muzzleTop = ry * MUZZLE_TOP;
+    const muzzleBottom = ry * MUZZLE_BOTTOM;
+    // Доля вдоль морды → координата. Все её детали посажены через неё, а не
+    // отдельными числами: иначе при следующем сдвиге черт лица они снова
+    // разъедутся поодиночке, как уже было.
+    const mz = (t) => muzzleTop + (muzzleBottom - muzzleTop) * t;
     // Морда — тот же выступающий объём, что и пятачок, и уезжает вместе с ним,
     // иначе пятак «отклеится» от своей опоры.
     const muzzleProj = yawProject(rx, 0, headYaw, SNOUT_PROTRUDE * 0.7);
@@ -2777,16 +2805,16 @@ function buildHeadNode(model, ctx) {
         shadow: -0.24, shadowTint: GRIME_SHADOW
     });
     const muzzleD = `M ${(-muzzleW * 1.22).toFixed(1)},${muzzleTop.toFixed(1)} ` +
-        `C ${(-muzzleW * 1.3).toFixed(1)},${(ry * 0.45).toFixed(1)} ${(-muzzleW * 1.08).toFixed(1)},${(ry * 0.78).toFixed(1)} ${(-muzzleW * 0.86).toFixed(1)},${muzzleBottom.toFixed(1)} ` +
-        `C ${(-muzzleW * 0.5).toFixed(1)},${(ry * 1.08).toFixed(1)} ${(muzzleW * 0.5).toFixed(1)},${(ry * 1.08).toFixed(1)} ${(muzzleW * 0.86).toFixed(1)},${muzzleBottom.toFixed(1)} ` +
-        `C ${(muzzleW * 1.08).toFixed(1)},${(ry * 0.78).toFixed(1)} ${(muzzleW * 1.3).toFixed(1)},${(ry * 0.45).toFixed(1)} ${(muzzleW * 1.22).toFixed(1)},${muzzleTop.toFixed(1)} ` +
-        `C ${(muzzleW * 0.7).toFixed(1)},${(-ry * 0.12).toFixed(1)} ${(-muzzleW * 0.7).toFixed(1)},${(-ry * 0.12).toFixed(1)} ${(-muzzleW * 1.22).toFixed(1)},${muzzleTop.toFixed(1)} Z`;
+        `C ${(-muzzleW * 1.3).toFixed(1)},${mz(0.44).toFixed(1)} ${(-muzzleW * 1.08).toFixed(1)},${mz(0.81).toFixed(1)} ${(-muzzleW * 0.86).toFixed(1)},${muzzleBottom.toFixed(1)} ` +
+        `C ${(-muzzleW * 0.5).toFixed(1)},${mz(1.14).toFixed(1)} ${(muzzleW * 0.5).toFixed(1)},${mz(1.14).toFixed(1)} ${(muzzleW * 0.86).toFixed(1)},${muzzleBottom.toFixed(1)} ` +
+        `C ${(muzzleW * 1.08).toFixed(1)},${mz(0.81).toFixed(1)} ${(muzzleW * 1.3).toFixed(1)},${mz(0.44).toFixed(1)} ${(muzzleW * 1.22).toFixed(1)},${muzzleTop.toFixed(1)} ` +
+        `C ${(muzzleW * 0.7).toFixed(1)},${mz(-0.19).toFixed(1)} ${(-muzzleW * 0.7).toFixed(1)},${mz(-0.19).toFixed(1)} ${(-muzzleW * 1.22).toFixed(1)},${muzzleTop.toFixed(1)} Z`;
     // Морда не должна иметь резкой верхней границы — она не накладка, а
     // продолжение черепа: заливка приглушена, а стык с лицом растворяется
     // мягким пятном (см. следующий слой).
     muzzleGroup.appendChild(svgEl('path', { d: muzzleD, fill: muzzleFill, opacity: 0.5 }));
     muzzleGroup.appendChild(svgEl('ellipse', {
-        cx: 0, cy: (ry * 0.06).toFixed(1),
+        cx: 0, cy: mz(0.01).toFixed(1),
         rx: (muzzleW * 1.5).toFixed(1), ry: (ry * 0.26).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-muzzle-blend-${ctx.instanceId}`, mixColor(head.fill, GRIME_HIGHLIGHT, 0.12), 1),
         opacity: 0.5
@@ -2794,7 +2822,7 @@ function buildHeadNode(model, ctx) {
     // Тени по бокам морды — она отделяется от щёк.
     [-1, 1].forEach(side => {
         muzzleGroup.appendChild(svgEl('ellipse', {
-            cx: (side * muzzleW * 1.24).toFixed(1), cy: (ry * 0.5).toFixed(1),
+            cx: (side * muzzleW * 1.24).toFixed(1), cy: mz(0.5).toFixed(1),
             rx: (rx * 0.12).toFixed(1), ry: (ry * 0.34).toFixed(1),
             fill: ensureSoftGradient(ctx, `worm-muzzle-side-${ctx.instanceId}`, GRIME_SHADOW, 1),
             opacity: 0.35
@@ -2802,7 +2830,7 @@ function buildHeadNode(model, ctx) {
     });
     // Светлая грань спинки морды.
     muzzleGroup.appendChild(svgEl('ellipse', {
-        cx: (-muzzleW * 0.18).toFixed(1), cy: (ry * 0.34).toFixed(1),
+        cx: (-muzzleW * 0.18).toFixed(1), cy: mz(0.32).toFixed(1),
         rx: (muzzleW * 0.44).toFixed(1), ry: (ry * 0.3).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-muzzle-top-${ctx.instanceId}`, GRIME_HIGHLIGHT, 1),
         opacity: 0.22
@@ -2815,23 +2843,23 @@ function buildHeadNode(model, ctx) {
     const jawGroup = svgEl('g', { 'data-part': 'jaw', 'clip-path': `url(#${skullClipId})` });
     const jawFill = ensureSoftGradient(ctx, `worm-jaw-shade-${ctx.instanceId}`, GRIME_SHADOW, 1);
     jawGroup.appendChild(svgEl('ellipse', {
-        cx: 0, cy: (ry * 1.0).toFixed(1),
+        cx: 0, cy: mz(1.06).toFixed(1),
         rx: (muzzleW * 0.95).toFixed(1), ry: (ry * 0.16).toFixed(1),
         fill: jawFill, opacity: 0.3
     }));
     const lipColor = mixColor(head.mouth.color, head.fill, 0.35);
     const lowerLip = svgEl('path', {
-        d: `M ${(-muzzleW * 0.78).toFixed(1)},${(ry * 1.02).toFixed(1)} Q 0,${(ry * 1.1).toFixed(1)} ${(muzzleW * 0.78).toFixed(1)},${(ry * 1.02).toFixed(1)}`,
+        d: `M ${(-muzzleW * 0.78).toFixed(1)},${mz(1.08).toFixed(1)} Q 0,${mz(1.17).toFixed(1)} ${(muzzleW * 0.78).toFixed(1)},${mz(1.08).toFixed(1)}`,
         fill: 'none', stroke: lipColor, 'stroke-width': SW.structure, opacity: 0.5, 'stroke-linecap': 'round'
     });
     jawGroup.appendChild(lowerLip);
 
     // ---------- ПЯТАЧОК ----------
     const snout = head.snout;
-    // Пятачок поднят (было 0.6, потом 0.5): под ним расчищается место для
-    // широкого рта. Иначе рот подлезает прямо под пятачок и его уголки
-    // теряются на фоне ноздрей — ровно то, ради чего рот и расширяли.
-    const snoutY = ry * 0.4;
+    // Высота из общей связки черт лица (SNOUT_Y): пятачок поднят, чтобы под
+    // ним расчистить место широкому рту. Иначе рот подлезает прямо под него и
+    // уголки теряются на фоне ноздрей — ровно то, ради чего рот и расширяли.
+    const snoutY = ry * SNOUT_Y;
     const snoutRx = 14.5, snoutRy = 10.5;
     // Пятачок сидит на оси лица (азимут 0), но заметно ВЫСТУПАЕТ вперёд,
     // поэтому при повороте уезжает в сторону сильнее любой другой черты.
@@ -3055,9 +3083,9 @@ function applyHeadYaw(headRef, yaw) {
     headRef.snoutX = snoutProj.x;
     headRef.snoutSquash = Math.max(0.55, Math.abs(snoutProj.squash));
     if (headRef.muzzleGroup) {
-        const mz = yawProject(rx, 0, yaw, headRef.snoutProtrude * 0.7);
-        headRef.muzzleX = mz.x;
-        headRef.muzzleGroup.setAttribute('transform', `translate(${mz.x.toFixed(2)},0)`);
+        const mzp = yawProject(rx, 0, yaw, headRef.snoutProtrude * 0.7);
+        headRef.muzzleX = mzp.x;
+        applyMuzzleTransform(headRef);
     }
 
     // Рот: тот же выступ, но с ограничителем по ширине морды.
@@ -3068,9 +3096,24 @@ function applyHeadYaw(headRef, yaw) {
         headRef.mouthSquash = Math.max(0.62, Math.abs(mp.squash));
         const mo = headRef.mouthBaseScale || { x: 1, y: 1 };
         headRef.mouthAnchor.setAttribute('transform',
-            `translate(${headRef.mouthX.toFixed(2)},${(ry * 0.9).toFixed(2)}) ` +
+            `translate(${headRef.mouthX.toFixed(2)},${(ry * MOUTH_Y).toFixed(2)}) ` +
             `scale(${(mo.x * headRef.mouthSquash).toFixed(3)},${mo.y.toFixed(3)})`);
     }
+}
+
+// Трансформ «морды» пишут ДВА источника: поворот головы (сдвиг вбок, потому
+// что морда выступает вперёд) и надувание щёк из мимики. Раньше каждый писал
+// атрибут целиком и затирал чужую работу — надутые щёки сбрасывали сдвиг от
+// поворота, и морда отклеивалась от пятачка, повисая светлым пятном рядом с
+// ним. Поэтому оба слагаемых хранятся в refs, а собирает их одно место.
+function applyMuzzleTransform(headRef) {
+    if (!headRef.muzzleGroup) return;
+    const x = headRef.muzzleX || 0;
+    const puff = headRef.muzzlePuff || 0;
+    const parts = [];
+    if (Math.abs(x) > 0.01) parts.push(`translate(${x.toFixed(2)},0)`);
+    if (puff > 0.001) parts.push(`scale(${(1 + 0.12 * puff).toFixed(3)},${(1 + 0.05 * puff).toFixed(3)})`);
+    headRef.muzzleGroup.setAttribute('transform', parts.join(' '));
 }
 
 // ---------- ШРАМЫ ----------
@@ -5032,9 +5075,9 @@ const WormRenderer = {
 
                     // Щёки: надуваются (полный рот) — брыли расходятся в стороны.
                     if (headRef.muzzleGroup) {
-                        const puff = state.livePose.cheekPuff != null ? clamp01(state.livePose.cheekPuff) : 0;
-                        headRef.muzzleGroup.setAttribute('transform',
-                            puff ? `scale(${(1 + 0.12 * puff).toFixed(3)},${(1 + 0.05 * puff).toFixed(3)})` : '');
+                        headRef.muzzlePuff = state.livePose.cheekPuff != null
+                            ? clamp01(state.livePose.cheekPuff) : 0;
+                        applyMuzzleTransform(headRef);
                     }
 
                     // Взгляд и брови.
