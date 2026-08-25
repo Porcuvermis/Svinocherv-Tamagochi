@@ -101,6 +101,26 @@ const WORM_WANDER_MOVE_BASE = 0.3;
 // приближаются к wormX/Y экспоненциально и математически никогда не
 // долетают ТОЧНО до цели.
 const WORM_MOVE_EPS = 1.5;
+
+// ---------- ПОВОРОТ НА ХОДУ: ДУГА, А НЕ ИЗЛОМ ----------
+// Раньше червь двигался прямо к цели: позиция подтягивалась к targetX/Y
+// экспонентой. Пока цель не менялась, это выглядело нормально, но стоило
+// задать новую (а тап по полу задаёт её постоянно) — направление менялось
+// МГНОВЕННО. Тело при этом продолжало ехать, и в кадре получался излом: червь
+// как будто отражался от невидимой стены.
+//
+// Теперь у него есть КУРС. Он доворачивается к нужному направлению с
+// ограниченной угловой скоростью, а тело едет туда, куда смотрит курс, —
+// поэтому смена цели даёт дугу.
+//
+// Радиан в секунду. Ниже примерно 1.3 (скорость подтягивания к цели) червь
+// перестаёт успевать доворачивать и начинает наматывать круги вокруг точки
+// вместо того, чтобы в неё прийти. 2.4 — заметная дуга с запасом от этого.
+const WORM_TURN_RATE = 2.4;
+// На крутом довороте червь притормаживает: разворот «на пятке» с полной
+// скоростью читается заносом. 0 = стоп на развороте, 1 = скорость не зависит
+// от угла.
+const WORM_TURN_SLOWDOWN = 0.45;
 // Насколько быстро "интенсивность движения" (0..1) сходится к цели —
 // подставляется в framerate-независимую формулу 1 - base^dtSec: МЕНЬШЕ
 // значение = БЫСТРЕЕ сходимость. Задаёт амплитуду/скорость покачивания
@@ -246,13 +266,25 @@ const ROOM = {
     farDepth: 4.6,         // глубина дальней стены
     // Червь ходит НЕ по всей глубине: у дальней стены он мельче, а стена там
     // ниже него, и голова начинала бы торчать над комнатой.
-    wanderNear: 0.3,       // ближняя граница блуждания
-    wanderFar: 2.0,        // дальняя граница блуждания
-    wanderInsetU: 0.9,     // доля свободной ширины пола, доступная червю
-    // Половина «следа» персонажа на полу в условных единицах холста: тело
-    // лежит вдоль пола и занимает место. Граница выгула считается с учётом
-    // этого, иначе хвост заезжает в боковую стену.
-    bodyHalf: 78,
+    // ---------- ГРАНИЦЫ ВЫГУЛА ----------
+    // Это не «где червю разрешено стоять», а лишь ВНЕШНИЕ рамки поиска.
+    // Настоящая граница считается от габаритов тела: см. refreshWanderRange
+    // и clampFloorPoint. Причина — константа не может знать, какого размера
+    // червь: он растёт с возрастом, и подобранный вручную отступ перестал бы
+    // работать на первом же новом сегменте.
+    wanderNear: 0.25,      // ближняя граница поиска
+    wanderFar: 3.4,        // дальняя граница поиска
+    // Отступ от стен и кромок кадра в условных единицах холста. Меряется от
+    // ГАБАРИТА ТЕЛА, а не от точки касания: тело лежит вдоль пола и занимает
+    // место, поэтому «касание внутри пола» ещё не значит, что хвост не заехал
+    // в стену.
+    wanderMargin: 6,
+    // Сколько места вбок должно остаться на глубине, чтобы она вообще
+    // считалась пригодной. Без этого условия дальняя часть комнаты
+    // формально проходима, но полоса там уже тела: червь оказывается
+    // намертво прижат к середине и перестаёт двигаться вбок вовсе. Дешевле
+    // объявить такую глубину непригодной и не пускать его туда.
+    wanderMinSpan: 18,
     // ---------- ПРИГЛУШЕНИЕ МАСШТАБА ПЕРСОНАЖА ----------
     // Пол считается по ЧЕСТНОЙ перспективе, а размер персонажа — нет, и это
     // осознанное расхождение.
@@ -3745,6 +3777,14 @@ const WormRenderer = {
             wormY: 0,
             targetX: 0,
             targetY: 0,
+            // Куда червь СМОТРИТ на ходу (радианы). null = стоит. Отдельно от
+            // направления на цель: именно расхождение между ними и даёт дугу
+            // при смене цели на ходу.
+            heading: null,
+            // Измеренный габарит тела и допустимый диапазон глубин. null =
+            // «пересчитать»: сбрасывается при пересборке тела и смене размера.
+            bodyBox: null,
+            wanderD: null,
             blinkClock: 0,
             faceClock: 0,
             rafId: null,
@@ -3840,6 +3880,7 @@ const WormRenderer = {
             if (opts.room) {
                 state.room = roomGeometry(w, h);
                 buildRoom(roomLayer, state.room, state.location);
+                state.wanderD = null;   // комната изменилась — границы пересчитать
                 // Стартовая точка — на полу, а не в произвольной доле высоты:
                 // иначе персонаж при запуске стоит в воздухе или в стене.
                 if (!state.wormX) state.wormX = state.room.cx;
@@ -3867,12 +3908,172 @@ const WormRenderer = {
                    `scale(${sc.toFixed(4)})${flipPart}`;
         }
 
+        // ---------- ГДЕ ЧЕРВЮ МОЖНО СТОЯТЬ ----------
+        // Габарит тела относительно ТОЧКИ КАСАНИЯ ПОЛА, в экранных единицах.
+        // Именно он, а не подобранная константа, задаёт границы выгула: червь
+        // растёт с возрастом, и любой зашитый отступ рано или поздно
+        // перестал бы совпадать с телом.
+        //
+        // getBBox() заставляет браузер посчитать раскладку SVG, поэтому
+        // измерение кешируется: тело меняет габарит только при пересборке.
+        // Перемер габарита. Одного замера мало: тело дышит, заваливается и
+        // водит хвостом, поэтому мгновенный getBBox() — это снимок одной позы,
+        // и по нему червь вылезал за нижнюю кромку примерно на два десятка
+        // единиц. Копим ОГИБАЮЩУЮ по максимуму: она сходится к настоящему
+        // размаху за несколько секунд и дальше не растёт.
+        function measureBody() {
+            if (!state.built) return false;
+            let B;
+            try { B = state.built.root.getBBox(); } catch (err) { return false; }
+            if (!B || !B.width) return false;
+
+            const old = state.bodyBox;
+            if (!old) { state.bodyBox = { x: B.x, y: B.y, width: B.width, height: B.height }; return true; }
+
+            const x0 = Math.min(old.x, B.x);
+            const y0 = Math.min(old.y, B.y);
+            const x1 = Math.max(old.x + old.width, B.x + B.width);
+            const y1 = Math.max(old.y + old.height, B.y + B.height);
+            const grew = (x0 < old.x - 0.5) || (y0 < old.y - 0.5) ||
+                         (x1 > old.x + old.width + 0.5) || (y1 > old.y + old.height + 0.5);
+            state.bodyBox = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+            return grew;
+        }
+
+        function bodyFootprint(sc) {
+            if (!state.bodyBox) measureBody();
+            const B = state.bodyBox;
+            const F = state.floorLocalY;
+            if (!B || !B.width) return { left: 0, right: 0, up: 0, down: 0 };
+            return {
+                left: B.x * sc,                        // от точки касания влево (число ≤ 0)
+                right: (B.x + B.width) * sc,           // вправо
+                up: (F - B.y) * sc,                    // насколько тело выше касания
+                down: (B.y + B.height - F) * sc        // и насколько ниже
+            };
+        }
+
+        // Диапазон глубин, на которых тело помещается в кадр ЦЕЛИКОМ: у
+        // ближнего края его нижняя кромка не должна вываливаться за низ
+        // экрана, у дальнего — макушка за верх коробки.
+        //
+        // Считается перебором, а не формулой: масштаб персонажа приглушён
+        // (charScaleStrength), поэтому зависимость габарита от глубины
+        // нелинейная и в одну строку не выражается. Полсотни шагов раз в
+        // пересборку — цена, которой не видно.
+        function refreshWanderRange() {
+            const g = state.room;
+            if (!g || !state.built || !state.floorLocalY) return;
+            const M = ROOM.wanderMargin;
+            const topLimit = g.backY - g.wallH * g.farScale + M;   // верхняя кромка коробки
+            const bottomLimit = g.frontY - M;                      // низ кадра
+
+            let min = null, max = null;
+            for (let d = ROOM.wanderNear; d <= ROOM.wanderFar + 1e-6; d += 0.05) {
+                const sc = roomCharScaleAt(d);
+                const y = roomYAt(g, d);
+                const fp = bodyFootprint(sc);
+                // Помещается по вертикали в кадр И имеет куда шагнуть вбок.
+                const span = 2 * (roomHalfAt(g, d) - M) - (fp.right - fp.left);
+                const fits = (y + fp.down <= bottomLimit) &&
+                             (y - fp.up >= topLimit) &&
+                             (span >= ROOM.wanderMinSpan);
+                if (fits) {
+                    if (min === null) min = d;
+                    max = d;
+                }
+            }
+            // Не поместился нигде (крошечная комната, огромный червь) — не
+            // запираем его в точке, а оставляем прежние рамки: пусть лучше
+            // немного вылезет, чем застынет на месте.
+            state.wanderD = (min === null)
+                ? { min: ROOM.wanderNear, max: ROOM.wanderFar }
+                : { min, max };
+        }
+
+        // Ближайшая точка пола, где червь помещается целиком. Через неё
+        // проходят И случайная прогулка, И тап игрока — поэтому уйти за край
+        // нельзя ни одним из способов.
+        function clampFloorPoint(fx, fy) {
+            const g = state.room;
+            if (!g) return { x: fx, y: fy };
+            if (!state.wanderD) refreshWanderRange();
+            const range = state.wanderD || { min: ROOM.wanderNear, max: ROOM.wanderFar };
+
+            const d = Math.min(Math.max(roomDepthAt(g, fy), range.min), range.max);
+            const sc = roomCharScaleAt(d);
+            const fp = bodyFootprint(sc);
+
+            // Вбок: габарит тела должен уместиться в ширину пола НА ЭТОЙ
+            // глубине. Пол сужается вглубь, поэтому проверять надо там, где
+            // червь стоит, а не у переднего края.
+            const half = roomHalfAt(g, d) - ROOM.wanderMargin;
+            const lo = g.cx - half - fp.left;
+            const hi = g.cx + half - fp.right;
+            const x = (hi < lo) ? g.cx : Math.min(Math.max(fx, lo), hi);
+
+            return { x, y: roomYAt(g, d) };
+        }
+
+        // ---------- ТАП ПО ПОЛУ: ИДИ СЮДА ----------
+        // Висит на всём svg, а не на полигоне пола: пол закрыт слоями слизи,
+        // предметов и самим червём, и попадание по нему «как по фигуре» ловилось
+        // бы только на чистых участках между ними.
+        //
+        // Что тапом НЕ является:
+        //   • предметы на полу — у них свой обработчик со stopPropagation
+        //     (кучку убирают, а не идут к ней);
+        //   • сам червь — тап по нему остаётся свободным под будущее «повозиться».
+        function onStageTap(e) {
+            if (!opts.tapToWalk || !opts.wander || !state.room) return;
+            const t = e.target;
+            if (t && t.closest && (t.closest('.worm-char-layer') || t.closest('.worm-room-objects'))) return;
+
+            // Экранные координаты → единицы холста. Через getBoundingClientRect,
+            // а не через clientWidth: вся игра живёт в холсте постоянного
+            // размера, который масштабируется CSS-трансформацией, и без этого
+            // деления тап уезжал бы тем сильнее, чем крупнее экран.
+            const r = svg.getBoundingClientRect();
+            if (!r.width || !r.height) return;
+            const x = (e.clientX - r.left) / r.width * state.room.w;
+            const y = (e.clientY - r.top) / r.height * state.room.h;
+
+            // Считается только попадание В ПОЛ. Тап по стене или по темноте
+            // вокруг коробки не должен никуда его отправлять: иначе «идёт
+            // куда сказали» превращается в «дёргается от любого касания
+            // экрана», и промах мимо кнопки сдвигает червя.
+            const g = state.room;
+            if (y < g.backY || y > g.frontY) return;
+            if (Math.abs(x - g.cx) > roomHalfAt(g, roomDepthAt(g, y))) return;
+
+            walkTo(x, y);
+        }
+
+        // Идти в точку пола. Точка вписывается в допустимую область, поэтому
+        // тапнуть можно куда угодно — хоть в стену, хоть мимо комнаты: червь
+        // подойдёт к ближайшему месту, где помещается целиком.
+        function walkTo(floorX, floorY) {
+            if (!state.room) return;
+            const spot = clampFloorPoint(floorX, floorY);
+            state.targetX = spot.x;
+            state.targetY = spot.y - state.floorLocalY;
+            // Курс НЕ трогаем: он доворачивается сам, и именно поэтому смена
+            // цели на ходу читается дугой, а не изломом.
+            state.nextMoveAt = null;
+        }
+
+        svg.addEventListener('pointerdown', onStageTap);
+
         function rebuild() {
             const m = mergedModel();
             while (charLayer.firstChild) charLayer.removeChild(charLayer.firstChild);
             state.built = buildWormSVGGroup(m, instanceId);
             charLayer.appendChild(state.built.root);
             state.built.root.setAttribute('transform', rootTransform());
+            // Тело пересобрано — прежние габариты недействительны, границы
+            // выгула пересчитаются по новым.
+            state.bodyBox = null;
+            state.wanderD = null;
         }
 
         syncViewportSize();
@@ -3982,17 +4183,76 @@ const WormRenderer = {
             const dtSec = Math.min(0.25, Math.max(0, dt / 1000)); // клэмп на случай подвисания вкладки
             state.animTime += dtSec * WORM_ANIM_TIME_PER_SEC;
 
+            // Габарит тела уточняется на ходу (см. measureBody). Раз в секунду
+            // — этого хватает, чтобы огибающая сошлась за несколько секунд, и
+            // getBBox не дёргает раскладку каждый кадр. Если размах вырос,
+            // границы пересчитываются, а текущая цель вписывается заново:
+            // иначе червь продолжил бы идти в точку, ставшую запретной.
+            if (opts.wander && state.room && now - (state.bodyMeasuredAt || 0) > 1000) {
+                state.bodyMeasuredAt = now;
+                if (measureBody()) {
+                    state.wanderD = null;
+                    const spot = clampFloorPoint(state.targetX, state.targetY + state.floorLocalY);
+                    state.targetX = spot.x;
+                    state.targetY = spot.y - state.floorLocalY;
+                }
+            }
+
             // ---------- ДВИЖЕНИЕ К ЦЕЛИ + РАСПИСАНИЕ "ПРОГУЛОК" ----------
             let instSpeed = 0; // px/сек, фактическая мгновенная скорость этого кадра
             if (opts.wander) {
                 const dx = state.targetX - state.wormX;
                 const dy = state.targetY - state.wormY;
-                const moveFactor = 1 - Math.pow(WORM_WANDER_MOVE_BASE, dtSec);
-                const stepX = dx * moveFactor;
-                const stepY = dy * moveFactor;
-                state.wormX += stepX;
-                state.wormY += stepY;
-                instSpeed = dtSec > 0 ? Math.hypot(stepX, stepY) / dtSec : 0;
+                const gap = Math.hypot(dx, dy);
+
+                if (gap > WORM_MOVE_EPS) {
+                    const want = Math.atan2(dy, dx);
+                    if (state.heading == null) {
+                        // Тронулся с места — сразу лицом куда надо. Дуга нужна
+                        // при смене цели НА ХОДУ, а разворот стоящего червя
+                        // вокруг себя выглядел бы вознёй на месте.
+                        state.heading = want;
+                    } else {
+                        // Кратчайшая дуга: без приведения к ±π доворот с 179°
+                        // на -179° поехал бы через весь круг.
+                        const delta = ((want - state.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+                        const maxTurn = WORM_TURN_RATE * dtSec;
+                        state.heading += Math.max(-maxTurn, Math.min(maxTurn, delta));
+                    }
+
+                    // Скорость — прежняя экспонента (плавный подъезд к цели),
+                    // но приваленная на крутом довороте.
+                    const err = ((want - state.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+                    const turnDamp = 1 - WORM_TURN_SLOWDOWN * (1 - Math.cos(err)) / 2;
+                    const step = gap * (1 - Math.pow(WORM_WANDER_MOVE_BASE, dtSec)) * turnDamp;
+
+                    // Едет туда, куда СМОТРИТ, а не туда, где цель: в этом
+                    // расхождении и рождается дуга.
+                    const stepX = Math.cos(state.heading) * step;
+                    const stepY = Math.sin(state.heading) * step;
+                    state.wormX += stepX;
+                    state.wormY += stepY;
+                    instSpeed = dtSec > 0 ? Math.hypot(stepX, stepY) / dtSec : 0;
+                } else {
+                    // Дошёл. Курс сбрасывается, чтобы следующая прогулка
+                    // началась без разворота на месте.
+                    state.heading = null;
+                }
+
+                // Вписываем САМУ ПОЗИЦИЮ, а не только цель. Одной цели мало:
+                // червь едет туда, куда смотрит, и на довороте его выносит
+                // ШИРЕ цели — дуга выпирает наружу. В замерах это выглядело
+                // как выезд начала координат за левый край экрана при
+                // развороте у стены. Здесь он упирается и скользит вдоль
+                // границы, вместо того чтобы её проскочить.
+                //
+                // Дорого это не стоит: габарит взят из кеша, вся проверка —
+                // десяток арифметических действий на кадр.
+                if (state.room) {
+                    const fix = clampFloorPoint(state.wormX, state.wormY + state.floorLocalY);
+                    state.wormX = fix.x;
+                    state.wormY = fix.y - state.floorLocalY;
+                }
             }
             const dist = opts.wander ? Math.hypot(state.targetX - state.wormX, state.targetY - state.wormY) : 0;
             const isMoving = opts.wander && dist > WORM_MOVE_EPS;
@@ -4008,21 +4268,24 @@ const WormRenderer = {
                         // гарантированно остаётся на полу и не заходит в
                         // стену, какой бы ни была форма трапеции.
                         const g = state.room;
-                        const d = ROOM.wanderNear + Math.random() * (ROOM.wanderFar - ROOM.wanderNear);
-                        // Свободная ширина считается с учётом самого червя:
-                        // тело лежит вдоль пола и занимает место, поэтому от
-                        // стены надо отступить на его половину, уменьшенную
-                        // перспективой. Иначе хвост заезжает в боковую стену
-                        // ровно тогда, когда червь уходит вглубь.
-                        const room = roomHalfAt(g, d) - ROOM.bodyHalf * roomCharScaleAt(d);
-                        const free = Math.max(0, room) * ROOM.wanderInsetU;
-                        state.targetX = g.cx + (Math.random() * 2 - 1) * free;
+                        if (!state.wanderD) refreshWanderRange();
+                        const r = state.wanderD || { min: ROOM.wanderNear, max: ROOM.wanderFar };
+                        const d = r.min + Math.random() * (r.max - r.min);
+                        // Точка выбирается вольно, а вписывает её в пол общий
+                        // ограничитель — тот же, через который проходит тап
+                        // игрока. Так правило «не залезать на стены» живёт в
+                        // одном месте, а не дублируется в каждом источнике
+                        // цели.
+                        const spot = clampFloorPoint(
+                            g.cx + (Math.random() * 2 - 1) * roomHalfAt(g, d),
+                            roomYAt(g, d));
+                        state.targetX = spot.x;
                         // Минус floorLocalY: на полу должна оказаться точка
                         // касания, а не голова. Без этой поправки червь
                         // «стоял» головой на полу, а всё тело свисало ниже —
                         // и на переднем крае комнаты уезжало за нижнюю кромку
                         // экрана. Именно это и выглядело как «уходит вниз».
-                        state.targetY = roomYAt(g, d) - state.floorLocalY;
+                        state.targetY = spot.y - state.floorLocalY;
                     } else {
                         const rw = container.clientWidth || container.getBoundingClientRect().width;
                         const rh = container.clientHeight || container.getBoundingClientRect().height;
@@ -4618,6 +4881,9 @@ const WormRenderer = {
             getLocation() {
                 return state.location;
             },
+            // Отправить червя в точку пола (в единицах холста). Тот же путь,
+            // которым идёт тап игрока: точка вписывается в допустимую область.
+            walkTo,
             // Точечная перестановка "точки стояния" персонажа уже ПОСЛЕ
             // монтирования — нужна мини-играм, где раскладку нельзя выразить
             // одним фиксированным anchorX/anchorY.
@@ -4750,6 +5016,7 @@ const WormRenderer = {
             destroy() {
                 if (state.rafId) cancelAnimationFrame(state.rafId);
                 window.removeEventListener('resize', onResize);
+                svg.removeEventListener('pointerdown', onStageTap);
                 container.innerHTML = '';
             }
         };
