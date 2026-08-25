@@ -260,6 +260,7 @@ const WormMood = {
                 gazeY: 0.3,
                 browRaise: 0,
                 cheekPuff: 0,      // иначе улыбка живого осталась бы на трупе
+                eyeSmile: 0,       // и поджатые от радости нижние веки тоже
                 earTilt: 42,
                 headTilt: 21,
                 tailBendAngle: 26,

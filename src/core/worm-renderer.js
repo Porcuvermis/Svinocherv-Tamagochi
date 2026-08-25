@@ -2116,6 +2116,39 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     lidTrack.appendChild(lidCrease);
     lidClipGroup.appendChild(lidTrack);
 
+    // ---------- НИЖНЕЕ ВЕКО: УЛЫБАЮЩИЙСЯ ГЛАЗ ----------
+    // Вторая шторка, едущая СНИЗУ ВВЕРХ, с выгнутым вверх краем.
+    //
+    // Зачем отдельная деталь, если верхнее веко уже умеет прищуриваться:
+    // прищур сверху и прищур снизу читаются по-разному. Опущенное верхнее
+    // веко — это дрёма, усталость, самодовольство. Живую же улыбку поджимает
+    // ПОДНЯВШАЯСЯ ЩЕКА, то есть нижний край, и глаз становится дугой,
+    // выпуклой вверх. Без этой детали радостный прищур неизбежно выглядел
+    // сонным, сколько его ни настраивай, — упирались в это дважды.
+    //
+    // Живёт в том же клипе по форме глаза, что и верхнее веко, поэтому
+    // ничего не торчит за пределы глазного яблока.
+    const smileArc = ry * 0.85;          // насколько край выгнут вверх
+    const smileTravel = 2 * ry + 6;
+    const smileTrack = svgEl('g', {
+        'data-part': `eyesmile-${eyeKey}`,
+        transform: `translate(0,${smileTravel.toFixed(2)})`   // 0 = убрано вниз
+    });
+    smileTrack.appendChild(svgEl('path', {
+        d: `M ${(-rx - 3).toFixed(2)},0 ` +
+           `Q 0,${(-smileArc).toFixed(2)} ${(rx + 3).toFixed(2)},0 ` +
+           `L ${(rx + 3).toFixed(2)},${lidHeight.toFixed(2)} ` +
+           `L ${(-rx - 3).toFixed(2)},${lidHeight.toFixed(2)} Z`,
+        fill: lidFill
+    }));
+    // Складка по краю: без неё поднятая щека сливается со склерой и глаз
+    // выглядит просто наполовину стёртым.
+    smileTrack.appendChild(svgEl('path', {
+        d: `M ${(-rx - 3).toFixed(2)},0 Q 0,${(-smileArc).toFixed(2)} ${(rx + 3).toFixed(2)},0`,
+        fill: 'none', stroke: withAlpha(FLESH[900], 0.45), 'stroke-width': SW.detail
+    }));
+    lidClipGroup.appendChild(smileTrack);
+
     // Короткие редкие ресницы по верхнему веку — свиные, не кукольные.
     const lashes = svgEl('g', { class: 'worm-eye-lashes' });
     for (let i = 0; i < 4; i++) {
@@ -2175,7 +2208,8 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
 
     // phi/offsetY/xLimitBase нужны, чтобы пересчитать посадку глаза при
     // ЖИВОМ повороте головы, не пересобирая его внутренности.
-    return { group, sclera, iris, pupil, gazeGroup, lidTrack, browGroup, rx, ry, lidHeight,
+    return { group, sclera, iris, pupil, gazeGroup, lidTrack, smileTrack, smileTravel,
+             browGroup, rx, ry, lidHeight,
              yawPhi: phi, offsetY: y, baseRx: rx };
 }
 
@@ -2190,7 +2224,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     // ушах и бровях, а улыбки видно не было. Чем шире рот, тем на большем
     // расстоянии расходятся его уголки при том же изгибе, — то есть ширина
     // и есть главный рычаг «видно эмоцию или нет».
-    const W = 12.4;
+    const W = 15.5;
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
     const mouthShape = svgEl('path', {
@@ -3934,6 +3968,10 @@ const WormRenderer = {
             livePose: {
                 tailBendAngle: 0,   // градусы поворота хвоста вокруг точки крепления
                 eyelidLevel: null,  // 0..1 — подменяет базовый уровень век обоих глаз
+                // 0..1 — нижнее веко, «улыбающийся глаз»: щека поджимает глаз
+                // СНИЗУ, край выгнут вверх. Отдельно от eyelidLevel, потому
+                // что прищур сверху и снизу читаются совершенно по-разному.
+                eyeSmile: null,
                 bellyScale: null,   // множитель радиуса живота (1 = обычный)
                 mouthOpenness: null, // 0..1 — подменяет head.mouth.openness
                 mouthCurve: null,    // подменяет head.mouth.curve
@@ -5005,6 +5043,15 @@ const WormRenderer = {
                         const travel = 2 * eyeRef.ry + 5;
                         const ty = -travel * (1 - level);
                         eyeRef.lidTrack.setAttribute('transform', `translate(0,${ty.toFixed(2)})`);
+
+                        // Нижнее веко. При моргании убирается: щека не может
+                        // держать глаз поджатым, пока он закрывается сверху,
+                        // и наложение двух шторок дало бы схлопывание в щель.
+                        if (eyeRef.smileTrack) {
+                            const smile = clamp01(state.livePose.eyeSmile || 0) * (1 - blinkLevel);
+                            eyeRef.smileTrack.setAttribute('transform',
+                                `translate(0,${(eyeRef.smileTravel * (1 - smile)).toFixed(2)})`);
+                        }
                     });
                 }
             }
