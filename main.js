@@ -117,6 +117,8 @@ const GameManager = {
 
     cacheElements() {
         this._els = {};
+        this._gold = document.getElementById('wallet-gold');
+        this._shownGold = null;
         ECONOMY.sinOrder.forEach(key => {
             this._els[key] = {
                 bar: document.getElementById(`bar-${key}`),
@@ -148,6 +150,17 @@ const GameManager = {
 
         const fullMenu = document.getElementById('full-menu');
         const menuOpen = !!fullMenu && fullMenu.classList.contains('active');
+
+        // Кошелёк. Значение целое и меняется редко, поэтому проверка на
+        // изменение здесь не про экономию кадров, а про то же правило, что и
+        // ниже: не писать в DOM, когда писать нечего.
+        if (this._gold) {
+            const gold = GameState.currency('gold');
+            if (force || this._shownGold !== gold) {
+                this._gold.textContent = gold;
+                this._shownGold = gold;
+            }
+        }
 
         ECONOMY.sinOrder.forEach(key => {
             const els = this._els[key];

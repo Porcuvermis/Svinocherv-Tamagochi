@@ -195,6 +195,113 @@ const WormDigestion = {
     }
 };
 
+// ================= САМОЧУВСТВИЕ: ОТ ШКАЛ К ВИДУ ЧЕРВЯ =================
+// Довольность считает WormCondition, здесь она только доезжает до картинки:
+// морда, худоба, серость, смерть.
+//
+// Почему это отдельный цикл, а не часть пищеварения: пищеварению нужны
+// пятнадцать обновлений в секунду (комок ползёт), а довольность меняется
+// ЧАСАМИ — раза в секунду хватает с колоссальным запасом. Дёргать из-за неё
+// геометрию чаще было бы чистой тратой батареи.
+const WormMood = {
+    timer: null,
+    shownGrey: null,
+    wasDead: null,
+
+    start() {
+        if (this.timer) return;
+        this.apply();
+        this.timer = setInterval(() => {
+            if (document.hidden) return;   // в фоне рисовать некому
+            this.apply();
+        }, 1000);
+    },
+
+    apply() {
+        if (!MainWormHandle || typeof WormCondition === 'undefined') return;
+        if (typeof GameState === 'undefined' || !GameState.data) return;
+
+        const dead = WormCondition.dead();
+
+        // Смена жизнь/смерть — единственное здесь, что меняется скачком.
+        if (dead !== this.wasDead) {
+            this.wasDead = dead;
+            document.body.classList.toggle('worm-dead', dead);
+            // Мёртвый не бродит по комнате и не моргает. Это не косметика:
+            // бродящий труп с закрытыми глазами выглядел бы спящим.
+            if (MainWormHandle.setOptions) {
+                MainWormHandle.setOptions({ wander: !dead, blink: !dead });
+            }
+
+            // Ожил — распрямляем то, что уронила смерть. Именно здесь, на
+            // переходе, а не в мимике довольности: наклон головы и изгиб
+            // хвоста ей не принадлежат, а хвостом вдобавок распоряжается
+            // пищеварение. Писать в него каждую секунду значило бы затирать
+            // анимацию какания на полудвижении.
+            if (!dead) {
+                MainWormHandle.setLivePose({ headTilt: 0, tailBendAngle: 0 });
+            }
+        }
+
+        if (dead) {
+            // Мёртвая морда — не «очень грустная», а ПУСТАЯ: закрытые глаза и
+            // прямая линия рта. Грусть — это ещё живое выражение, у трупа его
+            // быть не должно.
+            //
+            // Отдельная забота — не дать смерти читаться сном. Стоящий столбом
+            // червь с закрытыми глазами выглядит именно спящим, поэтому здесь
+            // всё, что можно уронить, уронено: голова свесилась набок, уши
+            // легли совсем плоско, хвост обмяк. Настоящей лежачей позы у
+            // рендерера пока нет — она стоит отдельной работы (см.
+            // docs/plan/07-condition.md).
+            MainWormHandle.setLivePose({
+                mouthCurve: -0.05,
+                eyelidLevel: 1,
+                gazeY: 0.3,
+                browRaise: 0,
+                earTilt: 42,
+                headTilt: 21,
+                tailBendAngle: 26,
+                bellyScale: 1 - ECONOMY.condition.witherThin
+            });
+            this.setGrey(0.06);
+            return;
+        }
+
+        const mood = WormCondition.mood();
+        const wither = WormCondition.wither(mood);
+
+        // Мимика и худоба идут одним патчем: это те же самые «живые» каналы,
+        // которыми пользуются мини-игры, поэтому пока открыта мини-игра со
+        // своей мимикой, она просто перебивает эту — и наоборот, по выходе
+        // самочувствие возвращается само, без кода восстановления.
+        const pose = WormCondition.facePose(mood);
+        pose.bellyScale = wither.belly;
+        MainWormHandle.setLivePose(pose);
+
+        this.setGrey(wither.saturation);
+    },
+
+    // Обесцвечивание — CSS-фильтром по контейнеру, а не подменой цветов в
+    // модели. Причина: цвета червя размазаны по десяткам градиентов, и
+    // пересобирать их ради оттенка значит перестраивать весь SVG. Фильтр же
+    // считает видеокарта, и он ничего не знает про устройство персонажа —
+    // сереет и кожа, и рёбра, и будущая косметика, без единой правки.
+    setGrey(saturation) {
+        const shown = Math.round(saturation * 100) / 100;
+        if (this.shownGrey === shown) return;   // фильтр — не бесплатная запись
+        this.shownGrey = shown;
+
+        const stage = document.getElementById('worm-stage');
+        if (!stage) return;
+        // Вместе с цветом уходит и яркость: обескровленный червь ещё и
+        // темнеет. Полностью здоровому фильтр не ставится вовсе.
+        stage.style.filter = shown >= 0.999
+            ? ''
+            : `saturate(${shown}) brightness(${(0.72 + shown * 0.28).toFixed(3)})`;
+    }
+};
+
 function initWorm() {
     try {
         // Без этих двух файлов (и соответствующих <script> в index.html)
@@ -277,6 +384,9 @@ function initWorm() {
         // Пищеварение и то, что лежит на полу.
         WormDigestion.start();
         WormDigestion.placePoops();
+
+        // Самочувствие: морда и вид тела по семи шкалам.
+        WormMood.start();
     } catch (err) {
         // Любая другая ошибка внутри рендера — тоже наружу через alert(),
         // чтобы можно было прочитать текст без доступа к консоли браузера.

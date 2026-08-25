@@ -224,6 +224,12 @@
 
     <div id="mini-hud"></div>
 
+    <!-- Кошелёк. Пока в нём только золото и добывать его негде — счётчик
+         стоит, чтобы было куда начислять, когда появится первая добыча. -->
+    <div id="wallet">
+        <span class="wallet-coin">🪙</span><span id="wallet-gold">0</span>
+    </div>
+
     <button id="debug-toggle-btn" class="debug-toggle-btn" title="Debug-режим">🐞</button>
 
     <div id="full-menu">
@@ -851,6 +857,7 @@
 <script src="src/core/palette.js?v=4"></script>
 <script src="src/core/worm-model.js?v=9"></script>
 <script src="src/core/worm-marks.js?v=3"></script>
+<script src="src/core/worm-condition.js?v=1"></script>
 <script src="src/core/worm-renderer.js?v=40"></script>
 <script src="src/core/worm.js?v=11"></script>
 <script src="src/core/debug.js?v=6"></script>

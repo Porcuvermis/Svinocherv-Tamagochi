@@ -57,6 +57,8 @@ const DebugState = {
             <button data-act="fill">Полные</button>
             <button data-act="scar">Шрам</button>
             <button data-act="feed">Покормить</button>
+            <button data-act="kill">Уморить</button>
+            <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
             <span id="debug-fps">— fps</span>
         `;
@@ -95,7 +97,19 @@ const DebugState = {
             // самом деле: две в одной точке выглядят как одна.
             const poops = (typeof GameState !== 'undefined' && GameState.data && GameState.data.room)
                 ? GameState.data.room.poops.length : 0;
-            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops;
+            // Довольность и часы до смерти. По морде «доволен на 62%» не
+            // прочитать, а баланс истощения крутится именно по этому числу.
+            let mood = '';
+            if (typeof WormCondition !== 'undefined' && GameState.data) {
+                if (WormCondition.dead()) {
+                    mood = ' · 💀';
+                } else {
+                    const left = WormCondition.hoursLeft();
+                    mood = ' · 🙂' + Math.round(WormCondition.mood() * 100) + '%'
+                         + (left === null ? '' : ' · ✝' + left.toFixed(1) + 'ч');
+                }
+            }
+            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops + mood;
             frames = 0;
             last = now;
         };
@@ -139,6 +153,21 @@ const DebugState = {
                 return;
             }
             if (typeof refreshWormMarks === 'function') refreshWormMarks();
+        } else if (act === 'kill') {
+            // Смерть наступает через сутки ПОСЛЕ обнуления последней шкалы,
+            // то есть вживую её ждать трое суток. Обнуляем всё и отматываем
+            // метки на срок смерти с запасом — проверяется ровно тот же
+            // механизм, что работает в игре, просто из другой точки времени.
+            const back = (ECONOMY.condition.deathAfterHours + 1) * 3600 * 1000;
+            Object.keys(GameState.data.sins).forEach(key => {
+                GameState.setSinValue(key, 0);
+                GameState.data.sins[key].updated_at -= back;
+            });
+            // Прошлое воскрешение держало бы отсчёт голодания: без этого
+            // кнопка не сработала бы вторым нажатием подряд.
+            GameState.data.worm.revived_at = null;
+        } else if (act === 'revive') {
+            Backend.revive();
         } else if (act === 'reset') {
             if (!confirm('Стереть весь прогресс: шкалы, кошелёк, счётчики?')) return;
             GameState.reset();

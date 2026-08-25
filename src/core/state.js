@@ -46,6 +46,11 @@ const GameState = {
             runs: {},
             // Пищеварение: одна метка времени, всё остальное считается от неё.
             digestion: { fed_at: null },
+            // Жизнь и смерть червя. Сама смерть НЕ хранится — она выводится
+            // из меток шкал (см. worm-condition.js). Хранится только
+            // воскрешение: оно обрывает прошлое голодание, иначе поднятый
+            // червь умирал бы снова в ту же секунду.
+            worm: { revived_at: null },
             // Комната: то, что лежит на полу. Пока только то, что червь
             // произвёл сам.
             room: { poops: [] },
@@ -144,6 +149,7 @@ const GameState = {
         }
 
         if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null };
+        if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
 
