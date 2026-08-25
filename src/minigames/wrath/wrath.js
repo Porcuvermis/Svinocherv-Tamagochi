@@ -17,8 +17,28 @@ function drawWormFigure(canvas, opts, shake) {
         tail: { x: 0, y: 0 }
     };
 
-    const baseOriginY = h * 0.25;
-    const scale = (h / 300) * 1.65;
+    // ---------- РАЗМЕР ФИГУРЫ: ВПИСЫВАЕМ, А НЕ ТЯНЕМ ОТ ВЫСОТЫ ----------
+    // Раньше масштаб считался только от высоты холста (`h / 300 * 1.65`), а
+    // фигура ставилась от `h * 0.25`. Это работало ровно для одной формы
+    // окна — карточки 400×700, под которую подбиралось. Как только окно
+    // мини-игры стало общим и во весь экран, холст стал выше и уже, и
+    // головы полезли за края.
+    //
+    // Поэтому габарит фигуры описан в условных единицах, а масштаб — это
+    // меньшее из «влезть по высоте» и «влезть по ширине». Числа
+    // соответствуют отрисовке ниже: рог поднимается на 45 над центром
+    // головы, цепь сегментов — 19 на сегмент, раструб хвоста — ещё ~22;
+    // половина ширины — это голова (радиус 32) плюс запас на обводку.
+    const FIG_TOP = 45;
+    const FIG_BOTTOM = segCount * 19 + 22;
+    const FIG_H = FIG_TOP + FIG_BOTTOM;
+    const FIG_HALF_W = 36 * thick;
+
+    const scale = Math.min(h / FIG_H, (w / 2) / FIG_HALF_W);
+
+    // Вписанная фигура ниже холста — центрируем её по вертикали, иначе она
+    // прижимается к верхнему краю и под ней остаётся пустота.
+    const baseOriginY = (h - FIG_H * scale) / 2 + FIG_TOP * scale;
 
     const bellyIndex = Math.floor(segCount / 2);
     const tailIndex = segCount;
@@ -148,7 +168,7 @@ function drawWormFigure(canvas, opts, shake) {
 
 const WrathMinigame = {
     screenElement: null,
-    closeBtn: null,
+    win: null,        // хэндл общего окна: рамка, крестик, вопрос при выходе
     daggerBtn: null,
     daggerDefense: null,
     daggerAttack: null,
@@ -175,7 +195,19 @@ const WrathMinigame = {
 
     init() {
         this.screenElement = document.getElementById('wrath-game');
-        this.closeBtn = document.getElementById('wrath-close-btn');
+
+        // Окно надевается ДО поиска остальных элементов: сборка переносит
+        // содержимое экрана внутрь рамки, и делать это надо один раз, пока
+        // на узлы ещё никто не смотрит.
+        this.win = MinigameWindow.attach(this.screenElement, {
+            sin: 'wrath',
+            onLeave: () => this.close(),
+            // Посреди боя выход спрашивается, после его конца — нет:
+            // спрашивать «прогресс не сохранится» там, где прогресса уже
+            // не осталось, значит приучать жать «выйти» не глядя.
+            canLeave: () => this.fightOver
+        });
+
         this.daggerBtn = document.getElementById('dagger-btn');
         this.daggerDefense = document.getElementById('dagger-defense');
         this.daggerAttack = document.getElementById('dagger-attack');
@@ -189,9 +221,6 @@ const WrathMinigame = {
 
         this.playerOpts = { hue: 340, segCount: 6, thick: 1, eyeMult: 1, dir: 1 };
 
-        if (this.closeBtn) {
-            this.closeBtn.onclick = (e) => { e.stopPropagation(); this.close(); };
-        }
         if (this.daggerBtn) {
             this.daggerBtn.onclick = (e) => { e.stopPropagation(); this.handleDaggerClick(); };
         }
@@ -221,6 +250,7 @@ const WrathMinigame = {
 
     open() {
         if (!this.screenElement) this.init();
+        if (this.win) this.win.hideConfirm();
         this.screenElement.classList.add('active');
         this.restartFight();
     },
@@ -240,14 +270,8 @@ const WrathMinigame = {
         if (this.resultOverlay) {
             this.resultOverlay.classList.remove('active', 'fade-out');
         }
-        if (typeof GameManager !== 'undefined' && typeof GameManager.updateUI === 'function') {
-            const fullMenu = document.getElementById('full-menu');
-            const miniHud = document.getElementById('mini-hud');
-            if (fullMenu && !fullMenu.classList.contains('active') && miniHud) {
-                miniHud.style.opacity = '1';
-                miniHud.style.pointerEvents = 'auto';
-            }
-        }
+        if (this.win) this.win.hideConfirm();
+        MinigameWindow.restoreHud();
     },
 
     restartFight() {

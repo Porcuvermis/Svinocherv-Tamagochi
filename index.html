@@ -194,8 +194,11 @@
          есть до момента, когда все эти файлы УЖЕ применены. Несобранного
          интерфейса игрок не увидит — он увидит черноту. -->
     <link rel="stylesheet" href="style.css?v=14" media="print" onload="this.media='all'">
+    <!-- Общее окно мини-игры (рамка, шапка, вопрос при выходе). Строго ДО
+         стилей самих мини-игр: они настраивают его переменными. -->
+    <link rel="stylesheet" href="src/core/minigame-window.css?v=1" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=2" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -412,58 +415,58 @@
         </div>
     </div>
 
-    <div id="wrath-game" class="minigame-screen">
-        <div class="wrath-modal">
-            <!-- Верхний HUD в стиле файтингов -->
-            <div class="fighting-hud">
-                <div class="fighter-hp-box player-side">
-                    <div class="hp-bar-container">
-                        <div class="hp-bar" id="player-hp-bar"></div>
-                    </div>
-                    <div class="dmg-popup" id="player-dmg-popup"></div>
+    <!-- ГНЕВ. Рамки, заголовка и крестика здесь нет намеренно: окно мини-игры
+         одно на все грехи и надевается сверху сборкой из
+         src/core/minigame-window.js (см. docs/minigame-window.md). В разметке
+         экрана лежит только то, что у этой игры своё. -->
+    <div id="wrath-game" class="minigame-screen mg-window" data-sin="wrath">
+        <!-- Полоски здоровья бойцов, в стиле файтингов -->
+        <div class="fighting-hud">
+            <div class="fighter-hp-box player-side">
+                <div class="hp-bar-container">
+                    <div class="hp-bar" id="player-hp-bar"></div>
                 </div>
+                <div class="dmg-popup" id="player-dmg-popup"></div>
+            </div>
 
-                <button id="wrath-close-btn" class="wrath-close-btn">&times;</button>
+            <div class="fighter-hp-box enemy-side">
+                <div class="hp-bar-container">
+                    <div class="hp-bar" id="enemy-hp-bar"></div>
+                </div>
+                <div class="dmg-popup" id="enemy-dmg-popup"></div>
+            </div>
+        </div>
 
-                <div class="fighter-hp-box enemy-side">
-                    <div class="hp-bar-container">
-                        <div class="hp-bar" id="enemy-hp-bar"></div>
-                    </div>
-                    <div class="dmg-popup" id="enemy-dmg-popup"></div>
+        <div class="wrath-result" id="wrath-result"></div>
+
+        <div class="battle-arena">
+            <div class="worm-wrap worm-player">
+                <div class="canvas-box">
+                    <canvas id="player-canvas"></canvas>
+                    <div class="zone-hit" data-zone="head"></div>
+                    <div class="zone-hit" data-zone="belly"></div>
+                    <div class="zone-hit" data-zone="tail"></div>
                 </div>
             </div>
 
-            <div class="wrath-result" id="wrath-result"></div>
-
-            <div class="battle-arena">
-                <div class="worm-wrap worm-player">
-                    <div class="canvas-box">
-                        <canvas id="player-canvas"></canvas>
-                        <div class="zone-hit" data-zone="head"></div>
-                        <div class="zone-hit" data-zone="belly"></div>
-                        <div class="zone-hit" data-zone="tail"></div>
-                    </div>
-                </div>
-
-                <div class="dagger-btn" id="dagger-btn">
-                    <div class="dagger dagger-defense" id="dagger-defense"></div>
-                    <div class="dagger dagger-attack" id="dagger-attack"></div>
-                </div>
-
-                <div class="worm-wrap worm-enemy">
-                    <div class="canvas-box">
-                        <canvas id="enemy-canvas"></canvas>
-                        <div class="zone-hit" data-zone="head"></div>
-                        <div class="zone-hit" data-zone="belly"></div>
-                        <div class="zone-hit" data-zone="tail"></div>
-                    </div>
-                </div>
+            <div class="dagger-btn" id="dagger-btn">
+                <div class="dagger dagger-defense" id="dagger-defense"></div>
+                <div class="dagger dagger-attack" id="dagger-attack"></div>
             </div>
 
-            <div class="wrath-result-overlay" id="wrath-result-overlay">
-                <div class="wrath-overlay-text" id="wrath-overlay-text">ПОРАЖЕНИЕ...</div>
-                <button class="wrath-restart-btn" id="wrath-restart-btn">Начать заново</button>
+            <div class="worm-wrap worm-enemy">
+                <div class="canvas-box">
+                    <canvas id="enemy-canvas"></canvas>
+                    <div class="zone-hit" data-zone="head"></div>
+                    <div class="zone-hit" data-zone="belly"></div>
+                    <div class="zone-hit" data-zone="tail"></div>
+                </div>
             </div>
+        </div>
+
+        <div class="wrath-result-overlay" id="wrath-result-overlay">
+            <div class="wrath-overlay-text" id="wrath-overlay-text">ПОРАЖЕНИЕ...</div>
+            <button class="wrath-restart-btn" id="wrath-restart-btn">Начать заново</button>
         </div>
     </div>
 
@@ -865,8 +868,11 @@
 <script src="src/core/worm.js?v=11"></script>
 <script src="src/core/debug.js?v=6"></script>
 <script src="main.js?v=14"></script>
+<!-- Сборка общего окна мини-игры. До любой мини-игры: они надевают его на
+     себя в своём init(). -->
+<script src="src/core/minigame-window.js?v=1"></script>
 <script src="src/minigames/greed/greed.js?v=9"></script>
-<script src="src/minigames/wrath/wrath.js?v=5"></script>
+<script src="src/minigames/wrath/wrath.js?v=6"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>
 <script src="src/minigames/lust/lust.js?v=3"></script>
