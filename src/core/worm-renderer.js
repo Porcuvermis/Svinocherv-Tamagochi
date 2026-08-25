@@ -2446,8 +2446,10 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
     });
 
     // Складки лба — две несимметричные дуги над бровями.
+    // Одна пара дуг вместо двух: лоб небольшой, две пары на нём читаются
+    // штриховкой, а не складками.
     if (folds > 0.01) {
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < 1; i++) {
             const y = -ry * (0.52 + i * 0.12);
             const w = rx * (0.4 - i * 0.07);
             const shift = (rng() - 0.5) * rx * 0.12;
@@ -2464,28 +2466,11 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
         }
     }
 
-    // Вибриссы: длинные редкие волоски по щекам и над бровями. Держатся
-    // внутри силуэта — торчащие наружу увеличили бы bbox головы.
-    if (bristle > 0.01) {
-        // Ровно по паре с каждой стороны и близко к краю щеки: вибриссы —
-        // редкая деталь. Пять длинных волосков через всю морду мгновенно
-        // превращают свинью в кота.
-        const whiskers = 2;
-        [-1, 1].forEach(side => {
-            for (let i = 0; i < whiskers; i++) {
-                const t = i / Math.max(1, whiskers - 1);
-                const x0 = side * rx * (0.4 + t * 0.08);
-                const y0 = ry * (0.3 + t * 0.18);
-                const len = rx * (0.16 + rng() * 0.12);
-                const up = -ry * (0.04 + rng() * 0.1);
-                group.appendChild(svgEl('path', {
-                    d: `M ${x0.toFixed(1)},${y0.toFixed(1)} Q ${(x0 + side * len * 0.6).toFixed(1)},${(y0 + up * 0.6).toFixed(1)} ${(x0 + side * len).toFixed(1)},${(y0 + up).toFixed(1)}`,
-                    fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.hairline,
-                    opacity: (0.15 * bristle).toFixed(3), 'stroke-linecap': 'round'
-                }));
-            }
-        });
-    }
+    // ---------- ВИБРИССЫ УБРАНЫ НАМЕРЕННО ----------
+    // Были четыре длинных волоска по щекам. Убраны по тому же правилу, что и
+    // складки: на лице в размер экрана это не волоски, а четыре диагональные
+    // царапины. Отличить одно от другого невозможно — значит рисовать нечего.
+    // Переменная bristle осталась: щетина по-прежнему идёт по телу.
 
     return group;
 }
@@ -2731,7 +2716,19 @@ function buildHeadNode(model, ctx) {
         organZone: null,
         muscle: false,
         clipPathData: skullD,
-        coat: { rings: false, folds: true, bristle: true }
+        // ---------- НА МОРДЕ НЕ РИСУЮТ ЛИНИЙ ----------
+        // Складки и щетина здесь ВЫКЛЮЧЕНЫ, и это не экономия. Правило
+        // сформулировано двумя абзацами ниже — «любая нарисованная линия на
+        // морде читается царапиной», — но голова при этом заказывала себе
+        // именно линии: одиннадцать штрихованных дуг поперёк щёк. Вместе с
+        // вибриссами и сосудами они превращали лицо в кашу из царапин.
+        //
+        // Причина в разнице масштабов. Тело крупное и текстуру держит; лицо
+        // на телефоне высотой в шесть десятков пикселей, и любая отдельная
+        // отметина на нём становится СЧИТАЕМОЙ — то есть перестаёт быть
+        // текстурой и начинает спорить с глазами и ртом за внимание.
+        // Рельеф морде даёт затенение мягкими пятнами, а не штрихи.
+        coat: { rings: false, folds: false, bristle: false }
     });
 
     // ---------- РЕЛЬЕФ ЧЕРЕПА ----------
@@ -2747,36 +2744,24 @@ function buildHeadNode(model, ctx) {
             const lightFill = ensureSoftGradient(ctx, `worm-head-light-${ctx.instanceId}`, GRIME_HIGHLIGHT, 1);
             [-1, 1].forEach(side => {
                 // височная впадина
+                // Височная впадина и скула слиты в ОДНО вытянутое пятно на
+                // сторону, а не в два отдельных. Раньше рельеф собирали из
+                // девяти самостоятельных эллипсов по 0.14–0.23 прозрачности,
+                // и на морде в размер экрана они читались не объёмом, а
+                // россыпью пятен — «синяками». Объём даёт ОДИН крупный
+                // мягкий переход, а не набор мелких.
                 skullShading.appendChild(svgEl('ellipse', {
-                    cx: (side * rx * 0.62).toFixed(1), cy: (-ry * 0.42).toFixed(1),
-                    rx: (rx * 0.22).toFixed(1), ry: (ry * 0.22).toFixed(1),
-                    fill: shadowFill, opacity: (0.18 * k).toFixed(3)
+                    cx: (side * rx * 0.64).toFixed(1), cy: (-ry * 0.2).toFixed(1),
+                    rx: (rx * 0.34).toFixed(1), ry: (ry * 0.44).toFixed(1),
+                    fill: shadowFill, opacity: (0.11 * k).toFixed(3)
                 }));
-                // скула — светлая грань
+                // Светлая грань скулы — там, куда падает верхний свет.
                 skullShading.appendChild(svgEl('ellipse', {
-                    cx: (side * rx * 0.66).toFixed(1), cy: (-ry * 0.04).toFixed(1),
-                    rx: (rx * 0.26).toFixed(1), ry: (ry * 0.2).toFixed(1),
-                    fill: lightFill, opacity: (0.16 * k).toFixed(3)
-                }));
-                // жевательная мышца / брыль
-                skullShading.appendChild(svgEl('ellipse', {
-                    cx: (side * rx * 0.56).toFixed(1), cy: (ry * 0.42).toFixed(1),
-                    rx: (rx * 0.3).toFixed(1), ry: (ry * 0.26).toFixed(1),
-                    fill: shadowFill, opacity: (0.2 * k).toFixed(3)
-                }));
-                // надбровная дуга
-                skullShading.appendChild(svgEl('ellipse', {
-                    cx: (side * rx * 0.34).toFixed(1), cy: (-ry * 0.4).toFixed(1),
-                    rx: (rx * 0.26).toFixed(1), ry: (ry * 0.12).toFixed(1),
-                    fill: lightFill, opacity: (0.14 * k).toFixed(3)
+                    cx: (side * rx * 0.5).toFixed(1), cy: (ry * 0.14).toFixed(1),
+                    rx: (rx * 0.34).toFixed(1), ry: (ry * 0.3).toFixed(1),
+                    fill: lightFill, opacity: (0.1 * k).toFixed(3)
                 }));
             });
-            // лобная ложбинка по центру
-            skullShading.appendChild(svgEl('ellipse', {
-                cx: 0, cy: (-ry * 0.34).toFixed(1),
-                rx: (rx * 0.1).toFixed(1), ry: (ry * 0.3).toFixed(1),
-                fill: shadowFill, opacity: (0.12 * k).toFixed(3)
-            }));
         }
     }
 
@@ -2794,10 +2779,27 @@ function buildHeadNode(model, ctx) {
     // Морда — тот же выступающий объём, что и пятачок, и уезжает вместе с ним,
     // иначе пятак «отклеится» от своей опоры.
     const muzzleProj = yawProject(rx, 0, headYaw, SNOUT_PROTRUDE * 0.7);
+    // ---------- КЛИП И ТРАНСФОРМ — НА РАЗНЫХ ГРУППАХ ----------
+    // Это не стилистика, а обязательное разделение. В SVG clip-path
+    // разрешается в системе координат элемента ПОСЛЕ его собственного
+    // трансформа: повесить и то и другое на один узел — значит двигать клип
+    // вместе с содержимым.
+    //
+    // Здесь это и происходило. Морда выступает вперёд, поэтому при повороте
+    // головы уезжает вбок — при штатном ракурсе в три четверти на 17.75
+    // единицы, — и клип по черепу уезжал вместе с ней. Морда обрезалась
+    // силуэтом, сдвинутым относительно настоящего: справа вылезала за контур
+    // головы, слева срезала лицо. На светлой комнате это стало видно как
+    // прямоугольная кромка поперёк щеки.
+    //
+    // Внешняя группа несёт КЛИП и не двигается. Внутренняя несёт трансформ.
     const muzzleGroup = svgEl('g', {
-        'data-part': 'muzzle', 'clip-path': `url(#${skullClipId})`,
+        'data-part': 'muzzle', 'clip-path': `url(#${skullClipId})`
+    });
+    const muzzleShift = svgEl('g', {
         transform: `translate(${muzzleProj.x.toFixed(2)},0)`
     });
+    muzzleGroup.appendChild(muzzleShift);
     const muzzleGradId = `worm-muzzle-grad-${ctx.instanceId}`;
     const muzzleFill = ensureVolumeGradient(ctx.defs, muzzleGradId, mixColor(head.fill, GRIME_HIGHLIGHT, 0.12), {
         cx: '42%', cy: '22%', r: '80%',
@@ -2812,8 +2814,8 @@ function buildHeadNode(model, ctx) {
     // Морда не должна иметь резкой верхней границы — она не накладка, а
     // продолжение черепа: заливка приглушена, а стык с лицом растворяется
     // мягким пятном (см. следующий слой).
-    muzzleGroup.appendChild(svgEl('path', { d: muzzleD, fill: muzzleFill, opacity: 0.5 }));
-    muzzleGroup.appendChild(svgEl('ellipse', {
+    muzzleShift.appendChild(svgEl('path', { d: muzzleD, fill: muzzleFill, opacity: 0.5 }));
+    muzzleShift.appendChild(svgEl('ellipse', {
         cx: 0, cy: mz(0.01).toFixed(1),
         rx: (muzzleW * 1.5).toFixed(1), ry: (ry * 0.26).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-muzzle-blend-${ctx.instanceId}`, mixColor(head.fill, GRIME_HIGHLIGHT, 0.12), 1),
@@ -2821,7 +2823,7 @@ function buildHeadNode(model, ctx) {
     }));
     // Тени по бокам морды — она отделяется от щёк.
     [-1, 1].forEach(side => {
-        muzzleGroup.appendChild(svgEl('ellipse', {
+        muzzleShift.appendChild(svgEl('ellipse', {
             cx: (side * muzzleW * 1.24).toFixed(1), cy: mz(0.5).toFixed(1),
             rx: (rx * 0.12).toFixed(1), ry: (ry * 0.34).toFixed(1),
             fill: ensureSoftGradient(ctx, `worm-muzzle-side-${ctx.instanceId}`, GRIME_SHADOW, 1),
@@ -2829,7 +2831,7 @@ function buildHeadNode(model, ctx) {
         }));
     });
     // Светлая грань спинки морды.
-    muzzleGroup.appendChild(svgEl('ellipse', {
+    muzzleShift.appendChild(svgEl('ellipse', {
         cx: (-muzzleW * 0.18).toFixed(1), cy: mz(0.32).toFixed(1),
         rx: (muzzleW * 0.44).toFixed(1), ry: (ry * 0.3).toFixed(1),
         fill: ensureSoftGradient(ctx, `worm-muzzle-top-${ctx.instanceId}`, GRIME_HIGHLIGHT, 1),
@@ -2840,9 +2842,14 @@ function buildHeadNode(model, ctx) {
     // Нижняя губа и подбородок вынесены в свою группу: при открывании рта она
     // опускается (см. tick), и морда открывается как челюсть, а не как дырка
     // в неподвижной коже.
+    // Та же пара, что у морды: клип снаружи, трансформ внутри. Челюсть
+    // опускается при открывании рта, и без разделения клип по черепу ехал бы
+    // вниз вместе с ней.
     const jawGroup = svgEl('g', { 'data-part': 'jaw', 'clip-path': `url(#${skullClipId})` });
+    const jawShift = svgEl('g');
+    jawGroup.appendChild(jawShift);
     const jawFill = ensureSoftGradient(ctx, `worm-jaw-shade-${ctx.instanceId}`, GRIME_SHADOW, 1);
-    jawGroup.appendChild(svgEl('ellipse', {
+    jawShift.appendChild(svgEl('ellipse', {
         cx: 0, cy: mz(1.06).toFixed(1),
         rx: (muzzleW * 0.95).toFixed(1), ry: (ry * 0.16).toFixed(1),
         fill: jawFill, opacity: 0.3
@@ -2852,7 +2859,7 @@ function buildHeadNode(model, ctx) {
         d: `M ${(-muzzleW * 0.78).toFixed(1)},${mz(1.08).toFixed(1)} Q 0,${mz(1.17).toFixed(1)} ${(muzzleW * 0.78).toFixed(1)},${mz(1.08).toFixed(1)}`,
         fill: 'none', stroke: lipColor, 'stroke-width': SW.structure, opacity: 0.5, 'stroke-linecap': 'round'
     });
-    jawGroup.appendChild(lowerLip);
+    jawShift.appendChild(lowerLip);
 
     // ---------- ПЯТАЧОК ----------
     const snout = head.snout;
@@ -2889,14 +2896,18 @@ function buildHeadNode(model, ctx) {
     const snoutShine = svgEl('ellipse', { cx: -4, cy: -4.6, rx: 4.6, ry: 2, fill: SPEC, opacity: 0.32 });
     const poreGroup = svgEl('g', { class: 'worm-snout-pores' });
     const poreRng = mulberry32(hashStringSeed(`${ctx.instanceId}-snout-pores`));
-    for (let i = 0; i < 14; i++) {
+    // Пор было четырнадцать на пятачок размером 30×20, и вместе с семью
+    // радиальными морщинками это давало девятнадцать отметин на пятачке —
+    // не текстура, а сыпь. Восемь штук читаются порами, а не пересчитываются
+    // глазом по одной.
+    for (let i = 0; i < 8; i++) {
         const a = poreRng() * Math.PI * 2;
         const rr = Math.sqrt(poreRng()) * 0.86;
         const px = Math.cos(a) * snoutRx * rr, py = Math.sin(a) * snoutRy * rr;
         if (Math.abs(px) < 8 && Math.abs(py) < 4.5) continue;
         poreGroup.appendChild(svgEl('circle', {
-            cx: px.toFixed(1), cy: py.toFixed(1), r: (0.5 + poreRng() * 0.6).toFixed(2),
-            fill: mixColor(snout.fill, GRIME_SHADOW, 0.55), opacity: 0.42
+            cx: px.toFixed(1), cy: py.toFixed(1), r: (0.5 + poreRng() * 0.5).toFixed(2),
+            fill: mixColor(snout.fill, GRIME_SHADOW, 0.55), opacity: 0.3
         }));
     }
     const nostrilShade = svgEl('g');
@@ -2922,7 +2933,10 @@ function buildHeadNode(model, ctx) {
     if (anatomy.enabled && (anatomy.coat && (anatomy.coat.folds || 0) > 0.01)) {
         const rng = anatRng(anatomy, 'snout', 'radial');
         const wrinkles = svgEl('g', { class: 'worm-snout-wrinkles' });
-        const count = 6 + Math.floor(rng() * 3);
+        // Морщинок было шесть-восемь; на пятачке в размер экрана они
+        // сливались с порами в общую рябь. Четыре читаются как расходящиеся
+        // складки кожи — то, чем они и являются.
+        const count = 4 + Math.floor(rng() * 2);
         for (let i = 0; i < count; i++) {
             const a = (i / count) * Math.PI * 2 + rng() * 0.2;
             const r0 = snoutRx * 1.05, r1 = r0 + 2 + rng() * 2.2;
@@ -2930,7 +2944,7 @@ function buildHeadNode(model, ctx) {
                 d: `M ${(Math.cos(a) * r0).toFixed(1)},${(Math.sin(a) * r0 * 0.72).toFixed(1)} ` +
                    `L ${(Math.cos(a) * r1).toFixed(1)},${(Math.sin(a) * r1 * 0.72).toFixed(1)}`,
                 stroke: GRIME_SHADOW, 'stroke-width': SW.hairline, fill: 'none',
-                opacity: (0.26 * anatomy.coat.folds).toFixed(3), 'stroke-linecap': 'round'
+                opacity: (0.16 * anatomy.coat.folds).toFixed(3), 'stroke-linecap': 'round'
             }));
         }
         snoutGroup.appendChild(wrinkles);
@@ -3005,7 +3019,8 @@ function buildHeadNode(model, ctx) {
     tiltGroup.appendChild(scarLayer);
 
     const headRef = {
-        group, tiltGroup, skull, ears: earRefs, snoutGroup, muzzleGroup, jawGroup,
+        group, tiltGroup, skull, ears: earRefs, snoutGroup,
+        muzzleGroup, muzzleShift, jawGroup, jawShift,
         mouth: mouthBuilt, mouthAnchor, skullClipShape, eyes: { left: eyeLeft, right: eyeRight },
         scarLayer, rx, ry, snoutY, anat: headAnat,
         fillColor: ctx.neckColor || head.fill,
@@ -3107,13 +3122,13 @@ function applyHeadYaw(headRef, yaw) {
 // поворота, и морда отклеивалась от пятачка, повисая светлым пятном рядом с
 // ним. Поэтому оба слагаемых хранятся в refs, а собирает их одно место.
 function applyMuzzleTransform(headRef) {
-    if (!headRef.muzzleGroup) return;
+    if (!headRef.muzzleShift) return;
     const x = headRef.muzzleX || 0;
     const puff = headRef.muzzlePuff || 0;
     const parts = [];
     if (Math.abs(x) > 0.01) parts.push(`translate(${x.toFixed(2)},0)`);
     if (puff > 0.001) parts.push(`scale(${(1 + 0.12 * puff).toFixed(3)},${(1 + 0.05 * puff).toFixed(3)})`);
-    headRef.muzzleGroup.setAttribute('transform', parts.join(' '));
+    headRef.muzzleShift.setAttribute('transform', parts.join(' '));
 }
 
 // ---------- ШРАМЫ ----------
@@ -5070,7 +5085,7 @@ const WormRenderer = {
                             ? clamp01(state.livePose.mouthOpenness)
                             : clamp01(mm.head.mouth.openness || 0);
                         const drop = state.livePose.jawDrop != null ? clamp01(state.livePose.jawDrop) : openness;
-                        headRef.jawGroup.setAttribute('transform', `translate(0,${(drop * 5).toFixed(2)})`);
+                        headRef.jawShift.setAttribute('transform', `translate(0,${(drop * 5).toFixed(2)})`);
                     }
 
                     // Щёки: надуваются (полный рот) — брыли расходятся в стороны.
