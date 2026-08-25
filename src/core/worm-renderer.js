@@ -5044,9 +5044,19 @@ const WormRenderer = {
             // Нужно тому, кто кладёт что-то рядом с червём: «под хвостом»
             // нельзя посчитать снаружи, потому что тело поворачивается по
             // ходу движения, а хвост уезжает за ним.
+            // Точка части тела в координатах КОМНАТЫ — тех же, в которых
+            // работают getPosition/setPosition и всё остальное снаружи.
+            //
+            // Пересчёт идёт в систему worldLayer, а НЕ svg. Разница появилась
+            // вместе с камерой: worldLayer сдвинут на -camX, и пересчёт в
+            // систему svg давал бы ЭКРАННЫЕ координаты. По этой точке
+            // кладутся кучки на пол, а рисуются они внутри worldLayer — то
+            // есть в комнате, — и кучка ложилась бы мимо червя ровно на сдвиг
+            // камеры. Там, где комнаты нет (мини-игры), worldLayer без
+            // трансформации и обе системы совпадают.
             getPartPoint(partName) {
                 const el = svg.querySelector(`[data-part="${partName}"]`);
-                if (!el || !el.getScreenCTM || !svg.getScreenCTM) {
+                if (!el || !el.getScreenCTM || !worldLayer.getScreenCTM) {
                     return { x: state.wormX, y: state.wormY };
                 }
                 try {
@@ -5054,7 +5064,7 @@ const WormRenderer = {
                     const pt = svg.createSVGPoint();
                     pt.x = box.x + box.width / 2;
                     pt.y = box.y + box.height / 2;
-                    const local = pt.matrixTransform(el.getScreenCTM().multiply(svg.getScreenCTM().inverse()));
+                    const local = pt.matrixTransform(el.getScreenCTM().multiply(worldLayer.getScreenCTM().inverse()));
                     return { x: local.x, y: local.y };
                 } catch (err) {
                     return { x: state.wormX, y: state.wormY };
