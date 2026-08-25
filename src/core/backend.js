@@ -236,6 +236,58 @@ const LocalBackend = {
         return true;
     },
 
+    // ---------- СНАРЯЖЕНИЕ ГНЕВА ----------
+    // Надеть предмет в слот. Начислением это не является, но живёт здесь по
+    // той же причине, что смена локации: проверки «есть ли предмет у игрока»
+    // и «подходит ли он этому слоту» — решение сервера, а не интерфейса.
+    // Сейчас проверки те же самые, просто исполняются на месте.
+    equip(slot, itemId) {
+        const item = itemId ? WRATH_GEAR.items[itemId] : null;
+        if (itemId && !item) return false;
+        if (item && item.slot !== slot) return false;
+        if (itemId && !GameState.data.inventory[itemId]) return false;
+
+        if (itemId) GameState.data.equipment[slot] = itemId;
+        else delete GameState.data.equipment[slot];
+        GameState.save();
+        return true;
+    },
+
+    // Положить предмет в инвентарь. Единственный источник предметов до
+    // появления магазина и рогалика — debug-режим; когда источники появятся,
+    // они будут звать этот же метод, а не писать в состояние сами.
+    grantItem(itemId) {
+        if (!WRATH_GEAR.items[itemId]) return false;
+        const inv = GameState.data.inventory;
+        inv[itemId] = inv[itemId] || { count: 0 };
+        inv[itemId].count += 1;
+        GameState.save();
+        return true;
+    },
+
+    // ---------- ПРОТИВНИК ----------
+    // Аналог GET /wrath/opponent. Сервер вернёт слепок ДРУГОГО игрока:
+    // его модель со шрамами, его снаряжение, его ник. Лобби у настоящего
+    // сервера всегда полное, поэтому ждать матчмейкинга не нужно —
+    // противник это данные, а не сессия (docs/plan/03-wrath.md).
+    //
+    // Пока сервера нет, отдаётся копия самого игрока. Флаг is_self_copy —
+    // не украшение: по нему интерфейс честно пишет «спарринг», а не выдумывает
+    // чужой ник. Появится сервер — флаг просто перестанет приходить.
+    getOpponent(mode) {
+        const model = (typeof WormModelAPI !== 'undefined')
+            ? WormModelAPI.loadWormModel() : null;
+        return Promise.resolve({
+            opponent: {
+                name: 'Спарринг',
+                mode: mode || 'duel',
+                model,
+                equipment: Object.assign({}, GameState.data.equipment),
+                is_self_copy: true
+            }
+        });
+    },
+
     // rewards[грех][режим][исход], иначе общее правило.
     resolveReward(sin, mode, outcome) {
         const bySin = ECONOMY.rewards[sin];

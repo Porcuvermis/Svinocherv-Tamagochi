@@ -58,6 +58,7 @@ const DebugState = {
             <button data-act="scar">Шрам</button>
             <button data-act="feed">Покормить</button>
             <button data-act="room">Комната</button>
+            <button data-act="gear">Снаряга</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -126,6 +127,18 @@ const DebugState = {
 
     run(act) {
         if (!GameState.data) return;
+
+        // Снаряжение гнева. Магазина и рогалика ещё нет, а проверять слоты,
+        // характеристики и их влияние на бой надо уже сейчас — эта кнопка и
+        // есть текущий источник предметов. Выдаёт через Backend, а не пишет в
+        // состояние: когда источники появятся, они пойдут тем же путём.
+        if (act === 'gear') {
+            if (typeof WRATH_GEAR === 'undefined') return;
+            Object.keys(WRATH_GEAR.items).forEach(id => Backend.grantItem(id));
+            if (typeof WrathLobby !== 'undefined' && WrathLobby.root) WrathLobby.refresh();
+            this.render();
+            return;
+        }
 
         if (act === 'hour' || act === 'shift') {
             const hours = act === 'hour' ? 1 : 8;

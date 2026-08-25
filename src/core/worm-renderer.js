@@ -5408,7 +5408,17 @@ const WormRenderer = {
                     const pt = svg.createSVGPoint();
                     pt.x = box.x + box.width / 2;
                     pt.y = box.y + box.height / 2;
-                    const local = pt.matrixTransform(el.getScreenCTM().multiply(worldLayer.getScreenCTM().inverse()));
+                    // Порядок умножения важен: нужно СНАЧАЛА перевести точку
+                    // из части в экран (el), и только потом из экрана в
+                    // worldLayer (обратная матрица). Это W⁻¹ × E, а не
+                    // E × W⁻¹.
+                    //
+                    // Ошибка не всплывала годами, потому что обе матрицы были
+                    // переносами, а переносы переставимы. Сломалось на первом
+                    // же зеркальном персонаже (opts.flip у противника в
+                    // гневе): scale(-1,1) с переносом не переставляется, и
+                    // точка части уезжала за пределы сцены.
+                    const local = pt.matrixTransform(worldLayer.getScreenCTM().inverse().multiply(el.getScreenCTM()));
                     return { x: local.x, y: local.y };
                 } catch (err) {
                     return { x: state.wormX, y: state.wormY };
@@ -5509,6 +5519,31 @@ const WormRenderer = {
             // '[data-part="tail"]', '[data-part="belly"]' и т.п.
             svgRoot: svg,
             getMergedModel: mergedModel,
+
+            // ---------- ПАУЗА ----------
+            // Остановить кадровый цикл, не разбирая персонажа.
+            //
+            // Зачем: у рендерера уже есть проверка «сцену не видно» (см.
+            // isStageVisible), но она ловит только спрятанное стилями или
+            // выкинутое из документа. Персонаж главного экрана под ОТКРЫТОЙ
+            // мини-игрой по всем признакам виден — его просто закрыли сверху
+            // непрозрачным окном. И он продолжает считать кадры: на медленном
+            // телефоне в бою гнева это третий живой червь поверх двух бойцов.
+            //
+            // Метка времени сбрасывается, иначе после паузы dt окажется равным
+            // всей паузе и персонаж прыгнет.
+            setPaused(paused) {
+                if (paused) {
+                    if (state.rafId) {
+                        cancelAnimationFrame(state.rafId);
+                        state.rafId = null;
+                    }
+                } else if (!state.rafId) {
+                    state.lastFrameTs = 0;
+                    state.rafId = requestAnimationFrame(tick);
+                }
+            },
+
             destroy() {
                 if (state.rafId) cancelAnimationFrame(state.rafId);
                 window.removeEventListener('resize', onResize);

@@ -1,45 +1,293 @@
-/* ================= МИНИ-ИГРА ГРЕХ ГНЕВА (БОЙ) =================
+/* ================= ГНЕВ: ЛОББИ И БОЙ =================
    Само окно — общее для всех грехов: рамка, шапка с названием, крестик и
-   вопрос при выходе живут в src/core/minigame-window.css и надеваются
-   сборкой (src/core/minigame-window.js). Здесь остаётся только начинка боя
-   и настройка окна под гнев.
+   вопрос при выходе живут в src/core/minigame-window.css. Здесь только
+   начинка греха и настройка окна под него.
 
-   Что отсюда УБРАНО и почему: своя карточка `.wrath-modal` (94vw × 86vh
-   посреди размытого фона), свой крестик между полосками здоровья и своё
-   затемнение с backdrop-filter. Карточка делала гнев не таким, как
-   остальные игры, крестик посреди HUD никто не находил, а размытие стоило
-   кадров (правка 29 в docs/progress-log.md). */
+   Внутри окна два экрана — лобби и бой (docs/plan/09-wrath-rework.md).
+   Своего рисунка червя у гнева больше нет: и в лобби, и в бою стоит общая
+   модель (WormRenderer), поэтому здесь нет ни одного правила про его вид. */
 
 /* Цвет рамки окно берёт само — из ECONOMY.sins.wrath.color, того же места,
-   откуда красится кружок гнева в HUD. Здесь только фон под боем. */
+   откуда красится кружок гнева в HUD. Здесь только фон. */
 #wrath-game {
     --mg-bg:
-        radial-gradient(ellipse at 15% 40%, rgba(255, 105, 160, 0.18), transparent 55%),
-        radial-gradient(ellipse at 85% 40%, rgba(70, 120, 255, 0.18), transparent 55%),
+        radial-gradient(ellipse at 15% 30%, rgba(255, 105, 160, 0.16), transparent 55%),
+        radial-gradient(ellipse at 85% 30%, rgba(70, 120, 255, 0.16), transparent 55%),
         #170606;
+    --wrath-attack: #ff3b30;
+    --wrath-defense: #4CAF50;
 }
 
-/* Начинка — колонка: полоски здоровья, строка результата, арена во всё
-   оставшееся. */
-#wrath-game .mg-body {
+/* Экраны греха лежат друг на друге и переключаются классом. Невидимый
+   экран не должен ни ловить тапы, ни отрисовываться — по той же причине,
+   по которой это правило есть у самих мини-игр (правка 29). */
+.wrath-screen {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.wrath-screen.active {
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* ============================================================ */
+/* ==========================  ЛОББИ  ========================= */
+/* ============================================================ */
+
+#wrath-lobby {
+    padding: 10px 8px 12px;
+    box-sizing: border-box;
+}
+
+/* ---------- СТРОКА ХАРАКТЕРИСТИК ----------
+   Без неё слоты не читаются как прокачка: игрок видит квадратики, но не
+   видит, что они дают. */
+.wrath-stats {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: space-around;
+    gap: 6px;
+    padding: 8px 6px;
+    border: 1px solid rgba(255, 59, 48, 0.35);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.wrath-stats .stat {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 12px 0 14px 0;
+    line-height: 1.2;
 }
 
-/* ============ ПОЛОСКИ ЗДОРОВЬЯ (В СТИЛЕ ФАЙТИНГОВ) ============
-   Раньше это был `position: absolute` поверх карточки с крестиком
-   посередине, из-за чего у блока был свой контекст наложения и крестик
-   спорил по z-index с оверлеем результата. Теперь это обычная строка в
-   колонке, крестик уехал в шапку окна — спорить стало не о чем. */
+.wrath-stats .stat b {
+    font-size: 15px;
+    color: #fff;
+}
+
+.wrath-stats .stat i {
+    font-style: normal;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+/* ---------- ЧЕРВЬ И СЛОТЫ ВОКРУГ ---------- */
+.wrath-gear {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+}
+
+/* Колонки слотов по бокам. Слотов станет больше — колонка просто вырастет
+   вниз, поэтому размер слота задан здесь один раз и небольшим. */
+.gear-column {
+    flex: 0 0 auto;
+    width: 58px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+}
+
+.gear-slot {
+    width: 58px;
+    height: 56px;
+    padding: 4px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: 2px dashed rgba(255, 255, 255, 0.22);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.28);
+    color: #fff;
+    cursor: pointer;
+}
+
+/* Занятый слот — сплошная рамка цветом греха. Разница видна с одного
+   взгляда, без чтения подписей. */
+.gear-slot.filled {
+    border-style: solid;
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.14);
+}
+
+.gear-slot:active { transform: scale(0.94); }
+
+.gear-slot .gear-icon {
+    font-size: 22px;
+    line-height: 1;
+    opacity: 0.5;
+}
+
+.gear-slot.filled .gear-icon { opacity: 1; }
+
+.gear-slot .gear-label {
+    font-size: 8px;
+    line-height: 1.1;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.gear-slot.filled .gear-label { color: #fff; }
+
+/* Место под персонажа в лобби. Сама модель монтируется во внутреннюю сцену
+   постоянного размера и вписывается сюда масштабом — тем же способом, что и
+   бойцы в бою (WrathFighter.fitWorm). */
+.wrath-lobby-box {
+    position: relative;
+    flex: 1 1 auto;
+    height: 100%;
+    min-width: 0;
+    pointer-events: none;
+}
+
+/* ---------- РЕЖИМЫ ---------- */
+.wrath-modes {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mode-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mode-btn.ready {
+    border-color: var(--wrath-attack);
+    background: linear-gradient(135deg, rgba(255, 59, 48, 0.35), rgba(166, 28, 21, 0.35));
+}
+
+/* Недоступные режимы показаны, а не спрятаны: игрок должен видеть, куда
+   растёт грех, иначе лобби выглядит законченным на одной кнопке. */
+.mode-btn.locked {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.mode-btn:active.ready { transform: scale(0.98); }
+
+.mode-emoji { font-size: 20px; }
+
+.mode-text { display: flex; flex-direction: column; line-height: 1.25; }
+.mode-name { font-size: 14px; font-weight: 700; }
+.mode-note { font-size: 9px; color: rgba(255, 255, 255, 0.5); }
+
+/* ---------- КАРТОЧКА СЛОТА ----------
+   Выезжает снизу поверх лобби: что в слоте, что это даёт, чем заменить. */
+.wrath-slot-card {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 30;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 59, 48, 0.5);
+    background: rgba(20, 6, 6, 0.97);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.6);
+    transform: translateY(115%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.wrath-slot-card.show {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.card-title { font-size: 15px; font-weight: 800; }
+.card-hint { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
+
+.card-current {
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    margin-bottom: 6px;
+}
+
+.card-current.empty { color: rgba(255, 255, 255, 0.45); }
+
+.card-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin-top: 6px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.card-item.strip { border-color: rgba(255, 59, 48, 0.4); }
+.card-item:active { transform: scale(0.98); }
+.card-item-stat { font-size: 10px; color: #ffd27f; }
+
+.card-note {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* ============================================================ */
+/* ===========================  БОЙ  ========================== */
+/* ============================================================ */
+
+#wrath-duel {
+    align-items: center;
+    padding: 10px 0 12px;
+    box-sizing: border-box;
+}
+
+/* ---------- ПОЛОСКИ ЗДОРОВЬЯ ----------
+   Обычная строка в колонке, а не позиционированный слой: крестик уехал в
+   шапку общего окна, спорить за z-index больше не с чем. */
 .fighting-hud {
     flex: 0 0 auto;
     width: 100%;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 26px;
+    gap: 22px;
     padding: 0 10px;
     box-sizing: border-box;
 }
@@ -47,27 +295,30 @@
 .fighter-hp-box {
     position: relative;
     flex: 1;
-    height: 20px;
 }
+
+.fighter-name {
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.65);
+    margin-bottom: 3px;
+}
+
+.enemy-side .fighter-name { text-align: right; }
+.fighter-name b { color: #fff; font-size: 11px; }
 
 .fighting-hud .hp-bar-container {
     width: 100%;
-    height: 100%;
+    height: 18px;
     background: #222;
     border: 2px solid #555;
     overflow: hidden;
-    box-shadow: inset 0 0 5px rgba(0,0,0,0.8);
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
 }
 
 /* Агрессивный наклон полосок */
-.player-side .hp-bar-container {
-    transform: skewX(-15deg);
-    border-right: none;
-}
-.enemy-side .hp-bar-container {
-    transform: skewX(15deg);
-    border-left: none;
-}
+.player-side .hp-bar-container { transform: skewX(-15deg); border-right: none; }
+.enemy-side .hp-bar-container { transform: skewX(15deg); border-left: none; }
 
 .fighting-hud .hp-bar {
     height: 100%;
@@ -77,182 +328,185 @@
 
 .player-side .hp-bar {
     background: linear-gradient(to left, #4CAF50, #8bc34a);
-    float: right; /* Убывает к внешнему краю */
+    float: right;
 }
 
 .enemy-side .hp-bar {
     background: linear-gradient(to right, #ff3b30, #ff6b62);
-    float: left; /* Убывает к внешнему краю */
+    float: left;
 }
 
 .wrath-result {
+    flex: 0 0 auto;
+    min-height: 18px;
+    margin-top: 6px;
     font-size: 14px;
     font-weight: 900;
     color: #ffd700;
-    min-height: 20px;
     text-align: center;
-    flex-shrink: 0;
     text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
-    margin-top: 5px;
 }
 
-/* ============ АРЕНА ============ */
+/* ---------- АРЕНА ---------- */
 .battle-arena {
     position: relative;
     width: 100%;
-    flex: 1;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex: 1 1 auto;
     min-height: 0;
-    padding: 0;
-    box-sizing: border-box;
-    background: transparent;
-}
-
-/* Половина арены на бойца, без наездов друг на друга: фигура вписывается в
-   свой холст ПО ШИРИНЕ (см. drawWormFigure), поэтому вылезающий за край
-   холст теперь означает обрезанную морду, а не сдвинутого червя. */
-.worm-wrap {
-    width: 50%;
-    height: 100%;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    background: transparent !important;
 }
 
-.canvas-box {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    background: transparent !important;
+/* ---------- ГДЕ СТОЯТ БОЙЦЫ ----------
+   Не рядом в строку, а по диагонали: противник в верхнем углу, игрок в
+   нижнем. Причина не в красоте, а в форме тела и экрана. Силуэт червя почти
+   квадратный (примерно 180×210), а арена — узкая и высокая (366×700). Двое
+   в строку занимают полосу 2:1 и оставляют сверху и снизу две трети пустоты,
+   а увеличить их нельзя: по ширине они уже упираются друг в друга.
+
+   По диагонали каждому достаётся больше места (масштаб выходит вдвое
+   крупнее), пустота исчезает, и читается это как глубина: противник дальше,
+   игрок ближе. Вписывает бойца в свой угол сам wrath-duel.js — по
+   измеренному силуэту, а не по числу отсюда. */
+.fighter-box {
+    position: absolute;
+    width: 70%;
+    height: 50%;
 }
 
-.canvas-box canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    background: transparent !important;
-    filter: drop-shadow(0 8px 12px rgba(0,0,0,0.7));
+#wrath-enemy-box { top: 0; right: 0; }
+#wrath-player-box { bottom: 0; left: 0; }
+
+/* Сцена нарочно больше отведённой половины: в неё монтируется модель в
+   своём натуральном размере, а вписывает её потом трансформация. Тапы сцена
+   не ловит — их ловят только зоны, иначе прозрачный край сцены перехватывал
+   бы нажатия у соседа и у кинжалов. */
+.worm-stage {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 300px;
+    height: 620px;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    pointer-events: none;
 }
 
-/* Зоны выбора целей */
+/* Тряска от попадания — на самом SVG, не на сцене: зоны лежат в сцене
+   рядом с ним и должны остаться на месте, иначе следующий тап промахнётся. */
+.worm-stage svg.hit-shake {
+    animation: wrath-hit-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes wrath-hit-shake {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    15% { transform: translate(-7px, 2px) rotate(-1.5deg); }
+    35% { transform: translate(6px, -2px) rotate(1.2deg); }
+    55% { transform: translate(-4px, 1px) rotate(-0.8deg); }
+    80% { transform: translate(2px, 0) rotate(0.4deg); }
+}
+
+/* ---------- ЗОНЫ ----------
+   Цвет по стороне, а не по состоянию: зелёное — то, что я закрываю, красное
+   — то, куда бью. Так читается без подписей и без обучения.
+   Размер и место ставит скрипт по реальным габаритам части тела. */
 .zone-hit {
     position: absolute;
-    width: 56px;
-    height: 56px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    border: 3px dashed #d4ff2b;
+    border: 2px dashed;
     box-sizing: border-box;
     cursor: pointer;
-    opacity: 0.85;
-    z-index: 20;
     pointer-events: auto;
-    animation: zone-spin 4s linear infinite;
+    z-index: 20;
+    transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
-@keyframes zone-spin {
-    from { transform: translate(-50%, -50%) rotate(0deg); }
-    to { transform: translate(-50%, -50%) rotate(360deg); }
+.player-zone {
+    border-color: rgba(76, 175, 80, 0.55);
+    background: rgba(76, 175, 80, 0.07);
 }
 
-.worm-player .zone-hit.selected {
+.enemy-zone {
+    border-color: rgba(255, 59, 48, 0.55);
+    background: rgba(255, 59, 48, 0.07);
+}
+
+/* Выбранная зона отмечается контуром и свечением, а заливка остаётся
+   лёгкой: при плотной заливке червь под мишенью перекрашивался целиком и
+   переставал быть похожим на себя. */
+.player-zone.selected {
     border-style: solid;
-    border-color: #4CAF50;
-    background: rgba(76, 175, 80, 0.3);
-    box-shadow: 0 0 14px #4CAF50;
-    opacity: 1;
+    border-color: var(--wrath-defense);
+    background: rgba(76, 175, 80, 0.14);
+    box-shadow: 0 0 16px var(--wrath-defense), inset 0 0 12px rgba(76, 175, 80, 0.35);
 }
 
-.worm-enemy .zone-hit.selected {
+.enemy-zone.selected {
     border-style: solid;
-    border-color: #ff3b30;
-    background: rgba(255, 59, 48, 0.3);
-    box-shadow: 0 0 14px #ff3b30;
-    opacity: 1;
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.14);
+    box-shadow: 0 0 16px var(--wrath-attack), inset 0 0 12px rgba(255, 59, 48, 0.35);
 }
 
-/* ============ КНОПКА БОЯ ============ */
+/* ---------- СКРЕЩЁННЫЕ КИНЖАЛЫ ----------
+   Левый (наклонённый влево) — защита, правый — удар. Пока зона не выбрана,
+   кинжал тусклый и стальной; выбрана — заливается своим цветом. */
 .dagger-btn {
     position: absolute;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: 90px;
-    height: 90px;
-    z-index: 15;
+    width: 104px;
+    height: 104px;
+    z-index: 25;
     cursor: pointer;
 }
 
-.dagger-btn.disabled {
-    pointer-events: none;
-    opacity: 0.35;
+.dagger-btn.disabled { pointer-events: none; opacity: 0.3; }
+.dagger-btn:active { transform: translate(-50%, -50%) scale(0.94); }
+
+.dagger-svg { width: 100%; height: 100%; overflow: visible; }
+
+.dagger .blade,
+.dagger .guard,
+.dagger .grip,
+.dagger .pommel {
+    fill: #6b6b6b;
+    stroke: #2b2b2b;
+    stroke-width: 2;
+    transition: fill 0.2s ease;
 }
 
-.dagger {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 80px;
-    height: 26px;
-    margin-left: -40px;
-    margin-top: -13px;
-    border-radius: 8px;
-    background: linear-gradient(90deg, #444 0%, #999 50%, #444 100%);
-    background-size: 200% 100%;
-    border: 2px solid #666;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    animation: dagger-shine 2s linear infinite;
-    transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
-}
+.dagger .grip { fill: #4a3428; }
 
-.dagger-defense {
-    transform: translate(0, 0) rotate(-45deg);
-    transform-origin: center;
-}
-
-.dagger-attack {
-    transform: rotate(45deg);
-    transform-origin: center;
-}
+/* Свечение и цвет выбранного кинжала. Логика та же, что была у палочек:
+   выбрал зону — кинжал загорелся. */
+.dagger.filled .blade { fill: #ffb3ae; }
+.dagger.filled .guard,
+.dagger.filled .pommel { fill: var(--wrath-attack); }
+.dagger-defense.filled .blade { fill: #c8f0ca; }
+.dagger-defense.filled .guard,
+.dagger-defense.filled .pommel { fill: var(--wrath-defense); }
 
 .dagger.filled {
-    animation: none;
-    background: linear-gradient(90deg, #7a1a12, #ff3b30 50%, #7a1a12);
-    background-size: 100% 100%;
-    border-color: #ffd0cb;
-    box-shadow: 0 0 14px #ff3b30;
+    filter: drop-shadow(0 0 8px var(--wrath-attack));
+    animation: dagger-pop 0.28s ease;
 }
 
 .dagger-defense.filled {
-    background: linear-gradient(90deg, #1f5a22, #4CAF50 50%, #1f5a22);
-    border-color: #cdf7cf;
-    box-shadow: 0 0 14px #4CAF50;
+    filter: drop-shadow(0 0 8px var(--wrath-defense));
 }
 
-.dagger.filled.dagger-defense { animation: dagger-pop-defense 0.3s ease; }
-.dagger.filled.dagger-attack { animation: dagger-pop-attack 0.3s ease; }
-
-@keyframes dagger-pop-defense {
-    0% { transform: rotate(-45deg) scale(1.5); }
-    100% { transform: rotate(-45deg) scale(1); }
-}
-@keyframes dagger-pop-attack {
-    0% { transform: rotate(45deg) scale(1.5); }
-    100% { transform: rotate(45deg) scale(1); }
+@keyframes dagger-pop {
+    0% { opacity: 0.6; }
+    100% { opacity: 1; }
 }
 
+/* ---------- ЦИФРЫ УРОНА ---------- */
 .dmg-popup {
     position: absolute;
-    top: 24px;
+    top: 26px;
     font-size: 18px;
     font-weight: 900;
     color: #ff5545;
@@ -260,12 +514,11 @@
     pointer-events: none;
     opacity: 0;
 }
+
 .player-side .dmg-popup { left: 10px; }
 .enemy-side .dmg-popup { right: 10px; }
 
-.dmg-popup.show {
-    animation: dmg-float 1.4s ease-out forwards;
-}
+.dmg-popup.show { animation: dmg-float 1.4s ease-out forwards; }
 
 @keyframes dmg-float {
     0% { opacity: 1; transform: translateY(0); }
@@ -371,7 +624,9 @@
     100% { transform: translate(-50%, -50%) translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.15); opacity: 0; }
 }
 
-/* ============ ОВЕРЛЕЙ РЕЗУЛЬТАТА ============ */
+/* ============ ОВЕРЛЕЙ РЕЗУЛЬТАТА ============
+   Накрывает только тело окна, но не шапку: крестик остаётся доступен, и
+   после конца боя он закрывает грех без лишнего вопроса. */
 .wrath-result-overlay {
     position: absolute;
     top: 0; left: 0;
@@ -381,10 +636,11 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 26px;
     z-index: 60;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.5s ease;
+    transition: opacity 0.4s ease;
 }
 
 .wrath-result-overlay.active {
@@ -393,11 +649,10 @@
 }
 
 .wrath-overlay-text {
-    font-size: 38px;
+    font-size: 36px;
     font-weight: 900;
     color: #ff3b30;
     text-shadow: 0 0 15px rgba(255, 59, 48, 0.6);
-    margin-bottom: 30px;
     text-align: center;
     letter-spacing: 2px;
     animation: textPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -408,17 +663,26 @@
     100% { transform: scale(1); opacity: 1; }
 }
 
-.wrath-restart-btn {
-    background: linear-gradient(135deg, #ff3b30, #a61c15);
-    border: 2px solid #fff;
-    color: #fff;
-    padding: 12px 28px;
-    font-size: 18px;
-    font-weight: 900;
-    border-radius: 16px;
-    cursor: pointer;
-    box-shadow: 0 6px 20px rgba(255, 59, 48, 0.4);
-    transition: transform 0.1s ease, box-shadow 0.2s ease;
+.wrath-overlay-buttons {
+    display: flex;
+    gap: 12px;
 }
 
-.wrath-restart-btn:active { transform: scale(0.95); }
+.wrath-btn {
+    padding: 12px 22px;
+    font-size: 15px;
+    font-weight: 800;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    cursor: pointer;
+}
+
+.wrath-btn.primary {
+    border-color: #fff;
+    background: linear-gradient(135deg, #ff3b30, #a61c15);
+    box-shadow: 0 6px 20px rgba(255, 59, 48, 0.4);
+}
+
+.wrath-btn:active { transform: scale(0.95); }

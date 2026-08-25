@@ -41,6 +41,9 @@ const GameState = {
             currencies: {},
             scars: [],
             inventory: {},
+            // Надетое снаряжение гнева: слот → id предмета из
+            // src/config/wrath-gear.js. Пусто = дерётся как есть.
+            equipment: {},
             unlocks: {},
             daily_counters: {},
             runs: {},
@@ -161,7 +164,7 @@ const GameState = {
             d.room.location = 'home';
         }
 
-        ['currencies', 'inventory', 'unlocks', 'daily_counters', 'runs'].forEach(key => {
+        ['currencies', 'inventory', 'equipment', 'unlocks', 'daily_counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
         ['scars', 'ledger', 'requests'].forEach(key => {
