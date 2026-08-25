@@ -70,6 +70,11 @@ const WORM_BLINK_DURATION = 220;
 // без видимых заломов. EGG_TOP/BOTTOM — лёгкая асимметрия "как яйцо" (верх
 // чуть уже, низ чуть шире), а не идеально круглая форма.
 const MOUTH_ARC_K = 0.5522847498;
+// Где рот сидит на морде, в долях полувысоты головы. Был 0.9 — рот стоял
+// почти на самом подбородке, далеко от пятачка, и морда выглядела пустой
+// посередине. Поднят к пятачку: так рот попадает в ту же зону лица, что
+// глаза и нос, и читается как её часть, а не как отдельная деталь внизу.
+const MOUTH_Y = 0.74;
 const MOUTH_EGG_TOP = 0.85;
 const MOUTH_EGG_BOTTOM = 1.12;
 
@@ -2227,8 +2232,15 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     const W = 15.5;
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
+    // Линия губ чуть толще обычной внутренней границы (structure = 1.7).
+    // Это осознанное отступление в пределах иерархии линий: губа — главная
+    // внутренняя линия лица, на ней держится всё выражение. Контур силуэта
+    // (2.6) она при этом не догоняет — иначе деталь начнёт спорить с
+    // силуэтом, а это прямо запрещено (art-direction.md §4).
     const mouthShape = svgEl('path', {
-        d: '', fill: VISCERA[700], stroke: mouth.color, 'stroke-width': SW.structure, 'stroke-linejoin': 'round'
+        d: '', fill: VISCERA[700], stroke: mouth.color,
+        'stroke-width': (SW.structure * 1.25).toFixed(2),
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round'
     });
     mouthAnchor.appendChild(mouthShape);
 
@@ -2258,35 +2270,62 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     return { mouthShape, mouthClipShape, teethGroup, teeth, W, MAX_GAP };
 }
 
-// Пересчитывает форму рта (и зубов) из bend/gap. Рот строится как НАСТОЯЩИЙ
-// гладкий овал — 4 кубические дуги (константа MOUTH_ARC_K), где верхняя и
-// нижняя половины могут иметь РАЗНЫЙ радиус (ryTop/ryBottom): касательная в
-// уголках всегда строго вертикальна, поэтому стык гладкий при любом
-// сочетании настроения и открытости.
+// Пересчитывает форму рта (и зубов) из bend/gap.
+//
+// ---------- ПОЧЕМУ НЕ ОВАЛ ----------
+// Раньше рот был овалом с разными радиусами сверху и снизу: при улыбке
+// верхний радиус обнулялся, и ВЕРХНЯЯ ГУБА ПРЕВРАЩАЛАСЬ В ПРЯМУЮ ЛИНИЮ.
+// Гнулась только нижняя кромка, а сверху рот оставался обрубленным по
+// горизонтали. Именно поэтому улыбка читалась «чем-то средним»: половина
+// рта в ней не участвовала.
+//
+// Теперь рот строится вокруг ИЗОГНУТОЙ СРЕДНЕЙ ЛИНИИ. Обе губы — это одна и
+// та же дуга, разведённая вверх и вниз на величину открытия, поэтому гнутся
+// они одинаково и всегда согласованно. Уголки при этом общие для обеих губ:
+// рот раскрывается в середине, а его углы остаются сколотыми — как у
+// настоящего рта.
+//
+// Закрытый рот (gap = 0) даёт нулевую площадь, и от него остаётся ровно
+// обводка — изогнутая линия губ. Отдельной ветки «нарисовать линию вместо
+// фигуры» не нужно.
 function mouthBendFromCurve(curve) {
     return 7 * curve;
 }
 
+// Сагитта квадратичной кривой равна половине смещения контрольной точки,
+// поэтому всюду ниже смещения удваиваются.
 function updateMouthGeometry(mouthBuilt, bend, gap) {
     const W = mouthBuilt.W;
-    const halfBend = bend / 2;
-    const topBulge = Math.max(0, -halfBend);
-    const bottomBulge = Math.max(0, halfBend);
-    const ryTop = (gap + topBulge) * MOUTH_EGG_TOP;
-    const ryBottom = (gap + bottomBulge) * MOUTH_EGG_BOTTOM;
-    const k = MOUTH_ARC_K;
-    const d = `M ${W.toFixed(2)},0 ` +
-        `C ${W.toFixed(2)},${(-k * ryTop).toFixed(2)} ${(k * W).toFixed(2)},${(-ryTop).toFixed(2)} 0,${(-ryTop).toFixed(2)} ` +
-        `C ${(-k * W).toFixed(2)},${(-ryTop).toFixed(2)} ${(-W).toFixed(2)},${(-k * ryTop).toFixed(2)} ${(-W).toFixed(2)},0 ` +
-        `C ${(-W).toFixed(2)},${(k * ryBottom).toFixed(2)} ${(-k * W).toFixed(2)},${ryBottom.toFixed(2)} 0,${ryBottom.toFixed(2)} ` +
-        `C ${(k * W).toFixed(2)},${ryBottom.toFixed(2)} ${W.toFixed(2)},${(k * ryBottom).toFixed(2)} ${W.toFixed(2)},0 Z`;
+
+    // Дуга симметрична относительно точки крепления: уголки уходят вверх,
+    // середина вниз. Так улыбка не «съезжает» с лица вниз по мере усиления,
+    // а раскрывается вокруг своего места.
+    const cornerY = -bend * 0.45;
+    const midY = bend * 0.55;
+    const ctrlY = 2 * midY - cornerY;      // контрольная точка средней линии
+
+    const gapTop = gap * MOUTH_EGG_TOP;
+    const gapBottom = gap * MOUTH_EGG_BOTTOM;
+
+    const d = `M ${(-W).toFixed(2)},${cornerY.toFixed(2)} ` +
+        `Q 0,${(ctrlY - 2 * gapTop).toFixed(2)} ${W.toFixed(2)},${cornerY.toFixed(2)} ` +
+        `Q 0,${(ctrlY + 2 * gapBottom).toFixed(2)} ${(-W).toFixed(2)},${cornerY.toFixed(2)} Z`;
     mouthBuilt.mouthShape.setAttribute('d', d);
     mouthBuilt.mouthClipShape.setAttribute('d', d);
+
     if (gap > 2) {
         mouthBuilt.teethGroup.setAttribute('visibility', 'visible');
-        const topY = -ryTop + 1;
+        // Зубы растут от ВЕРХНЕЙ ГУБЫ, а она теперь изогнута — значит и
+        // посадка каждого зуба считается по кривой, а не по одной высоте на
+        // всех. Иначе крайние зубы висят в воздухе, а средние тонут в губе.
         mouthBuilt.teeth.forEach(t => {
+            const u = Math.max(-1, Math.min(1, t.tx / W));
+            const s = (u + 1) / 2;                       // 0..1 вдоль рта
+            const lipY = (1 - s) * (1 - s) * cornerY +
+                         2 * (1 - s) * s * (ctrlY - 2 * gapTop) +
+                         s * s * cornerY;
             const toothH = Math.min(gap * 0.85, t.hBase);
+            const topY = lipY + 1;
             t.el.setAttribute('d',
                 `M ${(t.tx - t.tw / 2).toFixed(1)},${topY.toFixed(1)} ` +
                 `L ${(t.tx + t.tw / 2 + t.jitter).toFixed(1)},${topY.toFixed(1)} ` +
@@ -2789,10 +2828,10 @@ function buildHeadNode(model, ctx) {
 
     // ---------- ПЯТАЧОК ----------
     const snout = head.snout;
-    // Пятачок поднят с 0.6: под ним расчищается место для широкого рта.
-    // Иначе расширенный рот подлезает прямо под пятачок и его уголки
+    // Пятачок поднят (было 0.6, потом 0.5): под ним расчищается место для
+    // широкого рта. Иначе рот подлезает прямо под пятачок и его уголки
     // теряются на фоне ноздрей — ровно то, ради чего рот и расширяли.
-    const snoutY = ry * 0.5;
+    const snoutY = ry * 0.4;
     const snoutRx = 14.5, snoutRy = 10.5;
     // Пятачок сидит на оси лица (азимут 0), но заметно ВЫСТУПАЕТ вперёд,
     // поэтому при повороте уезжает в сторону сильнее любой другой черты.
@@ -2890,7 +2929,7 @@ function buildHeadNode(model, ctx) {
         'clip-path': `url(#${skullClipId})`,
         // Рот сидит ПОД ПЯТАКОМ, а не на самой нижней кромке черепа: на ry*1.0 он
         // сливался с контуром подбородка и просто исчезал из морды.
-        transform: `translate(${mouthYawX.toFixed(2)},${(ry * 0.9).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX * mouthYawSquash).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
+        transform: `translate(${mouthYawX.toFixed(2)},${(ry * MOUTH_Y).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX * mouthYawSquash).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
     });
     const mouthBuilt = buildMouthShapes(mouthAnchor, mouth, ctx.instanceId);
     updateMouthGeometry(mouthBuilt, mouthBendFromCurve(mouth.curve), mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
