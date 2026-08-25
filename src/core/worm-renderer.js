@@ -121,6 +121,10 @@ const WORM_TURN_RATE = 2.4;
 // скоростью читается заносом. 0 = стоп на развороте, 1 = скорость не зависит
 // от угла.
 const WORM_TURN_SLOWDOWN = 0.45;
+// Скорость доводки обесцвечивания (формула 1 - base^dt): МЕНЬШЕ = БЫСТРЕЕ.
+// Медленная нарочно: истощение — процесс на часы, и заметный переход нужен
+// только при смерти и воскрешении.
+const WORM_WITHER_BASE = 0.25;
 
 // ---------- КАМЕРА ----------
 // Свайп короче этого (в единицах холста) — это тап «иди сюда», а не панорама.
@@ -2181,7 +2185,12 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
 // раздутие живота, это "живой" параметр, управляемый через
 // handle.setLivePose({ mouthOpenness }) БЕЗ пересборки всего SVG.
 function buildMouthShapes(mouthAnchor, mouth, instanceId) {
-    const W = 8.6;       // половина ширины рта в уголках
+    // Половина ширины рта в уголках. Была 8.6 — рот выходил мелким, и на
+    // телефоне его кривизна не читалась вовсе: мимика держалась на одних
+    // ушах и бровях, а улыбки видно не было. Чем шире рот, тем на большем
+    // расстоянии расходятся его уголки при том же изгибе, — то есть ширина
+    // и есть главный рычаг «видно эмоцию или нет».
+    const W = 12.4;
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
     const mouthShape = svgEl('path', {
@@ -2746,7 +2755,10 @@ function buildHeadNode(model, ctx) {
 
     // ---------- ПЯТАЧОК ----------
     const snout = head.snout;
-    const snoutY = ry * 0.6;
+    // Пятачок поднят с 0.6: под ним расчищается место для широкого рта.
+    // Иначе расширенный рот подлезает прямо под пятачок и его уголки
+    // теряются на фоне ноздрей — ровно то, ради чего рот и расширяли.
+    const snoutY = ry * 0.5;
     const snoutRx = 14.5, snoutRy = 10.5;
     // Пятачок сидит на оси лица (азимут 0), но заметно ВЫСТУПАЕТ вперёд,
     // поэтому при повороте уезжает в сторону сильнее любой другой черты.
@@ -3806,6 +3818,40 @@ const WormRenderer = {
         // «отстанет» от пола на полкадра при быстром свайпе. Заодно это
         // единственное место, где вообще существует камера: вся остальная
         // математика живёт в координатах комнаты и про неё не знает.
+        // ---------- ФИЛЬТР ИСТОЩЕНИЯ ----------
+        // Обесцвечивание сделано РОДНЫМ SVG-фильтром, а не CSS-свойством
+        // filter, и это не вкусовщина.
+        //
+        // Сначала стоял CSS-фильтр на слое персонажа. В Chromium он работал, а
+        // на айфоне — нет: WebKit не применяет CSS filter к внутренним
+        // элементам SVG (к <g>), только к самому корню или к HTML-элементу.
+        // Выглядело это так, что червь при нуле шкал и даже мёртвый оставался
+        // розовым, хотя поза менялась правильно — то есть трансформации
+        // доезжали, а цвет нет. Родной <filter> в этом месте работает везде.
+        //
+        // Яркость отдельной ступенью: feColorMatrix умеет только насыщенность,
+        // а обескровленный червь должен ещё и темнеть.
+        const witherFilterId = `worm-wither-${instanceId}`;
+        const witherDefs = svgEl('defs');
+        const witherFilter = svgEl('filter', {
+            id: witherFilterId,
+            // Фильтр не должен обрезать тело: по умолчанию область всего 110%
+            // от габарита, а у червя за него выходят и тень, и след слизи.
+            x: '-25%', y: '-25%', width: '150%', height: '150%',
+            'color-interpolation-filters': 'sRGB'
+        });
+        const witherSat = svgEl('feColorMatrix', { type: 'saturate', values: '1' });
+        const witherBright = svgEl('feComponentTransfer');
+        const witherFuncs = ['feFuncR', 'feFuncG', 'feFuncB'].map(tag => {
+            const f = svgEl(tag, { type: 'linear', slope: '1', intercept: '0' });
+            witherBright.appendChild(f);
+            return f;
+        });
+        witherFilter.appendChild(witherSat);
+        witherFilter.appendChild(witherBright);
+        witherDefs.appendChild(witherFilter);
+        svg.appendChild(witherDefs);
+
         const worldLayer = svgEl('g', { class: 'worm-world-layer' });
         if (opts.room) worldLayer.appendChild(roomLayer);
         worldLayer.appendChild(slimeLayer);
@@ -3830,6 +3876,11 @@ const WormRenderer = {
             // направления на цель: именно расхождение между ними и даёт дугу
             // при смене цели на ходу.
             heading: null,
+            // Истощение: 1 = здоров (фильтр снят), меньше — обесцвечен.
+            // Показанное значение догоняет цель за кадры, поэтому смерть не
+            // обесцвечивает червя рывком.
+            witherTarget: 1,
+            witherShown: 1,
             // Камера: на сколько единиц комнаты окно сдвинуто вправо.
             camX: 0,
             camManualUntil: 0,   // до этого момента слежение молчит
@@ -4202,6 +4253,21 @@ const WormRenderer = {
         svg.addEventListener('pointerup', onStageUp);
         svg.addEventListener('pointercancel', onStageUp);
 
+        // Записать текущее истощение в фильтр. Здоровому фильтр СНИМАЕТСЯ
+        // целиком, а не ставится нейтральным: лишний проход фильтра стоит
+        // кадров на телефоне, а видимой разницы не даёт.
+        function applyWither() {
+            const s = Math.max(0, Math.min(1, state.witherShown));
+            const off = s >= 0.995;
+            witherSat.setAttribute('values', s.toFixed(3));
+            // Вместе с цветом уходит и яркость: обескровленный червь темнеет.
+            witherFuncs.forEach(f => f.setAttribute('slope', (0.72 + s * 0.28).toFixed(3)));
+            [charLayer, slimeLayer].forEach(el => {
+                if (off) el.removeAttribute('filter');
+                else el.setAttribute('filter', `url(#${witherFilterId})`);
+            });
+        }
+
         function rebuild() {
             const m = mergedModel();
             while (charLayer.firstChild) charLayer.removeChild(charLayer.firstChild);
@@ -4436,6 +4502,16 @@ const WormRenderer = {
             // Камера подтягивается к червю — после движения, чтобы за кадр не
             // отставать от него на шаг.
             if (opts.room) followCam(dtSec, now);
+
+            // Истощение доводится покадрово. Раньше плавность давал CSS
+            // transition, но у SVG-фильтра его нет — значения атрибутов
+            // браузер не анимирует. Зато шаг здесь и не нужен часто: пока
+            // показанное совпало с целью, не делается ничего.
+            if (Math.abs(state.witherShown - state.witherTarget) > 0.002) {
+                state.witherShown += (state.witherTarget - state.witherShown) *
+                                     (1 - Math.pow(WORM_WITHER_BASE, dtSec));
+                applyWither();
+            }
 
             // ---------- ДОВОРОТ ХВОСТА ЗА ДВИЖЕНИЕМ ----------
             // Целевой угол — строго противоположный движению: хвост тянется
@@ -5026,6 +5102,12 @@ const WormRenderer = {
             // Отправить червя в точку пола (в единицах холста). Тот же путь,
             // которым идёт тап игрока: точка вписывается в допустимую область.
             walkTo,
+            // Истощение: 1 = здоровый цвет, 0 = полностью обесцвечен.
+            // Показанное значение догоняет это за кадры — вызывающему не надо
+            // сглаживать самому.
+            setWither(saturation) {
+                state.witherTarget = Math.max(0, Math.min(1, saturation));
+            },
             // Точечная перестановка "точки стояния" персонажа уже ПОСЛЕ
             // монтирования — нужна мини-играм, где раскладку нельзя выразить
             // одним фиксированным anchorX/anchorY.
