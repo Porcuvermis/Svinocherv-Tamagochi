@@ -58,6 +58,7 @@ const DebugState = {
             <button data-act="scar">Шрам</button>
             <button data-act="feed">Покормить</button>
             <button data-act="room">Комната</button>
+            <button data-act="gear">Жетоны</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -126,6 +127,19 @@ const DebugState = {
 
     run(act) {
         if (!GameState.data) return;
+
+        // Жетоны гнева. Честный источник — победы в бою (осколок за победу,
+        // три осколка = жетон), но копить их ради проверки магазина долго.
+        // Выдаётся через Backend, а не записью в состояние: когда появится
+        // рогалик, он пойдёт тем же путём.
+        if (act === 'gear') {
+            Backend.grantCurrency('wrath_token', 5);
+            Backend.grantCurrency('gold', 100);
+            if (typeof WrathLobby !== 'undefined' && WrathLobby.root) WrathLobby.refresh();
+            if (typeof WrathShop !== 'undefined' && WrathShop.root) WrathShop.render();
+            this.render();
+            return;
+        }
 
         if (act === 'hour' || act === 'shift') {
             const hours = act === 'hour' ? 1 : 8;

@@ -41,11 +41,30 @@ const GameState = {
             currencies: {},
             scars: [],
             inventory: {},
+            // Боевая прокачка гнева: ветка → купленный уровень (0 = не
+            // куплено). В отличие от снаряжения, не снимается.
+            upgrades: {},
+            // Надетое снаряжение гнева: слот → id предмета из
+            // src/config/wrath-gear.js. Пусто = дерётся как есть.
+            equipment: {},
             unlocks: {},
             daily_counters: {},
+            // Накопительные счётчики за всё время (в отличие от суточных):
+            // на них стоят награды вида «осколок за каждые три поражения».
+            counters: {},
             runs: {},
             // Пищеварение: одна метка времени, всё остальное считается от неё.
             digestion: { fed_at: null },
+            // Боец гнева: сколько здоровья осталось после последнего боя.
+            // hp === null означает «полное»: до первого боя и после того, как
+            // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
+            // значение плюс метка времени, от которой считается остальное.
+            //
+            // frozen — «зарастание сейчас не идёт». Ставится на время боя и
+            // забега в рогалике: там здоровье лечится своими способами, а не
+            // само по себе. Флаг живёт в состоянии, а не в памяти экрана,
+            // потому что игру закрывают прямо посреди боя.
+            fighter: { hp: null, updated_at: null, frozen: false },
             // Жизнь и смерть червя. Сама смерть НЕ хранится — она выводится
             // из меток шкал (см. worm-condition.js). Хранится только
             // воскрешение: оно обрывает прошлое голодание, иначе поднятый
@@ -149,6 +168,8 @@ const GameState = {
         }
 
         if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null };
+        if (!d.fighter || typeof d.fighter !== 'object') d.fighter = { hp: null, updated_at: null, frozen: false };
+        if (typeof d.fighter.frozen !== 'boolean') d.fighter.frozen = false;
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
@@ -161,7 +182,7 @@ const GameState = {
             d.room.location = 'home';
         }
 
-        ['currencies', 'inventory', 'unlocks', 'daily_counters', 'runs'].forEach(key => {
+        ['currencies', 'inventory', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
         ['scars', 'ledger', 'requests'].forEach(key => {
@@ -220,6 +241,66 @@ const GameState = {
         return GameTime.decayed(sin.value, sin.updated_at, this.decayRate(sinKey), 0, this.maxValue(sinKey));
     },
 
+    // ---------- ЗДОРОВЬЕ БОЙЦА ----------
+    // Не хранится «сколько сейчас», хранится «сколько было и когда». Между
+    // боями оно зарастает само, и считается это формулой — как значение шкалы
+    // греха. Поэтому восстановление идёт и при закрытой игре, а перевод часов
+    // на телефоне ничего не меняет: время берётся из GameTime.
+    //
+    // Максимум приходит снаружи: он зависит от надетого снаряжения, а это не
+    // дело стора.
+    fighterHp(maxHp) {
+        const raw = this.fighterHpRaw();
+        if (raw === null) return maxHp;
+        // Вниз округляем: показывать «7 из 13», пока набежало 7.4, честнее,
+        // чем округлять к восьми, которых ещё нет.
+        return Math.max(0, Math.min(maxHp, Math.floor(raw)));
+    },
+
+    // ---------- ПРОКАЧКА ----------
+    // Суммарная прибавка ветки на купленном уровне. Ноль, если не куплено.
+    // Уровни — данные в конфиге, здесь только чтение.
+    upgradeBonus(key) {
+        const conf = ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades;
+        const branch = conf && conf[key];
+        if (!branch || !branch.levels) return 0;
+        const level = (this.data && this.data.upgrades && this.data.upgrades[key]) || 0;
+        if (level <= 0) return 0;
+        const step = branch.levels[Math.min(level, branch.levels.length) - 1];
+        return step ? (step.bonus || 0) : 0;
+    },
+
+    upgradeLevel(key) {
+        return (this.data && this.data.upgrades && this.data.upgrades[key]) || 0;
+    },
+
+    // Скорость зарастания: база из конфига плюс прокачка.
+    regenRate() {
+        const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+        return base + this.upgradeBonus('regen');
+    },
+
+    // Сырое здоровье, без потолка: потолок зависит от снаряжения, а это не
+    // дело стора. Нужно самой заморозке — зафиксировать накопленное.
+    // null означает «хранить нечего, здоровье полное».
+    fighterHpRaw() {
+        const f = this.data ? this.data.fighter : null;
+        if (!f || f.hp === null || f.hp === undefined || !f.updated_at) return null;
+        // Зарастание остановлено (идёт бой или забег) — сколько было, столько
+        // и есть, сколько бы времени ни прошло.
+        if (f.frozen) return f.hp;
+        return f.hp + GameTime.secondsSince(f.updated_at) * this.regenRate();
+    },
+
+    // Сколько секунд до полного здоровья. Нужно интерфейсу, чтобы написать
+    // «зарастает», а не молчать.
+    fighterHealSeconds(maxHp) {
+        const rate = this.regenRate();
+        if (rate <= 0) return null;
+        const missing = maxHp - this.fighterHp(maxHp);
+        return missing > 0 ? Math.ceil(missing / rate) : 0;
+    },
+
     currency(key) {
         return this.data.currencies[key] || 0;
     },
@@ -231,6 +312,12 @@ const GameState = {
     counter(counterKey) {
         const day = this.data.daily_counters[this.dayKey()];
         return (day && day[counterKey]) || 0;
+    },
+
+    // Накопительный счётчик — за всё время, а не за сутки. Суточные чистятся
+    // через неделю, а «каждое третье поражение» обязано помнить дольше.
+    totalCounter(counterKey) {
+        return (this.data.counters && this.data.counters[counterKey]) || 0;
     },
 
     // Фаза пищеварения на текущий момент. Ничего не хранится, кроме метки
@@ -273,6 +360,13 @@ const GameState = {
         const next = (this.data.currencies[key] || 0) + delta;
         this.data.currencies[key] = Math.max(0, next);
         return this.data.currencies[key];
+    },
+
+    bumpTotal(counterKey, delta) {
+        if (!this.data.counters) this.data.counters = {};
+        const value = (this.data.counters[counterKey] || 0) + (delta || 1);
+        this.data.counters[counterKey] = value;
+        return value;
     },
 
     bumpCounter(counterKey, delta) {

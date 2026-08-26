@@ -225,6 +225,10 @@ const GameManager = {
                         if (answer.awarded.mark && typeof refreshWormMarks === 'function') {
                             refreshWormMarks();
                         }
+                        // Обратная связь мини-игре: что именно ей начислили.
+                        // Она об этом не решает и не спрашивает — только
+                        // показывает ответ, пришедший с той стороны.
+                        GameEvents.emit('minigame:awarded', answer.awarded);
                     }
                     this.updateUI();
                 })

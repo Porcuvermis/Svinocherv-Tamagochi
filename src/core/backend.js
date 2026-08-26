@@ -90,20 +90,40 @@ const LocalBackend = {
         }
         awarded.sinValue = GameState.sinValue(sin);
 
+        const reason = sin + '.' + mode + '.' + outcome;
+
         if (reward.currencies) {
             Object.keys(reward.currencies).forEach(key => {
-                const delta = reward.currencies[key];
-                if (!delta) return;
-                GameState.addCurrency(key, delta);
-                GameState.pushLedger({
-                    currency: key,
-                    delta,
-                    reason: sin + '.' + mode + '.' + outcome,
-                    client_request_id: requestId
-                });
-                awarded.currencies[key] = delta;
+                this.award(awarded, key, reward.currencies[key], reason, requestId);
             });
         }
+
+        // ---------- ЗОЛОТО С УБЫВАЮЩЕЙ ДОХОДНОСТЬЮ ----------
+        // Считается по суточному счётчику ТАКИХ ЖЕ исходов. Счётчик
+        // увеличивается ниже, поэтому текущая победа — следующая по номеру.
+        if (reward.goldBase) {
+            const already = GameState.counter(reason);
+            const share = this.goldShare(already + 1);
+            const gold = Math.round(reward.goldBase * share);
+            awarded.goldShare = share;
+            if (gold > 0) this.award(awarded, 'gold', gold, reason + '.gold', requestId);
+        }
+
+        // ---------- НАГРАДА ЗА КАЖДЫЙ N-Й ИСХОД ----------
+        // «Осколок за каждые три поражения». Счётчик накопительный: три
+        // поражения за неделю тоже должны сложиться в осколок.
+        if (reward.everyN && reward.everyN.n > 0) {
+            const total = GameState.bumpTotal(reward.everyN.counter);
+            if (total % reward.everyN.n === 0) {
+                Object.keys(reward.everyN.currencies || {}).forEach(key => {
+                    this.award(awarded, key, reward.everyN.currencies[key], reason + '.every' + reward.everyN.n, requestId);
+                });
+            }
+            awarded.everyN = { counter: reward.everyN.counter, total, n: reward.everyN.n };
+        }
+
+        // Осколки могли сложиться в жетон.
+        this.settleExchange(awarded, requestId);
 
         // Червя покормили — запускается пищеварение.
         if (reward.feeds) {
@@ -175,6 +195,9 @@ const LocalBackend = {
             GameState.setSinValue(key, GameState.maxValue(key) * share);
         });
         GameState.data.worm.revived_at = GameTime.now();
+        // Поднятый червь дерётся с полным здоровьем: воскрешение — это
+        // второй шанс целиком, а не «встал, но избитый».
+        GameState.data.fighter = { hp: null, updated_at: null };
         GameState.save();
         return GameState.data.worm;
     },
@@ -232,6 +255,282 @@ const LocalBackend = {
         const i = list.findIndex(p => p.id === id);
         if (i === -1) return false;
         list.splice(i, 1);
+        GameState.save();
+        return true;
+    },
+
+    // ---------- ЗДОРОВЬЕ БОЙЦА ----------
+    // Записать, сколько здоровья осталось. Вызывается после каждого раунда, а
+    // не только в конце боя: если игрок закроет игру посреди драки, здоровье
+    // должно остаться таким, каким он её оставил, а не откатиться к целому.
+    //
+    // Хранится значение плюс метка времени; сколько заросло с тех пор,
+    // считает стор по формуле (GameState.fighterHp).
+    setFighterHp(hp) {
+        const f = GameState.data.fighter || {};
+        GameState.data.fighter = {
+            hp: Math.max(0, Math.round(hp)),
+            updated_at: GameTime.now(),
+            // Заморозку не трогаем: запись идёт в том числе посреди боя, где
+            // зарастание как раз остановлено.
+            frozen: !!f.frozen
+        };
+        GameState.save();
+        return GameState.data.fighter;
+    },
+
+    // ---------- ПАУЗА ЗАРАСТАНИЯ ----------
+    // Само по себе здоровье зарастает везде: в комнате, в лобби, при закрытой
+    // игре. Но не там, где здоровье — ресурс текущего испытания: в бою и в
+    // забеге рогалика (там своё лечение). Поэтому бой на входе замораживает
+    // зарастание, а лобби на входе размораживает.
+    //
+    // Флаг живёт в состоянии, а не в памяти экрана: игру закрывают прямо
+    // посреди боя, и «пока меня не было, всё заросло» было бы читом.
+    // Разморозка при этом всегда происходит при возврате в лобби — даже
+    // после того, как игру закрыли и открыли заново.
+    freezeHeal() {
+        const f = GameState.data.fighter;
+        if (!f || f.frozen) return;
+        // Фиксируем то, что накапало до этого момента. Потолок здесь не
+        // нужен: он зависит от снаряжения и применяется при чтении.
+        const raw = GameState.fighterHpRaw();
+        if (raw !== null) f.hp = Math.floor(raw);
+        f.updated_at = GameTime.now();
+        f.frozen = true;
+        GameState.save();
+    },
+
+    resumeHeal() {
+        const f = GameState.data.fighter;
+        if (!f || !f.frozen) return;
+        f.frozen = false;
+        // Отсчёт начинается заново: время, проведённое в бою, не зарастает
+        // задним числом.
+        f.updated_at = GameTime.now();
+        GameState.save();
+    },
+
+    // ---------- ОБМЕН ШРАМОВ ----------
+    // Пачка шрамов сходит с тела и превращается в валюту. Решение о том,
+    // сколько шрамов и что за них дают, живёт в конфиге, а не в экране —
+    // как и любое другое начисление.
+    //
+    // Уходят САМЫЕ СТАРЫЕ: тело зарастает в том же порядке, в каком его било,
+    // и свежие следы последнего боя остаются на месте. Случайный выбор
+    // выглядел бы как «шрамы исчезли непонятно какие».
+    exchangeScars() {
+        const rule = ECONOMY.marks && ECONOMY.marks.exchange;
+        const scars = GameState.data.scars || [];
+        if (!rule) return { ok: false, error: 'no_rule' };
+        if (scars.length < rule.scars) {
+            return { ok: false, error: 'not_enough', have: scars.length, need: rule.scars };
+        }
+
+        const oldestFirst = scars.slice().sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+        const removed = oldestFirst.slice(0, rule.scars);
+        const removedIds = {};
+        removed.forEach(m => { removedIds[m.id] = true; });
+        GameState.data.scars = scars.filter(m => !removedIds[m.id]);
+
+        const requestId = newRequestId();
+        GameState.addCurrency(rule.currency, rule.amount);
+        GameState.pushLedger({
+            currency: rule.currency,
+            delta: rule.amount,
+            reason: 'exchange.scars',
+            client_request_id: requestId
+        });
+        // Осколки могли сложиться в жетон.
+        this.settleExchange(null, requestId);
+        GameState.save();
+
+        return {
+            ok: true,
+            removed: removed.length,
+            left: GameState.data.scars.length,
+            currency: rule.currency,
+            amount: rule.amount
+        };
+    },
+
+    // ---------- СНАРЯЖЕНИЕ ГНЕВА ----------
+    // Надеть предмет в слот. Начислением это не является, но живёт здесь по
+    // той же причине, что смена локации: проверки «есть ли предмет у игрока»
+    // и «подходит ли он этому слоту» — решение сервера, а не интерфейса.
+    // Сейчас проверки те же самые, просто исполняются на месте.
+    equip(slot, itemId) {
+        const item = itemId ? WRATH_GEAR.items[itemId] : null;
+        if (itemId && !item) return false;
+        if (item && item.slot !== slot) return false;
+        if (itemId && !GameState.data.inventory[itemId]) return false;
+
+        if (itemId) GameState.data.equipment[slot] = itemId;
+        else delete GameState.data.equipment[slot];
+        GameState.save();
+        return true;
+    },
+
+    // Положить предмет в инвентарь. Единственный источник предметов до
+    // появления магазина и рогалика — debug-режим; когда источники появятся,
+    // они будут звать этот же метод, а не писать в состояние сами.
+    grantItem(itemId) {
+        if (!WRATH_GEAR.items[itemId]) return false;
+        const inv = GameState.data.inventory;
+        inv[itemId] = inv[itemId] || { count: 0 };
+        inv[itemId].count += 1;
+        GameState.save();
+        return true;
+    },
+
+    // ---------- ПРОТИВНИК ----------
+    // Аналог GET /wrath/opponent. Сервер вернёт слепок ДРУГОГО игрока:
+    // его модель со шрамами, его снаряжение, его ник. Лобби у настоящего
+    // сервера всегда полное, поэтому ждать матчмейкинга не нужно —
+    // противник это данные, а не сессия (docs/plan/03-wrath.md).
+    //
+    // Пока сервера нет, отдаётся копия самого игрока. Флаг is_self_copy —
+    // не украшение: по нему интерфейс честно пишет «спарринг», а не выдумывает
+    // чужой ник. Появится сервер — флаг просто перестанет приходить.
+    getOpponent(mode) {
+        const model = (typeof WormModelAPI !== 'undefined')
+            ? WormModelAPI.loadWormModel() : null;
+        return Promise.resolve({
+            opponent: {
+                name: 'Спарринг',
+                mode: mode || 'duel',
+                model,
+                equipment: Object.assign({}, GameState.data.equipment),
+                is_self_copy: true
+            }
+        });
+    },
+
+    // ---------- НАЧИСЛЕНИЕ ----------
+    // Одно место, где валюта попадает в кошелёк, и каждый раз со строкой в
+    // журнале: на сервере это таблица ledger, по которой разбирают баг и
+    // откатывают накрутку.
+    award(awarded, key, delta, reason, requestId) {
+        if (!delta) return 0;
+        GameState.addCurrency(key, delta);
+        GameState.pushLedger({ currency: key, delta, reason, client_request_id: requestId });
+        awarded.currencies[key] = (awarded.currencies[key] || 0) + delta;
+        return delta;
+    },
+
+    // Доля золота по числу побед за сутки (ECONOMY.goldReturns).
+    goldShare(winNumber) {
+        const tiers = (ECONOMY.goldReturns && ECONOMY.goldReturns.tiers) || [];
+        for (let i = 0; i < tiers.length; i++) {
+            if (tiers[i].upTo === null || winNumber <= tiers[i].upTo) return tiers[i].share;
+        }
+        return 1;
+    },
+
+    // ---------- РАЗМЕН МЕЛКОЙ ВАЛЮТЫ В КРУПНУЮ ----------
+    // Три осколка складываются в жетон сами. Кнопки «обменять» нет намеренно:
+    // курс фиксированный, выбора у игрока никакого, а лишний экран есть.
+    //
+    // Идёт циклом, а не один раз: наградить могут сразу несколькими
+    // осколками, и остаток обязан переехать целиком.
+    settleExchange(awarded, requestId) {
+        const rules = ECONOMY.exchange || {};
+        Object.keys(rules).forEach(from => {
+            const rule = rules[from];
+            if (!rule || !rule.per) return;
+            let converted = 0;
+            while (GameState.currency(from) >= rule.per) {
+                GameState.addCurrency(from, -rule.per);
+                GameState.addCurrency(rule.into, 1);
+                converted += 1;
+            }
+            if (!converted) return;
+            GameState.pushLedger({
+                currency: rule.into,
+                delta: converted,
+                reason: 'exchange.' + from,
+                client_request_id: requestId
+            });
+            // В список заработанного размен НЕ пишется: игрок заработал
+            // осколки, а жетон — это то, во что они сложились. Показывать
+            // «−2 осколка» после победы было бы прямой ложью.
+            if (awarded) awarded.exchanged = { from, into: rule.into, count: converted };
+        });
+    },
+
+    // ---------- МАГАЗИН ГНЕВА ----------
+    // Покупка: проверка цены и списание живут здесь, а не в экране магазина.
+    // Клиент никогда не говорит «выдай мне предмет» — он говорит «купи вот
+    // этот», а хватает ли валюты, решает эта сторона (позже — сервер).
+    buyItem(itemId) {
+        const item = WRATH_GEAR.items[itemId];
+        if (!item) return { ok: false, error: 'unknown_item' };
+        if (GameState.data.inventory[itemId]) return { ok: false, error: 'already_owned' };
+
+        const price = item.price || {};
+        const short = Object.keys(price).find(key => GameState.currency(key) < price[key]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(key => {
+            GameState.addCurrency(key, -price[key]);
+            GameState.pushLedger({
+                currency: key,
+                delta: -price[key],
+                reason: 'shop.wrath.' + itemId,
+                client_request_id: requestId
+            });
+        });
+
+        this.grantItem(itemId);
+        // Купил в пустой слот — сразу надето. Покупка и есть намерение
+        // пользоваться; заставлять после неё идти в лобби и надевать — лишний
+        // шаг ради ничего.
+        if (!GameState.data.equipment[item.slot]) this.equip(item.slot, itemId);
+
+        GameState.save();
+        return { ok: true, item: itemId, equipped: GameState.data.equipment[item.slot] === itemId };
+    },
+
+    // ---------- БОЕВАЯ ПРОКАЧКА ----------
+    // Купить следующий уровень ветки. Как и с предметами: клиент говорит
+    // «качни вот это», а хватает ли валюты и не упёрлись ли в потолок,
+    // решает эта сторона.
+    buyUpgrade(key) {
+        const conf = ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades;
+        const branch = conf && conf[key];
+        if (!branch || !branch.levels) return { ok: false, error: 'unknown_upgrade' };
+
+        const level = GameState.upgradeLevel(key);
+        if (level >= branch.levels.length) return { ok: false, error: 'maxed' };
+
+        const price = branch.levels[level].price || {};
+        const short = Object.keys(price).find(cur => GameState.currency(cur) < price[cur]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(cur => {
+            GameState.addCurrency(cur, -price[cur]);
+            GameState.pushLedger({
+                currency: cur,
+                delta: -price[cur],
+                reason: 'upgrade.wrath.' + key + '.' + (level + 1),
+                client_request_id: requestId
+            });
+        });
+
+        GameState.data.upgrades[key] = level + 1;
+        GameState.save();
+        return { ok: true, key, level: level + 1, bonus: GameState.upgradeBonus(key) };
+    },
+
+    // Выдать валюту напрямую. Пока это только debug-режим: настоящие
+    // источники (бой, рогалик) идут через minigameResult и свой конфиг наград.
+    grantCurrency(key, amount) {
+        if (!ECONOMY.currencies[key] || !amount) return false;
+        GameState.addCurrency(key, amount);
+        GameState.pushLedger({ currency: key, delta: amount, reason: 'debug.grant' });
+        this.settleExchange(null, null);
         GameState.save();
         return true;
     },

@@ -194,8 +194,11 @@
          есть до момента, когда все эти файлы УЖЕ применены. Несобранного
          интерфейса игрок не увидит — он увидит черноту. -->
     <link rel="stylesheet" href="style.css?v=14" media="print" onload="this.media='all'">
+    <!-- Общее окно мини-игры (рамка, шапка, вопрос при выходе). Строго ДО
+         стилей самих мини-игр: они настраивают его переменными. -->
+    <link rel="stylesheet" href="src/core/minigame-window.css?v=1" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=2" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=9" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -412,20 +415,90 @@
         </div>
     </div>
 
-    <div id="wrath-game" class="minigame-screen">
-        <div class="wrath-modal">
-            <!-- Верхний HUD в стиле файтингов -->
+    <!-- ГНЕВ. Рамки, заголовка и крестика здесь нет намеренно: окно мини-игры
+         одно на все грехи и надевается сверху сборкой из
+         src/core/minigame-window.js (см. docs/minigame-window.md).
+
+         Внутри окна — два экрана греха: лобби и бой. Переключает их wrath.js,
+         окно при этом не пересобирается (docs/plan/09-wrath-rework.md). -->
+    <div id="wrath-game" class="minigame-screen mg-window" data-sin="wrath">
+
+        <!-- ЛОББИ: свиночервь, слоты снаряжения вокруг него, выбор режима.
+             Слоты и кнопки режимов строятся из конфига
+             (src/config/wrath-gear.js), поэтому здесь только контейнеры:
+             слотов станет больше, и разметку под них дописывать не придётся. -->
+        <div class="wrath-screen active" id="wrath-lobby">
+            <div class="wrath-stats" id="wrath-stats"></div>
+
+            <div class="wrath-gear">
+                <div class="gear-column" id="wrath-gear-left"></div>
+                <!-- Коробка, в которую вписывается общая модель персонажа.
+                     Своего рисунка у гнева больше нет. Внутренняя сцена —
+                     постоянного размера, её масштабирует скрипт по реально
+                     измеренному силуэту. -->
+                <div class="wrath-lobby-box" id="wrath-lobby-box">
+                    <div class="worm-stage" id="wrath-lobby-worm"></div>
+                    <!-- Кольцо удержания. Появляется от первого касания червя
+                         над его головой и заполняется по кругу, пока палец на
+                         месте: это и есть объяснение жеста — тапнул, увидел,
+                         что что-то набирается, держишь дальше.
+
+                         Скрипт переносит его внутрь сцены персонажа и ставит
+                         над макушкой по реальным габаритам головы. -->
+                    <div class="hold-ring" id="wrath-hold">
+                        <svg viewBox="0 0 100 100">
+                            <circle class="hold-track" cx="50" cy="50" r="42"></circle>
+                            <circle class="hold-progress" id="wrath-hold-fill" cx="50" cy="50" r="42"></circle>
+                        </svg>
+                    </div>
+                </div>
+                <div class="gear-column" id="wrath-gear-right"></div>
+            </div>
+
+            <div class="wrath-modes" id="wrath-modes"></div>
+            <div class="wrath-slot-card" id="wrath-slot-card"></div>
+
+            <!-- Всплывающее сообщение: появляется и гаснет само, ничего не
+                 спрашивает. Для «шрамов пока мало» диалог был бы наказанием
+                 за любопытство. -->
+            <div class="wrath-toast" id="wrath-toast"></div>
+
+        </div>
+
+        <!-- МАГАЗИН ГНЕВА. Список строится из каталога снаряжения
+             (src/config/wrath-gear.js), поэтому здесь только контейнеры. -->
+        <div class="wrath-screen" id="wrath-shop">
+            <div class="shop-wallet" id="shop-wallet"></div>
+            <div class="shop-list" id="shop-list"></div>
+            <!-- Ответ на покупку. Снаружи прокручиваемого списка: сообщение,
+                 уехавшее под сгиб, — это молчание. -->
+            <div class="shop-message" id="shop-message"></div>
+            <button type="button" class="wrath-btn shop-back" id="wrath-shop-back">← В лобби</button>
+        </div>
+
+        <!-- БОЕВАЯ ПРОКАЧКА. Открывается удержанием пальца на черве в лобби:
+             качают самого персонажа, поэтому и жест по персонажу. Список
+             строится из конфига (ECONOMY.minigames.wrath.upgrades). -->
+        <div class="wrath-screen" id="wrath-boost">
+            <div class="shop-wallet" id="boost-wallet"></div>
+            <div class="shop-list" id="boost-list"></div>
+            <div class="shop-message" id="boost-message"></div>
+            <button type="button" class="wrath-btn shop-back" id="wrath-boost-back">← В лобби</button>
+        </div>
+
+        <!-- БОЙ ОДИН НА ОДИН -->
+        <div class="wrath-screen" id="wrath-duel">
             <div class="fighting-hud">
                 <div class="fighter-hp-box player-side">
+                    <div class="fighter-name"><span id="wrath-player-name">Ты</span> <b id="player-hp-num"></b></div>
                     <div class="hp-bar-container">
                         <div class="hp-bar" id="player-hp-bar"></div>
                     </div>
                     <div class="dmg-popup" id="player-dmg-popup"></div>
                 </div>
 
-                <button id="wrath-close-btn" class="wrath-close-btn">&times;</button>
-
                 <div class="fighter-hp-box enemy-side">
+                    <div class="fighter-name"><b id="enemy-hp-num"></b> <span id="wrath-enemy-name">Противник</span></div>
                     <div class="hp-bar-container">
                         <div class="hp-bar" id="enemy-hp-bar"></div>
                     </div>
@@ -436,33 +509,48 @@
             <div class="wrath-result" id="wrath-result"></div>
 
             <div class="battle-arena">
-                <div class="worm-wrap worm-player">
-                    <div class="canvas-box">
-                        <canvas id="player-canvas"></canvas>
-                        <div class="zone-hit" data-zone="head"></div>
-                        <div class="zone-hit" data-zone="belly"></div>
-                        <div class="zone-hit" data-zone="tail"></div>
-                    </div>
+                <!-- Зоны ударов добавляются сюда скриптом: их место считается
+                     от РЕАЛЬНОГО тела (getPartPoint), а не задаётся в разметке,
+                     иначе они разъедутся при взрослении червя. -->
+                <div class="fighter-box" id="wrath-player-box">
+                    <div class="worm-stage" id="wrath-player-stage"></div>
                 </div>
 
+                <!-- Скрещённые кинжалы: левый — защита, правый — удар.
+                     Заливаются цветом по мере выбора зон, тап проводит раунд. -->
                 <div class="dagger-btn" id="dagger-btn">
-                    <div class="dagger dagger-defense" id="dagger-defense"></div>
-                    <div class="dagger dagger-attack" id="dagger-attack"></div>
+                    <svg viewBox="0 0 100 100" class="dagger-svg">
+                        <g class="dagger dagger-defense" id="dagger-defense" transform="rotate(-45 50 50)">
+                            <path class="blade" d="M50 8 L58 40 L58 56 L42 56 L42 40 Z"/>
+                            <rect class="guard" x="28" y="55" width="44" height="8" rx="3"/>
+                            <rect class="grip" x="45" y="63" width="10" height="21" rx="4"/>
+                            <circle class="pommel" cx="50" cy="88" r="6"/>
+                        </g>
+                        <g class="dagger dagger-attack" id="dagger-attack" transform="rotate(45 50 50)">
+                            <path class="blade" d="M50 8 L58 40 L58 56 L42 56 L42 40 Z"/>
+                            <rect class="guard" x="28" y="55" width="44" height="8" rx="3"/>
+                            <rect class="grip" x="45" y="63" width="10" height="21" rx="4"/>
+                            <circle class="pommel" cx="50" cy="88" r="6"/>
+                        </g>
+                    </svg>
                 </div>
 
-                <div class="worm-wrap worm-enemy">
-                    <div class="canvas-box">
-                        <canvas id="enemy-canvas"></canvas>
-                        <div class="zone-hit" data-zone="head"></div>
-                        <div class="zone-hit" data-zone="belly"></div>
-                        <div class="zone-hit" data-zone="tail"></div>
-                    </div>
+                <div class="fighter-box" id="wrath-enemy-box">
+                    <div class="worm-stage" id="wrath-enemy-stage"></div>
                 </div>
             </div>
 
             <div class="wrath-result-overlay" id="wrath-result-overlay">
                 <div class="wrath-overlay-text" id="wrath-overlay-text">ПОРАЖЕНИЕ...</div>
-                <button class="wrath-restart-btn" id="wrath-restart-btn">Начать заново</button>
+                <!-- Что начислили. Заполняется по ответу с той стороны
+                     (событие minigame:awarded), сама игра ничего не считает. -->
+                <div class="wrath-award" id="wrath-award"></div>
+                <!-- Кнопка появляется НЕ сразу: секунду после оглашения
+                     результата экран ничего не принимает, чтобы случайный тап
+                     не смахнул результат раньше, чем игрок его прочитал. -->
+                <div class="wrath-overlay-buttons">
+                    <button type="button" class="wrath-btn primary" id="wrath-ok-btn">Окей</button>
+                </div>
             </div>
         </div>
     </div>
@@ -848,11 +936,14 @@
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
 <script src="src/core/stage.js?v=2"></script>
-<script src="src/config/economy.js?v=2"></script>
+<script src="src/config/economy.js?v=6"></script>
+<!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
+     числа боя лежат там, предметы здесь. -->
+<script src="src/config/wrath-gear.js?v=2"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
-<script src="src/core/state.js?v=2"></script>
-<script src="src/core/backend.js?v=2"></script>
+<script src="src/core/state.js?v=7"></script>
+<script src="src/core/backend.js?v=7"></script>
 
 <script src="src/core/palette.js?v=4"></script>
 <!-- Локации: таблица комнат. Строго после палитры — берёт цвета оттуда
@@ -861,12 +952,22 @@
 <script src="src/core/worm-model.js?v=9"></script>
 <script src="src/core/worm-marks.js?v=3"></script>
 <script src="src/core/worm-condition.js?v=1"></script>
-<script src="src/core/worm-renderer.js?v=40"></script>
+<script src="src/core/worm-renderer.js?v=41"></script>
 <script src="src/core/worm.js?v=11"></script>
-<script src="src/core/debug.js?v=6"></script>
-<script src="main.js?v=14"></script>
+<script src="src/core/debug.js?v=8"></script>
+<script src="main.js?v=15"></script>
+<!-- Сборка общего окна мини-игры. До любой мини-игры: они надевают его на
+     себя в своём init(). -->
+<script src="src/core/minigame-window.js?v=2"></script>
 <script src="src/minigames/greed/greed.js?v=9"></script>
-<script src="src/minigames/wrath/wrath.js?v=5"></script>
+<!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
+     лобби и бой, а они считают характеристики бойцом. -->
+<script src="src/minigames/wrath/wrath-fighter.js?v=3"></script>
+<script src="src/minigames/wrath/wrath-shop.js?v=2"></script>
+<script src="src/minigames/wrath/wrath-boost.js?v=1"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=6"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=4"></script>
+<script src="src/minigames/wrath/wrath.js?v=10"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>
 <script src="src/minigames/lust/lust.js?v=3"></script>
