@@ -52,6 +52,11 @@ const GameState = {
             runs: {},
             // Пищеварение: одна метка времени, всё остальное считается от неё.
             digestion: { fed_at: null },
+            // Боец гнева: сколько здоровья осталось после последнего боя.
+            // hp === null означает «полное»: до первого боя и после того, как
+            // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
+            // значение плюс метка времени, от которой считается остальное.
+            fighter: { hp: null, updated_at: null },
             // Жизнь и смерть червя. Сама смерть НЕ хранится — она выводится
             // из меток шкал (см. worm-condition.js). Хранится только
             // воскрешение: оно обрывает прошлое голодание, иначе поднятый
@@ -155,6 +160,7 @@ const GameState = {
         }
 
         if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null };
+        if (!d.fighter || typeof d.fighter !== 'object') d.fighter = { hp: null, updated_at: null };
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
@@ -224,6 +230,33 @@ const GameState = {
         const sin = this.data ? this.data.sins[sinKey] : null;
         if (!sin) return 0;
         return GameTime.decayed(sin.value, sin.updated_at, this.decayRate(sinKey), 0, this.maxValue(sinKey));
+    },
+
+    // ---------- ЗДОРОВЬЕ БОЙЦА ----------
+    // Не хранится «сколько сейчас», хранится «сколько было и когда». Между
+    // боями оно зарастает само, и считается это формулой — как значение шкалы
+    // греха. Поэтому восстановление идёт и при закрытой игре, а перевод часов
+    // на телефоне ничего не меняет: время берётся из GameTime.
+    //
+    // Максимум приходит снаружи: он зависит от надетого снаряжения, а это не
+    // дело стора.
+    fighterHp(maxHp) {
+        const f = this.data ? this.data.fighter : null;
+        if (!f || f.hp === null || f.hp === undefined || !f.updated_at) return maxHp;
+        const rate = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+        const healed = f.hp + GameTime.secondsSince(f.updated_at) * rate;
+        // Вниз округляем: показывать «7 из 13», пока набежало 7.4, честнее,
+        // чем округлять к восьми, которых ещё нет.
+        return Math.max(0, Math.min(maxHp, Math.floor(healed)));
+    },
+
+    // Сколько секунд до полного здоровья. Нужно интерфейсу, чтобы написать
+    // «зарастает», а не молчать.
+    fighterHealSeconds(maxHp) {
+        const rate = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+        if (rate <= 0) return null;
+        const missing = maxHp - this.fighterHp(maxHp);
+        return missing > 0 ? Math.ceil(missing / rate) : 0;
     },
 
     currency(key) {

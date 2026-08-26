@@ -51,6 +51,7 @@ const WrathDuel = {
     fightOver: false,
     lastHitZone: null,  // куда прилетело игроку — по ней садится шрам
     endFightTimeoutId: null,
+    healClock: null,
     mode: 'duel',
 
     init(host) {
@@ -121,6 +122,7 @@ const WrathDuel = {
 
     leave() {
         this.stopFightTimer();
+        this.stopHealWatch();
         ['player', 'enemy'].forEach(side => {
             if (this.handles[side]) {
                 this.handles[side].destroy();
@@ -284,9 +286,20 @@ const WrathDuel = {
     // ---------- РАУНД ----------
     restartFight() {
         this.stopFightTimer();
+        this.stopHealWatch();
         if (!this.fighters || !this.fighters.enemy) return;
 
-        this.playerHP = this.fighters.player.stats.hp;
+        // Драться нечем: здоровье зарастает, и пока оно на нуле, бой не
+        // начинается. Иначе «Ещё раз» после поражения означало бы мгновенное
+        // второе поражение.
+        if (GameState.fighterHp(this.fighters.player.stats.hp) <= 0) {
+            this.showHealWait();
+            return;
+        }
+
+        // Игрок входит в бой с тем здоровьем, что у него есть: побитым после
+        // прошлой драки или уже заросшим. Противник — слепок, он всегда целый.
+        this.playerHP = GameState.fighterHp(this.fighters.player.stats.hp);
         this.enemyHP = this.fighters.enemy.stats.hp;
         this.isFighting = false;
         this.fightOver = false;
@@ -332,6 +345,9 @@ const WrathDuel = {
         }
 
         this.updateHPBars();
+        // Здоровье записывается КАЖДЫЙ раунд, а не в конце боя: свернул игру
+        // посреди драки — остался с тем, с чем свернул.
+        Backend.setFighterHp(this.playerHP);
 
         if (this.enemyHP <= 0 || this.playerHP <= 0) {
             // Id таймера хранится, чтобы уход с экрана мог его отменить:
@@ -344,6 +360,50 @@ const WrathDuel = {
             this.isFighting = false;
             this.resetSelections();
         }
+    },
+
+    // ---------- ОЖИДАНИЕ ЗАРАСТАНИЯ ----------
+    // Не отказ, а ожидание: экран честно говорит, сколько осталось, и кнопка
+    // оживает сама. Пересчёт раз в секунду — только показ, само здоровье
+    // считается формулой от метки времени.
+    showHealWait() {
+        this.fightOver = true;
+        if (this.overlayText) {
+            this.overlayText.textContent = 'ЧЕРВЬ БЕЗ СИЛ';
+            this.overlayText.style.color = '#ff9500';
+        }
+        if (this.resultOverlay) this.resultOverlay.classList.add('active');
+        this.startHealWatch();
+    },
+
+    startHealWatch() {
+        if (this.healClock) return;
+        const again = document.getElementById('wrath-again-btn');
+        const update = () => {
+            const max = this.fighters && this.fighters.player ? this.fighters.player.stats.hp : 0;
+            const hp = GameState.fighterHp(max);
+            if (hp > 0) {
+                this.stopHealWatch();
+                if (again) { again.textContent = 'Ещё раз'; again.disabled = false; }
+                if (this.awardLine) this.awardLine.textContent = 'червь ожил — можно снова';
+                return;
+            }
+            if (again) {
+                again.disabled = true;
+                again.textContent = `зарастает: ${GameState.fighterHealSeconds(max)} с`;
+            }
+        };
+        update();
+        this.healClock = WrathFighter.startHealClock(update);
+    },
+
+    stopHealWatch() {
+        if (this.healClock) {
+            this.healClock.stop();
+            this.healClock = null;
+        }
+        const again = document.getElementById('wrath-again-btn');
+        if (again) { again.disabled = false; again.textContent = 'Ещё раз'; }
     },
 
     stopFightTimer() {

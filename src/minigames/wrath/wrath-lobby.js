@@ -35,6 +35,11 @@ const WrathLobby = {
     cardEl: null,
     wormHandle: null,
     openSlot: null,
+    scarLineEl: null,
+    toastEl: null,
+    askEl: null,
+    toastTimer: null,
+    healClock: null,
 
     init(host) {
         this.host = host;
@@ -50,13 +55,34 @@ const WrathLobby = {
         this.wormBox = this.wormStage ? this.wormStage.parentElement : null;
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
+        this.scarLineEl = document.getElementById('wrath-scar-line');
+        this.toastEl = document.getElementById('wrath-toast');
+        this.askEl = document.getElementById('wrath-ask');
 
         this.buildSlots();
         this.buildModes();
 
+        // Тап по червю — обмен шрамов. Обработчик на коробке, а не на самом
+        // SVG: тело узкое и извилистое, попасть по нему пальцем труднее, чем
+        // по области, где он стоит. Промахнуться некуда — в этой области
+        // больше ничего нет.
+        if (this.wormBox) {
+            this.wormBox.style.pointerEvents = 'auto';
+            this.wormBox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.tapWorm();
+            });
+        }
+
+        const yes = document.getElementById('wrath-ask-yes');
+        const no = document.getElementById('wrath-ask-no');
+        if (yes) yes.onclick = (e) => { e.stopPropagation(); this.confirmExchange(); };
+        if (no) no.onclick = (e) => { e.stopPropagation(); this.hideAsk(); };
+
         // Тап мимо карточки закрывает её. Слушатель на самом экране, а не на
         // документе: закрытая мини-игра не должна ничего ловить.
         this.root.addEventListener('click', (e) => {
+            if (this.askEl && this.askEl.contains(e.target)) return;
             if (!this.openSlot) return;
             if (this.cardEl.contains(e.target)) return;
             if (e.target.closest('.gear-slot')) return;
@@ -68,6 +94,11 @@ const WrathLobby = {
     enter() {
         this.mountWorm();
         this.refresh();
+        // Пока лобби открыто, число здоровья пересчитывается раз в секунду:
+        // иначе игрок смотрит на «3 из 13» и не видит, что оно растёт.
+        if (!this.healClock) {
+            this.healClock = WrathFighter.startHealClock(() => this.refreshHealth());
+        }
     },
 
     leave() {
@@ -75,7 +106,13 @@ const WrathLobby = {
             this.wormHandle.destroy();
             this.wormHandle = null;
         }
+        if (this.healClock) {
+            this.healClock.stop();
+            this.healClock = null;
+        }
         this.hideCard();
+        this.hideAsk();
+        this.hideToast();
     },
 
     mountWorm() {
@@ -128,6 +165,7 @@ const WrathLobby = {
             const el = document.createElement('button');
             el.type = 'button';
             el.className = 'mode-btn' + (mode.ready ? ' ready' : ' locked');
+            el.dataset.mode = mode.key;
             el.innerHTML = `
                 <span class="mode-emoji">${mode.ready ? mode.emoji : '🔒'}</span>
                 <span class="mode-text">
@@ -137,7 +175,15 @@ const WrathLobby = {
             `;
             el.onclick = (e) => {
                 e.stopPropagation();
-                if (!mode.ready) return;
+                // Проверяется класс, а не поле конфига: бой ещё и запирается
+                // на время зарастания червя.
+                if (el.classList.contains('locked')) {
+                    if (mode.key === 'duel') {
+                        const health = WrathFighter.playerHp();
+                        this.showToast(`Червь без сил — зарастает: ${health.healSeconds} с`);
+                    }
+                    return;
+                }
                 this.host.startMode(mode.key);
             };
             this.modesEl.appendChild(el);
@@ -171,11 +217,128 @@ const WrathLobby = {
         if (this.statsEl) {
             const s = WrathFighter.summary(WrathFighter.stats(equipment));
             this.statsEl.innerHTML = `
-                <span class="stat"><b>❤️ ${s.hp}</b><i>здоровье</i></span>
+                <span class="stat" id="wrath-hp-stat"></span>
                 <span class="stat"><b>🗡 ${s.damage}</b><i>урон</i></span>
                 <span class="stat"><b>🛡 ${s.armor}</b><i>броня гол/тело/хвост</i></span>
             `;
         }
+
+        this.refreshHealth();
+        this.refreshScarLine();
+    },
+
+    // ---------- ЗДОРОВЬЕ ----------
+    // Отдельно от общего refresh: пересчитывается раз в секунду, а
+    // перестраивать ради этого весь экран незачем.
+    refreshHealth() {
+        const health = WrathFighter.playerHp();
+
+        const hpStat = this.root.querySelector('#wrath-hp-stat');
+        if (hpStat) {
+            hpStat.innerHTML = health.full
+                ? `<b>❤️ ${health.max}</b><i>здоровье</i>`
+                : `<b class="hurt">❤️ ${health.hp}/${health.max}</b><i>зарастает: ${health.healSeconds} с</i>`;
+        }
+
+        // Драться без здоровья нельзя — и это не поломка, а ожидание. Кнопка
+        // не прячется, а говорит, сколько осталось ждать.
+        const duelBtn = this.root.querySelector('.mode-btn[data-mode="duel"]');
+        if (duelBtn) {
+            const dead = health.hp <= 0;
+            duelBtn.classList.toggle('locked', dead);
+            duelBtn.classList.toggle('ready', !dead);
+            const note = duelBtn.querySelector('.mode-note');
+            const mode = this.MODES.find(m => m.key === 'duel');
+            if (note) {
+                note.textContent = dead
+                    ? `червь без сил — зарастает: ${health.healSeconds} с`
+                    : (mode ? mode.note : '');
+            }
+        }
+    },
+
+    // ---------- СТРОКА ШРАМОВ ----------
+    // Она же подсказка про тап: без неё обмен — невидимая функция.
+    refreshScarLine() {
+        if (!this.scarLineEl) return;
+        const rule = ECONOMY.marks.exchange;
+        const have = (GameState.data.scars || []).length;
+        const conf = ECONOMY.currencies[rule.currency];
+        const ready = have >= rule.scars;
+
+        this.scarLineEl.classList.toggle('ready', ready);
+        this.scarLineEl.textContent = ready
+            ? `🩹 ${have} шрамов — тапни по червю, чтобы обменять ${rule.scars} на ${conf ? conf.emoji : ''} ${rule.amount}`
+            : `🩹 шрамы: ${have} из ${rule.scars} до обмена`;
+    },
+
+    // ---------- ОБМЕН ШРАМОВ ----------
+    // Тап по червю. Мало шрамов — просто всплывает сообщение и гаснет:
+    // диалог с кнопкой «ок» здесь был бы наказанием за любопытство. Хватает —
+    // спрашиваем, потому что шрамы не вернуть.
+    tapWorm() {
+        if (this.openSlot) { this.hideCard(); return; }
+        const rule = ECONOMY.marks.exchange;
+        const have = (GameState.data.scars || []).length;
+
+        if (have < rule.scars) {
+            this.showToast(`Шрамов мало: ${have} из ${rule.scars}`);
+            return;
+        }
+        this.showAsk(rule, have);
+    },
+
+    showAsk(rule, have) {
+        if (!this.askEl) return;
+        const conf = ECONOMY.currencies[rule.currency];
+        const textEl = document.getElementById('wrath-ask-text');
+        if (textEl) {
+            textEl.innerHTML = `Обменять ${rule.scars} шрамов на `
+                + `<b>${conf ? conf.emoji : ''} ${rule.amount}</b>?<br>`
+                + `<span class="ask-sub">Сойдут самые старые. Останется ${have - rule.scars}.</span>`;
+        }
+        this.askEl.classList.add('show');
+    },
+
+    hideAsk() {
+        if (this.askEl) this.askEl.classList.remove('show');
+    },
+
+    confirmExchange() {
+        const answer = Backend.exchangeScars();
+        this.hideAsk();
+        if (!answer.ok) {
+            this.showToast('Обменять не вышло');
+            return;
+        }
+
+        const conf = ECONOMY.currencies[answer.currency];
+        this.showToast(`${answer.removed} шрамов сошло · ${conf ? conf.emoji : ''} +${answer.amount}`);
+
+        // Тело перерисовывается сразу: обмен — это в первую очередь про то,
+        // как червь выглядит. И здесь, и на главном экране.
+        if (this.wormHandle) {
+            this.wormHandle.setOverride({ scars: GameState.data.scars });
+        }
+        if (typeof refreshWormMarks === 'function') refreshWormMarks();
+        this.refresh();
+    },
+
+    // ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
+    showToast(text) {
+        if (!this.toastEl) return;
+        this.toastEl.textContent = text;
+        this.toastEl.classList.add('show');
+        if (this.toastTimer) clearTimeout(this.toastTimer);
+        this.toastTimer = setTimeout(() => this.hideToast(), 2200);
+    },
+
+    hideToast() {
+        if (this.toastTimer) {
+            clearTimeout(this.toastTimer);
+            this.toastTimer = null;
+        }
+        if (this.toastEl) this.toastEl.classList.remove('show');
     },
 
     // ---------- КАРТОЧКА СЛОТА ----------

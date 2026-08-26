@@ -198,7 +198,7 @@
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=1" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=5" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=6" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -442,8 +442,27 @@
                 <div class="gear-column" id="wrath-gear-right"></div>
             </div>
 
+            <!-- Шрамы и подсказка про обмен. Без неё тап по червю —
+                 невидимая функция: игрок о ней не узнает. -->
+            <div class="scar-line" id="wrath-scar-line"></div>
+
             <div class="wrath-modes" id="wrath-modes"></div>
             <div class="wrath-slot-card" id="wrath-slot-card"></div>
+
+            <!-- Всплывающее сообщение: появляется и гаснет само, ничего не
+                 спрашивает. Для «шрамов пока мало» диалог был бы наказанием
+                 за любопытство. -->
+            <div class="wrath-toast" id="wrath-toast"></div>
+
+            <!-- Вопрос про обмен. Спрашивается только когда обмен реально
+                 возможен, потому что тут есть что терять: шрамы не вернуть. -->
+            <div class="wrath-ask" id="wrath-ask">
+                <div class="wrath-ask-text" id="wrath-ask-text"></div>
+                <div class="wrath-ask-buttons">
+                    <button type="button" class="wrath-ask-btn yes" id="wrath-ask-yes">Обменять</button>
+                    <button type="button" class="wrath-ask-btn no" id="wrath-ask-no">Оставить</button>
+                </div>
+            </div>
         </div>
 
         <!-- МАГАЗИН ГНЕВА. Список строится из каталога снаряжения
@@ -905,14 +924,14 @@
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
 <script src="src/core/stage.js?v=2"></script>
-<script src="src/config/economy.js?v=4"></script>
+<script src="src/config/economy.js?v=5"></script>
 <!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
      числа боя лежат там, предметы здесь. -->
 <script src="src/config/wrath-gear.js?v=2"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
-<script src="src/core/state.js?v=4"></script>
-<script src="src/core/backend.js?v=4"></script>
+<script src="src/core/state.js?v=5"></script>
+<script src="src/core/backend.js?v=5"></script>
 
 <script src="src/core/palette.js?v=4"></script>
 <!-- Локации: таблица комнат. Строго после палитры — берёт цвета оттуда
@@ -931,10 +950,10 @@
 <script src="src/minigames/greed/greed.js?v=9"></script>
 <!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
      лобби и бой, а они считают характеристики бойцом. -->
-<script src="src/minigames/wrath/wrath-fighter.js?v=1"></script>
+<script src="src/minigames/wrath/wrath-fighter.js?v=2"></script>
 <script src="src/minigames/wrath/wrath-shop.js?v=2"></script>
-<script src="src/minigames/wrath/wrath-lobby.js?v=2"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=2"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=3"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=3"></script>
 <script src="src/minigames/wrath/wrath.js?v=9"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>

@@ -154,6 +154,24 @@
     pointer-events: none;
 }
 
+/* Здоровье не полное — число красным, чтобы «7 из 13» бросалось в глаза
+   раньше, чем игрок полезет в бой. */
+.wrath-stats .stat b.hurt { color: #ff8a80; }
+
+/* ---------- СТРОКА ШРАМОВ ----------
+   Она же подсказка про тап по червю: без неё обмен — невидимая функция. */
+.scar-line {
+    flex: 0 0 auto;
+    padding: 6px 4px;
+    font-size: 10px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.scar-line.ready {
+    color: #ffd27f;
+}
+
 /* ---------- РЕЖИМЫ ---------- */
 .wrath-modes {
     flex: 0 0 auto;
@@ -267,6 +285,100 @@
     line-height: 1.4;
     color: rgba(255, 255, 255, 0.5);
 }
+
+/* ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
+   Ничего не спрашивает и ничем не управляет: появилось, сказало, погасло.
+   Для «шрамов пока мало» диалог с кнопкой «ок» был бы наказанием за
+   любопытство — игрок всего лишь тапнул по своему червю. */
+.wrath-toast {
+    position: absolute;
+    left: 50%;
+    bottom: 34%;
+    transform: translate(-50%, 8px);
+    max-width: 80%;
+    padding: 10px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(20, 6, 6, 0.94);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;    /* сообщение не должно перехватывать тапы */
+    z-index: 40;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.wrath-toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* ---------- ВОПРОС ПРО ОБМЕН ----------
+   Формой повторяет вопрос при выходе из общего окна: в игре ровно один вид
+   вопроса «да/нет», и выучивать второй не нужно. */
+.wrath-ask {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    background: rgba(0, 0, 0, 0.84);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.wrath-ask.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.wrath-ask-text {
+    max-width: 84%;
+    font-size: 16px;
+    line-height: 1.5;
+    text-align: center;
+    color: #eee;
+}
+
+.wrath-ask-text .ask-sub {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.wrath-ask-buttons {
+    display: flex;
+    gap: 14px;
+}
+
+.wrath-ask-btn {
+    padding: 12px 20px;
+    border-radius: 12px;
+    border: none;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.wrath-ask-btn.yes {
+    background: var(--wrath-attack);
+    color: #fff;
+}
+
+.wrath-ask-btn.no {
+    background: #2a2a2a;
+    color: #ccc;
+    border: 1px solid #444;
+}
+
+.wrath-ask-btn:active { transform: scale(0.95); }
 
 /* ============================================================ */
 /* ===========================  БОЙ  ========================== */
@@ -697,6 +809,15 @@
 }
 
 .wrath-btn:active { transform: scale(0.95); }
+
+/* Кнопка ждёт, а не отказывает: пока червь без сил, на ней написано,
+   сколько осталось. */
+.wrath-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.wrath-btn:disabled:active { transform: none; }
 
 /* ============================================================ */
 /* =========================  МАГАЗИН  ======================== */

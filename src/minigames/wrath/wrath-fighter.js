@@ -97,6 +97,47 @@ const WrathFighter = {
         return Math.max(0, raw - armor);
     },
 
+    // ---------- ТЕКУЩЕЕ ЗДОРОВЬЕ ----------
+    // Максимум зависит от снаряжения, а сколько от него осталось — от
+    // прошлого боя и от того, сколько с тех пор заросло. Обе половины нужны
+    // и лобби, и бою, поэтому считаются здесь.
+    playerHp() {
+        const stats = this.stats((GameState.data && GameState.data.equipment) || {});
+        const max = stats.hp;
+        const hp = GameState.fighterHp(max);
+        return {
+            hp,
+            max,
+            full: hp >= max,
+            healSeconds: GameState.fighterHealSeconds(max)
+        };
+    },
+
+    // ---------- ЧАСЫ ЗАРАСТАНИЯ ----------
+    // Раз в секунду дёргают колбэк, пока экран открыт. Это НЕ таймер
+    // состояния: здоровье считается формулой от метки времени и растёт само,
+    // даже когда игра закрыта. Здесь только перерисовка числа — ровно как
+    // единственный таймер в main.js, который перерисовывает шкалы.
+    startHealClock(onTick) {
+        const clock = {
+            raf: null,
+            stop() {
+                if (this.raf) cancelAnimationFrame(this.raf);
+                this.raf = null;
+            }
+        };
+        let last = 0;
+        const tick = (now) => {
+            clock.raf = requestAnimationFrame(tick);
+            if (document.hidden) return;      // в фоне рисовать некому
+            if (now - last < 1000) return;
+            last = now;
+            onTick();
+        };
+        clock.raf = requestAnimationFrame(tick);
+        return clock;
+    },
+
     // ---------- ПОКАЗ БОЙЦА ----------
     // Вписать смонтированную модель в отведённое место. Нужно и лобби, и бою,
     // поэтому живёт здесь, а не в одном из них.

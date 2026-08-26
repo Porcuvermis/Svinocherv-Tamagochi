@@ -195,6 +195,9 @@ const LocalBackend = {
             GameState.setSinValue(key, GameState.maxValue(key) * share);
         });
         GameState.data.worm.revived_at = GameTime.now();
+        // Поднятый червь дерётся с полным здоровьем: воскрешение — это
+        // второй шанс целиком, а не «встал, но избитый».
+        GameState.data.fighter = { hp: null, updated_at: null };
         GameState.save();
         return GameState.data.worm;
     },
@@ -254,6 +257,65 @@ const LocalBackend = {
         list.splice(i, 1);
         GameState.save();
         return true;
+    },
+
+    // ---------- ЗДОРОВЬЕ БОЙЦА ----------
+    // Записать, сколько здоровья осталось. Вызывается после каждого раунда, а
+    // не только в конце боя: если игрок закроет игру посреди драки, здоровье
+    // должно остаться таким, каким он её оставил, а не откатиться к целому.
+    //
+    // Хранится значение плюс метка времени; сколько заросло с тех пор,
+    // считает стор по формуле (GameState.fighterHp).
+    setFighterHp(hp) {
+        GameState.data.fighter = {
+            hp: Math.max(0, Math.round(hp)),
+            updated_at: GameTime.now()
+        };
+        GameState.save();
+        return GameState.data.fighter;
+    },
+
+    // ---------- ОБМЕН ШРАМОВ ----------
+    // Пачка шрамов сходит с тела и превращается в валюту. Решение о том,
+    // сколько шрамов и что за них дают, живёт в конфиге, а не в экране —
+    // как и любое другое начисление.
+    //
+    // Уходят САМЫЕ СТАРЫЕ: тело зарастает в том же порядке, в каком его било,
+    // и свежие следы последнего боя остаются на месте. Случайный выбор
+    // выглядел бы как «шрамы исчезли непонятно какие».
+    exchangeScars() {
+        const rule = ECONOMY.marks && ECONOMY.marks.exchange;
+        const scars = GameState.data.scars || [];
+        if (!rule) return { ok: false, error: 'no_rule' };
+        if (scars.length < rule.scars) {
+            return { ok: false, error: 'not_enough', have: scars.length, need: rule.scars };
+        }
+
+        const oldestFirst = scars.slice().sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+        const removed = oldestFirst.slice(0, rule.scars);
+        const removedIds = {};
+        removed.forEach(m => { removedIds[m.id] = true; });
+        GameState.data.scars = scars.filter(m => !removedIds[m.id]);
+
+        const requestId = newRequestId();
+        GameState.addCurrency(rule.currency, rule.amount);
+        GameState.pushLedger({
+            currency: rule.currency,
+            delta: rule.amount,
+            reason: 'exchange.scars',
+            client_request_id: requestId
+        });
+        // Осколки могли сложиться в жетон.
+        this.settleExchange(null, requestId);
+        GameState.save();
+
+        return {
+            ok: true,
+            removed: removed.length,
+            left: GameState.data.scars.length,
+            currency: rule.currency,
+            amount: rule.amount
+        };
     },
 
     // ---------- СНАРЯЖЕНИЕ ГНЕВА ----------
