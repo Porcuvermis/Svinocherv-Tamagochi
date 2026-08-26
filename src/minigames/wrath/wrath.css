@@ -1094,84 +1094,193 @@
 #wrath-rogue {
     padding: 10px 8px 12px;
     box-sizing: border-box;
+    gap: 6px;
 }
 
-/* Кнопка действия отдельно от кнопки возврата: «дальше по забегу» — главное
-   действие экрана, и оно должно быть под большим пальцем. */
-.rogue-action {
+/* ---------- ШАПКА ---------- */
+.rogue-status {
     flex: 0 0 auto;
-    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 6px;
+    padding: 7px 6px;
+    border: 1px solid rgba(255, 59, 48, 0.35);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
 }
 
-/* ---------- ЧТО ЗА ЗАБЕГ ---------- */
-.rogue-intro {
-    padding: 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 59, 48, 0.35);
-    background: rgba(0, 0, 0, 0.3);
+/* Усиления забега стоят рядом со здоровьем: больше их нигде не видно. */
+.rogue-chips { display: flex; gap: 4px; }
+
+.rogue-chip {
+    padding: 3px 7px;
+    border-radius: 8px;
+    background: rgba(255, 59, 48, 0.22);
+    border: 1px solid rgba(255, 59, 48, 0.45);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* ---------- ПОЛЕ КАРТЫ ----------
+   Дорожка, точки и карточка поверх — всё внутри одной коробки, потому что
+   точки стоят в процентах от неё, а не от экрана. */
+.rogue-field {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 2px 0;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(ellipse at 50% 100%, rgba(255, 59, 48, 0.12), transparent 60%),
+        rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+}
+
+/* ---------- ДОРОЖКА ----------
+   viewBox растягивается по коробке (preserveAspectRatio: none), поэтому
+   толщина линии задаётся non-scaling-stroke прямо в разметке — иначе она
+   растянулась бы вместе с координатами и вышла овальной. */
+.rogue-trail {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.rogue-seg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.16);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 5 7;
+}
+
+.rogue-seg.done {
+    stroke: rgba(255, 59, 48, 0.55);
+    stroke-dasharray: none;
+}
+
+/* ---------- ТОЧКИ ---------- */
+.rogue-nodes { position: absolute; inset: 0; }
+
+.rogue-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #fff;
+    cursor: default;
+}
+
+.rogue-node-dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    background: rgba(20, 6, 6, 0.9);
+    font-size: 20px;
+    line-height: 1;
+}
+
+.rogue-node-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.15;
+    text-shadow: 0 1px 3px #000;
+    pointer-events: none;
+}
+
+.rogue-node-label b { font-size: 10px; }
+.rogue-node-label i { font-style: normal; font-size: 9px; color: rgba(255, 255, 255, 0.6); }
+
+/* Пройденный узел гаснет, будущий приглушён, закрытый — серый и мёртвый:
+   магазин и событие нарисованы заранее, чтобы карта не поехала, когда их
+   сделают (docs/plan/10-wrath-rogue.md). */
+.rogue-node.done { opacity: 0.45; }
+.rogue-node.done .rogue-node-dot {
+    border-color: rgba(76, 175, 80, 0.6);
+    color: #7ddc82;
+}
+
+.rogue-node.future { opacity: 0.7; }
+
+.rogue-node.locked { opacity: 0.35; filter: grayscale(1); }
+
+/* Текущий узел — единственный нажимаемый, и это видно: он крупнее, светится
+   и медленно пульсирует. */
+.rogue-node.current {
+    cursor: pointer;
+    z-index: 2;
+}
+
+.rogue-node.current .rogue-node-dot {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.25);
+    box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.15), 0 0 18px rgba(255, 59, 48, 0.5);
+    animation: rogue-pulse 1.8s ease-in-out infinite;
+}
+
+.rogue-node.current:active .rogue-node-dot { transform: scale(0.92); }
+
+.rogue-node.boss .rogue-node-dot,
+.rogue-node.miniboss .rogue-node-dot { width: 52px; height: 52px; font-size: 24px; }
+
+@keyframes rogue-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.12), 0 0 14px rgba(255, 59, 48, 0.35); }
+    50%      { box-shadow: 0 0 0 7px rgba(255, 59, 48, 0.05), 0 0 22px rgba(255, 59, 48, 0.65); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rogue-node.current .rogue-node-dot { animation: none; }
+}
+
+/* ---------- КАРТОЧКА ПОВЕРХ КАРТЫ ----------
+   Одно место на три случая: предложение войти, выбор награды, итог забега.
+   Все три перекрывают карту целиком — потому что все три требуют ответа. */
+.rogue-card {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px;
+    box-sizing: border-box;
+    background: rgba(10, 3, 3, 0.95);
+    /* Выше текущей точки: та подсвечена и приподнята, и без этого она
+       светилась бы поверх вопроса, на который надо ответить. */
+    z-index: 3;
     font-size: 12px;
     line-height: 1.5;
     color: rgba(255, 255, 255, 0.8);
+    overflow-y: auto;
 }
 
-.rogue-intro-title {
-    margin-bottom: 8px;
-    font-size: 15px;
+.rogue-card.shown { display: flex; }
+.rogue-card p { margin: 0 0 6px; }
+.rogue-card-note { color: rgba(255, 255, 255, 0.45); }
+
+.rogue-card-title {
+    margin-bottom: 6px;
+    font-size: 16px;
     font-weight: 800;
     color: var(--wrath-attack);
 }
 
-.rogue-intro p { margin: 0 0 8px; }
-.rogue-intro-note { color: rgba(255, 255, 255, 0.45); }
-
-/* ---------- УЗЛЫ КАРТЫ ----------
-   Вся цепочка видна сразу: структура на этом уровне сложности одинаковая, а
-   видимая карта показывает, сколько осталось, и делает мини-босса рубежом, к
-   которому готовятся. */
-.rogue-node {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 6px;
-    padding: 9px 12px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.04);
-    font-size: 13px;
-}
-
-.rogue-node.done {
-    opacity: 0.5;
-    border-color: rgba(76, 175, 80, 0.4);
-}
-
-.rogue-node.current {
-    border-color: var(--wrath-attack);
-    background: rgba(255, 59, 48, 0.16);
-    box-shadow: 0 0 14px rgba(255, 59, 48, 0.25);
-}
-
-.rogue-node.future { opacity: 0.75; }
-
-/* Вторая половина забега злее — и это видно заранее, а не выясняется в бою. */
-.rogue-node.late:not(.done) .rogue-node-name::after {
-    content: ' · злее';
-    font-size: 9px;
-    color: #ffd27f;
-}
-
-.rogue-node-emoji { font-size: 18px; }
-.rogue-node-name { flex: 1 1 auto; font-weight: 700; }
-
-.rogue-node-here {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--wrath-attack);
-}
-
-.rogue-summary.win { border-color: rgba(76, 175, 80, 0.5); }
-.rogue-summary.lose { border-color: rgba(255, 59, 48, 0.5); }
+.rogue-card.win .rogue-card-title { color: #7ddc82; }
 
 .rogue-summary-list {
     margin: 0 0 8px;
@@ -1179,3 +1288,79 @@
     font-size: 13px;
     color: #ffd27f;
 }
+
+/* ---------- КАРТОЧКИ УСИЛЕНИЙ ---------- */
+.rogue-boosts {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 8px;
+}
+
+.rogue-boost {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 12px 6px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 59, 48, 0.45);
+    background: linear-gradient(160deg, rgba(255, 59, 48, 0.22), rgba(0, 0, 0, 0.4));
+    color: #fff;
+    cursor: pointer;
+    text-align: center;
+}
+
+.rogue-boost:active { transform: scale(0.96); }
+.rogue-boost-emoji { font-size: 22px; line-height: 1; }
+.rogue-boost b { font-size: 12px; }
+.rogue-boost i { font-style: normal; font-size: 9px; color: rgba(255, 255, 255, 0.55); }
+
+/* ---------- КНОПКИ ----------
+   «Дальше по забегу» — главное действие экрана, поэтому оно под большим
+   пальцем и в две строки: что делаем и с кем. */
+.rogue-action {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin-bottom: 6px;
+}
+
+.rogue-action b { font-size: 15px; }
+.rogue-action i { font-style: normal; font-size: 10px; opacity: 0.75; }
+
+.rogue-bottom {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.rogue-bottom .shop-back { flex: 1 1 auto; }
+
+/* Бросить забег видно только во время забега, и первый тап только
+   переспрашивает: цена ошибки — жетон. */
+.rogue-abandon {
+    display: none;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.rogue-abandon.shown { display: block; }
+
+.rogue-message {
+    flex: 0 0 auto;
+    min-height: 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #ffd27f;
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+.rogue-message.show { opacity: 1; }

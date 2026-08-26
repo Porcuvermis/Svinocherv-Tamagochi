@@ -81,6 +81,7 @@ const WrathLobby = {
         // Вернулись из боя — здоровье снова зарастает. Здесь, а не только на
         // выходе из боя: игру закрывают прямо посреди драки, и тогда снимать
         // заморозку будет некому.
+        // Во время забега Backend его не разморозит — там здоровье своё.
         Backend.resumeHeal();
         this.mountWorm();
         this.refresh();
@@ -211,8 +212,12 @@ const WrathLobby = {
         const rogueNote = this.root.querySelector('.mode-note[data-note="rogue"]');
         if (rogueNote) {
             const run = Backend.run();
+            // Считаются проходимые узлы: закрытые (магазин, событие) на
+            // карте нарисованы, но игрок их не проходит.
+            const total = run ? run.map.filter(n => !n.locked).length : 0;
+            const done = run ? run.map.filter(n => n.done).length : 0;
             rogueNote.textContent = run
-                ? `забег идёт: узел ${run.node + 1} из ${run.map.length} · ❤️ ${run.hp}/${run.maxHp}`
+                ? `забег идёт: ${done} из ${total} · ❤️ ${run.hp}/${run.maxHp}`
                 : 'забег за жетон гнева';
         }
 

@@ -84,6 +84,25 @@ const WrathMinigame = {
         WrathLobby.enter();
     },
 
+    // Возврат на карту забега. Отдельно от startMode: бой забега уходит и
+    // приходит сюда, а не в лобби, и экран карты при этом не сбрасывает
+    // накопленное (итог забега, показанную награду).
+    showRogue() {
+        WrathDuel.leave();
+        WrathLobby.leave();
+        WrathShop.leave();
+        WrathBoost.leave();
+        this.setScreen('rogue');
+        WrathRogue.enter();
+    },
+
+    // Бой узла забега. Экран боя один на все режимы: разница только в
+    // заказе (docs/plan/10-wrath-rogue.md).
+    startRogueFight(order) {
+        this.setScreen('duel');
+        WrathDuel.enter('rogue', order);
+    },
+
     startMode(mode) {
         WrathLobby.leave();
         // Магазин и прокачка — такие же экраны греха, как бой, и живут в том

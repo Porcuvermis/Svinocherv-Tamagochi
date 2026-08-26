@@ -30,7 +30,11 @@ const WrathFighter = {
     },
 
     // Характеристики от надетого. Пустые слоты = голые базовые числа.
-    stats(equipment) {
+    //
+    // bonus — прибавки забега (усиления рогалика). Они не в состоянии игрока
+    // и не в снаряжении: живут только внутри забега, поэтому приходят сюда
+    // параметром, а не читаются откуда-то сами.
+    stats(equipment, bonus) {
         const base = this.balance();
         const out = {
             // Прокачка входит в те же числа, что и снаряжение, — просто
@@ -54,13 +58,19 @@ const WrathFighter = {
             }
         });
 
+        if (bonus) {
+            if (bonus.hp) out.hp += bonus.hp;
+            if (bonus.damage) out.damage += bonus.damage;
+            if (bonus.armor) this.ZONES.forEach(zone => { out.armor[zone] += bonus.armor; });
+        }
+
         out.damageMin += out.damage;
         out.damageMax += out.damage;
         return out;
     },
 
     // Боец игрока: его собственная модель со шрамами и косметикой.
-    forPlayer() {
+    forPlayer(bonus) {
         const model = (typeof WormModelAPI !== 'undefined')
             ? WormModelAPI.loadWormModel() : null;
         const equipment = (GameState.data && GameState.data.equipment) || {};
@@ -68,7 +78,7 @@ const WrathFighter = {
             name: 'Ты',
             model,
             equipment: Object.assign({}, equipment),
-            stats: this.stats(equipment),
+            stats: this.stats(equipment, bonus),
             is_bot: false
         };
     },
@@ -85,6 +95,31 @@ const WrathFighter = {
             stats: this.stats(snap.equipment || {}),
             is_bot: true,
             is_self_copy: !!snap.is_self_copy
+        };
+    },
+
+    // Боец узла забега: числа из конфига, тело — слепком (пока это копия
+    // червя игрока, свои облики врагов рисуются позже).
+    //
+    // Характеристики НЕ складываются со снаряжением: у врага забега нет ни
+    // снаряжения, ни прокачки, у него просто написано, сколько он держит и
+    // как бьёт. Броня нулевая — сложность задаётся здоровьем и уроном.
+    fromEnemy(enemy, snapshot) {
+        const conf = enemy || {};
+        const damage = conf.damage || [1, 3];
+        return {
+            name: conf.name || 'Противник',
+            model: (snapshot && snapshot.model) || null,
+            equipment: {},
+            stats: {
+                hp: conf.hp || 10,
+                damage: 0,
+                armor: { head: 0, body: 0, tail: 0 },
+                damageMin: damage[0],
+                damageMax: damage[1]
+            },
+            is_bot: true,
+            is_enemy: true
         };
     },
 
