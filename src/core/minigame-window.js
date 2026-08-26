@@ -24,11 +24,17 @@
 //
 // Цвет рамки берётся из ECONOMY.sins[грех].color — того же места, откуда
 // красится кружок в HUD. Отдельного списка цветов окон нет и не будет.
+//
+// ---------- НИ ОДНОГО СЛОВА ----------
+// В окне нет букв (CLAUDE.md, инвариант 9). Где игрок — говорит эмодзи греха
+// и цвет рамки; вопрос при выходе — два знака-ответа и шкала, которая на
+// глазах опустошается: это и есть «прогресс не сохранится».
 const MinigameWindow = {
 
-    CONFIRM_TEXT: 'Выйти из мини-игры? Прогресс не сохранится.',
-    STAY_TEXT: 'Остаться',
-    LEAVE_TEXT: 'Выйти',
+    // Знаки ответов. Уход помечен тем же крестиком, который игрок только что
+    // нажал: вопрос читается как «точно этот крестик?», а не как загадка.
+    STAY_SIGN: '↩',
+    LEAVE_SIGN: '✕',
 
     // Возвращает хэндл окна. Повторный вызов на том же экране ничего не
     // пересобирает: init() у мини-игр вызывается не всегда один раз.
@@ -51,14 +57,16 @@ const MinigameWindow = {
         const titlebar = document.createElement('div');
         titlebar.className = 'mg-titlebar';
 
+        // Только эмодзи греха: название писать нечем и незачем — тот же
+        // значок стоит в HUD, откуда игрок сюда и пришёл.
         const title = document.createElement('div');
         title.className = 'mg-title';
-        title.textContent = options.title || (sin ? `${sin.emoji} ${sin.name}` : '');
+        title.textContent = options.title || (sin ? sin.emoji : '');
 
         const closeBtn = document.createElement('button');
         closeBtn.className = 'mg-close';
         closeBtn.type = 'button';
-        closeBtn.setAttribute('aria-label', 'Закрыть');
+        closeBtn.setAttribute('aria-label', 'x');
         closeBtn.innerHTML = '&times;';
 
         titlebar.appendChild(title);
@@ -72,13 +80,19 @@ const MinigameWindow = {
             body.appendChild(screenEl.firstChild);
         }
 
+        // Вопрос без слов: значок греха, под ним шкала, которая утекает в
+        // ноль, и два ответа. Утекающая шкала — это «прогресс не
+        // сохранится», сказанное движением, а не строкой.
         const confirm = document.createElement('div');
         confirm.className = 'mg-confirm';
         confirm.innerHTML = `
-            <div class="mg-confirm-text">${options.confirmText || this.CONFIRM_TEXT}</div>
+            <div class="mg-confirm-sign">
+                <span class="mg-confirm-sin">${sin ? sin.emoji : '❓'}</span>
+                <span class="mg-confirm-bar"><i></i></span>
+            </div>
             <div class="mg-confirm-buttons">
-                <button type="button" class="mg-confirm-btn stay">${this.STAY_TEXT}</button>
-                <button type="button" class="mg-confirm-btn leave">${this.LEAVE_TEXT}</button>
+                <button type="button" class="mg-confirm-btn stay">${this.STAY_SIGN}</button>
+                <button type="button" class="mg-confirm-btn leave">${this.LEAVE_SIGN}</button>
             </div>
         `;
 

@@ -134,14 +134,19 @@
 
 .gear-slot.filled .gear-icon { opacity: 1; }
 
-.gear-slot .gear-label {
-    font-size: 8px;
-    line-height: 1.1;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.55);
+/* ---------- ЗНАК ЗОНЫ ТЕЛА ----------
+   Кружок — голова, прямоугольник — тело, треугольник — хвост. Заменяет слова
+   «голова / тело / хвост» везде, где речь о броне (CLAUDE.md, инвариант 9).
+   Рисуется в WrathFighter.zoneMark(). */
+.zone-mark {
+    width: 26px;
+    height: 10px;
+    vertical-align: -1px;
+    margin-left: 3px;
 }
 
-.gear-slot.filled .gear-label { color: #fff; }
+.zone-mark .zm { fill: rgba(255, 255, 255, 0.22); }
+.zone-mark .zm.on { fill: currentColor; }
 
 /* Место под персонажа в лобби. Сама модель монтируется во внутреннюю сцену
    постоянного размера и вписывается сюда масштабом — тем же способом, что и
@@ -202,18 +207,23 @@
 }
 
 /* ---------- РЕЖИМЫ ---------- */
+/* Режимы — ряд значков во всю ширину: подписей нет, поэтому они стоят
+   рядом, а не столбцом, и значок можно сделать крупным. */
 .wrath-modes {
     flex: 0 0 auto;
     display: flex;
-    flex-direction: column;
     gap: 6px;
 }
 
 .mode-btn {
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 4px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(255, 255, 255, 0.05);
@@ -236,11 +246,19 @@
 
 .mode-btn:active.ready { transform: scale(0.98); }
 
-.mode-emoji { font-size: 20px; }
+.mode-emoji { font-size: 24px; line-height: 1; }
 
-.mode-text { display: flex; flex-direction: column; line-height: 1.25; }
-.mode-name { font-size: 14px; font-weight: 700; }
-.mode-note { font-size: 9px; color: rgba(255, 255, 255, 0.5); }
+/* Строка под значком — только числа: сколько жетонов, докуда дошёл забег,
+   сколько секунд зарастать. Пустая, когда сказать нечего. */
+.mode-note {
+    font-size: 10px;
+    line-height: 1.25;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.75);
+    white-space: nowrap;
+}
+
+.mode-note:empty { display: none; }
 
 /* ---------- КАРТОЧКА СЛОТА ----------
    Выезжает снизу поверх лобби: что в слоте, что это даёт, чем заменить. */
@@ -275,18 +293,7 @@
     margin-bottom: 8px;
 }
 
-.card-title { font-size: 15px; font-weight: 800; }
-.card-hint { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
-
-.card-current {
-    font-size: 12px;
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
-    margin-bottom: 6px;
-}
-
-.card-current.empty { color: rgba(255, 255, 255, 0.45); }
+.card-title { font-size: 22px; line-height: 1; }
 
 .card-item {
     display: flex;
@@ -304,9 +311,23 @@
     cursor: pointer;
 }
 
-.card-item.strip { border-color: rgba(255, 59, 48, 0.4); }
 .card-item:active { transform: scale(0.98); }
-.card-item-stat { font-size: 10px; color: #ffd27f; }
+
+/* Надетое помечено галочкой — отдельной кнопки «снять» нет: снять значит
+   выбрать пустую строку. Одно правило на весь список. */
+.card-item.on {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.16);
+}
+
+.card-item-icon { font-size: 20px; line-height: 1; flex: 0 0 auto; }
+.card-item-stat {
+    flex: 1 1 auto;
+    text-align: left;
+    font-size: 12px;
+    color: #ffd27f;
+}
+.card-item-mark { flex: 0 0 auto; font-size: 14px; color: var(--wrath-attack); }
 
 /* ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
    Ничего не спрашивает и ничем не управляет: появилось, сказало, погасло.
@@ -474,7 +495,7 @@
     flex: 0 0 auto;
     min-height: 18px;
     margin-top: 6px;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 900;
     color: #ffd700;
     text-align: center;
@@ -782,13 +803,13 @@
     pointer-events: auto;
 }
 
+/* Исход боя — крупный знак: кубок, череп, рукопожатие. Букв в игре нет
+   (CLAUDE.md, инвариант 9), поэтому знак и есть заголовок. */
 .wrath-overlay-text {
-    font-size: 36px;
-    font-weight: 900;
-    color: #ff3b30;
-    text-shadow: 0 0 15px rgba(255, 59, 48, 0.6);
+    font-size: 84px;
+    line-height: 1;
     text-align: center;
-    letter-spacing: 2px;
+    filter: drop-shadow(0 0 18px rgba(0, 0, 0, 0.7));
     animation: textPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -802,8 +823,9 @@
 .wrath-award {
     margin-top: -14px;
     max-width: 84%;
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.6;
     text-align: center;
     color: #ffd27f;
 }
@@ -884,12 +906,21 @@
 
 .wallet-item b { font-size: 15px; color: #fff; }
 
-.wallet-item i {
-    font-style: normal;
-    font-size: 8px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
+/* Не хватило именно этой валюты: она дёргается и краснеет. Это и есть
+   сообщение об отказе — слов в игре нет (docs/plan/11-no-words.md). */
+.wallet-item.lack {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.2);
+    animation: wallet-shake 0.42s ease;
+}
+
+.wallet-item.lack b { color: #ff6b60; }
+
+@keyframes wallet-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-5px); }
+    45% { transform: translateX(4px); }
+    70% { transform: translateX(-3px); }
 }
 
 /* Список прокручивается сам, а не тянет за собой экран: рамка окна остаётся
@@ -947,16 +978,13 @@
 
 .shop-item-emoji { font-size: 22px; }
 
-.shop-item-text {
+.shop-item-stat {
     flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.3;
+    text-align: left;
+    font-size: 12px;
+    color: #ffd27f;
 }
 
-.shop-item-name { font-size: 13px; font-weight: 700; }
-.shop-item-stat { font-size: 10px; color: #ffd27f; }
 
 .shop-buy {
     flex-shrink: 0;
@@ -973,11 +1001,23 @@
 
 .shop-buy:active { transform: scale(0.95); }
 
+/* Куплено — галочка. Надето — та же галочка, но в кружке цвета греха:
+   одно и то же понятие, разная громкость. */
 .shop-state {
     flex-shrink: 0;
-    font-size: 10px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.5);
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.shop-state.on {
+    color: #fff;
+    background: rgba(76, 175, 80, 0.75);
 }
 
 .shop-message {
@@ -1010,15 +1050,6 @@
     box-sizing: border-box;
 }
 
-/* Кошелёк и список — те же классы, что в магазине: два экрана одного греха
-   не должны выглядеть как два разных приложения. Здесь только строки. */
-.boost-group {
-    margin: 14px 2px 6px;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: var(--wrath-attack);
-}
 
 .boost-item {
     display: flex;
@@ -1038,6 +1069,15 @@
 
 .boost-item.poor { opacity: 0.55; }
 
+/* Шрамов не хватило: строка дёргается и краснеет — тот же ответ, что и у
+   кошелька в магазине. */
+.boost-item.lack {
+    opacity: 1;
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.2);
+    animation: wallet-shake 0.42s ease;
+}
+
 .boost-emoji { font-size: 22px; }
 
 .boost-text {
@@ -1048,9 +1088,23 @@
     line-height: 1.35;
 }
 
-.boost-name { font-size: 13px; font-weight: 700; }
-.boost-hint { font-size: 10px; color: rgba(255, 255, 255, 0.45); }
-.boost-now { font-size: 10px; color: #ffd27f; }
+.boost-now { font-size: 14px; font-weight: 700; color: #ffd27f; }
+
+/* Уровни — точками: залито столько, сколько куплено, и сразу видно, где
+   потолок. Слово «уровень 2 из 3» для этого не нужно. */
+.boost-pips { display: flex; gap: 4px; margin-top: 4px; }
+
+.boost-pips .pip {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.boost-pips .pip.on {
+    background: var(--wrath-attack);
+    border-color: var(--wrath-attack);
+}
 
 /* Цена сверху, что за неё дадут — снизу: решение принимается по паре
    «сколько стоит / что изменится», и держать их рядом важнее, чем экономить
@@ -1082,7 +1136,315 @@
 
 .boost-state {
     flex-shrink: 0;
-    font-size: 10px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.5);
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 14px;
+    color: #fff;
+    background: rgba(76, 175, 80, 0.75);
 }
+
+/* ============================================================ */
+/* =========================  РОГАЛИК  ======================== */
+/* ============================================================ */
+
+#wrath-rogue {
+    padding: 10px 8px 12px;
+    box-sizing: border-box;
+    gap: 6px;
+}
+
+/* ---------- ШАПКА ---------- */
+.rogue-status {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 6px;
+    padding: 7px 6px;
+    border: 1px solid rgba(255, 59, 48, 0.35);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+/* Усиления забега стоят рядом со здоровьем: больше их нигде не видно. */
+.rogue-chips { display: flex; gap: 4px; }
+
+.rogue-chip {
+    padding: 3px 7px;
+    border-radius: 8px;
+    background: rgba(255, 59, 48, 0.22);
+    border: 1px solid rgba(255, 59, 48, 0.45);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* ---------- ПОЛЕ КАРТЫ ----------
+   Дорожка, точки и карточка поверх — всё внутри одной коробки, потому что
+   точки стоят в процентах от неё, а не от экрана. */
+.rogue-field {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 2px 0;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(ellipse at 50% 100%, rgba(255, 59, 48, 0.12), transparent 60%),
+        rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+}
+
+/* ---------- ДОРОЖКА ----------
+   viewBox растягивается по коробке (preserveAspectRatio: none), поэтому
+   толщина линии задаётся non-scaling-stroke прямо в разметке — иначе она
+   растянулась бы вместе с координатами и вышла овальной. */
+.rogue-trail {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.rogue-seg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.16);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 5 7;
+}
+
+.rogue-seg.done {
+    stroke: rgba(255, 59, 48, 0.55);
+    stroke-dasharray: none;
+}
+
+/* Ветка развилки, ведущая в ещё не сделанный путь: она есть, но по ней не
+   пойдут — линия тише остальных. */
+.rogue-seg.dim { stroke: rgba(255, 255, 255, 0.07); }
+
+/* ---------- ТОЧКИ ---------- */
+.rogue-nodes { position: absolute; inset: 0; }
+
+.rogue-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #fff;
+    cursor: default;
+}
+
+.rogue-node-dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    /* Непрозрачный: дорожка проходит ПОД точками, и полупрозрачный кружок
+       показывал бы линию прямо у себя внутри. */
+    background: #180809;
+    font-size: 20px;
+    line-height: 1;
+}
+
+/* Под точкой — только числа: сколько у противника здоровья и как он бьёт.
+   Имени нет (CLAUDE.md, инвариант 9), за противника говорят его числа. */
+.rogue-node-label {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.15;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px #000;
+    color: rgba(255, 255, 255, 0.85);
+    pointer-events: none;
+}
+
+/* Пройденный узел гаснет, будущий приглушён, закрытый — серый и мёртвый:
+   магазин и событие нарисованы заранее, чтобы карта не поехала, когда их
+   сделают (docs/plan/10-wrath-rogue.md). */
+.rogue-node.done { opacity: 0.45; }
+.rogue-node.done .rogue-node-dot {
+    border-color: rgba(76, 175, 80, 0.6);
+    color: #7ddc82;
+}
+
+.rogue-node.future { opacity: 0.7; }
+
+.rogue-node.locked { opacity: 0.35; filter: grayscale(1); }
+
+/* Путь развилки, мимо которого прошли: он был доступен, но выбрали другой.
+   Гасится сильнее пройденного, чтобы выбранный путь читался с одного
+   взгляда. */
+.rogue-node.skipped { opacity: 0.25; filter: grayscale(0.7); }
+
+/* Текущий узел — единственный нажимаемый, и это видно: он крупнее, светится
+   и медленно пульсирует. */
+.rogue-node.current {
+    cursor: pointer;
+    z-index: 2;
+}
+
+.rogue-node.current .rogue-node-dot {
+    border-color: var(--wrath-attack);
+    background: #4d1512;
+    box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.15), 0 0 18px rgba(255, 59, 48, 0.5);
+    animation: rogue-pulse 1.8s ease-in-out infinite;
+}
+
+.rogue-node.current:active .rogue-node-dot { transform: scale(0.92); }
+
+.rogue-node.boss .rogue-node-dot,
+.rogue-node.miniboss .rogue-node-dot { width: 52px; height: 52px; font-size: 24px; }
+
+@keyframes rogue-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.12), 0 0 14px rgba(255, 59, 48, 0.35); }
+    50%      { box-shadow: 0 0 0 7px rgba(255, 59, 48, 0.05), 0 0 22px rgba(255, 59, 48, 0.65); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rogue-node.current .rogue-node-dot { animation: none; }
+}
+
+/* ---------- КАРТОЧКА ПОВЕРХ КАРТЫ ----------
+   Одно место на три случая: предложение войти, выбор награды, итог забега.
+   Все три перекрывают карту целиком — потому что все три требуют ответа. */
+.rogue-card {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px;
+    box-sizing: border-box;
+    background: rgba(10, 3, 3, 0.95);
+    /* Выше текущей точки: та подсвечена и приподнята, и без этого она
+       светилась бы поверх вопроса, на который надо ответить. */
+    z-index: 3;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.8);
+    overflow-y: auto;
+}
+
+.rogue-card.shown { display: flex; }
+.rogue-card p { margin: 0 0 6px; }
+.rogue-card-note { color: rgba(255, 255, 255, 0.45); }
+
+/* Карточка говорит значком и числами: большой знак сверху, под ним строки
+   «что впереди» и «что с этого будет». */
+.rogue-card-icon {
+    font-size: 46px;
+    line-height: 1;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.rogue-card-row {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.rogue-card-row.loot { color: #ffd27f; }
+.rogue-card-row.lost { color: #ff8a80; }
+
+/* ---------- КАРТОЧКИ УСИЛЕНИЙ ---------- */
+.rogue-boosts {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 8px;
+}
+
+.rogue-boost {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 12px 6px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 59, 48, 0.45);
+    background: linear-gradient(160deg, rgba(255, 59, 48, 0.22), rgba(0, 0, 0, 0.4));
+    color: #fff;
+    cursor: pointer;
+    text-align: center;
+}
+
+.rogue-boost:active { transform: scale(0.96); }
+.rogue-boost-emoji { font-size: 30px; line-height: 1; }
+.rogue-boost b { font-size: 18px; }
+
+/* ---------- КНОПКИ ----------
+   «Дальше по забегу» — главное действие экрана, поэтому оно под большим
+   пальцем и в две строки: что делаем и с кем. */
+.rogue-action {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin-bottom: 6px;
+}
+
+.rogue-action b { font-size: 22px; line-height: 1.1; }
+.rogue-action i { font-style: normal; font-size: 12px; font-weight: 700; opacity: 0.85; }
+
+.rogue-bottom {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.rogue-bottom .shop-back { flex: 1 1 auto; }
+
+/* Бросить забег видно только во время забега, и первый тап только
+   переспрашивает: цена ошибки — жетон. */
+/* Бросить забег — белый флаг. Первый тап только взводит: флаг краснеет и
+   пульсирует, второй бросает. Вопроса словами здесь нет и не нужно. */
+.rogue-abandon {
+    display: none;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    font-size: 18px;
+    line-height: 1;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.rogue-abandon.shown { display: block; }
+
+.rogue-abandon.armed {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.28);
+    animation: rogue-pulse 0.9s ease-in-out infinite;
+}
+
+.rogue-message {
+    flex: 0 0 auto;
+    min-height: 16px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffd27f;
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+.rogue-message.show { opacity: 1; }

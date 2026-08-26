@@ -59,6 +59,11 @@ const WrathDuel = {
     okTimeoutId: null,
     okBtn: null,
     mode: 'duel',
+    // Заказ на бой от забега: противник узла, здоровье забега и куда
+    // сообщить исход. У обычного боя его нет — там всё берётся из состояния.
+    order: null,
+    outcome: null,
+    awardPrefix: '',    // что дал узел забега — показывается вместе с наградой
 
     init(host) {
         this.host = host;
@@ -98,7 +103,7 @@ const WrathDuel = {
         }
         this.okBtn = document.getElementById('wrath-ok-btn');
         if (this.okBtn) {
-            this.okBtn.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+            this.okBtn.onclick = (e) => { e.stopPropagation(); this.finish(); };
         }
 
         window.addEventListener('resize', () => {
@@ -107,24 +112,42 @@ const WrathDuel = {
     },
 
     // ---------- ЖИЗНЕННЫЙ ЦИКЛ ЭКРАНА ----------
-    enter(mode) {
+    // order — заказ от забега (docs/plan/10-wrath-rogue.md):
+    //   { enemy, hp, maxHp, bonus, onResult(outcome), onClose() }
+    // Без него это обычный бой, и всё берётся из состояния, как раньше.
+    enter(mode, order) {
         this.mode = mode || 'duel';
+        this.order = order || null;
+        this.outcome = null;
+        this.awardPrefix = '';
+
         // В бою здоровье не зарастает: оно ресурс этой драки. Размораживает
         // лобби, когда игрок туда вернётся, — в том числе после того, как игру
-        // закрыли прямо посреди боя.
-        Backend.freezeHeal();
-        this.fighters = { player: WrathFighter.forPlayer(), enemy: null };
-        this.setName('player', this.fighters.player.name);
-        this.setName('enemy', '…');
+        // закрыли прямо посреди боя. В забеге замораживать нечего: здоровье
+        // лобби стоит на паузе всё время забега, и трогать его здесь значило
+        // бы разморозить его посреди дороги.
+        if (!this.order) Backend.freezeHeal();
+
+        this.fighters = {
+            player: WrathFighter.forPlayer(this.order ? this.order.bonus : null),
+            enemy: null
+        };
+        // Максимум здоровья в забеге — тот, что записан в забеге: усиления
+        // могли поднять его, а снаряжение и прокачка с тех пор смениться.
+        if (this.order) this.fighters.player.stats.hp = this.order.maxHp;
+
 
         this.mountFighter('player', this.fighters.player.model, false);
 
         // Противник приходит через переходник: сегодня это копия игрока,
         // завтра — слепок другого игрока с сервера. Вызывающий код одинаков.
+        // Забегу оттуда нужно только тело: числа у его врагов свои.
         Backend.getOpponent(this.mode).then(answer => {
             if (!this.host || this.host.current !== 'duel') return;
-            this.fighters.enemy = WrathFighter.fromSnapshot(answer && answer.opponent);
-            this.setName('enemy', this.fighters.enemy.name);
+            const snapshot = answer && answer.opponent;
+            this.fighters.enemy = this.order
+                ? WrathFighter.fromEnemy(this.order.enemy, snapshot)
+                : WrathFighter.fromSnapshot(snapshot);
             this.mountFighter('enemy', this.fighters.enemy.model, true);
             this.restartFight();
         });
@@ -135,6 +158,7 @@ const WrathDuel = {
         this.stopResultTimer();
         // Ушли с боя — здоровье снова зарастает. Дублируется в лобби на
         // случай, когда игру закрыли посреди драки и leave() не случился.
+        // Во время забега Backend его не разморозит — там здоровье своё.
         Backend.resumeHeal();
         ['player', 'enemy'].forEach(side => {
             if (this.handles[side]) {
@@ -145,6 +169,9 @@ const WrathDuel = {
         this.hideResult();
         this.fightOver = false;
         this.isFighting = false;
+        // Заказ забега снимается последним: до этой строки по нему решалось,
+        // размораживать ли здоровье лобби.
+        this.order = null;
     },
 
     mountFighter(side, model, flip) {
@@ -305,14 +332,17 @@ const WrathDuel = {
         // Драться нечем. В лобби кнопка боя в этот момент заперта, так что
         // сюда можно попасть только окольным путём — возвращаемся туда, где
         // видно, сколько зарастать.
-        if (GameState.fighterHp(this.fighters.player.stats.hp) <= 0) {
+        if (!this.order && GameState.fighterHp(this.fighters.player.stats.hp) <= 0) {
             this.host.showLobby();
             return;
         }
 
         // Игрок входит в бой с тем здоровьем, что у него есть: побитым после
-        // прошлой драки или уже заросшим. Противник — слепок, он всегда целый.
-        this.playerHP = GameState.fighterHp(this.fighters.player.stats.hp);
+        // прошлой драки или уже заросшим. В забеге это здоровье забега, оно
+        // не зарастает само. Противник всегда целый.
+        this.playerHP = this.order
+            ? this.order.hp
+            : GameState.fighterHp(this.fighters.player.stats.hp);
         this.enemyHP = this.fighters.enemy.stats.hp;
         this.isFighting = false;
         this.fightOver = false;
@@ -358,8 +388,10 @@ const WrathDuel = {
 
         this.updateHPBars();
         // Здоровье записывается КАЖДЫЙ раунд, а не в конце боя: свернул игру
-        // посреди драки — остался с тем, с чем свернул.
-        Backend.setFighterHp(this.playerHP);
+        // посреди драки — остался с тем, с чем свернул. В забеге пишется
+        // здоровье забега, а не лобби: это разные жизни.
+        if (this.order) Backend.setRunHp(this.playerHP);
+        else Backend.setFighterHp(this.playerHP);
 
         if (this.enemyHP <= 0 || this.playerHP <= 0) {
             // Id таймера хранится, чтобы уход с экрана мог его отменить:
@@ -418,18 +450,22 @@ const WrathDuel = {
         this.isFighting = false;
         if (this.daggerBtn) this.daggerBtn.classList.add('disabled');
 
-        let outcome, text, color;
+        // Исход — знаком, а не словом (CLAUDE.md, инвариант 9): кубок,
+        // череп, рукопожатие. Цвет добавляет громкости, но читается и без
+        // него.
+        let outcome, sign, color;
         if (this.playerHP <= 0 && this.enemyHP <= 0) {
-            outcome = 'draw'; text = 'НИЧЬЯ'; color = '#ffd700';
+            outcome = 'draw'; sign = '🤝'; color = '#ffd700';
         } else if (this.enemyHP <= 0) {
-            outcome = 'win'; text = 'ПОБЕДА!'; color = '#4CAF50';
+            outcome = 'win'; sign = '🏆'; color = '#4CAF50';
         } else {
-            outcome = 'lose'; text = 'ПОРАЖЕНИЕ...'; color = '#ff3b30';
+            outcome = 'lose'; sign = '💀'; color = '#ff3b30';
         }
+        this.outcome = outcome;
 
-        this.setResult(text);
+        this.setResult(sign);
         if (this.overlayText) {
-            this.overlayText.textContent = text;
+            this.overlayText.textContent = sign;
             this.overlayText.style.color = color;
         }
         this.showResult();
@@ -437,12 +473,34 @@ const WrathDuel = {
         // Мини-игра сообщает, ЧТО произошло. Сколько это стоит и выпадет ли
         // шрам — решает конфиг наград на стороне Backend. Зона последнего
         // пропущенного удара едет в meta: по ней шрам садится туда, куда били.
+        //
+        // Режим едет тот же, в котором дрались: у забега в конфиге наград
+        // своя строка, и валюту его бои не дают — за них платит карта.
         GameEvents.emit('minigame:result', {
             sin: 'wrath',
-            mode: 'duel',
+            mode: this.mode,
             outcome,
             meta: { lastHitZone: this.lastHitZone }
         });
+
+        // Узел забега засчитывается ЗДЕСЬ, а не по кнопке «Окей». Здоровье
+        // уже записано, и если игру закрыть между концом боя и кнопкой,
+        // забег обязан помнить, что бой был.
+        if (this.order && this.order.onResult) {
+            // Строка забега встаёт ПЕРЕД строкой наград: та придёт следом,
+            // ответом на minigame:result, и перепишет поле целиком.
+            this.awardPrefix = this.order.onResult(outcome) || '';
+            if (this.awardLine) this.awardLine.textContent = this.awardPrefix;
+        }
+    },
+
+    // Кнопка «Окей»: обычный бой возвращает в лобби, бой забега — на карту.
+    finish() {
+        if (this.order && this.order.onClose) {
+            this.order.onClose(this.outcome);
+            return;
+        }
+        this.host.showLobby();
     },
 
     // ---------- ПОКАЗ ----------
@@ -452,6 +510,7 @@ const WrathDuel = {
     showAward(awarded) {
         if (!this.awardLine) return;
         const parts = [];
+        if (this.awardPrefix) parts.push(this.awardPrefix);
 
         Object.keys(awarded.currencies || {}).forEach(key => {
             const delta = awarded.currencies[key];
@@ -460,28 +519,27 @@ const WrathDuel = {
             parts.push(`+${delta} ${conf ? conf.emoji : key}`);
         });
 
-        // Убывающая доходность объясняется прямо здесь, иначе «золота стало
-        // меньше» читается как поломка.
+        // Убывающая доходность показывается долей, а не объясняется словами:
+        // монета с процентом рядом с числом золота. Правило игрок выведет за
+        // два-три боя (docs/plan/11-no-words.md).
         if (awarded.goldShare != null && awarded.goldShare < 1) {
-            parts.push(`золота ${Math.round(awarded.goldShare * 100)}% — много побед за сутки`);
+            parts.push(`🪙 ${Math.round(awarded.goldShare * 100)}%`);
         }
+        // Осколки сложились в жетон — показываем сам жетон со стрелкой.
         if (awarded.exchanged) {
             const conf = ECONOMY.currencies[awarded.exchanged.into];
-            parts.push(`${conf ? conf.emoji : ''} собрался жетон!`);
+            parts.push(`🩸→${conf ? conf.emoji : ''}`);
         }
-        if (awarded.mark) parts.push('остался шрам');
+        if (awarded.mark) parts.push('🩹');
+        // Сколько поражений осталось до осколка: череп с числом и стрелка.
         if (awarded.everyN && !awarded.currencies.wrath_shard) {
             const left = awarded.everyN.n - (awarded.everyN.total % awarded.everyN.n);
-            parts.push(`осколок через ${left} поражения`);
+            parts.push(`💀 ${left}→🩸`);
         }
 
         this.awardLine.textContent = parts.join(' · ');
     },
 
-    setName(side, name) {
-        const el = document.getElementById(`wrath-${side}-name`);
-        if (el) el.textContent = name;
-    },
 
     updateHPBars() {
         ['player', 'enemy'].forEach(side => {
@@ -500,7 +558,8 @@ const WrathDuel = {
     showDamage(who, amount) {
         const popup = document.getElementById(`${who}-dmg-popup`);
         if (!popup) return;
-        popup.textContent = amount > 0 ? `-${amount}` : 'броня!';
+        // Ноль урона — это броня, и говорит об этом щит, а не слово.
+        popup.textContent = amount > 0 ? `−${amount}` : '🛡';
         popup.classList.remove('show');
         void popup.offsetWidth;
         popup.classList.add('show');

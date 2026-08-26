@@ -21,8 +21,10 @@ const WrathBoost = {
     root: null,
     walletEl: null,
     listEl: null,
-    messageEl: null,
-    message: null,
+    // Чего не хватило на покупку: подсвечивается в кошельке и гаснет само.
+    // Слов «не хватает жетонов» больше нет (docs/plan/11-no-words.md).
+    lack: null,
+    lackTimer: null,
 
     init(host) {
         this.host = host;
@@ -31,19 +33,18 @@ const WrathBoost = {
 
         this.walletEl = document.getElementById('boost-wallet');
         this.listEl = document.getElementById('boost-list');
-        this.messageEl = document.getElementById('boost-message');
 
         const back = document.getElementById('wrath-boost-back');
         if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
     },
 
     enter() {
-        this.message = null;
+        this.lack = null;
         this.render();
     },
 
     leave() {
-        this.message = null;
+        this.lack = null;
     },
 
     conf() {
@@ -52,7 +53,7 @@ const WrathBoost = {
 
     render() {
         if (!this.root) return;
-        if (this.walletEl) this.walletEl.innerHTML = WrathShop.walletHtml();
+        if (this.walletEl) this.walletEl.innerHTML = WrathShop.walletHtml(this.lack);
         if (!this.listEl) return;
 
         const conf = this.conf();
@@ -67,16 +68,17 @@ const WrathBoost = {
             const next = maxed ? null : branch.levels[level];
             const now = GameState.upgradeBonus(key);
 
+            // Уровень — точками, а не словом «уровень 2 из 3»: сколько
+            // залито, столько куплено, и сразу видно, где потолок.
             html += `
                 <div class="boost-item${maxed ? ' maxed' : ''}">
                     <span class="boost-emoji">${branch.emoji}</span>
                     <span class="boost-text">
-                        <span class="boost-name">${branch.name}</span>
-                        <span class="boost-hint">${branch.hint}</span>
-                        <span class="boost-now">${this.bonusText(key, now)} · уровень ${level} из ${branch.levels.length}</span>
+                        <span class="boost-now">${this.bonusText(key, now)}</span>
+                        <span class="boost-pips">${this.pips(level, branch.levels.length)}</span>
                     </span>
                     ${maxed
-                        ? '<span class="boost-state">потолок</span>'
+                        ? '<span class="boost-state">✓</span>'
                         : `<button type="button" class="boost-buy" data-key="${key}">
                                <b>${this.priceText(next.price)}</b>
                                <i>${this.bonusText(key, next.bonus)}</i>
@@ -85,22 +87,21 @@ const WrathBoost = {
         });
 
         // ---------- ОБМЕН ШРАМОВ ----------
+        // Обмен шрамов — такая же строка, как ветка прокачки: сколько
+        // накопилось из нужного, и кнопка с ценой и тем, что за неё дадут.
         const rule = ECONOMY.marks.exchange;
         const scars = (GameState.data.scars || []).length;
         const ready = scars >= rule.scars;
         const currency = ECONOMY.currencies[rule.currency];
         html += `
-            <div class="boost-group">Шрамы</div>
-            <div class="boost-item${ready ? '' : ' poor'}">
+            <div class="boost-item${ready ? '' : ' poor'}${this.lack === 'scars' ? ' lack' : ''}">
                 <span class="boost-emoji">🩹</span>
                 <span class="boost-text">
-                    <span class="boost-name">Обменять шрамы</span>
-                    <span class="boost-hint">сойдут самые старые, тело зарастёт</span>
-                    <span class="boost-now">${scars} из ${rule.scars} нужных</span>
+                    <span class="boost-now">🩹 ${scars}/${rule.scars}</span>
                 </span>
                 <button type="button" class="boost-buy" id="boost-scars" ${ready ? '' : 'disabled'}>
-                    <b>${rule.scars} 🩹</b>
-                    <i>${currency ? currency.emoji : ''} ${rule.amount}</i>
+                    <b>🩹 ${rule.scars}</b>
+                    <i>${currency ? currency.emoji : ''} +${rule.amount}</i>
                 </button>
             </div>`;
 
@@ -111,60 +112,66 @@ const WrathBoost = {
         });
         const scarBtn = this.listEl.querySelector('#boost-scars');
         if (scarBtn) scarBtn.onclick = (e) => { e.stopPropagation(); this.exchangeScars(); };
-
-        if (this.messageEl) {
-            this.messageEl.textContent = this.message || '';
-            this.messageEl.classList.toggle('show', !!this.message);
-        }
     },
 
+    // Купленный уровень виден точками, отказ — красной вспышкой там, где
+    // не хватило. Ни то, ни другое не требует слов.
     buy(key) {
         const answer = Backend.buyUpgrade(key);
-        if (!answer.ok) {
-            this.message = answer.error === 'not_enough'
-                ? 'Не хватает жетонов — победа даёт осколок, три осколка складываются в жетон.'
-                : 'Прокачать не вышло.';
-        } else {
-            const branch = this.conf()[key];
-            this.message = `${branch.emoji} ${branch.name} — уровень ${answer.level}.`;
-        }
+        if (!answer.ok) this.showLack(answer.currency || 'wrath_token');
+        else this.lack = null;
         this.render();
     },
 
     exchangeScars() {
         const answer = Backend.exchangeScars();
         if (!answer.ok) {
-            const rule = ECONOMY.marks.exchange;
-            this.message = `Шрамов мало: ${answer.have} из ${rule.scars}`;
+            this.showLack('scars');
             this.render();
             return;
         }
-
-        const currency = ECONOMY.currencies[answer.currency];
-        this.message = `${answer.removed} шрамов сошло · ${currency ? currency.emoji : ''} +${answer.amount}`;
+        this.lack = null;
         // Тело перерисовывается сразу — и на главном экране тоже: обмен в
-        // первую очередь про то, как червь выглядит.
+        // первую очередь про то, как червь выглядит, и это же и есть ответ
+        // игроку вместо строки «столько-то шрамов сошло».
         if (typeof refreshWormMarks === 'function') refreshWormMarks();
         this.render();
     },
 
-    // «+2 урон», «+4 ХП», «×2 к зарастанию» — каждая ветка меряется своим.
+    showLack(key) {
+        this.lack = key;
+        if (this.lackTimer) clearTimeout(this.lackTimer);
+        this.lackTimer = setTimeout(() => {
+            this.lackTimer = null;
+            this.lack = null;
+            this.render();
+        }, 900);
+    },
+
+    // Уровни точками: залитая — купленная ступень.
+    pips(level, total) {
+        let out = '';
+        for (let i = 0; i < total; i++) out += `<span class="pip${i < level ? ' on' : ''}"></span>`;
+        return out;
+    },
+
+    // Каждая ветка меряется своим значком: 🗡 урон, ❤️ здоровье,
+    // 🌱 сколько здоровья зарастает в секунду.
     bonusText(key, bonus) {
-        if (!bonus) return 'пока ничего';
-        if (key === 'damage') return `+${bonus} к урону`;
-        if (key === 'hp') return `+${bonus} к здоровью`;
         if (key === 'regen') {
             const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 1;
-            return `${(base + bonus).toFixed(1)} ХП/сек`;
+            return `🌱 ${(base + (bonus || 0)).toFixed(1)}`;
         }
-        return `+${bonus}`;
+        const emoji = key === 'hp' ? '❤️' : '🗡';
+        return `${emoji} +${bonus || 0}`;
     },
 
     priceText(price) {
-        return Object.keys(price || {}).map(key => {
+        const parts = Object.keys(price || {}).map(key => {
             const conf = ECONOMY.currencies[key];
             return `${conf ? conf.emoji : key} ${price[key]}`;
-        }).join(' · ') || 'даром';
+        });
+        return parts.join(' ') || '🎟 0';
     }
 };
 

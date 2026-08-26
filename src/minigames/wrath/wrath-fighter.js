@@ -30,7 +30,11 @@ const WrathFighter = {
     },
 
     // Характеристики от надетого. Пустые слоты = голые базовые числа.
-    stats(equipment) {
+    //
+    // bonus — прибавки забега (усиления рогалика). Они не в состоянии игрока
+    // и не в снаряжении: живут только внутри забега, поэтому приходят сюда
+    // параметром, а не читаются откуда-то сами.
+    stats(equipment, bonus) {
         const base = this.balance();
         const out = {
             // Прокачка входит в те же числа, что и снаряжение, — просто
@@ -54,13 +58,19 @@ const WrathFighter = {
             }
         });
 
+        if (bonus) {
+            if (bonus.hp) out.hp += bonus.hp;
+            if (bonus.damage) out.damage += bonus.damage;
+            if (bonus.armor) this.ZONES.forEach(zone => { out.armor[zone] += bonus.armor; });
+        }
+
         out.damageMin += out.damage;
         out.damageMax += out.damage;
         return out;
     },
 
     // Боец игрока: его собственная модель со шрамами и косметикой.
-    forPlayer() {
+    forPlayer(bonus) {
         const model = (typeof WormModelAPI !== 'undefined')
             ? WormModelAPI.loadWormModel() : null;
         const equipment = (GameState.data && GameState.data.equipment) || {};
@@ -68,7 +78,7 @@ const WrathFighter = {
             name: 'Ты',
             model,
             equipment: Object.assign({}, equipment),
-            stats: this.stats(equipment),
+            stats: this.stats(equipment, bonus),
             is_bot: false
         };
     },
@@ -85,6 +95,31 @@ const WrathFighter = {
             stats: this.stats(snap.equipment || {}),
             is_bot: true,
             is_self_copy: !!snap.is_self_copy
+        };
+    },
+
+    // Боец узла забега: числа из конфига, тело — слепком (пока это копия
+    // червя игрока, свои облики врагов рисуются позже).
+    //
+    // Характеристики НЕ складываются со снаряжением: у врага забега нет ни
+    // снаряжения, ни прокачки, у него просто написано, сколько он держит и
+    // как бьёт. Броня нулевая — сложность задаётся здоровьем и уроном.
+    fromEnemy(enemy, snapshot) {
+        const conf = enemy || {};
+        const damage = conf.damage || [1, 3];
+        return {
+            name: conf.name || 'Противник',
+            model: (snapshot && snapshot.model) || null,
+            equipment: {},
+            stats: {
+                hp: conf.hp || 10,
+                damage: 0,
+                armor: { head: 0, body: 0, tail: 0 },
+                damageMin: damage[0],
+                damageMax: damage[1]
+            },
+            is_bot: true,
+            is_enemy: true
         };
     },
 
@@ -205,6 +240,40 @@ const WrathFighter = {
         } catch (err) {
             return null;
         }
+    },
+
+    // ---------- ЗНАК ЗОНЫ ----------
+    // Три зоны тела нарисованы силуэтом: кружок — голова, скруглённый
+    // прямоугольник — тело, треугольник — хвост. Нужная зона горит, две
+    // другие приглушены.
+    //
+    // Это замена словам «голова / тело / хвост» (CLAUDE.md, инвариант 9):
+    // строка «−1 урона в голову» превращается в «🛡 −1 [знак]», и то же самое
+    // читается в магазине, в лобби и в карточке предмета одинаково.
+    zoneMark(zone) {
+        const on = (z) => z === zone ? ' on' : '';
+        return `<svg class="zone-mark" viewBox="0 0 32 12" aria-hidden="true">
+            <circle class="zm${on('head')}" cx="5" cy="6" r="4.6"/>
+            <rect class="zm${on('body')}" x="12" y="1.4" width="9" height="9.2" rx="2.6"/>
+            <path class="zm${on('tail')}" d="M24 1.6 L31 6 L24 10.4 Z"/>
+        </svg>`;
+    },
+
+    // ---------- ХАРАКТЕРИСТИКИ ПРЕДМЕТА ЗНАЧКАМИ ----------
+    // Одна и та же строка нужна лобби и магазину, поэтому живёт здесь.
+    // Ни одного слова: значок величины, число, знак зоны.
+    itemStats(item) {
+        const parts = [];
+        if (item.damage) parts.push(`🗡 +${item.damage}`);
+        if (item.hp) parts.push(`❤️ +${item.hp}`);
+        if (item.armor) {
+            this.ZONES.forEach(zone => {
+                if (item.armor[zone]) {
+                    parts.push(`🛡 ${item.armor[zone]}${this.zoneMark(zone)}`);
+                }
+            });
+        }
+        return parts.join(' ');
     },
 
     // Короткая сводка для интерфейса: то, что показывается строкой в лобби.
