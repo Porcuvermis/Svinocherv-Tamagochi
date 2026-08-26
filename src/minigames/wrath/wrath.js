@@ -40,12 +40,14 @@ const WrathMinigame = {
         this.screens = {
             lobby: document.getElementById('wrath-lobby'),
             duel: document.getElementById('wrath-duel'),
-            shop: document.getElementById('wrath-shop')
+            shop: document.getElementById('wrath-shop'),
+            boost: document.getElementById('wrath-boost')
         };
 
         WrathLobby.init(this);
         WrathDuel.init(this);
         WrathShop.init(this);
+        WrathBoost.init(this);
     },
 
     open() {
@@ -62,6 +64,7 @@ const WrathMinigame = {
         WrathDuel.leave();
         WrathLobby.leave();
         WrathShop.leave();
+        WrathBoost.leave();
         this.current = null;
         if (this.win) this.win.hideConfirm();
         MinigameWindow.resumeRoom();
@@ -72,16 +75,23 @@ const WrathMinigame = {
     showLobby() {
         WrathDuel.leave();
         WrathShop.leave();
+        WrathBoost.leave();
         this.setScreen('lobby');
         WrathLobby.enter();
     },
 
     startMode(mode) {
         WrathLobby.leave();
-        // Магазин — такой же экран греха, как бой, и живёт в том же окне.
+        // Магазин и прокачка — такие же экраны греха, как бой, и живут в том
+        // же окне.
         if (mode === 'shop') {
             this.setScreen('shop');
             WrathShop.enter();
+            return;
+        }
+        if (mode === 'boost') {
+            this.setScreen('boost');
+            WrathBoost.enter();
             return;
         }
         this.setScreen('duel');

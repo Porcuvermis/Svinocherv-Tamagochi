@@ -35,11 +35,14 @@ const WrathLobby = {
     cardEl: null,
     wormHandle: null,
     openSlot: null,
-    scarLineEl: null,
+    hintLineEl: null,
     toastEl: null,
-    askEl: null,
     toastTimer: null,
     healClock: null,
+    holdEl: null,
+    holdFillEl: null,
+    holdTimer: null,
+    holdActive: false,
 
     init(host) {
         this.host = host;
@@ -55,34 +58,18 @@ const WrathLobby = {
         this.wormBox = this.wormStage ? this.wormStage.parentElement : null;
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
-        this.scarLineEl = document.getElementById('wrath-scar-line');
+        this.hintLineEl = document.getElementById('wrath-hint-line');
         this.toastEl = document.getElementById('wrath-toast');
-        this.askEl = document.getElementById('wrath-ask');
+        this.holdEl = document.getElementById('wrath-hold');
+        this.holdFillEl = document.getElementById('wrath-hold-fill');
 
         this.buildSlots();
         this.buildModes();
-
-        // Тап по червю — обмен шрамов. Обработчик на коробке, а не на самом
-        // SVG: тело узкое и извилистое, попасть по нему пальцем труднее, чем
-        // по области, где он стоит. Промахнуться некуда — в этой области
-        // больше ничего нет.
-        if (this.wormBox) {
-            this.wormBox.style.pointerEvents = 'auto';
-            this.wormBox.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.tapWorm();
-            });
-        }
-
-        const yes = document.getElementById('wrath-ask-yes');
-        const no = document.getElementById('wrath-ask-no');
-        if (yes) yes.onclick = (e) => { e.stopPropagation(); this.confirmExchange(); };
-        if (no) no.onclick = (e) => { e.stopPropagation(); this.hideAsk(); };
+        this.bindHold();
 
         // Тап мимо карточки закрывает её. Слушатель на самом экране, а не на
         // документе: закрытая мини-игра не должна ничего ловить.
         this.root.addEventListener('click', (e) => {
-            if (this.askEl && this.askEl.contains(e.target)) return;
             if (!this.openSlot) return;
             if (this.cardEl.contains(e.target)) return;
             if (e.target.closest('.gear-slot')) return;
@@ -115,7 +102,7 @@ const WrathLobby = {
             this.healClock = null;
         }
         this.hideCard();
-        this.hideAsk();
+        this.cancelHold(false);
         this.hideToast();
     },
 
@@ -228,7 +215,7 @@ const WrathLobby = {
         }
 
         this.refreshHealth();
-        this.refreshScarLine();
+        this.refreshHint();
     },
 
     // ---------- ЗДОРОВЬЕ ----------
@@ -261,71 +248,90 @@ const WrathLobby = {
         }
     },
 
-    // ---------- СТРОКА ШРАМОВ ----------
-    // Она же подсказка про тап: без неё обмен — невидимая функция.
-    refreshScarLine() {
-        if (!this.scarLineEl) return;
+    // ---------- СТРОКА-ПОДСКАЗКА ----------
+    // Жест «удержать на персонаже» ниоткуда не следует, поэтому он написан
+    // словами под самим персонажем. Без этой строки прокачку не нашли бы:
+    // тапать по червю игрок может и сам, а держать полторы секунды — нет.
+    refreshHint() {
+        if (!this.hintLineEl) return;
+        const scars = (GameState.data.scars || []).length;
         const rule = ECONOMY.marks.exchange;
-        const have = (GameState.data.scars || []).length;
-        const conf = ECONOMY.currencies[rule.currency];
-        const ready = have >= rule.scars;
-
-        this.scarLineEl.classList.toggle('ready', ready);
-        this.scarLineEl.textContent = ready
-            ? `🩹 ${have} шрамов — тапни по червю, чтобы обменять ${rule.scars} на ${conf ? conf.emoji : ''} ${rule.amount}`
-            : `🩹 шрамы: ${have} из ${rule.scars} до обмена`;
+        const ready = scars >= rule.scars;
+        this.hintLineEl.classList.toggle('ready', ready);
+        this.hintLineEl.textContent = ready
+            ? `✊ удерживай червя — прокачка и обмен ${rule.scars} шрамов`
+            : '✊ удерживай червя — боевая прокачка';
     },
 
-    // ---------- ОБМЕН ШРАМОВ ----------
-    // Тап по червю. Мало шрамов — просто всплывает сообщение и гаснет:
-    // диалог с кнопкой «ок» здесь был бы наказанием за любопытство. Хватает —
-    // спрашиваем, потому что шрамы не вернуть.
-    tapWorm() {
-        if (this.openSlot) { this.hideCard(); return; }
-        const rule = ECONOMY.marks.exchange;
-        const have = (GameState.data.scars || []).length;
+    // ---------- УДЕРЖАНИЕ НА ЧЕРВЕ ----------
+    // Полторы секунды пальцем на персонаже открывают меню прокачки. Жест
+    // выбран не ради экзотики: качают самого червя, и «нажать на него» —
+    // самое понятное действие. А удержание, а не тап, потому что тап здесь
+    // слишком дёшев: по персонажу промахиваются, гладят его, тыкают от
+    // нечего делать.
+    //
+    // Чтобы жест был находим, он ПОКАЗЫВАЕТ СЕБЯ: от первого касания под
+    // червём появляется полоска и начинает заполняться. Отпустил раньше —
+    // полоска исчезла, но игрок уже увидел, что что-то набиралось.
+    HOLD_MS: 1500,
 
-        if (have < rule.scars) {
-            this.showToast(`Шрамов мало: ${have} из ${rule.scars}`);
-            return;
-        }
-        this.showAsk(rule, have);
+    bindHold() {
+        if (!this.wormBox) return;
+        // Коробка, а не сам SVG: тело узкое и извилистое, попасть по нему
+        // пальцем труднее, чем по области, где червь стоит. Промахнуться
+        // некуда — в этой области больше ничего нет.
+        this.wormBox.style.pointerEvents = 'auto';
+        this.wormBox.style.touchAction = 'none';
+
+        this.wormBox.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            this.startHold();
+        });
+        ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
+            this.wormBox.addEventListener(type, () => this.cancelHold(true));
+        });
     },
 
-    showAsk(rule, have) {
-        if (!this.askEl) return;
-        const conf = ECONOMY.currencies[rule.currency];
-        const textEl = document.getElementById('wrath-ask-text');
-        if (textEl) {
-            textEl.innerHTML = `Обменять ${rule.scars} шрамов на `
-                + `<b>${conf ? conf.emoji : ''} ${rule.amount}</b>?<br>`
-                + `<span class="ask-sub">Сойдут самые старые. Останется ${have - rule.scars}.</span>`;
+    startHold() {
+        if (this.holdActive) return;
+        this.holdActive = true;
+
+        if (this.holdEl) this.holdEl.classList.add('show');
+        if (this.holdFillEl) {
+            // Сброс без перехода, потом рост с переходом: иначе полоска
+            // поедет из прошлого положения.
+            this.holdFillEl.style.transition = 'none';
+            this.holdFillEl.style.width = '0%';
+            void this.holdFillEl.offsetWidth;
+            this.holdFillEl.style.transition = `width ${this.HOLD_MS}ms linear`;
+            this.holdFillEl.style.width = '100%';
         }
-        this.askEl.classList.add('show');
+
+        this.holdTimer = setTimeout(() => {
+            this.holdTimer = null;
+            this.cancelHold(false);
+            this.host.startMode('boost');
+        }, this.HOLD_MS);
     },
 
-    hideAsk() {
-        if (this.askEl) this.askEl.classList.remove('show');
-    },
+    // hint=true — палец убрали сами, значит жест не понят: подсказываем.
+    // hint=false — удержание сработало или экран закрывается, молчим.
+    cancelHold(hint) {
+        const wasActive = this.holdActive;
+        this.holdActive = false;
 
-    confirmExchange() {
-        const answer = Backend.exchangeScars();
-        this.hideAsk();
-        if (!answer.ok) {
-            this.showToast('Обменять не вышло');
-            return;
+        if (this.holdTimer) {
+            clearTimeout(this.holdTimer);
+            this.holdTimer = null;
         }
-
-        const conf = ECONOMY.currencies[answer.currency];
-        this.showToast(`${answer.removed} шрамов сошло · ${conf ? conf.emoji : ''} +${answer.amount}`);
-
-        // Тело перерисовывается сразу: обмен — это в первую очередь про то,
-        // как червь выглядит. И здесь, и на главном экране.
-        if (this.wormHandle) {
-            this.wormHandle.setOverride({ scars: GameState.data.scars });
+        if (this.holdEl) this.holdEl.classList.remove('show');
+        if (this.holdFillEl) {
+            this.holdFillEl.style.transition = 'width 0.15s ease';
+            this.holdFillEl.style.width = '0%';
         }
-        if (typeof refreshWormMarks === 'function') refreshWormMarks();
-        this.refresh();
+        if (hint && wasActive) {
+            this.showToast('Держи палец на черве — откроется прокачка');
+        }
     },
 
     // ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------

@@ -158,9 +158,10 @@
    раньше, чем игрок полезет в бой. */
 .wrath-stats .stat b.hurt { color: #ff8a80; }
 
-/* ---------- СТРОКА ШРАМОВ ----------
-   Она же подсказка про тап по червю: без неё обмен — невидимая функция. */
-.scar-line {
+/* ---------- СТРОКА-ПОДСКАЗКА ----------
+   Жест «удержать на персонаже» ниоткуда не следует: без строки под червём
+   прокачку просто не нашли бы. */
+.hint-line {
     flex: 0 0 auto;
     padding: 6px 4px;
     font-size: 10px;
@@ -168,8 +169,38 @@
     color: rgba(255, 255, 255, 0.45);
 }
 
-.scar-line.ready {
+.hint-line.ready {
     color: #ffd27f;
+}
+
+/* ---------- ПОЛОСКА УДЕРЖАНИЯ ----------
+   Показывает себя от первого касания червя: отпустил раньше — исчезла, но
+   игрок уже увидел, что что-то набиралось. Это и есть всё обучение жесту. */
+.hold-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 8%;
+    transform: translateX(-50%);
+    width: 116px;
+    height: 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 25;
+}
+
+.hold-bar.show { opacity: 1; }
+
+.hold-fill {
+    width: 0;
+    height: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #ff8a80, var(--wrath-attack));
+    box-shadow: 0 0 8px var(--wrath-attack);
 }
 
 /* ---------- РЕЖИМЫ ---------- */
@@ -978,3 +1009,89 @@
 }
 
 .shop-back { flex: 0 0 auto; }
+
+/* ============================================================ */
+/* =========================  ПРОКАЧКА  ======================= */
+/* ============================================================ */
+
+#wrath-boost {
+    padding: 10px 8px 12px;
+    box-sizing: border-box;
+}
+
+/* Кошелёк и список — те же классы, что в магазине: два экрана одного греха
+   не должны выглядеть как два разных приложения. Здесь только строки. */
+.boost-group {
+    margin: 14px 2px 6px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--wrath-attack);
+}
+
+.boost-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.boost-item.maxed {
+    border-color: rgba(76, 175, 80, 0.45);
+    background: rgba(76, 175, 80, 0.08);
+}
+
+.boost-item.poor { opacity: 0.55; }
+
+.boost-emoji { font-size: 22px; }
+
+.boost-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.35;
+}
+
+.boost-name { font-size: 13px; font-weight: 700; }
+.boost-hint { font-size: 10px; color: rgba(255, 255, 255, 0.45); }
+.boost-now { font-size: 10px; color: #ffd27f; }
+
+/* Цена сверху, что за неё дадут — снизу: решение принимается по паре
+   «сколько стоит / что изменится», и держать их рядом важнее, чем экономить
+   ширину. */
+.boost-buy {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: linear-gradient(135deg, rgba(255, 59, 48, 0.5), rgba(166, 28, 21, 0.5));
+    color: #fff;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.boost-buy b { font-size: 12px; }
+.boost-buy i { font-style: normal; font-size: 9px; opacity: 0.8; }
+.boost-buy:active { transform: scale(0.95); }
+
+.boost-buy:disabled {
+    opacity: 0.45;
+    cursor: default;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.boost-state {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+}

@@ -33,8 +33,10 @@ const WrathFighter = {
     stats(equipment) {
         const base = this.balance();
         const out = {
-            hp: base.baseHp,
-            damage: 0,                              // прибавка к броску
+            // Прокачка входит в те же числа, что и снаряжение, — просто
+            // складывается раньше: предмет можно снять, прокачку нет.
+            hp: base.baseHp + GameState.upgradeBonus('hp'),
+            damage: GameState.upgradeBonus('damage'),   // прибавка к броску
             armor: { head: 0, body: 0, tail: 0 },
             damageMin: base.damageMin,
             damageMax: base.damageMax

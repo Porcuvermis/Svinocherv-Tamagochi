@@ -492,6 +492,38 @@ const LocalBackend = {
         return { ok: true, item: itemId, equipped: GameState.data.equipment[item.slot] === itemId };
     },
 
+    // ---------- БОЕВАЯ ПРОКАЧКА ----------
+    // Купить следующий уровень ветки. Как и с предметами: клиент говорит
+    // «качни вот это», а хватает ли валюты и не упёрлись ли в потолок,
+    // решает эта сторона.
+    buyUpgrade(key) {
+        const conf = ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades;
+        const branch = conf && conf[key];
+        if (!branch || !branch.levels) return { ok: false, error: 'unknown_upgrade' };
+
+        const level = GameState.upgradeLevel(key);
+        if (level >= branch.levels.length) return { ok: false, error: 'maxed' };
+
+        const price = branch.levels[level].price || {};
+        const short = Object.keys(price).find(cur => GameState.currency(cur) < price[cur]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(cur => {
+            GameState.addCurrency(cur, -price[cur]);
+            GameState.pushLedger({
+                currency: cur,
+                delta: -price[cur],
+                reason: 'upgrade.wrath.' + key + '.' + (level + 1),
+                client_request_id: requestId
+            });
+        });
+
+        GameState.data.upgrades[key] = level + 1;
+        GameState.save();
+        return { ok: true, key, level: level + 1, bonus: GameState.upgradeBonus(key) };
+    },
+
     // Выдать валюту напрямую. Пока это только debug-режим: настоящие
     // источники (бой, рогалик) идут через minigameResult и свой конфиг наград.
     grantCurrency(key, amount) {

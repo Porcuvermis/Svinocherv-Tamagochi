@@ -41,6 +41,9 @@ const GameState = {
             currencies: {},
             scars: [],
             inventory: {},
+            // Боевая прокачка гнева: ветка → купленный уровень (0 = не
+            // куплено). В отличие от снаряжения, не снимается.
+            upgrades: {},
             // Надетое снаряжение гнева: слот → id предмета из
             // src/config/wrath-gear.js. Пусто = дерётся как есть.
             equipment: {},
@@ -179,7 +182,7 @@ const GameState = {
             d.room.location = 'home';
         }
 
-        ['currencies', 'inventory', 'equipment', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
+        ['currencies', 'inventory', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
         ['scars', 'ledger', 'requests'].forEach(key => {
@@ -254,6 +257,29 @@ const GameState = {
         return Math.max(0, Math.min(maxHp, Math.floor(raw)));
     },
 
+    // ---------- ПРОКАЧКА ----------
+    // Суммарная прибавка ветки на купленном уровне. Ноль, если не куплено.
+    // Уровни — данные в конфиге, здесь только чтение.
+    upgradeBonus(key) {
+        const conf = ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades;
+        const branch = conf && conf[key];
+        if (!branch || !branch.levels) return 0;
+        const level = (this.data && this.data.upgrades && this.data.upgrades[key]) || 0;
+        if (level <= 0) return 0;
+        const step = branch.levels[Math.min(level, branch.levels.length) - 1];
+        return step ? (step.bonus || 0) : 0;
+    },
+
+    upgradeLevel(key) {
+        return (this.data && this.data.upgrades && this.data.upgrades[key]) || 0;
+    },
+
+    // Скорость зарастания: база из конфига плюс прокачка.
+    regenRate() {
+        const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+        return base + this.upgradeBonus('regen');
+    },
+
     // Сырое здоровье, без потолка: потолок зависит от снаряжения, а это не
     // дело стора. Нужно самой заморозке — зафиксировать накопленное.
     // null означает «хранить нечего, здоровье полное».
@@ -263,14 +289,13 @@ const GameState = {
         // Зарастание остановлено (идёт бой или забег) — сколько было, столько
         // и есть, сколько бы времени ни прошло.
         if (f.frozen) return f.hp;
-        const rate = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
-        return f.hp + GameTime.secondsSince(f.updated_at) * rate;
+        return f.hp + GameTime.secondsSince(f.updated_at) * this.regenRate();
     },
 
     // Сколько секунд до полного здоровья. Нужно интерфейсу, чтобы написать
     // «зарастает», а не молчать.
     fighterHealSeconds(maxHp) {
-        const rate = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+        const rate = this.regenRate();
         if (rate <= 0) return null;
         const missing = maxHp - this.fighterHp(maxHp);
         return missing > 0 ? Math.ceil(missing / rate) : 0;
