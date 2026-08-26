@@ -23,7 +23,7 @@ const WrathLobby = {
         { key: 'duel',  emoji: '⚔️', name: 'Бой с ботом',   note: 'быстрый бой один на один', ready: true },
         { key: 'pvp',   emoji: '🤝', name: 'Бой с игроком', note: 'по коду комнаты',           ready: false },
         { key: 'rogue', emoji: '🗺', name: 'Рогалик',       note: 'за жетон гнева',            ready: false },
-        { key: 'shop',  emoji: '🏪', name: 'Магазин гнева', note: 'за жетоны и осколки',       ready: false }
+        { key: 'shop',  emoji: '🏪', name: 'Магазин гнева', note: 'снаряжение за жетоны',      ready: true }
     ],
 
     host: null,
@@ -132,7 +132,7 @@ const WrathLobby = {
                 <span class="mode-emoji">${mode.ready ? mode.emoji : '🔒'}</span>
                 <span class="mode-text">
                     <span class="mode-name">${mode.name}</span>
-                    <span class="mode-note">${mode.ready ? mode.note : 'скоро — ' + mode.note}</span>
+                    <span class="mode-note" data-note="${mode.key}">${mode.ready ? mode.note : 'скоро — ' + mode.note}</span>
                 </span>
             `;
             el.onclick = (e) => {
@@ -158,6 +158,15 @@ const WrathLobby = {
             icon.textContent = item ? item.emoji : slot.emoji;
             label.textContent = item ? item.name : slot.name;
         });
+
+        // Кошелёк показан там, где он что-то значит, — в строке магазина.
+        // Отдельной панели для двух чисел не заводим: экран и так плотный.
+        const shopNote = this.root.querySelector('.mode-note[data-note="shop"]');
+        if (shopNote) {
+            const per = (ECONOMY.exchange.wrath_shard && ECONOMY.exchange.wrath_shard.per) || 3;
+            shopNote.textContent = `🎟 ${GameState.currency('wrath_token')} · `
+                + `🩸 ${GameState.currency('wrath_shard')}/${per} до жетона`;
+        }
 
         if (this.statsEl) {
             const s = WrathFighter.summary(WrathFighter.stats(equipment));

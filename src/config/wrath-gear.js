@@ -35,41 +35,73 @@ const WRATH_GEAR = {
     ],
 
     // ---------- ПРЕДМЕТЫ ----------
-    // Пока их негде взять: ни магазина, ни рогалика ещё нет, стартового
-    // набора по решению нет тоже. Каталог всё равно нужен, и не «на будущее»,
-    // а прямо сейчас: без единого предмета нельзя проверить, что слоты,
-    // расчёт характеристик и их влияние на бой вообще работают. Выдаются в
-    // debug-режиме (кнопка 🐞) — это и есть их текущий источник.
+    // Продаются в магазине гнева за жетоны (docs/plan/03-wrath.md). Жетон —
+    // это три осколка, осколок даётся за победу, значит первый предмет стоит
+    // ровно три победы.
     //
+    //   slot   — в какой слот встаёт
+    //   tier   — ступень внутри слота: по ней магазин показывает «1 из 3»,
+    //            то есть потолок объявлен заранее, как требует план
+    //   price  — цена в валютах; карта, а не число, чтобы завтра предмет мог
+    //            стоить золота или кристалла без правки кода
     //   hp     — прибавка к максимуму здоровья
     //   damage — прибавка к наносимому урону
     //   armor  — сколько урона снимается с прилетевшего в эту зону
     //
     // Зоны те же три, что у шрамов: 'head' | 'body' | 'tail'.
     items: {
+        // ---- оружие: чистый урон ----
         'rusty-blade': {
-            slot: 'weapon', name: 'Ржавый клинок', emoji: '🗡',
-            damage: 1
+            slot: 'weapon', tier: 1, name: 'Ржавый клинок', emoji: '🗡',
+            damage: 1, price: { wrath_token: 1 }
         },
         'bone-shiv': {
-            slot: 'weapon', name: 'Костяная заточка', emoji: '🦴',
-            damage: 2
+            slot: 'weapon', tier: 2, name: 'Костяная заточка', emoji: '🦴',
+            damage: 2, price: { wrath_token: 3 }
         },
+        'tusk-saber': {
+            slot: 'weapon', tier: 3, name: 'Клыкастая сабля', emoji: '⚔️',
+            damage: 3, price: { wrath_token: 6 }
+        },
+
+        // ---- шлем: голова ----
         'pot-helmet': {
-            slot: 'helmet', name: 'Кастрюля', emoji: '🥘',
-            armor: { head: 1 }, hp: 1
+            slot: 'helmet', tier: 1, name: 'Кастрюля', emoji: '🥘',
+            armor: { head: 1 }, hp: 1, price: { wrath_token: 1 }
         },
+        'skull-cap': {
+            slot: 'helmet', tier: 2, name: 'Череп', emoji: '💀',
+            armor: { head: 2 }, hp: 2, price: { wrath_token: 4 }
+        },
+
+        // ---- броня: тело ----
         'hide-armor': {
-            slot: 'armor', name: 'Шкура', emoji: '🦺',
-            armor: { body: 1 }, hp: 2
+            slot: 'armor', tier: 1, name: 'Шкура', emoji: '🦺',
+            armor: { body: 1 }, hp: 2, price: { wrath_token: 2 }
         },
-        'lid-shield': {
-            slot: 'shield', name: 'Крышка', emoji: '🛡',
-            armor: { body: 1 }
+        'bone-plate': {
+            slot: 'armor', tier: 2, name: 'Костяной панцирь', emoji: '🛡',
+            armor: { body: 2 }, hp: 3, price: { wrath_token: 5 }
         },
+
+        // ---- перчатки: урон ----
         'work-gloves': {
-            slot: 'gloves', name: 'Рабочие перчатки', emoji: '🧤',
-            damage: 1
+            slot: 'gloves', tier: 1, name: 'Рабочие перчатки', emoji: '🧤',
+            damage: 1, price: { wrath_token: 1 }
+        },
+        'spiked-gloves': {
+            slot: 'gloves', tier: 2, name: 'Шипованные', emoji: '🥊',
+            damage: 2, price: { wrath_token: 4 }
+        },
+
+        // ---- щит: тело и хвост ----
+        'lid-shield': {
+            slot: 'shield', tier: 1, name: 'Крышка', emoji: '🛢',
+            armor: { body: 1 }, price: { wrath_token: 1 }
+        },
+        'tower-shield': {
+            slot: 'shield', tier: 2, name: 'Ростовой щит', emoji: '🚪',
+            armor: { body: 1, tail: 1 }, hp: 1, price: { wrath_token: 4 }
         }
     }
 };

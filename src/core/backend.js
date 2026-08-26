@@ -90,20 +90,40 @@ const LocalBackend = {
         }
         awarded.sinValue = GameState.sinValue(sin);
 
+        const reason = sin + '.' + mode + '.' + outcome;
+
         if (reward.currencies) {
             Object.keys(reward.currencies).forEach(key => {
-                const delta = reward.currencies[key];
-                if (!delta) return;
-                GameState.addCurrency(key, delta);
-                GameState.pushLedger({
-                    currency: key,
-                    delta,
-                    reason: sin + '.' + mode + '.' + outcome,
-                    client_request_id: requestId
-                });
-                awarded.currencies[key] = delta;
+                this.award(awarded, key, reward.currencies[key], reason, requestId);
             });
         }
+
+        // ---------- ЗОЛОТО С УБЫВАЮЩЕЙ ДОХОДНОСТЬЮ ----------
+        // Считается по суточному счётчику ТАКИХ ЖЕ исходов. Счётчик
+        // увеличивается ниже, поэтому текущая победа — следующая по номеру.
+        if (reward.goldBase) {
+            const already = GameState.counter(reason);
+            const share = this.goldShare(already + 1);
+            const gold = Math.round(reward.goldBase * share);
+            awarded.goldShare = share;
+            if (gold > 0) this.award(awarded, 'gold', gold, reason + '.gold', requestId);
+        }
+
+        // ---------- НАГРАДА ЗА КАЖДЫЙ N-Й ИСХОД ----------
+        // «Осколок за каждые три поражения». Счётчик накопительный: три
+        // поражения за неделю тоже должны сложиться в осколок.
+        if (reward.everyN && reward.everyN.n > 0) {
+            const total = GameState.bumpTotal(reward.everyN.counter);
+            if (total % reward.everyN.n === 0) {
+                Object.keys(reward.everyN.currencies || {}).forEach(key => {
+                    this.award(awarded, key, reward.everyN.currencies[key], reason + '.every' + reward.everyN.n, requestId);
+                });
+            }
+            awarded.everyN = { counter: reward.everyN.counter, total, n: reward.everyN.n };
+        }
+
+        // Осколки могли сложиться в жетон.
+        this.settleExchange(awarded, requestId);
 
         // Червя покормили — запускается пищеварение.
         if (reward.feeds) {
@@ -286,6 +306,103 @@ const LocalBackend = {
                 is_self_copy: true
             }
         });
+    },
+
+    // ---------- НАЧИСЛЕНИЕ ----------
+    // Одно место, где валюта попадает в кошелёк, и каждый раз со строкой в
+    // журнале: на сервере это таблица ledger, по которой разбирают баг и
+    // откатывают накрутку.
+    award(awarded, key, delta, reason, requestId) {
+        if (!delta) return 0;
+        GameState.addCurrency(key, delta);
+        GameState.pushLedger({ currency: key, delta, reason, client_request_id: requestId });
+        awarded.currencies[key] = (awarded.currencies[key] || 0) + delta;
+        return delta;
+    },
+
+    // Доля золота по числу побед за сутки (ECONOMY.goldReturns).
+    goldShare(winNumber) {
+        const tiers = (ECONOMY.goldReturns && ECONOMY.goldReturns.tiers) || [];
+        for (let i = 0; i < tiers.length; i++) {
+            if (tiers[i].upTo === null || winNumber <= tiers[i].upTo) return tiers[i].share;
+        }
+        return 1;
+    },
+
+    // ---------- РАЗМЕН МЕЛКОЙ ВАЛЮТЫ В КРУПНУЮ ----------
+    // Три осколка складываются в жетон сами. Кнопки «обменять» нет намеренно:
+    // курс фиксированный, выбора у игрока никакого, а лишний экран есть.
+    //
+    // Идёт циклом, а не один раз: наградить могут сразу несколькими
+    // осколками, и остаток обязан переехать целиком.
+    settleExchange(awarded, requestId) {
+        const rules = ECONOMY.exchange || {};
+        Object.keys(rules).forEach(from => {
+            const rule = rules[from];
+            if (!rule || !rule.per) return;
+            let converted = 0;
+            while (GameState.currency(from) >= rule.per) {
+                GameState.addCurrency(from, -rule.per);
+                GameState.addCurrency(rule.into, 1);
+                converted += 1;
+            }
+            if (!converted) return;
+            GameState.pushLedger({
+                currency: rule.into,
+                delta: converted,
+                reason: 'exchange.' + from,
+                client_request_id: requestId
+            });
+            // В список заработанного размен НЕ пишется: игрок заработал
+            // осколки, а жетон — это то, во что они сложились. Показывать
+            // «−2 осколка» после победы было бы прямой ложью.
+            if (awarded) awarded.exchanged = { from, into: rule.into, count: converted };
+        });
+    },
+
+    // ---------- МАГАЗИН ГНЕВА ----------
+    // Покупка: проверка цены и списание живут здесь, а не в экране магазина.
+    // Клиент никогда не говорит «выдай мне предмет» — он говорит «купи вот
+    // этот», а хватает ли валюты, решает эта сторона (позже — сервер).
+    buyItem(itemId) {
+        const item = WRATH_GEAR.items[itemId];
+        if (!item) return { ok: false, error: 'unknown_item' };
+        if (GameState.data.inventory[itemId]) return { ok: false, error: 'already_owned' };
+
+        const price = item.price || {};
+        const short = Object.keys(price).find(key => GameState.currency(key) < price[key]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(key => {
+            GameState.addCurrency(key, -price[key]);
+            GameState.pushLedger({
+                currency: key,
+                delta: -price[key],
+                reason: 'shop.wrath.' + itemId,
+                client_request_id: requestId
+            });
+        });
+
+        this.grantItem(itemId);
+        // Купил в пустой слот — сразу надето. Покупка и есть намерение
+        // пользоваться; заставлять после неё идти в лобби и надевать — лишний
+        // шаг ради ничего.
+        if (!GameState.data.equipment[item.slot]) this.equip(item.slot, itemId);
+
+        GameState.save();
+        return { ok: true, item: itemId, equipped: GameState.data.equipment[item.slot] === itemId };
+    },
+
+    // Выдать валюту напрямую. Пока это только debug-режим: настоящие
+    // источники (бой, рогалик) идут через minigameResult и свой конфиг наград.
+    grantCurrency(key, amount) {
+        if (!ECONOMY.currencies[key] || !amount) return false;
+        GameState.addCurrency(key, amount);
+        GameState.pushLedger({ currency: key, delta: amount, reason: 'debug.grant' });
+        this.settleExchange(null, null);
+        GameState.save();
+        return true;
     },
 
     // rewards[грех][режим][исход], иначе общее правило.

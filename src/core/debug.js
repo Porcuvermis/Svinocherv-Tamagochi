@@ -58,7 +58,7 @@ const DebugState = {
             <button data-act="scar">Шрам</button>
             <button data-act="feed">Покормить</button>
             <button data-act="room">Комната</button>
-            <button data-act="gear">Снаряга</button>
+            <button data-act="gear">Жетоны</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -128,14 +128,15 @@ const DebugState = {
     run(act) {
         if (!GameState.data) return;
 
-        // Снаряжение гнева. Магазина и рогалика ещё нет, а проверять слоты,
-        // характеристики и их влияние на бой надо уже сейчас — эта кнопка и
-        // есть текущий источник предметов. Выдаёт через Backend, а не пишет в
-        // состояние: когда источники появятся, они пойдут тем же путём.
+        // Жетоны гнева. Честный источник — победы в бою (осколок за победу,
+        // три осколка = жетон), но копить их ради проверки магазина долго.
+        // Выдаётся через Backend, а не записью в состояние: когда появится
+        // рогалик, он пойдёт тем же путём.
         if (act === 'gear') {
-            if (typeof WRATH_GEAR === 'undefined') return;
-            Object.keys(WRATH_GEAR.items).forEach(id => Backend.grantItem(id));
+            Backend.grantCurrency('wrath_token', 5);
+            Backend.grantCurrency('gold', 100);
             if (typeof WrathLobby !== 'undefined' && WrathLobby.root) WrathLobby.refresh();
+            if (typeof WrathShop !== 'undefined' && WrathShop.root) WrathShop.render();
             this.render();
             return;
         }

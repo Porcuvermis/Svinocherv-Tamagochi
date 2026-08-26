@@ -46,6 +46,9 @@ const GameState = {
             equipment: {},
             unlocks: {},
             daily_counters: {},
+            // Накопительные счётчики за всё время (в отличие от суточных):
+            // на них стоят награды вида «осколок за каждые три поражения».
+            counters: {},
             runs: {},
             // Пищеварение: одна метка времени, всё остальное считается от неё.
             digestion: { fed_at: null },
@@ -164,7 +167,7 @@ const GameState = {
             d.room.location = 'home';
         }
 
-        ['currencies', 'inventory', 'equipment', 'unlocks', 'daily_counters', 'runs'].forEach(key => {
+        ['currencies', 'inventory', 'equipment', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
         ['scars', 'ledger', 'requests'].forEach(key => {
@@ -236,6 +239,12 @@ const GameState = {
         return (day && day[counterKey]) || 0;
     },
 
+    // Накопительный счётчик — за всё время, а не за сутки. Суточные чистятся
+    // через неделю, а «каждое третье поражение» обязано помнить дольше.
+    totalCounter(counterKey) {
+        return (this.data.counters && this.data.counters[counterKey]) || 0;
+    },
+
     // Фаза пищеварения на текущий момент. Ничего не хранится, кроме метки
     // времени: где именно едет комок — вычисляется, как и всё остальное.
     //
@@ -276,6 +285,13 @@ const GameState = {
         const next = (this.data.currencies[key] || 0) + delta;
         this.data.currencies[key] = Math.max(0, next);
         return this.data.currencies[key];
+    },
+
+    bumpTotal(counterKey, delta) {
+        if (!this.data.counters) this.data.counters = {};
+        const value = (this.data.counters[counterKey] || 0) + (delta || 1);
+        this.data.counters[counterKey] = value;
+        return value;
     },
 
     bumpCounter(counterKey, delta) {

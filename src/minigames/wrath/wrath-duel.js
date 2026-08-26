@@ -74,6 +74,15 @@ const WrathDuel = {
         this.resultOverlay = document.getElementById('wrath-result-overlay');
         this.overlayText = document.getElementById('wrath-overlay-text');
         this.resultLine = document.getElementById('wrath-result');
+        this.awardLine = document.getElementById('wrath-award');
+
+        // Что начислили за бой, приходит ОТВЕТОМ с той стороны: мини-игра
+        // сообщила исход, а сколько это стоило — решил конфиг наград. Здесь
+        // только показ пришедшего.
+        GameEvents.on('minigame:awarded', (awarded) => {
+            if (!awarded || awarded.sin !== 'wrath') return;
+            this.showAward(awarded);
+        });
 
         this.buildZones();
 
@@ -285,6 +294,7 @@ const WrathDuel = {
         this.resetSelections();
         this.updateHPBars();
         this.setResult('');
+        if (this.awardLine) this.awardLine.textContent = '';
 
         if (this.resultOverlay) this.resultOverlay.classList.remove('active');
         if (this.daggerBtn) this.daggerBtn.classList.remove('disabled');
@@ -376,6 +386,38 @@ const WrathDuel = {
     },
 
     // ---------- ПОКАЗ ----------
+    // Строка «что получено». Осколки, золото и собравшийся жетон — это и есть
+    // единственная видимая связь боя с экономикой, без неё непонятно, зачем
+    // драться после того, как шкала уже полная.
+    showAward(awarded) {
+        if (!this.awardLine) return;
+        const parts = [];
+
+        Object.keys(awarded.currencies || {}).forEach(key => {
+            const delta = awarded.currencies[key];
+            if (!delta) return;
+            const conf = ECONOMY.currencies[key];
+            parts.push(`+${delta} ${conf ? conf.emoji : key}`);
+        });
+
+        // Убывающая доходность объясняется прямо здесь, иначе «золота стало
+        // меньше» читается как поломка.
+        if (awarded.goldShare != null && awarded.goldShare < 1) {
+            parts.push(`золота ${Math.round(awarded.goldShare * 100)}% — много побед за сутки`);
+        }
+        if (awarded.exchanged) {
+            const conf = ECONOMY.currencies[awarded.exchanged.into];
+            parts.push(`${conf ? conf.emoji : ''} собрался жетон!`);
+        }
+        if (awarded.mark) parts.push('остался шрам');
+        if (awarded.everyN && !awarded.currencies.wrath_shard) {
+            const left = awarded.everyN.n - (awarded.everyN.total % awarded.everyN.n);
+            parts.push(`осколок через ${left} поражения`);
+        }
+
+        this.awardLine.textContent = parts.join(' · ');
+    },
+
     setName(side, name) {
         const el = document.getElementById(`wrath-${side}-name`);
         if (el) el.textContent = name;

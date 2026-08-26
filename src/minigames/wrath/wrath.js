@@ -39,11 +39,13 @@ const WrathMinigame = {
 
         this.screens = {
             lobby: document.getElementById('wrath-lobby'),
-            duel: document.getElementById('wrath-duel')
+            duel: document.getElementById('wrath-duel'),
+            shop: document.getElementById('wrath-shop')
         };
 
         WrathLobby.init(this);
         WrathDuel.init(this);
+        WrathShop.init(this);
     },
 
     open() {
@@ -59,6 +61,7 @@ const WrathMinigame = {
         if (this.screenElement) this.screenElement.classList.remove('active');
         WrathDuel.leave();
         WrathLobby.leave();
+        WrathShop.leave();
         this.current = null;
         if (this.win) this.win.hideConfirm();
         MinigameWindow.resumeRoom();
@@ -68,12 +71,19 @@ const WrathMinigame = {
     // ---------- ЭКРАНЫ ----------
     showLobby() {
         WrathDuel.leave();
+        WrathShop.leave();
         this.setScreen('lobby');
         WrathLobby.enter();
     },
 
     startMode(mode) {
         WrathLobby.leave();
+        // Магазин — такой же экран греха, как бой, и живёт в том же окне.
+        if (mode === 'shop') {
+            this.setScreen('shop');
+            WrathShop.enter();
+            return;
+        }
         this.setScreen('duel');
         WrathDuel.enter(mode);
     },
