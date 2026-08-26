@@ -82,13 +82,12 @@
     z-index: 30;
 }
 
+/* Значок греха вместо названия: букв в игре нет (CLAUDE.md, инвариант 9),
+   а тот же значок игрок только что нажал в HUD. */
 .mg-title {
-    font-size: 14px;
-    font-weight: 800;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--mg-accent);
-    text-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+    font-size: 22px;
+    line-height: 1;
+    filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.7));
 }
 
 .mg-close {
@@ -142,12 +141,53 @@
     pointer-events: auto;
 }
 
-.mg-confirm-text {
-    font-size: 16px;
-    color: #eee;
-    text-align: center;
-    padding: 0 30px;
-    line-height: 1.4;
+/* ---------- ВОПРОС ПРИ ВЫХОДЕ ----------
+   Значок греха и шкала под ним, которая утекает в ноль: «выйдешь — потеряешь
+   вот это». Слов нет, поэтому цену выхода надо ПОКАЗАТЬ. */
+.mg-confirm-sign {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.mg-confirm-sin {
+    font-size: 54px;
+    line-height: 1;
+    filter: drop-shadow(0 0 16px rgba(0, 0, 0, 0.8));
+}
+
+.mg-confirm-bar {
+    display: block;
+    width: 120px;
+    height: 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.mg-confirm-bar i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    border-radius: 6px;
+    background: var(--mg-accent);
+}
+
+/* Шкала опустошается снова и снова, пока вопрос открыт: одно движение,
+   которое и есть всё сообщение. */
+.mg-confirm.show .mg-confirm-bar i {
+    animation: mg-drain 1.9s ease-in-out infinite;
+}
+
+@keyframes mg-drain {
+    0%, 12%  { width: 100%; opacity: 1; }
+    70%, 100% { width: 0%; opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mg-confirm.show .mg-confirm-bar i { animation: none; width: 22%; }
 }
 
 .mg-confirm-buttons {
@@ -155,12 +195,17 @@
     gap: 14px;
 }
 
+/* Ответы — знаками и размером под палец: слева вернуться, справа выйти. */
 .mg-confirm-btn {
-    padding: 12px 20px;
-    border-radius: 12px;
+    width: 66px;
+    height: 66px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
     border: none;
-    font-weight: bold;
-    font-size: 14px;
+    font-size: 26px;
+    line-height: 1;
     cursor: pointer;
 }
 
@@ -172,8 +217,8 @@
 
 .mg-confirm-btn.leave {
     background: #2a2a2a;
-    color: #ccc;
-    border: 1px solid #444;
+    color: #ff6b60;
+    border: 1px solid #5a3330;
 }
 
 .mg-confirm-btn:active { transform: scale(0.95); }

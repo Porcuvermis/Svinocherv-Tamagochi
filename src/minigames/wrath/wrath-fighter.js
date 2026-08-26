@@ -242,6 +242,40 @@ const WrathFighter = {
         }
     },
 
+    // ---------- ЗНАК ЗОНЫ ----------
+    // Три зоны тела нарисованы силуэтом: кружок — голова, скруглённый
+    // прямоугольник — тело, треугольник — хвост. Нужная зона горит, две
+    // другие приглушены.
+    //
+    // Это замена словам «голова / тело / хвост» (CLAUDE.md, инвариант 9):
+    // строка «−1 урона в голову» превращается в «🛡 −1 [знак]», и то же самое
+    // читается в магазине, в лобби и в карточке предмета одинаково.
+    zoneMark(zone) {
+        const on = (z) => z === zone ? ' on' : '';
+        return `<svg class="zone-mark" viewBox="0 0 32 12" aria-hidden="true">
+            <circle class="zm${on('head')}" cx="5" cy="6" r="4.6"/>
+            <rect class="zm${on('body')}" x="12" y="1.4" width="9" height="9.2" rx="2.6"/>
+            <path class="zm${on('tail')}" d="M24 1.6 L31 6 L24 10.4 Z"/>
+        </svg>`;
+    },
+
+    // ---------- ХАРАКТЕРИСТИКИ ПРЕДМЕТА ЗНАЧКАМИ ----------
+    // Одна и та же строка нужна лобби и магазину, поэтому живёт здесь.
+    // Ни одного слова: значок величины, число, знак зоны.
+    itemStats(item) {
+        const parts = [];
+        if (item.damage) parts.push(`🗡 +${item.damage}`);
+        if (item.hp) parts.push(`❤️ +${item.hp}`);
+        if (item.armor) {
+            this.ZONES.forEach(zone => {
+                if (item.armor[zone]) {
+                    parts.push(`🛡 ${item.armor[zone]}${this.zoneMark(zone)}`);
+                }
+            });
+        }
+        return parts.join(' ');
+    },
+
     // Короткая сводка для интерфейса: то, что показывается строкой в лобби.
     summary(stats) {
         return {

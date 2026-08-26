@@ -19,11 +19,15 @@ const WrathLobby = {
     // Режимы гнева. Пока готов один; остальные показываются с замком
     // сознательно — игрок должен видеть, куда растёт грех, а не гадать,
     // всё ли это.
+    //
+    // Подписей у режимов нет (CLAUDE.md, инвариант 9): значок говорит, что
+    // это, а строка под ним — числами, что там прямо сейчас (сколько жетонов
+    // в магазине, докуда дошёл забег).
     MODES: [
-        { key: 'duel',  emoji: '⚔️', name: 'Бой с ботом',   note: 'быстрый бой один на один', ready: true },
-        { key: 'pvp',   emoji: '🤝', name: 'Бой с игроком', note: 'по коду комнаты',           ready: false },
-        { key: 'rogue', emoji: '🗺', name: 'Рогалик',       note: 'забег за жетон гнева',     ready: true },
-        { key: 'shop',  emoji: '🏪', name: 'Магазин гнева', note: 'снаряжение за жетоны',      ready: true }
+        { key: 'duel',  emoji: '⚔️', ready: true },
+        { key: 'pvp',   emoji: '🤝', ready: false },
+        { key: 'rogue', emoji: '🗺', ready: true },
+        { key: 'shop',  emoji: '🏪', ready: true }
     ],
 
     host: null,
@@ -149,10 +153,9 @@ const WrathLobby = {
             el.type = 'button';
             el.className = 'gear-slot';
             el.dataset.slot = slot.key;
-            el.innerHTML = `
-                <span class="gear-icon"></span>
-                <span class="gear-label">${slot.name}</span>
-            `;
+            // Подписи нет: пустой слот показывает свой значок, занятый —
+            // значок предмета. Что это за слот, видно по значку.
+            el.innerHTML = '<span class="gear-icon"></span>';
             el.onclick = (e) => { e.stopPropagation(); this.showCard(slot.key); };
             column.appendChild(el);
         });
@@ -167,11 +170,8 @@ const WrathLobby = {
             el.className = 'mode-btn' + (mode.ready ? ' ready' : ' locked');
             el.dataset.mode = mode.key;
             el.innerHTML = `
-                <span class="mode-emoji">${mode.ready ? mode.emoji : '🔒'}</span>
-                <span class="mode-text">
-                    <span class="mode-name">${mode.name}</span>
-                    <span class="mode-note" data-note="${mode.key}">${mode.ready ? mode.note : 'скоро — ' + mode.note}</span>
-                </span>
+                <span class="mode-emoji">${mode.emoji}</span>
+                <span class="mode-note" data-note="${mode.key}">${mode.ready ? '' : '🔒'}</span>
             `;
             el.onclick = (e) => {
                 e.stopPropagation();
@@ -180,7 +180,9 @@ const WrathLobby = {
                 if (el.classList.contains('locked')) {
                     if (mode.key === 'duel') {
                         const health = WrathFighter.playerHp();
-                        this.showToast(`Червь без сил — зарастает: ${health.healSeconds} с`);
+                        // Сколько ждать — часами и числом: почему заперто,
+                        // видно по нулю здоровья рядом.
+                        this.showToast(`❤️ ${health.hp}/${health.max} · ⏳ ${health.healSeconds}`);
                     }
                     return;
                 }
@@ -199,16 +201,17 @@ const WrathLobby = {
             if (!el) return;
             const item = WRATH_GEAR.items[equipment[slot.key]];
             const icon = el.querySelector('.gear-icon');
-            const label = el.querySelector('.gear-label');
             el.classList.toggle('filled', !!item);
             icon.textContent = item ? item.emoji : slot.emoji;
-            label.textContent = item ? item.name : slot.name;
         });
 
         // Кошелёк показан там, где он что-то значит, — в строке магазина.
         // Отдельной панели для двух чисел не заводим: экран и так плотный.
         // Незавершённый забег — первое, что игрок должен увидеть в лобби:
         // он платный и ждёт возвращения.
+        // Незавершённый забег — первое, что игрок должен увидеть в лобби: он
+        // платный и ждёт возвращения. Показывается числами: сколько узлов
+        // пройдено и с каким здоровьем игрок там стоит.
         const rogueNote = this.root.querySelector('.mode-note[data-note="rogue"]');
         if (rogueNote) {
             const run = Backend.run();
@@ -216,24 +219,33 @@ const WrathLobby = {
             // карте нарисованы, но игрок их не проходит.
             const total = run ? run.map.filter(n => !n.locked).length : 0;
             const done = run ? run.map.filter(n => n.done).length : 0;
-            rogueNote.textContent = run
-                ? `забег идёт: ${done} из ${total} · ❤️ ${run.hp}/${run.maxHp}`
-                : 'забег за жетон гнева';
+            rogueNote.innerHTML = run
+                ? `${done}/${total}<br>❤️ ${run.hp}`
+                : `🎟 ${(Backend.rogueConfig().entry || {}).wrath_token || 1}`;
         }
 
+        // Кошелёк показан там, где он что-то значит, — под значком магазина.
         const shopNote = this.root.querySelector('.mode-note[data-note="shop"]');
         if (shopNote) {
             const per = (ECONOMY.exchange.wrath_shard && ECONOMY.exchange.wrath_shard.per) || 3;
-            shopNote.textContent = `🎟 ${GameState.currency('wrath_token')} · `
-                + `🩸 ${GameState.currency('wrath_shard')}/${per} до жетона`;
+            shopNote.innerHTML = `🎟 ${GameState.currency('wrath_token')}`
+                + `<br>🩸 ${GameState.currency('wrath_shard')}/${per}`;
         }
 
+        // Характеристики — значок и число. Броня показывает, В КАКУЮ ЗОНУ
+        // она работает, знаком тела: словам «голова/тело/хвост» здесь места
+        // нет, а «0/0/0» без подписи ничего не значило бы.
         if (this.statsEl) {
-            const s = WrathFighter.summary(WrathFighter.stats(equipment));
+            const stats = WrathFighter.stats(equipment);
+            const s = WrathFighter.summary(stats);
+            const armor = WrathFighter.ZONES
+                .filter(zone => stats.armor[zone])
+                .map(zone => `${stats.armor[zone]}${WrathFighter.zoneMark(zone)}`)
+                .join(' ');
             this.statsEl.innerHTML = `
                 <span class="stat" id="wrath-hp-stat"></span>
-                <span class="stat"><b>🗡 ${s.damage}</b><i>урон</i></span>
-                <span class="stat"><b>🛡 ${s.armor}</b><i>броня гол/тело/хвост</i></span>
+                <span class="stat"><b>🗡 ${s.damage}</b></span>
+                <span class="stat"><b>🛡 ${armor || '0'}</b></span>
             `;
         }
 
@@ -246,11 +258,13 @@ const WrathLobby = {
     refreshHealth() {
         const health = WrathFighter.playerHp();
 
+        // Целый червь — просто максимум. Побитый — дробь и часы: сколько
+        // осталось зарастать. Часы и есть слово «зарастает».
         const hpStat = this.root.querySelector('#wrath-hp-stat');
         if (hpStat) {
             hpStat.innerHTML = health.full
-                ? `<b>❤️ ${health.max}</b><i>здоровье</i>`
-                : `<b class="hurt">❤️ ${health.hp}/${health.max}</b><i>зарастает: ${health.healSeconds} с</i>`;
+                ? `<b>❤️ ${health.max}</b>`
+                : `<b class="hurt">❤️ ${health.hp}/${health.max}</b><i>⏳ ${health.healSeconds}</i>`;
         }
 
         // Драться без здоровья нельзя — и это не поломка, а ожидание. Кнопка
@@ -261,12 +275,7 @@ const WrathLobby = {
             duelBtn.classList.toggle('locked', dead);
             duelBtn.classList.toggle('ready', !dead);
             const note = duelBtn.querySelector('.mode-note');
-            const mode = this.MODES.find(m => m.key === 'duel');
-            if (note) {
-                note.textContent = dead
-                    ? `червь без сил — зарастает: ${health.healSeconds} с`
-                    : (mode ? mode.note : '');
-            }
+            if (note) note.innerHTML = dead ? `⏳ ${health.healSeconds}` : '';
         }
     },
 
@@ -367,9 +376,11 @@ const WrathLobby = {
             this.holdFillEl.style.transition = 'stroke-dashoffset 0.15s ease';
             this.holdFillEl.style.strokeDashoffset = this.holdCircumference.toFixed(2);
         }
-        if (hint && wasActive) {
-            this.showToast('Держи палец на черве — откроется прокачка');
-        }
+        // Раньше здесь всплывала подсказка словами. Её нет и не будет:
+        // кольцо над головой уже показало себя — начало заполняться и
+        // откатилось. Этого достаточно, чтобы понять, что палец надо
+        // подержать (CLAUDE.md, инвариант 9).
+        void hint; void wasActive;
     },
 
     // ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
@@ -414,27 +425,24 @@ const WrathLobby = {
             return item && item.slot === slotKey && id !== equippedId;
         });
 
-        const rows = available.map(id => {
-            const item = WRATH_GEAR.items[id];
-            return `<button type="button" class="card-item" data-item="${id}">
-                        <span>${item.emoji} ${item.name}</span>
-                        <span class="card-item-stat">${this.itemStatText(item)}</span>
+        // Карточка — это список того, что можно поставить в слот, включая
+        // «ничего». Надетое помечено галочкой; отдельной кнопки «снять» нет
+        // — снять значит выбрать пустую строку. Так список читается одним
+        // правилом: выбери, что тут стоит.
+        const row = (id, item) => {
+            const on = (id || null) === (equippedId || null);
+            return `<button type="button" class="card-item${on ? ' on' : ''}" data-item="${id || ''}">
+                        <span class="card-item-icon">${item ? item.emoji : '⬚'}</span>
+                        <span class="card-item-stat">${item ? WrathFighter.itemStats(item) : ''}</span>
+                        <span class="card-item-mark">${on ? '✓' : ''}</span>
                     </button>`;
-        }).join('');
+        };
 
-        const equipped = WRATH_GEAR.items[equippedId];
         this.cardEl.innerHTML = `
-            <div class="card-head">
-                <span class="card-title">${slot.emoji} ${slot.name}</span>
-                <span class="card-hint">${slot.hint}</span>
-            </div>
-            ${equipped
-                ? `<div class="card-current">Надето: ${equipped.emoji} ${equipped.name}
-                       <span class="card-item-stat">${this.itemStatText(equipped)}</span>
-                   </div>
-                   <button type="button" class="card-item strip" data-item="">Снять</button>`
-                : '<div class="card-current empty">Слот пуст</div>'}
-            ${rows}
+            <div class="card-head"><span class="card-title">${slot.emoji}</span></div>
+            ${row('', null)}
+            ${equippedId ? row(equippedId, WRATH_GEAR.items[equippedId]) : ''}
+            ${available.map(id => row(id, WRATH_GEAR.items[id])).join('')}
         `;
 
         this.cardEl.querySelectorAll('.card-item').forEach(btn => {
@@ -457,18 +465,6 @@ const WrathLobby = {
         if (this.cardEl) this.cardEl.classList.remove('show');
     },
 
-    itemStatText(item) {
-        const parts = [];
-        if (item.damage) parts.push(`+${item.damage} урон`);
-        if (item.hp) parts.push(`+${item.hp} ХП`);
-        if (item.armor) {
-            const names = { head: 'голова', body: 'тело', tail: 'хвост' };
-            Object.keys(item.armor).forEach(zone => {
-                if (item.armor[zone]) parts.push(`−${item.armor[zone]} урона в ${names[zone] || zone}`);
-            });
-        }
-        return parts.join(' · ');
-    }
 };
 
 if (typeof window !== 'undefined') {

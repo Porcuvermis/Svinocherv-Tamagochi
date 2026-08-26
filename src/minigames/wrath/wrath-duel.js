@@ -136,8 +136,6 @@ const WrathDuel = {
         // могли поднять его, а снаряжение и прокачка с тех пор смениться.
         if (this.order) this.fighters.player.stats.hp = this.order.maxHp;
 
-        this.setName('player', this.fighters.player.name);
-        this.setName('enemy', '…');
 
         this.mountFighter('player', this.fighters.player.model, false);
 
@@ -150,7 +148,6 @@ const WrathDuel = {
             this.fighters.enemy = this.order
                 ? WrathFighter.fromEnemy(this.order.enemy, snapshot)
                 : WrathFighter.fromSnapshot(snapshot);
-            this.setName('enemy', this.fighters.enemy.name);
             this.mountFighter('enemy', this.fighters.enemy.model, true);
             this.restartFight();
         });
@@ -453,19 +450,22 @@ const WrathDuel = {
         this.isFighting = false;
         if (this.daggerBtn) this.daggerBtn.classList.add('disabled');
 
-        let outcome, text, color;
+        // Исход — знаком, а не словом (CLAUDE.md, инвариант 9): кубок,
+        // череп, рукопожатие. Цвет добавляет громкости, но читается и без
+        // него.
+        let outcome, sign, color;
         if (this.playerHP <= 0 && this.enemyHP <= 0) {
-            outcome = 'draw'; text = 'НИЧЬЯ'; color = '#ffd700';
+            outcome = 'draw'; sign = '🤝'; color = '#ffd700';
         } else if (this.enemyHP <= 0) {
-            outcome = 'win'; text = 'ПОБЕДА!'; color = '#4CAF50';
+            outcome = 'win'; sign = '🏆'; color = '#4CAF50';
         } else {
-            outcome = 'lose'; text = 'ПОРАЖЕНИЕ...'; color = '#ff3b30';
+            outcome = 'lose'; sign = '💀'; color = '#ff3b30';
         }
         this.outcome = outcome;
 
-        this.setResult(text);
+        this.setResult(sign);
         if (this.overlayText) {
-            this.overlayText.textContent = text;
+            this.overlayText.textContent = sign;
             this.overlayText.style.color = color;
         }
         this.showResult();
@@ -519,28 +519,27 @@ const WrathDuel = {
             parts.push(`+${delta} ${conf ? conf.emoji : key}`);
         });
 
-        // Убывающая доходность объясняется прямо здесь, иначе «золота стало
-        // меньше» читается как поломка.
+        // Убывающая доходность показывается долей, а не объясняется словами:
+        // монета с процентом рядом с числом золота. Правило игрок выведет за
+        // два-три боя (docs/plan/11-no-words.md).
         if (awarded.goldShare != null && awarded.goldShare < 1) {
-            parts.push(`золота ${Math.round(awarded.goldShare * 100)}% — много побед за сутки`);
+            parts.push(`🪙 ${Math.round(awarded.goldShare * 100)}%`);
         }
+        // Осколки сложились в жетон — показываем сам жетон со стрелкой.
         if (awarded.exchanged) {
             const conf = ECONOMY.currencies[awarded.exchanged.into];
-            parts.push(`${conf ? conf.emoji : ''} собрался жетон!`);
+            parts.push(`🩸→${conf ? conf.emoji : ''}`);
         }
-        if (awarded.mark) parts.push('остался шрам');
+        if (awarded.mark) parts.push('🩹');
+        // Сколько поражений осталось до осколка: череп с числом и стрелка.
         if (awarded.everyN && !awarded.currencies.wrath_shard) {
             const left = awarded.everyN.n - (awarded.everyN.total % awarded.everyN.n);
-            parts.push(`осколок через ${left} поражения`);
+            parts.push(`💀 ${left}→🩸`);
         }
 
         this.awardLine.textContent = parts.join(' · ');
     },
 
-    setName(side, name) {
-        const el = document.getElementById(`wrath-${side}-name`);
-        if (el) el.textContent = name;
-    },
 
     updateHPBars() {
         ['player', 'enemy'].forEach(side => {
@@ -559,7 +558,8 @@ const WrathDuel = {
     showDamage(who, amount) {
         const popup = document.getElementById(`${who}-dmg-popup`);
         if (!popup) return;
-        popup.textContent = amount > 0 ? `-${amount}` : 'броня!';
+        // Ноль урона — это броня, и говорит об этом щит, а не слово.
+        popup.textContent = amount > 0 ? `−${amount}` : '🛡';
         popup.classList.remove('show');
         void popup.offsetWidth;
         popup.classList.add('show');

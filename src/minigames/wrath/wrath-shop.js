@@ -19,8 +19,9 @@ const WrathShop = {
     root: null,
     walletEl: null,
     listEl: null,
-    messageEl: null,
-    message: null,      // «не хватает жетонов» — гаснет само
+    // Какой валюты не хватило: она подсвечивается в кошельке и гаснет сама.
+    lack: null,
+    lackTimer: null,
 
     init(host) {
         this.host = host;
@@ -29,40 +30,36 @@ const WrathShop = {
 
         this.walletEl = document.getElementById('shop-wallet');
         this.listEl = document.getElementById('shop-list');
-        this.messageEl = document.getElementById('shop-message');
 
         const back = document.getElementById('wrath-shop-back');
         if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
     },
 
     enter() {
-        this.message = null;
+        this.lack = null;
         this.render();
     },
 
     leave() {
-        this.message = null;
+        this.lack = null;
     },
 
     // ---------- КОШЕЛЁК ----------
     // Осколки показаны дробью к жетону: по ней видно, сколько побед осталось
     // до следующей покупки. Без этого осколок выглядит валютой, которую
     // некуда потратить.
-    walletHtml() {
+    walletHtml(lack) {
         const per = (ECONOMY.exchange.wrath_shard && ECONOMY.exchange.wrath_shard.per) || 3;
-        const tokens = GameState.currency('wrath_token');
-        const shards = GameState.currency('wrath_shard');
-        const gold = GameState.currency('gold');
-        return `
-            <span class="wallet-item"><b>🎟 ${tokens}</b><i>жетоны</i></span>
-            <span class="wallet-item"><b>🩸 ${shards}/${per}</b><i>до жетона</i></span>
-            <span class="wallet-item"><b>🪙 ${gold}</b><i>золото</i></span>
-        `;
+        const item = (key, text) =>
+            `<span class="wallet-item${lack === key ? ' lack' : ''}" data-cur="${key}"><b>${text}</b></span>`;
+        return item('wrath_token', `🎟 ${GameState.currency('wrath_token')}`)
+             + item('wrath_shard', `🩸 ${GameState.currency('wrath_shard')}/${per}`)
+             + item('gold', `🪙 ${GameState.currency('gold')}`);
     },
 
     render() {
         if (!this.root) return;
-        if (this.walletEl) this.walletEl.innerHTML = this.walletHtml();
+        if (this.walletEl) this.walletEl.innerHTML = this.walletHtml(this.lack);
         if (!this.listEl) return;
 
         const inventory = GameState.data.inventory || {};
@@ -75,10 +72,12 @@ const WrathShop = {
                 .sort((a, b) => (WRATH_GEAR.items[a].tier || 0) - (WRATH_GEAR.items[b].tier || 0));
             if (!items.length) return;
 
+            // Заголовок группы — значок слота и дробь «куплено из всего».
+            // Потолок объявлен заранее числом, а не словами.
             const owned = items.filter(id => inventory[id]).length;
             html += `<div class="shop-group">
-                <span class="shop-group-name">${slot.emoji} ${slot.name}</span>
-                <span class="shop-group-count">куплено ${owned} из ${items.length}</span>
+                <span class="shop-group-name">${slot.emoji}</span>
+                <span class="shop-group-count">${owned}/${items.length}</span>
             </div>`;
 
             items.forEach(id => {
@@ -86,15 +85,15 @@ const WrathShop = {
                 const isOwned = !!inventory[id];
                 const isOn = equipment[item.slot] === id;
                 const affordable = this.affordable(item);
+                // Названия предмета нет: значок и есть имя, а что предмет
+                // даёт — сказано числами со значками (инвариант 9).
+                // Купленное помечено галочкой, надетое — галочкой в кружке.
                 html += `
                     <div class="shop-item${isOwned ? ' owned' : ''}${!isOwned && !affordable ? ' poor' : ''}">
                         <span class="shop-item-emoji">${item.emoji}</span>
-                        <span class="shop-item-text">
-                            <span class="shop-item-name">${item.name}</span>
-                            <span class="shop-item-stat">${this.statText(item)}</span>
-                        </span>
+                        <span class="shop-item-stat">${WrathFighter.itemStats(item)}</span>
                         ${isOwned
-                            ? `<span class="shop-state">${isOn ? 'надето' : 'куплено'}</span>`
+                            ? `<span class="shop-state${isOn ? ' on' : ''}">✓</span>`
                             : `<button type="button" class="shop-buy" data-item="${id}">${this.priceText(item)}</button>`}
                     </div>`;
             });
@@ -102,28 +101,33 @@ const WrathShop = {
 
         this.listEl.innerHTML = html;
 
-        if (this.messageEl) {
-            this.messageEl.textContent = this.message || '';
-            this.messageEl.classList.toggle('show', !!this.message);
-        }
-
         this.listEl.querySelectorAll('.shop-buy').forEach(btn => {
             btn.onclick = (e) => { e.stopPropagation(); this.buy(btn.dataset.item); };
         });
     },
 
+    // ---------- ОТКАЗ БЕЗ СЛОВ ----------
+    // Раньше здесь была строка «не хватает жетонов». Теперь дёргается и
+    // краснеет сама валюта в кошельке: игрок видит, ЧЕГО не хватило, а не
+    // читает об этом (docs/plan/11-no-words.md).
+    //
+    // Удачную покупку объяснять не надо: строка предмета сама превращается в
+    // галочку, а из кошелька уходят жетоны.
     buy(itemId) {
         const answer = Backend.buyItem(itemId);
-        if (!answer.ok) {
-            const names = { not_enough: 'Не хватает жетонов — победа даёт осколок, три осколка складываются в жетон.' };
-            this.message = names[answer.error] || 'Купить не вышло.';
-        } else {
-            const item = WRATH_GEAR.items[itemId];
-            this.message = answer.equipped
-                ? `${item.emoji} ${item.name} — куплено и сразу надето.`
-                : `${item.emoji} ${item.name} — куплено, надеть можно в лобби.`;
-        }
+        if (!answer.ok) this.showLack(answer.currency || 'wrath_token');
+        else this.lack = null;
         this.render();
+    },
+
+    showLack(key) {
+        this.lack = key;
+        if (this.lackTimer) clearTimeout(this.lackTimer);
+        this.lackTimer = setTimeout(() => {
+            this.lackTimer = null;
+            this.lack = null;
+            this.render();
+        }, 900);
     },
 
     affordable(item) {
@@ -133,23 +137,12 @@ const WrathShop = {
 
     priceText(item) {
         const price = item.price || {};
-        return Object.keys(price).map(key => {
+        const parts = Object.keys(price).map(key => {
             const conf = ECONOMY.currencies[key];
             return `${conf ? conf.emoji : key} ${price[key]}`;
-        }).join(' · ') || 'даром';
-    },
-
-    statText(item) {
-        const parts = [];
-        if (item.damage) parts.push(`+${item.damage} урон`);
-        if (item.hp) parts.push(`+${item.hp} ХП`);
-        if (item.armor) {
-            const names = { head: 'голова', body: 'тело', tail: 'хвост' };
-            Object.keys(item.armor).forEach(zone => {
-                if (item.armor[zone]) parts.push(`−${item.armor[zone]} в ${names[zone] || zone}`);
-            });
-        }
-        return parts.join(' · ');
+        });
+        // Бесплатное — это ноль, а не слово «даром».
+        return parts.join(' ') || '🎟 0';
     }
 };
 

@@ -20,14 +20,16 @@ const WrathRogue = {
 
     // Как показывается узел карты. Данные, а не ветвление в разметке: узлов
     // станет больше, и добавляться они должны записью.
+    // Виды узлов — только значками (CLAUDE.md, инвариант 9). Что это за
+    // узел, говорит картинка; что там будет, говорят числа рядом.
     NODE_KINDS: {
-        fight:    { emoji: '⚔️', name: 'Бой',        action: 'В бой' },
-        miniboss: { emoji: '👹', name: 'Мини-босс',  action: 'К мини-боссу' },
-        boss:     { emoji: '💀', name: 'Босс',       action: 'К боссу' },
-        heal:     { emoji: '❤️', name: 'Привал',     action: 'Отлежаться', note: 'половина ❤️' },
-        shop:     { emoji: '💰', name: 'Магазин',    action: 'Магазин' },
-        event:    { emoji: '❓', name: 'Событие',    action: 'Событие' },
-        fork:     { emoji: '🔀', name: 'Развилка',   action: 'Выбери путь' }
+        fight:    { emoji: '⚔️' },
+        miniboss: { emoji: '👹' },
+        boss:     { emoji: '💀' },
+        heal:     { emoji: '❤️' },
+        shop:     { emoji: '💰' },
+        event:    { emoji: '❓' },
+        fork:     { emoji: '👆' }
     },
 
     host: null,
@@ -43,6 +45,9 @@ const WrathRogue = {
     // Второй тап по «Бросить забег» — подтверждение. Диалога здесь нет
     // намеренно: цена ошибки — жетон, и вопрос из двух тапов дешевле окна.
     abandonArmed: false,
+    // Не хватило жетона на вход — он вспыхивает в кошельке (как в магазине).
+    lack: null,
+    lackTimer: null,
     // Итог законченного забега. Пока он на экране, войти в новый нельзя:
     // забег только что кончился, палец ещё на кнопке, а вход стоит жетон.
     summary: null,
@@ -105,7 +110,9 @@ const WrathRogue = {
 
         if (this.abandonEl) {
             this.abandonEl.classList.toggle('shown', !!run);
-            this.abandonEl.textContent = this.abandonArmed ? 'Точно бросить?' : 'Бросить забег';
+            // Второй тап — подтверждение: флаг краснеет и пульсирует, а не
+            // переспрашивает словами.
+            this.abandonEl.classList.toggle('armed', this.abandonArmed);
         }
         // Под итогом забега уходить некуда, кроме лобби, и кнопка для этого
         // уже есть — вторая такая же рядом выглядела бы ошибкой.
@@ -117,7 +124,7 @@ const WrathRogue = {
     renderStatus(run) {
         if (!this.statusEl) return;
         if (!run) {
-            this.statusEl.innerHTML = WrathShop.walletHtml();
+            this.statusEl.innerHTML = WrathShop.walletHtml(this.lack);
             return;
         }
 
@@ -129,8 +136,8 @@ const WrathRogue = {
         if (bonus.armor) chips.push(`<span class="rogue-chip">🛡 +${bonus.armor}</span>`);
 
         this.statusEl.innerHTML = `
-            <span class="wallet-item"><b>❤️ ${run.hp}/${run.maxHp}</b><i>здоровье</i></span>
-            <span class="wallet-item"><b>🦷 ${run.teeth}</b><i>зубы</i></span>
+            <span class="wallet-item"><b>❤️ ${run.hp}/${run.maxHp}</b></span>
+            <span class="wallet-item"><b>🦷 ${run.teeth}</b></span>
             <span class="rogue-chips">${chips.join('')}</span>
         `;
     },
@@ -189,11 +196,13 @@ const WrathRogue = {
 
                 const enemy = point.enemy && cfg.enemies[point.enemy];
                 // Числа противника видны заранее и у всех узлов: забег в
-                // шесть боёв — это про подготовку, а не про сюрпризы.
+                // шесть боёв — это про подготовку, а не про сюрпризы. Имени
+                // у противника на экране нет — за него говорят его числа, а
+                // потом будет говорить облик.
                 let note = '';
-                if (enemy) note = `${enemy.hp}❤ · ${enemy.damage[0]}–${enemy.damage[1]}🗡`;
-                else if (point.locked) note = 'скоро';
-                else if (kind.note) note = kind.note;
+                if (enemy) note = `${enemy.hp}❤ ${enemy.damage[0]}–${enemy.damage[1]}🗡`;
+                else if (point.locked) note = '🔒';
+                else if (point.kind === 'heal') note = `${Math.round((cfg.healShare || 0.5) * 100)}%`;
 
                 html += `
                     <button type="button" class="rogue-node ${point.kind} ${state}"
@@ -201,10 +210,7 @@ const WrathRogue = {
                             ${state === 'current' ? '' : 'disabled'}
                             style="left:${(point.x * 100).toFixed(1)}%; top:${(point.y * 100).toFixed(1)}%">
                         <span class="rogue-node-dot">${passed ? '✓' : kind.emoji}</span>
-                        <span class="rogue-node-label">
-                            <b>${enemy ? enemy.name : kind.name}</b>
-                            ${note ? `<i>${note}</i>` : ''}
-                        </span>
+                        ${note ? `<span class="rogue-node-label">${note}</span>` : ''}
                     </button>`;
             });
         });
@@ -279,22 +285,22 @@ const WrathRogue = {
         this.cardEl.innerHTML = '';
 
         const node = run.map[run.node];
-        if (!node) { this.setAction('Забег пройден', () => this.host.showLobby()); return; }
+        if (!node) { this.setAction('↩', () => this.host.showLobby()); return; }
 
-        const kind = this.NODE_KINDS[node.kind] || { name: node.kind, emoji: '•' };
+        const kind = this.NODE_KINDS[node.kind] || { emoji: '•' };
 
-        // На развилке кнопки действия нет: выбирать путь надо на самой
-        // карте, тапом по нужной точке. Кнопка здесь только подсказывает.
+        // На развилке кнопки действия нет: путь выбирается тапом по точке на
+        // карте. Кнопка показывает палец — «жми туда», и не нажимается сама.
         if (node.kind === 'fork') {
-            this.setAction(`${kind.emoji} ${kind.action}`, null, 'тапни точку на карте');
+            this.setAction(kind.emoji, null);
             return;
         }
 
         const enemy = Backend.rogueEnemy(node);
         this.setAction(
-            `${kind.emoji} ${kind.action || kind.name}`,
+            kind.emoji,
             () => this.enterNode(run.node),
-            enemy ? `${enemy.name} · ${enemy.hp}❤ · ${enemy.damage[0]}–${enemy.damage[1]}🗡` : ''
+            enemy ? `${enemy.hp}❤ ${enemy.damage[0]}–${enemy.damage[1]}🗡` : ''
         );
     },
 
@@ -304,22 +310,39 @@ const WrathRogue = {
         const cfg = Backend.rogueConfig();
         const price = cfg ? cfg.entry : {};
         const enough = !Object.keys(price).some(key => GameState.currency(key) < price[key]);
-        const fights = cfg ? cfg.map.filter(n => n.enemy).length : 0;
+
+        // Что впереди и что с этого будет — двумя строками значков, без
+        // единого слова. Числа считаются по карте: добавили узел — строка
+        // пересчиталась сама.
+        const counts = { fight: 0, miniboss: 0, boss: 0 };
+        const loot = {};
+        (cfg ? cfg.map : []).forEach(step => {
+            if (!step.enemy) return;
+            counts[step.kind] = (counts[step.kind] || 0) + 1;
+            const reward = (cfg.enemies[step.enemy] || {}).reward || {};
+            Object.keys(reward.currencies || {}).forEach(key => {
+                loot[key] = (loot[key] || 0) + reward.currencies[key];
+            });
+        });
+
+        const path = [
+            `⚔️ ${counts.fight}`,
+            counts.miniboss ? `👹 ${counts.miniboss}` : '',
+            counts.boss ? `💀 ${counts.boss}` : ''
+        ].filter(Boolean).join('  ');
+
+        const lootLine = Object.keys(loot).map(key => {
+            const conf = ECONOMY.currencies[key];
+            return `${conf ? conf.emoji : key} ${loot[key]}`;
+        }).join('  ');
 
         this.cardEl.className = 'rogue-card shown';
         this.cardEl.innerHTML = `
-            <div class="rogue-card-title">🗺 Забег</div>
-            <p>${fights} боёв подряд, мини-босс посередине и босс в конце. За победы —
-            зубы и усиления до конца забега, за мини-босса осколок, за босса жетон и монеты.</p>
-            <p>Здоровье в забеге своё и начинается полным. Проиграл бой — забег окончен,
-            жетон сгорел.</p>
-            <p class="rogue-card-note">Забег можно бросить на середине и вернуться хоть через
-            неделю: он сохраняется после каждого узла.</p>`;
+            <div class="rogue-card-icon">🗺</div>
+            <div class="rogue-card-row">${path}</div>
+            <div class="rogue-card-row loot">${lootLine}</div>`;
 
-        this.setAction(
-            enough ? `Войти за ${this.priceText(price)}` : `Нужен ${this.priceText(price)}`,
-            enough ? () => this.start() : null
-        );
+        this.setAction(this.priceText(price), enough ? () => this.start() : null);
     },
 
     // ---------- ВЫБОР НАГРАДЫ ----------
@@ -330,25 +353,25 @@ const WrathRogue = {
         const cards = (run.pending.choices || []).map(id => {
             const boost = cfg.boosts[id];
             if (!boost) return '';
+            // Что даёт карточка — значком и числом. Названия у усиления
+            // нет: «+2» рядом с мечом и есть название.
             return `
                 <button type="button" class="rogue-boost" data-boost="${id}">
                     <span class="rogue-boost-emoji">${boost.emoji}</span>
-                    <b>${boost.name}</b>
-                    <i>${boost.note || ''}</i>
+                    <b>+${boost.damage || boost.hp || boost.armor}</b>
                 </button>`;
         }).join('');
 
         this.cardEl.className = 'rogue-card shown';
         this.cardEl.innerHTML = `
-            <div class="rogue-card-title">Забирай награду</div>
-            <div class="rogue-boosts">${cards}</div>
-            <p class="rogue-card-note">Действует до конца забега.</p>`;
+            <div class="rogue-card-icon">🎁</div>
+            <div class="rogue-boosts">${cards}</div>`;
 
         Array.prototype.forEach.call(this.cardEl.querySelectorAll('.rogue-boost'), el => {
             el.onclick = (e) => { e.stopPropagation(); this.chooseBoost(el.dataset.boost); };
         });
 
-        this.setAction('Выбери награду', null);
+        this.setAction('👆', null);
     },
 
     // ---------- ИТОГ ЗАБЕГА ----------
@@ -358,22 +381,22 @@ const WrathRogue = {
     // бы жетона. Единственная кнопка здесь — уход в лобби.
     renderSummary() {
         const s = this.summary;
-        const lines = [];
-        Object.keys(s.currencies || {}).forEach(key => {
+        const won = Object.keys(s.currencies || {}).map(key => {
             const conf = ECONOMY.currencies[key];
-            lines.push(`<li>${conf ? conf.emoji : key} +${s.currencies[key]}</li>`);
-        });
-        if (s.teethLost) lines.push(`<li>🦷 ${s.teethLost} сгорело вместе с забегом</li>`);
-        if (!lines.length) lines.push('<li>вынести ничего не удалось</li>');
+            return `${conf ? conf.emoji : key} +${s.currencies[key]}`;
+        }).join('  ');
+        // Сгоревшие зубы показаны минусом: это и есть «они живут только
+        // внутри забега», сказанное числом.
+        const lost = s.teethLost ? `🦷 −${s.teethLost}` : '';
 
         this.cardEl.className = `rogue-card shown ${s.win ? 'win' : 'lose'}`;
         this.cardEl.innerHTML = `
-            <div class="rogue-card-title">${s.win ? '🏆 Забег пройден' : '💀 Забег окончен'}</div>
-            <p>Узлов пройдено: ${s.nodesDone} из ${s.nodesTotal}.</p>
-            <ul class="rogue-summary-list">${lines.join('')}</ul>
-            <p class="rogue-card-note">Зубы сгорели — они живут только внутри забега.</p>`;
+            <div class="rogue-card-icon">${s.win ? '🏆' : '💀'}</div>
+            <div class="rogue-card-row">${s.nodesDone}/${s.nodesTotal}</div>
+            ${won ? `<div class="rogue-card-row loot">${won}</div>` : ''}
+            ${lost ? `<div class="rogue-card-row lost">${lost}</div>` : ''}`;
 
-        this.setAction('В лобби', () => this.host.showLobby());
+        this.setAction('↩', () => this.host.showLobby());
     },
 
     setAction(text, onClick, note) {
@@ -394,14 +417,25 @@ const WrathRogue = {
     },
 
     // ---------- ДЕЙСТВИЯ ----------
+    // Вход: жетон списан — это и говорится, минусом на жетоне. Не хватило —
+    // тот же жетон вспыхивает красным в кошельке.
     start() {
         const answer = Backend.startRun();
         if (!answer.ok) {
-            this.message = answer.error === 'not_enough'
-                ? 'Не хватает жетонов на вход.'
-                : 'Начать забег не вышло.';
+            this.lack = answer.currency || 'wrath_token';
+            if (this.lackTimer) clearTimeout(this.lackTimer);
+            this.lackTimer = setTimeout(() => {
+                this.lackTimer = null;
+                this.lack = null;
+                this.render();
+            }, 900);
         } else {
-            this.message = 'Забег начат. Жетон сгорел — теперь только вперёд.';
+            this.lack = null;
+            const price = (Backend.rogueConfig() || {}).entry || {};
+            this.message = Object.keys(price).map(key => {
+                const conf = ECONOMY.currencies[key];
+                return `${conf ? conf.emoji : key} −${price[key]}`;
+            }).join(' ');
         }
         this.render();
     },
@@ -415,7 +449,7 @@ const WrathRogue = {
         }
         Backend.abandonRun();
         this.abandonArmed = false;
-        this.message = 'Забег брошен. Жетон не возвращается.';
+        this.message = null;
         this.render();
     },
 
@@ -424,7 +458,9 @@ const WrathRogue = {
         const answer = Backend.chooseBoost(id);
         if (!answer.ok) { this.render(); return; }
         const boost = cfg.boosts[id];
-        this.message = boost ? `${boost.emoji} ${boost.name}` : '';
+        this.message = boost
+            ? `${boost.emoji} +${boost.damage || boost.hp || boost.armor}`
+            : '';
         this.render();
     },
 
@@ -439,7 +475,9 @@ const WrathRogue = {
         // Развилка: прошли выбранным путём, дорога сходится дальше сама.
         if (node.kind === 'fork') {
             this.takeAnswer(Backend.resolveNode('win', option));
-            if (!this.message) this.message = 'Лечить нечего — и так целый.';
+            // Привал на полном здоровье ничего не дал — показываем само
+            // здоровье: видно, что оно и так полное.
+            if (!this.message) this.message = `❤️ ${run.hp}/${run.maxHp}`;
             this.render();
             return;
         }
@@ -461,9 +499,7 @@ const WrathRogue = {
         }
 
         this.takeAnswer(Backend.resolveNode('win'));
-        // Привал на полном здоровье — не молчание: пустая строка читается
-        // как «ничего не произошло, узел завис».
-        if (!this.message) this.message = 'Лечить нечего — и так целый.';
+        if (!this.message) this.message = `❤️ ${run.hp}/${run.maxHp}`;
         this.render();
     },
 
@@ -473,16 +509,13 @@ const WrathRogue = {
         const answer = Backend.resolveNode(outcome === 'win' ? 'win' : 'lose');
         this.takeAnswer(answer);
         if (!answer || !answer.ok) return '';
-        if (answer.outcome !== 'win') return 'Забег окончен.';
+        if (answer.outcome !== 'win') return '💀';
         return this.gainText(answer.gained) || '';
     },
 
     // Разбор ответа Backend: что показать и не кончился ли забег.
     takeAnswer(answer) {
-        if (!answer || !answer.ok) {
-            this.message = 'Узел не засчитался.';
-            return;
-        }
+        if (!answer || !answer.ok) return;
         if (answer.finished) {
             this.summary = {
                 win: answer.outcome === 'win',
