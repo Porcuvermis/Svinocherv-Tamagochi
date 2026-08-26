@@ -22,7 +22,7 @@ const WrathLobby = {
     MODES: [
         { key: 'duel',  emoji: '⚔️', name: 'Бой с ботом',   note: 'быстрый бой один на один', ready: true },
         { key: 'pvp',   emoji: '🤝', name: 'Бой с игроком', note: 'по коду комнаты',           ready: false },
-        { key: 'rogue', emoji: '🗺', name: 'Рогалик',       note: 'за жетон гнева',            ready: false },
+        { key: 'rogue', emoji: '🗺', name: 'Рогалик',       note: 'забег за жетон гнева',     ready: true },
         { key: 'shop',  emoji: '🏪', name: 'Магазин гнева', note: 'снаряжение за жетоны',      ready: true }
     ],
 
@@ -206,6 +206,16 @@ const WrathLobby = {
 
         // Кошелёк показан там, где он что-то значит, — в строке магазина.
         // Отдельной панели для двух чисел не заводим: экран и так плотный.
+        // Незавершённый забег — первое, что игрок должен увидеть в лобби:
+        // он платный и ждёт возвращения.
+        const rogueNote = this.root.querySelector('.mode-note[data-note="rogue"]');
+        if (rogueNote) {
+            const run = Backend.run();
+            rogueNote.textContent = run
+                ? `забег идёт: узел ${run.node + 1} из ${run.map.length} · ❤️ ${run.hp}/${run.maxHp}`
+                : 'забег за жетон гнева';
+        }
+
         const shopNote = this.root.querySelector('.mode-note[data-note="shop"]');
         if (shopNote) {
             const per = (ECONOMY.exchange.wrath_shard && ECONOMY.exchange.wrath_shard.per) || 3;

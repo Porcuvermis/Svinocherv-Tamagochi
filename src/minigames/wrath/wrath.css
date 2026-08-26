@@ -1086,3 +1086,96 @@
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.5);
 }
+
+/* ============================================================ */
+/* =========================  РОГАЛИК  ======================== */
+/* ============================================================ */
+
+#wrath-rogue {
+    padding: 10px 8px 12px;
+    box-sizing: border-box;
+}
+
+/* Кнопка действия отдельно от кнопки возврата: «дальше по забегу» — главное
+   действие экрана, и оно должно быть под большим пальцем. */
+.rogue-action {
+    flex: 0 0 auto;
+    margin-bottom: 8px;
+}
+
+/* ---------- ЧТО ЗА ЗАБЕГ ---------- */
+.rogue-intro {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 59, 48, 0.35);
+    background: rgba(0, 0, 0, 0.3);
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.rogue-intro-title {
+    margin-bottom: 8px;
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--wrath-attack);
+}
+
+.rogue-intro p { margin: 0 0 8px; }
+.rogue-intro-note { color: rgba(255, 255, 255, 0.45); }
+
+/* ---------- УЗЛЫ КАРТЫ ----------
+   Вся цепочка видна сразу: структура на этом уровне сложности одинаковая, а
+   видимая карта показывает, сколько осталось, и делает мини-босса рубежом, к
+   которому готовятся. */
+.rogue-node {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 13px;
+}
+
+.rogue-node.done {
+    opacity: 0.5;
+    border-color: rgba(76, 175, 80, 0.4);
+}
+
+.rogue-node.current {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.16);
+    box-shadow: 0 0 14px rgba(255, 59, 48, 0.25);
+}
+
+.rogue-node.future { opacity: 0.75; }
+
+/* Вторая половина забега злее — и это видно заранее, а не выясняется в бою. */
+.rogue-node.late:not(.done) .rogue-node-name::after {
+    content: ' · злее';
+    font-size: 9px;
+    color: #ffd27f;
+}
+
+.rogue-node-emoji { font-size: 18px; }
+.rogue-node-name { flex: 1 1 auto; font-weight: 700; }
+
+.rogue-node-here {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--wrath-attack);
+}
+
+.rogue-summary.win { border-color: rgba(76, 175, 80, 0.5); }
+.rogue-summary.lose { border-color: rgba(255, 59, 48, 0.5); }
+
+.rogue-summary-list {
+    margin: 0 0 8px;
+    padding-left: 18px;
+    font-size: 13px;
+    color: #ffd27f;
+}

@@ -41,13 +41,15 @@ const WrathMinigame = {
             lobby: document.getElementById('wrath-lobby'),
             duel: document.getElementById('wrath-duel'),
             shop: document.getElementById('wrath-shop'),
-            boost: document.getElementById('wrath-boost')
+            boost: document.getElementById('wrath-boost'),
+            rogue: document.getElementById('wrath-rogue')
         };
 
         WrathLobby.init(this);
         WrathDuel.init(this);
         WrathShop.init(this);
         WrathBoost.init(this);
+        WrathRogue.init(this);
     },
 
     open() {
@@ -65,6 +67,7 @@ const WrathMinigame = {
         WrathLobby.leave();
         WrathShop.leave();
         WrathBoost.leave();
+        WrathRogue.leave();
         this.current = null;
         if (this.win) this.win.hideConfirm();
         MinigameWindow.resumeRoom();
@@ -76,6 +79,7 @@ const WrathMinigame = {
         WrathDuel.leave();
         WrathShop.leave();
         WrathBoost.leave();
+        WrathRogue.leave();
         this.setScreen('lobby');
         WrathLobby.enter();
     },
@@ -92,6 +96,11 @@ const WrathMinigame = {
         if (mode === 'boost') {
             this.setScreen('boost');
             WrathBoost.enter();
+            return;
+        }
+        if (mode === 'rogue') {
+            this.setScreen('rogue');
+            WrathRogue.enter();
             return;
         }
         this.setScreen('duel');

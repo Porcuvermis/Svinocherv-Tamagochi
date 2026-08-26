@@ -492,6 +492,187 @@ const LocalBackend = {
         return { ok: true, item: itemId, equipped: GameState.data.equipment[item.slot] === itemId };
     },
 
+    // ---------- РОГАЛИК ГНЕВА ----------
+    // Забег — это состояние, а не сессия экрана: он переживает закрытие игры,
+    // не имеет таймера жизни и продолжается там, где остановился. Поэтому всё
+    // про него живёт здесь и в state.runs, а экран только показывает.
+    //
+    // Всё, что решает исход (какие усиления предложат, что в магазине, какое
+    // событие), выводится из seed и номера узла, а не хранится списком: тогда
+    // восстановление забега не зависит от того, что успело записаться.
+    rogueConfig() {
+        return (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.rogue) || null;
+    },
+
+    // Текущий забег или null.
+    run() {
+        const run = GameState.data.runs && GameState.data.runs.wrath;
+        return (run && run.map) ? run : null;
+    },
+
+    // Начать забег. Вход платный и невозвратный: жетон списывается здесь.
+    startRun() {
+        const cfg = this.rogueConfig();
+        if (!cfg) return { ok: false, error: 'no_config' };
+        if (this.run()) return { ok: false, error: 'run_in_progress' };
+
+        const price = cfg.entry || {};
+        const short = Object.keys(price).find(key => GameState.currency(key) < price[key]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(key => {
+            GameState.addCurrency(key, -price[key]);
+            GameState.pushLedger({
+                currency: key, delta: -price[key],
+                reason: 'rogue.wrath.entry', client_request_id: requestId
+            });
+        });
+
+        // Забег начинается с ПОЛНОГО здоровья: вход стоит жетон, то есть три
+        // победы, и пускать за эту цену на верную смерть — наказание за то,
+        // что игрок только что играл. Здоровье лобби при этом не трогается,
+        // оно заморожено на всё время забега.
+        const maxHp = this.fighterMaxHp();
+        GameState.data.runs.wrath = {
+            started_at: GameTime.now(),
+            seed: Math.floor(Math.random() * 1e9),
+            map: cfg.map.map((kind, i) => ({ id: i, kind, done: false })),
+            node: 0,
+            hp: maxHp,
+            maxHp,
+            teeth: 0,
+            goldBank: 0,
+            boosts: [],
+            pending: null
+        };
+        this.freezeHeal();
+        GameState.save();
+        return { ok: true, run: this.run() };
+    },
+
+    // Бросить забег. Жетон не возвращается — это цена входа, а не залог.
+    abandonRun() {
+        if (!this.run()) return { ok: false, error: 'no_run' };
+        delete GameState.data.runs.wrath;
+        this.resumeHeal();
+        GameState.save();
+        return { ok: true };
+    },
+
+    // Узел пройден. Что за это дать, решает конфиг, а не экран забега.
+    // outcome: 'win' | 'lose'.
+    resolveNode(outcome) {
+        const run = this.run();
+        const cfg = this.rogueConfig();
+        if (!run || !cfg) return { ok: false, error: 'no_run' };
+
+        const node = run.map[run.node];
+        if (!node) return { ok: false, error: 'no_node' };
+
+        // Поражение обрывает забег целиком: накопленное золото сгорает, если
+        // игрок не дошёл до вехи, зубы сгорают всегда.
+        if (outcome === 'lose') {
+            const lost = run.goldBank;
+            delete GameState.data.runs.wrath;
+            this.resumeHeal();
+            GameState.save();
+            return { ok: true, finished: true, outcome: 'lose', goldLost: lost };
+        }
+
+        const gained = { teeth: 0, gold: 0, currencies: {}, healed: 0 };
+        const rng = this.rogueRng(run.seed, run.node);
+
+        if (node.kind === 'fight') {
+            const t = cfg.perFight.teeth;
+            const g = cfg.perFight.gold;
+            gained.teeth = t[0] + Math.floor(rng() * (t[1] - t[0] + 1));
+            gained.gold = g[0] + Math.floor(rng() * (g[1] - g[0] + 1));
+            // Отхил после боя — не выбор, а часть награды: аккуратный игрок
+            // приходит к развилке почти целым, и узел хила для него не мёртв
+            // только потому, что хил переехал в сам бой (см. план).
+            const heal = Math.round(run.maxHp * (cfg.perFight.healShare || 0));
+            gained.healed = Math.min(heal, run.maxHp - run.hp);
+        }
+
+        const milestone = cfg[node.kind];
+        if (milestone) {
+            gained.teeth += milestone.teeth || 0;
+            Object.keys(milestone.currencies || {}).forEach(key => {
+                const requestId = newRequestId();
+                GameState.addCurrency(key, milestone.currencies[key]);
+                GameState.pushLedger({
+                    currency: key, delta: milestone.currencies[key],
+                    reason: 'rogue.wrath.' + node.kind, client_request_id: requestId
+                });
+                gained.currencies[key] = milestone.currencies[key];
+            });
+            // Веха открывает копилку: накопленное золото наконец выдаётся.
+            if (milestone.payout && run.goldBank > 0) {
+                const requestId = newRequestId();
+                GameState.addCurrency('gold', run.goldBank);
+                GameState.pushLedger({
+                    currency: 'gold', delta: run.goldBank,
+                    reason: 'rogue.wrath.payout', client_request_id: requestId
+                });
+                gained.currencies.gold = (gained.currencies.gold || 0) + run.goldBank;
+                run.goldBank = 0;
+            }
+        }
+
+        run.teeth += gained.teeth;
+        run.goldBank += gained.gold;
+        run.hp = Math.min(run.maxHp, run.hp + gained.healed);
+        node.done = true;
+        run.node += 1;
+
+        // Карта кончилась — забег пройден.
+        const finished = run.node >= run.map.length;
+        if (finished) {
+            delete GameState.data.runs.wrath;
+            this.resumeHeal();
+        }
+
+        GameState.save();
+        return { ok: true, finished, outcome: 'win', gained, run: this.run() };
+    },
+
+    // Здоровье забега меняется не только боем (усиления, лечение на развилке),
+    // поэтому запись отдельная — и снова с сохранением после каждого шага.
+    setRunHp(hp) {
+        const run = this.run();
+        if (!run) return null;
+        run.hp = Math.max(0, Math.min(run.maxHp, Math.round(hp)));
+        GameState.save();
+        return run.hp;
+    },
+
+    // Максимум здоровья бойца по снаряжению и прокачке. Живёт здесь, а не в
+    // мини-игре: забег стартует до того, как экран боя вообще открыт.
+    fighterMaxHp() {
+        const cfg = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
+        let max = (cfg.baseHp || 10) + GameState.upgradeBonus('hp');
+        const equipment = GameState.data.equipment || {};
+        Object.keys(equipment).forEach(slot => {
+            const item = WRATH_GEAR.items[equipment[slot]];
+            if (item && item.hp) max += item.hp;
+        });
+        return max;
+    },
+
+    // Детерминированный генератор для узла: один и тот же забег на одном и том
+    // же узле всегда предложит одно и то же. Иначе перезаход в игру
+    // перекатывал бы неудачный выбор усилений.
+    rogueRng(seed, node) {
+        let x = (seed ^ (node * 2654435761)) >>> 0;
+        return function () {
+            x ^= x << 13; x >>>= 0;
+            x ^= x >> 17;
+            x ^= x << 5; x >>>= 0;
+            return x / 4294967296;
+        };
+    },
+
     // ---------- БОЕВАЯ ПРОКАЧКА ----------
     // Купить следующий уровень ветки. Как и с предметами: клиент говорит
     // «качни вот это», а хватает ли валюты и не упёрлись ли в потолок,
