@@ -542,12 +542,21 @@ const LocalBackend = {
         return enemy ? Object.assign({ id: node.enemy }, enemy) : null;
     },
 
-    // Следующий узел, который вообще работает. Закрытые (магазин, событие)
-    // остаются на карте, но перешагиваются: они нарисованы заранее, чтобы
-    // карта не поехала, когда их сделают.
+    // Шаг проходим, если он не закрыт целиком. У развилки хватает одного
+    // открытого пути: магазин и события ещё не сделаны, но привал работает,
+    // и развилка из-за них не становится тупиком.
+    stepOpen(step) {
+        if (!step || step.locked) return false;
+        if (step.kind === 'fork') return (step.options || []).some(o => !o.locked);
+        return true;
+    },
+
+    // Следующий шаг, который вообще работает. Закрытые остаются на карте, но
+    // перешагиваются: они нарисованы заранее, чтобы карта не поехала, когда
+    // их сделают.
     nextOpenNode(run, from) {
         let i = from;
-        while (i < run.map.length && run.map[i].locked) i += 1;
+        while (i < run.map.length && !this.stepOpen(run.map[i])) i += 1;
         return i;
     },
 
@@ -578,13 +587,25 @@ const LocalBackend = {
         const run = {
             started_at: GameTime.now(),
             seed: Math.floor(Math.random() * 1e9),
-            map: cfg.map.map((node, i) => ({
-                id: i,
-                kind: node.kind,
-                enemy: node.enemy || null,
-                locked: !!node.locked,
-                done: false
-            })),
+            map: cfg.map.map((step, i) => {
+                const node = {
+                    id: i,
+                    kind: step.kind,
+                    enemy: step.enemy || null,
+                    locked: !!step.locked,
+                    done: false
+                };
+                // Развилка — три пути, из которых проходится один. Что
+                // выбрали, хранится номером: по нему рисуется дорожка и
+                // видно, чем игрок ходил.
+                if (step.kind === 'fork') {
+                    node.options = (step.options || []).map(o => ({
+                        kind: o.kind, locked: !!o.locked
+                    }));
+                    node.chosen = null;
+                }
+                return node;
+            }),
             node: 0,
             hp: maxHp,
             maxHp,
@@ -619,9 +640,18 @@ const LocalBackend = {
         return healed;
     },
 
+    // Что даёт узел, у которого нет противника. Отдельно, потому что таким
+    // узлом может быть и путь развилки, и когда-нибудь обычная точка карты.
+    applyPlainNode(run, cfg, kind, gained) {
+        if (kind === 'heal') {
+            gained.healed = this.rogueHeal(run, run.maxHp * (cfg.healShare || 0.5));
+        }
+        // Магазин и события пока закрыты и сюда не доходят.
+    },
+
     // Узел пройден. Что за это дать, решает конфиг, а не экран забега.
-    // outcome: 'win' | 'lose'.
-    resolveNode(outcome) {
+    // outcome: 'win' | 'lose'. choice — номер пути на развилке.
+    resolveNode(outcome, choice) {
         const run = this.run();
         const cfg = this.rogueConfig();
         if (!run || !cfg) return { ok: false, error: 'no_run' };
@@ -637,7 +667,7 @@ const LocalBackend = {
         // ДЛИНЕ карты: run.node — индекс в ней. А показывается игроку счёт
         // проходимых узлов: закрытые (магазин, событие) нарисованы, но он их
         // не проходит, и «4 из 11» врало бы.
-        const openTotal = run.map.filter(n => !n.locked).length;
+        const openTotal = run.map.filter(n => this.stepOpen(n)).length;
         const passed = () => run.map.filter(n => n.done).length;
 
         // Поражение обрывает забег целиком: жетон сгорел, зубы сгорели.
@@ -656,8 +686,15 @@ const LocalBackend = {
 
         const gained = { teeth: 0, healed: 0, currencies: {} };
 
-        if (node.kind === 'heal') {
-            gained.healed = this.rogueHeal(run, run.maxHp * (cfg.healShare || 0.5));
+        if (node.kind === 'fork') {
+            // Развилка: проходится ОДИН путь из трёх, дальше дорога снова
+            // сходится. Закрытый путь выбрать нельзя — он и не нажимается.
+            const option = (node.options || [])[choice];
+            if (!option || option.locked) return { ok: false, error: 'bad_choice' };
+            node.chosen = choice;
+            this.applyPlainNode(run, cfg, option.kind, gained);
+        } else if (!node.enemy) {
+            this.applyPlainNode(run, cfg, node.kind, gained);
         } else {
             const enemy = this.rogueEnemy(node);
             const reward = (enemy && enemy.reward) || null;

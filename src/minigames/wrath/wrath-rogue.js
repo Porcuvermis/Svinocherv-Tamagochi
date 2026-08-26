@@ -24,9 +24,10 @@ const WrathRogue = {
         fight:    { emoji: '⚔️', name: 'Бой',        action: 'В бой' },
         miniboss: { emoji: '👹', name: 'Мини-босс',  action: 'К мини-боссу' },
         boss:     { emoji: '💀', name: 'Босс',       action: 'К боссу' },
-        heal:     { emoji: '❤️', name: 'Привал',     action: 'Отлежаться' },
+        heal:     { emoji: '❤️', name: 'Привал',     action: 'Отлежаться', note: 'половина ❤️' },
         shop:     { emoji: '💰', name: 'Магазин',    action: 'Магазин' },
-        event:    { emoji: '❓', name: 'Событие',    action: 'Событие' }
+        event:    { emoji: '❓', name: 'Событие',    action: 'Событие' },
+        fork:     { emoji: '🔀', name: 'Развилка',   action: 'Выбери путь' }
     },
 
     host: null,
@@ -135,74 +136,131 @@ const WrathRogue = {
     },
 
     // ---------- КАРТА ----------
+    // Карта — это ШАГИ, а не точки: обычный шаг рисуется одной точкой,
+    // развилка — тремя в ряд, из которых проходится одна, после чего дорога
+    // снова сходится. Отсюда двойная адресация везде ниже: шаг и путь.
+    //
     // Дорожка и точки рисуются всегда, даже когда забега нет: перед входом
     // игрок должен видеть, куда идёт, а не читать про это текстом.
+    stepPoints(step) {
+        if (step.kind === 'fork') {
+            return (step.options || []).map((o, i) => ({
+                x: o.x, y: step.y, option: i,
+                kind: o.kind, locked: !!o.locked
+            }));
+        }
+        return [{
+            x: step.x, y: step.y, option: null,
+            kind: step.kind, locked: !!step.locked, enemy: step.enemy
+        }];
+    },
+
+    // Точка пройдена: шаг засчитан, и если это развилка — засчитан именно
+    // этим путём. Нужна и дорожке, и виду самих точек.
+    isPassed(run, index, point) {
+        if (!run) return false;
+        const node = run.map[index];
+        if (!node || !node.done) return false;
+        if (node.kind === 'fork') return node.chosen === point.option;
+        return true;
+    },
+
     renderMap(run) {
         const cfg = Backend.rogueConfig();
         if (!cfg || !this.nodesEl) return;
 
-        const nodes = cfg.map;
+        const steps = cfg.map;
         const current = run ? run.node : -1;
 
-        this.drawTrail(nodes, run);
+        this.drawTrail(steps, run);
 
-        this.nodesEl.innerHTML = nodes.map((node, i) => {
-            const kind = this.NODE_KINDS[node.kind] || { emoji: '•', name: node.kind };
-            const done = run ? !!(run.map[i] && run.map[i].done) : false;
-            let state = 'future';
-            if (node.locked) state = 'locked';
-            else if (done) state = 'done';
-            else if (i === current) state = 'current';
+        let html = '';
+        steps.forEach((step, i) => {
+            this.stepPoints(step).forEach(point => {
+                const kind = this.NODE_KINDS[point.kind] || { emoji: '•', name: point.kind };
+                const passed = this.isPassed(run, i, point);
 
-            const enemy = node.enemy && cfg.enemies[node.enemy];
-            // Числа противника видны заранее и у всех узлов: забег в шесть
-            // боёв — это про подготовку, а не про сюрпризы.
-            const note = enemy
-                ? `${enemy.hp}❤ · ${enemy.damage[0]}–${enemy.damage[1]}🗡`
-                : (node.locked ? 'скоро' : '');
+                let state = 'future';
+                if (point.locked) state = 'locked';
+                else if (passed) state = 'done';
+                // Путь развилки, мимо которого прошли: он был, но не выбран.
+                else if (run && run.map[i] && run.map[i].done) state = 'skipped';
+                else if (i === current) state = 'current';
 
-            return `
-                <button type="button" class="rogue-node ${node.kind} ${state}"
-                        data-node="${i}" ${state === 'current' ? '' : 'disabled'}
-                        style="left:${(node.x * 100).toFixed(1)}%; top:${(node.y * 100).toFixed(1)}%">
-                    <span class="rogue-node-dot">${done ? '✓' : kind.emoji}</span>
-                    <span class="rogue-node-label">
-                        <b>${enemy ? enemy.name : kind.name}</b>
-                        ${note ? `<i>${note}</i>` : ''}
-                    </span>
-                </button>`;
-        }).join('');
+                const enemy = point.enemy && cfg.enemies[point.enemy];
+                // Числа противника видны заранее и у всех узлов: забег в
+                // шесть боёв — это про подготовку, а не про сюрпризы.
+                let note = '';
+                if (enemy) note = `${enemy.hp}❤ · ${enemy.damage[0]}–${enemy.damage[1]}🗡`;
+                else if (point.locked) note = 'скоро';
+                else if (kind.note) note = kind.note;
+
+                html += `
+                    <button type="button" class="rogue-node ${point.kind} ${state}"
+                            data-step="${i}" data-option="${point.option === null ? '' : point.option}"
+                            ${state === 'current' ? '' : 'disabled'}
+                            style="left:${(point.x * 100).toFixed(1)}%; top:${(point.y * 100).toFixed(1)}%">
+                        <span class="rogue-node-dot">${passed ? '✓' : kind.emoji}</span>
+                        <span class="rogue-node-label">
+                            <b>${enemy ? enemy.name : kind.name}</b>
+                            ${note ? `<i>${note}</i>` : ''}
+                        </span>
+                    </button>`;
+            });
+        });
+        this.nodesEl.innerHTML = html;
 
         Array.prototype.forEach.call(this.nodesEl.querySelectorAll('.rogue-node'), el => {
             el.onclick = (e) => {
                 e.stopPropagation();
-                this.enterNode(parseInt(el.dataset.node, 10));
+                const option = el.dataset.option === '' ? null : parseInt(el.dataset.option, 10);
+                this.enterNode(parseInt(el.dataset.step, 10), option);
             };
         });
     },
 
     // Дорожка между точками. Кривая, а не ломаная: карта должна выглядеть
-    // тропой, а не блок-схемой. Проводится по Катмуллу-Рому — она проходит
-    // ровно через заданные точки, в отличие от обычной безье.
+    // тропой, а не блок-схемой. Изгиб вертикальный — обе управляющие точки
+    // уходят по высоте, — поэтому линия выходит из точки вниз и входит в
+    // следующую сверху, а не режет расстояние хордой.
     //
-    // Каждый отрезок — отдельный путь: так видно, докуда игрок уже дошёл, и
-    // не нужно считать длину линии.
-    drawTrail(nodes, run) {
+    // На развилке дорога расходится натрое и сходится обратно, поэтому
+    // отрезки строятся ОТ КАЖДОЙ точки шага К КАЖДОЙ точке следующего.
+    // Каждый отрезок отдельным путём: так видно, каким путём игрок прошёл.
+    drawTrail(steps, run) {
         if (!this.trailEl) return;
-        const pts = nodes.map(n => ({ x: n.x * 100, y: n.y * 100 }));
-        const at = (i) => pts[Math.max(0, Math.min(pts.length - 1, i))];
 
+        const rows = steps.map(step => this.stepPoints(step));
         let out = '';
-        for (let i = 0; i < pts.length - 1; i++) {
-            const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
-            const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
-            const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
-            const done = run && run.map[i] && run.map[i].done;
-            out += `<path class="rogue-seg${done ? ' done' : ''}" vector-effect="non-scaling-stroke"
-                          d="M${p1.x.toFixed(2)},${p1.y.toFixed(2)}
-                             C${c1x.toFixed(2)},${c1y.toFixed(2)}
-                              ${c2x.toFixed(2)},${c2y.toFixed(2)}
-                              ${p2.x.toFixed(2)},${p2.y.toFixed(2)}"/>`;
+
+        for (let i = 0; i < rows.length - 1; i++) {
+            rows[i].forEach(a => {
+                rows[i + 1].forEach(b => {
+                    // Изгиб — вертикальный: обе управляющие точки уходят по
+                    // высоте, поэтому линия выходит из точки вниз и входит в
+                    // следующую сверху, как тропа, а не как хорда.
+                    const bend = (a.y - b.y) * 0.45;
+                    const p1 = { x: a.x * 100, y: a.y * 100 };
+                    const p2 = { x: b.x * 100, y: b.y * 100 };
+                    const c1 = { x: p1.x, y: p1.y - bend * 100 };
+                    const c2 = { x: p2.x, y: p2.y + bend * 100 };
+
+                    // Красным светится только пройденное — и только тем
+                    // путём, которым шли: развилка после выбора не должна
+                    // выглядеть так, будто игрок прошёл всеми тремя.
+                    const passedA = this.isPassed(run, i, a);
+                    const nextIsFork = steps[i + 1].kind === 'fork';
+                    const done = passedA && (!nextIsFork || this.isPassed(run, i + 1, b));
+                    const dim = a.locked || b.locked;
+
+                    out += `<path class="rogue-seg${done ? ' done' : ''}${dim ? ' dim' : ''}"
+                                  vector-effect="non-scaling-stroke"
+                                  d="M${p1.x.toFixed(2)},${p1.y.toFixed(2)}
+                                     C${c1.x.toFixed(2)},${c1.y.toFixed(2)}
+                                      ${c2.x.toFixed(2)},${c2.y.toFixed(2)}
+                                      ${p2.x.toFixed(2)},${p2.y.toFixed(2)}"/>`;
+                });
+            });
         }
         this.trailEl.innerHTML = out;
     },
@@ -224,6 +282,14 @@ const WrathRogue = {
         if (!node) { this.setAction('Забег пройден', () => this.host.showLobby()); return; }
 
         const kind = this.NODE_KINDS[node.kind] || { name: node.kind, emoji: '•' };
+
+        // На развилке кнопки действия нет: выбирать путь надо на самой
+        // карте, тапом по нужной точке. Кнопка здесь только подсказывает.
+        if (node.kind === 'fork') {
+            this.setAction(`${kind.emoji} ${kind.action}`, null, 'тапни точку на карте');
+            return;
+        }
+
         const enemy = Backend.rogueEnemy(node);
         this.setAction(
             `${kind.emoji} ${kind.action || kind.name}`,
@@ -364,11 +430,19 @@ const WrathRogue = {
 
     // Узел карты. Бой уходит на экран боя и возвращается оттуда колбэками,
     // остальное решается на месте.
-    enterNode(index) {
+    enterNode(index, option) {
         const run = Backend.run();
         if (!run || run.pending || index !== run.node) return;
         const node = run.map[index];
         if (!node || node.locked) return;
+
+        // Развилка: прошли выбранным путём, дорога сходится дальше сама.
+        if (node.kind === 'fork') {
+            this.takeAnswer(Backend.resolveNode('win', option));
+            if (!this.message) this.message = 'Лечить нечего — и так целый.';
+            this.render();
+            return;
+        }
 
         const enemy = Backend.rogueEnemy(node);
         if (enemy) {

@@ -1164,6 +1164,10 @@
     stroke-dasharray: none;
 }
 
+/* Ветка развилки, ведущая в ещё не сделанный путь: она есть, но по ней не
+   пойдут — линия тише остальных. */
+.rogue-seg.dim { stroke: rgba(255, 255, 255, 0.07); }
+
 /* ---------- ТОЧКИ ---------- */
 .rogue-nodes { position: absolute; inset: 0; }
 
@@ -1189,7 +1193,9 @@
     height: 44px;
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.2);
-    background: rgba(20, 6, 6, 0.9);
+    /* Непрозрачный: дорожка проходит ПОД точками, и полупрозрачный кружок
+       показывал бы линию прямо у себя внутри. */
+    background: #180809;
     font-size: 20px;
     line-height: 1;
 }
@@ -1219,6 +1225,11 @@
 
 .rogue-node.locked { opacity: 0.35; filter: grayscale(1); }
 
+/* Путь развилки, мимо которого прошли: он был доступен, но выбрали другой.
+   Гасится сильнее пройденного, чтобы выбранный путь читался с одного
+   взгляда. */
+.rogue-node.skipped { opacity: 0.25; filter: grayscale(0.7); }
+
 /* Текущий узел — единственный нажимаемый, и это видно: он крупнее, светится
    и медленно пульсирует. */
 .rogue-node.current {
@@ -1228,7 +1239,7 @@
 
 .rogue-node.current .rogue-node-dot {
     border-color: var(--wrath-attack);
-    background: rgba(255, 59, 48, 0.25);
+    background: #4d1512;
     box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.15), 0 0 18px rgba(255, 59, 48, 0.5);
     animation: rogue-pulse 1.8s ease-in-out infinite;
 }
