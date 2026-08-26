@@ -198,7 +198,7 @@
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=1" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=8" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=9" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -438,20 +438,22 @@
                      измеренному силуэту. -->
                 <div class="wrath-lobby-box" id="wrath-lobby-box">
                     <div class="worm-stage" id="wrath-lobby-worm"></div>
-                    <!-- Полоска удержания. Появляется от первого касания
-                         червя и заполняется, пока палец на месте: это и есть
-                         объяснение жеста — тапнул, увидел, что что-то
-                         набирается, держишь дальше. -->
-                    <div class="hold-bar" id="wrath-hold">
-                        <div class="hold-fill" id="wrath-hold-fill"></div>
+                    <!-- Кольцо удержания. Появляется от первого касания червя
+                         над его головой и заполняется по кругу, пока палец на
+                         месте: это и есть объяснение жеста — тапнул, увидел,
+                         что что-то набирается, держишь дальше.
+
+                         Скрипт переносит его внутрь сцены персонажа и ставит
+                         над макушкой по реальным габаритам головы. -->
+                    <div class="hold-ring" id="wrath-hold">
+                        <svg viewBox="0 0 100 100">
+                            <circle class="hold-track" cx="50" cy="50" r="42"></circle>
+                            <circle class="hold-progress" id="wrath-hold-fill" cx="50" cy="50" r="42"></circle>
+                        </svg>
                     </div>
                 </div>
                 <div class="gear-column" id="wrath-gear-right"></div>
             </div>
-
-            <!-- Подсказка про жест. Удержание ниоткуда не следует, поэтому
-                 написано словами под самим персонажем. -->
-            <div class="hint-line" id="wrath-hint-line"></div>
 
             <div class="wrath-modes" id="wrath-modes"></div>
             <div class="wrath-slot-card" id="wrath-slot-card"></div>
@@ -963,7 +965,7 @@
 <script src="src/minigames/wrath/wrath-fighter.js?v=3"></script>
 <script src="src/minigames/wrath/wrath-shop.js?v=2"></script>
 <script src="src/minigames/wrath/wrath-boost.js?v=1"></script>
-<script src="src/minigames/wrath/wrath-lobby.js?v=5"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=6"></script>
 <script src="src/minigames/wrath/wrath-duel.js?v=4"></script>
 <script src="src/minigames/wrath/wrath.js?v=10"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>

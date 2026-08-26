@@ -35,12 +35,12 @@ const WrathLobby = {
     cardEl: null,
     wormHandle: null,
     openSlot: null,
-    hintLineEl: null,
     toastEl: null,
     toastTimer: null,
     healClock: null,
     holdEl: null,
     holdFillEl: null,
+    holdCircumference: 0,
     holdTimer: null,
     holdActive: false,
 
@@ -58,7 +58,6 @@ const WrathLobby = {
         this.wormBox = this.wormStage ? this.wormStage.parentElement : null;
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
-        this.hintLineEl = document.getElementById('wrath-hint-line');
         this.toastEl = document.getElementById('wrath-toast');
         this.holdEl = document.getElementById('wrath-hold');
         this.holdFillEl = document.getElementById('wrath-hold-fill');
@@ -121,10 +120,19 @@ const WrathLobby = {
             anchorY: 0.36
         });
 
+        // Кольцо удержания живёт ВНУТРИ сцены персонажа: mount() очищает
+        // контейнер, поэтому переносится после монтирования. Внутри сцены оно
+        // масштабируется вместе с червём и остаётся над головой при любом
+        // размере тела.
+        if (this.holdEl) this.wormStage.appendChild(this.holdEl);
+
         // Вписывается по реальному силуэту и только после первого кадра:
         // сегменты получают transform в tick(), не при сборке.
         requestAnimationFrame(() => requestAnimationFrame(() => {
             WrathFighter.fitWorm(this.wormHandle, this.wormStage, this.wormBox, 0.95);
+            // Ещё кадр: перестановка червя доезжает до экрана только в
+            // следующем тике рендерера.
+            requestAnimationFrame(() => this.placeHoldRing());
         }));
     },
 
@@ -215,7 +223,6 @@ const WrathLobby = {
         }
 
         this.refreshHealth();
-        this.refreshHint();
     },
 
     // ---------- ЗДОРОВЬЕ ----------
@@ -248,21 +255,6 @@ const WrathLobby = {
         }
     },
 
-    // ---------- СТРОКА-ПОДСКАЗКА ----------
-    // Жест «удержать на персонаже» ниоткуда не следует, поэтому он написан
-    // словами под самим персонажем. Без этой строки прокачку не нашли бы:
-    // тапать по червю игрок может и сам, а держать полторы секунды — нет.
-    refreshHint() {
-        if (!this.hintLineEl) return;
-        const scars = (GameState.data.scars || []).length;
-        const rule = ECONOMY.marks.exchange;
-        const ready = scars >= rule.scars;
-        this.hintLineEl.classList.toggle('ready', ready);
-        this.hintLineEl.textContent = ready
-            ? `✊ удерживай червя — прокачка и обмен ${rule.scars} шрамов`
-            : '✊ удерживай червя — боевая прокачка';
-    },
-
     // ---------- УДЕРЖАНИЕ НА ЧЕРВЕ ----------
     // Полторы секунды пальцем на персонаже открывают меню прокачки. Жест
     // выбран не ради экзотики: качают самого червя, и «нажать на него» —
@@ -292,19 +284,50 @@ const WrathLobby = {
         });
     },
 
+    // Кольцо ставится над макушкой по РЕАЛЬНЫМ габаритам головы: у
+    // подросшего червя голова крупнее и выше, и кольцо переедет вместе с ней.
+    // Координаты — в единицах сцены, поэтому масштаб сцены применяется к
+    // кольцу сам собой.
+    placeHoldRing() {
+        if (!this.holdEl || !this.wormHandle) return;
+        const headEl = this.wormHandle.svgRoot.querySelector('[data-part="head"]');
+        const head = WrathFighter.boxOf(this.wormHandle, headEl);
+        if (!head) return;
+
+        const size = Math.max(44, head.w * 0.6);
+        this.holdEl.style.width = `${size.toFixed(1)}px`;
+        this.holdEl.style.height = `${size.toFixed(1)}px`;
+        this.holdEl.style.left = `${head.cx.toFixed(1)}px`;
+        // Над макушкой, с зазором: кольцо не должно наезжать на уши.
+        this.holdEl.style.top = `${(head.y - size * 0.5).toFixed(1)}px`;
+    },
+
     startHold() {
         if (this.holdActive) return;
         this.holdActive = true;
 
+        // Место кольца считается в момент касания, а не при монтировании:
+        // fitWorm() переставляет червя, но сама перестановка доезжает до
+        // экрана только следующим кадром рендерера, и позиция головы,
+        // измеренная сразу после неё, оказывается ещё старой.
+        this.placeHoldRing();
         if (this.holdEl) this.holdEl.classList.add('show');
         if (this.holdFillEl) {
-            // Сброс без перехода, потом рост с переходом: иначе полоска
-            // поедет из прошлого положения.
+            // Заполнение по кругу — это длина штриха: обводка нарисована
+            // пунктиром в одну окружность, и сдвиг пунктира открывает её
+            // постепенно. Одно анимируемое свойство, никакой перерисовки.
+            if (!this.holdCircumference) {
+                const r = Number(this.holdFillEl.getAttribute('r')) || 42;
+                this.holdCircumference = 2 * Math.PI * r;
+                this.holdFillEl.style.strokeDasharray = this.holdCircumference.toFixed(2);
+            }
+            // Сброс без перехода, потом рост с переходом: иначе кольцо поедет
+            // из прошлого положения.
             this.holdFillEl.style.transition = 'none';
-            this.holdFillEl.style.width = '0%';
-            void this.holdFillEl.offsetWidth;
-            this.holdFillEl.style.transition = `width ${this.HOLD_MS}ms linear`;
-            this.holdFillEl.style.width = '100%';
+            this.holdFillEl.style.strokeDashoffset = this.holdCircumference.toFixed(2);
+            void this.holdFillEl.getBoundingClientRect();
+            this.holdFillEl.style.transition = `stroke-dashoffset ${this.HOLD_MS}ms linear`;
+            this.holdFillEl.style.strokeDashoffset = '0';
         }
 
         this.holdTimer = setTimeout(() => {
@@ -325,9 +348,9 @@ const WrathLobby = {
             this.holdTimer = null;
         }
         if (this.holdEl) this.holdEl.classList.remove('show');
-        if (this.holdFillEl) {
-            this.holdFillEl.style.transition = 'width 0.15s ease';
-            this.holdFillEl.style.width = '0%';
+        if (this.holdFillEl && this.holdCircumference) {
+            this.holdFillEl.style.transition = 'stroke-dashoffset 0.15s ease';
+            this.holdFillEl.style.strokeDashoffset = this.holdCircumference.toFixed(2);
         }
         if (hint && wasActive) {
             this.showToast('Держи палец на черве — откроется прокачка');
@@ -352,12 +375,20 @@ const WrathLobby = {
     },
 
     // ---------- КАРТОЧКА СЛОТА ----------
-    // Что в слоте, что это даёт и чем заменить. Пока предметов нет ни у кого,
-    // карточка честно говорит, откуда они возьмутся, — пустой слот без
-    // объяснения читается как поломка.
+    // Что в слоте и чем это заменить. Где брать предметы, здесь не пишется:
+    // магазин виден в том же лобби отдельной строкой, и объяснять это в
+    // каждом пустом слоте — шум.
     showCard(slotKey) {
         const slot = WRATH_GEAR.slots.find(s => s.key === slotKey);
         if (!slot || !this.cardEl) return;
+
+        // Повторный тап по тому же слоту закрывает карточку. Иначе закрыть её
+        // можно было только попав в пустое место мимо всего кликабельного —
+        // а на плотном экране такого места почти нет.
+        if (this.openSlot === slotKey) {
+            this.hideCard();
+            return;
+        }
 
         const equipment = (GameState.data && GameState.data.equipment) || {};
         const inventory = (GameState.data && GameState.data.inventory) || {};
@@ -388,7 +419,7 @@ const WrathLobby = {
                    </div>
                    <button type="button" class="card-item strip" data-item="">Снять</button>`
                 : '<div class="card-current empty">Слот пуст</div>'}
-            ${rows || (available.length ? '' : `<div class="card-note">Надеть нечего: предметы появятся в магазине гнева и в рогалике.</div>`)}
+            ${rows}
         `;
 
         this.cardEl.querySelectorAll('.card-item').forEach(btn => {
