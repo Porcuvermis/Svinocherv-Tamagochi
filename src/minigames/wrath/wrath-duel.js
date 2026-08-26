@@ -28,6 +28,11 @@ const WrathDuel = {
     // его габаритам была бы меньше пальца.
     MIN_TOUCH: 46,
 
+    // Сколько экран не принимает нажатий после оглашения результата. Палец в
+    // этот момент почти всегда уже летит к экрану — добивающий удар только что
+    // тапнули, — и без паузы результат смахивается раньше, чем его прочитают.
+    OK_DELAY_MS: 1100,
+
     host: null,
     root: null,
     boxes: null,
@@ -51,7 +56,8 @@ const WrathDuel = {
     fightOver: false,
     lastHitZone: null,  // куда прилетело игроку — по ней садится шрам
     endFightTimeoutId: null,
-    healClock: null,
+    okTimeoutId: null,
+    okBtn: null,
     mode: 'duel',
 
     init(host) {
@@ -90,10 +96,10 @@ const WrathDuel = {
         if (this.daggerBtn) {
             this.daggerBtn.onclick = (e) => { e.stopPropagation(); this.handleDaggerClick(); };
         }
-        const again = document.getElementById('wrath-again-btn');
-        const toLobby = document.getElementById('wrath-lobby-btn');
-        if (again) again.onclick = (e) => { e.stopPropagation(); this.restartFight(); };
-        if (toLobby) toLobby.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+        this.okBtn = document.getElementById('wrath-ok-btn');
+        if (this.okBtn) {
+            this.okBtn.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+        }
 
         window.addEventListener('resize', () => {
             if (this.host && this.host.current === 'duel') this.layoutFighters();
@@ -103,6 +109,10 @@ const WrathDuel = {
     // ---------- ЖИЗНЕННЫЙ ЦИКЛ ЭКРАНА ----------
     enter(mode) {
         this.mode = mode || 'duel';
+        // В бою здоровье не зарастает: оно ресурс этой драки. Размораживает
+        // лобби, когда игрок туда вернётся, — в том числе после того, как игру
+        // закрыли прямо посреди боя.
+        Backend.freezeHeal();
         this.fighters = { player: WrathFighter.forPlayer(), enemy: null };
         this.setName('player', this.fighters.player.name);
         this.setName('enemy', '…');
@@ -122,14 +132,17 @@ const WrathDuel = {
 
     leave() {
         this.stopFightTimer();
-        this.stopHealWatch();
+        this.stopResultTimer();
+        // Ушли с боя — здоровье снова зарастает. Дублируется в лобби на
+        // случай, когда игру закрыли посреди драки и leave() не случился.
+        Backend.resumeHeal();
         ['player', 'enemy'].forEach(side => {
             if (this.handles[side]) {
                 this.handles[side].destroy();
                 this.handles[side] = null;
             }
         });
-        if (this.resultOverlay) this.resultOverlay.classList.remove('active');
+        this.hideResult();
         this.fightOver = false;
         this.isFighting = false;
     },
@@ -286,14 +299,14 @@ const WrathDuel = {
     // ---------- РАУНД ----------
     restartFight() {
         this.stopFightTimer();
-        this.stopHealWatch();
+        this.hideResult();
         if (!this.fighters || !this.fighters.enemy) return;
 
-        // Драться нечем: здоровье зарастает, и пока оно на нуле, бой не
-        // начинается. Иначе «Ещё раз» после поражения означало бы мгновенное
-        // второе поражение.
+        // Драться нечем. В лобби кнопка боя в этот момент заперта, так что
+        // сюда можно попасть только окольным путём — возвращаемся туда, где
+        // видно, сколько зарастать.
         if (GameState.fighterHp(this.fighters.player.stats.hp) <= 0) {
-            this.showHealWait();
+            this.host.showLobby();
             return;
         }
 
@@ -309,7 +322,6 @@ const WrathDuel = {
         this.setResult('');
         if (this.awardLine) this.awardLine.textContent = '';
 
-        if (this.resultOverlay) this.resultOverlay.classList.remove('active');
         if (this.daggerBtn) this.daggerBtn.classList.remove('disabled');
     },
 
@@ -362,48 +374,36 @@ const WrathDuel = {
         }
     },
 
-    // ---------- ОЖИДАНИЕ ЗАРАСТАНИЯ ----------
-    // Не отказ, а ожидание: экран честно говорит, сколько осталось, и кнопка
-    // оживает сама. Пересчёт раз в секунду — только показ, само здоровье
-    // считается формулой от метки времени.
-    showHealWait() {
-        this.fightOver = true;
-        if (this.overlayText) {
-            this.overlayText.textContent = 'ЧЕРВЬ БЕЗ СИЛ';
-            this.overlayText.style.color = '#ff9500';
-        }
-        if (this.resultOverlay) this.resultOverlay.classList.add('active');
-        this.startHealWatch();
+    // ---------- ПОКАЗ РЕЗУЛЬТАТА ----------
+    // Бой кончился — экран замирает на секунду с результатом и НИЧЕГО не
+    // принимает: оверлей накрывает поле целиком, а кнопки на нём ещё нет.
+    // Только потом проявляется «Окей», и уход в лобби становится осознанным
+    // действием игрока, а не случайным тапом.
+    showResult() {
+        if (!this.resultOverlay) return;
+        this.stopResultTimer();
+        this.resultOverlay.classList.add('active');
+        this.resultOverlay.classList.remove('ready');
+        if (this.okBtn) this.okBtn.disabled = true;
+
+        this.okTimeoutId = setTimeout(() => {
+            this.okTimeoutId = null;
+            this.resultOverlay.classList.add('ready');
+            if (this.okBtn) this.okBtn.disabled = false;
+        }, this.OK_DELAY_MS);
     },
 
-    startHealWatch() {
-        if (this.healClock) return;
-        const again = document.getElementById('wrath-again-btn');
-        const update = () => {
-            const max = this.fighters && this.fighters.player ? this.fighters.player.stats.hp : 0;
-            const hp = GameState.fighterHp(max);
-            if (hp > 0) {
-                this.stopHealWatch();
-                if (again) { again.textContent = 'Ещё раз'; again.disabled = false; }
-                if (this.awardLine) this.awardLine.textContent = 'червь ожил — можно снова';
-                return;
-            }
-            if (again) {
-                again.disabled = true;
-                again.textContent = `зарастает: ${GameState.fighterHealSeconds(max)} с`;
-            }
-        };
-        update();
-        this.healClock = WrathFighter.startHealClock(update);
+    hideResult() {
+        this.stopResultTimer();
+        if (this.resultOverlay) this.resultOverlay.classList.remove('active', 'ready');
+        if (this.okBtn) this.okBtn.disabled = true;
     },
 
-    stopHealWatch() {
-        if (this.healClock) {
-            this.healClock.stop();
-            this.healClock = null;
+    stopResultTimer() {
+        if (this.okTimeoutId) {
+            clearTimeout(this.okTimeoutId);
+            this.okTimeoutId = null;
         }
-        const again = document.getElementById('wrath-again-btn');
-        if (again) { again.disabled = false; again.textContent = 'Ещё раз'; }
     },
 
     stopFightTimer() {
@@ -432,7 +432,7 @@ const WrathDuel = {
             this.overlayText.textContent = text;
             this.overlayText.style.color = color;
         }
-        if (this.resultOverlay) this.resultOverlay.classList.add('active');
+        this.showResult();
 
         // Мини-игра сообщает, ЧТО произошло. Сколько это стоит и выпадет ли
         // шрам — решает конфиг наград на стороне Backend. Зона последнего

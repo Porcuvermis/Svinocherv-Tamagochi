@@ -267,12 +267,48 @@ const LocalBackend = {
     // Хранится значение плюс метка времени; сколько заросло с тех пор,
     // считает стор по формуле (GameState.fighterHp).
     setFighterHp(hp) {
+        const f = GameState.data.fighter || {};
         GameState.data.fighter = {
             hp: Math.max(0, Math.round(hp)),
-            updated_at: GameTime.now()
+            updated_at: GameTime.now(),
+            // Заморозку не трогаем: запись идёт в том числе посреди боя, где
+            // зарастание как раз остановлено.
+            frozen: !!f.frozen
         };
         GameState.save();
         return GameState.data.fighter;
+    },
+
+    // ---------- ПАУЗА ЗАРАСТАНИЯ ----------
+    // Само по себе здоровье зарастает везде: в комнате, в лобби, при закрытой
+    // игре. Но не там, где здоровье — ресурс текущего испытания: в бою и в
+    // забеге рогалика (там своё лечение). Поэтому бой на входе замораживает
+    // зарастание, а лобби на входе размораживает.
+    //
+    // Флаг живёт в состоянии, а не в памяти экрана: игру закрывают прямо
+    // посреди боя, и «пока меня не было, всё заросло» было бы читом.
+    // Разморозка при этом всегда происходит при возврате в лобби — даже
+    // после того, как игру закрыли и открыли заново.
+    freezeHeal() {
+        const f = GameState.data.fighter;
+        if (!f || f.frozen) return;
+        // Фиксируем то, что накапало до этого момента. Потолок здесь не
+        // нужен: он зависит от снаряжения и применяется при чтении.
+        const raw = GameState.fighterHpRaw();
+        if (raw !== null) f.hp = Math.floor(raw);
+        f.updated_at = GameTime.now();
+        f.frozen = true;
+        GameState.save();
+    },
+
+    resumeHeal() {
+        const f = GameState.data.fighter;
+        if (!f || !f.frozen) return;
+        f.frozen = false;
+        // Отсчёт начинается заново: время, проведённое в бою, не зарастает
+        // задним числом.
+        f.updated_at = GameTime.now();
+        GameState.save();
     },
 
     // ---------- ОБМЕН ШРАМОВ ----------

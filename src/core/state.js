@@ -56,7 +56,12 @@ const GameState = {
             // hp === null означает «полное»: до первого боя и после того, как
             // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
             // значение плюс метка времени, от которой считается остальное.
-            fighter: { hp: null, updated_at: null },
+            //
+            // frozen — «зарастание сейчас не идёт». Ставится на время боя и
+            // забега в рогалике: там здоровье лечится своими способами, а не
+            // само по себе. Флаг живёт в состоянии, а не в памяти экрана,
+            // потому что игру закрывают прямо посреди боя.
+            fighter: { hp: null, updated_at: null, frozen: false },
             // Жизнь и смерть червя. Сама смерть НЕ хранится — она выводится
             // из меток шкал (см. worm-condition.js). Хранится только
             // воскрешение: оно обрывает прошлое голодание, иначе поднятый
@@ -160,7 +165,8 @@ const GameState = {
         }
 
         if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null };
-        if (!d.fighter || typeof d.fighter !== 'object') d.fighter = { hp: null, updated_at: null };
+        if (!d.fighter || typeof d.fighter !== 'object') d.fighter = { hp: null, updated_at: null, frozen: false };
+        if (typeof d.fighter.frozen !== 'boolean') d.fighter.frozen = false;
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
@@ -241,13 +247,24 @@ const GameState = {
     // Максимум приходит снаружи: он зависит от надетого снаряжения, а это не
     // дело стора.
     fighterHp(maxHp) {
-        const f = this.data ? this.data.fighter : null;
-        if (!f || f.hp === null || f.hp === undefined || !f.updated_at) return maxHp;
-        const rate = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
-        const healed = f.hp + GameTime.secondsSince(f.updated_at) * rate;
+        const raw = this.fighterHpRaw();
+        if (raw === null) return maxHp;
         // Вниз округляем: показывать «7 из 13», пока набежало 7.4, честнее,
         // чем округлять к восьми, которых ещё нет.
-        return Math.max(0, Math.min(maxHp, Math.floor(healed)));
+        return Math.max(0, Math.min(maxHp, Math.floor(raw)));
+    },
+
+    // Сырое здоровье, без потолка: потолок зависит от снаряжения, а это не
+    // дело стора. Нужно самой заморозке — зафиксировать накопленное.
+    // null означает «хранить нечего, здоровье полное».
+    fighterHpRaw() {
+        const f = this.data ? this.data.fighter : null;
+        if (!f || f.hp === null || f.hp === undefined || !f.updated_at) return null;
+        // Зарастание остановлено (идёт бой или забег) — сколько было, столько
+        // и есть, сколько бы времени ни прошло.
+        if (f.frozen) return f.hp;
+        const rate = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+        return f.hp + GameTime.secondsSince(f.updated_at) * rate;
     },
 
     // Сколько секунд до полного здоровья. Нужно интерфейсу, чтобы написать

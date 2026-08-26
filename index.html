@@ -198,7 +198,7 @@
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=1" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=6" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=7" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -535,9 +535,11 @@
                 <!-- Что начислили. Заполняется по ответу с той стороны
                      (событие minigame:awarded), сама игра ничего не считает. -->
                 <div class="wrath-award" id="wrath-award"></div>
+                <!-- Кнопка появляется НЕ сразу: секунду после оглашения
+                     результата экран ничего не принимает, чтобы случайный тап
+                     не смахнул результат раньше, чем игрок его прочитал. -->
                 <div class="wrath-overlay-buttons">
-                    <button type="button" class="wrath-btn primary" id="wrath-again-btn">Ещё раз</button>
-                    <button type="button" class="wrath-btn" id="wrath-lobby-btn">В лобби</button>
+                    <button type="button" class="wrath-btn primary" id="wrath-ok-btn">Окей</button>
                 </div>
             </div>
         </div>
@@ -930,8 +932,8 @@
 <script src="src/config/wrath-gear.js?v=2"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
-<script src="src/core/state.js?v=5"></script>
-<script src="src/core/backend.js?v=5"></script>
+<script src="src/core/state.js?v=6"></script>
+<script src="src/core/backend.js?v=6"></script>
 
 <script src="src/core/palette.js?v=4"></script>
 <!-- Локации: таблица комнат. Строго после палитры — берёт цвета оттуда
@@ -952,8 +954,8 @@
      лобби и бой, а они считают характеристики бойцом. -->
 <script src="src/minigames/wrath/wrath-fighter.js?v=2"></script>
 <script src="src/minigames/wrath/wrath-shop.js?v=2"></script>
-<script src="src/minigames/wrath/wrath-lobby.js?v=3"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=3"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=4"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=4"></script>
 <script src="src/minigames/wrath/wrath.js?v=9"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>

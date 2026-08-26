@@ -786,9 +786,21 @@
     color: #ffd27f;
 }
 
+/* Кнопка проявляется позже самого результата и до этого момента не
+   существует для пальца: пока её нет, тапы гасит сам оверлей. */
 .wrath-overlay-buttons {
     display: flex;
     gap: 12px;
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.wrath-result-overlay.ready .wrath-overlay-buttons {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
 .wrath-btn {
