@@ -27,11 +27,20 @@ const HIT = (ZONES.length - 1) / ZONES.length;   // доля ударов, пр�
 // ---------- ЦЕЛЕВЫЕ ЧИСЛА МОДЕЛИ ----------
 // Откуда взялись — docs/plan/15-progression.md, раздел 3.
 const TARGET = {
-    powerStep: 1.30,      // во сколько раз ступень сильнее предыдущей
+    levelStep: 1.60,      // во сколько раз сильнее СЛЕДУЮЩИЙ УРОВЕНЬ силы
+    powerStep: 1.30,      // во сколько раз ступень снаряжения сильнее предыдущей
     costStep: 1.90,       // во сколько раз ступень дороже предыдущей
     timeStep: [1.2, 1.7], // во сколько раз дольше копится (допустимый коридор)
     firstTierMinutes: 12  // первая ступень должна быть по силам за один заход
 };
+
+// Уровень силы — читаемое целое поверх сырой силы. Сила умножается, уровень
+// прибавляется: каждый уровень это ×1.6, то есть решающая разница (при равных
+// уровнях бой 50/50, на уровень ниже — 13% побед, на уровень выше — 87%).
+// Разбор — docs/plan/15-progression.md, раздел 9.
+function level(value, base) {
+    return Math.log(value / base) / Math.log(TARGET.levelStep);
+}
 
 // ---------- ДОПУЩЕНИЯ ПРО ИГРУ ----------
 // Меняются здесь; всё, что ниже, пересчитается само.
@@ -129,7 +138,8 @@ const rows = [zero, ...tiers].map((s, i) => {
 console.log('доход: ' + inc.tokensPerHour.toFixed(2) + ' жетона/час ('
     + inc.duelsPerHour.toFixed(0) + ' боёв/час, побед ' + (PLAY.winRate * 100) + '%)\n');
 
-console.log('ст.  хп   урон    броня   сила   ×пред   цена  всего  часов  ×пред');
+const BASE = rows[0].power;
+console.log('ст.  хп   урон    броня   сила   ур.   ×пред   цена  всего  часов  ×пред');
 let cum = 0, prevPower = null, prevTime = null;
 rows.forEach(r => {
     cum += r.cost;
@@ -142,6 +152,7 @@ rows.forEach(r => {
         (r.stats.damageMin + '-' + r.stats.damageMax).padStart(6) + '  ' +
         ZONES.map(z => r.stats.armor[z]).join('/').padStart(6) + '  ' +
         r.power.toFixed(0).padStart(5) + '  ' +
+        level(r.power, BASE).toFixed(1).padStart(4) + '  ' +
         (pStep ? '×' + pStep.toFixed(2) : '  —  ').padStart(6) + '  ' +
         String(r.cost).padStart(4) + '  ' +
         String(cum).padStart(5) + '  ' +
@@ -190,6 +201,30 @@ function winChance(ratio) {
     }
     return 99;
 }
+// ---------- ПРОТИВНИКИ ЗАБЕГА В ТЕХ ЖЕ УРОВНЯХ ----------
+// Чтобы силу контента и силу игрока можно было сравнивать одним числом.
+const rogue = W.rogue;
+if (rogue && rogue.enemies) {
+    console.log('\n--- противники забега в уровнях силы ---');
+    Object.keys(rogue.enemies).forEach(key => {
+        const e = rogue.enemies[key];
+        const p = power({
+            hp: e.hp, damageMin: e.damage[0], damageMax: e.damage[1],
+            armor: { head: 0, body: 0, tail: 0 }
+        }, (e.damage[0] + e.damage[1]) / 2).value;
+        console.log('  ' + key.padEnd(10) + 'сила ' + p.toFixed(0).padStart(4)
+            + '   уровень ' + level(p, BASE).toFixed(1));
+    });
+    if (rogue.start) {
+        const st = power({
+            hp: rogue.start.hp, damageMin: rogue.start.damage[0],
+            damageMax: rogue.start.damage[1], armor: { head: 0, body: 0, tail: 0 }
+        }, (rogue.start.damage[0] + rogue.start.damage[1]) / 2).value;
+        console.log('  ' + 'вход'.padEnd(10) + 'сила ' + st.toFixed(0).padStart(4)
+            + '   уровень ' + level(st, BASE).toFixed(1));
+    }
+}
+
 console.log('\n--- если войти на ступень со снаряжением предыдущей ---');
 for (let i = 1; i < rows.length; i++) {
     const ratio = rows[i - 1].power / rows[i].power;

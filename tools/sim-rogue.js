@@ -58,7 +58,17 @@ function takeBoost(p, choices, policy) {
     if (b.hp) { p.maxHp += b.hp; p.hp += b.hp; }
 }
 
-function run(start, policy) {
+// ---------- СИЛА ----------
+// Та же мера, что в tools/progression.js: сколько урона боец успевает
+// нанести, прежде чем умрёт (docs/plan/15-progression.md, раздел 2).
+const HIT = (ZONES.length - 1) / ZONES.length;
+function power(hp, dmgMin, dmgMax, armor, incoming) {
+    const dps = ((dmgMin + dmgMax) / 2) * HIT;
+    const perHit = Math.max(FLOOR, incoming - (armor || 0));
+    return hp * (incoming / perHit) * dps;
+}
+
+function run(start, policy, tension) {
     const p = {
         hp: start.hp, maxHp: start.hp,
         dmgMin: start.dmgMin, dmgMax: start.dmgMax,
@@ -74,6 +84,20 @@ function run(start, policy) {
             continue;
         }
         const enemy = ROGUE.enemies[step.enemy];
+
+        // Натяжение узла: во сколько раз боец сильнее противника В МОМЕНТ
+        // прихода. Меряется здесь, а не в таблице врагов, потому что внутри
+        // забега боец растёт — «процент от силы босса» без этого врёт.
+        if (tension) {
+            const incoming = (enemy.damage[0] + enemy.damage[1]) / 2;
+            const armor = ZONES.reduce((a, z) => a + p.armor[z], 0) / ZONES.length;
+            const mine = power(p.hp, p.dmgMin, p.dmgMax, armor, incoming);
+            const his = power(enemy.hp, enemy.damage[0], enemy.damage[1], 0,
+                (p.dmgMin + p.dmgMax) / 2);
+            const t = tension[node] || (tension[node] = { name: step.enemy, mine: 0, his: 0, n: 0 });
+            t.mine += mine; t.his += his; t.n++;
+        }
+
         const res = fight(p, enemy);
         if (!res.win) return { died: node, rounds: res.rounds };
         const reward = enemy.reward || {};
@@ -86,6 +110,11 @@ function run(start, policy) {
 }
 
 // ---------- бойцы, которых сравниваем ----------
+// Главный — тот, с которым в забег и входят: ROGUE.start. Остальные два для
+// сравнения: голая база (что было бы без стартового набора) и полный комплект
+// из магазина (что было бы без изоляции).
+const start = ROGUE.start || { hp: W.baseHp, damage: [W.damageMin, W.damageMax] };
+const runner = { hp: start.hp, dmgMin: start.damage[0], dmgMax: start.damage[1], armor: {} };
 const bare = { hp: W.baseHp, dmgMin: W.damageMin, dmgMax: W.damageMax, armor: {} };
 
 // Полный комплект: по лучшему предмету в каждый слот плюс потолок прокачки.
@@ -116,17 +145,19 @@ const geared = (() => {
 const N = parseInt(process.argv[2] || '20000', 10);
 const nodesTotal = ROGUE.map.filter(s => s.kind !== 'fork').length;
 
-[['голый (изоляция)', bare], ['полный комплект', geared]].forEach(([label, start]) => {
+[['боец забега', runner], ['голая база', bare], ['полный комплект', geared]].forEach(([label, start]) => {
     console.log('\n=== ' + label + ' === хп ' + start.hp
         + ', урон ' + start.dmgMin + '-' + start.dmgMax
         + ', броня ' + ZONES.map(z => start.armor[z] || 0).join('/'));
     ['damage', 'hp', 'mixed'].forEach(policy => {
         let wins = 0;
         const deaths = new Array(ROGUE.map.length).fill(0);
+        const tension = (policy === 'mixed') ? {} : null;
         for (let i = 0; i < N; i++) {
-            const r = run(start, policy);
+            const r = run(start, policy, tension);
             if (r.died === null) wins++; else deaths[r.died]++;
         }
+        if (tension) start._tension = tension;
         const where = deaths.map((d, i) => d ? (i + 1) + ':' + Math.round(d / N * 100) + '%' : null)
             .filter(Boolean).join(' ');
         console.log('  политика ' + policy.padEnd(7)
@@ -134,3 +165,24 @@ const nodesTotal = ROGUE.map.filter(s => s.kind !== 'fork').length;
     });
 });
 console.log('\nузлов с боем: ' + nodesTotal + ', прогонов на политику: ' + N);
+
+// ---------- НАТЯЖЕНИЕ ПО УЗЛАМ ----------
+// Чем ближе отношение к единице, тем ровнее бой. Меряется по бойцу, который
+// пришёл на узел, а не по таблице врагов: внутри забега игрок растёт, и
+// «процент от силы босса» без этого ничего не значит.
+if (runner._tension) {
+    console.log('\n=== натяжение по узлам (боец забега) ===');
+    console.log('узел  противник       его сила  сила игрока  отношение  доля от босса');
+    const t = runner._tension;
+    const keys = Object.keys(t).map(Number).sort((a, b) => a - b);
+    const bossPower = t[keys[keys.length - 1]].his / t[keys[keys.length - 1]].n;
+    keys.forEach(k => {
+        const row = t[k];
+        const his = row.his / row.n, mine = row.mine / row.n;
+        console.log(String(k + 1).padEnd(6) + row.name.padEnd(16)
+            + his.toFixed(0).padStart(8)
+            + mine.toFixed(0).padStart(13)
+            + ('×' + (mine / his).toFixed(2)).padStart(11)
+            + ((his / bossPower * 100).toFixed(0) + '%').padStart(15));
+    });
+}
