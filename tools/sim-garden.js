@@ -1,90 +1,135 @@
-// ================= САД ЛЕНИ: ПРОПУСКНАЯ СПОСОБНОСТЬ =================
-// Отвечает на два вопроса, без которых сад собирать нельзя:
-//   1) в каком масштабе времени держать ожидания — в часах или в минутах;
-//   2) сколько грядок имеет смысл, и когда следующая перестаёт что-то давать.
+// ================= САД ЛЕНИ: УРОЖАЙ, УДОБРЕНИЕ, ИНСТРУМЕНТЫ =================
+// Модель цикла (docs/plan/19-sloth-garden.md):
+//   вскопал+посеял+полил → ЭТАП 1 (часы) → прополол → ЭТАП 2 (минуты) → собрал
 //
-// ---------- ПОЧЕМУ ЧАСЫ НЕ РАБОТАЮТ ----------
-// Первая версия расчёта ставила ожидания в часы (полив 4 ч, прополка 3 ч) и
-// считала заходы в игру. Вышло, что за один заход грядка продвигается ровно на
-// ОДНУ стадию, сколько бы ни ждала: следующая стадия всё равно начинает
-// отсчёт заново. Поэтому урожай определялся только числом заходов, а прокачка
-// лейки не давала НИЧЕГО — 1.47 урожая в сутки и на стартовых инструментах, и
-// на лучших. Та же дыра, что в зависти: улучшение, которого нельзя
-// почувствовать.
+// Этап 1 длинный и оффлайновый. Его ускоряет УДОБРЕНИЕ: одна какашка снимает
+// час, скинуть можно хоть все часы разом. Базу этапа сокращает ЛЕЙКА.
+// Этап 2 короткий и внутрисессионный. Его сокращают ГРАБЛИ.
 //
-// Значит ожидания живут в МИНУТАХ, а сад — игра, в которой сидят: пока одна
-// грядка тянется, копаешь вторую. Оффлайн при этом не отменяется — растение
-// считается от метки времени и дозревает без игрока (инвариант 1), просто он
-// не единственный путь.
+// ---------- ЧТО ЗДЕСЬ ПРОВЕРЯЕТСЯ ----------
+// 1) Работает ли инструмент, который сокращает ожидание. Проверка нужна,
+//    потому что первый расчёт этого сада показал: при ожидании в часы прокачка
+//    не даёт НИЧЕГО — за один заход грядка продвигается ровно на одну стадию,
+//    сколько бы ни ждала. Инструмент чего-то стоит только если ожидание
+//    сравнимо с тем, сколько игрок готов ждать НЕ УХОДЯ (patience).
+// 2) Не печатает ли круг «удобрение → урожай → блюдо → какашки» ресурсы из
+//    ничего. Удобрение обязано быть чуть убыточным по ресурсу: платят за
+//    ВРЕМЯ, а не за прибыль.
 //
 // Запуск:  node tools/sim-garden.js
 
-const SESSION_MIN = 10;      // сколько игрок сидит в саду за заход
-const TICK = 1;              // секунда
+const DAYS = 60;
+const H = 60;                       // час в минутах
 
-// Ступени инструментов: ожидание после действия, СЕКУНДЫ.
-const CANS = [180, 120, 75];   // лейка: ждать после полива
-const HOES = [120, 80, 50];    // тяпка: ждать после прополки
+const CANS  = [3 * H, 2 * H, 1 * H];     // лейка: база этапа 1, ЦЕЛЫМИ часами
+const RAKES = [25, 15, 6];               // грабли: этап 2, минуты
+// Сколько минут игрок готов ждать в саду, не уходя. Это НЕ константа игры, а
+// свойство живого человека: у одного три минуты, у другого пятнадцать.
+// Поэтому грабли меряются не одним порогом, а полосой — см. таблицу внизу.
+let PATIENCE = 8;
 
-// Ручная работа: сколько секунд занимает само действие. Это и есть
-// «размеренность» — действия нарочно не мгновенные, и они же наполняют
-// шкалу лени.
-const WORK = { dig: 6, sow: 4, water: 5, weed: 5, pick: 3 };
-const HANDS_ON = WORK.dig + WORK.sow + WORK.water + WORK.weed + WORK.pick;
+// Сколько какашек приносит плод, попав в блюдо. Блюдо из 4 плодов даёт 10
+// мелких, то есть плод стоит 2.5 — а полный скип этапа 1 стоит 3 какашки.
+// Отношение НАРОЧНО меньше единицы: см. проверку 2 выше.
+const POOP_PER_FRUIT = 2.5;
+const BASE_POOPS_PER_DAY = 3;            // кормёжки без своего урожая
 
-function simulate(beds, canLvl, hoeLvl) {
-    const w1 = CANS[canLvl], w2 = HOES[hoeLvl];
-    const state = new Array(beds).fill(null).map(() => ({ stage: 'empty', readyAt: 0 }));
-    let t = 0, busyUntil = 0, harvests = 0;
+const SCHEDULES = {
+    'раз в день': [20],
+    'два раза':   [9, 21],
+    'три раза':   [8, 14, 21],
+    'пять раз':   [8, 12, 15, 18, 22]
+};
 
-    while (t < SESSION_MIN * 60) {
-        if (t >= busyUntil) {
-            // Руки свободны — ищем грядку, с которой можно что-то сделать.
-            let picked = null;
-            for (const b of state) {
-                if (b.stage === 'empty') { picked = { b, work: WORK.dig + WORK.sow + WORK.water, next: 'watered', wait: w1 }; break; }
-                if (b.stage === 'watered' && t >= b.readyAt) { picked = { b, work: WORK.weed, next: 'weeded', wait: w2 }; break; }
-                if (b.stage === 'weeded' && t >= b.readyAt) { picked = { b, work: WORK.pick, next: 'empty', wait: 0, harvest: true }; break; }
-            }
-            if (picked) {
-                busyUntil = t + picked.work;
-                picked.b.stage = picked.next;
-                picked.b.readyAt = busyUntil + picked.wait;
-                if (picked.harvest) harvests++;
+// policy: 'none' — не удобрять; 'top' — досыпать ровно столько, чтобы
+// дозрело прямо сейчас; 'all' — скипать всегда всё.
+function simulate(canLvl, rakeLvl, visits, policy, poopBudgetPerDay) {
+    const b1 = CANS[canLvl], b2 = RAKES[rakeLvl];
+    let stage = 'empty', readyAt = 0;
+    let harvests = 0, poopsSpent = 0;
+    let bank = 0;
+
+    for (let day = 0; day < DAYS; day++) {
+        bank += poopBudgetPerDay;
+        for (const h of visits) {
+            let now = day * 24 * H + h * H;
+            const leaveAt = now + PATIENCE;
+            let acted = true;
+            while (acted) {
+                acted = false;
+                if (stage === 'empty') {
+                    stage = 'growing'; readyAt = now + b1; acted = true;
+                } else if (stage === 'growing') {
+                    if (now < readyAt && policy !== 'none') {
+                        // Удобрение снимает ЦЕЛЫЙ час, дробить нельзя.
+                        const hoursLeft = Math.ceil((readyAt - now) / H);
+                        const want = policy === 'all' ? hoursLeft
+                            : (readyAt - now <= PATIENCE + H ? 1 : 0);
+                        const use = Math.min(want, hoursLeft, Math.floor(bank));
+                        if (use > 0) { readyAt -= use * H; bank -= use; poopsSpent += use; acted = true; }
+                    }
+                    if (now >= readyAt) { stage = 'weeded'; readyAt = now + b2; acted = true; }
+                } else if (stage === 'weeded') {
+                    // Готово сейчас — собираем. Осталось меньше терпения —
+                    // ждём прямо в саду, не уходя.
+                    if (now >= readyAt) { harvests++; stage = 'empty'; acted = true; }
+                    else if (readyAt <= leaveAt) { now = readyAt; acted = true; }
+                }
             }
         }
-        t += TICK;
     }
-    return harvests;
+    return { perDay: harvests / DAYS, poopsPerDay: poopsSpent / DAYS };
 }
 
-console.log(`заход ${SESSION_MIN} минут, ручной работы на цикл ${HANDS_ON} с\n`);
-console.log('урожаев за заход');
-const beds = [1, 2, 3, 4, 6, 8, 10];
-console.log(['грядок'].concat(beds).map(h => String(h).padStart(9)).join(''));
-const setups = [
-    { name: 'стартовые', can: 0, hoe: 0 },
-    { name: 'средние',   can: 1, hoe: 1 },
-    { name: 'лучшие',    can: 2, hoe: 2 }
-];
-for (const s of setups) {
-    const row = [s.name];
-    for (const n of beds) row.push(simulate(n, s.can, s.hoe));
-    console.log(row.map(h => String(h).padStart(9)).join(''));
+console.log(`этап 1 — часы (удобрение снимает час), этап 2 — минуты (грабли)`);
+console.log(`игрок готов ждать в саду ${PATIENCE} мин, дальше уходит\n`);
+
+console.log('УРОЖАЕВ В СУТКИ С ОДНОЙ ГРЯДКИ, без удобрений');
+console.log(['лейка/грабли'].concat(Object.keys(SCHEDULES)).map(s => String(s).padStart(13)).join(''));
+for (let i = 0; i < 3; i++) {
+    const row = [`ступень ${i}`];
+    for (const k of Object.keys(SCHEDULES)) {
+        row.push(simulate(i, i, SCHEDULES[k], 'none', 0).perDay.toFixed(2));
+    }
+    console.log(row.map(s => String(s).padStart(13)).join(''));
 }
 
-console.log('\nчистое ожидание одного цикла:');
-for (const s of setups) {
-    console.log(`  ${s.name.padEnd(11)} ${((CANS[s.can] + HOES[s.hoe]) / 60).toFixed(1)} мин` +
-        `   (руками ещё ${HANDS_ON} с)`);
+console.log('\nОТДЕЛЬНО ГРАБЛИ (лейка стартовая, три захода, без удобрений)');
+console.log(`  порог «подожду, не уходя» — ${PATIENCE} мин`);
+for (let r = 0; r < 3; r++) {
+    const res = simulate(0, r, SCHEDULES['три раза'], 'none', 0);
+    const waits = RAKES[r] <= PATIENCE ? '  ← укладывается в терпение' : '';
+    console.log(`  грабли ${String(RAKES[r]).padStart(2)} мин: ${res.perDay.toFixed(2)} урожая/сутки${waits}`);
 }
 
-console.log('\nгде грядка перестаёт окупаться (средние инструменты):');
-let prev = 0;
-for (let n = 1; n <= 12; n++) {
-    const h = simulate(n, 1, 1);
-    const gain = h - prev;
-    console.log(`  грядка ${String(n).padStart(2)}: всего ${String(h).padStart(2)} урожая  ` +
-        (gain > 0 ? `(+${gain})` : '(+0 — лишняя)'));
-    prev = h;
+// Грабли по полосе терпения: у разных игроков порог разный, поэтому ступень
+// инструмента ценна ровно тем, какую часть этой полосы она захватывает.
+console.log('\nГРАБЛИ ПО ПОЛОСЕ ТЕРПЕНИЯ (урожаев в сутки, три захода)');
+const band = [3, 5, 8, 12, 20];
+console.log(['грабли'].concat(band.map(p => p + ' мин')).map(s => String(s).padStart(10)).join(''));
+for (let r = 0; r < 3; r++) {
+    const row = [`${RAKES[r]} мин`];
+    for (const p of band) {
+        PATIENCE = p;
+        row.push(simulate(0, r, SCHEDULES['три раза'], 'none', 0).perDay.toFixed(2));
+    }
+    console.log(row.map(s => String(s).padStart(10)).join(''));
+}
+PATIENCE = 8;
+
+console.log('\nОТДЕЛЬНО ЛЕЙКА — она меняет не ожидание, а ЦЕНУ полного скипа');
+for (let c = 0; c < 3; c++) {
+    const res = simulate(c, 0, SCHEDULES['три раза'], 'all', 99);
+    console.log(`  лейка ${(CANS[c] / H)} ч: ${res.perDay.toFixed(2)} урожая/сутки, ` +
+        `скип стоит ${res.poopsPerDay.toFixed(2)} 💩/сутки`);
+}
+
+console.log('\nУДОБРЕНИЕ (три захода, стартовые инструменты, запас 3 какашки/сутки)');
+for (const policy of ['none', 'top', 'all']) {
+    const res = simulate(0, 0, SCHEDULES['три раза'], policy, BASE_POOPS_PER_DAY);
+    const gained = res.perDay * POOP_PER_FRUIT;
+    const label = { none: 'не удобрять', top: 'досыпать час', all: 'скипать всё' }[policy];
+    console.log(`  ${label.padEnd(14)} ${res.perDay.toFixed(2)} урожая  ` +
+        `тратит ${res.poopsPerDay.toFixed(2)} 💩  приносит ${gained.toFixed(2)} 💩  ` +
+        `итог ${(gained - res.poopsPerDay).toFixed(2)}`);
 }
