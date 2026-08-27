@@ -24,9 +24,21 @@ const WrathDuel = {
     // Тело как зона — это живот: он посередине цепочки и крупнее соседей.
     ZONE_PARTS: { head: 'head', body: 'belly', tail: 'tail' },
 
-    // Минимальный размер мишени. Хвост у взрослого червя тонкий, и зона по
-    // его габаритам была бы меньше пальца.
-    MIN_TOUCH: 46,
+    // Размер мишени. ОДИН на все три зоны, а не по габаритам части тела:
+    // раньше голова была вдвое крупнее хвоста, и попасть по хвосту было
+    // объективно труднее — то есть выбор зоны решался не тактикой, а
+    // меткостью. Теперь три равные мишени: промахнуться нельзя ни по одной.
+    //
+    // Число в экранных единицах и делится на масштаб сцены: палец не
+    // уменьшается вместе с червём.
+    ZONE_TOUCH: 78,
+
+    // Сколько боёв игрок считается новичком и подсветка горит в полный голос,
+    // и после скольких она затихает совсем. Между этими числами — средняя
+    // громкость. Считается по накопительному счётчику боёв: это про опыт
+    // игрока, а не про текущую сессию.
+    GUIDE_LOUD_FIGHTS: 5,
+    GUIDE_QUIET_FIGHTS: 15,
 
     // Сколько экран не принимает нажатий после оглашения результата. Палец в
     // этот момент почти всегда уже летит к экрану — добивающий удар только что
@@ -45,7 +57,6 @@ const WrathDuel = {
     daggerAttack: null,
     resultOverlay: null,
     overlayText: null,
-    resultLine: null,
 
     fighters: null,     // { player, enemy }
     playerHP: 0,
@@ -85,7 +96,6 @@ const WrathDuel = {
         this.daggerAttack = document.getElementById('dagger-attack');
         this.resultOverlay = document.getElementById('wrath-result-overlay');
         this.overlayText = document.getElementById('wrath-overlay-text');
-        this.resultLine = document.getElementById('wrath-result');
         this.awardLine = document.getElementById('wrath-award');
 
         // Что начислили за бой, приходит ОТВЕТОМ с той стороны: мини-игра
@@ -226,7 +236,9 @@ const WrathDuel = {
         const stage = this.stages[side];
         const box = this.boxes[side];
         if (!handle || !stage || !box) return;
-        const scale = WrathFighter.fitWorm(handle, stage, box, 0.82);
+        // Множитель крупнее, чем был: здоровье уехало в свободные углы, и
+        // бойцу достался весь его угол целиком.
+        const scale = WrathFighter.fitWorm(handle, stage, box, 0.94);
         this.layoutZones(side, scale);
     },
 
@@ -237,6 +249,10 @@ const WrathDuel = {
         const handle = this.handles[side];
         if (!handle) return;
 
+        // Размер один на все три зоны; от тела берётся только МЕСТО. Тело
+        // вырастет — мишени переедут вместе с ним, но останутся равными.
+        const size = this.ZONE_TOUCH / Math.max(0.2, scale);
+
         Object.keys(this.ZONE_PARTS).forEach(zone => {
             const el = this.zones[side][zone];
             if (!el) return;
@@ -244,16 +260,10 @@ const WrathDuel = {
             const part = WrathFighter.boxOf(handle, partEl);
             if (!part) return;
 
-            // Палец не уменьшается вместе с червём, поэтому минимальный
-            // размер задан в экранных единицах и делится на масштаб сцены.
-            const minSize = this.MIN_TOUCH / Math.max(0.2, scale);
-            const w = Math.max(minSize, part.w);
-            const h = Math.max(minSize, part.h);
-
             el.style.left = `${part.cx.toFixed(1)}px`;
             el.style.top = `${part.cy.toFixed(1)}px`;
-            el.style.width = `${w.toFixed(1)}px`;
-            el.style.height = `${h.toFixed(1)}px`;
+            el.style.width = `${size.toFixed(1)}px`;
+            el.style.height = `${size.toFixed(1)}px`;
         });
     },
 
@@ -276,12 +286,45 @@ const WrathDuel = {
         });
     },
 
+    // ---------- ПОДСКАЗКА ПО ШАГАМ ----------
+    // Задача: новичок должен видеть, куда жать, а опытный — не смотреть на
+    // мигание всю драку. Решается двумя способами сразу.
+    //
+    // Первое: подсвечивается ТОЛЬКО та сторона, от которой сейчас ждут ход.
+    // Не выбрана защита — дышат зелёные зоны на своём черве; выбрана —
+    // гаснут, и начинают дышать красные на противнике; выбрано всё — дышат
+    // сами кинжалы. Подсветка ведёт по шагам, а не горит везде разом.
+    //
+    // Второе: громкость падает с опытом. Первые бои — пульс не
+    // останавливается; дальше он делает несколько вдохов и затихает; у
+    // бойца с пятнадцатью боями за плечами — два вдоха в начале шага, и
+    // всё. Он и так помнит, где зоны.
+    guideLevel() {
+        const fights = GameState.totalCounter('wrath.duel.fights');
+        if (fights < this.GUIDE_LOUD_FIGHTS) return 'guide-loud';
+        if (fights < this.GUIDE_QUIET_FIGHTS) return 'guide-mid';
+        return 'guide-quiet';
+    },
+
+    updateGuide() {
+        if (!this.root) return;
+        const stage = this.fightOver ? ''
+            : (this.chosenDefense === null ? 'await-defense'
+            : (this.chosenAttack === null ? 'await-attack' : 'await-strike'));
+
+        this.root.classList.remove('await-defense', 'await-attack', 'await-strike');
+        if (stage) this.root.classList.add(stage);
+        this.root.classList.toggle('chose-defense', this.chosenDefense !== null);
+        this.root.classList.toggle('chose-attack', this.chosenAttack !== null);
+    },
+
     // ---------- ВЫБОР ----------
     selectDefense(zone) {
         if (this.fightOver || this.isFighting) return;
         this.chosenDefense = zone;
         this.markSelected('player', zone);
         if (this.daggerDefense) this.daggerDefense.classList.add('filled');
+        this.updateGuide();
     },
 
     selectAttack(zone) {
@@ -289,6 +332,7 @@ const WrathDuel = {
         this.chosenAttack = zone;
         this.markSelected('enemy', zone);
         if (this.daggerAttack) this.daggerAttack.classList.add('filled');
+        this.updateGuide();
     },
 
     markSelected(side, zone) {
@@ -307,6 +351,7 @@ const WrathDuel = {
         });
         if (this.daggerDefense) this.daggerDefense.classList.remove('filled');
         if (this.daggerAttack) this.daggerAttack.classList.remove('filled');
+        this.updateGuide();
     },
 
     randomZone() {
@@ -347,9 +392,18 @@ const WrathDuel = {
         this.isFighting = false;
         this.fightOver = false;
         this.lastHitZone = null;
+
+        // Счётчик боёв — накопительный: он про опыт игрока, а не про сессию.
+        // По нему решается, насколько громко подсказывать (guideLevel).
+        if (this.root) {
+            GameState.bumpTotal('wrath.duel.fights');
+            GameState.save();
+            this.root.classList.remove('guide-loud', 'guide-mid', 'guide-quiet');
+            this.root.classList.add(this.guideLevel());
+        }
+
         this.resetSelections();
         this.updateHPBars();
-        this.setResult('');
         if (this.awardLine) this.awardLine.textContent = '';
 
         if (this.daggerBtn) this.daggerBtn.classList.remove('disabled');
@@ -449,6 +503,7 @@ const WrathDuel = {
         this.fightOver = true;
         this.isFighting = false;
         if (this.daggerBtn) this.daggerBtn.classList.add('disabled');
+        this.updateGuide();
 
         // Исход — знаком, а не словом (CLAUDE.md, инвариант 9): кубок,
         // череп, рукопожатие. Цвет добавляет громкости, но читается и без
@@ -463,7 +518,6 @@ const WrathDuel = {
         }
         this.outcome = outcome;
 
-        this.setResult(sign);
         if (this.overlayText) {
             this.overlayText.textContent = sign;
             this.overlayText.style.color = color;
@@ -563,10 +617,6 @@ const WrathDuel = {
         popup.classList.remove('show');
         void popup.offsetWidth;
         popup.classList.add('show');
-    },
-
-    setResult(text) {
-        if (this.resultLine) this.resultLine.textContent = text;
     },
 
     // ---------- ЭФФЕКТЫ ----------

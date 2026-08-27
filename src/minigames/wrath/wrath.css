@@ -429,28 +429,25 @@
 
 #wrath-duel {
     align-items: center;
-    padding: 10px 0 12px;
+    padding: 8px 10px 10px;
     box-sizing: border-box;
 }
 
-/* ---------- ПОЛОСКИ ЗДОРОВЬЯ ----------
-   Обычная строка в колонке, а не позиционированный слой: крестик уехал в
-   шапку общего окна, спорить за z-index больше не с чем. */
-.fighting-hud {
-    flex: 0 0 auto;
-    width: 100%;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 22px;
-    padding: 0 10px;
-    box-sizing: border-box;
-}
-
+/* ---------- ЗДОРОВЬЕ БОЙЦА ----------
+   Стоит не общей шапкой сверху, а рядом со своим бойцом, в свободном углу
+   напротив него: у верхнего слева, у нижнего справа. Причина простая — так
+   видно, ЧЬЁ это здоровье, без подписей и без запоминания, кто где в шапке.
+   Заодно освобождается центр экрана: он весь под кинжалы и зоны. */
 .fighter-hp-box {
-    position: relative;
-    flex: 1;
+    position: absolute;
+    width: 36%;
+    z-index: 15;
 }
+
+/* Прижаты к самому углу: боец занимает свой угол целиком, и единственное
+   место, где полоска его не перекрывает, — противоположный край по высоте. */
+.enemy-side { left: 0; top: 0; }
+.player-side { right: 0; bottom: 0; }
 
 .fighter-name {
     font-size: 10px;
@@ -459,23 +456,24 @@
     margin-bottom: 3px;
 }
 
-.enemy-side .fighter-name { text-align: right; }
-.fighter-name b { color: #fff; font-size: 11px; }
+.enemy-side .fighter-name { text-align: left; }
+.player-side .fighter-name { text-align: right; }
+.fighter-name b { color: #fff; font-size: 13px; }
 
-.fighting-hud .hp-bar-container {
+.fighter-hp-box .hp-bar-container {
     width: 100%;
-    height: 18px;
+    height: 16px;
     background: #222;
     border: 2px solid #555;
     overflow: hidden;
     box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
 }
 
-/* Агрессивный наклон полосок */
+/* Агрессивный наклон полосок; наклон смотрит наружу от своего бойца. */
 .player-side .hp-bar-container { transform: skewX(-15deg); border-right: none; }
 .enemy-side .hp-bar-container { transform: skewX(15deg); border-left: none; }
 
-.fighting-hud .hp-bar {
+.fighter-hp-box .hp-bar {
     height: 100%;
     width: 100%;
     transition: width 0.2s ease-out;
@@ -491,25 +489,13 @@
     float: left;
 }
 
-.wrath-result {
-    flex: 0 0 auto;
-    min-height: 18px;
-    margin-top: 6px;
-    font-size: 16px;
-    font-weight: 900;
-    color: #ffd700;
-    text-align: center;
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
-}
-
 /* ---------- АРЕНА ---------- */
 .battle-arena {
     position: relative;
     width: 100%;
+    height: 100%;
     flex: 1 1 auto;
     min-height: 0;
-    display: flex;
-    align-items: center;
 }
 
 /* ---------- ГДЕ СТОЯТ БОЙЦЫ ----------
@@ -525,10 +511,14 @@
    измеренному силуэту, а не по числу отсюда. */
 .fighter-box {
     position: absolute;
-    width: 70%;
-    height: 50%;
+    width: 68%;
+    height: 46%;
 }
 
+/* Разведены по углам сильнее, чем половина экрана каждому: между ними
+   остаётся свободная полоса, и ровно в ней стоят кинжалы. Бойцы от этого
+   немного мельче, но перестают тесниться в центре, а центр перестаёт быть
+   свалкой из тел, мишеней и кнопки. */
 #wrath-enemy-box { top: 0; right: 0; }
 #wrath-player-box { bottom: 0; left: 0; }
 
@@ -564,7 +554,12 @@
 /* ---------- ЗОНЫ ----------
    Цвет по стороне, а не по состоянию: зелёное — то, что я закрываю, красное
    — то, куда бью. Так читается без подписей и без обучения.
-   Размер и место ставит скрипт по реальным габаритам части тела. */
+
+   Размер у всех трёх ОДИН (wrath-duel.js, ZONE_TOUCH), от тела берётся
+   только место. Раньше мишень повторяла габариты части, и голова выходила
+   вдвое крупнее хвоста: выбор зоны решался меткостью, а не тактикой.
+
+   В покое зона едва видна. Всё остальное — в блоке подсказки ниже. */
 .zone-hit {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -574,7 +569,9 @@
     cursor: pointer;
     pointer-events: auto;
     z-index: 20;
-    transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    opacity: 0.5;
+    transition: background 0.15s ease, box-shadow 0.15s ease,
+                border-color 0.15s ease, opacity 0.25s ease;
 }
 
 .player-zone {
@@ -587,9 +584,68 @@
     background: rgba(255, 59, 48, 0.07);
 }
 
+/* ---------- ПОДСКАЗКА: КУДА ЖАТЬ ----------
+   Две задачи разом: новичок должен видеть, куда жать, а опытный — не
+   смотреть на мигание всю драку. Отсюда два независимых механизма.
+
+   ПЕРВЫЙ — ходом. Дышит только та сторона, от которой сейчас ждут выбор:
+   не выбрана защита — свой червь, выбрана — противник, выбрано всё — сами
+   кинжалы. Подсветка ведёт по шагам, а не горит везде разом, поэтому даже
+   в полный голос она не превращается в ёлку.
+
+   ВТОРОЙ — громкостью. Пульс задан ЧИСЛОМ ВДОХОВ, и число это зависит от
+   того, сколько боёв за плечами (wrath-duel.js, guideLevel): первые бои —
+   бесконечно, дальше шесть вдохов, у опытного — два в начале шага, и всё.
+   Он и так помнит, где зоны. Стоит появиться новому шагу — счёт начинается
+   заново, потому что элемент заново попадает под правило. */
+#wrath-duel.await-defense .player-zone:not(.selected),
+#wrath-duel.await-attack .enemy-zone:not(.selected) {
+    opacity: 1;
+    animation: zone-breathe 1.3s ease-in-out 2;
+}
+
+#wrath-duel.guide-mid.await-defense .player-zone:not(.selected),
+#wrath-duel.guide-mid.await-attack .enemy-zone:not(.selected) {
+    animation-iteration-count: 6;
+}
+
+#wrath-duel.guide-loud.await-defense .player-zone:not(.selected),
+#wrath-duel.guide-loud.await-attack .enemy-zone:not(.selected) {
+    animation-iteration-count: infinite;
+}
+
+/* Своя зона уже выбрана — остальные на этой стороне уходят в тень: выбор
+   сделан, и напоминать о нём нечем. */
+#wrath-duel.chose-defense .player-zone:not(.selected),
+#wrath-duel.chose-attack .enemy-zone:not(.selected) { opacity: 0.28; }
+
+@keyframes zone-breathe {
+    0%, 100% {
+        box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+        transform: translate(-50%, -50%) scale(1);
+    }
+    50% {
+        box-shadow: 0 0 18px currentColor, inset 0 0 14px currentColor;
+        transform: translate(-50%, -50%) scale(1.06);
+    }
+}
+
+/* currentColor у зоны — её собственный цвет стороны, поэтому свечение
+   зелёное у защиты и красное у атаки без единого дубля правил. */
+.player-zone { color: rgba(76, 175, 80, 0.75); }
+.enemy-zone { color: rgba(255, 59, 48, 0.75); }
+
+@media (prefers-reduced-motion: reduce) {
+    #wrath-duel .zone-hit { animation: none !important; }
+    #wrath-duel.await-defense .player-zone:not(.selected),
+    #wrath-duel.await-attack .enemy-zone:not(.selected) { opacity: 1; }
+}
+
 /* Выбранная зона отмечается контуром и свечением, а заливка остаётся
    лёгкой: при плотной заливке червь под мишенью перекрашивался целиком и
    переставал быть похожим на себя. */
+.zone-hit.selected { opacity: 1; }
+
 .player-zone.selected {
     border-style: solid;
     border-color: var(--wrath-defense);
@@ -620,6 +676,27 @@
 
 .dagger-btn.disabled { pointer-events: none; opacity: 0.3; }
 .dagger-btn:active { transform: translate(-50%, -50%) scale(0.94); }
+
+/* Последний шаг: зоны выбраны, ждём удара — дышит сама кнопка. Тот же счёт
+   вдохов по опыту, что и у зон. */
+#wrath-duel.await-strike .dagger-btn {
+    animation: dagger-breathe 1.2s ease-in-out 2;
+}
+
+#wrath-duel.guide-mid.await-strike .dagger-btn { animation-iteration-count: 6; }
+#wrath-duel.guide-loud.await-strike .dagger-btn { animation-iteration-count: infinite; }
+
+@keyframes dagger-breathe {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); filter: none; }
+    50% {
+        transform: translate(-50%, -50%) scale(1.08);
+        filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.45));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wrath-duel.await-strike .dagger-btn { animation: none; }
+}
 
 .dagger-svg { width: 100%; height: 100%; overflow: visible; }
 
@@ -670,8 +747,8 @@
     opacity: 0;
 }
 
-.player-side .dmg-popup { left: 10px; }
-.enemy-side .dmg-popup { right: 10px; }
+.player-side .dmg-popup { right: 6px; }
+.enemy-side .dmg-popup { left: 6px; }
 
 .dmg-popup.show { animation: dmg-float 1.4s ease-out forwards; }
 

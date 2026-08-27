@@ -198,7 +198,7 @@
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=16" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=17" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -506,36 +506,27 @@
             </div>
         </div>
 
-        <!-- БОЙ ОДИН НА ОДИН -->
+        <!-- БОЙ ОДИН НА ОДИН.
+             Раскладка диагональная: противник в верхнем правом углу, игрок в
+             нижнем левом, кинжалы ровно в центре. Здоровье каждого бойца
+             стоит рядом с ним, в свободном углу напротив: у верхнего слева,
+             у нижнего справа. Так центр экрана остаётся под кинжалы и зоны,
+             а не под общую шапку. -->
         <div class="wrath-screen" id="wrath-duel">
-            <div class="fighting-hud">
-                <div class="fighter-hp-box player-side">
-                    <!-- Имени у бойца нет: слева всегда игрок, справа всегда
-                         противник, и это видно по тому, кто куда смотрит. -->
-                    <div class="fighter-name"><b id="player-hp-num"></b></div>
-                    <div class="hp-bar-container">
-                        <div class="hp-bar" id="player-hp-bar"></div>
-                    </div>
-                    <div class="dmg-popup" id="player-dmg-popup"></div>
+            <div class="battle-arena">
+                <!-- Зоны ударов добавляются в сцены скриптом: их место
+                     считается от РЕАЛЬНОГО тела (getPartPoint), а не
+                     задаётся в разметке, иначе они разъедутся при
+                     взрослении червя. -->
+                <div class="fighter-box" id="wrath-enemy-box">
+                    <div class="worm-stage" id="wrath-enemy-stage"></div>
                 </div>
-
                 <div class="fighter-hp-box enemy-side">
                     <div class="fighter-name"><b id="enemy-hp-num"></b></div>
                     <div class="hp-bar-container">
                         <div class="hp-bar" id="enemy-hp-bar"></div>
                     </div>
                     <div class="dmg-popup" id="enemy-dmg-popup"></div>
-                </div>
-            </div>
-
-            <div class="wrath-result" id="wrath-result"></div>
-
-            <div class="battle-arena">
-                <!-- Зоны ударов добавляются сюда скриптом: их место считается
-                     от РЕАЛЬНОГО тела (getPartPoint), а не задаётся в разметке,
-                     иначе они разъедутся при взрослении червя. -->
-                <div class="fighter-box" id="wrath-player-box">
-                    <div class="worm-stage" id="wrath-player-stage"></div>
                 </div>
 
                 <!-- Скрещённые кинжалы: левый — защита, правый — удар.
@@ -557,8 +548,15 @@
                     </svg>
                 </div>
 
-                <div class="fighter-box" id="wrath-enemy-box">
-                    <div class="worm-stage" id="wrath-enemy-stage"></div>
+                <div class="fighter-box" id="wrath-player-box">
+                    <div class="worm-stage" id="wrath-player-stage"></div>
+                </div>
+                <div class="fighter-hp-box player-side">
+                    <div class="fighter-name"><b id="player-hp-num"></b></div>
+                    <div class="hp-bar-container">
+                        <div class="hp-bar" id="player-hp-bar"></div>
+                    </div>
+                    <div class="dmg-popup" id="player-dmg-popup"></div>
                 </div>
             </div>
 
@@ -989,7 +987,7 @@
 <script src="src/minigames/wrath/wrath-boost.js?v=2"></script>
 <script src="src/minigames/wrath/wrath-rogue.js?v=4"></script>
 <script src="src/minigames/wrath/wrath-lobby.js?v=9"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=6"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=7"></script>
 <script src="src/minigames/wrath/wrath.js?v=12"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>
