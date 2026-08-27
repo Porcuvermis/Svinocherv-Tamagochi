@@ -21,6 +21,11 @@ const WrathBoost = {
     root: null,
     walletEl: null,
     listEl: null,
+    tabsEl: null,
+    // Открытая вкладка: 'stat' — числа бойца, 'passive' — способности,
+    // меняющие правила боя. Складывать их в один список нельзя: «+2 к урону»
+    // и «видишь намерения врага» — вещи разного рода.
+    tab: 'stat',
     // Чего не хватило на покупку: подсвечивается в кошельке и гаснет само.
     // Слов «не хватает жетонов» больше нет (docs/plan/11-no-words.md).
     lack: null,
@@ -33,6 +38,7 @@ const WrathBoost = {
 
         this.walletEl = document.getElementById('boost-wallet');
         this.listEl = document.getElementById('boost-list');
+        this.tabsEl = document.getElementById('boost-tabs');
 
         const back = document.getElementById('wrath-boost-back');
         if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
@@ -51,28 +57,56 @@ const WrathBoost = {
         return (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades) || { order: [] };
     },
 
+    // Ветки вкладки: открытые и ещё не выкачанные до потолка.
+    branches(tab) {
+        const conf = this.conf();
+        return (conf.order || []).filter(key => {
+            const branch = conf[key];
+            if (!branch || !branch.levels) return false;
+            if ((branch.tab || 'stat') !== tab) return false;
+            // Ветка с невыполненным условием не показывается вовсе — как и
+            // предмет в магазине (Backend.isUnlocked).
+            if (!Backend.isUnlocked(branch.unlock)) return false;
+            // Выкачанная до потолка ветка уходит из списка: покупать в ней
+            // больше нечего, а что она дала — видно в панели бойца в лобби.
+            return GameState.upgradeLevel(key) < branch.levels.length;
+        });
+    },
+
+    TABS: [
+        { key: 'stat', emoji: '📈' },
+        { key: 'passive', emoji: '✨' }
+    ],
+
     render() {
         if (!this.root) return;
         if (this.walletEl) this.walletEl.innerHTML = WrathShop.walletHtml(this.lack);
         if (!this.listEl) return;
 
+        if (this.tabsEl) {
+            this.tabsEl.innerHTML = this.TABS.map(tab => {
+                const left = this.branches(tab.key).length;
+                return `
+                    <button type="button" class="shop-tab${tab.key === this.tab ? ' on' : ''}${left ? '' : ' done'}"
+                            data-tab="${tab.key}">
+                        <span class="shop-tab-emoji">${tab.emoji}</span>
+                    </button>`;
+            }).join('');
+            this.tabsEl.querySelectorAll('.shop-tab').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.tab = btn.dataset.tab;
+                    this.render();
+                };
+            });
+        }
+
         const conf = this.conf();
         let html = '';
 
-        (conf.order || []).forEach(key => {
+        this.branches(this.tab).forEach(key => {
             const branch = conf[key];
-            if (!branch || !branch.levels) return;
-            // Ветка с невыполненным условием не показывается вовсе — как и
-            // предмет в магазине (Backend.isUnlocked). Пока условий нет ни у
-            // одной, но фильтр стоит.
-            if (!Backend.isUnlocked(branch.unlock)) return;
-
             const level = GameState.upgradeLevel(key);
-            const maxed = level >= branch.levels.length;
-            // Выкачанная до потолка ветка уходит из списка: покупать в ней
-            // больше нечего, а что она дала — видно в панели бойца в лобби.
-            if (maxed) return;
-
             const next = branch.levels[level];
             const now = GameState.upgradeBonus(key);
             const affordable = this.affordable(next.price);
@@ -87,12 +121,14 @@ const WrathBoost = {
                 <button type="button" class="boost-item${affordable ? '' : ' poor'}" data-key="${key}">
                     <span class="boost-emoji">${branch.emoji}</span>
                     <span class="boost-text">
-                        <span class="boost-now">${this.bonusText(key, now)}</span>
+                        <span class="boost-now">${branch.tab === 'passive'
+                            ? branch.emoji
+                            : this.bonusText(key, now)}</span>
                         <span class="boost-pips">${this.pips(level, branch.levels.length)}</span>
                     </span>
                     <span class="boost-price">
                         <b>${this.priceText(next.price)}</b>
-                        <i>${this.bonusText(key, next.bonus)}</i>
+                        ${branch.tab === 'passive' ? '' : `<i>${this.bonusText(key, next.bonus)}</i>`}
                     </span>
                 </button>`;
         });
@@ -100,7 +136,15 @@ const WrathBoost = {
         // ---------- ОБМЕН ШРАМОВ ----------
         // Обмен шрамов — такая же строка, как ветка прокачки: сколько
         // накопилось из нужного, и кнопка с ценой и тем, что за неё дадут.
+        // Живёт на вкладке чисел: это обмен ресурса, а не способность.
         const rule = ECONOMY.marks.exchange;
+        if (this.tab !== 'stat') {
+            this.listEl.innerHTML = html || '<div class="shop-empty">✓</div>';
+            this.listEl.querySelectorAll('.boost-item[data-key]').forEach(btn => {
+                btn.onclick = (e) => { e.stopPropagation(); this.buy(btn.dataset.key); };
+            });
+            return;
+        }
         const scars = (GameState.data.scars || []).length;
         const ready = scars >= rule.scars;
         const currency = ECONOMY.currencies[rule.currency];

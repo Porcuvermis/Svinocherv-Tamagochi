@@ -74,6 +74,16 @@ const WrathDuel = {
     // сообщить исход. У обычного боя его нет — там всё берётся из состояния.
     order: null,
     outcome: null,
+    // Что противник СОБИРАЕТСЯ сделать в этом раунде. Решается ДО того, как
+    // игрок выбирает защиту, и до конца раунда не меняется.
+    //
+    // Раньше бросок был в момент удара, и это было равнозначно — но только
+    // пока никто не умеет подглядывать. «Шестое чувство» показывает зону,
+    // куда противник точно не ударит, а показать намерение можно лишь тогда,
+    // когда оно уже есть. Заодно так честнее: план зафиксирован заранее и не
+    // подстраивается под выбор игрока.
+    enemyPlan: null,
+    safeZone: null,     // зона, по которой в этом раунде удара не будет
     awardPrefix: '',    // что дал узел забега — показывается вместе с наградой
 
     init(host) {
@@ -179,6 +189,9 @@ const WrathDuel = {
         this.hideResult();
         this.fightOver = false;
         this.isFighting = false;
+        this.enemyPlan = null;
+        this.safeZone = null;
+        this.markSafeZone();
         // Заказ забега снимается последним: до этой строки по нему решалось,
         // размораживать ли здоровье лобби.
         this.order = null;
@@ -403,10 +416,37 @@ const WrathDuel = {
         }
 
         this.resetSelections();
+        this.planEnemyRound();
         this.updateHPBars();
         if (this.awardLine) this.awardLine.textContent = '';
 
         if (this.daggerBtn) this.daggerBtn.classList.remove('disabled');
+    },
+
+    // ---------- ПЛАН ПРОТИВНИКА ----------
+    // Бросается в начале раунда, а не в момент удара. Пока никто не видит
+    // намерений, разницы нет; с «шестым чувством» она принципиальна —
+    // показать можно только то, что уже решено.
+    planEnemyRound() {
+        this.enemyPlan = { attack: this.randomZone(), defense: this.randomZone() };
+
+        // Пассивка помечает ОДНУ из двух зон, по которым удара не будет.
+        // Не обе: тогда защита стала бы бесплатной. Одна — и выбор из трёх
+        // превращается в выбор из двух (docs/plan/13-passives.md).
+        this.safeZone = null;
+        if (WrathFighter.hasPassive('sixth_sense')) {
+            const safe = Object.keys(this.ZONE_PARTS)
+                .filter(zone => zone !== this.enemyPlan.attack);
+            this.safeZone = safe[Math.floor(Math.random() * safe.length)];
+        }
+        this.markSafeZone();
+    },
+
+    markSafeZone() {
+        if (!this.zones) return;
+        Object.keys(this.zones.player).forEach(zone => {
+            this.zones.player[zone].classList.toggle('safe', zone === this.safeZone);
+        });
     },
 
     doRound() {
@@ -417,8 +457,10 @@ const WrathDuel = {
         const enemy = this.fighters.enemy;
         const playerAttack = this.chosenAttack;
         const playerDefense = this.chosenDefense;
-        const enemyAttack = this.randomZone();
-        const enemyDefense = this.randomZone();
+        // План уже решён в начале раунда — здесь только исполняется.
+        const plan = this.enemyPlan || { attack: this.randomZone(), defense: this.randomZone() };
+        const enemyAttack = plan.attack;
+        const enemyDefense = plan.defense;
 
         if (playerAttack !== enemyDefense) {
             const dmg = WrathFighter.rollDamage(player, enemy, playerAttack);
@@ -457,6 +499,8 @@ const WrathDuel = {
         } else {
             this.isFighting = false;
             this.resetSelections();
+            // Новый раунд — новый план противника и новая подсказка.
+            this.planEnemyRound();
         }
     },
 

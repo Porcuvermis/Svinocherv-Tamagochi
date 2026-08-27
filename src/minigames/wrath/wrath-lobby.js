@@ -204,7 +204,9 @@ const WrathLobby = {
             const icon = el.querySelector('.gear-icon');
             const gain = el.querySelector('.gear-gain');
             el.classList.toggle('filled', !!item);
-            icon.textContent = item ? item.emoji : slot.emoji;
+            // Пусто — силуэт того, что сюда встаёт. Занято — сам предмет.
+            if (item) icon.textContent = item.emoji;
+            else icon.innerHTML = WrathFighter.slotShape(slot);
             // Зона брони здесь не пишется: слот и есть зона (шлем — голова,
             // броня — тело), и повторять это значком незачем.
             if (gain) gain.innerHTML = item ? WrathFighter.itemStats(item) : '';
@@ -267,10 +269,23 @@ const WrathLobby = {
                     <span class="panel-icon">🛡</span>
                     <span class="panel-num">${armor}</span>
                 </div>
+                ${this.passivesRow()}
             `;
         }
 
         this.refreshHealth();
+    },
+
+    // Купленные способности показываются только здесь: из меню прокачки
+    // купленное уходит, а знать, что у бойца есть шестое чувство, надо.
+    passivesRow() {
+        const passives = WrathFighter.passives();
+        if (!passives.length) return '';
+        return `
+            <div class="panel-row passives">
+                <span class="panel-icon">✨</span>
+                <span class="panel-passives">${passives.map(p => p.emoji).join(' ')}</span>
+            </div>`;
     },
 
     // ---------- ЗДОРОВЬЕ ----------

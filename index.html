@@ -198,7 +198,7 @@
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=19" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=20" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
@@ -467,6 +467,10 @@
              (src/config/wrath-gear.js), поэтому здесь только контейнеры. -->
         <div class="wrath-screen" id="wrath-shop">
             <div class="shop-wallet" id="shop-wallet"></div>
+            <!-- Вкладки по слотам: один длинный список из всех предметов
+                 читается как свалка. Силуэт слота и дробь «куплено из
+                 всего» — строятся скриптом из каталога. -->
+            <div class="shop-tabs" id="shop-tabs"></div>
             <div class="shop-list" id="shop-list"></div>
             <!-- Ответ на покупку. Снаружи прокручиваемого списка: сообщение,
                  уехавшее под сгиб, — это молчание. -->
@@ -478,6 +482,9 @@
              строится из конфига (ECONOMY.minigames.wrath.upgrades). -->
         <div class="wrath-screen" id="wrath-boost">
             <div class="shop-wallet" id="boost-wallet"></div>
+            <!-- Две вкладки: числа бойца и способности, меняющие правила
+                 боя. Складывать их в один список нельзя. -->
+            <div class="shop-tabs" id="boost-tabs"></div>
             <div class="shop-list" id="boost-list"></div>
             <button type="button" class="wrath-btn shop-back" id="wrath-boost-back">↩</button>
         </div>
@@ -954,10 +961,10 @@
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
 <script src="src/core/stage.js?v=2"></script>
-<script src="src/config/economy.js?v=10"></script>
+<script src="src/config/economy.js?v=11"></script>
 <!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
      числа боя лежат там, предметы здесь. -->
-<script src="src/config/wrath-gear.js?v=3"></script>
+<script src="src/config/wrath-gear.js?v=4"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
 <script src="src/core/state.js?v=7"></script>
@@ -980,12 +987,12 @@
 <script src="src/minigames/greed/greed.js?v=9"></script>
 <!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
      лобби и бой, а они считают характеристики бойцом. -->
-<script src="src/minigames/wrath/wrath-fighter.js?v=6"></script>
-<script src="src/minigames/wrath/wrath-shop.js?v=4"></script>
-<script src="src/minigames/wrath/wrath-boost.js?v=3"></script>
+<script src="src/minigames/wrath/wrath-fighter.js?v=7"></script>
+<script src="src/minigames/wrath/wrath-shop.js?v=5"></script>
+<script src="src/minigames/wrath/wrath-boost.js?v=4"></script>
 <script src="src/minigames/wrath/wrath-rogue.js?v=4"></script>
-<script src="src/minigames/wrath/wrath-lobby.js?v=10"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=7"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=11"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=8"></script>
 <script src="src/minigames/wrath/wrath.js?v=12"></script>
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>

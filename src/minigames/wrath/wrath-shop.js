@@ -19,9 +19,14 @@ const WrathShop = {
     root: null,
     walletEl: null,
     listEl: null,
+    tabsEl: null,
     // Какой валюты не хватило: она подсвечивается в кошельке и гаснет сама.
     lack: null,
     lackTimer: null,
+    // Открытая вкладка. Прилавок разбит по слотам: один длинный список из
+    // всех предметов сразу читается как свалка, а по вкладкам видно, где
+    // что, и сколько в каждой ещё не куплено.
+    tab: null,
 
     init(host) {
         this.host = host;
@@ -30,6 +35,7 @@ const WrathShop = {
 
         this.walletEl = document.getElementById('shop-wallet');
         this.listEl = document.getElementById('shop-list');
+        this.tabsEl = document.getElementById('shop-tabs');
 
         const back = document.getElementById('wrath-shop-back');
         if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
@@ -37,7 +43,34 @@ const WrathShop = {
 
     enter() {
         this.lack = null;
+        // Открывается вкладка, где ещё есть что купить: если игрок уже
+        // выкупил оружие, показывать ему пустую полку незачем.
+        const groups = this.groups();
+        const has = groups.find(g => g.key === this.tab && g.rest.length);
+        if (!has) {
+            const first = groups.find(g => g.rest.length) || groups[0];
+            this.tab = first ? first.key : null;
+        }
         this.render();
+    },
+
+    // Прилавок по слотам: что открыто, что уже куплено, что осталось взять.
+    // Считается в одном месте — по этим же числам рисуются и вкладки.
+    groups() {
+        const inventory = GameState.data.inventory || {};
+        return WRATH_GEAR.slots.map(slot => {
+            // Открытое — то, до чего игрок дорос. Условий пока ни у одного
+            // предмета нет, но фильтр стоит: появится — и предмет просто
+            // возникнет на прилавке (Backend.isUnlocked).
+            const items = Object.keys(WRATH_GEAR.items)
+                .filter(id => WRATH_GEAR.items[id].slot === slot.key)
+                .filter(id => Backend.isUnlocked(WRATH_GEAR.items[id].unlock))
+                .sort((a, b) => (WRATH_GEAR.items[a].tier || 0) - (WRATH_GEAR.items[b].tier || 0));
+            // Купленное с прилавка УХОДИТ. Смотреть на то, что уже своё,
+            // незачем: где оно и что даёт, видно в лобби, в своём слоте.
+            const rest = items.filter(id => !inventory[id]);
+            return { key: slot.key, slot, items, rest };
+        }).filter(g => g.items.length);
     },
 
     leave() {
@@ -62,54 +95,47 @@ const WrathShop = {
         if (this.walletEl) this.walletEl.innerHTML = this.walletHtml(this.lack);
         if (!this.listEl) return;
 
-        const inventory = GameState.data.inventory || {};
-        let html = '';
-
-        WRATH_GEAR.slots.forEach(slot => {
-            // Открытое — то, до чего игрок дорос. Условия пока ни у одного
-            // предмета нет, но фильтр стоит: появится — и предмет просто
-            // возникнет на прилавке (Backend.isUnlocked).
-            const items = Object.keys(WRATH_GEAR.items)
-                .filter(id => WRATH_GEAR.items[id].slot === slot.key)
-                .filter(id => Backend.isUnlocked(WRATH_GEAR.items[id].unlock))
-                .sort((a, b) => (WRATH_GEAR.items[a].tier || 0) - (WRATH_GEAR.items[b].tier || 0));
-            if (!items.length) return;
-
-            // Купленное с прилавка УХОДИТ. Смотреть на то, что уже своё,
-            // незачем: где оно и что даёт, видно в лобби, в своём слоте.
-            // Прилавок показывает только то, что ещё можно взять.
-            const rest = items.filter(id => !inventory[id]);
-            if (!rest.length) return;
-
-            // Заголовок группы — значок слота и дробь «куплено из всего».
-            // Потолок объявлен заранее числом, а не словами.
-            const owned = items.length - rest.length;
-            html += `<div class="shop-group">
-                <span class="shop-group-name">${slot.emoji}</span>
-                <span class="shop-group-count">${owned}/${items.length}</span>
-            </div>`;
-
-            rest.forEach(id => {
-                const item = WRATH_GEAR.items[id];
-                const affordable = this.affordable(item);
-                // Названия предмета нет: значок и есть имя, а что предмет
-                // даёт — сказано числами со значками (инвариант 9).
-                //
-                // Нажимается вся строка целиком, а не кнопка внутри неё. Не
-                // по карману — строка приглушена и не выглядит кнопкой, но
-                // тап по ней всё равно ответит: вздрогнет та валюта, которой
-                // не хватило. Так игрок узнаёт причину, не нажимая на то,
-                // что притворялось доступным.
-                html += `
-                    <button type="button" class="shop-item${affordable ? '' : ' poor'}" data-item="${id}">
-                        <span class="shop-item-emoji">${item.emoji}</span>
-                        <span class="shop-item-stat">${WrathFighter.itemStats(item)}</span>
-                        <span class="shop-price">${this.priceText(item)}</span>
-                    </button>`;
+        const groups = this.groups();
+        if (this.tabsEl) {
+            // Вкладка — силуэт слота и дробь «куплено из всего». По дроби
+            // сразу видно, где ещё есть что взять, не открывая вкладку.
+            this.tabsEl.innerHTML = groups.map(g => `
+                <button type="button" class="shop-tab${g.key === this.tab ? ' on' : ''}${g.rest.length ? '' : ' done'}"
+                        data-tab="${g.key}">
+                    ${WrathFighter.slotShape(g.slot)}
+                    <span class="shop-tab-count">${g.items.length - g.rest.length}/${g.items.length}</span>
+                </button>`).join('');
+            this.tabsEl.querySelectorAll('.shop-tab').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.tab = btn.dataset.tab;
+                    this.render();
+                };
             });
-        });
+        }
 
-        // Всё раскуплено — прилавок пуст, и это тоже надо показать.
+        const group = groups.find(g => g.key === this.tab);
+        const rest = group ? group.rest : [];
+
+        // Названия предмета нет: значок и есть имя, а что предмет даёт —
+        // сказано числами со значками (инвариант 9).
+        //
+        // Нажимается вся строка целиком, а не кнопка внутри неё. Не по
+        // карману — строка приглушена и не выглядит кнопкой, но тап по ней
+        // всё равно ответит: вздрогнет та валюта, которой не хватило. Так
+        // игрок узнаёт причину, не нажимая на то, что притворялось доступным.
+        const html = rest.map(id => {
+            const item = WRATH_GEAR.items[id];
+            const affordable = this.affordable(item);
+            return `
+                <button type="button" class="shop-item${affordable ? '' : ' poor'}" data-item="${id}">
+                    <span class="shop-item-emoji">${item.emoji}</span>
+                    <span class="shop-item-stat">${WrathFighter.itemStats(item)}</span>
+                    <span class="shop-price">${this.priceText(item)}</span>
+                </button>`;
+        }).join('');
+
+        // Во вкладке всё раскуплено — это тоже надо показать.
         this.listEl.innerHTML = html || '<div class="shop-empty">✓</div>';
 
         this.listEl.querySelectorAll('.shop-item').forEach(btn => {

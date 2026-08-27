@@ -110,6 +110,10 @@
 .panel-row.hp .panel-num { text-align: right; }
 .panel-num.hurt { color: #ff8a80; }
 
+/* Купленные способности. Показываются только здесь: из меню прокачки
+   купленное уходит, а знать, что у бойца есть шестое чувство, надо. */
+.panel-passives { font-size: 15px; letter-spacing: 2px; }
+
 /* Драться нечем — панель вздрагивает и краснеет в ответ на тап по бою.
    Тот же язык, что у кошелька в магазине. */
 .wrath-panel.lack {
@@ -165,10 +169,23 @@
 
 .gear-slot:active { transform: scale(0.94); }
 
+/* Силуэт того, что встаёт в пустой слот: контур, а не приглушённое эмодзи.
+   Приглушённый значок читается как «выключено», контур — как «место под
+   вот это». Тот же силуэт стоит на вкладке магазина. */
+.slot-shape {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+}
+
 .gear-slot .gear-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 22px;
     line-height: 1;
-    opacity: 0.35;
+    opacity: 0.4;
+    color: #fff;
 }
 
 .gear-slot.filled .gear-icon { opacity: 1; }
@@ -602,20 +619,46 @@
    бесконечно, дальше шесть вдохов, у опытного — два в начале шага, и всё.
    Он и так помнит, где зоны. Стоит появиться новому шагу — счёт начинается
    заново, потому что элемент заново попадает под правило. */
-#wrath-duel.await-defense .player-zone:not(.selected),
+#wrath-duel.await-defense .player-zone:not(.selected):not(.safe),
 #wrath-duel.await-attack .enemy-zone:not(.selected) {
     opacity: 1;
     animation: zone-breathe 1.3s ease-in-out 2;
 }
 
-#wrath-duel.guide-mid.await-defense .player-zone:not(.selected),
+#wrath-duel.guide-mid.await-defense .player-zone:not(.selected):not(.safe),
 #wrath-duel.guide-mid.await-attack .enemy-zone:not(.selected) {
     animation-iteration-count: 6;
 }
 
-#wrath-duel.guide-loud.await-defense .player-zone:not(.selected),
+#wrath-duel.guide-loud.await-defense .player-zone:not(.selected):not(.safe),
 #wrath-duel.guide-loud.await-attack .enemy-zone:not(.selected) {
     animation-iteration-count: infinite;
+}
+
+/* ---------- ШЕСТОЕ ЧУВСТВО ----------
+   Зона, по которой противник в этом раунде точно не ударит. Гасится и
+   перечёркивается: «сюда не прилетит». Не пульсирует — ей нечего сообщать,
+   и внимание остаётся на двух оставшихся.
+
+   Нажатие НЕ запрещено: закрыться этой зоной можно, это просто плохой ход.
+   Запрет отнял бы у игрока право ошибиться. */
+#wrath-duel .player-zone.safe {
+    opacity: 0.3;
+    border-style: solid;
+    border-color: rgba(255, 255, 255, 0.35);
+    background: none;
+    animation: none !important;
+}
+
+#wrath-duel .player-zone.safe::after {
+    content: '';
+    position: absolute;
+    left: 12%;
+    top: 50%;
+    width: 76%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.6);
+    transform: rotate(-45deg);
 }
 
 /* Своя зона уже выбрана — остальные на этой стороне уходят в тень: выбор
@@ -1003,6 +1046,45 @@
     45% { transform: translateX(4px); }
     70% { transform: translateX(-3px); }
 }
+
+/* ---------- ВКЛАДКИ ----------
+   Прилавок разбит по слотам, прокачка — на числа и способности. Один длинный
+   список читается как свалка, а по вкладкам видно, где что лежит и где ещё
+   есть что взять: дробь под силуэтом говорит это, не открывая вкладку. */
+.shop-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.shop-tab {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 7px 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+}
+
+.shop-tab.on {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.22);
+    color: #fff;
+}
+
+/* Во вкладке всё выкуплено — она гаснет, но остаётся на месте: пропадающие
+   вкладки заставляли бы переучивать порядок. */
+.shop-tab.done { opacity: 0.4; }
+
+.shop-tab .slot-shape { width: 22px; height: 22px; }
+.shop-tab-emoji { font-size: 19px; line-height: 1.15; }
+.shop-tab-count { font-size: 9px; font-weight: 700; }
 
 /* Список прокручивается сам, а не тянет за собой экран: рамка окна остаётся
    на месте, крестик всегда на виду. */
