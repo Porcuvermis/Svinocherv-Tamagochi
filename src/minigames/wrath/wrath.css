@@ -1520,6 +1520,15 @@
 }
 
 .rogue-card-row.loot { color: #ffd27f; }
+
+/* С чем входишь в забег. Отделено чертой: это не добыча, а условие входа —
+   снаряжение из лобби внутрь не едет, все входят одинаково. */
+.rogue-card-row.start {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
 .rogue-card-row.lost { color: #ff8a80; }
 
 /* ---------- КАРТОЧКИ УСИЛЕНИЙ ---------- */

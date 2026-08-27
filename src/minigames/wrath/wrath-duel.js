@@ -148,13 +148,14 @@ const WrathDuel = {
         // бы разморозить его посреди дороги.
         if (!this.order) Backend.freezeHeal();
 
+        // В забеге боец собирается от чисел забега, а не от снаряжения:
+        // забег изолирован (docs/plan/10-wrath-rogue.md, раздел 8).
         this.fighters = {
-            player: WrathFighter.forPlayer(this.order ? this.order.bonus : null),
+            player: this.order
+                ? WrathFighter.forRun({ bonus: this.order.bonus, maxHp: this.order.maxHp })
+                : WrathFighter.forPlayer(),
             enemy: null
         };
-        // Максимум здоровья в забеге — тот, что записан в забеге: усиления
-        // могли поднять его, а снаряжение и прокачка с тех пор смениться.
-        if (this.order) this.fighters.player.stats.hp = this.order.maxHp;
 
 
         this.mountFighter('player', this.fighters.player.model, false);
@@ -434,7 +435,7 @@ const WrathDuel = {
         // Не обе: тогда защита стала бы бесплатной. Одна — и выбор из трёх
         // превращается в выбор из двух (docs/plan/13-passives.md).
         this.safeZone = null;
-        if (WrathFighter.hasPassive('sixth_sense')) {
+        if (WrathFighter.hasPassive('sixth_sense', this.mode)) {
             const safe = Object.keys(this.ZONE_PARTS)
                 .filter(zone => zone !== this.enemyPlan.attack);
             this.safeZone = safe[Math.floor(Math.random() * safe.length)];

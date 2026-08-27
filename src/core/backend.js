@@ -304,15 +304,6 @@ const LocalBackend = {
     resumeHeal() {
         const f = GameState.data.fighter;
         if (!f || !f.frozen) return;
-        // Во время забега здоровье лобби заморожено ЦЕЛИКОМ, от входа до
-        // конца: в забеге своё здоровье, и лобби не должно зарастать, пока
-        // игрок там. Правило стоит здесь, а не у зовущих: через лобби и
-        // через уход с боя игрок проходит по несколько раз за забег, и
-        // каждое такое место пришлось бы помнить об этом само.
-        //
-        // Состояние читается напрямую, а не через run(): тот сам зовёт
-        // resumeHeal(), когда выбрасывает забег старого формата.
-        if (GameState.data.runs && GameState.data.runs.wrath) return;
         f.frozen = false;
         // Отсчёт начинается заново: время, проведённое в бою, не зарастает
         // задним числом.
@@ -546,7 +537,6 @@ const LocalBackend = {
         const cfg = this.rogueConfig();
         if (!cfg || !run.bonus || run.map.length !== cfg.map.length) {
             delete GameState.data.runs.wrath;
-            this.resumeHeal();
             GameState.save();
             return null;
         }
@@ -599,11 +589,15 @@ const LocalBackend = {
             });
         });
 
-        // Забег начинается с ПОЛНОГО здоровья: вход стоит жетон, то есть три
-        // победы, и пускать за эту цену на верную смерть — наказание за то,
-        // что игрок только что играл. Здоровье лобби при этом не трогается,
-        // оно заморожено на всё время забега.
-        const maxHp = this.fighterMaxHp();
+        // Забег ИЗОЛИРОВАН: снаряжение и прокачка внутрь не едут, боец
+        // входит с числами из конфига — одинаково всегда и у всех
+        // (docs/plan/10-wrath-rogue.md, раздел 8).
+        //
+        // Здоровье лобби при этом НЕ замораживается: забег его не тратит, у
+        // него своё. Раньше заморозка была нужна, потому что бой забега бил
+        // по тому же здоровью; теперь это разные жизни, и зарастание идёт
+        // своим чередом, пока игрок ходит по карте.
+        const maxHp = (cfg.start && cfg.start.hp) || this.fighterMaxHp();
         const run = {
             started_at: GameTime.now(),
             seed: Math.floor(Math.random() * 1e9),
@@ -638,7 +632,6 @@ const LocalBackend = {
         };
         run.node = this.nextOpenNode(run, 0);
         GameState.data.runs.wrath = run;
-        this.freezeHeal();
         GameState.save();
         return { ok: true, run };
     },
@@ -647,7 +640,6 @@ const LocalBackend = {
     abandonRun() {
         if (!this.run()) return { ok: false, error: 'no_run' };
         delete GameState.data.runs.wrath;
-        this.resumeHeal();
         GameState.save();
         return { ok: true };
     },
@@ -696,7 +688,6 @@ const LocalBackend = {
         if (outcome === 'lose') {
             const teethLost = run.teeth;
             delete GameState.data.runs.wrath;
-            this.resumeHeal();
             GameState.save();
             return {
                 ok: true, finished: true, outcome: 'lose',
@@ -748,10 +739,7 @@ const LocalBackend = {
         // Карта кончилась — забег пройден. Невыбранное усиление на последнем
         // узле пропадает вместе с забегом: применять его уже некуда.
         const finished = run.node >= run.map.length;
-        if (finished) {
-            delete GameState.data.runs.wrath;
-            this.resumeHeal();
-        }
+        if (finished) delete GameState.data.runs.wrath;
 
         GameState.save();
         return {

@@ -69,6 +69,39 @@ const WrathFighter = {
         return out;
     },
 
+    // ---------- БОЕЦ ЗАБЕГА ----------
+    // Забег ИЗОЛИРОВАН от лобби: ни снаряжение, ни прокачка внутрь не едут.
+    // Боец входит с числами из конфига забега плюс то, что набрал на узлах.
+    //
+    // Смысл не в том, чтобы отобрать нажитое, а в том, что точка входа не
+    // должна меняться: иначе таблицу врагов пришлось бы пересчитывать после
+    // каждого нового предмета в магазине, а враги, растущие вместе со
+    // снаряжением, обесценили бы само снаряжение
+    // (docs/plan/10-wrath-rogue.md, раздел 8).
+    //
+    // Способности при этом работают: они и есть постоянная прогрессия забега.
+    forRun(run) {
+        const cfg = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.rogue) || {};
+        const start = cfg.start || { hp: 20, damage: [3, 5] };
+        const bonus = (run && run.bonus) || {};
+        const model = (typeof WormModelAPI !== 'undefined')
+            ? WormModelAPI.loadWormModel() : null;
+        const armor = (bonus.armor || 0);
+        return {
+            name: 'Ты',
+            model,
+            equipment: {},
+            stats: {
+                hp: (run && run.maxHp) || start.hp,
+                damage: bonus.damage || 0,
+                armor: { head: armor, body: armor, tail: armor },
+                damageMin: start.damage[0] + (bonus.damage || 0),
+                damageMax: start.damage[1] + (bonus.damage || 0)
+            },
+            is_bot: false
+        };
+    },
+
     // Боец игрока: его собственная модель со шрамами и косметикой.
     forPlayer(bonus) {
         const model = (typeof WormModelAPI !== 'undefined')
@@ -260,11 +293,21 @@ const WrathFighter = {
     },
 
     // ---------- ПАССИВКИ ----------
-    // Куплена ли способность. Пассивка — та же ветка прокачки, только с одним
-    // уровнем и без числовой прибавки: она меняет не характеристику, а
-    // правила боя (docs/plan/13-passives.md).
-    hasPassive(key) {
-        return GameState.upgradeLevel(key) > 0;
+    // Куплена ли способность И работает ли она в этом режиме. Пассивка — та
+    // же ветка прокачки, только с одним уровнем и без числовой прибавки: она
+    // меняет не характеристику, а правила боя (docs/plan/13-passives.md).
+    //
+    // Режим важен: «шестое чувство» невозможно в бою с живым игроком —
+    // показать чужое намерение можно только после того, как тот его отправил,
+    // а он не обязан спешить. Поэтому у способности написано, где она
+    // работает, и проверяется это здесь, а не в бою.
+    hasPassive(key, mode) {
+        if (GameState.upgradeLevel(key) <= 0) return false;
+        const conf = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades) || {};
+        const branch = conf[key];
+        if (!branch) return false;
+        if (!branch.modes || !mode) return true;
+        return branch.modes.indexOf(mode) >= 0;
     },
 
     // Все купленные пассивки — их значки показываются в панели лобби: больше

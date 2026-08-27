@@ -336,11 +336,17 @@ const WrathRogue = {
             return `${conf ? conf.emoji : key} ${loot[key]}`;
         }).join('  ');
 
+        // С чем входишь — числами, крупно. Забег изолирован от лобби, и это
+        // не должно быть сюрпризом на первом же бою: снаряжение остаётся за
+        // дверью, все входят одинаково.
+        const start = (cfg && cfg.start) || { hp: 20, damage: [3, 5] };
+
         this.cardEl.className = 'rogue-card shown';
         this.cardEl.innerHTML = `
             <div class="rogue-card-icon">🗺</div>
             <div class="rogue-card-row">${path}</div>
-            <div class="rogue-card-row loot">${lootLine}</div>`;
+            <div class="rogue-card-row loot">${lootLine}</div>
+            <div class="rogue-card-row start">❤️ ${start.hp}  🗡 ${start.damage[0]}–${start.damage[1]}</div>`;
 
         this.setAction(this.priceText(price), enough ? () => this.start() : null);
     },
