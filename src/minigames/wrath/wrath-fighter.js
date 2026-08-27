@@ -69,6 +69,39 @@ const WrathFighter = {
         return out;
     },
 
+    // ---------- БОЕЦ ЗАБЕГА ----------
+    // Забег ИЗОЛИРОВАН от лобби: ни снаряжение, ни прокачка внутрь не едут.
+    // Боец входит с числами из конфига забега плюс то, что набрал на узлах.
+    //
+    // Смысл не в том, чтобы отобрать нажитое, а в том, что точка входа не
+    // должна меняться: иначе таблицу врагов пришлось бы пересчитывать после
+    // каждого нового предмета в магазине, а враги, растущие вместе со
+    // снаряжением, обесценили бы само снаряжение
+    // (docs/plan/10-wrath-rogue.md, раздел 8).
+    //
+    // Способности при этом работают: они и есть постоянная прогрессия забега.
+    forRun(run) {
+        const cfg = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.rogue) || {};
+        const start = cfg.start || { hp: 20, damage: [3, 5] };
+        const bonus = (run && run.bonus) || {};
+        const model = (typeof WormModelAPI !== 'undefined')
+            ? WormModelAPI.loadWormModel() : null;
+        const armor = (bonus.armor || 0);
+        return {
+            name: 'Ты',
+            model,
+            equipment: {},
+            stats: {
+                hp: (run && run.maxHp) || start.hp,
+                damage: bonus.damage || 0,
+                armor: { head: armor, body: armor, tail: armor },
+                damageMin: start.damage[0] + (bonus.damage || 0),
+                damageMax: start.damage[1] + (bonus.damage || 0)
+            },
+            is_bot: false
+        };
+    },
+
     // Боец игрока: его собственная модель со шрамами и косметикой.
     forPlayer(bonus) {
         const model = (typeof WormModelAPI !== 'undefined')
@@ -123,15 +156,20 @@ const WrathFighter = {
         };
     },
 
-    // Сколько снял удар. Всё в лоб: бросок из диапазона плюс оружие, минус
-    // броня той зоны, куда прилетело. Ниже нуля не уходит — «броня лечит»
-    // выглядело бы ошибкой, а не тактикой.
+    // Сколько снял удар, который ДОШЁЛ (в блок он не попал). Всё в лоб:
+    // бросок из диапазона плюс оружие, минус броня той зоны, куда прилетело.
+    //
+    // Ниже пола не опускается. Пол — не мелочь и не страховка от деления на
+    // ноль: без него броня 3 против урона 1–3 делает противника безобидным
+    // совсем, и бой превращается в переглядывание. Броня снижает урон, но не
+    // отменяет его; отменяет только правильный блок.
     rollDamage(attacker, defender, zone) {
         const a = attacker.stats;
         const span = Math.max(0, a.damageMax - a.damageMin);
         const raw = a.damageMin + Math.floor(Math.random() * (span + 1));
         const armor = (defender.stats.armor && defender.stats.armor[zone]) || 0;
-        return Math.max(0, raw - armor);
+        const floor = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.minHitDamage) || 0;
+        return Math.max(floor, raw - armor);
     },
 
     // ---------- ТЕКУЩЕЕ ЗДОРОВЬЕ ----------
@@ -242,36 +280,59 @@ const WrathFighter = {
         }
     },
 
-    // ---------- ЗНАК ЗОНЫ ----------
-    // Три зоны тела нарисованы силуэтом: кружок — голова, скруглённый
-    // прямоугольник — тело, треугольник — хвост. Нужная зона горит, две
-    // другие приглушены.
-    //
-    // Это замена словам «голова / тело / хвост» (CLAUDE.md, инвариант 9):
-    // строка «−1 урона в голову» превращается в «🛡 −1 [знак]», и то же самое
-    // читается в магазине, в лобби и в карточке предмета одинаково.
-    zoneMark(zone) {
-        const on = (z) => z === zone ? ' on' : '';
-        return `<svg class="zone-mark" viewBox="0 0 32 12" aria-hidden="true">
-            <circle class="zm${on('head')}" cx="5" cy="6" r="4.6"/>
-            <rect class="zm${on('body')}" x="12" y="1.4" width="9" height="9.2" rx="2.6"/>
-            <path class="zm${on('tail')}" d="M24 1.6 L31 6 L24 10.4 Z"/>
+    // ---------- СИЛУЭТ СЛОТА ----------
+    // Пустой слот показывает не значок, а СИЛУЭТ того, что в него встаёт:
+    // контур шлема, перчатки, кинжала. Так с одного взгляда понятно, для
+    // чего слот, — без подписей и без разгадывания приглушённого эмодзи.
+    // Сам контур лежит данными в WRATH_GEAR.slots (поле shape).
+    slotShape(slot, extraClass) {
+        if (!slot || !slot.shape) return '';
+        return `<svg class="slot-shape ${extraClass || ''}" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="${slot.shape}"/>
         </svg>`;
     },
 
-    // ---------- ХАРАКТЕРИСТИКИ ПРЕДМЕТА ЗНАЧКАМИ ----------
+    // ---------- ПАССИВКИ ----------
+    // Куплена ли способность И работает ли она в этом режиме. Пассивка — та
+    // же ветка прокачки, только с одним уровнем и без числовой прибавки: она
+    // меняет не характеристику, а правила боя (docs/plan/13-passives.md).
+    //
+    // Режим важен: «шестое чувство» невозможно в бою с живым игроком —
+    // показать чужое намерение можно только после того, как тот его отправил,
+    // а он не обязан спешить. Поэтому у способности написано, где она
+    // работает, и проверяется это здесь, а не в бою.
+    hasPassive(key, mode) {
+        if (GameState.upgradeLevel(key) <= 0) return false;
+        const conf = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades) || {};
+        const branch = conf[key];
+        if (!branch) return false;
+        if (!branch.modes || !mode) return true;
+        return branch.modes.indexOf(mode) >= 0;
+    },
+
+    // Все купленные пассивки — их значки показываются в панели лобби: больше
+    // им негде показаться, из магазина прокачки купленное уходит.
+    passives() {
+        const conf = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades) || {};
+        return (conf.order || [])
+            .filter(key => conf[key] && conf[key].tab === 'passive' && this.hasPassive(key))
+            .map(key => conf[key]);
+    },
+
+    // ---------- ЧТО ДАЁТ ПРЕДМЕТ ----------
     // Одна и та же строка нужна лобби и магазину, поэтому живёт здесь.
-    // Ни одного слова: значок величины, число, знак зоны.
+    // Ни одного слова: значок величины и число.
+    //
+    // Зона брони не пишется. Слот и есть зона — шлем это голова, броня это
+    // тело, — а предмет всегда показан внутри своего слота или в своей
+    // группе магазина. Повторять это значком значило бы объяснять очевидное.
     itemStats(item) {
         const parts = [];
         if (item.damage) parts.push(`🗡 +${item.damage}`);
         if (item.hp) parts.push(`❤️ +${item.hp}`);
         if (item.armor) {
-            this.ZONES.forEach(zone => {
-                if (item.armor[zone]) {
-                    parts.push(`🛡 ${item.armor[zone]}${this.zoneMark(zone)}`);
-                }
-            });
+            const armor = this.ZONES.reduce((sum, zone) => sum + (item.armor[zone] || 0), 0);
+            if (armor) parts.push(`🛡 +${armor}`);
         }
         return parts.join(' ');
     },

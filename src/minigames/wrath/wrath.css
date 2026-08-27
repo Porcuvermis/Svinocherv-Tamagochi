@@ -45,38 +45,81 @@
     box-sizing: border-box;
 }
 
-/* ---------- СТРОКА ХАРАКТЕРИСТИК ----------
-   Без неё слоты не читаются как прокачка: игрок видит квадратики, но не
-   видит, что они дают. */
-.wrath-stats {
+/* ---------- ПАНЕЛЬ БОЙЦА ----------
+   Полоса здоровья во всю ширину и под ней итоги: удар и броня. Стоит над
+   червём, а не мелкой строкой в углу, потому что это главное, зачем игрок
+   заходит в лобби между боями.
+
+   Значки выстроены в колонку слева, числа — справа от них: читается сверху
+   вниз одним движением глаза, а не как строка из трёх пар. Секунд до
+   полного здоровья здесь нет намеренно: число растёт на глазах, а отдельный
+   счётчик растягивал строку и дёргал раскладку каждую секунду. */
+.wrath-panel {
     flex: 0 0 auto;
     display: flex;
-    justify-content: space-around;
-    gap: 6px;
-    padding: 8px 6px;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 11px;
     border: 1px solid rgba(255, 59, 48, 0.35);
     border-radius: 12px;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.32);
 }
 
-.wrath-stats .stat {
+.panel-row {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    line-height: 1.2;
+    gap: 8px;
+    line-height: 1;
 }
 
-.wrath-stats .stat b {
+.panel-icon {
+    flex: 0 0 auto;
+    width: 20px;
     font-size: 15px;
+    text-align: center;
+}
+
+/* Полоса тянется на всё свободное место: у здоровья своя строка, и оно
+   должно читаться с одного взгляда, как в бою. */
+.panel-bar {
+    flex: 1 1 auto;
+    height: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.panel-bar i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(to right, #4CAF50, #8bc34a);
+    transition: width 0.3s ease-out;
+}
+
+.panel-num {
+    flex: 0 0 auto;
+    min-width: 46px;
+    font-size: 14px;
+    font-weight: 800;
     color: #fff;
 }
 
-.wrath-stats .stat i {
-    font-style: normal;
-    font-size: 8px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
+/* Число здоровья прижато вправо, чтобы полоса не дёргалась, когда в нём
+   меняется количество цифр. */
+.panel-row.hp .panel-num { text-align: right; }
+.panel-num.hurt { color: #ff8a80; }
+
+/* Купленные способности. Показываются только здесь: из меню прокачки
+   купленное уходит, а знать, что у бойца есть шестое чувство, надо. */
+.panel-passives { font-size: 15px; letter-spacing: 2px; }
+
+/* Драться нечем — панель вздрагивает и краснеет в ответ на тап по бою.
+   Тот же язык, что у кошелька в магазине. */
+.wrath-panel.lack {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.18);
+    animation: wallet-shake 0.42s ease;
 }
 
 /* ---------- ЧЕРВЬ И СЛОТЫ ВОКРУГ ---------- */
@@ -93,7 +136,7 @@
    вниз, поэтому размер слота задан здесь один раз и небольшим. */
 .gear-column {
     flex: 0 0 auto;
-    width: 58px;
+    width: 66px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -101,8 +144,8 @@
 }
 
 .gear-slot {
-    width: 58px;
-    height: 56px;
+    width: 66px;
+    height: 62px;
     padding: 4px 2px;
     display: flex;
     flex-direction: column;
@@ -126,27 +169,39 @@
 
 .gear-slot:active { transform: scale(0.94); }
 
+/* Силуэт того, что встаёт в пустой слот: контур, а не приглушённое эмодзи.
+   Приглушённый значок читается как «выключено», контур — как «место под
+   вот это». Тот же силуэт стоит на вкладке магазина. */
+.slot-shape {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+}
+
 .gear-slot .gear-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 22px;
     line-height: 1;
-    opacity: 0.5;
+    opacity: 0.4;
+    color: #fff;
 }
 
 .gear-slot.filled .gear-icon { opacity: 1; }
 
-/* ---------- ЗНАК ЗОНЫ ТЕЛА ----------
-   Кружок — голова, прямоугольник — тело, треугольник — хвост. Заменяет слова
-   «голова / тело / хвост» везде, где речь о броне (CLAUDE.md, инвариант 9).
-   Рисуется в WrathFighter.zoneMark(). */
-.zone-mark {
-    width: 26px;
-    height: 10px;
-    vertical-align: -1px;
-    margin-left: 3px;
+/* Что даёт надетое — прямо в ячейке. Разбивка итога живёт здесь, а панель
+   наверху показывает только сумму: так ни там, ни тут не выходит стены
+   цифр, но узнать, откуда взялся урон, можно не уходя с экрана. */
+.gear-slot .gear-gain {
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-align: center;
+    color: #ffd27f;
 }
 
-.zone-mark .zm { fill: rgba(255, 255, 255, 0.22); }
-.zone-mark .zm.on { fill: currentColor; }
+.gear-slot .gear-gain:empty { display: none; }
 
 /* Место под персонажа в лобби. Сама модель монтируется во внутреннюю сцену
    постоянного размера и вписывается сюда масштабом — тем же способом, что и
@@ -158,10 +213,6 @@
     min-width: 0;
     pointer-events: none;
 }
-
-/* Здоровье не полное — число красным, чтобы «7 из 13» бросалось в глаза
-   раньше, чем игрок полезет в бой. */
-.wrath-stats .stat b.hurt { color: #ff8a80; }
 
 /* ---------- КОЛЬЦО УДЕРЖАНИЯ ----------
    Показывает себя от первого касания червя и заполняется по кругу над его
@@ -329,36 +380,6 @@
 }
 .card-item-mark { flex: 0 0 auto; font-size: 14px; color: var(--wrath-attack); }
 
-/* ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
-   Ничего не спрашивает и ничем не управляет: появилось, сказало, погасло.
-   Для «шрамов пока мало» диалог с кнопкой «ок» был бы наказанием за
-   любопытство — игрок всего лишь тапнул по своему червю. */
-.wrath-toast {
-    position: absolute;
-    left: 50%;
-    bottom: 34%;
-    transform: translate(-50%, 8px);
-    max-width: 80%;
-    padding: 10px 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(20, 6, 6, 0.94);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    font-size: 12px;
-    line-height: 1.4;
-    text-align: center;
-    color: #fff;
-    opacity: 0;
-    pointer-events: none;    /* сообщение не должно перехватывать тапы */
-    z-index: 40;
-    transition: opacity 0.35s ease, transform 0.35s ease;
-}
-
-.wrath-toast.show {
-    opacity: 1;
-    transform: translate(-50%, 0);
-}
-
 /* ---------- ВОПРОС ПРО ОБМЕН ----------
    Формой повторяет вопрос при выходе из общего окна: в игре ровно один вид
    вопроса «да/нет», и выучивать второй не нужно. */
@@ -429,28 +450,25 @@
 
 #wrath-duel {
     align-items: center;
-    padding: 10px 0 12px;
+    padding: 8px 10px 10px;
     box-sizing: border-box;
 }
 
-/* ---------- ПОЛОСКИ ЗДОРОВЬЯ ----------
-   Обычная строка в колонке, а не позиционированный слой: крестик уехал в
-   шапку общего окна, спорить за z-index больше не с чем. */
-.fighting-hud {
-    flex: 0 0 auto;
-    width: 100%;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 22px;
-    padding: 0 10px;
-    box-sizing: border-box;
-}
-
+/* ---------- ЗДОРОВЬЕ БОЙЦА ----------
+   Стоит не общей шапкой сверху, а рядом со своим бойцом, в свободном углу
+   напротив него: у верхнего слева, у нижнего справа. Причина простая — так
+   видно, ЧЬЁ это здоровье, без подписей и без запоминания, кто где в шапке.
+   Заодно освобождается центр экрана: он весь под кинжалы и зоны. */
 .fighter-hp-box {
-    position: relative;
-    flex: 1;
+    position: absolute;
+    width: 36%;
+    z-index: 15;
 }
+
+/* Прижаты к самому углу: боец занимает свой угол целиком, и единственное
+   место, где полоска его не перекрывает, — противоположный край по высоте. */
+.enemy-side { left: 0; top: 0; }
+.player-side { right: 0; bottom: 0; }
 
 .fighter-name {
     font-size: 10px;
@@ -459,23 +477,24 @@
     margin-bottom: 3px;
 }
 
-.enemy-side .fighter-name { text-align: right; }
-.fighter-name b { color: #fff; font-size: 11px; }
+.enemy-side .fighter-name { text-align: left; }
+.player-side .fighter-name { text-align: right; }
+.fighter-name b { color: #fff; font-size: 13px; }
 
-.fighting-hud .hp-bar-container {
+.fighter-hp-box .hp-bar-container {
     width: 100%;
-    height: 18px;
+    height: 16px;
     background: #222;
     border: 2px solid #555;
     overflow: hidden;
     box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
 }
 
-/* Агрессивный наклон полосок */
+/* Агрессивный наклон полосок; наклон смотрит наружу от своего бойца. */
 .player-side .hp-bar-container { transform: skewX(-15deg); border-right: none; }
 .enemy-side .hp-bar-container { transform: skewX(15deg); border-left: none; }
 
-.fighting-hud .hp-bar {
+.fighter-hp-box .hp-bar {
     height: 100%;
     width: 100%;
     transition: width 0.2s ease-out;
@@ -491,25 +510,13 @@
     float: left;
 }
 
-.wrath-result {
-    flex: 0 0 auto;
-    min-height: 18px;
-    margin-top: 6px;
-    font-size: 16px;
-    font-weight: 900;
-    color: #ffd700;
-    text-align: center;
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
-}
-
 /* ---------- АРЕНА ---------- */
 .battle-arena {
     position: relative;
     width: 100%;
+    height: 100%;
     flex: 1 1 auto;
     min-height: 0;
-    display: flex;
-    align-items: center;
 }
 
 /* ---------- ГДЕ СТОЯТ БОЙЦЫ ----------
@@ -525,10 +532,14 @@
    измеренному силуэту, а не по числу отсюда. */
 .fighter-box {
     position: absolute;
-    width: 70%;
-    height: 50%;
+    width: 68%;
+    height: 46%;
 }
 
+/* Разведены по углам сильнее, чем половина экрана каждому: между ними
+   остаётся свободная полоса, и ровно в ней стоят кинжалы. Бойцы от этого
+   немного мельче, но перестают тесниться в центре, а центр перестаёт быть
+   свалкой из тел, мишеней и кнопки. */
 #wrath-enemy-box { top: 0; right: 0; }
 #wrath-player-box { bottom: 0; left: 0; }
 
@@ -564,7 +575,12 @@
 /* ---------- ЗОНЫ ----------
    Цвет по стороне, а не по состоянию: зелёное — то, что я закрываю, красное
    — то, куда бью. Так читается без подписей и без обучения.
-   Размер и место ставит скрипт по реальным габаритам части тела. */
+
+   Размер у всех трёх ОДИН (wrath-duel.js, ZONE_TOUCH), от тела берётся
+   только место. Раньше мишень повторяла габариты части, и голова выходила
+   вдвое крупнее хвоста: выбор зоны решался меткостью, а не тактикой.
+
+   В покое зона едва видна. Всё остальное — в блоке подсказки ниже. */
 .zone-hit {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -574,7 +590,9 @@
     cursor: pointer;
     pointer-events: auto;
     z-index: 20;
-    transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    opacity: 0.5;
+    transition: background 0.15s ease, box-shadow 0.15s ease,
+                border-color 0.15s ease, opacity 0.25s ease;
 }
 
 .player-zone {
@@ -587,9 +605,94 @@
     background: rgba(255, 59, 48, 0.07);
 }
 
+/* ---------- ПОДСКАЗКА: КУДА ЖАТЬ ----------
+   Две задачи разом: новичок должен видеть, куда жать, а опытный — не
+   смотреть на мигание всю драку. Отсюда два независимых механизма.
+
+   ПЕРВЫЙ — ходом. Дышит только та сторона, от которой сейчас ждут выбор:
+   не выбрана защита — свой червь, выбрана — противник, выбрано всё — сами
+   кинжалы. Подсветка ведёт по шагам, а не горит везде разом, поэтому даже
+   в полный голос она не превращается в ёлку.
+
+   ВТОРОЙ — громкостью. Пульс задан ЧИСЛОМ ВДОХОВ, и число это зависит от
+   того, сколько боёв за плечами (wrath-duel.js, guideLevel): первые бои —
+   бесконечно, дальше шесть вдохов, у опытного — два в начале шага, и всё.
+   Он и так помнит, где зоны. Стоит появиться новому шагу — счёт начинается
+   заново, потому что элемент заново попадает под правило. */
+#wrath-duel.await-defense .player-zone:not(.selected):not(.safe),
+#wrath-duel.await-attack .enemy-zone:not(.selected) {
+    opacity: 1;
+    animation: zone-breathe 1.3s ease-in-out 2;
+}
+
+#wrath-duel.guide-mid.await-defense .player-zone:not(.selected):not(.safe),
+#wrath-duel.guide-mid.await-attack .enemy-zone:not(.selected) {
+    animation-iteration-count: 6;
+}
+
+#wrath-duel.guide-loud.await-defense .player-zone:not(.selected):not(.safe),
+#wrath-duel.guide-loud.await-attack .enemy-zone:not(.selected) {
+    animation-iteration-count: infinite;
+}
+
+/* ---------- ШЕСТОЕ ЧУВСТВО ----------
+   Зона, по которой противник в этом раунде точно не ударит. Гасится и
+   перечёркивается: «сюда не прилетит». Не пульсирует — ей нечего сообщать,
+   и внимание остаётся на двух оставшихся.
+
+   Нажатие НЕ запрещено: закрыться этой зоной можно, это просто плохой ход.
+   Запрет отнял бы у игрока право ошибиться. */
+#wrath-duel .player-zone.safe {
+    opacity: 0.3;
+    border-style: solid;
+    border-color: rgba(255, 255, 255, 0.35);
+    background: none;
+    animation: none !important;
+}
+
+#wrath-duel .player-zone.safe::after {
+    content: '';
+    position: absolute;
+    left: 12%;
+    top: 50%;
+    width: 76%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.6);
+    transform: rotate(-45deg);
+}
+
+/* Своя зона уже выбрана — остальные на этой стороне уходят в тень: выбор
+   сделан, и напоминать о нём нечем. */
+#wrath-duel.chose-defense .player-zone:not(.selected),
+#wrath-duel.chose-attack .enemy-zone:not(.selected) { opacity: 0.28; }
+
+@keyframes zone-breathe {
+    0%, 100% {
+        box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+        transform: translate(-50%, -50%) scale(1);
+    }
+    50% {
+        box-shadow: 0 0 18px currentColor, inset 0 0 14px currentColor;
+        transform: translate(-50%, -50%) scale(1.06);
+    }
+}
+
+/* currentColor у зоны — её собственный цвет стороны, поэтому свечение
+   зелёное у защиты и красное у атаки без единого дубля правил. */
+.player-zone { color: rgba(76, 175, 80, 0.75); }
+.enemy-zone { color: rgba(255, 59, 48, 0.75); }
+
+@media (prefers-reduced-motion: reduce) {
+    #wrath-duel .zone-hit { animation: none !important; }
+    #wrath-duel.await-defense .player-zone:not(.selected),
+    #wrath-duel.await-attack .enemy-zone:not(.selected) { opacity: 1; }
+}
+
 /* Выбранная зона отмечается контуром и свечением, а заливка остаётся
    лёгкой: при плотной заливке червь под мишенью перекрашивался целиком и
    переставал быть похожим на себя. */
+.zone-hit.selected { opacity: 1; }
+
 .player-zone.selected {
     border-style: solid;
     border-color: var(--wrath-defense);
@@ -620,6 +723,27 @@
 
 .dagger-btn.disabled { pointer-events: none; opacity: 0.3; }
 .dagger-btn:active { transform: translate(-50%, -50%) scale(0.94); }
+
+/* Последний шаг: зоны выбраны, ждём удара — дышит сама кнопка. Тот же счёт
+   вдохов по опыту, что и у зон. */
+#wrath-duel.await-strike .dagger-btn {
+    animation: dagger-breathe 1.2s ease-in-out 2;
+}
+
+#wrath-duel.guide-mid.await-strike .dagger-btn { animation-iteration-count: 6; }
+#wrath-duel.guide-loud.await-strike .dagger-btn { animation-iteration-count: infinite; }
+
+@keyframes dagger-breathe {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); filter: none; }
+    50% {
+        transform: translate(-50%, -50%) scale(1.08);
+        filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.45));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wrath-duel.await-strike .dagger-btn { animation: none; }
+}
 
 .dagger-svg { width: 100%; height: 100%; overflow: visible; }
 
@@ -670,8 +794,8 @@
     opacity: 0;
 }
 
-.player-side .dmg-popup { left: 10px; }
-.enemy-side .dmg-popup { right: 10px; }
+.player-side .dmg-popup { right: 6px; }
+.enemy-side .dmg-popup { left: 6px; }
 
 .dmg-popup.show { animation: dmg-float 1.4s ease-out forwards; }
 
@@ -923,6 +1047,45 @@
     70% { transform: translateX(-3px); }
 }
 
+/* ---------- ВКЛАДКИ ----------
+   Прилавок разбит по слотам, прокачка — на числа и способности. Один длинный
+   список читается как свалка, а по вкладкам видно, где что лежит и где ещё
+   есть что взять: дробь под силуэтом говорит это, не открывая вкладку. */
+.shop-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.shop-tab {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 7px 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+}
+
+.shop-tab.on {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.22);
+    color: #fff;
+}
+
+/* Во вкладке всё выкуплено — она гаснет, но остаётся на месте: пропадающие
+   вкладки заставляли бы переучивать порядок. */
+.shop-tab.done { opacity: 0.4; }
+
+.shop-tab .slot-shape { width: 22px; height: 22px; }
+.shop-tab-emoji { font-size: 19px; line-height: 1.15; }
+.shop-tab-count { font-size: 9px; font-weight: 700; }
+
 /* Список прокручивается сам, а не тянет за собой экран: рамка окна остаётся
    на месте, крестик всегда на виду. */
 .shop-list {
@@ -956,25 +1119,58 @@
     color: rgba(255, 255, 255, 0.45);
 }
 
+/* Строка прилавка — это кнопка целиком: нажимается вся, а не крохотная
+   надпись с ценой внутри неё. */
 .shop-item {
     display: flex;
     align-items: center;
     gap: 10px;
+    width: 100%;
     margin-bottom: 6px;
-    padding: 8px 10px;
+    padding: 9px 10px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
 }
 
-.shop-item.owned {
-    border-color: rgba(76, 175, 80, 0.45);
-    background: rgba(76, 175, 80, 0.08);
+.shop-item:active { transform: scale(0.98); }
+
+/* Не по карману — строка приглушена и не выглядит кнопкой. Прятать её
+   нельзя: по ней игрок и понимает, ради чего копить. Нажатие при этом не
+   отключено: тап отвечает вздрагиванием валюты, которой не хватило, —
+   иначе игрок остался бы без объяснения. */
+.shop-item.poor {
+    opacity: 0.45;
+    border-style: dashed;
+    background: none;
 }
 
-/* Не хватает валюты — предмет виден, но приглушён. Прятать недоступное
-   нельзя: по нему игрок и понимает, ради чего копить. */
-.shop-item.poor { opacity: 0.5; }
+.shop-item.poor:active { transform: none; }
+
+/* Цена — там же, где была кнопка покупки, и той же формы: место на экране
+   не поехало, а обещание «сюда нажимать» исчезло вместе с кнопкой. */
+.shop-price {
+    flex-shrink: 0;
+    padding: 7px 11px;
+    border-radius: 10px;
+    background: rgba(255, 59, 48, 0.4);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.shop-item.poor .shop-price { background: none; padding: 7px 4px; }
+
+/* Прилавок пуст — всё раскуплено. */
+.shop-empty {
+    padding: 40px 0;
+    text-align: center;
+    font-size: 40px;
+    color: rgba(255, 255, 255, 0.3);
+}
 
 .shop-item-emoji { font-size: 22px; }
 
@@ -986,39 +1182,6 @@
 }
 
 
-.shop-buy {
-    flex-shrink: 0;
-    padding: 8px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    background: linear-gradient(135deg, rgba(255, 59, 48, 0.5), rgba(166, 28, 21, 0.5));
-    color: #fff;
-    font-size: 12px;
-    font-weight: 800;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.shop-buy:active { transform: scale(0.95); }
-
-/* Куплено — галочка. Надето — та же галочка, но в кружке цвета греха:
-   одно и то же понятие, разная громкость. */
-.shop-state {
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.45);
-}
-
-.shop-state.on {
-    color: #fff;
-    background: rgba(76, 175, 80, 0.75);
-}
 
 .shop-message {
     flex: 0 0 auto;
@@ -1050,24 +1213,31 @@
     box-sizing: border-box;
 }
 
-
+/* Строка прокачки — кнопка целиком, как и на прилавке. */
 .boost-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 8px;
+    width: 100%;
+    margin-bottom: 6px;
     padding: 10px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
 }
 
-.boost-item.maxed {
-    border-color: rgba(76, 175, 80, 0.45);
-    background: rgba(76, 175, 80, 0.08);
+.boost-item:active { transform: scale(0.98); }
+
+.boost-item.poor {
+    opacity: 0.45;
+    border-style: dashed;
+    background: none;
 }
 
-.boost-item.poor { opacity: 0.55; }
+.boost-item.poor:active { transform: none; }
 
 /* Шрамов не хватило: строка дёргается и краснеет — тот же ответ, что и у
    кошелька в магазине. */
@@ -1109,7 +1279,7 @@
 /* Цена сверху, что за неё дадут — снизу: решение принимается по паре
    «сколько стоит / что изменится», и держать их рядом важнее, чем экономить
    ширину. */
-.boost-buy {
+.boost-price {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -1124,28 +1294,15 @@
     cursor: pointer;
 }
 
-.boost-buy b { font-size: 12px; }
-.boost-buy i { font-style: normal; font-size: 9px; opacity: 0.8; }
-.boost-buy:active { transform: scale(0.95); }
+.boost-price b { font-size: 12px; }
+.boost-price i { font-style: normal; font-size: 9px; opacity: 0.8; }
 
-.boost-buy:disabled {
-    opacity: 0.45;
-    cursor: default;
-    background: rgba(255, 255, 255, 0.06);
+/* Не по карману — цена перестаёт выглядеть кнопкой, как и на прилавке. */
+.boost-item.poor .boost-price {
+    border-color: transparent;
+    background: none;
 }
 
-.boost-state {
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 14px;
-    color: #fff;
-    background: rgba(76, 175, 80, 0.75);
-}
 
 /* ============================================================ */
 /* =========================  РОГАЛИК  ======================== */
@@ -1363,6 +1520,15 @@
 }
 
 .rogue-card-row.loot { color: #ffd27f; }
+
+/* С чем входишь в забег. Отделено чертой: это не добыча, а условие входа —
+   снаряжение из лобби внутрь не едет, все входят одинаково. */
+.rogue-card-row.start {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
 .rogue-card-row.lost { color: #ff8a80; }
 
 /* ---------- КАРТОЧКИ УСИЛЕНИЙ ---------- */
