@@ -45,38 +45,77 @@
     box-sizing: border-box;
 }
 
-/* ---------- СТРОКА ХАРАКТЕРИСТИК ----------
-   Без неё слоты не читаются как прокачка: игрок видит квадратики, но не
-   видит, что они дают. */
-.wrath-stats {
+/* ---------- ПАНЕЛЬ БОЙЦА ----------
+   Полоса здоровья во всю ширину и под ней итоги: удар и броня. Стоит над
+   червём, а не мелкой строкой в углу, потому что это главное, зачем игрок
+   заходит в лобби между боями.
+
+   Значки выстроены в колонку слева, числа — справа от них: читается сверху
+   вниз одним движением глаза, а не как строка из трёх пар. Секунд до
+   полного здоровья здесь нет намеренно: число растёт на глазах, а отдельный
+   счётчик растягивал строку и дёргал раскладку каждую секунду. */
+.wrath-panel {
     flex: 0 0 auto;
     display: flex;
-    justify-content: space-around;
-    gap: 6px;
-    padding: 8px 6px;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 11px;
     border: 1px solid rgba(255, 59, 48, 0.35);
     border-radius: 12px;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.32);
 }
 
-.wrath-stats .stat {
+.panel-row {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    line-height: 1.2;
+    gap: 8px;
+    line-height: 1;
 }
 
-.wrath-stats .stat b {
+.panel-icon {
+    flex: 0 0 auto;
+    width: 20px;
     font-size: 15px;
+    text-align: center;
+}
+
+/* Полоса тянется на всё свободное место: у здоровья своя строка, и оно
+   должно читаться с одного взгляда, как в бою. */
+.panel-bar {
+    flex: 1 1 auto;
+    height: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.panel-bar i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(to right, #4CAF50, #8bc34a);
+    transition: width 0.3s ease-out;
+}
+
+.panel-num {
+    flex: 0 0 auto;
+    min-width: 46px;
+    font-size: 14px;
+    font-weight: 800;
     color: #fff;
 }
 
-.wrath-stats .stat i {
-    font-style: normal;
-    font-size: 8px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
+/* Число здоровья прижато вправо, чтобы полоса не дёргалась, когда в нём
+   меняется количество цифр. */
+.panel-row.hp .panel-num { text-align: right; }
+.panel-num.hurt { color: #ff8a80; }
+
+/* Драться нечем — панель вздрагивает и краснеет в ответ на тап по бою.
+   Тот же язык, что у кошелька в магазине. */
+.wrath-panel.lack {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.18);
+    animation: wallet-shake 0.42s ease;
 }
 
 /* ---------- ЧЕРВЬ И СЛОТЫ ВОКРУГ ---------- */
@@ -93,7 +132,7 @@
    вниз, поэтому размер слота задан здесь один раз и небольшим. */
 .gear-column {
     flex: 0 0 auto;
-    width: 58px;
+    width: 66px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -101,8 +140,8 @@
 }
 
 .gear-slot {
-    width: 58px;
-    height: 56px;
+    width: 66px;
+    height: 62px;
     padding: 4px 2px;
     display: flex;
     flex-direction: column;
@@ -129,24 +168,23 @@
 .gear-slot .gear-icon {
     font-size: 22px;
     line-height: 1;
-    opacity: 0.5;
+    opacity: 0.35;
 }
 
 .gear-slot.filled .gear-icon { opacity: 1; }
 
-/* ---------- ЗНАК ЗОНЫ ТЕЛА ----------
-   Кружок — голова, прямоугольник — тело, треугольник — хвост. Заменяет слова
-   «голова / тело / хвост» везде, где речь о броне (CLAUDE.md, инвариант 9).
-   Рисуется в WrathFighter.zoneMark(). */
-.zone-mark {
-    width: 26px;
-    height: 10px;
-    vertical-align: -1px;
-    margin-left: 3px;
+/* Что даёт надетое — прямо в ячейке. Разбивка итога живёт здесь, а панель
+   наверху показывает только сумму: так ни там, ни тут не выходит стены
+   цифр, но узнать, откуда взялся урон, можно не уходя с экрана. */
+.gear-slot .gear-gain {
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-align: center;
+    color: #ffd27f;
 }
 
-.zone-mark .zm { fill: rgba(255, 255, 255, 0.22); }
-.zone-mark .zm.on { fill: currentColor; }
+.gear-slot .gear-gain:empty { display: none; }
 
 /* Место под персонажа в лобби. Сама модель монтируется во внутреннюю сцену
    постоянного размера и вписывается сюда масштабом — тем же способом, что и
@@ -158,10 +196,6 @@
     min-width: 0;
     pointer-events: none;
 }
-
-/* Здоровье не полное — число красным, чтобы «7 из 13» бросалось в глаза
-   раньше, чем игрок полезет в бой. */
-.wrath-stats .stat b.hurt { color: #ff8a80; }
 
 /* ---------- КОЛЬЦО УДЕРЖАНИЯ ----------
    Показывает себя от первого касания червя и заполняется по кругу над его
@@ -328,36 +362,6 @@
     color: #ffd27f;
 }
 .card-item-mark { flex: 0 0 auto; font-size: 14px; color: var(--wrath-attack); }
-
-/* ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
-   Ничего не спрашивает и ничем не управляет: появилось, сказало, погасло.
-   Для «шрамов пока мало» диалог с кнопкой «ок» был бы наказанием за
-   любопытство — игрок всего лишь тапнул по своему червю. */
-.wrath-toast {
-    position: absolute;
-    left: 50%;
-    bottom: 34%;
-    transform: translate(-50%, 8px);
-    max-width: 80%;
-    padding: 10px 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(20, 6, 6, 0.94);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    font-size: 12px;
-    line-height: 1.4;
-    text-align: center;
-    color: #fff;
-    opacity: 0;
-    pointer-events: none;    /* сообщение не должно перехватывать тапы */
-    z-index: 40;
-    transition: opacity 0.35s ease, transform 0.35s ease;
-}
-
-.wrath-toast.show {
-    opacity: 1;
-    transform: translate(-50%, 0);
-}
 
 /* ---------- ВОПРОС ПРО ОБМЕН ----------
    Формой повторяет вопрос при выходе из общего окна: в игре ровно один вид
@@ -1033,25 +1037,58 @@
     color: rgba(255, 255, 255, 0.45);
 }
 
+/* Строка прилавка — это кнопка целиком: нажимается вся, а не крохотная
+   надпись с ценой внутри неё. */
 .shop-item {
     display: flex;
     align-items: center;
     gap: 10px;
+    width: 100%;
     margin-bottom: 6px;
-    padding: 8px 10px;
+    padding: 9px 10px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
 }
 
-.shop-item.owned {
-    border-color: rgba(76, 175, 80, 0.45);
-    background: rgba(76, 175, 80, 0.08);
+.shop-item:active { transform: scale(0.98); }
+
+/* Не по карману — строка приглушена и не выглядит кнопкой. Прятать её
+   нельзя: по ней игрок и понимает, ради чего копить. Нажатие при этом не
+   отключено: тап отвечает вздрагиванием валюты, которой не хватило, —
+   иначе игрок остался бы без объяснения. */
+.shop-item.poor {
+    opacity: 0.45;
+    border-style: dashed;
+    background: none;
 }
 
-/* Не хватает валюты — предмет виден, но приглушён. Прятать недоступное
-   нельзя: по нему игрок и понимает, ради чего копить. */
-.shop-item.poor { opacity: 0.5; }
+.shop-item.poor:active { transform: none; }
+
+/* Цена — там же, где была кнопка покупки, и той же формы: место на экране
+   не поехало, а обещание «сюда нажимать» исчезло вместе с кнопкой. */
+.shop-price {
+    flex-shrink: 0;
+    padding: 7px 11px;
+    border-radius: 10px;
+    background: rgba(255, 59, 48, 0.4);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.shop-item.poor .shop-price { background: none; padding: 7px 4px; }
+
+/* Прилавок пуст — всё раскуплено. */
+.shop-empty {
+    padding: 40px 0;
+    text-align: center;
+    font-size: 40px;
+    color: rgba(255, 255, 255, 0.3);
+}
 
 .shop-item-emoji { font-size: 22px; }
 
@@ -1063,39 +1100,6 @@
 }
 
 
-.shop-buy {
-    flex-shrink: 0;
-    padding: 8px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    background: linear-gradient(135deg, rgba(255, 59, 48, 0.5), rgba(166, 28, 21, 0.5));
-    color: #fff;
-    font-size: 12px;
-    font-weight: 800;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.shop-buy:active { transform: scale(0.95); }
-
-/* Куплено — галочка. Надето — та же галочка, но в кружке цвета греха:
-   одно и то же понятие, разная громкость. */
-.shop-state {
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.45);
-}
-
-.shop-state.on {
-    color: #fff;
-    background: rgba(76, 175, 80, 0.75);
-}
 
 .shop-message {
     flex: 0 0 auto;
@@ -1127,24 +1131,31 @@
     box-sizing: border-box;
 }
 
-
+/* Строка прокачки — кнопка целиком, как и на прилавке. */
 .boost-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 8px;
+    width: 100%;
+    margin-bottom: 6px;
     padding: 10px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
 }
 
-.boost-item.maxed {
-    border-color: rgba(76, 175, 80, 0.45);
-    background: rgba(76, 175, 80, 0.08);
+.boost-item:active { transform: scale(0.98); }
+
+.boost-item.poor {
+    opacity: 0.45;
+    border-style: dashed;
+    background: none;
 }
 
-.boost-item.poor { opacity: 0.55; }
+.boost-item.poor:active { transform: none; }
 
 /* Шрамов не хватило: строка дёргается и краснеет — тот же ответ, что и у
    кошелька в магазине. */
@@ -1186,7 +1197,7 @@
 /* Цена сверху, что за неё дадут — снизу: решение принимается по паре
    «сколько стоит / что изменится», и держать их рядом важнее, чем экономить
    ширину. */
-.boost-buy {
+.boost-price {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -1201,28 +1212,15 @@
     cursor: pointer;
 }
 
-.boost-buy b { font-size: 12px; }
-.boost-buy i { font-style: normal; font-size: 9px; opacity: 0.8; }
-.boost-buy:active { transform: scale(0.95); }
+.boost-price b { font-size: 12px; }
+.boost-price i { font-style: normal; font-size: 9px; opacity: 0.8; }
 
-.boost-buy:disabled {
-    opacity: 0.45;
-    cursor: default;
-    background: rgba(255, 255, 255, 0.06);
+/* Не по карману — цена перестаёт выглядеть кнопкой, как и на прилавке. */
+.boost-item.poor .boost-price {
+    border-color: transparent;
+    background: none;
 }
 
-.boost-state {
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 14px;
-    color: #fff;
-    background: rgba(76, 175, 80, 0.75);
-}
 
 /* ============================================================ */
 /* =========================  РОГАЛИК  ======================== */

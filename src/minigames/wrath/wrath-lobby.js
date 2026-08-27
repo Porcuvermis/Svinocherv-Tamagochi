@@ -32,15 +32,13 @@ const WrathLobby = {
 
     host: null,
     root: null,
-    statsEl: null,
+    panelEl: null,
     columns: null,
     wormStage: null,
     modesEl: null,
     cardEl: null,
     wormHandle: null,
     openSlot: null,
-    toastEl: null,
-    toastTimer: null,
     healClock: null,
     holdEl: null,
     holdFillEl: null,
@@ -53,7 +51,7 @@ const WrathLobby = {
         this.root = document.getElementById('wrath-lobby');
         if (!this.root) return;
 
-        this.statsEl = document.getElementById('wrath-stats');
+        this.panelEl = document.getElementById('wrath-panel');
         this.columns = {
             left: document.getElementById('wrath-gear-left'),
             right: document.getElementById('wrath-gear-right')
@@ -62,7 +60,6 @@ const WrathLobby = {
         this.wormBox = this.wormStage ? this.wormStage.parentElement : null;
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
-        this.toastEl = document.getElementById('wrath-toast');
         this.holdEl = document.getElementById('wrath-hold');
         this.holdFillEl = document.getElementById('wrath-hold-fill');
 
@@ -107,7 +104,7 @@ const WrathLobby = {
         }
         this.hideCard();
         this.cancelHold(false);
-        this.hideToast();
+        if (this.panelEl) this.panelEl.classList.remove('lack');
     },
 
     mountWorm() {
@@ -134,7 +131,7 @@ const WrathLobby = {
         // Вписывается по реальному силуэту и только после первого кадра:
         // сегменты получают transform в tick(), не при сборке.
         requestAnimationFrame(() => requestAnimationFrame(() => {
-            WrathFighter.fitWorm(this.wormHandle, this.wormStage, this.wormBox, 0.95);
+            WrathFighter.fitWorm(this.wormHandle, this.wormStage, this.wormBox, 1);
             // Ещё кадр: перестановка червя доезжает до экрана только в
             // следующем тике рендерера.
             requestAnimationFrame(() => this.placeHoldRing());
@@ -153,9 +150,14 @@ const WrathLobby = {
             el.type = 'button';
             el.className = 'gear-slot';
             el.dataset.slot = slot.key;
-            // Подписи нет: пустой слот показывает свой значок, занятый —
-            // значок предмета. Что это за слот, видно по значку.
-            el.innerHTML = '<span class="gear-icon"></span>';
+            // Пустой слот показывает свой значок вполсилы — это
+            // единственное, что подсказывает, ЧТО сюда встаёт. Занятый
+            // показывает предмет и прибавку от него: разбивка итога живёт
+            // здесь, а в панели наверху — только сумма.
+            el.innerHTML = `
+                <span class="gear-icon"></span>
+                <span class="gear-gain"></span>
+            `;
             el.onclick = (e) => { e.stopPropagation(); this.showCard(slot.key); };
             column.appendChild(el);
         });
@@ -179,10 +181,9 @@ const WrathLobby = {
                 // на время зарастания червя.
                 if (el.classList.contains('locked')) {
                     if (mode.key === 'duel') {
-                        const health = WrathFighter.playerHp();
-                        // Сколько ждать — часами и числом: почему заперто,
-                        // видно по нулю здоровья рядом.
-                        this.showToast(`❤️ ${health.hp}/${health.max} · ⏳ ${health.healSeconds}`);
+                        // Почему заперто, видно по полосе здоровья: она
+                        // пустая и вздрагивает в ответ на тап.
+                        this.flashPanel();
                     }
                     return;
                 }
@@ -201,8 +202,12 @@ const WrathLobby = {
             if (!el) return;
             const item = WRATH_GEAR.items[equipment[slot.key]];
             const icon = el.querySelector('.gear-icon');
+            const gain = el.querySelector('.gear-gain');
             el.classList.toggle('filled', !!item);
             icon.textContent = item ? item.emoji : slot.emoji;
+            // Зона брони здесь не пишется: слот и есть зона (шлем — голова,
+            // броня — тело), и повторять это значком незачем.
+            if (gain) gain.innerHTML = item ? WrathFighter.itemStats(item) : '';
         });
 
         // Кошелёк показан там, где он что-то значит, — в строке магазина.
@@ -232,20 +237,36 @@ const WrathLobby = {
                 + `<br>🩸 ${GameState.currency('wrath_shard')}/${per}`;
         }
 
-        // Характеристики — значок и число. Броня показывает, В КАКУЮ ЗОНУ
-        // она работает, знаком тела: словам «голова/тело/хвост» здесь места
-        // нет, а «0/0/0» без подписи ничего не значило бы.
-        if (this.statsEl) {
+        // ---------- ПАНЕЛЬ БОЙЦА ----------
+        // Итоги, и только итоги: сколько всего здоровья, какой разброс удара,
+        // сколько брони. Из чего это сложилось, написано в самих слотах — так
+        // наверху не вырастает стена цифр, а разбивка всё равно под рукой.
+        //
+        // Строится ОДИН раз за вход, а раз в секунду обновляются только
+        // ширина полосы и число. Иначе перестройка панели дёргала бы
+        // раскладку каждую секунду — ровно та болезнь, от которой убран
+        // счётчик зарастания.
+        if (this.panelEl) {
             const stats = WrathFighter.stats(equipment);
-            const s = WrathFighter.summary(stats);
-            const armor = WrathFighter.ZONES
-                .filter(zone => stats.armor[zone])
-                .map(zone => `${stats.armor[zone]}${WrathFighter.zoneMark(zone)}`)
-                .join(' ');
-            this.statsEl.innerHTML = `
-                <span class="stat" id="wrath-hp-stat"></span>
-                <span class="stat"><b>🗡 ${s.damage}</b></span>
-                <span class="stat"><b>🛡 ${armor || '0'}</b></span>
+            const short = WrathFighter.summary(stats);
+            const armor = WrathFighter.ZONES.some(zone => stats.armor[zone])
+                ? WrathFighter.ZONES.map(zone => stats.armor[zone]).join('/')
+                : '0';
+
+            this.panelEl.innerHTML = `
+                <div class="panel-row hp">
+                    <span class="panel-icon">❤️</span>
+                    <span class="panel-bar"><i id="wrath-hp-fill"></i></span>
+                    <span class="panel-num" id="wrath-hp-num"></span>
+                </div>
+                <div class="panel-row">
+                    <span class="panel-icon">🗡</span>
+                    <span class="panel-num">${short.damage}</span>
+                </div>
+                <div class="panel-row">
+                    <span class="panel-icon">🛡</span>
+                    <span class="panel-num">${armor}</span>
+                </div>
             `;
         }
 
@@ -255,27 +276,28 @@ const WrathLobby = {
     // ---------- ЗДОРОВЬЕ ----------
     // Отдельно от общего refresh: пересчитывается раз в секунду, а
     // перестраивать ради этого весь экран незачем.
+    // Раз в секунду меняются ровно два значения: ширина полосы и число на
+    // ней. Секунд до полного здоровья мы НЕ показываем — число растёт на
+    // глазах, и по нему всё видно, а отдельный счётчик был лишним и вдобавок
+    // растягивал строку, отчего дёргалась вся раскладка.
     refreshHealth() {
         const health = WrathFighter.playerHp();
 
-        // Целый червь — просто максимум. Побитый — дробь и часы: сколько
-        // осталось зарастать. Часы и есть слово «зарастает».
-        const hpStat = this.root.querySelector('#wrath-hp-stat');
-        if (hpStat) {
-            hpStat.innerHTML = health.full
-                ? `<b>❤️ ${health.max}</b>`
-                : `<b class="hurt">❤️ ${health.hp}/${health.max}</b><i>⏳ ${health.healSeconds}</i>`;
+        const fill = this.root.querySelector('#wrath-hp-fill');
+        const num = this.root.querySelector('#wrath-hp-num');
+        if (fill) fill.style.width = `${Math.max(0, (health.hp / (health.max || 1)) * 100)}%`;
+        if (num) {
+            num.textContent = `${health.hp}/${health.max}`;
+            num.classList.toggle('hurt', !health.full);
         }
 
-        // Драться без здоровья нельзя — и это не поломка, а ожидание. Кнопка
-        // не прячется, а говорит, сколько осталось ждать.
+        // Драться без здоровья нельзя — и это не поломка, а ожидание.
+        // Кнопка запирается, а почему — видно по пустой полосе над червём.
         const duelBtn = this.root.querySelector('.mode-btn[data-mode="duel"]');
         if (duelBtn) {
             const dead = health.hp <= 0;
             duelBtn.classList.toggle('locked', dead);
             duelBtn.classList.toggle('ready', !dead);
-            const note = duelBtn.querySelector('.mode-note');
-            if (note) note.innerHTML = dead ? `⏳ ${health.healSeconds}` : '';
         }
     },
 
@@ -383,21 +405,15 @@ const WrathLobby = {
         void hint; void wasActive;
     },
 
-    // ---------- ВСПЛЫВАЮЩЕЕ СООБЩЕНИЕ ----------
-    showToast(text) {
-        if (!this.toastEl) return;
-        this.toastEl.textContent = text;
-        this.toastEl.classList.add('show');
-        if (this.toastTimer) clearTimeout(this.toastTimer);
-        this.toastTimer = setTimeout(() => this.hideToast(), 2200);
-    },
-
-    hideToast() {
-        if (this.toastTimer) {
-            clearTimeout(this.toastTimer);
-            this.toastTimer = null;
-        }
-        if (this.toastEl) this.toastEl.classList.remove('show');
+    // ---------- ОТКАЗ БЕЗ СЛОВ ----------
+    // Драться нечем — вздрагивает сама полоса здоровья. Тот же язык, что в
+    // магазине, где вздрагивает валюта, которой не хватило: игрок видит, ЧТО
+    // мешает, и не читает об этом (docs/plan/11-no-words.md).
+    flashPanel() {
+        if (!this.panelEl) return;
+        this.panelEl.classList.remove('lack');
+        void this.panelEl.offsetWidth;
+        this.panelEl.classList.add('lack');
     },
 
     // ---------- КАРТОЧКА СЛОТА ----------

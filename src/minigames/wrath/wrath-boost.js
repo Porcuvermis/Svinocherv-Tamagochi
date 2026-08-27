@@ -62,28 +62,39 @@ const WrathBoost = {
         (conf.order || []).forEach(key => {
             const branch = conf[key];
             if (!branch || !branch.levels) return;
+            // Ветка с невыполненным условием не показывается вовсе — как и
+            // предмет в магазине (Backend.isUnlocked). Пока условий нет ни у
+            // одной, но фильтр стоит.
+            if (!Backend.isUnlocked(branch.unlock)) return;
 
             const level = GameState.upgradeLevel(key);
             const maxed = level >= branch.levels.length;
-            const next = maxed ? null : branch.levels[level];
+            // Выкачанная до потолка ветка уходит из списка: покупать в ней
+            // больше нечего, а что она дала — видно в панели бойца в лобби.
+            if (maxed) return;
+
+            const next = branch.levels[level];
             const now = GameState.upgradeBonus(key);
+            const affordable = this.affordable(next.price);
 
             // Уровень — точками, а не словом «уровень 2 из 3»: сколько
             // залито, столько куплено, и сразу видно, где потолок.
+            //
+            // Нажимается вся строка. Не по карману — приглушена и не
+            // выглядит кнопкой, но тап всё равно отвечает: вздрагивает
+            // валюта, которой не хватило.
             html += `
-                <div class="boost-item${maxed ? ' maxed' : ''}">
+                <button type="button" class="boost-item${affordable ? '' : ' poor'}" data-key="${key}">
                     <span class="boost-emoji">${branch.emoji}</span>
                     <span class="boost-text">
                         <span class="boost-now">${this.bonusText(key, now)}</span>
                         <span class="boost-pips">${this.pips(level, branch.levels.length)}</span>
                     </span>
-                    ${maxed
-                        ? '<span class="boost-state">✓</span>'
-                        : `<button type="button" class="boost-buy" data-key="${key}">
-                               <b>${this.priceText(next.price)}</b>
-                               <i>${this.bonusText(key, next.bonus)}</i>
-                           </button>`}
-                </div>`;
+                    <span class="boost-price">
+                        <b>${this.priceText(next.price)}</b>
+                        <i>${this.bonusText(key, next.bonus)}</i>
+                    </span>
+                </button>`;
         });
 
         // ---------- ОБМЕН ШРАМОВ ----------
@@ -94,20 +105,20 @@ const WrathBoost = {
         const ready = scars >= rule.scars;
         const currency = ECONOMY.currencies[rule.currency];
         html += `
-            <div class="boost-item${ready ? '' : ' poor'}${this.lack === 'scars' ? ' lack' : ''}">
+            <button type="button" class="boost-item${ready ? '' : ' poor'}${this.lack === 'scars' ? ' lack' : ''}" id="boost-scars">
                 <span class="boost-emoji">🩹</span>
                 <span class="boost-text">
                     <span class="boost-now">🩹 ${scars}/${rule.scars}</span>
                 </span>
-                <button type="button" class="boost-buy" id="boost-scars" ${ready ? '' : 'disabled'}>
+                <span class="boost-price">
                     <b>🩹 ${rule.scars}</b>
                     <i>${currency ? currency.emoji : ''} +${rule.amount}</i>
-                </button>
-            </div>`;
+                </span>
+            </button>`;
 
         this.listEl.innerHTML = html;
 
-        this.listEl.querySelectorAll('.boost-buy[data-key]').forEach(btn => {
+        this.listEl.querySelectorAll('.boost-item[data-key]').forEach(btn => {
             btn.onclick = (e) => { e.stopPropagation(); this.buy(btn.dataset.key); };
         });
         const scarBtn = this.listEl.querySelector('#boost-scars');
@@ -117,10 +128,30 @@ const WrathBoost = {
     // Купленный уровень виден точками, отказ — красной вспышкой там, где
     // не хватило. Ни то, ни другое не требует слов.
     buy(key) {
+        const branch = this.conf()[key];
+        const level = GameState.upgradeLevel(key);
+        const next = branch && branch.levels[level];
+        // По строке не по карману покупка не пробуется: сразу ответ, чего
+        // не хватает.
+        if (next && !this.affordable(next.price)) {
+            this.showLack(this.missing(next.price));
+            this.render();
+            return;
+        }
+
         const answer = Backend.buyUpgrade(key);
         if (!answer.ok) this.showLack(answer.currency || 'wrath_token');
         else this.lack = null;
         this.render();
+    },
+
+    affordable(price) {
+        return !Object.keys(price || {}).some(key => GameState.currency(key) < price[key]);
+    },
+
+    missing(price) {
+        return Object.keys(price || {}).find(key => GameState.currency(key) < price[key])
+            || 'wrath_token';
     },
 
     exchangeScars() {

@@ -63,45 +63,56 @@ const WrathShop = {
         if (!this.listEl) return;
 
         const inventory = GameState.data.inventory || {};
-        const equipment = GameState.data.equipment || {};
         let html = '';
 
         WRATH_GEAR.slots.forEach(slot => {
+            // Открытое — то, до чего игрок дорос. Условия пока ни у одного
+            // предмета нет, но фильтр стоит: появится — и предмет просто
+            // возникнет на прилавке (Backend.isUnlocked).
             const items = Object.keys(WRATH_GEAR.items)
                 .filter(id => WRATH_GEAR.items[id].slot === slot.key)
+                .filter(id => Backend.isUnlocked(WRATH_GEAR.items[id].unlock))
                 .sort((a, b) => (WRATH_GEAR.items[a].tier || 0) - (WRATH_GEAR.items[b].tier || 0));
             if (!items.length) return;
 
+            // Купленное с прилавка УХОДИТ. Смотреть на то, что уже своё,
+            // незачем: где оно и что даёт, видно в лобби, в своём слоте.
+            // Прилавок показывает только то, что ещё можно взять.
+            const rest = items.filter(id => !inventory[id]);
+            if (!rest.length) return;
+
             // Заголовок группы — значок слота и дробь «куплено из всего».
             // Потолок объявлен заранее числом, а не словами.
-            const owned = items.filter(id => inventory[id]).length;
+            const owned = items.length - rest.length;
             html += `<div class="shop-group">
                 <span class="shop-group-name">${slot.emoji}</span>
                 <span class="shop-group-count">${owned}/${items.length}</span>
             </div>`;
 
-            items.forEach(id => {
+            rest.forEach(id => {
                 const item = WRATH_GEAR.items[id];
-                const isOwned = !!inventory[id];
-                const isOn = equipment[item.slot] === id;
                 const affordable = this.affordable(item);
                 // Названия предмета нет: значок и есть имя, а что предмет
                 // даёт — сказано числами со значками (инвариант 9).
-                // Купленное помечено галочкой, надетое — галочкой в кружке.
+                //
+                // Нажимается вся строка целиком, а не кнопка внутри неё. Не
+                // по карману — строка приглушена и не выглядит кнопкой, но
+                // тап по ней всё равно ответит: вздрогнет та валюта, которой
+                // не хватило. Так игрок узнаёт причину, не нажимая на то,
+                // что притворялось доступным.
                 html += `
-                    <div class="shop-item${isOwned ? ' owned' : ''}${!isOwned && !affordable ? ' poor' : ''}">
+                    <button type="button" class="shop-item${affordable ? '' : ' poor'}" data-item="${id}">
                         <span class="shop-item-emoji">${item.emoji}</span>
                         <span class="shop-item-stat">${WrathFighter.itemStats(item)}</span>
-                        ${isOwned
-                            ? `<span class="shop-state${isOn ? ' on' : ''}">✓</span>`
-                            : `<button type="button" class="shop-buy" data-item="${id}">${this.priceText(item)}</button>`}
-                    </div>`;
+                        <span class="shop-price">${this.priceText(item)}</span>
+                    </button>`;
             });
         });
 
-        this.listEl.innerHTML = html;
+        // Всё раскуплено — прилавок пуст, и это тоже надо показать.
+        this.listEl.innerHTML = html || '<div class="shop-empty">✓</div>';
 
-        this.listEl.querySelectorAll('.shop-buy').forEach(btn => {
+        this.listEl.querySelectorAll('.shop-item').forEach(btn => {
             btn.onclick = (e) => { e.stopPropagation(); this.buy(btn.dataset.item); };
         });
     },
@@ -114,10 +125,26 @@ const WrathShop = {
     // Удачную покупку объяснять не надо: строка предмета сама превращается в
     // галочку, а из кошелька уходят жетоны.
     buy(itemId) {
+        const item = WRATH_GEAR.items[itemId];
+        // По строке не по карману покупка даже не пробуется: сразу ответ,
+        // чего не хватает.
+        if (item && !this.affordable(item)) {
+            this.showLack(this.missing(item));
+            this.render();
+            return;
+        }
+
         const answer = Backend.buyItem(itemId);
         if (!answer.ok) this.showLack(answer.currency || 'wrath_token');
         else this.lack = null;
         this.render();
+    },
+
+    // Первая валюта, которой не хватает на этот предмет.
+    missing(item) {
+        const price = item.price || {};
+        return Object.keys(price).find(key => GameState.currency(key) < price[key])
+            || 'wrath_token';
     },
 
     showLack(key) {
