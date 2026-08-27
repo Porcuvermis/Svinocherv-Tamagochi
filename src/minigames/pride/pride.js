@@ -1,36 +1,44 @@
 // ================= МОДУЛЬ МИНИ-ИГРЫ ГРЕХ ТЩЕСЛАВИЯ (ТАП ПО ЦЕЛИ) =================
 // Персонаж (общая моделька, WormRenderer) стоит на постаменте в центре
-// игрового поля, которое занимает почти весь экран (тот же формат/пропорции,
-// что и весь игровой экран, только уменьшенный примерно на 10% — не
-// маленькая квадратная карточка, как было в первой версии). В случайных
-// точках поля появляется цель — кружок со сжимающимся светящимся кольцом
-// (кольцо = таймер на тап). Стартует с 1.5 сек, каждый УДАЧНЫЙ тап ускоряет
-// таймер на 0.1 сек (промах темп не меняет), пол — 0.5 сек, дальше не
-// ускоряется. Успел тапнуть по цели — окантовка поля
-// вспыхивает зелёным (удачно) или красным (промах/пропуск тайминга) — два
-// цвета, не три: розовый визуально читался как "ошибка", поэтому убран.
+// игрового поля, которое занимает почти весь экран. По полю вспыхивают ЗОНЫ
+// внимания — пятно света со сжимающимся кольцом (кольцо = таймер на тап).
 //
-// На МЕСТЕ тапа при этом показывается один из двух локальных эффектов —
-// они как раз и различают "поцелуй" (цель хоть немного касалась силуэта
-// персонажа) от "вспышки фотоаппарата" (цель была совсем мимо):
-// - 💋 — если ЦЕЛЬ (сам кружок, а не только точка тапа) хоть немного
-//   соприкасалась с реально отрисованным силуэтом персонажа;
+// ВАЖНОЕ ПРО РАЗМЕР ЗОНЫ (см. docs/plan/17-pride.md). Зона попадания равна
+// СТАРТОВОМУ размеру кольца и не меняется, пока зона жива: кольцо сжимается
+// только чтобы показать остаток времени. В первой версии было наоборот —
+// кольцо радиусом 44 px вело глаз, а засчитывался тап только в кружок 17 px
+// внутри него. По площади это в 6.7 раза меньше того, что игрок видит; игра
+// была буквально непроходима. Зелёный кружок в центре убран по той же
+// причине: он врал про размер зоны, а маркер и так есть — кольцо.
+//
+// ТАЙМИНГ ОДИН НА ВСЕ ЗОНЫ — TARGET_LIFE_MS. Ускорения за удачный тап (было:
+// −0.1 сек за каждый) больше нет: оно наказывало ровно за успех и упиралось в
+// физический предел. Сложность даёт не сжатие окна, а ПОТОК: новая зона
+// появляется каждые SPAWN_INTERVAL_MS, поэтому на экране их обычно две-три
+// одновременно, и тыкать их можно в любом порядке.
+//
+// На МЕСТЕ тапа показывается один из двух локальных эффектов — они различают
+// «поцелуй» (тап пришёлся по силуэту персонажа) от «вспышки фотоаппарата»
+// (тап мимо силуэта):
+// - 💋 — если ТОЧКА ТАПА попала по реально отрисованному силуэту;
 // - нарисованный блик вспышки (SVG, не эмодзи) — если нет.
-// Проверка "касается ли силуэта" — через document.elementFromPoint() в
-// нескольких точках по окружности цели (центр + 8 точек по периметру), то
-// есть буквально по тому, что реально нарисовано на экране (учитывает
-// форму тела, ушей, хвоста и т.п.), а не по прямоугольному bbox персонажа —
-// прямоугольник почти всегда перекрывал бы всё поле целиком и засчитывал
-// ЛЮБОЕ попадание как "поцелуй" (это и был баг в первой версии).
+// Проверка — через document.elementFromPoint(), то есть буквально по тому,
+// что нарисовано на экране (учитывает форму тела, ушей, хвоста), а не по
+// прямоугольному bbox персонажа: прямоугольник перекрывал бы почти всё поле и
+// засчитывал ЛЮБОЕ попадание как «поцелуй» (это был баг первой версии).
+// Смотрим именно точку тапа, а не всю зону: зона теперь большая и почти всегда
+// хоть краем цепляет силуэт — различие потеряло бы смысл.
 //
 // Шкала прогресса — свой отдельный счётчик 0..100, независимый от шкалы
-// греха: удачный этап +10%, промах/пропуск -10%, плюс постоянный пассивный
-// распад -2%/сек. Это внутрисессионный счётчик, он живёт по своим правилам и
-// умирает вместе с мини-игрой — таким таймерам это можно.
+// греха: попадание +HIT_DELTA, промах/пропуск MISS_DELTA, плюс постоянный
+// пассивный распад. Это внутрисессионный счётчик, он живёт по своим правилам
+// и умирает вместе с мини-игрой — таким таймерам это можно.
 //
 // О прохождении мини-игра сообщает событием minigame:result (тот же паттерн,
 // что и в envy.js/gluttony.js): шкала греха трогается только по факту
-// прохождения, а на сколько она поднимется, решает конфиг наград.
+// прохождения, а на сколько она поднимется, решает конфиг наград. В meta
+// уходят попадания/промахи — под будущий множитель за точность
+// (docs/plan/17-pride.md, раздел 4).
 //
 // Персонаж — общая моделька игрока (см. src/core/worm-model.js,
 // src/core/worm-renderer.js), а не свой хардкод-SVG. Раскладка (позиция
@@ -42,19 +50,20 @@
 // персонажа (другой размер тела) раскладка пересчитается сама.
 
 const PRIDE_CONFIG = {
-    TARGET_RADIUS: 17,          // px, радиус самой цели (кружка для тапа)
-    RING_RADIUS_MULT: 2.6,      // кольцо стартует в 2.6 раза больше радиуса цели (в диапазоне 2-3 из ТЗ)
-    RING_SHRINK_START_MS: 1500, // длительность кольца-таймера на самом первом этапе (относительно медленно)
-    RING_SHRINK_STEP_MS: 100,   // на сколько ускоряется (уменьшается) таймер за КАЖДЫЙ удачный тап (0.1 сек)
-    RING_SHRINK_MIN_MS: 500,    // потолок скорости — быстрее этого таймер уже не становится
-    HIT_DELTA: 10,               // % к шкале за удачный тап (любой из двух видов)
-    MISS_DELTA: -10,             // % к шкале за промах/пропуск тайминга
-    PASSIVE_DECAY_PER_SEC: 2,    // постоянный пассивный распад шкалы, %/сек
+    TAP_RADIUS: 44,             // px, радиус ЗОНЫ ПОПАДАНИЯ = стартовый радиус кольца
+    RING_CORE_RADIUS: 8,        // px, до чего сжимается кольцо к концу окна
+    TARGET_LIFE_MS: 1500,       // сколько живёт зона — одинаково для всех, не ускоряется
+    SPAWN_INTERVAL_MS: 800,     // как часто появляется новая зона (короче жизни — отсюда наложение)
+    MAX_TARGETS: 4,             // предохранитель: больше стольких зон на экране не держим
+    SPAWN_TRIES: 12,            // сколько бросков делаем, подбирая место подальше от живых зон
+    HIT_DELTA: 8,               // % к шкале за попадание
+    MISS_DELTA: -5,             // % к шкале за промах/пропуск (мягче попадания — см. план, раздел 5)
+    PASSIVE_DECAY_PER_SEC: 1.5,  // постоянный пассивный распад шкалы, %/сек
     KISS_FX_MS: 520,             // длительность локального эффекта "поцелуй" (💋)
     FLASH_FX_MS: 220,            // длительность локального эффекта "вспышка фотоаппарата"
     FEET_OVERLAP: 8,             // px, насколько силуэт персонажа "утоплен" в постамент при раскладке
-    ON_WORM_SAMPLE_RAYS: 8,      // сколько точек по периметру цели проверяем на касание силуэта (+ центр)
 };
+
 
 const PrideMinigame = {
     screenElement: null,
@@ -72,18 +81,17 @@ const PrideMinigame = {
 
     progress: 0,
     finished: false,
+    hits: 0,
+    misses: 0,
 
-    target: null,       // { x, y, token, resolved }
-    targetEl: null,
-    ringEl: null,
-    targetTimer: null,
+    // Живые зоны: { x, y, token, el, ringEl, timer, bornAt, resolved }.
+    // Их несколько одновременно — в этом и есть челлендж вместо ускорения.
+    targets: [],
     tokenCounter: 0,
-    // Текущая длительность кольца-таймера (мс) — стартует с
-    // RING_SHRINK_START_MS, ускоряется (уменьшается) на RING_SHRINK_STEP_MS
-    // за каждый УДАЧНЫЙ тап (любой из двух видов), промах её не меняет, и
-    // никогда не опускается ниже RING_SHRINK_MIN_MS. Сбрасывается на
-    // RING_SHRINK_START_MS в resetAll() при каждом новом заходе в мини-игру.
-    currentRingMs: PRIDE_CONFIG.RING_SHRINK_START_MS,
+    // Накопитель времени до следующей зоны. Считается в rAF-цикле, а не
+    // отдельным setInterval: тогда поток целей сам собой замирает вместе с
+    // кадрами (вкладка ушла в фон) и не выбрасывает пачку зон при возврате.
+    spawnAcc: 0,
 
     rafId: null,
     lastTs: null,
@@ -113,7 +121,10 @@ const PrideMinigame = {
             window.addEventListener('resize', () => {
                 if (!this.screenElement || !this.screenElement.classList.contains('active')) return;
                 this.layoutStage();
-                if (!this.finished) this.spawnTarget();
+                // Координаты зон — в пикселях внутри поля, после смены его
+                // размера они уже врут. Гасим живые, поток тут же насыплет
+                // новые: спавнить вручную не нужно.
+                this.clearTargets();
             });
         }
     },
@@ -126,7 +137,7 @@ const PrideMinigame = {
 
     close() {
         this.stopLoop();
-        this.clearActiveTarget();
+        this.clearTargets();
         if (this.screenElement) this.screenElement.classList.remove('active');
         // ВАЖНО: winOverlay получает класс 'show' в finishGame() (победа), а
         // раньше снимался только в resetAll() — то есть только при следующем
@@ -145,9 +156,11 @@ const PrideMinigame = {
     resetAll() {
         this.progress = 0;
         this.finished = false;
+        this.hits = 0;
+        this.misses = 0;
         this.lastTs = null;
-        this.currentRingMs = PRIDE_CONFIG.RING_SHRINK_START_MS;
-        this.clearActiveTarget();
+        this.spawnAcc = 0;
+        this.clearTargets();
         this.updateGaugeUI();
         if (this.winOverlay) this.winOverlay.classList.remove('show');
         if (this.fieldGlowEl) this.fieldGlowEl.className = 'pride-field-glow';
@@ -264,6 +277,15 @@ const PrideMinigame = {
                 this.progress = Math.max(0, this.progress - PRIDE_CONFIG.PASSIVE_DECAY_PER_SEC * dtSec);
                 this.updateGaugeUI();
             }
+            // Поток зон. Спавним не больше одной за кадр, даже если
+            // накопилось на несколько: пачка из трёх зон, вылетевшая
+            // одновременно, читается как баг, а не как сложность.
+            this.spawnAcc += dtSec * 1000;
+            if (this.spawnAcc >= PRIDE_CONFIG.SPAWN_INTERVAL_MS) {
+                this.spawnAcc = Math.min(this.spawnAcc - PRIDE_CONFIG.SPAWN_INTERVAL_MS,
+                                         PRIDE_CONFIG.SPAWN_INTERVAL_MS);
+                this.spawnTarget();
+            }
         } else {
             this.lastTs = now;
         }
@@ -282,11 +304,14 @@ const PrideMinigame = {
         }
     },
 
-    // ---------- ЦЕЛЬ + КОЛЬЦО-ТАЙМЕР ----------
+    // ---------- ЗОНЫ ВНИМАНИЯ + КОЛЬЦО-ТАЙМЕР ----------
+    // Зон на экране несколько сразу. Каждая живёт TARGET_LIFE_MS, зона
+    // попадания у всех одна и та же (TAP_RADIUS) и за время жизни не
+    // меняется — кольцо сжимается только как индикатор остатка времени.
     spawnTarget() {
         if (this.finished) return;
-        this.clearActiveTarget();
         if (!this.fieldEl || !this.targetsLayer) return;
+        if (this.targets.length >= PRIDE_CONFIG.MAX_TARGETS) return;
 
         const fieldRect = this.fieldEl.getBoundingClientRect();
         if (fieldRect.width < 4 || fieldRect.height < 4) {
@@ -296,146 +321,168 @@ const PrideMinigame = {
             return;
         }
 
-        // Отступ от края поля = максимальный (стартовый) радиус кольца —
-        // так кольцо в своём самом большом размере никогда не вылезает за
-        // рамку игрового поля.
-        const ringMaxR = PRIDE_CONFIG.TARGET_RADIUS * PRIDE_CONFIG.RING_RADIUS_MULT;
-        let x, y;
-        if (fieldRect.width - ringMaxR * 2 > 4 && fieldRect.height - ringMaxR * 2 > 4) {
-            x = ringMaxR + Math.random() * (fieldRect.width - ringMaxR * 2);
-            y = ringMaxR + Math.random() * (fieldRect.height - ringMaxR * 2);
-        } else {
-            // Поле слишком тесное для идеального отступа — не зависаем без цели.
-            x = fieldRect.width / 2;
-            y = fieldRect.height / 2;
-        }
-
+        const spot = this.pickSpot(fieldRect);
         this.tokenCounter++;
         const token = this.tokenCounter;
-        this.target = { x, y, token, resolved: false };
 
-        const targetEl = document.createElement('div');
-        targetEl.className = 'pride-target';
-        const targetD = PRIDE_CONFIG.TARGET_RADIUS * 2;
-        targetEl.style.width = `${targetD}px`;
-        targetEl.style.height = `${targetD}px`;
-        targetEl.style.left = `${x}px`;
-        targetEl.style.top = `${y}px`;
-        this.targetsLayer.appendChild(targetEl);
-        this.targetEl = targetEl;
+        const r = PRIDE_CONFIG.TAP_RADIUS;
+        const spotEl = document.createElement('div');
+        spotEl.className = 'pride-target';
+        spotEl.style.width = `${r * 2}px`;
+        spotEl.style.height = `${r * 2}px`;
+        spotEl.style.left = `${spot.x}px`;
+        spotEl.style.top = `${spot.y}px`;
+        this.targetsLayer.appendChild(spotEl);
 
         const ringEl = document.createElement('div');
         ringEl.className = 'pride-ring';
-        ringEl.style.left = `${x}px`;
-        ringEl.style.top = `${y}px`;
-        const maxD = ringMaxR * 2;
-        const minD = targetD;
-        ringEl.style.width = `${maxD}px`;
-        ringEl.style.height = `${maxD}px`;
+        ringEl.style.left = `${spot.x}px`;
+        ringEl.style.top = `${spot.y}px`;
+        ringEl.style.width = `${r * 2}px`;
+        ringEl.style.height = `${r * 2}px`;
         this.targetsLayer.appendChild(ringEl);
-        this.ringEl = ringEl;
 
         // Форсируем рефлоу между стартовым и конечным размером — иначе браузер
         // схлопнет transition в один кадр (оба значения применились бы в
         // одном и том же тике вёрстки) и сжатия визуально не будет видно.
-        // Длительность берём из this.currentRingMs (не из константы) — она
-        // ускоряется с каждым удачным тапом, см. resolveTarget().
         void ringEl.offsetWidth;
-        ringEl.style.transitionDuration = `${this.currentRingMs}ms`;
-        ringEl.style.width = `${minD}px`;
-        ringEl.style.height = `${minD}px`;
+        const coreD = PRIDE_CONFIG.RING_CORE_RADIUS * 2;
+        ringEl.style.transitionDuration = `${PRIDE_CONFIG.TARGET_LIFE_MS}ms`;
+        ringEl.style.width = `${coreD}px`;
+        ringEl.style.height = `${coreD}px`;
 
-        this.targetTimer = setTimeout(() => this.onTargetTimeout(token), this.currentRingMs);
+        const target = {
+            x: spot.x, y: spot.y, token,
+            el: spotEl, ringEl,
+            diesAt: performance.now() + PRIDE_CONFIG.TARGET_LIFE_MS,
+            resolved: false,
+            timer: null
+        };
+        target.timer = setTimeout(() => this.onTargetTimeout(token), PRIDE_CONFIG.TARGET_LIFE_MS);
+        this.targets.push(target);
     },
 
-    clearActiveTarget() {
-        if (this.targetTimer) {
-            clearTimeout(this.targetTimer);
-            this.targetTimer = null;
+    // Ищет место для новой зоны: несколько случайных бросков, побеждает тот,
+    // что дальше всех от уже живых зон. Без этого две зоны налезают друг на
+    // друга, и игрок не понимает, по какой из них он попал.
+    pickSpot(fieldRect) {
+        const r = PRIDE_CONFIG.TAP_RADIUS;
+        const freeW = fieldRect.width - r * 2;
+        const freeH = fieldRect.height - r * 2;
+        if (freeW < 4 || freeH < 4) {
+            // Поле слишком тесное для полного отступа — не зависаем без зоны.
+            return { x: fieldRect.width / 2, y: fieldRect.height / 2 };
         }
-        if (this.targetEl) { this.targetEl.remove(); this.targetEl = null; }
-        if (this.ringEl) { this.ringEl.remove(); this.ringEl = null; }
-        this.target = null;
+        let best = null;
+        let bestDist = -1;
+        for (let i = 0; i < PRIDE_CONFIG.SPAWN_TRIES; i++) {
+            const x = r + Math.random() * freeW;
+            const y = r + Math.random() * freeH;
+            let nearest = Infinity;
+            for (const t of this.targets) {
+                nearest = Math.min(nearest, Math.hypot(x - t.x, y - t.y));
+            }
+            if (nearest > bestDist) {
+                bestDist = nearest;
+                best = { x, y };
+            }
+            // Разошлись достаточно, чтобы пятна не слипались в одно, —
+            // дальше искать незачем. Радиуса мало: две зоны на таком
+            // расстоянии наезжают почти наполовину и читаются как одна.
+            if (bestDist >= r * 1.6) break;
+        }
+        return best;
+    },
+
+    removeTarget(target) {
+        if (target.timer) clearTimeout(target.timer);
+        if (target.el) target.el.remove();
+        if (target.ringEl) target.ringEl.remove();
+        const i = this.targets.indexOf(target);
+        if (i >= 0) this.targets.splice(i, 1);
+    },
+
+    clearTargets() {
+        while (this.targets.length) this.removeTarget(this.targets[0]);
     },
 
     // ---------- ВВОД ----------
     onFieldPointerDown(e) {
-        if (this.finished || !this.target || this.target.resolved) return;
+        if (this.finished) return;
         e.preventDefault();
         const rect = this.fieldEl.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const dist = Math.hypot(x - this.target.x, y - this.target.y);
-        const hit = dist <= PRIDE_CONFIG.TARGET_RADIUS;
-        this.resolveTarget(hit, x, y);
+
+        // Тап засчитывается той зоне, которой осталось жить меньше всех: если
+        // две зоны наложились краями, справедливее закрыть ту, что вот-вот
+        // погаснет, — вторую игрок ещё успеет добрать.
+        let pick = null;
+        for (const t of this.targets) {
+            if (t.resolved) continue;
+            if (Math.hypot(x - t.x, y - t.y) > PRIDE_CONFIG.TAP_RADIUS) continue;
+            if (!pick || t.diesAt < pick.diesAt) pick = t;
+        }
+
+        if (pick) {
+            this.resolveTarget(pick, true, x, y);
+        } else if (this.targets.length) {
+            // Тап мимо всех зон — промах. Иначе выгодно барабанить пальцем по
+            // всему полю: зоны большие, и слепая дробь закрывала бы их сама.
+            this.registerMiss();
+        }
     },
 
     onTargetTimeout(token) {
-        if (!this.target || this.target.token !== token || this.target.resolved) return;
-        // Кольцо схлопнулось раньше тапа — засчитываем как промах на месте цели.
-        this.resolveTarget(false, this.target.x, this.target.y);
+        const target = this.targets.find(t => t.token === token);
+        if (!target || target.resolved) return;
+        this.resolveTarget(target, false, target.x, target.y);
     },
 
-    resolveTarget(hit, tapX, tapY) {
-        if (!this.target || this.target.resolved) return;
-        this.target.resolved = true;
-        // "На модельке" определяем по позиции самой ЦЕЛИ (а не только точки
-        // тапа) — засчитываем, даже если цель лишь слегка касалась силуэта.
-        const wasOnWorm = hit ? this.isOnWorm(this.target.x, this.target.y) : false;
-        this.clearActiveTarget();
+    resolveTarget(target, hit, tapX, tapY) {
+        if (target.resolved) return;
+        target.resolved = true;
+        // «Поцелуй или вспышка» — по ТОЧКЕ ТАПА, а не по всей зоне: зона
+        // большая и почти всегда хоть краем задевает силуэт, так что различие
+        // по зоне выродилось бы в «всегда поцелуй».
+        const onWorm = hit ? this.isOnWorm(tapX, tapY) : false;
+        this.removeTarget(target);
 
-        if (hit) {
-            this.addProgress(PRIDE_CONFIG.HIT_DELTA);
-            this.flashField('green');
-            if (wasOnWorm) {
-                this.spawnKissFx(tapX, tapY);
-            } else {
-                this.spawnFlashFx(tapX, tapY);
-            }
-            // Удачный этап ускоряет СЛЕДУЮЩЕЕ окно тайминга на 0.1 сек —
-            // промах темп не меняет. Пол — RING_SHRINK_MIN_MS, дальше не
-            // ускоряется, чтобы игра не стала физически невозможной.
-            this.currentRingMs = Math.max(
-                PRIDE_CONFIG.RING_SHRINK_MIN_MS,
-                this.currentRingMs - PRIDE_CONFIG.RING_SHRINK_STEP_MS
-            );
+        if (!hit) {
+            this.registerMiss();
+            return;
+        }
+
+        this.hits++;
+        this.addProgress(PRIDE_CONFIG.HIT_DELTA);
+        this.flashField('green');
+        if (onWorm) {
+            this.spawnKissFx(tapX, tapY);
         } else {
-            this.addProgress(PRIDE_CONFIG.MISS_DELTA);
-            this.flashField('red');
-        }
-
-        if (!this.finished) {
-            this.spawnTarget();
+            this.spawnFlashFx(tapX, tapY);
         }
     },
 
-    // Проверяет, касается ли КРУГ цели (центр + несколько точек по
-    // периметру) реально отрисованного силуэта персонажа — через
-    // document.elementFromPoint(), то есть по факту того, что нарисовано на
-    // экране (учитывает форму тела/ушей/хвоста), а не по прямоугольному
-    // bbox. Прямоугольный bbox персонажа почти всегда покрывает большую
-    // часть поля (включая пустые промежутки внутри силуэта) — именно из-за
-    // этого в первой версии ЛЮБОЕ попадание засчитывалось как "поцелуй".
+    registerMiss() {
+        this.misses++;
+        this.addProgress(PRIDE_CONFIG.MISS_DELTA);
+        this.flashField('red');
+    },
+
+    // Проверяет, пришёлся ли тап по реально отрисованному силуэту персонажа —
+    // через document.elementFromPoint(), то есть по факту того, что
+    // нарисовано на экране (учитывает форму тела/ушей/хвоста), а не по
+    // прямоугольному bbox. Прямоугольный bbox персонажа покрывает большую
+    // часть поля (включая пустоты внутри силуэта) — именно из-за этого в
+    // первой версии ЛЮБОЕ попадание засчитывалось как «поцелуй».
     // Чтобы elementFromPoint видел форму персонажа (а не проваливался
     // сквозь неё к полю под ней), у SVG-персонажа в pride.css явно включён
     // pointer-events — см. .pride-worm-stage .worm-stage-svg.
     isOnWorm(fieldX, fieldY) {
         if (!this.wormHandle || !this.fieldEl) return false;
         const fieldRect = this.fieldEl.getBoundingClientRect();
-        const r = PRIDE_CONFIG.TARGET_RADIUS;
-        const rays = PRIDE_CONFIG.ON_WORM_SAMPLE_RAYS;
-        const points = [[0, 0]];
-        for (let i = 0; i < rays; i++) {
-            const angle = (i / rays) * Math.PI * 2;
-            points.push([Math.cos(angle) * r, Math.sin(angle) * r]);
-        }
-        for (const [ox, oy] of points) {
-            const clientX = fieldRect.left + fieldX + ox;
-            const clientY = fieldRect.top + fieldY + oy;
-            const el = document.elementFromPoint(clientX, clientY);
-            if (el && el.closest('.worm-root')) return true;
-        }
-        return false;
+        const el = document.elementFromPoint(fieldRect.left + fieldX, fieldRect.top + fieldY);
+        return !!(el && el.closest('.worm-root'));
     },
 
     // ---------- ИНДИКАЦИЯ: СВЕЧЕНИЕ ОКАНТОВКИ ПОЛЯ ----------
@@ -500,12 +547,18 @@ const PrideMinigame = {
     finishGame() {
         if (this.finished) return;
         this.finished = true;
-        this.clearActiveTarget();
+        this.clearTargets();
         if (this.winOverlay) this.winOverlay.classList.add('show');
 
         // Мини-игра не начисляет сама: сообщает результат, а что за него
         // дать, решает конфиг наград (src/config/economy.js).
-        GameEvents.emit('minigame:result', { sin: 'pride', mode: 'parade', outcome: 'win' });
+        // meta — под будущий множитель за точность (docs/plan/17-pride.md,
+        // раздел 4): решать, сколько за это дать, всё равно будет конфиг
+        // наград, но считать точность может только сама мини-игра.
+        GameEvents.emit('minigame:result', {
+            sin: 'pride', mode: 'parade', outcome: 'win',
+            meta: { hits: this.hits, misses: this.misses }
+        });
     }
 };
 
