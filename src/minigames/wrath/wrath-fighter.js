@@ -123,15 +123,20 @@ const WrathFighter = {
         };
     },
 
-    // Сколько снял удар. Всё в лоб: бросок из диапазона плюс оружие, минус
-    // броня той зоны, куда прилетело. Ниже нуля не уходит — «броня лечит»
-    // выглядело бы ошибкой, а не тактикой.
+    // Сколько снял удар, который ДОШЁЛ (в блок он не попал). Всё в лоб:
+    // бросок из диапазона плюс оружие, минус броня той зоны, куда прилетело.
+    //
+    // Ниже пола не опускается. Пол — не мелочь и не страховка от деления на
+    // ноль: без него броня 3 против урона 1–3 делает противника безобидным
+    // совсем, и бой превращается в переглядывание. Броня снижает урон, но не
+    // отменяет его; отменяет только правильный блок.
     rollDamage(attacker, defender, zone) {
         const a = attacker.stats;
         const span = Math.max(0, a.damageMax - a.damageMin);
         const raw = a.damageMin + Math.floor(Math.random() * (span + 1));
         const armor = (defender.stats.armor && defender.stats.armor[zone]) || 0;
-        return Math.max(0, raw - armor);
+        const floor = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.minHitDamage) || 0;
+        return Math.max(floor, raw - armor);
     },
 
     // ---------- ТЕКУЩЕЕ ЗДОРОВЬЕ ----------
