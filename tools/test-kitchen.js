@@ -193,6 +193,15 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: out + '9-feed.png' });
 
   for (let i = 0; i < 40 && await page.evaluate(() => GluttonyMinigame.phase !== 'feed'); i++) await page.waitForTimeout(100);
+  // Червю надо дать доползти: кастрюля появляется только когда он на месте.
+  for (let i = 0; i < 40 && await page.evaluate(() => !!GluttonyMinigame.wormWalk); i++) await page.waitForTimeout(100);
+  await page.waitForTimeout(400);
+  say('пришёл на: ' + await page.evaluate(() => JSON.stringify(GluttonyMinigame.feedHead)) +
+      '   кастрюля: ' + await page.evaluate(() => {
+        const b = document.getElementById('glut-tilt-bucket');
+        return b.style.left + ' / ' + b.style.top + ' op=' + getComputedStyle(b).opacity;
+      }));
+  await page.screenshot({ path: out + '9b-worm-arrived.png' });
   const pot = await page.$('#glut-tilt-bucket');
   if (pot) {
     const b = await pot.boundingBox();

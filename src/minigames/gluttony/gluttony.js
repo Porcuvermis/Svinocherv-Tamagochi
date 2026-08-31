@@ -47,10 +47,26 @@ const GluttonyMinigame = {
     // минус. В первой версии знаки были перепутаны, и свайп вверх опускал
     // нож — управление читалось сломанным.
     KNIFE_UP: 44,          // лезвие поднято
-    KNIFE_DOWN: -3,        // лезвие лежит на доске
-    KNIFE_SENS: 0.32,      // градусов на пиксель пальца: весь размах ≈ 150 px
+    // Не «лежит плашмя», а слегка носом вниз: в нижней точке лезвие обязано
+    // ВОЙТИ в продукты. Плоский нож на этой же высоте выглядел парящим над
+    // доской, и удар не читался ударом.
+    KNIFE_DOWN: -6,
+    KNIFE_SENS: 0.38,      // градусов на пиксель пальца: весь размах ≈ 130 px
     STIR_SWINGS: 6,
     HINT_DELAY: 1500,
+
+    // Куда приползает червь — центр коврика В КООРДИНАТАХ СЦЕНЫ. Одно число
+    // на всю раскладку кормёжки: подвинули коврик в картинке — кормёжка
+    // переехала следом, код не трогаем.
+    FEED_SPOT: { x: 450, y: 2246 },
+
+    // ---------- НАЛИВ ----------
+    // Считается от ВРЕМЕНИ, а не от числа событий указателя: раньше уровень
+    // рос на каждый pointermove, поэтому на быстром экране кастрюля
+    // наполнялась вдвое быстрее, чем на медленном, а если держать сосуд
+    // неподвижно — не наполнялась вовсе.
+    POUR_FULL: 60,           // уровень, при котором жидкость засчитана
+    POUR_RATE_PER_SEC: 32,   // ≈1.9 с на полную кастрюлю
 
     // ---------- СОСТОЯНИЕ СЕССИИ ----------
     phase: 'overview',     // overview | fridge | chop | stove | potzoom | feed
@@ -116,6 +132,8 @@ const GluttonyMinigame = {
 
     close() {
         this.stopFeedTick();
+        this.stopPour();
+        this.stopWormWalk();
         clearTimeout(this._hintTimer);
         this.screenElement.classList.remove('active');
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
@@ -129,6 +147,8 @@ const GluttonyMinigame = {
         this.knifeAngle = 0;
         this.knifeArmed = false;
         this.liquid = null;
+        this.pourLevel = 0;
+        this.stopPour();
         this.inPot = [];
         this.piles = [];
         this.stirSwings = 0;
@@ -138,6 +158,9 @@ const GluttonyMinigame = {
 
         if (this.stageFeed) this.stageFeed.classList.remove('active');
         if (this.svgEl) this.svgEl.style.display = '';
+        this.stopWormWalk();
+        this.setOpacity('kt-pot', 1);
+        if (this.tiltBucket) this.tiltBucket.style.opacity = '';
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
 
         this.el('kt-loose').innerHTML = '';
@@ -288,19 +311,37 @@ const GluttonyMinigame = {
         return m ? { x: +m[1], y: +m[2] } : { x: 0, y: 0 };
     },
 
-    // Указатель живёт в сцене, поэтому экранные цели переводятся в сцену:
-    // одна система координат на подсказку — меньше поводов ошибиться.
-    stageToScene(pt) {
+    // Указатель переехал в передний план, поэтому переводить надо в другую
+    // сторону: точки сцены (полки, кастрюля, кран) — в координаты стейджа.
+    sceneToStage(pt) {
         const m = this.camEl.getScreenCTM();
         const sm = this.svgEl.getScreenCTM();
         if (!m || !sm) return pt;
         const p = this.svgEl.createSVGPoint();
         p.x = pt.x; p.y = pt.y;
-        const screen = p.matrixTransform(sm);
+        const screen = p.matrixTransform(m);
         const back = this.svgEl.createSVGPoint();
         back.x = screen.x; back.y = screen.y;
-        return back.matrixTransform(m.inverse());
+        return back.matrixTransform(sm.inverse());
     },
+
+    // Точка стейджа → CSS-пиксели слоя персонажа. Мерить через getScreenCTM
+    // обязательно: кухня вписана в рамку окна с обрезкой (slice), поэтому
+    // единицы svg и пиксели слоя не совпадают и зависят от формы окна. Плюс
+    // весь холст ещё и отмасштабирован (--stage-scale) — на это делится k.
+    stageToWorm(pt) {
+        const host = this.wormStageEl;
+        const sm = this.svgEl && this.svgEl.getScreenCTM();
+        if (!host || !sm) return pt;
+        const r = host.getBoundingClientRect();
+        const k = (r.width / (host.clientWidth || r.width)) || 1;
+        const p = this.svgEl.createSVGPoint();
+        p.x = pt.x; p.y = pt.y;
+        const screen = p.matrixTransform(sm);
+        return { x: (screen.x - r.left) / k, y: (screen.y - r.top) / k };
+    },
+
+    sceneToWorm(pt) { return this.stageToWorm(this.sceneToStage(pt)); },
 
     showHint() {
         if (this.drag || this.locked || this.phase === 'feed') return;
@@ -308,23 +349,30 @@ const GluttonyMinigame = {
         const hint = this.el('kt-hint');
         if (!step || !hint) return;
 
-        const at = step.stage ? this.stageToScene(step.at) : step.at;
+        const at = step.stage ? step.at : this.sceneToStage(step.at);
         this.moveTo(this.el('kt-hint-ring'), at);
         const line = this.el('kt-hint-line');
 
         let to = null;
-        if (step.to) to = step.to;
-        else if (step.toStage) to = this.stageToScene(step.toStage);
-        else if (step.dragTo) to = this.stageToScene(step.dragTo);
+        if (step.to) to = this.sceneToStage(step.to);
+        else if (step.toStage) to = step.toStage;
+        else if (step.dragTo) to = step.dragTo;
 
         if (to) {
-            const mx = (at.x + to.x) / 2;
-            const my = Math.min(at.y, to.y) - 140;
+            // Дуга выгибается ПЕРПЕНДИКУЛЯРНО переносу и тем сильнее, чем он
+            // длиннее. Раньше горб всегда задирался вверх на 140: короткий
+            // перенос вправо (доска на нарезку) выгибался чуть не через весь
+            // экран и читался как «тащи вверх».
+            const dx = to.x - at.x, dy = to.y - at.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const bow = Math.min(70, len * 0.3);
+            const mx = (at.x + to.x) / 2 - (dy / len) * bow;
+            const my = (at.y + to.y) / 2 - (dx / len) * bow;
             line.setAttribute('d', `M${at.x} ${at.y} Q${mx} ${my} ${to.x} ${to.y}`);
         } else if (step.swipe === 'v') {
-            line.setAttribute('d', `M${at.x} ${at.y - 130} V${at.y + 130}`);
+            line.setAttribute('d', `M${at.x} ${at.y - 100} V${at.y + 100}`);
         } else if (step.swipe === 'h') {
-            line.setAttribute('d', `M${at.x - 130} ${at.y} H${at.x + 130}`);
+            line.setAttribute('d', `M${at.x - 100} ${at.y} H${at.x + 100}`);
         } else {
             line.setAttribute('d', '');
         }
@@ -622,23 +670,40 @@ const GluttonyMinigame = {
         const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.water;
         this.setAttr('kt-pot-fill', { fill: ramp[500] });
         this.setAttr('kt-pour', { opacity: 1, stroke: ramp[300] });
+        // Уровень набирает отдельный кадровый цикл, а не события указателя:
+        // держать сосуд над кастрюлей неподвижно — тоже наливать.
+        this.pourLastTick = null;
+        if (!this.pourRafId) this.pourRafId = requestAnimationFrame(t => this.pourTick(t));
     },
 
-    updatePour(from) {
-        if (!this.pouring) return;
-        const S = KITCHEN_ART.SLOTS;
-        this.setAttr('kt-pour', { d: `M${from.x} ${from.y} Q${from.x} ${(from.y + 620) / 2} ${S.pot.x} 640` });
-        this.pourLevel = Math.min(60, (this.pourLevel || 0) + 1.6);
+    pourTick(now) {
+        if (!this.pouring) { this.pourRafId = null; this.pourLastTick = null; return; }
+        if (!this.pourLastTick) this.pourLastTick = now;
+        const dt = Math.min(0.1, (now - this.pourLastTick) / 1000);
+        this.pourLastTick = now;
+
+        this.pourLevel = Math.min(this.POUR_FULL,
+            (this.pourLevel || 0) + this.POUR_RATE_PER_SEC * dt);
         this.updatePotLevel();
-        if (this.pourLevel >= 60 && !this.liquid) {
+        if (this.pourLevel >= this.POUR_FULL && !this.liquid) {
             this.liquid = this.pouring.key;
             this.setOpacity('kt-steam', 1);
             this.touched();
         }
+        this.pourRafId = requestAnimationFrame(t => this.pourTick(t));
+    },
+
+    // Событие указателя двигает только струю: где носик — там и её начало.
+    updatePour(from) {
+        if (!this.pouring) return;
+        const S = KITCHEN_ART.SLOTS;
+        this.setAttr('kt-pour', { d: `M${from.x} ${from.y} Q${from.x} ${(from.y + 620) / 2} ${S.pot.x} 640` });
     },
 
     stopPour() {
         this.pouring = null;
+        if (this.pourRafId) { cancelAnimationFrame(this.pourRafId); this.pourRafId = null; }
+        this.pourLastTick = null;
         this.setAttr('kt-pour', { opacity: 0, d: '' });
     },
 
@@ -938,11 +1003,26 @@ const GluttonyMinigame = {
     },
 
     // ================= КОРМЁЖКА =================
+    // Кухня НЕ прячется. Раньше на кормёжку подменялась вся картинка —
+    // отдельная сцена с градиентным фоном, — и это читалось как переход в
+    // другую игру: варил суп, а очнулся неизвестно где. Теперь камера просто
+    // переезжает на пол перед столом, а кастрюля со стола исчезает: её как
+    // раз и понесли вниз, к червю.
     goToFeed() {
         this.phase = 'feed';
-        if (this.svgEl) this.svgEl.style.display = 'none';
+        this.setOpacity('kt-pot', 0);
+        this.setOpacity('kt-flame', 0);
+        this.setOpacity('kt-spoon', 0);
+        this.setOpacity('kt-hint', 0);
+        this.setCamera('feed');
         if (this.stageFeed) this.stageFeed.classList.add('active');
-        this.setupFeedStage();
+        this.ensureFeedMarkup();
+        if (this.tiltBucket) this.tiltBucket.style.opacity = '0';
+        // Раскладка считается от точки НА КУХНЕ (центр коврика), поэтому её
+        // нельзя считать посреди переезда камеры: коврик ещё не там, где
+        // будет, и червь приходил в угол экрана, а кастрюля висела за краем.
+        // 680 мс — чуть больше перехода #kt-cam (0.62 с).
+        setTimeout(() => this.setupFeedStage(), 680);
     },
 
     dishMeta() {
@@ -983,19 +1063,16 @@ const GluttonyMinigame = {
             pointerEvents: 'none'
         });
 
-        // Ведро на этапе кормления должно выглядеть ТОЧНО так же, как
-        // ведро на этапе замешивания (.glut-bucket / #glut-bucket-body) —
-        // тот самый серый металлический градиент с окантовкой, а не
-        // эмодзи и не отдельно нарисованная форма. Копируем стиль прямо
-        // из рабочего варианта (см. .glut-bucket в gluttony.css) сюда,
-        // инлайново, чтобы это больше не зависело от разметки index.html.
+        // Кастрюлю рисует kitchen-art (KITCHEN_ART.potHeld), а не css-градиент:
+        // кормёжка идёт на самой кухне, и серый прямоугольник посреди
+        // нарисованной от руки сцены выглядел деталью из другой игры.
+        // Здесь только раскладка: где висит, за что берут, вокруг чего
+        // наклоняется (ось — верхний край, как у настоящей кастрюли в руках).
         this.tiltBucket = document.getElementById('glut-tilt-bucket');
         if (this.tiltBucket) {
             this.tiltBucket.textContent = '';
             Object.assign(this.tiltBucket.style, {
                 position: 'absolute',
-                top: '4%',
-                left: '10%',
                 width: '30%',
                 maxWidth: '120px',
                 fontSize: '0',
@@ -1015,11 +1092,7 @@ const GluttonyMinigame = {
                 position: 'relative',
                 width: '100%',
                 aspectRatio: '0.9',
-                boxSizing: 'border-box',
-                background: 'linear-gradient(180deg, #d9d9d9 0%, #9a9a9a 60%, #7a7a7a 100%)',
-                border: '3px solid #5a5a5a',
-                borderRadius: '14px 14px 26px 26px / 14px 14px 40px 40px',
-                boxShadow: 'inset 0 -10px 20px rgba(0,0,0,0.3)'
+                boxSizing: 'border-box'
             });
         }
 
@@ -1055,6 +1128,9 @@ const GluttonyMinigame = {
         if (this.tiltBucket) {
             this.tiltBucket.style.transform = 'rotate(0deg)';
         }
+        // Цвет варева — тот же, что налили в кастрюлю на плите: блюдо
+        // доехало до червя тем же, каким его готовили.
+        if (this.potEl) this.potEl.innerHTML = KITCHEN_ART.potHeld(this.liquid);
 
         // Персонаж — общая моделька игрока, не своя отрисовка. Монтируем
         // (один раз за сессию) именно здесь, когда .glut-stage-feed уже
@@ -1114,7 +1190,10 @@ const GluttonyMinigame = {
             // напольной цепи получают свои transform только в первом тике
             // рендерера (requestAnimationFrame), не в момент mount()/update().
             // Двойной rAF — гарантированно ПОСЛЕ этого первого тика.
-            requestAnimationFrame(() => requestAnimationFrame(() => this.layoutFeedStage()));
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                this.layoutFeedStage();
+                this.startWormWalk();
+            }));
         } catch (err) {
             alert('Чревоугодие: ошибка при отрисовке персонажа — ' + (err && err.message ? err.message : err));
             console.error(err);
@@ -1124,42 +1203,33 @@ const GluttonyMinigame = {
         if (!this.feedRafId) this.feedRafId = requestAnimationFrame((t) => this.feedTick(t));
     },
 
-    // Правка 17: раньше здесь была alignPotToMouth() — подгоняла только
-    // ГОРИЗОНТАЛЬ кастрюли под рот, а сама позиция персонажа была
-    // захардкожена (anchorX/anchorY), из-за чего он частично не влезал в
-    // сцену. Теперь одна функция решает обе задачи сразу и делает это не
-    // "на глаз" числами, а по РЕАЛЬНЫМ измеренным габаритам уже
-    // отрисованного персонажа (getBoundingClientRect его SVG) — это
-    // единственный способ, который сам собой продолжит работать и после
-    // появления взросления (новые сегменты, другой размер тела): силуэт
-    // персонажа просто станет больше/другим, а раскладка пересчитается от
-    // него заново, без правки констант.
+    // Раскладка кормёжки. Считается не числами «на глаз», а по РЕАЛЬНО
+    // измеренному силуэту уже отрисованного персонажа — единственный способ,
+    // который переживёт взросление: тело станет другим, раскладка
+    // пересчитается сама.
     //
-    // Логика:
-    // 1) меряем фактический bbox всего персонажа (bodyRect) и его головы
-    //    (headRect) — они дают "сколько места нужно" в каждую сторону от
-    //    ЦЕНТРА головы (up/down/left/right extent);
-    // 2) выбираем новую точку стояния головы (wormX/wormY) так, чтобы весь
-    //    силуэт был центрирован по горизонтали и стоял чуть ниже центра
-    //    сцены по вертикали, но целиком помещался в видимую область и
-    //    оставлял сверху место под кастрюлю;
-    // 3) переставляем персонажа туда через WormRenderer.setPosition();
-    // 4) ставим кастрюлю строго над новым положением головы (центр по X
-    //    совпадает с центром головы, дно — на небольшом зазоре над
-    //    макушкой) — поэтому кастрюля "над головой" гарантированно, где бы
-    //    голова ни оказалась.
+    // Точка стояния берётся из СЦЕНЫ (центр коврика), а не из долей экрана:
+    // червя кормят в конкретном месте кухни, и если коврик в картинке
+    // подвинут, кормёжка переезжает следом без правки кода.
+    //
+    // ВАЖНО про единицы. getBoundingClientRect отдаёт ВЬЮПОРТНЫЕ пиксели, а
+    // весь холст ещё и отмасштабирован (--stage-scale). Раскладка же живёт в
+    // css-пикселях слоя персонажа — на это и делится k. Без деления на
+    // телефоне персонаж уезжал тем сильнее, чем мельче окно.
     layoutFeedStage() {
-        if (!this.wormHandle || !this.wormStageEl || !this.feedSceneEl || !this.tiltBucket) return;
+        if (!this.wormHandle || !this.wormStageEl || !this.tiltBucket) return;
 
-        const stageRect = this.wormStageEl.getBoundingClientRect();
-        if (stageRect.width < 1 || stageRect.height < 1) return;
+        const host = this.wormStageEl;
+        const hostRect = host.getBoundingClientRect();
+        if (hostRect.width < 1 || hostRect.height < 1) return;
+        const k = (hostRect.width / (host.clientWidth || hostRect.width)) || 1;
+        const W = host.clientWidth || hostRect.width;
+        const H = host.clientHeight || hostRect.height;
 
         const headEl = this.wormHandle.svgRoot.querySelector('[data-part="head"]');
-        // ВАЖНО: bbox мерим по группе .worm-root (тот <g>, что реально
-        // содержит и двигает персонажа), а НЕ по this.wormHandle.svgRoot —
-        // svgRoot это сам внешний <svg>, его getBoundingClientRect() равен
-        // размеру КОНТЕЙНЕРА (он растянут на всю сцену через viewBox), а
-        // не силуэту персонажа внутри него.
+        // Габарит мерим по группе .worm-root (тот <g>, что реально содержит
+        // персонажа), а не по svgRoot: внешний <svg> растянут на весь слой, и
+        // его прямоугольник — это размер контейнера, а не силуэта.
         const bodyGroup = this.wormHandle.svgRoot.querySelector('.worm-root');
         if (!headEl || !bodyGroup) return;
         const bodyRect = bodyGroup.getBoundingClientRect();
@@ -1169,66 +1239,126 @@ const GluttonyMinigame = {
         const headCenterX = headRect.left + headRect.width / 2;
         const headCenterY = headRect.top + headRect.height / 2;
 
-        // Сколько персонаж реально занимает в каждую сторону от центра
-        // головы — хвостовая часть тянется в одну сторону намного дальше,
-        // чем что-либо в другую, поэтому все четыре отступа разные.
-        const upExtent = headCenterY - bodyRect.top;
-        const downExtent = bodyRect.bottom - headCenterY;
-        const leftExtent = headCenterX - bodyRect.left;
-        const rightExtent = bodyRect.right - headCenterX;
+        // Сколько персонаж занимает в каждую сторону от центра головы: хвост
+        // тянется в одну сторону намного дальше, поэтому отступы разные.
+        const upExtent    = (headCenterY - bodyRect.top) / k;
+        const downExtent  = (bodyRect.bottom - headCenterY) / k;
+        const leftExtent  = (headCenterX - bodyRect.left) / k;
+        const rightExtent = (bodyRect.right - headCenterX) / k;
 
         const potRect = this.tiltBucket.getBoundingClientRect();
-        const potWidth = potRect.width || stageRect.width * 0.3;
-        const potHeight = potRect.height || potWidth / 0.9;
+        const potWidth  = potRect.width  ? potRect.width  / k : W * 0.3;
+        const potHeight = potRect.height ? potRect.height / k : potWidth / 0.9;
 
-        const MARGIN = 10;   // отступ от краёв сцены
-        const POT_GAP = 6;   // зазор между дном кастрюли и макушкой головы
+        const MARGIN = 10;   // отступ от краёв
+        const POT_GAP = 6;   // зазор между дном кастрюли и макушкой
 
-        // По горизонтали центрируем весь силуэт (не саму голову — у неё
-        // разные "плечи" из-за хвоста), с зажимом в границы сцены.
-        let targetHeadX = stageRect.width / 2 + (leftExtent - rightExtent) / 2;
-        targetHeadX = Math.min(Math.max(targetHeadX, MARGIN + leftExtent), stageRect.width - MARGIN - rightExtent);
+        const spot = this.sceneToWorm(this.FEED_SPOT);
 
-        // По вертикали — чуть ниже центра сцены (экран портретный, а поза
-        // персонажа высокая), но обязательно так, чтобы снизу тело влезало
-        // целиком, а сверху оставалось место под кастрюлю.
-        const minHeadY = MARGIN + potHeight + POT_GAP + upExtent;
-        const maxHeadY = stageRect.height - MARGIN - downExtent;
-        let targetHeadY = stageRect.height * 0.58;
-        if (minHeadY <= maxHeadY) {
-            targetHeadY = Math.min(Math.max(targetHeadY, minHeadY), maxHeadY);
-        } else {
-            // Сцена слишком тесная для идеальной раскладки — приоритет
-            // месту под кастрюлю и полной видимости головы/верха тела.
-            targetHeadY = minHeadY;
-        }
+        // По горизонтали центрируем над ковриком ВЕСЬ силуэт, а не голову: у
+        // неё разные «плечи» из-за хвоста.
+        let x = spot.x + (leftExtent - rightExtent) / 2;
+        x = Math.min(Math.max(x, MARGIN + leftExtent), W - MARGIN - rightExtent);
 
-        // headRect/bodyRect — во ВЬЮПОРТЕ; переводим их через уже
-        // известную ТЕКУЩУЮ позицию головы (getPosition) в систему
-        // координат сцены (= системе координат SVG персонажа, см.
-        // syncViewportSize — viewBox 1:1 с CSS-пикселями контейнера).
-        const currentPos = this.wormHandle.getPosition();
-        const currentHeadX = headCenterX - stageRect.left;
-        const currentHeadY = headCenterY - stageRect.top;
-        const dx = targetHeadX - currentHeadX;
-        const dy = targetHeadY - currentHeadY;
-        this.wormHandle.setPosition(currentPos.x + dx, currentPos.y + dy);
+        // По вертикали тело низом встаёт на коврик, но обязательно так, чтобы
+        // сверху осталось место под кастрюлю.
+        let y = spot.y - downExtent;
+        const minY = MARGIN + potHeight + POT_GAP + upExtent;
+        const maxY = H - MARGIN - downExtent;
+        y = (minY <= maxY) ? Math.min(Math.max(y, minY), maxY) : minY;
 
-        // Кастрюля целится в РОТ, а не в центр головы. Пока голова была
-        // строго анфас, это было одно и то же; с появлением поворота
-        // (head.yaw) рот уезжает вбок на полтора десятка пикселей, и еда
-        // лилась бы мимо. Смещение считаем относительно центра головы,
-        // потому что вся раскладка ниже уже построена от него.
+        // Смещение «начало координат персонажа → центр головы». Меряется
+        // здесь один раз, дальше позиция ставится арифметикой: во время
+        // прихода червя это происходит каждый кадр, и замер в кадре был бы
+        // лишней раскладкой браузера.
+        const pos = this.wormHandle.getPosition();
+        this.wormHeadOffset = {
+            x: (headCenterX - hostRect.left) / k - pos.x,
+            y: (headCenterY - hostRect.top) / k - pos.y
+        };
+
+        // Кастрюля целится в РОТ, а не в центр головы: с поворотом головы рот
+        // уезжает вбок на полтора десятка пикселей, и еда лилась бы мимо.
         const mouthEl = this.wormHandle.svgRoot.querySelector('[data-anchor="mouth"]');
         let mouthOffsetX = 0;
         if (mouthEl) {
             const mouthRect = mouthEl.getBoundingClientRect();
             if (mouthRect.width > 0) {
-                mouthOffsetX = (mouthRect.left + mouthRect.width / 2) - headCenterX;
+                mouthOffsetX = ((mouthRect.left + mouthRect.width / 2) - headCenterX) / k;
             }
         }
-        this.tiltBucket.style.left = `${targetHeadX + mouthOffsetX - potWidth / 2}px`;
-        this.tiltBucket.style.top = `${targetHeadY - upExtent - POT_GAP - potHeight}px`;
+        this.feedPot = {
+            dx: mouthOffsetX - potWidth / 2,
+            dy: -upExtent - POT_GAP - potHeight
+        };
+
+        this.feedHead = { x, y };
+        // Пока червь ползёт — не дёргаем его на место, только обновляем цель.
+        if (this.wormWalk) this.wormWalk.to = this.feedHead;
+        else this.setWormHead(x, y);
+        this.placePot();
+    },
+
+    setWormHead(x, y) {
+        const o = this.wormHeadOffset;
+        if (!this.wormHandle || !o) return;
+        this.wormHandle.setPosition(x - o.x, y - o.y);
+    },
+
+    placePot() {
+        if (!this.tiltBucket || !this.feedHead || !this.feedPot) return;
+        this.tiltBucket.style.left = `${(this.feedHead.x + this.feedPot.dx).toFixed(1)}px`;
+        this.tiltBucket.style.top  = `${(this.feedHead.y + this.feedPot.dy).toFixed(1)}px`;
+    },
+
+    // ---------- ЧЕРВЬ ПРИХОДИТ САМ ----------
+    // Без прихода еда просто появляется рядом с персонажем, и непонятно, как
+    // он тут оказался. Ползёт справа за кадром: голова ведёт, тело тянется
+    // следом. Своя анимация, а не шагающий цикл рендерера, потому что тот
+    // включается только вместе с «прогулками» — а прогулки увели бы червя с
+    // коврика прямо во время кормления.
+    WALK_MS: 1500,
+
+    startWormWalk() {
+        if (!this.feedHead || !this.wormStageEl) return;
+        this.stopWormWalk();
+        const W = this.wormStageEl.clientWidth || 390;
+        this.wormWalk = {
+            from: { x: this.feedHead.x + W * 0.95, y: this.feedHead.y + 24 },
+            to: this.feedHead,
+            at: null
+        };
+        if (this.tiltBucket) this.tiltBucket.style.opacity = '0';
+        this.setWormHead(this.wormWalk.from.x, this.wormWalk.from.y);
+        this.wormWalkRaf = requestAnimationFrame(t => this.wormWalkTick(t));
+    },
+
+    wormWalkTick(now) {
+        const w = this.wormWalk;
+        if (!w) { this.wormWalkRaf = null; return; }
+        if (w.at === null) w.at = now;
+        const t = Math.min(1, (now - w.at) / this.WALK_MS);
+        const e = 1 - Math.pow(1 - t, 2);        // трогается охотно, подъезжает мягко
+        // Ползёт, а не едет: к прямой добавлена затухающая волна — тело идёт
+        // рывками, как у гусеницы.
+        const wob = Math.sin(t * Math.PI * 6) * 6 * (1 - t);
+        this.setWormHead(w.from.x + (w.to.x - w.from.x) * e,
+                         w.from.y + (w.to.y - w.from.y) * e + wob);
+        if (t >= 1) {
+            this.wormWalk = null;
+            this.wormWalkRaf = null;
+            this.setWormHead(w.to.x, w.to.y);
+            this.placePot();
+            if (this.tiltBucket) this.tiltBucket.style.opacity = '1';
+            return;
+        }
+        this.wormWalkRaf = requestAnimationFrame(x => this.wormWalkTick(x));
+    },
+
+    stopWormWalk() {
+        if (this.wormWalkRaf) cancelAnimationFrame(this.wormWalkRaf);
+        this.wormWalkRaf = null;
+        this.wormWalk = null;
     },
 
     stopFeedTick() {
@@ -1282,7 +1412,9 @@ const GluttonyMinigame = {
         if (Math.abs(this.feedTargetAngle - this.feedAngle) < 0.05) this.feedAngle = this.feedTargetAngle;
 
         if (this.tiltBucket) {
-            this.tiltBucket.style.transform = `rotate(${this.feedAngle.toFixed(1)}deg)`;
+            // Наклон ВЛЕВО: рыло у червя смотрит влево, и кастрюля обязана
+            // опрокидываться в ту же сторону — иначе она льёт мимо морды.
+            this.tiltBucket.style.transform = `rotate(${(-this.feedAngle).toFixed(1)}deg)`;
         }
         if (this.wormHandle) {
             // Наклон ведра 0° → рот закрыт (0), наклон MAX_ANGLE → рот
@@ -1315,13 +1447,13 @@ const GluttonyMinigame = {
         const drop = document.createElement('div');
         drop.className = 'glut-drop';
         // Берём границы самой кастрюли (не всей поворотной обёртки), причём
-        // не центр, а передний/нижний край её текущего (уже повёрнутого)
-        // прямоугольника — getBoundingClientRect() после rotate() возвращает
-        // именно повёрнутый bbox, так что right/bottom — это и есть "носик"
-        // наклонённой кастрюли, а не геометрический центр.
+        // не центр, а нижний ЛЕВЫЙ угол её текущего (уже повёрнутого)
+        // прямоугольника: getBoundingClientRect() после rotate() возвращает
+        // повёрнутый bbox, и левый нижний угол — это и есть «носик»
+        // опрокинутой к морде кастрюли.
         const potRect = this.potEl.getBoundingClientRect();
         const layerRect = this.pourLayer.getBoundingClientRect();
-        drop.style.left = `${potRect.right - layerRect.left - 6}px`;
+        drop.style.left = `${potRect.left - layerRect.left + 6}px`;
         drop.style.top = `${potRect.bottom - layerRect.top - 4}px`;
         this.pourLayer.appendChild(drop);
         setTimeout(() => drop.remove(), 550);

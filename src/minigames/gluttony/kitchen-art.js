@@ -105,7 +105,11 @@ const KITCHEN_ART = {
         fridge:   { x: 0,   y: 300,  w: 330, h: 1010 },
         chop:     { x: 300, y: 1400, w: 520, h: 520 },
         stove:    { x: 330, y: 540,  w: 560, h: 460 },
-        pot:      { x: 400, y: 540,  w: 260, h: 320 }
+        pot:      { x: 400, y: 540,  w: 260, h: 320 },
+        // Уголок кормления: пол перед разделочным столом. Отдельный кадр, а
+        // не своя сцена: червя кормят В КУХНЕ, где еду и готовили, —
+        // переключение на отдельный экран рвало эту связь пополам.
+        feed:     { x: 170, y: 1596, w: 560, h: 700 }
     },
 
     // Геометрия. Держим здесь, а не в коде мини-игры: это разметка картинки,
@@ -148,7 +152,11 @@ const KITCHEN_ART = {
         board: { hidden: { x: 470, y: 1080 }, fridge: { x: 195, y: 700 }, chop: { x: 195, y: 620 } },
         // Гнёзда под продукты на доске: три в ряд.
         slots: [{ x: -84, y: -6 }, { x: 0, y: -6 }, { x: 84, y: -6 }],
-        knife: { x: 262, y: 470 },
+        // Ось ножа стоит так, чтобы в нижней точке лезвие входило в кучку на
+        // доске, а не парило над ней: доска на y=620, верх кучки ≈590, кромка
+        // лезвия при KNIFE_DOWN приходит на ≈604. Числа связаны — двигать
+        // одно без другого нельзя.
+        knife: { x: 294, y: 578 },
         knifeRest: { x: 322, y: 748 },
         knifePivot: 96      // длина от оси вращения до кончика лезвия
     },
@@ -291,24 +299,35 @@ const KITCHEN_ART = {
         <!-- ---------- СТОЛ ДЛЯ НАРЕЗКИ (задник этапа) ---------- -->
         <g id="kt-table" class="kt-hot">
             <rect x="270" y="1420" width="640" height="500" fill="${PALETTE.timber[500]}"/>
+            <!-- Доски на передней стенке и тень на полу. В кадре нарезки это
+                 задник, который почти не видно, зато в кадре кормёжки стол
+                 занимает пол-экрана — и без фактуры читался плоской плитой. -->
+            <path d="M270 1560 H910 M270 1700 H910 M270 1840 H910"
+                  stroke="${PALETTE.timber[700]}" stroke-width="${S.detail}" opacity="0.5"/>
+            <path d="M330 1420 V1920 M700 1420 V1920"
+                  stroke="${PALETTE.timber[700]}" stroke-width="${S.detail}" opacity="0.35"/>
+            <rect x="270" y="1420" width="640" height="500" fill="none"
+                  stroke="${ink}" stroke-width="${S.structure}"/>
+            <ellipse cx="590" cy="1928" rx="330" ry="26" fill="${PALETTE.void[900]}" opacity="0.18"/>
             <rect x="256" y="1350" width="668" height="76" rx="10" fill="${k.board[300]}"
                   stroke="${ink}" stroke-width="${S.contour}"/>
             <path d="M256 1392 H924" stroke="${k.board[700]}" stroke-width="${S.detail}"/>
         </g>
 
-        <g id="kt-loose"></g>
-
-        <!-- указатель -->
-        <g id="kt-hint" opacity="0" pointer-events="none">
-            <path id="kt-hint-line" d="" fill="none" stroke="${k.flame[100]}"
-                  stroke-width="8" stroke-linecap="round" stroke-dasharray="16 20" opacity="0.9"/>
-            <g id="kt-hint-ring">
-              <g id="kt-hint-pulse">
-                <circle r="58" fill="none" stroke="${k.flame[300]}" stroke-width="9" opacity="0.95"/>
-                <circle r="58" fill="none" stroke="${k.flame[100]}" stroke-width="3"/>
-              </g>
-            </g>
+        <!-- ---------- УГОЛОК КОРМЛЕНИЯ ---------- -->
+        <!-- Коврик на полу перед столом. Он не украшение: без него это просто
+             пустой пол, и непонятно, куда именно приползает червь и где
+             держат кастрюлю. Трапеция — та же перспектива, что у доски. -->
+        <g id="kt-mat">
+            <path d="M312 2126 H588 L654 2334 H246 Z" fill="${k.board[500]}"
+                  stroke="${ink}" stroke-width="${S.contour}" stroke-linejoin="round"/>
+            <path d="M330 2148 H570 L628 2312 H272 Z" fill="${k.board[300]}"
+                  stroke="${k.board[700]}" stroke-width="${S.detail}" stroke-linejoin="round"/>
+            <path d="M356 2148 L332 2312 M414 2148 L404 2312 M472 2148 L476 2312 M530 2148 L548 2312"
+                  stroke="${k.board[500]}" stroke-width="${S.detail}" opacity="0.55"/>
         </g>
+
+        <g id="kt-loose"></g>
 
         <g id="kt-spoon" opacity="0">
             <g id="kt-spoon-body">
@@ -366,6 +385,22 @@ const KITCHEN_ART = {
             <rect x="-210" y="-92" width="300" height="184" fill="#000" fill-opacity="0"
                   pointer-events="all"/>
           </g>
+        </g>
+
+        <!-- УКАЗАТЕЛЬ. Живёт в переднем плане и ПОСЛЕДНИМ: в сцене он
+             оказывался ПОД доской и ножом — подсказка «сдвинь доску вправо»
+             рисовалась под самой доской, и её было почти не видно. Заодно
+             один слой снимает вопрос масштаба: в сцене кольцо меняло размер
+             вместе с наездом камеры, здесь оно всегда одного размера. -->
+        <g id="kt-hint" opacity="0" pointer-events="none">
+            <path id="kt-hint-line" d="" fill="none" stroke="${k.flame[100]}"
+                  stroke-width="6" stroke-linecap="round" stroke-dasharray="13 16" opacity="0.9"/>
+            <g id="kt-hint-ring">
+              <g id="kt-hint-pulse">
+                <circle r="44" fill="none" stroke="${k.flame[300]}" stroke-width="7" opacity="0.95"/>
+                <circle r="44" fill="none" stroke="${k.flame[100]}" stroke-width="2.5"/>
+              </g>
+            </g>
         </g>
         `;
     },
@@ -477,6 +512,35 @@ const KITCHEN_ART = {
             <rect x="-14" y="-56" width="28" height="14" rx="4"
                   fill="${k.steel[500]}" stroke="${ink}" stroke-width="${S.detail}"/>
         </g>`;
+    },
+
+    // Кастрюля, которую держат над червём на кормёжке. Рисуется здесь, а не
+    // css-градиентом: кормёжка идёт на самой кухне, а на кухне всё нарисовано
+    // от руки — серый прямоугольник посреди неё выглядел деталью из другой
+    // игры. Отдельный svg со своим viewBox, потому что живёт в вёрстке
+    // (её наклоняют поворотом обёртки), а не в сцене.
+    potHeld(liquid) {
+        const k = ktPal(), ink = ktInk(), S = ktStroke();
+        const soup = (liquid && k[liquid]) ? k[liquid] : k.broth;
+        return `<svg viewBox="0 0 200 224" preserveAspectRatio="xMidYMid meet"
+                     style="width:100%;height:100%;display:block;overflow:visible">
+            <path d="M26 76 q-34 26 -6 62" fill="none" stroke="${ink}"
+                  stroke-width="9" stroke-linecap="round"/>
+            <path d="M174 76 q34 26 6 62" fill="none" stroke="${ink}"
+                  stroke-width="9" stroke-linecap="round"/>
+            <!-- корпус: стальной, а не «стакан с содержимым». Варево видно
+                 только в горловине — так же, как в кастрюле на плите. -->
+            <path d="M26 48 H174 L162 194 Q100 214 38 194 Z" fill="${k.steel[300]}"
+                  stroke="${ink}" stroke-width="${S.contour}" stroke-linejoin="round"/>
+            <path d="M52 74 L58 188" stroke="${k.steel[100]}" stroke-width="9"
+                  opacity="0.5" stroke-linecap="round"/>
+            <path d="M148 74 L142 188" stroke="${k.steel[700]}" stroke-width="7"
+                  opacity="0.35" stroke-linecap="round"/>
+            <ellipse cx="100" cy="48" rx="74" ry="17" fill="${k.steel[700]}"
+                     stroke="${ink}" stroke-width="${S.structure}"/>
+            <ellipse cx="100" cy="52" rx="62" ry="13" fill="${soup[500]}"/>
+            <ellipse cx="82" cy="50" rx="20" ry="5" fill="${soup[300]}" opacity="0.8"/>
+        </svg>`;
     },
 
     // Доска, поставленная на столешницу у плиты: маленькая, без интерактива.

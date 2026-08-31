@@ -221,7 +221,7 @@
 }
 
 @keyframes kt-hint-flow {
-    from { stroke-dashoffset: 32; }
+    from { stroke-dashoffset: 29; }
     to   { stroke-dashoffset: 0; }
 }
 
@@ -248,4 +248,38 @@
 @keyframes kt-bump {
     0%, 100% { transform: translate(0, 0); }
     35%      { transform: translate(0, -16px); }
+}
+
+/* ---------- КОРМЁЖКА ИДЁТ НА САМОЙ КУХНЕ ----------
+   Раньше этап кормления подменял всю картинку: своя сцена со своим
+   градиентным фоном, а кухня на это время пряталась. Читалось это как
+   переход в другую игру — варил суп, а очнулся неизвестно где. Теперь слой
+   прозрачный и лежит поверх кухни: камера переезжает на пол перед столом,
+   туда же приползает червь. */
+#gluttony-game .glut-stage-feed {
+    top: 0; left: 0; right: 0; bottom: 0;
+    /* Слой сквозной: кастрюля ловит касания сама, а всё остальное здесь —
+       картинка, и перехватывать ей нечего. */
+    pointer-events: none;
+}
+
+#gluttony-game .glut-feed-scene {
+    background: none;
+    border-radius: 0;
+}
+
+/* Кастрюля появляется, только когда червь дошёл: до этого над пустым полом
+   висела бы еда неизвестно для кого. */
+#gluttony-game #glut-tilt-bucket {
+    pointer-events: auto;
+    transition: opacity 0.4s ease;
+}
+
+/* Шкала сытости больше не растягивает раскладку столбиком, а лежит поверх
+   пола: сцена под ней — вся кухня, и делить её высоту не с чем. */
+#gluttony-game .glut-stage-feed .glut-gauge-wrap {
+    position: absolute;
+    left: 8%; right: 8%; bottom: 16px;
+    width: auto;
+    margin: 0;
 }
