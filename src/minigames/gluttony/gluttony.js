@@ -45,7 +45,9 @@ const GluttonyMinigame = {
     MAX_DY: 90,
     MAX_ANGLE: 55,
     POUR_THRESHOLD_ANGLE: 28,
-    FEED_RATE_PER_SEC: 14,
+    // Вдвое быстрее прежнего: наклонять кастрюлю семь секунд было долго —
+    // жест давно понят, а держать его приходилось «просто так».
+    FEED_RATE_PER_SEC: 28,
 
     // ---------- СТРУЯ ИЗ КАСТРЮЛИ ----------
     // Отдельные капли-«точки» не читались едой вообще. Струя собрана из
@@ -64,6 +66,7 @@ const GluttonyMinigame = {
     STREAM_BASE: 1.6,      // доля пути в секунду у носика
     STREAM_ACC: 2.2,       // и насколько быстрее у рта: жидкость ПАДАЕТ
     STREAM_BOW: 0.45,      // насколько струя выгибается по ходу вытекания
+    FEED_STREAM_REF: 190,  // «обычная» длина струи в рот, от неё считается скорость
 
     CHOPS_TOTAL: 12,       // взмахов на полную нарезку: 6 до крупных, 6 до мелких
     // Лезвие смотрит ВЛЕВО, а положительный поворот в SVG — по часовой, то
@@ -97,9 +100,19 @@ const GluttonyMinigame = {
     BOTTLE_NECK: 60,         // от центра бутыли до её горлышка, в единицах сцены
     // Струя в кастрюлю живёт в координатах СЦЕНЫ, поэтому и шарики крупнее, и
     // путь длиннее: единица сцены мельче экранной примерно вдвое.
+    // Лейка: вокруг какой точки она растёт в руке и где у неё выход. Обе
+    // точки — из картинки (kitchen-art), поэтому и лежат рядом с зумом.
+    HOSE: { pivot: { x: 852, y: 640 }, out: { x: 852, y: 670 }, zoom: 1.8 },
     POT_BLOB_R: 15,
-    POT_BLOB_POOL: 40,
-    POT_EMIT_MS: 22,
+    // Пул с запасом: лить можно хоть от потолка, а чем длиннее путь, тем
+    // больше шариков одновременно в воздухе.
+    POT_BLOB_POOL: 64,
+    POT_EMIT_MS: 18,
+    POT_STREAM_REF: 240,
+    // Разгон у длинной струи слабее, чем у короткой: у неё и без того есть
+    // куда разогнаться, а на прежнем разгоне хвост растягивался быстрее, чем
+    // выходили новые шарики, и струя рвалась у самой кастрюли.
+    POT_STREAM_ACC: 1.4,
 
     // ---------- СОСТОЯНИЕ СЕССИИ ----------
     phase: 'overview',     // overview | fridge | chop | stove | potzoom | feed
@@ -153,8 +166,13 @@ const GluttonyMinigame = {
         // Пул шариков заводится ПОСЛЕ отрисовки сцены: до неё слоя ещё нет.
         this.potStream = this.makeStream(this.el('kt-pour-blobs'), {
             pool: this.POT_BLOB_POOL, r: this.POT_BLOB_R, emitMs: this.POT_EMIT_MS,
-            base: this.STREAM_BASE, acc: this.STREAM_ACC, bow: this.STREAM_BOW
+            base: this.STREAM_BASE, acc: this.POT_STREAM_ACC, bow: this.STREAM_BOW,
+            ref: this.POT_STREAM_REF
         });
+
+        // Своя debug-панель: кладовая расходуется каждой готовкой, и без
+        // кнопок её приходилось бы наполнять сбросом всего прогресса.
+        if (typeof KitchenDebug !== 'undefined') KitchenDebug.init(this.screenElement);
 
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
@@ -222,6 +240,7 @@ const GluttonyMinigame = {
         this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
         this.buildBottles();
         this.setCamera('overview', true);
+        if (typeof KitchenDebug !== 'undefined') KitchenDebug.render();
         this.touched();
     },
 
@@ -805,8 +824,14 @@ const GluttonyMinigame = {
         if (!this.pouring) return null;
         const p = this.pouring.from;
         if (this.pouring.kind === 'hose') {
-            // Лейка: выход под ней, льёт строго вниз.
-            return { x: p.x + 24, y: p.y + 6, dx: 0, dy: 1 };
+            // Лейка: выход под ней, льёт строго вниз. Смещение выхода от
+            // точки захвата растёт вместе с увеличением лейки в руке.
+            const H = this.HOSE;
+            return {
+                x: p.x + (H.out.x - H.pivot.x) * H.zoom,
+                y: p.y + (H.out.y - H.pivot.y) * H.zoom,
+                dx: 0, dy: 1
+            };
         }
         const a = this.POUR_TILT * Math.PI / 180;
         const sc = this.pouring.scale || 0.6;
@@ -1051,10 +1076,17 @@ const GluttonyMinigame = {
 
         const p = this.toScene(e);
         if (d.kind === 'hose') {
+            // Лейка в руке ПОДРАСТАЕТ — ровно как продукт, взятый с полки:
+            // иначе она теряется под пальцем и непонятно, держат её или нет.
+            // Масштаб идёт вокруг СВОЕГО центра, а не вокруг нуля сцены:
+            // лейка нарисована в абсолютных координатах, и простой scale
+            // унёс бы её в другой конец кухни.
+            const H = this.HOSE;
             this.el('kt-nozzle').setAttribute('transform',
-                `translate(${(p.x - 828).toFixed(1)} ${(p.y - 664).toFixed(1)})`);
+                `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) ` +
+                `scale(${H.zoom}) translate(${-H.pivot.x} ${-H.pivot.y})`);
             this.el('kt-hose-line').setAttribute('d',
-                `M828 624 Q${(828 + (p.x - 828) * 0.4).toFixed(1)} ${(p.y - 50).toFixed(1)} ${p.x.toFixed(1)} ${(p.y - 34).toFixed(1)}`);
+                `M828 624 Q${(828 + (p.x - 828) * 0.4).toFixed(1)} ${(p.y - 60).toFixed(1)} ${p.x.toFixed(1)} ${(p.y - 40).toFixed(1)}`);
         } else {
             // Бутыль над кастрюлей опрокидывается: держать её стоймя и при
             // этом лить — значит лить из закрытой пробки.
@@ -1641,6 +1673,7 @@ const GluttonyMinigame = {
             base: cfg.base,
             acc: cfg.acc,
             bow: cfg.bow,
+            ref: cfg.ref,          // длина пути, на которой скорость «обычная»
             emitAcc: 0,
             live: 0,
             blobs: []
@@ -1668,6 +1701,20 @@ const GluttonyMinigame = {
         b.off = (Math.random() * 2 - 1) * st.r * 0.28;   // струя не идеально ровная
         b.x0 = from.x; b.y0 = from.y;
         b.x2 = to.x;   b.y2 = to.y;
+        // Скорость — от ДЛИНЫ пути, а не доля пути в секунду. С долей шарик
+        // проходил хоть двадцать точек, хоть четыреста за одно и то же время,
+        // и струя с высоты рассыпалась на отдельные бусины: расстояние между
+        // ними росло вместе с длиной. Здесь расстояние остаётся тем же, а
+        // дольше падать — значит дольше лететь, как и положено.
+        b.k = Math.max(0.3, Math.min(1.8, st.ref / len));
+        // Набухание у носика и уход в цель — на фиксированной ДЛИНЕ, а не на
+        // доле пути. Долей на длинной струе последняя десятая превращалась в
+        // полсотни точек пустоты: жидкость таяла, не долетев.
+        b.grow = Math.min(0.16, (st.r * 2.6) / len);
+        // Уход короткий и почти обрывистый: фильтр-«гуашь» гасит мелкие
+        // шарики совсем, поэтому длинное затухание превращается в пустоту
+        // перед самой целью — струя не долетала.
+        b.fade = Math.min(0.1, (st.r * 1.1) / len);
         // Опорная точка — продолжение направления вытекания: жидкость выходит
         // ИЗ КРАЯ по наклону и только потом заворачивает вниз, к цели.
         b.x1 = from.x + (from.dx / dn) * len * st.bow;
@@ -1694,7 +1741,7 @@ const GluttonyMinigame = {
         for (let i = 0; i < st.blobs.length; i++) {
             const b = st.blobs[i];
             if (!b.alive) continue;
-            b.t += (st.base + st.acc * b.t) * dt;
+            b.t += (st.base + st.acc * b.t) * b.k * dt;
             if (b.t >= 1) {
                 b.alive = false;
                 st.live--;
@@ -1707,9 +1754,9 @@ const GluttonyMinigame = {
             // Струя СУЖАЕТСЯ по ходу падения: шарики летят всё быстрее, а
             // жидкости в секунду выходит столько же — значит на ту же длину
             // её приходится меньше. Без этого получалась ровная колбаса.
-            let k = 1 - 0.3 * b.t;
-            if (b.t < 0.12) k *= 0.35 + b.t / 0.12 * 0.65;
-            else if (b.t > 0.9) k *= (1 - b.t) / 0.1;
+            let k = 1 - 0.22 * b.t;
+            if (b.t < b.grow) k *= 0.35 + (b.t / b.grow) * 0.65;
+            else if (b.t > 1 - b.fade) k *= (1 - b.t) / b.fade;
             b.el.setAttribute('cx', x.toFixed(1));
             b.el.setAttribute('cy', y.toFixed(1));
             b.el.setAttribute('r', (st.r * b.size * k).toFixed(1));
@@ -1752,7 +1799,8 @@ const GluttonyMinigame = {
         this.pourSvg = document.getElementById('glut-pour-svg');
         this.feedStream = this.makeStream(document.getElementById('glut-pour-blobs'), {
             pool: this.BLOB_POOL, r: this.BLOB_R, emitMs: this.POUR_EMIT_MS,
-            base: this.STREAM_BASE, acc: this.STREAM_ACC, bow: this.STREAM_BOW
+            base: this.STREAM_BASE, acc: this.STREAM_ACC, bow: this.STREAM_BOW,
+            ref: this.FEED_STREAM_REF
         });
     },
 

@@ -293,3 +293,57 @@
     margin: 0;
     z-index: 6;
 }
+
+/* ---------- DEBUG-ПАНЕЛЬ КУХНИ ----------
+   Не игра, и правило «ни одного слова» (инвариант 9) сюда не относится.
+   Лежит поверх кухни сверху: снизу стоит червь на кормёжке, а сверху стена,
+   и закрывать там нечего. */
+#gluttony-game #kt-debug {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 5px;
+    background: rgba(0, 0, 0, 0.78);
+    -webkit-tap-highlight-color: transparent;
+}
+
+#gluttony-game #kt-debug.visible { display: flex; }
+
+#gluttony-game .kt-debug-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-items: center;
+}
+
+#gluttony-game .kt-debug-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 3px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#gluttony-game .kt-debug-item b { font-size: 11px; }
+#gluttony-game .kt-debug-item i {
+    min-width: 12px;
+    text-align: center;
+    font: 700 11px/1 monospace;
+    font-style: normal;
+    color: #ffc266;
+}
+
+#gluttony-game #kt-debug button {
+    padding: 2px 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+    font: 11px/1 monospace;
+}
+
+#gluttony-game #kt-debug button:active { background: rgba(255, 255, 255, 0.2); }
