@@ -124,8 +124,9 @@ const { chromium } = require('playwright');
   found.kitchen = await scan('gluttony-game');
   await page.screenshot({ path: out + 'nw-k1-kitchen.png' });
 
-  await page.click('#kt-fridge');
-  await page.waitForTimeout(900);
+  // Холодильник открывается тапом по себе — кнопки нет и не должно быть.
+  await page.evaluate(() => GluttonyMinigame.openFridge());
+  await page.waitForTimeout(1400);
   found.fridge = await scan('gluttony-game');
   await page.screenshot({ path: out + 'nw-k2-fridge.png' });
   await page.screenshot({ path: out + 'nw-10-result.png' });

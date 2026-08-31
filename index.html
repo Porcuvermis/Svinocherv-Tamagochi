@@ -828,56 +828,18 @@
     <!-- ЧРЕВОУГОДИЕ: КУХНЯ.
          Окно (рамка, крестик, вопрос при выходе) надевает
          src/core/minigame-window.js — здесь только содержимое (инвариант 8).
-         Три места кухни лежат в одной ленте .kt-world, камера ездит по ней
-         сдвигом; общий вид — та же лента, уменьшенная. -->
+         Вся кухня — ОДИН svg, который целиком рисует kitchen-art.js: разметки
+         у предметов нет и быть не должно, иначе картинка окажется размазана
+         между двумя файлами. Камера — transform на группе #kt-cam. -->
     <div id="gluttony-game" class="minigame-screen" data-sin="gluttony">
 
-        <div class="kt-scene" id="kt-scene">
-            <div class="kt-world" id="kt-world">
+        <svg id="kt-svg" class="kt-svg" viewBox="0 0 390 844"
+             preserveAspectRatio="xMidYMid slice">
+            <g id="kt-cam"></g>
+        </svg>
 
-                <!-- МЕСТО 1: ХОЛОДИЛЬНИК -->
-                <section class="kt-spot" data-spot="fridge">
-                    <div class="kt-fridge" id="kt-fridge">
-                        <div class="kt-freezer"><span class="kt-freezer-ice">❄</span></div>
-                        <div class="kt-fridge-main"><span class="kt-fridge-handle"></span></div>
-                    </div>
-                </section>
-
-                <!-- МЕСТО 2: СТОЛ С ДОСКОЙ -->
-                <section class="kt-spot" data-spot="board">
-                    <div class="kt-table">
-                        <div class="kt-board" id="kt-board">
-                            <div class="kt-chop" id="kt-chop"></div>
-                            <div class="kt-knife" id="kt-knife">🔪</div>
-                        </div>
-                        <div class="kt-queue" id="kt-queue"></div>
-                    </div>
-                </section>
-
-                <!-- МЕСТО 3: ПЛИТА -->
-                <section class="kt-spot" data-spot="stove">
-                    <div class="kt-bottles" id="kt-bottles"></div>
-                    <div class="kt-stove">
-                        <div class="kt-pot" id="kt-pot">
-                            <div class="kt-pot-fill" id="kt-pot-fill"></div>
-                            <div class="kt-pot-rim"></div>
-                        </div>
-                    </div>
-                    <div class="kt-piles" id="kt-piles"></div>
-                    <div class="kt-stir" id="kt-stir">🥄</div>
-                </section>
-
-            </div>
-        </div>
-
-        <!-- ОТКРЫТЫЙ ХОЛОДИЛЬНИК: выезжает поверх сцены -->
-        <div class="kt-open-fridge" id="kt-open-fridge">
-            <div class="kt-shelves" id="kt-shelves"></div>
-            <button type="button" class="kt-confirm" id="kt-confirm">✓</button>
-        </div>
-
-        <!-- КОРМЁЖКА. Разметка та же, что была: этап работает и переписывать
-             его незачем — меняется только то, что было до него. -->
+        <!-- КОРМЁЖКА. Этап работает и переписывать его незачем: меняется
+             только то, что происходит до него. -->
         <div class="glut-stage glut-stage-feed" id="glut-stage-feed">
             <div class="glut-feed-scene">
                 <div class="glut-tilt-bucket" id="glut-tilt-bucket"></div>
@@ -892,8 +854,6 @@
         <div class="glut-win-overlay" id="glut-win-overlay">
             <div class="kt-result" id="kt-result"></div>
         </div>
-
-        <div class="glut-fade" id="glut-fade"></div>
     </div>
 
     <div id="pride-game" class="minigame-screen">
@@ -1001,7 +961,10 @@
 <script src="src/minigames/sloth/plant-model.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=6"></script>
 <script src="src/minigames/lust/lust.js?v=3"></script>
-<script src="src/minigames/gluttony/gluttony.js?v=2"></script>
+<!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
+     вызывает при сборке экрана. -->
+<script src="src/minigames/gluttony/kitchen-art.js?v=1"></script>
+<script src="src/minigames/gluttony/gluttony.js?v=3"></script>
 <script src="src/minigames/pride/pride.js?v=6"></script>
 <!-- three.js лежит в репозитории, а не на CDN: игра должна открываться
      без сети с первого раза, и внешний хост не должен её ронять. -->
