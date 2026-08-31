@@ -23,6 +23,7 @@ const { chromium } = require('playwright');
 
   await page.goto('http://127.0.0.1:8777/index.html');
   await page.waitForTimeout(2300);
+  const KT_BASKET = await page.evaluate(() => KITCHEN_ART.SLOTS.basket);
 
   const before = await page.evaluate(() => Object.assign({}, GameState.data.pantry));
   say('кладовая до: ' + JSON.stringify(before));
@@ -100,9 +101,9 @@ const { chromium } = require('playwright');
     await page.waitForTimeout(450);
   }
   say('взято: ' + Object.keys(seen).join(', '));
-  // Холодильник закрывает игрок — тапом мимо продуктов. Автозакрытия нет:
-  // оно уезжало из-под пальца и не давало взять второй продукт.
-  await tap(310, 700);
+  // Из холодильника выходят тапом по КОРЗИНЕ — «понёс к столу». Тапа в
+  // пустоту больше нет: игрок его не находил.
+  await tap(KT_BASKET.x, KT_BASKET.y);
   await waitCamera();
   await page.screenshot({ path: out + '3-table.png' });
 
@@ -170,7 +171,8 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(400);
   say('фаза перед кормёжкой: ' + await page.evaluate(() => GluttonyMinigame.phase) +
       '   ложка: ' + await page.evaluate(() => document.getElementById('kt-spoon').getAttribute('opacity')) +
-      '   кучек: ' + await page.evaluate(() => GluttonyMinigame.piles.length));
+      '   кучек: ' + await page.evaluate(() => GluttonyMinigame.piles.length) +
+      '   качелей ложкой: ' + await page.evaluate(() => GluttonyMinigame.stirSwings));
   const pot = await page.$('#glut-tilt-bucket');
   if (pot) {
     const b = await pot.boundingBox();

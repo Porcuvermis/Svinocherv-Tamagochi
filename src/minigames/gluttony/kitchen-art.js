@@ -105,7 +105,7 @@ const KITCHEN_ART = {
     // кусок кухни — игрок не теряет, где он находится.
     FOCUS: {
         overview: { x: 0,   y: 0,    w: 780, h: 1688 },
-        fridge:   { x: 0,   y: 220,  w: 300, h: 920 },
+        fridge:   { x: 0,   y: 250,  w: 300, h: 960 },
         board:    { x: 322, y: 1150, w: 450, h: 450 },
         stove:    { x: 270, y: 470,  w: 500, h: 300 }
     },
@@ -117,6 +117,9 @@ const KITCHEN_ART = {
         shelfX: [80, 141, 202],
         shelfY: [566, 716, 866, 1016],
         freezer: { x: 141, y: 372 },
+        // Корзина стоит на полу справа от холодильника — в кадре наезда на
+        // холодильник, чтобы полёт продукта было видно целиком.
+        basket: { x: 168, y: 1116 },
         // продукты, выложенные на стол
         tableY: 1202,
         tableX: [366, 452, 538, 624, 710],
@@ -271,6 +274,8 @@ const KITCHEN_ART = {
                 <rect x="692" y="540" width="28" height="56" rx="10"
                       fill="${k.steel[300]}" stroke="${ink}" stroke-width="${S.detail}"/>
                 <rect x="696" y="588" width="20" height="10" rx="4" fill="${k.steel[700]}"/>
+                <ellipse cx="706" cy="568" rx="62" ry="72" fill="#000" fill-opacity="0"
+                         pointer-events="all"/>
             </g>
         </g>
 
@@ -294,24 +299,66 @@ const KITCHEN_ART = {
                   stroke="${k.board[500]}" stroke-width="${S.hairline}" opacity="0.55"/>
         </g>
 
+        <!-- ---------- КОРЗИНА У ХОЛОДИЛЬНИКА ---------- -->
+        <!-- Взятый продукт должен куда-то попадать НА ГЛАЗАХ. Без корзины он
+             улетал к столу, то есть за край кадра, и тап по полке выглядел
+             так, будто не сработал вовсе. -->
+        <g id="kt-basket" class="kt-hot">
+            <path d="M-64 -30 H64 L48 46 Q0 60 -48 46 Z"
+                  fill="${k.board[500]}" stroke="${ink}" stroke-width="${S.contour}"
+                  stroke-linejoin="round"/>
+            <path d="M-58 -6 H58 M-52 18 H52" stroke="${k.board[700]}" stroke-width="${S.detail}"/>
+            <path d="M-64 -30 H64" stroke="${k.board[300]}" stroke-width="${S.structure}"/>
+            <path d="M-40 -30 q40 -46 80 0" fill="none"
+                  stroke="${k.board[700]}" stroke-width="9" stroke-linecap="round"/>
+        </g>
+
         <!-- слои, которые наполняет игра -->
         <g id="kt-loose"></g>
         <g id="kt-knife">
+          <g id="kt-knife-bob">
             <g id="kt-knife-body">
-                <path d="M-10 -96 q26 6 30 52 q3 34 -20 44 h-20 q-22 -10 -20 -44 q4 -46 30 -52 Z"
+                <!-- Рукоять СВЕРХУ, лезвие ВНИЗ: нож смотрит на доску, а не в
+                     потолок. В первой версии он был перевёрнут, и над мясом
+                     висела рукоятка — читалось как «что-то сломалось». -->
+                <rect x="-17" y="-168" width="34" height="100" rx="14"
+                      fill="${PALETTE.timber[700]}" stroke="${ink}" stroke-width="${S.structure}"/>
+                <rect x="-20" y="-76" width="40" height="16" rx="6"
+                      fill="${k.steel[500]}" stroke="${ink}" stroke-width="${S.detail}"/>
+                <path d="M-26 -60 H26 q7 42 2 74 q-5 32 -28 50 q-23 -18 -28 -50 q-5 -32 2 -74 Z"
                       fill="${k.steel[100]}" stroke="${ink}" stroke-width="${S.structure}"
                       stroke-linejoin="round"/>
-                <rect x="-16" y="0" width="32" height="86" rx="12"
-                      fill="${PALETTE.timber[700]}" stroke="${ink}" stroke-width="${S.structure}"/>
-                <path d="M0 -88 V-8" stroke="${k.steel[500]}" stroke-width="${S.hairline}"/>
+                <path d="M0 -50 V44" stroke="${k.steel[500]}" stroke-width="${S.hairline}"/>
+                <ellipse cx="0" cy="-60" rx="76" ry="126" fill="#000" fill-opacity="0"
+                         pointer-events="all"/>
+            </g>
+          </g>
+        </g>
+        <!-- ---------- УКАЗАТЕЛЬ ----------
+             Единственная подсказка, которая в игре без слов вообще возможна:
+             пульсирующее кольцо на том, чего надо коснуться, и пунктирная
+             стрелка с бегущей точкой, когда предмет надо ПЕРЕТАЩИТЬ. Слоем
+             выше всего остального, но событий не ловит. -->
+        <g id="kt-hint" opacity="0" pointer-events="none">
+            <path id="kt-hint-line" d="" fill="none" stroke="${k.flame[100]}"
+                  stroke-width="7" stroke-linecap="round" stroke-dasharray="14 18" opacity="0.9"/>
+            <circle id="kt-hint-dot" r="11" fill="${k.flame[100]}" opacity="0"/>
+            <g id="kt-hint-ring">
+              <g id="kt-hint-pulse">
+                <circle r="54" fill="none" stroke="${k.flame[300]}" stroke-width="8" opacity="0.95"/>
+                <circle r="54" fill="none" stroke="${k.flame[100]}" stroke-width="3"/>
+              </g>
             </g>
         </g>
+
         <g id="kt-spoon" opacity="0">
             <g id="kt-spoon-body">
                 <rect x="-9" y="-150" width="18" height="150" rx="9"
                       fill="${PALETTE.timber[500]}" stroke="${ink}" stroke-width="${S.structure}"/>
                 <ellipse cx="0" cy="8" rx="26" ry="20" fill="${PALETTE.timber[300]}"
                          stroke="${ink}" stroke-width="${S.structure}"/>
+                <ellipse cx="0" cy="-60" rx="54" ry="100" fill="#000" fill-opacity="0"
+                         pointer-events="all"/>
             </g>
         </g>
         `;

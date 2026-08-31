@@ -79,24 +79,30 @@
 #gluttony-game #kt-fridge.open #kt-door-freezer { transform: rotateY(0deg) scaleX(-0.18) translateX(0px); }
 #gluttony-game #kt-fridge.open #kt-door-main    { transform: scaleX(-0.18); }
 
-/* ---------- НОЖ ---------- */
-/* Пока на доске нечего резать, нож лежит. Как только продукт лёг — нож встаёт
-   над доской и покачивается: это единственная подсказка, которая тут нужна. */
+/* ---------- НОЖ ----------
+   ТРИ уровня, и это не прихоть. Первая версия вешала покачивание и замах на
+   одну и ту же группу: CSS-анимация перебивает transform, выставленный из
+   кода, поэтому нож бодро качался сам по себе и НЕ РЕАГИРОВАЛ на палец.
+   Теперь #kt-knife держит позицию, #kt-knife-bob качается вхолостую,
+   #kt-knife-body отыгрывает замах — и они не спорят. */
 #gluttony-game #kt-knife {
     transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.25, 1);
 }
 
-#gluttony-game #kt-knife.ready #kt-knife-body {
-    animation: kt-knife-idle 1.25s ease-in-out infinite;
+#gluttony-game #kt-knife.ready #kt-knife-bob {
+    animation: kt-knife-idle 1.15s ease-in-out infinite;
 }
 
+/* Пока режут, вхолостую качаться незачем: нож идёт за пальцем. */
+#gluttony-game #kt-knife.cutting #kt-knife-bob { animation: none; }
+
 @keyframes kt-knife-idle {
-    0%, 100% { transform: translate(0, 0) rotate(-5deg); }
-    50%      { transform: translate(0, 26px) rotate(5deg); }
+    0%, 100% { transform: translate(0, -14px) rotate(-6deg); }
+    50%      { transform: translate(0, 18px) rotate(6deg); }
 }
 
 #gluttony-game #kt-knife-body {
-    transition: transform 0.09s linear;
+    transition: transform 0.06s linear;
 }
 
 /* ---------- КАСТРЮЛЯ, ОГОНЬ, ПАР ---------- */
@@ -148,4 +154,65 @@
     font-style: normal;
     font-size: 22px;
     opacity: 0.85;
+}
+
+
+/* ---------- УКАЗАТЕЛЬ ----------
+   Игра без слов обязана показывать, что делать, движением. Кольцо пульсирует
+   на том, чего надо коснуться; пунктирная стрелка с бегущей точкой означает
+   «перетащи отсюда туда». Появляется через паузу бездействия и гаснет от
+   любого касания — подсказка для растерявшегося, а не нянька. */
+#gluttony-game #kt-hint {
+    transition: opacity 0.35s ease;
+}
+
+/* Пульс живёт на ВЛОЖЕННОЙ группе, а позиция — на внешней. Та же беда, что с
+   ножом: анимация правит transform и стирает координаты, которыми кольцо
+   ставят на цель, — оно молча остаётся в углу сцены. */
+#gluttony-game #kt-hint-pulse {
+    animation: kt-hint-pulse 1.5s ease-out infinite;
+    /* fill-box, а не view-box: с view-box «центр» — это центр всего холста,
+       и кольцо не пульсировало на месте, а разъезжалось в сторону от цели. */
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes kt-hint-pulse {
+    0%   { transform: scale(0.62); opacity: 0; }
+    35%  { opacity: 1; }
+    100% { transform: scale(1.25); opacity: 0; }
+}
+
+#gluttony-game #kt-hint-line {
+    animation: kt-hint-flow 1.1s linear infinite;
+}
+
+@keyframes kt-hint-flow {
+    from { stroke-dashoffset: 32; }
+    to   { stroke-dashoffset: 0; }
+}
+
+/* ---------- ОТКЛИК НА КАСАНИЕ ----------
+   Любой предмет, которого коснулись, обязан ответить движением сразу. Без
+   этого игрок не понимает, попал он вообще или нет, и начинает долбить по
+   экрану — ровно то, что и случилось на первом живом прогоне. */
+#gluttony-game .kt-pop {
+    animation: kt-pop 0.28s cubic-bezier(0.3, 1.7, 0.5, 1);
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes kt-pop {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.28); }
+    100% { transform: scale(1); }
+}
+
+/* Корзина подпрыгивает, когда в неё что-то падает. */
+#gluttony-game #kt-basket { transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
+#gluttony-game #kt-basket.kt-bump { animation: kt-bump 0.34s ease-out; }
+
+@keyframes kt-bump {
+    0%, 100% { transform: translate(0, 0); }
+    35%      { transform: translate(0, -16px); }
 }
