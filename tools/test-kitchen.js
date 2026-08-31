@@ -85,6 +85,21 @@ const { chromium } = require('playwright');
     .map(g => ({ key: g.dataset.key, type: g.dataset.type, home: JSON.parse(g.dataset.home) })));
   say('на полках: ' + shelf.map(s => s.key + '/' + s.type).join(', '));
 
+  // Полки раскладываются сами: два продукта одного типа не имеют права
+  // оказаться в одной точке. Так уже было — четвёртый овощ (ягода) ложился
+  // ровно на картошку, потому что мест на полке было ровно три.
+  const stacked = await page.evaluate(() => {
+    const at = {};
+    const dup = [];
+    Array.from(document.querySelectorAll('#kt-loose .kt-item')).forEach(g => {
+      const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(g.getAttribute('transform'));
+      const spot = m[1] + ':' + m[2];
+      if (at[spot]) dup.push(at[spot] + ' и ' + g.dataset.key); else at[spot] = g.dataset.key;
+    });
+    return dup;
+  });
+  say('продуктов в одной точке: ' + (stacked.length ? stacked.join(', ') : 'нет'));
+
   const boardAt = await page.evaluate(() => KITCHEN_ART.FG.board.fridge);
   const seen = {};
   for (const s of shelf) {

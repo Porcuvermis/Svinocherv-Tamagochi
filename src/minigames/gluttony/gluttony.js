@@ -504,26 +504,45 @@ const GluttonyMinigame = {
         const loose = this.el('kt-loose');
         const pantry = (GameState.data && GameState.data.pantry) || {};
         const S = KITCHEN_ART.SLOTS;
-        const rows = { meat: 0, veg: 0, spice: 0 };
 
+        // Сначала собираем, ЧТО вообще есть, и только потом раскладываем.
+        // Раскладка знает число продуктов на полке заранее — иначе она не
+        // может ни расставить их по всей полке, ни ужать, когда их много.
+        const shelves = { meat: [], veg: [], spice: [] };
+        const frozen = [];
         Object.keys(KITCHEN.ingredients).forEach(key => {
             const item = KITCHEN.ingredients[key];
-            const count = item.infinite ? Infinity : (pantry[key] || 0);
-            if (!item.infinite && count <= 0) return;
+            if (!item.infinite && !((pantry[key] || 0) > 0)) return;
+            (item.frozen ? frozen : (shelves[item.type] || [])).push(key);
+        });
 
-            // Полка своя у каждого типа: мясо сверху, овощи в середине,
-            // зелень внизу. Устройство холодильника читается с одного взгляда.
-            const spot = item.frozen
-                ? S.freezer
-                : { x: S.shelfX[rows[item.type] % 3], y: S.shelfY[item.type] };
-            if (!item.frozen) rows[item.type]++;
-
-            const g = this.spawnItem(key, spot, 0.52, loose);
+        const put = (key, spot, scale) => {
+            const g = this.spawnItem(key, spot, scale, loose);
             g.dataset.home = JSON.stringify(spot);
             g.dataset.where = 'fridge';
-            g.dataset.type = item.type;
+            g.dataset.type = KITCHEN.ingredients[key].type;
             this.countFor(g, key);
+        };
+
+        // Полка своя у каждого типа: мясо сверху, овощи в середине, зелень
+        // внизу. Устройство холодильника читается с одного взгляда.
+        Object.keys(shelves).forEach(type => {
+            const keys = shelves[type];
+            if (!keys.length) return;
+            const L = S.shelf;
+            const step = keys.length < 2
+                ? 0
+                : Math.min(L.gap, (L.x1 - L.x0) / (keys.length - 1));
+            // Тесно — продукты мельчают, а не наползают. Наползающие
+            // невозможно ни разглядеть, ни взять по отдельности.
+            const scale = 0.52 * Math.min(1, step ? step / L.tight : 1);
+            const startX = L.cx - step * (keys.length - 1) / 2;
+            keys.forEach((key, i) => {
+                put(key, { x: Math.round(startX + step * i), y: S.shelfY[type] }, scale);
+            });
         });
+
+        frozen.forEach(key => put(key, S.freezer, 0.52));
     },
 
     // Цифра рядом с продуктом — это ОСТАТОК В КЛАДОВОЙ. У пищеблока остатка
