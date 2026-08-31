@@ -1,45 +1,37 @@
 // ================= МИНИ-ИГРА ГРЕХ ЧРЕВОУГОДИЯ: КУХНЯ =================
-// Кухня из одной картинки: холодильник, плита с духовкой, кастрюля на
-// конфорке, бутыли на столешнице, раковина с выдвижной лейкой и стол с
-// доской на переднем плане. Вся графика своя — src/minigames/gluttony/
-// kitchen-art.js, ни одного эмодзи.
+// Кухня одной картинкой, интерфейс диегетический: игрок пользуется
+// предметами, а не меню (docs/plan/20-gluttony-kitchen.md).
 //
-// ---------- ГЛАВНОЕ ПРАВИЛО ЭКРАНА: ИНТЕРФЕЙС ДИЕГЕТИЧЕСКИЙ ----------
-// Нет ни одного меню, списка или кнопки поверх сцены. Игрок видит предметы и
-// пользуется предметами: тапает по холодильнику — тот открывается; берёт
-// продукт с полки — он перелетает на стол; тащит его пальцем на доску;
-// водит ножом; готовая кучка едет к плите; тащит лейку из раковины к
-// кастрюле; кидает кучки в кастрюлю; мешает ложкой.
+// ---------- ДВА СЛОЯ ----------
+// Кухня живёт в координатах СЦЕНЫ 900×1948, по ней ездит камера. Доска и нож
+// живут в координатах ЭКРАНА 390×844 и камере не подчиняются: доска — предмет,
+// который игрок держит перед собой, она ближе камеры. Отсюда весь ход игры
+// читается как одно непрерывное движение по кухне, а не как смена картинок:
+// доска въезжает из-за края, набирается продуктами, уезжает, снова въезжает
+// уже на столе для нарезки, потом поднимается к плите.
 //
-// Отсюда следствие для кода: ВСЁ живёт в одной системе координат сцены
-// (780×1688), включая перетаскиваемое. Экранные пиксели переводятся в
-// координаты сцены через матрицу SVG — тогда предмет под пальцем лежит ровно
-// под пальцем при любом наезде камеры, и не нужно чинить это отдельно для
-// каждого масштаба.
-//
-// ---------- КАМЕРА ----------
-// Не переключает экраны, а наезжает на участок одной картинки. Прямоугольники
-// наезда — KITCHEN_ART.FOCUS, вписываются целиком (contain), поэтому вокруг
-// предмета всегда виден кусок кухни и игрок не теряет, где он.
+// ---------- ПОРЯДОК ----------
+//   общий вид
+//     → тап по холодильнику: открылся, снизу-справа въехала доска
+//     → продукты ПЕРЕТАСКИВАЮТ с полок на доску (по одному каждого типа)
+//     → удержание на доске: кольцо заполняется, доска уезжает
+//     → стол: та же доска въезжает с продуктами, режут ВСЕ СРАЗУ ножом
+//     → доску тянут вверх: она уходит к плите
+//     → плита: жидкость держат над кастрюлей и льют, кучки кидают внутрь
+//     → зум на кастрюлю, мешают слева направо
+//     → кастрюлю тянут вниз: приходит червь, дальше кормёжка
 //
 // ---------- ЧТО РЕШАЕТ НАГРАДУ ----------
-// Мини-игра ничего себе не начисляет (инвариант 2): сообщает в meta, сколько
-// РАЗНЫХ типов нарезаемого попало в кастрюлю и была ли жидкость крепче воды,
-// а таблицу качества держит KITCHEN.quality. Оттуда же берётся размер кучки,
-// которая появится через час пищеварения.
-//
-// Считаем типы, а не рецепты: рецепты пришлось бы где-то показывать, а
-// показывать их нечем — слов в игре нет (инвариант 9).
-//
-// ---------- ЭТАП КОРМЁЖКИ ----------
-// Не переписан: наклон кастрюли, капли, раздувание живота и раскладка по
-// РЕАЛЬНЫМ габаритам персонажа (правка 17) работают, менять их незачем.
+// Мини-игра ничего не начисляет (инвариант 2): сообщает в meta, сколько
+// РАЗНЫХ типов попало в кастрюлю и была ли жидкость крепче воды, а таблицу
+// качества держит KITCHEN.quality.
 
 const GluttonyMinigame = {
     screenElement: null,
     win: null,
     svgEl: null,
     camEl: null,
+    fgEl: null,
 
     // ---------- НАСТРОЙКИ КОРМЛЕНИЯ (не менялись) ----------
     MAX_DY: 90,
@@ -48,25 +40,25 @@ const GluttonyMinigame = {
     FEED_RATE_PER_SEC: 14,
     DROP_INTERVAL: 140,
 
-    // Насколько далеко нужно провести пальцем, чтобы засчиталась одна качель
-    // ножа. В координатах СЦЕНЫ, а не экрана: иначе на разном наезде нож
-    // требовал бы разного размаха.
-    SWING_TRAVEL: 60,
+    HOLD_MS: 900,          // сколько держать доску, чтобы уйти на нарезку
+    CHOPS_TOTAL: 12,       // взмахов на полную нарезку: 6 до крупных, 6 до мелких
+    KNIFE_UP: -46,         // угол поднятого ножа
+    KNIFE_DOWN: 2,         // угол опущенного: лезвие касается доски
+    STIR_SWINGS: 6,
+    HINT_DELAY: 1500,
 
     // ---------- СОСТОЯНИЕ СЕССИИ ----------
-    phase: 'overview',   // overview | fridge | board | stove | feed
-    picked: [],
-    inBasket: [],        // { key, el } — взятое из холодильника, лежит в корзине
-    onTable: [],         // { key, el } — продукты, выложенные на стол
-    hintAt: 0,           // когда игрок последний раз что-то трогал
-    onBoard: null,       // что сейчас режут
-    chopSwings: 0,
-    piles: [],           // { key, el } — нарезанные кучки у плиты
+    phase: 'overview',     // overview | fridge | chop | stove | potzoom | feed
+    onBoard: [],           // [{ key, type, el, ghost }] — что лежит на доске
+    chops: 0,
+    knifeAngle: 0,
+    knifeArmed: false,     // нож поднимали — значит следующий спуск режет
     liquid: null,
     inPot: [],
     stirSwings: 0,
     drag: null,
-    swing: null,
+    hold: null,
+    piles: [],
 
     feedDragging: false,
     feedStartY: 0,
@@ -95,6 +87,7 @@ const GluttonyMinigame = {
 
         this.svgEl = document.getElementById('kt-svg');
         this.camEl = document.getElementById('kt-cam');
+        this.fgEl = document.getElementById('kt-fg');
         this.stageFeed = document.getElementById('glut-stage-feed');
         this.feedSceneEl = this.stageFeed ? this.stageFeed.querySelector('.glut-feed-scene') : null;
         this.pourLayer = document.getElementById('glut-pour-layer');
@@ -102,7 +95,8 @@ const GluttonyMinigame = {
         this.winOverlay = document.getElementById('glut-win-overlay');
         this.resultEl = document.getElementById('kt-result');
 
-        this.buildScene();
+        this.camEl.innerHTML = KITCHEN_ART.scene();
+        this.fgEl.innerHTML = KITCHEN_ART.foreground();
 
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
@@ -118,23 +112,24 @@ const GluttonyMinigame = {
 
     close() {
         this.stopFeedTick();
+        clearTimeout(this._hintTimer);
+        cancelAnimationFrame(this._holdRaf);
         this.screenElement.classList.remove('active');
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
     },
 
     resetAll() {
         this.phase = 'overview';
-        this.picked = [];
-        this.inBasket = [];
-        this.onTable = [];
-        this.onBoard = null;
-        this.chopSwings = 0;
-        this.piles = [];
+        this.onBoard = [];
+        this.chops = 0;
+        this.knifeAngle = 0;
+        this.knifeArmed = false;
         this.liquid = null;
         this.inPot = [];
+        this.piles = [];
         this.stirSwings = 0;
         this.drag = null;
-        this.swing = null;
+        this.hold = null;
         this.feedFinished = false;
         this.feedProgress = 0;
 
@@ -143,25 +138,27 @@ const GluttonyMinigame = {
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
 
         this.el('kt-loose').innerHTML = '';
+        this.el('kt-board-items').innerHTML = '';
         this.el('kt-fridge').classList.remove('open');
-        this.setAttr('kt-pot-fill', { height: 0, y: 670 });
+        this.setAttr('kt-pot-fill', { height: 0, y: 772 });
         this.setOpacity('kt-flame', 0);
         this.setOpacity('kt-steam', 0);
         this.setOpacity('kt-spoon', 0);
-        this.moveTo(this.el('kt-knife'), KITCHEN_ART.SLOTS.knifeRest, -18);
-        this.el('kt-knife').classList.remove('ready');
-        this.moveTo(this.el('kt-basket'), KITCHEN_ART.SLOTS.basket);
+        this.setOpacity('kt-knife', 0);
+        this.el('kt-knife').classList.remove('kt-done');
+        this.el('kt-knife').removeAttribute('pointer-events');
+        this.setOpacity('kt-board-rest', 0);
+        this.setOpacity('kt-hold', 0);
+        this.setAttr('kt-pour', { opacity: 0, d: '' });
+        this.el('kt-board-rest').innerHTML = KITCHEN_ART.boardRest();
+        this.moveTo(this.el('kt-board-rest'), KITCHEN_ART.SLOTS.boardRest);
+        this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
         this.buildBottles();
         this.setCamera('overview', true);
         this.touched();
     },
 
-    // ================= СЦЕНА =================
-    buildScene() {
-        if (!this.camEl) return;
-        this.camEl.innerHTML = KITCHEN_ART.scene();
-    },
-
+    // ================= МЕЛОЧИ =================
     el(id) { return document.getElementById(id); },
 
     setAttr(id, attrs) {
@@ -179,9 +176,6 @@ const GluttonyMinigame = {
         node.classList.toggle('on', !!v);
     },
 
-    // Переставить группу. Всё перетаскиваемое двигается ТОЛЬКО так — одним
-    // transform, а не правкой координат внутри: тогда любую вещь можно
-    // анимировать переходом и не пересобирать её разметку.
     moveTo(node, pt, rot, scale) {
         if (!node) return;
         node.setAttribute('transform',
@@ -190,10 +184,23 @@ const GluttonyMinigame = {
             (scale && scale !== 1 ? ` scale(${scale})` : ''));
     },
 
-    // ---------- КАМЕРА ----------
-    // Прямоугольник наезда вписывается в стейдж целиком: масштаб по меньшей
-    // стороне, центр в центр. Показывать «на всю ширину» нельзя — тогда
-    // высокий предмет вроде холодильника обрезался бы по пояс.
+    pop(node) {
+        if (!node) return;
+        node.classList.remove('kt-pop');
+        void node.getBoundingClientRect();
+        node.classList.add('kt-pop');
+        setTimeout(() => node.classList.remove('kt-pop'), 300);
+    },
+
+    shake(node) {
+        if (!node) return;
+        node.classList.remove('kt-lack');
+        void node.getBoundingClientRect();
+        node.classList.add('kt-lack');
+        setTimeout(() => node.classList.remove('kt-lack'), 340);
+    },
+
+    // ================= КАМЕРА =================
     setCamera(name, instant) {
         const f = KITCHEN_ART.FOCUS[name] || KITCHEN_ART.FOCUS.overview;
         const s = Math.min(390 / f.w, 844 / f.h);
@@ -207,8 +214,7 @@ const GluttonyMinigame = {
         }
     },
 
-    // Экранные координаты → координаты сцены. Одна матрица на всё: предмет
-    // под пальцем остаётся под пальцем при любом наезде.
+    // Экранные координаты → координаты СЦЕНЫ (для того, что внутри камеры).
     toScene(e) {
         const pt = this.svgEl.createSVGPoint();
         pt.x = e.clientX; pt.y = e.clientY;
@@ -218,71 +224,57 @@ const GluttonyMinigame = {
         return { x: p.x, y: p.y };
     },
 
-    // ================= ОТКЛИК НА КАСАНИЕ =================
-    // Правило простое и обязательное: ЛЮБОЙ предмет, которого коснулись,
-    // отвечает движением в тот же кадр. Без этого игрок не понимает, попал он
-    // или нет, и начинает долбить по экрану.
-    pop(node) {
-        if (!node) return;
-        node.classList.remove('kt-pop');
-        void node.getBoundingClientRect();
-        node.classList.add('kt-pop');
-        setTimeout(() => node.classList.remove('kt-pop'), 300);
-    },
-
-    // Отказ — то же движение, но другое: вещь дёргается, а не подпрыгивает.
-    shake(node) {
-        if (!node) return;
-        node.classList.remove('kt-lack');
-        void node.getBoundingClientRect();
-        node.classList.add('kt-lack');
-        setTimeout(() => node.classList.remove('kt-lack'), 340);
+    // Экранные координаты → координаты СТЕЙДЖА (для переднего плана).
+    toStage(e) {
+        const pt = this.svgEl.createSVGPoint();
+        pt.x = e.clientX; pt.y = e.clientY;
+        const m = this.svgEl.getScreenCTM();
+        if (!m) return { x: 0, y: 0 };
+        const p = pt.matrixTransform(m.inverse());
+        return { x: p.x, y: p.y };
     },
 
     // ================= УКАЗАТЕЛЬ =================
-    // В игре без слов сказать «тапни сюда» нечем, кроме движения. Кольцо
-    // пульсирует там, где надо коснуться; пунктирная стрелка означает
-    // «перетащи отсюда туда». Появляется после паузы бездействия — это
-    // подсказка растерявшемуся, а не поводырь.
-    HINT_DELAY: 1400,
-
     touched() {
-        this.hintAt = Date.now();
         this.setOpacity('kt-hint', 0);
         clearTimeout(this._hintTimer);
         this._hintTimer = setTimeout(() => this.showHint(), this.HINT_DELAY);
     },
 
-    // Что именно сейчас надо сделать. Одна таблица на всю игру: если шаг
-    // некуда показать, значит шага и нет — и это сразу видно здесь, а не
-    // выясняется на живом игроке.
+    // Одна таблица на всю игру. Если шаг некуда показать — значит шага нет, и
+    // это видно здесь, а не выясняется на живом игроке.
     nextStep() {
-        const S = KITCHEN_ART.SLOTS;
-        if (this.phase === 'overview') return { at: { x: 141, y: 700 } };
+        const S = KITCHEN_ART.SLOTS, F = KITCHEN_ART.FG;
+        if (this.phase === 'overview') return { at: { x: 155, y: 800 } };
 
         if (this.phase === 'fridge') {
-            if (this.inBasket.length) return { at: KITCHEN_ART.SLOTS.basket };
-            const first = Array.from(this.el('kt-loose').children)
-                .find(n => n.dataset.where === 'fridge');
-            if (first) return { at: JSON.parse(first.dataset.home) };
+            if (this.onBoard.length) return { stage: true, at: F.board.fridge, hold: true };
+            const first = Array.from(this.el('kt-loose').children).find(n => n.dataset.where === 'fridge');
+            if (first) {
+                return { at: this.nodePos(first), toStage: F.board.fridge };
+            }
             return null;
         }
 
-        if (this.phase === 'board') {
-            if (this.onBoard) return { at: S.board, swipe: true };
-            const first = this.onTable[0];
-            if (first) return { at: this.nodePos(first.el), to: S.board };
-            return null;
+        if (this.phase === 'chop') {
+            if (this.chops < this.CHOPS_TOTAL) {
+                return { stage: true, at: { x: F.knife.x - 60, y: F.knife.y }, swipe: 'v' };
+            }
+            return { stage: true, at: F.board.chop, dragTo: { x: 195, y: 120 } };
         }
 
         if (this.phase === 'stove') {
             if (!this.liquid) {
                 const bottle = this.el('kt-bottles').querySelector('.kt-bottle:not([data-empty])');
-                const from = bottle ? this.nodePos(bottle) : { x: 706, y: 568 };
-                return { at: from, to: S.pot };
+                return { at: bottle ? this.nodePos(bottle) : S.hose, to: S.pot };
             }
             if (this.piles.length) return { at: this.nodePos(this.piles[0].el), to: S.pot };
-            return { at: S.spoon, swipe: true };
+            return null;
+        }
+
+        if (this.phase === 'potzoom') {
+            if (this.stirSwings < this.STIR_SWINGS) return { at: S.spoon, swipe: 'h' };
+            return { at: S.pot, to: { x: S.pot.x, y: S.pot.y + 300 } };
         }
         return null;
     },
@@ -292,27 +284,43 @@ const GluttonyMinigame = {
         return m ? { x: +m[1], y: +m[2] } : { x: 0, y: 0 };
     },
 
+    // Указатель живёт в сцене, поэтому экранные цели переводятся в сцену:
+    // одна система координат на подсказку — меньше поводов ошибиться.
+    stageToScene(pt) {
+        const m = this.camEl.getScreenCTM();
+        const sm = this.svgEl.getScreenCTM();
+        if (!m || !sm) return pt;
+        const p = this.svgEl.createSVGPoint();
+        p.x = pt.x; p.y = pt.y;
+        const screen = p.matrixTransform(sm);
+        const back = this.svgEl.createSVGPoint();
+        back.x = screen.x; back.y = screen.y;
+        return back.matrixTransform(m.inverse());
+    },
+
     showHint() {
-        if (this.drag || this.swing || this.phase === 'feed') return;
+        if (this.drag || this.hold || this.phase === 'feed') return;
         const step = this.nextStep();
         const hint = this.el('kt-hint');
         if (!step || !hint) return;
 
-        this.moveTo(this.el('kt-hint-ring'), step.at);
+        const at = step.stage ? this.stageToScene(step.at) : step.at;
+        this.moveTo(this.el('kt-hint-ring'), at);
         const line = this.el('kt-hint-line');
-        const dot = this.el('kt-hint-dot');
 
-        if (step.to) {
-            // Дуга от предмета к цели: прямая читается перечёркиванием, дуга —
-            // движением руки.
-            const mx = (step.at.x + step.to.x) / 2;
-            const my = Math.min(step.at.y, step.to.y) - 120;
-            line.setAttribute('d', `M${step.at.x} ${step.at.y} Q${mx} ${my} ${step.to.x} ${step.to.y}`);
-            dot.setAttribute('opacity', '0');
-        } else if (step.swipe) {
-            // Вверх-вниз на месте: то же движение, которое ждут от пальца.
-            line.setAttribute('d', `M${step.at.x} ${step.at.y - 110} V${step.at.y + 110}`);
-            dot.setAttribute('opacity', '0');
+        let to = null;
+        if (step.to) to = step.to;
+        else if (step.toStage) to = this.stageToScene(step.toStage);
+        else if (step.dragTo) to = this.stageToScene(step.dragTo);
+
+        if (to) {
+            const mx = (at.x + to.x) / 2;
+            const my = Math.min(at.y, to.y) - 140;
+            line.setAttribute('d', `M${at.x} ${at.y} Q${mx} ${my} ${to.x} ${to.y}`);
+        } else if (step.swipe === 'v') {
+            line.setAttribute('d', `M${at.x} ${at.y - 130} V${at.y + 130}`);
+        } else if (step.swipe === 'h') {
+            line.setAttribute('d', `M${at.x - 130} ${at.y} H${at.x + 130}`);
         } else {
             line.setAttribute('d', '');
         }
@@ -324,207 +332,263 @@ const GluttonyMinigame = {
         this.phase = 'fridge';
         this.setCamera('fridge');
         this.el('kt-fridge').classList.add('open');
-        this.touched();
-        // Продукты выкладываются на полки ПОСЛЕ того, как дверцы поехали:
-        // иначе они появляются сквозь закрытую дверь.
+        // Доска въезжает снизу-справа ПОСЛЕ открытия: сначала игрок видит,
+        // что холодильник открылся, и только потом — куда класть.
+        setTimeout(() => {
+            this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.fridge);
+        }, 260);
         setTimeout(() => this.fillShelves(), 220);
+        this.touched();
+    },
+
+    // Закрыть можно тапом по открытой дверце — так же, как открывали.
+    closeFridge() {
+        this.el('kt-fridge').classList.remove('open');
+        this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
+        Array.from(this.el('kt-loose').children).forEach(n => {
+            if (n.dataset.where === 'fridge') n.remove();
+        });
+        // Всё, что успели положить, возвращается: игрок закрыл холодильник,
+        // значит передумал готовить, а не потерял продукты.
+        this.el('kt-board-items').innerHTML = '';
+        this.onBoard = [];
+        this.phase = 'overview';
+        this.setCamera('overview');
+        this.touched();
     },
 
     fillShelves() {
         const loose = this.el('kt-loose');
         const pantry = (GameState.data && GameState.data.pantry) || {};
         const S = KITCHEN_ART.SLOTS;
-        let i = 0;
+        const rows = { meat: 0, veg: 0, spice: 0 };
 
         Object.keys(KITCHEN.ingredients).forEach(key => {
             const item = KITCHEN.ingredients[key];
             const count = item.infinite ? Infinity : (pantry[key] || 0);
-            if (!item.infinite && count <= 0) return;   // чего нет, того не видно
+            if (!item.infinite && count <= 0) return;
 
+            // Полка своя у каждого типа: мясо сверху, овощи в середине,
+            // зелень внизу. Устройство холодильника читается с одного взгляда.
             const spot = item.frozen
                 ? S.freezer
-                : { x: S.shelfX[i % 3], y: S.shelfY[Math.floor(i / 3) % S.shelfY.length] };
-            if (!item.frozen) i++;
+                : { x: S.shelfX[rows[item.type] % 3], y: S.shelfY[item.type] };
+            if (!item.frozen) rows[item.type]++;
 
-            const g = this.spawnItem(key, 0, spot, 0.5);
+            const g = this.spawnItem(key, spot, 0.52, loose);
             g.dataset.home = JSON.stringify(spot);
             g.dataset.where = 'fridge';
-            // Число рядом с продуктом — цифра, а не слово (инвариант 9).
-            if (!item.infinite) {
-                const n = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                n.setAttribute('class', 'kt-count');
-                // Число ставится ПОД продуктом, а не на нём: поверх рисунка
-                // оно спорит с ним за внимание и делает полку нечитаемой.
-                n.setAttribute('x', '0'); n.setAttribute('y', '76');
-                n.textContent = count;
-                g.appendChild(n);
-            }
-            loose.appendChild(g);
+            g.dataset.type = item.type;
+            if (!item.infinite) this.setCount(g, count);
         });
     },
 
-    // Один продукт как группа сцены. Всё перетаскиваемое создаётся здесь,
-    // поэтому и стадия нарезки, и позиция живут в одном месте.
-    spawnItem(key, stage, spot, scale) {
+    setCount(g, n) {
+        let label = g.querySelector('.kt-count');
+        if (!label) {
+            label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('class', 'kt-count');
+            label.setAttribute('x', '0');
+            label.setAttribute('y', '82');
+            g.appendChild(label);
+        }
+        label.textContent = n;
+    },
+
+    spawnItem(key, spot, scale, host) {
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         g.setAttribute('class', 'kt-item');
         g.dataset.key = key;
-        g.dataset.stage = String(stage);
         g.dataset.seed = String(Math.floor(Math.random() * 1e6));
-        g.innerHTML = KITCHEN_ART.ingredient(key, stage, +g.dataset.seed);
+        g.innerHTML = KITCHEN_ART.ingredient(key, +g.dataset.seed);
         this.moveTo(g, spot, 0, scale || 1);
         g.dataset.scale = String(scale || 1);
-        this.el('kt-loose').appendChild(g);
+        (host || this.el('kt-loose')).appendChild(g);
         return g;
     },
 
-    redrawItem(g) {
-        const seed = +g.dataset.seed;
-        const stage = +g.dataset.stage;
-        g.innerHTML = KITCHEN_ART.ingredient(g.dataset.key, stage, seed);
+    // ================= ДОСКА =================
+    // Что уже лежит: по одному продукту каждого типа. Пищеблок — сам по себе
+    // и ни с чем не сочетается: он и есть «еды нет», а не ингредиент.
+    canPutOnBoard(key) {
+        const type = KITCHEN.ingredients[key].type;
+        if (this.onBoard.some(o => o.type === 'block')) return false;
+        if (type === 'block') return this.onBoard.length === 0;
+        return !this.onBoard.some(o => o.type === type);
     },
 
-    // Взять с полки: продукт летит на стол. Закрывать холодильник и
-    // подтверждать выбор кнопкой не нужно — взял и взял.
-    takeFromFridge(g) {
-        const key = g.dataset.key;
-        const item = KITCHEN.ingredients[key];
-        const pantry = (GameState.data && GameState.data.pantry) || {};
-        const left = item.infinite ? Infinity : (pantry[key] || 0) - this.countPicked(key);
-
-        // Отказ тоже обязан быть виден: молчаливое «ничего не произошло» —
-        // это то, из-за чего игрок на первом живом прогоне долбил по полке и
-        // не понимал, работает игра или нет.
-        if (left <= 0 || this.inBasket.length >= KITCHEN.MAX_PICK) {
-            this.shake(g);
-            return;
+    putOnBoard(key, ghostNode) {
+        const F = KITCHEN_ART.FG;
+        const slot = F.slots[this.onBoard.length] || F.slots[0];
+        const g = this.spawnItem(key, slot, 0.62, this.el('kt-board-items'));
+        g.dataset.where = 'board';
+        g.dataset.type = KITCHEN.ingredients[key].type;
+        this.onBoard.push({ key, type: g.dataset.type, el: g, ghost: ghostNode });
+        // На полке остаётся силуэт: видно, ЧТО взяли и что это можно вернуть.
+        if (ghostNode) {
+            ghostNode.dataset.where = 'ghost';
+            ghostNode.innerHTML = KITCHEN_ART.ghost(key, +ghostNode.dataset.seed);
+            const pantry = (GameState.data && GameState.data.pantry) || {};
+            this.setCount(ghostNode, Math.max(0, (pantry[key] || 0) - 1));
         }
+        this.touched();
+        return g;
+    },
 
-        this.pop(g);
-        const S = KITCHEN_ART.SLOTS;
-        // Копия летит с полки в корзину — на глазах, в кадре, по дуге. Раньше
-        // она летела сразу к столу, то есть за край экрана, и тап выглядел
-        // несработавшим.
-        const flying = this.spawnItem(key, 0, JSON.parse(g.dataset.home), 0.5);
-        flying.dataset.where = 'basket';
-        const slot = this.basketSlot(this.inBasket.length);
-        requestAnimationFrame(() => this.moveTo(flying, slot, (this.inBasket.length - 1) * 9, 0.46));
-        this.inBasket.push({ key, el: flying });
-        this.picked.push(key);
-
-        setTimeout(() => {
-            const basket = this.el('kt-basket');
-            basket.classList.remove('kt-bump');
-            void basket.getBoundingClientRect();
-            basket.classList.add('kt-bump');
-        }, 380);
+    // Передумал — тащим обратно, силуэт снова становится продуктом.
+    takeOffBoard(entry) {
+        const i = this.onBoard.indexOf(entry);
+        if (i !== -1) this.onBoard.splice(i, 1);
+        entry.el.remove();
+        if (entry.ghost) {
+            entry.ghost.dataset.where = 'fridge';
+            entry.ghost.innerHTML = KITCHEN_ART.ingredient(entry.key, +entry.ghost.dataset.seed);
+            const pantry = (GameState.data && GameState.data.pantry) || {};
+            this.setCount(entry.ghost, pantry[entry.key] || 0);
+        }
+        // Остальные подвигаются в свои гнёзда: дырки в ряду читаются потерей.
+        this.onBoard.forEach((o, n) => this.moveTo(o.el, KITCHEN_ART.FG.slots[n], 0, 0.62));
         this.touched();
     },
 
-    // Продукты лежат в корзине внахлёст: горка, а не шеренга — так видно, что
-    // их несколько, и они помещаются в узкую корзину.
-    basketSlot(i) {
-        const b = KITCHEN_ART.SLOTS.basket;
-        return { x: b.x - 30 + i * 20, y: b.y - 6 - i * 7 };
+    // ================= УДЕРЖАНИЕ =================
+    // Уход на нарезку — не кнопка и не тап, а удержание доски: тап по ней
+    // уже занят (продукты кладут и снимают), а держать — жест, который ни с
+    // чем не путается. Кольцо показывает, что процесс идёт и сколько осталось.
+    startHold(e) {
+        if (!this.onBoard.length) return;
+        const p = this.toStage(e);
+        this.hold = { start: Date.now(), at: p };
+        this.moveTo(this.el('kt-hold'), p);
+        this.setOpacity('kt-hold', 1);
+        const arc = this.el('kt-hold-arc');
+        const tick = () => {
+            if (!this.hold) return;
+            const t = Math.min(1, (Date.now() - this.hold.start) / this.HOLD_MS);
+            arc.setAttribute('stroke-dashoffset', (214 * (1 - t)).toFixed(1));
+            if (t >= 1) { this.hold = null; this.setOpacity('kt-hold', 0); this.goToChop(); return; }
+            this._holdRaf = requestAnimationFrame(tick);
+        };
+        this._holdRaf = requestAnimationFrame(tick);
     },
 
-    countPicked(key) {
-        return this.picked.filter(k => k === key).length;
+    cancelHold() {
+        this.hold = null;
+        cancelAnimationFrame(this._holdRaf);
+        this.setOpacity('kt-hold', 0);
     },
 
-    closeFridge() {
+    // ================= НАРЕЗКА =================
+    goToChop() {
+        this.phase = 'chop';
         this.el('kt-fridge').classList.remove('open');
-        // Всё, что осталось лежать на полках, убирается вместе с дверцей.
-        Array.from(this.el('kt-loose').children).forEach(node => {
-            if (node.dataset.where === 'fridge') node.remove();
-        });
+        Array.from(this.el('kt-loose').children).forEach(n => n.remove());
+        // Доска уезжает вниз, камера переезжает к столу, и та же доска
+        // въезжает уже там: движение непрерывно, сцена не «прыгает».
+        this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
+        this.setCamera('chop');
+        setTimeout(() => {
+            this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.chop);
+            this.el('kt-knife').classList.remove('kt-done');
+            this.el('kt-knife').removeAttribute('pointer-events');
+            this.setOpacity('kt-knife', 1);
+            this.moveTo(this.el('kt-knife'), KITCHEN_ART.FG.knife);
+            this.setKnifeAngle(this.KNIFE_UP);
+            this.touched();
+        }, 520);
     },
 
-    // Тап по корзине = «понёс к столу». Продукты переезжают из корзины на
-    // стол тем же переходом, что и летели в неё: взгляд ведёт их всю дорогу.
-    carryBasket() {
-        if (!this.inBasket.length) return;
-        this.pop(this.el('kt-basket'));
-        this.closeFridge();
-        this.phase = 'board';
-        this.setCamera('board');
-
-        const S = KITCHEN_ART.SLOTS;
-        this.inBasket.forEach((entry, i) => {
-            entry.el.dataset.where = 'table';
-            this.onTable.push(entry);
-            // Вразнобой по времени: пачка, приехавшая разом, читается
-            // подменой картинки, а не переносом.
-            setTimeout(() => {
-                this.moveTo(entry.el, { x: S.tableX[i], y: S.tableY }, 0, 0.8);
-            }, 120 + i * 90);
-        });
-        this.inBasket = [];
-        this.touched();
+    setKnifeAngle(a) {
+        this.knifeAngle = Math.max(this.KNIFE_UP, Math.min(this.KNIFE_DOWN, a));
+        const arm = this.el('kt-knife-arm');
+        if (arm) arm.setAttribute('transform', `rotate(${this.knifeAngle.toFixed(1)})`);
     },
 
-    // ================= СТОЛ И ДОСКА =================
-    goToBoard() {
-        this.closeFridge();
-        this.phase = 'board';
-        this.setCamera('board');
-        this.touched();
-    },
-
-    // Продукт положили на доску — можно резать.
-    putOnBoard(entry) {
-        const S = KITCHEN_ART.SLOTS;
-        this.onBoard = entry;
-        this.chopSwings = 0;
-        entry.el.dataset.where = 'board';
-        this.moveTo(entry.el, S.board, 0, 1.3);
-        entry.el.dataset.scale = '1.3';
-        // Нож встаёт над доской и покачивается: это и есть подсказка, что
-        // делать дальше. Словами сказать нельзя, движением — можно.
-        this.el('kt-knife').classList.add('ready');
-        this.moveTo(this.el('kt-knife'), { x: S.board.x, y: S.board.y - 150 });
-        this.touched();
-    },
-
-    chopSwing() {
-        if (!this.onBoard) return;
-        const need = KITCHEN.ingredients[this.onBoard.key].chops;
-        this.chopSwings++;
-
-        const stage = Math.min(KITCHEN.CHOP_LOOK - 1,
-            Math.floor(this.chopSwings / (need / KITCHEN.CHOP_LOOK)));
-        if (String(stage) !== this.onBoard.el.dataset.stage) {
-            this.onBoard.el.dataset.stage = String(stage);
-            this.redrawItem(this.onBoard.el);
+    // Один надрез = полный размах: поднять нож доверху и опустить донизу.
+    // Одного движения вниз мало — иначе можно было бы «дрожать» у доски и
+    // нарезать всё за секунду.
+    knifeStep(angle) {
+        this.setKnifeAngle(angle);
+        if (this.knifeAngle <= this.KNIFE_UP + 6) { this.knifeArmed = true; return; }
+        if (this.knifeAngle >= this.KNIFE_DOWN - 4 && this.knifeArmed) {
+            this.knifeArmed = false;
+            this.chopOnce();
         }
-        if (this.chopSwings < need) return;
+    },
 
-        // Нарезано: кучка едет к плите, нож возвращается на место.
-        const entry = this.onBoard;
-        this.onBoard = null;
-        this.el('kt-knife').classList.remove('ready');
-        this.moveTo(this.el('kt-knife'), KITCHEN_ART.SLOTS.knifeRest, -18);
+    chopOnce() {
+        if (this.chops >= this.CHOPS_TOTAL) return;
+        this.chops++;
+        this.el('kt-board').classList.remove('kt-cut');
+        void this.el('kt-board').getBoundingClientRect();
+        this.el('kt-board').classList.add('kt-cut');
 
-        const idx = this.onTable.indexOf(entry);
-        if (idx !== -1) this.onTable.splice(idx, 1);
+        // Половина взмахов — крупные куски, вторая половина — мелкие.
+        const stage = this.chops >= this.CHOPS_TOTAL ? 2
+            : (this.chops >= this.CHOPS_TOTAL / 2 ? 1 : 0);
+        if (stage > 0) this.renderChopped(stage);
+        if (this.chops >= this.CHOPS_TOTAL) {
+            // Нож отработал — отводим его и снимаем с него касания. Иначе он
+            // остаётся лежать поверх доски и забирает себе все нажатия: доску
+            // потом не поднять, хотя резать уже нечего.
+            const knife = this.el('kt-knife');
+            knife.classList.add('kt-done');
+            // Атрибутом, а не только классом: зона захвата ножа шире лезвия и
+            // накрывает половину кухни, а через класс это легко потерять при
+            // следующей правке стилей. Отработавший инструмент не должен
+            // ловить касания вообще.
+            knife.setAttribute('pointer-events', 'none');
+            this.setKnifeAngle(this.KNIFE_UP);
+            this.moveTo(knife, { x: 372, y: 372 });
+            this.touched();
+        }
+    },
 
-        const S = KITCHEN_ART.SLOTS;
-        const slot = { x: S.pileX[this.piles.length % S.pileX.length], y: S.pileY };
-        entry.el.dataset.where = 'pile';
-        this.moveTo(entry.el, slot, 0, 0.7);
-        entry.el.dataset.scale = '0.7';
-        this.piles.push(entry);
-        this.touched();
-
-        if (!this.onTable.length) setTimeout(() => this.goToStove(), 600);
+    // Все ингредиенты режутся ВМЕСТЕ и в одну кучу: цвет кусков берётся из
+    // типов, которые лежат на доске, поэтому по куче видно состав блюда.
+    renderChopped(stage) {
+        const items = this.el('kt-board-items');
+        const keys = this.onBoard.map(o => o.key);
+        items.innerHTML = '';
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('class', 'kt-item');
+        g.dataset.where = 'chopped';
+        g.innerHTML = KITCHEN_ART.chopped(keys, stage, 17);
+        this.moveTo(g, { x: 0, y: -4 }, 0, 0.7);
+        g.dataset.scale = '0.7';
+        items.appendChild(g);
     },
 
     // ================= ПЛИТА =================
     goToStove() {
         this.phase = 'stove';
+        // Доска уходит вверх и встаёт на столешницу слева от плиты — там же,
+        // где игрок её и оставил бы.
+        this.moveTo(this.el('kt-board'), { x: 195, y: -220 });
+        // Нож остаётся в переднем плане и камере не подчиняется, поэтому его
+        // надо убрать руками: иначе он висит поперёк плиты весь остаток игры.
+        this.setOpacity('kt-knife', 0);
         this.setCamera('stove');
         this.setOpacity('kt-flame', 1);
-        this.touched();
+        setTimeout(() => {
+            this.setOpacity('kt-board-rest', 1);
+            this.spawnPiles();
+            this.touched();
+        }, 420);
+    },
+
+    // Нарезанное перекладывается с доски на столешницу отдельными кучками:
+    // их и будут кидать в кастрюлю по одной.
+    spawnPiles() {
+        const S = KITCHEN_ART.SLOTS;
+        this.el('kt-board-items').innerHTML = '';
+        this.piles = this.onBoard.map((o, i) => {
+            const spot = { x: S.boardRest.x - 40 + i * 40, y: S.boardRest.y - 20 };
+            const g = this.spawnItem(o.key, spot, 0.5, this.el('kt-loose'));
+            g.innerHTML = KITCHEN_ART.chopped([o.key], 2, 31 + i);
+            g.dataset.where = 'pile';
+            return { key: o.key, el: g };
+        });
     },
 
     buildBottles() {
@@ -532,252 +596,348 @@ const GluttonyMinigame = {
         if (!host) return;
         host.innerHTML = '';
         const pantry = (GameState.data && GameState.data.pantry) || {};
-        const S = KITCHEN_ART.SLOTS;
+        const spots = KITCHEN_ART.SLOTS.bottles;
         let i = 0;
         Object.keys(KITCHEN.liquids).forEach(key => {
-            if (KITCHEN.liquids[key].tap) return;      // вода — это кран, не бутыль
+            if (KITCHEN.liquids[key].tap) return;   // вода — это кран, не бутыль
+            const spot = spots[i] || spots[0];
             const empty = !(pantry[key] > 0);
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('class', 'kt-bottle');
             g.dataset.key = key;
             g.innerHTML = KITCHEN_ART.bottle(key, empty);
             if (empty) g.dataset.empty = '1';
-            const spot = { x: S.bottleX[i], y: S.bottleY };
             g.dataset.home = JSON.stringify(spot);
-            this.moveTo(g, spot);
+            g.dataset.scale = String(spot.s);
+            this.moveTo(g, spot, 0, spot.s);
             host.appendChild(g);
             i++;
         });
     },
 
-    // Налить основу. Что именно наливают — решает предмет, который поднесли:
-    // лейка даёт воду, бутыль — свою жидкость.
-    pour(key) {
+    // Зона кастрюли нарочно ВЫШЕ неё: жидкость держат НАД кастрюлей и льют,
+    // а не вставляют внутрь. Так это и делают руками.
+    overPot(p) {
+        const z = KITCHEN_ART.SLOTS.potZone;
+        return p.x > z.x && p.x < z.x + z.w && p.y > z.y && p.y < z.y + z.h;
+    },
+
+    // Пока сосуд держат над кастрюлей — течёт струя и уровень растёт. Не
+    // «отпустил и появилось»: наливание должно занимать время и быть видно.
+    startPour(key, from) {
         if (this.liquid) return;
-        this.liquid = key;
-        this.setOpacity('kt-steam', 1);
-        const fill = this.el('kt-pot-fill');
-        const liq = KITCHEN.liquids[key];
+        this.pouring = { key, from };
         const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.water;
-        fill.setAttribute('fill', ramp[500]);
+        this.setAttr('kt-pot-fill', { fill: ramp[500] });
+        this.setAttr('kt-pour', { opacity: 1, stroke: ramp[300] });
+    },
+
+    updatePour(from) {
+        if (!this.pouring) return;
+        const S = KITCHEN_ART.SLOTS;
+        this.setAttr('kt-pour', { d: `M${from.x} ${from.y} Q${from.x} ${(from.y + 620) / 2} ${S.pot.x} 640` });
+        this.pourLevel = Math.min(60, (this.pourLevel || 0) + 1.6);
         this.updatePotLevel();
-        this.touched();
+        if (this.pourLevel >= 60 && !this.liquid) {
+            this.liquid = this.pouring.key;
+            this.setOpacity('kt-steam', 1);
+            this.touched();
+        }
+    },
+
+    stopPour() {
+        this.pouring = null;
+        this.setAttr('kt-pour', { opacity: 0, d: '' });
     },
 
     updatePotLevel() {
         const fill = this.el('kt-pot-fill');
         if (!fill) return;
-        // Уровень в кастрюле и есть шкала: отдельной рисовать не надо.
-        const level = (this.liquid ? 46 : 0) + this.inPot.length * 22;
-        const h = Math.min(126, level);
-        fill.setAttribute('height', h);
-        fill.setAttribute('y', 670 - h);
+        const h = Math.min(140, (this.pourLevel || 0) + this.inPot.length * 22);
+        fill.setAttribute('height', h.toFixed(1));
+        fill.setAttribute('y', (772 - h).toFixed(1));
     },
 
     dropInPot(entry) {
-        const idx = this.piles.indexOf(entry);
-        if (idx !== -1) this.piles.splice(idx, 1);
+        const i = this.piles.indexOf(entry);
+        if (i !== -1) this.piles.splice(i, 1);
         this.inPot.push(entry.key);
-        // Пометку снимаем СРАЗУ, а не когда узел уйдёт из DOM. Пока кучка
-        // доезжает до кастрюли и гаснет, она полсекунды остаётся на экране —
-        // и всё это время её можно было взять второй раз.
         entry.el.dataset.where = 'pot';
-        // Кучка «уходит» в кастрюлю: съезжает внутрь и гаснет.
-        this.moveTo(entry.el, KITCHEN_ART.SLOTS.pot, 0, 0.4);
+        this.moveTo(entry.el, KITCHEN_ART.SLOTS.pot, 0, 0.3);
         entry.el.style.opacity = '0';
         setTimeout(() => entry.el.remove(), 420);
         this.updatePotLevel();
         this.touched();
 
-        if (!this.piles.length && this.liquid) {
-            this.setOpacity('kt-spoon', 1);
-            this.moveTo(this.el('kt-spoon'), KITCHEN_ART.SLOTS.spoon);
-        }
+        if (!this.piles.length && this.liquid) setTimeout(() => this.goToPotZoom(), 500);
     },
 
-    stirSwing() {
-        this.stirSwings++;
+    // ================= ПОМЕШИВАНИЕ =================
+    // Отдельный наезд на кастрюлю: мешать вслепую сбоку экрана неудобно, и
+    // движение ложки должно быть видно целиком.
+    goToPotZoom() {
+        this.phase = 'potzoom';
+        this.setCamera('pot');
+        setTimeout(() => {
+            this.setOpacity('kt-spoon', 1);
+            this.moveTo(this.el('kt-spoon'), KITCHEN_ART.SLOTS.spoon);
+            this.touched();
+        }, 420);
+    },
+
+    // Мешают СЛЕВА НАПРАВО: это движение по кругу в кастрюле, а не рубка.
+    stirStep(dx) {
         const spoon = this.el('kt-spoon-body');
-        if (spoon) spoon.setAttribute('transform', `rotate(${this.stirSwings % 2 ? 16 : -16})`);
-        if (this.stirSwings < KITCHEN.STIR_SWINGS) return;
+        if (spoon) spoon.setAttribute('transform', `rotate(${(dx > 0 ? 20 : -20)})`);
+        this.stirSwings++;
+        if (this.stirSwings < this.STIR_SWINGS) return;
         this.setOpacity('kt-spoon', 0);
-        setTimeout(() => this.goToFeed(), 400);
+        this.touched();
     },
 
     // ================= ВВОД =================
-    // Один обработчик на всю сцену: что именно взяли, решает предмет под
-    // пальцем. Ни одного невидимого слоя поверх картинки.
+    // Один обработчик на всю сцену: что взяли, решает предмет под пальцем.
     onDown(e) {
         if (this.phase === 'feed') return;
-        // Любое касание прячет подсказку и заводит паузу заново.
         this.touched();
 
-        const target = e.target.closest ? e.target.closest('g[id], g.kt-item, g.kt-bottle') : null;
-        const item = e.target.closest ? e.target.closest('g.kt-item') : null;
-        const bottle = e.target.closest ? e.target.closest('g.kt-bottle') : null;
-        const hit = (id) => target && (target.id === id || !!target.closest('#' + id));
+        const t = e.target;
+        const item = t.closest ? t.closest('g.kt-item') : null;
+        const bottle = t.closest ? t.closest('g.kt-bottle') : null;
+        const inId = (id) => !!(t.closest && t.closest('#' + id));
 
         if (this.phase === 'overview') {
-            // На общем виде работает вся кухня: куда ни ткни из четырёх мест,
-            // игра ведёт к холодильнику — начинать всё равно с него.
-            if (item || hit('kt-fridge') || hit('kt-stove') || hit('kt-pot') ||
-                hit('kt-sink') || hit('kt-table') || hit('kt-board')) {
-                this.pop(this.el('kt-fridge'));
-                this.openFridge();
-            }
+            this.pop(this.el('kt-fridge'));
+            this.openFridge();
             return;
         }
 
         if (this.phase === 'fridge') {
-            if (item && item.dataset.where === 'fridge') { this.takeFromFridge(item); return; }
-            // Корзина — «понёс к столу». Отдельный предмет вместо тапа в
-            // пустоту: раньше выйти со сцены можно было, только случайно
-            // ткнув мимо, и игрок этого не находил.
-            if (hit('kt-basket') || (item && item.dataset.where === 'basket')) { this.carryBasket(); return; }
+            // Продукт БЕРУТ И ТАЩАТ, а не тапают: тап ничего не сообщает о
+            // том, куда предмет денется, а перетаскивание показывает это
+            // само.
+            if (item && item.dataset.where === 'fridge') { this.grabFromShelf(e, item); return; }
+            if (item && item.dataset.where === 'board') {
+                const entry = this.onBoard.find(o => o.el === item);
+                if (entry) { this.grabFromBoard(e, entry); return; }
+            }
+            if (inId('kt-board')) { this.startHold(e); return; }
+            // Тап по открытой дверце закрывает холодильник — тем же жестом,
+            // которым открывали.
+            if (inId('kt-door-main') || inId('kt-door-freezer')) { this.closeFridge(); return; }
             return;
         }
 
-        if (this.phase === 'board') {
-            if (this.onBoard && (hit('kt-knife') || hit('kt-board'))) {
-                this.startSwing(e, 'chop');
+        if (this.phase === 'chop') {
+            if (this.chops < this.CHOPS_TOTAL) {
+                if (inId('kt-knife') || inId('kt-board')) {
+                    e.preventDefault();
+                    this.drag = { kind: 'knife', from: this.toStage(e), base: this.knifeAngle };
+                }
                 return;
             }
-            if (item && item.dataset.where === 'table') { this.pop(item); this.startDrag(e, item, 'table'); return; }
+            if (inId('kt-board')) { this.startDrag(e, this.el('kt-board'), 'boardup'); return; }
             return;
         }
 
         if (this.phase === 'stove') {
-            if (this.el('kt-spoon').getAttribute('opacity') !== '0' && hit('kt-spoon')) {
-                this.startSwing(e, 'stir');
-                return;
-            }
-            if (!this.liquid && hit('kt-hose')) { this.startDrag(e, this.el('kt-hose'), 'hose'); return; }
+            if (!this.liquid && inId('kt-hose')) { this.startDrag(e, this.el('kt-hose'), 'hose'); return; }
             if (!this.liquid && bottle && !bottle.dataset.empty) { this.pop(bottle); this.startDrag(e, bottle, 'bottle'); return; }
             if (!this.liquid && bottle) { this.shake(bottle); return; }
             if (item && item.dataset.where === 'pile') {
-                if (!this.liquid) { this.shake(item); return; }   // сначала основа
+                if (!this.liquid) { this.shake(item); return; }
                 this.pop(item);
                 this.startDrag(e, item, 'pile');
             }
+            return;
+        }
+
+        if (this.phase === 'potzoom') {
+            if (this.stirSwings < this.STIR_SWINGS) {
+                if (inId('kt-spoon') || inId('kt-pot')) {
+                    e.preventDefault();
+                    this.drag = { kind: 'stir', last: this.toScene(e).x };
+                }
+                return;
+            }
+            if (inId('kt-pot')) { this.startDrag(e, this.el('kt-pot'), 'potdown'); return; }
         }
     },
 
-    startSwing(e, kind) {
+    // Продукт с полки: под пальцем он ПОДРАСТАЕТ, иначе прячется под ним же.
+    grabFromShelf(e, node) {
+        const key = node.dataset.key;
+        if (!this.canPutOnBoard(key)) { this.shake(node); return; }
+        const pantry = (GameState.data && GameState.data.pantry) || {};
+        if (!KITCHEN.ingredients[key].infinite && !(pantry[key] > 0)) { this.shake(node); return; }
         e.preventDefault();
-        this.swing = { kind, last: this.toScene(e).y, dir: 0, first: true };
-        if (kind === 'chop') this.el('kt-knife').classList.add('cutting');
+
+        const ghost = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        ghost.setAttribute('class', 'kt-item kt-dragging');
+        ghost.dataset.key = key;
+        ghost.dataset.seed = node.dataset.seed;
+        ghost.innerHTML = KITCHEN_ART.ingredient(key, +node.dataset.seed);
+        this.fgEl.appendChild(ghost);
+        this.moveTo(ghost, this.toStage(e), 0, 0.9);
+        this.drag = { kind: 'shelf', node: ghost, key, source: node };
+    },
+
+    grabFromBoard(e, entry) {
+        e.preventDefault();
+        const ghost = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        ghost.setAttribute('class', 'kt-item kt-dragging');
+        ghost.dataset.key = entry.key;
+        ghost.dataset.seed = entry.el.dataset.seed;
+        ghost.innerHTML = KITCHEN_ART.ingredient(entry.key, +entry.el.dataset.seed);
+        this.fgEl.appendChild(ghost);
+        this.moveTo(ghost, this.toStage(e), 0, 0.9);
+        entry.el.style.opacity = '0';
+        this.drag = { kind: 'unboard', node: ghost, entry };
     },
 
     startDrag(e, node, kind) {
         e.preventDefault();
-        const p = this.toScene(e);
         node.classList.add('kt-dragging');
-        this.drag = { node, kind, p, home: node.dataset.home ? JSON.parse(node.dataset.home) : null };
-        this.el('kt-pot').classList.add('kt-target');
+        this.drag = {
+            node, kind,
+            home: node.dataset.home ? JSON.parse(node.dataset.home) : null,
+            scale: +(node.dataset.scale || 1),
+            base: kind === 'boardup' || kind === 'potdown' ? this.nodePos(node) : null
+        };
+        if (kind === 'pile' || kind === 'bottle' || kind === 'hose') this.el('kt-pot').classList.add('kt-target');
     },
 
     onMove(e) {
-        if (this.drag) {
-            const p = this.toScene(e);
-            const scale = +(this.drag.node.dataset.scale || 1);
-            if (this.drag.kind === 'hose') {
-                // Лейка тянется на шланге: сам шланг дорисовывается линией от
-                // крана до лейки, поэтому видно, что это шланг, а не предмет.
-                this.el('kt-nozzle').setAttribute('transform',
-                    `translate(${(p.x - 706).toFixed(1)} ${(p.y - 568).toFixed(1)})`);
-                this.el('kt-hose-line').setAttribute('d',
-                    `M706 530 Q${(706 + (p.x - 706) * 0.4).toFixed(1)} ${(p.y - 40).toFixed(1)} ${p.x.toFixed(1)} ${(p.y - 28).toFixed(1)}`);
-            } else {
-                this.moveTo(this.drag.node, p, 0, scale);
-            }
+        if (this.hold) {
+            // Палец уехал с доски — удержание отменяется, кольцо гаснет.
+            const p = this.toStage(e);
+            if (Math.hypot(p.x - this.hold.at.x, p.y - this.hold.at.y) > 60) this.cancelHold();
             return;
         }
-        if (!this.swing) return;
+        if (!this.drag) return;
+        const d = this.drag;
 
-        const y = this.toScene(e).y;
-        // Нож ЕДЕТ ЗА ПАЛЬЦЕМ. Так игрок видит, чем режет и где режет: на
-        // первом живом прогоне нож качался сам по себе в стороне от того
-        // места, где надо было водить, и это читалось поломкой.
-        if (this.swing.kind === 'chop') {
-            const S = KITCHEN_ART.SLOTS;
-            const dy = Math.max(-150, Math.min(60, y - S.board.y));
-            this.moveTo(this.el('kt-knife'), { x: S.board.x, y: S.board.y + dy });
+        if (d.kind === 'knife') {
+            // Свайп вверх-вниз наклоняет нож: игрок как будто тянет за лезвие,
+            // а ось у торца ручки — как в жизни.
+            const p = this.toStage(e);
+            this.knifeStep(d.base + (p.y - d.from.y) * 0.55);
+            return;
         }
 
-        const d = y - this.swing.last;
-        if (Math.abs(d) < this.SWING_TRAVEL) return;
-        const dir = d > 0 ? 1 : -1;
-        this.swing.last = y;
-        if (this.swing.dir === dir) return;
-        this.swing.dir = dir;
-        if (this.swing.first) { this.swing.first = false; return; }
+        if (d.kind === 'stir') {
+            const x = this.toScene(e).x;
+            const dx = x - d.last;
+            if (Math.abs(dx) < 46) return;
+            d.last = x;
+            this.stirStep(dx);
+            return;
+        }
 
-        if (this.swing.kind === 'chop') {
-            this.chopSwing();
+        if (d.kind === 'shelf' || d.kind === 'unboard') {
+            this.moveTo(d.node, this.toStage(e), 0, 0.9);
+            return;
+        }
+
+        if (d.kind === 'boardup' || d.kind === 'potdown') {
+            const p = this.toStage(e);
+            if (d.kind === 'boardup') this.moveTo(d.node, { x: 195, y: Math.min(KITCHEN_ART.FG.board.chop.y, p.y) });
+            return;
+        }
+
+        const p = this.toScene(e);
+        if (d.kind === 'hose') {
+            this.el('kt-nozzle').setAttribute('transform',
+                `translate(${(p.x - 828).toFixed(1)} ${(p.y - 664).toFixed(1)})`);
+            this.el('kt-hose-line').setAttribute('d',
+                `M828 624 Q${(828 + (p.x - 828) * 0.4).toFixed(1)} ${(p.y - 50).toFixed(1)} ${p.x.toFixed(1)} ${(p.y - 34).toFixed(1)}`);
         } else {
-            this.stirSwing();
+            this.moveTo(d.node, p, 0, d.scale);
+        }
+
+        // Держат над кастрюлей — льётся. Отвели — перестало.
+        if (d.kind === 'hose' || d.kind === 'bottle') {
+            const key = d.kind === 'hose' ? 'water' : d.node.dataset.key;
+            if (this.overPot(p)) {
+                if (!this.pouring) this.startPour(key, p);
+                this.updatePour(p);
+            } else if (this.pouring) {
+                this.stopPour();
+            }
         }
     },
 
     onUp(e) {
-        if (this.swing) {
-            if (this.swing.kind === 'chop') {
-                const S = KITCHEN_ART.SLOTS;
-                this.el('kt-knife').classList.remove('cutting');
-                if (this.onBoard) this.moveTo(this.el('kt-knife'), { x: S.board.x, y: S.board.y - 150 });
-            }
-            this.swing = null;
-            this.touched();
-            return;
-        }
+        if (this.hold) { this.cancelHold(); return; }
         if (!this.drag) return;
-        const drag = this.drag;
+        const d = this.drag;
         this.drag = null;
-        drag.node.classList.remove('kt-dragging');
-        this.el('kt-pot').classList.remove('kt-target');
         this.touched();
+        this.el('kt-pot').classList.remove('kt-target');
+        if (d.node) d.node.classList.remove('kt-dragging');
 
-        const p = e ? this.toScene(e) : { x: -999, y: -999 };
-        const overBoard = p.x > 330 && p.x < 760 && p.y > 1200 && p.y < 1560;
-        const overPot = p.x > 286 && p.x < 446 && p.y > 480 && p.y < 690;
+        if (d.kind === 'knife') { this.knifeArmed = false; return; }
+        if (d.kind === 'stir') return;
 
-        if (drag.kind === 'table') {
-            const entry = this.onTable.find(t => t.el === drag.node);
-            if (overBoard && entry && !this.onBoard) { this.putOnBoard(entry); return; }
-            // Мимо доски — вещь возвращается на своё место, ничего не теряется.
-            const i = this.onTable.indexOf(entry);
-            const S = KITCHEN_ART.SLOTS;
-            this.moveTo(drag.node, { x: S.tableX[Math.max(0, i)], y: S.tableY }, 0, 0.8);
+        if (d.kind === 'shelf') {
+            const p = this.toStage(e);
+            if (this.overBoard(p)) this.putOnBoard(d.key, d.source);
+            d.node.remove();
             return;
         }
 
-        if (drag.kind === 'pile') {
-            const entry = this.piles.find(t => t.el === drag.node);
-            if (overPot && entry) { this.dropInPot(entry); return; }
+        if (d.kind === 'unboard') {
+            const p = this.toStage(e);
+            if (!this.overBoard(p)) this.takeOffBoard(d.entry);
+            else d.entry.el.style.opacity = '';
+            d.node.remove();
+            return;
+        }
+
+        if (d.kind === 'boardup') {
+            const p = this.toStage(e);
+            // Утащили доску заметно вверх — значит понесли к плите.
+            if (p.y < KITCHEN_ART.FG.board.chop.y - 120) { this.goToStove(); return; }
+            this.moveTo(d.node, KITCHEN_ART.FG.board.chop);
+            return;
+        }
+
+        if (d.kind === 'potdown') {
+            const p = this.toStage(e);
+            if (p.y > 560) { this.goToFeed(); return; }
+            return;
+        }
+
+        if (this.pouring) this.stopPour();
+
+        if (d.kind === 'hose') {
+            this.el('kt-nozzle').setAttribute('transform', '');
+            this.el('kt-hose-line').setAttribute('d', 'M828 624 V644');
+            return;
+        }
+
+        if (d.kind === 'bottle') {
+            if (this.liquid === d.node.dataset.key) d.node.dataset.empty = '1';
+            this.moveTo(d.node, d.home, 0, d.scale);
+            return;
+        }
+
+        if (d.kind === 'pile') {
+            const p = this.toScene(e);
+            const entry = this.piles.find(x => x.el === d.node);
+            if (entry && this.overPot(p)) { this.dropInPot(entry); return; }
             const i = this.piles.indexOf(entry);
             const S = KITCHEN_ART.SLOTS;
-            this.moveTo(drag.node, { x: S.pileX[Math.max(0, i)], y: S.pileY }, 0, 0.7);
-            return;
-        }
-
-        if (drag.kind === 'bottle') {
-            if (overPot) {
-                this.pour(drag.node.dataset.key);
-                drag.node.dataset.empty = '1';
-            }
-            this.moveTo(drag.node, drag.home);
-            return;
-        }
-
-        if (drag.kind === 'hose') {
-            if (overPot) this.pour('water');
-            // Лейка всегда возвращается в кран: это пружина, а не предмет.
-            this.el('kt-nozzle').setAttribute('transform', '');
-            this.el('kt-hose-line').setAttribute('d', 'M706 530 V548');
+            this.moveTo(d.node, { x: S.boardRest.x - 40 + Math.max(0, i) * 40, y: S.boardRest.y - 20 }, 0, 0.5);
         }
     },
 
-    // ================= ПЕРЕХОД К КОРМЁЖКЕ =================
+    overBoard(p) {
+        const b = this.nodePos(this.el('kt-board'));
+        return Math.abs(p.x - b.x) < 190 && Math.abs(p.y - b.y) < 96;
+    },
+
+    // ================= КОРМЁЖКА =================
     goToFeed() {
         this.phase = 'feed';
         if (this.svgEl) this.svgEl.style.display = 'none';

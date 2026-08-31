@@ -79,7 +79,39 @@
 #gluttony-game #kt-fridge.open #kt-door-freezer { transform: rotateY(0deg) scaleX(-0.18) translateX(0px); }
 #gluttony-game #kt-fridge.open #kt-door-main    { transform: scaleX(-0.18); }
 
-/* ---------- НОЖ ----------
+/* ---------- ПЕРЕДНИЙ ПЛАН ----------
+   Доска и нож не подчиняются камере: они ближе неё. Едут своим переходом —
+   въезжают из-за края и уезжают за край, и по этому движению видно, что
+   этап сменился, а не картинка подменилась. */
+#gluttony-game #kt-board {
+    transition: transform 0.55s cubic-bezier(0.3, 0.75, 0.25, 1);
+}
+
+/* Короткий толчок доски в такт удару ножа: без него надрез не чувствуется. */
+#gluttony-game #kt-board.kt-cut { animation: kt-cut 0.16s ease-out; }
+
+@keyframes kt-cut {
+    0%, 100% { transform: translate(195px, 620px); }
+    50%      { transform: translate(195px, 626px); }
+}
+
+#gluttony-game #kt-knife { transition: opacity 0.3s ease, transform 0.45s cubic-bezier(0.3, 0.75, 0.25, 1); }
+#gluttony-game #kt-knife-arm { transition: transform 0.05s linear; }
+/* Отработавший нож отходит в сторону и перестаёт ловить касания: его зона
+   захвата шире лезвия и накрывает доску, а поднять надо именно доску. */
+/* И у самой группы, И у всего внутри. У зон захвата стоит собственный
+   pointer-events:all, а он перебивает выключение на родителе: отработавший
+   нож продолжал ловить касания и забирал их у бутылей на другом конце
+   кухни. */
+#gluttony-game #kt-knife.kt-done,
+#gluttony-game #kt-knife.kt-done * { pointer-events: none; }
+#gluttony-game #kt-knife.kt-done { opacity: 0.55; }
+#gluttony-game #kt-hold { transition: opacity 0.2s ease; }
+#gluttony-game #kt-hold-arc { transition: stroke-dashoffset 0.06s linear; }
+#gluttony-game #kt-board-rest { transition: opacity 0.4s ease; }
+#gluttony-game #kt-pour { transition: opacity 0.2s ease; }
+
+/* ---------- НОЖ (старое) ----------
    ТРИ уровня, и это не прихоть. Первая версия вешала покачивание и замах на
    одну и ту же группу: CSS-анимация перебивает transform, выставленный из
    кода, поэтому нож бодро качался сам по себе и НЕ РЕАГИРОВАЛ на палец.
