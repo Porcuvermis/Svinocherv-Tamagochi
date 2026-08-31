@@ -38,7 +38,24 @@ const GluttonyMinigame = {
     MAX_ANGLE: 55,
     POUR_THRESHOLD_ANGLE: 28,
     FEED_RATE_PER_SEC: 14,
-    DROP_INTERVAL: 140,
+
+    // ---------- СТРУЯ ИЗ КАСТРЮЛИ ----------
+    // Отдельные капли-«точки» не читались едой вообще. Струя собрана из
+    // шариков, которые сливаются в одну текучую массу фильтром-«гуашью»
+    // (размытие + резкий порог по альфе) — сами шарики не видны, видна
+    // густая жидкость.
+    // Носик — ПРАВЫЙ край горловины, а кастрюлю держат СЛЕВА от рыла и
+    // опрокидывают вправо, к морде. Пробовали наоборот (носик слева,
+    // опрокидывание влево) — при наклоне носик уезжает к оси поворота, то
+    // есть вправо, и струя шла ровно через морду: по глазам и лбу. Здесь
+    // наклон уводит носик ОТ лица, и еда падает перед рылом.
+    SPOUT: { x: 174 / 200, y: 48 / 224 },
+    POUR_EMIT_MS: 18,      // шаг выпуска: реже — и струя рвётся на бусины
+    BLOB_POOL: 48,
+    BLOB_R: 9,
+    STREAM_BASE: 1.6,      // доля пути в секунду у носика
+    STREAM_ACC: 2.2,       // и насколько быстрее у рта: жидкость ПАДАЕТ
+    STREAM_BOW: 0.45,      // насколько струя выгибается по ходу вытекания
 
     HOLD_MS: 900,          // сколько держать доску, чтобы уйти на нарезку
     CHOPS_TOTAL: 12,       // взмахов на полную нарезку: 6 до крупных, 6 до мелких
@@ -55,10 +72,12 @@ const GluttonyMinigame = {
     STIR_SWINGS: 6,
     HINT_DELAY: 1500,
 
-    // Куда приползает червь — центр коврика В КООРДИНАТАХ СЦЕНЫ. Одно число
-    // на всю раскладку кормёжки: подвинули коврик в картинке — кормёжка
-    // переехала следом, код не трогаем.
-    FEED_SPOT: { x: 450, y: 2246 },
+    // Куда приходит червь — точка ПОЛА В КООРДИНАТАХ СЦЕНЫ, у середины
+    // разделочного стола. Кормёжка идёт на общем виде кухни, поэтому червь
+    // просто встаёт перед столом: голова оказывается на уровне столешницы, а
+    // телом он закрывает переднюю стенку стола — так и читается «стоит у
+    // стола». Подвинули стол в картинке — подвинулась и кормёжка.
+    FEED_SPOT: { x: 590, y: 1841 },
 
     // ---------- НАЛИВ ----------
     // Считается от ВРЕМЕНИ, а не от числа событий указателя: раньше уровень
@@ -87,7 +106,6 @@ const GluttonyMinigame = {
     feedTargetAngle: 0,
     feedProgress: 0,
     feedFinished: false,
-    feedLastDropTime: 0,
     feedRafId: null,
     feedLastTick: null,
     feedMarkupReady: false,
@@ -159,6 +177,7 @@ const GluttonyMinigame = {
         if (this.stageFeed) this.stageFeed.classList.remove('active');
         if (this.svgEl) this.svgEl.style.display = '';
         this.stopWormWalk();
+        this.clearStream();
         this.setOpacity('kt-pot', 1);
         if (this.tiltBucket) this.tiltBucket.style.opacity = '';
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
@@ -1003,18 +1022,17 @@ const GluttonyMinigame = {
     },
 
     // ================= КОРМЁЖКА =================
-    // Кухня НЕ прячется. Раньше на кормёжку подменялась вся картинка —
-    // отдельная сцена с градиентным фоном, — и это читалось как переход в
-    // другую игру: варил суп, а очнулся неизвестно где. Теперь камера просто
-    // переезжает на пол перед столом, а кастрюля со стола исчезает: её как
-    // раз и понесли вниз, к червю.
+    // Кухня НЕ прячется и своего кадра у кормёжки нет. Отдельная сцена
+    // читалась как переход в другую игру, а отдельный кадр показывал пустой
+    // пол — кухни в нём почти не оставалось. Камера отъезжает на ОБЩИЙ ВИД,
+    // кастрюля с плиты исчезает (её понесли вниз), справа приходит червь.
     goToFeed() {
         this.phase = 'feed';
         this.setOpacity('kt-pot', 0);
         this.setOpacity('kt-flame', 0);
         this.setOpacity('kt-spoon', 0);
         this.setOpacity('kt-hint', 0);
-        this.setCamera('feed');
+        this.setCamera('overview');
         if (this.stageFeed) this.stageFeed.classList.add('active');
         this.ensureFeedMarkup();
         if (this.tiltBucket) this.tiltBucket.style.opacity = '0';
@@ -1091,10 +1109,15 @@ const GluttonyMinigame = {
             Object.assign(this.potEl.style, {
                 position: 'relative',
                 width: '100%',
-                aspectRatio: '0.9',
+                // Ровно как viewBox кастрюли: при совпадении пропорций svg
+                // ложится в блок без полей, и доли из SPOUT — это честные
+                // координаты носика, а не «примерно там».
+                aspectRatio: '200 / 224',
                 boxSizing: 'border-box'
             });
         }
+
+        this.buildStream();
 
         // Обработчик наклона вешается здесь же: в прежнем init() он висел на
         // разметке, которой больше нет, а кастрюля всё равно собирается тут.
@@ -1123,7 +1146,6 @@ const GluttonyMinigame = {
         this.feedDy = 0;
         this.feedAngle = 0;
         this.feedTargetAngle = 0;
-        this.feedLastDropTime = 0;
         this.ensureFeedMarkup();
         if (this.tiltBucket) {
             this.tiltBucket.style.transform = 'rotate(0deg)';
@@ -1131,6 +1153,12 @@ const GluttonyMinigame = {
         // Цвет варева — тот же, что налили в кастрюлю на плите: блюдо
         // доехало до червя тем же, каким его готовили.
         if (this.potEl) this.potEl.innerHTML = KITCHEN_ART.potHeld(this.liquid);
+        // Струя того же цвета, что варево в кастрюле: это одна и та же еда.
+        this.clearStream();
+        if (this.blobLayer) {
+            const ramp = (PALETTE.kitchen[this.liquid] || PALETTE.kitchen.broth);
+            this.blobLayer.setAttribute('fill', ramp[500]);
+        }
 
         // Персонаж — общая моделька игрока, не своя отрисовка. Монтируем
         // (один раз за сессию) именно здесь, когда .glut-stage-feed уже
@@ -1280,17 +1308,27 @@ const GluttonyMinigame = {
         // Кастрюля целится в РОТ, а не в центр головы: с поворотом головы рот
         // уезжает вбок на полтора десятка пикселей, и еда лилась бы мимо.
         const mouthEl = this.wormHandle.svgRoot.querySelector('[data-anchor="mouth"]');
-        let mouthOffsetX = 0;
+        let mouthOffsetX = 0, mouthOffsetY = upExtent * 0.15;
         if (mouthEl) {
             const mouthRect = mouthEl.getBoundingClientRect();
             if (mouthRect.width > 0) {
                 mouthOffsetX = ((mouthRect.left + mouthRect.width / 2) - headCenterX) / k;
+                mouthOffsetY = ((mouthRect.top + mouthRect.height / 2) - headCenterY) / k;
             }
         }
+        this.feedMouth = { dx: mouthOffsetX, dy: mouthOffsetY };
+        // Над ртом висит НЕ центр кастрюли, а её НОСИК: держат кастрюлю сбоку
+        // и опрокидывают к морде — так и наливают в жизни. Раньше центр стоял
+        // над ртом, и струя из левого края лилась мимо, левее морды.
         this.feedPot = {
-            dx: mouthOffsetX - potWidth / 2,
+            w: potWidth,
+            h: potHeight,
+            dx: mouthOffsetX - this.SPOUT.x * potWidth,
             dy: -upExtent - POT_GAP - potHeight
         };
+
+        // Слой струи считает в тех же css-пикселях, что и вся раскладка.
+        if (this.pourSvg) this.pourSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
         this.feedHead = { x, y };
         // Пока червь ползёт — не дёргаем его на место, только обновляем цель.
@@ -1400,7 +1438,9 @@ const GluttonyMinigame = {
 
     feedTick(now) {
         if (!this.feedLastTick) this.feedLastTick = now;
-        const dt = (now - this.feedLastTick) / 1000;
+        // Потолок на шаг: свернули вкладку или браузер задержал кадр — без
+        // ограничения вся струя разом перескакивает в рот и пропадает.
+        const dt = Math.min(0.05, (now - this.feedLastTick) / 1000);
         this.feedLastTick = now;
 
         // Плавно подводим текущий угол наклона кастрюли к целевому —
@@ -1412,9 +1452,7 @@ const GluttonyMinigame = {
         if (Math.abs(this.feedTargetAngle - this.feedAngle) < 0.05) this.feedAngle = this.feedTargetAngle;
 
         if (this.tiltBucket) {
-            // Наклон ВЛЕВО: рыло у червя смотрит влево, и кастрюля обязана
-            // опрокидываться в ту же сторону — иначе она льёт мимо морды.
-            this.tiltBucket.style.transform = `rotate(${(-this.feedAngle).toFixed(1)}deg)`;
+            this.tiltBucket.style.transform = `rotate(${this.feedAngle.toFixed(1)}deg)`;
         }
         if (this.wormHandle) {
             // Наклон ведра 0° → рот закрыт (0), наклон MAX_ANGLE → рот
@@ -1425,38 +1463,164 @@ const GluttonyMinigame = {
             this.wormHandle.setLivePose({ mouthOpenness: openness });
         }
 
-        if (!this.feedFinished && this.feedDragging) {
-            if (this.feedAngle >= this.POUR_THRESHOLD_ANGLE) {
-                this.feedProgress = Math.min(100, this.feedProgress + this.FEED_RATE_PER_SEC * dt);
-                this.updateFeedUI();
-                if (now - this.feedLastDropTime > this.DROP_INTERVAL) {
-                    this.feedLastDropTime = now;
-                    this.spawnDrop();
-                }
-                if (this.feedProgress >= 100) {
-                    this.finishFeeding();
-                }
-            }
+        const pouring = !this.feedFinished && this.feedDragging &&
+                        this.feedAngle >= this.POUR_THRESHOLD_ANGLE;
+        if (pouring) {
+            this.feedProgress = Math.min(100, this.feedProgress + this.FEED_RATE_PER_SEC * dt);
+            this.updateFeedUI();
+            if (this.feedProgress >= 100) this.finishFeeding();
         }
+        // Струя живёт каждый кадр, а не только пока льют: перестали лить —
+        // новые шарики не выходят, но вылетевшие доезжают до рта.
+        this.streamTick(dt, pouring);
 
         this.feedRafId = requestAnimationFrame((t) => this.feedTick(t));
     },
 
-    spawnDrop() {
-        if (!this.pourLayer || !this.potEl) return;
-        const drop = document.createElement('div');
-        drop.className = 'glut-drop';
-        // Берём границы самой кастрюли (не всей поворотной обёртки), причём
-        // не центр, а нижний ЛЕВЫЙ угол её текущего (уже повёрнутого)
-        // прямоугольника: getBoundingClientRect() после rotate() возвращает
-        // повёрнутый bbox, и левый нижний угол — это и есть «носик»
-        // опрокинутой к морде кастрюли.
-        const potRect = this.potEl.getBoundingClientRect();
-        const layerRect = this.pourLayer.getBoundingClientRect();
-        drop.style.left = `${potRect.left - layerRect.left + 6}px`;
-        drop.style.top = `${potRect.bottom - layerRect.top - 4}px`;
-        this.pourLayer.appendChild(drop);
-        setTimeout(() => drop.remove(), 550);
+    // ================= СТРУЯ =================
+    // Отдельные капли-«точки» не читались едой вообще: было видно, что из
+    // кастрюли что-то сыплется, но не что это жидкость. Струя собрана из
+    // шариков, слитых в одну массу фильтром: сильное размытие плюс резкий
+    // порог по альфе. Границы шариков от этого пропадают, а их объединение
+    // остаётся — тот самый приём, которым в вебе рисуют «капли ртути».
+    //
+    // Почему шарики идут по кривой, а не по своей скорости с гравитацией:
+    // струя обязана попадать В РОТ при любом наклоне, а свободный полёт
+    // этого не гарантирует — промах читался бы как поломка, а не как физика.
+    // Кривая же берёт начало у носика, стартовое направление — из НАКЛОНА
+    // кастрюли, и приходит ровно в рот. Каждый шарик запоминает СВОЮ кривую
+    // в момент выхода: качнули кастрюлю — новые полетят иначе, а уже
+    // вылетевшие спокойно доедут по-своему.
+    buildStream() {
+        if (!this.pourLayer) return;
+        if (this.blobs && this.blobLayer && this.blobLayer.isConnected) return;
+        const NS = 'http://www.w3.org/2000/svg';
+        this.pourLayer.innerHTML =
+            `<svg id="glut-pour-svg" preserveAspectRatio="none"
+                  style="position:absolute;inset:0;width:100%;height:100%">
+                <defs>
+                    <filter id="glut-goo" x="-25%" y="-15%" width="150%" height="130%">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/>
+                        <feColorMatrix in="b" type="matrix" values="
+                            1 0 0 0 0
+                            0 1 0 0 0
+                            0 0 1 0 0
+                            0 0 0 26 -11"/>
+                    </filter>
+                </defs>
+                <g id="glut-pour-blobs" filter="url(#glut-goo)"></g>
+            </svg>`;
+        this.pourSvg = document.getElementById('glut-pour-svg');
+        this.blobLayer = document.getElementById('glut-pour-blobs');
+        // Шарики заведены один раз и переиспользуются: создавать и удалять
+        // узлы по сорок раз в секунду — это работа для сборщика мусора
+        // ровно там, где нужен ровный кадр.
+        this.blobs = [];
+        for (let i = 0; i < this.BLOB_POOL; i++) {
+            const c = document.createElementNS(NS, 'circle');
+            c.setAttribute('r', '0');
+            this.blobLayer.appendChild(c);
+            this.blobs.push({ el: c, alive: false, t: 0, size: 1, off: 0 });
+        }
+    },
+
+    // Носик — левый край горловины, повёрнутый вместе с кастрюлей вокруг её
+    // верхней кромки (transform-origin: top center). Считается формулой, а не
+    // замером: замер прямоугольника каждый кадр — лишняя раскладка страницы.
+    spoutPoint() {
+        const P = this.feedPot, H = this.feedHead;
+        if (!P || !H) return null;
+        const bx = H.x + P.dx, by = H.y + P.dy;
+        const cx = bx + P.w / 2;                        // ось поворота
+        const lx = bx + P.w * this.SPOUT.x - cx;
+        const ly = P.h * this.SPOUT.y;
+        const a = this.feedAngle * Math.PI / 180;       // тот же знак, что в transform
+        const cos = Math.cos(a), sin = Math.sin(a);
+        return {
+            x: cx + lx * cos - ly * sin,
+            y: by + lx * sin + ly * cos,
+            // Куда льётся: направление «наружу из горловины», повёрнутое
+            // вместе с кастрюлей. Пока кастрюля стоит — вбок, опрокинули —
+            // вниз. Отсюда и берётся начало струи.
+            dx: cos - 0.35 * sin,
+            dy: sin + 0.35 * cos
+        };
+    },
+
+    // Целимся чуть ГЛУБЖЕ рта: шарик убывает на последней десятой пути, и
+    // если конец кривой — ровно край рта, струя видимо обрывается, не
+    // доставая до него. Пусть последние шарики гаснут уже внутри.
+    mouthPoint() {
+        const H = this.feedHead, M = this.feedMouth;
+        if (!H || !M) return null;
+        return { x: H.x + M.dx, y: H.y + M.dy + 14 };
+    },
+
+    spawnBlob() {
+        const from = this.spoutPoint(), to = this.mouthPoint();
+        if (!from || !to) return;
+        const b = this.blobs.find(x => !x.alive);
+        if (!b) return;                                  // пул кончился — кадр важнее
+        const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+        const dn = Math.hypot(from.dx, from.dy) || 1;
+        b.alive = true;
+        b.t = 0;
+        b.size = 0.8 + Math.random() * 0.45;
+        b.off = (Math.random() * 2 - 1) * 2.5;           // струя не идеально ровная
+        b.x0 = from.x; b.y0 = from.y;
+        b.x2 = to.x;   b.y2 = to.y;
+        // Опорная точка: продолжение направления вытекания. Струя выходит
+        // ИЗ КРАЯ по наклону и только потом заворачивает вниз, ко рту.
+        b.x1 = from.x + (from.dx / dn) * len * this.STREAM_BOW;
+        b.y1 = from.y + (from.dy / dn) * len * this.STREAM_BOW;
+    },
+
+    // emitting=false — новые не выходят, но уже вылетевшие обязаны доехать:
+    // струя не может пропасть в воздухе посреди падения.
+    streamTick(dt, emitting) {
+        if (!this.blobs) return;
+        if (emitting) {
+            this.emitAcc = (this.emitAcc || 0) + dt * 1000;
+            let guard = 8;
+            while (this.emitAcc >= this.POUR_EMIT_MS && guard-- > 0) {
+                this.emitAcc -= this.POUR_EMIT_MS;
+                this.spawnBlob();
+            }
+            if (this.emitAcc > this.POUR_EMIT_MS) this.emitAcc = 0;
+        } else {
+            this.emitAcc = 0;
+        }
+
+        for (let i = 0; i < this.blobs.length; i++) {
+            const b = this.blobs[i];
+            if (!b.alive) continue;
+            b.t += (this.STREAM_BASE + this.STREAM_ACC * b.t) * dt;
+            if (b.t >= 1) {
+                b.alive = false;
+                b.el.setAttribute('r', '0');
+                continue;
+            }
+            const u = 1 - b.t, w0 = u * u, w1 = 2 * u * b.t, w2 = b.t * b.t;
+            const x = w0 * b.x0 + w1 * b.x1 + w2 * b.x2 + b.off;
+            const y = w0 * b.y0 + w1 * b.y1 + w2 * b.y2;
+            // У носика шарик набухает, у рта — исчезает во рту, а не гаснет
+            // на лету: и то и другое отъедает края струи, а не саму струю.
+            // Струя СУЖАЕТСЯ по ходу падения: шарики летят всё быстрее, а
+            // жидкости в секунду выходит столько же — значит на ту же длину
+            // её приходится меньше. Без этого получалась ровная колбаса.
+            let k = 1 - 0.3 * b.t;
+            if (b.t < 0.12) k *= 0.35 + b.t / 0.12 * 0.65;
+            else if (b.t > 0.9) k *= (1 - b.t) / 0.1;
+            b.el.setAttribute('cx', x.toFixed(1));
+            b.el.setAttribute('cy', y.toFixed(1));
+            b.el.setAttribute('r', (this.BLOB_R * b.size * k).toFixed(1));
+        }
+    },
+
+    clearStream() {
+        if (!this.blobs) return;
+        this.blobs.forEach(b => { b.alive = false; b.el.setAttribute('r', '0'); });
+        this.emitAcc = 0;
     },
 
     updateFeedUI() {
