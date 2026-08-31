@@ -29,7 +29,13 @@ const KitchenDebug = {
     init(hostEl) {
         if (this.panel || !hostEl) return;
         if (typeof DebugMode === 'undefined' || typeof KITCHEN === 'undefined') return;
-        this.host = hostEl;
+        // Панель кладётся ВНУТРЬ рамки окна, а не на весь экран мини-игры.
+        // Экран — во весь вьюпорт, и его верх на телефоне уходит под чёлку и
+        // системную строку: кнопки видно, а нажать нельзя. У тела рамки верх
+        // уже отсчитан от безопасной зоны и от шапки с крестиком, поэтому
+        // здесь ничего вычислять не нужно — и не сломается на другом
+        // телефоне с другой чёлкой.
+        this.host = hostEl.querySelector('.mg-body') || hostEl;
 
         this.panel = document.createElement('div');
         this.panel.id = 'kt-debug';
@@ -41,7 +47,7 @@ const KitchenDebug = {
             e.stopPropagation();
             this.run(act, key);
         });
-        hostEl.appendChild(this.panel);
+        this.host.appendChild(this.panel);
 
         DebugMode.onChange(() => this.render());
         this.render();
