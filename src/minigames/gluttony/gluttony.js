@@ -13,13 +13,21 @@
 // ---------- ПОРЯДОК ----------
 //   общий вид
 //     → тап по холодильнику: открылся, снизу-справа въехала доска
-//     → продукты ПЕРЕТАСКИВАЮТ с полок на доску (по одному каждого типа)
-//     → удержание на доске: кольцо заполняется, доска уезжает
+//     → продукты ПЕРЕТАСКИВАЮТ с полок на доску (по одному каждого типа);
+//       передумал — тащат обратно, силуэт на полке снова становится продуктом
+//     → доску тянут ЗА РУЧКУ справа: уехала — значит понесли резать
 //     → стол: та же доска въезжает с продуктами, режут ВСЕ СРАЗУ ножом
-//     → доску тянут вверх: она уходит к плите
+//     → доску тянут за ручку вверх: она уходит к плите
 //     → плита: жидкость держат над кастрюлей и льют, кучки кидают внутрь
 //     → зум на кастрюлю, мешают слева направо
-//     → кастрюлю тянут вниз: приходит червь, дальше кормёжка
+//     → кастрюлю тянут вниз: камера отъезжает на общий вид, справа приходит
+//       червь и встаёт у стола, дальше кормёжка
+//
+// ---------- ПЕРЕХОДЫ — ЭТО ПЕРЕНОС ПРЕДМЕТА ----------
+// Между этапами не переключают, а ПЕРЕНОСЯТ: доску вправо, доску вверх,
+// кастрюлю вниз. Один жест на все переходы, и он же — единственный жест
+// игры. Удержание тут было и убрано: показать его пиктограммой нечем, а в
+// игре без слов такого жеста существовать не может.
 //
 // ---------- ЧТО РЕШАЕТ НАГРАДУ ----------
 // Мини-игра ничего не начисляет (инвариант 2): сообщает в meta, сколько
@@ -57,7 +65,6 @@ const GluttonyMinigame = {
     STREAM_ACC: 2.2,       // и насколько быстрее у рта: жидкость ПАДАЕТ
     STREAM_BOW: 0.45,      // насколько струя выгибается по ходу вытекания
 
-    HOLD_MS: 900,          // сколько держать доску, чтобы уйти на нарезку
     CHOPS_TOTAL: 12,       // взмахов на полную нарезку: 6 до крупных, 6 до мелких
     // Лезвие смотрит ВЛЕВО, а положительный поворот в SVG — по часовой, то
     // есть левый конец идёт ВВЕРХ. Поэтому поднятый нож — это ПЛЮС, а не
@@ -68,7 +75,7 @@ const GluttonyMinigame = {
     // ВОЙТИ в продукты. Плоский нож на этой же высоте выглядел парящим над
     // доской, и удар не читался ударом.
     KNIFE_DOWN: -6,
-    KNIFE_SENS: 0.38,      // градусов на пиксель пальца: весь размах ≈ 130 px
+    KNIFE_SENS: 0.5,       // градусов на пиксель пальца: весь размах ≈ 100 px
     STIR_SWINGS: 6,
     HINT_DELAY: 1500,
 
@@ -86,6 +93,13 @@ const GluttonyMinigame = {
     // неподвижно — не наполнялась вовсе.
     POUR_FULL: 60,           // уровень, при котором жидкость засчитана
     POUR_RATE_PER_SEC: 32,   // ≈1.9 с на полную кастрюлю
+    POUR_TILT: -118,         // на сколько опрокидывается бутыль над кастрюлей
+    BOTTLE_NECK: 60,         // от центра бутыли до её горлышка, в единицах сцены
+    // Струя в кастрюлю живёт в координатах СЦЕНЫ, поэтому и шарики крупнее, и
+    // путь длиннее: единица сцены мельче экранной примерно вдвое.
+    POT_BLOB_R: 15,
+    POT_BLOB_POOL: 40,
+    POT_EMIT_MS: 22,
 
     // ---------- СОСТОЯНИЕ СЕССИИ ----------
     phase: 'overview',     // overview | fridge | chop | stove | potzoom | feed
@@ -136,6 +150,12 @@ const GluttonyMinigame = {
         this.camEl.innerHTML = KITCHEN_ART.scene();
         this.fgEl.innerHTML = KITCHEN_ART.foreground();
 
+        // Пул шариков заводится ПОСЛЕ отрисовки сцены: до неё слоя ещё нет.
+        this.potStream = this.makeStream(this.el('kt-pour-blobs'), {
+            pool: this.POT_BLOB_POOL, r: this.POT_BLOB_R, emitMs: this.POT_EMIT_MS,
+            base: this.STREAM_BASE, acc: this.STREAM_ACC, bow: this.STREAM_BOW
+        });
+
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
         window.addEventListener('pointerup', (e) => this.onUp(e));
@@ -177,7 +197,9 @@ const GluttonyMinigame = {
         if (this.stageFeed) this.stageFeed.classList.remove('active');
         if (this.svgEl) this.svgEl.style.display = '';
         this.stopWormWalk();
-        this.clearStream();
+        if (this.wormStageEl) this.wormStageEl.style.opacity = '0';
+        this.streamClear(this.feedStream);
+        this.streamClear(this.potStream);
         this.setOpacity('kt-pot', 1);
         if (this.tiltBucket) this.tiltBucket.style.opacity = '';
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
@@ -193,7 +215,6 @@ const GluttonyMinigame = {
         this.el('kt-knife').classList.remove('kt-done');
         this.el('kt-knife').removeAttribute('pointer-events');
         this.setOpacity('kt-board-rest', 0);
-        this.setAttr('kt-pour', { opacity: 0, d: '' });
         this.el('kt-board-rest').innerHTML = KITCHEN_ART.boardRest();
         this.moveTo(this.el('kt-board-rest'), KITCHEN_ART.SLOTS.boardRest);
         this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
@@ -293,7 +314,13 @@ const GluttonyMinigame = {
 
         if (this.phase === 'fridge') {
             if (this.onBoard.length) {
-                return { stage: true, at: F.board.fridge, dragTo: { x: 372, y: F.board.fridge.y } };
+                // Указываем на РУЧКУ доски: середина занята продуктами, и
+                // кольцо там читалось бы как «тащи вот этот продукт».
+                return {
+                    stage: true,
+                    at: { x: F.board.fridge.x + 150, y: F.board.fridge.y },
+                    dragTo: { x: 380, y: F.board.fridge.y }
+                };
             }
             const first = Array.from(this.el('kt-loose').children).find(n => n.dataset.where === 'fridge');
             if (first) {
@@ -306,7 +333,11 @@ const GluttonyMinigame = {
             if (this.chops < this.CHOPS_TOTAL) {
                 return { stage: true, at: { x: F.knife.x - 60, y: F.knife.y }, swipe: 'v' };
             }
-            return { stage: true, at: F.board.chop, dragTo: { x: 195, y: 120 } };
+            return {
+                stage: true,
+                at: { x: F.board.chop.x + 150, y: F.board.chop.y },
+                dragTo: { x: F.board.chop.x + 150, y: 140 }
+            };
         }
 
         if (this.phase === 'stove') {
@@ -563,8 +594,11 @@ const GluttonyMinigame = {
     // нарезать всё за секунду.
     knifeStep(angle) {
         this.setKnifeAngle(angle);
-        if (this.knifeAngle >= this.KNIFE_UP - 6) { this.knifeArmed = true; return; }
-        if (this.knifeAngle <= this.KNIFE_DOWN + 4 && this.knifeArmed) {
+        // Пороги — доли размаха, а не абсолютные градусы: подвинули KNIFE_UP
+        // или KNIFE_DOWN — взвод и рез уехали следом, а не разошлись с ними.
+        const span = this.KNIFE_UP - this.KNIFE_DOWN;
+        if (this.knifeAngle >= this.KNIFE_UP - span * 0.18) { this.knifeArmed = true; return; }
+        if (this.knifeAngle <= this.KNIFE_DOWN + span * 0.14 && this.knifeArmed) {
             this.knifeArmed = false;
             this.chopOnce();
         }
@@ -683,47 +717,78 @@ const GluttonyMinigame = {
 
     // Пока сосуд держат над кастрюлей — течёт струя и уровень растёт. Не
     // «отпустил и появилось»: наливание должно занимать время и быть видно.
+    // Струя — тот же движок, что на кормёжке, только в координатах СЦЕНЫ и
+    // шариками покрупнее: единицы сцены мельче экранных.
     startPour(key, from) {
         if (this.liquid) return;
         this.pouring = { key, from };
         const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.water;
         this.setAttr('kt-pot-fill', { fill: ramp[500] });
-        this.setAttr('kt-pour', { opacity: 1, stroke: ramp[300] });
-        // Уровень набирает отдельный кадровый цикл, а не события указателя:
-        // держать сосуд над кастрюлей неподвижно — тоже наливать.
+        this.streamColor(this.potStream, key);
         this.pourLastTick = null;
         if (!this.pourRafId) this.pourRafId = requestAnimationFrame(t => this.pourTick(t));
     },
 
+    // Один цикл на уровень и на струю. Крутится, пока льют ИЛИ пока в воздухе
+    // остаются шарики: убрали бутыль — струя не исчезает, а долетает.
     pourTick(now) {
-        if (!this.pouring) { this.pourRafId = null; this.pourLastTick = null; return; }
         if (!this.pourLastTick) this.pourLastTick = now;
-        const dt = Math.min(0.1, (now - this.pourLastTick) / 1000);
+        const dt = Math.min(0.05, (now - this.pourLastTick) / 1000);
         this.pourLastTick = now;
 
-        this.pourLevel = Math.min(this.POUR_FULL,
-            (this.pourLevel || 0) + this.POUR_RATE_PER_SEC * dt);
-        this.updatePotLevel();
-        if (this.pourLevel >= this.POUR_FULL && !this.liquid) {
-            this.liquid = this.pouring.key;
-            this.setOpacity('kt-steam', 1);
-            this.touched();
+        if (this.pouring) {
+            this.pourLevel = Math.min(this.POUR_FULL,
+                (this.pourLevel || 0) + this.POUR_RATE_PER_SEC * dt);
+            this.updatePotLevel();
+            if (this.pourLevel >= this.POUR_FULL && !this.liquid) {
+                this.liquid = this.pouring.key;
+                this.setOpacity('kt-steam', 1);
+                this.touched();
+            }
         }
-        this.pourRafId = requestAnimationFrame(t => this.pourTick(t));
+
+        const live = this.streamTick(this.potStream, dt,
+                                     this.pouring ? this.pourSource() : null,
+                                     KITCHEN_ART.SLOTS.potMouth);
+        if (this.pouring || live > 0) {
+            this.pourRafId = requestAnimationFrame(t => this.pourTick(t));
+        } else {
+            this.pourRafId = null;
+            this.pourLastTick = null;
+        }
     },
 
-    // Событие указателя двигает только струю: где носик — там и её начало.
-    updatePour(from) {
+    // Откуда именно бьёт струя. У крана это выход лейки, у бутыли — её
+    // горлышко, а горлышко ездит вместе с наклоном: бутыль над кастрюлей
+    // ОПРОКИДЫВАЮТ, а не держат стоймя, иначе жидкость идёт из закрытой
+    // пробки.
+    pourSource() {
+        if (!this.pouring) return null;
+        const p = this.pouring.from;
+        if (this.pouring.kind === 'hose') {
+            // Лейка: выход под ней, льёт строго вниз.
+            return { x: p.x + 24, y: p.y + 6, dx: 0, dy: 1 };
+        }
+        const a = this.POUR_TILT * Math.PI / 180;
+        const sc = this.pouring.scale || 0.6;
+        const sin = Math.sin(a), cos = Math.cos(a);
+        return {
+            x: p.x + this.BOTTLE_NECK * sin * sc,
+            y: p.y - this.BOTTLE_NECK * cos * sc,
+            dx: sin,
+            dy: -cos
+        };
+    },
+
+    updatePour(from, kind, scale) {
         if (!this.pouring) return;
-        const S = KITCHEN_ART.SLOTS;
-        this.setAttr('kt-pour', { d: `M${from.x} ${from.y} Q${from.x} ${(from.y + 620) / 2} ${S.pot.x} 640` });
+        this.pouring.from = from;
+        this.pouring.kind = kind;
+        this.pouring.scale = scale;
     },
 
     stopPour() {
         this.pouring = null;
-        if (this.pourRafId) { cancelAnimationFrame(this.pourRafId); this.pourRafId = null; }
-        this.pourLastTick = null;
-        this.setAttr('kt-pour', { opacity: 0, d: '' });
     },
 
     updatePotLevel() {
@@ -811,7 +876,7 @@ const GluttonyMinigame = {
             if (this.chops < this.CHOPS_TOTAL) {
                 if (inId('kt-knife') || inId('kt-board')) {
                     e.preventDefault();
-                    this.drag = { kind: 'knife', from: this.toStage(e), base: this.knifeAngle };
+                    this.drag = { kind: 'knife', last: this.toStage(e) };
                 }
                 return;
             }
@@ -891,11 +956,14 @@ const GluttonyMinigame = {
         const d = this.drag;
 
         if (d.kind === 'knife') {
-            // Свайп вверх-вниз наклоняет нож: игрок как будто тянет за лезвие,
-            // а ось у торца ручки — как в жизни.
+            // Угол считается ОТ ПРЕДЫДУЩЕГО положения пальца, а не от начала
+            // свайпа. С отсчётом от начала появлялся завод: увели палец на
+            // 300 px вниз — нож упёрся в доску через 130, а чтобы поднять
+            // его обратно, надо было сперва отыграть лишние 170 «вслепую».
+            // Именно это и читалось как «свайпы не работают».
             const p = this.toStage(e);
-            // Палец вверх — лезвие вверх. Знак минус именно за это.
-            this.knifeStep(d.base - (p.y - d.from.y) * this.KNIFE_SENS);
+            this.knifeStep(this.knifeAngle - (p.y - d.last.y) * this.KNIFE_SENS);
+            d.last = p;
             return;
         }
 
@@ -929,7 +997,10 @@ const GluttonyMinigame = {
             this.el('kt-hose-line').setAttribute('d',
                 `M828 624 Q${(828 + (p.x - 828) * 0.4).toFixed(1)} ${(p.y - 50).toFixed(1)} ${p.x.toFixed(1)} ${(p.y - 34).toFixed(1)}`);
         } else {
-            this.moveTo(d.node, p, 0, d.scale);
+            // Бутыль над кастрюлей опрокидывается: держать её стоймя и при
+            // этом лить — значит лить из закрытой пробки.
+            const tip = (d.kind === 'bottle' && this.pouring) ? this.POUR_TILT : 0;
+            this.moveTo(d.node, p, tip, d.scale);
         }
 
         // Держат над кастрюлей — льётся. Отвели — перестало.
@@ -937,7 +1008,7 @@ const GluttonyMinigame = {
             const key = d.kind === 'hose' ? 'water' : d.node.dataset.key;
             if (this.overPot(p)) {
                 if (!this.pouring) this.startPour(key, p);
-                this.updatePour(p);
+                this.updatePour(p, d.kind, d.scale);
             } else if (this.pouring) {
                 this.stopPour();
             }
@@ -1078,7 +1149,12 @@ const GluttonyMinigame = {
             position: 'absolute',
             left: '0', top: '0', width: '100%', height: '100%',
             zIndex: '2',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            // Слой скрыт до первого шага прихода. Рендерер монтирует червя по
+            // умолчанию в центр сцены и рисует его там же, ещё до того как
+            // раскладка успеет посчитаться, — и он на кадр вспыхивал посреди
+            // кухни, чтобы тут же исчезнуть и полезть из-за края.
+            opacity: '0'
         });
 
         // Кастрюлю рисует kitchen-art (KITCHEN_ART.potHeld), а не css-градиент:
@@ -1117,7 +1193,7 @@ const GluttonyMinigame = {
             });
         }
 
-        this.buildStream();
+        this.buildFeedStream();
 
         // Обработчик наклона вешается здесь же: в прежнем init() он висел на
         // разметке, которой больше нет, а кастрюля всё равно собирается тут.
@@ -1154,11 +1230,8 @@ const GluttonyMinigame = {
         // доехало до червя тем же, каким его готовили.
         if (this.potEl) this.potEl.innerHTML = KITCHEN_ART.potHeld(this.liquid);
         // Струя того же цвета, что варево в кастрюле: это одна и та же еда.
-        this.clearStream();
-        if (this.blobLayer) {
-            const ramp = (PALETTE.kitchen[this.liquid] || PALETTE.kitchen.broth);
-            this.blobLayer.setAttribute('fill', ramp[500]);
-        }
+        this.streamClear(this.feedStream);
+        this.streamColor(this.feedStream, this.liquid);
 
         // Персонаж — общая моделька игрока, не своя отрисовка. Монтируем
         // (один раз за сессию) именно здесь, когда .glut-stage-feed уже
@@ -1368,6 +1441,8 @@ const GluttonyMinigame = {
         };
         if (this.tiltBucket) this.tiltBucket.style.opacity = '0';
         this.setWormHead(this.wormWalk.from.x, this.wormWalk.from.y);
+        // Показываем ТОЛЬКО когда червь уже поставлен за край экрана.
+        if (this.wormStageEl) this.wormStageEl.style.opacity = '1';
         this.wormWalkRaf = requestAnimationFrame(t => this.wormWalkTick(t));
     },
 
@@ -1472,29 +1547,133 @@ const GluttonyMinigame = {
         }
         // Струя живёт каждый кадр, а не только пока льют: перестали лить —
         // новые шарики не выходят, но вылетевшие доезжают до рта.
-        this.streamTick(dt, pouring);
+        this.streamTick(this.feedStream, dt,
+                        pouring ? this.spoutPoint() : null, this.mouthPoint());
 
         this.feedRafId = requestAnimationFrame((t) => this.feedTick(t));
     },
 
     // ================= СТРУЯ =================
-    // Отдельные капли-«точки» не читались едой вообще: было видно, что из
-    // кастрюли что-то сыплется, но не что это жидкость. Струя собрана из
-    // шариков, слитых в одну массу фильтром: сильное размытие плюс резкий
-    // порог по альфе. Границы шариков от этого пропадают, а их объединение
-    // остаётся — тот самый приём, которым в вебе рисуют «капли ртути».
+    // ОДИН движок на оба налива: и на разлив жидкости в кастрюлю, и на
+    // кормёжку из кастрюли. Отличаются они только системой координат (сцена
+    // против слоя персонажа) и размером шариков — поэтому это фабрика, а не
+    // два куска похожего кода.
+    //
+    // Отдельные капли-«точки» не читались жидкостью вообще: было видно, что
+    // что-то сыплется, но не что это льётся. Струя собрана из шариков, слитых
+    // в одну массу фильтром: сильное размытие плюс резкий порог по альфе.
+    // Границы шариков от этого пропадают, а их объединение остаётся — тот
+    // самый приём, которым в вебе рисуют «капли ртути».
     //
     // Почему шарики идут по кривой, а не по своей скорости с гравитацией:
-    // струя обязана попадать В РОТ при любом наклоне, а свободный полёт
-    // этого не гарантирует — промах читался бы как поломка, а не как физика.
-    // Кривая же берёт начало у носика, стартовое направление — из НАКЛОНА
-    // кастрюли, и приходит ровно в рот. Каждый шарик запоминает СВОЮ кривую
-    // в момент выхода: качнули кастрюлю — новые полетят иначе, а уже
+    // струя обязана попадать В ЦЕЛЬ при любом наклоне сосуда, а свободный
+    // полёт этого не гарантирует — промах читался бы как поломка, а не как
+    // физика. Кривая же берёт начало у носика, стартовое направление — из
+    // НАКЛОНА сосуда, и приходит ровно в цель. Каждый шарик запоминает СВОЮ
+    // кривую в момент выхода: качнули сосуд — новые полетят иначе, а уже
     // вылетевшие спокойно доедут по-своему.
-    buildStream() {
-        if (!this.pourLayer) return;
-        if (this.blobs && this.blobLayer && this.blobLayer.isConnected) return;
+    makeStream(layer, cfg) {
         const NS = 'http://www.w3.org/2000/svg';
+        const st = {
+            layer,
+            r: cfg.r,
+            emitMs: cfg.emitMs,
+            base: cfg.base,
+            acc: cfg.acc,
+            bow: cfg.bow,
+            emitAcc: 0,
+            live: 0,
+            blobs: []
+        };
+        // Шарики заведены один раз и переиспользуются: создавать и удалять
+        // узлы по полсотни раз в секунду — это работа для сборщика мусора
+        // ровно там, где нужен ровный кадр.
+        for (let i = 0; i < cfg.pool; i++) {
+            const c = document.createElementNS(NS, 'circle');
+            c.setAttribute('r', '0');
+            layer.appendChild(c);
+            st.blobs.push({ el: c, alive: false, t: 0, size: 1, off: 0 });
+        }
+        return st;
+    },
+
+    streamSpawn(st, from, to) {
+        const b = st.blobs.find(x => !x.alive);
+        if (!b) return;                                  // пул кончился — кадр важнее
+        const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+        const dn = Math.hypot(from.dx, from.dy) || 1;
+        b.alive = true;
+        b.t = 0;
+        b.size = 0.8 + Math.random() * 0.45;
+        b.off = (Math.random() * 2 - 1) * st.r * 0.28;   // струя не идеально ровная
+        b.x0 = from.x; b.y0 = from.y;
+        b.x2 = to.x;   b.y2 = to.y;
+        // Опорная точка — продолжение направления вытекания: жидкость выходит
+        // ИЗ КРАЯ по наклону и только потом заворачивает вниз, к цели.
+        b.x1 = from.x + (from.dx / dn) * len * st.bow;
+        b.y1 = from.y + (from.dy / dn) * len * st.bow;
+        st.live++;
+    },
+
+    // from=null — новые шарики не выходят, но уже вылетевшие обязаны доехать:
+    // струя не может пропасть в воздухе посреди падения.
+    streamTick(st, dt, from, to) {
+        if (!st) return 0;
+        if (from && to) {
+            st.emitAcc += dt * 1000;
+            let guard = 8;
+            while (st.emitAcc >= st.emitMs && guard-- > 0) {
+                st.emitAcc -= st.emitMs;
+                this.streamSpawn(st, from, to);
+            }
+            if (st.emitAcc > st.emitMs) st.emitAcc = 0;
+        } else {
+            st.emitAcc = 0;
+        }
+
+        for (let i = 0; i < st.blobs.length; i++) {
+            const b = st.blobs[i];
+            if (!b.alive) continue;
+            b.t += (st.base + st.acc * b.t) * dt;
+            if (b.t >= 1) {
+                b.alive = false;
+                st.live--;
+                b.el.setAttribute('r', '0');
+                continue;
+            }
+            const u = 1 - b.t, w0 = u * u, w1 = 2 * u * b.t, w2 = b.t * b.t;
+            const x = w0 * b.x0 + w1 * b.x1 + w2 * b.x2 + b.off;
+            const y = w0 * b.y0 + w1 * b.y1 + w2 * b.y2;
+            // Струя СУЖАЕТСЯ по ходу падения: шарики летят всё быстрее, а
+            // жидкости в секунду выходит столько же — значит на ту же длину
+            // её приходится меньше. Без этого получалась ровная колбаса.
+            let k = 1 - 0.3 * b.t;
+            if (b.t < 0.12) k *= 0.35 + b.t / 0.12 * 0.65;
+            else if (b.t > 0.9) k *= (1 - b.t) / 0.1;
+            b.el.setAttribute('cx', x.toFixed(1));
+            b.el.setAttribute('cy', y.toFixed(1));
+            b.el.setAttribute('r', (st.r * b.size * k).toFixed(1));
+        }
+        return st.live;
+    },
+
+    streamClear(st) {
+        if (!st) return;
+        st.blobs.forEach(b => { b.alive = false; b.el.setAttribute('r', '0'); });
+        st.live = 0;
+        st.emitAcc = 0;
+    },
+
+    streamColor(st, key) {
+        if (!st) return;
+        const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.broth;
+        st.layer.setAttribute('fill', ramp[500]);
+    },
+
+    // ---------- СТРУЯ КОРМЁЖКИ ----------
+    buildFeedStream() {
+        if (!this.pourLayer) return;
+        if (this.feedStream && this.feedStream.layer.isConnected) return;
         this.pourLayer.innerHTML =
             `<svg id="glut-pour-svg" preserveAspectRatio="none"
                   style="position:absolute;inset:0;width:100%;height:100%">
@@ -1511,20 +1690,13 @@ const GluttonyMinigame = {
                 <g id="glut-pour-blobs" filter="url(#glut-goo)"></g>
             </svg>`;
         this.pourSvg = document.getElementById('glut-pour-svg');
-        this.blobLayer = document.getElementById('glut-pour-blobs');
-        // Шарики заведены один раз и переиспользуются: создавать и удалять
-        // узлы по сорок раз в секунду — это работа для сборщика мусора
-        // ровно там, где нужен ровный кадр.
-        this.blobs = [];
-        for (let i = 0; i < this.BLOB_POOL; i++) {
-            const c = document.createElementNS(NS, 'circle');
-            c.setAttribute('r', '0');
-            this.blobLayer.appendChild(c);
-            this.blobs.push({ el: c, alive: false, t: 0, size: 1, off: 0 });
-        }
+        this.feedStream = this.makeStream(document.getElementById('glut-pour-blobs'), {
+            pool: this.BLOB_POOL, r: this.BLOB_R, emitMs: this.POUR_EMIT_MS,
+            base: this.STREAM_BASE, acc: this.STREAM_ACC, bow: this.STREAM_BOW
+        });
     },
 
-    // Носик — левый край горловины, повёрнутый вместе с кастрюлей вокруг её
+    // Носик — правый край горловины, повёрнутый вместе с кастрюлей вокруг её
     // верхней кромки (transform-origin: top center). Считается формулой, а не
     // замером: замер прямоугольника каждый кадр — лишняя раскладка страницы.
     spoutPoint() {
@@ -1554,73 +1726,6 @@ const GluttonyMinigame = {
         const H = this.feedHead, M = this.feedMouth;
         if (!H || !M) return null;
         return { x: H.x + M.dx, y: H.y + M.dy + 14 };
-    },
-
-    spawnBlob() {
-        const from = this.spoutPoint(), to = this.mouthPoint();
-        if (!from || !to) return;
-        const b = this.blobs.find(x => !x.alive);
-        if (!b) return;                                  // пул кончился — кадр важнее
-        const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-        const dn = Math.hypot(from.dx, from.dy) || 1;
-        b.alive = true;
-        b.t = 0;
-        b.size = 0.8 + Math.random() * 0.45;
-        b.off = (Math.random() * 2 - 1) * 2.5;           // струя не идеально ровная
-        b.x0 = from.x; b.y0 = from.y;
-        b.x2 = to.x;   b.y2 = to.y;
-        // Опорная точка: продолжение направления вытекания. Струя выходит
-        // ИЗ КРАЯ по наклону и только потом заворачивает вниз, ко рту.
-        b.x1 = from.x + (from.dx / dn) * len * this.STREAM_BOW;
-        b.y1 = from.y + (from.dy / dn) * len * this.STREAM_BOW;
-    },
-
-    // emitting=false — новые не выходят, но уже вылетевшие обязаны доехать:
-    // струя не может пропасть в воздухе посреди падения.
-    streamTick(dt, emitting) {
-        if (!this.blobs) return;
-        if (emitting) {
-            this.emitAcc = (this.emitAcc || 0) + dt * 1000;
-            let guard = 8;
-            while (this.emitAcc >= this.POUR_EMIT_MS && guard-- > 0) {
-                this.emitAcc -= this.POUR_EMIT_MS;
-                this.spawnBlob();
-            }
-            if (this.emitAcc > this.POUR_EMIT_MS) this.emitAcc = 0;
-        } else {
-            this.emitAcc = 0;
-        }
-
-        for (let i = 0; i < this.blobs.length; i++) {
-            const b = this.blobs[i];
-            if (!b.alive) continue;
-            b.t += (this.STREAM_BASE + this.STREAM_ACC * b.t) * dt;
-            if (b.t >= 1) {
-                b.alive = false;
-                b.el.setAttribute('r', '0');
-                continue;
-            }
-            const u = 1 - b.t, w0 = u * u, w1 = 2 * u * b.t, w2 = b.t * b.t;
-            const x = w0 * b.x0 + w1 * b.x1 + w2 * b.x2 + b.off;
-            const y = w0 * b.y0 + w1 * b.y1 + w2 * b.y2;
-            // У носика шарик набухает, у рта — исчезает во рту, а не гаснет
-            // на лету: и то и другое отъедает края струи, а не саму струю.
-            // Струя СУЖАЕТСЯ по ходу падения: шарики летят всё быстрее, а
-            // жидкости в секунду выходит столько же — значит на ту же длину
-            // её приходится меньше. Без этого получалась ровная колбаса.
-            let k = 1 - 0.3 * b.t;
-            if (b.t < 0.12) k *= 0.35 + b.t / 0.12 * 0.65;
-            else if (b.t > 0.9) k *= (1 - b.t) / 0.1;
-            b.el.setAttribute('cx', x.toFixed(1));
-            b.el.setAttribute('cy', y.toFixed(1));
-            b.el.setAttribute('r', (this.BLOB_R * b.size * k).toFixed(1));
-        }
-    },
-
-    clearStream() {
-        if (!this.blobs) return;
-        this.blobs.forEach(b => { b.alive = false; b.el.setAttribute('r', '0'); });
-        this.emitAcc = 0;
     },
 
     updateFeedUI() {

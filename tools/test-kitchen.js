@@ -96,8 +96,32 @@ const { chromium } = require('playwright');
   say('на доске: ' + await page.evaluate(() => GluttonyMinigame.onBoard.map(o => o.key).join(', ')));
   await page.screenshot({ path: out + '3-board.png' });
 
+  // ПЕРЕДУМАЛ: продукт с доски тащат обратно в холодильник. Проверка стоит
+  // здесь навсегда: зона захвата доски однажды уже накрыла продукты целиком,
+  // и снять их с доски было нельзя вообще ничем.
+  const slot1 = await page.evaluate(() => KITCHEN_ART.FG.slots[1]);
+  await dragPts(await atStage(boardAt.x + slot1.x, boardAt.y + slot1.y),
+                await atScene(155, 700), 12);
+  await page.waitForTimeout(450);
+  say('после возврата на доске: ' + await page.evaluate(() => GluttonyMinigame.onBoard.map(o => o.key).join(', ')) +
+      '   на полках снова: ' + await page.evaluate(() => Array.from(document.querySelectorAll('#kt-loose .kt-item'))
+        .filter(g => g.dataset.where === 'fridge').map(g => g.dataset.key).join(', ')));
+
+  // и кладём обратно, чтобы блюдо осталось из трёх типов
+  const again = await page.evaluate(() => {
+    const g = Array.from(document.querySelectorAll('#kt-loose .kt-item'))
+      .find(n => n.dataset.where === 'fridge' && n.dataset.type === 'veg');
+    return g ? JSON.parse(g.dataset.home) : null;
+  });
+  if (again) {
+    await dragPts(await atScene(again.x, again.y), await atStage(boardAt.x, boardAt.y));
+    await page.waitForTimeout(400);
+  }
+
   // Доску отодвигают вправо — тем же жестом, что и все остальные переходы.
-  await dragPts(await atStage(boardAt.x, boardAt.y), await atStage(boardAt.x + 170, boardAt.y), 14);
+  // Доску берут за РУЧКУ справа: середина занята продуктами.
+  await dragPts(await atStage(boardAt.x + 150, boardAt.y),
+                await atStage(boardAt.x + 190, boardAt.y), 14);
   await waitCamera();
   await page.waitForTimeout(900);
   say('фаза после сдвига доски: ' + await page.evaluate(() => GluttonyMinigame.phase));
@@ -123,7 +147,7 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: out + '5-chopped.png' });
 
   // Доску тянем вверх — она уходит к плите.
-  await dragPts(await atStage(195, 620), await atStage(195, 120), 14);
+  await dragPts(await atStage(345, 620), await atStage(345, 120), 14);
   await waitCamera();
   await page.waitForTimeout(900);
   say('фаза после подъёма доски: ' + await page.evaluate(() => GluttonyMinigame.phase));
