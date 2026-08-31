@@ -102,7 +102,13 @@ const GluttonyMinigame = {
     // путь длиннее: единица сцены мельче экранной примерно вдвое.
     // Лейка: вокруг какой точки она растёт в руке и где у неё выход. Обе
     // точки — из картинки (kitchen-art), поэтому и лежат рядом с зумом.
-    HOSE: { pivot: { x: 852, y: 640 }, out: { x: 852, y: 670 }, zoom: 1.8 },
+    HOSE: { pivot: { x: 852, y: 640 }, out: { x: 852, y: 670 }, zoom: 2 },
+
+    // Всё, что берут в руку, растёт вдвое: продукт с полки, продукт с доски,
+    // кучка, бутыль, лейка. Предмет под пальцем обязан быть крупнее пальца,
+    // иначе игрок не видит, что именно держит. Не растут только доска и
+    // кастрюля — они и так во весь экран, и увеличивать там нечего.
+    GRAB_ZOOM: 2,
     POT_BLOB_R: 15,
     // Пул с запасом: лить можно хоть от потолка, а чем длиннее путь, тем
     // больше шариков одновременно в воздухе.
@@ -820,7 +826,7 @@ const GluttonyMinigame = {
             if (this.pourLevel >= this.POUR_FULL && !this.liquid) {
                 this.liquid = this.pouring.key;
                 this.setOpacity('kt-steam', 1);
-                this.touched();
+                this.finishPour();
             }
         }
 
@@ -872,6 +878,36 @@ const GluttonyMinigame = {
 
     stopPour() {
         this.pouring = null;
+    },
+
+    // Кастрюля налита — дальше лить некуда, и держать сосуд незачем. Игра
+    // забирает его сама: струя иссякает, сосуд возвращается на место, а
+    // управление на это время отбирается. Иначе игрок стоит и льёт в полную
+    // кастрюлю, а картинка делает вид, что что-то происходит.
+    finishPour() {
+        const d = this.drag;
+        this.stopPour();
+        this.drag = null;
+        this.locked = true;
+        if (d) this.returnVessel(d);
+        setTimeout(() => { this.locked = false; this.touched(); }, 520);
+    },
+
+    // Сосуд на своё место: бутыль — в свой угол столешницы и пустой, лейка —
+    // обратно в кран. Одна дорога и для отпускания пальцем, и для
+    // автоматического конца налива.
+    returnVessel(d) {
+        if (!d || !d.node) return;
+        d.node.classList.remove('kt-dragging');
+        if (d.kind === 'hose') {
+            this.el('kt-nozzle').setAttribute('transform', '');
+            this.el('kt-hose-line').setAttribute('d', 'M828 624 V644');
+            return;
+        }
+        if (d.kind === 'bottle') {
+            if (this.liquid === d.node.dataset.key) d.node.dataset.empty = '1';
+            this.moveTo(d.node, d.home, 0, d.scale);
+        }
     },
 
     updatePotLevel() {
@@ -1005,8 +1041,9 @@ const GluttonyMinigame = {
         ghost.dataset.seed = node.dataset.seed;
         ghost.innerHTML = KITCHEN_ART.ingredient(key, +node.dataset.seed);
         this.fgEl.appendChild(ghost);
-        this.moveTo(ghost, this.toStage(e), 0, 0.9);
-        this.drag = { kind: 'shelf', node: ghost, key, source: node };
+        const grab = +(node.dataset.scale || 0.52) * this.GRAB_ZOOM;
+        this.moveTo(ghost, this.toStage(e), 0, grab);
+        this.drag = { kind: 'shelf', node: ghost, key, source: node, grab };
     },
 
     grabFromBoard(e, entry) {
@@ -1017,9 +1054,10 @@ const GluttonyMinigame = {
         ghost.dataset.seed = entry.el.dataset.seed;
         ghost.innerHTML = KITCHEN_ART.ingredient(entry.key, +entry.el.dataset.seed);
         this.fgEl.appendChild(ghost);
-        this.moveTo(ghost, this.toStage(e), 0, 0.9);
+        const grab = +(entry.el.dataset.scale || 0.62) * this.GRAB_ZOOM;
+        this.moveTo(ghost, this.toStage(e), 0, grab);
         entry.el.style.opacity = '0';
-        this.drag = { kind: 'unboard', node: ghost, entry };
+        this.drag = { kind: 'unboard', node: ghost, entry, grab };
     },
 
     startDrag(e, node, kind) {
@@ -1031,10 +1069,14 @@ const GluttonyMinigame = {
         // его взяли. Взяли за левый край доски — тащить надо было через пол
         // экрана, за правый — она уезжала сразу.
         const carry = kind === 'boardup' || kind === 'potdown' || kind === 'boardaway';
+        const scale = +(node.dataset.scale || 1);
         this.drag = {
             node, kind,
             home: node.dataset.home ? JSON.parse(node.dataset.home) : null,
-            scale: +(node.dataset.scale || 1),
+            scale,
+            // Пока предмет в руке — он крупный. Доска и кастрюля не в счёт:
+            // их «несут», а не держат, и они и без того во весь экран.
+            grab: carry ? scale : scale * this.GRAB_ZOOM,
             from: carry ? this.toStage(e) : null,
             base: carry ? this.nodePos(node) : null
         };
@@ -1070,7 +1112,7 @@ const GluttonyMinigame = {
         }
 
         if (d.kind === 'shelf' || d.kind === 'unboard') {
-            this.moveTo(d.node, this.toStage(e), 0, 0.9);
+            this.moveTo(d.node, this.toStage(e), 0, d.grab);
             return;
         }
 
@@ -1110,7 +1152,7 @@ const GluttonyMinigame = {
             // Бутыль над кастрюлей опрокидывается: держать её стоймя и при
             // этом лить — значит лить из закрытой пробки.
             const tip = (d.kind === 'bottle' && this.pouring) ? this.POUR_TILT : 0;
-            this.moveTo(d.node, p, tip, d.scale);
+            this.moveTo(d.node, p, tip, d.grab);
         }
 
         // Держат над кастрюлей — льётся. Отвели — перестало.
@@ -1118,7 +1160,7 @@ const GluttonyMinigame = {
             const key = d.kind === 'hose' ? 'water' : d.node.dataset.key;
             if (this.overPot(p)) {
                 if (!this.pouring) this.startPour(key, p);
-                this.updatePour(p, d.kind, d.scale);
+                this.updatePour(p, d.kind, d.grab);
             } else if (this.pouring) {
                 this.stopPour();
             }
@@ -1176,17 +1218,7 @@ const GluttonyMinigame = {
 
         if (this.pouring) this.stopPour();
 
-        if (d.kind === 'hose') {
-            this.el('kt-nozzle').setAttribute('transform', '');
-            this.el('kt-hose-line').setAttribute('d', 'M828 624 V644');
-            return;
-        }
-
-        if (d.kind === 'bottle') {
-            if (this.liquid === d.node.dataset.key) d.node.dataset.empty = '1';
-            this.moveTo(d.node, d.home, 0, d.scale);
-            return;
-        }
+        if (d.kind === 'hose' || d.kind === 'bottle') { this.returnVessel(d); return; }
 
         if (d.kind === 'pile') {
             const p = this.toScene(e);
@@ -1194,7 +1226,7 @@ const GluttonyMinigame = {
             if (entry && this.overPot(p)) { this.dropInPot(entry); return; }
             const i = this.piles.indexOf(entry);
             const S = KITCHEN_ART.SLOTS;
-            this.moveTo(d.node, { x: S.boardRest.x - 40 + Math.max(0, i) * 40, y: S.boardRest.y - 20 }, 0, 0.5);
+            this.moveTo(d.node, { x: S.boardRest.x - 40 + Math.max(0, i) * 40, y: S.boardRest.y - 20 }, 0, d.scale);
         }
     },
 
