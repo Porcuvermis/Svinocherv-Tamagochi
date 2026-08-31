@@ -42,8 +42,13 @@ const GluttonyMinigame = {
 
     HOLD_MS: 900,          // сколько держать доску, чтобы уйти на нарезку
     CHOPS_TOTAL: 12,       // взмахов на полную нарезку: 6 до крупных, 6 до мелких
-    KNIFE_UP: -46,         // угол поднятого ножа
-    KNIFE_DOWN: 2,         // угол опущенного: лезвие касается доски
+    // Лезвие смотрит ВЛЕВО, а положительный поворот в SVG — по часовой, то
+    // есть левый конец идёт ВВЕРХ. Поэтому поднятый нож — это ПЛЮС, а не
+    // минус. В первой версии знаки были перепутаны, и свайп вверх опускал
+    // нож — управление читалось сломанным.
+    KNIFE_UP: 44,          // лезвие поднято
+    KNIFE_DOWN: -3,        // лезвие лежит на доске
+    KNIFE_SENS: 0.32,      // градусов на пиксель пальца: весь размах ≈ 150 px
     STIR_SWINGS: 6,
     HINT_DELAY: 1500,
 
@@ -57,7 +62,6 @@ const GluttonyMinigame = {
     inPot: [],
     stirSwings: 0,
     drag: null,
-    hold: null,
     piles: [],
 
     feedDragging: false,
@@ -113,13 +117,13 @@ const GluttonyMinigame = {
     close() {
         this.stopFeedTick();
         clearTimeout(this._hintTimer);
-        cancelAnimationFrame(this._holdRaf);
         this.screenElement.classList.remove('active');
         if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
     },
 
     resetAll() {
         this.phase = 'overview';
+        this.locked = false;
         this.onBoard = [];
         this.chops = 0;
         this.knifeAngle = 0;
@@ -129,7 +133,6 @@ const GluttonyMinigame = {
         this.piles = [];
         this.stirSwings = 0;
         this.drag = null;
-        this.hold = null;
         this.feedFinished = false;
         this.feedProgress = 0;
 
@@ -148,7 +151,6 @@ const GluttonyMinigame = {
         this.el('kt-knife').classList.remove('kt-done');
         this.el('kt-knife').removeAttribute('pointer-events');
         this.setOpacity('kt-board-rest', 0);
-        this.setOpacity('kt-hold', 0);
         this.setAttr('kt-pour', { opacity: 0, d: '' });
         this.el('kt-board-rest').innerHTML = KITCHEN_ART.boardRest();
         this.moveTo(this.el('kt-board-rest'), KITCHEN_ART.SLOTS.boardRest);
@@ -248,7 +250,9 @@ const GluttonyMinigame = {
         if (this.phase === 'overview') return { at: { x: 155, y: 800 } };
 
         if (this.phase === 'fridge') {
-            if (this.onBoard.length) return { stage: true, at: F.board.fridge, hold: true };
+            if (this.onBoard.length) {
+                return { stage: true, at: F.board.fridge, dragTo: { x: 372, y: F.board.fridge.y } };
+            }
             const first = Array.from(this.el('kt-loose').children).find(n => n.dataset.where === 'fridge');
             if (first) {
                 return { at: this.nodePos(first), toStage: F.board.fridge };
@@ -299,7 +303,7 @@ const GluttonyMinigame = {
     },
 
     showHint() {
-        if (this.drag || this.hold || this.phase === 'feed') return;
+        if (this.drag || this.locked || this.phase === 'feed') return;
         const step = this.nextStep();
         const hint = this.el('kt-hint');
         if (!step || !hint) return;
@@ -451,33 +455,6 @@ const GluttonyMinigame = {
         this.touched();
     },
 
-    // ================= УДЕРЖАНИЕ =================
-    // Уход на нарезку — не кнопка и не тап, а удержание доски: тап по ней
-    // уже занят (продукты кладут и снимают), а держать — жест, который ни с
-    // чем не путается. Кольцо показывает, что процесс идёт и сколько осталось.
-    startHold(e) {
-        if (!this.onBoard.length) return;
-        const p = this.toStage(e);
-        this.hold = { start: Date.now(), at: p };
-        this.moveTo(this.el('kt-hold'), p);
-        this.setOpacity('kt-hold', 1);
-        const arc = this.el('kt-hold-arc');
-        const tick = () => {
-            if (!this.hold) return;
-            const t = Math.min(1, (Date.now() - this.hold.start) / this.HOLD_MS);
-            arc.setAttribute('stroke-dashoffset', (214 * (1 - t)).toFixed(1));
-            if (t >= 1) { this.hold = null; this.setOpacity('kt-hold', 0); this.goToChop(); return; }
-            this._holdRaf = requestAnimationFrame(tick);
-        };
-        this._holdRaf = requestAnimationFrame(tick);
-    },
-
-    cancelHold() {
-        this.hold = null;
-        cancelAnimationFrame(this._holdRaf);
-        this.setOpacity('kt-hold', 0);
-    },
-
     // ================= НАРЕЗКА =================
     goToChop() {
         this.phase = 'chop';
@@ -498,8 +475,18 @@ const GluttonyMinigame = {
         }, 520);
     },
 
+    // Спрятать нож совсем. Класс .kt-done снимается обязательно: у него в
+    // стилях своя прозрачность, и она перебивает атрибут opacity — из-за
+    // этого отработавший нож оставался висеть призраком поверх плиты.
+    hideKnife() {
+        const knife = this.el('kt-knife');
+        knife.classList.remove('kt-done');
+        knife.removeAttribute('pointer-events');
+        this.setOpacity('kt-knife', 0);
+    },
+
     setKnifeAngle(a) {
-        this.knifeAngle = Math.max(this.KNIFE_UP, Math.min(this.KNIFE_DOWN, a));
+        this.knifeAngle = Math.max(this.KNIFE_DOWN, Math.min(this.KNIFE_UP, a));
         const arm = this.el('kt-knife-arm');
         if (arm) arm.setAttribute('transform', `rotate(${this.knifeAngle.toFixed(1)})`);
     },
@@ -509,8 +496,8 @@ const GluttonyMinigame = {
     // нарезать всё за секунду.
     knifeStep(angle) {
         this.setKnifeAngle(angle);
-        if (this.knifeAngle <= this.KNIFE_UP + 6) { this.knifeArmed = true; return; }
-        if (this.knifeAngle >= this.KNIFE_DOWN - 4 && this.knifeArmed) {
+        if (this.knifeAngle >= this.KNIFE_UP - 6) { this.knifeArmed = true; return; }
+        if (this.knifeAngle <= this.KNIFE_DOWN + 4 && this.knifeArmed) {
             this.knifeArmed = false;
             this.chopOnce();
         }
@@ -527,21 +514,26 @@ const GluttonyMinigame = {
         const stage = this.chops >= this.CHOPS_TOTAL ? 2
             : (this.chops >= this.CHOPS_TOTAL / 2 ? 1 : 0);
         if (stage > 0) this.renderChopped(stage);
-        if (this.chops >= this.CHOPS_TOTAL) {
-            // Нож отработал — отводим его и снимаем с него касания. Иначе он
-            // остаётся лежать поверх доски и забирает себе все нажатия: доску
-            // потом не поднять, хотя резать уже нечего.
-            const knife = this.el('kt-knife');
-            knife.classList.add('kt-done');
-            // Атрибутом, а не только классом: зона захвата ножа шире лезвия и
-            // накрывает половину кухни, а через класс это легко потерять при
-            // следующей правке стилей. Отработавший инструмент не должен
-            // ловить касания вообще.
-            knife.setAttribute('pointer-events', 'none');
-            this.setKnifeAngle(this.KNIFE_UP);
-            this.moveTo(knife, { x: 372, y: 372 });
+        if (this.chops >= this.CHOPS_TOTAL) this.parkKnife();
+    },
+
+    // Нож отработал: сам ложится на стол рядом с доской. Пока он едет, ввод
+    // отобран — иначе игрок продолжает возить пальцем по уже нарезанному и не
+    // понимает, кончился этап или нет.
+    parkKnife() {
+        const knife = this.el('kt-knife');
+        this.locked = true;
+        this.drag = null;
+        knife.classList.add('kt-done');
+        knife.setAttribute('pointer-events', 'none');
+        this.setKnifeAngle(this.KNIFE_UP);
+        this.moveTo(knife, KITCHEN_ART.FG.knifeRest, 0);
+        setTimeout(() => {
+            // Нож ложится плашмя: он больше не инструмент, а предмет на столе.
+            this.el('kt-knife-arm').setAttribute('transform', 'rotate(8)');
+            this.locked = false;
             this.touched();
-        }
+        }, 520);
     },
 
     // Все ингредиенты режутся ВМЕСТЕ и в одну кучу: цвет кусков берётся из
@@ -567,7 +559,7 @@ const GluttonyMinigame = {
         this.moveTo(this.el('kt-board'), { x: 195, y: -220 });
         // Нож остаётся в переднем плане и камере не подчиняется, поэтому его
         // надо убрать руками: иначе он висит поперёк плиты весь остаток игры.
-        this.setOpacity('kt-knife', 0);
+        this.hideKnife();
         this.setCamera('stove');
         this.setOpacity('kt-flame', 1);
         setTimeout(() => {
@@ -698,7 +690,7 @@ const GluttonyMinigame = {
     // ================= ВВОД =================
     // Один обработчик на всю сцену: что взяли, решает предмет под пальцем.
     onDown(e) {
-        if (this.phase === 'feed') return;
+        if (this.phase === 'feed' || this.locked) return;
         this.touched();
 
         const t = e.target;
@@ -721,7 +713,10 @@ const GluttonyMinigame = {
                 const entry = this.onBoard.find(o => o.el === item);
                 if (entry) { this.grabFromBoard(e, entry); return; }
             }
-            if (inId('kt-board')) { this.startHold(e); return; }
+            // Доску не держат, а ОТОДВИГАЮТ: во всей остальной игре переход
+            // между этапами — это перенос доски или кастрюли, и удержание тут
+            // выбивалось из ряда. Один жест на все переходы.
+            if (inId('kt-board')) { this.startDrag(e, this.el('kt-board'), 'boardaway'); return; }
             // Тап по открытой дверце закрывает холодильник — тем же жестом,
             // которым открывали.
             if (inId('kt-door-main') || inId('kt-door-freezer')) { this.closeFridge(); return; }
@@ -808,12 +803,6 @@ const GluttonyMinigame = {
     },
 
     onMove(e) {
-        if (this.hold) {
-            // Палец уехал с доски — удержание отменяется, кольцо гаснет.
-            const p = this.toStage(e);
-            if (Math.hypot(p.x - this.hold.at.x, p.y - this.hold.at.y) > 60) this.cancelHold();
-            return;
-        }
         if (!this.drag) return;
         const d = this.drag;
 
@@ -821,7 +810,8 @@ const GluttonyMinigame = {
             // Свайп вверх-вниз наклоняет нож: игрок как будто тянет за лезвие,
             // а ось у торца ручки — как в жизни.
             const p = this.toStage(e);
-            this.knifeStep(d.base + (p.y - d.from.y) * 0.55);
+            // Палец вверх — лезвие вверх. Знак минус именно за это.
+            this.knifeStep(d.base - (p.y - d.from.y) * this.KNIFE_SENS);
             return;
         }
 
@@ -839,9 +829,12 @@ const GluttonyMinigame = {
             return;
         }
 
-        if (d.kind === 'boardup' || d.kind === 'potdown') {
+        if (d.kind === 'boardup' || d.kind === 'potdown' || d.kind === 'boardaway') {
             const p = this.toStage(e);
             if (d.kind === 'boardup') this.moveTo(d.node, { x: 195, y: Math.min(KITCHEN_ART.FG.board.chop.y, p.y) });
+            if (d.kind === 'boardaway') {
+                this.moveTo(d.node, { x: Math.max(KITCHEN_ART.FG.board.fridge.x, p.x), y: KITCHEN_ART.FG.board.fridge.y });
+            }
             return;
         }
 
@@ -868,7 +861,6 @@ const GluttonyMinigame = {
     },
 
     onUp(e) {
-        if (this.hold) { this.cancelHold(); return; }
         if (!this.drag) return;
         const d = this.drag;
         this.drag = null;
@@ -891,6 +883,14 @@ const GluttonyMinigame = {
             if (!this.overBoard(p)) this.takeOffBoard(d.entry);
             else d.entry.el.style.opacity = '';
             d.node.remove();
+            return;
+        }
+
+        if (d.kind === 'boardaway') {
+            const p = this.toStage(e);
+            // Уехала вправо заметно — значит понесли резать.
+            if (p.x > KITCHEN_ART.FG.board.fridge.x + 110) { this.goToChop(); return; }
+            this.moveTo(d.node, KITCHEN_ART.FG.board.fridge);
             return;
         }
 

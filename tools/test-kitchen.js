@@ -96,15 +96,11 @@ const { chromium } = require('playwright');
   say('на доске: ' + await page.evaluate(() => GluttonyMinigame.onBoard.map(o => o.key).join(', ')));
   await page.screenshot({ path: out + '3-board.png' });
 
-  // Удержание на доске уводит на нарезку.
-  const bp = await atStage(boardAt.x, boardAt.y);
-  await page.mouse.move(bp.x, bp.y);
-  await page.mouse.down();
-  await page.waitForTimeout(1300);
-  await page.mouse.up();
+  // Доску отодвигают вправо — тем же жестом, что и все остальные переходы.
+  await dragPts(await atStage(boardAt.x, boardAt.y), await atStage(boardAt.x + 170, boardAt.y), 14);
   await waitCamera();
-  await page.waitForTimeout(800);
-  say('фаза после удержания: ' + await page.evaluate(() => GluttonyMinigame.phase));
+  await page.waitForTimeout(900);
+  say('фаза после сдвига доски: ' + await page.evaluate(() => GluttonyMinigame.phase));
   await page.screenshot({ path: out + '4-chop.png' });
 
   // Нарезка: полный размах ножа — вверх до упора и вниз до доски.
@@ -113,7 +109,7 @@ const { chromium } = require('playwright');
   await page.mouse.move(k0.x, k0.y);
   await page.mouse.down();
   for (let i = 0; i < 30; i++) {
-    const p = await atStage(kn.x - 60, kn.y + (i % 2 ? -130 : 130));
+    const p = await atStage(kn.x - 60, kn.y + (i % 2 ? -140 : 140));
     await page.mouse.move(p.x, p.y, { steps: 4 });
     await page.waitForTimeout(50);
   }

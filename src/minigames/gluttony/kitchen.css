@@ -96,7 +96,9 @@
 }
 
 #gluttony-game #kt-knife { transition: opacity 0.3s ease, transform 0.45s cubic-bezier(0.3, 0.75, 0.25, 1); }
-#gluttony-game #kt-knife-arm { transition: transform 0.05s linear; }
+/* Наклон ножа идёт за пальцем непрерывно. Короткий переход только сглаживает
+   дрожь руки — большего нельзя: нож должен ощущаться продолжением пальца. */
+#gluttony-game #kt-knife-arm { transition: transform 0.07s linear; }
 /* Отработавший нож отходит в сторону и перестаёт ловить касания: его зона
    захвата шире лезвия и накрывает доску, а поднять надо именно доску. */
 /* И у самой группы, И у всего внутри. У зон захвата стоит собственный
@@ -105,9 +107,8 @@
    кухни. */
 #gluttony-game #kt-knife.kt-done,
 #gluttony-game #kt-knife.kt-done * { pointer-events: none; }
-#gluttony-game #kt-knife.kt-done { opacity: 0.55; }
-#gluttony-game #kt-hold { transition: opacity 0.2s ease; }
-#gluttony-game #kt-hold-arc { transition: stroke-dashoffset 0.06s linear; }
+/* Прозрачность у .kt-done НЕ задаём: CSS перебивает атрибут opacity, и
+   спрятать нож потом становится нечем — он остаётся призраком на экране. */
 #gluttony-game #kt-board-rest { transition: opacity 0.4s ease; }
 #gluttony-game #kt-pour { transition: opacity 0.2s ease; }
 

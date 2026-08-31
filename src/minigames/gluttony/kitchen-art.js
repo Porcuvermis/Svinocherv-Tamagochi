@@ -119,17 +119,26 @@ const KITCHEN_ART = {
         // Кастрюля и её зона: зона нарочно ВЫШЕ кастрюли, чтобы жидкость
         // можно было держать над ней и лить, а не вставлять внутрь.
         pot: { x: 530, y: 700 },
-        potZone: { x: 452, y: 520, w: 160, h: 260 },
+        // Зона кастрюли шире и ВЫШЕ самой кастрюли: и жидкость держат над
+        // ней, и кучки бросают сверху — целиться в горловину пальцем неудобно.
+        potZone: { x: 428, y: 468, w: 214, h: 336 },
         spoon: { x: 530, y: 640 },
         // Столешница слева от плиты — сюда встаёт доска с нарезанным.
         boardRest: { x: 372, y: 726 },
         // Бутыли стоят с глубиной, друг за другом, а не шеренгой.
+        // Бутыли стоят В РЯД вдоль столешницы, с лёгким разбросом по глубине,
+        // но БЕЗ наложения: раньше они висели друг на друге, и попасть в
+        // нужную было нельзя. Шаг 58 при полуширине 28 — между ними всегда
+        // остаётся зазор.
+        // Донца стоят на линии столешницы, а не висят над ней. Дальняя бутыль
+        // мельче и ЧУТЬ ВЫШЕ — так читается глубина, а не полёт.
         bottles: [
-            { x: 802, y: 700, s: 1.0 },
-            { x: 856, y: 672, s: 0.86 },
-            { x: 762, y: 664, s: 0.8 }
+            { x: 752, y: 722, s: 0.6 },
+            { x: 810, y: 714, s: 0.54 },
+            { x: 868, y: 722, s: 0.6 }
         ],
-        hose: { x: 828, y: 610 }
+        // Лейка висит ВЫШЕ бутылей и не спорит с ними за касания.
+        hose: { x: 852, y: 596 }
     },
 
     // ---------- ЭКРАННЫЙ СЛОЙ ----------
@@ -140,6 +149,7 @@ const KITCHEN_ART = {
         // Гнёзда под продукты на доске: три в ряд.
         slots: [{ x: -84, y: -6 }, { x: 0, y: -6 }, { x: 84, y: -6 }],
         knife: { x: 262, y: 470 },
+        knifeRest: { x: 322, y: 748 },
         knifePivot: 96      // длина от оси вращения до кончика лезвия
     },
 
@@ -258,18 +268,18 @@ const KITCHEN_ART = {
                      stroke="${ink}" stroke-width="${S.detail}"/>
             <ellipse cx="938" cy="810" rx="35" ry="12" fill="${k.enamel[100]}"
                      stroke="${ink}" stroke-width="${S.detail}"/>
-            <path d="M884 748 V656 q0 -32 -32 -32 h-24" fill="none"
+            <path d="M896 748 V632 q0 -34 -34 -34 h-10" fill="none"
                   stroke="${k.steel[500]}" stroke-width="15" stroke-linecap="round"/>
         </g>
 
         <g id="kt-hose" class="kt-hot">
-            <path id="kt-hose-line" d="M828 624 V644" fill="none"
+            <path id="kt-hose-line" d="M852 604 V620" fill="none"
                   stroke="${k.steel[700]}" stroke-width="8" stroke-linecap="round"/>
             <g id="kt-nozzle">
-                <rect x="814" y="636" width="28" height="56" rx="10"
+                <rect x="838" y="612" width="28" height="56" rx="10"
                       fill="${k.steel[300]}" stroke="${ink}" stroke-width="${S.detail}"/>
-                <rect x="818" y="684" width="20" height="10" rx="4" fill="${k.steel[700]}"/>
-                ${ktGrab(64, 76, 664)}
+                <rect x="842" y="660" width="20" height="10" rx="4" fill="${k.steel[700]}"/>
+                ${ktGrab(54, 52, 640)}
             </g>
         </g>
 
@@ -334,14 +344,6 @@ const KITCHEN_ART = {
             <g id="kt-board-items"></g>
             <rect x="-186" y="-78" width="372" height="156" fill="#000" fill-opacity="0"
                   pointer-events="all"/>
-        </g>
-
-        <!-- КОЛЬЦО УДЕРЖАНИЯ: заполняется, пока палец на доске -->
-        <g id="kt-hold" opacity="0" pointer-events="none">
-            <circle r="34" fill="none" stroke="${PALETTE.plaster[200]}" stroke-width="6" opacity="0.4"/>
-            <circle id="kt-hold-arc" r="34" fill="none" stroke="${k.flame[300]}" stroke-width="8"
-                    stroke-linecap="round" transform="rotate(-90)"
-                    stroke-dasharray="214" stroke-dashoffset="214"/>
         </g>
 
         <!-- ШЕФ-НОЖ. Ось вращения — у ТОРЦА РУЧКИ (нулевая точка группы),
