@@ -109,6 +109,19 @@ const LocalBackend = {
             if (gold > 0) this.award(awarded, 'gold', gold, reason + '.gold', requestId);
         }
 
+        // ---------- НАГРАДА ПО КАЧЕСТВУ БЛЮДА ----------
+        // Кухня сообщает в meta, что сварила; сколько за это дать — решает
+        // таблица KITCHEN.quality (инвариант 2: мини-игра не начисляет).
+        // Здесь же запоминается размер кучки: решить его надо в момент
+        // кормёжки, потому что через час, когда червь покакает, о блюде уже
+        // никто не помнит.
+        if (reward.byQuality) {
+            const dish = this.dishQuality(request.meta);
+            awarded.dish = dish;
+            if (dish.shards) this.award(awarded, 'glut_shard', dish.shards, reason + '.dish', requestId);
+            GameState.data.digestion.poop_size = dish.poop;
+        }
+
         // ---------- НАГРАДА ЗА КАЖДЫЙ N-Й ИСХОД ----------
         // «Осколок за каждые три поражения». Счётчик накопительный: три
         // поражения за неделю тоже должны сложиться в осколок.
@@ -224,6 +237,48 @@ const LocalBackend = {
         return GameState.data.digestion;
     },
 
+    // ---------- КУХНЯ ----------
+    // Что лежит в холодильнике. Пищеблок из морозилки бесконечен и в кладовой
+    // не хранится: он страховка от тупика «нечем кормить», а не запас.
+    pantryCount(key) {
+        const item = KITCHEN.ingredients[key] || KITCHEN.liquids[key];
+        if (item && item.infinite) return Infinity;
+        return (GameState.data.pantry && GameState.data.pantry[key]) || 0;
+    },
+
+    // Списать продукты, ушедшие в кастрюлю. Вызывается ОДИН раз, в момент
+    // кормёжки, а не когда игрок ткнул в холодильник: закрыл игру на
+    // середине — продукты остались на месте.
+    spendIngredients(keys) {
+        const pantry = GameState.data.pantry;
+        (keys || []).forEach(key => {
+            const item = KITCHEN.ingredients[key] || KITCHEN.liquids[key];
+            if (item && item.infinite) return;
+            pantry[key] = Math.max(0, (pantry[key] || 0) - 1);
+            if (!pantry[key]) delete pantry[key];
+        });
+        GameState.save();
+        return pantry;
+    },
+
+    // Качество блюда — по числу РАЗНЫХ типов нарезаемого, а не по рецепту.
+    // Рецепты пришлось бы где-то показывать, а показывать их нечем: слов в
+    // игре нет (docs/plan/20-gluttony-kitchen.md, раздел 4).
+    dishQuality(meta) {
+        const q = KITCHEN.quality;
+        const info = meta || {};
+        const types = Array.isArray(info.types) ? info.types : [];
+        const chopped = types.filter(t => KITCHEN.CHOP_TYPES.indexOf(t) !== -1);
+
+        // Пищеблок не считается типом: он закрывает потребность и только.
+        if (!chopped.length) return Object.assign({ tier: 'block' }, q.block);
+
+        const rich = !!info.richLiquid;
+        const n = Math.min(3, chopped.length);
+        if (n === 3 && !rich) return Object.assign({ tier: '3water' }, q['3water']);
+        return Object.assign({ tier: String(n) }, q[n]);
+    },
+
     // Довести пищеварение до текущего момента. Дёргается при каждом чтении
     // состояния и раз в секунду из интерфейса: цикл длиннее часа, и червь
     // обязан покакать даже если в этот момент приложение было закрыто —
@@ -240,23 +295,40 @@ const LocalBackend = {
             // ходит по комнате). Пока не знаем — кладём по центру.
             x: null,
             y: null,
-            seed: Math.floor(Math.random() * 1e9)
+            seed: Math.floor(Math.random() * 1e9),
+            // Сколько мелких какашек в этой кучке. Решено было в момент
+            // кормёжки — здесь только переносится на предмет, чтобы кучка
+            // рисовалась соответствующего размера и отдала своё при уборке.
+            size: Math.max(0, GameState.data.digestion.poop_size || 0)
         };
         GameState.data.room.poops.push(poop);
         GameState.data.digestion.fed_at = null;
+        GameState.data.digestion.poop_size = 0;
         GameState.save();
         return poop;
     },
 
-    // Убрать с пола. Пока просто исчезает; станет ресурсом — начисление
-    // добавится здесь же, а не в обработчике тапа.
+    // Убрать с пола — и получить за неё какашки. Начисление живёт здесь, а
+    // не в обработчике тапа: кошелёк пополняется в одном месте на всю игру.
+    //
+    // Кучка от пищеблока пустая (size 0): червь сыт, а экономика не
+    // двинулась — в этом и цена страховки от тупика.
     removePoop(id) {
         const list = GameState.data.room.poops;
         const i = list.findIndex(p => p.id === id);
         if (i === -1) return false;
+        const poop = list[i];
         list.splice(i, 1);
+
+        const gained = { dung: 0 };
+        const size = Math.max(0, poop.size || 0);
+        if (size > 0) {
+            const awarded = { currencies: {} };
+            this.award(awarded, 'dung', size, 'poop.collect', 'poop-' + id);
+            gained.dung = size;
+        }
         GameState.save();
-        return true;
+        return gained;
     },
 
     // ---------- ЗДОРОВЬЕ БОЙЦА ----------

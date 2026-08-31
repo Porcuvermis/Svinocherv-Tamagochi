@@ -41,6 +41,11 @@ const GameState = {
             currencies: {},
             scars: [],
             inventory: {},
+            // Кладовая кухни: сколько чего лежит в холодильнике. Отдельно от
+            // inventory — там снаряжение гнева, а тут расходники, которые
+            // тратятся каждой готовкой. Ключ — ингредиент или жидкость из
+            // src/config/kitchen.js, значение — штук.
+            pantry: {},
             // Боевая прокачка гнева: ветка → купленный уровень (0 = не
             // куплено). В отличие от снаряжения, не снимается.
             upgrades: {},
@@ -54,7 +59,7 @@ const GameState = {
             counters: {},
             runs: {},
             // Пищеварение: одна метка времени, всё остальное считается от неё.
-            digestion: { fed_at: null },
+            digestion: { fed_at: null, poop_size: 0 },
             // Боец гнева: сколько здоровья осталось после последнего боя.
             // hp === null означает «полное»: до первого боя и после того, как
             // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
@@ -167,7 +172,11 @@ const GameState = {
             d.player.timezone_offset = GameTime.localTimezoneOffset();
         }
 
-        if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null };
+        // poop_size — сколько мелких какашек даст кучка, которая появится
+        // через час. Решается в момент кормёжки (качество блюда), а не когда
+        // червь какает: к тому времени о блюде уже никто не помнит.
+        if (!d.digestion || typeof d.digestion !== 'object') d.digestion = { fed_at: null, poop_size: 0 };
+        if (typeof d.digestion.poop_size !== 'number') d.digestion.poop_size = 0;
         if (!d.fighter || typeof d.fighter !== 'object') d.fighter = { hp: null, updated_at: null, frozen: false };
         if (typeof d.fighter.frozen !== 'boolean') d.fighter.frozen = false;
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
@@ -182,9 +191,22 @@ const GameState = {
             d.room.location = 'home';
         }
 
-        ['currencies', 'inventory', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
+        ['currencies', 'inventory', 'pantry', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
+
+        // Стартовый запас кухни выдаётся ОДИН раз и помечается флагом, а не
+        // «досыпается, если пусто»: иначе игрок, честно израсходовавший все
+        // продукты, получал бы их обратно при каждой перезагрузке.
+        if (typeof KITCHEN !== 'undefined' && !d.player.pantry_seeded) {
+            Object.keys(KITCHEN.startingPantry).forEach(key => {
+                d.pantry[key] = (d.pantry[key] || 0) + KITCHEN.startingPantry[key];
+            });
+            Object.keys(KITCHEN.startingLiquids).forEach(key => {
+                d.pantry[key] = (d.pantry[key] || 0) + KITCHEN.startingLiquids[key];
+            });
+            d.player.pantry_seeded = true;
+        }
         ['scars', 'ledger', 'requests'].forEach(key => {
             if (!Array.isArray(d[key])) d[key] = [];
         });

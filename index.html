@@ -202,6 +202,7 @@
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=4" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=2" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=1" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/pride/pride.css?v=6" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/envy/envy.css?v=1" media="print" onload="this.media='all'">
 </head>
@@ -824,76 +825,75 @@
         </div>
     </div>
 
-    <div id="gluttony-game" class="minigame-screen">
-        <div class="glut-modal">
-            <button id="glut-close-btn" class="glut-close-btn">&times;</button>
+    <!-- ЧРЕВОУГОДИЕ: КУХНЯ.
+         Окно (рамка, крестик, вопрос при выходе) надевает
+         src/core/minigame-window.js — здесь только содержимое (инвариант 8).
+         Три места кухни лежат в одной ленте .kt-world, камера ездит по ней
+         сдвигом; общий вид — та же лента, уменьшенная. -->
+    <div id="gluttony-game" class="minigame-screen" data-sin="gluttony">
 
-            <!-- ЭТАП 1: СТОЛ -->
-            <div class="glut-stage glut-stage-table" id="glut-stage-table">
-                <div class="glut-table" id="glut-table"></div>
-                <div class="glut-next-arrow" id="glut-next-table">▼</div>
-            </div>
+        <div class="kt-scene" id="kt-scene">
+            <div class="kt-world" id="kt-world">
 
-            <!-- ЭТАП 2: ВЕДРО -->
-            <div class="glut-stage glut-stage-bucket" id="glut-stage-bucket">
-                <div class="glut-bucket-scene">
-                    <div class="glut-bucket-outer" id="glut-bucket-outer">
-                        <div class="glut-lid-wrap" id="glut-lid-wrap">
-                            <div class="glut-lid-hint" id="glut-lid-hint">▲</div>
-                            <div class="glut-lid" id="glut-lid">
-                                <div class="glut-lid-handle"></div>
-                            </div>
+                <!-- МЕСТО 1: ХОЛОДИЛЬНИК -->
+                <section class="kt-spot" data-spot="fridge">
+                    <div class="kt-fridge" id="kt-fridge">
+                        <div class="kt-freezer"><span class="kt-freezer-ice">❄</span></div>
+                        <div class="kt-fridge-main"><span class="kt-fridge-handle"></span></div>
+                    </div>
+                </section>
+
+                <!-- МЕСТО 2: СТОЛ С ДОСКОЙ -->
+                <section class="kt-spot" data-spot="board">
+                    <div class="kt-table">
+                        <div class="kt-board" id="kt-board">
+                            <div class="kt-chop" id="kt-chop"></div>
+                            <div class="kt-knife" id="kt-knife">🔪</div>
                         </div>
-                        <div class="glut-bucket" id="glut-bucket-body">
-                            <div class="glut-bucket-fall-zone" id="glut-fall-zone"></div>
-                            <div class="glut-spoon" id="glut-spoon">
-                                <svg class="glut-spoon-svg" viewBox="0 0 28 120" preserveAspectRatio="xMidYMax meet">
-                                    <defs>
-                                        <linearGradient id="glut-handle-grad" x1="0" y1="0" x2="1" y2="0">
-                                            <stop offset="0%" stop-color="#ecd0a0"/>
-                                            <stop offset="55%" stop-color="#c9a06a"/>
-                                            <stop offset="100%" stop-color="#a4783f"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <rect x="8" y="10" width="12" height="110" rx="6"
-                                          fill="url(#glut-handle-grad)" stroke="#6b4a26" stroke-width="3" stroke-linejoin="round"/>
-                                    <circle cx="14" cy="14" r="12"
-                                            fill="url(#glut-handle-grad)" stroke="#6b4a26" stroke-width="3"/>
-                                </svg>
-                            </div>
+                        <div class="kt-queue" id="kt-queue"></div>
+                    </div>
+                </section>
+
+                <!-- МЕСТО 3: ПЛИТА -->
+                <section class="kt-spot" data-spot="stove">
+                    <div class="kt-bottles" id="kt-bottles"></div>
+                    <div class="kt-stove">
+                        <div class="kt-pot" id="kt-pot">
+                            <div class="kt-pot-fill" id="kt-pot-fill"></div>
+                            <div class="kt-pot-rim"></div>
                         </div>
                     </div>
-                </div>
-                <div class="glut-next-arrow" id="glut-next-bucket" style="display:none;">▼</div>
-            </div>
+                    <div class="kt-piles" id="kt-piles"></div>
+                    <div class="kt-stir" id="kt-stir">🥄</div>
+                </section>
 
-            <!-- ЭТАП 3: КОРМЛЕНИЕ -->
-            <div class="glut-stage glut-stage-feed" id="glut-stage-feed">
-                <div class="glut-feed-scene">
-                    <svg class="glut-worm-lying" id="glut-worm-lying" viewBox="0 0 320 200">
-                        <ellipse cx="200" cy="140" rx="90" ry="45" fill="#f2b8d6"/>
-                        <ellipse id="glut-belly" cx="150" cy="130" rx="70" ry="55" fill="#f6c9de" transform="scale(1)"/>
-                        <circle cx="90" cy="100" r="55" fill="#f2b8d6"/>
-                        <ellipse cx="70" cy="80" rx="16" ry="10" fill="#fff"/>
-                        <circle cx="70" cy="80" r="5" fill="#2a2a2a"/>
-                        <ellipse cx="110" cy="80" rx="16" ry="10" fill="#fff"/>
-                        <circle cx="110" cy="80" r="5" fill="#2a2a2a"/>
-                        <ellipse cx="90" cy="115" rx="26" ry="18" fill="#7a2233"/>
-                    </svg>
-                    <div class="glut-tilt-bucket" id="glut-tilt-bucket">🪣</div>
-                    <div class="glut-pour-layer" id="glut-pour-layer"></div>
-                </div>
-                <div class="glut-gauge-wrap">
-                    <div class="glut-gauge-bar" id="glut-gauge-bar"></div>
-                </div>
             </div>
-
-            <div class="glut-win-overlay" id="glut-win-overlay">
-                <div class="glut-win-text">Употребил!</div>
-            </div>
-
-            <div class="glut-fade" id="glut-fade"></div>
         </div>
+
+        <!-- ОТКРЫТЫЙ ХОЛОДИЛЬНИК: выезжает поверх сцены -->
+        <div class="kt-open-fridge" id="kt-open-fridge">
+            <div class="kt-shelves" id="kt-shelves"></div>
+            <button type="button" class="kt-confirm" id="kt-confirm">✓</button>
+        </div>
+
+        <!-- КОРМЁЖКА. Разметка та же, что была: этап работает и переписывать
+             его незачем — меняется только то, что было до него. -->
+        <div class="glut-stage glut-stage-feed" id="glut-stage-feed">
+            <div class="glut-feed-scene">
+                <div class="glut-tilt-bucket" id="glut-tilt-bucket"></div>
+                <div class="glut-pour-layer" id="glut-pour-layer"></div>
+            </div>
+            <div class="glut-gauge-wrap">
+                <div class="glut-gauge-bar" id="glut-gauge-bar"></div>
+            </div>
+        </div>
+
+        <!-- ИТОГ БЕЗ СЛОВ: размер кучки и сколько осколков она принесла -->
+        <div class="glut-win-overlay" id="glut-win-overlay">
+            <div class="kt-result" id="kt-result"></div>
+        </div>
+
+        <div class="glut-fade" id="glut-fade"></div>
     </div>
 
     <div id="pride-game" class="minigame-screen">
@@ -965,6 +965,10 @@
 <!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
      числа боя лежат там, предметы здесь. -->
 <script src="src/config/wrath-gear.js?v=4"></script>
+<!-- Каталог кухни: ингредиенты, жидкости, таблица качества блюда. Тоже
+     данные без логики, и тоже нужен состоянию (стартовая кладовая), поэтому
+     подключается до state.js. -->
+<script src="src/config/kitchen.js?v=1"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
 <script src="src/core/state.js?v=7"></script>
