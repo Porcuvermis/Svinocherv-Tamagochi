@@ -208,6 +208,8 @@ const GluttonyMinigame = {
         this.el('kt-board-items').innerHTML = '';
         this.el('kt-fridge').classList.remove('open');
         this.setAttr('kt-pot-fill', { height: 0, y: 772 });
+        this.el('kt-pot').removeAttribute('transform');
+        this.el('kt-pot').classList.remove('kt-dragging', 'kt-target');
         this.setOpacity('kt-flame', 0);
         this.setOpacity('kt-steam', 0);
         this.setOpacity('kt-spoon', 0);
@@ -356,6 +358,26 @@ const GluttonyMinigame = {
         return null;
     },
 
+    // Сколько увели палец от точки захвата. Порог перехода считается по
+    // ПУТИ, а не по конечной точке: жест один и тот же, где бы за предмет ни
+    // взялись — за левый край доски или за самую ручку.
+    // 50, а не больше: доску берут за ручку у самого правого края, и места
+    // вправо остаётся меньше полусотни точек. Порог, до которого нельзя
+    // дотянуться, — это тот же тупик, только молчаливый.
+    CARRY_MIN: 50,
+
+    carried(d, e) {
+        if (!d.from) return { dx: 0, dy: 0 };
+        const p = this.toStage(e);
+        return { dx: p.x - d.from.x, dy: p.y - d.from.y };
+    },
+
+    // Во сколько раз кухня уменьшена текущим наездом камеры.
+    camScale() {
+        const m = /scale\(([-\d.]+)\)/.exec(this.camEl.getAttribute('transform') || '');
+        return m ? +m[1] : 1;
+    },
+
     nodePos(node) {
         const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(node.getAttribute('transform') || '');
         return m ? { x: +m[1], y: +m[2] } : { x: 0, y: 0 };
@@ -481,8 +503,22 @@ const GluttonyMinigame = {
             g.dataset.home = JSON.stringify(spot);
             g.dataset.where = 'fridge';
             g.dataset.type = item.type;
-            if (!item.infinite) this.setCount(g, count);
+            this.countFor(g, key);
         });
+    },
+
+    // Цифра рядом с продуктом — это ОСТАТОК В КЛАДОВОЙ. У пищеблока остатка
+    // нет: он бесконечный, на то и страховка от тупика. Раньше на нём
+    // появлялся «0» — ровно противоположное тому, что есть на самом деле, —
+    // и не исчезал даже когда пищеблок возвращали в морозилку.
+    countFor(g, key) {
+        if (KITCHEN.ingredients[key] && KITCHEN.ingredients[key].infinite) {
+            const old = g.querySelector('.kt-count');
+            if (old) old.remove();
+            return;
+        }
+        const pantry = (GameState.data && GameState.data.pantry) || {};
+        this.setCount(g, Math.max(0, pantry[key] || 0));
     },
 
     setCount(g, n) {
@@ -530,8 +566,12 @@ const GluttonyMinigame = {
         if (ghostNode) {
             ghostNode.dataset.where = 'ghost';
             ghostNode.innerHTML = KITCHEN_ART.ghost(key, +ghostNode.dataset.seed);
-            const pantry = (GameState.data && GameState.data.pantry) || {};
-            this.setCount(ghostNode, Math.max(0, (pantry[key] || 0) - 1));
+            if (KITCHEN.ingredients[key].infinite) {
+                this.countFor(ghostNode, key);
+            } else {
+                const pantry = (GameState.data && GameState.data.pantry) || {};
+                this.setCount(ghostNode, Math.max(0, (pantry[key] || 0) - 1));
+            }
         }
         this.touched();
         return g;
@@ -545,8 +585,7 @@ const GluttonyMinigame = {
         if (entry.ghost) {
             entry.ghost.dataset.where = 'fridge';
             entry.ghost.innerHTML = KITCHEN_ART.ingredient(entry.key, +entry.ghost.dataset.seed);
-            const pantry = (GameState.data && GameState.data.pantry) || {};
-            this.setCount(entry.ghost, pantry[entry.key] || 0);
+            this.countFor(entry.ghost, entry.key);
         }
         // Остальные подвигаются в свои гнёзда: дырки в ряду читаются потерей.
         this.onBoard.forEach((o, n) => this.moveTo(o.el, KITCHEN_ART.FG.slots[n], 0, 0.62));
@@ -942,13 +981,23 @@ const GluttonyMinigame = {
     startDrag(e, node, kind) {
         e.preventDefault();
         node.classList.add('kt-dragging');
+        // Переносы предметов (доска, кастрюля) считаются ОТ ТОЧКИ ЗАХВАТА, а
+        // не от абсолютного положения пальца: иначе предмет прыгает под палец
+        // в момент нажатия, а порог перехода зависит от того, за какой край
+        // его взяли. Взяли за левый край доски — тащить надо было через пол
+        // экрана, за правый — она уезжала сразу.
+        const carry = kind === 'boardup' || kind === 'potdown' || kind === 'boardaway';
         this.drag = {
             node, kind,
             home: node.dataset.home ? JSON.parse(node.dataset.home) : null,
             scale: +(node.dataset.scale || 1),
-            base: kind === 'boardup' || kind === 'potdown' ? this.nodePos(node) : null
+            from: carry ? this.toStage(e) : null,
+            base: carry ? this.nodePos(node) : null
         };
         if (kind === 'pile' || kind === 'bottle' || kind === 'hose') this.el('kt-pot').classList.add('kt-target');
+        // Кастрюлю понесли — ложка убирается сразу. Иначе она остаётся висеть
+        // в воздухе там, где была кастрюля, и это видно весь перенос.
+        if (kind === 'potdown') this.setOpacity('kt-spoon', 0);
     },
 
     onMove(e) {
@@ -983,9 +1032,19 @@ const GluttonyMinigame = {
 
         if (d.kind === 'boardup' || d.kind === 'potdown' || d.kind === 'boardaway') {
             const p = this.toStage(e);
-            if (d.kind === 'boardup') this.moveTo(d.node, { x: 195, y: Math.min(KITCHEN_ART.FG.board.chop.y, p.y) });
+            const dx = p.x - d.from.x, dy = p.y - d.from.y;
+            // Предмет едет ровно настолько, насколько увели палец, и только в
+            // ту сторону, куда его несут: доску вправо, доску вверх, кастрюлю
+            // вниз. Обратный ход ничего не двигает — переносят, а не возят.
             if (d.kind === 'boardaway') {
-                this.moveTo(d.node, { x: Math.max(KITCHEN_ART.FG.board.fridge.x, p.x), y: KITCHEN_ART.FG.board.fridge.y });
+                this.moveTo(d.node, { x: d.base.x + Math.max(0, dx), y: d.base.y });
+            } else if (d.kind === 'boardup') {
+                this.moveTo(d.node, { x: d.base.x, y: d.base.y + Math.min(0, dy) });
+            } else {
+                // Кастрюля живёт в СЦЕНЕ, а палец меряется в стейдже: делим на
+                // масштаб камеры, иначе она отстаёт от пальца во столько же
+                // раз, во сколько кухня уменьшена наездом.
+                this.moveTo(d.node, { x: d.base.x, y: d.base.y + Math.max(0, dy) / this.camScale() });
             }
             return;
         }
@@ -1042,24 +1101,25 @@ const GluttonyMinigame = {
         }
 
         if (d.kind === 'boardaway') {
-            const p = this.toStage(e);
-            // Уехала вправо заметно — значит понесли резать.
-            if (p.x > KITCHEN_ART.FG.board.fridge.x + 110) { this.goToChop(); return; }
+            // Порог — ПУТЬ ПАЛЬЦА, а не место, куда он пришёл: жест один и
+            // тот же, где бы за доску ни взялись.
+            if (this.carried(d, e).dx > this.CARRY_MIN) { this.goToChop(); return; }
             this.moveTo(d.node, KITCHEN_ART.FG.board.fridge);
             return;
         }
 
         if (d.kind === 'boardup') {
-            const p = this.toStage(e);
             // Утащили доску заметно вверх — значит понесли к плите.
-            if (p.y < KITCHEN_ART.FG.board.chop.y - 120) { this.goToStove(); return; }
+            if (this.carried(d, e).dy < -this.CARRY_MIN) { this.goToStove(); return; }
             this.moveTo(d.node, KITCHEN_ART.FG.board.chop);
             return;
         }
 
         if (d.kind === 'potdown') {
-            const p = this.toStage(e);
-            if (p.y > 560) { this.goToFeed(); return; }
+            if (this.carried(d, e).dy > this.CARRY_MIN) { this.goToFeed(); return; }
+            // Не донёс — кастрюля возвращается на плиту, ложка вместе с ней.
+            this.moveTo(d.node, { x: 0, y: 0 });
+            this.setOpacity('kt-spoon', 1);
             return;
         }
 

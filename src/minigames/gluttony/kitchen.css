@@ -164,6 +164,12 @@
 /* Кастрюля подсвечивается, пока в руках что-то, что в неё можно положить. */
 #gluttony-game #kt-pot.kt-target { filter: drop-shadow(0 0 10px var(--mg-accent, #ff9500)); }
 
+/* Кастрюлю НЕСУТ вниз, к червю: за пальцем она едет без перехода (иначе
+   тянется следом и ощущается ватной), а не донёс — возвращается на плиту
+   сама, вот этим переходом. */
+#gluttony-game #kt-pot { transition: transform 0.42s cubic-bezier(0.3, 0.7, 0.25, 1); }
+#gluttony-game #kt-pot.kt-dragging { transition: none; }
+
 #gluttony-game #kt-spoon { transition: opacity 0.4s ease, transform 0.4s ease; }
 #gluttony-game #kt-spoon-body { transition: transform 0.12s ease-out; }
 

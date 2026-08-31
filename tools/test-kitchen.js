@@ -119,8 +119,9 @@ const { chromium } = require('playwright');
   }
 
   // Доску отодвигают вправо — тем же жестом, что и все остальные переходы.
-  // Доску берут за РУЧКУ справа: середина занята продуктами.
-  await dragPts(await atStage(boardAt.x + 150, boardAt.y),
+  // Доску берут за РУЧКУ справа: середина занята продуктами. Порог — ПУТЬ
+  // пальца, поэтому важно, сколько увели, а не куда пришли.
+  await dragPts(await atStage(boardAt.x + 130, boardAt.y),
                 await atStage(boardAt.x + 190, boardAt.y), 14);
   await waitCamera();
   await page.waitForTimeout(900);
@@ -147,7 +148,7 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: out + '5-chopped.png' });
 
   // Доску тянем вверх — она уходит к плите.
-  await dragPts(await atStage(345, 620), await atStage(345, 120), 14);
+  await dragPts(await atStage(345, 620), await atStage(345, 460), 14);
   await waitCamera();
   await page.waitForTimeout(900);
   say('фаза после подъёма доски: ' + await page.evaluate(() => GluttonyMinigame.phase));
@@ -211,7 +212,8 @@ const { chromium } = require('playwright');
 
   // Кастрюлю вниз — приходит червь.
   const potP = await page.evaluate(() => KITCHEN_ART.SLOTS.pot);
-  await dragPts(await atScene(potP.x, potP.y), await atStage(195, 720), 14);
+  const potFrom = await atScene(potP.x, potP.y);
+  await dragPts(potFrom, { x: potFrom.x, y: potFrom.y + 190 }, 14);
   await page.waitForTimeout(900);
   say('фаза: ' + await page.evaluate(() => GluttonyMinigame.phase));
   await page.screenshot({ path: out + '9-feed.png' });
