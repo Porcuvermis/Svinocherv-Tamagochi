@@ -61,6 +61,7 @@
 | Цвет, линия, стиль картинки | `docs/art-direction.md` + `src/core/palette.js` |
 | Холст, камера, комната | `docs/stage-and-room.md` |
 | Окно мини-игры | `docs/minigame-window.md` |
+| Предметы кухни по референсу (склад SVG) | `docs/kitchen-objects.md` |
 | Убрать слова из экрана | `docs/plan/11-no-words.md` |
 | Деплой, iPhone, service worker | `docs/deploy-iphone.md` |
 | «Почему это сделано так» | `docs/progress-log.md` — архив с указателем сверху |
@@ -82,6 +83,7 @@ NODE_PATH=/opt/node22/lib/node_modules node tools/<тест>.js /tmp/shot-
 | `test-kitchen.js` | Кухня целиком: холодильник → доска → нож → плита → кормёжка |
 | `test-kitchen-block.js` | Второй путь кухни: пищеблок, страховка от тупика |
 | `test-garden.js` | Сад и его стык с кухней: цикл грядки, удобрение, потолок склада, замкнутый круг |
+| `shot-kitchen-objects.js` + `diff-kitchen-objects.py` | Склад предметов кухни: снимки и промах относительно референса |
 | `test-no-words.js` | Ни одного слова на игровых экранах (инвариант 9) |
 | `test-pride.js` | Проходимость тщеславия |
 | `progression.js`, `sim-*.js`, `measure-power.js` | Числа баланса по живому конфигу |

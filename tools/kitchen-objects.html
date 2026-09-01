@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Кухня: склад предметов</title>
+<!--
+  МАСТЕРСКАЯ ПРЕДМЕТОВ КУХНИ (инструмент, не игра — слова здесь разрешены).
+
+  Три режима:
+    • склад   — каждый предмет отдельно, в своём габарите;
+    • сцена   — предметы, собранные в кадр 720×1440;
+    • сверка  — та же сцена с референсом поверх. Ползунок гоняет прозрачность:
+                при 50% сразу видно, какая грань уехала и на сколько.
+  Сверка — главный режим. Глаз врёт на смещениях меньше десятка единиц, а
+  наложение не врёт.
+
+  Открывать: python3 -m http.server 8777 → /tools/kitchen-objects.html
+-->
+<style>
+  body { margin: 0; background: #1b1b1f; color: #ddd;
+         font: 13px/1.5 system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: #111;
+           padding: 10px 14px; display: flex; gap: 16px; align-items: center; }
+  button { background: #2c2c33; color: #ddd; border: 1px solid #4a4a55;
+           border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button.on { background: #4a6; color: #061; border-color: #6d8; }
+  .shelf { display: flex; flex-wrap: wrap; gap: 18px; padding: 18px; }
+  figure { margin: 0; background: #f2ead7; border-radius: 8px; padding: 8px; }
+  figure.dark { background: #3a3a42; }
+  figcaption { color: #333; font-size: 11px; text-align: center; padding-top: 4px; }
+  figure.dark figcaption { color: #ccc; }
+  /* display:block обязателен: инлайновый svg тянет за собой строчный
+     отступ под базовую линию, стейдж становится на несколько единиц выше
+     1440, и снимок при сверке съезжает по вертикали. */
+  .stage { position: relative; width: 720px; margin: 18px auto; }
+  .stage svg { display: block; }
+  .stage img { position: absolute; inset: 0; width: 720px; height: 1440px;
+               pointer-events: none; }
+  .hidden { display: none; }
+</style>
+
+<header>
+  <button id="b-shelf" class="on">Склад</button>
+  <button id="b-scene">Сцена</button>
+  <button id="b-diff">Сверка</button>
+  <label>референс <input id="alpha" type="range" min="0" max="100" value="50"></label>
+  <span id="count"></span>
+</header>
+
+<div id="shelf" class="shelf"></div>
+
+<div id="stage" class="stage hidden">
+  <svg id="scene" width="720" height="1440" viewBox="0 0 720 1440"></svg>
+  <img id="ref" src="../docs/ref/kitchen.png" style="opacity:0">
+</div>
+
+<script src="../src/core/palette.js"></script>
+<script src="../src/minigames/gluttony/kitchen-objects.js"></script>
+<script>
+const KO = KITCHEN_OBJECTS;
+
+// Склад: всё, у чего есть box и draw. Порядок — как в файле.
+const items = Object.keys(KO).filter(k => KO[k] && KO[k].box && KO[k].draw);
+document.getElementById('count').textContent = items.length + ' предметов';
+
+const shelf = document.getElementById('shelf');
+for (const key of items) {
+    const o = KO[key], b = o.box;
+    // Крупные предметы ужимаем, мелкие показываем крупно: на складе важно
+    // рассмотреть деталь, а не сохранить масштаб сцены.
+    const scale = Math.min(3, Math.max(0.4, 260 / Math.max(b.w, b.h)));
+    const fig = document.createElement('figure');
+    if (/handle|knife|faucet/.test(key)) fig.className = 'dark';
+    fig.innerHTML =
+        '<svg width="' + (b.w * scale).toFixed(0) + '" height="' + (b.h * scale).toFixed(0) +
+        '" viewBox="' + b.x + ' ' + b.y + ' ' + b.w + ' ' + b.h + '">' + o.draw() + '</svg>' +
+        '<figcaption>' + key + '<br>' + b.w + '×' + b.h + '</figcaption>';
+    shelf.appendChild(fig);
+}
+
+document.getElementById('scene').innerHTML = KO.scene ? KO.scene() :
+    items.map(k => KO[k].draw()).join('');
+
+const show = (mode) => {
+    document.getElementById('shelf').classList.toggle('hidden', mode !== 'shelf');
+    document.getElementById('stage').classList.toggle('hidden', mode === 'shelf');
+    document.getElementById('ref').style.opacity =
+        mode === 'diff' ? document.getElementById('alpha').value / 100 : 0;
+    for (const id of ['shelf', 'scene', 'diff'])
+        document.getElementById('b-' + id).classList.toggle('on', id === mode);
+    window.koMode = mode;
+};
+document.getElementById('b-shelf').onclick = () => show('shelf');
+document.getElementById('b-scene').onclick = () => show('scene');
+document.getElementById('b-diff').onclick = () => show('diff');
+document.getElementById('alpha').oninput = () => { if (window.koMode === 'diff') show('diff'); };
+</script>
