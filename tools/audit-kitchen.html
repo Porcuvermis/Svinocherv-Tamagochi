@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Аудит кухни</title>
+<!-- Голая площадка для аудита (tools/audit-kitchen.js): ни стилей, ни игры,
+     только палитра и предметы. Фон ЯДОВИТО-РОЗОВЫЙ и нигде в палитре не
+     встречается — по нему и находятся дыры: всё, что просвечивает розовым
+     внутри собранной сцены, значит не нарисовано. -->
+<style>
+  html, body { margin: 0; background: #ff00ff; }
+  svg { display: block; background: #ff00ff; }
+</style>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="../src/core/palette.js"></script>
+<script src="../src/config/kitchen.js"></script>
+<script src="../src/minigames/gluttony/kitchen-objects.js"></script>
+<script src="../src/minigames/gluttony/kitchen-art.js"></script>
+<script>
+// Показать произвольную разметку в произвольном окне.
+window.show = (markup, box, scale) => {
+    const svg = document.getElementById('stage');
+    svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+    svg.setAttribute('width', Math.round(box.w * scale));
+    svg.setAttribute('height', Math.round(box.h * scale));
+    svg.innerHTML = markup;
+    return { w: Math.round(box.w * scale), h: Math.round(box.h * scale) };
+};
+</script>

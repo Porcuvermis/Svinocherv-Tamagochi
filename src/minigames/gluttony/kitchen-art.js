@@ -264,6 +264,7 @@ const KITCHEN_ART = {
         ${O.window.draw()}
         ${O.sill.draw()}
         ${O.floor.draw()}
+        ${O.floorShade.draw()}
         ${O.counter.draw()}
         ${O.cooktop.draw()}
 
@@ -289,8 +290,28 @@ const KITCHEN_ART = {
         </g>
         ${O.sparkle.draw()}
 
+        <!-- ---------- КАСТРЮЛЯ ---------- -->
+        <g id="kt-pot" class="kt-hot">
+            ${O.pot.draw({ lid: false })}
+            <g clip-path="url(#kt-pot-clip)">
+                <rect id="kt-pot-fill" x="293" y="516" width="146" height="0"
+                      fill="${s.broth[500]}" opacity="0.82"/>
+            </g>
+            <g id="kt-steam" opacity="0">
+                <path d="M330 400 q-10 -26 4 -46 q12 -20 2 -40" fill="none"
+                      stroke="${s.wall.hi}" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+                <path d="M392 396 q10 -24 -4 -44 q-10 -20 0 -38" fill="none"
+                      stroke="${s.wall.hi}" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
+            </g>
+            ${ktGrab(84, 76, 468, 365)}
+        </g>
+
         <!-- ---------- ХОЛОДИЛЬНИК ---------- -->
-        <!-- Ручки лежат ВНУТРИ дверей: они к ним привинчены и обязаны
+        <!-- Холодильник идёт ПОСЛЕ кастрюли: он ближе к камере. Пока он был
+             раньше, левая ручка кастрюли рисовалась поверх белой дверцы —
+             тёмный крюк посреди холодильника, и это было первое, что видно
+             на общем виде.
+             Ручки лежат ВНУТРИ дверей: они к ним привинчены и обязаны
              уезжать вместе с ними. Снаружи они оставались висеть в воздухе
              посреди открытого холодильника. -->
         <g id="kt-fridge" class="kt-hot">
@@ -306,22 +327,6 @@ const KITCHEN_ART = {
                 ${O.fridgeHandleBottom.draw()}
                 ${ktGrab(126, 210, 700, 172)}
             </g>
-        </g>
-
-        <!-- ---------- КАСТРЮЛЯ ---------- -->
-        <g id="kt-pot" class="kt-hot">
-            ${O.pot.draw({ lid: false })}
-            <g clip-path="url(#kt-pot-clip)">
-                <rect id="kt-pot-fill" x="293" y="516" width="146" height="0"
-                      fill="${s.broth[500]}" opacity="0.82"/>
-            </g>
-            <g id="kt-steam" opacity="0">
-                <path d="M330 400 q-10 -26 4 -46 q12 -20 2 -40" fill="none"
-                      stroke="${s.wall.hi}" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
-                <path d="M392 396 q10 -24 -4 -44 q-10 -20 0 -38" fill="none"
-                      stroke="${s.wall.hi}" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
-            </g>
-            ${ktGrab(84, 76, 468, 365)}
         </g>
 
         <!-- Струя из бутыли или лейки. Стоит ПОСЛЕ кастрюли и целится в саму
@@ -427,9 +432,11 @@ const KITCHEN_ART = {
             <!-- клинок шеф-ножа: обух прямой, брюшко выпуклое, остриё далеко -->
             <path d="M8 -14 H-150 q-26 3 -36 13 q26 8 66 11 q60 4 112 4 H8 Z"
                   fill="url(#kt-fg-blade)"/>
-            <!-- спуск: узкая светлая полоса вдоль самой кромки -->
-            <path d="M-176 -1 q30 8 76 11 q46 4 100 3" fill="none"
-                  stroke="${k.bladeHi}" stroke-width="3.4" stroke-linecap="round"/>
+            <!-- Спуск: узкая светлая полоса вдоль кромки. Идёт на полторы
+                 единицы ВЫШЕ самой кромки: обводка шириной 3.4 иначе
+                 вылезает наружу, и под клинком висит белая нитка. -->
+            <path d="M-172 -3 q30 8 74 10 q46 4 98 3" fill="none"
+                  stroke="${k.bladeHi}" stroke-width="3" stroke-linecap="round"/>
             <!-- Зона захвата ПОВОРАЧИВАЕТСЯ вместе с ножом, поэтому она
                  заметно выше самого лезвия: на поднятом ноже узкая полоса
                  уходит из-под пальца, и нож перестаёт браться. -->
