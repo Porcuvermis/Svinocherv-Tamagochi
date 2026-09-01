@@ -303,15 +303,41 @@ const LocalBackend = {
         return beds;
     },
 
-    // Шкала лени растёт ЗА ДЕЙСТВИЕ, и начисляет её Backend, а не мини-игра
-    // (инвариант 2). Награда за присутствие в саду была бы наградой за то,
-    // что игрок не играет (docs/plan/19-sloth-garden.md, раздел 5).
+    // Шкала лени растёт от ДВУХ вещей сразу, и начисляет её Backend, а не
+    // мини-игра (инвариант 2):
+    //   * за действие — сразу кусок (GARDEN.actionFill);
+    //   * за ПРЕБЫВАНИЕ на экране сада — минута безделья закрывает шкалу
+    //     целиком (slothWatch ниже).
+    //
+    // Пребывание засчитывается именно лени и никому больше: это её суть —
+    // потребность, которая закрывается ничегонеделанием. Для любого другого
+    // греха такая награда означала бы «положи телефон и выиграешь».
     gardenFill(action) {
         const add = GARDEN.actionFill[action] || 0;
         if (!add) return 0;
         const max = GameState.maxValue('sloth');
         GameState.setSinValue('sloth', Math.min(max, GameState.sinValue('sloth') + add));
         return add;
+    },
+
+    // Пребывание в саду. Считается ФОРМУЛОЙ от метки (инвариант 1): экран
+    // отдаёт время своего открытия, получает добавку и новую метку. Ничего
+    // не «накручивается» в таймере — если между двумя вызовами прошло десять
+    // секунд или десять минут, результат одинаково выводится из разницы.
+    //
+    // Метка хранится в ПАМЯТИ экрана, а не в сейве: иначе игрок, закрывший
+    // игру с открытым садом, вернулся бы через сутки к полной шкале, ничего
+    // не сделав. Пребывание нельзя накопить оффлайн — на то оно и пребывание.
+    slothWatch(mark) {
+        const now = GameTime.now();
+        const dt = now - (mark || now);
+        if (!(dt > 0)) return { fill: 0, mark: now };
+        const max = GameState.maxValue('sloth');
+        const add = max * Math.min(dt, GARDEN.WATCH_FULL_MS * 4) / GARDEN.WATCH_FULL_MS;
+        const was = GameState.sinValue('sloth');
+        if (was >= max) return { fill: 0, mark: now };
+        GameState.setSinValue('sloth', Math.min(max, was + add));
+        return { fill: add, mark: now };
     },
 
     // Одно действие над грядкой. Возвращает { ok, what } — что именно
@@ -323,14 +349,24 @@ const LocalBackend = {
         const o = opts || {};
         const res = { ok: false, action };
 
-        if (action === 'dig' && bed.stage === 'locked') {
+        if (action === 'clear' && bed.stage === 'locked') {
+            // Завал разбирают РУКАМИ, а не лопатой: лопата занята лункой, и
+            // один инструмент на два разных дела путает — игрок тащил лопату
+            // на расчищенную грядку и не понимал, почему ничего не выходит.
             bed.stage = 'empty';
-            // Копание — единственный источник, не завязанный на чревоугодие:
-            // без него игрок, не готовящий еду, остался бы вообще без валюты
-            // и без магазина (план, раздел 7).
+            // Находка в завале — единственный источник, не завязанный на
+            // чревоугодие: без него игрок, не готовящий еду, остался бы вообще
+            // без валюты и без магазина (план, раздел 7). Один раз на грядку:
+            // на копке лунки, которая повторяется каждую посадку, находка
+            // превратила бы посев в печатный станок.
             res.find = this.gardenDigFind();
             res.ok = true;
-        } else if (action === 'sow' && bed.stage === 'empty') {
+        } else if (action === 'dig' && bed.stage === 'empty') {
+            // Лунка под семя. Копают её ПЕРЕД КАЖДОЙ посадкой: после сбора
+            // грядка снова становится просто расчищенной землёй.
+            bed.stage = 'dug';
+            res.ok = true;
+        } else if (action === 'sow' && bed.stage === 'dug') {
             const seeds = GameState.data.garden.seeds || [];
             const key = seeds.indexOf(o.species) !== -1 ? o.species : seeds[0];
             if (!key) return { ok: false };
@@ -361,6 +397,9 @@ const LocalBackend = {
             bed.at = GameTime.now();
             res.ok = true;
         } else if (action === 'harvest' && bed.stage === 'ripe') {
+            // Собранная грядка возвращается в 'empty', а не в 'dug': лунка
+            // осыпается вместе с выдернутым растением, и следующий круг
+            // начинается снова с лопаты.
             res.grown = bed.species;
             res.taken = this.gardenStore(bed.species, 1);
             bed.stage = 'empty';

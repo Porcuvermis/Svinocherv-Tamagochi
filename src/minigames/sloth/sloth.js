@@ -3,8 +3,8 @@
 // Интерфейс диегетический, как на кухне: инструмент ТАЩАТ на грядку, а не
 // выбирают в меню. Слов нет ни одного (инвариант 9), окно общее (инвариант 8).
 //
-// ---------- ДВА МАСШТАБА ВРЕМЕНИ ----------
-//   вскопал → посеял → полил
+// ---------- КРУГ ГРЯДКИ ----------
+//   разобрал завал (рукой) → вскопал лунку → посеял → полил
 //        └─ ЭТАП 1: часы, идёт ОФФЛАЙН, ускоряется удобрением
 //   прополол
 //        └─ ЭТАП 2: минуты, идёт в сессии, сокращается граблями
@@ -14,16 +14,23 @@
 // (инвариант 1), и спрашивают его у Backend в момент отрисовки. Поэтому сад
 // можно закрыть на неделю, и он не «догоняет» время при следующем открытии.
 //
-// ---------- ПОЧЕМУ ШКАЛА РАСТЁТ ЗА ДЕЙСТВИЯ ----------
-// Задумка «шкала растёт от времени в мини-игре» отвергнута: тогда лучшая
-// стратегия во всей игре — открыть сад и положить телефон, то есть механика
-// награждает ровно за отсутствие игрока. Растёт она за вскопал/посеял/полил/
-// прополол/собрал, и начисляет её Backend, а не этот файл (инвариант 2).
+// ---------- ПОЧЕМУ ШКАЛА РАСТЁТ И ОТ ПРЕБЫВАНИЯ ----------
+// Лень — единственный грех, которому «положил телефон и ничего не делаешь»
+// не противоречит, а ровно соответствует. Поэтому шкала растёт от двух вещей
+// сразу: минута в саду закрывает её целиком сама, каждое действие даёт пятую
+// часть. Возиться быстрее, чем сидеть, — иначе сад незачем открывать.
+//
+// Тикающего счётчика при этом нет (инвариант 1): экран держит МЕТКУ времени
+// открытия, а добавку считает Backend формулой от разницы меток. Метка живёт
+// в памяти экрана, а не в сейве — пребывание нельзя накопить, закрыв игру с
+// открытым садом.
 //
 // ---------- ЧТО ПОКАЗЫВАЕТ ВРЕМЯ ----------
-// Часы и минуты показать нечем: цифра «осталось 2 ч» — это подпись, а подписей
-// в игре нет. Вместо неё растёт само растение: чем ближе срок, тем оно выше.
-// Шкала и картинка — один и тот же объект.
+// Двумя вещами сразу: растение тем выше, чем ближе срок, а в кольце над
+// грядкой стоят цифры — сколько осталось. Кольцо без цифр отвечало только
+// «скоро/не скоро», а решение «ждать или скинуть какашкой» принимается по
+// разнице между двумя часами и двадцатью минутами. Цифра не слово
+// (инвариант 9).
 const SlothMinigame = {
     screenElement: null,
     win: null,
@@ -80,6 +87,9 @@ const SlothMinigame = {
         this.camX = 0;
         this.drag = null;
         this.locked = false;
+        // Метка пребывания ставится ЗАНОВО при каждом открытии: время, пока
+        // сад был закрыт, лени не засчитывается.
+        this.watchMark = GameTime.now();
         this.render();
         if (typeof GardenDebug !== 'undefined') GardenDebug.render();
         // Один кадровый цикл на весь сад: он двигает только КАРТИНКУ —
@@ -88,9 +98,23 @@ const SlothMinigame = {
     },
 
     close() {
+        // Досчитать пребывание за последний неполный кусок и записать: иначе
+        // секунды между последней отрисовкой и выходом пропадают.
+        this.settleWatch();
+        GameState.save();
+        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
         this.screenElement.classList.remove('active');
         if (this.tickId) { clearInterval(this.tickId); this.tickId = null; }
         this.drag = null;
+        this.watchMark = 0;
+    },
+
+    // Пребывание: считает Backend, экран только отдаёт метку и забирает новую.
+    settleWatch() {
+        if (!this.watchMark) return 0;
+        const r = Backend.slothWatch(this.watchMark);
+        this.watchMark = r.mark;
+        return r.fill;
     },
 
     // ---------- КООРДИНАТЫ ----------
@@ -117,17 +141,24 @@ const SlothMinigame = {
     // разбирать, что именно изменилось, дороже, чем собрать строку заново.
     render() {
         if (!this.camEl) return;
+        // Пребывание досчитывается на каждой отрисовке: раз в секунду шкала и
+        // так перерисовывается, второго механизма для этого не нужно.
+        this.settleWatch();
         const beds = Backend.gardenSettle();
         beds.forEach((bed, i) => {
             const g = document.getElementById('gd-bed-' + i);
             if (!g) return;
             g.setAttribute('transform', `translate(${GARDEN_ART.bedX(i)} 0)`);
             const growth = this.growthOf(bed);
-            const plant = bed.species ? PlantModel.generate(bed.species, bed.seed) : null;
-            g.innerHTML = GARDEN_ART.bed(bed.stage, {
+            const plant = bed.species ? PlantModel.generate(bed.species, bed.seed || 1) : null;
+            // Содержимое грядки лежит во ВЛОЖЕННОЙ группе. Анимации приседания
+            // и сбора правят transform, а на внешней группе им записана
+            // позиция грядки в сцене — совпав, они выкидывали грядку к нулю,
+            // и она прыгала через весь экран (docs/traps.md, п. 2).
+            g.innerHTML = `<g class="gd-bed-in">` + GARDEN_ART.bed(bed.stage, {
                 seed: bed.seed || (i + 1) * 17,
-                plant, growth, fruitKey: bed.species
-            }) + this.badgeFor(bed, plant, growth);
+                uid: i, plant, growth, fruitKey: bed.species
+            }) + this.badgeFor(bed, plant, growth) + `</g>`;
         });
         this.renderTools();
         this.renderGauge();
@@ -135,7 +166,9 @@ const SlothMinigame = {
 
     // Что грядка просит прямо сейчас. Одна таблица на всё: если состоянию
     // нечего сюда положить, значит от игрока в нём ничего не ждут.
-    NEED: { locked: 'spade', empty: 'seed', sown: 'can', weedy: 'rake', ripe: 'hand' },
+    // Порядок тот же, что у полки с инструментами: рука → лопата → семечко →
+    // лейка → грабли → рука.
+    NEED: { locked: 'hand', empty: 'spade', dug: 'seed', sown: 'can', weedy: 'rake', ripe: 'hand' },
 
     // Значок висит НАД растением, а не на фиксированной высоте: иначе выросший
     // куст закрывает собой ровно ту подсказку, которая к нему относится.
@@ -143,9 +176,13 @@ const SlothMinigame = {
         const need = this.NEED[bed.stage];
         const waiting = bed.stage === 'growing' || bed.stage === 'ripening';
         if (!need && !waiting) return '';
-        const top = plant ? 40 + plant.heightFrac * 180 * growth : 30;
-        const y = Math.max(120, GARDEN_ART.SOIL_Y - top - 52);
-        const art = waiting ? GARDEN_ART.badge('wait', growth) : GARDEN_ART.badge(need);
+        // Высоту куста спрашиваем у того же кода, который его рисует: свой
+        // расчёт разъезжается с настоящим, и значок садится кусту на голову.
+        const top = plant ? GARDEN_ART.plantHeight(plant, growth) + 18 : 30;
+        const y = Math.max(120, GARDEN_ART.SOIL_Y - top - 56);
+        const art = waiting
+            ? GARDEN_ART.badge('wait', growth, Backend.gardenLeft(bed))
+            : GARDEN_ART.badge(need);
         return `<g transform="translate(0 ${y.toFixed(0)})">${art}</g>`;
     },
 
@@ -162,28 +199,47 @@ const SlothMinigame = {
 
     // Доля роста: от неё зависит высота растения, и она же — единственная
     // видимая шкала времени в саду.
+    //
+    // Рост идёт СКВОЗЬ ОБА ЭТАПА одной непрерывной линией: этап 1 поднимает
+    // куст с нуля до трёх четвертей, этап 2 доводит до полного. Считать
+    // каждый этап от нуля было ошибкой — прополотая грядка внезапно
+    // становилась ростком, и выходило, что прополка растение уменьшила.
+    GROW_STAGE1: 0.74,
+
     growthOf(bed) {
-        if (!bed.at) return bed.stage === 'ripe' || bed.stage === 'weedy' ? 1 : 0.1;
         const left = Backend.gardenLeft(bed);
         const tools = Backend.gardenTools();
-        let total;
         if (bed.stage === 'growing') {
+            if (!bed.at) return 0.1;
             const hours = GARDEN.CAN_HOURS[Math.min(tools.can, GARDEN.CAN_HOURS.length - 1)];
-            total = Math.max(1, hours - (bed.skipped || 0) * GARDEN.FERT_HOURS_PER_DUNG) * 3600000;
-        } else {
-            const mins = GARDEN.RAKE_MINUTES[Math.min(tools.rake, GARDEN.RAKE_MINUTES.length - 1)];
-            total = mins * ((GARDEN.species[bed.species] || {}).stage2 || 1) * 60000;
+            const total = Math.max(1, hours - (bed.skipped || 0) * GARDEN.FERT_HOURS_PER_DUNG) * 3600000;
+            const done = Math.max(0, Math.min(1, 1 - left / total));
+            return 0.1 + done * (this.GROW_STAGE1 - 0.1);
         }
-        return Math.max(0.1, Math.min(1, 1 - left / total));
+        if (bed.stage === 'weedy') return this.GROW_STAGE1;
+        if (bed.stage === 'ripening') {
+            if (!bed.at) return this.GROW_STAGE1;
+            const mins = GARDEN.RAKE_MINUTES[Math.min(tools.rake, GARDEN.RAKE_MINUTES.length - 1)];
+            const total = mins * ((GARDEN.species[bed.species] || {}).stage2 || 1) * 60000;
+            const done = Math.max(0, Math.min(1, 1 - left / total));
+            return this.GROW_STAGE1 + done * (1 - this.GROW_STAGE1);
+        }
+        return bed.stage === 'ripe' ? 1 : 0.1;
     },
 
     // ---------- ИНСТРУМЕНТЫ ----------
     // Полка с инструментами лежит в переднем плане: она не уезжает вместе с
     // участком, потому что инструменты игрок держит при себе.
+    // Полка выложена ПО ПОРЯДКУ ПРИМЕНЕНИЯ, слева направо, как круг грядки и
+    // идёт: лопата (лунка) → семена (посев) → лейка (полив) → какашка
+    // (удобрение) → грабли (прополка). Порядок сам по себе объясняет цикл, и
+    // искать нужную вещь не приходится — она следующая справа.
     tools() {
-        const list = [{ kind: 'spade' }, { kind: 'can' }, { kind: 'rake' }];
+        const list = [{ kind: 'spade' }];
         (GameState.data.garden.seeds || []).forEach(key => list.push({ kind: 'seed', key }));
+        list.push({ kind: 'can' });
         if (GameState.currency('dung') > 0) list.push({ kind: 'dung' });
+        list.push({ kind: 'rake' });
         return list;
     },
 
@@ -219,11 +275,13 @@ const SlothMinigame = {
         }
 
         const bed = t.closest ? t.closest('.gd-bed') : null;
-        // Тап по спелой грядке — сбор. Плод срывают рукой, инструмент для
-        // этого не нужен, и заводить его было бы лишним предметом на полке.
+        // Что делают РУКАМИ: разбирают завал на новой грядке и срывают спелый
+        // плод. Инструмента для этого нет и не будет — рука уже есть у
+        // каждого, а лишний предмет на полке пришлось бы объяснять.
         if (bed) {
             const i = +bed.dataset.bed;
             const state = Backend.gardenBed(i);
+            if (state && state.stage === 'locked') { this.act(i, 'clear'); return; }
             if (state && state.stage === 'ripe') { this.act(i, 'harvest'); return; }
         }
 
@@ -271,7 +329,7 @@ const SlothMinigame = {
     allowed(d, i) {
         const bed = Backend.gardenBed(i);
         if (!bed) return false;
-        const need = { dig: 'locked', sow: 'empty', water: 'sown', weed: 'weedy', fertilize: 'growing' };
+        const need = { dig: 'empty', sow: 'dug', water: 'sown', weed: 'weedy', fertilize: 'growing' };
         return bed.stage === need[this.actionOf(d)];
     },
 
@@ -296,11 +354,11 @@ const SlothMinigame = {
 
         this.locked = true;
         if (action === 'water') this.pour(i);
-        const g = document.getElementById('gd-bed-' + i);
-        if (g) { g.classList.remove('gd-act'); void g.getBoundingClientRect(); g.classList.add('gd-act'); }
+        this.bump(i, 'gd-act');
 
         setTimeout(() => {
             this.locked = false;
+            GameState.save();
             this.render();
             if (res.grown) this.flyToPantry(i);
             // Шкала дёргается на каждом действии: без этого игрок не связывает
@@ -315,12 +373,20 @@ const SlothMinigame = {
     },
 
     // Отказ, сказанный движением: написать «сюда нельзя» нечем.
-    refuse(i) {
+    refuse(i) { this.bump(i, 'gd-no'); },
+
+    // Любая анимация грядки вешается на ВЛОЖЕННУЮ группу. На внешней записана
+    // позиция грядки в сцене (`transform="translate(x 0)"`), и CSS-анимация,
+    // правящая transform, стирала её на время проигрывания: грядка прыгала к
+    // левому краю экрана и возвращалась. Ровно тот же случай, что с пульсом
+    // значка (docs/traps.md, п. 2).
+    bump(i, cls) {
         const g = document.getElementById('gd-bed-' + i);
-        if (!g) return;
-        g.classList.remove('gd-no');
-        void g.getBoundingClientRect();
-        g.classList.add('gd-no');
+        const inner = g && g.querySelector('.gd-bed-in');
+        if (!inner) return;
+        inner.classList.remove(cls);
+        void inner.getBoundingClientRect();
+        inner.classList.add(cls);
     },
 
     // ---------- ПОЛИВ ----------
@@ -343,13 +409,7 @@ const SlothMinigame = {
 
     // Собранный плод улетает вниз — туда, где кладовая. Связь «сад кормит
     // кухню» показывается движением, а не объяснением.
-    flyToPantry(i) {
-        const g = document.getElementById('gd-bed-' + i);
-        if (!g) return;
-        g.classList.remove('gd-harvest');
-        void g.getBoundingClientRect();
-        g.classList.add('gd-harvest');
-    }
+    flyToPantry(i) { this.bump(i, 'gd-harvest'); }
 };
 
 if (typeof window !== 'undefined') window.SlothMinigame = SlothMinigame;

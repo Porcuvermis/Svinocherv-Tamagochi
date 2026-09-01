@@ -74,6 +74,11 @@ const GardenDebug = {
             GameState.data.garden.seeds = Object.keys(GARDEN.species);
         } else if (act === 'open') {
             this.beds().forEach(b => { if (b.stage === 'locked') b.stage = 'empty'; });
+        } else if (act === 'dig') {
+            // Круг стал длиннее на одно действие (лунка перед посадкой), и
+            // без этой кнопки любая проверка посева начинается с шести
+            // перетаскиваний лопаты.
+            this.beds().forEach(b => { if (b.stage === 'empty') b.stage = 'dug'; });
         } else if (act === 'reset') {
             this.beds().forEach((b, i) => {
                 b.stage = i < GARDEN.BEDS_OPEN ? 'empty' : 'locked';
@@ -115,6 +120,7 @@ const GardenDebug = {
              </div>
              <div class="gd-debug-row">
                 <button data-act="open">открыть грядки</button>
+                <button data-act="dig">вскопать</button>
                 <button data-act="seeds">все семена</button>
                 <button data-act="sloth0">шкала 0 (${Math.round(GameState.sinValue('sloth'))})</button>
                 <button data-act="reset">сброс сада</button>

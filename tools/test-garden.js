@@ -42,7 +42,12 @@ const { chromium } = require('playwright');
       ', семян: ' + await page.evaluate(() => GameState.data.garden.seeds.join(',')));
 
   // ---------- ЦИКЛ ГРЯДКИ ----------
+  // Порядок жёсткий: сначала лунка лопатой, только потом семя. Проверяется
+  // именно отказ — «посеял в нетронутую землю» должен быть невозможен, иначе
+  // лопата снова окажется декорацией.
   say('\n--- цикл грядки ---');
+  say('посев без лунки: ' + await act(0, 'sow', { species: 'potato' }) + '  (ok:false — верно)');
+  say('лунка: ' + await act(0, 'dig'));
   say('посев:  ' + await act(0, 'sow', { species: 'potato' }));
   say('полив:  ' + await act(0, 'water'));
   say('состояние: ' + await bed());
@@ -71,6 +76,7 @@ const { chromium } = require('playwright');
   // ---------- УДОБРЕНИЕ ----------
   say('\n--- удобрение: какашка снимает час ---');
   await page.evaluate(() => { GameState.addCurrency('dung', 5); GameState.save(); });
+  await act(0, 'dig');
   await act(0, 'sow', { species: 'herb' });
   await act(0, 'water');
   const h0 = await page.evaluate(() => Backend.gardenLeft(GameState.data.garden.beds[0]) / 3600000);
@@ -95,16 +101,122 @@ const { chromium } = require('playwright');
   say('потолок ' + cap + ', кладём ещё один → влезло ' + put +
       (put === 0 ? '  ✓ склад не резиновый' : '  ✗ ПОТОЛОК НЕ РАБОТАЕТ'));
 
-  // ---------- ШКАЛА ЛЕНИ ОТ ДЕЙСТВИЙ ----------
-  say('\n--- шкала лени растёт за действия, а не за присутствие ---');
+  // ---------- ШКАЛА ЛЕНИ ----------
+  // Лень — единственный грех, который наполняется и САМИМ ПРЕБЫВАНИЕМ на
+  // экране: минута безделья закрывает шкалу целиком. Проверяется, что
+  // пребывание считается ФОРМУЛОЙ от метки (инвариант 1), а не тикает: метку
+  // отматываем на полминуты и ждём ровно половину шкалы.
+  say('\n--- шкала лени: пребывание и действия ---');
   await page.evaluate(() => { GameState.setSinValue('sloth', 0); GameState.save(); });
-  const s0 = await page.evaluate(() => Math.round(GameState.sinValue('sloth')));
-  await page.waitForTimeout(1200);      // просто постоять в саду
+  const half = await page.evaluate(() => {
+    const r = Backend.slothWatch(GameTime.now() - 30000);   // «полминуты в саду»
+    return Math.round(r.fill);
+  });
+  say('полминуты пребывания: +' + half + (Math.abs(half - 50) <= 2 ? '  ✓ половина шкалы' : '  ✗ НЕ ТА СКОРОСТЬ'));
+
+  await page.evaluate(() => { GameState.setSinValue('sloth', 0); GameState.save(); });
   const s1 = await page.evaluate(() => Math.round(GameState.sinValue('sloth')));
-  await act(1, 'sow', { species: 'potato' });
+  await act(1, 'dig');
   const s2 = await page.evaluate(() => Math.round(GameState.sinValue('sloth')));
-  say('простояли секунду: ' + s0 + ' → ' + s1 + (s1 <= s0 ? '  ✓ ничего не накапало' : '  ✗ ШКАЛА ТИКАЕТ'));
-  say('одно действие:     ' + s1 + ' → ' + s2 + (s2 > s1 ? '  ✓ выросла' : '  ✗ ДЕЙСТВИЕ НЕ СЧИТАЕТСЯ'));
+  say('одно действие:        ' + s1 + ' → ' + s2 + (s2 - s1 === 20 ? '  ✓ пятая часть шкалы' : '  ✗ ДЕЙСТВИЕ НЕ СЧИТАЕТСЯ'));
+
+  // Живьём: открытый сад сам наполняет шкалу, закрытый — нет.
+  await page.evaluate(() => { GameState.setSinValue('sloth', 0); GameState.save(); GameManager.handleSinAction('sloth'); });
+  await page.waitForTimeout(2400);
+  const live = await page.evaluate(() => Math.round(GameState.sinValue('sloth')));
+  await page.evaluate(() => SlothMinigame.close());
+  const afterClose = await page.evaluate(() => Math.round(GameState.sinValue('sloth')));
+  await page.waitForTimeout(1500);
+  const idle = await page.evaluate(() => Math.round(GameState.sinValue('sloth')));
+  say('две секунды в саду:   0 → ' + live + (live >= 2 ? '  ✓ капает' : '  ✗ ПРЕБЫВАНИЕ НЕ СЧИТАЕТСЯ'));
+  say('полторы вне сада:     ' + afterClose + ' → ' + idle + (idle <= afterClose ? '  ✓ вне сада не капает' : '  ✗ КАПАЕТ ЗАКРЫТЫМ'));
+
+  // ---------- ПАЛЬЦЕМ ПО ЭКРАНУ ----------
+  // Всё, что выше, дёргает Backend напрямую. Здесь проверяется ровно то, что
+  // делает игрок: тап рукой по завалу, перетаскивание инструмента на грядку и
+  // порядок вещей на полке. Именно тут ломается тихо — таблица «что чем» и
+  // зоны захвата живут отдельно от правил, и разъезжаются они молча.
+  say('\n--- пальцем по экрану ---');
+  await page.evaluate(() => {
+    GameState.data.garden.beds.forEach((b, i) => Object.assign(b, {
+      stage: i === 0 ? 'locked' : 'empty', species: null, seed: 0, at: null, skipped: 0
+    }));
+    GameState.data.garden.seeds = ['potato'];
+    GameState.save();
+    GameManager.handleSinAction('sloth');
+  });
+  await page.waitForTimeout(700);
+
+  // Полка выложена по порядку применения: лопата → семена → лейка → грабли.
+  const shelf = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#gd-fg .gd-tool')).map(g => g.dataset.kind).join(','));
+  // Какашка на полке появляется, только если она есть, поэтому сверяется не
+  // точный список, а ПОРЯДОК: лопата → семена → лейка → какашка → грабли.
+  const ORDER = ['spade', 'seed', 'can', 'dung', 'rake'];
+  const idx = shelf.split(',').map(k => ORDER.indexOf(k));
+  const sorted = idx.every((v, n) => n === 0 || v >= idx[n - 1]);
+  say('полка: ' + shelf + (sorted ? '  ✓ по порядку применения' : '  ✗ ПОРЯДОК НЕ ТОТ'));
+
+  // Куда целиться пальцем: землю грядки берём из координат сцены, а не из
+  // габаритов группы — значок над кустом уводит её центр в небо.
+  const bedPoint = (i) => page.evaluate((i) => {
+    const svg = document.getElementById('gd-svg');
+    const p = svg.createSVGPoint();
+    p.x = GARDEN_ART.bedX(i); p.y = GARDEN_ART.SOIL_Y - 12;
+    const q = p.matrixTransform(document.getElementById('gd-cam').getScreenCTM());
+    return { x: q.x, y: q.y };
+  }, i);
+  const toolPoint = (kind) => page.evaluate((kind) => {
+    const g = document.querySelector(`#gd-fg .gd-tool[data-kind="${kind}"]`);
+    const r = g.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, kind);
+  const stageOf = (i) => page.evaluate((i) => GameState.data.garden.beds[i].stage, i);
+  const drag = async (kind, bed) => {
+    const a = await toolPoint(kind), b = await bedPoint(bed);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 6 });
+    await page.mouse.move(b.x, b.y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+  };
+
+  // Завал разбирают РУКОЙ: лопата по нему не работает.
+  await drag('spade', 0);
+  say('лопата по завалу:  ' + await stageOf(0) + (await stageOf(0) === 'locked' ? '  ✓ не берёт' : '  ✗ ЛОПАТА ЧИСТИТ ЗАВАЛ'));
+  const p0 = await bedPoint(0);
+  await page.mouse.click(p0.x, p0.y);
+  await page.waitForTimeout(700);
+  say('тап рукой:         ' + await stageOf(0) + (await stageOf(0) === 'empty' ? '  ✓ завал разобран' : '  ✗ РУКА НЕ РАБОТАЕТ'));
+
+  // Семя в нетронутую землю не ложится — сначала лунка.
+  await drag('seed', 1);
+  say('семя без лунки:    ' + await stageOf(1) + (await stageOf(1) === 'empty' ? '  ✓ не ложится' : '  ✗ СЕЯТЬ МОЖНО БЕЗ ЛУНКИ'));
+  await drag('spade', 1);
+  say('лопата:            ' + await stageOf(1) + (await stageOf(1) === 'dug' ? '  ✓ лунка' : '  ✗ ЛУНКА НЕ ВЫКОПАНА'));
+  await drag('seed', 1);
+  say('семя:              ' + await stageOf(1) + (await stageOf(1) === 'sown' ? '  ✓ посеяно' : '  ✗ НЕ ПОСЕЯНО'));
+  await drag('can', 1);
+  say('лейка:             ' + await stageOf(1) + (await stageOf(1) === 'growing' ? '  ✓ полито' : '  ✗ НЕ ПОЛИТО'));
+
+  // Грядка не должна прыгать по экрану, когда по ней работают: анимация,
+  // правящая transform, однажды уже стирала её позицию в сцене.
+  const bx0 = await page.evaluate(() => document.getElementById('gd-bed-1').getBoundingClientRect().x);
+  await page.evaluate(() => SlothMinigame.act(1, 'fertilize'));
+  await page.waitForTimeout(150);
+  const bx1 = await page.evaluate(() => document.getElementById('gd-bed-1').getBoundingClientRect().x);
+  say('грядка при работе: ' + bx0.toFixed(0) + ' → ' + bx1.toFixed(0) +
+      (Math.abs(bx0 - bx1) < 3 ? '  ✓ стоит на месте' : '  ✗ ПРЫГАЕТ ПО ЭКРАНУ'));
+
+  // Время в кольце — цифрами, иначе «два часа» и «двадцать минут» на глаз
+  // неразличимы.
+  const clock = await page.evaluate(() => {
+    const t = document.querySelector('.gd-clock');
+    return t ? t.textContent.trim() : '';
+  });
+  say('в кольце: «' + clock + '»' + (/^\d+:\d\d$/.test(clock) ? '  ✓ цифры на месте' : '  ✗ ЧАСОВ НЕ ВИДНО'));
+  await page.evaluate(() => SlothMinigame.close());
 
   // ---------- ЗАМКНУТЫЙ КРУГ ----------
   say('\n--- круг: сад → кухня → какашка → сад ---');

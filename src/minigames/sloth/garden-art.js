@@ -132,17 +132,22 @@ const GARDEN_ART = {
 
     // ---------- ОДНА ГРЯДКА ----------
     // Состояние грядки видно ПО НЕЙ САМОЙ, без подписей:
-    //   locked   — завалена камнями и хворостом,
-    //   empty    — вскопанная рыхлая земля,
-    //   sown     — бугорок с семенем, земля сухая,
+    //   locked   — завалена камнями и хворостом, разбирают руками,
+    //   empty    — расчищена, но земля нетронутая и ровная,
+    //   dug      — вскопана лунка: борозды и ямка под семя,
+    //   sown     — в лунке семя, земля сухая,
     //   growing  — росток тем выше, чем ближе срок,
     //   weedy    — выросло, но заросло сорняками,
     //   ripening — прополото, плод набухает,
     //   ripe     — плод налился, его видно целиком.
+    //
+    // Разница между «расчищена» и «вскопана» — не украшение: посадка идёт
+    // только в лунку, и если ровную землю не отличить от вскопанной, игрок не
+    // поймёт, почему семя не ложится.
     bed(state, opts) {
         const k = gdPal(), ink = gdInk(), S = gdS();
         const o = opts || {};
-        const x = 0, y = this.SOIL_Y;
+        const y = this.SOIL_Y;
         const hw = this.BED_W / 2;
         const out = [];
 
@@ -167,18 +172,43 @@ const GARDEN_ART = {
             return out.join('');
         }
 
+        if (state === 'empty') {
+            // Расчищено, но не тронуто: ровная земля, редкие камушки. Борозд
+            // нет — им взяться неоткуда, лопата сюда ещё не приходила.
+            const rng = gdRng((o.seed || 3) + 41);
+            for (let i = 0; i < 5; i++) {
+                out.push(`<ellipse cx="${((rng() * 2 - 1) * (hw - 30)).toFixed(0)}" cy="${(y - 12 + rng() * 24).toFixed(0)}"
+                                   rx="${(3 + rng() * 4).toFixed(0)}" ry="${(2 + rng() * 3).toFixed(0)}"
+                                   fill="${k.soil[300]}" opacity="0.7"/>`);
+            }
+            out.push(gdGrab(0, y - 20, hw, 56));
+            return out.join('');
+        }
+
         // Вскопанная земля: борозды. Они темнее самой земли — по ним и видно,
-        // что грядку трогали.
+        // что грядку трогали лопатой.
         out.push(`<path d="M${-hw + 30} ${y - 16} H${hw - 30} M${-hw + 26} ${y - 2} H${hw - 26} M${-hw + 22} ${y + 12} H${hw - 22}"
                         stroke="${k.soil[700]}" stroke-width="${S.detail}" opacity="0.7"/>`);
 
+        if (state === 'dug') {
+            // Лунка: тёмная ямка с валиком выброшенной земли по краю. Она
+            // ПУСТАЯ и потому просит семя — в этом вся её работа.
+            out.push(`
+                <ellipse cx="0" cy="${y - 6}" rx="26" ry="14" fill="${k.soil[300]}" opacity="0.8"/>
+                <ellipse cx="0" cy="${y - 6}" rx="20" ry="10" fill="${k.soil[700]}"
+                         stroke="${ink}" stroke-width="${S.detail}"/>`);
+        }
+
         if (state === 'sown') {
-            out.push(`<ellipse cx="0" cy="${y - 6}" rx="14" ry="9" fill="${k.soil[300]}"
-                               stroke="${ink}" stroke-width="${S.detail}"/>`);
+            // В лунке лежит семя: валик земли остался, ямка засыпана бугорком.
+            out.push(`
+                <ellipse cx="0" cy="${y - 6}" rx="24" ry="12" fill="${k.soil[300]}" opacity="0.7"/>
+                <ellipse cx="0" cy="${y - 8}" rx="13" ry="8" fill="${k.soil[300]}"
+                         stroke="${ink}" stroke-width="${S.detail}"/>`);
         }
 
         if (o.plant && (state === 'growing' || state === 'weedy' || state === 'ripening' || state === 'ripe')) {
-            out.push(this.plant(o.plant, o.growth, state, o.fruitKey, o.seed || 1));
+            out.push(this.plant(o.plant, o.growth, state, o.fruitKey, o.seed || 1, o.uid == null ? 0 : o.uid));
         }
 
         if (state === 'weedy') {
@@ -198,108 +228,357 @@ const GARDEN_ART = {
     },
 
     // ---------- РАСТЕНИЕ ----------
-    // Трейты приходят из PlantModel (вид закрепляет полосу оттенка и форму,
-    // сид отпускает остальное). growth 0..1 — насколько оно поднялось: это и
-    // есть видимая шкала времени.
-    plant(p, growth, state, fruitKey, seed) {
-        const ink = gdInk(), S = gdS();
+    // Это ПОРТ прежнего сада, где растение рисовалось на canvas: там оно
+    // получалось живым — стебель сужался кверху и врастал в почву корневым
+    // расширением, листья цеплялись к настоящей кривой стебля и имели
+    // прожилки, на верхушке распускался цветок. Первая SVG-версия всё это
+    // растеряла (кривая одной линией, лист одной заливкой) — и сад стал
+    // выглядеть чертежом. Здесь та же геометрия, но нарисованная в SVG:
+    // одна система координат со всей сценой, одна камера, никаких шести
+    // холстов, которые надо синхронизировать с масштабом стейджа.
+    //
+    // Числа геометрии живут в СЦЕНЕ (грядка 216 единиц шириной), а не в
+    // пикселях холста: сцена одного размера всегда (инвариант 10), поэтому
+    // пересчитывать нечего.
+    PLANT_MAX_H: 210,       // высота самого рослого вида при полном росте
+    PLANT_LATERAL: 62,      // предел бокового ухода: за свою грядку не вылезаем
+
+    // Насколько растение поднялось над землёй. Отдельной функцией, потому что
+    // это же число нужно экрану, чтобы повесить значок НАД кустом: два разных
+    // расчёта высоты разъезжаются, и значок садится кусту на голову.
+    plantHeight(p, growth) {
         const g = Math.max(0.08, Math.min(1, growth));
-        const y0 = this.SOIL_Y - 18;       // поверхность грядки, а не её кромка
-        const h = 40 + p.heightFrac * 180 * g;
-        const tilt = (p.tilt || 0) * Math.PI / 180;
-        const curve = (p.curve || 0) * 26;
+        return Math.max(18, this.PLANT_MAX_H * p.heightFrac * g);
+    },
 
-        const stem = `hsl(${p.hue}, ${p.satBase.toFixed(0)}%, ${p.lightBase.toFixed(0)}%)`;
-        const leaf = `hsl(${p.hue}, ${(p.satBase + 8).toFixed(0)}%, ${(p.lightBase + 16).toFixed(0)}%)`;
-
-        // Стебель: кубическая кривая от земли. Низ строго вертикальный —
-        // иначе основание выглядит приклеенным поверх грядки, а не растущим
-        // из неё (та же ошибка, что чинили в прежнем саду).
-        const tipX = Math.sin(tilt) * h * 0.8;
-        const tipY = y0 - h;
-        const d = `M0 ${y0} C0 ${(y0 - h * 0.34).toFixed(1)} ${(curve).toFixed(1)} ${(y0 - h * 0.7).toFixed(1)} ${tipX.toFixed(1)} ${tipY.toFixed(1)}`;
-
-        const out = [`<path d="${d}" fill="none" stroke="${stem}"
-                            stroke-width="${(3.4 + p.thickness).toFixed(1)}" stroke-linecap="round"/>`];
-
-        // Листья по плану из модели: доля высоты, сторона, вариация размера.
-        // Форма рисуется в СВОЕЙ системе координат и поворачивается целиком:
-        // считать изогнутый лист прямо в координатах сцены — верный способ
-        // получить тонкий серп вместо листа, что и вышло с первого раза.
-        const shape = {
-            oval:    (L, W) => `M0 0 Q${(L * 0.5).toFixed(1)} ${(-W).toFixed(1)} ${L.toFixed(1)} 0 Q${(L * 0.5).toFixed(1)} ${W.toFixed(1)} 0 0 Z`,
-            pointed: (L, W) => `M0 0 Q${(L * 0.45).toFixed(1)} ${(-W).toFixed(1)} ${L.toFixed(1)} 0 Q${(L * 0.45).toFixed(1)} ${(W * 0.7).toFixed(1)} 0 0 Z`,
-            heart:   (L, W) => `M0 0 Q${(L * 0.3).toFixed(1)} ${(-W * 1.25).toFixed(1)} ${(L * 0.72).toFixed(1)} ${(-W * 0.4).toFixed(1)} Q${L.toFixed(1)} ${(W * 0.15).toFixed(1)} ${(L * 0.6).toFixed(1)} ${(W * 0.7).toFixed(1)} Q${(L * 0.3).toFixed(1)} ${(W * 1.1).toFixed(1)} 0 0 Z`,
-            fern:    (L, W) => `M0 0 Q${(L * 0.5).toFixed(1)} ${(-W * 0.75).toFixed(1)} ${L.toFixed(1)} ${(-W * 0.2).toFixed(1)} Q${(L * 0.5).toFixed(1)} ${(W * 0.55).toFixed(1)} 0 0 Z`
+    // Кубическая кривая стебля. P0 — земля, P1 строго над ней (стебель всегда
+    // выходит из почвы вертикально, иначе основание выглядит приклеенным),
+    // P2/P3 — наклон и изгиб по типу стебля.
+    stemGeo(p, growth) {
+        const stemDef = PlantModel.STEM_TYPES[p.stemType] || PlantModel.STEM_TYPES.straight;
+        const len = this.plantHeight(p, growth);
+        const tiltRad = (p.tilt || 0) * Math.PI / 180;
+        let lateral = Math.sin(tiltRad) * len + (p.curve || 0) * len * stemDef.curveMul;
+        lateral = Math.max(-this.PLANT_LATERAL, Math.min(this.PLANT_LATERAL, lateral));
+        const rootLen = len * 0.22;
+        const geo = {
+            len, stemDef, lateral,
+            P0: { x: 0, y: 0 },
+            P1: { x: 0, y: -rootLen },
+            P2: { x: lateral * 0.72, y: -len * 0.62 },
+            P3: { x: lateral, y: -len }
         };
-        const draw = shape[p.leafShape] || shape.oval;
+        const tip = this.stemPointAt(geo, p, 1);
+        geo.tipX = tip.x; geo.tipY = tip.y;
+        return geo;
+    },
 
-        (p.leaves || []).forEach(lf => {
-            if (lf.t > g) return;                       // ещё не дорос до этого листа
-            const t = lf.t;
-            const lx = curve * t * (1 - t) * 3 + tipX * t * t;
-            const ly = y0 - h * t;
-            const L = (16 + 22 * p.leafSizeBase) * (lf.sizeScale || 1) * g;
-            const W = L * 0.42;
-            // Лист смотрит вверх-вбок: вниз он висел бы увядшим.
-            const ang = lf.side > 0 ? -32 + (lf.angleVar || 0) * 40 : -148 - (lf.angleVar || 0) * 40;
-            out.push(`<g transform="translate(${lx.toFixed(1)} ${ly.toFixed(1)}) rotate(${ang.toFixed(0)})">
-                <path d="${draw(L, W)}" fill="${leaf}" stroke="${ink}" stroke-width="${S.detail}"
-                      stroke-linejoin="round"/>
-                <path d="M0 0 L${(L * 0.85).toFixed(1)} 0" stroke="${stem}" stroke-width="${S.hairline}" opacity="0.7"/>
+    cubicPoint(a, b, c, d, t) {
+        const u = 1 - t;
+        return {
+            x: u * u * u * a.x + 3 * u * u * t * b.x + 3 * u * t * t * c.x + t * t * t * d.x,
+            y: u * u * u * a.y + 3 * u * u * t * b.y + 3 * u * t * t * c.y + t * t * t * d.y
+        };
+    },
+
+    cubicTangent(a, b, c, d, t) {
+        const u = 1 - t;
+        return {
+            x: 3 * u * u * (b.x - a.x) + 6 * u * t * (c.x - b.x) + 3 * t * t * (d.x - c.x),
+            y: 3 * u * u * (b.y - a.y) + 6 * u * t * (c.y - b.y) + 3 * t * t * (d.y - c.y)
+        };
+    },
+
+    // Точка НА РЕАЛЬНО НАРИСОВАННОЙ кривой в доле t плюс единичная нормаль.
+    // Единственное место, где считаются точки стебля: когда листья крепились
+    // к прямой «земля → верхушка», а стебель рисовался кривой, листья на
+    // изогнутых стеблях съезжали в сторону от него.
+    stemPointAt(geo, p, t) {
+        const pt = this.cubicPoint(geo.P0, geo.P1, geo.P2, geo.P3, t);
+        const tan = this.cubicTangent(geo.P0, geo.P1, geo.P2, geo.P3, t);
+        const tl = Math.hypot(tan.x, tan.y) || 1;
+        const nx = -tan.y / tl, ny = tan.x / tl;
+        let x = pt.x, y = pt.y;
+        if (geo.stemDef.wobbleAmp > 0) {
+            // Амплитуда волны растёт от нуля у земли к максимуму у верхушки:
+            // излом не должен портить вертикальный старт.
+            const wob = geo.stemDef.wobbleAmp *
+                Math.sin(t * Math.PI * geo.stemDef.wobbleFreq * 2 + (p.wobblePhase || 0)) * geo.len * 0.11 * t;
+            x += nx * wob; y += ny * wob;
+        }
+        const lim = this.PLANT_LATERAL + 12;
+        return { x: Math.max(-lim, Math.min(lim, x)), y, nx, ny };
+    },
+
+    // Ширина стебля в доле t: сужается кверху, у самой земли расширяется
+    // корневым утолщением.
+    stemWidthAt(t, base, tip, p) {
+        let w = base + (tip - base) * t;
+        if (t < 0.14) w += base * ((p.rootFlare || 1.6) - 1) * (1 - t / 0.14) * 0.5;
+        return w;
+    },
+
+    // Формы листа. Рисуются В СВОЕЙ системе координат (черешок в нуле, лист
+    // вдоль +x) и поворачиваются целиком: считать изогнутый лист сразу в
+    // координатах сцены — верный способ получить тонкий серп вместо листа.
+    leafPath(shape, L, W) {
+        if (shape === 'pointed') {
+            return `M0 0 Q${(L * 0.32).toFixed(1)} ${(-W * 0.42).toFixed(1)} ${L.toFixed(1)} 0
+                    Q${(L * 0.32).toFixed(1)} ${(W * 0.42).toFixed(1)} 0 0 Z`;
+        }
+        if (shape === 'heart') {
+            const n = W * 0.14;
+            return `M0 0 Q${(L * 0.18).toFixed(1)} ${(-n).toFixed(1)} ${(L * 0.42).toFixed(1)} ${(-W * 0.62).toFixed(1)}
+                    Q${(L * 0.95).toFixed(1)} ${(-W * 0.3).toFixed(1)} ${L.toFixed(1)} 0
+                    Q${(L * 0.95).toFixed(1)} ${(W * 0.3).toFixed(1)} ${(L * 0.42).toFixed(1)} ${(W * 0.62).toFixed(1)}
+                    Q${(L * 0.18).toFixed(1)} ${n.toFixed(1)} 0 0 Z`;
+        }
+        if (shape === 'fern') {
+            // Перистый лист: центральная ость с дольками по обе стороны.
+            const segs = 5;
+            let d = 'M0 0';
+            for (let s = 1; s <= segs; s++) {
+                const t = s / segs, sx = L * t;
+                const sw = W * 0.5 * Math.sin(Math.PI * t) + W * 0.06;
+                d += ` Q${(sx - L * 0.06).toFixed(1)} ${(-sw).toFixed(1)} ${sx.toFixed(1)} ${(-W * 0.05).toFixed(1)}`;
+            }
+            d += ` L${L.toFixed(1)} 0`;
+            for (let s = segs; s >= 1; s--) {
+                const t = s / segs, sx = L * t;
+                const sw = W * 0.5 * Math.sin(Math.PI * t) + W * 0.06;
+                d += ` Q${(sx - L * 0.06).toFixed(1)} ${sw.toFixed(1)} ${(sx - L / segs).toFixed(1)} ${(W * 0.05 * (s % 2 === 0 ? 1 : 0.4)).toFixed(1)}`;
+            }
+            return d + ' L0 0 Z';
+        }
+        return `M0 0 Q${(L * 0.4).toFixed(1)} ${(-W * 0.6).toFixed(1)} ${L.toFixed(1)} 0
+                Q${(L * 0.4).toFixed(1)} ${(W * 0.6).toFixed(1)} 0 0 Z`;
+    },
+
+    // Само растение. uid нужен только для имён градиентов: шесть грядок живут
+    // в одном документе, и одинаковые id склеили бы их заливки.
+    plant(p, growth, state, fruitKey, seed, uid) {
+        const g = Math.max(0.08, Math.min(1, growth));
+        const y0 = this.SOIL_Y - 18;            // поверхность грядки, не кромка короба
+        const geo = this.stemGeo(p, g);
+        const id = (n) => `gd-${uid}-${n}`;
+
+        const H = p.hue, Sa = Math.round(p.satBase), Li = Math.round(p.lightBase);
+        const hsl = (h, s, l) => `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(Math.max(6, Math.min(92, l)))}%)`;
+
+        const base = Math.max(3, 3 + p.thickness * 5.5 * g);
+        const tipW = Math.max(1, base * 0.2);
+
+        const defs = [];
+        const out = [];
+
+        // ---- КОРНЕВОЕ РАСШИРЕНИЕ ----
+        // Мягкое пятно цвета стебля с бугорками: без него основание выглядит
+        // обрубленным и приклеенным поверх грядки.
+        const flareW = base * (p.rootFlare || 1.6), flareH = flareW * 0.4;
+        defs.push(`<radialGradient id="${id('rt')}">
+            <stop offset="0" stop-color="${hsl(H, Sa, Li - 10)}"/>
+            <stop offset="1" stop-color="${hsl(H, Sa, Li - 10)}" stop-opacity="0"/>
+        </radialGradient>`);
+        out.push(`<ellipse cx="0" cy="0" rx="${(flareW * 0.75).toFixed(1)}" ry="${flareH.toFixed(1)}"
+                           fill="url(#${id('rt')})"/>`);
+        (p.rootBumps || []).forEach(b => {
+            const bx = Math.cos(b.angle) * flareW * b.dist * 0.55;
+            const by = Math.abs(Math.sin(b.angle)) * flareH * b.dist * 0.2;
+            out.push(`<ellipse cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}"
+                               rx="${(flareW * b.r * 0.5).toFixed(1)}" ry="${(flareH * b.r * 0.6).toFixed(1)}"
+                               fill="${hsl(H, Sa, Li - 14)}" opacity="0.75"/>`);
+        });
+
+        // ---- СТЕБЕЛЬ ----
+        // Не линия, а силуэт: две стороны, посчитанные от нормали к кривой.
+        // Линией постоянной толщины стебель читается проводом.
+        const SAMPLES = 20;
+        const left = [], right = [];
+        for (let i = 0; i <= SAMPLES; i++) {
+            const t = i / SAMPLES;
+            const sp = this.stemPointAt(geo, p, t);
+            const hwid = this.stemWidthAt(t, base, tipW, p) / 2;
+            left.push([sp.x + sp.nx * hwid, sp.y + sp.ny * hwid]);
+            right.push([sp.x - sp.nx * hwid, sp.y - sp.ny * hwid]);
+        }
+        const poly = 'M' + left.map(pt => `${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' L') +
+                     ' L' + right.reverse().map(pt => `${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' L') + ' Z';
+        defs.push(`<linearGradient id="${id('st')}" x1="${(-base).toFixed(1)}" y1="0" x2="${base.toFixed(1)}" y2="0"
+                                   gradientUnits="userSpaceOnUse">
+            <stop offset="0"    stop-color="${hsl(H, Sa, Li - 8)}"/>
+            <stop offset="0.45" stop-color="${hsl(H, Sa, Li + 6)}"/>
+            <stop offset="0.7"  stop-color="${hsl(H, Math.min(70, Sa + 8), Li + 16)}"/>
+            <stop offset="1"    stop-color="${hsl(H, Sa, Li - 4)}"/>
+        </linearGradient>`);
+        out.push(`<path d="${poly}" fill="url(#${id('st')})" stroke="${hsl(H, Sa, Li - 12)}"
+                        stroke-width="${gdS().hairline}" stroke-linejoin="round"/>`);
+
+        // ---- ЛИСТЬЯ ----
+        // Три градиента на растение, а не по одному на лист: листьев бывает
+        // полтора десятка, а грядок шесть, и каждый градиент — узел в
+        // документе, который перестраивается каждую секунду.
+        for (let v = 0; v < 3; v++) {
+            const hv = H + (v - 1) * 5;
+            defs.push(`<linearGradient id="${id('lf' + v)}" x1="0" y1="0" x2="1" y2="0.6">
+                <stop offset="0"    stop-color="${hsl(hv, Sa - 6, Li + 2 + v * 3)}"/>
+                <stop offset="0.55" stop-color="${hsl(hv, Sa + 10, Li + 16 + v * 3)}"/>
+                <stop offset="1"    stop-color="${hsl(hv + 6, Sa + 14, Li + 26 + v * 2)}"/>
+            </linearGradient>`);
+        }
+
+        (p.leaves || []).forEach((lf, n) => {
+            // Лист появляется не сразу: он «раскрывается», когда стебель дорос
+            // до его высоты. Иначе куст вырастает целиком и рост не читается.
+            const revealAt = lf.t * 0.78;
+            if (g < revealAt) return;
+            const local = Math.min(1, (g - revealAt) / 0.22);
+            if (local <= 0) return;
+
+            const sp = this.stemPointAt(geo, p, lf.t);
+            const hwid = this.stemWidthAt(lf.t, base, tipW, p) / 2;
+            const nx = sp.nx * lf.side, ny = sp.ny * lf.side;
+            // Черешок выносит крепление НА поверхность стебля, а не в его
+            // центр: иначе лист проваливается внутрь стебля.
+            const lx = sp.x + nx * hwid * 0.55 * (lf.distScale || 1);
+            const ly = sp.y + ny * hwid * 0.55 * (lf.distScale || 1);
+            const ang = (Math.atan2(ny, nx) + (lf.angleVar || 0)) * 180 / Math.PI;
+
+            const sizeMul = p.leafSizeBase * (lf.sizeScale || 1) * local;
+            // Лист меряется от стебля, а не от холста: тонкий стебель с
+            // огромным листом выглядит поломанным. Числа подняты против
+            // прежнего сада ровно во столько, во сколько сцена грядки крупнее
+            // того холста в горшке.
+            const L = Math.max(5, (15 + p.thickness * 10) * sizeMul);
+            const W = L * 0.56;
+            const grad = id('lf' + (n % 3));
+
+            const veins = p.leafShape === 'fern' ? '' : `
+                <path d="M2 0 L${(L - 2).toFixed(1)} 0" stroke="${hsl(H, Sa - 4, Li - 12)}"
+                      stroke-width="${gdS().hairline}" opacity="0.55" fill="none"/>
+                <path d="M${(L * 0.3).toFixed(1)} 0 Q${(L * 0.5).toFixed(1)} ${(-W * 0.18).toFixed(1)} ${(L * 0.68).toFixed(1)} ${(-W * 0.32).toFixed(1)}
+                         M${(L * 0.3).toFixed(1)} 0 Q${(L * 0.5).toFixed(1)} ${(W * 0.18).toFixed(1)} ${(L * 0.68).toFixed(1)} ${(W * 0.32).toFixed(1)}"
+                      stroke="${hsl(H, Sa - 4, Li - 12)}" stroke-width="${gdS().hairline}" opacity="0.35" fill="none"/>`;
+
+            out.push(`<g transform="translate(${lx.toFixed(1)} ${ly.toFixed(1)}) rotate(${ang.toFixed(1)})">
+                <path d="${this.leafPath(p.leafShape, L, W)}" fill="url(#${grad})"
+                      stroke="${hsl(H, Sa, Li - 14)}" stroke-width="${gdS().hairline}" stroke-linejoin="round"/>
+                ${veins}
             </g>`);
         });
 
-        // Плод. Рисует его КУХНЯ своим же кодом: то, что выросло на грядке, и
-        // то, что потом тащат на разделочную доску, — один и тот же предмет, и
-        // второй картинки того же помидора в игре быть не должно.
+        // ---- ЦВЕТОК ----
+        // Только пока плода нет: цветок — обещание урожая, и висеть рядом с
+        // готовым плодом ему незачем.
+        if (g > 0.86 && state === 'growing') {
+            const bloom = Math.min(1, (g - 0.86) / 0.14);
+            out.push(this.flower(geo.tipX, geo.tipY, bloom, p, id('fl')));
+        }
+
+        // ---- ПЛОД ----
+        // Рисует его КУХНЯ своим же кодом: то, что выросло на грядке, и то,
+        // что потом тащат на разделочную доску, — один предмет, и второй
+        // картинки того же помидора в игре быть не должно.
         if ((state === 'ripening' || state === 'ripe') && fruitKey && typeof KITCHEN_ART !== 'undefined') {
-            const scale = state === 'ripe' ? 0.42 : 0.28;
-            out.push(`<g transform="translate(${tipX.toFixed(1)} ${(tipY + 10).toFixed(1)}) scale(${scale})">
+            const scale = state === 'ripe' ? 0.46 : 0.3;
+            out.push(`<g transform="translate(${geo.tipX.toFixed(1)} ${(geo.tipY + 12).toFixed(1)}) scale(${scale})">
                         ${KITCHEN_ART.ingredient(fruitKey, seed)}
                       </g>`);
         }
-        return out.join('');
+
+        return `<g transform="translate(0 ${y0})">
+            <defs>${defs.join('')}</defs>
+            ${out.join('')}
+        </g>`;
+    },
+
+    // Цветок: лепестки-капли с градиентом от тёмного основания к светлому
+    // кончику, мягкий ореол и сердцевина. Плоские кружки на месте цветка
+    // выглядели наклейкой.
+    flower(cx, cy, bloom, p, gid) {
+        const len = (11 + p.thickness * 2.4) * bloom, wide = len * 0.52;
+        const petals = [];
+        const count = p.petalCount || 6;
+        for (let i = 0; i < count; i++) {
+            petals.push(`<path transform="rotate(${(360 * i / count).toFixed(1)})"
+                d="M0 0 Q${(len * 0.35).toFixed(1)} ${(-wide * 0.5).toFixed(1)} ${len.toFixed(1)} 0
+                   Q${(len * 0.35).toFixed(1)} ${(wide * 0.5).toFixed(1)} 0 0 Z"
+                fill="url(#${gid}-p)"/>`);
+        }
+        const core = len * 0.42;
+        return `<g transform="translate(${cx.toFixed(1)} ${cy.toFixed(1)})">
+            <defs>
+                <radialGradient id="${gid}-g">
+                    <stop offset="0" stop-color="${p.flowerColor}" stop-opacity="0.33"/>
+                    <stop offset="1" stop-color="${p.flowerColor}" stop-opacity="0"/>
+                </radialGradient>
+                <linearGradient id="${gid}-p" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="${p.flowerColor}" stop-opacity="0.75"/>
+                    <stop offset="1" stop-color="${p.flowerColor}"/>
+                </linearGradient>
+                <radialGradient id="${gid}-c" cx="0.35" cy="0.35">
+                    <stop offset="0" stop-color="#fff8d0"/>
+                    <stop offset="1" stop-color="#e8b93a"/>
+                </radialGradient>
+            </defs>
+            <circle r="${(len * 2.1).toFixed(1)}" fill="url(#${gid}-g)"/>
+            ${petals.join('')}
+            <circle r="${core.toFixed(1)}" fill="url(#${gid}-c)" stroke="rgba(140,100,10,0.35)" stroke-width="${gdS().hairline}"/>
+        </g>`;
     },
 
     // ---------- ЗНАЧОК НАД ГРЯДКОЙ ----------
     // Главный ответ на вопрос «а что дальше». Над каждой грядкой висит одно
     // из двух:
     //   * ЧЕМ её надо тронуть — маленький значок нужного инструмента. Грядка
-    //     сама просит лопату, семечко, лейку или грабли, и просьбу видно, не
-    //     подходя к ней;
-    //   * СКОЛЬКО ещё ждать — кольцо, которое заполняется.
+    //     сама просит руку, лопату, семечко, лейку или грабли, и просьбу
+    //     видно, не подходя к ней;
+    //   * СКОЛЬКО ещё ждать — кольцо со временем внутри.
     //
-    // Без этого сад читался так: посадил, полил, росток есть — и дальше
-    // непонятно ничего. Растение показывает время, но не показывает, нужен ли
-    // от игрока ход ПРЯМО СЕЙЧАС, а это разные вопроса.
-    badge(kind, frac) {
+    // Время внутри кольца — цифрами. Цифра не слово (инвариант 9), а кольцо
+    // без числа отвечает только «скоро/не скоро»: разницу между двумя часами
+    // и двадцатью минутами по дуге не увидеть, а решение «ждать или скинуть
+    // какашкой» принимается именно по ней.
+    badge(kind, frac, leftMs) {
         const k = gdPal(), ink = gdInk(), S = gdS();
         if (kind === 'wait') {
-            const r = 15, C = 2 * Math.PI * r;
+            const r = 20, C = 2 * Math.PI * r;
             const done = Math.max(0, Math.min(1, frac));
             return `<g class="gd-badge gd-badge-wait">
-                <circle r="${r + 6}" fill="${k.soil[700]}" opacity="0.55"/>
-                <circle r="${r}" fill="none" stroke="${k.sky[100]}" stroke-width="4" opacity="0.35"/>
+                <circle r="${r + 7}" fill="${k.soil[700]}" opacity="0.62"/>
+                <circle r="${r}" fill="none" stroke="${k.sky[100]}" stroke-width="4" opacity="0.3"/>
                 <circle r="${r}" fill="none" stroke="${k.sky[100]}" stroke-width="4"
                         stroke-linecap="round" transform="rotate(-90)"
                         stroke-dasharray="${(C * done).toFixed(1)} ${C.toFixed(1)}"/>
+                <text class="gd-clock" x="0" y="0">${this.clock(leftMs)}</text>
             </g>`;
         }
         // Значок инструмента — тот же рисунок, что на полке, только мельче:
         // игрок ищет глазами ровно ту вещь, которую грядка просит.
-        const art = kind === 'hand'
+        const inner = kind === 'hand'
             ? `<path d="M-9 6 q-4 -12 2 -12 q2 -8 6 -4 q3 -7 6 -1 q4 -4 5 3 l1 10 q0 8 -9 8 q-8 0 -11 -4 Z"
                      fill="${PALETTE.flesh ? PALETTE.flesh[300] : '#e8b0a8'}" stroke="${ink}" stroke-width="${S.structure}"
                      stroke-linejoin="round"/>`
-            : `<g transform="scale(0.62)">${this.tool(kind === 'seed' ? 'spade' : kind)}</g>`;
-        const inner = kind === 'seed'
-            ? `<g transform="scale(0.5)">${this.seedPacket('potato', 3)}</g>`
-            : art;
+            : kind === 'seed'
+                ? `<g transform="scale(0.5)">${this.seedPacket('potato', 3)}</g>`
+                : `<g transform="scale(0.62)">${this.tool(kind)}</g>`;
         return `<g class="gd-badge gd-badge-need">
             <circle r="24" fill="${k.soil[700]}" opacity="0.55"/>
             ${inner}
         </g>`;
+    },
+
+    // Часы без слов: «2:45» — это два часа сорок пять минут, «12:30» — двенадцать
+    // с половиной минут. Буквы «ч» и «м» здесь были бы подписью, а циферблат
+    // читается сам: крупная доля слева, мелкая справа, как на любых часах.
+    clock(ms) {
+        const left = Math.max(0, ms || 0);
+        const totalMin = Math.ceil(left / 60000);
+        if (totalMin >= 60) {
+            const h = Math.floor(totalMin / 60), m = totalMin % 60;
+            return `${h}:${String(m).padStart(2, '0')}`;
+        }
+        const sec = Math.ceil(left / 1000);
+        return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
     },
 
     // ---------- ИНСТРУМЕНТЫ ----------

@@ -75,19 +75,29 @@ const PlantModel = {
         const rnd = this.rng(typeof seed === 'number' ? seed : Math.floor(Math.random() * 1e9));
         const spec = (typeof GARDEN !== 'undefined' && GARDEN.species[species]) || null;
 
-        const stemPool = spec ? spec.stems : Object.keys(this.STEM_TYPES);
-        const stemType = stemPool[Math.floor(rnd() * stemPool.length)];
-        const arrangement = this.LEAF_ARRANGEMENTS[Math.floor(rnd() * this.LEAF_ARRANGEMENTS.length)];
-        const leafShape = spec ? spec.leaf : this.LEAF_SHAPES[Math.floor(rnd() * this.LEAF_SHAPES.length)];
+        // Выбор из списка и число из полосы — две операции, которыми
+        // описывается ВЕСЬ вид. Всё, что вид не задал, берётся из общих
+        // диапазонов: так таблица видов остаётся короткой и читаемой, а новый
+        // вид можно завести, указав два-три поля.
+        const pick = (list, fallback) => {
+            const src = (list && list.length) ? list : fallback;
+            return src[Math.floor(rnd() * src.length)];
+        };
+        const band = (b, lo, hi) => {
+            const a = b ? b[0] : lo, z = b ? b[1] : hi;
+            return a + rnd() * (z - a);
+        };
+
+        const stemType = pick(spec && spec.stems, Object.keys(this.STEM_TYPES));
+        const arrangement = pick(spec && spec.arrangements, this.LEAF_ARRANGEMENTS);
+        const leafShape = pick(spec && spec.leaves, this.LEAF_SHAPES);
 
         // Оттенок: у вида — своя полоса, без вида — вся радуга, как раньше.
-        const hue = spec
-            ? Math.floor(spec.hue[0] + rnd() * (spec.hue[1] - spec.hue[0]))
-            : 30 + Math.floor(rnd() * 250);
-        const satBase = 38 + rnd() * 30;                            // 38-68%
-        const lightBase = 26 + rnd() * 14;
+        const hue = Math.floor(band(spec && spec.hue, 30, 280));
+        const satBase = band(spec && spec.sat, 38, 68);
+        const lightBase = band(spec && spec.light, 26, 40);
 
-        const leafCount = 4 + Math.floor(rnd() * 8);                // 4-11
+        const leafCount = Math.round(band(spec && spec.leafCount, 4, 11));
 
         const plant = {
             // -- чем это выросло --
@@ -101,12 +111,10 @@ const PlantModel = {
             hue,
             satBase,
             lightBase,
-            heightFrac: spec
-                ? spec.height[0] + rnd() * (spec.height[1] - spec.height[0])
-                : 0.5 + rnd() * 0.5,
+            heightFrac: band(spec && spec.height, 0.5, 1.0),
             tilt: (rnd() - 0.5) * 56,                               // -28..28°
             curve: (rnd() - 0.5) * 1.8,
-            thickness: 0.5 + rnd() * 1.9,
+            thickness: band(spec && spec.thickness, 0.5, 2.4),
             wobblePhase: rnd() * Math.PI * 2,
 
             // -- крепление к земле ("корень") --
@@ -126,11 +134,14 @@ const PlantModel = {
             leafShape,
             leafArrangement: arrangement,
             leafCount,
-            leafSizeBase: 0.85 + rnd() * 0.5,
+            leafSizeBase: band(spec && spec.leafSize, 0.85, 1.35),
             leaves: [],                                             // заполняется ниже buildLeafPlan()
 
             // -- цветок / плод --
-            flowerColor: this.FLOWER_COLORS[Math.floor(rnd() * this.FLOWER_COLORS.length)],
+            // Цвет цветка тоже принадлежит семейству: жёлтый у помидора,
+            // белёсый у картошки. Радужный цветок на любом кусте стирал бы
+            // всю работу, которую делают полосы оттенка.
+            flowerColor: pick(spec && spec.flower, this.FLOWER_COLORS),
             petalCount: 5 + Math.floor(rnd() * 4),                  // 5-8
             // Иконка плода нужна только там, где вида нет: у грядки плод
             // рисует кухня своим же кодом, и второй картинки того же помидора

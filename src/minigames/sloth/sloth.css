@@ -33,8 +33,13 @@
 }
 
 /* Работа инструментом: грядка коротко приседает. Действие обязано быть видно
-   движением — сказать «вскопал» нечем. */
-#sloth-game .gd-bed.gd-act { animation: gd-act 0.5s ease; }
+   движением — сказать «вскопал» нечем.
+
+   ВСЕ анимации грядки живут на ВЛОЖЕННОЙ группе .gd-bed-in. На внешней
+   записана позиция грядки в сцене (transform="translate(x 0)"), и анимация,
+   правящая transform, стирала её на время проигрывания: грядка прыгала к
+   левому краю экрана и возвращалась обратно (docs/traps.md, п. 2). */
+#sloth-game .gd-bed-in.gd-act { animation: gd-act 0.5s ease; }
 
 @keyframes gd-act {
     0%, 100% { transform: translateY(0); }
@@ -42,7 +47,7 @@
 }
 
 /* Отказ: сюда этим нельзя. Тоже движением — надписи «нельзя» в игре нет. */
-#sloth-game .gd-bed.gd-no { animation: gd-no 0.32s ease; }
+#sloth-game .gd-bed-in.gd-no { animation: gd-no 0.32s ease; }
 
 @keyframes gd-no {
     0%, 100% { opacity: 1; }
@@ -51,7 +56,7 @@
 
 /* Собранный плод уходит вниз — туда, где кладовая и кухня. Связь «сад кормит
    кухню» показывается движением, а не объяснением. */
-#sloth-game .gd-bed.gd-harvest { animation: gd-harvest 0.6s ease; }
+#sloth-game .gd-bed-in.gd-harvest { animation: gd-harvest 0.6s ease; }
 
 @keyframes gd-harvest {
     0%   { transform: translateY(0);    opacity: 1; }
@@ -92,7 +97,21 @@
 
 /* Кольцо ожидания не пульсирует: оно не зовёт, а сообщает. Дёргающийся
    таймер читался бы как «сделай что-нибудь», а делать нечего. */
-#sloth-game .gd-badge-wait { opacity: 0.9; }
+#sloth-game .gd-badge-wait { opacity: 0.92; }
+
+/* Время внутри кольца. Цифра не слово, а пиктограмма количества
+   (инвариант 9): «2:45» читается как циферблат, без единой буквы.
+   Обводка — потому что кольцо висит то на небе, то на кусте. */
+#sloth-game .gd-clock {
+    font: 800 15px/1 -apple-system, system-ui, sans-serif;
+    text-anchor: middle;
+    dominant-baseline: central;
+    fill: #f2f7fa;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.6);
+    stroke-width: 3px;
+    pointer-events: none;
+}
 
 /* ---------- ШКАЛА ЛЕНИ ---------- */
 /* Сверху, а не снизу: внизу грядки и полка с инструментами. Та же причина,

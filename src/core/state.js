@@ -214,7 +214,10 @@ const GameState = {
                 const bed = d.garden.beds[i];
                 if (!bed || typeof bed !== 'object') {
                     d.garden.beds[i] = {
-                        // 'locked' — под мусором, 'empty' — вскопана и пуста,
+                        // 'locked' — под мусором (разбирают руками),
+                        // 'empty' — расчищена, но не вскопана,
+                        // 'dug' — вскопана лунка, ждёт семя,
+                        // 'sown' — посеяно, ждёт полива,
                         // 'growing' — этап 1, 'weedy' — просит прополки,
                         // 'ripening' — этап 2, 'ripe' — можно собирать.
                         stage: i < GARDEN.BEDS_OPEN ? 'empty' : 'locked',
