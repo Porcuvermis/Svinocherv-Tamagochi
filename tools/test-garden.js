@@ -192,20 +192,32 @@ const { chromium } = require('playwright');
     await page.mouse.up();
     await page.waitForTimeout(300);
   };
-  // Сама работа: движения по нужной оси. Считается разворот с достаточным
-  // размахом — мелкое дрожание работой не считается.
+  // Сама работа: движения ТУДА-СЮДА по нужной оси. Засчитывается разворот с
+  // достаточным размахом — ни длинный свайп в одну сторону, ни дрожание
+  // работой не считаются.
   const strokes = async (bed, n, axis, len) => {
     const p = await bedPoint(bed, -60);
     await page.mouse.move(p.x, p.y);
     await page.mouse.down();
-    for (let k = 0; k < n; k++) {
+    for (let k = 0; k <= n; k++) {
       const s = k % 2 === 0 ? 1 : -1;
       if (axis === 'y') await page.mouse.move(p.x, p.y + s * len, { steps: 4 });
       else await page.mouse.move(p.x + s * len, p.y, { steps: 4 });
-      await page.waitForTimeout(50);
+      await page.waitForTimeout(40);
     }
     await page.mouse.up();
     await page.waitForTimeout(650);
+  };
+  // Один длинный свайп в одну сторону — это НЕ работа: так весь этап
+  // проскакивался за долю секунды одним махом.
+  const longSwipe = async (bed, axis, len) => {
+    const p = await bedPoint(bed, -60);
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+    if (axis === 'y') await page.mouse.move(p.x, p.y - len, { steps: 12 });
+    else await page.mouse.move(p.x + len, p.y, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
   };
 
   // ---------- ЗАВАЛ СТОИТ ЖЕТОНА ----------
@@ -220,7 +232,7 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(250);
   say('завал с жетоном:   работа «' + await workOf() + '»' +
       (await workOf() !== 'нет' ? '  ✓ начали' : '  ✗ НЕ НАЧАЛИ'));
-  await strokes(0, 6, 'x', 46);
+  await strokes(0, 22, 'x', 60);
   const token = await page.evaluate(() => GameState.currency('sloth_token'));
   say('после разбора:     ' + await stageOf(0) + ', жетонов ' + token +
       (await stageOf(0) === 'empty' && token === 0 ? '  ✓ разобрано, жетон списан' : '  ✗ НЕ ТАК'));
@@ -229,9 +241,14 @@ const { chromium } = require('playwright');
   await bring('spade', 0);
   say('лопата донесена:   работа «' + await workOf() + '», грядка ' + await stageOf(0) +
       (await stageOf(0) === 'empty' ? '  ✓ встала в работу, но не сработала' : '  ✗ СРАБОТАЛА САМА'));
-  await strokes(0, 2, 'y', 40);
+  // Длинный свайп в одну сторону работой не считается — иначе весь этап
+  // проскакивал за долю секунды одним махом.
+  await longSwipe(0, 'y', 300);
+  say('длинный свайп:     работа «' + await workOf() + '»' +
+      ((await workOf()).endsWith('0/20') ? '  ✓ не засчитан' : '  ✗ ОДНИМ МАХОМ'));
+  await strokes(0, 6, 'y', 50);
   const midway = await workOf();
-  await strokes(0, 6, 'y', 40);
+  await strokes(0, 16, 'y', 50);
   say('дёргаем лопату:    ' + midway + ' → ' + await stageOf(0) +
       (await stageOf(0) === 'dug' ? '  ✓ лунка' : '  ✗ ЛУНКА НЕ ВЫКОПАНА'));
 
@@ -239,8 +256,8 @@ const { chromium } = require('playwright');
   await bring('seed', 0);
   await strokes(0, 8, 'x', 6);
   say('дрожание пальцем:  работа «' + await workOf() + '»' +
-      ((await workOf()).endsWith('0/4') ? '  ✓ не засчитано' : '  ✗ ЗАСЧИТАНО'));
-  await strokes(0, 5, 'x', 46);
+      ((await workOf()).endsWith('0/20') ? '  ✓ не засчитано' : '  ✗ ЗАСЧИТАНО'));
+  await strokes(0, 22, 'x', 56);
   say('приминаем землю:   ' + await stageOf(0) +
       (await stageOf(0) === 'sown' ? '  ✓ посеяно' : '  ✗ НЕ ПОСЕЯНО'));
 
@@ -296,8 +313,10 @@ const { chromium } = require('playwright');
   });
   await page.waitForTimeout(250);
   await bring('rake', 0);
-  await strokes(0, 5, 'x', 50);
-  say('водим граблями:    ' + await stageOf(0) +
+  // Грабли тянут К СЕБЕ, то есть вверх-вниз: ось работы обязана совпадать с
+  // тем, куда движется инструмент на картинке.
+  await strokes(0, 22, 'y', 50);
+  say('тянем грабли:      ' + await stageOf(0) +
       (await stageOf(0) === 'ripening' ? '  ✓ прополото' : '  ✗ НЕ ПРОПОЛОТО'));
 
   await page.evaluate(() => {
@@ -341,10 +360,23 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(250);
   await bring('dung', 0);
   const fertWork = await workOf();
-  await strokes(0, 4, 'x', 44);
+  await strokes(0, 22, 'x', 56);
   const skipped = await page.evaluate(() => GameState.data.garden.beds[0].skipped);
   say('растираем какашку: «' + fertWork + '» → снято часов ' + skipped +
       (fertWork.startsWith('fertilize') && skipped === 1 ? '  ✓ руками' : '  ✗ НЕ ТАК'));
+
+  // Ступени инструмента сокращают РАБОТУ, а не ожидание: то же правило, что
+  // у ранних ступеней лейки.
+  const ladder = await page.evaluate(() => {
+    const out = [];
+    for (let i = 0; i < GARDEN.work.dig.cycles.length; i++) {
+      GameState.data.garden.tools.spade = i;
+      out.push(Backend.gardenWorkNeed('dig') / 2 + ' циклов');
+    }
+    GameState.data.garden.tools.spade = 0;
+    return out;
+  });
+  say('ступени лопаты:    ' + ladder.join('  '));
 
   // Находка всплывает над грядкой и живёт свою анимацию целиком: пока она
   // лежала внутри грядки, её сносила секундная перерисовка на полпути.

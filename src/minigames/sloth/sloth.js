@@ -470,7 +470,9 @@ const SlothMinigame = {
 
         this.work = {
             i, action, opts: opts || null, cfg,
-            need: cfg.strokes, done: 0, swing: 0
+            // Сколько движений нужно, решает Backend по ступени инструмента:
+            // прокачка сокращает работу, и экрану об этом знать нечего.
+            need: Backend.gardenWorkNeed(action), done: 0, swing: 0
         };
         this.stroke = null;
         this.renderWork(true);
@@ -501,34 +503,64 @@ const SlothMinigame = {
         this.stroke = { last: this.work.cfg.axis === 'y' ? p.y : p.x, run: 0, dir: 0 };
     },
 
+    // Считается РАЗВОРОТ, а не пройденное расстояние. Первая версия считала
+    // расстояние и обнуляла набег после каждого зачёта — один длинный свайп
+    // через весь экран засчитывался как десяток движений, и вся работа
+    // делалась за долю секунды одним махом. Работа — это «туда и обратно»,
+    // значит и засчитывать надо возврат.
     strokeMove(e) {
         const w = this.work, st = this.stroke;
         if (!w || !st) return;
         const p = this.toScene(e);
         const now = w.cfg.axis === 'y' ? p.y : p.x;
         const d = now - st.last;
-        st.last = now;
         if (!d) return;
-
+        st.last = now;
         const dir = d > 0 ? 1 : -1;
-        // Развернулся — начинается новый мазок, набег обнуляется. Иначе
-        // дрожание пальца туда-сюда набирало бы длину и «работало» само.
-        if (dir !== st.dir) { st.dir = dir; st.run = 0; }
-        st.run += Math.abs(d);
 
-        // Инструмент ходит за пальцем: это единственный отклик на движение,
-        // без него игрок не понимает, засчитывается ли оно.
-        w.swing = Math.max(-1, Math.min(1, (st.run / w.cfg.min) * dir));
+        // Рывок (сбор) — единственное движение без возврата: плод срывают в
+        // одну сторону, и ждать, пока рука вернётся, незачем.
+        if (w.cfg.dir) {
+            if (dir !== w.cfg.dir) { st.run = 0; st.dir = dir; this.showSwing(0); return; }
+            st.run += Math.abs(d);
+            this.showSwing(Math.min(1, st.run / w.cfg.min) * dir);
+            if (st.run >= w.cfg.min) { st.run = 0; this.countStroke(); }
+            return;
+        }
+
+        if (st.dir === 0) st.dir = dir;
+        if (dir !== st.dir) {
+            // Развернулся. Засчитываем, только если размах добрал до
+            // минимума: дрожание пальца туда-сюда работой не считается.
+            const earned = st.run >= w.cfg.min;
+            st.dir = dir;
+            st.run = Math.abs(d);
+            if (earned) { this.countStroke(); return; }
+        } else {
+            st.run += Math.abs(d);
+        }
+        // Инструмент ходит ЗА ПАЛЬЦЕМ и ровно настолько, насколько тот ушёл:
+        // это единственный отклик на движение, которое ещё не засчитано.
+        this.showSwing(Math.min(1, st.run / w.cfg.min) * st.dir);
+    },
+
+    // Отклик на незасчитанное движение — только картинка, состояние не
+    // трогается. Поэтому перерисовывается один слой работы, а не грядки.
+    showSwing(v) {
+        if (!this.work) return;
+        this.work.swing = v;
         this.renderWork();
+    },
 
-        if (st.run < w.cfg.min) return;
-        if (w.cfg.dir && dir !== w.cfg.dir) { st.run = 0; return; }   // рывок только в одну сторону
-        st.run = 0;
+    countStroke() {
+        const w = this.work;
         w.done++;
-        // Грядка меняется от КАЖДОГО движения: камень отлетел, лунка глубже,
-        // сорняк выдран. Перерисовывается она только на засчитанном мазке —
-        // шесть грядок каждый кадр собирать заново незачем.
+        w.swing = 0;
+        // Грядка меняется от КАЖДОГО засчитанного движения: камень отлетел,
+        // лунка глубже, сорняк выдран. Перерисовывается она только здесь —
+        // собирать шесть грядок заново на каждый кадр незачем.
         this.render();
+        this.renderWork();
         if (w.done >= w.need) this.finishWork();
     },
 
