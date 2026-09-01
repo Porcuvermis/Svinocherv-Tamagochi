@@ -73,3 +73,98 @@
     stroke-width: 3px;
     pointer-events: none;
 }
+
+/* ---------- ЗНАЧОК НАД ГРЯДКОЙ ---------- */
+/* Просьба грядки пульсирует: неподвижный значок сливается со сценой, а он
+   здесь — единственный ответ на вопрос «а что дальше». Пульс живёт на
+   ВЛОЖЕННОЙ группе, а позиция задаётся внешней: анимация правит transform и
+   стёрла бы координаты (docs/traps.md, п. 2). */
+#sloth-game .gd-badge-need {
+    animation: gd-badge 1.6s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes gd-badge {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50%      { transform: translateY(-5px) scale(1.08); }
+}
+
+/* Кольцо ожидания не пульсирует: оно не зовёт, а сообщает. Дёргающийся
+   таймер читался бы как «сделай что-нибудь», а делать нечего. */
+#sloth-game .gd-badge-wait { opacity: 0.9; }
+
+/* ---------- ШКАЛА ЛЕНИ ---------- */
+/* Сверху, а не снизу: внизу грядки и полка с инструментами. Та же причина,
+   по которой шкала кормления на кухне переехала наверх. */
+#sloth-game .gd-gauge-wrap {
+    position: absolute;
+    left: 8%; right: 8%; top: 12px;
+    height: 18px;
+    background: #150a10;
+    border: 2px solid #3a2c1f;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
+    z-index: 6;
+    pointer-events: none;
+}
+
+#sloth-game .gd-gauge-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 10px;
+    background: linear-gradient(90deg, #6d9445, #93b866);
+    transition: width 0.35s ease;
+}
+
+/* Каждое действие даёт шкале заметно дёрнуться: без этого игрок не связывает
+   «повозился в саду» с «лень закрылась», а связь — весь смысл мини-игры. */
+#sloth-game .gd-gauge-wrap.gd-bump { animation: gd-bump 0.45s ease; }
+
+@keyframes gd-bump {
+    0%, 100% { transform: scale(1); }
+    40%      { transform: scale(1.06); }
+}
+
+/* ---------- DEBUG-ПАНЕЛЬ ---------- */
+/* Не игра, правило «ни одного слова» сюда не относится. Ноль — это верх тела
+   рамки, то есть сразу под шапкой с крестиком. */
+#sloth-game #gd-debug {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 5px;
+    background: rgba(0, 0, 0, 0.78);
+    border-radius: 0 0 8px 8px;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#sloth-game #gd-debug.visible { display: flex; }
+
+#sloth-game .gd-debug-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-items: center;
+}
+
+#sloth-game #gd-debug button {
+    padding: 2px 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+    font: 11px/1 monospace;
+}
+
+#sloth-game #gd-debug button:active { background: rgba(255, 255, 255, 0.2); }
+
+#sloth-game .gd-debug-beds {
+    font: 10px/1.4 monospace;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: pre-wrap;
+}

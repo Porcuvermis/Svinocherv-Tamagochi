@@ -220,19 +220,34 @@ const GARDEN_ART = {
         const d = `M0 ${y0} C0 ${(y0 - h * 0.34).toFixed(1)} ${(curve).toFixed(1)} ${(y0 - h * 0.7).toFixed(1)} ${tipX.toFixed(1)} ${tipY.toFixed(1)}`;
 
         const out = [`<path d="${d}" fill="none" stroke="${stem}"
-                            stroke-width="${(2.2 + p.thickness).toFixed(1)}" stroke-linecap="round"/>`];
+                            stroke-width="${(3.4 + p.thickness).toFixed(1)}" stroke-linecap="round"/>`];
 
         // Листья по плану из модели: доля высоты, сторона, вариация размера.
+        // Форма рисуется в СВОЕЙ системе координат и поворачивается целиком:
+        // считать изогнутый лист прямо в координатах сцены — верный способ
+        // получить тонкий серп вместо листа, что и вышло с первого раза.
+        const shape = {
+            oval:    (L, W) => `M0 0 Q${(L * 0.5).toFixed(1)} ${(-W).toFixed(1)} ${L.toFixed(1)} 0 Q${(L * 0.5).toFixed(1)} ${W.toFixed(1)} 0 0 Z`,
+            pointed: (L, W) => `M0 0 Q${(L * 0.45).toFixed(1)} ${(-W).toFixed(1)} ${L.toFixed(1)} 0 Q${(L * 0.45).toFixed(1)} ${(W * 0.7).toFixed(1)} 0 0 Z`,
+            heart:   (L, W) => `M0 0 Q${(L * 0.3).toFixed(1)} ${(-W * 1.25).toFixed(1)} ${(L * 0.72).toFixed(1)} ${(-W * 0.4).toFixed(1)} Q${L.toFixed(1)} ${(W * 0.15).toFixed(1)} ${(L * 0.6).toFixed(1)} ${(W * 0.7).toFixed(1)} Q${(L * 0.3).toFixed(1)} ${(W * 1.1).toFixed(1)} 0 0 Z`,
+            fern:    (L, W) => `M0 0 Q${(L * 0.5).toFixed(1)} ${(-W * 0.75).toFixed(1)} ${L.toFixed(1)} ${(-W * 0.2).toFixed(1)} Q${(L * 0.5).toFixed(1)} ${(W * 0.55).toFixed(1)} 0 0 Z`
+        };
+        const draw = shape[p.leafShape] || shape.oval;
+
         (p.leaves || []).forEach(lf => {
             if (lf.t > g) return;                       // ещё не дорос до этого листа
             const t = lf.t;
             const lx = curve * t * (1 - t) * 3 + tipX * t * t;
             const ly = y0 - h * t;
-            const len = (12 + 16 * p.leafSizeBase) * (lf.sizeScale || 1) * g;
-            const dx = lf.side * len, dy = -len * 0.5;
-            out.push(`<path d="M${lx.toFixed(1)} ${ly.toFixed(1)} q${(dx * 0.5).toFixed(1)} ${(dy * 1.2).toFixed(1)} ${dx.toFixed(1)} ${dy.toFixed(1)}
-                                q${(-dx * 0.3).toFixed(1)} ${(-dy * 0.2).toFixed(1)} ${(-dx).toFixed(1)} ${(-dy).toFixed(1)} Z"
-                            fill="${leaf}" stroke="${ink}" stroke-width="${S.hairline}"/>`);
+            const L = (16 + 22 * p.leafSizeBase) * (lf.sizeScale || 1) * g;
+            const W = L * 0.42;
+            // Лист смотрит вверх-вбок: вниз он висел бы увядшим.
+            const ang = lf.side > 0 ? -32 + (lf.angleVar || 0) * 40 : -148 - (lf.angleVar || 0) * 40;
+            out.push(`<g transform="translate(${lx.toFixed(1)} ${ly.toFixed(1)}) rotate(${ang.toFixed(0)})">
+                <path d="${draw(L, W)}" fill="${leaf}" stroke="${ink}" stroke-width="${S.detail}"
+                      stroke-linejoin="round"/>
+                <path d="M0 0 L${(L * 0.85).toFixed(1)} 0" stroke="${stem}" stroke-width="${S.hairline}" opacity="0.7"/>
+            </g>`);
         });
 
         // Плод. Рисует его КУХНЯ своим же кодом: то, что выросло на грядке, и
@@ -245,6 +260,46 @@ const GARDEN_ART = {
                       </g>`);
         }
         return out.join('');
+    },
+
+    // ---------- ЗНАЧОК НАД ГРЯДКОЙ ----------
+    // Главный ответ на вопрос «а что дальше». Над каждой грядкой висит одно
+    // из двух:
+    //   * ЧЕМ её надо тронуть — маленький значок нужного инструмента. Грядка
+    //     сама просит лопату, семечко, лейку или грабли, и просьбу видно, не
+    //     подходя к ней;
+    //   * СКОЛЬКО ещё ждать — кольцо, которое заполняется.
+    //
+    // Без этого сад читался так: посадил, полил, росток есть — и дальше
+    // непонятно ничего. Растение показывает время, но не показывает, нужен ли
+    // от игрока ход ПРЯМО СЕЙЧАС, а это разные вопроса.
+    badge(kind, frac) {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        if (kind === 'wait') {
+            const r = 15, C = 2 * Math.PI * r;
+            const done = Math.max(0, Math.min(1, frac));
+            return `<g class="gd-badge gd-badge-wait">
+                <circle r="${r + 6}" fill="${k.soil[700]}" opacity="0.55"/>
+                <circle r="${r}" fill="none" stroke="${k.sky[100]}" stroke-width="4" opacity="0.35"/>
+                <circle r="${r}" fill="none" stroke="${k.sky[100]}" stroke-width="4"
+                        stroke-linecap="round" transform="rotate(-90)"
+                        stroke-dasharray="${(C * done).toFixed(1)} ${C.toFixed(1)}"/>
+            </g>`;
+        }
+        // Значок инструмента — тот же рисунок, что на полке, только мельче:
+        // игрок ищет глазами ровно ту вещь, которую грядка просит.
+        const art = kind === 'hand'
+            ? `<path d="M-9 6 q-4 -12 2 -12 q2 -8 6 -4 q3 -7 6 -1 q4 -4 5 3 l1 10 q0 8 -9 8 q-8 0 -11 -4 Z"
+                     fill="${PALETTE.flesh ? PALETTE.flesh[300] : '#e8b0a8'}" stroke="${ink}" stroke-width="${S.structure}"
+                     stroke-linejoin="round"/>`
+            : `<g transform="scale(0.62)">${this.tool(kind === 'seed' ? 'spade' : kind)}</g>`;
+        const inner = kind === 'seed'
+            ? `<g transform="scale(0.5)">${this.seedPacket('potato', 3)}</g>`
+            : art;
+        return `<g class="gd-badge gd-badge-need">
+            <circle r="24" fill="${k.soil[700]}" opacity="0.55"/>
+            ${inner}
+        </g>`;
     },
 
     // ---------- ИНСТРУМЕНТЫ ----------

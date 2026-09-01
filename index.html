@@ -199,7 +199,7 @@
     <link rel="stylesheet" href="src/core/minigame-window.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=21" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=5" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=8" media="print" onload="this.media='all'">
@@ -596,6 +596,13 @@
                  перед собой, поэтому они не уезжают вместе с грядками. -->
             <g id="gd-fg"></g>
         </svg>
+
+        <!-- Шкала лени. Без неё игрок делает действия и не понимает, зачем:
+             связь «повозился в саду — лень закрылась» и есть весь смысл этой
+             мини-игры, и показать её нечем, кроме шкалы. -->
+        <div class="gd-gauge-wrap" id="gd-gauge-wrap">
+            <div class="gd-gauge-bar" id="gd-gauge-bar"></div>
+        </div>
     </div>
 
     <div id="lust-game" class="minigame-screen">
@@ -780,8 +787,9 @@
 <script src="src/minigames/wrath/wrath-duel.js?v=9"></script>
 <script src="src/minigames/wrath/wrath.js?v=12"></script>
 <script src="src/minigames/sloth/plant-model.js?v=2"></script>
-<script src="src/minigames/sloth/garden-art.js?v=1"></script>
-<script src="src/minigames/sloth/sloth.js?v=7"></script>
+<script src="src/minigames/sloth/garden-art.js?v=2"></script>
+<script src="src/minigames/sloth/garden-debug.js?v=1"></script>
+<script src="src/minigames/sloth/sloth.js?v=8"></script>
 <script src="src/minigames/lust/lust.js?v=3"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->

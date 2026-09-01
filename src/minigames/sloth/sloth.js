@@ -64,6 +64,10 @@ const SlothMinigame = {
         this.beds = (typeof GARDEN !== 'undefined') ? GARDEN.BEDS_TOTAL : 6;
         this.camEl.innerHTML = GARDEN_ART.scene(this.beds);
 
+        // Своя debug-панель: сад меряется часами, и без отмотки времени
+        // проверить его нельзя вообще никак.
+        if (typeof GardenDebug !== 'undefined') GardenDebug.init(this.screenElement);
+
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
         window.addEventListener('pointerup', (e) => this.onUp(e));
@@ -77,6 +81,7 @@ const SlothMinigame = {
         this.drag = null;
         this.locked = false;
         this.render();
+        if (typeof GardenDebug !== 'undefined') GardenDebug.render();
         // Один кадровый цикл на весь сад: он двигает только КАРТИНКУ —
         // подросшее растение и струю из лейки. Состояние он не трогает.
         if (!this.tickId) this.tickId = setInterval(() => this.render(), 1000);
@@ -117,14 +122,42 @@ const SlothMinigame = {
             const g = document.getElementById('gd-bed-' + i);
             if (!g) return;
             g.setAttribute('transform', `translate(${GARDEN_ART.bedX(i)} 0)`);
+            const growth = this.growthOf(bed);
+            const plant = bed.species ? PlantModel.generate(bed.species, bed.seed) : null;
             g.innerHTML = GARDEN_ART.bed(bed.stage, {
                 seed: bed.seed || (i + 1) * 17,
-                plant: bed.species ? PlantModel.generate(bed.species, bed.seed) : null,
-                growth: this.growthOf(bed),
-                fruitKey: bed.species
-            });
+                plant, growth, fruitKey: bed.species
+            }) + this.badgeFor(bed, plant, growth);
         });
         this.renderTools();
+        this.renderGauge();
+    },
+
+    // Что грядка просит прямо сейчас. Одна таблица на всё: если состоянию
+    // нечего сюда положить, значит от игрока в нём ничего не ждут.
+    NEED: { locked: 'spade', empty: 'seed', sown: 'can', weedy: 'rake', ripe: 'hand' },
+
+    // Значок висит НАД растением, а не на фиксированной высоте: иначе выросший
+    // куст закрывает собой ровно ту подсказку, которая к нему относится.
+    badgeFor(bed, plant, growth) {
+        const need = this.NEED[bed.stage];
+        const waiting = bed.stage === 'growing' || bed.stage === 'ripening';
+        if (!need && !waiting) return '';
+        const top = plant ? 40 + plant.heightFrac * 180 * growth : 30;
+        const y = Math.max(120, GARDEN_ART.SOIL_Y - top - 52);
+        const art = waiting ? GARDEN_ART.badge('wait', growth) : GARDEN_ART.badge(need);
+        return `<g transform="translate(0 ${y.toFixed(0)})">${art}</g>`;
+    },
+
+    // ---------- ШКАЛА ЛЕНИ ----------
+    // Её не было видно вообще: игрок делал действия и не понимал, зачем.
+    // Лежит поверх сцены сверху — снизу грядки и инструменты, и закрывать их
+    // нечем.
+    renderGauge() {
+        const el = document.getElementById('gd-gauge-bar');
+        if (!el) return;
+        const v = GameState.sinValue('sloth') / GameState.maxValue('sloth');
+        el.style.width = (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%';
     },
 
     // Доля роста: от неё зависит высота растения, и она же — единственная
@@ -270,6 +303,13 @@ const SlothMinigame = {
             this.locked = false;
             this.render();
             if (res.grown) this.flyToPantry(i);
+            // Шкала дёргается на каждом действии: без этого игрок не связывает
+            // «повозился в саду» с «лень закрылась», а связь тут и есть весь
+            // смысл мини-игры.
+            if (res.fill) {
+                const w = document.getElementById('gd-gauge-wrap');
+                if (w) { w.classList.remove('gd-bump'); void w.getBoundingClientRect(); w.classList.add('gd-bump'); }
+            }
             if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
         }, this.ACT_MS);
     },
