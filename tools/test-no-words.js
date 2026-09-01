@@ -131,6 +131,36 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(1400);
   found.fridge = await scan('gluttony-game');
   await page.screenshot({ path: out + 'nw-k2-fridge.png' });
+  // ---------- ЛЕНЬ: САД ----------
+  // Сад собирался сразу без слов: у прежней мини-игры внизу висела строка
+  // «ПЕРЕТАЩИ ЛЕЙКУ НА ГОРШОК», и она же была единственным объяснением
+  // происходящего. Раз объяснять теперь нечем, проверка обязана стоять с
+  // первого дня.
+  await page.evaluate(() => {
+    if (typeof GluttonyMinigame !== 'undefined' && GluttonyMinigame.close) GluttonyMinigame.close();
+    GameManager.handleSinAction('sloth');
+  });
+  await page.waitForTimeout(900);
+  found.garden = await scan('sloth-game');
+  await page.screenshot({ path: out + 'nw-s1-garden.png' });
+
+  // Грядка со всем, что на ней может вырасти: сорняки, плод, отказ.
+  await page.evaluate(() => {
+    const b = GameState.data.garden.beds[0];
+    b.stage = 'ripe'; b.species = 'tomato'; b.seed = 42; b.at = null;
+    GameState.save();
+    SlothMinigame.render();
+  });
+  await page.waitForTimeout(500);
+  found.gardenRipe = await scan('sloth-game');
+  await page.screenshot({ path: out + 'nw-s2-ripe.png' });
+
+  await page.evaluate(() => {
+    if (typeof SlothMinigame !== 'undefined' && SlothMinigame.close) SlothMinigame.close();
+    GameManager.handleSinAction('wrath');
+  });
+  await page.waitForTimeout(500);
+
   await page.screenshot({ path: out + 'nw-10-result.png' });
   await page.evaluate(() => document.getElementById('wrath-ok-btn').click());
   await page.waitForTimeout(400);
