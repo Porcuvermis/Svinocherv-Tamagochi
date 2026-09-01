@@ -1,0 +1,354 @@
+/* ================= КУХНЯ ЧРЕВОУГОДИЯ ================= */
+/* Рамку, шапку и крестик рисует общее окно мини-игры
+   (src/core/minigame-window.css) — здесь только начинка (инвариант 8).
+
+   Стилей у самих предметов почти нет: их вид задан в kitchen-art.js, потому
+   что это картинка, а не вёрстка. Здесь только ДВИЖЕНИЕ — переходы, которыми
+   предметы ездят, дверцы открываются, а нож замахивается. */
+
+#gluttony-game .kt-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- КАМЕРА ---------- */
+/* Наезд — это transform на группе сцены. Кривая нарочно с длинным выходом:
+   камера трогается охотно, а приезжает мягко, и переезд читается движением,
+   а не рывком. */
+#gluttony-game #kt-cam {
+    transition: transform 0.62s cubic-bezier(0.32, 0.72, 0.2, 1);
+}
+
+/* ---------- ПРЕДМЕТЫ ---------- */
+/* Всё, что игрок двигает, ездит одним и тем же переходом: продукт летит с
+   полки на стол, кучка едет к плите, бутыль возвращается на место. Пока
+   предмет в пальцах, переход снимается — иначе он тянется за пальцем с
+   задержкой и ощущается ватным. */
+#gluttony-game .kt-item,
+#gluttony-game .kt-bottle {
+    transition: transform 0.42s cubic-bezier(0.3, 0.7, 0.25, 1), opacity 0.35s ease;
+    cursor: grab;
+}
+
+#gluttony-game .kt-item.kt-dragging,
+#gluttony-game .kt-bottle.kt-dragging {
+    transition: none;
+    cursor: grabbing;
+}
+
+/* Нечего взять — вещь коротко дёргается. Это отказ, сказанный движением:
+   написать «не хватает» нечем (инвариант 9). */
+#gluttony-game .kt-item.kt-lack {
+    animation: kt-lack 0.32s ease;
+}
+
+@keyframes kt-lack {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+}
+
+/* Число рядом с продуктом в холодильнике. Цифра — не слово, а пиктограмма
+   количества. */
+#gluttony-game .kt-count {
+    font: 800 34px/1 -apple-system, system-ui, sans-serif;
+    text-anchor: middle;
+    fill: var(--mg-accent, #ff9500);
+    stroke: #23101d;
+    stroke-width: 3;
+    paint-order: stroke;
+    pointer-events: none;
+}
+
+/* ---------- ХОЛОДИЛЬНИК ---------- */
+/* Дверцы поворачиваются вокруг своего левого края — как настоящие. Ось
+   задана в единицах сцены (там же, где нарисована петля), поэтому при любом
+   наезде камеры дверца открывается правильно. */
+#gluttony-game .kt-door {
+    transition: transform 0.5s cubic-bezier(0.3, 0.8, 0.3, 1);
+    transform-box: view-box;
+}
+
+#gluttony-game #kt-door-freezer { transform-origin: 26px 360px; }
+#gluttony-game #kt-door-main    { transform-origin: 26px 790px; }
+
+#gluttony-game #kt-fridge.open #kt-door-freezer { transform: rotateY(0deg) scaleX(-0.18) translateX(0px); }
+#gluttony-game #kt-fridge.open #kt-door-main    { transform: scaleX(-0.18); }
+
+/* ---------- ПЕРЕДНИЙ ПЛАН ----------
+   Доска и нож не подчиняются камере: они ближе неё. Едут своим переходом —
+   въезжают из-за края и уезжают за край, и по этому движению видно, что
+   этап сменился, а не картинка подменилась. */
+#gluttony-game #kt-board {
+    transition: transform 0.55s cubic-bezier(0.3, 0.75, 0.25, 1);
+}
+
+/* Короткий толчок доски в такт удару ножа: без него надрез не чувствуется. */
+#gluttony-game #kt-board.kt-cut { animation: kt-cut 0.16s ease-out; }
+
+@keyframes kt-cut {
+    0%, 100% { transform: translate(195px, 620px); }
+    50%      { transform: translate(195px, 626px); }
+}
+
+#gluttony-game #kt-knife { transition: opacity 0.3s ease, transform 0.45s cubic-bezier(0.3, 0.75, 0.25, 1); }
+/* Наклон ножа идёт за пальцем непрерывно. Короткий переход только сглаживает
+   дрожь руки — большего нельзя: нож должен ощущаться продолжением пальца. */
+#gluttony-game #kt-knife-arm { transition: transform 0.07s linear; }
+/* Отработавший нож отходит в сторону и перестаёт ловить касания: его зона
+   захвата шире лезвия и накрывает доску, а поднять надо именно доску. */
+/* И у самой группы, И у всего внутри. У зон захвата стоит собственный
+   pointer-events:all, а он перебивает выключение на родителе: отработавший
+   нож продолжал ловить касания и забирал их у бутылей на другом конце
+   кухни. */
+#gluttony-game #kt-knife.kt-done,
+#gluttony-game #kt-knife.kt-done * { pointer-events: none; }
+/* Прозрачность у .kt-done НЕ задаём: CSS перебивает атрибут opacity, и
+   спрятать нож потом становится нечем — он остаётся призраком на экране. */
+#gluttony-game #kt-board-rest { transition: opacity 0.4s ease; }
+
+/* ---------- НОЖ (старое) ----------
+   ТРИ уровня, и это не прихоть. Первая версия вешала покачивание и замах на
+   одну и ту же группу: CSS-анимация перебивает transform, выставленный из
+   кода, поэтому нож бодро качался сам по себе и НЕ РЕАГИРОВАЛ на палец.
+   Теперь #kt-knife держит позицию, #kt-knife-bob качается вхолостую,
+   #kt-knife-body отыгрывает замах — и они не спорят. */
+#gluttony-game #kt-knife {
+    transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.25, 1);
+}
+
+#gluttony-game #kt-knife.ready #kt-knife-bob {
+    animation: kt-knife-idle 1.15s ease-in-out infinite;
+}
+
+/* Пока режут, вхолостую качаться незачем: нож идёт за пальцем. */
+#gluttony-game #kt-knife.cutting #kt-knife-bob { animation: none; }
+
+@keyframes kt-knife-idle {
+    0%, 100% { transform: translate(0, -14px) rotate(-6deg); }
+    50%      { transform: translate(0, 18px) rotate(6deg); }
+}
+
+#gluttony-game #kt-knife-body {
+    transition: transform 0.06s linear;
+}
+
+/* ---------- КАСТРЮЛЯ, ОГОНЬ, ПАР ---------- */
+#gluttony-game #kt-pot-fill { transition: height 0.5s ease, y 0.5s ease, fill 0.4s ease; }
+#gluttony-game #kt-flame, #gluttony-game #kt-steam, #gluttony-game #kt-spoon {
+    transition: opacity 0.5s ease;
+}
+
+/* Анимация только при включённом огне. Если вешать её безусловно, кейфреймы
+   сами задают opacity и перебивают выключённое состояние — плита горела бы с
+   первого кадра, ещё до того, как в кастрюлю что-то налили. */
+#gluttony-game #kt-flame.on { animation: kt-flicker 0.5s ease-in-out infinite alternate; }
+
+@keyframes kt-flicker {
+    from { opacity: 0.75; }
+    to   { opacity: 1; }
+}
+
+#gluttony-game #kt-steam.on { animation: kt-steam-rise 2.6s ease-in-out infinite; }
+
+@keyframes kt-steam-rise {
+    0%   { opacity: 0.15; }
+    50%  { opacity: 0.7; }
+    100% { opacity: 0.15; }
+}
+
+/* Кастрюля подсвечивается, пока в руках что-то, что в неё можно положить. */
+#gluttony-game #kt-pot.kt-target { filter: drop-shadow(0 0 10px var(--mg-accent, #ff9500)); }
+
+/* Кастрюлю НЕСУТ вниз, к червю: за пальцем она едет без перехода (иначе
+   тянется следом и ощущается ватной), а не донёс — возвращается на плиту
+   сама, вот этим переходом. */
+#gluttony-game #kt-pot { transition: transform 0.42s cubic-bezier(0.3, 0.7, 0.25, 1); }
+#gluttony-game #kt-pot.kt-dragging { transition: none; }
+
+#gluttony-game #kt-spoon { transition: opacity 0.4s ease, transform 0.4s ease; }
+#gluttony-game #kt-spoon-body { transition: transform 0.12s ease-out; }
+
+/* Лейка возвращается в кран пружиной, а не переносом. */
+#gluttony-game #kt-nozzle { transition: transform 0.35s cubic-bezier(0.4, 1.6, 0.5, 1); }
+#gluttony-game .kt-dragging #kt-nozzle { transition: none; }
+
+/* ---------- ИТОГ ---------- */
+#gluttony-game .kt-result {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 34px;
+    font-weight: 800;
+    color: #ffd9a0;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+#gluttony-game .kt-result i {
+    font-style: normal;
+    font-size: 22px;
+    opacity: 0.85;
+}
+
+
+/* ---------- УКАЗАТЕЛЬ ----------
+   Игра без слов обязана показывать, что делать, движением. Кольцо пульсирует
+   на том, чего надо коснуться; пунктирная стрелка с бегущей точкой означает
+   «перетащи отсюда туда». Появляется через паузу бездействия и гаснет от
+   любого касания — подсказка для растерявшегося, а не нянька. */
+#gluttony-game #kt-hint {
+    transition: opacity 0.35s ease;
+}
+
+/* Пульс живёт на ВЛОЖЕННОЙ группе, а позиция — на внешней. Та же беда, что с
+   ножом: анимация правит transform и стирает координаты, которыми кольцо
+   ставят на цель, — оно молча остаётся в углу сцены. */
+#gluttony-game #kt-hint-pulse {
+    animation: kt-hint-pulse 1.5s ease-out infinite;
+    /* fill-box, а не view-box: с view-box «центр» — это центр всего холста,
+       и кольцо не пульсировало на месте, а разъезжалось в сторону от цели. */
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes kt-hint-pulse {
+    0%   { transform: scale(0.62); opacity: 0; }
+    35%  { opacity: 1; }
+    100% { transform: scale(1.25); opacity: 0; }
+}
+
+#gluttony-game #kt-hint-line {
+    animation: kt-hint-flow 1.1s linear infinite;
+}
+
+@keyframes kt-hint-flow {
+    from { stroke-dashoffset: 29; }
+    to   { stroke-dashoffset: 0; }
+}
+
+/* ---------- ОТКЛИК НА КАСАНИЕ ----------
+   Любой предмет, которого коснулись, обязан ответить движением сразу. Без
+   этого игрок не понимает, попал он вообще или нет, и начинает долбить по
+   экрану — ровно то, что и случилось на первом живом прогоне. */
+#gluttony-game .kt-pop {
+    animation: kt-pop 0.28s cubic-bezier(0.3, 1.7, 0.5, 1);
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes kt-pop {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.28); }
+    100% { transform: scale(1); }
+}
+
+/* Корзина подпрыгивает, когда в неё что-то падает. */
+#gluttony-game #kt-basket { transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); }
+#gluttony-game #kt-basket.kt-bump { animation: kt-bump 0.34s ease-out; }
+
+@keyframes kt-bump {
+    0%, 100% { transform: translate(0, 0); }
+    35%      { transform: translate(0, -16px); }
+}
+
+/* ---------- КОРМЁЖКА ИДЁТ НА САМОЙ КУХНЕ ----------
+   Раньше этап кормления подменял всю картинку: своя сцена со своим
+   градиентным фоном, а кухня на это время пряталась. Читалось это как
+   переход в другую игру — варил суп, а очнулся неизвестно где. Теперь слой
+   прозрачный и лежит поверх кухни: камера переезжает на пол перед столом,
+   туда же приползает червь. */
+#gluttony-game .glut-stage-feed {
+    top: 0; left: 0; right: 0; bottom: 0;
+    /* Слой сквозной: кастрюля ловит касания сама, а всё остальное здесь —
+       картинка, и перехватывать ей нечего. */
+    pointer-events: none;
+}
+
+#gluttony-game .glut-feed-scene {
+    background: none;
+    border-radius: 0;
+}
+
+/* Кастрюля появляется, только когда червь дошёл: до этого над пустым полом
+   висела бы еда неизвестно для кого. */
+#gluttony-game #glut-tilt-bucket {
+    pointer-events: auto;
+    transition: opacity 0.4s ease;
+}
+
+/* Шкала сытости больше не растягивает раскладку столбиком, а лежит поверх
+   кухни: сцена под ней — вся кухня, и делить её высоту не с чем.
+
+   СВЕРХУ, а не снизу: внизу стоит червь, и его телом шкалу наполовину
+   закрывало — как раз в тот момент, когда по ней и надо следить. Сверху
+   пусто: там стена и до неё никому нет дела. */
+#gluttony-game .glut-stage-feed .glut-gauge-wrap {
+    position: absolute;
+    left: 8%; right: 8%; top: 12px;
+    width: auto;
+    margin: 0;
+    z-index: 6;
+}
+
+/* ---------- DEBUG-ПАНЕЛЬ КУХНИ ----------
+   Не игра, и правило «ни одного слова» (инвариант 9) сюда не относится.
+   Лежит поверх кухни сверху: снизу стоит червь на кормёжке, а сверху стена,
+   и закрывать там нечего. */
+#gluttony-game #kt-debug {
+    position: absolute;
+    /* Ноль здесь — это верх ТЕЛА РАМКИ, то есть сразу под шапкой с крестиком.
+       Панель лежит внутри рамки именно за этим: на телефоне верх экрана
+       мини-игры уходит под чёлку и системную строку, кнопки видно, а нажать
+       нельзя. Отсчёт от безопасной зоны уже сделан самой рамкой. */
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    border-radius: 0 0 8px 8px;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 5px;
+    background: rgba(0, 0, 0, 0.78);
+    -webkit-tap-highlight-color: transparent;
+}
+
+#gluttony-game #kt-debug.visible { display: flex; }
+
+#gluttony-game .kt-debug-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-items: center;
+}
+
+#gluttony-game .kt-debug-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 3px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#gluttony-game .kt-debug-item b { font-size: 11px; }
+#gluttony-game .kt-debug-item i {
+    min-width: 12px;
+    text-align: center;
+    font: 700 11px/1 monospace;
+    font-style: normal;
+    color: #ffc266;
+}
+
+#gluttony-game #kt-debug button {
+    padding: 2px 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+    font: 11px/1 monospace;
+}
+
+#gluttony-game #kt-debug button:active { background: rgba(255, 255, 255, 0.2); }

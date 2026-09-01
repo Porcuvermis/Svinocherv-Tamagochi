@@ -13,9 +13,8 @@ const { chromium } = require('playwright');
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-no-words.js /tmp/shots-
 //
-// Пока проверяется гнев — первый грех, переведённый на бессловесный язык
-// (docs/plan/11-no-words.md). По мере перевода остальных сюда добавляются
-// их экраны.
+// Проверяются гнев (первый переведённый грех) и чревоугодие (собрано сразу
+// без слов). По мере перевода остальных сюда добавляются их экраны.
 (async () => {
   const out = process.argv[2];
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -24,10 +23,11 @@ const { chromium } = require('playwright');
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
 
-  const scan = () => page.evaluate(() => {
+  const scan = (rootId) => page.evaluate((id) => {
     const bad = [];
-    const walker = document.createTreeWalker(
-      document.getElementById('wrath-game'), NodeFilter.SHOW_TEXT);
+    const root = document.getElementById(id || 'wrath-game');
+    if (!root) return ['нет экрана ' + id];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
       const t = (node.nodeValue || '').trim();
@@ -112,6 +112,23 @@ const { chromium } = require('playwright');
   }
   await page.waitForTimeout(1400);
   found.duelResult = await scan();
+
+  // ---------- ЧРЕВОУГОДИЕ: КУХНЯ ----------
+  // Собиралась сразу без слов, поэтому проверяется с первого дня, а не после
+  // отдельного перевода.
+  await page.evaluate(() => {
+    if (typeof WrathMinigame !== 'undefined' && WrathMinigame.close) WrathMinigame.close();
+    GameManager.handleSinAction('gluttony');
+  });
+  await page.waitForTimeout(900);
+  found.kitchen = await scan('gluttony-game');
+  await page.screenshot({ path: out + 'nw-k1-kitchen.png' });
+
+  // Холодильник открывается тапом по себе — кнопки нет и не должно быть.
+  await page.evaluate(() => GluttonyMinigame.openFridge());
+  await page.waitForTimeout(1400);
+  found.fridge = await scan('gluttony-game');
+  await page.screenshot({ path: out + 'nw-k2-fridge.png' });
   await page.screenshot({ path: out + 'nw-10-result.png' });
   await page.evaluate(() => document.getElementById('wrath-ok-btn').click());
   await page.waitForTimeout(400);
