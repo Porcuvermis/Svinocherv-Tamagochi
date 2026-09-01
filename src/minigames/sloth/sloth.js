@@ -43,6 +43,12 @@ const SlothMinigame = {
     // которой он затевался.
     ACT_MS: 520,
 
+    // Во сколько раз предмет в руке крупнее, чем на полке. Предмет под
+    // пальцем обязан быть крупнее самого пальца, иначе не видно, что держишь.
+    // Число нужно и носику лейки: струя выходит из повёрнутого и увеличенного
+    // рисунка, а не из точки «примерно там».
+    DRAG_SCALE: 1.6,
+
     camX: 0,
     drag: null,
     locked: false,
@@ -105,6 +111,9 @@ const SlothMinigame = {
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
         this.screenElement.classList.remove('active');
         if (this.tickId) { clearInterval(this.tickId); this.tickId = null; }
+        if (this.pourRaf) { cancelAnimationFrame(this.pourRaf); this.pourRaf = 0; }
+        LiquidStream.clear(this.stream);
+        if (this.wetEl) this.wetEl.innerHTML = '';
         this.drag = null;
         this.watchMark = 0;
     },
@@ -211,7 +220,7 @@ const SlothMinigame = {
         const tools = Backend.gardenTools();
         if (bed.stage === 'growing') {
             if (!bed.at) return 0.1;
-            const hours = GARDEN.CAN_HOURS[Math.min(tools.can, GARDEN.CAN_HOURS.length - 1)];
+            const hours = Backend.canTier().hours;
             const total = Math.max(1, hours - (bed.skipped || 0) * GARDEN.FERT_HOURS_PER_DUNG) * 3600000;
             const done = Math.max(0, Math.min(1, 1 - left / total));
             return 0.1 + done * (this.GROW_STAGE1 - 0.1);
@@ -243,11 +252,38 @@ const SlothMinigame = {
         return list;
     },
 
+    // Передний план разложен на слои РАЗ и навсегда: полка перерисовывается
+    // каждую секунду, а пул шариков струи создаётся один раз и переживать
+    // перерисовку обязан. Раньше `fgEl.innerHTML = ...` сносил бы его вместе
+    // с полкой.
+    buildFg() {
+        if (document.getElementById('gd-fg-tools')) return;
+        this.fgEl.innerHTML =
+            `<g id="gd-fg-wet"></g>
+             <g id="gd-fg-stream" filter="url(#gd-goo)" fill="${PALETTE.garden.water[500]}"></g>
+             <g id="gd-fg-tools"></g>`;
+        this.wetEl = document.getElementById('gd-fg-wet');
+        // Тот же движок струи, что на кухне (src/core/liquid-stream.js).
+        // Шарики летят в координатах ЭКРАНА: лейку игрок держит перед собой, и
+        // ездить вместе с участком она не должна.
+        // Числа подобраны по картинке, и вот что каждое держит:
+        //   emitMs пореже — струя рвалась на отдельные бусины на пути от
+        //     поднятой лейки до земли (это метра полтора по сцене);
+        //   bow небольшой — у лейки короткий носик, и вода из неё падает
+        //     почти сразу, а не летит дугой, как из опрокинутой бутыли.
+        //   taper мягче кухонного — лейку поднимают высоко, и при обычном
+        //     сужении струя таяла над самой грядкой, не долетев.
+        this.stream = LiquidStream.make(document.getElementById('gd-fg-stream'), {
+            pool: 64, r: 8, emitMs: 15, base: 0.85, acc: 1.4, bow: 0.22, ref: 220, taper: 0.08
+        });
+    },
+
     renderTools() {
+        this.buildFg();
         const list = this.tools();
         const step = Math.min(64, 340 / Math.max(1, list.length));
         const x0 = 195 - step * (list.length - 1) / 2;
-        this.fgEl.innerHTML = list.map((t, i) => {
+        document.getElementById('gd-fg-tools').innerHTML = list.map((t, i) => {
             const art = t.kind === 'seed' ? GARDEN_ART.seedPacket(t.key, 3) : GARDEN_ART.tool(t.kind);
             const badge = t.kind === 'dung'
                 ? `<text class="gd-count" x="0" y="34">${GameState.currency('dung')}</text>` : '';
@@ -269,8 +305,15 @@ const SlothMinigame = {
             ghost.classList.add('gd-dragging');
             this.fgEl.appendChild(ghost);
             const p = this.toStage(e);
-            ghost.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) scale(1.6)`);
-            this.drag = { kind: 'tool', node: ghost, tool: tool.dataset.kind, key: tool.dataset.key };
+            ghost.setAttribute('transform',
+                `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) scale(${this.DRAG_SCALE})`);
+            this.drag = {
+                kind: 'tool', node: ghost, tool: tool.dataset.kind, key: tool.dataset.key,
+                x: p.x, y: p.y,
+                pourBed: -1,        // над какой грядкой льём прямо сейчас
+                pourAcc: 0          // сколько миллисекунд уже налито
+            };
+            if (this.drag.tool === 'can') this.startPour();
             return;
         }
 
@@ -295,14 +338,27 @@ const SlothMinigame = {
             this.setCam(this.drag.base - (this.toStage(e).x - this.drag.from));
             return;
         }
+        const d = this.drag;
         const p = this.toStage(e);
-        this.drag.node.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) scale(1.6)`);
+        d.x = p.x; d.y = p.y;
         // Грядка под пальцем подсвечивается: до того, как игрок отпустил,
         // должно быть видно, куда попадёт инструмент.
-        const i = this.bedUnder(e);
+        const i = this.bedUnder(e, d.tool === 'can');
+        const ok = i >= 0 && this.allowed(d, i);
         Array.from(document.querySelectorAll('.gd-bed')).forEach((g, n) => {
-            g.classList.toggle('gd-target', n === i && this.allowed(this.drag, n));
+            g.classList.toggle('gd-target', n === i && ok);
         });
+
+        // Лейка — единственный инструмент, который не «срабатывает», а
+        // РАБОТАЕТ: её держат над грядкой, пока льётся вода. Наклон здесь же:
+        // предмет обязан выглядеть льющим, пока из него льёт.
+        if (d.tool === 'can') {
+            if (ok && i !== d.pourBed) { d.pourBed = i; d.pourAcc = 0; }
+            if (!ok) { d.pourBed = -1; d.pourAcc = 0; }
+        }
+        const tilt = (d.tool === 'can' && d.pourBed >= 0) ? GARDEN_ART.CAN_TILT : 0;
+        d.node.setAttribute('transform',
+            `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${tilt}) scale(${this.DRAG_SCALE})`);
     },
 
     onUp(e) {
@@ -313,8 +369,12 @@ const SlothMinigame = {
         if (d.kind === 'pan') return;
         d.node.remove();
 
-        const i = this.bedUnder(e);
+        const i = this.bedUnder(e, d.tool === 'can');
         if (i < 0 || !this.allowed(d, i)) return;
+        // Лейка при отпускании НЕ срабатывает: она уже отработала, пока её
+        // держали. Не долил — вода ушла в землю впустую, и это честно: иначе
+        // «поднести и отпустить» было бы быстрее, чем полить.
+        if (d.tool === 'can') return;
         this.act(i, this.actionOf(d), d.key ? { species: d.key } : null);
     },
 
@@ -333,12 +393,18 @@ const SlothMinigame = {
         return bed.stage === need[this.actionOf(d)];
     },
 
-    bedUnder(e) {
+    // Какая грядка под пальцем. `tall` — зона на всю высоту НАД грядкой:
+    // это зона ПОЛИВА. Лейку нельзя держать там же, где лежит грядка, — она
+    // закрывает собой ровно то, что поливает, и струе неоткуда падать. Ровно
+    // та же правка, что понадобилась наливу в кастрюлю на кухне: зона тянется
+    // до верха экрана, и вода летит сверху вниз, как ей и положено.
+    bedUnder(e, tall) {
         const p = this.toScene(e);
         for (let i = 0; i < this.beds; i++) {
             const x = GARDEN_ART.bedX(i);
-            if (Math.abs(p.x - x) < GARDEN_ART.BED_W / 2 + 10 &&
-                p.y > GARDEN_ART.SOIL_Y - 90 && p.y < GARDEN_ART.SOIL_Y + 40) return i;
+            if (Math.abs(p.x - x) > GARDEN_ART.BED_W / 2 + 10) continue;
+            const top = tall ? -200 : GARDEN_ART.SOIL_Y - 90;
+            if (p.y > top && p.y < GARDEN_ART.SOIL_Y + 40) return i;
         }
         return -1;
     },
@@ -353,7 +419,6 @@ const SlothMinigame = {
         if (!res.ok) { this.refuse(i); return; }
 
         this.locked = true;
-        if (action === 'water') this.pour(i);
         this.bump(i, 'gd-act');
 
         setTimeout(() => {
@@ -361,6 +426,10 @@ const SlothMinigame = {
             GameState.save();
             this.render();
             if (res.grown) this.flyToPantry(i);
+            // Что нашлось в земле — показывается ПРЕДМЕТОМ над грядкой.
+            // Число в кошельке игрок не связывает с ямкой, которую только что
+            // выкопал, а связь «копнул — нашёл» и есть весь смысл находок.
+            if (res.find) this.showFind(i, res.find);
             // Шкала дёргается на каждом действии: без этого игрок не связывает
             // «повозился в саду» с «лень закрылась», а связь тут и есть весь
             // смысл мини-игры.
@@ -390,21 +459,105 @@ const SlothMinigame = {
     },
 
     // ---------- ПОЛИВ ----------
-    // Та же связная струя, что на кухне: шарики под фильтром сливаются в воду.
-    // Отдельные капли не читаются жидкостью — это уже проверено на кухне
-    // (docs/traps.md, п. 4).
-    pour(i) {
-        const layer = document.getElementById('gd-stream');
+    // Полив — не мгновенное «сработало», а работа: лейку подносят к грядке и
+    // ДЕРЖАТ, пока в неё льётся вода. Ровно как налив на кухне, и той же
+    // струёй (src/core/liquid-stream.js) — второй физики жидкости в игре быть
+    // не должно.
+    //
+    // Из этого следует главное для баланса: время полива — единственное
+    // ускорение в саду, которое игрок ВИДИТ. Часы роста он не ждёт, он
+    // уходит; а секунды с лейкой в руке стоит прямо сейчас. Поэтому ранние
+    // ступени лейки сокращают именно их (GARDEN.CAN_TIERS).
+    startPour() {
+        if (this.pourRaf) return;
+        let last = performance.now();
+        const step = (now) => {
+            const dt = Math.min(0.05, (now - last) / 1000);
+            last = now;
+            const live = this.pourTick(dt);
+            // Цикл живёт, пока держат лейку ИЛИ пока летит вода: струя не
+            // может пропасть в воздухе посреди падения (та же причина, что на
+            // кухне).
+            if ((this.drag && this.drag.tool === 'can') || live > 0) {
+                this.pourRaf = requestAnimationFrame(step);
+            } else {
+                this.pourRaf = 0;
+                LiquidStream.clear(this.stream);
+                if (this.wetEl) this.wetEl.innerHTML = '';
+            }
+        };
+        this.pourRaf = requestAnimationFrame(step);
+    },
+
+    pourTick(dt) {
+        const d = this.drag;
+        const pouring = d && d.tool === 'can' && d.pourBed >= 0 && !this.locked;
+
+        if (!pouring) {
+            if (this.wetEl) this.wetEl.innerHTML = '';
+            return LiquidStream.tick(this.stream, dt, null, null);
+        }
+
+        const need = Backend.gardenPourMs();
+        d.pourAcc += dt * 1000;
+        const frac = Math.min(1, d.pourAcc / need);
+
+        // Куда льём: земля грядки в координатах ЭКРАНА. По вертикали сцена и
+        // экран совпадают, по горизонтали разъезжаются ровно на камеру.
+        const to = { x: GARDEN_ART.bedX(d.pourBed) - this.camX, y: GARDEN_ART.SOIL_Y - 10 };
+        const from = this.spoutPoint(d);
+        LiquidStream.tick(this.stream, dt, from, to);
+
+        // Лужа растёт вместе с налитым: сколько вылито, столько и мокрого.
+        // Это и есть шкала полива — без цифр и без подписи.
+        this.wetEl.innerHTML = `<g transform="translate(${to.x.toFixed(1)} ${(to.y + 8).toFixed(1)})">`
+            + GARDEN_ART.puddle(frac) + `</g>`;
+
+        if (d.pourAcc >= need) {
+            // Долил. Управление отбирается, лейка возвращается на полку — так
+            // же, как сосуд на кухне встаёт на место, когда кастрюля полна.
+            const bed = d.pourBed;
+            d.node.remove();
+            this.drag = null;
+            this.act(bed, 'water');
+        }
+        return this.stream.live;
+    },
+
+    // Носик лейки в координатах экрана. Считается из ЕЁ ЖЕ рисунка
+    // (GARDEN_ART.CAN_SPOUT/CAN_AXIS), повёрнутого и увеличенного так же, как
+    // сам предмет в руке: подобранная на глаз точка совпала бы с носиком
+    // ровно при одном угле наклона, а он меняется.
+    spoutPoint(d) {
+        const a = GARDEN_ART.CAN_TILT * Math.PI / 180;
+        const cos = Math.cos(a), sin = Math.sin(a), k = this.DRAG_SCALE;
+        const SP = GARDEN_ART.CAN_SPOUT, AX = GARDEN_ART.CAN_AXIS;
+        return {
+            x: d.x + (SP.x * cos - SP.y * sin) * k,
+            y: d.y + (SP.x * sin + SP.y * cos) * k,
+            // Куда смотрит носик: направление его оси, повёрнутое вместе с
+            // лейкой. Вода выходит ПО НЕМУ и только потом заворачивает вниз.
+            dx: AX.x * cos - AX.y * sin,
+            dy: AX.x * sin + AX.y * cos
+        };
+    },
+
+    // Находка всплывает над грядкой и тает. Живёт в слое сцены грядки, чтобы
+    // уехать вместе с участком, если игрок в этот момент ведёт панораму.
+    showFind(i, find) {
+        // Слой находок отдельный: грядка перерисовывается целиком раз в
+        // секунду, и монетка, положенная внутрь неё, пропадала на середине
+        // полёта. Позиция — на внешней группе, анимация — на вложенной
+        // (docs/traps.md, п. 2).
+        const layer = document.getElementById('gd-finds');
         if (!layer) return;
-        const x = GARDEN_ART.bedX(i);
-        const y0 = GARDEN_ART.SOIL_Y - 150, y1 = GARDEN_ART.SOIL_Y - 20;
-        const N = 9;
-        layer.innerHTML = Array.from({ length: N }, (_, n) => {
-            const t = n / (N - 1);
-            return `<circle cx="${(x + (t - 0.5) * 6).toFixed(1)}" cy="${(y0 + (y1 - y0) * t).toFixed(1)}"
-                            r="${(7 - 3 * t).toFixed(1)}"/>`;
-        }).join('');
-        setTimeout(() => { layer.innerHTML = ''; }, this.ACT_MS);
+        const node = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        node.setAttribute('class', 'gd-find-fly');
+        node.setAttribute('transform',
+            `translate(${GARDEN_ART.bedX(i)} ${GARDEN_ART.SOIL_Y - 40})`);
+        node.innerHTML = GARDEN_ART.find(find.what, find.key);
+        layer.appendChild(node);
+        setTimeout(() => node.remove(), 1100);
     },
 
     // Собранный плод улетает вниз — туда, где кладовая. Связь «сад кормит

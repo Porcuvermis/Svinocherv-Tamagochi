@@ -1697,135 +1697,20 @@ const GluttonyMinigame = {
     },
 
     // ================= СТРУЯ =================
-    // ОДИН движок на оба налива: и на разлив жидкости в кастрюлю, и на
-    // кормёжку из кастрюли. Отличаются они только системой координат (сцена
-    // против слоя персонажа) и размером шариков — поэтому это фабрика, а не
-    // два куска похожего кода.
-    //
-    // Отдельные капли-«точки» не читались жидкостью вообще: было видно, что
-    // что-то сыплется, но не что это льётся. Струя собрана из шариков, слитых
-    // в одну массу фильтром: сильное размытие плюс резкий порог по альфе.
-    // Границы шариков от этого пропадают, а их объединение остаётся — тот
-    // самый приём, которым в вебе рисуют «капли ртути».
-    //
-    // Почему шарики идут по кривой, а не по своей скорости с гравитацией:
-    // струя обязана попадать В ЦЕЛЬ при любом наклоне сосуда, а свободный
-    // полёт этого не гарантирует — промах читался бы как поломка, а не как
-    // физика. Кривая же берёт начало у носика, стартовое направление — из
-    // НАКЛОНА сосуда, и приходит ровно в цель. Каждый шарик запоминает СВОЮ
-    // кривую в момент выхода: качнули сосуд — новые полетят иначе, а уже
-    // вылетевшие спокойно доедут по-своему.
-    makeStream(layer, cfg) {
-        const NS = 'http://www.w3.org/2000/svg';
-        const st = {
-            layer,
-            r: cfg.r,
-            emitMs: cfg.emitMs,
-            base: cfg.base,
-            acc: cfg.acc,
-            bow: cfg.bow,
-            ref: cfg.ref,          // длина пути, на которой скорость «обычная»
-            emitAcc: 0,
-            live: 0,
-            blobs: []
-        };
-        // Шарики заведены один раз и переиспользуются: создавать и удалять
-        // узлы по полсотни раз в секунду — это работа для сборщика мусора
-        // ровно там, где нужен ровный кадр.
-        for (let i = 0; i < cfg.pool; i++) {
-            const c = document.createElementNS(NS, 'circle');
-            c.setAttribute('r', '0');
-            layer.appendChild(c);
-            st.blobs.push({ el: c, alive: false, t: 0, size: 1, off: 0 });
-        }
-        return st;
-    },
+    // ---------- СТРУЯ ----------
+    // Движок живёт в ядре (`src/core/liquid-stream.js`): та же струя нужна
+    // саду для лейки, а второй копии физики жидкости в игре быть не должно.
+    // Здесь остались только переходники — кухня зовёт их так же, как раньше.
+    makeStream(layer, cfg) { return LiquidStream.make(layer, cfg); },
+    streamSpawn(st, from, to) { return LiquidStream.spawn(st, from, to); },
+    streamTick(st, dt, from, to) { return LiquidStream.tick(st, dt, from, to); },
+    streamClear(st) { return LiquidStream.clear(st); },
 
-    streamSpawn(st, from, to) {
-        const b = st.blobs.find(x => !x.alive);
-        if (!b) return;                                  // пул кончился — кадр важнее
-        const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-        const dn = Math.hypot(from.dx, from.dy) || 1;
-        b.alive = true;
-        b.t = 0;
-        b.size = 0.8 + Math.random() * 0.45;
-        b.off = (Math.random() * 2 - 1) * st.r * 0.28;   // струя не идеально ровная
-        b.x0 = from.x; b.y0 = from.y;
-        b.x2 = to.x;   b.y2 = to.y;
-        // Скорость — от ДЛИНЫ пути, а не доля пути в секунду. С долей шарик
-        // проходил хоть двадцать точек, хоть четыреста за одно и то же время,
-        // и струя с высоты рассыпалась на отдельные бусины: расстояние между
-        // ними росло вместе с длиной. Здесь расстояние остаётся тем же, а
-        // дольше падать — значит дольше лететь, как и положено.
-        b.k = Math.max(0.3, Math.min(1.8, st.ref / len));
-        // Набухание у носика и уход в цель — на фиксированной ДЛИНЕ, а не на
-        // доле пути. Долей на длинной струе последняя десятая превращалась в
-        // полсотни точек пустоты: жидкость таяла, не долетев.
-        b.grow = Math.min(0.16, (st.r * 2.6) / len);
-        // Уход короткий и почти обрывистый: фильтр-«гуашь» гасит мелкие
-        // шарики совсем, поэтому длинное затухание превращается в пустоту
-        // перед самой целью — струя не долетала.
-        b.fade = Math.min(0.1, (st.r * 1.1) / len);
-        // Опорная точка — продолжение направления вытекания: жидкость выходит
-        // ИЗ КРАЯ по наклону и только потом заворачивает вниз, к цели.
-        b.x1 = from.x + (from.dx / dn) * len * st.bow;
-        b.y1 = from.y + (from.dy / dn) * len * st.bow;
-        st.live++;
-    },
-
-    // from=null — новые шарики не выходят, но уже вылетевшие обязаны доехать:
-    // струя не может пропасть в воздухе посреди падения.
-    streamTick(st, dt, from, to) {
-        if (!st) return 0;
-        if (from && to) {
-            st.emitAcc += dt * 1000;
-            let guard = 8;
-            while (st.emitAcc >= st.emitMs && guard-- > 0) {
-                st.emitAcc -= st.emitMs;
-                this.streamSpawn(st, from, to);
-            }
-            if (st.emitAcc > st.emitMs) st.emitAcc = 0;
-        } else {
-            st.emitAcc = 0;
-        }
-
-        for (let i = 0; i < st.blobs.length; i++) {
-            const b = st.blobs[i];
-            if (!b.alive) continue;
-            b.t += (st.base + st.acc * b.t) * b.k * dt;
-            if (b.t >= 1) {
-                b.alive = false;
-                st.live--;
-                b.el.setAttribute('r', '0');
-                continue;
-            }
-            const u = 1 - b.t, w0 = u * u, w1 = 2 * u * b.t, w2 = b.t * b.t;
-            const x = w0 * b.x0 + w1 * b.x1 + w2 * b.x2 + b.off;
-            const y = w0 * b.y0 + w1 * b.y1 + w2 * b.y2;
-            // Струя СУЖАЕТСЯ по ходу падения: шарики летят всё быстрее, а
-            // жидкости в секунду выходит столько же — значит на ту же длину
-            // её приходится меньше. Без этого получалась ровная колбаса.
-            let k = 1 - 0.22 * b.t;
-            if (b.t < b.grow) k *= 0.35 + (b.t / b.grow) * 0.65;
-            else if (b.t > 1 - b.fade) k *= (1 - b.t) / b.fade;
-            b.el.setAttribute('cx', x.toFixed(1));
-            b.el.setAttribute('cy', y.toFixed(1));
-            b.el.setAttribute('r', (st.r * b.size * k).toFixed(1));
-        }
-        return st.live;
-    },
-
-    streamClear(st) {
-        if (!st) return;
-        st.blobs.forEach(b => { b.alive = false; b.el.setAttribute('r', '0'); });
-        st.live = 0;
-        st.emitAcc = 0;
-    },
-
+    // Цвет — единственное, что у кухни своё: ключ жидкости знает она, а не
+    // ядро.
     streamColor(st, key) {
-        if (!st) return;
         const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.broth;
-        st.layer.setAttribute('fill', ramp[500]);
+        LiquidStream.color(st, ramp[500]);
     },
 
     // ---------- СТРУЯ КОРМЁЖКИ ----------

@@ -197,8 +197,66 @@ const { chromium } = require('playwright');
   say('лопата:            ' + await stageOf(1) + (await stageOf(1) === 'dug' ? '  ✓ лунка' : '  ✗ ЛУНКА НЕ ВЫКОПАНА'));
   await drag('seed', 1);
   say('семя:              ' + await stageOf(1) + (await stageOf(1) === 'sown' ? '  ✓ посеяно' : '  ✗ НЕ ПОСЕЯНО'));
-  await drag('can', 1);
-  say('лейка:             ' + await stageOf(1) + (await stageOf(1) === 'growing' ? '  ✓ полито' : '  ✗ НЕ ПОЛИТО'));
+  // ---------- ПОЛИВ УДЕРЖАНИЕМ ----------
+  // Лейка не «срабатывает», её ДЕРЖАТ, пока льётся вода. Проверяется тут
+  // именно поведение: поднёс и отпустил — не полито; подержал сколько нужно —
+  // полито, а лейка сама вернулась на полку.
+  const hold = async (bed, ms) => {
+    const a = await toolPoint('can'), b = await bedPoint(bed);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    // Зона полива — во всю высоту НАД грядкой: лейку держат сверху, иначе она
+    // закрывает собой ровно то, что поливает.
+    await page.mouse.move(b.x, b.y - 240, { steps: 6 });
+    await page.waitForTimeout(ms);
+    const st = await page.evaluate((i) => ({
+      stage: GameState.data.garden.beds[i].stage,
+      live: SlothMinigame.stream.live,
+      acc: Math.round(SlothMinigame.drag ? SlothMinigame.drag.pourAcc : -1)
+    }), bed);
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+    return st;
+  };
+
+  const need = await page.evaluate(() => Backend.gardenPourMs());
+  const early = await hold(1, Math.round(need * 0.35));
+  say('держим треть срока:  ' + early.stage + ', струя из ' + early.live + ' шариков' +
+      (early.stage === 'sown' && early.live > 0 ? '  ✓ льётся, но не полито' : '  ✗ ПОЛИВ НЕ ТАК'));
+  const full = await hold(1, need + 500);
+  say('держим полный срок:  ' + full.stage +
+      (full.stage === 'growing' ? '  ✓ полито' : '  ✗ НЕ ПОЛИТО'));
+  const cleaned = await page.evaluate(() => ({
+    ghost: document.querySelectorAll('#gd-fg .gd-dragging').length,
+    live: SlothMinigame.stream.live
+  }));
+  say('после долива:        лейка на полке: ' + (cleaned.ghost === 0) + ', струя: ' + cleaned.live +
+      (cleaned.ghost === 0 && cleaned.live === 0 ? '  ✓ прибрано' : '  ✗ ОСТАЛСЯ МУСОР'));
+
+  // Ступени лейки: ранние сокращают полив, поздние — часы роста.
+  const tiers = await page.evaluate(() => {
+    const out = [];
+    for (let i = 0; i < GARDEN.CAN_TIERS.length; i++) {
+      GameState.data.garden.tools.can = i;
+      out.push(Backend.gardenPourMs() + 'мс/' + Backend.canTier().hours + 'ч');
+    }
+    GameState.data.garden.tools.can = 0;
+    return out;
+  });
+  say('ступени лейки:       ' + tiers.join('  '));
+
+  // Находка всплывает над грядкой и живёт свою анимацию целиком: пока она
+  // лежала внутри грядки, её сносила секундная перерисовка на полпути.
+  const findAlive = await page.evaluate(async () => {
+    SlothMinigame.showFind(0, { what: 'gold', amount: 2 });
+    await new Promise(r => setTimeout(r, 900));
+    const n = document.querySelector('#gd-finds .gd-find-fly .gd-find');
+    if (!n) return null;
+    const r = n.getBoundingClientRect();
+    return { w: Math.round(r.width), y: Math.round(r.y) };
+  });
+  say('находка через 0.9 с: ' + JSON.stringify(findAlive) +
+      (findAlive && findAlive.w > 0 ? '  ✓ долетела' : '  ✗ ПРОПАЛА НА ПОЛПУТИ'));
 
   // Грядка не должна прыгать по экрану, когда по ней работают: анимация,
   // правящая transform, однажды уже стирала её позицию в сцене.

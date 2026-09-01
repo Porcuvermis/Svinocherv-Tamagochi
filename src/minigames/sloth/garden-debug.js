@@ -84,6 +84,11 @@ const GardenDebug = {
                 b.stage = i < GARDEN.BEDS_OPEN ? 'empty' : 'locked';
                 b.species = null; b.seed = 0; b.at = null; b.skipped = 0;
             });
+        } else if (act === 'can') {
+            // Ступени лейки: ранние сокращают полив, поздние — часы роста.
+            // Магазина ещё нет, а проверить обе половины лестницы надо.
+            const t = GameState.data.garden.tools;
+            t.can = (t.can + 1) % GARDEN.CAN_TIERS.length;
         } else if (act === 'sloth0') {
             GameState.setSinValue('sloth', 0);
         }
@@ -122,6 +127,7 @@ const GardenDebug = {
                 <button data-act="open">открыть грядки</button>
                 <button data-act="dig">вскопать</button>
                 <button data-act="seeds">все семена</button>
+                <button data-act="can">лейка ${GameState.data.garden.tools.can} (${Backend.canTier().pour}мс/${Backend.canTier().hours}ч)</button>
                 <button data-act="sloth0">шкала 0 (${Math.round(GameState.sinValue('sloth'))})</button>
                 <button data-act="reset">сброс сада</button>
              </div>
