@@ -194,17 +194,13 @@ const { chromium } = require('playwright');
     await page.waitForTimeout(300);
   };
   // ---------- МЕШОК С СЕМЕНАМИ ----------
-  // Открывается УДЕРЖАНИЕМ: короткий тап не должен разворачивать пол-экрана.
+  // Открывается ТАПОМ — тем же жестом, каким игрок трогает всё остальное.
   const sackOpen = () => page.evaluate(() => !!SlothMinigame.sackOpen);
-  const holdSack = async (ms) => {
+  const tapSack = async () => {
     const a = await toolPoint('sack');
-    await page.mouse.move(a.x, a.y);
-    await page.mouse.down();
-    await page.waitForTimeout(ms);
-    const opened = await sackOpen();
-    await page.mouse.up();
-    await page.waitForTimeout(150);
-    return opened;
+    await page.mouse.click(a.x, a.y);
+    await page.waitForTimeout(200);
+    return await sackOpen();
   };
   // Взять семечко из ячейки и донести до грядки: мешок при этом закрывается,
   // иначе он закрывает собой ровно ту грядку, куда несут.
@@ -287,9 +283,13 @@ const { chromium } = require('playwright');
       (await stageOf(0) === 'dug' ? '  ✓ лунка' : '  ✗ ЛУНКА НЕ ВЫКОПАНА'));
 
   // ---------- ПОСЕВ ИЗ МЕШКА ----------
-  say('короткий тап по мешку: ' + (await holdSack(150) ? '✗ ОТКРЫЛСЯ' : 'закрыт  ✓'));
-  const opened = await holdSack(700);
-  say('удержание полсекунды: ' + (opened ? 'открылся  ✓' : '✗ НЕ ОТКРЫЛСЯ'));
+  say('тап по мешку: ' + (await tapSack() ? 'открылся  ✓' : '✗ НЕ ОТКРЫЛСЯ'));
+  // Тап мимо закрывает: крестика у мешка нет и не будет.
+  const away = await bedPoint(1, -300);
+  await page.mouse.click(away.x, away.y);
+  await page.waitForTimeout(200);
+  say('тап мимо мешка: ' + (await sackOpen() ? '✗ ОСТАЛСЯ ОТКРЫТ' : 'закрылся  ✓'));
+  await tapSack();
   const cells = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#gd-fg-sack .gd-sack-cell')).map(g => g.dataset.key).join(','));
   say('в мешке: ' + cells + (cells.split(',')[0] === 'grass' ? '  ✓ трава первой, места закреплены' : '  ✗ ПОРЯДОК ЯЧЕЕК ПЛЫВЁТ'));
@@ -484,6 +484,44 @@ const { chromium } = require('playwright');
     return out;
   });
   say('ступени лопаты:    ' + ladder.join('  '));
+
+  // ---------- ШКАЛА ЛЕНИ НЕ УСКОРЯЕТСЯ ОТ РАБОТЫ ----------
+  // Отзыв с живого прогона: «во время копания шкала наполняется быстрее».
+  // Значение росло одинаково, а вот ПОЛОСА обновлялась раз в секунду и
+  // отставала, догоняя на частых перерисовках. Здесь сверяются оба: и
+  // значение, и ширина полосы на экране.
+  const rate = async (work) => {
+    await page.evaluate(() => { GameState.setSinValue('sloth', 0); GameState.save(); });
+    const t0 = Date.now();
+    // Читается ЗАСЧИТАННОЕ ПЛЮС НАБЕЖАВШЕЕ — ровно то, что видит игрок и что
+    // запишется при выходе. Одно засчитанное значение отстаёт на время с
+    // последней перерисовки и врёт тем сильнее, чем реже они идут.
+    const v0 = await page.evaluate(() => GameState.sinValue('sloth') + SlothMinigame.pendingWatch());
+    if (work) {
+      // Дёргаем лопату, не доводя действие до конца: нас интересует сам
+      // процесс, а не награда за него.
+      await page.evaluate(() => {
+        const b = GameState.data.garden.beds[1];
+        Object.assign(b, { stage: 'empty', species: null, at: null, seed: 0, skipped: 0 });
+        GameState.save(); SlothMinigame.render();
+      });
+      await bring('spade', 1);
+      await strokes(1, 10, 'y', 50);
+    } else {
+      await page.waitForTimeout(3000);
+    }
+    const v1 = await page.evaluate(() => GameState.sinValue('sloth') + SlothMinigame.pendingWatch());
+    const bar = await page.evaluate(() => parseFloat(document.getElementById('gd-gauge-bar').style.width));
+    const dt = (Date.now() - t0) / 1000;
+    return { перс: (v1 - v0) / dt, полоса: bar / dt };
+  };
+  const restRate = await rate(false);
+  const busy = await rate(true);
+  const same = Math.abs(restRate.перс - busy.перс) < 0.25 && Math.abs(restRate.полоса - busy.полоса) < 0.6;
+  say('шкала: безделье ' + restRate.перс.toFixed(2) + '/с (полоса ' + restRate.полоса.toFixed(2) + '%/с), ' +
+      'работа ' + busy.перс.toFixed(2) + '/с (полоса ' + busy.полоса.toFixed(2) + '%/с)' +
+      (same ? '  ✓ одинаково' : '  ✗ РАБОТА НАПОЛНЯЕТ БЫСТРЕЕ'));
+  await page.evaluate(() => { SlothMinigame.cancelWork(); });
 
   // Находка всплывает над грядкой и живёт свою анимацию целиком: пока она
   // лежала внутри грядки, её сносила секундная перерисовка на полпути.

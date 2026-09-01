@@ -878,12 +878,9 @@ const GARDEN_ART = {
 
     // Закрытый мешок: перевязанный горловиной куль. Рисуется в тех же
     // габаритах, что и остальные инструменты на полке.
-    sackClosed(hold) {
+    sackClosed() {
         const k = gdPal(), ink = gdInk(), S = gdS();
-        // hold 0..1 — насколько долго его держат: мешок раздувается, и по
-        // этому видно, что удержание работает и сколько осталось.
-        const h = Math.max(0, Math.min(1, hold || 0));
-        const w = 26 + 4 * h;
+        const w = 27;
         return `${gdGrab(0, 0, 30, 34)}
             <path d="M${-w} 8 q0 -20 ${w * 0.5} -24 q${w * 0.5} 4 ${w} 24 q0 18 -${w} 18 q-${w} 0 -${w} -18 Z"
                   transform="translate(0 4)" fill="${k.wood[300]}" stroke="${ink}"

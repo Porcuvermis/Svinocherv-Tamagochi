@@ -101,6 +101,17 @@ const SlothMinigame = {
         // Один кадровый цикл на весь сад: он двигает только КАРТИНКУ —
         // подросшее растение и струю из лейки. Состояние он не трогает.
         if (!this.tickId) this.tickId = setInterval(() => this.render(), 1000);
+        // Отдельный кадровый цикл на ОДНУ полосу: перерисовывать ради неё
+        // шесть грядок шестьдесят раз в секунду незачем, а двигаться она
+        // должна гладко. Состояния он не трогает — только ширину.
+        if (!this.gaugeRaf) {
+            const step = () => {
+                if (!this.gaugeRaf) return;
+                this.renderGauge();
+                this.gaugeRaf = requestAnimationFrame(step);
+            };
+            this.gaugeRaf = requestAnimationFrame(step);
+        }
     },
 
     close() {
@@ -111,10 +122,10 @@ const SlothMinigame = {
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
         this.screenElement.classList.remove('active');
         if (this.tickId) { clearInterval(this.tickId); this.tickId = null; }
+        if (this.gaugeRaf) { cancelAnimationFrame(this.gaugeRaf); this.gaugeRaf = 0; }
         if (this.pourRaf) { cancelAnimationFrame(this.pourRaf); this.pourRaf = 0; }
         this.work = null;
         this.stroke = null;
-        this.stopSackHold();
         this.sackOpen = false;
         const wl = document.getElementById('gd-work');
         if (wl) wl.innerHTML = '';
@@ -229,8 +240,29 @@ const SlothMinigame = {
     renderGauge() {
         const el = document.getElementById('gd-gauge-bar');
         if (!el) return;
-        const v = GameState.sinValue('sloth') / GameState.maxValue('sloth');
+        const max = GameState.maxValue('sloth');
+        // Показывается ЗАСЧИТАННОЕ ПЛЮС НАБЕЖАВШЕЕ: в состоянии пребывание
+        // фиксируется редко (на отрисовках и действиях), а глазу нужно
+        // непрерывное движение. Формула та же, просто взятая на текущий
+        // момент, а не на момент последней записи.
+        //
+        // Из-за этого и был «баг»: значение всегда росло ровно на сто за
+        // минуту, но полоса обновлялась раз в секунду и ползла с задержкой,
+        // а во время работы перерисовывалась чаще и догоняла правду. Работа
+        // казалась выгоднее безделья, хотя капало одинаково. Чинить надо было
+        // ПОКАЗ, а не начисление — и это стоило одного замера вместо правки
+        // наугад.
+        const v = (GameState.sinValue('sloth') + this.pendingWatch()) / max;
         el.style.width = (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%';
+    },
+
+    // Сколько пребывания набежало с последней записи. Ничего не начисляет —
+    // только считает, поэтому звать её можно хоть каждый кадр.
+    pendingWatch() {
+        if (!this.watchMark) return 0;
+        const dt = GameTime.now() - this.watchMark;
+        if (!(dt > 0)) return 0;
+        return GameState.maxValue('sloth') * dt / GARDEN.WATCH_FULL_MS;
     },
 
     // Доля роста: от неё зависит высота растения, и она же — единственная
@@ -310,9 +342,7 @@ const SlothMinigame = {
         const step = Math.min(64, 340 / Math.max(1, list.length));
         const x0 = 195 - step * (list.length - 1) / 2;
         document.getElementById('gd-fg-tools').innerHTML = list.map((t, i) => {
-            const art = t.kind === 'sack'
-                ? GARDEN_ART.sackClosed(this.sackHold || 0)
-                : GARDEN_ART.tool(t.kind);
+            const art = t.kind === 'sack' ? GARDEN_ART.sackClosed() : GARDEN_ART.tool(t.kind);
             const badge = t.kind === 'dung'
                 ? `<text class="gd-count" x="0" y="34">${GameState.currency('dung')}</text>` : '';
             return `<g class="gd-tool" data-kind="${t.kind}"
@@ -321,10 +351,9 @@ const SlothMinigame = {
     },
 
     // ---------- МЕШОК С СЕМЕНАМИ ----------
-    // Открывается УДЕРЖАНИЕМ: короткий тап по мешку ничего не делает. Полка
-    // тесная, и случайное касание не должно разворачивать пол-экрана — той же
-    // логикой на кухне живёт удержание над кастрюлей.
-    SACK_HOLD_MS: 500,
+    // Открывается тапом, закрывается тапом мимо или тем, что семечку вынули.
+    // Один жест на всё: в саду больше ничего не открывается удержанием, и
+    // отдельное правило для одного предмета читается как поломка.
 
     // Что лежит в мешке. Порядок ячеек — порядок видов в конфиге, и он
     // ПОСТОЯНЕН: место каждого вида закреплено, чтобы через неделю игрок
@@ -342,7 +371,6 @@ const SlothMinigame = {
 
     openSack() {
         this.sackOpen = true;
-        this.sackHold = 0;
         const layer = document.getElementById('gd-fg-sack');
         if (layer) layer.innerHTML = GARDEN_ART.sackOpen(this.sackItems());
         this.renderTools();
@@ -350,7 +378,6 @@ const SlothMinigame = {
 
     closeSack() {
         this.sackOpen = false;
-        this.sackHold = 0;
         const layer = document.getElementById('gd-fg-sack');
         if (layer) layer.innerHTML = '';
         this.renderTools();
@@ -381,24 +408,17 @@ const SlothMinigame = {
         }
 
         const tool = t.closest ? t.closest('.gd-tool') : null;
-        // ---- мешок на полке: открывается удержанием ----
+        // ---- мешок на полке: открывается ТАПОМ ----
+        // Было удержание — и это оказалось неверно: удержанием в саду больше
+        // ничего не делается, и единственный предмет с особым правилом
+        // ощущается сломанным, а не особенным. Жест должен быть тем же, каким
+        // игрок трогает всё остальное.
         if (tool && tool.dataset.kind === 'sack' && !this.work) {
             e.preventDefault();
-            this.sackHold = 0;
-            const t0 = performance.now();
-            // Мешок раздувается, пока его держат: по этому видно, что
-            // удержание работает и сколько осталось. Без этого короткий тап
-            // ощущается как «кнопка не нажалась».
-            this.sackTimer = setInterval(() => {
-                this.sackHold = Math.min(1, (performance.now() - t0) / this.SACK_HOLD_MS);
-                this.renderTools();
-                if (this.sackHold >= 1) { this.stopSackHold(); this.openSack(); }
-            }, 60);
-            this.drag = { kind: 'hold-sack', from: this.toStage(e) };
+            this.openSack();
             return;
         }
-        // Пока грядка в работе, второй инструмент в руки не берётся: две
-        // работы одновременно — это два разных объяснения на одном экране.
+
         if (tool && !this.work) {
             e.preventDefault();
             this.startDrag(e, tool.dataset.kind, tool.dataset.key, tool.innerHTML);
@@ -451,11 +471,6 @@ const SlothMinigame = {
         if (kind === 'can') this.startPour();
     },
 
-    stopSackHold() {
-        if (this.sackTimer) { clearInterval(this.sackTimer); this.sackTimer = 0; }
-        this.sackHold = 0;
-    },
-
     // Пустая ячейка отвечает движением: сказать «семечек нет» нечем.
     refuseSack(cell) {
         cell.classList.remove('gd-no');
@@ -465,17 +480,6 @@ const SlothMinigame = {
 
     onMove(e) {
         if (this.stroke) { this.strokeMove(e); return; }
-        // Палец уехал с мешка — удержание сорвано: это уже не «держу», а
-        // «веду», и мешок открываться не должен.
-        if (this.drag && this.drag.kind === 'hold-sack') {
-            const p = this.toStage(e);
-            if (Math.hypot(p.x - this.drag.from.x, p.y - this.drag.from.y) > 14) {
-                this.stopSackHold();
-                this.drag = { kind: 'pan', from: p.x, base: this.camX };
-                this.renderTools();
-            }
-            return;
-        }
         if (!this.drag) return;
         if (this.drag.kind === 'pan') {
             this.setCam(this.drag.base - (this.toStage(e).x - this.drag.from));
@@ -509,9 +513,6 @@ const SlothMinigame = {
         const d = this.drag;
         this.drag = null;
         if (!d) return;
-        // Отпустил раньше срока — мешок не открылся. Полсекунды это немного,
-        // но именно они отделяют «взял» от «случайно задел».
-        if (d.kind === 'hold-sack') { this.stopSackHold(); this.renderTools(); return; }
         Array.from(document.querySelectorAll('.gd-bed')).forEach(g => g.classList.remove('gd-target'));
         if (d.kind === 'pan') return;
         d.node.remove();
