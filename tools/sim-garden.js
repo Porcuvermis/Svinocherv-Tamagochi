@@ -18,6 +18,16 @@
 //
 // Запуск:  node tools/sim-garden.js
 
+// Конфиг берётся ЖИВОЙ, а не переписывается сюда числами: цена плода в
+// какашках задаётся таблицей качества блюда на кухне, и списанная копия
+// разошлась бы с ней при первой же правке — а именно на этом отношении и
+// держится проверка «круг не печатает ресурсы».
+const fs = require('fs');
+const win = {};
+new Function('module', 'window',
+    fs.readFileSync(__dirname + '/../src/config/kitchen.js', 'utf8'))({ exports: {} }, win);
+const KITCHEN = win.KITCHEN;
+
 const DAYS = 60;
 const H = 60;                       // час в минутах
 
@@ -28,11 +38,21 @@ const RAKES = [25, 15, 6];               // грабли: этап 2, минут
 // Поэтому грабли меряются не одним порогом, а полосой — см. таблицу внизу.
 let PATIENCE = 8;
 
-// Сколько какашек приносит плод, попав в блюдо. Блюдо из 4 плодов даёт 10
-// мелких, то есть плод стоит 2.5 — а полный скип этапа 1 стоит 3 какашки.
-// Отношение НАРОЧНО меньше единицы: см. проверку 2 выше.
-const POOP_PER_FRUIT = 2.5;
+// Сколько какашек приносит ОДИН плод. Считается из живой таблицы качества:
+// лучшее блюдо кухни требует по одному продукту каждого из трёх типов и
+// возвращает столько-то мелких — делим одно на другое.
+//
+// Это и есть точка стыка двух мини-игр, и её нельзя задавать числом здесь:
+// подняли награду за блюдо на кухне — сад немедленно начинает печатать
+// ресурсы, и узнать об этом надо ЗДЕСЬ, а не через месяц.
+const FRUITS_PER_DISH = KITCHEN.CHOP_TYPES.length;
+const POOP_PER_FRUIT = KITCHEN.quality[KITCHEN.CHOP_TYPES.length].poop / FRUITS_PER_DISH;
 const BASE_POOPS_PER_DAY = 3;            // кормёжки без своего урожая
+
+// Сколько какашек стоит снять ОДИН час этапа 1. Это число сада, а не кухни, и
+// именно им круг удерживается от печатания: награда за плод задана кухней и
+// трогать её нельзя, а цену времени сад назначает себе сам.
+const FERT_COST = +(process.env.FERT_COST || 1);
 
 const SCHEDULES = {
     'раз в день': [20],
@@ -65,8 +85,13 @@ function simulate(canLvl, rakeLvl, visits, policy, poopBudgetPerDay) {
                         const hoursLeft = Math.ceil((readyAt - now) / H);
                         const want = policy === 'all' ? hoursLeft
                             : (readyAt - now <= PATIENCE + H ? 1 : 0);
-                        const use = Math.min(want, hoursLeft, Math.floor(bank));
-                        if (use > 0) { readyAt -= use * H; bank -= use; poopsSpent += use; acted = true; }
+                        const use = Math.min(want, hoursLeft, Math.floor(bank / FERT_COST));
+                        if (use > 0) {
+                            readyAt -= use * H;
+                            bank -= use * FERT_COST;
+                            poopsSpent += use * FERT_COST;
+                            acted = true;
+                        }
                     }
                     if (now >= readyAt) { stage = 'weeded'; readyAt = now + b2; acted = true; }
                 } else if (stage === 'weeded') {
@@ -133,3 +158,32 @@ for (const policy of ['none', 'top', 'all']) {
         `тратит ${res.poopsPerDay.toFixed(2)} 💩  приносит ${gained.toFixed(2)} 💩  ` +
         `итог ${(gained - res.poopsPerDay).toFixed(2)}`);
 }
+
+// ---------- ГЛАВНАЯ ПРОВЕРКА СТЫКА С КУХНЕЙ ----------
+// Круг «удобрение → урожай → блюдо → какашки» не имеет права печатать ресурсы
+// из ничего: платят за ВРЕМЯ, а не за прибыль. Опасный угол — не стартовая
+// лейка, а ЛУЧШАЯ: она втрое удешевляет скип, оставляя награду за плод той же.
+// Считаем по всем ступеням лейки и по всем расписаниям сразу, потому что
+// печатать круг может начать в одной-единственной клетке этой таблицы.
+console.log('\nПЕЧАТАЕТ ЛИ КРУГ (итог за сутки: приносит − тратит)');
+console.log(`  час стоит ${FERT_COST} 💩, плод стоит ${POOP_PER_FRUIT.toFixed(2)} 💩 ` +
+            `(блюдо из ${FRUITS_PER_DISH} плодов даёт ${KITCHEN.quality[KITCHEN.CHOP_TYPES.length].poop})`);
+console.log('    лейка'.padEnd(12) + ['не удобрять', 'скипать всё', 'разница'].map(s => s.padStart(14)).join(''));
+let printing = false;
+for (let can = 0; can < CANS.length; can++) {
+    const row = [];
+    let none = 0, all = 0;
+    for (const policy of ['none', 'all']) {
+        const res = simulate(can, 2, SCHEDULES['три раза'], policy, 99);
+        const net = res.perDay * POOP_PER_FRUIT - res.poopsPerDay;
+        if (policy === 'none') none = net; else all = net;
+        row.push(net.toFixed(2).padStart(14));
+    }
+    const diff = all - none;
+    if (diff > 0) printing = true;
+    row.push((diff > 0 ? '+' + diff.toFixed(2) + ' ⚠' : diff.toFixed(2)).padStart(14));
+    console.log(`  ${(CANS[can] / H) + ' ч'}`.padEnd(12) + row.join(''));
+}
+console.log(printing
+    ? '  ⚠ УДОБРЕНИЕ ВЫГОДНО ПО РЕСУРСУ — круг печатает, баланс надо править'
+    : '  удобрение убыточно по ресурсу во всех ступенях — как и задумано');

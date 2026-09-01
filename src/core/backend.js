@@ -246,6 +246,172 @@ const LocalBackend = {
         return (GameState.data.pantry && GameState.data.pantry[key]) || 0;
     },
 
+    // ---------- САД ЛЕНИ ----------
+    // Сад и кухня — это один круг, а не две мини-игры: сад кладёт в кладовую
+    // ровно те продукты, которые кухня оттуда берёт, а кухня возвращает
+    // какашки, которыми сад удобряют. Поэтому и живут они в одном месте — тут.
+    //
+    // Всё состояние грядки выводится из меток времени (инвариант 1): ни один
+    // этап не «тикает», у грядки просто спрашивают, что с ней СЕЙЧАС.
+    gardenBed(i) {
+        const beds = (GameState.data.garden && GameState.data.garden.beds) || [];
+        return beds[i] || null;
+    },
+
+    gardenTools() {
+        const t = (GameState.data.garden && GameState.data.garden.tools) || {};
+        return { can: t.can || 0, rake: t.rake || 0, spade: t.spade || 0 };
+    },
+
+    // Сколько миллисекунд ещё зреть. Отрицательное — уже дозрело.
+    // Этап 1 меряется часами и идёт оффлайн, этап 2 — минутами и внутри
+    // сессии; какой именно этап идёт, видно по stage грядки.
+    gardenLeft(bed) {
+        if (!bed || !bed.at) return 0;
+        const tools = this.gardenTools();
+        if (bed.stage === 'growing') {
+            const hours = GARDEN.CAN_HOURS[Math.min(tools.can, GARDEN.CAN_HOURS.length - 1)];
+            const paid = (bed.skipped || 0) * GARDEN.FERT_HOURS_PER_DUNG;
+            return bed.at + Math.max(0, hours - paid) * 3600000 - GameTime.now();
+        }
+        if (bed.stage === 'ripening') {
+            const mins = GARDEN.RAKE_MINUTES[Math.min(tools.rake, GARDEN.RAKE_MINUTES.length - 1)];
+            const sp = (GARDEN.species[bed.species] || {}).stage2 || 1;
+            return bed.at + mins * sp * 60000 - GameTime.now();
+        }
+        return 0;
+    },
+
+    // Дозревшее переводится на следующий этап ЛЕНИВО — в момент, когда о
+    // грядке спросили. Никакого обхода грядок по таймеру: их может быть
+    // сколько угодно, а игра может быть закрыта неделю.
+    gardenSettle() {
+        const beds = (GameState.data.garden && GameState.data.garden.beds) || [];
+        let changed = false;
+        beds.forEach(bed => {
+            if (bed.stage === 'growing' && this.gardenLeft(bed) <= 0) {
+                bed.stage = 'weedy';        // выросло, но заросло сорняками
+                bed.at = null;
+                changed = true;
+            } else if (bed.stage === 'ripening' && this.gardenLeft(bed) <= 0) {
+                bed.stage = 'ripe';
+                bed.at = null;
+                changed = true;
+            }
+        });
+        if (changed) GameState.save();
+        return beds;
+    },
+
+    // Шкала лени растёт ЗА ДЕЙСТВИЕ, и начисляет её Backend, а не мини-игра
+    // (инвариант 2). Награда за присутствие в саду была бы наградой за то,
+    // что игрок не играет (docs/plan/19-sloth-garden.md, раздел 5).
+    gardenFill(action) {
+        const add = GARDEN.actionFill[action] || 0;
+        if (!add) return 0;
+        const max = GameState.maxValue('sloth');
+        GameState.setSinValue('sloth', Math.min(max, GameState.sinValue('sloth') + add));
+        return add;
+    },
+
+    // Одно действие над грядкой. Возвращает { ok, what } — что именно
+    // произошло, чтобы экран показал это движением, а не выяснял сам.
+    gardenAct(i, action, opts) {
+        const bed = this.gardenBed(i);
+        if (!bed) return { ok: false };
+        this.gardenSettle();
+        const o = opts || {};
+        const res = { ok: false, action };
+
+        if (action === 'dig' && bed.stage === 'locked') {
+            bed.stage = 'empty';
+            // Копание — единственный источник, не завязанный на чревоугодие:
+            // без него игрок, не готовящий еду, остался бы вообще без валюты
+            // и без магазина (план, раздел 7).
+            res.find = this.gardenDigFind();
+            res.ok = true;
+        } else if (action === 'sow' && bed.stage === 'empty') {
+            const seeds = GameState.data.garden.seeds || [];
+            const key = seeds.indexOf(o.species) !== -1 ? o.species : seeds[0];
+            if (!key) return { ok: false };
+            bed.species = key;
+            // Сид решается ОДИН раз и хранится: с Math.random() растение
+            // выглядело бы по-новому после каждой перезагрузки страницы.
+            bed.seed = Math.floor(Math.random() * 1e9);
+            bed.stage = 'sown';
+            bed.skipped = 0;
+            bed.at = null;
+            res.ok = true;
+        } else if (action === 'water' && bed.stage === 'sown') {
+            bed.stage = 'growing';
+            bed.at = GameTime.now();
+            res.ok = true;
+        } else if (action === 'fertilize' && bed.stage === 'growing') {
+            // Какашка снимает час. Удобрение не сокращает ожидание, оно
+            // ПОКУПАЕТ его целиком: снятый час снят, вернётся игрок через
+            // десять минут или через восемь часов — неважно.
+            if (GameState.currency('dung') < 1) return { ok: false, reason: 'no-dung' };
+            GameState.addCurrency('dung', -1);
+            GameState.pushLedger({ currency: 'dung', delta: -1, reason: 'garden.fertilize' });
+            bed.skipped = (bed.skipped || 0) + 1;
+            if (this.gardenLeft(bed) <= 0) { bed.stage = 'weedy'; bed.at = null; }
+            res.ok = true;
+        } else if (action === 'weed' && bed.stage === 'weedy') {
+            bed.stage = 'ripening';
+            bed.at = GameTime.now();
+            res.ok = true;
+        } else if (action === 'harvest' && bed.stage === 'ripe') {
+            res.grown = bed.species;
+            res.taken = this.gardenStore(bed.species, 1);
+            bed.stage = 'empty';
+            bed.species = null;
+            bed.at = null;
+            bed.skipped = 0;
+            res.ok = true;
+        }
+
+        if (res.ok) {
+            res.fill = this.gardenFill(action);
+            GameState.save();
+        }
+        return res;
+    },
+
+    // Плод кладётся в ТУ ЖЕ кладовую, из которой берёт кухня. Потолок на
+    // каждый вид: сад производит быстрее, чем червь ест, и без потолка овощи
+    // копятся бесконечно и обесцениваются (план, раздел 7).
+    gardenStore(key, n) {
+        if (!key) return 0;
+        const cap = this.pantryCap();
+        const pantry = GameState.data.pantry;
+        const was = pantry[key] || 0;
+        const now = Math.min(cap, was + n);
+        pantry[key] = now;
+        return now - was;                  // сколько влезло на самом деле
+    },
+
+    pantryCap() {
+        const lvl = ((GameState.data.upgrades || {}).fridge) || 0;
+        return GARDEN.PANTRY_CAP[Math.min(lvl, GARDEN.PANTRY_CAP.length - 1)];
+    },
+
+    gardenDigFind() {
+        for (const f of GARDEN.digFinds) {
+            if (Math.random() >= f.chance) continue;
+            if (f.what === 'seed') {
+                const seeds = GameState.data.garden.seeds;
+                const all = Object.keys(GARDEN.species).filter(k => seeds.indexOf(k) === -1);
+                if (!all.length) continue;
+                const key = all[Math.floor(Math.random() * all.length)];
+                seeds.push(key);
+                return { what: 'seed', key };
+            }
+            this.award({ currencies: {} }, f.what, f.amount, 'garden.dig');
+            return { what: f.what, amount: f.amount };
+        }
+        return null;
+    },
+
     // Списать продукты, ушедшие в кастрюлю. Вызывается ОДИН раз, в момент
     // кормёжки, а не когда игрок ткнул в холодильник: закрыл игру на
     // середине — продукты остались на месте.

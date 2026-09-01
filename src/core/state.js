@@ -60,6 +60,14 @@ const GameState = {
             runs: {},
             // Пищеварение: одна метка времени, всё остальное считается от неё.
             digestion: { fed_at: null, poop_size: 0 },
+            // Сад лени. Грядка — это НЕ снимок растения, а несколько чисел, из
+            // которых он выводится: вид, сид формы и метки времени. Иначе
+            // пришлось бы хранить список точек, а после каждой правки
+            // рендерера старые сейвы рисовались бы мусором.
+            //
+            // seeds — какие семена вообще открыты; tools — ступени лейки,
+            // граблей и лопаты.
+            garden: { beds: [], seeds: [], tools: { can: 0, rake: 0, spade: 0 } },
             // Боец гнева: сколько здоровья осталось после последнего боя.
             // hp === null означает «полное»: до первого боя и после того, как
             // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
@@ -189,6 +197,36 @@ const GameState = {
             if (!RoomLocations.has(d.room.location)) d.room.location = RoomLocations.DEFAULT;
         } else if (!d.room.location) {
             d.room.location = 'home';
+        }
+
+        // ---------- САД ----------
+        // Грядки заводятся по числу из конфига, а не по тому, сколько их было
+        // в сейве: добавили место на участке — оно появляется у всех, включая
+        // тех, кто играет неделю. Открытость грядки при этом сохраняется.
+        if (!d.garden || typeof d.garden !== 'object') d.garden = {};
+        if (!Array.isArray(d.garden.beds)) d.garden.beds = [];
+        if (!Array.isArray(d.garden.seeds)) d.garden.seeds = [];
+        if (!d.garden.tools || typeof d.garden.tools !== 'object') {
+            d.garden.tools = { can: 0, rake: 0, spade: 0 };
+        }
+        if (typeof GARDEN !== 'undefined') {
+            for (let i = 0; i < GARDEN.BEDS_TOTAL; i++) {
+                const bed = d.garden.beds[i];
+                if (!bed || typeof bed !== 'object') {
+                    d.garden.beds[i] = {
+                        // 'locked' — под мусором, 'empty' — вскопана и пуста,
+                        // 'growing' — этап 1, 'weedy' — просит прополки,
+                        // 'ripening' — этап 2, 'ripe' — можно собирать.
+                        stage: i < GARDEN.BEDS_OPEN ? 'empty' : 'locked',
+                        species: null,
+                        seed: 0,
+                        at: null,        // когда начался текущий этап
+                        skipped: 0       // сколько часов снято удобрением
+                    };
+                }
+            }
+            d.garden.beds.length = GARDEN.BEDS_TOTAL;
+            if (!d.garden.seeds.length) d.garden.seeds = GARDEN.startingSeeds.slice();
         }
 
         ['currencies', 'inventory', 'pantry', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {

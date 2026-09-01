@@ -37,34 +37,77 @@ const PlantModel = {
 
     clamp01(v, a, b) { return Math.max(a, Math.min(b, v)); },
 
+    // ---- СЛУЧАЙНОСТЬ ИЗ СИДА ----
+    // Растение живёт часами и лежит в сохранении. С Math.random() оно
+    // выглядело бы ПО-НОВОМУ ПОСЛЕ КАЖДОЙ ПЕРЕЗАГРУЗКИ страницы: посадил
+    // золотистое деревце, вернулся — стоит синий куст. Поэтому форма выводится
+    // из сида, как отметины на теле (worm-marks.js) и наклейки зависти, а в
+    // сейве лежит несколько байт вместо списка точек.
+    //
+    // Тот же генератор, что в kitchen-art.js: одинаковый сид — одинаковая
+    // форма, на любом устройстве и в любой сборке.
+    rng(seed) {
+        let h = (seed >>> 0) ^ 0x9e3779b9;
+        return function () {
+            h = (h + 0x6D2B79F5) >>> 0;
+            let t = h;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    },
+
     // ---- ГЕНЕРАЦИЯ ОДНОГО РАСТЕНИЯ ----
+    // Вид ЗАКРЕПЛЯЕТ (полоса оттенка, допустимые стебли, форма листа,
+    // высота), сид ОТПУСКАЕТ (точный оттенок внутри полосы, кривизна, фаза
+    // волны, расстановка листьев). Пять кустов картошки подряд будут все
+    // приземистыми и тускло-зелёными — и ни один не повторит другой.
+    //
+    // Таблица видов лежит в src/config/garden.js: новый вид — запись в ней,
+    // рендерер не трогается. Тот же приём, что у комнат (rooms.js).
     // Возвращает плоский трейт-объект + предрасчитанный план листьев
     // (leaves[]), где на каждый лист уже определено: доля высоты стебля
     // t (0..1), сторона side, вариация угла и размера, лёгкий сдвиг
     // оттенка (лист "наследует" hue стебля + небольшое отклонение).
-    generate() {
-        const stemTypeKeys = Object.keys(this.STEM_TYPES);
-        const stemType = stemTypeKeys[Math.floor(Math.random() * stemTypeKeys.length)];
-        const arrangement = this.LEAF_ARRANGEMENTS[Math.floor(Math.random() * this.LEAF_ARRANGEMENTS.length)];
-        const leafShape = this.LEAF_SHAPES[Math.floor(Math.random() * this.LEAF_SHAPES.length)];
+    generate(species, seed) {
+        // Без сида — случайный: старые вызовы generate() продолжают работать,
+        // просто их растение не переживает перезагрузку.
+        const rnd = this.rng(typeof seed === 'number' ? seed : Math.floor(Math.random() * 1e9));
+        const spec = (typeof GARDEN !== 'undefined' && GARDEN.species[species]) || null;
 
-        const hue = 30 + Math.floor(Math.random() * 250);          // 30-280: от жёлто-зелёного через зелёный, сине-зелёный, до сине-фиолетового — гораздо шире прежнего
-        const satBase = 38 + Math.random() * 30;                    // 38-68% — разброс насыщенности, а не одна и та же "формула" для всех растений
-        const lightBase = 26 + Math.random() * 14;                  // база яркости стебля у основания
+        const stemPool = spec ? spec.stems : Object.keys(this.STEM_TYPES);
+        const stemType = stemPool[Math.floor(rnd() * stemPool.length)];
+        const arrangement = this.LEAF_ARRANGEMENTS[Math.floor(rnd() * this.LEAF_ARRANGEMENTS.length)];
+        const leafShape = spec ? spec.leaf : this.LEAF_SHAPES[Math.floor(rnd() * this.LEAF_SHAPES.length)];
 
-        const leafCount = 4 + Math.floor(Math.random() * 8);        // 4-11 — больше вариативности количества, чем раньше (3-8)
+        // Оттенок: у вида — своя полоса, без вида — вся радуга, как раньше.
+        const hue = spec
+            ? Math.floor(spec.hue[0] + rnd() * (spec.hue[1] - spec.hue[0]))
+            : 30 + Math.floor(rnd() * 250);
+        const satBase = 38 + rnd() * 30;                            // 38-68%
+        const lightBase = 26 + rnd() * 14;
+
+        const leafCount = 4 + Math.floor(rnd() * 8);                // 4-11
 
         const plant = {
+            // -- чем это выросло --
+            // species — ключ ИНГРЕДИЕНТА КУХНИ: вырастил морковь, и в кладовую
+            // ляжет ровно та морковь, которую потом тащишь на разделочную доску.
+            species: species || null,
+            seed: typeof seed === 'number' ? seed : null,
+
             // -- стебель --
             stemType,
             hue,
             satBase,
             lightBase,
-            heightFrac: 0.5 + Math.random() * 0.5,                  // 0.5-1.0
-            tilt: (Math.random() - 0.5) * 56,                       // -28..28° общий наклон (после вертикального "корневого" участка)
-            curve: (Math.random() - 0.5) * 1.8,
-            thickness: 0.5 + Math.random() * 1.9,                   // 0.5-2.4 — шире диапазон толщины
-            wobblePhase: Math.random() * Math.PI * 2,
+            heightFrac: spec
+                ? spec.height[0] + rnd() * (spec.height[1] - spec.height[0])
+                : 0.5 + rnd() * 0.5,
+            tilt: (rnd() - 0.5) * 56,                               // -28..28°
+            curve: (rnd() - 0.5) * 1.8,
+            thickness: 0.5 + rnd() * 1.9,
+            wobblePhase: rnd() * Math.PI * 2,
 
             // -- крепление к земле ("корень") --
             // rootFlare — во сколько раз шире у самой земли расширяется
@@ -72,27 +115,30 @@ const PlantModel = {
             // вместо резкого обрубленного низа). rootBumps — 2-4
             // небольших нерегулярных бугорка вокруг основания, чтобы
             // корневая часть не была идеальным овалом.
-            rootFlare: 1.5 + Math.random() * 1.1,
-            rootBumps: Array.from({ length: 2 + Math.floor(Math.random() * 3) }, () => ({
-                angle: Math.random() * Math.PI * 2,
-                dist: 0.35 + Math.random() * 0.55,
-                r: 0.25 + Math.random() * 0.3
+            rootFlare: 1.5 + rnd() * 1.1,
+            rootBumps: Array.from({ length: 2 + Math.floor(rnd() * 3) }, () => ({
+                angle: rnd() * Math.PI * 2,
+                dist: 0.35 + rnd() * 0.55,
+                r: 0.25 + rnd() * 0.3
             })),
 
             // -- листья --
             leafShape,
             leafArrangement: arrangement,
             leafCount,
-            leafSizeBase: 0.85 + Math.random() * 0.5,               // общий множитель размера листьев для этого растения
+            leafSizeBase: 0.85 + rnd() * 0.5,
             leaves: [],                                             // заполняется ниже buildLeafPlan()
 
             // -- цветок / плод --
-            flowerColor: this.FLOWER_COLORS[Math.floor(Math.random() * this.FLOWER_COLORS.length)],
-            petalCount: 5 + Math.floor(Math.random() * 4),          // 5-8
-            fruitIcon: this.FRUIT_ICONS[Math.floor(Math.random() * this.FRUIT_ICONS.length)]
+            flowerColor: this.FLOWER_COLORS[Math.floor(rnd() * this.FLOWER_COLORS.length)],
+            petalCount: 5 + Math.floor(rnd() * 4),                  // 5-8
+            // Иконка плода нужна только там, где вида нет: у грядки плод
+            // рисует кухня своим же кодом, и второй картинки того же помидора
+            // в игре быть не должно.
+            fruitIcon: this.FRUIT_ICONS[Math.floor(rnd() * this.FRUIT_ICONS.length)]
         };
 
-        plant.leaves = this.buildLeafPlan(leafCount, arrangement);
+        plant.leaves = this.buildLeafPlan(leafCount, arrangement, rnd);
         return plant;
     },
 
@@ -110,7 +156,11 @@ const PlantModel = {
     //    бы их ни было;
     // 3) при малом числе листьев (напр. 4) они всё равно разнесены на
     //    заметное расстояние и хорошо видны, а не сбиты в кучу у земли.
-    buildLeafPlan(nLeaves, arrangement) {
+    buildLeafPlan(nLeaves, arrangement, rnd) {
+        // rnd — тот же генератор из сида, что и у самого растения: план
+        // листьев обязан воспроизводиться вместе с ним, иначе после
+        // перезагрузки листья переедут на другие места.
+        const rng = rnd || Math.random;
         const tMin = 0.16, tMax = 0.90;
         const leaves = [];
         const self = this;
@@ -119,11 +169,11 @@ const PlantModel = {
             leaves.push({
                 t: self.clamp01(t, tMin, tMax),
                 side,
-                angleVar: (Math.random() - 0.5) * 0.22,
-                distScale: 0.9 + Math.random() * 0.28,
-                sizeScale: 0.8 + Math.random() * 0.4,
-                hueShift: (Math.random() - 0.5) * 14,
-                popDelay: Math.random() * 0.03
+                angleVar: (rng() - 0.5) * 0.22,
+                distScale: 0.9 + rng() * 0.28,
+                sizeScale: 0.8 + rng() * 0.4,
+                hueShift: (rng() - 0.5) * 14,
+                popDelay: rng() * 0.03
             });
         }
 
@@ -132,7 +182,7 @@ const PlantModel = {
             const pairs = Math.max(1, Math.round(nLeaves / 2));
             for (let i = 0; i < pairs; i++) {
                 const t = tMin + (tMax - tMin) * ((i + 0.5) / pairs);
-                const jitter = (Math.random() - 0.5) * ((tMax - tMin) / pairs) * 0.3;
+                const jitter = (rng() - 0.5) * ((tMax - tMin) / pairs) * 0.3;
                 pushLeaf(t + jitter, 1);
                 if (leaves.length < nLeaves) pushLeaf(t + jitter, -1);
             }
@@ -144,21 +194,21 @@ const PlantModel = {
             for (let i = 0; i < whorls; i++) {
                 const t = tMin + (tMax - tMin) * ((i + 0.5) / whorls);
                 for (let k = 0; k < 3 && leaves.length < nLeaves; k++) {
-                    const side = k === 2 ? (Math.random() < 0.5 ? 1 : -1) : (k === 0 ? 1 : -1);
-                    pushLeaf(t + (Math.random() - 0.5) * 0.015, side);
+                    const side = k === 2 ? (rng() < 0.5 ? 1 : -1) : (k === 0 ? 1 : -1);
+                    pushLeaf(t + (rng() - 0.5) * 0.015, side);
                 }
             }
         } else {
             // 'alternate' — очередное листорасположение: сторона почти
             // всегда переключается, но не строго механически (~62%
             // шанс переключиться, иначе повторить — не длиннее 2 подряд)
-            let side = Math.random() < 0.5 ? 1 : -1;
+            let side = rng() < 0.5 ? 1 : -1;
             let repeats = 0;
             for (let i = 0; i < nLeaves; i++) {
                 const t = tMin + (tMax - tMin) * ((i + 0.5) / nLeaves);
-                const jitter = (Math.random() - 0.5) * ((tMax - tMin) / nLeaves) * 0.4;
+                const jitter = (rng() - 0.5) * ((tMax - tMin) / nLeaves) * 0.4;
                 pushLeaf(t + jitter, side);
-                if (repeats >= 1 || Math.random() < 0.62) {
+                if (repeats >= 1 || rng() < 0.62) {
                     side = -side;
                     repeats = 0;
                 } else {
