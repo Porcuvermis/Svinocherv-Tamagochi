@@ -615,6 +615,9 @@ const GARDEN_ART = {
         // Рисует его КУХНЯ своим же кодом: то, что выросло на грядке, и то,
         // что потом тащат на разделочную доску, — один предмет, и второй
         // картинки того же помидора в игре быть не должно.
+        // fruitKey === null — плода у вида нет (трава). Проверка обязательна:
+        // по неизвестному ключу кухня отдаёт запасной рисунок, и на грядке
+        // вырастал пищеблок.
         if ((state === 'ripening' || state === 'ripe') && fruitKey && typeof KITCHEN_ART !== 'undefined') {
             const scale = state === 'ripe' ? 0.46 : 0.3;
             out.push(`<g transform="translate(${geo.tipX.toFixed(1)} ${(geo.tipY + 12).toFixed(1)}) scale(${scale})">
@@ -758,25 +761,48 @@ const GARDEN_ART = {
     // Что попалось в земле — показывается ПРЕДМЕТОМ, а не числом в углу
     // экрана. Число в кошельке игрок не связывает с ямкой, которую только что
     // выкопал, а связь «копнул — нашёл» и есть весь смысл находок.
-    find(kind, key) {
+    // Один добытый ресурс: сколько и чего. Число стоит ПЕРЕД значком, как в
+    // любой строке добычи, и без него значок врёт — трава даёт два сена, а
+    // сноп рисуется один.
+    //
+    // «+2» словом не является (инвариант 9): цифра — пиктограмма количества,
+    // плюс — знак, а не буква.
+    gain(kind, key, amount) {
+        const n = amount == null ? 1 : amount;
+        return `<g class="gd-find" data-gain="${kind}">
+            <text class="gd-gain" x="-20" y="6">+${n}</text>
+            <g transform="translate(10 0)">${this.gainIcon(kind, key)}</g>
+        </g>`;
+    },
+
+    gainIcon(kind, key) {
         const k = gdPal(), ink = gdInk(), S = gdS();
         if (kind === 'gold') {
-            return `<g class="gd-find">
+            return `<g>
                 <circle r="15" fill="${k.coin[500]}" stroke="${ink}" stroke-width="${S.structure}"/>
                 <circle r="9" fill="none" stroke="${ink}" stroke-width="${S.detail}" opacity="0.6"/>
             </g>`;
         }
-        if (kind === 'seed') {
-            return `<g class="gd-find"><g transform="scale(1.1)">${this.seedItem(key || 'potato')}</g></g>`;
+        if (kind === 'seed') return `<g transform="scale(1.1)">${this.seedItem(key || 'potato')}</g>`;
+        // Сено — второй продукт любого растения.
+        if (kind === 'hay') return `<g transform="scale(1.15)">${this.hay()}</g>`;
+        // Плод рисует КУХНЯ своим же кодом: то, что выросло на грядке, и то,
+        // что потом тащат на доску, — один предмет.
+        if (kind === 'fruit') {
+            return (typeof KITCHEN_ART !== 'undefined')
+                ? `<g transform="scale(0.4)">${KITCHEN_ART.ingredient(key, 3)}</g>` : '';
         }
-        // Сено — второй продукт любого растения. Показывается так же, как
-        // находка: предметом над грядкой, а не цифрой в кошельке.
-        if (kind === 'hay') {
-            return `<g class="gd-find"><g transform="scale(1.15)">${this.hay()}</g></g>`;
+        // Осколок лени: обломок с зазубренным краем — по силуэту видно, что
+        // это ЧАСТЬ чего-то целого.
+        if (kind === 'sloth_shard') {
+            return `<g>
+                <path d="M-13 -8 L4 -14 L14 2 L6 15 L-8 12 L-14 2 Z"
+                      fill="${k.turf[300]}" stroke="${ink}" stroke-width="${S.structure}" stroke-linejoin="round"/>
+                <path d="M-6 -4 L2 8" stroke="${ink}" stroke-width="${S.detail}" opacity="0.5"/>
+            </g>`;
         }
-        // Осколок жетона: обломок с зазубренным краем, а не аккуратная
-        // фигура — по силуэту сразу видно, что это ЧАСТЬ чего-то целого.
-        return `<g class="gd-find">
+        // Осколок жетона гнева — то же тело, но своего цвета: валюта чужая.
+        return `<g>
             <path d="M-13 -8 L4 -14 L14 2 L6 15 L-8 12 L-14 2 Z"
                   fill="${k.shard[500]}" stroke="${ink}" stroke-width="${S.structure}" stroke-linejoin="round"/>
             <path d="M-6 -4 L2 8" stroke="${ink}" stroke-width="${S.detail}" opacity="0.5"/>

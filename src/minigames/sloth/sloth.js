@@ -187,7 +187,11 @@ const SlothMinigame = {
                 ? { action: this.work.action, frac: this.work.done / this.work.need } : null;
             g.innerHTML = `<g class="gd-bed-in">` + GARDEN_ART.bed(bed.stage, {
                 seed: bed.seed || (i + 1) * 17,
-                uid: i, plant, growth, fruitKey: bed.species, work
+                // Плод берётся из вида, а НЕ из его ключа: у травы плода
+                // нет вовсе, и по ключу 'grass' кухня рисовала запасной
+                // пищеблок — трава колосилась кирпичом.
+                uid: i, plant, growth, work,
+                fruitKey: (GARDEN.species[bed.species] || {}).fruit || null
             }) + this.badgeFor(bed, plant, growth, work) + `</g>`;
         });
         this.renderTools();
@@ -726,13 +730,24 @@ const SlothMinigame = {
             // Что нашлось в земле — показывается ПРЕДМЕТОМ над грядкой.
             // Число в кошельке игрок не связывает с ямкой, которую только что
             // выкопал, а связь «копнул — нашёл» и есть весь смысл находок.
-            if (res.find) this.showFind(i, res.find);
-            // Что дал урожай: сено с любого растения и, иногда, вернувшаяся
-            // семечка. Показывается предметом над грядкой — цифру в кошельке
-            // игрок со сбором не связывает. Вразбежку, чтобы не наложились
-            // друг на друга.
-            if (res.hay) this.showFind(i, { what: 'hay', amount: res.hay });
-            if (res.seedBack) setTimeout(() => this.showFind(i, { what: 'seed', key: res.seedBack }), 260);
+            // ВСЯ добыча за одно действие — одним списком, чтобы порядок и
+            // разбежка считались в одном месте, а не собирались из
+            // разбросанных таймеров.
+            const gains = [];
+            // Плод показывается только если он реально лёг в кладовую:
+            // склад не резиновый, и «+1» при полном складе был бы враньём.
+            if (res.grown && res.taken) {
+                const fruit = (GARDEN.species[res.grown] || {}).fruit;
+                if (fruit) gains.push({ what: 'fruit', key: fruit, amount: res.taken });
+            }
+            if (res.seedBack) gains.push({ what: 'seed', key: res.seedBack, amount: 1 });
+            if (res.shards) gains.push({ what: 'sloth_shard', amount: res.shards });
+            if (res.hay) gains.push({ what: 'hay', amount: res.hay });
+            if (res.find) {
+                gains.push({ what: res.find.what, key: res.find.key,
+                             amount: res.find.amount == null ? 1 : res.find.amount });
+            }
+            this.showGains(i, gains);
             // Шкала дёргается на каждом действии: без этого игрок не связывает
             // «повозился в саду» с «лень закрылась», а связь тут и есть весь
             // смысл мини-игры.
@@ -847,18 +862,37 @@ const SlothMinigame = {
 
     // Находка всплывает над грядкой и тает. Живёт в слое сцены грядки, чтобы
     // уехать вместе с участком, если игрок в этот момент ведёт панораму.
-    showFind(i, find) {
-        // Слой находок отдельный: грядка перерисовывается целиком раз в
-        // секунду, и монетка, положенная внутрь неё, пропадала на середине
+    // Что игрок получил — показывается ПРЕДМЕТАМИ над грядкой, по очереди,
+    // с числами. Цифра в кошельке со сбором не связывается: связь «сорвал —
+    // получил» держится на том, что вещь вылетает из той самой грядки.
+    //
+    // Порядок — от ценного к дешёвому: плод, семечко, осколок, сено. Первым
+    // показывается то, ради чего сажали, а сено — то, что достаётся всегда.
+    GAIN_ORDER: ['fruit', 'seed', 'gold', 'sloth_shard', 'wrath_shard', 'hay'],
+    // Разбежка между предметами. Летит каждый секунду, поэтому шаг должен
+    // быть заметно больше половины полёта — иначе следующий выходит из грядки
+    // раньше, чем предыдущий отлетел, и вместо очереди получается куча.
+    GAIN_STEP_MS: 480,
+
+    showGains(i, list) {
+        const sorted = (list || []).filter(g => g && (g.amount == null || g.amount > 0))
+            .sort((a, b) => this.GAIN_ORDER.indexOf(a.what) - this.GAIN_ORDER.indexOf(b.what));
+        // Вразбежку: два предмета, вылетевшие одновременно, читаются как один.
+        sorted.forEach((g, n) => setTimeout(() => this.showGain(i, g), n * this.GAIN_STEP_MS));
+    },
+
+    showGain(i, g) {
+        // Слой добычи отдельный: грядка перерисовывается целиком раз в
+        // секунду, и предмет, положенный внутрь неё, пропадал бы на середине
         // полёта. Позиция — на внешней группе, анимация — на вложенной
-        // (docs/traps.md, п. 2).
+        // (docs/traps.md, п. 2 и 2а).
         const layer = document.getElementById('gd-finds');
         if (!layer) return;
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         node.setAttribute('class', 'gd-find-fly');
         node.setAttribute('transform',
             `translate(${GARDEN_ART.bedX(i)} ${GARDEN_ART.SOIL_Y - 40})`);
-        node.innerHTML = GARDEN_ART.find(find.what, find.key);
+        node.innerHTML = GARDEN_ART.gain(g.what, g.key, g.amount);
         layer.appendChild(node);
         setTimeout(() => node.remove(), 1100);
     },

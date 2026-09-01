@@ -526,15 +526,57 @@ const { chromium } = require('playwright');
   // Находка всплывает над грядкой и живёт свою анимацию целиком: пока она
   // лежала внутри грядки, её сносила секундная перерисовка на полпути.
   const findAlive = await page.evaluate(async () => {
-    SlothMinigame.showFind(0, { what: 'gold', amount: 2 });
+    SlothMinigame.showGain(0, { what: 'gold', amount: 2 });
     await new Promise(r => setTimeout(r, 900));
     const n = document.querySelector('#gd-finds .gd-find-fly .gd-find');
     if (!n) return null;
     const r = n.getBoundingClientRect();
-    return { w: Math.round(r.width), y: Math.round(r.y) };
+    return { w: Math.round(r.width), y: Math.round(r.y), число: n.querySelector('.gd-gain').textContent };
   });
   say('находка через 0.9 с: ' + JSON.stringify(findAlive) +
-      (findAlive && findAlive.w > 0 ? '  ✓ долетела' : '  ✗ ПРОПАЛА НА ПОЛПУТИ'));
+      (findAlive && findAlive.w > 0 && findAlive.число === '+2' ? '  ✓ долетела с числом' : '  ✗ ПРОПАЛА ИЛИ БЕЗ ЧИСЛА'));
+
+  // ---------- ВСЯ ДОБЫЧА СО СБОРА ПОКАЗЫВАЕТСЯ ----------
+  // Каждый ресурс — своим значком и своим числом, по очереди от ценного к
+  // дешёвому. Сноп сена рисуется один, а трава даёт два: без цифры значок
+  // врёт.
+  // Ловим ПОЯВЛЕНИЯ, а не снимок: предметы живут по секунде и разъезжаются во
+  // времени, поэтому в один момент их всех на экране не бывает.
+  const shown = await page.evaluate(async () => {
+    const layer = document.getElementById('gd-finds');
+    layer.innerHTML = '';
+    const order = [];
+    const obs = new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => {
+      const g = n.querySelector && n.querySelector('.gd-find');
+      if (g) order.push(g.dataset.gain + g.querySelector('.gd-gain').textContent);
+    })));
+    obs.observe(layer, { childList: true });
+    SlothMinigame.showGains(0, [
+      { what: 'hay', amount: 2 },
+      { what: 'fruit', key: 'potato', amount: 1 },
+      { what: 'sloth_shard', amount: 1 },
+      { what: 'seed', key: 'potato', amount: 1 },
+      { what: 'gold', amount: 0 }        // ноль показывать нечего
+    ]);
+    await new Promise(r => setTimeout(r, SlothMinigame.GAIN_STEP_MS * 6));
+    obs.disconnect();
+    return order;
+  });
+  const wantOrder = 'fruit+1,seed+1,sloth_shard+1,hay+2';
+  say('добыча по очереди: ' + shown.join(',') +
+      (shown.join(',') === wantOrder ? '  ✓ от ценного к дешёвому, ноль не показан' : '  ✗ ПОРЯДОК ИЛИ СОСТАВ НЕ ТОТ'));
+
+  // Трава плода не даёт — и не должна отращивать чужой значок.
+  const grassFruit = await page.evaluate(() => {
+    const b = GameState.data.garden.beds[0];
+    Object.assign(b, { stage: 'ripe', species: 'grass', seed: 5, at: null, skipped: 0 });
+    GameState.save(); SlothMinigame.render();
+    // Пищеблок — запасной рисунок кухни для неизвестного ключа, и именно он
+    // вырастал на траве: прямоугольник с кирпичной расшивкой. Ищем его.
+    const html = document.getElementById('gd-bed-0').innerHTML;
+    return html.indexOf('width="88" height="56"') !== -1;
+  });
+  say('плод у травы: ' + (grassFruit ? '✗ ВЫРОС ЧУЖОЙ' : 'нет  ✓'));
 
   // Грядка не должна прыгать по экрану, когда по ней работают: анимация,
   // правящая transform, однажды уже стирала её позицию в сцене.

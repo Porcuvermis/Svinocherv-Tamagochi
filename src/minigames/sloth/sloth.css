@@ -168,13 +168,29 @@
    класс анимации оказался на том же узле, где стоит transform с позицией, —
    и находка улетала в левый верхний угол сцены, за край экрана. Ловушка
    docs/traps.md п. 2, третий раз. */
-#sloth-game .gd-find-fly .gd-find { animation: gd-find 1.1s ease-out forwards; }
+#sloth-game .gd-find-fly .gd-find { animation: gd-find 1s ease-out forwards; }
 
+/* Летит выше, чем раньше: со сбора приходит до четырёх ресурсов подряд, и на
+   короткой траектории они наезжали друг на друга. */
 @keyframes gd-find {
-    0%   { transform: translateY(0)    scale(0.5); opacity: 0; }
-    22%  { transform: translateY(-14px) scale(1.1); opacity: 1; }
-    70%  { transform: translateY(-34px) scale(1);   opacity: 1; }
-    100% { transform: translateY(-56px) scale(0.9); opacity: 0; }
+    0%   { transform: translateY(0)     scale(0.5); opacity: 0; }
+    18%  { transform: translateY(-18px) scale(1.1); opacity: 1; }
+    70%  { transform: translateY(-62px) scale(1);   opacity: 1; }
+    100% { transform: translateY(-92px) scale(0.9); opacity: 0; }
+}
+
+/* Сколько получено. Число стоит перед значком: сноп сена рисуется один, а
+   даёт трава два, и без цифры значок врёт. «+2» словом не является
+   (инвариант 9) — цифра пиктограмма количества, плюс знак, а не буква. */
+#sloth-game .gd-gain {
+    font: 800 17px/1 -apple-system, system-ui, sans-serif;
+    text-anchor: end;
+    dominant-baseline: alphabetic;
+    fill: #f6f9e8;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.7);
+    stroke-width: 3.5px;
+    pointer-events: none;
 }
 
 /* ---------- ШКАЛА ЛЕНИ ---------- */
