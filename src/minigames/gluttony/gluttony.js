@@ -241,6 +241,7 @@ const GluttonyMinigame = {
         this.el('kt-board-rest').innerHTML = KITCHEN_ART.boardRest();
         this.moveTo(this.el('kt-board-rest'), KITCHEN_ART.SLOTS.boardRest);
         this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
+        this.setOpacity('kt-table-set', 1);
         this.buildBottles();
         this.setCamera('overview', true);
         if (typeof KitchenDebug !== 'undefined') KitchenDebug.render();
@@ -334,7 +335,7 @@ const GluttonyMinigame = {
     // это видно здесь, а не выясняется на живом игроке.
     nextStep() {
         const S = KITCHEN_ART.SLOTS, F = KITCHEN_ART.FG;
-        if (this.phase === 'overview') return { at: { x: 155, y: 800 } };
+        if (this.phase === 'overview') return { at: KITCHEN_ART.SLOTS.fridgeDoor };
 
         if (this.phase === 'fridge') {
             if (this.onBoard.length) {
@@ -475,6 +476,9 @@ const GluttonyMinigame = {
 
     // ================= ХОЛОДИЛЬНИК =================
     openFridge() {
+        // Доска со стола уходит В РУКИ: набор на столе гаснет, иначе она
+        // лежит на столе и одновременно едет к игроку.
+        this.setOpacity('kt-table-set', 0);
         this.phase = 'fridge';
         this.setCamera('fridge');
         this.el('kt-fridge').classList.add('open');
@@ -498,6 +502,8 @@ const GluttonyMinigame = {
         // значит передумал готовить, а не потерял продукты.
         this.el('kt-board-items').innerHTML = '';
         this.onBoard = [];
+        // Доска возвращается на стол: передумали — значит и не брали.
+        this.setOpacity('kt-table-set', 1);
         this.phase = 'overview';
         this.setCamera('overview');
         this.touched();
@@ -737,7 +743,7 @@ const GluttonyMinigame = {
         this.phase = 'stove';
         // Доска уходит вверх и встаёт на столешницу слева от плиты — там же,
         // где игрок её и оставил бы.
-        this.moveTo(this.el('kt-board'), { x: 195, y: -220 });
+        this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.away);
         // Нож остаётся в переднем плане и камере не подчиняется, поэтому его
         // надо убрать руками: иначе он висит поперёк плиты весь остаток игры.
         this.hideKnife();
@@ -756,8 +762,11 @@ const GluttonyMinigame = {
         const S = KITCHEN_ART.SLOTS;
         this.el('kt-board-items').innerHTML = '';
         this.piles = this.onBoard.map((o, i) => {
-            const spot = { x: S.boardRest.x - 40 + i * 40, y: S.boardRest.y - 20 };
-            const g = this.spawnItem(o.key, spot, 0.5, this.el('kt-loose'));
+            // Гнёзда спрашиваем у картинки: они лежат вдоль доски, которая
+            // нарисована в перспективе. Считать их здесь «шагом вправо»
+            // значит уронить левую кучку мимо доски.
+            const spot = S.piles[i] || S.piles[S.piles.length - 1];
+            const g = this.spawnItem(o.key, spot, S.pileScale, this.el('kt-loose'));
             g.innerHTML = KITCHEN_ART.chopped([o.key], 2, 31 + i);
             g.dataset.where = 'pile';
             return { key: o.key, el: g };
@@ -896,10 +905,11 @@ const GluttonyMinigame = {
         if (!d || !d.node) return;
         d.node.classList.remove('kt-dragging');
         if (d.kind === 'hose') {
-            // Лейку не за что «втянуть обратно»: она просто встаёт на своё
-            // место на столешнице. Прежний кран тянул за собой шланг, и его
-            // линию приходилось перерисовывать — с лейкой рисовать нечего.
+            // Головка возвращается в излив, шланг втягивается за ней.
+            const H = this.hose();
             this.el('kt-nozzle').setAttribute('transform', '');
+            this.el('kt-hose-line').setAttribute('d',
+                `M${H.anchor.x} ${H.anchor.y} V${H.anchor.y + 8}`);
             return;
         }
         if (d.kind === 'bottle') {
@@ -1145,6 +1155,16 @@ const GluttonyMinigame = {
             this.el('kt-nozzle').setAttribute('transform',
                 `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) ` +
                 `scale(${H.zoom}) translate(${-H.pivot.x} ${-H.pivot.y})`);
+            // Шланг ПРОВИСАЕТ, и провис большой: точка изгиба уходит на 130
+            // ниже конца. Слабый провис давал ровную нитку через всю кухню —
+            // читалось бельевой верёвкой, а не шлангом. Провисая, шланг
+            // ложится на столешницу и уходит ЗА бутыли (они нарисованы
+            // позже), то есть ведёт себя как настоящий.
+            const A = H.anchor;
+            this.el('kt-hose-line').setAttribute('d',
+                `M${A.x} ${A.y} Q${(A.x + (p.x - A.x) * 0.35).toFixed(1)} ` +
+                `${(Math.max(A.y, p.y) + 130).toFixed(1)} ` +
+                `${p.x.toFixed(1)} ${(p.y - 30).toFixed(1)}`);
         } else {
             // Бутыль над кастрюлей опрокидывается: держать её стоймя и при
             // этом лить — значит лить из закрытой пробки.

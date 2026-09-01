@@ -62,6 +62,7 @@
 | Холст, камера, комната | `docs/stage-and-room.md` |
 | Окно мини-игры | `docs/minigame-window.md` |
 | Предметы кухни по референсу (склад SVG) | `docs/kitchen-objects.md` |
+| Как проверять кухню (три уровня) | `docs/kitchen-checks.md` |
 | Убрать слова из экрана | `docs/plan/11-no-words.md` |
 | Деплой, iPhone, service worker | `docs/deploy-iphone.md` |
 | «Почему это сделано так» | `docs/progress-log.md` — архив с указателем сверху |
@@ -83,6 +84,8 @@ NODE_PATH=/opt/node22/lib/node_modules node tools/<тест>.js /tmp/shot-
 | `test-kitchen.js` | Кухня целиком: холодильник → доска → нож → плита → кормёжка |
 | `test-kitchen-block.js` | Второй путь кухни: пищеблок, страховка от тупика |
 | `test-garden.js` | Сад и его стык с кухней: цикл грядки, удобрение, потолок склада, замкнутый круг |
+| `check-kitchen-fit.js` | **Подгонка кухни под геймплей: опора, зазор, захват, видимость. Секунда, без браузера — гонять после каждой правки координат** |
+| `zoom-kitchen.js` | Лупа: кусок кухни крупно, в заданной фазе |
 | `shot-kitchen-objects.js` + `diff-kitchen-objects.py` | Склад предметов кухни: снимки и промах относительно референса |
 | `test-no-words.js` | Ни одного слова на игровых экранах (инвариант 9) |
 | `test-pride.js` | Проходимость тщеславия |
