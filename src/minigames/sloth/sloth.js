@@ -112,6 +112,10 @@ const SlothMinigame = {
         this.screenElement.classList.remove('active');
         if (this.tickId) { clearInterval(this.tickId); this.tickId = null; }
         if (this.pourRaf) { cancelAnimationFrame(this.pourRaf); this.pourRaf = 0; }
+        this.work = null;
+        this.stroke = null;
+        const wl = document.getElementById('gd-work');
+        if (wl) wl.innerHTML = '';
         LiquidStream.clear(this.stream);
         if (this.wetEl) this.wetEl.innerHTML = '';
         this.drag = null;
@@ -164,10 +168,12 @@ const SlothMinigame = {
             // и сбора правят transform, а на внешней группе им записана
             // позиция грядки в сцене — совпав, они выкидывали грядку к нулю,
             // и она прыгала через весь экран (docs/traps.md, п. 2).
+            const work = (this.work && this.work.i === i)
+                ? { action: this.work.action, frac: this.work.done / this.work.need } : null;
             g.innerHTML = `<g class="gd-bed-in">` + GARDEN_ART.bed(bed.stage, {
                 seed: bed.seed || (i + 1) * 17,
-                uid: i, plant, growth, fruitKey: bed.species
-            }) + this.badgeFor(bed, plant, growth) + `</g>`;
+                uid: i, plant, growth, fruitKey: bed.species, work
+            }) + this.badgeFor(bed, plant, growth, work) + `</g>`;
         });
         this.renderTools();
         this.renderGauge();
@@ -181,9 +187,26 @@ const SlothMinigame = {
 
     // Значок висит НАД растением, а не на фиксированной высоте: иначе выросший
     // куст закрывает собой ровно ту подсказку, которая к нему относится.
-    badgeFor(bed, plant, growth) {
+    badgeFor(bed, plant, growth, work) {
         const need = this.NEED[bed.stage];
         const waiting = bed.stage === 'growing' || bed.stage === 'ripening';
+        // Пока идёт ручная работа, над грядкой висит её кольцо: сколько
+        // движений осталось. Просить инструмент в этот момент незачем — он
+        // уже в руках.
+        if (work) {
+            // Выше обычного значка: под кольцом стоит инструмент в рабочем
+            // положении, и на прежней высоте черенок лопаты упирался в него.
+            const y = Math.max(110, GARDEN_ART.SOIL_Y - (plant ? GARDEN_ART.plantHeight(plant, growth) + 18 : 30) - 112);
+            return `<g transform="translate(0 ${y.toFixed(0)})">${GARDEN_ART.badge('work', work.frac)}</g>`;
+        }
+        // Заваленная грядка просит не руку, а ЖЕТОН: она стоит денег, и
+        // узнать об этом игрок должен до того, как начнёт её разгребать.
+        if (bed.stage === 'locked') {
+            const cost = GARDEN.BED_COST;
+            const enough = GameState.currency(cost.currency) >= cost.amount;
+            return `<g transform="translate(0 ${(GARDEN_ART.SOIL_Y - 92).toFixed(0)})">${
+                GARDEN_ART.badge('price', 0, enough)}</g>`;
+        }
         if (!need && !waiting) return '';
         // Высоту куста спрашиваем у того же кода, который его рисует: свой
         // расчёт разъезжается с настоящим, и значок садится кусту на голову.
@@ -297,7 +320,9 @@ const SlothMinigame = {
         if (this.locked) return;
         const t = e.target;
         const tool = t.closest ? t.closest('.gd-tool') : null;
-        if (tool) {
+        // Пока грядка в работе, второй инструмент в руки не берётся: две
+        // работы одновременно — это два разных объяснения на одном экране.
+        if (tool && !this.work) {
             e.preventDefault();
             // Инструмент в руке крупнее: предмет под пальцем обязан быть
             // крупнее самого пальца, иначе не видно, что именно держишь.
@@ -318,14 +343,23 @@ const SlothMinigame = {
         }
 
         const bed = t.closest ? t.closest('.gd-bed') : null;
+        const bedIdx = bed ? +bed.dataset.bed : -1;
+
+        // Идёт ручная работа — палец продолжает её. Нажатие мимо этой грядки
+        // работу отменяет: иначе из неё нет выхода, кроме как доделать.
+        if (this.work) {
+            if (bedIdx === this.work.i || this.workZone(e)) { this.strokeStart(e); return; }
+            this.cancelWork();
+            return;
+        }
+
         // Что делают РУКАМИ: разбирают завал на новой грядке и срывают спелый
         // плод. Инструмента для этого нет и не будет — рука уже есть у
         // каждого, а лишний предмет на полке пришлось бы объяснять.
-        if (bed) {
-            const i = +bed.dataset.bed;
-            const state = Backend.gardenBed(i);
-            if (state && state.stage === 'locked') { this.act(i, 'clear'); return; }
-            if (state && state.stage === 'ripe') { this.act(i, 'harvest'); return; }
+        if (bedIdx >= 0) {
+            const state = Backend.gardenBed(bedIdx);
+            if (state && state.stage === 'locked') { this.startWork(bedIdx, 'clear'); this.strokeStart(e); return; }
+            if (state && state.stage === 'ripe') { this.startWork(bedIdx, 'harvest'); this.strokeStart(e); return; }
         }
 
         // Всё остальное — панорама: сад разглядывают, ведя пальцем вбок.
@@ -333,6 +367,7 @@ const SlothMinigame = {
     },
 
     onMove(e) {
+        if (this.stroke) { this.strokeMove(e); return; }
         if (!this.drag) return;
         if (this.drag.kind === 'pan') {
             this.setCam(this.drag.base - (this.toStage(e).x - this.drag.from));
@@ -362,6 +397,7 @@ const SlothMinigame = {
     },
 
     onUp(e) {
+        if (this.stroke) { this.stroke = null; return; }
         const d = this.drag;
         this.drag = null;
         if (!d) return;
@@ -375,7 +411,10 @@ const SlothMinigame = {
         // держали. Не долил — вода ушла в землю впустую, и это честно: иначе
         // «поднести и отпустить» было бы быстрее, чем полить.
         if (d.tool === 'can') return;
-        this.act(i, this.actionOf(d), d.key ? { species: d.key } : null);
+        // Остальные инструменты донести до грядки — это только НАЧАЛО работы.
+        // Лопата втыкается в землю, грабли ложатся зубьями — и дальше игрок
+        // работает ими сам.
+        this.startWork(i, this.actionOf(d), d.key ? { species: d.key } : null);
     },
 
     // Какое действие соответствует инструменту. Таблица одна и здесь: если
@@ -385,12 +424,11 @@ const SlothMinigame = {
     },
 
     // Можно ли этим по этой грядке. Проверяется ДО отпускания, чтобы подсветка
-    // не обещала того, чего не будет.
+    // не обещала того, чего не будет. Таблица «что на какой стадии» живёт в
+    // Backend в единственном экземпляре: вторая копия здесь разъехалась бы с
+    // ней молча.
     allowed(d, i) {
-        const bed = Backend.gardenBed(i);
-        if (!bed) return false;
-        const need = { dig: 'empty', sow: 'dug', water: 'sown', weed: 'weedy', fertilize: 'growing' };
-        return bed.stage === need[this.actionOf(d)];
+        return Backend.gardenCan(i, this.actionOf(d), d.key ? { species: d.key } : null);
     },
 
     // Какая грядка под пальцем. `tall` — зона на всю высоту НАД грядкой:
@@ -407,6 +445,121 @@ const SlothMinigame = {
             if (p.y > top && p.y < GARDEN_ART.SOIL_Y + 40) return i;
         }
         return -1;
+    },
+
+    // ---------- РУЧНАЯ РАБОТА ----------
+    // Ни одно действие в саду не срабатывает от того, что предмет донесли до
+    // грядки. Инструмент встаёт в рабочее положение, и дальше игрок РАБОТАЕТ
+    // им сам: дёргает лопату, приминает землю ладонью, водит граблями. Ровно
+    // тот же приём, что нож на кухне, и по той же причине — сад про возню
+    // руками, а мгновенное срабатывание превращает его в список кнопок.
+    //
+    // Устроено это так:
+    //   startWork  — инструмент занял позицию, дальше ждём движений;
+    //   strokeMove — считаем движения: длина по нужной оси, разворот = мазок;
+    //   finishWork — движений набралось, действие уходит в Backend.
+    //
+    // Отмена — нажатие мимо грядки. Без выхода работа была бы ловушкой:
+    // передумал, а деться некуда.
+    startWork(i, action, opts) {
+        const cfg = GARDEN.work[action];
+        if (!cfg) { this.act(i, action, opts); return; }      // действие без возни
+        // Проверяем ДО того, как инструмент встанет в позицию: разгребать
+        // завал, за который нечем заплатить, игрок не должен.
+        if (!Backend.gardenCan(i, action, opts)) { this.refuse(i); return; }
+
+        this.work = {
+            i, action, opts: opts || null, cfg,
+            need: cfg.strokes, done: 0, swing: 0
+        };
+        this.stroke = null;
+        this.renderWork(true);
+        this.render();
+    },
+
+    cancelWork() {
+        if (!this.work) return;
+        this.work = null;
+        this.stroke = null;
+        this.renderWork();
+        this.render();
+    },
+
+    // Зона работы — та же вертикальная полоса над грядкой, что у полива:
+    // дёргать лопату игрок будет там, где ему удобно, а не строго в границах
+    // короба.
+    workZone(e) {
+        return this.work && this.bedUnder(e, true) === this.work.i;
+    },
+
+    strokeStart(e) {
+        if (!this.work) return;
+        const p = this.toScene(e);
+        // Отсчёт ведётся ОТ ПРЕДЫДУЩЕГО положения пальца, а не от начала
+        // жеста: с отсчётом от начала инструмент «заводится» и уезжает
+        // (docs/traps.md, п. 3).
+        this.stroke = { last: this.work.cfg.axis === 'y' ? p.y : p.x, run: 0, dir: 0 };
+    },
+
+    strokeMove(e) {
+        const w = this.work, st = this.stroke;
+        if (!w || !st) return;
+        const p = this.toScene(e);
+        const now = w.cfg.axis === 'y' ? p.y : p.x;
+        const d = now - st.last;
+        st.last = now;
+        if (!d) return;
+
+        const dir = d > 0 ? 1 : -1;
+        // Развернулся — начинается новый мазок, набег обнуляется. Иначе
+        // дрожание пальца туда-сюда набирало бы длину и «работало» само.
+        if (dir !== st.dir) { st.dir = dir; st.run = 0; }
+        st.run += Math.abs(d);
+
+        // Инструмент ходит за пальцем: это единственный отклик на движение,
+        // без него игрок не понимает, засчитывается ли оно.
+        w.swing = Math.max(-1, Math.min(1, (st.run / w.cfg.min) * dir));
+        this.renderWork();
+
+        if (st.run < w.cfg.min) return;
+        if (w.cfg.dir && dir !== w.cfg.dir) { st.run = 0; return; }   // рывок только в одну сторону
+        st.run = 0;
+        w.done++;
+        // Грядка меняется от КАЖДОГО движения: камень отлетел, лунка глубже,
+        // сорняк выдран. Перерисовывается она только на засчитанном мазке —
+        // шесть грядок каждый кадр собирать заново незачем.
+        this.render();
+        if (w.done >= w.need) this.finishWork();
+    },
+
+    finishWork() {
+        const w = this.work;
+        this.work = null;
+        this.stroke = null;
+        this.renderWork();
+        this.act(w.i, w.action, w.opts);
+    },
+
+    // Слой работы устроен тремя уровнями, и это не бюрократия:
+    //   внешняя группа — ГДЕ грядка (transform с координатой в сцене);
+    //   .gd-work-in    — анимация втыкания, играет ОДИН раз при заходе;
+    //   внутри неё     — сам инструмент, он переписывается на каждое движение.
+    // Собери это одним узлом — и либо анимация сотрёт позицию грядки
+    // (docs/traps.md, п. 2), либо она будет запускаться заново на каждом
+    // кадре, потому что узел пересоздаётся.
+    renderWork(rebuild) {
+        const layer = document.getElementById('gd-work');
+        if (!layer) return;
+        const w = this.work;
+        if (!w) { layer.innerHTML = ''; return; }
+        const art = GARDEN_ART.workTool(w.action, w.swing, w.done / w.need);
+        const inner = layer.querySelector('.gd-work-in');
+        if (rebuild || !inner) {
+            layer.innerHTML = `<g transform="translate(${GARDEN_ART.bedX(w.i)} 0)">`
+                + `<g class="gd-work-in">${art}</g></g>`;
+            return;
+        }
+        inner.innerHTML = art;
     },
 
     // ---------- ДЕЙСТВИЕ ----------

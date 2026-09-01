@@ -130,6 +130,10 @@ const GARDEN_ART = {
         // перерисовывается целиком раз в секунду, и всплывающая монетка
         // исчезала бы на середине полёта — что и происходило, пока она была
         // её ребёнком.
+        // Слой ручной работы: инструмент в рабочем положении. Отдельно от
+        // грядки по той же причине, что и находки, — грядка перерисовывается
+        // целиком, а инструмент должен ходить за пальцем каждый кадр.
+        parts.push(`<g id="gd-work"></g>`);
         parts.push(`<g id="gd-finds"></g>`);
         parts.push(`<g id="gd-stream" filter="url(#gd-goo)" fill="${k.water[500]}"></g>`);
         return parts.join('');
@@ -155,6 +159,12 @@ const GARDEN_ART = {
         const y = this.SOIL_Y;
         const hw = this.BED_W / 2;
         const out = [];
+        // Доля выполненной ручной работы над этой грядкой. Грядка меняется ОТ
+        // КАЖДОГО ДВИЖЕНИЯ игрока: камни разлетаются по одному, лунка
+        // углубляется, сорняки убывают. Без этого работа читалась бы как
+        // «дёргаю, и ничего не происходит».
+        const w = o.work || null;
+        const wf = w ? Math.max(0, Math.min(1, w.frac)) : 0;
 
         // Короб грядки — трапеция: низ шире верха, как доска на кухне. Из этого
         // сразу читается, что смотрим сверху-сбоку, а не в упор.
@@ -164,20 +174,25 @@ const GARDEN_ART = {
 
         if (state === 'locked') {
             // Завал: камни и хворост. Форма из сида грядки, чтобы шесть
-            // заваленных грядок не были одинаковыми.
+            // заваленных грядок не были одинаковыми. Пока его разбирают,
+            // камни убывают по одному за движение.
             const rng = gdRng(o.seed || 3);
-            for (let i = 0; i < 7; i++) {
+            const total = 7;
+            const left = w && w.action === 'clear' ? Math.ceil(total * (1 - wf)) : total;
+            for (let i = 0; i < total; i++) {
                 const px = (rng() * 2 - 1) * (hw - 26);
                 const py = y - 18 + rng() * 30;
                 const r = 9 + rng() * 13;
+                const stone = rng() > 0.5;
+                if (i >= left) continue;
                 out.push(`<ellipse cx="${px.toFixed(0)}" cy="${py.toFixed(0)}" rx="${r.toFixed(0)}" ry="${(r * 0.72).toFixed(0)}"
-                        fill="${rng() > 0.5 ? k.iron[300] : k.wood[500]}" stroke="${ink}" stroke-width="${S.detail}"/>`);
+                        fill="${stone ? k.iron[300] : k.wood[500]}" stroke="${ink}" stroke-width="${S.detail}"/>`);
             }
             out.push(gdGrab(0, y - 10, hw, 44));
             return out.join('');
         }
 
-        if (state === 'empty') {
+        if (state === 'empty' && !(w && w.action === 'dig')) {
             // Расчищено, но не тронуто: ровная земля, редкие камушки. Борозд
             // нет — им взяться неоткуда, лопата сюда ещё не приходила.
             const rng = gdRng((o.seed || 3) + 41);
@@ -191,17 +206,31 @@ const GARDEN_ART = {
         }
 
         // Вскопанная земля: борозды. Они темнее самой земли — по ним и видно,
-        // что грядку трогали лопатой.
+        // что грядку трогали лопатой. Пока копают — проступают постепенно.
+        const furrow = (w && w.action === 'dig') ? wf : 1;
         out.push(`<path d="M${-hw + 30} ${y - 16} H${hw - 30} M${-hw + 26} ${y - 2} H${hw - 26} M${-hw + 22} ${y + 12} H${hw - 22}"
-                        stroke="${k.soil[700]}" stroke-width="${S.detail}" opacity="0.7"/>`);
+                        stroke="${k.soil[700]}" stroke-width="${S.detail}" opacity="${(0.7 * furrow).toFixed(2)}"/>`);
+
+        if (w && w.action === 'dig') {
+            // Лунка углубляется с каждым рывком лопаты, а рядом растёт кучка
+            // выброшенной земли: копание видно по тому, что земли стало где-то
+            // больше, а где-то меньше.
+            out.push(this.hole(wf));
+            out.push(`<ellipse cx="${(hw * 0.42).toFixed(0)}" cy="${(y + 2).toFixed(0)}"
+                               rx="${(10 + 22 * wf).toFixed(1)}" ry="${(4 + 9 * wf).toFixed(1)}"
+                               fill="${k.soil[300]}" stroke="${ink}" stroke-width="${S.hairline}" opacity="0.9"/>`);
+            out.push(gdGrab(0, y - 20, hw, 56));
+            return out.join('');
+        }
 
         if (state === 'dug') {
-            // Лунка: тёмная ямка с валиком выброшенной земли по краю. Она
-            // ПУСТАЯ и потому просит семя — в этом вся её работа.
-            out.push(`
-                <ellipse cx="0" cy="${y - 6}" rx="26" ry="14" fill="${k.soil[300]}" opacity="0.8"/>
-                <ellipse cx="0" cy="${y - 6}" rx="20" ry="10" fill="${k.soil[700]}"
-                         stroke="${ink}" stroke-width="${S.detail}"/>`);
+            out.push(this.hole(1));
+            // Пока приминают землю — над лункой растёт бугорок с семенем.
+            if (w && w.action === 'sow') {
+                out.push(`<ellipse cx="0" cy="${(y - 6 - 2 * wf).toFixed(1)}"
+                                   rx="${(13 + 11 * wf).toFixed(1)}" ry="${(4 + 4 * wf).toFixed(1)}"
+                                   fill="${k.soil[300]}" stroke="${ink}" stroke-width="${S.detail}"/>`);
+            }
         }
 
         if (state === 'sown') {
@@ -216,20 +245,118 @@ const GARDEN_ART = {
             out.push(this.plant(o.plant, o.growth, state, o.fruitKey, o.seed || 1, o.uid == null ? 0 : o.uid));
         }
 
+        if (state === 'growing' && w && w.action === 'fertilize') {
+            // Какашку не кладут целиком — её растирают по грядке. Комков
+            // становится меньше, тёмных пятен в земле больше.
+            const rng = gdRng((o.seed || 7) + 13);
+            const total = 3;
+            const left = Math.ceil(total * (1 - wf));
+            for (let i = 0; i < total; i++) {
+                const px = (rng() * 2 - 1) * (hw - 46);
+                if (i < left) {
+                    out.push(`<g transform="translate(${px.toFixed(0)} ${(y - 4).toFixed(0)}) scale(0.5)">
+                                ${this.tool('dung')}</g>`);
+                } else {
+                    out.push(`<ellipse cx="${px.toFixed(0)}" cy="${(y - 2).toFixed(0)}" rx="26" ry="9"
+                                       fill="${k.dung[700]}" opacity="0.55"/>`);
+                }
+            }
+        }
+
         if (state === 'weedy') {
-            // Сорняки поверх растения: они и есть «руками сюда».
+            // Сорняки поверх растения: они и есть «руками сюда». Выдираются по
+            // одному, и рядом растёт кучка выдранного.
             const rng = gdRng((o.seed || 5) + 91);
-            for (let i = 0; i < 6; i++) {
+            const total = 6;
+            const left = (w && w.action === 'weed') ? Math.ceil(total * (1 - wf)) : total;
+            for (let i = 0; i < total; i++) {
                 const px = (rng() * 2 - 1) * (hw - 30);
                 const h = 26 + rng() * 26;
                 const bend = (rng() * 2 - 1) * 16;
+                if (i >= left) continue;
                 out.push(`<path d="M${px.toFixed(0)} ${y - 8} q${bend.toFixed(0)} ${(-h * 0.6).toFixed(0)} ${(bend * 1.6).toFixed(0)} ${(-h).toFixed(0)}"
                         fill="none" stroke="${k.weed[500]}" stroke-width="${S.structure}" stroke-linecap="round"/>`);
+            }
+            if (w && w.action === 'weed' && wf > 0) {
+                out.push(`<g transform="translate(${(-hw * 0.62).toFixed(0)} ${(y + 8).toFixed(0)})">
+                    <ellipse rx="${(8 + 20 * wf).toFixed(1)}" ry="${(3 + 7 * wf).toFixed(1)}" fill="${k.weed[700]}" opacity="0.85"/>
+                    <path d="M${(-6 - 8 * wf).toFixed(0)} -2 q6 -10 12 -3 M2 -3 q7 -9 12 -1"
+                          fill="none" stroke="${k.weed[500]}" stroke-width="${S.detail}" stroke-linecap="round"/>
+                </g>`);
             }
         }
 
         out.push(gdGrab(0, y - 20, hw, 56));
         return out.join('');
+    },
+
+    // Лунка: тёмная ямка с валиком выброшенной земли по краю. frac — насколько
+    // она уже выкопана.
+    hole(frac) {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        const f = Math.max(0.08, Math.min(1, frac));
+        const y = this.SOIL_Y - 6;
+        return `
+            <ellipse cx="0" cy="${y}" rx="${(26 * f).toFixed(1)}" ry="${(14 * f).toFixed(1)}"
+                     fill="${k.soil[300]}" opacity="0.8"/>
+            <ellipse cx="0" cy="${y}" rx="${(20 * f).toFixed(1)}" ry="${(10 * f).toFixed(1)}"
+                     fill="${k.soil[700]}" stroke="${ink}" stroke-width="${S.detail}"/>`;
+    },
+
+    // ---------- ИНСТРУМЕНТ В РАБОТЕ ----------
+    // Пока идёт работа, предмет стоит НАД грядкой в рабочем положении и
+    // ходит вместе с пальцем. Он же — единственный отклик на движение: без
+    // него игрок дёргает пальцем в пустоту и не понимает, засчитывается ли
+    // это.
+    //
+    // swing — где сейчас палец в размахе (−1..1), frac — сколько работы уже
+    // сделано. Рисуется в координатах грядки, как и всё остальное.
+    workTool(action, swing, frac) {
+        const y = this.SOIL_Y;
+        const sw = Math.max(-1, Math.min(1, swing || 0));
+        const f = Math.max(0, Math.min(1, frac || 0));
+
+        if (action === 'dig') {
+            // Лопата воткнута в землю и ходит вверх-вниз вместе с пальцем.
+            // Уходит она тем глубже, чем больше выкопано.
+            const lift = -sw * 26;
+            return `<g transform="translate(-6 ${(y - 38 + 14 * f + lift).toFixed(1)}) rotate(${(-16 + sw * 7).toFixed(1)})">
+                        <g transform="scale(1.25)">${this.tool('spade')}</g>
+                    </g>`;
+        }
+        if (action === 'weed') {
+            // Грабли лежат зубьями в земле и ездят вбок.
+            return `<g transform="translate(${(sw * 44).toFixed(1)} ${(y - 40).toFixed(1)}) rotate(${(-8 + sw * 10).toFixed(1)})">
+                        <g transform="scale(1.25)">${this.tool('rake')}</g>
+                    </g>`;
+        }
+        if (action === 'clear') {
+            // Завал разбирают рукой: она ходит вбок и откидывает камни.
+            return `<g transform="translate(${(sw * 46).toFixed(1)} ${(y - 34).toFixed(1)}) rotate(${(sw * 18).toFixed(1)})">
+                        <g transform="scale(1.7)">${this.hand()}</g>
+                    </g>`;
+        }
+        if (action === 'harvest') {
+            // Рука тянет плод вверх: чем сильнее рывок, тем выше она ушла.
+            return `<g transform="translate(0 ${(y - 60 + sw * 30).toFixed(1)})">
+                        <g transform="scale(1.7)">${this.hand()}</g>
+                    </g>`;
+        }
+        // Посев и удобрение: ладонь приминает и растирает землю, прижимаясь к
+        // ней в середине каждого движения.
+        const press = 6 * (1 - Math.abs(sw));
+        return `<g transform="translate(${(sw * 40).toFixed(1)} ${(y - 30 + press).toFixed(1)}) rotate(${(sw * 12).toFixed(1)})">
+                    <g transform="scale(1.7)">${this.hand()}</g>
+                </g>`;
+    },
+
+    // Ладонь. Одна на всё: значок над грядкой, работа руками, будущие
+    // подсказки. Второй руки в игре быть не должно.
+    hand() {
+        const ink = gdInk(), S = gdS();
+        return `<path d="M-9 6 q-4 -12 2 -12 q2 -8 6 -4 q3 -7 6 -1 q4 -4 5 3 l1 10 q0 8 -9 8 q-8 0 -11 -4 Z"
+                      fill="${PALETTE.flesh ? PALETTE.flesh[300] : '#e8b0a8'}" stroke="${ink}"
+                      stroke-width="${S.structure}" stroke-linejoin="round"/>`;
     },
 
     // ---------- РАСТЕНИЕ ----------
@@ -557,12 +684,35 @@ const GARDEN_ART = {
                 <text class="gd-clock" x="0" y="0">${this.clock(leftMs)}</text>
             </g>`;
         }
+        // Кольцо работы: сколько движений уже сделано. Не пульсирует —
+        // работа идёт прямо сейчас, звать никуда не надо.
+        if (kind === 'work') {
+            const r = 20, C = 2 * Math.PI * r;
+            const done = Math.max(0, Math.min(1, frac));
+            return `<g class="gd-badge gd-badge-wait">
+                <circle r="${r + 7}" fill="${k.soil[700]}" opacity="0.62"/>
+                <circle r="${r}" fill="none" stroke="${k.turf[300]}" stroke-width="5" opacity="0.3"/>
+                <circle r="${r}" fill="none" stroke="${k.turf[300]}" stroke-width="5"
+                        stroke-linecap="round" transform="rotate(-90)"
+                        stroke-dasharray="${(C * done).toFixed(1)} ${C.toFixed(1)}"/>
+            </g>`;
+        }
+        // Цена заваленной грядки: жетон лени и сколько их надо. Цифра не
+        // слово (инвариант 9), а «сколько стоит» показать больше нечем.
+        // Красным — когда не хватает: отказ должен быть виден ДО того, как
+        // игрок начнёт разгребать завал.
+        if (kind === 'price') {
+            const enough = !!leftMs;          // сюда приходит «хватает ли»
+            return `<g class="gd-badge gd-badge-need">
+                <circle r="26" fill="${k.soil[700]}" opacity="${enough ? 0.55 : 0.7}"/>
+                <g transform="translate(0 -6) scale(0.85)">${this.token(enough)}</g>
+                <text class="gd-price" x="0" y="19">${GARDEN.BED_COST.amount}</text>
+            </g>`;
+        }
         // Значок инструмента — тот же рисунок, что на полке, только мельче:
         // игрок ищет глазами ровно ту вещь, которую грядка просит.
         const inner = kind === 'hand'
-            ? `<path d="M-9 6 q-4 -12 2 -12 q2 -8 6 -4 q3 -7 6 -1 q4 -4 5 3 l1 10 q0 8 -9 8 q-8 0 -11 -4 Z"
-                     fill="${PALETTE.flesh ? PALETTE.flesh[300] : '#e8b0a8'}" stroke="${ink}" stroke-width="${S.structure}"
-                     stroke-linejoin="round"/>`
+            ? this.hand()
             : kind === 'seed'
                 ? `<g transform="scale(0.5)">${this.seedPacket('potato', 3)}</g>`
                 : `<g transform="scale(0.62)">${this.tool(kind)}</g>`;
@@ -584,6 +734,19 @@ const GARDEN_ART = {
         }
         const sec = Math.ceil(left / 1000);
         return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    },
+
+    // Жетон лени: росток в круге. Тем же значком помечена цена грядки и
+    // будущий магазин — валюта обязана выглядеть одинаково везде, иначе её
+    // не узнать.
+    token(enough) {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        const body = enough === false ? k.iron[300] : k.turf[300];
+        return `<g>
+            <circle r="15" fill="${body}" stroke="${ink}" stroke-width="${S.structure}"/>
+            <path d="M0 7 V-3 q0 -8 8 -9 q1 8 -8 9 M0 1 q0 -7 -8 -8 q-1 7 8 8"
+                  fill="none" stroke="${ink}" stroke-width="${S.detail}" stroke-linecap="round"/>
+        </g>`;
     },
 
     // ---------- НАХОДКА ----------

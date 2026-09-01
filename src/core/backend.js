@@ -353,6 +353,32 @@ const LocalBackend = {
         return { fill: add, mark: now };
     },
 
+    // На какой стадии грядки какое действие имеет смысл. ОДНА таблица на всю
+    // игру: экран спрашивает её, чтобы подсветить грядку и не начинать
+    // работу впустую, и она же решает в gardenAct. Две такие таблицы
+    // разъезжаются молча — подсветка обещает то, чего не будет.
+    GARDEN_NEEDS: {
+        clear: 'locked', dig: 'empty', sow: 'dug', water: 'sown',
+        fertilize: 'growing', weed: 'weedy', harvest: 'ripe'
+    },
+
+    // Можно ли это действие прямо сейчас — вместе с ценой. Спрашивается ДО
+    // того, как инструмент встанет в рабочее положение: заставить игрока
+    // разгребать завал, за который нечем заплатить, значит соврать ему.
+    gardenCan(i, action, opts) {
+        const bed = this.gardenBed(i);
+        if (!bed || bed.stage !== this.GARDEN_NEEDS[action]) return false;
+        if (action === 'clear') {
+            return GameState.currency(GARDEN.BED_COST.currency) >= GARDEN.BED_COST.amount;
+        }
+        if (action === 'fertilize') return GameState.currency('dung') >= 1;
+        if (action === 'sow') {
+            const seeds = (GameState.data.garden.seeds || []);
+            return seeds.indexOf((opts || {}).species) !== -1 || seeds.length > 0;
+        }
+        return true;
+    },
+
     // Одно действие над грядкой. Возвращает { ok, what } — что именно
     // произошло, чтобы экран показал это движением, а не выяснял сам.
     gardenAct(i, action, opts) {
@@ -366,6 +392,17 @@ const LocalBackend = {
             // Завал разбирают РУКАМИ, а не лопатой: лопата занята лункой, и
             // один инструмент на два разных дела путает — игрок тащил лопату
             // на расчищенную грядку и не понимал, почему ничего не выходит.
+            //
+            // Но сначала за грядку надо ЗАПЛАТИТЬ. Жетон лени копится из
+            // осколков за собранный урожай, то есть новая грядка стоит труда
+            // на старых. Пока она была бесплатной, все шесть открывались за
+            // первые две минуты и обесценивали весь остальной прогресс сада.
+            const cost = GARDEN.BED_COST;
+            if (GameState.currency(cost.currency) < cost.amount) {
+                return { ok: false, reason: 'no-token' };
+            }
+            GameState.addCurrency(cost.currency, -cost.amount);
+            GameState.pushLedger({ currency: cost.currency, delta: -cost.amount, reason: 'garden.bed' });
             bed.stage = 'empty';
             res.find = this.gardenDigFind();
             res.ok = true;
@@ -416,6 +453,17 @@ const LocalBackend = {
             // начинается снова с лопаты.
             res.grown = bed.species;
             res.taken = this.gardenStore(bed.species, 1);
+            // Осколок за урожай. Три складываются в жетон (ECONOMY.exchange),
+            // жетон открывает новую грядку: участок растёт от того, что игрок
+            // его обрабатывает.
+            if (GARDEN.HARVEST_SHARDS) {
+                this.award({ currencies: {} }, 'sloth_shard', GARDEN.HARVEST_SHARDS, 'garden.harvest');
+                // Размен «три осколка = жетон» складывается сам, как у гнева
+                // и кухни: курс фиксированный, выбора у игрока нет, а лишняя
+                // кнопка «обменять» была бы работой без решения.
+                this.settleExchange(null, null);
+                res.shards = GARDEN.HARVEST_SHARDS;
+            }
             bed.stage = 'empty';
             bed.species = null;
             bed.at = null;

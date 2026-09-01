@@ -84,6 +84,11 @@ const GardenDebug = {
                 b.stage = i < GARDEN.BEDS_OPEN ? 'empty' : 'locked';
                 b.species = null; b.seed = 0; b.at = null; b.skipped = 0;
             });
+        } else if (act === 'token') {
+            // Грядки открываются за жетоны лени, а жетон копится из осколков
+            // за урожай — три урожая на грядку. Ждать их ради проверки завала
+            // бессмысленно.
+            Backend.award({ currencies: {} }, 'sloth_token', 1, 'debug.garden');
         } else if (act === 'can') {
             // Ступени лейки: ранние сокращают полив, поздние — часы роста.
             // Магазина ещё нет, а проверить обе половины лестницы надо.
@@ -122,6 +127,7 @@ const GardenDebug = {
                 <button data-act="h1">−1 ч</button>
                 <button data-act="h4">−4 ч</button>
                 <button data-act="dung">+5 💩 (${GameState.currency('dung')})</button>
+                <button data-act="token">+1 🌱 (${GameState.currency('sloth_token')}ж/${GameState.currency('sloth_shard')}о)</button>
              </div>
              <div class="gd-debug-row">
                 <button data-act="open">открыть грядки</button>

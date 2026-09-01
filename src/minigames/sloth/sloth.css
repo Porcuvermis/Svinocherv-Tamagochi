@@ -113,6 +113,29 @@
     pointer-events: none;
 }
 
+/* ---------- РУЧНАЯ РАБОТА ---------- */
+/* Инструмент, донесённый до грядки, ВТЫКАЕТСЯ в неё — коротким ударом, а не
+   появляется. Без этого непонятно, что он перешёл в рабочее положение и что
+   теперь ждут от игрока. Анимация на вложенной группе: на внешней стоит
+   позиция грядки (docs/traps.md, п. 2). */
+#sloth-game .gd-work-in { animation: gd-plant-tool 0.22s ease-out; }
+
+@keyframes gd-plant-tool {
+    0%   { transform: translateY(-30px); opacity: 0.4; }
+    100% { transform: translateY(0);     opacity: 1; }
+}
+
+/* Цена заваленной грядки. Цифра не слово (инвариант 9). */
+#sloth-game .gd-price {
+    font: 800 15px/1 -apple-system, system-ui, sans-serif;
+    text-anchor: middle;
+    fill: #f2f7fa;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.6);
+    stroke-width: 3px;
+    pointer-events: none;
+}
+
 /* ---------- НАХОДКА ---------- */
 /* Всплывает и тает: находка должна успеть прочитаться, но не задерживать
    игрока.
