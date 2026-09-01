@@ -69,9 +69,12 @@ const GardenDebug = {
         } else if (act === 'dung') {
             Backend.award({ currencies: {} }, 'dung', 5, 'debug.garden');
         } else if (act === 'seeds') {
-            // Все семена сразу: иначе виды растений проверяются только по
-            // мере того, как они выпадут при копании.
-            GameState.data.garden.seeds = Object.keys(GARDEN.species);
+            // По пять семечек каждого вида: иначе виды проверяются только по
+            // мере того, как они выпадут при копании, а теперь семена ещё и
+            // кончаются.
+            Object.keys(GARDEN.species).forEach(key => {
+                if (!GARDEN.species[key].infinite) GameState.data.garden.seeds[key] = 5;
+            });
         } else if (act === 'open') {
             this.beds().forEach(b => { if (b.stage === 'locked') b.stage = 'empty'; });
         } else if (act === 'dig') {
@@ -89,6 +92,8 @@ const GardenDebug = {
             // за урожай — три урожая на грядку. Ждать их ради проверки завала
             // бессмысленно.
             Backend.award({ currencies: {} }, 'sloth_token', 1, 'debug.garden');
+        } else if (act === 'hay') {
+            Backend.award({ currencies: {} }, 'hay', 20, 'debug.garden');
         } else if (act === 'can') {
             // Ступени лейки: ранние сокращают полив, поздние — часы роста.
             // Магазина ещё нет, а проверить обе половины лестницы надо.
@@ -121,6 +126,8 @@ const GardenDebug = {
             return `${i}:${b.stage.slice(0, 4)}${b.species ? '/' + b.species.slice(0, 4) : ''} ${t}`;
         }).join('   ');
 
+        const seeds = Object.keys(GameState.data.garden.seeds || {})
+            .map(k => k.slice(0, 4) + ':' + GameState.data.garden.seeds[k]).join(' ');
         this.panel.innerHTML =
             `<div class="gd-debug-row">
                 <button data-act="min">−30 мин</button>
@@ -128,6 +135,7 @@ const GardenDebug = {
                 <button data-act="h4">−4 ч</button>
                 <button data-act="dung">+5 💩 (${GameState.currency('dung')})</button>
                 <button data-act="token">+1 🌱 (${GameState.currency('sloth_token')}ж/${GameState.currency('sloth_shard')}о)</button>
+                <button data-act="hay">+20 🌾 (${GameState.currency('hay')})</button>
              </div>
              <div class="gd-debug-row">
                 <button data-act="open">открыть грядки</button>
@@ -137,7 +145,8 @@ const GardenDebug = {
                 <button data-act="sloth0">шкала 0 (${Math.round(GameState.sinValue('sloth'))})</button>
                 <button data-act="reset">сброс сада</button>
              </div>
-             <div class="gd-debug-beds">${rows}</div>`;
+             <div class="gd-debug-beds">${rows}</div>
+             <div class="gd-debug-beds">семена: ${seeds || '—'}</div>`;
     }
 };
 

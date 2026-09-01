@@ -719,7 +719,7 @@ const GARDEN_ART = {
         const inner = kind === 'hand'
             ? this.hand()
             : kind === 'seed'
-                ? `<g transform="scale(0.5)">${this.seedPacket('potato', 3)}</g>`
+                ? `<g transform="scale(0.85)">${this.seedItem('potato')}</g>`
                 : `<g transform="scale(0.62)">${this.tool(kind)}</g>`;
         return `<g class="gd-badge gd-badge-need">
             <circle r="24" fill="${k.soil[700]}" opacity="0.55"/>
@@ -767,7 +767,12 @@ const GARDEN_ART = {
             </g>`;
         }
         if (kind === 'seed') {
-            return `<g class="gd-find"><g transform="scale(0.62)">${this.seedPacket(key || 'potato', 3)}</g></g>`;
+            return `<g class="gd-find"><g transform="scale(1.1)">${this.seedItem(key || 'potato')}</g></g>`;
+        }
+        // Сено — второй продукт любого растения. Показывается так же, как
+        // находка: предметом над грядкой, а не цифрой в кошельке.
+        if (kind === 'hay') {
+            return `<g class="gd-find"><g transform="scale(1.15)">${this.hay()}</g></g>`;
         }
         // Осколок жетона: обломок с зазубренным краем, а не аккуратная
         // фигура — по силуэту сразу видно, что это ЧАСТЬ чего-то целого.
@@ -841,23 +846,141 @@ const GARDEN_ART = {
                          fill="${k.water[500]}" opacity="${(0.2 + 0.3 * f).toFixed(2)}"/>`;
     },
 
-    // Пакетик семян: сквозь окошко видно, что внутри — тот самый продукт,
-    // который вырастет и который потом окажется на кухне.
-    seedPacket(key, seed) {
+    // ---------- МЕШОК С СЕМЕНАМИ ----------
+    // Вместо ряда одинаковых пакетиков — один мешок. Причина простая: видов
+    // будет больше, чем помещается на полке, и ряд пакетиков превратился бы в
+    // ленту прокрутки, то есть в меню. Мешок — предмет: его держат, его
+    // открывают, в него заглядывают. Интерфейс остаётся диегетическим, как
+    // холодильник на кухне.
+    //
+    // Открывается удержанием: короткий тап по мешку ничего не делает, и это
+    // правильно — полка тесная, случайное касание не должно разворачивать
+    // пол-экрана.
+    // Нутро — скруглённый ПРЯМОУГОЛЬНИК, а не овал: в мешок разложена сетка,
+    // и у овала угловые ячейки вылезают за край — семечко лежит наполовину
+    // снаружи. Форма подчиняется раскладке, а не наоборот.
+    SACK: { cx: 195, cy: 688, w: 336, h: 212, cols: 4, rows: 2 },
+
+    // Центр ячейки по её номеру. Место каждого вида ЗАКРЕПЛЕНО (порядок
+    // берётся из таблицы видов): через неделю игрок помнит, что помидор лежит
+    // второй во втором ряду, и тянется туда не глядя. Сетка при этом не
+    // нарисована — ячейки нужны раскладке, а не глазу.
+    sackCell(n) {
+        const S = this.SACK;
+        const cw = S.w / S.cols, ch = S.h / S.rows;
+        const col = n % S.cols, row = Math.floor(n / S.cols);
+        return {
+            x: S.cx - S.w / 2 + cw * (col + 0.5),
+            y: S.cy - S.h / 2 + ch * (row + 0.5),
+            w: cw, h: ch
+        };
+    },
+
+    // Закрытый мешок: перевязанный горловиной куль. Рисуется в тех же
+    // габаритах, что и остальные инструменты на полке.
+    sackClosed(hold) {
         const k = gdPal(), ink = gdInk(), S = gdS();
-        const art = (typeof KITCHEN_ART !== 'undefined') ? KITCHEN_ART.ingredient(key, seed || 3) : '';
-        return `${gdGrab(0, 0, 26, 30)}
-            <rect x="-20" y="-26" width="40" height="52" rx="5" fill="${k.wood[300]}"
-                  stroke="${ink}" stroke-width="${S.structure}"/>
-            <rect x="-20" y="-26" width="40" height="10" fill="${k.wood[500]}"/>
-            <clipPath id="gd-pack-${key}"><rect x="-14" y="-12" width="28" height="30" rx="4"/></clipPath>
-            <g clip-path="url(#gd-pack-${key})">
-                <rect x="-14" y="-12" width="28" height="30" fill="${k.sky[100]}"/>
-                <g transform="translate(0 4) scale(0.3)">${art}</g>
-            </g>
-            <rect x="-14" y="-12" width="28" height="30" rx="4" fill="none"
-                  stroke="${ink}" stroke-width="${S.detail}"/>`;
-    }
+        // hold 0..1 — насколько долго его держат: мешок раздувается, и по
+        // этому видно, что удержание работает и сколько осталось.
+        const h = Math.max(0, Math.min(1, hold || 0));
+        const w = 26 + 4 * h;
+        return `${gdGrab(0, 0, 30, 34)}
+            <path d="M${-w} 8 q0 -20 ${w * 0.5} -24 q${w * 0.5} 4 ${w} 24 q0 18 -${w} 18 q-${w} 0 -${w} -18 Z"
+                  transform="translate(0 4)" fill="${k.wood[300]}" stroke="${ink}"
+                  stroke-width="${S.contour}" stroke-linejoin="round"/>
+            <path d="M-13 -14 q13 -8 26 0 q-4 -12 -13 -14 q-9 2 -13 14 Z"
+                  fill="${k.wood[500]}" stroke="${ink}" stroke-width="${S.structure}" stroke-linejoin="round"/>
+            <path d="M-14 -13 q14 6 28 0" fill="none" stroke="${ink}" stroke-width="${S.structure}"/>
+            <path d="M-6 6 q6 -4 12 0 M-8 14 q8 -4 16 0" fill="none"
+                  stroke="${k.wood[500]}" stroke-width="${S.detail}" opacity="0.8"/>`;
+    },
+
+    // Открытый мешок: вид СВЕРХУ, как будто заглядываешь внутрь. Отвёрнутая
+    // горловина кольцом, тёмное нутро, и в нём по ячейкам разложены семена.
+    // items — [{ key, count }] в порядке ячеек; count === null означает
+    // «бесконечно» (трава), и цифры у неё нет.
+    sackOpen(items) {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        const B = this.SACK;
+        const x = B.cx - B.w / 2, y = B.cy - B.h / 2;
+        const out = [`
+            <rect x="${(x - 16).toFixed(1)}" y="${(y - 14).toFixed(1)}"
+                  width="${(B.w + 32).toFixed(1)}" height="${(B.h + 28).toFixed(1)}" rx="42"
+                  fill="${k.wood[500]}" stroke="${ink}" stroke-width="${S.contour}"/>
+            <rect x="${(x - 7).toFixed(1)}" y="${(y - 6).toFixed(1)}"
+                  width="${(B.w + 14).toFixed(1)}" height="${(B.h + 12).toFixed(1)}" rx="36"
+                  fill="${k.wood[300]}" stroke="${ink}" stroke-width="${S.structure}"/>
+            <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${B.w}" height="${B.h}" rx="30"
+                  fill="${k.soil[700]}"/>
+            <ellipse cx="${B.cx}" cy="${y.toFixed(1)}" rx="${(B.w * 0.46).toFixed(1)}" ry="${(B.h * 0.3).toFixed(1)}"
+                     fill="#000" opacity="0.16"/>`];
+
+        // Сено лежит тут же, в углу горловины: им будут покупаться семена, и
+        // смотреть на него игрок будет ровно в тот момент, когда открыл мешок
+        // и увидел пустые ячейки.
+        if (typeof GameState !== 'undefined') {
+            // Над горловиной, а не внутри: внутри всё место занято ячейками,
+            // и сноп налез бы на семена.
+            out.push(`<g transform="translate(${B.cx} ${(y - 34).toFixed(1)})">
+                ${this.hay()}
+                <text class="gd-seed-count" x="26" y="8">${GameState.currency('hay')}</text>
+            </g>`);
+        }
+
+        (items || []).forEach((it, n) => {
+            const c = this.sackCell(n);
+            const empty = it.count === 0;
+            out.push(`<g class="gd-sack-cell${empty ? ' gd-empty' : ''}" data-key="${it.key}"
+                         transform="translate(${c.x.toFixed(1)} ${c.y.toFixed(1)})">
+                ${gdGrab(0, 0, c.w / 2 - 2, c.h / 2 - 2)}
+                <g transform="translate(0 -6)">${this.seedItem(it.key)}</g>
+                ${it.count === null ? '' : `<text class="gd-seed-count" x="0" y="32">${it.count}</text>`}
+            </g>`);
+        });
+        return out.join('');
+    },
+
+    // Одна семечка в ячейке: горстка зёрен цвета своего вида и над ней —
+    // маленький силуэт того, что вырастет. Без силуэта семена неразличимы:
+    // зерно и зерно, а игрок выбирает не зерно, а помидор.
+    seedItem(key) {
+        const ink = gdInk(), S = gdS(), k = gdPal();
+        const spec = (typeof GARDEN !== 'undefined' && GARDEN.species[key]) || null;
+        const hue = spec ? Math.round((spec.hue[0] + spec.hue[1]) / 2) : 90;
+        const grain = `hsl(${hue}, 34%, 42%)`;
+        const rng = gdRng(key.length * 37 + 11);
+        const heap = [];
+        for (let i = 0; i < 5; i++) {
+            const gx = (rng() * 2 - 1) * 13;
+            const gy = 8 + rng() * 7;
+            heap.push(`<ellipse cx="${gx.toFixed(1)}" cy="${gy.toFixed(1)}" rx="5" ry="3.4"
+                                transform="rotate(${(rng() * 60 - 30).toFixed(0)} ${gx.toFixed(1)} ${gy.toFixed(1)})"
+                                fill="${grain}" stroke="${ink}" stroke-width="${S.hairline}"/>`);
+        }
+        // Что вырастет. У плодовых это сам плод — тот же рисунок, что на
+        // кухне; у травы плода нет, и вместо него пучок травы: по нему сразу
+        // видно, что это «просто трава», а не чей-то урожай.
+        const top = (spec && spec.fruit && typeof KITCHEN_ART !== 'undefined')
+            ? `<g transform="translate(0 -8) scale(0.26)">${KITCHEN_ART.ingredient(spec.fruit, 3)}</g>`
+            : `<g transform="translate(0 -6)">
+                 <path d="M0 8 q-3 -12 -10 -18 M0 8 q0 -14 0 -20 M0 8 q3 -12 10 -17"
+                       fill="none" stroke="hsl(${hue}, 40%, 44%)" stroke-width="3" stroke-linecap="round"/>
+               </g>`;
+        return `<g>${heap.join('')}${top}</g>`;
+    },
+
+    // Сено: перевязанный сноп. Второй продукт любого растения, и валюта, на
+    // которую потом будут покупаться семена.
+    hay() {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        return `<g>
+            <path d="M-14 12 q2 -22 6 -26 M-6 13 q0 -24 2 -28 M2 13 q2 -24 6 -27 M10 12 q0 -20 4 -24"
+                  fill="none" stroke="${k.wood[300]}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M-16 6 q16 6 32 -2" fill="none" stroke="${ink}" stroke-width="${S.structure}"/>
+            <path d="M-15 12 q16 6 31 -3" fill="none" stroke="${k.wood[500]}" stroke-width="${S.structure}"/>
+        </g>`;
+    },
+
 };
 
 if (typeof window !== 'undefined') window.GARDEN_ART = GARDEN_ART;

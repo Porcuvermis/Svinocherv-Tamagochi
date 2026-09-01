@@ -260,7 +260,46 @@ const LocalBackend = {
 
     gardenTools() {
         const t = (GameState.data.garden && GameState.data.garden.tools) || {};
-        return { can: t.can || 0, rake: t.rake || 0, spade: t.spade || 0 };
+        // seed — ступень возврата семечки при сборе. Забыть её здесь легко,
+        // а поймать трудно: лестница в конфиге есть, работает вроде бы всё, и
+        // только тест показывает, что все ступени дают одно и то же.
+        return { can: t.can || 0, rake: t.rake || 0, spade: t.spade || 0, seed: t.seed || 0 };
+    },
+
+    // ---------- СЕМЕНА ----------
+    // Сколько семечек этого вида в мешке. Бесконечность живёт в ТАБЛИЦЕ
+    // ВИДОВ, а не в сейве: трава бесконечна по своей природе, а не потому,
+    // что кто-то однажды записал в сохранение большое число. Так же устроен
+    // пищеблок на кухне.
+    gardenSeedCount(key) {
+        const spec = GARDEN.species[key];
+        if (!spec) return 0;
+        if (spec.infinite) return Infinity;
+        return (GameState.data.garden.seeds || {})[key] || 0;
+    },
+
+    // Какие виды вообще открыты игроку: бесконечные плюс те, что лежат в
+    // мешке (даже с нулём — пустая ячейка показывает, что вид знаком и его
+    // стоит поискать снова).
+    gardenSeedKeys() {
+        const known = Object.keys(GARDEN.species).filter(k => GARDEN.species[k].infinite);
+        Object.keys(GameState.data.garden.seeds || {}).forEach(k => {
+            if (GARDEN.species[k] && known.indexOf(k) === -1) known.push(k);
+        });
+        return known;
+    },
+
+    gardenSeedAdd(key, n) {
+        if (!GARDEN.species[key] || GARDEN.species[key].infinite) return 0;
+        const seeds = GameState.data.garden.seeds;
+        seeds[key] = Math.max(0, (seeds[key] || 0) + n);
+        return seeds[key];
+    },
+
+    // Шанс вернуть семечку при сборе — ступенями, как и всё остальное в саду.
+    gardenSeedReturn() {
+        const lvl = this.gardenTools().seed || 0;
+        return GARDEN.SEED_RETURN[Math.min(lvl, GARDEN.SEED_RETURN.length - 1)];
     },
 
     // Ступень лейки целиком: сколько держать полив и сколько идут часы роста.
@@ -389,8 +428,11 @@ const LocalBackend = {
         }
         if (action === 'fertilize') return GameState.currency('dung') >= 1;
         if (action === 'sow') {
-            const seeds = (GameState.data.garden.seeds || []);
-            return seeds.indexOf((opts || {}).species) !== -1 || seeds.length > 0;
+            const key = (opts || {}).species;
+            // Без вида — вопрос «есть ли вообще чем сеять»: так спрашивает
+            // подсветка, когда игрок ещё только тянет мешок.
+            if (!key) return this.gardenSeedKeys().some(k => this.gardenSeedCount(k) > 0);
+            return this.gardenSeedCount(key) > 0;
         }
         return true;
     },
@@ -434,9 +476,12 @@ const LocalBackend = {
             res.find = this.gardenDigFind();
             res.ok = true;
         } else if (action === 'sow' && bed.stage === 'dug') {
-            const seeds = GameState.data.garden.seeds || [];
-            const key = seeds.indexOf(o.species) !== -1 ? o.species : seeds[0];
-            if (!key) return { ok: false };
+            const key = o.species;
+            if (!key || this.gardenSeedCount(key) <= 0) return { ok: false, reason: 'no-seed' };
+            // Семечка ТРАТИТСЯ. Пока семена были бесконечными, вид растения не
+            // значил ничего: посадить помидор стоило столько же, сколько
+            // траву, и выбор был не выбором.
+            this.gardenSeedAdd(key, -1);
             bed.species = key;
             // Сид решается ОДИН раз и хранится: с Math.random() растение
             // выглядело бы по-новому после каждой перезагрузки страницы.
@@ -467,12 +512,25 @@ const LocalBackend = {
             // Собранная грядка возвращается в 'empty', а не в 'dug': лунка
             // осыпается вместе с выдернутым растением, и следующий круг
             // начинается снова с лопаты.
+            const spec = GARDEN.species[bed.species] || {};
             res.grown = bed.species;
-            res.taken = this.gardenStore(bed.species, 1);
-            // Осколок за урожай. Три складываются в жетон (ECONOMY.exchange),
-            // жетон открывает новую грядку: участок растёт от того, что игрок
-            // его обрабатывает.
-            if (GARDEN.HARVEST_SHARDS) {
+
+            // ПЛОД. Его может не быть вовсе: трава — это сплошной стебель, и
+            // в кладовую кухни от неё не ложится ничего.
+            if (spec.fruit) res.taken = this.gardenStore(spec.fruit, 1);
+
+            // СЕНО. Второй продукт КАЖДОГО растения: стебель после сбора не
+            // исчезает в никуда. У травы его вдвое больше — она из него
+            // целиком и состоит.
+            if (spec.hay) {
+                this.award({ currencies: {} }, 'hay', spec.hay, 'garden.harvest');
+                res.hay = spec.hay;
+            }
+
+            // ОСКОЛОК ЛЕНИ — только за плодовое. Иначе бесконечная трава
+            // печатала бы жетоны, а с ними и новые грядки: потребность она
+            // закрывает, экономику двигать не должна.
+            if (GARDEN.HARVEST_SHARDS && spec.fruit) {
                 this.award({ currencies: {} }, 'sloth_shard', GARDEN.HARVEST_SHARDS, 'garden.harvest');
                 // Размен «три осколка = жетон» складывается сам, как у гнева
                 // и кухни: курс фиксированный, выбора у игрока нет, а лишняя
@@ -480,6 +538,13 @@ const LocalBackend = {
                 this.settleExchange(null, null);
                 res.shards = GARDEN.HARVEST_SHARDS;
             }
+
+            // ВОЗВРАТ СЕМЕЧКИ. Бесконечным видам возвращать нечего.
+            if (!spec.infinite && Math.random() < this.gardenSeedReturn()) {
+                this.gardenSeedAdd(bed.species, 1);
+                res.seedBack = bed.species;
+            }
+
             bed.stage = 'empty';
             bed.species = null;
             bed.at = null;
@@ -523,12 +588,15 @@ const LocalBackend = {
         for (const f of GARDEN.digFinds) {
             if (Math.random() >= f.chance) continue;
             if (f.what === 'seed') {
-                const seeds = GameState.data.garden.seeds;
-                const all = Object.keys(GARDEN.species).filter(k => seeds.indexOf(k) === -1);
-                if (!all.length) continue;
-                const key = all[Math.floor(Math.random() * all.length)];
-                seeds.push(key);
-                return { what: 'seed', key };
+                // Семечко УЖЕ ОТКРЫТОГО вида, а не нового: новые виды
+                // открываются за жетоны в магазине, и находка не должна
+                // обходить эту дверь. Зато она держит огород живым, пока
+                // магазина нет: без притока вид вымирает за пару посадок.
+                const keys = this.gardenSeedKeys().filter(k => !GARDEN.species[k].infinite);
+                if (!keys.length) continue;
+                const key = keys[Math.floor(Math.random() * keys.length)];
+                this.gardenSeedAdd(key, f.amount);
+                return { what: 'seed', key, amount: f.amount };
             }
             this.award({ currencies: {} }, f.what, f.amount, 'garden.dig');
             return { what: f.what, amount: f.amount };

@@ -114,8 +114,12 @@ const SlothMinigame = {
         if (this.pourRaf) { cancelAnimationFrame(this.pourRaf); this.pourRaf = 0; }
         this.work = null;
         this.stroke = null;
+        this.stopSackHold();
+        this.sackOpen = false;
         const wl = document.getElementById('gd-work');
         if (wl) wl.innerHTML = '';
+        const sl = document.getElementById('gd-fg-sack');
+        if (sl) sl.innerHTML = '';
         LiquidStream.clear(this.stream);
         if (this.wetEl) this.wetEl.innerHTML = '';
         this.drag = null;
@@ -267,9 +271,7 @@ const SlothMinigame = {
     // (удобрение) → грабли (прополка). Порядок сам по себе объясняет цикл, и
     // искать нужную вещь не приходится — она следующая справа.
     tools() {
-        const list = [{ kind: 'spade' }];
-        (GameState.data.garden.seeds || []).forEach(key => list.push({ kind: 'seed', key }));
-        list.push({ kind: 'can' });
+        const list = [{ kind: 'spade' }, { kind: 'sack' }, { kind: 'can' }];
         if (GameState.currency('dung') > 0) list.push({ kind: 'dung' });
         list.push({ kind: 'rake' });
         return list;
@@ -284,7 +286,8 @@ const SlothMinigame = {
         this.fgEl.innerHTML =
             `<g id="gd-fg-wet"></g>
              <g id="gd-fg-stream" filter="url(#gd-goo)" fill="${PALETTE.garden.water[500]}"></g>
-             <g id="gd-fg-tools"></g>`;
+             <g id="gd-fg-tools"></g>
+             <g id="gd-fg-sack"></g>`;
         this.wetEl = document.getElementById('gd-fg-wet');
         // Тот же движок струи, что на кухне (src/core/liquid-stream.js).
         // Шарики летят в координатах ЭКРАНА: лейку игрок держит перед собой, и
@@ -307,38 +310,98 @@ const SlothMinigame = {
         const step = Math.min(64, 340 / Math.max(1, list.length));
         const x0 = 195 - step * (list.length - 1) / 2;
         document.getElementById('gd-fg-tools').innerHTML = list.map((t, i) => {
-            const art = t.kind === 'seed' ? GARDEN_ART.seedPacket(t.key, 3) : GARDEN_ART.tool(t.kind);
+            const art = t.kind === 'sack'
+                ? GARDEN_ART.sackClosed(this.sackHold || 0)
+                : GARDEN_ART.tool(t.kind);
             const badge = t.kind === 'dung'
                 ? `<text class="gd-count" x="0" y="34">${GameState.currency('dung')}</text>` : '';
-            return `<g class="gd-tool" data-kind="${t.kind}" data-key="${t.key || ''}"
+            return `<g class="gd-tool" data-kind="${t.kind}"
                         transform="translate(${(x0 + i * step).toFixed(1)} 782)">${art}${badge}</g>`;
         }).join('');
     },
 
-    // ---------- ВВОД ----------
+    // ---------- МЕШОК С СЕМЕНАМИ ----------
+    // Открывается УДЕРЖАНИЕМ: короткий тап по мешку ничего не делает. Полка
+    // тесная, и случайное касание не должно разворачивать пол-экрана — той же
+    // логикой на кухне живёт удержание над кастрюлей.
+    SACK_HOLD_MS: 500,
+
+    // Что лежит в мешке. Порядок ячеек — порядок видов в конфиге, и он
+    // ПОСТОЯНЕН: место каждого вида закреплено, чтобы через неделю игрок
+    // тянулся за помидором не глядя.
+    sackItems() {
+        return Object.keys(GARDEN.species)
+            .filter(key => Backend.gardenSeedKeys().indexOf(key) !== -1)
+            .map(key => {
+                const n = Backend.gardenSeedCount(key);
+                // null — «бесконечно»: у травы счётчика нет, как у пищеблока
+                // в холодильнике. Цифра «∞» была бы значком без смысла.
+                return { key, count: n === Infinity ? null : n };
+            });
+    },
+
+    openSack() {
+        this.sackOpen = true;
+        this.sackHold = 0;
+        const layer = document.getElementById('gd-fg-sack');
+        if (layer) layer.innerHTML = GARDEN_ART.sackOpen(this.sackItems());
+        this.renderTools();
+    },
+
+    closeSack() {
+        this.sackOpen = false;
+        this.sackHold = 0;
+        const layer = document.getElementById('gd-fg-sack');
+        if (layer) layer.innerHTML = '';
+        this.renderTools();
+    },
+
+    // ---------- ВВОД ----------    // ---------- ВВОД ----------
     onDown(e) {
         if (this.locked) return;
         const t = e.target;
+
+        // ---- открытый мешок ----
+        if (this.sackOpen) {
+            const cell = t.closest ? t.closest('.gd-sack-cell') : null;
+            if (cell) {
+                e.preventDefault();
+                const key = cell.dataset.key;
+                // Пустая ячейка не тянется: семечки этого вида нет, и рука
+                // должна это чувствовать, а не узнавать после броска.
+                if (Backend.gardenSeedCount(key) <= 0) { this.refuseSack(cell); return; }
+                this.closeSack();
+                this.startDrag(e, 'seed', key, GARDEN_ART.seedItem(key));
+                return;
+            }
+            // Нажатие мимо мешка — закрыть. Крестика у него нет и не будет:
+            // это мешок, а не окно.
+            this.closeSack();
+            return;
+        }
+
         const tool = t.closest ? t.closest('.gd-tool') : null;
+        // ---- мешок на полке: открывается удержанием ----
+        if (tool && tool.dataset.kind === 'sack' && !this.work) {
+            e.preventDefault();
+            this.sackHold = 0;
+            const t0 = performance.now();
+            // Мешок раздувается, пока его держат: по этому видно, что
+            // удержание работает и сколько осталось. Без этого короткий тап
+            // ощущается как «кнопка не нажалась».
+            this.sackTimer = setInterval(() => {
+                this.sackHold = Math.min(1, (performance.now() - t0) / this.SACK_HOLD_MS);
+                this.renderTools();
+                if (this.sackHold >= 1) { this.stopSackHold(); this.openSack(); }
+            }, 60);
+            this.drag = { kind: 'hold-sack', from: this.toStage(e) };
+            return;
+        }
         // Пока грядка в работе, второй инструмент в руки не берётся: две
         // работы одновременно — это два разных объяснения на одном экране.
         if (tool && !this.work) {
             e.preventDefault();
-            // Инструмент в руке крупнее: предмет под пальцем обязан быть
-            // крупнее самого пальца, иначе не видно, что именно держишь.
-            const ghost = tool.cloneNode(true);
-            ghost.classList.add('gd-dragging');
-            this.fgEl.appendChild(ghost);
-            const p = this.toStage(e);
-            ghost.setAttribute('transform',
-                `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) scale(${this.DRAG_SCALE})`);
-            this.drag = {
-                kind: 'tool', node: ghost, tool: tool.dataset.kind, key: tool.dataset.key,
-                x: p.x, y: p.y,
-                pourBed: -1,        // над какой грядкой льём прямо сейчас
-                pourAcc: 0          // сколько миллисекунд уже налито
-            };
-            if (this.drag.tool === 'can') this.startPour();
+            this.startDrag(e, tool.dataset.kind, tool.dataset.key, tool.innerHTML);
             return;
         }
 
@@ -366,8 +429,53 @@ const SlothMinigame = {
         this.drag = { kind: 'pan', from: this.toStage(e).x, base: this.camX };
     },
 
+    // Предмет в руке. Один вход на всё, что можно взять: инструмент с полки и
+    // семечку из мешка — иначе у них разъезжаются масштаб, слой и правила.
+    startDrag(e, kind, key, art) {
+        const p = this.toStage(e);
+        const NS = 'http://www.w3.org/2000/svg';
+        const ghost = document.createElementNS(NS, 'g');
+        ghost.setAttribute('class', 'gd-tool gd-dragging');
+        ghost.innerHTML = art;
+        // Предмет под пальцем обязан быть крупнее самого пальца, иначе не
+        // видно, что именно держишь.
+        ghost.setAttribute('transform',
+            `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) scale(${this.DRAG_SCALE})`);
+        this.fgEl.appendChild(ghost);
+        this.drag = {
+            kind: 'tool', node: ghost, tool: kind, key: key || '',
+            x: p.x, y: p.y,
+            pourBed: -1,        // над какой грядкой льём прямо сейчас
+            pourAcc: 0          // сколько миллисекунд уже налито
+        };
+        if (kind === 'can') this.startPour();
+    },
+
+    stopSackHold() {
+        if (this.sackTimer) { clearInterval(this.sackTimer); this.sackTimer = 0; }
+        this.sackHold = 0;
+    },
+
+    // Пустая ячейка отвечает движением: сказать «семечек нет» нечем.
+    refuseSack(cell) {
+        cell.classList.remove('gd-no');
+        void cell.getBoundingClientRect();
+        cell.classList.add('gd-no');
+    },
+
     onMove(e) {
         if (this.stroke) { this.strokeMove(e); return; }
+        // Палец уехал с мешка — удержание сорвано: это уже не «держу», а
+        // «веду», и мешок открываться не должен.
+        if (this.drag && this.drag.kind === 'hold-sack') {
+            const p = this.toStage(e);
+            if (Math.hypot(p.x - this.drag.from.x, p.y - this.drag.from.y) > 14) {
+                this.stopSackHold();
+                this.drag = { kind: 'pan', from: p.x, base: this.camX };
+                this.renderTools();
+            }
+            return;
+        }
         if (!this.drag) return;
         if (this.drag.kind === 'pan') {
             this.setCam(this.drag.base - (this.toStage(e).x - this.drag.from));
@@ -401,6 +509,9 @@ const SlothMinigame = {
         const d = this.drag;
         this.drag = null;
         if (!d) return;
+        // Отпустил раньше срока — мешок не открылся. Полсекунды это немного,
+        // но именно они отделяют «взял» от «случайно задел».
+        if (d.kind === 'hold-sack') { this.stopSackHold(); this.renderTools(); return; }
         Array.from(document.querySelectorAll('.gd-bed')).forEach(g => g.classList.remove('gd-target'));
         if (d.kind === 'pan') return;
         d.node.remove();
@@ -615,6 +726,12 @@ const SlothMinigame = {
             // Число в кошельке игрок не связывает с ямкой, которую только что
             // выкопал, а связь «копнул — нашёл» и есть весь смысл находок.
             if (res.find) this.showFind(i, res.find);
+            // Что дал урожай: сено с любого растения и, иногда, вернувшаяся
+            // семечка. Показывается предметом над грядкой — цифру в кошельке
+            // игрок со сбором не связывает. Вразбежку, чтобы не наложились
+            // друг на друга.
+            if (res.hay) this.showFind(i, { what: 'hay', amount: res.hay });
+            if (res.seedBack) setTimeout(() => this.showFind(i, { what: 'seed', key: res.seedBack }), 260);
             // Шкала дёргается на каждом действии: без этого игрок не связывает
             // «повозился в саду» с «лень закрылась», а связь тут и есть весь
             // смысл мини-игры.

@@ -136,6 +136,29 @@
     pointer-events: none;
 }
 
+/* ---------- МЕШОК С СЕМЕНАМИ ---------- */
+/* Сетка ячеек не нарисована: она нужна раскладке, а не глазу. Видно только
+   семена, лежащие каждое на своём месте. */
+#sloth-game .gd-sack-cell { cursor: grab; }
+
+/* Пустая ячейка приглушена: вид знаком, но семечек нет. Значок остаётся на
+   месте — по нему видно, что искать. */
+#sloth-game .gd-sack-cell.gd-empty { opacity: 0.32; }
+
+#sloth-game .gd-sack-cell.gd-no { animation: gd-no 0.32s ease; }
+
+/* Сколько семечек осталось. Цифра не слово (инвариант 9), а у бесконечной
+   травы цифры нет вовсе — как у пищеблока в холодильнике. */
+#sloth-game .gd-seed-count {
+    font: 800 15px/1 -apple-system, system-ui, sans-serif;
+    text-anchor: middle;
+    fill: #f2f7fa;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.65);
+    stroke-width: 3px;
+    pointer-events: none;
+}
+
 /* ---------- НАХОДКА ---------- */
 /* Всплывает и тает: находка должна успеть прочитаться, но не задерживать
    игрока.

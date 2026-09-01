@@ -39,7 +39,8 @@ const { chromium } = require('playwright');
 
   say('грядок на участке: ' + await page.evaluate(() => GameState.data.garden.beds.length) +
       ', открыто: ' + await page.evaluate(() => GameState.data.garden.beds.filter(b => b.stage !== 'locked').length) +
-      ', семян: ' + await page.evaluate(() => GameState.data.garden.seeds.join(',')));
+      ', семян: ' + await page.evaluate(() =>
+          Object.keys(GameState.data.garden.seeds).map(k => k + ':' + GameState.data.garden.seeds[k]).join(' ')));
 
   // ---------- ЦИКЛ ГРЯДКИ ----------
   // Порядок жёсткий: сначала лунка лопатой, только потом семя. Проверяется
@@ -142,7 +143,7 @@ const { chromium } = require('playwright');
     GameState.data.garden.beds.forEach((b, i) => Object.assign(b, {
       stage: i === 0 ? 'locked' : 'empty', species: null, seed: 0, at: null, skipped: 0
     }));
-    GameState.data.garden.seeds = ['potato'];
+    GameState.data.garden.seeds = { potato: 9 };
     GameState.save();
     GameManager.handleSinAction('sloth');
   });
@@ -152,7 +153,7 @@ const { chromium } = require('playwright');
     Array.from(document.querySelectorAll('#gd-fg-tools .gd-tool')).map(g => g.dataset.kind).join(','));
   // Какашка на полке появляется, только если она есть, поэтому сверяется не
   // точный список, а ПОРЯДОК: лопата → семена → лейка → какашка → грабли.
-  const ORDER = ['spade', 'seed', 'can', 'dung', 'rake'];
+  const ORDER = ['spade', 'sack', 'can', 'dung', 'rake'];
   const idx = shelf.split(',').map(k => ORDER.indexOf(k));
   const sorted = idx.every((v, n) => n === 0 || v >= idx[n - 1]);
   say('полка: ' + shelf + (sorted ? '  ✓ по порядку применения' : '  ✗ ПОРЯДОК НЕ ТОТ'));
@@ -192,6 +193,39 @@ const { chromium } = require('playwright');
     await page.mouse.up();
     await page.waitForTimeout(300);
   };
+  // ---------- МЕШОК С СЕМЕНАМИ ----------
+  // Открывается УДЕРЖАНИЕМ: короткий тап не должен разворачивать пол-экрана.
+  const sackOpen = () => page.evaluate(() => !!SlothMinigame.sackOpen);
+  const holdSack = async (ms) => {
+    const a = await toolPoint('sack');
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.waitForTimeout(ms);
+    const opened = await sackOpen();
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    return opened;
+  };
+  // Взять семечко из ячейки и донести до грядки: мешок при этом закрывается,
+  // иначе он закрывает собой ровно ту грядку, куда несут.
+  const seedFromSack = async (key, bed) => {
+    const cell = await page.evaluate((key) => {
+      const g = document.querySelector(`#gd-fg-sack .gd-sack-cell[data-key="${key}"]`);
+      if (!g) return null;
+      const r = g.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, key);
+    if (!cell) return 'нет ячейки ' + key;
+    const b = await bedPoint(bed);
+    await page.mouse.move(cell.x, cell.y);
+    await page.mouse.down();
+    await page.mouse.move((cell.x + b.x) / 2, (cell.y + b.y) / 2, { steps: 5 });
+    await page.mouse.move(b.x, b.y, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    return 'ок';
+  };
+
   // Сама работа: движения ТУДА-СЮДА по нужной оси. Засчитывается разворот с
   // достаточным размахом — ни длинный свайп в одну сторону, ни дрожание
   // работой не считаются.
@@ -252,14 +286,27 @@ const { chromium } = require('playwright');
   say('дёргаем лопату:    ' + midway + ' → ' + await stageOf(0) +
       (await stageOf(0) === 'dug' ? '  ✓ лунка' : '  ✗ ЛУНКА НЕ ВЫКОПАНА'));
 
+  // ---------- ПОСЕВ ИЗ МЕШКА ----------
+  say('короткий тап по мешку: ' + (await holdSack(150) ? '✗ ОТКРЫЛСЯ' : 'закрыт  ✓'));
+  const opened = await holdSack(700);
+  say('удержание полсекунды: ' + (opened ? 'открылся  ✓' : '✗ НЕ ОТКРЫЛСЯ'));
+  const cells = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#gd-fg-sack .gd-sack-cell')).map(g => g.dataset.key).join(','));
+  say('в мешке: ' + cells + (cells.split(',')[0] === 'grass' ? '  ✓ трава первой, места закреплены' : '  ✗ ПОРЯДОК ЯЧЕЕК ПЛЫВЁТ'));
+  const seedsBefore = await page.evaluate(() => GameState.data.garden.seeds.potato || 0);
+  say('взяли картошку: ' + await seedFromSack('potato', 0) +
+      ', мешок ' + (await sackOpen() ? '✗ ОСТАЛСЯ ОТКРЫТ' : 'закрылся  ✓'));
+
   // Мелкое дрожание работой не считается: иначе действие делается само.
-  await bring('seed', 0);
   await strokes(0, 8, 'x', 6);
   say('дрожание пальцем:  работа «' + await workOf() + '»' +
       ((await workOf()).endsWith('0/20') ? '  ✓ не засчитано' : '  ✗ ЗАСЧИТАНО'));
   await strokes(0, 22, 'x', 56);
+  const seedsAfter = await page.evaluate(() => GameState.data.garden.seeds.potato || 0);
   say('приминаем землю:   ' + await stageOf(0) +
       (await stageOf(0) === 'sown' ? '  ✓ посеяно' : '  ✗ НЕ ПОСЕЯНО'));
+  say('семечек картошки:  ' + seedsBefore + ' → ' + seedsAfter +
+      (seedsAfter === seedsBefore - 1 ? '  ✓ потрачена' : '  ✗ СЕМЕНА БЕСКОНЕЧНЫ'));
 
   // ---------- ПОЛИВ УДЕРЖАНИЕМ ----------
   // Лейка не «срабатывает», её ДЕРЖАТ, пока льётся вода. Поднёс и отпустил —
@@ -337,6 +384,66 @@ const { chromium } = require('playwright');
       (await stageOf(0) === 'empty' ? '  ✓ собрано' : '  ✗ НЕ СОБРАНО'));
   const sh = await page.evaluate(() => GameState.currency('sloth_shard'));
   say('осколков за урожай: ' + sh + (sh >= 1 ? '  ✓ капнул' : '  ✗ НЕ КАПНУЛ'));
+
+  // ---------- ТРАВА: БЕСКОНЕЧНАЯ СЕМЕЧКА ----------
+  // Аналог пищеблока: потребность закрывает, экономику не двигает. Проверяем
+  // ровно это — сено даёт вдвое больше, плода и осколка не даёт вовсе, а
+  // семечка на неё не тратится.
+  const grass = await page.evaluate(() => {
+    const b = GameState.data.garden.beds[0];
+    const before = { hay: GameState.currency('hay'), shard: GameState.currency('sloth_shard'),
+                     pantry: JSON.stringify(GameState.data.pantry) };
+    Object.assign(b, { stage: 'dug', species: null, seed: 0, at: null, skipped: 0 });
+    const sow = Backend.gardenAct(0, 'sow', { species: 'grass' });
+    Object.assign(b, { stage: 'ripe' });
+    const cut = Backend.gardenAct(0, 'harvest');
+    return {
+      бесконечна: Backend.gardenSeedCount('grass') === Infinity,
+      посев: sow.ok,
+      сено: GameState.currency('hay') - before.hay,
+      осколок: GameState.currency('sloth_shard') - before.shard,
+      кладовая: JSON.stringify(GameState.data.pantry) === before.pantry ? 'не тронута' : 'ИЗМЕНИЛАСЬ'
+    };
+  });
+  say('трава: ' + JSON.stringify(grass) +
+      (grass.бесконечна && grass.сено === 2 && grass.осколок === 0 && grass.кладовая === 'не тронута'
+        ? '  ✓ пищеблок сада' : '  ✗ ТРАВА ДВИГАЕТ ЭКОНОМИКУ'));
+
+  // Сено капает и с плодового — вдвое меньше.
+  const hayFruit = await page.evaluate(() => {
+    const b = GameState.data.garden.beds[0];
+    const before = GameState.currency('hay');
+    GameState.data.garden.seeds.potato = 5;
+    Object.assign(b, { stage: 'dug', species: null, seed: 0, at: null, skipped: 0 });
+    Backend.gardenAct(0, 'sow', { species: 'potato' });
+    Object.assign(b, { stage: 'ripe' });
+    Backend.gardenAct(0, 'harvest');
+    return GameState.currency('hay') - before;
+  });
+  say('сено с плодового:  ' + hayFruit + (hayFruit === 1 ? '  ✓ вдвое меньше травы' : '  ✗ НЕ ТО'));
+
+  // Возврат семечки — редкий и ступенчатый.
+  const ret = await page.evaluate(() => {
+    const out = [];
+    for (let lvl = 0; lvl < GARDEN.SEED_RETURN.length; lvl++) {
+      GameState.data.garden.tools.seed = lvl;
+      out.push(Math.round(Backend.gardenSeedReturn() * 100) + '%');
+    }
+    GameState.data.garden.tools.seed = 0;
+    // Сто сборов подряд: сколько семечек вернулось на самом деле.
+    let back = 0;
+    const b = GameState.data.garden.beds[0];
+    for (let n = 0; n < 200; n++) {
+      GameState.data.garden.seeds.potato = 5;
+      Object.assign(b, { stage: 'dug', species: null, seed: 0, at: null, skipped: 0 });
+      Backend.gardenAct(0, 'sow', { species: 'potato' });   // 5 → 4
+      Object.assign(b, { stage: 'ripe' });
+      if (Backend.gardenAct(0, 'harvest').seedBack) back++;
+    }
+    return { ступени: out.join(' '), из200: back };
+  });
+  say('возврат семечки:   ' + JSON.stringify(ret) +
+      (ret.из200 > 5 && ret.из200 < 40 ? '  ✓ около десятой части' : '  ✗ ШАНС НЕ ТОТ'));
 
   // Три осколка складываются в жетон сами — как у гнева и кухни.
   const made = await page.evaluate(() => {

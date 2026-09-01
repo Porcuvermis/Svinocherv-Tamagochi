@@ -65,9 +65,10 @@ const GameState = {
             // пришлось бы хранить список точек, а после каждой правки
             // рендерера старые сейвы рисовались бы мусором.
             //
-            // seeds — какие семена вообще открыты; tools — ступени лейки,
-            // граблей и лопаты.
-            garden: { beds: [], seeds: [], tools: { can: 0, rake: 0, spade: 0 } },
+            // seeds — сколько семечек каждого вида лежит в мешке (трава сюда
+            // не пишется: она бесконечная, см. GARDEN.species.grass);
+            // tools — ступени лейки, граблей, лопаты и возврата семян.
+            garden: { beds: [], seeds: {}, tools: { can: 0, rake: 0, spade: 0, seed: 0 } },
             // Боец гнева: сколько здоровья осталось после последнего боя.
             // hp === null означает «полное»: до первого боя и после того, как
             // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
@@ -205,9 +206,18 @@ const GameState = {
         // тех, кто играет неделю. Открытость грядки при этом сохраняется.
         if (!d.garden || typeof d.garden !== 'object') d.garden = {};
         if (!Array.isArray(d.garden.beds)) d.garden.beds = [];
-        if (!Array.isArray(d.garden.seeds)) d.garden.seeds = [];
+        // Семена — СЧЁТЧИКИ по видам, а не список открытых. Старые сейвы
+        // хранили список: посадить можно было бесконечно, и вид ничего не
+        // стоил. Список превращается в счётчики, чтобы недельный прогресс не
+        // обнулился (инвариант 5).
+        if (Array.isArray(d.garden.seeds)) {
+            const was = d.garden.seeds;
+            d.garden.seeds = {};
+            was.forEach(key => { d.garden.seeds[key] = 2; });
+        }
+        if (!d.garden.seeds || typeof d.garden.seeds !== 'object') d.garden.seeds = {};
         if (!d.garden.tools || typeof d.garden.tools !== 'object') {
-            d.garden.tools = { can: 0, rake: 0, spade: 0 };
+            d.garden.tools = { can: 0, rake: 0, spade: 0, seed: 0 };
         }
         if (typeof GARDEN !== 'undefined') {
             for (let i = 0; i < GARDEN.BEDS_TOTAL; i++) {
@@ -229,7 +239,16 @@ const GameState = {
                 }
             }
             d.garden.beds.length = GARDEN.BEDS_TOTAL;
-            if (!d.garden.seeds.length) d.garden.seeds = GARDEN.startingSeeds.slice();
+            // Стартовые семена выдаются ОДИН раз и помечаются флагом, а не
+            // «досыпаются, если пусто»: иначе игрок, честно израсходовавший
+            // все семена, получал бы их обратно при каждой перезагрузке. Та
+            // же история, что со стартовой кладовой кухни.
+            if (!d.player.seeds_seeded) {
+                Object.keys(GARDEN.startingSeeds).forEach(key => {
+                    d.garden.seeds[key] = (d.garden.seeds[key] || 0) + GARDEN.startingSeeds[key];
+                });
+                d.player.seeds_seeded = true;
+            }
         }
 
         ['currencies', 'inventory', 'pantry', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
