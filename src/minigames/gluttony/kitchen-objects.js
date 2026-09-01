@@ -69,6 +69,13 @@ function koRad(id, cx, cy, r, stops, extra) {
 // Рампа из палитры + смещения из кода → готовый список стопов.
 const koRamp = (colors, offsets) => colors.map((c, i) => [offsets[i], c]);
 
+// Невидимая зона захвата. Предмет из тонких деталей палец ловит плохо:
+// прозрачная заливка (не `none` — `none` событий не ловит) делает захват
+// честным по габаритам.
+const koGrab = (rx, ry, cx, cy) =>
+    `<ellipse cx="${cx || 0}" cy="${cy || 0}" rx="${rx}" ry="${ry}"
+              fill="#000" fill-opacity="0" pointer-events="all"/>`;
+
 // Полигон по плоскому списку чисел: koPoly([x,y, x,y, ...], fill).
 const koPoly = (pts, fill, extra) =>
     `<polygon points="${pts.join(' ')}" fill="${fill}" ${extra || ''}/>`;
@@ -78,6 +85,13 @@ const KITCHEN_OBJECTS = {
     // Размер сцены, в которой промерены все предметы.
     W: 720,
     H: 1440,
+
+    // Кадр ИГРЫ выше кадра референса. Камера вписывает сцену в стейдж 390×844
+    // по меньшей стороне, а 720×1440 чуть «шире» этой пропорции — сверху и
+    // снизу остаётся по 59 единиц пустоты. Стена и пол дотянуты до этих
+    // границ, иначе на общем виде по краям видно фон страницы.
+    GAME_TOP: -60,
+    GAME_BOTTOM: 1500,
 
     // ================================================================
     //                          ХОЛОДИЛЬНИК
@@ -169,7 +183,7 @@ const KITCHEN_OBJECTS = {
             const w = koPal().wall, g = koUid('wall');
             return `<g class="ko ko-wall">
     <defs>${koLin(g, 0, 0, 620, 540, [[0, w.hi], [0.55, w[500]], [1, w.lo]])}</defs>
-    <rect x="0" y="0" width="720" height="560" fill="url(#${g})"/>
+    <rect x="0" y="-60" width="720" height="620" fill="url(#${g})"/>
 </g>`;
         }
     },
@@ -443,7 +457,9 @@ const KITCHEN_OBJECTS = {
     // несколько единиц отличает кастрюлю от жестяной банки.
     pot: {
         box: { x: 274, y: 386, w: 200, h: 145 },
-        draw() {
+        // opts.lid === false — кастрюля БЕЗ крышки: в игре в неё льют и
+        // кидают, и закрытая крышка означала бы «сюда нельзя».
+        draw(opts) {
             const st = koPal().steel;
             const gBody = koUid('potb'), gRim = koUid('potr'), gLid = koUid('potl');
             // Одна рампа на корпус, венчик и крышку — они из одного металла и
@@ -467,11 +483,15 @@ const KITCHEN_OBJECTS = {
           stroke="${st[900]}" stroke-width="9" stroke-linecap="round"/>
     <path d="M436 424 Q452 424 452 434 Q451 442 442 442" fill="none"
           stroke="${st[700]}" stroke-width="8" stroke-linecap="round"/>
+    ${(opts && opts.lid === false) ? `
+    <!-- открытая горловина: тёмное нутро под кромкой -->
+    <path d="M295 419 Q365 433 435 419 L435 424 Q365 439 295 424 Z"
+          fill="${st[900]}"/>` : `
     <!-- крышка: купол пологий, почти блюдце -->
     <path d="M310 417 Q322 408 355 406 Q372 403 390 406 Q425 409 437 417 Z"
           fill="url(#${gLid})"/>
     <rect x="360" y="394" width="28" height="14" rx="5" fill="url(#${gLid})"/>
-    <ellipse cx="374" cy="394" rx="14" ry="4.5" fill="${st[100]}"/>
+    <ellipse cx="374" cy="394" rx="14" ry="4.5" fill="${st[100]}"/>`}
     <!-- Венчик. Его нижняя кромка — ДУГА, а не прямая: мы смотрим на
          кастрюлю сверху, и поясок обходит её по эллипсу. Прямая линия здесь
          мгновенно распрямляет кастрюлю в плоскую жестянку. -->
@@ -618,7 +638,7 @@ const KITCHEN_OBJECTS = {
             const seams = [];
             for (let i = -2; i < 14; i++) {
                 const x0 = 60 + i * 72;
-                seams.push(`<path d="M${x0} 700 L${(x0 - 0.22 * 740).toFixed(0)} 1440"/>`);
+                seams.push(`<path d="M${x0} 700 L${(x0 - 0.22 * 800).toFixed(0)} 1500"/>`);
             }
             return `<g class="ko ko-floor">
     <defs>
@@ -627,7 +647,7 @@ const KITCHEN_OBJECTS = {
         ${koLin(gl, 0, 700, 0, 980, [
             [0, '#ffffff', 0.14], [1, '#ffffff', 0]])}
     </defs>
-    <rect x="0" y="700" width="720" height="740" fill="url(#${g})"/>
+    <rect x="0" y="700" width="720" height="800" fill="url(#${g})"/>
     <g stroke="${fl.seam}" stroke-width="2" fill="none" opacity="0.55">
         ${seams.join('')}
     </g>
@@ -679,8 +699,8 @@ const KITCHEN_OBJECTS = {
     </defs>
     <!-- ножки и проножки: под столешницей, она их подрезает -->
     ${leg(222, 1000, 40, 350)}
-    ${leg(620, 1075, 42, 365)}
-    ${leg(352, 1150, 46, 290)}
+    ${leg(620, 1075, 42, 395)}
+    ${leg(352, 1150, 46, 350)}
     <polygon points="240 1262 372 1300 372 1330 240 1292" fill="${t.legLo}"/>
     <polygon points="640 1238 690 1252 690 1282 640 1268" fill="${t.legLo}"/>
     <!-- столешница -->
@@ -806,6 +826,152 @@ const KITCHEN_OBJECTS = {
     },
 
     // ================================================================
+    //         ПРЕДМЕТЫ ПОД МЕХАНИКУ (в референсе их нет)
+    // ================================================================
+    // Нутро холодильника, лейка, бутыли, ложка. В кадре референса ничего
+    // этого нет — двери закрыты, воду взять неоткуда, — но игре они нужны.
+    // Рисуются по тем же правилам: без контура, объём держит перепад граней,
+    // цвет из палитры. Придуманное не должно быть видно как придуманное.
+
+    // Нутро холодильника. Эмаль ХОЛОДНЕЕ и глуше двери: если сделать заднюю
+    // стенку такой же белой, открытый холодильник читается закрытым.
+    // Полки идут с тем же уклоном, что и кромки шкафа, — иначе они повиснут
+    // в другой перспективе, чем сам холодильник.
+    fridgeInside: {
+        box: { x: 40, y: 180, w: 268, h: 800 },
+        draw() {
+            const p = koPal().inside, g = KITCHEN_OBJECTS.fridgeGeom;
+            const L = g.L + 6, R = g.R - 6;
+            const f = (v) => v.toFixed(1);
+            const gBack = koUid('fin'), gShelf = koUid('fsh'), gFrost = koUid('ffr');
+            // Полка: пластина стекла с ярким передним торцом. Уклон берётся
+            // у нижней кромки шкафа — той же, по которой стоят продукты.
+            const shelf = (y) => {
+                // Полка поднимается вправо, как и все горизонтали шкафа, но
+                // ПОЛОЖЕ его нижней кромки (0.28 против 0.365): кромка — это
+                // самое близкое к камере ребро, у него уклон максимальный.
+                // С уклоном кромки полки заваливались круче самого шкафа.
+                const yl = y - 0.28 * (L - 175), yr = y - 0.28 * (R - 175);
+                return `<g>
+        <polygon points="${L} ${f(yl - 7)} ${R} ${f(yr - 7)} ${R} ${f(yr)} ${L} ${f(yl)}"
+                 fill="${p.shelf}" opacity="0.85"/>
+        <polygon points="${L} ${f(yl)} ${R} ${f(yr)} ${R} ${f(yr + 5)} ${L} ${f(yl + 5)}"
+                 fill="${p.shelfEdge}"/>
+    </g>`;
+            };
+            return `<g class="ko ko-fridge-inside">
+    <defs>
+        ${koLin(gBack, L, 0, R, 0, [[0, p.backLo], [0.4, p.back], [1, p.backLo]])}
+        ${koLin(gShelf, 0, 500, 0, 940, [[0, p.shelf], [1, p.wall]])}
+        ${koLin(gFrost, L, 0, R, 0, [[0, p.wall], [0.45, p.frost], [1, p.wall]])}
+    </defs>
+    <!-- морозильная камера: холоднее и светлее, у неё своя одна полка -->
+    <polygon points="${L} ${f(g.band(L) + 8)} ${R} ${f(g.band(R) + 8)}
+                     ${R} ${f(g.seam(R))} ${L} ${f(g.seam(L))}" fill="url(#${gFrost})"/>
+    <polygon points="${L} ${f(g.band(L) + 8)} ${R} ${f(g.band(R) + 8)}
+                     ${R} ${f(g.band(R) + 26)} ${L} ${f(g.band(L) + 26)}"
+             fill="${p.shadow}" opacity="0.35"/>
+    ${shelf(408)}
+    <!-- холодильная камера -->
+    <polygon points="${L} ${f(g.seam(L) + 18)} ${R} ${f(g.seam(R) + 18)}
+                     ${R} ${f(g.bot(R) - 4)} ${L} ${f(g.bot(L) - 4)}"
+             fill="url(#${gBack})"/>
+    <!-- тень под верхней кромкой: без неё камера плоская, как наклейка -->
+    <polygon points="${L} ${f(g.seam(L) + 18)} ${R} ${f(g.seam(R) + 18)}
+                     ${R} ${f(g.seam(R) + 44)} ${L} ${f(g.seam(L) + 44)}"
+             fill="${p.shadow}" opacity="0.4"/>
+    <!-- боковые стенки: узкие полосы темнее задней, они и дают глубину -->
+    <polygon points="${L} ${f(g.seam(L) + 18)} ${L + 14} ${f(g.seam(L + 14) + 26)}
+                     ${L + 14} ${f(g.bot(L + 14) - 12)} ${L} ${f(g.bot(L) - 4)}"
+             fill="${p.wall}"/>
+    <polygon points="${R} ${f(g.seam(R) + 18)} ${R - 14} ${f(g.seam(R - 14) + 26)}
+                     ${R - 14} ${f(g.bot(R - 14) - 12)} ${R} ${f(g.bot(R) - 4)}"
+             fill="${p.wall}" opacity="0.7"/>
+    ${shelf(600)}
+    ${shelf(700)}
+    ${shelf(800)}
+    ${shelf(895)}
+</g>`;
+        }
+    },
+
+    // Лейка. Заменяет кран как источник воды: краном в кастрюлю не нальёшь,
+    // не подставив её под него, а лейку берут в руку и несут — это тот же
+    // жест, что и с бутылью, то есть на одну механику меньше.
+    // Нарисована вокруг СВОЕГО нуля, а не в координатах сцены: её носят.
+    wateringCan: {
+        box: { x: -84, y: -56, w: 156, h: 104 },
+        draw() {
+            const st = koPal().steel;
+            const gBody = koUid('wcb'), gSpout = koUid('wcs');
+            return `<g class="ko ko-watering-can">
+    <defs>
+        ${koLin(gBody, -30, 0, 32, 0, [
+            [0, st[700]], [0.16, st[300]], [0.32, st.spec], [0.5, st[300]],
+            [0.75, st[500]], [1, st[900]]])}
+        ${koLin(gSpout, -76, -34, -20, 16, [
+            [0, st[100]], [0.4, st[300]], [1, st[700]]])}
+    </defs>
+    ${koGrab(64, 46)}
+    <!-- Дужка идёт ПЕРВОЙ: корпус перекрывает её концы, и она читается
+         приделанной, а не наклеенной сверху. -->
+    <path d="M-4 -28 Q24 -48 34 -8" fill="none" stroke="${st[500]}"
+          stroke-width="9" stroke-linecap="round"/>
+    <path d="M-4 -31 Q21 -49 31 -12" fill="none" stroke="${st[100]}"
+          stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+    <!-- Носик. Он ОДИН отличает лейку от кастрюли, поэтому длинный, тонкий
+         и поднят ВЫШЕ корпуса: короткий носик сбоку читается ручкой ковша.
+         Первая версия была именно такой — в кадре плиты её принимали за
+         вторую кастрюлю. -->
+    <path d="M-20 16 Q-46 8 -66 -28" fill="none" stroke="url(#${gSpout})"
+          stroke-width="11" stroke-linecap="round"/>
+    <path d="M-78 -40 L-56 -22 L-64 -12 L-84 -30 Z" fill="url(#${gSpout})"/>
+    <!-- корпус: выше, чем шире, иначе это ведро -->
+    <path d="M-30 -26 h58 q12 0 12 13 v34 q0 13 -13 13 h-56 q-13 0 -13 -13
+             v-34 q0 -13 12 -13 Z" fill="url(#${gBody})"/>
+    <!-- горловина: по ней видно, что лейку наполняют сверху -->
+    <ellipse cx="-1" cy="-26" rx="28" ry="7" fill="${st[700]}"/>
+    <ellipse cx="-1" cy="-27" rx="22" ry="4.5" fill="${st[900]}"/>
+    <path d="M-19 -14 V26" stroke="${st.spec}" stroke-width="4.5"
+          opacity="0.8" stroke-linecap="round"/>
+    <path d="M21 -12 V24" stroke="${st[900]}" stroke-width="3"
+          opacity="0.45" stroke-linecap="round"/>
+</g>`;
+        }
+    },
+
+    // Бутыль с жидкостью. Один рисунок на три жидкости: меняется только
+    // цвет содержимого, форма общая — так видно, что это ОДИН ряд бутылей,
+    // а различаются они цветом, а не силуэтом.
+    liquidBottle: {
+        box: { x: -30, y: -58, w: 60, h: 112 },
+        draw(opts) { return koLiquidBottle((opts && opts.key) || 'broth', opts && opts.empty); }
+    },
+    bottleBroth: { box: { x: -30, y: -58, w: 60, h: 112 },
+                   draw() { return koLiquidBottle('broth'); } },
+    bottleMilk:  { box: { x: -26, y: -58, w: 52, h: 116 },
+                   draw() { return koLiquidBottle('milk'); } },
+    bottleWine:  { box: { x: -26, y: -58, w: 52, h: 116 },
+                   draw() { return koLiquidBottle('wine'); } },
+
+    // Деревянная ложка: ею мешают в кастрюле. Нарисована ручкой ВВЕРХ от
+    // нуля — вокруг него она и качается.
+    spoon: {
+        box: { x: -34, y: -126, w: 68, h: 168 },
+        draw() {
+            const w = koPal().table, st = koPal().steel;
+            const g = koUid('spn');
+            return `<g class="ko ko-spoon">
+    <defs>${koLin(g, -14, 0, 14, 0,
+        [[0, w.legHi], [0.35, w[500]], [0.7, w.hi], [1, w.side]])}</defs>
+    <rect x="-6" y="-118" width="12" height="122" rx="6" fill="url(#${g})"/>
+    <ellipse cx="0" cy="14" rx="30" ry="23" fill="url(#${g})"/>
+    <ellipse cx="-4" cy="12" rx="20" ry="14" fill="${w.side}" opacity="0.55"/>
+</g>`;
+        }
+    },
+
+    // ================================================================
     //                             СЦЕНА
     // ================================================================
     // Порядок = глубина. Список читается как «кто перед кем стоит», и это
@@ -847,6 +1013,35 @@ function koFridgeDoor(bandFn, topFn, botFn, cls) {
     <!-- лицо -->
     ${koPoly([L, f(topFn(L)), R, f(topFn(R)), R, f(botFn(R)), L, f(botFn(L))],
              `url(#${face})`)}
+</g>`;
+}
+
+// ---------- бутыль с жидкостью ----------
+// Стекло само по себе бесцветное: цвет бутыли — это цвет ТОГО, ЧТО В НЕЙ.
+// Поэтому содержимое рисуется отдельным телом внутри стеклянного силуэта, а
+// пустая бутыль остаётся стеклянной и сразу отличима от полной.
+function koLiquidBottle(key, empty) {
+    const P = koPal(), L = P[key] || P.broth, gl = P.glass;
+    const gBody = koUid('lqb'), gGlass = koUid('lqg');
+    // Силуэт: горлышко, ПЛЕЧИ и тулово. Плечи обязательны — без них
+    // получается банка, а не бутыль, и ряд на столешнице читается консервами.
+    const body = `M-6 -46 h12 v16 q0 7 5 12 q6 7 6 16 v40 q0 8 -8 8
+                  h-18 q-8 0 -8 -8 v-40 q0 -9 6 -16 q5 -5 5 -12 Z`;
+    return `<g class="ko ko-liquid-bottle">
+    <defs>
+        ${koLin(gBody, -26, 0, 26, 0,
+            [[0, L.lo], [0.28, L.hi], [0.5, L[500]], [0.82, L.lo], [1, L[500]]])}
+        ${koLin(gGlass, -26, 0, 26, 0,
+            [[0, gl.lo], [0.3, gl.hi], [0.7, gl[500]], [1, gl.lo]])}
+    </defs>
+    ${koGrab(28, 52)}
+    <rect x="-9" y="-54" width="18" height="12" rx="3" fill="${L.cap}"/>
+    <path d="${body}" fill="url(#${empty ? gGlass : gBody})"/>
+    <!-- блик по левому ребру: он и делает бутыль стеклянной -->
+    <path d="M-11 -2 V32" stroke="${gl.hi}" stroke-width="4" opacity="${empty ? 0.5 : 0.6}"
+          stroke-linecap="round"/>
+    <path d="M12 6 V30" stroke="${L.lo}" stroke-width="3" opacity="0.4"
+          stroke-linecap="round"/>
 </g>`;
 }
 

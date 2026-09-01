@@ -73,8 +73,12 @@
     transform-box: view-box;
 }
 
-#gluttony-game #kt-door-freezer { transform-origin: 26px 360px; }
-#gluttony-game #kt-door-main    { transform-origin: 26px 790px; }
+/* Ось — левый край дверной плиты (x=47 в координатах склада предметов), по
+   середине высоты каждой двери. Число взято из KITCHEN_OBJECTS.fridgeGeom.L:
+   подвинется картинка холодильника — подвинется и ось, и это единственное
+   место, где связь придётся поправить руками. */
+#gluttony-game #kt-door-freezer { transform-origin: 47px 350px; }
+#gluttony-game #kt-door-main    { transform-origin: 47px 700px; }
 
 #gluttony-game #kt-fridge.open #kt-door-freezer { transform: rotateY(0deg) scaleX(-0.18) translateX(0px); }
 #gluttony-game #kt-fridge.open #kt-door-main    { transform: scaleX(-0.18); }

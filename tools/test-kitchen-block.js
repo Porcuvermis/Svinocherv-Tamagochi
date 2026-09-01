@@ -59,11 +59,15 @@ const { chromium } = require('playwright');
   await page.mouse.up(); await page.waitForTimeout(500);
   console.log('основа: ' + await page.evaluate(() => GluttonyMinigame.liquid));
   // кучку в кастрюлю
+  // Куда кидать кучку — спрашиваем у картинки, а не помним числом: гнездо
+  // кастрюли переезжает вместе с графикой, и захардкоженная точка молча
+  // промахивалась мимо, а тест продолжал идти дальше.
+  const potSlot = await page.evaluate(() => KITCHEN_ART.SLOTS.pot);
   for (let i=0;i<3;i++){
     const pile = await page.evaluate(() => { const g=document.querySelector('#kt-loose .kt-item[data-where="pile"]'); if(!g) return null;
       const m=/translate\(([-\d.]+) ([-\d.]+)\)/.exec(g.getAttribute('transform')); return {x:+m[1],y:+m[2]}; });
     if (!pile) break;
-    await dragPts(await atScene(pile.x,pile.y), await atScene(535, 600));
+    await dragPts(await atScene(pile.x,pile.y), await atScene(potSlot.x, potSlot.y));
     await page.waitForTimeout(500);
   }
   await waitCamera(); await page.waitForTimeout(900);

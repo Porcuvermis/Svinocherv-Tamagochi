@@ -3,7 +3,7 @@
 // предметами, а не меню (docs/plan/20-gluttony-kitchen.md).
 //
 // ---------- ДВА СЛОЯ ----------
-// Кухня живёт в координатах СЦЕНЫ 900×1948, по ней ездит камера. Доска и нож
+// Кухня живёт в координатах СЦЕНЫ 720×1500, по ней ездит камера. Доска и нож
 // живут в координатах ЭКРАНА 390×844 и камере не подчиняются: доска — предмет,
 // который игрок держит перед собой, она ближе камеры. Отсюда весь ход игры
 // читается как одно непрерывное движение по кухне, а не как смена картинок:
@@ -82,12 +82,13 @@ const GluttonyMinigame = {
     STIR_SWINGS: 6,
     HINT_DELAY: 1500,
 
-    // Куда приходит червь — точка ПОЛА В КООРДИНАТАХ СЦЕНЫ, у середины
-    // разделочного стола. Кормёжка идёт на общем виде кухни, поэтому червь
-    // просто встаёт перед столом: голова оказывается на уровне столешницы, а
-    // телом он закрывает переднюю стенку стола — так и читается «стоит у
-    // стола». Подвинули стол в картинке — подвинулась и кормёжка.
-    FEED_SPOT: { x: 590, y: 1841 },
+    // ---------- ГЕОМЕТРИЯ КАРТИНКИ ЗДЕСЬ НЕ ЖИВЁТ ----------
+    // Куда приходит червь, докуда доходит уровень в кастрюле, где выход у
+    // лейки — всё это РАЗМЕТКА КАРТИНКИ, и лежит она в kitchen-art рядом с
+    // самой картинкой. Пока эти числа стояли здесь, смена графики означала
+    // правку игровой логики, а разъезжались они молча.
+    feedSpot() { return KITCHEN_ART.FEED_SPOT; },
+    hose() { return KITCHEN_ART.HOSE; },
 
     // ---------- НАЛИВ ----------
     // Считается от ВРЕМЕНИ, а не от числа событий указателя: раньше уровень
@@ -97,12 +98,8 @@ const GluttonyMinigame = {
     POUR_FULL: 60,           // уровень, при котором жидкость засчитана
     POUR_RATE_PER_SEC: 32,   // ≈1.9 с на полную кастрюлю
     POUR_TILT: -118,         // на сколько опрокидывается бутыль над кастрюлей
-    BOTTLE_NECK: 60,         // от центра бутыли до её горлышка, в единицах сцены
     // Струя в кастрюлю живёт в координатах СЦЕНЫ, поэтому и шарики крупнее, и
     // путь длиннее: единица сцены мельче экранной примерно вдвое.
-    // Лейка: вокруг какой точки она растёт в руке и где у неё выход. Обе
-    // точки — из картинки (kitchen-art), поэтому и лежат рядом с зумом.
-    HOSE: { pivot: { x: 852, y: 640 }, out: { x: 852, y: 670 }, zoom: 2 },
 
     // Всё, что берут в руку, растёт вдвое: продукт с полки, продукт с доски,
     // кучка, бутыль, лейка. Предмет под пальцем обязан быть крупнее пальца,
@@ -231,7 +228,7 @@ const GluttonyMinigame = {
         this.el('kt-loose').innerHTML = '';
         this.el('kt-board-items').innerHTML = '';
         this.el('kt-fridge').classList.remove('open');
-        this.setAttr('kt-pot-fill', { height: 0, y: 772 });
+        this.setAttr('kt-pot-fill', { height: 0, y: KITCHEN_ART.POT_FILL.bottom });
         this.el('kt-pot').removeAttribute('transform');
         this.el('kt-pot').classList.remove('kt-dragging', 'kt-target');
         this.setOpacity('kt-flame', 0);
@@ -805,8 +802,7 @@ const GluttonyMinigame = {
     startPour(key, from) {
         if (this.liquid) return;
         this.pouring = { key, from };
-        const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.water;
-        this.setAttr('kt-pot-fill', { fill: ramp[500] });
+        this.setAttr('kt-pot-fill', { fill: KITCHEN_ART.liquid(key)[500] });
         this.streamColor(this.potStream, key);
         this.pourLastTick = null;
         if (!this.pourRafId) this.pourRafId = requestAnimationFrame(t => this.pourTick(t));
@@ -851,7 +847,7 @@ const GluttonyMinigame = {
         if (this.pouring.kind === 'hose') {
             // Лейка: выход под ней, льёт строго вниз. Смещение выхода от
             // точки захвата растёт вместе с увеличением лейки в руке.
-            const H = this.HOSE;
+            const H = this.hose();
             return {
                 x: p.x + (H.out.x - H.pivot.x) * H.zoom,
                 y: p.y + (H.out.y - H.pivot.y) * H.zoom,
@@ -862,8 +858,8 @@ const GluttonyMinigame = {
         const sc = this.pouring.scale || 0.6;
         const sin = Math.sin(a), cos = Math.cos(a);
         return {
-            x: p.x + this.BOTTLE_NECK * sin * sc,
-            y: p.y - this.BOTTLE_NECK * cos * sc,
+            x: p.x + KITCHEN_ART.BOTTLE_NECK * sin * sc,
+            y: p.y - KITCHEN_ART.BOTTLE_NECK * cos * sc,
             dx: sin,
             dy: -cos
         };
@@ -900,8 +896,10 @@ const GluttonyMinigame = {
         if (!d || !d.node) return;
         d.node.classList.remove('kt-dragging');
         if (d.kind === 'hose') {
+            // Лейку не за что «втянуть обратно»: она просто встаёт на своё
+            // место на столешнице. Прежний кран тянул за собой шланг, и его
+            // линию приходилось перерисовывать — с лейкой рисовать нечего.
             this.el('kt-nozzle').setAttribute('transform', '');
-            this.el('kt-hose-line').setAttribute('d', 'M828 624 V644');
             return;
         }
         if (d.kind === 'bottle') {
@@ -913,9 +911,10 @@ const GluttonyMinigame = {
     updatePotLevel() {
         const fill = this.el('kt-pot-fill');
         if (!fill) return;
-        const h = Math.min(140, (this.pourLevel || 0) + this.inPot.length * 22);
+        const F = KITCHEN_ART.POT_FILL;
+        const h = Math.min(F.max, ((this.pourLevel || 0) + this.inPot.length * 22) * F.max / 140);
         fill.setAttribute('height', h.toFixed(1));
-        fill.setAttribute('y', (772 - h).toFixed(1));
+        fill.setAttribute('y', (F.bottom - h).toFixed(1));
     },
 
     dropInPot(entry) {
@@ -1142,12 +1141,10 @@ const GluttonyMinigame = {
             // Масштаб идёт вокруг СВОЕГО центра, а не вокруг нуля сцены:
             // лейка нарисована в абсолютных координатах, и простой scale
             // унёс бы её в другой конец кухни.
-            const H = this.HOSE;
+            const H = this.hose();
             this.el('kt-nozzle').setAttribute('transform',
                 `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) ` +
                 `scale(${H.zoom}) translate(${-H.pivot.x} ${-H.pivot.y})`);
-            this.el('kt-hose-line').setAttribute('d',
-                `M828 624 Q${(828 + (p.x - 828) * 0.4).toFixed(1)} ${(p.y - 60).toFixed(1)} ${p.x.toFixed(1)} ${(p.y - 40).toFixed(1)}`);
         } else {
             // Бутыль над кастрюлей опрокидывается: держать её стоймя и при
             // этом лить — значит лить из закрытой пробки.
@@ -1497,7 +1494,7 @@ const GluttonyMinigame = {
         const MARGIN = 10;   // отступ от краёв
         const POT_GAP = 6;   // зазор между дном кастрюли и макушкой
 
-        const spot = this.sceneToWorm(this.FEED_SPOT);
+        const spot = this.sceneToWorm(this.feedSpot());
 
         // По горизонтали центрируем над ковриком ВЕСЬ силуэт, а не голову: у
         // неё разные «плечи» из-за хвоста.
@@ -1709,8 +1706,7 @@ const GluttonyMinigame = {
     // Цвет — единственное, что у кухни своё: ключ жидкости знает она, а не
     // ядро.
     streamColor(st, key) {
-        const ramp = PALETTE.kitchen[key] || PALETTE.kitchen.broth;
-        LiquidStream.color(st, ramp[500]);
+        LiquidStream.color(st, KITCHEN_ART.liquid(key)[500]);
     },
 
     // ---------- СТРУЯ КОРМЁЖКИ ----------
