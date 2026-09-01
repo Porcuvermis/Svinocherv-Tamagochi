@@ -1,0 +1,13 @@
+# Снимки прогонных тестов: их пишут tools/test-*.js, и в репозитории им делать
+# нечего. Раньше тринадцать таких png уехали в корень из-за пустого аргумента
+# с путём — отсюда и правило.
+*-lobby.png
+*-slot.png
+*-shop*.png
+*-boost.png
+*-rogue-*.png
+*-duel.png
+*-confirm.png
+*-kitchen.png
+*-fridge.png
+undefined*
