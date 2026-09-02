@@ -111,8 +111,12 @@ for o in meta['objects']:
                 cracks += 1
                 worst = max(worst, x - x0)
                 spots.append((x0, x, y))
-    crack = '' if cracks < 12 else 'ТРЕЩИНА %d строк, ширина до %.0f' % (
-        cracks, worst / s)
+    # Предмет, у которого дыра ЕСТЬ ПО ЗАМЫСЛУ — петля ручки, просветы между
+    # ветками, пролёт между ножками стола, размывка тени, — объявляет это
+    # полем `holes`. Иначе проверка на трещины ловит его насквозь и заодно
+    # прячет настоящие расхождения швов за постоянным шумом.
+    crack = '' if (cracks < 12 or o.get('holes')) else (
+        'ТРЕЩИНА %d строк, ширина до %.0f' % (cracks, worst / s))
 
     fit = 'ok' if over <= 2 else 'ВЫЛЕЗ на %.0f' % over
     want = o.get('parts', 1)
@@ -135,6 +139,81 @@ for o in meta['objects']:
                       '%.0f..%.0f / %.0f..%.0f' % (
             o['name'], gx0, gx1, gy0, gy1,
             d['x'], d['x'] + d['w'], d['y'], d['y'] + d['h']))
+
+print('\n--- СИЛУЭТЫ В СЦЕНЕ ---')
+# Силуэт предмета — то, что от него осталось видно после перекрытий.
+# Проверяются две вещи:
+#   • сколько от предмета вообще видно (нулевой силуэт = предмет рисуется
+#     зря, его целиком перекрыли);
+#   • какая доля его КОНТУРА проваливается в фон — то есть где по обе
+#     стороны границы почти один и тот же цвет. Такой контур глаз не видит,
+#     и предмет сливается с тем, что за ним.
+stack_p = pref + 'stack.png'
+if os.path.exists(stack_p):
+    full = Image.open(stack_p).convert('RGB')
+    W, H = full.size
+    fp = full.load()
+    print('%-18s %8s %8s  %s' % ('предмет', 'видно', 'контур', 'слился с фоном'))
+    for name in meta['order']:
+        pl = '%sless-%s.png' % (pref, name)
+        if not os.path.exists(pl):
+            continue
+        less = Image.open(pl).convert('RGB')
+        lp = less.load()
+        # Маска — где предмет ЗАМЕТНО меняет пиксель. Порог высокий
+        # намеренно: у собственной мягкой тени предмета край размыт, и с
+        # низким порогом мерился бы контур ТЕНИ, а не силуэт.
+        vis = [[sum(abs(a - b) for a, b in zip(fp[x, y], lp[x, y])) > 45
+                for x in range(W)] for y in range(H)]
+        area = sum(sum(1 for v in row if v) for row in vis)
+        if area == 0:
+            print('%-18s %8d %8s  ПРЕДМЕТ НЕ ВИДЕН ВОВСЕ' % (name, 0, '-'))
+            issues.append('%s: в сцене не видно вовсе' % name)
+            continue
+        # Контраст меряется ПОПЕРЁК границы: цвет внутри силуэта против цвета
+        # снаружи В СОБРАННОЙ СЦЕНЕ. Так и смотрит глаз — ему всё равно, что
+        # там было бы без предмета.
+        edge = 0
+        dim = 0
+        for y in range(1, H - 1):
+            for x in range(1, W - 1):
+                if not vis[y][x]:
+                    continue
+                out = None
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    if not vis[y + dy][x + dx]:
+                        out = (x + dx, y + dy)
+                        break
+                if out is None:
+                    continue
+                edge += 1
+                if sum(abs(a - b) for a, b in zip(fp[x, y], fp[out])) < 40:
+                    dim += 1
+        share = 100.0 * dim / edge if edge else 0
+        # Порог свой у каждого предмета: у тени и блика сливаться с фоном —
+        # работа, а не брак, и объявляется это полем `merge`.
+        want = meta.get('merge', {}).get(name, 25)
+        mark = '' if share < want else ('СЛИВАЕТСЯ %.0f%% при пороге %d' % (share, want))
+        print('%-18s %8d %8d  %s' % (name, area, edge, mark or '%.0f%%' % share))
+        if mark:
+            issues.append('%s: %.0f%% контура сливается с тем, что за ним '
+                          '(порог %d)' % (name, share, want))
+            # Карта: красным те места контура, где предмет не отличить от фона.
+            vis_im = full.copy(); vpx = vis_im.load()
+            for y in range(1, H - 1):
+                for x in range(1, W - 1):
+                    if not vis[y][x]:
+                        continue
+                    if vis[y][x-1] and vis[y][x+1] and vis[y-1][x] and vis[y+1][x]:
+                        continue
+                    out = None
+                    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        if not vis[y + dy][x + dx]:
+                            out = (x + dx, y + dy)
+                            break
+                    if out and sum(abs(a - b) for a, b in zip(fp[x, y], fp[out])) < 40:
+                        vpx[x, y] = (255, 0, 0)
+            vis_im.save('%smerge-%s.png' % (pref, name))
 
 print('\n--- ДЫРЫ В СОБРАННОЙ СЦЕНЕ ---')
 scene = Image.open(pref + 'scene.png').convert('RGB')

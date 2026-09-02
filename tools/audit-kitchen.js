@@ -41,7 +41,9 @@ const fs = require('fs');
       const box = { x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 };
       const scale = Math.min(4, Math.max(1, 620 / Math.max(box.w, box.h)));
       const size = window.show(o.draw(), box, scale);
-      return { box, scale, size, declared: b, pad, parts: o.parts || 1 };
+      return { box, scale, size, declared: b, pad, parts: o.parts || 1,
+               holes: !!o.holes,
+               merge: o.merge == null ? 25 : o.merge };
     }, name);
     await page.locator('#stage').screenshot({ path: `${out}obj-${name}.png` });
     meta.objects.push(Object.assign({ name }, info));
@@ -60,6 +62,10 @@ const fs = require('fs');
     await page.locator('#stage').screenshot({ path: `${out}step-${String(i).padStart(2, '0')}-${order[i]}.png` });
   }
   meta.order = order;
+  meta.merge = {};
+  for (const n of order) meta.merge[n] = await page.evaluate(
+      (k) => (KITCHEN_OBJECTS[k] && KITCHEN_OBJECTS[k].merge) == null ? 25
+             : KITCHEN_OBJECTS[k].merge, n);
 
   // ---------- 2а. ПЕРЕДНИЙ ПЛАН ----------
   // Доска и нож живут в координатах стейджа и в склад не входят, поэтому в
@@ -75,6 +81,24 @@ const fs = require('fs');
                k.setAttribute('transform', 'translate(300 560)'); }
   });
   await page.locator('#stage').screenshot({ path: `${out}foreground.png` });
+
+  // ---------- 2б. СИЛУЭТ КАЖДОГО ПРЕДМЕТА В СЦЕНЕ ----------
+  // Сцена рисуется дважды: целиком и БЕЗ одного предмета. Разница даёт его
+  // видимый силуэт, а заодно показывает, что за ним лежит. По этой паре
+  // считается, не проваливается ли контур в фон (audit-kitchen.py).
+  const sceneBox = { x: 0, y: -60, w: 720, h: 1560 };
+  await page.evaluate((b) => {
+      window.show((KITCHEN_OBJECTS.ORDER || [])
+          .map(k => KITCHEN_OBJECTS[k].draw()).join('\n'), b, 1);
+  }, sceneBox);
+  await page.locator('#stage').screenshot({ path: `${out}stack.png` });
+  for (const name of order) {
+    await page.evaluate(([n, b]) => {
+        window.show((KITCHEN_OBJECTS.ORDER || []).filter(k => k !== n)
+            .map(k => KITCHEN_OBJECTS[k].draw()).join('\n'), b, 1);
+    }, [name, sceneBox]);
+    await page.locator('#stage').screenshot({ path: `${out}less-${name}.png` });
+  }
 
   // ---------- 3. СОБРАННАЯ ИГРОВАЯ СЦЕНА ----------
   // Та самая разметка, что уходит в игру, — со всеми игровыми слоями.
