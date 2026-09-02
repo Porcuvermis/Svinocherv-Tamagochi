@@ -79,7 +79,9 @@ const onSurface = (name, x, baseY, surf, slack) => {
 };
 
 // Кастрюля: дно из её пути в kitchen-objects (нижняя дуга корпуса).
-onSurface('кастрюля на варочной панели', 365, 522, CT, 6);
+// Абсцисса спрашивается у гнезда, а не пишется числом: кастрюля уже однажды
+// переезжала, а проверка осталась смотреть на старое место.
+onSurface('кастрюля на варочной панели', S.pot.x, 522, CT, 6);
 
 // Бутыли: дно = центр + половина высоты тулова с учётом масштаба.
 const BOTTLE_BASE = 46;   // от нуля бутыли до её донца (kitchen-objects)
@@ -95,6 +97,34 @@ S.piles.forEach((p, i) =>
 ok('лейка крана висит над мойкой',
    S.hose.y > 400 && S.hose.y < C.back(S.hose.x) + 6 && S.hose.x > 600 && S.hose.x < 720,
    `лейка (${S.hose.x}, ${S.hose.y}), кромка столешницы ${C.back(S.hose.x).toFixed(0)}`);
+
+// ПРОДУКТЫ НА ПОЛКАХ ХОЛОДИЛЬНИКА. Полка — линия, уходящая в точку схода
+// шкафа, и продукт обязан стоять на СТЕКЛЕ этой линии, а не на высоте,
+// подобранной для середины полки. Проверяется в трёх точках: с постоянным y
+// левый продукт висел над стеклом на семь десятков экранных точек, а правый
+// стоял на нём — на одной и той же полке.
+{
+    const SH = KO.fridgeShelves, PLATE = KO.SHELF_PLATE;
+    // Подошва ниже гнезда на столько: общая для всех продуктов линия низа
+    // (ART.FOOD_SOLE), сжатая общим ITEM и масштабом продукта на полке.
+    const SHELF_SCALE = 0.52;                  // база из gluttony.js
+    const sole = ART.FOOD_SOLE * ART.ITEM * SHELF_SCALE;
+    for (const type of ['meat', 'veg', 'spice']) {
+        for (const x of [S.shelf.x0, S.shelf.cx, S.shelf.x1]) {
+            const glass = SH[type] - PLATE
+                + KO.fridgeSlope(S.shelfAnchorX, SH[type]) * (x - S.shelfAnchorX);
+            const foot = ART.shelfLineY(type, x) + sole;
+            ok(`полка «${type}»: продукт на стекле при x=${x}`,
+               Math.abs(foot - glass) < 4,
+               `подошва ${foot.toFixed(0)}, стекло ${glass.toFixed(0)}`);
+        }
+    }
+    const fz = SH.freezer - PLATE
+        + KO.fridgeSlope(S.shelfAnchorX, SH.freezer) * (S.freezer.x - S.shelfAnchorX);
+    ok('пищеблок на полке морозилки',
+       Math.abs(S.freezer.y + sole - fz) < 4,
+       `подошва ${(S.freezer.y + sole).toFixed(0)}, стекло ${fz.toFixed(0)}`);
+}
 
 // Ложка: чаша должна быть В горловине кастрюле, а не над ней и не под.
 ok('ложка в горловине кастрюли',
@@ -146,9 +176,20 @@ const visible = (name, pt, focus) => {
     ok(name, p.x > M && p.x < 390 - M && p.y > M && p.y < 844 - M,
        `экран (${p.x.toFixed(0)}, ${p.y.toFixed(0)})`);
 };
-['meat', 'veg', 'spice'].forEach(t =>
+// Проверяется и ЦИФРА остатка: она висит под продуктом и уезжает за край
+// или под доску переднего плана раньше, чем сам продукт.
+const SHELF_SCALE = 0.52;
+const countAt = (t, x) => ({ x: x === undefined ? S.shelf.cx : x,
+                             y: ART.shelfLineY(t, x === undefined ? S.shelf.cx : x)
+                                + ART.COUNT_DY * SHELF_SCALE });
+['meat', 'veg', 'spice'].forEach(t => {
     visible(`полка ${t} видна в кадре холодильника`,
-            { x: S.shelf.cx, y: S.shelfY[t] }, 'fridge'));
+            { x: S.shelf.cx, y: S.shelfY[t] }, 'fridge');
+    // Оба конца полки: она наклонная, и левый её край на два десятка единиц
+    // ниже правого. Проверять один конец — значит не проверять ничего.
+    visible(`цифра остатка слева на полке ${t} видна`, countAt(t, S.shelf.x0), 'fridge');
+    visible(`цифра остатка справа на полке ${t} видна`, countAt(t, S.shelf.x1), 'fridge');
+});
 visible('морозилка видна в кадре холодильника', S.freezer, 'fridge');
 visible('кастрюля видна в кадре плиты', S.pot, 'stove');
 S.bottles.forEach((b, i) => visible(`бутыль ${i + 1} видна в кадре плиты`, b, 'stove'));
@@ -172,6 +213,13 @@ const notUnderBoard = (name, pt, focus, pos) => {
     notUnderBoard(`полка ${t} не за доской`,
                   { x: S.shelf.cx, y: S.shelfY[t] }, 'fridge', ART.FG.board.fridge));
 notUnderBoard('морозилка не за доской', S.freezer, 'fridge', ART.FG.board.fridge);
+// Из двух концов наклонной полки под доску первым уходит ЛЕВЫЙ: он ниже.
+['meat', 'veg', 'spice'].forEach(t => {
+    notUnderBoard(`цифра остатка слева на полке ${t} не за доской`,
+                  countAt(t, S.shelf.x0), 'fridge', ART.FG.board.fridge);
+    notUnderBoard(`цифра остатка справа на полке ${t} не за доской`,
+                  countAt(t, S.shelf.x1), 'fridge', ART.FG.board.fridge);
+});
 
 // --------------------------------------------------------- 5. ОПОРА ДОСКИ
 // При нарезке доска обязана лежать НА СТОЛЕ — всеми четырьмя углами внутри

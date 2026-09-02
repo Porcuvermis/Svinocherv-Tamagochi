@@ -547,7 +547,10 @@ const GluttonyMinigame = {
             const scale = 0.52 * Math.min(1, step ? step / L.tight : 1);
             const startX = L.cx - step * (keys.length - 1) / 2;
             keys.forEach((key, i) => {
-                put(key, { x: Math.round(startX + step * i), y: S.shelfY[type] }, scale);
+                const x = Math.round(startX + step * i);
+                // Высота берётся у ЛИНИИ полки, а не у одного числа: полка
+                // уходит в точку схода, и продукты идут по ней.
+                put(key, { x, y: Math.round(KITCHEN_ART.shelfLineY(type, x)) }, scale);
             });
         });
 
@@ -574,7 +577,7 @@ const GluttonyMinigame = {
             label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             label.setAttribute('class', 'kt-count');
             label.setAttribute('x', '0');
-            label.setAttribute('y', '82');
+            label.setAttribute('y', String(KITCHEN_ART.COUNT_DY));
             g.appendChild(label);
         }
         label.textContent = n;
