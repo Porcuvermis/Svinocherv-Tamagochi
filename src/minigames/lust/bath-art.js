@@ -54,9 +54,9 @@ const BATH_ART = {
         // и мочалку берут оттуда.
         body:     { x: 60, y: 300, w: 620, h: 620 },
         // Хвост всплывает у ближнего борта.
-        tail:     { x: 150, y: 520, w: 440, h: 420 },
+        tail:     { x: 110, y: 470, w: 510, h: 440 },
         // Финал: голова червя и хвост одновременно.
-        finish:   { x: 90, y: 470, w: 560, h: 480 }
+        finish:   { x: 110, y: 470, w: 510, h: 440 }
     },
 
     // ---------- ГНЁЗДА ----------
@@ -121,7 +121,19 @@ const BATH_ART = {
         ${this.smudgeDefs()}
         <g id="bt-film"></g>
         <g id="bt-foam"></g>
+
+        <!-- Хвост финала — ПОВЕРХ воды. Под водой он выглядит правильнее
+             (основание уходит под поверхность), но в покое тонет в ней
+             целиком, а на прицеле ложится ровно по линии воды и пропадает:
+             весь финал играется вслепую. Стык с водой держит тень в
+             основании — она и говорит, что хвост оттуда торчит. -->
+        <g id="bt-tail" opacity="0"></g>
+
+        <!-- Пузыри, струи и шкала — поверх всего: их трогают пальцем. -->
         <g id="bt-bubbles"></g>
+        <g id="bt-shots"></g>
+        <g id="bt-gauge"></g>
+        <g id="bt-spot"></g>
         `;
     },
 
@@ -179,12 +191,127 @@ const BATH_ART = {
                 <stop offset="0.55" stop-color="${c[500]}" stop-opacity="${a2}"/>
                 <stop offset="1"   stop-color="${c[500]}" stop-opacity="0"/>
             </radialGradient>`;
-        return `<defs>${one('bt-grad-soap', p.soapFilm, 0.55, 0.32)}`
-             + `${one('bt-grad-cloth', p.foam, 0.8, 0.5)}</defs>`;
+        // Прозрачность НИЗКАЯ нарочно: пятна ложатся сотнями и внахлёст,
+        // и та, что выглядит правильной на одном мазке, за проход собирается
+        // в сплошное белое поле — червя под ним не видно вовсе.
+        return `<defs>${one('bt-grad-soap', p.soapFilm, 0.3, 0.16)}`
+             + `${one('bt-grad-cloth', p.foam, 0.42, 0.22)}</defs>`;
     },
 
     smudge(x, y, r, kind) {
         return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"
                         fill="url(#bt-grad-${kind === 'cloth' ? 'cloth' : 'soap'})"/>`;
+    },
+
+    // ---------- ХВОСТ ФИНАЛА ----------
+    // Отдельная сущность, не привязанная к скелету (docs/plan/21-lust-bath.md,
+    // раздел 2). Так не от лени: в финале червь лежит головой у дальнего
+    // борта, а хвост всплывает у ближнего — привязанный к телу хвост в такую
+    // раскладку не встаёт, он растёт из левого конца туловища.
+    //
+    // От модели наследуется ТОЛЬКО оттенок: цвет хвоста обязан меняться
+    // вместе с червём. Долг записан там же — когда червь начнёт взрослеть,
+    // хвост за ним не изменится.
+    //
+    // Рисуется остриём ВВЕРХ из нуля группы: направление задаёт поворот
+    // группы, и угол в игре считается по обычной тригонометрии, без поправок
+    // на то, куда смотрит картинка.
+    TAIL: { len: 168, base: 58 },
+
+    tail(model) {
+        const T = this.TAIL;
+        const m = (model && model.tail) || {};
+        // Оттенок берётся у ПРЕДХВОСТОВОГО сегмента тела, а не у собственного
+        // хвоста модели: тот покрашен в самую тёмную ступень мяса, и хвост
+        // такого размера читался тёмным клинком, а не частью червя. Оттенок
+        // особи при этом наследуется — он у всех сегментов один.
+        const seg = (model && model.growingSegments && model.growingSegments[0])
+                 || (model && model.belly) || null;
+        const fill = (seg && seg.fill) || m.fill || PALETTE.flesh[700];
+        const ink = (seg && seg.stroke) || m.stroke || PALETTE.ink;
+        const b = T.base / 2, L = T.len;
+        // Силуэт со ЗМЕЙКОЙ, а не прямой клин: клин читается плавником, и
+        // первая версия так и выглядела. Кончик уводится вбок, бока идут
+        // разными дугами — тогда форма живая и видно, что она гнётся.
+        const d = `M${-b} 10
+                   C${-b - 4} ${-L * 0.3} ${-b * 0.5} ${-L * 0.62} ${-b * 0.24} ${-L * 0.86}
+                   C${-b * 0.16} ${-L * 0.96} ${b * 0.06} ${-L} ${b * 0.14} ${-L * 0.95}
+                   C${b * 0.5} ${-L * 0.7} ${b * 0.86} ${-L * 0.36} ${b} 10 Z`;
+        return `
+        <path d="${d}" fill="${fill}" stroke="${ink}" stroke-width="3"
+              stroke-linejoin="round"/>
+        <!-- Влажный бок: хвост только что вынули из воды. Блик УЗКИЙ и вдоль
+             формы — широкое пятно читается дырой в теле. -->
+        <path d="M${-b * 0.4} ${-L * 0.1} C${-b * 0.48} ${-L * 0.4}
+                 ${-b * 0.3} ${-L * 0.62} ${-b * 0.12} ${-L * 0.8}"
+              fill="none" stroke="${PALETTE.flesh[100]}" stroke-width="7"
+              stroke-linecap="round" opacity="0.42"/>
+        <!-- Основание уходит в воду: тёмная тень по нижнему краю не даёт
+             хвосту читаться приклеенным к поверхности. -->
+        <ellipse cx="0" cy="8" rx="${b * 1.05}" ry="9"
+                 fill="${ink}" opacity="0.28"/>`;
+    },
+
+    // ---------- ПУЗЫРИ ПЕНЫ ----------
+    // Пузырь читается пузырём по БЛИКУ, а не по кружку: без блика это пятно
+    // той же пены, и лопать его незачем.
+    bubble(x, y, r, seed) {
+        const f = btPal().foam;
+        const rng = btRng(seed);
+        const ox = (rng() - 0.5) * r * 0.5, oy = -r * (0.28 + rng() * 0.14);
+        return `<g class="bt-bubble" data-r="${r.toFixed(1)}"
+                   data-x="${x.toFixed(1)}" data-y="${y.toFixed(1)}">
+            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"
+                    fill="${f[500]}" fill-opacity="0.52"
+                    stroke="${f.rim}" stroke-width="2"/>
+            <circle cx="${(x + ox).toFixed(1)}" cy="${(y + oy).toFixed(1)}"
+                    r="${(r * 0.3).toFixed(1)}" fill="${f.hi}" opacity="0.85"/>
+        </g>`;
+    },
+
+    // ---------- СТРУЯ ТОЛЧКА ----------
+    // Капли, а не линия: линия читается лучом, а тут летит жидкость. Длина —
+    // насколько толчок долетел, поэтому недолёт видно сразу и без подписи.
+    shot(x, y, angle, len, seed) {
+        const w = btPal().water, rng = btRng(seed);
+        const n = Math.max(3, Math.round(len / 26));
+        const out = [];
+        for (let i = 1; i <= n; i++) {
+            const t = i / n;
+            const side = (rng() - 0.5) * 12 * t;
+            const px = x + Math.cos(angle) * len * t - Math.sin(angle) * side;
+            const py = y + Math.sin(angle) * len * t + Math.cos(angle) * side;
+            out.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}"
+                              r="${(9 - 4 * t).toFixed(1)}" fill="${w.surfHi}"
+                              opacity="${(0.9 - 0.5 * t).toFixed(2)}"/>`);
+        }
+        return out.join('');
+    },
+
+    // ---------- ШКАЛА ФИНАЛА ----------
+    // Три секции, и ни одной буквы: сколько налито — столько и горит
+    // (инвариант 9). Наполняется снизу вверх, как всё, что наливают.
+    gauge(x, y, sections, filled) {
+        const p = btPal(), h = 34, gap = 7, w = 26;
+        const out = [];
+        for (let i = 0; i < sections; i++) {
+            const cy = y - i * (h + gap);
+            const on = i < filled;
+            out.push(`<rect x="${(x - w / 2).toFixed(1)}" y="${(cy - h).toFixed(1)}"
+                            width="${w}" height="${h}" rx="7"
+                            fill="${on ? p.water.surfHi : p.shadow}"
+                            fill-opacity="${on ? 0.95 : 0.35}"
+                            stroke="${p.foam.rim}" stroke-width="2"/>`);
+        }
+        return out.join('');
+    },
+
+    // ---------- УКАЗАТЕЛЬ НЕПОКРЫТОГО ----------
+    // Порог 92% без подсказки превращается в поиск пикселя: игрок водит и не
+    // понимает, почему этап не кончается (план, §1).
+    spot(x, y, r) {
+        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}"
+                        fill="none" stroke="${btPal().foam.hi}" stroke-width="4"
+                        opacity="0.9"/>`;
     }
 };

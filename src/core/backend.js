@@ -122,6 +122,22 @@ const LocalBackend = {
             GameState.data.digestion.poop_size = dish.poop;
         }
 
+        // ---------- НАГРАДА ПО ЧИСЛУ ИЗ meta ----------
+        // Мини-игра сообщает, НАСКОЛЬКО хорошо сыграно (ванная — сколько
+        // секций шкалы заполнено), а сколько за это дать, решает эта запись.
+        // Число из meta берётся как множитель, а не как готовая награда:
+        // иначе мини-игра снова начисляла бы себе сама (инвариант 2).
+        if (reward.perMeta && reward.perMeta.currency) {
+            const raw = (request.meta || {})[reward.perMeta.field];
+            const n = Math.max(0, Math.floor(Number(raw) || 0));
+            const capped = reward.perMeta.max ? Math.min(n, reward.perMeta.max) : n;
+            if (capped > 0) {
+                this.award(awarded, reward.perMeta.currency,
+                    capped * (reward.perMeta.per || 1),
+                    reason + '.' + reward.perMeta.field, requestId);
+            }
+        }
+
         // ---------- НАГРАДА ЗА КАЖДЫЙ N-Й ИСХОД ----------
         // «Осколок за каждые три поражения». Счётчик накопительный: три
         // поражения за неделю тоже должны сложиться в осколок.
