@@ -200,7 +200,7 @@
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=21" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=2" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=9" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/pride/pride.css?v=6" media="print" onload="this.media='all'">
@@ -605,46 +605,34 @@
         </div>
     </div>
 
-    <div id="lust-game" class="minigame-screen">
-        <div class="lust-modal">
-            <button id="lust-close-btn" class="lust-close-btn">&times;</button>
-            <div class="lust-header">ПОХОТЬ</div>
+    <!-- ПОХОТЬ: ВАННАЯ.
+         Окно (рамка, крестик, вопрос при выходе) надевает
+         src/core/minigame-window.js — здесь только содержимое (инвариант 8).
+         Предметы комнаты приходят из ЗАПЕЧЁННОГО
+         (src/minigames/lust/bath-baked.js), который сгенерирован из 3д-моделей
+         и лежит в репозитории готовым: three.js в рантайм не попадает
+         (docs/bake-3d.md).
 
-            <div class="lust-scene">
-                <svg class="lust-worm" id="lust-worm-svg" viewBox="0 0 300 400">
-                    <ellipse cx="190" cy="330" rx="70" ry="55" fill="#f2b8d6"/>
-                    <ellipse cx="185" cy="255" rx="78" ry="60" fill="#f2b8d6"/>
-                    <circle cx="190" cy="150" r="95" fill="#f2b8d6"/>
-
-                    <ellipse cx="150" cy="140" rx="26" ry="16" fill="#fff"/>
-                    <circle id="lust-pupil-left" cx="150" cy="140" r="10" fill="#2a2a2a"/>
-                    <ellipse cx="225" cy="140" rx="26" ry="16" fill="#fff"/>
-                    <circle id="lust-pupil-right" cx="225" cy="140" r="10" fill="#2a2a2a"/>
-
-                    <path d="M150 190 Q190 215 230 188" stroke="#d68fb0" stroke-width="5" fill="none" stroke-linecap="round"/>
-
-                    <rect id="lust-lid-left" x="122" y="118" width="56" height="0" fill="#f2b8d6"/>
-                    <rect id="lust-lid-right" x="197" y="118" width="56" height="0" fill="#f2b8d6"/>
-                </svg>
-
-                <div class="lust-tail-zone" id="lust-tail-zone">
-                    <div class="lust-tail" id="lust-tail"></div>
-                </div>
-
-                <div class="lust-splash-layer" id="lust-splash-layer"></div>
-
-                <div class="lust-win-overlay" id="lust-win-overlay">
-                    <div class="lust-win-text">Нагрешил!</div>
-                </div>
-
-                <div class="lust-debug-layer" id="lust-debug-layer"></div>
-            </div>
-
-            <div class="lust-gauge-wrap">
-                <div class="lust-gauge-bar" id="lust-gauge-bar"></div>
-            </div>
-            <div class="lust-footer" id="lust-footer">СВАЙПАЙ ХВОСТ ВВЕРХ-ВНИЗ</div>
-        </div>
+         Холстов ДВА, и между ними — слой червя. Рендерер персонажа монтирует
+         свой собственный svg в html-контейнер, вложить его в группу сцены
+         нельзя; значит комната разрезана там, где должен быть червь — по
+         поверхности воды. Иначе он плавает поверх неё, а не лежит в ней. -->
+    <div id="lust-game" class="minigame-screen" data-sin="lust">
+        <svg id="bt-back" class="bt-svg" viewBox="0 0 390 844"
+             preserveAspectRatio="xMidYMid slice">
+            <!-- Комната и чаша: координаты сцены, по ней ездит камера. -->
+            <g id="bt-cam-back"></g>
+        </svg>
+        <!-- Червь: общая моделька игрока, своего рисунка у ванной нет. -->
+        <div id="bt-worm" class="bt-worm-host"></div>
+        <svg id="bt-svg" class="bt-svg" viewBox="0 0 390 844"
+             preserveAspectRatio="xMidYMid slice">
+            <!-- Вода и следы на теле — поверх червя, той же камерой. -->
+            <g id="bt-cam"></g>
+            <!-- Передний план: предмет в руке в координатах ЭКРАНА. Его
+                 держат перед собой, поэтому он не уезжает вместе с комнатой. -->
+            <g id="bt-fg"></g>
+        </svg>
     </div>
 
     <!-- ЧРЕВОУГОДИЕ: КУХНЯ.
@@ -793,7 +781,11 @@
 <script src="src/minigames/sloth/garden-art.js?v=2"></script>
 <script src="src/minigames/sloth/garden-debug.js?v=1"></script>
 <script src="src/minigames/sloth/sloth.js?v=8"></script>
-<script src="src/minigames/lust/lust.js?v=3"></script>
+<!-- Запечённая графика ванной: сгенерирована из 3д-моделей
+     (tools/bake-3d.js), в рантайме это обычный SVG. -->
+<script src="src/minigames/lust/bath-baked.js?v=1"></script>
+<script src="src/minigames/lust/bath-art.js?v=2"></script>
+<script src="src/minigames/lust/lust.js?v=4"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->
 <script src="src/minigames/gluttony/kitchen-objects.js?v=1"></script>

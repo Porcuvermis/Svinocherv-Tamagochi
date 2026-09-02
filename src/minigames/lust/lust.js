@@ -1,447 +1,422 @@
-// ================= МОДУЛЬ МИНИ-ИГРЫ ГРЕХ ПОХОТИ =================
+// ================= МИНИ-ИГРА ГРЕХ ПОХОТИ: ВАННАЯ =================
+// Замысел — docs/plan/21-lust-bath.md. Червь лежит в ванне, игрок его моет.
+//
+// ---------- ХОД ЗАБЕГА ----------
+//   кран → вода → мыло (широкие мазки) → мочалка (короткие тёрки)
+//        → хвост → пузыри → финал на меткость
+//
+// Сделаны первые три ступени; остальные идут следом и уже описаны в плане.
+//
+// ---------- ЧТО ЗДЕСЬ НЕ ЖИВЁТ ----------
+// Ни одного числа раскладки. Гнёзда приходят из ЯКОРЕЙ запекания
+// (BATH_ART.slots()) — точек мира, спроецированных той же камерой, что и
+// предметы. Разъехаться с картинкой они не могут по построению. Числа
+// баланса — в ECONOMY.minigames.lust.
+//
+// ---------- ПОЧЕМУ ДВА РАЗНЫХ ДВИЖЕНИЯ ----------
+// Мыло и мочалка механически похожи: и там, и там водишь пальцем по телу.
+// Оставить их одинаковыми — значит заставить игрока сделать одно и то же
+// дважды подряд. Поэтому мыло — ШИРОКИЕ МАЗКИ (красит проходом), мочалка —
+// КОРОТКИЕ ТЁРКИ НА МЕСТЕ (клетка засчитывается с третьего раза).
 const LustMinigame = {
     screenElement: null,
-    closeBtn: null,
-    tailZone: null,
-    tailEl: null,
-    tailPath: null,
-    tailTipMarker: null,
-    gaugeBar: null,
-    winOverlay: null,
-    splashLayer: null,
-    wormSvg: null,
-    lidLeft: null,
-    lidRight: null,
-    pupilLeft: null,
-    pupilRight: null,
-    debugLayer: null,
+    win: null,
+    svgEl: null,        // передний холст: вода, следы, предмет в руке
+    backEl: null,       // задний холст: комната и чаша
+    camEl: null,
+    camBackEl: null,
+    fgEl: null,
+    wormHost: null,
+    wormHandle: null,
 
-    // Настройки геймплея
-    SWING_GAIN: 5,      // % за одну засчитанную "качель" (20 качелей = 100%)
-    IDLE_DELAY: 1200,   // мс бездействия до начала падения шкалы
-    DECAY_PER_SEC: 4,   // %/сек падения при простое
-    WAVE_COUNT: 4,      // число залпов брызг
-    WAVE_GAP: 1500,     // мс между залпами (итог ~6 сек)
+    // Ступени забега. Держатся строкой, а не числом: в отладке видно, где ты.
+    phase: 'idle',      // idle → filling → soap → cloth → done
+    drag: null,
+    fillRaf: 0,
+    level: 0,           // 0..1, насколько налито
 
-    // Состояние
-    progress: 0,
-    pos: 0.5,           // текущее (зажатое 0..1) положение фейдера
-    atTop: false,       // фейдер сейчас физически упёрся в верхнюю точку
-    atBottom: false,    // фейдер сейчас физически упёрся в нижнюю точку
-    lastExtreme: null,  // 'top' | 'bottom' | null — какая точка сработала последней
-    dragging: false,
-    dragRect: null,     // геометрия РЕАЛЬНОГО хвоста, зафиксированная на старте драга
-    finished: false,
-    lastMoveTime: 0,
-    lastTick: null,
-    rafId: null,
-    waveTimeouts: [],
+    // Покрытие тела считается по КЛЕТКАМ, а не по пикселям: требование
+    // «закрась всё» упирается в пару незакрашенных точек, и игрок не
+    // понимает, почему этап не кончается (план, §1).
+    GRID: { nx: 14, ny: 9 },
+    cells: null,
+    covered: 0,
+    _cover: null,      // габарит червя в сцене, посчитанный по нарисованному
 
-    TAIL_SVG: `
-        <svg viewBox="0 0 120 260" preserveAspectRatio="xMidYMax meet">
-            <defs>
-                <linearGradient id="lust-tail-grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#ffd6ec"/>
-                    <stop offset="45%" stop-color="#ff9fd0"/>
-                    <stop offset="100%" stop-color="#ef6bae"/>
-                </linearGradient>
-                <radialGradient id="lust-shine-grad" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.85"/>
-                    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-                </radialGradient>
-                <clipPath id="lust-tail-clip">
-                    <use href="#lust-tail-path"/>
-                </clipPath>
-            </defs>
-            <path id="lust-tail-path"
-                  d="M60,10
-                     C42,10 34,34 36,64
-                     C38,100 30,140 28,178
-                     C26,210 32,238 44,250
-                     C50,256 70,256 76,250
-                     C88,238 94,210 92,178
-                     C90,140 82,100 84,64
-                     C86,34 78,10 60,10 Z"
-                  fill="url(#lust-tail-grad)"
-                  stroke="#e0559e"
-                  stroke-width="4"
-                  stroke-linejoin="round"/>
-            <ellipse cx="46" cy="52" rx="9" ry="24" fill="#ffffff" opacity="0.28" transform="rotate(-12 46 52)"/>
-            <g clip-path="url(#lust-tail-clip)">
-                <ellipse cx="60" cy="20" rx="60" ry="26" fill="url(#lust-shine-grad)">
-                    <animate attributeName="cy" values="20;238;20" dur="2.6s" repeatCount="indefinite"/>
-                </ellipse>
-            </g>
-            <circle id="lust-tail-tip-dot" cx="60" cy="12" r="1" fill="none" opacity="0"/>
-        </svg>
-    `,
+    cfg() {
+        return (typeof ECONOMY !== 'undefined' && ECONOMY.minigames
+                && ECONOMY.minigames.lust) || {};
+    },
 
+    // ---------- ЖИЗНЕННЫЙ ЦИКЛ ----------
     init() {
         this.screenElement = document.getElementById('lust-game');
-        this.closeBtn = document.getElementById('lust-close-btn');
-        this.tailZone = document.getElementById('lust-tail-zone');
-        this.tailEl = document.getElementById('lust-tail');
-        this.gaugeBar = document.getElementById('lust-gauge-bar');
-        this.winOverlay = document.getElementById('lust-win-overlay');
-        this.splashLayer = document.getElementById('lust-splash-layer');
-        this.wormSvg = document.getElementById('lust-worm-svg');
-        this.lidLeft = document.getElementById('lust-lid-left');
-        this.lidRight = document.getElementById('lust-lid-right');
-        this.pupilLeft = document.getElementById('lust-pupil-left');
-        this.pupilRight = document.getElementById('lust-pupil-right');
-        this.debugLayer = document.getElementById('lust-debug-layer');
+        if (!this.screenElement) return;
 
-        if (this.tailEl) {
-            this.tailEl.innerHTML = this.TAIL_SVG;
-            this.tailTipMarker = this.tailEl.querySelector('#lust-tail-tip-dot');
-            this.tailPath = this.tailEl.querySelector('#lust-tail-path');
-
-            // Слушатели теперь висят строго на самом <path> хвоста.
-            // Благодаря pointer-events:auto именно на path (а не на div/svg),
-            // хит-тест идёт по реальной закрашенной форме, а не по
-            // прямоугольному bbox, который был заметно больше видимого хвоста.
-            if (this.tailPath) {
-                this.tailPath.addEventListener('pointerdown', (e) => this.startDrag(e));
-                this.tailPath.addEventListener('pointermove', (e) => this.onMove(e));
-                this.tailPath.addEventListener('pointerup', (e) => this.onUp(e));
-                this.tailPath.addEventListener('pointercancel', (e) => this.onUp(e));
-            }
+        if (typeof MinigameWindow !== 'undefined') {
+            this.win = MinigameWindow.attach(this.screenElement, {
+                sin: 'lust',
+                onLeave: () => this.close(),
+                // Спрашивать не о чем, пока вода не включена: забег ещё не
+                // начинался и терять нечего.
+                canLeave: () => this.phase === 'idle' || this.phase === 'done'
+            });
         }
 
-        if (this.closeBtn) {
-            this.closeBtn.onclick = (e) => { e.stopPropagation(); this.close(); };
-        }
+        this.svgEl = document.getElementById('bt-svg');
+        this.backEl = document.getElementById('bt-back');
+        this.camEl = document.getElementById('bt-cam');
+        this.camBackEl = document.getElementById('bt-cam-back');
+        this.fgEl = document.getElementById('bt-fg');
+        this.wormHost = document.getElementById('bt-worm');
+        if (!this.svgEl || !this.backEl) return;
+
+        this.camBackEl.innerHTML = BATH_ART.sceneBack();
+        this.camEl.innerHTML = BATH_ART.sceneFront();
+
+        this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
+        window.addEventListener('pointermove', (e) => this.onMove(e));
+        window.addEventListener('pointerup', () => this.onUp());
+        window.addEventListener('pointercancel', () => this.onUp());
     },
 
     open() {
         if (!this.screenElement) this.init();
+        if (!this.screenElement || !this.svgEl) return;
         this.screenElement.classList.add('active');
-        this.resetState();
-        if (!this.rafId) this.rafId = requestAnimationFrame((t) => this.tick(t));
+        if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
+
+        this.phase = 'idle';
+        this.level = 0;
+        this.drag = null;
+        this.resetCover();
+        this.el('bt-film').innerHTML = '';
+        this.el('bt-film').style.opacity = '1';
+        this.el('bt-foam').innerHTML = '';
+        this.el('bt-bubbles').innerHTML = '';
+        this.el('bt-jet').innerHTML = BATH_ART.jet();
+        this.setOpacity('bt-jet', 0);
+        this.setOpacity('bt-water', 0);
+        this.fgEl.innerHTML = '';
+        this.showTools(true);
+        this.ready('faucet');
+
+        // Камера ПЕРЕД монтажом: она выставляет холст червя, а рендерер
+        // меряет его размер один раз, при монтаже.
+        this.setCamera('overview', true);
+        this.mountWorm();
     },
 
     close() {
-        if (this.screenElement) this.screenElement.classList.remove('active');
-        if (this.rafId) { cancelAnimationFrame(this.rafId); this.rafId = null; }
-        this.lastTick = null;
-        this.clearWaves();
+        this.screenElement.classList.remove('active');
+        if (this.fillRaf) { cancelAnimationFrame(this.fillRaf); this.fillRaf = 0; }
+        this.drag = null;
+        this.fgEl.innerHTML = '';
+        if (typeof MinigameWindow !== 'undefined') {
+            MinigameWindow.resumeRoom();
+            MinigameWindow.restoreHud();
+        }
+        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
     },
 
-    clearWaves() {
-        this.waveTimeouts.forEach(id => clearTimeout(id));
-        this.waveTimeouts = [];
+    // ---------- МЕЛОЧИ ----------
+    el(id) { return document.getElementById(id); },
+    setOpacity(id, v) { const n = this.el(id); if (n) n.style.opacity = String(v); },
+
+    // Что сейчас трогать. Подсказка без слов и без указателя: нужная вещь
+    // дышит, остальные стоят смирно (инвариант 9).
+    ready(what) {
+        for (const [key, id] of [['faucet', 'bt-faucet'],
+                                 ['soap', 'bt-soap-home'],
+                                 ['cloth', 'bt-cloth-home']]) {
+            const n = this.el(id);
+            if (n) n.classList.toggle('bt-ready', key === what);
+        }
     },
 
-    resetState() {
-        this.progress = 0;
-        this.pos = 0.5;
-        this.atTop = false;
-        this.atBottom = false;
-        this.lastExtreme = null;
-        this.dragging = false;
-        this.dragRect = null;
-        this.finished = false;
-        this.lastMoveTime = performance.now();
-        this.lastTick = null;
-        this.clearWaves();
-
-        if (this.splashLayer) this.splashLayer.innerHTML = '';
-        if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
-
-        this.updateGauge();
-        this.applyPos(0.5);
+    // ---------- КАМЕРА ----------
+    // Ровно та же формула, что на кухне: наезд — это crop и zoom одной
+    // картинки, а не движение камеры в пространстве. На этом же свойстве
+    // держится запекание (docs/bake-3d.md).
+    //
+    // Едут ОБЕ группы, одним и тем же преобразованием: комната и вода лежат
+    // на разных холстах, и разъехаться им нельзя.
+    setCamera(name, instant) {
+        const f = BATH_ART.FOCUS[name] || BATH_ART.FOCUS.overview;
+        const s = Math.min(390 / f.w, 844 / f.h);
+        const tx = 195 - s * (f.x + f.w / 2);
+        const ty = 422 - s * (f.y + f.h / 2);
+        const t = `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})`;
+        for (const g of [this.camEl, this.camBackEl]) {
+            if (instant) g.style.transition = 'none';
+            g.setAttribute('transform', t);
+            if (instant) { void g.getBoundingClientRect(); g.style.transition = ''; }
+        }
+        this.layoutWorm();
     },
 
-    // ---------- ЦИКЛ ПРОСТОЯ / ПАДЕНИЯ ШКАЛЫ ----------
-    tick(now) {
-        if (!this.lastTick) this.lastTick = now;
-        const dt = (now - this.lastTick) / 1000;
-        this.lastTick = now;
+    // ---------- ПЕРЕВОД КООРДИНАТ ----------
+    // Через getScreenCTM, а не делением на ширину: ванная вписана в рамку
+    // окна с ОБРЕЗКОЙ (slice), поэтому единицы svg и пиксели зависят от
+    // формы окна, а весь холст ещё и отмасштабирован (docs/traps.md).
+    fromScreen(x, y, node) {
+        const m = node.getScreenCTM();
+        if (!m) return { x: 0, y: 0 };
+        const pt = this.svgEl.createSVGPoint();
+        pt.x = x; pt.y = y;
+        const p = pt.matrixTransform(m.inverse());
+        return { x: p.x, y: p.y };
+    },
 
-        if (!this.finished && !this.dragging) {
-            const idleFor = now - this.lastMoveTime;
-            if (idleFor > this.IDLE_DELAY && this.progress > 0) {
-                this.progress = Math.max(0, this.progress - this.DECAY_PER_SEC * dt);
-                this.updateGauge();
+    // Экран → координаты СЦЕНЫ (всё, что внутри камеры).
+    toScene(e) { return this.fromScreen(e.clientX, e.clientY, this.camEl); },
+    // Экран → координаты ХОЛСТА (передний план: предмет в руке).
+    toStage(e) { return this.fromScreen(e.clientX, e.clientY, this.svgEl); },
+
+    // Точка сцены → пиксели слоя червя. Тот же приём, что на кухне.
+    sceneToHost(pt) {
+        const m = this.camEl.getScreenCTM();
+        const host = this.wormHost;
+        if (!m || !host || !host.offsetParent) return { x: 0, y: 0, k: 1 };
+        const r = host.offsetParent.getBoundingClientRect();
+        const k = (r.width / (host.offsetParent.clientWidth || r.width)) || 1;
+        const p = this.svgEl.createSVGPoint();
+        p.x = pt.x; p.y = pt.y;
+        const s = p.matrixTransform(m);
+        return { x: (s.x - r.left) / k, y: (s.y - r.top) / k };
+    },
+
+    // ---------- ЧЕРВЬ ----------
+    mountWorm() {
+        if (!window.WormModelAPI || !window.WormRenderer || !this.wormHost) return;
+        if (!this.wormHandle) {
+            const model = window.WormModelAPI.loadWormModel();
+            this.wormHandle = window.WormRenderer.mount(this.wormHost, model, {
+                context: 'lust',
+                // Лёжа: червь в ванне, а не стоит в ней.
+                pose: 'lying',
+                wander: false,
+                blink: true,
+                idleWave: true
+            });
+        } else {
+            this.wormHandle.update(window.WormModelAPI.loadWormModel());
+        }
+        this._cover = null;
+        this.layoutWorm();
+    },
+
+    // Слой червя ездит вместе с камерой ОДНОЙ ТРАНСФОРМАЦИЕЙ, а размер
+    // контейнера при этом НЕ меняется никогда. Так нарочно: рендерер
+    // персонажа ставит себе viewBox по clientWidth контейнера и пересчитывает
+    // его только по window.resize, которого при наезде камеры нет. Меняли бы
+    // размер — червь остался бы со старым viewBox, и его единицы разъехались
+    // бы с пикселями (первый вариант так и промахнулся: пена ложилась выше
+    // тела на треть его роста).
+    //
+    // Поэтому холст червя — постоянные 300×150, а нужный размер в сцене
+    // делает scale в transform.
+    WORM_BASE: { w: 300, h: 150 },
+
+    // Куда этот холст ложится в сцене. Ширина выведена из габарита ВОДЫ:
+    // червь лежит в чаше и шире её быть не может.
+    wormBoxScene() {
+        const A = BATH_ART.slots(), b = BATH_ART.box('water') || { w: 571 };
+        const w = b.w * 0.82, h = w * this.WORM_BASE.h / this.WORM_BASE.w;
+        return { x: A.worm.x - w / 2, y: A.worm.y - h * 0.55, w, h };
+    },
+
+    layoutWorm() {
+        if (!this.wormHost) return;
+        const box = this.wormBoxScene(), B = this.WORM_BASE;
+        this.wormHost.style.width = `${B.w}px`;
+        this.wormHost.style.height = `${B.h}px`;
+        const a = this.sceneToHost({ x: box.x, y: box.y });
+        // Масштаб мерим по двум точкам, а не берём из камеры: между сценой и
+        // пикселями есть ещё и вписывание холста в рамку окна с обрезкой.
+        const c = this.sceneToHost({ x: box.x + 100, y: box.y });
+        const k = ((c.x - a.x) / 100 || 1) * box.w / B.w;
+        this.wormHost.style.transform =
+            `translate(${a.x.toFixed(1)}px, ${a.y.toFixed(1)}px) scale(${k.toFixed(4)})`;
+    },
+
+    // ---------- ПОКРЫТИЕ ----------
+    // Клетки лежат на самом ЧЕРВЕ, а не на воде под ним. Первый вариант
+    // считал покрытие по габариту воды: мазки по пустой воде рядом с телом
+    // засчитывались, и пена оставалась там же — мыли ванну, а не червя.
+    //
+    // Габарит берётся у НАРИСОВАННОГО персонажа, а не подбирается числом:
+    // единицы его холста переводятся в сцену тем же множителем, что и в
+    // layoutWorm.
+    coverBox() {
+        if (this._cover) return this._cover;
+        const box = this.wormBoxScene(), B = this.WORM_BASE;
+        let b = null;
+        try {
+            const root = this.wormHandle && this.wormHandle.svgRoot;
+            const r = root && root.getBBox();
+            const k = box.w / B.w;
+            // Габарит поджимается: у нарисованного персонажа сверху остаётся
+            // пустое поле (уши задают верх коробки, а тело лежит ниже), и без
+            // поджатия пена ложится над червём, на воду.
+            const IN = 0.07;
+            if (r && r.width > 1) b = { x: box.x + (r.x + r.width * IN) * k,
+                                        y: box.y + (r.y + r.height * IN * 2) * k,
+                                        w: r.width * (1 - IN * 2) * k,
+                                        h: r.height * (1 - IN * 3) * k };
+        } catch (e) { /* червя ещё нет — сойдёт габарит воды */ }
+        this._cover = b || BATH_ART.box('water') || { x: 100, y: 600, w: 500, h: 150 };
+        return this._cover;
+    },
+
+    resetCover() {
+        this.cells = new Array(this.GRID.nx * this.GRID.ny).fill(0);
+        this.covered = 0;
+    },
+
+    // Пометить клетки под мазком. Возвращает долю покрытого.
+    paint(x, y, radius, need) {
+        const b = this.coverBox(), G = this.GRID;
+        const cw = b.w / G.nx, ch = b.h / G.ny;
+        const i0 = Math.max(0, Math.floor((x - radius - b.x) / cw));
+        const i1 = Math.min(G.nx - 1, Math.floor((x + radius - b.x) / cw));
+        const j0 = Math.max(0, Math.floor((y - radius - b.y) / ch));
+        const j1 = Math.min(G.ny - 1, Math.floor((y + radius - b.y) / ch));
+        for (let j = j0; j <= j1; j++) {
+            for (let i = i0; i <= i1; i++) {
+                const cx = b.x + (i + 0.5) * cw, cy = b.y + (j + 0.5) * ch;
+                if (Math.hypot(cx - x, cy - y) > radius) continue;
+                const k = j * G.nx + i;
+                if (this.cells[k] >= need) continue;
+                this.cells[k]++;
+                if (this.cells[k] >= need) this.covered++;
             }
         }
-        this.renderDebug();
-        this.rafId = requestAnimationFrame((t) => this.tick(t));
+        return this.covered / (G.nx * G.ny);
     },
 
-    // ---------- DEBUG-ВИЗУАЛИЗАЦИЯ ХИТБОКСА ХВОСТА ----------
-    renderDebug() {
-        if (!this.debugLayer) return;
-        const on = typeof DebugMode !== 'undefined' && DebugMode.enabled;
-        if (!on) {
-            if (this.debugLayer.classList.contains('show')) {
-                this.debugLayer.classList.remove('show');
-                this.debugLayer.innerHTML = '';
-            }
+    // ---------- ВВОД ----------
+    onDown(e) {
+        if (this.win && this.win.isConfirmOpen && this.win.isConfirmOpen()) return;
+        const p = this.toScene(e);
+        const A = BATH_ART.slots();
+
+        if (this.phase === 'idle') {
+            // Кран включает воду — это и есть старт забега.
+            if (Math.hypot(p.x - A.faucet.x, p.y - A.faucet.y) < 70) this.startWater();
             return;
         }
-        if (!this.tailPath) return;
-        const layerRect = this.debugLayer.getBoundingClientRect();
-        const rect = this.tailPath.getBoundingClientRect();
-        if (rect.height <= 0) return;
-        const relTop = rect.top - layerRect.top;
-        const relLeft = rect.left - layerRect.left;
-        const markerY = relTop + (1 - this.pos) * rect.height;
-        this.debugLayer.classList.add('show');
-        this.debugLayer.innerHTML = `
-            <div class="lust-debug-rect" style="left:${relLeft}px; top:${relTop}px; width:${rect.width}px; height:${rect.height}px;"></div>
-            <div class="lust-debug-line ${this.atTop ? 'triggered' : ''}" style="left:${relLeft}px; top:${relTop}px; width:${rect.width}px;">
-                <span>pos=1 (верх)</span>
-            </div>
-            <div class="lust-debug-line ${this.atBottom ? 'triggered' : ''}" style="left:${relLeft}px; top:${relTop + rect.height}px; width:${rect.width}px;">
-                <span>pos=0 (низ)</span>
-            </div>
-            <div class="lust-debug-marker" style="left:${relLeft}px; top:${markerY}px; width:${rect.width}px;"></div>
-            <div class="lust-debug-readout" style="left:${relLeft + rect.width + 8}px; top:${markerY - 8}px;">pos=${this.pos.toFixed(2)}</div>
-        `;
-    },
-
-    // ---------- ДРАГ ХВОСТА ----------
-    startDrag(e) {
-        if (this.finished || !this.tailPath) return;
-        this.dragging = true;
-        try { this.tailPath.setPointerCapture(e.pointerId); } catch (err) {}
-
-        // Диапазон свайпа фиксируется на старте драга по реальному bbox
-        // самого <path>, а не по увеличенной невидимой зоне-обёртке.
-        // Это гарантирует, что верхняя/нижняя точки срабатывания совпадают
-        // с физическими верхом/низом видимого хвоста.
-        this.dragRect = this.tailPath.getBoundingClientRect();
-
-        this.onMove(e);
+        if (this.phase === 'soap' || this.phase === 'cloth') {
+            const kind = this.phase;
+            if (Math.hypot(p.x - A[kind].x, p.y - A[kind].y) < 70) this.takeTool(kind, e);
+        }
     },
 
     onMove(e) {
-        if (!this.dragging || this.finished) return;
-        if (!this.dragRect || this.dragRect.height <= 0) return;
+        if (!this.drag) return;
+        e.preventDefault();
+        this.moveTool(this.toStage(e));
 
-        const rawFraction = 1 - (e.clientY - this.dragRect.top) / this.dragRect.height;
+        const p = this.toScene(e);
+        const C = this.cfg(), kind = this.drag.kind;
+        const radius = kind === 'cloth' ? (C.clothRadius || 26) : (C.soapRadius || 46);
+        const need = kind === 'cloth' ? (C.clothRubs || 3) : 1;
+        const share = this.paint(p.x, p.y, radius, need);
 
-        this.lastMoveTime = performance.now();
-        this.applyPos(rawFraction);
+        // Пятно ставится не на каждое событие указателя, а раз в треть
+        // радиуса пути. Событий за забег приходят сотни, и без этого след —
+        // это сотни узлов, наложенных друг на друга вплотную: узлы плодятся,
+        // а картинка от них не меняется.
+        const last = this.drag.mark;
+        if (!last || Math.hypot(p.x - last.x, p.y - last.y) > radius * 0.34) {
+            this.drag.mark = p;
+            this.el(kind === 'cloth' ? 'bt-foam' : 'bt-film')
+                .insertAdjacentHTML('beforeend',
+                    BATH_ART.smudge(p.x, p.y, radius, kind));
+        }
+
+        if (share >= (C.coverGoal || 0.92)) this.finishStage(kind);
     },
 
     onUp() {
-        this.dragging = false;
-        this.dragRect = null;
-        // Прогресс/lastExtreme НЕ трогаем — просто отпускание пальца.
+        if (!this.drag) return;
+        this.fgEl.innerHTML = '';
+        this.showTools(true);
+        this.drag = null;
     },
 
-    // Жёстко зажимает позицию фейдера в границах [0,1] — физически нельзя
-    // потащить выше верхней или ниже нижней точки срабатывания.
-    applyPos(rawFraction) {
-        this.pos = Math.min(1, Math.max(0, rawFraction));
-
-        if (this.tailEl) {
-            const pull = Math.abs(this.pos - 0.5) * 2;
-            this.tailEl.style.setProperty('--pull', pull.toFixed(2));
-        }
-
-        this.checkExtreme();
+    // ---------- ЭТАПЫ ----------
+    startWater() {
+        this.phase = 'filling';
+        this.ready(null);
+        this.setOpacity('bt-jet', 1);
+        this.setOpacity('bt-water', 1);
+        this.setCamera('body');
+        const b = BATH_ART.box('water');
+        const rect = this.el('bt-water-rect');
+        const t0 = performance.now();
+        const DUR = 2200;
+        const step = (t) => {
+            const k = Math.min(1, (t - t0) / DUR);
+            this.level = k;
+            // Обрезка растёт СНИЗУ ВВЕРХ: вода прибывает, а не выезжает
+            // пластиной сверху.
+            rect.setAttribute('x', String(b.x - 20));
+            rect.setAttribute('y', String(b.y + b.h * (1 - k)));
+            rect.setAttribute('width', String(b.w + 40));
+            rect.setAttribute('height', String(b.h * k + 4));
+            if (k < 1) { this.fillRaf = requestAnimationFrame(step); return; }
+            this.fillRaf = 0;
+            this.setOpacity('bt-jet', 0);
+            this.phase = 'soap';
+            this.resetCover();
+            this.ready('soap');
+        };
+        this.fillRaf = requestAnimationFrame(step);
     },
 
-    // ---------- ОПРЕДЕЛЕНИЕ СРАБАТЫВАНИЯ ТОЧЕК ----------
-    checkExtreme() {
-        if (this.finished) return;
-
-        if (this.pos >= 1) {
-            if (!this.atTop) {
-                this.atTop = true;
-                this.atBottom = false;
-                // Первое срабатывание в игре — любое. Дальше — строго чередование.
-                if (this.lastExtreme === null || this.lastExtreme === 'bottom') {
-                    this.lastExtreme = 'top';
-                    this.addSwing();
-                }
-            }
-        } else if (this.pos <= 0) {
-            if (!this.atBottom) {
-                this.atBottom = true;
-                this.atTop = false;
-                if (this.lastExtreme === null || this.lastExtreme === 'top') {
-                    this.lastExtreme = 'bottom';
-                    this.addSwing();
-                }
-            }
-        } else {
-            // Ушли из крайнего положения — снимаем флаги, чтобы точку можно
-            // было засчитать заново при следующем визите (после чередования).
-            this.atTop = false;
-            this.atBottom = false;
-        }
+    takeTool(kind, e) {
+        this.drag = { kind };
+        this.showTools(false, kind);
+        this.ready(null);
+        this.fgEl.innerHTML = `<g id="bt-held">${BATH_ART.held(kind)}</g>`;
+        this.moveTool(this.toStage(e));
     },
 
-    addSwing() {
-        this.progress = Math.min(100, this.progress + this.SWING_GAIN);
-        this.updateGauge();
-        if (this.progress >= 100 && !this.finished) {
-            this.finished = true;
-            this.onFull();
-        }
+    // Предмет в руке живёт в координатах ХОЛСТА: его держат перед собой, и
+    // камере он не подчиняется.
+    moveTool(p) {
+        const held = this.el('bt-held');
+        if (held) held.setAttribute('transform',
+            `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
     },
 
-    // ---------- ОТРИСОВКА СОСТОЯНИЯ ----------
-    updateGauge() {
-        const t = this.progress / 100;
-
-        if (this.gaugeBar) {
-            this.gaugeBar.style.width = `${this.progress}%`;
-
-            const hue = 120 - 120 * t;
-            const sat = 45 + 45 * t;
-            const light = 62 - 12 * t;
-            const color = `hsl(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
-            this.gaugeBar.style.background = color;
-            this.gaugeBar.style.boxShadow = `0 0 ${6 + t * 14}px hsla(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%, 0.85)`;
-        }
-
-        if (this.tailEl) this.tailEl.style.setProperty('--growth', t.toFixed(3));
-        this.updateWormFace(t);
-    },
-
-    updateWormFace(growth) {
-        const lidH = growth * 20;
-        if (this.lidLeft) this.lidLeft.setAttribute('height', lidH);
-        if (this.lidRight) this.lidRight.setAttribute('height', lidH);
-
-        const pupilCy = 140 - growth * 7;
-        if (this.pupilLeft) this.pupilLeft.setAttribute('cy', pupilCy);
-        if (this.pupilRight) this.pupilRight.setAttribute('cy', pupilCy);
-    },
-
-    // ---------- ФИНАЛ ----------
-    onFull() {
-        this.showWinText();
-        this.runSplashSequence();
-
-        // Мини-игра не начисляет сама: сообщает результат, а что за него
-        // дать, решает конфиг наград (src/config/economy.js).
-        GameEvents.emit('minigame:result', { sin: 'lust', mode: 'kiss', outcome: 'win' });
-    },
-
-    showWinText() {
-        if (!this.winOverlay) return;
-        this.winOverlay.classList.remove('fade-out');
-        this.winOverlay.classList.add('show');
-        setTimeout(() => this.winOverlay.classList.add('fade-out'), 1500);
-        setTimeout(() => this.winOverlay.classList.remove('show', 'fade-out'), 2500);
-    },
-
-    // ---------- БРЫЗГИ: 4 ЗАЛПА, ИТОГ ~6 СЕК ----------
-    runSplashSequence() {
-        for (let w = 0; w < this.WAVE_COUNT; w++) {
-            const id = setTimeout(() => this.spawnWave(w), w * this.WAVE_GAP);
-            this.waveTimeouts.push(id);
+    showTools(show, except) {
+        for (const k of ['soap', 'cloth']) {
+            const n = this.el(`bt-${k}-home`);
+            if (n) n.style.opacity = (show || k !== except) ? '1' : '0';
         }
     },
 
-    getTipOrigin(layerRect) {
-        if (this.tailTipMarker) {
-            const r = this.tailTipMarker.getBoundingClientRect();
-            return {
-                x: r.left + r.width / 2 - layerRect.left,
-                y: r.top - layerRect.top
-            };
+    finishStage(kind) {
+        this.onUp();
+        if (kind === 'soap') {
+            // Мочалка снимает мыло и оставляет пену: муть гасится, чтобы
+            // второй этап был виден.
+            this.phase = 'cloth';
+            this.resetCover();
+            this.el('bt-film').style.opacity = '0.35';
+            this.ready('cloth');
+            return;
         }
-        const tailRect = this.tailEl.getBoundingClientRect();
-        return { x: tailRect.left + tailRect.width / 2 - layerRect.left, y: tailRect.top - layerRect.top };
-    },
-
-    spawnWave(waveIndex) {
-        if (!this.splashLayer || !this.tailEl) return;
-
-        const layerRect = this.splashLayer.getBoundingClientRect();
-        const origin = this.getTipOrigin(layerRect);
-        const originX = origin.x;
-        const originY = origin.y;
-
-        const tailTargets = [
-            { x: originX - 14 - waveIndex * 3, y: originY + 30 },
-            { x: originX + 18 + waveIndex * 2, y: originY + 80 },
-            { x: originX - 10,                 y: originY + 140 },
-            { x: originX + 12,                 y: originY + 195 }
-        ];
-        tailTargets.forEach(t => this.flyDrop(originX, originY, t.x, t.y, 'tail', 14));
-
-        if (this.wormSvg) {
-            const wormRect = this.wormSvg.getBoundingClientRect();
-            const wormTargets = [
-                { x: wormRect.left + wormRect.width * (0.34 + waveIndex * 0.03) - layerRect.left, y: wormRect.top + wormRect.height * 0.48 - layerRect.top },
-                { x: wormRect.left + wormRect.width * 0.56 - layerRect.left,                       y: wormRect.top + wormRect.height * 0.3 - layerRect.top },
-                { x: wormRect.left + wormRect.width * 0.26 - layerRect.left,                       y: wormRect.top + wormRect.height * 0.66 - layerRect.top },
-                { x: wormRect.left + wormRect.width * 0.64 - layerRect.left,                       y: wormRect.top + wormRect.height * 0.56 - layerRect.top },
-                { x: wormRect.left + wormRect.width * 0.46 - layerRect.left,                       y: wormRect.top + wormRect.height * 0.82 - layerRect.top }
-            ];
-            wormTargets.forEach(t => this.flyDrop(originX, originY, t.x, t.y, 'worm', 16));
-        }
-
-        const randomCount = 30;
-        for (let i = 0; i < randomCount; i++) {
-            const angle = (-175 + Math.random() * 170) * Math.PI / 180;
-            const dist = 60 + Math.random() * 230;
-            const tx = originX + Math.cos(angle) * dist;
-            const ty = originY + Math.sin(angle) * dist;
-            const type = Math.random() < 0.45 ? 'worm' : (Math.random() < 0.55 ? 'tail' : 'none');
-            const isStream = Math.random() < 0.4;
-            const size = isStream ? (5 + Math.random() * 5) : (7 + Math.random() * 12);
-            this.flyDrop(originX, originY, tx, ty, type, size, isStream);
-        }
-    },
-
-    flyDrop(fromX, fromY, toX, toY, target, size, isStream) {
-        const drop = document.createElement('div');
-        drop.className = isStream ? 'lust-drop lust-stream' : 'lust-drop';
-        drop.style.left = `${fromX}px`;
-        drop.style.top = `${fromY}px`;
-        drop.style.setProperty('--tx', `${toX - fromX}px`);
-        drop.style.setProperty('--ty', `${toY - fromY}px`);
-        drop.style.setProperty('--rot', `${Math.random() * 120 - 60}deg`);
-
-        const w = size || (8 + Math.random() * 10);
-        const h = isStream ? w * 2.4 : w * 1.3;
-        drop.style.width = `${w}px`;
-        drop.style.height = `${h}px`;
-
-        const duration = 0.4 + Math.random() * 0.35;
-        drop.style.animationDuration = `${duration}s`;
-
-        this.splashLayer.appendChild(drop);
-
-        setTimeout(() => {
-            drop.remove();
-            if (target === 'tail') this.addStain(toX, toY);
-            else if (target === 'worm') this.addDrip(toX, toY);
-        }, duration * 1000);
-    },
-
-    addStain(x, y) {
-        const stain = document.createElement('div');
-        stain.className = 'lust-stain';
-        const size = 9 + Math.random() * 16;
-        stain.style.width = `${size}px`;
-        stain.style.height = `${size * (0.7 + Math.random() * 0.5)}px`;
-        stain.style.left = `${x - size / 2}px`;
-        stain.style.top = `${y - size / 2}px`;
-        stain.style.borderRadius =
-            `${40 + Math.random() * 30}% ${40 + Math.random() * 30}% ${40 + Math.random() * 30}% ${40 + Math.random() * 30}%`;
-        this.splashLayer.appendChild(stain);
-    },
-
-    addDrip(x, y) {
-        const drip = document.createElement('div');
-        drip.className = 'lust-drip';
-        const width = 6 + Math.random() * 5;
-        const length = 22 + Math.random() * 30;
-        drip.style.width = `${width}px`;
-        drip.style.height = `${length}px`;
-        drip.style.left = `${x - width / 2}px`;
-        drip.style.top = `${y}px`;
-        this.splashLayer.appendChild(drip);
+        this.phase = 'done';
+        this.ready(null);
+        // Мини-игра НИЧЕГО не начисляет сама (инвариант 2): она сообщает
+        // результат, а что за это дать — решает конфиг наград.
+        GameEvents.emit('minigame:result', {
+            sin: 'lust', mode: 'bath', outcome: 'win',
+            meta: { stages: ['soap', 'cloth'] }
+        });
     }
 };
 

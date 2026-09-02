@@ -68,7 +68,9 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             const parts = BAKE.bake([Object.assign({ name }, build[name])], v);
             items[name] = { d: parts, box: BAKE.box(parts) };
         }
-        return { items, anchors: BAKE.anchors(M.anchorPoints(), v) };
+        return { items, anchors: BAKE.anchors(M.anchorPoints(), v),
+                 tiles: BAKE.segments(M.tileLines(), v),
+                 grout: B.tile.grout };
     }, [VIEW, ORDER]);
 
     if (errors.length) {
@@ -100,6 +102,12 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('    anchors: ' + JSON.stringify(out.anchors, null, 8)
         .replace(/\n/g, '\n    ') + ',');
     lines.push('');
+    lines.push('    // Швы кафеля: отрезки, спроецированные той же камерой. Рисуются');
+    lines.push('    // ПОВЕРХ стены и ПОД всем остальным — это часть стены, а не');
+    lines.push('    // самостоятельный предмет.');
+    lines.push('    grout: ' + JSON.stringify(out.grout) + ',');
+    lines.push('    tiles: ' + JSON.stringify(out.tiles) + ',');
+    lines.push('');
     lines.push('    items: {');
     const names = Object.keys(out.items);
     names.forEach((name, i) => {
@@ -126,6 +134,13 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('             + \'</g>\';');
     lines.push('    },');
     lines.push('');
+    lines.push('    drawTiles(width) {');
+    lines.push('        const d = BATH_BAKED.tiles.map(t =>');
+    lines.push('            `M${t[0]} ${t[1]}L${t[2]} ${t[3]}`).join(\'\');');
+    lines.push('        return `<path class="bb bb-tiles" fill="none" stroke="${BATH_BAKED.grout}"`');
+    lines.push('             + ` stroke-width="${width || 1.6}" opacity="0.45" d="${d}"/>`;');
+    lines.push('    },');
+    lines.push('');
     lines.push('    box(name) {');
     lines.push('        return (BATH_BAKED.items[name] || {}).box || null;');
     lines.push('    }');
@@ -138,7 +153,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     const kb = (fs.statSync(dest).size / 1024).toFixed(0);
     let paths = 0;
     for (const n of names) paths += out.items[n].d.length;
-    console.log(`запечено ${names.length} предметов, ${paths} путей, ${kb} КБ`);
+    console.log(`запечено ${names.length} предметов, ${paths} путей,`
+        + ` ${out.tiles.length} швов кафеля, ${kb} КБ`);
     for (const n of names) {
         const b = out.items[n].box;
         console.log(`  ${n.padEnd(8)} ${String(out.items[n].d.length).padStart(4)} путей`

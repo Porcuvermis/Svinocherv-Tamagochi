@@ -1,383 +1,87 @@
+/* ================= ВАННАЯ ПОХОТИ ================= */
+/* Рамку, шапку и крестик рисует общее окно мини-игры
+   (src/core/minigame-window.css) — здесь только начинка (инвариант 8).
+
+   Стилей у предметов нет вовсе: их вид пришёл из запекания
+   (src/minigames/lust/bath-baked.js), а не из вёрстки. Здесь только
+   ДВИЖЕНИЕ — наезд камеры, появление воды, следы на теле. */
+
 #lust-game {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    z-index: 999999 !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
+    --mg-bg: #10161a;
 }
 
-#lust-game.active {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.lust-modal {
-    position: relative;
-    width: 92vw;
-    max-width: 380px;
-    height: 82vh;
-    max-height: 640px;
-    background: #1a0f16;
-    border: 3px solid #ff69b4;
-    border-radius: 28px;
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 16px 10px;
-    box-sizing: border-box;
-    overflow: hidden;
-    transform: scale(0.85);
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-#lust-game.active .lust-modal {
-    transform: scale(1);
-}
-
-.lust-close-btn {
+/* Два холста и слой червя между ними лежат стопкой в теле окна. */
+#lust-game .bt-svg {
     position: absolute;
-    top: 12px;
-    right: 16px;
-    background: #ff4444;
-    border: 2px solid #fff;
-    color: white;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    font-size: 20px;
-    line-height: 26px;
-    text-align: center;
-    cursor: pointer;
-    z-index: 30;
-    flex-shrink: 0;
-}
-
-.lust-close-btn:active { transform: scale(0.9); }
-
-.lust-header {
-    display: none;
-}
-
-.lust-footer {
-    display: none;
-}
-
-/* ============ СЦЕНА ============ */
-.lust-scene {
-    position: relative;
-    width: 100%;
-    flex: 1;
-    border-radius: 18px;
-    overflow: hidden;
-    background: linear-gradient(180deg, #cfe0e8 0%, #f4d9e6 100%);
-    margin-top: 4px;
-}
-
-.lust-worm {
-    position: absolute;
-    top: 34%;
-    right: -8%;
-    width: 78%;
-    height: auto;
-    filter: blur(3px);
-    opacity: 0.92;
-    transition: filter 0.4s ease;
-    z-index: 1;
-    pointer-events: none;
-}
-
-#lust-lid-left, #lust-lid-right {
-    transition: height 0.25s ease;
-}
-
-#lust-pupil-left, #lust-pupil-right {
-    transition: cy 0.25s ease;
-}
-
-/* ============ ХВОСТ ============ */
-/* Зона раскладки — только позиционирование, кликов не ловит.
-   ВАЖНО: раньше зона была выше 100% (top:8% + height:112% = низ
-   зоны на 120%, то есть на 20% НИЖЕ реального нижнего края окна
-   мини-игры). align-items:flex-end и transform-origin:bottom у
-   .lust-tail цеплялись именно за этот съехавший вниз-за-экран
-   якорь — поэтому нижняя точка срабатывания ("насос" pos=0)
-   физически была не там, где казалось. Теперь низ зоны стоит
-   ровно на границе окна (top:8% + height:92% = 100%). */
-.lust-tail-zone {
-    position: absolute;
-    left: 18%;
-    top: 8%;
-    width: 54%;
-    height: 92%;
-    z-index: 5;
-    pointer-events: none;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-}
-
-/* Сам блок хвоста и его SVG — тоже НЕ ловят клики.
-   Иначе прямоугольный bbox (который заметно больше и выше
-   реального рисунка хвоста) перехватывал бы касания мимо спрайта.
-   Высота увеличена со 92% (компенсация уменьшенной зоны выше),
-   чтобы визуальный размер хвоста остался прежним — меняется только
-   точка привязки, не масштаб. */
-.lust-tail {
-    position: relative;
-    width: 62%;
-    height: 112%;
-    transform-origin: bottom center;
-    transform:
-        scale(calc(0.68 + var(--growth, 0) * 0.55))
-        scaleY(calc(1 + var(--pull, 0) * 0.07));
-    transition: transform 0.12s ease-out;
-    pointer-events: none;
-}
-
-.lust-tail svg {
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
-    overflow: visible;
-    pointer-events: none;
-}
-
-/* Единственный интерактивный элемент — сама фигура хвоста.
-   pointer-events:auto на <path> учитывает реальную закрашенную
-   область (fill), а не прямоугольный bbox svg, поэтому клик мимо
-   формы хвоста больше не засчитывается. */
-#lust-tail-path {
-    pointer-events: auto;
-    cursor: grab;
     touch-action: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
-#lust-tail-path:active {
-    cursor: grabbing;
-}
-
-/* ============ БРЫЗГИ ============ */
-.lust-splash-layer {
-    position: absolute;
-    inset: 0;
+/* Задний холст кликов не ловит: попадания считает сам код по координатам
+   сцены, а перехват событий верхним холстом ему только мешал бы. */
+#lust-game #bt-back {
     pointer-events: none;
-    z-index: 10;
-    overflow: hidden;
 }
 
-.lust-drop {
-    position: absolute;
-    border-radius: 50% 50% 50% 0;
-    background: #fffaf3;
-    box-shadow: 0 0 3px rgba(0, 0, 0, 0.15);
-    opacity: 1;
-    animation-name: lust-fly;
-    animation-timing-function: ease-out;
-    animation-fill-mode: forwards;
-}
-
-.lust-stream {
-    border-radius: 50% 50% 40% 40% / 65% 65% 35% 35%;
-}
-
-@keyframes lust-fly {
-    0% {
-        transform: translate(0, 0) rotate(0deg) scale(0.4);
-        opacity: 1;
-    }
-    18% {
-        transform: translate(calc(var(--tx) * 0.15), calc(var(--ty) * 0.15)) rotate(calc(var(--rot) * 0.3)) scale(1.25);
-        opacity: 1;
-    }
-    100% {
-        transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.3);
-        opacity: 0;
-    }
-}
-
-.lust-stain {
-    position: absolute;
-    background: #fffaf3;
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
-    transform: scale(0);
-    animation: lust-stain-in 0.25s ease-out forwards;
-}
-
-@keyframes lust-stain-in {
-    to { transform: scale(1); }
-}
-
-.lust-drip {
-    position: absolute;
-    background: linear-gradient(180deg, #fffaf3 0%, #fbe4f0 100%);
-    border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
-    transform-origin: top center;
-    transform: scaleY(0.2);
-    opacity: 0;
-    animation: lust-drip-fall 0.7s ease-out forwards;
-}
-
-@keyframes lust-drip-fall {
-    0% { transform: scaleY(0.2); opacity: 0; }
-    25% { opacity: 0.95; }
-    70% { transform: scaleY(1.05); }
-    100% { transform: scaleY(1); opacity: 0.95; }
-}
-
-/* ============ ПОБЕДА ============ */
-.lust-win-overlay {
+/* Червь. Размер и положение выставляет lust.js по якорю запекания, поэтому
+   здесь только то, что от раскладки не зависит. */
+#lust-game .bt-worm-host {
     position: absolute;
     top: 0; left: 0;
-    width: 100%; height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Размер задан в единицах СЦЕНЫ и не меняется — двигает и масштабирует
+       слой только transform (почему именно так — комментарий в lust.js). */
+    transform-origin: 0 0;
+    transition: transform 0.62s cubic-bezier(0.32, 0.72, 0.2, 1);
     pointer-events: none;
-    z-index: 20;
-    opacity: 0;
+    z-index: 1;
 }
 
-.lust-win-overlay.show { opacity: 1; }
-
-.lust-win-text {
-    font-size: 28px;
-    font-weight: 900;
-    color: #ff2e8f;
-    text-shadow: 0 0 10px #fff, 0 0 20px #ff69b4;
-    opacity: 0;
-    transform: scale(0.5);
-    transition: opacity 0.4s ease, transform 0.4s ease;
+/* ---------- КАМЕРА ---------- */
+/* Наезд — тот же приём и та же кривая, что на кухне: камера трогается
+   охотно, приезжает мягко. Обе группы едут ОДИНАКОВО — иначе комната и
+   вода разъедутся. */
+#lust-game #bt-cam,
+#lust-game #bt-cam-back {
+    transition: transform 0.62s cubic-bezier(0.32, 0.72, 0.2, 1);
 }
 
-.lust-win-overlay.show .lust-win-text {
-    opacity: 1;
-    transform: scale(1);
+/* ---------- ВОДА И СТРУЯ ---------- */
+/* Вода не возникает, а прибывает: прозрачность включается разом, а уровень
+   растёт обрезкой. Струя гаснет плавно — кран закрывают, а не выключают. */
+#lust-game #bt-water,
+#lust-game #bt-jet {
+    transition: opacity 0.45s ease;
 }
 
-.lust-win-overlay.fade-out .lust-win-text {
-    opacity: 0;
-    transition: opacity 1s ease;
+/* ---------- СЛЕДЫ НА ТЕЛЕ ---------- */
+/* Муть от мыла гаснет, когда за дело берётся мочалка: второй этап обязан
+   быть виден поверх первого. */
+#lust-game #bt-film {
+    transition: opacity 0.5s ease;
 }
 
-/* ============ ШКАЛА ============ */
-.lust-gauge-wrap {
-    width: 86%;
-    height: 20px;
-    background: #150a10;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 2px solid #3a1f2c;
-    margin-top: 10px;
-    flex-shrink: 0;
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
-    position: relative;
-}
-
-.lust-gauge-bar {
-    height: 100%;
-    width: 0%;
-    border-radius: 10px;
-    position: relative;
-    transition: width 0.15s linear, background 0.15s linear, box-shadow 0.15s linear;
-}
-
-.lust-gauge-bar::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 4px;
-    right: 4px;
-    height: 35%;
-    background: rgba(255, 255, 255, 0.35);
-    border-radius: 8px;
+/* Предмет в руке кликов не ловит: под пальцем должно оказываться тело, а
+   не мыло, которое этим же пальцем держат. */
+#lust-game #bt-fg {
     pointer-events: none;
 }
-/* ============ DEBUG-СЛОЙ (НЕВИДИМЫЙ "НАСОС" ХВОСТА) ============ */
-/* Показывает реальный хитбокс drag-зоны хвоста (тот самый invisible
-   dragRect из lust.js), верхнюю/нижнюю точки срабатывания и текущее
-   положение "фейдера" — включается глобальной debug-кнопкой. */
-.lust-debug-layer {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 90;
-    display: none;
+
+/* Предмет, который можно взять, чуть дышит — это приглашение, сказанное
+   движением (инвариант 9). Взятый предмет гаснет на полке. */
+#lust-game #bt-soap-home,
+#lust-game #bt-cloth-home {
+    transition: opacity 0.25s ease;
 }
 
-.lust-debug-layer.show {
-    display: block;
+#lust-game .bt-ready {
+    animation: bt-ready 1.6s ease-in-out infinite;
 }
 
-.lust-debug-rect {
-    position: absolute;
-    border: 2px dashed #00e5ff;
-    background: rgba(0, 229, 255, 0.08);
-    box-sizing: border-box;
-}
-
-.lust-debug-line {
-    position: absolute;
-    height: 0;
-    border-top: 2px solid #ffd700;
-    transform: translateY(-1px);
-}
-
-.lust-debug-line span {
-    position: absolute;
-    top: -16px;
-    left: 2px;
-    font-size: 9px;
-    font-weight: bold;
-    color: #ffd700;
-    text-shadow: 0 0 3px #000;
-    white-space: nowrap;
-}
-
-.lust-debug-line.triggered {
-    border-top-color: #4CAF50;
-}
-
-.lust-debug-line.triggered span {
-    color: #4CAF50;
-}
-
-.lust-debug-marker {
-    position: absolute;
-    height: 0;
-    border-top: 2px solid #ff2e8f;
-    transform: translateY(-1px);
-}
-
-.lust-debug-marker::after {
-    content: '';
-    position: absolute;
-    right: -5px;
-    top: -4px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #ff2e8f;
-    box-shadow: 0 0 6px #ff2e8f;
-}
-
-.lust-debug-readout {
-    position: absolute;
-    font-size: 10px;
-    font-weight: bold;
-    color: #fff;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 2px 6px;
-    border-radius: 6px;
-    white-space: nowrap;
+@keyframes bt-ready {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.62; }
 }

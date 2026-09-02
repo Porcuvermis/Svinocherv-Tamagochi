@@ -155,8 +155,26 @@ const { chromium } = require('playwright');
   found.gardenRipe = await scan('sloth-game');
   await page.screenshot({ path: out + 'nw-s2-ripe.png' });
 
+  // ---------- ПОХОТЬ: ВАННАЯ ----------
+  // У прежней ванной на экране висели «ПОХОТЬ», «СВАЙПАЙ ХВОСТ ВВЕРХ-ВНИЗ»
+  // и «Нагрешил!» — три слова там, где хватает движения. Новая собрана без
+  // них, и проверка стоит здесь, чтобы они не вернулись.
   await page.evaluate(() => {
     if (typeof SlothMinigame !== 'undefined' && SlothMinigame.close) SlothMinigame.close();
+    GameManager.handleSinAction('lust');
+  });
+  await page.waitForTimeout(900);
+  found.bath = await scan('lust-game');
+  await page.screenshot({ path: out + 'nw-l1-bath.png' });
+
+  // Ванна с водой: этап мытья со всем, что на нём появляется.
+  await page.evaluate(() => LustMinigame.startWater());
+  await page.waitForTimeout(2800);
+  found.bathWash = await scan('lust-game');
+  await page.screenshot({ path: out + 'nw-l2-wash.png' });
+
+  await page.evaluate(() => {
+    if (typeof LustMinigame !== 'undefined' && LustMinigame.close) LustMinigame.close();
     GameManager.handleSinAction('wrath');
   });
   await page.waitForTimeout(500);

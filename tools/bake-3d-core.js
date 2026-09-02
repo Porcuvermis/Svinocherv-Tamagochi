@@ -244,6 +244,18 @@ const BAKE = {
         return out;
     },
 
+    // Отрезки МИРА, спроецированные в координаты сцены. Ими кладётся сетка
+    // швов кафеля: линия на плоскости в перспективе — всё ещё прямая, и
+    // достаточно спроецировать её концы.
+    segments(list, view) {
+        return list.map(([a, b]) => {
+            const p = this.project(new THREE.Vector3(a.x, a.y, a.z), view);
+            const q = this.project(new THREE.Vector3(b.x, b.y, b.z), view);
+            return [+p.x.toFixed(1), +p.y.toFixed(1),
+                    +q.x.toFixed(1), +q.y.toFixed(1)];
+        });
+    },
+
     // Готовая разметка предмета.
     markup(parts, cls) {
         return `<g class="${cls || 'baked'}">\n` + parts.map(p =>
