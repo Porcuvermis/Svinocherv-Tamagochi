@@ -78,19 +78,32 @@ const BAKE = {
     // не по одному: иначе вода не может оказаться внутри чаши, а только
     // целиком перед ней или целиком за ней.
     //
-    // Порядок вывода — ПО ГЛУБИНЕ, от дальнего к ближнему (алгоритм
-    // художника). Первая версия сортировала по ступени света и клала
+    // ---------- ПОРЯДОК РИСОВАНИЯ ----------
+    // Между ПРЕДМЕТАМИ порядок задан СПИСКОМ, а внутри предмета — по глубине.
+    //
+    // Две попытки до этого были неверны. Сортировка по ступени света клала
     // светлое поверх тёмного: наружная стенка ванны закрывала собой её же
-    // полость, и чаша читалась сплошной коробкой.
+    // полость, и чаша читалась сплошной коробкой. Сквозная сортировка по
+    // глубине ломалась там, где поверхности СОПРИКАСАЮТСЯ: ванна стоит на
+    // полу, у большой плиты пола один центр на десять единиц глубины, и пол
+    // рисовался поверх ванны. Дробление пола на сетку не спасло —
+    // соприкасающиеся поверхности алгоритм художника не разводит в принципе,
+    // для этого нужен буфер глубины, которого у SVG нет.
+    //
+    // Список же решает это даром и ровно так, как устроена кухня: стена,
+    // пол, оборудование, ванна, вода. Порядок — решение художника, а не
+    // результат вычисления.
     bake(items, view, opts) {
         const o = Object.assign({ minLight: 0.06, maxLight: 0.98 }, opts || {});
         const light = new THREE.Vector3(this.LIGHT.x, this.LIGHT.y, this.LIGHT.z)
             .normalize();
         const tris = [];
+        const order = [];
         const camPos = view.cam.position;
 
         for (const item of (Array.isArray(items) ? items : [items])) {
             const ramp = item.ramp;
+            order.push(item.name);
             item.root.updateMatrixWorld(true);
             item.root.traverse(node => {
                 if (!node.isMesh) return;
@@ -112,8 +125,17 @@ const BAKE = {
                     lit = Math.max(o.minLight, Math.min(o.maxLight, lit));
                     const step = Math.min(ramp.length - 1, Math.max(0,
                         Math.round(lit * (ramp.length - 1))));
-                    const mid = new THREE.Vector3()
-                        .setFromMatrixPosition(node.matrixWorld);
+                    // Глубина — по ЦЕНТРУ САМОГО КОНТУРА, а не по позиции
+                    // меша. Плоскости строятся сразу в мировых координатах и
+                    // стоят в нуле, поэтому позиция у всех у них одна: стена,
+                    // пол и вода получали одинаковую глубину, порядок между
+                    // ними выходил произвольным, и стена легла поверх всей
+                    // комнаты.
+                    const mid = new THREE.Vector3();
+                    for (const p of node.userData.outline) mid.add(
+                        new THREE.Vector3(p.x, p.y, p.z));
+                    mid.multiplyScalar(1 / node.userData.outline.length)
+                       .applyMatrix4(node.matrixWorld);
                     tris.push({
                         depth: mid.distanceTo(camPos), color: ramp[step],
                         name: item.name, poly: pts
@@ -164,15 +186,21 @@ const BAKE = {
             });
         }
 
-        // От дальнего к ближнему.
-        tris.sort((p, q) => q.depth - p.depth);
+        // Сортировка ВНУТРИ предмета: между предметами порядок уже задан
+        // списком, и перемешивать их нельзя.
+        const out = [];
+        for (const name of order) {
+            const own = tris.filter(t => t.name === name);
+            own.sort((p, q) => q.depth - p.depth);
+            out.push(...own);
+        }
 
         // Подряд идущие треугольники одного цвета сливаются в один путь:
         // иначе на предмет уходят сотни тегов вместо десятка. Слияние идёт
         // ТОЛЬКО по соседям в порядке рисования — иначе оно снова
         // перепутало бы глубину.
         const parts = [];
-        for (const t of tris) {
+        for (const t of out) {
             const pts = t.poly || t.p;
             const d = 'M' + pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
                                 .join('L') + 'Z';
@@ -199,6 +227,21 @@ const BAKE = {
             return { x: p.x + (p.x - cx) / len * step,
                      y: p.y + (p.y - cy) / len * step };
         });
+    },
+
+    // ---------- ЯКОРЯ ----------
+    // Именованные точки МИРА, спроецированные в координаты сцены. Ими
+    // заменяются вручную подогнанные гнёзда: место крана, посадка червя,
+    // полка. Раньше такие числа подбирались глазом и разъезжались с
+    // картинкой при каждой её правке — теперь они из неё выводятся.
+    anchors(points, view) {
+        const out = {};
+        for (const name of Object.keys(points)) {
+            const p = points[name];
+            const q = this.project(new THREE.Vector3(p.x, p.y, p.z), view);
+            out[name] = { x: Math.round(q.x), y: Math.round(q.y) };
+        }
+        return out;
     },
 
     // Готовая разметка предмета.

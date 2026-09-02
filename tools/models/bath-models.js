@@ -47,20 +47,226 @@ const BATH_MODELS = {
         // точки профиля. Так дно попадает в стенку, а не рядом с ней.
         g.add(BATH_MODELS.flat(BATH_MODELS.fan(
             BATH_MODELS.inset(plan, R - profile[1].x), -o.deep, true)));
+        // Ванна СТОИТ НА ПОЛУ. Модель строит её с бортом на нуле — это
+        // удобный якорь для профиля, — но в комнате нулём является пол, и
+        // без подъёма чаша оказывалась в него утопленной по самый борт.
+        g.position.y = o.deep;
         return g;
     },
 
-    // Поверхность воды: тот же контур, что у чаши, залитый веером
-    // треугольников от центра. Прямоугольная плоскость торчала бы углами
-    // сквозь стенки, круглая не легла бы в углы.
     // Поверхность воды: тот же контур чаши, смещённый внутрь на толщину
-    // стенки. Пропорциональное ужатие сюда не годится — оно уводит углы.
+    // стенки. Пропорциональное ужатие сюда не годится — оно уводит углы:
+    // прямоугольник торчал бы сквозь стенки, круг не лёг бы в углы.
     water(opts) {
         const o = Object.assign({ len: 17, wide: 7.4, deep: 5.2, level: -1.5,
                                   corner: 2.6, seg: 13, wall: 0.44 }, opts || {});
         const plan = BATH_MODELS.roundedPlan(o.len, o.wide, o.corner, o.seg);
+        // Уровень задан ОТ БОРТА (число отрицательное), а борт стоит на
+        // высоте deep над полом — как и сама ванна.
         return BATH_MODELS.flat(
-            BATH_MODELS.fan(BATH_MODELS.inset(plan, o.wall), o.level, true));
+            BATH_MODELS.fan(BATH_MODELS.inset(plan, o.wall),
+                            o.deep + o.level, true));
+    },
+
+    // ---------- РАСКЛАДКА КОМНАТЫ ----------
+    // Все числа мира в одном месте. Пол на нуле, ванна стоит на нём, стена
+    // за ванной. Отсюда же берутся ЯКОРЯ — точки, которые запекание
+    // проецирует в гнёзда игры: место крана, посадка червя, полка. Раньше
+    // такие числа подбирались глазом и разъезжались с картинкой при каждой
+    // её правке.
+    LAYOUT: {
+        tub:   { len: 13, wide: 6.4, deep: 5.2, corner: 2.2, seg: 11 },
+        wallZ: -3.9,          // стена сразу за ванной
+        roomW: 9.6,           // половина ширины комнаты
+        roomH: 15,            // до верха стены
+        floorFront: 15,       // докуда виден пол перед ванной
+        water: -1.4,          // уровень воды от борта
+        shower: { x: -5.0, y: 12.4, z: -1.6, riser: 6.6 },
+        faucet: { x: -5.0, y: 6.6 },
+        shelf:  { x: 4.3, y: 9.0, w: 4.6 }
+    },
+
+    // Якоря: точки МИРА, которые запекание переводит в координаты сцены.
+    anchorPoints() {
+        const L = BATH_MODELS.LAYOUT, T = L.tub;
+        return {
+            // Кран: тап по нему включает воду и начинает забег.
+            faucet: { x: L.faucet.x, y: L.faucet.y, z: L.wallZ + 0.5 },
+            // Лейка душа: из неё льётся на червя.
+            showerHead: { x: L.shower.x, y: L.shower.y - 1.1, z: L.shower.z },
+            // Мыло и мочалка на полке — их ТАЩАТ на червя.
+            soap:  { x: L.shelf.x - 1.2, y: L.shelf.y + 0.7, z: L.wallZ + 1.1 },
+            cloth: { x: L.shelf.x + 1.5, y: L.shelf.y + 0.7, z: L.wallZ + 1.1 },
+            // Червь лежит в воде, ближе к дальнему борту: спереди в финале
+            // всплывает хвост, и место ему надо оставить.
+            worm: { x: 0, y: T.deep + L.water + 0.6, z: -0.9 },
+            tail: { x: 1.2, y: T.deep + L.water, z: 1.7 },
+            // Углы борта: по ним игра знает, где чаша, не повторяя чисел.
+            rimL: { x: -T.len / 2, y: T.deep, z: 0 },
+            rimR: { x: T.len / 2, y: T.deep, z: 0 },
+            rimFront: { x: 0, y: T.deep, z: T.wide / 2 }
+        };
+    },
+
+    // ---------- КОМНАТА ----------
+    // Пол и стена — РАЗНЫЕ предметы: у них разные рампы палитры. Одной
+    // рампой на двоих комната выходила ровно белой, и ванна в ней терялась:
+    // отделение по светлоте — основа всей графики игры.
+    //
+    // Кафель НЕ геометрией: сетка швов на плоской стене рисуется в 2д поверх
+    // запечённого. Плоскость в перспективе и так правильная, а вдавленные
+    // швы стоили бы тысяч треугольников ни за что.
+    floor() {
+        const L = BATH_MODELS.LAYOUT, W = L.roomW;
+        // Одной плитой: порядок между предметами задан списком, и дробить
+        // пол на ячейки ради сортировки больше незачем.
+        //
+        // Задняя кромка заходит ЗА стену на полторы единицы. Сведённые
+        // встык, пол и стена оставляли по стыку светлую нить от сглаживания
+        // — ту же самую, из-за которой на кухне действует правило
+        // «стыки обязаны перекрываться».
+        return BATH_MODELS.quad(
+            [{ x: -W, y: 0, z: L.wallZ - 1.5 }, { x: W, y: 0, z: L.wallZ - 1.5 },
+             { x: W, y: 0, z: L.floorFront }, { x: -W, y: 0, z: L.floorFront }]);
+    },
+
+    wall() {
+        const L = BATH_MODELS.LAYOUT, W = L.roomW;
+        // Стена плоская и стоит целиком дальше всего — дробить её незачем,
+        // и одним путём она дешевле.
+        return BATH_MODELS.quad(
+            [{ x: -W, y: L.roomH, z: L.wallZ }, { x: W, y: L.roomH, z: L.wallZ },
+             { x: W, y: 0, z: L.wallZ }, { x: -W, y: 0, z: L.wallZ }]);
+    },
+
+    // Плоский четырёхугольник с запомненным контуром: выйдет одним путём.
+    quad(pts) {
+        const v = [], idx = [0, 1, 2, 0, 2, 3];
+        for (const p of pts) v.push(p.x, p.y, p.z);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        geo.userData.outline = pts.map(p => ({ x: p.x, y: p.y, z: p.z }));
+        return BATH_MODELS.flat(geo);
+    },
+
+    // Тот же четырёхугольник, но РАЗБИТЫЙ на сетку. Нужен для больших
+    // плоскостей — пола и стены.
+    //
+    // Порядок рисования у запекания — по глубине ЦЕНТРА фигуры, и у плиты
+    // пола в десять единиц глубиной один центр ничего не решает: пол уходил
+    // от стены до переднего края кадра, его середина оказывалась ближе
+    // ванны, и он рисовался ПОВЕРХ неё. Разбитый на ячейки, он сортируется
+    // с ванной вперемешку, как и должен.
+    //
+    // Швов от этого не возникает: у плоскости одна нормаль, значит все
+    // ячейки одного цвета, а подряд идущие ячейки одного цвета запекание
+    // сливает в один путь.
+    quadGrid(pts, nu, nv) {
+        const g = new THREE.Group();
+        const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t,
+                                     y: a.y + (b.y - a.y) * t,
+                                     z: a.z + (b.z - a.z) * t });
+        for (let i = 0; i < nu; i++) {
+            for (let j = 0; j < nv; j++) {
+                const u0 = i / nu, u1 = (i + 1) / nu;
+                const v0 = j / nv, v1 = (j + 1) / nv;
+                // Билинейная выборка по четырём углам исходной плиты.
+                const at = (u, v) => lerp(lerp(pts[0], pts[1], u),
+                                          lerp(pts[3], pts[2], u), v);
+                g.add(BATH_MODELS.quad([at(u0, v0), at(u1, v0),
+                                        at(u1, v1), at(u0, v1)]));
+            }
+        }
+        return g;
+    },
+
+    // ---------- ДУШ ----------
+    // Стояк по стене, колено и раструб лейки. Труба — протяжка окружности
+    // по кривой: у three.js это TubeGeometry, и вручную её строить незачем.
+    shower() {
+        const L = BATH_MODELS.LAYOUT, S = L.shower;
+        const g = new THREE.Group();
+        const path = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(S.x, S.riser, L.wallZ + 0.35),
+            new THREE.Vector3(S.x, S.y - 0.6, L.wallZ + 0.35),
+            new THREE.Vector3(S.x, S.y + 0.9, L.wallZ + 1.0),
+            new THREE.Vector3(S.x + 1.1, S.y + 1.2, S.z + 0.4),
+            new THREE.Vector3(S.x + 1.9, S.y + 0.5, S.z)
+        ], false, 'catmullrom', 0.4);
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 26, 0.26, 8, false)));
+        // Раструб: усечённый конус, широким концом ВНИЗ.
+        const head = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.44, 1.15, 1.1, 16, 1, false));
+        head.position.set(S.x + 1.9, S.y - 0.4, S.z);
+        g.add(head);
+        // Донце лейки — плоский диск, из него и льётся.
+        const face = new THREE.Mesh(new THREE.CircleGeometry(1.15, 16));
+        face.geometry.rotateX(-Math.PI / 2);
+        face.position.set(S.x + 1.9, S.y - 0.96, S.z);
+        g.add(face);
+        return g;
+    },
+
+    // ---------- СМЕСИТЕЛЬ ----------
+    faucet() {
+        const L = BATH_MODELS.LAYOUT, F = L.faucet;
+        const g = new THREE.Group();
+        // Розетка на стене.
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.5, 14));
+        base.rotation.x = Math.PI / 2;
+        base.position.set(F.x, F.y, L.wallZ + 0.24);
+        g.add(base);
+        // Излив: короткое колено вниз, как у ванной, а не гусак кухни.
+        const path = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(F.x, F.y, L.wallZ + 0.4),
+            new THREE.Vector3(F.x, F.y - 0.1, L.wallZ + 1.5),
+            new THREE.Vector3(F.x, F.y - 0.9, L.wallZ + 2.2)
+        ], false, 'catmullrom', 0.4);
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 14, 0.3, 8, false)));
+        // Рычаг: один, как у современного смесителя.
+        const lever = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 1.5));
+        lever.position.set(F.x - 0.1, F.y + 0.8, L.wallZ + 0.9);
+        lever.rotation.x = -0.24;
+        g.add(lever);
+        return g;
+    },
+
+    // ---------- ПОЛКА ----------
+    shelf() {
+        const L = BATH_MODELS.LAYOUT, S = L.shelf;
+        const g = new THREE.Group();
+        const slab = new THREE.Mesh(new THREE.BoxGeometry(S.w, 0.34, 1.9));
+        slab.position.set(S.x, S.y, L.wallZ + 1.05);
+        g.add(slab);
+        // Кронштейны: без них полка приклеена к стене.
+        for (const dx of [-S.w / 2 + 0.5, S.w / 2 - 0.5]) {
+            const br = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.7, 0.9));
+            br.position.set(S.x + dx, S.y - 0.5, L.wallZ + 0.55);
+            g.add(br);
+        }
+        return g;
+    },
+
+    // ---------- МЫЛО И МОЧАЛКА ----------
+    // Оба — скруглённые бруски, но разной формы и пропорции: на полке их
+    // разводит силуэт, а не только цвет.
+    soap() {
+        const a = BATH_MODELS.anchorPoints().soap;
+        const m = new THREE.Mesh(BATH_MODELS.roundedBox(2.3, 0.75, 1.35, 0.34, 3));
+        m.position.set(a.x, a.y - 0.3, a.z);
+        m.rotation.y = 0.22;
+        return m;
+    },
+
+    cloth() {
+        const a = BATH_MODELS.anchorPoints().cloth;
+        // Губка ВЫШЕ и короче мыла: мятый кубик против плоского бруска.
+        const m = new THREE.Mesh(BATH_MODELS.roundedBox(1.8, 1.25, 1.5, 0.42, 3));
+        m.position.set(a.x, a.y - 0.1, a.z);
+        m.rotation.y = -0.3;
+        return m;
     },
 
     // Контур, смещённый внутрь на заданную величину. Им ставятся вода и дно
