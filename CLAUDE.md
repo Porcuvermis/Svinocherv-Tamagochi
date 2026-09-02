@@ -91,6 +91,7 @@ NODE_PATH=/opt/node22/lib/node_modules node tools/<тест>.js /tmp/shot-
 | `zoom-kitchen.js` | Лупа: кусок кухни крупно, в заданной фазе |
 | `shot-kitchen-objects.js` + `diff-kitchen-objects.py` | Склад предметов кухни: снимки и промах относительно референса |
 | `test-no-words.js` | Ни одного слова на игровых экранах (инвариант 9) |
+| `test-lazy-three.js` | three.js не грузится, пока не открыли зависть — и грузится, когда открыли |
 | `test-pride.js` | Проходимость тщеславия |
 | `progression.js`, `sim-*.js`, `measure-power.js` | Числа баланса по живому конфигу |
 

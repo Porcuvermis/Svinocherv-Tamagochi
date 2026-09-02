@@ -134,6 +134,8 @@ const EnvyMinigame = {
     confirmLeaveBtn: null,
 
     // ---------- THREE ----------
+    threeLoading: null,   // промис загрузки библиотеки
+    sceneReady: null,     // промис «библиотека приехала И сцена построена»
     renderer: null,
     scene: null,
     camera: null,
@@ -235,7 +237,6 @@ const EnvyMinigame = {
         this.waves = [];
         this.activeTile = null;
         this.pointerDown = false;
-        this.state = 'play';
 
         this.updateGauge();
         this.hideConfirm();
@@ -248,19 +249,29 @@ const EnvyMinigame = {
             this.flashEl.style.transform = 'translate(-50%, -50%) scale(0)';
         }
 
-        this.ensureThree();
+        // Экран показывается СРАЗУ, а сцена достраивается, когда приедут
+        // библиотека и пул образов. Состояние до этого момента остаётся
+        // 'idle': обработчик указателя проверяет его первой же строкой и
+        // потому не может ткнуть в ещё не построенную сцену.
+        this.state = 'idle';
 
         // Векторные образы грузятся картинками, поэтому пул готовится
-        // асинхронно. Первый заход ждёт его доли секунды, дальше пул уже
-        // собран и промис отдаёт готовое немедленно.
-        this.poolReady.then(images => {
+        // асинхронно. Первый заход ждёт его доли секунды, дальше и пул, и
+        // библиотека уже на месте, и промис отдаёт готовое немедленно.
+        this.ensureThree().then(images => {
             if (!this.screenElement.classList.contains('active')) return;
             this.imagePool = images;
+            this.state = 'play';
             this.resize();      // считает раскладку и строит все три облака
 
             this.lastTs = null;
             if (this.rafId) cancelAnimationFrame(this.rafId);
             this.rafId = requestAnimationFrame((ts) => this.loop(ts));
+        }).catch(err => {
+            // Без библиотеки играть нечем: честно закрываем экран, а не
+            // оставляем игрока перед чёрным прямоугольником.
+            console.error('Зависть: сцена не собралась', err);
+            this.close();
         });
     },
 
@@ -307,7 +318,41 @@ const EnvyMinigame = {
     },
 
     // ================= СЦЕНА =================
+    // Библиотека грузится ЛЕНИВО, при первом открытии зависти. Раньше она
+    // висела обычным <script> в index.html и попадала в window.load, до
+    // которого держится пелена загрузки: 145 КБ gzip задерживали появление
+    // игры у всех, включая тех, кто в зависть не заходит.
+    //
+    // Промис хранится, а не создаётся заново: второе открытие не должно
+    // ни ждать, ни грузить повторно.
+    loadThree() {
+        if (window.THREE) return Promise.resolve();
+        if (this.threeLoading) return this.threeLoading;
+        this.threeLoading = new Promise((resolve, reject) => {
+            const el = document.createElement('script');
+            // Версия в запросе — как у остальных ассетов: адрес меняется
+            // вместе с версией, и кеш не отдаёт старую библиотеку.
+            el.src = 'vendor/three.min.js?v=r128';
+            el.onload = () => resolve();
+            el.onerror = () => reject(new Error('three.js не загрузился'));
+            document.head.appendChild(el);
+        });
+        return this.threeLoading;
+    },
+
+    // Возвращает ПРОМИС готовой сцены: до загрузки библиотеки строить нечего.
+    // Раньше метод был синхронным, и всё, что идёт после него, полагалось на
+    // немедленно существующий renderer.
     ensureThree() {
+        if (this.sceneReady) return this.sceneReady;
+        this.sceneReady = this.loadThree().then(() => {
+            this.buildThree();
+            return this.poolReady;
+        });
+        return this.sceneReady;
+    },
+
+    buildThree() {
         if (this.renderer) return;
 
         this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
