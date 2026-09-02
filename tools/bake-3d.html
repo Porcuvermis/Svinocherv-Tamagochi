@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Запекание 3д в SVG</title>
+<!-- ============ 3Д КАК ИСТОЧНИК ЧИСЕЛ, А НЕ КАК РАНТАЙМ ============
+
+     Здесь three.js работает ТОЛЬКО у меня на машине, при генерации. В игру
+     уходит обычный SVG, и вес рантайма не меняется ни на байт.
+
+     Зачем это вообще: восемь подгонок подряд не дали прочитать ванну ванной.
+     Твёрдые предметы (чаша, корпус техники, труба, кастрюля) — тела
+     вращения и выдавливания, и рисовать их вручную в перспективе значит
+     каждый раз угадывать проекцию. Модель угадывать не нужно: она
+     проецируется камерой, и перспектива получается правильной по
+     построению. Ловушка №14 (docs/traps.md) на запечённых предметах
+     перестаёт существовать.
+
+     Что НЕ уезжает в 3д: червь (10 тысяч строк своей анатомии), иконки,
+     интерфейс. Они остаются 2д и этого файла не касаются.
+-->
+<style>
+  html, body { margin: 0; background: #ff00ff; }
+  svg { display: block; background: #ff00ff; }
+</style>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/core/palette.js"></script>
+<script src="bake-3d-core.js"></script>
+<script src="models/bath-models.js"></script>
+<script>
+// Показать произвольную разметку — тем же способом, что и остальные разборы.
+window.show = (markup, box, scale) => {
+    const svg = document.getElementById('stage');
+    svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+    svg.setAttribute('width', Math.round(box.w * scale));
+    svg.setAttribute('height', Math.round(box.h * scale));
+    svg.innerHTML = markup;
+    return { w: Math.round(box.w * scale), h: Math.round(box.h * scale) };
+};
+</script>

@@ -62,6 +62,7 @@
 | Холст, камера, комната | `docs/stage-and-room.md` |
 | Окно мини-игры | `docs/minigame-window.md` |
 | Предметы кухни по референсу (склад SVG) | `docs/kitchen-objects.md` |
+| Твёрдый предмет в перспективе (3д → SVG) | `docs/bake-3d.md` |
 | Как проверять кухню (три уровня) | `docs/kitchen-checks.md` |
 | Убрать слова из экрана | `docs/plan/11-no-words.md` |
 | Деплой, iPhone, service worker | `docs/deploy-iphone.md` |
