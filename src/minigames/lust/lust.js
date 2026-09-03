@@ -55,30 +55,36 @@ const LustMinigame = {
     foamCtx: null,
 
     // ---------- ФИНАЛ ----------
-    // Угол хвоста держится ЗДЕСЬ, а не в разметке: по нему считается и
+    // Изгиб хвоста держится ЗДЕСЬ, а не в разметке: по нему считается и
     // картинка, и попадание, и это обязано быть одно и то же число.
-    tailAngle: 0,      // куда смотрит хвост сейчас, радианы
-    tailRest: 0,       // куда его тянет обратно
-    tailAim: 0,        // куда надо: от основания хвоста ко рту
+    bend: 0,           // на сколько радиан уведён кончик от вертикали
+    bendWant: 0,       // куда тянет палец
+    bendAim: 0,        // изгиб, при котором кончик смотрит в рот
     bubbles: null,
     shotsLeft: 0,
     hits: 0,
     aimRaf: 0,
+    aimLast: 0,
     shotTimer: 0,
     hintTimer: 0,
 
     // Между толчками. Десять толчков — это четверть минуты: реже станет
     // ожиданием, чаще — не успеть довести хвост против его сопротивления.
     SHOT_MS: 1500,
-    // На сколько хвост отпускает обратно за кадр. Не жёсткая пружина:
-    // мгновенный возврат читается рывком, а не сопротивлением.
-    TAIL_PULL: 0.055,
-    // Насколько далеко хвост можно увести от покоя.
-    TAIL_RANGE: 1.5,   // радианы
-    // На сколько покой отстоит от прицела. Знак МИНУС: хвост отдыхает
-    // задранным вверх, а тянуть его надо ВНИЗ ко рту. С плюсом он ложился
-    // плашмя на воду и читался плавником, а не хвостом.
-    REST_OFF: 0.62,
+
+    // ---------- УПРУГОСТЬ ХВОСТА ----------
+    // Хвост НЕ идёт туда, куда показывает палец. Первая версия ставила его
+    // ровно в точку пальца, и челленджа не было вовсе: навёл — попал.
+    //
+    // Теперь это отгибаемый прут. Палец тянет с постоянной силой, упругость
+    // тянет обратно, и она растёт БЫСТРЕЕ отклонения (кубическая добавка) —
+    // как ветка, которая у корня поддаётся, а на пределе упирается. Куда
+    // именно встанет кончик, решает равновесие этих двух сил, и держать его
+    // на цели приходится всё время.
+    BEND_MAX: 1.9,     // предел изгиба, радианы
+    BEND_PULL: 9.0,    // с какой силой тянет палец
+    BEND_STIFF: 2.6,   // упругость у корня
+    BEND_HARD: 1.15,   // насколько круче она растёт к пределу
 
     cfg() {
         return (typeof ECONOMY !== 'undefined' && ECONOMY.minigames
@@ -254,7 +260,7 @@ const LustMinigame = {
             this.wormHandle = window.WormRenderer.mount(this.wormHost, model, {
                 context: 'lust',
                 // Лёжа: червь в ванне, а не стоит в ней.
-                pose: 'lying',
+                pose: 'standing',
                 wander: false,
                 blink: true,
                 // Червя моют — он лежит смирно. Не украшение: маска силуэта,
@@ -280,14 +286,31 @@ const LustMinigame = {
     //
     // Поэтому холст червя — постоянные 300×150, а нужный размер в сцене
     // делает scale в transform.
-    WORM_BASE: { w: 300, h: 150 },
+    WORM_BASE: { w: 240, h: 320 },
 
-    // Куда этот холст ложится в сцене. Ширина выведена из габарита ВОДЫ:
-    // червь лежит в чаше и шире её быть не может.
+    // Куда этот холст ложится в сцене.
+    //
+    // ---------- ЧЕРВЬ ВЫНЫРИВАЕТ, А НЕ ЛЕЖИТ ----------
+    // Так было в первой, двумерной версии ванной, и так правильно: видно
+    // голову и верх туловища, остальное тело уходит вниз, в воду, и его нет.
+    // Лежащий поперёк чаши червь занимал весь кадр и не оставлял места ни
+    // хвосту на переднем плане, ни шкале над головой.
+    //
+    // Линия среза — уровень воды: ниже неё червя не видно вовсе (обрезка
+    // слоя ниже и стёртая маска мыла). Доля 0.72 подобрана по картинке: над
+    // водой остаются голова и пара сегментов.
+    WORM_SUBMERGE: 0.88,
+
+    waterLine() {
+        const w = BATH_ART.box('water');
+        return (w ? w.y : 600) + 26;
+    },
+
     wormBoxScene() {
-        const A = BATH_ART.slots(), b = BATH_ART.box('water') || { w: 571 };
-        const w = b.w * 0.82, h = w * this.WORM_BASE.h / this.WORM_BASE.w;
-        return { x: A.worm.x - w / 2, y: A.worm.y - h * 0.55, w, h };
+        const A = BATH_ART.slots(), b = BATH_ART.box('water') || { w: 578 };
+        const w = b.w * 0.92, h = w * this.WORM_BASE.h / this.WORM_BASE.w;
+        return { x: A.worm.x - w / 2, y: this.waterLine() - h * this.WORM_SUBMERGE,
+                 w, h };
     },
 
     layoutWorm() {
@@ -302,6 +325,10 @@ const LustMinigame = {
         const k = ((c.x - a.x) / 100 || 1) * box.w / B.w;
         const t = `translate(${a.x.toFixed(1)}px, ${a.y.toFixed(1)}px) scale(${k.toFixed(4)})`;
         this.wormHost.style.transform = t;
+        // Ниже уровня воды червя нет. Обрезка по слою, а не по картинке:
+        // рендерер рисует своё, и лезть внутрь его svg нельзя.
+        const cut = B.h * this.WORM_SUBMERGE;
+        this.wormHost.style.clipPath = `inset(0 0 ${(B.h - cut).toFixed(1)}px 0)`;
         // Холсты следа — в тех же единицах, значит и преобразование то же.
         for (const id of ['bt-film', 'bt-foam']) {
             const n = this.el(id);
@@ -339,6 +366,10 @@ const LustMinigame = {
                     d.data[i] = d.data[i] > 24 ? 255 : 0;
                 g.putImageData(d, 0, 0);
             } catch (e) { /* холст запачкан — сойдёт и мягкая кромка */ }
+            // Под водой мылить нечего: там червя не видно. Если этого не
+            // стереть, мазки туда засчитываются, а следа не видно — этап
+            // кончается сам собой.
+            g.clearRect(0, B.h * this.WORM_SUBMERGE * S, c.width, c.height);
             this.mask = c;
             this.buildCells();
         };
@@ -643,29 +674,25 @@ const LustMinigame = {
         // и работает (блаженство, открытый рот).
         this.el('bt-film').style.opacity = '0';
         this.el('bt-foam').style.opacity = '0';
-        const A = BATH_ART.slots();
         const model = window.WormModelAPI ? window.WormModelAPI.loadWormModel() : null;
-
-        // Покой — НЕ прицел: хвост тянет в сторону от рта, и держать его на
-        // цели приходится пальцем. Иначе финал играется бездействием.
-        this.tailAim = this.aimAngle();
-        this.tailRest = this.tailAim - this.REST_OFF;
-        this.tailAngle = this.tailRest;
+        this.tailModel = model;
+        this.bend = 0;
+        this.bendWant = 0;
 
         this.el('bt-tail').innerHTML =
             `<g id="bt-tail-pivot">${BATH_ART.tail(model)}</g>`;
         this.drawTail();
         this.setOpacity('bt-tail', 1);
 
-        // Всплытие: обрезки нет, хвост поднимается снизу вверх собственным
-        // сдвигом — так же, как прибывала вода.
+        // Всплытие: хвост выезжает снизу, из-под воды. Обрезка не нужна —
+        // группа лежит ПОД слоем воды, и та сама прячет всё, что не поднялось.
         const g = this.el('bt-tail');
         const t0 = performance.now(), DUR = 1100;
         const step = (t) => {
             const k = Math.min(1, (t - t0) / DUR);
             const e = 1 - Math.pow(1 - k, 3);
             g.setAttribute('transform',
-                `translate(0 ${((1 - e) * BATH_ART.TAIL.len * 0.9).toFixed(1)})`);
+                `translate(0 ${((1 - e) * BATH_ART.TAIL.len * 0.95).toFixed(1)})`);
             if (k < 1) { this.fillRaf = requestAnimationFrame(step); return; }
             this.fillRaf = 0;
             this.spawnBubbles();
@@ -673,9 +700,9 @@ const LustMinigame = {
         this.fillRaf = requestAnimationFrame(step);
     },
 
-    // Угол от основания хвоста ко рту червя. Считается по НАРИСОВАННОМУ рту,
-    // а не по числу: рот ездит вместе с моделью, и подобранный угол разошёлся
-    // бы с ней при первой же правке персонажа.
+    // Точка рта червя. Считается по НАРИСОВАННОМУ рту, а не по числу: рот
+    // ездит вместе с моделью, и подобранное число разошлось бы с ней при
+    // первой же правке персонажа.
     mouthPoint() {
         const box = this.wormBoxScene(), B = this.WORM_BASE, k = box.w / B.w;
         let p = null;
@@ -683,29 +710,40 @@ const LustMinigame = {
             const q = this.wormHandle.getPartPoint('mouth');
             if (q) p = { x: box.x + q.x * k, y: box.y + q.y * k };
         }
-        return p || { x: box.x + box.w * 0.72, y: box.y + box.h * 0.62 };
+        return p || { x: box.x + box.w * 0.6, y: box.y + box.h * 0.42 };
     },
 
-    aimAngle() {
-        const A = BATH_ART.slots(), m = this.mouthPoint();
-        return Math.atan2(m.y - A.tail.y, m.x - A.tail.x);
+    // Куда сейчас смотрит кончик и где он стоит.
+    tipState(bend) {
+        const A = BATH_ART.slots();
+        const c = BATH_ART.tailCurve(bend == null ? this.bend : bend);
+        return { x: A.tail.x + c.tip.x, y: A.tail.y + c.tip.y, dir: c.dir, curve: c };
     },
 
-    // Хвост нарисован остриём ВВЕРХ, то есть в -90°. Поворот доводит его до
-    // нужного направления.
+    // Изгиб, при котором струя из кончика идёт в рот. Ищется перебором, а не
+    // формулой: кончик при изгибе ещё и ЕЗДИТ, поэтому нужный угол зависит от
+    // самого изгиба, и в лоб это не решается.
+    solveBend(target) {
+        let best = 0, bestErr = Infinity;
+        for (let i = 0; i <= 60; i++) {
+            const b = -0.3 + (this.BEND_MAX + 0.3) * i / 60;
+            const s = this.tipState(b);
+            let d = Math.atan2(target.y - s.y, target.x - s.x) - s.dir;
+            while (d > Math.PI) d -= 2 * Math.PI;
+            while (d < -Math.PI) d += 2 * Math.PI;
+            if (Math.abs(d) < bestErr) { bestErr = Math.abs(d); best = b; }
+        }
+        return best;
+    },
+
     drawTail() {
         const A = BATH_ART.slots(), g = this.el('bt-tail-pivot');
         if (!g) return;
-        const deg = this.tailAngle * 180 / Math.PI + 90;
-        g.setAttribute('transform',
-            `translate(${A.tail.x} ${A.tail.y}) rotate(${deg.toFixed(1)})`);
-    },
-
-    // Кончик хвоста: отсюда бьёт струя и здесь сидят пузыри.
-    tipAt(t) {
-        const A = BATH_ART.slots(), L = BATH_ART.TAIL.len * (t == null ? 1 : t);
-        return { x: A.tail.x + Math.cos(this.tailAngle) * L,
-                 y: A.tail.y + Math.sin(this.tailAngle) * L };
+        // Ни одного поворота: группа только переносится, а гнётся сама фигура.
+        g.setAttribute('transform', `translate(${A.tail.x} ${A.tail.y})`);
+        const d = BATH_ART.tailD(this.bend);
+        this.el('bt-tail-body').setAttribute('d', d.body);
+        this.el('bt-tail-shine').setAttribute('d', d.shine);
     },
 
     // ---------- ПУЗЫРИ ----------
@@ -717,15 +755,17 @@ const LustMinigame = {
         const lo = C.bubblesMin || 8, hi = C.bubblesMax || 12;
         const n = lo + Math.floor(Math.random() * (hi - lo + 1));
         this.bubbles = [];
-        const W = BATH_ART.TAIL.base;
+        // Сидят на ОСИ хвоста, а не вокруг его основания: пена налипла на
+        // прут, и при изгибе она должна лежать вдоль него.
+        const A = BATH_ART.slots(), W = BATH_ART.TAIL.base;
+        const spine = BATH_ART.tailSpine(this.bend);
         for (let i = 0; i < n; i++) {
-            // Вдоль хвоста, а не по кругу: пена сидит НА нём.
-            const t = 0.12 + (i + 0.5) / n * 0.82;
-            const side = (Math.random() - 0.5) * W * 0.9;
-            const p = this.tipAt(t);
+            const t = 0.18 + (i + 0.5) / n * 0.78;
+            const p = spine[Math.round(t * (spine.length - 1))];
+            const side = (Math.random() - 0.5) * W * 0.85;
             this.bubbles.push({
-                x: p.x - Math.sin(this.tailAngle) * side,
-                y: p.y + Math.cos(this.tailAngle) * side,
+                x: A.tail.x + p.x + Math.cos(p.a) * side,
+                y: A.tail.y + p.y + Math.sin(p.a) * side,
                 r: 15 + Math.random() * 11, alive: true, seed: i * 37 + 5
             });
         }
@@ -762,19 +802,18 @@ const LustMinigame = {
         if (this.wormHandle && this.wormHandle.setLivePose)
             this.wormHandle.setLivePose({ mouthOpenness: 0.75, eyelidLevel: 0.9 });
 
-        // Прицел и покой пересчитываются: камера переехала, а рот считается
-        // по нарисованному червю.
-        this.tailAim = this.aimAngle();
-        this.tailRest = this.tailAim - this.REST_OFF;
+        // Прицел пересчитывается: камера переехала, а рот берётся у
+        // нарисованного червя.
+        this.bendAim = this.solveBend(this.mouthPoint());
         this.drawGauge();
 
-        const tick = () => {
-            // Хвост ТЯНЕТ ОБРАТНО, пока его не держат. Сопротивление — весь
-            // смысл управления: без него прицел ставится один раз и забег
-            // играется сам.
-            if (!this.drag || this.drag.kind !== 'tail') {
-                this.tailAngle += (this.tailRest - this.tailAngle) * this.TAIL_PULL;
-            }
+        this.aimLast = performance.now();
+        const tick = (now) => {
+            // Шаг по времени, а не по кадру: на медленном телефоне упругость
+            // иначе становится другой физикой.
+            const dt = Math.min(0.05, (now - this.aimLast) / 1000);
+            this.aimLast = now;
+            this.stepBend(dt);
             this.drawTail();
             this.aimRaf = requestAnimationFrame(tick);
         };
@@ -782,16 +821,42 @@ const LustMinigame = {
         this.shotTimer = setTimeout(() => this.shoot(), this.SHOT_MS);
     },
 
-    // Палец ставит хвост туда, куда показывает, но не дальше упора.
+    // Шаг упругости. Палец тянет с ПОСТОЯННОЙ силой, упругость тянет обратно
+    // и растёт быстрее отклонения — поэтому кончик всегда встаёт НЕ ТАМ, где
+    // палец, а там, где силы сошлись. Чем дальше отгибаешь, тем сильнее
+    // недобор, и держать цель приходится всё время.
+    //
+    // Порядок первый (без инерции) выбран нарочно: пружина второго порядка
+    // раскачивается, и хвост начинает болтаться сам по себе — целиться в
+    // болтающийся хвост нечестно, разброс и так намеренно случайный.
+    stepBend(dt) {
+        const held = this.drag && this.drag.kind === 'tail';
+        const u = this.bend / this.BEND_MAX;
+        const restore = this.BEND_STIFF * u * (1 + this.BEND_HARD * u * u);
+        const pull = held
+            ? this.BEND_PULL * (this.bendWant / this.BEND_MAX - u)
+            : 0;
+        this.bend += (pull - restore) * this.BEND_MAX * dt;
+        const lo = -0.25;
+        if (this.bend < lo) this.bend = lo;
+        if (this.bend > this.BEND_MAX) this.bend = this.BEND_MAX;
+    },
+
+    // Палец не ставит хвост, а ТЯНЕТ его. Здесь считается только «куда тянет»;
+    // где хвост окажется на самом деле, решает stepBend.
+    //
+    // Тянет — это УГОЛ ОТ ВЕРТИКАЛИ между основанием и пальцем, а не точка,
+    // куда должен смотреть кончик. Второе пробовали: из-за упругости хвост
+    // всегда недобирает, значит палец приходится уводить дальше, чем нужную
+    // точку, — а она уже у края кадра, и «дальше» оказывалось за экраном.
+    // Углом же полный размах укладывается в четверть оборота вокруг корня и
+    // весь помещается на экране.
     aimAt(p) {
         const A = BATH_ART.slots();
-        const want = Math.atan2(p.y - A.tail.y, p.x - A.tail.x);
-        let d = want - this.tailRest;
-        while (d > Math.PI) d -= 2 * Math.PI;
-        while (d < -Math.PI) d += 2 * Math.PI;
-        const R = this.TAIL_RANGE;
-        this.tailAngle = this.tailRest + Math.max(-R, Math.min(R, d));
-        this.drawTail();
+        const a = Math.atan2(p.x - A.tail.x, A.tail.y - p.y);
+        const u = a / (Math.PI / 2);
+        this.bendWant = Math.max(-0.25,
+            Math.min(this.BEND_MAX, u * this.BEND_MAX));
     },
 
     // Один толчок. Модель ровно та, что считает tools/sim-lust.js: сила
@@ -806,14 +871,19 @@ const LustMinigame = {
         const power = u(t.minPower || 0.2, 1);
         const err = (u(-(t.spread || 25), t.spread || 25)
                    + u(-(t.slop || 12), t.slop || 12)) * Math.PI / 180;
-        const angle = this.tailAngle + err;
 
-        const m = this.mouthPoint(), tip = this.tipAt(1);
-        const dist = Math.hypot(m.x - tip.x, m.y - tip.y);
+        // Струя летит по КАСАТЕЛЬНОЙ кончика: куда смотрит хвост, туда и бьёт.
+        const s = this.tipState();
+        const angle = s.dir + err;
+        const m = this.mouthPoint();
+        const dist = Math.hypot(m.x - s.x, m.y - s.y);
         const reach = C.reach || 0.5;
         const far = power >= reach ? dist * 1.06 : dist * (power / reach);
 
-        let off = angle - this.tailAim;
+        // Промах считается от направления НА РОТ из той точки, где сейчас
+        // кончик: он ездит вместе с изгибом, и мерить от чего-то другого
+        // значит мерить не то, что игрок видит.
+        let off = angle - Math.atan2(m.y - s.y, m.x - s.x);
         while (off > Math.PI) off -= 2 * Math.PI;
         while (off < -Math.PI) off += 2 * Math.PI;
         const hit = power >= reach
@@ -821,7 +891,7 @@ const LustMinigame = {
         if (hit) { this.hits++; this.drawGauge(); }
 
         const layer = this.el('bt-shots');
-        layer.innerHTML = BATH_ART.shot(tip.x, tip.y, angle, far, this.shotsLeft * 13);
+        layer.innerHTML = BATH_ART.shot(s.x, s.y, angle, far, this.shotsLeft * 13);
         setTimeout(() => { if (this.phase === 'aim') layer.innerHTML = ''; }, 420);
 
         if (--this.shotsLeft > 0) {
@@ -845,8 +915,11 @@ const LustMinigame = {
         const box = this.wormBoxScene();
         const filled = Math.min(C.sections || 3,
             Math.floor(this.hits / (C.perSection || 2)));
+        // Над головой, считая от ВЕРХА нарисованного червя: доля от холста
+        // персонажа уводила шкалу за кадр, стоило поменять его посадку.
+        const top = this.coverBox().y;
         this.el('bt-gauge').innerHTML =
-            BATH_ART.gauge(m.x, m.y - box.h * 0.62, C.sections || 3, filled);
+            BATH_ART.gauge(m.x, top - 26, C.sections || 3, filled);
     },
 
     stopClocks() {

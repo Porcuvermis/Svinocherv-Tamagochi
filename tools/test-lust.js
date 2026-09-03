@@ -120,16 +120,49 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: out + '3-aim.png' });
 
   // ---------- ФИНАЛ ----------
-  // Палец держит хвост на прицеле весь финал: это и есть «умелая игра», под
-  // которую считан баланс в tools/sim-lust.js.
+  // Хвост — отгибаемый прут: он НЕ встаёт туда, куда показывает палец.
+  // Проверяем это прямо: сначала тянем ровно «на рот» и убеждаемся, что
+  // упругость не пускает, потом с перетягом — и тогда встаёт.
+  const bendAt = async (target) => {
+    const t = await toScreen(target);
+    await page.mouse.move(t.x, t.y);
+    await page.mouse.down();
+    await page.waitForTimeout(900);
+    const b = await page.evaluate(() => LustMinigame.bend);
+    await page.mouse.up();
+    await page.waitForTimeout(900);
+    return b;
+  };
+  const aim = await page.evaluate(() => LustMinigame.bendAim);
+  // «Навёл ровно на цель» — палец на той дуге, которая соответствует нужному
+  // изгибу один в один, без всякого запаса на упругость.
+  const naive = await bendAt(await page.evaluate(() => {
+    const L = LustMinigame, A2 = BATH_ART.slots();
+    const a = L.bendAim / L.BEND_MAX * Math.PI / 2, r = 200;
+    return { x: A2.tail.x + Math.sin(a) * r, y: A2.tail.y - Math.cos(a) * r };
+  }));
+  ok(naive < aim * 0.85, 'хвост сопротивляется, а не идёт за пальцем',
+     `навёл на рот — изгиб ${naive.toFixed(2)} из нужных ${aim.toFixed(2)}`);
+  const relaxed = await page.evaluate(() => LustMinigame.bend);
+  ok(relaxed < naive * 0.5, 'отпущенный хвост возвращается', relaxed.toFixed(2));
+
+  // Точка перетяга: палец уводится по дуге вокруг корня дальше, чем нужный
+  // изгиб, — ровно настолько, чтобы равновесие село на прицел. Так тянет и
+  // живой игрок: «дальше, чем нужно, потому что не доходит».
   const hold = await page.evaluate(() => {
-    const A2 = BATH_ART.slots(), m = LustMinigame.mouthPoint();
-    return { x: A2.tail.x + (m.x - A2.tail.x) * 0.9,
-             y: A2.tail.y + (m.y - A2.tail.y) * 0.9 };
+    const L = LustMinigame, A2 = BATH_ART.slots(), u = L.bendAim / L.BEND_MAX;
+    const wantU = u + L.BEND_STIFF * u * (1 + L.BEND_HARD * u * u) / L.BEND_PULL;
+    const a = Math.min(1, wantU) * Math.PI / 2, r = 200;
+    return { x: A2.tail.x + Math.sin(a) * r, y: A2.tail.y - Math.cos(a) * r };
   });
   const hs = await toScreen(hold);
   await page.mouse.move(hs.x, hs.y);
   await page.mouse.down();
+  await page.waitForTimeout(900);
+  const held = await page.evaluate(() => LustMinigame.bend);
+  ok(Math.abs(held - aim) < 0.18, 'с перетягом хвост встаёт на прицел',
+     `${held.toFixed(2)} против ${aim.toFixed(2)}`);
+
   const shots = await page.evaluate(() => LustMinigame.cfg().shots);
   for (let i = 0; i < shots + 2; i++) {
     await page.mouse.move(hs.x + (i % 2), hs.y);   // палец держит, хвост не отпускает
