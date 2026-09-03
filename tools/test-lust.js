@@ -120,56 +120,85 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: out + '3-aim.png' });
 
   // ---------- ФИНАЛ ----------
-  // Хвост — отгибаемый прут: он НЕ встаёт туда, куда показывает палец.
-  // Проверяем это прямо: сначала тянем ровно «на рот» и убеждаемся, что
-  // упругость не пускает, потом с перетягом — и тогда встаёт.
-  const bendAt = async (target) => {
-    const t = await toScreen(target);
-    await page.mouse.move(t.x, t.y);
-    await page.mouse.down();
-    await page.waitForTimeout(900);
-    const b = await page.evaluate(() => LustMinigame.bend);
-    await page.mouse.up();
-    await page.waitForTimeout(900);
-    return b;
+  // Хвост держится ТОЛЧКАМИ: палец наклоняет его движением по дуге вокруг
+  // корня, а сам он всё время выпрямляется. Проверяем обе половины.
+  const arcPoint = (a, r) => page.evaluate(([ang, rad]) => {
+    const A2 = BATH_ART.slots();
+    return { x: A2.tail.x + Math.sin(ang) * rad, y: A2.tail.y - Math.cos(ang) * rad };
+  }, [a, r]);
+  const R = 190;
+
+  // Один проход пальцем по дуге: наклоняет хвост.
+  const stroke = async (from, to, steps) => {
+    for (let i = 0; i <= (steps || 8); i++) {
+      const p2 = await arcPoint(from + (to - from) * i / (steps || 8), R);
+      const s2 = await toScreen(p2);
+      await page.mouse.move(s2.x, s2.y);
+    }
   };
+
   const aim = await page.evaluate(() => LustMinigame.bendAim);
-  // «Навёл ровно на цель» — палец на той дуге, которая соответствует нужному
-  // изгибу один в один, без всякого запаса на упругость.
-  const naive = await bendAt(await page.evaluate(() => {
-    const L = LustMinigame, A2 = BATH_ART.slots();
-    const a = L.bendAim / L.BEND_MAX * Math.PI / 2, r = 200;
-    return { x: A2.tail.x + Math.sin(a) * r, y: A2.tail.y - Math.cos(a) * r };
-  }));
-  ok(naive < aim * 0.85, 'хвост сопротивляется, а не идёт за пальцем',
-     `навёл на рот — изгиб ${naive.toFixed(2)} из нужных ${aim.toFixed(2)}`);
-  const relaxed = await page.evaluate(() => LustMinigame.bend);
-  ok(relaxed < naive * 0.5, 'отпущенный хвост возвращается', relaxed.toFixed(2));
-
-  // Точка перетяга: палец уводится по дуге вокруг корня дальше, чем нужный
-  // изгиб, — ровно настолько, чтобы равновесие село на прицел. Так тянет и
-  // живой игрок: «дальше, чем нужно, потому что не доходит».
-  const hold = await page.evaluate(() => {
-    const L = LustMinigame, A2 = BATH_ART.slots(), u = L.bendAim / L.BEND_MAX;
-    const wantU = u + L.BEND_STIFF * u * (1 + L.BEND_HARD * u * u) / L.BEND_PULL;
-    const a = Math.min(1, wantU) * Math.PI / 2, r = 200;
-    return { x: A2.tail.x + Math.sin(a) * r, y: A2.tail.y - Math.cos(a) * r };
-  });
-  const hs = await toScreen(hold);
-  await page.mouse.move(hs.x, hs.y);
+  const bendMax = await page.evaluate(() => LustMinigame.BEND_MAX);
+  // Прицел обязан лежать В СЕРЕДИНЕ размаха. Один раз он оказался у самого
+  // предела: максимально согнутый хвост всё равно не доставал до рта, и финал
+  // был физически непроходим. Заодно это и требование к игре — должно быть
+  // место и недогнуть, и перегнуть.
+  ok(aim > bendMax * 0.25 && aim < bendMax * 0.7,
+     'прицел лежит в середине размаха хвоста',
+     `${aim.toFixed(2)} из ${bendMax}`);
+  const start = await arcPoint(0.05, R);
+  const ss = await toScreen(start);
+  await page.mouse.move(ss.x, ss.y);
   await page.mouse.down();
-  await page.waitForTimeout(900);
-  const held = await page.evaluate(() => LustMinigame.bend);
-  ok(Math.abs(held - aim) < 0.18, 'с перетягом хвост встаёт на прицел',
-     `${held.toFixed(2)} против ${aim.toFixed(2)}`);
+  await stroke(0.05, 1.15, 12);
+  await stroke(0.05, 1.15, 12);
+  const pushed = await page.evaluate(() => LustMinigame.bend);
+  ok(pushed > aim * 0.7, 'хвост наклоняется толчком пальца',
+     `изгиб ${pushed.toFixed(2)} при прицеле ${aim.toFixed(2)}`);
 
+  // Палец НА ЭКРАНЕ и неподвижен — хвост обязан выпрямляться сам.
+  await page.waitForTimeout(1100);
+  const held = await page.evaluate(() => LustMinigame.bend);
+  // Окно попадания по изгибу — примерно ±0.13 радиана, и за секунду хвост
+  // обязан уйти из него с запасом. Иначе «поставил и забыл» возвращается.
+  // Доля, а не разница: скорость выпрямления зависит от того, насколько
+  // хвост согнут, и порог в абсолютных радианах сравнивал бы разные величины.
+  ok((pushed - held) / pushed > 0.17, 'неподвижный палец хвост не держит',
+     `${pushed.toFixed(2)} → ${held.toFixed(2)} за секунду`);
+
+  // Перегнуть можно: доводим до упора.
+  for (let i = 0; i < 9; i++) await stroke(0.05, 1.4, 8);
+  const over = await page.evaluate(() => LustMinigame.bend);
+  ok(over > aim * 1.25, 'хвост можно перегнуть', over.toFixed(2));
+  await page.mouse.up();
+  await page.waitForTimeout(2600);
+  const back = await page.evaluate(() => LustMinigame.bend);
+  ok(back < over * 0.5, 'отпущенный хвост выпрямляется',
+     `${over.toFixed(2)} → ${back.toFixed(2)}`);
+
+  // Весь финал: держим прицел подталкиваниями — это и есть умелая игра, под
+  // которую считан баланс в tools/sim-lust.js.
+  const s0 = await toScreen(await arcPoint(0.05, R));
+  await page.mouse.move(s0.x, s0.y);
+  await page.mouse.down();
   const shots = await page.evaluate(() => LustMinigame.cfg().shots);
-  for (let i = 0; i < shots + 2; i++) {
-    await page.mouse.move(hs.x + (i % 2), hs.y);   // палец держит, хвост не отпускает
-    await page.waitForTimeout(1500);
+  const t0 = Date.now();
+  let held0 = 0, held0n = 0;
+  while (Date.now() - t0 < (shots + 2) * 1500) {
+    const b = await page.evaluate(() => LustMinigame.bend);
+    held0 += Math.abs(b - aim); held0n++;
+    if (b < aim - 0.03) {
+      // Короткий подталкивающий ход — так же поправляет прицел живая рука.
+      const from = 0.4 + Math.random() * 0.2;
+      await stroke(from, from + 0.14, 3);
+    } else {
+      await page.waitForTimeout(70);
+    }
   }
   await page.mouse.up();
   await page.waitForTimeout(1200);
+  ok(held0 / held0n < 0.3, 'прицел удерживается подталкиваниями',
+     `среднее отклонение ${(held0 / held0n).toFixed(2)} рад`);
 
   const res = await page.evaluate(() => ({
     phase: LustMinigame.phase,

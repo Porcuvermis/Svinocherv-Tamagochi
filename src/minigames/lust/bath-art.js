@@ -225,18 +225,21 @@ const BATH_ART = {
     // водой, кривизна набирается к кончику. Отсюда и форма изгиба: угол
     // растёт как t², то есть у корня прут почти прямой, а гнётся верхняя
     // треть — ровно так ведёт себя ветка, которую отгибают за макушку.
-    TAIL: { len: 250, base: 78, seg: 24 },
+    // side: в какую сторону гнётся. −1 — влево: хвост стоит правее головы,
+    // и тянуть его надо к ней.
+    TAIL: { len: 200, base: 74, seg: 22, side: -1 },
 
     // Осевая линия при заданном изгибе. bend — на сколько радиан уведён
     // КОНЧИК от вертикали; у основания отклонение всегда ноль.
     tailSpine(bend) {
         const T = this.TAIL, n = T.seg, ds = T.len / n;
+        const k = T.side || 1;
         const pts = [{ x: 0, y: 0, a: 0 }];
         let x = 0, y = 0;
         for (let i = 1; i <= n; i++) {
             const t = i / n;
             const a = bend * t * t;           // прут: кривизна набирается к концу
-            x += Math.sin(a) * ds;
+            x += k * Math.sin(a) * ds;
             y -= Math.cos(a) * ds;
             pts.push({ x, y, a });
         }
@@ -254,7 +257,7 @@ const BATH_ART = {
         const left = [], right = [];
         for (let i = 0; i <= n; i++) {
             const p = pts[i], w = half(i / n);
-            const nx = Math.cos(p.a), ny = Math.sin(p.a);   // нормаль к оси
+            const nx = (T.side || 1) * Math.cos(p.a), ny = Math.sin(p.a);
             left.push(`${(p.x - nx * w).toFixed(1)} ${(p.y - ny * w).toFixed(1)}`);
             right.push(`${(p.x + nx * w).toFixed(1)} ${(p.y + ny * w).toFixed(1)}`);
         }
@@ -265,7 +268,7 @@ const BATH_ART = {
         return { d, spine: pts, tip,
                  // Направление кончика в координатах сцены: фигура смотрит
                  // ВВЕРХ, то есть в −y.
-                 dir: Math.atan2(-Math.cos(tip.a), Math.sin(tip.a)) };
+                 dir: Math.atan2(-Math.cos(tip.a), (T.side || 1) * Math.sin(tip.a)) };
     },
 
     // Две линии хвоста при заданном изгибе: сам прут и блик по нему. Блик
@@ -274,7 +277,7 @@ const BATH_ART = {
     tailD(bend) {
         const c = this.tailCurve(bend || 0);
         const shine = c.spine.filter((p, i) => i > 1 && i < c.spine.length - 3)
-            .map(p => `${(p.x - Math.cos(p.a) * this.TAIL.base * 0.17).toFixed(1)} `
+            .map(p => `${(p.x - (this.TAIL.side || 1) * Math.cos(p.a) * this.TAIL.base * 0.17).toFixed(1)} `
                     + `${(p.y - Math.sin(p.a) * this.TAIL.base * 0.17).toFixed(1)}`);
         return { body: c.d, shine: 'M' + shine.join('L'), curve: c };
     },
