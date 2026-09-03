@@ -27,40 +27,59 @@
 // баланс в конфиге — калькулятор продолжал считать по старому и уверенно
 // докладывал, что всё сходится.
 const fs = require('fs');
-const CFG = eval(fs.readFileSync(__dirname + '/../src/config/economy.js', 'utf8')
+const root = __dirname + '/..';
+const CFG = eval(fs.readFileSync(root + '/src/config/economy.js', 'utf8')
     + '\nECONOMY').minigames.lust;
+// Физика берётся ТА ЖЕ, что в игре, а не переписывается здесь. Копия физики —
+// та же ошибка, что копия конфига: правишь полёт капли, а калькулятор
+// продолжает считать по старому и уверенно докладывает, что всё сходится.
+const SHOT = eval(fs.readFileSync(root + '/src/minigames/lust/lust-shot.js', 'utf8')
+    + '\nLustShot');
 
 const SHOTS = CFG.shots;
-const REACH = CFG.reach;
-const MOUTH = CFG.mouth;
 const PER_SECTION = CFG.perSection;
 const SECTIONS = CFG.sections;
-const RUNS = 200000;
+// Забегов меньше, чем было при формуле: капля теперь честно интегрируется
+// шагом в шестидесятую секунды, и триста миллионов шагов считались бы
+// минутами. Сорока тысяч хватает: ошибка среднего выходит около 0.005.
+const RUNS = 40000;
+
+// Раскладка финала, снятая с ЖИВОЙ сцены: откуда летит капля, под каким
+// углом смотрит кончик на прицеле и где рот. Числа печатает tools/test-lust.js
+// — если сцена переехала, а они нет, таблица считается для геометрии, которой
+// в игре больше нет.
+//
+// Угол берётся из игры, а не подбирается здесь заново: в игре прицел — это
+// ИЗГИБ хвоста, и кончик при изгибе ещё и ездит. Подбор «лучшего угла» из
+// неподвижной точки давал другой ответ, и таблица расходилась с игрой.
+const TIP = { x: 567, y: 457 };
+const MOUTH = { x: 480, y: 384 };
+const AIM = -129.5 * Math.PI / 180;
 
 // Имена ступеней — дело показа, а не баланса, и потому живут здесь.
 const TIER_NAMES = ['старт', 'ступень 1', 'ступень 2', 'ступень 3'];
 const TIERS = CFG.tiers.map((t, i) =>
     Object.assign({ name: TIER_NAMES[i] || `ступень ${i}` }, t));
 
-function u(a, b) { return a + Math.random() * (b - a); }
-
+// Один забег: игрок держит прицел, капля летит по баллистике, попадание —
+// столкновение с корзиной рта.
 function run(t) {
     let hits = 0;
     for (let i = 0; i < SHOTS; i++) {
-        if (u(t.minPower, 1) < REACH) continue;               // не долетела
-        if (Math.abs(u(-t.spread, t.spread) + u(-t.slop, t.slop)) <= MOUTH) hits++;
+        const v = SHOT.launch(CFG, t, AIM);
+        if (SHOT.fly(CFG, TIP, v, MOUTH, CFG.mouthR).hit) hits++;
     }
     return hits;
 }
 
-// Осколки: каждая заполненная секция — осколок, полная шкала — жетон целиком
-// (три осколка). Механизм размена уже есть в конфиге, ECONOMY.exchange.
 function shards(hits) {
     return Math.min(SECTIONS, Math.floor(hits / PER_SECTION));
 }
 
 console.log(`финал ${SHOTS} толчков, секция = ${PER_SECTION} попадания, ` +
-    `шкала ${SECTIONS} секции\n`);
+    `шкала ${SECTIONS} секции`);
+console.log(`прицел ${(AIM * 180 / Math.PI).toFixed(1)}° от кончика ` +
+    `(${TIP.x},${TIP.y}) в рот (${MOUTH.x},${MOUTH.y}), корзина ${CFG.mouthR}\n`);
 console.log(['ступень', 'сила от', 'разброс', 'хвост', 'попаданий', 'осколков', 'пусто', 'жетон']
     .map(h => String(h).padStart(11)).join(''));
 

@@ -52,11 +52,11 @@ const BATH_ART = {
         overview: { x: 20, y: 150, w: 690, h: 830 },
         // Мытьё: червь в чаше крупно. Полка обязана остаться в кадре — мыло
         // и мочалку берут оттуда.
-        body:     { x: 115, y: 250, w: 600, h: 430 },
+        body:     { x: 170, y: 180, w: 545, h: 500 },
         // Хвост всплывает у ближнего борта.
-        tail:     { x: 110, y: 230, w: 470, h: 470 },
+        tail:     { x: 150, y: 140, w: 520, h: 530 },
         // Финал: голова червя и хвост одновременно.
-        finish:   { x: 110, y: 180, w: 480, h: 520 }
+        finish:   { x: 150, y: 140, w: 520, h: 530 }
     },
 
     // ---------- ГНЁЗДА ----------
@@ -339,21 +339,39 @@ const BATH_ART = {
         </g>`;
     },
 
-    // ---------- СТРУЯ ТОЛЧКА ----------
-    // Капли, а не линия: линия читается лучом, а тут летит жидкость. Длина —
-    // насколько толчок долетел, поэтому недолёт видно сразу и без подписи.
-    shot(x, y, angle, len, seed) {
-        const w = btPal().water, rng = btRng(seed);
-        const n = Math.max(3, Math.round(len / 26));
-        const out = [];
-        for (let i = 1; i <= n; i++) {
-            const t = i / n;
-            const side = (rng() - 0.5) * 12 * t;
-            const px = x + Math.cos(angle) * len * t - Math.sin(angle) * side;
-            const py = y + Math.sin(angle) * len * t + Math.cos(angle) * side;
-            out.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}"
-                              r="${(9 - 4 * t).toFixed(1)}" fill="${w.surfHi}"
-                              opacity="${(0.9 - 0.5 * t).toFixed(2)}"/>`);
+    // ---------- КАПЛИ И ПОТЁКИ ----------
+    // Капля в полёте — густая, с вытянутым по скорости телом: по форме видно,
+    // куда она летит. Потёк — то, что не попало: прилипло к поверхности и
+    // ползёт вниз, оставляя хвост.
+    //
+    // Рисуется одной строкой на кадр: капель единицы, и держать их узлами
+    // ради этого незачем.
+    drops(flying, splats) {
+        const w = btPal().water, out = [];
+        for (const s of (splats || [])) {
+            if (s.gulp) {
+                // Попадание: короткая вспышка в самой корзине рта.
+                const k = 1 - s.t / 0.45;
+                out.push(`<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}"
+                                  r="${(s.r * (1.6 - k)).toFixed(1)}" fill="none"
+                                  stroke="${w.surfHi}" stroke-width="5"
+                                  opacity="${(k * 0.9).toFixed(2)}"/>`);
+                continue;
+            }
+            const k = Math.max(0, 1 - s.t / 2.6);
+            out.push(`<path d="M${(s.x - s.r).toFixed(1)} ${s.y.toFixed(1)}
+                             a${s.r.toFixed(1)} ${s.r.toFixed(1)} 0 1 0 ${(s.r * 2).toFixed(1)} 0
+                             l${(-s.r).toFixed(1)} ${(s.r * 2.2).toFixed(1)} Z"
+                            fill="${w.surfHi}" opacity="${(k * 0.72).toFixed(2)}"/>`);
+        }
+        for (const d of (flying || [])) {
+            const sp = Math.hypot(d.vx, d.vy) || 1;
+            const ex = d.vx / sp, ey = d.vy / sp, L = d.r * 1.7;
+            out.push(`<ellipse cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}"
+                               rx="${(d.r + L).toFixed(1)}" ry="${d.r.toFixed(1)}"
+                               fill="${w.surfHi}" opacity="0.95"
+                               transform="rotate(${(Math.atan2(ey, ex) * 180 / Math.PI).toFixed(1)}
+                                          ${d.x.toFixed(1)} ${d.y.toFixed(1)})"/>`);
         }
         return out.join('');
     },

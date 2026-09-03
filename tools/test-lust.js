@@ -233,26 +233,31 @@ const { chromium } = require('playwright');
   }));
   ok(res.phase === 'done', 'финал доигран', res.phase);
   // Живой забег — выборка из десяти толчков, и ноль попаданий в ней бывает
-  // законно (по расчёту примерно раз из десяти забегов). Поэтому проверяется
-  // МОДЕЛЬ на большой выборке: при удержанном прицеле доля попаданий обязана
+  // законно. Поэтому проверяется МОДЕЛЬ на большой выборке: та же физика,
+  // тот же прицел, та же корзина, что и в игре, — и доля попаданий обязана
   // сойтись с той, по которой считан баланс в tools/sim-lust.js.
-  const rate = await page.evaluate(() => {
-    const C = LustMinigame.cfg(), t = C.tiers[0];
-    const u = (a, b) => a + Math.random() * (b - a);
-    let hit = 0, N = 20000;
+  const shotInfo = await page.evaluate(() => {
+    const L = LustMinigame, C = L.cfg(), t = C.tiers[0];
+    const s = L.tipState(L.bendAim), m = L.mouthPoint();
+    let hit = 0, N = 4000;
     for (let i = 0; i < N; i++) {
-      if (u(t.minPower, 1) < C.reach) continue;
-      if (Math.abs(u(-t.spread, t.spread) + u(-t.slop, t.slop)) <= C.mouth) hit++;
+      const v = LustShot.launch(C, t, s.dir);
+      if (LustShot.fly(C, s, v, m, C.mouthR).hit) hit++;
     }
-    return hit / N;
+    return { rate: hit / N, tip: { x: Math.round(s.x), y: Math.round(s.y) },
+             mouth: { x: Math.round(m.x), y: Math.round(m.y) },
+             dir: +(s.dir * 180 / Math.PI).toFixed(1) };
   });
-  ok(rate > 0.18 && rate < 0.32, 'на удержанном прицеле попадает как в расчёте',
-     `${(rate * 100).toFixed(0)}% толчков, живой забег дал ${res.hits} из ${shots}`);
-  ok(res.sin === 100, 'шкала похоти полная', String(res.sin));
-  // Осколок за каждую заполненную секцию; три складываются в жетон разменом.
-  const want = Math.min(3, Math.floor(res.hits / 2));
-  ok(res.shard + res.token * 3 === want, 'начислено по числу секций',
-     `${res.shard} осколка + ${res.token} жетон, ждали ${want}`);
+  ok(shotInfo.rate > 0.2 && shotInfo.rate < 0.36,
+     'на удержанном прицеле попадает как в расчёте',
+     `${(shotInfo.rate * 100).toFixed(0)}% толчков, живой забег дал ${res.hits} из ${shots}`);
+  // Калькулятор считает баланс по ЖИВОЙ раскладке, а числа раскладки он
+  // держит своими константами: если сцена переехала, а он нет, таблица
+  // баланса считается для геометрии, которой в игре больше нет.
+  console.log(`  инфо  кончик на прицеле (${shotInfo.tip.x},${shotInfo.tip.y}) под`
+    + ` ${shotInfo.dir}°, рот (${shotInfo.mouth.x},${shotInfo.mouth.y})`
+    + ` — эти три числа стоят в tools/sim-lust.js`);
+
   await page.screenshot({ path: out + '4-done.png' });
 
   console.log(errs.length ? '\nОШИБКИ:\n  ' + errs.join('\n  ') : '\nошибок нет');

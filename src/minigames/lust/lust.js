@@ -42,6 +42,7 @@ const LustMinigame = {
     cells: null,
     covered: 0,
     _cover: null,      // габарит червя в сцене, посчитанный по нарисованному
+    _bbox: null,       // габарит нарисованного червя в единицах его холста
     cellOn: null,      // какие клетки вообще лежат НА черве
     cellTotal: 0,
     dirty: false,      // клетка изменилась — след надо перерисовать
@@ -62,6 +63,9 @@ const LustMinigame = {
     bendHand: null,    // угол пальца вокруг корня на прошлом событии
     bendAim: 0,        // изгиб, при котором кончик смотрит в рот
     bubbles: null,
+    drops: null,       // капли в полёте
+    splats: null,      // куда не попали: прилипло и стекает
+    dropAcc: 0,
     shotsLeft: 0,
     hits: 0,
     aimRaf: 0,
@@ -190,7 +194,7 @@ const LustMinigame = {
 
         // Камера ПЕРЕД монтажом: она выставляет холст червя, а рендерер
         // меряет его размер один раз, при монтаже.
-        this.setCamera('overview', true);
+        this.setCamera('overview');
         this.mountWorm();
     },
 
@@ -228,23 +232,22 @@ const LustMinigame = {
     //
     // Едут ОБЕ группы, одним и тем же преобразованием: комната и вода лежат
     // на разных холстах, и разъехаться им нельзя.
-    setCamera(name, instant) {
+    // Наезд МГНОВЕННЫЙ. Плавный переезд ехал по-разному у трёх слоёв: группы
+    // сцены анимировал css, а слой червя и холст мытья ставились по числам
+    // камеры сразу — и всё время переезда комната, персонаж и пена шли
+    // вразнобой. Смена ракурса это смена кадра: все объекты обязаны
+    // оказаться на новом месте одновременно.
+    setCamera(name) {
         const f = BATH_ART.FOCUS[name] || BATH_ART.FOCUS.overview;
         const s = Math.min(390 / f.w, 844 / f.h);
         const tx = 195 - s * (f.x + f.w / 2);
         const ty = 422 - s * (f.y + f.h / 2);
-        // Числа камеры запоминаются. По ним, а не по матрице из DOM, считается
-        // место слоя червя: transform на группе едет CSS-переходом, и матрица
-        // в момент вызова показывает ЕЩЁ СТАРУЮ камеру. Считанный по ней слой
-        // уезжал на разницу между кадрами — червь оказывался ниже воды, в
-        // которой должен лежать.
+        // Числа камеры запоминаются: по ним, а не по матрице из DOM,
+        // считается место слоя червя и холста мытья.
         this.cam = { s, tx, ty };
         const t = `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})`;
-        for (const g of [this.camEl, this.camBackEl]) {
-            if (instant) g.style.transition = 'none';
-            g.setAttribute('transform', t);
-            if (instant) { void g.getBoundingClientRect(); g.style.transition = ''; }
-        }
+        this.camEl.setAttribute('transform', t);
+        this.camBackEl.setAttribute('transform', t);
         this.layoutWorm();
     },
 
@@ -301,9 +304,17 @@ const LustMinigame = {
         } else {
             this.wormHandle.update(window.WormModelAPI.loadWormModel());
         }
-        this._cover = null;
         this.layoutWorm();
-        this.buildMask();
+        // Габарит червя мерится ПОСЛЕ первого кадра рендерера. На монтаже
+        // цепочка ещё не расставлена — все сегменты стоят в нуле, и getBBox
+        // отдаёт одну голову. Раскладка по такому габариту выходила вчетверо
+        // крупнее нужной, а мылить давали только морду.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            this._bbox = null;
+            this._cover = null;
+            this.layoutWorm();
+            this.buildMask();
+        }));
     },
 
     // Слой червя ездит вместе с камерой ОДНОЙ ТРАНСФОРМАЦИЕЙ, а размер
@@ -329,18 +340,47 @@ const LustMinigame = {
     // Линия среза — уровень воды: ниже неё червя не видно вовсе (обрезка
     // слоя ниже и стёртая маска мыла). Доля 0.72 подобрана по картинке: над
     // водой остаются голова и пара сегментов.
-    WORM_SUBMERGE: 0.90,
+    // Макушка стоит здесь, а всё, что ниже борта, не показывается вовсе.
+    // Раскладка задаётся ДВУМЯ этими числами, а не долей холста персонажа:
+    // доля не знает, где у него голова и где кончается тело, и подгонялась
+    // вслепую — над бортом оставалась одна морда, а мылить давали только её.
+    WORM_HEAD_TOP: 165,   // куда встаёт макушка, координаты сцены
+    WORM_SHOW: 0.78,      // какая доля червя обязана быть выше борта
 
+    // Уровень воды в координатах сцены.
     waterLine() {
         const w = BATH_ART.box('water');
         return (w ? w.y : 600) + 26;
     },
 
+    // Докуда червя ВИДНО. Ниже этой линии его закрывает дальняя половина
+    // чаши, и мылить там нечего: игрок не видит ни грязи, ни пены.
+    visibleLine() {
+        const t = BATH_ART.box('tubFar');
+        return t ? t.y + 6 : this.waterLine();
+    },
+
+    // Габарит НАРИСОВАННОГО червя в единицах его холста. Кэшируется: он не
+    // меняется, пока модель та же.
+    wormBBox() {
+        if (this._bbox) return this._bbox;
+        try {
+            const r = this.wormHandle && this.wormHandle.svgRoot.getBBox();
+            if (r && r.width > 1) return (this._bbox = r);
+        } catch (e) { /* червя ещё нет */ }
+        return { x: -10, y: 111, width: 180, height: 212 };
+    },
+
+    // Куда холст персонажа ложится в сцене. Считается ОТ ЧЕРВЯ: макушка на
+    // WORM_HEAD_TOP, доля WORM_SHOW его роста — выше борта. Масштаб отсюда и
+    // выводится, поэтому мылить всегда дают всё видимое тело.
     wormBoxScene() {
-        const A = BATH_ART.slots(), b = BATH_ART.box('water') || { w: 578 };
-        const w = b.w * 0.92, h = w * this.WORM_BASE.h / this.WORM_BASE.w;
-        return { x: A.worm.x - w / 2, y: this.waterLine() - h * this.WORM_SUBMERGE,
-                 w, h };
+        const A = BATH_ART.slots(), bb = this.wormBBox(), B = this.WORM_BASE;
+        const k = (this.visibleLine() - this.WORM_HEAD_TOP)
+                / Math.max(1, bb.height * this.WORM_SHOW);
+        return { x: A.worm.x - (bb.x + bb.width / 2) * k,
+                 y: this.WORM_HEAD_TOP - bb.y * k,
+                 w: B.w * k, h: B.h * k };
     },
 
     layoutWorm() {
@@ -375,11 +415,32 @@ const LustMinigame = {
     buildMask() {
         const root = this.wormHandle && this.wormHandle.svgRoot;
         if (!root) return;
-        const B = this.WORM_BASE, S = this.MASK_SCALE;
+        const B = this.WORM_BASE, S = this.MASK_SCALE, box = this.wormBoxScene();
         const copy = root.cloneNode(true);
         copy.setAttribute('width', B.w);
         copy.setAttribute('height', B.h);
         copy.setAttribute('viewBox', `0 0 ${B.w} ${B.h}`);
+        // Всё красится в ПЛОСКИЙ чёрный, а обрезки, фильтры и прозрачности
+        // снимаются. Маске нужен только силуэт, и снимать его «как есть»
+        // нельзя: растяжки и обрезки у персонажа заданы ссылками на defs, и
+        // при растрировании отдельной картинкой часть тела просто не
+        // рисовалась — в маску попадала одна голова, а мылить давали только
+        // её.
+        const all = copy.querySelectorAll('*');
+        for (const n of all) {
+            const tag = n.tagName.toLowerCase();
+            if (tag === 'defs' || tag === 'clippath' || tag === 'mask'
+                || tag === 'filter') { n.remove(); continue; }
+            n.removeAttribute('clip-path');
+            n.removeAttribute('mask');
+            n.removeAttribute('filter');
+            n.removeAttribute('style');
+            n.removeAttribute('opacity');
+            n.removeAttribute('fill-opacity');
+            n.removeAttribute('stroke-opacity');
+            if (n.hasAttribute('fill') || tag !== 'g') n.setAttribute('fill', '#000');
+            if (n.hasAttribute('stroke')) n.setAttribute('stroke', '#000');
+        }
         const svg = new XMLSerializer().serializeToString(copy);
         const img = new Image();
         img.onload = () => {
@@ -393,10 +454,12 @@ const LustMinigame = {
                     d.data[i] = d.data[i] > 24 ? 255 : 0;
                 g.putImageData(d, 0, 0);
             } catch (e) { /* холст запачкан — сойдёт и мягкая кромка */ }
-            // Под водой мылить нечего: там червя не видно. Если этого не
-            // стереть, мазки туда засчитываются, а следа не видно — этап
-            // кончается сам собой.
-            g.clearRect(0, B.h * this.WORM_SUBMERGE * S, c.width, c.height);
+            // Ниже борта червя НЕ ВИДНО — там и мылить нечего. Линия берётся
+            // у дальней половины чаши: ровно она его и закрывает. Раньше
+            // стояла доля от холста персонажа, и клетки под бортом считались
+            // «на теле»: игрок тёр видимое, а этап требовал невидимого.
+            const cut = (this.visibleLine() - box.y) * (B.h / box.h) * S;
+            g.clearRect(0, Math.max(0, cut), c.width, c.height);
             this.mask = c;
             this.buildCells();
         };
@@ -780,18 +843,20 @@ const LustMinigame = {
         return { x: A.tail.x + c.tip.x, y: A.tail.y + c.tip.y, dir: c.dir, curve: c };
     },
 
-    // Изгиб, при котором струя из кончика идёт в рот. Ищется перебором, а не
-    // формулой: кончик при изгибе ещё и ЕЗДИТ, поэтому нужный угол зависит от
-    // самого изгиба, и в лоб это не решается.
+    // Изгиб, при котором капля НОМИНАЛЬНОЙ силы проходит через рот. Ищется
+    // перебором и ТОЙ ЖЕ физикой, которой капля потом летит: прицел обязан
+    // считаться по тому же, по чему считается попадание.
     solveBend(target) {
-        let best = 0, bestErr = Infinity;
-        for (let i = 0; i <= 60; i++) {
-            const b = -0.3 + (this.BEND_MAX + 0.3) * i / 60;
+        const C = this.cfg();
+        const v = C.speedMin + 0.75 * (C.speedMax - C.speedMin);
+        let best = 0, near = Infinity;
+        for (let i = 0; i <= 48; i++) {
+            const b = -0.25 + (this.BEND_MAX + 0.25) * i / 48;
             const s = this.tipState(b);
-            let d = Math.atan2(target.y - s.y, target.x - s.x) - s.dir;
-            while (d > Math.PI) d -= 2 * Math.PI;
-            while (d < -Math.PI) d += 2 * Math.PI;
-            if (Math.abs(d) < bestErr) { bestErr = Math.abs(d); best = b; }
+            const r = LustShot.fly(C, s,
+                { vx: Math.cos(s.dir) * v, vy: Math.sin(s.dir) * v },
+                target, C.mouthR);
+            if (r.near < near) { near = r.near; best = b; }
         }
         return best;
     },
@@ -855,6 +920,9 @@ const LustMinigame = {
         this.phase = 'aim';
         this.setCamera('finish');
         this.hits = 0;
+        this.drops = [];
+        this.splats = [];
+        this.dropAcc = 0;
         this.shotsLeft = this.cfg().shots || 10;
 
         // Блаженство: рот открыт, глаза зажмурены. Сказано позой, а не
@@ -875,6 +943,7 @@ const LustMinigame = {
             this.aimLast = now;
             this.stepBend(dt);
             this.drawTail();
+            this.stepDrops(dt);
             this.aimRaf = requestAnimationFrame(tick);
         };
         this.aimRaf = requestAnimationFrame(tick);
@@ -921,46 +990,73 @@ const LustMinigame = {
                                         this.bend + d * this.BEND_GAIN);
     },
 
-    // Один толчок. Модель ровно та, что считает tools/sim-lust.js: сила
-    // U(minPower,1) — долетает от reach; угол — разброс струи плюс то, на
-    // сколько повело хвост. Никакого замаха и никакого указателя: случайность
-    // здесь — товар, который покупается прокачкой (план, §3).
+    // Один толчок. Из кончика вылетает КАПЛЯ-СНАРЯД: дальше она живёт по
+    // баллистике, и попадание — это её столкновение с открытым ртом. Раньше
+    // исход решала формула, а полёт был отдельной картинкой про то же самое:
+    // игрок видел струю в рот и не попадал.
     shoot() {
         if (this.phase !== 'aim') return;
         const C = this.cfg();
         const t = (C.tiers || [{}])[this.tier()] || {};
-        const u = (a, b) => a + Math.random() * (b - a);
-        const power = u(t.minPower || 0.2, 1);
-        const err = (u(-(t.spread || 25), t.spread || 25)
-                   + u(-(t.slop || 12), t.slop || 12)) * Math.PI / 180;
-
-        // Струя летит по КАСАТЕЛЬНОЙ кончика: куда смотрит хвост, туда и бьёт.
         const s = this.tipState();
-        const angle = s.dir + err;
-        const m = this.mouthPoint();
-        const dist = Math.hypot(m.x - s.x, m.y - s.y);
-        const reach = C.reach || 0.5;
-        const far = power >= reach ? dist * 1.06 : dist * (power / reach);
-
-        // Промах считается от направления НА РОТ из той точки, где сейчас
-        // кончик: он ездит вместе с изгибом, и мерить от чего-то другого
-        // значит мерить не то, что игрок видит.
-        let off = angle - Math.atan2(m.y - s.y, m.x - s.x);
-        while (off > Math.PI) off -= 2 * Math.PI;
-        while (off < -Math.PI) off += 2 * Math.PI;
-        const hit = power >= reach
-                 && Math.abs(off) <= (C.mouth || 10) * Math.PI / 180;
-        if (hit) { this.hits++; this.drawGauge(); }
-
-        const layer = this.el('bt-shots');
-        layer.innerHTML = BATH_ART.shot(s.x, s.y, angle, far, this.shotsLeft * 13);
-        setTimeout(() => { if (this.phase === 'aim') layer.innerHTML = ''; }, 420);
+        const v = LustShot.launch(C, t, s.dir);
+        this.drops.push({ x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0,
+                          r: 11, main: true });
+        // Мелкие брызги рядом — только вид. На счёт они не влияют: иначе
+        // десять толчков превращаются в полсотни попыток.
+        for (let i = 0; i < (C.spray || 0); i++) {
+            const a = v.angle + (Math.random() - 0.5) * 0.22;
+            const k = 0.82 + Math.random() * 0.3;
+            const sp = Math.hypot(v.vx, v.vy) * k;
+            this.drops.push({ x: s.x, y: s.y, vx: Math.cos(a) * sp,
+                              vy: Math.sin(a) * sp, t: 0,
+                              r: 4 + Math.random() * 3, main: false });
+        }
 
         if (--this.shotsLeft > 0) {
             this.shotTimer = setTimeout(() => this.shoot(), this.SHOT_MS);
         } else {
-            this.shotTimer = setTimeout(() => this.done(), 900);
+            // Последней капле дают долететь, и только потом считают итог.
+            this.shotTimer = setTimeout(() => this.done(), this.SHOT_MS + 900);
         }
+    },
+
+    // Шаг всех капель. Идёт ФИКСИРОВАННЫМ шагом из конфига, а не длиной
+    // кадра: тем же шагом считает баланс tools/sim-lust.js, и расходиться им
+    // нельзя. Лишнее время копится и доедается на следующем кадре.
+    stepDrops(dt) {
+        const C = this.cfg(), m = this.mouthPoint();
+        this.dropAcc = (this.dropAcc || 0) + dt;
+        let guard = 12;
+        while (this.dropAcc >= C.dt && guard-- > 0) {
+            this.dropAcc -= C.dt;
+            for (let i = this.drops.length - 1; i >= 0; i--) {
+                const d = this.drops[i];
+                LustShot.step(d, C);
+                if (d.main && LustShot.inMouth(d, m, C.mouthR)) {
+                    this.drops.splice(i, 1);
+                    this.hits++;
+                    this.drawGauge();
+                    this.splats.push({ x: m.x, y: m.y, r: 16, t: 0, gulp: true });
+                    continue;
+                }
+                if (LustShot.spent(d, C)) {
+                    this.drops.splice(i, 1);
+                    // Не долетела — прилипает там, где кончилась, и стекает.
+                    this.splats.push({ x: d.x, y: Math.min(d.y, C.floorY),
+                                       r: d.r * 1.3, t: 0 });
+                }
+            }
+        }
+        // Потёки живут своим временем и тают.
+        for (let i = this.splats.length - 1; i >= 0; i--) {
+            const sp = this.splats[i];
+            sp.t += dt;
+            if (!sp.gulp) sp.y += 26 * dt;
+            if (sp.t > (sp.gulp ? 0.45 : 2.6)) this.splats.splice(i, 1);
+        }
+        if (this.splats.length > 14) this.splats.splice(0, this.splats.length - 14);
+        this.el('bt-shots').innerHTML = BATH_ART.drops(this.drops, this.splats);
     },
 
     // Купленная ступень прокачки. Магазина ещё нет — до него ступень всегда
