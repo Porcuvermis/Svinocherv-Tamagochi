@@ -69,6 +69,25 @@ const { chromium } = require('playwright');
   };
   await scrub('soap', 1);
   ok(await phase() === 'cloth', 'мыло покрыло тело и передало мочалке', await phase());
+
+  // Мыло обязано лежать ТОЛЬКО на черве. Проверка буквальная: сравниваем
+  // пиксели следа с маской силуэта. Первая версия рисовала след фигурами в
+  // svg, и намыливалась вся вода вокруг тела.
+  const spill = await page.evaluate(() => {
+    const L = LustMinigame;
+    const f = document.getElementById('bt-film').getContext('2d')
+        .getImageData(0, 0, 900, 450).data;
+    const m = L.mask.getContext('2d').getImageData(0, 0, 900, 450).data;
+    let out = 0, on = 0;
+    for (let i = 3; i < f.length; i += 4) {
+      if (f[i] < 8) continue;
+      if (m[i] > 0) on++; else out++;
+    }
+    return { out, on };
+  });
+  ok(spill.on > 1000, 'мыло легло на тело', `${spill.on} точек`);
+  ok(spill.out === 0, 'мимо тела не намылено', `${spill.out} точек мимо`);
+
   await scrub('cloth', 4);
   await page.waitForTimeout(1600);
   const bubbles = await page.evaluate(() => (LustMinigame.bubbles || []).length);
@@ -90,6 +109,13 @@ const { chromium } = require('playwright');
   }
   await page.waitForTimeout(300);
   ok(await phase() === 'aim', 'пузыри лопнули, начался финал', await phase());
+  // Потолок на узлы в сцене. След от мыла и мочалки раньше копился
+  // ОТДЕЛЬНЫМИ полупрозрачными фигурами — к концу мытья их набиралось за
+  // две сотни, и на телефоне кадры умирали. Теперь весь след — два холста,
+  // и дерево обязано оставаться маленьким.
+  const nodes = await page.evaluate(() =>
+    document.getElementById('bt-cam').querySelectorAll('*').length);
+  ok(nodes < 120, 'дерево сцены не распухает от следа', `${nodes} узлов`);
   ok(taps < bubbles, 'лопались пачкой, а не по одному', `${taps} тапов на ${bubbles}`);
   await page.screenshot({ path: out + '3-aim.png' });
 

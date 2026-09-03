@@ -200,7 +200,7 @@
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=21" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=4" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=5" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=9" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/pride/pride.css?v=6" media="print" onload="this.media='all'">
@@ -625,6 +625,12 @@
         </svg>
         <!-- Червь: общая моделька игрока, своего рисунка у ванной нет. -->
         <div id="bt-worm" class="bt-worm-host"></div>
+        <!-- Мыльная муть и пена. ХОЛСТЫ, а не группы svg: след обязан
+             обрезаться по силуэту червя (в svg фигуру по нему не обрежешь), а
+             накопленные за проход полторы сотни полупрозрачных пятен убивали
+             кадры. На холсте это одна маска и один узел. -->
+        <canvas id="bt-film" class="bt-lather"></canvas>
+        <canvas id="bt-foam" class="bt-lather"></canvas>
         <svg id="bt-svg" class="bt-svg" viewBox="0 0 390 844"
              preserveAspectRatio="xMidYMid slice">
             <!-- Вода и следы на теле — поверх червя, той же камерой. -->
@@ -784,8 +790,8 @@
 <!-- Запечённая графика ванной: сгенерирована из 3д-моделей
      (tools/bake-3d.js), в рантайме это обычный SVG. -->
 <script src="src/minigames/lust/bath-baked.js?v=3"></script>
-<script src="src/minigames/lust/bath-art.js?v=4"></script>
-<script src="src/minigames/lust/lust.js?v=6"></script>
+<script src="src/minigames/lust/bath-art.js?v=5"></script>
+<script src="src/minigames/lust/lust.js?v=7"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->
 <script src="src/minigames/gluttony/kitchen-objects.js?v=1"></script>
