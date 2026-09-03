@@ -43,9 +43,13 @@ const { chromium } = require('playwright');
   const A = await page.evaluate(() => BATH_ART.slots());
 
   // ---------- КРАН ----------
+  const nodesNow = () => page.evaluate(() =>
+    document.getElementById('bt-cam').querySelectorAll('*').length);
+
   let p = await toScreen(A.faucet);
   await page.mouse.click(p.x, p.y);
   await page.waitForTimeout(3000);
+  const nodesBefore = await nodesNow();
   ok(await phase() === 'soap', 'кран налил воду и пустил к мылу', await phase());
   await page.screenshot({ path: out + '1-wash.png' });
 
@@ -53,31 +57,49 @@ const { chromium } = require('playwright');
   // Возит инструментом по всей коробке покрытия. Мочалке нужно несколько
   // проходов: клетка засчитывается не с первого раза — тем она и отличается
   // от мыла.
-  const scrub = async (kind, passes) => {
+  // Водит инструментом змейкой по всей коробке покрытия, шагом в полклетки:
+  // мельче шага мазок всё равно не засчитывается. Возвращает, сколько
+  // движений понадобилось — по этому числу видно, мгновенный этап или нет.
+  const scrub = async (kind, maxPasses) => {
     const box = await page.evaluate(() => LustMinigame.coverBox());
+    const G = await page.evaluate(() => LustMinigame.grid());
     const q = await toScreen(A[kind]);
     await page.mouse.move(q.x, q.y);
     await page.mouse.down();
-    for (let n = 0; n < passes; n++)
-      for (let j = 0; j < 9; j++)
-        for (let i = 0; i <= 14; i++) {
-          const s = await toScreen({ x: box.x + (i + 0.5) * box.w / 14,
-                                     y: box.y + (j + 0.5) * box.h / 9 });
+    let moves = 0, done = false;
+    for (let n = 0; n < maxPasses && !done; n++) {
+      for (let j = 0; j < G.ny * 2 && !done; j++) {
+        for (let i = 0; i <= G.nx * 2; i++) {
+          const ii = (j % 2) ? G.nx * 2 - i : i;
+          const s = await toScreen({ x: box.x + (ii + 0.5) * box.w / (G.nx * 2),
+                                     y: box.y + (j + 0.5) * box.h / (G.ny * 2) });
           await page.mouse.move(s.x, s.y);
+          moves++;
         }
+        // Проверяем после КАЖДОГО ряда, а не прохода: иначе счётчик работы
+        // округляется до целого прохода и этапы становятся неразличимы.
+        if (await phase() !== kind) done = true;
+      }
+    }
     await page.mouse.up();
+    return moves;
   };
-  await scrub('soap', 1);
+  const soapMoves = await scrub('soap', 4);
   ok(await phase() === 'cloth', 'мыло покрыло тело и передало мочалке', await phase());
+  // Этап не должен проходиться одним движением. Порог по ЧИСЛУ мазков, а не
+  // по секундам: секунды в headless свои, а работа — та же.
+  ok(soapMoves > 30, 'намыливание требует работы, а не одного мазка',
+     `${soapMoves} движений`);
+  const nodesAfterSoap = await nodesNow();
 
   // Мыло обязано лежать ТОЛЬКО на черве. Проверка буквальная: сравниваем
   // пиксели следа с маской силуэта. Первая версия рисовала след фигурами в
   // svg, и намыливалась вся вода вокруг тела.
   const spill = await page.evaluate(() => {
     const L = LustMinigame;
-    const f = document.getElementById('bt-film').getContext('2d')
-        .getImageData(0, 0, 900, 450).data;
-    const m = L.mask.getContext('2d').getImageData(0, 0, 900, 450).data;
+    const c = document.getElementById('bt-wash');
+    const f = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const m = L.mask.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     let out = 0, on = 0;
     for (let i = 3; i < f.length; i += 4) {
       if (f[i] < 8) continue;
@@ -88,7 +110,9 @@ const { chromium } = require('playwright');
   ok(spill.on > 1000, 'мыло легло на тело', `${spill.on} точек`);
   ok(spill.out === 0, 'мимо тела не намылено', `${spill.out} точек мимо`);
 
-  await scrub('cloth', 4);
+  const clothMoves = await scrub('cloth', 8);
+  ok(clothMoves > soapMoves, 'мочалка дольше мыла — у клетки три прохода',
+     `${clothMoves} против ${soapMoves}`);
   await page.waitForTimeout(1600);
   const bubbles = await page.evaluate(() => (LustMinigame.bubbles || []).length);
   ok(await phase() === 'pop', 'мочалка домыла, хвост всплыл', await phase());
@@ -109,13 +133,13 @@ const { chromium } = require('playwright');
   }
   await page.waitForTimeout(300);
   ok(await phase() === 'aim', 'пузыри лопнули, начался финал', await phase());
-  // Потолок на узлы в сцене. След от мыла и мочалки раньше копился
-  // ОТДЕЛЬНЫМИ полупрозрачными фигурами — к концу мытья их набиралось за
-  // две сотни, и на телефоне кадры умирали. Теперь весь след — два холста,
-  // и дерево обязано оставаться маленьким.
-  const nodes = await page.evaluate(() =>
-    document.getElementById('bt-cam').querySelectorAll('*').length);
-  ok(nodes < 120, 'дерево сцены не распухает от следа', `${nodes} узлов`);
+  // След от мыла и мочалки раньше копился ОТДЕЛЬНЫМИ полупрозрачными
+  // фигурами — к концу мытья их набиралось за две сотни, и на телефоне кадры
+  // умирали. Теперь весь след — два холста, и дерево сцены от мытья не
+  // меняется вовсе. Сравниваем с замером ДО мытья: абсолютное число зависит
+  // от того, что ещё нарисовано в кадре, а прирост — только от следа.
+  ok(nodesAfterSoap === nodesBefore, 'дерево сцены не распухает от следа',
+     `${nodesAfterSoap} против ${nodesBefore}`);
   ok(taps < bubbles, 'лопались пачкой, а не по одному', `${taps} тапов на ${bubbles}`);
   await page.screenshot({ path: out + '3-aim.png' });
 
@@ -208,7 +232,22 @@ const { chromium } = require('playwright');
     sin: Math.round(GameState.sinValue('lust'))
   }));
   ok(res.phase === 'done', 'финал доигран', res.phase);
-  ok(res.hits > 0, 'на прицеле хотя бы одно попадание', `${res.hits} из ${shots}`);
+  // Живой забег — выборка из десяти толчков, и ноль попаданий в ней бывает
+  // законно (по расчёту примерно раз из десяти забегов). Поэтому проверяется
+  // МОДЕЛЬ на большой выборке: при удержанном прицеле доля попаданий обязана
+  // сойтись с той, по которой считан баланс в tools/sim-lust.js.
+  const rate = await page.evaluate(() => {
+    const C = LustMinigame.cfg(), t = C.tiers[0];
+    const u = (a, b) => a + Math.random() * (b - a);
+    let hit = 0, N = 20000;
+    for (let i = 0; i < N; i++) {
+      if (u(t.minPower, 1) < C.reach) continue;
+      if (Math.abs(u(-t.spread, t.spread) + u(-t.slop, t.slop)) <= C.mouth) hit++;
+    }
+    return hit / N;
+  });
+  ok(rate > 0.18 && rate < 0.32, 'на удержанном прицеле попадает как в расчёте',
+     `${(rate * 100).toFixed(0)}% толчков, живой забег дал ${res.hits} из ${shots}`);
   ok(res.sin === 100, 'шкала похоти полная', String(res.sin));
   // Осколок за каждую заполненную секцию; три складываются в жетон разменом.
   const want = Math.min(3, Math.floor(res.hits / 2));

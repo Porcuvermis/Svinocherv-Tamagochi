@@ -29,6 +29,9 @@ const VIEW = {
 
 // Порядок — решение художника, а не результат вычисления: между предметами
 // он задан этим списком, по глубине сортируется только внутри предмета.
+// Ванна распилена по глубине надвое: дальняя половина рисуется ЗА червём,
+// ближняя — ПЕРЕД ним. Одним куском её нельзя: либо персонаж стоит перед
+// ванной, либо за ней целиком, и оба варианта уже пробовали.
 const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
                'tub', 'water'];
 
@@ -55,7 +58,10 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             shelf:  { root: M.shelf(),  ramp: [B.shelf.lo, B.shelf.edge, B.shelf.top] },
             soap:   { root: M.soap(),   ramp: B.soap },
             cloth:  { root: M.cloth(),  ramp: B.cloth },
-            tub:    { root: M.tub(tubOpts), ramp: B.enamel },
+            // splitZ — глубина, на которой стоит червь: всё, что ближе к
+            // камере, обязано рисоваться поверх него.
+            tub:    { root: M.tub(tubOpts), ramp: B.enamel,
+                      splitZ: M.anchorPoints().worm.z },
             water:  { root: M.water(Object.assign({}, tubOpts, { level: L.water })),
                       ramp: [B.water.deep, B.water.surf, B.water.surfHi] }
         };
@@ -65,8 +71,16 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
         // и общей простынёй это было бы невозможно.
         const items = {};
         for (const name of order) {
-            const parts = BAKE.bake([Object.assign({ name }, build[name])], v);
-            items[name] = { d: parts, box: BAKE.box(parts) };
+            const spec = build[name];
+            const parts = BAKE.bake([Object.assign({ name }, spec)], v);
+            if (spec.splitZ == null) {
+                items[name] = { d: parts, box: BAKE.box(parts) };
+            } else {
+                for (const half of [name + 'Far', name + 'Near']) {
+                    const own = parts.filter(p => p.name === half);
+                    items[half] = { d: own, box: BAKE.box(own) };
+                }
+            }
         }
         return { items, anchors: BAKE.anchors(M.anchorPoints(), v),
                  tiles: BAKE.segments(M.tileLines(), v),

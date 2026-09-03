@@ -200,7 +200,7 @@
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=21" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=5" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=6" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=9" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/pride/pride.css?v=6" media="print" onload="this.media='all'">
@@ -625,12 +625,13 @@
         </svg>
         <!-- Червь: общая моделька игрока, своего рисунка у ванной нет. -->
         <div id="bt-worm" class="bt-worm-host"></div>
-        <!-- Мыльная муть и пена. ХОЛСТЫ, а не группы svg: след обязан
-             обрезаться по силуэту червя (в svg фигуру по нему не обрежешь), а
-             накопленные за проход полторы сотни полупрозрачных пятен убивали
-             кадры. На холсте это одна маска и один узел. -->
-        <canvas id="bt-film" class="bt-lather"></canvas>
-        <canvas id="bt-foam" class="bt-lather"></canvas>
+        <!-- Состояние мытья: ОДИН холст на всё. Не два (муть отдельно, пена
+             отдельно): пока они были разными слоями, «намылено» и «оттёрто»
+             складывались в одно бледное пятно, и по картинке нельзя было
+             понять, что уже сделано. Теперь у клетки одно состояние и один
+             вид. Холст, а не фигуры в svg: след обязан обрезаться по силуэту
+             червя, а сотни полупрозрачных пятен убивали кадры. -->
+        <canvas id="bt-wash" class="bt-lather"></canvas>
         <svg id="bt-svg" class="bt-svg" viewBox="0 0 390 844"
              preserveAspectRatio="xMidYMid slice">
             <!-- Вода и следы на теле — поверх червя, той же камерой. -->
@@ -789,9 +790,9 @@
 <script src="src/minigames/sloth/sloth.js?v=8"></script>
 <!-- Запечённая графика ванной: сгенерирована из 3д-моделей
      (tools/bake-3d.js), в рантайме это обычный SVG. -->
-<script src="src/minigames/lust/bath-baked.js?v=5"></script>
-<script src="src/minigames/lust/bath-art.js?v=9"></script>
-<script src="src/minigames/lust/lust.js?v=10"></script>
+<script src="src/minigames/lust/bath-baked.js?v=6"></script>
+<script src="src/minigames/lust/bath-art.js?v=12"></script>
+<script src="src/minigames/lust/lust.js?v=12"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->
 <script src="src/minigames/gluttony/kitchen-objects.js?v=1"></script>

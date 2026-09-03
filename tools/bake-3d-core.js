@@ -103,7 +103,16 @@ const BAKE = {
 
         for (const item of (Array.isArray(items) ? items : [items])) {
             const ramp = item.ramp;
-            order.push(item.name);
+            // РАСПИЛ ПО ГЛУБИНЕ. Предмет, внутри которого что-то стоит (червь
+            // в ванне), нельзя нарисовать одним куском: дальняя его половина
+            // обязана быть ЗА персонажем, ближняя — ПЕРЕД ним. Треугольник
+            // уходит в ту половину, по какую сторону от splitZ лежит его
+            // центр; порядок между половинами задаётся списком, как обычно.
+            const cut = item.splitZ;
+            const nameOf = (mz) => cut == null ? item.name
+                : item.name + (mz < cut ? 'Far' : 'Near');
+            if (cut == null) order.push(item.name);
+            else order.push(item.name + 'Far', item.name + 'Near');
             item.root.updateMatrixWorld(true);
             item.root.traverse(node => {
                 if (!node.isMesh) return;
@@ -138,7 +147,7 @@ const BAKE = {
                        .applyMatrix4(node.matrixWorld);
                     tris.push({
                         depth: mid.distanceTo(camPos), color: ramp[step],
-                        name: item.name, poly: pts
+                        name: nameOf(mid.z), poly: pts
                     });
                     return;
                 }
@@ -179,7 +188,7 @@ const BAKE = {
                     mid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
                     tris.push({
                         depth: mid.distanceTo(camPos),
-                        color: ramp[step], name: item.name,
+                        color: ramp[step], name: nameOf(mid.z),
                         p: this.grow([pa, pb, pc], this.SEAM)
                     });
                 }
