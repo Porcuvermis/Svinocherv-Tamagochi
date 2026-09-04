@@ -212,7 +212,7 @@ const BATH_MODELS = {
             // читался висящим ПЕРЕД полкой, а не лежащим на ней.
             soap:  { x: L.shelf.x, y: L.shelf.hi + 0.17 + BATH_MODELS.SOAP.h / 2,
                      z: L.wallZ + 0.85 },
-            cloth: { x: L.shelf.x, y: L.shelf.lo + 0.17 + BATH_MODELS.CLOTH.h / 2,
+            cloth: { x: L.shelf.x, y: L.shelf.lo + 0.17 + BATH_MODELS.clothLift(),
                      z: L.wallZ + 0.8 },
             // Червь лежит в воде, ближе к дальнему борту: спереди в финале
             // всплывает хвост, и место ему надо оставить.
@@ -574,17 +574,183 @@ const BATH_MODELS = {
         return out;
     },
 
-    CLOTH: { w: 1.8, h: 1.3, d: 1.5 },
+    // ---------- ГУБКА ----------
+    // С натуры: жёлтый поролон с ХВАТАМИ по бокам и тонкая зелёная
+    // абразивная нашлёпка сверху.
+    //
+    // Наклонена НАЗАД почти на шестьдесят градусов, и это не поза, а
+    // необходимость: полка висит выше глаза, камера смотрит на неё снизу, и
+    // верхней грани не видно вовсе. Положи губку плашмя — весь абразив, то
+    // есть половина предмета, уйдёт от зрителя. Наклон возвращает тот же
+    // ракурс, с какого её снимают в каталоге: зелёный верх и жёлтый бок
+    // одновременно. Прислонённая губка на полке — поза совершенно обычная.
+    CLOTH: { w: 1.9, foam: 0.9, pad: 0.32, d: 1.4,
+             // Наклон ПОЛОЖИТЕЛЬНЫЙ: поворот вокруг X на +a уводит верх
+             // объекта К КАМЕРЕ (+z). С минусом губка заваливалась назад, и
+             // вместо абразива в кадр выходила ярко освещённая передняя
+             // грань поролона, а ворс ложился поверх неё.
+             tiltX: 0.48, turnY: -0.24 },
+
+    // Половина высоты НАКЛОНЁННОЙ губки: ею она и ставится на доску.
+    // Считается, а не подбирается — иначе разъедется при первой же правке
+    // наклона (docs/traps.md, п. 26).
+    clothLift() {
+        const C = BATH_MODELS.CLOTH;
+        return (Math.abs(Math.cos(C.tiltX)) * (C.foam + C.pad)
+              + Math.abs(Math.sin(C.tiltX)) * C.d) / 2;
+    },
+
+    // Общий поворот губки: им же кладётся её фактура.
+    clothBasis() {
+        const C = BATH_MODELS.CLOTH, a = BATH_MODELS.anchorPoints().cloth;
+        const m = new THREE.Matrix4().makeRotationFromEuler(
+            new THREE.Euler(C.tiltX, C.turnY, 0));
+        m.setPosition(a.x, a.y, a.z);
+        return m;
+    },
+
+    // Детерминированный шум: ворс обязан быть ОДИНАКОВЫМ у геометрии и у
+    // фактуры, иначе линии лягут мимо своих бугров.
+    noise(x, y) {
+        const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        return s - Math.floor(s);
+    },
 
     cloth() {
-        const a = BATH_MODELS.anchorPoints().cloth;
-        // Губка ВЫШЕ и короче мыла: мятый кубик против плоского бруска.
         const C = BATH_MODELS.CLOTH;
-        const m = new THREE.Mesh(
-            BATH_MODELS.roundedBox(C.w, C.h, C.d, 0.42, 3));
-        m.position.set(a.x, a.y, a.z);
-        m.rotation.y = -0.3;
-        return m;
+        const g = new THREE.Group();
+        const hw = C.w / 2, hd = C.d / 2;
+
+        // Поролон: профиль торца (глубина × высота) с ВЫЕМКАМИ по бокам,
+        // протянутый вдоль длинной оси. Выемки — те самые хваты для пальцев,
+        // и они же главная примета губки: без них это просто брусок.
+        const sh = new THREE.Shape();
+        const y0 = -(C.foam + C.pad) / 2, y1 = y0 + C.foam;
+        const cut = 0.26, lo = y0 + C.foam * 0.32, hi = y0 + C.foam * 0.64;
+        sh.moveTo(-hd, y0);
+        sh.lineTo(hd, y0);
+        sh.lineTo(hd, lo - 0.1);
+        sh.quadraticCurveTo(hd - cut, lo, hd - cut, (lo + hi) / 2);
+        sh.quadraticCurveTo(hd - cut, hi, hd, hi + 0.1);
+        sh.lineTo(hd, y1);
+        sh.lineTo(-hd, y1);
+        sh.lineTo(-hd, hi + 0.1);
+        sh.quadraticCurveTo(-hd + cut, hi, -hd + cut, (lo + hi) / 2);
+        sh.quadraticCurveTo(-hd + cut, lo, -hd, lo - 0.1);
+        sh.lineTo(-hd, y0);
+        const foam = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, {
+            depth: C.w, bevelEnabled: true, bevelThickness: 0.09,
+            bevelSize: 0.09, bevelSegments: 2, curveSegments: 4
+        }));
+        // Протяжка идёт по Z, а длинная ось губки — X.
+        foam.geometry.rotateY(Math.PI / 2);
+        // Протяжка идёт из нуля в +длину, поэтому брусок надо сдвинуть на
+        // половину назад: без этого поролон уезжал вбок от абразива и
+        // предмет читался двумя плитами рядом.
+        foam.geometry.translate(-hw, 0, 0);
+        g.add(foam);
+
+        // Абразив: тонкая плита, у которой ВЕРХНЯЯ ГРАНЬ ИЗОРВАНА шумом.
+        // Это главный приём: мохнатость видна не по заливке, а по СИЛУЭТУ —
+        // обводка предмета идёт по краю, и рваный край даёт рваную обводку.
+        // Ровная плита с любой фактурой поверх читается наклейкой.
+        const pad = new THREE.Mesh(
+            new THREE.BoxGeometry(C.w, C.pad, C.d, 14, 1, 10));
+        const pos = pad.geometry.attributes.position;
+        const top = C.pad / 2;
+        for (let i = 0; i < pos.count; i++) {
+            if (pos.getY(i) < top - 1e-4) continue;
+            // Смещение — чистая функция от (x, z), поэтому верхняя грань и
+            // верхний ряд боковых граней расходятся согласованно и шов не
+            // раскрывается.
+            const x = pos.getX(i), z = pos.getZ(i);
+            pos.setY(i, top + BATH_MODELS.noise(x * 8.3, z * 8.3) * 0.11);
+        }
+        pad.geometry.computeVertexNormals();
+        pad.position.y = y1 + C.pad / 2;
+        pad.userData.part = 'scour';
+        g.add(pad);
+
+        const a = BATH_MODELS.anchorPoints().cloth;
+        g.position.set(a.x, a.y, a.z);
+        g.rotation.set(C.tiltX, C.turnY, 0);
+        return g;
+    },
+
+    // Фактура губки: поры поролона и ворс абразива. Оба слоя лежат на
+    // гранях, которые видит камера, — на передней и на верхней.
+    clothMarks() {
+        const C = BATH_MODELS.CLOTH, B = PALETTE.bathScene;
+        const M = BATH_MODELS.clothBasis();
+        const hw = C.w / 2, hd = C.d / 2;
+        const y0 = -(C.foam + C.pad) / 2, y1 = y0 + C.foam;
+        const put = (x, y, z) => {
+            const v = new THREE.Vector3(x, y, z).applyMatrix4(M);
+            return { x: v.x, y: v.y, z: v.z };
+        };
+        const rnd = (() => { let s = 12345;
+            return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; })();
+
+        // ПОРЫ. Не точки, а короткие дужки: точка в один пиксель на
+        // проекции пропадает, а дужка держит размер и читается дыркой.
+        const pore = [], poreLit = [];
+        for (let i = 0; i < 105; i++) {
+            const u = (rnd() - 0.5) * (C.w - 0.24);
+            const v = y0 + 0.1 + rnd() * (C.foam - 0.2);
+            const r = 0.02 + rnd() * 0.022;
+            const a0 = rnd() * Math.PI * 2;
+            const arc = [];
+            for (let k = 0; k <= 3; k++) {
+                const t = a0 + k / 3 * Math.PI * 1.4;
+                arc.push(put(u + Math.cos(t) * r, v + Math.sin(t) * r, hd + 0.01));
+            }
+            for (let k = 1; k < arc.length; k++) pore.push([arc[k - 1], arc[k]]);
+            // Блик по нижнему краю дырки — она сразу становится ямкой.
+            poreLit.push([put(u - r * 0.7, v - r * 0.8, hd + 0.012),
+                          put(u + r * 0.7, v - r * 0.8, hd + 0.012)]);
+        }
+
+        // ВОРС. Короткие штрихи ПОПЕРЁК верхней грани и по её краю: абразив
+        // — это спутанное волокно, и читается оно направлением штриха, а не
+        // пятном. Часть штрихов переваливает за край на переднюю грань:
+        // ровно так выглядит мохнатая кромка.
+        const fuzz = [], fuzzLit = [];
+        for (let i = 0; i < 330; i++) {
+            const u = (rnd() - 0.5) * (C.w - 0.06);
+            const w = (rnd() - 0.5) * (C.d - 0.04);
+            const h = y1 + C.pad + BATH_MODELS.noise(u * 8.3, w * 8.3) * 0.11;
+            const len = 0.045 + rnd() * 0.055;
+            const ang = rnd() * Math.PI * 2;
+            const dz = Math.sin(ang) * len, dx = Math.cos(ang) * len;
+            const line = [put(u, h + 0.01, w), put(u + dx, h + 0.01 + len * 0.35, w + dz)];
+            (rnd() < 0.28 ? fuzzLit : fuzz).push(line);
+        }
+        // Ворс на ПЕРЕДНЕЙ грани абразива. Без него грань — ровная тёмная
+        // стенка, и слой читается крашеным пластиком, а не волокном.
+        for (let i = 0; i < 110; i++) {
+            const u = (rnd() - 0.5) * (C.w - 0.06);
+            const v = y1 + 0.02 + rnd() * (C.pad - 0.04);
+            const len = 0.04 + rnd() * 0.05;
+            const line = [put(u, v, hd + 0.012),
+                          put(u + (rnd() - 0.5) * 0.05, v + len, hd + 0.016)];
+            (rnd() < 0.3 ? fuzzLit : fuzz).push(line);
+        }
+        // Бахрома по переднему краю: штрихи, свисающие с кромки вниз.
+        for (let i = 0; i < 90; i++) {
+            const u = (rnd() - 0.5) * (C.w - 0.04);
+            const h = y1 + C.pad + BATH_MODELS.noise(u * 8.3, hd * 8.3) * 0.11;
+            const len = 0.06 + rnd() * 0.09;
+            const line = [put(u, h, hd + 0.02),
+                          put(u + (rnd() - 0.5) * 0.08, h - len, hd + 0.03)];
+            (rnd() < 0.3 ? fuzzLit : fuzz).push(line);
+        }
+
+        return [
+            { lines: pore,    color: B.spongePore, width: 1.15 },
+            { lines: poreLit, color: B.spongeLit,  width: 1.0 },
+            { lines: fuzz,    color: B.scourFuzz,  width: 1.15 },
+            { lines: fuzzLit, color: B.scourLit,   width: 1.05 }
+        ];
     },
 
     // Контур, смещённый внутрь на заданную величину. Им ставятся вода и дно

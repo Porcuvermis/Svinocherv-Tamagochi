@@ -76,10 +76,17 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             shelf:  { root: M.shelf(),  ramp: [B.shelf.lo, B.shelf.edge, B.shelf.top] },
             shelfRail: { root: M.shelfRail(),
                          ramp: [B.shelf.lo, B.shelf.edge, B.shelf.top] },
-            // engrave — ломаные, лежащие НА ГРАНИ предмета: клеймо «72%».
+            // marks — СЛОИ ФАКТУРЫ: ломаные, лежащие на гранях предмета.
+            // Ими делается всё, чего не даст низкополигональная форма:
+            // клеймо на мыле, поры губки, ворс абразива. Слой описывается
+            // цветом, толщиной и признаком emboss — рисовать ли под тёмной
+            // линией светлую со сдвигом (так читается КАНАВКА, а не волосок).
             soap:   { root: M.soap(),   ramp: B.soap,
-                      engrave: M.soapMark(), engraveColor: B.soapMark },
-            cloth:  { root: M.cloth(),  ramp: B.cloth },
+                      marks: [{ lines: M.soapMark(), color: B.soapMark,
+                                width: 2.8, emboss: true }] },
+            cloth:  { root: M.cloth(),
+                      ramp: B.sponge, ramps: { scour: B.scour },
+                      marks: M.clothMarks() },
             tub:    { root: M.tub(tubOpts), ramp: B.enamel,
                       // Нутро чаши — своя, тёмная рампа. В лоб его почти не
                       // видно, но «почти» — это торцы борта, и на них разница
@@ -99,10 +106,11 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
                 .map(l => BAKE.smooth(l))
                 .filter(Boolean);
             const it = { d: parts, box: BAKE.box(parts), ink: loops.join('') };
-            if (build[name] && build[name].engrave) {
-                it.en = BAKE.segments(build[name].engrave, v);
-                it.enc = build[name].engraveColor;
-            }
+            const marks = build[name] && build[name].marks;
+            if (marks) it.en = marks.map(m => ({
+                c: m.color, w: m.width, e: m.emboss ? 1 : 0,
+                s: BAKE.segments(m.lines, v)
+            }));
             return it;
         };
 
@@ -174,10 +182,7 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
         lines.push(`        ${name}: {`);
         lines.push(`            box: ${JSON.stringify(it.box)},`);
         lines.push(`            ink: '${esc(it.ink || '')}',`);
-        if (it.en) {
-            lines.push(`            en: ${JSON.stringify(it.en)},`);
-            lines.push(`            enc: ${JSON.stringify(it.enc)},`);
-        }
+        if (it.en) lines.push(`            en: ${JSON.stringify(it.en)},`);
         lines.push('            d: [');
         it.d.forEach((p, j) => {
             lines.push(`                ['${esc(p.color)}', '${esc(p.d)}']`
@@ -202,24 +207,24 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('            ? `<path class="bb-ink" fill="none" stroke="${BATH_BAKED.ink}"`');
     lines.push('              + ` stroke-width="5.4" stroke-linejoin="round"`');
     lines.push('              + ` stroke-linecap="round" d="${it.ink}"/>` : \'\';');
-    lines.push('        // Гравировка идёт ПОВЕРХ заливок: это не край предмета,');
-    lines.push('        // а бороздка на его грани. Рисуется дважды — светлая');
-    lines.push('        // линия со сдвигом вниз-вправо и тёмная поверх неё: у');
-    lines.push('        // канавки одна стенка в тени, другая на свету, и без');
-    lines.push('        // этой пары она читается наклейкой, а не штампом.');
-    lines.push('        const en = it.en ? (() => {');
-    lines.push('            const d = it.en.map(t =>');
+    lines.push('        // Фактура идёт ПОВЕРХ заливок: это не край предмета, а');
+    lines.push('        // то, что лежит на его гранях, — клеймо, поры, ворс.');
+    lines.push('        // emboss рисует под тёмной линией светлую со сдвигом');
+    lines.push('        // вниз-вправо: у канавки одна стенка в тени, другая на');
+    lines.push('        // свету, и без этой пары клеймо читается наклейкой.');
+    lines.push('        const en = (it.en || []).map(g => {');
+    lines.push('            const d = g.s.map(t =>');
     lines.push('                `M${t[0]} ${t[1]}L${t[2]} ${t[3]}`).join(\'\');');
-    lines.push('            const lit = it.en.map(t =>');
-    lines.push('                `M${t[0] + 1.4} ${t[1] + 1.4}L${t[2] + 1.4} ${t[3] + 1.4}`)');
-    lines.push('                .join(\'\');');
-    lines.push('            return `<path fill="none" stroke="${BATH_BAKED.engraveLit}"`');
-    lines.push('                 + ` stroke-width="3" stroke-linecap="round"`');
-    lines.push('                 + ` stroke-linejoin="round" d="${lit}"/>`');
-    lines.push('                 + `<path fill="none" stroke="${it.enc}"`');
-    lines.push('                 + ` stroke-width="2.8" stroke-linecap="round"`');
+    lines.push('            const lit = g.e ? `<path fill="none"`');
+    lines.push('                 + ` stroke="${BATH_BAKED.engraveLit}"`');
+    lines.push('                 + ` stroke-width="${g.w + 0.2}" stroke-linecap="round"`');
+    lines.push('                 + ` stroke-linejoin="round" d="${g.s.map(t =>');
+    lines.push('                     `M${t[0] + 1.4} ${t[1] + 1.4}L${t[2] + 1.4} ${t[3] + 1.4}`)');
+    lines.push('                     .join(\'\')}"/>` : \'\';');
+    lines.push('            return lit + `<path fill="none" stroke="${g.c}"`');
+    lines.push('                 + ` stroke-width="${g.w}" stroke-linecap="round"`');
     lines.push('                 + ` stroke-linejoin="round" d="${d}"/>`;');
-    lines.push('        })() : \'\';');
+    lines.push('        }).join(\'\');');
     lines.push('        return `<g class="bb bb-${name}">` + ink');
     lines.push('             + it.d.map(p => `<path fill="${p[0]}" d="${p[1]}"/>`).join(\'\')');
     lines.push('             + en + \'</g>\';');
