@@ -34,7 +34,14 @@ const BAKE = {
     LIGHT: { x: -0.55, y: 0.78, z: 0.42 },
 
     // На сколько раздувать треугольник от центра, чтобы перекрыть шов.
-    SEAM: 0.35,
+    // Полсотни длинных узких четырёхугольников протяжки сходятся встык, и на
+    // сглаженных краях каждый стык давал светлую нить: чаша была исчерчена
+    // диагональными волосками. Прежние 0.35 при доле 0.06 от короткой стороны
+    // для таких четырёхугольников означали почти ноль.
+    SEAM: 0.7,
+    // Доля СОБСТВЕННОГО размера, дальше которой раздувать нельзя: постоянная
+    // величина выворачивает длинные тонкие треугольники наизнанку.
+    SEAM_MAX: 0.16,
 
     // ---------- КАМЕРА ----------
     // Камера ОДНА на всю комнату, и это ключевое свойство: наезды в игре —
@@ -102,7 +109,6 @@ const BAKE = {
         const camPos = view.cam.position;
 
         for (const item of (Array.isArray(items) ? items : [items])) {
-            const ramp = item.ramp;
             // РАСПИЛ ПО ГЛУБИНЕ. Предмет, внутри которого что-то стоит (червь
             // в ванне), нельзя нарисовать одним куском: дальняя его половина
             // обязана быть ЗА персонажем, ближняя — ПЕРЕД ним. Треугольник
@@ -117,6 +123,11 @@ const BAKE = {
             item.root.updateMatrixWorld(true);
             item.root.traverse(node => {
                 if (!node.isMesh) return;
+                // Часть предмета может краситься СВОЕЙ рампой: у ванны нутро
+                // темнее наружной стенки, и одной рампой на всё она читается
+                // белым слитком.
+                const ramp = (node.userData.part && item.ramps
+                    && item.ramps[node.userData.part]) || item.ramp;
 
                 // ПЛОСКАЯ поверхность выходит ОДНИМ контуром, а не набором
                 // треугольников. У плоскости одна нормаль, то есть одна
@@ -131,10 +142,8 @@ const BAKE = {
                     const nrm = new THREE.Vector3(0, 1, 0)
                         .applyMatrix3(new THREE.Matrix3()
                             .getNormalMatrix(node.matrixWorld)).normalize();
-                    let lit = nrm.dot(light) * 0.5 + 0.5;
-                    lit = Math.max(o.minLight, Math.min(o.maxLight, lit));
-                    const step = Math.min(ramp.length - 1, Math.max(0,
-                        Math.round(lit * (ramp.length - 1))));
+                    const lit = Math.max(o.minLight, Math.min(o.maxLight,
+                        nrm.dot(light) * 0.5 + 0.5));
                     // Глубина — по ЦЕНТРУ САМОГО КОНТУРА, а не по позиции
                     // меша. Плоскости строятся сразу в мировых координатах и
                     // стоят в нуле, поэтому позиция у всех у них одна: стена,
@@ -147,7 +156,7 @@ const BAKE = {
                     mid.multiplyScalar(1 / node.userData.outline.length)
                        .applyMatrix4(node.matrixWorld);
                     tris.push({
-                        depth: mid.distanceTo(camPos), color: ramp[step],
+                        depth: mid.distanceTo(camPos), lit, ramp,
                         name: nameOf(mid.z), base, poly: pts, raw: pts
                     });
                     return;
@@ -181,15 +190,13 @@ const BAKE = {
 
                     ab.subVectors(b, a); ac.subVectors(c, a);
                     n.crossVectors(ab, ac).applyMatrix3(nm).normalize();
-                    let lit = n.dot(light) * 0.5 + 0.5;
-                    lit = Math.max(o.minLight, Math.min(o.maxLight, lit));
-                    const step = Math.min(ramp.length - 1, Math.max(0,
-                        Math.round(lit * (ramp.length - 1))));
+                    const lit = Math.max(o.minLight, Math.min(o.maxLight,
+                        n.dot(light) * 0.5 + 0.5));
 
                     mid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
                     tris.push({
                         depth: mid.distanceTo(camPos),
-                        color: ramp[step], name: nameOf(mid.z), base,
+                        lit, ramp, name: nameOf(mid.z), base,
                         // Контур считается по НЕРАЗДУТЫМ вершинам: раздутие
                         // разводит общие рёбра соседей, и они перестают
                         // сходиться — силуэт рассыпается на отдельные палки.
@@ -198,6 +205,68 @@ const BAKE = {
                     });
                 }
             });
+        }
+
+        // ---------- СВЕТ СГЛАЖИВАЕТСЯ ПО СОСЕДЯМ ----------
+        // Два треугольника одного четырёхугольника протяжки не копланарны, и
+        // их ступени иногда расходились — по диагонали КАЖДОГО
+        // четырёхугольника шла тонкая черта, и чаша выглядела исчерченной.
+        // Соседи с близкой освещённостью усредняются: настоящий перелом
+        // грани (борт, дно) разница больше порога и переживает.
+        const NEIGH = 0.14;
+        const ekey = (p, q) => {
+            const a = `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+            const b = `${q.x.toFixed(2)},${q.y.toFixed(2)}`;
+            return a < b ? a + '|' + b : b + '|' + a;
+        };
+        for (let pass = 0; pass < 2; pass++) {
+            const share = new Map();
+            for (const t of tris) {
+                if (!t.raw || t.raw.length !== 3) continue;
+                for (let i = 0; i < 3; i++) {
+                    const k = ekey(t.raw[i], t.raw[(i + 1) % 3]);
+                    if (!share.has(k)) share.set(k, []);
+                    share.get(k).push(t);
+                }
+            }
+            for (const [, pair] of share) {
+                if (pair.length !== 2) continue;
+                const [a, b] = pair;
+                if (a.base !== b.base) continue;
+                if (Math.abs(a.lit - b.lit) > NEIGH) continue;
+                const m = (a.lit + b.lit) / 2;
+                a.lit = m; b.lit = m;
+            }
+        }
+
+        // ---------- СВЕТ РАСТЯГИВАЕТСЯ ПО ВСЕЙ РАМПЕ ПРЕДМЕТА ----------
+        // Освещённость грани сама по себе почти никогда не занимает весь
+        // диапазон: у чаши, все грани которой смотрят вверх и внутрь, она
+        // лежала между 0.75 и 0.95 — и после квантования ВЕСЬ предмет
+        // приходился на две верхних ступени рампы. Ванна выходила листом
+        // белой бумаги, а перепад между гранями, на котором держится вся
+        // графика игры, пропадал.
+        //
+        // Поэтому наблюдённый разброс предмета растягивается на всю рампу.
+        // Это не «поярче»: это единственный способ получить у предмета
+        // светлую и тёмную сторону, не подбирая рампу под каждый ракурс.
+        //
+        // Совсем плоскому предмету (стена, пол, вода) растягивать нечего —
+        // ему даётся одна средняя ступень.
+        const FLAT = 0.035;
+        const range = new Map();
+        for (const t of tris) {
+            const r = range.get(t.base) || { lo: 1e9, hi: -1e9 };
+            if (t.lit < r.lo) r.lo = t.lit;
+            if (t.lit > r.hi) r.hi = t.lit;
+            range.set(t.base, r);
+        }
+        for (const t of tris) {
+            const r = range.get(t.base);
+            const n = t.ramp.length - 1;
+            const k = (r.hi - r.lo) < FLAT ? 0.62
+                    : (t.lit - r.lo) / (r.hi - r.lo);
+            t.color = t.ramp[Math.max(0, Math.min(n, Math.round(k * n)))];
         }
 
         // Контуры считаются ДО сортировки и слияния: им нужны сами
@@ -240,7 +309,7 @@ const BAKE = {
         const cx = (t[0].x + t[1].x + t[2].x) / 3;
         const cy = (t[0].y + t[1].y + t[2].y) / 3;
         const d = t.map(p => Math.hypot(p.x - cx, p.y - cy));
-        const step = Math.min(by, Math.min(d[0], d[1], d[2]) * 0.06);
+        const step = Math.min(by, Math.min(d[0], d[1], d[2]) * this.SEAM_MAX);
         return t.map((p, i) => {
             const len = d[i] || 1;
             return { x: p.x + (p.x - cx) / len * step,

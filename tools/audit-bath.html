@@ -1,26 +1,47 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Аудит ванной</title>
-<!-- Голая площадка для разбора ванной (tools/shot-bath.js, audit-bath.js):
-     ни стилей, ни игры, только палитра и предметы. Фон ЯДОВИТО-РОЗОВЫЙ и
-     нигде в палитре не встречается — по нему и находятся дыры: всё, что
-     просвечивает розовым внутри собранной сцены, значит не нарисовано. -->
+<!-- Площадка для разбора ЗАПЕЧЁННОЙ ванной (tools/audit-bath.js): ни стилей,
+     ни игры, только палитра и предметы из bath-baked.js.
+
+     Фон нейтрально-серый, а не розовый: предметы здесь оценивают ГЛАЗОМ, и
+     ядовитый фон мешает судить о цвете. Дыры при этом всё равно видно —
+     серого в палитре ванной нет. -->
 <style>
-  html, body { margin: 0; background: #ff00ff; }
-  svg { display: block; background: #ff00ff; }
+  html, body { margin: 0; background: #8d8d93; font: 12px system-ui; color: #fff; }
+  .grid { display: flex; flex-wrap: wrap; }
+  .cell { padding: 6px; }
+  .cap { opacity: 0.85; padding: 2px 0 0 2px; }
+  svg { display: block; background: #8d8d93; }
 </style>
-<svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+<div class="grid" id="grid"></div>
 <script src="../src/core/palette.js"></script>
-<script src="../src/minigames/lust/bath-objects.js"></script>
-<script src="../src/minigames/lust/bath-art.js"></script>
+<script src="../src/minigames/lust/bath-baked.js"></script>
 <script>
-// Показать произвольную разметку в произвольном окне.
-window.show = (markup, box, scale) => {
-    const svg = document.getElementById('stage');
-    svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
-    svg.setAttribute('width', Math.round(box.w * scale));
-    svg.setAttribute('height', Math.round(box.h * scale));
-    svg.innerHTML = markup;
-    return { w: Math.round(box.w * scale), h: Math.round(box.h * scale) };
+// Одна плитка: предмет по центру своей рамки с полем вокруг.
+window.tile = (name, side, pad) => {
+    const it = BATH_BAKED.items[name];
+    if (!it) return null;
+    const b = it.box, m = pad == null ? 0.12 : pad;
+    const w = b.w * (1 + m * 2), h = b.h * (1 + m * 2);
+    const s = Math.max(w, h);
+    const vb = `${b.x - (s - b.w) / 2} ${b.y - (s - b.h) / 2} ${s} ${s}`;
+    return `<div class="cell"><svg viewBox="${vb}" width="${side}" height="${side}">`
+         + BATH_BAKED.draw(name) + `</svg><div class="cap">${name} `
+         + `${it.d.length} путей ${b.w}×${b.h}</div></div>`;
+};
+
+// Все предметы разом — контактный лист.
+window.sheet = (side) => {
+    const names = Object.keys(BATH_BAKED.items);
+    document.getElementById('grid').innerHTML =
+        names.map(n => tile(n, side || 250)).join('');
+    return names;
+};
+
+// Один предмет крупно.
+window.one = (name, side) => {
+    document.getElementById('grid').innerHTML = tile(name, side || 700, 0.06);
+    return BATH_BAKED.items[name].box;
 };
 </script>

@@ -31,9 +31,15 @@ const BATH_MODELS = {
             P(0.885, -1.1),            // внутренняя стенка
             P(0.905, -0.34),
             P(1.00, 0.0),              // валик борта
-            P(1.055, -0.42),
-            P(1.045, -2.4),            // наружная стенка
-            P(1.00, -o.deep + 0.5),
+            P(1.06, -0.45),
+            // Наружная стенка с ЛЁГКИМ ПУЗОМ. Прямая вертикальная стенка
+            // смотрит в камеру одной нормалью и выходит ровным светлым
+            // пятном во всю ширину кадра: перепада между гранями, на котором
+            // держится вся графика игры, на ней просто нет. Пузо даёт стенке
+            // перелив сверху вниз даром.
+            P(1.115, -1.4),
+            P(1.095, -2.7),
+            P(1.00, -o.deep + 0.6),
             P(0.90, -o.deep),          // подошва
             P(0.66, -o.deep - 0.05)
         ];
@@ -42,11 +48,19 @@ const BATH_MODELS = {
         // круг читается тазом: у ванны бока ПРЯМЫЕ, и скруглены только углы.
         const plan = BATH_MODELS.roundedPlan(o.len, o.wide, o.corner, o.seg);
         const g = new THREE.Group();
-        g.add(new THREE.Mesh(BATH_MODELS.sweep(profile, plan, R)));
+        // Нутро и наружная стенка — РАЗНЫЕ куски, чтобы красить их разными
+        // рампами. Заодно на борту появляется настоящий перелом нормали:
+        // одной протяжкой он сглаживался, и борт терялся.
+        const inner = new THREE.Mesh(BATH_MODELS.sweep(profile, plan, R, 0, 6));
+        inner.userData.part = 'inner';
+        g.add(inner);
+        g.add(new THREE.Mesh(BATH_MODELS.sweep(profile, plan, R, 6, profile.length - 1)));
         // Дно чаши: тот же контур, смещённый внутрь ровно на вынос первой
         // точки профиля. Так дно попадает в стенку, а не рядом с ней.
-        g.add(BATH_MODELS.flat(BATH_MODELS.fan(
-            BATH_MODELS.inset(plan, R - profile[1].x), -o.deep, true)));
+        const bottom = BATH_MODELS.flat(BATH_MODELS.fan(
+            BATH_MODELS.inset(plan, R - profile[1].x), -o.deep, true));
+        bottom.userData.part = 'inner';
+        g.add(bottom);
         // Ванна СТОИТ НА ПОЛУ. Модель строит её с бортом на нуле — это
         // удобный якорь для профиля, — но в комнате нулём является пол, и
         // без подъёма чаша оказывалась в него утопленной по самый борт.
@@ -96,13 +110,15 @@ const BATH_MODELS = {
         // с вынырнувшим червём читалась игрушечной. Лейка не ниже его головы.
         // Стойка растёт ИЗ СМЕСИТЕЛЯ (тот же x), а не стоит рядом с ним:
         // труба, обрывающаяся в воздухе рядом с краном, читалась недоделанной.
-        shower: { x: -4.2, y: 16.0, z: -1.6, riser: 8.2 },
+        // riser — где НАЧИНАЕТСЯ труба. Ровно на высоте смесителя: труба,
+        // кончающаяся выше или ниже его корпуса, висит в воздухе обрубком.
+        shower: { x: -4.2, y: 16.0, z: -1.6, riser: 8.4 },
         // Смеситель ВЫШЕ борта на три единицы. На 6.6 его закрывал
         // дальний борт: смотрим сверху, и борт проецируется вверх.
         faucet: { x: -4.2, y: 8.4 },
         // Полка ВЫШЕ и ПРАВЕЕ головы: на прежнем месте её закрывал собой
         // сам червь, и взять мыло было не с чего.
-        shelf:  { x: 5.0, y: 12.3, w: 2.0 }
+        shelf:  { x: 5.2, y: 13.0, w: 3.4 }
     },
 
     // Якоря: точки МИРА, которые запекание переводит в координаты сцены.
@@ -114,8 +130,8 @@ const BATH_MODELS = {
             // Лейка душа: из неё льётся на червя.
             showerHead: { x: L.shower.x, y: L.shower.y - 1.1, z: L.shower.z },
             // Мыло и мочалка на полке — их ТАЩАТ на червя.
-            soap:  { x: L.shelf.x - 1.2, y: L.shelf.y + 0.7, z: L.wallZ + 1.1 },
-            cloth: { x: L.shelf.x + 1.5, y: L.shelf.y + 0.7, z: L.wallZ + 1.1 },
+            soap:  { x: L.shelf.x - 0.95, y: L.shelf.y + 0.62, z: L.wallZ + 1.15 },
+            cloth: { x: L.shelf.x + 1.05, y: L.shelf.y + 0.66, z: L.wallZ + 1.15 },
             // Червь лежит в воде, ближе к дальнему борту: спереди в финале
             // всплывает хвост, и место ему надо оставить.
             // Червь сидит ВЫШЕ уровня воды на полтора корпуса: в финале
@@ -236,7 +252,7 @@ const BATH_MODELS = {
             new THREE.Vector3(S.x + 1.1, S.y + 1.2, S.z + 0.4),
             new THREE.Vector3(S.x + 1.9, S.y + 0.5, S.z)
         ], false, 'catmullrom', 0.4);
-        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 30, 0.26, 12, false)));
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 26, 0.26, 10, false)));
         // Раструб: усечённый конус, широким концом ВНИЗ.
         const head = new THREE.Mesh(
             new THREE.CylinderGeometry(0.44, 1.15, 1.1, 22, 1, false));
@@ -251,48 +267,78 @@ const BATH_MODELS = {
     },
 
     // ---------- СМЕСИТЕЛЬ ----------
+    // ---------- СМЕСИТЕЛЬ ----------
+    // Настенный, с изливом вниз и одним рычагом. Собирается из четырёх
+    // читаемых кусков: розетка на стене, корпус, излив, рычаг. Прежний
+    // вариант был короткой трубкой в диске и на экране читался серой шишкой
+    // — по силуэту в нём не опознавался кран.
+    //
+    // Из этого же корпуса растёт стойка душа (см. shower): труба,
+    // обрывающаяся в воздухе рядом с краном, выглядела недоделанной.
     faucet() {
         const L = BATH_MODELS.LAYOUT, F = L.faucet;
         const g = new THREE.Group();
-        // Розетка на стене.
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.5, 14));
-        base.rotation.x = Math.PI / 2;
-        base.position.set(F.x, F.y, L.wallZ + 0.24);
-        g.add(base);
-        // Излив: короткое колено вниз, как у ванной, а не гусак кухни.
+        const put = (m, x, y, z) => { m.position.set(x, y, z); g.add(m); return m; };
+
+        // Розетка: плоский диск у самой стены.
+        const rose = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.95, 1.05, 0.4, 14));
+        rose.rotation.x = Math.PI / 2;
+        put(rose, F.x, F.y, L.wallZ + 0.17);
+
+        // Корпус: цилиндр от стены вперёд, со скруглённым торцом.
+        const body = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.72, 0.8, 1.7, 14));
+        body.rotation.x = Math.PI / 2;
+        put(body, F.x, F.y, L.wallZ + 1.05);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.72, 12, 7));
+        put(cap, F.x, F.y, L.wallZ + 1.9);
+
+        // Излив: колено вниз-вперёд, с лёгким расширением на конце.
         const path = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(F.x, F.y, L.wallZ + 0.4),
-            new THREE.Vector3(F.x, F.y - 0.1, L.wallZ + 1.5),
-            new THREE.Vector3(F.x, F.y - 0.9, L.wallZ + 2.2)
+            new THREE.Vector3(F.x, F.y - 0.45, L.wallZ + 1.2),
+            new THREE.Vector3(F.x, F.y - 1.25, L.wallZ + 2.0),
+            new THREE.Vector3(F.x, F.y - 2.25, L.wallZ + 2.5)
         ], false, 'catmullrom', 0.4);
-        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 14, 0.3, 8, false)));
-        // Рычаг: один, как у современного смесителя.
-        const lever = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 1.5));
-        lever.position.set(F.x - 0.1, F.y + 0.8, L.wallZ + 0.9);
-        lever.rotation.x = -0.24;
-        g.add(lever);
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 14, 0.33, 9, false)));
+        const lip = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.44, 0.37, 0.4, 12));
+        put(lip, F.x, F.y - 2.45, L.wallZ + 2.55);
+
+        // Рычаг: короткий цилиндр вверх-вперёд от корпуса.
+        const lever = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.18, 0.16, 1.5, 9));
+        lever.rotation.x = -0.5;
+        put(lever, F.x, F.y + 1.0, L.wallZ + 1.45);
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 6));
+        put(knob, F.x, F.y + 1.6, L.wallZ + 1.78);
         return g;
     },
 
     // ---------- ПОЛКА ----------
+    // Плита с фаской по переднему краю и два кронштейна ПОД ней. Прежние
+    // кронштейны торчали ниже полки отдельными брусками и читались ножками
+    // висящего в воздухе столика.
     shelf() {
         const L = BATH_MODELS.LAYOUT, S = L.shelf;
         const g = new THREE.Group();
-        const slab = new THREE.Mesh(new THREE.BoxGeometry(S.w, 0.34, 1.9));
-        slab.position.set(S.x, S.y, L.wallZ + 1.05);
+        const slab = new THREE.Mesh(
+            BATH_MODELS.roundedBox(S.w, 0.42, 2.1, 0.16, 3));
+        slab.position.set(S.x, S.y, L.wallZ + 1.15);
         g.add(slab);
-        // Кронштейны: без них полка приклеена к стене.
-        for (const dx of [-S.w / 2 + 0.5, S.w / 2 - 0.5]) {
-            const br = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.7, 0.9));
-            br.position.set(S.x + dx, S.y - 0.5, L.wallZ + 0.55);
+        // Кронштейн — клин: у стены высокий, к переднему краю сходит на нет.
+        for (const dx of [-S.w / 2 + 0.55, S.w / 2 - 0.55]) {
+            const sh = new THREE.Shape();
+            sh.moveTo(0, 0); sh.lineTo(1.5, 0); sh.lineTo(0, -0.85); sh.lineTo(0, 0);
+            const br = new THREE.Mesh(new THREE.ExtrudeGeometry(sh,
+                { depth: 0.22, bevelEnabled: false }));
+            br.position.set(S.x + dx - 0.11, S.y - 0.21, L.wallZ + 0.12);
+            br.rotation.y = Math.PI / 2;
             g.add(br);
         }
         return g;
     },
 
-    // ---------- МЫЛО И МОЧАЛКА ----------
-    // Оба — скруглённые бруски, но разной формы и пропорции: на полке их
-    // разводит силуэт, а не только цвет.
     soap() {
         const a = BATH_MODELS.anchorPoints().soap;
         const m = new THREE.Mesh(BATH_MODELS.roundedBox(2.3, 0.75, 1.35, 0.34, 3));
@@ -346,9 +392,14 @@ const BATH_MODELS = {
     // profile — точки сечения (x = вынос наружу от контура, y = высота),
     // plan — контур в плане с наружной нормалью в каждой точке,
     // R — на какой вынос профиля рассчитан контур (профиль нормируется).
-    sweep(profile, plan, R) {
+    // j0..j1 — какой КУСОК профиля протягивать. Чаша собирается из двух
+    // таких кусков (нутро и наружная стенка), потому что красятся они
+    // разными рампами: у ванны внутри всегда темнее, чем снаружи, и без
+    // этого перепада она читается белым слитком.
+    sweep(profile, plan, R, j0, j1) {
         const v = [], idx = [];
         const N = plan.length, M = profile.length;
+        const a0 = j0 == null ? 0 : j0, a1 = j1 == null ? M - 1 : j1;
         for (let i = 0; i < N; i++) {
             const q = plan[i];
             for (let j = 0; j < M; j++) {
@@ -367,7 +418,7 @@ const BATH_MODELS = {
         }
         for (let i = 0; i < N; i++) {
             const i2 = (i + 1) % N;
-            for (let j = 0; j < M - 1; j++) {
+            for (let j = a0; j < a1; j++) {
                 const a = i * M + j, b = i * M + j + 1;
                 const c = i2 * M + j, d = i2 * M + j + 1;
                 idx.push(a, b, d, a, d, c);

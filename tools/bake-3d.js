@@ -61,6 +61,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             // splitZ — глубина, на которой стоит червь: всё, что ближе к
             // камере, обязано рисоваться поверх него.
             tub:    { root: M.tub(tubOpts), ramp: B.enamel,
+                      // Нутро чаши — своя, тёмная рампа.
+                      ramps: { inner: B.basin },
                       splitZ: M.anchorPoints().worm.z },
             water:  { root: M.water(Object.assign({}, tubOpts, { level: L.water })),
                       ramp: [B.water.deep, B.water.surf, B.water.surfHi] }
