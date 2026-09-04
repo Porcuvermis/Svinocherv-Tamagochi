@@ -69,20 +69,31 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
         // Каждый предмет запекается ОТДЕЛЬНО (свой габарит, своя разметка),
         // но одной и той же камерой: игра включает и гасит их по ходу забега,
         // и общей простынёй это было бы невозможно.
+        // Обводка силуэта: тонкая чернильная линия по краю предмета. Она и
+        // прячет угловатость низкополигональной модели, и собирает предмет в
+        // одну фигуру — без неё запечённое читается набором граней.
+        const inked = (name, parts) => {
+            const loops = (BAKE.lastOutlines[name] || [])
+                .filter(l => l.length > 2)
+                .map(l => BAKE.smooth(l))
+                .filter(Boolean);
+            return { d: parts, box: BAKE.box(parts), ink: loops.join('') };
+        };
+
         const items = {};
         for (const name of order) {
             const spec = build[name];
             const parts = BAKE.bake([Object.assign({ name }, spec)], v);
             if (spec.splitZ == null) {
-                items[name] = { d: parts, box: BAKE.box(parts) };
+                items[name] = inked(name, parts);
             } else {
                 for (const half of [name + 'Far', name + 'Near']) {
-                    const own = parts.filter(p => p.name === half);
-                    items[half] = { d: own, box: BAKE.box(own) };
+                    items[half] = inked(half, parts.filter(p => p.name === half));
                 }
             }
         }
-        return { items, anchors: BAKE.anchors(M.anchorPoints(), v),
+        return { items, ink: PALETTE.ink,
+                 anchors: BAKE.anchors(M.anchorPoints(), v),
                  tiles: BAKE.segments(M.tileLines(), v),
                  grout: B.tile.grout };
     }, [VIEW, ORDER]);
@@ -120,6 +131,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('    // ПОВЕРХ стены и ПОД всем остальным — это часть стены, а не');
     lines.push('    // самостоятельный предмет.');
     lines.push('    grout: ' + JSON.stringify(out.grout) + ',');
+    lines.push('    // Цвет обводки силуэта — общие чернила игры.');
+    lines.push('    ink: ' + JSON.stringify(out.ink) + ',');
     lines.push('    tiles: ' + JSON.stringify(out.tiles) + ',');
     lines.push('');
     lines.push('    items: {');
@@ -128,6 +141,7 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
         const it = out.items[name];
         lines.push(`        ${name}: {`);
         lines.push(`            box: ${JSON.stringify(it.box)},`);
+        lines.push(`            ink: '${esc(it.ink || '')}',`);
         lines.push('            d: [');
         it.d.forEach((p, j) => {
             lines.push(`                ['${esc(p.color)}', '${esc(p.d)}']`
@@ -143,7 +157,16 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('    draw(name) {');
     lines.push('        const it = BATH_BAKED.items[name];');
     lines.push('        if (!it) return \'\';');
-    lines.push('        return `<g class="bb bb-${name}">`');
+    lines.push('        // Обводка идёт ПЕРВОЙ, под заливками, и потому вдвое');
+    lines.push('        // толще: наружу торчит ровно половина. Поверх заливок она');
+    lines.push('        // показывала бы и внутренние края — рёбра скрытых');
+    lines.push('        // поверхностей самого предмета, — и ванна читалась');
+    lines.push('        // прозрачной. Под заливками остаётся только силуэт.');
+    lines.push('        const ink = it.ink');
+    lines.push('            ? `<path class="bb-ink" fill="none" stroke="${BATH_BAKED.ink}"`');
+    lines.push('              + ` stroke-width="5.4" stroke-linejoin="round"`');
+    lines.push('              + ` stroke-linecap="round" d="${it.ink}"/>` : \'\';');
+    lines.push('        return `<g class="bb bb-${name}">` + ink');
     lines.push('             + it.d.map(p => `<path fill="${p[0]}" d="${p[1]}"/>`).join(\'\')');
     lines.push('             + \'</g>\';');
     lines.push('    },');

@@ -109,6 +109,7 @@ const BAKE = {
             // уходит в ту половину, по какую сторону от splitZ лежит его
             // центр; порядок между половинами задаётся списком, как обычно.
             const cut = item.splitZ;
+            const base = item.name;
             const nameOf = (mz) => cut == null ? item.name
                 : item.name + (mz < cut ? 'Far' : 'Near');
             if (cut == null) order.push(item.name);
@@ -147,7 +148,7 @@ const BAKE = {
                        .applyMatrix4(node.matrixWorld);
                     tris.push({
                         depth: mid.distanceTo(camPos), color: ramp[step],
-                        name: nameOf(mid.z), poly: pts
+                        name: nameOf(mid.z), base, poly: pts, raw: pts
                     });
                     return;
                 }
@@ -188,12 +189,21 @@ const BAKE = {
                     mid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
                     tris.push({
                         depth: mid.distanceTo(camPos),
-                        color: ramp[step], name: nameOf(mid.z),
+                        color: ramp[step], name: nameOf(mid.z), base,
+                        // Контур считается по НЕРАЗДУТЫМ вершинам: раздутие
+                        // разводит общие рёбра соседей, и они перестают
+                        // сходиться — силуэт рассыпается на отдельные палки.
+                        raw: [pa, pb, pc],
                         p: this.grow([pa, pb, pc], this.SEAM)
                     });
                 }
             });
         }
+
+        // Контуры считаются ДО сортировки и слияния: им нужны сами
+        // треугольники, а не готовые пути. Кладутся в поле, а не в возврат,
+        // чтобы не менять форму ответа у всех, кто уже зовёт bake().
+        this.lastOutlines = this.outlines(tris);
 
         // Сортировка ВНУТРИ предмета: между предметами порядок уже задан
         // списком, и перемешивать их нельзя.
@@ -263,6 +273,138 @@ const BAKE = {
             return [+p.x.toFixed(1), +p.y.toFixed(1),
                     +q.x.toFixed(1), +q.y.toFixed(1)];
         });
+    },
+
+    // ---------- КОНТУР СИЛУЭТА ----------
+    // Тонкая чернильная линия по краю предмета. Не по каждой грани — только
+    // по внешнему краю, и именно поэтому она читается мультяшной обводкой, а
+    // не сеткой полигонов.
+    //
+    // Зачем вообще: запечённое из трёхмерного всегда угловато по краю, и
+    // низкополигональность видно первым делом на силуэте. Добавлять
+    // полигоны — дорого и всё равно не спасает; обводка прячет фаску даром и
+    // заодно собирает предмет в одну фигуру.
+    //
+    // Как считается: ребро, у которого ровно ОДИН треугольник, лежит на краю
+    // видимой части. Общие рёбра соседей встречаются дважды и отбрасываются.
+    // Считается это по БАЗОВОМУ предмету, а не по половине распила: иначе по
+    // линии распила пошла бы лишняя черта поперёк ванны.
+    outlines(tris) {
+        const key = (p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+        const byBase = new Map();
+        for (const t of tris) {
+            if (!t.raw) continue;
+            const b = t.base || t.name;
+            if (!byBase.has(b)) byBase.set(b, new Map());
+            const edges = byBase.get(b);
+            const n = t.raw.length;
+            for (let i = 0; i < n; i++) {
+                const a = t.raw[i], c = t.raw[(i + 1) % n];
+                const ka = key(a), kc = key(c);
+                const k = ka < kc ? ka + '|' + kc : kc + '|' + ka;
+                const e = edges.get(k);
+                if (e) e.n++;
+                else edges.set(k, { n: 1, a, b: c, name: t.name });
+            }
+        }
+
+        // Оставшиеся рёбра сшиваются в ломаные. Идти можно ТОЛЬКО через
+        // вершины, где сходятся ровно два краевых ребра: в остальных ход
+        // неоднозначен, и любая догадка о продолжении уводила ломаную через
+        // всю фигуру — в углах ванны из таких перескоков вырастали чёрные
+        // веера. Там, где ход неоднозначен, ломаная просто обрывается.
+        const out = {};
+        for (const [, edges] of byBase) {
+            const byName = new Map();
+            for (const [, e] of edges) {
+                if (e.n !== 1) continue;
+                if (!byName.has(e.name)) byName.set(e.name, []);
+                byName.get(e.name).push(e);
+            }
+            for (const [name, list] of byName) {
+                const links = new Map();
+                const add = (k, e) => {
+                    if (!links.has(k)) links.set(k, []);
+                    links.get(k).push(e);
+                };
+                for (const e of list) { add(key(e.a), e); add(key(e.b), e); }
+                const used = new Set();
+                const chains = [];
+                const walk = (e0, fromKey) => {
+                    const pts = [fromKey === key(e0.a) ? e0.a : e0.b,
+                                 fromKey === key(e0.a) ? e0.b : e0.a];
+                    used.add(e0);
+                    let cur = key(pts[1]), guard = list.length + 4;
+                    while (guard-- > 0) {
+                        const at = links.get(cur) || [];
+                        if (at.length !== 2) break;         // развилка — обрыв
+                        const next = at.find(e => !used.has(e));
+                        if (!next) break;
+                        used.add(next);
+                        const p = key(next.a) === cur ? next.b : next.a;
+                        pts.push(p);
+                        cur = key(p);
+                        if (cur === key(pts[0])) break;
+                    }
+                    return pts;
+                };
+                // Сначала от развилок и концов, потом то, что осталось, —
+                // замкнутые кольца.
+                for (const e of list) {
+                    if (used.has(e)) continue;
+                    for (const end of [key(e.a), key(e.b)]) {
+                        if ((links.get(end) || []).length === 2) continue;
+                        chains.push(walk(e, end));
+                        break;
+                    }
+                }
+                for (const e of list) {
+                    if (used.has(e)) continue;
+                    chains.push(walk(e, key(e.a)));
+                }
+                out[name] = (out[name] || []).concat(chains.filter(c => c.length > 2));
+            }
+        }
+        return out;
+    },
+
+    // Ломаная → путь со СГЛАЖЕННЫМИ тупыми углами. Резкие повороты (борт
+    // ванны, край полки) остаются резкими: округлить всё подряд значит
+    // превратить предметы в кляксы.
+    //
+    // Ломаная может быть и незамкнутой — там, где силуэт оборвался на
+    // развилке. Замыкать её насильно нельзя: получится хорда через предмет.
+    smooth(pts, sharpDeg) {
+        const sharp = Math.cos((sharpDeg == null ? 62 : sharpDeg) * Math.PI / 180);
+        const p = pts.slice();
+        const closed = p.length > 3
+            && Math.hypot(p[0].x - p[p.length - 1].x,
+                          p[0].y - p[p.length - 1].y) < 0.01;
+        if (closed) p.pop();
+        const n = p.length;
+        if (n < 3) return '';
+        const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+        const at = (i) => p[(i + n) % n];
+        let d = '';
+        const from = closed ? 0 : 1, to = closed ? n - 1 : n - 2;
+        d = closed ? `M${mid(at(-1), p[0]).x.toFixed(1)} ${mid(at(-1), p[0]).y.toFixed(1)}`
+                   : `M${p[0].x.toFixed(1)} ${p[0].y.toFixed(1)}`;
+        for (let i = from; i <= to; i++) {
+            const a = at(i - 1), b = p[i], c = at(i + 1);
+            const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y;
+            const lu = Math.hypot(ux, uy) || 1, lv = Math.hypot(vx, vy) || 1;
+            const cosT = (ux * vx + uy * vy) / (lu * lv);
+            const m1 = mid(b, c);
+            if (cosT < sharp) {
+                d += `L${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+                d += `L${m1.x.toFixed(1)} ${m1.y.toFixed(1)}`;
+            } else {
+                d += `Q${b.x.toFixed(1)} ${b.y.toFixed(1)} `
+                   + `${m1.x.toFixed(1)} ${m1.y.toFixed(1)}`;
+            }
+        }
+        if (!closed) d += `L${p[n - 1].x.toFixed(1)} ${p[n - 1].y.toFixed(1)}`;
+        return closed ? d + 'Z' : d;
     },
 
     // Готовая разметка предмета.
