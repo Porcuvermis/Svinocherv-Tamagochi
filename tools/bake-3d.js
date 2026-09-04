@@ -17,23 +17,39 @@ const fs = require('fs');
 
 // ---------- КАМЕРА КОМНАТЫ ----------
 // Одна на всю ванную, потому что наезды в игре — это crop и zoom одной
-// картинки, а не движение камеры. Смотрит СВЕРХУ под углом: в чашу надо
-// заглядывать, иначе воды и червя в ней не видно вовсе.
+// картинки, а не движение камеры.
+//
+// Смотрит СТРОГО В ЛОБ: from и at на одной высоте и на одной оси. Раньше
+// камера висела сверху и заглядывала в чашу — и от этого разваливалось всё
+// остальное. Заглядывая в ванну, мы видим её нутро, а значит червю негде
+// спрятаться: борт режет его не линией, а дугой дальней стенки, и чашу
+// пришлось пилить надвое по глубине, чтобы он оказался «внутри». Вид в лоб
+// решает это даром: борт — прямая поперёк кадра, всё ниже неё закрыто
+// ближней стенкой, и воду рисовать не нужно вовсе.
+//
+// Глаз чуть НИЖЕ борта (4.2 против 4.5): так внутренность чаши не видна ни
+// с какой стороны кадра, а не «почти не видна».
+//
+// from.z большое: объектив длинный, перспектива мягкая. Совсем убирать её
+// нельзя — предметы разной глубины перестанут отличаться размером, — но
+// ванна не должна разъезжаться трапецией.
 const VIEW = {
     fov: 20,
-    from: { x: 2.0, y: 23.8, z: 35.3 },
-    at:   { x: 0, y: 3.4, z: 0.4 },
-    origin: { x: 360, y: 700 },
+    from: { x: 0, y: 4.2, z: 46 },
+    at:   { x: 0, y: 4.2, z: 0 },
+    origin: { x: 360, y: 760 },
     scale: 330
 };
 
 // Порядок — решение художника, а не результат вычисления: между предметами
 // он задан этим списком, по глубине сортируется только внутри предмета.
-// Ванна распилена по глубине надвое: дальняя половина рисуется ЗА червём,
-// ближняя — ПЕРЕД ним. Одним куском её нельзя: либо персонаж стоит перед
-// ванной, либо за ней целиком, и оба варианта уже пробовали.
+//
+// Чаша идёт ОДНИМ куском и рисуется ПОВЕРХ червя. Пила по глубине была
+// нужна только косой камере: при взгляде сверху дальний борт оказывался
+// выше червя, и целая чаша накрыла бы его с головой. В лоб дальнего борта
+// не видно вовсе — ближняя стенка закрывает его сама.
 const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
-               'tub', 'water'];
+               'tub'];
 
 (async () => {
     const browser = await chromium.launch({
@@ -58,14 +74,11 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             shelf:  { root: M.shelf(),  ramp: [B.shelf.lo, B.shelf.edge, B.shelf.top] },
             soap:   { root: M.soap(),   ramp: B.soap },
             cloth:  { root: M.cloth(),  ramp: B.cloth },
-            // splitZ — глубина, на которой стоит червь: всё, что ближе к
-            // камере, обязано рисоваться поверх него.
             tub:    { root: M.tub(tubOpts), ramp: B.enamel,
-                      // Нутро чаши — своя, тёмная рампа.
-                      ramps: { inner: B.basin },
-                      splitZ: M.anchorPoints().worm.z },
-            water:  { root: M.water(Object.assign({}, tubOpts, { level: L.water })),
-                      ramp: [B.water.deep, B.water.surf, B.water.surfHi] }
+                      // Нутро чаши — своя, тёмная рампа. В лоб его почти не
+                      // видно, но «почти» — это торцы борта, и на них разница
+                      // между нутром и наружей как раз и читается толщиной.
+                      ramps: { inner: B.basin } }
         };
 
         // Каждый предмет запекается ОТДЕЛЬНО (свой габарит, своя разметка),
@@ -97,6 +110,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
         return { items, ink: PALETTE.ink,
                  anchors: BAKE.anchors(M.anchorPoints(), v),
                  tiles: BAKE.segments(M.tileLines(), v),
+                 seams: BAKE.segments(M.floorLines(), v),
+                 seamColor: B.floor.seam,
                  grout: B.tile.grout };
     }, [VIEW, ORDER]);
 
@@ -136,6 +151,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('    // Цвет обводки силуэта — общие чернила игры.');
     lines.push('    ink: ' + JSON.stringify(out.ink) + ',');
     lines.push('    tiles: ' + JSON.stringify(out.tiles) + ',');
+    lines.push('    seams: ' + JSON.stringify(out.seams) + ',');
+    lines.push('    seamColor: ' + JSON.stringify(out.seamColor) + ',');
     lines.push('');
     lines.push('    items: {');
     const names = Object.keys(out.items);
@@ -178,6 +195,14 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('            `M${t[0]} ${t[1]}L${t[2]} ${t[3]}`).join(\'\');');
     lines.push('        return `<path class="bb bb-tiles" fill="none" stroke="${BATH_BAKED.grout}"`');
     lines.push('             + ` stroke-width="${width || 1.6}" opacity="0.45" d="${d}"/>`;');
+    lines.push('    },');
+    lines.push('');
+    lines.push('    drawSeams(width) {');
+    lines.push('        const d = BATH_BAKED.seams.map(t =>');
+    lines.push('            `M${t[0]} ${t[1]}L${t[2]} ${t[3]}`).join(\'\');');
+    lines.push('        return `<path class="bb bb-seams" fill="none"`');
+    lines.push('             + ` stroke="${BATH_BAKED.seamColor}"`');
+    lines.push('             + ` stroke-width="${width || 1.8}" opacity="0.5" d="${d}"/>`;');
     lines.push('    },');
     lines.push('');
     lines.push('    box(name) {');

@@ -30,10 +30,9 @@ const LustMinigame = {
     wormHandle: null,
 
     // Ступени забега. Держатся строкой, а не числом: в отладке видно, где ты.
-    phase: 'idle',      // idle → filling → soap → cloth → tail → pop → aim → done
+    phase: 'idle',      // idle → rinse → soap → cloth → tail → pop → aim → done
     drag: null,
     fillRaf: 0,
-    level: 0,           // 0..1, насколько налито
 
     // Покрытие тела считается по КЛЕТКАМ, а не по пикселям: требование
     // «закрась всё» упирается в пару незакрашенных точек, и игрок не
@@ -92,7 +91,11 @@ const LustMinigame = {
     // быстрее, чем сильнее согнут. Держишь палец неподвижно — хвост уходит в
     // прямое положение; чтобы удержать угол, его надо подталкивать снова и
     // снова, и легко перегнуть.
-    BEND_MAX: 1.8,     // предел изгиба, радианы
+    // 1.2, а не 1.8: камера смотрит в лоб, и вся дуга полёта теперь лежит
+    // поперёк ванны. Прицел на такой дуге приходится примерно на 40° от
+    // вертикали, и размах в 103° оставлял половину хода за пределами того,
+    // чем вообще можно целиться.
+    BEND_MAX: 1.0,     // предел изгиба, радианы
     // Ход пальца переводится в наклон с ЗАПАСОМ НА ТОЧНОСТЬ: окно попадания
     // по изгибу — четверть радиана, и толчок должен быть заметно мельче него,
     // иначе прицел проскакивается одним движением.
@@ -174,23 +177,23 @@ const LustMinigame = {
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
 
         this.phase = 'idle';
-        this.level = 0;
         this.drag = null;
         this.resetCover();
         this.wipeLather();
         this.el('bt-bubbles').innerHTML = '';
-        this.el('bt-jet').innerHTML = BATH_ART.jet();
+        this.el('bt-rain-back').innerHTML = BATH_ART.rain(false);
+        this.el('bt-rain-front').innerHTML = BATH_ART.rain(true);
         for (const id of ['bt-tail', 'bt-bubbles', 'bt-shots', 'bt-gauge', 'bt-spot'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.bubbles = null;
         this.hits = 0;
         this.shotsLeft = 0;
-        this.setOpacity('bt-jet', 0);
-        this.setOpacity('bt-water', 0);
+        this.setOpacity('bt-rain-back', 0);
+        this.setOpacity('bt-rain-front', 0);
         this.fgEl.innerHTML = '';
         this.showTools(true);
-        this.ready('faucet');
+        this.ready('shower');
 
         // Камера ПЕРЕД монтажом: она выставляет холст червя, а рендерер
         // меряет его размер один раз, при монтаже.
@@ -217,7 +220,7 @@ const LustMinigame = {
     // Что сейчас трогать. Подсказка без слов и без указателя: нужная вещь
     // дышит, остальные стоят смирно (инвариант 9).
     ready(what) {
-        for (const [key, id] of [['faucet', 'bt-faucet'],
+        for (const [key, id] of [['shower', 'bt-shower'],
                                  ['soap', 'bt-soap-home'],
                                  ['cloth', 'bt-cloth-home']]) {
             const n = this.el(id);
@@ -344,20 +347,15 @@ const LustMinigame = {
     // Раскладка задаётся ДВУМЯ этими числами, а не долей холста персонажа:
     // доля не знает, где у него голова и где кончается тело, и подгонялась
     // вслепую — над бортом оставалась одна морда, а мылить давали только её.
-    WORM_HEAD_TOP: 165,   // куда встаёт макушка, координаты сцены
+    WORM_HEAD_TOP: 400,   // куда встаёт макушка, координаты сцены
     WORM_SHOW: 0.78,      // какая доля червя обязана быть выше борта
 
-    // Уровень воды в координатах сцены.
-    waterLine() {
-        const w = BATH_ART.box('water');
-        return (w ? w.y : 600) + 26;
-    },
-
-    // Докуда червя ВИДНО. Ниже этой линии его закрывает дальняя половина
-    // чаши, и мылить там нечего: игрок не видит ни грязи, ни пены.
+    // Докуда червя ВИДНО. Ниже этой линии его закрывает борт, и мылить там
+    // нечего: игрок не видит ни грязи, ни пены. Камера смотрит в лоб, поэтому
+    // это ПРЯМАЯ поперёк кадра — верх чаши и есть линия среза.
     visibleLine() {
-        const t = BATH_ART.box('tubFar');
-        return t ? t.y + 6 : this.waterLine();
+        const t = BATH_ART.box('tub');
+        return t ? t.y + 8 : 750;
     },
 
     // Габарит НАРИСОВАННОГО червя в единицах его холста. Кэшируется: он не
@@ -523,7 +521,7 @@ const LustMinigame = {
                                         w: r.width * (1 - IN * 2) * k,
                                         h: r.height * (1 - IN * 3) * k };
         } catch (e) { /* червя ещё нет — сойдёт габарит воды */ }
-        this._cover = b || BATH_ART.box('water') || { x: 100, y: 600, w: 500, h: 150 };
+        this._cover = b || BATH_ART.box('tub') || { x: 100, y: 600, w: 500, h: 150 };
         return this._cover;
     },
 
@@ -635,8 +633,9 @@ const LustMinigame = {
         const A = BATH_ART.slots();
 
         if (this.phase === 'idle') {
-            // Кран включает воду — это и есть старт забега.
-            if (Math.hypot(p.x - A.faucet.x, p.y - A.faucet.y) < 70) this.startWater();
+            // Душ включает воду — это и есть старт забега.
+            if (Math.hypot(p.x - A.showerHead.x, p.y - A.showerHead.y) < 96)
+                this.startWater();
             return;
         }
         if (this.phase === 'soap' || this.phase === 'cloth') {
@@ -685,28 +684,23 @@ const LustMinigame = {
     },
 
     // ---------- ЭТАПЫ ----------
+    // Душ включён — и больше не выключается. Раньше здесь наливалась ванна:
+    // рос уровень воды, обрезка ползла снизу вверх. С фронтальной камерой
+    // нутра чаши не видно вовсе, наливать некуда и нечего показывать — вода
+    // теперь просто ИДЁТ ИЗ ЛЕЙКИ, а забег начинается сразу.
     startWater() {
-        this.phase = 'filling';
+        this.phase = 'rinse';
         this.ready(null);
-        this.setOpacity('bt-jet', 1);
-        this.setOpacity('bt-water', 1);
+        this.setOpacity('bt-rain-back', 1);
+        this.setOpacity('bt-rain-front', 1);
+        // Наезд ОДНОВРЕМЕННО с водой: смотреть на лейку больше незачем, вся
+        // работа теперь между червём и полкой.
         this.setCamera('body');
-        const b = BATH_ART.box('water');
-        const rect = this.el('bt-water-rect');
         const t0 = performance.now();
-        const DUR = 2200;
+        const DUR = 900;      // ровно чтобы заметить, что полилось
         const step = (t) => {
-            const k = Math.min(1, (t - t0) / DUR);
-            this.level = k;
-            // Обрезка растёт СНИЗУ ВВЕРХ: вода прибывает, а не выезжает
-            // пластиной сверху.
-            rect.setAttribute('x', String(b.x - 20));
-            rect.setAttribute('y', String(b.y + b.h * (1 - k)));
-            rect.setAttribute('width', String(b.w + 40));
-            rect.setAttribute('height', String(b.h * k + 4));
-            if (k < 1) { this.fillRaf = requestAnimationFrame(step); return; }
+            if (t - t0 < DUR) { this.fillRaf = requestAnimationFrame(step); return; }
             this.fillRaf = 0;
-            this.setOpacity('bt-jet', 0);
             this.phase = 'soap';
             this.resetCover();
             this.ready('soap');
@@ -856,7 +850,13 @@ const LustMinigame = {
             const r = LustShot.fly(C, s,
                 { vx: Math.cos(s.dir) * v, vy: Math.sin(s.dir) * v },
                 target, C.mouthR);
-            if (r.near < near) { near = r.near; best = b; }
+            // Строго лучше, и с запасом. У баллистики на одну дальность
+            // ДВА решения — навесное и настильное, — и оба точные. Простое
+            // «меньше» выбирало то одно, то другое от шага перебора: прицел
+            // прыгал с 0.4 на 1.2 при сдвиге рта на десяток пикселей.
+            // Перебор идёт от малого изгиба, поэтому запас оставляет
+            // НАВЕСНОЕ: дуга видна целиком, и по ней читается перелёт.
+            if (r.near < near - 0.5) { near = r.near; best = b; }
         }
         return best;
     },

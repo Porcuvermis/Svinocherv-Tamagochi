@@ -42,15 +42,15 @@ const { chromium } = require('playwright');
   const phase = () => page.evaluate(() => LustMinigame.phase);
   const A = await page.evaluate(() => BATH_ART.slots());
 
-  // ---------- КРАН ----------
+  // ---------- ДУШ ----------
   const nodesNow = () => page.evaluate(() =>
     document.getElementById('bt-cam').querySelectorAll('*').length);
 
-  let p = await toScreen(A.faucet);
+  let p = await toScreen(A.showerHead);
   await page.mouse.click(p.x, p.y);
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2000);
   const nodesBefore = await nodesNow();
-  ok(await phase() === 'soap', 'кран налил воду и пустил к мылу', await phase());
+  ok(await phase() === 'soap', 'душ полил и пустил к мылу', await phase());
   await page.screenshot({ path: out + '1-wash.png' });
 
   // ---------- МЫТЬЁ ----------
