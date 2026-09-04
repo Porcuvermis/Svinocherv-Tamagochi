@@ -253,16 +253,24 @@ const BAKE = {
         //
         // Совсем плоскому предмету (стена, пол, вода) растягивать нечего —
         // ему даётся одна средняя ступень.
+        //
+        // Растягивается КАЖДАЯ РАМПА ОТДЕЛЬНО, а не предмет целиком. У ванны
+        // нутро красится тёмной рампой, наружа — светлой, и общий на двоих
+        // разброс задавало нутро: вся наружная стенка вместе с бортом
+        // сваливалась в две верхних ступени, борт не отделялся от стенки, и
+        // чаша снова выходила листом бумаги.
         const FLAT = 0.035;
+        const keyOf = (t) => t.base + '|' + t.ramp[0];
         const range = new Map();
         for (const t of tris) {
-            const r = range.get(t.base) || { lo: 1e9, hi: -1e9 };
+            const k = keyOf(t);
+            const r = range.get(k) || { lo: 1e9, hi: -1e9 };
             if (t.lit < r.lo) r.lo = t.lit;
             if (t.lit > r.hi) r.hi = t.lit;
-            range.set(t.base, r);
+            range.set(k, r);
         }
         for (const t of tris) {
-            const r = range.get(t.base);
+            const r = range.get(keyOf(t));
             const n = t.ramp.length - 1;
             const k = (r.hi - r.lo) < FLAT ? 0.62
                     : (t.lit - r.lo) / (r.hi - r.lo);
@@ -384,6 +392,14 @@ const BAKE = {
         // веера. Там, где ход неоднозначен, ломаная просто обрывается.
         const out = {};
         for (const [, edges] of byBase) {
+            // Габарит предмета: по нему отсекаются осколки обводки.
+            let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+            for (const [, e] of edges)
+                for (const p of [e.a, e.b]) {
+                    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+                    x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+                }
+            const diag = Math.hypot(x1 - x0, y1 - y0);
             const byName = new Map();
             for (const [, e] of edges) {
                 if (e.n !== 1) continue;
@@ -431,7 +447,33 @@ const BAKE = {
                     if (used.has(e)) continue;
                     chains.push(walk(e, key(e.a)));
                 }
-                out[name] = (out[name] || []).concat(chains.filter(c => c.length > 2));
+                // Не всякая цепочка краевых рёбер — силуэт. Отбраковка режет
+                // предмет на куски, и у внутреннего куска появляется
+                // собственная граница. У дальней половины ванны из неё
+                // вырастали два чёрных плавника под чашей: в углу чаши
+                // протяжка даёт веер осколочных треугольников, у каждого
+                // почти все рёбра краевые, и обход складывал их в гармошку —
+                // ломаную длиной в полтысячи пикселей внутри пятна тридцать
+                // на двадцать. Обведённая линией в пять, она выходила
+                // сплошной кляксой.
+                //
+                // Отсюда два признака, по которым осколок отличается от
+                // силуэта. Силуэт СОРАЗМЕРЕН предмету — осколок мельче его
+                // сотой доли. И силуэт НЕ СКЛАДЫВАЕТСЯ вдвое: у кольца вокруг
+                // фигуры длина втрое больше её диагонали, у гармошки — в
+                // десятки раз.
+                out[name] = (out[name] || []).concat(chains.filter(c => {
+                    if (c.length <= 2) return false;
+                    let len = 0, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+                    for (let i = 0; i < c.length; i++) {
+                        if (i) len += Math.hypot(c[i].x - c[i - 1].x,
+                                                 c[i].y - c[i - 1].y);
+                        x0 = Math.min(x0, c[i].x); y0 = Math.min(y0, c[i].y);
+                        x1 = Math.max(x1, c[i].x); y1 = Math.max(y1, c[i].y);
+                    }
+                    const own = Math.hypot(x1 - x0, y1 - y0);
+                    return own > diag * 0.035 && len < own * 6;
+                }));
             }
         }
         return out;
