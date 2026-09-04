@@ -355,7 +355,7 @@ const BATH_MODELS = {
             new THREE.Vector3(S.x + 1.6, S.y + 1.5, S.z + 0.5),
             new THREE.Vector3(S.x + S.arm, S.y + 0.5, S.z)
         ], false, 'catmullrom', 0.4);
-        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 26, 0.26, 10, false)));
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 24, 0.26, 12, false)));
         // Раструб: усечённый конус, широким концом ВНИЗ, НАКЛОНЁННЫЙ К ЧЕРВЮ.
         // Червь сидит не под самой лейкой: его голова смещена вправо от
         // посадочного якоря почти на два корпуса, и отвесная струя лила мимо
@@ -393,16 +393,16 @@ const BATH_MODELS = {
 
         // Розетка: плоский диск у самой стены.
         const rose = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.95, 1.05, 0.4, 14));
+            new THREE.CylinderGeometry(0.95, 1.05, 0.4, 16));
         rose.rotation.x = Math.PI / 2;
         put(rose, F.x, F.y, L.wallZ + 0.17);
 
         // Корпус: цилиндр от стены вперёд, со скруглённым торцом.
         const body = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.72, 0.8, 1.7, 14));
+            new THREE.CylinderGeometry(0.72, 0.8, 1.7, 16));
         body.rotation.x = Math.PI / 2;
         put(body, F.x, F.y, L.wallZ + 1.05);
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.72, 12, 7));
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.72, 16, 10));
         put(cap, F.x, F.y, L.wallZ + 1.9);
 
         // Излив: колено вниз-вперёд, с лёгким расширением на конце.
@@ -411,17 +411,17 @@ const BATH_MODELS = {
             new THREE.Vector3(F.x, F.y - 1.25, L.wallZ + 2.0),
             new THREE.Vector3(F.x, F.y - 2.25, L.wallZ + 2.5)
         ], false, 'catmullrom', 0.4);
-        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 14, 0.33, 9, false)));
+        g.add(new THREE.Mesh(new THREE.TubeGeometry(path, 14, 0.33, 11, false)));
         const lip = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.44, 0.37, 0.4, 12));
+            new THREE.CylinderGeometry(0.44, 0.37, 0.4, 13));
         put(lip, F.x, F.y - 2.45, L.wallZ + 2.55);
 
         // Рычаг: короткий цилиндр вверх-вперёд от корпуса.
         const lever = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.18, 0.16, 1.5, 9));
+            new THREE.CylinderGeometry(0.18, 0.16, 1.5, 11));
         lever.rotation.x = -0.5;
         put(lever, F.x, F.y + 1.0, L.wallZ + 1.45);
-        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 6));
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.24, 11, 7));
         put(knob, F.x, F.y + 1.6, L.wallZ + 1.78);
         return g;
     },

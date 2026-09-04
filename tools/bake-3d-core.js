@@ -33,15 +33,18 @@ const BAKE = {
     // получался вывернутым наизнанку.
     LIGHT: { x: -0.55, y: 0.78, z: 0.42 },
 
-    // На сколько раздувать треугольник от центра, чтобы перекрыть шов.
-    // Полсотни длинных узких четырёхугольников протяжки сходятся встык, и на
-    // сглаженных краях каждый стык давал светлую нить: чаша была исчерчена
-    // диагональными волосками. Прежние 0.35 при доле 0.06 от короткой стороны
-    // для таких четырёхугольников означали почти ноль.
-    SEAM: 0.7,
-    // Доля СОБСТВЕННОГО размера, дальше которой раздувать нельзя: постоянная
-    // величина выворачивает длинные тонкие треугольники наизнанку.
-    SEAM_MAX: 0.16,
+    // Раздутия треугольников здесь НЕТ, и это важно.
+    //
+    // Им перекрывали светлую нить на стыке соседних заливок, но лечило оно
+    // симптом и ломало главное: раздутые треугольники перестают сходиться
+    // общими рёбрами, а разрез ступени по изолинии (см. bake) как раз на
+    // общих рёбрах и держится — границы у соседей расходятся, и предмет
+    // снова покрывается мозаикой из собственных граней.
+    //
+    // Нить со стыка снимает обводка заливки ЕЁ ЖЕ цветом (см. draw() в
+    // bath-baked.js): она перекрывает шов и снаружи, и изнутри, не сдвигая
+    // ни одной вершины.
+
 
     // ---------- КАМЕРА ----------
     // Камера ОДНА на всю комнату, и это ключевое свойство: наезды в игре —
@@ -100,6 +103,35 @@ const BAKE = {
     // Список же решает это даром и ровно так, как устроена кухня: стена,
     // пол, оборудование, ванна, вода. Порядок — решение художника, а не
     // результат вычисления.
+    // ---------- РАМПА ПОДРОБНЕЕ ----------
+    // Художественная рампа задаётся четырьмя-шестью цветами: это удобно
+    // править и мало для света. Между соседними ступенями достраиваются
+    // промежуточные — перепад между гранями остаётся, но перестаёт быть
+    // лестницей в три ступени на весь предмет.
+    //
+    // Достраивается ЗДЕСЬ, а не в палитре: в палитре должно лежать решение
+    // художника, а не его интерполяция.
+    RAMP_STEPS: 8,
+    _rampCache: {},
+    fatRamp(colors) {
+        const key = colors.join('');
+        if (this._rampCache[key]) return this._rampCache[key];
+        const N = this.RAMP_STEPS;
+        if (colors.length >= N) return (this._rampCache[key] = colors);
+        const rgb = colors.map(c => [parseInt(c.slice(1, 3), 16),
+                                     parseInt(c.slice(3, 5), 16),
+                                     parseInt(c.slice(5, 7), 16)]);
+        const out = [];
+        for (let i = 0; i < N; i++) {
+            const t = i / (N - 1) * (rgb.length - 1);
+            const j = Math.min(rgb.length - 2, Math.floor(t)), f = t - j;
+            const v = [0, 1, 2].map(k => Math.round(
+                rgb[j][k] + (rgb[j + 1][k] - rgb[j][k]) * f));
+            out.push('#' + v.map(x => x.toString(16).padStart(2, '0')).join(''));
+        }
+        return (this._rampCache[key] = out);
+    },
+
     bake(items, view, opts) {
         const o = Object.assign({ minLight: 0.06, maxLight: 0.98 }, opts || {});
         const light = new THREE.Vector3(this.LIGHT.x, this.LIGHT.y, this.LIGHT.z)
@@ -126,8 +158,8 @@ const BAKE = {
                 // Часть предмета может краситься СВОЕЙ рампой: у ванны нутро
                 // темнее наружной стенки, и одной рампой на всё она читается
                 // белым слитком.
-                const ramp = (node.userData.part && item.ramps
-                    && item.ramps[node.userData.part]) || item.ramp;
+                const ramp = this.fatRamp((node.userData.part && item.ramps
+                    && item.ramps[node.userData.part]) || item.ramp);
 
                 // ПЛОСКАЯ поверхность выходит ОДНИМ контуром, а не набором
                 // треугольников. У плоскости одна нормаль, то есть одна
@@ -164,6 +196,7 @@ const BAKE = {
 
                 const geo = node.geometry;
                 const pos = geo.attributes.position;
+                const nrm = geo.attributes.normal;
                 const idx = geo.index;
                 const count = idx ? idx.count : pos.count;
                 const nm = new THREE.Matrix3().getNormalMatrix(node.matrixWorld);
@@ -171,6 +204,7 @@ const BAKE = {
                       c = new THREE.Vector3();
                 const ab = new THREE.Vector3(), ac = new THREE.Vector3(),
                       n = new THREE.Vector3(), mid = new THREE.Vector3();
+                const sm = new THREE.Vector3(), vn = new THREE.Vector3();
 
                 for (let i = 0; i < count; i += 3) {
                     const i0 = idx ? idx.getX(i) : i;
@@ -188,56 +222,73 @@ const BAKE = {
                                - (pc.x - pa.x) * (pb.y - pa.y);
                     if (area >= -1e-6) continue;
 
+                    // Нормаль грани. Вершины УЖЕ переведены в мир, значит и
+                    // векторное произведение их рёбер — мировая нормаль.
+                    // Стояло ещё и умножение на матрицу нормалей: повёрнутый
+                    // предмет получал свой поворот ВТОРОЙ раз, и свет на нём
+                    // лежал не с той стороны. На неповёрнутых (ванна, стена)
+                    // матрица единичная — потому ошибка и жила так долго.
                     ab.subVectors(b, a); ac.subVectors(c, a);
-                    n.crossVectors(ab, ac).applyMatrix3(nm).normalize();
-                    const lit = Math.max(o.minLight, Math.min(o.maxLight,
+                    n.crossVectors(ab, ac).normalize();
+
+                    // ---------- СГЛАЖЕННАЯ НОРМАЛЬ ----------
+                    // Свет считается не по грани, а по УСРЕДНЁННЫМ нормалям
+                    // вершин: у гнутой поверхности соседние треугольники
+                    // получают почти одинаковую освещённость, и вместо
+                    // гранёного бока выходит перелив. Без этого труба душа,
+                    // борт ванны и раструб лейки показывали собственную
+                    // сетку — каждая грань своей ступенью.
+                    //
+                    // НО только там, где поверхность действительно гнутая.
+                    // Если усреднённая нормаль сильно расходится с нормалью
+                    // грани, это настоящий перелом (борт, торец, фаска), и
+                    // сглаживать его нельзя: предмет потеряет форму.
+                    // Освещённость считается В КАЖДОЙ ВЕРШИНЕ, а не одна на
+                    // грань. Одна на грань — это и есть «видно сетку»: у
+                    // каждого треугольника своя ступень, и модель показывает
+                    // собственное разбиение. По трём значениям в вершинах
+                    // свет внутри треугольника меняется линейно, и границу
+                    // ступени можно провести ГДЕ НАДО, а не по рёбрам.
+                    const face = Math.max(o.minLight, Math.min(o.maxLight,
                         n.dot(light) * 0.5 + 0.5));
+                    let lv = [face, face, face];
+                    if (nrm) {
+                        sm.set(0, 0, 0);
+                        for (const j of [i0, i1, i2])
+                            sm.add(vn.fromBufferAttribute(nrm, j));
+                        sm.applyMatrix3(nm).normalize();
+                        // Сглаживаем только НАСТОЯЩУЮ кривизну. Если
+                        // усреднённая нормаль сильно расходится с нормалью
+                        // грани, это перелом (борт, торец, фаска) — его
+                        // сглаживание съело бы форму.
+                        if (sm.dot(n) > 0.8) lv = [i0, i1, i2].map(j => {
+                            vn.fromBufferAttribute(nrm, j)
+                              .applyMatrix3(nm).normalize();
+                            return Math.max(o.minLight, Math.min(o.maxLight,
+                                vn.dot(light) * 0.5 + 0.5));
+                        });
+                    }
+                    const lit = (lv[0] + lv[1] + lv[2]) / 3;
 
                     mid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
                     tris.push({
                         depth: mid.distanceTo(camPos),
-                        lit, ramp, name: nameOf(mid.z), base,
+                        lit, lv, ramp, name: nameOf(mid.z), base,
                         // Контур считается по НЕРАЗДУТЫМ вершинам: раздутие
                         // разводит общие рёбра соседей, и они перестают
                         // сходиться — силуэт рассыпается на отдельные палки.
                         raw: [pa, pb, pc],
-                        p: this.grow([pa, pb, pc], this.SEAM)
+                        p: [pa, pb, pc]
                     });
                 }
             });
         }
 
-        // ---------- СВЕТ СГЛАЖИВАЕТСЯ ПО СОСЕДЯМ ----------
-        // Два треугольника одного четырёхугольника протяжки не копланарны, и
-        // их ступени иногда расходились — по диагонали КАЖДОГО
-        // четырёхугольника шла тонкая черта, и чаша выглядела исчерченной.
-        // Соседи с близкой освещённостью усредняются: настоящий перелом
-        // грани (борт, дно) разница больше порога и переживает.
-        const NEIGH = 0.14;
-        const ekey = (p, q) => {
-            const a = `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
-            const b = `${q.x.toFixed(2)},${q.y.toFixed(2)}`;
-            return a < b ? a + '|' + b : b + '|' + a;
-        };
-        for (let pass = 0; pass < 2; pass++) {
-            const share = new Map();
-            for (const t of tris) {
-                if (!t.raw || t.raw.length !== 3) continue;
-                for (let i = 0; i < 3; i++) {
-                    const k = ekey(t.raw[i], t.raw[(i + 1) % 3]);
-                    if (!share.has(k)) share.set(k, []);
-                    share.get(k).push(t);
-                }
-            }
-            for (const [, pair] of share) {
-                if (pair.length !== 2) continue;
-                const [a, b] = pair;
-                if (a.base !== b.base) continue;
-                if (Math.abs(a.lit - b.lit) > NEIGH) continue;
-                const m = (a.lit + b.lit) / 2;
-                a.lit = m; b.lit = m;
-            }
-        }
+        // Усреднения света по соседним треугольникам здесь БОЛЬШЕ НЕТ, и
+        // это не потеря. Оно затыкало ровно одну дыру: у двух треугольников
+        // одного четырёхугольника ступени расходились, и по диагонали шла
+        // черта. Свет, посчитанный в вершинах, этой дыры не оставляет вовсе —
+        // общие вершины у соседей одни и те же.
 
         // ---------- СВЕТ РАСТЯГИВАЕТСЯ ПО ВСЕЙ РАМПЕ ПРЕДМЕТА ----------
         // Освещённость грани сама по себе почти никогда не занимает весь
@@ -269,18 +320,66 @@ const BAKE = {
             if (t.lit > r.hi) r.hi = t.lit;
             range.set(k, r);
         }
+        // ---------- СТУПЕНЬ РЕЖЕТСЯ ПО ИЗОЛИНИИ, А НЕ ПО РЕБРУ ----------
+        // Вот это и есть «видно сетку полигонов». Заливка у треугольника
+        // одна, поэтому граница между двумя ступенями света могла проходить
+        // ТОЛЬКО по его рёбрам — и шла зигзагом по разбиению модели.
+        // Никакое сглаживание света этого не лечит: чем мягче свет, тем
+        // длиннее зигзаг.
+        //
+        // Свет внутри треугольника меняется линейно (значения известны в
+        // вершинах), значит линия равной освещённости — прямая, и её можно
+        // ПОСЧИТАТЬ. Треугольник режется по каждой такой линии, и каждый
+        // кусок заливается своей ступенью. Границы ступеней после этого
+        // идут по форме предмета, а не по его сетке, и низкополигональная
+        // модель перестаёт показывать, из чего она сложена.
+        const out2 = [];
         for (const t of tris) {
             const r = range.get(keyOf(t));
             const n = t.ramp.length - 1;
-            const k = (r.hi - r.lo) < FLAT ? 0.62
-                    : (t.lit - r.lo) / (r.hi - r.lo);
-            t.color = t.ramp[Math.max(0, Math.min(n, Math.round(k * n)))];
+            const flat = (r.hi - r.lo) < FLAT;
+            const norm = (v) => flat ? 0.62 : (v - r.lo) / (r.hi - r.lo);
+            const step = (k) => t.ramp[Math.max(0, Math.min(n, Math.round(k * n)))];
+            const pts = t.poly || t.p;
+            if (flat || !t.lv || t.lv.length !== 3) {
+                t.color = step(norm(t.lit));
+                out2.push(t);
+                continue;
+            }
+            const kv = t.lv.map(norm);
+            if (Math.round(Math.min(...kv) * n) === Math.round(Math.max(...kv) * n)) {
+                t.color = step(kv[0]);
+                out2.push(t);
+                continue;
+            }
+            // Резать надо ПО РАЗДУТЫМ вершинам — по ним и рисуется заливка.
+            let cur = { poly: pts, vals: t.lv.map(norm) };
+            for (let i = 0; i < n && cur; i++) {
+                const th = (i + 0.5) / n;
+                const lo = Math.min(...cur.vals), hi = Math.max(...cur.vals);
+                if (lo >= th) continue;
+                if (hi <= th) {
+                    out2.push(Object.assign({}, t, { poly: cur.poly,
+                        color: t.ramp[i], raw: null }));
+                    cur = null;
+                    break;
+                }
+                const cut = this.clipAt(cur.poly, cur.vals, th);
+                if (cut[0].poly.length > 2)
+                    out2.push(Object.assign({}, t, { poly: cut[0].poly,
+                        color: t.ramp[i], raw: null }));
+                cur = cut[1].poly.length > 2 ? cut[1] : null;
+            }
+            // Остаток лежит выше последнего порога — это верхняя ступень.
+            // Считать её по среднему нельзя: среднее иногда падало на
+            // ступень ниже, и по предмету шли лишние полосы.
+            if (cur) out2.push(Object.assign({}, t, { poly: cur.poly,
+                color: t.ramp[n], raw: null }));
         }
-
-        // Контуры считаются ДО сортировки и слияния: им нужны сами
-        // треугольники, а не готовые пути. Кладутся в поле, а не в возврат,
-        // чтобы не менять форму ответа у всех, кто уже зовёт bake().
+        // Контуры считаются ДО разреза: им нужны целые треугольники.
         this.lastOutlines = this.outlines(tris);
+        tris.length = 0;
+        tris.push(...out2);
 
         // Сортировка ВНУТРИ предмета: между предметами порядок уже задан
         // списком, и перемешивать их нельзя.
@@ -298,7 +397,13 @@ const BAKE = {
         const parts = [];
         for (const t of out) {
             const pts = t.poly || t.p;
-            const d = 'M' + pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+            // Координаты заливок округляются ДО ЦЕЛЫХ. Полупиксельная
+            // точность здесь не нужна: предмет рисуется не крупнее своего
+            // запечённого размера, а шов в полединицы всё равно перекрыт
+            // обводкой заливки. Разрез ступеней по изолиниям утроил число
+            // кусков, и лишний знак после запятой стоил бы десяток килобайт
+            // на ровном месте.
+            const d = 'M' + pts.map(p => `${Math.round(p.x)} ${Math.round(p.y)}`)
                                 .join('L') + 'Z';
             const last = parts[parts.length - 1];
             if (last && last.color === t.color) { last.d += d; last.tris++; }
@@ -307,23 +412,28 @@ const BAKE = {
         return parts;
     },
 
-    // Раздуть треугольник от центра: перекрыть шов с соседом того же цвета.
-    //
-    // Раздувается на долю СОБСТВЕННОГО размера, а не на постоянную величину.
-    // Постоянная выворачивала длинные тонкие треугольники — веер, которым
-    // залита поверхность воды, шёл «бабочкой» через всю чашу. Доля короткой
-    // стороны безопасна для любой формы.
-    grow(t, by) {
-        const cx = (t[0].x + t[1].x + t[2].x) / 3;
-        const cy = (t[0].y + t[1].y + t[2].y) / 3;
-        const d = t.map(p => Math.hypot(p.x - cx, p.y - cy));
-        const step = Math.min(by, Math.min(d[0], d[1], d[2]) * this.SEAM_MAX);
-        return t.map((p, i) => {
-            const len = d[i] || 1;
-            return { x: p.x + (p.x - cx) / len * step,
-                     y: p.y + (p.y - cy) / len * step };
-        });
+    // ---------- РАЗРЕЗ МНОГОУГОЛЬНИКА ПО УРОВНЮ ----------
+    // Значения заданы в вершинах и меняются вдоль ребра линейно, поэтому
+    // точка пересечения с уровнем считается точно. Возвращает две части:
+    // «не выше уровня» и «не ниже».
+    clipAt(poly, vals, th) {
+        const lo = { poly: [], vals: [] }, hi = { poly: [], vals: [] };
+        for (let i = 0; i < poly.length; i++) {
+            const j = (i + 1) % poly.length;
+            const a = poly[i], b = poly[j], va = vals[i], vb = vals[j];
+            (va <= th ? lo : hi).poly.push(a);
+            (va <= th ? lo : hi).vals.push(va);
+            if ((va < th && vb > th) || (va > th && vb < th)) {
+                const f = (th - va) / (vb - va);
+                const p = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+                lo.poly.push(p); lo.vals.push(th);
+                hi.poly.push(p); hi.vals.push(th);
+            }
+        }
+        return [lo, hi];
     },
+
+
 
     // ---------- ЯКОРЯ ----------
     // Именованные точки МИРА, спроецированные в координаты сцены. Ими
