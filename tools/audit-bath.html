@@ -39,6 +39,23 @@ window.sheet = (side) => {
     return names;
 };
 
+// Несколько предметов вместе, крупно: предмет из двух половин по одной не
+// читается — надо видеть, как они стыкуются.
+window.group = (names, side) => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const n of names) {
+        const b = BATH_BAKED.items[n].box;
+        x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+        x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+    }
+    const w = x1 - x0, h = y1 - y0, s = Math.max(w, h) * 1.1;
+    const vb = `${x0 - (s - w) / 2} ${y0 - (s - h) / 2} ${s} ${s}`;
+    document.getElementById('grid').innerHTML =
+        `<div class="cell"><svg viewBox="${vb}" width="${side}" height="${side}">`
+        + names.map(n => BATH_BAKED.draw(n)).join('') + '</svg></div>';
+    return { x: x0, y: y0, w, h };
+};
+
 // Один предмет крупно.
 window.one = (name, side) => {
     document.getElementById('grid').innerHTML = tile(name, side || 700, 0.06);
