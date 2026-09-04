@@ -48,8 +48,10 @@ const VIEW = {
 // нужна только косой камере: при взгляде сверху дальний борт оказывался
 // выше червя, и целая чаша накрыла бы его с головой. В лоб дальнего борта
 // не видно вовсе — ближняя стенка закрывает его сама.
+// shelfRail идёт ПОСЛЕ мыла и мочалки нарочно: бортик доски обязан
+// перекрывать их низ, иначе в лоб не отличить «на полке» от «перед полкой».
 const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
-               'tub'];
+               'shelfRail', 'tub'];
 
 (async () => {
     const browser = await chromium.launch({
@@ -72,7 +74,11 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             shower: { root: M.shower(), ramp: chrome },
             faucet: { root: M.faucet(), ramp: chrome },
             shelf:  { root: M.shelf(),  ramp: [B.shelf.lo, B.shelf.edge, B.shelf.top] },
-            soap:   { root: M.soap(),   ramp: B.soap },
+            shelfRail: { root: M.shelfRail(),
+                         ramp: [B.shelf.lo, B.shelf.edge, B.shelf.top] },
+            // engrave — ломаные, лежащие НА ГРАНИ предмета: клеймо «72%».
+            soap:   { root: M.soap(),   ramp: B.soap,
+                      engrave: M.soapMark(), engraveColor: B.soapMark },
             cloth:  { root: M.cloth(),  ramp: B.cloth },
             tub:    { root: M.tub(tubOpts), ramp: B.enamel,
                       // Нутро чаши — своя, тёмная рампа. В лоб его почти не
@@ -92,7 +98,12 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
                 .filter(l => l.length > 2)
                 .map(l => BAKE.smooth(l))
                 .filter(Boolean);
-            return { d: parts, box: BAKE.box(parts), ink: loops.join('') };
+            const it = { d: parts, box: BAKE.box(parts), ink: loops.join('') };
+            if (build[name] && build[name].engrave) {
+                it.en = BAKE.segments(build[name].engrave, v);
+                it.enc = build[name].engraveColor;
+            }
+            return it;
         };
 
         const items = {};
@@ -107,7 +118,7 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
                 }
             }
         }
-        return { items, ink: PALETTE.ink,
+        return { items, ink: PALETTE.ink, engraveLit: B.soapLit,
                  anchors: BAKE.anchors(M.anchorPoints(), v),
                  tiles: BAKE.segments(M.tileLines(), v),
                  seams: BAKE.segments(M.floorLines(), v),
@@ -153,6 +164,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('    tiles: ' + JSON.stringify(out.tiles) + ',');
     lines.push('    seams: ' + JSON.stringify(out.seams) + ',');
     lines.push('    seamColor: ' + JSON.stringify(out.seamColor) + ',');
+    lines.push('    // Светлая стенка гравированной канавки.');
+    lines.push('    engraveLit: ' + JSON.stringify(out.engraveLit) + ',');
     lines.push('');
     lines.push('    items: {');
     const names = Object.keys(out.items);
@@ -161,6 +174,10 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
         lines.push(`        ${name}: {`);
         lines.push(`            box: ${JSON.stringify(it.box)},`);
         lines.push(`            ink: '${esc(it.ink || '')}',`);
+        if (it.en) {
+            lines.push(`            en: ${JSON.stringify(it.en)},`);
+            lines.push(`            enc: ${JSON.stringify(it.enc)},`);
+        }
         lines.push('            d: [');
         it.d.forEach((p, j) => {
             lines.push(`                ['${esc(p.color)}', '${esc(p.d)}']`
@@ -185,9 +202,27 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
     lines.push('            ? `<path class="bb-ink" fill="none" stroke="${BATH_BAKED.ink}"`');
     lines.push('              + ` stroke-width="5.4" stroke-linejoin="round"`');
     lines.push('              + ` stroke-linecap="round" d="${it.ink}"/>` : \'\';');
+    lines.push('        // Гравировка идёт ПОВЕРХ заливок: это не край предмета,');
+    lines.push('        // а бороздка на его грани. Рисуется дважды — светлая');
+    lines.push('        // линия со сдвигом вниз-вправо и тёмная поверх неё: у');
+    lines.push('        // канавки одна стенка в тени, другая на свету, и без');
+    lines.push('        // этой пары она читается наклейкой, а не штампом.');
+    lines.push('        const en = it.en ? (() => {');
+    lines.push('            const d = it.en.map(t =>');
+    lines.push('                `M${t[0]} ${t[1]}L${t[2]} ${t[3]}`).join(\'\');');
+    lines.push('            const lit = it.en.map(t =>');
+    lines.push('                `M${t[0] + 1.4} ${t[1] + 1.4}L${t[2] + 1.4} ${t[3] + 1.4}`)');
+    lines.push('                .join(\'\');');
+    lines.push('            return `<path fill="none" stroke="${BATH_BAKED.engraveLit}"`');
+    lines.push('                 + ` stroke-width="3" stroke-linecap="round"`');
+    lines.push('                 + ` stroke-linejoin="round" d="${lit}"/>`');
+    lines.push('                 + `<path fill="none" stroke="${it.enc}"`');
+    lines.push('                 + ` stroke-width="2.8" stroke-linecap="round"`');
+    lines.push('                 + ` stroke-linejoin="round" d="${d}"/>`;');
+    lines.push('        })() : \'\';');
     lines.push('        return `<g class="bb bb-${name}">` + ink');
     lines.push('             + it.d.map(p => `<path fill="${p[0]}" d="${p[1]}"/>`).join(\'\')');
-    lines.push('             + \'</g>\';');
+    lines.push('             + en + \'</g>\';');
     lines.push('    },');
     lines.push('');
     lines.push('    drawTiles(width) {');

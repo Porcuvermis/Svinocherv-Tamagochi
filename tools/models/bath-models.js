@@ -188,7 +188,7 @@ const BATH_MODELS = {
         // головой червя, а над ней и под ней оставалось пустое поле плитки.
         // Игра вертикальная — и полка теперь тоже: два яруса ставят предметы
         // друг над другом и забирают ту самую пустоту.
-        shelf:  { x: 5.4, lo: 8.4, hi: 15.0, w: 3.0 }
+        shelf:  { x: 5.6, lo: 8.4, hi: 15.0, w: 3.0 }
     },
 
     // Якоря: точки МИРА, которые запекание переводит в координаты сцены.
@@ -202,8 +202,16 @@ const BATH_MODELS = {
                           z: L.shower.z },
             // Мыло и мочалка на полке — их ТАЩАТ на червя. Ярусы разные:
             // мыло сверху (им работают первым), мочалка снизу.
-            soap:  { x: L.shelf.x, y: L.shelf.hi + 0.58, z: L.wallZ + 1.0 },
-            cloth: { x: L.shelf.x, y: L.shelf.lo + 0.82, z: L.wallZ + 1.0 },
+            //
+            // Высота выведена ИЗ ДОСКИ и из самого предмета, а не подобрана:
+            // предмет стоит подошвой на верхней грани доски, утопая в неё на
+            // волосок. Подобранные числа оставляли между подошвой и доской
+            // щель, и в лоб — а камера смотрит именно в лоб — предмет
+            // читался висящим ПЕРЕД полкой, а не лежащим на ней.
+            soap:  { x: L.shelf.x, y: L.shelf.hi + 0.15 + BATH_MODELS.SOAP.h / 2,
+                     z: L.wallZ + 0.85 },
+            cloth: { x: L.shelf.x, y: L.shelf.lo + 0.15 + BATH_MODELS.CLOTH.h / 2,
+                     z: L.wallZ + 0.8 },
             // Червь лежит в воде, ближе к дальнему борту: спереди в финале
             // всплывает хвост, и место ему надо оставить.
             // Червь сидит ВЫШЕ уровня воды на полтора корпуса: в финале
@@ -428,7 +436,10 @@ const BATH_MODELS = {
         const L = BATH_MODELS.LAYOUT, S = L.shelf;
         const g = new THREE.Group();
         const midY = (S.lo + S.hi) / 2, span = S.hi - S.lo;
-        for (const dx of [-S.w / 2 + 0.15, S.w / 2 - 0.15]) {
+        // Стойки по КРАЯМ ДОСКИ, а не уже её: доска шире стоек, и предмет
+        // на ней оказывался шире рамы — читался балансирующим на весу.
+        const half = (S.w + 0.5) / 2 - 0.15;
+        for (const dx of [-half, half]) {
             const post = new THREE.Mesh(
                 BATH_MODELS.roundedBox(0.26, span + 1.0, 0.8, 0.1, 2));
             post.position.set(S.x + dx, midY, L.wallZ + 0.75);
@@ -443,19 +454,113 @@ const BATH_MODELS = {
         return g;
     },
 
-    soap() {
-        const a = BATH_MODELS.anchorPoints().soap;
-        const m = new THREE.Mesh(BATH_MODELS.roundedBox(2.3, 0.75, 1.35, 0.34, 3));
-        m.position.set(a.x, a.y - 0.3, a.z);
-        m.rotation.y = 0.22;
-        return m;
+    // Передний бортик доски — ОТДЕЛЬНЫЙ предмет, потому что рисуется ПОСЛЕ
+    // мыла и мочалки. В этом весь смысл: камера смотрит в лоб, и «на полке»
+    // от «перед полкой» отличается ровно одним — тем, что низ предмета
+    // чем-то перекрыт. Пока бортик шёл внутри полки, предметы стояли поверх
+    // всей доски и висели в воздухе рядом с ней.
+    shelfRail() {
+        const L = BATH_MODELS.LAYOUT, S = L.shelf;
+        const g = new THREE.Group();
+        for (const y of [S.lo, S.hi]) {
+            const lip = new THREE.Mesh(
+                BATH_MODELS.roundedBox(S.w + 0.5, 0.24, 0.2, 0.08, 2, 0.05));
+            // Чуть ВПЕРЁД от переднего края доски: бортик должен стоять
+            // перед предметом, а не в одной с ним плоскости.
+            lip.position.set(S.x, y + 0.24, L.wallZ + 1.78);
+            g.add(lip);
+        }
+        return g;
     },
+
+    // ---------- МЫЛО ----------
+    // Хозяйственный брусок «72%» с натуры: не мыльце-подушка, а КУСОК —
+    // прямые грани, мелкая фаска, характерная подошва пошире корпуса
+    // (след формы) и вдавленные цифры во всю переднюю грань.
+    //
+    // Пропорции с фотографии: длина к высоте чуть больше двух, глубина
+    // чуть больше половины длины.
+    SOAP: { w: 2.5, h: 1.15, d: 1.3, base: 0.16, turn: 0.16 },
+
+    soap() {
+        const a = BATH_MODELS.anchorPoints().soap, S = BATH_MODELS.SOAP;
+        const g = new THREE.Group();
+        // Корпус. Фаска мелкая (0.07 против обычных 0.18): с крупной брусок
+        // читается подушкой.
+        const body = new THREE.Mesh(
+            BATH_MODELS.roundedBox(S.w, S.h - S.base, S.d, 0.09, 2, 0.07));
+        body.position.y = S.base / 2;
+        g.add(body);
+        // Подошва: ЧУТЬ ШИРЕ корпуса и с ним не заподлицо. У настоящего
+        // бруска это след формы — тонкий поясок по низу, и именно он не даёт
+        // мылу выглядеть просто коробкой.
+        const base = new THREE.Mesh(
+            BATH_MODELS.roundedBox(S.w + 0.06, S.base, S.d + 0.05, 0.07, 2, 0.04));
+        base.position.y = -(S.h - S.base) / 2;
+        g.add(base);
+        g.position.set(a.x, a.y, a.z);
+        g.rotation.y = S.turn;
+        return g;
+    },
+
+    // Клеймо «72%». Не геометрия, а ГРАВИРОВКА: ломаные, лежащие на
+    // передней грани бруска. Вдавленные цифры мешем — это сотни
+    // треугольников на предмет размером в сотню точек, и отбраковка всё
+    // равно оставила бы от них кашу; линия по грани читается штампом и
+    // стоит десяток отрезков (см. docs/bake-3d.md, «гравировка»).
+    SOAP_GLYPHS: {
+        '7': [[[0, 1], [0.62, 1]], [[0.62, 1], [0.24, 0]]],
+        '2': [[[0.02, 0.76], [0.13, 0.93], [0.32, 1.0], [0.50, 0.93],
+               [0.58, 0.76], [0.48, 0.56], [0.02, 0.02]],
+              [[0.0, 0.02], [0.60, 0.02]]],
+        '%': [[[0.58, 1.0], [0.02, 0.0]]]
+    },
+
+    soapMark() {
+        const a = BATH_MODELS.anchorPoints().soap, S = BATH_MODELS.SOAP;
+        const K = 0.56;          // высота цифры в единицах мира
+        const TILT = -0.05;      // клеймо на бруске всегда чуть косое
+        const ring = (cx, cy, r) => {
+            const p = [];
+            for (let i = 0; i <= 8; i++) {
+                const t = i / 8 * Math.PI * 2;
+                p.push([cx + Math.cos(t) * r, cy + Math.sin(t) * r * 1.05]);
+            }
+            return p;
+        };
+        const glyphs = Object.assign({}, BATH_MODELS.SOAP_GLYPHS);
+        glyphs['%'] = glyphs['%'].concat([ring(0.17, 0.80, 0.15),
+                                          ring(0.44, 0.20, 0.15)]);
+        const out = [];
+        const zf = S.d / 2 + 0.012;              // на самой грани, чуть поверх
+        const cr = Math.cos(S.turn), sr = Math.sin(S.turn);
+        let u0 = -1.09;   // клеймо по центру грани: три знака шагом 0.78
+        for (const ch of ['7', '2', '%']) {
+            for (const poly of glyphs[ch]) {
+                const pts = poly.map(([u, v]) => {
+                    const x0 = (u0 + u) * K, y0 = (v - 0.5) * K + 0.03;
+                    const x = x0 * Math.cos(TILT) - y0 * Math.sin(TILT);
+                    const y = x0 * Math.sin(TILT) + y0 * Math.cos(TILT);
+                    return { x: a.x + x * cr + zf * sr, y: a.y + y,
+                             z: a.z - x * sr + zf * cr };
+                });
+                for (let i = 1; i < pts.length; i++)
+                    out.push([pts[i - 1], pts[i]]);
+            }
+            u0 += 0.78;
+        }
+        return out;
+    },
+
+    CLOTH: { w: 1.8, h: 1.3, d: 1.5 },
 
     cloth() {
         const a = BATH_MODELS.anchorPoints().cloth;
         // Губка ВЫШЕ и короче мыла: мятый кубик против плоского бруска.
-        const m = new THREE.Mesh(BATH_MODELS.roundedBox(1.8, 1.25, 1.5, 0.42, 3));
-        m.position.set(a.x, a.y - 0.1, a.z);
+        const C = BATH_MODELS.CLOTH;
+        const m = new THREE.Mesh(
+            BATH_MODELS.roundedBox(C.w, C.h, C.d, 0.42, 3));
+        m.position.set(a.x, a.y, a.z);
         m.rotation.y = -0.3;
         return m;
     },
@@ -583,7 +688,10 @@ const BATH_MODELS = {
     // ---------- ВСПОМОГАТЕЛЬНОЕ ----------
     // Скруглённая коробка: сегменты по углам, а не фаска в одну грань.
     // Одна фаска на угол читается срезом, а не скруглением.
-    roundedBox(w, h, d, r, seg) {
+    // bevel — насколько скруглена кромка по высоте. По умолчанию щедро:
+    // так строятся мягкие предметы ванной. Твёрдому бруску (мыло) нужна
+    // МЕЛКАЯ фаска: с крупной он читается подушкой, а не куском мыла.
+    roundedBox(w, h, d, r, seg, bevel) {
         const shape = new THREE.Shape();
         const hw = w / 2 - r, hd = d / 2 - r;
         shape.moveTo(-hw, -hd - r);
@@ -595,9 +703,10 @@ const BATH_MODELS = {
         shape.absarc(-hw, hd, r, Math.PI / 2, Math.PI, false);
         shape.lineTo(-hw - r, -hd);
         shape.absarc(-hw, -hd, r, Math.PI, Math.PI * 1.5, false);
+        const bv = bevel == null ? 0.18 : bevel;
         const geo = new THREE.ExtrudeGeometry(shape, {
-            depth: h, bevelEnabled: true, bevelThickness: 0.18,
-            bevelSize: 0.18, bevelSegments: 2, curveSegments: seg || 4
+            depth: h, bevelEnabled: bv > 0, bevelThickness: bv,
+            bevelSize: bv, bevelSegments: 2, curveSegments: seg || 4
         });
         // Выдавливание идёт по Z; разворачиваем, чтобы высота была по Y.
         geo.rotateX(-Math.PI / 2);
