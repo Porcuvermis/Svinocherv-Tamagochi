@@ -313,6 +313,7 @@ const LustMinigame = {
         // отдаёт одну голову. Раскладка по такому габариту выходила вчетверо
         // крупнее нужной, а мылить давали только морду.
         requestAnimationFrame(() => requestAnimationFrame(() => {
+            this.hideSunk();
             this._bbox = null;
             this._cover = null;
             this.layoutWorm();
@@ -356,6 +357,28 @@ const LustMinigame = {
     visibleLine() {
         const t = BATH_ART.box('tub');
         return t ? t.y + 8 : 750;
+    },
+
+    // ---------- ЧТО УТОПЛЕНО ----------
+    // Части ПОСЛЕ ЖИВОТА в ванне не показываются вовсе. Причина не в
+    // красоте: борт режет червя ПРЯМОЙ, а хвост с последними сегментами
+    // уходит у него вбок, а не вниз, — и лежал поверх борта отдельной
+    // колбасой. Опустить его под борт нельзя, не утопив заодно голову:
+    // тело жёсткое, а линия среза одна.
+    //
+    // Прятать надо в САМОМ РЕНДЕРЕРЕ, а не обрезкой слоя: обрезка снова
+    // даёт прямую линию поперёк тела, а скрытая часть выпадает и из
+    // габарита, и из маски — то есть и из раскладки, и из учёта мытья.
+    // Мини-игра монтирует собственного червя в свой холст, поэтому на
+    // комнату это не влияет.
+    hideSunk() {
+        const root = this.wormHandle && this.wormHandle.svgRoot;
+        if (!root) return;
+        for (const n of root.querySelectorAll('[data-part]')) {
+            const p = n.getAttribute('data-part') || '';
+            if (p === 'tail' || p.indexOf('growing-') === 0)
+                n.style.display = 'none';
+        }
     },
 
     // Габарит НАРИСОВАННОГО червя в единицах его холста. Кэшируется: он не
@@ -418,18 +441,23 @@ const LustMinigame = {
         copy.setAttribute('width', B.w);
         copy.setAttribute('height', B.h);
         copy.setAttribute('viewBox', `0 0 ${B.w} ${B.h}`);
-        // Всё красится в ПЛОСКИЙ чёрный, а обрезки, фильтры и прозрачности
-        // снимаются. Маске нужен только силуэт, и снимать его «как есть»
-        // нельзя: растяжки и обрезки у персонажа заданы ссылками на defs, и
-        // при растрировании отдельной картинкой часть тела просто не
-        // рисовалась — в маску попадала одна голова, а мылить давали только
-        // её.
+        // Всё красится в ПЛОСКИЙ чёрный, снимаются фильтры и прозрачности —
+        // маске нужен один силуэт.
+        //
+        // А вот ОБРЕЗКИ СНИМАТЬ НЕЛЬЗЯ. Раньше снимались вместе со всем
+        // остальным, и маска выходила ЗАМЕТНО БОЛЬШЕ червя: анатомические
+        // слои сегментов обрезаны по своей форме, и без обрезки они
+        // расползались за тело — из-под живота вылезал прямой косой клин, по
+        // которому мыло ложилось на пустую плитку. Ссылки url(#...)
+        // разрешаются: клонируется весь корень вместе с defs.
+        //
+        // Убирается только display:none — им спрятаны утопленные части
+        // (hideSunk), и в маске их быть не должно тем более.
         const all = copy.querySelectorAll('*');
         for (const n of all) {
             const tag = n.tagName.toLowerCase();
-            if (tag === 'defs' || tag === 'clippath' || tag === 'mask'
-                || tag === 'filter') { n.remove(); continue; }
-            n.removeAttribute('clip-path');
+            if (tag === 'filter') { n.remove(); continue; }
+            if (n.closest('defs') || n.closest('clipPath')) continue;
             n.removeAttribute('mask');
             n.removeAttribute('filter');
             n.removeAttribute('style');
@@ -438,6 +466,13 @@ const LustMinigame = {
             n.removeAttribute('stroke-opacity');
             if (n.hasAttribute('fill') || tag !== 'g') n.setAttribute('fill', '#000');
             if (n.hasAttribute('stroke')) n.setAttribute('stroke', '#000');
+        }
+        // Спрятанное остаётся спрятанным: style снят выше со всех, поэтому
+        // прячем заново уже в клоне.
+        for (const n of copy.querySelectorAll('[data-part]')) {
+            const q = n.getAttribute('data-part') || '';
+            if (q === 'tail' || q.indexOf('growing-') === 0)
+                n.setAttribute('display', 'none');
         }
         const svg = new XMLSerializer().serializeToString(copy);
         const img = new Image();
@@ -459,6 +494,10 @@ const LustMinigame = {
             const cut = (this.visibleLine() - box.y) * (B.h / box.h) * S;
             g.clearRect(0, Math.max(0, cut), c.width, c.height);
             this.mask = c;
+            // Коробка покрытия выводится ИЗ МАСКИ, значит её кэш обязан
+            // сброситься здесь: до этой строки маски не было и коробка
+            // считалась по запасному варианту.
+            this._cover = null;
             this.buildCells();
         };
         img.onerror = () => { this.mask = null; this.buildCells(); };
@@ -504,24 +543,42 @@ const LustMinigame = {
     // Габарит берётся у НАРИСОВАННОГО персонажа, а не подбирается числом:
     // единицы его холста переводятся в сцену тем же множителем, что и в
     // layoutWorm.
+    // Габарит СИЛУЭТА — прямо по маске, а не по коробке червя с поджатием.
+    // Поджатие было подобранным числом (семь процентов по бокам, вдвое
+    // сверху) и врало: уши и макушка оказывались ВНЕ коробки, и мыло на них
+    // не ложилось вовсе, а снизу коробка уходила на семь десятков единиц
+    // ниже силуэта — там мылить было нечего, но клетки считались. Из ста
+    // клеток сетки на теле оказывалось сорок.
+    maskBounds() {
+        if (!this.mask) return null;
+        const box = this.wormBoxScene(), B = this.WORM_BASE, S = this.MASK_SCALE;
+        let d;
+        try {
+            d = this.mask.getContext('2d')
+                .getImageData(0, 0, this.mask.width, this.mask.height).data;
+        } catch (e) { return null; }
+        const W = this.mask.width, H = this.mask.height;
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) {
+            const row = y * W * 4;
+            for (let x = 0; x < W; x++) {
+                if (!d[row + x * 4 + 3]) continue;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+        }
+        if (x1 < 0) return null;
+        const k = box.w / (B.w * S);          // пиксель маски → единица сцены
+        return { x: box.x + x0 * k, y: box.y + y0 * k,
+                 w: (x1 - x0 + 1) * k, h: (y1 - y0 + 1) * k };
+    },
+
     coverBox() {
         if (this._cover) return this._cover;
-        const box = this.wormBoxScene(), B = this.WORM_BASE;
-        let b = null;
-        try {
-            const root = this.wormHandle && this.wormHandle.svgRoot;
-            const r = root && root.getBBox();
-            const k = box.w / B.w;
-            // Габарит поджимается: у нарисованного персонажа сверху остаётся
-            // пустое поле (уши задают верх коробки, а тело лежит ниже), и без
-            // поджатия пена ложится над червём, на воду.
-            const IN = 0.07;
-            if (r && r.width > 1) b = { x: box.x + (r.x + r.width * IN) * k,
-                                        y: box.y + (r.y + r.height * IN * 2) * k,
-                                        w: r.width * (1 - IN * 2) * k,
-                                        h: r.height * (1 - IN * 3) * k };
-        } catch (e) { /* червя ещё нет — сойдёт габарит воды */ }
-        this._cover = b || BATH_ART.box('tub') || { x: 100, y: 600, w: 500, h: 150 };
+        this._cover = this.maskBounds()
+            || BATH_ART.box('tub') || { x: 100, y: 600, w: 500, h: 150 };
         return this._cover;
     },
 

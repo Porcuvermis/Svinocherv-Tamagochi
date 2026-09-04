@@ -481,10 +481,10 @@ const ECONOMY = {
             // силы 0.56..1 сам по себе разносил каплю на полсотни точек —
             // сколько угол ни сужай.
             tiers: [
-                { minPower: 0.22, spread: 20, slop: 10 },
+                { minPower: 0.24, spread: 17, slop: 8.5 },
                 { minPower: 0.39, spread: 11, slop: 5 },
                 { minPower: 0.54, spread: 7, slop: 3 },
-                { minPower: 0.68, spread: 3, slop: 1.2 }
+                { minPower: 0.70, spread: 2.6, slop: 1 }
             ]
         }
     },
