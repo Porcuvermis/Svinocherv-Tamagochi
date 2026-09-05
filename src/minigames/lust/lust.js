@@ -148,6 +148,7 @@ const LustMinigame = {
 
         this.svgEl = document.getElementById('bt-svg');
         this.backEl = document.getElementById('bt-back');
+        this.stageEl = document.getElementById('bt-stage');
         this.camEl = document.getElementById('bt-cam');
         this.camBackEl = document.getElementById('bt-cam-back');
         // Холсты дождя ездят той же камерой, что и всё остальное. Отдельные
@@ -293,24 +294,61 @@ const LustMinigame = {
         return { s, tx: 195 - s * (f.x + f.w / 2), ty: 422 - s * (f.y + f.h / 2) };
     },
 
+    // Переезд НЕ раскладывается по кадрам. Раскладывался: каждый кадр
+    // проставлялись новые числа камеры во все шесть групп сцены, и браузер
+    // честно растрировал шесть полноэкранных слоёв заново — кадры на
+    // переезде падали вдвое (53 против 24).
+    //
+    // Теперь переезд считается ОДИН РАЗ, как разница между кадром «откуда»
+    // и кадром «куда», и отдаётся композитору обычным css-переходом на
+    // обёртке сцены. Дальше слои просто едут готовыми текстурами: ни одной
+    // перерисовки, ни одного стилевого хода до самого конца.
+    //
+    // Картинка при этом на время переезда чуть мягче — растр растягивается,
+    // — но по прибытии обёртка сбрасывается и настоящие числа камеры
+    // проставляются начисто. На секунду движения этого не видно.
     setCamera(name, ms) {
         const to = this.camFor(name);
-        cancelAnimationFrame(this.camRaf || 0);
-        this.camRaf = 0;
-        const from = this.cam;
-        if (!ms || !from) { this.camAt(to.s, to.tx, to.ty); return; }
-        const t0 = performance.now();
-        const step = (now) => {
-            // Ход по времени, а не по кадрам: на медленном телефоне переезд
-            // обязан длиться те же секунды, а не те же кадры.
-            const k = Math.min(1, (now - t0) / ms);
-            const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
-            this.camAt(from.s + (to.s - from.s) * e,
-                       from.tx + (to.tx - from.tx) * e,
-                       from.ty + (to.ty - from.ty) * e);
-            this.camRaf = k < 1 ? requestAnimationFrame(step) : 0;
-        };
-        this.camRaf = requestAnimationFrame(step);
+        this.endCamMove();
+        const from = this.cam, body = this.stageEl;
+        if (!ms || !from || !body) { this.camAt(to.s, to.tx, to.ty); return; }
+
+        // Разница двух кадров в ЭКРАННЫХ точках. Камера живёт в единицах
+        // холста (q = s·p + t), значит переход «откуда → куда» — это
+        // D(q) = c·q + (t₁ − c·t₀) при c = s₁/s₀. Осталось перевести это в
+        // пиксели: холст вписан в окно с обрезкой, отсюда масштаб m и
+        // отступ off.
+        const W = body.clientWidth, H = body.clientHeight;
+        const m = Math.max(W / 390, H / 844);
+        const offX = (W - 390 * m) / 2, offY = (H - 844 * m) / 2;
+        const c = to.s / from.s;
+        const ax = m * (to.tx - c * from.tx) + offX * (1 - c);
+        const ay = m * (to.ty - c * from.ty) + offY * (1 - c);
+
+        this.camTo = to;
+        body.style.willChange = 'transform';
+        body.style.transition = `transform ${ms}ms cubic-bezier(0.65, 0, 0.35, 1)`;
+        body.style.transform =
+            `translate(${ax.toFixed(2)}px, ${ay.toFixed(2)}px) scale(${c.toFixed(5)})`;
+        this.camTimer = setTimeout(() => this.endCamMove(), ms + 40);
+    },
+
+    // Приехали (или переезд прервали новым): обёртка сбрасывается, а числа
+    // камеры проставляются начисто — с этого мгновения картинка снова
+    // считается по-настоящему и резко.
+    endCamMove() {
+        clearTimeout(this.camTimer); this.camTimer = 0;
+        const body = this.stageEl;
+        if (body) {
+            body.style.transition = '';
+            body.style.transform = '';
+            body.style.willChange = '';
+        }
+        if (this.camTo) {
+            const to = this.camTo;
+            this.camTo = null;
+            this.camAt(to.s, to.tx, to.ty);
+        }
     },
 
     // ---------- ПЕРЕВОД КООРДИНАТ ----------
@@ -1725,7 +1763,7 @@ const LustMinigame = {
     stopClocks() {
         if (this.fillRaf) { cancelAnimationFrame(this.fillRaf); this.fillRaf = 0; }
         if (this.aimRaf) { cancelAnimationFrame(this.aimRaf); this.aimRaf = 0; }
-        if (this.camRaf) { cancelAnimationFrame(this.camRaf); this.camRaf = 0; }
+        if (this.camTimer) { this.endCamMove(); }
         if (this.rubRaf) { cancelAnimationFrame(this.rubRaf); this.rubRaf = 0; }
         if (this.blurRaf) { cancelAnimationFrame(this.blurRaf); this.blurRaf = 0; }
         if (this.settleRaf) { cancelAnimationFrame(this.settleRaf); this.settleRaf = 0; }
