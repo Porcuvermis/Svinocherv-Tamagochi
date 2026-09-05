@@ -116,13 +116,18 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(1600);
   const bubbles = await page.evaluate(() => (LustMinigame.bubbles || []).length);
   ok(await phase() === 'pop', 'мочалка домыла, хвост всплыл', await phase());
-  ok(bubbles >= 8 && bubbles <= 12, 'пузырей 8–12', String(bubbles));
+  ok(bubbles >= 22 && bubbles <= 28, 'пузырей 22–28', String(bubbles));
+  // Калибр РАЗНЫЙ: одинаковые кружки складываются в бусы, а не в пену.
+  const rr = await page.evaluate(() => (LustMinigame.bubbles || []).map(b => b.r));
+  ok(Math.max(...rr) / Math.min(...rr) > 1.8, 'пузыри разного калибра',
+     `${Math.min(...rr).toFixed(0)}…${Math.max(...rr).toFixed(0)}`);
   await page.screenshot({ path: out + '2-tail.png' });
 
   // ---------- ПУЗЫРИ ----------
-  // Тапов должно хватить МЕНЬШЕ, чем пузырей: соседние лопаются пачкой.
+  // Лопаются ПО ОДНОМУ за касание: щелчок по пузырю — само по себе
+  // удовольствие, ради которого этап и существует.
   let taps = 0;
-  for (let n = 0; n < 20; n++) {
+  for (let n = 0; n < 50; n++) {
     const b = await page.evaluate(() =>
       (LustMinigame.bubbles || []).filter(x => x.alive)[0] || null);
     if (!b) break;
@@ -132,7 +137,8 @@ const { chromium } = require('playwright');
     await page.waitForTimeout(80);
   }
   await page.waitForTimeout(300);
-  ok(await phase() === 'aim', 'пузыри лопнули, начался финал', await phase());
+  ok(await phase() === 'rub', 'пузыри лопнули, начались поглаживания',
+     await phase());
   // След от мыла и мочалки раньше копился ОТДЕЛЬНЫМИ полупрозрачными
   // фигурами — к концу мытья их набиралось за две сотни, и на телефоне кадры
   // умирали. Теперь весь след — два холста, и дерево сцены от мытья не
@@ -140,7 +146,42 @@ const { chromium } = require('playwright');
   // от того, что ещё нарисовано в кадре, а прирост — только от следа.
   ok(nodesAfterSoap === nodesBefore, 'дерево сцены не распухает от следа',
      `${nodesAfterSoap} против ${nodesBefore}`);
-  ok(taps < bubbles, 'лопались пачкой, а не по одному', `${taps} тапов на ${bubbles}`);
+  ok(taps === bubbles, 'лопались по одному за касание',
+     `${taps} тапов на ${bubbles}`);
+  await page.screenshot({ path: out + '3-rub.png' });
+
+  // ---------- ПОГЛАЖИВАНИЕ ----------
+  // Хвост наливается от ПУТИ пальца вдоль него и спадает, пока палец стоит.
+  // Проверяем обе половины: иначе достаточно положить палец и ждать.
+  const tailPt = (t) => page.evaluate((k) => {
+    const A2 = BATH_ART.slots();
+    const sp = BATH_ART.tailSpine(0, LustMinigame.tailGrow());
+    const p2 = sp[Math.round(k * (sp.length - 1))];
+    return { x: A2.tail.x + p2.x, y: A2.tail.y + p2.y };
+  }, t);
+  const grow0 = await page.evaluate(() => LustMinigame.tailGrow());
+  let a2 = await toScreen(await tailPt(0.15));
+  await page.mouse.move(a2.x, a2.y);
+  await page.mouse.down();
+  // Палец лежит неподвижно — заряд не растёт.
+  await page.waitForTimeout(700);
+  const still = await page.evaluate(() => LustMinigame.charge);
+  ok(still < 0.02, 'неподвижный палец хвост не наливает', still.toFixed(3));
+  // Ведём вдоль хвоста туда-обратно.
+  let strokes = 0;
+  for (let n = 0; n < 14 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
+    for (const t of (n % 2 ? [0.9, 0.7, 0.5, 0.3, 0.15] : [0.15, 0.3, 0.5, 0.7, 0.9])) {
+      const q2 = await toScreen(await tailPt(t));
+      await page.mouse.move(q2.x, q2.y);
+    }
+    strokes++;
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  ok(await phase() === 'aim', 'хвост налился, начался финал', await phase());
+  ok(strokes >= 3, 'налив требует работы, а не одного хода', `${strokes} ходов`);
+  const grow1 = await page.evaluate(() => LustMinigame.tailGrow());
+  ok(grow1 > grow0 * 1.15, 'хвост вырос', `${grow0.toFixed(2)} → ${grow1.toFixed(2)}`);
   await page.screenshot({ path: out + '3-aim.png' });
 
   // ---------- ФИНАЛ ----------

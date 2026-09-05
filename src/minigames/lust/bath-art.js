@@ -60,7 +60,12 @@ const BATH_ART = {
         body:     { x: 205, y: 270, w: 460, h: 600 },
         // Хвост всплывает у борта. Кадр держит ДУГУ, по которой полетит
         // струя: от корня хвоста до рта.
-        tail:     { x: 70, y: 355, w: 480, h: 450 },
+        // Пузыри и поглаживание: работа идёт ПО ХВОСТУ, и он должен быть
+        // крупным. На общем с финалом кадре хвост стоял у левого края
+        // размером с палец — по нему нечем было ни попасть, ни провести.
+        tail:     { x: 20, y: 400, w: 460, h: 440 },
+        // Финал: в кадре обязаны быть и кончик хвоста, и рот — между ними
+        // летит струя.
         finish:   { x: 70, y: 355, w: 480, h: 450 }
     },
 
@@ -248,23 +253,56 @@ const BATH_ART = {
     },
 
     // Заливка одной клетки. t — доля от нужного числа проходов.
-    washPaint(ctx, kind, x, y, r, t) {
-        const W = this.WASH[kind === 'cloth' ? 'cloth' : 'soap'];
-        const c = btPal()[W.key];
-        const step = Math.max(1, Math.min(W.a.length,
-            Math.ceil((t == null ? 1 : t) * W.a.length)));
-        const A = W.a[step - 1];
-        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        const rgba = (hex, a) => {
-            const n = parseInt(hex.slice(1), 16);
-            return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-        };
-        // Ядро плотное, край мягкий: соседние клетки сливаются, а пропущенная
-        // остаётся дырой — и её видно.
-        g.addColorStop(0, rgba(c.hi, A));
-        g.addColorStop(0.6, rgba(c[500], A * 0.8));
-        g.addColorStop(1, rgba(c[500], 0));
-        return g;
+    // Пена на теле — ТЕ ЖЕ ПУЗЫРИ, что налипли на хвост, только нарисованные
+    // на холсте. Радиальное пятно с мягким краем читалось запотевшим стеклом:
+    // мыло есть, а пены нет. У пузыря есть КРАЙ, блик и сосед — из этого он и
+    // читается пеной.
+    //
+    // Размеры идут ГРАДАЦИЕЙ: доля возводится в степень, поэтому мелких
+    // много, крупных единицы — так пена и выглядит. Одинаковые кружки
+    // складываются в сетку, а не в пену.
+    //
+    // Раскладка выводится из СИДА клетки: пена перерисовывается на каждый
+    // мазок, и случайные числа заставили бы её мигать.
+    washCell(ctx, kind, x, y, cell, t, seed) {
+        const cloth = kind === 'cloth';
+        const c = btPal()[cloth ? 'foam' : 'soapFilm'];
+        const rng = btRng(seed);
+        const k = t == null ? 1 : Math.max(0, Math.min(1, t));
+        // Мыло — плёнка: пузырьков много и они мелкие. Мочалка взбивает:
+        // пузыри крупнее, ярче и с краем, и тем гуще, чем больше тёрок.
+        const n = cloth ? 4 + Math.round(k * 4) : 6;
+        const big = cell * (cloth ? 0.66 : 0.46);
+        const small = cell * (cloth ? 0.16 : 0.11);
+        const A = cloth ? 0.34 + k * 0.3 : 0.3;
+        // Подложка под пузырями. Одни пузыри оставляют между собой голую
+        // кожу, и намыленный червь читается обсыпанным, а не намыленным.
+        // Слабая заливка по клетке закрывает эти просветы, не съедая
+        // пузыри: они всё равно ярче и с краем.
+        ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : 0.16;
+        ctx.fillStyle = c[500];
+        ctx.beginPath(); ctx.arc(x, y, cell * 0.95, 0, Math.PI * 2); ctx.fill();
+        for (let i = 0; i < n; i++) {
+            const r = small + Math.pow(rng(), 2.1) * (big - small);
+            const a = rng() * Math.PI * 2, d = Math.pow(rng(), 0.6) * cell * 0.72;
+            const bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
+            ctx.globalAlpha = A;
+            ctx.fillStyle = c[500];
+            ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = A * (cloth ? 1.5 : 1.1);
+            ctx.lineWidth = Math.max(1, r * 0.16);
+            ctx.strokeStyle = c.hi;
+            ctx.beginPath(); ctx.arc(bx, by, r * 0.94, 0, Math.PI * 2); ctx.stroke();
+            // Блик — только у крупных: на мелком он превращается в шум.
+            if (r > cell * 0.3) {
+                ctx.globalAlpha = A * 1.7;
+                ctx.fillStyle = c.hi;
+                ctx.beginPath();
+                ctx.arc(bx - r * 0.32, by - r * 0.34, r * 0.26, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = 1;
     },
 
     // ---------- ХВОСТ ФИНАЛА ----------
@@ -291,8 +329,12 @@ const BATH_ART = {
 
     // Осевая линия при заданном изгибе. bend — на сколько радиан уведён
     // КОНЧИК от вертикали; у основания отклонение всегда ноль.
-    tailSpine(bend) {
-        const T = this.TAIL, n = T.seg, ds = T.len / n;
+    // grow — во сколько раз хвост длиннее исходного. Растёт он на этапе
+    // поглаживания, и растёт ВСЯ фигура: и осевая, и толщина. Держать рост
+    // масштабом группы нельзя — вместе с хвостом поехал бы и его корень,
+    // а тот обязан оставаться на месте, под бортом.
+    tailSpine(bend, grow) {
+        const T = this.TAIL, n = T.seg, ds = T.len * (grow || 1) / n;
         const k = T.side || 1;
         const pts = [{ x: 0, y: 0, a: 0 }];
         let x = 0, y = 0;
@@ -307,12 +349,15 @@ const BATH_ART = {
     },
 
     // Контур прута: осевая линия, разведённая на полутолщину по нормали.
-    tailCurve(bend) {
-        const T = this.TAIL, pts = this.tailSpine(bend), n = pts.length - 1;
+    tailCurve(bend, grow) {
+        const T = this.TAIL, g = grow || 1;
+        const pts = this.tailSpine(bend, g), n = pts.length - 1;
         // Сужение с лёгкой выпуклостью в середине и ОСТРЫМ кончиком.
         // Линейное давало ровный треугольник — плавник, а не хвост; степень
         // без множителя оставляла кончик тупым, и изгиб на нём не читался.
-        const half = (t) => (T.base / 2) * Math.pow(1 - t, 0.72)
+        // Толщина растёт БЫСТРЕЕ длины: налившийся хвост — это прежде всего
+        // толщина, длина одна выглядит вытягиванием резинки.
+        const half = (t) => (T.base / 2) * Math.pow(g, 1.7) * Math.pow(1 - t, 0.72)
                           * (1 + 0.28 * Math.sin(Math.PI * t));
         const left = [], right = [];
         for (let i = 0; i <= n; i++) {
@@ -334,11 +379,20 @@ const BATH_ART = {
     // Две линии хвоста при заданном изгибе: сам прут и блик по нему. Блик
     // идёт ПО ОСИ, а не отдельной дугой: при изгибе он обязан гнуться вместе
     // с телом, иначе съезжает с формы.
-    tailD(bend) {
-        const c = this.tailCurve(bend || 0);
+    // Полуширина хвоста в доле t вдоль оси. Пузыри садятся ПО НЕЙ, а не по
+    // постоянной: у основания хвост вдвое толще, чем у кончика, и общая
+    // ширина сажала половину пены мимо, на плитку.
+    tailHalf(t, grow) {
+        const g = grow || 1;
+        return (this.TAIL.base / 2) * Math.pow(g, 1.7)
+             * Math.pow(1 - t, 0.72) * (1 + 0.28 * Math.sin(Math.PI * t));
+    },
+
+    tailD(bend, grow) {
+        const c = this.tailCurve(bend || 0, grow);
         const shine = c.spine.filter((p, i) => i > 1 && i < c.spine.length - 3)
-            .map(p => `${(p.x - (this.TAIL.side || 1) * Math.cos(p.a) * this.TAIL.base * 0.17).toFixed(1)} `
-                    + `${(p.y - Math.sin(p.a) * this.TAIL.base * 0.17).toFixed(1)}`);
+            .map(p => `${(p.x - (this.TAIL.side || 1) * Math.cos(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)} `
+                    + `${(p.y - Math.sin(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)}`);
         return { body: c.d, shine: 'M' + shine.join('L'), curve: c };
     },
 

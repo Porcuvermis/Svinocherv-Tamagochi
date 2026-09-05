@@ -30,7 +30,7 @@ const LustMinigame = {
     wormHandle: null,
 
     // Ступени забега. Держатся строкой, а не числом: в отладке видно, где ты.
-    phase: 'idle',      // idle → rinse → soap → cloth → tail → pop → aim → done
+    phase: 'idle',      // idle → rinse → soap → cloth → tail → pop → rub → aim → done
     drag: null,
     fillRaf: 0,
 
@@ -62,6 +62,7 @@ const LustMinigame = {
     bendHand: null,    // угол пальца вокруг корня на прошлом событии
     bendAim: 0,        // изгиб, при котором кончик смотрит в рот
     bubbles: null,
+    charge: 0,          // 0..1, насколько хвост налит поглаживанием
     drops: null,       // капли в полёте
     splats: null,      // куда не попали: прилипло и стекает
     dropAcc: 0,
@@ -187,6 +188,7 @@ const LustMinigame = {
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.bubbles = null;
+        this.charge = 0;
         this.hits = 0;
         this.shotsLeft = 0;
         this.setOpacity('bt-rain-back', 0);
@@ -657,16 +659,10 @@ const LustMinigame = {
                 const y = (b.y + (j + 0.5) * ch - box.y) * k;
                 // На этапе мочалки клетка сначала показывает муть, а тёрки
                 // проступают поверх неё яркой пеной — тем и видно разницу.
-                if (filmed) {
-                    ctx.fillStyle = BATH_ART.washPaint(ctx, 'soap', x, y, r, 1);
-                    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-                }
-                if (cloth && rubs) {
-                    const rr = r * (0.55 + 0.45 * Math.min(1, rubs / need));
-                    ctx.fillStyle = BATH_ART.washPaint(ctx, 'cloth', x, y, rr,
-                                                       rubs / need);
-                    ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill();
-                }
+                if (filmed) BATH_ART.washCell(ctx, 'soap', x, y, r, 1, idx * 7 + 3);
+                if (cloth && rubs)
+                    BATH_ART.washCell(ctx, 'cloth', x, y, r, rubs / need,
+                                      idx * 13 + 91);
             }
         }
         if (this.mask) {
@@ -701,6 +697,11 @@ const LustMinigame = {
             return;
         }
         if (this.phase === 'pop') { this.pop(p); return; }
+        if (this.phase === 'rub') {
+            this.drag = { kind: 'rub', t: null };
+            this.rubMove(p);
+            return;
+        }
         // В финале палец не берёт предмет, а ДЕРЖИТ хвост: пока он на экране,
         // хвост стоит там, куда его увели, и тянется обратно, как только
         // палец убрали.
@@ -710,6 +711,7 @@ const LustMinigame = {
     onMove(e) {
         if (!this.drag) return;
         e.preventDefault();
+        if (this.drag.kind === 'rub') { this.rubMove(this.toScene(e)); return; }
         if (this.drag.kind === 'tail') { this.aimAt(this.toScene(e)); return; }
         this.moveTool(this.toStage(e));
 
@@ -733,7 +735,7 @@ const LustMinigame = {
     onUp() {
         if (!this.drag) return;
         this.bendHand = null;
-        if (this.drag.kind !== 'tail') {
+        if (this.drag.kind !== 'tail' && this.drag.kind !== 'rub') {
             this.fgEl.innerHTML = '';
             this.showTools(true);
         }
@@ -888,10 +890,71 @@ const LustMinigame = {
     },
 
     // Куда сейчас смотрит кончик и где он стоит.
+    // Во сколько раз хвост крупнее исходного. Считается ОТ ЗАРЯДА, а не
+    // хранится: заряд меняется каждый кадр, и держать рядом второе число,
+    // которое обязано с ним совпадать, — верный способ их развести.
+    tailGrow() { return 1 + this.charge * (this.cfg().rubGrow || 0.3); },
+
     tipState(bend) {
         const A = BATH_ART.slots();
-        const c = BATH_ART.tailCurve(bend == null ? this.bend : bend);
+        const c = BATH_ART.tailCurve(bend == null ? this.bend : bend,
+                                     this.tailGrow());
         return { x: A.tail.x + c.tip.x, y: A.tail.y + c.tip.y, dir: c.dir, curve: c };
+    },
+
+    // ---------- ПОГЛАЖИВАНИЕ ----------
+    // Между лопаньем пузырей и финалом. Палец ВЕДЁТ вдоль хвоста, хвост
+    // наливается и растёт; перестал вести — заряд спадает.
+    //
+    // Ровно та же механика, что у прицела в финале, и по той же причине:
+    // засчитывается ПУТЬ пальца вдоль оси, а не то, где он лежит. Иначе
+    // достаточно положить палец и ждать.
+    startRub() {
+        this.phase = 'rub';
+        this.charge = 0;
+        // Морда откликается заранее: рот приоткрыт, глаза приспущены. В
+        // финале то же лицо доводится до блаженства — так по нему видно, что
+        // этап идёт и к чему ведёт (инвариант 9: сказано позой, не подписью).
+        if (this.wormHandle && this.wormHandle.setLivePose)
+            this.wormHandle.setLivePose({ mouthOpenness: 0.3, eyelidLevel: 0.55 });
+        this.el('bt-bubbles').innerHTML = '';
+        this.rubLast = performance.now();
+        const tick = (now) => {
+            const dt = Math.min(0.05, (now - this.rubLast) / 1000);
+            this.rubLast = now;
+            if (this.phase !== 'rub') { this.rubRaf = 0; return; }
+            const C = this.cfg();
+            if (!this.drag || this.drag.kind !== 'rub')
+                this.charge = Math.max(0, this.charge - (C.rubRelax || 0.3) * dt);
+            this.drawTail();
+            if (this.charge >= 1) { this.rubRaf = 0; this.startFinale(); return; }
+            this.rubRaf = requestAnimationFrame(tick);
+        };
+        this.rubRaf = requestAnimationFrame(tick);
+    },
+
+    // Доля вдоль хвоста (0 — корень, 1 — кончик) для точки сцены и
+    // расстояние до оси. Нужны обе: заряд даёт только палец НА хвосте.
+    rubAt(p) {
+        const A = BATH_ART.slots();
+        const spine = BATH_ART.tailSpine(this.bend, this.tailGrow());
+        let best = 0, dist = Infinity;
+        for (let i = 0; i < spine.length; i++) {
+            const d = Math.hypot(A.tail.x + spine[i].x - p.x,
+                                 A.tail.y + spine[i].y - p.y);
+            if (d < dist) { dist = d; best = i / (spine.length - 1); }
+        }
+        return { t: best, dist };
+    },
+
+    rubMove(p) {
+        const C = this.cfg(), a = this.rubAt(p);
+        const reach = BATH_ART.TAIL.base * this.tailGrow() * 1.3;
+        if (a.dist > reach) { this.drag.t = null; return; }
+        if (this.drag.t != null)
+            this.charge = Math.min(1, this.charge
+                + Math.abs(a.t - this.drag.t) * (C.rubGain || 1.3));
+        this.drag.t = a.t;
     },
 
     // Изгиб, при котором капля НОМИНАЛЬНОЙ силы проходит через рот. Ищется
@@ -923,14 +986,19 @@ const LustMinigame = {
         if (!g) return;
         // Ни одного поворота: группа только переносится, а гнётся сама фигура.
         g.setAttribute('transform', `translate(${A.tail.x} ${A.tail.y})`);
-        const d = BATH_ART.tailD(this.bend);
+        const d = BATH_ART.tailD(this.bend, this.tailGrow());
         this.el('bt-tail-body').setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
     },
 
     // ---------- ПУЗЫРИ ----------
-    // Восемь-двенадцать, и соседние лопаются пачкой: тридцать тапов
-    // превращают приятный щелчок в работу (план, §1).
+    // Пена налипла на хвост ГУСТО и разным калибром: одинаковые кружки в ряд
+    // складываются в бусы, а не в пену. Доля возводится в степень, поэтому
+    // мелких много, крупных единицы.
+    //
+    // Лопаются ПО ОДНОМУ за касание. Пачкой было быстрее, но щелчок по
+    // пузырю — сам по себе удовольствие, ради которого этап и существует;
+    // пачка съедала его ради экономии десятка тапов.
     spawnBubbles() {
         this.phase = 'pop';
         const C = this.cfg();
@@ -939,18 +1007,26 @@ const LustMinigame = {
         this.bubbles = [];
         // Сидят на ОСИ хвоста, а не вокруг его основания: пена налипла на
         // прут, и при изгибе она должна лежать вдоль него.
-        const A = BATH_ART.slots(), W = BATH_ART.TAIL.base;
-        const spine = BATH_ART.tailSpine(this.bend);
+        const A = BATH_ART.slots();
+        const spine = BATH_ART.tailSpine(this.bend, this.tailGrow());
         for (let i = 0; i < n; i++) {
-            const t = 0.18 + (i + 0.5) / n * 0.78;
-            const p = spine[Math.round(t * (spine.length - 1))];
-            const side = (Math.random() - 0.5) * W * 0.85;
+            // Вдоль оси идут не по одному, а парами со сдвигом: иначе густая
+            // пена вытягивается в одну цепочку.
+            const t = 0.1 + ((i >> 1) + 0.5 + (i & 1) * 0.5) / Math.ceil(n / 2) * 0.86;
+            const p = spine[Math.min(spine.length - 1,
+                Math.round(t * (spine.length - 1)))];
+            const side = (Math.random() - 0.5) * 1.7
+                       * BATH_ART.tailHalf(t, this.tailGrow());
             this.bubbles.push({
                 x: A.tail.x + p.x + Math.cos(p.a) * side,
                 y: A.tail.y + p.y + Math.sin(p.a) * side,
-                r: 15 + Math.random() * 11, alive: true, seed: i * 37 + 5
+                r: 5 + Math.pow(Math.random(), 1.9) * 15,
+                alive: true, seed: i * 37 + 5
             });
         }
+        // Крупные рисуются ПЕРВЫМИ, мелкие поверх: иначе мелкий тонет под
+        // соседним крупным и по нему нечем попасть.
+        this.bubbles.sort((a, b) => b.r - a.r);
         this.drawBubbles();
     },
 
@@ -961,15 +1037,19 @@ const LustMinigame = {
     },
 
     pop(p) {
-        const hit = this.bubbles.find(b =>
-            b.alive && Math.hypot(b.x - p.x, b.y - p.y) < b.r + 14);
+        // ОДИН за касание, и ближайший: под пальцем часто оказываются два, и
+        // лопаться должен тот, по которому целились.
+        let hit = null, best = Infinity;
+        for (const b of this.bubbles) {
+            if (!b.alive) continue;
+            const d = Math.hypot(b.x - p.x, b.y - p.y);
+            if (d > b.r + 14 || d >= best) continue;
+            best = d; hit = b;
+        }
         if (!hit) return;
-        // Пачкой: лопается тот, по которому попали, и все соседи в радиусе.
-        const R = this.cfg().burstRadius || 64;
-        for (const b of this.bubbles)
-            if (b.alive && Math.hypot(b.x - hit.x, b.y - hit.y) <= R) b.alive = false;
+        hit.alive = false;
         this.drawBubbles();
-        if (!this.bubbles.some(b => b.alive)) this.startFinale();
+        if (!this.bubbles.some(b => b.alive)) this.startRub();
     },
 
     // ---------- ФИНАЛ: ТОЛЧКИ И ЛОВЛЯ ----------
