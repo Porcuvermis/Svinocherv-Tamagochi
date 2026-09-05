@@ -194,6 +194,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-back', 0);
         this.setOpacity('bt-rain-front', 0);
         this.fgEl.innerHTML = '';
+        this.wormHost.classList.remove('bt-soft');
         this.showTools(true);
         this.ready('shower');
 
@@ -917,6 +918,8 @@ const LustMinigame = {
         // этап идёт и к чему ведёт (инвариант 9: сказано позой, не подписью).
         if (this.wormHandle && this.wormHandle.setLivePose)
             this.wormHandle.setLivePose({ mouthOpenness: 0.3, eyelidLevel: 0.55 });
+        // Червь уходит в расфокус: главный в кадре — хвост.
+        this.wormHost.classList.add('bt-soft');
         this.el('bt-bubbles').innerHTML = '';
         this.rubLast = performance.now();
         const tick = (now) => {
@@ -1056,6 +1059,8 @@ const LustMinigame = {
     startFinale() {
         this.phase = 'aim';
         this.setCamera('finish');
+        // Резкость возвращается: в финале работает морда, и целятся в рот.
+        this.wormHost.classList.remove('bt-soft');
         this.hits = 0;
         this.drops = [];
         this.splats = [];
