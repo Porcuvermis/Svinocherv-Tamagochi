@@ -205,6 +205,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-near', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
+        this.stopPanting();
         this.blurFar(0, 0);
         this.showTools(true);
         this.ready('shower');
@@ -218,6 +219,7 @@ const LustMinigame = {
     close() {
         this.screenElement.classList.remove('active');
         this.stopClocks();
+        this.stopPanting();
         this.drag = null;
         this.fgEl.innerHTML = '';
         if (typeof MinigameWindow !== 'undefined') {
@@ -510,7 +512,13 @@ const LustMinigame = {
         const c = this.sceneToHost({ x: box.x + 100, y: box.y });
         const k = ((c.x - a.x) / 100 || 1) * box.w / B.w;
         const t = `translate(${a.x.toFixed(1)}px, ${a.y.toFixed(1)}px) scale(${k.toFixed(4)})`;
-        this.wormHost.style.transform = t;
+        // Строка запоминается: дыхание в финале подмешивает к ней свой сдвиг
+        // КАЖДЫЙ КАДР, и пересчитывать ради этого всю раскладку нельзя —
+        // она читает getScreenCTM и габарит контейнера, то есть дёргает
+        // раскладку страницы.
+        this._wormT = t;
+        this.wormHost.style.transform = this.breathY
+            ? `${t} translate(0px, ${this.breathY.toFixed(2)}px)` : t;
         // Обрезки НЕТ. Прямая линия среза по уровню воды читалась ровно тем,
         // чем была, — обрезанным персонажем. Нижнюю половину прячет сама
         // чаша: она рисуется в переднем холсте, поверх слоя червя.
@@ -843,6 +851,7 @@ const LustMinigame = {
         // хвост стоит там, куда его увели, и тянется обратно, как только
         // палец убрали.
         if (this.phase === 'aim') { this.drag = { kind: 'tail' }; this.aimAt(p); }
+        // В 'settle' управление уже отобрано: доигрываются капли.
     },
 
     onMove(e) {
@@ -1384,8 +1393,9 @@ const LustMinigame = {
             // иначе становится другой физикой.
             const dt = Math.min(0.05, (now - this.aimLast) / 1000);
             this.aimLast = now;
-            this.stepBend(dt);
-            this.drawTail();
+            // На доигрывании хвостом распоряжается relaxTail: он опадает, а
+            // не слушается упругости. Двое пишущих в bend дёргали бы его.
+            if (this.phase === 'aim') { this.stepBend(dt); this.drawTail(); }
             this.stepDrops(dt);
             this.aimRaf = requestAnimationFrame(tick);
         };
@@ -1459,8 +1469,83 @@ const LustMinigame = {
         if (--this.shotsLeft > 0) {
             this.shotTimer = setTimeout(() => this.shoot(), this.SHOT_MS);
         } else {
-            // Последней капле дают долететь, и только потом считают итог.
-            this.shotTimer = setTimeout(() => this.done(), this.SHOT_MS + 900);
+            this.startSettle();
+        }
+    },
+
+    // ---------- ДОИГРЫВАНИЕ ----------
+    // Управление у игрока отобрано, но игра ещё не кончилась: последние капли
+    // обязаны долететь и растечься там, где долетели.
+    //
+    // Раньше здесь стоял таймер на done(), а done() гасил кадровый цикл — и
+    // капли, не успевшие приземлиться, ЗАМИРАЛИ В ВОЗДУХЕ. Ждать «примерно
+    // достаточно» нельзя: сколько летит капля, зависит от силы толчка и
+    // угла, и в редком случае она живёт вдвое дольше средней.
+    //
+    // Поэтому ждём не время, а ПУСТОЕ НЕБО: как только последняя капля
+    // приземлилась, доигрывание кончилось. Потолок в maxT + запас всё равно
+    // стоит — на случай капли, застрявшей в углу расчёта.
+    startSettle() {
+        this.phase = 'settle';
+        this.bendHand = null;
+        this.drag = null;
+        // Три знака сразу говорят, что управление отобрано, и ни одного
+        // слова (инвариант 9): вода перестаёт литься, хвост опадает, червь
+        // тяжело дышит.
+        this.setOpacity('bt-rain-far', 0);
+        this.setOpacity('bt-rain-near', 0);
+        this.relaxTail();
+        this.startPanting();
+        const t0 = performance.now();
+        const wait = () => {
+            const dry = !this.drops.length;
+            if (dry || performance.now() - t0 > 4000) {
+                this.settleRaf = 0;
+                this.shotTimer = setTimeout(() => this.done(), 900);
+                return;
+            }
+            this.settleRaf = requestAnimationFrame(wait);
+        };
+        this.settleRaf = requestAnimationFrame(wait);
+    },
+
+    // Тяжёлое дыхание. Живот раздувается тем же живым каналом, что и в
+    // чревоугодии, — но ОДНОГО живота мало: в ванне он под бортом, и его
+    // почти не видно. Дышит поэтому вся фигура сразу, четырьмя разными
+    // способами в одной волне:
+    //   тело подаётся вверх и опадает — это и читается вдохом;
+    //   живот набухает — то, что видно из-под борта;
+    //   рот приоткрывается шире на вдохе;
+    //   веки приподнимаются на вдохе, уши опадают на выдохе.
+    // Каждое по отдельности слабое, вместе — тяжёлое дыхание.
+    startPanting() {
+        const t0 = performance.now();
+        const step = (now) => {
+            const t = (now - t0) / 1000;
+            // Полтора вдоха в секунду — частота загнанного, а не спящего.
+            const w = Math.sin(t * Math.PI * 1.5);
+            if (this.wormHandle && this.wormHandle.setLivePose) {
+                this.wormHandle.setLivePose({
+                    bellyScale: 1 + 0.16 * w,
+                    mouthOpenness: 0.55 + 0.3 * w,
+                    eyelidLevel: this.LID_MAX * (1 - 0.35 * w),
+                    earTilt: 10 - 8 * w
+                });
+            }
+            this.setBreath(-5 * w);
+            this.pantRaf = requestAnimationFrame(step);
+        };
+        this.pantRaf = requestAnimationFrame(step);
+    },
+
+    // Сдвиг всей фигуры по вертикали. Подмешивается к готовой строке
+    // раскладки, а не пересчитывает её: пересчёт читает getScreenCTM и
+    // габарит контейнера — то есть дёргает раскладку страницы каждый кадр.
+    setBreath(dy) {
+        this.breathY = dy;
+        if (this.wormHost && this._wormT) {
+            this.wormHost.style.transform = dy
+                ? `${this._wormT} translate(0px, ${dy.toFixed(2)}px)` : this._wormT;
         }
     },
 
@@ -1542,12 +1627,21 @@ const LustMinigame = {
             BATH_ART.gauge(m.x, top - 26, C.sections || 3, filled);
     },
 
+    // Дыхание живёт ДОЛЬШЕ остальных часов: оно продолжается и на итоговом
+    // экране — червь только что отработал, ему есть от чего отдышаться.
+    // Поэтому гасится оно не в stopClocks, а на входе и выходе из игры.
+    stopPanting() {
+        if (this.pantRaf) { cancelAnimationFrame(this.pantRaf); this.pantRaf = 0; }
+        this.setBreath(0);
+    },
+
     stopClocks() {
         if (this.fillRaf) { cancelAnimationFrame(this.fillRaf); this.fillRaf = 0; }
         if (this.aimRaf) { cancelAnimationFrame(this.aimRaf); this.aimRaf = 0; }
         if (this.camRaf) { cancelAnimationFrame(this.camRaf); this.camRaf = 0; }
         if (this.rubRaf) { cancelAnimationFrame(this.rubRaf); this.rubRaf = 0; }
         if (this.blurRaf) { cancelAnimationFrame(this.blurRaf); this.blurRaf = 0; }
+        if (this.settleRaf) { cancelAnimationFrame(this.settleRaf); this.settleRaf = 0; }
         if (this.relaxRaf) { cancelAnimationFrame(this.relaxRaf); this.relaxRaf = 0; }
         clearTimeout(this.shotTimer); this.shotTimer = 0;
         this.clearHint();

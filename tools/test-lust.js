@@ -281,8 +281,13 @@ const { chromium } = require('playwright');
   const shots = await page.evaluate(() => LustMinigame.cfg().shots);
   const t0 = Date.now();
   let held0 = 0, held0n = 0;
+  // Меряем удержание ТОЛЬКО пока идут толчки. После последнего игра
+  // доигрывает капли ('settle'), хвост при этом сам опадает к нулю — считать
+  // это промахом игрока незачем.
   while (Date.now() - t0 < (shots + 2) * 1500) {
-    const b = await page.evaluate(() => LustMinigame.bend);
+    const st = await page.evaluate(() => ({ b: LustMinigame.bend, p: LustMinigame.phase }));
+    if (st.p !== 'aim') break;
+    const b = st.b;
     held0 += Math.abs(b - aim); held0n++;
     if (b < aim - 0.03) {
       // Короткий подталкивающий ход — так же поправляет прицел живая рука.
@@ -293,7 +298,8 @@ const { chromium } = require('playwright');
     }
   }
   await page.mouse.up();
-  await page.waitForTimeout(1200);
+  // Доигрывание: капли долетают, хвост опадает, червь отдышивается.
+  await page.waitForTimeout(4000);
   ok(held0 / held0n < 0.3, 'прицел удерживается подталкиваниями',
      `среднее отклонение ${(held0 / held0n).toFixed(2)} рад`);
 
@@ -302,9 +308,16 @@ const { chromium } = require('playwright');
     hits: LustMinigame.hits,
     shard: GameState.data.currencies.lust_shard || 0,
     token: GameState.data.currencies.lust_token || 0,
-    sin: Math.round(GameState.sinValue('lust'))
+    sin: Math.round(GameState.sinValue('lust')),
+    flying: (LustMinigame.drops || []).length,
+    rain: +(document.getElementById('bt-rain-far').style.opacity || 1)
   }));
   ok(res.phase === 'done', 'финал доигран', res.phase);
+  // Ни одной капли в воздухе: игра не считается доигранной, пока последняя
+  // не приземлилась. Раньше кадровый цикл гасили по таймеру, и капли,
+  // не успевшие долететь, ЗАМИРАЛИ в воздухе до конца экрана.
+  ok(res.flying === 0, 'все капли долетели', `${res.flying} в воздухе`);
+  ok(res.rain < 0.05, 'душ выключен на доигрывании', `прозрачность ${res.rain}`);
   // Живой забег — выборка из десяти толчков, и ноль попаданий в ней бывает
   // законно. Поэтому проверяется МОДЕЛЬ на большой выборке: та же физика,
   // тот же прицел, та же корзина, что и в игре, — и доля попаданий обязана
