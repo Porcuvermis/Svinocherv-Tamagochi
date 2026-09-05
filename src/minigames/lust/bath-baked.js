@@ -37,7 +37,7 @@ const BATH_BAKED = {
                     "y": 700
             },
             "tail": {
-                    "x": 254,
+                    "x": 301,
                     "y": 748
             },
             "rimL": {

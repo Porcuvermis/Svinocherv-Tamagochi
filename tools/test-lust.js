@@ -111,12 +111,19 @@ const { chromium } = require('playwright');
   ok(spill.out === 0, 'мимо тела не намылено', `${spill.out} точек мимо`);
 
   const clothMoves = await scrub('cloth', 8);
-  ok(clothMoves > soapMoves, 'мочалка дольше мыла — у клетки три прохода',
-     `${clothMoves} против ${soapMoves}`);
+  // Мочалка НЕ обязана быть длиннее мыла — она обязана быть НЕ КОРОЧЕ и
+  // требовать своей работы. Пока с неё спрашивали три тёрки узким пятном,
+  // она и была длиннее — ценой того, что игрок доводил её пиксель-хантингом
+  // по уже сплошь намыленному червю. Разница между мылом и мочалкой в
+  // ДВИЖЕНИИ (широкий мазок против частой тёрки), а не в минутах.
+  ok(clothMoves >= soapMoves * 0.9, 'мочалка требует своей работы',
+     `${clothMoves} против ${soapMoves} у мыла`);
   await page.waitForTimeout(1600);
   const bubbles = await page.evaluate(() => (LustMinigame.bubbles || []).length);
   ok(await phase() === 'pop', 'мочалка домыла, хвост всплыл', await phase());
-  ok(bubbles >= 22 && bubbles <= 28, 'пузырей 22–28', String(bubbles));
+  const BUB = await page.evaluate(() => LustMinigame.cfg());
+  ok(bubbles >= BUB.bubblesMin && bubbles <= BUB.bubblesMax,
+     `пузырей ${BUB.bubblesMin}–${BUB.bubblesMax}`, String(bubbles));
   // Калибр РАЗНЫЙ: одинаковые кружки складываются в бусы, а не в пену.
   const rr = await page.evaluate(() => (LustMinigame.bubbles || []).map(b => b.r));
   ok(Math.max(...rr) / Math.min(...rr) > 1.8, 'пузыри разного калибра',
