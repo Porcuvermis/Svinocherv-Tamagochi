@@ -922,14 +922,29 @@ const LustMinigame = {
         this.wormHost.classList.add('bt-soft');
         this.el('bt-bubbles').innerHTML = '';
         this.rubLast = performance.now();
+        this.rubMoved = this.rubLast;
+        this.rubLids = -1;
         const tick = (now) => {
             const dt = Math.min(0.05, (now - this.rubLast) / 1000);
             this.rubLast = now;
             if (this.phase !== 'rub') { this.rubRaf = 0; return; }
             const C = this.cfg();
-            if (!this.drag || this.drag.kind !== 'rub')
-                this.charge = Math.max(0, this.charge - (C.rubRelax || 0.3) * dt);
+            // Спад НЕ СРАЗУ: рука не может водить без единой остановки, а
+            // прирост за ход мелкий — мгновенный спад не давал набрать вовсе.
+            if ((now - this.rubMoved) / 1000 > (C.rubIdle || 1.1))
+                this.charge = Math.max(0, this.charge - (C.rubRelax || 0.06) * dt);
             this.drawTail();
+            this.drawRubGauge();
+            // Веки опускаются ВМЕСТЕ с наливом: тот же прогресс, сказанный
+            // мордой. Обновляется только на заметном шаге — setLivePose
+            // перерисовывает персонажа.
+            const lids = Math.round((0.25 + this.charge * 0.7) * 12) / 12;
+            if (lids !== this.rubLids && this.wormHandle
+                && this.wormHandle.setLivePose) {
+                this.rubLids = lids;
+                this.wormHandle.setLivePose({ mouthOpenness: 0.3 + this.charge * 0.3,
+                                              eyelidLevel: lids });
+            }
             if (this.charge >= 1) { this.rubRaf = 0; this.startFinale(); return; }
             this.rubRaf = requestAnimationFrame(tick);
         };
@@ -950,13 +965,25 @@ const LustMinigame = {
         return { t: best, dist };
     },
 
+    // Столбик налива СЛЕВА ОТ ХВОСТА: работа идёт по хвосту, туда игрок и
+    // смотрит. Высота столбика — по самому хвосту, чтобы он не жил в кадре
+    // отдельной деталью.
+    drawRubGauge() {
+        const A = BATH_ART.slots(), T = BATH_ART.TAIL;
+        const h = T.len * 1.05;
+        this.el('bt-gauge').innerHTML = BATH_ART.rubGauge(
+            A.tail.x - T.base * 0.95, A.tail.y - h - 6, h, this.charge);
+    },
+
     rubMove(p) {
         const C = this.cfg(), a = this.rubAt(p);
         const reach = BATH_ART.TAIL.base * this.tailGrow() * 1.3;
         if (a.dist > reach) { this.drag.t = null; return; }
-        if (this.drag.t != null)
+        if (this.drag.t != null && a.t !== this.drag.t) {
             this.charge = Math.min(1, this.charge
-                + Math.abs(a.t - this.drag.t) * (C.rubGain || 1.3));
+                + Math.abs(a.t - this.drag.t) * (C.rubGain || 0.09));
+            this.rubMoved = performance.now();
+        }
         this.drag.t = a.t;
     },
 
@@ -966,23 +993,36 @@ const LustMinigame = {
     solveBend(target) {
         const C = this.cfg();
         const v = C.speedMin + 0.75 * (C.speedMax - C.speedMin);
-        let best = 0, near = Infinity;
-        for (let i = 0; i <= 48; i++) {
-            const b = -0.25 + (this.BEND_MAX + 0.25) * i / 48;
+        const LO = -0.25, HI = this.BEND_MAX, N = 240;
+        // Собираем ВСЕ изгибы, при которых капля проходит через рот, и
+        // возвращаем СЕРЕДИНУ первой непрерывной полосы попаданий.
+        //
+        // Раньше возвращался «лучший по промаху». Промах у любого попадания
+        // равен нулю, попадают несколько изгибов подряд, и правило «строго
+        // лучше» выбирало ПЕРВЫЙ из них — то есть самый край окна. Игрок
+        // держал прицел идеально и мазал половину толчков: разброс уводил
+        // каплю только в одну сторону, наружу.
+        //
+        // Первая полоса, а не лучшая: перебор идёт от малого изгиба, и
+        // первая — навесная. Дуга видна целиком, и по ней читается перелёт.
+        const hits = [], bends = [];
+        let best = LO, near = Infinity;
+        for (let i = 0; i <= N; i++) {
+            const b = LO + (HI - LO) * i / N;
             const s = this.tipState(b);
             const r = LustShot.fly(C, s,
                 { vx: Math.cos(s.dir) * v, vy: Math.sin(s.dir) * v },
                 target, C.mouthR);
-            // Строго лучше, и с запасом. У баллистики на одну дальность
-            // ДВА решения — навесное и настильное, — и оба точные. Простое
-            // «меньше» выбирало то одно, то другое от шага перебора: прицел
-            // прыгал с 0.4 на 1.2 при сдвиге рта на десяток пикселей.
-            // Перебор идёт от малого изгиба, поэтому запас оставляет
-            // НАВЕСНОЕ: дуга видна целиком, и по ней читается перелёт.
-            if (r.near < near - 0.5) { near = r.near; best = b; }
+            bends.push(b); hits.push(r.hit);
+            if (r.near < near) { near = r.near; best = b; }
         }
-        return best;
+        const from = hits.indexOf(true);
+        if (from < 0) return best;          // не долетает ни при каком изгибе
+        let to = from;
+        while (to + 1 <= N && hits[to + 1]) to++;
+        return (bends[from] + bends[to]) / 2;
     },
+
 
     drawTail() {
         const A = BATH_ART.slots(), g = this.el('bt-tail-pivot');
@@ -1023,7 +1063,7 @@ const LustMinigame = {
             this.bubbles.push({
                 x: A.tail.x + p.x + Math.cos(p.a) * side,
                 y: A.tail.y + p.y + Math.sin(p.a) * side,
-                r: 5 + Math.pow(Math.random(), 1.9) * 15,
+                r: 4 + Math.pow(Math.random(), 1.9) * 11,
                 alive: true, seed: i * 37 + 5
             });
         }
@@ -1058,9 +1098,11 @@ const LustMinigame = {
     // ---------- ФИНАЛ: ТОЛЧКИ И ЛОВЛЯ ----------
     startFinale() {
         this.phase = 'aim';
-        this.setCamera('finish');
-        // Резкость возвращается: в финале работает морда, и целятся в рот.
-        this.wormHost.classList.remove('bt-soft');
+        // Кадр НЕ МЕНЯЕТСЯ и расфокус НЕ СНИМАЕТСЯ: пузыри, поглаживание и
+        // стрельба — один эпизод, а переезд камеры и возврат резкости
+        // посреди него читаются сменой сцены. Червь и здесь фон: игрок
+        // работает хвостом.
+        this.setCamera('tail');
         this.hits = 0;
         this.drops = [];
         this.splats = [];
@@ -1190,15 +1232,19 @@ const LustMinigame = {
                 }
             }
         }
-        // Потёки живут своим временем и тают.
+        // Потёк СТЕКАЕТ и застывает, но не исчезает: к концу забега по
+        // стене видна вся история промахов. Тающие потёки означали стрельбу
+        // в пустоту — попал или нет, через три секунды одинаково.
         for (let i = this.splats.length - 1; i >= 0; i--) {
             const sp = this.splats[i];
             sp.t += dt;
-            if (!sp.gulp) sp.y += 26 * dt;
-            if (sp.t > (sp.gulp ? 0.45 : 2.6)) this.splats.splice(i, 1);
+            if (!sp.gulp && sp.t < 1.4) sp.y += 30 * dt;
+            if (sp.gulp && sp.t > 0.45) this.splats.splice(i, 1);
         }
-        if (this.splats.length > 14) this.splats.splice(0, this.splats.length - 14);
-        this.el('bt-shots').innerHTML = BATH_ART.drops(this.drops, this.splats);
+        if (this.splats.length > 40) this.splats.splice(0, this.splats.length - 40);
+        this.el('bt-shots').innerHTML = BATH_ART.drops(this.drops, this.splats,
+            { x: m.x, y: m.y + C.mouthR * 0.25, r: C.mouthR,
+              k: this.hits / ((C.sections || 3) * (C.perSection || 2)) });
     },
 
     // Купленная ступень прокачки. Магазина ещё нет — до него ступень всегда

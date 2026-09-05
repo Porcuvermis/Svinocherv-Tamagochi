@@ -169,7 +169,7 @@ const { chromium } = require('playwright');
   ok(still < 0.02, 'неподвижный палец хвост не наливает', still.toFixed(3));
   // Ведём вдоль хвоста туда-обратно.
   let strokes = 0;
-  for (let n = 0; n < 14 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
+  for (let n = 0; n < 30 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
     for (const t of (n % 2 ? [0.9, 0.7, 0.5, 0.3, 0.15] : [0.15, 0.3, 0.5, 0.7, 0.9])) {
       const q2 = await toScreen(await tailPt(t));
       await page.mouse.move(q2.x, q2.y);
@@ -179,7 +179,8 @@ const { chromium } = require('playwright');
   await page.mouse.up();
   await page.waitForTimeout(200);
   ok(await phase() === 'aim', 'хвост налился, начался финал', await phase());
-  ok(strokes >= 3, 'налив требует работы, а не одного хода', `${strokes} ходов`);
+  // Полтора десятка ходов — столько же, сколько «качелей» в старой версии.
+  ok(strokes >= 10, 'налив требует работы, а не одного хода', `${strokes} ходов`);
   const grow1 = await page.evaluate(() => LustMinigame.tailGrow());
   ok(grow1 > grow0 * 1.15, 'хвост вырос', `${grow0.toFixed(2)} → ${grow1.toFixed(2)}`);
   await page.screenshot({ path: out + '3-aim.png' });
@@ -285,9 +286,12 @@ const { chromium } = require('playwright');
       const v = LustShot.launch(C, t, s.dir);
       if (LustShot.fly(C, s, v, m, C.mouthR).hit) hit++;
     }
-    return { rate: hit / N, tip: { x: Math.round(s.x), y: Math.round(s.y) },
-             mouth: { x: Math.round(m.x), y: Math.round(m.y) },
-             dir: +(s.dir * 180 / Math.PI).toFixed(1) };
+    // Точность НЕ округляется до целых градусов и точек: окно попадания у
+    // навесной дуги — единицы градусов, и калькулятор, взяв округлённые
+    // числа, считает баланс для прицела на краю окна, а не в середине.
+    return { rate: hit / N, tip: { x: +s.x.toFixed(1), y: +s.y.toFixed(1) },
+             mouth: { x: +m.x.toFixed(1), y: +m.y.toFixed(1) },
+             dir: +(s.dir * 180 / Math.PI).toFixed(3) };
   });
   ok(shotInfo.rate > 0.2 && shotInfo.rate < 0.36,
      'на удержанном прицеле попадает как в расчёте',
