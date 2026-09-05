@@ -150,6 +150,12 @@ const LustMinigame = {
         this.backEl = document.getElementById('bt-back');
         this.camEl = document.getElementById('bt-cam');
         this.camBackEl = document.getElementById('bt-cam-back');
+        // Холсты дождя ездят той же камерой, что и всё остальное. Отдельные
+        // элементы они не ради порядка в разметке, а ради композитора:
+        // бесконечная анимация внутри общего svg метит грязной всю комнату
+        // (комментарий в index.html).
+        this.camRainEls = [document.getElementById('bt-cam-rain-far'),
+                           document.getElementById('bt-cam-rain-near')];
         this.fgEl = document.getElementById('bt-fg');
         this.wormHost = document.getElementById('bt-worm');
         if (!this.svgEl || !this.backEl) return;
@@ -182,8 +188,8 @@ const LustMinigame = {
         this.resetCover();
         this.wipeLather();
         this.el('bt-bubbles').innerHTML = '';
-        this.el('bt-rain-back').innerHTML = BATH_ART.rain(false);
-        this.el('bt-rain-front').innerHTML = BATH_ART.rain(true);
+        this.el('bt-cam-rain-far').innerHTML = BATH_ART.rain(false);
+        this.el('bt-cam-rain-near').innerHTML = BATH_ART.rain(true);
         for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
                           'bt-gauge', 'bt-spot'])
             this.el(id).innerHTML = '';
@@ -195,8 +201,8 @@ const LustMinigame = {
         this.charge = 0;
         this.hits = 0;
         this.shotsLeft = 0;
-        this.setOpacity('bt-rain-back', 0);
-        this.setOpacity('bt-rain-front', 0);
+        this.setOpacity('bt-rain-far', 0);
+        this.setOpacity('bt-rain-near', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
         this.blurFar(0, 0);
@@ -256,6 +262,7 @@ const LustMinigame = {
         const t = `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})`;
         this.camEl.setAttribute('transform', t);
         this.camBackEl.setAttribute('transform', t);
+        for (const n of (this.camRainEls || [])) if (n) n.setAttribute('transform', t);
         this.layoutWorm();
     },
 
@@ -885,8 +892,8 @@ const LustMinigame = {
     startWater() {
         this.phase = 'rinse';
         this.ready(null);
-        this.setOpacity('bt-rain-back', 1);
-        this.setOpacity('bt-rain-front', 1);
+        this.setOpacity('bt-rain-far', 1);
+        this.setOpacity('bt-rain-near', 1);
         // Наезд ОДНОВРЕМЕННО с водой и ПЛАВНЫЙ: игра начинается с общего
         // плана, где видно всю комнату, и камера сама подъезжает к участку,
         // на котором идёт работа. Скачок читался сменой сцены — как будто
