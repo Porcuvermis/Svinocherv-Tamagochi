@@ -1020,16 +1020,36 @@ const LustMinigame = {
     // внутренние элементы svg в WebKit, и на айфоне размытия бы не было
     // вовсе (та же грабля, что у фильтра истощения в worm-renderer).
     blurFar(to, ms) {
-        const n = this.el('bt-far-blur-amount');
-        if (!n) return;
+        const n = this.el('bt-far-blur-amount'), g = this.el('bt-shower');
+        const lines = this.el('bt-far-lines');
+        if (!n || !g) return;
         cancelAnimationFrame(this.blurRaf || 0);
+        // Дальний план мылится ДВУМЯ РАЗНЫМИ СРЕДСТВАМИ, и это не небрежность.
+        // Стена и пол — плоские заливки, размывать в них нечего; расфокус на
+        // них читается пропавшим контрастом ЛИНИЙ, а это одна прозрачность.
+        // Честный гауссиан остаётся только на душе — единственном предмете
+        // дальнего плана с формой, зато и площадью с ладонь. Фильтр во всю
+        // стену стоил трети кадров: дождь перерисовывается каждый кадр и
+        // тянет за собой пересчёт размытия по всему экрану.
+        //
+        // Фильтр СНИМАЕТСЯ вовсе, когда размывать нечего: нулевая
+        // stdDeviation не бесплатна, группа всё равно гоняется через
+        // конвейер фильтра каждый кадр.
+        const set = (v) => {
+            n.setAttribute('stdDeviation', v.toFixed(2));
+            if (v < 0.05) g.removeAttribute('filter');
+            else g.setAttribute('filter', 'url(#bt-far-blur)');
+            // Швы гаснут вместе с наводкой: на полном размытии от них
+            // остаётся четверть, то есть намёк на кафель, а не сетка.
+            if (lines) lines.setAttribute('opacity',
+                (1 - 0.75 * Math.min(1, v / 2.6)).toFixed(3));
+        };
         const from = parseFloat(n.getAttribute('stdDeviation')) || 0;
-        if (!ms) { n.setAttribute('stdDeviation', String(to)); return; }
+        if (!ms) { set(to); return; }
         const t0 = performance.now();
         const step = (now) => {
             const k = Math.min(1, (now - t0) / ms);
-            n.setAttribute('stdDeviation',
-                (from + (to - from) * k * k * (3 - 2 * k)).toFixed(2));
+            set(from + (to - from) * k * k * (3 - 2 * k));
             this.blurRaf = k < 1 ? requestAnimationFrame(step) : 0;
         };
         this.blurRaf = requestAnimationFrame(step);
