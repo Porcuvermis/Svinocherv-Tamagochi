@@ -198,7 +198,7 @@ const { chromium } = require('playwright');
   ok(still < 0.02, 'неподвижный палец хвост не наливает', still.toFixed(3));
   // Ведём вдоль хвоста туда-обратно.
   let strokes = 0;
-  for (let n = 0; n < 30 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
+  for (let n = 0; n < 80 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
     for (const t of (n % 2 ? [0.9, 0.7, 0.5, 0.3, 0.15] : [0.15, 0.3, 0.5, 0.7, 0.9])) {
       const q2 = await toScreen(await tailPt(t));
       await page.mouse.move(q2.x, q2.y);
@@ -208,8 +208,10 @@ const { chromium } = require('playwright');
   await page.mouse.up();
   await page.waitForTimeout(200);
   ok(await phase() === 'aim', 'хвост налился, начался финал', await phase());
-  // Полтора десятка ходов — столько же, сколько «качелей» в старой версии.
-  ok(strokes >= 10, 'налив требует работы, а не одного хода', `${strokes} ходов`);
+  // Этап обязан ТЯНУТЬСЯ: в нём всё удовольствие, и проскакивать его
+  // незачем. На живом прогоне выходит быстрее, чем здесь: рука ведёт
+  // длинными ходами, а тест — аккуратными пятиточечными.
+  ok(strokes >= 25, 'налив требует работы, а не одного хода', `${strokes} ходов`);
   const grow1 = await page.evaluate(() => LustMinigame.tailGrow());
   ok(grow1 > grow0 * 1.15, 'хвост вырос', `${grow0.toFixed(2)} → ${grow1.toFixed(2)}`);
   await page.screenshot({ path: out + '3-aim.png' });

@@ -184,10 +184,14 @@ const LustMinigame = {
         this.el('bt-bubbles').innerHTML = '';
         this.el('bt-rain-back').innerHTML = BATH_ART.rain(false);
         this.el('bt-rain-front').innerHTML = BATH_ART.rain(true);
-        for (const id of ['bt-tail', 'bt-bubbles', 'bt-shots', 'bt-gauge', 'bt-spot'])
+        for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
+                          'bt-gauge', 'bt-spot'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
+        this.el('bt-tail').removeAttribute('transform');
         this.bubbles = null;
+        this.pile = null;
+        this.mouthFill = null;
         this.charge = 0;
         this.hits = 0;
         this.shotsLeft = 0;
@@ -202,6 +206,9 @@ const LustMinigame = {
         // меряет его размер один раз, при монтаже.
         this.setCamera('overview');
         this.mountWorm();
+        // Рот пуст. Канал живой и переживает закрытие мини-игры: без явного
+        // сброса червь входит в следующий забег с лужицей от прошлого.
+        this.setMouthFill(0);
     },
 
     close() {
@@ -238,23 +245,46 @@ const LustMinigame = {
     //
     // Едут ОБЕ группы, одним и тем же преобразованием: комната и вода лежат
     // на разных холстах, и разъехаться им нельзя.
-    // Наезд МГНОВЕННЫЙ. Плавный переезд ехал по-разному у трёх слоёв: группы
-    // сцены анимировал css, а слой червя и холст мытья ставились по числам
-    // камеры сразу — и всё время переезда комната, персонаж и пена шли
-    // вразнобой. Смена ракурса это смена кадра: все объекты обязаны
-    // оказаться на новом месте одновременно.
-    setCamera(name) {
-        const f = BATH_ART.FOCUS[name] || BATH_ART.FOCUS.overview;
-        const s = Math.min(390 / f.w, 844 / f.h);
-        const tx = 195 - s * (f.x + f.w / 2);
-        const ty = 422 - s * (f.y + f.h / 2);
-        // Числа камеры запоминаются: по ним, а не по матрице из DOM,
-        // считается место слоя червя и холста мытья.
+    // Наезд ПЛАВНЫЙ, но не средствами css. Первый плавный переезд ехал
+    // по-разному у трёх слоёв: группы сцены анимировал css, а слой червя и
+    // холст мытья ставились по числам камеры сразу — и всё время переезда
+    // комната, персонаж и пена шли вразнобой. Тогда переезд убрали вовсе.
+    //
+    // Теперь анимируются САМИ ЧИСЛА камеры, а кадр целиком выставляется из
+    // них: и группы сцены, и слой червя, и холст мытья. Разъехаться нечему —
+    // все трое каждый кадр берут одну и ту же тройку (s, tx, ty).
+    camAt(s, tx, ty) {
         this.cam = { s, tx, ty };
         const t = `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})`;
         this.camEl.setAttribute('transform', t);
         this.camBackEl.setAttribute('transform', t);
         this.layoutWorm();
+    },
+
+    camFor(name) {
+        const f = BATH_ART.FOCUS[name] || BATH_ART.FOCUS.overview;
+        const s = Math.min(390 / f.w, 844 / f.h);
+        return { s, tx: 195 - s * (f.x + f.w / 2), ty: 422 - s * (f.y + f.h / 2) };
+    },
+
+    setCamera(name, ms) {
+        const to = this.camFor(name);
+        cancelAnimationFrame(this.camRaf || 0);
+        this.camRaf = 0;
+        const from = this.cam;
+        if (!ms || !from) { this.camAt(to.s, to.tx, to.ty); return; }
+        const t0 = performance.now();
+        const step = (now) => {
+            // Ход по времени, а не по кадрам: на медленном телефоне переезд
+            // обязан длиться те же секунды, а не те же кадры.
+            const k = Math.min(1, (now - t0) / ms);
+            const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+            this.camAt(from.s + (to.s - from.s) * e,
+                       from.tx + (to.tx - from.tx) * e,
+                       from.ty + (to.ty - from.ty) * e);
+            this.camRaf = k < 1 ? requestAnimationFrame(step) : 0;
+        };
+        this.camRaf = requestAnimationFrame(step);
     },
 
     // ---------- ПЕРЕВОД КООРДИНАТ ----------
@@ -298,6 +328,10 @@ const LustMinigame = {
             const model = window.WormModelAPI.loadWormModel();
             this.wormHandle = window.WormRenderer.mount(this.wormHost, model, {
                 context: 'lust',
+                // Смотрит ВЛЕВО. Зеркалит сам рендерер (opts.flip), а не
+                // css поверх слоя: иначе маска силуэта, снятая с его же svg,
+                // осталась бы незеркальной, и пена ложилась бы наоборот.
+                flip: true,
                 // Лёжа: червь в ванне, а не стоит в ней.
                 pose: 'standing',
                 wander: false,
@@ -774,6 +808,11 @@ const LustMinigame = {
 
         const share = this.paint(p.x, p.y, radius, this.stageNeed());
         if (this.dirty) { this.renderLather(); this.dirty = false; }
+        // Пена копится НЕ ТОЛЬКО на черве: над будущим хвостом растёт горка.
+        // Растёт она ровно по той же доле вытертого — игрок видит, что она
+        // связана с его работой, а не появилась сама.
+        if (kind === 'cloth')
+            this.pileShow(share / Math.max(0.01, C.coverGoal || 0.92));
         if (share >= (C.coverGoal || 0.92)) this.finishStage(kind);
     },
 
@@ -797,9 +836,11 @@ const LustMinigame = {
         this.ready(null);
         this.setOpacity('bt-rain-back', 1);
         this.setOpacity('bt-rain-front', 1);
-        // Наезд ОДНОВРЕМЕННО с водой: смотреть на лейку больше незачем, вся
-        // работа теперь между червём и полкой.
-        this.setCamera('body');
+        // Наезд ОДНОВРЕМЕННО с водой и ПЛАВНЫЙ: игра начинается с общего
+        // плана, где видно всю комнату, и камера сама подъезжает к участку,
+        // на котором идёт работа. Скачок читался сменой сцены — как будто
+        // открыли другую игру, а не подошли ближе.
+        this.setCamera('body', 900);
         const t0 = performance.now();
         const DUR = 900;      // ровно чтобы заметить, что полилось
         const step = (t) => {
@@ -841,6 +882,10 @@ const LustMinigame = {
         this.onUp();
         this.clearHint();
         if (kind === 'soap') {
+            // Горка пены над будущим хвостом собирается ЗАРАНЕЕ, пока червя
+            // трут мочалкой. К моменту, когда хвост всплывает, она уже
+            // непроницаема, и его появления не видно.
+            this.buildPile();
             // Мочалка снимает мыло и оставляет пену: муть гасится, чтобы
             // второй этап был виден.
             // Что намылено — запоминается: на этапе мочалки это фон, по
@@ -890,7 +935,12 @@ const LustMinigame = {
     // ---------- ХВОСТ ВСПЛЫВАЕТ ----------
     raiseTail() {
         this.phase = 'tail';
-        this.setCamera('tail');
+        // Кадр СЖИМАЕТСЯ до двоих: мыло, мочалка и полка отработали, и
+        // держать их на экране больше незачем. Переезд плавный, и червь
+        // уходит в расфокус одновременно с ним: это не новая сцена, а
+        // смена того, на что смотрят.
+        this.setCamera('tail', 1000);
+        this.wormHost.classList.add('bt-soft');
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
         // и работает (блаженство, открытый рот).
@@ -905,8 +955,9 @@ const LustMinigame = {
         this.drawTail();
         this.setOpacity('bt-tail', 1);
 
-        // Всплытие: хвост выезжает снизу, из-под воды. Обрезка не нужна —
-        // группа лежит ПОД слоем воды, и та сама прячет всё, что не поднялось.
+        // Всплытие ПОД ГОРКОЙ ПЕНЫ: она уже стоит на этом месте и закрывает
+        // хвост целиком. Видеть, как хвост «материализуется», игрок не
+        // должен — он должен разобрать пену и обнаружить его там.
         const g = this.el('bt-tail');
         const t0 = performance.now(), DUR = 1100;
         const step = (t) => {
@@ -919,6 +970,55 @@ const LustMinigame = {
             this.spawnBubbles();
         };
         this.fillRaf = requestAnimationFrame(step);
+    },
+
+    // ---------- ГОРКА ПЕНЫ ----------
+    // Список пузырей собирается ОДИН РАЗ, ещё на этапе мочалки, и потом
+    // только показывается по частям. Так горка растёт на глазах, а не
+    // возникает готовой в момент, когда её нужно лопать.
+    buildPile() {
+        const C = this.cfg(), T = BATH_ART.TAIL;
+        const lo = C.bubblesMin || 16, hi = C.bubblesMax || 20;
+        const n = lo + Math.floor(Math.random() * (hi - lo + 1));
+        const A = BATH_ART.slots();
+        // Горка обязана закрывать НЕВЫРОСШИЙ хвост целиком, с запасом:
+        // всплывает он маленьким.
+        this.pileW = T.base * 2.4;
+        this.pileH = T.len * 1.15;
+        this.pileSeed = 1 + Math.floor(Math.random() * 999);
+        this.pile = [];
+        for (let i = 0; i < n; i++) {
+            // Кладутся по той же горке, что и комки: доля вдоль высоты, и
+            // чем выше, тем уже разброс. Иначе пузыри висят по краям над
+            // пустотой, а сама горка остаётся голой.
+            const t = Math.pow((i + 0.5) / n, 0.8);
+            const half = (this.pileW / 2) * (1 - 0.55 * t);
+            this.pile.push({
+                x: A.tail.x + (Math.random() - 0.5) * 2 * half,
+                y: A.tail.y - t * this.pileH - 4,
+                // Мельче прежних (было 4…15): хвост стал вдвое короче, и
+                // старый калибр закрывал его целиком. Попадать по ним от
+                // размера не зависит — зона срабатывания общая (popReach).
+                r: 5 + Math.pow(Math.random(), 1.6) * 9,
+                alive: true, seed: i * 37 + 5
+            });
+        }
+        // Крупные рисуются ПЕРВЫМИ, мелкие поверх: иначе мелкий тонет под
+        // соседним крупным и по нему нечем попасть.
+        this.pile.sort((a, b) => b.r - a.r);
+        this.pileShow(0);
+    },
+
+    // Показать долю k горки: сама горка растёт, пузыри проступают по одному.
+    pileShow(k) {
+        if (!this.pile) return;
+        const A = BATH_ART.slots(), g = Math.max(0, Math.min(1, k));
+        this.el('bt-foam').innerHTML = BATH_ART.foamMound(
+            A.tail.x, A.tail.y, this.pileW, this.pileH, g, this.pileSeed);
+        const upto = Math.round(g * this.pile.length);
+        this.el('bt-bubbles').innerHTML = this.pile
+            .filter((b, i) => i < upto && b.alive)
+            .map(b => BATH_ART.bubble(b.x, b.y, b.r, b.seed)).join('');
     },
 
     // Точка рта червя. Считается по НАРИСОВАННОМУ рту, а не по числу: рот
@@ -1015,8 +1115,12 @@ const LustMinigame = {
     drawRubGauge() {
         const A = BATH_ART.slots(), T = BATH_ART.TAIL;
         const h = T.len * 1.05;
+        // Столбик стоит с ВНЕШНЕЙ стороны хвоста — той, куда хвост НЕ гнётся:
+        // иначе он оказывается между хвостом и мордой, ровно в том коридоре,
+        // где идёт вся работа.
         this.el('bt-gauge').innerHTML = BATH_ART.rubGauge(
-            A.tail.x - T.base * 0.95, A.tail.y - h - 6, h, this.charge);
+            A.tail.x + (T.side || 1) * T.base * 0.95 * -1,
+            A.tail.y - h - 6, h, this.charge);
     },
 
     rubMove(p) {
@@ -1096,44 +1200,26 @@ const LustMinigame = {
     // Лопаются ПО ОДНОМУ за касание. Пачкой было быстрее, но щелчок по
     // пузырю — сам по себе удовольствие, ради которого этап и существует;
     // пачка съедала его ради экономии десятка тапов.
+    // Горка уже стоит и уже полная — здесь только отдаётся управление
+    // игроку. Новых пузырей не появляется: те же, что копились под мочалкой,
+    // теперь можно лопать.
     spawnBubbles() {
         this.phase = 'pop';
-        const C = this.cfg();
-        const lo = C.bubblesMin || 8, hi = C.bubblesMax || 12;
-        const n = lo + Math.floor(Math.random() * (hi - lo + 1));
-        this.bubbles = [];
-        // Сидят на ОСИ хвоста, а не вокруг его основания: пена налипла на
-        // прут, и при изгибе она должна лежать вдоль него.
-        const A = BATH_ART.slots();
-        const spine = BATH_ART.tailSpine(this.bend, this.tailGrow());
-        for (let i = 0; i < n; i++) {
-            // Вдоль оси идут не по одному, а парами со сдвигом: иначе густая
-            // пена вытягивается в одну цепочку.
-            const t = 0.1 + ((i >> 1) + 0.5 + (i & 1) * 0.5) / Math.ceil(n / 2) * 0.86;
-            const p = spine[Math.min(spine.length - 1,
-                Math.round(t * (spine.length - 1)))];
-            const side = (Math.random() - 0.5) * 1.7
-                       * BATH_ART.tailHalf(t, this.tailGrow());
-            this.bubbles.push({
-                x: A.tail.x + p.x + Math.cos(p.a) * side,
-                y: A.tail.y + p.y + Math.sin(p.a) * side,
-                // Мельче прежних (было 4…15): хвост стал вдвое короче, и
-                // старый калибр закрывал его целиком. Попадать по ним от
-                // размера не зависит — зона срабатывания общая (popReach).
-                r: 3 + Math.pow(Math.random(), 1.9) * 8,
-                alive: true, seed: i * 37 + 5
-            });
-        }
-        // Крупные рисуются ПЕРВЫМИ, мелкие поверх: иначе мелкий тонет под
-        // соседним крупным и по нему нечем попасть.
-        this.bubbles.sort((a, b) => b.r - a.r);
-        this.drawBubbles();
+        if (!this.pile) this.buildPile();
+        this.bubbles = this.pile;
+        this.pileShow(1);
     },
 
+    // Горка тает вместе с пузырями: её доля — это доля целых. Иначе игрок
+    // разобрал бы всю пену, а ширма осталась бы стоять поверх хвоста.
     drawBubbles() {
-        this.el('bt-bubbles').innerHTML = this.bubbles
-            .filter(b => b.alive)
+        const A = BATH_ART.slots();
+        const alive = this.bubbles.filter(b => b.alive);
+        this.el('bt-bubbles').innerHTML = alive
             .map(b => BATH_ART.bubble(b.x, b.y, b.r, b.seed)).join('');
+        this.el('bt-foam').innerHTML = BATH_ART.foamMound(
+            A.tail.x, A.tail.y, this.pileW, this.pileH,
+            alive.length / Math.max(1, this.bubbles.length), this.pileSeed);
     },
 
     pop(p) {
@@ -1170,6 +1256,10 @@ const LustMinigame = {
         this.hits = 0;
         this.drops = [];
         this.splats = [];
+        // Рот пуст: канал живой, значит его надо явно опустошить, иначе в
+        // следующий забег червь входит с чужой лужицей.
+        this.mouthFill = null;
+        this.setMouthFill(0);
         this.dropAcc = 0;
         this.shotsLeft = this.cfg().shots || 10;
 
@@ -1306,9 +1396,24 @@ const LustMinigame = {
             if (sp.gulp && sp.t > 0.45) this.splats.splice(i, 1);
         }
         if (this.splats.length > 40) this.splats.splice(0, this.splats.length - 40);
-        this.el('bt-shots').innerHTML = BATH_ART.drops(this.drops, this.splats,
-            { x: m.x, y: m.y + C.mouthR * 0.25, r: C.mouthR,
-              k: this.hits / ((C.sections || 3) * (C.perSection || 2)) });
+        this.el('bt-shots').innerHTML = BATH_ART.drops(this.drops, this.splats);
+        // Лужица во рту рисуется САМИМ ЧЕРВЁМ — это часть его рта, а не
+        // пятно поверх морды. Значит она едет с ним при любом переезде
+        // камеры, обрезается его же губами и уходит в расфокус вместе с ним.
+        // Пока её рисовала мини-игра в своём слое, она жила отдельной
+        // жизнью и на камере, собранной под хвост, оказывалась на щеке.
+        this.setMouthFill(this.hits / ((C.sections || 3) * (C.perSection || 2)));
+    },
+
+    // Уровень жидкости во рту. Отдельным методом, потому что его дёргают из
+    // двух мест: полёт капель и сброс на старте забега.
+    setMouthFill(k) {
+        if (!this.wormHandle || !this.wormHandle.setLivePose) return;
+        const v = Math.max(0, Math.min(1, k || 0));
+        if (v === this.mouthFill) return;
+        this.mouthFill = v;
+        this.wormHandle.setLivePose({
+            mouthFill: v, mouthFillColor: PALETTE.bathScene.milk[500] });
     },
 
     // Купленная ступень прокачки. Магазина ещё нет — до него ступень всегда
@@ -1335,6 +1440,8 @@ const LustMinigame = {
     stopClocks() {
         if (this.fillRaf) { cancelAnimationFrame(this.fillRaf); this.fillRaf = 0; }
         if (this.aimRaf) { cancelAnimationFrame(this.aimRaf); this.aimRaf = 0; }
+        if (this.camRaf) { cancelAnimationFrame(this.camRaf); this.camRaf = 0; }
+        if (this.rubRaf) { cancelAnimationFrame(this.rubRaf); this.rubRaf = 0; }
         clearTimeout(this.shotTimer); this.shotTimer = 0;
         this.clearHint();
     },

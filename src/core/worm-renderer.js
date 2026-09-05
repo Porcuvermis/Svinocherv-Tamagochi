@@ -2358,7 +2358,23 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     }
     mouthAnchor.appendChild(teethGroup);
 
-    return { mouthShape, mouthClipShape, teethGroup, teeth, W, MAX_GAP };
+    // ---------- ЖИДКОСТЬ ВО РТУ ----------
+    // Часть САМОГО РТА, а не наклейка поверх морды. Пока лужица рисовалась
+    // мини-игрой в своём слое, её приходилось заново наводить на рот после
+    // каждого переезда камеры, она не размывалась вместе с персонажем и при
+    // любом промахе висела на щеке.
+    //
+    // Обрезка — тем же контуром рта, что и зубы: лужица физически не может
+    // вылезти за губы, как бы её ни налили. Пустая — прозрачная и не мешает
+    // никому; цвет и уровень задаются живым каналом (mouthFill,
+    // mouthFillColor), поэтому годится на любую жидкость в любой мини-игре.
+    const liquid = svgEl('path', {
+        class: 'worm-mouth-liquid', d: '', fill: 'none',
+        'clip-path': `url(#${mouthClipId})`, opacity: 0
+    });
+    mouthAnchor.appendChild(liquid);
+
+    return { mouthShape, mouthClipShape, teethGroup, teeth, liquid, W, MAX_GAP };
 }
 
 // Пересчитывает форму рта (и зубов) из bend/gap.
@@ -2385,7 +2401,27 @@ function mouthBendFromCurve(curve) {
 
 // Сагитта квадратичной кривой равна половине смещения контрольной точки,
 // поэтому всюду ниже смещения удваиваются.
-function updateMouthGeometry(mouthBuilt, bend, gap) {
+// Уровень жидкости во рту. Считается ПО ТОЙ ЖЕ полости, что нарисована:
+// заливка идёт снизу вверх от нижней губы, а лишнее срезает обрезка ртом.
+function updateMouthLiquid(mouthBuilt, fill, color, top, bottom) {
+    const el = mouthBuilt.liquid;
+    if (!el) return;
+    const k = Math.max(0, Math.min(1, fill || 0));
+    if (k <= 0.001 || bottom - top <= 0.5) {
+        el.setAttribute('opacity', '0');
+        el.setAttribute('d', '');
+        return;
+    }
+    const W = mouthBuilt.W + 4;
+    const y = bottom - k * (bottom - top);
+    el.setAttribute('fill', color || '#ffffff');
+    el.setAttribute('opacity', '1');
+    el.setAttribute('d', `M ${-W},${y.toFixed(2)} L ${W},${y.toFixed(2)} ` +
+                         `L ${W},${(bottom + 4).toFixed(2)} ` +
+                         `L ${-W},${(bottom + 4).toFixed(2)} Z`);
+}
+
+function updateMouthGeometry(mouthBuilt, bend, gap, fill, color) {
     const W = mouthBuilt.W;
 
     // Дуга симметрична относительно точки крепления: уголки уходят вверх,
@@ -2403,6 +2439,10 @@ function updateMouthGeometry(mouthBuilt, bend, gap) {
         `Q 0,${(ctrlY + 2 * gapBottom).toFixed(2)} ${(-W).toFixed(2)},${cornerY.toFixed(2)} Z`;
     mouthBuilt.mouthShape.setAttribute('d', d);
     mouthBuilt.mouthClipShape.setAttribute('d', d);
+
+    // Крайние точки полости: у квадратичной кривой это её середина, то есть
+    // ровно midY ∓ зазор. Отсюда и берётся, докуда наливать.
+    updateMouthLiquid(mouthBuilt, fill, color, midY - gapTop, midY + gapBottom);
 
     if (gap > 2) {
         mouthBuilt.teethGroup.setAttribute('visibility', 'visible');
@@ -3053,7 +3093,8 @@ function buildHeadNode(model, ctx) {
         transform: `translate(${mouthYawX.toFixed(2)},${(ry * MOUTH_Y).toFixed(2)}) scale(${(mouth.scale * mouth.stretchX * mouthYawSquash).toFixed(3)},${(mouth.scale * mouth.stretchY).toFixed(3)})`
     });
     const mouthBuilt = buildMouthShapes(mouthAnchor, mouth, ctx.instanceId);
-    updateMouthGeometry(mouthBuilt, mouthBendFromCurve(mouth.curve), mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
+    updateMouthGeometry(mouthBuilt, mouthBendFromCurve(mouth.curve),
+        mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
 
     // ---------- ГЛАЗА ----------
     const eyesGroup = svgEl('g', { 'data-part': 'eyes' });
@@ -4154,6 +4195,12 @@ const WormRenderer = {
                 bellyScale: null,   // множитель радиуса живота (1 = обычный)
                 mouthOpenness: null, // 0..1 — подменяет head.mouth.openness
                 mouthCurve: null,    // подменяет head.mouth.curve
+                // Жидкость во рту: 0..1 — насколько полость налита, и каким
+                // цветом. Часть рта, а не наклейка поверх морды: едет,
+                // размывается и обрезается губами вместе с ним. Пустой рот
+                // прозрачен, так что канал ничего не стоит, пока не нужен.
+                mouthFill: null,
+                mouthFillColor: null,
                 // Анатомические "живые" каналы — устроены ровно так же, как
                 // всё остальное тело: null = брать из модели/оверрайда.
                 // organPulseScale — множитель амплитуды пульсации органов
@@ -5083,7 +5130,8 @@ const WormRenderer = {
                     const curve = liveCurve != null ? liveCurve : mm.head.mouth.curve;
                     const bend = mouthBendFromCurve(curve);
                     const gap = mouthBuiltRef.MAX_GAP * clamp01(openness);
-                    updateMouthGeometry(mouthBuiltRef, bend, gap);
+                    updateMouthGeometry(mouthBuiltRef, bend, gap,
+                        state.livePose.mouthFill, state.livePose.mouthFillColor);
                 }
 
                 // ---------- МИМИКА ГОЛОВЫ ----------
