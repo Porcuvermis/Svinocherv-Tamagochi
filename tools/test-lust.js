@@ -92,23 +92,45 @@ const { chromium } = require('playwright');
      `${soapMoves} движений`);
   const nodesAfterSoap = await nodesNow();
 
-  // Мыло обязано лежать ТОЛЬКО на черве. Проверка буквальная: сравниваем
-  // пиксели следа с маской силуэта. Первая версия рисовала след фигурами в
-  // svg, и намыливалась вся вода вокруг тела.
+  // Мыло обязано лежать НА ЧЕРВЕ. Проверка буквальная: сравниваем пиксели
+  // следа с маской силуэта. Первая версия рисовала след фигурами в svg, и
+  // намыливалась вся вода вокруг тела.
+  //
+  // Но и НОЛЬ снаружи — тоже неправда. Пузырь выпуклый: у кромки тела
+  // половина его честно торчит наружу, и обрезка всего следа силуэтом
+  // давала пене идеально ровную дугу по контуру червя. Поэтому проверяется
+  // не «ни точки снаружи», а КАЙМА: доля снаружи мелкая, и ни одна точка не
+  // отходит от силуэта дальше пузыря.
   const spill = await page.evaluate(() => {
     const L = LustMinigame;
     const c = document.getElementById('bt-wash');
     const f = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     const m = L.mask.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const W = c.width;
     let out = 0, on = 0;
-    for (let i = 3; i < f.length; i += 4) {
+    const bb = (o) => o;
+    let fx0 = 1e9, fy0 = 1e9, fx1 = -1e9, fy1 = -1e9;
+    let mx0 = 1e9, my0 = 1e9, mx1 = -1e9, my1 = -1e9;
+    for (let i = 3, p = 0; i < f.length; i += 4, p++) {
+      const x = p % W, y = (p / W) | 0;
+      if (m[i] > 0) {
+        if (x < mx0) mx0 = x; if (x > mx1) mx1 = x;
+        if (y < my0) my0 = y; if (y > my1) my1 = y;
+      }
       if (f[i] < 8) continue;
+      if (x < fx0) fx0 = x; if (x > fx1) fx1 = x;
+      if (y < fy0) fy0 = y; if (y > fy1) fy1 = y;
       if (m[i] > 0) on++; else out++;
     }
-    return { out, on };
+    return { out, on,
+             over: Math.max(mx0 - fx0, fx1 - mx1, my0 - fy0, fy1 - my1) };
   });
   ok(spill.on > 1000, 'мыло легло на тело', `${spill.on} точек`);
-  ok(spill.out === 0, 'мимо тела не намылено', `${spill.out} точек мимо`);
+  ok(spill.out / (spill.on + spill.out) < 0.08,
+     'за силуэт вылезает только кайма пены',
+     `${(spill.out / (spill.on + spill.out) * 100).toFixed(1)}% точек снаружи`);
+  ok(spill.over <= 34, 'кайма не дальше одного пузыря от тела',
+     `${spill.over} точек холста`);
 
   const clothMoves = await scrub('cloth', 8);
   // Мочалка НЕ обязана быть длиннее мыла — она обязана быть НЕ КОРОЧЕ и

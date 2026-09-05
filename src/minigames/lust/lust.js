@@ -497,13 +497,26 @@ const LustMinigame = {
             const cut = (this.visibleLine() - box.y) * (B.h / box.h) * S;
             g.clearRect(0, Math.max(0, cut), c.width, c.height);
             this.mask = c;
+            // Альфа маски снимается ОДИН РАЗ и живёт рядом: по ней потом
+            // проверяется, стоит ли центр пузыря на теле. Маска за этап не
+            // меняется, а getImageData на каждую перерисовку следа — это
+            // мегабайт чтения по десятку раз в секунду.
+            this.maskAlpha = null;
+            try {
+                const d = g.getImageData(0, 0, c.width, c.height).data;
+                const a = new Uint8Array(c.width * c.height);
+                for (let i = 0, j = 0; j < a.length; i += 4, j++) a[j] = d[i + 3];
+                this.maskAlpha = a;
+            } catch (e) { /* холст запачкан — обойдёмся без проверки */ }
             // Коробка покрытия выводится ИЗ МАСКИ, значит её кэш обязан
             // сброситься здесь: до этой строки маски не было и коробка
             // считалась по запасному варианту.
             this._cover = null;
             this.buildCells();
         };
-        img.onerror = () => { this.mask = null; this.buildCells(); };
+        img.onerror = () => {
+            this.mask = null; this.maskAlpha = null; this.buildCells();
+        };
         img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     },
 
@@ -646,31 +659,62 @@ const LustMinigame = {
         const r = Math.max(cw, ch) * 0.78 * k;
         const cloth = this.phase === 'cloth';
 
+        // ДВА ПРОХОДА, и разница между ними — обрезка силуэтом.
+        //
+        // Подложка — это плёнка НА КОЖЕ: она обязана кончаться там же, где
+        // кончается червь. Пузырь — предмет, лежащий на коже: он выпуклый,
+        // и у края тела половина его честно торчит наружу. Пока обрезалось
+        // всё разом, пена кончалась идеально ровной дугой по контуру червя,
+        // а крайние пузыри стояли аккуратными полукружиями — так пена не
+        // выглядит нигде.
+        //
+        // Наружу пузырь может уехать только НЕМНОГО: сажают его по клетке, а
+        // клетки живут строго на теле (cellOn). Дальше своего радиуса край
+        // не уйдёт, и получается ровно то, что нужно, — мохнатая кромка.
+        // Стоит ли точка холста на теле. Нужна пузырям: сажают их по клетке,
+        // а клетка крупная, и центр большого пузыря может уехать за силуэт —
+        // тогда он повиснет в воздухе отдельным колечком.
+        const W = this.mask ? this.mask.width : 0;
+        const H = this.mask ? this.mask.height : 0;
+        const A = this.maskAlpha;
+        const inside = A ? (px, py) => {
+            const i = Math.round(px), j = Math.round(py);
+            if (i < 0 || j < 0 || i >= W || j >= H) return false;
+            return A[j * W + i] > 0;
+        } : null;
+
+        const paint = (part) => {
+            for (let j = 0; j < G.ny; j++) {
+                for (let i = 0; i < G.nx; i++) {
+                    const idx = j * G.nx + i;
+                    if (this.cellOn && !this.cellOn[idx]) continue;
+                    const rubs = this.cells[idx] || 0;
+                    const filmed = cloth ? (this.filmCells && this.filmCells[idx])
+                                         : rubs > 0;
+                    if (!rubs && !filmed) continue;
+                    const x = (b.x + (i + 0.5) * cw - box.x) * k;
+                    const y = (b.y + (j + 0.5) * ch - box.y) * k;
+                    // На этапе мочалки клетка сначала показывает муть, а тёрки
+                    // проступают поверх неё яркой пеной — тем и видно разницу.
+                    if (filmed)
+                        BATH_ART.washCell(ctx, 'soap', x, y, r, 1,
+                                          idx * 7 + 3, part, inside);
+                    if (cloth && rubs)
+                        BATH_ART.washCell(ctx, 'cloth', x, y, r, rubs / need,
+                                          idx * 13 + 91, part, inside);
+                }
+            }
+        };
+
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, B.w * S, B.h * S);
-        for (let j = 0; j < G.ny; j++) {
-            for (let i = 0; i < G.nx; i++) {
-                const idx = j * G.nx + i;
-                if (this.cellOn && !this.cellOn[idx]) continue;
-                const rubs = this.cells[idx] || 0;
-                const filmed = cloth ? (this.filmCells && this.filmCells[idx])
-                                     : rubs > 0;
-                if (!rubs && !filmed) continue;
-                const x = (b.x + (i + 0.5) * cw - box.x) * k;
-                const y = (b.y + (j + 0.5) * ch - box.y) * k;
-                // На этапе мочалки клетка сначала показывает муть, а тёрки
-                // проступают поверх неё яркой пеной — тем и видно разницу.
-                if (filmed) BATH_ART.washCell(ctx, 'soap', x, y, r, 1, idx * 7 + 3);
-                if (cloth && rubs)
-                    BATH_ART.washCell(ctx, 'cloth', x, y, r, rubs / need,
-                                      idx * 13 + 91);
-            }
-        }
+        paint('base');
         if (this.mask) {
             ctx.globalCompositeOperation = 'destination-in';
             ctx.drawImage(this.mask, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
         }
+        paint('foam');
     },
 
     wipeLather() {

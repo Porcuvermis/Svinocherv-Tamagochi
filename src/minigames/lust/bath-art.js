@@ -289,7 +289,13 @@ const BATH_ART = {
     //
     // Раскладка выводится из СИДА клетки: пена перерисовывается на каждый
     // мазок, и случайные числа заставили бы её мигать.
-    washCell(ctx, kind, x, y, cell, t, seed) {
+    // part: 'base' — только подложка (её обрезают силуэтом),
+    //       'foam' — только пузыри (их НЕ обрезают),
+    //       не задан — и то и другое разом.
+    // inside(x, y) — необязательная проверка «точка на теле»: пузырь, чей
+    // ЦЕНТР за силуэтом, не рисуется вовсе. Край при этом торчать наружу
+    // может и должен — пузырь выпуклый, у кромки тела половина его снаружи.
+    washCell(ctx, kind, x, y, cell, t, seed, part, inside) {
         const cloth = kind === 'cloth';
         const c = btPal()[cloth ? 'foam' : 'soapFilm'];
         const rng = btRng(seed);
@@ -311,15 +317,32 @@ const BATH_ART = {
         // кожу, и намыленный червь читается обсыпанным, а не намыленным.
         // Слабая заливка по клетке закрывает эти просветы, не съедая
         // пузыри: они всё равно ярче и с краем.
-        ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : 0.16;
-        ctx.fillStyle = c[500];
-        ctx.beginPath();
-        ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
+        if (part !== 'foam') {
+            ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : 0.16;
+            ctx.fillStyle = c[500];
+            ctx.beginPath();
+            ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
+        }
+        if (part === 'base') { ctx.globalAlpha = 1; return; }
         for (let i = 0; i < n; i++) {
             const r = (small + Math.pow(rng(), 2.1) * (big - small)) * spread;
             const a = rng() * Math.PI * 2;
             const d = Math.pow(rng(), 0.6) * cell * 0.72 * spread;
             const bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
+            // Пузырь садится на тело, а не цепляется за него краем: мало
+            // того, что центр на силуэте, — половина пузыря обязана лежать
+            // на нём же. Без второго условия крупный пузырь, чей центр попал
+            // на кончик уха, висел в воздухе отдельным кольцом.
+            if (inside) {
+                if (!inside(bx, by)) continue;
+                const q = r * 0.7;
+                let n2 = 0;
+                if (inside(bx - q, by)) n2++;
+                if (inside(bx + q, by)) n2++;
+                if (inside(bx, by - q)) n2++;
+                if (inside(bx, by + q)) n2++;
+                if (n2 < 2) continue;
+            }
             ctx.globalAlpha = A;
             ctx.fillStyle = c[500];
             ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
