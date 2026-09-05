@@ -417,7 +417,8 @@ const LustMinigame = {
             bellyScale: belly,
             // Всё остальное — начисто. null значит «решает модель».
             eyelidLevel: 0, eyeSmile: null, browRaise: null,
-            mouthOpenness: null, mouthCurve: null,
+            mouthOpenness: null, mouthCurve: null, earTilt: null,
+            breathAmp: null, breathSpeed: null,
             mouthFill: 0, headTilt: null, tailBendAngle: 0
         });
         this.mouthFill = 0;
@@ -526,8 +527,7 @@ const LustMinigame = {
         // она читает getScreenCTM и габарит контейнера, то есть дёргает
         // раскладку страницы.
         this._wormT = t;
-        this.wormHost.style.transform = this.breathY
-            ? `${t} translate(0px, ${this.breathY.toFixed(2)}px)` : t;
+        this.wormHost.style.transform = t;
 
         // Дождю нужны те же две величины, что уже посчитаны для червя:
         // сколько экранных точек в единице сцены и где на экране верх струи.
@@ -1543,44 +1543,43 @@ const LustMinigame = {
         this.settleRaf = requestAnimationFrame(wait);
     },
 
-    // Тяжёлое дыхание. Живот раздувается тем же живым каналом, что и в
-    // чревоугодии, — но ОДНОГО живота мало: в ванне он под бортом, и его
-    // почти не видно. Дышит поэтому вся фигура сразу, четырьмя разными
-    // способами в одной волне:
-    //   тело подаётся вверх и опадает — это и читается вдохом;
-    //   живот набухает — то, что видно из-под борта;
-    //   рот приоткрывается шире на вдохе;
-    //   веки приподнимаются на вдохе, уши опадают на выдохе.
-    // Каждое по отдельности слабое, вместе — тяжёлое дыхание.
+    // Тяжёлое дыхание. Дышит ТЕЛО, а не червь целиком: сегменты набухают и
+    // опадают на месте.
+    //
+    // Первая версия качала всю фигуру по вертикали — и червь читался не
+    // дышащим, а качающимся на волнах. Дыхание не двигает существо с места:
+    // оно меняет ОБЪЁМ, и только его.
+    //
+    // Раздувание идёт собственным механизмом рендерера (WORM_BREATH_RATIO:
+    // живот сильнее всех, за ним второй сегмент, потом первый), просто с
+    // размахом втрое больше обычного. Заводить своё было бы вторым способом
+    // делать то же самое.
+    //
+    // Морда идёт ТОЙ ЖЕ волной, и это половина эффекта: на вдохе шире открыт
+    // рот и приподняты веки, на выдохе опадают уши. По одному телу дыхание
+    // читается бурлением в кишках, а не усталостью.
+    PANT_HZ: 0.8,        // вдохов в секунду: глубоко, а не часто
+    PANT_AMP: 0.14,      // размах вдоха, доля радиуса (обычный — 0.035)
+
     startPanting() {
         const t0 = performance.now();
         const step = (now) => {
+            // Та же однополярная волна и та же частота, что у рендерера, —
+            // иначе морда дышала бы отдельно от тела.
             const t = (now - t0) / 1000;
-            // Полтора вдоха в секунду — частота загнанного, а не спящего.
-            const w = Math.sin(t * Math.PI * 1.5);
+            const w = (1 - Math.cos(t * this.PANT_HZ * Math.PI * 2)) / 2;
             if (this.wormHandle && this.wormHandle.setLivePose) {
                 this.wormHandle.setLivePose({
-                    bellyScale: 1 + 0.16 * w,
-                    mouthOpenness: 0.55 + 0.3 * w,
-                    eyelidLevel: this.LID_MAX * (1 - 0.35 * w),
-                    earTilt: 10 - 8 * w
+                    breathAmp: this.PANT_AMP,
+                    breathSpeed: this.PANT_HZ,
+                    mouthOpenness: 0.45 + 0.4 * w,
+                    eyelidLevel: this.LID_MAX * (1 - 0.4 * w),
+                    earTilt: 12 - 12 * w
                 });
             }
-            this.setBreath(-5 * w);
             this.pantRaf = requestAnimationFrame(step);
         };
         this.pantRaf = requestAnimationFrame(step);
-    },
-
-    // Сдвиг всей фигуры по вертикали. Подмешивается к готовой строке
-    // раскладки, а не пересчитывает её: пересчёт читает getScreenCTM и
-    // габарит контейнера — то есть дёргает раскладку страницы каждый кадр.
-    setBreath(dy) {
-        this.breathY = dy;
-        if (this.wormHost && this._wormT) {
-            this.wormHost.style.transform = dy
-                ? `${this._wormT} translate(0px, ${dy.toFixed(2)}px)` : this._wormT;
-        }
     },
 
     // Шаг всех капель. Идёт ФИКСИРОВАННЫМ шагом из конфига, а не длиной
@@ -1666,7 +1665,8 @@ const LustMinigame = {
     // Поэтому гасится оно не в stopClocks, а на входе и выходе из игры.
     stopPanting() {
         if (this.pantRaf) { cancelAnimationFrame(this.pantRaf); this.pantRaf = 0; }
-        this.setBreath(0);
+        if (this.wormHandle && this.wormHandle.setLivePose)
+            this.wormHandle.setLivePose({ breathAmp: null, breathSpeed: null });
     },
 
     stopClocks() {

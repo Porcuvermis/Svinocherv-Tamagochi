@@ -4218,6 +4218,13 @@ const WormRenderer = {
                 // что прищур сверху и снизу читаются совершенно по-разному.
                 eyeSmile: null,
                 bellyScale: null,   // множитель радиуса живота (1 = обычный)
+                // Дыхание: размах вдоха (доля радиуса) и его частота (Гц).
+                // null = собственное дыхание персонажа, еле заметное и
+                // только при idleWave. Заданный размах включает дыхание
+                // независимо от idleWave — телу надо дышать и когда оно
+                // лежит смирно.
+                breathAmp: null,
+                breathSpeed: null,
                 mouthOpenness: null, // 0..1 — подменяет head.mouth.openness
                 mouthCurve: null,    // подменяет head.mouth.curve
                 // Жидкость во рту: 0..1 — насколько полость налита, и каким
@@ -4926,6 +4933,11 @@ const WormRenderer = {
                 let lastGrowLocal = null;
                 const lastGrowingName = mm.growingSegments.length ? `growing-${mm.growingSegments.length}` : null;
                 let breathWave = 0;
+                // Размах вдоха. Собственное дыхание персонажа еле заметно
+                // (3.5% радиуса) — это фон жизни, а не действие. Мини-игра
+                // может попросить размах побольше через livePose.breathAmp.
+                const breathAmp = state.livePose.breathAmp != null
+                    ? state.livePose.breathAmp : WORM_BREATH_AMP;
 
                 // Круги единого силуэта, по порядку цепочки: [0] — якорь
                 // внутри головы (чтобы шея входила в череп без стыка),
@@ -4979,7 +4991,21 @@ const WormRenderer = {
 
                     // Однополярная волна дыхания: стартует с 0 (стандартный
                     // радиус), поднимается до 1 и возвращается к 0.
-                    breathWave = opts.idleWave ? (1 - Math.cos(state.animTime * WORM_BREATH_SPEED)) / 2 : 0;
+                    //
+                    // Живой канал (breathAmp/breathSpeed) ПЕРЕБИВАЕТ собственное
+                    // дыхание персонажа: мини-игре бывает нужно не ровное
+                    // сопение, а тяжёлые вдохи после работы. Часы у него свои
+                    // и стартуют с нуля, поэтому дыхание всегда начинается с
+                    // выдоха, а не с середины чужой волны.
+                    if (state.livePose.breathAmp != null) {
+                        state.breathClock = (state.breathClock || 0)
+                            + dtSec * (state.livePose.breathSpeed || 1);
+                        breathWave = (1 - Math.cos(state.breathClock * Math.PI * 2)) / 2;
+                    } else {
+                        state.breathClock = 0;
+                        breathWave = opts.idleWave
+                            ? (1 - Math.cos(state.animTime * WORM_BREATH_SPEED)) / 2 : 0;
+                    }
 
                     state.built.segments.forEach(seg => {
                         if (seg.idx > bellyIdx) return;
@@ -4989,7 +5015,7 @@ const WormRenderer = {
                         hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor };
                         const breathRatio = WORM_BREATH_RATIO[seg.name];
                         if (breathRatio != null) {
-                            const breathFactor = 1 + breathWave * WORM_BREATH_AMP * breathRatio;
+                            const breathFactor = 1 + breathWave * breathAmp * breathRatio;
                             hullCircles[seg.idx].r = seg.baseRx * breathFactor;
                             seg.ellipse.setAttribute('rx', (seg.baseRx * breathFactor).toFixed(2));
                             seg.ellipse.setAttribute('ry', (seg.baseRy * breathFactor).toFixed(2));
@@ -5079,7 +5105,7 @@ const WormRenderer = {
                 if (bellySeg) {
                     // Дыхание живота умножается на bellyFactor (раздутие из
                     // мини-игр через livePose.bellyScale), а не заменяет его.
-                    const bellyBreathFactor = 1 + breathWave * WORM_BREATH_AMP * (WORM_BREATH_RATIO.belly || 0);
+                    const bellyBreathFactor = 1 + breathWave * breathAmp * (WORM_BREATH_RATIO.belly || 0);
                     const effectiveBellyFactor = bellyFactor * bellyBreathFactor;
                     const newRx = bellySeg.baseRx * effectiveBellyFactor;
                     const newRy = bellySeg.baseRy * effectiveBellyFactor;
