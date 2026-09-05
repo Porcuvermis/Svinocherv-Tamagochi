@@ -2665,8 +2665,21 @@ function buildHeadNode(model, ctx) {
     // наклон (livePose.headTilt) поворачивал голову целиком вокруг основания
     // шеи, а не каждую деталь по отдельности.
     const group = svgEl('g', { 'data-part': 'head' });
+    // Зеркало головы — ОТДЕЛЬНОЙ обёрткой между group и tiltGroup, и это не
+    // придирка: transform у group переписывает покачивание (idleWave), у
+    // tiltGroup — наклон головы. Обе крутятся каждый кадр, и зеркало на
+    // любой из них жило бы ровно до первого кадра.
+    //
+    // Отражение вокруг СОБСТВЕННОГО нуля головы: там же сидит и шея, и
+    // ось рта, поэтому голова разворачивается на месте, а не съезжает с
+    // тела. Меняются местами ровно те черты, которые и должны, — выступ
+    // пятачка, переднее ухо, блики в глазах.
+    const flipGroup = ctx.headFlip
+        ? svgEl('g', { 'data-part': 'head-face', transform: 'scale(-1,1)' })
+        : null;
     const tiltGroup = svgEl('g', { 'data-part': 'head-tilt' });
-    group.appendChild(tiltGroup);
+    if (flipGroup) { group.appendChild(flipGroup); flipGroup.appendChild(tiltGroup); }
+    else group.appendChild(tiltGroup);
 
     const R = 40 * head.scale;
     const rx = R * head.stretchX;
@@ -3778,7 +3791,7 @@ function updateBodyHull(built, circles) {
     }
 }
 
-function buildWormSVGGroup(model, instanceId) {
+function buildWormSVGGroup(model, instanceId, headFlip) {
     const root = svgEl('g', { class: 'worm-root' });
 
     // Общий <defs> на весь инстанс персонажа — сюда складываются все
@@ -3796,7 +3809,11 @@ function buildWormSVGGroup(model, instanceId) {
                   // база для отражённого света: тёплый оттенок самой кожи,
                   // а не производная от тёмного контура (иначе кайма выходит
                   // грязно-бежевой и читается как ореол, а не как свет)
-                  rimBaseColor: model.belly.fill };
+                  rimBaseColor: model.belly.fill,
+                  // Голова смотрит в другую сторону. Зеркалится ТОЛЬКО она:
+                  // тело остаётся как есть, потому что от того, куда червь
+                  // повернул морду, туша под водой не переезжает.
+                  headFlip: !!headFlip };
 
     // Порядок цепочки от головы к хвосту: 2 фикс. сегмента, живот, N
     // растущих сегментов, хвост.
@@ -4025,6 +4042,10 @@ const WormRenderer = {
             // Зеркалит всю модельку по горизонтали — цепочка тела тогда
             // растёт вправо от головы, а не влево.
             flip: false,
+            // Развернуть ТОЛЬКО голову (морда смотрит в другую сторону), не
+            // трогая тело. Не то же, что flip: тот зеркалит фигуру целиком
+            // вместе с посадкой тела и хвостом.
+            headFlip: false,
             // false — тело неподвижно застыло в базовой позе (нужно для
             // сцен, где персонаж лежит смирно, например кормление).
             idleWave: true,
@@ -4535,7 +4556,7 @@ const WormRenderer = {
         function rebuild() {
             const m = mergedModel();
             while (charLayer.firstChild) charLayer.removeChild(charLayer.firstChild);
-            state.built = buildWormSVGGroup(m, instanceId);
+            state.built = buildWormSVGGroup(m, instanceId, opts.headFlip);
             charLayer.appendChild(state.built.root);
             state.built.root.setAttribute('transform', rootTransform());
             // Тело пересобрано — прежние габариты недействительны, границы
