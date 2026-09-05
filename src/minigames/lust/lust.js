@@ -156,6 +156,14 @@ const LustMinigame = {
         // (комментарий в index.html).
         this.camRainEls = [document.getElementById('bt-cam-rain-far'),
                            document.getElementById('bt-cam-rain-near')];
+        // Пары «неподвижная обёртка — едущий холст». Обёртке задаётся
+        // обрезка верха, холсту — на сколько ехать и за сколько.
+        this.rainLayers = [
+            { clip: document.getElementById('bt-rain-far'),
+              step: BATH_ART.RAIN.step.far, dur: BATH_ART.RAIN.dur.far },
+            { clip: document.getElementById('bt-rain-near'),
+              step: BATH_ART.RAIN.step.near, dur: BATH_ART.RAIN.dur.near }
+        ];
         this.fgEl = document.getElementById('bt-fg');
         this.wormHost = document.getElementById('bt-worm');
         if (!this.svgEl || !this.backEl) return;
@@ -203,6 +211,7 @@ const LustMinigame = {
         this.shotsLeft = 0;
         this.setOpacity('bt-rain-far', 0);
         this.setOpacity('bt-rain-near', 0);
+        this.setOpacity('bt-rain-veil', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
         this.stopPanting();
@@ -519,12 +528,35 @@ const LustMinigame = {
         this._wormT = t;
         this.wormHost.style.transform = this.breathY
             ? `${t} translate(0px, ${this.breathY.toFixed(2)}px)` : t;
+
+        // Дождю нужны те же две величины, что уже посчитаны для червя:
+        // сколько экранных точек в единице сцены и где на экране верх струи.
+        // Считать их отдельно значило бы второй раз за кадр дёрнуть
+        // раскладку страницы.
+        this.layoutRain((c.x - a.x) / 100 || 1);
         // Обрезки НЕТ. Прямая линия среза по уровню воды читалась ровно тем,
         // чем была, — обрезанным персонажем. Нижнюю половину прячет сама
         // чаша: она рисуется в переднем холсте, поверх слоя червя.
         // Холст мытья — в тех же единицах, значит и преобразование то же.
         const w = this.el('bt-wash');
         if (w) w.style.transform = t;
+    },
+
+    // Обрезка верха и длина хода — в экранных точках, поэтому пересчитываются
+    // при каждом переезде камеры. Обрезка стоит на НЕПОДВИЖНОЙ обёртке: на
+    // едущем холсте она поехала бы вместе с ним (css применяет обрезку до
+    // трансформации).
+    layoutRain(pxPerScene) {
+        if (!this.rainLayers) return;
+        const top = this.sceneToHost({ x: 0, y: BATH_ART.RAIN.top }).y;
+        for (const L of this.rainLayers) {
+            if (!L.clip) continue;
+            L.clip.style.setProperty('--rt', `${Math.max(0, top).toFixed(1)}px`);
+            const mv = L.clip.firstElementChild;
+            if (!mv) continue;
+            mv.style.setProperty('--rp', `${(L.step * pxPerScene).toFixed(2)}px`);
+            mv.style.setProperty('--rd', `${L.dur}s`);
+        }
     },
 
     // ---------- МАСКА СИЛУЭТА ----------
@@ -903,6 +935,7 @@ const LustMinigame = {
         this.ready(null);
         this.setOpacity('bt-rain-far', 1);
         this.setOpacity('bt-rain-near', 1);
+        this.setOpacity('bt-rain-veil', 1);
         // Наезд ОДНОВРЕМЕННО с водой и ПЛАВНЫЙ: игра начинается с общего
         // плана, где видно всю комнату, и камера сама подъезжает к участку,
         // на котором идёт работа. Скачок читался сменой сцены — как будто
@@ -1494,6 +1527,7 @@ const LustMinigame = {
         // тяжело дышит.
         this.setOpacity('bt-rain-far', 0);
         this.setOpacity('bt-rain-near', 0);
+        this.setOpacity('bt-rain-veil', 0);
         this.relaxTail();
         this.startPanting();
         const t0 = performance.now();

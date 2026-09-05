@@ -78,34 +78,49 @@
    на этот шаг: стык не виден, а таймеров в js нет ни одного (инвариант 1).
    Анимация — на transform, то есть на композиторе: сотня струек не стоит
    ни одного пересчёта раскладки. */
-#lust-game #bt-rain-far,
-#lust-game #bt-rain-near {
+
+
+/* ---------- ДОЖДЬ: ОДИН УЗОР, КОТОРЫЙ ЕДЕТ ЦЕЛИКОМ ----------
+   Обёртка НЕПОДВИЖНА и только обрезает верх: css-обрезка применяется ДО
+   трансформации, поэтому на едущем элементе она поехала бы вместе с ним.
+   Снизу обрезать нечего — там всё закрывает чаша.
+
+   Едет сам холст, одной анимацией на всю плоскость. Узор периодичен с шагом
+   --rp: проехав его, картинка совпадает сама с собой. Холст растрируется
+   один раз, дальше видеокарта двигает готовую текстуру — ни отрисовки, ни
+   пересчёта стиля (подробности в index.html). */
+/* Вуаль живёт в комнате и гаснет вместе со струями. */
+#lust-game #bt-rain-veil {
     transition: opacity 0.5s ease;
 }
 
-/* Холсты дождя — СВОИ СЛОИ КОМПОЗИТОРА. will-change здесь не «на всякий
-   случай»: без него бесконечная анимация струек метит грязной всю область
-   экрана, и браузер перерисовывает вместе с ней всю запечённую комнату —
-   две тысячи узлов — каждый кадр. Замер: Paint втрое меньше, кадров в
-   полтора раза больше (подробности в index.html). */
-#lust-game .bt-rain-layer {
+#lust-game .bt-rain-clip {
+    position: absolute;
+    inset: 0;
     pointer-events: none;
-    will-change: transform;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    clip-path: inset(var(--rt, 0px) 0 0 0);
 }
 
-@keyframes bt-drip {
+#lust-game .bt-rain-move {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+    animation: bt-rain var(--rd, 0.7s) linear infinite;
+}
+
+@keyframes bt-rain {
     from { transform: translateY(0); }
-    to   { transform: translateY(var(--p)); }
-}
-
-#lust-game .bt-drip {
-    animation: bt-drip var(--d, 0.7s) linear infinite;
-    will-change: transform;
+    to   { transform: translateY(var(--rp, 0px)); }
 }
 
 /* Кто не любит движения — тому вода просто висит струями. */
 @media (prefers-reduced-motion: reduce) {
-    #lust-game .bt-drip { animation: none; }
+    #lust-game .bt-rain-move { animation: none; }
 }
 
 /* ---------- СЛЕДЫ НА ТЕЛЕ ---------- */
