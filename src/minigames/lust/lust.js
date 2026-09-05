@@ -207,9 +207,6 @@ const LustMinigame = {
         // меряет его размер один раз, при монтаже.
         this.setCamera('overview');
         this.mountWorm();
-        // Рот пуст. Канал живой и переживает закрытие мини-игры: без явного
-        // сброса червь входит в следующий забег с лужицей от прошлого.
-        this.setMouthFill(0);
     },
 
     close() {
@@ -348,6 +345,7 @@ const LustMinigame = {
         } else {
             this.wormHandle.update(window.WormModelAPI.loadWormModel());
         }
+        this.applyCondition();
         this.layoutWorm();
         // Габарит червя мерится ПОСЛЕ первого кадра рендерера. На монтаже
         // цепочка ещё не расставлена — все сегменты стоят в нуле, и getBBox
@@ -360,6 +358,46 @@ const LustMinigame = {
             this.layoutWorm();
             this.buildMask();
         }));
+    },
+
+    // ---------- ЧЕРВЬ ПРИХОДИТ КАКОЙ ЕСТЬ ----------
+    // Мини-игра монтирует СВОЙ экземпляр персонажа, и всё, что главный экран
+    // навешивает на своего, здесь не появляется само: обесцвечивание от
+    // истощения и худоба — это не модель, а живые каналы поверх неё
+    // (worm.js, WormMood). Без них червь в ванне выходил бодрым и розовым,
+    // даже когда снаружи он серый и отощавший, — то есть игрок видел не
+    // своего червя, а образцового.
+    //
+    // Модель при этом уже настоящая: отметины, живот, взросление приходят
+    // из loadWormModel(). Здесь добавляется только самочувствие.
+    //
+    // МОРДУ САМОЧУВСТВИЕ НЕ ТРОГАЕТ. Мимика грусти опускает веки, а в этой
+    // мини-игре веки — рабочий указатель: они опускаются по ходу
+    // поглаживания. Начинать надо с ПОЛНОСТЬЮ открытых, иначе у грустного
+    // червя указателю некуда двигаться. Заодно это сброс: свой экземпляр
+    // переживает закрытие мини-игры, и после пройденного забега червь
+    // открывал её с полуприкрытыми глазами и открытым ртом от прошлого раза.
+    applyCondition() {
+        const h = this.wormHandle;
+        if (!h || !h.setLivePose) return;
+        let sat = 1, belly = 1;
+        if (typeof WormCondition !== 'undefined'
+            && typeof GameState !== 'undefined' && GameState.data) {
+            if (WormCondition.dead()) { sat = 0.06; belly = 1 - ECONOMY.condition.witherThin; }
+            else {
+                const w = WormCondition.wither(WormCondition.mood());
+                sat = w.saturation; belly = w.belly;
+            }
+        }
+        if (h.setWither) h.setWither(sat);
+        h.setLivePose({
+            bellyScale: belly,
+            // Всё остальное — начисто. null значит «решает модель».
+            eyelidLevel: 0, eyeSmile: null, browRaise: null,
+            mouthOpenness: null, mouthCurve: null,
+            mouthFill: 0, headTilt: null, tailBendAngle: 0
+        });
+        this.mouthFill = 0;
     },
 
     // Слой червя ездит вместе с камерой ОДНОЙ ТРАНСФОРМАЦИЕЙ, а размер
