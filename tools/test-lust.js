@@ -311,7 +311,13 @@ const { chromium } = require('playwright');
   // сойтись с той, по которой считан баланс в tools/sim-lust.js.
   const shotInfo = await page.evaluate(() => {
     const L = LustMinigame, C = L.cfg(), t = C.tiers[0];
+    // Геометрию меряем при ПОЛНОМ хвосте: забег уже кончился, и хвост к
+    // этому моменту опадает обратно к исходному размеру. Стрелял он
+    // налитым — по нему и считается.
+    const keep = L.charge;
+    L.charge = 1;
     const s = L.tipState(L.bendAim), m = L.mouthPoint();
+    L.charge = keep;
     let hit = 0, N = 4000;
     for (let i = 0; i < N; i++) {
       const v = LustShot.launch(C, t, s.dir);

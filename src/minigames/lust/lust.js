@@ -199,6 +199,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-front', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
+        this.blurFar(0, 0);
         this.showTools(true);
         this.ready('shower');
 
@@ -388,6 +389,10 @@ const LustMinigame = {
     // Раскладка задаётся ДВУМЯ этими числами, а не долей холста персонажа:
     // доля не знает, где у него голова и где кончается тело, и подгонялась
     // вслепую — над бортом оставалась одна морда, а мылить давали только её.
+    // Глубже этого веки не опускаются НИКОГДА. Полностью прикрытые глаза
+    // выключают морду, а именно ей червь и играет в финале.
+    LID_MAX: 0.5,
+
     WORM_HEAD_TOP: 400,   // куда встаёт макушка, координаты сцены
     WORM_SHOW: 0.78,      // какая доля червя обязана быть выше борта
 
@@ -944,6 +949,7 @@ const LustMinigame = {
         // смена того, на что смотрят.
         this.setCamera('tail', 1000);
         this.wormHost.classList.add('bt-soft');
+        this.blurFar(2.6, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
         // и работает (блаженство, открытый рот).
@@ -958,21 +964,37 @@ const LustMinigame = {
         this.drawTail();
         this.setOpacity('bt-tail', 1);
 
-        // Всплытие ПОД ГОРКОЙ ПЕНЫ: она уже стоит на этом месте и закрывает
-        // хвост целиком. Видеть, как хвост «материализуется», игрок не
-        // должен — он должен разобрать пену и обнаружить его там.
+        // НИКАКОГО ВСПЛЫТИЯ. Хвост просто оказывается на своём месте — под
+        // горкой пены, которая его целиком закрывает. Раньше он выезжал
+        // снизу, и это было видно: сначала кончик показывался из-за борта,
+        // потом подъезжал к пене и прятался под ней. Появление, которое
+        // прячут, не нужно анимировать — его нужно не показывать.
         const g = this.el('bt-tail');
-        const t0 = performance.now(), DUR = 1100;
-        const step = (t) => {
-            const k = Math.min(1, (t - t0) / DUR);
-            const e = 1 - Math.pow(1 - k, 3);
-            g.setAttribute('transform',
-                `translate(0 ${((1 - e) * BATH_ART.TAIL.len * 0.95).toFixed(1)})`);
-            if (k < 1) { this.fillRaf = requestAnimationFrame(step); return; }
-            this.fillRaf = 0;
-            this.spawnBubbles();
+        g.removeAttribute('transform');
+        this.spawnBubbles();
+    },
+
+    // Размытие ДАЛЬНЕГО плана. Стена с плиткой стоит дальше всех, значит и
+    // мылится сильнее всех — из этого и берётся глубина кадра. Пока размыт
+    // был один червь, резкая плитка спорила с ним и тянула взгляд на себя.
+    //
+    // Ставится в svg-фильтр, а не в css: css filter не действует на
+    // внутренние элементы svg в WebKit, и на айфоне размытия бы не было
+    // вовсе (та же грабля, что у фильтра истощения в worm-renderer).
+    blurFar(to, ms) {
+        const n = this.el('bt-far-blur-amount');
+        if (!n) return;
+        cancelAnimationFrame(this.blurRaf || 0);
+        const from = parseFloat(n.getAttribute('stdDeviation')) || 0;
+        if (!ms) { n.setAttribute('stdDeviation', String(to)); return; }
+        const t0 = performance.now();
+        const step = (now) => {
+            const k = Math.min(1, (now - t0) / ms);
+            n.setAttribute('stdDeviation',
+                (from + (to - from) * k * k * (3 - 2 * k)).toFixed(2));
+            this.blurRaf = k < 1 ? requestAnimationFrame(step) : 0;
         };
-        this.fillRaf = requestAnimationFrame(step);
+        this.blurRaf = requestAnimationFrame(step);
     },
 
     // ---------- ГОРКА ПЕНЫ ----------
@@ -999,6 +1021,12 @@ const LustMinigame = {
             this.pile.push({
                 x: A.tail.x + (Math.random() - 0.5) * 2 * half,
                 y: A.tail.y - t * this.pileH - 4,
+                // Порядок ПОЯВЛЕНИЯ — по высоте, снизу вверх: пена не
+                // возникает в воздухе, она нарастает от борта ванны, комок
+                // на комок. Порядок ОТРИСОВКИ другой (крупные первыми), и
+                // путать их нельзя: иначе мелкий тонет под соседним крупным
+                // и по нему нечем попасть.
+                ord: i,
                 // Мельче прежних (было 4…15): хвост стал вдвое короче, и
                 // старый калибр закрывал его целиком. Попадать по ним от
                 // размера не зависит — зона срабатывания общая (popReach).
@@ -1006,8 +1034,6 @@ const LustMinigame = {
                 alive: true, seed: i * 37 + 5
             });
         }
-        // Крупные рисуются ПЕРВЫМИ, мелкие поверх: иначе мелкий тонет под
-        // соседним крупным и по нему нечем попасть.
         this.pile.sort((a, b) => b.r - a.r);
         this.pileShow(0);
     },
@@ -1020,7 +1046,7 @@ const LustMinigame = {
             A.tail.x, A.tail.y, this.pileW, this.pileH, g, this.pileSeed);
         const upto = Math.round(g * this.pile.length);
         this.el('bt-bubbles').innerHTML = this.pile
-            .filter((b, i) => i < upto && b.alive)
+            .filter(b => b.ord < upto && b.alive)
             .map(b => BATH_ART.bubble(b.x, b.y, b.r, b.seed)).join('');
     },
 
@@ -1070,7 +1096,6 @@ const LustMinigame = {
         this.el('bt-bubbles').innerHTML = '';
         this.rubLast = performance.now();
         this.rubMoved = this.rubLast;
-        this.rubLids = -1;
         const tick = (now) => {
             const dt = Math.min(0.05, (now - this.rubLast) / 1000);
             this.rubLast = now;
@@ -1083,14 +1108,18 @@ const LustMinigame = {
             this.drawTail();
             this.drawRubGauge();
             // Веки опускаются ВМЕСТЕ с наливом: тот же прогресс, сказанный
-            // мордой. Обновляется только на заметном шаге — setLivePose
-            // перерисовывает персонажа.
-            const lids = Math.round((0.25 + this.charge * 0.7) * 12) / 12;
-            if (lids !== this.rubLids && this.wormHandle
-                && this.wormHandle.setLivePose) {
-                this.rubLids = lids;
-                this.wormHandle.setLivePose({ mouthOpenness: 0.3 + this.charge * 0.3,
-                                              eyelidLevel: lids });
+            // мордой. Каждый кадр и без ступеней: setLivePose только кладёт
+            // числа в живой канал, а применяет их тот же кадровый цикл
+            // рендерера — округлять было не за чем, а ступени на веках
+            // видно.
+            //
+            // Глубже ПОЛОВИНЫ веки не опускаются. Зажмуренный червь теряет
+            // морду: в финале он ловит струю ртом, и по прикрытым глазам
+            // читается блаженство, а по закрытым — что он спит.
+            if (this.wormHandle && this.wormHandle.setLivePose) {
+                this.wormHandle.setLivePose({
+                    mouthOpenness: 0.3 + this.charge * 0.3,
+                    eyelidLevel: this.LID_MAX * (0.5 + this.charge * 0.5) });
             }
             if (this.charge >= 1) { this.rubRaf = 0; this.startFinale(); return; }
             this.rubRaf = requestAnimationFrame(tick);
@@ -1268,8 +1297,11 @@ const LustMinigame = {
 
         // Блаженство: рот открыт, глаза зажмурены. Сказано позой, а не
         // подписью (инвариант 9).
+        // Веки остаются там же, где их оставило поглаживание: этап другой,
+        // а состояние то же. Скачок до зажмуренных читался сменой сцены.
         if (this.wormHandle && this.wormHandle.setLivePose)
-            this.wormHandle.setLivePose({ mouthOpenness: 0.75, eyelidLevel: 0.9 });
+            this.wormHandle.setLivePose({ mouthOpenness: 0.75,
+                                          eyelidLevel: this.LID_MAX });
 
         // Прицел пересчитывается: камера переехала, а рот берётся у
         // нарисованного червя.
@@ -1445,6 +1477,8 @@ const LustMinigame = {
         if (this.aimRaf) { cancelAnimationFrame(this.aimRaf); this.aimRaf = 0; }
         if (this.camRaf) { cancelAnimationFrame(this.camRaf); this.camRaf = 0; }
         if (this.rubRaf) { cancelAnimationFrame(this.rubRaf); this.rubRaf = 0; }
+        if (this.blurRaf) { cancelAnimationFrame(this.blurRaf); this.blurRaf = 0; }
+        if (this.relaxRaf) { cancelAnimationFrame(this.relaxRaf); this.relaxRaf = 0; }
         clearTimeout(this.shotTimer); this.shotTimer = 0;
         this.clearHint();
     },
@@ -1452,6 +1486,7 @@ const LustMinigame = {
     done() {
         this.phase = 'done';
         this.stopClocks();
+        this.relaxTail();
         const C = this.cfg();
         const sections = Math.min(C.sections || 3,
             Math.floor(this.hits / (C.perSection || 2)));
@@ -1461,6 +1496,26 @@ const LustMinigame = {
             sin: 'lust', mode: 'bath', outcome: 'win',
             meta: { hits: this.hits, sections, shots: C.shots || 10 }
         });
+    },
+
+    // Забег кончился — хвост опадает: сдувается до исходного размера и
+    // выпрямляется. Замерший в согнутом положении налитый хвост читался
+    // зависшей игрой: всё остановилось, а он всё ещё стоит под нагрузкой.
+    //
+    // Заряд и изгиб — те же два числа, что рисуют хвост весь забег, так что
+    // ничего особенного тут нет: их просто ведут к нулю.
+    relaxTail() {
+        const from = this.charge, bend0 = this.bend, DUR = 900;
+        const t0 = performance.now();
+        const step = (now) => {
+            const k = Math.min(1, (now - t0) / DUR);
+            const e = 1 - Math.pow(1 - k, 3);
+            this.charge = from * (1 - e);
+            this.bend = bend0 * (1 - e);
+            this.drawTail();
+            this.relaxRaf = k < 1 ? requestAnimationFrame(step) : 0;
+        };
+        this.relaxRaf = requestAnimationFrame(step);
     }
 };
 
