@@ -53,6 +53,7 @@ const GameManager = {
         this.updateUI(true);
         this.setupEvents();
         this.listenMinigames();
+        this.watchMinigameScreens();
         this.startUiClock();
 
         if (typeof initWorm === 'function') {
@@ -237,6 +238,35 @@ const GameManager = {
                     this.updateUI();
                 });
         });
+    },
+
+    // ---------- КОМНАТА ПОД ОТКРЫТОЙ МИНИ-ИГРОЙ ----------
+    // Персонаж главного экрана — самая дорогая вещь на экране: семьсот узлов,
+    // и каждый кадр по ним проходит вся анимация. Под открытой мини-игрой он
+    // не виден, но продолжает считать кадры: рендерер этого не ловит, потому
+    // что по всем признакам сцена видима — её просто накрыли непрозрачным
+    // окном.
+    //
+    // Умели гасить его ровно две игры из семи — те, что вызывали
+    // MinigameWindow.pauseRoom() руками. Остальные пять грузили процессор
+    // вторым червём даром: в зависти на нём одном уходило 127 мс из трёх
+    // секунд, и это при том, что там своя трёхмерная сцена.
+    //
+    // Наблюдатель, а не вызовы в каждой игре: закрываются они все по-разному
+    // (у шести свои окна), а признак один — класс active на экране. Так
+    // ничего нельзя забыть добавить в новой мини-игре.
+    watchMinigameScreens() {
+        const screens = document.querySelectorAll('.minigame-screen');
+        if (!screens.length) return;
+        const sync = () => {
+            const busy = document.querySelector('.minigame-screen.active');
+            const h = window.MainWormHandle;
+            if (h && typeof h.setPaused === 'function') h.setPaused(!!busy);
+        };
+        const obs = new MutationObserver(sync);
+        screens.forEach(n => obs.observe(n, { attributes: true,
+                                              attributeFilter: ['class'] }));
+        sync();
     },
 
     // ---------- ЭКРАНЫ ----------

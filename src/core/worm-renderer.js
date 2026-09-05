@@ -519,7 +519,7 @@ function buildRoom(layer, g, locationKey) {
     const poly = (pts, fill, opacity) => {
         const d = 'M ' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L ') + ' Z';
         const el = svgEl('path', { d, fill });
-        if (opacity != null) el.setAttribute('opacity', opacity);
+        if (opacity != null) setAttr(el, 'opacity', opacity);
         layer.appendChild(el);
         return el;
     };
@@ -697,10 +697,32 @@ function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 
 let wormInstanceCounter = 0;
 
+// ---------- ЗАПИСЬ АТРИБУТА, КОТОРАЯ ЧТО-ТО МЕНЯЕТ ----------
+// В svg установка атрибута — это не «положить число»: она метит геометрию
+// грязной, и браузер пересчитывает её заново, даже если значение то же
+// самое. А оно то же самое чаще всего: замер по живой игре показал, что
+// ТРИ ЧЕТВЕРТИ всех записей за кадр (в тщеславии — четыре пятых) пишут ровно
+// то, что уже стоит. Пятнадцать тысяч холостых записей за три секунды.
+//
+// Кэш висит на самом узле, а не в общей таблице: узлы создаются и выкидываются
+// вместе с персонажем, и общая таблица их бы пережила.
+//
+// Условие одно и оно жёсткое: атрибуты этих узлов НИКТО не пишет мимо
+// setAttr — иначе кэш разойдётся с деревом. Внутри рендерера так и есть,
+// снаружи в его узлы никто не пишет (мини-игры читают части и меняют позу
+// живым каналом).
+function setAttr(el, name, value) {
+    const v = String(value);
+    const cache = el.__wattr || (el.__wattr = Object.create(null));
+    if (cache[name] === v) return;
+    cache[name] = v;
+    Element.prototype.setAttribute.call(el, name, v);
+}
+
 function svgEl(tag, attrs) {
     const el = document.createElementNS(SVG_NS, tag);
     if (attrs) {
-        Object.keys(attrs).forEach(key => el.setAttribute(key, attrs[key]));
+        Object.keys(attrs).forEach(key => setAttr(el, key, attrs[key]));
     }
     return el;
 }
@@ -1188,8 +1210,8 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
             cx: (-rx * 0.08).toFixed(1), cy: (ry * 0.12).toFixed(1),
             rx: 0, ry: 0, fill: mixColor(color, BILE[400], 0.5), opacity: 0.85
         });
-        content.setAttribute('data-full-rx', (rx * 0.52).toFixed(1));
-        content.setAttribute('data-full-ry', (ry * 0.46).toFixed(1));
+        setAttr(content, 'data-full-rx', (rx * 0.52).toFixed(1));
+        setAttr(content, 'data-full-ry', (ry * 0.46).toFixed(1));
         group.appendChild(content);
 
         // Складки на своде — стенка желудка не гладкий шар.
@@ -1258,7 +1280,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
         }
     }
 
-    group.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(plan.rot || 0).toFixed(1)})`);
+    setAttr(group, 'transform', `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(plan.rot || 0).toFixed(1)})`);
     return {
         group, x, y, rot: plan.rot || 0, kind: plan.kind,
         speedMul: plan.speedMul || 1, ampMul: plan.ampMul || 1, phase: plan.phase || 0
@@ -1994,7 +2016,7 @@ function buildTailNode(tail, ctx, attachRadius) {
         coat: { rings: true }
     });
     if (anat) {
-        anat.group.setAttribute('transform', `translate(${(-L * 0.5).toFixed(1)},0)`);
+        setAttr(anat.group, 'transform', `translate(${(-L * 0.5).toFixed(1)},0)`);
         bendGroup.appendChild(anat.group);
     }
 
@@ -2408,15 +2430,15 @@ function updateMouthLiquid(mouthBuilt, fill, color, top, bottom) {
     if (!el) return;
     const k = Math.max(0, Math.min(1, fill || 0));
     if (k <= 0.001 || bottom - top <= 0.5) {
-        el.setAttribute('opacity', '0');
-        el.setAttribute('d', '');
+        setAttr(el, 'opacity', '0');
+        setAttr(el, 'd', '');
         return;
     }
     const W = mouthBuilt.W + 4;
     const y = bottom - k * (bottom - top);
-    el.setAttribute('fill', color || '#ffffff');
-    el.setAttribute('opacity', '1');
-    el.setAttribute('d', `M ${-W},${y.toFixed(2)} L ${W},${y.toFixed(2)} ` +
+    setAttr(el, 'fill', color || '#ffffff');
+    setAttr(el, 'opacity', '1');
+    setAttr(el, 'd', `M ${-W},${y.toFixed(2)} L ${W},${y.toFixed(2)} ` +
                          `L ${W},${(bottom + 4).toFixed(2)} ` +
                          `L ${-W},${(bottom + 4).toFixed(2)} Z`);
 }
@@ -2437,15 +2459,15 @@ function updateMouthGeometry(mouthBuilt, bend, gap, fill, color) {
     const d = `M ${(-W).toFixed(2)},${cornerY.toFixed(2)} ` +
         `Q 0,${(ctrlY - 2 * gapTop).toFixed(2)} ${W.toFixed(2)},${cornerY.toFixed(2)} ` +
         `Q 0,${(ctrlY + 2 * gapBottom).toFixed(2)} ${(-W).toFixed(2)},${cornerY.toFixed(2)} Z`;
-    mouthBuilt.mouthShape.setAttribute('d', d);
-    mouthBuilt.mouthClipShape.setAttribute('d', d);
+    setAttr(mouthBuilt.mouthShape, 'd', d);
+    setAttr(mouthBuilt.mouthClipShape, 'd', d);
 
     // Крайние точки полости: у квадратичной кривой это её середина, то есть
     // ровно midY ∓ зазор. Отсюда и берётся, докуда наливать.
     updateMouthLiquid(mouthBuilt, fill, color, midY - gapTop, midY + gapBottom);
 
     if (gap > 2) {
-        mouthBuilt.teethGroup.setAttribute('visibility', 'visible');
+        setAttr(mouthBuilt.teethGroup, 'visibility', 'visible');
         // Зубы растут от ВЕРХНЕЙ ГУБЫ, а она теперь изогнута — значит и
         // посадка каждого зуба считается по кривой, а не по одной высоте на
         // всех. Иначе крайние зубы висят в воздухе, а средние тонут в губе.
@@ -2457,13 +2479,13 @@ function updateMouthGeometry(mouthBuilt, bend, gap, fill, color) {
                          s * s * cornerY;
             const toothH = Math.min(gap * 0.85, t.hBase);
             const topY = lipY + 1;
-            t.el.setAttribute('d',
+            setAttr(t.el, 'd',
                 `M ${(t.tx - t.tw / 2).toFixed(1)},${topY.toFixed(1)} ` +
                 `L ${(t.tx + t.tw / 2 + t.jitter).toFixed(1)},${topY.toFixed(1)} ` +
                 `L ${(t.tx + t.jitter * 0.4).toFixed(1)},${(topY + toothH).toFixed(1)} Z`);
         });
     } else {
-        mouthBuilt.teethGroup.setAttribute('visibility', 'hidden');
+        setAttr(mouthBuilt.teethGroup, 'visibility', 'hidden');
     }
 }
 
@@ -3192,8 +3214,8 @@ function applyHeadYaw(headRef, yaw) {
     // Она короткая (шесть кривых), в отличие от пути кишечного тракта.
     if (headRef.skull) {
         const d = skullPathData(rx, ry, headRef.skullCfg, yaw);
-        headRef.skull.setAttribute('d', d);
-        if (headRef.skullClipShape) headRef.skullClipShape.setAttribute('d', d);
+        setAttr(headRef.skull, 'd', d);
+        if (headRef.skullClipShape) setAttr(headRef.skullClipShape, 'd', d);
     }
 
     // Глаза: посадка по поверхности + ракурсное сжатие через scale группы.
@@ -3205,7 +3227,7 @@ function applyHeadYaw(headRef, yaw) {
         const squash = Math.max(0.58, Math.abs(proj.squash));
         const limit = Math.max(0, maxAbsX - e.baseRx * squash * 1.12);
         const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), limit);
-        e.group.setAttribute('transform',
+        setAttr(e.group, 'transform',
             `translate(${x.toFixed(2)},${e.offsetY}) scale(${squash.toFixed(3)},1)`);
     });
 
@@ -3221,7 +3243,7 @@ function applyHeadYaw(headRef, yaw) {
         // Разворот наружу тоже зависит от ракурса — ухо, вставшее ребром,
         // подбирается за голову вместо того, чтобы торчать вбок.
         ear.baseAngle = ear.baseTilt * (1 - EAR_EDGE_STRAIGHTEN * place.edge) + ear.ownRotation;
-        ear.group.setAttribute('transform',
+        setAttr(ear.group, 'transform',
             `translate(${ear.anchorX.toFixed(2)},${ear.anchorY.toFixed(2)}) ` +
             `rotate(${ear.baseAngle.toFixed(1)}) ` +
             `scale(${ear.scaleX.toFixed(3)},${ear.scaleY.toFixed(3)})`);
@@ -3246,7 +3268,7 @@ function applyHeadYaw(headRef, yaw) {
         headRef.mouthX = Math.sign(mp.x) * Math.min(Math.abs(mp.x), maxX);
         headRef.mouthSquash = Math.max(0.62, Math.abs(mp.squash));
         const mo = headRef.mouthBaseScale || { x: 1, y: 1 };
-        headRef.mouthAnchor.setAttribute('transform',
+        setAttr(headRef.mouthAnchor, 'transform',
             `translate(${headRef.mouthX.toFixed(2)},${(ry * MOUTH_Y).toFixed(2)}) ` +
             `scale(${(mo.x * headRef.mouthSquash).toFixed(3)},${mo.y.toFixed(3)})`);
     }
@@ -3264,7 +3286,7 @@ function applyMuzzleTransform(headRef) {
     const parts = [];
     if (Math.abs(x) > 0.01) parts.push(`translate(${x.toFixed(2)},0)`);
     if (puff > 0.001) parts.push(`scale(${(1 + 0.12 * puff).toFixed(3)},${(1 + 0.05 * puff).toFixed(3)})`);
-    headRef.muzzleShift.setAttribute('transform', parts.join(' '));
+    setAttr(headRef.muzzleShift, 'transform', parts.join(' '));
 }
 
 // ---------- ШРАМЫ ----------
@@ -3669,7 +3691,7 @@ function createGutTract(ctx, thinByIdx) {
     });
     if (maskCircles.length) {
         ctx.defs.appendChild(mask);
-        group.setAttribute('mask', `url(#${maskId})`);
+        setAttr(group, 'mask', `url(#${maskId})`);
     }
     // Отдельного узла-тени нет намеренно: строка пути тракта длинная (~3 КБ),
     // и переставлять её дважды за кадр — самая дорогая операция во всём
@@ -3707,10 +3729,10 @@ function updateBodyHull(built, circles) {
     for (let i = 0; i < hull.outlineCircles.length; i++) {
         const c = circles[i];
         const oc = hull.outlineCircles[i], cc = hull.clipCircles[i], rc = hull.rimCircles[i];
-        if (!c || !(c.r > 0)) { oc.setAttribute('r', 0); cc.setAttribute('r', 0); rc.setAttribute('r', 0); continue; }
-        oc.setAttribute('cx', c.x.toFixed(1)); oc.setAttribute('cy', c.y.toFixed(1)); oc.setAttribute('r', (c.r + W).toFixed(1));
-        rc.setAttribute('cx', c.x.toFixed(1)); rc.setAttribute('cy', c.y.toFixed(1)); rc.setAttribute('r', (c.r + W * 0.45).toFixed(1));
-        cc.setAttribute('cx', c.x.toFixed(1)); cc.setAttribute('cy', c.y.toFixed(1)); cc.setAttribute('r', c.r.toFixed(1));
+        if (!c || !(c.r > 0)) { setAttr(oc, 'r', 0); setAttr(cc, 'r', 0); setAttr(rc, 'r', 0); continue; }
+        setAttr(oc, 'cx', c.x.toFixed(1)); setAttr(oc, 'cy', c.y.toFixed(1)); setAttr(oc, 'r', (c.r + W).toFixed(1));
+        setAttr(rc, 'cx', c.x.toFixed(1)); setAttr(rc, 'cy', c.y.toFixed(1)); setAttr(rc, 'r', (c.r + W * 0.45).toFixed(1));
+        setAttr(cc, 'cx', c.x.toFixed(1)); setAttr(cc, 'cy', c.y.toFixed(1)); setAttr(cc, 'r', c.r.toFixed(1));
     }
 
     // Маска кишечного тракта ходит вместе с телом: круги стоят на тех же
@@ -3722,12 +3744,12 @@ function updateBodyHull(built, circles) {
             const c = circles[i];
             const mc = gutMask[i];
             if (!mc) continue;
-            if (!c || !(c.r > 0)) { mc.setAttribute('r', 0); continue; }
-            mc.setAttribute('cx', c.x.toFixed(1));
-            mc.setAttribute('cy', c.y.toFixed(1));
+            if (!c || !(c.r > 0)) { setAttr(mc, 'r', 0); continue; }
+            setAttr(mc, 'cx', c.x.toFixed(1));
+            setAttr(mc, 'cy', c.y.toFixed(1));
             // Чуть шире звена: соседние круги должны перекрываться, иначе на
             // стыках появятся тёмные перехваты — кишка будет «пунктиром».
-            mc.setAttribute('r', (c.r * 1.5).toFixed(1));
+            setAttr(mc, 'r', (c.r * 1.5).toFixed(1));
         }
     }
 
@@ -3735,7 +3757,7 @@ function updateBodyHull(built, circles) {
         const a = circles[i], b = circles[i + 1];
         const ob = hull.outlineBridges[i], cb = hull.clipBridges[i], bs = hull.bridgeShapes[i], rb = hull.rimBridges[i];
         if (!a || !b || !(a.r > 0) || !(b.r > 0)) {
-            ob.setAttribute('d', ''); cb.setAttribute('d', ''); bs.setAttribute('d', ''); rb.setAttribute('d', '');
+            setAttr(ob, 'd', ''); setAttr(cb, 'd', ''); setAttr(bs, 'd', ''); setAttr(rb, 'd', '');
             continue;
         }
         // ТАЛИЯ: мост уже соседних кругов. Без неё тело превращается в ровную
@@ -3743,14 +3765,14 @@ function updateBodyHull(built, circles) {
         // вздутия, и силуэт выглядит надувным матрасом. Отрицательный отступ и
         // есть та самая перетяжка между секциями.
         const waist = -Math.min(a.r, b.r) * WORM_HULL_WAIST_RATIO;
-        ob.setAttribute('d', bridgeQuadPath(a, b, waist + W));
-        rb.setAttribute('d', bridgeQuadPath(a, b, waist + W * 0.45));
+        setAttr(ob, 'd', bridgeQuadPath(a, b, waist + W));
+        setAttr(rb, 'd', bridgeQuadPath(a, b, waist + W * 0.45));
         const plain = bridgeQuadPath(a, b, waist);
-        cb.setAttribute('d', plain);
-        bs.setAttribute('d', plain);
+        setAttr(cb, 'd', plain);
+        setAttr(bs, 'd', plain);
         // Цвет моста — среднее между соседями, поэтому переход тона по телу
         // остаётся непрерывным и промежуток не выглядит "заплаткой".
-        if (a.color && b.color) bs.setAttribute('fill', mixColor(a.color, b.color, 0.5));
+        if (a.color && b.color) setAttr(bs, 'fill', mixColor(a.color, b.color, 0.5));
     }
 
     // Перетяжки: ставятся в точку касания соседних кругов и разворачиваются
@@ -3758,8 +3780,8 @@ function updateBodyHull(built, circles) {
     for (let i = 0; i < rings.rings.length; i++) {
         const a = circles[i + 1], b = circles[i + 2];
         const r = rings.rings[i];
-        if (!a || !b || !(a.r > 0) || !(b.r > 0)) { r.g.setAttribute('opacity', 0); continue; }
-        r.g.setAttribute('opacity', 1);
+        if (!a || !b || !(a.r > 0) || !(b.r > 0)) { setAttr(r.g, 'opacity', 0); continue; }
+        setAttr(r.g, 'opacity', 1);
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.hypot(dx, dy) || 1;
         const t = (a.r + (dist - a.r - b.r) * 0.5) / dist; // середина перекрытия
@@ -3767,11 +3789,11 @@ function updateBodyHull(built, circles) {
         const deg = Math.atan2(dy, dx) * 180 / Math.PI;
         const half = Math.min(a.r, b.r) * (1 - WORM_HULL_WAIST_RATIO) * 1.06;
         const w = Math.max(2.4, half * 0.26);
-        r.shade.setAttribute('ry', half.toFixed(1)); r.shade.setAttribute('rx', w.toFixed(1));
-        r.light.setAttribute('ry', (half * 0.96).toFixed(1)); r.light.setAttribute('rx', (w * 0.6).toFixed(1));
-        r.light.setAttribute('cx', (w * 1.15).toFixed(1));
-        r.crease.setAttribute('ry', (half * 0.99).toFixed(1)); r.crease.setAttribute('rx', Math.max(1.2, w * 0.42).toFixed(1));
-        r.g.setAttribute('transform', `translate(${px.toFixed(1)},${py.toFixed(1)}) rotate(${deg.toFixed(1)})`);
+        setAttr(r.shade, 'ry', half.toFixed(1)); setAttr(r.shade, 'rx', w.toFixed(1));
+        setAttr(r.light, 'ry', (half * 0.96).toFixed(1)); setAttr(r.light, 'rx', (w * 0.6).toFixed(1));
+        setAttr(r.light, 'cx', (w * 1.15).toFixed(1));
+        setAttr(r.crease, 'ry', (half * 0.99).toFixed(1)); setAttr(r.crease, 'rx', Math.max(1.2, w * 0.42).toFixed(1));
+        setAttr(r.g, 'transform', `translate(${px.toFixed(1)},${py.toFixed(1)}) rotate(${deg.toFixed(1)})`);
     }
 
     // Тень на полу — по нижнему краю напольной части.
@@ -3783,10 +3805,10 @@ function updateBodyHull(built, circles) {
             bottom = Math.max(bottom, c.y + c.r);
         });
         if (minX < maxX) {
-            built.floorShadow.setAttribute('cx', ((minX + maxX) / 2).toFixed(1));
-            built.floorShadow.setAttribute('cy', (bottom + 4).toFixed(1));
-            built.floorShadow.setAttribute('rx', ((maxX - minX) / 2 + 10).toFixed(1));
-            built.floorShadow.setAttribute('ry', '11');
+            setAttr(built.floorShadow, 'cx', ((minX + maxX) / 2).toFixed(1));
+            setAttr(built.floorShadow, 'cy', (bottom + 4).toFixed(1));
+            setAttr(built.floorShadow, 'rx', ((maxX - minX) / 2 + 10).toFixed(1));
+            setAttr(built.floorShadow, 'ry', '11');
         }
     }
 }
@@ -4046,10 +4068,15 @@ const WormRenderer = {
             // трогая тело. Не то же, что flip: тот зеркалит фигуру целиком
             // вместе с посадкой тела и хвостом.
             headFlip: false,
-            // Ограничить частоту пересчёта персонажа (Гц). 0 — как получится,
-            // то есть каждый кадр. Ставится там, где персонаж почти не
-            // движется: он самая дорогая вещь на экране.
-            frameHz: 0,
+            // Частота пересчёта персонажа (Гц). По умолчанию ТРИДЦАТЬ, а не
+            // «сколько получится»: персонаж — самая дорогая вещь на экране
+            // (семьсот узлов, и каждый кадр по ним проходит вся анимация), а
+            // разницы между шестьюдесятью пересчётами в секунду и тридцатью
+            // на нём не видно. Сцена при этом рисуется, сколько может.
+            //
+            // 0 снимает ограничение. Мини-игра может попросить и меньше: в
+            // ванне персонаж вообще стоит смирно, там двадцать.
+            frameHz: 30,
             // false — тело неподвижно застыло в базовой позе (нужно для
             // сцен, где персонаж лежит смирно, например кормление).
             idleWave: true,
@@ -4276,7 +4303,7 @@ const WormRenderer = {
             // отличается только увеличением.
             const w = Math.max(1, container.clientWidth || container.getBoundingClientRect().width);
             const h = Math.max(1, container.clientHeight || container.getBoundingClientRect().height);
-            svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            setAttr(svg, 'viewBox', `0 0 ${w} ${h}`);
             if (opts.room) {
                 state.room = roomGeometry(w, h);
                 buildRoom(roomLayer, state.room, state.location);
@@ -4295,7 +4322,7 @@ const WormRenderer = {
             // (размер окна изменился — прежний сдвиг мог стать недопустимым).
             if (opts.room && state.room) {
                 setCam(state.camX || (state.wormX - state.room.w / 2));
-                worldLayer.setAttribute('transform', `translate(${(-state.camX).toFixed(1)},0)`);
+                setAttr(worldLayer, 'transform', `translate(${(-state.camX).toFixed(1)},0)`);
             }
         }
 
@@ -4432,7 +4459,7 @@ const WormRenderer = {
             const next = Math.min(Math.max(x, 0), g.panMax);
             if (Math.abs(next - state.camX) < 0.01) return;
             state.camX = next;
-            worldLayer.setAttribute('transform', `translate(${(-next).toFixed(1)},0)`);
+            setAttr(worldLayer, 'transform', `translate(${(-next).toFixed(1)},0)`);
         }
 
         // Слежение за червём с мёртвой зоной. Камера стоит, пока он гуляет по
@@ -4555,12 +4582,20 @@ const WormRenderer = {
         function applyWither() {
             const s = Math.max(0, Math.min(1, state.witherShown));
             const off = s >= 0.995;
-            witherSat.setAttribute('values', s.toFixed(3));
+            setAttr(witherSat, 'values', s.toFixed(3));
             // Вместе с цветом уходит и яркость: обескровленный червь темнеет.
-            witherFuncs.forEach(f => f.setAttribute('slope', (0.72 + s * 0.28).toFixed(3)));
+            witherFuncs.forEach(f => setAttr(f, 'slope', (0.72 + s * 0.28).toFixed(3)));
             [charLayer, slimeLayer].forEach(el => {
-                if (off) el.removeAttribute('filter');
-                else el.setAttribute('filter', `url(#${witherFilterId})`);
+                // Снятие атрибута идёт МИМО setAttr, поэтому его кэш здесь
+                // чистится руками: иначе следующая попытка поставить то же
+                // самое значение будет пропущена как «уже стоит», и фильтр
+                // не вернётся.
+                if (off) {
+                    el.removeAttribute('filter');
+                    if (el.__wattr) delete el.__wattr.filter;
+                } else {
+                    setAttr(el, 'filter', `url(#${witherFilterId})`);
+                }
             });
         }
 
@@ -4569,7 +4604,7 @@ const WormRenderer = {
             while (charLayer.firstChild) charLayer.removeChild(charLayer.firstChild);
             state.built = buildWormSVGGroup(m, instanceId, opts.headFlip);
             charLayer.appendChild(state.built.root);
-            state.built.root.setAttribute('transform', rootTransform());
+            setAttr(state.built.root, 'transform', rootTransform());
             // Тело пересобрано — прежние габариты недействительны, границы
             // выгула пересчитаются по новым.
             state.bodyBox = null;
@@ -4627,7 +4662,7 @@ const WormRenderer = {
             if (Math.hypot(x - last.x, y - last.y) < WORM_SLIME_MIN_STEP) return;
             trail.points.push({ x, y });
             const d = trail.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-            trail.stroke.setAttribute('d', d);
+            setAttr(trail.stroke, 'd', d);
             // Капля свежей слизи — не на каждом шаге и со случайным сносом
             // поперёк следа, иначе капли выстроятся ровной пунктирной линией
             // по центру и получится разметка шоссе, а не слизь.
@@ -4671,7 +4706,7 @@ const WormRenderer = {
                     trail.g.remove();
                     state.slimeTrails.splice(i, 1);
                 } else {
-                    trail.g.setAttribute('opacity', (1 - elapsed / WORM_SLIME_FADE_MS).toFixed(3));
+                    setAttr(trail.g, 'opacity', (1 - elapsed / WORM_SLIME_FADE_MS).toFixed(3));
                 }
             }
         }
@@ -4916,7 +4951,7 @@ const WormRenderer = {
             state.speedIntensity += (speedIntensityTarget - state.speedIntensity) * speedIntensityFactor;
 
             if (state.built) {
-                state.built.root.setAttribute('transform', rootTransform());
+                setAttr(state.built.root, 'transform', rootTransform());
 
                 // Модель читаем один раз за кадр и переиспользуем ниже.
                 const mm = mergedModel();
@@ -4956,28 +4991,28 @@ const WormRenderer = {
                     // ---------- СТАРАЯ РАСКЛАДКА: ОДНА ПРЯМАЯ ЛИНИЯ ----------
                     // Логика не тронута — нужна Чревоугодию.
                     const wave = opts.idleWave ? Math.sin(state.animTime) * 8 : 0;
-                    state.built.head.group.setAttribute('transform', `translate(0,${wave.toFixed(2)})`);
+                    setAttr(state.built.head.group, 'transform', `translate(0,${wave.toFixed(2)})`);
 
                     state.built.segments.forEach(seg => {
                         const extraGap = seg.idx > bellyIdx ? bellyPushGap : 0;
                         const sx = -(seg.idx * WORM_SEGMENT_SPACING + WORM_CHAIN_HEAD_GAP + extraGap);
                         const sy = opts.idleWave ? (Math.sin(state.animTime + seg.idx * 0.6) * 12 + seg.idx * 4) : 0;
-                        seg.group.setAttribute('transform', `translate(${sx.toFixed(1)},${sy.toFixed(1)})`);
+                        setAttr(seg.group, 'transform', `translate(${sx.toFixed(1)},${sy.toFixed(1)})`);
                         hullCircles[seg.idx] = { x: sx, y: sy, r: seg.baseRx, color: seg.fillColor };
                     });
 
                     const tsx = -(state.built.tail.idx * WORM_SEGMENT_SPACING + WORM_CHAIN_HEAD_GAP + bellyPushGap);
                     const tsy = opts.idleWave ? (Math.sin(state.animTime + state.built.tail.idx * 0.6) * 12 + state.built.tail.idx * 4) : 0;
-                    state.built.tail.group.setAttribute('transform', `translate(${tsx.toFixed(1)},${tsy.toFixed(1)})`);
+                    setAttr(state.built.tail.group, 'transform', `translate(${tsx.toFixed(1)},${tsy.toFixed(1)})`);
                     hullCircles[state.built.tail.idx] = {
                         x: tsx, y: tsy, r: state.built.tail.baseRadius, color: mm.tail.fill
                     };
                     if (state.built.tail.bendGroup) {
-                        state.built.tail.bendGroup.setAttribute('transform', `rotate(${state.livePose.tailBendAngle.toFixed(1)})`);
+                        setAttr(state.built.tail.bendGroup, 'transform', `rotate(${state.livePose.tailBendAngle.toFixed(1)})`);
                     }
                 } else {
                     // ---------- "СТОЯЩАЯ" ПОЗА ----------
-                    state.built.head.group.setAttribute('transform', 'translate(0,0)');
+                    setAttr(state.built.head.group, 'transform', 'translate(0,0)');
 
                     const floorY = bellyIdx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
                     // Запоминаем для rootTransform: масштаб по глубине берёт
@@ -5011,20 +5046,20 @@ const WormRenderer = {
                         if (seg.idx > bellyIdx) return;
                         const vy = seg.idx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
                         const vx = spineLeanMag(bellyIdx > 0 ? seg.idx / bellyIdx : 0) * leanDir;
-                        seg.group.setAttribute('transform', `translate(${vx.toFixed(1)},${vy.toFixed(1)})`);
+                        setAttr(seg.group, 'transform', `translate(${vx.toFixed(1)},${vy.toFixed(1)})`);
                         hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor };
                         const breathRatio = WORM_BREATH_RATIO[seg.name];
                         if (breathRatio != null) {
                             const breathFactor = 1 + breathWave * breathAmp * breathRatio;
                             hullCircles[seg.idx].r = seg.baseRx * breathFactor;
-                            seg.ellipse.setAttribute('rx', (seg.baseRx * breathFactor).toFixed(2));
-                            seg.ellipse.setAttribute('ry', (seg.baseRy * breathFactor).toFixed(2));
+                            setAttr(seg.ellipse, 'rx', (seg.baseRx * breathFactor).toFixed(2));
+                            setAttr(seg.ellipse, 'ry', (seg.baseRy * breathFactor).toFixed(2));
                             // Анатомические слои дышат ВМЕСТЕ с сегментом:
                             // одна группа = один setAttribute, вся стопка
                             // слоёв внутри масштабируется автоматически по
                             // SVG-иерархии (тот же принцип, что и у шрамов).
                             if (seg.anat) {
-                                seg.anat.group.setAttribute('transform', `scale(${breathFactor.toFixed(4)})`);
+                                setAttr(seg.anat.group, 'transform', `scale(${breathFactor.toFixed(4)})`);
                             }
                         }
                     });
@@ -5059,7 +5094,7 @@ const WormRenderer = {
                         const linkLength = floorLinkBaseLength(prevRadius, seg.baseRx) + moveStretch;
                         chainX += linkLength * Math.cos(angleRad);
                         chainY += linkLength * Math.sin(angleRad);
-                        seg.group.setAttribute('transform', `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
+                        setAttr(seg.group, 'transform', `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
                         hullCircles[seg.idx] = { x: chainX, y: chainY, r: seg.baseRx, color: seg.fillColor };
                         prevRadius = seg.baseRx;
                         if (seg.name === lastGrowingName) {
@@ -5075,14 +5110,14 @@ const WormRenderer = {
                     const tailLinkLength = floorLinkBaseLength(prevRadius, state.built.tail.baseRadius) + moveStretch;
                     chainX += tailLinkLength * Math.cos(tailAngleRad);
                     chainY += tailLinkLength * Math.sin(tailAngleRad);
-                    state.built.tail.group.setAttribute('transform', `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
+                    setAttr(state.built.tail.group, 'transform', `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
                     hullCircles[state.built.tail.idx] = {
                         x: chainX, y: chainY, r: state.built.tail.baseRadius, color: mm.tail.fill
                     };
                     if (state.built.tail.bendGroup) {
                         const extraWag = opts.idleWave ? Math.sin(state.tailWagPhase + 1.7) * tailExtraWagDeg : 0;
                         const totalRotate = (tailAngleDeg - 180) + extraWag + state.livePose.tailBendAngle;
-                        state.built.tail.bendGroup.setAttribute('transform', `rotate(${totalRotate.toFixed(1)})`);
+                        setAttr(state.built.tail.bendGroup, 'transform', `rotate(${totalRotate.toFixed(1)})`);
                     }
 
                     if (opts.wander) {
@@ -5115,15 +5150,15 @@ const WormRenderer = {
                     // По X живот всегда "растёт вперёд": локальный +X — это
                     // сторона стыка с головным соседом, она остаётся на месте.
                     const cx = -bellyGrowX;
-                    bellySeg.ellipse.setAttribute('rx', newRx.toFixed(2));
-                    bellySeg.ellipse.setAttribute('ry', newRy.toFixed(2));
-                    bellySeg.ellipse.setAttribute('cx', cx.toFixed(2));
-                    bellySeg.ellipse.setAttribute('cy', cy.toFixed(2));
+                    setAttr(bellySeg.ellipse, 'rx', newRx.toFixed(2));
+                    setAttr(bellySeg.ellipse, 'ry', newRy.toFixed(2));
+                    setAttr(bellySeg.ellipse, 'cx', cx.toFixed(2));
+                    setAttr(bellySeg.ellipse, 'cy', cy.toFixed(2));
                     if (bellySeg.shine) {
-                        bellySeg.shine.setAttribute('cx', (cx - newRx * 0.25).toFixed(2));
-                        bellySeg.shine.setAttribute('cy', (cy - newRy * 0.4).toFixed(2));
-                        bellySeg.shine.setAttribute('rx', (newRx * 0.38).toFixed(2));
-                        bellySeg.shine.setAttribute('ry', (newRy * 0.22).toFixed(2));
+                        setAttr(bellySeg.shine, 'cx', (cx - newRx * 0.25).toFixed(2));
+                        setAttr(bellySeg.shine, 'cy', (cy - newRy * 0.4).toFixed(2));
+                        setAttr(bellySeg.shine, 'rx', (newRx * 0.38).toFixed(2));
+                        setAttr(bellySeg.shine, 'ry', (newRy * 0.22).toFixed(2));
                     }
                     // Анатомия живота повторяет ровно ту же трансформацию,
                     // что и его заливка: смещение центра + масштаб. Один
@@ -5131,7 +5166,7 @@ const WormRenderer = {
                     // мышцы, кольца и блики растягиваются вместе с животом
                     // (и, соответственно, честно раздуваются в Чревоугодии).
                     if (bellySeg.anat) {
-                        bellySeg.anat.group.setAttribute('transform',
+                        setAttr(bellySeg.anat.group, 'transform',
                             `translate(${cx.toFixed(2)},${cy.toFixed(2)}) scale(${effectiveBellyFactor.toFixed(4)})`);
                     }
                     // Живот в силуэте — с уже раздутыми размерами и смещённым
@@ -5167,12 +5202,12 @@ const WormRenderer = {
                             wave: cfg.wave, bellyWave: cfg.bellyWave,
                             waveLength: cfg.waveLength, loopDensity: cfg.loopDensity
                         });
-                        state.built.gutTract.tube.setAttribute('d', geom.ribbon);
-                        state.built.gutTract.coreLine.setAttribute('d', geom.core);
+                        setAttr(state.built.gutTract.tube, 'd', geom.ribbon);
+                        setAttr(state.built.gutTract.coreLine, 'd', geom.core);
                         state.built.gutTract.corePts = geom.corePts;
                         const liveVis = state.livePose.organVisibility;
                         const baseVis = liveVis != null ? liveVis : (organs.visibility != null ? organs.visibility : 0.6);
-                        state.built.gutTract.group.setAttribute('opacity',
+                        setAttr(state.built.gutTract.group, 'opacity',
                             clamp01(baseVis * (cfg.visibility != null ? cfg.visibility : 0.85)).toFixed(3));
                     }
                 }
@@ -5200,7 +5235,7 @@ const WormRenderer = {
                                 // своя манера, а не общий мигающий scale.
                                 const sx = o.kind === 'gut' ? (1 - a * 0.35) : (1 + a);
                                 const sy = 1 + a;
-                                o.group.setAttribute('transform',
+                                setAttr(o.group, 'transform',
                                     `translate(${o.x.toFixed(1)},${o.y.toFixed(1)}) rotate(${o.rot.toFixed(1)}) scale(${sx.toFixed(4)},${sy.toFixed(4)})`);
                             });
                         }
@@ -5294,7 +5329,7 @@ const WormRenderer = {
                     // Наклон головы — вокруг основания шеи, а не центра черепа:
                     // иначе голова "съезжает" с тела.
                     const tilt = state.livePose.headTilt != null ? state.livePose.headTilt : 0;
-                    headRef.tiltGroup.setAttribute('transform',
+                    setAttr(headRef.tiltGroup, 'transform',
                         tilt ? `rotate(${tilt.toFixed(2)} 0 ${(headRef.ry * 1.15).toFixed(1)})` : '');
 
                     // Уши.
@@ -5308,7 +5343,7 @@ const WormRenderer = {
                         else if (common != null) extra = common;
                         else if (side === twitchSide) extra = -14 * earImpulse * earIdleAmt;
                         const mirror = side === 'left' ? -1 : 1;
-                        ref.group.setAttribute('transform',
+                        setAttr(ref.group, 'transform',
                             `translate(${ref.anchorX.toFixed(2)},${ref.anchorY.toFixed(2)}) ` +
                             `rotate(${(ref.baseAngle + extra * mirror).toFixed(2)}) ` +
                             `scale(${ref.scaleX.toFixed(3)},${ref.scaleY.toFixed(3)})`);
@@ -5325,7 +5360,7 @@ const WormRenderer = {
                         // Ракурс входит сюда множителем: tick переписывает
                         // трансформ целиком, и без него поворот пятачка
                         // терялся бы через кадр после сборки.
-                        headRef.snoutGroup.setAttribute('transform',
+                        setAttr(headRef.snoutGroup, 'transform',
                             `translate(${(headRef.snoutX || 0).toFixed(2)},${(headRef.snoutY - 1.6 * twitch).toFixed(2)}) ` +
                             `scale(${(sx * (headRef.snoutSquash != null ? headRef.snoutSquash : 1)).toFixed(3)},${sy.toFixed(3)})`);
                     }
@@ -5337,7 +5372,7 @@ const WormRenderer = {
                             ? clamp01(state.livePose.mouthOpenness)
                             : clamp01(mm.head.mouth.openness || 0);
                         const drop = state.livePose.jawDrop != null ? clamp01(state.livePose.jawDrop) : openness;
-                        headRef.jawShift.setAttribute('transform', `translate(0,${(drop * 5).toFixed(2)})`);
+                        setAttr(headRef.jawShift, 'transform', `translate(0,${(drop * 5).toFixed(2)})`);
                     }
 
                     // Щёки: надуваются (полный рот) — брыли расходятся в стороны.
@@ -5356,7 +5391,7 @@ const WormRenderer = {
                         if (eyeRef.gazeGroup) {
                             const dx = (gx != null ? gx : 0) * eyeRef.rx * 0.34;
                             const dy = (gy != null ? gy : 0) * eyeRef.ry * 0.34;
-                            eyeRef.gazeGroup.setAttribute('transform',
+                            setAttr(eyeRef.gazeGroup, 'transform',
                                 (dx || dy) ? `translate(${dx.toFixed(2)},${dy.toFixed(2)})` : '');
                         }
                         if (browRaise != null && eyeRef.browGroup) {
@@ -5364,7 +5399,7 @@ const WormRenderer = {
                             const mirror = side === 'left' ? -1 : 1;
                             const lift = -browRaise * 4;
                             const angle = eyeModel.brow.angle * mirror - browRaise * 6 * mirror;
-                            eyeRef.browGroup.setAttribute('transform',
+                            setAttr(eyeRef.browGroup, 'transform',
                                 `translate(0,${(-eyeRef.ry - 7 + lift).toFixed(2)}) rotate(${angle.toFixed(2)})`);
                         }
                     });
@@ -5391,14 +5426,14 @@ const WormRenderer = {
                         const level = Math.max(restLevel, blinkLevel);
                         const travel = 2 * eyeRef.ry + 5;
                         const ty = -travel * (1 - level);
-                        eyeRef.lidTrack.setAttribute('transform', `translate(0,${ty.toFixed(2)})`);
+                        setAttr(eyeRef.lidTrack, 'transform', `translate(0,${ty.toFixed(2)})`);
 
                         // Нижнее веко. При моргании убирается: щека не может
                         // держать глаз поджатым, пока он закрывается сверху,
                         // и наложение двух шторок дало бы схлопывание в щель.
                         if (eyeRef.smileTrack) {
                             const smile = clamp01(state.livePose.eyeSmile || 0) * (1 - blinkLevel);
-                            eyeRef.smileTrack.setAttribute('transform',
+                            setAttr(eyeRef.smileTrack, 'transform',
                                 `translate(0,${(eyeRef.smileTravel * (1 - smile)).toFixed(2)})`);
                         }
                     });
@@ -5422,7 +5457,7 @@ const WormRenderer = {
                 rebuild();
             },
             setPose(name) {
-                svg.setAttribute('data-pose', name || '');
+                setAttr(svg, 'data-pose', name || '');
             },
             // Повернуть голову в именованную позу: 'left' | 'center' | 'right'.
             // Голова доедет туда сама, за кадры — без пересборки SVG.
@@ -5469,7 +5504,7 @@ const WormRenderer = {
                         const thin = partName && m.anatomy
                             ? anatThinness(m.anatomy, partName, (m.growingSegments || []).length) : 1;
                         const vis = patch.organVisibility != null ? patch.organVisibility : base;
-                        layers[i].setAttribute('opacity', clamp01(vis * thin).toFixed(3));
+                        setAttr(layers[i], 'opacity', clamp01(vis * thin).toFixed(3));
                     }
                 }
             },
@@ -5512,7 +5547,7 @@ const WormRenderer = {
                 state.wormY = y;
                 state.targetX = x;
                 state.targetY = y;
-                if (state.built) state.built.root.setAttribute('transform', rootTransform());
+                if (state.built) setAttr(state.built.root, 'transform', rootTransform());
             },
             getPosition() {
                 return { x: state.wormX, y: state.wormY };
@@ -5582,7 +5617,7 @@ const WormRenderer = {
                     }
                     tract.foodNodes.forEach((node, i) => {
                         const b = list[i];
-                        if (!b || pts.length < 2) { node.setAttribute('rx', 0); node.setAttribute('ry', 0); return; }
+                        if (!b || pts.length < 2) { setAttr(node, 'rx', 0); setAttr(node, 'ry', 0); return; }
                         // Позиция считается по точкам осевой линии — сложение
                         // и умножение вместо промера пути.
                         const fs = Math.max(0, Math.min(1, b.s)) * (pts.length - 1);
@@ -5594,13 +5629,13 @@ const WormRenderer = {
                         // а не поперёк: он её растягивает, а не лежит поперёк.
                         const ang = Math.atan2(c[1] - a[1], c[0] - a[0]) * 180 / Math.PI;
                         const size = (b.size || 1) * (d.scale || 7);
-                        node.setAttribute('cx', 0);
-                        node.setAttribute('cy', 0);
-                        node.setAttribute('rx', (size * 1.35).toFixed(1));
-                        node.setAttribute('ry', size.toFixed(1));
-                        node.setAttribute('fill', b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35));
-                        node.setAttribute('opacity', b.opacity != null ? b.opacity : 0.9);
-                        node.setAttribute('transform',
+                        setAttr(node, 'cx', 0);
+                        setAttr(node, 'cy', 0);
+                        setAttr(node, 'rx', (size * 1.35).toFixed(1));
+                        setAttr(node, 'ry', size.toFixed(1));
+                        setAttr(node, 'fill', b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35));
+                        setAttr(node, 'opacity', b.opacity != null ? b.opacity : 0.9);
+                        setAttr(node, 'transform',
                             `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
                     });
                 }
@@ -5613,8 +5648,8 @@ const WormRenderer = {
                 if (content) {
                     const fx = parseFloat(content.getAttribute('data-full-rx')) || 0;
                     const fy = parseFloat(content.getAttribute('data-full-ry')) || 0;
-                    content.setAttribute('rx', (fx * fill).toFixed(1));
-                    content.setAttribute('ry', (fy * fill).toFixed(1));
+                    setAttr(content, 'rx', (fx * fill).toFixed(1));
+                    setAttr(content, 'ry', (fy * fill).toFixed(1));
                 }
             },
 
@@ -5632,7 +5667,7 @@ const WormRenderer = {
                     const depthScale = (opts.room && state.room)
                         ? roomCharScaleAt(roomDepthAt(state.room, obj.y)) : 1;
                     const g = buildPoopNode(obj, depthScale);
-                    g.setAttribute('data-poop-id', obj.id);
+                    setAttr(g, 'data-poop-id', obj.id);
                     g.style.cursor = 'pointer';
 
                     // Обработчик висит на самом предмете, а не считает

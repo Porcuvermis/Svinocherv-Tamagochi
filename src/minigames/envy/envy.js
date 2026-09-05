@@ -428,7 +428,11 @@ const EnvyMinigame = {
     // одинаковое при любой частоте кадров.
     updateHalo(dt) {
         const halo = this.halo;
-        const rect = this.canvas.getBoundingClientRect();
+        // Прямоугольник холста берётся ИЗ КЭША. Он меняется только при
+        // повороте экрана, а getBoundingClientRect каждый кадр заставляет
+        // браузер пересчитать раскладку страницы — одно такое чтение стоит
+        // дороже сотни записей (docs/traps.md, п. 39).
+        const rect = this.canvasRect || (this.canvasRect = this.canvas.getBoundingClientRect());
         const lit = (this.state === 'play' && this.pointerDown);
 
         if (lit) {
@@ -459,12 +463,75 @@ const EnvyMinigame = {
         u.uHaloI.value = halo.intensity;
     },
 
-    resize() {
-        if (!this.imagePool) return;     // пул ещё грузится, строить нечего
+    // ---------- ПЛОТНОСТЬ ПИКСЕЛЕЙ: ЕДИНСТВЕННАЯ РУЧКА ЭТОЙ СЦЕНЫ ----------
+    // Зависть — единственная трёхмерная мини-игра, и упирается она не в
+    // процессор, а в ЗАЛИВКУ: за кадр рисуются два полноэкранных прохода
+    // сцены (общий и значимые) плюс два полноэкранных прямоугольника
+    // (фон и шейдер разрыва). При плотности 2 это пять мегапикселей на кадр.
+    //
+    // Замер на замедленной машине: плотность 2 — 6 кадров, 1.5 — 12,
+    // 1.25 — 17, 1 — 22. Зависимость чисто квадратичная, то есть заливка и
+    // есть потолок.
+    //
+    // Поэтому плотность ПОДБИРАЕТСЯ САМА. Прибитая цифра тут не годится: на
+    // хорошем телефоне она отняла бы резкость даром, на плохом всё равно не
+    // спасла бы. Игра смотрит на собственные кадры и опускает планку, пока
+    // не станет ровно; станет с запасом — поднимает обратно.
+    DPR_STEPS: [2, 1.5, 1.25, 1],
+
+    maxDpr() {
+        const cap = Math.min(window.devicePixelRatio || 1, 2);
+        return Math.min(cap, this.DPR_STEPS[this.dprStep || 0]);
+    },
+
+    // Шаг качества вниз/вверх. Считается по СГЛАЖЕННОЙ длине кадра, а не по
+    // одному кадру: одиночный провал бывает от чего угодно, а вот полсекунды
+    // подряд — уже правда.
+    tuneDpr(dt) {
+        if (this.dprStep == null) this.dprStep = 0;
+        this.frameMs = this.frameMs == null ? dt : this.frameMs * 0.9 + dt * 0.1;
+        this.dprHold = (this.dprHold || 0) + dt;
+        if (this.dprHold < 500) return;
+        // Вниз — быстро (играть невозможно), вверх — с запасом и неохотно,
+        // иначе плотность запрыгает туда-сюда на границе.
+        // Пороги разведены нарочно: 26 мс — это уже рвано (тридцать восемь
+        // кадров), 17.5 — ровно шестьдесят с небольшим запасом. Возьми их
+        // ближе, и плотность запрыгает туда-сюда на границе; поставь порог
+        // подъёма в «идеальные» 15 мс — не поднимется никогда, потому что
+        // шестьдесят кадров это 16.7.
+        if (this.frameMs > 26 && this.dprStep < this.DPR_STEPS.length - 1) {
+            this.dprStep++;
+        } else if (this.frameMs < 17.5 && this.dprStep > 0 && this.dprHold > 4000) {
+            this.dprStep--;
+        } else {
+            return;
+        }
+        this.dprHold = 0;
+        this.frameMs = 20;
+        this.applyDpr();
+    },
+
+    applyDpr() {
+        if (!this.renderer || !this.rtAll) return;
         const w = this.canvas.clientWidth || window.innerWidth;
         const h = this.canvas.clientHeight || window.innerHeight;
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const dpr = this.maxDpr();
+        this.renderer.setPixelRatio(dpr);
+        this.renderer.setSize(w, h, false);
+        this.rtAll.setSize(Math.round(w * dpr), Math.round(h * dpr));
+        this.rtSig.setSize(Math.round(w * dpr), Math.round(h * dpr));
+    },
 
+    resize() {
+        if (!this.imagePool) return;     // пул ещё грузится, строить нечего
+        // Кэш прямоугольника холста живёт ровно до этого места: размер
+        // поменялся — значит и он.
+        this.canvasRect = null;
+        const w = this.canvas.clientWidth || window.innerWidth;
+        const h = this.canvas.clientHeight || window.innerHeight;
+        const dpr = this.maxDpr();
+
+        this.renderer.setPixelRatio(dpr);
         this.renderer.setSize(w, h, false);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
@@ -1135,7 +1202,11 @@ const EnvyMinigame = {
     // ================= ЦИКЛ И ОТРИСОВКА =================
     loop(ts) {
         if (!this.lastTs) this.lastTs = ts;
-        const dt = Math.min(48, ts - this.lastTs);
+        // Настоящая длина кадра нужна ОТДЕЛЬНО от игровой: игровая обрезана
+        // сверху, чтобы после паузы ничего не прыгнуло, — а подбору качества
+        // важно ровно то, насколько всё плохо на самом деле.
+        const raw = ts - this.lastTs;
+        const dt = Math.min(48, raw);
         this.lastTs = ts;
 
         if (this.state === 'play') this.updatePlay(dt);
@@ -1143,6 +1214,7 @@ const EnvyMinigame = {
         else if (this.state === 'flying') this.updateFlying(dt);
         else if (this.state === 'winning') this.updateWinning(dt);
 
+        this.tuneDpr(raw);
         this.updateHalo(dt);
         this.updateWaves(dt);
         this.updateDisturbance(ts / 1000);
