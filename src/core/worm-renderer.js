@@ -694,36 +694,42 @@ const WORM_BREATH_RATIO = { 'belly': 1, 'segment-2': 0.7, 'segment-1': 0.3 };
 // на каждое пятно стоил бы кадров, а градиент рисуется как обычная
 // заливка (тот же приём, что у пятен на теле, см. ensureSoftGradient).
 const WORM_SLIME_WIDTH = 26;
-// Ступени мокрого: [во сколько раз шире базы, насколько плотнее]. Три
-// ступени вместо одной дают мягко уплотняющийся к середине край — без
-// размытия.
-const WORM_SLIME_WET_STEPS = [[1.22, 0.05], [1.09, 0.11], [1.0, 0.3]];
-// ОБЪЁМ. Плёнка не наклейка, у неё есть толщина, и видно это по свету:
-// сверху-слева мениск ловит блик, снизу-справа лежит тень. Оба — тот же
-// путь, просто сдвинутый: два штриха вместо честной геометрии кромки.
-const WORM_SLIME_LIFT = 0.07;        // сдвиг каймы и тени, доля ширины
-const WORM_SLIME_DROPSHADOW = 1.16;  // тень чуть шире тела
-const WORM_SLIME_DROPSHADOW_ALPHA = 0.1;
-// Наплывы: тот же путь широким пунктиром. Пунктир и делает силуэт
+// ПЛОТНОСТЬ ЗАДАЁТ ГРУППА, А НЕ ЦВЕТ. Внутри мокрой группы все куски —
+// штрих, наплывы, сгустки, начальная клякса — рисуются ОДНИМ непрозрачным
+// цветом, и только вся группа целиком получает прозрачность и умножение.
+//
+// Так было не сразу, и «не сразу» выглядело плохо: пока у каждого куска
+// была своя прозрачность, каждый торчащий за тело кусок читался отдельным
+// тёмным облаком, а вместе они давали неровный ореол вокруг следа. Ровно то
+// же и с мягким краем в три ступени ширины — это и есть ореол, только
+// аккуратный. Однородная плёнка с ЧЁТКИМ краем оказалась и правильнее, и
+// проще: у слизи край резкий, она не туман.
+const WORM_SLIME_WET_ALPHA = 0.32;
+// Наплывы: тот же путь широким рваным пунктиром. Пунктир и делает силуэт
 // неровным — по следу идут утолщения, как у натёкшей слизи.
-const WORM_SLIME_BULGE = 1.5;
-const WORM_SLIME_BULGE_ALPHA = 0.12;
+const WORM_SLIME_BULGE = 1.16;
+// Кант света ВНУТРИ силуэта. Кайма — те же штрихи, что и тело, но на 6%
+// шире, и лежит она ПОД телом: наружу выходит ровно тот волосок, который и
+// читается кромкой плёнки. Кайма шире этого (или сдвинутая) немедленно
+// превращается в светящийся ободок вокруг следа — видно, что свет лежит не
+// на слизи, а рядом с ней.
+const WORM_SLIME_RIM = 1.06;
+const WORM_SLIME_RIM_ALPHA = 0.3;
 // Всё, что сыплется по ходу — раз в N шагов следа (шаг = MIN_STEP единиц).
-const WORM_SLIME_BUBBLE_EVERY = 6;   // пузырьки
-const WORM_SLIME_SHINE_EVERY = 3;    // крупные блики
-const WORM_SLIME_LUMP_EVERY = 9;     // сгустки и оторвавшиеся капли
-const WORM_SLIME_DROP_EVERY = 9;     // капли кислоты
-// Свет по краю плёнки — не пятнами, а ШИРОКИМ штрихом ПОД мокрым телом:
-// мокрое ложится сверху и оставляет от него только кайму. Так мениск
-// получается сплошным и ровно по форме следа, без единой лишней записи.
-const WORM_SLIME_RIM = 1.1;          // во сколько раз кайма шире тела
+const WORM_SLIME_BUBBLE_EVERY = 7;   // пузырьки
+const WORM_SLIME_SHINE_EVERY = 4;    // крупные блики
+const WORM_SLIME_LUMP_EVERY = 11;    // сгустки и оторвавшиеся капли
+const WORM_SLIME_DROP_EVERY = 11;    // капли кислоты
 const WORM_SLIME_DROP_R = 2.1;
 const WORM_SLIME_DROP_ALPHA = 0.42;
 const WORM_SLIME_SHINE_ALPHA = 0.5;
-const WORM_SLIME_RIM_ALPHA = 0.14;
 const WORM_SLIME_BUBBLE_ALPHA = 0.45;
 const WORM_SLIME_FADE_MS = 15000;
-const WORM_SLIME_MIN_STEP = 5;
+// Шаг опорной точки следа. Точки соединяются КРИВОЙ, а не отрезками: на
+// медленном устройстве персонаж успевает уехать далеко между кадрами, и
+// ломаная из таких звеньев выглядела чертежом — прямые куски со стыками
+// под углом. Кривая по тем же точкам идёт плавно.
+const WORM_SLIME_MIN_STEP = 4;
 // На сколько должен измениться масштаб глубины, чтобы начать новый отрезок следа.
 const WORM_SLIME_DEPTH_STEP = 0.1;
 
@@ -4246,7 +4252,7 @@ const WormRenderer = {
             rafPrevTs: null,
             lastGeomTs: null,
             frameMs: 0,
-            geomEvery: 1,
+            geomLevel: 0,
             geomCount: 0,
             geomHold: 0,
             geomDirty: true,
@@ -4702,34 +4708,29 @@ const WormRenderer = {
 
         function startSlimeTrail(x, y) {
             const g = svgEl('g', { class: 'worm-slime-trail' });
-            // Мокрое и блеск — РАЗНЫЕ режимы наложения (умножение и
-            // осветление), поэтому лежат в двух группах.
+            // Три группы наложения, снизу вверх: кайма (осветление), тело
+            // (умножение), блеск с пузырьками (осветление).
             //
-            // isolation на обеих обязательна. Без неё перекрывающиеся куски
-            // одной группы умножаются друг на друга, и каждый наплыв,
-            // сгусток и стык отрезков превращается в тёмную заплату — след
-            // выглядит грязным пятном, а не однородной плёнкой. С изоляцией
-            // группа сперва собирается сама в себе, и на пол ложится уже
-            // готовая плёнка, ровно один раз.
+            // isolation на каждой обязательна. Без неё перекрывающиеся куски
+            // ОДНОЙ группы накладываются друг на друга поодиночке, и каждый
+            // наплыв, сгусток и стык превращается в тёмную заплату — след
+            // выглядит грязным пятном. С изоляцией группа сперва собирается
+            // сама в себе, и на пол ложится уже готовая плёнка, ровно раз.
             //
-            // Гашение при высыхании — непрозрачностью ЭТИХ групп: она
-            // применяется до наложения, поэтому подсыхающий след честно
-            // светлеет, оставаясь мокрым пятном (первая версия гасила
-            // родителя над ними и выключала наложение целиком).
+            // Прозрачность живёт ТОЖЕ на группе, а не в цветах кусков: она
+            // применяется до наложения, поэтому и плотность плёнки, и её
+            // подсыхание — это одно и то же число, а куски внутри остаются
+            // непрозрачными и не просвечивают друг сквозь друга.
+            const rimGroup = svgEl('g', {
+                class: 'worm-slime-rim', opacity: WORM_SLIME_RIM_ALPHA,
+                style: 'mix-blend-mode:screen;isolation:isolate'
+            });
             const wetGroup = svgEl('g', {
-                class: 'worm-slime-wet', opacity: 1,
+                class: 'worm-slime-wet', opacity: WORM_SLIME_WET_ALPHA,
                 style: 'mix-blend-mode:multiply;isolation:isolate'
             });
             const glowGroup = svgEl('g', {
                 class: 'worm-slime-gloss', opacity: 1,
-                style: 'mix-blend-mode:screen;isolation:isolate'
-            });
-            // Кайма лежит ПОД мокрым телом и своей группой: тело накрывает
-            // её середину и оставляет только светящийся ободок по форме
-            // следа. Ободок снаружи, а не внутри, потому что плёнка на полу
-            // приподнята краями — мениск ловит свет именно там.
-            const rimGroup = svgEl('g', {
-                class: 'worm-slime-rim', opacity: 1,
                 style: 'mix-blend-mode:screen;isolation:isolate'
             });
             // След лежит НА ПОЛУ, значит подчиняется той же перспективе, что
@@ -4738,6 +4739,10 @@ const WormRenderer = {
             const w = WORM_SLIME_WIDTH * trailScale;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
             const start = `M ${x.toFixed(1)},${y.toFixed(1)}`;
+            // Пунктир наплывов один и тот же у тела и у каймы: иначе кайма
+            // обведёт не ту форму, и свет поедет мимо края.
+            const bulgeDash = `${(w * 1.1).toFixed(1)} ${(w * 1.9).toFixed(1)} `
+                            + `${(w * 0.5).toFixed(1)} ${(w * 2.6).toFixed(1)}`;
             const stroke = (host, color, width, dash) => {
                 const el = svgEl('path', {
                     d: start, fill: 'none', stroke: color,
@@ -4748,39 +4753,27 @@ const WormRenderer = {
                 host.appendChild(el);
                 return el;
             };
-            const wetStroke = (width, alpha, dash) =>
-                stroke(wetGroup, withAlpha(SLIME_WET, alpha), width, dash);
-            // Сначала кайма (она ниже всех), потом тело в три ступени ширины
-            // — мягко уплотняющийся к середине край.
             // Кайма светлая, а не кислотная: чистая кислота по всей длине
             // следа даёт неоновый ободок — тот самый «акцент большой
             // площадью», который здесь запрещён. Свет с примесью кислоты.
-            const rimColor = withAlpha(mixColor(SPEC, P_.acid[200], 0.45), WORM_SLIME_RIM_ALPHA);
-            const lift = w * WORM_SLIME_LIFT;
-            const strokes = [stroke(rimGroup, rimColor, WORM_SLIME_RIM)];
-            // Кайма сдвинута к верхне-левому краю, тень — к нижне-правому.
-            // Свет в игре падает сверху-слева (art-direction §3), и от одного
-            // этого сдвига плоская полоса начинает читаться приподнятой.
-            setAttr(strokes[0], 'transform', `translate(${(-lift).toFixed(2)},${(-lift * 1.2).toFixed(2)})`);
-            const shadow = wetStroke(WORM_SLIME_DROPSHADOW, WORM_SLIME_DROPSHADOW_ALPHA);
-            setAttr(shadow, 'transform', `translate(${lift.toFixed(2)},${(lift * 1.2).toFixed(2)})`);
-            strokes.push(shadow);
-            WORM_SLIME_WET_STEPS.forEach(([k, a]) => strokes.push(wetStroke(k, a)));
-            // Наплывы: широкий рваный пунктир поверх. Именно он ломает
-            // ровную ширину, из-за которой след читался полосой.
-            strokes.push(wetStroke(WORM_SLIME_BULGE, WORM_SLIME_BULGE_ALPHA,
-                `${(w * 1.1).toFixed(1)} ${(w * 1.9).toFixed(1)} ${(w * 0.5).toFixed(1)} ${(w * 2.6).toFixed(1)}`));
+            const rimColor = mixColor(SPEC, P_.acid[200], 0.45);
+            const strokes = [
+                stroke(rimGroup, rimColor, WORM_SLIME_RIM),
+                stroke(rimGroup, rimColor, WORM_SLIME_BULGE * WORM_SLIME_RIM, bulgeDash),
+                stroke(wetGroup, SLIME_WET, 1),
+                stroke(wetGroup, SLIME_WET, WORM_SLIME_BULGE, bulgeDash)
+            ];
             // Начальная клякса: след начинается лужицей, а не срезом.
             wetGroup.appendChild(svgEl('ellipse', {
                 cx: 0, cy: 0, rx: (w * 0.5).toFixed(2), ry: (w * 0.36).toFixed(2),
-                fill: withAlpha(SLIME_WET, 0.22),
+                fill: SLIME_WET,
                 transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(rng() * 180).toFixed(1)})`
             }));
             // Комки и оторвавшиеся капли — своим слоем, чтобы дописывать их
             // на ходу, не трогая штрихи.
             const lumps = svgEl('g', { class: 'worm-slime-lumps' });
             wetGroup.appendChild(lumps);
-            // Блеск: крупные мягкие пятна, свет по краю, пузырьки, капли.
+            // Блеск: крупные мягкие пятна, пузырьки, капли кислоты.
             const shine = svgEl('g', { class: 'worm-slime-shine' });
             const bubbles = svgEl('g', { class: 'worm-slime-bubbles' });
             glowGroup.appendChild(shine);
@@ -4791,7 +4784,10 @@ const WormRenderer = {
             slimeLayer.appendChild(g);
             state.slimeTrails.push({
                 g, strokes, lumps, shine, bubbles, rng, steps: 0,
-                parts: [rimGroup, wetGroup, glowGroup],
+                // Пары «узел, его собственная плотность»: при высыхании
+                // каждая группа гаснет от СВОЕЙ, а не от общей единицы.
+                parts: [[rimGroup, WORM_SLIME_RIM_ALPHA], [wetGroup, WORM_SLIME_WET_ALPHA],
+                        [glowGroup, 1]],
                 scale: trailScale, points: [{ x, y }], finishedAt: null
             });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
@@ -4817,9 +4813,14 @@ const WormRenderer = {
             const last = trail.points[trail.points.length - 1];
             if (Math.hypot(x - last.x, y - last.y) < WORM_SLIME_MIN_STEP) return;
             trail.points.push({ x, y });
-            const d = trail.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-            // Одна строка пути на все штрихи: ступени мокрого и наплывы —
-            // это одна и та же линия, нарисованная разной толщиной.
+            // КРИВОЙ, а не ломаной. Между кадрами персонаж успевает уехать
+            // на десятки единиц — тем дальше, чем слабее устройство, — и
+            // ломаная из таких звеньев выглядит чертежом: прямые куски со
+            // стыками под углом. Та же сглаженная кривая, что у кишечного
+            // тракта, идёт по тем же точкам плавно.
+            const d = smoothPolyline(trail.points.map(p => [p.x, p.y]), false);
+            // Одна строка пути на все штрихи: тело, наплывы и кайма — это
+            // одна и та же линия, нарисованная разной толщиной.
             trail.strokes.forEach(el => setAttr(el, 'd', d));
 
             const n = ++trail.steps;
@@ -4870,7 +4871,7 @@ const WormRenderer = {
                 const lr = w * (far ? 0.07 + rng() * 0.05 : 0.17 + rng() * 0.13);
                 trail.lumps.appendChild(svgEl('ellipse', {
                     cx: 0, cy: 0, rx: lr.toFixed(2), ry: (lr * (0.55 + rng() * 0.4)).toFixed(2),
-                    fill: withAlpha(SLIME_WET, far ? 0.3 : 0.22),
+                    fill: SLIME_WET,
                     transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${(p.deg + (rng() * 60 - 30)).toFixed(1)})`
                 }));
             }
@@ -4910,8 +4911,8 @@ const WormRenderer = {
                     trail.g.remove();
                     state.slimeTrails.splice(i, 1);
                 } else {
-                    const k = (1 - elapsed / WORM_SLIME_FADE_MS).toFixed(3);
-                    trail.parts.forEach(el => setAttr(el, 'opacity', k));
+                    const k = 1 - elapsed / WORM_SLIME_FADE_MS;
+                    trail.parts.forEach(([el, base]) => setAttr(el, 'opacity', (base * k).toFixed(3)));
                 }
             }
         }
@@ -5016,16 +5017,21 @@ const WormRenderer = {
         // Отсюда деление кадра надвое:
         //   • каждый кадр — корневой transform (червь едет по комнате плавно,
         //     как и раньше);
-        //   • раз в geomEvery кадров — вся деформация (силуэт, кишка, лицо).
+        //   • по лестнице (GEOM_LADDER) — вся деформация: силуэт, кишка, лицо.
         //
         // Частоту деформации выбирает САМО УСТРОЙСТВО: пока кадры короткие,
         // деформация идёт кадр в кадр и картинка ровно та же, что была. Как
         // только кадр перестаёт укладываться в бюджет, она разрежается. Это
         // ровно та же лестница с гистерезисом, что у разрешения в зависти.
-        // Реже одного раза из трёх не разрежаем: дальше дыхание и виляние
-        // начинают идти ступенями, и это видно даже на медленном телефоне.
-        // Моргание из лестницы исключено отдельно (см. wantGeometry).
-        const GEOM_MAX_EVERY = 3;
+        // Ступени лестницы: [сколько тиков с деформацией, из скольких].
+        // Дробная ступень тут не прихоть. Целая («каждый второй тик»)
+        // делит частоту сразу вдвое, а собственный делитель кадров уже
+        // поделил её на два — вместе получалось четыре, и на медленном
+        // телефоне это стало видно сразу: поворот хвоста пошёл ступенями, а
+        // след из-под него — прямыми отрезками со стыками под углом. «Два
+        // тика из трёх» отнимают треть работы вместо половины, и ступеней
+        // не видно. Моргание из лестницы исключено отдельно (wantGeometry).
+        const GEOM_LADDER = [[1, 1], [2, 3]];
         const GEOM_SLOW_MS = 24;       // кадр длиннее — разрядить деформацию
         const GEOM_FAST_MS = 17.5;     // кадр короче — вернуть (порог ВЫШЕ 16.7,
                                        // иначе 60 fps никогда не считается "быстро")
@@ -5045,12 +5051,12 @@ const WormRenderer = {
                 state.frameMs = state.frameMs ? state.frameMs + (raf - state.frameMs) * 0.1 : raf;
             }
             state.geomHold = (state.geomHold || 0) + raf;
-            if (state.frameMs > GEOM_SLOW_MS && state.geomEvery < GEOM_MAX_EVERY
+            if (state.frameMs > GEOM_SLOW_MS && state.geomLevel < GEOM_LADDER.length - 1
                 && state.geomHold > GEOM_HOLD_UP) {
-                state.geomEvery++; state.geomHold = 0;
-            } else if (state.frameMs < GEOM_FAST_MS && state.geomEvery > 1
+                state.geomLevel++; state.geomHold = 0;
+            } else if (state.frameMs < GEOM_FAST_MS && state.geomLevel > 0
                        && state.geomHold > GEOM_HOLD_DOWN) {
-                state.geomEvery--; state.geomHold = 0;
+                state.geomLevel--; state.geomHold = 0;
             }
         }
 
@@ -5065,7 +5071,6 @@ const WormRenderer = {
             if (opts.blink && state.lastGeomTs) {
                 const pos = (state.blinkClock + (now - state.lastGeomTs)) % WORM_BLINK_CYCLE;
                 if (pos >= WORM_BLINK_START - 40 && pos < WORM_BLINK_START + WORM_BLINK_DURATION + 40) {
-                    state.geomCount = 0;
                     state.geomFrames = (state.geomFrames || 0) + 1;
                     geomFrameTotal++;
                     return true;
@@ -5074,12 +5079,10 @@ const WormRenderer = {
             // Живой канал (мини-игра ведёт хвост за пальцем, наливает рот)
             // перебивает лестницу: пропущенный кадр здесь читается как
             // задержка управления, а её никакая экономия не оправдывает.
-            if (!state.geomDirty) {
-                state.geomCount = (state.geomCount || 0) + 1;
-                if (state.geomCount < state.geomEvery) return false;
-            }
+            const [keep, of] = GEOM_LADDER[state.geomLevel];
+            state.geomCount = ((state.geomCount || 0) + 1) % of;
+            if (!state.geomDirty && state.geomCount >= keep) return false;
             state.geomDirty = false;
-            state.geomCount = 0;
             state.geomFrames = (state.geomFrames || 0) + 1;
             geomFrameTotal++;
             return true;
@@ -5912,7 +5915,8 @@ const WormRenderer = {
             getFrameStats() {
                 return {
                     frameMs: +(state.frameMs || 0).toFixed(1),
-                    geomEvery: state.geomEvery,
+                    geomLevel: state.geomLevel,
+                    geomPart: GEOM_LADDER[state.geomLevel].join('/'),
                     geomFrames: state.geomFrames || 0,
                     frameHz: opts.frameHz
                 };
