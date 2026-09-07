@@ -678,16 +678,16 @@ const WORM_BREATH_RATIO = { 'belly': 1, 'segment-2': 0.7, 'segment-1': 0.3 };
 // Вторая: только затемнение (multiply). Пол честно намокал, но это была
 // ровная полоса с каймой — влажное место, а не слизь.
 //
-// Слизь на референсах собирается из ПЯТИ вещей, и без любой из них она
+// Слизь на референсах собирается из ЧЕТЫРЁХ вещей, и без любой из них она
 // разваливается в плоское пятно:
 //   1. неровный, натёкший силуэт — с наплывами, языками и оторвавшимися
 //      каплями рядом; ровная ширина мгновенно читается полосой краски;
 //   2. затемнение основы — плёнка мокрая, под ней пол темнее и холоднее;
 //   3. КРУПНЫЕ мягкие блики — главный признак глянца. Не искры и не
-//      тонкая жила, а размытые пятна отражённого света в полширины следа;
-//   4. свет по КРАЮ — плёнка натянута, край работает линзой и светится
-//      ярче середины;
-//   5. пузырьки — мелкие светлые точки внутри. Это то, что отличает гель
+//      тонкая жила, а размытые пятна отражённого света в полширины следа.
+//      Объём плёнке даёт только это: свет по краю и тень под пятном
+//      пробовали, и то и другое читается обводкой и ореолом;
+//   4. пузырьки — мелкие светлые точки внутри. Это то, что отличает гель
 //      от воды: в воде нечему держать пузырь.
 //
 // Мягкость всех бликов — радиальными градиентами, а не размытием: фильтр
@@ -708,13 +708,11 @@ const WORM_SLIME_WET_ALPHA = 0.32;
 // Наплывы: тот же путь широким рваным пунктиром. Пунктир и делает силуэт
 // неровным — по следу идут утолщения, как у натёкшей слизи.
 const WORM_SLIME_BULGE = 1.16;
-// Кант света ВНУТРИ силуэта. Кайма — те же штрихи, что и тело, но на 6%
-// шире, и лежит она ПОД телом: наружу выходит ровно тот волосок, который и
-// читается кромкой плёнки. Кайма шире этого (или сдвинутая) немедленно
-// превращается в светящийся ободок вокруг следа — видно, что свет лежит не
-// на слизи, а рядом с ней.
-const WORM_SLIME_RIM = 1.06;
-const WORM_SLIME_RIM_ALPHA = 0.3;
+// Канта света по краю здесь НЕТ и не будет. Пробовали дважды: широкий и
+// сдвинутый давал светящийся ободок вокруг следа, узкий и точно по кромке —
+// аккуратную светлую обводку. И то и другое читается контуром, наведённым
+// поверх пятна, а не мокрой плёнкой: обводка — признак наклейки. Объём
+// плёнке даёт только блеск на ней самой.
 // Всё, что сыплется по ходу — раз в N шагов следа (шаг = MIN_STEP единиц).
 const WORM_SLIME_BUBBLE_EVERY = 7;   // пузырьки
 const WORM_SLIME_SHINE_EVERY = 4;    // крупные блики
@@ -4708,8 +4706,8 @@ const WormRenderer = {
 
         function startSlimeTrail(x, y) {
             const g = svgEl('g', { class: 'worm-slime-trail' });
-            // Три группы наложения, снизу вверх: кайма (осветление), тело
-            // (умножение), блеск с пузырьками (осветление).
+            // Две группы наложения: тело (умножение) и блеск с пузырьками
+            // (осветление).
             //
             // isolation на каждой обязательна. Без неё перекрывающиеся куски
             // ОДНОЙ группы накладываются друг на друга поодиночке, и каждый
@@ -4721,10 +4719,6 @@ const WormRenderer = {
             // применяется до наложения, поэтому и плотность плёнки, и её
             // подсыхание — это одно и то же число, а куски внутри остаются
             // непрозрачными и не просвечивают друг сквозь друга.
-            const rimGroup = svgEl('g', {
-                class: 'worm-slime-rim', opacity: WORM_SLIME_RIM_ALPHA,
-                style: 'mix-blend-mode:screen;isolation:isolate'
-            });
             const wetGroup = svgEl('g', {
                 class: 'worm-slime-wet', opacity: WORM_SLIME_WET_ALPHA,
                 style: 'mix-blend-mode:multiply;isolation:isolate'
@@ -4739,8 +4733,6 @@ const WormRenderer = {
             const w = WORM_SLIME_WIDTH * trailScale;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
             const start = `M ${x.toFixed(1)},${y.toFixed(1)}`;
-            // Пунктир наплывов один и тот же у тела и у каймы: иначе кайма
-            // обведёт не ту форму, и свет поедет мимо края.
             const bulgeDash = `${(w * 1.1).toFixed(1)} ${(w * 1.9).toFixed(1)} `
                             + `${(w * 0.5).toFixed(1)} ${(w * 2.6).toFixed(1)}`;
             const stroke = (host, color, width, dash) => {
@@ -4753,13 +4745,7 @@ const WormRenderer = {
                 host.appendChild(el);
                 return el;
             };
-            // Кайма светлая, а не кислотная: чистая кислота по всей длине
-            // следа даёт неоновый ободок — тот самый «акцент большой
-            // площадью», который здесь запрещён. Свет с примесью кислоты.
-            const rimColor = mixColor(SPEC, P_.acid[200], 0.45);
             const strokes = [
-                stroke(rimGroup, rimColor, WORM_SLIME_RIM),
-                stroke(rimGroup, rimColor, WORM_SLIME_BULGE * WORM_SLIME_RIM, bulgeDash),
                 stroke(wetGroup, SLIME_WET, 1),
                 stroke(wetGroup, SLIME_WET, WORM_SLIME_BULGE, bulgeDash)
             ];
@@ -4778,7 +4764,6 @@ const WormRenderer = {
             const bubbles = svgEl('g', { class: 'worm-slime-bubbles' });
             glowGroup.appendChild(shine);
             glowGroup.appendChild(bubbles);
-            g.appendChild(rimGroup);
             g.appendChild(wetGroup);
             g.appendChild(glowGroup);
             slimeLayer.appendChild(g);
@@ -4786,8 +4771,7 @@ const WormRenderer = {
                 g, strokes, lumps, shine, bubbles, rng, steps: 0,
                 // Пары «узел, его собственная плотность»: при высыхании
                 // каждая группа гаснет от СВОЕЙ, а не от общей единицы.
-                parts: [[rimGroup, WORM_SLIME_RIM_ALPHA], [wetGroup, WORM_SLIME_WET_ALPHA],
-                        [glowGroup, 1]],
+                parts: [[wetGroup, WORM_SLIME_WET_ALPHA], [glowGroup, 1]],
                 scale: trailScale, points: [{ x, y }], finishedAt: null
             });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
