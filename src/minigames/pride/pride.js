@@ -1,7 +1,7 @@
 // ================= ТЩЕСЛАВИЕ: ВЫХОД ПО КОВРОВОЙ ДОРОЖКЕ =================
-// Червь выходит из машины на ковровую дорожку и идёт двадцать секунд, пока
-// не дойдёт до финишной арки. По бокам — ограждения и толпа. Игрок ловит
-// вспышки фотоаппаратов и поцелуи.
+// Червь выходит из машины на ковровую дорожку и идёт двадцать секунд НА
+// ЗРИТЕЛЯ — как звезда идёт на камеры. По бокам — ограждения и толпа, они
+// проплывают мимо и уходят за спину. Игрок ловит вспышки и поцелуи.
 //
 // Замысел целиком — docs/plan/17-pride.md. Здесь только правила и связь с
 // картинкой; сама картинка и вся перспектива — в pride-art.js, числа
@@ -9,9 +9,11 @@
 //
 // ---------- ЧТО ЗАМЕНИЛО ШКАЛУ ----------
 // Раньше был свой счётчик 0..100: попадание +8, промах −5, набрал сто —
-// победа. Его больше нет. Прогресс — это сама дорожка: финишная арка выходит
-// с горизонта и подъезжает ровно к концу выхода, и по ней видно, сколько
-// осталось. Одной сущностью в интерфейсе меньше, и ни одной цифры не надо.
+// победа. Его больше нет. Прогресс — это сама дорожка, и читается он СЗАДИ:
+// арка входа с машиной остаются позади и уезжают к горизонту ровно за время
+// выхода. Червь идёт на камеру, значит впереди показывать нечего — там
+// зритель; зато пройденное видно целиком. Одной сущностью в интерфейсе
+// меньше, и ни одной цифры не надо.
 //
 // Проигрыша тоже нет: дойти до конца дорожки нельзя не суметь. Шкала греха
 // закрывается всегда (правило «гарантия лежит в шкале»), а собранное внимание
@@ -82,7 +84,7 @@ const PrideMinigame = {
     stripes: [],
     clusters: [],
     car: null,
-    arch: null,
+    arch: null,      // арка ВХОДА: она же шкала выхода, см. шапку
     targets: [],
     tokenCounter: 0,
     spawnAcc: 0,
@@ -182,10 +184,11 @@ const PrideMinigame = {
         this.awardedKisses = null;
         this.spawnAcc = 0;
         this.ambientAcc = 0;
-        // Скорость выводится из длины выхода, а не задаётся отдельно: дорожка
-        // ОБЯЗАНА кончиться ровно тогда, когда кончится время, иначе финиш
-        // приезжает то раньше, то позже и перестаёт быть шкалой.
-        this.speed = (PRIDE_ART.Z_FAR - PRIDE_ART.Z_WORM) / (this.params.runMs / 1000);
+        // Скорость выводится из длины выхода, а не задаётся отдельно: арка
+        // входа ОБЯЗАНА добраться до горизонта ровно тогда, когда кончится
+        // время, иначе она приезжает то раньше, то позже и перестаёт быть
+        // шкалой.
+        this.speed = (PRIDE_ART.Z_FAR - PRIDE_ART.Z_START) / (this.params.runMs / 1000);
         this.clearTargets();
         this.buildMovers();
         this.renderHud();
@@ -238,10 +241,12 @@ const PrideMinigame = {
         props.appendChild(carG);
         this.car = { el: carG, z: A.CAR_Z };
 
+        // Арка входа стоит В НАЧАЛЕ прямо над червём — он только что из-под
+        // неё вышел — и дальше уезжает назад, к горизонту.
         const archG = this.svgNode('g');
         archG.innerHTML = PRIDE_ART.arch();
         props.appendChild(archG);
-        this.arch = { el: archG, z: A.Z_FAR };
+        this.arch = { el: archG, z: A.Z_START };
 
         this.placeMovers();
     },
@@ -251,8 +256,13 @@ const PrideMinigame = {
     // вчетверо больше.
     placeMovers() {
         const A = PRIDE_ART;
+        // Поперечины живут только НА ковре: за аркой входа ковра ещё нет, и
+        // полоса, нарисованная там, висела бы поперёк голого асфальта.
+        const zEnd = this.arch ? this.arch.z : A.Z_FAR;
         this.stripes.forEach(s => {
-            s.el.setAttribute('points', A.stripePoints(s.z, PRIDE_VIEW.STRIPE_THICK));
+            const on = s.z < zEnd - PRIDE_VIEW.STRIPE_THICK;
+            s.el.style.display = on ? '' : 'none';
+            if (on) s.el.setAttribute('points', A.stripePoints(s.z, PRIDE_VIEW.STRIPE_THICK));
         });
         this.clusters.forEach(c => {
             const k = A.CROWD_H * A.s(c.z) / 1000;
@@ -262,18 +272,28 @@ const PrideMinigame = {
         });
         if (this.car) {
             const k = A.CROWD_H * A.s(this.car.z) / 1000;
-            // Машина стоит СЛЕВА от дорожки и уезжает за левый край: в кадре
-            // нужен её открытый бок с дверью, а не вся длина. Целиком она в
-            // кадр и не влезет — автомобиль шире дорожки.
+            // Машина стоит СЛЕВА от дорожки, у самой обочины: в кадре нужен её
+            // открытый бок с дверью, а не вся длина. Целиком она в кадр и не
+            // влезет — автомобиль шире дорожки.
             const x = A.CX - A.half(this.car.z) * A.LANE - 430 * k;
             this.car.el.setAttribute('transform',
                 `translate(${x.toFixed(1)},${A.y(this.car.z).toFixed(1)}) scale(${k.toFixed(4)})`);
-            this.car.el.style.display = this.car.z > 1.5 ? '' : 'none';
+            // Уехала за горизонт — прячем: у самой линии горизонта она
+            // превращается в мусорный пиксель, который непонятно чем является.
+            this.car.el.style.display = this.car.z < A.Z_FAR ? '' : 'none';
         }
         if (this.arch) {
             const k = A.CROWD_H * A.s(this.arch.z) / 1000;
             this.arch.el.setAttribute('transform',
                 `translate(${A.CX},${A.y(this.arch.z).toFixed(1)}) scale(${k.toFixed(4)})`);
+            // Ковёр расстелен ОТ АРКИ до камеры: пройденное — это длина
+            // красной полосы за спиной, и она растёт сама собой.
+            const poly = this.sceneEl.querySelector('#pr-carpet-poly');
+            const el = this.sceneEl.querySelector('#pr-edge-l');
+            const er = this.sceneEl.querySelector('#pr-edge-r');
+            if (poly) poly.setAttribute('points', A.carpetPoints(this.arch.z));
+            if (el) el.setAttribute('points', A.edgePoints(-1, this.arch.z));
+            if (er) er.setAttribute('points', A.edgePoints(1, this.arch.z));
         }
     },
 
@@ -372,20 +392,24 @@ const PrideMinigame = {
         this.lastTs = now;
 
         if (this.phase === 'run') {
+            // ГЛУБИНА РАСТЁТ У ВСЕГО: мир уходит от камеры, а значит червь
+            // идёт на зрителя. Предметы выплывают снизу кадра, проходят мимо
+            // и уменьшаются к горизонту.
             const dz = this.speed * dt;
             // Толпа едет МЕДЛЕННЕЕ ковра — она дальше от оси движения, и
             // параллакс отделяет её от дорожки. Без него сцена читается одной
-            // плоской картинкой, которую тянут вниз.
+            // плоской картинкой, которую тянут за верёвочку.
+            const span = PRIDE_VIEW.STRIPES * PRIDE_VIEW.STRIPE_STEP;
             this.stripes.forEach(s => {
-                s.z -= dz;
-                if (s.z < -PRIDE_VIEW.STRIPE_THICK) s.z += PRIDE_VIEW.STRIPES * PRIDE_VIEW.STRIPE_STEP;
+                s.z += dz;
+                if (s.z > span) s.z -= span;
             });
             this.clusters.forEach(c => {
-                c.z -= dz * 0.78;
-                if (c.z < PRIDE_ART.Z_CROWD_MIN) c.z += PRIDE_ART.Z_FAR - PRIDE_ART.Z_CROWD_MIN;
+                c.z += dz * 0.78;
+                if (c.z > PRIDE_ART.Z_FAR) c.z -= PRIDE_ART.Z_FAR - PRIDE_ART.Z_CROWD_MIN;
             });
-            if (this.car) this.car.z = Math.max(0, this.car.z - dz);
-            if (this.arch) this.arch.z -= dz;
+            if (this.car) this.car.z += dz;
+            if (this.arch) this.arch.z += dz;
             this.placeMovers();
 
             this.spawnAcc += dt * 1000;
@@ -398,7 +422,8 @@ const PrideMinigame = {
             this.tickTargets(now);
             this.tickAmbient(dt);
 
-            if (this.arch.z <= PRIDE_ART.Z_WORM) this.finishRun();
+            // Арка входа добралась до горизонта — вся дорожка пройдена.
+            if (this.arch.z >= PRIDE_ART.Z_FAR) this.finishRun();
         }
 
         this.rafId = requestAnimationFrame((t) => this.loop(t));
