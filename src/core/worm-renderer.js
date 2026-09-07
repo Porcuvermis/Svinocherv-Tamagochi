@@ -671,23 +671,41 @@ const WORM_BREATH_RATIO = { 'belly': 1, 'segment-2': 0.7, 'segment-1': 0.3 };
 // growing-сегмента) — см. startSlimeTrail/extendSlimeTrail/updateSlimeTrail
 // внутри WormRenderer.mount().
 const WORM_SLIME_FADE_MS = 15000;
-const WORM_SLIME_WIDTH = 15;
+const WORM_SLIME_WIDTH = 24;
 const WORM_SLIME_MIN_STEP = 4;
-// След слизи на полу. Раньше это был один непрозрачный оливковый штрих
-// шириной 15px с круглыми концами — на экране он читался палкой, а не
-// слизью. Теперь след состоит из двух штрихов: широкой тёмной мокрой
-// кляксы и тонкой яркой сердцевины (свежая слизь блестит).
+// ---------- СЛЕД — ЭТО НЕ КРАСКА, А МОКРОЕ МЕСТО ----------
+// Сначала след был заливкой: оливковый штрих поверх пола. Любая заливка
+// врёт одинаково — она НЕ ЗНАЕТ, на чём лежит, поэтому на светлых досках
+// выглядела зелёной полосой, а на тёмных пропадала.
 //
-// Почему тёмная ступень кислоты, а не яркая: след — БОЛЬШАЯ площадь, а
-// акцент по правилу дозировки большим быть не может (art-direction.md §1.2).
-// Яркая кислота остаётся только на узкой сердцевине.
-const WORM_SLIME_SMEAR_ALPHA = 0.5;
+// Мокрое пятно устроено иначе: оно не кладёт свой цвет, а ЗАБИРАЕТ у
+// поверхности светлоту. Ровно это и делает умножение (mix-blend-mode:
+// multiply): пол под следом темнеет и чуть холодеет, оставаясь собой —
+// доска остаётся доской, кафель кафелем. Второй признак мокрого — блик:
+// зеркальная плёнка отражает свет туда, где сухая поверхность рассеивает.
+// Он кладётся осветлением (screen) и живёт редкими искрами (см. ниже).
+//
+// Если браузер режимы наложения не поддержит, всё останется на месте:
+// цвета подобраны так, чтобы и обычным наложением читались мокрым пятном
+// и бликом, просто менее слитно с полом.
+const WORM_SLIME_WET_ALPHA = 0.34;    // насколько мазок съедает светлоту пола
+const WORM_SLIME_HALO = 1.7;          // во сколько раз шире мазка сырая кайма
+const WORM_SLIME_HALO_ALPHA = 0.14;   // кайма едва заметна: это подсыхающий край
+// Блик — РЕДКИЕ ИСКРЫ вдоль следа, а не светлая жила. Первой версией была
+// прерывистая линия (dasharray) по всей длине: на экране это оказалось
+// пунктиром дорожной разметки, ровно та же ошибка, из-за которой отсюда
+// однажды убрали сплошную зелёную сердцевину. Блеск читается только
+// пятнами: где плёнка легла ровно — свет, где скомкана — ничего.
+const WORM_SLIME_GLINT_EVERY = 3;     // искра на каждую N-ю каплю
+const WORM_SLIME_GLINT_ALPHA = 0.34;
+const WORM_SLIME_GLINT_LEN = 0.34;    // доля ширины мазка
+const WORM_SLIME_GLINT_THIN = 0.1;
 // Яркая кислота в следе живёт ОТДЕЛЬНЫМИ КАПЛЯМИ, а не непрерывной линией.
 // Проверено: тонкая яркая сердцевина вдоль всего следа читается зелёным
 // кабелем — та же ошибка "акцент большой площадью", что и широкая заливка,
 // только вытянутая. Капли дают кислотность, оставаясь точками.
-const WORM_SLIME_DROP_ALPHA = 0.72;
-const WORM_SLIME_DROP_EVERY = 4;   // капля на каждую N-ю точку следа
+const WORM_SLIME_DROP_ALPHA = 0.38;
+const WORM_SLIME_DROP_EVERY = 5;   // капля на каждую N-ю точку следа
 const WORM_SLIME_DROP_R = 2.1;
 // На сколько должен измениться масштаб глубины, чтобы начать новый отрезок следа.
 const WORM_SLIME_DEPTH_STEP = 0.1;
@@ -4601,18 +4619,21 @@ const WormRenderer = {
             setAttr(witherSat, 'values', s.toFixed(3));
             // Вместе с цветом уходит и яркость: обескровленный червь темнеет.
             witherFuncs.forEach(f => setAttr(f, 'slope', (0.72 + s * 0.28).toFixed(3)));
-            [charLayer, slimeLayer].forEach(el => {
+            // Фильтр надевается ТОЛЬКО на тело. Слизь под ним раньше тоже
+            // была — и обесцвечивалась вместе с червём, хотя лужа на полу
+            // про его здоровье ничего не знает. Мокрое пятно вообще не
+            // красится: оно забирает цвет у пола (см. mix-blend-mode в
+            // startSlimeTrail), а фильтр поверх этого ломал бы наложение.
+            if (off) {
                 // Снятие атрибута идёт МИМО setAttr, поэтому его кэш здесь
                 // чистится руками: иначе следующая попытка поставить то же
                 // самое значение будет пропущена как «уже стоит», и фильтр
                 // не вернётся.
-                if (off) {
-                    el.removeAttribute('filter');
-                    if (el.__wattr) delete el.__wattr.filter;
-                } else {
-                    setAttr(el, 'filter', `url(#${witherFilterId})`);
-                }
-            });
+                charLayer.removeAttribute('filter');
+                if (charLayer.__wattr) delete charLayer.__wattr.filter;
+            } else {
+                setAttr(charLayer, 'filter', `url(#${witherFilterId})`);
+            }
         }
 
         function rebuild() {
@@ -4648,27 +4669,53 @@ const WormRenderer = {
             return d + 'Z';
         }
 
+        // Цвет "мокрого": не краска, а то, что след ЗАБИРАЕТ у пола. Тёмная
+        // ступень кислоты в чернильной примеси — умножаясь, она уводит
+        // поверхность в тень и чуть в холод, как и положено намокшему.
+        const SLIME_WET = mixColor(ACID_DEEP, INK, 0.45);
+
         function startSlimeTrail(x, y) {
+            // Мокрое пятно и блик — РАЗНЫЕ режимы наложения (умножение и
+            // осветление), поэтому лежат в двух группах, а не в одной.
             const g = svgEl('g', { class: 'worm-slime-trail' });
+            const wetGroup = svgEl('g', { class: 'worm-slime-wet', style: 'mix-blend-mode:multiply' });
+            const glossGroup = svgEl('g', { class: 'worm-slime-gloss', style: 'mix-blend-mode:screen' });
             // След лежит НА ПОЛУ, значит подчиняется той же перспективе, что
             // и всё остальное: у дальней стены он должен быть уже.
             const trailScale = opts.room ? state.depthScale : 1;
+            const w = WORM_SLIME_WIDTH * trailScale;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
-            const smearColor = withAlpha(ACID_DEEP, WORM_SLIME_SMEAR_ALPHA);
-            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, WORM_SLIME_WIDTH * 0.55 * trailScale), fill: smearColor });
-            // Широкая тёмная клякса — само мокрое пятно, оно и есть след.
-            const stroke = svgEl('path', {
-                d: `M ${x.toFixed(1)},${y.toFixed(1)}`,
-                fill: 'none', stroke: smearColor, 'stroke-width': (WORM_SLIME_WIDTH * trailScale).toFixed(2),
+            const wetColor = withAlpha(SLIME_WET, WORM_SLIME_WET_ALPHA);
+            const haloColor = withAlpha(SLIME_WET, WORM_SLIME_HALO_ALPHA);
+            const start = `M ${x.toFixed(1)},${y.toFixed(1)}`;
+            // Сырая кайма: тот же путь, шире и почти прозрачный. Она и даёт
+            // растёкшийся край — без неё мазок обрублен, как полоса краски.
+            const halo = svgEl('path', {
+                d: start, fill: 'none', stroke: haloColor,
+                'stroke-width': (w * WORM_SLIME_HALO).toFixed(2),
                 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
             });
-            // Слой для ярких капель — они добавляются по мере движения.
+            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, w * 0.5), fill: wetColor });
+            const wet = svgEl('path', {
+                d: start, fill: 'none', stroke: wetColor, 'stroke-width': w.toFixed(2),
+                'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+            });
+            // Слой для капель и искр — они добавляются по мере движения.
             const drops = svgEl('g', { class: 'worm-slime-drops' });
-            g.appendChild(blot);
-            g.appendChild(stroke);
-            g.appendChild(drops);
+            wetGroup.appendChild(halo);
+            wetGroup.appendChild(blot);
+            wetGroup.appendChild(wet);
+            glossGroup.appendChild(drops);
+            g.appendChild(wetGroup);
+            g.appendChild(glossGroup);
             slimeLayer.appendChild(g);
-            state.slimeTrails.push({ g, stroke, drops, rng, scale: trailScale, points: [{ x, y }], finishedAt: null });
+            // Гаснет след ПОЭЛЕМЕНТНО, а не непрозрачностью группы. Причина
+            // в наложении: opacity на группе изолирует её, группа перестаёт
+            // видеть пол под собой — и в первый же кадр высыхания мокрое
+            // пятно превратилось бы в плоскую тёмную наклейку.
+            state.slimeTrails.push({ g, strokes: [halo, wet], drops,
+                                     parts: [halo, blot, wet, drops], rng, drips: 0,
+                                     scale: trailScale, points: [{ x, y }], finishedAt: null });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
         }
 
@@ -4679,20 +4726,75 @@ const WormRenderer = {
             if (Math.hypot(x - last.x, y - last.y) < WORM_SLIME_MIN_STEP) return;
             trail.points.push({ x, y });
             const d = trail.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-            setAttr(trail.stroke, 'd', d);
+            // Одна строка пути на все три штриха: кайма, мокрое и блик — это
+            // одна и та же линия, нарисованная разной толщиной.
+            trail.strokes.forEach(el => setAttr(el, 'd', d));
             // Капля свежей слизи — не на каждом шаге и со случайным сносом
             // поперёк следа, иначе капли выстроятся ровной пунктирной линией
             // по центру и получится разметка шоссе, а не слизь.
             if (trail.points.length % WORM_SLIME_DROP_EVERY !== 0) return;
             const ts = trail.scale || 1;
-            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3 * ts;
-            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.3 * ts;
+            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.28 * ts;
+            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.28 * ts;
             const r = WORM_SLIME_DROP_R * (0.6 + trail.rng() * 0.8) * ts;
+            // Капля — крошечная линза: тело капли и точка света на нём.
+            // Обе в осветляющей группе, поэтому на тёмном полу это искра, а
+            // на светлом — почти ничего, ровно как настоящий блик.
             trail.drops.appendChild(svgEl('ellipse', {
                 cx: (x + jx).toFixed(1), cy: (y + jy).toFixed(1),
                 rx: r.toFixed(2), ry: (r * (0.55 + trail.rng() * 0.4)).toFixed(2),
                 fill: withAlpha(P_.acid[400], WORM_SLIME_DROP_ALPHA)
             }));
+            trail.drops.appendChild(svgEl('ellipse', {
+                cx: (x + jx - r * 0.3).toFixed(1), cy: (y + jy - r * 0.35).toFixed(1),
+                rx: (r * 0.34).toFixed(2), ry: (r * 0.24).toFixed(2),
+                fill: withAlpha(SPEC, 0.55)
+            }));
+            // Искра: вытянутое пятно света ВДОЛЬ следа. Направление берётся
+            // из самого движения, поэтому блик всегда лежит по течению
+            // плёнки, а не поперёк, как лёг бы случайный кружок.
+            trail.drips = (trail.drips || 0) + 1;
+            if (trail.drips % WORM_SLIME_GLINT_EVERY) return;
+            const prev = trail.points[trail.points.length - 2] || last;
+            const deg = Math.atan2(y - prev.y, x - prev.x) * 180 / Math.PI;
+            const gw = WORM_SLIME_WIDTH * ts;
+            const off = (trail.rng() * 2 - 1) * gw * 0.22;
+            trail.drops.appendChild(svgEl('ellipse', {
+                cx: 0, cy: 0,
+                rx: (gw * WORM_SLIME_GLINT_LEN * (0.7 + trail.rng() * 0.6)).toFixed(2),
+                ry: (gw * WORM_SLIME_GLINT_THIN).toFixed(2),
+                fill: withAlpha(SPEC, WORM_SLIME_GLINT_ALPHA),
+                transform: `translate(${(x - off * Math.sin(deg * Math.PI / 180)).toFixed(1)},`
+                         + `${(y + off * Math.cos(deg * Math.PI / 180)).toFixed(1)}) rotate(${deg.toFixed(1)})`
+            }));
+        }
+
+        // ---------- СЛИЗЬ ЖИВЁТ ОТДЕЛЬНО ОТ ЧЕРВЯ ----------
+        // Высыхание вынесено из updateSlimeTrail нарочно. Тот вызывался
+        // только при opts.wander, а wander снимается со смертью персонажа —
+        // и след мёртвого червя оставался на полу навсегда. След — это не
+        // часть тела, а то, что тело оставило: он подсыхает сам по себе, что
+        // бы ни случилось с червём, и по той же причине не красится фильтром
+        // истощения (см. applyWither).
+        function fadeSlimeTrails(now) {
+            // Червь перестал ходить (или умер) — незаконченный отрезок надо
+            // закрыть, иначе он не начнёт сохнуть.
+            if (!opts.wander && state.activeSlimeTrail) {
+                state.activeSlimeTrail.finishedAt = state.activeSlimeTrail.finishedAt || now;
+                state.activeSlimeTrail = null;
+            }
+            for (let i = state.slimeTrails.length - 1; i >= 0; i--) {
+                const trail = state.slimeTrails[i];
+                if (trail.finishedAt == null) continue;
+                const elapsed = now - trail.finishedAt;
+                if (elapsed >= WORM_SLIME_FADE_MS) {
+                    trail.g.remove();
+                    state.slimeTrails.splice(i, 1);
+                } else {
+                    const k = (1 - elapsed / WORM_SLIME_FADE_MS).toFixed(3);
+                    trail.parts.forEach(el => setAttr(el, 'opacity', k));
+                }
+            }
         }
 
         function updateSlimeTrail(now, isMoving, anchor) {
@@ -4713,18 +4815,6 @@ const WormRenderer = {
             } else if (state.activeSlimeTrail) {
                 state.activeSlimeTrail.finishedAt = now;
                 state.activeSlimeTrail = null;
-            }
-
-            for (let i = state.slimeTrails.length - 1; i >= 0; i--) {
-                const trail = state.slimeTrails[i];
-                if (trail.finishedAt == null) continue;
-                const elapsed = now - trail.finishedAt;
-                if (elapsed >= WORM_SLIME_FADE_MS) {
-                    trail.g.remove();
-                    state.slimeTrails.splice(i, 1);
-                } else {
-                    setAttr(trail.g, 'opacity', (1 - elapsed / WORM_SLIME_FADE_MS).toFixed(3));
-                }
             }
         }
 
@@ -5083,6 +5173,9 @@ const WormRenderer = {
                 const geomDt = state.lastGeomTs ? Math.min(500, now - state.lastGeomTs) : dt;
                 const geomDtSec = Math.min(0.25, Math.max(0, geomDt / 1000));
                 state.lastGeomTs = now;
+
+                // След подсыхает всегда — он живёт отдельно от червя.
+                if (state.slimeTrails.length) fadeSlimeTrails(now);
 
                 // Модель читаем один раз за кадр и переиспользуем ниже.
                 const mm = mergedModel();
