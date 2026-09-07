@@ -252,8 +252,11 @@ const PrideMinigame = {
             this.stripes.push({ el, z: i * PRIDE_VIEW.STRIPE_STEP });
         }
 
-        // Толпа гуще от покупки массовки: купленное обязано быть видно.
-        const rows = PRIDE_VIEW.CROWD_ROWS + this.params.levels.crowd;
+        // Толпа гуще от покупки массовки: купленное обязано быть видно. Но не
+        // по силуэту за ступень — ступеней теперь шесть, и толпа выросла бы
+        // вдвое против задуманной, а это чистая заливка каждый кадр. Ряд
+        // добавляется через ступень: видно, что стало гуще, и кадр цел.
+        const rows = PRIDE_VIEW.CROWD_ROWS + Math.ceil(this.params.levels.crowd / 2);
         const crowdLayer = this.sceneEl.querySelector('#pr-crowd');
         const span = (A.Z_FAR - A.Z_CROWD_MIN) / PRIDE_VIEW.CLUSTERS;
         for (let side = -1; side <= 1; side += 2) {
@@ -736,23 +739,35 @@ const PrideMinigame = {
     renderHud() {
         if (!this.hudEl) return;
         const C = PALETTE.redCarpet;
+        // ---------- КОШЕЛЁК И ПРИБАВКА — ДВА РАЗНЫХ ЧИСЛА ----------
+        // Пока показывали одно, выход читался как ОБНУЛЕНИЕ кошелька: игрок
+        // заканчивал выход с «💋 34», начинал следующий — и видел «💋 0».
+        // Копилось при этом всё честно, врал именно показ.
+        //
+        // Теперь слева всегда КОШЕЛЁК (он не уменьшается никогда), а рядом со
+        // знаком «плюс» — сколько добавит этот выход. В конце прибавка
+        // складывается в кошелёк на глазах: число слева подскакивает ровно на
+        // то, что стоит справа от плюса.
         const wallet = GameState.currency('pride_kiss');
         // Строка счёта — от ВИДИМОГО верха, а не от верха холста: иначе на
         // телефоне, где холст обрезан, цифры уезжают под край окна.
         const x = this.safe.x0 + 16, y = this.safe.y0 + 34;
+        const purse = `<text x="${x}" y="${y}" font-size="26">💋</text>` +
+                      `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
         if (this.phase === 'idle') {
-            this.hudEl.innerHTML =
-                `<text x="${x}" y="${y}" font-size="26">💋</text>` +
-                `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
+            this.hudEl.innerHTML = purse;
             return;
         }
         const mult = this.multiplier();
         const heat = Math.min(1, this.hype / (this.params.hype.perStep * this.params.multCap));
-        const shown = this.phase === 'done' && this.awardedKisses != null
+        // На финише показываем НАЧИСЛЕННОЕ (публика могла устать, и тогда оно
+        // меньше собранного), пока оно не пришло — собранное.
+        const gain = this.phase === 'done' && this.awardedKisses != null
             ? this.awardedKisses : this.kisses;
-        this.hudEl.innerHTML =
-            `<text x="${x}" y="${y}" font-size="26">💋</text>` +
-            `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${shown}</text>` +
+        const gx = x + 30 + String(wallet).length * 16 + 14;
+        this.hudEl.innerHTML = purse +
+            `<text x="${gx}" y="${y}" font-size="22" fill="${C.flash[500]}"
+                   font-weight="700" opacity="${this.phase === 'done' ? 1 : 0.85}">+${gain}</text>` +
             `<g transform="translate(${this.safe.x1 - 16},${y - 8})" opacity="${(0.45 + heat * 0.55).toFixed(2)}">` +
             `<text x="0" y="8" text-anchor="end" font-size="${(20 + heat * 14).toFixed(0)}"
                    fill="${C.flash[500]}" font-weight="700">×${mult}</text></g>`;
@@ -772,7 +787,7 @@ const PrideMinigame = {
         // Ценник висит на том, что покупка меняет: на машине, на толпе и на
         // ковре. Место при этом обязано быть ВИДНО целиком, поэтому каждая
         // точка вжимается в видимую область холста.
-        const S = this.safe, pad = 52;
+        const S = this.safe, pad = 64;
         const fit = (x, y) => ({
             x: Math.max(S.x0 + pad, Math.min(S.x1 - pad, x)),
             y: Math.max(S.y0 + 76, Math.min(S.y1 - 34, y))
@@ -807,14 +822,24 @@ const PrideMinigame = {
     tag(key, pos, level, max, price, rich, emoji) {
         const C = PALETTE.redCarpet;
         const done = level >= max;
-        const w = done ? 62 : 84;
+        // Ширина от ЦЕНЫ: на верхних ступенях в ценнике четыре цифры, и в
+        // фиксированную табличку они не влезали.
+        const digits = done ? 0 : String(price).length;
+        const w = done ? 62 : 64 + digits * 13;
+        // Лесенка точек: сколько ступеней у линии, столько и точек. Шаг
+        // считается от ширины, а не задан числом, — линий с разным числом
+        // ступеней теперь две (у машины их четыре, у соседей шесть).
+        const step = Math.min(14, (w - 24) / Math.max(1, max));
         const pips = Array.from({ length: max }, (_, i) =>
-            `<circle cx="${-w / 2 + 14 + i * 14}" cy="20" r="4"
+            `<circle cx="${(-w / 2 + 12 + i * step).toFixed(1)}" cy="20" r="${(step / 3.4).toFixed(1)}"
                      fill="${i < level ? C.kiss[300] : C.night[500]}"/>`).join('');
+        // Раскладка слева направо, каждому знаку своё место: что покупаем →
+        // чем платим → сколько. Пока число стояло по правому краю, а значок
+        // по левому, на четырёхзначной цене они налезали друг на друга.
         const body = done
             ? `<text x="0" y="4" text-anchor="middle" font-size="20">${emoji}</text>`
-            : `<text x="${-w / 2 + 16}" y="4" font-size="18">${emoji}</text>` +
-              `<text x="${-w / 2 + 40}" y="4" font-size="15">💋</text>` +
+            : `<text x="${-w / 2 + 8}" y="4" font-size="17">${emoji}</text>` +
+              `<text x="${-w / 2 + 30}" y="4" font-size="13">💋</text>` +
               `<text x="${w / 2 - 8}" y="4" text-anchor="end" font-size="16"
                      fill="${rich ? C.kiss[300] : C.night[500]}" font-weight="700">${price}</text>`;
         return `<g class="pr-tag${rich ? ' rich' : ''}" data-key="${key}"

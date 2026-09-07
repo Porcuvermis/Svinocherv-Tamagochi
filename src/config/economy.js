@@ -441,20 +441,28 @@ const ECONOMY = {
                     hint: 'зон становится больше',
                     base: 620,         // мс между зонами без прокачки
                     levels: [
-                        { price: { pride_kiss: 75 },  bonus: 530 },
-                        { price: { pride_kiss: 135 }, bonus: 470 },
-                        { price: { pride_kiss: 245 }, bonus: 420 }
+                        { price: { pride_kiss: 70 },   bonus: 585 },
+                        { price: { pride_kiss: 140 },   bonus: 550 },
+                        { price: { pride_kiss: 280 },  bonus: 515 },
+                        { price: { pride_kiss: 560 },  bonus: 480 },
+                        { price: { pride_kiss: 1120 },  bonus: 450 },
+                        { price: { pride_kiss: 1980 }, bonus: 420 }
                     ]
                 },
 
+                // Ступеней ЧЕТЫРЕ, а не шесть, как у соседей, и это не
+                // экономия: множитель — целое число, и между ×3 и ×7 их ровно
+                // четыре. Дробный потолок ничего не изменил бы — ×3.5
+                // округляется до тех же трёх.
                 car: {
                     name: 'Машина', emoji: '🚘',
                     hint: 'выше потолок множителя',
                     base: 3,           // потолок множителя без прокачки
                     levels: [
-                        { price: { pride_kiss: 75 },  bonus: 4 },
-                        { price: { pride_kiss: 135 }, bonus: 5 },
-                        { price: { pride_kiss: 245 }, bonus: 7 }
+                        { price: { pride_kiss: 70 },  bonus: 4 },
+                        { price: { pride_kiss: 140 },  bonus: 5 },
+                        { price: { pride_kiss: 280 }, bonus: 6 },
+                        { price: { pride_kiss: 560 }, bonus: 7 }
                     ]
                 },
 
@@ -463,9 +471,12 @@ const ECONOMY = {
                     hint: 'зоны шире',
                     base: 44,          // радиус зоны в единицах холста
                     levels: [
-                        { price: { pride_kiss: 75 },  bonus: 50 },
-                        { price: { pride_kiss: 135 }, bonus: 56 },
-                        { price: { pride_kiss: 245 }, bonus: 62 }
+                        { price: { pride_kiss: 70 },   bonus: 47 },
+                        { price: { pride_kiss: 140 },   bonus: 50 },
+                        { price: { pride_kiss: 280 },  bonus: 53 },
+                        { price: { pride_kiss: 560 },  bonus: 56 },
+                        { price: { pride_kiss: 1120 },  bonus: 59 },
+                        { price: { pride_kiss: 1980 }, bonus: 62 }
                     ]
                 }
             }

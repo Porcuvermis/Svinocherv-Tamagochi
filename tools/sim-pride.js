@@ -66,10 +66,18 @@ function run(interval, cap, accuracy) {
     return kisses;
 }
 
+// Память на посчитанное: дневная модель спрашивает доход по одной и той же
+// клетке сотни раз (каждый день до следующей покупки — одна и та же), а
+// каждый ответ стоит двадцати тысяч выходов.
+const AVG_CACHE = new Map();
 function avg(interval, cap, accuracy) {
+    const key = interval + ':' + cap + ':' + accuracy;
+    if (AVG_CACHE.has(key)) return AVG_CACHE.get(key);
     let sum = 0;
     for (let i = 0; i < RUNS; i++) sum += run(interval, cap, accuracy);
-    return sum / RUNS;
+    const v = sum / RUNS;
+    AVG_CACHE.set(key, v);
+    return v;
 }
 
 for (const accuracy of [1, 0.85, 0.7]) {
@@ -135,4 +143,89 @@ if (!trap) console.log('  каждая ступень платит больше 
 // линия покупок начинается с недели ожидания.
 const first = PRICES[0] / base;
 console.log(`первая покупка — ${first.toFixed(1)} выхода на стартовых числах` +
-            (first > 5 ? '   ⚠ дороговато для первой' : ''));
+            (first > 8 ? '   ⚠ дороговато для первой' : ''));
+
+// ================= СКОЛЬКО ДНЕЙ КОПИТЬ =================
+// Главный вопрос ко всей линии покупок, и «сколько выходов» на него не
+// отвечает. Выходов можно сделать хоть двести за вечер — а вот заплатят за
+// них по убывающей, и именно суточная лестница, а не ценник, решает, растянется
+// прокачка на месяцы или кончится за час.
+//
+// Поэтому здесь считается ДЕНЬ, а не выход: игрок делает N выходов в сутки,
+// каждый следующий оплачивается всё хуже, купленное поднимает доход
+// следующих дней. Покупается всегда самое дешёвое из доступного — так ведёт
+// себя человек, у которого три ценника перед глазами.
+function daysToBuyAll(perDay, accuracy) {
+    const levels = { crowd: 0, car: 0, carpet: 0 };
+    const price = (key) => {
+        const l = UP[key].levels[levels[key]];
+        return l ? l.price.pride_kiss : Infinity;
+    };
+    const income = () => avg(CROWD[levels.crowd], CARS[levels.car], accuracy);
+    const total = ['crowd', 'car', 'carpet']
+        .reduce((sum, k) => sum + UP[k].levels.reduce((a, l) => a + l.price.pride_kiss, 0), 0);
+
+    let wallet = 0, day = 0, bought = 0;
+    const log = [];
+    const steps = ['crowd', 'car', 'carpet'].reduce((n, k) => n + UP[k].levels.length, 0);
+    while (bought < steps && day < 3000) {
+        day++;
+        const per = income();
+        let dayIncome = 0;
+        for (let i = 1; i <= perDay; i++) dayIncome += Math.max(1, Math.round(per * share(i)));
+        wallet += dayIncome;
+        // Покупки разбираются в конце дня: игрок заходит, видит, что хватило.
+        let again = true;
+        while (again) {
+            again = false;
+            const best = ['crowd', 'car', 'carpet']
+                .filter(k => levels[k] < UP[k].levels.length)
+                .sort((a, b) => price(a) - price(b))[0];
+            if (best && wallet >= price(best)) {
+                const paid = price(best);
+                wallet -= paid;
+                levels[best]++;
+                bought++;
+                // Копил — в ДОЛЯХ ДНЯ, а не в целых: на дешёвых ступенях
+                // разница «один день против двух» это округление, а не
+                // кривая, и по целым дням любая лестница выглядит стеной.
+                log.push({ day, key: best, lvl: levels[best], price: paid,
+                           daysFor: paid / dayIncome });
+                again = true;
+            }
+        }
+    }
+    return { day, log, total, income: income() };
+}
+
+console.log('\n=== сколько дней копить на ВСЮ прокачку ===');
+console.log('(покупается самое дешёвое из доступного, точность 85%)');
+for (const perDay of [2, 4, 10, 40]) {
+    const r = daysToBuyAll(perDay, 0.85);
+    const firstDay = r.log.length ? r.log[0].day : '—';
+    console.log(`  ${String(perDay).padStart(2)} выхода в день: всё куплено на ${String(r.day).padStart(3)}-й день   ` +
+                `(первая покупка на ${firstDay}-й, всего ${r.total} 💋)`);
+}
+
+// Корридор времени из docs/plan/15-progression.md: каждая следующая ступень
+// копится в 1.2–1.7 раза дольше предыдущей. Ниже — контент выедается за
+// вечер, выше — игрок упирается в стену.
+const ref = daysToBuyAll(3, 0.85);
+// Коридор считается ВНУТРИ ЛИНИИ, а не по порядку покупок. Три линии стоят
+// одинаково и разбираются вперемешку, и сравнивать соседние покупки из разных
+// линий бессмысленно: ряд 1.0, 0.9, 0.8, 1.5, 1.4 — это не кривая цен, это
+// три одинаковые ступени подряд.
+console.log('\nпо ступеням при трёх выходах в день (коридор 1.2–1.7 внутри линии):');
+['crowd', 'car', 'carpet'].forEach(key => {
+    console.log(`  ${UP[key].name}:`);
+    let prevFor = null;
+    ref.log.filter(b => b.key === key).forEach(b => {
+        const ratio = prevFor ? b.daysFor / prevFor : null;
+        console.log(`    ур.${b.lvl}  ${String(b.price).padStart(5)} 💋   ` +
+                    `куплено на ${String(b.day).padStart(3)}-й день   ` +
+                    `копил ${b.daysFor.toFixed(1)} дн.` +
+                    (ratio ? `   ×${ratio.toFixed(2)}` +
+                        (ratio > 1.75 ? '  ⚠ стена' : (ratio < 1.15 ? '  ⚠ слишком дёшево' : '')) : ''));
+        prevFor = b.daysFor;
+    });
+});
