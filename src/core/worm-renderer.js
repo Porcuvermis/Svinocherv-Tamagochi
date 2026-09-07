@@ -741,7 +741,7 @@ const WORM_SLIME_DROP_R = 2.1;
 const WORM_SLIME_DROP_ALPHA = 0.42;
 const WORM_SLIME_SHINE_ALPHA = 0.5;
 const WORM_SLIME_BUBBLE_ALPHA = 0.45;
-const WORM_SLIME_FADE_MS = 15000;
+const WORM_SLIME_FADE_MS = 7500;
 // Шаг опорной точки следа. Точки соединяются КРИВОЙ, а не отрезками: на
 // медленном устройстве персонаж успевает уехать далеко между кадрами, и
 // ломаная из таких звеньев выглядела чертежом — прямые куски со стыками
