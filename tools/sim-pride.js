@@ -49,19 +49,37 @@ const steps = (branch) => [branch.base].concat(branch.levels.map(l => l.bonus));
 const CROWD = steps(UP.crowd);
 const CARS = steps(UP.car);
 const PRICES = UP.crowd.levels.map(l => l.price.pride_kiss);
+const CAR_PRICES = UP.car.levels.map(l => l.price.pride_kiss);
+
+// Мешок зон — ТОТ ЖЕ, что в игре, и это принципиально: доля поцелуев зависит
+// от ажиотажа, то есть доход зависит от игры дважды (через множитель и через
+// саму частоту поцелуев). Считать это броском монетки значило бы считать
+// другую игру.
+function drawBag(hype) {
+    const b = CFG.kissBag;
+    const kisses = hype >= b.hotAt ? b.hot : b.cold;
+    const bag = Array.from({ length: b.of }, (_, i) => i < kisses);
+    for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = bag[i]; bag[i] = bag[j]; bag[j] = t;
+    }
+    return bag;
+}
 
 function run(interval, cap, accuracy) {
     const zones = Math.floor(CFG.runMs / interval);
     // Сколько зон игрок вообще успевает попробовать закрыть. Остальные
     // гаснут сами — и роняют ажиотаж наравне с промахом.
     const reach = Math.min(1, (TAP_RATE * RUN_SEC) / zones);
-    let hype = 0, kisses = 0;
+    let hype = 0, kisses = 0, bag = [];
     for (let i = 0; i < zones; i++) {
+        if (!bag.length) bag = drawBag(hype);
+        const isKiss = bag.pop();
         const caught = Math.random() < accuracy * reach;
         hype = Math.max(0, hype + (caught ? CFG.hype.hit : CFG.hype.miss));
         if (!caught) continue;
         const mult = Math.min(cap, 1 + Math.floor(hype / CFG.hype.perStep));
-        if (Math.random() < CFG.kissShare) kisses += mult;
+        if (isKiss) kisses += mult;
     }
     return kisses;
 }
@@ -99,8 +117,9 @@ const top = avg(CROWD[CROWD.length - 1], CARS[CARS.length - 1], 0.85);
 const lineCost = PRICES.reduce((a, b) => a + b, 0);
 console.log(`\nстартовый доход (толпа 0, ×${CARS[0]}, точность 85%): ${base.toFixed(1)} поцелуев/выход`);
 console.log(`полностью прокачанный:                            ${top.toFixed(1)} поцелуев/выход  (×${(top / base).toFixed(1)})`);
-console.log(`цены ступеней одной линии: ${PRICES.join(' → ')}   всего ${lineCost} за линию`);
-console.log(`три линии: ${lineCost * 3} поцелуев`);
+console.log(`массовка и дорожка: ${PRICES.join(' → ')}   всего ${lineCost} за линию`);
+console.log(`машина:             ${CAR_PRICES.join(' → ')}   всего ${CAR_PRICES.reduce((a, b) => a + b, 0)}`);
+console.log(`три линии: ${lineCost * 2 + CAR_PRICES.reduce((a, b) => a + b, 0)} поцелуев`);
 console.log(`при среднем доходе ${((base + top) / 2).toFixed(0)}/выход это ≈ ${Math.round(lineCost * 3 / ((base + top) / 2))} выходов`);
 
 // ---------- ПУБЛИКА УСТАЁТ ----------

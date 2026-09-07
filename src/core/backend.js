@@ -1384,7 +1384,7 @@ const LocalBackend = {
         return {
             runMs: cfg.runMs || 20000,
             lifeMs: cfg.targetLifeMs || 1500,
-            kissShare: cfg.kissShare != null ? cfg.kissShare : 1 / 3,
+            kissBag: Object.assign({ of: 4, cold: 1, hot: 2, hotAt: 6 }, cfg.kissBag || {}),
             maxTargets: cfg.maxTargets || 5,
             hype: Object.assign({ hit: 1, miss: -2, perStep: 3 }, cfg.hype || {}),
             spawnMs: this.upgradeValue('pride', 'crowd'),

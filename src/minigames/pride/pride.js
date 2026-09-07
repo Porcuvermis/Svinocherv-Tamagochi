@@ -126,6 +126,7 @@ const PrideMinigame = {
     clusters: [],
     car: null,       // она же шкала выхода: см. шапку
     targets: [],
+    bag: [],             // мешок типов зон, см. nextIsKiss()
     tokenCounter: 0,
     spawnAcc: 0,
     ambientAcc: 0,
@@ -255,6 +256,7 @@ const PrideMinigame = {
         this.awardedKisses = null;
         this.spawnAcc = 0;
         this.ambientAcc = 0;
+        this.bag = [];
         // Скорость выводится из длины выхода, а не задаётся отдельно: машина
         // ОБЯЗАНА добраться до горизонта ровно тогда, когда кончится время,
         // иначе она приезжает то раньше, то позже и перестаёт быть шкалой.
@@ -660,7 +662,7 @@ const PrideMinigame = {
     spawnTarget() {
         if (this.phase !== 'run') return;
         if (this.targets.length >= this.params.maxTargets) return;
-        const kiss = Math.random() < this.params.kissShare && !!this.wormBox;
+        const kiss = this.nextIsKiss() && !!this.wormBox;
         const spot = kiss ? this.pickKissSpot() : this.pickFlashSpot();
         if (!spot) return;
 
@@ -683,6 +685,33 @@ const PrideMinigame = {
             bornAt: performance.now(),
             diesAt: performance.now() + this.params.lifeMs
         });
+    },
+
+    // ---------- КОМУ ДОСТАЁТСЯ ЗОНА ----------
+    // Мешок, а не бросок монетки на каждую зону: из `of` зон ровно столько-то
+    // поцелуйных, порядок случайный, тянем без возврата. Разница не в
+    // среднем, а в хвостах — монетка регулярно выдаёт выход, где поцелуев
+    // почти не было, и виноватым себя чувствует игрок, хотя не виноват.
+    //
+    // Мешок набирается ПО ТЕКУЩЕМУ АЖИОТАЖУ: разогретая толпа лезет
+    // целоваться вдвое чаще. Это единственное, ради чего вспышки нужны, пока
+    // машина не куплена: множитель на старте ×1 и не даёт ничего, а вот
+    // «завёл толпу — на тебя чаще прыгают» работает с первой же секунды.
+    nextIsKiss() {
+        if (!this.bag || !this.bag.length) this.fillBag();
+        return this.bag.pop();
+    },
+
+    fillBag() {
+        const b = this.params.kissBag;
+        const kisses = this.hype >= b.hotAt ? b.hot : b.cold;
+        this.bag = Array.from({ length: b.of }, (_, i) => i < kisses);
+        // Тасовка Фишера—Йетса: доля в мешке задана, а порядок нет — иначе
+        // поцелуи шли бы строго через три вспышки и читались расписанием.
+        for (let i = this.bag.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const t = this.bag[i]; this.bag[i] = this.bag[j]; this.bag[j] = t;
+        }
     },
 
     // Поцелуй — на черве. Точка берётся из измеренного габарита силуэта, с
@@ -912,7 +941,11 @@ const PrideMinigame = {
             return;
         }
         const mult = this.multiplier();
-        const heat = Math.min(1, this.hype / (this.params.hype.perStep * this.params.multCap));
+        // Накал показывает РАЗОГРЕВ ТОЛПЫ, а не близость к потолку множителя:
+        // на старте потолок ×1, и мерить накал по нему значило бы, что
+        // индикатор всё время в максимуме. Разогретая толпа — это та, что
+        // лезет целоваться вдвое чаще, и её порог и есть шкала накала.
+        const heat = Math.min(1, this.hype / this.params.kissBag.hotAt);
         // На финише показываем НАЧИСЛЕННОЕ (публика могла устать, и тогда оно
         // меньше собранного), пока оно не пришло — собранное.
         const gain = this.phase === 'done' && this.awardedKisses != null
