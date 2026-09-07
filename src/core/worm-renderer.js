@@ -670,43 +670,60 @@ const WORM_BREATH_RATIO = { 'belly': 1, 'segment-2': 0.7, 'segment-1': 0.3 };
 // Слизистый след на полу во время ходьбы (растёт из-под предхвостового
 // growing-сегмента) — см. startSlimeTrail/extendSlimeTrail/updateSlimeTrail
 // внутри WormRenderer.mount().
-const WORM_SLIME_FADE_MS = 15000;
-const WORM_SLIME_WIDTH = 24;
-const WORM_SLIME_MIN_STEP = 4;
-// ---------- СЛЕД — ЭТО НЕ КРАСКА, А МОКРОЕ МЕСТО ----------
-// Сначала след был заливкой: оливковый штрих поверх пола. Любая заливка
-// врёт одинаково — она НЕ ЗНАЕТ, на чём лежит, поэтому на светлых досках
-// выглядела зелёной полосой, а на тёмных пропадала.
+// ---------- СЛЕД — ЭТО НЕ КРАСКА, А СЛИЗЬ НА ПОЛУ ----------
+// Две попытки до этой провалились одинаково — плоско.
 //
-// Мокрое пятно устроено иначе: оно не кладёт свой цвет, а ЗАБИРАЕТ у
-// поверхности светлоту. Ровно это и делает умножение (mix-blend-mode:
-// multiply): пол под следом темнеет и чуть холодеет, оставаясь собой —
-// доска остаётся доской, кафель кафелем. Второй признак мокрого — блик:
-// зеркальная плёнка отражает свет туда, где сухая поверхность рассеивает.
-// Он кладётся осветлением (screen) и живёт редкими искрами (см. ниже).
+// Первая: заливка, оливковый штрих поверх пола. Заливка не знает, на чём
+// лежит: на светлых досках зелёная полоса, на тёмных её нет вовсе.
+// Вторая: только затемнение (multiply). Пол честно намокал, но это была
+// ровная полоса с каймой — влажное место, а не слизь.
 //
-// Если браузер режимы наложения не поддержит, всё останется на месте:
-// цвета подобраны так, чтобы и обычным наложением читались мокрым пятном
-// и бликом, просто менее слитно с полом.
-const WORM_SLIME_WET_ALPHA = 0.34;    // насколько мазок съедает светлоту пола
-const WORM_SLIME_HALO = 1.7;          // во сколько раз шире мазка сырая кайма
-const WORM_SLIME_HALO_ALPHA = 0.14;   // кайма едва заметна: это подсыхающий край
-// Блик — РЕДКИЕ ИСКРЫ вдоль следа, а не светлая жила. Первой версией была
-// прерывистая линия (dasharray) по всей длине: на экране это оказалось
-// пунктиром дорожной разметки, ровно та же ошибка, из-за которой отсюда
-// однажды убрали сплошную зелёную сердцевину. Блеск читается только
-// пятнами: где плёнка легла ровно — свет, где скомкана — ничего.
-const WORM_SLIME_GLINT_EVERY = 3;     // искра на каждую N-ю каплю
-const WORM_SLIME_GLINT_ALPHA = 0.34;
-const WORM_SLIME_GLINT_LEN = 0.34;    // доля ширины мазка
-const WORM_SLIME_GLINT_THIN = 0.1;
-// Яркая кислота в следе живёт ОТДЕЛЬНЫМИ КАПЛЯМИ, а не непрерывной линией.
-// Проверено: тонкая яркая сердцевина вдоль всего следа читается зелёным
-// кабелем — та же ошибка "акцент большой площадью", что и широкая заливка,
-// только вытянутая. Капли дают кислотность, оставаясь точками.
-const WORM_SLIME_DROP_ALPHA = 0.38;
-const WORM_SLIME_DROP_EVERY = 5;   // капля на каждую N-ю точку следа
+// Слизь на референсах собирается из ПЯТИ вещей, и без любой из них она
+// разваливается в плоское пятно:
+//   1. неровный, натёкший силуэт — с наплывами, языками и оторвавшимися
+//      каплями рядом; ровная ширина мгновенно читается полосой краски;
+//   2. затемнение основы — плёнка мокрая, под ней пол темнее и холоднее;
+//   3. КРУПНЫЕ мягкие блики — главный признак глянца. Не искры и не
+//      тонкая жила, а размытые пятна отражённого света в полширины следа;
+//   4. свет по КРАЮ — плёнка натянута, край работает линзой и светится
+//      ярче середины;
+//   5. пузырьки — мелкие светлые точки внутри. Это то, что отличает гель
+//      от воды: в воде нечему держать пузырь.
+//
+// Мягкость всех бликов — радиальными градиентами, а не размытием: фильтр
+// на каждое пятно стоил бы кадров, а градиент рисуется как обычная
+// заливка (тот же приём, что у пятен на теле, см. ensureSoftGradient).
+const WORM_SLIME_WIDTH = 26;
+// Ступени мокрого: [во сколько раз шире базы, насколько плотнее]. Три
+// ступени вместо одной дают мягко уплотняющийся к середине край — без
+// размытия.
+const WORM_SLIME_WET_STEPS = [[1.22, 0.05], [1.09, 0.11], [1.0, 0.3]];
+// ОБЪЁМ. Плёнка не наклейка, у неё есть толщина, и видно это по свету:
+// сверху-слева мениск ловит блик, снизу-справа лежит тень. Оба — тот же
+// путь, просто сдвинутый: два штриха вместо честной геометрии кромки.
+const WORM_SLIME_LIFT = 0.07;        // сдвиг каймы и тени, доля ширины
+const WORM_SLIME_DROPSHADOW = 1.16;  // тень чуть шире тела
+const WORM_SLIME_DROPSHADOW_ALPHA = 0.1;
+// Наплывы: тот же путь широким пунктиром. Пунктир и делает силуэт
+// неровным — по следу идут утолщения, как у натёкшей слизи.
+const WORM_SLIME_BULGE = 1.5;
+const WORM_SLIME_BULGE_ALPHA = 0.12;
+// Всё, что сыплется по ходу — раз в N шагов следа (шаг = MIN_STEP единиц).
+const WORM_SLIME_BUBBLE_EVERY = 6;   // пузырьки
+const WORM_SLIME_SHINE_EVERY = 3;    // крупные блики
+const WORM_SLIME_LUMP_EVERY = 9;     // сгустки и оторвавшиеся капли
+const WORM_SLIME_DROP_EVERY = 9;     // капли кислоты
+// Свет по краю плёнки — не пятнами, а ШИРОКИМ штрихом ПОД мокрым телом:
+// мокрое ложится сверху и оставляет от него только кайму. Так мениск
+// получается сплошным и ровно по форме следа, без единой лишней записи.
+const WORM_SLIME_RIM = 1.1;          // во сколько раз кайма шире тела
 const WORM_SLIME_DROP_R = 2.1;
+const WORM_SLIME_DROP_ALPHA = 0.42;
+const WORM_SLIME_SHINE_ALPHA = 0.5;
+const WORM_SLIME_RIM_ALPHA = 0.14;
+const WORM_SLIME_BUBBLE_ALPHA = 0.45;
+const WORM_SLIME_FADE_MS = 15000;
+const WORM_SLIME_MIN_STEP = 5;
 // На сколько должен измениться масштаб глубины, чтобы начать новый отрезок следа.
 const WORM_SLIME_DEPTH_STEP = 0.1;
 
@@ -4669,54 +4686,129 @@ const WormRenderer = {
             return d + 'Z';
         }
 
-        // Цвет "мокрого": не краска, а то, что след ЗАБИРАЕТ у пола. Тёмная
-        // ступень кислоты в чернильной примеси — умножаясь, она уводит
-        // поверхность в тень и чуть в холод, как и положено намокшему.
-        const SLIME_WET = mixColor(ACID_DEEP, INK, 0.45);
+        // Цвет "мокрого" — не краска, а множитель: на что умножается пол под
+        // плёнкой. Он зелёный, но работает не как зелёная полоса поверх, а
+        // как светофильтр: доска остаётся доской, только уходит в тень и в
+        // зелень. Чистая кислота была бы ядовитой заливкой, чистая чернила —
+        // просто тенью; нужна их середина.
+        const SLIME_WET = mixColor(ACID_DEEP, P_.acid[400], 0.35);
+        // Отдельный <defs> под градиенты слизи: они общие на все следы этого
+        // персонажа, поэтому создаются один раз, а не на каждый блик.
+        const slimeDefs = svgEl('defs');
+        svg.appendChild(slimeDefs);
+        const slimeCtx = { defs: slimeDefs, gradCache: Object.create(null) };
+        const slimeShine = ensureSoftGradient(slimeCtx, `worm-slime-shine-${instanceId}`,
+                                              SPEC, WORM_SLIME_SHINE_ALPHA);
 
         function startSlimeTrail(x, y) {
-            // Мокрое пятно и блик — РАЗНЫЕ режимы наложения (умножение и
-            // осветление), поэтому лежат в двух группах, а не в одной.
             const g = svgEl('g', { class: 'worm-slime-trail' });
-            const wetGroup = svgEl('g', { class: 'worm-slime-wet', style: 'mix-blend-mode:multiply' });
-            const glossGroup = svgEl('g', { class: 'worm-slime-gloss', style: 'mix-blend-mode:screen' });
+            // Мокрое и блеск — РАЗНЫЕ режимы наложения (умножение и
+            // осветление), поэтому лежат в двух группах.
+            //
+            // isolation на обеих обязательна. Без неё перекрывающиеся куски
+            // одной группы умножаются друг на друга, и каждый наплыв,
+            // сгусток и стык отрезков превращается в тёмную заплату — след
+            // выглядит грязным пятном, а не однородной плёнкой. С изоляцией
+            // группа сперва собирается сама в себе, и на пол ложится уже
+            // готовая плёнка, ровно один раз.
+            //
+            // Гашение при высыхании — непрозрачностью ЭТИХ групп: она
+            // применяется до наложения, поэтому подсыхающий след честно
+            // светлеет, оставаясь мокрым пятном (первая версия гасила
+            // родителя над ними и выключала наложение целиком).
+            const wetGroup = svgEl('g', {
+                class: 'worm-slime-wet', opacity: 1,
+                style: 'mix-blend-mode:multiply;isolation:isolate'
+            });
+            const glowGroup = svgEl('g', {
+                class: 'worm-slime-gloss', opacity: 1,
+                style: 'mix-blend-mode:screen;isolation:isolate'
+            });
+            // Кайма лежит ПОД мокрым телом и своей группой: тело накрывает
+            // её середину и оставляет только светящийся ободок по форме
+            // следа. Ободок снаружи, а не внутри, потому что плёнка на полу
+            // приподнята краями — мениск ловит свет именно там.
+            const rimGroup = svgEl('g', {
+                class: 'worm-slime-rim', opacity: 1,
+                style: 'mix-blend-mode:screen;isolation:isolate'
+            });
             // След лежит НА ПОЛУ, значит подчиняется той же перспективе, что
             // и всё остальное: у дальней стены он должен быть уже.
             const trailScale = opts.room ? state.depthScale : 1;
             const w = WORM_SLIME_WIDTH * trailScale;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
-            const wetColor = withAlpha(SLIME_WET, WORM_SLIME_WET_ALPHA);
-            const haloColor = withAlpha(SLIME_WET, WORM_SLIME_HALO_ALPHA);
             const start = `M ${x.toFixed(1)},${y.toFixed(1)}`;
-            // Сырая кайма: тот же путь, шире и почти прозрачный. Она и даёт
-            // растёкшийся край — без неё мазок обрублен, как полоса краски.
-            const halo = svgEl('path', {
-                d: start, fill: 'none', stroke: haloColor,
-                'stroke-width': (w * WORM_SLIME_HALO).toFixed(2),
-                'stroke-linecap': 'round', 'stroke-linejoin': 'round'
-            });
-            const blot = svgEl('path', { d: randomBlobPath(x, y, rng, w * 0.5), fill: wetColor });
-            const wet = svgEl('path', {
-                d: start, fill: 'none', stroke: wetColor, 'stroke-width': w.toFixed(2),
-                'stroke-linecap': 'round', 'stroke-linejoin': 'round'
-            });
-            // Слой для капель и искр — они добавляются по мере движения.
-            const drops = svgEl('g', { class: 'worm-slime-drops' });
-            wetGroup.appendChild(halo);
-            wetGroup.appendChild(blot);
-            wetGroup.appendChild(wet);
-            glossGroup.appendChild(drops);
+            const stroke = (host, color, width, dash) => {
+                const el = svgEl('path', {
+                    d: start, fill: 'none', stroke: color,
+                    'stroke-width': (w * width).toFixed(2),
+                    'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+                });
+                if (dash) setAttr(el, 'stroke-dasharray', dash);
+                host.appendChild(el);
+                return el;
+            };
+            const wetStroke = (width, alpha, dash) =>
+                stroke(wetGroup, withAlpha(SLIME_WET, alpha), width, dash);
+            // Сначала кайма (она ниже всех), потом тело в три ступени ширины
+            // — мягко уплотняющийся к середине край.
+            // Кайма светлая, а не кислотная: чистая кислота по всей длине
+            // следа даёт неоновый ободок — тот самый «акцент большой
+            // площадью», который здесь запрещён. Свет с примесью кислоты.
+            const rimColor = withAlpha(mixColor(SPEC, P_.acid[200], 0.45), WORM_SLIME_RIM_ALPHA);
+            const lift = w * WORM_SLIME_LIFT;
+            const strokes = [stroke(rimGroup, rimColor, WORM_SLIME_RIM)];
+            // Кайма сдвинута к верхне-левому краю, тень — к нижне-правому.
+            // Свет в игре падает сверху-слева (art-direction §3), и от одного
+            // этого сдвига плоская полоса начинает читаться приподнятой.
+            setAttr(strokes[0], 'transform', `translate(${(-lift).toFixed(2)},${(-lift * 1.2).toFixed(2)})`);
+            const shadow = wetStroke(WORM_SLIME_DROPSHADOW, WORM_SLIME_DROPSHADOW_ALPHA);
+            setAttr(shadow, 'transform', `translate(${lift.toFixed(2)},${(lift * 1.2).toFixed(2)})`);
+            strokes.push(shadow);
+            WORM_SLIME_WET_STEPS.forEach(([k, a]) => strokes.push(wetStroke(k, a)));
+            // Наплывы: широкий рваный пунктир поверх. Именно он ломает
+            // ровную ширину, из-за которой след читался полосой.
+            strokes.push(wetStroke(WORM_SLIME_BULGE, WORM_SLIME_BULGE_ALPHA,
+                `${(w * 1.1).toFixed(1)} ${(w * 1.9).toFixed(1)} ${(w * 0.5).toFixed(1)} ${(w * 2.6).toFixed(1)}`));
+            // Начальная клякса: след начинается лужицей, а не срезом.
+            wetGroup.appendChild(svgEl('ellipse', {
+                cx: 0, cy: 0, rx: (w * 0.5).toFixed(2), ry: (w * 0.36).toFixed(2),
+                fill: withAlpha(SLIME_WET, 0.22),
+                transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(rng() * 180).toFixed(1)})`
+            }));
+            // Комки и оторвавшиеся капли — своим слоем, чтобы дописывать их
+            // на ходу, не трогая штрихи.
+            const lumps = svgEl('g', { class: 'worm-slime-lumps' });
+            wetGroup.appendChild(lumps);
+            // Блеск: крупные мягкие пятна, свет по краю, пузырьки, капли.
+            const shine = svgEl('g', { class: 'worm-slime-shine' });
+            const bubbles = svgEl('g', { class: 'worm-slime-bubbles' });
+            glowGroup.appendChild(shine);
+            glowGroup.appendChild(bubbles);
+            g.appendChild(rimGroup);
             g.appendChild(wetGroup);
-            g.appendChild(glossGroup);
+            g.appendChild(glowGroup);
             slimeLayer.appendChild(g);
-            // Гаснет след ПОЭЛЕМЕНТНО, а не непрозрачностью группы. Причина
-            // в наложении: opacity на группе изолирует её, группа перестаёт
-            // видеть пол под собой — и в первый же кадр высыхания мокрое
-            // пятно превратилось бы в плоскую тёмную наклейку.
-            state.slimeTrails.push({ g, strokes: [halo, wet], drops,
-                                     parts: [halo, blot, wet, drops], rng, drips: 0,
-                                     scale: trailScale, points: [{ x, y }], finishedAt: null });
+            state.slimeTrails.push({
+                g, strokes, lumps, shine, bubbles, rng, steps: 0,
+                parts: [rimGroup, wetGroup, glowGroup],
+                scale: trailScale, points: [{ x, y }], finishedAt: null
+            });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
+        }
+
+        // Точка со сносом ПОПЕРЁК следа: k = 0 — по центру, ±1 — у самого
+        // края. Всё, что сыплется по ходу, ставится через неё, иначе капли
+        // и блики выстраиваются в ровную линию по оси и получается разметка.
+        function slimeSide(trail, x, y, prev, k) {
+            const dx = x - prev.x, dy = y - prev.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const half = WORM_SLIME_WIDTH * (trail.scale || 1) * 0.5;
+            return {
+                x: x - (dy / len) * half * k,
+                y: y + (dx / len) * half * k,
+                deg: Math.atan2(dy, dx) * 180 / Math.PI
+            };
         }
 
         function extendSlimeTrail(x, y) {
@@ -4726,46 +4818,73 @@ const WormRenderer = {
             if (Math.hypot(x - last.x, y - last.y) < WORM_SLIME_MIN_STEP) return;
             trail.points.push({ x, y });
             const d = trail.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-            // Одна строка пути на все три штриха: кайма, мокрое и блик — это
-            // одна и та же линия, нарисованная разной толщиной.
+            // Одна строка пути на все штрихи: ступени мокрого и наплывы —
+            // это одна и та же линия, нарисованная разной толщиной.
             trail.strokes.forEach(el => setAttr(el, 'd', d));
-            // Капля свежей слизи — не на каждом шаге и со случайным сносом
-            // поперёк следа, иначе капли выстроятся ровной пунктирной линией
-            // по центру и получится разметка шоссе, а не слизь.
-            if (trail.points.length % WORM_SLIME_DROP_EVERY !== 0) return;
+
+            const n = ++trail.steps;
+            const rng = trail.rng;
             const ts = trail.scale || 1;
-            const jx = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.28 * ts;
-            const jy = (trail.rng() * 2 - 1) * WORM_SLIME_WIDTH * 0.28 * ts;
-            const r = WORM_SLIME_DROP_R * (0.6 + trail.rng() * 0.8) * ts;
-            // Капля — крошечная линза: тело капли и точка света на нём.
-            // Обе в осветляющей группе, поэтому на тёмном полу это искра, а
-            // на светлом — почти ничего, ровно как настоящий блик.
-            trail.drops.appendChild(svgEl('ellipse', {
-                cx: (x + jx).toFixed(1), cy: (y + jy).toFixed(1),
-                rx: r.toFixed(2), ry: (r * (0.55 + trail.rng() * 0.4)).toFixed(2),
+            const w = WORM_SLIME_WIDTH * ts;
+
+            // ПУЗЫРЬКИ. Мелкие светлые точки внутри плёнки — то, чем гель
+            // отличается от воды. Ставятся вразнобой по всей ширине.
+            if (n % WORM_SLIME_BUBBLE_EVERY === 0) {
+                const p = slimeSide(trail, x, y, last, (rng() * 2 - 1) * 0.8);
+                const r = w * (0.025 + rng() * 0.04);
+                trail.bubbles.appendChild(svgEl('circle', {
+                    cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: r.toFixed(2),
+                    fill: withAlpha(mixColor(SPEC, P_.acid[200], 0.5), WORM_SLIME_BUBBLE_ALPHA)
+                }));
+            }
+
+            // КРУПНЫЙ БЛИК — главный признак глянца. Мягкое пятно
+            // отражённого света почти в полширины следа, вытянутое по ходу.
+            // Сторона ВСЕГДА одна (верхне-левая): свет в игре падает оттуда
+            // (art-direction §3), и от этого блики выстраиваются в одну
+            // жилу вдоль следа, а не сыплются пылью в разные стороны —
+            // именно это отличает глянец от крапа.
+            // ...но С РАЗРЫВАМИ. Сплошная жила бликов вдоль всего следа —
+            // это светящийся кабель, проверено. Блик рвётся: две-три
+            // соседние вспышки, потом промежуток, где плёнка легла неровно
+            // и света нет.
+            if (n % WORM_SLIME_SHINE_EVERY === 0 && rng() < 0.6) {
+                const p = slimeSide(trail, x, y, last, -0.34 + (rng() * 2 - 1) * 0.16);
+                trail.shine.appendChild(svgEl('ellipse', {
+                    cx: 0, cy: 0,
+                    rx: (w * (0.3 + rng() * 0.42)).toFixed(2),
+                    ry: (w * (0.13 + rng() * 0.08)).toFixed(2),
+                    fill: slimeShine,
+                    transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${p.deg.toFixed(1)})`
+                }));
+            }
+
+            // СГУСТКИ И ОТОРВАВШИЕСЯ КАПЛИ. Кляксы того же мокрого цвета:
+            // те, что у кромки, сливаются со следом и делают его силуэт
+            // рваным, те, что дальше — отдельные капельки рядом.
+            if (n % WORM_SLIME_LUMP_EVERY === 0) {
+                const far = rng() < 0.4;
+                const p = slimeSide(trail, x, y, last, (rng() < 0.5 ? -1 : 1) * (far ? 1.15 + rng() * 0.5 : 0.55 + rng() * 0.35));
+                // Эллипсом, а не многоугольником: у ломаной видны прямые
+                // грани, и вместо натёка получается осколок.
+                const lr = w * (far ? 0.07 + rng() * 0.05 : 0.17 + rng() * 0.13);
+                trail.lumps.appendChild(svgEl('ellipse', {
+                    cx: 0, cy: 0, rx: lr.toFixed(2), ry: (lr * (0.55 + rng() * 0.4)).toFixed(2),
+                    fill: withAlpha(SLIME_WET, far ? 0.3 : 0.22),
+                    transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${(p.deg + (rng() * 60 - 30)).toFixed(1)})`
+                }));
+            }
+
+            // КАПЛИ КИСЛОТЫ. Единственное место, где в следе есть цвет:
+            // кислота — акцент, а акцент по правилу дозировки может быть
+            // только точкой (art-direction §1.2).
+            if (n % WORM_SLIME_DROP_EVERY) return;
+            const p = slimeSide(trail, x, y, last, (rng() * 2 - 1) * 0.6);
+            const r = WORM_SLIME_DROP_R * (0.6 + rng() * 0.8) * ts;
+            trail.bubbles.appendChild(svgEl('ellipse', {
+                cx: p.x.toFixed(1), cy: p.y.toFixed(1),
+                rx: r.toFixed(2), ry: (r * (0.55 + rng() * 0.4)).toFixed(2),
                 fill: withAlpha(P_.acid[400], WORM_SLIME_DROP_ALPHA)
-            }));
-            trail.drops.appendChild(svgEl('ellipse', {
-                cx: (x + jx - r * 0.3).toFixed(1), cy: (y + jy - r * 0.35).toFixed(1),
-                rx: (r * 0.34).toFixed(2), ry: (r * 0.24).toFixed(2),
-                fill: withAlpha(SPEC, 0.55)
-            }));
-            // Искра: вытянутое пятно света ВДОЛЬ следа. Направление берётся
-            // из самого движения, поэтому блик всегда лежит по течению
-            // плёнки, а не поперёк, как лёг бы случайный кружок.
-            trail.drips = (trail.drips || 0) + 1;
-            if (trail.drips % WORM_SLIME_GLINT_EVERY) return;
-            const prev = trail.points[trail.points.length - 2] || last;
-            const deg = Math.atan2(y - prev.y, x - prev.x) * 180 / Math.PI;
-            const gw = WORM_SLIME_WIDTH * ts;
-            const off = (trail.rng() * 2 - 1) * gw * 0.22;
-            trail.drops.appendChild(svgEl('ellipse', {
-                cx: 0, cy: 0,
-                rx: (gw * WORM_SLIME_GLINT_LEN * (0.7 + trail.rng() * 0.6)).toFixed(2),
-                ry: (gw * WORM_SLIME_GLINT_THIN).toFixed(2),
-                fill: withAlpha(SPEC, WORM_SLIME_GLINT_ALPHA),
-                transform: `translate(${(x - off * Math.sin(deg * Math.PI / 180)).toFixed(1)},`
-                         + `${(y + off * Math.cos(deg * Math.PI / 180)).toFixed(1)}) rotate(${deg.toFixed(1)})`
             }));
         }
 
