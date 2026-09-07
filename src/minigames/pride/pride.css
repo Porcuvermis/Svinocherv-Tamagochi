@@ -1,384 +1,152 @@
-/* ================= МИНИ-ИГРА ГРЕХ ТЩЕСЛАВИЯ (ТАП ПО ЦЕЛИ) ================= */
+/* ================= ТЩЕСЛАВИЕ: КОВРОВАЯ ДОРОЖКА ================= */
+/* Рамку, шапку, крестик и вопрос при выходе рисует общее окно мини-игры
+   (src/core/minigame-window.css) — здесь только начинка (инвариант 8). Своей
+   карточки, своего крестика и своего заголовка у тщеславия больше нет: до
+   этой правки оно было одной из четырёх игр, которые рисовали окно сами.
 
-#pride-game {
-    position: fixed;
+   Вид самой сцены — в pride-art.js: это картинка, а не вёрстка. Здесь только
+   ДВИЖЕНИЕ и то, что движением сказать нельзя. */
+
+#pride-game .pr-svg {
+    position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    z-index: 999999 !important;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-}
-
-#pride-game.active {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-/* Окно мини-игры — почти во весь экран (та же пропорция, что и весь
-   игровой экран, просто уменьшенная примерно на 10%), а не маленькая
-   квадратная карточка, как было раньше.
-   ВАЖНО: раньше размер задавался через width:90vw/height:90vh — в
-   браузере, которым тестирует пользователь (локальный WebDAV-просмотрщик),
-   эти vh/vw-единицы посчитались некорректно, и модалка схлопнулась до
-   размера контента (виден был только заголовок + пустая шкала, само поле
-   с постаментом — нулевой высоты). Заменено на position:absolute с
-   отступами inset:5% от #pride-game — тот же самый эффект ("на 10% меньше,
-   с теми же пропорциями"), но проценты считаются от уже гарантированно
-   на весь экран растянутого #pride-game (см. его position:fixed;inset:0
-   выше), а не от вьюпорта напрямую — надёжнее в разных браузерах/вебвью. */
-.pride-modal {
-    position: absolute;
-    top: 5%;
-    left: 5%;
-    right: 5%;
-    bottom: 5%;
-    background: #1a140f;
-    border: 3px solid #ffd700;
-    border-radius: 28px;
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: max(14px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
-    box-sizing: border-box;
-    transform: scale(0.85);
-    transform-origin: center center;
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-#pride-game.active .pride-modal {
-    transform: scale(1);
-}
-
-/* ============ КРЕСТИК ЗАКРЫТИЯ ============ */
-.pride-close-btn {
-    position: absolute;
-    top: max(12px, env(safe-area-inset-top));
-    right: 16px;
-    background: #ff4444;
-    border: 2px solid #fff;
-    color: white;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    font-size: 20px;
-    line-height: 28px;
-    text-align: center;
-    cursor: pointer;
-    z-index: 95;
-    flex-shrink: 0;
-}
-
-.pride-close-btn:active { transform: scale(0.9); }
-
-/* ============ ЗАГОЛОВОК ============ */
-.pride-title {
-    font-size: 15px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    color: #ffd700;
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
-    margin: 4px 0 10px 0;
-    flex-shrink: 0;
-}
-
-/* ============ ИГРОВОЕ ПОЛЕ (РАМКА) ============ */
-/* Только тёмно-коричневая окантовка снаружи и тёплый тан-фон внутри неё —
-   тонкую белую рамку из первой версии убрали: пользователь принял её за
-   отдельный декоративный слой, а задумывалась она как область вспышки
-   цветовой индикации (см. .pride-field-glow ниже, он и есть эта область). */
-.pride-field-frame {
-    position: relative;
-    width: 100%;
-    flex: 1;
-    min-height: 0;
-    background: #3d2410;
-    border-radius: 20px;
-    padding: 10px;
-    box-sizing: border-box;
-    margin: 4px 0 14px 0;
-}
-
-.pride-field {
-    position: relative;
     width: 100%;
     height: 100%;
-    background: linear-gradient(160deg, #dba35f 0%, #c1873f 100%);
-    border-radius: 10px;
-    overflow: hidden;
+    display: block;
     touch-action: none;
-    cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-}
-
-/* Свечение внутренней окантовки поля — индикатор реакции на тап. Не сплошная
-   заливка, а свет, рассеивающийся от края к центру (inset box-shadow с
-   большим блуром), в прозрачность. Два цвета: зелёный/красный — розовый
-   был в первой версии, но по фидбеку убран (визуально читался как ошибка). */
-.pride-field-glow {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: 0;
-    z-index: 8;
-}
-
-.pride-field-glow.flash-green {
-    animation: pride-glow-pulse 0.5s ease-out;
-    box-shadow: inset 0 0 8px 3px rgba(80, 220, 100, 0.9), inset 0 0 50px 20px rgba(80, 220, 100, 0.6);
-}
-
-.pride-field-glow.flash-red {
-    animation: pride-glow-pulse 0.5s ease-out;
-    box-shadow: inset 0 0 8px 3px rgba(255, 50, 50, 0.9), inset 0 0 50px 20px rgba(255, 50, 50, 0.6);
-}
-
-@keyframes pride-glow-pulse {
-    0% { opacity: 0; }
-    12% { opacity: 1; }
-    100% { opacity: 0; }
-}
-
-/* ============ ПОСТАМЕНТ ============ */
-/* Горизонталь — центрируется через left:50%/transform. Вертикаль (top)
-   выставляет JS (layoutStage() в pride.js) по РЕАЛЬНО измеренным габаритам
-   персонажа, чтобы вся композиция "персонаж + постамент" была по центру
-   поля и целиком в кадре — top ниже лишь стартовое значение до первого
-   пересчёта. */
-.pride-pedestal {
-    position: absolute;
-    left: 50%;
-    top: 55%;
-    width: min(42%, 220px);
-    height: 30px;
-    transform: translateX(-50%);
-    background: linear-gradient(180deg, #c9a25c 0%, #8a6a34 55%, #6b4f24 100%);
-    border: 3px solid #4a3618;
-    border-radius: 8px 8px 14px 14px / 8px 8px 20px 20px;
-    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.35), inset 0 3px 5px rgba(255, 255, 255, 0.18);
-    z-index: 2;
-}
-
-.pride-pedestal::before {
-    content: '';
-    position: absolute;
-    top: -40%;
-    left: 4%;
-    right: 4%;
-    height: 65%;
-    background: linear-gradient(180deg, #e8c988 0%, #c9a25c 100%);
-    border: 2px solid #4a3618;
-    border-radius: 50%;
-}
-
-/* ============ ПЕРСОНАЖ ============ */
-.pride-worm-stage {
-    position: absolute;
-    inset: 0;
-    z-index: 4;
+    /* Ввод ловит только верхний холст (см. ниже): сцена под ним не должна
+       перехватывать касания, предназначенные зонам и ценникам. */
     pointer-events: none;
 }
 
-/* Сам SVG персонажа — pointer-events включён (в отличие от контейнера
-   выше), чтобы document.elementFromPoint() в pride.js реально "видел"
-   отрисованный силуэт (уши/тело/хвост), а не проваливался сквозь него к
-   полю — это и есть проверка "цель касается модельки" при определении
-   поцелуй/вспышка. Клики по-прежнему обрабатываются на уровне #pride-field
-   (событие всплывает туда в любом случае), так что игровая логика тапов не
-   меняется.
-   ВАЖНО: правило обязательно должно быть СКОПИРОВАНО под #pride-game.active.
-   Раньше оно было безусловным — а #pride-game остаётся смонтированным в DOM
-   и после закрытия (просто opacity:0; pointer-events:none на контейнере),
-   и этот pointer-events:auto на SVG персонажа его переопределял ВСЕГДА, даже
-   когда игра закрыта. В результате поверх всего экрана оставался невидимый,
-   но кликабельный "призрак" силуэта Свиночервя, который перехватывал тапы,
-   предназначенные другим мини-играм (например, "Алчность" — тапы по автомату
-   проваливались в этот невидимый слой вместо обработчика слотов). Теперь
-   auto включается только пока #pride-game реально открыт (.active), и сразу
-   возвращается к унаследованному pointer-events:none при закрытии. */
-#pride-game.active .pride-worm-stage .worm-stage-svg {
+#pride-game .pr-svg-top {
     pointer-events: auto;
 }
 
-/* ============ ЦЕЛЬ И КОЛЬЦО-ТАЙМЕР ============ */
-.pride-targets-layer,
-.pride-fx-layer {
+/* Персонаж лежит МЕЖДУ сценой и зонами: толпа за ним, зоны внимания перед
+   ним. Холст червя размером в единицы сцены, весь перевод в пиксели —
+   одним transform из pride.js. */
+#pride-game .pr-worm {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
     pointer-events: none;
 }
 
-.pride-targets-layer { z-index: 6; }
-.pride-fx-layer { z-index: 7; }
-
-/* Пятно света = ЗОНА ПОПАДАНИЯ. Размер задаёт JS (2 × TAP_RADIUS), и он же
-   размер стартового кольца — то есть видимое пятно и есть то, по чему
-   засчитывается тап, один в один. Раньше здесь был зелёный кружок вчетверо
-   меньше кольца: игрок целился по кольцу и промахивался, потому что зона была
-   совсем не там, где выглядела (docs/plan/17-pride.md, раздел 1).
-   Не мишень, а именно свет: у греха и так вся образность про прожектор и
-   вспышки, а «мишень» подсказывала бы, что бить надо точно в центр. */
-.pride-target {
-    position: absolute;
-    border-radius: 50%;
-    background: radial-gradient(circle,
-                rgba(255, 246, 214, 0.42) 0%,
-                rgba(255, 236, 170, 0.22) 55%,
-                rgba(255, 230, 150, 0) 100%);
-    transform: translate(-50%, -50%);
-    animation: pride-spot-in 0.18s ease-out;
+/* ---------- ЗОНА ВНИМАНИЯ ---------- */
+/* Появление — только прозрачностью. Зона НЕ раздувается из точки: пока она
+   растёт, её видимый размер не равен зоне попадания, а расхождение между
+   тем, что видно, и тем, что засчитывается, здесь уже стоило одной
+   переделки (docs/plan/17-pride.md, раздел 1). */
+#pride-game .pr-zone {
+    animation: pr-zone-in 0.16s ease-out;
 }
 
-@keyframes pride-spot-in {
+@keyframes pr-zone-in {
     from { opacity: 0; }
     to   { opacity: 1; }
 }
 
-/* Кольцо — ТОЛЬКО таймер. Стартует по границе пятна и стягивается в точку;
-   зона попадания при этом не меняется, поэтому попасть можно и в последний
-   момент, когда кольцо уже схлопнулось в ядрышко. */
-.pride-ring {
-    position: absolute;
-    border-radius: 50%;
-    border: 3px solid rgba(255, 255, 255, 0.92);
-    box-shadow: 0 0 16px 4px rgba(255, 255, 255, 0.55), inset 0 0 16px 4px rgba(255, 255, 255, 0.35);
-    transform: translate(-50%, -50%);
-    transition-property: width, height;
-    transition-timing-function: linear;
+#pride-game .pr-ring {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.55));
 }
 
-/* ============ ЛОКАЛЬНЫЕ ЭФФЕКТЫ НА МЕСТЕ ТАПА ============ */
-.pride-fx {
-    position: absolute;
-    left: 0;
-    top: 0;
-    transform: translate(-50%, -50%);
+/* ---------- ЩЕЛЧКИ ТОЛПЫ ---------- */
+/* Фоновая вспышка: короткая и без раздувания — она за ограждением, далеко.
+   Раздувающееся пятно читалось бы зоной, по которой надо тапать. */
+#pride-game .pr-ambient {
+    animation: pr-ambient 0.4s ease-out forwards;
     pointer-events: none;
 }
 
-.pride-fx-kiss {
-    font-size: 26px;
-    line-height: 1;
-    animation: pride-kiss-pop 0.5s ease-out forwards;
+@keyframes pr-ambient {
+    0%   { opacity: 0; }
+    18%  { opacity: 0.95; }
+    100% { opacity: 0; }
 }
 
-@keyframes pride-kiss-pop {
-    0% {
-        transform: translate(-50%, -50%) scale(1) rotate(0deg);
-        opacity: 1;
-    }
-    55% {
-        transform: translate(calc(-50% + var(--fx-shift, 8px)), -50%) scale(4.6) rotate(var(--fx-rot, 10deg));
-        opacity: 1;
-    }
-    100% {
-        transform: translate(calc(-50% + var(--fx-shift, 8px)), -50%) scale(4.6) rotate(var(--fx-rot, 10deg));
-        opacity: 0;
-    }
-}
-
-.pride-fx-flash {
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9));
-    animation: pride-flash-pop 0.2s ease-out forwards;
-}
-
-@keyframes pride-flash-pop {
-    0% {
-        transform: translate(-50%, -50%) scale(1);
-        opacity: 1;
-    }
-    100% {
-        transform: translate(-50%, -50%) scale(5);
-        opacity: 0;
-    }
-}
-
-/* ============ ШКАЛА ПРОГРЕССА ============ */
-.pride-gauge-wrap {
-    width: 92%;
-    height: 20px;
-    background: #150a10;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 2px solid #3a2c1f;
-    flex-shrink: 0;
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
-}
-
-.pride-gauge-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #b8860b, #ffd700);
-    border-radius: 10px;
-    transition: width 0.15s linear;
-}
-
-/* ============ ПОБЕДА ============ */
-.pride-win-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.55);
-    border-radius: 22px;
-    opacity: 0;
+/* ---------- ЭФФЕКТЫ НА МЕСТЕ ПОПАДАНИЯ ---------- */
+#pride-game .pr-fx-kiss {
+    animation: pr-kiss 0.6s ease-out forwards;
     pointer-events: none;
-    transition: opacity 0.3s ease;
-    z-index: 90;
 }
 
-.pride-win-overlay.show {
-    opacity: 1;
-    pointer-events: auto;
+@keyframes pr-kiss {
+    0%   { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-26px); }
 }
 
-.pride-win-flash {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: radial-gradient(circle, rgba(255, 215, 0, 0.35) 0%, rgba(255, 215, 0, 0) 70%);
-    animation: pride-win-flash-pulse 1.6s ease-in-out infinite;
+/* Ключевой кадр правит ТОЛЬКО прозрачность и сдвиг по вертикали: положение
+   эффекта записано в собственный transform узла, и анимация с translate()
+   в css его бы стёрла. Поэтому губы едут вверх через отдельный
+   transform-box/origin, а не через подмену всей строки. */
+#pride-game .pr-fx-kiss {
+    transform-box: fill-box;
+    transform-origin: center;
 }
 
-@keyframes pride-win-flash-pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
+#pride-game .pr-fx-flash {
+    animation: pr-flash 0.26s ease-out forwards;
+    transform-box: fill-box;
+    transform-origin: center;
+    pointer-events: none;
 }
 
-.pride-win-text {
-    font-size: 30px;
-    font-weight: 900;
-    color: #ffd700;
-    text-shadow: 0 0 10px #fff, 0 0 22px #ffd700;
-    transform: scale(0.7);
-    opacity: 0;
-    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease;
+@keyframes pr-flash {
+    0%   { opacity: 1; transform: scale(0.6); }
+    100% { opacity: 0; transform: scale(3.4); }
 }
 
-.pride-win-overlay.show .pride-win-text {
-    transform: scale(1);
-    opacity: 1;
+/* ---------- ЛУЖА СВЕТА У СТАРТА ---------- */
+/* Единственная «кнопка» игры, и она без слов: пятно света на ковре впереди
+   дышит, пока выход не начался. */
+#pride-game .pr-start-mark {
+    animation: pr-breathe 1.5s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
 }
 
-.pride-win-sub {
-    font-size: 14px;
-    color: #f0e0c0;
-    opacity: 0;
-    transition: opacity 0.4s ease 0.15s;
+@keyframes pr-breathe {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
 }
 
-.pride-win-overlay.show .pride-win-sub {
-    opacity: 0.9;
+/* ---------- ЦЕННИКИ ---------- */
+#pride-game .pr-tag {
+    cursor: pointer;
+}
+
+/* Хватает поцелуев — ценник слегка дышит. Отказ — короткий толчок вбок:
+   «нет» здесь сказано движением, а не буквами. */
+#pride-game .pr-tag.rich {
+    animation: pr-breathe 2.2s ease-in-out infinite;
+    transform-box: fill-box;
+}
+
+#pride-game .pr-tag.pr-deny rect {
+    animation: pr-deny 0.32s ease-out;
+}
+
+@keyframes pr-deny {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-4px); }
+    75%      { transform: translateX(4px); }
+}
+
+#pride-game .pr-hud,
+#pride-game .pr-fx {
+    pointer-events: none;
+}
+
+/* Цифры счёта и ценников — единственный текст в игре, и это ЦИФРЫ
+   (инвариант 9: цифра не слово, а пиктограмма количества). */
+#pride-game .pr-hud text,
+#pride-game .pr-shop text {
+    font-family: system-ui, -apple-system, sans-serif;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.55);
+    stroke-width: 3px;
+    stroke-linejoin: round;
 }

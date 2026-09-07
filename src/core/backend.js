@@ -131,9 +131,21 @@ const LocalBackend = {
             const raw = (request.meta || {})[reward.perMeta.field];
             const n = Math.max(0, Math.floor(Number(raw) || 0));
             const capped = reward.perMeta.max ? Math.min(n, reward.perMeta.max) : n;
-            if (capped > 0) {
-                this.award(awarded, reward.perMeta.currency,
-                    capped * (reward.perMeta.per || 1),
+            // Убывающая доходность, если конфиг награды её просит: тот же
+            // механизм, что режет золото за десятый бой за сутки, только по
+            // своей таблице. Счётчик тот же, что и у золота, — исходов за
+            // сутки, и текущий исход считается следующим по номеру.
+            let amount = capped * (reward.perMeta.per || 1);
+            if (reward.perMeta.returns) {
+                const share = this.returnsShare(reward.perMeta.returns, GameState.counter(reason) + 1);
+                awarded.metaShare = share;
+                // Округление ВВЕРХ: сыгранный выход, за который дали ноль,
+                // читается как поломка. Десятая часть от единицы — всё равно
+                // единица.
+                amount = amount > 0 ? Math.max(1, Math.round(amount * share)) : 0;
+            }
+            if (amount > 0) {
+                this.award(awarded, reward.perMeta.currency, amount,
                     reason + '.' + reward.perMeta.field, requestId);
             }
         }
@@ -864,13 +876,23 @@ const LocalBackend = {
         return delta;
     },
 
-    // Доля золота по числу побед за сутки (ECONOMY.goldReturns).
-    goldShare(winNumber) {
-        const tiers = (ECONOMY.goldReturns && ECONOMY.goldReturns.tiers) || [];
+    // Доля выплаты по номеру исхода за сутки. Таблица лестниц теперь не
+    // одна: золото режется по ECONOMY.goldReturns, поцелуи тщеславия — по
+    // своей, более крутой (ECONOMY.crowdReturns, «публика устаёт»). Правило
+    // одно и то же, поэтому и код один: имя таблицы приходит из конфига
+    // награды, а не зашито здесь.
+    returnsShare(tableKey, n) {
+        const table = ECONOMY[tableKey];
+        const tiers = (table && table.tiers) || [];
         for (let i = 0; i < tiers.length; i++) {
-            if (tiers[i].upTo === null || winNumber <= tiers[i].upTo) return tiers[i].share;
+            if (tiers[i].upTo === null || n <= tiers[i].upTo) return tiers[i].share;
         }
         return 1;
+    },
+
+    // Доля золота по числу побед за сутки (ECONOMY.goldReturns).
+    goldShare(winNumber) {
+        return this.returnsShare('goldReturns', winNumber);
     },
 
     // ---------- РАЗМЕН МЕЛКОЙ ВАЛЮТЫ В КРУПНУЮ ----------
@@ -1253,12 +1275,14 @@ const LocalBackend = {
     // Купить следующий уровень ветки. Как и с предметами: клиент говорит
     // «качни вот это», а хватает ли валюты и не упёрлись ли в потолок,
     // решает эта сторона.
-    buyUpgrade(key) {
-        const conf = ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades;
+    buyUpgrade(key, sin) {
+        const sinKey = sin || 'wrath';
+        const conf = ECONOMY.minigames[sinKey] && ECONOMY.minigames[sinKey].upgrades;
         const branch = conf && conf[key];
         if (!branch || !branch.levels) return { ok: false, error: 'unknown_upgrade' };
 
-        const level = GameState.upgradeLevel(key);
+        const stateKey = this.upgradeKey(sinKey, key);
+        const level = GameState.upgradeLevel(stateKey);
         if (level >= branch.levels.length) return { ok: false, error: 'maxed' };
 
         const price = branch.levels[level].price || {};
@@ -1271,14 +1295,69 @@ const LocalBackend = {
             GameState.pushLedger({
                 currency: cur,
                 delta: -price[cur],
-                reason: 'upgrade.wrath.' + key + '.' + (level + 1),
+                reason: 'upgrade.' + sinKey + '.' + key + '.' + (level + 1),
                 client_request_id: requestId
             });
         });
 
-        GameState.data.upgrades[key] = level + 1;
+        GameState.data.upgrades[stateKey] = level + 1;
         GameState.save();
-        return { ok: true, key, level: level + 1, bonus: GameState.upgradeBonus(key) };
+        return { ok: true, key, sin: sinKey, level: level + 1,
+                 value: this.upgradeValue(sinKey, key) };
+    },
+
+    // Ключ прокачки в состоянии. У гнева он БЕЗ приставки, и это не
+    // вкусовщина: на сейвах игроков уже лежат damage/hp/regen, а инвариант 5
+    // запрещает ронять накопленное ради красоты формата. Все остальные грехи
+    // пишутся с приставкой, чтобы одинаковые имена веток в разных грехах не
+    // сложились в одну.
+    upgradeKey(sinKey, key) {
+        return sinKey === 'wrath' ? key : sinKey + '_' + key;
+    },
+
+    // ЗНАЧЕНИЕ ветки на текущем уровне, а не прибавка. У гнева прокачка
+    // прибавляет к базе (+2 здоровья), у тщеславия — ЗАМЕНЯЕТ число
+    // (интервал 1000 → 850 мс): «прибавка −150 мс» читалась бы как ошибка
+    // знака. Поэтому base лежит в самой ветке, а levels[].bonus — это
+    // готовое значение уровня.
+    upgradeValue(sinKey, key) {
+        const conf = ECONOMY.minigames[sinKey] && ECONOMY.minigames[sinKey].upgrades;
+        const branch = conf && conf[key];
+        if (!branch) return 0;
+        const level = GameState.upgradeLevel(this.upgradeKey(sinKey, key));
+        if (level <= 0) return branch.base;
+        const step = branch.levels[Math.min(level, branch.levels.length) - 1];
+        return step ? step.bonus : branch.base;
+    },
+
+    // ---------- ТЩЕСЛАВИЕ: ЧИСЛА ВЫХОДА ----------
+    // Мини-игра спрашивает, с чем она сегодня выходит на дорожку, и не
+    // считает этого сама: и база, и купленные ступени — конфиг (инвариант 3).
+    prideRun() {
+        const cfg = (ECONOMY.minigames && ECONOMY.minigames.pride) || {};
+        return {
+            runMs: cfg.runMs || 20000,
+            lifeMs: cfg.targetLifeMs || 1500,
+            kissShare: cfg.kissShare != null ? cfg.kissShare : 1 / 3,
+            maxTargets: cfg.maxTargets || 5,
+            hype: Object.assign({ hit: 1, miss: -2, perStep: 3 }, cfg.hype || {}),
+            spawnMs: this.upgradeValue('pride', 'crowd'),
+            multCap: this.upgradeValue('pride', 'car'),
+            radius: this.upgradeValue('pride', 'carpet'),
+            levels: {
+                crowd: GameState.upgradeLevel('pride_crowd'),
+                car: GameState.upgradeLevel('pride_car'),
+                carpet: GameState.upgradeLevel('pride_carpet')
+            }
+        };
+    },
+
+    // Сколько выходов за сутки уже оплачено полностью и какая доля светит
+    // следующему. Нужно экрану дорожки: усталость публики иначе видна только
+    // по уменьшившемуся числу поцелуев, то есть уже задним числом.
+    prideShare() {
+        const reason = 'pride.parade.win';
+        return this.returnsShare('crowdReturns', GameState.counter(reason) + 1);
     },
 
     // Выдать валюту напрямую. Пока это только debug-режим: настоящие

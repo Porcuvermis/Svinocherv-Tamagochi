@@ -173,8 +173,27 @@ const { chromium } = require('playwright');
   found.bathWash = await scan('lust-game');
   await page.screenshot({ path: out + 'nw-l2-wash.png' });
 
+  // ---------- ТЩЕСЛАВИЕ: КОВРОВАЯ ДОРОЖКА ----------
+  // У прежней мини-игры на экране висели «ТЩЕСЛАВИЕ», «ВЕЛИКОЛЕПНО!» и «Все
+  // тобой восхищаются!». Дорожка собрана без них: счёт и ценники — цифры,
+  // старт — лужа света, прогресс — сама дорожка. Проверяются ОБА состояния:
+  // стойка у машины с ценниками и сам выход со счётом.
   await page.evaluate(() => {
     if (typeof LustMinigame !== 'undefined' && LustMinigame.close) LustMinigame.close();
+    Backend.grantCurrency('pride_kiss', 60);
+    GameManager.handleSinAction('pride');
+  });
+  await page.waitForTimeout(1200);
+  found.carpetIdle = await scan('pride-game');
+  await page.screenshot({ path: out + 'nw-p1-carpet.png' });
+
+  await page.evaluate(() => PrideMinigame.startRun());
+  await page.waitForTimeout(2500);
+  found.carpetRun = await scan('pride-game');
+  await page.screenshot({ path: out + 'nw-p2-run.png' });
+
+  await page.evaluate(() => {
+    if (typeof PrideMinigame !== 'undefined' && PrideMinigame.close) PrideMinigame.close();
     GameManager.handleSinAction('wrath');
   });
   await page.waitForTimeout(500);

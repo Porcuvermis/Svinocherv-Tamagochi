@@ -203,7 +203,7 @@
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=7" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=9" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=6" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=7" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/envy/envy.css?v=1" media="print" onload="this.media='all'">
 </head>
 <body>
@@ -742,31 +742,35 @@
         </div>
     </div>
 
-    <div id="pride-game" class="minigame-screen">
-        <div class="pride-modal">
-            <button id="pride-close-btn" class="pride-close-btn">&times;</button>
-            <div class="pride-title">ТЩЕСЛАВИЕ</div>
+    <!-- ТЩЕСЛАВИЕ: КОВРОВАЯ ДОРОЖКА.
+         Окно (рамка, крестик, вопрос при выходе) надевает
+         src/core/minigame-window.js — здесь только содержимое (инвариант 8).
 
-            <div class="pride-field-frame">
-                <div class="pride-field" id="pride-field">
-                    <div class="pride-pedestal" id="pride-pedestal"></div>
-                    <div class="pride-worm-stage" id="pride-worm-stage"></div>
-                    <div class="pride-targets-layer" id="pride-targets-layer"></div>
-                    <div class="pride-fx-layer" id="pride-fx-layer"></div>
-                    <div class="pride-field-glow" id="pride-field-glow"></div>
-                </div>
-            </div>
+         Холст ОДИН, а слоёв в нём четыре, и порядок у них смысловой:
+         сцена (ночь, ковёр, ограждения, толпа) → червь → зоны внимания →
+         вспышки и счёт. Червь живёт в html-контейнере между двумя частями
+         холста: рендерер персонажа монтирует собственный svg, вложить его в
+         группу чужого нельзя.
 
-            <div class="pride-gauge-wrap">
-                <div class="pride-gauge-bar" id="pride-gauge-bar"></div>
-            </div>
-
-            <div class="pride-win-overlay" id="pride-win-overlay">
-                <div class="pride-win-flash"></div>
-                <div class="pride-win-text">ВЕЛИКОЛЕПНО!</div>
-                <div class="pride-win-sub">Все тобой восхищаются!</div>
-            </div>
-        </div>
+         Шкалы 0..100 здесь нет намеренно: прогресс выхода — это сама
+         дорожка, а финишная арка выезжает с горизонта ровно на двадцать
+         секунд (docs/plan/17-pride.md, раздел 4). -->
+    <div id="pride-game" class="minigame-screen" data-sin="pride">
+        <svg id="pr-svg" class="pr-svg" viewBox="0 0 390 844"
+             preserveAspectRatio="xMidYMid slice">
+            <g id="pr-scene"></g>
+        </svg>
+        <div id="pr-worm" class="pr-worm"></div>
+        <!-- Верхний холст ЛОВИТ ВЕСЬ ВВОД, нижний не ловит вовсе (css). Так
+             тап приходит туда же, где нарисованы зоны и ценники: иначе
+             ценник, лежащий в верхнем холсте, не получал бы касания вовсе. -->
+        <svg id="pr-svg-top" class="pr-svg pr-svg-top" viewBox="0 0 390 844"
+             preserveAspectRatio="xMidYMid slice">
+            <g id="pr-zones"></g>
+            <g id="pr-fx" class="pr-fx"></g>
+            <g id="pr-shop" class="pr-shop"></g>
+            <g id="pr-hud" class="pr-hud"></g>
+        </svg>
     </div>
 
     <div id="envy-game" class="minigame-screen">
@@ -864,7 +868,8 @@
 <script src="src/minigames/gluttony/kitchen-art.js?v=9"></script>
 <script src="src/minigames/gluttony/kitchen-debug.js?v=2"></script>
 <script src="src/minigames/gluttony/gluttony.js?v=11"></script>
-<script src="src/minigames/pride/pride.js?v=6"></script>
+<script src="src/minigames/pride/pride-art.js?v=1"></script>
+<script src="src/minigames/pride/pride.js?v=7"></script>
 <!-- three.js ЗДЕСЬ НЕ ПОДКЛЮЧЁН, и это осознанно.
      Библиотека нужна ровно одной мини-игре из семи (зависть), а весит
      145 КБ gzip — 22% всей загрузки. Подключённая обычным <script>, она

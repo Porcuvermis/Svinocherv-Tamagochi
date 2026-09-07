@@ -4278,6 +4278,14 @@ const WormRenderer = {
             moveIntensity: 0,
             // 0..1 — от ФАКТИЧЕСКОЙ мгновенной скорости перемещения.
             speedIntensity: 0,
+            // ---------- ШАГ НА МЕСТЕ ----------
+            // 0 = канал выключен, 0..1 = «считай, что он идёт с такой
+            // скоростью, никуда не перемещаясь». Нужен сценам, где под
+            // персонажем едет мир, а сам он стоит в центре кадра (дорожка
+            // тщеславия). Без этого канала походка включалась ТОЛЬКО от
+            // реального перемещения по комнате (opts.wander), и червь ехал
+            // по дорожке статуей на тележке.
+            treadmill: 0,
             nextMoveAt: null,
             // Аккумуляторы фазы: покачивание цепи, "флик" кончика хвоста и
             // пульсация внутренних органов. НЕ путать с animTime: эти поля
@@ -5200,7 +5208,9 @@ const WormRenderer = {
                 }
             }
             const dist = opts.wander ? Math.hypot(state.targetX - state.wormX, state.targetY - state.wormY) : 0;
-            const isMoving = opts.wander && dist > WORM_MOVE_EPS;
+            // Шаг на месте считается движением наравне с настоящим: виляние,
+            // растяжка цепи и мах хвостом смотрят именно сюда.
+            const isMoving = (opts.wander && dist > WORM_MOVE_EPS) || state.treadmill > 0;
             if (opts.wander) {
                 if (isMoving) {
                     state.nextMoveAt = null;
@@ -5287,7 +5297,10 @@ const WormRenderer = {
             const intensityFactor = 1 - Math.pow(WORM_MOVE_INTENSITY_SMOOTH_BASE, dtSec);
             state.moveIntensity += ((isMoving ? 1 : 0) - state.moveIntensity) * intensityFactor;
 
-            const speedIntensityTarget = Math.min(1, instSpeed / WORM_SPEED_REF_PX_PER_SEC);
+            // Скорость походки — большее из настоящей и заказанной «на
+            // месте»: канал ДОБАВЛЯЕТ ход, а не отменяет реальный.
+            const speedIntensityTarget = Math.max(state.treadmill,
+                Math.min(1, instSpeed / WORM_SPEED_REF_PX_PER_SEC));
             const speedIntensityFactor = 1 - Math.pow(WORM_SPEED_INTENSITY_SMOOTH_BASE, dtSec);
             state.speedIntensity += (speedIntensityTarget - state.speedIntensity) * speedIntensityFactor;
 
@@ -5910,6 +5923,16 @@ const WormRenderer = {
             // сглаживать самому.
             setWither(saturation) {
                 state.witherTarget = Math.max(0, Math.min(1, saturation));
+            },
+            // ---------- ШАГ НА МЕСТЕ ----------
+            // «Иди со скоростью v, оставаясь на месте»: 0 — стоит, 1 — идёт
+            // в полную силу. Перемещения не даёт вовсе — двигать сцену под
+            // персонажем должна сама мини-игра. Сделано отдельным каналом, а
+            // не включением wander: wander тянет за собой выбор целей, дугу
+            // разворота, слизистый след и привязку к полу комнаты — на
+            // дорожке тщеславия не нужно ничего из этого.
+            setTreadmill(v) {
+                state.treadmill = Math.max(0, Math.min(1, Number(v) || 0));
             },
             // Точечная перестановка "точки стояния" персонажа уже ПОСЛЕ
             // монтирования — нужна мини-играм, где раскладку нельзя выразить
