@@ -61,6 +61,8 @@ const PRIDE_VIEW = {
     AMBIENT_MS: 620,      // как часто щёлкает фоновая вспышка при нулевом ажиотаже
     KISS_FX_MS: 620,
     FLASH_FX_MS: 260,
+    CHANGE_MS: 750,       // сколько едут декорации при смене
+    COUNT_STEP_MS: 500,   // одна цифра отсчёта: три цифры = полторы секунды
     END_HOLD_MS: 2400     // сколько кадр стоит на финише, прежде чем вернуться к старту.
                           // Меньше двух секунд — начисленное число не успевают прочитать
 };
@@ -91,17 +93,26 @@ const PrideMinigame = {
     win: null,
     svgEl: null,
     sceneEl: null,
+    roomEl: null,
     zonesEl: null,
     fxEl: null,
     hudEl: null,
-    shopEl: null,
+    uiEl: null,
+    storeEl: null,
+    countEl: null,
     wormHost: null,
     wormHandle: null,
 
     // ---------- СОСТОЯНИЕ ВЫХОДА ----------
-    // 'idle' — червь у машины, можно покупать и стартовать;
-    // 'run'  — идёт выход; 'done' — дошёл, награда показана.
-    phase: 'idle',
+    // 'wardrobe' — костюмерная: червь у зеркала, слоты наряда, магазин;
+    // 'change'   — смена декораций: костюмерная разъезжается, дорожка приезжает;
+    // 'count'    — отсчёт 3-2-1 перед выходом;
+    // 'run'      — идёт выход;
+    // 'done'     — дошёл, награда показана, дальше обратно в костюмерную.
+    phase: 'wardrobe',
+    storeTab: 'wear',    // какая вкладка витрины открыта: наряд или прокачка
+    storeOpen: false,
+    countLeft: 0,
     params: null,        // числа этого выхода: интервал, потолок, радиус
     speed: 0,            // единиц глубины в секунду
     kisses: 0,
@@ -151,14 +162,18 @@ const PrideMinigame = {
         // поэтому единицы сцены у них общие.
         this.svgEl = document.getElementById('pr-svg-top');
         this.sceneEl = document.getElementById('pr-scene');
+        this.roomEl = document.getElementById('pr-room');
         this.zonesEl = document.getElementById('pr-zones');
         this.fxEl = document.getElementById('pr-fx');
         this.hudEl = document.getElementById('pr-hud');
-        this.shopEl = document.getElementById('pr-shop');
+        this.uiEl = document.getElementById('pr-ui');
+        this.storeEl = document.getElementById('pr-store');
+        this.countEl = document.getElementById('pr-count');
         this.wormHost = document.getElementById('pr-worm');
         if (!this.svgEl) return;
 
         this.sceneEl.innerHTML = PRIDE_ART.scene();
+        this.roomEl.innerHTML = PRIDE_ART.room();
 
         if (!this._bound) {
             this._bound = true;
@@ -181,7 +196,7 @@ const PrideMinigame = {
         if (!this.screenElement) this.init();
         this.screenElement.classList.add('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
-        this.resetRun();
+        this.enterWardrobe();
         this.mountWorm();
         // Два вложенных кадра: сегменты напольной цепи получают свой
         // transform только в ПЕРВОМ тике рендерера, и до него габарит
@@ -208,11 +223,31 @@ const PrideMinigame = {
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
     },
 
-    // Начало (или повтор) выхода из состояния «стоим у машины». Числа берутся
-    // заново каждый раз: между двумя выходами игрок мог что-то купить.
+    // ---------- КОСТЮМЕРНАЯ ----------
+    // Точка входа в грех и точка возврата после выхода. Здесь одеваются,
+    // покупают и отсюда стартуют — как в лобби гнева, только вместо брони
+    // наряд, а вместо боя выход на публику.
+    enterWardrobe() {
+        this.resetRun();
+        this.phase = 'wardrobe';
+        this.storeOpen = false;
+        this.setDecor('room');
+        this.renderAll();
+        // Червя пересобираем: наряд мог смениться, а он живёт в модели.
+        this.mountWorm();
+        requestAnimationFrame(() => requestAnimationFrame(() => this.layoutWorm()));
+    },
+
+    renderAll() {
+        this.renderUI();
+        this.renderStore();
+        this.renderHud();
+    },
+
+    // Числа выхода берутся заново каждый раз: между двумя выходами игрок мог
+    // что-то купить.
     resetRun() {
         this.params = Backend.prideRun();
-        this.phase = 'idle';
         this.kisses = 0;
         this.hype = 0;
         this.hits = 0;
@@ -226,9 +261,59 @@ const PrideMinigame = {
         this.speed = (PRIDE_ART.Z_FAR - PRIDE_ART.Z_START) / (this.params.runMs / 1000);
         this.clearTargets();
         this.buildMovers();
-        this.renderHud();
-        this.renderShop();
         if (this.wormHandle && this.wormHandle.setTreadmill) this.wormHandle.setTreadmill(0);
+    },
+
+    // ---------- СМЕНА ДЕКОРАЦИЙ ----------
+    // Один вызов на обе стороны: 'room' — костюмерная на месте, дорожка
+    // разъехалась; 'carpet' — наоборот. Двигаются КУСКИ, и каждый в свою
+    // сторону: занавес вверх, помост вниз, зеркало и вешалка по бокам, а
+    // дорожка приезжает им на смену теми же путями. Читается это работой
+    // сцены — увезли одно, привезли другое.
+    //
+    // Едет всё на css-переходах, то есть на композиторе: ни одной
+    // перерисовки, что бы ни лежало внутри групп.
+    setDecor(which, animated) {
+        const room = which === 'room';
+        const hide = [], moved = [];
+        const put = (id, x, y, on) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.style.transition = animated ? `transform ${PRIDE_VIEW.CHANGE_MS}ms cubic-bezier(.5,.05,.3,1)` : 'none';
+            // Пока едет — видима любая декорация, даже уезжающая: иначе
+            // половина смены пройдёт с пустым экраном.
+            el.style.visibility = 'visible';
+            // Слой композитора выдаётся ТОЛЬКО на время переезда: постоянный
+            // will-change держал бы девять полноэкранных слоёв в памяти всё
+            // время, пока игра открыта, ради трёх четвертей секунды.
+            el.style.willChange = animated ? 'transform' : '';
+            el.style.transform = on ? 'translate(0,0)' : `translate(${x}px,${y}px)`;
+            if (!on) hide.push(el);
+            moved.push(el);
+        };
+        const W = PRIDE_ART.W, H = PRIDE_ART.H;
+        put('pr-room-back', 0, -H, room);
+        put('pr-room-floor', 0, H, room);
+        put('pr-room-l', -W, 0, room);
+        put('pr-room-r', W, 0, room);
+        put('pr-far', 0, -H, !room);
+        put('pr-ground', 0, H, !room);
+        put('pr-side-l', -W, 0, !room);
+        put('pr-side-r', W, 0, !room);
+        put('pr-props', 0, H, !room);
+
+        // Уехавшую декорацию ПРЯЧЕМ. Она за краем холста и не видна, но
+        // браузер продолжает считать её слоем и растрировать: за экраном
+        // лежит либо вся дорожка с толпой, либо вся костюмерная с занавесом
+        // в тринадцать складок. Это ровно тот случай, когда «невидимое» и
+        // «не отрисовывается» — разные вещи (docs/traps.md, п. 38).
+        if (this._hideTimer) clearTimeout(this._hideTimer);
+        const apply = () => {
+            hide.forEach(el => { el.style.visibility = 'hidden'; });
+            moved.forEach(el => { el.style.willChange = ''; });
+        };
+        if (animated) this._hideTimer = setTimeout(apply, PRIDE_VIEW.CHANGE_MS + 40);
+        else apply();
     },
 
     // ---------- ПОДВИЖНОЕ: ПОПЕРЕЧИНЫ, ТОЛПА, МАШИНА, ФИНИШ ----------
@@ -238,7 +323,8 @@ const PrideMinigame = {
     buildMovers() {
         const A = PRIDE_ART;
         this.sceneEl.querySelector('#pr-stripes').innerHTML = '';
-        this.sceneEl.querySelector('#pr-crowd').innerHTML = '';
+        this.sceneEl.querySelector('#pr-crowd-l').innerHTML = '';
+        this.sceneEl.querySelector('#pr-crowd-r').innerHTML = '';
         this.sceneEl.querySelector('#pr-props').innerHTML = '';
         this.stripes = [];
         this.clusters = [];
@@ -257,13 +343,16 @@ const PrideMinigame = {
         // вдвое против задуманной, а это чистая заливка каждый кадр. Ряд
         // добавляется через ступень: видно, что стало гуще, и кадр цел.
         const rows = PRIDE_VIEW.CROWD_ROWS + Math.ceil(this.params.levels.crowd / 2);
-        const crowdLayer = this.sceneEl.querySelector('#pr-crowd');
+        const crowdLayers = {
+            '-1': this.sceneEl.querySelector('#pr-crowd-l'),
+            '1': this.sceneEl.querySelector('#pr-crowd-r')
+        };
         const span = (A.Z_FAR - A.Z_CROWD_MIN) / PRIDE_VIEW.CLUSTERS;
         for (let side = -1; side <= 1; side += 2) {
             for (let i = 0; i < PRIDE_VIEW.CLUSTERS; i++) {
                 const g = this.svgNode('g');
                 g.innerHTML = PRIDE_ART.crowdCluster(rows, side * 31 + i * 7 + 3);
-                crowdLayer.appendChild(g);
+                crowdLayers[side].appendChild(g);
                 // Стороны сдвинуты на полшага друг относительно друга: иначе
                 // толпа идёт парами напротив и читается забором, а не людьми.
                 this.clusters.push({
@@ -414,11 +503,12 @@ const PrideMinigame = {
 
         // Тень: по ширине силуэта, а не по числу. Без неё червь не стоит на
         // ковре, а висит над ним — и это первое, что видно в кадре.
-        const shadow = this.sceneEl.querySelector('#pr-shadow');
-        if (shadow) {
+        [this.sceneEl.querySelector('#pr-shadow'),
+         this.roomEl.querySelector('#pr-room-shadow')].forEach(shadow => {
+            if (!shadow) return;
             shadow.setAttribute('rx', (this.wormBox.w * 0.42).toFixed(1));
             shadow.setAttribute('ry', (this.wormBox.w * 0.11).toFixed(1));
-        }
+        });
     },
 
     // ---------- ПЕРЕВОД КООРДИНАТ ----------
@@ -486,13 +576,54 @@ const PrideMinigame = {
         this.rafId = requestAnimationFrame((t) => this.loop(t));
     },
 
-    // ---------- СТАРТ И ФИНИШ ----------
-    startRun() {
-        if (this.phase !== 'idle') return;
+    // ---------- СТАРТ ----------
+    // Три шага, и каждый нужен: декорации меняются, потом отсчёт, потом
+    // выход. Без отсчёта игрок оказывается на дорожке в тот момент, когда
+    // ещё смотрит, как уезжает костюмерная, и первые зоны пропускает не по
+    // своей вине.
+    startShow() {
+        if (this.phase !== 'wardrobe' || this.storeOpen) return;
+        this.phase = 'change';
+        this.renderUI();
+        this.setDecor('carpet', true);
+        setTimeout(() => {
+            if (this.phase !== 'change') return;
+            this.startCount();
+        }, PRIDE_VIEW.CHANGE_MS);
+    },
+
+    startCount() {
+        this.phase = 'count';
+        this.countLeft = 3;
+        const tick = () => {
+            if (this.phase !== 'count') return;
+            if (this.countLeft <= 0) { this.beginRun(); return; }
+            this.showCount(this.countLeft);
+            this.countLeft--;
+            setTimeout(tick, PRIDE_VIEW.COUNT_STEP_MS);
+        };
+        tick();
+    },
+
+    showCount(n) {
+        if (!this.countEl) return;
+        const C = PALETTE.redCarpet;
+        // Цифра стоит ВЫШЕ середины: по центру она садится ровно на морду
+        // червя, а он тут главный даже в отсчёте.
+        const y = this.safe.y0 + (this.safe.y1 - this.safe.y0) * 0.42;
+        this.countEl.innerHTML =
+            `<text class="pr-count-digit" x="${PRIDE_ART.CX}" y="${y.toFixed(0)}"
+                   text-anchor="middle" font-size="190" font-weight="800"
+                   fill="${C.flash[300]}" stroke="${PALETTE.ink}" stroke-width="6"
+                   paint-order="stroke">${n}</text>`;
+    },
+
+    beginRun() {
         this.phase = 'run';
+        if (this.countEl) this.countEl.innerHTML = '';
         this.spawnAcc = this.params.spawnMs * 0.5;
         if (this.wormHandle && this.wormHandle.setTreadmill) this.wormHandle.setTreadmill(1);
-        this.renderShop();
+        this.renderUI();
         this.placeMovers();
         this.renderHud();
     },
@@ -515,7 +646,9 @@ const PrideMinigame = {
         setTimeout(() => {
             if (this.phase !== 'done') return;
             if (!this.screenElement.classList.contains('active')) return;
-            this.resetRun();
+            // Обратно в костюмерную — и декорации едут обратно тем же путём.
+            this.setDecor('room', true);
+            setTimeout(() => this.enterWardrobe(), PRIDE_VIEW.CHANGE_MS);
         }, PRIDE_VIEW.END_HOLD_MS);
     },
 
@@ -625,18 +758,38 @@ const PrideMinigame = {
     },
 
     // ---------- ВВОД ----------
+    // Один обработчик на весь экран, разведённый по фазам. Витрина, пока
+    // открыта, съедает всё: тап мимо карточки закрывает её, а не улетает в
+    // костюмерную под ней.
     onDown(e) {
         e.preventDefault();
-        const p = this.fromScreen(e.clientX, e.clientY);
+        const hit = (sel) => (e.target.closest ? e.target.closest(sel) : null);
 
-        if (this.phase === 'idle') {
-            const tag = e.target.closest ? e.target.closest('.pr-tag') : null;
-            if (tag) { this.buy(tag.dataset.key); return; }
-            this.startRun();
+        if (this.storeOpen) {
+            const tab = hit('.pr-tab');
+            if (tab) { this.storeTab = tab.dataset.tab; this.renderStore(); return; }
+            const item = hit('.pr-item');
+            if (item) { this.tapItem(item.dataset.item); return; }
+            const boost = hit('.pr-boost');
+            if (boost) { this.buyBoost(boost.dataset.boost); return; }
+            // Крестик витрины или тап мимо панели — закрываем.
+            if (hit('.pr-store-close') || hit('.pr-store-back')) {
+                this.storeOpen = false;
+                this.renderStore();
+            }
+            return;
+        }
+
+        if (this.phase === 'wardrobe') {
+            const slot = hit('.pr-slot');
+            if (slot) { this.tapSlot(slot.dataset.slot); return; }
+            if (hit('#pr-shop-btn')) { this.storeOpen = true; this.renderStore(); return; }
+            if (hit('#pr-start-btn')) { this.startShow(); return; }
             return;
         }
         if (this.phase !== 'run') return;
 
+        const p = this.fromScreen(e.clientX, e.clientY);
         // Тап засчитывается той зоне, которой осталось жить меньше всех: если
         // две наложились краями, справедливее закрыть ту, что вот-вот
         // погаснет, — вторую игрок ещё успеет добрать.
@@ -754,7 +907,7 @@ const PrideMinigame = {
         const x = this.safe.x0 + 16, y = this.safe.y0 + 34;
         const purse = `<text x="${x}" y="${y}" font-size="26">💋</text>` +
                       `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
-        if (this.phase === 'idle') {
+        if (this.phase !== 'run' && this.phase !== 'done') {
             this.hudEl.innerHTML = purse;
             return;
         }
@@ -773,97 +926,212 @@ const PrideMinigame = {
                    fill="${C.flash[500]}" font-weight="700">×${mult}</text></g>`;
     },
 
-    // ---------- ТРИ ПОКУПКИ ----------
-    // Магазина как экрана нет: покупается сам предмет в кадре. Ценник висит
-    // на машине, на толпе и на ковре — на том, что покупка меняет. Хватает
-    // поцелуев — ценник горит, не хватает — тусклый; всё куплено — вместо
-    // ценника полная лесенка точек.
-    renderShop() {
-        if (!this.shopEl) return;
-        if (this.phase !== 'idle') { this.shopEl.innerHTML = ''; return; }
+    // ---------- ИНТЕРФЕЙС КОСТЮМЕРНОЙ ----------
+    // Слоты наряда, кнопка магазина и кнопка старта. Всё рисуется в
+    // ВЕРХНЕМ холсте, в единицах сцены, и вжимается в видимую область —
+    // холст обрезается по-разному на разных телефонах.
+    //
+    // Ценников на предметах сцены больше нет: прокачка переехала на свою
+    // вкладку витрины. Ценник, висящий на машине посреди выхода, спорил с
+    // игрой за внимание, а в костюмерной для покупок есть отдельное место.
+    renderUI() {
+        if (!this.uiEl) return;
+        if (this.phase !== 'wardrobe') { this.uiEl.innerHTML = ''; return; }
+        const S = this.safe;
+        const worn = GameState.data.cosmetics || {};
+        const cols = { left: S.x0 + 44, right: S.x1 - 44 };
+        const rows = [S.y0 + 356, S.y0 + 442];
+        const used = { left: 0, right: 0 };
+
+        let out = '';
+        PRIDE_WARDROBE.slots.forEach(slot => {
+            const x = cols[slot.side];
+            const y = rows[Math.min(1, used[slot.side]++)];
+            const art = worn[slot.key]
+                ? WormCosmetics.art(worn[slot.key], 15, PALETTE.flesh[500]) : null;
+            out += `<g transform="translate(${x.toFixed(0)},${y.toFixed(0)})">` +
+                   PRIDE_ART.slotCard(slot, art) + '</g>';
+        });
+
+        // Кнопка старта — ПОД червём, как и просили: он стоит, готовый, и
+        // трогается с места, когда решит игрок.
+        out += `<g transform="translate(${PRIDE_ART.CX},${(PRIDE_ART.Y_FEET + 86).toFixed(0)})">` +
+               PRIDE_ART.startButton(44) + '</g>';
+        out += `<g transform="translate(${(S.x0 + 44).toFixed(0)},${(S.y1 - 46).toFixed(0)})">` +
+               PRIDE_ART.shopButton(26) + '</g>';
+        this.uiEl.innerHTML = out;
+    },
+
+    // ---------- ВИТРИНА ----------
+    // Две вкладки: наряд и прокачка. Наряд ничего не даёт и виден везде,
+    // прокачка меняет числа выхода и не видна нигде — общего у них ровно
+    // одно: платят за них поцелуями. Поэтому одна витрина, две полки.
+    renderStore() {
+        if (!this.storeEl) return;
+        if (!this.storeOpen) { this.storeEl.innerHTML = ''; return; }
+        const C = PALETTE.redCarpet;
+        const S = this.safe;
+        const x0 = S.x0 + 14, x1 = S.x1 - 14;
+        const wear = this.storeTab === 'wear';
+        // Панель ровно по содержимому: полки разной длины, и растянутая на
+        // весь экран витрина с пустой нижней половиной читается недогрузом.
+        const y0 = S.y0 + 74;
+        const y1 = y0 + 56 + (wear ? 4 * 106 : 3 * 96) + 16;
+
+        let out = `<rect class="pr-store-back" x="${S.x0}" y="${S.y0}"
+                         width="${(S.x1 - S.x0).toFixed(0)}" height="${(S.y1 - S.y0).toFixed(0)}"
+                         fill="${C.night[900]}" fill-opacity="0.82"/>
+            <rect x="${x0}" y="${y0}" width="${(x1 - x0).toFixed(0)}" height="${(y1 - y0).toFixed(0)}"
+                  rx="20" fill="${C.night[700]}" stroke="${C.gold[700]}" stroke-width="2"/>`;
+
+        // Вкладки — двумя значками, без единой буквы.
+        const tab = (key, emoji, cx) => `<g class="pr-tab" data-tab="${key}">
+            <rect x="${cx - 52}" y="${y0 - 22}" width="104" height="44" rx="14"
+                  fill="${this.storeTab === key ? C.silk[700] : C.night[900]}"
+                  stroke="${this.storeTab === key ? C.gold[300] : C.rail[700]}" stroke-width="2"/>
+            <text x="${cx}" y="${y0 + 8}" text-anchor="middle" font-size="24">${emoji}</text></g>`;
+        out += tab('wear', '👗', (x0 + x1) / 2 - 58) + tab('boost', '⬆', (x0 + x1) / 2 + 58);
+
+        out += `<g class="pr-store-close" transform="translate(${(x1 - 26).toFixed(0)},${(y0 + 26).toFixed(0)})">
+            <circle r="18" fill="${C.night[900]}" stroke="${C.rail[700]}" stroke-width="2"/>
+            <path d="M -7 -7 L 7 7 M 7 -7 L -7 7" stroke="${C.flash[500]}"
+                  stroke-width="3" stroke-linecap="round"/></g>`;
+
+        out += wear ? this.storeWear(x0, x1, y0 + 56) : this.storeBoost(x0, x1, y0 + 56);
+        this.storeEl.innerHTML = out;
+    },
+
+    // Полка наряда: восемь карточек по две в ряд. На карточке сам предмет,
+    // а не значок: покупают глазами, и что покупаешь, должно быть видно.
+    storeWear(x0, x1, top) {
+        const C = PALETTE.redCarpet;
+        const wallet = GameState.currency('pride_kiss');
+        const owned = GameState.data.wardrobe || {};
+        const worn = GameState.data.cosmetics || {};
+        const cw = (x1 - x0 - 30) / 2, ch = 96;
+        return PRIDE_WARDROBE.items.map((item, i) => {
+            const cx = x0 + 15 + cw * (i % 2) + cw / 2;
+            const cy = top + Math.floor(i / 2) * (ch + 10) + ch / 2;
+            const have = !!owned[item.id];
+            const on = worn[item.slot] === item.id;
+            const price = item.price.pride_kiss;
+            const rich = wallet >= price;
+            const art = WormCosmetics.art(item.id, 24, PALETTE.flesh[500]);
+            const label = have
+                ? `<circle cx="${(cw / 2 - 16).toFixed(0)}" cy="${(-ch / 2 + 16).toFixed(0)}" r="7"
+                           fill="${on ? C.gold[300] : C.rail[500]}"/>`
+                : `<text x="${(cw / 2 - 10).toFixed(0)}" y="${(ch / 2 - 12).toFixed(0)}"
+                         text-anchor="end" font-size="15" font-weight="700"
+                         fill="${rich ? C.kiss[300] : C.night[500]}">${price}</text>
+                   <text x="${(-cw / 2 + 12).toFixed(0)}" y="${(ch / 2 - 12).toFixed(0)}"
+                         font-size="13">💋</text>`;
+            return `<g class="pr-item${have ? ' have' : ''}${on ? ' on' : ''}${!have && rich ? ' rich' : ''}"
+                       data-item="${item.id}" transform="translate(${cx.toFixed(0)},${cy.toFixed(0)})">
+                <rect x="${-cw / 2 + 4}" y="${-ch / 2}" width="${cw - 8}" height="${ch}" rx="14"
+                      fill="${C.night[900]}" fill-opacity="0.9"
+                      stroke="${on ? C.gold[300] : (have ? C.rail[500] : C.rail[700])}"
+                      stroke-width="${on ? 2.5 : 1.6}"/>
+                <g transform="translate(0,8)" opacity="${have ? 1 : 0.5}">${art}</g>
+                ${label}</g>`;
+        }).join('');
+    },
+
+    // Полка прокачки: три линии, у каждой лесенка ступеней и цена следующей.
+    storeBoost(x0, x1, top) {
+        const C = PALETTE.redCarpet;
         const conf = ECONOMY.minigames.pride.upgrades;
         const wallet = GameState.currency('pride_kiss');
-        const A = PRIDE_ART;
-        // Ценник висит на том, что покупка меняет: на машине, на толпе и на
-        // ковре. Место при этом обязано быть ВИДНО целиком, поэтому каждая
-        // точка вжимается в видимую область холста.
-        const S = this.safe, pad = 64;
-        const fit = (x, y) => ({
-            x: Math.max(S.x0 + pad, Math.min(S.x1 - pad, x)),
-            y: Math.max(S.y0 + 76, Math.min(S.y1 - 34, y))
-        });
-        const at = {
-            car:    fit(A.CX - A.half(A.Z_START) * 1.9, A.y(A.Z_START) - 70),
-            crowd:  fit(A.CX + A.half(A.Z_WORM) * 1.06, A.y(A.Z_WORM) - 250),
-            carpet: fit(A.CX, S.y1 - 46)
-        };
-        // Лужа света с галочкой — единственная «кнопка» игры. Живёт в ВЕРХНЕМ
-        // холсте вместе с ценниками, а не в сцене: её дыхание — бесконечная
-        // css-анимация, а такая анимация внутри общего холста заставляет
-        // перекрашивать всю сцену каждый кадр (docs/traps.md, п. 36).
-        // Лужа света лежит МЕЖДУ червём и нижним ценником: ниже она налезала
-        // на ценник ковра, выше — на самого червя.
-        const my = (A.Y_FEET + (S.y1 - 34)) / 2 + 6;
-        const mz = A.zAtY(my);
-        let out = `<g transform="translate(${A.CX},${my.toFixed(1)}) scale(${(A.s(mz) / A.s(A.Z_WORM)).toFixed(3)})">` +
-                  PRIDE_ART.startMark() + '</g>';
-        conf.order.forEach(key => {
+        const w = x1 - x0 - 30, h = 84;
+        return conf.order.map((key, i) => {
             const branch = conf[key];
             const level = GameState.upgradeLevel('pride_' + key);
             const next = branch.levels[level];
-            const pos = at[key];
             const price = next ? next.price.pride_kiss : 0;
             const rich = next && wallet >= price;
-            out += this.tag(key, pos, level, branch.levels.length, price, rich, branch.emoji);
-        });
-        this.shopEl.innerHTML = out;
+            const cy = top + i * (h + 12) + h / 2;
+            const max = branch.levels.length;
+            const step = Math.min(22, (w - 150) / max);
+            const pips = Array.from({ length: max }, (_, k) =>
+                `<circle cx="${(-w / 2 + 64 + k * step).toFixed(1)}" cy="8" r="5"
+                         fill="${k < level ? C.kiss[300] : C.night[500]}"/>`).join('');
+            const cost = next
+                ? `<text x="${(w / 2 - 14).toFixed(0)}" y="6" text-anchor="end" font-size="19"
+                         font-weight="700" fill="${rich ? C.kiss[300] : C.night[500]}">${price}</text>
+                   <text x="${(w / 2 - 22 - String(price).length * 12).toFixed(0)}" y="5"
+                         text-anchor="end" font-size="14">💋</text>`
+                : `<text x="${(w / 2 - 20).toFixed(0)}" y="8" text-anchor="end" font-size="22"
+                         fill="${C.gold[300]}">✓</text>`;
+            return `<g class="pr-boost${rich ? ' rich' : ''}" data-boost="${key}"
+                       transform="translate(${((x0 + x1) / 2).toFixed(0)},${cy.toFixed(0)})">
+                <rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="14"
+                      fill="${C.night[900]}" fill-opacity="0.9"
+                      stroke="${rich ? C.kiss[500] : C.rail[700]}" stroke-width="${rich ? 2.2 : 1.6}"/>
+                <text x="${(-w / 2 + 20).toFixed(0)}" y="0" font-size="26">${branch.emoji}</text>
+                ${pips}${cost}</g>`;
+        }).join('');
     },
 
-    tag(key, pos, level, max, price, rich, emoji) {
-        const C = PALETTE.redCarpet;
-        const done = level >= max;
-        // Ширина от ЦЕНЫ: на верхних ступенях в ценнике четыре цифры, и в
-        // фиксированную табличку они не влезали.
-        const digits = done ? 0 : String(price).length;
-        const w = done ? 62 : 64 + digits * 13;
-        // Лесенка точек: сколько ступеней у линии, столько и точек. Шаг
-        // считается от ширины, а не задан числом, — линий с разным числом
-        // ступеней теперь две (у машины их четыре, у соседей шесть).
-        const step = Math.min(14, (w - 24) / Math.max(1, max));
-        const pips = Array.from({ length: max }, (_, i) =>
-            `<circle cx="${(-w / 2 + 12 + i * step).toFixed(1)}" cy="20" r="${(step / 3.4).toFixed(1)}"
-                     fill="${i < level ? C.kiss[300] : C.night[500]}"/>`).join('');
-        // Раскладка слева направо, каждому знаку своё место: что покупаем →
-        // чем платим → сколько. Пока число стояло по правому краю, а значок
-        // по левому, на четырёхзначной цене они налезали друг на друга.
-        const body = done
-            ? `<text x="0" y="4" text-anchor="middle" font-size="20">${emoji}</text>`
-            : `<text x="${-w / 2 + 8}" y="4" font-size="17">${emoji}</text>` +
-              `<text x="${-w / 2 + 30}" y="4" font-size="13">💋</text>` +
-              `<text x="${w / 2 - 8}" y="4" text-anchor="end" font-size="16"
-                     fill="${rich ? C.kiss[300] : C.night[500]}" font-weight="700">${price}</text>`;
-        return `<g class="pr-tag${rich ? ' rich' : ''}" data-key="${key}"
-                   transform="translate(${pos.x.toFixed(0)},${pos.y.toFixed(0)})">
-                    <rect x="${-w / 2}" y="-18" width="${w}" height="48" rx="12"
-                          fill="${C.night[900]}" fill-opacity="0.86"
-                          stroke="${rich ? C.kiss[500] : C.rail[700]}" stroke-width="2"/>
-                    ${body}${pips}
-                </g>`;
-    },
-
-    buy(key) {
+    // ---------- ПОКУПКИ ----------
+    // Решает всё та же сторона, что и всегда: клиент говорит «купи вот это»,
+    // а хватает ли валюты — отвечает Backend (инвариант 2).
+    buyBoost(key) {
         const answer = Backend.buyUpgrade(key, 'pride');
-        // Отказ показывается тем же ценником: он мигает и остаётся тусклым.
-        // Текста «не хватает» нет и быть не может (инвариант 9).
-        const tag = this.shopEl.querySelector(`.pr-tag[data-key="${key}"]`);
-        if (!answer.ok) {
-            if (tag) { tag.classList.remove('pr-deny'); void tag.getBBox(); tag.classList.add('pr-deny'); }
-            return;
+        if (!answer.ok) { this.deny(`.pr-boost[data-boost="${key}"]`); return; }
+        this.resetRun();          // числа следующего выхода изменились
+        this.renderAll();
+    },
+
+    // Тап по предмету наряда: не куплен — покупаем, куплен — надеваем,
+    // надет — снимаем. Одно и то же место, три состояния, ни одной кнопки.
+    tapItem(itemId) {
+        const item = PRIDE_WARDROBE.items.find(i => i.id === itemId);
+        if (!item) return;
+        if (!(GameState.data.wardrobe || {})[itemId]) {
+            const answer = Backend.buyWardrobe(itemId);
+            if (!answer.ok) { this.deny(`.pr-item[data-item="${itemId}"]`); return; }
+        } else {
+            Backend.wearCosmetic(item.slot, GameState.data.cosmetics[item.slot] === itemId ? null : itemId);
         }
-        // Купленное меняет сам выход: числа перечитываются, толпа и машина
-        // пересобираются — иначе купленную массовку станет видно только со
-        // следующего открытия игры.
-        this.resetRun();
+        this.refreshWorm();
+        this.renderAll();
+    },
+
+    // Тап по слоту в костюмерной: перебирает купленное для этого слота по
+    // кругу — надето → следующее → голо. Ничего не куплено — открываем
+    // витрину: игроку показали место и сразу показали, чем его заполнить.
+    tapSlot(slotKey) {
+        const owned = PRIDE_WARDROBE.items
+            .filter(i => i.slot === slotKey && (GameState.data.wardrobe || {})[i.id]);
+        if (!owned.length) { this.storeOpen = true; this.storeTab = 'wear'; this.renderStore(); return; }
+        const now = (GameState.data.cosmetics || {})[slotKey] || null;
+        const idx = owned.findIndex(i => i.id === now);
+        const next = idx + 1 >= owned.length ? null : owned[idx + 1].id;
+        Backend.wearCosmetic(slotKey, next);
+        this.refreshWorm();
+        this.renderAll();
+    },
+
+    // Наряд живёт в модели персонажа, значит смена наряда — это пересборка
+    // модели. Здесь же перекладывается и главный червь на экране комнаты:
+    // купленное носится ВЕЗДЕ, и увидеть это игрок должен сразу.
+    refreshWorm() {
+        this.mountWorm();
+        requestAnimationFrame(() => requestAnimationFrame(() => this.layoutWorm()));
+        if (window.MainWormHandle && window.WormModelAPI) {
+            const m = window.WormModelAPI.loadWormModel();
+            if (typeof wormMarksFromState === 'function') m.scars = wormMarksFromState();
+            window.MainWormHandle.update(m);
+        }
+    },
+
+    // Отказ показывается там же, где нажали: карточка дёргается и остаётся
+    // тусклой. Текста «не хватает» нет и быть не может (инвариант 9).
+    deny(selector) {
+        const el = this.screenElement.querySelector(selector);
+        if (!el) return;
+        el.classList.remove('pr-deny');
+        void el.getBBox();
+        el.classList.add('pr-deny');
     }
 };
 

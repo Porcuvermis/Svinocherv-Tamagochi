@@ -4111,6 +4111,33 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         });
     });
 
+    // ---------- НАДЕТОЕ ----------
+    // Ровно тем же путём, что и шрамы, и по той же причине: слот — это зона
+    // и доля вдоль неё, а не имя сегмента. Цилиндр остаётся на голове при
+    // взрослении, потому что «голова» переживает и смену числа сегментов, и
+    // эволюцию, а `growing-3` — нет.
+    //
+    // Узел статический: он висит внутри слоя части и ездит вместе с ней сам.
+    // В покадровой анимации про одежду нет ни строчки, и стоит она поэтому
+    // ноль кадров.
+    if (typeof WormCosmetics !== 'undefined' && model.cosmetics) {
+        Object.keys(model.cosmetics).forEach(slotKey => {
+            const itemId = model.cosmetics[slotKey];
+            if (!itemId) return;
+            const place = WormMarks.resolveSlot(model, slotKey);
+            if (!place) return;
+            const host = scarHostByPart[place.part];
+            if (!host) return;
+            const art = WormCosmetics.art(itemId, radiusByPart[place.part] || 15,
+                                          skinByPart[place.part]);
+            if (!art) return;
+            const g = svgEl('g', { 'data-cosmetic': slotKey,
+                                   transform: `translate(${place.x.toFixed(1)},0)` });
+            g.innerHTML = art;
+            host.appendChild(g);
+        });
+    }
+
     return {
         root,
         totalWithTail,

@@ -470,19 +470,33 @@ function createVariedWormModel(seed) {
 }
 
 // ---------- ПЕРСИСТЕНЦИЯ ----------
+// Наряд — не часть модели, а часть состояния игрока, и подставляется он
+// ЗДЕСЬ, в одном месте на всю игру. Иначе пришлось бы дописывать по строчке
+// в каждую из восьми точек, где модель загружают, и первая же забытая
+// означала бы «в ванной цилиндр пропадает».
+function withCosmetics(model) {
+    model.cosmetics = wormCosmeticsFromState();
+    return model;
+}
+
+function wormCosmeticsFromState() {
+    const st = (typeof GameState !== 'undefined' && GameState.data) ? GameState.data : null;
+    return st && st.cosmetics ? st.cosmetics : {};
+}
+
 function loadWormModel() {
     try {
         const raw = localStorage.getItem(WORM_MODEL_STORAGE_KEY);
-        if (!raw) return createDefaultWormModel();
+        if (!raw) return withCosmetics(createDefaultWormModel());
         const parsed = JSON.parse(raw);
-        if (!parsed || parsed.version !== WORM_MODEL_VERSION) return createDefaultWormModel();
+        if (!parsed || parsed.version !== WORM_MODEL_VERSION) return withCosmetics(createDefaultWormModel());
         // Страховка от сохранений, сделанных до появления блока anatomy
         // (или с частично вырезанным блоком): недостающие ветки достраиваются
         // дефолтами, уже имеющиеся значения игрока сохраняются.
         parsed.anatomy = deepMergeWormObjects(createDefaultAnatomy(), parsed.anatomy || {});
-        return parsed;
+        return withCosmetics(parsed);
     } catch (err) {
-        return createDefaultWormModel();
+        return withCosmetics(createDefaultWormModel());
     }
 }
 

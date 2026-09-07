@@ -99,6 +99,74 @@
     100% { opacity: 0; transform: scale(3.4); }
 }
 
+/* ---------- КОСТЮМЕРНАЯ ---------- */
+/* Куски декораций ездят ТОЛЬКО трансформом: это композитор, и внутри группы
+   может лежать что угодно — хоть занавес в складках, хоть вся толпа, —
+   перерисовки не будет ни одной.
+
+   А вот will-change здесь НЕ СТОИТ, хотя просится. Он поднимает каждую
+   группу в собственный слой композитора НАВСЕГДА, а групп девять, и каждая
+   размером с экран: девять полноэкранных слоёв висят в памяти всё время,
+   пока игра открыта, ради перехода длиной в три четверти секунды. Слой
+   выдаётся на время самого переезда, из js, и снимается после. */
+
+#pride-game .pr-slot,
+#pride-game .pr-item,
+#pride-game .pr-boost,
+#pride-game .pr-tab,
+#pride-game .pr-store-close,
+#pride-game .pr-round-btn,
+#pride-game .pr-start-btn {
+    cursor: pointer;
+}
+
+/* Кнопка старта дышит: она единственная, с которой начинается выход, и
+   промахнуться мимо неё игрок не должен. */
+#pride-game .pr-start-btn {
+    animation: pr-pulse 1.8s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes pr-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+}
+
+/* Купленное, но не надетое — приглушено; надетое горит золотом (рамка
+   рисуется в js). Дышит то, на что хватает поцелуев. */
+#pride-game .pr-item.rich,
+#pride-game .pr-boost.rich {
+    animation: pr-breathe 2.4s ease-in-out infinite;
+}
+
+#pride-game .pr-deny rect {
+    animation: pr-deny 0.32s ease-out;
+}
+
+/* Цифры отсчёта: появляются крупно и опадают. Полторы секунды на три
+   цифры — ровно столько, чтобы собраться, и не столько, чтобы заскучать. */
+#pride-game .pr-count-digit {
+    animation: pr-count 0.5s ease-out forwards;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes pr-count {
+    0%   { opacity: 0; transform: scale(1.8); }
+    16%  { opacity: 1; transform: scale(1); }
+    72%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.86); }
+}
+
+/* Цифра лежит поверх яркой сцены, поэтому у неё своя тень: без неё «3» на
+   ковре читается как пятно, а на толпе не читается вовсе. */
+#pride-game .pr-count-digit {
+    filter: drop-shadow(0 0 18px rgba(0, 0, 0, 0.85));
+}
+
+#pride-game .pr-count { pointer-events: none; }
+
 /* ---------- ЛУЖА СВЕТА У СТАРТА ---------- */
 /* Единственная «кнопка» игры, и она без слов: пятно света на ковре впереди
    дышит, пока выход не начался. */
@@ -113,22 +181,8 @@
     50%      { opacity: 1; }
 }
 
-/* ---------- ЦЕННИКИ ---------- */
-#pride-game .pr-tag {
-    cursor: pointer;
-}
-
-/* Хватает поцелуев — ценник слегка дышит. Отказ — короткий толчок вбок:
-   «нет» здесь сказано движением, а не буквами. */
-#pride-game .pr-tag.rich {
-    animation: pr-breathe 2.2s ease-in-out infinite;
-    transform-box: fill-box;
-}
-
-#pride-game .pr-tag.pr-deny rect {
-    animation: pr-deny 0.32s ease-out;
-}
-
+/* Отказ — короткий толчок вбок: «нет» здесь сказано движением, а не
+   буквами. */
 @keyframes pr-deny {
     0%, 100% { transform: translateX(0); }
     25%      { transform: translateX(-4px); }
@@ -143,7 +197,8 @@
 /* Цифры счёта и ценников — единственный текст в игре, и это ЦИФРЫ
    (инвариант 9: цифра не слово, а пиктограмма количества). */
 #pride-game .pr-hud text,
-#pride-game .pr-shop text {
+#pride-game .pr-ui text,
+#pride-game .pr-store text {
     font-family: system-ui, -apple-system, sans-serif;
     paint-order: stroke;
     stroke: rgba(0, 0, 0, 0.55);

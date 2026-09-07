@@ -137,6 +137,12 @@ const PRIDE_ART = {
             </radialGradient>
         </defs>
 
+        <!-- ДАЛЬНИЙ ПЛАН. Отдельной группой не ради порядка рисования, а ради
+             ПЕРЕЕЗДА: при смене декораций небо уезжает вверх, земля вниз, а
+             толпа с ограждениями разъезжается по сторонам — как будто рабочие
+             сцены увезли одно и привезли другое. Каждому куску нужна своя
+             группа, иначе двигать их порознь нечем. -->
+        <g id="pr-far">
         <rect x="0" y="0" width="${this.W}" height="${this.HORIZON + 2}" fill="url(#pr-sky)"/>
         <!-- Лучи прожекторов. Не украшение: над ночным горизонтом иначе
              остаётся пустое место в треть кадра, а лучи разом объясняют, что
@@ -145,6 +151,9 @@ const PRIDE_ART = {
              кадр (docs/traps.md, п. 36). -->
         ${this.beams()}
         <ellipse cx="${this.CX}" cy="${this.HORIZON}" rx="300" ry="150" fill="url(#pr-glow)"/>
+        </g>
+
+        <g id="pr-ground">
         <rect x="0" y="${this.HORIZON}" width="${this.W}" height="${this.H - this.HORIZON}" fill="url(#pr-floor)"/>
 
         <!-- КОВЁР — ЭТО И ЕСТЬ ШКАЛА ВЫХОДА.
@@ -159,6 +168,8 @@ const PRIDE_ART = {
              лучше — на ней звезду сюда и привезли.
              Дальний край переставляет pride.js каждый кадр — одна запись
              на три узла, дешевле некуда. -->
+        <ellipse id="pr-shadow" cx="${this.CX}" cy="${this.Y_FEET}" rx="0" ry="0"
+                 fill="${PALETTE.ink}" opacity="0.34"/>
         <polygon id="pr-carpet-poly" points="${this.carpetPoints(this.Z_START)}" fill="url(#pr-carpet)"/>
         <!-- Кант ковра: тонкая светлая линия по обеим кромкам. Без неё край
              ковра сливается с тёмным полом, и дорожка теряет форму. -->
@@ -171,16 +182,18 @@ const PRIDE_ART = {
              живёт в отдельном html-слое поверх, и его собственная тень
              оказалась бы НАД ковром вместо того, чтобы лежать на нём.
              Размер выставляет pride.js по измеренному силуэту. -->
-        <ellipse id="pr-shadow" cx="${this.CX}" cy="${this.Y_FEET}" rx="0" ry="0"
-                 fill="${PALETTE.ink}" opacity="0.34"/>
 
         <!-- Порядок слоёв — это порядок в глубину: толпа стоит ЗА
              ограждением, поэтому и рисуется до него. Пока было наоборот,
              люди перелезали через перила и накрывали их собой. -->
-        <g id="pr-crowd"></g>
-        ${this.rail(-1)}
-        ${this.rail(1)}
         <g id="pr-stripes"></g>
+        </g>
+
+        <!-- Толпа стоит ЗА ограждением, поэтому и рисуется до него. Стороны
+             разведены по двум группам: при смене декораций левая уезжает
+             влево, правая вправо. -->
+        <g id="pr-side-l"><g id="pr-crowd-l"></g>${this.rail(-1)}</g>
+        <g id="pr-side-r"><g id="pr-crowd-r"></g>${this.rail(1)}</g>
         <g id="pr-props"></g>`;
     },
 
@@ -378,6 +391,146 @@ const PRIDE_ART = {
                  туда, куда червь как раз не идёт. -->
             <path d="M -30 -12 L 0 18 L 30 -12" fill="none" stroke="${C.flash[300]}"
                   stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+        </g>`;
+    },
+
+    // ================= КОСТЮМЕРНАЯ =================
+    // Стартовый экран тщеславия: червь у гримёрного зеркала, вокруг слоты
+    // наряда. Здесь одеваются и покупают, отсюда же уходят на дорожку.
+    //
+    // Комната собрана из ЧЕТЫРЁХ кусков, и это не декоративное деление:
+    // занавес уезжает вверх, зеркало влево, вешалка вправо, помост вниз —
+    // так смена декораций читается работой сцены, а не переходом слайдов.
+    // Каждому куску нужна своя группа, иначе двигать их порознь нечем.
+    room() {
+        const C = PALETTE.redCarpet;
+        const P = PALETTE;
+        const W = this.W, H = this.H;
+        // Гримёрное зеркало: рама с лампами. Лампы — единственный источник
+        // света в комнате, поэтому они же и объясняют, почему червь освещён.
+        let bulbs = '';
+        const bx = 54, by = 122, bw = 152, bh = 214;
+        for (let i = 0; i < 8; i++) {
+            const t = i / 7;
+            bulbs += `<circle cx="${(bx - 16).toFixed(0)}" cy="${(by + bh * t).toFixed(0)}" r="9" fill="${C.flash[500]}"/>`;
+            bulbs += `<circle cx="${(bx + bw + 16).toFixed(0)}" cy="${(by + bh * t).toFixed(0)}" r="9" fill="${C.flash[500]}"/>`;
+        }
+        for (let i = 1; i < 7; i++) {
+            const t = i / 7;
+            bulbs += `<circle cx="${(bx + bw * t).toFixed(0)}" cy="${(by - 16).toFixed(0)}" r="9" fill="${C.flash[500]}"/>`;
+        }
+        return `
+        <defs>
+            <linearGradient id="pr-curtain" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="${C.carpet[700]}"/>
+                <stop offset="1" stop-color="${C.carpet[500]}"/>
+            </linearGradient>
+            <radialGradient id="pr-mirror" cx="0.5" cy="0.35" r="0.75">
+                <stop offset="0" stop-color="${C.glow[300]}" stop-opacity="0.5"/>
+                <stop offset="1" stop-color="${C.night[700]}" stop-opacity="0.9"/>
+            </radialGradient>
+            <linearGradient id="pr-podium" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="${C.night[500]}"/>
+                <stop offset="1" stop-color="${C.night[900]}"/>
+            </linearGradient>
+        </defs>
+
+        <!-- ЗАНАВЕС. Уезжает вверх. -->
+        <g id="pr-room-back">
+            <rect x="0" y="0" width="${W}" height="${H}" fill="${C.night[900]}"/>
+            <rect x="0" y="0" width="${W}" height="${H * 0.62}" fill="url(#pr-curtain)"/>
+            ${Array.from({ length: 9 }, (_, i) => {
+                const x = (i + 0.5) * (W / 9);
+                return `<path d="M ${x.toFixed(1)} 0 L ${x.toFixed(1)} ${(H * 0.62).toFixed(0)}"
+                              stroke="${C.carpet[700]}" stroke-width="${(7 + (i % 3) * 6)}"/>`;
+            }).join('')}
+            <rect x="0" y="${(H * 0.6).toFixed(0)}" width="${W}" height="26" fill="${C.rail[700]}"/>
+            <rect x="0" y="${(H * 0.6).toFixed(0)}" width="${W}" height="6" fill="${C.rail[500]}"/>
+        </g>
+
+        <!-- ЗЕРКАЛО. Уезжает влево. -->
+        <g id="pr-room-l">
+            <rect x="${bx - 30}" y="${by - 30}" width="${bw + 60}" height="${bh + 52}" rx="18"
+                  fill="${C.rail[700]}" stroke="${C.rail[500]}" stroke-width="${STROKE.structure}"/>
+            <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="8" fill="url(#pr-mirror)"/>
+            ${bulbs}
+        </g>
+
+        <!-- ВЕШАЛКА С ЗАПАСНЫМ ТРЯПЬЁМ. Уезжает вправо. Она тут не для
+             красоты: без неё комната не читается костюмерной — зеркало есть
+             и в ванной. -->
+        <g id="pr-room-r">
+            <rect x="${W - 66}" y="112" width="10" height="286" rx="5" fill="${C.rail[700]}"/>
+            <rect x="${W - 172}" y="110" width="128" height="10" rx="5" fill="${C.rail[500]}"/>
+            ${[0, 1, 2].map(i => {
+                const x = W - 162 + i * 40;
+                const col = [C.cloth[700], C.silk[700], C.cloth[500]][i];
+                return `<path d="M ${x} 120 L ${x + 24} 120 L ${x + 32} ${208 + i * 22}
+                                L ${x - 8} ${208 + i * 22} Z"
+                              fill="${col}" stroke="${P.ink}" stroke-width="${STROKE.detail}"/>
+                        <path d="M ${x + 12} 120 L ${x + 12} 112" stroke="${C.rail[500]}"
+                              stroke-width="${STROKE.detail}"/>`;
+            }).join('')}
+        </g>
+
+        <!-- ПОМОСТ, на котором стоит червь. Уезжает вниз. -->
+        <g id="pr-room-floor">
+            <rect x="0" y="${(H * 0.62).toFixed(0)}" width="${W}" height="${(H * 0.38).toFixed(0)}"
+                  fill="url(#pr-podium)"/>
+            <ellipse cx="${this.CX}" cy="${this.Y_FEET}" rx="150" ry="34"
+                     fill="${C.night[500]}" opacity="0.8"/>
+            <ellipse cx="${this.CX}" cy="${this.Y_FEET}" rx="150" ry="34"
+                     fill="none" stroke="${C.rail[700]}" stroke-width="${STROKE.structure}"/>
+            <ellipse id="pr-room-shadow" cx="${this.CX}" cy="${(this.Y_FEET + 4).toFixed(0)}"
+                     rx="0" ry="0" fill="${P.ink}" opacity="0.38"/>
+        </g>`;
+    },
+
+    // Карточка слота: рамка, а в ней либо силуэт того, что сюда ставится,
+    // либо надетый предмет. Без единой буквы — по силуэту видно, что это за
+    // место (тот же приём, что в лобби гнева).
+    slotCard(slot, worn, size) {
+        const C = PALETTE.redCarpet;
+        const s = size || 62;
+        const inner = worn
+            ? `<g transform="translate(0,${(s * 0.16).toFixed(1)})">${worn}</g>`
+            : `<g transform="translate(${(-s * 0.29).toFixed(1)},${(-s * 0.29).toFixed(1)}) scale(${(s * 0.024).toFixed(3)})">
+                   <path d="${slot.shape}" fill="none" stroke="${C.night[500]}"
+                         stroke-width="1.6" stroke-linejoin="round"/></g>`;
+        return `<g class="pr-slot${worn ? ' filled' : ''}" data-slot="${slot.key}">
+            <rect x="${-s / 2}" y="${-s / 2}" width="${s}" height="${s}" rx="14"
+                  fill="${C.night[900]}" fill-opacity="0.82"
+                  stroke="${worn ? C.gold[500] : C.rail[700]}" stroke-width="2"/>
+            ${inner}
+        </g>`;
+    },
+
+    // Кнопка старта: круг с треугольником. Треугольник — знак, а не слово
+    // (инвариант 9), и он же показывает направление: вперёд, на публику.
+    startButton(r) {
+        const C = PALETTE.redCarpet;
+        return `<g id="pr-start-btn" class="pr-start-btn">
+            <circle cx="0" cy="0" r="${r}" fill="${C.carpet[500]}"
+                    stroke="${C.gold[300]}" stroke-width="3"/>
+            <circle cx="0" cy="0" r="${r - 8}" fill="none" stroke="${C.gold[500]}"
+                    stroke-width="1.5" opacity="0.6"/>
+            <path d="M ${-r * 0.24} ${-r * 0.4} L ${r * 0.42} 0 L ${-r * 0.24} ${r * 0.4} Z"
+                  fill="${C.flash[300]}"/>
+        </g>`;
+    },
+
+    // Кнопка магазина: сумка. Тоже без букв.
+    shopButton(r) {
+        const C = PALETTE.redCarpet;
+        return `<g id="pr-shop-btn" class="pr-round-btn">
+            <circle cx="0" cy="0" r="${r}" fill="${C.night[900]}" fill-opacity="0.9"
+                    stroke="${C.gold[500]}" stroke-width="2"/>
+            <path d="M ${-r * 0.42} ${-r * 0.18} L ${r * 0.42} ${-r * 0.18}
+                     L ${r * 0.32} ${r * 0.46} L ${-r * 0.32} ${r * 0.46} Z"
+                  fill="none" stroke="${C.gold[300]}" stroke-width="2.4" stroke-linejoin="round"/>
+            <path d="M ${-r * 0.2} ${-r * 0.18} Q ${-r * 0.2} ${-r * 0.56} 0 ${-r * 0.56}
+                     Q ${r * 0.2} ${-r * 0.56} ${r * 0.2} ${-r * 0.18}"
+                  fill="none" stroke="${C.gold[300]}" stroke-width="2.4"/>
         </g>`;
     },
 

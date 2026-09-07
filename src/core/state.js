@@ -52,6 +52,16 @@ const GameState = {
             // Надетое снаряжение гнева: слот → id предмета из
             // src/config/wrath-gear.js. Пусто = дерётся как есть.
             equipment: {},
+            // Купленный гардероб тщеславия: id предмета → true. Отдельно от
+            // inventory (там снаряжение гнева) по той же причине, по которой
+            // кладовая кухни отдельно: разные грехи не должны толкаться в
+            // одной корзине.
+            wardrobe: {},
+            // Надетый наряд: слот → id предмета из src/config/pride-wardrobe.js.
+            // Живёт В СОСТОЯНИИ, а не в модели червя: модель — это «как он
+            // устроен», а наряд — что на нём сегодня надето. Ровно та же
+            // граница, что у шрамов (docs/plan/17-pride.md, раздел 8).
+            cosmetics: {},
             unlocks: {},
             daily_counters: {},
             // Накопительные счётчики за всё время (в отличие от суточных):
@@ -251,7 +261,8 @@ const GameState = {
             }
         }
 
-        ['currencies', 'inventory', 'pantry', 'equipment', 'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
+        ['currencies', 'inventory', 'pantry', 'equipment', 'wardrobe', 'cosmetics',
+         'upgrades', 'unlocks', 'daily_counters', 'counters', 'runs'].forEach(key => {
             if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
         });
 

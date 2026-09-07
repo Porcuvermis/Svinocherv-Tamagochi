@@ -203,7 +203,7 @@
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=7" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=9" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=7" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=8" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/envy/envy.css?v=1" media="print" onload="this.media='all'">
 </head>
 <body>
@@ -758,6 +758,11 @@
     <div id="pride-game" class="minigame-screen" data-sin="pride">
         <svg id="pr-svg" class="pr-svg" viewBox="0 0 390 844"
              preserveAspectRatio="xMidYMid slice">
+            <!-- ДВЕ ДЕКОРАЦИИ В ОДНОМ ХОЛСТЕ: костюмерная и дорожка. Они не
+                 заменяют друг друга разметкой, а РАЗЪЕЗЖАЮТСЯ: на старте
+                 куски костюмерной уходят вверх, вниз и по сторонам, а куски
+                 дорожки приезжают им на смену. Живут поэтому обе сразу. -->
+            <g id="pr-room"></g>
             <g id="pr-scene"></g>
         </svg>
         <div id="pr-worm" class="pr-worm"></div>
@@ -768,8 +773,15 @@
              preserveAspectRatio="xMidYMid slice">
             <g id="pr-zones"></g>
             <g id="pr-fx" class="pr-fx"></g>
-            <g id="pr-shop" class="pr-shop"></g>
+            <g id="pr-ui" class="pr-ui"></g>
             <g id="pr-hud" class="pr-hud"></g>
+            <!-- Витрина: одежда и прокачка. Поверх всего и ловит весь ввод,
+                 пока открыта. -->
+            <g id="pr-store" class="pr-store"></g>
+            <!-- Отсчёт перед выходом. Отдельным слоем, потому что он должен
+                 быть НАД сменой декораций: пока цифры идут, декорации ещё
+                 доезжают. -->
+            <g id="pr-count" class="pr-count"></g>
         </svg>
     </div>
 
@@ -815,6 +827,7 @@
 <!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
      числа боя лежат там, предметы здесь. -->
 <script src="src/config/wrath-gear.js?v=4"></script>
+<script src="src/config/pride-wardrobe.js?v=1"></script>
 <!-- Каталог кухни: ингредиенты, жидкости, таблица качества блюда. Тоже
      данные без логики, и тоже нужен состоянию (стартовая кладовая), поэтому
      подключается до state.js. -->
@@ -831,6 +844,7 @@
 <script src="src/core/rooms.js?v=1"></script>
 <script src="src/core/worm-model.js?v=9"></script>
 <script src="src/core/worm-marks.js?v=3"></script>
+<script src="src/core/worm-cosmetics.js?v=1"></script>
 <script src="src/core/worm-condition.js?v=1"></script>
 <script src="src/core/worm-renderer.js?v=41"></script>
 <script src="src/core/worm.js?v=11"></script>
@@ -868,8 +882,8 @@
 <script src="src/minigames/gluttony/kitchen-art.js?v=9"></script>
 <script src="src/minigames/gluttony/kitchen-debug.js?v=2"></script>
 <script src="src/minigames/gluttony/gluttony.js?v=11"></script>
-<script src="src/minigames/pride/pride-art.js?v=1"></script>
-<script src="src/minigames/pride/pride.js?v=7"></script>
+<script src="src/minigames/pride/pride-art.js?v=2"></script>
+<script src="src/minigames/pride/pride.js?v=8"></script>
 <!-- three.js ЗДЕСЬ НЕ ПОДКЛЮЧЁН, и это осознанно.
      Библиотека нужна ровно одной мини-игре из семи (зависть), а весит
      145 КБ gzip — 22% всей загрузки. Подключённая обычным <script>, она

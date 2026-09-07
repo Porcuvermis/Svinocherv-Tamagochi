@@ -184,11 +184,26 @@ const { chromium } = require('playwright');
     GameManager.handleSinAction('pride');
   });
   await page.waitForTimeout(1200);
-  found.carpetIdle = await scan('pride-game');
-  await page.screenshot({ path: out + 'nw-p1-carpet.png' });
+  found.wardrobe = await scan('pride-game');
+  await page.screenshot({ path: out + 'nw-p1-wardrobe.png' });
 
-  await page.evaluate(() => PrideMinigame.startRun());
-  await page.waitForTimeout(2500);
+  // Витрина: восемь предметов с ценами и три линии прокачки. Место, где
+  // соблазн подписать «купить» и «не хватает» сильнее всего.
+  await page.evaluate(() => { PrideMinigame.storeOpen = true; PrideMinigame.renderStore(); });
+  await page.waitForTimeout(300);
+  found.storeWear = await scan('pride-game');
+  await page.screenshot({ path: out + 'nw-p2-store.png' });
+  await page.evaluate(() => { PrideMinigame.storeTab = 'boost'; PrideMinigame.renderStore(); });
+  await page.waitForTimeout(300);
+  found.storeBoost = await scan('pride-game');
+  await page.evaluate(() => { PrideMinigame.storeOpen = false; PrideMinigame.renderStore(); });
+
+  // Отсчёт перед выходом — единственное место, где на экране крупные цифры.
+  await page.evaluate(() => PrideMinigame.startShow());
+  await page.waitForTimeout(1000);
+  found.count = await scan('pride-game');
+  await page.screenshot({ path: out + 'nw-p3-count.png' });
+  await page.waitForTimeout(2000);
   found.carpetRun = await scan('pride-game');
   await page.screenshot({ path: out + 'nw-p2-run.png' });
 

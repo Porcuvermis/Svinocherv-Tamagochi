@@ -31,6 +31,15 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(1000);
 
   const params = await page.evaluate(() => PrideMinigame.params);
+  const wardrobe = await page.evaluate(() => ({
+    фаза: PrideMinigame.phase,
+    слотов: document.querySelectorAll('#pr-ui .pr-slot').length,
+    старт: !!document.querySelector('#pr-start-btn'),
+    магазин: !!document.querySelector('#pr-shop-btn')
+  }));
+  console.log(`костюмерная: ${wardrobe.фаза}, слотов ${wardrobe.слотов}, ` +
+              `кнопка старта ${wardrobe.старт ? 'есть' : 'НЕТ'}, ` +
+              `магазин ${wardrobe.магазин ? 'есть' : 'НЕТ'}`);
   console.log(`выход: ${params.runMs / 1000} с   зона каждые ${params.spawnMs} мс   ` +
               `радиус ${params.radius}   потолок ×${params.multCap}`);
 
@@ -44,9 +53,14 @@ const { chromium } = require('playwright');
     return { x: s.x, y: s.y };
   }, [p.x, p.y]);
 
-  // Старт: тап по ковру перед червём.
-  const startAt = await toScreen({ x: 195, y: 700 });
-  await page.mouse.click(startAt.x, startAt.y);
+  // Старт — кнопка под червём в костюмерной. Дальше смена декораций и
+  // отсчёт: до первой зоны игра доходит сама, тест только ждёт.
+  const btn = await page.evaluate(() => {
+    const b = document.querySelector('#pr-start-btn').getBoundingClientRect();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  });
+  await page.mouse.click(btn.x, btn.y);
+  await page.waitForFunction(() => PrideMinigame.phase === 'run', null, { timeout: 8000 });
   const started = Date.now();
 
   let taps = 0, maxOnScreen = 0;
@@ -117,8 +131,32 @@ const { chromium } = require('playwright');
               `потолок ×${buy.before.multCap} → ×${buy.after.multCap}   ` +
               `радиус ${buy.before.radius} → ${buy.after.radius}   осталось 💋 ${buy.wallet}`);
 
+  // ---------- НАРЯД ----------
+  // Проверяется не «списались ли поцелуи», а то, ради чего наряд есть:
+  // купленное надевается и оказывается НА ТЕЛЕ — в самой мини-игре и в
+  // комнате, то есть везде.
+  const dress = await page.evaluate(() => {
+    Backend.grantCurrency('pride_kiss', 3000);
+    const buy = Backend.buyWardrobe('top-hat');
+    PrideMinigame.refreshWorm();
+    return { ok: buy.ok, надето: GameState.data.cosmetics.head };
+  });
+  await page.waitForTimeout(600);
+  const onBody = await page.evaluate(() => ({
+    вИгре: document.querySelectorAll('#pr-worm [data-cosmetic]').length,
+    вКомнате: document.querySelectorAll('#worm-stage [data-cosmetic]').length
+  }));
+  console.log(`наряд: куплен ${dress.ok}, надет «${dress.надето}», ` +
+              `на червe в игре ${onBody.вИгре}, в комнате ${onBody.вКомнате}`);
+
   const bad = [];
-  if (res.phase !== 'idle' && res.phase !== 'done') bad.push('выход не завершился сам');
+  if (!dress.ok || dress.надето !== 'top-hat') bad.push('наряд не купился или не надет');
+  if (!onBody.вИгре) bad.push('купленный наряд не появился на червe в игре');
+  if (!onBody.вКомнате) bad.push('купленный наряд не появился на червe в комнате');
+  if (res.phase !== 'done' && res.phase !== 'wardrobe') bad.push('выход не завершился сам');
+  if (wardrobe.фаза !== 'wardrobe') bad.push('игра открылась не костюмерной');
+  if (wardrobe.слотов !== 4) bad.push(`слотов наряда ${wardrobe.слотов} вместо четырёх`);
+  if (!wardrobe.старт || !wardrobe.магазин) bad.push('нет кнопки старта или магазина');
   if (Math.abs(sec - params.runMs / 1000) > 4) bad.push(`длина выхода ${sec} с вместо ${params.runMs / 1000}`);
   if (res.sin !== 100) bad.push('шкала греха не закрылась');
   if (!buy.ok) bad.push('покупка не прошла');

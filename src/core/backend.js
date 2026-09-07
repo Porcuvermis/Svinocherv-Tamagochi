@@ -1330,6 +1330,52 @@ const LocalBackend = {
         return step ? step.bonus : branch.base;
     },
 
+    // ---------- ТЩЕСЛАВИЕ: ГАРДЕРОБ ----------
+    // Покупка предмета наряда. Ровно та же форма, что у снаряжения гнева:
+    // клиент говорит «купи вот это», а хватает ли валюты — решает эта
+    // сторона, позже сервер.
+    //
+    // Наряд НИЧЕГО не меняет в числах — ни здесь, ни в других грехах. Это
+    // граница, а не недоделка: поцелуи не покупают силу, иначе появляется
+    // вторая линия прогресса (docs/plan/15-progression.md, правило первое).
+    buyWardrobe(itemId) {
+        const item = (typeof PRIDE_WARDROBE !== 'undefined')
+            ? PRIDE_WARDROBE.items.find(i => i.id === itemId) : null;
+        if (!item) return { ok: false, error: 'unknown_item' };
+        if (GameState.data.wardrobe[itemId]) return { ok: false, error: 'already_owned' };
+
+        const price = item.price || {};
+        const short = Object.keys(price).find(cur => GameState.currency(cur) < price[cur]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(cur => {
+            GameState.addCurrency(cur, -price[cur]);
+            GameState.pushLedger({
+                currency: cur, delta: -price[cur],
+                reason: 'wardrobe.pride.' + itemId, client_request_id: requestId
+            });
+        });
+        GameState.data.wardrobe[itemId] = true;
+        // Купил — сразу надето: покупка и есть намерение носить, а гонять
+        // игрока после неё в слот значит требовать лишний тап ради ничего.
+        // Тот же довод, что у снаряжения гнева.
+        GameState.data.cosmetics[item.slot] = itemId;
+        GameState.save();
+        return { ok: true, item: itemId, slot: item.slot };
+    },
+
+    // Надеть или снять (itemId = null). Проверка одна: носить можно только
+    // купленное — иначе примерочная превращается в бесплатный магазин.
+    wearCosmetic(slot, itemId) {
+        if (!GameState.data.cosmetics) GameState.data.cosmetics = {};
+        if (itemId && !GameState.data.wardrobe[itemId]) return { ok: false, error: 'not_owned' };
+        if (itemId) GameState.data.cosmetics[slot] = itemId;
+        else delete GameState.data.cosmetics[slot];
+        GameState.save();
+        return { ok: true, slot, item: itemId || null };
+    },
+
     // ---------- ТЩЕСЛАВИЕ: ЧИСЛА ВЫХОДА ----------
     // Мини-игра спрашивает, с чем она сегодня выходит на дорожку, и не
     // считает этого сама: и база, и купленные ступени — конфиг (инвариант 3).
