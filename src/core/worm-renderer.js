@@ -207,6 +207,24 @@ const WORM_CHAIN_PHASE_STEP = 0.3;
 // Хвост дополнительно "вихляет" СВЕРХ базового угла звена — косметический
 // поворот ЕГО СОБСТВЕННОЙ формы (bendGroup) вокруг уже вычисленной точки
 // крепления, на само крепление не влияет.
+// ---------- ХВОСТ В ГЛУБИНУ (opts.tailDepth) ----------
+// Обычно напольная часть лежит ВБОК: персонажа смотрят сбоку, и хвост,
+// вытянутый по экрану, читается как хвост. Но там, где на персонажа смотрят
+// В ЛОБ (дорожка тщеславия: червь идёт на камеру), боковой хвост превращает
+// фигуру в букву «Г» — тело по центру, а хвост зачем-то уехал влево.
+//
+// Режим tailDepth кладёт цепь ОТ КАМЕРЫ: по экрану она идёт вверх, сильно
+// укорочена перспективой и уменьшается к кончику. Рисуется она при этом там
+// же, где и была, — самым нижним слоем, то есть ЗА телом. Видно её ровно
+// тогда, когда виляние выносит кончик из-за силуэта, и это и есть весь
+// показ хвоста в таком ракурсе.
+const WORM_TAIL_DEPTH_ANGLE = 270;      // «от камеры» в экранных градусах
+const WORM_TAIL_DEPTH_SHRINK = 0.42;    // насколько кончик мельче основания
+const WORM_TAIL_DEPTH_WAG_DEG = 30;     // размах виляния из-за тела, градусы
+// Виляние в этом режиме — не рябь по телу, а МАХ хвостом, поэтому размах
+// на порядок больше обычного (3.5°): при 3.5° из-за силуэта не выглядывает
+// ничего вообще, и хвоста в кадре просто нет.
+
 const WORM_TAIL_EXTRA_WAG_IDLE_DEG = 2;
 const WORM_TAIL_EXTRA_WAG_MOVE_DEG = 5;
 
@@ -4145,6 +4163,11 @@ const WormRenderer = {
             // false — тело неподвижно застыло в базовой позе (нужно для
             // сцен, где персонаж лежит смирно, например кормление).
             idleWave: true,
+            // 0 — хвост лежит вбок (обычный, «вид сбоку»). 0..1 — хвост
+            // уходит ОТ КАМЕРЫ за спину персонажа, а число задаёт, какая
+            // доля длины звена остаётся на экране (перспективное
+            // укорочение). Нужно сценам, где на персонажа смотрят в лоб.
+            tailDepth: 0,
             // 'center' (по умолчанию) — живот раздувается симметрично.
             // 'bottom' — нижний край живота остаётся на месте, раздувается
             // только вверх. 'top' — наоборот.
@@ -4307,7 +4330,9 @@ const WormRenderer = {
             // Экранный угол хвостовой части. 180° = хвост влево, как было
             // всегда до появления ориентации; это же значение и стартовое,
             // поэтому неподвижный червь выглядит ровно как раньше.
-            tailAngle: 180,
+            // Куда лежит напольная часть. 180° — вбок по экрану (обычный
+            // вид сбоку), 270° — от камеры за спину (opts.tailDepth).
+            tailAngle: opts.tailDepth ? WORM_TAIL_DEPTH_ANGLE : 180,
             room: null,
             depthScale: 1,
             floorLocalY: 0,
@@ -5456,6 +5481,19 @@ const WormRenderer = {
                         .filter(seg => seg.idx > bellyIdx)
                         .sort((a, b) => a.idx - b.idx);
 
+                    // ---------- ХВОСТ В ГЛУБИНУ ----------
+                    // Три вещи разом: звенья укорочены (перспектива),
+                    // сегменты мельчают к кончику (он дальше от камеры), а
+                    // виляние — широкое, потому что только оно и выносит
+                    // хвост из-за силуэта. Всё вместе включается ОДНИМ
+                    // числом opts.tailDepth и по умолчанию выключено: у
+                    // остальных шести грехов персонаж стоит боком.
+                    const depth = opts.tailDepth || 0;
+                    const depthSteps = floorSegments.length + 1;
+                    const depthScaleAt = (step) => depth
+                        ? 1 - WORM_TAIL_DEPTH_SHRINK * (step / depthSteps) : 1;
+                    const chainWagDeg = depth ? WORM_TAIL_DEPTH_WAG_DEG : wiggleAmpDeg;
+
                     // Стартуем от РЕАЛЬНОГО положения живота: он уехал вбок
                     // вместе с колонной, и цепь обязана продолжаться от него.
                     // Сдвиг живота на раздутие тоже идёт в сторону хвоста.
@@ -5464,14 +5502,19 @@ const WormRenderer = {
                     let prevRadius = bellySeg ? bellySeg.baseRx : 15;
                     floorSegments.forEach(seg => {
                         const stepsFromBelly = seg.idx - bellyIdx;
-                        const wiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + stepsFromBelly * WORM_CHAIN_PHASE_STEP) * wiggleAmpDeg : 0;
+                        const wiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + stepsFromBelly * WORM_CHAIN_PHASE_STEP) * chainWagDeg : 0;
                         const angleRad = (state.tailAngle + wiggleDeg) * DEG2RAD;
-                        const linkLength = floorLinkBaseLength(prevRadius, seg.baseRx) + moveStretch;
+                        const k = depthScaleAt(stepsFromBelly);
+                        const radius = seg.baseRx * k;
+                        const linkLength = (floorLinkBaseLength(prevRadius, radius) + moveStretch)
+                                         * (depth || 1);
                         chainX += linkLength * Math.cos(angleRad);
                         chainY += linkLength * Math.sin(angleRad);
-                        setAttr(seg.group, 'transform', `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
-                        hullCircles[seg.idx] = { x: chainX, y: chainY, r: seg.baseRx, color: seg.fillColor };
-                        prevRadius = seg.baseRx;
+                        setAttr(seg.group, 'transform', depth
+                            ? `translate(${chainX.toFixed(1)},${chainY.toFixed(1)}) scale(${k.toFixed(3)})`
+                            : `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
+                        hullCircles[seg.idx] = { x: chainX, y: chainY, r: radius, color: seg.fillColor };
+                        prevRadius = radius;
                         if (seg.name === lastGrowingName) {
                             lastGrowLocal = { x: chainX, y: chainY };
                         }
@@ -5479,15 +5522,20 @@ const WormRenderer = {
 
                     // Хвост — последнее звено той же цепи.
                     const tailStepsFromBelly = state.built.tail.idx - bellyIdx;
-                    const tailWiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + tailStepsFromBelly * WORM_CHAIN_PHASE_STEP) * wiggleAmpDeg : 0;
+                    const tailWiggleDeg = opts.idleWave ? Math.sin(state.chainWigglePhase + tailStepsFromBelly * WORM_CHAIN_PHASE_STEP) * chainWagDeg : 0;
                     const tailAngleDeg = state.tailAngle + tailWiggleDeg;
                     const tailAngleRad = tailAngleDeg * DEG2RAD;
-                    const tailLinkLength = floorLinkBaseLength(prevRadius, state.built.tail.baseRadius) + moveStretch;
+                    const tailK = depthScaleAt(depthSteps);
+                    const tailRadius = state.built.tail.baseRadius * tailK;
+                    const tailLinkLength = (floorLinkBaseLength(prevRadius, tailRadius) + moveStretch)
+                                         * (depth || 1);
                     chainX += tailLinkLength * Math.cos(tailAngleRad);
                     chainY += tailLinkLength * Math.sin(tailAngleRad);
-                    setAttr(state.built.tail.group, 'transform', `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
+                    setAttr(state.built.tail.group, 'transform', depth
+                        ? `translate(${chainX.toFixed(1)},${chainY.toFixed(1)}) scale(${tailK.toFixed(3)})`
+                        : `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
                     hullCircles[state.built.tail.idx] = {
-                        x: chainX, y: chainY, r: state.built.tail.baseRadius, color: mm.tail.fill
+                        x: chainX, y: chainY, r: tailRadius, color: mm.tail.fill
                     };
                     if (state.built.tail.bendGroup) {
                         const extraWag = opts.idleWave ? Math.sin(state.tailWagPhase + 1.7) * tailExtraWagDeg : 0;

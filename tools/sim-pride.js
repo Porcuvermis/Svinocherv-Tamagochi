@@ -30,6 +30,19 @@ const CFG = ECONOMY.minigames.pride;
 const UP = CFG.upgrades;
 const RUNS = 20000;
 
+// ---------- ПОТОЛОК ПАЛЬЦА ----------
+// Главное число этого калькулятора и единственное, которого нет в конфиге:
+// сколько зон человек ФИЗИЧЕСКИ успевает закрыть за секунду. Тапать в одну
+// точку можно и впятеро быстрее, но здесь каждый тап — это ещё и заметить
+// зону и довести до неё палец; устойчиво выходит два с половиной в секунду.
+//
+// Без этого потолка калькулятор считает, что игрок успевает всё, и любая
+// прибавка плотности выглядит чистым выигрышем. На деле у неё есть край, за
+// которым зоны начинают гаснуть сами, а погасшая зона роняет ажиотаж — то
+// есть покупка массовки может начать ВРЕДИТЬ. Ровно этот край здесь и ищем.
+const TAP_RATE = 2.5;
+const RUN_SEC = CFG.runMs / 1000;
+
 // Ступени берутся из конфига: base — то, с чего начинают, levels[].bonus —
 // значение каждой купленной ступени.
 const steps = (branch) => [branch.base].concat(branch.levels.map(l => l.bonus));
@@ -39,9 +52,12 @@ const PRICES = UP.crowd.levels.map(l => l.price.pride_kiss);
 
 function run(interval, cap, accuracy) {
     const zones = Math.floor(CFG.runMs / interval);
+    // Сколько зон игрок вообще успевает попробовать закрыть. Остальные
+    // гаснут сами — и роняют ажиотаж наравне с промахом.
+    const reach = Math.min(1, (TAP_RATE * RUN_SEC) / zones);
     let hype = 0, kisses = 0;
     for (let i = 0; i < zones; i++) {
-        const caught = Math.random() < accuracy;
+        const caught = Math.random() < accuracy * reach;
         hype = Math.max(0, hype + (caught ? CFG.hype.hit : CFG.hype.miss));
         if (!caught) continue;
         const mult = Math.min(cap, 1 + Math.floor(hype / CFG.hype.perStep));
@@ -59,12 +75,13 @@ function avg(interval, cap, accuracy) {
 for (const accuracy of [1, 0.85, 0.7]) {
     console.log(`\n=== точность ${(accuracy * 100).toFixed(0)}% — поцелуев за выход ===`);
     console.log(['толпа\\машина'].concat(CARS.map(c => `×${c}`))
-        .map(h => String(h).padStart(13)).join(''));
+        .map(h => String(h).padStart(16)).join(''));
     CROWD.forEach((interval, lvl) => {
         const zones = Math.floor(CFG.runMs / interval);
-        const row = [`${lvl} (${zones} зон)`];
+        const perSec = (zones / RUN_SEC).toFixed(1);
+        const row = [`${lvl}: ${zones} зон, ${perSec}/с`];
         for (const cap of CARS) row.push(avg(interval, cap, accuracy).toFixed(1));
-        console.log(row.map(h => String(h).padStart(13)).join(''));
+        console.log(row.map(h => String(h).padStart(16)).join(''));
     });
 }
 
@@ -92,6 +109,27 @@ for (let n = 1; n <= 10; n++) {
 }
 console.log(`\nвыходы подряд за сутки (стартовые числа): ${line.join(' ')}`);
 console.log(`итого за десять выходов ${day} поцелуев — против ${Math.round(base * 10)} без усталости публики`);
+
+// ---------- НЕ СТАЛА ЛИ ПЛОТНОСТЬ ЛОВУШКОЙ ----------
+// Купленная массовка ОБЯЗАНА платить больше некупленной. Если верхняя
+// ступень при честной точности приносит меньше нижней, значит зоны пошли
+// гуще, чем успевает палец, и покупка превратилась в наказание за деньги.
+// Это тот самый случай, ради которого калькулятор и написан.
+console.log('\nпроверка ступеней массовки (машина ×' + CARS[0] + ', точность 85%):');
+let prev = null, trap = false;
+CROWD.forEach((interval, lvl) => {
+    const v = avg(interval, CARS[0], 0.85);
+    const zones = Math.floor(CFG.runMs / interval);
+    const over = zones / RUN_SEC > TAP_RATE;
+    const worse = prev !== null && v < prev;
+    if (worse) trap = true;
+    console.log(`  ступень ${lvl}: ${v.toFixed(1)} поцелуев` +
+                (prev === null ? '' : `   ${v > prev ? '+' : ''}${(v - prev).toFixed(1)}`) +
+                (over ? '   ⚠ зон больше, чем успевает палец' : '') +
+                (worse ? '   ✗ ПОКУПКА ВРЕДИТ' : ''));
+    prev = v;
+});
+if (!trap) console.log('  каждая ступень платит больше предыдущей — ловушки нет');
 
 // Первое улучшение должно быть в досягаемости за несколько выходов, иначе
 // линия покупок начинается с недели ожидания.

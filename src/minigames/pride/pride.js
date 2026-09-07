@@ -43,9 +43,18 @@ const PRIDE_VIEW = {
     STRIPE_THICK: 1.6,    // толщина поперечины в единицах глубины
     CLUSTERS: 5,          // гроздей толпы на каждой стороне
     CROWD_ROWS: 4,        // силуэтов в грозди без покупки массовки
-    SPAWN_TRIES: 10,      // бросков при поиске места для зоны
+    WORM_SCALE: 1.16,     // во сколько раз червь крупнее своего натурального
+                          // размера. Он тут главный в кадре, а с хвостом,
+                          // ушедшим за спину, фигура стала заметно компактнее
+                          // и в полный кадр уже не читалась
+    SPAWN_TRIES: 14,      // бросков при поиске места для зоны. Больше, чем
+                          // было: поток гуще, и место искать труднее
     ZONE_CORE: 8,         // до какого радиуса стягивается кольцо-таймер
-    ZONE_GAP: 1.15,       // насколько зоны держатся друг от друга (в радиусах)
+    ZONE_GAP: 1.0,        // насколько зоны держатся друг от друга (в радиусах).
+                          // Ровно радиус: центры не ближе, чем на радиус, —
+                          // зоны касаются, но не наезжают. Больше — и на
+                          // верхней ступени массовки места просто не хватает,
+                          // спавн срывается, и купленная плотность не даётся
     FLASH_MAX_Z: 46,      // дальняя граница, где ещё вспыхивает толпа. Ближняя —
                           // не своя, а общая с толпой (PRIDE_ART.Z_CROWD_MIN):
                           // вспышка обязана приходить оттуда, где стоят люди
@@ -54,6 +63,27 @@ const PRIDE_VIEW = {
     FLASH_FX_MS: 260,
     END_HOLD_MS: 2400     // сколько кадр стоит на финише, прежде чем вернуться к старту.
                           // Меньше двух секунд — начисленное число не успевают прочитать
+};
+
+// ---------- ЛИЦО ЗВЕЗДЫ ----------
+// Покерфейс и надменность — это не улыбка и не злость, а ОТСУТСТВИЕ реакции
+// на происходящее. Собирается из четырёх вещей, и каждая делает свою:
+//   • веки приспущены — «мне всё это слегка утомительно»;
+//   • брови опущены к переносице, но чуть-чуть: нахмуренность читается
+//     злостью, а нужно безразличие;
+//   • рот ровной чертой, без изгиба в любую сторону;
+//   • голова откинута назад — смотрит сверху вниз даже на того, кто выше.
+// Взгляд при этом строго прямо: бегающие глаза выдают интерес, а звезда
+// заинтересованной быть не должна.
+const PRIDE_FACE = {
+    eyelidLevel: 0.34,
+    browRaise: -0.22,
+    mouthCurve: 0,
+    mouthOpenness: 0,
+    headTilt: -5,
+    gazeX: 0,
+    gazeY: 0.06,
+    eyeSmile: 0
 };
 
 const PrideMinigame = {
@@ -83,14 +113,20 @@ const PrideMinigame = {
 
     stripes: [],
     clusters: [],
-    car: null,
-    arch: null,      // арка ВХОДА: она же шкала выхода, см. шапку
+    car: null,       // она же шкала выхода: см. шапку
     targets: [],
     tokenCounter: 0,
     spawnAcc: 0,
     ambientAcc: 0,
 
     wormBox: null,       // габарит силуэта в единицах сцены — по нему кладутся поцелуи
+    // ---------- ЧТО ИЗ ХОЛСТА РЕАЛЬНО ВИДНО ----------
+    // Холст вписан в окно с ОБРЕЗКОЙ (slice): на узком экране срезаются верх
+    // и низ, на широком — бока, и сколько именно, зависит от телефона. Всё,
+    // что обязано быть видно целиком — счёт, ценники, зоны, — считается от
+    // этого прямоугольника, а не от границ холста. Пока считалось от границ,
+    // счёт на iPhone срезало верхним краем.
+    safe: { x0: 0, y0: 0, x1: 390, y1: 844 },
     rafId: null,
     lastTs: null,
     _bound: false,
@@ -184,10 +220,9 @@ const PrideMinigame = {
         this.awardedKisses = null;
         this.spawnAcc = 0;
         this.ambientAcc = 0;
-        // Скорость выводится из длины выхода, а не задаётся отдельно: арка
-        // входа ОБЯЗАНА добраться до горизонта ровно тогда, когда кончится
-        // время, иначе она приезжает то раньше, то позже и перестаёт быть
-        // шкалой.
+        // Скорость выводится из длины выхода, а не задаётся отдельно: машина
+        // ОБЯЗАНА добраться до горизонта ровно тогда, когда кончится время,
+        // иначе она приезжает то раньше, то позже и перестаёт быть шкалой.
         this.speed = (PRIDE_ART.Z_FAR - PRIDE_ART.Z_START) / (this.params.runMs / 1000);
         this.clearTargets();
         this.buildMovers();
@@ -235,18 +270,14 @@ const PrideMinigame = {
             }
         }
 
+        // Машина стоит в начале ковра, дверь открыта — червь только что из
+        // неё вышел. Дальше она остаётся позади и уезжает к горизонту; по
+        // ней и по длине ковра за спиной и видно, сколько уже пройдено.
         const props = this.sceneEl.querySelector('#pr-props');
         const carG = this.svgNode('g');
         carG.innerHTML = PRIDE_ART.car(this.params.levels.car);
         props.appendChild(carG);
-        this.car = { el: carG, z: A.CAR_Z };
-
-        // Арка входа стоит В НАЧАЛЕ прямо над червём — он только что из-под
-        // неё вышел — и дальше уезжает назад, к горизонту.
-        const archG = this.svgNode('g');
-        archG.innerHTML = PRIDE_ART.arch();
-        props.appendChild(archG);
-        this.arch = { el: archG, z: A.Z_START };
+        this.car = { el: carG, z: A.Z_START };
 
         this.placeMovers();
     },
@@ -256,9 +287,9 @@ const PrideMinigame = {
     // вчетверо больше.
     placeMovers() {
         const A = PRIDE_ART;
-        // Поперечины живут только НА ковре: за аркой входа ковра ещё нет, и
+        // Поперечины живут только НА ковре: дальше машины ковра ещё нет, и
         // полоса, нарисованная там, висела бы поперёк голого асфальта.
-        const zEnd = this.arch ? this.arch.z : A.Z_FAR;
+        const zEnd = this.carpetEnd();
         this.stripes.forEach(s => {
             const on = s.z < zEnd - PRIDE_VIEW.STRIPE_THICK;
             s.el.style.display = on ? '' : 'none';
@@ -272,29 +303,26 @@ const PrideMinigame = {
         });
         if (this.car) {
             const k = A.CROWD_H * A.s(this.car.z) / 1000;
-            // Машина стоит СЛЕВА от дорожки, у самой обочины: в кадре нужен её
-            // открытый бок с дверью, а не вся длина. Целиком она в кадр и не
-            // влезет — автомобиль шире дорожки.
-            const x = A.CX - A.half(this.car.z) * A.LANE - 430 * k;
+            // По ЦЕНТРУ дорожки: машина подвезла звезду к началу ковра и
+            // уезжает назад по той же осевой, по которой он идёт вперёд.
             this.car.el.setAttribute('transform',
-                `translate(${x.toFixed(1)},${A.y(this.car.z).toFixed(1)}) scale(${k.toFixed(4)})`);
-            // Уехала за горизонт — прячем: у самой линии горизонта она
-            // превращается в мусорный пиксель, который непонятно чем является.
-            this.car.el.style.display = this.car.z < A.Z_FAR ? '' : 'none';
-        }
-        if (this.arch) {
-            const k = A.CROWD_H * A.s(this.arch.z) / 1000;
-            this.arch.el.setAttribute('transform',
-                `translate(${A.CX},${A.y(this.arch.z).toFixed(1)}) scale(${k.toFixed(4)})`);
-            // Ковёр расстелен ОТ АРКИ до камеры: пройденное — это длина
+                `translate(${A.CX},${A.y(this.car.z).toFixed(1)}) scale(${k.toFixed(4)})`);
+            // Ковёр расстелен ОТ МАШИНЫ до камеры: пройденное — это длина
             // красной полосы за спиной, и она растёт сама собой.
+            const zEnd = this.carpetEnd();
             const poly = this.sceneEl.querySelector('#pr-carpet-poly');
             const el = this.sceneEl.querySelector('#pr-edge-l');
             const er = this.sceneEl.querySelector('#pr-edge-r');
-            if (poly) poly.setAttribute('points', A.carpetPoints(this.arch.z));
-            if (el) el.setAttribute('points', A.edgePoints(-1, this.arch.z));
-            if (er) er.setAttribute('points', A.edgePoints(1, this.arch.z));
+            if (poly) poly.setAttribute('points', A.carpetPoints(zEnd));
+            if (el) el.setAttribute('points', A.edgePoints(-1, zEnd));
+            if (er) er.setAttribute('points', A.edgePoints(1, zEnd));
         }
+    },
+
+    // Дальний край ковра: чуть за машиной, чтобы она стояла НА ковре, а не
+    // на голой земле перед ним.
+    carpetEnd() {
+        return Math.min(PRIDE_ART.Z_FAR, (this.car ? this.car.z : PRIDE_ART.Z_START) + 4);
     },
 
     // ---------- ПЕРСОНАЖ ----------
@@ -314,11 +342,24 @@ const PrideMinigame = {
                 blink: true,
                 idleWave: true,
                 pose: 'standing',
+                // ---------- НА НЕГО СМОТРЯТ В ЛОБ ----------
+                // Хвост уходит ОТ КАМЕРЫ за спину, а не вбок: боковой хвост
+                // при взгляде в лоб превращает фигуру в букву «Г» — тело по
+                // центру дорожки, а хвост зачем-то уехал влево. Число —
+                // перспективное укорочение звена; виляние выносит кончик
+                // из-за силуэта, и хвост в кадре только так и виден.
+                tailDepth: 0.62,
                 anchorX: 0.5,
                 anchorY: 0.55
             });
+            // Морда прямо на камеру и не двигается: звезда идёт на публику,
+            // а не ищет её глазами.
+            this.wormHandle.setHeadPose('center', { instant: true });
+            this.wormHandle.setLivePose(PRIDE_FACE);
         } else {
             this.wormHandle.update(model);
+            this.wormHandle.setHeadPose('center', { instant: true });
+            this.wormHandle.setLivePose(PRIDE_FACE);
         }
     },
 
@@ -337,10 +378,24 @@ const PrideMinigame = {
         // деления червь получил бы масштаб дважды.
         const r = parent.getBoundingClientRect();
         const zoom = (r.width / (parent.clientWidth || r.width)) || 1;
+        // Видимый кусок холста — в единицах сцены. Считается здесь, потому
+        // что здесь уже дёрнута раскладка: второй раз за кадр её трогать
+        // нельзя (docs/traps.md).
+        const tl = this.fromScreen(r.left, r.top);
+        const br = this.fromScreen(r.right, r.bottom);
+        this.safe = {
+            x0: Math.max(0, tl.x), y0: Math.max(0, tl.y),
+            x1: Math.min(PRIDE_ART.W, br.x), y1: Math.min(PRIDE_ART.H, br.y)
+        };
         const p0 = this.toScreen(0, 0, m), p1 = this.toScreen(100, 0, m);
         const k = ((p1.x - p0.x) / 100) / zoom || 1;
+        // Червь крупнее сцены на WORM_SCALE, поэтому внутри его холста одна
+        // единица длиннее единицы сцены ровно во столько же раз — и все
+        // сдвиги, которые считаются в единицах сцены, надо делить на это
+        // число, прежде чем отдавать рендереру.
+        const S = PRIDE_VIEW.WORM_SCALE;
         this.wormHost.style.transform =
-            `translate(${((p0.x - r.left) / zoom).toFixed(1)}px, ${((p0.y - r.top) / zoom).toFixed(1)}px) scale(${k.toFixed(4)})`;
+            `translate(${((p0.x - r.left) / zoom).toFixed(1)}px, ${((p0.y - r.top) / zoom).toFixed(1)}px) scale(${(k * S).toFixed(4)})`;
 
         const body = this.wormHandle.svgRoot.querySelector('.worm-root');
         if (!body) return;
@@ -351,7 +406,7 @@ const PrideMinigame = {
         const dx = PRIDE_ART.CX - (a.x + b.x) / 2;
         const dy = PRIDE_ART.Y_FEET - b.y;
         const pos = this.wormHandle.getPosition();
-        this.wormHandle.setPosition(pos.x + dx, pos.y + dy);
+        this.wormHandle.setPosition(pos.x + dx / S, pos.y + dy / S);
         this.wormBox = { x: a.x + dx, y: a.y + dy, w: b.x - a.x, h: b.y - a.y };
 
         // Тень: по ширине силуэта, а не по числу. Без неё червь не стоит на
@@ -409,7 +464,6 @@ const PrideMinigame = {
                 if (c.z > PRIDE_ART.Z_FAR) c.z -= PRIDE_ART.Z_FAR - PRIDE_ART.Z_CROWD_MIN;
             });
             if (this.car) this.car.z += dz;
-            if (this.arch) this.arch.z += dz;
             this.placeMovers();
 
             this.spawnAcc += dt * 1000;
@@ -422,8 +476,8 @@ const PrideMinigame = {
             this.tickTargets(now);
             this.tickAmbient(dt);
 
-            // Арка входа добралась до горизонта — вся дорожка пройдена.
-            if (this.arch.z >= PRIDE_ART.Z_FAR) this.finishRun();
+            // Машина добралась до горизонта — вся дорожка пройдена.
+            if (this.car.z >= PRIDE_ART.Z_FAR) this.finishRun();
         }
 
         this.rafId = requestAnimationFrame((t) => this.loop(t));
@@ -526,10 +580,11 @@ const PrideMinigame = {
     // Зона целиком в кадре: половина зоны за краем экрана — это половина
     // зоны, по которой нельзя попасть.
     clampSpot(x, y) {
-        const r = this.params.radius;
+        const r = this.params.radius, S = this.safe;
         return {
-            x: Math.max(r, Math.min(PRIDE_ART.W - r, x)),
-            y: Math.max(PRIDE_ART.HORIZON - r * 0.2, Math.min(PRIDE_ART.H - r, y))
+            x: Math.max(S.x0 + r, Math.min(S.x1 - r, x)),
+            y: Math.max(Math.max(S.y0 + r, PRIDE_ART.HORIZON - r * 0.2),
+                        Math.min(S.y1 - r, y))
         };
     },
 
@@ -682,10 +737,13 @@ const PrideMinigame = {
         if (!this.hudEl) return;
         const C = PALETTE.redCarpet;
         const wallet = GameState.currency('pride_kiss');
+        // Строка счёта — от ВИДИМОГО верха, а не от верха холста: иначе на
+        // телефоне, где холст обрезан, цифры уезжают под край окна.
+        const x = this.safe.x0 + 16, y = this.safe.y0 + 34;
         if (this.phase === 'idle') {
             this.hudEl.innerHTML =
-                `<text x="16" y="56" font-size="26">💋</text>` +
-                `<text x="46" y="56" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
+                `<text x="${x}" y="${y}" font-size="26">💋</text>` +
+                `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
             return;
         }
         const mult = this.multiplier();
@@ -693,9 +751,9 @@ const PrideMinigame = {
         const shown = this.phase === 'done' && this.awardedKisses != null
             ? this.awardedKisses : this.kisses;
         this.hudEl.innerHTML =
-            `<text x="16" y="56" font-size="26">💋</text>` +
-            `<text x="46" y="56" font-size="26" fill="${C.kiss[300]}" font-weight="700">${shown}</text>` +
-            `<g transform="translate(${PRIDE_ART.W - 26},48)" opacity="${(0.45 + heat * 0.55).toFixed(2)}">` +
+            `<text x="${x}" y="${y}" font-size="26">💋</text>` +
+            `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${shown}</text>` +
+            `<g transform="translate(${this.safe.x1 - 16},${y - 8})" opacity="${(0.45 + heat * 0.55).toFixed(2)}">` +
             `<text x="0" y="8" text-anchor="end" font-size="${(20 + heat * 14).toFixed(0)}"
                    fill="${C.flash[500]}" font-weight="700">×${mult}</text></g>`;
     },
@@ -711,17 +769,28 @@ const PrideMinigame = {
         const conf = ECONOMY.minigames.pride.upgrades;
         const wallet = GameState.currency('pride_kiss');
         const A = PRIDE_ART;
+        // Ценник висит на том, что покупка меняет: на машине, на толпе и на
+        // ковре. Место при этом обязано быть ВИДНО целиком, поэтому каждая
+        // точка вжимается в видимую область холста.
+        const S = this.safe, pad = 52;
+        const fit = (x, y) => ({
+            x: Math.max(S.x0 + pad, Math.min(S.x1 - pad, x)),
+            y: Math.max(S.y0 + 76, Math.min(S.y1 - 34, y))
+        });
         const at = {
-            car:    { x: A.CX - A.half(A.Z_WORM) * 1.05, y: A.y(A.Z_WORM) - 210 },
-            crowd:  { x: A.CX + A.half(A.Z_WORM) * 1.02, y: A.y(A.Z_WORM) - 250 },
-            carpet: { x: A.CX, y: 764 }
+            car:    fit(A.CX - A.half(A.Z_START) * 1.9, A.y(A.Z_START) - 70),
+            crowd:  fit(A.CX + A.half(A.Z_WORM) * 1.06, A.y(A.Z_WORM) - 250),
+            carpet: fit(A.CX, S.y1 - 46)
         };
         // Лужа света с галочкой — единственная «кнопка» игры. Живёт в ВЕРХНЕМ
         // холсте вместе с ценниками, а не в сцене: её дыхание — бесконечная
         // css-анимация, а такая анимация внутри общего холста заставляет
         // перекрашивать всю сцену каждый кадр (docs/traps.md, п. 36).
-        const mz = A.Z_WORM * 0.55;
-        let out = `<g transform="translate(${A.CX},${A.y(mz).toFixed(1)}) scale(${(A.s(mz) / A.s(A.Z_WORM)).toFixed(3)})">` +
+        // Лужа света лежит МЕЖДУ червём и нижним ценником: ниже она налезала
+        // на ценник ковра, выше — на самого червя.
+        const my = (A.Y_FEET + (S.y1 - 34)) / 2 + 6;
+        const mz = A.zAtY(my);
+        let out = `<g transform="translate(${A.CX},${my.toFixed(1)}) scale(${(A.s(mz) / A.s(A.Z_WORM)).toFixed(3)})">` +
                   PRIDE_ART.startMark() + '</g>';
         conf.order.forEach(key => {
             const branch = conf[key];
