@@ -4049,7 +4049,14 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
 }
 
 // ---------- ПУБЛИЧНЫЙ API РЕНДЕРЕРА ----------
+// Сколько кадров деформации персонажа отрисовано с загрузки страницы —
+// по ВСЕМ экземплярам сразу. Нужно техосмотру (tools/audit-frames.js): по
+// нему видно, на какой ступени лестницы идёт игра на этом устройстве.
+let geomFrameTotal = 0;
+
 const WormRenderer = {
+    // Общий счётчик кадров деформации (см. geomFrameTotal).
+    geomFrames() { return geomFrameTotal; },
     mount(container, model, opts) {
         opts = Object.assign({
             context: 'main',
@@ -4199,6 +4206,15 @@ const WormRenderer = {
             faceClock: 0,
             rafId: null,
             lastFrameTs: null,
+            // Лестница деформации (см. wantGeometry): сглаженная длительность
+            // кадра, текущая ступень и счётчик кадров до следующей деформации.
+            rafPrevTs: null,
+            lastGeomTs: null,
+            frameMs: 0,
+            geomEvery: 1,
+            geomCount: 0,
+            geomHold: 0,
+            geomDirty: true,
             // 0 = стоит на месте, 1 = идёт — рычаг интенсивности ТОЛЬКО
             // виляния.
             moveIntensity: 0,
@@ -4609,6 +4625,7 @@ const WormRenderer = {
             // выгула пересчитаются по новым.
             state.bodyBox = null;
             state.wanderD = null;
+            state.geomDirty = true;
         }
 
         syncViewportSize();
@@ -4767,7 +4784,100 @@ const WormRenderer = {
         // бы плохо ни было. Ниже начинает дёргаться моргание.
         const FRAME_FLOOR_MS = 100;
 
+        // ---------- ДВИЖЕНИЕ ОТДЕЛЬНО ОТ ДЕФОРМАЦИИ ----------
+        // Замер, ради которого всё это написано (throttle 6, комната):
+        //
+        //   все записи как сейчас .......... 1560 мс главного потока за 2 с
+        //   только корневой transform ......  538
+        //   ни одной записи ................  244
+        //
+        // И главное — промежуточных значений НЕТ. Запретить записи любой
+        // ОДНОЙ подсистемы (силуэт, кишка, анатомия, голова) экономит 0–9%,
+        // а запретить все, кроме корневого трансформа, — 66%. Значит цена
+        // кадра не в количестве записей, а в самом ФАКТЕ: как только в теле
+        // поменялась хоть одна геометрия (d, cx, rx, opacity), браузер
+        // перезаписывает список отрисовки всех семисот узлов, заново
+        // раскладывает слои и заново их растрирует. Сорок записей стоят
+        // почти столько же, сколько одна.
+        //
+        // Зато СМЕЩЕНИЕ узла (атрибут transform) в эту цену не входит: там
+        // меняется только матрица, список отрисовки берётся готовым. Поэтому
+        // ходьба по комнате почти бесплатна, а дорого стоит дыхание.
+        //
+        // Отсюда деление кадра надвое:
+        //   • каждый кадр — корневой transform (червь едет по комнате плавно,
+        //     как и раньше);
+        //   • раз в geomEvery кадров — вся деформация (силуэт, кишка, лицо).
+        //
+        // Частоту деформации выбирает САМО УСТРОЙСТВО: пока кадры короткие,
+        // деформация идёт кадр в кадр и картинка ровно та же, что была. Как
+        // только кадр перестаёт укладываться в бюджет, она разрежается. Это
+        // ровно та же лестница с гистерезисом, что у разрешения в зависти.
+        // Реже одного раза из трёх не разрежаем: дальше дыхание и виляние
+        // начинают идти ступенями, и это видно даже на медленном телефоне.
+        // Моргание из лестницы исключено отдельно (см. wantGeometry).
+        const GEOM_MAX_EVERY = 3;
+        const GEOM_SLOW_MS = 24;       // кадр длиннее — разрядить деформацию
+        const GEOM_FAST_MS = 17.5;     // кадр короче — вернуть (порог ВЫШЕ 16.7,
+                                       // иначе 60 fps никогда не считается "быстро")
+        const GEOM_HOLD_UP = 700;      // ступень вниз по качеству — почти сразу
+        const GEOM_HOLD_DOWN = 4000;   // обратно — только после долгого затишья
+
+        // Длительность НАСТОЯЩЕГО кадра страницы и ступень лестницы.
+        // Считается в самом начале tick(), до делителя частоты: делитель
+        // пропускает кадры, и мерить по нему значило бы мерить собственную
+        // экономию, а не то, как тяжело устройству.
+        function trackFrame(now) {
+            const raf = state.rafPrevTs ? now - state.rafPrevTs : 16.7;
+            state.rafPrevTs = now;
+            // Сглаженная длительность: одиночный длинный кадр (сборка мусора,
+            // открытие мини-игры) не должен переключать ступень.
+            if (raf > 0 && raf < 500) {
+                state.frameMs = state.frameMs ? state.frameMs + (raf - state.frameMs) * 0.1 : raf;
+            }
+            state.geomHold = (state.geomHold || 0) + raf;
+            if (state.frameMs > GEOM_SLOW_MS && state.geomEvery < GEOM_MAX_EVERY
+                && state.geomHold > GEOM_HOLD_UP) {
+                state.geomEvery++; state.geomHold = 0;
+            } else if (state.frameMs < GEOM_FAST_MS && state.geomEvery > 1
+                       && state.geomHold > GEOM_HOLD_DOWN) {
+                state.geomEvery--; state.geomHold = 0;
+            }
+        }
+
+        // Нужна ли в этом кадре деформация.
+        function wantGeometry(now) {
+            // Моргание — единственное быстрое движение персонажа: глаз
+            // закрывается и открывается за 220 мс. На разреженной лестнице
+            // в это окно попадает один кадр, а то и ни одного, и червь
+            // просто перестаёт моргать. Поэтому на время моргания лестница
+            // отступает: три лишних кадра деформации раз в две с половиной
+            // секунды ничего не стоят, а взгляд без моргания мёртвый.
+            if (opts.blink && state.lastGeomTs) {
+                const pos = (state.blinkClock + (now - state.lastGeomTs)) % WORM_BLINK_CYCLE;
+                if (pos >= WORM_BLINK_START - 40 && pos < WORM_BLINK_START + WORM_BLINK_DURATION + 40) {
+                    state.geomCount = 0;
+                    state.geomFrames = (state.geomFrames || 0) + 1;
+                    geomFrameTotal++;
+                    return true;
+                }
+            }
+            // Живой канал (мини-игра ведёт хвост за пальцем, наливает рот)
+            // перебивает лестницу: пропущенный кадр здесь читается как
+            // задержка управления, а её никакая экономия не оправдывает.
+            if (!state.geomDirty) {
+                state.geomCount = (state.geomCount || 0) + 1;
+                if (state.geomCount < state.geomEvery) return false;
+            }
+            state.geomDirty = false;
+            state.geomCount = 0;
+            state.geomFrames = (state.geomFrames || 0) + 1;
+            geomFrameTotal++;
+            return true;
+        }
+
         function tick(now) {
+            trackFrame(now);
             if (frameEvery > 1) {
                 state.rafCount = (state.rafCount || 0) + 1;
                 if (state.rafCount % frameEvery
@@ -4780,6 +4890,9 @@ const WormRenderer = {
                 // Метку времени двигаем и на пропущенном кадре: иначе после
                 // возврата dt окажется равным всей паузе, и персонаж прыгнет.
                 state.lastFrameTs = now;
+                // Первый кадр после возвращения на экран — обязательно с
+                // деформацией: мини-игра сразу после open() меряет тело.
+                state.geomDirty = true;
                 state.rafId = requestAnimationFrame(tick);
                 return;
             }
@@ -4951,7 +5064,25 @@ const WormRenderer = {
             state.speedIntensity += (speedIntensityTarget - state.speedIntensity) * speedIntensityFactor;
 
             if (state.built) {
+                // Смещение — каждый кадр: оно дёшево (см. wantGeometry).
                 setAttr(state.built.root, 'transform', rootTransform());
+
+                // А вся деформация — только на своём кадре.
+                if (!wantGeometry(now)) {
+                    state.rafId = requestAnimationFrame(tick);
+                    return;
+                }
+
+                // Собственное время деформации: между её кадрами прошло
+                // больше, чем между кадрами движения. Если кормить дыхание,
+                // моргание и виляние обычным dt, они замедлятся ровно во
+                // столько раз, во сколько разрежена деформация, — червь
+                // задышал бы втрое медленнее просто оттого, что телефон
+                // слабее. Здесь это время считается честно, от прошлого
+                // кадра деформации.
+                const geomDt = state.lastGeomTs ? Math.min(500, now - state.lastGeomTs) : dt;
+                const geomDtSec = Math.min(0.25, Math.max(0, geomDt / 1000));
+                state.lastGeomTs = now;
 
                 // Модель читаем один раз за кадр и переиспользуем ниже.
                 const mm = mergedModel();
@@ -5034,7 +5165,7 @@ const WormRenderer = {
                     // выдоха, а не с середины чужой волны.
                     if (state.livePose.breathAmp != null) {
                         state.breathClock = (state.breathClock || 0)
-                            + dtSec * (state.livePose.breathSpeed || 1);
+                            + geomDtSec * (state.livePose.breathSpeed || 1);
                         breathWave = (1 - Math.cos(state.breathClock * Math.PI * 2)) / 2;
                     } else {
                         state.breathClock = 0;
@@ -5074,8 +5205,8 @@ const WormRenderer = {
                     const tailExtraWagDeg = lerp(WORM_TAIL_EXTRA_WAG_IDLE_DEG, WORM_TAIL_EXTRA_WAG_MOVE_DEG, state.moveIntensity);
                     const DEG2RAD = Math.PI / 180;
 
-                    state.chainWigglePhase += dtSec * WORM_ANIM_TIME_PER_SEC * wiggleSpeed;
-                    state.tailWagPhase += dtSec * WORM_ANIM_TIME_PER_SEC * wiggleSpeed * 1.3;
+                    state.chainWigglePhase += geomDtSec * WORM_ANIM_TIME_PER_SEC * wiggleSpeed;
+                    state.tailWagPhase += geomDtSec * WORM_ANIM_TIME_PER_SEC * wiggleSpeed * 1.3;
 
                     const floorSegments = state.built.segments
                         .filter(seg => seg.idx > bellyIdx)
@@ -5194,7 +5325,7 @@ const WormRenderer = {
                     const organs = anat && anat.organs ? anat.organs : null;
                     const cfg = organs && organs.tract ? organs.tract : null;
                     if (cfg) {
-                        state.gutPhase += dtSec * (cfg.speed != null ? cfg.speed : 0.32);
+                        state.gutPhase += geomDtSec * (cfg.speed != null ? cfg.speed : 0.32);
                         const axis = sampleBodyAxis(hullCircles, 3.4);
                         const geom = buildGutTractGeometry(axis, bellySeg ? hullCircles[bellySeg.idx] : null, {
                             phase: state.gutPhase,
@@ -5222,7 +5353,7 @@ const WormRenderer = {
                     const pulse = anatomy && anatomy.organs ? (anatomy.organs.pulse || {}) : null;
                     if (pulse) {
                         const speed = pulse.speed != null ? pulse.speed : 0.85;
-                        state.organPhase += dtSec * speed * Math.PI;
+                        state.organPhase += geomDtSec * speed * Math.PI;
                         const ampScale = state.livePose.organPulseScale != null ? state.livePose.organPulseScale : 1;
                         const amp = (pulse.amp != null ? pulse.amp : 0.07) * ampScale;
                         if (amp > 0.0005) {
@@ -5265,7 +5396,7 @@ const WormRenderer = {
                 if (headRef && headRef.tiltGroup) {
                     const face = (mm.anatomy && mm.anatomy.face) || {};
                     const idle = face.idle || {};
-                    state.faceClock += dt;
+                    state.faceClock += geomDt;
 
                     // Подёргивание уха: короткий импульс раз в несколько секунд,
                     // поочерёдно у разных ушей.
@@ -5316,7 +5447,7 @@ const WormRenderer = {
                         yawTarget = mm.head.yaw != null ? mm.head.yaw : 0;
                     }
                     if (state.headYawCurrent == null) state.headYawCurrent = yawTarget;
-                    const yawK = 1 - Math.pow(WORM_HEAD_YAW_BASE, dtSec);
+                    const yawK = 1 - Math.pow(WORM_HEAD_YAW_BASE, geomDtSec);
                     state.headYawCurrent += (yawTarget - state.headYawCurrent) * yawK;
                     // Ниже порога дотягиваем до цели: экспонента математически
                     // никогда не долетает, а «почти повёрнутая» голова —
@@ -5412,7 +5543,7 @@ const WormRenderer = {
                 {
                     let blinkLevel = 0;
                     if (opts.blink) {
-                        state.blinkClock += dt;
+                        state.blinkClock += geomDt;
                         const cyclePos = state.blinkClock % WORM_BLINK_CYCLE;
                         if (cyclePos >= WORM_BLINK_START && cyclePos < WORM_BLINK_START + WORM_BLINK_DURATION) {
                             const p = (cyclePos - WORM_BLINK_START) / WORM_BLINK_DURATION;
@@ -5488,6 +5619,16 @@ const WormRenderer = {
                 };
             },
             setLivePose(patch) {
+                // Изменение живого канала обязано попасть в ближайший же
+                // кадр: мини-игра ведёт хвост за пальцем, и пропуск кадра
+                // здесь читается как задержка управления. Но именно
+                // ИЗМЕНЕНИЕ: если мини-игра каждый кадр присылает те же
+                // значения, деформация остаётся на своей ступени.
+                if (patch) {
+                    for (const k in patch) {
+                        if (state.livePose[k] !== patch[k]) { state.geomDirty = true; break; }
+                    }
+                }
                 Object.assign(state.livePose, patch);
                 // Степень просвечивания органов — единственный "живой"
                 // параметр, который нельзя поменять одним transform: он
@@ -5551,6 +5692,18 @@ const WormRenderer = {
             },
             getPosition() {
                 return { x: state.wormX, y: state.wormY };
+            },
+            // Что сейчас у персонажа с кадрами: сглаженная длительность кадра
+            // страницы и ступень разрежения деформации (1 = деформация в
+            // каждом собственном кадре). Нужно инструментам техосмотра —
+            // иначе про лестницу можно узнать только по косвенным признакам.
+            getFrameStats() {
+                return {
+                    frameMs: +(state.frameMs || 0).toFixed(1),
+                    geomEvery: state.geomEvery,
+                    geomFrames: state.geomFrames || 0,
+                    frameHz: opts.frameHz
+                };
             },
 
             // Где сейчас конкретная часть тела — в координатах сцены.
@@ -5709,6 +5862,12 @@ const WormRenderer = {
                     }
                 } else if (!state.rafId) {
                     state.lastFrameTs = 0;
+                    // Метки времени кадра и деформации тоже сбрасываются:
+                    // иначе первый же кадр после паузы получит dt длиной во
+                    // всю паузу, и дыхание с вилянием прыгнут вперёд.
+                    state.rafPrevTs = null;
+                    state.lastGeomTs = null;
+                    state.geomDirty = true;
                     state.rafId = requestAnimationFrame(tick);
                 }
             },

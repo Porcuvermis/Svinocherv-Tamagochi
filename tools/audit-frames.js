@@ -7,6 +7,11 @@
 //      (getBBox, getScreenCTM, getBoundingClientRect). Раскладка в этом
 //      списке главная: одно её чтение стоит дороже сотни записей.
 //
+//   1a. СКОЛЬКО РАЗ ЗА СЕКУНДУ ПЕРЕСЧИТАН ПЕРСОНАЖ («дефрм») — кадры его
+//      деформации. Движение персонажа идёт каждый кадр и стоит копейки, а
+//      деформация (силуэт, кишка, лицо) разрежается лестницей по нагрузке.
+//      На быстрой машине здесь 30, на медленной — 10.
+//
 //   2. КУДА УШЛО ВРЕМЯ — разбор трассировки Chrome по статьям: Paint,
 //      Style, Layout, JS. Здесь видно, что легло на процессор, а что уехало
 //      на видеокарту (у чисто композиторской анимации Paint нулевой).
@@ -78,6 +83,10 @@ const SCREENS = [
         cdp.on('Tracing.dataCollected', onData);
         await page.evaluate(() => {
             window.__c = {}; window.__frames = 0;
+            // Кадры деформации персонажа (см. worm-renderer, «движение
+            // отдельно от деформации»): по ним видно, на какой ступени
+            // лестницы идёт игра.
+            window.__geom0 = window.WormRenderer ? window.WormRenderer.geomFrames() : 0;
             // Метка поколения: прошлый счётчик кадров обязан умереть, иначе
             // на следующем экране считают сразу несколько циклов и fps
             // выходит кратно завышенным.
@@ -103,7 +112,8 @@ const SCREENS = [
             sum[e.name] = (sum[e.name] || 0) + e.dur / 1000;
         }
         const r = await page.evaluate(() => ({ f: window.__frames, c: window.__c,
-            anims: document.getAnimations().filter(a => a.playState === 'running').length }));
+            anims: document.getAnimations().filter(a => a.playState === 'running').length,
+            geom: (window.WormRenderer ? window.WormRenderer.geomFrames() : 0) - window.__geom0 }));
         const ms = (n) => Math.round(sum[n] || 0);
         return {
             fps: Math.round(r.f / (MS / 1000)),
@@ -112,14 +122,15 @@ const SCREENS = [
             layout: (r.c.layout || 0) / r.f, anims: r.anims,
             paint: ms('Paint'), style: ms('UpdateLayoutTree'),
             lay: ms('Layout'), js: ms('FireAnimationFrame') + ms('FunctionCall'),
-            layerize: ms('Layerize')
+            layerize: ms('Layerize'),
+            geom: Math.round(r.geom / (MS / 1000))
         };
     };
 
     console.log(`техосмотр кадра, замедление ${SLOW}×, плотность 3, по ${MS} мс на экран\n`);
-    const head = ['экран', 'fps', 'аним', 'attr/к', 'html/к', 'симв/к', 'раскл/к',
+    const head = ['экран', 'fps', 'дефрм', 'аним', 'attr/к', 'html/к', 'симв/к', 'раскл/к',
                   'Paint', 'Style', 'Layout', 'JS', 'Layerize'];
-    const w = [12, 4, 5, 7, 7, 7, 8, 6, 6, 7, 5, 9];
+    const w = [12, 4, 6, 5, 7, 7, 7, 8, 6, 6, 7, 5, 9];
     const row = (v) => v.map((x, i) => String(x).padStart(w[i])).join(' ');
     console.log(row(head));
 
@@ -135,7 +146,7 @@ const SCREENS = [
             await page.waitForTimeout(2500);
         }
         const r = await measure();
-        console.log(row([s.name, r.fps, r.anims, r.attr.toFixed(0), r.html.toFixed(1),
+        console.log(row([s.name, r.fps, r.geom, r.anims, r.attr.toFixed(0), r.html.toFixed(1),
                          r.chars, r.layout.toFixed(1), r.paint, r.style, r.lay,
                          r.js, r.layerize]));
         // Пороги: раскладка за кадр вообще не должна читаться, разметка не
