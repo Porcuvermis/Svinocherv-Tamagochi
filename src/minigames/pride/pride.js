@@ -110,7 +110,16 @@ const PrideMinigame = {
     // 'run'      — идёт выход;
     // 'done'     — дошёл, награда показана, дальше обратно в костюмерную.
     phase: 'wardrobe',
-    storeTab: 'wear',    // какая вкладка витрины открыта: наряд или прокачка
+    // Какая полка витрины открыта: ключ слота ('head', 'neck', 'body',
+    // 'tail') или 'boost'. Полка «весь наряд одной кучей» была, и на восьми
+    // предметах ещё читалась; на трёх десятках она превращается в свалку, где
+    // шляпы перемешаны с хвостами. Полка на слот — это тот же порядок, что у
+    // самих слотов на червe, только развёрнутый.
+    storeTab: 'head',
+    // Слот, чей инвентарь сейчас раскрыт в костюмерной. Не витрина: здесь
+    // только КУПЛЕННОЕ, и выбирается, что надеть (как карточка слота в лобби
+    // гнева, wrath-lobby.js).
+    openSlot: null,
     storeOpen: false,
     countLeft: 0,
     params: null,        // числа этого выхода: интервал, потолок, радиус
@@ -242,6 +251,7 @@ const PrideMinigame = {
         this.resetRun();
         this.phase = 'wardrobe';
         this.storeOpen = false;
+        this.openSlot = null;
         this.setDecor('room');
         // Червя пересобираем: наряд мог смениться, а он живёт в модели.
         this.mountWorm();
@@ -607,7 +617,7 @@ const PrideMinigame = {
     // ещё смотрит, как уезжает костюмерная, и первые зоны пропускает не по
     // своей вине.
     startShow() {
-        if (this.phase !== 'wardrobe' || this.storeOpen) return;
+        if (this.phase !== 'wardrobe' || this.storeOpen || this.openSlot) return;
         // Числа берутся ЗАНОВО: в костюмерной можно просидеть час, и порог
         // голода за это время вполне переходится. Решать «платят ли» надо на
         // момент старта, а не на момент входа в грех.
@@ -835,12 +845,27 @@ const PrideMinigame = {
     },
 
     // ---------- ВВОД ----------
-    // Один обработчик на весь экран, разведённый по фазам. Витрина, пока
-    // открыта, съедает всё: тап мимо карточки закрывает её, а не улетает в
-    // костюмерную под ней.
+    // Один обработчик на весь экран, разведённый по фазам. Всё, что открыто
+    // поверх костюмерной, съедает ввод целиком: тап мимо карточки закрывает
+    // её, а не улетает в костюмерную под ней.
     onDown(e) {
         e.preventDefault();
         const hit = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+
+        // Инвентарь слота стоит ПЕРЕД витриной: он открывается тапом по
+        // слоту, витрина при этом закрыта, и оба состояния одновременно
+        // невозможны.
+        if (this.openSlot) {
+            const pick = hit('.pr-slot-item');
+            if (pick) { this.pickSlotItem(pick.dataset.slotItem); return; }
+            // Тап по тому же слоту (он остался кликабельным под затемнением)
+            // или мимо панели — закрываем.
+            const slot = hit('.pr-slot');
+            if (slot && slot.dataset.slot !== this.openSlot) { this.tapSlot(slot.dataset.slot); return; }
+            this.openSlot = null;
+            this.renderStore();
+            return;
+        }
 
         if (this.storeOpen) {
             const tab = hit('.pr-tab');
@@ -1028,7 +1053,7 @@ const PrideMinigame = {
         const purse = `<text x="${x}" y="${y}" font-size="26">💋</text>` +
                       `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
         if (this.phase !== 'run' && this.phase !== 'done') {
-            this.hudEl.innerHTML = purse + this.hungerBadge(x, y + 14);
+            this.hudEl.innerHTML = purse;
             return;
         }
         // На финише показываем НАЧИСЛЕННОЕ, пока оно не пришло — собранное.
@@ -1046,40 +1071,7 @@ const PrideMinigame = {
                 ? `<text x="${px}" y="${y}" font-size="22" fill="${C.flash[500]}"
                          font-weight="700" opacity="${this.phase === 'done' ? 1 : 0.85}">+${gain}</text>`
                 : '') +
-            this.multBadge(this.safe.x1 - 18, y - 4) +
-            (this.phase === 'done' ? this.hungerBadge(x, y + 14) : '');
-    },
-
-    // ---------- ПОРОГ ГОЛОДА: ПОЛОСКА С МЕТКОЙ ----------
-    // Здесь был ряд точек — суточная лестница «публика устаёт». Лестницы
-    // больше нет: она резала заработанное, и показать её честно было
-    // невозможно, потому что показывать приходилось сам факт отъёма.
-    //
-    // Теперь показывается ГОЛОД: полоска — шкала гордыни, риска на ней —
-    // порог, ниже которого за выход платят. Пока заливка правее риски, червь
-    // сыт: поцелуйных зон на дорожке не будет, и полоска потушена. Цифра
-    // рядом — часы до порога, ждать столько. Ни одного слова, цифра не слово
-    // (инвариант 9).
-    hungerBadge(x, y) {
-        const C = PALETTE.redCarpet;
-        const info = Backend.sinPayInfo ? Backend.sinPayInfo('pride') : null;
-        if (!info || info.threshold == null) return '';
-        const W = 108, H = 7;
-        const fill = Math.max(0, Math.min(1, info.value / info.max));
-        const mark = Math.max(0, Math.min(1, info.threshold / info.max));
-        const hours = Math.ceil(info.hoursLeft);
-        return `<g class="pr-hunger" transform="translate(${x.toFixed(0)},${y.toFixed(0)})">
-            <rect x="0" y="0" width="${W}" height="${H}" rx="${H / 2}"
-                  fill="${C.night[500]}" opacity="0.8"/>
-            <rect x="0" y="0" width="${(W * fill).toFixed(1)}" height="${H}" rx="${H / 2}"
-                  fill="${info.pays ? C.kiss[300] : C.glow[500]}"
-                  opacity="${info.pays ? 1 : 0.55}"/>
-            <rect x="${(W * mark).toFixed(1)}" y="${-3}" width="2" height="${H + 6}" rx="1"
-                  fill="${C.gold[300]}"/>
-            ${info.pays ? '' :
-              `<text x="${W + 9}" y="${H}" font-size="15" font-weight="700"
-                     fill="${C.glow[500]}" opacity="0.85">${hours}</text>`}
-        </g>`;
+            this.multBadge(this.safe.x1 - 18, y - 4);
     },
 
     // ---------- МНОЖИТЕЛЬ НА ЭКРАНЕ ----------
@@ -1178,15 +1170,23 @@ const PrideMinigame = {
     // одно: платят за них поцелуями. Поэтому одна витрина, две полки.
     renderStore() {
         if (!this.storeEl) return;
+        if (this.openSlot) {
+            this.storeEl.innerHTML = this.slotPanel();
+            this.centerSlotArt();
+            return;
+        }
         if (!this.storeOpen) { this.storeEl.innerHTML = ''; return; }
         const C = PALETTE.redCarpet;
         const S = this.safe;
         const x0 = S.x0 + 14, x1 = S.x1 - 14;
-        const wear = this.storeTab === 'wear';
+        const boost = this.storeTab === 'boost';
+        const rows = boost
+            ? ECONOMY.minigames.pride.upgrades.order.length
+            : Math.ceil(this.tabItems().length / 2);
         // Панель ровно по содержимому: полки разной длины, и растянутая на
         // весь экран витрина с пустой нижней половиной читается недогрузом.
         const y0 = S.y0 + 74;
-        const y1 = y0 + 56 + (wear ? 4 * 106 : 3 * 96) + 16;
+        const y1 = y0 + 56 + (boost ? rows * 96 : Math.max(1, rows) * 106) + 16;
 
         let out = `<rect class="pr-store-back" x="${S.x0}" y="${S.y0}"
                          width="${(S.x1 - S.x0).toFixed(0)}" height="${(S.y1 - S.y0).toFixed(0)}"
@@ -1194,32 +1194,57 @@ const PrideMinigame = {
             <rect x="${x0}" y="${y0}" width="${(x1 - x0).toFixed(0)}" height="${(y1 - y0).toFixed(0)}"
                   rx="20" fill="${C.night[700]}" stroke="${C.gold[700]}" stroke-width="2"/>`;
 
-        // Вкладки — двумя значками, без единой буквы.
-        const tab = (key, emoji, cx) => `<g class="pr-tab" data-tab="${key}">
-            <rect x="${cx - 52}" y="${y0 - 22}" width="104" height="44" rx="14"
-                  fill="${this.storeTab === key ? C.silk[700] : C.night[900]}"
-                  stroke="${this.storeTab === key ? C.gold[300] : C.rail[700]}" stroke-width="2"/>
-            <text x="${cx}" y="${y0 + 8}" text-anchor="middle" font-size="24">${emoji}</text></g>`;
-        out += tab('wear', '👗', (x0 + x1) / 2 - 58) + tab('boost', '⬆', (x0 + x1) / 2 + 58);
+        // ---------- ВКЛАДКИ ----------
+        // По одной на слот плюс прокачка, и все — значками. У слотов значка
+        // нет и не будет: их иконка — СИЛУЭТ того, что в них встаёт (тот же
+        // path, которым пустой слот показывает себя на черве). Одна картинка
+        // на две роли, и ни одной буквы (инвариант 9).
+        const tabs = PRIDE_WARDROBE.slots.map(sl => ({ key: sl.key, shape: sl.shape }))
+                                         .concat([{ key: 'boost', emoji: '⬆' }]);
+        // Ширина такая, чтобы ряд вкладок не доехал до крестика в правом
+        // углу панели: пять вкладок по 62 упирались в него вплотную.
+        const tw = Math.min(56, (x1 - x0 - 76) / tabs.length);
+        const first = (x0 + x1) / 2 - (tabs.length * tw) / 2 + tw / 2;
+        out += tabs.map((t, i) => {
+            const cx = first + i * tw;
+            const live = this.storeTab === t.key;
+            const face = t.emoji
+                ? `<text x="${cx}" y="${y0 + 2}" text-anchor="middle" font-size="22">${t.emoji}</text>`
+                : `<g transform="translate(${(cx - 13).toFixed(1)},${(y0 - 21).toFixed(1)}) scale(1.1)"
+                       fill="none" stroke="${live ? C.gold[300] : C.rail[500]}" stroke-width="1.8"
+                       stroke-linejoin="round"><path d="${t.shape}"/></g>`;
+            return `<g class="pr-tab" data-tab="${t.key}">
+                <rect x="${(cx - tw / 2 + 3).toFixed(1)}" y="${y0 - 28}"
+                      width="${(tw - 6).toFixed(1)}" height="44" rx="13"
+                      fill="${live ? C.silk[700] : C.night[900]}"
+                      stroke="${live ? C.gold[300] : C.rail[700]}" stroke-width="2"/>
+                ${face}</g>`;
+        }).join('');
 
-        out += `<g class="pr-store-close" transform="translate(${(x1 - 26).toFixed(0)},${(y0 + 26).toFixed(0)})">
+        out += `<g class="pr-store-close" transform="translate(${(x1 - 24).toFixed(0)},${(y0 + 24).toFixed(0)})">
             <circle r="18" fill="${C.night[900]}" stroke="${C.rail[700]}" stroke-width="2"/>
             <path d="M -7 -7 L 7 7 M 7 -7 L -7 7" stroke="${C.flash[500]}"
                   stroke-width="3" stroke-linecap="round"/></g>`;
 
-        out += wear ? this.storeWear(x0, x1, y0 + 56) : this.storeBoost(x0, x1, y0 + 56);
+        out += boost ? this.storeBoost(x0, x1, y0 + 56) : this.storeWear(x0, x1, y0 + 56);
         this.storeEl.innerHTML = out;
     },
 
-    // Полка наряда: восемь карточек по две в ряд. На карточке сам предмет,
-    // а не значок: покупают глазами, и что покупаешь, должно быть видно.
+    // Что лежит на открытой полке наряда.
+    tabItems() {
+        return PRIDE_WARDROBE.items.filter(i => i.slot === this.storeTab);
+    },
+
+    // Полка наряда: предметы ОДНОГО слота, по две карточки в ряд. На карточке
+    // сам предмет, а не значок: покупают глазами, и что покупаешь, должно
+    // быть видно.
     storeWear(x0, x1, top) {
         const C = PALETTE.redCarpet;
         const wallet = GameState.currency('pride_kiss');
         const owned = GameState.data.wardrobe || {};
         const worn = GameState.data.cosmetics || {};
         const cw = (x1 - x0 - 30) / 2, ch = 96;
-        return PRIDE_WARDROBE.items.map((item, i) => {
+        return this.tabItems().map((item, i) => {
             const cx = x0 + 15 + cw * (i % 2) + cw / 2;
             const cy = top + Math.floor(i / 2) * (ch + 10) + ch / 2;
             const have = !!owned[item.id];
@@ -1306,19 +1331,107 @@ const PrideMinigame = {
         this.renderAll();
     },
 
-    // Тап по слоту в костюмерной: перебирает купленное для этого слота по
-    // кругу — надето → следующее → голо. Ничего не куплено — открываем
-    // витрину: игроку показали место и сразу показали, чем его заполнить.
+    // ---------- ТАП ПО СЛОТУ: ИНВЕНТАРЬ, А НЕ ПЕРЕБОР ----------
+    // Раньше слот перебирал купленное по кругу: надето → следующее → голо, а
+    // при пустом инвентаре открывал витрину. Перебор врал о содержимом —
+    // сколько там вариантов и какие, видно не было, — а прыжок в витрину
+    // путал два разных места: где ПОКУПАЮТ и где ОДЕВАЮТСЯ.
+    //
+    // Теперь как карточка слота в лобби гнева (wrath-lobby.js): тап
+    // раскрывает список того, что можно сюда поставить. Повторный тап по
+    // тому же слоту закрывает.
     tapSlot(slotKey) {
+        this.openSlot = this.openSlot === slotKey ? null : slotKey;
+        this.storeOpen = false;
+        this.renderStore();
+    },
+
+    // ---------- ИНВЕНТАРЬ СЛОТА ----------
+    // Только КУПЛЕННОЕ, ценников здесь нет — за ними витрина. Строки идут
+    // снизу вверх, и самая нижняя всегда «ничего»: она есть в любом слоте
+    // при любом инвентаре, поэтому и стоит там, где палец, а не там, где
+    // список кончился. Пусто в шкафу — одна эта строка и остаётся.
+    //
+    // Надетое помечено галочкой; отдельной кнопки «снять» нет — снять значит
+    // выбрать пустую строку. Правило одно: выбери, что тут стоит.
+    slotPanel() {
+        const C = PALETTE.redCarpet;
+        const S = this.safe;
+        const slot = PRIDE_WARDROBE.slots.find(s => s.key === this.openSlot);
+        if (!slot) return '';
+        const worn = (GameState.data.cosmetics || {})[slot.key] || null;
         const owned = PRIDE_WARDROBE.items
-            .filter(i => i.slot === slotKey && (GameState.data.wardrobe || {})[i.id]);
-        if (!owned.length) { this.storeOpen = true; this.storeTab = 'wear'; this.renderStore(); return; }
-        const now = (GameState.data.cosmetics || {})[slotKey] || null;
-        const idx = owned.findIndex(i => i.id === now);
-        const next = idx + 1 >= owned.length ? null : owned[idx + 1].id;
-        Backend.wearCosmetic(slotKey, next);
+            .filter(i => i.slot === slot.key && (GameState.data.wardrobe || {})[i.id]);
+
+        const W = 176;
+        const rows = owned.length + 1;            // +1 — строка «ничего»
+        // Высота строки подстраивается под длину списка. Предметы рисуются в
+        // тех же координатах, что на теле, а там цилиндр уходит вверх почти на
+        // две своих радиуса — в тесной строке он вылезал за карточку. Отсюда
+        // и запас 72, и общий сдвиг ART_DY ниже: строка обязана вмещать
+        // САМЫЙ высокий предмет, а не средний.
+        const room = (S.y1 - S.y0) - 140;
+        const RH = Math.max(44, Math.min(72, room / rows));
+        const ar = Math.max(11, RH * 0.25);       // радиус предмета в строке
+        const h = 16 + rows * RH;
+        const cx = (S.x0 + S.x1) / 2;
+        // Панель по центру видимой области: слот может стоять у самого края,
+        // и привязанная к нему карточка уезжала бы за обрез холста.
+        const y0 = Math.max(S.y0 + 60, (S.y0 + S.y1) / 2 - h / 2);
+
+        const row = (id, i) => {
+            const on = (id || null) === worn;
+            const y = y0 + 8 + i * RH + RH / 2;
+            const art = id
+                ? `<g class="pr-slot-art">${WormCosmetics.art(id, ar, PALETTE.flesh[500])}</g>`
+                : `<g transform="translate(-12,-12)" fill="none" stroke="${C.rail[500]}"
+                       stroke-width="1.6" stroke-linejoin="round"
+                       opacity="0.7"><path d="${slot.shape}"/></g>`;
+            return `<g class="pr-slot-item" data-slot-item="${id || ''}"
+                       transform="translate(${cx.toFixed(0)},${y.toFixed(0)})">
+                <rect x="${-W / 2 + 8}" y="${-RH / 2 + 4}" width="${W - 16}" height="${RH - 8}" rx="13"
+                      fill="${C.night[900]}" fill-opacity="0.92"
+                      stroke="${on ? C.gold[300] : C.rail[700]}" stroke-width="${on ? 2.4 : 1.6}"/>
+                <g transform="translate(-26,0)">${art}</g>
+                ${on ? `<text x="${W / 2 - 28}" y="7" text-anchor="middle" font-size="20"
+                              fill="${C.gold[300]}">✓</text>` : ''}</g>`;
+        };
+
+        return `<rect class="pr-store-back" x="${S.x0}" y="${S.y0}"
+                      width="${(S.x1 - S.x0).toFixed(0)}" height="${(S.y1 - S.y0).toFixed(0)}"
+                      fill="${C.night[900]}" fill-opacity="0.7"/>
+            <rect x="${(cx - W / 2).toFixed(0)}" y="${y0.toFixed(0)}" width="${W}" height="${h.toFixed(0)}"
+                  rx="18" fill="${C.night[700]}" stroke="${C.gold[700]}" stroke-width="2"/>
+            ${owned.map((it, i) => row(it.id, i)).join('')}
+            ${row(null, owned.length)}`;
+    },
+
+    // ---------- ВЫРОВНЯТЬ ПРЕДМЕТЫ В СТРОКАХ ----------
+    // Каждый предмет нарисован в координатах ТОГО МЕСТА, где он сидит на теле:
+    // цилиндр висит над точкой крепления, очки стоят на ней, бант — под ней.
+    // В списке от этого они разъезжаются по высоте, и ровные карточки
+    // выглядят кривыми.
+    //
+    // Считать смещение по формуле нельзя — оно у каждого предмета своё и
+    // меняется с каждым новым. Поэтому спрашиваем настоящий габарит: одно
+    // чтение раскладки на строку и только в момент открытия панели, а не в
+    // кадровом цикле (docs/traps.md про чтения раскладки — там речь про
+    // КАЖДЫЙ кадр, здесь этого нет).
+    centerSlotArt() {
+        if (!this.storeEl) return;
+        this.storeEl.querySelectorAll('.pr-slot-art').forEach(g => {
+            const b = g.getBBox();
+            if (!b.height) return;
+            g.setAttribute('transform', `translate(0,${(-(b.y + b.height / 2)).toFixed(1)})`);
+        });
+    },
+
+    // Выбор строки в инвентаре слота. Надевает Backend, а не интерфейс:
+    // проверки «есть ли предмет» и «тот ли слот» на сервере будут теми же.
+    pickSlotItem(itemId) {
+        Backend.wearCosmetic(this.openSlot, itemId || null);
         this.refreshWorm();
-        this.renderAll();
+        this.renderAll();          // renderStore внутри перерисует и панель
     },
 
     // Наряд живёт в модели персонажа, значит смена наряда — это пересборка

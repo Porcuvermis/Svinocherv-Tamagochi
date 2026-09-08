@@ -224,6 +224,58 @@ const { chromium } = require('playwright');
   console.log(`наряд: куплен ${dress.ok}, надет «${dress.надето}», ` +
               `на червe в игре ${onBody.вИгре}, в комнате ${onBody.вКомнате}`);
 
+  // ---------- ВИТРИНА ПО СЛОТАМ И ИНВЕНТАРЬ СЛОТА ----------
+  // Проверяется не «нарисовалось ли», а два правила раскладки: на полке
+  // лежат предметы ТОЛЬКО своего слота, а в инвентаре последняя строка —
+  // всегда «ничего», сколько бы вещей ни было куплено.
+  const shop = await page.evaluate(() => {
+    PrideMinigame.openSlot = null;
+    PrideMinigame.storeOpen = true;
+    const out = { полки: {} };
+    PRIDE_WARDROBE.slots.forEach(sl => {
+      PrideMinigame.storeTab = sl.key;
+      PrideMinigame.renderStore();
+      const ids = [...document.querySelectorAll('.pr-item')].map(e => e.dataset.item);
+      out.полки[sl.key] = ids.every(id =>
+        PRIDE_WARDROBE.items.find(i => i.id === id).slot === sl.key) && ids.length > 0;
+    });
+    PrideMinigame.storeTab = 'boost';
+    PrideMinigame.renderStore();
+    out.прокачка = document.querySelectorAll('.pr-boost').length;
+    PrideMinigame.storeOpen = false;
+    return out;
+  });
+  const shelvesOk = Object.values(shop.полки).every(Boolean) && shop.прокачка === 3;
+  console.log(`витрина: полок ${Object.keys(shop.полки).length}, каждая только своим слотом ` +
+              `${Object.values(shop.полки).every(Boolean)}, линий прокачки ${shop.прокачка}   ` +
+              (shelvesOk ? 'ок' : '✗ ПОЛКИ ПЕРЕМЕШАНЫ'));
+
+  const inv = await page.evaluate(() => {
+    // Пустой шкаф: в слоте, где ничего не куплено, строка должна быть одна.
+    const empty = (() => {
+      PrideMinigame.openSlot = 'tail';
+      PrideMinigame.renderStore();
+      return [...document.querySelectorAll('.pr-slot-item')].map(e => e.dataset.slotItem);
+    })();
+    // Полный: две шляпы + «ничего», и «ничего» — последняя строка.
+    Backend.buyWardrobe('shades');
+    PrideMinigame.openSlot = 'head';
+    PrideMinigame.renderStore();
+    const rows = [...document.querySelectorAll('.pr-slot-item')].map(e => e.dataset.slotItem);
+    // Выбор пустой строки = снять.
+    PrideMinigame.pickSlotItem('');
+    const afterNude = GameState.data.cosmetics.head || null;
+    PrideMinigame.openSlot = null;
+    PrideMinigame.renderStore();
+    return { empty, rows, afterNude };
+  });
+  const invOk = inv.empty.length === 1 && inv.empty[0] === '' &&
+                inv.rows.length === 3 && inv.rows[inv.rows.length - 1] === '' &&
+                inv.afterNude === null;
+  console.log(`инвентарь слота: пустой шкаф — строк ${inv.empty.length}; ` +
+              `две шляпы — строки [${inv.rows.join(', ')}]; пустая строка снимает ${inv.afterNude === null}   ` +
+              (invOk ? 'ок' : '✗ НЕ ТО'));
+
   const bad = [];
   if (!dress.ok || dress.надето !== 'top-hat') bad.push('наряд не купился или не надет');
   if (!onBody.вИгре) bad.push('купленный наряд не появился на червe в игре');
