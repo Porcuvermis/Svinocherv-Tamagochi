@@ -1,0 +1,168 @@
+/* ================= МЕНЮ ГРЕХОВ: КОЛЕСО ЛУЧЕЙ =================
+   Раньше грехи жили в верхнем HUD (семь кружков) и в списке полосок под ним.
+   HUD занимал место в комнате, полоски были обычным списком — и то и другое
+   снято целиком: меню теперь открывается удержанием пальца на самом червя и
+   рисуется одной картинкой (src/core/sins-menu.js).
+
+   Здесь только оформление. Вся геометрия — в SVG, который собирает js:
+   раскладка лучей считается от центра, а не верстается. */
+
+#sins-menu {
+    position: absolute;
+    inset: 0;
+    z-index: 100000;
+    background: radial-gradient(circle at 50% 50%, #17111a 0%, #090709 62%, #050405 100%);
+    opacity: 0;
+    transition: opacity 0.18s ease-out;
+    /* Закрытое меню не существует: display:none снимает и отрисовку, и
+       бесконечные анимации свечения. Прятать прозрачностью нельзя — живая
+       css-анимация внутри svg заставляет перекрашивать всё, что под ней
+       (docs/traps.md, пп. 37–38). */
+    display: none;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+#sins-menu.active {
+    display: block;
+    opacity: 1;
+}
+
+#sins-menu svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ---------- ЛУЧ ----------
+   Тёмное русло и светлая струя поверх него. Струя — тот же путь с
+   pathLength="100", поэтому «сколько налито» задаётся одним числом и не
+   зависит от того, какой длины получился излом. */
+.sm-ray-base {
+    fill: none;
+    stroke-width: 9;
+    stroke-linejoin: miter;
+    stroke-linecap: butt;
+    opacity: 0.2;
+}
+
+.sm-ray-flow {
+    fill: none;
+    stroke-width: 6;
+    stroke-linejoin: miter;
+    stroke-linecap: butt;
+    opacity: 0.85;
+    transition: stroke-dasharray 0.35s ease-out;
+}
+
+/* ---------- УЗЕЛ ----------
+   Значок греха. Не горит — грех сыт, играть можно, но платить не за что.
+   Горит — мини-игра отдаёт полную награду. */
+.sm-node-shell {
+    stroke-width: 2.4;
+    transition: stroke-width 0.2s ease-out;
+}
+
+.sm-node-glow {
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+}
+
+/* Заливка узла своим цветом. Погашенный узел внутри чёрный — «энергии нет»;
+   налившийся светится изнутри. */
+.sm-node-tint {
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+    pointer-events: none;
+}
+
+.sm-mark {
+    font-size: 22px;
+    text-anchor: middle;
+    dominant-baseline: central;
+    opacity: 0.34;
+    transition: opacity 0.3s ease-out;
+    pointer-events: none;
+}
+
+.sm-sin.ready .sm-node-shell { stroke-width: 3.6; }
+.sm-sin.ready .sm-node-glow  { opacity: 0.2; }
+.sm-sin.ready .sm-node-tint  { opacity: 0.3; }
+.sm-sin.ready .sm-mark       { opacity: 1; }
+
+/* Свечение — родным drop-shadow по цвету греха (он задан группе через
+   `color`, поэтому одно правило работает на все семь). Фильтр стоит своей
+   ПЛОЩАДИ (docs/traps.md, п. 35), поэтому висит на узле, а не на луче и не
+   на всём меню: узел маленький, и горят одновременно далеко не все. */
+.sm-sin.ready .sm-node {
+    filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* Мерцание — ПРОЗРАЧНОСТЬЮ ореола, а не размером узла. Пробовали дыхание
+   через transform: scale — и семь горящих узлов роняли меню с 62 до 37
+   кадров при замедлении в шесть раз: у элемента с drop-shadow каждый новый
+   размер это новая растеризация всей его площади вместе с тенью
+   (docs/traps.md, п. 35). Прозрачность же считает композитор, и картинка
+   на глаз та же. */
+.sm-sin.ready .sm-node-glow {
+    animation: sm-breath 1.7s ease-in-out infinite;
+}
+
+@keyframes sm-breath {
+    0%, 100% { opacity: 0.12; }
+    50%      { opacity: 0.34; }
+}
+
+/* Струя готового греха мерцает — та самая «энергия, дошедшая до конца». */
+.sm-sin.ready .sm-ray-flow {
+    animation: sm-flow 1.7s ease-in-out infinite;
+}
+
+@keyframes sm-flow {
+    0%, 100% { opacity: 0.85; }
+    50%      { opacity: 1; }
+}
+
+/* Нажатие на узел: короткая просадка, чтобы палец получил ответ до того,
+   как откроется мини-игра. */
+.sm-sin.press .sm-node { opacity: 0.55; }
+
+/* ---------- ЦЕНТР ----------
+   Логотип игры. Он же кнопка выхода: закрывается меню тем же удержанием,
+   которым открылось, — жест один, учить нечего. */
+.sm-core-ring {
+    stroke-width: 2.2;
+    opacity: 0.55;
+}
+
+.sm-hold {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    opacity: 0;
+}
+
+.sm-hold.holding { opacity: 1; }
+
+/* ---------- КОЛЬЦО УДЕРЖАНИЯ НА ЧЕРВЕ ----------
+   Ответ пальцу: удержание длится 0.7 с, и всё это время должно быть видно,
+   что игра его считает, — иначе жест читается как «ничего не произошло». */
+#hold-ring {
+    position: absolute;
+    width: 92px;
+    height: 92px;
+    margin: -46px 0 0 -46px;
+    pointer-events: none;
+    z-index: 99990;
+    opacity: 0;
+    transition: opacity 0.12s linear;
+}
+
+#hold-ring.on { opacity: 1; }
+
+#hold-ring circle {
+    fill: none;
+    stroke-linecap: round;
+}

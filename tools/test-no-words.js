@@ -22,6 +22,7 @@ const { chromium } = require('playwright');
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const errors = [];
+  const found = {};
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
 
@@ -44,6 +45,17 @@ const { chromium } = require('playwright');
 
   await page.goto('http://127.0.0.1:8777/index.html');
   await page.waitForTimeout(2300);
+
+  // ---------- КОМНАТА И МЕНЮ ГРЕХОВ ----------
+  // Меню — экран, который игрок открывает чаще любой мини-игры, и оно
+  // целиком построено на значках, цвете и свечении. Проверяется первым.
+  found.room = await scan('game-container');
+  await page.evaluate(() => SinsMenu.open());
+  await page.waitForTimeout(400);
+  found.sinsMenu = await scan('sins-menu');
+  await page.screenshot({ path: out + 'nw-0-sins-menu.png' });
+  await page.evaluate(() => SinsMenu.closeInstant());
+
   await page.evaluate(() => {
     Backend.grantCurrency('wrath_token', 6);
     Backend.grantCurrency('wrath_shard', 2);
@@ -55,7 +67,6 @@ const { chromium } = require('playwright');
   });
   await page.waitForTimeout(900);
 
-  const found = {};
   found.lobby = await scan();
   await page.screenshot({ path: out + 'nw-1-lobby.png' });
 

@@ -68,7 +68,9 @@ const { chromium } = require('playwright');
     await page.mouse.up();
   };
 
-  await page.evaluate(() => GameManager.handleSinAction('gluttony'));
+  // Шкала в ноль: сытый грех не платит (порог ECONOMY.sins.<грех>.payAt),
+  // а проверять здесь надо именно награду за блюдо.
+  await page.evaluate(() => { GameState.setSinValue('gluttony', 0); GameManager.handleSinAction('gluttony'); });
   await page.waitForTimeout(700);
   await page.screenshot({ path: out + '1-overview.png' });
 

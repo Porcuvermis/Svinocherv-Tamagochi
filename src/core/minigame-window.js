@@ -167,14 +167,10 @@ const MinigameWindow = {
         if (handle && typeof handle.setPaused === 'function') handle.setPaused(false);
     },
 
-    // Вернуть верхний HUD после закрытия мини-игры. Раньше эти же семь
-    // строк были скопированы в close() каждой игры.
-    restoreHud() {
-        const fullMenu = document.getElementById('full-menu');
-        const miniHud = document.getElementById('mini-hud');
-        if (fullMenu && !fullMenu.classList.contains('active') && miniHud) {
-            miniHud.style.opacity = '1';
-            miniHud.style.pointerEvents = 'auto';
-        }
-    }
+    // Раньше здесь возвращался верхний HUD со шкалами. HUD снят целиком:
+    // грехи живут в своём меню, которое открывается удержанием пальца на
+    // червя (src/core/sins-menu.js), и возвращать после мини-игры нечего.
+    // Метод оставлен пустым: его зовут шесть игр из семи, и молчаливое
+    // «ничего не делать» здесь лучше, чем шесть одинаковых правок.
+    restoreHud() {}
 };

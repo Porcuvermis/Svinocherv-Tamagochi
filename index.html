@@ -197,6 +197,7 @@
     <!-- Общее окно мини-игры (рамка, шапка, вопрос при выходе). Строго ДО
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=2" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/core/sins-menu.css?v=1">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=21" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
@@ -226,20 +227,15 @@
          какая именно сборка сейчас открыта. -->
     <div id="build-stamp"></div>
 
-    <div id="mini-hud"></div>
-
     <!-- Кошелёк. Пока в нём только золото и добывать его негде — счётчик
-         стоит, чтобы было куда начислять, когда появится первая добыча. -->
+         стоит, чтобы было куда начислять, когда появится первая добыча.
+         Единственное, что осталось в комнате от интерфейса: шкалы грехов
+         уехали в своё меню (src/core/sins-menu.js). -->
     <div id="wallet">
         <span class="wallet-coin">🪙</span><span id="wallet-gold">0</span>
     </div>
 
     <button id="debug-toggle-btn" class="debug-toggle-btn" title="Debug-режим">🐞</button>
-
-    <div id="full-menu">
-        <div id="close-menu-area">▲ ▲ ▲ ▲ ▲</div>
-        <div id="sins-container"></div>
-    </div>
 
     <div id="slots-game" class="minigame-screen">
         <div class="slots-modal">
@@ -849,7 +845,8 @@
 <script src="src/core/worm-renderer.js?v=41"></script>
 <script src="src/core/worm.js?v=11"></script>
 <script src="src/core/debug.js?v=8"></script>
-<script src="main.js?v=15"></script>
+<script src="src/core/sins-menu.js?v=1"></script>
+<script src="main.js?v=16"></script>
 <!-- Сборка общего окна мини-игры. До любой мини-игры: они надевают его на
      себя в своём init(). -->
 <script src="src/core/minigame-window.js?v=3"></script>

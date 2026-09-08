@@ -293,12 +293,8 @@ const EnvyMinigame = {
         this.disposeCloud(this.clouds.prev);
         this.clouds = { cur: null, next: null, prev: null };
 
-        const fullMenu = document.getElementById('full-menu');
-        const miniHud = document.getElementById('mini-hud');
-        if (fullMenu && !fullMenu.classList.contains('active') && miniHud) {
-            miniHud.style.opacity = '1';
-            miniHud.style.pointerEvents = 'auto';
-        }
+        // Верхнего HUD со шкалами больше нет — возвращать нечего
+        // (src/core/sins-menu.js).
     },
 
     showConfirm() {

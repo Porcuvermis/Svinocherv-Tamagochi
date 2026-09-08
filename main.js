@@ -1,6 +1,6 @@
 // ================= ГЛОБАЛЬНЫЙ МЕНЕДЖЕР ИГРЫ (GAMEMANAGER) =================
-// Теперь это только интерфейс: собрать HUD, показать значения, открыть нужную
-// мини-игру. Состояния он не хранит и ничего не начисляет.
+// Теперь это только интерфейс: показать значения и открыть нужную мини-игру.
+// Состояния он не хранит и ничего не начисляет.
 //
 // Что изменилось и почему (docs/plan/05-next-steps.md):
 //
@@ -14,6 +14,11 @@
 //
 //   • Мини-игры больше не пишут в шкалы. Они бросают событие с результатом,
 //     а что за это дать, решает конфиг наград через Backend.
+//
+//   • Шкал в комнате больше нет. Верхний HUD из семи кружков и список
+//     полосок под ним сняты целиком: грехи живут в отдельном экране —
+//     колесе лучей (src/core/sins-menu.js), которое открывается удержанием
+//     пальца на самом червя. Здесь остались только кошелёк и маршрутизация.
 const GameManager = {
 
     // Какая мини-игра открывается по кнопке «Утолить». Раньше это была
@@ -51,7 +56,6 @@ const GameManager = {
         this.initUI();
         this.cacheElements();
         this.updateUI(true);
-        this.setupEvents();
         this.listenMinigames();
         this.watchMinigameScreens();
         this.startUiClock();
@@ -60,7 +64,11 @@ const GameManager = {
             initWorm();
         }
 
-        // Экран загрузки открывается только теперь: HUD собран, персонаж
+        // Удержание пальца на червя вешается ПОСЛЕ монтажа: до него сцены
+        // персонажа в документе ещё нет, и вешать было бы не на что.
+        if (window.SinsMenu) SinsMenu.attachWorm();
+
+        // Экран загрузки открывается только теперь: интерфейс собран, персонаж
         // смонтирован. Два кадра ожидания — чтобы под пеленой успел
         // отрисоваться ПЕРВЫЙ кадр свиночервя, иначе круг раскроется на
         // пустую комнату и червь появится в ней уже на глазах.
@@ -72,89 +80,33 @@ const GameManager = {
     },
 
     // ---------- ИНТЕРФЕЙС ----------
+    // Собирать больше нечего: меню грехов строит себя само, а в комнате из
+    // интерфейса остался один кошелёк.
     initUI() {
-        const miniHud = document.getElementById('mini-hud');
-        const sinsContainer = document.getElementById('sins-container');
-        if (!miniHud || !sinsContainer) return;
-
-        miniHud.innerHTML = '';
-        sinsContainer.innerHTML = '';
-
-        ECONOMY.sinOrder.forEach(key => {
-            const sin = ECONOMY.sins[key];
-            if (!sin) return;
-
-            // Кружок в верхнем HUD
-            miniHud.insertAdjacentHTML('beforeend', `
-                <div class="stat-circle" id="mini-${key}">
-                    <svg viewBox="0 0 36 36">
-                        <circle class="bg" cx="18" cy="18" r="16"></circle>
-                        <circle class="progress" cx="18" cy="18" r="16" stroke="${sin.color}"></circle>
-                    </svg>
-                    <div class="emoji">${sin.emoji}</div>
-                </div>
-            `);
-
-            // Строка в полноэкранном меню
-            sinsContainer.insertAdjacentHTML('beforeend', `
-                <div class="sin-row">
-                    <div class="sin-info">
-                        <div class="sin-name"><span>${sin.emoji} ${sin.name}</span></div>
-                        <div class="sin-bar-container">
-                            <div class="sin-bar" id="bar-${key}" style="background-color: ${sin.color}"></div>
-                            <div class="sin-value" id="val-${key}">0%</div>
-                        </div>
-                    </div>
-                    <button class="sin-btn" style="background-color: ${sin.color}" onclick="GameManager.handleSinAction('${key}')">Утолить</button>
-                </div>
-            `);
-        });
+        if (window.SinsMenu) SinsMenu.init();
     },
 
-    // Ссылки на элементы шкал. Ищутся один раз при сборке HUD: искать их
-    // заново на каждой перерисовке — это семь querySelector в секунду по
-    // документу, в котором лежит здоровенный SVG персонажа.
-    _els: null,
+    _gold: null,
+    _shownGold: null,
+    _cached: false,
 
     cacheElements() {
-        this._els = {};
+        this._cached = true;
         this._gold = document.getElementById('wallet-gold');
         this._shownGold = null;
-        ECONOMY.sinOrder.forEach(key => {
-            this._els[key] = {
-                bar: document.getElementById(`bar-${key}`),
-                val: document.getElementById(`val-${key}`),
-                circle: document.querySelector(`#mini-${key} .progress`),
-                // Что уже нарисовано. Отдельно для кружка и для полоски: они
-                // видны в разное время, и расходятся тоже.
-                shownCircle: null,
-                shownBar: null
-            };
-        });
     },
 
     // Показывает то, что в состоянии. Источник данных — GameState, а не поле
     // в этом объекте: значение считается на момент обращения.
     //
-    // ---------- ПОЧЕМУ ЗДЕСЬ ПРОВЕРКИ, А НЕ ПРОСТО ЗАПИСЬ ----------
-    // Шкала теперь теряет около трёх ТЫСЯЧНЫХ процента в секунду. Записывать
-    // такое изменение в стиль бессмысленно и недёшево: каждая запись — это
-    // пересчёт стилей и раскладки всего документа, а вместе с CSS-переходом
-    // ещё и работа в каждом кадре, пока переход идёт. Пиксель при этом не
-    // сдвигается: 0.003% не видно.
-    //
-    // Поэтому пишем, только когда изменилась хотя бы десятая доля процента, и
-    // не трогаем полоски меню, пока меню закрыто.
+    // Проверки на «изменилось ли» здесь не про экономию на спичках: шкала
+    // теряет около трёх ТЫСЯЧНЫХ процента в секунду, и каждая запись в стиль
+    // — это пересчёт раскладки всего документа ради пикселя, который не
+    // сдвинулся.
     updateUI(force) {
         if (!GameState.data) return;
-        if (!this._els) this.cacheElements();
+        if (!this._cached) this.cacheElements();
 
-        const fullMenu = document.getElementById('full-menu');
-        const menuOpen = !!fullMenu && fullMenu.classList.contains('active');
-
-        // Кошелёк. Значение целое и меняется редко, поэтому проверка на
-        // изменение здесь не про экономию кадров, а про то же правило, что и
-        // ниже: не писать в DOM, когда писать нечего.
         if (this._gold) {
             const gold = GameState.currency('gold');
             if (force || this._shownGold !== gold) {
@@ -163,29 +115,9 @@ const GameManager = {
             }
         }
 
-        ECONOMY.sinOrder.forEach(key => {
-            const els = this._els[key];
-            if (!els) return;
-
-            const max = GameState.maxValue(key) || 1;
-            const percent = Math.max(0, Math.min(100, (GameState.sinValue(key) / max) * 100));
-            const shown = Math.round(percent * 10) / 10;
-
-            if (els.circle && (force || els.shownCircle !== shown)) {
-                els.circle.style.strokeDashoffset = 100 - shown;
-                els.shownCircle = shown;
-            }
-
-            // Меню закрыто — его полоски не видит никто, а раскладку они
-            // пересчитывают наравне с видимыми. Отметка о нарисованном при
-            // этом НЕ ставится, поэтому при следующем открытии меню полоски
-            // подтянутся сами, даже если никто не позвал перерисовку.
-            if ((menuOpen || force) && (force || els.shownBar !== shown)) {
-                if (els.bar) els.bar.style.width = `${shown}%`;
-                if (els.val) els.val.textContent = `${Math.round(shown)}%`;
-                els.shownBar = shown;
-            }
-        });
+        // Меню само решит, есть ли смысл рисовать: закрытое оно не трогает
+        // ни одного узла.
+        if (window.SinsMenu) SinsMenu.update(force);
     },
 
     // Единственный таймер в игре — и он ничего не считает, только
@@ -270,14 +202,11 @@ const GameManager = {
     },
 
     // ---------- ЭКРАНЫ ----------
+    // Меню закрывается без затухания: под ним всё равно тут же встанет
+    // мини-игра, а лишний переход — это ещё четверть секунды, в течение
+    // которой игрок видит непонятно что.
     closeMenuBeforeMinigame() {
-        const fullMenu = document.getElementById('full-menu');
-        const miniHud = document.getElementById('mini-hud');
-        if (fullMenu) fullMenu.classList.remove('active');
-        if (miniHud) {
-            miniHud.style.opacity = '1';
-            miniHud.style.pointerEvents = 'auto';
-        }
+        if (window.SinsMenu) SinsMenu.closeInstant();
     },
 
     handleSinAction(sinKey) {
@@ -294,34 +223,6 @@ const GameManager = {
 
         this.closeMenuBeforeMinigame();
         minigame.open();
-    },
-
-    setupEvents() {
-        const closeMenuArea = document.getElementById('close-menu-area');
-        const fullMenu = document.getElementById('full-menu');
-        const miniHud = document.getElementById('mini-hud');
-
-        // Открываем меню при клике на верхний HUD со шкалами-кружками
-        if (miniHud && fullMenu) {
-            miniHud.onclick = (e) => {
-                e.stopPropagation(); // Не даем клику уйти на игровой Canvas
-                fullMenu.classList.add('active');
-                miniHud.style.opacity = '0';
-                miniHud.style.pointerEvents = 'none';
-                // Пока меню было закрыто, его полоски не обновлялись.
-                this.updateUI(true);
-            };
-        }
-
-        // Закрываем меню при клике на верхнюю зону стрелок
-        if (closeMenuArea && fullMenu && miniHud) {
-            closeMenuArea.onclick = (e) => {
-                e.stopPropagation();
-                fullMenu.classList.remove('active');
-                miniHud.style.opacity = '1';
-                miniHud.style.pointerEvents = 'auto';
-            };
-        }
     }
 };
 
