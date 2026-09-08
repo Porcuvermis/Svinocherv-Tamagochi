@@ -84,8 +84,13 @@ const PrideDebug = {
             GameState.data.cosmetics = {};
             GameState.save();
         } else if (act === 'fresh') {
-            // Суточный счётчик выходов: на нём стоит усталость публики, и
-            // без сброса проверять её приходится «завтра».
+            // ---------- ПРОГОЛОДАТЬСЯ ПРЯМО СЕЙЧАС ----------
+            // Кнопка была «обнулить сутки» и сбрасывала счётчик выходов, на
+            // котором стояла усталость публики. Усталости больше нет, есть
+            // порог голода — и проверять его иначе пришлось бы ждать
+            // двенадцать часов. Роняем шкалу ровно на порог.
+            const at = (ECONOMY.sins.pride || {}).payAt;
+            GameState.setSinValue('pride', at != null ? at : 0);
             delete GameState.data.daily_counters['pride.parade.win'];
             GameState.save();
         }
@@ -122,7 +127,7 @@ const PrideDebug = {
                 <button data-act="kiss">+500</button>
                 <button data-act="kiss5k">+5000</button>
                 <span class="pr-debug-tag">выходов сегодня ${day}</span>
-                <button data-act="fresh">обнулить сутки</button>
+                <button data-act="fresh">проголодаться</button>
             </div>
             <div class="pr-debug-row">
                 ${this.lines().map(line).join('')}

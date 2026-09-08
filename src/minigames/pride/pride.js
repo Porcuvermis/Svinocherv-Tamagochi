@@ -608,6 +608,10 @@ const PrideMinigame = {
     // своей вине.
     startShow() {
         if (this.phase !== 'wardrobe' || this.storeOpen) return;
+        // Числа берутся ЗАНОВО: в костюмерной можно просидеть час, и порог
+        // голода за это время вполне переходится. Решать «платят ли» надо на
+        // момент старта, а не на момент входа в грех.
+        this.params = Backend.prideRun();
         this.phase = 'change';
         this.renderUI();
         this.setDecor('carpet', true);
@@ -660,9 +664,10 @@ const PrideMinigame = {
         if (this.wormHandle && this.wormHandle.setTreadmill) this.wormHandle.setTreadmill(0);
         this.renderHud();
 
-        // Мини-игра не начисляет сама: сообщает, сколько поцелуев собрано с
-        // учётом ажиотажа, а сколько за это дать (и не устала ли публика) —
-        // решает конфиг наград через Backend (инвариант 2).
+        // Мини-игра не начисляет сама: сообщает, сколько поцелуев собрано, а
+        // выдавать ли их — решает конфиг наград через Backend (инвариант 2).
+        // При сытом черве не выдаст ничего, но собирать там и нечего:
+        // поцелуйных зон в таком выходе не появляется вовсе.
         GameEvents.emit('minigame:result', {
             sin: 'pride', mode: 'parade', outcome: 'win',
             meta: { kisses: this.kisses, hits: this.hits, misses: this.misses }
@@ -726,10 +731,19 @@ const PrideMinigame = {
         return this.bag.pop();
     },
 
-    // Открыт ли червь для поцелуев. Единственное условие — живой стрик:
-    // хотя бы одна белая зона закрыта и с тех пор ничего не пропущено.
+    // Открыт ли червь для поцелуев. Условий два, и второе важнее:
+    //
+    //   • живой стрик — хотя бы одна белая зона закрыта и с тех пор ничего
+    //     не пропущено;
+    //   • червь ГОЛОДЕН, то есть шкала гордыни опустилась до порога. Пока он
+    //     сыт, целовать его никто не лезет: выход идёт, шкала закроется, но
+    //     поцелуев в кадре не будет ни одного.
+    //
+    // Второе — то самое правило антифарма, и живёт оно ЗДЕСЬ, в спавне зон, а
+    // не в начислении. Разница принципиальная: игрок видит пустую дорожку, а
+    // не пустой кошелёк после честно собранных четырнадцати поцелуев.
     kissesOpen() {
-        return this.streak >= this.params.streak.needForKiss;
+        return this.params.pays && this.streak >= this.params.streak.needForKiss;
     },
 
     fillBag() {
@@ -1014,63 +1028,58 @@ const PrideMinigame = {
         const purse = `<text x="${x}" y="${y}" font-size="26">💋</text>` +
                       `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
         if (this.phase !== 'run' && this.phase !== 'done') {
-            this.hudEl.innerHTML = purse + this.dayBadge(x, y + 22);
+            this.hudEl.innerHTML = purse + this.hungerBadge(x, y + 14);
             return;
         }
-        // На финише показываем НАЧИСЛЕННОЕ (публика могла устать, и тогда оно
-        // меньше собранного), пока оно не пришло — собранное.
+        // На финише показываем НАЧИСЛЕННОЕ, пока оно не пришло — собранное.
         const done = this.phase === 'done' && this.awardedKisses != null;
         const gain = done ? this.awardedKisses : this.kisses;
         const gx = x + 30 + String(wallet).length * 16 + 14;
-        // ---------- СОБРАЛ СЕМЬ, ПОЛУЧИЛ ЧЕТЫРЕ ----------
-        // Когда публика устала, начисленное МЕНЬШЕ собранного, и молчать об
-        // этом нельзя: в живой игре разрыв ровно этих двух чисел был принят
-        // за баг, и правильно принят — игра сама ничем не показывала, что
-        // урезала награду. Теперь собранное остаётся на экране зачёркнутым
-        // рядом с начисленным. Ни одного слова: число, черта, стрелка.
-        // Всю работу делает СТРЕЛКА, а не зачёркивание: собранное тусклое,
-        // начисленное яркое, между ними «▸». Зачёркивание тут пробовали двумя
-        // способами — text-decoration в svg поддержан неровно, а линией поверх
-        // цифры получалась не зачёркнутая семёрка, а сломанный глиф.
-        const cutW = String(this.kisses).length * 11;
-        const cut = done && this.kisses > gain
-            ? `<text x="${gx}" y="${y}" font-size="18" fill="${C.glow[500]}"
-                     font-weight="700" opacity="0.8">${this.kisses}</text>` +
-              `<text x="${gx + cutW + 6}" y="${y}" font-size="18"
-                     fill="${C.glow[500]}" opacity="0.8">▸</text>`
-            : '';
-        const px = gx + (cut ? cutW + 24 : 0);
-        this.hudEl.innerHTML = purse + cut +
-            `<text x="${px}" y="${y}" font-size="22" fill="${C.flash[500]}"
-                   font-weight="700" opacity="${this.phase === 'done' ? 1 : 0.85}">+${gain}</text>` +
+        // Урезания больше нет: начисленное либо равно собранному, либо выхода
+        // просто не оплатили (сытый червь), и тогда собирать было нечего —
+        // поцелуйных зон в таком выходе не появлялось. Поэтому и показывать
+        // здесь двух чисел больше не надо, а при неоплаченном выходе прибавку
+        // не показываем вовсе: вместо неё говорит полоска голода.
+        const px = gx;
+        this.hudEl.innerHTML = purse +
+            (this.params.pays
+                ? `<text x="${px}" y="${y}" font-size="22" fill="${C.flash[500]}"
+                         font-weight="700" opacity="${this.phase === 'done' ? 1 : 0.85}">+${gain}</text>`
+                : '') +
             this.multBadge(this.safe.x1 - 18, y - 4) +
-            (this.phase === 'done' ? this.dayBadge(x, y + 22) : '');
+            (this.phase === 'done' ? this.hungerBadge(x, y + 14) : '');
     },
 
-    // ---------- ПУБЛИКА УСТАЁТ: РЯД ТОЧЕК ----------
-    // Первые три выхода за сутки платят полностью, следующие три — половину,
-    // дальше десятую часть (ECONOMY.crowdReturns). Пока это было видно
-    // только по обрезанной награде, правило читалось поломкой.
+    // ---------- ПОРОГ ГОЛОДА: ПОЛОСКА С МЕТКОЙ ----------
+    // Здесь был ряд точек — суточная лестница «публика устаёт». Лестницы
+    // больше нет: она резала заработанное, и показать её честно было
+    // невозможно, потому что показывать приходилось сам факт отъёма.
     //
-    // Показ — сама лестница, кружок на выход: крупный = полная оплата,
-    // поменьше = половина, точка в конце = всё остальное. Потраченные
-    // погашены. Слов не нужно: ряд гаснет слева направо, и следующий яркий
-    // кружок и есть ответ на вопрос «сколько мне заплатят сейчас».
-    dayBadge(x, y) {
+    // Теперь показывается ГОЛОД: полоска — шкала гордыни, риска на ней —
+    // порог, ниже которого за выход платят. Пока заливка правее риски, червь
+    // сыт: поцелуйных зон на дорожке не будет, и полоска потушена. Цифра
+    // рядом — часы до порога, ждать столько. Ни одного слова, цифра не слово
+    // (инвариант 9).
+    hungerBadge(x, y) {
         const C = PALETTE.redCarpet;
-        const day = Backend.prideDay ? Backend.prideDay() : null;
-        if (!day || !day.seats.length) return '';
-        let out = '', cx = x + 4;
-        day.seats.forEach((seat, i) => {
-            const r = 3 + seat.share * 4;          // размер = доля выплаты
-            const spent = i < day.done;
-            out += `<circle cx="${cx.toFixed(1)}" cy="${y}" r="${r.toFixed(1)}"
-                        fill="${spent ? 'none' : C.kiss[300]}"
-                        stroke="${C.kiss[700]}" stroke-width="1.5"
-                        opacity="${spent ? 0.45 : 1}"/>`;
-            cx += r * 2 + 5;
-        });
-        return `<g class="pr-day">${out}</g>`;
+        const info = Backend.sinPayInfo ? Backend.sinPayInfo('pride') : null;
+        if (!info || info.threshold == null) return '';
+        const W = 108, H = 7;
+        const fill = Math.max(0, Math.min(1, info.value / info.max));
+        const mark = Math.max(0, Math.min(1, info.threshold / info.max));
+        const hours = Math.ceil(info.hoursLeft);
+        return `<g class="pr-hunger" transform="translate(${x.toFixed(0)},${y.toFixed(0)})">
+            <rect x="0" y="0" width="${W}" height="${H}" rx="${H / 2}"
+                  fill="${C.night[500]}" opacity="0.8"/>
+            <rect x="0" y="0" width="${(W * fill).toFixed(1)}" height="${H}" rx="${H / 2}"
+                  fill="${info.pays ? C.kiss[300] : C.glow[500]}"
+                  opacity="${info.pays ? 1 : 0.55}"/>
+            <rect x="${(W * mark).toFixed(1)}" y="${-3}" width="2" height="${H + 6}" rx="1"
+                  fill="${C.gold[300]}"/>
+            ${info.pays ? '' :
+              `<text x="${W + 9}" y="${H}" font-size="15" font-weight="700"
+                     fill="${C.glow[500]}" opacity="0.85">${hours}</text>`}
+        </g>`;
     },
 
     // ---------- МНОЖИТЕЛЬ НА ЭКРАНЕ ----------

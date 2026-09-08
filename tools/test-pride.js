@@ -145,6 +145,50 @@ const { chromium } = require('playwright');
                               : 'при нулевом стрике поцелуев не было — правило держится'));
   console.log(`начислено: шкала греха ${res.sin}   поцелуи ${res.kiss}   золото ${res.gold}`);
 
+  // ---------- ПОРОГ ГОЛОДА ----------
+  // Главное правило антифарма, и проверять его надо в обе стороны: сытому
+  // червю не платят И не спавнят поцелуйных зон, голодному — платят целиком,
+  // без всяких долей.
+  const gate = await page.evaluate(() => {
+    const out = {};
+    const was = PrideMinigame.phase;
+    ['сыт', 'голоден'].forEach((label, i) => {
+      GameState.setSinValue('pride', i ? 20 : 100);
+      PrideMinigame.params = Backend.prideRun();
+      PrideMinigame.phase = 'run';
+      PrideMinigame.streak = 5;
+      PrideMinigame.clearTargets();
+      // Сорок попыток: доля поцелуйных зон 1 из 4, и ни одной при сытом черве
+      // быть не должно ни разу.
+      for (let n = 0; n < 40; n++) PrideMinigame.spawnTarget();
+      out[label] = {
+        платят: PrideMinigame.params.pays,
+        поцелуйных: PrideMinigame.targets.filter(t => t.kiss).length
+      };
+      PrideMinigame.clearTargets();
+    });
+    PrideMinigame.phase = was;
+    return out;
+  });
+  const gateOk = !gate['сыт'].платят && !gate['сыт'].поцелуйных &&
+                 gate['голоден'].платят && gate['голоден'].поцелуйных > 0;
+  console.log(`порог: сыт — платят ${gate['сыт'].платят}, поцелуйных зон ${gate['сыт'].поцелуйных};  ` +
+              `голоден — платят ${gate['голоден'].платят}, поцелуйных ${gate['голоден'].поцелуйных}   ` +
+              (gateOk ? 'правило держится' : '✗ ПОРОГ НЕ РАБОТАЕТ'));
+
+  // Начисление при сытом черве: шкала закрывается, кошелёк не трогается.
+  const fed = await page.evaluate(async () => {
+    GameState.setSinValue('pride', 100);
+    const before = GameState.currency('pride_kiss');
+    await Backend.minigameResult({ sin: 'pride', mode: 'parade', outcome: 'win',
+                                   meta: { kisses: 14, hits: 20, misses: 0 } });
+    return { before, after: GameState.currency('pride_kiss'),
+             шкала: Math.round(GameState.sinValue('pride')) };
+  });
+  console.log(`сытый выход: собрал 14, кошелёк ${fed.before} → ${fed.after}, шкала ${fed.шкала}   ` +
+              (fed.before === fed.after && fed.шкала === 100
+                ? 'не заплатили, но шкалу закрыли' : '✗ НЕ ТО'));
+
   // ---------- ПОКУПКА ----------
   // Проверяем не «списались ли деньги», а то, ради чего покупка существует:
   // числа следующего выхода обязаны стать другими.

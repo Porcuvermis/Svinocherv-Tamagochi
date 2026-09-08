@@ -83,6 +83,14 @@ const LocalBackend = {
         const reward = this.resolveReward(sin, mode, outcome);
         const awarded = { sin, mode, outcome, sinValue: null, currencies: {}, mark: null };
 
+        // ---------- ПОРОГ ГОЛОДА: ПЛАТЯТ ЛИ ЗА ЭТОТ ЗАХОД ----------
+        // Замер ОБЯЗАН стоять здесь, до sinFill: выход закрывает шкалу, и
+        // любая проверка после него увидит полную сотню и решит, что червь сыт.
+        // Единственная причина, по которой эти две строки нельзя переставить
+        // местами с блоком ниже.
+        const pays = this.sinPays(sin);
+        awarded.pays = pays;
+
         if (reward.sinFill === 'full') {
             GameState.setSinValue(sin, GameState.maxValue(sin));
         } else if (typeof reward.sinFill === 'number') {
@@ -92,7 +100,7 @@ const LocalBackend = {
 
         const reason = sin + '.' + mode + '.' + outcome;
 
-        if (reward.currencies) {
+        if (reward.currencies && pays) {
             Object.keys(reward.currencies).forEach(key => {
                 this.award(awarded, key, reward.currencies[key], reason, requestId);
             });
@@ -101,7 +109,7 @@ const LocalBackend = {
         // ---------- ЗОЛОТО С УБЫВАЮЩЕЙ ДОХОДНОСТЬЮ ----------
         // Считается по суточному счётчику ТАКИХ ЖЕ исходов. Счётчик
         // увеличивается ниже, поэтому текущая победа — следующая по номеру.
-        if (reward.goldBase) {
+        if (reward.goldBase && pays) {
             const already = GameState.counter(reason);
             const share = this.goldShare(already + 1);
             const gold = Math.round(reward.goldBase * share);
@@ -118,7 +126,9 @@ const LocalBackend = {
         if (reward.byQuality) {
             const dish = this.dishQuality(request.meta);
             awarded.dish = dish;
-            if (dish.shards) this.award(awarded, 'glut_shard', dish.shards, reason + '.dish', requestId);
+            // Кучка появится в любом случае — червя ведь покормили; а вот
+            // осколки идут по общему правилу порога (сытому не платят).
+            if (dish.shards && pays) this.award(awarded, 'glut_shard', dish.shards, reason + '.dish', requestId);
             GameState.data.digestion.poop_size = dish.poop;
         }
 
@@ -127,7 +137,7 @@ const LocalBackend = {
         // секций шкалы заполнено), а сколько за это дать, решает эта запись.
         // Число из meta берётся как множитель, а не как готовая награда:
         // иначе мини-игра снова начисляла бы себе сама (инвариант 2).
-        if (reward.perMeta && reward.perMeta.currency) {
+        if (reward.perMeta && reward.perMeta.currency && pays) {
             const raw = (request.meta || {})[reward.perMeta.field];
             const n = Math.max(0, Math.floor(Number(raw) || 0));
             const capped = reward.perMeta.max ? Math.min(n, reward.perMeta.max) : n;
@@ -155,7 +165,7 @@ const LocalBackend = {
         // поражения за неделю тоже должны сложиться в осколок.
         if (reward.everyN && reward.everyN.n > 0) {
             const total = GameState.bumpTotal(reward.everyN.counter);
-            if (total % reward.everyN.n === 0) {
+            if (pays && total % reward.everyN.n === 0) {
                 Object.keys(reward.everyN.currencies || {}).forEach(key => {
                     this.award(awarded, key, reward.everyN.currencies[key], reason + '.every' + reward.everyN.n, requestId);
                 });
@@ -876,11 +886,11 @@ const LocalBackend = {
         return delta;
     },
 
-    // Доля выплаты по номеру исхода за сутки. Таблица лестниц теперь не
-    // одна: золото режется по ECONOMY.goldReturns, поцелуи тщеславия — по
-    // своей, более крутой (ECONOMY.crowdReturns, «публика устаёт»). Правило
-    // одно и то же, поэтому и код один: имя таблицы приходит из конфига
-    // награды, а не зашито здесь.
+    // Доля выплаты по номеру исхода за сутки. Осталась только у золота
+    // (ECONOMY.goldReturns): у тщеславия такая же лестница была и была
+    // убрана — она резала заработанное, а её место занял порог голода
+    // (sinPays ниже). Имя таблицы по-прежнему приходит из конфига награды,
+    // а не зашито здесь: механизм общий, просто пользователь у него один.
     returnsShare(tableKey, n) {
         const table = ECONOMY[tableKey];
         const tiers = (table && table.tiers) || [];
@@ -1397,6 +1407,10 @@ const LocalBackend = {
             runMs: cfg.runMs || 20000,
             kissBag: Object.assign({ of: 4, kisses: 1 }, cfg.kissBag || {}),
             maxTargets: cfg.maxTargets || 5,
+            // Платят ли за этот выход. Решает не мини-игра — она только
+            // спрашивает: при сытом черве поцелуйных зон не бывает вовсе,
+            // и правило видно глазом, а не выводится из пустого кошелька.
+            pays: this.sinPays('pride'),
             streak: Object.assign({ perHit: 1, needForKiss: 1,
                                     breakOnMiss: true, breakOnMissclick: true },
                                   cfg.streak || {}),
@@ -1409,31 +1423,33 @@ const LocalBackend = {
         };
     },
 
-    // Сколько выходов за сутки уже оплачено полностью и какая доля светит
-    // следующему. Нужно экрану дорожки: усталость публики иначе видна только
-    // по уменьшившемуся числу поцелуев, то есть уже задним числом.
-    prideShare() {
-        const reason = 'pride.parade.win';
-        return this.returnsShare('crowdReturns', GameState.counter(reason) + 1);
+    // ---------- ПОРОГ ГОЛОДА ----------
+    // Платит ли грех за заход прямо сейчас. Правило одно на всю игру:
+    // валюту и золото выдают, только пока шкала опустилась до payAt или ниже
+    // (ECONOMY.sins.<грех>.payAt). У греха без этого поля правило не заведено —
+    // он платит всегда, как раньше.
+    //
+    // Смысл — в замене убывающей доходности, которая резала ЗАРАБОТАННОЕ.
+    // Здесь ничего не режется: перешёл порог — получи всё до последней монеты,
+    // не перешёл — сыграй сколько хочешь, но кошелёк не тронется.
+    sinPays(sinKey) {
+        const cfg = (ECONOMY.sins && ECONOMY.sins[sinKey]) || {};
+        if (cfg.payAt == null) return true;
+        return GameState.sinValue(sinKey) <= cfg.payAt;
     },
 
-    // Вся суточная лестница разом: сколько выходов уже сделано и по какой
-    // доле платит каждый следующий. Костюмерная рисует по этому ряд точек —
-    // усталость публики иначе замечается только по обрезанной награде, и
-    // читается она тогда как баг, а не как правило (так и вышло в живой
-    // игре: собрал семь, получил четыре, и объяснить это было нечем).
-    prideDay() {
-        const done = GameState.counter('pride.parade.win');
-        const tiers = (ECONOMY.crowdReturns && ECONOMY.crowdReturns.tiers) || [];
-        // Разворачиваем лестницу в список выходов: по одному на каждый
-        // оплачиваемый выход плюс один «хвост» на всё, что дальше.
-        const seats = [];
-        let n = 0;
-        tiers.forEach(t => {
-            if (t.upTo === null) { seats.push({ share: t.share, tail: true }); return; }
-            while (n < t.upTo) { seats.push({ share: t.share, tail: false }); n++; }
-        });
-        return { done, seats, next: this.returnsShare('crowdReturns', done + 1) };
+    // Всё, что нужно экрану, чтобы показать это правило без единого слова:
+    // где сейчас шкала, где порог и сколько ЧАСОВ до него осталось.
+    // Часы считаются из drainHours — той же скорости падения, что и шкала,
+    // так что второе место, где эта скорость записана, не появляется.
+    sinPayInfo(sinKey) {
+        const cfg = (ECONOMY.sins && ECONOMY.sins[sinKey]) || {};
+        const max = GameState.maxValue(sinKey);
+        const value = GameState.sinValue(sinKey);
+        if (cfg.payAt == null) return { pays: true, value, max, threshold: null, hoursLeft: 0 };
+        const perHour = cfg.drainHours ? max / cfg.drainHours : 0;
+        const left = perHour > 0 ? Math.max(0, (value - cfg.payAt) / perHour) : 0;
+        return { pays: value <= cfg.payAt, value, max, threshold: cfg.payAt, hoursLeft: left };
     },
 
     // Выдать валюту напрямую. Пока это только debug-режим: настоящие

@@ -102,7 +102,7 @@ const GameState = {
         };
         Object.keys(ECONOMY.sins).forEach(key => {
             state.sins[key] = {
-                value: ECONOMY.sins[key].max,
+                value: this.startValue(key),
                 updated_at: now,
                 // Множитель, а не готовая скорость. Скорость берётся из
                 // конфига и домножается на это число, поэтому правка баланса
@@ -289,7 +289,7 @@ const GameState = {
                 // Новый грех в конфиге — начинаем его с полной шкалы, а не с
                 // нуля: иначе добавление греха выглядит как наказание.
                 d.sins[key] = {
-                    value: this.maxValue(key),
+                    value: this.startValue(key),
                     updated_at: now,
                     decay_mult: 1,
                     max_bonus: 0
@@ -442,6 +442,21 @@ const GameState = {
     // ---------- ЗАПИСЬ ----------
     // Дёргается только из Backend: правила начисления живут там, а не здесь
     // и тем более не в мини-играх.
+    // ---------- С ЧЕГО ГРЕХ НАЧИНАЕТСЯ ----------
+    // Полная шкала — не всегда правильное начало. У греха с порогом выплаты
+    // (ECONOMY.sins.<грех>.payAt) полная шкала означала бы, что за ПЕРВЫЙ в
+    // жизни заход игроку не заплатят и ждать придётся полсуток — ровно в тот
+    // момент, когда он решает, интересна ли ему игра вообще
+    // (docs/plan/15-progression.md, §4: купить осязаемое надо сразу).
+    //
+    // Поэтому такой грех начинается РОВНО НА ПОРОГЕ: первый заход оплачен, а
+    // после него шкала закрывается и правило показывает себя само — второй
+    // заход подряд уже не платит, и видно, почему.
+    startValue(sinKey) {
+        const cfg = (ECONOMY.sins && ECONOMY.sins[sinKey]) || {};
+        return cfg.payAt != null ? cfg.payAt : this.maxValue(sinKey);
+    },
+
     setSinValue(sinKey, value) {
         const sin = this.data.sins[sinKey];
         if (!sin) return;
