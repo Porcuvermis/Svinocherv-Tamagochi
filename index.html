@@ -261,7 +261,14 @@
             </div>
 
             <div class="machine-container" id="machine-container">
-                <svg class="machine-svg" id="machine-svg" viewBox="0 0 350 620" preserveAspectRatio="xMidYMid meet">
+                <!-- viewBox начинается с -14, а не с нуля, и это не опечатка: корпус
+                     нарисован в 25..297 (справа торчит рычаг), его середина —
+                     161, а середина холста 0..350 — 175. Автомат из-за этого
+                     стоял заметно левее центра экрана. Сдвинуто окно, а не
+                     сами координаты: перерисовывать полсотни узлов ради
+                     четырнадцати единиц незачем. Проценты накладок в
+                     greed.css считаются от ЭТОГО начала: (x + 14) / 350. -->
+                <svg class="machine-svg" id="machine-svg" viewBox="-14 0 350 620" preserveAspectRatio="xMidYMid meet">
                     <defs>
                         <linearGradient id="cabinetBodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                             <stop offset="0%" stop-color="#611818"/>
@@ -338,27 +345,17 @@
                     <rect x="25" y="95" width="270" height="355" rx="22" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="6"/>
                     <rect x="32" y="102" width="256" height="341" rx="16" fill="none" stroke="url(#goldGradSoft)" stroke-width="1.5" opacity="0.5"/>
 
-                    <!-- левый пилястр -->
-                    <g opacity="0.9">
-                        <rect x="29" y="104" width="24" height="336" fill="#210505"/>
-                        <line x1="33" y1="106" x2="33" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="39" y1="106" x2="39" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="45" y1="106" x2="45" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="51" y1="106" x2="51" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
-                        <rect x="27" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                        <rect x="27" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                    </g>
-
-                    <!-- правый пилястр -->
-                    <g opacity="0.9">
-                        <rect x="267" y="104" width="24" height="336" fill="#210505"/>
-                        <line x1="271" y1="106" x2="271" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="277" y1="106" x2="277" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="283" y1="106" x2="283" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="289" y1="106" x2="289" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
-                        <rect x="265" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                        <rect x="265" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                    </g>
+                    <!-- НИША ПОД КОЛБУ ЗАРЯДА.
+                         Раньше по краям корпуса стояли два одинаковых
+                         пилястра, и в левом лежала шкала алчности. Читалось
+                         это плохо: справа получалась такая же колба, только
+                         вечно пустая, а слева шкала налезала на полоски
+                         пилястра. Пилястры убраны оба, слева — честная ниша
+                         под стеклянную колбу (сама колба в greed.css). -->
+                    <rect x="28" y="106" width="19" height="336" rx="9.5" fill="#0a0505" stroke="url(#goldGrad)" stroke-width="2"/>
+                    <!-- Ниша узкая не от бедности: справа от неё сразу
+                         начинается чёрная рамка окна барабанов (x=48), и
+                         широкая колба налезала на неё. -->
 
                     <!-- маркиза (вывеска) -->
                     <rect x="45" y="18" width="230" height="72" rx="36" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="5"/>
@@ -405,10 +402,19 @@
                          монета, которую автомат забирает: она лежит у щели и
                          на каждом рывке рычага уходит внутрь (анимация в
                          greed.css, .slot-price.feeding). -->
-                    <rect x="250" y="326" width="42" height="70" rx="8" fill="#141414" stroke="url(#goldGrad)" stroke-width="2.5"/>
-                    <rect x="256" y="332" width="30" height="58" rx="5" fill="none" stroke="url(#goldGradSoft)" stroke-width="1" opacity="0.5"/>
+                    <rect x="250" y="326" width="42" height="48" rx="8" fill="#141414" stroke="url(#goldGrad)" stroke-width="2.5"/>
+                    <rect x="256" y="332" width="30" height="36" rx="5" fill="none" stroke="#a97a1e" stroke-width="1" opacity="0.5"/>
                     <!-- сама щель -->
-                    <rect x="262" y="338" width="18" height="6" rx="3" fill="#000000" stroke="url(#chromeGrad)" stroke-width="1.5"/>
+                    <rect x="262" y="340" width="18" height="6" rx="3" fill="#000000" stroke="url(#chromeGrad)" stroke-width="1.5"/>
+                    <!-- лоток возврата под щелью: приёмник без него читался
+                         просто тёмной коробкой -->
+                    <rect x="260" y="356" width="22" height="6" rx="3" fill="#0a0a0a" stroke="#a97a1e" stroke-width="0.8" opacity="0.7"/>
+
+                    <!-- ПЛАШКА КОШЕЛЬКА — прямо под монетоприёмником: монета,
+                         которая уходит в щель, вылетает из этой самой кучки.
+                         Раньше счёт лежал в широком лотке внизу, и связь
+                         «мои монеты → щель» ниоткуда не читалась. -->
+                    <rect x="250" y="380" width="42" height="44" rx="7" fill="#0b0b0b" stroke="url(#goldGrad)" stroke-width="2"/>
 
                     <!-- крепление рычага -->
                     <ellipse cx="282" cy="268" rx="14" ry="18" fill="url(#chromeGrad)" stroke="#1a1a1a" stroke-width="2"/>
@@ -441,12 +447,15 @@
                      надо там же, где её наливают. -->
                 <div class="greed-charge" id="greed-charge"><i></i></div>
 
-                <!-- ЛОТОК ДЛЯ МОНЕТ = кошелёк. Сколько золота у игрока, видно
-                     на самом автомате: он его и забирает. -->
+                <!-- КОШЕЛЁК — на плашке под монетоприёмником. Оттуда же
+                     вылетает монета ставки: видно, что автомат берёт монеты
+                     ИЗ ЭТОЙ кучки, а не из ниоткуда. -->
                 <div class="coin-tray" id="coin-tray"><span>🪙</span><b id="slot-gold">0</b></div>
 
-                <!-- ЦЕНА КРУТКИ у монетоприёмника, рядом с рычагом. -->
-                <div class="slot-price" id="slot-price"><span>🪙</span><b id="slot-cost">1</b></div>
+                <!-- Монета ставки. Живёт отдельным узлом, потому что летит:
+                     поднимается от кучки к щели и уходит в неё (greed.css,
+                     .coin-feed.go). -->
+                <div class="coin-feed" id="coin-feed"><span>🪙</span><b id="slot-cost"></b></div>
 
                 <div class="lever-trigger-zone" id="lever-trigger"></div>
 

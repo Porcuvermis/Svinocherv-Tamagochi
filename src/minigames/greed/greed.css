@@ -178,12 +178,12 @@
 
 /* ============ ОКНО БАРАБАНОВ ============ */
 /* Все проценты ниже — от контейнера, а он повторяет viewBox корпуса
-   (350×620). Пересчитывать их надо КАЖДЫЙ раз, когда меняется высота
-   viewBox: числа тут не «на глаз», а координаты нарисованных в SVG окон,
-   поделённые на размер холста. */
+   (350×620, начало по X — минус 14). Пересчитывать их надо КАЖДЫЙ раз,
+   когда меняется viewBox: числа тут не «на глаз», а координаты нарисованных
+   в SVG окон: left = (x + 14) / 350, top = y / 620. */
 .reels-overlay {
     position: absolute;
-    left: 16.571%;
+    left: 20.571%;
     top: 25.484%;
     width: 58.286%;
     height: 23.871%;
@@ -441,7 +441,7 @@
    иначе они разъедутся с балансом при первой же правке выплат. */
 .pay-table {
     position: absolute;
-    left: 16.571%;
+    left: 20.571%;
     top: 52.58%;
     width: 53.7%;
     height: 11.29%;
@@ -485,18 +485,32 @@
     color: #f7d465;
 }
 
-/* ================= ЗАРЯД: ШКАЛА АЛЧНОСТИ ================= */
-/* Стеклянная колба в левом пилястре корпуса. Наливается КАЖДОЙ круткой —
-   это и есть главное правило греха, показанное движением, а не цифрой. */
+/* ================= ЗАРЯД: КОЛБА АЛЧНОСТИ ================= */
+/* Стеклянная колба в нише слева (ниша нарисована в SVG). Наливается КАЖДОЙ
+   круткой — это главное правило греха, показанное движением.
+
+   Почему именно колба, а не полоска: полоска — это интерфейс, а в игре без
+   слов интерфейса быть не должно, всё говорят предметы. Стекло делают три
+   вещи: тёмное нутро с внутренней тенью, продольный блик и мениск на
+   поверхности жидкости. */
 .greed-charge {
     position: absolute;
-    left: 8.9%;
-    top: 18.55%;
-    width: 5.7%;
-    height: 48.7%;
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(201, 147, 44, 0.55);
-    border-radius: 5px;
+    left: 12.857%;
+    top: 17.74%;
+    width: 4%;
+    height: 52.9%;
+    border-radius: 999px;
+    /* Пустая часть колбы — тёмное СТЕКЛО, а не чернота: у чёрной трубки не
+       видно ни стенок, ни того, что она вообще стеклянная. */
+    background:
+        linear-gradient(90deg,
+            rgba(255, 240, 190, 0.16) 0%,
+            rgba(40, 26, 8, 0.85) 34%,
+            rgba(28, 18, 6, 0.9) 62%,
+            rgba(255, 240, 190, 0.12) 100%);
+    box-shadow:
+        inset 0 0 6px rgba(0, 0, 0, 0.85),
+        inset 0 0 12px rgba(255, 200, 60, 0.12);
     overflow: hidden;
     display: flex;
     align-items: flex-end;
@@ -504,70 +518,115 @@
     pointer-events: none;
 }
 
+/* Сама жидкость. Скруглённый верх — мениск: ровный срез читается как
+   закрашенный прямоугольник, а не как налитое. */
 .greed-charge i {
+    position: relative;
     display: block;
     width: 100%;
     height: 0;
-    background: linear-gradient(180deg, #ffe680 0%, var(--mg-accent, #FFD400) 55%, #a97a1e 100%);
-    box-shadow: 0 0 8px rgba(255, 212, 0, 0.55);
-    transition: height 0.45s ease-out;
+    border-radius: 50% 50% 4px 4px / 9px 9px 4px 4px;
+    background: linear-gradient(180deg, #fff0a8 0%, var(--mg-accent, #FFD400) 40%, #b8860b 100%);
+    box-shadow:
+        0 0 10px rgba(255, 212, 0, 0.55),
+        inset 0 -6px 10px rgba(0, 0, 0, 0.35);
+    /* Наливается плавно и с оттяжкой в конце — как жидкость, а не как
+       полоска прогресса. */
+    transition: height 0.75s cubic-bezier(0.25, 0.9, 0.3, 1);
 }
 
-/* ================= КОШЕЛЁК И ЦЕНА ================= */
-/* Кошелёк лежит в лотке для монет: автомат их и забирает. Цена крутки —
-   у монетоприёмника рядом с рычагом. Оба показывают ЧИСЛО и значок. */
-.coin-tray,
-.slot-price {
+/* Блик на поверхности: тонкая светлая полоса у самого верха жидкости. */
+.greed-charge i::after {
+    content: '';
     position: absolute;
+    left: 12%;
+    right: 12%;
+    top: 1px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.75);
+    filter: blur(0.5px);
+}
+
+/* Продольный блик стекла — поверх жидкости, иначе колба выглядит трубкой из
+   картона. */
+.greed-charge::after {
+    content: '';
+    position: absolute;
+    left: 16%;
+    top: 3%;
+    width: 24%;
+    height: 94%;
+    border-radius: 999px;
+    background: linear-gradient(180deg,
+        rgba(255, 255, 255, 0.42) 0%,
+        rgba(255, 255, 255, 0.10) 45%,
+        rgba(255, 255, 255, 0.22) 100%);
+    pointer-events: none;
+}
+
+/* ================= КОШЕЛЁК И МОНЕТА СТАВКИ ================= */
+/* Кошелёк лежит на плашке ПОД МОНЕТОПРИЁМНИКОМ, а не в лотке внизу: монета
+   ставки вылетает из этой самой кучки и уходит в щель прямо над ней. Пока
+   счёт стоял внизу, связь «мои монеты → щель» ниоткуда не читалась. */
+.coin-tray,
+.coin-feed {
+    position: absolute;
+    left: 75.43%;
+    width: 12%;
+    z-index: 7;
+    pointer-events: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    z-index: 6;
-    pointer-events: none;
     font-family: system-ui, sans-serif;
     color: #f7d465;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 .coin-tray {
-    left: 20%;
-    top: 66.13%;
-    width: 51.4%;
-    height: 4.52%;
-    font-size: 13px;
+    top: 61.29%;
+    height: 7.1%;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 12px;
     font-weight: 800;
 }
 
-/* Монета лежит в монетоприёмнике — она же и ценник. Числа рядом с ней
-   быть не должно: монета одна, крутка одна, и «1» рядом с одной монетой
-   объясняет ровно ничего. */
-.slot-price {
-    left: 71.43%;
-    top: 52.58%;
-    width: 12%;
-    height: 11.29%;
-    flex-direction: column;
-    gap: 1px;
-    font-size: 11px;
-    font-weight: 700;
-}
+.coin-tray span { font-size: 12px; line-height: 1; }
 
-.slot-price span {
+/* Монета ставки. Стоит там же, где кучка, и на рывке рычага поднимается к
+   щели монетоприёмника и уходит в неё. Высота узла равна высоте плашки, и
+   на этом держится вся анимация: путь до щели — ровно два с небольшим её
+   роста, поэтому проценты, а не пиксели (автомат масштабируется целиком). */
+.coin-feed {
+    top: 61.29%;
+    height: 7.1%;
     font-size: 15px;
-    line-height: 1;
+    opacity: 0;
 }
 
-/* Рывок рычага — монета уходит в щель. Не украшение: это единственное место,
-   где видно, что крутка ЧЕГО-ТО стоит. */
-.slot-price.feeding span {
-    animation: coin-feed 0.5s cubic-bezier(0.4, 0, 0.9, 1);
+.coin-feed b {
+    font-size: 10px;
+    font-weight: 800;
+    margin-left: 2px;
 }
 
+.coin-feed.go {
+    animation: coin-feed 0.62s cubic-bezier(0.35, 0.05, 0.6, 1);
+}
+
+/* Путь считается в процентах ВЫСОТЫ САМОГО УЗЛА, а высота у него — высота
+   плашки кошелька (44 единицы холста). От середины плашки до щели
+   приёмника 59 единиц, то есть 134%. Пиксели тут не годятся: автомат
+   масштабируется целиком под окно. */
 @keyframes coin-feed {
-    0%   { transform: translateY(0) scaleY(1); opacity: 1; }
-    45%  { transform: translateY(-6px) scaleY(1); opacity: 1; }
-    100% { transform: translateY(10px) scaleY(0.2); opacity: 0; }
+    0%   { transform: translateY(0) scale(0.9);            opacity: 0; }
+    14%  { transform: translateY(-10%) scale(1);           opacity: 1; }
+    70%  { transform: translateY(-112%) scale(1);          opacity: 1; }
+    /* монета дошла до щели и уходит в неё: сплющивается по вертикали */
+    88%  { transform: translateY(-134%) scale(1.03, 0.4);  opacity: 1; }
+    100% { transform: translateY(-134%) scale(1.03, 0.05); opacity: 0; }
 }
 
 /* Пустой кошелёк: автомат дёргается, лоток вспыхивает красным. Ни окошка,

@@ -32,6 +32,7 @@ const GreedMinigame = {
     chargeEl: null,
     goldEl: null,
     costEl: null,
+    feedEl: null,
 
     // ---------- КАРТИНКИ СИМВОЛОВ ----------
     // Ключи приходят из конфига, а глифы живут здесь: конфиг — это ЧИСЛА
@@ -78,6 +79,7 @@ const GreedMinigame = {
         this.chargeEl = document.getElementById('greed-charge');
         this.goldEl = document.getElementById('slot-gold');
         this.costEl = document.getElementById('slot-cost');
+        this.feedEl = document.getElementById('coin-feed');
 
         this.reelWindows = [0, 1, 2].map(i => document.getElementById('reel-' + i));
         this.reelStrips = [0, 1, 2].map(i => document.getElementById('strip-' + i));
@@ -365,15 +367,15 @@ const GreedMinigame = {
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
     },
 
-    // Ставка уходит в монетоприёмник. Единственное место, где видно, что
-    // крутка чего-то стоит: число в лотке меняется молча и на него не смотрят.
+    // Ставка уходит в монетоприёмник: монета поднимается от кучки к щели и
+    // исчезает в ней. Единственное место, где видно, что крутка чего-то
+    // стоит: число в кошельке меняется молча, и на него не смотрят.
     feedCoin() {
-        const price = document.getElementById('slot-price');
-        if (!price) return;
-        price.classList.remove('feeding');
-        void price.getBoundingClientRect().width;
-        price.classList.add('feeding');
-        const t = setTimeout(() => price.classList.remove('feeding'), 520);
+        if (!this.feedEl) return;
+        this.feedEl.classList.remove('go');
+        void this.feedEl.getBoundingClientRect().width;
+        this.feedEl.classList.add('go');
+        const t = setTimeout(() => this.feedEl.classList.remove('go'), 700);
         this.spinTimers.push(t);
     },
 
