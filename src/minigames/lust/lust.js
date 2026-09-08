@@ -352,37 +352,34 @@ const LustMinigame = {
     },
 
     // ---------- ПЕРЕВОД КООРДИНАТ ----------
-    // Через getScreenCTM, а не делением на ширину: ванная вписана в рамку
-    // окна с ОБРЕЗКОЙ (slice), поэтому единицы svg и пиксели зависят от
-    // формы окна, а весь холст ещё и отмасштабирован (docs/traps.md).
-    fromScreen(x, y, node) {
-        const m = node.getScreenCTM();
-        if (!m) return { x: 0, y: 0 };
-        const pt = this.svgEl.createSVGPoint();
-        pt.x = x; pt.y = y;
-        const p = pt.matrixTransform(m.inverse());
-        return { x: p.x, y: p.y };
+    // Через SvgSpace (rect + viewBox), а не через getScreenCTM: вся игра
+    // лежит в контейнере с css-трансформацией, а учитывает ли CTM
+    // трансформацию ПРЕДКА — вопрос браузера. На айфоне вне Telegram масштаб
+    // холста был ровно единицей, и разницы не было; внутри Telegram он стал
+    // 0.85–0.9, и червь оказался больше ванны. Подробности — в
+    // src/core/svg-space.js.
+    //
+    // Камера подставляется ЧИСЛАМИ (см. camAt): холст → сцена это q = s·p + t,
+    // значит обратно p = (q − t)/s. Во время переезда камеры числа отстают от
+    // картинки на длину анимации — там ввод и не ловится.
+    toStage(e) { return SvgSpace.fromClient(this.svgEl, e.clientX, e.clientY); },
+
+    toScene(e) {
+        const q = this.toStage(e), c = this.cam;
+        if (!c) return q;
+        return { x: (q.x - c.tx) / c.s, y: (q.y - c.ty) / c.s };
     },
 
-    // Экран → координаты СЦЕНЫ (всё, что внутри камеры).
-    toScene(e) { return this.fromScreen(e.clientX, e.clientY, this.camEl); },
-    // Экран → координаты ХОЛСТА (передний план: предмет в руке).
-    toStage(e) { return this.fromScreen(e.clientX, e.clientY, this.svgEl); },
-
-    // Точка сцены → пиксели слоя червя. Камера подставляется ЧИСЛАМИ (см.
-    // setCamera), а холст → экран берётся у самого svg: он не анимируется, и
-    // его матрица всегда честная.
+    // Точка сцены → пиксели слоя червя (нетрансформированные, в них и задаётся
+    // его смещение). Масштаб холста в разности прямоугольников сокращается,
+    // поэтому ответ не зависит ни от какого CTM.
     sceneToHost(pt) {
-        const m = this.svgEl && this.svgEl.getScreenCTM();
         const host = this.wormHost, c = this.cam;
-        if (!m || !c || !host || !host.offsetParent) return { x: 0, y: 0 };
-        const r = host.offsetParent.getBoundingClientRect();
-        const k = (r.width / (host.offsetParent.clientWidth || r.width)) || 1;
-        const p = this.svgEl.createSVGPoint();
-        p.x = c.tx + c.s * pt.x;
-        p.y = c.ty + c.s * pt.y;
-        const s = p.matrixTransform(m);
-        return { x: (s.x - r.left) / k, y: (s.y - r.top) / k };
+        if (!this.svgEl || !c || !host || !host.offsetParent) return { x: 0, y: 0 };
+        return SvgSpace.toLocal(this.svgEl,
+                                c.tx + c.s * pt.x,
+                                c.ty + c.s * pt.y,
+                                host.offsetParent);
     },
 
     // ---------- ЧЕРВЬ ----------

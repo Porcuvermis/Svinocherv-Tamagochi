@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const harness = require('./harness');
 
 // ================= ПРОВЕРКА: КУХНЯ ЧРЕВОУГОДИЯ =================
 // Проходит весь цикл готовки так же, как игрок: тащит продукты пальцем,
@@ -11,7 +12,8 @@ const { chromium } = require('playwright');
 (async () => {
   const out = process.argv[2] || '/tmp/kitchen-';
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 2 }));
+  await harness.prepare(page);
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
@@ -23,19 +25,16 @@ const { chromium } = require('playwright');
   say('кладовая до: ' + JSON.stringify(before));
 
   // Координаты сцены → экранные (внутри камеры).
+  // Через SvgSpace и числа камеры, а не через getScreenCTM: прогон,
+  // считающий матрицей, промахнётся вместе с ней (см. tools/harness.js).
   const atScene = (x, y) => page.evaluate(([sx, sy]) => {
-    const svg = document.getElementById('kt-svg');
-    const p = svg.createSVGPoint(); p.x = sx; p.y = sy;
-    const r = p.matrixTransform(document.getElementById('kt-cam').getScreenCTM());
-    return { x: r.x, y: r.y };
+    const c = GluttonyMinigame.cam;
+    return SvgSpace.toClient(document.getElementById('kt-svg'),
+                             c.tx + c.s * sx, c.ty + c.s * sy);
   }, [x, y]);
   // Координаты стейджа → экранные (передний план).
-  const atStage = (x, y) => page.evaluate(([sx, sy]) => {
-    const svg = document.getElementById('kt-svg');
-    const p = svg.createSVGPoint(); p.x = sx; p.y = sy;
-    const r = p.matrixTransform(svg.getScreenCTM());
-    return { x: r.x, y: r.y };
-  }, [x, y]);
+  const atStage = (x, y) => page.evaluate(([sx, sy]) =>
+    SvgSpace.toClient(document.getElementById('kt-svg'), sx, sy), [x, y]);
 
   // Ждём, пока камера ДОЕДЕТ. Сравнивать атрибут бесполезно: его ставят один
   // раз, а двигает картинку CSS-переход — атрибут «замирает» сразу, и тест

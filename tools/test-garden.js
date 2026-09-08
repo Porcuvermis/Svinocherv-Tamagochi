@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const harness = require('./harness');
 
 // ============ ПРОВЕРКА: САД ЛЕНИ И ЕГО СТЫК С КУХНЕЙ ============
 // Сад и кухня — это ОДИН круг, а не две мини-игры:
@@ -18,7 +19,8 @@ const { chromium } = require('playwright');
 //     node tools/test-garden.js
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 2 }));
+  await harness.prepare(page);
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
@@ -161,11 +163,13 @@ const { chromium } = require('playwright');
 
   // Куда целиться пальцем: землю грядки берём из координат сцены, а не из
   // габаритов группы — значок над кустом уводит её центр в небо.
+  // Через SvgSpace и сдвиг камеры, а не через getScreenCTM: прогон,
+  // считающий матрицей, промахнётся вместе с ней и обвинит игру
+  // (см. tools/harness.js).
   const bedPoint = (i, dy) => page.evaluate(([i, dy]) => {
-    const svg = document.getElementById('gd-svg');
-    const p = svg.createSVGPoint();
-    p.x = GARDEN_ART.bedX(i); p.y = GARDEN_ART.SOIL_Y - 12;
-    const q = p.matrixTransform(document.getElementById('gd-cam').getScreenCTM());
+    const q = SvgSpace.toClient(document.getElementById('gd-svg'),
+                                GARDEN_ART.bedX(i) - (SlothMinigame.camX || 0),
+                                GARDEN_ART.SOIL_Y - 12);
     return { x: q.x, y: q.y + (dy || 0) };
   }, [i, dy || 0]);
   const toolPoint = (kind) => page.evaluate((kind) => {

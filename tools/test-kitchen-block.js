@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const harness = require('./harness');
 
 // ============ ПРОВЕРКА: ПИЩЕБЛОК — СТРАХОВКА ОТ ТУПИКА ============
 // Второй путь через кухню: не «наготовил из трёх типов», а «нечем кормить,
@@ -15,15 +16,17 @@ const { chromium } = require('playwright');
 //     node tools/test-kitchen-block.js
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 2 }));
+  await harness.prepare(page);
   const errors = []; page.on('pageerror', e => errors.push('ERR '+e.message));
   page.on('console', m => { if (m.type()==='error') errors.push('CON '+m.text()); });
   await page.goto('http://127.0.0.1:8777/index.html');
   await page.waitForTimeout(2300);
   const atScene = (x,y) => page.evaluate(([sx,sy]) => { const svg=document.getElementById('kt-svg');
-    const p=svg.createSVGPoint(); p.x=sx; p.y=sy; const r=p.matrixTransform(document.getElementById('kt-cam').getScreenCTM()); return {x:r.x,y:r.y}; }, [x,y]);
+    const c = GluttonyMinigame.cam;
+    return SvgSpace.toClient(svg, c.tx + c.s * sx, c.ty + c.s * sy); }, [x,y]);
   const atStage = (x,y) => page.evaluate(([sx,sy]) => { const svg=document.getElementById('kt-svg');
-    const p=svg.createSVGPoint(); p.x=sx; p.y=sy; const r=p.matrixTransform(svg.getScreenCTM()); return {x:r.x,y:r.y}; }, [x,y]);
+    return SvgSpace.toClient(svg, sx, sy); }, [x,y]);
   const waitCamera = async () => { let prev=''; for (let i=0;i<80;i++){ const now = await page.evaluate(()=>{const m=document.getElementById('kt-cam').getScreenCTM(); return [m.a,m.b,m.c,m.d,m.e,m.f].map(v=>v.toFixed(3)).join(',');}); const st=now===prev; prev=now; await page.waitForTimeout(60); if(st&&i>2)return; } };
   const dragPts = async (f,t,st) => { await page.mouse.move(f.x,f.y); await page.mouse.down();
     for(let i=1;i<=(st||12);i++){ await page.mouse.move(f.x+(t.x-f.x)*i/(st||12), f.y+(t.y-f.y)*i/(st||12)); await page.waitForTimeout(18);} await page.mouse.up(); };

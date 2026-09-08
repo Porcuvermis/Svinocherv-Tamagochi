@@ -10,12 +10,13 @@
 // Запуск (из корня, при поднятом python3 -m http.server 8777):
 //     NODE_PATH=/opt/node22/lib/node_modules node tools/test-lust.js /tmp/shot-
 const { chromium } = require('playwright');
+const harness = require('./harness');
 
 (async () => {
   const browser = await chromium.launch({
     executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 },
-                                       deviceScaleFactor: 2 });
+  const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 2 }));
+  await harness.prepare(page);
   const errs = [];
   page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errs.push('CONSOLE: ' + m.text()); });
@@ -31,13 +32,13 @@ const { chromium } = require('playwright');
   await page.evaluate(() => { GameState.setSinValue('lust', 0); LustMinigame.open(); });
   await page.waitForTimeout(600);
 
-  // Точка сцены → точка экрана. Тот же перевод, которым игра кладёт предметы.
+  // Точка сцены → точка экрана. Через SvgSpace и числа камеры, а НЕ через
+  // getScreenCTM: прогон, который сам считает матрицей, промахнётся вместе с
+  // ней и обвинит игру (см. tools/harness.js).
   const toScreen = (pt) => page.evaluate((p) => {
-    const m = document.getElementById('bt-cam').getScreenCTM();
-    const s = document.getElementById('bt-svg').createSVGPoint();
-    s.x = p.x; s.y = p.y;
-    const r = s.matrixTransform(m);
-    return { x: r.x, y: r.y };
+    const c = LustMinigame.cam;
+    return SvgSpace.toClient(document.getElementById('bt-svg'),
+                             c.tx + c.s * p.x, c.ty + c.s * p.y);
   }, pt);
   const phase = () => page.evaluate(() => LustMinigame.phase);
   const A = await page.evaluate(() => BATH_ART.slots());

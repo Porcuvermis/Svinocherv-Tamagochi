@@ -296,6 +296,10 @@ const GluttonyMinigame = {
         const s = Math.min(390 / f.w, 844 / f.h);
         const tx = 195 - s * (f.x + f.w / 2);
         const ty = 422 - s * (f.y + f.h / 2);
+        // Числа камеры запоминаются: по ним считается перевод координат
+        // (см. toScene), а не по матрице узла — матрица во время переезда
+        // интерполируется, и вычитать из неё что-либо бессмысленно.
+        this.cam = { s, tx, ty };
         if (instant) this.camEl.style.transition = 'none';
         this.camEl.setAttribute('transform', `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})`);
         if (instant) {
@@ -304,24 +308,17 @@ const GluttonyMinigame = {
         }
     },
 
-    // Экранные координаты → координаты СЦЕНЫ (для того, что внутри камеры).
-    toScene(e) {
-        const pt = this.svgEl.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const m = this.camEl.getScreenCTM();
-        if (!m) return { x: 0, y: 0 };
-        const p = pt.matrixTransform(m.inverse());
-        return { x: p.x, y: p.y };
-    },
+    // ---------- ПЕРЕВОД КООРДИНАТ ----------
+    // Через SvgSpace (rect + viewBox), а не через getScreenCTM: вся игра
+    // лежит в контейнере с css-трансформацией, а учитывает ли CTM
+    // трансформацию ПРЕДКА — вопрос браузера (src/core/svg-space.js).
+    // Камера подставляется числами: q = s·p + t, обратно p = (q − t)/s.
+    toStage(e) { return SvgSpace.fromClient(this.svgEl, e.clientX, e.clientY); },
 
-    // Экранные координаты → координаты СТЕЙДЖА (для переднего плана).
-    toStage(e) {
-        const pt = this.svgEl.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const m = this.svgEl.getScreenCTM();
-        if (!m) return { x: 0, y: 0 };
-        const p = pt.matrixTransform(m.inverse());
-        return { x: p.x, y: p.y };
+    toScene(e) {
+        const q = this.toStage(e), c = this.cam;
+        if (!c) return q;
+        return { x: (q.x - c.tx) / c.s, y: (q.y - c.ty) / c.s };
     },
 
     // ================= УКАЗАТЕЛЬ =================
@@ -408,32 +405,22 @@ const GluttonyMinigame = {
 
     // Указатель переехал в передний план, поэтому переводить надо в другую
     // сторону: точки сцены (полки, кастрюля, кран) — в координаты стейджа.
+    // Это чистая арифметика камеры, без матриц: q = s·p + t.
     sceneToStage(pt) {
-        const m = this.camEl.getScreenCTM();
-        const sm = this.svgEl.getScreenCTM();
-        if (!m || !sm) return pt;
-        const p = this.svgEl.createSVGPoint();
-        p.x = pt.x; p.y = pt.y;
-        const screen = p.matrixTransform(m);
-        const back = this.svgEl.createSVGPoint();
-        back.x = screen.x; back.y = screen.y;
-        return back.matrixTransform(sm.inverse());
+        const c = this.cam;
+        if (!c) return pt;
+        return { x: c.tx + c.s * pt.x, y: c.ty + c.s * pt.y };
     },
 
-    // Точка стейджа → CSS-пиксели слоя персонажа. Мерить через getScreenCTM
-    // обязательно: кухня вписана в рамку окна с обрезкой (slice), поэтому
-    // единицы svg и пиксели слоя не совпадают и зависят от формы окна. Плюс
-    // весь холст ещё и отмасштабирован (--stage-scale) — на это делится k.
+    // Точка стейджа → CSS-пиксели слоя персонажа. Кухня вписана в рамку окна
+    // с ОБРЕЗКОЙ (slice), поэтому единицы svg и пиксели слоя не совпадают и
+    // зависят от формы окна; плюс весь холст отмасштабирован. И то и другое
+    // считает SvgSpace: масштаб холста в разности прямоугольников
+    // сокращается, поэтому ответ не зависит ни от какого CTM.
     stageToWorm(pt) {
         const host = this.wormStageEl;
-        const sm = this.svgEl && this.svgEl.getScreenCTM();
-        if (!host || !sm) return pt;
-        const r = host.getBoundingClientRect();
-        const k = (r.width / (host.clientWidth || r.width)) || 1;
-        const p = this.svgEl.createSVGPoint();
-        p.x = pt.x; p.y = pt.y;
-        const screen = p.matrixTransform(sm);
-        return { x: (screen.x - r.left) / k, y: (screen.y - r.top) / k };
+        if (!host || !this.svgEl) return pt;
+        return SvgSpace.toLocal(this.svgEl, pt.x, pt.y, host);
     },
 
     sceneToWorm(pt) { return this.stageToWorm(this.sceneToStage(pt)); },

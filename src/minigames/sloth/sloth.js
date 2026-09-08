@@ -146,16 +146,18 @@ const SlothMinigame = {
     },
 
     // ---------- КООРДИНАТЫ ----------
-    toScene(e) {
-        const p = this.svgEl.createSVGPoint();
-        p.x = e.clientX; p.y = e.clientY;
-        return p.matrixTransform(this.camEl.getScreenCTM().inverse());
-    },
+    // Через SvgSpace, а не через getScreenCTM: вся игра лежит в контейнере с
+    // css-трансформацией, а учитывает ли CTM трансформацию ПРЕДКА — вопрос
+    // браузера (src/core/svg-space.js). Внутри Telegram, где масштаб холста
+    // перестал быть единицей, лопата от этого повисала в стороне от пальца.
+    //
+    // Камера сада — только сдвиг вбок на camX (см. setCam), поэтому обратный
+    // перевод — одно сложение, без матриц.
+    toStage(e) { return SvgSpace.fromClient(this.svgEl, e.clientX, e.clientY); },
 
-    toStage(e) {
-        const p = this.svgEl.createSVGPoint();
-        p.x = e.clientX; p.y = e.clientY;
-        return p.matrixTransform(this.svgEl.getScreenCTM().inverse());
+    toScene(e) {
+        const p = this.toStage(e);
+        return { x: p.x + (this.camX || 0), y: p.y };
     },
 
     setCam(x) {

@@ -497,32 +497,30 @@ const PrideMinigame = {
         if (!this.wormHandle || !this.wormHost || !this.svgEl) return;
         const parent = this.wormHost.offsetParent || this.wormHost.parentElement;
         if (!parent) return;
-        const m = this.svgEl.getScreenCTM();
-        if (!m) return;
-
-        // Единица сцены в пикселях РАСКЛАДКИ. Делить на масштаб родителя
-        // обязательно: весь холст игры отмасштабирован stage.js, и без этого
-        // деления червь получил бы масштаб дважды.
-        const r = parent.getBoundingClientRect();
-        const zoom = (r.width / (parent.clientWidth || r.width)) || 1;
         // Видимый кусок холста — в единицах сцены. Считается здесь, потому
         // что здесь уже дёрнута раскладка: второй раз за кадр её трогать
         // нельзя (docs/traps.md).
+        const r = parent.getBoundingClientRect();
         const tl = this.fromScreen(r.left, r.top);
         const br = this.fromScreen(r.right, r.bottom);
         this.safe = {
             x0: Math.max(0, tl.x), y0: Math.max(0, tl.y),
             x1: Math.min(PRIDE_ART.W, br.x), y1: Math.min(PRIDE_ART.H, br.y)
         };
-        const p0 = this.toScreen(0, 0, m), p1 = this.toScreen(100, 0, m);
-        const k = ((p1.x - p0.x) / 100) / zoom || 1;
+        // Единица сцены в пикселях РАСКЛАДКИ, то есть без масштаба холста:
+        // им отмасштабирован и сам слой червя, и учесть его дважды значит
+        // раздуть персонажа (в Telegram, где масштаб перестал быть единицей,
+        // это и вылезало бы). SvgSpace считает обе величины сразу и без
+        // getScreenCTM — см. src/core/svg-space.js.
+        const p0 = SvgSpace.toLocal(this.svgEl, 0, 0, parent);
+        const k = SvgSpace.unit(this.svgEl) || 1;
         // Червь крупнее сцены на WORM_SCALE, поэтому внутри его холста одна
         // единица длиннее единицы сцены ровно во столько же раз — и все
         // сдвиги, которые считаются в единицах сцены, надо делить на это
         // число, прежде чем отдавать рендереру.
         const S = PRIDE_VIEW.WORM_SCALE;
         this.wormHost.style.transform =
-            `translate(${((p0.x - r.left) / zoom).toFixed(1)}px, ${((p0.y - r.top) / zoom).toFixed(1)}px) scale(${(k * S).toFixed(4)})`;
+            `translate(${p0.x.toFixed(1)}px, ${p0.y.toFixed(1)}px) scale(${(k * S).toFixed(4)})`;
 
         const body = this.wormHandle.svgRoot.querySelector('.worm-root');
         if (!body) return;
@@ -547,21 +545,12 @@ const PrideMinigame = {
     },
 
     // ---------- ПЕРЕВОД КООРДИНАТ ----------
-    // Через getScreenCTM, а не делением на ширину: холст вписан в окно с
-    // обрезкой, и единицы сцены не равны пикселям (docs/traps.md).
+    // Через SvgSpace, а не через getScreenCTM: холст вписан в окно с
+    // обрезкой, единицы сцены не равны пикселям (docs/traps.md), и вдобавок
+    // вся игра лежит в контейнере с css-трансформацией — учитывает ли её CTM,
+    // зависит от браузера (src/core/svg-space.js).
     fromScreen(x, y) {
-        const m = this.svgEl.getScreenCTM();
-        if (!m) return { x: 0, y: 0 };
-        const pt = this.svgEl.createSVGPoint();
-        pt.x = x; pt.y = y;
-        const p = pt.matrixTransform(m.inverse());
-        return { x: p.x, y: p.y };
-    },
-
-    toScreen(x, y, m) {
-        const pt = this.svgEl.createSVGPoint();
-        pt.x = x; pt.y = y;
-        return pt.matrixTransform(m || this.svgEl.getScreenCTM());
+        return SvgSpace.fromClient(this.svgEl, x, y);
     },
 
     svgNode(name) {
