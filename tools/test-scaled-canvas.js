@@ -101,6 +101,37 @@ const { chromium } = require('playwright');
   const gdScene = await probe('SlothMinigame', { layer: 'camEl', method: 'toScene', x: 140, y: 320 });
   check(near(gdStage), 'сад: палец → холст (' + gdStage.got.x.toFixed(1) + ',' + gdStage.got.y.toFixed(1) + ')');
   check(near(gdScene), 'сад: палец → сцена (' + gdScene.got.x.toFixed(1) + ',' + gdScene.got.y.toFixed(1) + ')');
+  // ---------- ПРЕДМЕТ В РУКЕ ДЕРЖИТСЯ ПОД ПАЛЬЦЕМ ----------
+  // Главная жалоба с телефона: «перетаскиваемые объекты не под пальцем».
+  // Проверяется буквально: берём инструмент с полки, ведём в известную
+  // точку и меряем, где он оказался НА ЭКРАНЕ.
+  const tool = await page.evaluate(() => {
+    const g = document.querySelector('#gd-fg-tools .gd-tool[data-kind="spade"]')
+           || document.querySelector('#gd-fg-tools .gd-tool');
+    if (!g) return null;
+    const r = g.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  check(!!tool, 'в саду нашёлся инструмент на полке');
+  if (tool) {
+    await page.mouse.move(tool.x, tool.y);
+    await page.mouse.down();
+    const to = { x: 200, y: 380 };
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await page.waitForTimeout(120);
+    const held = await page.evaluate(() => {
+      const g = document.querySelector('.gd-tool.gd-dragging');
+      if (!g) return null;
+      const r = g.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    const off = held ? Math.hypot(held.x - to.x, held.y - to.y) : 999;
+    check(held && off < 30,
+          'сад: инструмент держится под пальцем (промах ' + off.toFixed(0) + ' точек)');
+  }
+
   await page.evaluate(() => SlothMinigame.close());
 
   // ---------- ПОХОТЬ: ВАННАЯ ----------

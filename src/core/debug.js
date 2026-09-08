@@ -62,6 +62,7 @@ const DebugState = {
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
+            <button data-act="fresh">Обновить</button>
             <span id="debug-fps">— fps</span>
         `;
         this.panel.addEventListener('click', (e) => {
@@ -140,6 +141,37 @@ const DebugState = {
     },
 
     run(act) {
+        // ---------- ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ СБОРКИ ----------
+        // Нужно ровно там, где нет ни адресной строки, ни devtools: внутри
+        // Telegram. Клиент кеширует страницу мини-приложения сам, поверх
+        // этого лежит наш service worker, и «закрыть и открыть заново» может
+        // не помочь ни разу — игрок видит вчерашний код и чинит уже
+        // починенное.
+        //
+        // Поэтому сносится ВСЁ: регистрации service worker, все кеши, а
+        // сама страница перезагружается с новым параметром в адресе —
+        // иначе её отдаст http-кеш клиента. Прогресс не трогается: он в
+        // localStorage, а не в кешах.
+        //
+        // Идёт до проверки состояния: обновляться нужно и тогда, когда игра
+        // не поднялась.
+        if (act === 'fresh') {
+            const reload = () => {
+                const url = location.pathname + '?fresh=' + Date.now() + location.hash;
+                location.replace(url);
+            };
+            const kill = navigator.serviceWorker
+                ? navigator.serviceWorker.getRegistrations()
+                    .then(regs => Promise.all(regs.map(r => r.unregister())))
+                    .catch(() => {})
+                : Promise.resolve();
+            kill.then(() => (window.caches ? caches.keys() : []))
+                .then(keys => Promise.all(Array.from(keys || []).map(k => caches.delete(k))))
+                .catch(() => {})
+                .then(reload, reload);
+            return;
+        }
+
         if (!GameState.data) return;
 
         // Жетоны гнева. Честный источник — победы в бою (осколок за победу,
