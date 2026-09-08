@@ -1424,6 +1424,137 @@ const LocalBackend = {
         };
     },
 
+    // ---------- АЛЧНОСТЬ: ОДНА КРУТКА АВТОМАТА ----------
+    // Автомат — единственный грех, который не платит игроку, а берёт с него,
+    // и единственная мини-игра, которая ходит сюда не один раз в конце, а на
+    // каждое действие: крутка — это транзакция (списали ставку, разыграли
+    // барабаны, выплатили), а не «исход захода».
+    //
+    // Мини-игра НЕ решает ничего (инвариант 2): она просит крутку и получает
+    // готовые три символа с выплатой. Ни весов, ни таблицы выплат, ни
+    // гарантии на её стороне нет — иначе автомат можно было бы уговорить из
+    // консоли, а на сервере это место станет ровно тем же вызовом.
+    //
+    // ---------- ПОЧЕМУ ВЫПЛАТА НЕ ИДЁТ ЧЕРЕЗ ПОРОГ ГОЛОДА ----------
+    // Порог (sinPays) не даёт СЫТОМУ грехy платить валютой, и для шести
+    // грехов это правильно: там валюта — награда за заход. Здесь выплата —
+    // возврат части СВОИХ ЖЕ денег, отданных за крутку. Прогони её через
+    // порог — и у сытого червя возврат 75% превращается в 0%, то есть в
+    // прямой отъём монет за нажатие рычага. Поэтому порог тут не при чём, а
+    // сток обеспечен другим: возврат заведомо меньше сотни, и в минус
+    // уходит кошелёк всегда, играй хоть сытым, хоть голодным.
+    greedSpin() {
+        const cfg = (ECONOMY.minigames && ECONOMY.minigames.greed) || null;
+        if (!cfg) return { ok: false, error: 'no_config' };
+
+        const cost = cfg.spinCost || 0;
+        const balance = GameState.currency('gold');
+        // Крутка не уходит в минус. Особого режима для пустого кошелька нет
+        // сознательно: золото дают почти все грехи, монета находится за
+        // минуту (docs/plan/16-greed-slots.md, раздел 6).
+        if (balance < cost) {
+            return { ok: false, error: 'not_enough', currency: 'gold', balance };
+        }
+
+        const requestId = newRequestId();
+        if (cost > 0) {
+            GameState.addCurrency('gold', -cost);
+            GameState.pushLedger({
+                currency: 'gold', delta: -cost,
+                reason: 'greed.slots.spin', client_request_id: requestId
+            });
+        }
+
+        // ---------- ГАРАНТИЯ ПРОТИВ ТИЛЬТА ----------
+        // Она не доплачивает поверх пустых барабанов, а ПОДМЕНЯЕТ бросок:
+        // барабаны встают на тройку из конфига, и выплату она получает по
+        // общей таблице. В игре без слов иначе нельзя — монеты, упавшие при
+        // пустых барабанах, читаются как поломка, а не как подарок.
+        const dry = Math.max(0, Math.floor(GameState.data.greed.dry || 0));
+        const pity = dry >= ((cfg.pity && cfg.pity.spins) || Infinity) - 1;
+        const reels = pity
+            ? [cfg.pity.key, cfg.pity.key, cfg.pity.key]
+            : [this.greedRoll(cfg), this.greedRoll(cfg), this.greedRoll(cfg)];
+
+        const pay = this.greedPay(cfg, reels);
+        if (pay > 0) {
+            GameState.addCurrency('gold', pay);
+            GameState.pushLedger({
+                currency: 'gold', delta: pay,
+                reason: 'greed.slots.win', client_request_id: requestId
+            });
+        }
+        GameState.data.greed.dry = pay > 0 ? 0 : dry + 1;
+
+        // ---------- ШКАЛУ НАЛИВАЕТ КАЖДАЯ КРУТКА ----------
+        // Независимо от исхода — в этом вся механика: любое действие
+        // небесполезно, а золото идёт драмой сверху, а не условием закрытия
+        // потребности (docs/plan/16-greed-slots.md, раздел 1).
+        GameState.setSinValue('greed', GameState.sinValue('greed') + (cfg.fillPerSpin || 0));
+
+        GameState.touch();
+        GameState.save();
+
+        return {
+            ok: true,
+            reels,
+            pay,
+            cost,
+            pity,
+            // Джекпот — не отдельная запись в конфиге, а просто самая дорогая
+            // тройка: экрану надо знать, когда шуметь громче обычного.
+            jackpot: pay > 0 && reels[0] === reels[1] && reels[1] === reels[2]
+                     && reels[0] === this.greedTopKey(cfg),
+            dry: GameState.data.greed.dry,
+            sinValue: GameState.sinValue('greed'),
+            balance: GameState.currency('gold')
+        };
+    },
+
+    // Один барабан. Веса — ВИРТУАЛЬНЫЕ позиции: шанс задаёт вес, а не число
+    // картинок на ленте (патент Телнеса, см. docs/plan/16-greed-slots.md).
+    greedRoll(cfg) {
+        const reel = cfg.reel || [];
+        const total = reel.reduce((s, sym) => s + sym.weight, 0);
+        let r = Math.random() * total;
+        for (let i = 0; i < reel.length; i++) {
+            r -= reel[i].weight;
+            if (r <= 0) return reel[i].key;
+        }
+        return reel[reel.length - 1].key;
+    },
+
+    // Сколько платит выпавшая тройка. Правил ровно два: три одинаковых по
+    // таблице и ровно две монеты — возврат ставки.
+    greedPay(cfg, reels) {
+        const find = key => (cfg.reel || []).find(s => s.key === key) || { pay: 0 };
+        if (reels[0] === reels[1] && reels[1] === reels[2]) return find(reels[0]).pay || 0;
+        const pairKey = cfg.pair && cfg.pair.key;
+        if (pairKey && reels.filter(k => k === pairKey).length === 2) return cfg.pair.pay || 0;
+        return 0;
+    },
+
+    // Самый дорогой символ таблицы. Считается, а не записан вторым числом в
+    // конфиг: иначе правка выплат разъедет с «что считать джекпотом».
+    greedTopKey(cfg) {
+        return (cfg.reel || []).reduce((best, s) => (!best || s.pay > best.pay ? s : best), null).key;
+    },
+
+    // Что нужно экрану, чтобы нарисовать автомат: ставка, кошелёк и таблица
+    // выплат. Мини-игра не берёт их из ECONOMY напрямую по той же причине,
+    // по которой не считает исход: на сервере этих чисел у неё не будет.
+    greedTable() {
+        const cfg = (ECONOMY.minigames && ECONOMY.minigames.greed) || {};
+        return {
+            cost: cfg.spinCost || 0,
+            fillPerSpin: cfg.fillPerSpin || 0,
+            balance: GameState.currency('gold'),
+            symbols: (cfg.reel || []).map(s => ({ key: s.key, pay: s.pay || 0 })),
+            pair: Object.assign({}, cfg.pair || {}),
+            top: this.greedTopKey(cfg)
+        };
+    },
+
     // ---------- ПОРОГ ГОЛОДА ----------
     // Платит ли грех за заход прямо сейчас. Правило одно на всю игру:
     // валюту и золото выдают, только пока шкала опустилась до payAt или ниже

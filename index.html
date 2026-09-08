@@ -237,180 +237,198 @@
 
     <button id="debug-toggle-btn" class="debug-toggle-btn" title="Debug-режим">🐞</button>
 
-    <div id="slots-game" class="minigame-screen">
-        <div class="slots-modal">
-            <button id="slots-close-btn" class="slots-close-btn">&times;</button>
-            <div class="slots-title">АЛЧНОСТЬ</div>
+    <!-- АЛЧНОСТЬ: АВТОМАТ ЗА МОНЕТЫ.
+         Рамки, заголовка и крестика здесь нет намеренно: окно мини-игры одно
+         на все грехи и надевается сборкой из src/core/minigame-window.js
+         (инвариант 8, docs/minigame-window.md).
 
-            <div class="machine-stage" id="machine-stage">
-                <div class="casino-bg">
-                    <div class="casino-vignette"></div>
-                    <div class="casino-spotlight"></div>
-                    <div class="casino-curtain curtain-left"></div>
-                    <div class="casino-curtain curtain-right"></div>
-                    <div class="casino-floor"></div>
-                    <div class="casino-glow p1"></div>
-                    <div class="casino-glow p2"></div>
-                    <div class="casino-glow p3"></div>
+         Слов в разметке нет (инвариант 9): цифры на маркизе — цифры, всё
+         остальное говорит значками. Таблица выплат, кошелёк и цена крутки
+         НЕ прописаны здесь руками — их строит greed.js по числам из конфига
+         (Backend.greedTable()), иначе разметка разъезжается с балансом при
+         первой же правке выплат. -->
+    <div id="slots-game" class="minigame-screen">
+        <div class="machine-stage" id="machine-stage">
+            <div class="casino-bg">
+                <div class="casino-vignette"></div>
+                <div class="casino-spotlight"></div>
+                <div class="casino-curtain curtain-left"></div>
+                <div class="casino-curtain curtain-right"></div>
+                <div class="casino-floor"></div>
+                <div class="casino-glow p1"></div>
+                <div class="casino-glow p2"></div>
+                <div class="casino-glow p3"></div>
+            </div>
+
+            <div class="machine-container" id="machine-container">
+                <svg class="machine-svg" id="machine-svg" viewBox="0 0 350 480" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                        <linearGradient id="cabinetBodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#611818"/>
+                            <stop offset="45%" stop-color="#2c0808"/>
+                            <stop offset="100%" stop-color="#150303"/>
+                        </linearGradient>
+                        <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#fff6d2"/>
+                            <stop offset="28%" stop-color="#f7d465"/>
+                            <stop offset="55%" stop-color="#c9932c"/>
+                            <stop offset="80%" stop-color="#8a5f10"/>
+                            <stop offset="100%" stop-color="#4d3305"/>
+                        </linearGradient>
+                        <linearGradient id="goldGradSoft" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#f9e6a8"/>
+                            <stop offset="100%" stop-color="#a97a1e"/>
+                        </linearGradient>
+                        <linearGradient id="chromeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#f5f5f5"/>
+                            <stop offset="35%" stop-color="#c3c3c3"/>
+                            <stop offset="65%" stop-color="#7c7c7c"/>
+                            <stop offset="100%" stop-color="#2c2c2c"/>
+                        </linearGradient>
+                        <radialGradient id="ballGrad" cx="35%" cy="30%" r="75%">
+                            <stop offset="0%" stop-color="#ff9a86"/>
+                            <stop offset="45%" stop-color="#d1392b"/>
+                            <stop offset="100%" stop-color="#650f08"/>
+                        </radialGradient>
+                        <radialGradient id="gemGrad" cx="35%" cy="30%" r="75%">
+                            <stop offset="0%" stop-color="#ffb3a3"/>
+                            <stop offset="55%" stop-color="#c0392b"/>
+                            <stop offset="100%" stop-color="#5c140c"/>
+                        </radialGradient>
+                        <radialGradient id="marqueeGlow" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" stop-color="#fff2c0"/>
+                            <stop offset="100%" stop-color="#fff2c0" stop-opacity="0"/>
+                        </radialGradient>
+                        <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="3"/>
+                        </filter>
+                    </defs>
+
+                    <!-- тень от корпуса -->
+                    <ellipse cx="160" cy="466" rx="122" ry="10" fill="#000000" opacity="0.45" filter="url(#softBlur)"/>
+
+                    <!-- ножки -->
+                    <rect x="46" y="446" width="26" height="18" rx="5" fill="url(#goldGrad)"/>
+                    <rect x="248" y="446" width="26" height="18" rx="5" fill="url(#goldGrad)"/>
+
+                    <!-- корпус -->
+                    <rect x="25" y="95" width="270" height="355" rx="22" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="6"/>
+                    <rect x="32" y="102" width="256" height="341" rx="16" fill="none" stroke="url(#goldGradSoft)" stroke-width="1.5" opacity="0.5"/>
+
+                    <!-- левый пилястр -->
+                    <g opacity="0.9">
+                        <rect x="29" y="104" width="24" height="336" fill="#210505"/>
+                        <line x1="33" y1="106" x2="33" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="39" y1="106" x2="39" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="45" y1="106" x2="45" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="51" y1="106" x2="51" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
+                        <rect x="27" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
+                        <rect x="27" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
+                    </g>
+
+                    <!-- правый пилястр -->
+                    <g opacity="0.9">
+                        <rect x="267" y="104" width="24" height="336" fill="#210505"/>
+                        <line x1="271" y1="106" x2="271" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="277" y1="106" x2="277" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="283" y1="106" x2="283" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="289" y1="106" x2="289" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
+                        <rect x="265" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
+                        <rect x="265" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
+                    </g>
+
+                    <!-- маркиза (вывеска) -->
+                    <rect x="45" y="18" width="230" height="72" rx="36" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="5"/>
+
+                    <!-- мягкое свечение позади надписи (без пересекающихся линий —
+                         раньше здесь были лучи-звезда, которые на глаз читались как
+                         перечёркивающий "крестик" поверх "777"; убраны совсем) -->
+                    <ellipse cx="160" cy="54" rx="70" ry="30" fill="url(#marqueeGlow)" opacity="0.5"/>
+
+                    <text x="161" y="66" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="900" text-anchor="middle" fill="#2a1200" opacity="0.55" letter-spacing="3">777</text>
+                    <text x="160" y="64" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="900" text-anchor="middle" fill="url(#goldGrad)" stroke="#3a1a00" stroke-width="1" letter-spacing="3">777</text>
+
+                    <!-- лампочки по периметру маркизы -->
+                    <g id="marquee-bulbs">
+                        <circle class="bulb" style="--i:0" cx="273" cy="54" r="4.2"/>
+                        <circle class="bulb" style="--i:1" cx="257.8" cy="70" r="4.2"/>
+                        <circle class="bulb" style="--i:2" cx="216.5" cy="81.7" r="4.2"/>
+                        <circle class="bulb" style="--i:3" cx="160" cy="86" r="4.2"/>
+                        <circle class="bulb" style="--i:4" cx="103.5" cy="81.7" r="4.2"/>
+                        <circle class="bulb" style="--i:5" cx="62.2" cy="70" r="4.2"/>
+                        <circle class="bulb" style="--i:6" cx="47" cy="54" r="4.2"/>
+                        <circle class="bulb" style="--i:7" cx="62.2" cy="38" r="4.2"/>
+                        <circle class="bulb" style="--i:8" cx="103.5" cy="26.3" r="4.2"/>
+                        <circle class="bulb" style="--i:9" cx="160" cy="22" r="4.2"/>
+                        <circle class="bulb" style="--i:10" cx="216.5" cy="26.3" r="4.2"/>
+                        <circle class="bulb" style="--i:11" cx="257.8" cy="38" r="4.2"/>
+                    </g>
+
+                    <!-- экран/окно барабанов -->
+                    <rect x="48" y="148" width="224" height="168" rx="16" fill="#0b0b0b" stroke="url(#goldGrad)" stroke-width="4"/>
+                    <rect x="58" y="158" width="204" height="148" rx="10" fill="#050505" stroke="#2a2a2a" stroke-width="1"/>
+
+                    <!-- гем-декор по углам экрана -->
+                    <circle cx="58" cy="158" r="5" fill="url(#gemGrad)"/>
+                    <circle cx="262" cy="158" r="5" fill="url(#gemGrad)"/>
+                    <circle cx="58" cy="306" r="5" fill="url(#gemGrad)"/>
+                    <circle cx="262" cy="306" r="5" fill="url(#gemGrad)"/>
+
+                    <!-- лоток для монет -->
+                    <rect x="70" y="410" width="180" height="28" rx="10" fill="#0b0b0b" stroke="url(#goldGrad)" stroke-width="3"/>
+                    <rect x="108" y="420" width="104" height="7" rx="3.5" fill="#000000"/>
+
+                    <!-- крепление рычага -->
+                    <ellipse cx="282" cy="268" rx="14" ry="18" fill="url(#chromeGrad)" stroke="#1a1a1a" stroke-width="2"/>
+                    <ellipse cx="282" cy="262" rx="9" ry="6" fill="#000000" opacity="0.35"/>
+
+                    <!-- рычаг: пивот в креплении (282,268), при вращении шар остаётся
+                         в пределах viewBox (see greed.css #lever-arm keyframes) -->
+                    <g id="lever-arm">
+                        <rect x="275" y="224" width="14" height="44" rx="7" fill="url(#chromeGrad)" stroke="#2a2a2a" stroke-width="1.5" id="lever-shaft"/>
+                        <ellipse cx="282" cy="240" rx="8" ry="2.5" fill="#1a1a1a" opacity="0.5"/>
+                        <ellipse cx="282" cy="256" rx="8" ry="2.5" fill="#1a1a1a" opacity="0.5"/>
+                        <circle cx="282" cy="220" r="15" fill="url(#ballGrad)" stroke="#5a140c" stroke-width="2" id="lever-ball"/>
+                        <ellipse cx="277" cy="213" rx="5" ry="3.5" fill="#ffffff" opacity="0.55"/>
+                    </g>
+                </svg>
+                <div class="reels-overlay" id="reels-overlay">
+                    <div class="reel-window" id="reel-0"><div class="reel-strip" id="strip-0"></div></div>
+                    <div class="reel-window" id="reel-1"><div class="reel-strip" id="strip-1"></div></div>
+                    <div class="reel-window" id="reel-2"><div class="reel-strip" id="strip-2"></div></div>
+                    <div class="payline"></div>
+                    <div class="reel-glass"></div>
                 </div>
 
-                <div class="machine-container" id="machine-container">
-                    <svg class="machine-svg" id="machine-svg" viewBox="0 0 350 480" preserveAspectRatio="xMidYMid meet">
-                        <defs>
-                            <linearGradient id="cabinetBodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                                <stop offset="0%" stop-color="#611818"/>
-                                <stop offset="45%" stop-color="#2c0808"/>
-                                <stop offset="100%" stop-color="#150303"/>
-                            </linearGradient>
-                            <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#fff6d2"/>
-                                <stop offset="28%" stop-color="#f7d465"/>
-                                <stop offset="55%" stop-color="#c9932c"/>
-                                <stop offset="80%" stop-color="#8a5f10"/>
-                                <stop offset="100%" stop-color="#4d3305"/>
-                            </linearGradient>
-                            <linearGradient id="goldGradSoft" x1="0%" y1="0%" x2="0%" y2="100%">
-                                <stop offset="0%" stop-color="#f9e6a8"/>
-                                <stop offset="100%" stop-color="#a97a1e"/>
-                            </linearGradient>
-                            <linearGradient id="chromeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stop-color="#f5f5f5"/>
-                                <stop offset="35%" stop-color="#c3c3c3"/>
-                                <stop offset="65%" stop-color="#7c7c7c"/>
-                                <stop offset="100%" stop-color="#2c2c2c"/>
-                            </linearGradient>
-                            <radialGradient id="ballGrad" cx="35%" cy="30%" r="75%">
-                                <stop offset="0%" stop-color="#ff9a86"/>
-                                <stop offset="45%" stop-color="#d1392b"/>
-                                <stop offset="100%" stop-color="#650f08"/>
-                            </radialGradient>
-                            <radialGradient id="gemGrad" cx="35%" cy="30%" r="75%">
-                                <stop offset="0%" stop-color="#ffb3a3"/>
-                                <stop offset="55%" stop-color="#c0392b"/>
-                                <stop offset="100%" stop-color="#5c140c"/>
-                            </radialGradient>
-                            <radialGradient id="marqueeGlow" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stop-color="#fff2c0"/>
-                                <stop offset="100%" stop-color="#fff2c0" stop-opacity="0"/>
-                            </radialGradient>
-                            <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
-                                <feGaussianBlur stdDeviation="3"/>
-                            </filter>
-                        </defs>
+                <!-- ТАБЛИЦА ВЫПЛАТ на месте бывшей таблички с названием: за что
+                     платит автомат, видно не выходя из него. Заполняет greed.js. -->
+                <div class="pay-table" id="pay-table"></div>
 
-                        <!-- тень от корпуса -->
-                        <ellipse cx="160" cy="466" rx="122" ry="10" fill="#000000" opacity="0.45" filter="url(#softBlur)"/>
+                <!-- ЗАРЯД: шкала алчности. Наливается КАЖДОЙ круткой, чем бы она
+                     ни кончилась, — в этом вся механика греха, и показать это
+                     надо там же, где её наливают. -->
+                <div class="greed-charge" id="greed-charge"><i></i></div>
 
-                        <!-- ножки -->
-                        <rect x="46" y="446" width="26" height="18" rx="5" fill="url(#goldGrad)"/>
-                        <rect x="248" y="446" width="26" height="18" rx="5" fill="url(#goldGrad)"/>
+                <!-- ЛОТОК ДЛЯ МОНЕТ = кошелёк. Сколько золота у игрока, видно
+                     на самом автомате: он его и забирает. -->
+                <div class="coin-tray" id="coin-tray"><span>🪙</span><b id="slot-gold">0</b></div>
 
-                        <!-- корпус -->
-                        <rect x="25" y="95" width="270" height="355" rx="22" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="6"/>
-                        <rect x="32" y="102" width="256" height="341" rx="16" fill="none" stroke="url(#goldGradSoft)" stroke-width="1.5" opacity="0.5"/>
+                <!-- ЦЕНА КРУТКИ у монетоприёмника, рядом с рычагом. -->
+                <div class="slot-price" id="slot-price"><span>🪙</span><b id="slot-cost">1</b></div>
 
-                        <!-- левый пилястр -->
-                        <g opacity="0.9">
-                            <rect x="29" y="104" width="24" height="336" fill="#210505"/>
-                            <line x1="33" y1="106" x2="33" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
-                            <line x1="39" y1="106" x2="39" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
-                            <line x1="45" y1="106" x2="45" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
-                            <line x1="51" y1="106" x2="51" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
-                            <rect x="27" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                            <rect x="27" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                        </g>
+                <div class="lever-trigger-zone" id="lever-trigger"></div>
 
-                        <!-- правый пилястр -->
-                        <g opacity="0.9">
-                            <rect x="267" y="104" width="24" height="336" fill="#210505"/>
-                            <line x1="271" y1="106" x2="271" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
-                            <line x1="277" y1="106" x2="277" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
-                            <line x1="283" y1="106" x2="283" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
-                            <line x1="289" y1="106" x2="289" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
-                            <rect x="265" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                            <rect x="265" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
-                        </g>
-
-                        <!-- маркиза (вывеска) -->
-                        <rect x="45" y="18" width="230" height="72" rx="36" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="5"/>
-
-                        <!-- мягкое свечение позади надписи (без пересекающихся линий —
-                             раньше здесь были лучи-звезда, которые на глаз читались как
-                             перечёркивающий "крестик" поверх "777"; убраны совсем) -->
-                        <ellipse cx="160" cy="54" rx="70" ry="30" fill="url(#marqueeGlow)" opacity="0.5"/>
-
-                        <text x="161" y="66" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="900" text-anchor="middle" fill="#2a1200" opacity="0.55" letter-spacing="3">777</text>
-                        <text x="160" y="64" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="900" text-anchor="middle" fill="url(#goldGrad)" stroke="#3a1a00" stroke-width="1" letter-spacing="3">777</text>
-
-                        <!-- лампочки по периметру маркизы -->
-                        <g id="marquee-bulbs">
-                            <circle class="bulb" style="--i:0" cx="273" cy="54" r="4.2"/>
-                            <circle class="bulb" style="--i:1" cx="257.8" cy="70" r="4.2"/>
-                            <circle class="bulb" style="--i:2" cx="216.5" cy="81.7" r="4.2"/>
-                            <circle class="bulb" style="--i:3" cx="160" cy="86" r="4.2"/>
-                            <circle class="bulb" style="--i:4" cx="103.5" cy="81.7" r="4.2"/>
-                            <circle class="bulb" style="--i:5" cx="62.2" cy="70" r="4.2"/>
-                            <circle class="bulb" style="--i:6" cx="47" cy="54" r="4.2"/>
-                            <circle class="bulb" style="--i:7" cx="62.2" cy="38" r="4.2"/>
-                            <circle class="bulb" style="--i:8" cx="103.5" cy="26.3" r="4.2"/>
-                            <circle class="bulb" style="--i:9" cx="160" cy="22" r="4.2"/>
-                            <circle class="bulb" style="--i:10" cx="216.5" cy="26.3" r="4.2"/>
-                            <circle class="bulb" style="--i:11" cx="257.8" cy="38" r="4.2"/>
-                        </g>
-
-                        <!-- экран/окно барабанов -->
-                        <rect x="48" y="148" width="224" height="168" rx="16" fill="#0b0b0b" stroke="url(#goldGrad)" stroke-width="4"/>
-                        <rect x="58" y="158" width="204" height="148" rx="10" fill="#050505" stroke="#2a2a2a" stroke-width="1"/>
-
-                        <!-- гем-декор по углам экрана -->
-                        <circle cx="58" cy="158" r="5" fill="url(#gemGrad)"/>
-                        <circle cx="262" cy="158" r="5" fill="url(#gemGrad)"/>
-                        <circle cx="58" cy="306" r="5" fill="url(#gemGrad)"/>
-                        <circle cx="262" cy="306" r="5" fill="url(#gemGrad)"/>
-
-                        <!-- табличка с названием -->
-                        <rect x="94" y="322" width="132" height="20" rx="6" fill="#0b0b0b" stroke="url(#goldGradSoft)" stroke-width="1.4"/>
-                        <text x="160" y="336" font-family="Georgia, serif" font-size="11" font-weight="700" text-anchor="middle" fill="#e8c467" letter-spacing="2">FORTUNA</text>
-
-                        <!-- лоток для монет -->
-                        <rect x="70" y="410" width="180" height="28" rx="10" fill="#0b0b0b" stroke="url(#goldGrad)" stroke-width="3"/>
-                        <rect x="108" y="420" width="104" height="7" rx="3.5" fill="#000000"/>
-
-                        <!-- крепление рычага -->
-                        <ellipse cx="282" cy="268" rx="14" ry="18" fill="url(#chromeGrad)" stroke="#1a1a1a" stroke-width="2"/>
-                        <ellipse cx="282" cy="262" rx="9" ry="6" fill="#000000" opacity="0.35"/>
-
-                        <!-- рычаг: пивот в креплении (282,268), при вращении шар остаётся
-                             в пределах viewBox (see greed.css #lever-arm keyframes) -->
-                        <g id="lever-arm">
-                            <rect x="275" y="224" width="14" height="44" rx="7" fill="url(#chromeGrad)" stroke="#2a2a2a" stroke-width="1.5" id="lever-shaft"/>
-                            <ellipse cx="282" cy="240" rx="8" ry="2.5" fill="#1a1a1a" opacity="0.5"/>
-                            <ellipse cx="282" cy="256" rx="8" ry="2.5" fill="#1a1a1a" opacity="0.5"/>
-                            <circle cx="282" cy="220" r="15" fill="url(#ballGrad)" stroke="#5a140c" stroke-width="2" id="lever-ball"/>
-                            <ellipse cx="277" cy="213" rx="5" ry="3.5" fill="#ffffff" opacity="0.55"/>
-                        </g>
-                    </svg>
-
-                    <div class="reels-overlay" id="reels-overlay">
-                        <div class="reel-window" id="reel-0"><div class="reel-strip" id="strip-0"></div></div>
-                        <div class="reel-window" id="reel-1"><div class="reel-strip" id="strip-1"></div></div>
-                        <div class="reel-window" id="reel-2"><div class="reel-strip" id="strip-2"></div></div>
-                        <div class="payline"></div>
-                        <div class="reel-glass"></div>
-                    </div>
-
-                    <div class="lever-trigger-zone" id="lever-trigger"></div>
-
-                    <div class="win-overlay" id="win-overlay">
-                        <div class="win-flash"></div>
-                        <div class="coin-rain" id="coin-rain"></div>
-                        <div class="fireworks" id="fireworks"></div>
-                        <div class="win-text" id="win-text">Нагрешил!</div>
-                    </div>
+                <div class="win-overlay" id="win-overlay">
+                    <div class="win-flash"></div>
+                    <div class="coin-rain" id="coin-rain"></div>
+                    <div class="fireworks" id="fireworks"></div>
+                    <!-- Сколько заплатили — цифрой. Цифра не слово (инвариант 9). -->
+                    <div class="win-pay" id="win-pay"></div>
                 </div>
             </div>
         </div>
     </div>
+
 
     <!-- ГНЕВ. Рамки, заголовка и крестика здесь нет намеренно: окно мини-игры
          одно на все грехи и надевается сверху сборкой из

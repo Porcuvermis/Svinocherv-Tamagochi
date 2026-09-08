@@ -79,6 +79,13 @@ const GameState = {
             // не пишется: она бесконечная, см. GARDEN.species.grass);
             // tools — ступени лейки, граблей, лопаты и возврата семян.
             garden: { beds: [], seeds: {}, tools: { can: 0, rake: 0, spade: 0, seed: 0 } },
+            // Автомат алчности. Хранится ровно одно число — сколько круток
+            // подряд не заплатили: на нём стоит гарантия против тильта
+            // (шестая крутка платит обязательно). Живёт в состоянии, а не в
+            // памяти экрана, потому что автомат закрывают и открывают заново,
+            // а гарантия обязана это переживать — иначе её можно обнулять
+            // выходом из мини-игры и ловить выплату когда удобно.
+            greed: { dry: 0 },
             // Боец гнева: сколько здоровья осталось после последнего боя.
             // hp === null означает «полное»: до первого боя и после того, как
             // всё заросло, хранить нечего. Форма та же, что у шкал грехов —
@@ -199,6 +206,8 @@ const GameState = {
         if (!d.fighter || typeof d.fighter !== 'object') d.fighter = { hp: null, updated_at: null, frozen: false };
         if (typeof d.fighter.frozen !== 'boolean') d.fighter.frozen = false;
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
+        if (!d.greed || typeof d.greed !== 'object') d.greed = { dry: 0 };
+        if (typeof d.greed.dry !== 'number' || !isFinite(d.greed.dry)) d.greed.dry = 0;
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
         // Ключ локации проверяется по реестру, а не просто на «непусто»:

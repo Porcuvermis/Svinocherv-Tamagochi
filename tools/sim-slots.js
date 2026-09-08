@@ -2,6 +2,11 @@
 // Считает автомат так, как их считают на самом деле: по барабанам с
 // ВЕСАМИ символов, полным перебором всех исходов, а не на глазок.
 //
+// Числа берутся из ЖИВОГО конфига (ECONOMY.minigames.greed), а не из копии
+// здесь: копия ТУТ БЫЛА, и это ровно тот случай, против которого написано
+// правило проекта — правишь баланс в конфиге, а калькулятор считает по
+// старому и уверенно докладывает, что всё сходится.
+//
 // ---------- КАК УСТРОЕН НАСТОЯЩИЙ АВТОМАТ ----------
 // У механического «однорукого бандита» Чарльза Фея (1895) три барабана по
 // десять позиций — тысяча исходов, выигрыш выпадал в 26.4% круток, и машина
@@ -31,111 +36,99 @@
 //
 // Запуск из корня:  node tools/sim-slots.js
 
-const SPIN_COST = 1;        // крутка стоит монету
-const FILL_SPINS = 10;      // круток на полную шкалу алчности
-const PITY = 6;             // не больше стольких пустых круток подряд
-const PITY_PAY = 3;         // что выдаёт гарантия
-const TARGET_RTP = 0.75;    // сколько автомат возвращает игроку ВСЕГО
+const fs = require('fs');
+const ECONOMY = eval(fs.readFileSync(__dirname + '/../src/config/economy.js', 'utf8') + '\nECONOMY');
+const CFG = ECONOMY.minigames.greed;
 
-// Барабаны: символ → вес (сколько виртуальных позиций он занимает). Три
-// одинаковых барабана — так проще читать, но веса могут отличаться.
-const REEL = { '💀': 1, '🪙': 10, '🍖': 10, '🦴': 12, '▫️': 7 };
+// Картинки символов живут в мини-игре, а не в конфиге (там только числа),
+// поэтому для отчёта они лежат здесь — калькулятору нужно чем-то печатать
+// строки таблицы.
+const GLYPH = { skull: '💀', coin: '🪙', meat: '🍖', bone: '🦴', blank: '▫️' };
+const glyph = key => GLYPH[key] || key;
 
-// Сколько платит комбинация. Числа — ОТНОШЕНИЯ: калькулятор сам подгонит их
-// множителем под нужный возврат, чтобы не подбирать вручную.
-const PAYS = { '💀': 100, '🪙': 20, '🍖': 10, '🦴': 5 };
-const PAIR_SYMBOL = '🪙';   // две монеты платят по-мелкому, как две подковы у Фея
-const PAIR_PAY = 2;
+const REEL = CFG.reel;
+const TOTAL = REEL.reduce((s, sym) => s + sym.weight, 0);
+const P = key => REEL.find(s => s.key === key).weight / TOTAL;
 
-// ---------- ТОЧНЫЙ ПЕРЕБОР ----------
-// Все сочетания трёх барабанов с их вероятностями. Символов мало, поэтому
-// перебор дешевле и честнее любой симуляции: погрешности нет вовсе.
-const SYMBOLS = Object.keys(REEL);
-const TOTAL = SYMBOLS.reduce((s, k) => s + REEL[k], 0);
-
-function outcomes(scale) {
-    let rtp = 0, hit = 0;
-    const byPay = {};
-    SYMBOLS.forEach(a => SYMBOLS.forEach(b => SYMBOLS.forEach(c => {
-        const p = (REEL[a] / TOTAL) * (REEL[b] / TOTAL) * (REEL[c] / TOTAL);
-        let pay = 0;
-        if (a === b && b === c && PAYS[a]) pay = Math.max(1, Math.round(PAYS[a] * scale));
-        else if ([a, b, c].filter(x => x === PAIR_SYMBOL).length === 2) {
-            pay = Math.max(1, Math.round(PAIR_PAY * scale));
-        }
-        if (pay > 0) {
-            rtp += p * pay;
-            hit += p;
-            byPay[pay] = (byPay[pay] || 0) + p;
-        }
-    })));
-    return { rtp, hit, byPay };
+// ---------- ОДНА КРУТКА: ТОЧНЫЙ ПЕРЕБОР ----------
+// Все сочетания трёх барабанов с их вероятностями. Символов пять, значит
+// исходов 125 — перебор дешевле и честнее любой симуляции: погрешности нет.
+function payOf(a, b, c) {
+    if (a.key === b.key && b.key === c.key) return a.pay;
+    const pairs = [a, b, c].filter(s => s.key === CFG.pair.key).length;
+    if (pairs === 2) return CFG.pair.pay;
+    return 0;
 }
 
-// ---------- ГАРАНТИЯ ----------
-// Она добавляет к возврату, и добавляет прилично. Считается симуляцией:
-// зависит от того, как часто случаются шесть пустых круток подряд, а это уже
-// не одна крутка, а последовательность.
-function withPity(scale, spins) {
-    const base = outcomes(scale);
-    let paid = 0, spent = 0, sinceWin = 0, pityFired = 0, wins = 0, worst = 0;
-    for (let i = 0; i < spins; i++) {
-        spent += SPIN_COST;
-        if (sinceWin >= PITY - 1) {
-            paid += PITY_PAY; pityFired++; wins++;
-            worst = Math.max(worst, sinceWin);
-            sinceWin = 0;
-            continue;
-        }
-        if (Math.random() < base.hit) {
-            // Какую именно выплату дала крутка — по долям внутри выигрышей.
-            let r = Math.random() * base.hit, acc = 0, pay = 0;
-            for (const key of Object.keys(base.byPay)) {
-                acc += base.byPay[key];
-                if (r <= acc) { pay = Number(key); break; }
-            }
-            paid += pay; wins++;
-            worst = Math.max(worst, sinceWin);
-            sinceWin = 0;
-        } else sinceWin++;
-    }
-    return { rtp: paid / spent, hit: wins / spins, pityShare: pityFired / spins, worst, base };
-}
+let hit = 0, expectedPay = 0;
+REEL.forEach(a => REEL.forEach(b => REEL.forEach(c => {
+    const p = (a.weight / TOTAL) * (b.weight / TOTAL) * (c.weight / TOTAL);
+    const pay = payOf(a, b, c);
+    if (pay <= 0) return;
+    hit += p;
+    expectedPay += p * pay;
+})));
 
-// ---------- ПОДГОНКА ПОД ВОЗВРАТ ----------
-// Сначала выбирается возврат, потом под него подбираются выплаты — а не
-// наоборот (docs/plan/16-greed-slots.md, раздел 4).
-let scale = 1, res = null;
-for (let i = 0; i < 40; i++) {
-    res = withPity(scale, 300000);
-    if (Math.abs(res.rtp - TARGET_RTP) < 0.004) break;
-    scale *= TARGET_RTP / res.rtp;
+// ---------- ГАРАНТИЯ: ТОЖЕ ТОЧНО, А НЕ СИМУЛЯЦИЕЙ ----------
+// Гарантия делает крутки зависимыми, поэтому одной вероятности мало: нужна
+// цепь состояний «сколько пустых круток подряд уже случилось». Состояний
+// ровно pity.spins, переходы простые — из d выходим в 0 с шансом выигрыша и
+// в d+1 иначе, а из последнего всегда в 0 (там исход подменяется).
+//
+// Отсюда доли состояний считаются формулой: π(d) = π(0)·q^d, q — шанс пустой
+// крутки. Симуляция здесь давала бы те же числа с погрешностью и зависела
+// бы от зерна.
+const PITY = CFG.pity.spins;
+const PITY_PAY = REEL.find(s => s.key === CFG.pity.key).pay;
+const q = 1 - hit;
+const pi0 = (1 - q) / (1 - Math.pow(q, PITY));
+const share = d => pi0 * Math.pow(q, d);
+
+let rtpPay = 0, hitRate = 0;
+for (let d = 0; d < PITY - 1; d++) {
+    rtpPay += share(d) * expectedPay;
+    hitRate += share(d) * hit;
 }
+const pityShare = share(PITY - 1);
+rtpPay += pityShare * PITY_PAY;
+hitRate += pityShare;
+
+const rtp = rtpPay / CFG.spinCost;
 
 // ---------- ОТЧЁТ ----------
 console.log('барабан (веса виртуальных позиций, всего ' + TOTAL + '):');
-SYMBOLS.forEach(s => console.log('  ' + s + '  вес ' + String(REEL[s]).padStart(2)
-    + '   шанс на барабане ' + (REEL[s] / TOTAL * 100).toFixed(1) + '%'));
+REEL.forEach(s => console.log('  ' + glyph(s.key) + '  вес ' + String(s.weight).padStart(2)
+    + '   шанс на барабане ' + (s.weight / TOTAL * 100).toFixed(1) + '%'));
 
-console.log('\nвыплаты (подогнаны множителем ' + scale.toFixed(2) + '):');
-Object.keys(PAYS).forEach(s => {
-    const p = Math.pow(REEL[s] / TOTAL, 3);
-    console.log('  ' + s + s + s + '  шанс ' + (p * 100).toFixed(3).padStart(7) + '%'
-        + '   платит ' + String(Math.max(1, Math.round(PAYS[s] * scale))).padStart(3));
+console.log('\nвыплаты:');
+REEL.filter(s => s.pay > 0).forEach(s => {
+    const p = Math.pow(s.weight / TOTAL, 3);
+    console.log('  ' + glyph(s.key).repeat(3) + '  шанс ' + (p * 100).toFixed(3).padStart(7) + '%'
+        + '   платит ' + String(s.pay).padStart(3));
 });
-const pairP = 3 * Math.pow(REEL[PAIR_SYMBOL] / TOTAL, 2) * (1 - REEL[PAIR_SYMBOL] / TOTAL);
-console.log('  ' + PAIR_SYMBOL + PAIR_SYMBOL + '·  шанс ' + (pairP * 100).toFixed(3).padStart(7) + '%'
-    + '   платит ' + String(Math.max(1, Math.round(PAIR_PAY * scale))).padStart(3));
+const pairP = 3 * Math.pow(P(CFG.pair.key), 2) * (1 - P(CFG.pair.key));
+console.log('  ' + glyph(CFG.pair.key).repeat(2) + '·  шанс ' + (pairP * 100).toFixed(3).padStart(7) + '%'
+    + '   платит ' + String(CFG.pair.pay).padStart(3) + '   (возврат ставки)');
 console.log('  гарантия  раз в ' + PITY + '     платит ' + String(PITY_PAY).padStart(3)
-    + '   (срабатывает в ' + (res.pityShare * 100).toFixed(1) + '% круток)');
+    + '   (' + glyph(CFG.pity.key).repeat(3) + ', срабатывает в ' + (pityShare * 100).toFixed(1) + '% круток)');
 
-console.log('\nвозврат (RTP): ' + (res.rtp * 100).toFixed(1) + '%'
-    + (res.rtp > 1 ? '   ⚠ ПЕЧАТНЫЙ СТАНОК'
-      : res.rtp < 0.6 ? '   ⚠ грабёж'
-      : res.rtp > 0.8 ? '   ⚠ великовато'
-      : '   в коридоре 60–80%'));
-console.log('выигрышных круток: ' + (res.hit * 100).toFixed(1) + '%'
+const verdict = rtp > 1 ? '   ⚠ ПЕЧАТНЫЙ СТАНОК'
+    : rtp < CFG.rtpMin ? '   ⚠ грабёж'
+    : rtp > CFG.rtpMax ? '   ⚠ великовато'
+    : '   в коридоре ' + Math.round(CFG.rtpMin * 100) + '–' + Math.round(CFG.rtpMax * 100) + '%';
+console.log('\nвозврат (RTP): ' + (rtp * 100).toFixed(1) + '%' + verdict);
+console.log('выигрышных круток: ' + (hitRate * 100).toFixed(1) + '%'
     + '   (у «Liberty Bell» 1895 года было 26.4%)');
-console.log('дольше всего без выигрыша: ' + res.worst + ' круток подряд');
-console.log('одна шкала алчности (' + FILL_SPINS + ' круток) стоит игроку '
-    + (FILL_SPINS * SPIN_COST * (1 - res.rtp)).toFixed(1) + ' монет');
+console.log('дольше всего без выигрыша: ' + (PITY - 1) + ' круток подряд');
+console.log('одна шкала алчности (' + Math.ceil(100 / CFG.fillPerSpin) + ' круток) стоит игроку '
+    + (Math.ceil(100 / CFG.fillPerSpin) * CFG.spinCost * (1 - rtp)).toFixed(1) + ' монет');
+
+// Если выплаты уехали из коридора — сразу сказать, во сколько раз их двигать.
+// Порядок настройки: СНАЧАЛА возврат, ПОТОМ выплаты под него, а не наоборот
+// (docs/plan/16-greed-slots.md, раздел 5).
+if (rtp < CFG.rtpMin || rtp > CFG.rtpMax) {
+    const target = (CFG.rtpMin + CFG.rtpMax) / 2;
+    console.log('\nчтобы попасть в середину коридора (' + (target * 100).toFixed(0) + '%),'
+        + ' выплаты нужно умножить на ' + (target / rtp).toFixed(2));
+    process.exitCode = 1;
+}

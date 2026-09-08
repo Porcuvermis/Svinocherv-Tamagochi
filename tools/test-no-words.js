@@ -13,8 +13,8 @@ const { chromium } = require('playwright');
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-no-words.js /tmp/shots-
 //
-// Проверяются гнев (первый переведённый грех) и чревоугодие (собрано сразу
-// без слов). По мере перевода остальных сюда добавляются их экраны.
+// Проверяются все переведённые экраны: гнев, кухня, сад, ванная, дорожка
+// тщеславия и автомат алчности. Новый экран добавляется сюда сразу.
 (async () => {
   // Без аргумента снимки идут во временную папку, а НЕ в корень проекта:
   // из-за `undefined` в пути тринадцать png однажды уехали прямо в репозиторий.
@@ -218,8 +218,31 @@ const { chromium } = require('playwright');
   found.carpetRun = await scan('pride-game');
   await page.screenshot({ path: out + 'nw-p2-run.png' });
 
+  // ---------- АЛЧНОСТЬ: АВТОМАТ ----------
+  // У прежнего автомата на экране висели «АЛЧНОСТЬ», «FORTUNA» и
+  // «Нагрешил!». Новый собран без них: за что платят — три значка и число,
+  // сколько заплатили — число, сколько монет в кошельке — число. Цифра не
+  // слово (инвариант 9), а вот буквы в маркизе и на табличке были словами.
   await page.evaluate(() => {
     if (typeof PrideMinigame !== 'undefined' && PrideMinigame.close) PrideMinigame.close();
+    Backend.grantCurrency('gold', 50);
+    GameManager.handleSinAction('greed');
+  });
+  await page.waitForTimeout(800);
+  found.slots = await scan('slots-game');
+  await page.screenshot({ path: out + 'nw-g1-slots.png' });
+
+  // Крутка с выплатой: дождь монет и число выплаты — второе состояние
+  // экрана, и слов там тоже быть не должно.
+  await page.evaluate(() => {
+    GreedMinigame.showWin({ pay: 13, jackpot: false }, GreedMinigame.spinGeneration);
+  });
+  await page.waitForTimeout(400);
+  found.slotsWin = await scan('slots-game');
+  await page.screenshot({ path: out + 'nw-g2-slots-win.png' });
+
+  await page.evaluate(() => {
+    if (typeof GreedMinigame !== 'undefined' && GreedMinigame.close) GreedMinigame.close();
     GameManager.handleSinAction('wrath');
   });
   await page.waitForTimeout(500);
