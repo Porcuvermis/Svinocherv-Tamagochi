@@ -81,13 +81,16 @@ const WrathShop = {
     // Осколки показаны дробью к жетону: по ней видно, сколько побед осталось
     // до следующей покупки. Без этого осколок выглядит валютой, которую
     // некуда потратить.
+    // Золота здесь НЕТ и быть не должно: в гневе оно только зарабатывается —
+    // ни один ценник (ни лавка, ни вход в забег, ни усиления) в золоте не
+    // считается. Счётчик валюты, которую на этом экране некуда потратить, —
+    // это шум: игрок ищет, что на него купить, и не находит.
     walletHtml(lack) {
         const per = (ECONOMY.exchange.wrath_shard && ECONOMY.exchange.wrath_shard.per) || 3;
         const item = (key, text) =>
             `<span class="wallet-item${lack === key ? ' lack' : ''}" data-cur="${key}"><b>${text}</b></span>`;
         return item('wrath_token', `🎟 ${GameState.currency('wrath_token')}`)
-             + item('wrath_shard', `🩸 ${GameState.currency('wrath_shard')}/${per}`)
-             + item('gold', `${currencyMark('gold')} ${GameState.currency('gold')}`);
+             + item('wrath_shard', `🩸 ${GameState.currency('wrath_shard')}/${per}`);
     },
 
     render() {
