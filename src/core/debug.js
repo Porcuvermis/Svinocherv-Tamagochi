@@ -111,7 +111,21 @@ const DebugState = {
                          + (left === null ? '' : ' · ✝' + left.toFixed(1) + 'ч');
                 }
             }
-            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops + mood;
+            // ---------- ГДЕ МЫ ЗАПУЩЕНЫ ----------
+            // Внутри Telegram или как обычная страница, и работает ли отдача
+            // в палец. Проверить это иначе нельзя вообще: тактильная отдача
+            // не видна на экране, а «не вибрирует» может значить и «нет
+            // моста», и «платформа не умеет», и «выключено в системе».
+            // Debug-панель — единственное место игры, где слова разрешены
+            // (инвариант 9).
+            let host = '';
+            if (typeof Haptics !== 'undefined') {
+                const tg = !!Haptics.tg();
+                const vib = (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function');
+                host = ' · ' + (tg ? 'TG' : 'web')
+                     + '/' + (tg ? 'haptic' : vib ? 'vibro' : 'нем');
+            }
+            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops + mood + host;
             frames = 0;
             last = now;
         };
