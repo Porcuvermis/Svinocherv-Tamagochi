@@ -828,7 +828,7 @@ const PrideMinigame = {
             if (!pick || t.diesAt < pick.diesAt) pick = t;
         }
         if (pick) this.resolveTarget(pick, p);
-        else this.registerMiss();   // барабанить пальцем по всему полю невыгодно
+        else this.registerMissclick();   // барабанить пальцем по полю невыгодно
     },
 
     resolveTarget(target, p) {
@@ -847,10 +847,39 @@ const PrideMinigame = {
         this.renderHud();
     },
 
+    // Зона погасла сама — ажиотаж просел. Не вина игрока: зон бывает больше,
+    // чем успевает палец, и обнулять за это значит наказывать за купленную
+    // прокачку.
     registerMiss() {
         this.misses++;
         this.bumpHype(this.params.hype.miss);
         this.renderHud();
+    },
+
+    // Тап в пустоту — СБРОС. Это уже не «не успел», это дробь по экрану, и
+    // стоить она обязана дорого: иначе выгодно молотить пальцем вслепую, а
+    // зоны большие и слепая дробь закрывала бы их сама.
+    registerMissclick() {
+        this.misses++;
+        if (this.params.hype.missclickResets) {
+            const had = this.multiplier();
+            this.hype = 0;
+            if (had > 1) this.flashReset();
+        } else {
+            this.bumpHype(this.params.hype.miss);
+        }
+        this.renderHud();
+    },
+
+    // Сорванный множитель показывается тем же местом, где он рос: цифра
+    // краснеет и дёргается. Без этого сброс — самое обидное событие игры,
+    // случившееся молча.
+    flashReset() {
+        const el = this.hudEl && this.hudEl.querySelector('.pr-mult');
+        if (!el) return;
+        el.classList.remove('pr-mult-drop');
+        void el.getBBox();
+        el.classList.add('pr-mult-drop');
     },
 
     // Ажиотаж ПРОСЕДАЕТ, но не обнуляется. Обнуление проверялось симулятором
@@ -940,12 +969,6 @@ const PrideMinigame = {
             this.hudEl.innerHTML = purse;
             return;
         }
-        const mult = this.multiplier();
-        // Накал показывает РАЗОГРЕВ ТОЛПЫ, а не близость к потолку множителя:
-        // на старте потолок ×1, и мерить накал по нему значило бы, что
-        // индикатор всё время в максимуме. Разогретая толпа — это та, что
-        // лезет целоваться вдвое чаще, и её порог и есть шкала накала.
-        const heat = Math.min(1, this.hype / this.params.kissBag.hotAt);
         // На финише показываем НАЧИСЛЕННОЕ (публика могла устать, и тогда оно
         // меньше собранного), пока оно не пришло — собранное.
         const gain = this.phase === 'done' && this.awardedKisses != null
@@ -954,9 +977,36 @@ const PrideMinigame = {
         this.hudEl.innerHTML = purse +
             `<text x="${gx}" y="${y}" font-size="22" fill="${C.flash[500]}"
                    font-weight="700" opacity="${this.phase === 'done' ? 1 : 0.85}">+${gain}</text>` +
-            `<g transform="translate(${this.safe.x1 - 16},${y - 8})" opacity="${(0.45 + heat * 0.55).toFixed(2)}">` +
-            `<text x="0" y="8" text-anchor="end" font-size="${(20 + heat * 14).toFixed(0)}"
-                   fill="${C.flash[500]}" font-weight="700">×${mult}</text></g>`;
+            this.multBadge(this.safe.x1 - 18, y - 4);
+    },
+
+    // ---------- МНОЖИТЕЛЬ НА ЭКРАНЕ ----------
+    // Он теперь главное, что игрок теряет за одну ошибку, — значит должен
+    // быть виден всё время и крупно, а не тускнеть в углу. Три вещи в одном
+    // месте:
+    //   • сама цифра — во сколько раз дороже следующий поцелуй;
+    //   • полоска под ней — сколько ажиотажа до следующей ступени;
+    //   • размер — насколько толпа разогрета (а разогретая ещё и целуется
+    //     вдвое чаще, так что это не украшение).
+    // Упёрлись в потолок машины — полоска полная и золотая: видно, что
+    // упёрся не в игру, а в непокупленное.
+    multBadge(x, y) {
+        const C = PALETTE.redCarpet;
+        const mult = this.multiplier();
+        const per = this.params.hype.perStep;
+        const capped = mult >= this.params.multCap;
+        const toNext = capped ? 1 : (this.hype % per) / per;
+        const heat = Math.min(1, this.hype / this.params.kissBag.hotAt);
+        const size = 26 + heat * 12;
+        const bar = 36;
+        return `<g class="pr-mult" transform="translate(${x.toFixed(0)},${y.toFixed(0)})">
+            <text x="0" y="0" text-anchor="end" font-size="${size.toFixed(0)}"
+                  font-weight="800" fill="${capped ? C.gold[300] : C.flash[500]}">×${mult}</text>
+            <rect x="${-bar}" y="9" width="${bar}" height="5" rx="2.5"
+                  fill="${C.night[500]}" opacity="0.75"/>
+            <rect x="${-bar}" y="9" width="${(bar * toNext).toFixed(1)}" height="5" rx="2.5"
+                  fill="${capped ? C.gold[300] : C.kiss[300]}"/>
+        </g>`;
     },
 
     // ---------- ИНТЕРФЕЙС КОСТЮМЕРНОЙ ----------

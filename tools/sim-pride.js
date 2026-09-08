@@ -46,10 +46,30 @@ const RUN_SEC = CFG.runMs / 1000;
 // Ступени берутся из конфига: base — то, с чего начинают, levels[].bonus —
 // значение каждой купленной ступени.
 const steps = (branch) => [branch.base].concat(branch.levels.map(l => l.bonus));
-const CROWD = steps(UP.crowd);
-const CARS = steps(UP.car);
+const RADIUS = steps(UP.crowd);     // толпа — ширина зоны
+const CARS = steps(UP.car);         // машина — потолок множителя
+const LIFE = steps(UP.carpet);      // дорожка — сколько зона висит
 const PRICES = UP.crowd.levels.map(l => l.price.pride_kiss);
 const CAR_PRICES = UP.car.levels.map(l => l.price.pride_kiss);
+
+// ---------- ЧАСТОТА ЗОН ----------
+// Скрытая ручка: её двигает любая купленная ступень любой линии. Считается
+// так же, как в Backend.prideRun(), и это не дубль ради удобства — иначе
+// калькулятор считал бы другую игру.
+const spawnAt = (steps) => Math.max(CFG.spawnFloor, CFG.spawnBase - CFG.spawnStep * steps);
+
+// ---------- ТОЧНОСТЬ ОТ ШИРИНЫ И ВРЕМЕНИ ----------
+// Обе покупки, кроме машины, работают только через ОДНО — через то, чаще ли
+// игрок попадает. Модель простая и намеренно грубая: базовая точность даётся
+// на стартовой зоне (радиус 44, полторы секунды), шире зона и дольше висит —
+// промахов меньше. Дальше единицы: доля НЕзакрытых зон делится пополам между
+// «не успел» (зона погасла) и «ткнул мимо» (сброс).
+function accuracyAt(radius, lifeMs, base) {
+    const miss = 1 - base;
+    const byRadius = Math.pow(UP.crowd.base / radius, 1.15);   // шире зона — реже мажешь
+    const byLife = Math.pow(UP.carpet.base / lifeMs, 0.8);     // дольше висит — реже не успеваешь
+    return 1 - Math.min(0.98, miss * byRadius * byLife);
+}
 
 // Мешок зон — ТОТ ЖЕ, что в игре, и это принципиально: доля поцелуев зависит
 // от ажиотажа, то есть доход зависит от игры дважды (через множитель и через
@@ -66,18 +86,28 @@ function drawBag(hype) {
     return bag;
 }
 
+// Один выход. Три исхода у зоны, и они РАЗНЫЕ по цене:
+//   • закрыл          — ажиотаж вверх, поцелуйная зона платит множителем;
+//   • не успел        — ажиотаж вниз на miss (зон больше, чем успевает палец);
+//   • ткнул мимо неё  — ажиотаж В НОЛЬ (дробь по экрану стоит дорого).
 function run(interval, cap, accuracy) {
     const zones = Math.floor(CFG.runMs / interval);
     // Сколько зон игрок вообще успевает попробовать закрыть. Остальные
-    // гаснут сами — и роняют ажиотаж наравне с промахом.
+    // гаснут сами.
     const reach = Math.min(1, (TAP_RATE * RUN_SEC) / zones);
     let hype = 0, kisses = 0, bag = [];
     for (let i = 0; i < zones; i++) {
         if (!bag.length) bag = drawBag(hype);
         const isKiss = bag.pop();
-        const caught = Math.random() < accuracy * reach;
-        hype = Math.max(0, hype + (caught ? CFG.hype.hit : CFG.hype.miss));
-        if (!caught) continue;
+        if (Math.random() > reach) {          // не дотянулся: зона погасла
+            hype = Math.max(0, hype + CFG.hype.miss);
+            continue;
+        }
+        if (Math.random() > accuracy) {       // целился и промазал: сброс
+            hype = CFG.hype.missclickResets ? 0 : Math.max(0, hype + CFG.hype.miss);
+            continue;
+        }
+        hype += CFG.hype.hit;
         const mult = Math.min(cap, 1 + Math.floor(hype / CFG.hype.perStep));
         if (isKiss) kisses += mult;
     }
@@ -88,32 +118,39 @@ function run(interval, cap, accuracy) {
 // клетке сотни раз (каждый день до следующей покупки — одна и та же), а
 // каждый ответ стоит двадцати тысяч выходов.
 const AVG_CACHE = new Map();
-function avg(interval, cap, accuracy) {
-    const key = interval + ':' + cap + ':' + accuracy;
+// Доход клетки: сколько поцелуев даёт выход при таких покупках. Все три
+// линии сходятся здесь — толпа через ширину зоны, дорожка через её время,
+// машина через потолок множителя, а частота считается из их суммы.
+function avg(lv, base) {
+    const key = lv.crowd + ':' + lv.car + ':' + lv.carpet + ':' + base;
     if (AVG_CACHE.has(key)) return AVG_CACHE.get(key);
+    const interval = spawnAt(lv.crowd + lv.car + lv.carpet);
+    const acc = accuracyAt(RADIUS[lv.crowd], LIFE[lv.carpet], base);
     let sum = 0;
-    for (let i = 0; i < RUNS; i++) sum += run(interval, cap, accuracy);
+    for (let i = 0; i < RUNS; i++) sum += run(interval, CARS[lv.car], acc);
     const v = sum / RUNS;
     AVG_CACHE.set(key, v);
     return v;
 }
+const L = (crowd, car, carpet) => ({ crowd, car, carpet });
 
-for (const accuracy of [1, 0.85, 0.7]) {
-    console.log(`\n=== точность ${(accuracy * 100).toFixed(0)}% — поцелуев за выход ===`);
-    console.log(['толпа\\машина'].concat(CARS.map(c => `×${c}`))
+for (const base of [1, 0.85, 0.7]) {
+    console.log(`\n=== точность ${(base * 100).toFixed(0)}% на стартовой зоне — поцелуев за выход ===`);
+    console.log(['линии\\машина'].concat(CARS.map(c => `×${c}`))
         .map(h => String(h).padStart(16)).join(''));
-    CROWD.forEach((interval, lvl) => {
-        const zones = Math.floor(CFG.runMs / interval);
-        const perSec = (zones / RUN_SEC).toFixed(1);
-        const row = [`${lvl}: ${zones} зон, ${perSec}/с`];
-        for (const cap of CARS) row.push(avg(interval, cap, accuracy).toFixed(1));
+    // Строка — одинаковый уровень толпы и дорожки: игрок редко качает одну
+    // линию в отрыве от другой, а таблица с тремя осями нечитаема.
+    for (let lv = 0; lv < RADIUS.length; lv++) {
+        const zones = Math.floor(CFG.runMs / spawnAt(lv * 2));
+        const row = [`${lv}: ${RADIUS[lv]}px ${LIFE[lv]}мс`];
+        for (let car = 0; car < CARS.length; car++) row.push(avg(L(lv, car, lv), base).toFixed(1));
         console.log(row.map(h => String(h).padStart(16)).join(''));
-    });
+    }
 }
 
 // ---------- ЦЕНЫ И ТЕМП ----------
-const base = avg(CROWD[0], CARS[0], 0.85);
-const top = avg(CROWD[CROWD.length - 1], CARS[CARS.length - 1], 0.85);
+const base = avg(L(0, 0, 0), 0.85);
+const top = avg(L(RADIUS.length - 1, CARS.length - 1, LIFE.length - 1), 0.85);
 const lineCost = PRICES.reduce((a, b) => a + b, 0);
 console.log(`\nстартовый доход (толпа 0, ×${CARS[0]}, точность 85%): ${base.toFixed(1)} поцелуев/выход`);
 console.log(`полностью прокачанный:                            ${top.toFixed(1)} поцелуев/выход  (×${(top / base).toFixed(1)})`);
@@ -137,26 +174,33 @@ for (let n = 1; n <= 10; n++) {
 console.log(`\nвыходы подряд за сутки (стартовые числа): ${line.join(' ')}`);
 console.log(`итого за десять выходов ${day} поцелуев — против ${Math.round(base * 10)} без усталости публики`);
 
-// ---------- НЕ СТАЛА ЛИ ПЛОТНОСТЬ ЛОВУШКОЙ ----------
-// Купленная массовка ОБЯЗАНА платить больше некупленной. Если верхняя
-// ступень при честной точности приносит меньше нижней, значит зоны пошли
-// гуще, чем успевает палец, и покупка превратилась в наказание за деньги.
-// Это тот самый случай, ради которого калькулятор и написан.
-console.log('\nпроверка ступеней массовки (машина ×' + CARS[0] + ', точность 85%):');
-let prev = null, trap = false;
-CROWD.forEach((interval, lvl) => {
-    const v = avg(interval, CARS[0], 0.85);
-    const zones = Math.floor(CFG.runMs / interval);
-    const over = zones / RUN_SEC > TAP_RATE;
-    const worse = prev !== null && v < prev;
-    if (worse) trap = true;
-    console.log(`  ступень ${lvl}: ${v.toFixed(1)} поцелуев` +
-                (prev === null ? '' : `   ${v > prev ? '+' : ''}${(v - prev).toFixed(1)}`) +
-                (over ? '   ⚠ зон больше, чем успевает палец' : '') +
-                (worse ? '   ✗ ПОКУПКА ВРЕДИТ' : ''));
-    prev = v;
-});
-if (!trap) console.log('  каждая ступень платит больше предыдущей — ловушки нет');
+// ---------- НЕ СТАЛА ЛИ КАКАЯ-ТО ЛИНИЯ ЛОВУШКОЙ ----------
+// Каждая ступень каждой линии ОБЯЗАНА платить больше предыдущей. Проверка
+// стоит здесь с тех пор, как плотная лестница массовки однажды провалилась:
+// зоны пошли гуще, чем успевает палец, и купленная ступень стала приносить
+// МЕНЬШЕ некупленной (docs/traps.md, п. 53). Теперь частота скрытая и общая,
+// но проверять надо тем более.
+// Смотреть надо ПРИ КУПЛЕННЫХ соседях, а не в вакууме: при машине ×1
+// множитель не работает вовсе, и вклад ширины зоны с временем выглядит
+// втрое меньше, чем он есть в живой игре.
+console.log('\nпроверка ступеней (точность 85%, у соседних линий середина):');
+const MID = 3, MIDCAR = 3;
+let trap = false;
+[['crowd', (i) => L(i, MIDCAR, MID)], ['car', (i) => L(MID, i, MID)], ['carpet', (i) => L(MID, MIDCAR, i)]]
+    .forEach(([key, mk]) => {
+        const n = UP[key].levels.length;
+        let prev = null;
+        const row = [];
+        for (let i = 0; i <= n; i++) {
+            const v = avg(mk(i), 0.85);
+            row.push(v.toFixed(1) + (prev !== null && v < prev ? ' ✗' : ''));
+            if (prev !== null && v < prev) trap = true;
+            prev = v;
+        }
+        console.log(`  ${UP[key].name.padEnd(9)} ${row.join(' → ')}`);
+    });
+console.log(trap ? '  ✗ ЕСТЬ СТУПЕНЬ, КОТОРАЯ ПЛАТИТ МЕНЬШЕ ПРЕДЫДУЩЕЙ'
+                 : '  каждая ступень платит больше предыдущей — ловушки нет');
 
 // Первое улучшение должно быть в досягаемости за несколько выходов, иначе
 // линия покупок начинается с недели ожидания.
@@ -180,7 +224,7 @@ function daysToBuyAll(perDay, accuracy) {
         const l = UP[key].levels[levels[key]];
         return l ? l.price.pride_kiss : Infinity;
     };
-    const income = () => avg(CROWD[levels.crowd], CARS[levels.car], accuracy);
+    const income = () => avg(levels, accuracy);
     const total = ['crowd', 'car', 'carpet']
         .reduce((sum, k) => sum + UP[k].levels.reduce((a, l) => a + l.price.pride_kiss, 0), 0);
 

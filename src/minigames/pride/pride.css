@@ -167,6 +167,24 @@
 
 #pride-game .pr-count { pointer-events: none; }
 
+/* ---------- МНОЖИТЕЛЬ ---------- */
+/* Сорванный множитель — самое обидное событие в игре, и случиться молча оно
+   не должно: цифра дёргается и на мгновение краснеет. Анимация на ТЕКСТЕ, а
+   не на группе: на группе записано её место, и css-анимация transform стёрла
+   бы его целиком (docs/traps.md, п. 50). */
+#pride-game .pr-mult.pr-mult-drop text {
+    animation: pr-mult-drop 0.45s ease-out;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes pr-mult-drop {
+    0%   { fill: #ff5a5a; transform: scale(1.4); }
+    30%  { transform: scale(1.05) translateX(-5px); }
+    55%  { transform: scale(1.05) translateX(5px); }
+    100% { transform: scale(1); }
+}
+
 /* ---------- ЛУЖА СВЕТА У СТАРТА ---------- */
 /* Единственная «кнопка» игры, и она без слов: пятно света на ковре впереди
    дышит, пока выход не начался. */

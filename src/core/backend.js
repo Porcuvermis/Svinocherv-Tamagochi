@@ -1381,20 +1381,30 @@ const LocalBackend = {
     // считает этого сама: и база, и купленные ступени — конфиг (инвариант 3).
     prideRun() {
         const cfg = (ECONOMY.minigames && ECONOMY.minigames.pride) || {};
+        const levels = {
+            crowd: GameState.upgradeLevel('pride_crowd'),
+            car: GameState.upgradeLevel('pride_car'),
+            carpet: GameState.upgradeLevel('pride_carpet')
+        };
+        // ---------- СКРЫТАЯ РУЧКА ----------
+        // Частоту зон двигает ЛЮБАЯ купленная ступень любой линии, а не
+        // отдельная покупка. Поэтому она и считается здесь, из суммы всех
+        // уровней: прокачка ощущается сильнее, чем обещает ценник.
+        const steps = levels.crowd + levels.car + levels.carpet;
+        const spawn = Math.max(cfg.spawnFloor || 430,
+                               (cfg.spawnBase || 620) - (cfg.spawnStep || 8) * steps);
         return {
             runMs: cfg.runMs || 20000,
-            lifeMs: cfg.targetLifeMs || 1500,
             kissBag: Object.assign({ of: 4, cold: 1, hot: 2, hotAt: 6 }, cfg.kissBag || {}),
             maxTargets: cfg.maxTargets || 5,
-            hype: Object.assign({ hit: 1, miss: -2, perStep: 3 }, cfg.hype || {}),
-            spawnMs: this.upgradeValue('pride', 'crowd'),
+            hype: Object.assign({ hit: 1, miss: -2, perStep: 3, missclickResets: true },
+                                cfg.hype || {}),
+            spawnMs: spawn,
+            steps,
+            radius: this.upgradeValue('pride', 'crowd'),
             multCap: this.upgradeValue('pride', 'car'),
-            radius: this.upgradeValue('pride', 'carpet'),
-            levels: {
-                crowd: GameState.upgradeLevel('pride_crowd'),
-                car: GameState.upgradeLevel('pride_car'),
-                carpet: GameState.upgradeLevel('pride_carpet')
-            }
+            lifeMs: this.upgradeValue('pride', 'carpet'),
+            levels
         };
     },
 
