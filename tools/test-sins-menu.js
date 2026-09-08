@@ -5,11 +5,12 @@ const { chromium } = require('playwright');
 //
 //   1. в комнате нет ни HUD, ни списка полосок;
 //   2. короткий тап по червю меню НЕ открывает (это «повозиться»);
-//   3. удержание 0.7 с на червя открывает меню;
+//   3. удержание 0.5 с на червя открывает меню;
 //   4. луч налит нехваткой греха, а узел горит ровно тогда, когда шкала
 //      опустилась до порога голода (ECONOMY.sins.<грех>.payAt);
 //   5. тап по узлу открывает мини-игру этого греха;
-//   6. удержание на логотипе меню закрывает.
+//   6. удержание на логотипе меню закрывает, а короткий тап — нет, и
+//      отпущенный палец обрывает отсчёт НАСОВСЕМ.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     NODE_PATH=/opt/node22/lib/node_modules node tools/test-sins-menu.js /tmp/shot-
@@ -64,20 +65,23 @@ const { chromium } = require('playwright');
   // ---------- 2. короткий тап ----------
   await page.mouse.move(spot.x, spot.y);
   await page.mouse.down();
-  await page.waitForTimeout(220);
+  await page.waitForTimeout(180);
   await page.mouse.up();
-  await page.waitForTimeout(200);
+  // Ждать надо ДОЛЬШЕ полного удержания. Первая версия проверяла через
+  // 200 мс — то есть раньше, чем сработал бы отсчёт, — и потому не заметила,
+  // что отпускание пальца его вообще не отменяет.
+  await page.waitForTimeout(700);
   check(!(await open()), 'короткий тап по червю меню не открывает');
 
   // ---------- 3. удержание ----------
   await page.mouse.move(spot.x, spot.y);
   await page.mouse.down();
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(280);
   await page.screenshot({ path: out + 'sm-1-hold.png' });     // кольцо удержания
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
   await page.mouse.up();
   await page.waitForTimeout(400);
-  check(await open(), 'удержание 0.7 с открывает меню');
+  check(await open(), 'удержание 0.5 с открывает меню');
   await page.screenshot({ path: out + 'sm-2-menu.png' });
 
   // ---------- 4. что показано ----------
@@ -126,9 +130,9 @@ const { chromium } = require('playwright');
   });
   await page.mouse.move(core.x, core.y);
   await page.mouse.down();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(250);
   await page.screenshot({ path: out + 'sm-5-close-hold.png' });
-  await page.waitForTimeout(550);
+  await page.waitForTimeout(400);
   await page.mouse.up();
   await page.waitForTimeout(400);
   check(!(await open()), 'удержание на логотипе закрывает меню');
@@ -138,10 +142,34 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(250);
   await page.mouse.move(core.x, core.y);
   await page.mouse.down();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(180);
   await page.mouse.up();
-  await page.waitForTimeout(250);
-  check(await open(), 'короткое нажатие на логотип меню не закрывает');
+  await page.waitForTimeout(900);   // заведомо дольше удержания: отсчёт обязан быть снят
+  check(await open(), 'короткое нажатие на логотип не закрывает даже спустя секунду');
+
+  // Отпускание МИМО меню тоже обязано обрывать отсчёт: палец уехал с
+  // логотипа и поднялся где-то ещё.
+  await page.mouse.move(core.x, core.y);
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  await page.mouse.move(core.x + 120, core.y + 200);
+  await page.mouse.up();
+  await page.waitForTimeout(900);
+  check(await open(), 'уехавший и отпущенный палец меню не закрывает');
+
+  // И подменяемое чтение греха: колесо не обязано знать, откуда взялись
+  // «налито» и «горит».
+  const custom = await page.evaluate(() => {
+    SinsMenu.readers.envy = () => ({ fill: 42, ready: true });
+    SinsMenu.update(true);
+    const g = document.querySelector('.sm-sin[data-sin="envy"]');
+    const out = { fill: parseFloat(g.querySelector('.sm-ray-flow').getAttribute('stroke-dasharray')),
+                  ready: g.classList.contains('ready') };
+    delete SinsMenu.readers.envy;
+    SinsMenu.update(true);
+    return out;
+  });
+  check(custom.fill === 42 && custom.ready, 'грех может читаться своей читалкой, а не общим правилом');
 
   // ---------- 7. награда только за просевший грех ----------
   const paid = await page.evaluate(async () => {
