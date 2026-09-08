@@ -86,7 +86,7 @@
 | Наряд: слоты, предметы, отрисовка | `src/config/pride-wardrobe.js` + `src/core/worm-cosmetics.js` |
 | Как проверять кухню (три уровня) | `docs/kitchen-checks.md` |
 | Убрать слова из экрана | `docs/plan/11-no-words.md` |
-| Деплой, iPhone, service worker | `docs/deploy-iphone.md` |
+| Деплой, iPhone, service worker, запуск в Telegram | `docs/deploy-iphone.md` |
 | «Почему это сделано так» | `docs/progress-log.md` — архив с указателем сверху |
 
 ---
@@ -119,6 +119,7 @@ NODE_PATH=/opt/node22/lib/node_modules node tools/<тест>.js /tmp/shot-
 | `test-no-words.js` | Ни одного слова на игровых экранах (инвариант 9) |
 | `test-sins-menu.js` | Меню грехов: удержание открывает, узел запускает игру, награду даёт только просевший грех |
 | `test-lazy-three.js` | three.js не грузится, пока не открыли зависть — и грузится, когда открыли |
+| `test-telegram.js` | Мини-приложение: библиотеку Telegram не грузят вне Telegram, внутри — окно развёрнуто, свайп-закрытие запрещено, отдача идёт тактильным мостом |
 | `test-pride.js` | Ковровая дорожка: длина выхода, стрик и запрет поцелуев без него, начисление поцелуев, три покупки |
 | `progression.js`, `sim-*.js`, `measure-power.js` | Числа баланса по живому конфигу |
 
@@ -192,6 +193,8 @@ src/core/           ядро, общее для всех экранов:
   liquid-stream.js    струя жидкости: один движок на все наливы в игре
   haptics.js          отдача в палец: Telegram, vibrate или ничего — решает
                       она, мини-игра только говорит, что произошло
+  telegram.js         мост в Telegram: разворот окна, запрет свайп-закрытия.
+                      Библиотека грузится только внутри Telegram
   stage.js            холст постоянного размера и «поверни телефон»
   debug.js            debug-режим и машина времени
 
