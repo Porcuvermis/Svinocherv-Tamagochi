@@ -135,38 +135,13 @@ canvas {
     animation: none !important;
 }
 
-/* ================= КЛИКАБЕЛЬНЫЙ HUD СВЕРХУ ================= */
-#mini-hud {
-    position: absolute;
-    top: max(15px, env(safe-area-inset-top));
-    left: 5%;
-    width: 90%;
-    display: flex;
-    justify-content: space-around;
-    padding: 12px;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    z-index: 99999 !important; 
-    pointer-events: auto !important;
-    cursor: pointer;
-    transition: transform 0.1s ease, opacity 0.3s ease;
-}
-
-#mini-hud:active {
-    transform: scale(0.97);
-    background: rgba(0, 0, 0, 0.7);
-}
-
 /* ---------- КОШЕЛЁК ----------
-   Под рядом кружков грехов и правее: HUD грехов кликабелен целиком (тап по
-   нему открывает меню), поэтому кошелёк лежит СНАРУЖИ него — иначе тап по
-   монетам открывал бы меню грехов. */
+   Единственное, что осталось от интерфейса в комнате: ряд кружков грехов и
+   список полосок сняты совсем, грехи живут в своём меню (sins-menu.css).
+   Поэтому кошелёк переехал наверх — под ним больше ничего не висит. */
 #wallet {
     position: absolute;
-    top: calc(max(15px, env(safe-area-inset-top)) + 72px);
+    top: max(15px, env(safe-area-inset-top));
     right: 5%;
     display: flex;
     align-items: center;
@@ -204,155 +179,8 @@ canvas {
 /* ---------- СМЕРТЬ ----------
    Интерфейс гаснет вместе с червём: играть, пока он лежит, всё равно не во
    что — шкалы пусты по определению смерти. */
-body.worm-dead #mini-hud,
 body.worm-dead #wallet {
     opacity: 0.55;
-}
-
-.stat-circle {
-    width: 38px;
-    height: 38px;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.stat-circle svg {
-    transform: rotate(-90deg);
-    width: 100%;
-    height: 100%;
-}
-
-.stat-circle circle {
-    fill: none;
-    stroke-width: 4;
-}
-
-.stat-circle .bg { stroke: #444; }
-.stat-circle .progress {
-    stroke-dasharray: 100;
-    stroke-dashoffset: 0;
-    transition: stroke-dashoffset 0.1s linear;
-}
-
-.stat-circle .emoji {
-    position: absolute;
-    font-size: 13px;
-}
-
-/* ================= ПОЛНОЭКРАННОЕ МЕНЮ ГРЕХОВ ================= */
-#full-menu {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(15, 15, 15, 0.97);
-    display: flex;
-    flex-direction: column;
-    z-index: 100000 !important; 
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.25s ease-out;
-}
-
-#full-menu.active {
-    opacity: 1;
-    pointer-events: auto !important;
-}
-
-/* Зона закрытия меню, дублирующая положение HUD */
-#close-menu-area {
-    width: 90%;
-    margin: max(15px, env(safe-area-inset-top)) auto 0 auto;
-    padding: 12px;
-    background: rgba(255, 69, 0, 0.15);
-    border: 1px dashed rgba(255, 69, 0, 0.4);
-    border-radius: 20px;
-    text-align: center;
-    color: #ffaa00;
-    font-weight: bold;
-    font-size: 14px;
-    letter-spacing: 4px;
-    cursor: pointer;
-    box-sizing: border-box;
-    transition: background 0.1s ease, transform 0.1s ease;
-}
-
-#close-menu-area:active {
-    transform: scale(0.97);
-    background: rgba(255, 69, 0, 0.3);
-}
-
-#sins-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    padding: 20px 16px;
-    gap: min(1.8vh, 14px);
-    overflow-y: auto;
-}
-
-.sin-row {
-    display: flex;
-    align-items: center;
-    background: var(--panel-color);
-    padding: 12px;
-    border-radius: 16px;
-    border: 1px solid #383838;
-}
-
-.sin-info {
-    flex: 1;
-    margin-right: 12px;
-}
-
-.sin-name {
-    font-size: 14px;
-    font-weight: bold;
-    margin-bottom: 6px;
-}
-
-.sin-bar-container {
-    width: 100%;
-    height: 20px;
-    background-color: #111;
-    border-radius: 10px;
-    overflow: hidden;
-    position: relative;
-}
-
-.sin-bar {
-    height: 100%;
-    width: 100%;
-    /* Короткий нарочно. Полоска меняется редко (раз в десятую долю процента),
-       и почти всегда это заметный скачок после мини-игры. Длинный переход
-       заставлял бы браузер пересчитывать раскладку в каждом кадре почти
-       половину времени — за анимацию, которой никто не видит. */
-    transition: width 0.2s ease-out;
-}
-
-.sin-value {
-    position: absolute;
-    width: 100%;
-    text-align: center;
-    font-size: 11px;
-    line-height: 20px;
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 1px 1px 2px #000;
-}
-
-.sin-btn {
-    padding: 10px 16px;
-    border: none;
-    border-radius: 10px;
-    color: white;
-    font-weight: bold;
-    font-size: 13px;
-    cursor: pointer;
 }
 
 /* ============ DEBUG-РЕЖИМ (глобальная кнопка) ============ */

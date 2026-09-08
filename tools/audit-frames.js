@@ -30,6 +30,7 @@ const SLOW = Number(process.argv[2] || 6);
 // Экраны и как их открыть. Комната — это просто «ничего не открыто».
 const SCREENS = [
     { name: 'комната',    open: null },
+    { name: 'меню грехов', open: 'SinsMenu' },
     { name: 'кухня',      open: 'GluttonyMinigame' },
     { name: 'сад',        open: 'SlothMinigame' },
     { name: 'тщеславие',  open: 'PrideMinigame' },

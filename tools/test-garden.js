@@ -144,6 +144,7 @@ const { chromium } = require('playwright');
       stage: i === 0 ? 'locked' : 'empty', species: null, seed: 0, at: null, skipped: 0
     }));
     GameState.data.garden.seeds = { potato: 9 };
+    GameState.setSinValue('sloth', 0);
     GameState.save();
     GameManager.handleSinAction('sloth');
   });
@@ -611,6 +612,9 @@ const { chromium } = require('playwright');
                    items: ['pork', 'potato', 'herb'], liquid: 'broth' };
     const dish = Backend.dishQuality(meta);
     const dungBefore = GameState.currency('dung');
+    // Сытый грех не платит (ECONOMY.readyBelow), а проверяется здесь именно
+    // круг «блюдо → кучка → удобрение».
+    GameState.setSinValue('gluttony', 0);
     Backend.minigameResult({ sin: 'gluttony', mode: 'feast', outcome: 'win', meta });
     const poopSize = GameState.data.digestion.poop_size;
     // Час спустя червь какает. Отматываем метку кормёжки — тем же способом,

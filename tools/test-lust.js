@@ -28,7 +28,7 @@ const { chromium } = require('playwright');
     if (!cond) fail.push(what);
   };
 
-  await page.evaluate(() => LustMinigame.open());
+  await page.evaluate(() => { GameState.setSinValue('lust', 0); LustMinigame.open(); });
   await page.waitForTimeout(600);
 
   // Точка сцены → точка экрана. Тот же перевод, которым игра кладёт предметы.

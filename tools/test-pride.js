@@ -23,7 +23,9 @@ const { chromium } = require('playwright');
 
   await page.goto('http://127.0.0.1:8777/index.html');
   await page.waitForTimeout(2300);
-  await page.evaluate(() => GameManager.handleSinAction('pride'));
+  // Шкалу роняем в ноль: награду грех отдаёт, только когда просел ниже
+  // ECONOMY.readyBelow, а свежий сейв стартует с полными шкалами.
+  await page.evaluate(() => { GameState.setSinValue('pride', 0); GameManager.handleSinAction('pride'); });
   await page.waitForTimeout(1200);
 
   const started = Date.now();

@@ -28,7 +28,7 @@ const { chromium } = require('playwright');
   const dragPts = async (f,t,st) => { await page.mouse.move(f.x,f.y); await page.mouse.down();
     for(let i=1;i<=(st||12);i++){ await page.mouse.move(f.x+(t.x-f.x)*i/(st||12), f.y+(t.y-f.y)*i/(st||12)); await page.waitForTimeout(18);} await page.mouse.up(); };
 
-  await page.evaluate(() => GameManager.handleSinAction('gluttony'));
+  await page.evaluate(() => { GameState.setSinValue('gluttony', 0); GameManager.handleSinAction('gluttony'); });
   await page.waitForTimeout(600);
   await page.mouse.click((await atScene(155,800)).x, (await atScene(155,800)).y);
   await waitCamera(); await page.waitForTimeout(700);

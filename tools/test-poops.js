@@ -127,7 +127,9 @@ const { chromium } = require('playwright-core');
   await cycle();
   await p.setViewportSize({ width: 420, height: 800 }); await p.waitForTimeout(900);
   await check('после смены размера');
-  await p.evaluate(() => GameManager.handleSinAction('gluttony')); await p.waitForTimeout(900);
+  // Кучка — часть награды за кормёжку, а награду даёт только просевший
+  // грех (ECONOMY.readyBelow).
+  await p.evaluate(() => { GameState.setSinValue('gluttony', 0); GameManager.handleSinAction('gluttony'); }); await p.waitForTimeout(900);
   await p.evaluate(() => { const el = document.getElementById('gluttony-game'); if (el) el.classList.remove('active'); });
   await p.waitForTimeout(900); await check('после мини-игры');
   await cycle(); await check('цикл после перестроений');

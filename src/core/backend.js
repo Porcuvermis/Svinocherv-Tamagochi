@@ -80,8 +80,20 @@ const LocalBackend = {
             return Promise.resolve({ state: GameState.data, awarded: null, repeated: true });
         }
 
-        const reward = this.resolveReward(sin, mode, outcome);
-        const awarded = { sin, mode, outcome, sinValue: null, currencies: {}, mark: null };
+        // ---------- ГОТОВ ЛИ ГРЕХ ПЛАТИТЬ ----------
+        // Полная шкала — сытый червь: играть можно, а платить не за что
+        // (ECONOMY.readyBelow). Решается ЗДЕСЬ, а не в мини-игре: это
+        // начисление, а не правило игры (инвариант 2). И считается ДО того,
+        // как шкалу зальют, — иначе готовым не окажется никто.
+        //
+        // Не готов — начисляется только шкала: ни валют, ни осколков, ни
+        // отметин, ни кормёжки. Игрок ничего не теряет, но и не выигрывает
+        // от того, что крутит одну и ту же игру подряд.
+        const ready = GameState.sinValue(sin) < GameState.maxValue(sin) * ECONOMY.readyBelow;
+
+        const full = this.resolveReward(sin, mode, outcome);
+        const reward = ready ? full : { sinFill: full.sinFill };
+        const awarded = { sin, mode, outcome, ready, sinValue: null, currencies: {}, mark: null };
 
         if (reward.sinFill === 'full') {
             GameState.setSinValue(sin, GameState.maxValue(sin));
@@ -171,7 +183,10 @@ const LocalBackend = {
         // нём стоит убывающая доходность золота из плана (1–5 побед за сутки
         // дают 100%, 6–15 — половину, дальше — 10%). Считать его надо с
         // самого начала: задним числом эти данные не восстановишь.
-        GameState.bumpCounter(sin + '.' + mode + '.' + outcome, 1);
+        // Счётчик суточных исходов двигают только оплаченные заходы: он
+        // управляет убывающей доходностью золота, и было бы странно, если бы
+        // бесплатные повторы съедали доход у будущих оплаченных.
+        if (ready) GameState.bumpCounter(sin + '.' + mode + '.' + outcome, 1);
 
         GameState.markProcessed(requestId);
         GameState.touch();
