@@ -137,6 +137,48 @@ const { chromium } = require('playwright');
     check(/^\+\d+$/.test(shownPay), 'выплата показана числом: ' + shownPay);
   }
 
+  // ---------- 4а. РЫЧАГ ТЯНЕТСЯ ПАЛЬЦЕМ ----------
+  // Автомат с рычагом, который нельзя дёрнуть, — это картинка рычага.
+  // Проверяется ровно так, как делает палец: нажали на ручку, потянули
+  // вниз, отпустили.
+  const lever = await page.evaluate(() => {
+    const r = document.getElementById('lever-grab').getBoundingClientRect();
+    const m = document.getElementById('machine-container').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, pull: m.height * 0.18 };
+  });
+  const spinsBefore = await page.evaluate(() => window.__spins.length);
+  await page.mouse.move(lever.x, lever.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(lever.x, lever.y + lever.pull * i / 6);
+    await page.waitForTimeout(20);
+  }
+  const angle = await page.evaluate(() => {
+    const t = document.getElementById('lever-arm').style.transform;
+    const m = /rotate\(([\d.]+)deg\)/.exec(t);
+    return m ? Number(m[1]) : 0;
+  });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  check(angle > 30, 'рычаг идёт за пальцем (угол ' + angle.toFixed(0) + '°)');
+  const spinsAfter = await page.evaluate(() => window.__spins.length);
+  check(spinsAfter === spinsBefore + 1, 'дотянутый рычаг запускает крутку');
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(100);
+    if (!(await page.evaluate(() => GreedMinigame.isSpinning))) break;
+  }
+
+  // Недотянутый рычаг возвращается сам и ничего не запускает.
+  const shortBefore = await page.evaluate(() => window.__spins.length);
+  await page.mouse.move(lever.x, lever.y);
+  await page.mouse.down();
+  await page.mouse.move(lever.x, lever.y + lever.pull * 0.25);
+  await page.waitForTimeout(60);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const shortAfter = await page.evaluate(() => window.__spins.length);
+  check(shortAfter === shortBefore, 'недотянутый рычаг крутку не запускает');
+
   // ---------- 5. ГАРАНТИЯ ПРОТИВ ТИЛЬТА ----------
   // Пальцем — только первые крутки: дальше проверяется по ответам, иначе
   // прогон идёт минуты ради одного числа.
@@ -228,6 +270,25 @@ const { chromium } = require('playwright');
   }));
   check(back.worm === 'visible' && !back.open, 'после выхода комната вернулась');
   check(back.marked && back.nodes > 100, 'сцена та же, а не собрана заново');
+
+  // ---------- 10. УЗЕЛ АЛЧНОСТИ В КОЛЕСЕ ГРЕХОВ ----------
+  // У автомата к общему правилу добавлено второе условие: монета в кошельке.
+  // Горящий узел при пустом кошельке звал бы туда, где крутка не состоится.
+  const node = await page.evaluate(() => {
+    GameState.setSinValue('greed', 10);
+    Backend.grantCurrency('gold', 50);
+    const rich = SinsMenu.read('greed');
+    GameState.data.currencies.gold = 0;
+    const poor = SinsMenu.read('greed');
+    GameState.setSinValue('greed', GameState.maxValue('greed'));
+    Backend.grantCurrency('gold', 50);
+    const full = SinsMenu.read('greed');
+    return { rich, poor, full };
+  });
+  check(node.rich.ready, 'просевшая шкала и монеты в кошельке — узел горит');
+  check(!node.poor.ready, 'без монет узел погашен: крутка бы не состоялась');
+  check(!node.full.ready, 'полная шкала — узел погашен, как у всех грехов');
+  check(node.rich.fill > node.full.fill, 'луч налит нехваткой греха');
 
   console.log(errors.length ? '\nошибки страницы:\n' + errors.join('\n') : '\nошибок страницы нет');
   console.log(fail.length ? '\nПРОВАЛЕНО: ' + fail.length : '\nвсё сошлось');

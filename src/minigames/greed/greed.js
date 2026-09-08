@@ -95,6 +95,17 @@ const GreedMinigame = {
             };
         }
 
+        this.attachLeverDrag();
+
+        // ---------- УЗЕЛ АЛЧНОСТИ В КОЛЕСЕ ГРЕХОВ ----------
+        // Читалка живёт рядом со своей мини-игрой (docs/sins-menu.md): что
+        // считать готовностью, знает грех, а не колесо. У автомата к общему
+        // правилу добавлено второе условие — монета в кошельке, иначе узел
+        // звал бы туда, где крутка не состоится.
+        if (typeof SinsMenu !== 'undefined' && typeof Backend !== 'undefined') {
+            SinsMenu.readers.greed = () => Backend.greedReady();
+        }
+
         window.addEventListener('resize', () => {
             if (!this.screenElement || !this.screenElement.classList.contains('active')) return;
             this.fitMachineStage();
@@ -313,11 +324,13 @@ const GreedMinigame = {
     // едут уже к известному результату: так работает и настоящий автомат
     // (исход решается в момент нажатия), и так это переживёт сервер — ответ
     // придёт по сети раньше, чем доедет анимация.
-    pullLever() {
+    // byHand — крутку запустили, дотянув рычаг пальцем: тогда своя анимация
+    // рывка не нужна, рычаг уже отыграл движение рукой.
+    pullLever(byHand) {
         if (this.isSpinning) return;
         if (!this.reelWindows[0] || this.reelWindows[0].clientHeight < 4) {
             // Сцена ещё не измерена — пробуем на следующем кадре.
-            requestAnimationFrame(() => this.pullLever());
+            requestAnimationFrame(() => this.pullLever(byHand));
             return;
         }
 
@@ -337,7 +350,7 @@ const GreedMinigame = {
         // после остановки барабанов. Выплата прибавится, когда будет видно, за что.
         this.refreshMeters(res.balance - res.pay);
 
-        this.animateLever();
+        if (!byHand) this.animateLever();
         this.feedCoin();
         if (this.machineContainer) this.machineContainer.classList.add('spin-lights');
 
@@ -393,8 +406,92 @@ const GreedMinigame = {
         this.spinTimers.push(t);
     },
 
+    // ---------- РЫЧАГ, КОТОРЫЙ ТЯНУТ ПАЛЬЦЕМ ----------
+    // Тап по автомату крутит и так — но автомат с рычагом, который нельзя
+    // дёрнуть, это картинка рычага. Палец тянет ручку вниз, рычаг идёт за
+    // ним, и на отпускании: дотянул до порога — крутка, не дотянул — рычаг
+    // возвращается сам, как пружина.
+    //
+    // Угол ставится СТИЛЕМ, а не атрибутом, и перед автоматической анимацией
+    // снимается: css-анимация transform стирает атрибут transform у
+    // svg-узла (docs/traps.md, п. 50), и жить им обоим одновременно нельзя.
+    LEVER_MAX_DEG: 58,       // столько же, сколько в keyframes автоматического рывка
+    LEVER_FIRE_DEG: 40,      // с этого угла рычаг «сорвался» и крутка идёт
+    dragging: false,
+
+    attachLeverDrag() {
+        const grab = document.getElementById('lever-grab');
+        if (!grab || !this.leverArm) return;
+
+        let startY = 0;
+        let travel = 1;
+        let angle = 0;
+        let startAt = 0;
+
+        const setAngle = (deg) => {
+            angle = Math.max(0, Math.min(this.LEVER_MAX_DEG, deg));
+            this.leverArm.style.transform = 'rotate(' + angle.toFixed(1) + 'deg)';
+        };
+
+        // fire — рычаг дотянут до срыва. tap — по ручке просто ткнули: она
+        // лежит поверх общей зоны тапа, и без этой ветки тап по самому
+        // рычагу оказался бы единственным местом автомата, которое не
+        // крутит.
+        const release = (fire, tap) => {
+            if (!this.dragging) return;
+            this.dragging = false;
+            grab.style.cursor = 'grab';
+            // Возврат пружиной: рычагу дают доиграть самому, а крутка
+            // запускается сразу — ждать анимацию незачем.
+            this.leverArm.style.transition = 'transform 0.45s cubic-bezier(0.34, 1.4, 0.64, 1)';
+            this.leverArm.style.transform = 'rotate(0deg)';
+            const t = setTimeout(() => {
+                if (!this.leverArm) return;
+                this.leverArm.style.transition = '';
+                this.leverArm.style.transform = '';
+            }, 500);
+            this.spinTimers.push(t);
+            if (fire) this.pullLever(true);
+            else if (tap) this.pullLever(false);
+        };
+
+        grab.addEventListener('pointerdown', (e) => {
+            if (this.isSpinning) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this.dragging = true;
+            startY = e.clientY;
+            grab.setPointerCapture(e.pointerId);
+            grab.style.cursor = 'grabbing';
+            startAt = Date.now();
+            this.leverArm.style.transition = '';
+            this.leverArm.classList.remove('pulled');
+            // Полный ход рычага — седьмая часть высоты автомата: столько
+            // палец проходит одним движением, не отрывая его от стекла.
+            const box = this.machineContainer
+                ? this.machineContainer.getBoundingClientRect() : null;
+            travel = Math.max(40, (box ? box.height : 480) * 0.14);
+            setAngle(0);
+        });
+
+        grab.addEventListener('pointermove', (e) => {
+            if (!this.dragging) return;
+            e.preventDefault();
+            setAngle((e.clientY - startY) / travel * this.LEVER_MAX_DEG);
+        });
+
+        const end = () => release(angle >= this.LEVER_FIRE_DEG,
+                                  angle < 4 && Date.now() - startAt < 350);
+        grab.addEventListener('pointerup', end);
+        grab.addEventListener('pointercancel', () => release(false, false));
+    },
+
     animateLever() {
         if (!this.leverArm) return;
+        // Инлайновый угол от перетаскивания снимается: css-анимация и
+        // собственный transform в одном узле не уживаются (traps, п. 50).
+        this.leverArm.style.transform = '';
+        this.leverArm.style.transition = '';
         this.leverArm.classList.remove('pulled');
         void this.leverArm.getBoundingClientRect().width;
         this.leverArm.classList.add('pulled');
