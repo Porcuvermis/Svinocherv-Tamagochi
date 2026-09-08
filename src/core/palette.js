@@ -611,3 +611,22 @@ if (typeof window !== 'undefined') {
     window.inkSoft = inkSoft;
     window.lightAttenuation = lightAttenuation;
 }
+
+// ---------- ЗНАЧОК ВАЛЮТЫ ----------
+// Возвращает РАЗМЕТКУ значка валюты для мест, где ценник собирается строкой.
+// Нужен из-за одной валюты: системная эмодзи-монета на айфоне серебряная, а
+// золото в игре обязано быть золотым — объяснять словами, что это золото,
+// нечем (инвариант 9). Поэтому монета рисуется классом .coin-gold
+// (style.css), а остальные валюты остаются значками из конфига.
+//
+// Живёт рядом с палитрой, потому что это вопрос ЦВЕТА, а не данных: в
+// конфиге валют лежит эмодзи, и он там и остаётся — конфиг переезжает на
+// сервер, а как это выглядит, решает клиент.
+function currencyMark(key) {
+    if (key === 'gold') return '<i class="coin-gold"></i>';
+    const conf = (typeof ECONOMY !== 'undefined' && ECONOMY.currencies)
+        ? ECONOMY.currencies[key] : null;
+    return conf ? conf.emoji : key;
+}
+
+if (typeof window !== 'undefined') window.currencyMark = currencyMark;

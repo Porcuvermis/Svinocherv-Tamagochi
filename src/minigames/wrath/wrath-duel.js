@@ -615,19 +615,18 @@ const WrathDuel = {
             const delta = awarded.currencies[key];
             if (!delta) return;
             const conf = ECONOMY.currencies[key];
-            parts.push(`+${delta} ${conf ? conf.emoji : key}`);
+            parts.push(`+${delta} ${currencyMark(key)}`);
         });
 
         // Убывающая доходность показывается долей, а не объясняется словами:
         // монета с процентом рядом с числом золота. Правило игрок выведет за
         // два-три боя (docs/plan/11-no-words.md).
         if (awarded.goldShare != null && awarded.goldShare < 1) {
-            parts.push(`🪙 ${Math.round(awarded.goldShare * 100)}%`);
+            parts.push(`${currencyMark('gold')} ${Math.round(awarded.goldShare * 100)}%`);
         }
         // Осколки сложились в жетон — показываем сам жетон со стрелкой.
         if (awarded.exchanged) {
-            const conf = ECONOMY.currencies[awarded.exchanged.into];
-            parts.push(`🩸→${conf ? conf.emoji : ''}`);
+            parts.push(`🩸→${currencyMark(awarded.exchanged.into)}`);
         }
         if (awarded.mark) parts.push('🩹');
         // Сколько поражений осталось до осколка: череп с числом и стрелка.

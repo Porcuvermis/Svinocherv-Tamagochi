@@ -87,7 +87,7 @@ const WrathShop = {
             `<span class="wallet-item${lack === key ? ' lack' : ''}" data-cur="${key}"><b>${text}</b></span>`;
         return item('wrath_token', `🎟 ${GameState.currency('wrath_token')}`)
              + item('wrath_shard', `🩸 ${GameState.currency('wrath_shard')}/${per}`)
-             + item('gold', `🪙 ${GameState.currency('gold')}`);
+             + item('gold', `${currencyMark('gold')} ${GameState.currency('gold')}`);
     },
 
     render() {
@@ -192,7 +192,7 @@ const WrathShop = {
         const price = item.price || {};
         const parts = Object.keys(price).map(key => {
             const conf = ECONOMY.currencies[key];
-            return `${conf ? conf.emoji : key} ${price[key]}`;
+            return `${currencyMark(key)} ${price[key]}`;
         });
         // Бесплатное — это ноль, а не слово «даром».
         return parts.join(' ') || '🎟 0';

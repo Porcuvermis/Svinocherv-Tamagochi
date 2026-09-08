@@ -39,7 +39,11 @@ const GreedMinigame = {
     // (инвариант 3), а чем нарисован символ — дело картинки. Незнакомый ключ
     // рисуется точкой, а не ломает экран: барабан обязан крутиться и после
     // того, как в PAR-лист добавят шестой символ.
-    GLYPH: { skull: '💀', coin: '🪙', meat: '🍖', bone: '🦴', blank: '▫️' },
+    //
+    // Монеты среди значков нет намеренно: системная эмодзи-монета на айфоне
+    // СЕРЕБРЯНАЯ, а это игра про золото. Монета рисуется (currencyMark →
+    // .coin-gold в style.css), остальные символы — обычные значки.
+    GLYPH: { skull: '💀', meat: '🍖', bone: '🦴', blank: '▫️' },
 
     table: null,             // ставка, кошелёк и выплаты — с той стороны
     isSpinning: false,
@@ -156,6 +160,16 @@ const GreedMinigame = {
         return this.GLYPH[key] || '·';
     },
 
+    // Разметка символа: монета — нарисованный кружок, остальное — значок.
+    // Возвращается именно разметка, а не текст: монета собирается из
+    // элемента с градиентом, текстом её не выразить.
+    symbolHtml(key, times) {
+        const one = (key === 'coin')
+            ? (typeof currencyMark === 'function' ? currencyMark('gold') : '')
+            : this.glyph(key);
+        return one.repeat ? one.repeat(times || 1) : one;
+    },
+
     // ---------- ТАБЛИЦА ВЫПЛАТ ----------
     // Строится из конфига, а не пишется в разметке: правка выплат обязана
     // быть видна игроку в тот же момент, что и калькулятору. Слов в ней нет —
@@ -166,9 +180,9 @@ const GreedMinigame = {
         const rows = this.table.symbols
             .filter(s => s.pay > 0)
             .sort((a, b) => b.pay - a.pay);
-        rows.forEach(s => this.tableEl.appendChild(this.payRow(this.glyph(s.key).repeat(3), s.pay)));
+        rows.forEach(s => this.tableEl.appendChild(this.payRow(this.symbolHtml(s.key, 3), s.pay)));
         if (this.table.pair && this.table.pair.key) {
-            this.tableEl.appendChild(this.payRow(this.glyph(this.table.pair.key).repeat(2),
+            this.tableEl.appendChild(this.payRow(this.symbolHtml(this.table.pair.key, 2),
                                                  this.table.pair.pay));
         }
         // Цифра у монеты — только если ставка не одна монета. Одна монета
@@ -181,7 +195,7 @@ const GreedMinigame = {
         row.className = 'pay-row';
         const left = document.createElement('span');
         left.className = 'pay-signs';
-        left.textContent = signs;
+        left.innerHTML = signs;
         const right = document.createElement('b');
         right.className = 'pay-value';
         right.textContent = pay;
@@ -290,7 +304,7 @@ const GreedMinigame = {
         cell.style.height = cellH + 'px';
         cell.style.fontSize = (cellH * (role === 'mid' ? 0.62 : 0.5)).toFixed(1) + 'px';
         cell.dataset.key = key;
-        cell.textContent = this.glyph(key);
+        cell.innerHTML = this.symbolHtml(key, 1);
         return cell;
     },
 

@@ -333,7 +333,7 @@ const WrathRogue = {
 
         const lootLine = Object.keys(loot).map(key => {
             const conf = ECONOMY.currencies[key];
-            return `${conf ? conf.emoji : key} ${loot[key]}`;
+            return `${currencyMark(key)} ${loot[key]}`;
         }).join('  ');
 
         // С чем входишь — числами, крупно. Забег изолирован от лобби, и это
@@ -389,7 +389,7 @@ const WrathRogue = {
         const s = this.summary;
         const won = Object.keys(s.currencies || {}).map(key => {
             const conf = ECONOMY.currencies[key];
-            return `${conf ? conf.emoji : key} +${s.currencies[key]}`;
+            return `${currencyMark(key)} +${s.currencies[key]}`;
         }).join('  ');
         // Сгоревшие зубы показаны минусом: это и есть «они живут только
         // внутри забега», сказанное числом.
@@ -440,7 +440,7 @@ const WrathRogue = {
             const price = (Backend.rogueConfig() || {}).entry || {};
             this.message = Object.keys(price).map(key => {
                 const conf = ECONOMY.currencies[key];
-                return `${conf ? conf.emoji : key} −${price[key]}`;
+                return `${currencyMark(key)} −${price[key]}`;
             }).join(' ');
         }
         this.render();
@@ -543,7 +543,7 @@ const WrathRogue = {
         if (g.healed) parts.push(`❤️ +${g.healed}`);
         Object.keys(g.currencies || {}).forEach(key => {
             const conf = ECONOMY.currencies[key];
-            parts.push(`${conf ? conf.emoji : key} +${g.currencies[key]}`);
+            parts.push(`${currencyMark(key)} +${g.currencies[key]}`);
         });
         return parts.join(' · ');
     },
@@ -551,7 +551,7 @@ const WrathRogue = {
     priceText(price) {
         return Object.keys(price || {}).map(key => {
             const conf = ECONOMY.currencies[key];
-            return `${conf ? conf.emoji : key} ${price[key]}`;
+            return `${currencyMark(key)} ${price[key]}`;
         }).join(' · ');
     }
 };

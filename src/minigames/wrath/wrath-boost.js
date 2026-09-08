@@ -244,7 +244,7 @@ const WrathBoost = {
     priceText(price) {
         const parts = Object.keys(price || {}).map(key => {
             const conf = ECONOMY.currencies[key];
-            return `${conf ? conf.emoji : key} ${price[key]}`;
+            return `${currencyMark(key)} ${price[key]}`;
         });
         return parts.join(' ') || '🎟 0';
     }
