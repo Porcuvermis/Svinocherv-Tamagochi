@@ -144,7 +144,7 @@ const GreedMinigame = {
     },
 
     clearWinFx() {
-        if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out');
+        if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out', 'back', 'win', 'jackpot');
         if (this.fireworksEl) this.fireworksEl.innerHTML = '';
         if (this.coinRainEl) this.coinRainEl.innerHTML = '';
         if (this.payEl) this.payEl.textContent = '';
@@ -169,7 +169,9 @@ const GreedMinigame = {
             this.tableEl.appendChild(this.payRow(this.glyph(this.table.pair.key).repeat(2),
                                                  this.table.pair.pay));
         }
-        if (this.costEl) this.costEl.textContent = this.table.cost;
+        // Цифра у монеты — только если ставка не одна монета. Одна монета
+        // и так одна: «1» рядом с ней объясняет ровно ничего.
+        if (this.costEl) this.costEl.textContent = this.table.cost > 1 ? this.table.cost : '';
     },
 
     payRow(signs, pay) {
@@ -208,7 +210,7 @@ const GreedMinigame = {
         const stageH = this.stageElement.clientHeight;
         if (stageW < 4 || stageH < 4) return;
 
-        const RATIO = 350 / 480;   // совпадает с viewBox корпуса
+        const RATIO = 350 / 620;   // совпадает с viewBox корпуса (с тумбой)
         let w = stageW;
         let h = w / RATIO;
         if (h > stageH) {
@@ -320,6 +322,7 @@ const GreedMinigame = {
         this.refreshMeters(res.balance - res.pay);
 
         this.animateLever();
+        this.feedCoin();
         if (this.machineContainer) this.machineContainer.classList.add('spin-lights');
 
         const mid = res.reels;
@@ -344,11 +347,34 @@ const GreedMinigame = {
     // Барабаны встали — показываем итог. Шкала алчности налилась в любом
     // случае, поэтому заряд обновляется всегда, а шум — только за выплату.
     settle(res, gen) {
-        this.refreshMeters(res.balance);
-        if (res.pay > 0) this.showWin(res, gen);
+        if (res.pay > 0) {
+            this.showWin(res, gen);
+            // Кошелёк пополняется не в момент остановки, а когда монеты
+            // ДОЛЕТЕЛИ до лотка: иначе число прибавляется раньше, чем
+            // становится понятно за что, и выплата читается как случайность.
+            const t = setTimeout(() => {
+                if (gen !== this.spinGeneration) return;
+                this.refreshMeters(res.balance);
+            }, 380);
+            this.spinTimers.push(t);
+        } else {
+            this.refreshMeters(res.balance);
+        }
         // Кошелёк в комнате считает то же состояние: пусть перерисуется сразу,
         // а не через секунду на общем таймере.
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+    },
+
+    // Ставка уходит в монетоприёмник. Единственное место, где видно, что
+    // крутка чего-то стоит: число в лотке меняется молча и на него не смотрят.
+    feedCoin() {
+        const price = document.getElementById('slot-price');
+        if (!price) return;
+        price.classList.remove('feeding');
+        void price.getBoundingClientRect().width;
+        price.classList.add('feeding');
+        const t = setTimeout(() => price.classList.remove('feeding'), 520);
+        this.spinTimers.push(t);
     },
 
     animateLever() {
@@ -377,27 +403,44 @@ const GreedMinigame = {
     },
 
     // ---------- ВЫПЛАТА ----------
-    // Шума ровно столько, сколько заплатили: возврат ставки — щелчок монеты,
-    // тройка — дождь и искры. Иначе выплата в одну монету празднуется как
-    // джекпот, и цена джекпота обесценивается.
+    // Шума ровно столько, сколько заплатили. Ступени три, и они не выдуманы,
+    // а взяты из самой таблицы выплат:
+    //
+    //   • ВОЗВРАТ СТАВКИ (pay ≤ цена крутки) — не выигрыш, а «не проиграл»:
+    //     одна монета падает в лоток, и всё;
+    //   • ВЫИГРЫШ — дождь монет по размеру выплаты и бегущие огни;
+    //   • ДЖЕКПОТ (самая дорогая тройка) — вспышка, искры и тряска корпуса.
+    //
+    // Иначе выплата в одну монету празднуется так же, как тройка черепов, и
+    // цена джекпота обесценивается: игрок перестаёт различать исходы, а
+    // различать их ему больше нечем — слов в игре нет.
     showWin(res, gen) {
         if (!this.winOverlay) return;
-        const big = res.jackpot || res.pay >= 10;
+        const tier = res.jackpot ? 'jackpot' : (res.pay > (this.table ? this.table.cost : 1) ? 'win' : 'back');
 
         if (this.payEl) this.payEl.textContent = '+' + res.pay;
+        this.winOverlay.classList.remove('back', 'win', 'jackpot');
+        this.winOverlay.classList.add(tier);
+
         if (this.machineContainer) {
             this.machineContainer.classList.remove('spin-lights');
-            if (big) this.machineContainer.classList.add('win-lights');
+            if (tier !== 'back') this.machineContainer.classList.add('win-lights');
+            if (tier === 'jackpot') {
+                this.machineContainer.classList.remove('jackpot-hit');
+                void this.machineContainer.getBoundingClientRect().width;
+                this.machineContainer.classList.add('jackpot-hit');
+            }
         }
 
-        this.winOverlay.classList.toggle('big', big);
-        this.spawnCoinRain(Math.max(4, Math.min(res.pay * 2, 26)));
-        if (big) this.spawnFireworks();
+        // Монет столько, сколько заплатили, но не больше горсти: сорок монет
+        // за джекпот в кадре не читаются, а стоят сорока анимаций.
+        this.spawnCoinRain(tier === 'back' ? 1 : Math.max(5, Math.min(res.pay, 22)));
+        if (tier === 'jackpot') this.spawnFireworks();
 
         this.winOverlay.classList.remove('fade-out');
         this.winOverlay.classList.add('show');
 
-        const hold = big ? 1500 : 800;
+        const hold = tier === 'jackpot' ? 2000 : tier === 'win' ? 1200 : 650;
         const t1 = setTimeout(() => {
             if (gen !== this.spinGeneration) return;
             this.winOverlay.classList.add('fade-out');
@@ -405,7 +448,9 @@ const GreedMinigame = {
         const t2 = setTimeout(() => {
             if (gen !== this.spinGeneration) return;
             this.clearWinFx();
-            if (this.machineContainer) this.machineContainer.classList.remove('win-lights');
+            if (this.machineContainer) {
+                this.machineContainer.classList.remove('win-lights', 'jackpot-hit');
+            }
         }, hold + 700);
         this.spinTimers.push(t1, t2);
     },

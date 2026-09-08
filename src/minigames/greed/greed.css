@@ -177,12 +177,16 @@
 }
 
 /* ============ ОКНО БАРАБАНОВ ============ */
+/* Все проценты ниже — от контейнера, а он повторяет viewBox корпуса
+   (350×620). Пересчитывать их надо КАЖДЫЙ раз, когда меняется высота
+   viewBox: числа тут не «на глаз», а координаты нарисованных в SVG окон,
+   поделённые на размер холста. */
 .reels-overlay {
     position: absolute;
     left: 16.571%;
-    top: 32.9166%;
+    top: 25.484%;
     width: 58.286%;
-    height: 30.8333%;
+    height: 23.871%;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -332,8 +336,15 @@
 /* Сколько заплатили — ЦИФРОЙ. Раньше здесь было слово «Нагрешил!», и оно
    не только нарушало инвариант 9, но и не сообщало главного: сколько именно
    вернул автомат. */
+/* Число выплаты стоит НАД БАРАБАНАМИ, а не в середине картинки: центр
+   контейнера уехал вниз вместе с тумбой, и «+66» ложилось поперёк таблицы
+   выплат. Барабаны — то место, куда игрок и так смотрит. */
 .win-pay {
-    position: relative;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 30%;
+    text-align: center;
     font-size: 30px;
     font-weight: 900;
     font-family: system-ui, sans-serif;
@@ -356,11 +367,21 @@
     transition: opacity 0.9s ease, transform 0.9s ease;
 }
 
-/* Мелкая выплата (возврат ставки) шумит меньше крупной: вспышка на весь
-   экран за одну монету обесценивает тройку. */
+/* ТРИ СТУПЕНИ ШУМА (классы вешает greed.js по размеру выплаты):
+   back — возврат ставки, win — выигрыш, jackpot — самая дорогая тройка.
+   Вспышка на весь экран за одну монету обесценивает джекпот, поэтому
+   вспышка есть только у него. */
 .win-overlay .win-flash { opacity: 0; }
-.win-overlay.show.big .win-flash { animation: win-flash-pulse 1.6s ease-in-out infinite; }
-.win-overlay.show:not(.big) .win-pay { font-size: 22px; }
+.win-overlay.show.jackpot .win-flash { animation: win-flash-pulse 1.6s ease-in-out infinite; }
+
+.win-overlay.show.back .win-pay { font-size: 18px; color: #f0d79a; text-shadow: 0 2px 3px rgba(0, 0, 0, 0.7); }
+.win-overlay.show.win .win-pay { font-size: 30px; }
+.win-overlay.show.jackpot .win-pay { font-size: 46px; }
+
+/* Джекпот — единственное, от чего трясётся сам корпус. */
+#machine-container.jackpot-hit {
+    animation: machine-shake 0.5s ease-in-out 2;
+}
 
 /* Дождь монет */
 .coin-rain {
@@ -420,10 +441,10 @@
    иначе они разъедутся с балансом при первой же правке выплат. */
 .pay-table {
     position: absolute;
-    left: 14%;
-    top: 67.5%;
-    width: 64%;
-    height: 16%;
+    left: 16.571%;
+    top: 52.58%;
+    width: 53.7%;
+    height: 11.29%;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -448,14 +469,17 @@
 }
 
 .pay-signs {
-    font-size: 10px;
+    font-size: 9px;
     line-height: 1;
     white-space: nowrap;
+    /* Значки стоят вплотную: три подряд — это одна комбинация, и разрыв
+       между ними читался бы как три разные строки таблицы. */
+    letter-spacing: -1px;
 }
 
 .pay-value {
     font-family: system-ui, sans-serif;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     line-height: 1;
     color: #f7d465;
@@ -466,10 +490,10 @@
    это и есть главное правило греха, показанное движением, а не цифрой. */
 .greed-charge {
     position: absolute;
-    left: 9%;
-    top: 24%;
-    width: 5.4%;
-    height: 63%;
+    left: 8.9%;
+    top: 18.55%;
+    width: 5.7%;
+    height: 48.7%;
     background: rgba(0, 0, 0, 0.6);
     border: 1px solid rgba(201, 147, 44, 0.55);
     border-radius: 5px;
@@ -508,21 +532,42 @@
 
 .coin-tray {
     left: 20%;
-    top: 85.4%;
+    top: 66.13%;
     width: 51.4%;
-    height: 5.8%;
+    height: 4.52%;
     font-size: 13px;
     font-weight: 800;
 }
 
+/* Монета лежит в монетоприёмнике — она же и ценник. Числа рядом с ней
+   быть не должно: монета одна, крутка одна, и «1» рядом с одной монетой
+   объясняет ровно ничего. */
 .slot-price {
-    left: 74%;
-    top: 61%;
-    width: 20%;
-    height: 5%;
-    font-size: 10px;
+    left: 71.43%;
+    top: 52.58%;
+    width: 12%;
+    height: 11.29%;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 11px;
     font-weight: 700;
-    opacity: 0.85;
+}
+
+.slot-price span {
+    font-size: 15px;
+    line-height: 1;
+}
+
+/* Рывок рычага — монета уходит в щель. Не украшение: это единственное место,
+   где видно, что крутка ЧЕГО-ТО стоит. */
+.slot-price.feeding span {
+    animation: coin-feed 0.5s cubic-bezier(0.4, 0, 0.9, 1);
+}
+
+@keyframes coin-feed {
+    0%   { transform: translateY(0) scaleY(1); opacity: 1; }
+    45%  { transform: translateY(-6px) scaleY(1); opacity: 1; }
+    100% { transform: translateY(10px) scaleY(0.2); opacity: 0; }
 }
 
 /* Пустой кошелёк: автомат дёргается, лоток вспыхивает красным. Ни окошка,

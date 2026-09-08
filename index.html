@@ -261,7 +261,7 @@
             </div>
 
             <div class="machine-container" id="machine-container">
-                <svg class="machine-svg" id="machine-svg" viewBox="0 0 350 480" preserveAspectRatio="xMidYMid meet">
+                <svg class="machine-svg" id="machine-svg" viewBox="0 0 350 620" preserveAspectRatio="xMidYMid meet">
                     <defs>
                         <linearGradient id="cabinetBodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                             <stop offset="0%" stop-color="#611818"/>
@@ -304,12 +304,35 @@
                         </filter>
                     </defs>
 
-                    <!-- тень от корпуса -->
-                    <ellipse cx="160" cy="466" rx="122" ry="10" fill="#000000" opacity="0.45" filter="url(#softBlur)"/>
-
-                    <!-- ножки -->
-                    <rect x="46" y="446" width="26" height="18" rx="5" fill="url(#goldGrad)"/>
-                    <rect x="248" y="446" width="26" height="18" rx="5" fill="url(#goldGrad)"/>
+                    <!-- ТУМБА ПОД АВТОМАТОМ.
+                         Раньше корпус стоял на двух коротких ножках, и в
+                         холсте 390×844 автомат занимал чуть больше половины
+                         высоты: сверху и снизу оставалась пустая чернота.
+                         Тумба — не растягивание корпуса (растянутый корпус
+                         читается как сломанные пропорции), а то, на чём
+                         автоматы и стоят в залах. -->
+                    <ellipse cx="160" cy="606" rx="140" ry="12" fill="#000000" opacity="0.5" filter="url(#softBlur)"/>
+                    <rect x="52" y="448" width="216" height="152" rx="10" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="5"/>
+                    <rect x="62" y="458" width="196" height="132" rx="6" fill="none" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.45"/>
+                    <!-- филёнка на передней стенке: пустая тумба выглядит
+                         куском картона, а не мебелью -->
+                    <rect x="88" y="478" width="144" height="92" rx="6" fill="#1a0404" stroke="url(#goldGradSoft)" stroke-width="1.2" opacity="0.75"/>
+                    <!-- дверца денежного ящика: решётка и замок. Пустая филёнка
+                         читалась куском картона — тумбе нужна причина быть. -->
+                    <!-- ЦВЕТ СПЛОШНОЙ, не градиент: у линии одна сторона рамки
+                         нулевая, а градиент по умолчанию считается ОТ РАМКИ
+                         объекта — вырождается и не рисуется вовсе. На этом же
+                         месте были невидимы полоски пилястров. -->
+                    <g opacity="0.5" stroke="#a97a1e" stroke-width="1.2">
+                        <line x1="104" y1="496" x2="216" y2="496"/>
+                        <line x1="104" y1="508" x2="216" y2="508"/>
+                        <line x1="104" y1="520" x2="216" y2="520"/>
+                        <line x1="104" y1="532" x2="216" y2="532"/>
+                    </g>
+                    <circle cx="160" cy="552" r="7" fill="url(#chromeGrad)" stroke="#1a1a1a" stroke-width="1.5"/>
+                    <rect x="158.5" y="549" width="3" height="7" rx="1.5" fill="#0b0b0b"/>
+                    <!-- цоколь -->
+                    <rect x="44" y="586" width="232" height="16" rx="5" fill="url(#goldGrad)"/>
 
                     <!-- корпус -->
                     <rect x="25" y="95" width="270" height="355" rx="22" fill="url(#cabinetBodyGrad)" stroke="url(#goldGrad)" stroke-width="6"/>
@@ -318,9 +341,9 @@
                     <!-- левый пилястр -->
                     <g opacity="0.9">
                         <rect x="29" y="104" width="24" height="336" fill="#210505"/>
-                        <line x1="33" y1="106" x2="33" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="33" y1="106" x2="33" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
                         <line x1="39" y1="106" x2="39" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="45" y1="106" x2="45" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="45" y1="106" x2="45" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
                         <line x1="51" y1="106" x2="51" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
                         <rect x="27" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
                         <rect x="27" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
@@ -329,9 +352,9 @@
                     <!-- правый пилястр -->
                     <g opacity="0.9">
                         <rect x="267" y="104" width="24" height="336" fill="#210505"/>
-                        <line x1="271" y1="106" x2="271" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="271" y1="106" x2="271" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
                         <line x1="277" y1="106" x2="277" y2="438" stroke="#000" stroke-width="1.4" opacity="0.35"/>
-                        <line x1="283" y1="106" x2="283" y2="438" stroke="url(#goldGradSoft)" stroke-width="1.4" opacity="0.35"/>
+                        <line x1="283" y1="106" x2="283" y2="438" stroke="#a97a1e" stroke-width="1.4" opacity="0.35"/>
                         <line x1="289" y1="106" x2="289" y2="438" stroke="#000" stroke-width="1.4" opacity="0.3"/>
                         <rect x="265" y="100" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
                         <rect x="265" y="432" width="28" height="10" rx="3" fill="url(#goldGrad)"/>
@@ -377,6 +400,15 @@
                     <!-- лоток для монет -->
                     <rect x="70" y="410" width="180" height="28" rx="10" fill="#0b0b0b" stroke="url(#goldGrad)" stroke-width="3"/>
                     <rect x="108" y="420" width="104" height="7" rx="3.5" fill="#000000"/>
+
+                    <!-- МОНЕТОПРИЁМНИК. Ставка — не строка в интерфейсе, а
+                         монета, которую автомат забирает: она лежит у щели и
+                         на каждом рывке рычага уходит внутрь (анимация в
+                         greed.css, .slot-price.feeding). -->
+                    <rect x="250" y="326" width="42" height="70" rx="8" fill="#141414" stroke="url(#goldGrad)" stroke-width="2.5"/>
+                    <rect x="256" y="332" width="30" height="58" rx="5" fill="none" stroke="url(#goldGradSoft)" stroke-width="1" opacity="0.5"/>
+                    <!-- сама щель -->
+                    <rect x="262" y="338" width="18" height="6" rx="3" fill="#000000" stroke="url(#chromeGrad)" stroke-width="1.5"/>
 
                     <!-- крепление рычага -->
                     <ellipse cx="282" cy="268" rx="14" ry="18" fill="url(#chromeGrad)" stroke="#1a1a1a" stroke-width="2"/>
