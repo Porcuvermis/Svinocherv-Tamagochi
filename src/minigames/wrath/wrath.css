@@ -797,11 +797,26 @@
 .player-side .dmg-popup { right: 6px; }
 .enemy-side .dmg-popup { left: 6px; }
 
-.dmg-popup.show { animation: dmg-float 1.4s ease-out forwards; }
+/* ---------- КУДА ЛЕТИТ ЦИФРА ----------
+   У врага полоска здоровья вверху экрана, у игрока — внизу, и лететь вниз
+   они обе не могут: цифра игрока начинала полёт в двадцати точках от нижнего
+   края окна и заканчивала ЗА ним — окно обрезает по себе (mg-body,
+   overflow: hidden). Видно это было не всегда: в Safari на iPhone за край
+   уходила половина цифры, а в Telegram, где видимая высота меньше, — вся.
 
-@keyframes dmg-float {
+   Поэтому направление зависит от стороны: цифра всегда уходит ВГЛУБЬ окна,
+   а не за его край. */
+.enemy-side .dmg-popup.show { animation: dmg-float-down 1.4s ease-out forwards; }
+.player-side .dmg-popup.show { animation: dmg-float-up 1.4s ease-out forwards; }
+
+@keyframes dmg-float-down {
     0% { opacity: 1; transform: translateY(0); }
     100% { opacity: 0; transform: translateY(30px); }
+}
+
+@keyframes dmg-float-up {
+    0% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-30px); }
 }
 
 /* ============ ЭФФЕКТЫ ПОПАДАНИЯ / БЛОКА ============ */

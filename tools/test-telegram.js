@@ -46,7 +46,15 @@ const { chromium } = require('playwright');
         disableVerticalSwipes: log('disableVerticalSwipes'),
         setHeaderColor: log('setHeaderColor'),
         setBackgroundColor: log('setBackgroundColor'),
-        HapticFeedback: {
+          // Клиент отдаёт ВИДИМУЮ высоту меньше высоты вебвью: часть его
+        // уходит под шапку и нижнюю кромку. Ровно на этой разнице игру и
+        // срезало сверху и снизу.
+        viewportHeight: 760,
+        viewportStableHeight: 760,
+        safeAreaInset: { top: 0, bottom: 0, left: 0, right: 0 },
+        contentSafeAreaInset: { top: 0, bottom: 0, left: 0, right: 0 },
+        onEvent: (name, fn) => { (window.__tgEvents = window.__tgEvents || {})[name] = fn; },
+      HapticFeedback: {
           impactOccurred: log('impact'),
           selectionChanged: log('selection'),
           notificationOccurred: log('notify')
@@ -63,6 +71,36 @@ const { chromium } = require('playwright');
         'вертикальный свайп не сворачивает приложение — иначе рычаг неиграбелен');
   check(calls.includes('setHeaderColor:#000000') && calls.includes('setBackgroundColor:#000000'),
         'рамка клиента чёрная, как пелена загрузки');
+
+  // ---------- ХОЛСТ ПО ВИДИМОЙ ВЫСОТЕ ----------
+  // Окно 390×844, но клиент говорит, что видно только 760. Масштаб обязан
+  // считаться по 760: иначе игру срезает сверху и снизу ровно на разницу.
+  const fit = await page.evaluate(() => ({
+    scale: Number(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale')),
+    want: 760 / 844
+  }));
+  check(Math.abs(fit.scale - fit.want) < 0.005,
+        'холст вписан в видимую высоту Telegram (' + fit.scale.toFixed(3) + ' против ' + fit.want.toFixed(3) + ')');
+
+  // Холст обязан стоять в середине ВИДИМОГО, а не страницы: иначе к
+  // срезанному краю добавляется ещё и сдвиг вниз.
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('game-container').getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, center: r.top + r.height / 2 };
+  });
+  check(Math.abs(box.center - 380) < 2, 'холст стоит по центру видимой области (' + box.center.toFixed(0) + ')');
+  check(box.top >= -1 && box.bottom <= 761, 'холст целиком внутри видимой области');
+
+  // Клиент поменял высоту (свернули клавиатуру, сменился режим) — игра
+  // обязана пересчитаться по событию, а не остаться в прежнем масштабе.
+  const after = await page.evaluate(async () => {
+    window.Telegram.WebApp.viewportStableHeight = 600;
+    window.Telegram.WebApp.viewportHeight = 600;
+    if (window.__tgEvents && window.__tgEvents.viewportChanged) window.__tgEvents.viewportChanged();
+    return Number(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale'));
+  });
+  check(Math.abs(after - 600 / 844) < 0.005,
+        'смена высоты клиентом пересчитывает холст (' + after.toFixed(3) + ')');
 
   // Отдача идёт через Telegram, а не через vibrate.
   // Пауза между двумя отдачами не для красоты: слой не пропускает их чаще

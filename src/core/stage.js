@@ -49,12 +49,45 @@ const Stage = {
         this.askPlatformForPortrait();
     },
 
+    // ---------- СКОЛЬКО МЕСТА НА САМОМ ДЕЛЕ ----------
+    // Обычная страница: visualViewport — это ровно то, что видно
+    // (window.innerHeight врёт про панели браузера и клавиатуру).
+    //
+    // Telegram: врёт уже сам visualViewport. Вебвью мини-приложения ВЫШЕ
+    // видимой области — часть его уходит под шапку клиента и под нижнюю
+    // кромку, — а высоту он отдаёт полную. Игра из-за этого масштабировалась
+    // под несуществующее место, и её ровно на эту разницу срезало сверху и
+    // снизу: в бою гнева уплывающая цифра урона уходила за край экрана.
+    //
+    // Правду знает сам клиент:
+    //   viewportStableHeight — видимая высота без учёта временных панелей
+    //                          (клавиатуры), то есть то, во что верстать;
+    //   safeAreaInset        — чёлка и полоска «домой» устройства;
+    //   contentSafeAreaInset — сверху шапка клиента, снизу его кромка.
+    //                          В обычном (не полноэкранном) режиме нули,
+    //                          но вычитать их надо: полноэкранный режим —
+    //                          вопрос одной строки в будущем.
     viewport() {
         const vv = window.visualViewport;
-        return {
-            w: Math.max(1, vv ? vv.width : window.innerWidth),
-            h: Math.max(1, vv ? vv.height : window.innerHeight)
-        };
+        let w = Math.max(1, vv ? vv.width : window.innerWidth);
+        let h = Math.max(1, vv ? vv.height : window.innerHeight);
+
+        const tg = window.Telegram && window.Telegram.WebApp;
+        if (tg) {
+            const stable = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
+            if (stable > 0) h = Math.min(h, stable);
+
+            const safe = tg.safeAreaInset || {};
+            const content = tg.contentSafeAreaInset || {};
+            const cut = (Number(safe.top) || 0) + (Number(safe.bottom) || 0)
+                      + (Number(content.top) || 0) + (Number(content.bottom) || 0);
+            const side = (Number(safe.left) || 0) + (Number(safe.right) || 0)
+                       + (Number(content.left) || 0) + (Number(content.right) || 0);
+            if (cut > 0) h = Math.max(1, h - cut);
+            if (side > 0) w = Math.max(1, w - side);
+        }
+
+        return { w, h };
     },
 
     apply() {
@@ -64,6 +97,26 @@ const Stage = {
         // за краем окажется то крестик выхода, то сам персонаж.
         const scale = Math.min(w / STAGE_W, h / STAGE_H);
         document.documentElement.style.setProperty('--stage-scale', scale.toFixed(4));
+
+        // ---------- ЦЕНТР ВИДИМОГО, А НЕ ЦЕНТР СТРАНИЦЫ ----------
+        // Холст стоит серединой в середине родителя, и обычно это одно и то
+        // же. В Telegram — нет: страница выше видимой области, и «середина
+        // страницы» оказывается ниже «середины экрана». Игру из-за этого
+        // сдвигало вниз поверх правильного масштаба.
+        //
+        // Считается по верхней безопасной зоне (если клиент закрывает верх
+        // своей шапкой) и видимой высоте. Когда прятать нечего, выходит
+        // ровно 50% — то есть вне Telegram ничего не меняется.
+        const tg = window.Telegram && window.Telegram.WebApp;
+        const root = document.documentElement;
+        if (tg) {
+            const safe = tg.safeAreaInset || {};
+            const content = tg.contentSafeAreaInset || {};
+            const top = (Number(safe.top) || 0) + (Number(content.top) || 0);
+            root.style.setProperty('--stage-top', (top + h / 2).toFixed(1) + 'px');
+        } else {
+            root.style.setProperty('--stage-top', '50%');
+        }
 
         this.updateRotateHint(w, h);
     },

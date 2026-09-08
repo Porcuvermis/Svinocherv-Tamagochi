@@ -89,11 +89,24 @@ const TelegramBridge = {
         call('setBackgroundColor', '#000000');
         call('lockOrientation');
 
-        // Холст меряется по окну, а Telegram отдаёт свою высоту не сразу:
-        // после разворота её надо пересчитать.
-        if (typeof Stage !== 'undefined' && typeof Stage.apply === 'function') {
-            Stage.apply();
-            setTimeout(() => Stage.apply(), 250);
+        // ---------- ХОЛСТ МЕРЯЕТСЯ ПО ВИДИМОЙ ВЫСОТЕ ----------
+        // Её знает только клиент (см. Stage.viewport), и отдаёт он её не
+        // сразу: сначала разворот, потом событие о новой высоте. Поэтому
+        // пересчёт идёт и сразу, и с задержкой, и по каждому событию
+        // клиента: свернули-развернули окно, вылезла клавиатура, поменялись
+        // безопасные зоны.
+        const relayout = () => {
+            if (typeof Stage !== 'undefined' && typeof Stage.apply === 'function') Stage.apply();
+        };
+        relayout();
+        setTimeout(relayout, 250);
+        setTimeout(relayout, 800);
+
+        if (typeof app.onEvent === 'function') {
+            ['viewportChanged', 'safeAreaChanged', 'contentSafeAreaChanged',
+             'fullscreenChanged'].forEach(name => {
+                try { app.onEvent(name, relayout); } catch (err) { /* нет такого события */ }
+            });
         }
     }
 };
