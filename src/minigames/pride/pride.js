@@ -116,7 +116,9 @@ const PrideMinigame = {
     params: null,        // числа этого выхода: интервал, потолок, радиус
     speed: 0,            // единиц глубины в секунду
     kisses: 0,
-    hype: 0,
+    // Стрик — сколько БЕЛЫХ зон закрыто подряд. Он же множитель, он же
+    // разрешение червю быть поцелованным: при нуле поцелуйных зон нет вовсе.
+    streak: 0,
     hits: 0,
     misses: 0,
     awardedKisses: null, // сколько НАЧИСЛИЛИ (публика могла устать) — приходит
@@ -271,7 +273,7 @@ const PrideMinigame = {
     resetRun() {
         this.params = Backend.prideRun();
         this.kisses = 0;
-        this.hype = 0;
+        this.streak = 0;
         this.hits = 0;
         this.misses = 0;
         this.awardedKisses = null;
@@ -683,7 +685,10 @@ const PrideMinigame = {
     spawnTarget() {
         if (this.phase !== 'run') return;
         if (this.targets.length >= this.params.maxTargets) return;
-        const kiss = this.nextIsKiss() && !!this.wormBox;
+        // Поцелуй возможен только при живом стрике: пока толпа не заведена,
+        // на червя никто не прыгает, и мешок при этом НЕ трогаем — иначе
+        // выпавшие впустую поцелуи съедали бы долю уже открытого периода.
+        const kiss = this.kissesOpen() && this.nextIsKiss() && !!this.wormBox;
         const spot = kiss ? this.pickKissSpot() : this.pickFlashSpot();
         if (!spot) return;
 
@@ -714,19 +719,22 @@ const PrideMinigame = {
     // среднем, а в хвостах — монетка регулярно выдаёт выход, где поцелуев
     // почти не было, и виноватым себя чувствует игрок, хотя не виноват.
     //
-    // Мешок набирается ПО ТЕКУЩЕМУ АЖИОТАЖУ: разогретая толпа лезет
-    // целоваться вдвое чаще. Это единственное, ради чего вспышки нужны, пока
-    // машина не куплена: множитель на старте ×1 и не даёт ничего, а вот
-    // «завёл толпу — на тебя чаще прыгают» работает с первой же секунды.
+    // Доля фиксированная. Раньше она зависела от ажиотажа, но теперь тем же
+    // занят стрик, и занят жёстче: при нулевом стрике поцелуев нет вообще.
     nextIsKiss() {
         if (!this.bag || !this.bag.length) this.fillBag();
         return this.bag.pop();
     },
 
+    // Открыт ли червь для поцелуев. Единственное условие — живой стрик:
+    // хотя бы одна белая зона закрыта и с тех пор ничего не пропущено.
+    kissesOpen() {
+        return this.streak >= this.params.streak.needForKiss;
+    },
+
     fillBag() {
         const b = this.params.kissBag;
-        const kisses = this.hype >= b.hotAt ? b.hot : b.cold;
-        this.bag = Array.from({ length: b.of }, (_, i) => i < kisses);
+        this.bag = Array.from({ length: b.of }, (_, i) => i < b.kisses);
         // Тасовка Фишера—Йетса: доля в мешке задана, а порядок нет — иначе
         // поцелуи шли бы строго через три вспышки и читались расписанием.
         for (let i = this.bag.length - 1; i > 0; i--) {
@@ -855,45 +863,63 @@ const PrideMinigame = {
     resolveTarget(target, p) {
         this.removeTarget(target);
         this.hits++;
-        this.bumpHype(this.params.hype.hit);
         if (target.kiss) {
-            // Платят только поцелуи, и платят они ТЕКУЩИМ множителем: вспышки
-            // и есть то, чем этот множитель набивается.
+            // Поцелуй ПЛАТИТ, но стрик не растит: он его только удерживает
+            // (это не промах). Иначе деньги дорожали бы сами от себя, и
+            // вспышки, ради которых всё затевалось, стали бы не нужны.
             const mult = this.multiplier();
             this.kisses += mult;
             this.kissFx(target.x, target.y, mult);
         } else {
+            // Белая зона — единственное, что растит стрик. Она же открывает
+            // червя для поцелуев, если стрик был нулевым.
+            this.streak += this.params.streak.perHit;
             this.flashFx(target.x, target.y);
         }
         this.renderHud();
     },
 
-    // Зона погасла сама — ажиотаж просел. Не вина игрока: зон бывает больше,
-    // чем успевает палец, и обнулять за это значит наказывать за купленную
-    // прокачку.
+    // Зона погасла сама — СЕРИЯ РВЁТСЯ. Раньше это было мягче (ажиотаж просто
+    // проседал), потому что зон бывает больше, чем успевает палец, и рвать за
+    // это значит наказывать за купленную прокачку. Теперь тормоз держит не
+    // мягкость наказания, а spawnFloor: интервал не опускается ниже того, что
+    // палец физически закрывает, — а всё, что игрок увидел и не тронул, он
+    // пропустил сам.
     registerMiss() {
         this.misses++;
-        this.bumpHype(this.params.hype.miss);
+        if (this.params.streak.breakOnMiss) this.breakStreak();
         this.renderHud();
     },
 
-    // Тап в пустоту — СБРОС. Это уже не «не успел», это дробь по экрану, и
-    // стоить она обязана дорого: иначе выгодно молотить пальцем вслепую, а
-    // зоны большие и слепая дробь закрывала бы их сама.
+    // Тап в пустоту — тоже разрыв. Дробь по экрану обязана стоить дорого:
+    // иначе выгодно молотить пальцем вслепую, а зоны большие и слепая дробь
+    // закрывала бы их сама.
     registerMissclick() {
         this.misses++;
-        if (this.params.hype.missclickResets) {
-            const had = this.multiplier();
-            this.hype = 0;
-            if (had > 1) this.flashReset();
-        } else {
-            this.bumpHype(this.params.hype.miss);
-        }
+        if (this.params.streak.breakOnMissclick) this.breakStreak();
         this.renderHud();
+    },
+
+    // ---------- РАЗРЫВ ----------
+    // Стрик в ноль, и вместе с ним закрывается червь: висящие поцелуйные зоны
+    // ГАСНУТ В ТОТ ЖЕ МИГ. Оставлять их дожидаться своей смерти нельзя — они
+    // платили бы по множителю, которого уже нет, а главное: правило «поцелуи
+    // только при живом стрике» должно быть видно глазом, а не выводиться из
+    // чисел.
+    //
+    // Гасим ТИХО, минуя registerMiss: рекурсия из разрывов внутри разрыва —
+    // это не наказание, а поломка.
+    breakStreak() {
+        if (this.streak > 0) this.flashReset();
+        this.streak = 0;
+        for (let i = this.targets.length - 1; i >= 0; i--) {
+            const t = this.targets[i];
+            if (t.kiss) this.removeTarget(t);
+        }
     },
 
     // Сорванный множитель показывается тем же местом, где он рос: цифра
-    // краснеет и дёргается. Без этого сброс — самое обидное событие игры,
+    // краснеет и дёргается. Без этого разрыв — самое обидное событие игры,
     // случившееся молча.
     flashReset() {
         const el = this.hudEl && this.hudEl.querySelector('.pr-mult');
@@ -903,16 +929,11 @@ const PrideMinigame = {
         el.classList.add('pr-mult-drop');
     },
 
-    // Ажиотаж ПРОСЕДАЕТ, но не обнуляется. Обнуление проверялось симулятором
-    // и провалилось: плохая серия становилась безнадёжной, а покупка машины —
-    // бесполезной (docs/plan/17-pride.md, раздел 5).
-    bumpHype(delta) {
-        this.hype = Math.max(0, this.hype + delta);
-    },
-
+    // Множитель = длина стрика, потолок задаёт машина. При нулевом стрике
+    // поцелуйных зон на экране нет, так что платить этой единицей нечему —
+    // она нужна только показу.
     multiplier() {
-        return Math.min(this.params.multCap,
-                        1 + Math.floor(this.hype / this.params.hype.perStep));
+        return Math.min(this.params.multCap, Math.max(1, this.streak));
     },
 
     // ---------- ФОНОВЫЕ ВСПЫШКИ ----------
@@ -920,7 +941,7 @@ const PrideMinigame = {
     // по ним не тапают, они ничего не дают. Это показ ажиотажа без единой
     // цифры — накал света (план, раздел 5).
     tickAmbient(dt) {
-        this.ambientAcc += dt * 1000 * (1 + this.hype * 0.35);
+        this.ambientAcc += dt * 1000 * (1 + this.streak * 0.35);
         if (this.ambientAcc < PRIDE_VIEW.AMBIENT_MS) return;
         this.ambientAcc = 0;
         const spot = this.pickFlashSpot();
@@ -1006,23 +1027,29 @@ const PrideMinigame = {
     // быть виден всё время и крупно, а не тускнеть в углу. Три вещи в одном
     // месте:
     //   • сама цифра — во сколько раз дороже следующий поцелуй;
-    //   • полоска под ней — сколько ажиотажа до следующей ступени;
-    //   • размер — насколько толпа разогрета (а разогретая ещё и целуется
-    //     вдвое чаще, так что это не украшение).
-    // Упёрлись в потолок машины — полоска полная и золотая: видно, что
-    // упёрся не в игру, а в непокупленное.
+    //   • полоска под ней — насколько стрик подобрался к потолку машины;
+    //   • размер — то же самое ростом, чтобы разрыв было видно боковым зрением.
+    //
+    // ПОГАШЕННЫЙ ВИД ПРИ НУЛЕВОМ СТРИКЕ — не украшение, а показ правила: пока
+    // цифра серая, червя не целуют, и единственный способ это изменить —
+    // закрыть белую зону. Ни одного слова на это не потрачено (инвариант 9).
+    //
+    // Упёрлись в потолок машины — полоска полная и золотая: видно, что упёрся
+    // не в игру, а в непокупленное.
     multBadge(x, y) {
         const C = PALETTE.redCarpet;
+        const live = this.kissesOpen();
         const mult = this.multiplier();
-        const per = this.params.hype.perStep;
-        const capped = mult >= this.params.multCap;
-        const toNext = capped ? 1 : (this.hype % per) / per;
-        const heat = Math.min(1, this.hype / this.params.kissBag.hotAt);
-        const size = 26 + heat * 12;
+        const cap = this.params.multCap;
+        const capped = live && mult >= cap;
+        const toNext = cap > 1 ? Math.min(1, this.streak / cap) : (live ? 1 : 0);
+        const size = 26 + (live ? Math.min(1, this.streak / cap) * 12 : 0);
         const bar = 36;
-        return `<g class="pr-mult" transform="translate(${x.toFixed(0)},${y.toFixed(0)})">
+        const face = !live ? C.glow[500] : (capped ? C.gold[300] : C.flash[500]);
+        return `<g class="pr-mult" transform="translate(${x.toFixed(0)},${y.toFixed(0)})"
+                   opacity="${live ? 1 : 0.4}">
             <text x="0" y="0" text-anchor="end" font-size="${size.toFixed(0)}"
-                  font-weight="800" fill="${capped ? C.gold[300] : C.flash[500]}">×${mult}</text>
+                  font-weight="800" fill="${face}">×${mult}</text>
             <rect x="${-bar}" y="9" width="${bar}" height="5" rx="2.5"
                   fill="${C.night[500]}" opacity="0.75"/>
             <rect x="${-bar}" y="9" width="${(bar * toNext).toFixed(1)}" height="5" rx="2.5"

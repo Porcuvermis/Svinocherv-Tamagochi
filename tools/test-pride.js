@@ -63,18 +63,25 @@ const { chromium } = require('playwright');
   await page.waitForFunction(() => PrideMinigame.phase === 'run', null, { timeout: 8000 });
   const started = Date.now();
 
-  let taps = 0, maxOnScreen = 0;
+  // Главная проверка новых правил, и её нельзя заменить чтением кода:
+  // поцелуйная зона НЕ ИМЕЕТ ПРАВА висеть на экране, пока стрик нулевой.
+  // Считаем кадры, где это правило нарушено, — их обязано быть ноль.
+  let taps = 0, maxOnScreen = 0, closedWithKiss = 0, kissSeen = 0, maxStreak = 0;
   while (Date.now() - started < 40000) {
     const shot = await page.evaluate(() => ({
       phase: PrideMinigame.phase,
       kisses: PrideMinigame.kisses,
-      hype: PrideMinigame.hype,
+      streak: PrideMinigame.streak,
       targets: PrideMinigame.targets.slice()
         .sort((a, b) => a.diesAt - b.diesAt)
         .map(t => ({ x: t.x, y: t.y, kiss: t.kiss }))
     }));
     if (shot.phase !== 'run') break;
     maxOnScreen = Math.max(maxOnScreen, shot.targets.length);
+    maxStreak = Math.max(maxStreak, shot.streak);
+    const kissesUp = shot.targets.filter(t => t.kiss).length;
+    kissSeen += kissesUp;
+    if (!shot.streak && kissesUp) closedWithKiss++;
     if (shot.targets.length) {
       const t = shot.targets[0];
       // Промах моделируем честно: тапаем туда, куда не дотягивается ни одна
@@ -112,6 +119,9 @@ const { chromium } = require('playwright');
   console.log(`тапов: ${taps}   попаданий: ${res.hits}   промахов: ${res.misses}   ` +
               `зон на экране разом: ${maxOnScreen}`);
   console.log(`выход занял ${sec} с   собрано поцелуев: ${res.awarded}`);
+  console.log(`стрик доходил до ${maxStreak}   поцелуйных зон замечено ${kissSeen}   ` +
+              (closedWithKiss ? `✗ ПОЦЕЛУЙ ПРИ НУЛЕВОМ СТРИКЕ: ${closedWithKiss} кадров`
+                              : 'при нулевом стрике поцелуев не было — правило держится'));
   console.log(`начислено: шкала греха ${res.sin}   поцелуи ${res.kiss}   золото ${res.gold}`);
 
   // ---------- ПОКУПКА ----------

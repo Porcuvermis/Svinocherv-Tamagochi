@@ -1395,10 +1395,11 @@ const LocalBackend = {
                                (cfg.spawnBase || 620) - (cfg.spawnStep || 8) * steps);
         return {
             runMs: cfg.runMs || 20000,
-            kissBag: Object.assign({ of: 4, cold: 1, hot: 2, hotAt: 6 }, cfg.kissBag || {}),
+            kissBag: Object.assign({ of: 4, kisses: 1 }, cfg.kissBag || {}),
             maxTargets: cfg.maxTargets || 5,
-            hype: Object.assign({ hit: 1, miss: -2, perStep: 3, missclickResets: true },
-                                cfg.hype || {}),
+            streak: Object.assign({ perHit: 1, needForKiss: 1,
+                                    breakOnMiss: true, breakOnMissclick: true },
+                                  cfg.streak || {}),
             spawnMs: spawn,
             steps,
             radius: this.upgradeValue('pride', 'crowd'),
