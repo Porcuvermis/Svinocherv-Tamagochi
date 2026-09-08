@@ -176,12 +176,19 @@ const PrideMinigame = {
         this.sceneEl.innerHTML = PRIDE_ART.scene();
         this.roomEl.innerHTML = PRIDE_ART.room();
 
+        // Своя debug-панель: прокачка тщеславия меряется месяцами, и проверить
+        // игру с широкой зоной или множителем ×7 честным путём нельзя.
+        if (typeof PrideDebug !== 'undefined') PrideDebug.init(this.screenElement);
+
         if (!this._bound) {
             this._bound = true;
             this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
             window.addEventListener('resize', () => {
                 if (!this.screenElement.classList.contains('active')) return;
+                // Изменился размер — изменилась и видимая область, а по ней
+                // расставлен весь интерфейс.
                 this.layoutWorm();
+                this.renderAll();
             });
             // Что именно начислили за выход — говорит ядро, а не мини-игра
             // (инвариант 2). Показать ответ можно только дождавшись его.
@@ -198,6 +205,7 @@ const PrideMinigame = {
         this.screenElement.classList.add('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
         this.enterWardrobe();
+        if (typeof PrideDebug !== 'undefined') PrideDebug.render();
         this.mountWorm();
         // Два вложенных кадра: сегменты напольной цепи получают свой
         // transform только в ПЕРВОМ тике рендерера, и до него габарит
@@ -233,10 +241,23 @@ const PrideMinigame = {
         this.phase = 'wardrobe';
         this.storeOpen = false;
         this.setDecor('room');
-        this.renderAll();
         // Червя пересобираем: наряд мог смениться, а он живёт в модели.
         this.mountWorm();
-        requestAnimationFrame(() => requestAnimationFrame(() => this.layoutWorm()));
+        // ---------- СНАЧАЛА РАСКЛАДКА, ПОТОМ ИНТЕРФЕЙС ----------
+        // Видимый кусок холста (safe) считается в layoutWorm, а по нему
+        // ставятся счёт, слоты, кнопки и ценники. Рисовать их ДО него значит
+        // рисовать по границам холста, а не по границам экрана: на телефоне,
+        // где холст обрезан сильнее, чем в тестовом окне, счёт уезжал под
+        // шапку окна, а кнопка магазина — за нижний край.
+        //
+        // Два вложенных кадра — не суеверие: сегменты напольной цепи
+        // получают свой transform только в первом тике рендерера, и до него
+        // габарит силуэта врёт.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            this.layoutWorm();
+            this.renderAll();
+        }));
+        this.renderAll();
     },
 
     renderAll() {
@@ -1022,8 +1043,23 @@ const PrideMinigame = {
         if (this.phase !== 'wardrobe') { this.uiEl.innerHTML = ''; return; }
         const S = this.safe;
         const worn = GameState.data.cosmetics || {};
-        const cols = { left: S.x0 + 44, right: S.x1 - 44 };
-        const rows = [S.y0 + 356, S.y0 + 442];
+
+        // ---------- РАСКЛАДКА ОТ ЧЕРВЯ, А НЕ ОТ КРАЁВ ----------
+        // Слоты стоят двумя столбцами по бокам ОТ ПЕРСОНАЖА и на его высоте:
+        // прижатые к краям экрана, они налезали на зеркало и вешалку, а на
+        // узком телефоне ещё и резались рамкой окна. Столбец отсчитывается от
+        // измеренного силуэта, поэтому держится рядом с червём при любом
+        // размере экрана и любом росте персонажа.
+        const box = this.wormBox || { x: 140, y: 380, w: 110, h: 250 };
+        const gap = 52;
+        const cols = {
+            left: Math.max(S.x0 + 40, box.x - gap),
+            right: Math.min(S.x1 - 40, box.x + box.w + gap)
+        };
+        const rows = [
+            Math.max(S.y0 + 132, PRIDE_ART.Y_FEET - 240),
+            Math.max(S.y0 + 218, PRIDE_ART.Y_FEET - 152)
+        ];
         const used = { left: 0, right: 0 };
 
         let out = '';
@@ -1036,11 +1072,15 @@ const PrideMinigame = {
                    PRIDE_ART.slotCard(slot, art) + '</g>';
         });
 
-        // Кнопка старта — ПОД червём, как и просили: он стоит, готовый, и
-        // трогается с места, когда решит игрок.
-        out += `<g transform="translate(${PRIDE_ART.CX},${(PRIDE_ART.Y_FEET + 86).toFixed(0)})">` +
-               PRIDE_ART.startButton(44) + '</g>';
-        out += `<g transform="translate(${(S.x0 + 44).toFixed(0)},${(S.y1 - 46).toFixed(0)})">` +
+        // Кнопка старта — ПОД червём: он стоит готовый и трогается с места,
+        // когда решит игрок. Ниже её ничего быть не должно, поэтому она же и
+        // определяет, где кончается экран костюмерной.
+        const startY = Math.min(S.y1 - 62, PRIDE_ART.Y_FEET + 84);
+        out += `<g transform="translate(${PRIDE_ART.CX},${startY.toFixed(0)})">` +
+               PRIDE_ART.startButton(42) + '</g>';
+        // Магазин — СПРАВА внизу. Слева нельзя: там кнопка debug-режима, и на
+        // телефоне они наезжали друг на друга.
+        out += `<g transform="translate(${(S.x1 - 44).toFixed(0)},${(S.y1 - 44).toFixed(0)})">` +
                PRIDE_ART.shopButton(26) + '</g>';
         this.uiEl.innerHTML = out;
     },
@@ -1199,7 +1239,10 @@ const PrideMinigame = {
     // купленное носится ВЕЗДЕ, и увидеть это игрок должен сразу.
     refreshWorm() {
         this.mountWorm();
-        requestAnimationFrame(() => requestAnimationFrame(() => this.layoutWorm()));
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            this.layoutWorm();
+            this.renderUI();
+        }));
         if (window.MainWormHandle && window.WormModelAPI) {
             const m = window.WormModelAPI.loadWormModel();
             if (typeof wormMarksFromState === 'function') m.scars = wormMarksFromState();
