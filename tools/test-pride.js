@@ -232,12 +232,17 @@ const { chromium } = require('playwright');
     PrideMinigame.openSlot = null;
     PrideMinigame.storeOpen = true;
     const out = { полки: {} };
+    const owned = GameState.data.wardrobe || {};
     PRIDE_WARDROBE.slots.forEach(sl => {
       PrideMinigame.storeTab = sl.key;
       PrideMinigame.renderStore();
       const ids = [...document.querySelectorAll('.pr-item')].map(e => e.dataset.item);
-      out.полки[sl.key] = ids.every(id =>
-        PRIDE_WARDROBE.items.find(i => i.id === id).slot === sl.key) && ids.length > 0;
+      const ждём = PRIDE_WARDROBE.items
+        .filter(i => i.slot === sl.key && !owned[i.id]).map(i => i.id);
+      // Полка обязана показывать РОВНО некупленное своего слота: ни чужого
+      // слота, ни того, за что уже заплачено (иначе витрина работает второй
+      // раздевалкой — тап по своей же шляпе её надевает).
+      out.полки[sl.key] = ids.join() === ждём.join();
     });
     PrideMinigame.storeTab = 'boost';
     PrideMinigame.renderStore();
@@ -246,9 +251,27 @@ const { chromium } = require('playwright');
     return out;
   });
   const shelvesOk = Object.values(shop.полки).every(Boolean) && shop.прокачка === 3;
-  console.log(`витрина: полок ${Object.keys(shop.полки).length}, каждая только своим слотом ` +
-              `${Object.values(shop.полки).every(Boolean)}, линий прокачки ${shop.прокачка}   ` +
-              (shelvesOk ? 'ок' : '✗ ПОЛКИ ПЕРЕМЕШАНЫ'));
+  console.log(`витрина: полок ${Object.keys(shop.полки).length}, на каждой ровно некупленное ` +
+              `своего слота ${Object.values(shop.полки).every(Boolean)}, ` +
+              `линий прокачки ${shop.прокачка}   ` +
+              (shelvesOk ? 'ок' : '✗ ПОЛКИ НЕ ТЕ'));
+
+  // Полка, раскупленная целиком, обязана быть ПУСТОЙ — и не сломанной:
+  // вместо карточек там галочка.
+  const sold = await page.evaluate(() => {
+    PRIDE_WARDROBE.items.filter(i => i.slot === 'head')
+      .forEach(i => { GameState.data.wardrobe[i.id] = true; });
+    PrideMinigame.storeOpen = true;
+    PrideMinigame.storeTab = 'head';
+    PrideMinigame.renderStore();
+    const out = { карточек: document.querySelectorAll('.pr-item').length,
+                  галочка: PrideMinigame.storeEl.innerHTML.includes('✓') };
+    PrideMinigame.storeOpen = false;
+    PrideMinigame.renderStore();
+    return out;
+  });
+  console.log(`раскупленная полка: карточек ${sold.карточек}, галочка ${sold.галочка}   ` +
+              (!sold.карточек && sold.галочка ? 'ок' : '✗ НЕ ТО'));
 
   const inv = await page.evaluate(() => {
     // Пустой шкаф: в слоте, где ничего не куплено, строка должна быть одна.

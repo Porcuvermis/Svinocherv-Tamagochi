@@ -1230,44 +1230,62 @@ const PrideMinigame = {
         this.storeEl.innerHTML = out;
     },
 
-    // Что лежит на открытой полке наряда.
+    // ---------- ЧТО ЛЕЖИТ НА ПОЛКЕ ----------
+    // ТОЛЬКО НЕКУПЛЕННОЕ. Купленный предмет с витрины исчезает и живёт
+    // дальше в инвентаре слота.
+    //
+    // Пока купленное оставалось на полке, витрина работала второй
+    // раздевалкой: тап по своей же шляпе её надевал. Два места делали одно и
+    // то же, и то, которое для покупок, делало это хуже — без строки
+    // «ничего», без порядка слотов, зато с ценниками у вещей, за которые уже
+    // заплачено. Витрина — каталог того, чего у тебя ЕЩЁ НЕТ.
     tabItems() {
-        return PRIDE_WARDROBE.items.filter(i => i.slot === this.storeTab);
+        const owned = GameState.data.wardrobe || {};
+        return PRIDE_WARDROBE.items.filter(i => i.slot === this.storeTab && !owned[i.id]);
     },
 
-    // Полка наряда: предметы ОДНОГО слота, по две карточки в ряд. На карточке
-    // сам предмет, а не значок: покупают глазами, и что покупаешь, должно
-    // быть видно.
+    // Полка наряда: НЕкупленные предметы одного слота, по две карточки в ряд.
+    // На карточке сам предмет, а не значок: покупают глазами, и что
+    // покупаешь, должно быть видно.
+    //
+    // Состояний у карточки больше нет — она всегда одна и та же «купить».
+    // Раскупили полку целиком — вместо карточек стоит галочка: полка пуста не
+    // потому, что сломалась, а потому, что здесь всё твоё.
     storeWear(x0, x1, top) {
         const C = PALETTE.redCarpet;
         const wallet = GameState.currency('pride_kiss');
-        const owned = GameState.data.wardrobe || {};
-        const worn = GameState.data.cosmetics || {};
+        const items = this.tabItems();
+        if (!items.length) {
+            const slot = PRIDE_WARDROBE.slots.find(s => s.key === this.storeTab);
+            // Силуэт слота и галочка стоят ДРУГ НАД ДРУГОМ, а не в одной
+            // точке: наложенные, они читались одним нечитаемым пятном.
+            return `<g transform="translate(${((x0 + x1) / 2).toFixed(0)},${(top + 30).toFixed(0)})"
+                       opacity="0.8">
+                ${slot ? `<g transform="translate(-21,-21) scale(1.75)" fill="none"
+                              stroke="${C.rail[700]}" stroke-width="1.4"
+                              stroke-linejoin="round"><path d="${slot.shape}"/></g>` : ''}
+                <text x="0" y="66" text-anchor="middle" font-size="34"
+                      fill="${C.gold[300]}">✓</text></g>`;
+        }
         const cw = (x1 - x0 - 30) / 2, ch = 96;
-        return this.tabItems().map((item, i) => {
+        return items.map((item, i) => {
             const cx = x0 + 15 + cw * (i % 2) + cw / 2;
             const cy = top + Math.floor(i / 2) * (ch + 10) + ch / 2;
-            const have = !!owned[item.id];
-            const on = worn[item.slot] === item.id;
             const price = item.price.pride_kiss;
             const rich = wallet >= price;
             const art = WormCosmetics.art(item.id, 24, PALETTE.flesh[500]);
-            const label = have
-                ? `<circle cx="${(cw / 2 - 16).toFixed(0)}" cy="${(-ch / 2 + 16).toFixed(0)}" r="7"
-                           fill="${on ? C.gold[300] : C.rail[500]}"/>`
-                : `<text x="${(cw / 2 - 10).toFixed(0)}" y="${(ch / 2 - 12).toFixed(0)}"
-                         text-anchor="end" font-size="15" font-weight="700"
-                         fill="${rich ? C.kiss[300] : C.night[500]}">${price}</text>
-                   <text x="${(-cw / 2 + 12).toFixed(0)}" y="${(ch / 2 - 12).toFixed(0)}"
-                         font-size="13">💋</text>`;
-            return `<g class="pr-item${have ? ' have' : ''}${on ? ' on' : ''}${!have && rich ? ' rich' : ''}"
-                       data-item="${item.id}" transform="translate(${cx.toFixed(0)},${cy.toFixed(0)})">
+            return `<g class="pr-item${rich ? ' rich' : ''}" data-item="${item.id}"
+                       transform="translate(${cx.toFixed(0)},${cy.toFixed(0)})">
                 <rect x="${-cw / 2 + 4}" y="${-ch / 2}" width="${cw - 8}" height="${ch}" rx="14"
                       fill="${C.night[900]}" fill-opacity="0.9"
-                      stroke="${on ? C.gold[300] : (have ? C.rail[500] : C.rail[700])}"
-                      stroke-width="${on ? 2.5 : 1.6}"/>
-                <g transform="translate(0,8)" opacity="${have ? 1 : 0.5}">${art}</g>
-                ${label}</g>`;
+                      stroke="${rich ? C.rail[500] : C.rail[700]}"
+                      stroke-width="${rich ? 2 : 1.6}"/>
+                <g transform="translate(0,8)" opacity="0.85">${art}</g>
+                <text x="${(cw / 2 - 10).toFixed(0)}" y="${(ch / 2 - 12).toFixed(0)}"
+                      text-anchor="end" font-size="15" font-weight="700"
+                      fill="${rich ? C.kiss[300] : C.night[500]}">${price}</text>
+                <text x="${(-cw / 2 + 12).toFixed(0)}" y="${(ch / 2 - 12).toFixed(0)}"
+                      font-size="13">💋</text></g>`;
         }).join('');
     },
 
@@ -1316,17 +1334,19 @@ const PrideMinigame = {
         this.renderAll();
     },
 
-    // Тап по предмету наряда: не куплен — покупаем, куплен — надеваем,
-    // надет — снимаем. Одно и то же место, три состояния, ни одной кнопки.
+    // Тап по карточке витрины — ТОЛЬКО покупка. Надевать здесь больше нечего:
+    // купленное с полки уходит, а надевают его в инвентаре слота.
+    //
+    // Купленное при этом сразу и НАДЕВАЕТСЯ: игрок покупает шляпу, чтобы её
+    // увидеть, и заставлять его после оплаты идти в другое место за тем же
+    // самым — лишний шаг. Не понравилось — снимается там же, где всё
+    // остальное.
     tapItem(itemId) {
         const item = PRIDE_WARDROBE.items.find(i => i.id === itemId);
-        if (!item) return;
-        if (!(GameState.data.wardrobe || {})[itemId]) {
-            const answer = Backend.buyWardrobe(itemId);
-            if (!answer.ok) { this.deny(`.pr-item[data-item="${itemId}"]`); return; }
-        } else {
-            Backend.wearCosmetic(item.slot, GameState.data.cosmetics[item.slot] === itemId ? null : itemId);
-        }
+        if (!item || (GameState.data.wardrobe || {})[itemId]) return;
+        const answer = Backend.buyWardrobe(itemId);
+        if (!answer.ok) { this.deny(`.pr-item[data-item="${itemId}"]`); return; }
+        Backend.wearCosmetic(item.slot, itemId);
         this.refreshWorm();
         this.renderAll();
     },
