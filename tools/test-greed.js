@@ -69,6 +69,24 @@ const { chromium } = require('playwright');
   check(win.frame && win.close && win.confirm, 'окно общее: рамка, крестик, вопрос при выходе');
   check(win.title === '💰', 'в шапке значок алчности');
   check(!win.ownModal, 'своей рамки, крестика и заголовка больше нет');
+
+  // ---------- 1а. ОКНО ВО ВЕСЬ ХОЛСТ, КОМНАТА ПОД НИМ ПОГАШЕНА ----------
+  // Проверка общая для всех семи игр, но живёт здесь: щель вокруг рамки и
+  // рисующаяся под ней комната нашлись именно на автомате.
+  const room = await page.evaluate(() => {
+    const frame = document.querySelector('#slots-game .mg-frame').getBoundingClientRect();
+    const cont = document.getElementById('game-container').getBoundingClientRect();
+    return {
+      gap: Math.max(frame.left - cont.left, frame.top - cont.top,
+                    cont.right - frame.right, cont.bottom - frame.bottom),
+      worm: getComputedStyle(document.getElementById('worm-stage')).visibility,
+      wallet: getComputedStyle(document.getElementById('wallet')).visibility,
+      debug: getComputedStyle(document.getElementById('debug-toggle-btn')).visibility
+    };
+  });
+  check(room.gap < 1, 'рамка идёт по краю холста: щели с комнатой нет');
+  check(room.worm === 'hidden' && room.wallet === 'hidden', 'комната под окном не рисуется');
+  check(room.debug === 'visible', 'кнопка 🐞 остаётся поверх мини-игры');
   await page.screenshot({ path: out + 'greed-0-open.png' });
 
   // Точка на автомате: тап по нему и есть рывок рычага.
@@ -188,6 +206,28 @@ const { chromium } = require('playwright');
     return { rtp: paid / spent, sin: GameState.sinValue('greed') };
   });
   check(full.rtp > cfg.rtpMin, 'при полной шкале автомат платит так же: ' + (full.rtp * 100).toFixed(1) + '%');
+
+  // ---------- 9. ВОЗВРАТ В КОМНАТУ ----------
+  // Гашение обязано быть обратимым и БЕЗ пересборки: сцена та же самая, а не
+  // собранная заново (потому и visibility, а не display).
+  // Метка на живом узле сцены: если на возврате она на месте, значит сцену не
+  // пересобирали. Считать узлы нельзя — их число законно меняется само
+  // (у червя от состояния шкал меняется морда).
+  await page.evaluate(() => {
+    const svg = document.querySelector('#worm-stage svg');
+    if (svg) svg.dataset.mgMark = '1';
+  });
+  await page.evaluate(() => GreedMinigame.close());
+  await page.waitForTimeout(600);
+  const back = await page.evaluate(() => ({
+    worm: getComputedStyle(document.getElementById('worm-stage')).visibility,
+    open: document.getElementById('game-container').classList.contains('mg-open'),
+    nodes: document.querySelectorAll('#worm-stage svg *').length,
+    marked: (document.querySelector('#worm-stage svg') || {}).dataset
+            ? document.querySelector('#worm-stage svg').dataset.mgMark === '1' : false
+  }));
+  check(back.worm === 'visible' && !back.open, 'после выхода комната вернулась');
+  check(back.marked && back.nodes > 100, 'сцена та же, а не собрана заново');
 
   console.log(errors.length ? '\nошибки страницы:\n' + errors.join('\n') : '\nошибок страницы нет');
   console.log(fail.length ? '\nПРОВАЛЕНО: ' + fail.length : '\nвсё сошлось');

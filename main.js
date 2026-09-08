@@ -190,10 +190,17 @@ const GameManager = {
     watchMinigameScreens() {
         const screens = document.querySelectorAll('.minigame-screen');
         if (!screens.length) return;
+        const room = document.getElementById('game-container');
         const sync = () => {
             const busy = document.querySelector('.minigame-screen.active');
             const h = window.MainWormHandle;
             if (h && typeof h.setPaused === 'function') h.setPaused(!!busy);
+            // Мало остановить анимацию: комнату под мини-игрой браузер всё
+            // равно КРАСИТ каждый кадр — семьсот узлов персонажа, локация,
+            // кошелёк. Класс снимает с неё отрисовку целиком (правило в
+            // style.css), сохраняя раскладку: возврат мгновенный и без
+            // пересборки сцены.
+            if (room) room.classList.toggle('mg-open', !!busy);
         };
         const obs = new MutationObserver(sync);
         screens.forEach(n => obs.observe(n, { attributes: true,
