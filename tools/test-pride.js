@@ -119,6 +119,27 @@ const { chromium } = require('playwright');
   console.log(`тапов: ${taps}   попаданий: ${res.hits}   промахов: ${res.misses}   ` +
               `зон на экране разом: ${maxOnScreen}`);
   console.log(`выход занял ${sec} с   собрано поцелуев: ${res.awarded}`);
+  // ---------- РАЗРЫВ ОБЯЗАН ЧИСТИТЬ ЭКРАН ----------
+  // Пока он гасил только розовые, мисклик не стоил ничего: игрок тыкал в
+  // пустоту при живой белой зоне, тут же добивал её и возвращал стрик. Ловится
+  // это только так — тапом в пустоту при заведомо живой зоне.
+  const wipe = await page.evaluate(async () => {
+    const was = PrideMinigame.phase;
+    PrideMinigame.phase = 'run';
+    PrideMinigame.streak = 0;
+    PrideMinigame.clearTargets();
+    PrideMinigame.spawnTarget();
+    const before = PrideMinigame.targets.length;
+    PrideMinigame.registerMissclick();
+    const after = PrideMinigame.targets.length;
+    PrideMinigame.clearTargets();
+    PrideMinigame.phase = was;
+    return { before, after };
+  });
+  console.log(`разрыв: зон до ${wipe.before}, после ${wipe.after}   ` +
+              (wipe.before && !wipe.after ? 'экран чистится'
+                                          : '✗ ЗОНЫ ПЕРЕЖИЛИ РАЗРЫВ'));
+
   console.log(`стрик доходил до ${maxStreak}   поцелуйных зон замечено ${kissSeen}   ` +
               (closedWithKiss ? `✗ ПОЦЕЛУЙ ПРИ НУЛЕВОМ СТРИКЕ: ${closedWithKiss} кадров`
                               : 'при нулевом стрике поцелуев не было — правило держится'));

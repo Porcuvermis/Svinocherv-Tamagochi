@@ -789,8 +789,13 @@ const PrideMinigame = {
 
     tickTargets(now) {
         const r = this.params.radius;
-        for (let i = this.targets.length - 1; i >= 0; i--) {
-            const t = this.targets[i];
+        // Идём по КОПИИ, и каждую зону перед касанием проверяем на живость.
+        // Погасшая зона рвёт стрик, а разрыв гасит ВЕСЬ экран — то есть
+        // выносит тот самый массив, по которому идёт цикл. По живому массиву
+        // это падало бы на первом же разрыве, и падало бы через кадр после
+        // правки, а не в ней самой.
+        for (const t of this.targets.slice()) {
+            if (this.targets.indexOf(t) < 0) continue;
             const left = (t.diesAt - now) / this.params.lifeMs;
             if (left <= 0) {
                 this.removeTarget(t);
@@ -901,21 +906,22 @@ const PrideMinigame = {
     },
 
     // ---------- РАЗРЫВ ----------
-    // Стрик в ноль, и вместе с ним закрывается червь: висящие поцелуйные зоны
-    // ГАСНУТ В ТОТ ЖЕ МИГ. Оставлять их дожидаться своей смерти нельзя — они
-    // платили бы по множителю, которого уже нет, а главное: правило «поцелуи
-    // только при живом стрике» должно быть видно глазом, а не выводиться из
-    // чисел.
+    // Стрик в ноль, и ЭКРАН ОЧИЩАЕТСЯ ЦЕЛИКОМ: гаснут все висящие зоны, и
+    // розовые, и белые.
+    //
+    // Белые сначала оставляли жить, и это была дыра, а не мягкость. Игрок
+    // тыкал в пустоту при живой белой зоне, тут же добивал её — и стрик
+    // возвращался к единице, а с ним и доступ к поцелуям. Мисклик не стоил
+    // ничего: наказание отменялось той самой зоной, которая висела в момент
+    // наказания. Разрыв обязан быть разрывом — после него набирать серию
+    // приходится с зон, которые ЕЩЁ НЕ ПОЯВИЛИСЬ.
     //
     // Гасим ТИХО, минуя registerMiss: рекурсия из разрывов внутри разрыва —
     // это не наказание, а поломка.
     breakStreak() {
         if (this.streak > 0) this.flashReset();
         this.streak = 0;
-        for (let i = this.targets.length - 1; i >= 0; i--) {
-            const t = this.targets[i];
-            if (t.kiss) this.removeTarget(t);
-        }
+        this.clearTargets();
     },
 
     // Сорванный множитель показывается тем же местом, где он рос: цифра
@@ -1008,18 +1014,63 @@ const PrideMinigame = {
         const purse = `<text x="${x}" y="${y}" font-size="26">💋</text>` +
                       `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
         if (this.phase !== 'run' && this.phase !== 'done') {
-            this.hudEl.innerHTML = purse;
+            this.hudEl.innerHTML = purse + this.dayBadge(x, y + 22);
             return;
         }
         // На финише показываем НАЧИСЛЕННОЕ (публика могла устать, и тогда оно
         // меньше собранного), пока оно не пришло — собранное.
-        const gain = this.phase === 'done' && this.awardedKisses != null
-            ? this.awardedKisses : this.kisses;
+        const done = this.phase === 'done' && this.awardedKisses != null;
+        const gain = done ? this.awardedKisses : this.kisses;
         const gx = x + 30 + String(wallet).length * 16 + 14;
-        this.hudEl.innerHTML = purse +
-            `<text x="${gx}" y="${y}" font-size="22" fill="${C.flash[500]}"
+        // ---------- СОБРАЛ СЕМЬ, ПОЛУЧИЛ ЧЕТЫРЕ ----------
+        // Когда публика устала, начисленное МЕНЬШЕ собранного, и молчать об
+        // этом нельзя: в живой игре разрыв ровно этих двух чисел был принят
+        // за баг, и правильно принят — игра сама ничем не показывала, что
+        // урезала награду. Теперь собранное остаётся на экране зачёркнутым
+        // рядом с начисленным. Ни одного слова: число, черта, стрелка.
+        // Всю работу делает СТРЕЛКА, а не зачёркивание: собранное тусклое,
+        // начисленное яркое, между ними «▸». Зачёркивание тут пробовали двумя
+        // способами — text-decoration в svg поддержан неровно, а линией поверх
+        // цифры получалась не зачёркнутая семёрка, а сломанный глиф.
+        const cutW = String(this.kisses).length * 11;
+        const cut = done && this.kisses > gain
+            ? `<text x="${gx}" y="${y}" font-size="18" fill="${C.glow[500]}"
+                     font-weight="700" opacity="0.8">${this.kisses}</text>` +
+              `<text x="${gx + cutW + 6}" y="${y}" font-size="18"
+                     fill="${C.glow[500]}" opacity="0.8">▸</text>`
+            : '';
+        const px = gx + (cut ? cutW + 24 : 0);
+        this.hudEl.innerHTML = purse + cut +
+            `<text x="${px}" y="${y}" font-size="22" fill="${C.flash[500]}"
                    font-weight="700" opacity="${this.phase === 'done' ? 1 : 0.85}">+${gain}</text>` +
-            this.multBadge(this.safe.x1 - 18, y - 4);
+            this.multBadge(this.safe.x1 - 18, y - 4) +
+            (this.phase === 'done' ? this.dayBadge(x, y + 22) : '');
+    },
+
+    // ---------- ПУБЛИКА УСТАЁТ: РЯД ТОЧЕК ----------
+    // Первые три выхода за сутки платят полностью, следующие три — половину,
+    // дальше десятую часть (ECONOMY.crowdReturns). Пока это было видно
+    // только по обрезанной награде, правило читалось поломкой.
+    //
+    // Показ — сама лестница, кружок на выход: крупный = полная оплата,
+    // поменьше = половина, точка в конце = всё остальное. Потраченные
+    // погашены. Слов не нужно: ряд гаснет слева направо, и следующий яркий
+    // кружок и есть ответ на вопрос «сколько мне заплатят сейчас».
+    dayBadge(x, y) {
+        const C = PALETTE.redCarpet;
+        const day = Backend.prideDay ? Backend.prideDay() : null;
+        if (!day || !day.seats.length) return '';
+        let out = '', cx = x + 4;
+        day.seats.forEach((seat, i) => {
+            const r = 3 + seat.share * 4;          // размер = доля выплаты
+            const spent = i < day.done;
+            out += `<circle cx="${cx.toFixed(1)}" cy="${y}" r="${r.toFixed(1)}"
+                        fill="${spent ? 'none' : C.kiss[300]}"
+                        stroke="${C.kiss[700]}" stroke-width="1.5"
+                        opacity="${spent ? 0.45 : 1}"/>`;
+            cx += r * 2 + 5;
+        });
+        return `<g class="pr-day">${out}</g>`;
     },
 
     // ---------- МНОЖИТЕЛЬ НА ЭКРАНЕ ----------

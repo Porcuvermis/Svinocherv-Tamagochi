@@ -1417,6 +1417,25 @@ const LocalBackend = {
         return this.returnsShare('crowdReturns', GameState.counter(reason) + 1);
     },
 
+    // Вся суточная лестница разом: сколько выходов уже сделано и по какой
+    // доле платит каждый следующий. Костюмерная рисует по этому ряд точек —
+    // усталость публики иначе замечается только по обрезанной награде, и
+    // читается она тогда как баг, а не как правило (так и вышло в живой
+    // игре: собрал семь, получил четыре, и объяснить это было нечем).
+    prideDay() {
+        const done = GameState.counter('pride.parade.win');
+        const tiers = (ECONOMY.crowdReturns && ECONOMY.crowdReturns.tiers) || [];
+        // Разворачиваем лестницу в список выходов: по одному на каждый
+        // оплачиваемый выход плюс один «хвост» на всё, что дальше.
+        const seats = [];
+        let n = 0;
+        tiers.forEach(t => {
+            if (t.upTo === null) { seats.push({ share: t.share, tail: true }); return; }
+            while (n < t.upTo) { seats.push({ share: t.share, tail: false }); n++; }
+        });
+        return { done, seats, next: this.returnsShare('crowdReturns', done + 1) };
+    },
+
     // Выдать валюту напрямую. Пока это только debug-режим: настоящие
     // источники (бой, рогалик) идут через minigameResult и свой конфиг наград.
     grantCurrency(key, amount) {

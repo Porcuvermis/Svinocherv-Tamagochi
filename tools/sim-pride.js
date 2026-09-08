@@ -28,7 +28,11 @@ const fs = require('fs');
 const ECONOMY = eval(fs.readFileSync(__dirname + '/../src/config/economy.js', 'utf8') + '\nECONOMY');
 const CFG = ECONOMY.minigames.pride;
 const UP = CFG.upgrades;
-const RUNS = 20000;
+// Выходов на клетку. Было двадцать тысяч, пока выход считался одним проходом
+// по списку зон; событийная модель дороже раз в пять, и на двадцати тысячах
+// калькулятор идёт минуты. Четырёх хватает: разброс между запусками держится
+// в пределах ±0.1 поцелуя, а проверка ступеней сравнивает разницы в единицы.
+const RUNS = 4000;
 
 // ---------- ПОТОЛОК ПАЛЬЦА ----------
 // Главное число этого калькулятора и единственное, которого нет в конфиге:
@@ -38,10 +42,10 @@ const RUNS = 20000;
 //
 // Без этого потолка калькулятор считает, что игрок успевает всё, и любая
 // прибавка плотности выглядит чистым выигрышем. На деле у неё есть край, за
-// которым зоны начинают гаснуть сами, а погасшая зона роняет ажиотаж — то
-// есть покупка массовки может начать ВРЕДИТЬ. Ровно этот край здесь и ищем.
+// которым зоны начинают гаснуть сами, а погасшая зона рвёт стрик и гасит
+// экран — то есть покупка массовки может начать ВРЕДИТЬ. Ровно этот край
+// здесь и ищем.
 const TAP_RATE = 2.5;
-const RUN_SEC = CFG.runMs / 1000;
 
 // Ступени берутся из конфига: base — то, с чего начинают, levels[].bonus —
 // значение каждой купленной ступени.
@@ -64,10 +68,15 @@ const spawnAt = (steps) => Math.max(CFG.spawnFloor, CFG.spawnBase - CFG.spawnSte
 // на стартовой зоне (радиус 44, полторы секунды), шире зона и дольше висит —
 // промахов меньше. Дальше единицы: доля НЕзакрытых зон делится пополам между
 // «не успел» (зона погасла) и «ткнул мимо» (сброс).
+// Точность — это ТОЛЬКО «попал ли пальцем», без «успел ли вообще»: успевание
+// теперь считает сама событийная модель ниже. Поэтому показатель у времени
+// жизни стал втрое мягче прежнего (0.8 → 0.3): длинная зона по-прежнему даёт
+// прицелиться спокойнее, но больше не изображает заодно и запас времени,
+// который модель и так видит.
 function accuracyAt(radius, lifeMs, base) {
     const miss = 1 - base;
     const byRadius = Math.pow(UP.crowd.base / radius, 1.15);   // шире зона — реже мажешь
-    const byLife = Math.pow(UP.carpet.base / lifeMs, 0.8);     // дольше висит — реже не успеваешь
+    const byLife = Math.pow(UP.carpet.base / lifeMs, 0.3);     // дольше висит — спокойнее целишься
     return 1 - Math.min(0.98, miss * byRadius * byLife);
 }
 
@@ -84,28 +93,56 @@ function drawBag() {
     return bag;
 }
 
-// Один выход. Три исхода у зоны:
-//   • закрыл       — белая растит стрик, поцелуйная платит стриком;
-//   • не успел     — зона погасла, СТРИК В НОЛЬ;
-//   • ткнул мимо   — то же самое.
+// ---------- ОДИН ВЫХОД, ПО СОБЫТИЯМ ----------
+// Раньше здесь зоны шли ПОДРЯД: одна зона — одна итерация, «успел/не успел»
+// решалось долей от потолка пальца. Это перестало годиться, когда разрыв стал
+// сносить ВЕСЬ экран: цена разрыва — это число ВИСЯЩИХ зон, а сколько их
+// висит, в модели «зоны подряд» вообще не выражается. Попытка приписать
+// потерю формулой lifeMs/interval дала прямую ложь: покупка дорожки выходила
+// ВРЕДНОЙ (`docs/traps.md`, п. 64).
 //
-// Пока стрик нулевой, мешок НЕ трогается: поцелуйных зон в это время не
-// бывает, и выпавший впустую поцелуй съедал бы долю уже открытого периода
-// (в игре так же — pride.js, spawnTarget).
-function run(interval, cap, accuracy) {
-    const zones = Math.floor(CFG.runMs / interval);
-    // Сколько зон игрок вообще успевает попробовать закрыть. Остальные
-    // гаснут сами — и теперь каждая такая рвёт стрик.
-    const reach = Math.min(1, (TAP_RATE * RUN_SEC) / zones);
+// Поэтому теперь считается ровно то, что происходит на экране:
+//
+//   • зона появляется раз в interval, живёт lifeMs, больше maxTargets на
+//     экране не держится;
+//   • палец обрабатывает одну зону раз в 1/TAP_RATE секунды и берёт ту, что
+//     умрёт раньше всех, — так же, как игра выбирает зону под тапом;
+//   • промах пальца и погасшая зона рвут стрик и ГАСЯТ ЭКРАН.
+//
+// Цена разрыва после этого не задаётся коэффициентом, а получается сама: и
+// снесённые зоны, и пауза до следующего спавна, и то, что часть снесённых
+// игрок всё равно не успел бы закрыть.
+function run(interval, cap, accuracy, lifeMs) {
+    const tapEvery = 1000 / TAP_RATE;
     const need = CFG.streak.needForKiss;
-    let streak = 0, kisses = 0, bag = [];
-    for (let i = 0; i < zones; i++) {
-        const open = streak >= need;
-        const isKiss = open ? (bag.length ? bag : (bag = drawBag())).pop() : false;
-        if (Math.random() > reach) { streak = 0; bag = []; continue; }   // не дотянулся
-        if (Math.random() > accuracy) { streak = 0; bag = []; continue; } // промазал
-        if (isKiss) kisses += Math.min(cap, Math.max(1, streak));
-        else streak += CFG.streak.perHit;
+    let live = [], streak = 0, kisses = 0, bag = [];
+    let tSpawn = interval, tTap = tapEvery;
+    const wipe = () => { streak = 0; bag = []; live = []; };
+    for (;;) {
+        const tDie = live.length ? live[0].die : Infinity;
+        const t = Math.min(tSpawn, tTap, tDie);
+        if (t > CFG.runMs) break;
+
+        if (t === tDie) { wipe(); continue; }        // не успели — экран гаснет
+
+        if (t === tTap) {
+            tTap = t + tapEvery;
+            if (!live.length) continue;              // тыкать не во что — палец ждёт
+            if (Math.random() > accuracy) { wipe(); continue; }
+            const z = live.shift();
+            if (z.kiss) kisses += Math.min(cap, Math.max(1, streak));
+            else streak += CFG.streak.perHit;
+            continue;
+        }
+
+        tSpawn = t + interval;
+        if (live.length >= CFG.maxTargets) continue;
+        // Пока стрик нулевой, мешок НЕ трогаем: поцелуйных зон в это время не
+        // бывает, и выпавший впустую поцелуй съедал бы долю уже открытого
+        // периода (в игре так же — pride.js, spawnTarget).
+        const kiss = streak >= need ? (bag.length ? bag : (bag = drawBag())).pop() : false;
+        live.push({ die: t + lifeMs, kiss });
+        live.sort((a, b) => a.die - b.die);
     }
     return kisses;
 }
@@ -123,7 +160,7 @@ function avg(lv, base) {
     const interval = spawnAt(lv.crowd + lv.car + lv.carpet);
     const acc = accuracyAt(RADIUS[lv.crowd], LIFE[lv.carpet], base);
     let sum = 0;
-    for (let i = 0; i < RUNS; i++) sum += run(interval, CARS[lv.car], acc);
+    for (let i = 0; i < RUNS; i++) sum += run(interval, CARS[lv.car], acc, LIFE[lv.carpet]);
     const v = sum / RUNS;
     AVG_CACHE.set(key, v);
     return v;
