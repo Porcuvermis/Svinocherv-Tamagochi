@@ -146,6 +146,15 @@ const { chromium } = require('playwright');
     const m = document.getElementById('machine-container').getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2, pull: m.height * 0.18 };
   });
+  // Отдача в палец: считаем не «завибрировало ли» (в браузере это не
+  // проверить), а что игра её ЗАПРОСИЛА — храповик по ходу и удар на срыве.
+  await page.evaluate(() => {
+    window.__haptics = [];
+    const tick = Haptics.tick.bind(Haptics);
+    const impact = Haptics.impact.bind(Haptics);
+    Haptics.tick = () => { window.__haptics.push('tick'); tick(); };
+    Haptics.impact = (kind, force) => { window.__haptics.push('impact:' + (kind || '')); impact(kind, force); };
+  });
   const spinsBefore = await page.evaluate(() => window.__spins.length);
   await page.mouse.move(lever.x, lever.y);
   await page.mouse.down();
@@ -161,6 +170,11 @@ const { chromium } = require('playwright');
   await page.mouse.up();
   await page.waitForTimeout(200);
   check(angle > 30, 'рычаг идёт за пальцем (угол ' + angle.toFixed(0) + '°)');
+  const feel = await page.evaluate(() => window.__haptics.slice());
+  check(feel[0] === 'impact:light', 'взялись за ручку — тихая отдача');
+  check(feel.filter(x => x === 'tick').length >= 3,
+        'храповик щёлкает по ходу (' + feel.filter(x => x === 'tick').length + ' зубцов)');
+  check(feel.includes('impact:heavy'), 'срыв рычага бьёт в палец');
   const spinsAfter = await page.evaluate(() => window.__spins.length);
   check(spinsAfter === spinsBefore + 1, 'дотянутый рычаг запускает крутку');
   for (let i = 0; i < 40; i++) {

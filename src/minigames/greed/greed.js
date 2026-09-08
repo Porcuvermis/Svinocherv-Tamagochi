@@ -338,6 +338,9 @@ const GreedMinigame = {
         if (!res.ok) {
             // Денег нет. Крутка не уходит в минус, а отказ показывается тем
             // же, чем он вызван: пустеющим лотком (docs/plan/16, раздел 6).
+            // В палец он тоже отдаёт — иначе дотянутый рычаг, за которым
+            // ничего не случилось, читается как несработавшее касание.
+            if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
             this.showBroke();
             return;
         }
@@ -415,6 +418,15 @@ const GreedMinigame = {
     // Угол ставится СТИЛЕМ, а не атрибутом, и перед автоматической анимацией
     // снимается: css-анимация transform стирает атрибут transform у
     // svg-узла (docs/traps.md, п. 50), и жить им обоим одновременно нельзя.
+    //
+    // ---------- ОТДАЧА В ПАЛЕЦ ----------
+    // Рычаг — единственное место игры, где палец ВЕДЁТ железо, а не тыкает
+    // в картинку, и без отдачи это чувствуется ватой. Отдача повторяет
+    // устройство настоящего рычага: храповик щёлкает зубцами по ходу, на
+    // срыве бьёт один раз посильнее, пружина на возврате отзывается тихо.
+    // Ход в 58° разбит на семь зубцов — по щелчку каждые восемь градусов:
+    // чаще палец уже не различает, реже — тянешь по гладкому.
+    LEVER_NOTCH_DEG: 8,
     LEVER_MAX_DEG: 58,       // столько же, сколько в keyframes автоматического рывка
     LEVER_FIRE_DEG: 40,      // с этого угла рычаг «сорвался» и крутка идёт
     dragging: false,
@@ -427,10 +439,19 @@ const GreedMinigame = {
         let travel = 1;
         let angle = 0;
         let startAt = 0;
+        let notch = 0;
 
         const setAngle = (deg) => {
             angle = Math.max(0, Math.min(this.LEVER_MAX_DEG, deg));
             this.leverArm.style.transform = 'rotate(' + angle.toFixed(1) + 'deg)';
+
+            // Зубец храповика. Считается по пройденным ступеням, а не по
+            // каждому движению пальца: иначе отдача сливается в жужжание.
+            // Ступени только ВПЕРЁД — отпуская рычаг назад, храповик молчит,
+            // как и положено храповику.
+            const step = Math.floor(angle / this.LEVER_NOTCH_DEG);
+            if (step > notch && typeof Haptics !== 'undefined') Haptics.tick();
+            if (step > notch) notch = step;
         };
 
         // fire — рычаг дотянут до срыва. tap — по ручке просто ткнули: она
@@ -451,6 +472,12 @@ const GreedMinigame = {
                 this.leverArm.style.transform = '';
             }, 500);
             this.spinTimers.push(t);
+            if (typeof Haptics !== 'undefined') {
+                // Срыв — один сильный удар: рычаг ушёл, крутка пошла.
+                // Недотянутый рычаг отзывается тихо: пружина, а не событие.
+                if (fire) Haptics.impact('heavy', true);
+                else if (!tap) Haptics.impact('light');
+            }
             if (fire) this.pullLever(true);
             else if (tap) this.pullLever(false);
         };
@@ -471,7 +498,11 @@ const GreedMinigame = {
             const box = this.machineContainer
                 ? this.machineContainer.getBoundingClientRect() : null;
             travel = Math.max(40, (box ? box.height : 480) * 0.14);
+            notch = 0;
             setAngle(0);
+            // Взялись за ручку. Самая тихая отдача из всех: это ещё не
+            // действие, а «железо в руке».
+            if (typeof Haptics !== 'undefined') Haptics.impact('light', true);
         });
 
         grab.addEventListener('pointermove', (e) => {
