@@ -132,6 +132,98 @@ const harness = require('./harness');
   ok(seeThrough.length === 0, 'при высыхании ни один кусок не полупрозрачен',
      seeThrough.slice(0, 4).join(',') || 'ни одного');
 
+  // ---------- ОДИН ПРЕДМЕТ, А НЕ РОССЫПЬ ----------
+  // Слизь на полу — одно тело. Значит ни один её кусок не имеет права лежать
+  // отдельно: ни капля рядом с кромкой, ни сгусток, переживший плёнку под
+  // собой. Раньше отрывались оба — «дальние» капли ставились в полторы
+  // полуширины от оси (то есть заведомо мимо следа), а украшения снимались
+  // по собственному возрасту, а не по краю высыхания. И то и другое игрок
+  // читает одинаково: след распался.
+  //
+  // Проверяется в САМОМ ХОДЕ высыхания, когда край уже съел часть следа.
+  const loose = await page.evaluate(() => new Promise(res => {
+    MainWormHandle.setOptions({ wander: true });
+    MainWormHandle.setPosition(70, 690);
+    MainWormHandle.walkTo(330, 790);
+    setTimeout(() => {
+      const film = [];      // точки видимой плёнки
+      let half = 0;
+      document.querySelectorAll('.worm-slime-wet').forEach(g => {
+        const paths = g.querySelectorAll('path');
+        if (!paths.length) return;
+        // Полуширина берётся по САМОМУ ШИРОКОМУ слою: это и есть внешняя
+        // кромка плёнки, дальше неё слизи нет.
+        paths.forEach(p => half = Math.max(half, parseFloat(p.getAttribute('stroke-width')) / 2));
+        const body = paths[paths.length - 1];
+        const total = body.getTotalLength();
+        const off = -parseFloat(body.getAttribute('stroke-dashoffset') || '0');
+        for (let u = Math.max(0, off); u <= total; u += 2) {
+          const q = body.getPointAtLength(u);
+          film.push([q.x, q.y]);
+        }
+      });
+      const centre = (el) => {
+        const tr = el.getAttribute('transform') || '';
+        const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(tr);
+        if (m) return [+m[1], +m[2]];
+        return [parseFloat(el.getAttribute('cx')), parseFloat(el.getAttribute('cy'))];
+      };
+      const sel = '.worm-slime-lumps > *, .worm-slime-shine > *, .worm-slime-bubbles > *';
+      const bad = [];
+      document.querySelectorAll(sel).forEach(el => {
+        const [x, y] = centre(el);
+        if (!isFinite(x)) return;
+        let best = Infinity;
+        for (let i = 0; i < film.length; i++) {
+          const d = Math.hypot(film[i][0] - x, film[i][1] - y);
+          if (d < best) best = d;
+        }
+        if (best > half + 2) bad.push(Math.round(best));
+      });
+      res({ film: film.length, half: +half.toFixed(1), bad,
+            decor: document.querySelectorAll(sel).length });
+    }, 2000);
+  }));
+  ok(loose.film > 0 && loose.decor > 3, 'на полу есть и плёнка, и украшения',
+     `точек ${loose.film}, украшений ${loose.decor}`);
+  ok(loose.bad.length === 0, 'ни один кусок слизи не лежит отдельно от плёнки',
+     loose.bad.length ? `оторвались ${loose.bad.length} шт., дальше кромки на `
+                        + loose.bad.slice(0, 5).join(', ') + ' ед.'
+                      : `полуширина ${loose.half}`);
+
+  // ---------- ПАУЗА НЕ РВЁТ СЛЕД ----------
+  // Червь останавливается посреди комнаты и идёт дальше. Отрезок при
+  // остановке закрывается — и следующий обязан начаться там же, где закрылся
+  // предыдущий, а не там, куда за время стойки уехал хвост (при развороте на
+  // месте это десятки единиц).
+  const pause = await page.evaluate(() => new Promise(res => {
+    MainWormHandle.setOptions({ wander: true });
+    MainWormHandle.setPosition(90, 700);
+    MainWormHandle.walkTo(300, 700);          // идём вправо
+    setTimeout(() => {
+      MainWormHandle.walkTo(300, 700);        // пришли и стоим: след оборвался
+      setTimeout(() => {
+        MainWormHandle.walkTo(80, 790);       // пошли ОБРАТНО — хвост перекинулся
+        setTimeout(() => {
+          const segs = Array.from(document.querySelectorAll('.worm-slime-wet'));
+          const pts = segs.map(g => {
+            const d = g.querySelector('path').getAttribute('d') || '';
+            const n = d.match(/-?[\d.]+/g).map(Number);
+            return { start: [n[0], n[1]], end: [n[n.length - 2], n[n.length - 1]] };
+          });
+          const gaps = [];
+          for (let i = 1; i < pts.length; i++)
+            gaps.push(+Math.hypot(pts[i].start[0] - pts[i - 1].end[0],
+                                  pts[i].start[1] - pts[i - 1].end[1]).toFixed(1));
+          res({ segs: pts.length, gaps });
+        }, 500);
+      }, 700);
+    }, 2200);
+  }));
+  ok(pause.segs > 1, 'после паузы след продолжен новым отрезком', String(pause.segs));
+  ok(pause.gaps.every(g => g <= 1.5), 'остановка не оставила дыры в следе',
+     pause.gaps.join(', ') || '—');
+
   // Высыхание: червь стоит, след уходит целиком.
   const gone = await page.evaluate(() => new Promise(res => {
     MainWormHandle.setOptions({ wander: false });
