@@ -1137,11 +1137,18 @@ function organPlanForZone(zone, rng) {
         // у обоих слоёв одно (общая фаза и множители), иначе половинки
         // клетки разъехались бы.
         const ribPhase = rng() * 6.28;
+        // cx/cy — середина оси клетки: вокруг неё группа и доворачивается
+        // при развороте тела (поворот пишется в тот же transform, что и
+        // пульсация, — лишней работы ноль).
+        const ribMid = ribAxisAt(0.5);
         const ribs = (side) => ({
-            kind: 'ribs', side, cx: 0, cy: 0, len: 0.92, thick: 0.86, count: 4,
+            kind: 'ribs', side, cx: ribMid.x, cy: ribMid.y, count: 4,
             rot: 0, speedMul: 0.5, ampMul: 0.3, phase: ribPhase
         });
-        plan.push(ribs('back'));
+        // Две ПОЛОВИНЫ клетки — левая и правая, а не «ближняя» и «дальняя».
+        // Какая из них ближе к зрителю, решает разворот тела, и роли
+        // меняются местами прямо на ходу (см. tick, разворот клетки).
+        plan.push(ribs('a'));
         plan.push({
             kind: 'heart', cx: 0.32 + rng() * 0.08, cy: -0.44 - rng() * 0.06, len: 0.34, thick: 0.38,
             rot: rng() * 16 - 8, speedMul: 2.1, ampMul: 1.8, phase: rng() * 6.28
@@ -1150,7 +1157,7 @@ function organPlanForZone(zone, rng) {
             kind: 'stomach', cx: -0.22 + rng() * 0.08, cy: -0.3 + rng() * 0.06, len: 0.46, thick: 0.42,
             rot: rng() * 14 - 7, speedMul: 0.75, ampMul: 0.9, phase: rng() * 6.28
         });
-        plan.push(ribs('front'));
+        plan.push(ribs('b'));
     }
     return plan;
 }
@@ -1209,121 +1216,190 @@ function buildVesselTree(group, rng, x, y, angle, len, depth, color, width) {
 //
 // Всё статично: узлы собираются один раз, в кадре у них не меняется ничего,
 // кроме общего дыхания всей группы органов.
+// Ось тела внутри живота — воображаемая линия, вокруг которой построена
+// клетка. Не рисуется. Числа получены подгонкой под утверждённый профиль:
+// середины восьми нарисованных автором рёбер легли на эту кривую с ошибкой
+// меньше трёх сотых полуоси (tools — см. правку 159 в журнале).
+const RIB_AXIS = [{ x: 0.49, y: -0.67 }, { x: -0.01, y: -0.15 }, { x: -0.32, y: 0.18 }];
+// Половина ширины клетки и снос ребра вдоль хребта на станции t (0 — у шеи,
+// 1 — у хвоста). Тоже из подгонки: R растёт к тазу, снос меняет знак —
+// верхние рёбра забирают к голове, нижние к хвосту.
+const RIB_R_FROM = 0.43, RIB_R_TO = 0.66;
+const RIB_SLANT_FROM = -0.3, RIB_SLANT_TO = 0.32;
+// Насколько камера смотрит сверху. Единственное, из-за чего в профиль видно
+// РАЗНИЦУ между ближней и дальней стенкой: их дуги расходятся по вертикали.
+const RIB_TILT = 0.2;
+// На сколько градусов клетка доворачивается, когда тело встаёт к
+// камере: ось живота нарисована наискосок (так тело лежит в профиль),
+// а в анфас туловище на экране почти отвесно.
+const RIB_TURN_DEG = -42;
+// Насколько ребро опускается, пока обходит тушу (в долях своего
+// радиуса). Работает только в анфас — см. drift в ribPath.
+const RIB_FRONT_DROP = 0.9;
+
+function ribAxisAt(t) {
+    const u = 1 - t, A = RIB_AXIS[0], C = RIB_AXIS[1], B = RIB_AXIS[2];
+    return { x: u * u * A.x + 2 * u * t * C.x + t * t * B.x,
+             y: u * u * A.y + 2 * u * t * C.y + t * t * B.y };
+}
+function ribAxisDir(t) {
+    const A = RIB_AXIS[0], C = RIB_AXIS[1], B = RIB_AXIS[2];
+    const dx = 2 * ((1 - t) * (C.x - A.x) + t * (B.x - C.x));
+    const dy = 2 * ((1 - t) * (C.y - A.y) + t * (B.y - C.y));
+    const l = Math.hypot(dx, dy) || 1;
+    return { x: dx / l, y: dy / l };
+}
+
+// ---------- ОДНО РЕБРО В ЗАДАННОМ РАКУРСЕ ----------
+// Ребро — половина обруча вокруг оси тела: от хребта (спина) через бок к
+// брюху. Считается в 3д и проецируется на экран, поэтому один и тот же
+// набор чисел даёт и профиль, и вид спереди, и всё между ними — как у
+// головы, только у головы поворот приблизительный, а здесь честный.
+//
+//   psi = 0      — тело смотрит в камеру: хребет позади, рёбра опоясывают
+//                  тушу с ДВУХ сторон симметрично;
+//   psi = ±90°   — профиль: обруч виден с ребра, дуга ложится поперёк тела,
+//                  а ближняя и дальняя половины расходятся по вертикали
+//                  (наклон камеры) и идут накрест.
+//
+// Возвращает готовую строку пути и глубину середины ребра — по ней решается,
+// насколько оно яркое и что рисуется поверх чего.
+function ribPath(ref, psi) {
+    const sp = Math.sin(psi), cp = Math.cos(psi);
+    // Станция переползает между анфасной и профильной — см. buildRibs.
+    const w = Math.abs(sp), v = 1 - w;
+    const A = ref.a, B = ref.b;
+    const rib = {
+        side: ref.side,
+        cx: A.cx * v + B.cx * w, cy: A.cy * v + B.cy * w,
+        nx: A.nx * v + B.nx * w, ny: A.ny * v + B.ny * w,
+        tx: A.tx * v + B.tx * w, ty: A.ty * v + B.ty * w,
+        R: A.R * v + B.R * w, slant: A.slant * v + B.slant * w
+    };
+    const pt = (phi) => {
+        const c = Math.cos(phi), s = Math.sin(phi);
+        const across = rib.R * (-c * sp + s * rib.side * cp);   // поперёк тела, в плоскости экрана
+        const depth = rib.R * (-c * cp - s * rib.side * sp);    // от зрителя (минус) к зрителю (плюс)
+        // Снос вдоль хребта. Два слагаемых, и оба обязательны:
+        //   в профиль работает ПОСТОЯННЫЙ наклон ребра (slant) — он и снят с
+        //   утверждённого эскиза: верхние рёбра забирают к голове, нижние к
+        //   хвосту;
+        //   в анфас работает СПУСК: ребро опускается, пока уходит на бок, и
+        //   поднимается обратно к средней линии. Без него обход виден в
+        //   упор — ребро вырождается в отрезок туда-обратно, и восемь таких
+        //   отрезков читаются пружиной, а не клеткой. Спуск считается от
+        //   |sin| (то есть от того, насколько ребро ушло вбок), поэтому
+        //   левая и правая половины опускаются одинаково и клетка спереди
+        //   выходит симметричной ёлочкой.
+        const drift = rib.R * (rib.slant * Math.abs(sp) * (1 - c)
+                               + RIB_FRONT_DROP * cp * cp * Math.pow(Math.abs(s), 1.7));
+        return { x: rib.cx + rib.nx * across + rib.tx * drift,
+                 y: rib.cy + rib.ny * across + rib.ty * drift + RIB_TILT * depth,
+                 z: depth };
+    };
+
+    // ---------- КАКОЙ КУСОК ОБРУЧА ВООБЩЕ РИСУЕТСЯ ----------
+    // Поперечная координата ребра — синусоида по φ: across = R·sin(φ + δ).
+    // Если рисовать весь полуобруч, на любом ракурсе кроме профиля она
+    // разворачивается назад, и ребро складывается пополам — на экране это
+    // петля. Поэтому берётся ровно тот участок, где проекция МОНОТОННА:
+    // ребро уходит вбок и не возвращается. В профиль это весь полуобруч (там
+    // разворота нет), в анфас — половина, и её как раз и видно.
+    const delta = Math.atan2(-sp, rib.side * cp);
+    const window = (lo) => {
+        let a = lo - delta, b = a + Math.PI;
+        while (b < 0) { a += Math.PI * 2; b += Math.PI * 2; }
+        while (a > Math.PI) { a -= Math.PI * 2; b -= Math.PI * 2; }
+        return [Math.max(0, a), Math.min(Math.PI, b)];
+    };
+    // Кусков-кандидатов два (обруч монотонен по обе стороны от бока), и
+    // выбирается не просто длинный, а БЛИЖНИЙ к зрителю: при равной длине
+    // левая и правая половины обязаны выбрать зеркальные куски, иначе анфас
+    // выходит кривым — одна стенка рисует переднюю половину рёбер, другая
+    // заднюю.
+    const w1 = window(-Math.PI / 2), w2 = window(Math.PI / 2);
+    const score = (w) => {
+        const mid = (w[0] + w[1]) / 2;
+        const depth = -Math.cos(mid) * cp - Math.sin(mid) * rib.side * sp;
+        return (w[1] - w[0]) / Math.PI + 0.35 * depth;
+    };
+    const win = score(w1) >= score(w2) ? w1 : w2;
+    const phiFrom = win[0];
+    const phiTo = Math.min(Math.PI, Math.max(win[1], phiFrom + 0.6));
+
+    // Кубическая кривая по четырём точкам дуги. Квадратичной здесь мало:
+    // проекция обруча — не парабола, и «через середину» давало перелёт с
+    // характерным крючком на конце.
+    const d3 = phiTo - phiFrom;
+    const P0 = pt(phiFrom), P1 = pt(phiFrom + d3 / 3),
+          P2 = pt(phiFrom + 2 * d3 / 3), P3 = pt(phiTo);
+    const c1x = (-5 * P0.x + 18 * P1.x - 9 * P2.x + 2 * P3.x) / 6;
+    const c1y = (-5 * P0.y + 18 * P1.y - 9 * P2.y + 2 * P3.y) / 6;
+    const c2x = (2 * P0.x - 9 * P1.x + 18 * P2.x - 5 * P3.x) / 6;
+    const c2y = (2 * P0.y - 9 * P1.y + 18 * P2.y - 5 * P3.y) / 6;
+    return {
+        d: `M ${P0.x.toFixed(1)},${P0.y.toFixed(1)} C ${c1x.toFixed(1)},${c1y.toFixed(1)} ` +
+           `${c2x.toFixed(1)},${c2y.toFixed(1)} ${P3.x.toFixed(1)},${P3.y.toFixed(1)}`,
+        near: ((P1.z + P2.z) / 2 / rib.R + 1) / 2
+    };
+}
+
+// Одна СТЕНКА клетки — левая или правая половина обруча. Строит узлы (по два
+// на ребро: тень под костью и сама кость) и отдаёт описания, по которым
+// tick() пересчитывает их при развороте тела.
 function buildRibs(ctx, group, plan, halfLen, halfThick) {
     const palette = (ctx.anatomy.organs && ctx.anatomy.organs.palette) || {};
     const bone = palette.bone || BILE[200];
-    const back = plan.side === 'back';
+    const side = plan.side === 'b' ? -1 : 1;
+    // Половину подписываем: по ней прогон отличает левую стенку от правой,
+    // а по порядку в дереве видно, какая сейчас ближе к зрителю.
+    setAttr(group, 'data-side', plan.side);
     const count = Math.max(2, plan.count || 4);
+    const MID = ribAxisAt(0.5);
+    const ribs = [];
 
-    // ---------- ОТКУДА ВЗЯТА ЭТА ГЕОМЕТРИЯ ----------
-    // Не из головы. Автор нарисовал клетку поверх скриншота, и рисунок был
-    // разобран ПО ПИКСЕЛЯМ: штрихи разложены на связные компоненты, у
-    // каждого посчитаны точка крепления, угол хорды, длина и знак изгиба, а
-    // потом то же самое считалось по готовым путям рендерера и сравнивалось
-    // с эскизом наложением. Числа ниже — оттуда, а не подобраны на глаз.
-    //
-    // Что из разбора следует и что две прошлые версии делали неправильно:
-    //
-    // 1. Хребет проходит через живот НАИСКОСОК: сверху в живот входит
-    //    стоящее туловище, слева выходит напольная часть. Рёбра сидят на
-    //    этой дуге по обе стороны от излома — верхние ещё на «стоячей»
-    //    части, нижние уже на «напольной».
-    // 2. Растут они в НИЖНЮЮ ПРАВУЮ четверть — на внешнюю сторону излома,
-    //    туда, где и лежит масса живота. Угол хорды растёт вдоль хребта
-    //    ровно: 28° у верхнего ребра, 61° у нижнего (на эскизе 27…61).
-    //    Это и есть тот «небольшой наклон» — не веер из одной точки и не
-    //    пучок параллельных полос.
-    // 3. Два ряда изогнуты В РАЗНЫЕ СТОРОНЫ. Ближние (перед органами)
-    //    отходят от хребта круто и выполаживаются к концу; дальние (за
-    //    органами) наоборот — отходят полого и заворачивают вниз. Это
-    //    ближняя и дальняя стенки одной бочки: их дуги идут накрест, и
-    //    только из-за этого клетка читается объёмной. Ряд, скопированный со
-    //    сдвигом, давал плоскую решётку.
-    // 4. Дальний ряд сидит на хребте ВЫШЕ ближнего на полшага: у бочки в три
-    //    четверти дальняя стенка видна над ближней.
-    //
-    // Сам хребет не рисуется — он воображаемый.
-    // ---------- ЧИСЛА СНЯТЫ С ЭСКИЗА, А НЕ ПОДОБРАНЫ ----------
-    // Эскиз автора и мой рендер приведены к одной системе координат по
-    // ЗРАЧКАМ (два тёмных пятна находятся в обеих картинках автоматически,
-    // и по ним считается масштаб со сдвигом), после чего каждый штрих
-    // пересчитан в доли полуосей живота: 0 — центр, 1 — край. Всё, что
-    // ниже, — прямо оттуда.
-    //
-    // Что из этого следовало и в чём была ошибка прошлых версий: рёбра
-    // растут ОТ ХРЕБТА (дуга крепления идёт по спинной стороне шара, от
-    // верха к левому краю) и ДОХОДЯТ ПОЧТИ ДО противоположного края — концы
-    // ложатся на 0.5…0.99 радиуса. У меня они то начинались в середине и
-    // вылезали наружу, то, наоборот, обрывались у центра — и в обоих случаях
-    // читались растущими из брюха в спину.
-    const P0 = { x: 0.16, y: -0.87 };   // верх: хребет входит из туловища
-    const PC = { x: -0.37, y: -0.46 };
-    const P1 = { x: -0.76, y: -0.24 };  // левый край: хребет уходит к хвосту
-    const at = (t) => {
-        const u = 1 - t;
-        return { x: (u * u * P0.x + 2 * u * t * PC.x + t * t * P1.x) * halfLen,
-                 y: (u * u * P0.y + 2 * u * t * PC.y + t * t * P1.y) * halfThick };
-    };
-
-    // Ближний ряд сидит НИЖЕ по дуге и круче поставлен, дальний — выше и
-    // положе: у бочки в три четверти дальняя стенка видна над ближней.
-    // Углы, длины и изгибы — замеры с эскиза (ближние 28…62°, дальние
-    // 28…50°; длина ребра 0.67…1.26 полуоси).
-    const tFrom = back ? 0 : 0.26;
-    const tTo   = back ? 0.72 : 1;
-    const aFrom = 28;                    // угол хорды от горизонтали, градусы
-    const aTo   = back ? 50 : 62;
-    const lFrom = back ? 0.85 : 0.68;    // длина ребра в долях полуоси живота
-    const lTo   = back ? 1.2 : 1.24;
-    // Знак изгиба у двух стенок разный, и это главное: дуги идут накрест.
-    // У ближних изгиб ещё и растёт книзу — нижние рёбра заворачиваются
-    // сильнее (на эскизе 0.00 → 0.16 от длины хорды, здесь вдвое больше:
-    // отклонение кривой — половина смещения опорной точки).
-    const bowFrom = back ? -0.17 : 0.04;
-    const bowTo   = back ? -0.19 : 0.32;
-
+    // Станция ребра на хребте — их ДВЕ. В анфас левое и правое ребро сидят
+    // на одной высоте, как у всякого позвоночного. А в профиль пара на одной
+    // станции сходится концами и замыкается в линзу — восемь линз читаются
+    // цепью, а не клеткой; на утверждённом эскизе половины стоят вразбежку.
+    // Поэтому в профиль правая половина съезжает на полшага, и между двумя
+    // ракурсами станция плавно переползает (blend в ribPath).
+    const halfStep = 0.5 / (count - 1);
     for (let i = 0; i < count; i++) {
-        const u = count > 1 ? i / (count - 1) : 0.5;
-        const A = at(tFrom + (tTo - tFrom) * u);
-        const ang = (aFrom + (aTo - aFrom) * u) * Math.PI / 180;
-        // Длина растёт быстро у первых рёбер и почти не растёт дальше —
-        // так на эскизе (0.67 → 1.12 → 1.09 → 1.26 полуоси).
-        const L = halfLen * (lFrom + (lTo - lFrom) * Math.pow(u, 0.45));
-        const dx = Math.cos(ang), dy = Math.sin(ang);
-        const ex = A.x + dx * L, ey = A.y + dy * L;
-        // Опора — от середины хорды по нормали к ней. Знак нормали и делает
-        // ближнюю стенку выпуклой вниз-влево, а дальнюю — вверх-вправо.
-        const bow = bowFrom + (bowTo - bowFrom) * u;
-        const cx = (A.x + ex) / 2 - dy * L * bow;
-        const cy = (A.y + ey) / 2 + dx * L * bow;
-        const d = `M ${A.x.toFixed(1)},${A.y.toFixed(1)} ` +
-                  `Q ${cx.toFixed(1)},${cy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
-        if (back) {
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: mixColor(bone, GRIME_SHADOW, 0.3),
-                'stroke-width': SW.structure,
-                'stroke-linecap': 'round', opacity: 0.5
-            }));
-        } else {
-            // Тень под костью: без неё ребро — просто светлая полоска, с ней
-            // оно лежит ПОД кожей.
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: mixColor(bone, GRIME_SHADOW, 0.62),
-                'stroke-width': (SW.structure * 1.9).toFixed(2),
-                'stroke-linecap': 'round', opacity: 0.22
-            }));
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: bone,
-                'stroke-width': (SW.structure * 1.25).toFixed(2),
-                'stroke-linecap': 'round', opacity: 0.5
-            }));
-        }
+        const t = i / (count - 1);
+        // Правая половина в профиль стоит вразбежку с левой: не сдвигом
+        // (последнее ребро упёрлось бы в конец хребта и совпало с чужим), а
+        // сжатием в ту же полосу со смещением на полшага.
+        const tProf = side < 0 ? halfStep + t * (1 - 2 * halfStep) : t;
+        const C = ribAxisAt(t), T = ribAxisDir(t);
+        const Cp = ribAxisAt(tProf), Tp = ribAxisDir(tProf);
+        const shadow = svgEl('path', {
+            d: '', fill: 'none', stroke: mixColor(bone, GRIME_SHADOW, 0.62),
+            'stroke-width': (SW.structure * 1.7).toFixed(2),
+            'stroke-linecap': 'round', opacity: 0.2
+        });
+        const line = svgEl('path', {
+            d: '', fill: 'none', stroke: bone,
+            'stroke-width': (SW.structure * 1.1).toFixed(2),
+            'stroke-linecap': 'round', opacity: 0.4
+        });
+        group.appendChild(shadow);
+        group.appendChild(line);
+        const R = (t) => (RIB_R_FROM + (RIB_R_TO - RIB_R_FROM) * t) * halfLen;
+        const SL = (t) => RIB_SLANT_FROM + (RIB_SLANT_TO - RIB_SLANT_FROM) * t;
+        ribs.push({
+            // Две станции: анфасная и профильная. Координаты — от середины
+            // оси: сама группа стоит в этой точке.
+            // Поперечное направление — перпендикуляр к хребту, в сторону
+            // брюха. Считается один раз: ось тела не меняется.
+            a: { cx: (C.x - MID.x) * halfLen, cy: (C.y - MID.y) * halfThick,
+                 nx: T.y, ny: -T.x, tx: T.x, ty: T.y, R: R(t), slant: SL(t) },
+            b: { cx: (Cp.x - MID.x) * halfLen, cy: (Cp.y - MID.y) * halfThick,
+                 nx: Tp.y, ny: -Tp.x, tx: Tp.x, ty: Tp.y, R: R(tProf), slant: SL(tProf) },
+            side, shadow, line, shown: -1
+        });
     }
-
-    // Рёберной дуги (линии по концам рёбер) здесь СОЗНАТЕЛЬНО нет. Она
-    // выглядела логично на бумаге, но на эскизе автора её не было, и не зря:
-    // замыкающая линия по концам собирает восемь дуг в один плоский контур —
-    // клетка становится похожа на ракушку. Оставлены только сами рёбра.
+    return ribs;
 }
 
 // Один орган: заливка мягко растворяется к краям (без фильтров), а КОНТУР
@@ -1331,6 +1407,7 @@ function buildRibs(ctx, group, plan, halfLen, halfThick) {
 function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
     const palette = (ctx.anatomy.organs && ctx.anatomy.organs.palette) || {};
     const group = svgEl('g', { class: `worm-organ worm-organ-${plan.kind}` });
+    let ribs = null;
     const x = plan.cx * halfLen;
     const y = plan.cy * halfThick;
 
@@ -1511,12 +1588,12 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
             }));
         }
     } else if (plan.kind === 'ribs') {
-        buildRibs(ctx, group, plan, halfLen, halfThick);
+        ribs = buildRibs(ctx, group, plan, halfLen, halfThick);
     }
 
     setAttr(group, 'transform', `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(plan.rot || 0).toFixed(1)})`);
     return {
-        group, x, y, rot: plan.rot || 0, kind: plan.kind,
+        group, x, y, rot: plan.rot || 0, kind: plan.kind, ribs,
         speedMul: plan.speedMul || 1, ampMul: plan.ampMul || 1, phase: plan.phase || 0
     };
 }
@@ -4398,6 +4475,18 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         });
     }
 
+    // Грудная клетка: плоский список рёбер обеих половин и сами группы —
+    // tick() пересчитывает по ним ракурс и меняет половины местами по
+    // глубине. Держим отдельно, чтобы не искать их каждый кадр в дереве.
+    const ribWalls = organRefs.filter(o => o.kind === 'ribs' && o.ribs);
+    const ribCage = ribWalls.length ? {
+        walls: ribWalls,
+        list: ribWalls.reduce((acc, o) => acc.concat(o.ribs), []),
+        groups: ribWalls.map(o => o.group),
+        psi: null,        // какой ракурс сейчас нарисован
+        frontIsB: null    // какая половина сейчас поверх органов
+    } : null;
+
     return {
         root,
         totalWithTail,
@@ -4406,7 +4495,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         head: headBuilt,
         organs: organRefs,
         muscles: muscleRefs,
-        hull, rings, floorShadow, gutTract,
+        hull, rings, floorShadow, gutTract, ribCage,
         anatomy
     };
 }
@@ -5105,6 +5194,68 @@ const WormRenderer = {
             }
         }
 
+        // ---------- РАЗВОРОТ ГРУДНОЙ КЛЕТКИ ----------
+        // Клетка живёт в трёх измерениях (ribPath) и пересчитывается, когда
+        // тело поворачивается. Цена вопроса — восемнадцать записей в дерево
+        // на заметный поворот, и ноль, пока червь стоит: ракурс сравнивается
+        // с уже нарисованным.
+        function updateRibCage() {
+            const cage = state.built && state.built.ribCage;
+            if (!cage) return;
+            // Ракурс тела — тот же признак, по которому доворачивается
+            // голова: куда лежит хвост. 0 — тело смотрит в камеру,
+            // ±90° — профиль. Мини-игра может задать его сама (bodyYaw),
+            // если водит червя не хвостом.
+            const live = state.livePose.bodyYaw;
+            const k = live != null ? Math.max(-1, Math.min(1, live))
+                                   : -Math.cos(state.tailAngle * Math.PI / 180);
+            const psi = k * Math.PI / 2;
+            if (cage.psi != null && Math.abs(psi - cage.psi) < 0.026) return;
+            cage.psi = psi;
+
+            // Вся клетка ещё и ДОВОРАЧИВАЕТСЯ. Ось тела в животе нарисована
+            // наискосок — так тело и лежит, когда мы видим его сбоку. Но
+            // когда червь поворачивается к камере, хвост уходит в глубину, и
+            // туловище на экране становится почти отвесным: клетка обязана
+            // встать вместе с ним, иначе анфас выходит перекошенным. Поворот
+            // делается ОДНИМ transform на половину клетки — его всё равно
+            // переписывает пульсация органов, так что это ноль лишней работы.
+            const beta = RIB_TURN_DEG * Math.cos(psi);
+            cage.walls.forEach(w => { w.rot = beta; });
+
+            for (let i = 0; i < cage.list.length; i++) {
+                const rib = cage.list[i];
+                const r = ribPath(rib, psi);
+                setAttr(rib.shadow, 'd', r.d);
+                setAttr(rib.line, 'd', r.d);
+                // Ближнее ребро ярче дальнего. Ступенями по шестым долям:
+                // иначе на каждый кадр поворота приходится ещё по две записи
+                // на ребро, а разницы в четверть процента прозрачности никто
+                // не увидит.
+                const near = Math.round(r.near * 6) / 6;
+                if (rib.shown !== near) {
+                    rib.shown = near;
+                    setAttr(rib.line, 'opacity', (0.28 + 0.26 * near).toFixed(2));
+                    setAttr(rib.shadow, 'opacity', (0.1 + 0.16 * near).toFixed(2));
+                }
+            }
+
+            // Половина клетки, которая ближе к зрителю, рисуется ПОВЕРХ
+            // органов, дальняя — под ними. При развороте они меняются
+            // ролями: две перестановки узлов на весь разворот, а не на кадр.
+            if (cage.groups.length === 2) {
+                const frontIsB = Math.sin(psi) > 0;
+                if (cage.frontIsB !== frontIsB) {
+                    cage.frontIsB = frontIsB;
+                    const layer = cage.groups[0].parentNode;
+                    if (layer) {
+                        layer.insertBefore(frontIsB ? cage.groups[0] : cage.groups[1], layer.firstChild);
+                        layer.appendChild(frontIsB ? cage.groups[1] : cage.groups[0]);
+                    }
+                }
+            }
+        }
+
         function rebuild() {
             const m = mergedModel();
             while (charLayer.firstChild) charLayer.removeChild(charLayer.firstChild);
@@ -5123,6 +5274,9 @@ const WormRenderer = {
             state.witherNodes = null;
             state.stomachContent = undefined;
             bakeWither(true);
+            // Клетка собрана без путей — ракурс рисуется сразу, иначе на
+            // первом кадре рёбер просто нет.
+            updateRibCage();
         }
 
         syncViewportSize();
@@ -6103,6 +6257,9 @@ const WormRenderer = {
                         }
                     }
                 }
+
+                // Грудная клетка доворачивается за телом.
+                updateRibCage();
 
                 // Рот — пересчитываем форму каждый кадр из bend/gap.
                 const mouthBuiltRef = state.built.head.mouth;
