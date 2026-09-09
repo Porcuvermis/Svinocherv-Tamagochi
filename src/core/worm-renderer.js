@@ -37,7 +37,6 @@ const VISCERA = P_.viscera;  // анатомия живой ткани: паст
 const BILE = P_.bile;        // грязь, налёт, зубы
 const SCLERA = P_.sclera;    // белок глаза — костяной, не белый
 const SPEC = P_.flesh[100];  // блик на МАТОВОЙ коже — тёплый, не белый
-const ACID = P_.acid[200];   // АКЦЕНТ-ирокез: блик на слизи. Только на влажном
 const ACID_DEEP = P_.acid[600]; // тёмная кислота — для БОЛЬШИХ мокрых площадей
 // Лестница толщин линий. Значений вне лестницы в файле быть не должно —
 // причины в docs/art-direction.md §4.4.
@@ -1101,16 +1100,19 @@ function ensureDorsoVentralGradient(ctx) {
 //   'floor' — растущие сегменты: кишка + иногда узелки;
 //   'tail'  — хвост: только тонкий отросток кишки;
 //   'head'  — голова: органов нет (кожа/череп плотные), только сосудики в ушах.
-function organPlanForZone(zone, rng, density) {
+function organPlanForZone(zone, rng) {
     const plan = [];
-    const d = density != null ? density : 1;
-    function maybe(chance) { return rng() < chance * d; }
 
     // ВАЖНО: отдельных "кишок" по сегментам здесь больше нет. Кишечник —
     // ОДИН непрерывный тракт на всё тело (см. buildGutTractGeometry): куски
     // кишки, живущие каждый в своём сегменте, не могут быть связаны между
-    // собой в принципе — на каждом стыке был разрыв. Здесь остаются только
-    // локальные органы: мешочки и грозди узелков.
+    // собой в принципе — на каждом стыке был разрыв.
+    //
+    // И органы теперь ТОЛЬКО в животе. Раньше «грудная клетка» стояла ещё в
+    // двух шейных сегментах, а в напольных лежали «грозди узелков». Ни то ни
+    // другое ничего не означало: рёбра поперёк шеи читались полосками, а
+    // узелки — просто точками. Внутренности должны опознаваться, иначе это
+    // не анатомия, а шум под кожей.
     if (zone === 'core') {
         // ---------- ЖИВОТ: УЗНАВАЕМЫЕ ОРГАНЫ ----------
         // Раньше здесь лежали абстрактные "мешочек" и "гроздь узелков". Через
@@ -1124,6 +1126,22 @@ function organPlanForZone(zone, rng, density) {
         // особей одна, разными их делает мелочь, а не перестановка органов.
         // Сердце и желудок сидят в ВЕРХНЕЙ половине живота: петли кишечника
         // занимают низ, и органы, положенные по центру, тонули в них.
+        // ---------- ГРУДНАЯ КЛЕТКА ДВУМЯ СЛОЯМИ ----------
+        // Клетка — объёмная бочка, а не решётка на плоскости, и объём даёт
+        // ровно одно: ДАЛЬНЯЯ половина рёбер лежит ЗА органами, ближняя —
+        // перед ними. Раньше все дуги стояли одинаково поверх, и клетка
+        // читалась полосками поперёк тела.
+        //
+        // Порядок в плане и есть порядок отрисовки, поэтому дальние рёбра
+        // идут первыми, до сердца и желудка, а ближние — последними. Дыхание
+        // у обоих слоёв одно (общая фаза и множители), иначе половинки
+        // клетки разъехались бы.
+        const ribPhase = rng() * 6.28;
+        const ribs = (side) => ({
+            kind: 'ribs', side, cx: 0, cy: 0, len: 0.92, thick: 0.86, count: 5,
+            rot: 0, speedMul: 0.5, ampMul: 0.3, phase: ribPhase
+        });
+        plan.push(ribs('back'));
         plan.push({
             kind: 'heart', cx: 0.32 + rng() * 0.08, cy: -0.44 - rng() * 0.06, len: 0.34, thick: 0.38,
             rot: rng() * 16 - 8, speedMul: 2.1, ampMul: 1.8, phase: rng() * 6.28
@@ -1132,25 +1150,7 @@ function organPlanForZone(zone, rng, density) {
             kind: 'stomach', cx: -0.22 + rng() * 0.08, cy: -0.3 + rng() * 0.06, len: 0.46, thick: 0.42,
             rot: rng() * 14 - 7, speedMul: 0.75, ampMul: 0.9, phase: rng() * 6.28
         });
-        // Рёбра идут последними: они обнимают органы снаружи, значит и
-        // рисуются поверх них — ближе к коже.
-        plan.push({
-            kind: 'ribs', cx: 0, cy: 0, len: 0.92, thick: 0.86, count: 5,
-            rot: 0, speedMul: 0.5, ampMul: 0.35, phase: rng() * 6.28
-        });
-    } else if (zone === 'neck') {
-        // В сегменте перед животом рёбер меньше — грудная клетка сходит на нет.
-        plan.push({
-            kind: 'ribs', cx: 0, cy: 0, len: 0.8, thick: 0.78, count: 3,
-            rot: 0, speedMul: 0.5, ampMul: 0.3, phase: rng() * 6.28
-        });
-    } else if (zone === 'floor') {
-        if (maybe(0.65)) {
-            plan.push({
-                kind: 'node', cx: -0.25 + rng() * 0.5, cy: -0.22, len: 0.16, thick: 0.18,
-                rot: rng() * 40 - 20, speedMul: 1.2, ampMul: 0.7, phase: rng() * 6.28
-            });
-        }
+        plan.push(ribs('front'));
     }
     return plan;
 }
@@ -1176,6 +1176,119 @@ function buildVesselTree(group, rng, x, y, angle, len, depth, color, width) {
         buildVesselTree(group, rng, ex, ey,
             angle + (rng() - 0.5) * 1.5, len * (0.5 + rng() * 0.25),
             depth - 1, color, Math.max(0.35, width * 0.6));
+    }
+}
+
+// ---------- ГРУДНАЯ КЛЕТКА ----------
+// Червю рёбра не полагаются, но это и не червь: свиночервю они нужны для
+// образа — клетка сразу превращает «мешок с органами» в существо.
+//
+// Как это устроено и почему именно так (прошлая версия была набором дуг
+// поперёк тела и читалась полосками неизвестной природы):
+//
+// * Рёбра растут ОТ ПОЗВОНОЧНИКА. Позвоночник здесь воображаемый — линия
+//   вдоль спины (локальный −Y): его роль уже играет спинной сосуд, который
+//   идёт там же (buildCoatLayer), поэтому отдельной линии не рисуем, а
+//   верхние концы всех рёбер выстраиваем ровно по ней. Ребро, у которого
+//   виден один конец на общей линии, читается прикреплённым.
+// * Идут они ПОПЕРЁК тела, а не вдоль: система координат здесь всегда
+//   локальная — +X вдоль тела к голове, +Y к брюху, — поэтому «поперёк»
+//   получается само, как бы ни был повёрнут сегмент на экране.
+// * С НАКЛОНОМ к хвосту, и чем ниже ребро, тем сильнее: у настоящей клетки
+//   рёбра идут вниз-вперёд, а не радиально из точки. Ребро уходит от
+//   позвоночника почти перпендикулярно и подворачивает к хвосту только
+//   ближе к брюху — отсюда квадратичная кривая с одной опорной точкой.
+// * Длина: средние рёбра самые длинные, крайние короче — клетка сужается к
+//   концам, иначе это бочка с одинаковыми обручами.
+// * ДВА РЯДА. Дальний (side:'back') рисуется ДО органов, ближний — ПОСЛЕ
+//   (порядок задаётся планом в organPlanForZone). Дальний смещён на полшага,
+//   короче, тоньше и бледнее: так клетка читается объёмной, а не решёткой в
+//   одной плоскости. Совпадающие пары дуг выглядели бы одним толстым ребром.
+// * Рёберная дуга по концам ближних рёбер — одна линия, а стоит она больше
+//   всех: именно по ней глаз опознаёт грудную клетку.
+//
+// Всё статично: узлы собираются один раз, в кадре у них не меняется ничего,
+// кроме общего дыхания всей группы органов.
+function buildRibs(ctx, group, plan, halfLen, halfThick) {
+    const palette = (ctx.anatomy.organs && ctx.anatomy.organs.palette) || {};
+    const bone = palette.bone || BILE[200];
+    const back = plan.side === 'back';
+    const count = Math.max(2, plan.count || 5);
+
+    // ---------- ГДЕ ЗДЕСЬ ПОЗВОНОЧНИК ----------
+    // Живот — угол тела: над ним туловище стоит СТОЛБИКОМ, из него же тело
+    // уходит по полу к хвосту. Позвоночник в этом месте читается по
+    // туловищу, то есть идёт ВЕРТИКАЛЬНО, по спине — а спина у стоящей части
+    // повёрнута к правому краю экрана (у напольной цепи спина сверху, тело
+    // на повороте выгибается наружу).
+    //
+    // Поэтому клетка строится в системе «вдоль позвоночника / поперёк него»:
+    //   u — вдоль хребта, от шеи (вверх) к хвосту (вниз) — это локальный Y;
+    //   v — глубина ребра от хребта к брюху — это локальный −X.
+    // Локальные оси живота совпадают с экранными, так что рёбра выходят
+    // поперёк стоящего туловища, как и просили, а не поперёк пола.
+    const spineX = halfLen * 0.52;
+    const uTop = -halfThick * 0.62;
+    const uBottom = halfThick * 0.38;
+    const stepU = (uBottom - uTop) / (count - 1);
+    const n = back ? count - 1 : count;   // дальних на одно меньше: они между ближними
+    const ends = [];
+
+    for (let i = 0; i < n; i++) {
+        const t = i / (count - 1);
+        const u0 = uTop + (uBottom - uTop) * t + (back ? stepU * 0.5 : 0);
+        // Средние рёбра длиннее крайних: клетка сужается к шее и к тазу,
+        // иначе это бочка с одинаковыми обручами.
+        const lenK = 0.62 + 0.38 * Math.sin(Math.PI * (t * 0.86 + 0.07));
+        const reach = halfLen * 1.06 * lenK * (back ? 0.74 : 1);
+        const xEnd = spineX - reach;
+        // Наклон к хвосту: ребро идёт вниз-вперёд, и чем ниже оно сидит на
+        // хребте, тем сильнее завал. Радиального веера из одной точки быть
+        // не должно — так рёбра не растут.
+        const yEnd = u0 + halfThick * (0.2 + 0.34 * t);
+        // Опорная точка почти на уровне крепления: от позвоночника ребро
+        // отходит поперёк тела и подворачивает вниз только у брюха.
+        const d = `M ${spineX.toFixed(1)},${u0.toFixed(1)} ` +
+                  `Q ${(spineX - reach * 0.58).toFixed(1)},${(u0 + halfThick * 0.09).toFixed(1)} ` +
+                  `${xEnd.toFixed(1)},${yEnd.toFixed(1)}`;
+        if (back) {
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: mixColor(bone, GRIME_SHADOW, 0.5),
+                'stroke-width': (SW.detail * 1.1).toFixed(2),
+                'stroke-linecap': 'round', opacity: 0.26
+            }));
+        } else {
+            // Тень под костью: без неё ребро — просто светлая полоска, с ней
+            // оно лежит ПОД кожей.
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: mixColor(bone, GRIME_SHADOW, 0.62),
+                'stroke-width': (SW.structure * 1.35).toFixed(2),
+                'stroke-linecap': 'round', opacity: 0.22
+            }));
+            group.appendChild(svgEl('path', {
+                d, fill: 'none', stroke: bone,
+                'stroke-width': (SW.structure * 0.85).toFixed(2),
+                'stroke-linecap': 'round', opacity: 0.44
+            }));
+            ends.push([xEnd, yEnd]);
+        }
+    }
+
+    // Рёберная дуга по концам ближних рёбер. Одна линия, а стоит она больше
+    // всех остальных: именно по ней глаз опознаёт грудную клетку, а не набор
+    // дуг.
+    if (!back && ends.length > 2) {
+        let d = `M ${ends[0][0].toFixed(1)},${ends[0][1].toFixed(1)}`;
+        for (let i = 1; i < ends.length; i++) {
+            const a = ends[i - 1], b = ends[i];
+            d += ` Q ${((a[0] + b[0]) / 2 - halfLen * 0.05).toFixed(1)},` +
+                 `${((a[1] + b[1]) / 2).toFixed(1)} ` +
+                 `${b[0].toFixed(1)},${b[1].toFixed(1)}`;
+        }
+        group.appendChild(svgEl('path', {
+            d, fill: 'none', stroke: bone, 'stroke-width': (SW.detail * 1.1).toFixed(2),
+            'stroke-linecap': 'round', opacity: 0.3
+        }));
     }
 }
 
@@ -1364,59 +1477,7 @@ function buildOrganNode(ctx, plan, halfLen, halfThick, idKey) {
             }));
         }
     } else if (plan.kind === 'ribs') {
-        // ---------- РЁБРА ----------
-        // Червю рёбра не полагаются, но это и не червь: свиночервю они нужны
-        // для образа — грудная клетка сразу превращает «мешок с органами» в
-        // существо. Дуги обнимают внутренности, поэтому и рисуются поверх
-        // них, ближе к коже.
-        const color = palette.bone || BILE[200];
-        const count = plan.count || 5;
-        const halfSpan = plan.len * halfLen;
-        const reach = plan.thick * halfThick;
-        const rrng = anatRng(ctx.anatomy, idKey, 'ribs');
-        for (let i = 0; i < count; i++) {
-            const k = count > 1 ? i / (count - 1) : 0.5;
-            const cx = (k * 2 - 1) * halfSpan * 0.72;
-            // Крайние рёбра короче: клетка сужается к концам.
-            const shrink = 0.72 + 0.28 * Math.sin(Math.PI * k);
-            const drop = reach * shrink;
-            // Рёбра расходятся веером от середины, а не стоят параллельно:
-            // параллельные дуги читаются как решётка радиатора, а не как
-            // грудная клетка. Верхний конец ребра клонится к центру, нижний
-            // уходит наружу.
-            const side = (k * 2 - 1);
-            const lean = side * halfSpan * 0.16;
-            const bow = drop * (0.5 + rrng() * 0.12) * (side >= 0 ? 1 : -1);
-            const d = `M ${(cx - lean).toFixed(1)},${(-drop).toFixed(1)} ` +
-                      `Q ${(cx + bow).toFixed(1)},0 ${(cx + lean * 0.6).toFixed(1)},${(drop * 0.84).toFixed(1)}`;
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: mixColor(color, GRIME_SHADOW, 0.55),
-                'stroke-width': (SW.structure * 1.1).toFixed(2), 'stroke-linecap': 'round', opacity: 0.32
-            }));
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: color,
-                'stroke-width': SW.structure,
-                'stroke-linecap': 'round', opacity: 0.55
-            }));
-        }
-    } else if (plan.kind === 'node') {
-        const color = palette.node || BILE[400];
-        const rng = anatRng(ctx.anatomy, idKey, 'node');
-        const base = plan.thick * halfThick;
-        for (let i = 0; i < 3; i++) {
-            const r = base * (0.45 + rng() * 0.4);
-            const nx = (rng() - 0.5) * plan.len * halfLen * 1.4;
-            const ny = (rng() - 0.5) * base * 1.2;
-            group.appendChild(svgEl('circle', {
-                cx: nx.toFixed(1), cy: ny.toFixed(1), r: r.toFixed(1),
-                fill: color, opacity: 0.75,
-                stroke: mixColor(color, GRIME_SHADOW, 0.45), 'stroke-width': SW.hairline
-            }));
-            group.appendChild(svgEl('circle', {
-                cx: (nx - r * 0.2).toFixed(1), cy: (ny - r * 0.2).toFixed(1), r: (r * 0.42).toFixed(1),
-                fill: mixColor(color, BILE[200], 0.55), opacity: 0.6
-            }));
-        }
+        buildRibs(ctx, group, plan, halfLen, halfThick);
     }
 
     setAttr(group, 'transform', `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(plan.rot || 0).toFixed(1)})`);
@@ -1684,20 +1745,12 @@ function buildSurfaceLayer(ctx, partName, rx, ry, features) {
         // с подложкой, кислотная зелень на розовом даёт хаки, и акцент
         // умирает, размазанный по большой площади.
         group.appendChild(svgEl('path', { d, fill: SPEC, opacity: (0.3 * gloss).toFixed(3) }));
-        // А вот это — САМА слизь: маленькая, почти непрозрачная капля.
-        // Акцент работает малой площадью и высокой плотностью, ровно
-        // наоборот к широкому блику (docs/art-direction.md §2.5).
-        group.appendChild(svgEl('ellipse', {
-            cx: (rx * 0.34).toFixed(1), cy: (-ry * 0.34).toFixed(1),
-            rx: (rx * 0.11).toFixed(1), ry: (ry * 0.085).toFixed(1),
-            fill: ACID, opacity: (0.88 * gloss).toFixed(3)
-        }));
-        // Блик на самой капле — она выпуклая и мокрая.
-        group.appendChild(svgEl('ellipse', {
-            cx: (rx * 0.32).toFixed(1), cy: (-ry * 0.36).toFixed(1),
-            rx: (rx * 0.04).toFixed(1), ry: (ry * 0.03).toFixed(1),
-            fill: SPEC, opacity: (0.7 * gloss).toFixed(3)
-        }));
+        // Кислотной капли здесь БОЛЬШЕ НЕТ. Она стояла на каждой части тела
+        // (и на голове тоже) и в игре читалась не как капля слизи, а как
+        // жёлто-зелёная точка непонятного происхождения — одинаковая на всех
+        // сегментах, будто метки на выкройке. Акцент малой площадью работает
+        // там, где он ОДИН и объясним; размноженный по всем частям он
+        // становится сыпью. Влажность кожи держит широкий серп выше.
         empty = false;
     }
 
@@ -1766,14 +1819,18 @@ function buildAnatomyStack(ctx, partName, opts) {
         const alpha = clamp01(anatomy.organs.visibility * thin);
         if (alpha > 0.02) {
             const rng = anatRng(anatomy, partName, 'organs');
-            const plan = organPlanForZone(zone, rng, anatomy.organs.density);
-            const organGroup = svgEl('g', { class: 'worm-organ-layer', opacity: alpha.toFixed(3) });
-            plan.forEach((p, i) => {
-                const built = buildOrganNode(ctx, p, halfLen, halfThick, `${partName}-${i}`);
-                organGroup.appendChild(built.group);
-                organs.push(built);
-            });
-            layers.organs = organGroup;
+            const plan = organPlanForZone(zone, rng);
+            // Пустого узла не заводим: после чистки органы остались только в
+            // животе, а у остальных зон план пустой.
+            if (plan.length) {
+                const organGroup = svgEl('g', { class: 'worm-organ-layer', opacity: alpha.toFixed(3) });
+                plan.forEach((p, i) => {
+                    const built = buildOrganNode(ctx, p, halfLen, halfThick, `${partName}-${i}`);
+                    organGroup.appendChild(built.group);
+                    organs.push(built);
+                });
+                layers.organs = organGroup;
+            }
         }
     }
 
