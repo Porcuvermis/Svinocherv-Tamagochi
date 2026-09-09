@@ -141,6 +141,36 @@ const DebugState = {
         if (this.fpsEl) this.fpsEl.textContent = '— fps';
     },
 
+    // ---------- ЧТО ИМЕННО ДОРОГО В САМОМ ПЕРСОНАЖЕ ----------
+    // Три вещи заставляют браузер рисовать слой в ОТДЕЛЬНЫЙ буфер и потому
+    // стоят кратно больше обычной заливки: фильтр (у нас это обесцвечивание
+    // истощённого червя — надет на весь слой), обрезка/маска и градиенты
+    // (тридцать пять радиальных).
+    //
+    // Снимаются они здесь ПО-ЖИВОМУ и без возврата: это замерочный режим, а
+    // не настройка. Вернуть — закрыть и открыть мини-игру заново.
+    stripWorm(mode) {
+        const roots = document.querySelectorAll('#worm-stage svg, .worm-char-layer svg, .bt-worm-host svg');
+        roots.forEach(svg => {
+            if (mode === 'червь: без фильтра') {
+                svg.querySelectorAll('[filter]').forEach(n => n.removeAttribute('filter'));
+                svg.removeAttribute('filter');
+            } else if (mode === 'червь: без обрезки') {
+                svg.querySelectorAll('[clip-path]').forEach(n => n.removeAttribute('clip-path'));
+                svg.querySelectorAll('[mask]').forEach(n => n.removeAttribute('mask'));
+            } else if (mode === 'червь: без градиентов') {
+                svg.querySelectorAll('*').forEach(n => {
+                    ['fill', 'stroke'].forEach(a => {
+                        const v = n.getAttribute(a) || '';
+                        if (v.indexOf('url(') === 0) {
+                            n.setAttribute(a, a === 'fill' ? '#b08878' : '#3a2a24');
+                        }
+                    });
+                });
+            }
+        });
+    },
+
     // Остановить всех живых червей на экране. Список знает про мини-игры
     // поимённо, и для debug-инструмента это нормально: он и существует, чтобы
     // лезть туда, куда игре лезть незачем. Незнакомая игра просто не найдётся.
@@ -189,9 +219,10 @@ const DebugState = {
             // вообще. Замер на телефоне: погас — 60, замер — 24 → чинить
             // надо картинку; замер — 60 → чинить частоту.
             const modes = ['всё', 'без дождя', 'без червя', 'без следа', 'без сцены',
-                           'червь замер', 'только фон'];
+                           'червь замер', 'червь: без фильтра', 'червь: без обрезки',
+                           'червь: без градиентов', 'только фон'];
             const classes = ['', 'dbg-no-rain', 'dbg-no-worm', 'dbg-no-trail', 'dbg-no-scene',
-                             '', 'dbg-no-rain dbg-no-worm dbg-no-trail'];
+                             '', '', '', '', 'dbg-no-rain dbg-no-worm dbg-no-trail'];
             this.layerMode = ((this.layerMode || 0) + 1) % modes.length;
             const root = document.documentElement;
             classes.join(' ').split(' ').filter(Boolean)
@@ -199,6 +230,7 @@ const DebugState = {
             classes[this.layerMode].split(' ').filter(Boolean)
                 .forEach(c => root.classList.add(c));
             this.freezeWorms(modes[this.layerMode] === 'червь замер');
+            this.stripWorm(modes[this.layerMode]);
             const btn = this.panel && this.panel.querySelector('[data-act="layers"]');
             if (btn) btn.textContent = 'Слои: ' + modes[this.layerMode];
             return;
