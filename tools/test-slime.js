@@ -195,6 +195,43 @@ const harness = require('./harness');
                         + loose.bad.slice(0, 5).join(', ') + ' ед.'
                       : `полуширина ${loose.half}`);
 
+  // ---------- ФРОНТ ВЫСЫХАНИЯ ОДИН ----------
+  // Кромка, блеск и тело плёнки обязаны исчезать в ОДНОМ месте следа. Пока у
+  // слоёв были свои сроки жизни (1000, 1400, 2000), фронты расходились на
+  // половину следа: у старшей половины дорожки разом пропадала мягкая кромка
+  // и блеск, и только потом подтягивалось тело. С экрана это читается как
+  // «сначала отключаются эффекты на всём следе, потом он стирается».
+  //
+  // Меряется прямо по обрезке: у всех слоёв отрезка стёртая длина должна
+  // совпадать с точностью до скоса на кончике.
+  const fronts = await page.evaluate(() => new Promise(res => {
+    MainWormHandle.setOptions({ wander: true });
+    MainWormHandle.setPosition(70, 690);
+    MainWormHandle.walkTo(330, 800);
+    setTimeout(() => {
+      MainWormHandle.setOptions({ wander: false });     // встали, след сохнет
+      setTimeout(() => {
+        let worst = 0, seen = 0;
+        document.querySelectorAll('.worm-slime-wet').forEach(g => {
+          const cuts = [];
+          g.querySelectorAll('path').forEach(p => {
+            const dash = parseFloat((p.getAttribute('stroke-dasharray') || '0').split(/[\s,]+/)[0]);
+            const raw = parseFloat(p.getAttribute('stroke-dashoffset') || '0');
+            cuts.push(raw ? 2 * dash - raw : 0);
+          });
+          if (cuts.length < 2) return;
+          const spread = Math.max(...cuts) - Math.min(...cuts);
+          if (spread > worst) worst = spread;
+          seen++;
+        });
+        res({ worst: Math.round(worst), seen });
+      }, 900);
+    }, 1500);
+  }));
+  ok(fronts.seen > 0, 'на полу есть сохнущие отрезки', String(fronts.seen));
+  ok(fronts.worst <= 30, 'кромка и блеск стираются там же, где плёнка',
+     'расхождение фронтов ' + fronts.worst + ' ед.');
+
   // ---------- ПАУЗА НЕ РВЁТ СЛЕД ----------
   // Червь останавливается посреди комнаты и идёт дальше. Отрезок при
   // остановке закрывается — и следующий обязан начаться там же, где закрылся
