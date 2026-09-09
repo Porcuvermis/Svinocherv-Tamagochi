@@ -3746,7 +3746,7 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
     }
     const bellyReach = Math.max(24, bellyR * 1.9); // насколько далеко тянется зона петель
 
-    const left = [], right = [], core = [];
+    const left = [], right = [], core = [], coreR = [];
     let phase = cfg.phase || 0;
     let prevS = axis[0].s;
 
@@ -3793,7 +3793,67 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
     // corePts — сырые точки осевой линии. Нужны, чтобы ставить куски еды на
     // тракт арифметикой, а не промером SVG-пути: строка пути переписывается
     // каждый кадр, и getTotalLength каждый раз меряет её заново.
-    return { ribbon, core: smoothPolyline(core, false), corePts: core };
+    return { ribbon, core: smoothPolyline(core, false), corePts: core, coreR };
+}
+
+// ---------- КОМОК ЕДЫ ----------
+// Три узла на комок, и все три собираются один раз: за кадр у комка меняется
+// РОВНО ДВА атрибута — transform группы и её прозрачность. Всё остальное
+// (размер, цвет, блик) переставляется только когда меняется сам список еды,
+// то есть раз в несколько секунд.
+//
+// Почему комок не просто эллипс: одна плоская клякса под кожей читается как
+// пятно грязи. Из трёх пятен получается объём — светлое пятно шире комка
+// (кишку распирает), сам комок с контуром и блик на нём.
+function createBolusNode(gutColor) {
+    const g = svgEl('g', { class: 'worm-bolus', opacity: 0 });
+    // Перетяжка ПОЗАДИ комка — та самая мышца, которая его толкает. Стоит
+    // одного узла, а даёт главное: видно не «шарик едет», а «его пропихивают».
+    const pinch = svgEl('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0, fill: 'none',
+        stroke: mixColor(gutColor, GRIME_SHADOW, 0.5), 'stroke-width': SW.detail,
+        opacity: 0 });
+    // Растянутая стенка кишки. Цвет — самой кишки, но светлее: натянутая
+    // ткань бликует, и именно по этому светлому ободу видно, что комок
+    // сидит ВНУТРИ трубы, а не лежит поверх неё.
+    const wall = svgEl('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0,
+        fill: mixColor(gutColor, GRIME_HIGHLIGHT, 0.5), opacity: 0.6 });
+    // Сам комок — тёмная жёлчная масса с чернильным контуром. Контур здесь
+    // не украшение: без него комок сливается с бордовой кишкой в мутное
+    // пятно, а он и есть то единственное, за чем игрок следит.
+    const body = svgEl('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0,
+        fill: mixColor(BILE[600], GRIME_HIGHLIGHT, 0.35),
+        stroke: INK, 'stroke-width': SW.structure, 'stroke-opacity': 0.7 });
+    // Два тёмных куска внутри — еда не однородная масса. Без них комок
+    // читается как гладкое яйцо, а не как проглоченный кусок.
+    const chunkFill = mixColor(BILE[600], GRIME_SHADOW, 0.45);
+    const chunkA = svgEl('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0, fill: chunkFill, opacity: 0.55 });
+    const chunkB = svgEl('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0, fill: chunkFill, opacity: 0.4 });
+    const shine = svgEl('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0,
+        fill: mixColor(BILE[200], FLESH[100], 0.5), opacity: 0.7 });
+    g.appendChild(pinch);
+    g.appendChild(wall);
+    g.appendChild(body);
+    g.appendChild(chunkA);
+    g.appendChild(chunkB);
+    g.appendChild(shine);
+    // Исходные цвета хранятся при узле: комок рождается ПОСЛЕ сборки тела и
+    // в список запекания истощения не попадает — красить его приходится
+    // отдельно (bakeWither внизу проходит и по комкам).
+    return { group: g, pinch, wall, body, chunkA, chunkB, shine, size: -1, shown: false,
+             base: { wall: wall.getAttribute('fill'), body: body.getAttribute('fill'),
+                     shine: shine.getAttribute('fill') } };
+}
+
+// Плотность кожи в точке s (0..1 вдоль цепи звеньев). Та же величина, по
+// которой построена маска тракта, только читается арифметикой: слой еды
+// маске больше не подчиняется и считает свою видимость сам.
+function skinThinAt(arr, s) {
+    if (!arr || arr.length < 2) return 1;
+    const f = Math.max(0, Math.min(1, s)) * (arr.length - 1);
+    const i0 = Math.min(arr.length - 2, Math.floor(f));
+    const k = f - i0;
+    const a = arr[i0] || 0, b = arr[i0 + 1] || 0;
+    return a + (b - a) * k;
 }
 
 // Узлы тракта: тень под трубой → сама труба с контуром → светлая жила.
@@ -3847,14 +3907,24 @@ function createGutTract(ctx, thinByIdx) {
     group.appendChild(tube);
     group.appendChild(coreLine);
 
-    // Куски еды едут ВНУТРИ группы тракта, значит подчиняются той же маске:
-    // у головы и хвоста кожа плотная — и комок там не виден, как и кишка.
-    // Ровно то поведение, которое нужно: еда «появляется» из головы, когда
-    // доезжает до просвечивающей части, и пропадает у хвоста.
+    // ---------- ЕДА ЕДЕТ ОТДЕЛЬНЫМ СЛОЕМ ----------
+    // Раньше комки лежали ВНУТРИ группы тракта и подчинялись её маске. Это
+    // выглядело правильно (у головы кожа плотная — комка не видно), но
+    // стоило кадров ровно так же, как фильтр истощения из правки 153: любое
+    // изменение внутри группы с маской и обрезкой заставляет браузер
+    // пересчитать всю группу целиком. Кишка пересчитывается по лестнице
+    // разрежения (на слабом телефоне впятеро реже), а еда двигалась по
+    // своим часам — и сводила лестницу на нет. Отсюда и жалоба: «покормил —
+    // персонаж залагал, желудок наполнился — лаги прошли». Всё сходится: в
+    // фазе желудка комков нет, и никто группу не трогает.
+    //
+    // Поэтому слой еды живёт СНАРУЖИ, без маски и обрезки, а «сколько её
+    // видно сквозь кожу» считается арифметикой в самом комке — по той же
+    // плотности кожи, из которой построена маска.
     const foodLayer = svgEl('g', { class: 'worm-food-layer' });
-    group.appendChild(foodLayer);
 
-    return { group, tube, coreLine, maskCircles, foodLayer, foodNodes: [] };
+    return { group, tube, coreLine, maskCircles, foodLayer, foodNodes: [],
+             color, thinByIdx: thinByIdx || [] };
 }
 
 // Пересчёт всех трёх копий силуэта + перетяжек + отражённого света + тени.
@@ -4138,6 +4208,10 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         });
         gutTract = createGutTract(ctx, thinByIdx);
         root.appendChild(gutTract.group);
+        // Слой еды — СРАЗУ ЗА трактом и на том же уровне, а не внутри него
+        // (почему — в комментарии у createGutTract). Порядок сохраняется:
+        // комки рисуются поверх кишки, но под перетяжками и головой.
+        root.appendChild(gutTract.foodLayer);
     }
 
     // Перетяжки — поверх тела, но ПОД головой: они принадлежат туше, а не
@@ -4338,6 +4412,12 @@ const WormRenderer = {
             witherShown: 1,
             witherBaked: null,   // какая ступень запечена в цвета
             witherNodes: null,   // цветные узлы тела, собираются на сборке
+            // Пищеварение: что нарисовать (кладёт setDigestion) и своя фаза
+            // перистальтики. Комки едут покадрово, а список приходит редко.
+            digest: { boluses: [], stomachFill: 0, scale: 7 },
+            foodPhase: 0,
+            foodVis: 0.6,        // сколько видно тракт — та же величина, что у группы
+            stomachContent: undefined,   // узел содержимого желудка, ищется раз на сборку
             // Камера: на сколько единиц комнаты окно сдвинуто вправо.
             camX: 0,
             camManualUntil: 0,   // до этого момента слежение молчит
@@ -4803,6 +4883,103 @@ const WormRenderer = {
                 const out = witherColor(it.base, step);
                 if (out) setAttr(it.n, it.a, out);
             }
+            // Комки еды живут отдельным слоем и в списке не лежат: они
+            // появляются и исчезают по ходу пищеварения.
+            const tract = state.built && state.built.gutTract;
+            if (tract) tract.foodNodes.forEach(paintBolus);
+        }
+
+        // Цвета одного комка под текущее истощение.
+        function paintBolus(ref) {
+            if (!ref || !ref.base) return;
+            setAttr(ref.wall, 'fill', witherPaint(ref.base.wall));
+            setAttr(ref.body, 'fill', witherPaint(ref.base.body));
+            setAttr(ref.shine, 'fill', witherPaint(ref.base.shine));
+        }
+
+        // ---------- ЕДА В КИШКЕ, ПОКАДРОВО ----------
+        // Что здесь считается и почему именно здесь:
+        //
+        // * Раньше положение комков ставил вызывающий, пятнадцать раз в
+        //   секунду. Пятнадцать шагов в секунду — это видимые рывки, а платил
+        //   за них весь тракт целиком (маска + обрезка, см. createGutTract).
+        //   Теперь вызывающий говорит только «комок вот на такой доле пути»,
+        //   а движение, перистальтика и видимость считаются в кадре и стоят
+        //   двух атрибутов на комок.
+        // * Перистальтика — не украшение: без неё комок ПОЛЗЁТ равномерно,
+        //   и в фазе кишечника (десять минут на путь) это выглядит зависшей
+        //   картинкой. Волна сжимает комок вдоль трубы и подталкивает
+        //   вперёд — видно, что его именно проталкивают.
+        // * Видимость считается по плотности кожи, но с ПОЛОМ: там, где кожа
+        //   плотная, кишку не видно вовсе, а еду видно приглушённо. Иначе
+        //   самое интересное — как червь глотает — происходило бы за
+        //   непрозрачной шеей.
+        const FOOD_PULSE_HZ = 0.85;   // волн перистальтики в секунду
+        const FOOD_NUDGE = 0.014;     // на сколько доли пути толкает волна
+        // Комок ВИДНО ЛУЧШЕ, чем саму кишку, и это осознанно: кишка — фон,
+        // а комок — единственное, что здесь происходит. Под плотной кожей
+        // он не пропадает совсем, иначе самое интересное (как червь глотает)
+        // случалось бы за непрозрачной шеей.
+        const FOOD_SEE_BOOST = 0.28;  // насколько комок виднее кишки
+        const FOOD_SEE_FLOOR = 0.5;   // доля видимости там, где кожа плотная
+
+        function updateFood(dtSec) {
+            const tract = state.built && state.built.gutTract;
+            if (!tract || !tract.foodNodes.length) return;
+            const list = state.digest.boluses;
+            const pts = tract.corePts || [];
+            state.foodPhase += dtSec;
+
+            for (let i = 0; i < tract.foodNodes.length; i++) {
+                const ref = tract.foodNodes[i];
+                const b = list[i];
+                if (!b || pts.length < 2) {
+                    if (ref.shown) { setAttr(ref.group, 'opacity', '0'); ref.shown = false; }
+                    continue;
+                }
+                // Своя фаза у каждого комка: иначе три проглоченных куска
+                // сжимались бы разом, как один организм.
+                const wave = state.foodPhase * FOOD_PULSE_HZ + i * 0.41;
+                const squeeze = Math.sin((wave - Math.floor(wave)) * Math.PI * 2);
+                const sPos = Math.max(0, Math.min(1, b.s + FOOD_NUDGE * squeeze));
+
+                // Точка на осевой линии — сложение и умножение вместо промера
+                // SVG-пути: строка пути меняется вслед за телом, и кеш длины
+                // всё равно был бы недействителен каждый кадр.
+                const fs = sPos * (pts.length - 1);
+                const i0 = Math.min(pts.length - 2, Math.floor(fs));
+                const k = fs - i0;
+                const a = pts[i0], c = pts[i0 + 1];
+                const x = a[0] + (c[0] - a[0]) * k;
+                const y = a[1] + (c[1] - a[1]) * k;
+                // Комок вытянут ВДОЛЬ кишки: он её растягивает, а не лежит
+                // поперёк.
+                const ang = Math.atan2(c[1] - a[1], c[0] - a[0]) * 180 / Math.PI;
+                // Толчок вытягивает комок вдоль трубы, откат — округляет.
+                // Плюс комок ужимается там, где тело тоньше него самого: на
+                // хвосте оно вдвое тоньше живота, а маски, которая раньше
+                // прятала вылезшее, у слоя еды больше нет.
+                const rr = tract.coreR || null;
+                const rLocal = rr && rr.length > i0 + 1
+                    ? rr[i0] + (rr[i0 + 1] - rr[i0]) * k : 0;
+                const fit = rLocal > 0
+                    ? Math.min(1, (rLocal * 0.82) / Math.max(1, ref.size * 1.4)) : 1;
+                const sx = fit * (1 + 0.24 * squeeze);
+                const sy = fit * (1 - 0.16 * squeeze);
+                setAttr(ref.group, 'transform',
+                    `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${ang.toFixed(1)}) ` +
+                    `scale(${sx.toFixed(3)},${sy.toFixed(3)})`);
+
+                const thin = skinThinAt(tract.thinByIdx, sPos);
+                const vis = (state.foodVis + FOOD_SEE_BOOST)
+                          * (FOOD_SEE_FLOOR + (1 - FOOD_SEE_FLOOR) * thin);
+                setAttr(ref.group, 'opacity', clamp01(vis).toFixed(3));
+                // Перетяжка видна только на толчке: мышца сжалась — комок
+                // поехал. На откате её нет вовсе.
+                setAttr(ref.pinch, 'opacity',
+                    (squeeze > 0 ? squeeze * 0.75 : 0).toFixed(2));
+                ref.shown = true;
+            }
         }
 
         function rebuild() {
@@ -4821,6 +4998,7 @@ const WormRenderer = {
             // на кадр-другой становился бы здоровым при любой смене
             // косметики, отметин или модели.
             state.witherNodes = null;
+            state.stomachContent = undefined;
             bakeWither(true);
         }
 
@@ -5462,6 +5640,12 @@ const WormRenderer = {
                 // Смещение — каждый кадр: оно дёшево (см. wantGeometry).
                 setAttr(state.built.root, 'transform', rootTransform());
 
+                // Еда в кишке — тоже каждый кадр, ДО ворот деформации. Она
+                // живёт отдельным слоем без маски и стоит двух атрибутов на
+                // комок, зато обязана ехать плавно и там, где тело
+                // пересчитывается впятеро реже (слабый телефон).
+                if (state.digest.boluses.length) updateFood(dtSec);
+
                 // А вся деформация — только на своём кадре.
                 if (!wantGeometry(now)) {
                     state.rafId = requestAnimationFrame(tick);
@@ -5757,10 +5941,14 @@ const WormRenderer = {
                         setAttr(state.built.gutTract.tube, 'd', geom.ribbon);
                         setAttr(state.built.gutTract.coreLine, 'd', geom.core);
                         state.built.gutTract.corePts = geom.corePts;
+                        state.built.gutTract.coreR = geom.coreR;
                         const liveVis = state.livePose.organVisibility;
                         const baseVis = liveVis != null ? liveVis : (organs.visibility != null ? organs.visibility : 0.6);
-                        setAttr(state.built.gutTract.group, 'opacity',
-                            clamp01(baseVis * (cfg.visibility != null ? cfg.visibility : 0.85)).toFixed(3));
+                        const tractVis = clamp01(baseVis * (cfg.visibility != null ? cfg.visibility : 0.85));
+                        setAttr(state.built.gutTract.group, 'opacity', tractVis.toFixed(3));
+                        // Еда лежит СНАРУЖИ группы тракта и её прозрачность не
+                        // наследует — считает сама, от этого же числа.
+                        state.foodVis = tractVis;
                     }
                 }
 
@@ -6190,49 +6378,70 @@ const WormRenderer = {
             setDigestion(data) {
                 const d = data || {};
                 const tract = state.built && state.built.gutTract;
+                state.digest.stomachFill = Math.max(0, Math.min(1, d.stomachFill || 0));
                 if (tract && tract.foodLayer) {
                     const list = d.boluses || [];
-                    const pts = tract.corePts || [];
+                    state.digest.boluses = list;
+                    state.digest.scale = d.scale || 7;
 
                     // Узлы переиспользуются: комков три-четыре, создавать их
                     // заново каждый кадр незачем.
                     while (tract.foodNodes.length < list.length) {
-                        const node = svgEl('ellipse', { class: 'worm-food', rx: 0, ry: 0, cx: 0, cy: 0 });
-                        tract.foodLayer.appendChild(node);
-                        tract.foodNodes.push(node);
+                        const ref = createBolusNode(tract.color);
+                        paintBolus(ref);
+                        tract.foodLayer.appendChild(ref.group);
+                        tract.foodNodes.push(ref);
                     }
-                    tract.foodNodes.forEach((node, i) => {
-                        const b = list[i];
-                        if (!b || pts.length < 2) { setAttr(node, 'rx', 0); setAttr(node, 'ry', 0); return; }
-                        // Позиция считается по точкам осевой линии — сложение
-                        // и умножение вместо промера пути.
-                        const fs = Math.max(0, Math.min(1, b.s)) * (pts.length - 1);
-                        const i0 = Math.min(pts.length - 2, Math.floor(fs));
-                        const k = fs - i0;
-                        const a = pts[i0], c = pts[i0 + 1];
-                        const pt = { x: a[0] + (c[0] - a[0]) * k, y: a[1] + (c[1] - a[1]) * k };
-                        // Направление в этой точке — комок вытянут вдоль кишки,
-                        // а не поперёк: он её растягивает, а не лежит поперёк.
-                        const ang = Math.atan2(c[1] - a[1], c[0] - a[0]) * 180 / Math.PI;
-                        const size = (b.size || 1) * (d.scale || 7);
-                        setAttr(node, 'cx', 0);
-                        setAttr(node, 'cy', 0);
-                        setAttr(node, 'rx', (size * 1.35).toFixed(1));
-                        setAttr(node, 'ry', size.toFixed(1));
-                        setAttr(node, 'fill', witherPaint(
-                            b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35)));
-                        setAttr(node, 'opacity', b.opacity != null ? b.opacity : 0.9);
-                        setAttr(node, 'transform',
-                            `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
-                    });
+                    // Размер и цвет переставляются ЗДЕСЬ, а не в кадре: список
+                    // еды меняется раз в несколько секунд, а кадров за это
+                    // время сотни.
+                    for (let i = 0; i < tract.foodNodes.length; i++) {
+                        const ref = tract.foodNodes[i], b = list[i];
+                        if (!b) continue;
+                        const size = (b.size || 1) * state.digest.scale;
+                        if (ref.size === size && !b.color) continue;
+                        ref.size = size;
+                        setAttr(ref.wall, 'rx', (size * 1.85).toFixed(1));
+                        setAttr(ref.wall, 'ry', (size * 1.4).toFixed(1));
+                        setAttr(ref.body, 'rx', (size * 1.4).toFixed(1));
+                        setAttr(ref.body, 'ry', size.toFixed(1));
+                        setAttr(ref.shine, 'rx', (size * 0.52).toFixed(1));
+                        setAttr(ref.shine, 'ry', (size * 0.3).toFixed(1));
+                        setAttr(ref.shine, 'cx', (size * 0.36).toFixed(1));
+                        setAttr(ref.shine, 'cy', (-size * 0.42).toFixed(1));
+                        setAttr(ref.chunkA, 'rx', (size * 0.42).toFixed(1));
+                        setAttr(ref.chunkA, 'ry', (size * 0.34).toFixed(1));
+                        setAttr(ref.chunkA, 'cx', (-size * 0.5).toFixed(1));
+                        setAttr(ref.chunkA, 'cy', (size * 0.24).toFixed(1));
+                        setAttr(ref.chunkB, 'rx', (size * 0.3).toFixed(1));
+                        setAttr(ref.chunkB, 'ry', (size * 0.26).toFixed(1));
+                        setAttr(ref.chunkB, 'cx', (size * 0.44).toFixed(1));
+                        setAttr(ref.chunkB, 'cy', (size * 0.3).toFixed(1));
+                        // Перетяжка стоит позади комка: он движется вдоль
+                        // +X собственной системы (её задаёт rotate по
+                        // направлению кишки), значит «сзади» — это −X.
+                        setAttr(ref.pinch, 'cx', (-size * 1.75).toFixed(1));
+                        setAttr(ref.pinch, 'rx', (size * 0.42).toFixed(1));
+                        setAttr(ref.pinch, 'ry', (size * 1.35).toFixed(1));
+                        if (b.color) { ref.base.body = b.color; setAttr(ref.body, 'fill', witherPaint(b.color)); }
+                    }
+                    // Комки едут покадрово (updateFood), но первый кадр после
+                    // смены списка рисуем сразу: иначе новый комок появится
+                    // в точке предыдущего.
+                    updateFood(0);
                 }
 
                 // Наполненный желудок слегка раздувается — но остаётся
-                // желудком, а не превращается в шар.
-                const fill = Math.max(0, Math.min(1, d.stomachFill || 0));
-                const content = state.built && state.built.root
-                    ? state.built.root.querySelector('.worm-stomach-content') : null;
+                // желудком, а не превращается в шар. Узел ищется один раз на
+                // сборку тела: querySelector по семи сотням узлов пятнадцать
+                // раз в секунду — ровно та мелочь, из которой складываются
+                // потерянные кадры.
+                if (state.stomachContent === undefined && state.built && state.built.root) {
+                    state.stomachContent = state.built.root.querySelector('.worm-stomach-content') || null;
+                }
+                const content = state.stomachContent;
                 if (content) {
+                    const fill = state.digest.stomachFill;
                     const fx = parseFloat(content.getAttribute('data-full-rx')) || 0;
                     const fy = parseFloat(content.getAttribute('data-full-ry')) || 0;
                     setAttr(content, 'rx', (fx * fill).toFixed(1));
