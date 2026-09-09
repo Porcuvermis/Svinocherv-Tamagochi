@@ -156,7 +156,11 @@ const harness = require('./harness');
         paths.forEach(p => half = Math.max(half, parseFloat(p.getAttribute('stroke-width')) / 2));
         const body = paths[paths.length - 1];
         const total = body.getTotalLength();
-        const off = -parseFloat(body.getAttribute('stroke-dashoffset') || '0');
+        // Смещение узора положительное: «стёрто q единиц» записано как
+        // период минус q (период — два штриха узора). Расшифровываем обратно.
+        const dash = parseFloat((body.getAttribute('stroke-dasharray') || '0').split(/[\s,]+/)[0]);
+        const raw = parseFloat(body.getAttribute('stroke-dashoffset') || '0');
+        const off = raw ? 2 * dash - raw : 0;
         for (let u = Math.max(0, off); u <= total; u += 2) {
           const q = body.getPointAtLength(u);
           film.push([q.x, q.y]);
