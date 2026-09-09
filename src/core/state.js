@@ -352,7 +352,7 @@ const GameState = {
     // Максимум приходит снаружи: он зависит от надетого снаряжения, а это не
     // дело стора.
     fighterHp(maxHp) {
-        const raw = this.fighterHpRaw();
+        const raw = this.fighterHpRaw(maxHp);
         if (raw === null) return maxHp;
         // Вниз округляем: показывать «7 из 13», пока набежало 7.4, честнее,
         // чем округлять к восьми, которых ещё нет.
@@ -376,30 +376,55 @@ const GameState = {
         return (this.data && this.data.upgrades && this.data.upgrades[key]) || 0;
     },
 
-    // Скорость зарастания: база из конфига плюс прокачка.
-    regenRate() {
-        const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 0;
+    // ---------- СКОРОСТЬ ЗАРАСТАНИЯ ----------
+    // Доля максимума в минуту: база из конфига плюс прокачка. Обе величины —
+    // доли, а не хп, поэтому складываются напрямую.
+    //
+    // Почему доля, а не хп в секунду: с плоским числом ветка «+здоровье»
+    // становилась наказанием — больше запас, дольше ждать, а шанс победы в
+    // зеркальном спарринге тот же (разбор — ECONOMY.minigames.wrath).
+    regenShare() {
+        const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenSharePerMinute) || 0;
         return base + this.upgradeBonus('regen');
+    },
+
+    // Сколько хп зарастает за СЕКУНДУ при таком максимуме. Максимум приходит
+    // снаружи: он зависит от снаряжения, а это не дело стора. Без него берётся
+    // базовое здоровье — так формула остаётся осмысленной, а не обнуляется.
+    regenRate(maxHp) {
+        const conf = ECONOMY.minigames.wrath || {};
+        const max = maxHp || conf.baseHp || 0;
+        return this.regenShare() * max / 60;
     },
 
     // Сырое здоровье, без потолка: потолок зависит от снаряжения, а это не
     // дело стора. Нужно самой заморозке — зафиксировать накопленное.
     // null означает «хранить нечего, здоровье полное».
-    fighterHpRaw() {
+    fighterHpRaw(maxHp) {
         const f = this.data ? this.data.fighter : null;
         if (!f || f.hp === null || f.hp === undefined || !f.updated_at) return null;
         // Зарастание остановлено (идёт бой или забег) — сколько было, столько
         // и есть, сколько бы времени ни прошло.
         if (f.frozen) return f.hp;
-        return f.hp + GameTime.secondsSince(f.updated_at) * this.regenRate();
+        return f.hp + GameTime.secondsSince(f.updated_at) * this.regenRate(maxHp);
+    },
+
+    // Здоровье БЕЗ округления вниз, с потолком. Нужно полосе: при доле в
+    // минуту целое число стоит на месте по минуте кряду, и полоса, нарисованная
+    // по нему, выглядела бы застывшей. Число под полосой остаётся целым —
+    // дробное здоровье в бою не значит ничего.
+    fighterHpExact(maxHp) {
+        const raw = this.fighterHpRaw(maxHp);
+        if (raw === null) return maxHp;
+        return Math.max(0, Math.min(maxHp, raw));
     },
 
     // Сколько секунд до полного здоровья. Нужно интерфейсу, чтобы написать
     // «зарастает», а не молчать.
     fighterHealSeconds(maxHp) {
-        const rate = this.regenRate();
+        const rate = this.regenRate(maxHp);
         if (rate <= 0) return null;
-        const missing = maxHp - this.fighterHp(maxHp);
+        const missing = maxHp - this.fighterHpExact(maxHp);
         return missing > 0 ? Math.ceil(missing / rate) : 0;
     },
 

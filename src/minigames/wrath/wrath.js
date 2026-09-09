@@ -50,6 +50,15 @@ const WrathMinigame = {
         WrathShop.init(this);
         WrathBoost.init(this);
         WrathRogue.init(this);
+
+        // ---------- УЗЕЛ ГНЕВА В КОЛЕСЕ ГРЕХОВ ----------
+        // Читалка живёт рядом со своей мини-игрой (docs/sins-menu.md): что
+        // считать готовностью, знает грех, а не колесо. У гнева порога голода
+        // нет — за бой платят всегда, — поэтому мерой служит здоровье бойца.
+        // Максимум считает WrathFighter: он единственный знает про снаряжение.
+        if (typeof SinsMenu !== 'undefined' && typeof Backend !== 'undefined') {
+            SinsMenu.readers.wrath = () => Backend.wrathReady(WrathFighter.playerHp().max);
+        }
     },
 
     open() {

@@ -183,6 +183,11 @@ const WrathFighter = {
         return {
             hp,
             max,
+            // Дробное здоровье — только для полосы. При доле в минуту целое
+            // число стоит на месте по минуте кряду, и полоса, нарисованная по
+            // нему, читалась бы как сломанная. Число под полосой остаётся
+            // целым: дробное хп в бою не значит ничего.
+            exact: GameState.fighterHpExact(max),
             full: hp >= max,
             healSeconds: GameState.fighterHealSeconds(max)
         };

@@ -231,11 +231,18 @@ const WrathBoost = {
     },
 
     // Каждая ветка меряется своим значком: 🗡 урон, ❤️ здоровье,
-    // 🌱 сколько здоровья зарастает в секунду.
+    // 🌱 какая доля полосы зарастает за минуту.
+    //
+    // У зарастания показана доля, а не хп и не минуты до полного. Хп врут:
+    // одно и то же число значит разное при разном максимуме. Минуты врут
+    // иначе — там меньше значит лучше, и в списке, где у двух других веток
+    // больше значит лучше, это читается как ухудшение. Доля растёт вместе с
+    // пользой, как и соседи. Процент — не слово, а знак количества
+    // (инвариант 9).
     bonusText(key, bonus) {
         if (key === 'regen') {
-            const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenPerSecond) || 1;
-            return `🌱 ${(base + (bonus || 0)).toFixed(1)}`;
+            const base = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.regenSharePerMinute) || 0;
+            return `🌱 ${Math.round((base + (bonus || 0)) * 100)}%`;
         }
         const emoji = key === 'hp' ? '❤️' : '🗡';
         return `${emoji} +${bonus || 0}`;
