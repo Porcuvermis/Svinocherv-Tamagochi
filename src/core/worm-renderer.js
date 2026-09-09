@@ -5056,11 +5056,23 @@ const WormRenderer = {
         // Тяжёлый кадр чередуется с дешёвыми, и общая частота растёт, а
         // персонаж просто обновляется реже — там, где он всё равно стоит
         // смирно, этого не видно.
-        const frameEvery = opts.frameHz > 0
-            ? Math.max(1, Math.round(60 / opts.frameHz)) : 1;
+        //
+        // Считается КАЖДЫЙ раз, а не один раз при монтировании: мини-игра
+        // меняет частоту на ходу (handle.setFrameHz). В ванной, например,
+        // персонаж на общем плане живой, а на наезде — фон за хвостом, и
+        // платить за него полную цену там незачем.
+        const frameEvery = () => (opts.frameHz > 0
+            ? Math.max(1, Math.round(60 / opts.frameHz)) : 1);
         // Пол: реже десяти раз в секунду персонаж не обновляется никогда, как
         // бы плохо ни было. Ниже начинает дёргаться моргание.
+        //
+        // На ЗАДЫХАЮЩЕМСЯ устройстве пол поднимается: там кадр и так длиннее
+        // сотни миллисекунд, и «не реже десяти раз в секунду» означает
+        // «каждый кадр», то есть делитель не экономит вовсе. Замер на айфоне
+        // в ванной: 24 кадра с живым персонажем и 60 с замершим — весь
+        // бюджет уходил на его пересчёт.
         const FRAME_FLOOR_MS = 100;
+        const FRAME_FLOOR_SLOW_MS = 260;
 
         // ---------- ДВИЖЕНИЕ ОТДЕЛЬНО ОТ ДЕФОРМАЦИИ ----------
         // Замер, ради которого всё это написано (throttle 6, комната):
@@ -5099,7 +5111,13 @@ const WormRenderer = {
         // след из-под него — прямыми отрезками со стыками под углом. «Два
         // тика из трёх» отнимают треть работы вместо половины, и ступеней
         // не видно. Моргание из лестницы исключено отдельно (wantGeometry).
-        const GEOM_LADDER = [[1, 1], [2, 3]];
+        //
+        // Ступеней пять, а не две. Две были рассчитаны на «слегка не
+        // успевает»: нижняя отнимала треть работы, и на устройстве, которое
+        // проседает вдвое, это не спасало вовсе. Верхние ступени — для
+        // случая, когда выбор стоит не между красиво и очень красиво, а
+        // между «дышит рывками» и «игра не отвечает».
+        const GEOM_LADDER = [[1, 1], [2, 3], [1, 2], [1, 3], [1, 5]];
         // Пороги нарочно РАЗВЕДЕНЫ ШИРОКО, и нижний стоит там, где картинка
         // уже разваливается сама (30 кадров), а не там, где просто не идеал.
         // Сначала лестница включалась с 24 мс (сорок кадров), то есть почти
@@ -5111,6 +5129,11 @@ const WormRenderer = {
         const GEOM_FAST_MS = 22;       // кадр короче (больше 45 fps) — вернуть
         const GEOM_HOLD_UP = 1500;     // и не по первому же тяжёлому кадру
         const GEOM_HOLD_DOWN = 4000;   // обратно — только после долгого затишья
+        // Совсем плохой кадр (меньше 25 fps) разрежает деформацию БЫСТРО: там
+        // уже не до аккуратности, и полторы секунды ожидания на каждую
+        // ступень — это шесть секунд, которые игрок проводит в киселе.
+        const GEOM_AWFUL_MS = 40;
+        const GEOM_HOLD_AWFUL = 400;
 
         // Длительность НАСТОЯЩЕГО кадра страницы и ступень лестницы.
         // Считается в самом начале tick(), до делителя частоты: делитель
@@ -5125,8 +5148,9 @@ const WormRenderer = {
                 state.frameMs = state.frameMs ? state.frameMs + (raf - state.frameMs) * 0.1 : raf;
             }
             state.geomHold = (state.geomHold || 0) + raf;
+            const holdUp = state.frameMs > GEOM_AWFUL_MS ? GEOM_HOLD_AWFUL : GEOM_HOLD_UP;
             if (state.frameMs > GEOM_SLOW_MS && state.geomLevel < GEOM_LADDER.length - 1
-                && state.geomHold > GEOM_HOLD_UP) {
+                && state.geomHold > holdUp) {
                 state.geomLevel++; state.geomHold = 0;
             } else if (state.frameMs < GEOM_FAST_MS && state.geomLevel > 0
                        && state.geomHold > GEOM_HOLD_DOWN) {
@@ -5164,10 +5188,12 @@ const WormRenderer = {
 
         function tick(now) {
             trackFrame(now);
-            if (frameEvery > 1) {
+            const every = frameEvery();
+            if (every > 1) {
                 state.rafCount = (state.rafCount || 0) + 1;
-                if (state.rafCount % frameEvery
-                    && state.lastFrameTs && now - state.lastFrameTs < FRAME_FLOOR_MS) {
+                const floor = state.frameMs > GEOM_SLOW_MS ? FRAME_FLOOR_SLOW_MS : FRAME_FLOOR_MS;
+                if (state.rafCount % every
+                    && state.lastFrameTs && now - state.lastFrameTs < floor) {
                     state.rafId = requestAnimationFrame(tick);
                     return;
                 }
@@ -6184,6 +6210,14 @@ const WormRenderer = {
             //
             // Метка времени сбрасывается, иначе после паузы dt окажется равным
             // всей паузе и персонаж прыгнет.
+            // Частота пересчёта персонажа НА ХОДУ. Мини-игра знает то, чего
+            // не знает рендерер: сейчас червь — герой кадра или фон за
+            // хвостом. Замер на айфоне: в ванной на наезде живой персонаж
+            // стоил 36 кадров из 60, а замерший — ноль.
+            setFrameHz(hz) {
+                opts.frameHz = (hz > 0) ? hz : 0;
+            },
+
             setPaused(paused) {
                 if (paused) {
                     if (state.rafId) {

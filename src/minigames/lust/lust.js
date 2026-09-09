@@ -230,6 +230,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
+        if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(12);
         this.stopPanting();
         this.blurFar(0, 0);
         this.showTools(true);
@@ -405,7 +406,7 @@ const LustMinigame = {
                 // мимика меняется медленно. Шестьдесят пересчётов в секунду
                 // ему не нужны, а стоит он дороже всей остальной сцены
                 // вместе взятой (docs/traps.md, п. 36).
-                frameHz: 20,
+                frameHz: 12,
                 // Лёжа: червь в ванне, а не стоит в ней.
                 pose: 'standing',
                 wander: false,
@@ -1090,6 +1091,11 @@ const LustMinigame = {
         // уходит в расфокус одновременно с ним: это не новая сцена, а
         // смена того, на что смотрят.
         this.setCamera('tail', 1000);
+        // Червь стал ФОНОМ за хвостом, и платить за него полную цену больше
+        // незачем: на наезде он занимает пол-экрана, а каждая правка его
+        // геометрии — это перерисовка всей этой площади. Замер на айфоне:
+        // живой персонаж 24 кадра, замерший 60.
+        if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(6);
         this.wormHost.classList.add('bt-soft');
         this.blurFar(2.6, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
