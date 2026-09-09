@@ -641,13 +641,38 @@ const BATH_ART = {
     // Разметка ОДНОГО потёка. Отдельным методом, потому что застывший потёк
     // рисуется РОВНО ОДИН РАЗ и дальше живёт узлом: он больше не меняется,
     // и пересобирать его каждый кадр незачем.
+    // Путь потёка отдельно от разметки: живые потёки ползут каждый кадр, и
+    // им переписывается ОДИН атрибут `d`, а не пересобирается узел. Разметка
+    // ниже нужна застывшим — те дописываются в слой один раз и больше не
+    // трогаются.
+    splatD(s) {
+        return `M${(s.x - s.r).toFixed(1)} ${s.y.toFixed(1)}
+                a${s.r.toFixed(1)} ${s.r.toFixed(1)} 0 1 0 ${(s.r * 2).toFixed(1)} 0
+                l${(-s.r).toFixed(1)} ${(s.r * 2.2).toFixed(1)} Z`;
+    },
+
     splat(s) {
         const m = btPal().milk;
-        return `<path d="M${(s.x - s.r).toFixed(1)} ${s.y.toFixed(1)}
-                     a${s.r.toFixed(1)} ${s.r.toFixed(1)} 0 1 0 ${(s.r * 2).toFixed(1)} 0
-                     l${(-s.r).toFixed(1)} ${(s.r * 2.2).toFixed(1)} Z"
+        return `<path d="${this.splatD(s)}"
                     fill="${m[500]}" stroke="${m.edge}" stroke-width="1.6"
                     opacity="0.88"/>`;
+    },
+
+    // Заготовки узлов для живого слоя: создаются по одному разу, дальше им
+    // правятся только координаты (см. renderShots в lust.js).
+    dropNode() {
+        const m = btPal().milk;
+        return `<ellipse rx="1" ry="1" fill="${m.hi}" stroke="${m.edge}" stroke-width="1.4"/>`;
+    },
+
+    flashNode() {
+        const m = btPal().milk;
+        return `<circle r="1" fill="none" stroke="${m.hi}" stroke-width="5"/>`;
+    },
+
+    splatNode() {
+        const m = btPal().milk;
+        return `<path fill="${m[500]}" stroke="${m.edge}" stroke-width="1.6" opacity="0.88"/>`;
     },
 
     // Только ЖИВОЕ: капли в полёте, ещё сползающие потёки и вспышка

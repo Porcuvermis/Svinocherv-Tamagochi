@@ -220,8 +220,11 @@ const LustMinigame = {
         this.pile = null;
         this.mouthFill = null;
         this.mouthAt = null;
-        this._shots = null;
+        // Слои очищены — значит и пул узлов живого слоя больше ни на что не
+        // указывает: узлы из него только что выброшены вместе с разметкой.
+        this._pool = null;
         this._tailKey = null;
+        this._tailTs = 0;
         this.charge = 0;
         this.hits = 0;
         this.shotsLeft = 0;
@@ -230,7 +233,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
-        if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(12);
+        if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(8);
         this.stopPanting();
         this.blurFar(0, 0);
         this.showTools(true);
@@ -406,7 +409,7 @@ const LustMinigame = {
                 // мимика меняется медленно. Шестьдесят пересчётов в секунду
                 // ему не нужны, а стоит он дороже всей остальной сцены
                 // вместе взятой (docs/traps.md, п. 36).
-                frameHz: 12,
+                frameHz: 8,
                 // Лёжа: червь в ванне, а не стоит в ней.
                 pose: 'standing',
                 wander: false,
@@ -1095,7 +1098,7 @@ const LustMinigame = {
         // незачем: на наезде он занимает пол-экрана, а каждая правка его
         // геометрии — это перерисовка всей этой площади. Замер на айфоне:
         // живой персонаж 24 кадра, замерший 60.
-        if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(6);
+        if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
         this.wormHost.classList.add('bt-soft');
         this.blurFar(2.6, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
@@ -1382,7 +1385,7 @@ const LustMinigame = {
     },
 
 
-    drawTail() {
+    drawTail(force) {
         const A = BATH_ART.slots(), g = this.el('bt-tail-pivot');
         if (!g) return;
         // Пересобирать путь хвоста имеет смысл, только если он изменился.
@@ -1391,6 +1394,18 @@ const LustMinigame = {
         // в дерево.
         const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}`;
         if (key === this._tailKey) return;
+
+        // ---------- И НЕ ЧАЩЕ ТРИДЦАТИ РАЗ В СЕКУНДУ ----------
+        // Хвост — крупная фигура, а правка его пути значит перерисовку всей
+        // его площади процессором (svg рисует CPU, видеокарта только двигает
+        // готовое). Шестьдесят перерисовок в секунду телефон не тянет, а
+        // разницы между 30 и 60 на упругом движении не видно.
+        //
+        // Последний кадр движения рисуется ВСЕГДА (force): иначе хвост
+        // застывал бы чуть-чуть не там, где его отпустили.
+        const now = performance.now();
+        if (!force && this._tailTs && now - this._tailTs < 33) return;
+        this._tailTs = now;
         this._tailKey = key;
         // Ни одного поворота: группа только переносится, а гнётся сама фигура.
         g.setAttribute('transform', `translate(${A.tail.x} ${A.tail.y})`);
@@ -1464,7 +1479,6 @@ const LustMinigame = {
         this.drops = [];
         this.splats = [];
         this.el('bt-splats').innerHTML = '';
-        this._shots = null;
         // Рот пуст: канал живой, значит его надо явно опустошить, иначе в
         // следующий забег червь входит с чужой лужицей.
         this.mouthFill = null;
@@ -1495,7 +1509,12 @@ const LustMinigame = {
             this.aimLast = now;
             // На доигрывании хвостом распоряжается relaxTail: он опадает, а
             // не слушается упругости. Двое пишущих в bend дёргали бы его.
-            if (this.phase === 'aim') { this.stepBend(dt); this.drawTail(); }
+            if (this.phase === 'aim') {
+                this.stepBend(dt);
+                // Хвост стоит — дорисовать начисто, дальше ключ всё равно
+                // совпадёт и записи не будет.
+                this.drawTail((this.bendStep || 0) < 0.0005);
+            }
             this.stepDrops(dt);
             this.aimRaf = requestAnimationFrame(tick);
         };
@@ -1514,10 +1533,14 @@ const LustMinigame = {
     // Выпрямление. Идёт ВСЕГДА, в том числе пока палец на экране: в этом вся
     // разница с прежней версией, где неподвижный палец держал угол сам.
     stepBend(dt) {
+        const was = this.bend;
         const u = Math.max(0, this.bend) / this.BEND_MAX;
         this.bend -= this.bend * this.BEND_RELAX * (1 + this.BEND_HARD * u * u) * dt;
         if (this.bend < 0) this.bend = 0;
         if (this.bend > this.BEND_MAX) this.bend = this.BEND_MAX;
+        // Насколько хвост сдвинулся за этот шаг: по этому числу кадровый цикл
+        // решает, дорисовывать ли его начисто (см. drawTail).
+        this.bendStep = Math.abs(this.bend - was);
     },
 
     // Угол пальца вокруг корня хвоста. Ноль — прямо над корнем, вправо
@@ -1710,14 +1733,7 @@ const LustMinigame = {
             this.splats.splice(i, 1);
             this.freezeSplat(sp);
         }
-        // Пишем в дерево, ТОЛЬКО ЕСЛИ картинка изменилась. Между толчками в
-        // воздухе пусто и потёки уже застыли — а запись в innerHTML даже
-        // пустой строкой метит слой грязным и заставляет его перерисовать.
-        const markup = BATH_ART.drops(this.drops, this.splats);
-        if (markup !== this._shots) {
-            this._shots = markup;
-            this.el('bt-shots').innerHTML = markup;
-        }
+        this.renderShots();
 
         // Лужица во рту рисуется САМИМ ЧЕРВЁМ — это часть его рта, а не
         // пятно поверх морды. Значит она едет с ним при любом переезде
@@ -1725,6 +1741,73 @@ const LustMinigame = {
         // Пока её рисовала мини-игра в своём слое, она жила отдельной
         // жизнью и на камере, собранной под хвост, оказывалась на щеке.
         this.setMouthFill(this.hits / ((C.sections || 3) * (C.perSection || 2)));
+    },
+
+    // ---------- ЖИВОЙ СЛОЙ ВЫСТРЕЛА: УЗЛЫ, А НЕ РАЗМЕТКА ----------
+    // Капли в полёте и ползущие потёки меняются КАЖДЫЙ кадр. Пока слой
+    // пересобирался строкой, браузер на каждом кадре заново разбирал
+    // разметку, строил узлы и выбрасывал прежние — и всё это ради четырёх
+    // сдвинувшихся эллипсов.
+    //
+    // Теперь узлы живут в пуле и переиспользуются: за кадр правится по
+    // нескольку атрибутов, разбора разметки нет вовсе. Лишние узлы не
+    // удаляются, а прячутся — удаление и создание стоят столько же, сколько
+    // разбор, а капель за забег ровно столько же, сколько было.
+    shotNode(kind, i, markup) {
+        if (!this._pool) this._pool = {};
+        const pool = this._pool[kind] || (this._pool[kind] = []);
+        if (pool[i]) return pool[i];
+        const layer = this.el('bt-shots');
+        if (!layer) return null;
+        layer.insertAdjacentHTML('beforeend', markup());
+        pool[i] = layer.lastElementChild;
+        return pool[i];
+    },
+
+    hideRest(kind, from) {
+        const pool = (this._pool && this._pool[kind]) || [];
+        for (let i = from; i < pool.length; i++) pool[i].setAttribute('display', 'none');
+    },
+
+    renderShots() {
+        let flash = 0, splat = 0;
+        for (const s of this.splats) {
+            if (s.gulp) {
+                // Попадание: короткая вспышка в самой корзине рта.
+                const n = this.shotNode('flash', flash++, () => BATH_ART.flashNode());
+                if (!n) continue;
+                const k = 1 - s.t / 0.45;
+                n.setAttribute('cx', s.x.toFixed(1));
+                n.setAttribute('cy', s.y.toFixed(1));
+                n.setAttribute('r', (s.r * (1.6 - k)).toFixed(1));
+                n.setAttribute('opacity', (k * 0.9).toFixed(2));
+                n.removeAttribute('display');
+                continue;
+            }
+            const n = this.shotNode('splat', splat++, () => BATH_ART.splatNode());
+            if (!n) continue;
+            n.setAttribute('d', BATH_ART.splatD(s));
+            n.removeAttribute('display');
+        }
+        this.hideRest('flash', flash);
+        this.hideRest('splat', splat);
+
+        let drop = 0;
+        for (const d of this.drops) {
+            const n = this.shotNode('drop', drop++, () => BATH_ART.dropNode());
+            if (!n) continue;
+            const sp = Math.hypot(d.vx, d.vy) || 1;
+            const L = d.r * 1.7;
+            n.setAttribute('cx', d.x.toFixed(1));
+            n.setAttribute('cy', d.y.toFixed(1));
+            n.setAttribute('rx', (d.r + L).toFixed(1));
+            n.setAttribute('ry', d.r.toFixed(1));
+            n.setAttribute('transform',
+                'rotate(' + (Math.atan2(d.vy / sp, d.vx / sp) * 180 / Math.PI).toFixed(1)
+                + ' ' + d.x.toFixed(1) + ' ' + d.y.toFixed(1) + ')');
+            n.removeAttribute('display');
+        }
+        this.hideRest('drop', drop);
     },
 
     // Уровень жидкости во рту. Отдельным методом, потому что его дёргают из
