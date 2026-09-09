@@ -779,7 +779,12 @@ const WORM_SLIME_BUBBLE_ALPHA = 0.45;
 const WORM_SLIME_LIFE_MS = 2000;        // возраст, в котором пропадает тело плёнки
 const WORM_SLIME_EDGE_LIFE = [1000, 1400]; // ступени края уходят первыми
 const WORM_SLIME_BULGE_LIFE = 1250;     // наплывы
-const WORM_SLIME_DECOR_LIFE = 1300;     // блики, пузырьки, комки, капли
+// Блеск гаснет чуть раньше плёнки: подсохшая слизь первым делом
+// перестаёт блестеть. А вот СГУСТКИ — часть самой плёнки, и жить они
+// обязаны ровно столько же: пока они пропадали раньше, силуэт следа
+// на глазах менялся, и это читалось как «рассыпается на куски».
+const WORM_SLIME_SHINE_LIFE = 1500;     // блики, пузырьки, капли кислоты
+const WORM_SLIME_LUMP_LIFE = WORM_SLIME_LIFE_MS;  // сгустки и начальная клякса
 // Такт высыхания: как часто пересчитывается обрезка. Чаще не нужно — за
 // семьдесят миллисекунд край сдвигается на пару единиц.
 const WORM_SLIME_FADE_TICK = 70;
@@ -5458,7 +5463,7 @@ const WormRenderer = {
                 scale: trailScale, points: 1
             });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
-            state.activeSlimeTrail.decor.push({ el: blob, t: now });
+            state.activeSlimeTrail.decor.push({ el: blob, t: now, life: WORM_SLIME_LUMP_LIFE });
             // Больше заданного числа отрезков на полу не живёт. При двух
             // секундах жизни это страховка, а не рабочий режим: сюда доходит
             // только тот случай, когда кадры провалились и высыхание не
@@ -5529,7 +5534,7 @@ const WormRenderer = {
                     fill: withAlpha(mixColor(SPEC, P_.acid[200], 0.5), WORM_SLIME_BUBBLE_ALPHA)
                 });
                 trail.bubbles.appendChild(el);
-                trail.decor.push({ el, t: now });
+                trail.decor.push({ el, t: now, life: WORM_SLIME_SHINE_LIFE });
             }
 
             // КРУПНЫЙ БЛИК — главный признак глянца. Мягкое пятно
@@ -5552,7 +5557,7 @@ const WormRenderer = {
                     transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${p.deg.toFixed(1)})`
                 });
                 trail.shine.appendChild(el);
-                trail.decor.push({ el, t: now });
+                trail.decor.push({ el, t: now, life: WORM_SLIME_SHINE_LIFE });
             }
 
             // СГУСТКИ И ОТОРВАВШИЕСЯ КАПЛИ. Кляксы того же мокрого цвета:
@@ -5570,7 +5575,7 @@ const WormRenderer = {
                     transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${(p.deg + (rng() * 60 - 30)).toFixed(1)})`
                 });
                 trail.lumps.appendChild(el);
-                trail.decor.push({ el, t: now });
+                trail.decor.push({ el, t: now, life: WORM_SLIME_LUMP_LIFE });
             }
 
             // КАПЛИ КИСЛОТЫ. Единственное место, где в следе есть цвет:
@@ -5585,7 +5590,7 @@ const WormRenderer = {
                     fill: withAlpha(P_.acid[400], WORM_SLIME_DROP_ALPHA)
                 });
                 trail.bubbles.appendChild(el);
-                trail.decor.push({ el, t: now });
+                trail.decor.push({ el, t: now, life: WORM_SLIME_SHINE_LIFE });
             }
 
             // ОТРЕЗОК КОНЕЧЕН. Иначе за один проход по комнате вырастает
@@ -5594,11 +5599,17 @@ const WormRenderer = {
             // Короткие отрезки стыкуются кляксой начала и в общей плёнке
             // неразличимы, зато меняется только последний из них.
             if (trail.points >= WORM_SLIME_SEG_POINTS) {
-                // Отрезок закончился, но НЕ начал сохнуть: пока червь идёт,
-                // весь его след — один мокрый след, и сохнуть он начинает
-                // целиком, когда червь остановился. Отрезки только для
-                // перерисовки, игроку про них знать нечего.
+                // Отрезок кончился — и следующий начинается ЗДЕСЬ ЖЕ, в этой
+                // самой точке, а не там, куда червь уедет к следующему кадру.
+                //
+                // Это не мелочь: между кадрами червь успевает проехать
+                // десятки единиц (на слабом устройстве — тем больше, чем
+                // хуже кадры). Пока новый отрезок начинался «где придётся»,
+                // на каждом стыке оставался разрыв в один кадр хода, и
+                // подсыхающий след рассыпался на куски — ровно то, за что
+                // его и ругали.
                 state.activeSlimeTrail = null;
+                startSlimeTrail(x, y, now || performance.now());
             }
         }
 
@@ -5653,12 +5664,15 @@ const WormRenderer = {
                     setAttr(st.el, 'stroke-dashoffset', String(-q));
                 }
 
-                // Украшения не гаснут, а снимаются, когда край до них дошёл.
-                const decorEdge = now - WORM_SLIME_DECOR_LIFE;
-                while (trail.decor.length && trail.decor[0].t < decorEdge) {
-                    trail.decor.shift().el.remove();
+                // Украшения не гаснут, а снимаются, когда край высыхания до
+                // них дошёл. Сроки у них разные (сгустки — часть плёнки,
+                // блеск уходит раньше), поэтому список просматривается
+                // целиком: он короткий, десяток штук на отрезок.
+                for (let d = trail.decor.length - 1; d >= 0; d--) {
+                    const it = trail.decor[d];
+                    if (now - it.t >= it.life) { it.el.remove(); trail.decor.splice(d, 1); }
+                    else alive = true;
                 }
-                if (trail.decor.length) alive = true;
 
                 if (!alive) {
                     trail.wetG.remove();
@@ -5679,9 +5693,13 @@ const WormRenderer = {
             if (opts.room && (state.slimeScale == null
                 || Math.abs(state.depthScale / state.slimeScale - 1) > WORM_SLIME_DEPTH_STEP)) {
                 // Глубина заметно изменилась — след честно сужается (или
-                // расширяется), и для этого начинается новый отрезок.
+                // расширяется), и для этого начинается новый отрезок. Он
+                // начинается В КОНЦЕ предыдущего, а не в текущей точке:
+                // иначе на стыке остаётся разрыв в один кадр хода.
+                const act = state.activeSlimeTrail;
                 state.slimeScale = state.depthScale;
                 state.activeSlimeTrail = null;
+                if (act) startSlimeTrail(act.last.x, act.last.y, now);
             }
             if (!state.activeSlimeTrail) startSlimeTrail(anchor.x, anchor.y, now);
             else extendSlimeTrail(anchor.x, anchor.y, now);

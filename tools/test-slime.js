@@ -71,6 +71,39 @@ const harness = require('./harness');
      run.charsPerFrame + ' символов на кадр');
   ok(run.segments <= 16, 'отрезков не больше предела', String(run.segments));
 
+  // ---------- СЛЕД НЕПРЕРЫВЕН НА СТЫКАХ ----------
+  // Отрезки нарезаны ради дешёвой перерисовки, но для игрока это одна
+  // дорожка: каждый следующий обязан начинаться ровно там, где кончился
+  // предыдущий. Пока новый начинался «где придётся» (то есть там, куда червь
+  // уехал к следующему кадру), на каждом стыке зиял разрыв в один кадр хода —
+  // и на слабом устройстве, где кадр длинный, подсыхающий след рассыпался на
+  // куски. Прогон идёт с ЗАМЕДЛЕНИЕМ процессора: на быстрой машине разрыв
+  // меньше единицы и незаметен.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 20 });
+  const joints = await page.evaluate(() => new Promise(res => {
+    MainWormHandle.setPosition(70, 660);
+    MainWormHandle.walkTo(330, 800);
+    setTimeout(() => {
+      const segs = Array.from(document.querySelectorAll('.worm-slime-layer .worm-slime-wet'));
+      const pts = segs.map(g => {
+        const d = g.querySelector('path').getAttribute('d') || '';
+        const n = d.match(/-?[\d.]+/g).map(Number);
+        return { start: [n[0], n[1]], end: [n[n.length - 2], n[n.length - 1]] };
+      });
+      const gaps = [];
+      for (let i = 1; i < pts.length; i++) {
+        gaps.push(+Math.hypot(pts[i].start[0] - pts[i - 1].end[0],
+                              pts[i].start[1] - pts[i - 1].end[1]).toFixed(1));
+      }
+      res({ segs: pts.length, gaps });
+    }, 1700);
+  }));
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  ok(joints.segs > 1, 'за проход набралось несколько отрезков', String(joints.segs));
+  ok(joints.gaps.every(g => g <= 1.5), 'на стыках отрезков нет разрывов',
+     joints.gaps.join(', ') || '—');
+
   // ---------- НИ ОДНОГО ПОЛУПРОЗРАЧНОГО КУСКА ----------
   // Главное правило плёнки: прозрачность есть только у ОБЩЕЙ группы, а
   // каждый кусок внутри непрозрачен. Иначе подсыхающие куски снова начнут
