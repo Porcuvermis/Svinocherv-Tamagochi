@@ -64,6 +64,9 @@ const DebugState = {
             <button data-act="reset">Сброс</button>
             <button data-act="fresh">Обновить</button>
             <button data-act="layers">Слои: всё</button>
+            <button data-act="strip-filter">−фильтр</button>
+            <button data-act="strip-clip">−обрезка</button>
+            <button data-act="strip-grad">−градиенты</button>
             <span id="debug-fps">— fps</span>
         `;
         this.panel.addEventListener('click', (e) => {
@@ -144,30 +147,41 @@ const DebugState = {
     // ---------- ЧТО ИМЕННО ДОРОГО В САМОМ ПЕРСОНАЖЕ ----------
     // Три вещи заставляют браузер рисовать слой в ОТДЕЛЬНЫЙ буфер и потому
     // стоят кратно больше обычной заливки: фильтр (у нас это обесцвечивание
-    // истощённого червя — надет на весь слой), обрезка/маска и градиенты
+    // истощённого червя — надет на весь слой), обрезка с маской и градиенты
     // (тридцать пять радиальных).
     //
-    // Снимаются они здесь ПО-ЖИВОМУ и без возврата: это замерочный режим, а
-    // не настройка. Вернуть — закрыть и открыть мини-игру заново.
-    stripWorm(mode) {
-        const roots = document.querySelectorAll('#worm-stage svg, .worm-char-layer svg, .bt-worm-host svg');
+    // Каждая — СВОЯ кнопка, а не шаг общего переключателя: сравнивать надо
+    // «как есть» против одного подозреваемого, а не листать до нужного через
+    // остальные.
+    //
+    // Снятое ВОЗВРАЩАЕТСЯ: исходное значение атрибута кладётся на сам узел, и
+    // повторное нажатие ставит его обратно. Иначе замер — дорога в один
+    // конец, и на каждую проверку надо переоткрывать мини-игру.
+    stripWorm(kind, on) {
+        const attr = { filter: ['filter'], clip: ['clip-path', 'mask'], grad: ['fill', 'stroke'] }[kind];
+        if (!attr) return;
+        const roots = document.querySelectorAll(
+            '#worm-stage svg, .worm-char-layer svg, .bt-worm-host svg, .worm-stage svg');
         roots.forEach(svg => {
-            if (mode === 'червь: без фильтра') {
-                svg.querySelectorAll('[filter]').forEach(n => n.removeAttribute('filter'));
-                svg.removeAttribute('filter');
-            } else if (mode === 'червь: без обрезки') {
-                svg.querySelectorAll('[clip-path]').forEach(n => n.removeAttribute('clip-path'));
-                svg.querySelectorAll('[mask]').forEach(n => n.removeAttribute('mask'));
-            } else if (mode === 'червь: без градиентов') {
-                svg.querySelectorAll('*').forEach(n => {
-                    ['fill', 'stroke'].forEach(a => {
-                        const v = n.getAttribute(a) || '';
-                        if (v.indexOf('url(') === 0) {
-                            n.setAttribute(a, a === 'fill' ? '#b08878' : '#3a2a24');
-                        }
-                    });
+            const nodes = [svg].concat(Array.from(svg.querySelectorAll('*')));
+            nodes.forEach(n => {
+                attr.forEach(a => {
+                    const key = '__dbg_' + a;
+                    if (on) {
+                        const v = n.getAttribute(a);
+                        if (!v) return;
+                        // Градиенты снимаются только там, где они есть:
+                        // ссылкой url(...). Плоские цвета трогать незачем.
+                        if (kind === 'grad' && v.indexOf('url(') !== 0) return;
+                        if (n[key] === undefined) n[key] = v;
+                        if (kind === 'grad') n.setAttribute(a, a === 'fill' ? '#b08878' : '#3a2a24');
+                        else n.removeAttribute(a);
+                    } else if (n[key] !== undefined) {
+                        n.setAttribute(a, n[key]);
+                        delete n[key];
+                    }
                 });
-            }
+            });
         });
     },
 
@@ -219,10 +233,9 @@ const DebugState = {
             // вообще. Замер на телефоне: погас — 60, замер — 24 → чинить
             // надо картинку; замер — 60 → чинить частоту.
             const modes = ['всё', 'без дождя', 'без червя', 'без следа', 'без сцены',
-                           'червь замер', 'червь: без фильтра', 'червь: без обрезки',
-                           'червь: без градиентов', 'только фон'];
+                           'червь замер', 'только фон'];
             const classes = ['', 'dbg-no-rain', 'dbg-no-worm', 'dbg-no-trail', 'dbg-no-scene',
-                             '', '', '', '', 'dbg-no-rain dbg-no-worm dbg-no-trail'];
+                             '', 'dbg-no-rain dbg-no-worm dbg-no-trail'];
             this.layerMode = ((this.layerMode || 0) + 1) % modes.length;
             const root = document.documentElement;
             classes.join(' ').split(' ').filter(Boolean)
@@ -230,9 +243,19 @@ const DebugState = {
             classes[this.layerMode].split(' ').filter(Boolean)
                 .forEach(c => root.classList.add(c));
             this.freezeWorms(modes[this.layerMode] === 'червь замер');
-            this.stripWorm(modes[this.layerMode]);
             const btn = this.panel && this.panel.querySelector('[data-act="layers"]');
             if (btn) btn.textContent = 'Слои: ' + modes[this.layerMode];
+            return;
+        }
+
+        if (act.indexOf('strip-') === 0) {
+            const kind = act.slice(6);
+            if (!this.strip) this.strip = {};
+            this.strip[kind] = !this.strip[kind];
+            this.stripWorm(kind, this.strip[kind]);
+            const btn = this.panel && this.panel.querySelector('[data-act="' + act + '"]');
+            const label = { filter: 'фильтр', clip: 'обрезка', grad: 'градиенты' }[kind];
+            if (btn) btn.textContent = (this.strip[kind] ? '+' : '−') + label;
             return;
         }
 
