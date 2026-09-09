@@ -189,3 +189,22 @@
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.62; }
 }
+
+
+/* ================= ГАШЕНИЕ СЛОЁВ ДЛЯ ЗАМЕРА ================= */
+/* Кнопка «Слои» в debug-панели вешает эти классы на <html>. Нужны они там,
+   где профайлера нет и быть не может — на телефоне: гасим слой, смотрим на
+   счётчик кадров рядом, повторяем. Замер на компьютере отвечает на другой
+   вопрос: движок другой, и расклад по стоимости у него свой. */
+html.dbg-no-rain #lust-game .bt-rain-clip,
+html.dbg-no-rain #lust-game #bt-rain-veil { display: none !important; }
+
+html.dbg-no-worm #lust-game #bt-worm { display: none !important; }
+
+html.dbg-no-trail #lust-game #bt-wash,
+html.dbg-no-trail #lust-game #bt-bubbles { display: none !important; }
+
+html.dbg-no-scene #lust-game #bt-cam,
+html.dbg-no-scene #lust-game #bt-cam-back,
+html.dbg-no-scene #lust-game #bt-cam-under,
+html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }

@@ -63,6 +63,7 @@ const DebugState = {
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
             <button data-act="fresh">Обновить</button>
+            <button data-act="layers">Слои: всё</button>
             <span id="debug-fps">— fps</span>
         `;
         this.panel.addEventListener('click', (e) => {
@@ -155,6 +156,31 @@ const DebugState = {
         //
         // Идёт до проверки состояния: обновляться нужно и тогда, когда игра
         // не поднялась.
+        // ---------- ГАШЕНИЕ СЛОЁВ: ПРОФИЛЬ БЕЗ ПРОФАЙЛЕРА ----------
+        // Единственный способ понять, ЧТО именно жрёт кадры на телефоне.
+        // Devtools к нему не подключить, а замер на компьютере врёт: там
+        // другой движок и другая отрисовка (в ванной размытие стоило семи
+        // кадров из восьми, а дождь — трёх десятых; на айфоне расклад
+        // оказался иным).
+        //
+        // Кнопка гасит слои по одному, рядом живой счётчик кадров: снял
+        // число — нажал ещё раз. Классы вешаются на <html>, правила лежат
+        // рядом с самой сценой (пример — lust.css).
+        if (act === 'layers') {
+            const modes = ['всё', 'без дождя', 'без червя', 'без следа', 'без сцены', 'только фон'];
+            const classes = ['', 'dbg-no-rain', 'dbg-no-worm', 'dbg-no-trail', 'dbg-no-scene',
+                             'dbg-no-rain dbg-no-worm dbg-no-trail'];
+            this.layerMode = ((this.layerMode || 0) + 1) % modes.length;
+            const root = document.documentElement;
+            classes.join(' ').split(' ').filter(Boolean)
+                .forEach(c => root.classList.remove(c));
+            classes[this.layerMode].split(' ').filter(Boolean)
+                .forEach(c => root.classList.add(c));
+            const btn = this.panel && this.panel.querySelector('[data-act="layers"]');
+            if (btn) btn.textContent = 'Слои: ' + modes[this.layerMode];
+            return;
+        }
+
         if (act === 'fresh') {
             const reload = () => {
                 const url = location.pathname + '?fresh=' + Date.now() + location.hash;
