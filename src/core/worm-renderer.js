@@ -1215,42 +1215,63 @@ function buildRibs(ctx, group, plan, halfLen, halfThick) {
     const back = plan.side === 'back';
     const count = Math.max(2, plan.count || 5);
 
-    // ---------- ГДЕ ЗДЕСЬ ПОЗВОНОЧНИК ----------
-    // Живот — угол тела: над ним туловище стоит СТОЛБИКОМ, из него же тело
-    // уходит по полу к хвосту. Позвоночник в этом месте читается по
-    // туловищу, то есть идёт ВЕРТИКАЛЬНО, по спине — а спина у стоящей части
-    // повёрнута к правому краю экрана (у напольной цепи спина сверху, тело
-    // на повороте выгибается наружу).
+    // ---------- ХРЕБЕТ В ЖИВОТЕ ИЗОГНУТ ----------
+    // Живот — это УГОЛ тела: сверху в него приходит стоящее туловище, слева
+    // из него выходит напольная часть к хвосту. Значит и позвоночник здесь
+    // не прямая, а дуга: сверху-справа вниз и дальше влево. Рёбра висят на
+    // ней и разворачиваются вместе с ней — сверху почти горизонтально,
+    // ближе к хвосту почти отвесно. Веер из одной точки и одинаковые
+    // параллельные дуги — обе прошлые версии — читались полосками именно
+    // потому, что не поворачивались за телом.
     //
-    // Поэтому клетка строится в системе «вдоль позвоночника / поперёк него»:
-    //   u — вдоль хребта, от шеи (вверх) к хвосту (вниз) — это локальный Y;
-    //   v — глубина ребра от хребта к брюху — это локальный −X.
-    // Локальные оси живота совпадают с экранными, так что рёбра выходят
-    // поперёк стоящего туловища, как и просили, а не поперёк пола.
-    const spineX = halfLen * 0.52;
-    const uTop = -halfThick * 0.62;
-    const uBottom = halfThick * 0.38;
-    const stepU = (uBottom - uTop) / (count - 1);
+    // Сам хребет НЕ рисуется: он воображаемый, его роль — задать, откуда
+    // растут рёбра. Опорные точки в долях полуосей живота, чтобы клетка
+    // ехала вместе с раздутием живота при кормлении.
+    const S0 = { x: halfLen * 0.5, y: -halfThick * 0.64 };   // верх грудины
+    const SC = { x: halfLen * 0.47, y: -halfThick * 0.14 };
+    const S1 = { x: halfLen * 0.3, y: halfThick * 0.4 };     // низ, хребет уже уходит к хвосту
+    const at = (t) => {
+        const u = 1 - t;
+        return { x: u * u * S0.x + 2 * u * t * SC.x + t * t * S1.x,
+                 y: u * u * S0.y + 2 * u * t * SC.y + t * t * S1.y };
+    };
+    // Касательная к хребту — направление «к хвосту» в этой точке.
+    const dir = (t) => {
+        const dx = 2 * ((1 - t) * (SC.x - S0.x) + t * (S1.x - SC.x));
+        const dy = 2 * ((1 - t) * (SC.y - S0.y) + t * (S1.y - SC.y));
+        const len = Math.hypot(dx, dy) || 1;
+        return { x: dx / len, y: dy / len };
+    };
+
     const n = back ? count - 1 : count;   // дальних на одно меньше: они между ближними
+    const step = 1 / (count - 1);
     const ends = [];
 
     for (let i = 0; i < n; i++) {
-        const t = i / (count - 1);
-        const u0 = uTop + (uBottom - uTop) * t + (back ? stepU * 0.5 : 0);
-        // Средние рёбра длиннее крайних: клетка сужается к шее и к тазу,
-        // иначе это бочка с одинаковыми обручами.
-        const lenK = 0.62 + 0.38 * Math.sin(Math.PI * (t * 0.86 + 0.07));
-        const reach = halfLen * 1.06 * lenK * (back ? 0.74 : 1);
-        const xEnd = spineX - reach;
-        // Наклон к хвосту: ребро идёт вниз-вперёд, и чем ниже оно сидит на
-        // хребте, тем сильнее завал. Радиального веера из одной точки быть
-        // не должно — так рёбра не растут.
-        const yEnd = u0 + halfThick * (0.2 + 0.34 * t);
-        // Опорная точка почти на уровне крепления: от позвоночника ребро
-        // отходит поперёк тела и подворачивает вниз только у брюха.
-        const d = `M ${spineX.toFixed(1)},${u0.toFixed(1)} ` +
-                  `Q ${(spineX - reach * 0.58).toFixed(1)},${(u0 + halfThick * 0.09).toFixed(1)} ` +
-                  `${xEnd.toFixed(1)},${yEnd.toFixed(1)}`;
+        const t = Math.min(1, i * step + (back ? step * 0.5 : 0));
+        const A = at(t);
+        const T = dir(t);
+        // Нормаль «наружу от хребта, вниз по телу»: рёбра обнимают тушу с
+        // брюшной стороны, а не торчат в спину.
+        // Нормаль — в сторону брюха, то есть влево от хребта. Она
+        // доворачивается вместе с хребтом: внизу, где он уже клонится к
+        // хвосту, рёбра тоже уходят вниз.
+        const N = { x: -T.y, y: T.x };
+        // Средние рёбра длиннее крайних — клетка сужается к шее и к тазу.
+        const lenK = 0.7 + 0.3 * Math.sin(Math.PI * (0.1 + 0.8 * t));
+        const reach = halfThick * 1.12 * lenK * (back ? 0.8 : 1);
+        // Завал: ближний ряд уходит концами к хвосту, дальний — почти
+        // отвесно. Разный изгиб двух рядов и есть то, из-за чего клетка
+        // читается бочкой: дуги ближней и дальней стенки идут накрест, как
+        // на реальной грудной клетке в три четверти.
+        const lean = back ? -0.16 : 0.34;
+        const bow = back ? -0.34 : 0.3;
+        const ex = A.x + N.x * reach + T.x * reach * lean;
+        const ey = A.y + N.y * reach + T.y * reach * lean;
+        const cx = A.x + N.x * reach * 0.55 + T.x * reach * bow;
+        const cy = A.y + N.y * reach * 0.55 + T.y * reach * bow;
+        const d = `M ${A.x.toFixed(1)},${A.y.toFixed(1)} ` +
+                  `Q ${cx.toFixed(1)},${cy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
         if (back) {
             group.appendChild(svgEl('path', {
                 d, fill: 'none', stroke: mixColor(bone, GRIME_SHADOW, 0.5),
@@ -1270,7 +1291,7 @@ function buildRibs(ctx, group, plan, halfLen, halfThick) {
                 'stroke-width': (SW.structure * 0.85).toFixed(2),
                 'stroke-linecap': 'round', opacity: 0.44
             }));
-            ends.push([xEnd, yEnd]);
+            ends.push([ex, ey]);
         }
     }
 
@@ -1281,8 +1302,8 @@ function buildRibs(ctx, group, plan, halfLen, halfThick) {
         let d = `M ${ends[0][0].toFixed(1)},${ends[0][1].toFixed(1)}`;
         for (let i = 1; i < ends.length; i++) {
             const a = ends[i - 1], b = ends[i];
-            d += ` Q ${((a[0] + b[0]) / 2 - halfLen * 0.05).toFixed(1)},` +
-                 `${((a[1] + b[1]) / 2).toFixed(1)} ` +
+            d += ` Q ${((a[0] + b[0]) / 2 + halfLen * 0.04).toFixed(1)},` +
+                 `${((a[1] + b[1]) / 2 + halfThick * 0.04).toFixed(1)} ` +
                  `${b[0].toFixed(1)},${b[1].toFixed(1)}`;
         }
         group.appendChild(svgEl('path', {
@@ -1577,24 +1598,43 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
     // (б) заметно изогнута по кривизне тела, (в) сопровождается светлым
     // ребром с одной стороны. Прямая линия через весь сегмент читается как
     // полоска краски на банке — ровно это и было первой ошибкой.
+    //
+    // И ещё одно, из-за чего пришлось переделывать второй раз: бороздка,
+    // проведённая через ВСЮ ширину части, читается не как вмятина на коже, а
+    // как ребро под кожей. На стоящих сегментах эти линии ложились поперёк
+    // тела ровными полосами — ровно так же, как рёбра в животе, только без
+    // всякого смысла. Настоящая вмятина на округлом теле видна там, где
+    // поверхность УХОДИТ от зрителя, то есть у краёв, а в середине, где она
+    // повёрнута к нам плашмя, её почти нет. Поэтому от каждой бороздки
+    // остались только два коротких конца у силуэта, а середина выброшена.
     const rings = features.rings === false ? 0 : (coat.rings != null ? coat.rings : 0.5);
     if (rings > 0.01) {
         const count = 2 + Math.floor(rng() * 2);
         for (let i = 0; i < count; i++) {
             const t = (i + 1) / (count + 1);
             const x = (t * 2 - 1) * halfLen * 0.66 + (rng() - 0.5) * halfLen * 0.1;
-            const h = halfThick * (0.5 + rng() * 0.14);
+            const h = halfThick * (0.62 + rng() * 0.14);
             const curve = halfLen * 0.22 * (x > 0 ? 1 : -1);
-            const d = `M ${x.toFixed(1)},${(-h).toFixed(1)} Q ${(x + curve).toFixed(1)},0 ${x.toFixed(1)},${h.toFixed(1)}`;
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
-                opacity: (0.16 * rings).toFixed(3), 'stroke-linecap': 'round'
-            }));
-            group.appendChild(svgEl('path', {
-                d, fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': SW.hairline,
-                opacity: (0.1 * rings).toFixed(3), 'stroke-linecap': 'round',
-                transform: 'translate(1.8,0)'
-            }));
+            // Та же дуга, что и раньше, но берутся только её концы: точка на
+            // квадратичной кривой считается напрямую, без промера пути.
+            const P0 = { x, y: -h }, C = { x: x + curve, y: 0 }, P1 = { x, y: h };
+            const pt = (u) => {
+                const v = 1 - u;
+                return { x: v * v * P0.x + 2 * v * u * C.x + u * u * P1.x,
+                         y: v * v * P0.y + 2 * v * u * C.y + u * u * P1.y };
+            };
+            [[0, 0.3], [0.7, 1]].forEach(([a, b]) => {
+                const s0 = pt(a), s1 = pt(b), sm = pt((a + b) / 2);
+                // Опорная точка квадратичной дуги через три точки: середина
+                // кривой лежит ровно посередине между концами и опорой.
+                const cq = { x: 2 * sm.x - (s0.x + s1.x) / 2, y: 2 * sm.y - (s0.y + s1.y) / 2 };
+                const d = `M ${s0.x.toFixed(1)},${s0.y.toFixed(1)} ` +
+                          `Q ${cq.x.toFixed(1)},${cq.y.toFixed(1)} ${s1.x.toFixed(1)},${s1.y.toFixed(1)}`;
+                group.appendChild(svgEl('path', {
+                    d, fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
+                    opacity: (0.2 * rings).toFixed(3), 'stroke-linecap': 'round'
+                }));
+            });
             empty = false;
         }
     }
@@ -1609,12 +1649,24 @@ function buildCoatLayer(ctx, partName, halfLen, halfThick, features) {
             cx: 0, cy: 0, rx: w.toFixed(1), ry: (halfThick * 0.99).toFixed(1),
             fill: GRIME_HIGHLIGHT, opacity: (0.14 * strength).toFixed(3)
         }));
+        // Края пояска — по тому же правилу, что и бороздки выше: только
+        // концы у силуэта. Целиком проведённые, они давали на стоящем
+        // сегменте две ровные полосы поперёк тела — вторую пару «рёбер»
+        // там, где рёбер быть не должно.
         [-w, w].forEach(edge => {
-            group.appendChild(svgEl('path', {
-                d: `M ${edge.toFixed(1)},${(-halfThick * 0.92).toFixed(1)} Q ${(edge * 1.12).toFixed(1)},0 ${edge.toFixed(1)},${(halfThick * 0.92).toFixed(1)}`,
-                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
-                opacity: (0.3 * strength).toFixed(3), 'stroke-linecap': 'round'
-            }));
+            const H = halfThick * 0.92;
+            [[-1, -0.42], [0.42, 1]].forEach(([a, b]) => {
+                const ya = H * a, yb = H * b;
+                // Опора берётся из той же дуги: край пояска слегка выпуклый.
+                const bulge = edge * 0.06;
+                group.appendChild(svgEl('path', {
+                    d: `M ${edge.toFixed(1)},${ya.toFixed(1)} ` +
+                       `Q ${(edge + bulge).toFixed(1)},${((ya + yb) / 2).toFixed(1)} ` +
+                       `${edge.toFixed(1)},${yb.toFixed(1)}`,
+                    fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
+                    opacity: (0.32 * strength).toFixed(3), 'stroke-linecap': 'round'
+                }));
+            });
         });
         empty = false;
     }
