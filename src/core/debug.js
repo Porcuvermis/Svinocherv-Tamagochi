@@ -141,6 +141,21 @@ const DebugState = {
         if (this.fpsEl) this.fpsEl.textContent = '— fps';
     },
 
+    // Остановить всех живых червей на экране. Список знает про мини-игры
+    // поимённо, и для debug-инструмента это нормально: он и существует, чтобы
+    // лезть туда, куда игре лезть незачем. Незнакомая игра просто не найдётся.
+    freezeWorms(stop) {
+        const handles = [
+            window.MainWormHandle,
+            (typeof LustMinigame !== 'undefined') ? LustMinigame.wormHandle : null,
+            (typeof PrideMinigame !== 'undefined') ? PrideMinigame.wormHandle : null,
+            (typeof GluttonyMinigame !== 'undefined') ? GluttonyMinigame.wormHandle : null
+        ];
+        handles.forEach(h => {
+            if (h && typeof h.setPaused === 'function') h.setPaused(!!stop);
+        });
+    },
+
     run(act) {
         // ---------- ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ СБОРКИ ----------
         // Нужно ровно там, где нет ни адресной строки, ни devtools: внутри
@@ -167,15 +182,23 @@ const DebugState = {
         // число — нажал ещё раз. Классы вешаются на <html>, правила лежат
         // рядом с самой сценой (пример — lust.css).
         if (act === 'layers') {
-            const modes = ['всё', 'без дождя', 'без червя', 'без следа', 'без сцены', 'только фон'];
+            // «Червь замер» — не гашение, а ОСТАНОВКА: персонаж на месте и
+            // виден, но кадры по нему не идут. Этим режимом разделяются две
+            // совершенно разные беды, которые снаружи выглядят одинаково:
+            // дорого ПЕРЕСЧИТЫВАТЬ его каждый кадр или дорого РИСОВАТЬ его
+            // вообще. Замер на телефоне: погас — 60, замер — 24 → чинить
+            // надо картинку; замер — 60 → чинить частоту.
+            const modes = ['всё', 'без дождя', 'без червя', 'без следа', 'без сцены',
+                           'червь замер', 'только фон'];
             const classes = ['', 'dbg-no-rain', 'dbg-no-worm', 'dbg-no-trail', 'dbg-no-scene',
-                             'dbg-no-rain dbg-no-worm dbg-no-trail'];
+                             '', 'dbg-no-rain dbg-no-worm dbg-no-trail'];
             this.layerMode = ((this.layerMode || 0) + 1) % modes.length;
             const root = document.documentElement;
             classes.join(' ').split(' ').filter(Boolean)
                 .forEach(c => root.classList.remove(c));
             classes[this.layerMode].split(' ').filter(Boolean)
                 .forEach(c => root.classList.add(c));
+            this.freezeWorms(modes[this.layerMode] === 'червь замер');
             const btn = this.panel && this.panel.querySelector('[data-act="layers"]');
             if (btn) btn.textContent = 'Слои: ' + modes[this.layerMode];
             return;
