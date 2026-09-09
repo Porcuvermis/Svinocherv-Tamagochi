@@ -848,6 +848,69 @@ function mixColor(css, targetCss, t) {
     return `rgb(${nr},${ng},${nb})`;
 }
 
+// ---------- ОБЕСЦВЕЧИВАНИЕ ИСТОЩЁННОГО: ЦВЕТ, А НЕ ФИЛЬТР ----------
+// Раньше здесь стоял родной SVG-фильтр (saturate + feComponentTransfer) на
+// весь слой персонажа. Работал он везде, но стоил ДВУХ ТРЕТЕЙ КАДРОВ: любая
+// правка внутри отфильтрованной группы заставляет браузер перерисовать её
+// в отдельный буфер и прогнать через конвейер целиком — а червь меняется
+// каждый кадр. Замер на айфоне (кнопка «−фильтр» в debug-панели): 24 кадра
+// с фильтром против 60 без него, при одинаковой картинке.
+//
+// Поэтому обесцвечивание теперь ЗАПЕКАЕТСЯ В САМИ ЦВЕТА: те же две
+// операции считаются один раз на ступень истощения и записываются в fill,
+// stroke и stop-color. Плата — разовая пробежка по узлам на смену ступени,
+// а не пересчёт всей группы в каждом кадре.
+//
+// Математика ровно та же, что была в фильтре, поэтому картинка не поехала:
+// матрица saturate(s) из спецификации SVG, следом линейная яркость
+// slope = 0.72 + 0.28·s. Считается в sRGB — фильтр стоял с
+// color-interpolation-filters="sRGB", то есть в тех же числах.
+const witherColorCache = Object.create(null);
+function witherColor(css, s) {
+    if (!css || css === 'none' || css.indexOf('url(') === 0) return null;
+    const key = css + '|' + s;
+    const hit = witherColorCache[key];
+    if (hit !== undefined) return hit;
+
+    let r, g, b, a = null;
+    const hex = /^#([0-9a-f]{3,8})$/i.exec(css.trim());
+    if (hex && (hex[1].length === 3 || hex[1].length === 6)) {
+        const h = hex[1].length === 3
+            ? hex[1].split('').map(c => c + c).join('') : hex[1];
+        r = parseInt(h.slice(0, 2), 16);
+        g = parseInt(h.slice(2, 4), 16);
+        b = parseInt(h.slice(4, 6), 16);
+    } else {
+        const m = /^rgba?\(([^)]+)\)$/i.exec(css.trim());
+        if (m) {
+            const p = m[1].split(',').map(v => parseFloat(v));
+            r = p[0]; g = p[1]; b = p[2];
+            if (p.length > 3) a = p[3];
+        } else {
+            // Именованные и hsl — через браузер. Дорого, но их единицы.
+            const c = parseCssColor(css);
+            r = c.r; g = c.g; b = c.b;
+        }
+    }
+    if (!(r >= 0)) { witherColorCache[key] = null; return null; }
+
+    const k = 0.72 + s * 0.28;
+    const lr = 0.213, lg = 0.715, lb = 0.072;
+    const ch = (cr, cg, cb) => Math.max(0, Math.min(255, Math.round(k * (
+        (lr + (cr - lr) * s) * r +
+        (lg + (cg - lg) * s) * g +
+        (lb + (cb - lb) * s) * b))));
+    const nr = ch(1, 0, 0), ng = ch(0, 1, 0), nb = ch(0, 0, 1);
+    const out = a == null ? `rgb(${nr},${ng},${nb})` : `rgba(${nr},${ng},${nb},${a})`;
+    witherColorCache[key] = out;
+    return out;
+}
+
+// Атрибуты, в которых у персонажа вообще лежит цвет. Проверено пробежкой по
+// собранному дереву: ни одного цвета в style или в css-классах нет — иначе
+// запекание бы их не достало.
+const WITHER_COLOR_ATTRS = ['fill', 'stroke', 'stop-color'];
+
 function withAlpha(css, alpha) {
     const { r, g, b } = parseCssColor(css);
     return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${alpha})`;
@@ -4239,39 +4302,10 @@ const WormRenderer = {
         // «отстанет» от пола на полкадра при быстром свайпе. Заодно это
         // единственное место, где вообще существует камера: вся остальная
         // математика живёт в координатах комнаты и про неё не знает.
-        // ---------- ФИЛЬТР ИСТОЩЕНИЯ ----------
-        // Обесцвечивание сделано РОДНЫМ SVG-фильтром, а не CSS-свойством
-        // filter, и это не вкусовщина.
-        //
-        // Сначала стоял CSS-фильтр на слое персонажа. В Chromium он работал, а
-        // на айфоне — нет: WebKit не применяет CSS filter к внутренним
-        // элементам SVG (к <g>), только к самому корню или к HTML-элементу.
-        // Выглядело это так, что червь при нуле шкал и даже мёртвый оставался
-        // розовым, хотя поза менялась правильно — то есть трансформации
-        // доезжали, а цвет нет. Родной <filter> в этом месте работает везде.
-        //
-        // Яркость отдельной ступенью: feColorMatrix умеет только насыщенность,
-        // а обескровленный червь должен ещё и темнеть.
-        const witherFilterId = `worm-wither-${instanceId}`;
-        const witherDefs = svgEl('defs');
-        const witherFilter = svgEl('filter', {
-            id: witherFilterId,
-            // Фильтр не должен обрезать тело: по умолчанию область всего 110%
-            // от габарита, а у червя за него выходят и тень, и след слизи.
-            x: '-25%', y: '-25%', width: '150%', height: '150%',
-            'color-interpolation-filters': 'sRGB'
-        });
-        const witherSat = svgEl('feColorMatrix', { type: 'saturate', values: '1' });
-        const witherBright = svgEl('feComponentTransfer');
-        const witherFuncs = ['feFuncR', 'feFuncG', 'feFuncB'].map(tag => {
-            const f = svgEl(tag, { type: 'linear', slope: '1', intercept: '0' });
-            witherBright.appendChild(f);
-            return f;
-        });
-        witherFilter.appendChild(witherSat);
-        witherFilter.appendChild(witherBright);
-        witherDefs.appendChild(witherFilter);
-        svg.appendChild(witherDefs);
+        // ---------- ИСТОЩЕНИЕ ----------
+        // Фильтра здесь больше нет: обесцвечивание запекается в цвета узлов
+        // (witherColor + bakeWither ниже). Почему так — в комментарии у
+        // witherColor: фильтр на слое персонажа стоил двух третей кадров.
 
         const worldLayer = svgEl('g', { class: 'worm-world-layer' });
         if (opts.room) worldLayer.appendChild(roomLayer);
@@ -4297,11 +4331,13 @@ const WormRenderer = {
             // направления на цель: именно расхождение между ними и даёт дугу
             // при смене цели на ходу.
             heading: null,
-            // Истощение: 1 = здоров (фильтр снят), меньше — обесцвечен.
-            // Показанное значение догоняет цель за кадры, поэтому смерть не
+            // Истощение: 1 = здоров, меньше — обесцвечен. Показанное
+            // значение догоняет цель за кадры, поэтому смерть не
             // обесцвечивает червя рывком.
             witherTarget: 1,
             witherShown: 1,
+            witherBaked: null,   // какая ступень запечена в цвета
+            witherNodes: null,   // цветные узлы тела, собираются на сборке
             // Камера: на сколько единиц комнаты окно сдвинуто вправо.
             camX: 0,
             camManualUntil: 0,   // до этого момента слежение молчит
@@ -4710,29 +4746,62 @@ const WormRenderer = {
         svg.addEventListener('pointerup', onStageUp);
         svg.addEventListener('pointercancel', onStageUp);
 
-        // Записать текущее истощение в фильтр. Здоровому фильтр СНИМАЕТСЯ
-        // целиком, а не ставится нейтральным: лишний проход фильтра стоит
-        // кадров на телефоне, а видимой разницы не даёт.
-        function applyWither() {
+        // ---------- ЗАПЕКАНИЕ ИСТОЩЕНИЯ В ЦВЕТА ----------
+        // Список цветных узлов собирается ОДИН РАЗ на сборку тела, а не
+        // ищется заново на каждую ступень: пробежка по семи сотням узлов
+        // ради двух десятков ступеней — ровно та мелочь, из которой потом
+        // складывается «почему-то тормозит».
+        //
+        // Ступень грубая (1/16) намеренно. Показанное истощение подтягивается
+        // к цели за кадры, и на каждый такой кадр перекрашивать полтысячи
+        // атрибутов незачем: переход идёт секунду-две, шестнадцати ступеней
+        // на нём глазом не различить, а работы в двадцать раз меньше.
+        const WITHER_STEP = 16;
+
+        function collectWitherNodes() {
+            const out = [];
+            const root = state.built && state.built.root;
+            if (!root) { state.witherNodes = out; return; }
+            const nodes = root.querySelectorAll('*');
+            for (let i = 0; i < nodes.length; i++) {
+                const n = nodes[i];
+                for (let k = 0; k < WITHER_COLOR_ATTRS.length; k++) {
+                    const a = WITHER_COLOR_ATTRS[k];
+                    const v = n.getAttribute(a);
+                    // url(...) и none пропускаем сразу: у первого цвет лежит в
+                    // стопах градиента (они в этом же дереве и попадут сюда
+                    // сами), у второго цвета нет вовсе.
+                    if (!v || v === 'none' || v.indexOf('url(') === 0) continue;
+                    out.push({ n, a, base: v });
+                }
+            }
+            state.witherNodes = out;
+        }
+
+        // Цвет для узла, который рождается ПОСЛЕ сборки тела и потому в
+        // списке запекания не лежит: комок еды в кишке, жидкость во рту.
+        // Раньше их красил тот же фильтр, что и всё тело, — теперь надо
+        // руками, иначе у обесцвеченного червя внутренности останутся
+        // сочными.
+        function witherPaint(css) {
+            const s = state.witherBaked;
+            if (css == null || s == null || s >= 0.999) return css;
+            return witherColor(css, s) || css;
+        }
+
+        // Здоровому червю (s = 1) цвета возвращаются исходные: witherColor при
+        // единице даёт тот же оттенок, только записанный как rgb(...).
+        function bakeWither(force) {
             const s = Math.max(0, Math.min(1, state.witherShown));
-            const off = s >= 0.995;
-            setAttr(witherSat, 'values', s.toFixed(3));
-            // Вместе с цветом уходит и яркость: обескровленный червь темнеет.
-            witherFuncs.forEach(f => setAttr(f, 'slope', (0.72 + s * 0.28).toFixed(3)));
-            // Фильтр надевается ТОЛЬКО на тело. Слизь под ним раньше тоже
-            // была — и обесцвечивалась вместе с червём, хотя лужа на полу
-            // про его здоровье ничего не знает. Мокрое пятно вообще не
-            // красится: оно забирает цвет у пола (см. mix-blend-mode в
-            // startSlimeTrail), а фильтр поверх этого ломал бы наложение.
-            if (off) {
-                // Снятие атрибута идёт МИМО setAttr, поэтому его кэш здесь
-                // чистится руками: иначе следующая попытка поставить то же
-                // самое значение будет пропущена как «уже стоит», и фильтр
-                // не вернётся.
-                charLayer.removeAttribute('filter');
-                if (charLayer.__wattr) delete charLayer.__wattr.filter;
-            } else {
-                setAttr(charLayer, 'filter', `url(#${witherFilterId})`);
+            const step = Math.round(s * WITHER_STEP) / WITHER_STEP;
+            if (!force && state.witherBaked === step) return;
+            state.witherBaked = step;
+            if (!state.witherNodes) collectWitherNodes();
+            const list = state.witherNodes;
+            for (let i = 0; i < list.length; i++) {
+                const it = list[i];
+                const out = witherColor(it.base, step);
+                if (out) setAttr(it.n, it.a, out);
             }
         }
 
@@ -4747,6 +4816,12 @@ const WormRenderer = {
             state.bodyBox = null;
             state.wanderD = null;
             state.geomDirty = true;
+            // Тело собрано заново — оно РОЗОВОЕ. Список цветных узлов
+            // недействителен, истощение запекается сразу: иначе больной червь
+            // на кадр-другой становился бы здоровым при любой смене
+            // косметики, отметин или модели.
+            state.witherNodes = null;
+            bakeWither(true);
         }
 
         syncViewportSize();
@@ -4963,7 +5038,7 @@ const WormRenderer = {
         // и след мёртвого червя оставался на полу навсегда. След — это не
         // часть тела, а то, что тело оставило: он подсыхает сам по себе, что
         // бы ни случилось с червём, и по той же причине не красится фильтром
-        // истощения (см. applyWither).
+        // истощения (см. bakeWither).
         function fadeSlimeTrails(now) {
             // Червь перестал ходить (или умер) — незаконченный отрезок надо
             // закрыть, иначе он не начнёт сохнуть.
@@ -5332,14 +5407,15 @@ const WormRenderer = {
             // отставать от него на шаг.
             if (opts.room) followCam(dtSec, now);
 
-            // Истощение доводится покадрово. Раньше плавность давал CSS
-            // transition, но у SVG-фильтра его нет — значения атрибутов
-            // браузер не анимирует. Зато шаг здесь и не нужен часто: пока
-            // показанное совпало с целью, не делается ничего.
+            // Истощение доводится покадрово: атрибуты браузер не
+            // анимирует, а плавность перехода нужна — цвет червя не должен
+            // прыгать. Работы это почти не стоит: пока показанное совпало с
+            // целью, не делается ничего, а внутри bakeWither перекраска идёт
+            // только на смену ступени (1/16), а не на каждый кадр.
             if (Math.abs(state.witherShown - state.witherTarget) > 0.002) {
                 state.witherShown += (state.witherTarget - state.witherShown) *
                                      (1 - Math.pow(WORM_WITHER_BASE, dtSec));
-                applyWither();
+                bakeWither();
             }
 
             // ---------- ДОВОРОТ ХВОСТА ЗА ДВИЖЕНИЕМ ----------
@@ -5728,7 +5804,8 @@ const WormRenderer = {
                     const bend = mouthBendFromCurve(curve);
                     const gap = mouthBuiltRef.MAX_GAP * clamp01(openness);
                     updateMouthGeometry(mouthBuiltRef, bend, gap,
-                        state.livePose.mouthFill, state.livePose.mouthFillColor);
+                        state.livePose.mouthFill,
+                        witherPaint(state.livePose.mouthFillColor));
                 }
 
                 // ---------- МИМИКА ГОЛОВЫ ----------
@@ -6142,7 +6219,8 @@ const WormRenderer = {
                         setAttr(node, 'cy', 0);
                         setAttr(node, 'rx', (size * 1.35).toFixed(1));
                         setAttr(node, 'ry', size.toFixed(1));
-                        setAttr(node, 'fill', b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35));
+                        setAttr(node, 'fill', witherPaint(
+                            b.color || mixColor(BILE[400], GRIME_SHADOW, 0.35)));
                         setAttr(node, 'opacity', b.opacity != null ? b.opacity : 0.9);
                         setAttr(node, 'transform',
                             `translate(${pt.x.toFixed(1)},${pt.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
