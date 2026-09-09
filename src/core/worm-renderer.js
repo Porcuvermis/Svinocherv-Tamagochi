@@ -752,15 +752,37 @@ const WORM_SLIME_EDGE = [[1.2, 0.18], [1.1, 0.45]];
 // Всё, что сыплется по ходу — раз в N шагов следа (шаг = MIN_STEP единиц).
 const WORM_SLIME_BUBBLE_EVERY = 7;   // пузырьки
 const WORM_SLIME_SHINE_EVERY = 4;    // крупные блики
-const WORM_SLIME_LUMP_EVERY = 11;    // сгустки и оторвавшиеся капли
+const WORM_SLIME_LUMP_EVERY = 5;     // сгустки и оторвавшиеся капли
 const WORM_SLIME_DROP_EVERY = 11;    // капли кислоты
 const WORM_SLIME_DROP_R = 2.1;
 const WORM_SLIME_DROP_ALPHA = 0.42;
 const WORM_SLIME_SHINE_ALPHA = 0.5;
 const WORM_SLIME_BUBBLE_ALPHA = 0.45;
-const WORM_SLIME_FADE_MS = 7500;
-// Такт высыхания: как часто пересчитываются подсыхающие отрезки.
-const WORM_SLIME_FADE_TICK = 120;
+// ---------- ВЫСЫХАНИЕ: СЛЕД НЕ ГАСНЕТ, А УБЫВАЕТ ----------
+// Прозрачности при высыхании больше НЕТ ни у одного куска следа, и это не
+// экономия, а единственный способ убрать то, ради чего вся плёнка и была
+// сведена в одну группу. Пока подсыхающий отрезок гас прозрачностью, он
+// снова становился полупрозрачным слоем поверх соседей: в местах, где след
+// пересекал сам себя, оттенки перемножались, и на полу опять проступали
+// отдельные куски.
+//
+// Поэтому слизь УБЫВАЕТ С ХВОСТА: то, что нарисовано раньше, стирается
+// раньше, а стирается оно обрезкой самого штриха (stroke-dasharray), а не
+// прозрачностью. Плёнка в каждой точке либо есть целиком, либо её нет —
+// значит перекрытия одинаковы всегда, и швов между отрезками не видно
+// никогда.
+//
+// «Сужение» при этом бесплатное: широкие ступени края стираются РАНЬШЕ
+// узкого тела, и хвост следа сам сходит на нет. Числа ниже — это возраст
+// слизи (мс), в котором пропадает соответствующий слой. Полная жизнь — две
+// секунды: секунду след лежит целым, вторую убывает.
+const WORM_SLIME_LIFE_MS = 2000;        // возраст, в котором пропадает тело плёнки
+const WORM_SLIME_EDGE_LIFE = [1000, 1400]; // ступени края уходят первыми
+const WORM_SLIME_BULGE_LIFE = 1250;     // наплывы
+const WORM_SLIME_DECOR_LIFE = 1300;     // блики, пузырьки, комки, капли
+// Такт высыхания: как часто пересчитывается обрезка. Чаще не нужно — за
+// семьдесят миллисекунд край сдвигается на пару единиц.
+const WORM_SLIME_FADE_TICK = 70;
 // Длина одного отрезка следа в опорных точках и сколько отрезков живёт разом.
 // Оба числа — про цену, а не про вид: короткий путь перерисовывается быстро,
 // а предел отрезков не даёт беготне по комнате копить их без счёта.
@@ -4734,6 +4756,10 @@ const WormRenderer = {
             headYawAuto: true,
             activeSlimeTrail: null,
             slimeTrails: [],
+            // Ширина следа держится здесь, а не берётся отрезком своя: иначе
+            // на каждом стыке отрезков по следу шла бы ступенька.
+            slimeScale: null,
+            slimeFadedAt: 0,
             // "Горячий" канал для непрерывных обновлений от мини-игр — не
             // трогает baseModel/override, не вызывает пересборку SVG.
             livePose: {
@@ -5350,48 +5376,64 @@ const WormRenderer = {
         const slimeShine = ensureSoftGradient(slimeCtx, `worm-slime-shine-${instanceId}`,
                                               SPEC, WORM_SLIME_SHINE_ALPHA);
 
-        function startSlimeTrail(x, y) {
+        function startSlimeTrail(x, y, now) {
             // Наложения и изоляции здесь БОЛЬШЕ НЕТ: они лежат на двух общих
             // группах слоя (см. slimeWetAll/slimeGlowAll). Отрезок — просто
             // непрозрачные куски внутри них.
             const wetG = svgEl('g', { class: 'worm-slime-wet' });
             const glowG = svgEl('g', { class: 'worm-slime-gloss' });
             // След лежит НА ПОЛУ, значит подчиняется той же перспективе, что
-            // и всё остальное: у дальней стены он должен быть уже.
-            const trailScale = opts.room ? state.depthScale : 1;
+            // и всё остальное: у дальней стены он должен быть уже. Но ширина
+            // держится в состоянии, а не берётся у каждого отрезка своя:
+            // отрезки нарезаются часто (это про цену перерисовки), и если
+            // каждый брал бы текущую глубину, по следу пошли бы ступеньки
+            // ширины на каждом стыке.
+            const trailScale = state.slimeScale != null ? state.slimeScale
+                                                        : (opts.room ? state.depthScale : 1);
             const w = WORM_SLIME_WIDTH * trailScale;
             const rng = mulberry32(hashStringSeed(`slime-${instanceId}-${state.slimeTrails.length}-${Math.round(x)}-${Math.round(y)}`));
             const start = `M ${Math.round(x)},${Math.round(y)}`;
-            const bulgeDash = `${(w * 1.1).toFixed(1)} ${(w * 1.9).toFixed(1)} `
-                            + `${(w * 0.5).toFixed(1)} ${(w * 2.6).toFixed(1)}`;
             const strokes = [];
-            const stroke = (color, width, dash) => {
+            // life — возраст, в котором слой пропадает. Разный у слоёв, и
+            // именно из этой разницы получается сужение хвоста: широкие
+            // ступени края стираются раньше узкого тела.
+            // Каждый слой плёнки — сплошной штрих с круглыми торцами и с
+            // узором, который задаётся ОДИН раз и заведомо длиннее любого
+            // отрезка. Высыхание двигает только смещение узора — одно число
+            // за такт на слой.
+            //
+            // Пунктирного штриха «наплывов» здесь больше нет. Обрезать его
+            // высыханием можно было только через нулевой штрих в узоре, а
+            // нулевой штрих с круглым торцом рисуется ТОЧКОЙ; с плоским
+            // торцом капли превращались в прямоугольные зубцы по краю следа.
+            // Неровный силуэт даёт то же, что и раньше давало половину
+            // работы, — сгустки у кромки (см. ниже), просто их стало чаще.
+            const stroke = (color, width, life) => {
                 const el = svgEl('path', {
                     d: start, fill: 'none', stroke: color,
                     'stroke-width': (w * width).toFixed(2),
-                    'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+                    'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+                    'stroke-dasharray': '100000'
                 });
-                if (dash) setAttr(el, 'stroke-dasharray', dash);
                 wetG.appendChild(el);
-                // Базовая ширина запоминается: при высыхании плёнка УСЫХАЕТ,
-                // а не просто гаснет.
-                strokes.push({ el, w: w * width });
+                strokes.push({ el, life, cut: -1 });
                 return el;
             };
             // Снизу вверх: растушёвка края, тело плёнки, наплывы.
-            WORM_SLIME_EDGE.forEach(([k, a]) => stroke(withAlpha(SLIME_WET, a), k));
-            stroke(SLIME_WET, 1);
-            stroke(SLIME_WET, WORM_SLIME_BULGE, bulgeDash);
+            WORM_SLIME_EDGE.forEach(([k, a], i) =>
+                stroke(withAlpha(SLIME_WET, a), k, WORM_SLIME_EDGE_LIFE[i] || WORM_SLIME_EDGE_LIFE[0]));
+            stroke(SLIME_WET, 1, WORM_SLIME_LIFE_MS);
             // Комки, капли и начальная клякса — своим слоем: при высыхании
             // они снимаются раньше плёнки, и её усыхание видно чисто.
             const lumps = svgEl('g', { class: 'worm-slime-lumps' });
             // Начальная клякса: след начинается лужицей, а не срезом. Она же
             // закрывает стык с предыдущим отрезком.
-            lumps.appendChild(svgEl('ellipse', {
+            const blob = svgEl('ellipse', {
                 cx: 0, cy: 0, rx: (w * 0.5).toFixed(2), ry: (w * 0.36).toFixed(2),
                 fill: SLIME_WET,
                 transform: `translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(rng() * 180).toFixed(1)})`
-            }));
+            });
+            lumps.appendChild(blob);
             wetG.appendChild(lumps);
             const shine = svgEl('g', { class: 'worm-slime-shine' });
             const bubbles = svgEl('g', { class: 'worm-slime-bubbles' });
@@ -5406,16 +5448,26 @@ const WormRenderer = {
                 // последнее звено. Пересборка была O(длины) на каждый шаг, и
                 // чем длиннее след, тем дороже обходился каждый шаг червя.
                 prefix: start, last: { x, y },
-                scale: trailScale, points: 1, finishedAt: null
+                // Возраст слизи считается ПО ДЛИНЕ: для каждой опорной точки
+                // помнится, когда её положили и сколько пути к ней набежало.
+                // Шестнадцать чисел на отрезок — по ним обрезка находит, где
+                // сейчас проходит край высыхания.
+                times: [now], lens: [0], len: 0,
+                // Украшения снимаются поштучно, когда край до них дошёл.
+                decor: [],
+                scale: trailScale, points: 1
             });
             state.activeSlimeTrail = state.slimeTrails[state.slimeTrails.length - 1];
-            // Больше заданного числа отрезков на полу не живёт: старшие
-            // начинают сохнуть досрочно. Иначе беготня по комнате копит их
-            // без предела, и телефон это чувствует.
-            const extra = state.slimeTrails.length - WORM_SLIME_MAX_SEGS;
-            for (let i = 0; i < extra; i++) {
-                const t = state.slimeTrails[i];
-                if (t.finishedAt == null && t !== state.activeSlimeTrail) t.finishedAt = performance.now();
+            state.activeSlimeTrail.decor.push({ el: blob, t: now });
+            // Больше заданного числа отрезков на полу не живёт. При двух
+            // секундах жизни это страховка, а не рабочий режим: сюда доходит
+            // только тот случай, когда кадры провалились и высыхание не
+            // успевало считаться.
+            while (state.slimeTrails.length > WORM_SLIME_MAX_SEGS) {
+                const t = state.slimeTrails.shift();
+                if (t === state.activeSlimeTrail) state.activeSlimeTrail = null;
+                t.wetG.remove();
+                t.glowG.remove();
             }
         }
 
@@ -5450,6 +5502,12 @@ const WormRenderer = {
             const mx = Math.round((last.x + x) / 2), my = Math.round((last.y + y) / 2);
             trail.prefix += ` Q ${Math.round(last.x)},${Math.round(last.y)} ${mx},${my}`;
             const d = trail.prefix + ` L ${Math.round(x)},${Math.round(y)}`;
+            // Возраст слизи считается по длине пути: для новой точки
+            // запоминаем, сколько его набежало и когда. По этим двум спискам
+            // высыхание находит, где сейчас край.
+            trail.len += Math.hypot(x - last.x, y - last.y);
+            trail.times.push(now || performance.now());
+            trail.lens.push(trail.len);
             trail.last = { x, y };
             trail.points++;
             // Одна строка пути на все штрихи: тело, наплывы и кайма — это
@@ -5466,10 +5524,12 @@ const WormRenderer = {
             if (n % WORM_SLIME_BUBBLE_EVERY === 0) {
                 const p = slimeSide(trail, x, y, last, (rng() * 2 - 1) * 0.8);
                 const r = w * (0.025 + rng() * 0.04);
-                trail.bubbles.appendChild(svgEl('circle', {
+                const el = svgEl('circle', {
                     cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: r.toFixed(2),
                     fill: withAlpha(mixColor(SPEC, P_.acid[200], 0.5), WORM_SLIME_BUBBLE_ALPHA)
-                }));
+                });
+                trail.bubbles.appendChild(el);
+                trail.decor.push({ el, t: now });
             }
 
             // КРУПНЫЙ БЛИК — главный признак глянца. Мягкое пятно
@@ -5484,13 +5544,15 @@ const WormRenderer = {
             // и света нет.
             if (n % WORM_SLIME_SHINE_EVERY === 0 && rng() < 0.6) {
                 const p = slimeSide(trail, x, y, last, -0.34 + (rng() * 2 - 1) * 0.16);
-                trail.shine.appendChild(svgEl('ellipse', {
+                const el = svgEl('ellipse', {
                     cx: 0, cy: 0,
                     rx: (w * (0.3 + rng() * 0.42)).toFixed(2),
                     ry: (w * (0.13 + rng() * 0.08)).toFixed(2),
                     fill: slimeShine,
                     transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${p.deg.toFixed(1)})`
-                }));
+                });
+                trail.shine.appendChild(el);
+                trail.decor.push({ el, t: now });
             }
 
             // СГУСТКИ И ОТОРВАВШИЕСЯ КАПЛИ. Кляксы того же мокрого цвета:
@@ -5502,11 +5564,13 @@ const WormRenderer = {
                 // Эллипсом, а не многоугольником: у ломаной видны прямые
                 // грани, и вместо натёка получается осколок.
                 const lr = w * (far ? 0.07 + rng() * 0.05 : 0.17 + rng() * 0.13);
-                trail.lumps.appendChild(svgEl('ellipse', {
+                const el = svgEl('ellipse', {
                     cx: 0, cy: 0, rx: lr.toFixed(2), ry: (lr * (0.55 + rng() * 0.4)).toFixed(2),
                     fill: SLIME_WET,
                     transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${(p.deg + (rng() * 60 - 30)).toFixed(1)})`
-                }));
+                });
+                trail.lumps.appendChild(el);
+                trail.decor.push({ el, t: now });
             }
 
             // КАПЛИ КИСЛОТЫ. Единственное место, где в следе есть цвет:
@@ -5515,11 +5579,13 @@ const WormRenderer = {
             if (n % WORM_SLIME_DROP_EVERY === 0) {
                 const p = slimeSide(trail, x, y, last, (rng() * 2 - 1) * 0.6);
                 const r = WORM_SLIME_DROP_R * (0.6 + rng() * 0.8) * ts;
-                trail.bubbles.appendChild(svgEl('ellipse', {
+                const el = svgEl('ellipse', {
                     cx: p.x.toFixed(1), cy: p.y.toFixed(1),
                     rx: r.toFixed(2), ry: (r * (0.55 + rng() * 0.4)).toFixed(2),
                     fill: withAlpha(P_.acid[400], WORM_SLIME_DROP_ALPHA)
-                }));
+                });
+                trail.bubbles.appendChild(el);
+                trail.decor.push({ el, t: now });
             }
 
             // ОТРЕЗОК КОНЕЧЕН. Иначе за один проход по комнате вырастает
@@ -5543,66 +5609,82 @@ const WormRenderer = {
         // часть тела, а то, что тело оставило: он подсыхает сам по себе, что
         // бы ни случилось с червём, и по той же причине не красится фильтром
         // истощения (см. bakeWither).
+
+        // Сколько пути отрезка положено РАНЬШЕ момента t. По этой длине
+        // штрих и обрезается: всё, что старше, стёрто.
+        //
+        // Поиск идёт с конца: край высыхания почти всегда у первых точек, а
+        // список короткий (шестнадцать штук на отрезок).
+        function slimeCutAt(trail, t) {
+            const times = trail.times, lens = trail.lens;
+            if (!times.length || t <= times[0]) return 0;
+            if (t >= times[times.length - 1]) return trail.len + 1;
+            let i = 1;
+            while (i < times.length && times[i] < t) i++;
+            const t0 = times[i - 1], t1 = times[i];
+            const k = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+            return lens[i - 1] + (lens[i] - lens[i - 1]) * k;
+        }
+
         function fadeSlimeTrails(now) {
-            // Червь перестал ходить (или умер) — незаконченный отрезок надо
-            // закрыть, иначе он не начнёт сохнуть.
-            if (!opts.wander) {
-                state.slimeTrails.forEach(t => { if (t.finishedAt == null) t.finishedAt = now; });
-                state.activeSlimeTrail = null;
-            }
-            // Высыхание идёт своим тактом, а не каждый кадр: за восьмую долю
-            // секунды плёнка не меняется ни на глаз, ни на пиксель, а записей
-            // это экономит по числу отрезков на полу.
+            // Такт: за семьдесят миллисекунд край высыхания сдвигается на
+            // пару единиц — чаще считать нечего.
             if (now - (state.slimeFadedAt || 0) < WORM_SLIME_FADE_TICK) return;
             state.slimeFadedAt = now;
+
             for (let i = state.slimeTrails.length - 1; i >= 0; i--) {
                 const trail = state.slimeTrails[i];
-                if (trail.finishedAt == null) continue;
-                const elapsed = now - trail.finishedAt;
-                if (elapsed >= WORM_SLIME_FADE_MS) {
+                let alive = false;
+
+                for (let k = 0; k < trail.strokes.length; k++) {
+                    const st = trail.strokes[k];
+                    const cut = slimeCutAt(trail, now - st.life);
+                    if (cut <= trail.len) alive = true;
+                    // Обрезка с начала пути. Прозрачности здесь нет НИ ОДНОЙ:
+                    // плёнка в каждой точке либо есть целиком, либо её нет.
+                    // Поэтому перекрытия одинаковы всегда и швов между
+                    // отрезками не видно — ни свежих, ни подсыхающих.
+                    const q = Math.round(Math.min(cut, trail.len + 2));
+                    if (st.cut === q) continue;
+                    st.cut = q;
+                    // Узор стоит с рождения, двигается только его смещение:
+                    // отрицательное смещение выставляет перед штрихом пропуск
+                    // ровно в стёртое. Одно число за такт на слой.
+                    setAttr(st.el, 'stroke-dashoffset', String(-q));
+                }
+
+                // Украшения не гаснут, а снимаются, когда край до них дошёл.
+                const decorEdge = now - WORM_SLIME_DECOR_LIFE;
+                while (trail.decor.length && trail.decor[0].t < decorEdge) {
+                    trail.decor.shift().el.remove();
+                }
+                if (trail.decor.length) alive = true;
+
+                if (!alive) {
                     trail.wetG.remove();
                     trail.glowG.remove();
                     state.slimeTrails.splice(i, 1);
-                    continue;
+                    if (trail === state.activeSlimeTrail) state.activeSlimeTrail = null;
                 }
-                const k = 1 - elapsed / WORM_SLIME_FADE_MS;
-                // Плёнка не просто гаснет, а УСЫХАЕТ: сохнет от краёв, и
-                // полоса сужается. Прозрачность при этом тоже падает, но она
-                // тут не главная — без сужения след пропадал ровным
-                // прямоугольником, как будто его стёрли ластиком.
-                const narrow = 0.35 + 0.65 * k;
-                trail.strokes.forEach(st => setAttr(st.el, 'stroke-width', (st.w * narrow).toFixed(2)));
-                setAttr(trail.wetG, 'opacity', k.toFixed(3));
-                // Блеск уходит чуть быстрее плёнки: подсохшая слизь первым
-                // делом перестаёт блестеть. Но именно ЧУТЬ — след без бликов
-                // сразу читается лужей краски, а не слизью.
-                const dry = Math.max(0, 1 - elapsed / (WORM_SLIME_FADE_MS * 0.8));
-                setAttr(trail.glowG, 'opacity', dry.toFixed(3));
             }
         }
 
         function updateSlimeTrail(now, isMoving, anchor) {
-            if (isMoving && anchor) {
-                // Ширина отрезка следа задаётся один раз, на его старте:
-                // это обычный stroke, сузить его по длине нельзя. Поэтому
-                // когда червь заметно меняет глубину, текущий отрезок
-                // закрывается и начинается новый, уже своей ширины. Отрезки
-                // перекрываются, стык не виден, а след честно сужается,
-                // уходя вглубь комнаты.
-                const act = state.activeSlimeTrail;
-                if (act && opts.room && Math.abs(state.depthScale / (act.scale || 1) - 1) > WORM_SLIME_DEPTH_STEP) {
-                    act.finishedAt = now;
-                    state.activeSlimeTrail = null;
-                }
-                if (!state.activeSlimeTrail) startSlimeTrail(anchor.x, anchor.y);
-                else extendSlimeTrail(anchor.x, anchor.y, now);
-            } else if (state.activeSlimeTrail || state.slimeTrails.some(t => t.finishedAt == null)) {
-                // Червь встал — сохнет ВЕСЬ след, а не только последний его
-                // кусок: для игрока это одна дорожка, разрезанная на отрезки
-                // только ради дешёвой перерисовки.
-                state.slimeTrails.forEach(t => { if (t.finishedAt == null) t.finishedAt = now; });
+            if (!(isMoving && anchor)) { state.activeSlimeTrail = null; return; }
+            // Ширина отрезка следа задаётся один раз, на его старте: это
+            // обычный stroke, сузить его по длине нельзя. Поэтому когда червь
+            // заметно меняет глубину, текущий отрезок закрывается и начинается
+            // новый, уже своей ширины. Отрезки перекрываются, стык не виден, а
+            // след честно сужается, уходя вглубь комнаты.
+            if (opts.room && (state.slimeScale == null
+                || Math.abs(state.depthScale / state.slimeScale - 1) > WORM_SLIME_DEPTH_STEP)) {
+                // Глубина заметно изменилась — след честно сужается (или
+                // расширяется), и для этого начинается новый отрезок.
+                state.slimeScale = state.depthScale;
                 state.activeSlimeTrail = null;
             }
+            if (!state.activeSlimeTrail) startSlimeTrail(anchor.x, anchor.y, now);
+            else extendSlimeTrail(anchor.x, anchor.y, now);
         }
 
         // ---------- КАДР НЕ СЧИТАЕТСЯ, ПОКА ХОЛСТ НЕ НА ЭКРАНЕ ----------

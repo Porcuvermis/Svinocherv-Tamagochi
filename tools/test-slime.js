@@ -71,6 +71,34 @@ const harness = require('./harness');
      run.charsPerFrame + ' символов на кадр');
   ok(run.segments <= 16, 'отрезков не больше предела', String(run.segments));
 
+  // ---------- НИ ОДНОГО ПОЛУПРОЗРАЧНОГО КУСКА ----------
+  // Главное правило плёнки: прозрачность есть только у ОБЩЕЙ группы, а
+  // каждый кусок внутри непрозрачен. Иначе подсыхающие куски снова начнут
+  // просвечивать друг сквозь друга, и на пересечениях следа проступят
+  // отдельные слои — ровно то, ради чего всё и переделывалось.
+  const seeThrough = await page.evaluate(() => new Promise(res => {
+    // Ловим момент высыхания: ходим, встаём и смотрим на середине жизни.
+    MainWormHandle.walkTo(300, 700);
+    setTimeout(() => {
+      MainWormHandle.walkTo(150, 760);
+      setTimeout(() => {
+        MainWormHandle.setOptions({ wander: false });
+        setTimeout(() => {
+          const bad = [];
+          document.querySelectorAll('.worm-slime-layer *').forEach(n => {
+            const cls = n.getAttribute('class') || '';
+            if (cls === 'worm-slime-wet-all') return;      // общая плёнка — ей и положено
+            const o = n.getAttribute('opacity');
+            if (o != null && parseFloat(o) < 0.999) bad.push(cls || n.tagName);
+          });
+          res(bad);
+        }, 900);
+      }, 1000);
+    }, 1200);
+  }));
+  ok(seeThrough.length === 0, 'при высыхании ни один кусок не полупрозрачен',
+     seeThrough.slice(0, 4).join(',') || 'ни одного');
+
   // Высыхание: червь стоит, след уходит целиком.
   const gone = await page.evaluate(() => new Promise(res => {
     MainWormHandle.setOptions({ wander: false });
@@ -84,6 +112,7 @@ const harness = require('./harness');
     tick();
   }));
   ok(gone.left === 0, 'высохший след исчезает весь', gone.ms > 0 ? 'за ' + gone.ms + ' мс' : 'осталось ' + gone.left);
+  ok(gone.ms > 0 && gone.ms < 3200, 'жизнь слизи около двух секунд', gone.ms + ' мс');
 
   console.log(errs.length ? '\n' + errs.join('\n') : '\nошибок страницы нет');
   console.log(fail.length ? '\nСЛОМАНО: ' + fail.join('; ') : '\nвсё сошлось');
