@@ -1243,36 +1243,57 @@ function buildRibs(ctx, group, plan, halfLen, halfThick) {
     //    четверти дальняя стенка видна над ближней.
     //
     // Сам хребет не рисуется — он воображаемый.
-    const S0 = { x: halfLen * 0.34, y: -halfThick * 0.85 };  // вход из туловища
-    const SC = { x: halfLen * 0.16, y: -halfThick * 0.12 };  // излом
-    const S1 = { x: -halfLen * 0.85, y: halfThick * 0.16 };  // выход к хвосту
+    // ---------- ЧИСЛА СНЯТЫ С ЭСКИЗА, А НЕ ПОДОБРАНЫ ----------
+    // Эскиз автора и мой рендер приведены к одной системе координат по
+    // ЗРАЧКАМ (два тёмных пятна находятся в обеих картинках автоматически,
+    // и по ним считается масштаб со сдвигом), после чего каждый штрих
+    // пересчитан в доли полуосей живота: 0 — центр, 1 — край. Всё, что
+    // ниже, — прямо оттуда.
+    //
+    // Что из этого следовало и в чём была ошибка прошлых версий: рёбра
+    // растут ОТ ХРЕБТА (дуга крепления идёт по спинной стороне шара, от
+    // верха к левому краю) и ДОХОДЯТ ПОЧТИ ДО противоположного края — концы
+    // ложатся на 0.5…0.99 радиуса. У меня они то начинались в середине и
+    // вылезали наружу, то, наоборот, обрывались у центра — и в обоих случаях
+    // читались растущими из брюха в спину.
+    const P0 = { x: 0.16, y: -0.87 };   // верх: хребет входит из туловища
+    const PC = { x: -0.37, y: -0.46 };
+    const P1 = { x: -0.76, y: -0.24 };  // левый край: хребет уходит к хвосту
     const at = (t) => {
         const u = 1 - t;
-        return { x: u * u * S0.x + 2 * u * t * SC.x + t * t * S1.x,
-                 y: u * u * S0.y + 2 * u * t * SC.y + t * t * S1.y };
+        return { x: (u * u * P0.x + 2 * u * t * PC.x + t * t * P1.x) * halfLen,
+                 y: (u * u * P0.y + 2 * u * t * PC.y + t * t * P1.y) * halfThick };
     };
 
-    // Ближний ряд сидит НИЖЕ по хребту и круче поставлен, дальний — выше и
-    // положе: у бочки в три четверти дальняя стенка видна сверху.
-    const tFrom = back ? 0.18 : 0.28;
-    const tTo   = back ? 0.76 : 0.86;
-    const aFrom = back ? 28 : 33;    // угол хорды от горизонтали, градусы
-    const aTo   = back ? 56 : 61;
-    const lFrom = back ? 0.9 : 0.8;
-    const lTo   = back ? 1.26 : 1.38;
-    const bow   = back ? -0.14 : 0.14;   // знак изгиба: разный у двух стенок
+    // Ближний ряд сидит НИЖЕ по дуге и круче поставлен, дальний — выше и
+    // положе: у бочки в три четверти дальняя стенка видна над ближней.
+    // Углы, длины и изгибы — замеры с эскиза (ближние 28…62°, дальние
+    // 28…50°; длина ребра 0.67…1.26 полуоси).
+    const tFrom = back ? 0 : 0.26;
+    const tTo   = back ? 0.72 : 1;
+    const aFrom = 28;                    // угол хорды от горизонтали, градусы
+    const aTo   = back ? 50 : 62;
+    const lFrom = back ? 0.85 : 0.68;    // длина ребра в долях полуоси живота
+    const lTo   = back ? 1.2 : 1.24;
+    // Знак изгиба у двух стенок разный, и это главное: дуги идут накрест.
+    // У ближних изгиб ещё и растёт книзу — нижние рёбра заворачиваются
+    // сильнее (на эскизе 0.00 → 0.16 от длины хорды, здесь вдвое больше:
+    // отклонение кривой — половина смещения опорной точки).
+    const bowFrom = back ? -0.17 : 0.04;
+    const bowTo   = back ? -0.19 : 0.32;
 
     for (let i = 0; i < count; i++) {
         const u = count > 1 ? i / (count - 1) : 0.5;
         const A = at(tFrom + (tTo - tFrom) * u);
         const ang = (aFrom + (aTo - aFrom) * u) * Math.PI / 180;
-        // Средние рёбра длиннее крайних — клетка сужается к концам.
-        const L = halfLen * (lFrom + (lTo - lFrom) * u)
-                * (0.86 + 0.14 * Math.sin(Math.PI * (0.15 + 0.7 * u)));
+        // Длина растёт быстро у первых рёбер и почти не растёт дальше —
+        // так на эскизе (0.67 → 1.12 → 1.09 → 1.26 полуоси).
+        const L = halfLen * (lFrom + (lTo - lFrom) * Math.pow(u, 0.45));
         const dx = Math.cos(ang), dy = Math.sin(ang);
         const ex = A.x + dx * L, ey = A.y + dy * L;
         // Опора — от середины хорды по нормали к ней. Знак нормали и делает
         // ближнюю стенку выпуклой вниз-влево, а дальнюю — вверх-вправо.
+        const bow = bowFrom + (bowTo - bowFrom) * u;
         const cx = (A.x + ex) / 2 - dy * L * bow;
         const cy = (A.y + ey) / 2 + dx * L * bow;
         const d = `M ${A.x.toFixed(1)},${A.y.toFixed(1)} ` +
@@ -3894,7 +3915,9 @@ function buildGutTractGeometry(axis, bellyPoint, cfg) {
     // corePts — сырые точки осевой линии. Нужны, чтобы ставить куски еды на
     // тракт арифметикой, а не промером SVG-пути: строка пути переписывается
     // каждый кадр, и getTotalLength каждый раз меряет её заново.
-    return { ribbon, core: smoothPolyline(core, false), corePts: core, coreR };
+    // Строка осевой линии больше не нужна (жилу убрали), но сами точки —
+    // нужны: по ним едет еда.
+    return { ribbon, corePts: core, coreR };
 }
 
 // ---------- КОМОК ЕДЫ ----------
@@ -4001,12 +4024,11 @@ function createGutTract(ctx, thinByIdx) {
         d: '', fill: color, stroke: mixColor(color, GRIME_SHADOW, 0.55),
         'stroke-width': SW.structure, 'stroke-linejoin': 'round', opacity: 0.95
     });
-    const coreLine = svgEl('path', {
-        d: '', fill: 'none', stroke: mixColor(color, GRIME_HIGHLIGHT, 0.5),
-        'stroke-width': SW.detail, 'stroke-linecap': 'round', opacity: 0.3
-    });
+    // Светлой «жилы» по оси кишки здесь БОЛЬШЕ НЕТ. Она шла одной линией
+    // через всё тело и читалась не как блик на трубе, а как хребет — причём
+    // с той стороны, где хребта нет: «что это за белая линия, от которой
+    // растут рёбра?». Труба со своей тёмной обводкой обходится без неё.
     group.appendChild(tube);
-    group.appendChild(coreLine);
 
     // ---------- ЕДА ЕДЕТ ОТДЕЛЬНЫМ СЛОЕМ ----------
     // Раньше комки лежали ВНУТРИ группы тракта и подчинялись её маске. Это
@@ -4024,7 +4046,7 @@ function createGutTract(ctx, thinByIdx) {
     // плотности кожи, из которой построена маска.
     const foodLayer = svgEl('g', { class: 'worm-food-layer' });
 
-    return { group, tube, coreLine, maskCircles, foodLayer, foodNodes: [],
+    return { group, tube, maskCircles, foodLayer, foodNodes: [],
              color, thinByIdx: thinByIdx || [] };
 }
 
@@ -6040,7 +6062,6 @@ const WormRenderer = {
                             waveLength: cfg.waveLength, loopDensity: cfg.loopDensity
                         });
                         setAttr(state.built.gutTract.tube, 'd', geom.ribbon);
-                        setAttr(state.built.gutTract.coreLine, 'd', geom.core);
                         state.built.gutTract.corePts = geom.corePts;
                         state.built.gutTract.coreR = geom.coreR;
                         const liveVis = state.livePose.organVisibility;
