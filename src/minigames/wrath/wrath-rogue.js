@@ -47,6 +47,7 @@ const WrathRogue = {
     abandonArmed: false,
     // Не хватило жетона на вход — он вспыхивает в кошельке (как в магазине).
     lack: null,
+    level: 0,      // выбранная сложность в окне входа; забег хранит свою
     lackTimer: null,
     // Итог законченного забега. Пока он на экране, войти в новый нельзя:
     // забег только что кончился, палец ещё на кнопке, а вход стоит жетон.
@@ -120,11 +121,15 @@ const WrathRogue = {
         if (bottom) bottom.style.display = this.summary ? 'none' : '';
     },
 
-    // ---------- ШАПКА ----------
+    // ---------- СТРОКА ЗАБЕГА ----------
+    // Кошелька здесь больше нет: он в общей шапке греха, над этим экраном.
+    // Строка показывает только то, что живёт ВНУТРИ забега и нигде больше не
+    // видно, — его собственное здоровье, зубы и набранные усиления. Пока
+    // забега нет, показывать нечего.
     renderStatus(run) {
         if (!this.statusEl) return;
         if (!run) {
-            this.statusEl.innerHTML = WrathShop.walletHtml(this.lack);
+            this.statusEl.innerHTML = '';
             return;
         }
 
@@ -304,16 +309,29 @@ const WrathRogue = {
         );
     },
 
-    // Забега нет: предложение войти. Цена и то, что за неё будет, написаны
-    // прямо здесь — жетон невозвратный, и игрок должен понимать, на что идёт.
+    // ---------- ОКНО ВХОДА ----------
+    // Всё, что игрок должен знать про забег, живёт ЗДЕСЬ и только здесь:
+    // сложность, цена, что впереди, что за это дадут и с чем он войдёт.
+    //
+    // Раньше цена стояла числом под значком забега в лобби. Кнопка от этого
+    // переставала быть кнопкой и становилась ценником, а выбирать всё равно
+    // было нечего — сложность была одна. Теперь нажатие открывает окно, и
+    // выбор со всеми числами делается в одном месте.
+    //
+    // Ни одного слова: сложность — огоньки, путь — значки врагов, добыча —
+    // нарисованные жетоны, вход — здоровье и разброс удара (инвариант 9).
     renderStart() {
         const cfg = Backend.rogueConfig();
-        const price = cfg ? cfg.entry : {};
+        const levels = Backend.rogueLevels();
+        if (this.level == null) this.level = 0;
+        if (this.level >= levels.length) this.level = levels.length - 1;
+        const level = Backend.rogueLevel(this.level);
+        const price = level.entry || (cfg ? cfg.entry : {});
         const enough = !Object.keys(price).some(key => GameState.currency(key) < price[key]);
 
-        // Что впереди и что с этого будет — двумя строками значков, без
-        // единого слова. Числа считаются по карте: добавили узел — строка
-        // пересчиталась сама.
+        // Что впереди и что с этого будет — строками значков. Числа считаются
+        // по карте и по множителю сложности: добавили узел или тронули
+        // множитель — строка пересчиталась сама.
         const counts = { fight: 0, miniboss: 0, boss: 0 };
         const loot = {};
         (cfg ? cfg.map : []).forEach(step => {
@@ -321,7 +339,7 @@ const WrathRogue = {
             counts[step.kind] = (counts[step.kind] || 0) + 1;
             const reward = (cfg.enemies[step.enemy] || {}).reward || {};
             Object.keys(reward.currencies || {}).forEach(key => {
-                loot[key] = (loot[key] || 0) + reward.currencies[key];
+                loot[key] = (loot[key] || 0) + Math.round(reward.currencies[key] * (level.loot || 1));
             });
         });
 
@@ -331,22 +349,37 @@ const WrathRogue = {
             counts.boss ? `💀 ${counts.boss}` : ''
         ].filter(Boolean).join('  ');
 
-        const lootLine = Object.keys(loot).map(key => {
-            const conf = ECONOMY.currencies[key];
-            return `${currencyMark(key)} ${loot[key]}`;
-        }).join('  ');
+        const lootLine = Object.keys(loot).map(key =>
+            `${currencyMark(key)} ${loot[key]}`).join('  ');
 
-        // С чем входишь — числами, крупно. Забег изолирован от лобби, и это
-        // не должно быть сюрпризом на первом же бою: снаряжение остаётся за
-        // дверью, все входят одинаково.
+        // Сила врагов показана ПРИМЕРОМ, а не множителем: множитель — это
+        // число без единиц, а «босс держит столько-то» игрок сравнит с тем,
+        // с чем он входит, прямо в соседней строке.
+        const boss = Backend.rogueEnemy({ enemy: 'boss' }, this.level);
         const start = (cfg && cfg.start) || { hp: 20, damage: [3, 5] };
 
-        this.cardEl.className = 'rogue-card shown';
+        const picker = levels.map((l, i) => `
+            <button type="button" class="rogue-level${i === this.level ? ' on' : ''}"
+                    data-level="${i}">${l.sign}</button>`).join('');
+
+        this.cardEl.className = 'rogue-card shown start';
         this.cardEl.innerHTML = `
             <div class="rogue-card-icon">🗺</div>
+            <div class="rogue-levels">${picker}</div>
             <div class="rogue-card-row">${path}</div>
             <div class="rogue-card-row loot">${lootLine}</div>
-            <div class="rogue-card-row start">❤️ ${start.hp}  🗡 ${start.damage[0]}–${start.damage[1]}</div>`;
+            <div class="rogue-card-row start">❤️ ${start.hp}  🗡 ${start.damage[0]}–${start.damage[1]}</div>
+            ${boss ? `<div class="rogue-card-row foe">💀 ${boss.hp}❤ ${boss.damage[0]}–${boss.damage[1]}🗡</div>` : ''}`;
+
+        this.cardEl.querySelectorAll('.rogue-level').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                this.level = Number(btn.dataset.level) || 0;
+                // Перерисовывается ВСЁ окно, а не только подсветка: от
+                // сложности едут и цена, и добыча, и сила босса.
+                this.renderStart();
+            };
+        });
 
         this.setAction(this.priceText(price), enough ? () => this.start() : null);
     },
@@ -429,7 +462,7 @@ const WrathRogue = {
     // Вход: жетон списан — это и говорится, минусом на жетоне. Не хватило —
     // тот же жетон вспыхивает красным в кошельке.
     start() {
-        const answer = Backend.startRun();
+        const answer = Backend.startRun(this.level);
         if (!answer.ok) {
             this.lack = answer.currency || 'wrath_token';
             if (this.lackTimer) clearTimeout(this.lackTimer);

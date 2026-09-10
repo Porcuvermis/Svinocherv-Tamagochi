@@ -1663,3 +1663,133 @@
 
 .wallet-item .token-art { width: 26px; height: 26px; }
 .wallet-item { flex-direction: row; gap: 5px; }
+
+/* ---------- ОБЩАЯ ШАПКА ЛОББИ ---------- */
+/* Здоровье, характеристики и кошелёк одинаковы в лобби, лавке, прокачке и на
+   карте забега, поэтому живут ОДНИ на четыре экрана, над ними. В бою скрыта:
+   там своё здоровье, и чужая полоса рядом читалась бы как ещё один боец. */
+/* Стоит ПОВЕРХ экранов, а не в потоке. Причина в том, как устроены сами
+   экраны: каждый из них `position: absolute` во всю рамку окна, потому что
+   они перекрывают друг друга при переключении. Обычный элемент перед ними
+   они просто накрывают — на первом же снимке карта забега затемнила строку
+   характеристик.
+
+   Поэтому шапка абсолютная и лежит выше, а экраны, пока она видна, начинаются
+   от её низа. Высота меряется в js и кладётся в --wrath-head-h: содержимое
+   шапки зависит от того, что куплено, и прибитое число однажды разъедется. */
+.wrath-head {
+    display: none;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 6;
+    padding: 0 10px 6px;
+}
+
+.wrath-head.shown { display: block; }
+
+/* Сдвигается ВЕРХ и снимается фиксированная высота: у экрана осталось бы
+   `height: 100%`, и он вылез бы за низ рамки ровно на высоту шапки — вместе
+   с кнопкой возврата, которая стоит у него в самом низу. */
+.wrath-head.shown ~ .wrath-screen {
+    top: var(--wrath-head-h, 78px);
+    height: auto;
+    bottom: 0;
+}
+
+/* Характеристики и кошелёк — одной строкой чипов под полосой здоровья.
+   Раньше каждая величина занимала свою строку, и панель росла вниз тем
+   сильнее, чем больше куплено; теперь она одной высоты всегда. */
+.panel-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+}
+
+.panel-chip {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 7px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.1;
+}
+
+.panel-chip .panel-icon { font-size: 12px; }
+
+/* Кошелёк прижат вправо: он про то, что игрок МОЖЕТ, а не про то, каков он в
+   бою, — и отделять его от боевых чисел проще всего местом. */
+.panel-chip.wallet:first-of-type { margin-left: auto; }
+.panel-chip.wallet { padding: 2px 6px; gap: 4px; }
+.panel-chip.wallet .token-art { width: 22px; height: 22px; }
+
+/* Не хватило именно этой валюты — дёргается сам чип в шапке. Раньше дёргался
+   кошелёк в строке лавки, а его там больше нет. */
+.panel-chip.wallet.lack {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.2);
+    animation: wallet-shake 0.42s ease;
+}
+
+/* Замок на недоступном режиме. Отдельно от значка: значок говорит, ЧТО это,
+   замок — что сюда пока нельзя. */
+.mode-lock { font-size: 11px; opacity: 0.8; }
+
+/* Кнопка забега, в котором игрок уже сидит. Числа под ней больше не пишутся
+   (цена и содержимое — во всплывающем окне), поэтому «забег идёт» говорит
+   сама кнопка. */
+.mode-btn.running {
+    border-color: var(--wrath-attack);
+    box-shadow: 0 0 0 1px var(--wrath-attack) inset, 0 0 12px rgba(255, 42, 42, 0.35);
+}
+
+.mode-btn.running .mode-emoji { animation: mode-running 1.8s ease-in-out infinite; }
+
+@keyframes mode-running {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.12); }
+}
+
+/* ---------- ВЫБОР СЛОЖНОСТИ ЗАБЕГА ---------- */
+/* Стоит в окне входа, а не в лобби: цена, добыча и сила врагов едут вместе
+   со сложностью, и разводить их по разным экранам значит заставлять игрока
+   держать числа в голове. */
+.rogue-levels {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin: 2px 0 8px;
+}
+
+.rogue-level {
+    padding: 5px 9px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    /* Огоньки не должны разъезжаться по ширине: у трёх знаков строка втрое
+       длиннее, и без этого кнопки прыгали бы при выборе. */
+    letter-spacing: -2px;
+}
+
+.rogue-level.on {
+    border-color: var(--wrath-attack);
+    background: rgba(255, 59, 48, 0.22);
+    box-shadow: 0 0 10px rgba(255, 42, 42, 0.3);
+}
+
+/* Сила босса на выбранной сложности: примером, а не множителем. Множитель —
+   число без единиц, а «босс держит столько-то» игрок сравнит с тем, с чем
+   входит, прямо в строке выше. */
+.rogue-card-row.foe {
+    font-size: 12px;
+    opacity: 0.75;
+    margin-top: -2px;
+}

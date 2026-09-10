@@ -18,6 +18,22 @@ const { WRATH_GEAR, ECONOMY } = mod.exports;
 
 const W = ECONOMY.minigames.wrath;
 const ROGUE = W.rogue;
+
+// ---------- СЛОЖНОСТЬ ----------
+// Та же формула, что в Backend.rogueEnemy: множитель на здоровье и урон, вверх
+// по округлению. Переписана здесь, а не позвана оттуда, по одной причине —
+// backend.js тянет за собой состояние игрока и время; зато формула одна
+// строчка, и если она разъедется, разъедутся и числа в этом отчёте.
+function scaled(enemy, k) {
+    if (!enemy || !k || k === 1) return enemy;
+    return Object.assign({}, enemy, {
+        hp: Math.ceil(enemy.hp * k),
+        damage: enemy.damage.map(d => Math.ceil(d * k))
+    });
+}
+let LEVEL = 1;
+let LOOT = 1;
+const PER_SHARD = (ECONOMY.exchange.wrath_shard || {}).per || 3;
 const FLOOR = W.minHitDamage || 0;
 const ZONES = W.zones;
 
@@ -75,6 +91,10 @@ function run(start, policy, tension) {
         armor: Object.assign({ head: 0, body: 0, tail: 0 }, start.armor)
     };
     let node = 0;
+    // Добыча забега в «жетонах»: осколок считается третью жетона, как его и
+    // разменивают (ECONOMY.exchange). Без этого отчёт по сложностям считал бы
+    // только босса и врал бы на треть — мини-босс тоже платит.
+    const loot = { token: 0, gold: 0 };
     for (const step of ROGUE.map) {
         if (step.kind === 'fork') {
             // Открыт только привал: магазин и события ещё не сделаны.
@@ -83,7 +103,7 @@ function run(start, policy, tension) {
             node++;
             continue;
         }
-        const enemy = ROGUE.enemies[step.enemy];
+        const enemy = scaled(ROGUE.enemies[step.enemy], LEVEL);
 
         // Натяжение узла: во сколько раз боец сильнее противника В МОМЕНТ
         // прихода. Меряется здесь, а не в таблице врагов, потому что внутри
@@ -99,14 +119,18 @@ function run(start, policy, tension) {
         }
 
         const res = fight(p, enemy);
-        if (!res.win) return { died: node, rounds: res.rounds };
+        if (!res.win) return { died: node, rounds: res.rounds, loot };
         const reward = enemy.reward || {};
+        const cur = reward.currencies || {};
+        loot.token += Math.round((cur.wrath_token || 0) * LOOT)
+                    + Math.round((cur.wrath_shard || 0) * LOOT) / PER_SHARD;
+        loot.gold += Math.round((cur.gold || 0) * LOOT);
         if (reward.healFull) p.hp = p.maxHp;
         else if (reward.heal) p.hp = Math.min(p.maxHp, p.hp + reward.heal);
         if (reward.choices) takeBoost(p, reward.choices, policy);
         node++;
     }
-    return { died: null, hp: p.hp, maxHp: p.maxHp, dmg: p.dmgMin + '-' + p.dmgMax };
+    return { died: null, hp: p.hp, maxHp: p.maxHp, dmg: p.dmgMin + '-' + p.dmgMax, loot };
 }
 
 // ---------- бойцы, которых сравниваем ----------
@@ -144,6 +168,33 @@ const geared = (() => {
 
 const N = parseInt(process.argv[2] || '20000', 10);
 const nodesTotal = ROGUE.map.filter(s => s.kind !== 'fork').length;
+
+// ---------- ПРОХОДИМОСТЬ ПО СЛОЖНОСТЯМ ----------
+// Забег изолирован: входят все с одними и теми же числами, а сложность
+// двигает врагов. Значит доля дошедших — единственное, что говорит, стоит ли
+// вообще заводить верхнюю ступень. Ниже пяти процентов её покупать не будут.
+const LEVELS = ROGUE.levels || [{ sign: '×1', entry: ROGUE.entry, enemy: 1, loot: 1 }];
+console.log('=== ПРОХОДИМОСТЬ ПО СЛОЖНОСТЯМ (боец забега, смешанная политика) ===');
+console.log('сложность  враги  цена  добыча    дошли  жетонов+  золота+  итог');
+LEVELS.forEach((lvl, i) => {
+    LEVEL = lvl.enemy || 1;
+    LOOT = lvl.loot || 1;
+    let wins = 0, tok = 0, gold = 0;
+    const runs = Math.max(4000, Math.round(N / 3));
+    for (let j = 0; j < runs; j++) {
+        const r = run(runner, 'mixed', null);
+        if (r.died === null) wins++;
+        tok += r.loot.token; gold += r.loot.gold;
+    }
+    const share = wins / runs;
+    const cost = (lvl.entry && lvl.entry.wrath_token) || 0;
+    const net = tok / runs - cost;
+    console.log(`${(lvl.sign || i).padEnd(9)}  ×${String(lvl.enemy).padEnd(5)} ${String(cost).padStart(4)}  `
+        + `×${String(lvl.loot).padEnd(6)} ${(share * 100).toFixed(1).padStart(9)}%  `
+        + `${(tok / runs).toFixed(2).padStart(9)}  ${(gold / runs).toFixed(0).padStart(7)}  `
+        + `${net >= 0 ? '+' : ''}${net.toFixed(2)}`);
+});
+LEVEL = 1; LOOT = 1;
 
 [['боец забега', runner], ['голая база', bare], ['полный комплект', geared]].forEach(([label, start]) => {
     console.log('\n=== ' + label + ' === хп ' + start.hp

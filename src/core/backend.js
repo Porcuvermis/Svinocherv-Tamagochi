@@ -1269,11 +1269,47 @@ const LocalBackend = {
 
     // Противник узла. Числа — из конфига, модель придёт отдельно
     // (getOpponent): своих обликов у врагов забега пока нет.
-    rogueEnemy(node) {
+    // ---------- СЛОЖНОСТЬ ЗАБЕГА ----------
+    // Уровень выбирается при входе и живёт в самом забеге: поменять его на
+    // середине нельзя, иначе цена входа перестанет что-либо значить.
+    rogueLevels() {
+        const cfg = this.rogueConfig();
+        return (cfg && cfg.levels) || [{ sign: '🔥', entry: cfg ? cfg.entry : {}, enemy: 1, loot: 1 }];
+    },
+
+    rogueLevel(index) {
+        const levels = this.rogueLevels();
+        const i = Math.max(0, Math.min(levels.length - 1, index || 0));
+        return Object.assign({ index: i }, levels[i]);
+    },
+
+    // Уровень ИДУЩЕГО забега. Старые сохранения его не знают — там ноль,
+    // то есть та самая сложность, на которой они и начинались.
+    runLevel() {
+        const run = this.run();
+        return this.rogueLevel(run ? (run.level || 0) : 0);
+    },
+
+    // Враг узла с поправкой на сложность. Множитель применяется ЗДЕСЬ, а не
+    // записывается в забег при старте: тогда правка конфига догоняла бы уже
+    // идущие забеги, а таблица врагов оставалась бы одна на все сложности.
+    //
+    // levelIndex нужен окну входа: там забега ещё нет, а показать, каким
+    // станет босс на выбранной сложности, надо ДО того, как жетон списан.
+    // Без этого довода окно показывало босса первой сложности на всех трёх.
+    rogueEnemy(node, levelIndex) {
         const cfg = this.rogueConfig();
         if (!cfg || !node || !node.enemy) return null;
         const enemy = cfg.enemies[node.enemy];
-        return enemy ? Object.assign({ id: node.enemy }, enemy) : null;
+        if (!enemy) return null;
+        const k = (levelIndex == null ? this.runLevel() : this.rogueLevel(levelIndex)).enemy || 1;
+        if (k === 1) return Object.assign({ id: node.enemy }, enemy);
+        // Вверх, а не вниз: враг на высокой сложности не должен оказаться
+        // слабее, чем на низкой, из-за округления.
+        return Object.assign({ id: node.enemy }, enemy, {
+            hp: Math.ceil(enemy.hp * k),
+            damage: (enemy.damage || [1, 3]).map(d => Math.ceil(d * k))
+        });
     },
 
     // Шаг проходим, если он не закрыт целиком. У развилки хватает одного
@@ -1295,12 +1331,13 @@ const LocalBackend = {
     },
 
     // Начать забег. Вход платный и невозвратный: жетон списывается здесь.
-    startRun() {
+    startRun(levelIndex) {
         const cfg = this.rogueConfig();
         if (!cfg) return { ok: false, error: 'no_config' };
         if (this.run()) return { ok: false, error: 'run_in_progress' };
 
-        const price = cfg.entry || {};
+        const level = this.rogueLevel(levelIndex);
+        const price = level.entry || cfg.entry || {};
         const short = Object.keys(price).find(key => GameState.currency(key) < price[key]);
         if (short) return { ok: false, error: 'not_enough', currency: short };
 
@@ -1325,6 +1362,7 @@ const LocalBackend = {
         const run = {
             started_at: GameTime.now(),
             seed: Math.floor(Math.random() * 1e9),
+            level: level.index,
             map: cfg.map.map((step, i) => {
                 const node = {
                     id: i,
@@ -1434,7 +1472,11 @@ const LocalBackend = {
             const enemy = this.rogueEnemy(node);
             const reward = (enemy && enemy.reward) || null;
             if (reward) {
-                gained.teeth = reward.teeth || 0;
+                // Добыча растёт вместе со сложностью — за то и платили на
+                // входе. Здоровье, которое узел возвращает, НЕ растёт: оно
+                // считается долей от максимума забега, а тот у всех один.
+                const loot = this.runLevel().loot || 1;
+                gained.teeth = Math.round((reward.teeth || 0) * loot);
                 run.teeth += gained.teeth;
 
                 if (reward.healFull) gained.healed = this.rogueHeal(run, run.maxHp);
@@ -1442,13 +1484,14 @@ const LocalBackend = {
 
                 Object.keys(reward.currencies || {}).forEach(key => {
                     const requestId = newRequestId();
-                    GameState.addCurrency(key, reward.currencies[key]);
+                    const amount = Math.round(reward.currencies[key] * loot);
+                    GameState.addCurrency(key, amount);
                     GameState.pushLedger({
-                        currency: key, delta: reward.currencies[key],
+                        currency: key, delta: amount,
                         reason: 'rogue.wrath.' + (node.enemy || node.kind),
                         client_request_id: requestId
                     });
-                    gained.currencies[key] = reward.currencies[key];
+                    gained.currencies[key] = amount;
                 });
 
                 if (reward.choices && reward.choices.length) {

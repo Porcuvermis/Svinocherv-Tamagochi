@@ -19,7 +19,6 @@ const WrathBoost = {
 
     host: null,
     root: null,
-    walletEl: null,
     listEl: null,
     tabsEl: null,
     // Открытая вкладка: 'stat' — числа бойца, 'passive' — способности,
@@ -36,7 +35,6 @@ const WrathBoost = {
         this.root = document.getElementById('wrath-boost');
         if (!this.root) return;
 
-        this.walletEl = document.getElementById('boost-wallet');
         this.listEl = document.getElementById('boost-list');
         this.tabsEl = document.getElementById('boost-tabs');
 
@@ -80,7 +78,6 @@ const WrathBoost = {
 
     render() {
         if (!this.root) return;
-        if (this.walletEl) this.walletEl.innerHTML = WrathShop.walletHtml(this.lack);
         if (!this.listEl) return;
 
         if (this.tabsEl) {
@@ -213,8 +210,10 @@ const WrathBoost = {
         this.render();
     },
 
+    // Отказ показывает шапка — там же, где кошелёк (WrathLobby.flashLack).
     showLack(key) {
         this.lack = key;
+        WrathLobby.flashLack(key);
         if (this.lackTimer) clearTimeout(this.lackTimer);
         this.lackTimer = setTimeout(() => {
             this.lackTimer = null;

@@ -72,6 +72,12 @@ const WrathMinigame = {
 
     close() {
         if (this.screenElement) this.screenElement.classList.remove('active');
+        // Часы здоровья в шапке — единственное, что тикает вне экранов, и
+        // гасить их обязан тот, кто закрывает грех (CLAUDE.md: мини-игра
+        // убирает за собой).
+        WrathLobby.stopHeadClock();
+        const head = document.getElementById('wrath-head');
+        if (head) head.classList.remove('shown');
         WrathDuel.leave();
         WrathLobby.leave();
         WrathShop.leave();
@@ -135,6 +141,15 @@ const WrathMinigame = {
         WrathDuel.enter(mode);
     },
 
+    // ---------- ОБЩАЯ ШАПКА ----------
+    // Здоровье, характеристики и кошелёк одинаковы в лобби, лавке, прокачке и
+    // на карте забега — значит и живут они одни на четыре экрана, над ними.
+    // Переключение экранов их не трогает.
+    //
+    // В БОЮ шапка скрыта: там своё здоровье и своя полоса, а чужая рядом
+    // читалась бы как ещё один боец.
+    HEAD_SCREENS: ['lobby', 'shop', 'boost', 'rogue'],
+
     setScreen(name) {
         if (!this.screens) return;
         Object.keys(this.screens).forEach(key => {
@@ -142,6 +157,14 @@ const WrathMinigame = {
             if (el) el.classList.toggle('active', key === name);
         });
         this.current = name;
+
+        const shown = this.HEAD_SCREENS.indexOf(name) !== -1;
+        const head = document.getElementById('wrath-head');
+        if (head) head.classList.toggle('shown', shown);
+        // Содержимое шапки пересобирает лобби — оно знает про снаряжение и
+        // кошелёк. Экранам под шапкой об этом знать незачем.
+        if (shown) WrathLobby.refreshHead();
+        else WrathLobby.stopHeadClock();
     }
 };
 

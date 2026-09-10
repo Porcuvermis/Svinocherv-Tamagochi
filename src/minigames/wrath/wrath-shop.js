@@ -17,7 +17,6 @@ const WrathShop = {
 
     host: null,
     root: null,
-    walletEl: null,
     listEl: null,
     tabsEl: null,
     // Какой валюты не хватило: она подсвечивается в кошельке и гаснет сама.
@@ -33,7 +32,6 @@ const WrathShop = {
         this.root = document.getElementById('wrath-shop');
         if (!this.root) return;
 
-        this.walletEl = document.getElementById('shop-wallet');
         this.listEl = document.getElementById('shop-list');
         this.tabsEl = document.getElementById('shop-tabs');
 
@@ -108,7 +106,6 @@ const WrathShop = {
 
     render() {
         if (!this.root) return;
-        if (this.walletEl) this.walletEl.innerHTML = this.walletHtml(this.lack);
         if (!this.listEl) return;
 
         const groups = this.groups();
@@ -189,8 +186,12 @@ const WrathShop = {
             || 'wrath_token';
     },
 
+    // Отказ показывает ШАПКА: кошелёк один на все экраны греха и живёт там.
+    // Здесь остаётся только приглушение строки предмета, до которого игрок
+    // не дотянулся.
     showLack(key) {
         this.lack = key;
+        WrathLobby.flashLack(key);
         if (this.lackTimer) clearTimeout(this.lackTimer);
         this.lackTimer = setTimeout(() => {
             this.lackTimer = null;

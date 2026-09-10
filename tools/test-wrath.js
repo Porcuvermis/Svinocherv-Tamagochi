@@ -315,6 +315,149 @@ const { viewport, prepare } = require('./harness');
     WrathMinigame.showLobby();
   });
 
+  // ---------- 6c. ОБЩАЯ ШАПКА ЛОББИ ----------
+  // Здоровье, характеристики и кошелёк — одни на четыре экрана греха. Раньше
+  // панель бойца жила внутри лобби, а кошелёк был размазан по кнопкам
+  // режимов: числами под значком лавки и ценником под значком забега.
+  console.log('\n--- общая шапка ---');
+  const head = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 3;
+    GameState.data.currencies.wrath_shard = 1;
+    GameState.data.counters = {}; GameState.bumpTotal('wrath.duel.lose', 1);
+    GameState.data.equipment = {}; GameState.data.upgrades = { damage: 0, hp: 0, regen: 0 };
+    Backend.setFighterHp(6);
+    WrathMinigame.open();
+    const seen = {};
+    const look = () => {
+      const el = document.getElementById('wrath-head');
+      return {
+        shown: el.classList.contains('shown'),
+        hp: (el.querySelector('#wrath-hp-num') || {}).textContent || '',
+        chips: el.querySelectorAll('.panel-chip').length,
+        wallet: el.querySelectorAll('.panel-chip.wallet .token-art').length,
+        width: Math.round(el.getBoundingClientRect().width),
+        top: Math.round(el.getBoundingClientRect().top)
+      };
+    };
+    for (const mode of [null, 'shop', 'boost', 'rogue']) {
+      if (mode) WrathMinigame.startMode(mode); else WrathMinigame.showLobby();
+      await new Promise(r => setTimeout(r, 260));
+      seen[mode || 'lobby'] = look();
+    }
+    WrathMinigame.startMode('duel');
+    await new Promise(r => setTimeout(r, 400));
+    seen.duel = look();
+    return seen;
+  });
+  const menus = ['lobby', 'shop', 'boost', 'rogue'];
+  check(menus.every(m => head[m].shown), 'шапка видна во всех четырёх меню лобби');
+  check(!head.duel.shown, 'в бою шапка скрыта: там своё здоровье');
+  check(menus.every(m => head[m].hp === head.lobby.hp && head.lobby.hp),
+    `здоровье одно и то же во всех меню: ${head.lobby.hp}`);
+  check(menus.every(m => head[m].top === head.lobby.top && head[m].width === head.lobby.width),
+    'шапка не прыгает при переключении экранов');
+  check(head.lobby.wallet === 2,
+    'кошелёк в шапке: целый жетон со счётчиком и собираемый');
+
+  // Кнопки режимов очищены от чисел: значок и только значок.
+  const modes = await page.evaluate(async () => {
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 260));
+    const out = {};
+    document.querySelectorAll('#wrath-lobby .mode-btn').forEach(btn => {
+      out[btn.dataset.mode] = (btn.textContent || '').replace(/\s+/g, '');
+    });
+    return out;
+  });
+  check(!/\d/.test(modes.shop || ''), `на кнопке лавки нет чисел: «${modes.shop}»`);
+  check(!/\d/.test(modes.rogue || ''), `на кнопке забега нет ценника: «${modes.rogue}»`);
+
+  // Отказ по нехватке валюты отвечает шапкой — кошелька в лавке больше нет.
+  const refuse = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 0;
+    WrathMinigame.startMode('shop');
+    await new Promise(r => setTimeout(r, 260));
+    const btn = document.querySelector('#wrath-shop .shop-item');
+    if (btn) btn.click();
+    await new Promise(r => setTimeout(r, 80));
+    return !!document.querySelector('#wrath-head .panel-chip.wallet.lack');
+  });
+  check(refuse, 'не хватило жетонов — дёргается кошелёк в шапке');
+
+  // Шапка лежит ПОВЕРХ экранов (те абсолютные во всю рамку), поэтому экраны
+  // сдвинуты вниз на её высоту. Стоит забыть снять им высоту — и они вылезут
+  // за низ рамки ровно на эту высоту, вместе с кнопкой возврата. Один раз так
+  // и вышло, поэтому проверка постоянная.
+  const fit = await page.evaluate(async () => {
+    const out = {};
+    for (const mode of ['lobby', 'shop', 'boost', 'rogue']) {
+      if (mode === 'lobby') WrathMinigame.showLobby(); else WrathMinigame.startMode(mode);
+      await new Promise(r => setTimeout(r, 300));
+      const body = document.querySelector('#wrath-game .mg-body').getBoundingClientRect();
+      const scr = document.querySelector('#wrath-game .wrath-screen.active');
+      const outside = [...scr.querySelectorAll('button')]
+        .filter(b => b.offsetParent !== null)
+        .filter(b => {
+          const r = b.getBoundingClientRect();
+          return r.bottom > body.bottom + 1 || r.top < body.top - 1;
+        })
+        .map(b => (b.className || b.id || 'button'));
+      out[mode] = { outside, top: Math.round(scr.getBoundingClientRect().top) };
+    }
+    return out;
+  });
+  const cut = Object.keys(fit).filter(m => fit[m].outside.length);
+  check(!cut.length, cut.length
+    ? `кнопки вылезли за рамку: ${cut.map(m => m + ' → ' + fit[m].outside.join(',')).join('; ')}`
+    : 'ни одна кнопка не вылезла за рамку ни в одном меню');
+  check(Object.keys(fit).every(m => fit[m].top === fit.lobby.top && fit.lobby.top > 100),
+    `экраны начинаются под шапкой, на одной высоте: y=${fit.lobby.top}`);
+
+  // ---------- 6d. СЛОЖНОСТЬ ЗАБЕГА ----------
+  // Цена и содержимое забега живут в окне входа, там же выбирается сложность.
+  console.log('\n--- сложности забега ---');
+  const rogue = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 9;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 400));
+    const levels = Backend.rogueLevels();
+    const rows = [];
+    for (let i = 0; i < levels.length; i++) {
+      const btn = document.querySelector(`.rogue-level[data-level="${i}"]`);
+      if (btn) btn.click();
+      await new Promise(r => setTimeout(r, 120));
+      const boss = Backend.rogueEnemy({ enemy: 'boss' }, i);
+      rows.push({
+        chosen: Number(document.querySelector('.rogue-level.on').dataset.level),
+        price: (document.getElementById('rogue-action').textContent || '').trim(),
+        bossHp: boss.hp,
+        card: (document.getElementById('rogue-card').textContent || '').replace(/\s+/g, ' ')
+      });
+    }
+    // Вход на выбранной сложности: она обязана записаться в сам забег.
+    const answer = Backend.startRun(2);
+    return { count: levels.length, rows, started: answer.ok,
+             runLevel: Backend.run() ? Backend.run().level : null,
+             enemyAtRun: Backend.rogueEnemy({ enemy: 'boss' }).hp,
+             enemyBase: Backend.rogueConfig().enemies.boss.hp };
+  });
+  check(rogue.count === 3, `сложностей три: ${rogue.count}`);
+  check(rogue.rows.every((r, i) => r.chosen === i), 'выбранная сложность подсвечена');
+  check(rogue.rows[0].bossHp < rogue.rows[1].bossHp && rogue.rows[1].bossHp < rogue.rows[2].bossHp,
+    `босс растёт со сложностью: ${rogue.rows.map(r => r.bossHp).join(' → ')} хп`);
+  check(new Set(rogue.rows.map(r => r.card)).size === 3, 'окно перерисовывается целиком: добыча и враг едут вместе с ценой');
+  check(rogue.started && rogue.runLevel === 2, `вход записал сложность в забег: ур. ${rogue.runLevel}`);
+  check(rogue.enemyAtRun === rogue.rows[2].bossHp && rogue.enemyAtRun > rogue.enemyBase,
+    `в идущем забеге враги той сложности, на которой вошли: ${rogue.enemyAtRun} против ${rogue.enemyBase} в таблице`);
+
+  await page.evaluate(() => {
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    GameState.data.currencies.wrath_shard = 0;
+    GameState.data.counters = {};
+    WrathMinigame.showLobby();
+  });
+
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');
   const node = await page.evaluate(() => {
@@ -378,6 +521,7 @@ const { viewport, prepare } = require('./harness');
       over: WrathDuel.fightOver,
       outcome: WrathDuel.outcome,
       award: (document.getElementById('wrath-award') || {}).textContent || '',
+      tokenShown: (document.getElementById('wrath-token') || {}).innerHTML.length > 100,
       hpLeft: GameState.data.fighter.hp,
       // Осколки считаются вместе с жетонами: три осколка складываются в
       // жетон сами (ECONOMY.exchange), и голая разница по осколкам после
@@ -399,7 +543,11 @@ const { viewport, prepare } = require('./harness');
     check(fight.shardDelta >= 1 && fight.goldDelta > 0,
       `победа при полной шкале принесла ${fight.shardDelta} 🩸 и ${fight.goldDelta} золота`);
   } else {
-    check(fight.award.length > 0, `итог показан строкой награды: «${fight.award}»`);
+    // Строка награды при поражении может быть и пустой: осколки и жетоны в
+    // неё больше не пишутся числом — их показывает жетон под ней, и он же
+    // единственный обязательный итог. Раньше здесь ждали непустую строку, и
+    // проверка падала ровно на честном поражении без золота и без шрама.
+    check(fight.tokenShown, 'итог поражения показан жетоном под строкой');
   }
 
   // Возврат в лобби размораживает.

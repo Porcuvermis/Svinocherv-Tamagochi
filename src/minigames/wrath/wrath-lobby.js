@@ -40,6 +40,7 @@ const WrathLobby = {
     wormHandle: null,
     openSlot: null,
     healClock: null,
+    lackTimer: null,
     holdEl: null,
     holdFillEl: null,
     holdCircumference: 0,
@@ -86,11 +87,6 @@ const WrathLobby = {
         Backend.resumeHeal();
         this.mountWorm();
         this.refresh();
-        // Пока лобби открыто, число здоровья пересчитывается раз в секунду:
-        // иначе игрок смотрит на «3 из 13» и не видит, что оно растёт.
-        if (!this.healClock) {
-            this.healClock = WrathFighter.startHealClock(() => this.refreshHealth());
-        }
     },
 
     leave() {
@@ -98,10 +94,9 @@ const WrathLobby = {
             this.wormHandle.destroy();
             this.wormHandle = null;
         }
-        if (this.healClock) {
-            this.healClock.stop();
-            this.healClock = null;
-        }
+        // Часы здоровья здесь НЕ останавливаются: шапка живёт и в лавке, и в
+        // прокачке, и на карте забега. Гасит их маршрутизатор, когда шапка
+        // уходит с экрана (WrathMinigame.setScreen).
         this.hideCard();
         this.cancelHold(false);
         if (this.panelEl) this.panelEl.classList.remove('lack');
@@ -171,10 +166,12 @@ const WrathLobby = {
             el.type = 'button';
             el.className = 'mode-btn' + (mode.ready ? ' ready' : ' locked');
             el.dataset.mode = mode.key;
-            el.innerHTML = `
-                <span class="mode-emoji">${mode.emoji}</span>
-                <span class="mode-note" data-note="${mode.key}">${mode.ready ? '' : '🔒'}</span>
-            `;
+            // Только значок. Раньше под ним стояла строка чисел — жетоны у
+            // лавки, цена входа у забега, — и кнопка переставала быть
+            // кнопкой: игрок читал её как табло. Кошелёк уехал в шапку, цена
+            // забега — в окно, которое открывается этим же нажатием.
+            el.innerHTML = `<span class="mode-emoji">${mode.emoji}</span>`
+                + (mode.ready ? '' : '<span class="mode-lock">🔒</span>');
             el.onclick = (e) => {
                 e.stopPropagation();
                 // Проверяется класс, а не поле конфига: бой ещё и запирается
@@ -193,8 +190,122 @@ const WrathLobby = {
         });
     },
 
+
+    // ---------- ШАПКА ----------
+    // Зовётся маршрутизатором при КАЖДОМ переключении экрана: кошелёк мог
+    // измениться в лавке, здоровье — набежать, способность — купиться.
+    // Отдельный метод, а не часть refresh(), потому что слотов снаряжения на
+    // экране лавки нет вовсе.
+    refreshHead() {
+        if (!this.panelEl) this.panelEl = document.getElementById('wrath-panel');
+        const equipment = (GameState.data && GameState.data.equipment) || {};
+        // ---------- ШАПКА: ИТОГИ БОЙЦА И КОШЕЛЁК ----------
+        // Итоги, и только итоги: сколько всего здоровья, какой разброс удара,
+        // сколько брони, что куплено из способностей и сколько жетонов. Из
+        // чего это сложилось, написано в самих слотах — так наверху не
+        // вырастает стена цифр, а разбивка всё равно под рукой.
+        //
+        // Кошелёк стоит ЗДЕСЬ, а не под кнопкой лавки, и это не перестановка
+        // ради красоты. Число жетонов — такая же характеристика бойца, как
+        // урон: оно говорит, что он может себе позволить. Под кнопкой оно
+        // превращало кнопку в табло и было видно только из лобби, хотя нужно
+        // ровно там, где тратят, — в лавке и в прокачке.
+        //
+        // Строится ОДИН раз за вход, а раз в секунду обновляются только
+        // ширина полосы и число здоровья. Иначе перестройка шапки дёргала бы
+        // раскладку каждую секунду — ровно та болезнь, от которой убран
+        // счётчик регенерации.
+        if (this.panelEl) {
+            const stats = WrathFighter.stats(equipment);
+            const short = WrathFighter.summary(stats);
+            const armor = WrathFighter.ZONES.some(zone => stats.armor[zone])
+                ? WrathFighter.ZONES.map(zone => stats.armor[zone]).join('/')
+                : '0';
+            const passives = WrathFighter.passives();
+
+            this.panelEl.innerHTML = `
+                <div class="panel-row hp">
+                    <span class="panel-icon">❤️</span>
+                    <span class="panel-bar"><i id="wrath-hp-fill"></i></span>
+                    <span class="panel-num" id="wrath-hp-num"></span>
+                </div>
+                <div class="panel-stats">
+                    <span class="panel-chip"><span class="panel-icon">🗡</span>${short.damage}</span>
+                    <span class="panel-chip"><span class="panel-icon">🛡</span>${armor}</span>
+                    ${passives.length
+                        ? `<span class="panel-chip">${passives.map(p => p.emoji).join(' ')}</span>`
+                        : ''}
+                    <span class="panel-chip wallet" data-cur="wrath_token">
+                        ${TokenArt.svg('wrath_token', 0, { whole: true })}
+                        <b>${GameState.currency('wrath_token')}</b>
+                    </span>
+                    <span class="panel-chip wallet" data-cur="wrath_shard">
+                        ${TokenArt.svg('wrath_token',
+                            TokenArt.progress('wrath_token', 'wrath.duel.lose'))}
+                    </span>
+                </div>
+            `;
+        }
+
+        this.refreshHealth();
+
+        // ---------- ВЫСОТА ШАПКИ ----------
+        // Экраны греха абсолютные и накрыли бы шапку целиком, поэтому она
+        // лежит поверх них, а они начинаются от её низа. Насколько отодвинуть,
+        // считается ЗДЕСЬ и после перестройки: в шапке то четыре чипа, то
+        // пять — с прибитым числом строка характеристик однажды уехала бы под
+        // экран. Меряется после кадра, иначе высота ещё нулевая.
+        requestAnimationFrame(() => {
+            const head = this.panelEl && this.panelEl.parentElement;
+            if (!head) return;
+            const h = Math.round(head.getBoundingClientRect().height);
+            if (h) head.style.setProperty('--wrath-head-h', h + 'px');
+        });
+
+        // Число здоровья пересчитывается раз в секунду, пока шапка на экране:
+        // иначе игрок смотрит на «3 из 13» и не видит, что оно растёт. Часы
+        // живут при ШАПКЕ, а не при лобби, — здоровье видно и из лавки.
+        if (!this.healClock) {
+            this.healClock = WrathFighter.startHealClock(() => this.refreshHealth());
+        }
+    },
+
+    // ---------- ОТКАЗ БЕЗ СЛОВ ----------
+    // Не хватило валюты — дёргается и краснеет сам чип кошелька в шапке.
+    // Раньше это делал кошелёк в строке лавки, но кошелька там больше нет:
+    // он один на все экраны и живёт наверху. Значит и отвечать обязан он —
+    // причём одинаково, из лавки и из прокачки (docs/plan/11-no-words.md).
+    flashLack(key) {
+        if (!this.panelEl) return;
+        const chip = this.panelEl.querySelector(`.panel-chip.wallet[data-cur="${key}"]`)
+                  || this.panelEl.querySelector('.panel-chip.wallet');
+        if (!chip) return;
+        chip.classList.remove('lack');
+        // Пересчёт стиля между снятием и возвратом класса: без него повторный
+        // отказ по той же валюте не перезапустит анимацию, и второй тап
+        // выглядел бы как «игра меня не услышала».
+        void chip.offsetWidth;
+        chip.classList.add('lack');
+        if (this.lackTimer) clearTimeout(this.lackTimer);
+        this.lackTimer = setTimeout(() => {
+            this.lackTimer = null;
+            if (chip) chip.classList.remove('lack');
+        }, 900);
+    },
+
+    stopHeadClock() {
+        if (this.healClock) this.healClock.stop();
+        this.healClock = null;
+    },
+
     // Показать текущее состояние: что надето и что это даёт.
+    //
+    // Делится надвое СОЗНАТЕЛЬНО. Шапка (здоровье, характеристики, кошелёк)
+    // общая на четыре экрана греха и пересобирается при каждом переключении;
+    // слоты снаряжения и кнопки режимов живут только в лобби, и трогать их из
+    // лавки нечего — там этих узлов на экране просто нет.
     refresh() {
+        this.refreshHead();
         const equipment = (GameState.data && GameState.data.equipment) || {};
 
         WRATH_GEAR.slots.forEach(slot => {
@@ -212,81 +323,15 @@ const WrathLobby = {
             if (gain) gain.innerHTML = item ? WrathFighter.itemStats(item) : '';
         });
 
-        // Кошелёк показан там, где он что-то значит, — в строке магазина.
-        // Отдельной панели для двух чисел не заводим: экран и так плотный.
         // Незавершённый забег — первое, что игрок должен увидеть в лобби:
-        // он платный и ждёт возвращения.
-        // Незавершённый забег — первое, что игрок должен увидеть в лобби: он
-        // платный и ждёт возвращения. Показывается числами: сколько узлов
-        // пройдено и с каким здоровьем игрок там стоит.
-        const rogueNote = this.root.querySelector('.mode-note[data-note="rogue"]');
-        if (rogueNote) {
-            const run = Backend.run();
-            // Считаются проходимые узлы: закрытые (магазин, событие) на
-            // карте нарисованы, но игрок их не проходит.
-            const total = run ? run.map.filter(n => !n.locked).length : 0;
-            const done = run ? run.map.filter(n => n.done).length : 0;
-            rogueNote.innerHTML = run
-                ? `${done}/${total}<br>❤️ ${run.hp}`
-                : `🎟 ${(Backend.rogueConfig().entry || {}).wrath_token || 1}`;
-        }
+        // он платный и ждёт возвращения. Показывается СОСТОЯНИЕМ кнопки, а не
+        // числами под ней: цена и содержимое забега теперь живут во
+        // всплывающем окне, которое открывается тем же нажатием.
+        const rogueBtn = this.root.querySelector('.mode-btn[data-mode="rogue"]');
+        if (rogueBtn) rogueBtn.classList.toggle('running', !!Backend.run());
 
-        // Кошелёк показан там, где он что-то значит, — под значком магазина.
-        const shopNote = this.root.querySelector('.mode-note[data-note="shop"]');
-        if (shopNote) {
-            const per = (ECONOMY.exchange.wrath_shard && ECONOMY.exchange.wrath_shard.per) || 3;
-            shopNote.innerHTML = `🎟 ${GameState.currency('wrath_token')}`
-                + `<br>🩸 ${GameState.currency('wrath_shard')}/${per}`;
-        }
-
-        // ---------- ПАНЕЛЬ БОЙЦА ----------
-        // Итоги, и только итоги: сколько всего здоровья, какой разброс удара,
-        // сколько брони. Из чего это сложилось, написано в самих слотах — так
-        // наверху не вырастает стена цифр, а разбивка всё равно под рукой.
-        //
-        // Строится ОДИН раз за вход, а раз в секунду обновляются только
-        // ширина полосы и число. Иначе перестройка панели дёргала бы
-        // раскладку каждую секунду — ровно та болезнь, от которой убран
-        // счётчик регенерации.
-        if (this.panelEl) {
-            const stats = WrathFighter.stats(equipment);
-            const short = WrathFighter.summary(stats);
-            const armor = WrathFighter.ZONES.some(zone => stats.armor[zone])
-                ? WrathFighter.ZONES.map(zone => stats.armor[zone]).join('/')
-                : '0';
-
-            this.panelEl.innerHTML = `
-                <div class="panel-row hp">
-                    <span class="panel-icon">❤️</span>
-                    <span class="panel-bar"><i id="wrath-hp-fill"></i></span>
-                    <span class="panel-num" id="wrath-hp-num"></span>
-                </div>
-                <div class="panel-row">
-                    <span class="panel-icon">🗡</span>
-                    <span class="panel-num">${short.damage}</span>
-                </div>
-                <div class="panel-row">
-                    <span class="panel-icon">🛡</span>
-                    <span class="panel-num">${armor}</span>
-                </div>
-                ${this.passivesRow()}
-            `;
-        }
-
-        this.refreshHealth();
     },
 
-    // Купленные способности показываются только здесь: из меню прокачки
-    // купленное уходит, а знать, что у бойца есть шестое чувство, надо.
-    passivesRow() {
-        const passives = WrathFighter.passives();
-        if (!passives.length) return '';
-        return `
-            <div class="panel-row passives">
-                <span class="panel-icon">✨</span>
-                <span class="panel-passives">${passives.map(p => p.emoji).join(' ')}</span>
-            </div>`;
-    },
 
     // ---------- ЗДОРОВЬЕ ----------
     // Отдельно от общего refresh: пересчитывается раз в секунду, а
@@ -303,8 +348,14 @@ const WrathLobby = {
     refreshHealth() {
         const health = WrathFighter.playerHp();
 
-        const fill = this.root.querySelector('#wrath-hp-fill');
-        const num = this.root.querySelector('#wrath-hp-num');
+        // Ищется в ПАНЕЛИ, а не в лобби: панель уехала в общую шапку, за
+        // пределы экрана лобби, и из лавки this.root её уже не содержит.
+        // Пока искали по старому месту, полоса стояла на месте во всех
+        // четырёх меню и число под ней не появлялось вовсе.
+        const panel = this.panelEl || document.getElementById('wrath-panel');
+        if (!panel) return;
+        const fill = panel.querySelector('#wrath-hp-fill');
+        const num = panel.querySelector('#wrath-hp-num');
         if (fill) fill.style.width = `${Math.max(0, (health.exact / (health.max || 1)) * 100)}%`;
         if (num) {
             num.textContent = `${health.hp}/${health.max}`;
@@ -313,7 +364,9 @@ const WrathLobby = {
 
         // Драться без здоровья нельзя — и это не поломка, а ожидание.
         // Кнопка запирается, а почему — видно по пустой полосе над червём.
-        const duelBtn = this.root.querySelector('.mode-btn[data-mode="duel"]');
+        // Кнопка боя — в лобби, а не в шапке: часы здоровья тикают и в лавке,
+        // где её на экране нет вовсе.
+        const duelBtn = this.root && this.root.querySelector('.mode-btn[data-mode="duel"]');
         if (duelBtn) {
             const dead = health.hp <= 0;
             duelBtn.classList.toggle('locked', dead);
