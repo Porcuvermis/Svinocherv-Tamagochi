@@ -57,6 +57,8 @@ const WrathDuel = {
     daggerAttack: null,
     resultOverlay: null,
     overlayText: null,
+    tokenEl: null,      // жетон под строкой награды (src/core/token-art.js)
+    tokenTimer: null,   // только анимация полёта собравшегося жетона
 
     fighters: null,     // { player, enemy }
     playerHP: 0,
@@ -107,6 +109,7 @@ const WrathDuel = {
         this.resultOverlay = document.getElementById('wrath-result-overlay');
         this.overlayText = document.getElementById('wrath-overlay-text');
         this.awardLine = document.getElementById('wrath-award');
+        this.tokenEl = document.getElementById('wrath-token');
 
         // Что начислили за бой, приходит ОТВЕТОМ с той стороны: мини-игра
         // сообщила исход, а сколько это стоило — решил конфиг наград. Здесь
@@ -177,6 +180,7 @@ const WrathDuel = {
     leave() {
         this.stopFightTimer();
         this.stopResultTimer();
+        this.stopTokenTimer();
         // Ушли с боя — здоровье снова восстанавливается. Дублируется в лобби на
         // случай, когда игру закрыли посреди драки и leave() не случился.
         // Во время забега Backend его не разморозит — там здоровье своё.
@@ -419,7 +423,9 @@ const WrathDuel = {
         this.resetSelections();
         this.planEnemyRound();
         this.updateHPBars();
-        if (this.awardLine) this.awardLine.textContent = '';
+        if (this.awardLine) this.awardLine.innerHTML = '';
+        this.stopTokenTimer();
+        if (this.tokenEl) { this.tokenEl.classList.remove('done'); this.tokenEl.innerHTML = ''; }
 
         if (this.daggerBtn) this.daggerBtn.classList.remove('disabled');
     },
@@ -589,7 +595,9 @@ const WrathDuel = {
             // Строка забега встаёт ПЕРЕД строкой наград: та придёт следом,
             // ответом на minigame:result, и перепишет поле целиком.
             this.awardPrefix = this.order.onResult(outcome) || '';
-            if (this.awardLine) this.awardLine.textContent = this.awardPrefix;
+            // Тоже разметка: строка забега приходит из WrathRogue.gainText, а
+            // босс отдаёт золото — то есть нарисованную монету.
+            if (this.awardLine) this.awardLine.innerHTML = this.awardPrefix;
         }
     },
 
@@ -611,10 +619,12 @@ const WrathDuel = {
         const parts = [];
         if (this.awardPrefix) parts.push(this.awardPrefix);
 
+        // Осколки и жетоны в строку НЕ пишутся числом: их показывает сам
+        // жетон под строкой. «+1 🩸» рядом с картинкой, где эта же долька
+        // только что закрасилась, — это одно и то же, сказанное дважды.
         Object.keys(awarded.currencies || {}).forEach(key => {
             const delta = awarded.currencies[key];
-            if (!delta) return;
-            const conf = ECONOMY.currencies[key];
+            if (!delta || key === 'wrath_shard' || key === 'wrath_token') return;
             parts.push(`+${delta} ${currencyMark(key)}`);
         });
 
@@ -624,18 +634,61 @@ const WrathDuel = {
         if (awarded.goldShare != null && awarded.goldShare < 1) {
             parts.push(`${currencyMark('gold')} ${Math.round(awarded.goldShare * 100)}%`);
         }
-        // Осколки сложились в жетон — показываем сам жетон со стрелкой.
-        if (awarded.exchanged) {
-            parts.push(`🩸→${currencyMark(awarded.exchanged.into)}`);
-        }
         if (awarded.mark) parts.push('🩹');
-        // Сколько поражений осталось до осколка: череп с числом и стрелка.
-        if (awarded.everyN && !awarded.currencies.wrath_shard) {
-            const left = awarded.everyN.n - (awarded.everyN.total % awarded.everyN.n);
-            parts.push(`💀 ${left}→🩸`);
-        }
 
-        this.awardLine.textContent = parts.join(' · ');
+        // РАЗМЕТКА, а не текст. Строка собирается из currencyMark(), а тот
+        // возвращает для золота не значок, а элемент `<i class="coin-gold">`:
+        // системная монета на айфоне серебряная, и золото приходится рисовать
+        // (src/core/palette.js). С textContent игрок видел на экране тег
+        // целиком — ровно то, что и было на снимке из Telegram.
+        this.awardLine.innerHTML = parts.join(' · ');
+        this.showToken(awarded);
+    },
+
+    // ---------- ЖЕТОН ПОСЛЕ БОЯ ----------
+    // Главная награда гнева копится по долькам, и раньше об этом сообщали
+    // числом: «+1 🩸», а иногда «💀 2→🩸». Число не показывает ни размера
+    // цели, ни расстояния до неё, а связь осколка с жетоном не показывает
+    // вовсе — её приходилось выводить самому.
+    //
+    // Теперь под строкой стоит сам жетон: целиком, всегда, с пунктиром на
+    // недостающих дольках. После победы закрашивается ещё одна треть, после
+    // поражения — девятая. Смотреть надо на одну картинку, и она же говорит,
+    // сколько осталось.
+    //
+    // ---------- ЖЕТОН СОБРАЛСЯ ЦЕЛИКОМ ----------
+    // Тогда он на мгновение показывается ПОЛНЫМ, улетает в кошелёк и
+    // возвращается скелетом с остатком. Это не украшение: без него размен
+    // выглядит как пропажа осколков. Момент «вот он собрался, вот он мой»
+    // единственное, чем размен вообще можно показать без слов.
+    showToken(awarded) {
+        if (!this.tokenEl) return;
+        const filled = TokenArt.progress('wrath_token', 'wrath.duel.lose');
+        const done = !!(awarded && awarded.exchanged);
+
+        this.tokenEl.classList.remove('done');
+        this.tokenEl.innerHTML = TokenArt.svg('wrath_token', done ? TokenArt.PIECES : filled);
+        if (!done) return;
+
+        // Показали целый, дали кадр на отрисовку, запустили полёт, а по его
+        // концу подставили остаток. Таймер здесь чисто анимационный —
+        // состояние он не двигает (CLAUDE.md, инвариант 1).
+        requestAnimationFrame(() => {
+            if (!this.tokenEl) return;
+            this.tokenEl.classList.add('done');
+        });
+        this.stopTokenTimer();
+        this.tokenTimer = setTimeout(() => {
+            this.tokenTimer = null;
+            if (!this.tokenEl) return;
+            this.tokenEl.classList.remove('done');
+            this.tokenEl.innerHTML = TokenArt.svg('wrath_token', filled);
+        }, 900);
+    },
+
+    stopTokenTimer() {
+        if (this.tokenTimer) clearTimeout(this.tokenTimer);
+        this.tokenTimer = null;
     },
 
 

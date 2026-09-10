@@ -207,6 +207,114 @@ const { viewport, prepare } = require('./harness');
     GameState.data.upgrades = { damage: 0, hp: 0, regen: 0 };
   });
 
+  // ---------- 6b. ЖЕТОН ПО ЧАСТЯМ ----------
+  // Жетон рисуется целиком всегда, а закрашены в нём ровно те дольки, что
+  // заработаны: треть за победу, девятая за поражение. Проверяется и сама
+  // арифметика долек, и то, что после размена скелет начинается заново.
+  console.log('\n--- жетон по частям ---');
+  const tok = await page.evaluate(() => {
+    const put = (shards, losses) => {
+      GameState.data.currencies.wrath_shard = shards;
+      GameState.data.counters = {};
+      if (losses) GameState.bumpTotal('wrath.duel.lose', losses);
+      return TokenArt.progress('wrath_token', 'wrath.duel.lose');
+    };
+    const svgOf = (n) => TokenArt.svg('wrath_token', n);
+    const countFilled = (markup) => {
+      const box = document.createElement('div');
+      box.innerHTML = markup;
+      return {
+        filled: box.querySelectorAll('path[fill^="url"]').length,
+        dashed: box.querySelectorAll('path[stroke-dasharray]').length,
+        rim: box.querySelectorAll('circle').length,
+        spokes: box.querySelectorAll('line').length
+      };
+    };
+    return {
+      pieces: TokenArt.PIECES,
+      // Осколок — треть, поражение — девятая. Эти числа обязаны совпадать с
+      // разменом и с everyN в конфиге, иначе картинка врёт.
+      exchangePer: ECONOMY.exchange.wrath_shard.per,
+      everyN: ECONOMY.rewards.wrath.duel.lose.everyN.n,
+      empty: put(0, 0),
+      oneLoss: put(0, 1),
+      twoLosses: put(0, 2),
+      oneShard: put(1, 0),
+      shardAndLoss: put(1, 2),
+      almost: put(2, 2),
+      shape0: countFilled(svgOf(0)),
+      shape5: countFilled(svgOf(5)),
+      shape9: countFilled(svgOf(9)),
+      whole: countFilled(TokenArt.svg('wrath_token', 0, { whole: true }))
+    };
+  });
+  check(tok.pieces === tok.exchangePer * tok.everyN,
+    `жетон делится ровно как в конфиге: ${tok.exchangePer} осколка × ${tok.everyN} поражения = ${tok.pieces} долек`);
+  check(tok.empty === 0 && tok.oneLoss === 1 && tok.twoLosses === 2,
+    'поражение красит одну девятую');
+  check(tok.oneShard === 3, 'осколок красит треть (три девятых)');
+  check(tok.shardAndLoss === 5, 'треть плюс две девятых даёт пять долек');
+  check(tok.almost === 8, 'до полного жетона не хватает ровно одной дольки');
+  check(tok.shape0.filled === 0 && tok.shape0.dashed === 9,
+    'пустой жетон нарисован ЦЕЛИКОМ: девять долек пунктиром');
+  check(tok.shape5.filled === 5 && tok.shape5.dashed === 4,
+    'наполовину собранный: пять закрашено, четыре пунктиром');
+  check(tok.shape9.filled === 9 && tok.shape9.dashed === 0, 'полный закрашен весь');
+  check(tok.whole.filled === 9, 'заработанный жетон рисуется целым');
+  check(tok.shape0.rim >= 2 && tok.shape0.spokes >= 3,
+    'скелет на месте и у пустого: ободок, дырка и три линии разлома');
+
+  // Размен: жетон собрался, улетел, скелет вернулся с остатком.
+  const fly = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_shard = 2;
+    GameState.data.currencies.wrath_token = 0;
+    GameState.data.counters = {}; GameState.bumpTotal('wrath.duel.lose', 2);
+    GameState.setSinValue('wrath', GameState.maxValue('wrath'));
+    const a = (await Backend.minigameResult({ sin: 'wrath', mode: 'duel', outcome: 'win' })).awarded;
+    WrathMinigame.open();
+    WrathMinigame.startMode('duel');
+    await new Promise(r => setTimeout(r, 600));
+    WrathDuel.awardPrefix = '';
+    WrathDuel.showResult();
+    WrathDuel.showAward(a);
+    await new Promise(r => setTimeout(r, 150));
+    const el = document.getElementById('wrath-token');
+    const atOnce = { filled: el.querySelectorAll('path[fill^="url"]').length,
+                     flying: el.classList.contains('done') };
+    await new Promise(r => setTimeout(r, 1100));
+    return { exchanged: !!a.exchanged, tokens: GameState.currency('wrath_token'), atOnce,
+             after: { filled: el.querySelectorAll('path[fill^="url"]').length,
+                      flying: el.classList.contains('done') } };
+  });
+  check(fly.exchanged && fly.tokens === 1, 'три осколка сложились в жетон');
+  check(fly.atOnce.filled === 9 && fly.atOnce.flying,
+    'собравшийся жетон показан ПОЛНЫМ и улетает в кошелёк');
+  check(fly.after.filled === 2 && !fly.after.flying,
+    `после полёта на скелете снова закрашен остаток: ${fly.after.filled}/9`);
+
+  // Кошелёк лавки: жетон вместо значка со счётчиком.
+  const wallet = await page.evaluate(() => {
+    GameState.data.currencies.wrath_token = 2;
+    WrathMinigame.startMode('shop');
+    const box = document.createElement('div');
+    box.innerHTML = WrathShop.walletHtml(null);
+    return {
+      tokens: box.querySelectorAll('.token-art').length,
+      digits: (box.textContent || '').replace(/\s/g, ''),
+      price: WrathShop.priceText(WRATH_GEAR.items['rusty-blade']).indexOf('token-art') !== -1
+    };
+  });
+  check(wallet.tokens === 2, 'в кошельке два нарисованных жетона: целый и собираемый');
+  check(wallet.digits === '2', `цифра в кошельке одна — число жетонов («${wallet.digits}»), дроби нет`);
+  check(wallet.price, 'ценник в лавке тоже показывает нарисованный жетон');
+
+  // Раздеваем игрока обратно.
+  await page.evaluate(() => {
+    GameState.data.currencies.wrath_shard = 0;
+    GameState.data.counters = {};
+    WrathMinigame.showLobby();
+  });
+
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');
   const node = await page.evaluate(() => {

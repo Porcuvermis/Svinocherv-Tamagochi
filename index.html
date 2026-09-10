@@ -193,13 +193,13 @@
          инлайн-стилей выше, ничего не требует и держится до window.load, то
          есть до момента, когда все эти файлы УЖЕ применены. Несобранного
          интерфейса игрок не увидит — он увидит черноту. -->
-    <link rel="stylesheet" href="style.css?v=14" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="style.css?v=15" media="print" onload="this.media='all'">
     <!-- Общее окно мини-игры (рамка, шапка, вопрос при выходе). Строго ДО
          стилей самих мини-игр: они настраивают его переменными. -->
     <link rel="stylesheet" href="src/core/minigame-window.css?v=2" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/core/sins-menu.css?v=1">
     <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=21" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=22" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/lust/lust.css?v=7" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
@@ -647,6 +647,9 @@
                 <!-- Что начислили. Заполняется по ответу с той стороны
                      (событие minigame:awarded), сама игра ничего не считает. -->
                 <div class="wrath-award" id="wrath-award"></div>
+                <!-- Жетон после боя: целиком, с пунктиром на недостающих
+                     дольках. Разбор — src/core/token-art.js. -->
+                <div class="wrath-token" id="wrath-token"></div>
                 <!-- Кнопка появляется НЕ сразу: секунду после оглашения
                      результата экран ничего не принимает, чтобы случайный тап
                      не смахнул результат раньше, чем игрок его прочитал. -->
@@ -914,7 +917,7 @@
 <script src="src/core/state.js?v=8"></script>
 <script src="src/core/backend.js?v=13"></script>
 
-<script src="src/core/palette.js?v=4"></script>
+<script src="src/core/palette.js?v=5"></script>
 <!-- Отдача в палец: один слой на всю игру. До мини-игр — они зовут её из
      обработчиков ввода. -->
 <script src="src/core/haptics.js?v=1"></script>
@@ -928,6 +931,7 @@
 <!-- Локации: таблица комнат. Строго после палитры — берёт цвета оттуда
      прямо при разборе файла. -->
 <script src="src/core/rooms.js?v=1"></script>
+<script src="src/core/token-art.js?v=1"></script>
 <script src="src/core/worm-model.js?v=9"></script>
 <script src="src/core/worm-marks.js?v=3"></script>
 <script src="src/core/worm-cosmetics.js?v=1"></script>
@@ -947,11 +951,11 @@
 <!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
      лобби и бой, а они считают характеристики бойцом. -->
 <script src="src/minigames/wrath/wrath-fighter.js?v=10"></script>
-<script src="src/minigames/wrath/wrath-shop.js?v=5"></script>
+<script src="src/minigames/wrath/wrath-shop.js?v=6"></script>
 <script src="src/minigames/wrath/wrath-boost.js?v=5"></script>
-<script src="src/minigames/wrath/wrath-rogue.js?v=5"></script>
+<script src="src/minigames/wrath/wrath-rogue.js?v=6"></script>
 <script src="src/minigames/wrath/wrath-lobby.js?v=12"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=10"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=11"></script>
 <script src="src/minigames/wrath/wrath.js?v=12"></script>
 <script src="src/minigames/sloth/plant-model.js?v=2"></script>
 <script src="src/minigames/sloth/garden-art.js?v=2"></script>

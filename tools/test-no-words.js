@@ -26,6 +26,18 @@ const { chromium } = require('playwright');
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
 
+  // Ищет два разных непорядка сразу.
+  //
+  // ПЕРВЫЙ — слова на игровом экране (инвариант 9), ради чего прогон и
+  // заводился.
+  //
+  // ВТОРОЙ — РАЗМЕТКА, попавшая на экран текстом. Ловится отдельным правилом,
+  // а не буквами, и вот почему: строка награды в бою собирается из
+  // currencyMark(), а тот возвращает для золота элемент, а не значок. Стоило
+  // присвоить её через textContent — и игрок увидел на экране `<i
+  // class="coin-gold"></i>` целиком. Прогон этого не заметил: он добивает бой
+  // ЗАБЕГА, а тот валюты не даёт, и до строки с золотом просто не доходил.
+  // Теперь тег ловится сам по себе, даже если букв в нём не было бы.
   const scan = (rootId) => page.evaluate((id) => {
     const bad = [];
     const root = document.getElementById(id || 'wrath-game');
@@ -34,10 +46,16 @@ const { chromium } = require('playwright');
     let node;
     while ((node = walker.nextNode())) {
       const t = (node.nodeValue || '').trim();
-      if (!t || !/[A-Za-zА-Яа-яЁё]/.test(t)) continue;
+      if (!t) continue;
       const el = node.parentElement;
+      // Текст ВНУТРИ svg — это не подпись на экране, а содержимое рисунка
+      // (у нас там ничего нет, но <title> и <desc> легальны и невидимы).
+      if (el.closest('svg')) continue;
       const style = getComputedStyle(el);
       if (style.visibility === 'hidden' || style.display === 'none') continue;
+      const leak = /<\/?[a-z][\s\S]*>|&lt;|class\s*=\s*["']/i.test(t);
+      if (leak) { bad.push(`РАЗМЕТКА ТЕКСТОМ ${el.className || el.id || el.tagName}: «${t.slice(0, 60)}»`); continue; }
+      if (!/[A-Za-zА-Яа-яЁё]/.test(t)) continue;
       bad.push(`${el.className || el.id || el.tagName}: «${t.slice(0, 40)}»`);
     }
     return bad;
@@ -125,6 +143,32 @@ const { chromium } = require('playwright');
   }
   await page.waitForTimeout(1400);
   found.duelResult = await scan();
+
+  // ---------- ОБЫЧНЫЙ БОЙ, А НЕ БОЙ ЗАБЕГА ----------
+  // Выше добивался бой на карте забега, а тот валюты не даёт вовсе. Строка
+  // награды с золотом и жетоном — только у обычного боя, и именно на ней
+  // однажды вылез тег вместо монеты. Поэтому она проверяется отдельно.
+  await page.evaluate(async () => {
+    if (typeof WrathMinigame !== 'undefined' && WrathMinigame.close) WrathMinigame.close();
+    GameState.setSinValue('wrath', 0);
+    const awarded = (await Backend.minigameResult({
+      sin: 'wrath', mode: 'duel', outcome: 'win'
+    })).awarded;
+    GameManager.handleSinAction('wrath');
+    await new Promise(r => setTimeout(r, 500));
+    WrathMinigame.startMode('duel');
+    await new Promise(r => setTimeout(r, 700));
+    WrathDuel.awardPrefix = '';
+    WrathDuel.showResult();
+    WrathDuel.showAward(awarded);
+  });
+  await page.waitForTimeout(700);
+  found.duelAward = await scan();
+  await page.screenshot({ path: out + 'nw-8b-duel-award.png' });
+  await page.evaluate(() => {
+    if (typeof WrathMinigame !== 'undefined' && WrathMinigame.close) WrathMinigame.close();
+  });
+  await page.waitForTimeout(300);
 
   // ---------- ЧРЕВОУГОДИЕ: КУХНЯ ----------
   // Собиралась сразу без слов, поэтому проверяется с первого дня, а не после

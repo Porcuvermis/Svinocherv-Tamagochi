@@ -403,3 +403,22 @@ body.debug-mode #build-stamp {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.45);
 }
+
+/* ---------- ЖЕТОН В СТРОКЕ ---------- */
+/* Нарисованный жетон там, где раньше стоял значок валюты: ценник в лавке,
+   вход в забег, добыча на карте. Размер в em по той же причине, что у
+   монеты — растёт вместе с текстом рядом и не требует правки в каждом месте
+   (currencyMark() в src/core/palette.js возвращает его разметку, рисует
+   src/core/token-art.js).
+
+   Чуть крупнее монеты: у жетона девять долек против сплошного кружка, и в
+   один em они сливаются в точку. */
+.mark-token {
+    display: inline-block;
+    width: 1.45em;
+    height: 1.45em;
+    vertical-align: -0.42em;
+    flex: none;
+}
+
+.mark-token .token-art { display: block; width: 100%; height: 100%; overflow: visible; }

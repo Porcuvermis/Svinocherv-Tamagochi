@@ -418,7 +418,10 @@ const WrathRogue = {
 
     showMessage() {
         if (!this.messageEl) return;
-        this.messageEl.textContent = this.message || '';
+        // Разметка: сообщение собирается из currencyMark(), а золото там —
+        // нарисованный кружок, а не значок (та же причина, что у строки
+        // награды в бою).
+        this.messageEl.innerHTML = this.message || '';
         this.messageEl.classList.toggle('show', !!this.message);
     },
 

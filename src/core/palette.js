@@ -624,6 +624,26 @@ if (typeof window !== 'undefined') {
 // сервер, а как это выглядит, решает клиент.
 function currencyMark(key) {
     if (key === 'gold') return '<i class="coin-gold"></i>';
+
+    // ---------- ЖЕТОНЫ И ОСКОЛКИ РИСУЮТСЯ ----------
+    // Та же причина, что у монеты, только хуже: у жетона гнева эмодзи был
+    // билетик 🎟, у осколка — капля крови 🩸, и по этой паре нельзя было
+    // догадаться, что одно складывается из другого. Связь «три осколка =
+    // жетон» существовала только в конфиге.
+    //
+    // Теперь и то и другое — один рисунок (src/core/token-art.js): круглая
+    // эмблема, разломанная на три трети, каждая ещё на три. Жетон целый,
+    // осколок — ровно его треть, и это ВИДНО, а не написано. Ценник «стоит
+    // один такой» читается с той же картинки, что и кошелёк.
+    if (typeof TokenArt !== 'undefined') {
+        if (/_token$/.test(key)) {
+            return `<span class="mark-token">${TokenArt.svg(key, 0, { whole: true })}</span>`;
+        }
+        if (/_shard$/.test(key) && ECONOMY.exchange && ECONOMY.exchange[key]) {
+            return `<span class="mark-token">${TokenArt.svg(key, TokenArt.PER_THIRD)}</span>`;
+        }
+    }
+
     const conf = (typeof ECONOMY !== 'undefined' && ECONOMY.currencies)
         ? ECONOMY.currencies[key] : null;
     return conf ? conf.emoji : key;
