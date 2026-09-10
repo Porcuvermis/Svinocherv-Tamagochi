@@ -1793,3 +1793,122 @@
     opacity: 0.75;
     margin-top: -2px;
 }
+
+/* ============================================================ */
+/* ================  ОКНО ВХОДА В ЗАБЕГ  ====================== */
+/* ============================================================ */
+/* Три блока, и каждый держится на приёме, который читается без подписи:
+   схватка — сравнение лицом к лицу, дорога — сами узлы по порядку, сделка —
+   цена, стрелка, добыча. Разбор, чем был плох прежний список из четырёх
+   строк «значок плюс число», — в renderStart(). */
+
+.rogue-card.start { gap: 10px; justify-content: center; }
+
+/* ---------- СХВАТКА ---------- */
+/* Две стороны с ОДНИМИ И ТЕМИ ЖЕ величинами в одном и том же порядке: именно
+   одинаковость строк и делает это сравнением, а не двумя списками. */
+.rogue-versus {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 4px;
+}
+
+.vs-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* Сторона противника подкрашена красным греха — тем же, что рамка окна и луч
+   в колесе. Цвет здесь работает как имя: слева свой, справа чужой. */
+.vs-side.foe {
+    border-color: rgba(255, 42, 42, 0.4);
+    background: rgba(255, 42, 42, 0.1);
+}
+
+.vs-face { font-size: 26px; line-height: 1; margin-bottom: 2px; }
+
+.vs-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.vs-stat i { font-style: normal; font-size: 11px; opacity: 0.85; }
+
+.vs-mark { font-size: 15px; opacity: 0.55; padding: 0 2px; }
+
+/* ---------- ДОРОГА ---------- */
+/* Не «⚔️ 4», а сами узлы по порядку — теми же значками, что на карте под
+   окном. Линия под ними связывает их в путь: без неё это просто ряд значков. */
+.rogue-road {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 7px 6px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.road-node {
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.85;
+    /* Между узлами — короткая перемычка, чтобы ряд читался дорогой. */
+    position: relative;
+    padding: 0 4px;
+}
+
+.road-node + .road-node::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: 50%;
+    width: 6px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+/* Босс и мини-босс крупнее: по ряду сразу видно, где ступени. */
+.road-node.boss { font-size: 19px; opacity: 1; }
+.road-node.miniboss { font-size: 16px; opacity: 1; }
+.road-node.fork { opacity: 0.5; }
+
+/* ---------- СДЕЛКА ---------- */
+/* Стрелка и делает из двух чисел обмен: слева то, что уходит, справа то, что
+   может прийти. Без неё это две несвязанные строки. */
+.rogue-deal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.deal-pay, .deal-win { display: flex; align-items: center; gap: 6px; }
+.deal-pay { opacity: 0.75; }
+
+.deal-item { display: flex; align-items: center; gap: 3px; }
+.deal-item b { font-size: 15px; font-weight: 700; color: #fff; }
+.deal-item .token-art { width: 24px; height: 24px; }
+.deal-item .coin-gold { font-size: 17px; }
+
+.deal-arrow { font-size: 15px; color: var(--wrath-attack); flex: none; }
+
+/* Не по карману — кнопка «идти» приглушена и не выглядит нажимаемой. Чего
+   именно не хватило, отвечает кошелёк в шапке. */
+.rogue-action.poor { opacity: 0.4; }

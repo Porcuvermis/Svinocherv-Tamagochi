@@ -443,6 +443,49 @@ const { viewport, prepare } = require('./harness');
              enemyBase: Backend.rogueConfig().enemies.boss.hp };
   });
   check(rogue.count === 3, `сложностей три: ${rogue.count}`);
+
+  // ---------- СТРУКТУРА ОКНА ВХОДА ----------
+  // Первый вариант выкладывал четыре строки «значок плюс число» подряд, и
+  // читать их было нельзя: ни одна не говорила, про что она, а один и тот же
+  // значок означал в соседних строках разное. Теперь три блока, и каждый
+  // держится на приёме, который читается без подписи. Проверка следит, что
+  // блоки на месте и что в них ровно то, что задумано.
+  const card = await page.evaluate(() => {
+    const root = document.querySelector('.rogue-card.start');
+    if (!root) return null;
+    const vs = root.querySelectorAll('.rogue-versus .vs-side');
+    const stats = [...vs].map(s => [...s.querySelectorAll('.vs-stat')].map(e => e.textContent.trim()));
+    return {
+      blocks: ['.rogue-levels', '.rogue-versus', '.rogue-road', '.rogue-deal']
+        .filter(sel => root.querySelector(sel)).length,
+      sides: vs.length,
+      // Обе стороны схватки обязаны нести ОДНИ И ТЕ ЖЕ величины в одном
+      // порядке — именно одинаковость строк и делает это сравнением.
+      sameShape: stats.length === 2 && stats[0].length === stats[1].length
+                 && stats[0].every((t, i) => t[0] === stats[1][i][0]),
+      roadNodes: root.querySelectorAll('.rogue-road .road-node').length,
+      mapSteps: Backend.rogueConfig().map.length,
+      // На дороге развилка НЕ рисуется значком узла: там 👆, и это подсказка
+      // кнопке («жми по точке»), а в ряду она читалась как «тут надо нажать».
+      forkGlyph: (root.querySelector('.rogue-road .road-node.fork') || {}).textContent,
+      pay: root.querySelectorAll('.deal-pay .deal-item').length,
+      win: root.querySelectorAll('.deal-win .deal-item').length,
+      arrow: !!root.querySelector('.deal-arrow'),
+      // Цена стоит в сделке, а не на кнопке: на кнопке она была бы вторым
+      // местом для одного числа.
+      action: (document.getElementById('rogue-action').textContent || '').trim()
+    };
+  });
+  check(card && card.blocks === 4, 'в окне четыре блока: сложность, схватка, дорога, сделка');
+  check(card.sides === 2 && card.sameShape,
+    'схватка: две стороны с одинаковыми величинами в одном порядке');
+  check(card.roadNodes === card.mapSteps,
+    `дорога показывает все узлы карты: ${card.roadNodes} из ${card.mapSteps}`);
+  check(card.forkGlyph && card.forkGlyph !== '👆',
+    `развилка на дороге не палец, а «${card.forkGlyph}»`);
+  check(card.pay >= 1 && card.win >= 2 && card.arrow,
+    `сделка: ${card.pay} слева, стрелка, ${card.win} справа`);
+  check(!/\d/.test(card.action), `на кнопке нет цены, только «${card.action}»`);
   check(rogue.rows.every((r, i) => r.chosen === i), 'выбранная сложность подсвечена');
   check(rogue.rows[0].bossHp < rogue.rows[1].bossHp && rogue.rows[1].bossHp < rogue.rows[2].bossHp,
     `босс растёт со сложностью: ${rogue.rows.map(r => r.bossHp).join(' → ')} хп`);

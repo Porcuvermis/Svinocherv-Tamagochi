@@ -205,7 +205,7 @@ const WrathRogue = {
                 // у противника на экране нет — за него говорят его числа, а
                 // потом будет говорить облик.
                 let note = '';
-                if (enemy) note = `${enemy.hp}❤ ${enemy.damage[0]}–${enemy.damage[1]}🗡`;
+                if (enemy) note = this.foeStats(enemy);
                 else if (point.locked) note = '🔒';
                 else if (point.kind === 'heal') note = `${Math.round((cfg.healShare || 0.5) * 100)}%`;
 
@@ -305,21 +305,55 @@ const WrathRogue = {
         this.setAction(
             kind.emoji,
             () => this.enterNode(run.node),
-            enemy ? `${enemy.hp}❤ ${enemy.damage[0]}–${enemy.damage[1]}🗡` : ''
+            enemy ? this.foeStats(enemy) : ''
         );
     },
 
+    // ---------- ЧИСЛА ПРОТИВНИКА ----------
+    // Один формат на весь грех: значок ПЕРЕД числом, здоровье первым, урон
+    // вторым. Раньше на точках карты стояло «56❤ 2–11🗡» — значок после
+    // числа и в обратном порядке, — а в окне входа «❤️ 56 🗡 2–11». Две
+    // записи одного и того же заставляют читать каждую заново; сравнивать
+    // же приходится постоянно, и именно на сравнении держится вся карта.
+    foeStats(enemy) {
+        if (!enemy) return '';
+        return `❤️ ${enemy.hp}  🗡 ${enemy.damage[0]}–${enemy.damage[1]}`;
+    },
+
     // ---------- ОКНО ВХОДА ----------
-    // Всё, что игрок должен знать про забег, живёт ЗДЕСЬ и только здесь:
-    // сложность, цена, что впереди, что за это дадут и с чем он войдёт.
+    // Всё, что игрок решает про забег, живёт ЗДЕСЬ: сложность, во что он
+    // ввязывается, какая дорога впереди и чем меняются жетоны.
     //
-    // Раньше цена стояла числом под значком забега в лобби. Кнопка от этого
-    // переставала быть кнопкой и становилась ценником, а выбирать всё равно
-    // было нечего — сложность была одна. Теперь нажатие открывает окно, и
-    // выбор со всеми числами делается в одном месте.
+    // ---------- ЧЕМ БЫЛО ПЛОХО ----------
+    // Первый вариант выкладывал три строки подряд: «⚔️4 👹1 💀1», «жетон 2
+    // осколок 2 монета 60», «❤️20 🗡3–5» и «💀56❤ 2–11🗡». Значки правильные,
+    // числа верные, читать невозможно — и по трём причинам сразу.
     //
-    // Ни одного слова: сложность — огоньки, путь — значки врагов, добыча —
-    // нарисованные жетоны, вход — здоровье и разброс удара (инвариант 9).
+    //   1. Ни одна строка не говорит, ПРО ЧТО она. Четыре ряда «значок плюс
+    //      число» сливаются в таблицу без заголовков.
+    //   2. Один значок означает разное в соседних строках. 💀 сверху — «на
+    //      карте один босс», 💀 снизу — «вот его характеристики». ❤️ в одной
+    //      строке твоё здоровье, в другой — его.
+    //   3. Жетон и осколок в мелком размере неразличимы, и «2 и ещё 2»
+    //      читается как одно число, написанное дважды.
+    //
+    // ---------- КАК ТЕПЕРЬ ----------
+    // Три блока, и каждый построен на приёме, который читается без подписи:
+    //
+    //   СХВАТКА — ты и босс лицом к лицу, одни и те же величины в одном и том
+    //   же порядке. Сравнение говорит про сложность больше, чем множитель:
+    //   видно, что входишь с двадцатью против шестидесяти, и понятно, зачем по
+    //   дороге усиления.
+    //
+    //   ДОРОГА — не «⚔️ 4», а сами узлы по порядку, теми же значками, что на
+    //   карте под окном. Кому нужно число — сосчитает точки.
+    //
+    //   СДЕЛКА — цена, стрелка, добыча. Стрелка и делает из двух чисел обмен.
+    //
+    // Добыча приведена к ОДНОЙ валюте: осколки — трети жетона, и показывать
+    // «2 жетона и 2 осколка» значит заставлять игрока складывать. Считается в
+    // девятых и рисуется как в кошельке — целые со счётчиком плюс остаток
+    // недособранным жетоном.
     renderStart() {
         const cfg = Backend.rogueConfig();
         const levels = Backend.rogueLevels();
@@ -329,59 +363,88 @@ const WrathRogue = {
         const price = level.entry || (cfg ? cfg.entry : {});
         const enough = !Object.keys(price).some(key => GameState.currency(key) < price[key]);
 
-        // Что впереди и что с этого будет — строками значков. Числа считаются
-        // по карте и по множителю сложности: добавили узел или тронули
-        // множитель — строка пересчиталась сама.
-        const counts = { fight: 0, miniboss: 0, boss: 0 };
+        const picker = levels.map((l, i) => `
+            <button type="button" class="rogue-level${i === this.level ? ' on' : ''}"
+                    data-level="${i}">${l.sign}</button>`).join('');
+
+        // ---------- СХВАТКА ----------
+        const start = (cfg && cfg.start) || { hp: 20, damage: [3, 5] };
+        const boss = Backend.rogueEnemy({ enemy: 'boss' }, this.level);
+        const side = (face, cls, hp, dmg) => `
+            <div class="vs-side ${cls}">
+                <span class="vs-face">${face}</span>
+                <span class="vs-stat"><i>❤️</i>${hp}</span>
+                <span class="vs-stat"><i>🗡</i>${dmg}</span>
+            </div>`;
+
+        // ---------- ДОРОГА ----------
+        // Развилка — один значок, а не три: игрок проходит ОДИН путь из трёх,
+        // и рисовать все три значило бы считать дорогу длиннее, чем она есть.
+        const road = (cfg ? cfg.map : []).map(step => {
+            // Развилка рисуется НЕ значком узла: у неё в NODE_KINDS стоит 👆,
+            // и это подсказка кнопке действия («жми по точке на карте»), а не
+            // имя узла. В ряду дороги палец читался как «тут надо нажать», а
+            // не «тут дорога расходится». Скрещённые стрелки говорят ровно то,
+            // что нужно, и ни на что другое не похожи.
+            const emoji = step.kind === 'fork'
+                ? '🔀'
+                : (this.NODE_KINDS[step.kind] || { emoji: '•' }).emoji;
+            return `<span class="road-node ${step.kind}">${emoji}</span>`;
+        }).join('');
+
+        // ---------- СДЕЛКА ----------
+        const money = (map) => {
+            const per = (ECONOMY.exchange.wrath_shard || {}).per || 3;
+            const ninths = (map.wrath_token || 0) * TokenArt.PIECES
+                         + (map.wrath_shard || 0) * (TokenArt.PIECES / per);
+            const whole = Math.floor(ninths / TokenArt.PIECES);
+            const rest = Math.round(ninths % TokenArt.PIECES);
+            const parts = [];
+            if (whole) parts.push(`<span class="deal-item">${TokenArt.svg('wrath_token', 0, { whole: true })}<b>${whole}</b></span>`);
+            if (rest) parts.push(`<span class="deal-item">${TokenArt.svg('wrath_token', rest)}</span>`);
+            if (map.gold) parts.push(`<span class="deal-item">${currencyMark('gold')}<b>${map.gold}</b></span>`);
+            return parts.join('') || `<span class="deal-item"><b>0</b></span>`;
+        };
         const loot = {};
         (cfg ? cfg.map : []).forEach(step => {
             if (!step.enemy) return;
-            counts[step.kind] = (counts[step.kind] || 0) + 1;
             const reward = (cfg.enemies[step.enemy] || {}).reward || {};
             Object.keys(reward.currencies || {}).forEach(key => {
                 loot[key] = (loot[key] || 0) + Math.round(reward.currencies[key] * (level.loot || 1));
             });
         });
 
-        const path = [
-            `⚔️ ${counts.fight}`,
-            counts.miniboss ? `👹 ${counts.miniboss}` : '',
-            counts.boss ? `💀 ${counts.boss}` : ''
-        ].filter(Boolean).join('  ');
-
-        const lootLine = Object.keys(loot).map(key =>
-            `${currencyMark(key)} ${loot[key]}`).join('  ');
-
-        // Сила врагов показана ПРИМЕРОМ, а не множителем: множитель — это
-        // число без единиц, а «босс держит столько-то» игрок сравнит с тем,
-        // с чем он входит, прямо в соседней строке.
-        const boss = Backend.rogueEnemy({ enemy: 'boss' }, this.level);
-        const start = (cfg && cfg.start) || { hp: 20, damage: [3, 5] };
-
-        const picker = levels.map((l, i) => `
-            <button type="button" class="rogue-level${i === this.level ? ' on' : ''}"
-                    data-level="${i}">${l.sign}</button>`).join('');
-
         this.cardEl.className = 'rogue-card shown start';
         this.cardEl.innerHTML = `
-            <div class="rogue-card-icon">🗺</div>
             <div class="rogue-levels">${picker}</div>
-            <div class="rogue-card-row">${path}</div>
-            <div class="rogue-card-row loot">${lootLine}</div>
-            <div class="rogue-card-row start">❤️ ${start.hp}  🗡 ${start.damage[0]}–${start.damage[1]}</div>
-            ${boss ? `<div class="rogue-card-row foe">💀 ${boss.hp}❤ ${boss.damage[0]}–${boss.damage[1]}🗡</div>` : ''}`;
+            <div class="rogue-versus">
+                ${side('🐷', 'me', start.hp, `${start.damage[0]}–${start.damage[1]}`)}
+                <span class="vs-mark">⚔️</span>
+                ${side('💀', 'foe', boss ? boss.hp : '?', boss ? `${boss.damage[0]}–${boss.damage[1]}` : '?')}
+            </div>
+            <div class="rogue-road">${road}</div>
+            <div class="rogue-deal">
+                <span class="deal-pay">${money(price)}</span>
+                <span class="deal-arrow">➜</span>
+                <span class="deal-win">${money(loot)}</span>
+            </div>`;
 
         this.cardEl.querySelectorAll('.rogue-level').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 this.level = Number(btn.dataset.level) || 0;
                 // Перерисовывается ВСЁ окно, а не только подсветка: от
-                // сложности едут и цена, и добыча, и сила босса.
+                // сложности едут и босс, и добыча, и цена.
                 this.renderStart();
             };
         });
 
-        this.setAction(this.priceText(price), enough ? () => this.start() : null);
+        // Кнопка — только «идти». Цену повторять на ней незачем: она стоит в
+        // сделке выше, слева от стрелки, и там у неё есть смысл — рядом с тем,
+        // что за неё дадут. Не хватило жетонов — ответит кошелёк в шапке.
+        this.setAction('▶', enough ? () => this.start() : null);
+        if (!enough && this.actionEl) this.actionEl.classList.add('poor');
+        else if (this.actionEl) this.actionEl.classList.remove('poor');
     },
 
     // ---------- ВЫБОР НАГРАДЫ ----------
