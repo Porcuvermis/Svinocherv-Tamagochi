@@ -144,10 +144,17 @@ function income(hp, regenLevel) {
 }
 
 // ---------- ОТЧЁТ ----------
-// Ступеней столько, сколько их в каталоге: добавили предмет тира 6 — таблица
-// стала на строку длиннее сама.
-const maxTier = Object.keys(WRATH_GEAR.items)
-    .reduce((m, id) => Math.max(m, WRATH_GEAR.items[id].tier || 1), 1);
+// Ступеней столько, сколько их в каталоге И в ветках прокачки: добавили
+// предмет тира 6 или седьмой уровень ветки — таблица стала на строку длиннее
+// сама. Ветки считаются наравне с предметами, иначе последние уровни прокачки
+// просто не попадут в отчёт.
+const maxTier = Math.max(
+    Object.keys(WRATH_GEAR.items).reduce((m, id) => Math.max(m, WRATH_GEAR.items[id].tier || 1), 1),
+    (W.upgrades.order || []).reduce((m, key) => {
+        const branch = W.upgrades[key];
+        return (branch && branch.levels && branch.tab !== 'passive')
+            ? Math.max(m, branch.levels.length) : m;
+    }, 1));
 const inc = income(W.baseHp, 0);
 const tiers = [];
 for (let n = 1; n <= maxTier; n++) { const st = stage(n); if (st.cost > 0) tiers.push(st); }
