@@ -128,13 +128,13 @@ console.log(`порог голода у боя снят: ${ECONOMY.rewards.wrath
 
 console.log('\n---------- ЦИКЛ «БОЙ → ОЖИДАНИЕ → БОЙ» ----------');
 console.log('сборка      регенерация  хп   хп/мин  ожидание  цикл   побед  боёв/ч  побед/ч  жетонов/ч');
-const cycles = {};
+const cycles0 = {};
 BUILDS.forEach(([name, upg, gear]) => {
     LEVELS.forEach(level => {
         const f = build(Object.assign({}, upg, { regen: level }), gear);
         const s = share({ regen: level });
         const c = cycle(f, s, Math.max(20000, Math.round(N / 4)));
-        cycles[name + '/' + level] = c;
+        cycles0[name + '/' + level] = c;
         const perHour = 60 / c.perFight;
         const winsHour = perHour * c.winRate;
         console.log(
@@ -146,17 +146,117 @@ BUILDS.forEach(([name, upg, gear]) => {
     });
 });
 
-// ---------- ЧТО СТОИТ ВЕТКА «+ЗДОРОВЬЕ» ----------
-// Плоская регенерация означает, что купленный запас надо ещё и отсиживать.
-// Это не побочный эффект, а замысел: ровно отсюда берётся спрос на вторую
-// ветку. Здесь видно цену вопроса в минутах.
-console.log('\n---------- ЧЕМ ОПЛАЧИВАЕТСЯ БОЛЬШОЙ ЗАПАС ----------');
+// ---------- ГЛАВНАЯ ТАБЛИЦА: ЦИКЛ ВДОЛЬ ПУТИ ПРОКАЧКИ ----------
+// Таблица выше сравнивает сборки при ОДИНАКОВОЙ регенерации, и по ней легко
+// сделать неверный вывод: «полный ждёт втрое дольше голого». Так и есть — но
+// только если игрок скупил снаряжение и не тронул регенерацию, то есть выбрал
+// худший из возможных путей.
+//
+// Настоящий вопрос другой: что происходит, если качаться РАЗУМНО — брать
+// каждый раз самое дешёвое из доступного, отчего регенерация покупается
+// вперемешку с остальным. Вот на него и отвечает эта таблица, и отвечает она
+// «ничего страшного не происходит»: цикл держится около десяти минут от
+// голого до полностью выкупленного.
+//
+// Пила в столбце дохода — это и есть замысел: покупка «+хп» цикл удлиняет,
+// следующая ступень регенерации возвращает его обратно и немного сверх. Две
+// ветки спорят друг с другом, как и задумано.
+console.log('\n---------- ЦИКЛ ВДОЛЬ РАЗУМНОГО ПУТИ ПРОКАЧКИ ----------');
+console.log('(каждый раз покупается самое дешёвое из доступного)\n');
+console.log('покупка              цена всего   хп  реген  ожидание  цикл   боёв/ч  жетонов/ч');
+
+const perShard = ECONOMY.exchange.wrath_shard.per;
+const loseEveryN = ECONOMY.rewards.wrath.duel.lose.everyN;
+const tiersOf = {};
+WRATH_GEAR.slots.forEach(sl => {
+    tiersOf[sl.key] = Object.keys(WRATH_GEAR.items)
+        .filter(id => WRATH_GEAR.items[id].slot === sl.key)
+        .sort((x, y) => WRATH_GEAR.items[x].tier - WRATH_GEAR.items[y].tier);
+});
+
+function statsOf(eq, up) {
+    const o = { hp: W.baseHp, dmgMin: W.damageMin, dmgMax: W.damageMax,
+                armor: { head: 0, body: 0, tail: 0 } };
+    let dmg = 0;
+    ['damage', 'hp'].forEach(key => {
+        const branch = W.upgrades[key], n = up[key] || 0;
+        if (!n) return;
+        const step = branch.levels[Math.min(n, branch.levels.length) - 1];
+        if (key === 'damage') dmg += step.bonus; else o.hp += step.bonus;
+    });
+    Object.keys(eq).forEach(slot => {
+        const it = WRATH_GEAR.items[eq[slot]];
+        if (!it) return;
+        o.hp += it.hp || 0; dmg += it.damage || 0;
+        if (it.armor) ZONES.forEach(z => { if (it.armor[z]) o.armor[z] += it.armor[z]; });
+    });
+    o.dmgMin += dmg; o.dmgMax += dmg;
+    return o;
+}
+
+const path = [];
+const eq = {}, up = { damage: 0, hp: 0, regen: 0 };
+const record = (label, price, spent) => {
+    const f = statsOf(eq, up), r = share(up);
+    const c = cycle(f, r, Math.max(15000, Math.round(N / 6)));
+    const perHour = 60 / c.perFight;
+    const shards = perHour * (c.winRate + (1 - c.winRate - c.drawRate) / loseEveryN.n);
+    path.push({ perFight: c.perFight, tokens: shards / perShard });
+    console.log(label.padEnd(20) + String(price).padStart(4) + String(spent).padStart(6)
+      + String(f.hp).padStart(5) + r.toFixed(1).padStart(7)
+      + (c.wait.toFixed(1) + ' м').padStart(10) + (c.perFight.toFixed(1) + ' м').padStart(7)
+      + perHour.toFixed(1).padStart(8) + (shards / perShard).toFixed(2).padStart(11));
+};
+record('голый', 0, 0);
+let spent = 0;
+for (;;) {
+    let best = null;
+    Object.keys(tiersOf).forEach(slot => {
+        const owned = eq[slot] ? WRATH_GEAR.items[eq[slot]].tier : 0;
+        if (owned >= tiersOf[slot].length) return;
+        const id = tiersOf[slot][owned];
+        const price = WRATH_GEAR.items[id].price.wrath_token;
+        if (!best || price < best.price) best = { kind: 'gear', slot, id, price };
+    });
+    ['damage', 'hp', 'regen'].forEach(key => {
+        const levels = W.upgrades[key].levels;
+        if (up[key] >= levels.length) return;
+        const price = levels[up[key]].price.wrath_token;
+        if (!best || price < best.price) best = { kind: 'up', slot: key, price };
+    });
+    if (!best) break;
+    if (best.kind === 'gear') eq[best.slot] = best.id; else up[best.slot]++;
+    spent += best.price;
+    record(best.kind === 'gear'
+        ? `${WRATH_GEAR.items[best.id].emoji} ${best.slot} т${WRATH_GEAR.items[best.id].tier}`
+        : `⬆ ${best.slot} ур.${up[best.slot]}`, best.price, spent);
+}
+
+const cycles = path.map(r => r.perFight);
+const tokens = path.map(r => r.tokens);
+const first = path[0], last = path[path.length - 1];
+console.log(`\nцикл: голый ${first.perFight.toFixed(1)} м → всё куплено ${last.perFight.toFixed(1)} м `
+  + `(по пути ${Math.min(...cycles).toFixed(1)}…${Math.max(...cycles).toFixed(1)} м, размах ×${(Math.max(...cycles) / Math.min(...cycles)).toFixed(2)})`);
+console.log(`доход: ${first.tokens.toFixed(2)} → ${last.tokens.toFixed(2)} жетона/час `
+  + `(по пути ${Math.min(...tokens).toFixed(2)}…${Math.max(...tokens).toFixed(2)})`);
+
+// Единственное, что тут действительно кривовато: ветка регенерации кончается
+// на третьем уровне, а снаряжение растёт дальше. После этой точки каждая
+// следующая покупка «+хп» удлиняет цикл, и ответить на неё уже нечем.
+const capAt = path.findIndex((r, i) => i > 0 && cycles[i] > cycles[i - 1]);
+console.log(`\nпотолок регенерации: ${W.upgrades.regen.levels.length} уровня, `
+  + `верхняя скорость ${(W.regenPerMinute + W.upgrades.regen.levels[W.upgrades.regen.levels.length - 1].bonus).toFixed(1)} хп/мин. `
+  + `Снаряжение растёт дальше, и последняя треть лестницы идёт уже без ответа.`);
+
+// ---------- ЧТО СТОИТ ВЕТКА «+ЗДОРОВЬЕ» ПРИ ФИКСИРОВАННОЙ РЕГЕНЕРАЦИИ ----------
+// Оставлено ради одного вывода: без регенерации большой запас действительно
+// невыносим. Это НЕ «прогресс отрицательный» — это цена отказа качать вторую
+// ветку, и сравнивать по этой таблице разные сборки нельзя.
+console.log('\n---------- ЦЕНА ОТКАЗА КАЧАТЬ РЕГЕНЕРАЦИЮ ----------');
 LEVELS.forEach(level => {
     const s = share({ regen: level });
-    const line = BUILDS.map(([name, f]) => `${name} ${cycles[name + '/' + level].perFight.toFixed(1)} м`).join(', ');
-    const bare = cycles['голый/' + level].perFight;
-    const full = cycles[BUILDS[BUILDS.length - 1][0] + '/' + level].perFight;
-    console.log(`регенерация ${s.toFixed(1)} хп/мин: ${line}  → полный ждёт в ${(full / bare).toFixed(1)} раза дольше голого`);
+    const line = BUILDS.map(([name]) => `${name} ${cycles0[name + '/' + level].perFight.toFixed(1)} м`).join(', ');
+    console.log(`регенерация ${s.toFixed(1)} хп/мин: ${line}`);
 });
 
 // ---------- ЧЕМ ПЛАТИТ ЗАХОД ПОБИТЫМ ----------
@@ -174,7 +274,7 @@ const bare = build({}, []);
 // доходность золота (ECONOMY.goldReturns). Осколки не режутся ничем —
 // тормозом работает время регенерации.
 console.log('\n---------- ЗА ЧАС И ЗА СУТКИ НЕПРЕРЫВНОЙ ИГРЫ (голый, база) ----------');
-const c0 = cycles['голый/0'];
+const c0 = cycles0['голый/0'];
 const winsHour = 60 / c0.perFight * c0.winRate;
 const losesHour = 60 / c0.perFight * (1 - c0.winRate - c0.drawRate);
 const everyN = ECONOMY.rewards.wrath.duel.lose.everyN;
