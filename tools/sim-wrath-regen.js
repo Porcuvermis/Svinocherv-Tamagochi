@@ -1,7 +1,7 @@
 // ================= СИМУЛЯЦИЯ ТЕМПА ГНЕВА =================
 // Считает, КАК ЧАСТО игрок реально дерётся и что за это получает: гоняет
 // зеркальный спарринг по настоящей формуле урона из конфига, а между боями
-// отматывает время по настоящей скорости зарастания.
+// отматывает время по настоящей скорости регенерации.
 //
 // Зачем машина, а не глаз. У гнева два числа спорят друг с другом: сколько
 // здоровья съедает бой и как быстро оно возвращается. Ни то, ни другое не
@@ -9,7 +9,7 @@
 // неверно (на самом деле около 85% полосы). Пока это не посчитали, темп
 // гнева задавался наугад.
 //
-// Здесь же проверяется то, ради чего зарастание стало ДОЛЕЙ от максимума:
+// Здесь же проверяется то, ради чего регенерация стало ДОЛЕЙ от максимума:
 // цикл «бой — ожидание — бой» обязан быть одинаковым у голого червя и у
 // полностью прокачанного. С плоскими хп в секунду он расходился вдвое, и
 // ветка «+здоровье» превращалась в наказание.
@@ -61,12 +61,12 @@ function build(upgrades, equipment) {
     return out;
 }
 
-// Доля максимума в минуту: база плюс ступень ветки, как GameState.regenShare.
+// Хп в минуту: база плюс ступень ветки, как GameState.regenPerMinute.
 function share(upgrades) {
     const branch = W.upgrades.regen;
     const level = (upgrades || {}).regen || 0;
     const step = level > 0 ? branch.levels[Math.min(level, branch.levels.length) - 1] : null;
-    return W.regenSharePerMinute + (step ? step.bonus : 0);
+    return W.regenPerMinute + (step ? step.bonus : 0);
 }
 
 // ---------- БОЙ ----------
@@ -87,8 +87,7 @@ function duel(f, startHp) {
 // ---------- ЦИКЛ ----------
 // Игрок ждёт до полного и дерётся. Ждёт именно до полного не из вежливости:
 // заход побитым — почти гарантированное поражение (см. таблицу входа ниже).
-function cycle(f, sharePerMin, runs) {
-    const perMin = sharePerMin * f.hp;
+function cycle(f, perMin, runs) {
     let hp = f.hp, minutes = 0, waited = 0, wins = 0, draws = 0, rounds = 0;
     for (let i = 0; i < runs; i++) {
         if (hp < f.hp) {
@@ -117,18 +116,18 @@ const goldShare = n => {
 // ---------- СБОРКИ ----------
 const BUILDS = [
     ['голый',   {}, []],
-    ['середина', { hp: 2, damage: 2 }, ['pot-helmet', 'hide-armor']],
-    ['полный',   { hp: 3, damage: 3 }, ['tusk-saber', 'skull-cap', 'bone-plate', 'spiked-gloves', 'tower-shield']]
+    ['середина', { hp: 2, damage: 2 }, ['bucket-helm', 'beetle-shell', 'claw-gloves', 'rusty-saw', 'barn-door']],
+    ['полный',   { hp: 3, damage: 3 }, ['hog-skull', 'chitin-plate', 'pincers', 'great-tusk', 'tombstone']]
 ];
 const LEVELS = [0, 1, 2, 3];
 
 console.log(`прогонов: ${N}`);
-console.log(`база зарастания: ${(W.regenSharePerMinute * 100).toFixed(0)}% полосы в минуту `
-          + `(полная полоса за ${(1 / W.regenSharePerMinute).toFixed(0)} мин)`);
+console.log(`база регенерации: ${W.regenPerMinute} хп в минуту `
+          + `(полная полоса базового бойца за ${(W.baseHp / W.regenPerMinute).toFixed(0)} мин)`);
 console.log(`порог голода у боя снят: ${ECONOMY.rewards.wrath.duel.win.alwaysPays ? 'да (alwaysPays)' : 'НЕТ'}`);
 
 console.log('\n---------- ЦИКЛ «БОЙ → ОЖИДАНИЕ → БОЙ» ----------');
-console.log('сборка      зарастание   хп   хп/мин  ожидание  цикл   побед  боёв/ч  побед/ч  жетонов/ч');
+console.log('сборка      регенерация  хп   хп/мин  ожидание  цикл   побед  боёв/ч  побед/ч  жетонов/ч');
 const cycles = {};
 BUILDS.forEach(([name, upg, gear]) => {
     LEVELS.forEach(level => {
@@ -139,7 +138,7 @@ BUILDS.forEach(([name, upg, gear]) => {
         const perHour = 60 / c.perFight;
         const winsHour = perHour * c.winRate;
         console.log(
-            `${name.padEnd(10)}  ${(s * 100).toFixed(0).padStart(3)}%/мин   `
+            `${name.padEnd(10)}  ${s.toFixed(1).padStart(4)} хп/мин  `
           + `${String(f.hp).padStart(2)}   ${c.hpPerMin.toFixed(1).padStart(5)}  `
           + `${c.wait.toFixed(1).padStart(6)} м  ${c.perFight.toFixed(1).padStart(4)} м  `
           + `${(c.winRate * 100).toFixed(0).padStart(4)}%  ${perHour.toFixed(1).padStart(5)}   `
@@ -147,16 +146,17 @@ BUILDS.forEach(([name, upg, gear]) => {
     });
 });
 
-// ---------- ПРОВЕРКА, РАДИ КОТОРОЙ ВСЁ ЗАТЕВАЛОСЬ ----------
-// Доля от максимума обязана держать цикл ОДИНАКОВЫМ при любой сборке.
-console.log('\n---------- РОВНЫЙ ЛИ ЦИКЛ ПРИ РАЗНЫХ СБОРКАХ ----------');
+// ---------- ЧТО СТОИТ ВЕТКА «+ЗДОРОВЬЕ» ----------
+// Плоская регенерация означает, что купленный запас надо ещё и отсиживать.
+// Это не побочный эффект, а замысел: ровно отсюда берётся спрос на вторую
+// ветку. Здесь видно цену вопроса в минутах.
+console.log('\n---------- ЧЕМ ОПЛАЧИВАЕТСЯ БОЛЬШОЙ ЗАПАС ----------');
 LEVELS.forEach(level => {
-    const values = BUILDS.map(([name]) => cycles[name + '/' + level].perFight);
-    const spread = Math.max(...values) / Math.min(...values);
-    const verdict = spread <= 1.1 ? 'ровно' : 'РАСХОДИТСЯ';
-    console.log(`зарастание ${(share({ regen: level }) * 100).toFixed(0)}%/мин: `
-      + values.map((v, i) => `${BUILDS[i][0]} ${v.toFixed(1)} м`).join(', ')
-      + `  → разброс ×${spread.toFixed(2)} — ${verdict}`);
+    const s = share({ regen: level });
+    const line = BUILDS.map(([name, f]) => `${name} ${cycles[name + '/' + level].perFight.toFixed(1)} м`).join(', ');
+    const bare = cycles['голый/' + level].perFight;
+    const full = cycles[BUILDS[BUILDS.length - 1][0] + '/' + level].perFight;
+    console.log(`регенерация ${s.toFixed(1)} хп/мин: ${line}  → полный ждёт в ${(full / bare).toFixed(1)} раза дольше голого`);
 });
 
 // ---------- ЧЕМ ПЛАТИТ ЗАХОД ПОБИТЫМ ----------
@@ -172,7 +172,7 @@ const bare = build({}, []);
 // ---------- ДОХОД ----------
 // Порога голода у боя больше нет, поэтому доход режет только убывающая
 // доходность золота (ECONOMY.goldReturns). Осколки не режутся ничем —
-// тормозом работает время зарастания.
+// тормозом работает время регенерации.
 console.log('\n---------- ЗА ЧАС И ЗА СУТКИ НЕПРЕРЫВНОЙ ИГРЫ (голый, база) ----------');
 const c0 = cycles['голый/0'];
 const winsHour = 60 / c0.perFight * c0.winRate;
@@ -190,6 +190,6 @@ console.log(`сутки без перерыва: ${winsDay} побед → зо�
 
 // ---------- СКОЛЬКО СТОИТ ВЫКАЧАТЬ ЗАРАСТАНИЕ ----------
 const price = W.upgrades.regen.levels.reduce((sum, l) => sum + (l.price.wrath_token || 0), 0);
-console.log(`\nвыкачать зарастание целиком: ${price} жетона = `
+console.log(`\nвыкачать регенерацию целиком: ${price} жетона = `
           + `${price * ECONOMY.exchange.wrath_shard.per} осколков ≈ `
           + `${Math.round(price * ECONOMY.exchange.wrath_shard.per / shardsHour)} ч боёв на базовой скорости`);

@@ -20,53 +20,24 @@ const WrathFighter = {
     // Три зоны боя — это те же три зоны, в которых живут шрамы
     // (WormMarks.ZONES). Совпадение не случайное: зона последнего удара
     // уезжает в Backend.grantMark() как есть, без переходников.
-    balance() {
-        const cfg = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
-        return {
-            baseHp: cfg.baseHp || 10,
-            damageMin: cfg.damageMin || 1,
-            damageMax: cfg.damageMax || 3
-        };
-    },
 
     // Характеристики от надетого. Пустые слоты = голые базовые числа.
     //
+    // Сама арифметика живёт в Backend.wrathStats, а не здесь, и переехала она
+    // не ради чистоты: пока она была здесь, прокачку она читала прямо из
+    // состояния игрока — ЧЬИ БЫ числа ни считала. Слепок соперника молча
+    // получал всю прокачку игрока, и бой оставался зеркалом, сколько бы
+    // соперника ни меняли. Теперь уровни приходят доводом, и у каждого бойца
+    // они свои.
+    //
+    // upgrades — карта уровней веток. Не передали — берутся уровни игрока:
+    // это тот же вызов, что был раньше, и в бою он остался у своей стороны.
     // bonus — прибавки забега (усиления рогалика). Они не в состоянии игрока
     // и не в снаряжении: живут только внутри забега, поэтому приходят сюда
     // параметром, а не читаются откуда-то сами.
-    stats(equipment, bonus) {
-        const base = this.balance();
-        const out = {
-            // Прокачка входит в те же числа, что и снаряжение, — просто
-            // складывается раньше: предмет можно снять, прокачку нет.
-            hp: base.baseHp + GameState.upgradeBonus('hp'),
-            damage: GameState.upgradeBonus('damage'),   // прибавка к броску
-            armor: { head: 0, body: 0, tail: 0 },
-            damageMin: base.damageMin,
-            damageMax: base.damageMax
-        };
-
-        Object.keys(equipment || {}).forEach(slot => {
-            const item = WRATH_GEAR.items[equipment[slot]];
-            if (!item) return;
-            if (item.hp) out.hp += item.hp;
-            if (item.damage) out.damage += item.damage;
-            if (item.armor) {
-                this.ZONES.forEach(zone => {
-                    if (item.armor[zone]) out.armor[zone] += item.armor[zone];
-                });
-            }
-        });
-
-        if (bonus) {
-            if (bonus.hp) out.hp += bonus.hp;
-            if (bonus.damage) out.damage += bonus.damage;
-            if (bonus.armor) this.ZONES.forEach(zone => { out.armor[zone] += bonus.armor; });
-        }
-
-        out.damageMin += out.damage;
-        out.damageMax += out.damage;
-        return out;
+    stats(equipment, bonus, upgrades) {
+        const levels = upgrades || (GameState.data && GameState.data.upgrades) || {};
+        return Backend.wrathStats(equipment || {}, levels, bonus);
     },
 
     // ---------- БОЕЦ ЗАБЕГА ----------
@@ -119,13 +90,18 @@ const WrathFighter = {
     // Боец из слепка, который отдал Backend.getOpponent(). Слепок приходит в
     // той форме, в какой его вернёт сервер, — здесь он только обрастает
     // посчитанными характеристиками.
+    // Прокачка берётся ИЗ СЛЕПКА, а не из состояния игрока. Без третьего
+    // довода здесь соперник получал бы чужие уровни — ровно та ошибка, из-за
+    // которой бой был зеркалом.
     fromSnapshot(snapshot) {
         const snap = snapshot || {};
         return {
             name: snap.name || 'Противник',
             model: snap.model || null,
             equipment: Object.assign({}, snap.equipment || {}),
-            stats: this.stats(snap.equipment || {}),
+            upgrades: Object.assign({}, snap.upgrades || {}),
+            stats: this.stats(snap.equipment || {}, null, snap.upgrades || {}),
+            powerRatio: snap.powerRatio || 1,
             is_bot: true,
             is_self_copy: !!snap.is_self_copy
         };

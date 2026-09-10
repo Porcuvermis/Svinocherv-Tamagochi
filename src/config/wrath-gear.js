@@ -80,6 +80,26 @@ const WRATH_GEAR = {
     //            Ни у одного предмета пока не стоит — это каркас на будущее
     //
     // Зоны те же три, что у шрамов: 'head' | 'body' | 'tail'.
+    // ---------- ЛЕСТНИЦА: ПО ЧЕМУ РАССТАВЛЕНЫ ЧИСЛА ----------
+    // Каждая следующая ступень слота примерно вдвое дороже предыдущей
+    // (модель — docs/plan/15-progression.md, ЦЕНА(n) = Ц0 × 1.9^n), а даёт
+    // заметно меньше, чем вдвое. На этом и держится долгая часть игры: цена
+    // растёт быстрее силы.
+    //
+    // Проверено калькулятором по живому конфигу (tools/progression.js): если
+    // покупать по одному предмету, начиная с самого дешёвого, сила растёт
+    // ровными шагами ×1.03…×1.11 за покупку. Ям и скачков в лестнице нет —
+    // это и было единственным требованием к числам.
+    //
+    // Слоты не взаимозаменяемы, у каждого своя роль:
+    //   оружие    — самый крупный урон, самый дорогой слот
+    //   перчатки  — тот же урон дешевле и с меньшим потолком
+    //   шлем      — голова: броня и немного здоровья
+    //   броня     — тело: главный источник здоровья
+    //   щит       — тело и хвост сразу, брони меньше, чем у брони
+    //
+    // Названия в игре не показываются (инвариант 9) — значок и есть имя. Они
+    // здесь для того, чтобы разговаривать о предметах в правках и планах.
     items: {
         // ---- оружие: чистый урон ----
         'rusty-blade': {
@@ -94,6 +114,18 @@ const WRATH_GEAR = {
             slot: 'weapon', tier: 3, name: 'Клыкастая сабля', emoji: '⚔️',
             damage: 3, price: { wrath_token: 6 }
         },
+        'rusty-saw': {
+            slot: 'weapon', tier: 4, name: 'Ржавая пила', emoji: '🪚',
+            damage: 4, price: { wrath_token: 11 }
+        },
+        'meat-hook': {
+            slot: 'weapon', tier: 5, name: 'Мясницкий крюк', emoji: '🪝',
+            damage: 5, price: { wrath_token: 20 }
+        },
+        'great-tusk': {
+            slot: 'weapon', tier: 6, name: 'Бивень', emoji: '🦣',
+            damage: 6, price: { wrath_token: 36 }
+        },
 
         // ---- шлем: голова ----
         'pot-helmet': {
@@ -103,6 +135,18 @@ const WRATH_GEAR = {
         'skull-cap': {
             slot: 'helmet', tier: 2, name: 'Череп', emoji: '💀',
             armor: { head: 2 }, hp: 2, price: { wrath_token: 4 }
+        },
+        'bucket-helm': {
+            slot: 'helmet', tier: 3, name: 'Ведро', emoji: '🪣',
+            armor: { head: 3 }, hp: 3, price: { wrath_token: 8 }
+        },
+        'horned-helm': {
+            slot: 'helmet', tier: 4, name: 'Рогатый шлем', emoji: '🐃',
+            armor: { head: 4 }, hp: 4, price: { wrath_token: 15 }
+        },
+        'hog-skull': {
+            slot: 'helmet', tier: 5, name: 'Череп Хряка', emoji: '🐗',
+            armor: { head: 5 }, hp: 5, price: { wrath_token: 27 }
         },
 
         // ---- броня: тело ----
@@ -114,6 +158,18 @@ const WRATH_GEAR = {
             slot: 'armor', tier: 2, name: 'Костяной панцирь', emoji: '🛡',
             armor: { body: 2 }, hp: 3, price: { wrath_token: 5 }
         },
+        'beetle-shell': {
+            slot: 'armor', tier: 3, name: 'Панцирь жука', emoji: '🪲',
+            armor: { body: 3 }, hp: 4, price: { wrath_token: 10 }
+        },
+        'bone-mail': {
+            slot: 'armor', tier: 4, name: 'Костяная кольчуга', emoji: '⛓',
+            armor: { body: 4 }, hp: 6, price: { wrath_token: 18 }
+        },
+        'chitin-plate': {
+            slot: 'armor', tier: 5, name: 'Хитин', emoji: '🦂',
+            armor: { body: 5 }, hp: 8, price: { wrath_token: 32 }
+        },
 
         // ---- перчатки: урон ----
         'work-gloves': {
@@ -124,6 +180,18 @@ const WRATH_GEAR = {
             slot: 'gloves', tier: 2, name: 'Шипованные', emoji: '🥊',
             damage: 2, price: { wrath_token: 4 }
         },
+        'claw-gloves': {
+            slot: 'gloves', tier: 3, name: 'Когти', emoji: '🐾',
+            damage: 3, price: { wrath_token: 8 }
+        },
+        'knuckles': {
+            slot: 'gloves', tier: 4, name: 'Кастет', emoji: '👊',
+            damage: 4, price: { wrath_token: 14 }
+        },
+        'pincers': {
+            slot: 'gloves', tier: 5, name: 'Клешни', emoji: '🦀',
+            damage: 5, price: { wrath_token: 25 }
+        },
 
         // ---- щит: тело и хвост ----
         'lid-shield': {
@@ -133,6 +201,18 @@ const WRATH_GEAR = {
         'tower-shield': {
             slot: 'shield', tier: 2, name: 'Ростовой щит', emoji: '🚪',
             armor: { body: 1, tail: 1 }, hp: 1, price: { wrath_token: 4 }
+        },
+        'barn-door': {
+            slot: 'shield', tier: 3, name: 'Дверь сарая', emoji: '🚧',
+            armor: { body: 2, tail: 1 }, hp: 2, price: { wrath_token: 8 }
+        },
+        'turtle-shell': {
+            slot: 'shield', tier: 4, name: 'Панцирь черепахи', emoji: '🐢',
+            armor: { body: 2, tail: 2 }, hp: 3, price: { wrath_token: 15 }
+        },
+        'tombstone': {
+            slot: 'shield', tier: 5, name: 'Надгробие', emoji: '🪦',
+            armor: { body: 3, tail: 3 }, hp: 4, price: { wrath_token: 27 }
         }
     }
 };

@@ -44,11 +44,31 @@ function level(value, base) {
 
 // ---------- ДОПУЩЕНИЯ ПРО ИГРУ ----------
 // Меняются здесь; всё, что ниже, пересчитается само.
+//
+// duelSeconds раньше было прибито шестьюдесятью — «бой примерно минуту».
+// Это перестало быть правдой в тот день, когда регенерация стала считаться в
+// минутах: бой съедает почти весь запас, и ждать приходится столько, сколько
+// его набегает. Поэтому цикл теперь ВЫВОДИТСЯ из здоровья ступени, а не
+// стоит константой, и у каждой ступени он свой.
+//
+// winRate — половина, и это не допущение, а следствие подбора: соперник
+// берётся из узкого коридора вокруг силы игрока
+// (ECONOMY.minigames.wrath.opponent), значит бой в среднем ровный.
 const PLAY = {
-    duelSeconds: 60,      // бой плюс ожидание зарастания
-    winRate: 0.5,         // против зеркала это ровно половина
+    fightSeconds: 60,     // сама драка, без ожидания
+    hpSpentShare: 0.85,   // сколько запаса съедает бой (симулятор: 8.5 из 10)
+    winRate: 0.5,
     sessionMinutes: 10
 };
+
+// Сколько минут занимает один круг «бой → ожидание → бой» у бойца с таким
+// запасом и такой скоростью регенерации.
+function cycleMinutes(hp, regenLevel) {
+    const branch = W.upgrades.regen;
+    const step = regenLevel > 0 ? branch.levels[Math.min(regenLevel, branch.levels.length) - 1] : null;
+    const perMin = W.regenPerMinute + (step ? step.bonus : 0);
+    return PLAY.fightSeconds / 60 + (hp * PLAY.hpSpentShare) / perMin;
+}
 
 // ---------- СИЛА ----------
 // Сколько урона боец успевает нанести, прежде чем умрёт:
@@ -111,21 +131,26 @@ function stage(n) {
 // ---------- ДОХОД ----------
 // Сколько жетонов приносит час игры. Осколок — треть жетона; сколько их
 // падает, решает конфиг наград, а не это место.
-function income() {
+function income(hp, regenLevel) {
     const per = ECONOMY.exchange.wrath_shard.per;
     const win = ECONOMY.rewards.wrath.duel.win.currencies || {};
     const lose = ECONOMY.rewards.wrath.duel.lose || {};
     const shardsPerWin = win.wrath_shard || 0;
     const everyN = lose.everyN ? (lose.everyN.currencies.wrath_shard || 0) / lose.everyN.n : 0;
 
-    const duelsPerHour = 3600 / PLAY.duelSeconds;
+    const duelsPerHour = 60 / cycleMinutes(hp, regenLevel);
     const shards = duelsPerHour * (PLAY.winRate * shardsPerWin + (1 - PLAY.winRate) * everyN);
     return { tokensPerHour: shards / per, duelsPerHour };
 }
 
 // ---------- ОТЧЁТ ----------
-const inc = income();
-const tiers = [1, 2, 3].map(stage).filter(s => s.cost > 0);
+// Ступеней столько, сколько их в каталоге: добавили предмет тира 6 — таблица
+// стала на строку длиннее сама.
+const maxTier = Object.keys(WRATH_GEAR.items)
+    .reduce((m, id) => Math.max(m, WRATH_GEAR.items[id].tier || 1), 1);
+const inc = income(W.baseHp, 0);
+const tiers = [];
+for (let n = 1; n <= maxTier; n++) { const st = stage(n); if (st.cost > 0) tiers.push(st); }
 const zero = stage(0);
 
 // Сила меряется против «ровни» — противника такой же ступени: в бою с ботом
@@ -143,7 +168,9 @@ console.log('ст.  хп   урон    броня   сила   ур.   ×пре�
 let cum = 0, prevPower = null, prevTime = null;
 rows.forEach(r => {
     cum += r.cost;
-    const time = r.cost / inc.tokensPerHour;
+    // Доход считается по ЭТОЙ ступени, а не по базовой: цикл боя растёт
+    // вместе с запасом здоровья, значит богатый копит медленнее бедного.
+    const time = r.cost / income(r.stats.hp, Math.min(r.n, W.upgrades.regen.levels.length)).tokensPerHour;
     const pStep = prevPower ? (r.power / prevPower) : null;
     const tStep = (prevTime && prevTime > 0) ? (time / prevTime) : null;
     console.log(

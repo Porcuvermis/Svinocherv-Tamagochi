@@ -899,10 +899,10 @@
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
 <script src="src/core/stage.js?v=2"></script>
-<script src="src/config/economy.js?v=13"></script>
+<script src="src/config/economy.js?v=14"></script>
 <!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
      числа боя лежат там, предметы здесь. -->
-<script src="src/config/wrath-gear.js?v=4"></script>
+<script src="src/config/wrath-gear.js?v=5"></script>
 <script src="src/config/pride-wardrobe.js?v=1"></script>
 <!-- Каталог кухни: ингредиенты, жидкости, таблица качества блюда. Тоже
      данные без логики, и тоже нужен состоянию (стартовая кладовая), поэтому
@@ -911,8 +911,8 @@
 <script src="src/config/garden.js?v=1"></script>
 <script src="src/core/events.js?v=1"></script>
 <script src="src/core/time.js?v=1"></script>
-<script src="src/core/state.js?v=7"></script>
-<script src="src/core/backend.js?v=12"></script>
+<script src="src/core/state.js?v=8"></script>
+<script src="src/core/backend.js?v=13"></script>
 
 <script src="src/core/palette.js?v=4"></script>
 <!-- Отдача в палец: один слой на всю игру. До мини-игр — они зовут её из
@@ -946,12 +946,12 @@
 <script src="src/minigames/greed/greed.js?v=9"></script>
 <!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
      лобби и бой, а они считают характеристики бойцом. -->
-<script src="src/minigames/wrath/wrath-fighter.js?v=9"></script>
+<script src="src/minigames/wrath/wrath-fighter.js?v=10"></script>
 <script src="src/minigames/wrath/wrath-shop.js?v=5"></script>
-<script src="src/minigames/wrath/wrath-boost.js?v=4"></script>
+<script src="src/minigames/wrath/wrath-boost.js?v=5"></script>
 <script src="src/minigames/wrath/wrath-rogue.js?v=5"></script>
-<script src="src/minigames/wrath/wrath-lobby.js?v=11"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=9"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=12"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=10"></script>
 <script src="src/minigames/wrath/wrath.js?v=12"></script>
 <script src="src/minigames/sloth/plant-model.js?v=2"></script>
 <script src="src/minigames/sloth/garden-art.js?v=2"></script>

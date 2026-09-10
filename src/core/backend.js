@@ -29,6 +29,24 @@ function newRequestId() {
     return 'req-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
+// Случайность ОТ СИДА, а не Math.random. Соперник собирается из двух десятков
+// бросков — внешность, шрамы, наряд, ступени снаряжения, — и все они обязаны
+// выводиться из одного числа. Тогда слепок соперника это ровно `seed`: его
+// можно сохранить в журнал боя, переслать, воспроизвести и разобрать баг.
+// С Math.random любой такой слепок пришлось бы хранить целиком.
+//
+// Тот же mulberry32, что и в модели червя (worm-model.js): одна и та же
+// дешёвая формула на весь проект, чтобы не гадать, какая где.
+function wrathRandom(seed) {
+    let s = (seed >>> 0) || 1;
+    return function () {
+        s |= 0; s = (s + 0x6D2B79F5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
 const LocalBackend = {
     name: 'local',
 
@@ -747,7 +765,7 @@ const LocalBackend = {
             hp: Math.max(0, Math.round(hp)),
             updated_at: GameTime.now(),
             // Заморозку не трогаем: запись идёт в том числе посреди боя, где
-            // зарастание как раз остановлено.
+            // регенерация как раз остановлено.
             frozen: !!f.frozen
         };
         GameState.save();
@@ -755,26 +773,21 @@ const LocalBackend = {
     },
 
     // ---------- ПАУЗА ЗАРАСТАНИЯ ----------
-    // Само по себе здоровье зарастает везде: в комнате, в лобби, при закрытой
+    // Само по себе здоровье восстанавливается везде: в комнате, в лобби, при закрытой
     // игре. Но не там, где здоровье — ресурс текущего испытания: в бою и в
     // забеге рогалика (там своё лечение). Поэтому бой на входе замораживает
-    // зарастание, а лобби на входе размораживает.
+    // регенерация, а лобби на входе размораживает.
     //
     // Флаг живёт в состоянии, а не в памяти экрана: игру закрывают прямо
     // посреди боя, и «пока меня не было, всё заросло» было бы читом.
     // Разморозка при этом всегда происходит при возврате в лобби — даже
     // после того, как игру закрыли и открыли заново.
-    // maxHp — максимум бойца прямо сейчас (со снаряжением и прокачкой).
-    // Нужен потому, что зарастание считается ДОЛЕЙ от максимума, а сколько у
-    // бойца максимум, знает не стор и не переходник, а тот, кто собрал бойца
-    // (WrathFighter). Без него формула откатится к базовому здоровью и
-    // заморозит чуть меньше накопленного, чем было на самом деле.
-    freezeHeal(maxHp) {
+    freezeHeal() {
         const f = GameState.data.fighter;
         if (!f || f.frozen) return;
         // Фиксируем то, что накапало до этого момента. Потолок здесь не
         // нужен: он зависит от снаряжения и применяется при чтении.
-        const raw = GameState.fighterHpRaw(maxHp);
+        const raw = GameState.fighterHpRaw();
         if (raw !== null) f.hp = Math.floor(raw);
         f.updated_at = GameTime.now();
         f.frozen = true;
@@ -785,7 +798,7 @@ const LocalBackend = {
         const f = GameState.data.fighter;
         if (!f || !f.frozen) return;
         f.frozen = false;
-        // Отсчёт начинается заново: время, проведённое в бою, не зарастает
+        // Отсчёт начинается заново: время, проведённое в бою, не восстанавливается
         // задним числом.
         f.updated_at = GameTime.now();
         GameState.save();
@@ -796,7 +809,7 @@ const LocalBackend = {
     // сколько шрамов и что за них дают, живёт в конфиге, а не в экране —
     // как и любое другое начисление.
     //
-    // Уходят САМЫЕ СТАРЫЕ: тело зарастает в том же порядке, в каком его било,
+    // Уходят САМЫЕ СТАРЫЕ: тело восстанавливается в том же порядке, в каком его било,
     // и свежие следы последнего боя остаются на месте. Случайный выбор
     // выглядел бы как «шрамы исчезли непонятно какие».
     exchangeScars() {
@@ -863,27 +876,248 @@ const LocalBackend = {
         return true;
     },
 
-    // ---------- ПРОТИВНИК ----------
-    // Аналог GET /wrath/opponent. Сервер вернёт слепок ДРУГОГО игрока:
-    // его модель со шрамами, его снаряжение, его ник. Лобби у настоящего
-    // сервера всегда полное, поэтому ждать матчмейкинга не нужно —
-    // противник это данные, а не сессия (docs/plan/03-wrath.md).
+    // ---------- ХАРАКТЕРИСТИКИ БОЙЦА ----------
+    // Сборка «снаряжение + прокачка → три числа» живёт ЗДЕСЬ, а не в
+    // мини-игре, и это не переезд ради красоты. Раньше её делал
+    // WrathFighter.stats, и прокачку он читал прямо из состояния игрока —
+    // чьи бы числа ни считал. То есть слепок соперника молча получал ВСЮ
+    // прокачку игрока, и бой был зеркалом, сколько бы соперника ни меняли.
     //
-    // Пока сервера нет, отдаётся копия самого игрока. Флаг is_self_copy —
-    // не украшение: по нему интерфейс честно пишет «спарринг», а не выдумывает
-    // чужой ник. Появится сервер — флаг просто перестанет приходить.
+    // Функция чистая: ничего не читает из состояния, всё приходит доводами.
+    // Поэтому ею одинаково считается и игрок, и соперник, и кандидат при
+    // подборе. На сервере она станет серверной без единой правки.
+    //
+    //   equipment — { slot: itemId }
+    //   upgrades  — { damage: n, hp: n, ... }, уровни веток
+    //   bonus     — прибавки забега (усиления рогалика), если они есть
+    wrathStats(equipment, upgrades, bonus) {
+        const conf = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
+        const zones = conf.zones || ['head', 'body', 'tail'];
+        const out = {
+            hp: conf.baseHp || 0,
+            damage: this.upgradeBonusOf(upgrades, 'damage'),
+            armor: { head: 0, body: 0, tail: 0 },
+            damageMin: conf.damageMin || 0,
+            damageMax: conf.damageMax || 0
+        };
+        out.hp += this.upgradeBonusOf(upgrades, 'hp');
+
+        Object.keys(equipment || {}).forEach(slot => {
+            const item = WRATH_GEAR.items[equipment[slot]];
+            if (!item) return;
+            if (item.hp) out.hp += item.hp;
+            if (item.damage) out.damage += item.damage;
+            if (item.armor) zones.forEach(z => { if (item.armor[z]) out.armor[z] += item.armor[z]; });
+        });
+
+        if (bonus) {
+            if (bonus.hp) out.hp += bonus.hp;
+            if (bonus.damage) out.damage += bonus.damage;
+            if (bonus.armor) zones.forEach(z => { out.armor[z] += bonus.armor; });
+        }
+
+        out.damageMin += out.damage;
+        out.damageMax += out.damage;
+        return out;
+    },
+
+    // Суммарная прибавка ветки на купленном уровне — по переданной карте
+    // уровней, а не по состоянию игрока. Та же логика, что в
+    // GameState.upgradeBonus, но без привязки к тому, ЧЬЯ это прокачка.
+    upgradeBonusOf(upgrades, key) {
+        const conf = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades) || {};
+        const branch = conf[key];
+        const level = ((upgrades || {})[key]) || 0;
+        if (!branch || !branch.levels || level <= 0) return 0;
+        const step = branch.levels[Math.min(level, branch.levels.length) - 1];
+        return step ? (step.bonus || 0) : 0;
+    },
+
+    // ---------- СИЛА БОЙЦА ----------
+    // «Сколько урона боец успевает нанести, прежде чем умрёт»: ЭХП × ДПС.
+    // Мера ПРОВЕРЕНА, а не придумана — бойцы с одинаковой силой, набранной
+    // по-разному (через здоровье или через урон), бьются между собой 50/50
+    // (tools/measure-power.js, docs/plan/15-progression.md, раздел 2).
+    //
+    // Броня меряется против КОНКРЕТНОГО противника: против слабых ударов она
+    // стоит дороже, чем против сильных, и честно учесть это иначе нельзя.
+    // Поэтому вторым доводом идёт средний урон того, с кем сравниваем.
+    wrathPower(stats, vsAvgDamage) {
+        const conf = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
+        const zones = conf.zones || ['head', 'body', 'tail'];
+        const floor = conf.minHitDamage || 1;
+        const hit = (zones.length - 1) / zones.length;      // доля ударов мимо блока
+        const avg = (stats.damageMin + stats.damageMax) / 2;
+        const incoming = vsAvgDamage || avg;
+        const armor = zones.reduce((sum, z) => sum + (stats.armor[z] || 0), 0) / zones.length;
+        const ehp = stats.hp * (incoming / Math.max(floor, incoming - armor));
+        return ehp * avg * hit;
+    },
+
+    // ---------- ПРОТИВНИК ----------
+    // Аналог GET /wrath/opponent. Сервер вернёт слепок ДРУГОГО игрока: его
+    // модель со шрамами, его снаряжение, его прокачку. Лобби у настоящего
+    // сервера всегда полное, поэтому ждать матчмейкинга не нужно — противник
+    // это данные, а не сессия (docs/plan/03-wrath.md).
+    //
+    // Пока сервера нет, слепок СОЧИНЯЕТСЯ здесь — и это ровно то место, где
+    // на сервере встанет подбор по рейтингу. Форма ответа уже правильная:
+    // мини-игра получает чужие данные и не знает, откуда они взялись.
+    //
+    // Раньше отдавалась копия игрока, и из-за этого прокачка не двигала шанс
+    // победы вовсе (разбор — ECONOMY.minigames.wrath.opponent).
     getOpponent(mode) {
-        const model = (typeof WormModelAPI !== 'undefined')
-            ? WormModelAPI.loadWormModel() : null;
+        const conf = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.opponent) || {};
+        const seed = Math.floor(Math.random() * 1e9);
+        const rnd = wrathRandom(seed);
+
+        // Забегу от соперника нужно только тело: числа его врагам задаёт
+        // карта забега, а не подбор (docs/plan/10-wrath-rogue.md, раздел 8).
+        const build = (mode === 'rogue')
+            ? { equipment: {}, upgrades: {} }
+            : this.matchOpponent(rnd, conf);
+
         return Promise.resolve({
             opponent: {
-                name: 'Спарринг',
                 mode: mode || 'duel',
-                model,
-                equipment: Object.assign({}, GameState.data.equipment),
-                is_self_copy: true
+                seed,
+                model: this.opponentModel(seed, rnd, conf),
+                equipment: build.equipment,
+                upgrades: build.upgrades,
+                // Отношение сил: во сколько раз соперник сильнее игрока.
+                // На бой не влияет и наградой пока не пользуется — едет ради
+                // прогонов и журнала: по нему видно, что подбор не съехал.
+                // Здесь же оно будет лежать, если однажды за более сильного
+                // соперника решат платить больше.
+                powerRatio: build.ratio || 1,
+                is_self_copy: false
             }
         });
+    },
+
+    // ---------- ПОДБОР ПО СИЛЕ ----------
+    // Соперник обязан быть примерно ровней: кривая победы крутая, и разница
+    // в полтора раза — это уже не «сложнее», а «безнадёжно». Поэтому цель
+    // берётся из узкого коридора вокруг силы игрока (conf.spread).
+    //
+    // Собирается он ПЕРЕБОРОМ правдоподобных сборок, а не подгонкой чисел:
+    // случайные ступени в каждом слоте, случайные уровни прокачки — и из
+    // нескольких десятков кандидатов берётся тот, чья сила ближе к цели. Так
+    // соперник всегда одет в те же предметы, что продаются игроку, и по нему
+    // видно, во что он вложился: кто-то в оружие, кто-то в броню.
+    matchOpponent(rnd, conf) {
+        const mine = this.wrathStats(GameState.data.equipment, GameState.data.upgrades);
+        const myAvg = (mine.damageMin + mine.damageMax) / 2;
+        const myPower = this.wrathPower(mine, myAvg);
+
+        const spread = conf.spread || [0.9, 1.1];
+        const wanted = myPower * (spread[0] + rnd() * (spread[1] - spread[0]));
+
+        const tiers = this.gearTiers();
+        const myTiers = this.myTierLevel(tiers);
+        const spreadT = conf.tierSpread == null ? 2 : conf.tierSpread;
+        const upgrades = (ECONOMY.minigames.wrath.upgrades.order || [])
+            .filter(key => (ECONOMY.minigames.wrath.upgrades[key].tab || 'stat') === 'stat');
+
+        let best = null;
+        const total = conf.candidates || 40;
+        for (let i = 0; i < total; i++) {
+            const equipment = {};
+            Object.keys(tiers).forEach(slot => {
+                // Ступень около той, на которой стоит игрок. Ноль — пустой
+                // слот: у соперника тоже не всё куплено.
+                const around = myTiers[slot] + Math.round((rnd() * 2 - 1) * spreadT);
+                const tier = Math.max(0, Math.min(tiers[slot].length, around));
+                if (tier > 0) equipment[slot] = tiers[slot][tier - 1];
+            });
+            const ups = {};
+            upgrades.forEach(key => {
+                const levels = ECONOMY.minigames.wrath.upgrades[key].levels.length;
+                const mineLevel = ((GameState.data.upgrades || {})[key]) || 0;
+                const around = mineLevel + Math.round((rnd() * 2 - 1) * spreadT);
+                ups[key] = Math.max(0, Math.min(levels, around));
+            });
+
+            const stats = this.wrathStats(equipment, ups);
+            // Сила соперника меряется против УДАРОВ ИГРОКА, а сила игрока —
+            // против ударов соперника: броня стоит по-разному против разного
+            // урона, и сравнивать иначе нечестно.
+            const hisPower = this.wrathPower(stats, myAvg);
+            const hisAvg = (stats.damageMin + stats.damageMax) / 2;
+            const minePower = this.wrathPower(mine, hisAvg) || 1;
+            const miss = Math.abs(hisPower - wanted);
+            if (!best || miss < best.miss) {
+                best = { equipment, upgrades: ups, miss, ratio: hisPower / minePower };
+            }
+        }
+        return best || { equipment: {}, upgrades: {}, ratio: 1 };
+    },
+
+    // Идентификаторы предметов слота по ступеням, снизу вверх. Собирается из
+    // каталога, а не переписывается рядом: новый предмет в конфиге сразу
+    // попадает и в подбор соперника.
+    gearTiers() {
+        const out = {};
+        WRATH_GEAR.slots.forEach(slot => {
+            out[slot.key] = Object.keys(WRATH_GEAR.items)
+                .filter(id => WRATH_GEAR.items[id].slot === slot.key)
+                .sort((a, b) => (WRATH_GEAR.items[a].tier || 0) - (WRATH_GEAR.items[b].tier || 0));
+        });
+        return out;
+    },
+
+    // На какой ступени игрок стоит в каждом слоте. Пустой слот — ноль.
+    myTierLevel(tiers) {
+        const worn = GameState.data.equipment || {};
+        const out = {};
+        Object.keys(tiers).forEach(slot => {
+            const item = WRATH_GEAR.items[worn[slot]];
+            out[slot] = item ? (item.tier || 1) : 0;
+        });
+        return out;
+    },
+
+    // ---------- КАК СОПЕРНИК ВЫГЛЯДИТ ----------
+    // Тело, окрас, органы и шрамы — всё от одного сида. Разными их делает не
+    // случайность в рендерере, а РАЗНАЯ МОДЕЛЬ: createVariedWormModel уже
+    // умеет разводить особей по оттенку кожи, плотности кишки, тону мышц и
+    // десятку других чисел. До этой правки её никто не звал, и все соперники
+    // были одним и тем же червём.
+    //
+    // Наряд к бою отношения не имеет и надевается по той же причине, по
+    // которой у соперника есть шрамы: чтобы двух подряд нельзя было спутать.
+    opponentModel(seed, rnd, conf) {
+        if (typeof WormModelAPI === 'undefined') return null;
+        const model = WormModelAPI.createVariedWormModel(seed);
+
+        // Шрамы соперника — его собственные, а не игрока. Ставятся тем же
+        // способом, что и в бою (WormMarks не даёт им слипаться в пятно).
+        const range = conf.scars || [0, 0];
+        const count = range[0] + Math.floor(rnd() * (range[1] - range[0] + 1));
+        const marks = [];
+        for (let i = 0; i < count; i++) {
+            const markSeed = Math.floor(rnd() * 1e9);
+            const zone = WormMarks.ZONES[markSeed % WormMarks.ZONES.length];
+            const t = WormMarks.pickSpot(marks, zone, markSeed);
+            if (t === null) continue;      // зона забита — это нормальный ответ
+            marks.push({ id: 'foe-' + i, kind: 'scar', zone, t, seed: markSeed, created_at: 0 });
+        }
+        model.scars = marks;
+
+        // Гардероб общий с тщеславием: соперник носит то же, что продаётся
+        // игроку. Своего каталога заводить не надо.
+        const wear = {};
+        if (typeof PRIDE_WARDROBE !== 'undefined') {
+            const chance = conf.wearChance || 0;
+            PRIDE_WARDROBE.slots.forEach(slot => {
+                if (rnd() >= chance) return;
+                const fit = PRIDE_WARDROBE.items.filter(it => it.slot === slot.key);
+                if (!fit.length) return;
+                wear[slot.key] = fit[Math.floor(rnd() * fit.length)].id;
+            });
+        }
+        model.cosmetics = wear;
+        return model;
     },
 
     // ---------- НАЧИСЛЕНИЕ ----------
@@ -1085,7 +1319,7 @@ const LocalBackend = {
         //
         // Здоровье лобби при этом НЕ замораживается: забег его не тратит, у
         // него своё. Раньше заморозка была нужна, потому что бой забега бил
-        // по тому же здоровью; теперь это разные жизни, и зарастание идёт
+        // по тому же здоровью; теперь это разные жизни, и регенерация идёт
         // своим чередом, пока игрок ходит по карте.
         const maxHp = (cfg.start && cfg.start.hp) || this.fighterMaxHp();
         const run = {
@@ -1599,8 +1833,9 @@ const LocalBackend = {
     // поражение (симулятор: 44% побед с полной полосой против 26% с 80%).
     //
     // Живёт здесь, а не в колесе: что считать готовностью, знает тот, кто
-    // платит (инвариант 2). Максимум приходит снаружи по той же причине, по
-    // которой его просит freezeHeal, — его знает сборщик бойца.
+    // платит (инвариант 2). Максимум приходит снаружи: он зависит от
+    // снаряжения и прокачки, а это знает сборщик бойца (WrathFighter), не
+    // переходник.
     wrathReady(maxHp) {
         const max = maxHp || (ECONOMY.minigames.wrath || {}).baseHp || 1;
         const hp = GameState.fighterHpExact(max);

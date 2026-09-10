@@ -3,17 +3,17 @@ const { viewport, prepare } = require('./harness');
 
 // ================= ПРОГОН: ГНЕВ — НАГРАДА И ЗАРАСТАНИЕ =================
 // Проверяет ровно то, что чинилось правкой «победа платит всегда, а темп
-// держит зарастание»:
+// держит регенерацию»:
 //
 //   1. победа в бою платит при ПОЛНОЙ шкале гнева (порог голода у боя снят);
 //   2. поражение при полной шкале тоже засчитывается — «каждое третье»
 //      считает все поражения, а не только те, что при просевшей шкале;
 //   3. порог голода при этом жив у остальных грехов (проверяется тщеславием);
-//   4. зарастание идёт ДОЛЕЙ от максимума в минуту: полная полоса за десять
+//   4. регенерация идёт ДОЛЕЙ от максимума в минуту: полная полоса за десять
 //      минут и у голого червя, и у прокачанного;
-//   5. прокачка ветки зарастания ускоряет ровно во столько, во сколько
+//   5. прокачка ветки регенерации ускоряет ровно во столько, во сколько
 //      обещает конфиг;
-//   6. в бою зарастание заморожено, в лобби — размораживается;
+//   6. в бою регенерация заморожено, в лобби — размораживается;
 //   7. узел гнева в колесе горит по ЗДОРОВЬЮ, а не по шкале греха;
 //   8. полоса здоровья в лобби едет по дробному здоровью, а не стоит
 //      минуту на месте вместе с целым числом;
@@ -82,7 +82,7 @@ const { viewport, prepare } = require('./harness');
   check(pays.prideKisses === 0, 'сытому тщеславию поцелуи не начислены');
 
   // ---------- 4–5. СКОРОСТЬ ЗАРАСТАНИЯ ----------
-  console.log('\n--- зарастание ---');
+  console.log('\n--- регенерация ---');
   const regen = await page.evaluate(() => {
     const W = ECONOMY.minigames.wrath;
     // Отматывается метка в состоянии, а не часы: проверяется тот же механизм,
@@ -93,34 +93,37 @@ const { viewport, prepare } = require('./harness');
       GameState.data.fighter.frozen = false;
       return GameState.fighterHpExact(maxHp);
     };
-    const full = 1 / W.regenSharePerMinute;      // минут до полной полосы
+    const base = W.regenPerMinute;
     const levels = W.upgrades.regen.levels.map((step, i) => {
       GameState.data.upgrades.regen = i + 1;
-      const share = W.regenSharePerMinute + step.bonus;
-      const got = after(1, W.baseHp);
-      return { level: i + 1, share, minutesToFull: 1 / share, hpInMinute: got };
+      const rate = base + step.bonus;
+      return { level: i + 1, rate, got: after(1, 40), full: W.baseHp / rate };
     });
     GameState.data.upgrades.regen = 0;
     return {
-      fullMinutes: full,
-      baseHalf: after(full / 2, W.baseHp),           // половина срока — половина полосы
-      baseFull: after(full, W.baseHp),
-      baseOver: after(full * 3, W.baseHp),           // потолок не пробивается
-      bigHalf: after(full / 2, 23),                  // прокачанный: та же доля
-      bigFull: after(full, 23),
+      base,
+      inMinute: after(1, 40),                     // потолок заведомо выше — мерим саму скорость
+      baseFull: after(W.baseHp / base, W.baseHp), // ровно столько, сколько нужно на полную полосу
+      baseOver: after(W.baseHp / base * 3, W.baseHp),
+      // Плоское число: у бойца на 30 хп за то же время набегает СТОЛЬКО ЖЕ хп,
+      // а не столько же процентов. На этом и держится спор двух веток
+      // прокачки — чем больше запас, тем нужнее регенерация.
+      bigInMinute: after(1, 30),
+      bigFull: after(W.baseHp / base, 30),
       levels
     };
   });
-  const eps = 0.05;
-  check(Math.abs(regen.baseHalf - 5) < eps, `за полсрока набежала половина полосы (${regen.baseHalf.toFixed(2)}/10)`);
-  check(Math.abs(regen.baseFull - 10) < eps, `полная полоса за ${regen.fullMinutes} мин`);
+  const eps = 0.02;
+  check(Math.abs(regen.inMinute - regen.base) < eps, `база: ${regen.base} хп в минуту`);
+  check(Math.abs(regen.baseFull - 10) < eps, `полная полоса базового бойца за ${(10 / regen.base)} мин`);
   check(regen.baseOver === 10, 'сверх максимума не набегает');
-  check(Math.abs(regen.bigHalf - 11.5) < eps * 3, `у бойца на 23 хп за тот же полсрока — половина полосы (${regen.bigHalf.toFixed(2)}/23)`);
-  check(Math.abs(regen.bigFull - 23) < eps * 3, 'полная полоса за те же 10 мин при любом максимуме');
+  check(Math.abs(regen.bigInMinute - regen.base) < eps,
+    'у бойца на 30 хп за минуту набегает столько же хп, а не столько же долей');
+  check(regen.bigFull < 30 - 1,
+    `и полная полоса ему за 10 минут НЕ набирается (${regen.bigFull.toFixed(1)}/30) — ветка регенерации нужна тем сильнее, чем больше запас`);
   regen.levels.forEach(l => {
-    const want = l.share * 10;                       // хп за минуту при базовых 10
-    check(Math.abs(l.hpInMinute - want) < eps,
-      `ветка зарастания, ур. ${l.level}: ${(l.share * 100).toFixed(0)}%/мин — полная полоса за ${l.minutesToFull.toFixed(2).replace(/\.00$/, '')} мин`);
+    check(Math.abs(l.got - l.rate) < eps,
+      `ветка регенерации, ур. ${l.level}: ${l.rate} хп/мин — полная полоса базового за ${l.full.toFixed(2).replace(/\.?0+$/, '')} мин`);
   });
 
   // ---------- 6. ЗАМОРОЗКА ----------
@@ -135,8 +138,74 @@ const { viewport, prepare } = require('./harness');
     const afterLobby = GameState.fighterHpExact(10);
     return { inFight, afterLobby };
   });
-  check(frozen.inFight === 2, 'в бою здоровье не зарастает даже за час');
+  check(frozen.inFight === 2, 'в бою здоровье не восстанавливается даже за час');
   check(Math.abs(frozen.afterLobby - 5) < eps, 'после возврата в лобби отсчёт пошёл заново');
+
+  // ---------- 6a. СОПЕРНИК ----------
+  console.log('\n--- соперник ---');
+  const foes = await page.evaluate(async () => {
+    // Одеваем и качаем игрока, чтобы копия сразу бросалась в глаза.
+    GameState.data.equipment = { weapon: 'tusk-saber', armor: 'bone-plate' };
+    GameState.data.upgrades = { damage: 3, hp: 3, regen: 0 };
+    const mine = Backend.wrathStats(GameState.data.equipment, GameState.data.upgrades);
+    const myAvg = (mine.damageMin + mine.damageMax) / 2;
+    const myPower = Backend.wrathPower(mine, myAvg);
+
+    const out = [];
+    for (let i = 0; i < 12; i++) {
+      const foe = (await Backend.getOpponent('duel')).opponent;
+      const f = WrathFighter.fromSnapshot(foe);
+      out.push({
+        seed: foe.seed,
+        selfCopy: foe.is_self_copy,
+        equipment: JSON.stringify(foe.equipment),
+        upgrades: JSON.stringify(foe.upgrades),
+        stats: `${f.stats.hp}/${f.stats.damageMin}-${f.stats.damageMax}`,
+        power: Backend.wrathPower(f.stats, myAvg),
+        ratio: foe.powerRatio,
+        skin: foe.model && foe.model.head ? foe.model.head.fill : null,
+        gut: foe.model && foe.model.anatomy ? foe.model.anatomy.organs.tract.loopDensity : null,
+        scars: foe.model && foe.model.scars ? foe.model.scars.length : -1,
+        wear: foe.model ? Object.keys(foe.model.cosmetics || {}).length : -1
+      });
+    }
+    return { myPower, mineStats: `${mine.hp}/${mine.damageMin}-${mine.damageMax}`, out };
+  });
+  const uniqKey = k => new Set(foes.out.map(f => f[k])).size;
+  check(foes.out.every(f => f.selfCopy === false), 'соперник больше не помечен копией игрока');
+  check(uniqKey('equipment') >= 8, `снаряжение разное: ${uniqKey('equipment')} вариантов из 12`);
+  check(uniqKey('stats') >= 6, `числа разные: ${uniqKey('stats')} вариантов из 12`);
+  check(uniqKey('skin') >= 10, `окрас разный: ${uniqKey('skin')} из 12`);
+  check(uniqKey('gut') >= 10, `тело разное (плотность кишки): ${uniqKey('gut')} из 12`);
+  check(uniqKey('scars') >= 4, `шрамы разные: ${uniqKey('scars')} вариантов из 12`);
+  check(foes.out.some(f => f.wear > 0), 'кто-то из соперников одет');
+  check(foes.out.some(f => f.stats !== foes.mineStats), 'соперник не повторяет числа игрока');
+
+  // Главное: сила соперника рядом с силой игрока, а не где попало.
+  const spread = await page.evaluate(() => ECONOMY.minigames.wrath.opponent.spread);
+  const ratios = foes.out.map(f => f.ratio);
+  const lo = Math.min(...ratios), hi = Math.max(...ratios);
+  check(lo > spread[0] - 0.35 && hi < spread[1] + 0.35,
+    `сила соперника рядом с игроком: ×${lo.toFixed(2)}…×${hi.toFixed(2)} при коридоре ×${spread[0]}…×${spread[1]}`);
+
+  // И столь же важное: прокачка соперника — ЕГО, а не игрока. Раньше
+  // WrathFighter.stats читал уровни из состояния кому угодно.
+  const notMine = await page.evaluate(() => {
+    GameState.data.upgrades = { damage: 3, hp: 3, regen: 0 };
+    const snap = { equipment: {}, upgrades: { damage: 0, hp: 0 } };
+    const f = WrathFighter.fromSnapshot(snap);
+    const W = ECONOMY.minigames.wrath;
+    return { hp: f.stats.hp, dmg: f.stats.damageMax, baseHp: W.baseHp, baseDmg: W.damageMax };
+  });
+  check(notMine.hp === notMine.baseHp && notMine.dmg === notMine.baseDmg,
+    `голый соперник голый и при прокачанном игроке: ${notMine.hp} хп, урон до ${notMine.dmg}`);
+
+  // Раздеваем игрока обратно: дальше меряется полоса здоровья, и она обязана
+  // быть базовой десяткой, иначе проверки ниже считают не то.
+  await page.evaluate(() => {
+    GameState.data.equipment = {};
+    GameState.data.upgrades = { damage: 0, hp: 0, regen: 0 };
+  });
 
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');
@@ -214,7 +283,7 @@ const { viewport, prepare } = require('./harness');
     };
   });
   await page.screenshot({ path: out + 'duel.png' });
-  check(fight.froze, 'вход в бой заморозил зарастание');
+  check(fight.froze, 'вход в бой заморозил регенерацию');
   check(fight.over, `бой дошёл до конца, исход: ${fight.outcome}`);
   check(fight.hpLeft !== null && fight.hpLeft < 10, `здоровье осталось побитым: ${fight.hpLeft}/10`);
   check(fight.barFull, 'шкала гнева закрылась');
@@ -229,7 +298,7 @@ const { viewport, prepare } = require('./harness');
   await page.evaluate(() => WrathMinigame.showLobby());
   await page.waitForTimeout(500);
   const thawed = await page.evaluate(() => !GameState.data.fighter.frozen);
-  check(thawed, 'возврат в лобби разморозил зарастание');
+  check(thawed, 'возврат в лобби разморозил регенерацию');
 
   console.log('');
   if (errors.length) { console.log('ОШИБКИ В КОНСОЛИ:'); errors.forEach(e => console.log('  ' + e)); }
