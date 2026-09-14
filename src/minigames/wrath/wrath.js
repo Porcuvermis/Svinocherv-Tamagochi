@@ -80,6 +80,8 @@ const WrathMinigame = {
         if (head) head.classList.remove('shown');
         const foot = document.getElementById('wrath-foot');
         if (foot) foot.classList.remove('shown');
+        const back = document.getElementById('wrath-backdrop');
+        if (back) { back.innerHTML = ''; delete back.dataset.screen; }
         WrathDuel.leave();
         WrathLobby.leave();
         WrathShop.leave();
@@ -163,6 +165,14 @@ const WrathMinigame = {
     // вовсе, и ряд режимов внизу был бы приглашением это сделать.
     HEAD_SCREENS: ['lobby', 'shop', 'boost', 'rogue'],
 
+    setBackdrop(name) {
+        const el = document.getElementById('wrath-backdrop');
+        if (!el || typeof WrathBackdrop === 'undefined') return;
+        if (el.dataset.screen === name) return;      // тот же экран — не пересобирать
+        el.dataset.screen = name || '';
+        el.innerHTML = WrathBackdrop.svg(name);
+    },
+
     setScreen(name) {
         if (!this.screens) return;
         Object.keys(this.screens).forEach(key => {
@@ -170,6 +180,12 @@ const WrathMinigame = {
             if (el) el.classList.toggle('active', key === name);
         });
         this.current = name;
+
+        // Фон экрана. Собирается ЗАНОВО при каждом переходе и дальше не
+        // трогается: пять статических слоёв, висящих одновременно, стоили бы
+        // памяти и первой отрисовки на ровном месте, а закрытые мини-игры
+        // уже однажды платили за свои украшения (docs/traps.md, пп. 36–38).
+        this.setBackdrop(name);
 
         const shown = this.HEAD_SCREENS.indexOf(name) !== -1;
         const head = document.getElementById('wrath-head');

@@ -500,6 +500,12 @@
          окно при этом не пересобирается (docs/plan/09-wrath-rework.md). -->
     <div id="wrath-game" class="minigame-screen mg-window" data-sin="wrath">
 
+        <!-- ФОН. Один слой на все экраны: содержимое меняет маршрутизатор
+             (WrathBackdrop). Лежит ПОД всем и пальцев не ловит — под ним
+             кнопки и зоны ударов. Почему у каждого режима свой фон и почему
+             он статический — в шапке src/minigames/wrath/wrath-backdrop.js. -->
+        <div class="wrath-backdrop" id="wrath-backdrop" aria-hidden="true"></div>
+
         <!-- ЛОББИ: свиночервь, слоты снаряжения вокруг него, выбор режима.
              Слоты и кнопки режимов строятся из конфига
              (src/config/wrath-gear.js), поэтому здесь только контейнеры:
@@ -981,6 +987,7 @@
 <!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
      лобби и бой, а они считают характеристики бойцом. -->
 <script src="src/minigames/wrath/wrath-fighter.js?v=10"></script>
+<script src="src/minigames/wrath/wrath-backdrop.js?v=1"></script>
 <script src="src/minigames/wrath/wrath-shop.js?v=7"></script>
 <script src="src/minigames/wrath/wrath-boost.js?v=6"></script>
 <script src="src/minigames/wrath/wrath-rogue.js?v=14"></script>

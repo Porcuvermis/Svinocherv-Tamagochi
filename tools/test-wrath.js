@@ -485,6 +485,58 @@ const { viewport, prepare } = require('./harness');
   check(Object.keys(fit).every(m => fit[m].bottom <= fit[m].footTop + 1),
     `экраны кончаются над подвалом: низ ${fit.lobby.bottom}, подвал с ${fit.lobby.footTop}`);
 
+  // ---------- ФОН ЭКРАНА ----------
+  // У каждого режима своё место, и фон — не украшение: он объясняет, ГДЕ
+  // игрок и что здесь делают, без единого слова. Проверка следит за тремя
+  // вещами, каждая из которых уже ломала эту игру в другом месте: фон есть
+  // везде и разный, он не крутит анимаций (закрытые мини-игры однажды
+  // красили сцену каждый кадр — docs/traps.md, пп. 36–38) и не ловит пальцы.
+  console.log('\n--- фоны экранов ---');
+  const back = await page.evaluate(async () => {
+    const seen = {};
+    for (const mode of ['lobby', 'shop', 'boost', 'rogue', 'duel']) {
+      if (mode === 'lobby') WrathMinigame.showLobby(); else WrathMinigame.startMode(mode);
+      await new Promise(r => setTimeout(r, 320));
+      const el = document.getElementById('wrath-backdrop');
+      const svg = el.querySelector('svg');
+      const box = el.getBoundingClientRect();
+      seen[mode] = {
+        has: !!svg,
+        len: el.innerHTML.length,
+        // Ни одного кадра: ни SMIL, ни css-анимации, ни фильтра, ни маски.
+        moving: el.querySelectorAll('animate,animateTransform,animateMotion').length,
+        heavy: el.querySelectorAll('filter,mask,clipPath').length,
+        // Тап в середину фона обязан дойти до того, что под ним.
+        taps: document.elementFromPoint(box.left + box.width / 2,
+                                        box.top + box.height / 2) === el,
+        text: (el.textContent || '').trim()
+      };
+    }
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 260));
+    return seen;
+  });
+  const modes5 = ['lobby', 'shop', 'boost', 'rogue', 'duel'];
+  check(modes5.every(m => back[m].has && back[m].len > 400), 'фон есть на всех пяти экранах');
+  check(new Set(modes5.map(m => back[m].len)).size === 5,
+    `у каждого режима фон свой: ${modes5.map(m => back[m].len).join(' / ')} знаков`);
+  check(modes5.every(m => !back[m].moving && !back[m].heavy),
+    'фон статический: ни анимаций, ни фильтров, ни масок');
+  check(modes5.every(m => !back[m].taps), 'фон не перехватывает тап');
+  check(modes5.every(m => !back[m].text), 'на фоне нет ни одной буквы');
+
+  const closed = await page.evaluate(async () => {
+    WrathMinigame.close();
+    await new Promise(r => setTimeout(r, 200));
+    const el = document.getElementById('wrath-backdrop');
+    const empty = !el.innerHTML;
+    WrathMinigame.open();
+    await new Promise(r => setTimeout(r, 400));
+    return { empty, back: !!document.querySelector('#wrath-backdrop svg') };
+  });
+  check(closed.empty, 'закрытый грех сносит свой фон, а не держит его в дереве');
+  check(closed.back, 'повторный вход собирает фон заново');
+
   // ---------- 6d. СЛОЖНОСТЬ ЗАБЕГА ----------
   // Цена и содержимое забега живут в окне входа, там же выбирается сложность.
   console.log('\n--- сложности забега ---');
