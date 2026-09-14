@@ -580,7 +580,7 @@ const LocalBackend = {
 
             // ПЛОД. Его может не быть вовсе: трава — это сплошной стебель, и
             // в кладовую кухни от неё не ложится ничего.
-            if (spec.fruit) res.taken = this.gardenStore(spec.fruit, 1);
+            if (spec.fruit) res.taken = this.pantryStore(spec.fruit, 1);
 
             // СЕНО. Второй продукт КАЖДОГО растения: стебель после сбора не
             // исчезает в никуда. У травы его вдвое больше — она из него
@@ -622,10 +622,14 @@ const LocalBackend = {
         return res;
     },
 
-    // Плод кладётся в ТУ ЖЕ кладовую, из которой берёт кухня. Потолок на
+    // Положить в кладовую — ту самую, из которой берёт кухня. Потолок на
     // каждый вид: сад производит быстрее, чем червь ест, и без потолка овощи
     // копятся бесконечно и обесцениваются (план, раздел 7).
-    gardenStore(key, n) {
+    //
+    // Имя общее, а не «садовое»: с тех пор как боссы забега роняют мясо, в
+    // кладовую кладёт не один сад. Возвращает, сколько влезло НА САМОМ ДЕЛЕ —
+    // по этому числу зовущий и решает, показывать ли прибавку.
+    pantryStore(key, n) {
         if (!key) return 0;
         const cap = this.pantryCap();
         const pantry = GameState.data.pantry;
@@ -1481,6 +1485,16 @@ const LocalBackend = {
 
                 if (reward.healFull) gained.healed = this.rogueHeal(run, run.maxHp);
                 else if (reward.heal) gained.healed = this.rogueHeal(run, reward.heal);
+
+                // Мясо в кладовую. Умножается на сложность, как и всё
+                // остальное, но КЛАДЁТСЯ с потолком: кладовая не резиновая, и
+                // забег на верхней сложности не должен её переполнять молча.
+                // Сколько влезло, возвращает pantryStore — это и показывается.
+                Object.keys(reward.pantry || {}).forEach(key => {
+                    const want = Math.round(reward.pantry[key] * loot);
+                    const got = this.pantryStore(key, want);
+                    if (got > 0) gained.pantry = Object.assign(gained.pantry || {}, { [key]: got });
+                });
 
                 Object.keys(reward.currencies || {}).forEach(key => {
                     const requestId = newRequestId();

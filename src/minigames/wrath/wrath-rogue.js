@@ -129,9 +129,14 @@ const WrathRogue = {
     renderStatus(run) {
         if (!this.statusEl) return;
         if (!run) {
+            // Не просто пустая: СКРЫТАЯ. Пустая строка с рамкой и отступами —
+            // это полоса на экране, которая выглядит элементом и ничем не
+            // является; ровно то, от чего чистили это окно.
             this.statusEl.innerHTML = '';
+            this.statusEl.classList.add('empty');
             return;
         }
+        this.statusEl.classList.remove('empty');
 
         // Усиления забега стоят рядом со здоровьем: они и есть ответ на
         // вопрос «что у меня накопилось», а больше его нигде не видно.
@@ -321,39 +326,30 @@ const WrathRogue = {
     },
 
     // ---------- ОКНО ВХОДА ----------
-    // Всё, что игрок решает про забег, живёт ЗДЕСЬ: сложность, во что он
-    // ввязывается, какая дорога впереди и чем меняются жетоны.
+    // На экране ровно три вещи: ЧТО выбрать, ГДЕ посмотреть награду и ЧЕМ
+    // подтвердить. Ни одного числа, пока игрок сам его не спросит.
     //
-    // ---------- ЧЕМ БЫЛО ПЛОХО ----------
-    // Первый вариант выкладывал три строки подряд: «⚔️4 👹1 💀1», «жетон 2
-    // осколок 2 монета 60», «❤️20 🗡3–5» и «💀56❤ 2–11🗡». Значки правильные,
-    // числа верные, читать невозможно — и по трём причинам сразу.
+    // ---------- ЧТО БЫЛО ДО ----------
+    // Окно выкладывало всё сразу: сравнение «ты против босса», дорогу узлами
+    // и строку «цена → добыча». Каждый блок по отдельности был осмыслен, а
+    // вместе они давали шесть одинаковых плашек, из которых нажимались три.
+    // Игрок видел набор чисел и не понимал ни где кнопка, ни что чему
+    // соответствует (docs/traps.md, п. 82).
     //
-    //   1. Ни одна строка не говорит, ПРО ЧТО она. Четыре ряда «значок плюс
-    //      число» сливаются в таблицу без заголовков.
-    //   2. Один значок означает разное в соседних строках. 💀 сверху — «на
-    //      карте один босс», 💀 снизу — «вот его характеристики». ❤️ в одной
-    //      строке твоё здоровье, в другой — его.
-    //   3. Жетон и осколок в мелком размере неразличимы, и «2 и ещё 2»
-    //      читается как одно число, написанное дважды.
+    // Выброшено по одному правилу: «помогает ли это решить, идти или нет».
     //
-    // ---------- КАК ТЕПЕРЬ ----------
-    // Три блока, и каждый построен на приёме, который читается без подписи:
+    //   ДОРОГА — нет. Карта нарисована прямо за этим окном.
+    //   С ЧЕМ ВХОДИШЬ — нет. Одинаково на всех сложностях, значит выбирать по
+    //   нему нечего; это факт о режиме, а не о выборе.
+    //   ЧИСЛА БОССА — хуже, чем нет: 50 → 56 → 60 выглядит «почти то же
+    //   самое», а доходимость падает с 40% до 8%. Цифра прямо врала.
+    //   ЦЕНА — одинаковая на всех трёх, в сравнении ей делать нечего. Её
+    //   место на кнопке, которой платят.
     //
-    //   СХВАТКА — ты и босс лицом к лицу, одни и те же величины в одном и том
-    //   же порядке. Сравнение говорит про сложность больше, чем множитель:
-    //   видно, что входишь с двадцатью против шестидесяти, и понятно, зачем по
-    //   дороге усиления.
-    //
-    //   ДОРОГА — не «⚔️ 4», а сами узлы по порядку, теми же значками, что на
-    //   карте под окном. Кому нужно число — сосчитает точки.
-    //
-    //   СДЕЛКА — цена, стрелка, добыча. Стрелка и делает из двух чисел обмен.
-    //
-    // Добыча приведена к ОДНОЙ валюте: осколки — трети жетона, и показывать
-    // «2 жетона и 2 осколка» значит заставлять игрока складывать. Считается в
-    // девятых и рисуется как в кошельке — целые со счётчиком плюс остаток
-    // недособранным жетоном.
+    // ---------- ЧТО ОСТАЛОСЬ ----------
+    // Огоньки — выбор. СУНДУК — награда: он говорит «здесь добыча» сам, без
+    // подписи и без обучения, а числа прячет внутрь и показывает по нажатию.
+    // Кнопка — цена. Три предмета, три роли, и каждый нажимается.
     renderStart() {
         const cfg = Backend.rogueConfig();
         const levels = Backend.rogueLevels();
@@ -367,84 +363,112 @@ const WrathRogue = {
             <button type="button" class="rogue-level${i === this.level ? ' on' : ''}"
                     data-level="${i}">${l.sign}</button>`).join('');
 
-        // ---------- СХВАТКА ----------
-        const start = (cfg && cfg.start) || { hp: 20, damage: [3, 5] };
-        const boss = Backend.rogueEnemy({ enemy: 'boss' }, this.level);
-        const side = (face, cls, hp, dmg) => `
-            <div class="vs-side ${cls}">
-                <span class="vs-face">${face}</span>
-                <span class="vs-stat"><i>❤️</i>${hp}</span>
-                <span class="vs-stat"><i>🗡</i>${dmg}</span>
-            </div>`;
-
-        // ---------- ДОРОГА ----------
-        // Развилка — один значок, а не три: игрок проходит ОДИН путь из трёх,
-        // и рисовать все три значило бы считать дорогу длиннее, чем она есть.
-        const road = (cfg ? cfg.map : []).map(step => {
-            // Развилка рисуется НЕ значком узла: у неё в NODE_KINDS стоит 👆,
-            // и это подсказка кнопке действия («жми по точке на карте»), а не
-            // имя узла. В ряду дороги палец читался как «тут надо нажать», а
-            // не «тут дорога расходится». Скрещённые стрелки говорят ровно то,
-            // что нужно, и ни на что другое не похожи.
-            const emoji = step.kind === 'fork'
-                ? '🔀'
-                : (this.NODE_KINDS[step.kind] || { emoji: '•' }).emoji;
-            return `<span class="road-node ${step.kind}">${emoji}</span>`;
-        }).join('');
-
-        // ---------- СДЕЛКА ----------
-        const money = (map) => {
-            const per = (ECONOMY.exchange.wrath_shard || {}).per || 3;
-            const ninths = (map.wrath_token || 0) * TokenArt.PIECES
-                         + (map.wrath_shard || 0) * (TokenArt.PIECES / per);
-            const whole = Math.floor(ninths / TokenArt.PIECES);
-            const rest = Math.round(ninths % TokenArt.PIECES);
-            const parts = [];
-            if (whole) parts.push(`<span class="deal-item">${TokenArt.svg('wrath_token', 0, { whole: true })}<b>${whole}</b></span>`);
-            if (rest) parts.push(`<span class="deal-item">${TokenArt.svg('wrath_token', rest)}</span>`);
-            if (map.gold) parts.push(`<span class="deal-item">${currencyMark('gold')}<b>${map.gold}</b></span>`);
-            return parts.join('') || `<span class="deal-item"><b>0</b></span>`;
-        };
-        const loot = {};
-        (cfg ? cfg.map : []).forEach(step => {
-            if (!step.enemy) return;
-            const reward = (cfg.enemies[step.enemy] || {}).reward || {};
-            Object.keys(reward.currencies || {}).forEach(key => {
-                loot[key] = (loot[key] || 0) + Math.round(reward.currencies[key] * (level.loot || 1));
-            });
-        });
-
         this.cardEl.className = 'rogue-card shown start';
         this.cardEl.innerHTML = `
             <div class="rogue-levels">${picker}</div>
-            <div class="rogue-versus">
-                ${side('🐷', 'me', start.hp, `${start.damage[0]}–${start.damage[1]}`)}
-                <span class="vs-mark">⚔️</span>
-                ${side('💀', 'foe', boss ? boss.hp : '?', boss ? `${boss.damage[0]}–${boss.damage[1]}` : '?')}
-            </div>
-            <div class="rogue-road">${road}</div>
-            <div class="rogue-deal">
-                <span class="deal-pay">${money(price)}</span>
-                <span class="deal-arrow">➜</span>
-                <span class="deal-win">${money(loot)}</span>
-            </div>`;
+            <button type="button" class="rogue-chest" id="rogue-chest">
+                ${LootArt.chest()}
+            </button>`;
 
         this.cardEl.querySelectorAll('.rogue-level').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 this.level = Number(btn.dataset.level) || 0;
-                // Перерисовывается ВСЁ окно, а не только подсветка: от
-                // сложности едут и босс, и добыча, и цена.
                 this.renderStart();
             };
         });
+        const chest = this.cardEl.querySelector('#rogue-chest');
+        if (chest) chest.onclick = (e) => { e.stopPropagation(); this.openChest(); };
 
-        // Кнопка — только «идти». Цену повторять на ней незачем: она стоит в
-        // сделке выше, слева от стрелки, и там у неё есть смысл — рядом с тем,
-        // что за неё дадут. Не хватило жетонов — ответит кошелёк в шапке.
-        this.setAction('▶', enough ? () => this.start() : null);
-        if (!enough && this.actionEl) this.actionEl.classList.add('poor');
-        else if (this.actionEl) this.actionEl.classList.remove('poor');
+        // Цена — на кнопке, которой платят, и больше нигде. Не хватило —
+        // кнопка приглушена, а ЧЕГО не хватило, отвечает кошелёк в шапке.
+        this.setAction(this.priceText(price), enough ? () => this.start() : null);
+        if (this.actionEl) this.actionEl.classList.toggle('poor', !enough);
+    },
+
+    // ---------- ЧТО В СУНДУКЕ ----------
+    // Открывается по нажатию на сундук и показывает то, что игрок ГАРАНТИРОВАННО
+    // унесёт, пройдя забег целиком. Не «сколько примерно», не «с какой
+    // вероятностью» — просто содержимое, как в любой игре с сундуками.
+    //
+    // Сложность переключается прямо здесь: от неё едет вся добыча, и заставлять
+    // закрывать окно ради сравнения — то же самое, что заставлять запоминать.
+    openChest() {
+        const cfg = Backend.rogueConfig();
+        const levels = Backend.rogueLevels();
+        const level = Backend.rogueLevel(this.level);
+
+        // Что падает за полный проход: складывается по карте, как и раньше, но
+        // теперь вместе с кладовой — мясо роняют мини-босс и босс.
+        const coin = {}, pantry = {};
+        (cfg ? cfg.map : []).forEach(step => {
+            if (!step.enemy) return;
+            const reward = (cfg.enemies[step.enemy] || {}).reward || {};
+            Object.keys(reward.currencies || {}).forEach(key => {
+                coin[key] = (coin[key] || 0) + Math.round(reward.currencies[key] * (level.loot || 1));
+            });
+            Object.keys(reward.pantry || {}).forEach(key => {
+                pantry[key] = (pantry[key] || 0) + Math.round(reward.pantry[key] * (level.loot || 1));
+            });
+        });
+
+        // Жетоны и осколки — одна валюта: осколок это треть жетона, и «2 жетона
+        // и 2 осколка» заставляло бы складывать. Считается в девятых и рисуется
+        // как в кошельке: целые со счётчиком плюс остаток недособранным.
+        const per = (ECONOMY.exchange.wrath_shard || {}).per || 3;
+        const ninths = (coin.wrath_token || 0) * TokenArt.PIECES
+                     + (coin.wrath_shard || 0) * (TokenArt.PIECES / per);
+        const whole = Math.floor(ninths / TokenArt.PIECES);
+        const rest = Math.round(ninths % TokenArt.PIECES);
+
+        const rows = [];
+        if (whole) rows.push(`${TokenArt.svg('wrath_token', 0, { whole: true })}<b>${whole}</b>`);
+        if (rest) rows.push(TokenArt.svg('wrath_token', rest));
+        const tokenRow = rows.length ? `<div class="loot-row">${rows.join('')}</div>` : '';
+        const goldRow = coin.gold
+            ? `<div class="loot-row">${currencyMark('gold')}<b>${coin.gold}</b></div>` : '';
+
+        // Мясо рисуется ТЕМ ЖЕ рисунком, что лежит в холодильнике кухни: игрок
+        // должен узнать его с первого взгляда и понять, куда оно поедет.
+        // Своего мяса гнев не заводит (src/config/kitchen.js).
+        const meatRow = Object.keys(pantry).map(key => {
+            const art = (typeof KITCHEN_ART !== 'undefined' && KITCHEN_ART.ingredientRaw)
+                ? `<svg class="loot-meat" viewBox="-72 -62 144 124" aria-hidden="true">
+                       ${KITCHEN_ART.ingredientRaw(key, 1)}</svg>`
+                : ((KITCHEN.ingredients[key] || {}).emoji || '');
+            return `<div class="loot-row">${art}<b>${pantry[key]}</b></div>`;
+        }).join('');
+
+        const picker = levels.map((l, i) => `
+            <button type="button" class="rogue-level${i === this.level ? ' on' : ''}"
+                    data-level="${i}">${l.sign}</button>`).join('');
+
+        this.cardEl.className = 'rogue-card shown chest';
+        this.cardEl.innerHTML = `
+            <div class="rogue-levels">${picker}</div>
+            <button type="button" class="rogue-chest open" id="rogue-chest-close">
+                ${LootArt.chest({ open: true })}
+            </button>
+            <div class="loot-list">${tokenRow}${goldRow}${meatRow}</div>`;
+
+        this.cardEl.querySelectorAll('.rogue-level').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                this.level = Number(btn.dataset.level) || 0;
+                // Перерисовывается открытый сундук, а не окно входа: игрок
+                // сравнивает добычу, и закрывать его ради этого незачем.
+                this.openChest();
+            };
+        });
+        const close = this.cardEl.querySelector('#rogue-chest-close');
+        if (close) close.onclick = (e) => { e.stopPropagation(); this.renderStart(); };
+
+        // Кнопка внизу остаётся той же: цена и вход. Из открытого сундука можно
+        // уйти прямо в забег, не закрывая его.
+        const price = level.entry || (cfg ? cfg.entry : {});
+        const enough = !Object.keys(price).some(key => GameState.currency(key) < price[key]);
+        this.setAction(this.priceText(price), enough ? () => this.start() : null);
+        if (this.actionEl) this.actionEl.classList.toggle('poor', !enough);
     },
 
     // ---------- ВЫБОР НАГРАДЫ ----------
@@ -641,8 +665,18 @@ const WrathRogue = {
         if (g.teeth) parts.push(`🦷 +${g.teeth}`);
         if (g.healed) parts.push(`❤️ +${g.healed}`);
         Object.keys(g.currencies || {}).forEach(key => {
-            const conf = ECONOMY.currencies[key];
             parts.push(`${currencyMark(key)} +${g.currencies[key]}`);
+        });
+        // МЯСО. Сундук его обещал — значит, в момент выпадения оно обязано
+        // появиться в строке, иначе обещание нечем подтвердить. Рисунок тот
+        // же, что в сундуке и в холодильнике кухни: продукт узнаётся, а не
+        // читается.
+        Object.keys(g.pantry || {}).forEach(key => {
+            const art = (typeof KITCHEN_ART !== 'undefined' && KITCHEN_ART.ingredientRaw)
+                ? `<svg class="gain-meat" viewBox="-72 -62 144 124" aria-hidden="true">
+                       ${KITCHEN_ART.ingredientRaw(key, 1)}</svg>`
+                : ((KITCHEN.ingredients[key] || {}).emoji || '');
+            parts.push(`${art} +${g.pantry[key]}`);
         });
         return parts.join(' · ');
     },

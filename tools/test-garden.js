@@ -100,7 +100,7 @@ const harness = require('./harness');
   say('\n--- потолок склада ---');
   const cap = await page.evaluate(() => Backend.pantryCap());
   await page.evaluate((c) => { GameState.data.pantry.potato = c; GameState.save(); }, cap);
-  const put = await page.evaluate(() => Backend.gardenStore('potato', 1));
+  const put = await page.evaluate(() => Backend.pantryStore('potato', 1));
   say('потолок ' + cap + ', кладём ещё один → влезло ' + put +
       (put === 0 ? '  ✓ склад не резиновый' : '  ✗ ПОТОЛОК НЕ РАБОТАЕТ'));
 

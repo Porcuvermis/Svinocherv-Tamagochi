@@ -442,11 +442,23 @@ const ECONOMY = {
                         name: 'Приблуда', hp: 10, damage: [2, 4],
                         reward: { teeth: 10, heal: 5, choices: ['damage2', 'hp5'] }
                     },
+                    // ---------- МЯСО ----------
+                    // Мясо падает ТОЛЬКО с мини-босса и босса забега — так это
+                    // и было задумано с самого начала (src/config/kitchen.js,
+                    // шапка: «мясо — только боссы гнева, с обычных побед не
+                    // падает»). Дефицит намеренный: он и есть причина лезть в
+                    // забег, когда жетонов хватает и без него.
+                    //
+                    // pantry, а не currencies: мясо — не валюта, а ингредиент,
+                    // и ложится оно в ТУ ЖЕ кладовую, из которой берёт кухня.
+                    // Поле общее, не «мясное»: завтра сюда можно положить
+                    // специю или жидкость, не трогая код.
                     miniboss: {
                         name: 'Мясоед', hp: 20, damage: [3, 5],
                         reward: {
                             teeth: 20, healFull: true,
                             currencies: { wrath_shard: 1 },
+                            pantry: { pork: 1 },
                             choices: ['damage2', 'hp10', 'armor3']
                         }
                     },
@@ -460,7 +472,8 @@ const ECONOMY = {
                     },
                     boss: {
                         name: 'Гнойный Хряк', hp: 50, damage: [1, 10],
-                        reward: { currencies: { wrath_token: 1, gold: 30 } }
+                        reward: { currencies: { wrath_token: 1, gold: 30 },
+                                  pantry: { pork: 1 } }
                     }
                 },
 

@@ -444,55 +444,116 @@ const { viewport, prepare } = require('./harness');
   });
   check(rogue.count === 3, `сложностей три: ${rogue.count}`);
 
-  // ---------- СТРУКТУРА ОКНА ВХОДА ----------
-  // Первый вариант выкладывал четыре строки «значок плюс число» подряд, и
-  // читать их было нельзя: ни одна не говорила, про что она, а один и тот же
-  // значок означал в соседних строках разное. Теперь три блока, и каждый
-  // держится на приёме, который читается без подписи. Проверка следит, что
-  // блоки на месте и что в них ровно то, что задумано.
+  // Забег, открытый ради проверки входа, сворачивается: окно входа проверяется
+  // в том же виде, в каком его видит игрок перед забегом.
+  await page.evaluate(async () => {
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 300));
+  });
+
+  // ---------- ОКНО ВХОДА: ОГОНЬКИ, СУНДУК, ЦЕНА ----------
+  // Первый вариант выкладывал четыре строки «значок плюс число» подряд, второй —
+  // три блока со схваткой и дорогой. Оба читались только после объяснения.
+  // Теперь в окне ровно три предмета и у каждого одна роль: огоньки — выбор,
+  // СУНДУК — добыча (он говорит «здесь награда» сам, как во всех играх),
+  // кнопка — цена. Числа спрятаны внутрь сундука и показываются по нажатию.
   const card = await page.evaluate(() => {
     const root = document.querySelector('.rogue-card.start');
     if (!root) return null;
-    const vs = root.querySelectorAll('.rogue-versus .vs-side');
-    const stats = [...vs].map(s => [...s.querySelectorAll('.vs-stat')].map(e => e.textContent.trim()));
     return {
-      blocks: ['.rogue-levels', '.rogue-versus', '.rogue-road', '.rogue-deal']
-        .filter(sel => root.querySelector(sel)).length,
-      sides: vs.length,
-      // Обе стороны схватки обязаны нести ОДНИ И ТЕ ЖЕ величины в одном
-      // порядке — именно одинаковость строк и делает это сравнением.
-      sameShape: stats.length === 2 && stats[0].length === stats[1].length
-                 && stats[0].every((t, i) => t[0] === stats[1][i][0]),
-      roadNodes: root.querySelectorAll('.rogue-road .road-node').length,
-      mapSteps: Backend.rogueConfig().map.length,
-      // На дороге развилка НЕ рисуется значком узла: там 👆, и это подсказка
-      // кнопке («жми по точке»), а в ряду она читалась как «тут надо нажать».
-      forkGlyph: (root.querySelector('.rogue-road .road-node.fork') || {}).textContent,
-      pay: root.querySelectorAll('.deal-pay .deal-item').length,
-      win: root.querySelectorAll('.deal-win .deal-item').length,
-      arrow: !!root.querySelector('.deal-arrow'),
-      // Цена стоит в сделке, а не на кнопке: на кнопке она была бы вторым
-      // местом для одного числа.
+      levels: root.querySelectorAll('.rogue-level').length,
+      chest: !!root.querySelector('.rogue-chest svg'),
+      // В закрытом окне НЕТ ни одной цифры: всё, что можно посчитать, лежит в
+      // сундуке и на кнопке. Иначе снова получится ряд «значок плюс число».
+      digits: /\d/.test(root.textContent || ''),
+      kids: root.children.length,
       action: (document.getElementById('rogue-action').textContent || '').trim()
     };
   });
-  check(card && card.blocks === 4, 'в окне четыре блока: сложность, схватка, дорога, сделка');
-  check(card.sides === 2 && card.sameShape,
-    'схватка: две стороны с одинаковыми величинами в одном порядке');
-  check(card.roadNodes === card.mapSteps,
-    `дорога показывает все узлы карты: ${card.roadNodes} из ${card.mapSteps}`);
-  check(card.forkGlyph && card.forkGlyph !== '👆',
-    `развилка на дороге не палец, а «${card.forkGlyph}»`);
-  check(card.pay >= 1 && card.win >= 2 && card.arrow,
-    `сделка: ${card.pay} слева, стрелка, ${card.win} справа`);
-  check(!/\d/.test(card.action), `на кнопке нет цены, только «${card.action}»`);
+  check(card && card.levels === 3 && card.chest, 'в закрытом окне только огоньки и сундук');
+  check(card && card.kids === 2 && !card.digits, 'в закрытом окне ни одной цифры: числа внутри сундука');
+  check(card && /\d/.test(card.action), `цена стоит на кнопке входа: «${card.action}»`);
+
+  // ---------- ЧТО В СУНДУКЕ ----------
+  // По нажатию сундук открывается и показывает то, что игрок ГАРАНТИРОВАННО
+  // унесёт за полный проход: жетон, золото и мясо. Мясо — то же самое, что
+  // лежит в холодильнике кухни, и рисуется тем же рисунком.
+  const chest = await page.evaluate(async () => {
+    const rows = [];
+    for (let i = 0; i < 3; i++) {
+      document.querySelector(`.rogue-level[data-level="${i}"]`).click();
+      const open = document.querySelector('.rogue-card.chest')
+        || (document.getElementById('rogue-chest').click(), document.querySelector('.rogue-card.chest'));
+      rows.push({
+        // Сложность переключается ПРЯМО В ОТКРЫТОМ сундуке: игрок сравнивает
+        // добычу, закрывать его ради этого незачем.
+        stillOpen: !!document.querySelector('.rogue-card.chest'),
+        chosen: Number(document.querySelector('.rogue-level.on').dataset.level),
+        items: open.querySelectorAll('.loot-row').length,
+        meat: !!open.querySelector('.loot-meat'),
+        text: (open.querySelector('.loot-list').textContent || '').replace(/\s+/g, ' ').trim()
+      });
+    }
+    document.getElementById('rogue-chest-close').click();
+    return { rows, closed: !!document.querySelector('.rogue-card.start') };
+  });
+  check(chest.rows.every(r => r.stillOpen && r.chosen === chest.rows.indexOf(r)),
+    'сложность переключается в открытом сундуке, он не захлопывается');
+  check(chest.rows.every(r => r.items >= 3 && r.meat),
+    `в сундуке жетон, золото и мясо: ${chest.rows[0].items} строки`);
+  check(new Set(chest.rows.map(r => r.text)).size === 3,
+    `добыча растёт со сложностью: ${chest.rows.map(r => r.text).join(' | ')}`);
+  check(chest.closed, 'нажатие на открытый сундук закрывает его');
+
   check(rogue.rows.every((r, i) => r.chosen === i), 'выбранная сложность подсвечена');
   check(rogue.rows[0].bossHp < rogue.rows[1].bossHp && rogue.rows[1].bossHp < rogue.rows[2].bossHp,
     `босс растёт со сложностью: ${rogue.rows.map(r => r.bossHp).join(' → ')} хп`);
-  check(new Set(rogue.rows.map(r => r.card)).size === 3, 'окно перерисовывается целиком: добыча и враг едут вместе с ценой');
   check(rogue.started && rogue.runLevel === 2, `вход записал сложность в забег: ур. ${rogue.runLevel}`);
   check(rogue.enemyAtRun === rogue.rows[2].bossHp && rogue.enemyAtRun > rogue.enemyBase,
     `в идущем забеге враги той сложности, на которой вошли: ${rogue.enemyAtRun} против ${rogue.enemyBase} в таблице`);
+
+  // ---------- МЯСО ДОЕЗЖАЕТ ДО КУХНИ ----------
+  // Сундук обещает мясо — значит, победа над боссом обязана положить его в ту
+  // же кладовую, из которой берёт холодильник кухни. Своего мяса кухня не
+  // заводит (src/config/kitchen.js): гнев — единственный его источник, и до
+  // этой правки обещание висело невыполненным.
+  const meat = await page.evaluate(() => {
+    GameState.data.pantry = {};
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    Backend.startRun(0);
+    const cfg = Backend.rogueConfig();
+    const out = { dropped: 0, line: '' };
+    // Прогоняется вся карта: узлы, у которых в награде есть кладовая, обязаны
+    // её наполнить, остальные — не трогать. Предложенное усиление берётся
+    // сразу: пока оно висит, дорога дальше не идёт.
+    let guard = 0;
+    while (Backend.run() && guard++ < 30) {
+      const run = Backend.run();
+      const node = run.map[run.node];
+      // На развилке берётся первый ОТКРЫТЫЙ путь: закрытый не выбирается и
+      // здесь, иначе прогон спорил бы с правилом самой развилки.
+      const pick = node && node.kind === 'fork'
+        ? (node.options || []).findIndex(o => o && !o.locked) : undefined;
+      const answer = Backend.resolveNode('win', pick);
+      if (!answer.ok) break;
+      if (answer.gained && answer.gained.pantry) {
+        out.dropped += Object.values(answer.gained.pantry).reduce((a, b) => a + b, 0);
+        out.line = WrathRogue.gainText(answer.gained);
+      }
+      if (answer.finished) break;
+      const pend = Backend.run() && Backend.run().pending;
+      if (pend) Backend.chooseBoost(pend.choices[0]);
+    }
+    out.pantry = Object.assign({}, GameState.data.pantry);
+    // Кухня читает ту же кладовую — если мясо там, оно уже в холодильнике.
+    out.fridge = Object.keys(out.pantry).filter(k => KITCHEN.ingredients[k]);
+    return out;
+  });
+  check(meat.dropped >= 2, `за полный забег выпало мяса: ${meat.dropped} куска`);
+  check((meat.pantry.pork || 0) >= 2, `мясо лежит в кладовой: ${JSON.stringify(meat.pantry)}`);
+  check(meat.fridge.includes('pork'), 'кладовая с мясом — та самая, из которой берёт холодильник кухни');
+  check(/\+\d/.test(meat.line) && /svg|🥩/.test(meat.line), 'выпавшее мясо показано в строке итога узла');
 
   await page.evaluate(() => {
     if (GameState.data.runs) delete GameState.data.runs.wrath;
