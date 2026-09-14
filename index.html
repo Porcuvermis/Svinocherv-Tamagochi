@@ -521,6 +521,29 @@
             <div class="wrath-panel" id="wrath-panel"></div>
         </div>
 
+        <!-- ОБЩИЙ ПОДВАЛ. Пара к шапке: сверху — кто ты (здоровье, числа,
+             кошелёк), снизу — куда пойти (режимы и лавка), между ними
+             меняется только содержимое. Раньше режимы жили ВНУТРИ лобби, а у
+             каждого меню была своя кнопка возврата в своём углу: из лавки в
+             забег нельзя было попасть иначе как через лобби, и место кнопки
+             «назад» переезжало от экрана к экрану.
+
+             Кнопка возврата тоже переехала сюда и стоит всегда на одном
+             месте. В самом лобби возвращаться некуда — там она спрятана, но
+             место за собой держит, чтобы ряд не прыгал.
+
+             Стоит она СПРАВА, и не по вкусу: левый нижний угол навсегда занят
+             кнопкой 🐞 (style.css, .debug-toggle-btn лежит поверх всего), и
+             всё, что туда поставить, наполовину не нажимается. Заодно выходы
+             собираются по правому краю: ✕ греха сверху, ↩ меню снизу.
+
+             В бою подвал скрыт вместе с шапкой: бой занимает весь экран и
+             уходить из него посреди размена нельзя. -->
+        <div class="wrath-foot" id="wrath-foot">
+            <div class="wrath-modes" id="wrath-modes"></div>
+            <button type="button" class="wrath-btn foot-back" id="wrath-foot-back">↩</button>
+        </div>
+
         <div class="wrath-screen active" id="wrath-lobby">
             <div class="wrath-gear">
                 <div class="gear-column" id="wrath-gear-left"></div>
@@ -547,7 +570,6 @@
                 <div class="gear-column" id="wrath-gear-right"></div>
             </div>
 
-            <div class="wrath-modes" id="wrath-modes"></div>
             <div class="wrath-slot-card" id="wrath-slot-card"></div>
         </div>
 
@@ -559,9 +581,6 @@
                  всего» — строятся скриптом из каталога. -->
             <div class="shop-tabs" id="shop-tabs"></div>
             <div class="shop-list" id="shop-list"></div>
-            <!-- Ответ на покупку. Снаружи прокручиваемого списка: сообщение,
-                 уехавшее под сгиб, — это молчание. -->
-            <button type="button" class="wrath-btn shop-back" id="wrath-shop-back">↩</button>
         </div>
 
         <!-- БОЕВАЯ ПРОКАЧКА. Открывается удержанием пальца на черве в лобби:
@@ -572,7 +591,6 @@
                  боя. Складывать их в один список нельзя. -->
             <div class="shop-tabs" id="boost-tabs"></div>
             <div class="shop-list" id="boost-list"></div>
-            <button type="button" class="wrath-btn shop-back" id="wrath-boost-back">↩</button>
         </div>
 
         <!-- РОГАЛИК. Карта забега: дорожка с точками, здоровье и зубы. Сам
@@ -591,8 +609,10 @@
             </div>
             <div class="rogue-message" id="rogue-message"></div>
             <button type="button" class="wrath-btn primary rogue-action" id="rogue-action"><b>🎟</b></button>
+            <!-- Сдаться и бросить забег. Возврат в лобби отсюда убран: он
+                 стоит в общем подвале, а рядом с ним читался как «то же
+                 самое, только другой кнопкой». -->
             <div class="rogue-bottom">
-                <button type="button" class="wrath-btn shop-back" id="wrath-rogue-back">↩</button>
                 <button type="button" class="wrath-btn rogue-abandon" id="rogue-abandon">🏳️</button>
             </div>
         </div>

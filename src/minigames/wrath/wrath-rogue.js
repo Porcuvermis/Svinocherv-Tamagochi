@@ -66,8 +66,8 @@ const WrathRogue = {
         this.messageEl = document.getElementById('rogue-message');
         this.abandonEl = document.getElementById('rogue-abandon');
 
-        const back = document.getElementById('wrath-rogue-back');
-        if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+        // Своей кнопки возврата у экрана нет: она одна на все меню и стоит
+        // в общем подвале (index.html, #wrath-foot).
         if (this.abandonEl) {
             this.abandonEl.onclick = (e) => { e.stopPropagation(); this.abandon(); };
         }

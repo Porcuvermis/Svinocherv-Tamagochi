@@ -38,8 +38,8 @@ const WrathBoost = {
         this.listEl = document.getElementById('boost-list');
         this.tabsEl = document.getElementById('boost-tabs');
 
-        const back = document.getElementById('wrath-boost-back');
-        if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+        // Своей кнопки возврата у экрана нет: она одна на все меню и стоит
+        // в общем подвале (index.html, #wrath-foot).
     },
 
     enter() {

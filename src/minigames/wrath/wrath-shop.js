@@ -35,8 +35,8 @@ const WrathShop = {
         this.listEl = document.getElementById('shop-list');
         this.tabsEl = document.getElementById('shop-tabs');
 
-        const back = document.getElementById('wrath-shop-back');
-        if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+        // Своей кнопки возврата у экрана нет: она одна на все меню и стоит
+        // в общем подвале (index.html, #wrath-foot).
     },
 
     enter() {

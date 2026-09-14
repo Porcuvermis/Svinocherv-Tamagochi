@@ -359,18 +359,75 @@ const { viewport, prepare } = require('./harness');
   check(head.lobby.wallet === 2,
     'кошелёк в шапке: целый жетон со счётчиком и собираемый');
 
-  // Кнопки режимов очищены от чисел: значок и только значок.
-  const modes = await page.evaluate(async () => {
+  // ---------- ОБЩИЙ ПОДВАЛ ----------
+  // Пара к шапке: сверху — кто ты, снизу — куда пойти. Ряд режимов и кнопка
+  // возврата стоят на одном месте во всех меню; раньше режимы жили внутри
+  // лобби, а «назад» было своё у каждого экрана и переезжало от экрана к
+  // экрану. Проверка следит за ОБОИМИ свойствами: подвал есть везде и не
+  // прыгает.
+  const foot = await page.evaluate(async () => {
+    const seen = {};
+    const look = () => {
+      const el = document.getElementById('wrath-foot');
+      const box = el.getBoundingClientRect();
+      const modes = {};
+      el.querySelectorAll('.mode-btn').forEach(b => {
+        modes[b.dataset.mode] = (b.textContent || '').replace(/\s+/g, '');
+      });
+      const back = document.getElementById('wrath-foot-back');
+      return {
+        shown: el.classList.contains('shown'),
+        modes,
+        lit: [...el.querySelectorAll('.mode-btn.on')].map(b => b.dataset.mode).join(),
+        // Кнопка возврата в лобби спрятана, но МЕСТО за собой держит:
+        // offsetParent жив, а видимости нет.
+        backShown: back.offsetParent !== null
+                   && getComputedStyle(back).visibility !== 'hidden',
+        bottom: Math.round(box.bottom),
+        width: Math.round(box.width)
+      };
+    };
+    for (const mode of [null, 'shop', 'boost', 'rogue']) {
+      if (mode) WrathMinigame.startMode(mode); else WrathMinigame.showLobby();
+      await new Promise(r => setTimeout(r, 260));
+      seen[mode || 'lobby'] = look();
+    }
+    WrathMinigame.startMode('duel');
+    await new Promise(r => setTimeout(r, 400));
+    seen.duel = look();
     WrathMinigame.showLobby();
     await new Promise(r => setTimeout(r, 260));
-    const out = {};
-    document.querySelectorAll('#wrath-lobby .mode-btn').forEach(btn => {
-      out[btn.dataset.mode] = (btn.textContent || '').replace(/\s+/g, '');
-    });
-    return out;
+    return seen;
   });
-  check(!/\d/.test(modes.shop || ''), `на кнопке лавки нет чисел: «${modes.shop}»`);
-  check(!/\d/.test(modes.rogue || ''), `на кнопке забега нет ценника: «${modes.rogue}»`);
+  check(menus.every(m => foot[m].shown), 'подвал с режимами виден во всех четырёх меню');
+  check(!foot.duel.shown, 'в бою подвал скрыт: уходить посреди размена нельзя');
+  check(menus.every(m => foot[m].bottom === foot.lobby.bottom
+                      && foot[m].width === foot.lobby.width),
+    'подвал не прыгает при переключении экранов');
+  check(!foot.lobby.backShown && menus.filter(m => m !== 'lobby').every(m => foot[m].backShown),
+    'возврат есть во всех меню, кроме лобби: оттуда возвращаться некуда');
+  check(foot.lobby.lit === '' && foot.shop.lit === 'shop' && foot.rogue.lit === 'rogue',
+    `горит тот режим, в котором игрок: лобби «${foot.lobby.lit}», лавка «${foot.shop.lit}»`);
+
+  // Главное, ради чего подвал и заводился: из лавки можно уйти прямо в
+  // забег, не заходя по дороге в лобби. Раньше ряд режимов был внутри лобби,
+  // и другого пути не было вовсе.
+  const hop = await page.evaluate(async () => {
+    WrathMinigame.startMode('shop');
+    await new Promise(r => setTimeout(r, 260));
+    document.querySelector('#wrath-foot .mode-btn[data-mode="rogue"]').click();
+    await new Promise(r => setTimeout(r, 300));
+    const direct = WrathMinigame.current;
+    document.getElementById('wrath-foot-back').click();
+    await new Promise(r => setTimeout(r, 300));
+    return { direct, back: WrathMinigame.current };
+  });
+  check(hop.direct === 'rogue', `из лавки прямо в забег, без захода в лобби: «${hop.direct}»`);
+  check(hop.back === 'lobby', `общий возврат уводит в лобби: «${hop.back}»`);
+
+  // Кнопки режимов очищены от чисел: значок и только значок.
+  check(!/\d/.test(foot.lobby.modes.shop || ''), `на кнопке лавки нет чисел: «${foot.lobby.modes.shop}»`);
+  check(!/\d/.test(foot.lobby.modes.rogue || ''), `на кнопке забега нет ценника: «${foot.lobby.modes.rogue}»`);
 
   // Отказ по нехватке валюты отвечает шапкой — кошелька в лавке больше нет.
   const refuse = await page.evaluate(async () => {
@@ -402,7 +459,12 @@ const { viewport, prepare } = require('./harness');
           return r.bottom > body.bottom + 1 || r.top < body.top - 1;
         })
         .map(b => (b.className || b.id || 'button'));
-      out[mode] = { outside, top: Math.round(scr.getBoundingClientRect().top) };
+      const footBox = document.getElementById('wrath-foot').getBoundingClientRect();
+      const headBox = document.getElementById('wrath-head').getBoundingClientRect();
+      out[mode] = { outside, top: Math.round(scr.getBoundingClientRect().top),
+                    bottom: Math.round(scr.getBoundingClientRect().bottom),
+                    headBottom: Math.round(headBox.bottom),
+                    footTop: Math.round(footBox.top) };
     }
     return out;
   });
@@ -410,8 +472,18 @@ const { viewport, prepare } = require('./harness');
   check(!cut.length, cut.length
     ? `кнопки вылезли за рамку: ${cut.map(m => m + ' → ' + fit[m].outside.join(',')).join('; ')}`
     : 'ни одна кнопка не вылезла за рамку ни в одном меню');
-  check(Object.keys(fit).every(m => fit[m].top === fit.lobby.top && fit.lobby.top > 100),
-    `экраны начинаются под шапкой, на одной высоте: y=${fit.lobby.top}`);
+  // Сверяется с РЕАЛЬНЫМ низом шапки, а не с порогом «больше ста»: высота
+  // шапки кладётся в css из замера, и стоит померить её в экранных пикселях
+  // вместо единиц сцены — на айфоне, где масштаб не единица, экран съедет.
+  // Ровно это и случилось; ловится только прогоном с SVINO_VIEWPORT.
+  check(Object.keys(fit).every(m => fit[m].top === fit.lobby.top
+                                 && Math.abs(fit[m].top - fit[m].headBottom) <= 2),
+    `экраны начинаются ровно под шапкой, на одной высоте: y=${fit.lobby.top}`);
+  // И кончаются НАД подвалом. Один раз уже вышло, что экрану сдвинули только
+  // верх, а высоту оставили прежней, и он вылез за рамку; с подвалом та же
+  // ошибка прячет ряд режимов под содержимым.
+  check(Object.keys(fit).every(m => fit[m].bottom <= fit[m].footTop + 1),
+    `экраны кончаются над подвалом: низ ${fit.lobby.bottom}, подвал с ${fit.lobby.footTop}`);
 
   // ---------- 6d. СЛОЖНОСТЬ ЗАБЕГА ----------
   // Цена и содержимое забега живут в окне входа, там же выбирается сложность.

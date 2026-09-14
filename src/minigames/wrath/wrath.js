@@ -78,6 +78,8 @@ const WrathMinigame = {
         WrathLobby.stopHeadClock();
         const head = document.getElementById('wrath-head');
         if (head) head.classList.remove('shown');
+        const foot = document.getElementById('wrath-foot');
+        if (foot) foot.classList.remove('shown');
         WrathDuel.leave();
         WrathLobby.leave();
         WrathShop.leave();
@@ -119,7 +121,16 @@ const WrathMinigame = {
     },
 
     startMode(mode) {
+        // Сносятся ВСЕ экраны, а не одно лобби. Пока режимы жили внутри
+        // лобби, попасть сюда можно было только из него; теперь ряд режимов
+        // стоит в общем подвале, и переход идёт напрямую — из лавки в забег,
+        // из забега в лавку. Уходящий экран обязан убрать за собой в любом
+        // случае, иначе на нём остаётся показанный отказ или итог прошлого
+        // захода.
         WrathLobby.leave();
+        WrathShop.leave();
+        WrathBoost.leave();
+        if (mode !== 'rogue') WrathRogue.leave();
         // Магазин и прокачка — такие же экраны греха, как бой, и живут в том
         // же окне.
         if (mode === 'shop') {
@@ -141,13 +152,15 @@ const WrathMinigame = {
         WrathDuel.enter(mode);
     },
 
-    // ---------- ОБЩАЯ ШАПКА ----------
-    // Здоровье, характеристики и кошелёк одинаковы в лобби, лавке, прокачке и
-    // на карте забега — значит и живут они одни на четыре экрана, над ними.
-    // Переключение экранов их не трогает.
+    // ---------- ОБЩАЯ ШАПКА И ОБЩИЙ ПОДВАЛ ----------
+    // Сверху — кто ты (здоровье, числа, кошелёк), снизу — куда пойти (режимы
+    // и лавка). И то и другое одинаково в лобби, лавке, прокачке и на карте
+    // забега, поэтому живёт одно на четыре экрана; между ними меняется только
+    // содержимое.
     //
-    // В БОЮ шапка скрыта: там своё здоровье и своя полоса, а чужая рядом
-    // читалась бы как ещё один боец.
+    // В БОЮ скрыто и то и другое: там своё здоровье и своя полоса, а чужая
+    // рядом читалась бы как ещё один боец; уходить же посреди размена нельзя
+    // вовсе, и ряд режимов внизу был бы приглашением это сделать.
     HEAD_SCREENS: ['lobby', 'shop', 'boost', 'rogue'],
 
     setScreen(name) {
@@ -160,7 +173,18 @@ const WrathMinigame = {
 
         const shown = this.HEAD_SCREENS.indexOf(name) !== -1;
         const head = document.getElementById('wrath-head');
+        const foot = document.getElementById('wrath-foot');
         if (head) head.classList.toggle('shown', shown);
+        if (foot) {
+            foot.classList.toggle('shown', shown);
+            // В лобби возвращаться некуда: кнопка гаснет, но место за собой
+            // держит — ряд режимов, который прыгает при каждом переходе,
+            // читается как другой ряд.
+            foot.classList.toggle('at-home', name === 'lobby');
+            foot.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.toggle('on', btn.dataset.mode === name);
+            });
+        }
         // Содержимое шапки пересобирает лобби — оно знает про снаряжение и
         // кошелёк. Экранам под шапкой об этом знать незачем.
         if (shown) WrathLobby.refreshHead();

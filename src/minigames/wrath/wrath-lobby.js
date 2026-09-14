@@ -35,6 +35,7 @@ const WrathLobby = {
     panelEl: null,
     columns: null,
     wormStage: null,
+    footEl: null,
     modesEl: null,
     cardEl: null,
     wormHandle: null,
@@ -59,6 +60,7 @@ const WrathLobby = {
         };
         this.wormStage = document.getElementById('wrath-lobby-worm');
         this.wormBox = this.wormStage ? this.wormStage.parentElement : null;
+        this.footEl = document.getElementById('wrath-foot');
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
         this.holdEl = document.getElementById('wrath-hold');
@@ -67,6 +69,12 @@ const WrathLobby = {
         this.buildSlots();
         this.buildModes();
         this.bindHold();
+
+        // Возврат живёт в подвале и один на все меню. Вешается здесь, а не в
+        // каждом экране: раньше своя кнопка была у лавки, у прокачки и у
+        // карты забега, и место «назад» переезжало от экрана к экрану.
+        const back = document.getElementById('wrath-foot-back');
+        if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
 
         // Тап мимо карточки закрывает её. Слушатель на самом экране, а не на
         // документе: закрытая мини-игра не должна ничего ловить.
@@ -257,9 +265,27 @@ const WrathLobby = {
         // экран. Меряется после кадра, иначе высота ещё нулевая.
         requestAnimationFrame(() => {
             const head = this.panelEl && this.panelEl.parentElement;
-            if (!head) return;
-            const h = Math.round(head.getBoundingClientRect().height);
-            if (h) head.style.setProperty('--wrath-head-h', h + 'px');
+            const foot = this.footEl || document.getElementById('wrath-foot');
+            // Свойство ставится на ОБЩЕГО РОДИТЕЛЯ, а не на саму шапку:
+            // читают его экраны, а они шапке соседи, и через соседа
+            // пользовательское свойство не наследуется. Пока стояло на шапке,
+            // экраны молча жили на запасном числе из css.
+            const host = (head && head.parentElement) || (foot && foot.parentElement);
+            if (!host) return;
+            // Меряется offsetHeight, а НЕ getBoundingClientRect: весь холст
+            // масштабируется под окно (CLAUDE.md, инвариант 11), и рамка
+            // возвращает ЭКРАННЫЕ пиксели, а число кладётся обратно в css —
+            // то есть в единицы сцены. На айфоне, где масштаб не единица,
+            // экраны от этого разъезжались и низ уходил под подвал.
+            // offsetHeight трансформации предка не видит.
+            if (head) {
+                const h = Math.round(head.offsetHeight);
+                if (h) host.style.setProperty('--wrath-head-h', h + 'px');
+            }
+            if (foot) {
+                const h = Math.round(foot.offsetHeight);
+                if (h) host.style.setProperty('--wrath-foot-h', h + 'px');
+            }
         });
 
         // Число здоровья пересчитывается раз в секунду, пока шапка на экране:
@@ -327,7 +353,7 @@ const WrathLobby = {
         // он платный и ждёт возвращения. Показывается СОСТОЯНИЕМ кнопки, а не
         // числами под ней: цена и содержимое забега теперь живут во
         // всплывающем окне, которое открывается тем же нажатием.
-        const rogueBtn = this.root.querySelector('.mode-btn[data-mode="rogue"]');
+        const rogueBtn = this.modesEl && this.modesEl.querySelector('.mode-btn[data-mode="rogue"]');
         if (rogueBtn) rogueBtn.classList.toggle('running', !!Backend.run());
 
     },
@@ -364,9 +390,9 @@ const WrathLobby = {
 
         // Драться без здоровья нельзя — и это не поломка, а ожидание.
         // Кнопка запирается, а почему — видно по пустой полосе над червём.
-        // Кнопка боя — в лобби, а не в шапке: часы здоровья тикают и в лавке,
-        // где её на экране нет вовсе.
-        const duelBtn = this.root && this.root.querySelector('.mode-btn[data-mode="duel"]');
+        // Кнопка боя живёт в общем подвале и видна из любого меню — значит и
+        // запирается она отовсюду: часы здоровья тикают и в лавке.
+        const duelBtn = this.modesEl && this.modesEl.querySelector('.mode-btn[data-mode="duel"]');
         if (duelBtn) {
             const dead = health.hp <= 0;
             duelBtn.classList.toggle('locked', dead);
