@@ -1418,13 +1418,189 @@ const LocalBackend = {
         return healed;
     },
 
+    // ---------- ОДИН ФОРМАТ ЭФФЕКТА НА ВСЁ ----------
+    // Товар магазина, вариант события и когда-нибудь ловушка на карте дают
+    // одно и то же: здоровье, максимум, урон, броню, зубы, валюту. Раз так —
+    // применяет их ОДНО место, а конфиг пишет табличкой. Иначе каждая новая
+    // механика забега тащила бы свою ветку в resolveNode.
+    //
+    // hpShare — доля от МАКСИМУМА забега, а не от текущего: «отдай четверть
+    // здоровья» не должно дешеветь по мере того, как игрок его теряет.
+    //
+    // ЗДОРОВЬЕМ ЭФФЕКТ НЕ УБИВАЕТ: цена обрезается так, чтобы осталась хотя бы
+    // единица. Умереть от нажатия на картинку, не увидев боя, — худшее, что
+    // может случиться за жетон (docs/plan/10-wrath-rogue.md, разд. 4).
+    applyRogueEffect(run, eff, gained) {
+        const out = gained || { currencies: {} };
+        if (!eff) return out;
+
+        if (eff.maxHp) {
+            // Как и усиление здоровьем: поднимает И максимум, И текущее.
+            // Карточка, доставшаяся пустой, — это карточка, которую не берут.
+            run.maxHp += eff.maxHp;
+            run.hp += eff.maxHp;
+            out.healed = (out.healed || 0) + eff.maxHp;
+        }
+
+        const hpDelta = (eff.hp || 0) + (eff.hpShare ? run.maxHp * eff.hpShare : 0);
+        if (hpDelta > 0) out.healed = (out.healed || 0) + this.rogueHeal(run, hpDelta);
+        else if (hpDelta < 0) {
+            const paid = Math.min(Math.round(-hpDelta), run.hp - 1);
+            if (paid > 0) { run.hp -= paid; out.hurt = (out.hurt || 0) + paid; }
+        }
+
+        if (eff.damage) { run.bonus.damage += eff.damage; out.damage = eff.damage; }
+        if (eff.armor) { run.bonus.armor += eff.armor; out.armor = eff.armor; }
+
+        if (eff.teeth) {
+            const delta = eff.teeth > 0 ? eff.teeth : -Math.min(-eff.teeth, run.teeth);
+            run.teeth += delta;
+            out.teeth = (out.teeth || 0) + delta;
+        }
+
+        Object.keys(eff.currencies || {}).forEach(key => {
+            const amount = eff.currencies[key];
+            const requestId = newRequestId();
+            GameState.addCurrency(key, amount);
+            GameState.pushLedger({
+                currency: key, delta: amount,
+                reason: 'rogue.wrath.effect', client_request_id: requestId
+            });
+            out.currencies = Object.assign(out.currencies || {}, { [key]: amount });
+        });
+        return out;
+    },
+
+    // ---------- ЧТО ПРЕДЛАГАЕТ МАГАЗИН И КАКОЕ ВЫПАЛО СОБЫТИЕ ----------
+    // Считается из СИДА ЗАБЕГА и номера узла, а не бросается при открытии.
+    // Иначе перезаход перекатывал бы витрину, и «выйти и зайти, пока не
+    // выпадет нужное» стало бы основной механикой магазина.
+    rogueRoll(run, salt) {
+        return wrathRandom(((run && run.seed) || 1) + salt * 7919);
+    },
+
+    rogueShopOffer(run, step) {
+        const cfg = this.rogueConfig();
+        const shop = (cfg && cfg.shop) || { slots: 3, items: {} };
+        // Обязательные вещи стоят на витрине всегда. Причина в конфиге: без
+        // дешёвой перевязки случайная тройка могла оказаться целиком не по
+        // карману, и заход в магазин кончался ничем — а путь развилки при
+        // этом потрачен.
+        const must = (shop.always || []).filter(id => (shop.items || {})[id]);
+        const ids = Object.keys(shop.items || {}).filter(id => must.indexOf(id) < 0);
+        const rnd = this.rogueRoll(run, step + 1);
+        // Тасовка, а не «взять N случайных»: повторов в витрине быть не
+        // должно, две одинаковые вещи рядом читаются ошибкой.
+        for (let i = ids.length - 1; i > 0; i--) {
+            const j = Math.floor(rnd() * (i + 1));
+            const t = ids[i]; ids[i] = ids[j]; ids[j] = t;
+        }
+        return must.concat(ids).slice(0, shop.slots || 3);
+    },
+
+    rogueEventPick(run, step) {
+        const cfg = this.rogueConfig();
+        const ids = Object.keys((cfg && cfg.events) || {});
+        if (!ids.length) return null;
+        return ids[Math.floor(this.rogueRoll(run, step + 101)() * ids.length)];
+    },
+
     // Что даёт узел, у которого нет противника. Отдельно, потому что таким
     // узлом может быть и путь развилки, и когда-нибудь обычная точка карты.
-    applyPlainNode(run, cfg, kind, gained) {
+    //
+    // Привал срабатывает СРАЗУ, а магазин и событие открывают лавку —
+    // `run.pending`, тот же механизм, что у выбора усиления после боя. Пока
+    // она открыта, дальше по карте не пускает (resolveNode отказывает), и
+    // переживает она перезаход: мобильная сессия обязательно прервётся, а
+    // потерять из-за этого выбор на развилке нельзя.
+    applyPlainNode(run, cfg, kind, gained, step) {
         if (kind === 'heal') {
             gained.healed = this.rogueHeal(run, run.maxHp * (cfg.healShare || 0.5));
+            return;
         }
-        // Магазин и события пока закрыты и сюда не доходят.
+        if (kind === 'shop') {
+            run.pending = { kind: 'shop', step, offer: this.rogueShopOffer(run, step), bought: [] };
+            return;
+        }
+        if (kind === 'event') {
+            run.pending = { kind: 'event', step, id: this.rogueEventPick(run, step) };
+        }
+    },
+
+    // Эффект, который ничего не изменит. Сейчас такой ровно один — лечение на
+    // полном здоровье, — но проверка общая: любая вещь, которая сводится к
+    // чистому лечению, на полной полосе бесполезна.
+    rogueEffectEmpty(run, eff) {
+        if (!eff) return true;
+        const onlyHeal = !eff.maxHp && !eff.damage && !eff.armor && !eff.teeth
+                         && !eff.currencies;
+        return onlyHeal && run.hp >= run.maxHp;
+    },
+
+    // ---------- ПОКУПКА В МАГАЗИНЕ ЗАБЕГА ----------
+    // Платят ЗУБАМИ — валютой, которая живёт только внутри забега и сгорает
+    // на выходе. Поэтому и проверка здесь своя, а не общая на валюты.
+    buyRogueItem(id) {
+        const run = this.run();
+        const cfg = this.rogueConfig();
+        if (!run || !cfg) return { ok: false, error: 'no_run' };
+        const pending = run.pending;
+        if (!pending || pending.kind !== 'shop') return { ok: false, error: 'no_shop' };
+        if ((pending.offer || []).indexOf(id) < 0) return { ok: false, error: 'not_offered' };
+        // Каждая вещь в витрине одна: витрина — это ВЫБОР, а не автомат по
+        // размену зубов на здоровье.
+        if ((pending.bought || []).indexOf(id) >= 0) return { ok: false, error: 'sold_out' };
+
+        const item = (cfg.shop.items || {})[id];
+        if (!item) return { ok: false, error: 'unknown_item' };
+        if (run.teeth < item.price) return { ok: false, error: 'not_enough', currency: 'teeth' };
+        // ПУСТУЮ ВЕЩЬ НЕ ПРОДАЁМ. Перевязка на полном здоровье не даёт
+        // ничего, а зубы списывает — это не выбор игрока, а ловушка. То же
+        // правило, по которому усиление здоровьем поднимает и максимум:
+        // карточка не должна доставаться пустой.
+        if (this.rogueEffectEmpty(run, item.effect)) return { ok: false, error: 'no_effect' };
+
+        run.teeth -= item.price;
+        const gained = this.applyRogueEffect(run, item.effect, { currencies: {} });
+        pending.bought = (pending.bought || []).concat(id);
+        GameState.save();
+        return { ok: true, gained, teeth: run.teeth };
+    },
+
+    // Уйти из магазина. Отдельным шагом, а не «купил и вышел»: покупок может
+    // быть несколько, и решает игрок, а не последняя цена.
+    closeRogueShop() {
+        const run = this.run();
+        if (!run || !run.pending || run.pending.kind !== 'shop') {
+            return { ok: false, error: 'no_shop' };
+        }
+        run.pending = null;
+        GameState.save();
+        return { ok: true };
+    },
+
+    // ---------- ВАРИАНТ СОБЫТИЯ ----------
+    // Вариантов два, и оба чего-то стоят. Выбор закрывает событие сразу:
+    // передумать нельзя, в этом и риск.
+    takeRogueEvent(index) {
+        const run = this.run();
+        const cfg = this.rogueConfig();
+        if (!run || !cfg) return { ok: false, error: 'no_run' };
+        const pending = run.pending;
+        if (!pending || pending.kind !== 'event') return { ok: false, error: 'no_event' };
+
+        const event = (cfg.events || {})[pending.id];
+        const option = event && (event.options || [])[index];
+        if (!option) return { ok: false, error: 'bad_choice' };
+        // Не хватило зубов — вариант не берётся. Долгов в забеге нет.
+        if (option.teeth < 0 && run.teeth < -option.teeth) {
+            return { ok: false, error: 'not_enough', currency: 'teeth' };
+        }
+
+        const gained = this.applyRogueEffect(run, option, { currencies: {} });
+        run.pending = null;
+        GameState.save();
+        return { ok: true, gained };
     },
 
     // Узел пройден. Что за это дать, решает конфиг, а не экран забега.
@@ -1469,9 +1645,9 @@ const LocalBackend = {
             const option = (node.options || [])[choice];
             if (!option || option.locked) return { ok: false, error: 'bad_choice' };
             node.chosen = choice;
-            this.applyPlainNode(run, cfg, option.kind, gained);
+            this.applyPlainNode(run, cfg, option.kind, gained, run.node);
         } else if (!node.enemy) {
-            this.applyPlainNode(run, cfg, node.kind, gained);
+            this.applyPlainNode(run, cfg, node.kind, gained, run.node);
         } else {
             const enemy = this.rogueEnemy(node);
             const reward = (enemy && enemy.reward) || null;
@@ -1509,7 +1685,11 @@ const LocalBackend = {
                 });
 
                 if (reward.choices && reward.choices.length) {
-                    run.pending = { choices: reward.choices.slice() };
+                    // kind проставляется явно: в pending теперь живут три
+                    // разные вещи — выбор усиления, витрина и событие.
+                    // Старые сохранения его не знают, и отсутствие kind
+                    // читается как 'boost' (там ничего другого быть не могло).
+                    run.pending = { kind: 'boost', choices: reward.choices.slice() };
                 }
             }
         }
@@ -1539,7 +1719,10 @@ const LocalBackend = {
         const cfg = this.rogueConfig();
         if (!run || !cfg) return { ok: false, error: 'no_run' };
         if (!run.pending) return { ok: false, error: 'no_choice' };
-        if (run.pending.choices.indexOf(id) < 0) return { ok: false, error: 'not_offered' };
+        // Лавка и событие висят в том же pending, но выбираются другими
+        // ручками: общий ящик — один, а ключи к нему разные.
+        if (run.pending.kind && run.pending.kind !== 'boost') return { ok: false, error: 'no_choice' };
+        if ((run.pending.choices || []).indexOf(id) < 0) return { ok: false, error: 'not_offered' };
 
         const boost = cfg.boosts[id];
         if (!boost) return { ok: false, error: 'unknown_boost' };

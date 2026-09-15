@@ -210,11 +210,16 @@ const { chromium } = require('playwright');
         'дольше ' + (cfg.pity.spins - 1) + ' пустых круток подряд не бывает (было ' + worst + ')');
 
   // ---------- 6. АВТОМАТ УБЫТОЧЕН ----------
+  // Круток здесь ДЕСЯТКИ ТЫСЯЧ, а не три тысячи, и это не запас прочности.
+  // Возврат автомата держится на редких крупных выплатах, поэтому разброс
+  // выборки огромен: на трёх тысячах он гулял от 73% до 84% при коридоре
+  // 60–80%, и проверка падала на ровном месте примерно каждый пятый прогон.
+  // Тридцать тысяч сжимают разброс втрое и делают отказ настоящим.
   const drain = await page.evaluate(() => {
-    Backend.grantCurrency('gold', 5000);
+    Backend.grantCurrency('gold', 60000);
     const start = GameState.currency('gold');
     let paid = 0, spent = 0;
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 30000; i++) {
       const r = Backend.greedSpin();
       if (!r.ok) break;
       spent += r.cost; paid += r.pay;

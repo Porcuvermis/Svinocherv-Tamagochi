@@ -1428,31 +1428,37 @@
 
 .rogue-seg {
     fill: none;
-    stroke: rgba(255, 255, 255, 0.16);
-    stroke-width: 3;
+    stroke: rgba(255, 255, 255, 0.14);
+    stroke-width: 2.5;
     stroke-linecap: round;
-    stroke-dasharray: 5 7;
+    stroke-dasharray: 3 9;
 }
 
+/* Пройденная дорога ГОРИТ: сплошная, толще непройденной и со свечением.
+   Свечение стоит только на пройденном — это несколько коротких отрезков, а
+   не весь холст, и платит за него один слой. */
 .rogue-seg.done {
-    stroke: rgba(255, 59, 48, 0.55);
+    stroke: var(--wrath-attack);
+    stroke-width: 3.5;
     stroke-dasharray: none;
+    filter: drop-shadow(0 0 4px rgba(255, 59, 48, 0.75));
 }
 
-/* Ветка развилки, ведущая в ещё не сделанный путь: она есть, но по ней не
-   пойдут — линия тише остальных. */
-.rogue-seg.dim { stroke: rgba(255, 255, 255, 0.07); }
+/* Ветка развилки, ведущая мимо выбранного пути. */
+.rogue-seg.dim { stroke: rgba(255, 255, 255, 0.06); }
 
-/* ---------- ТОЧКИ ---------- */
+/* ---------- ТОЧКИ ----------
+   На карте одни значки: подписей с числами под точками больше нет. Чем
+   опасен узел, говорит его РАЗМЕР — рядовой мелкий, мини-босс крупнее, босс
+   крупнее всех. Разбор — в комментарии к renderMap(). */
 .rogue-nodes { position: absolute; inset: 0; }
 
 .rogue-node {
     position: absolute;
     transform: translate(-50%, -50%);
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 2px;
+    justify-content: center;
     padding: 0;
     border: none;
     background: none;
@@ -1464,73 +1470,104 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.18);
     /* Непрозрачный: дорожка проходит ПОД точками, и полупрозрачный кружок
        показывал бы линию прямо у себя внутри. */
     background: #180809;
-    font-size: 20px;
+    font-size: 18px;
     line-height: 1;
+    transition: width 0.25s ease, height 0.25s ease,
+                opacity 0.25s ease, border-color 0.25s ease;
 }
 
-/* Под точкой — только числа: сколько у противника здоровья и как он бьёт.
-   Имени нет (CLAUDE.md, инвариант 9), за противника говорят его числа. */
-.rogue-node-label {
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 1.15;
-    white-space: nowrap;
-    text-shadow: 0 1px 3px #000;
-    color: rgba(255, 255, 255, 0.85);
-    pointer-events: none;
-}
+/* Лестница угрозы. Три ступени, и это единственное, что на карте говорит о
+   силе врага, — вместо строки чисел под каждой точкой. */
+.rogue-node.miniboss .rogue-node-dot { width: 50px; height: 50px; font-size: 24px; }
+.rogue-node.boss .rogue-node-dot { width: 60px; height: 60px; font-size: 30px; }
 
-/* Пройденный узел гаснет, будущий приглушён, закрытый — серый и мёртвый:
-   магазин и событие нарисованы заранее, чтобы карта не поехала, когда их
-   сделают (docs/plan/10-wrath-rogue.md). */
-.rogue-node.done { opacity: 0.45; }
+/* Пройденный узел СЖИМАЕТСЯ и гаснет, но свой значок сохраняет: по нему
+   видно, через что игрок уже прошёл. Галочки вместо значка здесь была —
+   она стирала эту память и добавляла ещё один символ на экран. */
 .rogue-node.done .rogue-node-dot {
-    border-color: rgba(76, 175, 80, 0.6);
-    color: #7ddc82;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    opacity: 0.5;
+    border-color: rgba(255, 59, 48, 0.45);
 }
 
-.rogue-node.future { opacity: 0.7; }
+.rogue-node.done.miniboss .rogue-node-dot,
+.rogue-node.done.boss .rogue-node-dot { width: 30px; height: 30px; font-size: 15px; }
 
-.rogue-node.locked { opacity: 0.35; filter: grayscale(1); }
+.rogue-node.future .rogue-node-dot { opacity: 0.6; }
 
-/* Путь развилки, мимо которого прошли: он был доступен, но выбрали другой.
-   Гасится сильнее пройденного, чтобы выбранный путь читался с одного
-   взгляда. */
-.rogue-node.skipped { opacity: 0.25; filter: grayscale(0.7); }
+.rogue-node.locked .rogue-node-dot { opacity: 0.28; filter: grayscale(1); }
 
-/* Текущий узел — единственный нажимаемый, и это видно: он крупнее, светится
-   и медленно пульсирует. */
+/* Путь развилки, мимо которого прошли: он был доступен, но выбрали другой. */
+.rogue-node.skipped .rogue-node-dot {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+    opacity: 0.22;
+    filter: grayscale(0.7);
+}
+
+/* ---------- ТЕКУЩИЙ УЗЕЛ ----------
+   Единственный нажимаемый на всей карте, и это видно с одного взгляда: он
+   ярче остальных, приподнят и окружён живым кольцом.
+   Кольцо — отдельный ::before на HTML-элементе, а не свечение внутри SVG
+   дорожки: оно едет трансформацией и прозрачностью, то есть на видеокарте, и
+   ничего вокруг не перерисовывает (docs/traps.md, п. 73). */
 .rogue-node.current {
     cursor: pointer;
     z-index: 2;
 }
 
+.rogue-node.current::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 2px solid var(--wrath-attack);
+    animation: rogue-ring 1.9s ease-out infinite;
+    pointer-events: none;
+}
+
 .rogue-node.current .rogue-node-dot {
     border-color: var(--wrath-attack);
     background: #4d1512;
-    box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.15), 0 0 18px rgba(255, 59, 48, 0.5);
-    animation: rogue-pulse 1.8s ease-in-out infinite;
+    box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.14), 0 0 20px rgba(255, 59, 48, 0.5);
 }
 
-.rogue-node.current:active .rogue-node-dot { transform: scale(0.92); }
+.rogue-node.current:active .rogue-node-dot { transform: scale(0.9); }
 
-.rogue-node.boss .rogue-node-dot,
-.rogue-node.miniboss .rogue-node-dot { width: 52px; height: 52px; font-size: 24px; }
+/* Кольцо расходится и гаснет — «нажми сюда», сказанное движением. */
+@keyframes rogue-ring {
+    0%   { transform: scale(1);   opacity: 0.85; }
+    70%  { transform: scale(1.9); opacity: 0; }
+    100% { transform: scale(1.9); opacity: 0; }
+}
 
-@keyframes rogue-pulse {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.12), 0 0 14px rgba(255, 59, 48, 0.35); }
-    50%      { box-shadow: 0 0 0 7px rgba(255, 59, 48, 0.05), 0 0 22px rgba(255, 59, 48, 0.65); }
+/* ---------- ШАГ ВПЕРЁД ----------
+   Только что пройденная точка коротко вспыхивает, а дорожка до неё
+   прочерчивается (WrathRogue.playStep). Обе анимации ОДНОРАЗОВЫЕ: вечных на
+   карте нет, кроме кольца текущей точки. */
+.rogue-node-dot.pop { animation: rogue-pop 0.45s ease-out; }
+
+@keyframes rogue-pop {
+    0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
+    45%  { transform: scale(1.35); box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
+    100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .rogue-node.current .rogue-node-dot { animation: none; }
+    .rogue-node.current::before { animation: none; opacity: 0.5; }
+    .rogue-node-dot.pop { animation: none; }
+    .rogue-seg { transition: none !important; }
 }
 
 /* ---------- КАРТОЧКА ПОВЕРХ КАРТЫ ----------
@@ -1545,7 +1582,9 @@
     gap: 6px;
     padding: 16px;
     box-sizing: border-box;
-    background: rgba(10, 3, 3, 0.95);
+    /* НЕПРОЗРАЧНАЯ. Пяти процентов просвета хватало, чтобы значки карты
+       лезли сквозь карточку: эмодзи яркие, и даже 5% от яркого видно. */
+    background: radial-gradient(ellipse at 50% 30%, rgba(255, 59, 48, 0.1), transparent 60%), #0b0404;
     /* Выше текущей точки: та подсвечена и приподнята, и без этого она
        светилась бы поверх вопроса, на который надо ответить. */
     z-index: 3;
@@ -1612,6 +1651,106 @@
 }
 
 .rogue-boost:active { transform: scale(0.96); }
+
+/* ---------- ВИТРИНА МАГАЗИНА ЗАБЕГА ----------
+   Три вещи столбиком: значок, что даёт, цена. Строка, а не карточка в ряд,
+   потому что у товара три величины, и в колонку они не влезают читаемо. */
+.rogue-buys {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin: 4px 0 8px;
+}
+
+.rogue-buy {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 59, 48, 0.4);
+    background: linear-gradient(120deg, rgba(255, 59, 48, 0.18), rgba(0, 0, 0, 0.42));
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.18s ease, border-color 0.18s ease;
+}
+
+.rogue-buy:active { transform: scale(0.97); }
+.buy-emoji { font-size: 26px; line-height: 1; }
+.buy-gain { flex: 1 1 auto; text-align: left; font-size: 15px; }
+
+.buy-price {
+    flex: 0 0 auto;
+    padding: 4px 9px;
+    border-radius: 9px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+/* Не по карману — тише, но НЕ выключено: цена и есть ответ, почему нельзя,
+   а выключенная кнопка на неё не отвечает. */
+.rogue-buy.poor { opacity: 0.45; }
+.rogue-buy.poor .buy-price { border-color: var(--wrath-attack); color: #ffb0ab; }
+
+/* Купленное из витрины не пропадает: пустое место на месте вещи читается
+   поломкой. Гаснет и перестаёт нажиматься — как выкупленная ступень. */
+.rogue-buy.sold {
+    opacity: 0.32;
+    filter: grayscale(0.8);
+    cursor: default;
+    border-color: rgba(76, 175, 80, 0.5);
+}
+
+.rogue-buy.sold:active { transform: none; }
+
+/* ---------- СОБЫТИЕ: ДВА ОБМЕНА ----------
+   Слева отдал, справа получил, между ними стрелка. Стрелка работает ровно
+   потому, что стороны РАЗНЫЕ: одинаковые по обе стороны её убивают
+   (docs/traps.md, п. 82). */
+.rogue-deals {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 4px 0 8px;
+}
+
+.rogue-deal {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 10px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 59, 48, 0.4);
+    background: linear-gradient(120deg, rgba(0, 0, 0, 0.45), rgba(255, 59, 48, 0.16));
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.18s ease;
+}
+
+.rogue-deal:active { transform: scale(0.97); }
+.rogue-deal.poor { opacity: 0.4; cursor: default; }
+.rogue-deal.poor:active { transform: none; }
+
+.deal-give { flex: 1 1 0; text-align: right; color: #ffb0ab; white-space: nowrap; }
+.deal-take { flex: 1 1 0; text-align: left; color: #9ee3a2; white-space: nowrap; }
+
+.deal-arrow {
+    flex: 0 0 auto;
+    font-size: 17px;
+    opacity: 0.75;
+}
+
+/* Не хватило зубов — дёргается их счётчик в строке забега, а не кнопка, по
+   которой нажали: отказ показывается там, где лежит недостающее. Тот же
+   приём, что у кошелька в шапке. */
+.rogue-teeth.lack {
+    animation: wallet-shake 0.42s ease;
+    color: #ffb0ab;
+}
 .rogue-boost-emoji { font-size: 30px; line-height: 1; }
 .rogue-boost b { font-size: 18px; }
 
@@ -1630,12 +1769,17 @@
 .rogue-action b { font-size: 22px; line-height: 1.1; }
 .rogue-action i { font-style: normal; font-size: 12px; font-weight: 700; opacity: 0.85; }
 
+/* Действие и белый флаг одной строкой: флаг занимал целый ряд внизу, и ряд
+   был почти пустым. Кнопка действия тянется, флаг держит свою ширину. */
 .rogue-bottom {
     flex: 0 0 auto;
     display: flex;
     gap: 6px;
-    align-items: center;
+    align-items: stretch;
+    margin-bottom: 6px;
 }
+
+.rogue-bottom .rogue-action { flex: 1 1 auto; margin-bottom: 0; }
 
 /* Бросить забег видно только во время забега, и первый тап только
    переспрашивает: цена ошибки — жетон. */

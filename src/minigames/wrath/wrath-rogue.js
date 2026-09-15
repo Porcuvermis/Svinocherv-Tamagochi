@@ -115,10 +115,7 @@ const WrathRogue = {
             // переспрашивает словами.
             this.abandonEl.classList.toggle('armed', this.abandonArmed);
         }
-        // Под итогом забега уходить некуда, кроме лобби, и кнопка для этого
-        // уже есть — вторая такая же рядом выглядела бы ошибкой.
-        const bottom = this.abandonEl && this.abandonEl.parentElement;
-        if (bottom) bottom.style.display = this.summary ? 'none' : '';
+        // Под итогом забега бросать уже нечего: забег кончился.
     },
 
     // ---------- СТРОКА ЗАБЕГА ----------
@@ -147,7 +144,7 @@ const WrathRogue = {
 
         this.statusEl.innerHTML = `
             <span class="wallet-item"><b>❤️ ${run.hp}/${run.maxHp}</b></span>
-            <span class="wallet-item"><b>🦷 ${run.teeth}</b></span>
+            <span class="wallet-item rogue-teeth"><b>🦷 ${run.teeth}</b></span>
             <span class="rogue-chips">${chips.join('')}</span>
         `;
     },
@@ -182,6 +179,15 @@ const WrathRogue = {
         return true;
     },
 
+    // ---------- НА КАРТЕ ОДНИ ЗНАЧКИ ----------
+    // Под каждой точкой раньше стояла строка «❤️ 50 🗡 1–10», и на восьми
+    // узлах это давало восемь строк мелких чисел поверх дорожки. Карта из
+    // «куда я иду» превращалась в таблицу, которую никто не читал: числа
+    // следующего боя и так стоят на кнопке действия, а числа боя через три
+    // узла ничего не решают — до него ещё дойти надо, и дойдёшь ты другим.
+    //
+    // Чем ОПАСЕН узел, говорит теперь его РАЗМЕР: рядовой мелкий, мини-босс
+    // крупнее, босс крупнее всех. Это читается издали и не требует цифр.
     renderMap(run) {
         const cfg = Backend.rogueConfig();
         if (!cfg || !this.nodesEl) return;
@@ -204,23 +210,15 @@ const WrathRogue = {
                 else if (run && run.map[i] && run.map[i].done) state = 'skipped';
                 else if (i === current) state = 'current';
 
-                const enemy = point.enemy && cfg.enemies[point.enemy];
-                // Числа противника видны заранее и у всех узлов: забег в
-                // шесть боёв — это про подготовку, а не про сюрпризы. Имени
-                // у противника на экране нет — за него говорят его числа, а
-                // потом будет говорить облик.
-                let note = '';
-                if (enemy) note = this.foeStats(enemy);
-                else if (point.locked) note = '🔒';
-                else if (point.kind === 'heal') note = `${Math.round((cfg.healShare || 0.5) * 100)}%`;
+                // Точка, пройденная ПОСЛЕДНЕЙ. По ней и бьёт вспышка шага.
+                const just = passed && i === current - 1 ? ' just' : '';
 
                 html += `
-                    <button type="button" class="rogue-node ${point.kind} ${state}"
+                    <button type="button" class="rogue-node ${point.kind} ${state}${just}"
                             data-step="${i}" data-option="${point.option === null ? '' : point.option}"
                             ${state === 'current' ? '' : 'disabled'}
                             style="left:${(point.x * 100).toFixed(1)}%; top:${(point.y * 100).toFixed(1)}%">
-                        <span class="rogue-node-dot">${passed ? '✓' : kind.emoji}</span>
-                        ${note ? `<span class="rogue-node-label">${note}</span>` : ''}
+                        <span class="rogue-node-dot">${kind.emoji}</span>
                     </button>`;
             });
         });
@@ -229,10 +227,47 @@ const WrathRogue = {
         Array.prototype.forEach.call(this.nodesEl.querySelectorAll('.rogue-node'), el => {
             el.onclick = (e) => {
                 e.stopPropagation();
+                if (typeof Haptics !== 'undefined') Haptics.impact('light');
                 const option = el.dataset.option === '' ? null : parseInt(el.dataset.option, 10);
                 this.enterNode(parseInt(el.dataset.step, 10), option);
             };
         });
+
+        // ---------- ШАГ ВПЕРЁД РИСУЕТСЯ, А НЕ ПРОСТО СЛУЧАЕТСЯ ----------
+        // Дорожка до нового узла ПРОЧЕРЧИВАЕТСЯ, а сам узел коротко
+        // вспыхивает. Анимация одноразовая и только на изменившемся куске:
+        // вечных анимаций на карте нет (docs/traps.md, пп. 36–38), а без
+        // движения продвижение по карте не чувствуется вовсе — точка просто
+        // перекрашивается, и игрок не видит, что прошёл.
+        if (run && this.shownNode != null && run.node > this.shownNode) this.playStep();
+        this.shownNode = run ? run.node : null;
+    },
+
+    // Какой узел был показан в прошлый раз. По нему и только по нему видно,
+    // что игрок продвинулся: сравнивать состояние с самим собой больше
+    // негде — render() зовётся и просто так.
+    shownNode: null,
+
+    playStep() {
+        // Прочерчивание: у только что пройденных отрезков снимается
+        // пунктирный сдвиг, и линия «дорисовывается» от точки к точке.
+        Array.prototype.forEach.call(this.trailEl.querySelectorAll('.rogue-seg.fresh'), el => {
+            const len = el.getTotalLength ? el.getTotalLength() : 100;
+            el.style.strokeDasharray = `${len}`;
+            el.style.strokeDashoffset = `${len}`;
+            // Кадр между записью и снятием обязателен: без него браузер
+            // схлопывает оба значения в одно и анимации не будет вовсе.
+            requestAnimationFrame(() => {
+                el.style.transition = 'stroke-dashoffset 0.5s ease-out';
+                el.style.strokeDashoffset = '0';
+            });
+        });
+        const dot = this.nodesEl.querySelector('.rogue-node.just .rogue-node-dot');
+        if (dot) {
+            dot.classList.remove('pop');
+            void dot.offsetWidth;
+            dot.classList.add('pop');
+        }
     },
 
     // Дорожка между точками. Кривая, а не ломаная: карта должна выглядеть
@@ -268,8 +303,11 @@ const WrathRogue = {
                     const nextIsFork = steps[i + 1].kind === 'fork';
                     const done = passedA && (!nextIsFork || this.isPassed(run, i + 1, b));
                     const dim = a.locked || b.locked;
+                    // Свежий — тот, что упирается в ТЕКУЩУЮ точку: только он
+                    // и прочерчивается, остальные уже нарисованы.
+                    const fresh = done && run && i + 1 === run.node;
 
-                    out += `<path class="rogue-seg${done ? ' done' : ''}${dim ? ' dim' : ''}"
+                    out += `<path class="rogue-seg${done ? ' done' : ''}${dim ? ' dim' : ''}${fresh ? ' fresh' : ''}"
                                   vector-effect="non-scaling-stroke"
                                   d="M${p1.x.toFixed(2)},${p1.y.toFixed(2)}
                                      C${c1.x.toFixed(2)},${c1.y.toFixed(2)}
@@ -289,7 +327,15 @@ const WrathRogue = {
 
         if (this.summary) { this.renderSummary(); return; }
         if (!run) { this.renderStart(); return; }
-        if (run.pending) { this.renderChoice(run); return; }
+        if (run.pending) {
+            // В pending живут три разные вещи: выбор усиления после боя,
+            // витрина магазина и событие. Вид у каждой свой, а механизм один
+            // — пока лавка открыта, дальше по карте не пускает.
+            if (run.pending.kind === 'shop') { this.renderShop(run); return; }
+            if (run.pending.kind === 'event') { this.renderEvent(run); return; }
+            this.renderChoice(run);
+            return;
+        }
 
         this.cardEl.className = 'rogue-card';
         this.cardEl.innerHTML = '';
@@ -498,6 +544,157 @@ const WrathRogue = {
         });
 
         this.setAction('👆', null);
+    },
+
+    // ---------- МАГАЗИН ЗАБЕГА ----------
+    // Путь развилки, где зубы наконец тратятся. Витрина — три вещи, каждая
+    // значком и ценой; купить можно сколько угодно, пока хватает зубов, а
+    // уйти — кнопкой внизу.
+    //
+    // Что уже купил, из витрины НЕ пропадает: пустое место на месте вещи
+    // читается как «сломалось». Оно гаснет и перестаёт нажиматься — так же,
+    // как выкупленная ступень в лавке снаряжения.
+    //
+    // Названий нет и не будет: «🗡 +2» и есть название (инвариант 9).
+    renderShop(run) {
+        const cfg = Backend.rogueConfig();
+        const shop = (cfg && cfg.shop) || { items: {} };
+        const bought = run.pending.bought || [];
+
+        const rows = (run.pending.offer || []).map(id => {
+            const item = (shop.items || {})[id];
+            if (!item) return '';
+            // Пустая вещь показана так же, как купленная: она гаснет и не
+            // нажимается. Перевязка на полном здоровье ничего не даст, а зубы
+            // спишет — это ловушка, а не выбор.
+            const sold = bought.indexOf(id) >= 0 || Backend.rogueEffectEmpty(run, item.effect);
+            const poor = run.teeth < item.price;
+            return `
+                <button type="button" class="rogue-buy${sold ? ' sold' : ''}${poor ? ' poor' : ''}"
+                        data-item="${id}" ${sold ? 'disabled' : ''}>
+                    <span class="buy-emoji">${item.emoji}</span>
+                    <b class="buy-gain">${this.effectText(item.effect, run)}</b>
+                    <span class="buy-price">🦷 ${item.price}</span>
+                </button>`;
+        }).join('');
+
+        this.cardEl.className = 'rogue-card shown shop';
+        this.cardEl.innerHTML = `
+            <div class="rogue-card-icon">💰</div>
+            <div class="rogue-buys">${rows}</div>`;
+
+        Array.prototype.forEach.call(this.cardEl.querySelectorAll('.rogue-buy'), el => {
+            el.onclick = (e) => { e.stopPropagation(); this.buy(el.dataset.item); };
+        });
+
+        // Уйти из магазина — отдельным шагом: покупок может быть несколько, и
+        // решает игрок, а не последняя цена.
+        this.setAction('➜', () => {
+            Backend.closeRogueShop();
+            if (typeof Haptics !== 'undefined') Haptics.tick();
+            this.message = null;
+            this.render();
+        });
+    },
+
+    buy(id) {
+        const answer = Backend.buyRogueItem(id);
+        if (!answer.ok) {
+            // Не хватило зубов — вспыхивает их счётчик в строке забега. Это
+            // тот же приём, что у кошелька в шапке: отказ показывается там,
+            // где лежит недостающее, а не там, где нажали.
+            if (answer.error === 'not_enough') {
+                this.flashTeeth();
+                if (typeof Haptics !== 'undefined') Haptics.notify('error');
+            }
+            return;
+        }
+        if (typeof Haptics !== 'undefined') Haptics.notify('success');
+        this.message = this.gainText(answer.gained);
+        this.render();
+    },
+
+    // ---------- СЛУЧАЙНОЕ СОБЫТИЕ ----------
+    // Каждое событие — ОБМЕН, и вариантов ровно два. Слева отдал, справа
+    // получил, между ними стрелка: единственная раскладка, которая читается
+    // без слов, когда стороны РАЗНЫЕ (docs/traps.md, п. 82). «Повезло / не
+    // повезло» показать нечем, поэтому события здесь не лотерея, а решение.
+    renderEvent(run) {
+        const cfg = Backend.rogueConfig();
+        const event = ((cfg && cfg.events) || {})[run.pending.id];
+        if (!event) { Backend.takeRogueEvent(0); this.render(); return; }
+
+        const rows = (event.options || []).map((opt, i) => {
+            const give = this.effectText(opt, run, -1);
+            const take = this.effectText(opt, run, 1);
+            // Зубов не хватило — вариант гаснет. Долгов в забеге нет.
+            const poor = opt.teeth < 0 && run.teeth < -opt.teeth;
+            return `
+                <button type="button" class="rogue-deal${poor ? ' poor' : ''}"
+                        data-option="${i}" ${poor ? 'disabled' : ''}>
+                    <span class="deal-give">${give}</span>
+                    <span class="deal-arrow">➜</span>
+                    <span class="deal-take">${take}</span>
+                </button>`;
+        }).join('');
+
+        this.cardEl.className = 'rogue-card shown event';
+        this.cardEl.innerHTML = `
+            <div class="rogue-card-icon">${event.emoji}</div>
+            <div class="rogue-deals">${rows}</div>`;
+
+        Array.prototype.forEach.call(this.cardEl.querySelectorAll('.rogue-deal'), el => {
+            el.onclick = (e) => { e.stopPropagation(); this.takeEvent(Number(el.dataset.option)); };
+        });
+
+        this.setAction('👆', null);
+    },
+
+    takeEvent(index) {
+        const answer = Backend.takeRogueEvent(index);
+        if (!answer.ok) {
+            if (answer.error === 'not_enough') this.flashTeeth();
+            return;
+        }
+        if (typeof Haptics !== 'undefined') Haptics.impact('medium');
+        this.message = this.gainText(answer.gained);
+        this.render();
+    },
+
+    // ---------- ЭФФЕКТ СТРОКОЙ ----------
+    // Один формат на товар магазина и на вариант события: значок и число.
+    // sign выбирает, какую половину показать, — отрицательную (цена) или
+    // положительную (награда): из этого и складывается обмен со стрелкой.
+    //
+    // Доля здоровья переводится в ЧИСЛО хп прямо здесь. «30%» игроку нечего
+    // делить в уме, а «+6» он сравнит с полосой над картой одним взглядом.
+    effectText(eff, run, sign) {
+        if (!eff) return '';
+        const want = (v) => sign == null || (sign > 0 ? v > 0 : v < 0);
+        const out = [];
+
+        const hp = (eff.hp || 0) + (eff.hpShare ? (run ? run.maxHp : 20) * eff.hpShare : 0);
+        if (hp && want(hp)) out.push(`❤️ ${hp > 0 ? '+' : '−'}${Math.abs(Math.round(hp))}`);
+        if (eff.maxHp && want(eff.maxHp)) out.push(`💪 +${eff.maxHp}`);
+        if (eff.damage && want(eff.damage)) out.push(`🗡 +${eff.damage}`);
+        if (eff.armor && want(eff.armor)) out.push(`🛡 +${eff.armor}`);
+        if (eff.teeth && want(eff.teeth)) {
+            out.push(`🦷 ${eff.teeth > 0 ? '+' : '−'}${Math.abs(eff.teeth)}`);
+        }
+        Object.keys(eff.currencies || {}).forEach(key => {
+            if (want(eff.currencies[key])) out.push(`${currencyMark(key)} +${eff.currencies[key]}`);
+        });
+        return out.join(' ');
+    },
+
+    // Не хватило зубов — дёргается их счётчик в строке забега, а не кнопка,
+    // по которой нажали: отказ показывается там, где лежит недостающее.
+    flashTeeth() {
+        const el = this.statusEl && this.statusEl.querySelector('.rogue-teeth');
+        if (!el) return;
+        el.classList.remove('lack');
+        void el.offsetWidth;
+        el.classList.add('lack');
     },
 
     // ---------- ИТОГ ЗАБЕГА ----------

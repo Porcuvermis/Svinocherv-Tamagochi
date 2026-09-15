@@ -700,8 +700,12 @@ const { viewport, prepare } = require('./harness');
         out.line = WrathRogue.gainText(answer.gained);
       }
       if (answer.finished) break;
+      // В pending теперь живут три разные вещи: выбор усиления, витрина
+      // магазина и событие. Прогон закрывает любую — иначе забег встанет.
       const pend = Backend.run() && Backend.run().pending;
-      if (pend) Backend.chooseBoost(pend.choices[0]);
+      if (pend && pend.kind === 'shop') Backend.closeRogueShop();
+      else if (pend && pend.kind === 'event') Backend.takeRogueEvent(0);
+      else if (pend) Backend.chooseBoost(pend.choices[0]);
     }
     out.pantry = Object.assign({}, GameState.data.pantry);
     // Кухня читает ту же кладовую — если мясо там, оно уже в холодильнике.
@@ -719,6 +723,143 @@ const { viewport, prepare } = require('./harness');
     GameState.data.counters = {};
     WrathMinigame.showLobby();
   });
+
+  // ---------- РАЗВИЛКА: ПРИВАЛ, МАГАЗИН, СОБЫТИЕ ----------
+  // Полгода два пути из трёх стояли закрытыми, и развилка была не выбором, а
+  // лишним шагом. Проверка следит за тем, что все три работают и что каждый
+  // из них — РАЗМЕН, а не подарок.
+  console.log('\n--- развилка забега ---');
+  const fork = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 9;
+    GameState.data.currencies.gold = 0;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    Backend.startRun(0);
+    for (let i = 0; i < 2; i++) {
+      Backend.resolveNode('win');
+      const p = Backend.run().pending;
+      if (p && p.kind === 'boost') Backend.chooseBoost(p.choices[0]);
+    }
+    const run = Backend.run();
+    const step = run.map[run.node];
+    const kinds = (step.options || []).map(o => o.kind);
+    const open = (step.options || []).filter(o => !o.locked).length;
+
+    // ---------- МАГАЗИН ----------
+    const items = ECONOMY.minigames.wrath.rogue.shop.items;
+    Backend.resolveNode('win', kinds.indexOf('shop'));
+    const shop = Backend.run().pending;
+    const offer = (shop.offer || []).slice();
+    const teethBefore = Backend.run().teeth;
+    // Витрина НЕ перекатывается: она считается из сида забега, иначе «выйти и
+    // зайти, пока не выпадет нужное» стало бы основной механикой магазина.
+    const again = Backend.rogueShopOffer(Backend.run(), shop.step).join();
+
+    // Здоровье роняется: перевязка на полной полосе не продаётся вовсе
+    // (пустая вещь — ловушка, а не выбор), и покупка бы не состоялась.
+    Backend.run().hp = 5;
+    const cheap = offer.slice().sort((a, b) => items[a].price - items[b].price)[0];
+    const empty = Backend.rogueEffectEmpty(
+        Object.assign({}, Backend.run(), { hp: 20, maxHp: 20 }), items[cheap].effect);
+    const buy = Backend.buyRogueItem(cheap);
+    const twice = Backend.buyRogueItem(cheap);
+    const dear = offer.find(id => id !== cheap && items[id].price > Backend.run().teeth);
+    const poor = dear ? Backend.buyRogueItem(dear) : { error: 'no_dear' };
+    const teethAfter = Backend.run().teeth;
+    Backend.closeRogueShop();
+    const shopClosed = !Backend.run().pending;
+
+    // ---------- СОБЫТИЕ ----------
+    // Вторая развилка. Здоровье роняется в единицу: событие обязано взять
+    // цену, но НЕ убить — умереть от нажатия на картинку, не увидев боя, за
+    // жетон нельзя.
+    let guard = 0;
+    while (Backend.run() && Backend.run().map[Backend.run().node].kind !== 'fork' && guard++ < 10) {
+      const a = Backend.resolveNode('win');
+      if (!a.ok) break;
+      const p = Backend.run() && Backend.run().pending;
+      if (p && p.kind === 'boost') Backend.chooseBoost(p.choices[0]);
+    }
+    const run2 = Backend.run();
+    const eventAt = (run2.map[run2.node].options || []).findIndex(o => o.kind === 'event');
+    run2.hp = 1;
+    Backend.resolveNode('win', eventAt);
+    // Событие подменяется на ТО, ЧТО БЕРЁТ ЗДОРОВЬЕ: выпади случайно то, что
+    // здоровье даёт, проверка «не убивает» прошла бы ни о чём.
+    Backend.run().pending.id = 'altar';
+    const ev = Backend.run().pending;
+    const conf = ECONOMY.minigames.wrath.rogue.events[ev.id];
+    const goldBefore = GameState.currency('gold');
+    const hpBefore = Backend.run().hp;
+    const took = Backend.takeRogueEvent(0);
+    const after = Backend.run();
+
+    return {
+      kinds, open,
+      shop: {
+        size: offer.length, stable: again === offer.join(),
+        bought: buy.ok, twice: twice.error, poor: poor.error,
+        spent: teethBefore - teethAfter, price: items[cheap].price,
+        gained: buy.gained, closed: shopClosed, empty
+      },
+      event: {
+        id: ev.id, options: (conf.options || []).length,
+        ok: took.ok, gained: took.gained,
+        hpBefore, hp: after.hp, pending: !!after.pending,
+        gold: GameState.currency('gold') - goldBefore
+      }
+    };
+  });
+
+  check(fork.kinds.join() === 'shop,heal,event' && fork.open === 3,
+    `на развилке три открытых пути: ${fork.kinds.join(' / ')}`);
+  check(fork.shop.size === 3, `в витрине три вещи: ${fork.shop.size}`);
+  check(fork.shop.stable, 'витрина не перекатывается: она считается из сида забега');
+  check(fork.shop.bought && fork.shop.spent === fork.shop.price,
+    `покупка списала ровно цену: ${fork.shop.spent} зубов`);
+  check(!!(fork.shop.gained && (fork.shop.gained.healed || fork.shop.gained.damage
+        || fork.shop.gained.armor)), 'покупка что-то дала, а не просто списала зубы');
+  check(fork.shop.twice === 'sold_out', `вещь в витрине одна: «${fork.shop.twice}»`);
+  check(fork.shop.poor === 'not_enough' || fork.shop.poor === 'no_dear',
+    `не по карману — отказ: «${fork.shop.poor}»`);
+  check(fork.shop.closed, 'из магазина выходят отдельным шагом, и он закрывается');
+  check(fork.shop.empty, 'перевязка на полном здоровье не продаётся: пустая вещь — ловушка');
+
+  check(fork.event.options === 2, `у события два варианта: ${fork.event.options}`);
+  check(fork.event.ok && !fork.event.pending, 'выбор варианта закрывает событие сразу');
+  check(fork.event.hp >= 1,
+    `событие не убивает: было ${fork.event.hpBefore} хп, стало ${fork.event.hp}`);
+  check(!!(fork.event.gained && (fork.event.gained.damage || fork.event.gained.armor
+        || fork.event.gained.healed || fork.event.gained.teeth || fork.event.gold)),
+    'событие — размен: за цену что-то дают');
+
+  // ---------- КАРТА БЕЗ МУСОРА ----------
+  // Под каждой точкой стояла строка чисел, и на восьми узлах это была таблица
+  // поверх дорожки. Чем опасен узел, говорит теперь его РАЗМЕР.
+  const map = await page.evaluate(async () => {
+    // Забег заводится заново: к концу прошлого все рядовые узлы пройдены, а
+    // пройденные сжаты до одного размера — лестницу угрозы по ним не видно.
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    GameState.data.currencies.wrath_token = 9;
+    Backend.startRun(0);
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 400));
+    // Мерятся НЕПРОЙДЕННЫЕ точки: пройденные сжимаются все до одного
+    // размера, и лестница угрозы по ним не читается.
+    const size = (sel) => {
+      const el = document.querySelector('.rogue-node.' + sel + ':not(.done):not(.skipped) .rogue-node-dot');
+      return el ? Math.round(el.getBoundingClientRect().width) : 0;
+    };
+    return {
+      labels: document.querySelectorAll('.rogue-node-label').length,
+      digits: /\d/.test(document.getElementById('rogue-nodes').textContent || ''),
+      fight: size('fight'), miniboss: size('miniboss'), boss: size('boss'),
+      ring: !!document.querySelector('.rogue-node.current')
+    };
+  });
+  check(!map.labels && !map.digits, 'на карте ни одной подписи и ни одной цифры');
+  check(map.boss > map.miniboss && map.miniboss > map.fight,
+    `опасность узла — его размер: рядовой ${map.fight}, мини-босс ${map.miniboss}, босс ${map.boss}`);
+  check(map.ring, 'текущая точка на карте есть и она нажимается');
 
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');

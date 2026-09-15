@@ -84,22 +84,79 @@ function power(hp, dmgMin, dmgMax, armor, incoming) {
     return hp * (incoming / perHit) * dps;
 }
 
-function run(start, policy, tension) {
+// ---------- ЭФФЕКТ ----------
+// Тот же формат, что в Backend.applyRogueEffect: товар магазина и вариант
+// события дают одно и то же. Переписан здесь по той же причине, что и
+// формула сложности, — backend тянет за собой состояние и время.
+//
+// Здоровьем НЕ убивает: цена обрезается так, чтобы осталась единица.
+function effect(p, eff) {
+    if (!eff) return;
+    if (eff.currencies) p.gold = (p.gold || 0) + (eff.currencies.gold || 0);
+    if (eff.maxHp) { p.maxHp += eff.maxHp; p.hp += eff.maxHp; }
+    const hp = (eff.hp || 0) + (eff.hpShare ? p.maxHp * eff.hpShare : 0);
+    if (hp > 0) p.hp = Math.min(p.maxHp, p.hp + Math.round(hp));
+    else if (hp < 0) p.hp -= Math.min(Math.round(-hp), p.hp - 1);
+    if (eff.damage) { p.dmgMin += eff.damage; p.dmgMax += eff.damage; }
+    if (eff.armor) ZONES.forEach(z => { p.armor[z] += eff.armor; });
+    if (eff.teeth) p.teeth += eff.teeth > 0 ? eff.teeth : -Math.min(-eff.teeth, p.teeth);
+}
+
+// ---------- ЧТО ИГРОК ДЕЛАЕТ НА РАЗВИЛКЕ ----------
+// Три пути: привал, магазин, событие. Политика нужна, чтобы увидеть, НА
+// СКОЛЬКО каждый из них двигает доходимость: развилка, где один путь заметно
+// лучше двух других, — это не выбор, а обязанность.
+function takeFork(p, fork) {
+    if (fork === 'shop') {
+        const items = Object.keys(ROGUE.shop.items);
+        // Витрина — три вещи из каталога, как в игре. Покупает всё, на что
+        // хватает, начиная с самого дорогого: жадная стратегия — верхняя
+        // оценка того, что магазин вообще может дать.
+        const must = ROGUE.shop.always || [];
+        const rest = items.filter(id => must.indexOf(id) < 0).sort(() => Math.random() - 0.5);
+        const offer = must.concat(rest).slice(0, ROGUE.shop.slots || 3)
+            .sort((a, b) => ROGUE.shop.items[b].price - ROGUE.shop.items[a].price);
+        offer.forEach(id => {
+            const item = ROGUE.shop.items[id];
+            if (p.teeth >= item.price) { p.teeth -= item.price; effect(p, item.effect); }
+        });
+        return;
+    }
+    if (fork === 'event') {
+        const ids = Object.keys(ROGUE.events);
+        const ev = ROGUE.events[pick(ids)];
+        // Вариант берётся СЛУЧАЙНО из доступных. Не «первый» и не «лучший»:
+        // оба варианта задуманы рабочими, и средняя доходимость по ним и
+        // есть то, что надо сравнивать с привалом. Первый вариант давал
+        // нижнюю оценку, лучший дал бы верхнюю, и обе врали бы.
+        const open = (ev.options || []).filter(o => !(o.teeth < 0 && p.teeth < -o.teeth));
+        const opt = open.length ? pick(open) : null;
+        effect(p, opt);
+        return;
+    }
+    const heal = Math.round(p.maxHp * (ROGUE.healShare || 0.5));
+    p.hp = Math.min(p.maxHp, p.hp + heal);
+}
+
+function run(start, policy, tension, fork) {
     const p = {
         hp: start.hp, maxHp: start.hp,
         dmgMin: start.dmgMin, dmgMax: start.dmgMax,
+        teeth: 0,
         armor: Object.assign({ head: 0, body: 0, tail: 0 }, start.armor)
     };
     let node = 0;
+    let forks = 0;
     // Добыча забега в «жетонах»: осколок считается третью жетона, как его и
     // разменивают (ECONOMY.exchange). Без этого отчёт по сложностям считал бы
     // только босса и врал бы на треть — мини-босс тоже платит.
     const loot = { token: 0, gold: 0 };
     for (const step of ROGUE.map) {
         if (step.kind === 'fork') {
-            // Открыт только привал: магазин и события ещё не сделаны.
-            const heal = Math.round(p.maxHp * (ROGUE.healShare || 0.5));
-            p.hp = Math.min(p.maxHp, p.hp + heal);
+            // Развилок две, и путь на каждой может быть свой: сочетание —
+            // это и есть то, что игрок на самом деле выбирает.
+            takeFork(p, Array.isArray(fork) ? (fork[forks] || fork[0]) : (fork || 'heal'));
+            forks++;
             node++;
             continue;
         }
@@ -127,10 +184,12 @@ function run(start, policy, tension) {
         loot.gold += Math.round((cur.gold || 0) * LOOT);
         if (reward.healFull) p.hp = p.maxHp;
         else if (reward.heal) p.hp = Math.min(p.maxHp, p.hp + reward.heal);
+        p.teeth += Math.round((reward.teeth || 0) * LOOT);
         if (reward.choices) takeBoost(p, reward.choices, policy);
         node++;
     }
-    return { died: null, hp: p.hp, maxHp: p.maxHp, dmg: p.dmgMin + '-' + p.dmgMax, loot };
+    return { died: null, hp: p.hp, maxHp: p.maxHp, dmg: p.dmgMin + '-' + p.dmgMax,
+             loot, teeth: p.teeth, gold: p.gold || 0 };
 }
 
 // ---------- бойцы, которых сравниваем ----------
@@ -195,6 +254,37 @@ LEVELS.forEach((lvl, i) => {
         + `${net >= 0 ? '+' : ''}${net.toFixed(2)}`);
 });
 LEVEL = 1; LOOT = 1;
+
+// ---------- ПУТИ РАЗВИЛКИ ----------
+// Три пути: привал, магазин, событие. Проверяется ровно одно: не оказался ли
+// какой-то из них настолько лучше остальных, что выбора больше нет. Разница
+// в пару процентов — это выбор; разница в полтора раза — это обязанность, и
+// тогда развилку надо чинить, а не оставлять как есть.
+console.log('\n=== ПУТИ РАЗВИЛКИ (боец забега, смешанная политика) ===');
+console.log('путь                  дошли   сгорело зубов  жетонов итог  золота');
+const RU = { heal: 'привал', shop: 'магазин', event: 'событие' };
+const PATHS = [
+    ['heal', 'heal'], ['shop', 'shop'], ['event', 'event'],
+    // Сочетания: зубы, добытые на первой развилке, тратятся на второй.
+    // Если такая связка заметно лучше одинаковых путей — развилки работают
+    // вместе, а не по отдельности, и это ровно то, ради чего их две.
+    ['event', 'shop'], ['heal', 'shop']
+];
+PATHS.forEach(fork => {
+    let wins = 0, teeth = 0, tok = 0, gold = 0;
+    for (let i = 0; i < N; i++) {
+        const r = run(runner, 'mixed', null, fork);
+        tok += r.loot.token; gold += r.loot.gold + (r.gold || 0);
+        if (r.died === null) { wins++; teeth += r.teeth; }
+    }
+    const label = fork[0] === fork[1] ? RU[fork[0]] : RU[fork[0]] + ' → ' + RU[fork[1]];
+    const cost = (LEVELS[0].entry && LEVELS[0].entry.wrath_token) || 1;
+    const net = tok / N - cost;
+    console.log(`${label.padEnd(20)} ${((wins / N) * 100).toFixed(1).padStart(6)}%   `
+        + `${String(wins ? (teeth / wins).toFixed(0) : '—').padStart(6)}  `
+        + `${(net >= 0 ? '+' : '') + net.toFixed(2)}`.padStart(10)
+        + `${(gold / N).toFixed(0).padStart(8)}`);
+});
 
 [['боец забега', runner], ['голая база', bare], ['полный комплект', geared]].forEach(([label, start]) => {
     console.log('\n=== ' + label + ' === хп ' + start.hp
