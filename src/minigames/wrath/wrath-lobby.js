@@ -36,6 +36,7 @@ const WrathLobby = {
     columns: null,
     wormStage: null,
     footEl: null,
+    fightEl: null,
     modesEl: null,
     cardEl: null,
     wormHandle: null,
@@ -61,6 +62,7 @@ const WrathLobby = {
         this.wormStage = document.getElementById('wrath-lobby-worm');
         this.wormBox = this.wormStage ? this.wormStage.parentElement : null;
         this.footEl = document.getElementById('wrath-foot');
+        this.fightEl = document.getElementById('wrath-fight');
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
         this.holdEl = document.getElementById('wrath-hold');
@@ -70,11 +72,19 @@ const WrathLobby = {
         this.buildModes();
         this.bindHold();
 
-        // Возврат живёт в подвале и один на все меню. Вешается здесь, а не в
-        // каждом экране: раньше своя кнопка была у лавки, у прокачки и у
-        // карты забега, и место «назад» переезжало от экрана к экрану.
-        const back = document.getElementById('wrath-foot-back');
-        if (back) back.onclick = (e) => { e.stopPropagation(); this.host.showLobby(); };
+        // Кнопка боя. Лобби — это МЕНЮ боя, и драться идут отсюда, а не с
+        // кнопки режима внизу: та открывает меню. Пока бой запускался прямо
+        // рядом с лавкой и забегом, промах по соседней кнопке стоил здоровья,
+        // а оно набирается минутами.
+        if (this.fightEl) {
+            this.fightEl.onclick = (e) => {
+                e.stopPropagation();
+                // Заперта — значит без сил. Почему, видно по пустой полосе в
+                // шапке: она вздрагивает в ответ на тап.
+                if (this.fightEl.classList.contains('locked')) { this.flashPanel(); return; }
+                this.host.startFight('duel');
+            };
+        }
 
         // Тап мимо карточки закрывает её. Слушатель на самом экране, а не на
         // документе: закрытая мини-игра не должна ничего ловить.
@@ -182,16 +192,10 @@ const WrathLobby = {
                 + (mode.ready ? '' : '<span class="mode-lock">🔒</span>');
             el.onclick = (e) => {
                 e.stopPropagation();
-                // Проверяется класс, а не поле конфига: бой ещё и запирается
-                // на время регенерации червя.
-                if (el.classList.contains('locked')) {
-                    if (mode.key === 'duel') {
-                        // Почему заперто, видно по полосе здоровья: она
-                        // пустая и вздрагивает в ответ на тап.
-                        this.flashPanel();
-                    }
-                    return;
-                }
+                // Кнопки режимов НЕ запираются по здоровью: они открывают
+                // меню, а не начинают действие. Замок остался только у того,
+                // чего ещё нет вовсе (бой с игроком).
+                if (el.classList.contains('locked')) return;
                 this.host.startMode(mode.key);
             };
             this.modesEl.appendChild(el);
@@ -389,15 +393,11 @@ const WrathLobby = {
         }
 
         // Драться без здоровья нельзя — и это не поломка, а ожидание.
-        // Кнопка запирается, а почему — видно по пустой полосе над червём.
-        // Кнопка боя живёт в общем подвале и видна из любого меню — значит и
-        // запирается она отовсюду: часы здоровья тикают и в лавке.
-        const duelBtn = this.modesEl && this.modesEl.querySelector('.mode-btn[data-mode="duel"]');
-        if (duelBtn) {
-            const dead = health.hp <= 0;
-            duelBtn.classList.toggle('locked', dead);
-            duelBtn.classList.toggle('ready', !dead);
-        }
+        // Запирается КНОПКА БОЯ в лобби, а не кнопка режима внизу: та лишь
+        // открывает меню, а посмотреть на своего бойца и его снаряжение можно
+        // и без сил. Почему заперто, видно по пустой полосе в шапке.
+        if (!this.fightEl) this.fightEl = document.getElementById('wrath-fight');
+        if (this.fightEl) this.fightEl.classList.toggle('locked', health.hp <= 0);
     },
 
     // ---------- УДЕРЖАНИЕ НА ЧЕРВЕ ----------

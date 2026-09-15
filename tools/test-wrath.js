@@ -272,7 +272,7 @@ const { viewport, prepare } = require('./harness');
     GameState.setSinValue('wrath', GameState.maxValue('wrath'));
     const a = (await Backend.minigameResult({ sin: 'wrath', mode: 'duel', outcome: 'win' })).awarded;
     WrathMinigame.open();
-    WrathMinigame.startMode('duel');
+    WrathMinigame.startFight('duel');
     await new Promise(r => setTimeout(r, 600));
     WrathDuel.awardPrefix = '';
     WrathDuel.showResult();
@@ -344,7 +344,7 @@ const { viewport, prepare } = require('./harness');
       await new Promise(r => setTimeout(r, 260));
       seen[mode || 'lobby'] = look();
     }
-    WrathMinigame.startMode('duel');
+    WrathMinigame.startFight('duel');
     await new Promise(r => setTimeout(r, 400));
     seen.duel = look();
     return seen;
@@ -374,15 +374,12 @@ const { viewport, prepare } = require('./harness');
       el.querySelectorAll('.mode-btn').forEach(b => {
         modes[b.dataset.mode] = (b.textContent || '').replace(/\s+/g, '');
       });
-      const back = document.getElementById('wrath-foot-back');
       return {
         shown: el.classList.contains('shown'),
         modes,
         lit: [...el.querySelectorAll('.mode-btn.on')].map(b => b.dataset.mode).join(),
-        // Кнопка возврата в лобби спрятана, но МЕСТО за собой держит:
-        // offsetParent жив, а видимости нет.
-        backShown: back.offsetParent !== null
-                   && getComputedStyle(back).visibility !== 'hidden',
+        // Кнопки «назад» здесь нет вовсе: между меню ходят режимами.
+        back: !!document.getElementById('wrath-foot-back'),
         bottom: Math.round(box.bottom),
         width: Math.round(box.width)
       };
@@ -392,7 +389,7 @@ const { viewport, prepare } = require('./harness');
       await new Promise(r => setTimeout(r, 260));
       seen[mode || 'lobby'] = look();
     }
-    WrathMinigame.startMode('duel');
+    WrathMinigame.startFight('duel');
     await new Promise(r => setTimeout(r, 400));
     seen.duel = look();
     WrathMinigame.showLobby();
@@ -404,26 +401,59 @@ const { viewport, prepare } = require('./harness');
   check(menus.every(m => foot[m].bottom === foot.lobby.bottom
                       && foot[m].width === foot.lobby.width),
     'подвал не прыгает при переключении экранов');
-  check(!foot.lobby.backShown && menus.filter(m => m !== 'lobby').every(m => foot[m].backShown),
-    'возврат есть во всех меню, кроме лобби: оттуда возвращаться некуда');
-  check(foot.lobby.lit === '' && foot.shop.lit === 'shop' && foot.rogue.lit === 'rogue',
+  check(menus.every(m => !foot[m].back),
+    'кнопки «назад» в подвале нет: между меню ходят самими режимами');
+  // Лобби — это меню БОЯ, поэтому в нём горит ⚔️: отдельного пункта «лобби»
+  // в ряду нет.
+  check(foot.lobby.lit === 'duel' && foot.shop.lit === 'shop' && foot.rogue.lit === 'rogue',
     `горит тот режим, в котором игрок: лобби «${foot.lobby.lit}», лавка «${foot.shop.lit}»`);
 
   // Главное, ради чего подвал и заводился: из лавки можно уйти прямо в
   // забег, не заходя по дороге в лобби. Раньше ряд режимов был внутри лобби,
   // и другого пути не было вовсе.
+  //
+  // И второе, ради чего убрали «назад»: кнопка ⚔️ открывает МЕНЮ боя, а не
+  // бой. Пока она бросала драться сразу, промах по соседней кнопке стоил
+  // здоровья, а оно набирается минутами.
   const hop = await page.evaluate(async () => {
     WrathMinigame.startMode('shop');
     await new Promise(r => setTimeout(r, 260));
     document.querySelector('#wrath-foot .mode-btn[data-mode="rogue"]').click();
     await new Promise(r => setTimeout(r, 300));
     const direct = WrathMinigame.current;
-    document.getElementById('wrath-foot-back').click();
-    await new Promise(r => setTimeout(r, 300));
-    return { direct, back: WrathMinigame.current };
+    Backend.setFighterHp(10);
+    document.querySelector('#wrath-foot .mode-btn[data-mode="duel"]').click();
+    await new Promise(r => setTimeout(r, 320));
+    const menu = WrathMinigame.current;
+    const fightBtn = document.getElementById('wrath-fight');
+    const ready = !!fightBtn && !fightBtn.classList.contains('locked');
+    fightBtn.click();
+    await new Promise(r => setTimeout(r, 600));
+    const fighting = WrathMinigame.current;
+
+    // Без сил кнопка боя заперта, а кнопка режима — нет: посмотреть на своего
+    // бойца можно и побитым, драться нельзя.
+    WrathDuel.leave();
+    WrathMinigame.showLobby();
+    Backend.setFighterHp(0);
+    WrathLobby.refreshHealth();
+    await new Promise(r => setTimeout(r, 200));
+    const deadLocked = document.getElementById('wrath-fight').classList.contains('locked');
+    const tabFree = !document.querySelector('#wrath-foot .mode-btn[data-mode="duel"]')
+                        .classList.contains('locked');
+    document.getElementById('wrath-fight').click();
+    await new Promise(r => setTimeout(r, 200));
+    const stayed = WrathMinigame.current;
+    Backend.setFighterHp(10);
+    WrathLobby.refreshHealth();
+    return { direct, menu, ready, fighting, deadLocked, tabFree, stayed };
   });
   check(hop.direct === 'rogue', `из лавки прямо в забег, без захода в лобби: «${hop.direct}»`);
-  check(hop.back === 'lobby', `общий возврат уводит в лобби: «${hop.back}»`);
+  check(hop.menu === 'lobby', `кнопка ⚔️ открывает меню боя, а не бой: «${hop.menu}»`);
+  check(hop.ready && hop.fighting === 'duel', 'бой начинается кнопкой в лобби, и только ею');
+  check(hop.deadLocked && hop.tabFree,
+    'без сил заперта кнопка боя, а кнопка режима открыта: на бойца можно смотреть побитым');
+  check(hop.stayed === 'lobby', `запертая кнопка в бой не пускает: «${hop.stayed}»`);
 
   // Кнопки режимов очищены от чисел: значок и только значок.
   check(!/\d/.test(foot.lobby.modes.shop || ''), `на кнопке лавки нет чисел: «${foot.lobby.modes.shop}»`);
@@ -495,7 +525,11 @@ const { viewport, prepare } = require('./harness');
   const back = await page.evaluate(async () => {
     const seen = {};
     for (const mode of ['lobby', 'shop', 'boost', 'rogue', 'duel']) {
-      if (mode === 'lobby') WrathMinigame.showLobby(); else WrathMinigame.startMode(mode);
+      // В бой — только startFight: кнопка режима ⚔️ теперь открывает МЕНЮ боя
+      // (то самое лобби), и через неё до арены не добраться.
+      if (mode === 'lobby') WrathMinigame.showLobby();
+      else if (mode === 'duel') WrathMinigame.startFight('duel');
+      else WrathMinigame.startMode(mode);
       await new Promise(r => setTimeout(r, 320));
       const el = document.getElementById('wrath-backdrop');
       const svg = el.querySelector('svg');
@@ -734,7 +768,7 @@ const { viewport, prepare } = require('./harness');
     const shardBefore = GameState.currency('wrath_shard');
     const tokenBefore = GameState.currency('wrath_token');
     const goldBefore = GameState.currency('gold');
-    WrathMinigame.startMode('duel');
+    WrathMinigame.startFight('duel');
     await new Promise(r => setTimeout(r, 700));
     const froze = !!GameState.data.fighter.frozen;
     let guard = 0;
