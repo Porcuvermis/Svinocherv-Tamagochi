@@ -1756,15 +1756,15 @@ const LocalBackend = {
 
     // Максимум здоровья бойца по снаряжению и прокачке. Живёт здесь, а не в
     // мини-игре: забег стартует до того, как экран боя вообще открыт.
+    //
+    // Считает wrathStats, а не своя сумма рядом. Своя здесь и была — те же
+    // три слагаемых, выписанные второй раз, — и это ровно тот случай, когда
+    // два места однажды разойдутся: правка в одном (скажем, новое поле
+    // предмета) молча не доедет до другого, и максимум в шапке разойдётся с
+    // максимумом в бою.
     fighterMaxHp() {
-        const cfg = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
-        let max = (cfg.baseHp || 10) + GameState.upgradeBonus('hp');
-        const equipment = GameState.data.equipment || {};
-        Object.keys(equipment).forEach(slot => {
-            const item = WRATH_GEAR.items[equipment[slot]];
-            if (item && item.hp) max += item.hp;
-        });
-        return max;
+        return this.wrathStats(GameState.data.equipment || {},
+                               GameState.data.upgrades || {}).hp;
     },
 
     // ---------- БОЕВАЯ ПРОКАЧКА ----------

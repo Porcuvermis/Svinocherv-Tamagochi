@@ -118,6 +118,7 @@ const WrathLobby = {
         // уходит с экрана (WrathMinigame.setScreen).
         this.hideCard();
         this.cancelHold(false);
+        if (this.lackTimer) { clearTimeout(this.lackTimer); this.lackTimer = null; }
         if (this.panelEl) this.panelEl.classList.remove('lack');
     },
 
@@ -462,6 +463,21 @@ const WrathLobby = {
         ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
             this.wormBox.addEventListener(type, () => this.cancelHold(true));
         });
+
+        // Палец УЕХАЛ с червя, не отпуская, — это тоже «передумал».
+        //
+        // Проверяется КООРДИНАТАМИ, а не pointerleave: на касании браузер
+        // молча захватывает указатель за элементом, pointermove продолжает
+        // приходить сюда же, а leave не приходит до самого отпускания. На
+        // мыши отмена работала бы, на телефоне уехавший палец всё равно
+        // открывал бы прокачку. Та же грабля, что у белого флага забега
+        // (docs/traps.md, п. 90).
+        this.wormBox.addEventListener('pointermove', (e) => {
+            if (!this.holdActive) return;
+            const r = this.wormBox.getBoundingClientRect();
+            if (e.clientX < r.left || e.clientX > r.right
+                || e.clientY < r.top || e.clientY > r.bottom) this.cancelHold(true);
+        });
     },
 
     // Кольцо ставится над макушкой по РЕАЛЬНЫМ габаритам головы: у
@@ -600,6 +616,10 @@ const WrathLobby = {
                 e.stopPropagation();
                 // Надевает Backend, а не интерфейс: проверки «есть ли предмет»
                 // и «тот ли слот» на сервере будут теми же самыми.
+                //
+                // Щелчок в палец — потому что это ПЕРЕКЛЮЧЕНИЕ, самое мелкое
+                // событие из тех, что вообще отдают (src/core/haptics.js).
+                if (typeof Haptics !== 'undefined') Haptics.tick();
                 Backend.equip(slotKey, btn.dataset.item || null);
                 this.refresh();
                 this.showCard(slotKey);

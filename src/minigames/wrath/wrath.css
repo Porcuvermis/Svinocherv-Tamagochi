@@ -128,10 +128,6 @@
 .panel-row.hp .panel-num { text-align: right; }
 .panel-num.hurt { color: #ff8a80; }
 
-/* Купленные способности. Показываются только здесь: из меню прокачки
-   купленное уходит, а знать, что у бойца есть шестое чувство, надо. */
-.panel-passives { font-size: 15px; letter-spacing: 2px; }
-
 /* Драться нечем — панель вздрагивает и краснеет в ответ на тап по бою.
    Тот же язык, что у кошелька в магазине. */
 .wrath-panel.lack {
@@ -317,18 +313,6 @@
 
 .mode-emoji { font-size: 24px; line-height: 1; }
 
-/* Строка под значком — только числа: сколько жетонов, докуда дошёл забег,
-   сколько секунд восстанавливаться. Пустая, когда сказать нечего. */
-.mode-note {
-    font-size: 10px;
-    line-height: 1.25;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.75);
-    white-space: nowrap;
-}
-
-.mode-note:empty { display: none; }
-
 /* ---------- КАРТОЧКА СЛОТА ----------
    Выезжает снизу поверх лобби: что в слоте, что это даёт, чем заменить. */
 /* ---------- КНОПКА БОЯ ----------
@@ -420,70 +404,6 @@
     color: #ffd27f;
 }
 .card-item-mark { flex: 0 0 auto; font-size: 14px; color: var(--wrath-attack); }
-
-/* ---------- ВОПРОС ПРО ОБМЕН ----------
-   Формой повторяет вопрос при выходе из общего окна: в игре ровно один вид
-   вопроса «да/нет», и выучивать второй не нужно. */
-.wrath-ask {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 22px;
-    background: rgba(0, 0, 0, 0.84);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-}
-
-.wrath-ask.show {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.wrath-ask-text {
-    max-width: 84%;
-    font-size: 16px;
-    line-height: 1.5;
-    text-align: center;
-    color: #eee;
-}
-
-.wrath-ask-text .ask-sub {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
-}
-
-.wrath-ask-buttons {
-    display: flex;
-    gap: 14px;
-}
-
-.wrath-ask-btn {
-    padding: 12px 20px;
-    border-radius: 12px;
-    border: none;
-    font-weight: bold;
-    font-size: 14px;
-    cursor: pointer;
-}
-
-.wrath-ask-btn.yes {
-    background: var(--wrath-attack);
-    color: #fff;
-}
-
-.wrath-ask-btn.no {
-    background: #2a2a2a;
-    color: #ccc;
-    border: 1px solid #444;
-}
-
-.wrath-ask-btn:active { transform: scale(0.95); }
 
 /* ============================================================ */
 /* ===========================  БОЙ  ========================== */
@@ -1064,19 +984,10 @@
     box-sizing: border-box;
 }
 
-/* Кошелёк той же формой, что строка характеристик в лобби: два экрана
-   одного греха не должны выглядеть как два разных приложения. */
-.shop-wallet {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: space-around;
-    gap: 6px;
-    padding: 8px 6px;
-    border: 1px solid rgba(255, 59, 48, 0.35);
-    border-radius: 12px;
-    background: rgba(0, 0, 0, 0.3);
-}
-
+/* Строка забега — та же форма, что у панели бойца в лобби: два экрана
+   одного греха не должны выглядеть как два разных приложения. Кошелька в
+   лавке больше нет (он один на весь грех, в шапке), но форма осталась —
+   её носит строка здоровья и зубов на карте. */
 .wallet-item {
     display: flex;
     flex-direction: column;
@@ -1153,28 +1064,6 @@
     padding-right: 2px;
 }
 
-.shop-group {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin: 12px 2px 6px;
-}
-
-.shop-group-name {
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: var(--wrath-attack);
-}
-
-/* «Куплено 1 из 3» — потолок слота объявлен заранее, как требует план:
-   игрок с самого начала видит, где конец лестницы. */
-.shop-group-count {
-    font-size: 9px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
-}
-
 /* Строка прилавка — это кнопка целиком: нажимается вся, а не крохотная
    надпись с ценой внутри неё. */
 .shop-item {
@@ -1238,25 +1127,6 @@
 }
 
 
-
-.shop-message {
-    flex: 0 0 auto;
-    margin-bottom: 8px;
-    padding: 0 10px;
-    max-height: 0;
-    overflow: hidden;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
-    font-size: 11px;
-    line-height: 1.4;
-    color: rgba(255, 255, 255, 0.8);
-    transition: max-height 0.2s ease, padding 0.2s ease;
-}
-
-.shop-message.show {
-    max-height: 60px;
-    padding: 8px 10px;
-}
 
 /* ============================================================ */
 /* =========================  ПРОКАЧКА  ======================= */
@@ -1593,10 +1463,6 @@
     color: rgba(255, 255, 255, 0.8);
     overflow-y: auto;
 }
-
-.rogue-card.shown { display: flex; }
-.rogue-card p { margin: 0 0 6px; }
-.rogue-card-note { color: rgba(255, 255, 255, 0.45); }
 
 /* Карточка говорит значком и числами: большой знак сверху, под ним строки
    «что впереди» и «что с этого будет». */

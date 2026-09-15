@@ -292,21 +292,36 @@ const { viewport, prepare } = require('./harness');
   check(fly.after.filled === 2 && !fly.after.flying,
     `после полёта на скелете снова закрашен остаток: ${fly.after.filled}/9`);
 
-  // Кошелёк лавки: жетон вместо значка со счётчиком.
+  // Жетон в кошельке и в ценнике — НАРИСОВАННЫЙ, а не системный значок.
+  //
+  // Проверялось это раньше через WrathShop.walletHtml — сборку кошелька
+  // внутри лавки. Кошелёк оттуда уехал в общую шапку ещё правкой 170, а
+  // функция осталась жить: её никто не звал, кроме вот этой проверки. Прогон,
+  // который держит мёртвый код живым, хуже отсутствующего — он врёт, что
+  // проверяет игру. Меряется теперь то, что на экране: сама шапка.
   const wallet = await page.evaluate(() => {
     GameState.data.currencies.wrath_token = 2;
     WrathMinigame.startMode('shop');
-    const box = document.createElement('div');
-    box.innerHTML = WrathShop.walletHtml(null);
+    const panel = document.getElementById('wrath-panel');
+    const chips = panel.querySelectorAll('.panel-chip.wallet');
+    // Строка обмена шрамов живёт на экране прокачки — её надо открыть.
+    WrathMinigame.startMode('boost');
+    const scarsRow = (document.getElementById('boost-scars') || {}).innerHTML || '';
+    WrathMinigame.startMode('shop');
     return {
-      tokens: box.querySelectorAll('.token-art').length,
-      digits: (box.textContent || '').replace(/\s/g, ''),
-      price: WrathShop.priceText(WRATH_GEAR.items['rusty-blade']).indexOf('token-art') !== -1
+      tokens: panel.querySelectorAll('.panel-chip.wallet .token-art').length,
+      digits: [...chips].map(c => (c.textContent || '').replace(/\s/g, '')).join(),
+      price: WrathShop.priceText(WRATH_GEAR.items['rusty-blade']).indexOf('token-art') !== -1,
+      // Обмен шрамов — последнее место в грехе, где жетон был системным
+      // билетиком 🎟 вместо нарисованной эмблемы.
+      scars: scarsRow
     };
   });
   check(wallet.tokens === 2, 'в кошельке два нарисованных жетона: целый и собираемый');
-  check(wallet.digits === '2', `цифра в кошельке одна — число жетонов («${wallet.digits}»), дроби нет`);
+  check(wallet.digits === '2,', `цифра в кошельке одна — число жетонов («${wallet.digits}»), дроби нет`);
   check(wallet.price, 'ценник в лавке тоже показывает нарисованный жетон');
+  check(wallet.scars.indexOf('token-art') >= 0 && wallet.scars.indexOf('🎟') < 0,
+    'обмен шрамов тоже рисует жетон, а не системный билетик');
 
   // Раздеваем игрока обратно.
   await page.evaluate(() => {
@@ -973,6 +988,134 @@ const { viewport, prepare } = require('./harness');
   await page.waitForTimeout(250);
   check(await page.evaluate(() => !!Backend.run()),
     'палец уехал с кнопки, не отпуская, — забег цел');
+
+  // ---------- ИНСПЕКЦИЯ: ДЫРЫ, НАЙДЕННЫЕ ВЫЧИТКОЙ ----------
+  // Пять разных мест, и общее у них одно: все работали «почти». Ни одно не
+  // ловилось прежними проверками, потому что каждое проявляется только на
+  // краю — на пальце, на медленном ответе, на пустом кошельке.
+  console.log('\n--- полировка гнева ---');
+
+  // 1. ОТКАЗ НА ВХОДЕ В ЗАБЕГ. Кнопка входа при нехватке была ВЫКЛЮЧЕНА:
+  //    тап не доходил вообще, и игрок жал на приглушённую кнопку впустую.
+  const entryRefuse = await page.evaluate(async () => {
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    GameState.data.currencies.wrath_token = 0;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 400));
+    const btn = document.getElementById('rogue-action');
+    const dead = btn.disabled;
+    btn.click();
+    await new Promise(r => setTimeout(r, 120));
+    return {
+      dead,
+      poor: btn.classList.contains('poor'),
+      flashed: !!document.querySelector('#wrath-panel .panel-chip.wallet.lack'),
+      started: !!Backend.run()
+    };
+  });
+  check(!entryRefuse.dead && entryRefuse.poor, 'кнопка входа нажимается даже без жетона, но приглушена');
+  check(entryRefuse.flashed, 'не хватило жетона — вспыхивает жетон в шапке, а не тишина');
+  check(!entryRefuse.started, 'забег при этом не начался');
+
+  // 2. УДЕРЖАНИЕ НА ЧЕРВЕ. Палец уехал с червя, не отпуская, — прокачка
+  //    открываться не должна. На КАСАНИИ pointerleave не приходит до самого
+  //    отпускания, поэтому ловится это координатами (docs/traps.md, п. 90).
+  await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 9;
+    Backend.setFighterHp(10);
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 400));
+  });
+  const wormAt = await page.evaluate(() => {
+    const r = WrathLobby.wormBox.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), top: Math.round(r.y) };
+  });
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {
+    type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }]
+  });
+  await touch('touchStart', wormAt.x, wormAt.y);
+  await page.waitForTimeout(200);
+  await touch('touchMove', wormAt.x, wormAt.top - 60);
+  await page.waitForTimeout(1700);
+  await touch('touchEnd', wormAt.x, wormAt.top - 60);
+  await page.waitForTimeout(200);
+  check(await page.evaluate(() => WrathMinigame.current) === 'lobby',
+    'палец уехал с червя, не отпуская, — прокачка не открылась');
+
+  // 3. ОТДАЧА В ПАЛЕЦ В БОЮ. Считается не «завибрировало ли» (в браузере это
+  //    не проверить), а что игра её ЗАПРОСИЛА. До правки бой молчал целиком.
+  const buzz = await page.evaluate(async () => {
+    window.__h = [];
+    const t = Haptics.tick.bind(Haptics), i = Haptics.impact.bind(Haptics), n = Haptics.notify.bind(Haptics);
+    Haptics.tick = () => { window.__h.push('tick'); t(); };
+    Haptics.impact = (k, f) => { window.__h.push('impact:' + (k || '')); i(k, f); };
+    Haptics.notify = (k, f) => { window.__h.push('notify:' + (k || '')); n(k, f); };
+
+    Backend.setFighterHp(10);
+    WrathMinigame.startFight('duel');
+    await new Promise(r => setTimeout(r, 500));
+    const zone = document.querySelector('.zone-hit.player-zone');
+    if (zone) zone.click();
+    const afterZone = window.__h.slice();
+
+    let guard = 0;
+    const rounds = [];
+    while (!WrathDuel.fightOver && guard++ < 60) {
+      const before = window.__h.length;
+      document.getElementById('dagger-btn').click();
+      await new Promise(r => setTimeout(r, 120));
+      const added = window.__h.slice(before).filter(x => x.indexOf('impact:') === 0);
+      if (added.length) rounds.push(added.length);
+    }
+    await new Promise(r => setTimeout(r, 400));
+    const all = window.__h.slice();
+    Haptics.tick = t; Haptics.impact = i; Haptics.notify = n;
+    return {
+      zone: afterZone.indexOf('tick') >= 0,
+      // Ровно одна отдача на раунд: в раунде бьют оба, и две вибрации подряд
+      // читаются сбоем, а не двумя ударами.
+      perRound: rounds.every(n => n === 1) && rounds.length > 0,
+      outcome: all.some(x => x === 'notify:success' || x === 'notify:error' || x === 'impact:rigid')
+    };
+  });
+  check(buzz.zone, 'выбор зоны отдаёт щелчком в палец');
+  check(buzz.perRound, 'в бою ровно одна отдача на раунд, а не по одной на каждый удар');
+  check(buzz.outcome, 'исход боя отдаёт в палец отдельно от размена');
+
+  // 4. ПРОСРОЧЕННЫЙ СЛЕПОК СОПЕРНИКА. Соперник приходит ОТВЕТОМ, и ответ
+  //    может доехать, когда бой уже другой: ушёл из драки, зашёл снова — и
+  //    припозднившийся ответ перезапускал ИДУЩИЙ бой с чужим соперником.
+  const stale = await page.evaluate(async () => {
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 200));
+    Backend.setFighterHp(10);
+    const orig = Backend.getOpponent.bind(Backend);
+    let n = 0;
+    Backend.getOpponent = (mode) => {
+      const id = ++n;
+      // Первый ответ задерживается — как будто сеть тормознула.
+      return orig(mode).then(a => id === 1 ? new Promise(r => setTimeout(() => r(a), 500)) : a);
+    };
+    GameState.data.counters = {};
+    WrathMinigame.startFight('duel');
+    await new Promise(r => setTimeout(r, 60));
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 60));
+    WrathMinigame.startFight('duel');
+    await new Promise(r => setTimeout(r, 900));      // просроченный ответ доехал
+    Backend.getOpponent = orig;
+    // Счётчик боёв растёт в restartFight. Перезапуск от чужого ответа виден
+    // по нему: боёв было бы два вместо одного.
+    return GameState.totalCounter('wrath.duel.fights');
+  });
+  check(stale === 1, `просроченный ответ не перезапускает идущий бой: боёв ${stale}`);
+
+  await page.evaluate(async () => {
+    WrathDuel.leave();
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 200));
+  });
 
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');

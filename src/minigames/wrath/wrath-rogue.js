@@ -55,8 +55,6 @@ const WrathRogue = {
     // причине: тап слишком дёшев для того, что стоит дорого.
     ABANDON_MS: 1500,
     abandonTimer: null,
-    // Не хватило жетона на вход — он вспыхивает в кошельке (как в магазине).
-    lack: null,
     level: 0,      // выбранная сложность в окне входа; забег хранит свою
     lackTimer: null,
     // Итог законченного забега. Пока он на экране, войти в новый нельзя:
@@ -96,6 +94,9 @@ const WrathRogue = {
         this.message = null;
         this.summary = null;
         this.cancelAbandon();
+        // Таймер отказа гасится тоже: иначе он сработает уже на другом
+        // экране и перерисует этот — тот, которого на экране нет.
+        if (this.lackTimer) { clearTimeout(this.lackTimer); this.lackTimer = null; }
     },
 
     // ---------- ПОКАЗ ----------
@@ -440,7 +441,10 @@ const WrathRogue = {
 
         // Цена — на кнопке, которой платят, и больше нигде. Не хватило —
         // кнопка приглушена, а ЧЕГО не хватило, отвечает кошелёк в шапке.
-        this.setAction(this.priceText(price), enough ? () => this.start() : null);
+        // Кнопка нажимается ВСЕГДА, даже когда не хватает: выключенная
+        // кнопка не отвечает ничем, а игрок жмёт именно её. Приглушённость
+        // говорит «дорого», а сам отказ показывает вспыхнувший жетон в шапке.
+        this.setAction(this.priceText(price), () => this.start());
         if (this.actionEl) this.actionEl.classList.toggle('poor', !enough);
     },
 
@@ -525,7 +529,10 @@ const WrathRogue = {
         // уйти прямо в забег, не закрывая его.
         const price = level.entry || (cfg ? cfg.entry : {});
         const enough = !Object.keys(price).some(key => GameState.currency(key) < price[key]);
-        this.setAction(this.priceText(price), enough ? () => this.start() : null);
+        // Кнопка нажимается ВСЕГДА, даже когда не хватает: выключенная
+        // кнопка не отвечает ничем, а игрок жмёт именно её. Приглушённость
+        // говорит «дорого», а сам отказ показывает вспыхнувший жетон в шапке.
+        this.setAction(this.priceText(price), () => this.start());
         if (this.actionEl) this.actionEl.classList.toggle('poor', !enough);
     },
 
@@ -716,10 +723,8 @@ const WrathRogue = {
     // бы жетона. Единственная кнопка здесь — уход в лобби.
     renderSummary() {
         const s = this.summary;
-        const won = Object.keys(s.currencies || {}).map(key => {
-            const conf = ECONOMY.currencies[key];
-            return `${currencyMark(key)} +${s.currencies[key]}`;
-        }).join('  ');
+        const won = Object.keys(s.currencies || {})
+            .map(key => `${currencyMark(key)} +${s.currencies[key]}`).join('  ');
         // Сгоревшие зубы показаны минусом: это и есть «они живут только
         // внутри забега», сказанное числом.
         const lost = s.teethLost ? `🦷 −${s.teethLost}` : '';
@@ -757,24 +762,27 @@ const WrathRogue = {
     // ---------- ДЕЙСТВИЯ ----------
     // Вход: жетон списан — это и говорится, минусом на жетоне. Не хватило —
     // тот же жетон вспыхивает красным в кошельке.
+    // ---------- ОТКАЗ ОТВЕЧАЕТ ----------
+    // Не хватило жетона — вспыхивает сам жетон в шапке, ровно как в лавке и
+    // в прокачке (WrathLobby.flashLack). До этого здесь молчали дважды:
+    // кнопка входа при нехватке была ВЫКЛЮЧЕНА (disabled), то есть тап по ней
+    // не доходил вообще, а если бы и дошёл — записывалась переменная lack,
+    // которую никто не читал. Игрок жал на приглушённую кнопку и не получал
+    // ничего: ни ответа, ни причины.
     start() {
         const answer = Backend.startRun(this.level);
         if (!answer.ok) {
-            this.lack = answer.currency || 'wrath_token';
-            if (this.lackTimer) clearTimeout(this.lackTimer);
-            this.lackTimer = setTimeout(() => {
-                this.lackTimer = null;
-                this.lack = null;
-                this.render();
-            }, 900);
-        } else {
-            this.lack = null;
-            const price = (Backend.rogueConfig() || {}).entry || {};
-            this.message = Object.keys(price).map(key => {
-                const conf = ECONOMY.currencies[key];
-                return `${currencyMark(key)} −${price[key]}`;
-            }).join(' ');
+            if (typeof WrathLobby !== 'undefined') {
+                WrathLobby.flashLack(answer.currency || 'wrath_token');
+            }
+            if (typeof Haptics !== 'undefined') Haptics.notify('error');
+            return;
         }
+        if (typeof Haptics !== 'undefined') Haptics.impact('medium');
+        const price = Backend.rogueLevel(this.level).entry
+                   || (Backend.rogueConfig() || {}).entry || {};
+        this.message = Object.keys(price)
+            .map(key => `${currencyMark(key)} −${price[key]}`).join(' ');
         this.render();
     },
 
@@ -934,10 +942,8 @@ const WrathRogue = {
     },
 
     priceText(price) {
-        return Object.keys(price || {}).map(key => {
-            const conf = ECONOMY.currencies[key];
-            return `${currencyMark(key)} ${price[key]}`;
-        }).join(' · ');
+        return Object.keys(price || {})
+            .map(key => `${currencyMark(key)} ${price[key]}`).join(' · ');
     }
 };
 

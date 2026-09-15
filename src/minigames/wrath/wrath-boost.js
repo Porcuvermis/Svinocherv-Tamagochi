@@ -49,6 +49,9 @@ const WrathBoost = {
 
     leave() {
         this.lack = null;
+        // И таймер отказа: без этого он сработает уже на другом экране и
+        // перерисует этот — тот, которого на экране нет.
+        if (this.lackTimer) { clearTimeout(this.lackTimer); this.lackTimer = null; }
     },
 
     conf() {
@@ -134,6 +137,18 @@ const WrathBoost = {
         // Обмен шрамов — такая же строка, как ветка прокачки: сколько
         // накопилось из нужного, и кнопка с ценой и тем, что за неё дадут.
         // Живёт на вкладке чисел: это обмен ресурса, а не способность.
+        //
+        // Награда рисуется через currencyMark, а не эмодзи из конфига. Здесь
+        // как раз и оставался последний билетик 🎟: жетон во всём грехе — это
+        // нарисованная эмблема (src/core/token-art.js), а в одной строке он
+        // был системной картинкой. Одна и та же вещь, показанная двумя
+        // разными значками, читается как две разные.
+        //
+        // Цены В ЦЕНЕ НЕТ, и это не забывчивость: слева уже стоит «🩹 6 из
+        // 15» — та же пятнашка, сказанная дробью. Повторять её справа значит
+        // писать одно число дважды и заставлять сверять, одно ли это и то же
+        // (docs/traps.md, п. 82). Справа осталось только то, чего слева нет:
+        // что за это дадут.
         const rule = ECONOMY.marks.exchange;
         if (this.tab !== 'stat') {
             this.listEl.innerHTML = html || '<div class="shop-empty">✓</div>';
@@ -144,7 +159,6 @@ const WrathBoost = {
         }
         const scars = (GameState.data.scars || []).length;
         const ready = scars >= rule.scars;
-        const currency = ECONOMY.currencies[rule.currency];
         html += `
             <button type="button" class="boost-item${ready ? '' : ' poor'}${this.lack === 'scars' ? ' lack' : ''}" id="boost-scars">
                 <span class="boost-emoji">🩹</span>
@@ -152,8 +166,7 @@ const WrathBoost = {
                     <span class="boost-now">🩹 ${scars}/${rule.scars}</span>
                 </span>
                 <span class="boost-price">
-                    <b>🩹 ${rule.scars}</b>
-                    <i>${currency ? currency.emoji : ''} +${rule.amount}</i>
+                    <b>${currencyMark(rule.currency)} +${rule.amount}</b>
                 </span>
             </button>`;
 
@@ -249,7 +262,6 @@ const WrathBoost = {
 
     priceText(price) {
         const parts = Object.keys(price || {}).map(key => {
-            const conf = ECONOMY.currencies[key];
             return `${currencyMark(key)} ${price[key]}`;
         });
         return parts.join(' ') || '🎟 0';

@@ -72,6 +72,7 @@ const WrathDuel = {
     okTimeoutId: null,
     okBtn: null,
     mode: 'duel',
+    entry: 0,          // номер захода в бой: по нему отбраковываются просроченные ответы
     // Заказ на бой от забега: противник узла, здоровье забега и куда
     // сообщить исход. У обычного боя его нет — там всё берётся из состояния.
     order: null,
@@ -143,6 +144,13 @@ const WrathDuel = {
         this.order = order || null;
         this.outcome = null;
         this.awardPrefix = '';
+        // Номер захода. Соперник приходит ОТВЕТОМ (Backend.getOpponent —
+        // обещание, и завтра это будет запрос к серверу), а ответ может
+        // доехать, когда бой уже другой: ушёл из драки, зашёл снова — и
+        // припозднившийся ответ первого захода перезапускал ИДУЩИЙ бой с
+        // чужим соперником. Проверки «мы всё ещё на экране боя» для этого
+        // мало: экран-то тот же, бой другой.
+        this.entry = (this.entry || 0) + 1;
 
         // В бою здоровье не восстанавливается: оно ресурс этой драки. Размораживает
         // лобби, когда игрок туда вернётся, — в том числе после того, как игру
@@ -166,8 +174,10 @@ const WrathDuel = {
         // Противник приходит через переходник: сегодня это копия игрока,
         // завтра — слепок другого игрока с сервера. Вызывающий код одинаков.
         // Забегу оттуда нужно только тело: числа у его врагов свои.
+        const entry = this.entry;
         Backend.getOpponent(this.mode).then(answer => {
             if (!this.host || this.host.current !== 'duel') return;
+            if (entry !== this.entry) return;          // ответ от прошлого захода
             const snapshot = answer && answer.opponent;
             this.fighters.enemy = this.order
                 ? WrathFighter.fromEnemy(this.order.enemy, snapshot)
@@ -181,6 +191,7 @@ const WrathDuel = {
         this.stopFightTimer();
         this.stopResultTimer();
         this.stopTokenTimer();
+        this.stopFx();
         // Ушли с боя — здоровье снова восстанавливается. Дублируется в лобби на
         // случай, когда игру закрыли посреди драки и leave() не случился.
         // Во время забега Backend его не разморозит — там здоровье своё.
@@ -336,9 +347,28 @@ const WrathDuel = {
         this.root.classList.toggle('chose-attack', this.chosenAttack !== null);
     },
 
+    // ---------- ОТДАЧА В ПАЛЕЦ ----------
+    // Бой — самое тактильное место в игре, и до этой правки он молчал
+    // целиком: ни выбор зоны, ни удар, ни блок, ни исход не отдавали ничем.
+    // Автомат алчности дёргал палец на каждом зубце храповика, а драка — нет.
+    //
+    // Отдача даётся РОВНО ОДНА НА РАУНД и говорит про игрока, а не про
+    // размен: в раунде бьют оба, и две вибрации подряд читаются как сбой, а
+    // не как два удара. Сила выбирается по худшему для игрока: прилетело
+    // ему — тяжёлая, попал он — средняя, оба в блок — лёгкая.
+    //
+    // Решает всё Haptics: где её нет (айфон вне Telegram), там просто тихо, и
+    // знать об этом бою незачем (src/core/haptics.js).
+    buzz(kind) {
+        if (typeof Haptics !== 'undefined') Haptics.impact(kind);
+    },
+
     // ---------- ВЫБОР ----------
     selectDefense(zone) {
         if (this.fightOver || this.isFighting) return;
+        // Щелчок, а не удар: выбор зоны — это переключение, самое мелкое
+        // событие в бою.
+        if (this.chosenDefense !== zone && typeof Haptics !== 'undefined') Haptics.tick();
         this.chosenDefense = zone;
         this.markSelected('player', zone);
         if (this.daggerDefense) this.daggerDefense.classList.add('filled');
@@ -347,6 +377,7 @@ const WrathDuel = {
 
     selectAttack(zone) {
         if (this.fightOver || this.isFighting) return;
+        if (this.chosenAttack !== zone && typeof Haptics !== 'undefined') Haptics.tick();
         this.chosenAttack = zone;
         this.markSelected('enemy', zone);
         if (this.daggerAttack) this.daggerAttack.classList.add('filled');
@@ -469,8 +500,11 @@ const WrathDuel = {
         const enemyAttack = plan.attack;
         const enemyDefense = plan.defense;
 
+        let dealtHit = false, tookHit = false;
+
         if (playerAttack !== enemyDefense) {
             const dmg = WrathFighter.rollDamage(player, enemy, playerAttack);
+            dealtHit = dmg > 0;
             this.enemyHP = Math.max(0, this.enemyHP - dmg);
             this.showDamage('enemy', dmg);
             this.triggerImpact('enemy', playerAttack, dmg > 0 ? 'hit' : 'block');
@@ -480,6 +514,7 @@ const WrathDuel = {
 
         if (enemyAttack !== playerDefense) {
             const dmg = WrathFighter.rollDamage(enemy, player, enemyAttack);
+            tookHit = dmg > 0;
             this.playerHP = Math.max(0, this.playerHP - dmg);
             this.showDamage('player', dmg);
             this.triggerImpact('player', enemyAttack, dmg > 0 ? 'hit' : 'block');
@@ -490,6 +525,10 @@ const WrathDuel = {
         }
 
         this.updateHPBars();
+        // Одна отдача на раунд, по худшему для игрока: прилетело ему —
+        // тяжёлая, попал он — средняя, оба в блок — лёгкая.
+        this.buzz(tookHit ? 'heavy' : (dealtHit ? 'medium' : 'light'));
+
         // Здоровье записывается КАЖДЫЙ раунд, а не в конце боя: свернул игру
         // посреди драки — остался с тем, с чем свернул. В забеге пишется
         // здоровье забега, а не лобби: это разные жизни.
@@ -550,6 +589,28 @@ const WrathDuel = {
         }
     },
 
+    // ---------- ТАЙМЕРЫ ВСПЫШЕК ----------
+    // Вспышки, щиты, искры и тряска убирают себя сами через таймер. Уход с
+    // экрана их не ждал: после закрытия боя в воздухе оставалась дюжина
+    // отложенных вызовов, и каждый лез в дерево уже снесённой сцены. Ничего
+    // не падало, но платить за это незачем — тем более что уходят из боя
+    // ровно в тот момент, когда вспышек больше всего.
+    fxTimers: [],
+
+    fx(fn, ms) {
+        const id = setTimeout(() => {
+            this.fxTimers = this.fxTimers.filter(t => t !== id);
+            fn();
+        }, ms);
+        this.fxTimers.push(id);
+        return id;
+    },
+
+    stopFx() {
+        this.fxTimers.forEach(clearTimeout);
+        this.fxTimers = [];
+    },
+
     endFight() {
         this.fightOver = true;
         this.isFighting = false;
@@ -572,6 +633,13 @@ const WrathDuel = {
         if (this.overlayText) {
             this.overlayText.textContent = sign;
             this.overlayText.style.color = color;
+        }
+        // Исход — известие, а не удар: у него своя отдача, отличимая от
+        // размена. Ничья идёт лёгким ударом: ни то ни другое.
+        if (typeof Haptics !== 'undefined') {
+            if (outcome === 'win') Haptics.notify('success');
+            else if (outcome === 'lose') Haptics.notify('error');
+            else Haptics.impact('rigid');
         }
         this.showResult();
 
@@ -742,7 +810,7 @@ const WrathDuel = {
         root.classList.remove('hit-shake');
         void root.getBoundingClientRect();
         root.classList.add('hit-shake');
-        setTimeout(() => root.classList.remove('hit-shake'), 420);
+        this.fx(() => root.classList.remove('hit-shake'), 420);
     },
 
     spawnFlash(stage, x, y) {
@@ -751,7 +819,7 @@ const WrathDuel = {
         flash.style.left = x;
         flash.style.top = y;
         stage.appendChild(flash);
-        setTimeout(() => flash.remove(), 780);
+        this.fx(() => flash.remove(), 780);
 
         const rayCount = 8;
         for (let i = 0; i < rayCount; i++) {
@@ -761,7 +829,7 @@ const WrathDuel = {
             ray.style.top = y;
             ray.style.setProperty('--ray-rot', `${(360 / rayCount) * i + (Math.random() * 12 - 6)}deg`);
             stage.appendChild(ray);
-            setTimeout(() => ray.remove(), 560);
+            this.fx(() => ray.remove(), 560);
         }
     },
 
@@ -775,14 +843,14 @@ const WrathDuel = {
                   fill="rgba(90,210,255,0.4)" stroke="#8fe9ff" stroke-width="4"/>
         </svg>`;
         stage.appendChild(shield);
-        setTimeout(() => shield.remove(), 760);
+        this.fx(() => shield.remove(), 760);
 
         const ring = document.createElement('div');
         ring.className = 'shield-ring';
         ring.style.left = x;
         ring.style.top = y;
         stage.appendChild(ring);
-        setTimeout(() => ring.remove(), 600);
+        this.fx(() => ring.remove(), 600);
 
         const dirSign = side === 'player' ? -1 : 1;
         [-16, 0, 16].forEach(angleDeg => {
@@ -796,7 +864,7 @@ const WrathDuel = {
             spark.style.setProperty('--ty', `${dist * Math.sin(angleRad) * 0.6}px`);
             spark.style.setProperty('--rot', `${dirSign * (angleDeg + 90)}deg`);
             stage.appendChild(spark);
-            setTimeout(() => spark.remove(), 620);
+            this.fx(() => spark.remove(), 620);
         });
     }
 };
