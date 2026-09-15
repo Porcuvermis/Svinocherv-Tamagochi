@@ -42,9 +42,19 @@ const WrathRogue = {
     messageEl: null,
     abandonEl: null,
     message: null,
-    // Второй тап по «Бросить забег» — подтверждение. Диалога здесь нет
-    // намеренно: цена ошибки — жетон, и вопрос из двух тапов дешевле окна.
-    abandonArmed: false,
+    // ---------- БРОСИТЬ ЗАБЕГ — ТОЛЬКО УДЕРЖАНИЕМ ----------
+    // Раньше хватало двух тапов: первый взводил флаг, второй бросал забег.
+    // Этого мало. Взведённое состояние висело БЕЗ СРОКА — тапнул случайно,
+    // через десять минут задел ещё раз, и забег вместе с жетоном кончился;
+    // а на телефоне два тапа подряд по одному месту случаются сами собой.
+    //
+    // Теперь это УДЕРЖАНИЕ: палец на флаге полторы секунды, кнопка при этом
+    // наливается. Случайный тап не делает ничего вообще, а отпустить раньше
+    // времени можно в любой момент. Жест не новый — им же открывается
+    // прокачка в лобби (WrathLobby.bindHold), и там он выбран по той же
+    // причине: тап слишком дёшев для того, что стоит дорого.
+    ABANDON_MS: 1500,
+    abandonTimer: null,
     // Не хватило жетона на вход — он вспыхивает в кошельке (как в магазине).
     lack: null,
     level: 0,      // выбранная сложность в окне входа; забег хранит свою
@@ -68,16 +78,14 @@ const WrathRogue = {
 
         // Своей кнопки возврата у экрана нет: она одна на все меню и стоит
         // в общем подвале (index.html, #wrath-foot).
-        if (this.abandonEl) {
-            this.abandonEl.onclick = (e) => { e.stopPropagation(); this.abandon(); };
-        }
+        this.bindAbandon();
     },
 
     // Сообщение здесь НЕ сбрасывается: с боя на карту возвращаются через
     // enter(), а показать надо именно то, что этот бой принёс. Гасится оно
     // в leave() — то есть при уходе в лобби или закрытии окна.
     enter() {
-        this.abandonArmed = false;
+        this.cancelAbandon();
         this.render();
     },
 
@@ -87,12 +95,17 @@ const WrathRogue = {
     leave() {
         this.message = null;
         this.summary = null;
-        this.abandonArmed = false;
+        this.cancelAbandon();
     },
 
     // ---------- ПОКАЗ ----------
     render() {
         if (!this.root) return;
+        // Кошелёк в шапке подновляется СРАЗУ. Забег — единственный экран, где
+        // валюта уходит и приходит БЕЗ смены экрана: вход платит жетоном,
+        // мини-босс даёт осколок, босс — жетон и золото. Пока этого не было,
+        // шапка врала до следующего перехода, и заметнее всего на входе.
+        if (typeof WrathLobby !== 'undefined') WrathLobby.refreshWallet();
         const run = this.summary ? null : Backend.run();
 
         // Здоровье кончилось, а узел не засчитан: единственный способ сюда
@@ -111,9 +124,8 @@ const WrathRogue = {
 
         if (this.abandonEl) {
             this.abandonEl.classList.toggle('shown', !!run);
-            // Второй тап — подтверждение: флаг краснеет и пульсирует, а не
-            // переспрашивает словами.
-            this.abandonEl.classList.toggle('armed', this.abandonArmed);
+            // Забега нет — недодержанное удержание тоже ни к чему.
+            if (!run) this.cancelAbandon();
         }
         // Под итогом забега бросать уже нечего: забег кончился.
     },
@@ -766,17 +778,60 @@ const WrathRogue = {
         this.render();
     },
 
-    abandon() {
-        if (!Backend.run()) return;
-        if (!this.abandonArmed) {
-            this.abandonArmed = true;
-            this.render();
-            return;
-        }
-        Backend.abandonRun();
-        this.abandonArmed = false;
-        this.message = null;
-        this.render();
+    // ---------- УДЕРЖАНИЕ ФЛАГА ----------
+    // Полторы секунды пальцем на флаге. Кнопка при этом наливается — это и
+    // есть объяснение жеста: нажал, увидел, что что-то набирается, держишь
+    // дальше. Отпустил раньше — ничего не случилось.
+    //
+    // Слушатели на pointer*, а не на click: клик приходит уже ПОСЛЕ отпускания
+    // и о том, сколько палец лежал, не знает вовсе.
+    bindAbandon() {
+        const el = this.abandonEl;
+        if (!el) return;
+        el.style.touchAction = 'none';
+
+        const start = (e) => {
+            if (!Backend.run() || this.abandonTimer) return;
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.add('holding');
+            if (typeof Haptics !== 'undefined') Haptics.tick();
+            this.abandonTimer = setTimeout(() => {
+                this.abandonTimer = null;
+                el.classList.remove('holding');
+                // Тяжёлая отдача: то, что случилось, дорого стоит.
+                if (typeof Haptics !== 'undefined') Haptics.impact('heavy');
+                Backend.abandonRun();
+                this.message = null;
+                this.render();
+            }, this.ABANDON_MS);
+        };
+
+        el.addEventListener('pointerdown', start);
+        ['pointerup', 'pointercancel', 'pointerleave'].forEach(name => {
+            el.addEventListener(name, () => this.cancelAbandon());
+        });
+
+        // Палец УЕХАЛ с кнопки, не отпуская, — это тоже «передумал», и на
+        // пальце это единственный способ передумать аккуратно.
+        //
+        // Проверяется КООРДИНАТАМИ, а не pointerleave. Причина в том, как
+        // браузер ведёт себя с касанием: на touch он молча захватывает
+        // указатель за элементом, pointermove продолжает приходить сюда же, а
+        // pointerleave не приходит до самого отпускания. То есть на мыши
+        // отмена работала бы, а на телефоне — нет, и уехавший палец всё равно
+        // бросал бы забег. Для действия без отмены это недопустимо.
+        el.addEventListener('pointermove', (e) => {
+            if (!this.abandonTimer) return;
+            const r = el.getBoundingClientRect();
+            if (e.clientX < r.left || e.clientX > r.right
+                || e.clientY < r.top || e.clientY > r.bottom) this.cancelAbandon();
+        });
+    },
+
+    cancelAbandon() {
+        if (this.abandonTimer) { clearTimeout(this.abandonTimer); this.abandonTimer = null; }
+        if (this.abandonEl) this.abandonEl.classList.remove('holding');
     },
 
     chooseBoost(id) {

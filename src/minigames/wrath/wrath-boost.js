@@ -183,6 +183,9 @@ const WrathBoost = {
         const answer = Backend.buyUpgrade(key);
         if (!answer.ok) this.showLack(answer.currency || 'wrath_token');
         else this.lack = null;
+        // Кошелёк в шапке подновляется СРАЗУ: он общий на все экраны греха,
+        // и покупка обязана быть видна в тот же миг, а не через секунду.
+        WrathLobby.refreshWallet();
         this.render();
     },
 

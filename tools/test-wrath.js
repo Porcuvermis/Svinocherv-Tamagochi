@@ -861,6 +861,119 @@ const { viewport, prepare } = require('./harness');
     `опасность узла — его размер: рядовой ${map.fight}, мини-босс ${map.miniboss}, босс ${map.boss}`);
   check(map.ring, 'текущая точка на карте есть и она нажимается');
 
+  // ---------- КОШЕЛЁК В ШАПКЕ ЖИВОЙ ----------
+  // Шапка целиком пересобирается только при СМЕНЕ ЭКРАНА, и из этого следовала
+  // прямая ложь: жетон списан, а в шапке старое число. Заметнее всего на входе
+  // в забег — там экран не меняется вовсе, и враньё висело до перехода.
+  console.log('\n--- кошелёк в шапке ---');
+  const purse = await page.evaluate(async () => {
+    const head = () => {
+      const el = document.querySelector('#wrath-panel .panel-chip.wallet[data-cur="wrath_token"] b');
+      return el ? Number(el.textContent) : null;
+    };
+    GameState.data.currencies.wrath_token = 5;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 300));
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 400));
+    const before = head();
+
+    // ВХОД В ЗАБЕГ. Экран не меняется — значит шапка обязана подновиться сама.
+    WrathRogue.start();
+    await new Promise(r => setTimeout(r, 200));
+    const entry = { state: GameState.currency('wrath_token'), head: head() };
+
+    // ПОКУПКА В ЛАВКЕ. Тот же случай: экран остаётся тем же.
+    GameState.data.currencies.wrath_token = 9;
+    WrathMinigame.startMode('shop');
+    await new Promise(r => setTimeout(r, 300));
+    const beforeBuy = GameState.currency('wrath_token');
+    const btn = document.querySelector('#wrath-shop .shop-item');
+    if (btn) btn.click();
+    await new Promise(r => setTimeout(r, 200));
+    const buy = { state: GameState.currency('wrath_token'), head: head(), spent: beforeBuy };
+
+    // Покупка снимается обратно. Надетый предмет поднимает МАКСИМУМ здоровья,
+    // а проверки ниже считают бойца голым («полное здоровье» у них 10 из 10) —
+    // и падали бы не из-за своей поломки, а из-за чужой покупки.
+    GameState.data.equipment = {};
+    return { before, entry, buy };
+  });
+  check(purse.before === 5, `до входа в шапке настоящее число: ${purse.before}`);
+  check(purse.entry.head === purse.entry.state,
+    `вход в забег списал жетон И в шапке: ${purse.entry.head} при ${purse.entry.state} в состоянии`);
+  check(purse.buy.state < purse.buy.spent && purse.buy.head === purse.buy.state,
+    `покупка в лавке видна в шапке сразу: ${purse.buy.head} при ${purse.buy.state} в состоянии`);
+
+  // ---------- БРОСИТЬ ЗАБЕГ ТОЛЬКО УДЕРЖАНИЕМ ----------
+  // Двух тапов оказалось мало: взведённое состояние висело без срока, а на
+  // телефоне два тапа подряд по одному месту случаются сами собой. Забег с
+  // жетоном терялся от промаха.
+  console.log('\n--- бросить забег ---');
+  await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 9;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    Backend.startRun(0);
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 400));
+  });
+  await page.waitForTimeout(300);
+  const flagAt = await page.evaluate(() => {
+    const r = document.getElementById('rogue-abandon').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  // Пальцем, а не через код: проверяется именно жест.
+  await page.mouse.click(flagAt.x, flagAt.y);
+  await page.waitForTimeout(250);
+  const afterTap = await page.evaluate(() => !!Backend.run());
+
+  await page.mouse.move(flagAt.x, flagAt.y);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  const filling = await page.evaluate(() =>
+    document.getElementById('rogue-abandon').classList.contains('holding'));
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const afterShort = await page.evaluate(() => !!Backend.run());
+
+  await page.mouse.move(flagAt.x, flagAt.y);
+  await page.mouse.down();
+  await page.waitForTimeout(1900);
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const afterHold = await page.evaluate(() => !!Backend.run());
+
+  check(afterTap, 'случайный тап по флагу забег НЕ бросает');
+  check(filling, 'удержание видно: кнопка наливается, пока палец на месте');
+  check(afterShort, 'отпустил раньше времени — забег цел');
+  check(!afterHold, 'полное удержание бросает забег');
+
+  // Палец УЕХАЛ с кнопки, не отпуская. Проверка отдельная, потому что чинится
+  // это не pointerleave: на касании браузер молча захватывает указатель за
+  // элементом, и leave не приходит до самого отпускания. На мыши отмена
+  // работала бы, а на телефоне уехавший палец всё равно бросал бы забег.
+  await page.evaluate(async () => {
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    GameState.data.currencies.wrath_token = 9;
+    Backend.startRun(0);
+    WrathRogue.render();
+    await new Promise(r => setTimeout(r, 200));
+  });
+  const flagBox = await page.evaluate(() => {
+    const r = document.getElementById('rogue-abandon').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width };
+  });
+  await page.mouse.move(flagBox.x, flagBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  await page.mouse.move(flagBox.x - flagBox.w * 2, flagBox.y);
+  await page.waitForTimeout(1600);
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  check(await page.evaluate(() => !!Backend.run()),
+    'палец уехал с кнопки, не отпуская, — забег цел');
+
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');
   const node = await page.evaluate(() => {

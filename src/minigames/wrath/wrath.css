@@ -1781,12 +1781,18 @@
 
 .rogue-bottom .rogue-action { flex: 1 1 auto; margin-bottom: 0; }
 
-/* Бросить забег видно только во время забега, и первый тап только
-   переспрашивает: цена ошибки — жетон. */
-/* Бросить забег — белый флаг. Первый тап только взводит: флаг краснеет и
-   пульсирует, второй бросает. Вопроса словами здесь нет и не нужно. */
+/* ---------- БРОСИТЬ ЗАБЕГ ----------
+   Видно только во время забега. Бросают его УДЕРЖАНИЕМ: полторы секунды
+   пальцем, и кнопка всё это время наливается снизу вверх.
+
+   Два тапа (первый взводит, второй бросает) здесь были и оказались слабой
+   защитой: взведённое состояние висело без срока, а на телефоне два тапа
+   подряд по одному месту случаются сами собой. Разбор — в комментарии к
+   WrathRogue.bindAbandon(). */
 .rogue-abandon {
     display: none;
+    position: relative;
+    overflow: hidden;
     flex: 0 0 auto;
     padding: 8px 12px;
     font-size: 18px;
@@ -1796,11 +1802,28 @@
 
 .rogue-abandon.shown { display: block; }
 
-.rogue-abandon.armed {
-    border-color: var(--wrath-attack);
-    background: rgba(255, 59, 48, 0.28);
-    animation: rogue-pulse 0.9s ease-in-out infinite;
+/* Налив. Отдельный слой под значком, едет ТРАНСФОРМАЦИЕЙ — то есть на
+   видеокарте и ничего вокруг не перерисовывает. Длительность обязана
+   совпадать с WrathRogue.ABANDON_MS: полоса, дошедшая до верха раньше или
+   позже самого броска, врёт о том, когда отпускать поздно. */
+.rogue-abandon::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 100%;
+    background: var(--wrath-attack);
+    transform: scaleY(0);
+    transform-origin: 50% 100%;
+    opacity: 0.55;
+    pointer-events: none;
 }
+
+.rogue-abandon.holding::after {
+    transform: scaleY(1);
+    transition: transform 1.5s linear;
+}
+
+.rogue-abandon.holding { border-color: var(--wrath-attack); }
 
 .rogue-message {
     flex: 0 0 auto;

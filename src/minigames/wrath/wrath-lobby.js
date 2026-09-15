@@ -42,6 +42,7 @@ const WrathLobby = {
     wormHandle: null,
     openSlot: null,
     healClock: null,
+    shownWallet: null,
     lackTimer: null,
     holdEl: null,
     holdFillEl: null,
@@ -259,6 +260,9 @@ const WrathLobby = {
             `;
         }
 
+        // Сторож кошелька сбрасывается вместе с панелью: чипы новые, и
+        // сравнивать их с запомненным от старой панели нельзя.
+        this.shownWallet = null;
         this.refreshHealth();
 
         // ---------- ВЫСОТА ШАПКИ ----------
@@ -298,6 +302,32 @@ const WrathLobby = {
         if (!this.healClock) {
             this.healClock = WrathFighter.startHealClock(() => this.refreshHealth());
         }
+    },
+
+    // ---------- КОШЕЛЁК В ШАПКЕ ЖИВОЙ ----------
+    // Шапка целиком пересобирается только при СМЕНЕ ЭКРАНА — иначе раскладка
+    // дёргалась бы на каждой перерисовке. Из этого следовала неприятность,
+    // которую видно сразу: жетон списан, а в шапке всё ещё старое число.
+    // Хуже всего на входе в забег — там экран не меняется вовсе, и враньё
+    // висело до следующего перехода.
+    //
+    // Поэтому кошелёк подновляется ОТДЕЛЬНО и точечно: меняются два чипа, а
+    // не вся панель. Есть сторож по значениям — если ничего не изменилось,
+    // в дерево не пишется ничего, и звать это можно хоть каждую секунду.
+    refreshWallet() {
+        const panel = this.panelEl || document.getElementById('wrath-panel');
+        if (!panel) return;
+
+        const tokens = GameState.currency('wrath_token');
+        const shards = TokenArt.progress('wrath_token', 'wrath.duel.lose');
+        if (this.shownWallet && this.shownWallet.tokens === tokens
+            && this.shownWallet.shards === shards) return;
+        this.shownWallet = { tokens, shards };
+
+        const whole = panel.querySelector('.panel-chip.wallet[data-cur="wrath_token"] b');
+        if (whole) whole.textContent = tokens;
+        const part = panel.querySelector('.panel-chip.wallet[data-cur="wrath_shard"]');
+        if (part) part.innerHTML = TokenArt.svg('wrath_token', shards);
     },
 
     // ---------- ОТКАЗ БЕЗ СЛОВ ----------
@@ -376,6 +406,11 @@ const WrathLobby = {
     // полоса, нарисованная по нему, выглядела бы застывшей, то есть
     // сломанной. По дробному она ползёт непрерывно, и ждать становится видно.
     refreshHealth() {
+        // Кошелёк едет тем же тиком. Это СТРАХОВКА, а не основной путь: там,
+        // где валюту тратят, refreshWallet зовётся сразу, иначе число
+        // отставало бы на секунду ровно в момент, когда на него смотрят.
+        this.refreshWallet();
+
         const health = WrathFighter.playerHp();
 
         // Ищется в ПАНЕЛИ, а не в лобби: панель уехала в общую шапку, за
