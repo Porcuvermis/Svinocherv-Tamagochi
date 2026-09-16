@@ -107,6 +107,10 @@ const WrathRogue = {
         // мини-босс даёт осколок, босс — жетон и золото. Пока этого не было,
         // шапка врала до следующего перехода, и заметнее всего на входе.
         if (typeof WrathLobby !== 'undefined') WrathLobby.refreshWallet();
+        // Живой забег СТИРАЕТ показанный итог: итог значит «забег кончился»,
+        // и держать его поверх начатого — показывать прошлое вместо
+        // настоящего.
+        if (this.summary && Backend.run()) this.summary = null;
         const run = this.summary ? null : Backend.run();
 
         // Здоровье кончилось, а узел не засчитан: единственный способ сюда
@@ -729,9 +733,13 @@ const WrathRogue = {
         // внутри забега», сказанное числом.
         const lost = s.teethLost ? `🦷 −${s.teethLost}` : '';
 
+        // Знак итога: кубок за пройденный, череп за проигранный и белый флаг
+        // за брошенный. Три разных конца — три разных знака: череп над
+        // забегом, который игрок бросил сам, сказал бы неправду.
+        const sign = s.win ? '🏆' : (s.abandoned ? '🏳️' : '💀');
         this.cardEl.className = `rogue-card shown ${s.win ? 'win' : 'lose'}`;
         this.cardEl.innerHTML = `
-            <div class="rogue-card-icon">${s.win ? '🏆' : '💀'}</div>
+            <div class="rogue-card-icon">${sign}</div>
             <div class="rogue-card-row">${s.nodesDone}/${s.nodesTotal}</div>
             ${won ? `<div class="rogue-card-row loot">${won}</div>` : ''}
             ${lost ? `<div class="rogue-card-row lost">${lost}</div>` : ''}`;
@@ -809,9 +817,7 @@ const WrathRogue = {
                 el.classList.remove('holding');
                 // Тяжёлая отдача: то, что случилось, дорого стоит.
                 if (typeof Haptics !== 'undefined') Haptics.impact('heavy');
-                Backend.abandonRun();
-                this.message = null;
-                this.render();
+                this.takeAbandon(Backend.abandonRun());
             }, this.ABANDON_MS);
         };
 
@@ -840,6 +846,32 @@ const WrathRogue = {
     cancelAbandon() {
         if (this.abandonTimer) { clearTimeout(this.abandonTimer); this.abandonTimer = null; }
         if (this.abandonEl) this.abandonEl.classList.remove('holding');
+    },
+
+    // ---------- БРОШЕННЫЙ ЗАБЕГ КОНЧАЕТСЯ ИТОГОМ ----------
+    // Раньше бросок просто стирал забег и звал render(), а тот показывал ОКНО
+    // ВХОДА. Дальше происходило вот что: флаг живёт в одной строке с кнопкой
+    // действия и при отсутствии забега ПРОПАДАЛ вместе со своим местом —
+    // кнопка входа растягивалась на всю ширину и вставала ровно под палец,
+    // который только что держал флаг. Следующий тап по тому же месту платил
+    // жетон за новый забег. Тап, тап, тап — и кошелёк пуст.
+    //
+    // Теперь брошенный забег кончается тем же итоговым окном, что и любой
+    // другой: с него уходят одной кнопкой в лобби, и платящей кнопки на
+    // экране нет вовсе. Механизм не новый — он ровно для этого и заведён
+    // («забег кончился, палец ещё на кнопке, а вход стоит жетон»).
+    takeAbandon(answer) {
+        if (!answer || !answer.ok) { this.render(); return; }
+        this.summary = {
+            win: false,
+            abandoned: true,
+            nodesDone: answer.nodesDone,
+            nodesTotal: answer.nodesTotal,
+            currencies: {},
+            teethLost: answer.teethLost || 0
+        };
+        this.message = null;
+        this.render();
     },
 
     chooseBoost(id) {

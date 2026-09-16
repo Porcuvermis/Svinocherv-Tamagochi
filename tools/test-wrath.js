@@ -1117,6 +1117,61 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 200));
   });
 
+  // ---------- БРОШЕННЫЙ ЗАБЕГ НЕ ПОДСТАВЛЯЕТ ПЛАТЯЩУЮ КНОПКУ ----------
+  // Живой случай: игрок жмякал белым флагом раз за разом и потратил все
+  // жетоны. Флаг стоит в одной строке с кнопкой действия и при отсутствии
+  // забега ПРОПАДАЛ вместе со своим местом — кнопка входа растягивалась с 316
+  // до 370 и вставала ровно под палец, который только что держал флаг. А на
+  // экране без забега кнопка действия — это ВХОД, то есть платящая.
+  //
+  // Проверяется обе половины починки: место флага держится, и брошенный забег
+  // кончается итоговым окном, где платящей кнопки нет вовсе.
+  console.log('\n--- брошенный забег ---');
+  const dropped = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 5;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    Backend.startRun(0);
+    WrathRogue.summary = null;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 400));
+    const fr = document.getElementById('rogue-abandon').getBoundingClientRect();
+    const spot = { x: fr.x + fr.width / 2, y: fr.y + fr.height / 2 };
+    const wide = Math.round(document.getElementById('rogue-action').getBoundingClientRect().width);
+
+    WrathRogue.takeAbandon(Backend.abandonRun());
+    await new Promise(r => setTimeout(r, 200));
+    const el = document.elementFromPoint(spot.x, spot.y);
+    return {
+      spot,
+      tokens: GameState.currency('wrath_token'),
+      summary: !!WrathRogue.summary,
+      // Ширина кнопки действия не изменилась — значит место флага на месте.
+      same: Math.round(document.getElementById('rogue-action').getBoundingClientRect().width) === wide,
+      under: el ? (el.id || el.className) : null
+    };
+  });
+  check(dropped.summary, 'брошенный забег кончается итоговым окном, а не экраном входа');
+  check(dropped.same, 'место флага держится: кнопка входа не растягивается под палец');
+  check(dropped.under !== 'rogue-action',
+    `под пальцем после броска не платящая кнопка, а «${dropped.under}»`);
+
+  // И то же самое пальцем: пять тапов по месту флага не стоят ни жетона.
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.click(dropped.spot.x, dropped.spot.y);
+    await page.waitForTimeout(90);
+  }
+  const afterSpam = await page.evaluate(() => ({
+    tokens: GameState.currency('wrath_token'), run: !!Backend.run()
+  }));
+  check(afterSpam.tokens === dropped.tokens && !afterSpam.run,
+    `пять тапов по месту флага не стоили ничего: ${dropped.tokens} → ${afterSpam.tokens}`);
+
+  await page.evaluate(async () => {
+    WrathRogue.summary = null;
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 200));
+  });
+
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');
   const node = await page.evaluate(() => {

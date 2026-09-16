@@ -1403,11 +1403,20 @@ const LocalBackend = {
     },
 
     // Бросить забег. Жетон не возвращается — это цена входа, а не залог.
+    //
+    // Возвращается ИТОГ, в той же форме, что у проигранного боя: докуда
+    // дошёл и сколько зубов сгорело. Нужен он экрану: брошенный забег
+    // обязан кончаться таким же итоговым окном, как любой другой, — иначе
+    // экран входа встаёт под палец сразу после броска (docs/traps.md, п. 94).
     abandonRun() {
-        if (!this.run()) return { ok: false, error: 'no_run' };
+        const run = this.run();
+        if (!run) return { ok: false, error: 'no_run' };
+        const nodesTotal = run.map.filter(n => this.stepOpen(n)).length;
+        const nodesDone = run.map.filter(n => n.done).length;
+        const teethLost = run.teeth || 0;
         delete GameState.data.runs.wrath;
         GameState.save();
-        return { ok: true };
+        return { ok: true, outcome: 'abandon', nodesDone, nodesTotal, teethLost };
     },
 
     // Подлечить забег, но не выше максимума. Возвращает, сколько реально
