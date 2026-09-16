@@ -90,7 +90,6 @@ const WrathShop = {
                 <button type="button" class="shop-tab${g.key === this.tab ? ' on' : ''}${g.rest.length ? '' : ' done'}"
                         data-tab="${g.key}">
                     ${WrathFighter.slotShape(g.slot)}
-                    <span class="shop-tab-count">${g.items.length - g.rest.length}/${g.items.length}</span>
                 </button>`).join('');
             this.tabsEl.querySelectorAll('.shop-tab').forEach(btn => {
                 btn.onclick = (e) => {

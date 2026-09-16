@@ -1172,6 +1172,58 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 200));
   });
 
+  // ---------- ШЕСТОЕ ЧУВСТВО ЗАКРЫВАЕТ ЗОНУ НАСОВСЕМ ----------
+  // Способность говорит «сюда точно не ударят». Пока по этой зоне можно было
+  // закрыться, способность не работала: выбор оставался из трёх, а случайный
+  // добор по кинжалам регулярно вставал именно в неё — то есть купленное
+  // играло против игрока.
+  console.log('\n--- шестое чувство ---');
+  const sense = await page.evaluate(async () => {
+    GameState.data.upgrades = Object.assign({}, GameState.data.upgrades, { sixth_sense: 1 });
+    WrathMinigame.startFight('duel');
+    await new Promise(r => setTimeout(r, 1200));
+    const safe = WrathDuel.safeZone;
+    if (!safe) return { noSafe: true };
+
+    WrathDuel.selectDefense(safe);
+    const manual = WrathDuel.chosenDefense;
+
+    // Добор по кинжалам: двести бросков и ни одного в помеченную зону.
+    let rolled = 0;
+    for (let i = 0; i < 300; i++) {
+      if (WrathDuel.randomZone(safe) === safe) rolled++;
+    }
+
+    // И палец туда не проходит физически.
+    const el = WrathDuel.zones.player[safe];
+    const r = el.getBoundingClientRect();
+    const under = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return {
+      safe, manual, rolled,
+      blocked: getComputedStyle(el).pointerEvents === 'none',
+      underSafe: !!(under && under.classList && under.classList.contains('safe'))
+    };
+  });
+
+  check(!sense.noSafe, `шестое чувство пометило зону: ${sense.safe}`);
+  check(sense.manual === null, 'помеченную зону нельзя выбрать в защиту вручную');
+  check(sense.rolled === 0, `добор по кинжалам не берёт помеченную зону: ${sense.rolled} из 300`);
+  check(sense.blocked && !sense.underSafe, 'палец в помеченную зону не проходит');
+
+  // ---------- ВКЛАДКИ ЛАВКИ БЕЗ СЧЁТЧИКОВ ----------
+  const shopTabs = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 80;
+    WrathMinigame.startMode('shop');
+    await new Promise(r => setTimeout(r, 300));
+    // Способность снимается: купленная ветка уходит из меню прокачки, а
+    // проверки ниже смотрят именно на её наличие там.
+    delete GameState.data.upgrades.sixth_sense;
+    return [...document.querySelectorAll('#shop-tabs .shop-tab')]
+      .map(b => b.textContent.replace(/\s+/g, ''));
+  });
+  check(shopTabs.length > 0 && shopTabs.every(t => t === ''),
+    'на вкладках лавки нет счётчиков «1/5» — только силуэт слота');
+
   // ---------- ТРИ ХАРАКТЕРИСТИКИ И ОДНА БРОНЯ ----------
   // У бойца ровно три величины: ❤️ 🗡 🛡. Четвёртой (💪 maxHp) больше нет
   // нигде, броня не делится по зонам, и в забеге показываются все три —

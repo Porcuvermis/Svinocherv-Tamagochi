@@ -366,6 +366,17 @@ const WrathDuel = {
     // ---------- ВЫБОР ----------
     selectDefense(zone) {
         if (this.fightOver || this.isFighting) return;
+        // ---------- ПО ПОМЕЧЕННОЙ ЗОНЕ ЗАКРЫТЬСЯ НЕЛЬЗЯ ----------
+        // Шестое чувство говорит «сюда точно не ударят». Пока закрыться этой
+        // зоной было МОЖНО, способность не работала: выбор оставался из трёх,
+        // а случайный добор по кинжалам регулярно вставал именно в неё —
+        // то есть купленная способность иногда играла ПРОТИВ игрока.
+        //
+        // Раньше здесь стоял довод «запрет отнял бы право ошибиться». Он
+        // неверен: право ошибиться остаётся между двумя живыми зонами, а
+        // третья — не ошибка, а заведомо пустой ход, за который уже заплачено
+        // жетонами.
+        if (zone === this.safeZone) return;
         // Щелчок, а не удар: выбор зоны — это переключение, самое мелкое
         // событие в бою.
         if (this.chosenDefense !== zone && typeof Haptics !== 'undefined') Haptics.tick();
@@ -403,16 +414,20 @@ const WrathDuel = {
         this.updateGuide();
     },
 
-    randomZone() {
-        const zones = Object.keys(this.ZONE_PARTS);
-        return zones[Math.floor(Math.random() * zones.length)];
+    // exclude — зона, которую брать нельзя. Нужна добору по кинжалам: он не
+    // имеет права поставить защиту туда, куда, как игрок уже видит, удара не
+    // будет.
+    randomZone(exclude) {
+        const zones = Object.keys(this.ZONE_PARTS).filter(z => z !== exclude);
+        const list = zones.length ? zones : Object.keys(this.ZONE_PARTS);
+        return list[Math.floor(Math.random() * list.length)];
     },
 
     // Тап по кинжалам: чего не выбрал — доберётся случайным, и только когда
     // выбрано всё, идёт раунд. Так же было и раньше.
     handleDaggerClick() {
         if (this.fightOver || this.isFighting || !this.fighters || !this.fighters.enemy) return;
-        if (this.chosenDefense === null) { this.selectDefense(this.randomZone()); return; }
+        if (this.chosenDefense === null) { this.selectDefense(this.randomZone(this.safeZone)); return; }
         if (this.chosenAttack === null) { this.selectAttack(this.randomZone()); return; }
         this.doRound();
     },
