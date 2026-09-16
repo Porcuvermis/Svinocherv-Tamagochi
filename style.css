@@ -490,3 +490,55 @@ body.debug-mode #build-stamp {
 @media (prefers-reduced-motion: reduce) {
     .wallet-fx-item { animation-duration: 0.6s; }
 }
+
+/* ---------- ИСКРЫ, ВЛЕТАЮЩИЕ В КОШЕЛЁК ----------
+   Ресурс не просто прибавился — он ПРИЛЕТЕЛ оттуда, где был. Искры сначала
+   коротко разлетаются (чтобы глаз увидел частицы, а не одну точку), а потом
+   их разом утягивает в счётчик. Разбор — в src/core/wallet-fx.js. */
+.wallet-fx-spark {
+    position: absolute;
+    /* БЛОК, а не строчный. Тег <i> по умолчанию строчный, и ширина с высотой
+       на нём не действуют вовсе: искры существовали в дереве, занимали ноль
+       на ноль и не были видны ни одной. */
+    display: block;
+    width: 10px;
+    height: 10px;
+    margin: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle,
+        #fff 0%, #fff 22%, rgba(255, 244, 200, 0.9) 48%, rgba(255, 200, 100, 0) 76%);
+    /* Свет ВОКРУГ искры, а не только сама точка: без ореола десяток белых
+       кружков читается как мусор на экране, а не как разлетевшаяся энергия. */
+    box-shadow: 0 0 7px rgba(255, 250, 225, 0.95), 0 0 16px rgba(255, 210, 130, 0.6);
+    /* Каждая искра едет ТРАНСФОРМАЦИЕЙ, то есть на видеокарте: их полсотни
+       разом, и любая правка раскладки на каждую стоила бы кадров. */
+    animation: wallet-fx-spark 750ms linear forwards;
+}
+
+/* Две фазы в одной анимации, и у каждой своё ускорение — оно задаётся НА
+   КАДРЕ, а не на всей анимации: разлёт тормозит к концу (ease-out), а полёт
+   в кошелёк, наоборот, разгоняется (ease-in). Одной кривой на всю анимацию
+   этого не сказать, а без разницы фаз искры просто плывут по прямой.
+
+   Гаснут они только В САМОМ КОНЦЕ: искра, потускневшая на полпути, не
+   долетает — а вся мысль в том, что ресурс ДОЛЕТЕЛ до счётчика. */
+@keyframes wallet-fx-spark {
+    0%   { opacity: 0;
+           transform: translate(-50%, -50%) scale(0.5);
+           animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1); }
+    13%  { opacity: 1;
+           transform: translate(calc(-50% + var(--sx)), calc(-50% + var(--sy))) scale(1.3); }
+    30%  { opacity: 1;
+           transform: translate(calc(-50% + var(--sx)), calc(-50% + var(--sy))) scale(1);
+           animation-timing-function: cubic-bezier(0.55, 0, 0.7, 0.35); }
+    92%  { opacity: 1;
+           transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.55); }
+    100% { opacity: 0;
+           transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wallet-fx-spark { animation-duration: 0.3s; }
+}

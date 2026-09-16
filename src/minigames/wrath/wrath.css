@@ -228,32 +228,44 @@
     pointer-events: none;
 }
 
-/* ---------- УДЕРЖАНИЕ: ТЕЛО НАЛИВАЕТСЯ СВЕТОМ ----------
-   Палец на черве — за семь десятых секунды тело заливается светом. Досидел,
-   и шрамов хватило — они СХОДЯТ ПОД ЭТИМ ЖЕ СВЕЧЕНИЕМ, а оно разлетается
-   вспышкой очищения. Не хватило — свечение коротко краснеет и гаснет.
+/* ---------- УДЕРЖАНИЕ: СВЕТЯТСЯ ШРАМЫ ----------
+   Палец на черве — за семь десятых секунды ШРАМЫ наливаются светом: заливаются
+   белым вместо своей текстуры и начинают светить наружу, как лампочки.
+   Досидел, и их хватило — они разлетаются искрами, и те влетают в кошелёк.
+   Не хватило — свет краснеет и гаснет.
 
-   Индикатор удержания и объяснение происходящего — одно движение. Раньше
-   здесь было кольцо над головой: оно говорило «что-то грузится», но не
-   говорило ЧТО, и к переработке шрамов отношения не имело вовсе — жест вёл
-   в отдельный экран прокачки, которого больше нет.
+   ---------- ЧТО БЫЛО ДО ----------
+   Светилось всё тело целиком. Выглядело эффектно и говорило не то: жест про
+   ШРАМЫ, а подсвечивался персонаж, и связь «светится — значит уйдёт» не
+   читалась. Теперь горит ровно то, что сейчас переработают.
 
-   Про фильтр на живом слое (docs/traps.md, п. 73): червь дышит и моргает, и
-   фильтр поверх него стоит дорого. Здесь это осознанно — разовая анимация,
-   пока палец прижат, а не постоянное состояние экрана. */
+   ---------- ПРО ФИЛЬТР НА ЖИВОМ СЛОЕ ----------
+   docs/traps.md, п. 73: фильтр на слое, который меняется каждый кадр, стоит
+   дорого. Поэтому свечение висит на СЛОЯХ ШРАМОВ (их шесть, по числу частей
+   тела), а не на каждой отметине по отдельности — отметин бывает под сорок.
+   И это разовая анимация, пока палец прижат, а не состояние экрана. */
 .wrath-lobby-box { position: relative; }
 
-.wrath-lobby-box.charging .worm-stage svg {
-    animation: worm-charge 700ms linear forwards;
+/* Заливка: шрам теряет свою текстуру и становится светом. */
+.wrath-lobby-box.charging .worm-mark-scar path,
+.wrath-lobby-box.cleansed .worm-mark-scar path { fill: #fff; }
+
+.wrath-lobby-box.charging .worm-mark-scar polyline,
+.wrath-lobby-box.cleansed .worm-mark-scar polyline { stroke: #fff; opacity: 1; }
+
+.wrath-lobby-box.charging .worm-scar-layer {
+    animation: scars-charge 700ms ease-in forwards;
 }
 
-@keyframes worm-charge {
-    0%   { filter: brightness(1) saturate(1); }
-    100% { filter: brightness(2.6) saturate(0.25); }
+@keyframes scars-charge {
+    0%   { filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+    100% { filter: drop-shadow(0 0 5px rgba(255, 252, 230, 0.95))
+                   drop-shadow(0 0 13px rgba(255, 226, 150, 0.7)); }
 }
 
-/* Ореол вокруг тела: собственно «свечение». Отдельным слоем, чтобы фильтр
-   на червя остался дешёвым, а мягкий свет делал обычный градиент. */
+/* Ореол вокруг тела — подпор для свечения шрамов: без него свет есть только
+   на самих отметинах и не «стоит в воздухе». Обычный градиент отдельным
+   слоем, чтобы не платить ещё одним фильтром. */
 .hold-glow {
     position: absolute;
     inset: -12%;
@@ -262,9 +274,9 @@
     opacity: 0;
     z-index: 24;
     background: radial-gradient(circle at 50% 55%,
-        rgba(255, 255, 255, 0.85) 0%,
-        rgba(255, 240, 200, 0.45) 32%,
-        rgba(255, 210, 140, 0) 68%);
+        rgba(255, 255, 255, 0.35) 0%,
+        rgba(255, 240, 200, 0.18) 34%,
+        rgba(255, 210, 140, 0) 66%);
 }
 
 .wrath-lobby-box.charging .hold-glow {
@@ -272,65 +284,68 @@
 }
 
 @keyframes hold-glow-rise {
-    0%   { opacity: 0;    transform: scale(0.72); }
-    100% { opacity: 0.95; transform: scale(1.12); }
+    0%   { opacity: 0;   transform: scale(0.72); }
+    100% { opacity: 0.9; transform: scale(1.1); }
 }
 
 /* ---------- ОЧИЩЕНИЕ ----------
-   Шрамов хватило: свечение разлетается по экрану и растворяется само. Тело
-   в этот момент перерисовывается уже без шрамов — под вспышкой, поэтому их
-   исчезновение читается как её работа, а не как подмена картинки. */
+   Шрамов хватило: они вспыхивают и ИСЧЕЗАЮТ, рассыпавшись искрами. Сами
+   искры рисует общий слой кошелька (src/core/wallet-fx.js) — они летят в
+   счётчик жетонов, и потому живут не здесь, а там, где их цель. */
+.wrath-lobby-box.cleansed .worm-scar-layer {
+    animation: scars-burst 420ms ease-out forwards;
+}
+
+@keyframes scars-burst {
+    0%   { opacity: 1; filter: drop-shadow(0 0 5px rgba(255, 252, 230, 0.95))
+                               drop-shadow(0 0 13px rgba(255, 226, 150, 0.7)); }
+    18%  { opacity: 1; filter: drop-shadow(0 0 12px #fff) drop-shadow(0 0 26px #fff); }
+    100% { opacity: 0; filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+}
+
 .wrath-lobby-box.cleansed .hold-glow {
     animation: hold-burst 900ms cubic-bezier(0.18, 0.7, 0.3, 1) forwards;
 }
 
 @keyframes hold-burst {
-    0%   { opacity: 0.95; transform: scale(1.12); }
-    22%  { opacity: 1;    transform: scale(1.7); }
-    100% { opacity: 0;    transform: scale(3.2); }
-}
-
-.wrath-lobby-box.cleansed .worm-stage svg {
-    animation: worm-cleansed 900ms ease-out forwards;
-}
-
-@keyframes worm-cleansed {
-    0%   { filter: brightness(2.6) saturate(0.25); }
-    18%  { filter: brightness(3.4) saturate(0); }
-    100% { filter: brightness(1) saturate(1); }
+    0%   { opacity: 0.9; transform: scale(1.1); }
+    20%  { opacity: 1;   transform: scale(1.75); }
+    100% { opacity: 0;   transform: scale(3.2); }
 }
 
 /* ---------- ОТКАЗ ----------
-   Шрамов не набралось: то же свечение коротко краснеет и умирает. Тот же
-   язык, что у кошелька, которому не хватило, — красная вспышка на месте
-   причины (docs/plan/11-no-words.md). */
+   Шрамов не набралось: тот же свет краснеет и умирает, шрамы остаются на
+   месте. Тот же язык, что у кошелька, которому не хватило, — красная вспышка
+   там, где причина (docs/plan/11-no-words.md). */
+.wrath-lobby-box.refused .worm-mark-scar path { fill: #ff5a46; }
+
+.wrath-lobby-box.refused .worm-scar-layer {
+    animation: scars-refuse 450ms ease-out forwards;
+}
+
+@keyframes scars-refuse {
+    0%   { filter: drop-shadow(0 0 10px rgba(255, 90, 70, 0.95)); }
+    100% { filter: drop-shadow(0 0 0 rgba(255, 90, 70, 0)); }
+}
+
 .wrath-lobby-box.refused .hold-glow {
     background: radial-gradient(circle at 50% 55%,
-        rgba(255, 90, 70, 0.8) 0%,
-        rgba(255, 59, 48, 0.35) 38%,
+        rgba(255, 90, 70, 0.55) 0%,
+        rgba(255, 59, 48, 0.25) 38%,
         rgba(255, 59, 48, 0) 70%);
     animation: hold-refuse 450ms ease-out forwards;
 }
 
 @keyframes hold-refuse {
-    0%   { opacity: 0.95; transform: scale(1.12); }
-    35%  { opacity: 1;    transform: scale(1.2); }
-    100% { opacity: 0;    transform: scale(0.9); }
-}
-
-.wrath-lobby-box.refused .worm-stage svg {
-    animation: worm-refused 450ms ease-out forwards;
-}
-
-@keyframes worm-refused {
-    0%   { filter: brightness(2.6) saturate(0.25); }
-    100% { filter: brightness(1) saturate(1); }
+    0%   { opacity: 0.9; transform: scale(1.1); }
+    35%  { opacity: 1;   transform: scale(1.18); }
+    100% { opacity: 0;   transform: scale(0.9); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .wrath-lobby-box.charging .worm-stage svg,
-    .wrath-lobby-box.cleansed .worm-stage svg,
-    .wrath-lobby-box.refused .worm-stage svg { animation-duration: 1ms; }
+    .wrath-lobby-box.charging .worm-scar-layer,
+    .wrath-lobby-box.cleansed .worm-scar-layer,
+    .wrath-lobby-box.refused .worm-scar-layer { animation-duration: 1ms; }
 }
 
 /* ---------- РЕЖИМЫ ---------- */

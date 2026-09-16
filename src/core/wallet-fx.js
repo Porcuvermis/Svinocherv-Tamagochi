@@ -83,6 +83,59 @@ const WalletFx = {
         return el;
     },
 
+    // ---------- ИСКРЫ В КОШЕЛЁК ----------
+    // Ресурс не просто прибавился — он ПРИЛЕТЕЛ откуда-то. Вызывающий даёт
+    // точки, из которых он берётся (экранные координаты), и валюту, в чей
+    // счётчик всё это влетает.
+    //
+    // Первым делом искры коротко разлетаются в стороны, и только потом их
+    // разом утягивает в счётчик. Разлёт нужен, чтобы глаз успел заметить, что
+    // это ЧАСТИЦЫ, а не одна точка: без него получается прямая линия из
+    // ниоткуда в кошелёк, и читается она как артефакт, а не как событие.
+    SPARK_MS: 750,
+    SPARKS_PER_POINT: 3,
+    SPARKS_MAX: 48,
+
+    sparks(key, points, opts) {
+        const layer = this.layer();
+        const chip = this.at(key);
+        if (!layer || !chip || !points || !points.length) return;
+
+        const host = layer.getBoundingClientRect();
+        const scale = (host.width / (layer.offsetWidth || 1)) || 1;
+        const box = chip.getBoundingClientRect();
+        const toX = (box.left + box.width / 2 - host.left) / scale;
+        const toY = (box.top + box.height / 2 - host.top) / scale;
+
+        const per = Math.max(1, Math.min(
+            (opts && opts.per) || this.SPARKS_PER_POINT,
+            Math.ceil(this.SPARKS_MAX / points.length)));
+
+        points.forEach(pt => {
+            const x = (pt.x - host.left) / scale;
+            const y = (pt.y - host.top) / scale;
+            for (let i = 0; i < per; i++) {
+                const node = document.createElement('i');
+                node.className = 'wallet-fx-spark';
+                node.style.left = x.toFixed(1) + 'px';
+                node.style.top = y.toFixed(1) + 'px';
+                // Разлёт — в случайную сторону, но недалеко: это вспышка, а
+                // не фейерверк, и через миг всё уже летит в одну точку.
+                const a = Math.random() * Math.PI * 2;
+                const r = 14 + Math.random() * 26;
+                node.style.setProperty('--sx', (Math.cos(a) * r).toFixed(1) + 'px');
+                node.style.setProperty('--sy', (Math.sin(a) * r).toFixed(1) + 'px');
+                node.style.setProperty('--dx', (toX - x).toFixed(1) + 'px');
+                node.style.setProperty('--dy', (toY - y).toFixed(1) + 'px');
+                // Разнобой в пару десятков миллисекунд: одновременный старт
+                // всех искр выглядит как одна большая частица.
+                node.style.animationDelay = (Math.random() * 90).toFixed(0) + 'ms';
+                layer.appendChild(node);
+                setTimeout(() => node.remove(), this.SPARK_MS + 200);
+            }
+        });
+    },
+
     // mark — необязательная замена значка. Нужна счётчикам, которых нет в
     // GameState.currencies: зубы и здоровье забега живут внутри самого забега,
     // но показываются точно так же — цифра вылетает из своего счётчика.

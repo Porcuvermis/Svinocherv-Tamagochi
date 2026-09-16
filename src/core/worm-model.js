@@ -474,14 +474,31 @@ function createVariedWormModel(seed) {
 // ЗДЕСЬ, в одном месте на всю игру. Иначе пришлось бы дописывать по строчке
 // в каждую из восьми точек, где модель загружают, и первая же забытая
 // означала бы «в ванной цилиндр пропадает».
+// ---------- ЧТО ЖИВЁТ В СОСТОЯНИИ, А НЕ В МОДЕЛИ ----------
+// Наряд и ШРАМЫ хранятся не в файле модели, а в состоянии игрока: модель —
+// это анатомия и цвета, а надетое и нажитое приходит из GameState. Обе вещи
+// подставляются здесь, в одном месте, и потому видны ВЕЗДЕ, где персонажа
+// монтируют.
+//
+// Шрамы сюда переехали не сразу, и это стоило бага: их подставлял себе
+// главный экран (worm.js), а мини-игры звали тот же loadWormModel() и
+// получали модель с пустым списком. Червь в лобби гнева, на кухне, в ванной
+// и на дорожке был БЕЗ ШРАМОВ — и оставался таким даже после перезахода,
+// потому что подставить их было некому (docs/traps.md, п. 98).
 function withCosmetics(model) {
     model.cosmetics = wormCosmeticsFromState();
+    model.scars = wormScarsFromState();
     return model;
 }
 
 function wormCosmeticsFromState() {
     const st = (typeof GameState !== 'undefined' && GameState.data) ? GameState.data : null;
     return st && st.cosmetics ? st.cosmetics : {};
+}
+
+function wormScarsFromState() {
+    const st = (typeof GameState !== 'undefined' && GameState.data) ? GameState.data : null;
+    return (st && st.scars) ? st.scars : [];
 }
 
 function loadWormModel() {

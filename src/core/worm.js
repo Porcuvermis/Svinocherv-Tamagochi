@@ -18,9 +18,15 @@ function wormMarksFromState() {
 // Перерисовать червя с актуальными отметинами. Дёргается, когда появилась
 // новая: пересборка SVG — вещь недешёвая, поэтому по событию, а не по
 // таймеру и не на каждое сохранение состояния.
+//
+// Экранов с живым червём может быть два сразу: главный и открытая мини-игра.
+// Поэтому кроме своего экземпляра кричим по шине — кто смонтировал персонажа,
+// тот и подновит себя сам. Без этого шрам появлялся в комнате мгновенно, а в
+// лобби гнева — никогда (docs/traps.md, п. 98).
 function refreshWormMarks() {
-    if (!MainWormHandle) return;
-    MainWormHandle.setOverride({ scars: wormMarksFromState() });
+    const scars = wormMarksFromState();
+    if (MainWormHandle) MainWormHandle.setOverride({ scars });
+    if (typeof GameEvents !== 'undefined') GameEvents.emit('worm-marks', { scars });
 }
 
 // ================= ПИЩЕВАРЕНИЕ: ОТ МЕТКИ ВРЕМЕНИ К КАРТИНКЕ =================
@@ -356,11 +362,9 @@ function initWorm() {
         const model = window.WormModelAPI.loadWormModel();
         MainWormModel = model;
 
-        // Внешность червя (модель) и его летопись (отметины) — разные вещи и
-        // хранятся раздельно: модель это «как он устроен», отметины — «что с
-        // ним было». Правда об отметинах живёт в состоянии игрока, а сюда
-        // они попадают только на время отрисовки.
-        model.scars = wormMarksFromState();
+        // Отметины сюда больше не подставляются: их кладёт сам
+        // loadWormModel(), и потому они видны ВЕЗДЕ, где монтируют персонажа,
+        // а не только на главном экране (docs/traps.md, п. 98).
 
         MainWormHandle = window.WormRenderer.mount(container, model, {
             context: 'main',
