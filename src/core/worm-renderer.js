@@ -79,8 +79,11 @@ const MOUTH_ARC_K = 0.5522847498;
 // пустым светлым пятном под ртом. Хуже того, Y рта был зашит ВТОРОЙ РАЗ в
 // живом пересчёте поворота головы, поэтому при повороте рот прыгал обратно
 // на старое место.
-const SNOUT_Y = 0.36;
-const MOUTH_Y = 0.68;
+// Высоты черт лица живут в `worm-silhouette.js` вместе с силуэтом: по ним
+// же размещение отметин узнаёт, где на голове уже занято. Две копии одного
+// числа — это ровно тот способ, которым шрамы и оказались на глазу.
+const SNOUT_Y = WormSilhouette.face.snoutY;
+const MOUTH_Y = WormSilhouette.face.mouthY;
 // Границы «морды» выводятся из них же, а не задаются отдельно: сверху она
 // начинается заметно выше пятачка (переход к переносице), снизу закрывает
 // рот с небольшим запасом на подбородок.
@@ -2083,7 +2086,7 @@ function buildAnatomyStack(ctx, partName, opts) {
 // Азимуты НЕ выдуманы, а посчитаны из нынешних анфасных отступов
 // (phi = asin(offset / rx)), поэтому yaw = 0 воспроизводит сегодняшнюю
 // голову с точностью до пикселя, и правка безопасна.
-const YAW_MAX_DEG = 42;   // сколько градусов даёт yaw = 1
+const YAW_MAX_DEG = WormSilhouette.YAW_MAX_DEG;   // сколько градусов даёт yaw = 1
 
 // ---------- ИМЕНОВАННЫЕ ПОЗЫ ГОЛОВЫ ----------
 // Ось непрерывная — это механизм. Позы — словарь: код игры говорит
@@ -2105,28 +2108,17 @@ const WORM_HEAD_POSES = { left: -0.5, center: 0, right: 0.5 };
 // сторону сильнее, чем лежащие на поверхности: они дальше от оси вращения.
 // Это и есть главный признак ракурса — нос уходит с центра лица.
 function yawProject(rx, phiDeg, yaw, protrude) {
-    const theta = yaw * YAW_MAX_DEG;
-    const a = (phiDeg + theta) * Math.PI / 180;
-    const reach = rx * (1 + (protrude || 0));
-    // Сжатие НОРМИРОВАНО на своё же значение при нулевом повороте.
+    // Сам расчёт — в `worm-silhouette.js`: им пользуется и размещение
+    // отметин, и оно обязано считать ракурс ТЕМ ЖЕ способом, иначе шрам
+    // проверен в одном месте, а нарисован в другом.
     //
-    // Без нормировки squash = cos(phi) уже при анфасе: у глаза на азимуте
-    // 40° это 0.77, у уха на 73° — 0.29. То есть черты оказывались
-    // сплющены В САМОМ АНФАСЕ, и обещание «yaw = 0 воспроизводит прежнюю
-    // голову» держалось только для позиций, но не для ширин. Замер это и
-    // показал: оба уха выходили одинаково узкими даже в центральной позе.
-    //
-    // Нас интересует не абсолютный ракурс черты, а ИЗМЕНЕНИЕ ракурса от
-    // поворота головы. Отсюда деление на cos(phi).
-    const base = Math.cos(phiDeg * Math.PI / 180);
-    const rel = Math.abs(base) > 1e-3 ? Math.cos(a) / base : Math.cos(a);
-    return {
-        x: reach * Math.sin(a),
-        // Верхний предел: ближняя черта при повороте к зрителю честно
-        // становится шире, но раздувать её сверх меры незачем.
-        squash: Math.min(1.08, rel),
-        front: rel > 0.08
-    };
+    // Сжатие НОРМИРОВАНО на своё же значение при нулевом повороте. Без
+    // нормировки squash = cos(phi) уже при анфасе: у глаза на азимуте 40° это
+    // 0.77, у уха на 73° — 0.29, то есть черты оказывались сплющены В САМОМ
+    // АНФАСЕ, и обещание «yaw = 0 воспроизводит прежнюю голову» держалось
+    // только для позиций, но не для ширин.
+    const p = WormSilhouette.yawProject(phiDeg, yaw);
+    return { x: rx * (1 + (protrude || 0)) * p.x, squash: p.squash, front: p.front };
 }
 
 // Азимут черты, стоящей при анфасе на расстоянии offset от центра лица.
@@ -2337,6 +2329,7 @@ function buildSegmentNode(partName, seg, ctx, opts) {
     // единый (см. createHullLayers) — иначе на каждом стыке виден шов, и тело
     // читается стопкой отдельных шаров, а не одним существом.
     const ellipse = svgEl('ellipse', {
+        class: 'worm-part-shape',
         cx: 0, cy: 0,
         rx: baseRx.toFixed(2),
         ry: baseRy.toFixed(2),
@@ -2400,7 +2393,7 @@ function buildTailNode(tail, ctx, attachRadius) {
         highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
         shadow: -0.32, shadowTint: GRIME_SHADOW
     });
-    const path = svgEl('path', { d, fill: fillUrl, stroke: tail.stroke, 'stroke-width': SW.contour });
+    const path = svgEl('path', { class: 'worm-part-shape', d, fill: fillUrl, stroke: tail.stroke, 'stroke-width': SW.contour });
 
     // Внутренняя группа для "живого" изгиба хвоста — вращается вокруг точки
     // крепления (0,0), не требует пересборки SVG, обновляется напрямую через
@@ -2439,7 +2432,6 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     // глаз при повороте вылезал за контур лица.
     const headRx = yawCtx ? yawCtx.headRx : (eye.offsetX / 0.55);
     const phi = yawAzimuth(eye.offsetX * mirror, headRx);
-    const proj = yawProject(headRx, phi, yaw, 0);
     const y = eye.offsetY;
     // Ракурсное сокращение: дальний глаз сплющивается по горизонтали.
     // Ограничено снизу — полностью схлопнутый глаз читается дефектом,
@@ -2447,19 +2439,21 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     // Нижний предел сжатия. 0.42 давал дальний глаз-щёлочку, которая
     // читалась дефектом отрисовки, а не ракурсом: у стилизованного персонажа
     // глаз обязан остаться глазом. Ракурс здесь уступает читаемости.
-    const yawSquash = Math.max(0.58, Math.abs(proj.squash));
-
     // Сжатие НЕ запекается в rx: иначе при живом повороте пришлось бы
     // пересобирать всю внутреннюю геометрию глаза (склера, радужка, веко,
     // clipPath) каждый кадр. Оно живёт в scale() группы — там его можно
     // переставить одним атрибутом.
     const rx = 8 * eye.stretchX * eye.scale;
     const ry = 8 * eye.stretchY * eye.scale;
-    // Страховка: даже на правильной поверхности глаз со своей шириной может
-    // задеть контур. Держим его целиком внутри лица — наполовину срезанный
-    // глаз читается браком отрисовки, а не ракурсом.
-    const xLimit = (yawCtx && yawCtx.maxAbsX != null) ? Math.max(0, yawCtx.maxAbsX - rx * yawSquash * 1.12) : Infinity;
-    const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), xLimit);
+    // Посадка глаза — в `worm-silhouette.js`: и проекция, и прижим к лицу
+    // (дальний глаз подбирается внутрь, чтобы не вылезти за контур). Там же
+    // её спрашивает размещение шрамов, когда решает, свободно ли место. Пока
+    // формула жила только здесь, шрам считал глаз стоящим дальше, чем он
+    // нарисован, и при полном повороте ложился ему на белок.
+    const rxHead = (yawCtx && yawCtx.rxHead) || headRx;
+    const place = WormSilhouette.eyePlace(phi, yaw, rx / rxHead);
+    const yawSquash = place.squash;
+    const x = place.x * rxHead;
 
     const group = svgEl('g', {
         'data-part': `eye-${eyeKey}`,
@@ -3015,63 +3009,12 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
 // кубическими кривыми и симметрична; все пропорции — параметры модели
 // (`head.skull`), а не числа в коде, поэтому череп можно менять под возраст,
 // породу или настроение, не трогая рендерер.
+// Контур черепа. Сами кривые живут в `worm-silhouette.js` — ОДНИМ описанием
+// на рисование и на размещение отметин. Пока описаний было два (кривые здесь,
+// вписанный круг там), шрамы честно влезали в круг и висели в воздухе рядом с
+// головой: круг шире черепа у лба и у подбородка (docs/traps.md, п. 103).
 function skullPathData(rx, ry, p, yaw) {
-    const brow = (p.browWidth != null ? p.browWidth : 0.62) * rx;   // ширина свода у макушки
-    const temple = (p.templeWidth != null ? p.templeWidth : 0.97) * rx;
-    const cheek = (p.cheekWidth != null ? p.cheekWidth : 1) * rx;   // самое широкое место
-    const jaw = (p.jawWidth != null ? p.jawWidth : 0.78) * rx;
-    const muzzle = (p.muzzleWidth != null ? p.muzzleWidth : 0.46) * rx;
-    const chin = (p.chinDrop != null ? p.chinDrop : 1.04) * ry;
-
-    // ---------- АСИММЕТРИЯ ЧЕРЕПА ПРИ ПОВОРОТЕ ----------
-    // Без неё поворот читается наполовину: черты уезжают вбок по СИММЕТРИЧНОЙ
-    // маске, и лицо выглядит не повёрнутым, а съехавшим.
-    //
-    // Что происходит при развороте на реальной голове:
-    //   • сторона, КУДА смотрит лицо: свод виден с ребра и оптически уже,
-    //     зато на этот край выходит морда — низ становится шире;
-    //   • затылочная сторона: наоборот, купол разворачивается к зрителю и
-    //     становится полнее, а низ подбирается.
-    // Знак yaw соответствует стороне, куда уезжает пятачок (см. yawProject).
-    const yw = yaw || 0;
-    const faceSide = yw >= 0 ? 1 : -1;
-    const t = Math.abs(yw);
-    const kTopFace = 1 - 0.13 * t, kLowFace = 1 + 0.17 * t;
-    const kTopBack = 1 + 0.11 * t, kLowBack = 1 - 0.12 * t;
-
-    const half = (side) => {
-        const k = side;
-        const isFace = side === faceSide;
-        const up = isFace ? kTopFace : kTopBack;   // свод, виски, скулы
-        const lo = isFace ? kLowFace : kLowBack;   // челюсть, морда, подбородок
-        return `C ${(k * brow * up).toFixed(1)},${(-ry * 0.99).toFixed(1)} ${(k * temple * up).toFixed(1)},${(-ry * 0.72).toFixed(1)} ${(k * cheek * up).toFixed(1)},${(-ry * 0.08).toFixed(1)} ` +
-               `C ${(k * cheek * 0.99 * lo).toFixed(1)},${(ry * 0.3).toFixed(1)} ${(k * jaw * lo).toFixed(1)},${(ry * 0.56).toFixed(1)} ${(k * muzzle * lo).toFixed(1)},${(ry * 0.84).toFixed(1)} ` +
-               `C ${(k * muzzle * 0.92 * lo).toFixed(1)},${(chin * 0.97).toFixed(1)} ${(k * muzzle * 0.45 * lo).toFixed(1)},${chin.toFixed(1)} 0,${chin.toFixed(1)}`;
-    };
-    // Вниз по правой стороне, потом обратно вверх по левой.
-    return `M 0,${(-ry).toFixed(1)} ${half(1)} ` +
-           `${half(-1).replace('C', 'C').split(' ').reverse().length ? '' : ''}` +
-           reverseHalf(half(-1)) + ' Z';
-}
-
-// Левая половина строится теми же кривыми, но проходится в обратном
-// направлении — иначе контур пришлось бы дублировать вручную и он рисковал
-// разъехаться при правке пропорций.
-function reverseHalf(dRight) {
-    // dRight: "C a,b c,d e,f C g,h i,j k,l" — разворачиваем порядок сегментов
-    // и меняем местами контрольные точки внутри каждого.
-    const segs = dRight.trim().split('C').filter(Boolean).map(seg => {
-        const nums = seg.trim().split(/[ ,]+/).map(Number);
-        return { c1: [nums[0], nums[1]], c2: [nums[2], nums[3]], p: [nums[4], nums[5]] };
-    });
-    let d = '';
-    for (let i = segs.length - 1; i >= 0; i--) {
-        const target = i === 0 ? null : segs[i - 1].p;
-        const seg = segs[i];
-        const end = target || [0, segs[0].c1[1]];
-        d += ` C ${seg.c2[0].toFixed(1)},${seg.c2[1].toFixed(1)} ${seg.c1[0].toFixed(1)},${seg.c1[1].toFixed(1)} ${end[0].toFixed(1)},${end[1].toFixed(1)}`;
-    }
-    return d;
+    return WormSilhouette.skullPath(rx, ry, p, yaw);
 }
 
 // ---------- ПОСТРОЕНИЕ ГОЛОВЫ (череп, морда, уши, пятачок, рот, глаза) ----------
@@ -3106,7 +3049,7 @@ function buildHeadNode(model, ctx) {
     if (flipGroup) { group.appendChild(flipGroup); flipGroup.appendChild(tiltGroup); }
     else group.appendChild(tiltGroup);
 
-    const R = 40 * head.scale;
+    const R = WormSilhouette.face.headR * head.scale;
     const rx = R * head.stretchX;
     const ry = R * head.stretchY;
     const skullD = skullPathData(rx, ry, skullCfg, headYaw);
@@ -3117,7 +3060,9 @@ function buildHeadNode(model, ctx) {
         highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
         shadow: -0.34, shadowTint: GRIME_SHADOW
     });
-    const skull = svgEl('path', { d: skullD, fill: headFill, stroke: head.stroke, 'stroke-width': SW.contour, 'stroke-linejoin': 'round' });
+    // Класс на силуэте — чтобы прогон мог спросить «внутри ли шрам»
+    // у САМОГО контура, а не угадывать его первым path в группе.
+    const skull = svgEl('path', { class: 'worm-part-shape', d: skullD, fill: headFill, stroke: head.stroke, 'stroke-width': SW.contour, 'stroke-linejoin': 'round' });
 
     // Клип по РЕАЛЬНОЙ форме черепа: все слои кожи, складки и щетина
     // обрезаются силуэтом головы, а не вписанным эллипсом.
@@ -3538,12 +3483,12 @@ function buildHeadNode(model, ctx) {
     const eyesGroup = svgEl('g', { 'data-part': 'eyes' });
     // Полуширина черепа на высоте глаз (между виском и скулой) и с поправкой
     // на сужение повёрнутой стороны — она же служит ограничителем.
-    const EYE_SURFACE_K = 0.86;
+    const EYE_SURFACE_K = WormSilhouette.face.eyeSurfaceK;
     const eyeSurfaceRx = rx * EYE_SURFACE_K;
     const yawCtx = {
         yaw: headYaw,
         headRx: eyeSurfaceRx,
-        maxAbsX: eyeSurfaceRx * (1 - 0.13 * Math.abs(headYaw))
+        rxHead: rx
     };
     const eyeLeft = buildEyeNode(model.eyes.left, -1, ctx.instanceId, 'left', ctx.defs, yawCtx);
     const eyeRight = buildEyeNode(model.eyes.right, 1, ctx.instanceId, 'right', ctx.defs, yawCtx);
@@ -3608,71 +3553,33 @@ function buildHeadNode(model, ctx) {
 //
 // Пересчитывать нужно ровно шесть вещей: путь черепа (он асимметричен),
 // трансформы двух глаз, двух ушей, пятачка с мордой и рта.
-// ---------- ШРАМ НЕ САДИТСЯ НА ГЛАЗ ----------
-// Глаз стоит на своём азимуте (yawPhi) и на своей высоте. Если шрам попал в
-// ту же угловую полосу И в ту же высоту — его азимут отодвигается за глаз, в
-// ближайшую свободную сторону.
+// ---------- ШРАМЫ ГОЛОВЫ ПРИ ЖИВОМ ПОВОРОТЕ ----------
+// Шрам — точка НА КОЖЕ: у него есть азимут вокруг вертикальной оси и высота.
+// Куда он попадёт на экране, считает `WormSilhouette.skinPoint` — та самая
+// функция, которой размещение проверяло место. Пока функций было две (здесь
+// проекция по шару радиуса rx, там разрешённые прямоугольники), шрам был
+// проверен в одном месте, а нарисован в другом — и висел рядом с головой
+// в воздухе (docs/traps.md, п. 103).
 //
-// Сравнение именно угловое: глаз и шрам поворачиваются вместе, поэтому
-// разошедшиеся по азимуту не сойдутся ни при каком ракурсе.
-// Запас поверх суммы половин — чтобы шрам не касался ресниц.
-const HEAD_SCAR_EYE_KEEP = 7;
-
-function headScarAzimuth(headRef, phiDeg, y, halfLen, halfHigh) {
-    const eyes = headRef.eyes || {};
-    const rx = headRef.rx || 1;
-    const surf = headRef.eyeSurfaceRx || rx;
-    const asDeg = (v) => Math.asin(Math.max(-1, Math.min(1, v))) * 180 / Math.PI;
-    let phi = phiDeg;
-    ['left', 'right'].forEach(side => {
-        const e = eyes[side];
-        if (!e) return;
-        // Высоты не пересекаются — угол трогать незачем: шрам на подбородке
-        // спокойно живёт под глазом.
-        // Полоса высоты глаза — от его РЕАЛЬНОГО габарита. У глаза известен
-        // только горизонтальный радиус, а по вертикали он примерно в полтора
-        // раза выше своей ширины (ресницы и складки), — замер это и показал:
-        // при коэффициенте 1.2 шрам, который на экране задевает веко, в
-        // полосу не попадал и не отодвигался.
-        if (Math.abs(y - e.offsetY) > Math.abs(e.baseRx) * 1.5 + (halfHigh || 0)) return;
-
-        // ---------- ОДНА СИСТЕМА ОТСЧЁТА ----------
-        // Азимут глаза размечен по ЕГО поверхности (eyeSurfaceRx), азимут
-        // шрама — по радиусу головы. Это разные сферы, и сравнивать углы
-        // напрямую нельзя: один и тот же экранный сдвиг даёт на них разные
-        // углы. Переводим глаз на сферу шрама через общую величину —
-        // горизонтальный вынос.
-        const eyePhi = asDeg(surf * Math.sin(e.yawPhi * Math.PI / 180) / rx);
-        // Отступ считается от РАЗМЕРОВ, а не числом из головы: глаз сам по
-        // себе занимает два десятка градусов, и постоянная от его ЦЕНТРА
-        // оставляла шрам лежать на ресницах.
-        const keep = asDeg(Math.abs(e.baseRx) / rx)
-                   + asDeg((halfLen || 0) / rx)
-                   + HEAD_SCAR_EYE_KEEP;
-        const d = phi - eyePhi;
-        if (Math.abs(d) >= keep) return;
-        phi = eyePhi + (d >= 0 ? keep : -keep);
-    });
-    // За затылок не уводим: там отметину всё равно не видно никогда.
-    return Math.max(-88, Math.min(88, phi));
-}
-
-// ---------- ШРАМЫ ГОЛОВЫ ПОД РАКУРСОМ ----------
-// Считаются ровно как глаза: азимут на сфере → проекция, сжатие, видимость.
-// Отдельная функция, потому что зовётся и при сборке (голова могла быть
-// собрана уже повёрнутой), и из applyHeadYaw при каждом повороте.
+// Разводка с глазами, пятачком и ртом здесь НЕ делается: место, которое
+// задевает черту лица, просто не выдаётся при размещении — и не выдаётся ни
+// при каком ракурсе. Отодвигать шрам на лету значило бы ломать ровно ту
+// проверку, которой он прошёл.
 function applyHeadScars(headRef, yaw) {
+
     const list = headRef.scars;
     if (!list || !list.length) return;
+    const rx = headRef.rx || 1;
+    const ratio = (headRef.ry || rx) / rx;
     for (let i = 0; i < list.length; i++) {
         const sc = list[i];
-        const proj = yawProject(headRef.rx, sc.phiDeg, yaw, 0);
-        if (!proj.front) { setAttr(sc.node, 'display', 'none'); continue; }
+        // v — высота в долях rx, как её вернуло размещение.
+        const skin = WormSilhouette.skinPoint(sc.phiDeg, sc.y / rx, headRef.skullCfg, yaw, ratio, sc.halfX, sc.halfY);
+        if (!skin.front) { setAttr(sc.node, 'display', 'none'); continue; }
         setAttr(sc.node, 'display', null);
-        const squash = Math.max(0.12, Math.abs(proj.squash));
         setAttr(sc.node, 'transform',
-            `translate(${proj.x.toFixed(2)},${sc.y.toFixed(2)}) `
-            + `scale(${squash.toFixed(3)},1) rotate(${sc.rotation.toFixed(1)})`);
+            `translate(${(skin.x * rx).toFixed(2)},${sc.y.toFixed(2)}) `
+            + `scale(${Math.max(0.05, skin.squash).toFixed(3)},1) rotate(${sc.rotation.toFixed(1)})`);
     }
 }
 
@@ -3691,16 +3598,15 @@ function applyHeadYaw(headRef, yaw) {
     }
 
     // Глаза: посадка по поверхности + ракурсное сжатие через scale группы.
-    const maxAbsX = headRef.eyeSurfaceRx * (1 - 0.13 * Math.abs(yaw));
+    // Та же посадка, что и при сборке, и та же, которую спрашивает
+    // размещение шрамов. Формула ОДНА: пока она была записана трижды, две
+    // копии из трёх успевали разойтись.
     ['left', 'right'].forEach(side => {
         const e = headRef.eyes[side];
         if (!e) return;
-        const proj = yawProject(headRef.eyeSurfaceRx, e.yawPhi, yaw, 0);
-        const squash = Math.max(0.58, Math.abs(proj.squash));
-        const limit = Math.max(0, maxAbsX - e.baseRx * squash * 1.12);
-        const x = Math.sign(proj.x) * Math.min(Math.abs(proj.x), limit);
+        const place = WormSilhouette.eyePlace(e.yawPhi, yaw, e.baseRx / rx);
         setAttr(e.group, 'transform',
-            `translate(${x.toFixed(2)},${e.offsetY}) scale(${squash.toFixed(3)},1)`);
+            `translate(${(place.x * rx).toFixed(2)},${e.offsetY}) scale(${place.squash.toFixed(3)},1)`);
     });
 
     // Уши: пересчитываем якорь и сжатие, но САМ трансформ не пишем — его
@@ -3778,9 +3684,14 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
     const color = WormMarks.color(skinColor || FLESH[500], mark.kind);
     const rng = WormMarks.rng(mark.seed || 0, 'draw');
 
-    const half = Math.max(2.5, geo.length * hostRadius * 0.5);
-    const wide = Math.max(0.9, geo.width * hostRadius);
-    const bend = geo.curve * half * 0.5;
+    // Размеры берутся у WormMarks, а не считаются здесь заново: по ним же
+    // размещение проверяло, влезает ли шрам в силуэт. Пока формула была
+    // записана дважды, шрам рисовался вдвое шире, чем его мерили, и вылезал
+    // за контур на глазок (docs/traps.md, п. 103).
+    const ext = WormMarks.extent(geo, hostRadius);
+    const half = ext.half;
+    const wide = ext.wide;
+    const bend = (geo.curve || 0) * half * 0.5;
 
     // Осевая линия шрама — дуга, а не отрезок.
     const axisAt = (u) => ({          // u: -1..1
@@ -3820,7 +3731,12 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
         transform: `translate(${(place.x * hostRadius).toFixed(2)},${(place.y * hostRadius).toFixed(2)})`
                  + (squashY < 0.999 ? ` scale(1,${squashY.toFixed(3)})` : '')
                  + ` rotate(${place.rotation.toFixed(1)})`,
-        class: `worm-mark worm-mark-${mark.kind || 'scar'}`
+        class: `worm-mark worm-mark-${mark.kind || 'scar'}`,
+        // Устойчивый ключ: по нему отметину можно найти после пересборки
+        // персонажа. Прогон, следивший за шрамом по НОМЕРУ узла, при
+        // пересборке начинал сравнивать разные шрамы и объявлял скачок через
+        // всю голову.
+        'data-mark': mark.id || ''
     });
     if (place.front === false) setAttr(group, 'display', 'none');
     group.appendChild(svgEl('path', { d, fill: color, opacity: 0.9 }));
@@ -4600,36 +4516,23 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
             // же yawProject, что у глаза (docs/traps.md, п. 102).
             if (place.part === 'head') {
                 headBuilt.scars = headBuilt.scars || [];
-                // ---------- МЕСТО НА ЛИЦЕ → УГОЛ НА СФЕРЕ ----------
-                // Площадки шрамов размечены по голове ТАКОЙ, КАК ОНА ВИДНА, а
-                // видна она под своим углом (model.head.yaw, по умолчанию три
-                // четверти). Поэтому азимут — это обратная проекция: такой
-                // угол, который при ТЕКУЩЕМ повороте даёт ровно размеченное
-                // место. Без вычитания угла шрам при сборке уезжал с площадки
-                // и садился на глаз.
-                const rxHead = radiusByPart.head || 15;
-                const theta = (headBuilt.yaw || 0) * YAW_MAX_DEG;
-                const asin = Math.asin(Math.max(-1, Math.min(1, place.x))) * 180 / Math.PI;
-                const y = place.y * rxHead;
-                const gm = WormMarks.geometry(mark.seed || 0, mark.kind || 'scar');
-                const ang = (place.rotation || 0) * Math.PI / 180;
-                // Габарит с учётом поворота — ОБА слагаемых, и от длины, и от
-                // ширины. Первая версия считала только длину, и шрам выходил
-                // ниже, чем думала проверка.
-                const halfLen = (Math.abs(gm.length / 2 * Math.cos(ang))
-                               + Math.abs(gm.width / 2 * Math.sin(ang))) * rxHead;
-                const halfHigh = (Math.abs(gm.length / 2 * Math.sin(ang))
-                                + Math.abs(gm.width / 2 * Math.cos(ang))) * rxHead;
+                const headScarBox = WormMarks.halfBox(
+                    WormMarks.geometry(mark.seed || 0, mark.kind || 'scar'),
+                    place.rotation, radiusByPart.head || 15);
+                // Азимут и высоту считать заново не надо: они ЛЕЖАТ В
+                // ОТМЕТИНЕ. Здесь когда-то стояла обратная проекция — экранный
+                // x переводился в угол с вычитанием текущего поворота, — и
+                // держалась она ровно до первой правки: то забывали вычесть
+                // поворот по умолчанию, то сравнивали углы с разных сфер.
                 headBuilt.scars.push({
                     node,
-                    // Разводка с глазами идёт ПО АЗИМУТУ, а не по месту на
-                    // экране. Азимут не зависит от поворота: разошлись
-                    // однажды — разошлись при любом ракурсе. Экранная
-                    // проверка держалась бы только для той позы, в которой
-                    // её сделали, — и шрам, чистый в три четверти, садился на
-                    // глаз при сильном повороте.
-                    phiDeg: headScarAzimuth(headBuilt, asin - theta, y, halfLen, halfHigh),
-                    y,
+                    phiDeg: (place.phi || 0) * 180 / Math.PI,
+                    y: place.y * (radiusByPart.head || 15),
+                    // Полугабарит вдоль поверхности — он же угловой размер
+                    // отметины. Без него ракурс у края считается по
+                    // производной и отметина вылезает за контур.
+                    halfX: headScarBox.hx,
+                    halfY: headScarBox.hy,
                     rotation: place.rotation
                 });
             }

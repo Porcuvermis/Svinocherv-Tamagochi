@@ -54,7 +54,14 @@ const WORM_MARK_MIN_GAP = 0.45;
 // phi выводится из сида, поэтому старые сохранения получают осмысленный угол
 // сами, без миграции. Явное поле phi у отметины тоже читается — им
 // пользуется поиск свободного места.
-const WORM_MARK_FRONT_MIN = 0.12;   // ближе к краю этого — уже изнанка
+// Ближе к краю этого — уже изнанка. Дело не только в «видно/не видно»:
+// у самого лимба поверхность сжата так, что отметина шириной в полголовы
+// превращается в двухпиксельную полоску, и ДВЕ такие полоски, честно
+// разнесённые по коже на четверть окружности, встают на экране в одну
+// кляксу. Порог 0.12 (видно до 83° от оси взгляда) это и давал. 0.35 — это
+// 69°, дальше отметина всё равно нечитаема.
+const WORM_MARK_FRONT_MIN = (typeof WormSilhouette !== 'undefined')
+    ? WormSilhouette.FRONT_MIN : 0.35;
 
 // Насколько отметина отступает от края силуэта. Считается ВМЕСТЕ с её
 // собственной длиной: раньше проверялся только центр, и шрам, стоявший почти
@@ -177,20 +184,163 @@ function wormMarkZoneParts(model) {
 }
 
 // ---------- КУДА ШРАМ САДИТЬСЯ НЕ ДОЛЖЕН ----------
-// На голове есть места, где шрам недопустим: глаза, пятак, уши. Шрам поперёк
+// На голове есть места, где шрам недопустим: глаза, пятак, рот. Шрам поперёк
 // глаза не читается как шрам — он читается как ошибка отрисовки, потому что
-// глаз рисуется своими слоями поверх и от шрама остаются рваные куски по
-// краям.
+// глаз рисуется своими слоями поверх и от шрама остаются рваные куски.
 //
-// Поэтому у головы есть список разрешённых площадок — щёки, скулы и лоб
-// сбоку от глаз. Координаты в долях радиуса головы: x вдоль (минус — к
-// затылку), y поперёк (минус — вверх).
-const WORM_HEAD_SAFE_SPOTS = [
-    { x: [-0.82, -0.42], y: [-0.30, 0.30] },   // левая скула, за глазом
-    { x: [-0.70, -0.25], y: [ 0.30, 0.62] },   // левая челюсть снизу
-    { x: [-0.30,  0.15], y: [ 0.45, 0.70] },   // подбородок под пятаком
-    { x: [-0.55, -0.10], y: [-0.78, -0.52] }   // лоб выше бровей
-];
+// Раньше здесь лежал список РАЗРЕШЁННЫХ площадок — четыре прямоугольника,
+// набитых на глаз, в долях rx по обеим осям (хотя высота головы — ry). Он и
+// был причиной висящих в воздухе шрамов: площадка «лоб» доходила до 0.55rx
+// по ширине там, где череп всего 0.55rx ПОЛУШИРИНОЙ, — то есть кончалась
+// ровно на контуре, а шрам со своей длиной вылезал наружу.
+//
+// Теперь разрешено всё, что одновременно:
+//   • целиком внутри РЕАЛЬНОГО силуэта черепа (`worm-silhouette.js`), и не
+//     при одном ракурсе, а при всех — голова поворачивается живьём;
+//   • не пересекается ни с одной чертой лица, и тоже при всех ракурсах.
+// Оба условия считаются по тем же числам, которыми голова рисуется.
+
+// Ракурсы, на которых проверяется место. Голова ходит в пределах ±1 ПЛАВНО,
+// поэтому проверять края и середину мало: между семью замерами оставались
+// щели, и шрам, чистый на всех семи, вылезал на пиксель между ними. Шаг 0.1
+// — это 4° поворота, мельче толщины линии.
+const WORM_HEAD_YAW_PROBE = (() => {
+    const list = [];
+    for (let y = -1; y <= 1.0001; y += 0.1) list.push(Math.round(y * 10) / 10);
+    return list;
+})();
+
+// Насколько высоко и низко по голове вообще раскладываются шрамы. Не запрет,
+// а диапазон разброса: что из него годится, решает проверка силуэта.
+const WORM_HEAD_V_SPAN = 0.95;
+
+// Поворот отметины выводится из сида. Отдельной функцией, потому что его
+// надо знать ДО размещения: габарит повёрнутого шрама другой, и место
+// подбирается под него.
+function wormMarkRotation(seed) {
+    return (wormMarkRng(seed || 0, 'place')() * 2 - 1) * 40;
+}
+
+// ---------- СКОЛЬКО МЕСТА ОТМЕТИНА ЗАНИМАЕТ НА САМОМ ДЕЛЕ ----------
+// Не «длина и ширина из конфига», а габарит НАРИСОВАННОЙ фигуры. Разница
+// была вдвое и объясняет половину висящих в воздухе шрамов: рисование
+// откладывает `width` в КАЖДУЮ сторону от осевой (то есть это половина, а
+// не вся ширина), да ещё выгибает саму осевую дугой. Размещение про оба
+// слагаемых не знало и мерило шрам вдвое уже, чем он выходил на экран.
+// hostRadius — радиус части в пикселях: без него не учесть ограничители
+// снизу, которыми рисование не даёт шраму выродиться в волосок на мелком
+// персонаже. Именно они и давали остаток перелёта: размещение считало шрам
+// по конфигу, а на экране он был крупнее.
+function wormMarkExtent(geo, hostRadius) {
+    // Радиус НЕ передали — считаем без ограничителей. Это не «на всякий
+    // случай»: ограничители заданы в пикселях, и при R = 1 они дают габарит
+    // в две с половиной ЧАСТИ ТЕЛА. Один такой недосмотр уже стянул все
+    // шрамы части ровно в её центр — они встали друг на друга, чего в жизни
+    // не бывает, а прогон этого не поймал: снаружи силуэта никто не оказался.
+    const known = typeof hostRadius === 'number' && hostRadius > 0;
+    const R = known ? hostRadius : 1;
+    const half = known ? Math.max(2.5, geo.length * R * 0.5) : geo.length * 0.5;
+    const wide = known ? Math.max(0.9, Math.max(geo.width, 0.01) * R) : Math.max(geo.width, 0.01);
+    const bend = Math.abs((geo.curve || 0) * half * 0.5);      // прогиб осевой
+    return {
+        half, wide, bend,
+        // Те же величины в долях радиуса части — в них считает размещение.
+        along: half / R,
+        across: (wide + bend) / R
+    };
+}
+
+// Полугабарит отметины с учётом её поворота: не полудлина, а настоящий угол
+// прямоугольника. Проверять по полудлине — значит не проверять.
+function wormMarkHalfBox(geo, rotationDeg, hostRadius) {
+    const a = (rotationDeg || 0) * Math.PI / 180;
+    const ext = wormMarkExtent(geo, hostRadius);
+    const h = ext.along, w = ext.across;
+    return {
+        hx: Math.abs(h * Math.cos(a)) + Math.abs(w * Math.sin(a)),
+        hy: Math.abs(h * Math.sin(a)) + Math.abs(w * Math.cos(a))
+    };
+}
+
+// Годится ли место на голове: азимут phi (радианы) и высота v (в долях rx).
+// Проверяется при каждом ракурсе из WORM_HEAD_YAW_PROBE — и силуэт, и черты.
+function wormHeadSpotOk(phi, v, geo, rotationDeg, model, others) {
+    if (typeof WormSilhouette === 'undefined') return true;
+    const head = (model && model.head) || {};
+    const ratio = (head.stretchY || 1) / (head.stretchX || 1);   // ry / rx
+    const cfg = head.skull || {};
+    const rxPx = (typeof WormSilhouette !== 'undefined' ? WormSilhouette.face.headR : 40)
+               * (head.scale || 1) * (head.stretchX || 1);
+    const box = wormMarkHalfBox(geo, rotationDeg, rxPx);
+    const phiDeg = phi * 180 / Math.PI;
+    const keep = WormSilhouette.headKeepOut(model);
+
+    for (let i = 0; i < WORM_HEAD_YAW_PROBE.length; i++) {
+        const yaw = WORM_HEAD_YAW_PROBE[i];
+        const skin = WormSilhouette.skinPoint(phiDeg, v, cfg, yaw, ratio, box.hx, box.hy);
+        // На изнанке шрам не рисуется — проверять там нечего.
+        if (!skin.front) continue;
+        const hx = box.hx * skin.squash;
+        // Силуэт: все четыре угла габарита внутри черепа. Высота силуэта
+        // считается в долях ry, габарит отметины — в долях rx, отсюда делёж.
+        for (let sx = -1; sx <= 1; sx += 2) {
+            for (let sy = -1; sy <= 1; sy += 2) {
+                if (!WormSilhouette.skullContains(skin.x + sx * hx, (v + sy * box.hy) / ratio, cfg, yaw)) return false;
+            }
+        }
+        // Черты лица: габариты не должны пересекаться. Проверка идёт в
+        // ПРОЕКЦИИ, а не по азимуту: два азимута на разных сферах несравнимы,
+        // и именно на этом шрам однажды и оказался на глазу. Сами черты
+        // проецируются своим способом (yawProject) — тем, которым нарисованы.
+        for (let k = 0; k < keep.length; k++) {
+            const sp = keep[k];
+            // Каждая черта проецируется ТЕМ ЖЕ способом, которым нарисована:
+            // глаз — со своим прижимом к лицу, пятачок и рот — со своим
+            // выносом вперёд. Общей формулы тут нет и придумывать её нельзя.
+            const sproj = sp.place === 'eye'
+                ? WormSilhouette.eyePlace(sp.phiDeg, yaw, sp.halfW)
+                : WormSilhouette.yawProject(sp.phiDeg, yaw);
+            const sx = sp.place === 'eye' ? sproj.x : sproj.x * (sp.reach == null ? 1 : sp.reach);
+            const shx = sp.hx * Math.abs(sproj.squash);
+            if (Math.abs(skin.x - sx) < hx + shx && Math.abs(v - sp.y) < box.hy + sp.hy) return false;
+        }
+        // ---------- СОСЕДИ: ТОЖЕ В ПРОЕКЦИИ ----------
+        // На теле соседство меряется по коже, и этого хватает: труба видна
+        // сбоку, и одинаковый угол даёт одинаковый сдвиг. На голове не так —
+        // ширина черепа меняется с высотой, а ракурс живой. Две отметины,
+        // честно разнесённые по коже на четверть окружности, у края
+        // складываются на экране в одну кляксу. Поэтому здесь соседство —
+        // это «не перекрылись НИ ПРИ КАКОМ повороте».
+        if (others) {
+            for (let k = 0; k < others.length; k++) {
+                const o = others[k];
+                const os = WormSilhouette.skinPoint(o.phiDeg, o.v, cfg, yaw, ratio, o.hx, o.hy);
+                if (!os.front) continue;
+                const ohx = o.hx * os.squash;
+                if (Math.abs(skin.x - os.x) < hx + ohx && Math.abs(v - o.v) < box.hy + o.hy) return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Существующие отметины головы в том виде, в каком их ждёт проверка места.
+function wormHeadNeighbours(marks, model) {
+    const head = (model && model.head) || {};
+    const ratio = (head.stretchY || 1) / (head.stretchX || 1);
+    const rxPx = (typeof WormSilhouette !== 'undefined' ? WormSilhouette.face.headR : 40)
+               * (head.scale || 1) * (head.stretchX || 1);
+    return (marks || []).filter(m => m.zone === 'head').map(m => {
+        const geo = wormMarkGeometry(m.seed || 0, m.kind || 'scar');
+        const box = wormMarkHalfBox(geo, wormMarkRotation(m.seed || 0), rxPx);
+        const t = Math.max(0, Math.min(0.9999, Number(m.t) || 0));
+        return {
+            phiDeg: wormMarkPhi(m) * 180 / Math.PI,
+            v: (t * 2 - 1) * WORM_HEAD_V_SPAN * ratio,
+            hx: box.hx, hy: box.hy
+        };
+    });
+}
 
 // ---------- УГОЛ ВОКРУГ ТЕЛА ----------
 // Выводится из сида, если в отметине его нет. Диапазон сознательно уже
@@ -251,32 +401,25 @@ function wormMarksClash(a, b) {
 // и считает его рендерер (applyHeadYaw), потому что зависит от живого угла.
 function wormResolveMark(model, mark) {
     const surf = wormMarkSurface(model, mark);
-    const rng = wormMarkRng(mark.seed || 0, 'place');
     const geo = wormMarkGeometry(mark.seed || 0, mark.kind || 'scar');
-    const rotation = (rng() * 2 - 1) * 40;
+    const rotation = wormMarkRotation(mark.seed || 0);
 
     if (surf.part === 'head') {
-        // Голова: площадка выбирается позицией вдоль зоны, место внутри неё —
-        // сидом. Дальше площадка переводится в АЗИМУТ, чтобы поворот головы
-        // считался тем же способом, что у глаз и ушей (yawProject).
-        const local = (surf.u + 1) / 2;
-        const spot = WORM_HEAD_SAFE_SPOTS[Math.floor(local * WORM_HEAD_SAFE_SPOTS.length) % WORM_HEAD_SAFE_SPOTS.length];
-        // ---------- ВНУТРЬ ПЛОЩАДКИ, А НЕ К ЦЕНТРУ ГОЛОВЫ ----------
-        // Площадка ужимается на половину габарита отметины, и место берётся
-        // уже внутри ужатой. Это единственный способ удержать шрам в
-        // разрешённом месте целиком.
+        // Голова — такая же поверхность, как тело: азимут вокруг и высота
+        // вдоль. Никаких «площадок»: место уже проверено размещением по
+        // настоящему силуэту при всех ракурсах.
         //
-        // Общая подтяжка к оси части, которой пользуется тело, здесь
-        // НЕДОПУСТИМА: у головы в центре глаза и пятак. Первая версия делала
-        // именно так — и шрамы съезжали ровно на глаз, то есть туда, куда им
-        // нельзя в первую очередь.
-        const fit = wormMarkFitSpot(spot, geo, rotation, rng);
+        // x здесь — проекция при анфасе. Живой поворот пересчитывает её
+        // рендерер (applyHeadScars) из того же азимута, что лежит в phi, —
+        // тем же yawProject, что двигает глаза и уши.
+        const head = (model && model.head) || {};
+        const ratio = (head.stretchY || 1) / (head.stretchX || 1);
         return {
-            part: 'head', x: fit.x, y: fit.y, rotation,
-            // Азимут не считается здесь: голова живёт под своим углом
-            // (model.head.yaw), и перевод «место на лице → угол на сфере»
-            // делает рендерер — там же, где живёт сама проекция.
-            phi: null,
+            part: 'head',
+            x: Math.sin(surf.phi),
+            y: surf.u * WORM_HEAD_V_SPAN * ratio,
+            rotation,
+            phi: surf.phi,
             squashX: 1, squashY: 1, front: true
         };
     }
@@ -296,31 +439,12 @@ function wormResolveMark(model, mark) {
     };
 }
 
-// Место внутри РАЗРЕШЁННОЙ ПЛОЩАДКИ с учётом габарита отметины. Площадка
-// уже отметины — отметина встаёт в её середину: лучше слегка вылезти за
-// границу площадки, чем уехать оттуда совсем.
-function wormMarkFitSpot(spot, geo, rotationDeg, rng) {
-    const a = (rotationDeg || 0) * Math.PI / 180;
-    const h = geo.length / 2, w = Math.max(geo.width, 0.02) / 2;
-    const hx = Math.abs(h * Math.cos(a)) + Math.abs(w * Math.sin(a));
-    const hy = Math.abs(h * Math.sin(a)) + Math.abs(w * Math.cos(a));
-    const pick = (range, half) => {
-        const lo = range[0] + half, hi = range[1] - half;
-        if (hi <= lo) return (range[0] + range[1]) / 2;
-        return lo + rng() * (hi - lo);
-    };
-    return { x: pick(spot.x, hx), y: pick(spot.y, hy) };
-}
-
 // ---------- ЦЕЛИКОМ ВНУТРИ СИЛУЭТА ----------
 // Проверяется не центр, а самый дальний угол габарита отметины с учётом её
 // длины, ширины и поворота. Не влезает — центр подтягивается к оси части,
 // ровно настолько, насколько нужно.
 function wormMarkFit(x, y, geo, rotationDeg) {
-    const a = (rotationDeg || 0) * Math.PI / 180;
-    const h = geo.length / 2, w = Math.max(geo.width, 0.02) / 2;
-    const hx = Math.abs(h * Math.cos(a)) + Math.abs(w * Math.sin(a));
-    const hy = Math.abs(h * Math.sin(a)) + Math.abs(w * Math.cos(a));
+    const { hx, hy } = wormMarkHalfBox(geo, rotationDeg);
     const limit = 1 - WORM_MARK_EDGE_MARGIN;
     const reach = Math.hypot(Math.abs(x) + hx, Math.abs(y) + hy);
     if (reach <= limit) return { x, y };
@@ -349,10 +473,22 @@ function wormMarkSpotFree(marks, zone, t, model, seed, phi) {
 // Не нашлось за все попытки — зона забита, и это нормальный ответ.
 function wormPickMarkSpot(marks, zone, seed, model) {
     const rng = wormMarkRng(seed || 0, 'spot');
+    const geo = wormMarkGeometry(seed || 0, 'scar');
+    const rotation = wormMarkRotation(seed || 0);
+    const neighbours = zone === 'head' ? wormHeadNeighbours(marks, model) : null;
     for (let attempt = 0; attempt < 40; attempt++) {
         const t = rng();
         const phi = (rng() * 2 - 1) * 130 * Math.PI / 180;
-        if (wormMarkSpotFree(marks, zone, t, model, seed, phi)) return { t, phi };
+        if (!wormMarkSpotFree(marks, zone, t, model, seed, phi)) continue;
+        // Голова: место обязано лежать внутри силуэта при ЛЮБОМ повороте и
+        // не задевать черт лица. Свободно от соседей — ещё не значит годно.
+        if (zone === 'head') {
+            const head = (model && model.head) || {};
+            const ratio = (head.stretchY || 1) / (head.stretchX || 1);
+            const v = (t * 2 - 1) * WORM_HEAD_V_SPAN * ratio;
+            if (!wormHeadSpotOk(phi, v, geo, rotation, model, neighbours)) continue;
+        }
+        return { t, phi };
     }
     return null;
 }
@@ -402,6 +538,8 @@ const WormMarks = {
     spotFree: wormMarkSpotFree,
     pickSpot: wormPickMarkSpot,
     geometry: wormMarkGeometry,
+    extent: wormMarkExtent,
+    halfBox: wormMarkHalfBox,
     // Координаты по коже и проверка пересечения — наружу, чтобы прогон мог
     // считать их без браузера (модуль намеренно без DOM).
     surface: wormMarkSurface,
@@ -423,10 +561,15 @@ const WormMarks = {
     resolveSlot(model, slotKey) {
         const slot = WORM_COSMETIC_SLOTS[slotKey];
         if (!slot) return null;
-        const place = wormResolveMark(model, { zone: slot.zone, t: slot.t, seed: 0 });
+        // phi = 0 явно: предмет сидит по центру лицевой стороны, а не там,
+        // куда его забросил бы сид. У отметины разброс — свойство, у шляпы —
+        // дефект.
+        const place = wormResolveMark(model, { zone: slot.zone, t: slot.t, seed: 0, phi: 0 });
         // У предмета нет случайного разброса: он сидит на оси части.
         return { slot: slotKey, part: place.part, x: place.x, y: 0, rotation: 0 };
     }
 };
 
 if (typeof window !== 'undefined') window.WormMarks = WormMarks;
+
+if (typeof module !== 'undefined' && module.exports) module.exports = WormMarks;

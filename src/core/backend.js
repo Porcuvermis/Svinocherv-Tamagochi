@@ -260,7 +260,12 @@ const LocalBackend = {
             for (let i = 0; i < WormMarks.ZONES.length && spot === null; i++) {
                 const other = WormMarks.ZONES[i];
                 if (other === useZone) continue;
-                spot = WormMarks.pickSpot(marks, other, useSeed + i + 1, model);
+                // Сид тот же самый, и это важно: по нему считаются и размер
+                // шрама, и его поворот. Здесь стояло `useSeed + i + 1` — и
+                // место подбиралось под шрам ОДНОГО размера, а рисовался
+                // шрам другого. На голове это давало наложения: проверка
+                // разводила соседей по габаритам, которых на экране не было.
+                spot = WormMarks.pickSpot(marks, other, useSeed, model);
                 if (spot !== null) spotZone = other;
             }
         }
