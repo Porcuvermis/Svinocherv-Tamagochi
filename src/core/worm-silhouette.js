@@ -169,6 +169,26 @@ const WORM_HEAD_MOUTH_Y = 0.68;    // доля ry
 const WORM_HEAD_R = 40;            // базовый радиус головы до масштабов модели
 const WORM_HEAD_SNOUT_PROTRUDE = 0.34;   // насколько пятачок вынесен вперёд
 const WORM_HEAD_MOUTH_PROTRUDE = 0.08;
+// ---------- ЗАПАСЫ ВОКРУГ ЧЕРТ ЛИЦА ----------
+// Это НЕ подгонка, а решение: у черты лица есть не только её собственная
+// фигура, но и то, что вокруг неё нарисовано — веки, ресницы, бровь, складки
+// у глаза; борозда, губы и подбородок у морды. Шрам, разошедшийся с БЕЛКОМ,
+// спокойно ложится на ресницы и читается как шрам на глазу.
+//
+// Запасы взяты от реальных габаритов соседних слоёв: глазница шире яблока в
+// 1.38 раза, складки уходят на 1.31, бровь поднята на 1.7 радиуса вверх.
+// Берём с запасом сверху, потому что цена ошибки несимметрична: лишний
+// свободный пятачок кожи не видно, а шрам на глазу видно сразу.
+// По горизонтали запас меньше, чем по вертикали, и это не непоследовательность,
+// а место: от края глаза до контура лица всего пятая часть радиуса, и запас
+// в два радиуса глаза закрывает висок целиком — шрамам на голове не остаётся
+// ничего выше челюсти. 1.75 — это 14 пикселей от центра глаза при складках,
+// уходящих на 10.5: ресницы и веко закрыты, висок жив.
+const WORM_EYE_KEEP_X = 1.75;
+// По вертикали запас закрывает бровь: она поднята на 1.7 радиуса глаза над
+// его центром. Больше двух брать нельзя по той же причине, что и по
+// горизонтали, — запас в 2.3 съедал весь лоб.
+const WORM_EYE_KEEP_Y = 1.9;
 const WORM_HEAD_SNOUT_RX = 14.5;   // пятачок до масштабов модели
 const WORM_HEAD_SNOUT_RY = 10.5;
 const WORM_HEAD_EYE_R = 8;         // глаз до масштабов модели
@@ -176,6 +196,12 @@ const WORM_YAW_MAX_DEG = 42;       // сколько градусов даёт y
 // Тот же порог видимости, что у отметин тела (`worm-marks.js`): голова и
 // тело прячут свои отметины по одному правилу, а не каждый по своему.
 const WORM_MARK_FRONT_MIN_SHARED = 0.35;
+// Полоса, на которой отметина не исчезает, а ГАСНЕТ. Жёсткий порог давал
+// мигание: голова у стоящего червя всё время чуть поводит, и отметина,
+// оказавшаяся ровно на пороге, включалась и выключалась по нескольку раз в
+// секунду. Гашение по краю — это ещё и правильно: на реальной коже отметина
+// у лимба не пропадает, а сходит на нет вместе с поверхностью.
+const WORM_MARK_FADE_BAND = 0.2;
 
 // Проекция точки, сидящей на сфере под азимутом phi, при повороте головы.
 // Единичный радиус: умножение на rx делает вызывающий. Сжатие НОРМИРОВАНО
@@ -242,27 +268,29 @@ function wormHeadKeepOut(model) {
             y: (e.offsetY || 0) / rx,
             // Веки, ресницы и бровь занимают заметно больше самого яблока —
             // иначе шрам «не на глазу» ложится ровно на бровь.
-            hx: WORM_HEAD_EYE_R * (e.stretchX || 1) * (e.scale || 1) * 1.45 / rx,
-            hy: WORM_HEAD_EYE_R * (e.stretchY || 1) * (e.scale || 1) * 1.7 / rx
+            hx: WORM_HEAD_EYE_R * (e.stretchX || 1) * (e.scale || 1) * WORM_EYE_KEEP_X / rx,
+            hy: WORM_HEAD_EYE_R * (e.stretchY || 1) * (e.scale || 1) * WORM_EYE_KEEP_Y / rx
         });
     });
 
+    // ---------- МОРДА ЦЕЛИКОМ, А НЕ ПЯТАЧОК И РОТ ПО ОТДЕЛЬНОСТИ ----------
+    // Раньше здесь стояли два пятна: пятачок и рот. Между ними и вокруг них
+    // оставались щели — на переносице, на губе, под пятачком, — и шрам туда
+    // садился. А рот ещё и ОТКРЫВАЕТСЯ: пятно по закрытому рту не покрывает
+    // открытый. Поэтому морда считается одной запретной областью: сверху от
+    // переносицы (где начинается переход к пятачку), снизу до подбородка.
     const snout = (model && model.head && model.head.snout) || {};
     const sc = snout.scale || 1;
+    const cfg = wormSkullCfg(head.skull);
+    const top = WORM_HEAD_SNOUT_Y - 0.32;          // переносица
+    const bottom = cfg.chin;                        // подбородок — ниже открытого рта
     spots.push({
         phiDeg: 0,
         reach: 1 + WORM_HEAD_SNOUT_PROTRUDE,
-        y: WORM_HEAD_SNOUT_Y * ratio,
-        hx: WORM_HEAD_SNOUT_RX * sc * (snout.stretchX || 1) * 1.15 / rx,
-        hy: WORM_HEAD_SNOUT_RY * sc * (snout.stretchY || 1) * 1.15 / rx
-    });
-    // Рот: отдельным пятном, потому что он ниже пятачка и шире его.
-    spots.push({
-        phiDeg: 0,
-        reach: 1 + WORM_HEAD_MOUTH_PROTRUDE,
-        y: WORM_HEAD_MOUTH_Y * ratio,
-        hx: WORM_HEAD_SNOUT_RX * 0.95 / rx,
-        hy: WORM_HEAD_SNOUT_RY * 0.9 / rx
+        y: (top + bottom) / 2 * ratio,
+        // Ширина — по самому широкому из двух: пятачок бывает шире морды.
+        hx: Math.max(WORM_HEAD_SNOUT_RX * sc * (snout.stretchX || 1) * 1.2 / rx, cfg.muzzle),
+        hy: (bottom - top) / 2 * ratio
     });
     return spots;
 }
@@ -346,7 +374,7 @@ function wormHeadSkinPoint(phiDeg, v, cfg, yaw, ratio, halfX, halfY) {
     const front = depth > WORM_MARK_FRONT_MIN_SHARED;
     // Без размера отметины — просто точка.
     if (!halfX || half <= 0.0001) {
-        return { x: half * Math.sin(a), squash: Math.abs(depth), front, depth };
+        return { x: half * Math.sin(a), squash: Math.abs(depth), front, alpha: 1, depth };
     }
     // ---------- ПРОЕКЦИЯ ПО КРАЯМ, А НЕ ПО ЦЕНТРУ ----------
     // Центр отметины лежит НА поверхности, то есть у края силуэта — прямо на
@@ -372,7 +400,9 @@ function wormHeadSkinPoint(phiDeg, v, cfg, yaw, ratio, halfX, halfY) {
     // один и он обязан быть виден), у отметины — нет: она у самого края всё
     // равно сжата в полоску, и спрятать её честнее, чем подвинуть.
     const fits = Math.abs(x) + halfX * squash <= half;
-    return { x, squash, front: front && fits, depth };
+    // Прозрачность у края: 0 на пороге, 1 за полосой гашения.
+    const alpha = Math.max(0, Math.min(1, (depth - WORM_MARK_FRONT_MIN_SHARED) / WORM_MARK_FADE_BAND));
+    return { x, squash, front: front && fits, alpha, depth };
 }
 
 
@@ -385,6 +415,7 @@ const WormSilhouette = {
     eyePlace: wormEyePlace,
     YAW_MAX_DEG: WORM_YAW_MAX_DEG,
     FRONT_MIN: WORM_MARK_FRONT_MIN_SHARED,
+    FADE_BAND: WORM_MARK_FADE_BAND,
     // Разметка лица — числами, а не копиями в двух файлах: рендерер берёт их
     // отсюда же.
     face: { snoutY: WORM_HEAD_SNOUT_Y, mouthY: WORM_HEAD_MOUTH_Y,

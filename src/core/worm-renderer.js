@@ -3577,6 +3577,17 @@ function applyHeadScars(headRef, yaw) {
         const skin = WormSilhouette.skinPoint(sc.phiDeg, sc.y / rx, headRef.skullCfg, yaw, ratio, sc.halfX, sc.halfY);
         if (!skin.front) { setAttr(sc.node, 'display', 'none'); continue; }
         setAttr(sc.node, 'display', null);
+        // Гашение у края: отметина не пропадает рывком, а сходит на нет.
+        // Жёсткий порог давал мигание — голова у стоящего червя всё время
+        // чуть поводит, и отметина ровно на пороге вспыхивала по нескольку
+        // раз в секунду (docs/traps.md, п. 104).
+        if (sc.alpha !== skin.alpha) {
+            sc.alpha = skin.alpha;
+            for (let c = sc.node.firstChild; c; c = c.nextSibling) {
+                if (c.__baseOpacity == null) continue;
+                setAttr(c, 'opacity', (c.__baseOpacity * skin.alpha).toFixed(3));
+            }
+        }
         setAttr(sc.node, 'transform',
             `translate(${(skin.x * rx).toFixed(2)},${sc.y.toFixed(2)}) `
             + `scale(${Math.max(0.05, skin.squash).toFixed(3)},1) rotate(${sc.rotation.toFixed(1)})`);
@@ -3739,7 +3750,12 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
         'data-mark': mark.id || ''
     });
     if (place.front === false) setAttr(group, 'display', 'none');
-    group.appendChild(svgEl('path', { d, fill: color, opacity: 0.9 }));
+    // Базовые прозрачности запоминаются на узле: у края силуэта отметина
+    // ГАСНЕТ, и гасить надо, домножая их, а не ставя opacity на группу —
+    // прозрачность группы это отдельный буфер на живом слое (traps, п. 73).
+    const body = svgEl('path', { d, fill: color, opacity: 0.9 });
+    body.__baseOpacity = 0.9;
+    group.appendChild(body);
 
     // Тонкая светлая жилка вдоль шрама: рубцовая ткань блестит сильнее кожи.
     const shine = [];
@@ -3747,14 +3763,16 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
         const p = axisAt(-1 + (2 * i) / steps);
         shine.push(`${p.x.toFixed(2)},${p.y.toFixed(2)}`);
     }
-    group.appendChild(svgEl('polyline', {
+    const vein = svgEl('polyline', {
         points: shine.join(' '),
         fill: 'none',
         stroke: WormMarks.color(skinColor || FLESH[500], 'shine'),
         'stroke-width': Math.max(0.4, wide * 0.2).toFixed(2),
         'stroke-linecap': 'round',
         opacity: 0.32
-    }));
+    });
+    vein.__baseOpacity = 0.32;
+    group.appendChild(vein);
     return group;
 }
 

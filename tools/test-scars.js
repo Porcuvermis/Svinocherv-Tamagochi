@@ -244,7 +244,15 @@ const { viewport, prepare } = require('./harness');
       }
     });
     const hidden = track.map(t => Object.keys(t.xs).filter(k => t.xs[k] == null).length);
-    return { n, ever, travelled, backwards, worstBack: +worstBack.toFixed(1), maxRun: +maxRun.toFixed(1),
+    // Сколько отметин ПРЯТАЛИСЬ И ПОКАЗЫВАЛИСЬ. Считать «менялось ли общее
+    // число скрытых» нельзя: на голове их всего две-три, и одна ушла, другая
+    // пришла — итог тот же, а прогон краснеет на ровном месте.
+    const swapped = ids.filter(i => {
+      const on = track.some(t => t.xs[i] != null);
+      const off = track.some(t => t.xs[i] == null);
+      return on && off;
+    }).length;
+    return { n, ever, travelled, swapped, backwards, worstBack: +worstBack.toFixed(1), maxRun: +maxRun.toFixed(1),
              hidMin: Math.min(...hidden), hidMax: Math.max(...hidden) };
   })();
   await setYaw(-1); const yawLeft = await grab();
@@ -253,8 +261,8 @@ const { viewport, prepare } = require('./harness');
   yawTest.returned = Object.keys(yawLeft).every(i => (yawLeft[i] == null) === (yawBack[i] == null));
   check(yawTest.travelled > 0 && yawTest.backwards === 0,
     `шрамы едут вместе с лицом и ни разу назад: проехали ${yawTest.travelled} из ${yawTest.ever}, назад ${yawTest.backwards} (худший шаг назад ${yawTest.worstBack}px), ход ${yawTest.maxRun}px`);
-  check(yawTest.hidMax > yawTest.hidMin,
-    `часть шрамов уходит за голову при повороте: скрыто от ${yawTest.hidMin} до ${yawTest.hidMax} из ${yawTest.n}`);
+  check(yawTest.n < 2 || yawTest.swapped > 0,
+    `шрамы прячутся за голову и возвращаются: так делают ${yawTest.swapped} из ${yawTest.n}`);
   check(yawTest.returned, 'вернувшиеся показываются те же, что и прятались');
 
 
@@ -270,10 +278,17 @@ const { viewport, prepare } = require('./harness');
     const res = { parts: 0, onEye: 0, onSnout: 0, samples: 0 };
     const shapes = () => {
       const list = [];
+      // Глаз — это не только белок: веки, ресницы и бровь сидят на
+      // глазнице, и шрам, задевший её, читается как шрам на глазу. Первая
+      // версия мерила белок и была зелёной на скриншоте, где шрам лежал на
+      // внешнем уголке.
       ['left', 'right'].forEach(side => {
         const g = document.querySelector(`[data-part="eye-${side}"]`);
-        const e = g && g.querySelector('ellipse[fill*="sclera"]');
-        if (e) list.push({ kind: 'eye', el: e });
+        if (!g) return;
+        const socket = g.querySelector('ellipse');           // глазница — первая
+        const sclera = g.querySelector('ellipse[fill*="sclera"]');
+        if (sclera) list.push({ kind: 'eye', el: sclera });
+        if (socket && socket !== sclera) list.push({ kind: 'eye', el: socket });
       });
       const sn = document.querySelector('[data-part="snout"]');
       const se = sn && sn.querySelector('ellipse');
@@ -312,6 +327,44 @@ const { viewport, prepare } = require('./harness');
   check(face.parts >= 3, `черты лица найдены: ${face.parts}`);
   check(face.onEye === 0, `ни один шрам не лёг на глаз: ${face.onEye} из ${face.samples}`);
   check(face.onSnout === 0, `ни один шрам не лёг на пятачок: ${face.onSnout} из ${face.samples}`);
+
+  // ---------- НЕ МИГАЕТ ----------
+  // Жалоба была ровно такая: «персонаж просто чуть-чуть ходит, а шрам на лбу
+  // мигает». Поэтому здесь НИЧЕГО не задаётся руками — червь живёт сам, а мы
+  // считаем, сколько раз каждая отметина сменила видимость. Один проход
+  // головы туда-обратно — это максимум два переключения на отметину; больше
+  // значит, что она моргает на пороге.
+  console.log('\n--- не мигает ---');
+  const flick = await page.evaluate(async () => {
+    // Отпускаем поворот: до этого прогон держал его руками, и червь стоял бы
+    // столбом — а мигание ловится именно на своей, живой болтанке головы.
+    MainWormHandle.setLivePose({ headYaw: null });
+    await new Promise(r => setTimeout(r, 400));
+    const layer = document.querySelector('[data-anchor="head-scars"]');
+    const state = {}, flips = {}, seen = {}; const yaws = [];
+    for (let i = 0; i < 700; i++) {
+      await new Promise(r => requestAnimationFrame(r));
+      yaws.push(MainWormHandle.getHeadPose().current);
+      [...layer.querySelectorAll('g.worm-mark')].forEach(n => {
+        const id = n.getAttribute('data-mark');
+        const path = n.querySelector('path');
+        const op = path ? parseFloat(path.getAttribute('opacity') || '1') : 0;
+        const on = n.getAttribute('display') !== 'none' && op > 0.02;
+        if (state[id] !== undefined && state[id] !== on) flips[id] = (flips[id] || 0) + 1;
+        state[id] = on;
+        if (on) seen[id] = (seen[id] || 0) + 1;
+      });
+    }
+    const ids = Object.keys(state);
+    return {
+      n: ids.length,
+      worst: Math.max(0, ...ids.map(k => flips[k] || 0)),
+      everSeen: ids.filter(k => seen[k]).length,
+      span: +(Math.max(...yaws) - Math.min(...yaws)).toFixed(2)
+    };
+  });
+  check(flick.worst <= 2, `шрам не моргает, пока червь живёт: худшая отметина сменила видимость ${flick.worst} раз за 700 кадров`);
+  check(flick.everSeen > 0, `шрамы головы вообще показываются сами, без принудительного поворота: ${flick.everSeen} из ${flick.n} (голова гуляла на ${flick.span})`);
 
   // ---------- СНИМКИ ----------
   const box = await page.evaluate(() => {

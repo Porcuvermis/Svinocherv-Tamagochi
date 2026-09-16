@@ -210,6 +210,26 @@ const WORM_HEAD_YAW_PROBE = (() => {
     return list;
 })();
 
+// ---------- ЗАПАС ПРИ ПОДБОРЕ МЕСТА ----------
+// Место ищется с запасом, а рисование проверяет БЕЗ запаса. Разница и есть
+// защита от мигания: отметина, посаженная ровно по границе, при малейшем
+// повороте головы то влезала, то нет — и мигала по нескольку раз в секунду,
+// пока червь просто ходил по комнате.
+const WORM_HEAD_FIT_MARGIN = 0.08;
+
+// ---------- МЕСТО, КОТОРОГО НЕ ВИДНО, — НЕ МЕСТО ----------
+// Проверка «влезает ли» пропускает ракурсы, на которых отметины не видно, —
+// иначе пришлось бы проверять изнанку, где ничего не рисуется. Но из этого
+// следует дырка: место, которое НЕ ВИДНО НИ ПРИ КАКОМ ракурсе, проходит
+// проверку не глядя. Так все шрамы головы и уехали на затылок: снаружи
+// силуэта ноль, внахлёст ноль, на лице чисто — и на экране пусто.
+//
+// Голова в комнате гуляет примерно в пределах ±0.5 (WormHandle, позы
+// left/right). Поэтому место обязано быть ВИДНО хотя бы где-то внутри этого
+// диапазона, а не только при повороте, до которого игра не доходит.
+const WORM_HEAD_SEEN_YAW = 0.5;
+const WORM_HEAD_SEEN_MIN_ALPHA = 0.5;
+
 // Насколько высоко и низко по голове вообще раскладываются шрамы. Не запрет,
 // а диапазон разброса: что из него годится, решает проверка силуэта.
 const WORM_HEAD_V_SPAN = 0.95;
@@ -272,20 +292,31 @@ function wormHeadSpotOk(phi, v, geo, rotationDeg, model, others) {
     const rxPx = (typeof WormSilhouette !== 'undefined' ? WormSilhouette.face.headR : 40)
                * (head.scale || 1) * (head.stretchX || 1);
     const box = wormMarkHalfBox(geo, rotationDeg, rxPx);
+    // Место ищется под шрам «на запас больше», чем он есть. Иначе посаженный
+    // ровно по границе шрам при малейшем повороте головы то влезает, то нет,
+    // и мигает по нескольку раз в секунду, пока червь просто ходит.
+    // Запас входит и в габарит, и в окно, по которому берётся полуширина
+    // черепа: иначе проверка меряет углы на одной высоте, а посадку считает
+    // по другой, и обе половины расходятся (docs/traps.md, п. 103).
+    const mx = box.hx + WORM_HEAD_FIT_MARGIN;
+    const my = box.hy + WORM_HEAD_FIT_MARGIN;
     const phiDeg = phi * 180 / Math.PI;
     const keep = WormSilhouette.headKeepOut(model);
+    let seen = false;
 
     for (let i = 0; i < WORM_HEAD_YAW_PROBE.length; i++) {
         const yaw = WORM_HEAD_YAW_PROBE[i];
-        const skin = WormSilhouette.skinPoint(phiDeg, v, cfg, yaw, ratio, box.hx, box.hy);
+        const skin = WormSilhouette.skinPoint(phiDeg, v, cfg, yaw, ratio, mx, my);
         // На изнанке шрам не рисуется — проверять там нечего.
         if (!skin.front) continue;
-        const hx = box.hx * skin.squash;
+        if (Math.abs(yaw) <= WORM_HEAD_SEEN_YAW && skin.alpha >= WORM_HEAD_SEEN_MIN_ALPHA) seen = true;
+        const hx = mx * skin.squash;
+        const hy = my;
         // Силуэт: все четыре угла габарита внутри черепа. Высота силуэта
         // считается в долях ry, габарит отметины — в долях rx, отсюда делёж.
         for (let sx = -1; sx <= 1; sx += 2) {
             for (let sy = -1; sy <= 1; sy += 2) {
-                if (!WormSilhouette.skullContains(skin.x + sx * hx, (v + sy * box.hy) / ratio, cfg, yaw)) return false;
+                if (!WormSilhouette.skullContains(skin.x + sx * hx, (v + sy * hy) / ratio, cfg, yaw)) return false;
             }
         }
         // Черты лица: габариты не должны пересекаться. Проверка идёт в
@@ -302,7 +333,7 @@ function wormHeadSpotOk(phi, v, geo, rotationDeg, model, others) {
                 : WormSilhouette.yawProject(sp.phiDeg, yaw);
             const sx = sp.place === 'eye' ? sproj.x : sproj.x * (sp.reach == null ? 1 : sp.reach);
             const shx = sp.hx * Math.abs(sproj.squash);
-            if (Math.abs(skin.x - sx) < hx + shx && Math.abs(v - sp.y) < box.hy + sp.hy) return false;
+            if (Math.abs(skin.x - sx) < hx + shx && Math.abs(v - sp.y) < hy + sp.hy) return false;
         }
         // ---------- СОСЕДИ: ТОЖЕ В ПРОЕКЦИИ ----------
         // На теле соседство меряется по коже, и этого хватает: труба видна
@@ -317,11 +348,11 @@ function wormHeadSpotOk(phi, v, geo, rotationDeg, model, others) {
                 const os = WormSilhouette.skinPoint(o.phiDeg, o.v, cfg, yaw, ratio, o.hx, o.hy);
                 if (!os.front) continue;
                 const ohx = o.hx * os.squash;
-                if (Math.abs(skin.x - os.x) < hx + ohx && Math.abs(v - o.v) < box.hy + o.hy) return false;
+                if (Math.abs(skin.x - os.x) < hx + ohx && Math.abs(v - o.v) < hy + o.hy) return false;
             }
         }
     }
-    return true;
+    return seen;
 }
 
 // Существующие отметины головы в том виде, в каком их ждёт проверка места.
@@ -540,6 +571,9 @@ const WormMarks = {
     geometry: wormMarkGeometry,
     extent: wormMarkExtent,
     halfBox: wormMarkHalfBox,
+    // Наружу — чтобы прогон мог спросить «а годится ли вот это место», а не
+    // угадывать ответ по последствиям.
+    headSpotOk: wormHeadSpotOk,
     // Координаты по коже и проверка пересечения — наружу, чтобы прогон мог
     // считать их без браузера (модуль намеренно без DOM).
     surface: wormMarkSurface,
