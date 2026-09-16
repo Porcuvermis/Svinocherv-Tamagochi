@@ -1345,26 +1345,37 @@ const { viewport, prepare } = require('./harness');
   await page.waitForTimeout(200);
   const scarTap = await page.evaluate(() => (GameState.data.scars || []).length);
 
-  await page.mouse.move(scarBox.x, scarBox.y);
-  await page.mouse.down();
-  await page.waitForTimeout(400);
-  const scarMid = await page.evaluate(() => {
+  // Свет меряется ДВАЖДЫ: в начале удержания и ближе к концу. Одного замера
+  // мало — он не отличает «набирается» от «включилось лампочкой сразу», а
+  // именно так первая версия и работала: класс вешался разом, и заливка
+  // белым срабатывала мгновенно.
+  const lit = () => page.evaluate(() => {
     const layer = document.querySelector('#wrath-lobby-worm .worm-scar-layer');
-    const path = document.querySelector('#wrath-lobby-worm .worm-mark-scar path');
+    const f = layer ? getComputedStyle(layer).filter : '';
+    const m = /brightness\(([\d.]+)\)/.exec(f);
     return {
       charging: WrathLobby.wormBox.classList.contains('charging'),
-      glow: Number(getComputedStyle(document.getElementById('wrath-hold-glow')).opacity),
-      // Светятся ШРАМЫ, а не червь: заливка белым плюс свет наружу со слоя.
-      fill: path ? getComputedStyle(path).fill : '',
-      lit: layer ? getComputedStyle(layer).filter : '',
+      bright: m ? Number(m[1]) : 0,
+      filter: f,
+      // Общего ореола вокруг червя быть не должно: свет идёт ОТ ШРАМОВ.
+      halo: !!document.getElementById('wrath-hold-glow'),
       // Шрамы вообще должны быть видны в лобби — до правки их там не было
       // вовсе, хотя в комнате они появлялись сразу (docs/traps.md, п. 98).
       marks: document.querySelectorAll('#wrath-lobby-worm .worm-mark-scar').length
     };
   });
-  await page.waitForTimeout(450);
+
+  await page.mouse.move(scarBox.x, scarBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  const scarEarly = await lit();
+  await page.waitForTimeout(400);
+  const scarMid = await lit();
+  // Удержание кончается на 700 мс от нажатия; к этому моменту прошло 520.
+  // Дальше замер делается ВНУТРИ вспышки очищения (BURST_MS), а не после неё.
+  await page.waitForTimeout(230);
   await page.mouse.up();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(120);
   const scarDone = await page.evaluate(() => ({
     cleansed: WrathLobby.wormBox.classList.contains('cleansed'),
     // Искры вылетают из шрамов и летят в счётчик жетонов.
@@ -1377,9 +1388,11 @@ const { viewport, prepare } = require('./harness');
   check(scarTap === scarBox.need + 5,
     'случайный тап шрамы НЕ перерабатывает');
   check(scarMid.marks > 0, `шрамы видны в лобби гнева: ${scarMid.marks}`);
-  check(scarMid.charging && /drop-shadow/.test(scarMid.lit)
-        && scarMid.fill === 'rgb(255, 255, 255)',
-    `пока палец на месте, светятся сами шрамы (заливка ${scarMid.fill})`);
+  check(!scarMid.halo, 'общего ореола вокруг червя нет: светятся только шрамы');
+  check(scarMid.charging && /drop-shadow/.test(scarMid.filter),
+    'пока палец на месте, светятся сами шрамы');
+  check(scarEarly.bright > 1 && scarMid.bright > scarEarly.bright * 1.4,
+    `свет НАБИРАЕТСЯ, а не включается сразу: ${scarEarly.bright.toFixed(2)} → ${scarMid.bright.toFixed(2)}`);
   check(scarDone.scars === 5 && scarDone.tokens === scarBox.gives,
     `удержание переработало ${scarBox.need} шрамов в жетон: осталось ${scarDone.scars}, жетонов ${scarDone.tokens}`);
   check(scarDone.cleansed, 'свечение разлетелось вспышкой очищения');

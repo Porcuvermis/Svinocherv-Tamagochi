@@ -229,92 +229,73 @@
 }
 
 /* ---------- УДЕРЖАНИЕ: СВЕТЯТСЯ ШРАМЫ ----------
-   Палец на черве — за семь десятых секунды ШРАМЫ наливаются светом: заливаются
-   белым вместо своей текстуры и начинают светить наружу, как лампочки.
-   Досидел, и их хватило — они разлетаются искрами, и те влетают в кошелёк.
-   Не хватило — свет краснеет и гаснет.
+   Палец на черве — шрамы ПОСТЕПЕННО наливаются светом: за семь десятых
+   секунды теряют свой цвет, выгорают добела и начинают светить наружу.
+   Досидел, и их хватило — они разлетаются искрами в кошелёк. Не хватило —
+   свет краснеет и гаснет.
 
-   ---------- ЧТО БЫЛО ДО ----------
-   Светилось всё тело целиком. Выглядело эффектно и говорило не то: жест про
-   ШРАМЫ, а подсвечивался персонаж, и связь «светится — значит уйдёт» не
-   читалась. Теперь горит ровно то, что сейчас переработают.
+   ---------- ПОЧЕМУ ЯРКОСТЬЮ, А НЕ ЗАЛИВКОЙ ----------
+   Первая версия красила шрамы белым через `fill` в классе. Класс вешается
+   разом, и свет включался МГНОВЕННО, как лампочка: удержание переставало
+   читаться как процесс — не было видно, что что-то набирается.
+
+   Заливку `fill` анимировать нельзя: у каждого шрама свой цвет и он стоит
+   атрибутом на узле, а css-свойство его перебивает — начальное значение
+   анимации взять неоткуда. Поэтому свет набирается ЯРКОСТЬЮ: обесцвечивание
+   плюс разгон brightness за то же время выжигают шрам добела из любого
+   исходного цвета, и делают это плавно.
 
    ---------- ПРО ФИЛЬТР НА ЖИВОМ СЛОЕ ----------
    docs/traps.md, п. 73: фильтр на слое, который меняется каждый кадр, стоит
-   дорого. Поэтому свечение висит на СЛОЯХ ШРАМОВ (их шесть, по числу частей
-   тела), а не на каждой отметине по отдельности — отметин бывает под сорок.
-   И это разовая анимация, пока палец прижат, а не состояние экрана. */
+   дорого. Поэтому он висит на СЛОЯХ ШРАМОВ (их шесть, по числу частей тела),
+   а не на каждой отметине по отдельности — отметин бывает под сорок. И это
+   разовая анимация, пока палец прижат, а не состояние экрана.
+
+   Общего ореола вокруг червя здесь нет намеренно: свет должен идти ОТ
+   ШРАМОВ. Нимб вокруг персонажа возвращал ровно ту мысль, от которой
+   уходили, — будто светится он сам. */
 .wrath-lobby-box { position: relative; }
-
-/* Заливка: шрам теряет свою текстуру и становится светом. */
-.wrath-lobby-box.charging .worm-mark-scar path,
-.wrath-lobby-box.cleansed .worm-mark-scar path { fill: #fff; }
-
-.wrath-lobby-box.charging .worm-mark-scar polyline,
-.wrath-lobby-box.cleansed .worm-mark-scar polyline { stroke: #fff; opacity: 1; }
 
 .wrath-lobby-box.charging .worm-scar-layer {
     animation: scars-charge 700ms ease-in forwards;
 }
 
 @keyframes scars-charge {
-    0%   { filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
-    100% { filter: drop-shadow(0 0 5px rgba(255, 252, 230, 0.95))
-                   drop-shadow(0 0 13px rgba(255, 226, 150, 0.7)); }
-}
-
-/* Ореол вокруг тела — подпор для свечения шрамов: без него свет есть только
-   на самих отметинах и не «стоит в воздухе». Обычный градиент отдельным
-   слоем, чтобы не платить ещё одним фильтром. */
-.hold-glow {
-    position: absolute;
-    inset: -12%;
-    border-radius: 50%;
-    pointer-events: none;
-    opacity: 0;
-    z-index: 24;
-    background: radial-gradient(circle at 50% 55%,
-        rgba(255, 255, 255, 0.35) 0%,
-        rgba(255, 240, 200, 0.18) 34%,
-        rgba(255, 210, 140, 0) 66%);
-}
-
-.wrath-lobby-box.charging .hold-glow {
-    animation: hold-glow-rise 700ms ease-in forwards;
-}
-
-@keyframes hold-glow-rise {
-    0%   { opacity: 0;   transform: scale(0.72); }
-    100% { opacity: 0.9; transform: scale(1.1); }
+    0%   { filter: brightness(1) saturate(1)
+                   drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
+    45%  { filter: brightness(2.2) saturate(0.5)
+                   drop-shadow(0 0 3px rgba(255, 252, 230, 0.55)); }
+    100% { filter: brightness(5) saturate(0)
+                   drop-shadow(0 0 6px rgba(255, 252, 230, 0.95))
+                   drop-shadow(0 0 15px rgba(255, 226, 150, 0.75)); }
 }
 
 /* ---------- ОЧИЩЕНИЕ ----------
    Шрамов хватило: они вспыхивают и ИСЧЕЗАЮТ, рассыпавшись искрами. Сами
    искры рисует общий слой кошелька (src/core/wallet-fx.js) — они летят в
-   счётчик жетонов, и потому живут не здесь, а там, где их цель. */
+   счётчик жетонов, и потому живут не здесь, а там, где их цель.
+
+   Здесь, на пике, заливка уже добита до белого классом: шрам к этому моменту
+   и так выжжен яркостью, а ровный белый убирает остатки оттенка, чтобы
+   вспышка была одного цвета с искрами. */
+.wrath-lobby-box.cleansed .worm-mark-scar path { fill: #fff; }
+.wrath-lobby-box.cleansed .worm-mark-scar polyline { stroke: #fff; opacity: 1; }
+
 .wrath-lobby-box.cleansed .worm-scar-layer {
     animation: scars-burst 420ms ease-out forwards;
 }
 
 @keyframes scars-burst {
-    0%   { opacity: 1; filter: drop-shadow(0 0 5px rgba(255, 252, 230, 0.95))
-                               drop-shadow(0 0 13px rgba(255, 226, 150, 0.7)); }
-    18%  { opacity: 1; filter: drop-shadow(0 0 12px #fff) drop-shadow(0 0 26px #fff); }
-    100% { opacity: 0; filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
-}
-
-.wrath-lobby-box.cleansed .hold-glow {
-    animation: hold-burst 900ms cubic-bezier(0.18, 0.7, 0.3, 1) forwards;
-}
-
-@keyframes hold-burst {
-    0%   { opacity: 0.9; transform: scale(1.1); }
-    20%  { opacity: 1;   transform: scale(1.75); }
-    100% { opacity: 0;   transform: scale(3.2); }
+    0%   { opacity: 1; filter: brightness(5) saturate(0)
+                               drop-shadow(0 0 6px rgba(255, 252, 230, 0.95)); }
+    18%  { opacity: 1; filter: brightness(6) saturate(0)
+                               drop-shadow(0 0 14px #fff) drop-shadow(0 0 28px #fff); }
+    100% { opacity: 0; filter: brightness(6) saturate(0)
+                               drop-shadow(0 0 0 rgba(255, 255, 255, 0)); }
 }
 
 /* ---------- ОТКАЗ ----------
-   Шрамов не набралось: тот же свет краснеет и умирает, шрамы остаются на
+   Шрамов не набралось: набранный свет краснеет и умирает, шрамы остаются на
    месте. Тот же язык, что у кошелька, которому не хватило, — красная вспышка
    там, где причина (docs/plan/11-no-words.md). */
 .wrath-lobby-box.refused .worm-mark-scar path { fill: #ff5a46; }
@@ -324,22 +305,8 @@
 }
 
 @keyframes scars-refuse {
-    0%   { filter: drop-shadow(0 0 10px rgba(255, 90, 70, 0.95)); }
-    100% { filter: drop-shadow(0 0 0 rgba(255, 90, 70, 0)); }
-}
-
-.wrath-lobby-box.refused .hold-glow {
-    background: radial-gradient(circle at 50% 55%,
-        rgba(255, 90, 70, 0.55) 0%,
-        rgba(255, 59, 48, 0.25) 38%,
-        rgba(255, 59, 48, 0) 70%);
-    animation: hold-refuse 450ms ease-out forwards;
-}
-
-@keyframes hold-refuse {
-    0%   { opacity: 0.9; transform: scale(1.1); }
-    35%  { opacity: 1;   transform: scale(1.18); }
-    100% { opacity: 0;   transform: scale(0.9); }
+    0%   { filter: brightness(1.6) drop-shadow(0 0 11px rgba(255, 90, 70, 0.95)); }
+    100% { filter: brightness(1) drop-shadow(0 0 0 rgba(255, 90, 70, 0)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
