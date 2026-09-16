@@ -44,11 +44,9 @@ const WrathLobby = {
     healClock: null,
     shownWallet: null,
     lackTimer: null,
-    holdEl: null,
-    holdFillEl: null,
-    holdCircumference: 0,
     holdTimer: null,
     holdActive: false,
+    burstTimer: null,
 
     init(host) {
         this.host = host;
@@ -66,8 +64,6 @@ const WrathLobby = {
         this.fightEl = document.getElementById('wrath-fight');
         this.modesEl = document.getElementById('wrath-modes');
         this.cardEl = document.getElementById('wrath-slot-card');
-        this.holdEl = document.getElementById('wrath-hold');
-        this.holdFillEl = document.getElementById('wrath-hold-fill');
 
         this.buildSlots();
         this.buildModes();
@@ -141,15 +137,11 @@ const WrathLobby = {
         // контейнер, поэтому переносится после монтирования. Внутри сцены оно
         // масштабируется вместе с червём и остаётся над головой при любом
         // размере тела.
-        if (this.holdEl) this.wormStage.appendChild(this.holdEl);
 
         // Вписывается по реальному силуэту и только после первого кадра:
         // сегменты получают transform в tick(), не при сборке.
         requestAnimationFrame(() => requestAnimationFrame(() => {
             WrathFighter.fitWorm(this.wormHandle, this.wormStage, this.wormBox, 1);
-            // Ещё кадр: перестановка червя доезжает до экрана только в
-            // следующем тике рендерера.
-            requestAnimationFrame(() => this.placeHoldRing());
         }));
     },
 
@@ -448,7 +440,12 @@ const WrathLobby = {
     // Чтобы жест был находим, он ПОКАЗЫВАЕТ СЕБЯ: от первого касания под
     // червём появляется полоска и начинает заполняться. Отпустил раньше —
     // полоска исчезла, но игрок уже увидел, что что-то набиралось.
-    HOLD_MS: 1500,
+    // Семь десятых секунды: столько тело наливается светом. Длиннее —
+    // жест начинает казаться зависанием, короче — свечение не успевает
+    // прочитаться как процесс.
+    HOLD_MS: 700,
+    BURST_MS: 900,      // столько разлетается вспышка очищения
+    REFUSE_MS: 450,     // столько держится красный отказ
 
     bindHold() {
         if (!this.wormBox) return;
@@ -482,79 +479,85 @@ const WrathLobby = {
         });
     },
 
-    // Кольцо ставится над макушкой по РЕАЛЬНЫМ габаритам головы: у
-    // подросшего червя голова крупнее и выше, и кольцо переедет вместе с ней.
-    // Координаты — в единицах сцены, поэтому масштаб сцены применяется к
-    // кольцу сам собой.
-    placeHoldRing() {
-        if (!this.holdEl || !this.wormHandle) return;
-        const headEl = this.wormHandle.svgRoot.querySelector('[data-part="head"]');
-        const head = WrathFighter.boxOf(this.wormHandle, headEl);
-        if (!head) return;
-
-        const size = Math.max(44, head.w * 0.6);
-        this.holdEl.style.width = `${size.toFixed(1)}px`;
-        this.holdEl.style.height = `${size.toFixed(1)}px`;
-        this.holdEl.style.left = `${head.cx.toFixed(1)}px`;
-        // Над макушкой, с зазором: кольцо не должно наезжать на уши.
-        this.holdEl.style.top = `${(head.y - size * 0.5).toFixed(1)}px`;
-    },
-
     startHold() {
         if (this.holdActive) return;
         this.holdActive = true;
 
-        // Место кольца считается в момент касания, а не при монтировании:
-        // fitWorm() переставляет червя, но сама перестановка доезжает до
-        // экрана только следующим кадром рендерера, и позиция головы,
-        // измеренная сразу после неё, оказывается ещё старой.
-        this.placeHoldRing();
-        if (this.holdEl) this.holdEl.classList.add('show');
-        if (this.holdFillEl) {
-            // Заполнение по кругу — это длина штриха: обводка нарисована
-            // пунктиром в одну окружность, и сдвиг пунктира открывает её
-            // постепенно. Одно анимируемое свойство, никакой перерисовки.
-            if (!this.holdCircumference) {
-                const r = Number(this.holdFillEl.getAttribute('r')) || 42;
-                this.holdCircumference = 2 * Math.PI * r;
-                this.holdFillEl.style.strokeDasharray = this.holdCircumference.toFixed(2);
-            }
-            // Сброс без перехода, потом рост с переходом: иначе кольцо поедет
-            // из прошлого положения.
-            this.holdFillEl.style.transition = 'none';
-            this.holdFillEl.style.strokeDashoffset = this.holdCircumference.toFixed(2);
-            void this.holdFillEl.getBoundingClientRect();
-            this.holdFillEl.style.transition = `stroke-dashoffset ${this.HOLD_MS}ms linear`;
-            this.holdFillEl.style.strokeDashoffset = '0';
+        // Тело НАЛИВАЕТСЯ СВЕТОМ, пока палец на месте. Это сразу две вещи:
+        // индикатор удержания и объяснение того, что произойдёт в конце —
+        // шрамы сойдут под этим же свечением. Отдельного кольца над головой
+        // больше нет: кольцо показывало «что-то грузится», а свечение
+        // показывает, ЧТО ИМЕННО грузится.
+        //
+        // Фильтр висит на слое, который и без того живой (червь дышит и
+        // моргает), и это ровно тот случай, про который предупреждает
+        // docs/traps.md, п. 73. Здесь он допустим осознанно: это разовая
+        // анимация на семь десятых секунды, пока палец прижат, а не
+        // постоянное состояние экрана.
+        if (this.wormBox) {
+            this.wormBox.classList.remove('cleansed', 'refused');
+            void this.wormBox.offsetWidth;
+            this.wormBox.classList.add('charging');
         }
 
         this.holdTimer = setTimeout(() => {
             this.holdTimer = null;
-            this.cancelHold(false);
-            this.host.startMode('boost');
+            this.finishHold();
         }, this.HOLD_MS);
     },
 
-    // hint=true — палец убрали сами, значит жест не понят: подсказываем.
-    // hint=false — удержание сработало или экран закрывается, молчим.
-    cancelHold(hint) {
-        const wasActive = this.holdActive;
+    // ---------- ЧТО ПРОИСХОДИТ В КОНЦЕ УДЕРЖАНИЯ ----------
+    // Переработка шрамов в жетон. Механика спрятана в жест нарочно: показать
+    // её прилавком нечем — это не покупка, а то, что происходит С ТЕЛОМ, и
+    // тело же за неё отвечает.
+    //
+    // Хватило шрамов — они сходят под свечением, и оно РАЗЛЕТАЕТСЯ вспышкой:
+    // очищение. Не хватило — то же свечение коротко краснеет и гаснет.
+    // Ни одного слова ни в том, ни в другом случае (инвариант 9).
+    finishHold() {
         this.holdActive = false;
+        const answer = Backend.exchangeScars();
 
+        if (this.wormBox) this.wormBox.classList.remove('charging');
+        if (this.burstTimer) { clearTimeout(this.burstTimer); this.burstTimer = null; }
+
+        if (!answer.ok) {
+            if (this.wormBox) this.wormBox.classList.add('refused');
+            if (typeof Haptics !== 'undefined') Haptics.notify('error');
+            this.burstTimer = setTimeout(() => {
+                this.burstTimer = null;
+                if (this.wormBox) this.wormBox.classList.remove('refused');
+            }, this.REFUSE_MS);
+            return;
+        }
+
+        if (this.wormBox) this.wormBox.classList.add('cleansed');
+        if (typeof Haptics !== 'undefined') Haptics.notify('success');
+        // Тело перерисовывается сразу — и на главном экране тоже: обмен в
+        // первую очередь про то, как червь выглядит. Перерисовка идёт ПОД
+        // вспышкой, поэтому исчезновение шрамов читается как её работа.
+        if (typeof refreshWormMarks === 'function') refreshWormMarks();
+        this.refresh();
+        this.burstTimer = setTimeout(() => {
+            this.burstTimer = null;
+            if (this.wormBox) this.wormBox.classList.remove('cleansed');
+        }, this.BURST_MS);
+    },
+
+    // hint=true — палец убрали сами, значит жест не досидели.
+    // hint=false — удержание сработало или экран закрывается.
+    //
+    // Подсказки словами здесь нет и не будет: свечение уже показало себя —
+    // начало наливаться и погасло. Этого достаточно, чтобы понять, что палец
+    // надо подержать (CLAUDE.md, инвариант 9).
+    cancelHold(hint) {
+        this.holdActive = false;
         if (this.holdTimer) {
             clearTimeout(this.holdTimer);
             this.holdTimer = null;
         }
-        if (this.holdEl) this.holdEl.classList.remove('show');
-        if (this.holdFillEl && this.holdCircumference) {
-            this.holdFillEl.style.transition = 'stroke-dashoffset 0.15s ease';
-            this.holdFillEl.style.strokeDashoffset = this.holdCircumference.toFixed(2);
-        }
-        // Раньше здесь всплывала подсказка словами. Её нет и не будет:
-        // кольцо над головой уже показало себя — начало заполняться и
-        // откатилось. Этого достаточно, чтобы понять, что палец надо
-        // подержать (CLAUDE.md, инвариант 9).
-        void hint; void wasActive;
+        if (this.wormBox) this.wormBox.classList.remove('charging');
+        void hint;
     },
 
     // ---------- ОТКАЗ БЕЗ СЛОВ ----------

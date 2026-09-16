@@ -48,7 +48,6 @@ const WrathMinigame = {
         WrathLobby.init(this);
         WrathDuel.init(this);
         WrathShop.init(this);
-        WrathBoost.init(this);
         WrathRogue.init(this);
 
         // ---------- УЗЕЛ ГНЕВА В КОЛЕСЕ ГРЕХОВ ----------
@@ -85,7 +84,6 @@ const WrathMinigame = {
         WrathDuel.leave();
         WrathLobby.leave();
         WrathShop.leave();
-        WrathBoost.leave();
         WrathRogue.leave();
         this.current = null;
         if (this.win) this.win.hideConfirm();
@@ -97,7 +95,6 @@ const WrathMinigame = {
     showLobby() {
         WrathDuel.leave();
         WrathShop.leave();
-        WrathBoost.leave();
         WrathRogue.leave();
         this.setScreen('lobby');
         WrathLobby.enter();
@@ -110,7 +107,6 @@ const WrathMinigame = {
         WrathDuel.leave();
         WrathLobby.leave();
         WrathShop.leave();
-        WrathBoost.leave();
         this.setScreen('rogue');
         WrathRogue.enter();
     },
@@ -139,7 +135,6 @@ const WrathMinigame = {
         // захода.
         WrathLobby.leave();
         WrathShop.leave();
-        WrathBoost.leave();
         // Забег сносится ТОЖЕ, включая сам забег: кнопка режима — это
         // осознанный переход на экран, а не «оставь как было». Иначе тап по
         // 🗺 с показанного итога оставлял итог на месте, и кнопка под пальцем
@@ -151,11 +146,6 @@ const WrathMinigame = {
         if (mode === 'shop') {
             this.setScreen('shop');
             WrathShop.enter();
-            return;
-        }
-        if (mode === 'boost') {
-            this.setScreen('boost');
-            WrathBoost.enter();
             return;
         }
         if (mode === 'rogue') {
@@ -173,7 +163,6 @@ const WrathMinigame = {
     startFight(mode) {
         WrathLobby.leave();
         WrathShop.leave();
-        WrathBoost.leave();
         WrathRogue.leave();
         this.setScreen('duel');
         WrathDuel.enter(mode || 'duel');
@@ -188,7 +177,7 @@ const WrathMinigame = {
     // В БОЮ скрыто и то и другое: там своё здоровье и своя полоса, а чужая
     // рядом читалась бы как ещё один боец; уходить же посреди размена нельзя
     // вовсе, и ряд режимов внизу был бы приглашением это сделать.
-    HEAD_SCREENS: ['lobby', 'shop', 'boost', 'rogue'],
+    HEAD_SCREENS: ['lobby', 'shop', 'rogue'],
 
     setBackdrop(name) {
         const el = document.getElementById('wrath-backdrop');

@@ -1,55 +1,38 @@
 // ================= БОЕВАЯ ПРОКАЧКА ГНЕВА =================
-// Открывается УДЕРЖАНИЕМ пальца на черве в лобби. Здесь качаются за жетоны
-// три величины самого бойца — урон, здоровье, скорость регенерации — и здесь
-// же меняются шрамы.
+// Две полки в общем ряду лавки гнева: 📈 числа самого бойца (урон, здоровье,
+// скорость регенерации) и ✨ способности, меняющие правила боя.
 //
-// ---------- ЧЕМ ЭТО ОТЛИЧАЕТСЯ ОТ МАГАЗИНА ----------
-// Магазин продаёт ПРЕДМЕТЫ: их надевают и снимают, они занимают слоты.
-// Прокачка — это сам червь: купленное остаётся навсегда и снять его нельзя.
-// Поэтому и экран отдельный, и открывается он не кнопкой в списке режимов, а
-// жестом по самому персонажу — качают ведь его.
+// ---------- СВОЕГО ЭКРАНА У ПРОКАЧКИ БОЛЬШЕ НЕТ ----------
+// Был: отдельный экран, куда попадали удержанием пальца на черве и только из
+// лобби. Покупки из-за этого жили в двух разных местах, и в одно из них вёл
+// скрытый жест — игрок не находил половину того, что можно купить.
 //
-// ---------- ПОЧЕМУ ОБМЕН ШРАМОВ ЗДЕСЬ ----------
-// Раньше он висел на обычном тапе по червю. Тап — слишком дешёвый жест для
-// необратимого действия (пятнадцать шрамов не вернуть), и он занимал собой
-// единственное «нажатие на персонажа». Теперь это обычная кнопка рядом с
-// прокачкой: обмен — такая же операция с валютой, как покупка уровня.
+// Теперь всё покупаемое лежит за одной кнопкой 🏪, одним рядом полок:
+// пять слотов снаряжения, 📈 числа, ✨ способности. Этот модуль поставляет
+// две последние полки, а рисует их WrathShop.
+//
+// ---------- ЧЕМ ЭТО ОТЛИЧАЕТСЯ ОТ СНАРЯЖЕНИЯ ----------
+// Снаряжение — ПРЕДМЕТЫ: их надевают и снимают, они занимают слоты.
+// Прокачка — сам червь: купленное остаётся навсегда и снять его нельзя.
+// Разница осталась, а разные экраны под неё — нет: полка в одном ряду
+// показывает её дешевле, чем отдельный экран за скрытым жестом.
+//
+// ---------- ОБМЕН ШРАМОВ ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ ----------
+// Он уехал на удержание пальца по самому червю (WrathLobby.startHold):
+// шрамы на теле, свечение по телу, шрамы сходят под свечением. Прилавку
+// такое показать нечем — там это была строка «🩹 6/15» среди покупок.
 
 const WrathBoost = {
 
-    host: null,
-    root: null,
-    listEl: null,
-    tabsEl: null,
-    // Открытая вкладка: 'duel' — что работает в бою, 'rogue' — что работает
-    // в забеге. Одна и та же покупка может стоять на обеих.
-    tab: 'duel',
     // Чего не хватило на покупку: подсвечивается в кошельке и гаснет само.
     // Слов «не хватает жетонов» больше нет (docs/plan/11-no-words.md).
     lack: null,
     lackTimer: null,
 
-    init(host) {
-        this.host = host;
-        this.root = document.getElementById('wrath-boost');
-        if (!this.root) return;
-
-        this.listEl = document.getElementById('boost-list');
-        this.tabsEl = document.getElementById('boost-tabs');
-
-        // Своей кнопки возврата у экрана нет: она одна на все меню и стоит
-        // в общем подвале (index.html, #wrath-foot).
-    },
-
-    enter() {
-        this.lack = null;
-        this.render();
-    },
-
+    // Таймер отказа гасится лавкой на выходе: иначе он сработает уже на
+    // другом экране и перерисует тот, которого на экране нет.
     leave() {
         this.lack = null;
-        // И таймер отказа: без этого он сработает уже на другом экране и
-        // перерисует этот — тот, которого на экране нет.
         if (this.lackTimer) { clearTimeout(this.lackTimer); this.lackTimer = null; }
     },
 
@@ -57,26 +40,56 @@ const WrathBoost = {
         return (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.upgrades) || { order: [] };
     },
 
-    // Ветки вкладки: открытые и ещё не выкачанные до потолка.
+    // ---------- ПОЛКИ ПРОКАЧКИ ----------
+    // Модуль больше не рисует себе экран и вкладки: он поставляет ДВЕ ПОЛКИ
+    // в общий ряд лавки (WrathShop). Раньше прокачка была отдельным экраном,
+    // куда попадали только удержанием пальца на черве и только из лобби, —
+    // то есть покупки жили в двух разных местах, в одно из которых вёл
+    // скрытый жест. Теперь всё покупаемое лежит за одной кнопкой 🏪.
     //
-    // ---------- ВКЛАДКИ ПО РЕЖИМАМ, А НЕ ПО ВИДУ ----------
-    // Раньше вкладки делили покупки на «числа» и «способности». Деление
-    // честное и игроку бесполезное: он покупает не ради того, чтобы иметь
-    // число или способность, а ради того, чтобы это где-то работало. А вот
-    // это как раз нигде не было написано — и не совпадало с ожиданием:
-    // снаряжение и числовая прокачка в забег НЕ ЕДУТ вовсе, там свой боец с
-    // числами из конфига (WrathFighter.forRun). Игрок качал урон и шёл с ним
-    // в забег, где урона не прибавилось.
+    // Полок две, и делятся они по ВИДУ товара, а не по режиму:
+    //   📈 числа бойца   — урон, здоровье, регенерация
+    //   ✨ способности   — то, что меняет правила боя
     //
-    // Теперь вкладка — это РЕЖИМ, и значки те же, что на кнопках в подвале:
-    // ⚔️ бой, 🗺 забег. Что работает и там и там (шестое чувство), стоит на
-    // обеих. Купленное в забеге видно там, где оно сработает.
+    // Деление по режимам пробовали и отказались: шестое чувство работает и в
+    // бою, и в забеге, поэтому стояло сразу на двух вкладках, а после покупки
+    // исчезало с обеих. «Купил в одном месте — пропало в двух» — это не
+    // структура, а ребус. Где вещь работает, теперь сказано ЗНАЧКОМ РЕЖИМА:
+    // у полки, если вся полка про один режим, и у строки, если у строк
+    // по-разному.
+    SHELVES: [
+        { key: 'stat',    emoji: '📈', tab: 'stat' },
+        { key: 'passive', emoji: '✨', tab: 'passive' }
+    ],
+
+    shelves() {
+        return this.SHELVES.map(sh => ({
+            key: sh.key,
+            emoji: sh.emoji,
+            kind: 'boost',
+            rest: this.branches(sh.tab),
+            // Значок режима у полки — только если ВСЯ полка про одно место.
+            // У способностей режимы разные, и значок уезжает на строки.
+            modes: this.shelfModes(sh.tab)
+        })).filter(sh => sh.rest.length);
+    },
+
+    // Общие режимы всей полки: если у всех веток они одинаковые — вернуть их,
+    // иначе null (значит, показывать надо построчно).
+    shelfModes(tab) {
+        const conf = this.conf();
+        const list = this.branches(tab).map(key => (conf[key].modes || ['duel']).join());
+        if (!list.length) return null;
+        return list.every(m => m === list[0]) ? list[0].split(',') : null;
+    },
+
+    // Ветки полки: открытые и ещё не выкачанные до потолка.
     branches(tab) {
         const conf = this.conf();
         return (conf.order || []).filter(key => {
             const branch = conf[key];
             if (!branch || !branch.levels) return false;
-            if ((branch.modes || ['duel']).indexOf(tab) < 0) return false;
+            if ((branch.tab || 'stat') !== tab) return false;
             // Ветка с невыполненным условием не показывается вовсе — как и
             // предмет в магазине (Backend.isUnlocked).
             if (!Backend.isUnlocked(branch.unlock)) return false;
@@ -86,42 +99,25 @@ const WrathBoost = {
         });
     },
 
-    TABS: [
-        { key: 'duel', emoji: '⚔️' },
-        { key: 'rogue', emoji: '🗺' }
-    ],
-
-    render() {
-        if (!this.root) return;
-        if (!this.listEl) return;
-
-        if (this.tabsEl) {
-            this.tabsEl.innerHTML = this.TABS.map(tab => {
-                const left = this.branches(tab.key).length;
-                return `
-                    <button type="button" class="shop-tab${tab.key === this.tab ? ' on' : ''}${left ? '' : ' done'}"
-                            data-tab="${tab.key}">
-                        <span class="shop-tab-emoji">${tab.emoji}</span>
-                    </button>`;
-            }).join('');
-            this.tabsEl.querySelectorAll('.shop-tab').forEach(btn => {
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    this.tab = btn.dataset.tab;
-                    this.render();
-                };
-            });
-        }
-
+    // ---------- СТРОКИ ПОЛКИ ----------
+    // Экран рисует лавка, отсюда приходит только содержимое полки. Строка
+    // такая же, как у предмета: значок, что даёт сейчас, точки уровня, цена.
+    rowsHtml(shelfKey) {
         const conf = this.conf();
-        let html = '';
+        const shelf = this.SHELVES.find(sh => sh.key === shelfKey);
+        if (!shelf) return '';
+        // Значок режима на строке нужен только там, где у строк он РАЗНЫЙ:
+        // если вся полка про одно место, значок стоит на самой полке и
+        // повторять его в каждой строке значит писать одно и то же трижды.
+        const perRow = this.shelfModes(shelf.tab) === null;
 
-        this.branches(this.tab).forEach(key => {
+        return this.branches(shelf.tab).map(key => {
             const branch = conf[key];
             const level = GameState.upgradeLevel(key);
             const next = branch.levels[level];
             const now = GameState.upgradeBonus(key);
             const affordable = this.affordable(next.price);
+            const passive = branch.tab === 'passive';
 
             // Уровень — точками, а не словом «уровень 2 из 3»: сколько
             // залито, столько куплено, и сразу видно, где потолок.
@@ -129,68 +125,29 @@ const WrathBoost = {
             // Нажимается вся строка. Не по карману — приглушена и не
             // выглядит кнопкой, но тап всё равно отвечает: вздрагивает
             // валюта, которой не хватило.
-            html += `
+            return `
                 <button type="button" class="boost-item${affordable ? '' : ' poor'}" data-key="${key}">
                     <span class="boost-emoji">${branch.emoji}</span>
                     <span class="boost-text">
-                        <span class="boost-now">${branch.tab === 'passive'
-                            ? branch.emoji
+                        <span class="boost-now">${passive
+                            ? (perRow ? WrathFighter.modeMarks(branch.modes) : branch.emoji)
                             : this.bonusText(key, now)}</span>
                         <span class="boost-pips">${this.pips(level, branch.levels.length)}</span>
                     </span>
                     <span class="boost-price">
                         <b>${this.priceText(next.price)}</b>
-                        ${branch.tab === 'passive' ? '' : `<i>${this.bonusText(key, next.bonus)}</i>`}
+                        ${passive ? '' : `<i>${this.bonusText(key, next.bonus)}</i>`}
                     </span>
                 </button>`;
-        });
+        }).join('');
+    },
 
-        // ---------- ОБМЕН ШРАМОВ ----------
-        // Обмен шрамов — такая же строка, как ветка прокачки: сколько
-        // накопилось из нужного, и кнопка с ценой и тем, что за неё дадут.
-        // Живёт на вкладке боя: шрамы меняются на жетоны, а жетоны тратятся
-        // и там и там. Вкладка забега — про то, что внутри забега работает,
-        // и обмену валюты там делать нечего.
-        //
-        // Награда рисуется через currencyMark, а не эмодзи из конфига. Здесь
-        // как раз и оставался последний билетик 🎟: жетон во всём грехе — это
-        // нарисованная эмблема (src/core/token-art.js), а в одной строке он
-        // был системной картинкой. Одна и та же вещь, показанная двумя
-        // разными значками, читается как две разные.
-        //
-        // Цены В ЦЕНЕ НЕТ, и это не забывчивость: слева уже стоит «🩹 6 из
-        // 15» — та же пятнашка, сказанная дробью. Повторять её справа значит
-        // писать одно число дважды и заставлять сверять, одно ли это и то же
-        // (docs/traps.md, п. 82). Справа осталось только то, чего слева нет:
-        // что за это дадут.
-        const rule = ECONOMY.marks.exchange;
-        if (this.tab !== 'duel') {
-            this.listEl.innerHTML = html || '<div class="shop-empty">✓</div>';
-            this.listEl.querySelectorAll('.boost-item[data-key]').forEach(btn => {
-                btn.onclick = (e) => { e.stopPropagation(); this.buy(btn.dataset.key); };
-            });
-            return;
-        }
-        const scars = (GameState.data.scars || []).length;
-        const ready = scars >= rule.scars;
-        html += `
-            <button type="button" class="boost-item${ready ? '' : ' poor'}${this.lack === 'scars' ? ' lack' : ''}" id="boost-scars">
-                <span class="boost-emoji">🩹</span>
-                <span class="boost-text">
-                    <span class="boost-now">🩹 ${scars}/${rule.scars}</span>
-                </span>
-                <span class="boost-price">
-                    <b>${currencyMark(rule.currency)} +${rule.amount}</b>
-                </span>
-            </button>`;
-
-        this.listEl.innerHTML = html;
-
-        this.listEl.querySelectorAll('.boost-item[data-key]').forEach(btn => {
+    // Клики по строкам полки. Вешает лавка, сразу после вставки разметки.
+    bindRows(listEl) {
+        if (!listEl) return;
+        listEl.querySelectorAll('.boost-item[data-key]').forEach(btn => {
             btn.onclick = (e) => { e.stopPropagation(); this.buy(btn.dataset.key); };
         });
-        const scarBtn = this.listEl.querySelector('#boost-scars');
-        if (scarBtn) scarBtn.onclick = (e) => { e.stopPropagation(); this.exchangeScars(); };
     },
 
     // Купленный уровень виден точками, отказ — красной вспышкой там, где
@@ -203,7 +160,7 @@ const WrathBoost = {
         // не хватает.
         if (next && !this.affordable(next.price)) {
             this.showLack(this.missing(next.price));
-            this.render();
+            WrathShop.render();
             return;
         }
 
@@ -213,7 +170,7 @@ const WrathBoost = {
         // Кошелёк в шапке подновляется СРАЗУ: он общий на все экраны греха,
         // и покупка обязана быть видна в тот же миг, а не через секунду.
         WrathLobby.refreshWallet();
-        this.render();
+        WrathShop.render();
     },
 
     affordable(price) {
@@ -225,21 +182,6 @@ const WrathBoost = {
             || 'wrath_token';
     },
 
-    exchangeScars() {
-        const answer = Backend.exchangeScars();
-        if (!answer.ok) {
-            this.showLack('scars');
-            this.render();
-            return;
-        }
-        this.lack = null;
-        // Тело перерисовывается сразу — и на главном экране тоже: обмен в
-        // первую очередь про то, как червь выглядит, и это же и есть ответ
-        // игроку вместо строки «столько-то шрамов сошло».
-        if (typeof refreshWormMarks === 'function') refreshWormMarks();
-        this.render();
-    },
-
     // Отказ показывает шапка — там же, где кошелёк (WrathLobby.flashLack).
     showLack(key) {
         this.lack = key;
@@ -248,7 +190,7 @@ const WrathBoost = {
         this.lackTimer = setTimeout(() => {
             this.lackTimer = null;
             this.lack = null;
-            this.render();
+            WrathShop.render();
         }, 900);
     },
 

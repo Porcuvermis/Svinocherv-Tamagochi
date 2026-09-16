@@ -35,6 +35,8 @@ const { viewport, prepare } = require('./harness');
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
 
   const fail = [];
+  // Сколько слотов снаряжения в каталоге: по нему считается длина ряда полок.
+  let WRATH_SLOTS = 0;
   const check = (ok, what) => { console.log((ok ? '  ok  ' : ' FAIL ') + what); if (!ok) fail.push(what); };
 
   await page.goto('http://127.0.0.1:8777/index.html');
@@ -304,10 +306,7 @@ const { viewport, prepare } = require('./harness');
     WrathMinigame.startMode('shop');
     const panel = document.getElementById('wrath-panel');
     const chips = panel.querySelectorAll('.panel-chip.wallet');
-    // Строка обмена шрамов живёт на экране прокачки — её надо открыть.
-    WrathMinigame.startMode('boost');
-    const scarsRow = (document.getElementById('boost-scars') || {}).innerHTML || '';
-    WrathMinigame.startMode('shop');
+    const scarsRow = '';
     return {
       tokens: panel.querySelectorAll('.panel-chip.wallet .token-art').length,
       digits: [...chips].map(c => (c.textContent || '').replace(/\s/g, '')).join(),
@@ -320,8 +319,9 @@ const { viewport, prepare } = require('./harness');
   check(wallet.tokens === 2, 'в кошельке два нарисованных жетона: целый и собираемый');
   check(wallet.digits === '2,', `цифра в кошельке одна — число жетонов («${wallet.digits}»), дроби нет`);
   check(wallet.price, 'ценник в лавке тоже показывает нарисованный жетон');
-  check(wallet.scars.indexOf('token-art') >= 0 && wallet.scars.indexOf('🎟') < 0,
-    'обмен шрамов тоже рисует жетон, а не системный билетик');
+  // Проверки обмена шрамов здесь больше нет: он уехал с прилавка на
+  // удержание пальца по черве, и проверяется ниже, в своём блоке.
+  void wallet.scars;
 
   // Раздеваем игрока обратно.
   await page.evaluate(() => {
@@ -354,7 +354,7 @@ const { viewport, prepare } = require('./harness');
         top: Math.round(el.getBoundingClientRect().top)
       };
     };
-    for (const mode of [null, 'shop', 'boost', 'rogue']) {
+    for (const mode of [null, 'shop', 'rogue']) {
       if (mode) WrathMinigame.startMode(mode); else WrathMinigame.showLobby();
       await new Promise(r => setTimeout(r, 260));
       seen[mode || 'lobby'] = look();
@@ -364,8 +364,8 @@ const { viewport, prepare } = require('./harness');
     seen.duel = look();
     return seen;
   });
-  const menus = ['lobby', 'shop', 'boost', 'rogue'];
-  check(menus.every(m => head[m].shown), 'шапка видна во всех четырёх меню лобби');
+  const menus = ['lobby', 'shop', 'rogue'];
+  check(menus.every(m => head[m].shown), 'шапка видна во всех трёх меню лобби');
   check(!head.duel.shown, 'в бою шапка скрыта: там своё здоровье');
   check(menus.every(m => head[m].hp === head.lobby.hp && head.lobby.hp),
     `здоровье одно и то же во всех меню: ${head.lobby.hp}`);
@@ -399,7 +399,7 @@ const { viewport, prepare } = require('./harness');
         width: Math.round(box.width)
       };
     };
-    for (const mode of [null, 'shop', 'boost', 'rogue']) {
+    for (const mode of [null, 'shop', 'rogue']) {
       if (mode) WrathMinigame.startMode(mode); else WrathMinigame.showLobby();
       await new Promise(r => setTimeout(r, 260));
       seen[mode || 'lobby'] = look();
@@ -411,7 +411,7 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 260));
     return seen;
   });
-  check(menus.every(m => foot[m].shown), 'подвал с режимами виден во всех четырёх меню');
+  check(menus.every(m => foot[m].shown), 'подвал с режимами виден во всех трёх меню');
   check(!foot.duel.shown, 'в бою подвал скрыт: уходить посреди размена нельзя');
   check(menus.every(m => foot[m].bottom === foot.lobby.bottom
                       && foot[m].width === foot.lobby.width),
@@ -492,7 +492,7 @@ const { viewport, prepare } = require('./harness');
   // и вышло, поэтому проверка постоянная.
   const fit = await page.evaluate(async () => {
     const out = {};
-    for (const mode of ['lobby', 'shop', 'boost', 'rogue']) {
+    for (const mode of ['lobby', 'shop', 'rogue']) {
       if (mode === 'lobby') WrathMinigame.showLobby(); else WrathMinigame.startMode(mode);
       await new Promise(r => setTimeout(r, 300));
       const body = document.querySelector('#wrath-game .mg-body').getBoundingClientRect();
@@ -539,7 +539,7 @@ const { viewport, prepare } = require('./harness');
   console.log('\n--- фоны экранов ---');
   const back = await page.evaluate(async () => {
     const seen = {};
-    for (const mode of ['lobby', 'shop', 'boost', 'rogue', 'duel']) {
+    for (const mode of ['lobby', 'shop', 'rogue', 'duel']) {
       // В бой — только startFight: кнопка режима ⚔️ теперь открывает МЕНЮ боя
       // (то самое лобби), и через неё до арены не добраться.
       if (mode === 'lobby') WrathMinigame.showLobby();
@@ -565,9 +565,9 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 260));
     return seen;
   });
-  const modes5 = ['lobby', 'shop', 'boost', 'rogue', 'duel'];
-  check(modes5.every(m => back[m].has && back[m].len > 400), 'фон есть на всех пяти экранах');
-  check(new Set(modes5.map(m => back[m].len)).size === 5,
+  const modes5 = ['lobby', 'shop', 'rogue', 'duel'];
+  check(modes5.every(m => back[m].has && back[m].len > 400), 'фон есть на всех четырёх экранах');
+  check(new Set(modes5.map(m => back[m].len)).size === modes5.length,
     `у каждого режима фон свой: ${modes5.map(m => back[m].len).join(' / ')} знаков`);
   check(modes5.every(m => !back[m].moving && !back[m].heavy),
     'фон статический: ни анимаций, ни фильтров, ни масок');
@@ -1178,7 +1178,7 @@ const { viewport, prepare } = require('./harness');
   // добор по кинжалам регулярно вставал именно в неё — то есть купленное
   // играло против игрока.
   console.log('\n--- шестое чувство ---');
-  const sense = await page.evaluate(async () => {
+  const senseZone = await page.evaluate(async () => {
     GameState.data.upgrades = Object.assign({}, GameState.data.upgrades, { sixth_sense: 1 });
     WrathMinigame.startFight('duel');
     await new Promise(r => setTimeout(r, 1200));
@@ -1198,31 +1198,22 @@ const { viewport, prepare } = require('./harness');
     const el = WrathDuel.zones.player[safe];
     const r = el.getBoundingClientRect();
     const under = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-    return {
+    const out = {
       safe, manual, rolled,
       blocked: getComputedStyle(el).pointerEvents === 'none',
       underSafe: !!(under && under.classList && under.classList.contains('safe'))
     };
-  });
-
-  check(!sense.noSafe, `шестое чувство пометило зону: ${sense.safe}`);
-  check(sense.manual === null, 'помеченную зону нельзя выбрать в защиту вручную');
-  check(sense.rolled === 0, `добор по кинжалам не берёт помеченную зону: ${sense.rolled} из 300`);
-  check(sense.blocked && !sense.underSafe, 'палец в помеченную зону не проходит');
-
-  // ---------- ВКЛАДКИ ЛАВКИ БЕЗ СЧЁТЧИКОВ ----------
-  const shopTabs = await page.evaluate(async () => {
-    GameState.data.currencies.wrath_token = 80;
-    WrathMinigame.startMode('shop');
-    await new Promise(r => setTimeout(r, 300));
-    // Способность снимается: купленная ветка уходит из меню прокачки, а
-    // проверки ниже смотрят именно на её наличие там.
+    // Способность снимается: купленная ветка уходит с полки, а проверка ниже
+    // смотрит именно на её наличие там.
     delete GameState.data.upgrades.sixth_sense;
-    return [...document.querySelectorAll('#shop-tabs .shop-tab')]
-      .map(b => b.textContent.replace(/\s+/g, ''));
+    return out;
   });
-  check(shopTabs.length > 0 && shopTabs.every(t => t === ''),
-    'на вкладках лавки нет счётчиков «1/5» — только силуэт слота');
+
+  check(!senseZone.noSafe, `шестое чувство пометило зону: ${senseZone.safe}`);
+  check(senseZone.manual === null, 'помеченную зону нельзя выбрать в защиту вручную');
+  check(senseZone.rolled === 0, `добор по кинжалам не берёт помеченную зону: ${senseZone.rolled} из 300`);
+  check(senseZone.blocked && !senseZone.underSafe, 'палец в помеченную зону не проходит');
+
 
   // ---------- ТРИ ХАРАКТЕРИСТИКИ И ОДНА БРОНЯ ----------
   // У бойца ровно три величины: ❤️ 🗡 🛡. Четвёртой (💪 maxHp) больше нет
@@ -1274,35 +1265,126 @@ const { viewport, prepare } = require('./harness');
     `в забеге показаны все три характеристики: «${stats3.runRow}»`);
   check(!/💪/.test(stats3.runRow + stats3.lobbyRow), 'значка 💪 на экранах нет');
 
-  // ---------- ПРОКАЧКА РАЗЛОЖЕНА ПО РЕЖИМАМ ----------
-  // Вопрос «а в забеге это работает?» должен иметь ответ на экране. Вкладки
-  // прокачки — это режимы, и вещь стоит на той вкладке, где сработает.
-  console.log('\n--- прокачка по режимам ---');
-  const byMode = await page.evaluate(async () => {
-    WrathMinigame.startMode('boost');
-    await new Promise(r => setTimeout(r, 300));
-    const tabs = [...document.querySelectorAll('#boost-tabs .shop-tab')]
-      .map(b => b.dataset.tab);
-    const rows = (tab) => {
-      WrathBoost.tab = tab;
-      WrathBoost.render();
-      return [...document.querySelectorAll('#boost-list .boost-item[data-key]')]
-        .map(b => b.dataset.key);
-    };
-    // Снаряжение снимается: оно поднимает максимум здоровья, а проверки
-    // ниже считают полное здоровье голого бойца.
+  // ---------- ВСЁ ПОКУПАЕМОЕ В ОДНОМ РЯДУ ----------
+  // Покупки жили в двух местах, и в одно из них вёл скрытый жест: снаряжение
+  // в лавке, прокачка — на отдельном экране за удержанием пальца на черве.
+  // Теперь один экран за 🏪 и один ряд полок без вложенности, а где вещь
+  // работает, сказано значком режима — на полке или на строке.
+  WRATH_SLOTS = await page.evaluate(() => WRATH_GEAR.slots.length);
+  console.log('\n--- один ряд полок ---');
+  const shelves = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 90;
     GameState.data.equipment = {};
-    return { tabs, duel: rows('duel'), rogue: rows('rogue') };
+    WrathMinigame.startMode('shop');
+    await new Promise(r => setTimeout(r, 350));
+
+    const tabs = [...document.querySelectorAll('#shop-tabs .shop-tab')].map(b => ({
+      key: b.dataset.tab,
+      where: (b.querySelector('.shop-tab-where') || {}).textContent || '',
+      counter: /\d/.test(b.textContent || '')
+    }));
+    const rows = (tab) => {
+      WrathShop.tab = tab;
+      WrathShop.render();
+      return [...document.querySelectorAll('#shop-list [data-key], #shop-list [data-item]')]
+        .map(b => b.dataset.key || b.dataset.item);
+    };
+    const out = {
+      tabs,
+      upgrades: JSON.stringify(GameState.data.upgrades || {}),
+      stat: rows('stat'),
+      passive: rows('passive'),
+      helmet: rows('helmet'),
+      // Отдельного экрана прокачки больше нет вовсе.
+      boostScreen: !!document.getElementById('wrath-boost')
+    };
+    WrathShop.tab = 'helmet';
+    WrathShop.render();
+    return out;
   });
 
-  check(byMode.tabs.join() === 'duel,rogue',
-    `вкладки прокачки — это режимы: ${byMode.tabs.join(' ')}`);
-  check(byMode.duel.indexOf('damage') >= 0 && byMode.duel.indexOf('hp') >= 0,
-    'числовая прокачка стоит на вкладке боя');
-  check(byMode.rogue.indexOf('damage') < 0 && byMode.rogue.indexOf('hp') < 0,
-    'её же нет на вкладке забега: внутрь забега она не едет');
-  check(byMode.rogue.indexOf('sixth_sense') >= 0 && byMode.duel.indexOf('sixth_sense') >= 0,
-    'работающее в обоих режимах стоит на обеих вкладках');
+  check(shelves.tabs.length === WRATH_SLOTS + 2,
+    `ряд полок один и без вложенности: ${shelves.tabs.map(t => t.key).join(' ')} (прокачка: ${shelves.upgrades})`);
+  check(!shelves.boostScreen, 'отдельного экрана прокачки больше нет');
+  check(shelves.stat.indexOf('damage') >= 0 && shelves.stat.indexOf('hp') >= 0,
+    'числа бойца лежат на своей полке');
+  check(shelves.passive.indexOf('sixth_sense') >= 0,
+    'способности лежат на своей полке');
+  check(shelves.stat.indexOf('sixth_sense') < 0,
+    'и ровно в одном месте: способность не дублируется на полке чисел');
+  check(shelves.helmet.length > 0, 'полки снаряжения на месте');
+  check(shelves.tabs.every(t => !t.counter), 'счётчиков «1/5» на полках нет');
+  check(shelves.tabs.find(t => t.key === 'helmet').where === '⚔️'
+     && shelves.tabs.find(t => t.key === 'stat').where === '⚔️',
+    'у снаряжения и чисел на полке стоит ⚔️: в забег они не едут');
+  check(shelves.tabs.find(t => t.key === 'passive').where === '⚔️🗺',
+    'у способностей — оба режима: они работают и там и там');
+
+  // ---------- УДЕРЖАНИЕ НА ЧЕРВЕ: ПЕРЕРАБОТКА ШРАМОВ ----------
+  // За жестом теперь не экран прокачки, а сама механика: тело наливается
+  // светом, и шрамы сходят ПОД ЭТИМ ЖЕ свечением. Проверяется и то, что
+  // происходит с состоянием, и то, что видно на экране.
+  console.log('\n--- удержание: шрамы в жетон ---');
+  const scarBox = await page.evaluate(async () => {
+    const rule = ECONOMY.marks.exchange;
+    GameState.data.scars = [];
+    for (let i = 0; i < rule.scars + 5; i++) {
+      GameState.data.scars.push({ id: 'p' + i, kind: 'scar', zone: 'body',
+        t: 0.3 + i * 0.01, side: 1, size: 1, created_at: Date.now() - i * 1000 });
+    }
+    GameState.data.currencies.wrath_token = 0;
+    GameState.save();
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 700));
+    const r = WrathLobby.wormBox.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, need: rule.scars, gives: rule.amount };
+  });
+
+  // Тап НЕ перерабатывает: необратимое действие берётся только удержанием.
+  await page.mouse.click(scarBox.x, scarBox.y);
+  await page.waitForTimeout(200);
+  const scarTap = await page.evaluate(() => (GameState.data.scars || []).length);
+
+  await page.mouse.move(scarBox.x, scarBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  const scarMid = await page.evaluate(() => ({
+    charging: WrathLobby.wormBox.classList.contains('charging'),
+    glow: Number(getComputedStyle(document.getElementById('wrath-hold-glow')).opacity),
+    lit: getComputedStyle(document.querySelector('#wrath-lobby-worm svg')).filter
+  }));
+  await page.waitForTimeout(450);
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const scarDone = await page.evaluate(() => ({
+    cleansed: WrathLobby.wormBox.classList.contains('cleansed'),
+    scars: (GameState.data.scars || []).length,
+    tokens: GameState.currency('wrath_token'),
+    fx: [...document.querySelectorAll('.wallet-fx-item')].length
+  }));
+
+  check(scarTap === scarBox.need + 5,
+    'случайный тап шрамы НЕ перерабатывает');
+  check(scarMid.charging && scarMid.glow > 0.1 && /brightness/.test(scarMid.lit),
+    `пока палец на месте, тело наливается светом (${scarMid.glow.toFixed(2)})`);
+  check(scarDone.scars === 5 && scarDone.tokens === scarBox.gives,
+    `удержание переработало ${scarBox.need} шрамов в жетон: осталось ${scarDone.scars}, жетонов ${scarDone.tokens}`);
+  check(scarDone.cleansed, 'свечение разлетелось вспышкой очищения');
+  check(scarDone.fx > 0, 'жетон прилетел в кошелёк цифрой, без отдельного сообщения');
+
+  // Шрамов не хватило — то же свечение, но красный отказ, и ничего не ушло.
+  await page.evaluate(() => { GameState.data.scars = []; GameState.save(); });
+  await page.mouse.move(scarBox.x, scarBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(850);
+  const scarNo = await page.evaluate(() => ({
+    refused: WrathLobby.wormBox.classList.contains('refused'),
+    tokens: GameState.currency('wrath_token')
+  }));
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  check(scarNo.refused && scarNo.tokens === scarBox.gives,
+    'шрамов не хватило — красный отказ, и ничего не начислено');
 
   // ---------- КОШЕЛЁК ГОВОРИТ САМ ----------
   // Три отдельные жалобы, и все три про одно: экран сообщал о деньгах и о

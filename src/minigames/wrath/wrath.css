@@ -228,47 +228,109 @@
     pointer-events: none;
 }
 
-/* ---------- КОЛЬЦО УДЕРЖАНИЯ ----------
-   Показывает себя от первого касания червя и заполняется по кругу над его
-   головой: отпустил раньше — исчезло, но игрок уже увидел, что что-то
-   набиралось. Это и есть всё обучение жесту, без единого слова на экране.
+/* ---------- УДЕРЖАНИЕ: ТЕЛО НАЛИВАЕТСЯ СВЕТОМ ----------
+   Палец на черве — за семь десятых секунды тело заливается светом. Досидел,
+   и шрамов хватило — они СХОДЯТ ПОД ЭТИМ ЖЕ СВЕЧЕНИЕМ, а оно разлетается
+   вспышкой очищения. Не хватило — свечение коротко краснеет и гаснет.
 
-   Размер и место ставит скрипт по реальным габаритам головы, поэтому здесь
-   нет ни ширины, ни координат. */
-.hold-ring {
+   Индикатор удержания и объяснение происходящего — одно движение. Раньше
+   здесь было кольцо над головой: оно говорило «что-то грузится», но не
+   говорило ЧТО, и к переработке шрамов отношения не имело вовсе — жест вёл
+   в отдельный экран прокачки, которого больше нет.
+
+   Про фильтр на живом слое (docs/traps.md, п. 73): червь дышит и моргает, и
+   фильтр поверх него стоит дорого. Здесь это осознанно — разовая анимация,
+   пока палец прижат, а не постоянное состояние экрана. */
+.wrath-lobby-box { position: relative; }
+
+.wrath-lobby-box.charging .worm-stage svg {
+    animation: worm-charge 700ms linear forwards;
+}
+
+@keyframes worm-charge {
+    0%   { filter: brightness(1) saturate(1); }
+    100% { filter: brightness(2.6) saturate(0.25); }
+}
+
+/* Ореол вокруг тела: собственно «свечение». Отдельным слоем, чтобы фильтр
+   на червя остался дешёвым, а мягкий свет делал обычный градиент. */
+.hold-glow {
     position: absolute;
-    transform: translate(-50%, -50%);
-    opacity: 0;
+    inset: -12%;
+    border-radius: 50%;
     pointer-events: none;
-    transition: opacity 0.15s ease;
-    z-index: 25;
+    opacity: 0;
+    z-index: 24;
+    background: radial-gradient(circle at 50% 55%,
+        rgba(255, 255, 255, 0.85) 0%,
+        rgba(255, 240, 200, 0.45) 32%,
+        rgba(255, 210, 140, 0) 68%);
 }
 
-.hold-ring.show { opacity: 1; }
-
-.hold-ring svg {
-    width: 100%;
-    height: 100%;
-    overflow: visible;
+.wrath-lobby-box.charging .hold-glow {
+    animation: hold-glow-rise 700ms ease-in forwards;
 }
 
-.hold-track {
-    fill: rgba(0, 0, 0, 0.45);
-    stroke: rgba(255, 255, 255, 0.22);
-    stroke-width: 7;
+@keyframes hold-glow-rise {
+    0%   { opacity: 0;    transform: scale(0.72); }
+    100% { opacity: 0.95; transform: scale(1.12); }
 }
 
-/* Заполнение — это открывающийся пунктир длиной в одну окружность: длину
-   штриха и сдвиг ставит скрипт, анимируется одно свойство. Поворот на -90°,
-   чтобы кольцо росло от макушки, а не от правого бока. */
-.hold-progress {
-    fill: none;
-    stroke: var(--wrath-attack);
-    stroke-width: 7;
-    stroke-linecap: round;
-    transform: rotate(-90deg);
-    transform-origin: 50% 50%;
-    filter: drop-shadow(0 0 5px var(--wrath-attack));
+/* ---------- ОЧИЩЕНИЕ ----------
+   Шрамов хватило: свечение разлетается по экрану и растворяется само. Тело
+   в этот момент перерисовывается уже без шрамов — под вспышкой, поэтому их
+   исчезновение читается как её работа, а не как подмена картинки. */
+.wrath-lobby-box.cleansed .hold-glow {
+    animation: hold-burst 900ms cubic-bezier(0.18, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes hold-burst {
+    0%   { opacity: 0.95; transform: scale(1.12); }
+    22%  { opacity: 1;    transform: scale(1.7); }
+    100% { opacity: 0;    transform: scale(3.2); }
+}
+
+.wrath-lobby-box.cleansed .worm-stage svg {
+    animation: worm-cleansed 900ms ease-out forwards;
+}
+
+@keyframes worm-cleansed {
+    0%   { filter: brightness(2.6) saturate(0.25); }
+    18%  { filter: brightness(3.4) saturate(0); }
+    100% { filter: brightness(1) saturate(1); }
+}
+
+/* ---------- ОТКАЗ ----------
+   Шрамов не набралось: то же свечение коротко краснеет и умирает. Тот же
+   язык, что у кошелька, которому не хватило, — красная вспышка на месте
+   причины (docs/plan/11-no-words.md). */
+.wrath-lobby-box.refused .hold-glow {
+    background: radial-gradient(circle at 50% 55%,
+        rgba(255, 90, 70, 0.8) 0%,
+        rgba(255, 59, 48, 0.35) 38%,
+        rgba(255, 59, 48, 0) 70%);
+    animation: hold-refuse 450ms ease-out forwards;
+}
+
+@keyframes hold-refuse {
+    0%   { opacity: 0.95; transform: scale(1.12); }
+    35%  { opacity: 1;    transform: scale(1.2); }
+    100% { opacity: 0;    transform: scale(0.9); }
+}
+
+.wrath-lobby-box.refused .worm-stage svg {
+    animation: worm-refused 450ms ease-out forwards;
+}
+
+@keyframes worm-refused {
+    0%   { filter: brightness(2.6) saturate(0.25); }
+    100% { filter: brightness(1) saturate(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wrath-lobby-box.charging .worm-stage svg,
+    .wrath-lobby-box.cleansed .worm-stage svg,
+    .wrath-lobby-box.refused .worm-stage svg { animation-duration: 1ms; }
 }
 
 /* ---------- РЕЖИМЫ ---------- */
@@ -1055,6 +1117,17 @@
 
 .shop-tab .slot-shape { width: 22px; height: 22px; }
 .shop-tab-emoji { font-size: 19px; line-height: 1.15; }
+
+/* Значок режима на полке: где работает всё, что на ней лежит. Мелкий и
+   приглушённый — это не содержимое полки, а пометка о ней. Стоит только у
+   полок, где режим общий на весь список; у способностей он на строках. */
+.shop-tab-where {
+    display: block;
+    margin-top: 1px;
+    font-size: 9px;
+    line-height: 1;
+    opacity: 0.75;
+}
 /* Счётчика «1/5» на вкладке больше нет. Он отвечал на вопрос, которого
    игрок не задавал, и мешал тому, который задавал: вкладка должна говорить
    «что тут лежит», а не «сколько ты уже выкупил». Выкупленная полка и так
