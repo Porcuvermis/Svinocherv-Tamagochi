@@ -1328,16 +1328,20 @@ const { viewport, prepare } = require('./harness');
   const scarBox = await page.evaluate(async () => {
     const rule = ECONOMY.marks.exchange;
     GameState.data.scars = [];
-    for (let i = 0; i < rule.scars + 5; i++) {
+    // ДВЕ полных пятнашки плюс остаток: обмен обязан забрать обе за одно
+    // удержание, а не по одной, и оставить остаток на теле.
+    for (let i = 0; i < rule.scars * 2 + 5; i++) {
       GameState.data.scars.push({ id: 'p' + i, kind: 'scar', zone: 'body',
         t: 0.3 + i * 0.01, side: 1, size: 1, created_at: Date.now() - i * 1000 });
     }
     GameState.data.currencies.wrath_token = 0;
+    GameState.data.currencies.wrath_shard = 0;
     GameState.save();
     WrathMinigame.showLobby();
     await new Promise(r => setTimeout(r, 700));
     const r = WrathLobby.wormBox.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, need: rule.scars, gives: rule.amount };
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2,
+             need: rule.scars, gives: rule.amount, currency: rule.currency };
   });
 
   // Тап НЕ перерабатывает: необратимое действие берётся только удержанием.
@@ -1381,11 +1385,13 @@ const { viewport, prepare } = require('./harness');
     // Искры вылетают из шрамов и летят в счётчик жетонов.
     sparks: document.querySelectorAll('.wallet-fx-spark').length,
     scars: (GameState.data.scars || []).length,
-    tokens: GameState.currency('wrath_token'),
+    // Считается в ДЕВЯТЫХ жетона: осколок это его треть, и складывать
+    // «жетоны плюс осколки» в двух разных числах здесь нечего.
+    ninths: GameState.currency('wrath_token') * 3 + GameState.currency('wrath_shard'),
     fx: [...document.querySelectorAll('.wallet-fx-item')].length
   }));
 
-  check(scarTap === scarBox.need + 5,
+  check(scarTap === scarBox.need * 2 + 5,
     'случайный тап шрамы НЕ перерабатывает');
   check(scarMid.marks > 0, `шрамы видны в лобби гнева: ${scarMid.marks}`);
   check(!scarMid.halo, 'общего ореола вокруг червя нет: светятся только шрамы');
@@ -1393,8 +1399,12 @@ const { viewport, prepare } = require('./harness');
     'пока палец на месте, светятся сами шрамы');
   check(scarEarly.bright > 1 && scarMid.bright > scarEarly.bright * 1.4,
     `свет НАБИРАЕТСЯ, а не включается сразу: ${scarEarly.bright.toFixed(2)} → ${scarMid.bright.toFixed(2)}`);
-  check(scarDone.scars === 5 && scarDone.tokens === scarBox.gives,
-    `удержание переработало ${scarBox.need} шрамов в жетон: осталось ${scarDone.scars}, жетонов ${scarDone.tokens}`);
+  check(scarBox.currency === 'wrath_shard' && scarBox.gives === 1,
+    'пятнадцать шрамов дают ОСКОЛОК — треть жетона, а не целый');
+  check(scarDone.scars === 5,
+    `обменялись ВСЕ полные пятнашки за одно удержание: осталось ${scarDone.scars}`);
+  check(scarDone.ninths === scarBox.gives * 2,
+    `и награда за обе: ${scarDone.ninths} третей жетона`);
   check(scarDone.cleansed, 'свечение разлетелось вспышкой очищения');
   check(scarDone.sparks > 0,
     `шрамы рассыпались искрами и полетели в кошелёк: ${scarDone.sparks}`);
@@ -1407,12 +1417,62 @@ const { viewport, prepare } = require('./harness');
   await page.waitForTimeout(850);
   const scarNo = await page.evaluate(() => ({
     refused: WrathLobby.wormBox.classList.contains('refused'),
-    tokens: GameState.currency('wrath_token')
+    ninths: GameState.currency('wrath_token') * 3 + GameState.currency('wrath_shard')
   }));
   await page.mouse.up();
   await page.waitForTimeout(150);
-  check(scarNo.refused && scarNo.tokens === scarBox.gives,
+  check(scarNo.refused && scarNo.ninths === scarBox.gives * 2,
     'шрамов не хватило — красный отказ, и ничего не начислено');
+
+  // ---------- ПОТОЛОК ШРАМОВ ----------
+  // Шрам ставится в зону удара, но если та забита — ищется место в других.
+  // Раньше шрам просто не появлялся при забитой зоне, даже когда на
+  // остальном теле места было сколько угодно: удар в морду при забитой морде
+  // молча не оставлял следа.
+  console.log('\n--- потолок шрамов ---');
+  const cap = await page.evaluate(() => {
+    GameState.data.scars = [];
+    // Забиваем ОДНУ зону, а потом просим шрам именно в неё.
+    let filled = 0;
+    while (Backend.grantMark('scar', 'head') && filled < 200) filled++;
+    const headOnly = GameState.data.scars.every(m => m.zone === 'head');
+
+    GameState.data.scars = [];
+    let n = 0;
+    while (Backend.grantMark('scar') && n < 400) n++;
+    const zones = {};
+    GameState.data.scars.forEach(m => { zones[m.zone] = (zones[m.zone] || 0) + 1; });
+    return {
+      spread: !headOnly,
+      zones: Object.keys(zones).length,
+      total: GameState.data.scars.length,
+      // Тело забито — новые шрамы почти не находят места. «Почти», а не
+      // «совсем»: место ищется случайными попытками, и на плотно забитом
+      // теле изредка находится щель. Это не поломка, а свойство поиска, и
+      // прогон обязан мерить именно так, а не требовать железного нуля.
+      stillFits: (() => {
+        let got = 0;
+        for (let i = 0; i < 40; i++) if (Backend.grantMark('scar')) got++;
+        return got;
+      })(),
+      // Для сравнения: на ПУСТОМ теле те же сорок попыток заходят почти все.
+      // Сравнение, а не абсолютный порог: числа тут случайные, и жёсткая
+      // граница делает прогон мигающим — он уже мигнул на «2 из 20» против
+      // «4 из 20».
+      fitsOnEmpty: (() => {
+        GameState.data.scars = [];
+        let got = 0;
+        for (let i = 0; i < 40; i++) if (Backend.grantMark('scar')) got++;
+        return got;
+      })()
+    };
+  });
+
+  check(!cap.spread === false, 'забитая зона не съедает шрам: он уходит в другую');
+  check(cap.zones === 3, `шрамы расходятся по всем зонам: ${cap.zones}`);
+  check(cap.total > 30, `на тело влезает вменяемое число шрамов: ${cap.total}`);
+  check(cap.stillFits * 3 < cap.fitsOnEmpty,
+    `на забитом теле места втрое меньше: ${cap.stillFits} против ${cap.fitsOnEmpty} из 40`);
 
   // ---------- КОШЕЛЁК ГОВОРИТ САМ ----------
   // Три отдельные жалобы, и все три про одно: экран сообщал о деньгах и о

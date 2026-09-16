@@ -241,13 +241,31 @@ const LocalBackend = {
             ? zone
             : WormMarks.ZONES[useSeed % WormMarks.ZONES.length];
 
-        const t = WormMarks.pickSpot(marks, useZone, useSeed);
-        if (t === null) return null;   // зона забита — это нормальный ответ
+        // ---------- ЗАБИТА ЗОНА — ИЩЕМ В ДРУГИХ ----------
+        // Раньше шрам просто не появлялся, если в НУЖНОЙ зоне не нашлось
+        // места, — даже когда на остальном теле его было сколько угодно.
+        // Игрок при этом не получал ничего и не узнавал почему: удар в морду
+        // при забитой морде молча не оставлял следа.
+        //
+        // Теперь зона удара — предпочтение, а не условие. Пусто везде —
+        // тело действительно заполнено, и вот это уже нормальный отказ:
+        // место освобождает переработка шрамов (WrathLobby.startHold).
+        let spotZone = useZone;
+        let t = WormMarks.pickSpot(marks, spotZone, useSeed);
+        if (t === null) {
+            for (let i = 0; i < WormMarks.ZONES.length && t === null; i++) {
+                const other = WormMarks.ZONES[i];
+                if (other === useZone) continue;
+                t = WormMarks.pickSpot(marks, other, useSeed + i + 1);
+                if (t !== null) spotZone = other;
+            }
+        }
+        if (t === null) return null;   // тело забито целиком — нормальный ответ
 
         const mark = {
             id: 'mark-' + useSeed.toString(36) + '-' + marks.length,
             kind: kind || 'scar',
-            zone: useZone,
+            zone: spotZone,
             t,
             seed: useSeed,
             created_at: GameTime.now()
@@ -824,17 +842,26 @@ const LocalBackend = {
             return { ok: false, error: 'not_enough', have: scars.length, need: rule.scars };
         }
 
+        // ---------- МЕНЯЕТСЯ ВСЁ, ЧТО НАБРАЛОСЬ ----------
+        // Сколько полных пятнашек накопилось, столько наград и даётся, за
+        // ОДНО удержание. Остаток остаётся на теле. Раньше уходила ровно одна
+        // пятнашка, и при тридцати шрамах игроку пришлось бы держать палец
+        // дважды — это уже не жест, а работа.
+        const batches = Math.floor(scars.length / rule.scars);
+        const take = batches * rule.scars;
+
         const oldestFirst = scars.slice().sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
-        const removed = oldestFirst.slice(0, rule.scars);
+        const removed = oldestFirst.slice(0, take);
         const removedIds = {};
         removed.forEach(m => { removedIds[m.id] = true; });
         GameState.data.scars = scars.filter(m => !removedIds[m.id]);
 
+        const gained = rule.amount * batches;
         const requestId = newRequestId();
-        GameState.addCurrency(rule.currency, rule.amount);
+        GameState.addCurrency(rule.currency, gained);
         GameState.pushLedger({
             currency: rule.currency,
-            delta: rule.amount,
+            delta: gained,
             reason: 'exchange.scars',
             client_request_id: requestId
         });
@@ -845,9 +872,10 @@ const LocalBackend = {
         return {
             ok: true,
             removed: removed.length,
+            batches,
             left: GameState.data.scars.length,
             currency: rule.currency,
-            amount: rule.amount
+            amount: gained
         };
     },
 
