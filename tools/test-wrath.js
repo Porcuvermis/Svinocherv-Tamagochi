@@ -1349,17 +1349,28 @@ const { viewport, prepare } = require('./harness');
   await page.waitForTimeout(200);
   const scarTap = await page.evaluate(() => (GameState.data.scars || []).length);
 
-  // Свет меряется ДВАЖДЫ: в начале удержания и ближе к концу. Одного замера
-  // мало — он не отличает «набирается» от «включилось лампочкой сразу», а
-  // именно так первая версия и работала: класс вешался разом, и заливка
-  // белым срабатывала мгновенно.
+  // ---------- СВЕТ МЕРЯЕТСЯ ТРИЖДЫ ----------
+  // Одного замера мало — он не отличает «набирается» от «включилось сразу».
+  // Двух тоже мало, и это выяснилось дорого: замер «1.17 → 3.03» выглядел
+  // безупречным нарастанием, а на экране первые полсекунды не происходило
+  // НИЧЕГО. Виновата была кривая `ease-in`, копившая изменение в конце, и
+  // то, что тёмный шрам при brightness 2.2 остаётся просто красным.
+  //
+  // Поэтому мерится РАННЯЯ фаза отдельно, и мерится не только яркость, а
+  // РАДИУС ОРЕОЛА: он и есть то, что видно раньше всего, и он обязан быть
+  // заметным уже к десятой доле жеста (docs/traps.md, п. 100).
   const lit = () => page.evaluate(() => {
     const layer = document.querySelector('#wrath-lobby-worm .worm-scar-layer');
     const f = layer ? getComputedStyle(layer).filter : '';
     const m = /brightness\(([\d.]+)\)/.exec(f);
+    // Радиус размытия ореола. Regexp по «drop-shadow(...)» здесь не годится:
+    // внутри лежит rgba(...) со своей скобкой, и любой [^)] обрывается на
+    // ней. Берём все «…px)» и самый большой из них — это и есть радиус.
+    const blurs = (f.match(/([\d.]+)px\)/g) || []).map(v => parseFloat(v));
     return {
       charging: WrathLobby.wormBox.classList.contains('charging'),
       bright: m ? Number(m[1]) : 0,
+      blur: blurs.length ? Math.max.apply(null, blurs) : 0,
       filter: f,
       // Общего ореола вокруг червя быть не должно: свет идёт ОТ ШРАМОВ.
       halo: !!document.getElementById('wrath-hold-glow'),
@@ -1371,9 +1382,11 @@ const { viewport, prepare } = require('./harness');
 
   await page.mouse.move(scarBox.x, scarBox.y);
   await page.mouse.down();
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(110);
   const scarEarly = await lit();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(190);
+  const scarThird = await lit();
+  await page.waitForTimeout(220);
   const scarMid = await lit();
   // Удержание кончается на 700 мс от нажатия; к этому моменту прошло 520.
   // Дальше замер делается ВНУТРИ вспышки очищения (BURST_MS), а не после неё.
@@ -1397,8 +1410,14 @@ const { viewport, prepare } = require('./harness');
   check(!scarMid.halo, 'общего ореола вокруг червя нет: светятся только шрамы');
   check(scarMid.charging && /drop-shadow/.test(scarMid.filter),
     'пока палец на месте, светятся сами шрамы');
-  check(scarEarly.bright > 1 && scarMid.bright > scarEarly.bright * 1.4,
-    `свет НАБИРАЕТСЯ, а не включается сразу: ${scarEarly.bright.toFixed(2)} → ${scarMid.bright.toFixed(2)}`);
+  check(scarEarly.bright > 1 && scarThird.bright > scarEarly.bright
+        && scarMid.bright > scarThird.bright,
+    `свет НАБИРАЕТСЯ ровно, а не рывком: ${scarEarly.bright.toFixed(2)} → `
+    + `${scarThird.bright.toFixed(2)} → ${scarMid.bright.toFixed(2)}`);
+  check(scarEarly.blur >= 3,
+    `ореол виден УЖЕ в начале жеста, а не только в конце: ${scarEarly.blur}px`);
+  check(scarMid.blur > scarEarly.blur,
+    `и растёт дальше: ${scarEarly.blur}px → ${scarMid.blur}px`);
   check(scarBox.currency === 'wrath_shard' && scarBox.gives === 1,
     'пятнадцать шрамов дают ОСКОЛОК — треть жетона, а не целый');
   check(scarDone.scars === 5,
