@@ -1349,37 +1349,35 @@ const { viewport, prepare } = require('./harness');
   await page.waitForTimeout(200);
   const scarTap = await page.evaluate(() => (GameState.data.scars || []).length);
 
-  // ---------- СВЕТ МЕРЯЕТСЯ ТРИЖДЫ ----------
-  // Одного замера мало — он не отличает «набирается» от «включилось сразу».
-  // Двух тоже мало, и это выяснилось дорого: замер «1.17 → 3.03» выглядел
-  // безупречным нарастанием, а на экране первые полсекунды не происходило
-  // НИЧЕГО. Виновата была кривая `ease-in`, копившая изменение в конце, и
-  // то, что тёмный шрам при brightness 2.2 остаётся просто красным.
+  // ---------- СВЕТ МЕРЯЕТСЯ ТРИЖДЫ И ПО КРАСКЕ ----------
+  // Мерится ЗАЛИВКА самого шрама, а не значение фильтра. Это уже третья
+  // редакция проверки, и каждая прошлая была зелёной при пустом экране:
   //
-  // Поэтому мерится РАННЯЯ фаза отдельно, и мерится не только яркость, а
-  // РАДИУС ОРЕОЛА: он и есть то, что видно раньше всего, и он обязан быть
-  // заметным уже к десятой доле жеста (docs/traps.md, п. 100).
+  //   1) один замер — не отличал «набирается» от «включилось сразу»;
+  //   2) два замера значения фильтра — показывали честный рост 1.17 → 3.03,
+  //      пока кривая ease-in копила всё изменение в конце (traps, п. 100);
+  //   3) фильтр на слое шрамов вообще не рисовался на живом телефоне, хотя
+  //      в прогоне и значение росло, и пиксели светлели (traps, п. 101).
+  //
+  // Заливка — это то, чем шрам покрашен на экране. Врать ей нечем.
   const lit = () => page.evaluate(() => {
-    const layer = document.querySelector('#wrath-lobby-worm .worm-scar-layer');
-    const f = layer ? getComputedStyle(layer).filter : '';
-    const m = /brightness\(([\d.]+)\)/.exec(f);
-    // Радиус размытия ореола. Regexp по «drop-shadow(...)» здесь не годится:
-    // внутри лежит rgba(...) со своей скобкой, и любой [^)] обрывается на
-    // ней. Берём все «…px)» и самый большой из них — это и есть радиус.
-    const blurs = (f.match(/([\d.]+)px\)/g) || []).map(v => parseFloat(v));
+    const path = document.querySelector('#wrath-lobby-worm .worm-mark-scar path');
+    const cs = path ? getComputedStyle(path) : null;
+    const rgb = (v) => {
+      const m = /(\d+),\s*(\d+),\s*(\d+)/.exec(v || '');
+      return m ? (Number(m[1]) + Number(m[2]) + Number(m[3])) / 3 : 0;
+    };
     return {
       charging: WrathLobby.wormBox.classList.contains('charging'),
-      bright: m ? Number(m[1]) : 0,
-      blur: blurs.length ? Math.max.apply(null, blurs) : 0,
-      filter: f,
-      // Общего ореола вокруг червя быть не должно: свет идёт ОТ ШРАМОВ.
-      halo: !!document.getElementById('wrath-hold-glow'),
-      // Шрамы вообще должны быть видны в лобби — до правки их там не было
-      // вовсе, хотя в комнате они появлялись сразу (docs/traps.md, п. 98).
+      // Светлота заливки: от собственного цвета шрама к белому (255).
+      paint: cs ? rgb(cs.fill) : 0,
+      // И обводка, которая изображает свет за краями шрама.
+      halo: cs ? parseFloat(cs.strokeWidth) || 0 : 0,
       marks: document.querySelectorAll('#wrath-lobby-worm .worm-mark-scar').length
     };
   });
 
+  const scarZero = await lit();
   await page.mouse.move(scarBox.x, scarBox.y);
   await page.mouse.down();
   await page.waitForTimeout(110);
@@ -1407,17 +1405,16 @@ const { viewport, prepare } = require('./harness');
   check(scarTap === scarBox.need * 2 + 5,
     'случайный тап шрамы НЕ перерабатывает');
   check(scarMid.marks > 0, `шрамы видны в лобби гнева: ${scarMid.marks}`);
-  check(!scarMid.halo, 'общего ореола вокруг червя нет: светятся только шрамы');
-  check(scarMid.charging && /drop-shadow/.test(scarMid.filter),
-    'пока палец на месте, светятся сами шрамы');
-  check(scarEarly.bright > 1 && scarThird.bright > scarEarly.bright
-        && scarMid.bright > scarThird.bright,
-    `свет НАБИРАЕТСЯ ровно, а не рывком: ${scarEarly.bright.toFixed(2)} → `
-    + `${scarThird.bright.toFixed(2)} → ${scarMid.bright.toFixed(2)}`);
-  check(scarEarly.blur >= 3,
-    `ореол виден УЖЕ в начале жеста, а не только в конце: ${scarEarly.blur}px`);
-  check(scarMid.blur > scarEarly.blur,
-    `и растёт дальше: ${scarEarly.blur}px → ${scarMid.blur}px`);
+  check(scarMid.charging, 'пока палец на месте, идёт набор света по шрамам');
+  check(scarEarly.paint > scarZero.paint
+        && scarThird.paint > scarEarly.paint
+        && scarMid.paint > scarThird.paint,
+    `заливка шрама НАБИРАЕТ белизну ровно: ${scarZero.paint.toFixed(0)} → `
+    + `${scarEarly.paint.toFixed(0)} → ${scarThird.paint.toFixed(0)} → ${scarMid.paint.toFixed(0)}`);
+  check(scarEarly.paint - scarZero.paint >= 8,
+    `и видна УЖЕ в начале жеста: +${(scarEarly.paint - scarZero.paint).toFixed(0)} за первую десятую`);
+  check(scarMid.halo > scarEarly.halo && scarEarly.halo > 0,
+    `свет выходит за края шрама и растёт: ${scarEarly.halo.toFixed(2)}px → ${scarMid.halo.toFixed(2)}px`);
   check(scarBox.currency === 'wrath_shard' && scarBox.gives === 1,
     'пятнадцать шрамов дают ОСКОЛОК — треть жетона, а не целый');
   check(scarDone.scars === 5,

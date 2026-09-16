@@ -499,26 +499,28 @@ const WrathLobby = {
     startHold() {
         if (this.holdActive) return;
 
-        // ---------- ОТКАЗ СРАЗУ, А НЕ ЧЕРЕЗ СЕМЬ ДЕСЯТЫХ ----------
-        // Перерабатывать нечего — отвечаем НЕМЕДЛЕННО, не заставляя держать
-        // палец впустую. И это же чинит дыру, которую проделал переезд света
-        // на шрамы: пока светилось всё тело, при отказе было что показать
-        // всегда, а теперь при пустом теле подсвечивать НЕЧЕГО — и жест
-        // выглядел так, будто он просто не работает (docs/traps.md, п. 99).
+        // ---------- НЕЧЕГО МЕНЯТЬ — ХВАТИТ ОДНОГО КАСАНИЯ ----------
+        // Удержание нужно ради необратимого действия: пятнадцать шрамов не
+        // вернуть, и полсекунды пальца — это «я правда хочу». Но когда менять
+        // НЕЧЕГО, необратимого действия нет вовсе, и держать палец не за чем:
+        // ответ приходит на первом же касании.
+        //
+        // Так и читается: тап — узнать, можно ли; удержание — сделать. Заодно
+        // это чинит дыру, которую проделал переезд света на шрамы: пока
+        // светилось всё тело, при отказе было что показать всегда, а на
+        // чистом теле подсвечивать нечего, и жест выглядел сломанным
+        // (docs/traps.md, п. 99).
         if (!Backend.scarBatches()) { this.refuse(); return; }
 
         this.holdActive = true;
 
-        // Светятся ШРАМЫ, а не червь. Это сразу две вещи: индикатор
-        // удержания и объяснение того, что произойдёт в конце, — горит ровно
-        // то, что сейчас переработают. Первая версия подсвечивала всё тело:
-        // выглядело эффектно и говорило не то, связь «светится — значит
-        // уйдёт» не читалась (src/minigames/wrath/wrath.css).
+        // Светятся ШРАМЫ, а не червь: горит ровно то, что сейчас переработают.
         if (this.wormBox) {
             this.wormBox.classList.remove('cleansed', 'refused');
             void this.wormBox.offsetWidth;
             this.wormBox.classList.add('charging');
         }
+        this.chargeScars();
 
         this.holdTimer = setTimeout(() => {
             this.holdTimer = null;
@@ -571,11 +573,62 @@ const WrathLobby = {
         this.refresh();
     },
 
+    // ---------- НАБОР СВЕТА: КРАСКОЙ, А НЕ ФИЛЬТРОМ ----------
+    // Каждый шрам заливается белым и обрастает белой обводкой — свет как бы
+    // выходит за его края. Оба свойства анимируются по одному узлу через
+    // Web Animations API.
+    //
+    // Почему не css-фильтром, как было. Фильтр висел на СЛОЕ шрамов
+    // (`.worm-scar-layer`), и в прогонах это работало: и значение росло, и
+    // пиксели светлели. А на живом телефоне не рисовалось НИЧЕГО — при том
+    // что красная вспышка отказа, где фильтр висит на всём svg целиком,
+    // показывалась исправно. То есть фильтр на внутренней группе svg — вещь,
+    // на которую нельзя опираться (docs/traps.md, п. 101).
+    //
+    // Заливка и обводка — это обычная покраска, она рисуется везде. Начальный
+    // цвет для анимации берётся С САМОГО УЗЛА: в css его взять неоткуда, у
+    // каждого шрама он свой и стоит атрибутом — ровно та причина, по которой
+    // раньше и полезли в фильтр.
+    CHARGE_STROKE: 3.2,
+
+    chargeScars() {
+        this.stopCharge();
+        if (!this.wormStage || typeof Element === 'undefined') return;
+        const nodes = this.wormStage.querySelectorAll('.worm-mark-scar path');
+        if (!nodes.length || !nodes[0].animate) return;
+
+        this.chargeAnims = [];
+        Array.prototype.forEach.call(nodes, el => {
+            const now = getComputedStyle(el);
+            const from = now.fill || '#000';
+            // Обводка растёт от нуля: свет «распухает» за края шрама. Красится
+            // ПОД заливкой (paint-order в css), иначе она съест сам шрам.
+            this.chargeAnims.push(el.animate([
+                { fill: from, stroke: 'rgba(255,255,255,0)', strokeWidth: '0px', opacity: 0.9 },
+                { fill: '#fff', stroke: 'rgba(255,255,255,0.95)',
+                  strokeWidth: this.CHARGE_STROKE + 'px', opacity: 1 }
+            ], { duration: this.HOLD_MS, easing: 'linear', fill: 'forwards' }));
+        });
+    },
+
+    // Палец убрали раньше времени — набранный свет откатывается назад, и
+    // быстро: это ответ «не досидел», а не вторая анимация.
+    stopCharge(rewind) {
+        const list = this.chargeAnims || [];
+        list.forEach(a => {
+            if (!rewind) { a.cancel(); return; }
+            a.updatePlaybackRate(-4);
+            a.onfinish = () => a.cancel();
+        });
+        this.chargeAnims = null;
+    },
+
     // ---------- ОТКАЗ ----------
     // Шрамов не набралось. Краснеет и сам червь, и его шрамы, если они есть:
     // на червя — потому что ответ обязан быть виден ВСЕГДА, даже когда тело
     // чистое и подсвечивать нечего.
     refuse() {
+        this.stopCharge();
         if (this.burstTimer) { clearTimeout(this.burstTimer); this.burstTimer = null; }
         if (this.wormBox) {
             this.wormBox.classList.remove('charging', 'cleansed', 'refused');
@@ -621,6 +674,7 @@ const WrathLobby = {
             this.holdTimer = null;
         }
         if (this.wormBox) this.wormBox.classList.remove('charging');
+        this.stopCharge(true);
         void hint;
     },
 
