@@ -1172,6 +1172,52 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 200));
   });
 
+  // ---------- КАРТОЧКА ЗАБЕГА ВИДНА НА ЭКРАНЕ ----------
+  // Проверка меряется КОРОБКОЙ на экране, а не разметкой. Разметка карточки
+  // собиралась исправно и класс `shown` вешался — а правило, которое этот
+  // класс включает, было снесено при чистке мёртвого css. Погасло сразу пять
+  // экранов: вход со сложностями, выбор усиления, лавка, событие и итог.
+  // Прогоны при этом оставались зелёными (docs/traps.md, п. 95).
+  console.log('\n--- карточка поверх карты видна ---');
+  const cardStates = await page.evaluate(async () => {
+    const box = () => {
+      const r = document.getElementById('rogue-card').getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    };
+    const out = {};
+    GameState.data.currencies.wrath_token = 9;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    WrathRogue.summary = null;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 300));
+    out.start = box();
+
+    Backend.startRun(0);
+    const run = Backend.run();
+
+    run.pending = { kind: 'boost', choices: Object.keys(Backend.rogueConfig().boosts || {}).slice(0, 2) };
+    WrathRogue.render();
+    out.boost = box();
+
+    run.pending = { kind: 'shop', step: 0, offer: Backend.rogueShopOffer(run, 0), bought: [] };
+    WrathRogue.render();
+    out.shop = box();
+
+    run.pending = { kind: 'event', step: 0, id: Backend.rogueEventPick(run, 0) };
+    WrathRogue.render();
+    out.event = box();
+
+    run.pending = null;
+    WrathRogue.takeAbandon(Backend.abandonRun());
+    out.summary = box();
+    return out;
+  });
+  Object.keys(cardStates).forEach(name => {
+    const b = cardStates[name];
+    check(b.w > 100 && b.h > 100,
+      `карточка «${name}» занимает место на экране: ${b.w}×${b.h}`);
+  });
+
   // ---------- 7. УЗЕЛ В КОЛЕСЕ ----------
   console.log('\n--- узел гнева в колесе ---');
   const node = await page.evaluate(() => {
