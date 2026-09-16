@@ -295,9 +295,27 @@
 }
 
 /* ---------- ОТКАЗ ----------
-   Шрамов не набралось: набранный свет краснеет и умирает, шрамы остаются на
-   месте. Тот же язык, что у кошелька, которому не хватило, — красная вспышка
-   там, где причина (docs/plan/11-no-words.md). */
+   Шрамов не набралось: красным вспыхивает САМ ЧЕРВЬ, и вместе с ним его
+   шрамы, если они есть.
+
+   На червя — а не только на шрамы — потому что ответ обязан быть виден
+   ВСЕГДА. Пока светилось всё тело, при отказе всегда было что показать; после
+   переезда света на шрамы при ЧИСТОМ теле подсвечивать стало нечего, и жест
+   выглядел так, будто он не работает вовсе (docs/traps.md, п. 99).
+
+   Это не возвращение «светящегося червя»: свечение набора света осталось
+   только на шрамах, а красная вспышка живёт четыре десятых секунды и означает
+   ровно одно — «нечего менять». */
+.wrath-lobby-box.refused .worm-stage svg {
+    animation: worm-refused 450ms ease-out forwards;
+}
+
+@keyframes worm-refused {
+    0%   { filter: none; }
+    30%  { filter: brightness(1.15) sepia(0.6) saturate(6) hue-rotate(-28deg); }
+    100% { filter: none; }
+}
+
 .wrath-lobby-box.refused .worm-mark-scar path { fill: #ff5a46; }
 
 .wrath-lobby-box.refused .worm-scar-layer {
@@ -312,7 +330,8 @@
 @media (prefers-reduced-motion: reduce) {
     .wrath-lobby-box.charging .worm-scar-layer,
     .wrath-lobby-box.cleansed .worm-scar-layer,
-    .wrath-lobby-box.refused .worm-scar-layer { animation-duration: 1ms; }
+    .wrath-lobby-box.refused .worm-scar-layer,
+    .wrath-lobby-box.refused .worm-stage svg { animation-duration: 1ms; }
 }
 
 /* ---------- РЕЖИМЫ ---------- */

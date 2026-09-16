@@ -1410,11 +1410,17 @@ const { viewport, prepare } = require('./harness');
     `шрамы рассыпались искрами и полетели в кошелёк: ${scarDone.sparks}`);
   check(scarDone.fx > 0, 'жетон прилетел в кошелёк цифрой, без отдельного сообщения');
 
-  // Шрамов не хватило — то же свечение, но красный отказ, и ничего не ушло.
-  await page.evaluate(() => { GameState.data.scars = []; GameState.save(); });
+  // Шрамов не хватило — красный отказ, и приходит он СРАЗУ: держать палец
+  // впустую нечего, поэтому замер делается через сотню миллисекунд, а не
+  // через полную длину удержания.
+  await page.evaluate(() => {
+    GameState.data.scars = [];
+    GameState.save();
+    if (typeof refreshWormMarks === 'function') refreshWormMarks();
+  });
   await page.mouse.move(scarBox.x, scarBox.y);
   await page.mouse.down();
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(140);
   const scarNo = await page.evaluate(() => ({
     refused: WrathLobby.wormBox.classList.contains('refused'),
     ninths: GameState.currency('wrath_token') * 3 + GameState.currency('wrath_shard')
@@ -1423,6 +1429,42 @@ const { viewport, prepare } = require('./harness');
   await page.waitForTimeout(150);
   check(scarNo.refused && scarNo.ninths === scarBox.gives * 2,
     'шрамов не хватило — красный отказ, и ничего не начислено');
+
+  // ---------- ОТКАЗ НЕ МОЛЧИТ НИКОГДА ----------
+  // Свет уехал с тела на шрамы — и на ЧИСТОМ теле подсвечивать стало нечего:
+  // удержание выглядело так, будто жест не работает вовсе. Ответ обязан быть
+  // виден при любом состоянии тела (docs/traps.md, п. 99).
+  console.log('\n--- отказ не молчит ---');
+  const silent = await page.evaluate(async () => {
+    GameState.data.scars = [];
+    // Стереть мало: смонтированный червь перерисовывается не сам, а по
+    // событию — ровно тот механизм, который чинили правкой 185.
+    if (typeof refreshWormMarks === 'function') refreshWormMarks();
+    WrathMinigame.showLobby();
+    await new Promise(r => setTimeout(r, 600));
+    const r = WrathLobby.wormBox.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2,
+             marks: document.querySelectorAll('#wrath-lobby-worm .worm-mark-scar').length };
+  });
+
+  await page.mouse.move(silent.x, silent.y);
+  await page.mouse.down();
+  await page.waitForTimeout(140);
+  const noScars = await page.evaluate(() => ({
+    refused: WrathLobby.wormBox.classList.contains('refused'),
+    // И отвечает СРАЗУ, а не через семь десятых секунды: держать палец
+    // впустую нечего.
+    charging: WrathLobby.wormBox.classList.contains('charging'),
+    worm: getComputedStyle(document.querySelector('#wrath-lobby-worm svg')).filter
+  }));
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+
+  check(silent.marks === 0, 'тело чистое: подсвечивать нечего');
+  check(noScars.refused && !noScars.charging,
+    'на чистом теле жест отвечает ОТКАЗОМ сразу, а не молчит семь десятых секунды');
+  check(noScars.worm !== 'none',
+    `и отказ виден на самом черве: ${noScars.worm.slice(0, 32)}`);
 
   // ---------- ПОТОЛОК ШРАМОВ ----------
   // Шрам ставится в зону удара, но если та забита — ищется место в других.

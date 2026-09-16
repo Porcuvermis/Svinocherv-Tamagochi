@@ -341,11 +341,17 @@ const WrathLobby = {
     // Раньше это делал кошелёк в строке лавки, но кошелька там больше нет:
     // он один на все экраны и живёт наверху. Значит и отвечать обязан он —
     // причём одинаково, из лавки и из прокачки (docs/plan/11-no-words.md).
+    // Отказ НИКОГДА не молчит. Не нашёлся чип нужной валюты — дёргается
+    // первый попавшийся, не нашёлся ни один — вся шапка целиком. Раньше
+    // функция в этих случаях просто выходила, и тап оставался без ответа:
+    // ровно та болезнь, из-за которой перестал отвечать жест переработки
+    // шрамов на чистом теле (docs/traps.md, п. 99).
     flashLack(key) {
-        if (!this.panelEl) return;
-        const chip = this.panelEl.querySelector(`.panel-chip.wallet[data-cur="${key}"]`)
-                  || this.panelEl.querySelector('.panel-chip.wallet');
-        if (!chip) return;
+        const panel = this.panelEl || document.getElementById('wrath-panel');
+        if (!panel) return;
+        const chip = panel.querySelector(`.panel-chip.wallet[data-cur="${key}"]`)
+                  || panel.querySelector('.panel-chip.wallet')
+                  || panel;
         chip.classList.remove('lack');
         // Пересчёт стиля между снятием и возвратом класса: без него повторный
         // отказ по той же валюте не перезапустит анимацию, и второй тап
@@ -492,6 +498,15 @@ const WrathLobby = {
 
     startHold() {
         if (this.holdActive) return;
+
+        // ---------- ОТКАЗ СРАЗУ, А НЕ ЧЕРЕЗ СЕМЬ ДЕСЯТЫХ ----------
+        // Перерабатывать нечего — отвечаем НЕМЕДЛЕННО, не заставляя держать
+        // палец впустую. И это же чинит дыру, которую проделал переезд света
+        // на шрамы: пока светилось всё тело, при отказе было что показать
+        // всегда, а теперь при пустом теле подсвечивать НЕЧЕГО — и жест
+        // выглядел так, будто он просто не работает (docs/traps.md, п. 99).
+        if (!Backend.scarBatches()) { this.refuse(); return; }
+
         this.holdActive = true;
 
         // Светятся ШРАМЫ, а не червь. Это сразу две вещи: индикатор
@@ -526,15 +541,7 @@ const WrathLobby = {
         if (this.wormBox) this.wormBox.classList.remove('charging');
         if (this.burstTimer) { clearTimeout(this.burstTimer); this.burstTimer = null; }
 
-        if (!answer.ok) {
-            if (this.wormBox) this.wormBox.classList.add('refused');
-            if (typeof Haptics !== 'undefined') Haptics.notify('error');
-            this.burstTimer = setTimeout(() => {
-                this.burstTimer = null;
-                if (this.wormBox) this.wormBox.classList.remove('refused');
-            }, this.REFUSE_MS);
-            return;
-        }
+        if (!answer.ok) { this.refuse(); return; }
 
         // ---------- ШРАМЫ СТАНОВЯТСЯ ИСКРАМИ ----------
         // Точки снимаются ДО перерисовки: сейчас шрамы ещё на теле, и искры
@@ -562,6 +569,27 @@ const WrathLobby = {
             if (this.wormBox) this.wormBox.classList.remove('cleansed');
         }, this.BURST_MS);
         this.refresh();
+    },
+
+    // ---------- ОТКАЗ ----------
+    // Шрамов не набралось. Краснеет и сам червь, и его шрамы, если они есть:
+    // на червя — потому что ответ обязан быть виден ВСЕГДА, даже когда тело
+    // чистое и подсвечивать нечего.
+    refuse() {
+        if (this.burstTimer) { clearTimeout(this.burstTimer); this.burstTimer = null; }
+        if (this.wormBox) {
+            this.wormBox.classList.remove('charging', 'cleansed', 'refused');
+            // Пересчёт стиля между снятием и возвратом: без него второй отказ
+            // подряд не перезапустит анимацию, и выглядело бы это как «игра
+            // меня не услышала» — та же грабля, что у кошелька (flashLack).
+            void this.wormBox.offsetWidth;
+            this.wormBox.classList.add('refused');
+        }
+        if (typeof Haptics !== 'undefined') Haptics.notify('error');
+        this.burstTimer = setTimeout(() => {
+            this.burstTimer = null;
+            if (this.wormBox) this.wormBox.classList.remove('refused');
+        }, this.REFUSE_MS);
     },
 
     // Где сейчас шрамы на экране: центр каждой отметины в экранных

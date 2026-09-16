@@ -834,6 +834,14 @@ const LocalBackend = {
     // Уходят САМЫЕ СТАРЫЕ: тело восстанавливается в том же порядке, в каком его било,
     // и свежие следы последнего боя остаются на месте. Случайный выбор
     // выглядел бы как «шрамы исчезли непонятно какие».
+    // Сколько полных пятнашек шрамов лежит на теле. Ноль означает «менять
+    // нечего» — по нему жест отказывает СРАЗУ, не заставляя держать палец.
+    scarBatches() {
+        const rule = ECONOMY.marks && ECONOMY.marks.exchange;
+        if (!rule || !rule.scars) return 0;
+        return Math.floor(((GameState.data.scars || []).length) / rule.scars);
+    },
+
     exchangeScars() {
         const rule = ECONOMY.marks && ECONOMY.marks.exchange;
         const scars = GameState.data.scars || [];
