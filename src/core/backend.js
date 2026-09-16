@@ -896,11 +896,14 @@ const LocalBackend = {
     //   bonus     — прибавки забега (усиления рогалика), если они есть
     wrathStats(equipment, upgrades, bonus) {
         const conf = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
-        const zones = conf.zones || ['head', 'body', 'tail'];
+        // ---------- ТРИ ХАРАКТЕРИСТИКИ, И ВСЁ ----------
+        // ❤️ здоровье, 🗡 урон, 🛡 броня. Броня — ОДНО число на всего червя:
+        // складывается со всех источников и снимает урон с любого дошедшего
+        // удара. Разбор, почему уехала с зон, — в src/config/wrath-gear.js.
         const out = {
             hp: conf.baseHp || 0,
             damage: this.upgradeBonusOf(upgrades, 'damage'),
-            armor: { head: 0, body: 0, tail: 0 },
+            armor: 0,
             damageMin: conf.damageMin || 0,
             damageMax: conf.damageMax || 0
         };
@@ -911,13 +914,13 @@ const LocalBackend = {
             if (!item) return;
             if (item.hp) out.hp += item.hp;
             if (item.damage) out.damage += item.damage;
-            if (item.armor) zones.forEach(z => { if (item.armor[z]) out.armor[z] += item.armor[z]; });
+            if (item.armor) out.armor += item.armor;
         });
 
         if (bonus) {
             if (bonus.hp) out.hp += bonus.hp;
             if (bonus.damage) out.damage += bonus.damage;
-            if (bonus.armor) zones.forEach(z => { out.armor[z] += bonus.armor; });
+            if (bonus.armor) out.armor += bonus.armor;
         }
 
         out.damageMin += out.damage;
@@ -946,6 +949,18 @@ const LocalBackend = {
     // Броня меряется против КОНКРЕТНОГО противника: против слабых ударов она
     // стоит дороже, чем против сильных, и честно учесть это иначе нельзя.
     // Поэтому вторым доводом идёт средний урон того, с кем сравниваем.
+    // ---------- СКОЛЬКО БРОНИ СРАБОТАЛО ПО ЭТОМУ УДАРУ ----------
+    // Одно место на бой и на все расчёты силы: правило потолка обязано быть
+    // одним и тем же везде, иначе подбор соперника считает одну игру, а
+    // играется другая.
+    armorCut(armor, raw) {
+        const conf = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
+        const share = conf.armorMaxShare;
+        const have = armor || 0;
+        if (!share) return have;
+        return Math.min(have, Math.floor((raw || 0) * share));
+    },
+
     wrathPower(stats, vsAvgDamage) {
         const conf = (ECONOMY.minigames && ECONOMY.minigames.wrath) || {};
         const zones = conf.zones || ['head', 'body', 'tail'];
@@ -953,8 +968,11 @@ const LocalBackend = {
         const hit = (zones.length - 1) / zones.length;      // доля ударов мимо блока
         const avg = (stats.damageMin + stats.damageMax) / 2;
         const incoming = vsAvgDamage || avg;
-        const armor = zones.reduce((sum, z) => sum + (stats.armor[z] || 0), 0) / zones.length;
-        const ehp = stats.hp * (incoming / Math.max(floor, incoming - armor));
+        // Усреднения по зонам здесь больше нет: броня одна и работает на
+        // каждом дошедшем ударе. Но входит она с тем же потолком, что и в
+        // бою, — иначе подбор соперника считал бы броню сильнее, чем она есть.
+        const cut = this.armorCut(stats.armor, incoming);
+        const ehp = stats.hp * (incoming / Math.max(floor, incoming - cut));
         return ehp * avg * hit;
     },
 
@@ -1443,15 +1461,21 @@ const LocalBackend = {
         const out = gained || { currencies: {} };
         if (!eff) return out;
 
-        if (eff.maxHp) {
-            // Как и усиление здоровьем: поднимает И максимум, И текущее.
-            // Карточка, доставшаяся пустой, — это карточка, которую не берут.
-            run.maxHp += eff.maxHp;
-            run.hp += eff.maxHp;
-            out.healed = (out.healed || 0) + eff.maxHp;
+        // ---------- ДВА ВИДА ЗДОРОВЬЯ, ОДИН ЗНАЧОК ----------
+        // hp поднимает И максимум, И текущее — так же, как усиление здоровьем
+        // после боя: карточка, доставшаяся пустой, это карточка, которую не
+        // берут. hpShare только лечит, долей от максимума.
+        //
+        // Раньше первое звалось maxHp и показывалось значком 💪 — четвёртой
+        // величиной, которой у бойца нет. Механика та же, поэтому теперь и
+        // имя, и значок общие: ❤️ (src/config/economy.js).
+        if (eff.hp) {
+            run.maxHp += eff.hp;
+            run.hp += eff.hp;
+            out.healed = (out.healed || 0) + eff.hp;
         }
 
-        const hpDelta = (eff.hp || 0) + (eff.hpShare ? run.maxHp * eff.hpShare : 0);
+        const hpDelta = eff.hpShare ? run.maxHp * eff.hpShare : 0;
         if (hpDelta > 0) out.healed = (out.healed || 0) + this.rogueHeal(run, hpDelta);
         else if (hpDelta < 0) {
             const paid = Math.min(Math.round(-hpDelta), run.hp - 1);
@@ -1541,7 +1565,7 @@ const LocalBackend = {
     // чистому лечению, на полной полосе бесполезна.
     rogueEffectEmpty(run, eff) {
         if (!eff) return true;
-        const onlyHeal = !eff.maxHp && !eff.damage && !eff.armor && !eff.teeth
+        const onlyHeal = !eff.hp && !eff.damage && !eff.armor && !eff.teeth
                          && !eff.currencies;
         return onlyHeal && run.hp >= run.maxHp;
     },

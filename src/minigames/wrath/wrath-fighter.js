@@ -57,7 +57,6 @@ const WrathFighter = {
         const bonus = (run && run.bonus) || {};
         const model = (typeof WormModelAPI !== 'undefined')
             ? WormModelAPI.loadWormModel() : null;
-        const armor = (bonus.armor || 0);
         return {
             name: 'Ты',
             model,
@@ -65,7 +64,7 @@ const WrathFighter = {
             stats: {
                 hp: (run && run.maxHp) || start.hp,
                 damage: bonus.damage || 0,
-                armor: { head: armor, body: armor, tail: armor },
+                armor: bonus.armor || 0,
                 damageMin: start.damage[0] + (bonus.damage || 0),
                 damageMax: start.damage[1] + (bonus.damage || 0)
             },
@@ -123,7 +122,7 @@ const WrathFighter = {
             stats: {
                 hp: conf.hp || 10,
                 damage: 0,
-                armor: { head: 0, body: 0, tail: 0 },
+                armor: 0,
                 damageMin: damage[0],
                 damageMax: damage[1]
             },
@@ -143,7 +142,11 @@ const WrathFighter = {
         const a = attacker.stats;
         const span = Math.max(0, a.damageMax - a.damageMin);
         const raw = a.damageMin + Math.floor(Math.random() * (span + 1));
-        const armor = (defender.stats.armor && defender.stats.armor[zone]) || 0;
+        // Броня одна на всего червя: зона решает, дошёл удар или в блок, а
+        // сколько снимется — одно и то же число откуда бы ни прилетело
+        // (src/config/wrath-gear.js). Снять больше половины удара она не
+        // может — почему, разобрано у ECONOMY…armorMaxShare.
+        const armor = Backend.armorCut(defender.stats.armor, raw);
         const floor = (ECONOMY.minigames.wrath && ECONOMY.minigames.wrath.minHitDamage) || 0;
         return Math.max(floor, raw - armor);
     },
@@ -302,19 +305,14 @@ const WrathFighter = {
 
     // ---------- ЧТО ДАЁТ ПРЕДМЕТ ----------
     // Одна и та же строка нужна лобби и магазину, поэтому живёт здесь.
-    // Ни одного слова: значок величины и число.
-    //
-    // Зона брони не пишется. Слот и есть зона — шлем это голова, броня это
-    // тело, — а предмет всегда показан внутри своего слота или в своей
-    // группе магазина. Повторять это значком значило бы объяснять очевидное.
+    // Ни одного слова: значок величины и число. Значков ровно три на всю
+    // игру — ❤️ 🗡 🛡, — и предмет, магазин, забег и прокачка говорят
+    // одними и теми же.
     itemStats(item) {
         const parts = [];
         if (item.damage) parts.push(`🗡 +${item.damage}`);
         if (item.hp) parts.push(`❤️ +${item.hp}`);
-        if (item.armor) {
-            const armor = this.ZONES.reduce((sum, zone) => sum + (item.armor[zone] || 0), 0);
-            if (armor) parts.push(`🛡 +${armor}`);
-        }
+        if (item.armor) parts.push(`🛡 +${item.armor}`);
         return parts.join(' ');
     },
 
@@ -325,7 +323,7 @@ const WrathFighter = {
             damage: stats.damageMin === stats.damageMax
                 ? String(stats.damageMin)
                 : `${stats.damageMin}–${stats.damageMax}`,
-            armor: `${stats.armor.head}/${stats.armor.body}/${stats.armor.tail}`
+            armor: String(stats.armor || 0)
         };
     }
 };

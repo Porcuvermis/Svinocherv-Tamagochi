@@ -14,10 +14,26 @@
 //
 //     максимум ХП = base.hp + сумма hp надетого
 //     урон        = бросок из base.damageMin..base.damageMax + сумма damage
-//     получено    = урон противника − armor[зона]  (не ниже нуля)
+//     получено    = урон противника − armor  (не ниже minHitDamage)
 //
 // Базовый урон одинаков в любую зону: зона решает, попал ты или в блок, а не
 // сколько снял. Это сознательно (docs/plan/09-wrath-rework.md, вводная 9).
+//
+// ---------- БРОНЯ ОДНА НА ВСЕГО ЧЕРВЯ ----------
+// Раньше броня бронировала ЗОНУ: шлем — голову, панцирь — тело, щит — тело и
+// хвост. Механика честная и совершенно непоказуемая: чтобы игрок ею
+// пользовался, ему надо держать в голове три числа и помнить, в какую зону
+// сейчас бьют. В игре без единого слова это не объяснить, а на экране это
+// выглядело как «5/10/3» — три числа через дробь, которые никто не читал.
+//
+// Теперь броня СУММИРУЕТСЯ со всех источников в одно число и снимает урон с
+// ЛЮБОГО дошедшего удара. Характеристик у бойца ровно три, и все три
+// показываются одним значком каждая: ❤️ здоровье, 🗡 урон, 🛡 броня.
+//
+// Числа при этом пересчитаны, а не перенесены: прежняя броня работала на
+// треть ударов (одна зона из трёх), новая — на все. Поэтому значения примерно
+// втрое меньше прежних, и полный топовый комплект даёт 6 против прежних 5.3
+// в среднем по зонам. Проверено tools/measure-power.js и tools/sim-wrath-foe.js.
 
 const WRATH_GEAR = {
 
@@ -34,13 +50,13 @@ const WRATH_GEAR = {
     slots: [
         {
             key: 'helmet', name: 'Шлем', emoji: '🪖', column: 'left',
-            hint: '− урон в голову',
+            hint: '− весь входящий урон',
             shape: 'M12 3a8 8 0 0 0-8 8v3h16v-3a8 8 0 0 0-8-8z'
                  + 'M2.5 15.5h19a1.2 1.2 0 0 1 0 3.4h-19a1.2 1.2 0 0 1 0-3.4z'
         },
         {
             key: 'armor', name: 'Броня', emoji: '🦺', column: 'left',
-            hint: '− урон в тело',
+            hint: '− весь входящий урон',
             shape: 'M9 2.5l3 2 3-2 5.5 3-2.2 3.6V21H5.7V9.1L3.5 5.5z'
         },
         {
@@ -56,7 +72,7 @@ const WRATH_GEAR = {
         },
         {
             key: 'shield', name: 'Щит', emoji: '🛡', column: 'right',
-            hint: '− урон в тело',
+            hint: '− весь входящий урон',
             shape: 'M12 2l9 3.2v6.4c0 5.4-3.8 9.4-9 10.4-5.2-1-9-5-9-10.4V5.2z'
         }
     ],
@@ -130,45 +146,45 @@ const WRATH_GEAR = {
         // ---- шлем: голова ----
         'pot-helmet': {
             slot: 'helmet', tier: 1, name: 'Кастрюля', emoji: '🥘',
-            armor: { head: 1 }, hp: 1, price: { wrath_token: 1 }
+            armor: 1, hp: 1, price: { wrath_token: 1 }
         },
         'skull-cap': {
             slot: 'helmet', tier: 2, name: 'Череп', emoji: '💀',
-            armor: { head: 2 }, hp: 2, price: { wrath_token: 4 }
+            armor: 1, hp: 2, price: { wrath_token: 4 }
         },
         'bucket-helm': {
             slot: 'helmet', tier: 3, name: 'Ведро', emoji: '🪣',
-            armor: { head: 3 }, hp: 3, price: { wrath_token: 8 }
+            armor: 1, hp: 3, price: { wrath_token: 8 }
         },
         'horned-helm': {
             slot: 'helmet', tier: 4, name: 'Рогатый шлем', emoji: '🐃',
-            armor: { head: 4 }, hp: 4, price: { wrath_token: 15 }
+            armor: 2, hp: 4, price: { wrath_token: 15 }
         },
         'hog-skull': {
             slot: 'helmet', tier: 5, name: 'Череп Хряка', emoji: '🐗',
-            armor: { head: 5 }, hp: 5, price: { wrath_token: 27 }
+            armor: 2, hp: 5, price: { wrath_token: 27 }
         },
 
         // ---- броня: тело ----
         'hide-armor': {
             slot: 'armor', tier: 1, name: 'Шкура', emoji: '🦺',
-            armor: { body: 1 }, hp: 2, price: { wrath_token: 2 }
+            armor: 1, hp: 2, price: { wrath_token: 2 }
         },
         'bone-plate': {
             slot: 'armor', tier: 2, name: 'Костяной панцирь', emoji: '🛡',
-            armor: { body: 2 }, hp: 3, price: { wrath_token: 5 }
+            armor: 1, hp: 3, price: { wrath_token: 5 }
         },
         'beetle-shell': {
             slot: 'armor', tier: 3, name: 'Панцирь жука', emoji: '🪲',
-            armor: { body: 3 }, hp: 4, price: { wrath_token: 10 }
+            armor: 2, hp: 4, price: { wrath_token: 10 }
         },
         'bone-mail': {
             slot: 'armor', tier: 4, name: 'Костяная кольчуга', emoji: '⛓',
-            armor: { body: 4 }, hp: 6, price: { wrath_token: 18 }
+            armor: 2, hp: 6, price: { wrath_token: 18 }
         },
         'chitin-plate': {
             slot: 'armor', tier: 5, name: 'Хитин', emoji: '🦂',
-            armor: { body: 5 }, hp: 8, price: { wrath_token: 32 }
+            armor: 2, hp: 8, price: { wrath_token: 32 }
         },
 
         // ---- перчатки: урон ----
@@ -196,23 +212,23 @@ const WRATH_GEAR = {
         // ---- щит: тело и хвост ----
         'lid-shield': {
             slot: 'shield', tier: 1, name: 'Крышка', emoji: '🛢',
-            armor: { body: 1 }, price: { wrath_token: 1 }
+            armor: 1, price: { wrath_token: 1 }
         },
         'tower-shield': {
             slot: 'shield', tier: 2, name: 'Ростовой щит', emoji: '🚪',
-            armor: { body: 1, tail: 1 }, hp: 1, price: { wrath_token: 4 }
+            armor: 1, hp: 1, price: { wrath_token: 4 }
         },
         'barn-door': {
             slot: 'shield', tier: 3, name: 'Дверь сарая', emoji: '🚧',
-            armor: { body: 2, tail: 1 }, hp: 2, price: { wrath_token: 8 }
+            armor: 1, hp: 2, price: { wrath_token: 8 }
         },
         'turtle-shell': {
             slot: 'shield', tier: 4, name: 'Панцирь черепахи', emoji: '🐢',
-            armor: { body: 2, tail: 2 }, hp: 3, price: { wrath_token: 15 }
+            armor: 2, hp: 3, price: { wrath_token: 15 }
         },
         'tombstone': {
             slot: 'shield', tier: 5, name: 'Надгробие', emoji: '🪦',
-            armor: { body: 3, tail: 3 }, hp: 4, price: { wrath_token: 27 }
+            armor: 2, hp: 4, price: { wrath_token: 27 }
         }
     }
 };

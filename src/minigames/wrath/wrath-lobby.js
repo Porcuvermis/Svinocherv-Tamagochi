@@ -232,9 +232,11 @@ const WrathLobby = {
         if (this.panelEl) {
             const stats = WrathFighter.stats(equipment);
             const short = WrathFighter.summary(stats);
-            const armor = WrathFighter.ZONES.some(zone => stats.armor[zone])
-                ? WrathFighter.ZONES.map(zone => stats.armor[zone]).join('/')
-                : '0';
+            // Броня — ОДНО число. Раньше здесь стояло «5/10/3» — три числа
+            // через дробь, по зонам. Их никто не читал, и прочесть было
+            // нечем: без слов не объяснить, какая дробь чья
+            // (src/config/wrath-gear.js).
+            const armor = short.armor;
             const passives = WrathFighter.passives();
 
             this.panelEl.innerHTML = `

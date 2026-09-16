@@ -4,6 +4,16 @@
 // здоровье или через урон), должны выигрывать друг у друга примерно поровну,
 // а шанс победы должен зависеть только от ОТНОШЕНИЯ сил.
 const FLOOR = 1, ZONES = 3, N = 40000;
+
+// Потолок брони: снять больше этой доли удара она не может. Здесь число
+// прибито, а не читается из конфига, — этот прогон вообще не загружает игру,
+// он проверяет ГИПОТЕЗУ о мере силы на выдуманных бойцах. Держать его в
+// синхроне с ECONOMY…armorMaxShare нужно только если сюда добавят броню:
+// у всех бойцов ниже она нулевая, и потолок их не задевает.
+const ARMOR_SHARE = 0.5;
+const cut = (armor, raw) => ARMOR_SHARE
+    ? Math.min(armor || 0, Math.floor((raw || 0) * ARMOR_SHARE))
+    : (armor || 0);
 const roll = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 
 function duel(a, b) {
@@ -11,8 +21,8 @@ function duel(a, b) {
     while (ah > 0 && bh > 0 && r++ < 500) {
         const aAtk = Math.floor(Math.random() * ZONES), aDef = Math.floor(Math.random() * ZONES);
         const bAtk = Math.floor(Math.random() * ZONES), bDef = Math.floor(Math.random() * ZONES);
-        if (aAtk !== bDef) bh -= Math.max(FLOOR, roll(a.dmg[0], a.dmg[1]) - b.armor);
-        if (bAtk !== aDef) ah -= Math.max(FLOOR, roll(b.dmg[0], b.dmg[1]) - a.armor);
+        if (aAtk !== bDef) { const r = roll(a.dmg[0], a.dmg[1]); bh -= Math.max(FLOOR, r - cut(b.armor, r)); }
+        if (bAtk !== aDef) { const r = roll(b.dmg[0], b.dmg[1]); ah -= Math.max(FLOOR, r - cut(a.armor, r)); }
     }
     if (ah > 0 && bh <= 0) return 1;      // победа A
     if (bh > 0 && ah <= 0) return 0;      // победа B
@@ -33,7 +43,7 @@ function power(f, vs) {
     const avg = (f.dmg[0] + f.dmg[1]) / 2;
     const dps = avg * HIT;
     const incoming = vs ? (vs.dmg[0] + vs.dmg[1]) / 2 : avg;
-    const perHit = Math.max(FLOOR, incoming - f.armor);
+    const perHit = Math.max(FLOOR, incoming - cut(f.armor, incoming));
     const ehp = f.hp * (incoming / perHit);
     return { dps, ehp, power: ehp * dps };
 }

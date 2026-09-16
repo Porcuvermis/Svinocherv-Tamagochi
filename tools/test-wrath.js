@@ -1172,6 +1172,86 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 200));
   });
 
+  // ---------- ТРИ ХАРАКТЕРИСТИКИ И ОДНА БРОНЯ ----------
+  // У бойца ровно три величины: ❤️ 🗡 🛡. Четвёртой (💪 maxHp) больше нет
+  // нигде, броня не делится по зонам, и в забеге показываются все три —
+  // чтобы было видно, что боец там свой, а не одетый из лобби.
+  console.log('\n--- три характеристики ---');
+  const stats3 = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 60;
+    GameState.data.equipment = {};
+    ['pot-helmet', 'hide-armor', 'lid-shield'].forEach(id => Backend.grantItem(id));
+    Backend.equip('helmet', 'pot-helmet');
+    Backend.equip('armor', 'hide-armor');
+    Backend.equip('shield', 'lid-shield');
+
+    const mine = Backend.wrathStats(GameState.data.equipment, GameState.data.upgrades);
+    const out = {
+      // Броня — ЧИСЛО, а не карта зон.
+      armorIsNumber: typeof mine.armor === 'number',
+      armorSum: mine.armor,
+      // Потолок: снять больше половины удара броня не может.
+      cutSmall: Backend.armorCut(5, 4),
+      cutBig: Backend.armorCut(2, 20),
+      // Ни один предмет в каталоге не носит броню по зонам.
+      zonedGear: Object.keys(WRATH_GEAR.items)
+        .filter(id => WRATH_GEAR.items[id].armor
+                   && typeof WRATH_GEAR.items[id].armor !== 'number'),
+      // Четвёртой величины нет ни в одном эффекте забега.
+      maxHpLeft: JSON.stringify(ECONOMY.minigames.wrath.rogue).indexOf('maxHp') >= 0
+    };
+
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    WrathRogue.summary = null;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 350));
+    Backend.startRun(0);
+    WrathRogue.render();
+    await new Promise(r => setTimeout(r, 150));
+    out.runRow = document.getElementById('rogue-status').textContent.replace(/\s+/g, ' ').trim();
+    out.lobbyRow = document.getElementById('wrath-panel').textContent.replace(/\s+/g, ' ').trim();
+    return out;
+  });
+
+  check(stats3.armorIsNumber, `броня — одно число на всего червя: ${stats3.armorSum}`);
+  check(stats3.cutSmall === 2 && stats3.cutBig === 2,
+    `броня снимает не больше половины удара: ${stats3.cutSmall} из 4, ${stats3.cutBig} из 20`);
+  check(stats3.zonedGear.length === 0, 'в каталоге снаряжения не осталось брони по зонам');
+  check(!stats3.maxHpLeft, 'четвёртой величины (maxHp / 💪) в забеге больше нет');
+  check(/❤️/.test(stats3.runRow) && /🗡/.test(stats3.runRow) && /🛡/.test(stats3.runRow),
+    `в забеге показаны все три характеристики: «${stats3.runRow}»`);
+  check(!/💪/.test(stats3.runRow + stats3.lobbyRow), 'значка 💪 на экранах нет');
+
+  // ---------- ПРОКАЧКА РАЗЛОЖЕНА ПО РЕЖИМАМ ----------
+  // Вопрос «а в забеге это работает?» должен иметь ответ на экране. Вкладки
+  // прокачки — это режимы, и вещь стоит на той вкладке, где сработает.
+  console.log('\n--- прокачка по режимам ---');
+  const byMode = await page.evaluate(async () => {
+    WrathMinigame.startMode('boost');
+    await new Promise(r => setTimeout(r, 300));
+    const tabs = [...document.querySelectorAll('#boost-tabs .shop-tab')]
+      .map(b => b.dataset.tab);
+    const rows = (tab) => {
+      WrathBoost.tab = tab;
+      WrathBoost.render();
+      return [...document.querySelectorAll('#boost-list .boost-item[data-key]')]
+        .map(b => b.dataset.key);
+    };
+    // Снаряжение снимается: оно поднимает максимум здоровья, а проверки
+    // ниже считают полное здоровье голого бойца.
+    GameState.data.equipment = {};
+    return { tabs, duel: rows('duel'), rogue: rows('rogue') };
+  });
+
+  check(byMode.tabs.join() === 'duel,rogue',
+    `вкладки прокачки — это режимы: ${byMode.tabs.join(' ')}`);
+  check(byMode.duel.indexOf('damage') >= 0 && byMode.duel.indexOf('hp') >= 0,
+    'числовая прокачка стоит на вкладке боя');
+  check(byMode.rogue.indexOf('damage') < 0 && byMode.rogue.indexOf('hp') < 0,
+    'её же нет на вкладке забега: внутрь забега она не едет');
+  check(byMode.rogue.indexOf('sixth_sense') >= 0 && byMode.duel.indexOf('sixth_sense') >= 0,
+    'работающее в обоих режимах стоит на обеих вкладках');
+
   // ---------- КОШЕЛЁК ГОВОРИТ САМ ----------
   // Три отдельные жалобы, и все три про одно: экран сообщал о деньгах и о
   // противнике где попало, а не там, где игрок на это смотрит.

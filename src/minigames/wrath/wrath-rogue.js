@@ -147,17 +147,25 @@ const WrathRogue = {
         }
         this.statusEl.classList.remove('empty');
 
-        // Усиления забега стоят рядом со здоровьем: они и есть ответ на
-        // вопрос «что у меня накопилось», а больше его нигде не видно.
-        const bonus = run.bonus || {};
-        const chips = [];
-        if (bonus.damage) chips.push(`<span class="rogue-chip">🗡 +${bonus.damage}</span>`);
-        if (bonus.armor) chips.push(`<span class="rogue-chip">🛡 +${bonus.armor}</span>`);
+        // ---------- ТРИ ХАРАКТЕРИСТИКИ, ВСЕГДА ВСЕ ТРИ ----------
+        // Раньше здесь стояли здоровье и зубы, а урон с бронёй появлялись,
+        // только если забег их где-то добыл. Из-за этого у бойца забега как
+        // будто не было ни урона, ни брони — и главный вопрос игрока («едет
+        // ли сюда моё снаряжение?») оставался без ответа.
+        //
+        // Ответ — НЕ ЕДЕТ: забег изолирован, боец входит с числами из
+        // конфига (WrathFighter.forRun). Показывается это не словами, а
+        // теми же тремя значками, что в лобби: ❤️ 🗡 🛡. Числа рядом другие
+        // — этого достаточно, чтобы увидеть, что боец здесь свой.
+        const me = WrathFighter.forRun(run).stats;
+        const dmg = me.damageMin === me.damageMax
+            ? String(me.damageMin) : `${me.damageMin}–${me.damageMax}`;
 
         this.statusEl.innerHTML = `
             <span class="wallet-item" data-cur="hp"><b>❤️ ${run.hp}/${run.maxHp}</b></span>
+            <span class="wallet-item" data-cur="damage"><b>🗡 ${dmg}</b></span>
+            <span class="wallet-item" data-cur="armor"><b>🛡 ${me.armor}</b></span>
             <span class="wallet-item rogue-teeth" data-cur="teeth"><b>🦷 ${run.teeth}</b></span>
-            <span class="rogue-chips">${chips.join('')}</span>
         `;
     },
 
@@ -680,9 +688,12 @@ const WrathRogue = {
         const want = (v) => sign == null || (sign > 0 ? v > 0 : v < 0);
         const out = [];
 
+        // ТРИ ЗНАЧКА НА ВСЁ. Здесь стоял четвёртый — 💪 для maxHp, — и он
+        // ничего не значил: рядом ❤️ было здоровьем, 🗡 уроном, 🛡 бронёй, а
+        // 💪 непонятно чем. Механика у него была ровно та же, что у здоровья
+        // (поднять максимум и вылечить), поэтому значок теперь общий.
         const hp = (eff.hp || 0) + (eff.hpShare ? (run ? run.maxHp : 20) * eff.hpShare : 0);
         if (hp && want(hp)) out.push(`❤️ ${hp > 0 ? '+' : '−'}${Math.abs(Math.round(hp))}`);
-        if (eff.maxHp && want(eff.maxHp)) out.push(`💪 +${eff.maxHp}`);
         if (eff.damage && want(eff.damage)) out.push(`🗡 +${eff.damage}`);
         if (eff.armor && want(eff.armor)) out.push(`🛡 +${eff.armor}`);
         if (eff.teeth && want(eff.teeth)) {

@@ -22,6 +22,13 @@ const { WRATH_GEAR, ECONOMY } = mod.exports;
 const W = ECONOMY.minigames.wrath;
 const ZONES = W.zones;
 const FLOOR = W.minHitDamage || 1;
+
+// Потолок брони: снять больше этой доли удара она не может.
+// Правило живёт в конфиге, здесь только чтение (ECONOMY…armorMaxShare).
+const ARMOR_SHARE = (ECONOMY.minigames.wrath || {}).armorMaxShare || 0;
+const cut = (armor, raw) => ARMOR_SHARE
+    ? Math.min(armor || 0, Math.floor((raw || 0) * ARMOR_SHARE))
+    : (armor || 0);
 const HIT = (ZONES.length - 1) / ZONES.length;   // доля ударов, прошедших мимо блока
 
 // ---------- ЦЕЛЕВЫЕ ЧИСЛА МОДЕЛИ ----------
@@ -79,8 +86,8 @@ function cycleMinutes(hp, regenLevel) {
 function power(f, vsAvgDamage) {
     const avg = (f.damageMin + f.damageMax) / 2;
     const dps = avg * HIT;
-    const armor = ZONES.reduce((s, z) => s + (f.armor[z] || 0), 0) / ZONES.length;
-    const perHit = Math.max(FLOOR, vsAvgDamage - armor);
+    const armor = f.armor || 0;
+    const perHit = Math.max(FLOOR, vsAvgDamage - cut(armor, vsAvgDamage));
     const ehp = f.hp * (vsAvgDamage / perHit);
     return { dps, ehp, value: ehp * dps };
 }
@@ -96,7 +103,7 @@ function power(f, vsAvgDamage) {
 function stage(n) {
     const stats = {
         hp: W.baseHp, damageMin: W.damageMin, damageMax: W.damageMax,
-        armor: { head: 0, body: 0, tail: 0 }
+        armor: 0
     };
     let cost = 0;
     if (n === 0) return { stats, cost };
@@ -111,7 +118,7 @@ function stage(n) {
         stats.hp += owned.hp || 0;
         stats.damageMin += owned.damage || 0;
         stats.damageMax += owned.damage || 0;
-        ZONES.forEach(z => { if (owned.armor && owned.armor[z]) stats.armor[z] += owned.armor[z]; });
+        if (owned.armor) stats.armor += owned.armor;
         if ((owned.tier || 1) === n) cost += (owned.price && owned.price.wrath_token) || 0;
     });
 
@@ -184,7 +191,7 @@ rows.forEach(r => {
         String(r.n).padEnd(4) +
         String(r.stats.hp).padStart(3) + '  ' +
         (r.stats.damageMin + '-' + r.stats.damageMax).padStart(6) + '  ' +
-        ZONES.map(z => r.stats.armor[z]).join('/').padStart(6) + '  ' +
+        String(r.stats.armor || 0).padStart(6) + '  ' +
         r.power.toFixed(0).padStart(5) + '  ' +
         level(r.power, BASE).toFixed(1).padStart(4) + '  ' +
         (pStep ? '×' + pStep.toFixed(2) : '  —  ').padStart(6) + '  ' +
@@ -244,7 +251,7 @@ if (rogue && rogue.enemies) {
         const e = rogue.enemies[key];
         const p = power({
             hp: e.hp, damageMin: e.damage[0], damageMax: e.damage[1],
-            armor: { head: 0, body: 0, tail: 0 }
+            armor: 0
         }, (e.damage[0] + e.damage[1]) / 2).value;
         console.log('  ' + key.padEnd(10) + 'сила ' + p.toFixed(0).padStart(4)
             + '   уровень ' + level(p, BASE).toFixed(1));
@@ -252,7 +259,7 @@ if (rogue && rogue.enemies) {
     if (rogue.start) {
         const st = power({
             hp: rogue.start.hp, damageMin: rogue.start.damage[0],
-            damageMax: rogue.start.damage[1], armor: { head: 0, body: 0, tail: 0 }
+            damageMax: rogue.start.damage[1], armor: 0
         }, (rogue.start.damage[0] + rogue.start.damage[1]) / 2).value;
         console.log('  ' + 'вход'.padEnd(10) + 'сила ' + st.toFixed(0).padStart(4)
             + '   уровень ' + level(st, BASE).toFixed(1));

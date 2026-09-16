@@ -36,6 +36,13 @@ const { WRATH_GEAR, ECONOMY, LocalBackend: B, wrathRandom } = mod.exports;
 
 const W = ECONOMY.minigames.wrath;
 const ZONES = W.zones, FLOOR = W.minHitDamage;
+
+// Потолок брони: снять больше этой доли удара она не может.
+// Правило живёт в конфиге, здесь только чтение (ECONOMY…armorMaxShare).
+const ARMOR_SHARE = (ECONOMY.minigames.wrath || {}).armorMaxShare || 0;
+const cut = (armor, raw) => ARMOR_SHARE
+    ? Math.min(armor || 0, Math.floor((raw || 0) * ARMOR_SHARE))
+    : (armor || 0);
 const N = Number(process.argv[2]) || 20000;
 const pick = l => l[Math.floor(Math.random() * l.length)];
 const roll = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -45,8 +52,8 @@ function duel(a, b) {
     let ah = a.hp, bh = b.hp, r = 0;
     while (ah > 0 && bh > 0 && r++ < 400) {
         const aa = pick(ZONES), ad = pick(ZONES), ba = pick(ZONES), bd = pick(ZONES);
-        if (aa !== bd) bh -= Math.max(FLOOR, roll(a.damageMin, a.damageMax) - (b.armor[aa] || 0));
-        if (ba !== ad) ah -= Math.max(FLOOR, roll(b.damageMin, b.damageMax) - (a.armor[ba] || 0));
+        if (aa !== bd) { const r = roll(a.damageMin, a.damageMax); bh -= Math.max(FLOOR, r - cut(b.armor, r)); }
+        if (ba !== ad) { const r = roll(b.damageMin, b.damageMax); ah -= Math.max(FLOOR, r - cut(a.armor, r)); }
     }
     return (bh <= 0 && ah > 0) ? 1 : ((ah <= 0 && bh > 0) ? 0 : 0.5);
 }
@@ -95,7 +102,7 @@ BUILDS.forEach(build => {
         wins += duel(mine, his);
     }
     ratios.sort((a, b) => a - b);
-    const armor = `${mine.armor.head}/${mine.armor.body}/${mine.armor.tail}`;
+    const armor = String(mine.armor || 0);
     console.log(
         String(build.tier).padStart(5) + '  '
       + String(mine.hp).padStart(4) + '  '
@@ -151,5 +158,5 @@ sample.forEach(f => {
     const st = B.wrathStats(f.equipment, f.upgrades);
     const worn = Object.keys(tiers).map(s => f.equipment[s] ? WRATH_GEAR.items[f.equipment[s]].emoji : '·').join(' ');
     console.log(`  ${worn}  прокачка ур.${f.upgrades.damage}/${f.upgrades.hp}  `
-      + `${st.hp} хп, ${st.damageMin}-${st.damageMax}, броня ${st.armor.head}/${st.armor.body}/${st.armor.tail}  ×${f.ratio.toFixed(2)}`);
+      + `${st.hp} хп, ${st.damageMin}-${st.damageMax}, броня ${st.armor || 0}  ×${f.ratio.toFixed(2)}`);
 });

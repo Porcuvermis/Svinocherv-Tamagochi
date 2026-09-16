@@ -31,6 +31,13 @@ const { WRATH_GEAR, ECONOMY } = mod.exports;
 const W = ECONOMY.minigames.wrath;
 const ZONES = W.zones;
 const FLOOR = W.minHitDamage;
+
+// Потолок брони: снять больше этой доли удара она не может.
+// Правило живёт в конфиге, здесь только чтение (ECONOMY…armorMaxShare).
+const ARMOR_SHARE = (ECONOMY.minigames.wrath || {}).armorMaxShare || 0;
+const cut = (armor, raw) => ARMOR_SHARE
+    ? Math.min(armor || 0, Math.floor((raw || 0) * ARMOR_SHARE))
+    : (armor || 0);
 const N = Number(process.argv[2]) || 6000;
 
 const PRESENCE = [
@@ -47,7 +54,7 @@ const roll = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // ---------- СБОРКА ----------
 function statsOf(eq, up) {
     const o = { hp: W.baseHp, dmgMin: W.damageMin, dmgMax: W.damageMax,
-                armor: { head: 0, body: 0, tail: 0 } };
+                armor: 0 };
     let dmg = 0;
     ['damage', 'hp'].forEach(key => {
         const branch = W.upgrades[key], n = up[key] || 0;
@@ -59,7 +66,7 @@ function statsOf(eq, up) {
         const it = WRATH_GEAR.items[eq[slot]];
         if (!it) return;
         o.hp += it.hp || 0; dmg += it.damage || 0;
-        if (it.armor) ZONES.forEach(z => { if (it.armor[z]) o.armor[z] += it.armor[z]; });
+        if (it.armor) o.armor += it.armor;
     });
     o.dmgMin += dmg; o.dmgMax += dmg;
     return o;
@@ -80,8 +87,8 @@ function measure(f, runs) {
         while (p > 0 && e > 0 && r < 400) {
             r++;
             const pa = pick(ZONES), pd = pick(ZONES), ea = pick(ZONES), ed = pick(ZONES);
-            if (pa !== ed) e -= Math.max(FLOOR, roll(f.dmgMin, f.dmgMax) - (f.armor[pa] || 0));
-            if (ea !== pd) p -= Math.max(FLOOR, roll(f.dmgMin, f.dmgMax) - (f.armor[ea] || 0));
+            if (pa !== ed) { const r = roll(f.dmgMin, f.dmgMax); e -= Math.max(FLOOR, r - cut(f.armor, r)); }
+            if (ea !== pd) { const r = roll(f.dmgMin, f.dmgMax); p -= Math.max(FLOOR, r - cut(f.armor, r)); }
         }
         if (e <= 0 && p > 0) wins++;
         if (e <= 0 && p <= 0) draws++;

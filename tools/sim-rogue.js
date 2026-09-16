@@ -35,6 +35,13 @@ let LEVEL = 1;
 let LOOT = 1;
 const PER_SHARD = (ECONOMY.exchange.wrath_shard || {}).per || 3;
 const FLOOR = W.minHitDamage || 0;
+
+// Потолок брони: снять больше этой доли удара она не может.
+// Правило живёт в конфиге, здесь только чтение (ECONOMY…armorMaxShare).
+const ARMOR_SHARE = (ECONOMY.minigames.wrath || {}).armorMaxShare || 0;
+const cut = (armor, raw) => ARMOR_SHARE
+    ? Math.min(armor || 0, Math.floor((raw || 0) * ARMOR_SHARE))
+    : (armor || 0);
 const ZONES = W.zones;
 
 const pick = list => list[Math.floor(Math.random() * list.length)];
@@ -44,14 +51,14 @@ const roll = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 function round(p, e) {
     const pa = pick(ZONES), pd = pick(ZONES);
     const ea = pick(ZONES), ed = pick(ZONES);
-    if (pa !== ed) e.hp -= Math.max(FLOOR, roll(p.dmgMin, p.dmgMax) - (e.armor[pa] || 0));
-    if (ea !== pd) p.hp -= Math.max(FLOOR, roll(e.dmgMin, e.dmgMax) - (p.armor[ea] || 0));
+    if (pa !== ed) { const r = roll(p.dmgMin, p.dmgMax); e.hp -= Math.max(FLOOR, r - cut(e.armor, r)); }
+    if (ea !== pd) { const r = roll(e.dmgMin, e.dmgMax); p.hp -= Math.max(FLOOR, r - cut(p.armor, r)); }
 }
 
 function fight(p, enemy) {
     const e = {
         hp: enemy.hp, dmgMin: enemy.damage[0], dmgMax: enemy.damage[1],
-        armor: { head: 0, body: 0, tail: 0 }
+        armor: 0
     };
     let rounds = 0;
     while (p.hp > 0 && e.hp > 0 && rounds < 200) { round(p, e); rounds++; }
@@ -70,7 +77,7 @@ function takeBoost(p, choices, policy) {
     }
     const b = ROGUE.boosts[id];
     if (b.damage) { p.dmgMin += b.damage; p.dmgMax += b.damage; }
-    if (b.armor) ZONES.forEach(z => { p.armor[z] += b.armor; });
+    if (b.armor) p.armor += b.armor;
     if (b.hp) { p.maxHp += b.hp; p.hp += b.hp; }
 }
 
@@ -80,7 +87,7 @@ function takeBoost(p, choices, policy) {
 const HIT = (ZONES.length - 1) / ZONES.length;
 function power(hp, dmgMin, dmgMax, armor, incoming) {
     const dps = ((dmgMin + dmgMax) / 2) * HIT;
-    const perHit = Math.max(FLOOR, incoming - (armor || 0));
+    const perHit = Math.max(FLOOR, incoming - cut(armor, incoming));
     return hp * (incoming / perHit) * dps;
 }
 
@@ -93,12 +100,13 @@ function power(hp, dmgMin, dmgMax, armor, incoming) {
 function effect(p, eff) {
     if (!eff) return;
     if (eff.currencies) p.gold = (p.gold || 0) + (eff.currencies.gold || 0);
-    if (eff.maxHp) { p.maxHp += eff.maxHp; p.hp += eff.maxHp; }
-    const hp = (eff.hp || 0) + (eff.hpShare ? p.maxHp * eff.hpShare : 0);
+    // hp поднимает И максимум, И текущее (как усиление), hpShare только лечит.
+    if (eff.hp) { p.maxHp += eff.hp; p.hp += eff.hp; }
+    const hp = eff.hpShare ? p.maxHp * eff.hpShare : 0;
     if (hp > 0) p.hp = Math.min(p.maxHp, p.hp + Math.round(hp));
     else if (hp < 0) p.hp -= Math.min(Math.round(-hp), p.hp - 1);
     if (eff.damage) { p.dmgMin += eff.damage; p.dmgMax += eff.damage; }
-    if (eff.armor) ZONES.forEach(z => { p.armor[z] += eff.armor; });
+    if (eff.armor) p.armor += eff.armor;
     if (eff.teeth) p.teeth += eff.teeth > 0 ? eff.teeth : -Math.min(-eff.teeth, p.teeth);
 }
 
@@ -143,7 +151,7 @@ function run(start, policy, tension, fork) {
         hp: start.hp, maxHp: start.hp,
         dmgMin: start.dmgMin, dmgMax: start.dmgMax,
         teeth: 0,
-        armor: Object.assign({ head: 0, body: 0, tail: 0 }, start.armor)
+        armor: start.armor || 0
     };
     let node = 0;
     let forks = 0;
@@ -167,8 +175,7 @@ function run(start, policy, tension, fork) {
         // забега боец растёт — «процент от силы босса» без этого врёт.
         if (tension) {
             const incoming = (enemy.damage[0] + enemy.damage[1]) / 2;
-            const armor = ZONES.reduce((a, z) => a + p.armor[z], 0) / ZONES.length;
-            const mine = power(p.hp, p.dmgMin, p.dmgMax, armor, incoming);
+            const mine = power(p.hp, p.dmgMin, p.dmgMax, p.armor || 0, incoming);
             const his = power(enemy.hp, enemy.damage[0], enemy.damage[1], 0,
                 (p.dmgMin + p.dmgMax) / 2);
             const t = tension[node] || (tension[node] = { name: step.enemy, mine: 0, his: 0, n: 0 });
@@ -197,8 +204,8 @@ function run(start, policy, tension, fork) {
 // сравнения: голая база (что было бы без стартового набора) и полный комплект
 // из магазина (что было бы без изоляции).
 const start = ROGUE.start || { hp: W.baseHp, damage: [W.damageMin, W.damageMax] };
-const runner = { hp: start.hp, dmgMin: start.damage[0], dmgMax: start.damage[1], armor: {} };
-const bare = { hp: W.baseHp, dmgMin: W.damageMin, dmgMax: W.damageMax, armor: {} };
+const runner = { hp: start.hp, dmgMin: start.damage[0], dmgMax: start.damage[1], armor: 0 };
+const bare = { hp: W.baseHp, dmgMin: W.damageMin, dmgMax: W.damageMax, armor: 0 };
 
 // Полный комплект: по лучшему предмету в каждый слот плюс потолок прокачки.
 const geared = (() => {
@@ -207,13 +214,13 @@ const geared = (() => {
         const i = WRATH_GEAR.items[id];
         (slots[i.slot] = slots[i.slot] || []).push(i);
     });
-    const armor = { head: 0, body: 0, tail: 0 };
+    let armor = 0;
     let dmg = 0, hp = 0;
     Object.keys(slots).forEach(slot => {
-        const score = i => (i.armor ? Object.values(i.armor).reduce((a, b) => a + b, 0) : 0)
+        const score = i => (i.armor || 0)
                          + (i.damage || 0) + (i.hp || 0);
         const top = slots[slot].reduce((a, b) => score(b) > score(a) ? b : a);
-        ZONES.forEach(z => { if (top.armor && top.armor[z]) armor[z] += top.armor[z]; });
+        if (top.armor) armor += top.armor;
         dmg += top.damage || 0; hp += top.hp || 0;
     });
     const up = W.upgrades;
@@ -289,7 +296,7 @@ PATHS.forEach(fork => {
 [['боец забега', runner], ['голая база', bare], ['полный комплект', geared]].forEach(([label, start]) => {
     console.log('\n=== ' + label + ' === хп ' + start.hp
         + ', урон ' + start.dmgMin + '-' + start.dmgMax
-        + ', броня ' + ZONES.map(z => start.armor[z] || 0).join('/'));
+        + ', броня ' + (start.armor || 0));
     ['damage', 'hp', 'mixed'].forEach(policy => {
         let wins = 0;
         const deaths = new Array(ROGUE.map.length).fill(0);
