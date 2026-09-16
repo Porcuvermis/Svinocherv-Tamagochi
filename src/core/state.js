@@ -491,9 +491,20 @@ const GameState = {
         sin.updated_at = GameTime.now();
     },
 
+    // ЕДИНСТВЕННАЯ дверь, через которую валюта меняется, — поэтому отсюда же
+    // о ней и сообщается. Показывать изменение берётся WalletFx: цифра
+    // вылетает из самого счётчика этой валюты, где бы он сейчас ни был
+    // (src/core/wallet-fx.js). Экранам про это знать не нужно, и заводить у
+    // себя строку «−1 жетон» им больше не надо.
     addCurrency(key, delta) {
-        const next = (this.data.currencies[key] || 0) + delta;
-        this.data.currencies[key] = Math.max(0, next);
+        const before = this.data.currencies[key] || 0;
+        this.data.currencies[key] = Math.max(0, before + delta);
+        // Сообщается ФАКТИЧЕСКОЕ изменение, а не запрошенное: списание ниже
+        // нуля обрезается, и «−5» при двух монетах в кошельке было бы враньём.
+        const real = this.data.currencies[key] - before;
+        if (real && typeof GameEvents !== 'undefined') {
+            GameEvents.emit('currency', { key, delta: real, value: this.data.currencies[key] });
+        }
         return this.data.currencies[key];
     },
 

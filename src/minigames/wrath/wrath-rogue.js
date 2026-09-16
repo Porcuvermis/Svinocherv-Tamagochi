@@ -39,9 +39,7 @@ const WrathRogue = {
     nodesEl: null,
     cardEl: null,
     actionEl: null,
-    messageEl: null,
     abandonEl: null,
-    message: null,
     // ---------- БРОСИТЬ ЗАБЕГ — ТОЛЬКО УДЕРЖАНИЕМ ----------
     // Раньше хватало двух тапов: первый взводил флаг, второй бросал забег.
     // Этого мало. Взведённое состояние висело БЕЗ СРОКА — тапнул случайно,
@@ -71,7 +69,6 @@ const WrathRogue = {
         this.nodesEl = document.getElementById('rogue-nodes');
         this.cardEl = document.getElementById('rogue-card');
         this.actionEl = document.getElementById('rogue-action');
-        this.messageEl = document.getElementById('rogue-message');
         this.abandonEl = document.getElementById('rogue-abandon');
 
         // Своей кнопки возврата у экрана нет: она одна на все меню и стоит
@@ -91,7 +88,6 @@ const WrathRogue = {
     // не через leave(), а через host.showRogue(), и показанный итог должен
     // пережить эту дорогу.
     leave() {
-        this.message = null;
         this.summary = null;
         this.cancelAbandon();
         // Таймер отказа гасится тоже: иначе он сработает уже на другом
@@ -125,7 +121,6 @@ const WrathRogue = {
         this.renderStatus(run);
         this.renderMap(run);
         this.renderCard(run);
-        this.showMessage();
 
         if (this.abandonEl) {
             this.abandonEl.classList.toggle('shown', !!run);
@@ -160,8 +155,8 @@ const WrathRogue = {
         if (bonus.armor) chips.push(`<span class="rogue-chip">🛡 +${bonus.armor}</span>`);
 
         this.statusEl.innerHTML = `
-            <span class="wallet-item"><b>❤️ ${run.hp}/${run.maxHp}</b></span>
-            <span class="wallet-item rogue-teeth"><b>🦷 ${run.teeth}</b></span>
+            <span class="wallet-item" data-cur="hp"><b>❤️ ${run.hp}/${run.maxHp}</b></span>
+            <span class="wallet-item rogue-teeth" data-cur="teeth"><b>🦷 ${run.teeth}</b></span>
             <span class="rogue-chips">${chips.join('')}</span>
         `;
     },
@@ -369,23 +364,13 @@ const WrathRogue = {
             return;
         }
 
-        const enemy = Backend.rogueEnemy(node);
-        this.setAction(
-            kind.emoji,
-            () => this.enterNode(run.node),
-            enemy ? this.foeStats(enemy) : ''
-        );
-    },
-
-    // ---------- ЧИСЛА ПРОТИВНИКА ----------
-    // Один формат на весь грех: значок ПЕРЕД числом, здоровье первым, урон
-    // вторым. Раньше на точках карты стояло «56❤ 2–11🗡» — значок после
-    // числа и в обратном порядке, — а в окне входа «❤️ 56 🗡 2–11». Две
-    // записи одного и того же заставляют читать каждую заново; сравнивать
-    // же приходится постоянно, и именно на сравнении держится вся карта.
-    foeStats(enemy) {
-        if (!enemy) return '';
-        return `❤️ ${enemy.hp}  🗡 ${enemy.damage[0]}–${enemy.damage[1]}`;
+        // ---------- НА КНОПКЕ ТОЛЬКО ЗНАЧОК ----------
+        // Под значком стояли числа противника — «❤️ 5 🗡 1–3». Выброшены по
+        // тому же правилу, что и половина окна входа: помогает ли это
+        // РЕШИТЬ. Не помогает: ответов у игрока на этом месте ровно два —
+        // идти в бой или бросить забег, и оба доступны всегда, при любых
+        // числах. Сила узла и так видна на карте — размером точки.
+        this.setAction(kind.emoji, () => this.enterNode(run.node));
     },
 
     // ---------- ОКНО ВХОДА ----------
@@ -615,7 +600,6 @@ const WrathRogue = {
         this.setAction('➜', () => {
             Backend.closeRogueShop();
             if (typeof Haptics !== 'undefined') Haptics.tick();
-            this.message = null;
             this.render();
         });
     },
@@ -633,7 +617,7 @@ const WrathRogue = {
             return;
         }
         if (typeof Haptics !== 'undefined') Haptics.notify('success');
-        this.message = this.gainText(answer.gained);
+        this.flyGains(answer.gained);
         this.render();
     },
 
@@ -680,7 +664,7 @@ const WrathRogue = {
             return;
         }
         if (typeof Haptics !== 'undefined') Haptics.impact('medium');
-        this.message = this.gainText(answer.gained);
+        this.flyGains(answer.gained);
         this.render();
     },
 
@@ -747,24 +731,13 @@ const WrathRogue = {
         this.setAction('↩', () => this.host.showLobby());
     },
 
-    setAction(text, onClick, note) {
+    setAction(text, onClick) {
         if (!this.actionEl) return;
-        this.actionEl.innerHTML = note
-            ? `<b>${text}</b><i>${note}</i>`
-            : `<b>${text}</b>`;
+        this.actionEl.innerHTML = `<b>${text}</b>`;
         this.actionEl.disabled = !onClick;
         this.actionEl.onclick = onClick
             ? (e) => { e.stopPropagation(); onClick(); }
             : null;
-    },
-
-    showMessage() {
-        if (!this.messageEl) return;
-        // Разметка: сообщение собирается из currencyMark(), а золото там —
-        // нарисованный кружок, а не значок (та же причина, что у строки
-        // награды в бою).
-        this.messageEl.innerHTML = this.message || '';
-        this.messageEl.classList.toggle('show', !!this.message);
     },
 
     // ---------- ДЕЙСТВИЯ ----------
@@ -787,10 +760,11 @@ const WrathRogue = {
             return;
         }
         if (typeof Haptics !== 'undefined') Haptics.impact('medium');
-        const price = Backend.rogueLevel(this.level).entry
-                   || (Backend.rogueConfig() || {}).entry || {};
-        this.message = Object.keys(price)
-            .map(key => `${currencyMark(key)} −${price[key]}`).join(' ');
+        // О списанном жетоне здесь не сообщается: цифра уже вылетела из
+        // кошелька в шапке (src/core/wallet-fx.js). Строка «🔴 −1» под картой
+        // висела до следующей перерисовки, говорила ровно то, что было
+        // написано на только что нажатой кнопке, и с кошельком никак не
+        // связывалась.
         this.render();
     },
 
@@ -870,7 +844,6 @@ const WrathRogue = {
             currencies: {},
             teethLost: answer.teethLost || 0
         };
-        this.message = null;
         this.render();
     },
 
@@ -878,10 +851,9 @@ const WrathRogue = {
         const cfg = Backend.rogueConfig();
         const answer = Backend.chooseBoost(id);
         if (!answer.ok) { this.render(); return; }
-        const boost = cfg.boosts[id];
-        this.message = boost
-            ? `${boost.emoji} +${boost.damage || boost.hp || boost.armor}`
-            : '';
+        // Что взяли — видно по самому усилению: оно встаёт чипом в строку
+        // забега, рядом со здоровьем и зубами. Отдельная строка сообщала о
+        // том же самом вторым способом.
         this.render();
     },
 
@@ -896,9 +868,6 @@ const WrathRogue = {
         // Развилка: прошли выбранным путём, дорога сходится дальше сама.
         if (node.kind === 'fork') {
             this.takeAnswer(Backend.resolveNode('win', option));
-            // Привал на полном здоровье ничего не дал — показываем само
-            // здоровье: видно, что оно и так полное.
-            if (!this.message) this.message = `❤️ ${run.hp}/${run.maxHp}`;
             this.render();
             return;
         }
@@ -920,7 +889,6 @@ const WrathRogue = {
         }
 
         this.takeAnswer(Backend.resolveNode('win'));
-        if (!this.message) this.message = `❤️ ${run.hp}/${run.maxHp}`;
         this.render();
     },
 
@@ -945,10 +913,24 @@ const WrathRogue = {
                 currencies: (answer.gained && answer.gained.currencies) || {},
                 teethLost: answer.teethLost || 0
             };
-            this.message = null;
             return;
         }
-        this.message = this.gainText(answer.gained);
+        this.flyGains(answer.gained);
+    },
+
+    // ---------- ДОБЫЧА ПОКАЗЫВАЕТСЯ НА СЧЁТЧИКАХ ----------
+    // Валюты (жетон, осколок, золото) вылетают сами: их показывает WalletFx
+    // прямо из кошелька в шапке, по событию от GameState.addCurrency. Здесь
+    // остаются два счётчика, которых в кошельке нет, — зубы и здоровье
+    // забега. Они живут внутри забега и стоят в строке над картой, поэтому
+    // цифра вылетает оттуда же. Мясо не показывается: оно едет в кладовую
+    // кухни, счётчика на этом экране у него нет, и строка награды в окне боя
+    // о нём уже сказала.
+    flyGains(gained) {
+        if (typeof WalletFx === 'undefined') return;
+        const g = gained || {};
+        if (g.teeth) WalletFx.show('teeth', g.teeth, '🦷');
+        if (g.healed) WalletFx.show('hp', g.healed, '❤️');
     },
 
     gainText(gained) {

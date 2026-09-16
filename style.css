@@ -135,8 +135,12 @@ canvas {
    машина времени нужна и внутри мини-игры.
 
    Анимация персонажа при этом ещё и останавливается — за это отвечает
-   MainWormHandle.setPaused() из main.js, там же и вешается класс. */
-#game-container.mg-open > *:not(.minigame-screen):not(.debug-toggle-btn):not(#debug-state-panel) {
+   MainWormHandle.setPaused() из main.js, там же и вешается класс.
+
+   Слой кошелька (#wallet-fx) в исключениях по той же причине, что и кнопка
+   🐞: это не обстановка комнаты, а надпись поверх ВСЕЙ игры. Кошельки есть
+   и внутри мини-игр (шапка гнева), и цифра обязана вылетать из них тоже. */
+#game-container.mg-open > *:not(.minigame-screen):not(.debug-toggle-btn):not(#debug-state-panel):not(#wallet-fx) {
     visibility: hidden;
 }
 
@@ -422,3 +426,67 @@ body.debug-mode #build-stamp {
 }
 
 .mark-token .token-art { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* ================= ПРИЛЁТ И УЛЁТ В КОШЕЛЬКЕ ================= */
+/* Цифра, вылетающая из счётчика валюты при начислении и трате. Разбор, зачем
+   это вместо строк-сообщений на экранах, — в src/core/wallet-fx.js. */
+#wallet-fx {
+    position: absolute;
+    inset: 0;
+    /* Поверх ВСЕГО, включая окно мини-игры (999999): кошелёк гнева живёт в
+       его шапке, и цифра обязана лететь над ней, а не под. Ниже остаётся
+       только debug-хлам — кнопка 🐞 и счётчик слоёв. */
+    z-index: 9999997;
+    pointer-events: none;
+}
+
+.wallet-fx-item {
+    position: absolute;
+    /* Привязка — БОК счётчика: по вертикали по центру, по горизонтали от
+       его края наружу. Разбор, почему не поверх, — в wallet-fx.js. */
+    transform: translate(0, -50%);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+    /* Читается на любом фоне: цифра летит и над тёмной шапкой гнева, и над
+       светлой комнатой. */
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.6);
+    animation: wallet-fx-fly 1s ease-out forwards;
+}
+
+.wallet-fx-item.plus { color: #9cf27a; }
+.wallet-fx-item.minus { color: #ff8a80; }
+
+/* Значок внутри цифры — мелкий: главное здесь ЧИСЛО, а какая это валюта,
+   и так видно по счётчику, из которого цифра вылетела. */
+.wallet-fx-item .token-art,
+.wallet-fx-item .mark-token .token-art { width: 15px; height: 15px; }
+.wallet-fx-item .coin-gold { width: 13px; height: 13px; }
+
+/* Вниз и врастворение. Едет ТРАНСФОРМАЦИЕЙ — то есть на видеокарте, ничего
+   вокруг не перерисовывая: цифра часто летит поверх живого экрана. */
+@keyframes wallet-fx-fly {
+    0% { transform: translate(0, -50%) scale(0.7); opacity: 0; }
+    16% { transform: translate(0, -80%) scale(1.1); opacity: 1; }
+    30% { transform: translate(0, -70%) scale(1); opacity: 1; }
+    100% { transform: translate(0, 18px) scale(0.95); opacity: 0; }
+}
+
+/* Слева от счётчика — когда справа кончился экран. Своя пара кадров, потому
+   что узел при этом сдвигается на всю свою ширину влево. */
+.wallet-fx-item.to-left { animation-name: wallet-fx-fly-left; }
+
+@keyframes wallet-fx-fly-left {
+    0% { transform: translate(-100%, -50%) scale(0.7); opacity: 0; }
+    16% { transform: translate(-100%, -80%) scale(1.1); opacity: 1; }
+    30% { transform: translate(-100%, -70%) scale(1); opacity: 1; }
+    100% { transform: translate(-100%, 18px) scale(0.95); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wallet-fx-item { animation-duration: 0.6s; }
+}

@@ -231,7 +231,10 @@
          стоит, чтобы было куда начислять, когда появится первая добыча.
          Единственное, что осталось в комнате от интерфейса: шкалы грехов
          уехали в своё меню (src/core/sins-menu.js). -->
-    <div id="wallet">
+    <!-- data-cur на ВСЁМ чипе, а не на числе: по этой метке WalletFx находит
+         счётчик и ставит вылетающую цифру рядом с ним. На одном числе цифра
+         вставала бы поверх монеты слева от него. -->
+    <div id="wallet" data-cur="gold">
         <i class="coin-gold wallet-coin"></i><span id="wallet-gold">0</span>
     </div>
 
@@ -622,7 +625,6 @@
                 <!-- Поверх карты: предложение войти, выбор награды, итог. -->
                 <div class="rogue-card" id="rogue-card"></div>
             </div>
-            <div class="rogue-message" id="rogue-message"></div>
             <!-- Действие и белый флаг ОДНОЙ строкой. Флаг занимал целый ряд
                  внизу, и ряд этот был почти пустым: одна мелкая кнопка на всю
                  ширину экрана. Возврат в лобби отсюда убран — он стоит в
@@ -977,6 +979,10 @@
      прямо при разборе файла. -->
 <script src="src/core/rooms.js?v=1"></script>
 <script src="src/core/token-art.js?v=1"></script>
+<!-- Прилёт и улёт в кошельке: цифра вылетает из счётчика валюты при
+     начислении и трате. После token-art.js — значок жетона рисует он.
+     Подписывается на шину сразу при загрузке. -->
+<script src="src/core/wallet-fx.js?v=1"></script>
 <script src="src/core/loot-art.js?v=1"></script>
 <script src="src/core/worm-model.js?v=9"></script>
 <script src="src/core/worm-marks.js?v=3"></script>

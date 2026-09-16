@@ -1172,6 +1172,73 @@ const { viewport, prepare } = require('./harness');
     await new Promise(r => setTimeout(r, 200));
   });
 
+  // ---------- КОШЕЛЁК ГОВОРИТ САМ ----------
+  // Три отдельные жалобы, и все три про одно: экран сообщал о деньгах и о
+  // противнике где попало, а не там, где игрок на это смотрит.
+  console.log('\n--- кошелёк говорит сам ---');
+  const walletFx = await page.evaluate(async () => {
+    GameState.data.currencies.wrath_token = 5;
+    if (GameState.data.runs) delete GameState.data.runs.wrath;
+    WrathRogue.summary = null;
+    WrathMinigame.startMode('rogue');
+    await new Promise(r => setTimeout(r, 350));
+
+    document.getElementById('rogue-action').click();
+    await new Promise(r => setTimeout(r, 200));
+
+    const fly = document.querySelector('.wallet-fx-item');
+    const chip = document.querySelector('[data-cur="wrath_token"]');
+    const flyBox = fly && fly.getBoundingClientRect();
+    const chipBox = chip && chip.getBoundingClientRect();
+    const out = {
+      // Цифра вылетела, и вылетела ИЗ КОШЕЛЬКА, а не из середины экрана.
+      flew: !!fly,
+      text: fly ? fly.textContent.replace(/\s+/g, '') : '',
+      seen: !!fly && getComputedStyle(fly).visibility !== 'hidden'
+            && flyBox.width > 0 && flyBox.height > 0,
+      nearChip: !!(flyBox && chipBox)
+        && Math.abs((flyBox.top + flyBox.height / 2) - (chipBox.top + chipBox.height / 2)) < 40,
+      // И НЕ ПОВЕРХ него: цифра, закрывшая изменившееся число, бесполезна.
+      overlaps: !!(flyBox && chipBox)
+        && flyBox.left < chipBox.right - 2 && flyBox.right > chipBox.left + 2,
+      // Строки-сообщения под картой больше нет вовсе.
+      messageRow: !!document.getElementById('rogue-message')
+    };
+
+    // Кнопка узла: только значок, никаких чисел противника.
+    const run = Backend.run();
+    WrathRogue.render();
+    await new Promise(r => setTimeout(r, 120));
+    const act = document.getElementById('rogue-action');
+    out.actionText = act.textContent.replace(/\s+/g, ' ').trim();
+    out.actionDigits = /\d/.test(out.actionText);
+
+    // Бой узла: флаг обязан уйти вместе со своим экраном.
+    WrathRogue.enterNode(run.node);
+    await new Promise(r => setTimeout(r, 900));
+    const flag = document.getElementById('rogue-abandon');
+    const fb = flag.getBoundingClientRect();
+    out.screen = WrathMinigame.current;
+    out.flagHidden = getComputedStyle(flag).visibility === 'hidden';
+    out.underFlag = (() => {
+      const el = document.elementFromPoint(fb.x + fb.width / 2, fb.y + fb.height / 2);
+      return el ? (el.id || el.className || '') : '';
+    })();
+    return out;
+  });
+
+  check(walletFx.flew && walletFx.seen,
+    `трата показана в кошельке: «${walletFx.text}»`);
+  check(walletFx.nearChip, 'цифра вылетела ИЗ кошелька, а не из середины экрана');
+  check(!walletFx.overlaps, 'цифра стоит РЯДОМ со счётчиком, а не поверх него');
+  check(!walletFx.messageRow, 'строки-сообщения под картой больше нет');
+  check(!walletFx.actionDigits,
+    `на кнопке узла только значок, без чисел противника: «${walletFx.actionText}»`);
+  check(walletFx.screen === 'duel' && walletFx.flagHidden,
+    'в бою флага «сдаться» нет: он ушёл вместе со своим экраном');
+  check(walletFx.underFlag.indexOf('rogue') < 0,
+    `на месте флага в бою не кнопка забега, а «${walletFx.underFlag}»`);
+
   // ---------- КАРТОЧКА ЗАБЕГА ВИДНА НА ЭКРАНЕ ----------
   // Проверка меряется КОРОБКОЙ на экране, а не разметкой. Разметка карточки
   // собиралась исправно и класс `shown` вешался — а правило, которое этот

@@ -1668,8 +1668,16 @@
        растягивалась на освободившуюся ширину и вставала ровно под палец,
        который только что держал флаг, — а на экране без забега это кнопка
        ВХОДА, то есть платящая. Тап по тому же месту стоил жетона
-       (docs/traps.md, п. 94). */
-    visibility: hidden;
+       (docs/traps.md, п. 94).
+
+       Держит место ПРОЗРАЧНОСТЬЮ, а не visibility. Экраны греха гасятся
+       через `visibility: hidden` на самом экране, а `visibility` —
+       наследуемое свойство: потомок со своим `visible` вылезает из-под
+       скрытого предка. Так флаг и висел поверх ВСЕХ остальных экранов, в
+       бою — ровно над числом здоровья бойца, отчего «20/20» читалось как
+       «20 из 20 флагов» (docs/traps.md, п. 96). */
+    opacity: 0;
+    pointer-events: none;
     position: relative;
     overflow: hidden;
     flex: 0 0 auto;
@@ -1679,7 +1687,7 @@
     background: rgba(255, 255, 255, 0.06);
 }
 
-.rogue-abandon.shown { visibility: visible; }
+.rogue-abandon.shown { opacity: 1; pointer-events: auto; }
 
 /* Налив. Отдельный слой под значком, едет ТРАНСФОРМАЦИЕЙ — то есть на
    видеокарте и ничего вокруг не перерисовывает. Длительность обязана
@@ -1703,19 +1711,6 @@
 }
 
 .rogue-abandon.holding { border-color: var(--wrath-attack); }
-
-.rogue-message {
-    flex: 0 0 auto;
-    min-height: 16px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 700;
-    color: #ffd27f;
-    opacity: 0;
-    transition: opacity 200ms ease;
-}
-
-.rogue-message.show { opacity: 1; }
 
 /* ---------- ЖЕТОН ПОСЛЕ БОЯ ---------- */
 /* Стоит под строкой награды и показывает то же, что она, но картинкой:
@@ -1986,10 +1981,12 @@
 .loot-row .coin-gold { font-size: 24px; }
 .loot-row .loot-meat { width: 38px; height: 34px; overflow: visible; }
 
-/* Мясо в строке итога узла — тот же рисунок, что в сундуке, только с букву
-   ростом: строка идёт вровень с иконками валют. */
-.rogue-message .gain-meat { width: 22px; height: 20px; overflow: visible;
-                            vertical-align: -0.35em; }
+/* Мясо в строке награды за бой — тот же рисунок, что в сундуке, только с
+   букву ростом: строка идёт вровень с иконками валют. Строка живёт в окне
+   боя: строки-сообщения под картой больше нет, о валютах говорит кошелёк
+   (src/core/wallet-fx.js). */
+.wrath-award .gain-meat { width: 22px; height: 20px; overflow: visible;
+                          vertical-align: -0.35em; }
 
 /* Не по карману — кнопка «идти» приглушена и не выглядит нажимаемой. Чего
    именно не хватило, отвечает кошелёк в шапке. */
