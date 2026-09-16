@@ -250,23 +250,30 @@ const LocalBackend = {
         // Теперь зона удара — предпочтение, а не условие. Пусто везде —
         // тело действительно заполнено, и вот это уже нормальный отказ:
         // место освобождает переработка шрамов (WrathLobby.startHold).
+        // Место ищется на ПОВЕРХНОСТИ: пара «вдоль оси + вокруг тела». Одной
+        // координаты мало — тело труба, и место на ней двумерное
+        // (src/core/worm-marks.js).
+        const model = (typeof WormModelAPI !== 'undefined') ? WormModelAPI.loadWormModel() : {};
         let spotZone = useZone;
-        let t = WormMarks.pickSpot(marks, spotZone, useSeed);
-        if (t === null) {
-            for (let i = 0; i < WormMarks.ZONES.length && t === null; i++) {
+        let spot = WormMarks.pickSpot(marks, spotZone, useSeed, model);
+        if (spot === null) {
+            for (let i = 0; i < WormMarks.ZONES.length && spot === null; i++) {
                 const other = WormMarks.ZONES[i];
                 if (other === useZone) continue;
-                t = WormMarks.pickSpot(marks, other, useSeed + i + 1);
-                if (t !== null) spotZone = other;
+                spot = WormMarks.pickSpot(marks, other, useSeed + i + 1, model);
+                if (spot !== null) spotZone = other;
             }
         }
-        if (t === null) return null;   // тело забито целиком — нормальный ответ
+        if (spot === null) return null;   // тело забито целиком — нормальный ответ
 
         const mark = {
             id: 'mark-' + useSeed.toString(36) + '-' + marks.length,
             kind: kind || 'scar',
             zone: spotZone,
-            t,
+            t: spot.t,
+            // Угол вокруг тела хранится явно: по нему отметина прячется при
+            // повороте и сплющивается у края силуэта.
+            phi: spot.phi,
             seed: useSeed,
             created_at: GameTime.now()
         };
@@ -1156,9 +1163,10 @@ const LocalBackend = {
         for (let i = 0; i < count; i++) {
             const markSeed = Math.floor(rnd() * 1e9);
             const zone = WormMarks.ZONES[markSeed % WormMarks.ZONES.length];
-            const t = WormMarks.pickSpot(marks, zone, markSeed);
-            if (t === null) continue;      // зона забита — это нормальный ответ
-            marks.push({ id: 'foe-' + i, kind: 'scar', zone, t, seed: markSeed, created_at: 0 });
+            const spot = WormMarks.pickSpot(marks, zone, markSeed, model);
+            if (spot === null) continue;   // зона забита — это нормальный ответ
+            marks.push({ id: 'foe-' + i, kind: 'scar', zone,
+                         t: spot.t, phi: spot.phi, seed: markSeed, created_at: 0 });
         }
         model.scars = marks;
 

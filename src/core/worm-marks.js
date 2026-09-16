@@ -27,9 +27,39 @@
 //   t     — 0..1 вдоль зоны
 //   seed  — из него детерминированно растёт форма
 
-// Минимальное расстояние между отметинами внутри зоны. Без него они
-// слипаются в одно пятно, и вместо «летописи» получается грязь.
-const WORM_MARK_MIN_GAP = 0.04;
+// ---------- ЗАЗОР МЕЖДУ ОТМЕТИНАМИ ----------
+// Меряется НЕ в долях зоны, а по ПОВЕРХНОСТИ ТЕЛА, в долях радиуса части:
+// сколько свободной кожи обязано остаться между краями двух шрамов.
+//
+// Прежний зазор считался по одному числу t — позиции вдоль зоны — и не знал
+// ни про длину шрама, ни про то, что поперёк тела у отметин есть вторая
+// координата. Два шрама с «достаточно разными» t спокойно ложились друг на
+// друга: замер по трёмстам отметинам дал 71 пересекающуюся пару.
+// Значение подобрано замером, а не на глаз: при нём ёмкость тела остаётся
+// прежней (около восьми десятков отметин), пересечений ноль, за силуэт не
+// выходит ни одна. Меньший зазор пускает на тело вдвое больше отметин, и
+// летопись превращается в штриховку.
+const WORM_MARK_MIN_GAP = 0.45;
+
+// ---------- ПОВЕРХНОСТЬ, А НЕ КАРТИНКА ----------
+// Тело — труба, голова — шар. У отметины поэтому ДВЕ координаты на
+// поверхности: t вдоль оси и phi ВОКРУГ неё. phi = 0 смотрит на зрителя,
+// ±90° — силуэтный край, 180° — изнанка, которой не видно.
+//
+// Без второй координаты отметина была просто пятном на плоской картинке: она
+// не знала, на какой стороне тела сидит, не пряталась при повороте и не
+// сплющивалась у края. Из-за этого при повороте головы лицо уезжало ПОД
+// неподвижными шрамами — они «уплывали на глаза».
+//
+// phi выводится из сида, поэтому старые сохранения получают осмысленный угол
+// сами, без миграции. Явное поле phi у отметины тоже читается — им
+// пользуется поиск свободного места.
+const WORM_MARK_FRONT_MIN = 0.12;   // ближе к краю этого — уже изнанка
+
+// Насколько отметина отступает от края силуэта. Считается ВМЕСТЕ с её
+// собственной длиной: раньше проверялся только центр, и шрам, стоявший почти
+// у края, высовывал за силуэт свой конец — 9% отметин из трёхсот.
+const WORM_MARK_EDGE_MARGIN = 0.06;
 
 // Сколько отметин зона показывает. Сверх этого числа они продолжают
 // копиться в данных (и считаются для обмена), но не рисуются: иначе к сотне
@@ -162,51 +192,167 @@ const WORM_HEAD_SAFE_SPOTS = [
     { x: [-0.55, -0.10], y: [-0.78, -0.52] }   // лоб выше бровей
 ];
 
-// Зона + позиция вдоль неё → конкретная часть и локальные координаты внутри
-// неё (в долях радиуса части, как их ждёт рендерер).
-function wormResolveMark(model, mark) {
+// ---------- УГОЛ ВОКРУГ ТЕЛА ----------
+// Выводится из сида, если в отметине его нет. Диапазон сознательно уже
+// полного круга: отметины, севшие ровно на изнанку, не видно НИКОГДА, и
+// копить их там — значит терять летопись впустую. Поэтому изнанке достаётся
+// меньшая доля круга, а лицевой стороне и бокам — большая.
+function wormMarkPhi(mark) {
+    if (mark && typeof mark.phi === 'number') return mark.phi;
+    const rng = wormMarkRng((mark && mark.seed) || 0, 'phi');
+    // −130°..+130°: бока целиком, изнанка только краем.
+    return (rng() * 2 - 1) * 130 * Math.PI / 180;
+}
+
+// Половина длины отметины — она же радиус круга, которым отметина считается
+// при проверке на пересечение. Форма выводится из сида (wormMarkGeometry),
+// поэтому и здесь берётся оттуда: одна правда на размещение и на рисование.
+function wormMarkReach(mark) {
+    return wormMarkGeometry((mark && mark.seed) || 0, (mark && mark.kind) || 'scar').length / 2;
+}
+
+// ---------- КООРДИНАТЫ НА ПОВЕРХНОСТИ ----------
+// Не экранные, а «по коже»: u вдоль оси зоны в долях радиуса части, phi
+// вокруг. В этих координатах расстояние между отметинами не зависит от того,
+// куда сейчас повёрнут червь, — а значит проверка на пересечение верна в
+// любой позе. Экранная проверка была бы верна только в текущей.
+function wormMarkSurface(model, mark) {
     const zones = wormMarkZoneParts(model);
     const parts = zones[mark.zone] || zones.body;
     const t = Math.max(0, Math.min(0.9999, Number(mark.t) || 0));
-
     const idx = Math.min(parts.length - 1, Math.floor(t * parts.length));
-    const local = t * parts.length - idx;          // 0..1 внутри части
-    const rng = wormMarkRng(mark.seed || 0, 'place');
-
-    if (parts[idx] === 'head') {
-        // Площадка выбирается позицией вдоль зоны, а место внутри неё — сидом.
-        const spot = WORM_HEAD_SAFE_SPOTS[Math.floor(local * WORM_HEAD_SAFE_SPOTS.length) % WORM_HEAD_SAFE_SPOTS.length];
-        return {
-            part: 'head',
-            x: spot.x[0] + rng() * (spot.x[1] - spot.x[0]),
-            y: spot.y[0] + rng() * (spot.y[1] - spot.y[0]),
-            rotation: (rng() * 2 - 1) * 35
-        };
-    }
-
     return {
         part: parts[idx],
-        // Вдоль оси части: края оставляем свободными, иначе отметина
-        // наполовину вылезает за силуэт.
-        x: (local * 2 - 1) * 0.62,
-        // Поперёк — от сида, но не у самого края по той же причине.
-        y: (rng() * 2 - 1) * 0.52,
-        rotation: (rng() * 2 - 1) * 40
+        // Вдоль оси: в долях радиуса части. Часть — круг радиуса 1, поэтому
+        // её длина по оси это те же две единицы, что и поперёк.
+        u: (t * parts.length - idx) * 2 - 1,
+        phi: wormMarkPhi(mark),
+        reach: wormMarkReach(mark)
     };
 }
 
-// Свободно ли место: рядом с существующей отметиной новую не ставим.
-function wormMarkSpotFree(marks, zone, t) {
-    return !(marks || []).some(m => m.zone === zone && Math.abs((m.t || 0) - t) < WORM_MARK_MIN_GAP);
+// Мешают ли две отметины друг другу. Расстояние берётся ПО ПОВЕРХНОСТИ: вдоль
+// оси как есть, вокруг — как длина дуги (угол на радиус, радиус здесь 1).
+function wormMarksClash(a, b) {
+    if (a.part !== b.part) return false;
+    let dphi = Math.abs(a.phi - b.phi) % (Math.PI * 2);
+    if (dphi > Math.PI) dphi = Math.PI * 2 - dphi;
+    const d = Math.hypot(a.u - b.u, dphi);
+    return d < a.reach + b.reach + WORM_MARK_MIN_GAP;
 }
 
-// Ищет свободное место в зоне. Если зона забита плотно (а места в ней
-// конечное число), возвращает null — и это нормальный ответ, а не ошибка.
-function wormPickMarkSpot(marks, zone, seed) {
+// Зона + позиция вдоль неё → конкретная часть и локальные координаты внутри
+// неё (в долях радиуса части, как их ждёт рендерер).
+//
+// Возвращает ещё и ракурс: squashY — насколько отметина сплющена поперёк,
+// front — видно ли её вообще. Тело мы видим сбоку, поэтому вокруг трубы
+// отметина ездит по ВЕРТИКАЛИ экрана, и сплющивается тоже по вертикали.
+// Голова поворачивается вокруг вертикальной оси — там ракурс по горизонтали,
+// и считает его рендерер (applyHeadYaw), потому что зависит от живого угла.
+function wormResolveMark(model, mark) {
+    const surf = wormMarkSurface(model, mark);
+    const rng = wormMarkRng(mark.seed || 0, 'place');
+    const geo = wormMarkGeometry(mark.seed || 0, mark.kind || 'scar');
+    const rotation = (rng() * 2 - 1) * 40;
+
+    if (surf.part === 'head') {
+        // Голова: площадка выбирается позицией вдоль зоны, место внутри неё —
+        // сидом. Дальше площадка переводится в АЗИМУТ, чтобы поворот головы
+        // считался тем же способом, что у глаз и ушей (yawProject).
+        const local = (surf.u + 1) / 2;
+        const spot = WORM_HEAD_SAFE_SPOTS[Math.floor(local * WORM_HEAD_SAFE_SPOTS.length) % WORM_HEAD_SAFE_SPOTS.length];
+        // ---------- ВНУТРЬ ПЛОЩАДКИ, А НЕ К ЦЕНТРУ ГОЛОВЫ ----------
+        // Площадка ужимается на половину габарита отметины, и место берётся
+        // уже внутри ужатой. Это единственный способ удержать шрам в
+        // разрешённом месте целиком.
+        //
+        // Общая подтяжка к оси части, которой пользуется тело, здесь
+        // НЕДОПУСТИМА: у головы в центре глаза и пятак. Первая версия делала
+        // именно так — и шрамы съезжали ровно на глаз, то есть туда, куда им
+        // нельзя в первую очередь.
+        const fit = wormMarkFitSpot(spot, geo, rotation, rng);
+        return {
+            part: 'head', x: fit.x, y: fit.y, rotation,
+            // Азимут не считается здесь: голова живёт под своим углом
+            // (model.head.yaw), и перевод «место на лице → угол на сфере»
+            // делает рендерер — там же, где живёт сама проекция.
+            phi: null,
+            squashX: 1, squashY: 1, front: true
+        };
+    }
+
+    const depth = Math.cos(surf.phi);
+    // Поперёк трубы отметина стоит там, куда её кладёт угол. Это и есть
+    // проекция точки на круглом сечении: y = sin(phi).
+    const fit = wormMarkFit(surf.u * 0.72, Math.sin(surf.phi) * 0.78, geo, rotation);
+    return {
+        part: surf.part, x: fit.x, y: fit.y, rotation,
+        phi: surf.phi,
+        squashX: 1,
+        // Ракурс: у края трубы поверхность уходит от зрителя, и отметина
+        // сжимается поперёк. Без этого шрам у края читается наклейкой.
+        squashY: Math.max(0.12, Math.abs(depth)),
+        front: depth > WORM_MARK_FRONT_MIN
+    };
+}
+
+// Место внутри РАЗРЕШЁННОЙ ПЛОЩАДКИ с учётом габарита отметины. Площадка
+// уже отметины — отметина встаёт в её середину: лучше слегка вылезти за
+// границу площадки, чем уехать оттуда совсем.
+function wormMarkFitSpot(spot, geo, rotationDeg, rng) {
+    const a = (rotationDeg || 0) * Math.PI / 180;
+    const h = geo.length / 2, w = Math.max(geo.width, 0.02) / 2;
+    const hx = Math.abs(h * Math.cos(a)) + Math.abs(w * Math.sin(a));
+    const hy = Math.abs(h * Math.sin(a)) + Math.abs(w * Math.cos(a));
+    const pick = (range, half) => {
+        const lo = range[0] + half, hi = range[1] - half;
+        if (hi <= lo) return (range[0] + range[1]) / 2;
+        return lo + rng() * (hi - lo);
+    };
+    return { x: pick(spot.x, hx), y: pick(spot.y, hy) };
+}
+
+// ---------- ЦЕЛИКОМ ВНУТРИ СИЛУЭТА ----------
+// Проверяется не центр, а самый дальний угол габарита отметины с учётом её
+// длины, ширины и поворота. Не влезает — центр подтягивается к оси части,
+// ровно настолько, насколько нужно.
+function wormMarkFit(x, y, geo, rotationDeg) {
+    const a = (rotationDeg || 0) * Math.PI / 180;
+    const h = geo.length / 2, w = Math.max(geo.width, 0.02) / 2;
+    const hx = Math.abs(h * Math.cos(a)) + Math.abs(w * Math.sin(a));
+    const hy = Math.abs(h * Math.sin(a)) + Math.abs(w * Math.cos(a));
+    const limit = 1 - WORM_MARK_EDGE_MARGIN;
+    const reach = Math.hypot(Math.abs(x) + hx, Math.abs(y) + hy);
+    if (reach <= limit) return { x, y };
+    // Подтягиваем ЦЕНТР, а не режем отметину: укоротить шрам значит поменять
+    // его форму, а форма выведена из сида и обязана быть одна и та же всегда.
+    const room = Math.max(0, limit - Math.hypot(hx, hy));
+    const len = Math.hypot(x, y) || 1;
+    const k = Math.min(1, room / len);
+    return { x: x * k, y: y * k };
+}
+
+// Свободно ли место: рядом с существующей отметиной новую не ставим.
+// Сравнение идёт по поверхности тела и учитывает размер обеих отметин.
+function wormMarkSpotFree(marks, zone, t, model, seed, phi) {
+    const probe = wormMarkSurface(model || {}, { zone, t, seed, phi });
+    return !(marks || []).some(m => {
+        if (m.zone !== zone) return false;
+        return wormMarksClash(probe, wormMarkSurface(model || {}, m));
+    });
+}
+
+// Ищет свободное место в зоне: перебирает пары «вдоль оси + вокруг тела».
+// Обе координаты перебираются вместе — место на трубе двумерное, и искать
+// его по одной координате значит не искать вовсе.
+//
+// Не нашлось за все попытки — зона забита, и это нормальный ответ.
+function wormPickMarkSpot(marks, zone, seed, model) {
     const rng = wormMarkRng(seed || 0, 'spot');
-    for (let attempt = 0; attempt < 24; attempt++) {
+    for (let attempt = 0; attempt < 40; attempt++) {
         const t = rng();
-        if (wormMarkSpotFree(marks, zone, t)) return t;
+        const phi = (rng() * 2 - 1) * 130 * Math.PI / 180;
+        if (wormMarkSpotFree(marks, zone, t, model, seed, phi)) return { t, phi };
     }
     return null;
 }
@@ -256,6 +402,12 @@ const WormMarks = {
     spotFree: wormMarkSpotFree,
     pickSpot: wormPickMarkSpot,
     geometry: wormMarkGeometry,
+    // Координаты по коже и проверка пересечения — наружу, чтобы прогон мог
+    // считать их без браузера (модуль намеренно без DOM).
+    surface: wormMarkSurface,
+    clash: wormMarksClash,
+    phiOf: wormMarkPhi,
+    FRONT_MIN: WORM_MARK_FRONT_MIN,
 
     // Отметины зоны, которые реально показываются: свежие важнее старых,
     // остальные остаются в данных.

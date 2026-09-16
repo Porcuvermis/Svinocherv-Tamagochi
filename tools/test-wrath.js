@@ -1328,15 +1328,18 @@ const { viewport, prepare } = require('./harness');
   const scarBox = await page.evaluate(async () => {
     const rule = ECONOMY.marks.exchange;
     GameState.data.scars = [];
+    // Шрамы ставятся НАСТОЯЩИМ путём, а не вписываются руками. Руками они
+    // получались без сида — то есть все с одним и тем же углом вокруг тела, —
+    // и целиком уезжали на изнанку, где их не видно и откуда нечему лететь
+    // искрами. Фикстура обязана давать то же, что даёт игра.
+    //
     // ДВЕ полных пятнашки плюс остаток: обмен обязан забрать обе за одно
     // удержание, а не по одной, и оставить остаток на теле.
-    for (let i = 0; i < rule.scars * 2 + 5; i++) {
-      GameState.data.scars.push({ id: 'p' + i, kind: 'scar', zone: 'body',
-        t: 0.3 + i * 0.01, side: 1, size: 1, created_at: Date.now() - i * 1000 });
-    }
+    for (let i = 0; i < rule.scars * 2 + 5; i++) Backend.grantMark('scar');
     GameState.data.currencies.wrath_token = 0;
     GameState.data.currencies.wrath_shard = 0;
     GameState.save();
+    if (typeof refreshWormMarks === 'function') refreshWormMarks();
     WrathMinigame.showLobby();
     await new Promise(r => setTimeout(r, 700));
     const r = WrathLobby.wormBox.getBoundingClientRect();
@@ -1496,8 +1499,12 @@ const { viewport, prepare } = require('./harness');
     const headOnly = GameState.data.scars.every(m => m.zone === 'head');
 
     GameState.data.scars = [];
-    let n = 0;
-    while (Backend.grantMark('scar') && n < 400) n++;
+    // Забиваем тело ДО НАСЫЩЕНИЯ, а не до первого отказа. Место ищется
+    // случайными попытками, поэтому один отказ ничего не значит: после него
+    // подряд заходит ещё десяток шрамов (замерено: 64 против 81). Насыщение
+    // — это когда подряд не заходит ничто.
+    let miss = 0;
+    while (miss < 25) { if (Backend.grantMark('scar')) miss = 0; else miss++; }
     const zones = {};
     GameState.data.scars.forEach(m => { zones[m.zone] = (zones[m.zone] || 0) + 1; });
     return {
@@ -1513,7 +1520,7 @@ const { viewport, prepare } = require('./harness');
         for (let i = 0; i < 40; i++) if (Backend.grantMark('scar')) got++;
         return got;
       })(),
-      // Для сравнения: на ПУСТОМ теле те же сорок попыток заходят почти все.
+      // Для сравнения: на ПУСТОМ теле те же сорок попыток заходят все.
       // Сравнение, а не абсолютный порог: числа тут случайные, и жёсткая
       // граница делает прогон мигающим — он уже мигнул на «2 из 20» против
       // «4 из 20».
@@ -1528,9 +1535,9 @@ const { viewport, prepare } = require('./harness');
 
   check(!cap.spread === false, 'забитая зона не съедает шрам: он уходит в другую');
   check(cap.zones === 3, `шрамы расходятся по всем зонам: ${cap.zones}`);
-  check(cap.total > 30, `на тело влезает вменяемое число шрамов: ${cap.total}`);
-  check(cap.stillFits * 3 < cap.fitsOnEmpty,
-    `на забитом теле места втрое меньше: ${cap.stillFits} против ${cap.fitsOnEmpty} из 40`);
+  check(cap.total > 50, `на тело влезает вменяемое число шрамов: ${cap.total}`);
+  check(cap.stillFits * 8 < cap.fitsOnEmpty,
+    `на насыщенном теле места почти нет: ${cap.stillFits} против ${cap.fitsOnEmpty} из 40`);
 
   // ---------- КОШЕЛЁК ГОВОРИТ САМ ----------
   // Три отдельные жалобы, и все три про одно: экран сообщал о деньгах и о
