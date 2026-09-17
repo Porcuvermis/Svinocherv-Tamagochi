@@ -377,12 +377,18 @@ const { viewport, prepare } = require('./harness');
     // Отпускаем поворот: до этого прогон держал его руками, и червь стоял бы
     // столбом — а мигание ловится именно на своей, живой болтанке головы.
     MainWormHandle.setLivePose({ headYaw: null });
+    // Заставляем червя ПРОЙТИСЬ: своей болтанки головы за семьсот кадров
+    // хватает не всегда (замер: то 0.98, то 0.04), и прогон краснел на ровном
+    // месте. Ходьба поворачивает голову надёжно — и это ровно тот случай, на
+    // который жаловались.
+    if (MainWormHandle.walkTo) MainWormHandle.walkTo(320, 700);
     await new Promise(r => setTimeout(r, 400));
     const layer = document.querySelector('[data-anchor="head-scars"]');
     const state = {}, flips = {}, seen = {}; const yaws = [];
     for (let i = 0; i < 700; i++) {
       await new Promise(r => requestAnimationFrame(r));
       yaws.push(MainWormHandle.getHeadPose().current);
+      if (i === 350 && MainWormHandle.walkTo) MainWormHandle.walkTo(70, 700);
       [...layer.querySelectorAll('g.worm-mark')].forEach(n => {
         const id = n.getAttribute('data-mark');
         const path = n.querySelector('path');
@@ -401,7 +407,10 @@ const { viewport, prepare } = require('./harness');
       span: +(Math.max(...yaws) - Math.min(...yaws)).toFixed(2)
     };
   });
-  check(flick.worst <= 2, `шрам не моргает, пока червь живёт: худшая отметина сменила видимость ${flick.worst} раз за 700 кадров`);
+  // За семьсот кадров червь проходит комнату в обе стороны, и голова
+  // успевает отвернуться и вернуться ДВАЖДЫ. Значит честных смен видимости у
+  // одной отметины может быть до четырёх; всё, что сверху, — уже моргание.
+  check(flick.worst <= 4, `шрам не моргает, пока червь живёт: худшая отметина сменила видимость ${flick.worst} раз за 700 кадров`);
   check(flick.span > 0.1, `голова за прогон успела погулять: на ${flick.span}`);
 
   // ---------- СНИМКИ ----------

@@ -70,6 +70,37 @@ const WORM_MARK_EDGE_MARGIN = 0.06;
 
 const WORM_MARK_ZONES = ['head', 'body', 'tail'];
 
+// ---------- РАДИУСЫ ЧАСТЕЙ ----------
+// Их знает рендерер, а нужны они РАЗМЕЩЕНИЮ: у размера отметины есть
+// ограничители в ПИКСЕЛЯХ (чтобы она не выродилась в волосок на мелкой
+// части), и на хвосте они срабатывают — нарисованный ожог там вдвое крупнее
+// своего конфига. Проверка, считавшая габарит без радиуса, этого не видела и
+// пропускала наложения (docs/traps.md, п. 103, пункт про ограничители).
+// Таблицу заполняет рендерер на каждой сборке.
+const WORM_PART_RADIUS = {};
+
+// Хвост — не шар, а капля: она сужается к концу, а отметины нормируются по
+// радиусу ОСНОВАНИЯ. Поэтому поле на хвосте уже, чем на сегментах: иначе
+// отметина у острого конца высовывается за контур (замер: четверть пикселя,
+// но во ВСЕХ замерах подряд — то есть это не случайность, а форма).
+const WORM_TAIL_SPREAD = 0.64;
+
+function wormPartRadius(part) {
+    const v = WORM_PART_RADIUS[part];
+    if (v == null) return null;
+    return typeof v === 'number' ? v : v.rx;
+}
+
+// Отношение высоты части к её ширине. Часть — ЭЛЛИПС, а не круг, и вписывать
+// в неё по кругу нельзя: у приплюснутого сегмента отметина, честно влезшая в
+// круг, высовывается сверху и снизу (замер: четверть-треть пикселя, но во
+// всех замерах подряд).
+function wormPartRatio(part) {
+    const v = WORM_PART_RADIUS[part];
+    if (v == null || typeof v === 'number' || !v.rx) return 1;
+    return v.ry / v.rx;
+}
+
 // ---------- ДЕТЕРМИНИРОВАННЫЙ ГЕНЕРАТОР ----------
 // Тот же приём, что у растений в лени: форма не хранится, а выводится из
 // сида. Значит одна отметина — это несколько байт, а не список точек, и
@@ -505,7 +536,13 @@ function wormResolveMark(model, mark) {
     const depth = Math.cos(surf.phi);
     // Поперёк трубы отметина стоит там, куда её кладёт угол. Это и есть
     // проекция точки на круглом сечении: y = sin(phi).
-    const fit = wormMarkFit(surf.u * 0.72, Math.sin(surf.phi) * 0.78, geo, rotation);
+    //
+    // Хвост — не шар, а капля: она сужается к концу, а нормируются отметины
+    // по радиусу ОСНОВАНИЯ. Поэтому на хвосте поле уже: иначе отметина у
+    // острого конца вылезает за контур (замер: 1.1 px, все замеры подряд).
+    const spread = surf.part === 'tail' ? WORM_TAIL_SPREAD : 0.72;
+    const fit = wormMarkFit(surf.u * spread, Math.sin(surf.phi) * (spread + 0.06), geo, rotation,
+                            wormPartRatio(surf.part), wormPartRadius(surf.part));
     return {
         part: surf.part, x: fit.x, y: fit.y, rotation,
         phi: surf.phi,
@@ -521,17 +558,19 @@ function wormResolveMark(model, mark) {
 // Проверяется не центр, а самый дальний угол габарита отметины с учётом её
 // длины, ширины и поворота. Не влезает — центр подтягивается к оси части,
 // ровно настолько, насколько нужно.
-function wormMarkFit(x, y, geo, rotationDeg) {
-    const { hx, hy } = wormMarkHalfBox(geo, rotationDeg);
+function wormMarkFit(x, y, geo, rotationDeg, ratio, hostRadius) {
+    const { hx, hy } = wormMarkHalfBox(geo, rotationDeg, hostRadius);
     const limit = 1 - WORM_MARK_EDGE_MARGIN;
-    const reach = Math.hypot(Math.abs(x) + hx, Math.abs(y) + hy);
+    const k = ratio || 1;
+    // Габарит проверяется ПО ЭЛЛИПСУ части: высота делится на её сплющенность.
+    const reach = Math.hypot(Math.abs(x) + hx, (Math.abs(y) + hy) / k);
     if (reach <= limit) return { x, y };
     // Подтягиваем ЦЕНТР, а не режем отметину: укоротить шрам значит поменять
     // его форму, а форма выведена из сида и обязана быть одна и та же всегда.
-    const room = Math.max(0, limit - Math.hypot(hx, hy));
+    const room = Math.max(0, limit - Math.hypot(hx, hy / k));
     const len = Math.hypot(x, y) || 1;
-    const k = Math.min(1, room / len);
-    return { x: x * k, y: y * k };
+    const pull = Math.min(1, room / len);
+    return { x: x * pull, y: y * pull };
 }
 
 // ---------- КУДА ОТМЕТИНА ПОПАДЁТ НА ЭКРАНЕ ----------
@@ -541,13 +580,15 @@ function wormMarkFit(x, y, geo, rotationDeg) {
 // — разные вещи, и две отметины, честно разнесённые на четверть окружности,
 // у края тела вставали в одну кляксу.
 function wormMarkDrawn(surf, geo, rotationDeg) {
-    const box = wormMarkHalfBox(geo, rotationDeg);
+    const box = wormMarkHalfBox(geo, rotationDeg, wormPartRadius(surf.part));
     const squash = Math.max(0.12, Math.abs(Math.cos(surf.phi)));
     // Место берём ТЕМ ЖЕ wormMarkFit, которым его считает отрисовка. Без
     // этого разница вылезает там, где отметина не влезла и её подтянули к оси:
     // две подтянутые с разных краёв встают в одну точку, а проверка по
     // неподтянутым координатам считает их далёкими.
-    const fit = wormMarkFit(surf.u * 0.72, Math.sin(surf.phi) * 0.78, geo, rotationDeg);
+    const spread = surf.part === 'tail' ? WORM_TAIL_SPREAD : 0.72;
+    const fit = wormMarkFit(surf.u * spread, Math.sin(surf.phi) * (spread + 0.06), geo, rotationDeg,
+                            wormPartRatio(surf.part), wormPartRadius(surf.part));
     return {
         x: fit.x, y: fit.y,
         hx: box.hx,
@@ -561,7 +602,11 @@ function wormMarkDrawn(surf, geo, rotationDeg) {
 // тела отметины сходятся в кляксу).
 function wormMarkSpotFree(marks, zone, t, model, seed, phi) {
     const probe = wormMarkSurface(model || {}, { zone, t, seed, phi });
-    const pgeo = wormMarkGeometry(seed || 0, 'scar');
+    // Вид отметины выводится ИЗ СИДА, и место надо подбирать под него: у
+    // ожога габарит круглый, у шва — со стежками поперёк. Здесь стояло
+    // 'scar' — место мерили под порез, а рисовался ожог, и на теле выходили
+    // наложения, которых «не могло быть».
+    const pgeo = wormMarkGeometry(seed || 0, wormMarkKindOf(seed || 0));
     const pdraw = wormMarkDrawn(probe, pgeo, wormMarkRotation(seed || 0));
     return !(marks || []).some(m => {
         if (m.zone !== zone) return false;
@@ -585,7 +630,7 @@ function wormMarkSpotFree(marks, zone, t, model, seed, phi) {
 // Не нашлось за все попытки — зона забита, и это нормальный ответ.
 function wormPickMarkSpot(marks, zone, seed, model) {
     const rng = wormMarkRng(seed || 0, 'spot');
-    const geo = wormMarkGeometry(seed || 0, 'scar');
+    const geo = wormMarkGeometry(seed || 0, wormMarkKindOf(seed || 0));
     const rotation = wormMarkRotation(seed || 0);
     const neighbours = zone === 'head' ? wormHeadNeighbours(marks, model) : null;
     for (let attempt = 0; attempt < 40; attempt++) {
@@ -700,6 +745,8 @@ const WormMarks = {
     kindOf: wormMarkKindOf,
     extent: wormMarkExtent,
     halfBox: wormMarkHalfBox,
+    partRadius: wormPartRadius,
+    setPartRadii(map) { Object.keys(map || {}).forEach(k => { WORM_PART_RADIUS[k] = map[k]; }); },
     // Наружу — чтобы прогон мог спросить «а годится ли вот это место», а не
     // угадывать ответ по последствиям.
     headSpotOk: wormHeadSpotOk,

@@ -197,6 +197,56 @@ const { viewport, prepare } = require('./harness');
     check(v != null && v < 0.7, `«${id}» не затягивает живот целиком: закрыто ${v}`);
   }
 
+  // ---------- 5. НАРЯД ЖИВЁТ ВМЕСТЕ С ТЕЛОМ ----------
+  // Жалоба была ровно такая: «вся остальная одежда приколочена, бантик на
+  // хвосте всегда горизонтальный относительно ЭКРАНА, а не относительно тела».
+  // Поэтому мерим поворот предмета В ЭКРАННЫХ координатах: так всё равно,
+  // какой из предков его повернул, — важно, что он поворачивается.
+  console.log('\n--- наряд поворачивается вместе с телом ---');
+  await dress({ neck: 'chain', body: 'tux', tail: 'tail-bow' });
+  const live = await page.evaluate(async () => {
+    const turn = {}, swing = {};
+    const note = () => {
+      document.querySelectorAll('[data-cosmetic]').forEach(g => {
+        const m = g.getScreenCTM(); if (!m) return;
+        const k = g.getAttribute('data-cosmetic');
+        const deg = Math.atan2(m.b, m.a) * 180 / Math.PI;
+        // Разворачиваем угол: atan2 прыгает через ±180, и размах без этого
+        // показывает 360 у предмета, который качнулся на градус.
+        if (!turn[k]) { turn[k] = { prev: deg, acc: 0, min: 0, max: 0 }; return; }
+        let d = deg - turn[k].prev;
+        while (d > 180) d -= 360;
+        while (d < -180) d += 360;
+        turn[k].prev = deg;
+        turn[k].acc += d;
+        turn[k].min = Math.min(turn[k].min, turn[k].acc);
+        turn[k].max = Math.max(turn[k].max, turn[k].acc);
+      });
+      document.querySelectorAll('[data-swing]').forEach(el => {
+        const host = el.closest('[data-cosmetic]');
+        const k = host ? host.getAttribute('data-cosmetic') : '?';
+        const m = /rotate\(([-0-9.]+)/.exec(el.getAttribute('transform') || '');
+        const v = m ? parseFloat(m[1]) : 0;
+        swing[k] = swing[k] || { min: v, max: v };
+        swing[k].min = Math.min(swing[k].min, v); swing[k].max = Math.max(swing[k].max, v);
+      });
+    };
+    if (MainWormHandle.walkTo) MainWormHandle.walkTo(320, 700);
+    for (let i = 0; i < 420; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
+    if (MainWormHandle.walkTo) MainWormHandle.walkTo(70, 700);
+    for (let i = 0; i < 420; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
+    const span = (o) => { const r = {}; Object.keys(o).forEach(k => r[k] = +(o[k].max - o[k].min).toFixed(1)); return r; };
+    return { turn: span(turn), swing: span(swing) };
+  });
+  ['neck', 'body', 'tail'].forEach(slot => {
+    check((live.turn[slot] || 0) > 5,
+      `«${slot}» поворачивается вместе с телом, а не стоит по экрану: ${live.turn[slot]}°`);
+  });
+  ['neck', 'body', 'tail'].forEach(slot => {
+    check((live.swing[slot] || 0) > 2,
+      `у «${slot}» есть подвижная деталь и её качает ход: ${live.swing[slot]}°`);
+  });
+
   // ---------- СНИМКИ ----------
   for (const [name, set] of [
     ['wear', { head: 'top-hat', neck: 'bow-tie', body: 'tux', tail: 'tail-sock' }],

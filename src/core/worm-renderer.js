@@ -2417,8 +2417,11 @@ function buildTailNode(tail, ctx, attachRadius) {
     }
 
     group.appendChild(bendGroup);
+    // Слой кожи ВНУТРИ группы изгиба, а не рядом с ней. Снаружи он не гнулся
+    // вместе с хвостом: хвост загибался, а бант и шрамы на нём оставались
+    // висеть горизонтально — приколоченными к экрану, а не к телу.
     const scarLayer = svgEl('g', { 'data-anchor': 'tail-scars', class: 'worm-scar-layer' });
-    group.appendChild(scarLayer);
+    bendGroup.appendChild(scarLayer);
     return { group, path, bendGroup, scarLayer, baseRadius: Rbase, anat };
 }
 
@@ -4649,6 +4652,11 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         skinByPart[seg.name] = seg.fillColor;
     });
 
+    // Размещение отметин считает габариты в пикселях и обязано знать
+    // настоящие радиусы частей — иначе на мелких частях срабатывают
+    // ограничители размера, о которых оно не подозревает.
+    WormMarks.setPartRadii(wearFitByPart);
+
     WormMarks.ZONES.forEach(zone => {
         WormMarks.visible(model.scars, zone).forEach(mark => {
             const place = WormMarks.resolve(model, mark);
@@ -4697,6 +4705,10 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     // Узел статический: он висит внутри слоя части и ездит вместе с ней сам.
     // В покадровой анимации про одежду нет ни строчки, и стоит она поэтому
     // ноль кадров.
+    // Надетое, которому нужен ЖИВОЙ угол части: сегменты тела ставятся одним
+    // сдвигом, без поворота, и одежда на них стояла горизонтально к экрану.
+    // Угол берётся из положения соседей и пересчитывается в tick().
+    const wearOnBody = [];
     if (typeof WormCosmetics !== 'undefined' && model.cosmetics) {
         Object.keys(model.cosmetics).forEach(slotKey => {
             const itemId = model.cosmetics[slotKey];
@@ -4717,6 +4729,21 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                                    transform: `translate(${(place.x * hostR).toFixed(2)},0)` });
             g.innerHTML = art;
             host.appendChild(g);
+            // Надетое на ТЕЛО поворачивается вместе с осью части.
+            if (place.part !== 'head') {
+                const seg = segmentRefs.filter(sg => sg.name === place.part)[0];
+                wearOnBody.push({
+                    node: g, part: place.part,
+                    idx: place.part === "tail" ? tailIdx : (seg ? seg.idx : null),
+                    baseX: place.x * hostR,
+                    // Подвижные детали: банты, фалды, подвески. Их качает
+                    // ходьба — тем и отличается наряд от наклейки.
+                    swings: [...g.querySelectorAll('[data-swing]')].map(el => ({
+                        el, k: parseFloat(el.getAttribute('data-swing')) || 1, now: 0
+                    })),
+                    prevX: null, swing: 0, angle: 0
+                });
+            }
             // Надетое на ГОЛОВУ едет вместе с лицом — как глаза, уши и шрамы.
             if (place.part === 'head') {
                 headBuilt.wear = headBuilt.wear || [];
@@ -4755,6 +4782,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     } : null;
 
     return {
+        wearOnBody,
         root,
         totalWithTail,
         tail: { ...tailBuilt, idx: tailIdx },
@@ -6645,6 +6673,61 @@ const WormRenderer = {
                         bellyCircle.y += cy;
                         bellyCircle.r = Math.max(newRx, newRy);
                     }
+                }
+
+                // ---------- НАРЯД ЖИВЁТ ВМЕСТЕ С ТЕЛОМ ----------
+                // Сегменты ставятся одним сдвигом, БЕЗ поворота, поэтому
+                // одежда на них стояла горизонтально к ЭКРАНУ, а не к телу:
+                // тело изгибалось, а пиджак и бант оставались приколоченными.
+                // Угол части берём из положения соседей — из тех же кругов,
+                // что и силуэт, так что расходиться нечему.
+                if (state.built.wearOnBody && state.built.wearOnBody.length) {
+                    // ---------- КАЧАНИЕ ----------
+                    // Считается от ХОДА ПЕРСОНАЖА ПО КОМНАТЕ, а не от местных
+                    // координат частей: при ходьбе двигается весь червь
+                    // целиком (один трансформ на корне), и местные координаты
+                    // почти не меняются — первая версия качала фалды на две
+                    // десятых градуса. Плюс еле заметное покачивание на месте:
+                    // наряд не должен выглядеть приклеенным у стоящего червя.
+                    const vx = state.wearPrevX == null ? 0 : (state.wormX - state.wearPrevX);
+                    state.wearPrevX = state.wormX;
+                    const idle = opts.idleWave ? Math.sin(state.animTime * 1.25) * 2.4 : 0;
+                    const swingTarget = Math.max(-20, Math.min(20, -vx * 1.6)) + idle;
+                    state.wearSwing = (state.wearSwing || 0) + (swingTarget - (state.wearSwing || 0)) * 0.12;
+
+                    state.built.wearOnBody.forEach(w => {
+                        if (w.idx == null) return;
+                        const me = hullCircles[w.idx];
+                        if (!me) return;
+                        // У хвоста собственный поворот уже есть: слой кожи
+                        // лежит внутри группы изгиба и гнётся вместе с ним.
+                        // Добавлять сюда ещё и угол по соседям значит
+                        // повернуть дважды.
+                        if (w.part !== 'tail') {
+                            const a = hullCircles[w.idx - 1] || me;
+                            const b = hullCircles[w.idx + 1] || me;
+                            if (a !== b) {
+                                // Ось части — направление «от предыдущего
+                                // соседа к следующему». Одежда сидит ПОПЕРЁК
+                                // неё, а ось тела у стоящего червя идёт вниз,
+                                // отсюда −90°.
+                                const deg = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI - 90;
+                                if (w.angleSet !== true || Math.abs(deg - w.angle) > 0.2) {
+                                    w.angle = deg;
+                                    w.angleSet = true;
+                                    setAttr(w.node, 'transform',
+                                        `translate(${w.baseX.toFixed(2)},0) rotate(${deg.toFixed(1)})`);
+                                }
+                            }
+                        }
+                        for (let k = 0; k < w.swings.length; k++) {
+                            const sw = w.swings[k];
+                            const want = state.wearSwing * sw.k;
+                            if (Math.abs(want - sw.now) < 0.15) continue;
+                            sw.now = want;
+                            setAttr(sw.el, 'transform', `rotate(${want.toFixed(1)})`);
+                        }
+                    });
                 }
 
                 // Единый силуэт, перетяжки, отражённый свет и тень на полу.

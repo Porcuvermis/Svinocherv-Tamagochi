@@ -193,8 +193,10 @@ const WormCosmetics = {
                 <path d="M ${-w} 0 Q 0 ${sag * 1.9} ${w} 0"
                       fill="none" stroke="${C.gold[700]}" stroke-width="${Math.min(rx, ry) * 0.11}" stroke-linecap="round"/>
                 ${links}
-                <circle cx="0" cy="${(sag * 0.86).toFixed(1)}" r="${(Math.min(rx, ry) * 0.2).toFixed(1)}"
-                        fill="${C.gold[300]}" stroke="${C.gold[700]}" stroke-width="${STROKE.detail}"/>
+                <g data-swing="0.8">
+                    <circle cx="0" cy="${(sag * 0.86).toFixed(1)}" r="${(Math.min(rx, ry) * 0.2).toFixed(1)}"
+                            fill="${C.gold[300]}" stroke="${C.gold[700]}" stroke-width="${STROKE.detail}"/>
+                </g>
             </g>`;
         },
 
@@ -205,32 +207,49 @@ const WormCosmetics = {
         'tux'(r, skin, fit) {
             const C = PALETTE.redCarpet;
             const rx = (fit && fit.rx) || r, ry = (fit && fit.ry) || r;
-            const K = 0.94;                 // кромка идёт чуть внутри контура
-            // ---------- ФРАК ОТКРЫТ, А НЕ ЗАСТЁГНУТ ----------
-            // Лацканы лежат по КРАЯМ живота, середина остаётся голой. Первая
-            // версия кроила их по кругу, и углы торчали за тело; вторая
-            // затянула живот целиком чёрным — а живот единственная вершина
-            // силуэта (docs/art-direction.md §4.1), закрывать его нельзя.
-            const inner = rx * 0.44;
+            const K = 0.94;
+            // ---------- ТРИ ФИГУРЫ, БОЛЬШЕ НЕЛЬЗЯ ----------
+            // Часть тела — шар размером с монету. Лацканы, манишка, галстук и
+            // фалды вместе давали на нём кашу: понять, что это за одежда, было
+            // нельзя. Осталось ровно три читаемые фигуры:
+            //   1. тёмный фрак, охватывающий живот и распахнутый клином;
+            //   2. светлая манишка в этом клине;
+            //   3. фалды, тянущиеся ВДОЛЬ ТЕЛА и качающиеся на ходу.
+            // Живот при этом остаётся виден снизу — он вершина силуэта
+            // (docs/art-direction.md §4.1).
+            const neck = rx * 0.34;          // ширина выреза у плеч
+            const waist = rx * 0.26;         // ширина выреза у пояса
+            // Фрак кончается на ТАЛИИ, а нижняя треть живота остаётся голой:
+            // живот — вершина силуэта, и затягивать его целиком нельзя
+            // (docs/art-direction.md §4.1). Замер: до этого одежда закрывала
+            // 88% живота, после — меньше двух третей.
+            const top = -ry * K * 0.58, bottom = -ry * K * 0.02;
             const side = (dir) => {
-                const a0 = dir > 0 ? -58 : 238, a1 = dir > 0 ? 58 : 122;
+                const a0 = dir > 0 ? -50 : 230, a1 = dir > 0 ? 10 : 170;
                 const p0 = WormCosmetics.edge(rx, ry, a0, K);
-                const p1 = WormCosmetics.edge(rx, ry, a1, K);
                 return `<path d="M ${p0.x.toFixed(2)},${p0.y.toFixed(2)}`
                      + WormCosmetics.edgeArc(rx, ry, a0, a1, K, 10)
-                     + ` L ${(dir * inner * 0.8).toFixed(2)},${(p1.y * 0.86).toFixed(2)}`
-                     + ` L ${(dir * inner).toFixed(2)},${(-ry * 0.1).toFixed(2)}`
-                     + ` L ${(dir * inner * 0.72).toFixed(2)},${(p0.y * 0.86).toFixed(2)} Z"
-                      fill="${C.cloth[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>
-                <path d="M ${(dir * inner * 0.72).toFixed(2)},${(p0.y * 0.86).toFixed(2)}
-                         L ${(dir * rx * 0.78).toFixed(2)},${(-ry * 0.42).toFixed(2)}
-                         L ${(dir * inner).toFixed(2)},${(-ry * 0.1).toFixed(2)} Z"
-                      fill="${C.cloth[500]}" opacity="0.9"/>`;
+                     + ` L ${(dir * waist).toFixed(2)},${bottom.toFixed(2)}`
+                     + ` L ${(dir * neck).toFixed(2)},${top.toFixed(2)} Z"
+                      fill="${C.cloth[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
             };
+            const tail = (dir) => `<path d="M ${(dir * waist * 0.3).toFixed(2)},${(ry * 0.1).toFixed(2)}
+                         L ${(dir * rx * 0.46).toFixed(2)},${(ry * 0.26).toFixed(2)}
+                         L ${(dir * rx * 0.26).toFixed(2)},${(ry * 1.12).toFixed(2)}
+                         L ${(dir * rx * 0.02).toFixed(2)},${(ry * 0.78).toFixed(2)} Z"
+                      fill="${C.cloth[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
             return `<g class="worm-cos">
+                <g data-swing="1">${tail(-1)}${tail(1)}</g>
+                <path d="M ${(-neck).toFixed(2)},${top.toFixed(2)} L ${neck.toFixed(2)},${top.toFixed(2)}
+                         L ${waist.toFixed(2)},${bottom.toFixed(2)} L ${(-waist).toFixed(2)},${bottom.toFixed(2)} Z"
+                      fill="${C.linen[500]}"
+                      stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>
                 ${side(-1)}${side(1)}
-                <circle cx="${(-inner * 0.86).toFixed(2)}" cy="${(ry * 0.12).toFixed(2)}"
-                        r="${(Math.min(rx, ry) * 0.08).toFixed(2)}" fill="${C.gold[500]}"/>
+                <path d="M ${(-neck).toFixed(2)},${top.toFixed(2)} L ${(-waist).toFixed(2)},${bottom.toFixed(2)}
+                         M ${neck.toFixed(2)},${top.toFixed(2)} L ${waist.toFixed(2)},${bottom.toFixed(2)}"
+                      fill="none" stroke="${C.silk[500]}" stroke-width="${STROKE.detail}" opacity="0.9"/>
+                <circle cx="0" cy="${(bottom * 0.45).toFixed(2)}" r="${(Math.min(rx, ry) * 0.08).toFixed(2)}"
+                        fill="${C.gold[500]}"/>
             </g>`;
         },
 
@@ -303,10 +322,12 @@ const WormCosmetics = {
                       fill="${C.silk[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
             return `<g class="worm-cos" transform="translate(0,${(-ry * 0.3).toFixed(1)})">
                 ${loop(-1)}${loop(1)}
-                <path d="M ${-w * 0.24} ${h * 0.1} L ${-w * 0.44} ${h * 1.25}
-                         L ${-w * 0.05} ${h * 0.86} Z" fill="${C.silk[700]}"/>
-                <path d="M ${w * 0.24} ${h * 0.1} L ${w * 0.44} ${h * 1.25}
-                         L ${w * 0.05} ${h * 0.86} Z" fill="${C.silk[700]}"/>
+                <g data-swing="1.3">
+                    <path d="M ${-w * 0.24} ${h * 0.1} L ${-w * 0.44} ${h * 1.25}
+                             L ${-w * 0.05} ${h * 0.86} Z" fill="${C.silk[700]}"/>
+                    <path d="M ${w * 0.24} ${h * 0.1} L ${w * 0.44} ${h * 1.25}
+                             L ${w * 0.05} ${h * 0.86} Z" fill="${C.silk[700]}"/>
+                </g>
                 <circle cx="0" cy="0" r="${Math.min(rx, ry) * 0.26}" fill="${C.silk[300]}"
                         stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>
             </g>`;
