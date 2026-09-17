@@ -325,14 +325,34 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     // качалась вовсе: у головы своя ветка монтажа, и про data-swing она не
     // знала. Список общий: висящее есть висящее, где бы оно ни висело.
     const wearSwings = [];
-    const collectSwings = (node, part) => {
+    // ---------- ОПРАВА: ЗЕРКАЛО И ЖИВОЙ УГОЛ НОСИТЕЛЯ ----------
+    // Висящее обязано смотреть вниз ПО ЭКРАНУ, а не по своему носителю.
+    // Значит из своего угла оно вычитает угол носителя и поправляется на
+    // зеркало, если сидит в отражённой копии. Оба числа знает ТОЛЬКО место
+    // монтажа: серьга сидит в ухе, повёрнутом на свой наклон, а левая копия
+    // вдобавок отражена через scale(-1,1) — внутри неё положительный поворот
+    // выглядит на экране отрицательным. Пока этого не было, обе серьги
+    // сходились к голове на одном завале телефона и расходились на другом.
+    // frame: { flip: ±1, ear: ссылка на ухо (у него живой baseAngle) }
+    const collectSwings = (node, part, frame) => {
+        const f = frame || {};
         // `order` — место детали ВНУТРИ своей вещи. По нему пружина
         // мягчеет вдоль подвески: так цепочка из нескольких звеньев
         // изгибается, а не едет одним куском. Общий номер в списке для этого
         // не годится — тогда вещь, добавленная позже, качалась бы вяло.
         [...node.querySelectorAll('[data-swing]')].forEach((el, order) => {
+            // Точка крепления подвески в её собственных координатах. Вокруг
+            // неё и идёт поворот: без этого подвеска вертелась вокруг начала
+            // координат части и отрывалась от своего же гвоздика.
+            // Строки собираются здесь, а не каждый кадр: в tick остаётся одна
+            // склейка вместо четырёх.
+            const pv = (el.getAttribute('data-pivot') || '').split(',');
+            const px = parseFloat(pv[0]) || 0, py = parseFloat(pv[1]) || 0;
             wearSwings.push({ el, part, order,
                               k: parseFloat(el.getAttribute('data-swing')) || 1,
+                              flip: f.flip || 1, ear: f.ear || null,
+                              pre: (px || py) ? `translate(${px},${py}) rotate(` : 'rotate(',
+                              post: (px || py) ? `) translate(${-px},${-py})` : ')',
                               ang: 0, vel: 0, now: 0 });
         });
     };
@@ -472,7 +492,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                         ? [{ node: headBuilt.mouthAnchor, side: 1 }]
                         : ['left', 'right'].map(sd => {
                             const e = headBuilt.ears && headBuilt.ears[sd];
-                            return e ? { node: e.group, side: e.mirror || 1 } : null;
+                            return e ? { node: e.group, side: e.mirror || 1, ref: e } : null;
                         });
                     hosts.filter(Boolean).forEach((h, k) => {
                         const art = k === 0 ? g : g.cloneNode(true);
@@ -485,7 +505,13 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                                                   transform: h.side < 0 ? 'scale(-1,1)' : '' });
                         node.appendChild(art);
                         art.removeAttribute('data-cosmetic');
-                        collectSwings(node, 'head');
+                        // Сторона зеркалится через scale(-1,1) — значит и
+                        // поворот подвески внутри неё виден на экране с
+                        // обратным знаком. А сам носитель (ухо) повёрнут на
+                        // свой наклон, и его надо вычесть: серьга висит вниз
+                        // по экрану, а не вниз по уху.
+                        collectSwings(node, 'head',
+                                      { flip: h.side < 0 ? -1 : 1, ear: h.ref || null });
                         const wrap = svgEl('g');
                         wrap.appendChild(node);
                         host.appendChild(wrap);

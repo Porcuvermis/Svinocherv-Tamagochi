@@ -168,8 +168,19 @@ const WormGarment = {
 
             // Качающееся. Число — податливость: 1 — обычная ткань, больше —
             // легче и размашистее.
-            swing(k, inner) {
-                return '<g data-swing="' + k + '">' + inner + '</g>';
+            //
+            // ---------- ВИСЯЩЕЕ КРУТИТСЯ ВОКРУГ СВОЕГО КРЕПЛЕНИЯ ----------
+            // pivot — точка, которой подвеска ПРИШИТА к вещи, в тех же
+            // местных координатах, в которых нарисована. Пока её не было,
+            // рендерер вертел подвеску вокруг начала координат части, и
+            // серьга, висящая на мочке в двадцати единицах от него, при
+            // наклоне телефона уезжала со своего же гвоздика и летала рядом
+            // с ухом. Умолчание — начало координат: там, где подвеска и так
+            // начинается у центра (цепочка на шее), писать нечего.
+            swing(k, inner, pivot) {
+                const p = pivot || null;
+                const at = p ? ' data-pivot="' + p.x.toFixed(2) + ',' + p.y.toFixed(2) + '"' : '';
+                return '<g data-swing="' + k + '"' + at + '>' + inner + '</g>';
             }
         };
         return g;
@@ -260,7 +271,7 @@ const WormGarment = {
         }
         const g = this.ctx(pattern, fit, skin, ref);
         if (pattern.kind === 'rigid') {
-            const hang = pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g)) : '';
+            const hang = pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g), pattern.pivot && pattern.pivot(g)) : '';
             return '<g class="worm-cos">' + (pattern.draw ? pattern.draw(g) : '') + hang + '</g>';
         }
         const cut = pattern.cut ? pattern.cut(g) : [[-1, 0], [1, 0], [1, 1], [-1, 1]];
@@ -298,7 +309,7 @@ const WormGarment = {
         const face = (pattern.face ? pattern.face(g) : '')
                    + (pattern.over ? pattern.over(g) : '');
         return '<g class="worm-cos">'
-             + (pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g)) : '')
+             + (pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g), pattern.pivot && pattern.pivot(g)) : '')
              + '<path d="' + path.fill + '" fill="' + base + '"/>'
              + (pattern.paint ? pattern.paint(g) : '')
              + ink

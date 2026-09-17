@@ -211,6 +211,14 @@ const WormCosmetics = {
                 return `<circle cx="${F.earJewelX}" cy="${F.earJewelY}" r="${(r * 0.42).toFixed(2)}"
                           fill="${g.C.gold[700]}"/>`;
             },
+            // ---------- ГВОЗДИК И ЕСТЬ ОСЬ КАЧАНИЯ ----------
+            // Серьга висит на мочке, а не в середине уха: без этой точки
+            // рендерер вертел подвеску вокруг начала координат уха, и она
+            // при наклоне телефона отрывалась от своего же гвоздика.
+            pivot() {
+                const F = WormSilhouette.face;
+                return { x: F.earJewelX, y: F.earJewelY };
+            },
             // Подвеска качается на ходу — тем и отличается серьга от нашивки.
             hang(g) {
                 const C = g.C, F = WormSilhouette.face;
@@ -278,9 +286,19 @@ const WormCosmetics = {
                           fill="none" stroke="${C.gold[700]}" stroke-width="${unit * 0.11}" stroke-linecap="round"/>
                     ${links}`;
             },
+            // Подвеска висит на НИЖНЕМ звене цепочки — оно же и ось качания.
+            // Раньше бусина лежала отдельным кружком, лишь касаясь звена, и
+            // качалась вокруг середины шеи: при наклоне она уезжала вбок от
+            // цепочки и висела рядом с ней в воздухе.
+            pivot: g => g.at(0, 0.78),
             hang(g) {
-                const C = g.C, unit = Math.min(g.rx, g.ry), q = g.at(0, 0.9);
-                return `<circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${(unit * 0.2).toFixed(1)}"
+                const C = g.C, unit = Math.min(g.rx, g.ry);
+                const top = g.at(0, 0.78), q = g.at(0, 0.9);
+                return `<path d="M ${top.x.toFixed(2)},${top.y.toFixed(2)}
+                              L ${q.x.toFixed(2)},${q.y.toFixed(2)}"
+                          stroke="${C.gold[700]}" stroke-width="${(unit * 0.09).toFixed(2)}"
+                          fill="none"/>
+                    <circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${(unit * 0.2).toFixed(1)}"
                           fill="${C.gold[300]}" stroke="${C.gold[700]}" stroke-width="${STROKE.detail}"/>`;
             }
         },
@@ -353,6 +371,10 @@ const WormCosmetics = {
                                 r="${(Math.min(g.rx, g.ry) * 0.09).toFixed(2)}" fill="${g.C.gold[500]}"
                                 stroke="${g.C.gold[700]}" stroke-width="${STROKE.hairline}"/>`;
                     },
+                    // Фалды пришиты к ПОДОЛУ, оттуда и качаются. Вокруг
+                    // центра сегмента они при качании сползали с подола вбок,
+                    // и между пиджаком и фалдами открывалась щель.
+                    pivot: g => ({ x: 0, y: g.y(1) }),
                     // Фалды: по ним фрак и отличают от пиджака. Кусок ОДИН, с
                     // вырезом посередине — двумя клиньями это читалось
                     // штанинами. У́же подола, чтобы были видны бока живота.
@@ -464,6 +486,8 @@ const WormCosmetics = {
                     <circle cx="0" cy="0" r="${(Math.min(g.rx, g.ry) * 0.34).toFixed(2)}"
                             fill="${C.silk[300]}" stroke="${g.ink}" stroke-width="${STROKE.detail}"/></g>`;
             },
+            // Концы ленты выходят из УЗЛА банта — он и есть ось качания.
+            pivot: g => ({ x: 0, y: -g.ry * 0.3 }),
             hang(g) {
                 const C = g.C, w = g.rx * 1.95, h = g.ry * 1.3, up = -g.ry * 0.3;
                 return `<g transform="translate(0,${up.toFixed(1)})">
