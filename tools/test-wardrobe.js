@@ -133,29 +133,48 @@ const { viewport, prepare } = require('./harness');
           y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.bottom);
         });
         if (x1 <= x0) return null;
-        // Разрез через середину ткани: у длинной части (хвост) поперёк неё,
-        // у обычной — по ширине.
-        const pr = shape.getBoundingClientRect();
-        const pt = svg.createSVGPoint(), inv = shape.getScreenCTM().inverse();
+        // ---------- РЕЗАТЬ НАДО ПОПЕРЁК ЧАСТИ, А НЕ ПОПЕРЁК ЭКРАНА ----------
+        // Разрез шёл строго по вертикали экрана. Пока хвост лежал
+        // горизонтально, это совпадало; стоило ему загнуться — вертикаль
+        // проходила наискось и мерила НЕ толщину, а диагональ. Проверка
+        // краснела от позы червя, а не от кроя.
+        //
+        // Ось части знает её матрица: (a, b) — куда смотрит местный x на
+        // экране, (c, d) — местный y. Режем вдоль них.
+        const m = shape.getScreenCTM();
+        const inv = m.inverse();
+        const ax = Math.hypot(m.a, m.b) || 1, ay = Math.hypot(m.c, m.d) || 1;
+        const dir = along ? { x: m.c / ay, y: m.d / ay }    // поперёк длинной части
+                          : { x: m.a / ax, y: m.b / ax };   // поперёк обычной
+        const pt = svg.createSVGPoint();
         const hit = (sx, sy) => {
           pt.x = sx; pt.y = sy;
           const loc = pt.matrixTransform(inv);
           const q = svg.createSVGPoint(); q.x = loc.x; q.y = loc.y;
           return shape.isPointInFill(q);
         };
-        const N = 200;
+        // Центр ткани и её протяжённость ВДОЛЬ линии разреза.
+        const cx0 = (x0 + x1) / 2, cy0 = (y0 + y1) / 2;
+        const proj = (px, py) => (px - cx0) * dir.x + (py - cy0) * dir.y;
+        let c0 = 1e9, c1 = -1e9;
+        cloth.forEach(el => {
+          const r = el.getBoundingClientRect();
+          if (!r.width && !r.height) return;
+          [[r.x, r.y], [r.right, r.y], [r.x, r.bottom], [r.right, r.bottom]]
+            .forEach(q => { const t = proj(q[0], q[1]); c0 = Math.min(c0, t); c1 = Math.max(c1, t); });
+        });
+        // Сколько части попадает под тот же разрез.
+        const pr = shape.getBoundingClientRect();
+        const reach = Math.hypot(pr.width, pr.height);
+        const N = 400;
         let a = null, b = null;
         for (let i = 0; i <= N; i++) {
-          const t = i / N;
-          const sx = along ? (x0 + x1) / 2 : pr.x + pr.width * t;
-          const sy = along ? pr.y + pr.height * t : (y0 + y1) / 2;
-          if (!hit(sx, sy)) continue;
-          const v = along ? sy : sx;
-          if (a == null) a = v;
-          b = v;
+          const t = -reach + (2 * reach) * i / N;
+          if (!hit(cx0 + dir.x * t, cy0 + dir.y * t)) continue;
+          if (a == null) a = t;
+          b = t;
         }
         if (a == null || b <= a) return null;
-        const c0 = along ? y0 : x0, c1 = along ? y1 : x1;
         const cover = Math.min(c1, b) - Math.max(c0, a);
         return +(cover / (b - a)).toFixed(3);
       },

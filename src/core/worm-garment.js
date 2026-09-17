@@ -158,33 +158,66 @@ const WormGarment = {
     },
 
     // Путь по списку [u, v] с дугами вдоль края тела.
-    pathOf(points, g) {
+    // Путь по списку [u, v]. Возвращает и заливку, и ОБВОДКУ — они разные,
+    // и в этом всё дело (см. «кромка обводится не везде» ниже).
+    pathOf(points, g) { return this.trace(points, g).fill; },
+
+    // ---------- КРОМКА ОБВОДИТСЯ НЕ ВЕЗДЕ ----------
+    // Ткань кончается двумя разными способами, и рисовать их одинаково
+    // нельзя. Там, где она кончается НА теле (вырез, подол, край ленты), у
+    // неё есть свой край — его надо обвести. А там, где она уходит ЗА
+    // СИЛУЭТ, края у неё нет вовсе: видно ровно столько, сколько видно тела,
+    // и границей служит контур тела, уже обведённый.
+    //
+    // Вторая линия поверх контура превращает вещь в КОРОБКУ: воротник на шее
+    // выглядел картонным хомутом именно поэтому — у него по бокам шла
+    // чернильная рамка там, где должен был быть край шеи.
+    //
+    // Отличать одно от другого движок умеет сам: участок, который идёт по
+    // краю части (оба конца на u = ±1 с одной стороны), — это уход за силуэт.
+    // Художнику решать нечего, и забыть нечего.
+    trace(points, g) {
         const pts = points.filter(p => p);
-        if (!pts.length) return '';
+        if (!pts.length) return { fill: '', edges: [] };
         const onEdge = (p) => Math.abs(Math.abs(p[0]) - 1) < 0.001;
-        let d = 'M ' + g.p(pts[0][0], pts[0][1]);
+        let fill = 'M ' + g.p(pts[0][0], pts[0][1]);
+        const edges = [];         // куски кромки, которые надо обвести
+        let run = null;           // накопитель подряд идущих таких кусков
+
         for (let i = 1; i <= pts.length; i++) {
             const a = pts[i - 1], b = pts[i % pts.length];
-            if (onEdge(a) && onEdge(b) && a[0] * b[0] > 0 && Math.abs(b[1] - a[1]) > 0.001) {
+            const alongEdge = onEdge(a) && onEdge(b) && a[0] * b[0] > 0
+                              && Math.abs(b[1] - a[1]) > 0.001;
+            let piece = '';
+            if (alongEdge) {
                 for (let s = 1; s <= this.EDGE_STEPS; s++) {
                     const v = a[1] + (b[1] - a[1]) * s / this.EDGE_STEPS;
-                    d += ' L ' + g.p(a[0], v);
+                    piece += ' L ' + g.p(a[0], v);
                 }
-            } else if (i < pts.length || !onEdge(a) || !onEdge(b)) {
+            } else {
                 const span = Math.abs(b[0] - a[0]);
                 if (span >= this.BOW_MIN_SPAN) {
                     // Квадратичная: чтобы кривая просела на s, опорная точка
                     // отводится на 2s.
                     const sag = g.ry * this.BOW * span / 2;
                     const m = g.at((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
-                    d += ' Q ' + m.x.toFixed(2) + ',' + (m.y + sag * 2).toFixed(2)
-                       + ' ' + g.p(b[0], b[1]);
-                } else if (i < pts.length) {
-                    d += ' L ' + g.p(b[0], b[1]);
+                    piece = ' Q ' + m.x.toFixed(2) + ',' + (m.y + sag * 2).toFixed(2)
+                          + ' ' + g.p(b[0], b[1]);
+                } else {
+                    piece = ' L ' + g.p(b[0], b[1]);
                 }
             }
+            fill += piece;
+            // Уход за силуэт не обводим, остальное копим в связный кусок.
+            if (alongEdge || (onEdge(a) && onEdge(b) && a[0] === b[0])) {
+                if (run) { edges.push(run); run = null; }
+            } else {
+                if (!run) run = 'M ' + g.p(a[0], a[1]);
+                run += piece;
+            }
         }
-        return d + ' Z';
+        if (run) edges.push(run);
+        return { fill: fill + ' Z', edges };
     },
 
     // ---------- СБОРКА ----------
@@ -196,16 +229,19 @@ const WormGarment = {
             return '<g class="worm-cos">' + (pattern.draw ? pattern.draw(g) : '') + hang + '</g>';
         }
         const cut = pattern.cut ? pattern.cut(g) : [[-1, 0], [1, 0], [1, 1], [-1, 1]];
-        const d = g.d(cut);
+        const path = this.trace(cut, g);
         const base = pattern.base ? pattern.base(g) : g.C.cloth[500];
         const shift = g.shift ? ' transform="translate(' + g.shift.toFixed(2) + ',0)"' : '';
+        const ink = path.edges.map(d =>
+            '<path d="' + d + '" fill="none" stroke="' + PALETTE.ink
+            + '" stroke-width="' + STROKE.structure
+            + '" stroke-linejoin="round" stroke-linecap="round"/>').join('');
         // Подол идёт ПЕРВЫМ: он выходит из-под ткани, а не лежит на ней.
         return '<g class="worm-cos"' + shift + '>'
              + (pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g)) : '')
-             + '<path d="' + d + '" fill="' + base + '"/>'
+             + '<path d="' + path.fill + '" fill="' + base + '"/>'
              + (pattern.paint ? pattern.paint(g) : '')
-             + '<path d="' + d + '" fill="none" stroke="' + PALETTE.ink
-             + '" stroke-width="' + STROKE.structure + '" stroke-linejoin="round"/>'
+             + ink
              + (pattern.over ? pattern.over(g) : '')
              + '</g>';
     },

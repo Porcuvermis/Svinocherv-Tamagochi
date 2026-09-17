@@ -109,7 +109,11 @@ const WormCosmetics = {
             paint: g => `<path d="${g.band(0.0, 0.22)}" fill="${g.C.linen[300]}"/>`,
             over(g) {
                 const C = g.C;
-                const wing = (dir) => `<path d="${g.d([[dir * 0.9, 0.16], [dir * 0.16, 0.52], [dir * 0.9, 0.92]])}"
+                // Петли доходят до u = ±1, то есть уходят ЗА шею. Пока они
+                // кончались внутри (0.9), их обведённый край шёл вертикальной
+                // линией по краю воротника — и весь воротник читался
+                // картонной коробкой. Бабочка шириной с шею её и обнимает.
+                const wing = (dir) => `<path d="${g.d([[dir, 0.14], [dir * 0.16, 0.52], [dir, 0.94]])}"
                           fill="${C.silk[500]}" stroke="${g.ink}" stroke-width="${STROKE.detail}"
                           stroke-linejoin="round"/>`;
                 const knot = g.at(0, 0.52);
