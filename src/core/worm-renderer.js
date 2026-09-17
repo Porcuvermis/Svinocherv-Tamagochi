@@ -3565,6 +3565,21 @@ function buildHeadNode(model, ctx) {
 // задевает черту лица, просто не выдаётся при размещении — и не выдаётся ни
 // при каком ракурсе. Отодвигать шрам на лету значило бы ломать ровно ту
 // проверку, которой он прошёл.
+// Надетое на голову при живом повороте. Отдельно от шрамов: у шрама есть
+// азимут и он прячется на изнанке, а шляпа и очки сидят по центру морды и
+// не прячутся никогда — им нужна только посадка (WormSilhouette.wearPlace).
+function applyHeadWear(headRef, yaw) {
+    const list = headRef.wear;
+    if (!list || !list.length) return;
+    const rx = headRef.rx || 1;
+    for (let i = 0; i < list.length; i++) {
+        const w = list[i];
+        const p = WormSilhouette.wearPlace(w.fit, yaw, w);
+        setAttr(w.node, 'transform',
+            `translate(${(w.x + p.x * rx).toFixed(2)},0) scale(${p.squash.toFixed(3)},1)`);
+    }
+}
+
 function applyHeadScars(headRef, yaw) {
 
     const list = headRef.scars;
@@ -3598,6 +3613,7 @@ function applyHeadYaw(headRef, yaw) {
     if (!headRef || headRef.yaw === yaw) return;
     headRef.yaw = yaw;
     applyHeadScars(headRef, yaw);
+    applyHeadWear(headRef, yaw);
     const rx = headRef.rx, ry = headRef.ry;
 
     // Череп — единственная строка пути, которую приходится пересобирать.
@@ -4612,10 +4628,24 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     // взрослении, а «середина хвостовой части» остаётся собой.
     const scarHostByPart = { head: headBuilt.scarLayer, tail: tailBuilt.scarLayer };
     const radiusByPart = { head: headBuilt.rx, tail: tailBuilt.baseRadius };
+    // ---------- РАЗМЕРЫ ДЛЯ ОДЕЖДЫ ----------
+    // Отметине хватает одного радиуса, а одежде нужен НАСТОЯЩИЙ габарит
+    // нарисованной части: сегмент — эллипс, и лента, скроенная по кругу,
+    // концами повисает в воздухе. Плюс опорные точки лица: очки обязаны
+    // сидеть там, где глаза, а не там, где их нарисовали на глаз.
+    const wearFitByPart = {
+        head: { rx: headBuilt.rx, ry: headBuilt.ry,
+                eyeY: (model.eyes && model.eyes.left && model.eyes.left.offsetY) || 0,
+                eyeX: (model.eyes && model.eyes.left && model.eyes.left.offsetX) || 0,
+                eyeR: 8 * ((model.eyes && model.eyes.left && model.eyes.left.stretchX) || 1)
+                        * ((model.eyes && model.eyes.left && model.eyes.left.scale) || 1) },
+        tail: { rx: tailBuilt.baseRadius, ry: tailBuilt.baseRadius }
+    };
     const skinByPart = { head: model.head.fill, tail: model.tail.fill };
     segmentRefs.forEach(seg => {
         scarHostByPart[seg.name] = seg.scarLayer;
         radiusByPart[seg.name] = seg.radius;
+        wearFitByPart[seg.name] = { rx: seg.baseRx, ry: seg.baseRy };
         skinByPart[seg.name] = seg.fillColor;
     });
 
@@ -4675,15 +4705,42 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
             if (!place) return;
             const host = scarHostByPart[place.part];
             if (!host) return;
-            const art = WormCosmetics.art(itemId, radiusByPart[place.part] || 15,
-                                          skinByPart[place.part]);
+            const fit = wearFitByPart[place.part] || { rx: radiusByPart[place.part] || 15,
+                                                      ry: radiusByPart[place.part] || 15 };
+            const art = WormCosmetics.art(itemId, fit.rx, skinByPart[place.part], fit);
             if (!art) return;
+            // place.x нормализован (доля радиуса части) — его надо УМНОЖИТЬ
+            // на радиус, как это делает buildMarkNode. Здесь стояло сырое
+            // число: работало только потому, что у предметов x всегда 0.
+            const hostR = radiusByPart[place.part] || 15;
             const g = svgEl('g', { 'data-cosmetic': slotKey,
-                                   transform: `translate(${place.x.toFixed(1)},0)` });
+                                   transform: `translate(${(place.x * hostR).toFixed(2)},0)` });
             g.innerHTML = art;
             host.appendChild(g);
+            // Надетое на ГОЛОВУ едет вместе с лицом — как глаза, уши и шрамы.
+            if (place.part === 'head') {
+                headBuilt.wear = headBuilt.wear || [];
+                headBuilt.wear.push({
+                    node: g, fit: WormCosmetics.fit(itemId), x: place.x * hostR,
+                    // Опоры для посадки на лице: где стоят глаза и какой у
+                    // предмета авторский разлёт. По ним очки садятся ровно на
+                    // яблоки при любом повороте.
+                    eyeAzDeg: (() => {
+                        const surf = headBuilt.rx * WormSilhouette.face.eyeSurfaceK;
+                        const off = Math.max(-1, Math.min(1, (fit.eyeX || 0) / (surf || 1)));
+                        return Math.asin(off) * 180 / Math.PI;
+                    })(),
+                    eyeHalfW: (fit.eyeR || 0) / headBuilt.rx,
+                    eyeSpread: (fit.eyeX || 0) / headBuilt.rx
+                });
+            }
         });
     }
+
+    // Посадку надетого надо применить СРАЗУ, а не ждать первого поворота:
+    // голова по умолчанию стоит в три четверти, и очки, собранные в позе
+    // анфас, до первого движения висят мимо глаз.
+    if (headBuilt.wear) applyHeadWear(headBuilt, headBuilt.yaw || 0);
 
     // Грудная клетка: плоский список рёбер обеих половин и сами группы —
     // tick() пересчитывает по ним ракурс и меняет половины местами по

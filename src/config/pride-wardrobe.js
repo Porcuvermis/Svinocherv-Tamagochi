@@ -56,19 +56,28 @@ const PRIDE_WARDROBE = {
     //           ни на что не влияет: в одном слоте можно носить только одно,
     //           хоть тряпку, хоть побрякушку
     //   price — в поцелуях. Валюта тщеславия и только его
+    //   sits  — какая доля предмета ЛЕЖИТ НА ТЕЛЕ. Это не порог прогона, а
+    //           свойство кроя: цилиндр стоит НАД головой и на теле у него
+    //           только поля, а лента обязана лежать на животе целиком.
+    //           Прогон (tools/test-wardrobe.js) проверяет заявленное при всех
+    //           ракурсах — и ловит предмет, у которого угол повис в воздухе.
+    //           Замеры до полировки: лента 0.84, бант 0.67, фрак 0.95 —
+    //           у всех троих концы висели за силуэтом.
     //
     // Цена растёт с тем, насколько предмет ЗАМЕТЕН: цилиндр на голове видно
     // отовсюду, гетру на хвосте — почти нет. Это тот же принцип, по которому
     // расставлены цены прокачки, только мерой служит не сила, а вид.
     items: [
-        { id: 'top-hat',   slot: 'head', kind: 'wear', price: { pride_kiss: 600 } },
-        { id: 'shades',    slot: 'head', kind: 'glam', price: { pride_kiss: 350 } },
-        { id: 'bow-tie',   slot: 'neck', kind: 'wear', price: { pride_kiss: 400 } },
-        { id: 'chain',     slot: 'neck', kind: 'glam', price: { pride_kiss: 300 } },
-        { id: 'tux',       slot: 'body', kind: 'wear', price: { pride_kiss: 800 } },
-        { id: 'sash',      slot: 'body', kind: 'glam', price: { pride_kiss: 450 } },
-        { id: 'tail-sock', slot: 'tail', kind: 'wear', price: { pride_kiss: 250 } },
-        { id: 'tail-bow',  slot: 'tail', kind: 'glam', price: { pride_kiss: 200 } }
+        { id: 'top-hat',   slot: 'head', kind: 'wear', price: { pride_kiss: 600 }, sits: 0.29 },
+        { id: 'shades',    slot: 'head', kind: 'glam', price: { pride_kiss: 350 }, sits: 0.93 },
+        { id: 'bow-tie',   slot: 'neck', kind: 'wear', price: { pride_kiss: 400 }, sits: 0.96 },
+        { id: 'chain',     slot: 'neck', kind: 'glam', price: { pride_kiss: 300 }, sits: 0.96 },
+        { id: 'tux',       slot: 'body', kind: 'wear', price: { pride_kiss: 800 }, sits: 0.93 },
+        { id: 'sash',      slot: 'body', kind: 'glam', price: { pride_kiss: 450 }, sits: 0.93 },
+        { id: 'tail-sock', slot: 'tail', kind: 'wear', price: { pride_kiss: 250 }, sits: 0.95 },
+        // У банта петли законно выходят за хвост — на то он и бант, — но
+        // именно выходят, а не парят: было 0.67, когда он висел НАД хвостом.
+        { id: 'tail-bow',  slot: 'tail', kind: 'glam', price: { pride_kiss: 200 }, sits: 0.90 }
     ]
 };
 

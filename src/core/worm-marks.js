@@ -534,13 +534,47 @@ function wormMarkFit(x, y, geo, rotationDeg) {
     return { x: x * k, y: y * k };
 }
 
+// ---------- КУДА ОТМЕТИНА ПОПАДЁТ НА ЭКРАНЕ ----------
+// Тело мы видим сбоку, и отметина рисуется НЕ там, где она лежит на коже:
+// вдоль оси её место сжато до 0.72, вокруг тела — до 0.78, да ещё и сплющено
+// по вертикали ракурсом. Поэтому «разошлись по коже» и «разошлись на экране»
+// — разные вещи, и две отметины, честно разнесённые на четверть окружности,
+// у края тела вставали в одну кляксу.
+function wormMarkDrawn(surf, geo, rotationDeg) {
+    const box = wormMarkHalfBox(geo, rotationDeg);
+    const squash = Math.max(0.12, Math.abs(Math.cos(surf.phi)));
+    // Место берём ТЕМ ЖЕ wormMarkFit, которым его считает отрисовка. Без
+    // этого разница вылезает там, где отметина не влезла и её подтянули к оси:
+    // две подтянутые с разных краёв встают в одну точку, а проверка по
+    // неподтянутым координатам считает их далёкими.
+    const fit = wormMarkFit(surf.u * 0.72, Math.sin(surf.phi) * 0.78, geo, rotationDeg);
+    return {
+        x: fit.x, y: fit.y,
+        hx: box.hx,
+        hy: box.hy * squash,
+        front: Math.cos(surf.phi) > WORM_MARK_FRONT_MIN
+    };
+}
+
 // Свободно ли место: рядом с существующей отметиной новую не ставим.
-// Сравнение идёт по поверхности тела и учитывает размер обеих отметин.
+// Проверяется дважды — по коже (ракурс-независимо) и по экрану (иначе у края
+// тела отметины сходятся в кляксу).
 function wormMarkSpotFree(marks, zone, t, model, seed, phi) {
     const probe = wormMarkSurface(model || {}, { zone, t, seed, phi });
+    const pgeo = wormMarkGeometry(seed || 0, 'scar');
+    const pdraw = wormMarkDrawn(probe, pgeo, wormMarkRotation(seed || 0));
     return !(marks || []).some(m => {
         if (m.zone !== zone) return false;
-        return wormMarksClash(probe, wormMarkSurface(model || {}, m));
+        const surf = wormMarkSurface(model || {}, m);
+        if (wormMarksClash(probe, surf)) return true;
+        if (surf.part !== probe.part) return false;
+        // На экране сравниваем только видимые: спрятавшаяся на изнанке
+        // отметина никому не мешает.
+        const other = wormMarkDrawn(surf, wormMarkGeometry(m.seed || 0, m.kind || 'scar'),
+                                    wormMarkRotation(m.seed || 0));
+        if (!pdraw.front || !other.front) return false;
+        return Math.abs(pdraw.x - other.x) < pdraw.hx + other.hx
+            && Math.abs(pdraw.y - other.y) < pdraw.hy + other.hy;
     });
 }
 
@@ -643,9 +677,12 @@ function wormMarkGeometry(seed, kind) {
 // того, как появится первый предмет, иначе предметы прибьются к чему
 // попало и переезд будет стоить дороже.
 const WORM_COSMETIC_SLOTS = {
+    // `t` выбирает ЧАСТЬ внутри зоны, а не точку на ней: одежда садится по
+    // центру выбранной части. Тело — это ЖИВОТ (последняя часть зоны, самая
+    // крупная): фрак на тонком сегменте под головой читается слюнявчиком.
     head: { zone: 'head', t: 0.5, label: 'Голова' },
     neck: { zone: 'body', t: 0.02, label: 'Шея' },
-    body: { zone: 'body', t: 0.6, label: 'Тело' },
+    body: { zone: 'body', t: 0.9, label: 'Тело' },
     tail: { zone: 'tail', t: 0.85, label: 'Хвост' }
 };
 
@@ -697,8 +734,12 @@ const WormMarks = {
         // куда его забросил бы сид. У отметины разброс — свойство, у шляпы —
         // дефект.
         const place = wormResolveMark(model, { zone: slot.zone, t: slot.t, seed: 0, phi: 0 });
-        // У предмета нет случайного разброса: он сидит на оси части.
-        return { slot: slotKey, part: place.part, x: place.x, y: 0, rotation: 0 };
+        // ---------- ПРЕДМЕТ СИДИТ ПО ЦЕНТРУ ЧАСТИ ----------
+        // `t` выбирает ЧАСТЬ, а внутри части предмет сидит посередине.
+        // Смещать его вдоль оси нельзя: у отметины сдвиг — свойство, у одежды
+        // — съезд. Бабочка, посаженная по `t` на край сегмента, наполовину
+        // висела в воздухе.
+        return { slot: slotKey, part: place.part, x: 0, y: 0, rotation: 0 };
     }
 };
 

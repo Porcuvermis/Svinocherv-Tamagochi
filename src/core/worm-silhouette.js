@@ -235,6 +235,46 @@ function wormEyePlace(phiDeg, yaw, halfW) {
     return { x: (raw < 0 ? -1 : 1) * Math.min(Math.abs(raw), maxAbs), squash };
 }
 
+// ---------- ГДЕ СИДИТ НАДЕТОЕ НА ГОЛОВУ ----------
+// Одежда головы висела статическим узлом: лицо поворачивалось, а цилиндр и
+// очки оставались на месте — очки съезжали мимо глаз, шляпа уезжала с черепа
+// вбок. Теперь у каждого предмета есть ПОСАДКА, и она пересчитывается тем же
+// поворотом, что двигает глаза и шрамы:
+//
+//   face  — предмет лежит на ЛИЦЕ (очки): едет вместе с чертами, по той же
+//           поверхности, что глаза, и так же сплющивается;
+//   crown — предмет надет НА ЧЕРЕП сверху (цилиндр): череп под ним крутится,
+//           а сам он осесимметричен и потому лишь слегка ведёт за лицом.
+//           Возить его наравне с глазами нельзя — шляпа съедет с головы.
+const WORM_WEAR_CROWN_FOLLOW = 0.22;   // доля хода лица, которую берёт макушка
+const WORM_WEAR_CROWN_SQUASH = 0.86;   // насколько макушка вообще сплющивается
+
+function wormWearPlace(fit, yaw, opts) {
+    if (fit === 'crown') {
+        const theta = (yaw || 0) * WORM_YAW_MAX_DEG * Math.PI / 180;
+        return {
+            x: Math.sin(theta) * WORM_WEAR_CROWN_FOLLOW,
+            squash: 1 - (1 - WORM_WEAR_CROWN_SQUASH) * Math.abs(Math.sin(theta))
+        };
+    }
+    // ---------- ОЧКИ ЕДУТ НА ГЛАЗАХ ----------
+    // Не по своей формуле, а ПО САМИМ ГЛАЗАМ: считаем, где при этом повороте
+    // оказались оба глаза, и садим очки ровно между ними, растянув так, чтобы
+    // линзы легли на яблоки. Собственная формула, даже правильная, у края
+    // расходится с глазом — глаз там ещё и прижимается к контуру, и линза
+    // уезжала с яблока.
+    const o = opts || {};
+    const az = o.eyeAzDeg || 0;
+    const half = o.eyeHalfW || 0;
+    const l = wormEyePlace(-az, yaw || 0, half);
+    const r = wormEyePlace(az, yaw || 0, half);
+    const spread = o.eyeSpread || 0;      // авторский разлёт линз, в долях rx
+    return {
+        x: (l.x + r.x) / 2,
+        squash: spread > 0.001 ? Math.max(0.2, (r.x - l.x) / (2 * spread)) : l.squash
+    };
+}
+
 // Запретные пятна на голове, В ДОЛЯХ rx по обеим осям (так их ждёт
 // размещение отметин). У каждого — азимут на сфере, высота и полуразмеры.
 // Азимут, а не x: угол не зависит от поворота, и разойтись с глазом надо
@@ -413,6 +453,7 @@ const WormSilhouette = {
     skullHalfWidth: wormSkullHalfWidth,
     headKeepOut: wormHeadKeepOut,
     eyePlace: wormEyePlace,
+    wearPlace: wormWearPlace,
     YAW_MAX_DEG: WORM_YAW_MAX_DEG,
     FRONT_MIN: WORM_MARK_FRONT_MIN_SHARED,
     FADE_BAND: WORM_MARK_FADE_BAND,
