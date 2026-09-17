@@ -1148,7 +1148,7 @@ const PrideMinigame = {
             const y0 = top + (span - step * (n - 1)) / 2;
             const y = y0 + step * used[slot.side]++;
             const art = worn[slot.key]
-                ? WormCosmetics.art(worn[slot.key], 15, PALETTE.flesh[500]) : null;
+                ? WormCosmetics.cardArt(worn[slot.key], 15, PALETTE.flesh[500], slot.key) : null;
             out += `<g transform="translate(${x.toFixed(0)},${y.toFixed(0)})">` +
                    PRIDE_ART.slotCard(slot, art, card) + '</g>';
         });
@@ -1275,7 +1275,7 @@ const PrideMinigame = {
             const cy = top + Math.floor(i / 2) * (ch + 10) + ch / 2;
             const price = item.price.pride_kiss;
             const rich = wallet >= price;
-            const art = WormCosmetics.art(item.id, 24, PALETTE.flesh[500]);
+            const art = WormCosmetics.cardArt(item.id, 24, PALETTE.flesh[500], item.slot);
             return `<g class="pr-item${rich ? ' rich' : ''}" data-item="${item.id}"
                        transform="translate(${cx.toFixed(0)},${cy.toFixed(0)})">
                 <rect x="${-cw / 2 + 4}" y="${-ch / 2}" width="${cw - 8}" height="${ch}" rx="14"
@@ -1405,7 +1405,7 @@ const PrideMinigame = {
             const on = (id || null) === worn;
             const y = y0 + 8 + i * RH + RH / 2;
             const art = id
-                ? `<g class="pr-slot-art">${WormCosmetics.art(id, ar, PALETTE.flesh[500])}</g>`
+                ? `<g class="pr-slot-art">${WormCosmetics.cardArt(id, ar, PALETTE.flesh[500], slot.key)}</g>`
                 : `<g transform="translate(-12,-12)" fill="none" stroke="${C.rail[500]}"
                        stroke-width="1.6" stroke-linejoin="round"
                        opacity="0.7"><path d="${slot.shape}"/></g>`;

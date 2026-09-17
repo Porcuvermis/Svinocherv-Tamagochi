@@ -194,7 +194,11 @@ const WormGarment = {
     // Отличать одно от другого движок умеет сам: участок, который идёт по
     // краю части (оба конца на u = ±1 с одной стороны), — это уход за силуэт.
     // Художнику решать нечего, и забыть нечего.
-    trace(points, g) {
+    // seam — какой кромкой половина стыкуется с соседней ('top' / 'bottom').
+    // Такую кромку не обводят: это не край вещи, а середина. Пока обводили,
+    // поперёк фрака шла чернильная линия, и он читался двумя надетыми друг
+    // на друга кусками, а не одним пиджаком.
+    trace(points, g, seam) {
         const pts = points.filter(p => p);
         if (!pts.length) return { fill: '', edges: [] };
         const onEdge = (p) => Math.abs(Math.abs(p[0]) - 1) < 0.001;
@@ -226,8 +230,11 @@ const WormGarment = {
                 }
             }
             fill += piece;
+            // Стык половин — не край вещи, а её середина.
+            const atSeam = seam && ((seam === 'top' && a[1] < 0.001 && b[1] < 0.001)
+                                 || (seam === 'bottom' && a[1] > 0.999 && b[1] > 0.999));
             // Уход за силуэт не обводим, остальное копим в связный кусок.
-            if (alongEdge || (onEdge(a) && onEdge(b) && a[0] === b[0])) {
+            if (alongEdge || atSeam || (onEdge(a) && onEdge(b) && a[0] === b[0])) {
                 if (run) { edges.push(run); run = null; }
             } else {
                 if (!run) run = 'M ' + g.p(a[0], a[1]);
@@ -257,7 +264,7 @@ const WormGarment = {
             return '<g class="worm-cos">' + (pattern.draw ? pattern.draw(g) : '') + hang + '</g>';
         }
         const cut = pattern.cut ? pattern.cut(g) : [[-1, 0], [1, 0], [1, 1], [-1, 1]];
-        const path = this.trace(cut, g);
+        const path = this.trace(cut, g, pattern.seam);
         const base = pattern.base ? pattern.base(g) : g.C.cloth[500];
         // ---------- У ОДЕЖДЫ ВСЕГДА ЕСТЬ КРАЙ ----------
         // Здесь обводились только те куски кромки, что кончаются на теле, а

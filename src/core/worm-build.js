@@ -250,9 +250,9 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         // cx — его середина.
         tail: (() => {
             const L = tailBuilt.length, R = tailBuilt.baseRadius;
-            const tipR = R * 0.6;          // полутолщина хвоста у гнезда
+            const tipR = R * 0.72;         // полутолщина хвоста у гнезда
             return { rx: tipR, ry: tipR,   // для твёрдых вещей — бант, подвеска
-                     long: L * 0.15, longRy: tipR * 0.92, cx: -L * 0.76 };
+                     long: L * 0.36, longRy: tipR * 0.95, cx: -L * 0.60 };
         })()
     };
     const skinByPart = { head: model.head.fill, tail: model.tail.fill };
@@ -320,6 +320,22 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     // сдвигом, без поворота, и одежда на них стояла горизонтально к экрану.
     // Угол берётся из положения соседей и пересчитывается в tick().
     const wearOnBody = [];
+    // ---------- ПОДВИЖНЫЕ ДЕТАЛИ — ОДНИМ СПИСКОМ ----------
+    // Качание собиралось только у надетого на ТЕЛО, и серьга в ухе не
+    // качалась вовсе: у головы своя ветка монтажа, и про data-swing она не
+    // знала. Список общий: висящее есть висящее, где бы оно ни висело.
+    const wearSwings = [];
+    const collectSwings = (node, part) => {
+        // `order` — место детали ВНУТРИ своей вещи. По нему пружина
+        // мягчеет вдоль подвески: так цепочка из нескольких звеньев
+        // изгибается, а не едет одним куском. Общий номер в списке для этого
+        // не годится — тогда вещь, добавленная позже, качалась бы вяло.
+        [...node.querySelectorAll('[data-swing]')].forEach((el, order) => {
+            wearSwings.push({ el, part, order,
+                              k: parseFloat(el.getAttribute('data-swing')) || 1,
+                              ang: 0, vel: 0, now: 0 });
+        });
+    };
     if (typeof WormCosmetics !== 'undefined' && model.cosmetics) {
         Object.keys(model.cosmetics).forEach(slotKey => {
             const itemId = model.cosmetics[slotKey];
@@ -335,6 +351,13 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
             // одна доля даёт в них разную ширину.
             const refFit = wearFitByPart[places[places.length - 1].part];
             const refRx = refFit ? refFit.rx : null;
+            // Опорная часть вещи: по её оси выстраивается ЛИЦО всех половин.
+            // Сегменты не стоят на одной вертикали (при рождении они сдвинуты
+            // друг относительно друга, а при изгибе тем более), и манишка,
+            // отцентрованная по каждому сегменту своему, разрывалась по шву
+            // зигзагом. Обшивка при этом обнимает СВОЙ сегмент — ей смещение
+            // не нужно и вредно.
+            const refPart = places[places.length - 1].part;
 
             places.forEach(place => {
                 const host = scarHostByPart[place.part];
@@ -366,6 +389,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                     const hostNode = svgEl('g', { class: 'worm-wear-host' });
                     hostNode.appendChild(g);
                     wearLayer.appendChild(hostNode);
+                    collectSwings(g, place.part);
                     wearOnBody.push({
                         node: g, hostNode, mirror, mirrored: null, part: place.part,
                         idx: place.part === 'tail' ? tailIdx : (seg ? seg.idx : null),
@@ -377,6 +401,19 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                         // Пока сужалась вся вещь, она скукоживалась к центру, и
                         // по бокам вылезала голая кожа.
                         faceNode: g.querySelector('[data-face]'),
+                        // ---------- ПОЛОВИНЫ ЕДУТ ОДИНАКОВО ----------
+                        // Сдвиг лица считался в радиусах СВОЕЙ части, а у
+                        // половин они разные: манишка сверху уезжала не
+                        // настолько, насколько снизу, и разрывалась по шву.
+                        // Опорный радиус общий — тот же, которым меряются
+                        // ширины (см. refRx).
+                        faceR: refRx || null,
+                        refIdx: (() => {
+                            if (places.length < 2 || place.part === refPart) return null;
+                            if (refPart === 'tail') return tailIdx;
+                            const rs = segmentRefs.filter(sg => sg.name === refPart)[0];
+                            return rs ? rs.idx : null;
+                        })(),
                         faceHalf: (() => {
                             const f = g.querySelector('[data-face]');
                             return f ? (parseFloat(f.getAttribute('data-face')) || 0.62) : 0;
@@ -384,10 +421,6 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                         // Подвижные детали: банты, фалды, подвески. Их качает
                         // ходьба — тем и отличается наряд от наклейки.
                         halfW: WormCosmetics.halfWidth(itemId, place.sub),
-                        swings: [...g.querySelectorAll('[data-swing]')].map(el => ({
-                            el, k: parseFloat(el.getAttribute('data-swing')) || 1,
-                            ang: 0, vel: 0, now: 0
-                        })),
                         shownX: null, shownSq: null
                     });
                     return;
@@ -400,6 +433,30 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                 // морду.
                 headBuilt.wear = headBuilt.wear || [];
                 const seat = place.seat || 'axis';
+
+                // ---------- ПАРНАЯ ЧЕРТА: КАЖДЫЙ КУСОК НА СВОЮ ----------
+                // Очки садились ОДНИМ узлом на оба глаза: середина между
+                // ними плюс общее сужение. Середина совпадала точно, а
+                // ширина — нет: глаза при повороте сужаются по-разному
+                // (ближний почти не сужается, дальний вдвое), и одна общая
+                // шкала не может сесть на оба. Замер: глаз 23.0, линза 8.4 —
+                // из-под дальней линзы выглядывала склера.
+                //
+                // Теперь куски с data-eye садятся каждый на СВОЙ глаз, а
+                // перемычка (data-span) растягивается между ними. Заодно это
+                // и есть способ сделать вещь на ОДИН глаз — повязку пирата.
+                if (seat === 'eyes' && /data-eye=/.test(art)) {
+                    host.appendChild(g);
+                    collectSwings(g, 'head');
+                    headBuilt.wear.push({
+                        node: g,
+                        eyePair: {
+                            left: headBuilt.eyes && headBuilt.eyes.left && headBuilt.eyes.left.group,
+                            right: headBuilt.eyes && headBuilt.eyes.right && headBuilt.eyes.right.group
+                        }
+                    });
+                    return;
+                }
 
                 // Рот и уши своей формулы не имеют: они СПИСЫВАЮТ transform у
                 // того узла, который уже едет правильно. У ушей таких узлов
@@ -428,6 +485,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                                                   transform: h.side < 0 ? 'scale(-1,1)' : '' });
                         node.appendChild(art);
                         art.removeAttribute('data-cosmetic');
+                        collectSwings(node, 'head');
                         const wrap = svgEl('g');
                         wrap.appendChild(node);
                         host.appendChild(wrap);
@@ -437,6 +495,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                 }
 
                 host.appendChild(g);
+                collectSwings(g, 'head');
                 headBuilt.wear.push({
                     node: g, fit: seat === 'eyes' ? 'face' : seat, x: place.x * hostR,
                     // Опоры для посадки на лице: где стоят глаза и какой у
@@ -472,7 +531,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     } : null;
 
     return {
-        wearOnBody,
+        wearOnBody, wearSwings,
         root,
         totalWithTail,
         tail: { ...tailBuilt, idx: tailIdx },

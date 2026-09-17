@@ -25,14 +25,62 @@ const WormCosmetics = {
     art(itemId, r, skin, fit, sub, ref) {
         const pattern = this.ITEMS[itemId];
         if (!pattern) return null;
-        // Витрина зовёт без fit и без части: там надо показать вещь целиком.
-        // У многочастной для этого есть `card` — одна картинка на карточку.
+        // ---------- ВИТРИНА ЗОВЁТ БЕЗ ЧАСТИ ----------
+        // В костюмерной и в лавке надо показать вещь ЦЕЛИКОМ. Отдельной
+        // картинки для карточки не заводим: она разойдётся с настоящей вещью
+        // на первой же правке. Вместо этого собираем те же половины и ставим
+        // их друг под другом, как они стоят на теле.
         if (!sub && pattern.parts) {
-            return pattern.card ? WormGarment.build(
-                Object.assign({}, pattern, pattern.card, { parts: null }),
-                fit || { rx: r, ry: r }, skin) : null;
+            const R = (fit && fit.rx) || r;
+            const order = ['upper', 'lower'].filter(k => pattern.parts[k]);
+            if (!order.length) return null;
+            return order.map(k => {
+                // Верх сидит на сегменте поменьше и выше — так же и на карточке.
+                const up = k === 'upper';
+                const half = WormGarment.build(pattern,
+                    { rx: R * (up ? 0.82 : 1), ry: R * (up ? 0.82 : 1) }, skin, k, R);
+                if (!half) return '';
+                return `<g transform="translate(0,${(up ? -R * 0.9 : R * 0.3).toFixed(1)})">${half}</g>`;
+            }).join('');
         }
         return WormGarment.build(pattern, fit || { rx: r, ry: r }, skin, sub, ref);
+    },
+
+    // ---------- ПОКАЗ НА КАРТОЧКЕ ----------
+    // В витрине нет ни тела, ни рендерера — значит нет и того, кто ставит
+    // куски по чертам: линзы садятся на глаза, серьга на ухо, сигара на рот
+    // уже НА ТЕЛЕ. Без них обе линзы ложатся в одну точку, а серьга
+    // оказывается в углу карточки.
+    //
+    // Отдельной картинки для витрины не заводим — она разойдётся с настоящей
+    // вещью на первой же правке. Вместо этого раскладываем ТЕ ЖЕ куски по
+    // умолчанию, по одной короткой записи на гнездо.
+    CARD: {
+        // Линзы разносим на глазную ширину, перемычку растягиваем между ними.
+        eyes(svg, r) {
+            const d = r * 0.52;
+            return svg.replace(/data-eye="left"/, `data-eye="left" transform="translate(${-d},0)"`)
+                      .replace(/data-eye="right"/, `data-eye="right" transform="translate(${d},0)"`)
+                      .replace(/data-span="1"/, `data-span="1" transform="scale(${d * 2},1)"`);
+        },
+        // Серьга нарисована в координатах уха — сдвигаем её в середину.
+        ears(svg, r) {
+            const F = WormSilhouette.face, k = r / 8;
+            return `<g transform="scale(${k.toFixed(3)}) translate(${-F.earJewelX},${(-F.earJewelY - 4).toFixed(1)})">${svg}</g>`;
+        },
+        // Сигара нарисована в координатах рта — туда же.
+        mouth(svg, r) {
+            const W = WormSilhouette.face.mouthHalf, k = r / (W * 0.95);
+            return `<g transform="scale(${k.toFixed(3)}) translate(${(-W * 1.45).toFixed(1)},0)">${svg}</g>`;
+        }
+    },
+
+    // Картинка для витрины: вещь целиком, без тела под ней.
+    cardArt(itemId, r, skin, slot) {
+        const svg = this.art(itemId, r, skin);
+        if (!svg) return null;
+        const lay = this.CARD[slot];
+        return lay ? lay(svg, r) : svg;
     },
 
     // Многочастная ли вещь и какие у неё части.
@@ -88,25 +136,40 @@ const WormCosmetics = {
         // Причина ровно одна: её размер задан ЧЕРТОЙ лица, а не долей
         // радиуса, и она едет вместе с этой чертой. Выкройка делает то же
         // самое для ткани.
+        // Очки. Каждая линза сидит на СВОЁМ глазу (data-eye), перемычка
+        // растягивается между ними (data-span). Одним узлом на оба глаза не
+        // выходит: при повороте они сужаются по-разному, и общая шкала
+        // делала дальнюю линзу у́же её глаза — из-под неё выглядывала склера.
+        //
+        // Рисуется в МЕСТНЫХ координатах глаза: начало — центр яблока,
+        // радиус яблока — g.eye.r. Ракурсное сужение уже в узле глаза, и
+        // линзе оно достаётся даром.
         'shades': {
             kind: 'rigid', halfW: 0.72,
             draw(g) {
-                const C = g.C;
-                const y = g.eye.y, eyeX = g.eye.x, eyeR = g.eye.r;
-                const w = eyeR * 2.1, h = eyeR * 1.7;
-                const lens = (cx) => `<rect x="${cx - w / 2}" y="${y - h / 2}" width="${w}" height="${h}"
-                          rx="${h * 0.42}" fill="${C.lens[500]}" stroke="${C.gold[500]}"
-                          stroke-width="${STROKE.structure}"/>
-                    <path d="M ${cx - w * 0.34} ${y + h * 0.18} L ${cx + w * 0.1} ${y - h * 0.26}"
-                          stroke="${C.gold[300]}" stroke-width="${STROKE.detail}" opacity="0.7" fill="none"/>`;
-                return `<path d="M ${-eyeX} ${y} L ${eyeX} ${y}" stroke="${C.gold[500]}"
-                          stroke-width="${eyeR * 0.24}" fill="none"/>
-                    ${lens(-eyeX)}
-                    ${lens(eyeX)}
-                    <path d="M ${-(eyeX + w / 2)} ${y} L ${-(eyeX + w / 2 + eyeR * 0.5)} ${y + eyeR * 0.2}"
-                          stroke="${C.gold[700]}" stroke-width="${eyeR * 0.22}" fill="none" stroke-linecap="round"/>
-                    <path d="M ${eyeX + w / 2} ${y} L ${eyeX + w / 2 + eyeR * 0.5} ${y + eyeR * 0.2}"
-                          stroke="${C.gold[700]}" stroke-width="${eyeR * 0.22}" fill="none" stroke-linecap="round"/>`;
+                const C = g.C, R = g.eye.r;
+                const w = R * 3.35, h = R * 2.7;
+                // dir: наружу от середины лица. Дужка уходит к уху.
+                const lens = (dir) => `<rect x="${(-w / 2).toFixed(2)}" y="${(-h / 2).toFixed(2)}"
+                          width="${w.toFixed(2)}" height="${h.toFixed(2)}"
+                          rx="${(h * 0.42).toFixed(2)}" fill="${C.lens[500]}"
+                          stroke="${C.gold[500]}" stroke-width="${STROKE.structure}"/>
+                    <path d="M ${(-w * 0.3).toFixed(2)} ${(h * 0.2).toFixed(2)}
+                             L ${(w * 0.12).toFixed(2)} ${(-h * 0.28).toFixed(2)}"
+                          stroke="${C.gold[300]}" stroke-width="${STROKE.detail}"
+                          opacity="0.7" fill="none"/>
+                    <path d="M ${(dir * w / 2).toFixed(2)} 0
+                             L ${(dir * (w / 2 + R * 0.62)).toFixed(2)} ${(R * 0.22).toFixed(2)}"
+                          stroke="${C.gold[700]}" stroke-width="${(R * 0.26).toFixed(2)}"
+                          fill="none" stroke-linecap="round"/>`;
+                // Перемычка: прямоугольник шириной РОВНО единица, центр в
+                // нуле. Растягивает его рендерер — ровно на расстояние между
+                // глазами, каким бы оно ни стало при повороте.
+                const br = R * 0.24;
+                return `<rect data-span="1" x="-0.5" y="${(-br / 2).toFixed(2)}"
+                          width="1" height="${br.toFixed(2)}" fill="${C.gold[500]}"/>
+                    <g data-eye="left">${lens(-1)}</g>
+                    <g data-eye="right">${lens(1)}</g>`;
             }
         },
 
@@ -248,7 +311,7 @@ const WormCosmetics = {
             parts: {
                 // Верх: плечи, воротник, начало манишки.
                 upper: {
-                    cover: [-0.80, 0.78], swing: 0,
+                    cover: [-0.80, 0.78], swing: 0, seam: 'bottom',
                     base: g => g.C.cloth[500],
                     faceHalf: 0.6,
                     face(g) {
@@ -269,7 +332,7 @@ const WormCosmetics = {
                 },
                 // Низ: продолжение манишки, пуговица, подол и фалды.
                 lower: {
-                    cover: [-0.92, 0.10], swing: 1,
+                    cover: [-0.92, 0.10], swing: 1, seam: 'top',
                     base: g => g.C.cloth[500],
                     faceHalf: 0.55,
                     face(g) {
@@ -308,29 +371,44 @@ const WormCosmetics = {
         // потому самый тщеславный: она ничего не значит и надета затем, чтобы
         // её увидели. Оба конца стоят на u = ±1, то есть РОВНО на краю тела:
         // лента через плечо тем и лента, что уходит за бока.
-        // Лента — не верхняя одежда, а украшение поверх: она занимает одну
-        // половину гнезда. Верхняя одежда (пиджаки, фраки, куртки) обязана
-        // занимать обе — иначе костюм снова разорвётся.
+        // ---------- ЛЕНТА ЧЕРЕЗ ТЕЛО ----------
+        // Занимает ОДНУ половину гнезда: она украшение поверх, а не верхняя
+        // одежда (той обе половины обязательны).
+        //
+        // ---------- КУДА ЕЁ МОЖНО ВЕСТИ ----------
+        // Край сегмента и край ТЕЛА — не одно и то же: там, где сегменты
+        // перекрываются, край сегмента проходит ВНУТРИ силуэта. Узкая
+        // яркая лента, упёршаяся в такой стык, обрывается чернильной линией
+        // посреди тела и читается порванным ремнём — ровно это и было, пока
+        // лента шла в верхний правый угол живота, к стыку с грудью.
+        //
+        // Двухчастной её делать не помогло: сегменты сдвинуты друг
+        // относительно друга, и две половины ложатся ДВУМЯ параллельными
+        // ремнями, а не одной лентой. Правильный ответ проще — вести ленту
+        // там, где края сегмента свободны: у живота это нижняя половина.
+        //
+        // Широкой вещи (фраку) это не мешает: её края у стыка прикрыты
+        // соседним сегментом того же тона, и глаз читает их как заход ткани
+        // за тело.
         'sash': {
-            kind: 'cloth', parts: { lower: {
-            cover: [-0.80, 0.80],
-            base: g => g.C.silk[500],
-            // Через плечо, а не поперёк пояса: правый конец высоко, левый
-            // низко. Уклон был в девять градусов и читался ремнём.
-            cut: g => [[-1, 0.58], [1, 0.02], [1, 0.28], [-1, 0.84]],
-            // Блик идёт вдоль самой ленты — это рисунок НА ткани.
-            paint: g => `<path d="${g.d([[-1, 0.58], [1, 0.02], [1, 0.10], [-1, 0.66]])}"
-                          fill="${g.C.silk[300]}" opacity="0.75"/>`,
-            // Медаль лежит на груди.
-            faceHalf: 0.5,
-            over(g) {
-                // Медаль была в полрадиуса части и вылезала за тело шаром.
-                const q = g.at(0.40, 0.30), r = Math.min(g.rx, g.ry) * 0.2;
-                return `<circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${r.toFixed(2)}"
-                          fill="${g.C.gold[500]}" stroke="${g.C.gold[700]}" stroke-width="${STROKE.detail}"/>
-                    <circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${(r * 0.46).toFixed(2)}"
-                          fill="${g.C.gold[300]}"/>`;
-            } } }
+            kind: 'cloth',
+            parts: { lower: {
+                cover: [-0.80, 0.80],
+                base: g => g.C.silk[500],
+                cut: g => [[-1, 0.74], [1, 0.30], [1, 0.56], [-1, 1]],
+                // Блик идёт вдоль самой ленты — это рисунок НА ткани.
+                paint: g => `<path d="${g.d([[-1, 0.74], [1, 0.30], [1, 0.38], [-1, 0.82]])}"
+                              fill="${g.C.silk[300]}" opacity="0.75"/>`,
+                // Медаль лежит на груди.
+                faceHalf: 0.5,
+                over(g) {
+                    const q = g.at(0.30, 0.58), r = Math.min(g.rx, g.ry) * 0.2;
+                    return `<circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${r.toFixed(2)}"
+                              fill="${g.C.gold[500]}" stroke="${g.C.gold[700]}" stroke-width="${STROKE.detail}"/>
+                        <circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${(r * 0.46).toFixed(2)}"
+                              fill="${g.C.gold[300]}"/>`;
+                }
+            } }
         },
 
         // ---------- ХВОСТ ----------
@@ -339,15 +417,28 @@ const WormCosmetics = {
         // Гетра кроится ВДОЛЬ хвоста (`along`): по толщине это было колечко
         // в палец шириной. Полосы идут ПОПЕРЁК него — то есть по постоянному
         // u, потому что у длинной части u бежит вдоль.
+        // Носок на кончике хвоста. Кроится ВДОЛЬ (`along`): по толщине это
+        // было колечко в палец шириной. У длинной части u бежит вдоль, и
+        // u = +1 — сторона основания (манжета), u = −1 — сам кончик (мысок).
+        //
+        // Цвет СВЕТЛЫЙ нарочно: кончик хвоста у червя тёмный, и тёмный носок
+        // на нём не читался вовсе — было видно только золотую полоску.
         'tail-sock': {
-            kind: 'cloth', along: true, cover: [-0.90, 0.90],
-            base: g => g.C.cloth[500],
+            kind: 'cloth', along: true, cover: [-0.92, 0.92],
+            base: g => g.C.linen[500],
             paint(g) {
-                const stripe = (u0, u1, c) => `<path d="${g.d([[u0, 0], [u1, 0], [u1, 1], [u0, 1]])}"
+                const C = g.C;
+                const band = (u0, u1, c) => `<path d="${g.d([[u0, 0], [u1, 0], [u1, 1], [u0, 1]])}"
                           fill="${c}"/>`;
-                return stripe(-0.18, 0.12, g.C.gold[500])
-                     + stripe(-0.98, -0.78, g.C.cloth[700])
-                     + stripe(0.78, 0.98, g.C.cloth[700]);
+                // ---------- ПОЛОСЫ НЕ ДОВОДЯТСЯ ДО u = ±1 ----------
+                // На краю станок ведёт кромку ДУГОЙ по контуру части, и
+                // полоса «от 0.8 до 1» захватывает весь конец выкройки
+                // серпом — носок выходил тёмным кольцом со светлой серединой.
+                // Полосы здесь внутренние, а светлое поле доходит до концов.
+                return band(0.58, 0.86, C.cloth[700])     // манжета
+                     + band(0.10, 0.30, C.silk[500])      // полоска
+                     + band(-0.26, -0.06, C.silk[500])    // вторая полоска
+                     + band(-0.86, -0.58, C.cloth[700]);  // мысок
             }
         },
 
@@ -356,21 +447,32 @@ const WormCosmetics = {
         'tail-bow': {
             kind: 'rigid', halfW: 1.7, swing: 1.3,
             draw(g) {
-                const C = g.C, w = g.rx * 1.7, h = g.ry * 1.15, up = -g.ry * 0.3;
+                const C = g.C;
+                // Гнездо переехало на КОНЧИК, и мерка там своя: бант, размер
+                // которого считался от основания хвоста, стал на кончике
+                // пятнышком. Плюс светлая петля — на тёмном кончике тёмный
+                // бант не читался вовсе.
+                const w = g.rx * 1.95, h = g.ry * 1.3, up = -g.ry * 0.3;
                 const loop = (dir) => `<path d="M 0 0 Q ${dir * w} ${-h} ${dir * w * 0.86} 0
                              Q ${dir * w} ${h} 0 0 Z"
                           fill="${C.silk[500]}" stroke="${g.ink}" stroke-width="${STROKE.structure}"/>`;
-                return `<g transform="translate(0,${up.toFixed(1)})">${loop(-1)}${loop(1)}
-                    <circle cx="0" cy="0" r="${Math.min(g.rx, g.ry) * 0.26}" fill="${C.silk[300]}"
-                            stroke="${g.ink}" stroke-width="${STROKE.detail}"/></g>`;
+                const shine = (dir) => `<path d="M ${dir * w * 0.2} ${-h * 0.12}
+                             Q ${dir * w * 0.66} ${-h * 0.5} ${dir * w * 0.72} ${-h * 0.1} Z"
+                          fill="${C.silk[300]}" opacity="0.85"/>`;
+                return `<g transform="translate(0,${up.toFixed(1)})">
+                    ${loop(-1)}${loop(1)}${shine(-1)}${shine(1)}
+                    <circle cx="0" cy="0" r="${(Math.min(g.rx, g.ry) * 0.34).toFixed(2)}"
+                            fill="${C.silk[300]}" stroke="${g.ink}" stroke-width="${STROKE.detail}"/></g>`;
             },
             hang(g) {
-                const C = g.C, w = g.rx * 1.7, h = g.ry * 1.15, up = -g.ry * 0.3;
+                const C = g.C, w = g.rx * 1.95, h = g.ry * 1.3, up = -g.ry * 0.3;
                 return `<g transform="translate(0,${up.toFixed(1)})">
-                    <path d="M ${-w * 0.24} ${h * 0.1} L ${-w * 0.44} ${h * 1.25}
-                             L ${-w * 0.05} ${h * 0.86} Z" fill="${C.silk[700]}"/>
-                    <path d="M ${w * 0.24} ${h * 0.1} L ${w * 0.44} ${h * 1.25}
-                             L ${w * 0.05} ${h * 0.86} Z" fill="${C.silk[700]}"/></g>`;
+                    <path d="M ${-w * 0.26} ${h * 0.1} L ${-w * 0.46} ${h * 1.2}
+                             L ${-w * 0.06} ${h * 0.84} Z" fill="${C.silk[700]}"
+                          stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>
+                    <path d="M ${w * 0.26} ${h * 0.1} L ${w * 0.46} ${h * 1.2}
+                             L ${w * 0.06} ${h * 0.84} Z" fill="${C.silk[700]}"
+                          stroke="${g.ink}" stroke-width="${STROKE.hairline}"/></g>`;
             }
         }
     }

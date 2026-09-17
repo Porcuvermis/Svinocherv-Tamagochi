@@ -90,7 +90,8 @@ const { viewport, prepare } = require('./harness');
       lensOffEye() {
         const g = this.q('[data-cosmetic="eyes"]');
         if (!g) return null;
-        const lens = [...g.querySelectorAll('rect')]
+        // Перемычка между линзами — тоже rect, но линзой не является.
+        const lens = [...g.querySelectorAll('rect:not([data-span])')]
           .map(r => r.getBoundingClientRect())
           .filter(r => r.width > 3 && r.height > 3)
           .sort((a, b) => a.x - b.x);

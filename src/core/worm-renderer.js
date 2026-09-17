@@ -1492,7 +1492,8 @@ const WormRenderer = {
                 // тело изгибалось, а пиджак и бант оставались приколоченными.
                 // Угол части берём из положения соседей — из тех же кругов,
                 // что и силуэт, так что расходиться нечему.
-                if (state.built.wearOnBody && state.built.wearOnBody.length) {
+                if ((state.built.wearOnBody && state.built.wearOnBody.length)
+                    || (state.built.wearSwings && state.built.wearSwings.length)) {
                     // ---------- ТЕЛО ПОВОРАЧИВАЕТСЯ, А НЕ КРУТИТСЯ ----------
                     // Первая версия поворачивала одежду по оси части — и это
                     // читалось как шарик, крутящийся под фраком. Для игрока
@@ -1556,35 +1557,53 @@ const WormRenderer = {
                         const half = w.faceNode ? w.faceHalf : w.halfW;
                         if (w.part !== 'tail' || w.faceNode) {
                             const p = WormSilhouette.wearBodyPlace(bodyK, half, !!w.faceNode);
-                            if (w.shownX !== p.x || w.shownSq !== p.squash) {
-                                w.shownX = p.x; w.shownSq = p.squash;
+                            const refNow = (w.faceNode && w.refIdx != null) ? hullCircles[w.refIdx] : null;
+                            const dxNow = refNow ? +(refNow.x - me.x).toFixed(2) : 0;
+                            if (w.shownX !== p.x || w.shownSq !== p.squash || w.shownDx !== dxNow) {
+                                w.shownX = p.x; w.shownSq = p.squash; w.shownDx = dxNow;
+                                // Половины одной вещи двигаются в ОДНИХ
+                                // единицах: иначе манишка сверху уезжает не
+                                // настолько, насколько снизу, и рвётся по шву.
+                                const unit = (w.faceNode && w.faceR) || me.r || 1;
+                                // Лицо половины выстраивается по оси ОПОРНОЙ
+                                // части вещи: сегменты не стоят на одной
+                                // вертикали, и манишка, отцентрованная по
+                                // каждому своему, шла по шву зигзагом.
+                                const ref = (w.faceNode && w.refIdx != null) ? hullCircles[w.refIdx] : null;
+                                const dx = ref ? (ref.x - me.x) : 0;
                                 setAttr(moved, 'transform',
-                                    `translate(${((w.faceNode ? 0 : w.baseX) + p.x * (me.r || 1)).toFixed(2)},0)`
+                                    `translate(${((w.faceNode ? dx : w.baseX) + p.x * unit).toFixed(2)},0)`
                                     + ` scale(${p.squash.toFixed(3)},1)`);
                             }
                         }
+                    });
+
+                    // ---------- ВИСЯЩЕЕ КАЧАЕТСЯ ВЕЗДЕ ОДИНАКОВО ----------
+                    // Список общий для тела и головы: качание собиралось
+                    // только у надетого на тело, и серьга в ухе не качалась
+                    // вовсе — у головы своя ветка монтажа.
+                    const sw = state.built.wearSwings || [];
+                    for (let k = 0; k < sw.length; k++) {
+                        const s2 = sw[k];
+                        // Пружина: тянет к цели, гасится, потому качается.
+                        // Чем дальше по подвеске, тем мягче — так цепочка из
+                        // нескольких звеньев изгибается, а не едет одним куском.
+                        const n = s2.order || 0;
+                        const stiff = 46 / (1 + n * 0.9), damp = 7.5 + n * 1.2;
+                        s2.vel = (s2.vel || 0) + ((target * s2.k - (s2.ang || 0)) * stiff
+                                                 - (s2.vel || 0) * damp) * dt;
+                        s2.ang = (s2.ang || 0) + s2.vel * dt;
                         // Куда повёрнут сам носитель: висящее обязано это
                         // вычесть, иначе оно висит «вниз по хвосту», а не вниз.
-                        const host = w.part === 'tail' ? (state.tailWearRot || 0) : 0;
-                        for (let k = 0; k < w.swings.length; k++) {
-                            const sw = w.swings[k];
-                            // Пружина: тянет к цели, гасится, потому качается.
-                            // Чем дальше по подвеске, тем мягче — так цепочка
-                            // из нескольких звеньев изгибается, а не едет одним
-                            // куском.
-                            const stiff = 46 / (1 + k * 0.9), damp = 7.5 + k * 1.2;
-                            sw.vel = (sw.vel || 0) + ((target * sw.k - (sw.ang || 0)) * stiff
-                                                     - (sw.vel || 0) * damp) * dt;
-                            sw.ang = (sw.ang || 0) + sw.vel * dt;
-                            // sw.ang — куда уехал свободный конец (плюс вправо),
-                            // а поворот носителя надо вычесть, чтобы висящее
-                            // держало свой угол по ЭКРАНУ.
-                            const want = -sw.ang - host;
-                            if (Math.abs(want - sw.now) < 0.2) continue;
-                            sw.now = want;
-                            setAttr(sw.el, 'transform', `rotate(${want.toFixed(1)})`);
-                        }
-                    });
+                        const host = s2.part === 'tail' ? (state.tailWearRot || 0) : 0;
+                        // s2.ang — куда уехал свободный конец (плюс вправо), а
+                        // поворот носителя вычитается, чтобы висящее держало
+                        // свой угол по ЭКРАНУ.
+                        const want = -s2.ang - host;
+                        if (Math.abs(want - s2.now) < 0.2) continue;
+                        s2.now = want;
+                        setAttr(s2.el, 'transform', `rotate(${want.toFixed(1)})`);
+                    }
                 }
 
                 // Единый силуэт, перетяжки, отражённый свет и тень на полу.

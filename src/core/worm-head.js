@@ -1528,6 +1528,31 @@ function applyHeadWear(headRef, yaw) {
         // уже пересчитаны на этот ракурс, и вещь просто повторяет их
         // transform. Вторая формула про то же самое разошлась бы с первой
         // на первой же правке (docs/traps.md, п. 103).
+        // ---------- ПАРНАЯ ЧЕРТА ----------
+        // Каждый кусок садится на свой глаз, перемычка растягивается между
+        // ними. Своих формул тут нет: берём то, что уже посчитано глазам.
+        if (w.eyePair) {
+            const at = (node) => {
+                const m = /translate\(([-0-9.]+)[ ,]([-0-9.]+)\)/.exec(
+                    (node && node.getAttribute('transform')) || '');
+                return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : null;
+            };
+            const l = at(w.eyePair.left), r = at(w.eyePair.right);
+            ['left', 'right'].forEach(side => {
+                const part = w.node.querySelector('[data-eye="' + side + '"]');
+                const host = w.eyePair[side];
+                if (!part || !host) return;
+                const t = host.getAttribute('transform') || '';
+                if (t !== part.__was) { part.__was = t; setAttr(part, 'transform', t); }
+            });
+            const span = w.node.querySelector('[data-span]');
+            if (span && l && r) {
+                const t = `translate(${((l.x + r.x) / 2).toFixed(2)},${((l.y + r.y) / 2).toFixed(2)})`
+                        + ` scale(${Math.abs(r.x - l.x).toFixed(2)},1)`;
+                if (t !== span.__was) { span.__was = t; setAttr(span, 'transform', t); }
+            }
+            continue;
+        }
         if (w.mirror) {
             const t = w.mirror.getAttribute('transform') || '';
             if (t !== w.mirrored) { w.mirrored = t; setAttr(w.node, 'transform', t); }
