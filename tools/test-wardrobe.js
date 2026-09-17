@@ -335,25 +335,38 @@ const { viewport, prepare } = require('./harness');
     const quiet = { alive: Tilt.info().live, x: Tilt.x() };
     const fire = (g) => window.dispatchEvent(Object.assign(new Event('deviceorientation'),
                                                            { gamma: g, beta: 0, alpha: 0 }));
-    const read = () => {
+    // ---------- МЕРИМ КОНЕЦ, А НЕ УГОЛ ----------
+    // Угол сам по себе не говорит НИЧЕГО про сторону: у svg ось Y вниз, и
+    // положительный поворот уводит висящий конец ВЛЕВО. Поэтому берём
+    // экранное место самого свободного конца — низ фигуры. Проверка на
+    // размах («лишь бы менялось») пропускала перевёрнутый знак, и наклон
+    // работал ровно наоборот.
+    const tipX = () => {
       const el = window.__wear.q('[data-cosmetic="body"] [data-swing]');
-      const m = el && /rotate\(([-0-9.]+)/.exec(el.getAttribute('transform') || '');
-      return m ? parseFloat(m[1]) : null;
+      if (!el) return null;
+      const bb = el.getBBox();
+      const svg = document.querySelector('#game-container svg');
+      const m = el.getScreenCTM(); if (!m) return null;
+      const pt = (x, y) => { const p = svg.createSVGPoint(); p.x = x; p.y = y; return p.matrixTransform(m); };
+      // Считаем сдвиг конца ОТНОСИТЕЛЬНО точки крепления: червь всё это время
+      // ходит по комнате, и экранный x сам по себе меряет его шаги, а не
+      // наклон (на этом уже обжигались — docs/traps.md, п. 103).
+      return pt(bb.x + bb.width / 2, bb.y + bb.height).x - pt(0, 0).x;
     };
-    // Единицу датчика игра определяет по данным, а не по вере: сперва даём
-    // ей увидеть размах, и только потом меряем.
-    fire(-30);
-    for (let i = 0; i < 150; i++) { Tilt.x(); await new Promise(r => requestAnimationFrame(r)); }
-    const left = read();
-    fire(30);
-    for (let i = 0; i < 150; i++) { Tilt.x(); await new Promise(r => requestAnimationFrame(r)); }
-    const right = read();
-    return { quiet, info: Tilt.info(), left, right };
+    const settle = async () => {
+      for (let i = 0; i < 170; i++) { Tilt.x(); await new Promise(r => requestAnimationFrame(r)); }
+    };
+    // Единицу датчика игра определяет по данным: сперва даём увидеть размах.
+    fire(-30); await settle();
+    const left = tipX();
+    fire(30); await settle();
+    const right = tipX();
+    return { quiet, info: Tilt.info(), left: left && +left.toFixed(1), right: right && +right.toFixed(1) };
   });
   check(tilt.quiet.alive === false && tilt.quiet.x === 0,
     'без датчика наклон равен нулю и ничего не ломает');
-  check(tilt.left != null && tilt.right != null && tilt.right - tilt.left > 12,
-    `наклон телефона отводит фалды в разные стороны: ${tilt.left}° → ${tilt.right}°`);
+  check(tilt.left != null && tilt.right != null && tilt.right - tilt.left > 6,
+    `завал телефона ВПРАВО уводит свободный конец ВПРАВО: ${tilt.left} → ${tilt.right} по экрану`);
 
   // ---------- СНИМКИ ----------
   for (const [name, set] of [

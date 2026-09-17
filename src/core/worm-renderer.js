@@ -6706,6 +6706,15 @@ const WormRenderer = {
                     const dt = Math.max(0.001, Math.min(0.05, geomDtSec || 0.016));
                     const vx = state.wearPrevX == null ? 0 : (state.wormX - state.wearPrevX) / dt;
                     state.wearPrevX = state.wormX;
+                    // ---------- ЗНАК СЧИТАЕТСЯ В ОДНОМ МЕСТЕ ----------
+                    // Угол здесь — это «куда уехал СВОБОДНЫЙ КОНЕЦ»: плюс —
+                    // вправо по экрану. В этих понятиях оба источника
+                    // очевидны и не путаются:
+                    //   • завалили телефон вправо — тяжесть тянет вправо, плюс;
+                    //   • пошли вправо — ткань ОТСТАЁТ и уходит влево, минус.
+                    // В сам rotate() это уезжает со знаком минус, потому что у
+                    // svg ось Y вниз и положительный поворот уводит висящий
+                    // конец ВЛЕВО (docs/traps.md, п. 116).
                     const tiltDeg = (typeof Tilt !== 'undefined' && Tilt.x) ? Tilt.x() * 16 : 0;
                     const target = Math.max(-24, Math.min(24, -vx * 0.035)) + tiltDeg;
 
@@ -6737,7 +6746,10 @@ const WormRenderer = {
                             sw.vel = (sw.vel || 0) + ((target * sw.k - (sw.ang || 0)) * stiff
                                                      - (sw.vel || 0) * damp) * dt;
                             sw.ang = (sw.ang || 0) + sw.vel * dt;
-                            const want = sw.ang - host;
+                            // sw.ang — куда уехал свободный конец (плюс вправо),
+                            // а поворот носителя надо вычесть, чтобы висящее
+                            // держало свой угол по ЭКРАНУ.
+                            const want = -sw.ang - host;
                             if (Math.abs(want - sw.now) < 0.2) continue;
                             sw.now = want;
                             setAttr(sw.el, 'transform', `rotate(${want.toFixed(1)})`);
