@@ -188,7 +188,13 @@ const { viewport, prepare } = require('./harness');
         const bb = shape.getBBox(), N = 24;
         let inside = 0, covered = 0;
         const pt = svg.createSVGPoint();
-        const cloth = [...g.querySelectorAll('path,rect,circle,ellipse,polygon')];
+        // ---------- МЕРЯЕТСЯ ОБШИВКА, А НЕ ПОДОЛ ----------
+        // Правило про живот — про то, чтобы ткань не ЗАТЯГИВАЛА его. Подол,
+        // свисающий ниже тела, — законная часть вещи (на то он и подол), и
+        // считать его «затянутым животом» неправильно: так проверка требовала
+        // бы отказаться от фалд у фрака.
+        const cloth = [...g.querySelectorAll('path,rect,circle,ellipse,polygon')]
+          .filter(el => !el.closest('[data-swing]'));
         for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
           pt.x = bb.x + bb.width * i / N; pt.y = bb.y + bb.height * j / N;
           if (!shape.isPointInFill(pt)) continue;
@@ -399,8 +405,14 @@ const { viewport, prepare } = require('./harness');
           turn[k].min = Math.min(turn[k].min, turn[k].acc);
           turn[k].max = Math.max(turn[k].max, turn[k].acc);
         }
-        // Сужение при повороте тела — своим transform, не экранным.
-        const sm = /scale\(([-0-9.]+)/.exec(g.getAttribute('transform') || '');
+        // ---------- СУЖАЕТСЯ ЛИЦО, А НЕ ВСЯ ВЕЩЬ ----------
+        // Мерить надо узел [data-face] — то, что нарисовано на груди.
+        // Обшивка при развороте НЕ сужается нарочно: она обнимает часть
+        // кругом и обязана доставать до обоих краёв силуэта. Пока проверка
+        // смотрела на всю вещь, она требовала ровно того дефекта, из-за
+        // которого одежда скукоживалась к центру.
+        const fg = g.querySelector('[data-face]') || g;
+        const sm = /scale\(([-0-9.]+)/.exec(fg.getAttribute('transform') || '');
         const sx = sm ? parseFloat(sm[1]) : 1;
         squash[k] = squash[k] || { min: sx, max: sx };
         squash[k].min = Math.min(squash[k].min, sx); squash[k].max = Math.max(squash[k].max, sx);

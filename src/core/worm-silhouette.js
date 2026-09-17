@@ -301,10 +301,24 @@ const WORM_WEAR_BODY_SQUASH_MIN = 0.62;
 // ехать по глазам целиком.
 const WORM_WEAR_BODY_SLIDE = 0.18;
 
-function wormWearBodyPlace(k, halfW) {
+// ---------- ЛИЦО ПОВОРАЧИВАЕТСЯ СИЛЬНЕЕ, ЧЕМ ВЕЩЬ ЦЕЛИКОМ ----------
+// Пока ракурс двигал ВСЮ вещь, сужать её сильно было нельзя: она отрывалась
+// от краёв тела и читалась скукоженной. Отсюда мягкие 0.62 и почти
+// незаметный сдвиг.
+//
+// Теперь сужается только лицевая сторона — то, что нарисовано на груди, — а
+// обшивка продолжает обнимать часть. Лицо можно и нужно уводить честно: оно
+// и правда уезжает на дальний бок и почти пропадает. Ровно так же ведут себя
+// очки на повёрнутом лице, и по ним видно, что это работает.
+const WORM_WEAR_FACE_SQUASH_MIN = 0.3;
+const WORM_WEAR_FACE_SLIDE = 0.52;
+
+function wormWearBodyPlace(k, halfW, isFace) {
     const psi = Math.max(-1, Math.min(1, k || 0)) * Math.PI / 2;
-    const squash = 1 - (1 - WORM_WEAR_BODY_SQUASH_MIN) * Math.abs(Math.sin(psi));
-    const raw = Math.sin(psi) * WORM_WEAR_BODY_SLIDE;
+    const squashMin = isFace ? WORM_WEAR_FACE_SQUASH_MIN : WORM_WEAR_BODY_SQUASH_MIN;
+    const slide = isFace ? WORM_WEAR_FACE_SLIDE : WORM_WEAR_BODY_SLIDE;
+    const squash = 1 - (1 - squashMin) * Math.abs(Math.sin(psi));
+    const raw = Math.sin(psi) * slide;
     // И даже намёк не должен выехать за край части.
     const room = Math.max(0, 1 - (halfW || 0) * squash);
     return { x: (raw < 0 ? -1 : 1) * Math.min(Math.abs(raw), room), squash };

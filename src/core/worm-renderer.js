@@ -1545,12 +1545,21 @@ const WormRenderer = {
                         }
                         // Хвост живёт в своей группе изгиба — она его и
                         // поворачивает; тело поворота не имеет вовсе.
-                        if (w.part !== 'tail') {
-                            const p = WormSilhouette.wearBodyPlace(bodyK, w.halfW);
+                        // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------
+                        // У ткани есть узел [data-face] — то, что нарисовано
+                        // на груди. Сужается и съезжает он, а обшивка стоит:
+                        // она обнимает часть кругом и достаёт до обоих краёв
+                        // силуэта при любом ракурсе. Пока сужалась вся вещь,
+                        // она скукоживалась к центру и по бокам вылезала
+                        // голая кожа — «повернулся» это не читалось.
+                        const moved = w.faceNode || w.node;
+                        const half = w.faceNode ? w.faceHalf : w.halfW;
+                        if (w.part !== 'tail' || w.faceNode) {
+                            const p = WormSilhouette.wearBodyPlace(bodyK, half, !!w.faceNode);
                             if (w.shownX !== p.x || w.shownSq !== p.squash) {
                                 w.shownX = p.x; w.shownSq = p.squash;
-                                setAttr(w.node, 'transform',
-                                    `translate(${(w.baseX + p.x * (me.r || 1)).toFixed(2)},0)`
+                                setAttr(moved, 'transform',
+                                    `translate(${((w.faceNode ? 0 : w.baseX) + p.x * (me.r || 1)).toFixed(2)},0)`
                                     + ` scale(${p.squash.toFixed(3)},1)`);
                             }
                         }

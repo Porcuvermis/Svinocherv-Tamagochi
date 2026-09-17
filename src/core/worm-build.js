@@ -349,6 +349,20 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                     node: g, hostNode, mirror, mirrored: null, part: place.part,
                     idx: place.part === "tail" ? tailIdx : (seg ? seg.idx : null),
                     baseX: place.x * hostR,
+                    // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------
+                    // У ткани обшивка обнимает часть кругом и при любом
+                    // ракурсе достаёт до обоих краёв силуэта. Сужается и
+                    // съезжает только лицевая сторона — узел [data-face].
+                    // Пока сужалась вся вещь, она на развороте скукоживалась
+                    // к центру, и по бокам вылезала голая кожа.
+                    //
+                    // У твёрдых вещей (очки, цилиндр, бант) лица нет: они не
+                    // обшивка, и ракурс двигает их целиком, как раньше.
+                    faceNode: g.querySelector('[data-face]'),
+                    faceHalf: (() => {
+                        const f = g.querySelector('[data-face]');
+                        return f ? (parseFloat(f.getAttribute('data-face')) || 0.62) : 0;
+                    })(),
                     // Подвижные детали: банты, фалды, подвески. Их качает
                     // ходьба — тем и отличается наряд от наклейки.
                     halfW: WormCosmetics.halfWidth(itemId),
