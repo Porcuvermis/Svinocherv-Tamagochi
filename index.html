@@ -193,19 +193,19 @@
          инлайн-стилей выше, ничего не требует и держится до window.load, то
          есть до момента, когда все эти файлы УЖЕ применены. Несобранного
          интерфейса игрок не увидит — он увидит черноту. -->
-    <link rel="stylesheet" href="style.css?v=15" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="style.css?v=__BUILD__" media="print" onload="this.media='all'">
     <!-- Общее окно мини-игры (рамка, шапка, вопрос при выходе). Строго ДО
          стилей самих мини-игр: они настраивают его переменными. -->
-    <link rel="stylesheet" href="src/core/minigame-window.css?v=2" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/core/sins-menu.css?v=1">
-    <link rel="stylesheet" href="src/minigames/greed/greed.css?v=10" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=29" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=6" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=7" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=3" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=9" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=9" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="src/minigames/envy/envy.css?v=1" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/core/minigame-window.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/core/sins-menu.css?v=__BUILD__">
+    <link rel="stylesheet" href="src/minigames/greed/greed.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/wrath/wrath.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/sloth/sloth.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/lust/lust.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/gluttony/gluttony.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/pride/pride.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="src/minigames/envy/envy.css?v=__BUILD__" media="print" onload="this.media='all'">
 </head>
 <body>
 
@@ -921,96 +921,114 @@
 
 <!-- Логика экрана загрузки. Стили и класс пелены — инлайном в <head>,
      здесь только «когда открывать и чего ждать». -->
-<script src="src/core/boot-screen.js?v=1"></script>
+<script src="src/core/boot-screen.js?v=__BUILD__"></script>
 
-<script src="boot.js?v=1"></script>
+<script src="boot.js?v=__BUILD__"></script>
 
 <!-- Ядро. Порядок важен: конфиг → время → состояние → переходник к серверу,
      и только потом main.js и мини-игры, которые всем этим пользуются. -->
-<script src="src/core/stage.js?v=2"></script>
-<script src="src/config/economy.js?v=18"></script>
+<script src="src/core/stage.js?v=__BUILD__"></script>
+<script src="src/config/economy.js?v=__BUILD__"></script>
 <!-- Каталог снаряжения гнева: данные, без логики. После economy.js —
      числа боя лежат там, предметы здесь. -->
-<script src="src/config/wrath-gear.js?v=5"></script>
-<script src="src/config/pride-wardrobe.js?v=3"></script>
+<script src="src/config/wrath-gear.js?v=__BUILD__"></script>
+<script src="src/config/pride-wardrobe.js?v=__BUILD__"></script>
 <!-- Каталог кухни: ингредиенты, жидкости, таблица качества блюда. Тоже
      данные без логики, и тоже нужен состоянию (стартовая кладовая), поэтому
      подключается до state.js. -->
-<script src="src/config/kitchen.js?v=1"></script>
-<script src="src/config/garden.js?v=1"></script>
-<script src="src/core/events.js?v=1"></script>
-<script src="src/core/time.js?v=1"></script>
-<script src="src/core/state.js?v=8"></script>
-<script src="src/core/backend.js?v=18"></script>
+<script src="src/config/kitchen.js?v=__BUILD__"></script>
+<script src="src/config/garden.js?v=__BUILD__"></script>
+<script src="src/core/events.js?v=__BUILD__"></script>
+<script src="src/core/time.js?v=__BUILD__"></script>
+<script src="src/core/state.js?v=__BUILD__"></script>
+<script src="src/core/backend.js?v=__BUILD__"></script>
 
-<script src="src/core/palette.js?v=6"></script>
+<script src="src/core/palette.js?v=__BUILD__"></script>
 <!-- Отдача в палец: один слой на всю игру. До мини-игр — они зовут её из
      обработчиков ввода. -->
-<script src="src/core/tilt.js?v=2"></script>
-<script src="src/core/haptics.js?v=1"></script>
+<script src="src/core/tilt.js?v=__BUILD__"></script>
+<script src="src/core/haptics.js?v=__BUILD__"></script>
 <!-- Перевод координат экран ↔ svg. До мини-игр: ими пользуются все, кто
      ловит палец на сцене. -->
-<script src="src/core/svg-space.js?v=1"></script>
+<script src="src/core/svg-space.js?v=__BUILD__"></script>
 <!-- Мост в Telegram: развернуть окно, запретить свайп-закрытие (иначе
      вертикальные жесты игры сворачивают мини-приложение), покрасить рамку.
      После stage.js — пересчитывает холст, когда Telegram отдаст высоту. -->
-<script src="src/core/telegram.js?v=2"></script>
+<script src="src/core/telegram.js?v=__BUILD__"></script>
 <!-- Локации: таблица комнат. Строго после палитры — берёт цвета оттуда
      прямо при разборе файла. -->
-<script src="src/core/rooms.js?v=1"></script>
-<script src="src/core/token-art.js?v=1"></script>
+<script src="src/core/rooms.js?v=__BUILD__"></script>
+<script src="src/core/token-art.js?v=__BUILD__"></script>
 <!-- Прилёт и улёт в кошельке: цифра вылетает из счётчика валюты при
      начислении и трате. После token-art.js — значок жетона рисует он.
      Подписывается на шину сразу при загрузке. -->
-<script src="src/core/wallet-fx.js?v=1"></script>
-<script src="src/core/loot-art.js?v=1"></script>
-<script src="src/core/worm-model.js?v=9"></script>
-<script src="src/core/worm-silhouette.js?v=15"></script>
-<script src="src/core/worm-marks.js?v=28"></script>
-<script src="src/core/worm-garment.js?v=4"></script>
-<script src="src/core/worm-cosmetics.js?v=23"></script>
-<script src="src/core/worm-condition.js?v=1"></script>
-<script src="src/core/worm-renderer.js?v=66"></script>
-<script src="src/core/worm.js?v=11"></script>
-<script src="src/core/debug.js?v=10"></script>
-<script src="src/core/sins-menu.js?v=2"></script>
-<script src="main.js?v=16"></script>
+<script src="src/core/wallet-fx.js?v=__BUILD__"></script>
+<script src="src/core/loot-art.js?v=__BUILD__"></script>
+<!-- ---------- ?v=__BUILD__ : ЗДЕСЬ НЕЧЕГО ПОДНИМАТЬ ----------
+     Версии ассетов стояли числами и правились руками — восемьдесят штук.
+     Смысла в этом не было никогда: при деплое ВСЕ ?v=... всё равно
+     переписываются одной меткой сборки (.github/workflows/deploy-pages.yml),
+     а в прогонах браузер каждый раз новый и кеша у него нет. Зато забыть
+     поднять номер было легко, и на айфон уезжал вчерашний код.
+     Теперь поднимать нечего: метка одна и подставляется на деплое. Если в
+     обычном браузере всё-таки застрял старый файл — открыть с ?sw=off.
+     ---------------------------------------------------------------- -->
+<script src="src/core/worm-model.js?v=__BUILD__"></script>
+<script src="src/core/worm-silhouette.js?v=__BUILD__"></script>
+<script src="src/core/worm-marks.js?v=__BUILD__"></script>
+<script src="src/core/worm-garment.js?v=__BUILD__"></script>
+<script src="src/core/worm-cosmetics.js?v=__BUILD__"></script>
+<script src="src/core/worm-condition.js?v=__BUILD__"></script>
+<!-- Стопка рендерера: порядок = порядок зависимости, карта в worm-basis.js -->
+<script src="src/core/worm-basis.js?v=__BUILD__"></script>
+<script src="src/core/worm-room.js?v=__BUILD__"></script>
+<script src="src/core/worm-paint.js?v=__BUILD__"></script>
+<script src="src/core/worm-anatomy.js?v=__BUILD__"></script>
+<script src="src/core/worm-head.js?v=__BUILD__"></script>
+<script src="src/core/worm-marks-art.js?v=__BUILD__"></script>
+<script src="src/core/worm-hull.js?v=__BUILD__"></script>
+<script src="src/core/worm-build.js?v=__BUILD__"></script>
+<script src="src/core/worm-renderer.js?v=__BUILD__"></script>
+<script src="src/core/worm.js?v=__BUILD__"></script>
+<script src="src/core/debug.js?v=__BUILD__"></script>
+<script src="src/core/sins-menu.js?v=__BUILD__"></script>
+<script src="main.js?v=__BUILD__"></script>
 <!-- Сборка общего окна мини-игры. До любой мини-игры: они надевают его на
      себя в своём init(). -->
-<script src="src/core/minigame-window.js?v=3"></script>
+<script src="src/core/minigame-window.js?v=__BUILD__"></script>
 <!-- Один движок струи на все наливы: кастрюля и кормёжка на кухне, лейка в
      саду. До мини-игр — они заводят свои пулы шариков в init(). -->
-<script src="src/core/liquid-stream.js?v=1"></script>
-<script src="src/minigames/greed/greed.js?v=9"></script>
+<script src="src/core/liquid-stream.js?v=__BUILD__"></script>
+<script src="src/minigames/greed/greed.js?v=__BUILD__"></script>
 <!-- Гнев: боец и экраны греха. Порядок важен — wrath.js в init() зовёт
      лобби и бой, а они считают характеристики бойцом. -->
-<script src="src/minigames/wrath/wrath-fighter.js?v=10"></script>
-<script src="src/minigames/wrath/wrath-backdrop.js?v=1"></script>
-<script src="src/minigames/wrath/wrath-shop.js?v=7"></script>
-<script src="src/minigames/wrath/wrath-boost.js?v=6"></script>
-<script src="src/minigames/wrath/wrath-rogue.js?v=14"></script>
-<script src="src/minigames/wrath/wrath-lobby.js?v=16"></script>
-<script src="src/minigames/wrath/wrath-duel.js?v=11"></script>
-<script src="src/minigames/wrath/wrath.js?v=13"></script>
-<script src="src/minigames/sloth/plant-model.js?v=2"></script>
-<script src="src/minigames/sloth/garden-art.js?v=2"></script>
-<script src="src/minigames/sloth/garden-debug.js?v=1"></script>
-<script src="src/minigames/sloth/sloth.js?v=8"></script>
+<script src="src/minigames/wrath/wrath-fighter.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-backdrop.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-shop.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-boost.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-rogue.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-lobby.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-duel.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/plant-model.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/garden-art.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/garden-debug.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/sloth.js?v=__BUILD__"></script>
 <!-- Запечённая графика ванной: сгенерирована из 3д-моделей
      (tools/bake-3d.js), в рантайме это обычный SVG. -->
-<script src="src/minigames/lust/bath-baked.js?v=17"></script>
-<script src="src/minigames/lust/lust-shot.js?v=1"></script>
-<script src="src/minigames/lust/bath-art.js?v=16"></script>
-<script src="src/minigames/lust/lust.js?v=15"></script>
+<script src="src/minigames/lust/bath-baked.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-shot.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-art.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust.js?v=__BUILD__"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->
-<script src="src/minigames/gluttony/kitchen-objects.js?v=1"></script>
-<script src="src/minigames/gluttony/kitchen-art.js?v=9"></script>
-<script src="src/minigames/gluttony/kitchen-debug.js?v=2"></script>
-<script src="src/minigames/gluttony/gluttony.js?v=11"></script>
-<script src="src/minigames/pride/pride-art.js?v=3"></script>
-<script src="src/minigames/pride/pride-debug.js?v=1"></script>
-<script src="src/minigames/pride/pride.js?v=9"></script>
+<script src="src/minigames/gluttony/kitchen-objects.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/kitchen-art.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/kitchen-debug.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/gluttony.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-art.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-debug.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride.js?v=__BUILD__"></script>
 <!-- three.js ЗДЕСЬ НЕ ПОДКЛЮЧЁН, и это осознанно.
      Библиотека нужна ровно одной мини-игре из семи (зависть), а весит
      145 КБ gzip — 22% всей загрузки. Подключённая обычным <script>, она
@@ -1023,10 +1041,10 @@
      её ронять. Кеш у vendor/ свой и переживает деплои (sw.js). -->
 <!-- Пул образов и упаковка полотна — до самой мини-игры: она берёт оттуда
      текстуры наклеек и раскладку при первом открытии. -->
-<script src="src/minigames/envy/envy-art.js?v=1"></script>
-<script src="src/minigames/envy/envy-images.js?v=1"></script>
-<script src="src/minigames/envy/envy-packing.js?v=1"></script>
-<script src="src/minigames/envy/envy.js?v=2"></script>
+<script src="src/minigames/envy/envy-art.js?v=__BUILD__"></script>
+<script src="src/minigames/envy/envy-images.js?v=__BUILD__"></script>
+<script src="src/minigames/envy/envy-packing.js?v=__BUILD__"></script>
+<script src="src/minigames/envy/envy.js?v=__BUILD__"></script>
 
 </body>
 </html>
