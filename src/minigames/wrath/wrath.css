@@ -258,7 +258,9 @@
 
 /* Обводка красится ПОД заливкой: растущая белая обводка изображает свет,
    выходящий за края шрама, и не должна съедать сам шрам. */
-.worm-mark-scar path { paint-order: stroke; }
+/* Свет набирают ВСЕ виды отметин, а не только порез: у ожога фигура path,
+   у шва — line, у жилки пореза — polyline. */
+.worm-mark path, .worm-mark line, .worm-mark polyline { paint-order: stroke; }
 
 /* Набор света живёт НЕ ЗДЕСЬ. Он анимируется по каждому шраму краской, из
    js (WrathLobby.chargeScars): заливка от собственного цвета шрама к белому
@@ -282,8 +284,9 @@
    Здесь, на пике, заливка уже добита до белого классом: шрам к этому моменту
    и так выжжен яркостью, а ровный белый убирает остатки оттенка, чтобы
    вспышка была одного цвета с искрами. */
-.wrath-lobby-box.cleansed .worm-mark-scar path { fill: #fff; }
-.wrath-lobby-box.cleansed .worm-mark-scar polyline { stroke: #fff; opacity: 1; }
+.wrath-lobby-box.cleansed .worm-mark path { fill: #fff; }
+.wrath-lobby-box.cleansed .worm-mark polyline,
+.wrath-lobby-box.cleansed .worm-mark line { stroke: #fff; opacity: 1; }
 
 /* Гаснут ПРОЗРАЧНОСТЬЮ, а не фильтром — по той же причине: прозрачность
    рисуется везде, фильтр на внутренней группе svg — нет. */
@@ -319,7 +322,9 @@
     100% { filter: none; }
 }
 
-.wrath-lobby-box.refused .worm-mark-scar path { fill: #ff5a46; }
+.wrath-lobby-box.refused .worm-mark path { fill: #ff5a46; }
+.wrath-lobby-box.refused .worm-mark line,
+.wrath-lobby-box.refused .worm-mark polyline { stroke: #ff5a46; }
 
 @media (prefers-reduced-motion: reduce) {
     .wrath-lobby-box.cleansed .worm-scar-layer,

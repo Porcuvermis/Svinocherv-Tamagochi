@@ -594,7 +594,10 @@ const WrathLobby = {
     chargeScars() {
         this.stopCharge();
         if (!this.wormStage || typeof Element === 'undefined') return;
-        const nodes = this.wormStage.querySelectorAll('.worm-mark-scar path');
+        // Не '.worm-mark-scar path': видов отметин три, и у двух из них фигура
+        // не path (клякса ожога — path, стежки шва — line, жилка пореза —
+        // polyline). Берём всё крашеное внутри любой отметины.
+        const nodes = this.wormStage.querySelectorAll('.worm-mark path, .worm-mark polyline, .worm-mark line');
         if (!nodes.length || !nodes[0].animate) return;
 
         this.chargeAnims = [];
@@ -651,7 +654,7 @@ const WrathLobby = {
     // поворотами и масштабом сцены.
     scarPoints() {
         if (!this.wormStage) return [];
-        const nodes = this.wormStage.querySelectorAll('.worm-mark-scar');
+        const nodes = this.wormStage.querySelectorAll('.worm-mark');
         const out = [];
         Array.prototype.forEach.call(nodes, el => {
             const r = el.getBoundingClientRect();

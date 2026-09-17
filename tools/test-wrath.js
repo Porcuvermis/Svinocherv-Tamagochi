@@ -1335,7 +1335,7 @@ const { viewport, prepare } = require('./harness');
     //
     // ДВЕ полных пятнашки плюс остаток: обмен обязан забрать обе за одно
     // удержание, а не по одной, и оставить остаток на теле.
-    for (let i = 0; i < rule.scars * 2 + 5; i++) Backend.grantMark('scar');
+    for (let i = 0; i < rule.scars * 2 + 5; i++) Backend.grantMark();
     GameState.data.currencies.wrath_token = 0;
     GameState.data.currencies.wrath_shard = 0;
     GameState.save();
@@ -1495,7 +1495,7 @@ const { viewport, prepare } = require('./harness');
     GameState.data.scars = [];
     // Забиваем ОДНУ зону, а потом просим шрам именно в неё.
     let filled = 0;
-    while (Backend.grantMark('scar', 'head') && filled < 200) filled++;
+    while (Backend.grantMark(null, 'head') && filled < 200) filled++;
     const headOnly = GameState.data.scars.every(m => m.zone === 'head');
 
     GameState.data.scars = [];
@@ -1504,7 +1504,7 @@ const { viewport, prepare } = require('./harness');
     // подряд заходит ещё десяток шрамов (замерено: 64 против 81). Насыщение
     // — это когда подряд не заходит ничто.
     let miss = 0;
-    while (miss < 25) { if (Backend.grantMark('scar')) miss = 0; else miss++; }
+    while (miss < 25) { if (Backend.grantMark()) miss = 0; else miss++; }
     const zones = {};
     GameState.data.scars.forEach(m => { zones[m.zone] = (zones[m.zone] || 0) + 1; });
     return {
@@ -1517,7 +1517,7 @@ const { viewport, prepare } = require('./harness');
       // прогон обязан мерить именно так, а не требовать железного нуля.
       stillFits: (() => {
         let got = 0;
-        for (let i = 0; i < 40; i++) if (Backend.grantMark('scar')) got++;
+        for (let i = 0; i < 40; i++) if (Backend.grantMark()) got++;
         return got;
       })(),
       // Для сравнения: на ПУСТОМ теле те же сорок попыток заходят все.
@@ -1527,7 +1527,7 @@ const { viewport, prepare } = require('./harness');
       fitsOnEmpty: (() => {
         GameState.data.scars = [];
         let got = 0;
-        for (let i = 0; i < 40; i++) if (Backend.grantMark('scar')) got++;
+        for (let i = 0; i < 40; i++) if (Backend.grantMark()) got++;
         return got;
       })()
     };

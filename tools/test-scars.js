@@ -154,7 +154,7 @@ const { viewport, prepare } = require('./harness');
   const fill = () => page.evaluate(() => {
     GameState.data.scars = [];
     let miss = 0;
-    while (miss < 20) { if (Backend.grantMark('scar')) miss = 0; else miss++; }
+    while (miss < 20) { if (Backend.grantMark()) miss = 0; else miss++; }
     if (typeof refreshWormMarks === 'function') refreshWormMarks();
     return GameState.data.scars.length;
   });
@@ -185,6 +185,36 @@ const { viewport, prepare } = require('./harness');
   check(sumOut === 0, `ни один шрам не вылез за силуэт: ${sumOut} за ${samples} замеров (худший перелёт ${worstOut}px) ${JSON.stringify(outWhere)} ${JSON.stringify(outYaw)}`);
   check(sumClash === 0, `ни одна пара не налезла друг на друга: ${sumClash} ${JSON.stringify(outWhere)}`);
   check(sumStack === 0, `ни один шрам не лёг на другой в одну точку: ${sumStack}`);
+
+  // ---------- ЧТО В ДАННЫХ, ТО И НА ТЕЛЕ ----------
+  // Потолок «зона показывает последние восемь» делал так, что новый шрам
+  // ВЫТАЛКИВАЛ с экрана старый: ставишь один — другой на глазах пропадает.
+  // Двух разных правд об одном теле быть не должно.
+  console.log('\n--- что в данных, то и на теле ---');
+  const mounted = await page.evaluate(() => {
+    const kinds = {}, shown = {};
+    GameState.data.scars.forEach(m => { kinds[m.kind] = (kinds[m.kind] || 0) + 1; });
+    document.querySelectorAll('.worm-scar-layer g.worm-mark').forEach(n => {
+      const k = (n.getAttribute('class').match(/worm-mark-(\w+)/) || [])[1];
+      shown[k] = (shown[k] || 0) + 1;
+    });
+    // Чем нарисован каждый вид: у фигур должны быть РАЗНЫЕ силуэты, иначе
+    // «три вида» это три названия одного и того же.
+    const shapes = {};
+    document.querySelectorAll('.worm-scar-layer g.worm-mark').forEach(n => {
+      const k = (n.getAttribute('class').match(/worm-mark-(\w+)/) || [])[1];
+      if (shapes[k]) return;
+      shapes[k] = [...n.children].map(c => c.tagName).join('+');
+    });
+    return { saved: GameState.data.scars.length, kinds, shown, shapes };
+  });
+  const shownTotal = Object.keys(mounted.shown).reduce((a, k) => a + mounted.shown[k], 0);
+  check(shownTotal === mounted.saved,
+    `на теле столько же отметин, сколько в сейве: ${shownTotal} и ${mounted.saved}`);
+  check(Object.keys(mounted.kinds).length === 3,
+    `встречаются все три вида: ${JSON.stringify(mounted.kinds)}`);
+  check(new Set(Object.keys(mounted.shapes).map(k => mounted.shapes[k])).size === 3,
+    `у каждого вида своя фигура, а не общая: ${JSON.stringify(mounted.shapes)}`);
 
   // ---------- 2. ПОВОРОТ ГОЛОВЫ ----------
   console.log('\n--- поворот головы ---');
@@ -252,7 +282,13 @@ const { viewport, prepare } = require('./harness');
       const off = track.some(t => t.xs[i] == null);
       return on && off;
     }).length;
-    return { n, ever, travelled, swapped, backwards, worstBack: +worstBack.toFixed(1), maxRun: +maxRun.toFixed(1),
+    // Каждая отметина головы обязана быть видна в том диапазоне, который
+    // голова реально проходит (±0.5). Проверять это на «пусть червь поживёт»
+    // нельзя: за семьсот кадров он успевает обойти не весь диапазон, и
+    // прогон краснеет там, где всё в порядке.
+    const inRange = track.filter(t => Math.abs(t.y) <= 0.5);
+    const seenNear = ids.filter(i => inRange.some(t => t.xs[i] != null)).length;
+    return { n, ever, travelled, swapped, seenNear, backwards, worstBack: +worstBack.toFixed(1), maxRun: +maxRun.toFixed(1),
              hidMin: Math.min(...hidden), hidMax: Math.max(...hidden) };
   })();
   await setYaw(-1); const yawLeft = await grab();
@@ -264,6 +300,8 @@ const { viewport, prepare } = require('./harness');
   check(yawTest.n < 2 || yawTest.swapped > 0,
     `шрамы прячутся за голову и возвращаются: так делают ${yawTest.swapped} из ${yawTest.n}`);
   check(yawTest.returned, 'вернувшиеся показываются те же, что и прятались');
+  check(yawTest.n === 0 || yawTest.seenNear === yawTest.n,
+    `каждый шрам головы видно в рабочем повороте: ${yawTest.seenNear} из ${yawTest.n}`);
 
 
   // ---------- 3. ШРАМ НЕ НА ГЛАЗУ ----------
@@ -364,7 +402,7 @@ const { viewport, prepare } = require('./harness');
     };
   });
   check(flick.worst <= 2, `шрам не моргает, пока червь живёт: худшая отметина сменила видимость ${flick.worst} раз за 700 кадров`);
-  check(flick.everSeen > 0, `шрамы головы вообще показываются сами, без принудительного поворота: ${flick.everSeen} из ${flick.n} (голова гуляла на ${flick.span})`);
+  check(flick.span > 0.1, `голова за прогон успела погулять: на ${flick.span}`);
 
   // ---------- СНИМКИ ----------
   const box = await page.evaluate(() => {

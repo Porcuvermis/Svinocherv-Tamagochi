@@ -3690,25 +3690,27 @@ function applyMuzzleTransform(headRef) {
 // Раньше здесь была ровная горизонтальная эллипса цвета scar.color. Ровный
 // эллипс читается как наклейка: у шрама неровный край и он изогнут, потому
 // что кожа при заживлении стягивается. Отсюда рваный контур и дуга.
-function buildMarkNode(mark, place, hostRadius, skinColor) {
-    const geo = WormMarks.geometry(mark.seed, mark.kind);
-    const color = WormMarks.color(skinColor || FLESH[500], mark.kind);
-    const rng = WormMarks.rng(mark.seed || 0, 'draw');
+// ---------- ТРИ ВИДА ОТМЕТИН ----------
+// Отличаются СИЛУЭТОМ, а не размером: на теле отметина размером с ноготь, и
+// пять «шрамов» разной длины читаются одним и тем же шрамом. Поэтому у
+// каждого вида своя фигура — полоса, клякса и линия со стежками, — и узнать
+// их можно с одного взгляда, не приглядываясь.
+//
+// Общее у всех трёх: габарит берётся у WormMarks.extent, а не считается тут
+// заново (docs/traps.md, п. 103), и базовая прозрачность каждого элемента
+// запоминается на нём — у края силуэта отметина гаснет умножением, а не
+// прозрачностью группы (traps, п. 73).
+function markPaint(el, opacity) {
+    setAttr(el, 'opacity', opacity);
+    el.__baseOpacity = opacity;
+    return el;
+}
 
-    // Размеры берутся у WormMarks, а не считаются здесь заново: по ним же
-    // размещение проверяло, влезает ли шрам в силуэт. Пока формула была
-    // записана дважды, шрам рисовался вдвое шире, чем его мерили, и вылезал
-    // за контур на глазок (docs/traps.md, п. 103).
-    const ext = WormMarks.extent(geo, hostRadius);
-    const half = ext.half;
-    const wide = ext.wide;
+// ПОРЕЗ: вытянутая рваная фигура со светлой жилкой вдоль.
+function buildCutShape(group, geo, ext, color, shineColor, rng) {
+    const half = ext.half, wide = ext.wide;
     const bend = (geo.curve || 0) * half * 0.5;
-
-    // Осевая линия шрама — дуга, а не отрезок.
-    const axisAt = (u) => ({          // u: -1..1
-        x: u * half,
-        y: bend * (1 - u * u)
-    });
+    const axisAt = (u) => ({ x: u * half, y: bend * (1 - u * u) });
 
     // Обходим фигуру по одной стороне и возвращаемся по другой, дёргая
     // ширину на каждом шаге: получается неровный край.
@@ -3721,13 +3723,124 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
             // К концам шрам сходит на нет, в середине шире всего.
             const taper = Math.pow(1 - u * u, 0.6);
             const jitter = 1 - geo.ragged * rng() * 0.55;
-            const w = wide * taper * jitter * dir;
-            pts.push(`${p.x.toFixed(2)},${(p.y + w).toFixed(2)}`);
+            pts.push(`${p.x.toFixed(2)},${(p.y + wide * taper * jitter * dir).toFixed(2)}`);
         }
         return pts;
     };
+    group.appendChild(markPaint(svgEl('path', {
+        d: 'M ' + side(1).join(' L ') + ' L ' + side(-1).join(' L ') + ' Z',
+        fill: color
+    }), 0.9));
 
-    const d = 'M ' + side(1).join(' L ') + ' L ' + side(-1).join(' L ') + ' Z';
+    // Тонкая светлая жилка вдоль шрама: рубцовая ткань блестит сильнее кожи.
+    const shine = [];
+    for (let i = 0; i <= steps; i++) {
+        const p = axisAt(-1 + (2 * i) / steps);
+        shine.push(`${p.x.toFixed(2)},${p.y.toFixed(2)}`);
+    }
+    group.appendChild(markPaint(svgEl('polyline', {
+        points: shine.join(' '),
+        fill: 'none',
+        stroke: shineColor,
+        'stroke-width': Math.max(0.4, wide * 0.2).toFixed(2),
+        'stroke-linecap': 'round'
+    }), 0.32));
+}
+
+// ОЖОГ: круглая клякса с языками по краю и обугленной серединой. Оси у него
+// нет вовсе — этим он и отличается от пореза на первый взгляд.
+function burnBlob(r, geo, rng, k) {
+    const steps = 22;
+    const pts = [];
+    for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        // Языки по краю — синус по углу, плюс небольшая случайная рябь:
+        // ровная волна читается цветком, а не ожогом.
+        const wob = 1 + (geo.wobble || 0) * k * (Math.sin(a * (geo.lobes || 4) + (geo.phase || 0)) * 0.75
+                                               + (rng() * 2 - 1) * 0.25);
+        pts.push([Math.cos(a) * r * wob, Math.sin(a) * r * wob]);
+    }
+    // ---------- КОНТУР СГЛАЖЕН, А НЕ ЛОМАНЫЙ ----------
+    // Ломаная по тем же точкам давала колючую звезду: на размер с ноготь
+    // каждый излом читается лучом. Идём квадратичными кривыми через СЕРЕДИНЫ
+    // отрезков — углы съедаются, форма остаётся.
+    const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const f = (p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`;
+    let d = 'M ' + f(mid(pts[steps - 1], pts[0]));
+    for (let i = 0; i < steps; i++) {
+        d += ` Q ${f(pts[i])} ${f(mid(pts[i], pts[(i + 1) % steps]))}`;
+    }
+    return d + ' Z';
+}
+
+function buildBurnShape(group, geo, ext, color, coreColor, rimColor, rng) {
+    const r = ext.half / (1 + (geo.wobble || 0));   // ext.half уже с запасом на языки
+    // Ожог — ОДНО неровное пятно с тёмной серединой и маленьким бликом.
+    // Кольцо большего радиуса под пятном (первая версия) давало не ожог, а
+    // значок: два вложенных контура читаются звездой или печатью.
+    // Ни кольца, ни блика внутри: и то и другое даёт вложенные контуры, а
+    // вложенные контуры на круглом пятне читаются глазом. Проверено дважды —
+    // сперва светлым кольцом большего радиуса (вышла звезда-печать), потом
+    // светлым пятнышком внутри (вышел зрачок). Ожог — это ОДНА неровная
+    // клякса с более тёмным натёком, сдвинутым к краю.
+    group.appendChild(markPaint(svgEl('path', {
+        d: burnBlob(r, geo, rng, 1), fill: color
+    }), 0.8));
+    const core = svgEl('path', { d: burnBlob(r * (geo.core || 0.5), geo, rng, 1.35), fill: coreColor });
+    setAttr(core, 'transform', `translate(${(r * 0.26).toFixed(2)},${(r * 0.2).toFixed(2)})`);
+    group.appendChild(markPaint(core, 0.55));
+}
+
+// ШОВ: тонкая затянувшаяся линия и поперечные стежки. Силуэт дают именно
+// стежки — линия одна читалась бы царапиной.
+function buildStitchShape(group, geo, ext, color, rng) {
+    const half = ext.half;
+    const bend = (geo.curve || 0) * half * 0.5;
+    const axisAt = (u) => ({ x: u * half, y: bend * (1 - u * u) });
+
+    const line = [];
+    for (let i = 0; i <= 10; i++) {
+        const p = axisAt(-1 + i / 5);
+        line.push(`${p.x.toFixed(2)},${p.y.toFixed(2)}`);
+    }
+    const w = Math.max(0.5, ext.wide);
+    group.appendChild(markPaint(svgEl('polyline', {
+        points: line.join(' '), fill: 'none', stroke: color,
+        'stroke-width': w.toFixed(2), 'stroke-linecap': 'round'
+    }), 0.8));
+
+    const n = geo.stitches || 4;
+    const out = ext.stitchOut || half * 0.25;
+    const tilt = (geo.stitchTilt || 18) * Math.PI / 180;
+    for (let i = 0; i < n; i++) {
+        // Стежки не по всей длине: у концов рана сходится сама.
+        const u = -0.72 + (1.44 * i) / Math.max(1, n - 1);
+        const p = axisAt(u);
+        // Лёгкий разнобой в длине и наклоне — но наклон В ОДНУ СТОРОНУ:
+        // чередование через стежок давало зигзаг, который читается молнией,
+        // а не швом. Настоящий шов идёт косыми стежками в одну сторону.
+        // Длина и наклон гуляют ВНУТРЬ разрешённого габарита, а не вокруг
+        // него: out — это максимум, который посчитало размещение.
+        const len = out * (0.7 + rng() * 0.3);
+        const a = tilt * (0.75 + rng() * 0.5);
+        const dx = Math.sin(a) * len, dy = Math.cos(a) * len;
+        group.appendChild(markPaint(svgEl('line', {
+            x1: (p.x - dx).toFixed(2), y1: (p.y - dy).toFixed(2),
+            x2: (p.x + dx).toFixed(2), y2: (p.y + dy).toFixed(2),
+            stroke: color, 'stroke-width': Math.max(0.55, w * 0.9).toFixed(2),
+            'stroke-linecap': 'round'
+        }), 0.85));
+    }
+}
+
+function buildMarkNode(mark, place, hostRadius, skinColor) {
+    const kind = mark.kind || 'scar';
+    const geo = WormMarks.geometry(mark.seed, kind);
+    const skin = skinColor || FLESH[500];
+    const rng = WormMarks.rng(mark.seed || 0, 'draw');
+    // Размеры берутся у WormMarks, а не считаются здесь заново: по ним же
+    // размещение проверяло, влезает ли отметина в силуэт.
+    const ext = WormMarks.extent(geo, hostRadius);
 
     // ---------- РАКУРС ----------
     // Отметина нарисована НА КОЖЕ, а кожа круглая. Поэтому у края силуэта она
@@ -3742,7 +3855,7 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
         transform: `translate(${(place.x * hostRadius).toFixed(2)},${(place.y * hostRadius).toFixed(2)})`
                  + (squashY < 0.999 ? ` scale(1,${squashY.toFixed(3)})` : '')
                  + ` rotate(${place.rotation.toFixed(1)})`,
-        class: `worm-mark worm-mark-${mark.kind || 'scar'}`,
+        class: `worm-mark worm-mark-${kind}`,
         // Устойчивый ключ: по нему отметину можно найти после пересборки
         // персонажа. Прогон, следивший за шрамом по НОМЕРУ узла, при
         // пересборке начинал сравнивать разные шрамы и объявлял скачок через
@@ -3750,31 +3863,18 @@ function buildMarkNode(mark, place, hostRadius, skinColor) {
         'data-mark': mark.id || ''
     });
     if (place.front === false) setAttr(group, 'display', 'none');
-    // Базовые прозрачности запоминаются на узле: у края силуэта отметина
-    // ГАСНЕТ, и гасить надо, домножая их, а не ставя opacity на группу —
-    // прозрачность группы это отдельный буфер на живом слое (traps, п. 73).
-    const body = svgEl('path', { d, fill: color, opacity: 0.9 });
-    body.__baseOpacity = 0.9;
-    group.appendChild(body);
 
-    // Тонкая светлая жилка вдоль шрама: рубцовая ткань блестит сильнее кожи.
-    const shine = [];
-    for (let i = 0; i <= steps; i++) {
-        const p = axisAt(-1 + (2 * i) / steps);
-        shine.push(`${p.x.toFixed(2)},${p.y.toFixed(2)}`);
+    if (kind === 'burn') {
+        buildBurnShape(group, geo, ext, WormMarks.color(skin, 'burn'),
+            WormMarks.color(skin, 'burnCore'), WormMarks.color(skin, 'shine'), rng);
+    } else if (kind === 'stitch') {
+        buildStitchShape(group, geo, ext, WormMarks.color(skin, 'stitch'), rng);
+    } else {
+        buildCutShape(group, geo, ext, WormMarks.color(skin, 'scar'), WormMarks.color(skin, 'shine'), rng);
     }
-    const vein = svgEl('polyline', {
-        points: shine.join(' '),
-        fill: 'none',
-        stroke: WormMarks.color(skinColor || FLESH[500], 'shine'),
-        'stroke-width': Math.max(0.4, wide * 0.2).toFixed(2),
-        'stroke-linecap': 'round',
-        opacity: 0.32
-    });
-    vein.__baseOpacity = 0.32;
-    group.appendChild(vein);
     return group;
 }
+
 
 // ---------- КУЧКА НА ПОЛУ ----------
 // Результат пищеварения. Форма детерминированная от сида: две-три спирали

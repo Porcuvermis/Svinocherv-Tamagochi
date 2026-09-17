@@ -273,7 +273,10 @@ const LocalBackend = {
 
         const mark = {
             id: 'mark-' + useSeed.toString(36) + '-' + marks.length,
-            kind: kind || 'scar',
+            // Вид не назвали — выводим из сида. Так в конфиге наград не
+            // приходится перечислять виды отметин: это дело картинки, а не
+            // баланса.
+            kind: kind || WormMarks.kindOf(useSeed),
             zone: spotZone,
             t: spot.t,
             // Угол вокруг тела хранится явно: по нему отметина прячется при

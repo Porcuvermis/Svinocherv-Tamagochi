@@ -179,7 +179,7 @@ const ECONOMY = {
                 lose: {
                     sinFill: 20,
                     alwaysPays: true,
-                    mark: { kind: 'scar', chance: 0.3 },
+                    mark: { chance: 0.3 },
                     everyN: { counter: 'wrath.duel.lose', n: 3, currencies: { wrath_shard: 1 } }
                 }
             },
@@ -192,7 +192,7 @@ const ECONOMY = {
                 draw: { sinFill: 50 },
                 // Шрам за проигранный бой в забеге такой же, как в обычном:
                 // тело помнит все драки, а не только те, что вне забега.
-                lose: { sinFill: 20, mark: { kind: 'scar', chance: 0.3 } }
+                lose: { sinFill: 20, mark: { chance: 0.3 } }
             }
         }
     },
