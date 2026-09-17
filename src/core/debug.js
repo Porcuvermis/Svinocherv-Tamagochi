@@ -130,7 +130,16 @@ const DebugState = {
                 host = ' · ' + (tg ? 'TG' : 'web')
                      + '/' + (tg ? 'haptic' : vib ? 'vibro' : 'нем');
             }
-            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops + mood + host;
+            // Наклон телефона: на компьютере его нет вовсе, и проверить, ЖИВ
+            // ли датчик на конкретном аппарате, иначе нечем — угол сам по
+            // себе может быть нулём и при живом датчике. Поэтому здесь
+            // источник, определённая единица и текущее значение.
+            let tilt = '';
+            if (typeof Tilt !== 'undefined') {
+                const t = Tilt.info();
+                tilt = ' · ' + (t.live ? (t.source + '/' + t.unit + ' ' + t.x) : 'наклона нет');
+            }
+            if (this.fpsEl) this.fpsEl.textContent = fps + ' fps · 💩' + poops + mood + host + tilt;
             frames = 0;
             last = now;
         };

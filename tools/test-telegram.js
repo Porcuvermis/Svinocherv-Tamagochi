@@ -54,6 +54,19 @@ const { chromium } = require('playwright');
         safeAreaInset: { top: 0, bottom: 0, left: 0, right: 0 },
         contentSafeAreaInset: { top: 0, bottom: 0, left: 0, right: 0 },
         onEvent: (name, fn) => { (window.__tgEvents = window.__tgEvents || {})[name] = fn; },
+        // Датчик наклона клиента (Bot API 8.0). Значения в РАДИАНАХ — на
+        // компьютере их подделываем, чтобы проверить весь путь: включили,
+        // подписались, число доехало до Tilt.
+        DeviceOrientation: {
+          isStarted: false, absolute: false, alpha: 0, beta: 0, gamma: 0,
+          start(params, cb) {
+            window.__tg.push('orientStart:' + (params && params.refresh_rate));
+            this.isStarted = true;
+            if (cb) cb(true);
+            return this;
+          },
+          stop(cb) { this.isStarted = false; if (cb) cb(true); return this; }
+        },
       HapticFeedback: {
           impactOccurred: log('impact'),
           selectionChanged: log('selection'),
@@ -69,6 +82,28 @@ const { chromium } = require('playwright');
   check(calls.includes('ready') && calls.includes('expand'), 'окно развёрнуто и клиент оповещён');
   check(calls.includes('disableVerticalSwipes'),
         'вертикальный свайп не сворачивает приложение — иначе рычаг неиграбелен');
+  // ---------- ДАТЧИК НАКЛОНА ----------
+  // Игра живёт в Telegram, и наклон обязан работать СРАЗУ: разрешение там
+  // спрашивает сам клиент, своего окна у нас нет и быть не может (в игре нет
+  // слов). Проверяем весь путь: включили, подписались, число доехало.
+  const tilt = await page.evaluate(async () => {
+    const dev = window.Telegram.WebApp.DeviceOrientation;
+    const ev = window.__tgEvents && window.__tgEvents.deviceOrientationChanged;
+    if (!ev) return { подписались: false };
+    // 0.55 радиана — это 31.5°, почти полный завал.
+    dev.gamma = 0.55; ev();
+    await new Promise(r => setTimeout(r, 1300));
+    dev.gamma = 0.55; ev();
+    // Сглаживание идёт ПРИ КАЖДОМ ЧТЕНИИ — его крутит рендерер кадрами.
+    // Один вызов даёт только первый шаг, поэтому читаем как рендерер.
+    for (let i = 0; i < 60; i++) { Tilt.x(); await new Promise(r => requestAnimationFrame(r)); }
+    return { подписались: true, info: Tilt.info() };
+  });
+  check(calls.some(c => c.indexOf('orientStart') === 0), 'датчик наклона включён у клиента без единого нашего окна');
+  check(tilt.подписались, 'игра подписалась на изменения наклона');
+  check(tilt.info && tilt.info.live && tilt.info.unit === 'rad' && tilt.info.x > 0.5,
+        `наклон из Telegram доехал и понят как радианы: ${JSON.stringify(tilt.info)}`);
+
   check(calls.includes('setHeaderColor:#000000') && calls.includes('setBackgroundColor:#000000'),
         'рамка клиента чёрная, как пелена загрузки');
 

@@ -72,6 +72,10 @@ const TelegramBridge = {
     // API, и на клиенте постарше отсутствующий метод — это исключение, а не
     // молчаливый ноль. Один упавший вызов не должен уносить остальные.
     setup(app) {
+        // Датчик наклона: внутри Telegram он свой, и разрешение на него
+        // спрашивает сам клиент. Включаем сразу — игра живёт в Telegram, и
+        // «работать по умолчанию» значит именно здесь (src/core/tilt.js).
+        if (typeof Tilt !== 'undefined') Tilt.telegram(app);
         const call = (name, arg) => {
             try {
                 if (typeof app[name] === 'function') app[name](arg);

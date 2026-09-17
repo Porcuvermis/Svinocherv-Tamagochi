@@ -37,6 +37,16 @@ const { viewport, prepare } = require('./harness');
 
   await page.addScriptTag({ content: `
     window.__wear = {
+      // ---------- ЗАМЕРЫ ТОЛЬКО ПО СВОЕМУ ЧЕРВЮ ----------
+      // Червей на экране бывает несколько (комната, колесо грехов, лобби), и
+      // наряд по состоянию надевается на ВСЕХ. document.querySelector брал
+      // первого попавшегося — иногда скрытого, с вырожденной матрицей, — и
+      // проверка «пришито к телу» краснела через раз на ровном месте.
+      root() {
+        return (window.MainWormHandle && MainWormHandle.svgRoot) || document.querySelector('#game-container svg');
+      },
+      q(sel) { const r = this.root(); return r ? r.querySelector(sel) : null; },
+      qa(sel) { const r = this.root(); return r ? [...r.querySelectorAll(sel)] : []; },
       // Доля площади предмета, лежащая на теле. Тело — объединение силуэтов
       // частей; точки берутся сеткой по каждой фигуре предмета.
       //
@@ -45,9 +55,9 @@ const { viewport, prepare } = require('./harness');
       // отдельная проверка: пришитый конец обязан быть на теле.
       onBody(slot) {
         const svg = document.querySelector('#game-container svg');
-        const g = document.querySelector('[data-cosmetic="' + slot + '"]');
+        const g = this.q('[data-cosmetic="' + slot + '"]');
         if (!g || !svg) return null;
-        const parts = [...document.querySelectorAll('.worm-part-shape')];
+        const parts = this.qa('.worm-part-shape');
         let inside = 0, total = 0;
         const pt = svg.createSVGPoint();
         [...g.querySelectorAll('path,rect,circle,ellipse,polygon')].forEach(sh => {
@@ -72,14 +82,14 @@ const { viewport, prepare } = require('./harness');
 
       // Насколько линзы очков совпали с глазами, в долях радиуса глаза.
       lensOffEye() {
-        const g = document.querySelector('[data-cosmetic="head"]');
+        const g = this.q('[data-cosmetic="head"]');
         if (!g) return null;
         const lens = [...g.querySelectorAll('rect')]
           .map(r => r.getBoundingClientRect())
           .filter(r => r.width > 3 && r.height > 3)
           .sort((a, b) => a.x - b.x);
         const eyes = ['left', 'right'].map(s => {
-          const e = document.querySelector('[data-part="eye-' + s + '"] ellipse[fill*="sclera"]');
+          const e = this.q('[data-part="eye-' + s + '"] ellipse[fill*="sclera"]');
           return e ? e.getBoundingClientRect() : null;
         }).filter(Boolean).sort((a, b) => a.x - b.x);
         if (lens.length < 2 || eyes.length < 2) return null;
@@ -96,8 +106,8 @@ const { viewport, prepare } = require('./harness');
       // целиком нельзя.
       bellyCovered() {
         const svg = document.querySelector('#game-container svg');
-        const g = document.querySelector('[data-cosmetic="body"]');
-        const belly = document.querySelector('[data-anchor="belly-scars"]');
+        const g = this.q('[data-cosmetic="body"]');
+        const belly = this.q('[data-anchor="belly-scars"]');
         const shape = belly && belly.parentNode.querySelector(':scope > .worm-part-shape');
         if (!g || !shape) return null;
         const bb = shape.getBBox(), N = 24;
@@ -125,9 +135,9 @@ const { viewport, prepare } = require('./harness');
       // (начало координат её группы) и спрашиваем силуэты частей.
       hangRoots(slot) {
         const svg = document.querySelector('#game-container svg');
-        const g = document.querySelector('[data-cosmetic="' + slot + '"]');
+        const g = this.q('[data-cosmetic="' + slot + '"]');
         if (!g || !svg) return null;
-        const parts = [...document.querySelectorAll('.worm-part-shape')];
+        const parts = this.qa('.worm-part-shape');
         const out = [];
         [...g.querySelectorAll('[data-swing]')].forEach(el => {
           const m = el.getScreenCTM(); if (!m) return;
@@ -146,8 +156,8 @@ const { viewport, prepare } = require('./harness');
       // Где предмет стоит ОТНОСИТЕЛЬНО ГОЛОВЫ. Не на экране: червь ходит по
       // комнате, и экранный сдвиг считался бы от его шагов, а не от поворота.
       centre(slot) {
-        const g = document.querySelector('[data-cosmetic="' + slot + '"]');
-        const head = document.querySelector('[data-part="head"]');
+        const g = this.q('[data-cosmetic="' + slot + '"]');
+        const head = this.q('[data-part="head"]');
         if (!g || !head) return null;
         const r = g.getBoundingClientRect(), h = head.getBoundingClientRect();
         return +((r.x + r.width / 2) - (h.x + h.width / 2)).toFixed(1);
@@ -255,7 +265,7 @@ const { viewport, prepare } = require('./harness');
     const turn = {}, swing = {}, squash = {}, hang = {};
     const span = (o) => { const r = {}; Object.keys(o).forEach(k => r[k] = +(o[k].max - o[k].min).toFixed(1)); return r; };
     const note = () => {
-      document.querySelectorAll('[data-cosmetic]').forEach(g => {
+      window.__wear.qa('[data-cosmetic]').forEach(g => {
         const m = g.getScreenCTM(); if (!m) return;
         const k = g.getAttribute('data-cosmetic');
         const deg = Math.atan2(m.b, m.a) * 180 / Math.PI;
@@ -274,7 +284,7 @@ const { viewport, prepare } = require('./harness');
         squash[k] = squash[k] || { min: sx, max: sx };
         squash[k].min = Math.min(squash[k].min, sx); squash[k].max = Math.max(squash[k].max, sx);
       });
-      document.querySelectorAll('[data-swing]').forEach(el => {
+      window.__wear.qa('[data-swing]').forEach(el => {
         const host = el.closest('[data-cosmetic]');
         const k = host ? host.getAttribute('data-cosmetic') : '?';
         const m = /rotate\(([-0-9.]+)/.exec(el.getAttribute('transform') || '');
@@ -322,21 +332,23 @@ const { viewport, prepare } = require('./harness');
   console.log('\n--- наклон телефона отклоняет висящее ---');
   await dress({ body: 'tux' });
   const tilt = await page.evaluate(async () => {
-    const quiet = { alive: Tilt.alive(), x: Tilt.x() };
+    const quiet = { alive: Tilt.info().live, x: Tilt.x() };
     const fire = (g) => window.dispatchEvent(Object.assign(new Event('deviceorientation'),
                                                            { gamma: g, beta: 0, alpha: 0 }));
     const read = () => {
-      const el = document.querySelector('[data-cosmetic="body"] [data-swing]');
+      const el = window.__wear.q('[data-cosmetic="body"] [data-swing]');
       const m = el && /rotate\(([-0-9.]+)/.exec(el.getAttribute('transform') || '');
       return m ? parseFloat(m[1]) : null;
     };
+    // Единицу датчика игра определяет по данным, а не по вере: сперва даём
+    // ей увидеть размах, и только потом меряем.
     fire(-30);
-    for (let i = 0; i < 150; i++) await new Promise(r => requestAnimationFrame(r));
+    for (let i = 0; i < 150; i++) { Tilt.x(); await new Promise(r => requestAnimationFrame(r)); }
     const left = read();
     fire(30);
-    for (let i = 0; i < 150; i++) await new Promise(r => requestAnimationFrame(r));
+    for (let i = 0; i < 150; i++) { Tilt.x(); await new Promise(r => requestAnimationFrame(r)); }
     const right = read();
-    return { quiet, alive: Tilt.alive(), left, right };
+    return { quiet, info: Tilt.info(), left, right };
   });
   check(tilt.quiet.alive === false && tilt.quiet.x === 0,
     'без датчика наклон равен нулю и ничего не ломает');
