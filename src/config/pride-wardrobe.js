@@ -30,23 +30,49 @@ const PRIDE_WARDROBE = {
     // слот рисует его вместо предмета: по силуэту видно, что сюда ставится,
     // и это работает без единой буквы (инвариант 9). Тот же приём, что в
     // лобби гнева.
+    // ---------- ГНЁЗДА ----------
+    // Порядок = порядок показа в костюмерной. Ключи обязаны совпадать с
+    // WormMarks.SLOTS: там якорь, здесь витрина.
+    //
+    // Гнёзд СЕМЬ, и это не украшательство. Было четыре — голова, шея, тело,
+    // хвост, — и голова была одна на всё: надеть шляпу и очки одновременно
+    // было нельзя, а костюм разрывало по телу (воротник на шее, пиджак на
+    // животе, между ними голое место). Теперь на голове четыре черты, у
+    // каждой своё гнездо, а верхняя одежда занимает два соседних сегмента
+    // сразу (docs/bench/wear.md).
+    //
+    // side — с какой стороны от червя висит карточка гнезда в костюмерной.
+    // shape — силуэт того, что сюда встаёт, контур на сетке 24×24. Пустое
+    // гнездо рисует его вместо предмета: по силуэту видно, что сюда
+    // ставится, и это работает без единой буквы (инвариант 9).
     slots: [
-        {
-            key: 'head', side: 'left',
+        {   // макушка: цилиндр
+            key: 'hat', side: 'left',
             shape: 'M5 15h14l-1.6-3.2H6.6z M7.6 11.8V5.4a4.4 4.4 0 0 1 8.8 0v6.4z'
         },
-        {
-            key: 'neck', side: 'left',
+        {   // глаза: очки
+            key: 'eyes', side: 'left',
+            shape: 'M3 11h5.5v4.5H3z M15.5 11H21v4.5h-5.5z M8.5 12.6h7'
+        },
+        {   // рот: сигара с дымком
+            key: 'mouth', side: 'left',
+            shape: 'M4 14h12v3.2H4z M13 14v3.2 M18 12.6c1.6-1 1.6-2.6 0-3.6'
+        },
+        {   // уши: серьга-подвеска
+            key: 'ears', side: 'left',
+            shape: 'M12 4v7 M12 15.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M12 4.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'
+        },
+        {   // шея: бабочка
+            key: 'neck', side: 'right',
             shape: 'M12 12l-7-4v8z M12 12l7-4v8z M10.4 10.4h3.2v3.2h-3.2z'
         },
-        {
-            key: 'body', side: 'right',
+        {   // верхняя одежда: пиджак
+            key: 'coat', side: 'right',
             shape: 'M9 3l3 3 3-3 5 2.6-1.8 3.4V21H5.8V9L4 5.6z'
         },
-        {
-            key: 'tail', side: 'right',
-            shape: 'M12 4c4 0 6 2.4 6 5.6S15.6 15 12 15s-6-2.2-6-5.4S8 4 12 4z'
-                 + 'M12 15v5 M8 20h8'
+        {   // кончик хвоста: носок
+            key: 'tailTip', side: 'right',
+            shape: 'M9 3h6v9.5c0 3-1.4 4.5-4 5.6L7 20a3 3 0 0 1-2.6-5.2L9 12z'
         }
     ],
 
@@ -68,16 +94,24 @@ const PRIDE_WARDROBE = {
     // отовсюду, гетру на хвосте — почти нет. Это тот же принцип, по которому
     // расставлены цены прокачки, только мерой служит не сила, а вид.
     items: [
-        { id: 'top-hat',   slot: 'head', kind: 'wear', price: { pride_kiss: 600 }, sits: 0.29 },
-        { id: 'shades',    slot: 'head', kind: 'glam', price: { pride_kiss: 350 }, sits: 0.93 },
-        { id: 'bow-tie',   slot: 'neck', kind: 'wear', price: { pride_kiss: 400 }, sits: 0.96 },
-        { id: 'chain',     slot: 'neck', kind: 'glam', price: { pride_kiss: 300 }, sits: 0.96 },
-        { id: 'tux',       slot: 'body', kind: 'wear', price: { pride_kiss: 800 }, sits: 0.93 },
-        { id: 'sash',      slot: 'body', kind: 'glam', price: { pride_kiss: 450 }, sits: 0.93 },
-        { id: 'tail-sock', slot: 'tail', kind: 'wear', price: { pride_kiss: 250 }, sits: 0.95 },
+        { id: 'top-hat',   slot: 'hat',   kind: 'wear', price: { pride_kiss: 600 }, sits: 0.29 },
+        { id: 'shades',    slot: 'eyes',  kind: 'glam', price: { pride_kiss: 350 }, sits: 0.93 },
+        // ---------- ПОЧЕМУ У ЭТИХ ДВУХ sits = 0 ----------
+        // `sits` меряется по силуэтам ЧАСТЕЙ ТЕЛА, а морда и уши в них не
+        // входят: это черты, а не части. Вещь, сидящая на них, честно даёт
+        // ноль, и требовать от неё большего — значит требовать, чтобы она
+        // уехала с уха на череп. За такие вещи отвечает другая проверка:
+        // «едет вместе со своей чертой» (tools/test-wardrobe.js).
+        { id: 'cigar',     slot: 'mouth', kind: 'glam', price: { pride_kiss: 300 }, sits: 0 },
+        { id: 'earrings',  slot: 'ears',  kind: 'glam', price: { pride_kiss: 280 }, sits: 0 },
+        { id: 'bow-tie',   slot: 'neck',  kind: 'wear', price: { pride_kiss: 400 }, sits: 0.96 },
+        { id: 'chain',     slot: 'neck',  kind: 'glam', price: { pride_kiss: 300 }, sits: 0.96 },
+        { id: 'tux',       slot: 'coat',  kind: 'wear', price: { pride_kiss: 800 }, sits: 0.93 },
+        { id: 'sash',      slot: 'coat',  kind: 'glam', price: { pride_kiss: 450 }, sits: 0.93 },
+        { id: 'tail-sock', slot: 'tailTip', kind: 'wear', price: { pride_kiss: 250 }, sits: 0.95 },
         // У банта петли законно выходят за хвост — на то он и бант, — но
         // именно выходят, а не парят: было 0.67, когда он висел НАД хвостом.
-        { id: 'tail-bow',  slot: 'tail', kind: 'glam', price: { pride_kiss: 200 }, sits: 0.90 }
+        { id: 'tail-bow',  slot: 'tailTip', kind: 'glam', price: { pride_kiss: 200 }, sits: 0.88 }
     ]
 };
 

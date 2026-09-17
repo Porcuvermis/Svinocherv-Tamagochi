@@ -53,14 +53,20 @@ const { viewport, prepare } = require('./harness');
       // ВИСЯЩИЕ части ([data-swing]) в счёт не идут: лента, качнувшаяся в
       // сторону, ЗАКОННО уходит с тела — на то она и висит. За них отвечает
       // отдельная проверка: пришитый конец обязан быть на теле.
+      // У гнезда может быть НЕСКОЛЬКО узлов: верхняя одежда занимает два
+      // сегмента, серьга висит на двух ушах. Считаем по всем сразу.
+      nodes(slot) { return this.qa('[data-cosmetic="' + slot + '"]'); },
+
       onBody(slot) {
         const svg = document.querySelector('#game-container svg');
-        const g = this.q('[data-cosmetic="' + slot + '"]');
-        if (!g || !svg) return null;
+        const gs = this.nodes(slot);
+        if (!gs.length || !svg) return null;
         const parts = this.qa('.worm-part-shape');
         let inside = 0, total = 0;
         const pt = svg.createSVGPoint();
-        [...g.querySelectorAll('path,rect,circle,ellipse,polygon')].forEach(sh => {
+        const shapes = [];
+        gs.forEach(g => shapes.push(...g.querySelectorAll('path,rect,circle,ellipse,polygon')));
+        shapes.forEach(sh => {
           if (!sh.isPointInFill || sh.closest('[data-swing]')) return;
           const bb = sh.getBBox(), N = 14;
           for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
@@ -82,7 +88,7 @@ const { viewport, prepare } = require('./harness');
 
       // Насколько линзы очков совпали с глазами, в долях радиуса глаза.
       lensOffEye() {
-        const g = this.q('[data-cosmetic="head"]');
+        const g = this.q('[data-cosmetic="eyes"]');
         if (!g) return null;
         const lens = [...g.querySelectorAll('rect')]
           .map(r => r.getBoundingClientRect())
@@ -114,10 +120,15 @@ const { viewport, prepare } = require('./harness');
       // Часть спрашивается у того же WormMarks.resolveSlot, что и у
       // рендерера: угадывать её «ближайшей к предмету» значило бы завести
       // второе описание.
-      clothSpan(slot, along) {
+      // sub — какая ЧАСТЬ многочастной вещи меряется ('upper' / 'lower').
+      // У гнезда мест может быть два, и мерить их надо по отдельности:
+      // каждая половина сидит на своём сегменте.
+      clothSpan(slot, along, sub) {
         const svg = document.querySelector('#game-container svg');
-        const g = this.q('[data-cosmetic="' + slot + '"]');
-        const place = WormMarks.resolveSlot(MainWormHandle.model || GameState.data.worm, slot);
+        const g = sub ? this.q('[data-cosmetic="' + slot + '"][data-sub="' + sub + '"]')
+                      : this.q('[data-cosmetic="' + slot + '"]');
+        const places = WormMarks.resolveSlot(MainWormHandle.model || GameState.data.worm, slot) || [];
+        const place = sub ? places.filter(pl => pl.sub === sub)[0] : places[0];
         if (!g || !place || !svg) return null;
         const holder = this.q('[data-part="' + place.part + '"]');
         const shape = holder && holder.querySelector('.worm-part-shape');
@@ -181,7 +192,7 @@ const { viewport, prepare } = require('./harness');
 
       bellyCovered() {
         const svg = document.querySelector('#game-container svg');
-        const g = this.q('[data-cosmetic="body"]');
+        const g = this.q('[data-cosmetic="coat"][data-sub="lower"]');
         const belly = this.q('[data-anchor="belly-scars"]');
         const shape = belly && belly.parentNode.querySelector(':scope > .worm-part-shape');
         if (!g || !shape) return null;
@@ -216,11 +227,13 @@ const { viewport, prepare } = require('./harness');
       // (начало координат её группы) и спрашиваем силуэты частей.
       hangRoots(slot) {
         const svg = document.querySelector('#game-container svg');
-        const g = this.q('[data-cosmetic="' + slot + '"]');
-        if (!g || !svg) return null;
+        const gs = this.nodes(slot);
+        if (!gs.length || !svg) return null;
         const parts = this.qa('.worm-part-shape');
         const out = [];
-        [...g.querySelectorAll('[data-swing]')].forEach(el => {
+        const swings = [];
+        gs.forEach(g => swings.push(...g.querySelectorAll('[data-swing]')));
+        swings.forEach(el => {
           const m = el.getScreenCTM(); if (!m) return;
           const p = svg.createSVGPoint(); p.x = 0; p.y = 0;
           const scr = p.matrixTransform(m);
@@ -236,8 +249,44 @@ const { viewport, prepare } = require('./harness');
 
       // Где предмет стоит ОТНОСИТЕЛЬНО ГОЛОВЫ. Не на экране: червь ходит по
       // комнате, и экранный сдвиг считался бы от его шагов, а не от поворота.
-      centre(slot) {
+      // Какая доля вещи накрыта головой. Для того, что ТОРЧИТ (сигара),
+      // это и есть главное: она может быть сколь угодно снаружи, но обязана
+      // держаться лица при любом ракурсе.
+      overlapHead(slot) {
         const g = this.q('[data-cosmetic="' + slot + '"]');
+        const head = this.q('[data-part="head-tilt"]');
+        if (!g || !head) return null;
+        const r = g.getBoundingClientRect(), h = head.getBoundingClientRect();
+        const w = Math.min(r.right, h.right) - Math.max(r.x, h.x);
+        const v = Math.min(r.bottom, h.bottom) - Math.max(r.y, h.y);
+        if (w <= 0 || v <= 0 || !r.width) return 0;
+        return +(w / r.width).toFixed(3);
+      },
+
+      // Смещение вещи от ЕЁ ЧЕРТЫ. Сигара сидит на морде, серьга — на ухе,
+      // и «едет вместе с головой» им не подходит: их черта сама ездит, и
+      // относительно неё вещь обязана СТОЯТЬ. Заодно видно, что черта и
+      // правда двигалась, — иначе проверка мерила бы неподвижность.
+      rides(slot, hostSel, side) {
+        const g = side ? this.q('[data-cosmetic="' + slot + '"][data-side="' + side + '"]')
+                       : this.q('[data-cosmetic="' + slot + '"]');
+        const host = this.q(hostSel);
+        if (!g || !host) return null;
+        const r = g.getBoundingClientRect(), h = host.getBoundingClientRect();
+        const skull = this.q('[data-part="head-tilt"]');
+        const s0 = skull ? skull.getBoundingClientRect() : h;
+        return {
+          от: +((r.x + r.width / 2) - (h.x + h.width / 2)).toFixed(1),
+          черта: +((h.x + h.width / 2) - (s0.x + s0.width / 2)).toFixed(1)
+        };
+      },
+
+      // Симметричную пару (серьги) мерить надо по ОДНОЙ стороне: середина
+      // двух зеркальных узлов при повороте почти не двигается, и проверка
+      // «поехало вместе с головой» получала ноль на работающей вещи.
+      centre(slot, side) {
+        const g = side ? this.q('[data-cosmetic="' + slot + '"][data-side="' + side + '"]')
+                       : this.q('[data-cosmetic="' + slot + '"]');
         const head = this.q('[data-part="head"]');
         if (!g || !head) return null;
         const r = g.getBoundingClientRect(), h = head.getBoundingClientRect();
@@ -279,11 +328,14 @@ const { viewport, prepare } = require('./harness');
   const rails = await page.evaluate(ids => ids.map(id => {
     const p = WormCosmetics.ITEMS[id];
     if (!p) return { id, есть: false };
-    const cover = p.cover || null;
+    // Вещь может быть МНОГОЧАСТНОЙ: верхняя одежда занимает два сегмента, и
+    // охват объявлен у каждой половины отдельно.
+    const halves = p.parts ? Object.keys(p.parts).map(k => p.parts[k]) : [p];
+    const ok = (c) => !!(c && c.length === 2 && c[0] >= -1 && c[1] <= 1 && c[1] > c[0]);
     return {
-      id, есть: true, kind: p.kind || null, along: !!p.along,
-      охват: p.kind === 'cloth' ? (cover && cover.length === 2
-             && cover[0] >= -1 && cover[1] <= 1 && cover[1] > cover[0]) : true
+      id, есть: true, kind: p.kind || null, along: !!(p.along || halves.some(h => h.along)),
+      части: p.parts ? Object.keys(p.parts) : null,
+      охват: p.kind === 'cloth' ? halves.every(h => ok(h.cover)) : true
     };
   }), catalog.map(i => i.id));
   rails.forEach(r => {
@@ -303,10 +355,14 @@ const { viewport, prepare } = require('./harness');
       MainWormHandle.setLivePose({ bodyYaw: 0 });
       for (let i = 0; i < 6; i++) await new Promise(r => requestAnimationFrame(r));
     });
-    const w = await page.evaluate(a => window.__wear.clothSpan(a[0], a[1]),
-                                  [item.slot, !!p.along]);
-    check(w != null && w >= 0.85,
-      `«${item.id}» доходит до краёв части: ${w} её толщины`);
+    // У многочастной вещи проверяется КАЖДАЯ половина: разошлась одна —
+    // костюм разъехался по шву.
+    for (const sub of (p.части || [null])) {
+      const w = await page.evaluate(a => window.__wear.clothSpan(a[0], a[1], a[2]),
+                                    [item.slot, !!p.along, sub]);
+      check(w != null && w >= 0.85,
+        `«${item.id}${sub ? ':' + sub : ''}» доходит до краёв части: ${w} её толщины`);
+    }
   }
   await page.evaluate(() => MainWormHandle.setLivePose({ bodyYaw: null }));
 
@@ -330,7 +386,7 @@ const { viewport, prepare } = require('./harness');
   });
 
   console.log('\n--- висящее пришито к телу ---');
-  for (const [slot, id] of [['neck', 'chain'], ['body', 'tux'], ['tail', 'tail-bow']]) {
+  for (const [slot, id] of [['neck', 'chain'], ['coat', 'tux'], ['tailTip', 'tail-bow']]) {
     const set = {}; set[slot] = id;
     await dress(set);
     let bad = 0, total = 0;
@@ -344,18 +400,72 @@ const { viewport, prepare } = require('./harness');
   }
 
   // ---------- 2. ГОЛОВНОЕ ЕДЕТ ВМЕСТЕ С ЛИЦОМ ----------
+  // На голове четыре гнезда, и каждое обязано ехать: шляпа на макушке, очки
+  // на глазах, сигара во рту, серьги в ушах. Пока гнездо было одно, носить
+  // их одновременно было нельзя, а половина этих проверок не существовала.
   console.log('\n--- надетое на голову едет с лицом ---');
-  for (const id of ['top-hat', 'shades']) {
-    await dress({ head: id });
-    await setYaw(-1); const left = await page.evaluate(() => window.__wear.centre('head'));
-    await setYaw(1);  const right = await page.evaluate(() => window.__wear.centre('head'));
+  // Шляпа и очки ездят по ЧЕРЕПУ — их сдвиг виден относительно головы.
+  for (const slot of ['hat', 'eyes']) {
+    const item = catalog.filter(i => i.slot === slot)[0];
+    if (!item) { check(false, `в гнезде «${slot}» нет ни одного предмета`); continue; }
+    const set = {}; set[slot] = item.id;
+    await dress(set);
+    await setYaw(-1); const left = await page.evaluate(s => window.__wear.centre(s), slot);
+    await setYaw(1);  const right = await page.evaluate(s => window.__wear.centre(s), slot);
     check(left != null && right != null && right - left > 6,
-      `«${id}» проехал вместе с головой: ${left} → ${right}`);
+      `«${item.id}» (${slot}) проехал вместе с головой: ${left} → ${right}`);
+  }
+
+  // ---------- 2б. РОТ И УШИ ЕДУТ СО СВОЕЙ ЧЕРТОЙ ----------
+  // Сигара сидит на морде, серьга — на ухе. Относительно ЧЕРТЫ они обязаны
+  // стоять на месте: черта ездит сама, и вещь просто повторяет её. Пока
+  // сигара получала сдвиг морды, но не её сужение, она при повороте
+  // отрывалась от лица.
+  // Опора мерится по САМОЙ ЧЕРТЕ, а не по её соседям. Пробовали морду —
+  // её группа обрезана по черепу и при повороте не сужается вовсе; пробовали
+  // пятачок — он выступает вперёд и ездит по своему закону. Вещь во рту
+  // обязана совпадать со РТОМ, вещь на ухе — со СВОИМ ухом.
+  for (const [slot, hostSel, side] of [['ears', '[data-part="ear-right"]', 'right']]) {
+    const item = catalog.filter(i => i.slot === slot)[0];
+    if (!item) { check(false, `в гнезде «${slot}» нет ни одного предмета`); continue; }
+    const set = {}; set[slot] = item.id;
+    await dress(set);
+    const seen = [];
+    for (const yaw of YAWS) {
+      await setYaw(yaw);
+      const v = await page.evaluate(a => window.__wear.rides(a[0], a[1], a[2]), [slot, hostSel, side]);
+      if (v) seen.push(v);
+    }
+    const offs = seen.map(v => v.от);
+    const hostMoved = Math.max(...seen.map(v => v.черта)) - Math.min(...seen.map(v => v.черта));
+    const drift = offs.length ? Math.max(...offs) - Math.min(...offs) : null;
+    check(seen.length === YAWS.length && hostMoved > 4,
+      `черта под «${item.id}» и правда ездит: размах ${hostMoved.toFixed(1)}`);
+    check(drift != null && drift < 5,
+      `«${item.id}» едет вместе со своей чертой: уход ${drift}`);
+  }
+
+  // ---------- 2в. ТОРЧАЩЕЕ ДЕРЖИТСЯ ЛИЦА ----------
+  // У сигары мерить «смещение от рта» бессмысленно: она повторяет transform
+  // самого рта, и ответ был бы тождественно нулевым — проверка проверяла бы
+  // сама себя. Смысл в другом: при повороте она не должна ОТОРВАТЬСЯ от
+  // лица. Именно это и было видно глазами — сигара улетала вбок.
+  {
+    const item = catalog.filter(i => i.slot === 'mouth')[0];
+    await dress({ mouth: item.id });
+    let worst = 1;
+    for (const yaw of YAWS) {
+      await setYaw(yaw);
+      const v = await page.evaluate(() => window.__wear.overlapHead('mouth'));
+      if (v != null) worst = Math.min(worst, v);
+    }
+    check(worst > 0.25,
+      `«${item.id}» держится лица при любом повороте: худшее перекрытие ${worst}`);
   }
 
   // ---------- 3. ЛИНЗЫ НА ГЛАЗАХ ----------
   console.log('\n--- очки сидят на глазах ---');
-  await dress({ head: 'shades' });
+  await dress({ eyes: 'shades' });
   let lensWorst = 0, lensMeasured = 0;
   for (const yaw of YAWS) {
     await setYaw(yaw);
@@ -368,7 +478,7 @@ const { viewport, prepare } = require('./harness');
   // ---------- 4. ЖИВОТ НЕ ЗАТЯНУТ ЦЕЛИКОМ ----------
   console.log('\n--- живот виден из-под одежды ---');
   for (const id of ['tux', 'sash']) {
-    await dress({ body: id });
+    await dress({ coat: id });
     await setYaw(0);
     const v = await page.evaluate(() => window.__wear.bellyCovered());
     check(v != null && v < 0.7, `«${id}» не затягивает живот целиком: закрыто ${v}`);
@@ -387,7 +497,7 @@ const { viewport, prepare } = require('./harness');
   // Поэтому у тела и у хвоста проверки разные, и это не поблажка, а два
   // разных движения.
   console.log('\n--- наряд живёт вместе с телом ---');
-  await dress({ neck: 'chain', body: 'tux', tail: 'tail-bow' });
+  await dress({ neck: 'chain', coat: 'tux', tailTip: 'tail-bow' });
   const live = await page.evaluate(async () => {
     const turn = {}, swing = {}, squash = {}, hang = {};
     const span = (o) => { const r = {}; Object.keys(o).forEach(k => r[k] = +(o[k].max - o[k].min).toFixed(1)); return r; };
@@ -452,15 +562,15 @@ const { viewport, prepare } = require('./harness');
     Object.keys(hang).forEach(k => worstHang[k] = +Math.max(Math.abs(hang[k].min), Math.abs(hang[k].max)).toFixed(1));
     return { turn: span(turn), swing: span(swing), squash: span(squash), hang: worstHang };
   });
-  ['neck', 'body'].forEach(slot => {
+  ['neck', 'coat'].forEach(slot => {
     check((live.turn[slot] || 0) < 8,
       `«${slot}» НЕ крутится вокруг своей оси: ${live.turn[slot]}°`);
     check((live.squash[slot] || 0) > 0.12,
       `«${slot}» отзывается на поворот тела сужением: размах ${live.squash[slot]}`);
   });
-  check((live.turn.tail || 0) > 20,
-    `«tail» гнётся вместе с хвостом: ${live.turn.tail}°`);
-  ['neck', 'body', 'tail'].forEach(slot => {
+  check((live.turn.tailTip || 0) > 20,
+    `«tailTip» гнётся вместе с хвостом: ${live.turn.tailTip}°`);
+  ['neck', 'coat', 'tailTip'].forEach(slot => {
     check((live.swing[slot] || 0) > 2,
       `у «${slot}» есть подвижная деталь и её качает ход: ${live.swing[slot]}°`);
     check((live.hang[slot] || 99) < 34,
@@ -473,7 +583,7 @@ const { viewport, prepare } = require('./harness');
   // то, что число с датчика доезжает до ткани и разводит её в РАЗНЫЕ стороны.
   // И что без датчика всё работает как раньше: это штатный режим.
   console.log('\n--- наклон телефона отклоняет висящее ---');
-  await dress({ body: 'tux' });
+  await dress({ coat: 'tux' });
   const tilt = await page.evaluate(async () => {
     const quiet = { alive: Tilt.info().live, x: Tilt.x() };
     const fire = (g) => window.dispatchEvent(Object.assign(new Event('deviceorientation'),
@@ -485,7 +595,7 @@ const { viewport, prepare } = require('./harness');
     // размах («лишь бы менялось») пропускала перевёрнутый знак, и наклон
     // работал ровно наоборот.
     const tipX = () => {
-      const el = window.__wear.q('[data-cosmetic="body"] [data-swing]');
+      const el = window.__wear.q('[data-cosmetic="coat"] [data-swing]');
       if (!el) return null;
       const bb = el.getBBox();
       const svg = document.querySelector('#game-container svg');

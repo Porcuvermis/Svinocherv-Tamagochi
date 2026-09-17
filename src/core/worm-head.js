@@ -688,7 +688,7 @@ function buildMouthShapes(mouthAnchor, mouth, instanceId) {
     // ушах и бровях, а улыбки видно не было. Чем шире рот, тем на большем
     // расстоянии расходятся его уголки при том же изгибе, — то есть ширина
     // и есть главный рычаг «видно эмоцию или нет».
-    const W = 15.5;
+    const W = WormSilhouette.face.mouthHalf;
     const MAX_GAP = 10;  // при полном открытии (gap==W) рот примерно круглый
 
     // Линия губ чуть толще обычной внутренней границы (structure = 1.7).
@@ -1523,6 +1523,16 @@ function applyHeadWear(headRef, yaw) {
     const rx = headRef.rx || 1;
     for (let i = 0; i < list.length; i++) {
         const w = list[i];
+        // ---------- ЧТО УЖЕ ЕДЕТ ПРАВИЛЬНО, У ТОГО И СПИСЫВАЕМ ----------
+        // У рта и у ушей своей формулы посадки нет и не нужно: морда и уши
+        // уже пересчитаны на этот ракурс, и вещь просто повторяет их
+        // transform. Вторая формула про то же самое разошлась бы с первой
+        // на первой же правке (docs/traps.md, п. 103).
+        if (w.mirror) {
+            const t = w.mirror.getAttribute('transform') || '';
+            if (t !== w.mirrored) { w.mirrored = t; setAttr(w.node, 'transform', t); }
+            continue;
+        }
         const p = WormSilhouette.wearPlace(w.fit, yaw, w);
         setAttr(w.node, 'transform',
             `translate(${(w.x + p.x * rx).toFixed(2)},0) scale(${p.squash.toFixed(3)},1)`);
@@ -1562,7 +1572,6 @@ function applyHeadYaw(headRef, yaw) {
     if (!headRef || headRef.yaw === yaw) return;
     headRef.yaw = yaw;
     applyHeadScars(headRef, yaw);
-    applyHeadWear(headRef, yaw);
     const rx = headRef.rx, ry = headRef.ry;
 
     // Череп — единственная строка пути, которую приходится пересобирать.
@@ -1626,6 +1635,12 @@ function applyHeadYaw(headRef, yaw) {
             `translate(${headRef.mouthX.toFixed(2)},${(ry * MOUTH_Y).toFixed(2)}) ` +
             `scale(${(mo.x * headRef.mouthSquash).toFixed(3)},${mo.y.toFixed(3)})`);
     }
+
+    // ---------- НАДЕТОЕ НА ГОЛОВУ — ПОСЛЕДНИМ ----------
+    // Сигара во рту и серьги в ушах не считают свою посадку, а СПИСЫВАЮТ
+    // transform у морды и у ушей. Значит те должны быть уже пересчитаны:
+    // вызов стоял первым, и вещи отставали на кадр.
+    applyHeadWear(headRef, yaw);
 }
 
 // Трансформ «морды» пишут ДВА источника: поворот головы (сдвиг вбок, потому

@@ -82,7 +82,7 @@ const WormGarment = {
     // Всё, чем пользуется художник. Больше ему ничего не дают — и не надо:
     // любая другая арифметика по радиусу и есть та самая ручная подгонка,
     // ради отмены которой этот файл написан.
-    ctx(pattern, fit, skin) {
+    ctx(pattern, fit, skin, ref) {
         // ---------- ВДОЛЬ ДЛИННОЙ ЧАСТИ ----------
         // Хвост лежит поперёк экрана и длиннее себя же в толщину. Вещь,
         // скроенная по его поперечному радиусу, выходила колечком. `along`
@@ -107,8 +107,23 @@ const WormGarment = {
             return rx * Math.sqrt(Math.max(0, 1 - t * t)) * hug;
         };
 
+        // ---------- ОДНА ЕДИНИЦА НА ВСЕ ЧАСТИ ВЕЩИ ----------
+        // Верхняя одежда живёт на ДВУХ сегментах разной толщины. Если каждая
+        // половина мерит ширину своим rx, они не сходятся по шву: манишка
+        // сверху шире, чем снизу, и вещь разваливается ровно посередине.
+        // `unit` — общая мера для всех частей вещи (радиус опорной части), а
+        // `uOf` переводит её в местное u.
+        const unit = ref || rx;
+
         const g = {
-            rx, ry, skin,
+            rx, ry, skin, unit,
+
+            // u, при котором точка стоит в `k` общих единиц от середины.
+            // Половины вещи сходятся по шву по построению, а не подбором.
+            uOf(v, k) {
+                const h = hwAt(v);
+                return h > 0.001 ? Math.max(-1, Math.min(1, k * unit / h)) : 0;
+            },
             // Опорные точки лица — для твёрдых вещей, которые садятся не на
             // тело, а на черту: очки на глаза, цилиндр над бровью.
             eye: { y: (fit && fit.eyeY) || -ry * 0.35,
@@ -155,11 +170,7 @@ const WormGarment = {
             // легче и размашистее.
             swing(k, inner) {
                 return '<g data-swing="' + k + '">' + inner + '</g>';
-            },
-
-            // Сдвиг всей вещи к середине одеваемого куска. Ноль для всего,
-            // что сидит по центру части.
-            shift: along ? ((fit && fit.cx) || 0) : 0
+            }
         };
         return g;
     },
@@ -228,9 +239,19 @@ const WormGarment = {
     },
 
     // ---------- СБОРКА ----------
-    build(pattern, fit, skin) {
+    // sub — какая ЧАСТЬ многочастной вещи строится ('upper' / 'lower').
+    // ref — общая мера для всех её частей (радиус опорной части).
+    build(pattern, fit, skin, sub, ref) {
         if (!pattern) return null;
-        const g = this.ctx(pattern, fit, skin);
+        if (sub) {
+            const half = pattern.parts && pattern.parts[sub];
+            if (!half) return null;
+            // Половина наследует всё общее у вещи и добавляет своё.
+            pattern = Object.assign({}, pattern, half, { parts: null });
+        } else if (pattern.parts) {
+            return null;   // многочастную вещь целиком не строят
+        }
+        const g = this.ctx(pattern, fit, skin, ref);
         if (pattern.kind === 'rigid') {
             const hang = pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g)) : '';
             return '<g class="worm-cos">' + (pattern.draw ? pattern.draw(g) : '') + hang + '</g>';
@@ -238,7 +259,6 @@ const WormGarment = {
         const cut = pattern.cut ? pattern.cut(g) : [[-1, 0], [1, 0], [1, 1], [-1, 1]];
         const path = this.trace(cut, g);
         const base = pattern.base ? pattern.base(g) : g.C.cloth[500];
-        const shift = g.shift ? ' transform="translate(' + g.shift.toFixed(2) + ',0)"' : '';
         // ---------- У ОДЕЖДЫ ВСЕГДА ЕСТЬ КРАЙ ----------
         // Здесь обводились только те куски кромки, что кончаются на теле, а
         // уход за силуэт оставался голым. Смысл был верный (не класть вторую
@@ -270,7 +290,7 @@ const WormGarment = {
         // Подол идёт ПЕРВЫМ: он выходит из-под ткани, а не лежит на ней.
         const face = (pattern.face ? pattern.face(g) : '')
                    + (pattern.over ? pattern.over(g) : '');
-        return '<g class="worm-cos"' + shift + '>'
+        return '<g class="worm-cos">'
              + (pattern.hang ? g.swing(pattern.swing || 1, pattern.hang(g)) : '')
              + '<path d="' + path.fill + '" fill="' + base + '"/>'
              + (pattern.paint ? pattern.paint(g) : '')

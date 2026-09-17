@@ -239,16 +239,21 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                 eyeX: (model.eyes && model.eyes.left && model.eyes.left.offsetX) || 0,
                 eyeR: 8 * ((model.eyes && model.eyes.left && model.eyes.left.stretchX) || 1)
                         * ((model.eyes && model.eyes.left && model.eyes.left.scale) || 1) },
-        // ---------- У ХВОСТА ДВА РАЗМЕРА, А НЕ ОДИН ----------
-        // Хвост — не шар, а длинная капля, и «радиус» у него только
-        // поперечный. Пока габарит был один, гетра выходила колечком у
-        // основания: движок кроя считал часть кругом в один Rbase.
-        // long — половина длины куска, который вообще можно одеть, cx — его
-        // середина (у самого основания хвост слишком толст, у кончика
-        // слишком тонок).
-        tail: { rx: tailBuilt.baseRadius, ry: tailBuilt.baseRadius,
-                long: tailBuilt.length * 0.24, cx: -tailBuilt.length * 0.36,
-                longRy: tailBuilt.baseRadius * 0.78 }
+        // ---------- ХВОСТ ОДЕВАЕТСЯ ЗА КОНЧИК ----------
+        // Гнездо на хвосте — это именно КОНЧИК: туда надевается носок,
+        // чулок, бантик — то, во что кончик суют целиком. Раньше вещь сидела
+        // у середины хвоста и читалась повязкой посреди него.
+        //
+        // У капли габарит по длине и по толщине РАЗНЫЕ, и толщина берётся в
+        // том месте, где вещь лежит, а не у основания: по основанию ткань
+        // вылезала за силуэт. long — половина длины одеваемого куска,
+        // cx — его середина.
+        tail: (() => {
+            const L = tailBuilt.length, R = tailBuilt.baseRadius;
+            const tipR = R * 0.6;          // полутолщина хвоста у гнезда
+            return { rx: tipR, ry: tipR,   // для твёрдых вещей — бант, подвеска
+                     long: L * 0.15, longRy: tipR * 0.92, cx: -L * 0.76 };
+        })()
     };
     const skinByPart = { head: model.head.fill, tail: model.tail.fill };
     segmentRefs.forEach(seg => {
@@ -319,68 +324,121 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         Object.keys(model.cosmetics).forEach(slotKey => {
             const itemId = model.cosmetics[slotKey];
             if (!itemId) return;
-            const place = WormMarks.resolveSlot(model, slotKey);
-            if (!place) return;
-            const host = scarHostByPart[place.part];
-            if (!host) return;
-            const fit = wearFitByPart[place.part] || { rx: radiusByPart[place.part] || 15,
-                                                      ry: radiusByPart[place.part] || 15 };
-            const art = WormCosmetics.art(itemId, fit.rx, skinByPart[place.part], fit);
-            if (!art) return;
-            // place.x нормализован (доля радиуса части) — его надо УМНОЖИТЬ
-            // на радиус, как это делает buildMarkNode. Здесь стояло сырое
-            // число: работало только потому, что у предметов x всегда 0.
-            const hostR = radiusByPart[place.part] || 15;
-            const g = svgEl('g', { 'data-cosmetic': slotKey,
-                                   transform: `translate(${(place.x * hostR).toFixed(2)},0)` });
-            g.innerHTML = art;
-            // Надетое на ТЕЛО поворачивается вместе с осью части.
-            if (place.part !== 'head') {
-                const seg = segmentRefs.filter(sg => sg.name === place.part)[0];
-                // Зеркало части: чьи transform списывать каждый кадр. У
-                // хвоста их два — положение звена и его изгиб.
-                const mirror = place.part === 'tail'
-                    ? [tailBuilt.group, tailBuilt.bendGroup]
-                    : (seg ? [seg.group] : []);
-                const hostNode = svgEl('g', { class: 'worm-wear-host' });
-                hostNode.appendChild(g);
-                wearLayer.appendChild(hostNode);
-                wearOnBody.push({
-                    node: g, hostNode, mirror, mirrored: null, part: place.part,
-                    idx: place.part === "tail" ? tailIdx : (seg ? seg.idx : null),
-                    baseX: place.x * hostR,
-                    // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------
-                    // У ткани обшивка обнимает часть кругом и при любом
-                    // ракурсе достаёт до обоих краёв силуэта. Сужается и
-                    // съезжает только лицевая сторона — узел [data-face].
-                    // Пока сужалась вся вещь, она на развороте скукоживалась
-                    // к центру, и по бокам вылезала голая кожа.
-                    //
-                    // У твёрдых вещей (очки, цилиндр, бант) лица нет: они не
-                    // обшивка, и ракурс двигает их целиком, как раньше.
-                    faceNode: g.querySelector('[data-face]'),
-                    faceHalf: (() => {
-                        const f = g.querySelector('[data-face]');
-                        return f ? (parseFloat(f.getAttribute('data-face')) || 0.62) : 0;
-                    })(),
-                    // Подвижные детали: банты, фалды, подвески. Их качает
-                    // ходьба — тем и отличается наряд от наклейки.
-                    halfW: WormCosmetics.halfWidth(itemId),
-                    swings: [...g.querySelectorAll('[data-swing]')].map(el => ({
-                        el, k: parseFloat(el.getAttribute('data-swing')) || 1,
-                        ang: 0, vel: 0, now: 0
-                    })),
-                    shownX: null, shownSq: null
-                });
-            }
-            // Надетое на ГОЛОВУ едет вместе с лицом — как глаза, уши и шрамы.
-            // Голова рисуется последней и поверх колец сама, поэтому её
-            // наряд остаётся жить внутри неё.
-            if (place.part === 'head') {
-                host.appendChild(g);
+            // ---------- У ГНЕЗДА МЕСТ МОЖЕТ БЫТЬ НЕСКОЛЬКО ----------
+            // Верхняя одежда занимает два соседних сегмента: верх и низ одной
+            // вещи. Ответ у resolveSlot всегда список — одна ветка на все
+            // гнёзда, иначе вторая отстаёт от первой.
+            const places = WormMarks.resolveSlot(model, slotKey) || [];
+            if (!places.length) return;
+            // Общая мера для всех частей вещи — радиус ПОСЛЕДНЕЙ (нижней).
+            // По ней половины сходятся по шву: сегменты разной толщины, и
+            // одна доля даёт в них разную ширину.
+            const refFit = wearFitByPart[places[places.length - 1].part];
+            const refRx = refFit ? refFit.rx : null;
+
+            places.forEach(place => {
+                const host = scarHostByPart[place.part];
+                if (!host) return;
+                const fit = wearFitByPart[place.part] || { rx: radiusByPart[place.part] || 15,
+                                                          ry: radiusByPart[place.part] || 15 };
+                const art = WormCosmetics.art(itemId, fit.rx, skinByPart[place.part],
+                                              fit, place.sub, refRx);
+                // Часть вещи может не существовать: лента занимает только низ
+                // гнезда верхней одежды. Это не ошибка.
+                if (!art) return;
+                const hostR = radiusByPart[place.part] || 15;
+                // Сдвиг к МЕСТУ на части — дело монтажа, а не кроя: у гнезда
+                // на хвосте место у кончика, у остальных по центру.
+                const along = (place.tip && fit.cx) || 0;
+                const g = svgEl('g', { 'data-cosmetic': slotKey,
+                                       'data-sub': place.sub || '',
+                                       transform: `translate(${(place.x * hostR + along).toFixed(2)},0)` });
+                g.innerHTML = art;
+
+                // ---------- НА ТЕЛЕ ----------
+                if (place.part !== 'head') {
+                    const seg = segmentRefs.filter(sg => sg.name === place.part)[0];
+                    // Зеркало части: чьи transform списывать каждый кадр. У
+                    // хвоста их два — положение звена и его изгиб.
+                    const mirror = place.part === 'tail'
+                        ? [tailBuilt.group, tailBuilt.bendGroup]
+                        : (seg ? [seg.group] : []);
+                    const hostNode = svgEl('g', { class: 'worm-wear-host' });
+                    hostNode.appendChild(g);
+                    wearLayer.appendChild(hostNode);
+                    wearOnBody.push({
+                        node: g, hostNode, mirror, mirrored: null, part: place.part,
+                        idx: place.part === 'tail' ? tailIdx : (seg ? seg.idx : null),
+                        baseX: place.x * hostR + along,
+                        // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------
+                        // У ткани обшивка обнимает часть кругом и при любом
+                        // ракурсе достаёт до обоих краёв силуэта. Сужается и
+                        // съезжает только лицевая сторона — узел [data-face].
+                        // Пока сужалась вся вещь, она скукоживалась к центру, и
+                        // по бокам вылезала голая кожа.
+                        faceNode: g.querySelector('[data-face]'),
+                        faceHalf: (() => {
+                            const f = g.querySelector('[data-face]');
+                            return f ? (parseFloat(f.getAttribute('data-face')) || 0.62) : 0;
+                        })(),
+                        // Подвижные детали: банты, фалды, подвески. Их качает
+                        // ходьба — тем и отличается наряд от наклейки.
+                        halfW: WormCosmetics.halfWidth(itemId, place.sub),
+                        swings: [...g.querySelectorAll('[data-swing]')].map(el => ({
+                            el, k: parseFloat(el.getAttribute('data-swing')) || 1,
+                            ang: 0, vel: 0, now: 0
+                        })),
+                        shownX: null, shownSq: null
+                    });
+                    return;
+                }
+
+                // ---------- НА ГОЛОВЕ ----------
+                // Голова рисуется последней и поверх колец сама, поэтому её
+                // наряд остаётся жить внутри неё. Посадку даёт ГНЕЗДО, а не
+                // предмет: любые очки садятся на глаза, любая сигара — на
+                // морду.
                 headBuilt.wear = headBuilt.wear || [];
+                const seat = place.seat || 'axis';
+
+                // Рот и уши своей формулы не имеют: они СПИСЫВАЮТ transform у
+                // того узла, который уже едет правильно. У ушей таких узлов
+                // два, поэтому вещь вешается на каждое ухо своей копией.
+                if (seat === 'mouth' || seat === 'ears') {
+                    // ---------- ЦЕПЛЯЕМСЯ К САМОЙ ЧЕРТЕ ----------
+                    // Ко РТУ, а не к морде: у морды своя проекция (она
+                    // выступает вперёд), и вещь, посаженная на неё, при
+                    // повороте расходилась со ртом. mouthAnchor несёт ровно
+                    // ту посадку, что у рта, и предмет рисуется в МЕСТНЫХ
+                    // координатах рта — уголки губ на ±face.mouthHalf.
+                    const hosts = seat === 'mouth'
+                        ? [{ node: headBuilt.mouthAnchor, side: 1 }]
+                        : ['left', 'right'].map(sd => {
+                            const e = headBuilt.ears && headBuilt.ears[sd];
+                            return e ? { node: e.group, side: e.mirror || 1 } : null;
+                        });
+                    hosts.filter(Boolean).forEach((h, k) => {
+                        const art = k === 0 ? g : g.cloneNode(true);
+                        // Сторона зеркалится ЗДЕСЬ, а не в предмете: вещь
+                        // рисуется один раз, для правой стороны, и левая
+                        // получает её отражением. Иначе каждая вещь на уши
+                        // заводила бы по две картинки.
+                        const node = svgEl('g', { 'data-cosmetic': slotKey,
+                                                  'data-side': h.side < 0 ? 'left' : 'right',
+                                                  transform: h.side < 0 ? 'scale(-1,1)' : '' });
+                        node.appendChild(art);
+                        art.removeAttribute('data-cosmetic');
+                        const wrap = svgEl('g');
+                        wrap.appendChild(node);
+                        host.appendChild(wrap);
+                        headBuilt.wear.push({ node: wrap, mirror: h.node, mirrored: null });
+                    });
+                    return;
+                }
+
+                host.appendChild(g);
                 headBuilt.wear.push({
-                    node: g, fit: WormCosmetics.fit(itemId), x: place.x * hostR,
+                    node: g, fit: seat === 'eyes' ? 'face' : seat, x: place.x * hostR,
                     // Опоры для посадки на лице: где стоят глаза и какой у
                     // предмета авторский разлёт. По ним очки садятся ровно на
                     // яблоки при любом повороте.
@@ -392,7 +450,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                     eyeHalfW: (fit.eyeR || 0) / headBuilt.rx,
                     eyeSpread: (fit.eyeX || 0) / headBuilt.rx
                 });
-            }
+            });
         });
     }
 

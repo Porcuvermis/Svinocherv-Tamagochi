@@ -214,7 +214,7 @@ const { chromium } = require('playwright');
     Backend.grantCurrency('pride_kiss', 3000);
     const buy = Backend.buyWardrobe('top-hat');
     PrideMinigame.refreshWorm();
-    return { ok: buy.ok, надето: GameState.data.cosmetics.head };
+    return { ok: buy.ok, надето: GameState.data.cosmetics.hat };
   });
   await page.waitForTimeout(600);
   const onBody = await page.evaluate(() => ({
@@ -259,10 +259,10 @@ const { chromium } = require('playwright');
   // Полка, раскупленная целиком, обязана быть ПУСТОЙ — и не сломанной:
   // вместо карточек там галочка.
   const sold = await page.evaluate(() => {
-    PRIDE_WARDROBE.items.filter(i => i.slot === 'head')
+    PRIDE_WARDROBE.items.filter(i => i.slot === 'hat')
       .forEach(i => { GameState.data.wardrobe[i.id] = true; });
     PrideMinigame.storeOpen = true;
-    PrideMinigame.storeTab = 'head';
+    PrideMinigame.storeTab = 'hat';
     PrideMinigame.renderStore();
     const out = { карточек: document.querySelectorAll('.pr-item').length,
                   галочка: PrideMinigame.storeEl.innerHTML.includes('✓') };
@@ -276,27 +276,29 @@ const { chromium } = require('playwright');
   const inv = await page.evaluate(() => {
     // Пустой шкаф: в слоте, где ничего не куплено, строка должна быть одна.
     const empty = (() => {
-      PrideMinigame.openSlot = 'tail';
+      PrideMinigame.openSlot = 'tailTip';
       PrideMinigame.renderStore();
       return [...document.querySelectorAll('.pr-slot-item')].map(e => e.dataset.slotItem);
     })();
     // Полный: две шляпы + «ничего», и «ничего» — последняя строка.
     Backend.buyWardrobe('shades');
-    PrideMinigame.openSlot = 'head';
+    PrideMinigame.openSlot = 'hat';
     PrideMinigame.renderStore();
     const rows = [...document.querySelectorAll('.pr-slot-item')].map(e => e.dataset.slotItem);
     // Выбор пустой строки = снять.
     PrideMinigame.pickSlotItem('');
-    const afterNude = GameState.data.cosmetics.head || null;
+    const afterNude = GameState.data.cosmetics.hat || null;
     PrideMinigame.openSlot = null;
     PrideMinigame.renderStore();
     return { empty, rows, afterNude };
   });
+  // В гнезде макушки один предмет: очки уехали в своё гнездо, когда голову
+  // разделили на четыре точки. Строк в шкафу = купленное плюс пустая.
   const invOk = inv.empty.length === 1 && inv.empty[0] === '' &&
-                inv.rows.length === 3 && inv.rows[inv.rows.length - 1] === '' &&
+                inv.rows.length === 2 && inv.rows[inv.rows.length - 1] === '' &&
                 inv.afterNude === null;
-  console.log(`инвентарь слота: пустой шкаф — строк ${inv.empty.length}; ` +
-              `две шляпы — строки [${inv.rows.join(', ')}]; пустая строка снимает ${inv.afterNude === null}   ` +
+  console.log(`инвентарь гнезда: пустой шкаф — строк ${inv.empty.length}; ` +
+              `после покупки — строки [${inv.rows.join(', ')}]; пустая строка снимает ${inv.afterNude === null}   ` +
               (invOk ? 'ок' : '✗ НЕ ТО'));
 
   const bad = [];
@@ -305,7 +307,9 @@ const { chromium } = require('playwright');
   if (!onBody.вКомнате) bad.push('купленный наряд не появился на червe в комнате');
   if (res.phase !== 'done' && res.phase !== 'wardrobe') bad.push('выход не завершился сам');
   if (wardrobe.фаза !== 'wardrobe') bad.push('игра открылась не костюмерной');
-  if (wardrobe.слотов !== 4) bad.push(`слотов наряда ${wardrobe.слотов} вместо четырёх`);
+  // Гнёзд семь: четыре на голове (макушка, глаза, рот, уши), шея, верхняя
+  // одежда на двух сегментах и кончик хвоста.
+  if (wardrobe.слотов !== 7) bad.push(`гнёзд наряда ${wardrobe.слотов} вместо семи`);
   if (!wardrobe.старт || !wardrobe.магазин) bad.push('нет кнопки старта или магазина');
   if (Math.abs(sec - params.runMs / 1000) > 4) bad.push(`длина выхода ${sec} с вместо ${params.runMs / 1000}`);
   if (res.sin !== 100) bad.push('шкала греха не закрылась');

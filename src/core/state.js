@@ -22,7 +22,7 @@
 //      а не затереть его.
 const GameState = {
     STORAGE_KEY: 'svinocherv_state_v1',
-    SCHEMA_VERSION: 1,
+    SCHEMA_VERSION: 2,
 
     data: null,
     _listeners: [],
@@ -126,7 +126,32 @@ const GameState = {
     // Сюда добавляются функции по мере изменения формата:
     //   MIGRATIONS[1] = (data) => { ...превратить схему 1 в схему 2... };
     // и SCHEMA_VERSION поднимается на единицу.
-    MIGRATIONS: {},
+    MIGRATIONS: {
+        // ---------- 1 → 2: ГНЁЗДА КОСМЕТИКИ ПЕРЕИМЕНОВАНЫ ----------
+        // Было четыре гнезда (голова, шея, тело, хвост), стало семь: на
+        // голове теперь макушка, глаза, рот и уши по отдельности, а верхняя
+        // одежда занимает два сегмента сразу. Ключи в сейве надо перевести,
+        // иначе купленный наряд просто перестанет надеваться.
+        //
+        // Перевод идёт ПО ПРЕДМЕТУ, а не по старому ключу: старая «голова»
+        // могла держать и цилиндр, и очки, а они теперь в разных гнёздах.
+        // Каталог — единственный, кто знает, где чему место.
+        1(data) {
+            const worn = data.cosmetics;
+            if (!worn || typeof worn !== 'object') return;
+            const catalog = (typeof PRIDE_WARDROBE !== 'undefined') ? PRIDE_WARDROBE.items : null;
+            if (!catalog) return;
+            const next = {};
+            Object.keys(worn).forEach(oldSlot => {
+                const id = worn[oldSlot];
+                if (!id) return;
+                const item = catalog.filter(i => i.id === id)[0];
+                // Предмета больше нет в каталоге — вещь просто снимается.
+                if (item) next[item.slot] = id;
+            });
+            data.cosmetics = next;
+        }
+    },
 
     load() {
         let raw = null;

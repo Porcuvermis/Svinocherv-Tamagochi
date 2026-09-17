@@ -192,6 +192,19 @@ const WORM_EYE_KEEP_Y = 1.9;
 const WORM_HEAD_SNOUT_RX = 14.5;   // пятачок до масштабов модели
 const WORM_HEAD_SNOUT_RY = 10.5;
 const WORM_HEAD_EYE_R = 8;         // глаз до масштабов модели
+// ---------- КУДА ВЕШАЕТСЯ СЕРЬГА ----------
+// В МЕСТНЫХ координатах уха (см. earPathData в worm-head.js): основание уха
+// идёт от x = −19 до x = +27 на высоте y ≈ 11, наружный нижний угол — около
+// (24, 6). Серьга висит оттуда. Числа лежат здесь, а не в предмете: это
+// опорная точка тела, такая же как положение глаза, и предмету её знать
+// неоткуда.
+// Полуширина рта в его МЕСТНЫХ координатах: уголки губ на x = ±mouthHalf.
+// По ней садится всё, что держат во рту. Раньше число жило только в
+// рисовании рта, и вещь на нём не имела способа узнать, где уголок.
+const WORM_MOUTH_HALF = 15.5;
+const WORM_EAR_JEWEL_X = 21;
+const WORM_EAR_JEWEL_Y = 7;
+const WORM_EAR_UNIT = 27;          // масштаб уха: по нему меряются украшения
 const WORM_YAW_MAX_DEG = 42;       // сколько градусов даёт yaw = 1
 // Тот же порог видимости, что у отметин тела (`worm-marks.js`): голова и
 // тело прячут свои отметины по одному правилу, а не каждый по своему.
@@ -509,7 +522,8 @@ const WormSilhouette = {
     FADE_BAND: WORM_MARK_FADE_BAND,
     // Разметка лица — числами, а не копиями в двух файлах: рендерер берёт их
     // отсюда же.
-    face: { snoutY: WORM_HEAD_SNOUT_Y, mouthY: WORM_HEAD_MOUTH_Y,
+    face: {
+        mouthHalf: WORM_MOUTH_HALF, earJewelX: WORM_EAR_JEWEL_X, earJewelY: WORM_EAR_JEWEL_Y, earUnit: WORM_EAR_UNIT, snoutY: WORM_HEAD_SNOUT_Y, mouthY: WORM_HEAD_MOUTH_Y,
             eyeSurfaceK: WORM_HEAD_EYE_SURFACE_K, headR: WORM_HEAD_R },
     skullContains: wormSkullContains,
     skullPolygon: wormSkullPolyCached,

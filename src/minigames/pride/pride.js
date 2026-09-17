@@ -1124,20 +1124,33 @@ const PrideMinigame = {
             left: Math.max(S.x0 + 40, box.x - gap),
             right: Math.min(S.x1 - 40, box.x + box.w + gap)
         };
-        const rows = [
-            Math.max(S.y0 + 132, PRIDE_ART.Y_FEET - 240),
-            Math.max(S.y0 + 218, PRIDE_ART.Y_FEET - 152)
-        ];
+        // ---------- СТОЛБИК СТРОИТСЯ ПОД ЧИСЛО ГНЁЗД ----------
+        // Здесь стояли ДВЕ готовые строки: гнёзд было четыре, по два на
+        // сторону. Гнёзд стало семь, и лишние молча ложились друг на друга.
+        // Столбик считается от их количества, а карточка ужимается, чтобы
+        // весь ряд влез между шапкой и ногами червя.
+        const total = { left: 0, right: 0 };
+        PRIDE_WARDROBE.slots.forEach(sl => { total[sl.side]++; });
+        const most = Math.max(total.left, total.right, 1);
+        const top = Math.max(S.y0 + 118, PRIDE_ART.Y_FEET - 268);
+        const bottom = PRIDE_ART.Y_FEET - 96;
+        const span = Math.max(0, bottom - top);
+        const step = most > 1 ? span / (most - 1) : 0;
+        const card = Math.max(38, Math.min(62, step - 6));
         const used = { left: 0, right: 0 };
 
         let out = '';
         PRIDE_WARDROBE.slots.forEach(slot => {
             const x = cols[slot.side];
-            const y = rows[Math.min(1, used[slot.side]++)];
+            // Столбик каждой стороны центрируется по своей длине: три
+            // карточки справа не должны висеть выше четырёх слева.
+            const n = total[slot.side];
+            const y0 = top + (span - step * (n - 1)) / 2;
+            const y = y0 + step * used[slot.side]++;
             const art = worn[slot.key]
                 ? WormCosmetics.art(worn[slot.key], 15, PALETTE.flesh[500]) : null;
             out += `<g transform="translate(${x.toFixed(0)},${y.toFixed(0)})">` +
-                   PRIDE_ART.slotCard(slot, art) + '</g>';
+                   PRIDE_ART.slotCard(slot, art, card) + '</g>';
         });
 
         // Кнопка старта — ПОД червём: он стоит готовый и трогается с места,

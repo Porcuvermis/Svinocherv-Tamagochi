@@ -22,27 +22,39 @@ const WormCosmetics = {
 
     // Что рисовать для предмета. Возвращает строку SVG в местных координатах
     // части; null — предмета нет, вешать нечего.
-    art(itemId, r, skin, fit) {
+    art(itemId, r, skin, fit, sub, ref) {
         const pattern = this.ITEMS[itemId];
         if (!pattern) return null;
-        return WormGarment.build(pattern, fit || { rx: r, ry: r }, skin);
+        // Витрина зовёт без fit и без части: там надо показать вещь целиком.
+        // У многочастной для этого есть `card` — одна картинка на карточку.
+        if (!sub && pattern.parts) {
+            return pattern.card ? WormGarment.build(
+                Object.assign({}, pattern, pattern.card, { parts: null }),
+                fit || { rx: r, ry: r }, skin) : null;
+        }
+        return WormGarment.build(pattern, fit || { rx: r, ry: r }, skin, sub, ref);
+    },
+
+    // Многочастная ли вещь и какие у неё части.
+    partsOf(itemId) {
+        const p = this.ITEMS[itemId];
+        return (p && p.parts) ? Object.keys(p.parts) : null;
     },
 
     // Полуширина предмета в долях радиуса части. По ней надетое прижимается
     // к телу при повороте. У ткани она не объявляется вовсе — выкройка сама
     // доходит до краёв части, и число берётся оттуда.
-    halfWidth(itemId) {
-        return WormGarment.halfWidth(this.ITEMS[itemId]);
+    halfWidth(itemId, sub) {
+        const p = this.ITEMS[itemId];
+        if (p && p.parts && sub) return WormGarment.halfWidth(Object.assign({}, p, p.parts[sub]));
+        return WormGarment.halfWidth(p);
     },
 
-    // Посадка относительно поворота головы:
-    //   face  — лежит на лице, едет вместе с чертами (очки);
-    //   crown — надет на череп сверху, лишь слегка ведёт за лицом (цилиндр);
-    //   axis  — на оси части, поворот головы его не касается (всё остальное).
-    fit(itemId) {
-        const p = this.ITEMS[itemId];
-        return (p && p.seat) || 'axis';
-    },
+    // ---------- ПОСАДКИ ЗДЕСЬ НЕТ ----------
+    // Она объявлялась в предмете и была лишним решением у художника: любые
+    // очки садятся на глаза, любая шляпа — на макушку, любая сигара — на рот.
+    // Теперь посадку даёт ГНЕЗДО (`seat` в WormMarks.SLOTS), а предмету
+    // остаётся только картинка.
 
     ITEMS: {
 
@@ -51,7 +63,7 @@ const WormCosmetics = {
         // берётся от брови — цилиндр, надвинутый на глаза, читается не
         // нарядом, а тем, что персонаж прячется.
         'top-hat': {
-            kind: 'rigid', seat: 'crown', halfW: 1.02,
+            kind: 'rigid', halfW: 1.02,
             draw(g) {
                 const C = g.C, ry = g.ry, r = g.rx;
                 const brimY = g.eye.y - g.eye.r * 1.7 - ry * 0.1;
@@ -77,7 +89,7 @@ const WormCosmetics = {
         // радиуса, и она едет вместе с этой чертой. Выкройка делает то же
         // самое для ткани.
         'shades': {
-            kind: 'rigid', seat: 'face', halfW: 0.72,
+            kind: 'rigid', halfW: 0.72,
             draw(g) {
                 const C = g.C;
                 const y = g.eye.y, eyeX = g.eye.x, eyeR = g.eye.r;
@@ -95,6 +107,58 @@ const WormCosmetics = {
                           stroke="${C.gold[700]}" stroke-width="${eyeR * 0.22}" fill="none" stroke-linecap="round"/>
                     <path d="M ${eyeX + w / 2} ${y} L ${eyeX + w / 2 + eyeR * 0.5} ${y + eyeR * 0.2}"
                           stroke="${C.gold[700]}" stroke-width="${eyeR * 0.22}" fill="none" stroke-linecap="round"/>`;
+            }
+        },
+
+        // Сигара во рту. Твёрдая вещь: сидит на морде и едет вместе с
+        // ней — узел повторяет transform самой морды, своей формулы у него
+        // нет (одно описание на всех, docs/traps.md, п. 103).
+        // Сигара во рту. Рисуется в МЕСТНЫХ координатах РТА: уголки губ на
+        // x = ±face.mouthHalf, начало — середина рта. Узел повторяет
+        // transform самого рта, поэтому и сдвиг, и сужение при повороте
+        // достаются даром и ровно те же, что у рта (docs/traps.md, п. 103).
+        'cigar': {
+            kind: 'rigid', halfW: 0.75,
+            draw(g) {
+                const C = g.C, W = WormSilhouette.face.mouthHalf;
+                const x0 = W * 0.72, len = W * 1.5, th = W * 0.17;
+                return `<g transform="translate(${x0.toFixed(2)},0) rotate(-12)">
+                    <rect x="0" y="${(-th).toFixed(2)}" width="${len.toFixed(2)}" height="${(th * 2).toFixed(2)}"
+                          rx="${th.toFixed(2)}" fill="${C.linen[500]}"
+                          stroke="${g.ink}" stroke-width="${STROKE.detail}"/>
+                    <rect x="${(len * 0.6).toFixed(2)}" y="${(-th).toFixed(2)}"
+                          width="${(len * 0.2).toFixed(2)}" height="${(th * 2).toFixed(2)}"
+                          fill="${C.gold[700]}"/>
+                    <circle cx="${len.toFixed(2)}" cy="0" r="${(th * 1.1).toFixed(2)}"
+                            fill="${C.glow[300]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>
+                </g>`;
+            }
+        },
+
+        // Серьга. Рисуется в МЕСТНЫХ координатах уха и вешается на оба:
+        // узел повторяет transform своего уха, поэтому дальнее ухо само
+        // сожмётся и уедет, а зеркало левой стороны ставит монтаж.
+        // Якорь (наружный нижний угол уха) и масштаб — у силуэта: предмету
+        // их знать неоткуда.
+        'earrings': {
+            kind: 'rigid', halfW: 0.4, swing: 1.6,
+            draw(g) {
+                const F = WormSilhouette.face;
+                const r = F.earUnit * 0.13;
+                return `<circle cx="${F.earJewelX}" cy="${F.earJewelY}" r="${(r * 0.42).toFixed(2)}"
+                          fill="${g.C.gold[700]}"/>`;
+            },
+            // Подвеска качается на ходу — тем и отличается серьга от нашивки.
+            hang(g) {
+                const C = g.C, F = WormSilhouette.face;
+                const r = F.earUnit * 0.13, x = F.earJewelX, y = F.earJewelY;
+                return `<g transform="translate(${x},${y})">
+                    <path d="M 0 0 L 0 ${(r * 1.5).toFixed(2)}" stroke="${C.gold[700]}"
+                          stroke-width="${(r * 0.34).toFixed(2)}" fill="none"/>
+                    <circle cx="0" cy="${(r * 2.3).toFixed(2)}" r="${r.toFixed(2)}"
+                            fill="${C.gold[500]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>
+                    <circle cx="${(-r * 0.3).toFixed(2)}" cy="${(r * 2).toFixed(2)}"
+                            r="${(r * 0.3).toFixed(2)}" fill="${C.gold[300]}"/></g>`;
             }
         },
 
@@ -131,7 +195,7 @@ const WormCosmetics = {
         // Подвеска отдельным качающимся куском: тем и отличается наряд от
         // наклейки.
         'chain': {
-            kind: 'rigid', seat: 'axis', halfW: 0.9, swing: 0.8,
+            kind: 'rigid', halfW: 0.9, swing: 0.8,
             draw(g) {
                 const C = g.C, unit = Math.min(g.rx, g.ry);
                 // Концы подобраны так, чтобы КРАЙ звена был внутри шеи, а не
@@ -169,46 +233,74 @@ const WormCosmetics = {
         //   3. фалды, выходящие из-под подола и качающиеся на ходу.
         // Нижняя треть живота остаётся голой: живот — вершина силуэта
         // (docs/art-direction.md §4.1).
+        // ---------- ФРАК: ОДНА ВЕЩЬ, ДВЕ ПОЛОВИНЫ ----------
+        // Верхняя одежда занимает ДВА соседних сегмента и рисуется верхом и
+        // низом. Для игрока это одна вещь: сегменты перекрываются, половины
+        // стоят вплотную, шва не видно. Раньше пиджак жил на одном животе, и
+        // костюм читался разорванным — воротник на шее, пиджак на животе,
+        // между ними голое тело.
+        //
+        // Ширины манишки заданы через g.uOf — в ОБЩИХ единицах вещи, а не в
+        // долях своего сегмента. Иначе половины не сходятся по шву: сегменты
+        // разной толщины, и одна и та же доля даёт разную ширину.
         'tux': {
-            kind: 'cloth', cover: [-0.72, 0.30], swing: 1,
-            base: g => g.C.cloth[500],
-            // Манишка, лацканы и воротник — ЛИЦО фрака: при развороте они
-            // съезжают вбок и сужаются, а сукно продолжает обнимать живот.
-            faceHalf: 0.6,
-            face(g) {
-                const C = g.C;
-                // Манишка. Клин от плеч к пуговице: узнаваемая примета фрака
-                // — не чёрное, а БЕЛОЕ.
-                const shirt = g.d([[-0.58, 0.02], [0.58, 0.02], [0.24, 0.62], [0, 0.78], [-0.24, 0.62]]);
-                // Лацканы — тёмная кайма по краю манишки. Не четвёртая
-                // фигура: они лежат внутри её силуэта и только отделяют
-                // белое от сукна.
-                const lapel = (dir) => `<path d="${g.d([[dir * 0.58, 0.02], [dir * 0.94, 0.04],
-                                                        [dir * 0.30, 0.74], [dir * 0.14, 0.60]])}"
-                          fill="${C.cloth[900]}"/>`;
-                return `${lapel(-1)}${lapel(1)}
-                    <path d="${shirt}" fill="${C.linen[300]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>
-                    <path d="${g.d([[-0.60, 0.0], [0.60, 0.0], [0.52, 0.14], [-0.52, 0.14]])}"
-                          fill="${C.linen[500]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>`;
-            },
-            // Фалды. Выходят из-под подола и свисают ниже тела — по этому
-            // хвосту фрак и отличают от пиджака. Кусок ОДИН, с вырезом
-            // посередине: двумя отдельными клиньями это читалось штанинами.
-            hang(g) {
-                const C = g.C;
-                // Фалды у́же подола: из-под них должны быть видны бока
-                // живота — он вершина силуэта (docs/art-direction.md §4.1).
-                const pts = [[-0.70, -0.02], [0.70, -0.02], [0.60, 0.72], [0.28, 0.86],
-                             [0.10, 0.56], [-0.10, 0.56], [-0.28, 0.86], [-0.60, 0.72]];
-                const d = 'M ' + pts.map(q => g.po(q[0], 1, q[1])).join(' L ') + ' Z';
-                return `<path d="${d}" fill="${C.cloth[900]}" stroke="${g.ink}"
-                          stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
-            },
-            over(g) {
-                const b = g.at(0, 0.84);
-                return `<circle cx="${b.x.toFixed(2)}" cy="${b.y.toFixed(2)}"
-                        r="${(Math.min(g.rx, g.ry) * 0.09).toFixed(2)}" fill="${g.C.gold[500]}"
-                        stroke="${g.C.gold[700]}" stroke-width="${STROKE.hairline}"/>`;
+            kind: 'cloth',
+            parts: {
+                // Верх: плечи, воротник, начало манишки.
+                upper: {
+                    cover: [-0.80, 0.78], swing: 0,
+                    base: g => g.C.cloth[500],
+                    faceHalf: 0.6,
+                    face(g) {
+                        const C = g.C;
+                        const w0 = g.uOf(0.06, 0.30), w1 = g.uOf(1, 0.24);
+                        const shirt = g.d([[-w0, 0.06], [w0, 0.06], [w1, 1], [-w1, 1]]);
+                        const lapel = (dir) => `<path d="${g.d([[dir * w0, 0.06], [dir * 0.95, 0.10],
+                                                               [dir * w1 * 1.7, 1], [dir * w1, 1]])}"
+                                  fill="${C.cloth[900]}"/>`;
+                        return `${lapel(-1)}${lapel(1)}
+                            <path d="${shirt}" fill="${C.linen[300]}"
+                                  stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>
+                            <path d="${g.d([[-g.uOf(0, 0.34), 0], [g.uOf(0, 0.34), 0],
+                                            [g.uOf(0.16, 0.30), 0.16], [-g.uOf(0.16, 0.30), 0.16]])}"
+                                  fill="${C.linen[500]}" stroke="${g.ink}"
+                                  stroke-width="${STROKE.hairline}"/>`;
+                    }
+                },
+                // Низ: продолжение манишки, пуговица, подол и фалды.
+                lower: {
+                    cover: [-0.92, 0.10], swing: 1,
+                    base: g => g.C.cloth[500],
+                    faceHalf: 0.55,
+                    face(g) {
+                        const C = g.C;
+                        const w0 = g.uOf(0, 0.24);
+                        const shirt = g.d([[-w0, 0], [w0, 0], [w0 * 0.5, 0.52], [0, 0.66],
+                                           [-w0 * 0.5, 0.52]]);
+                        const lapel = (dir) => `<path d="${g.d([[dir * w0, 0], [dir * w0 * 1.7, 0],
+                                                               [dir * w0 * 0.7, 0.62], [dir * w0 * 0.4, 0.5]])}"
+                                  fill="${C.cloth[900]}"/>`;
+                        return `${lapel(-1)}${lapel(1)}
+                            <path d="${shirt}" fill="${C.linen[300]}"
+                                  stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>`;
+                    },
+                    over(g) {
+                        const b = g.at(0, 0.78);
+                        return `<circle cx="${b.x.toFixed(2)}" cy="${b.y.toFixed(2)}"
+                                r="${(Math.min(g.rx, g.ry) * 0.09).toFixed(2)}" fill="${g.C.gold[500]}"
+                                stroke="${g.C.gold[700]}" stroke-width="${STROKE.hairline}"/>`;
+                    },
+                    // Фалды: по ним фрак и отличают от пиджака. Кусок ОДИН, с
+                    // вырезом посередине — двумя клиньями это читалось
+                    // штанинами. У́же подола, чтобы были видны бока живота.
+                    hang(g) {
+                        const pts = [[-0.70, -0.02], [0.70, -0.02], [0.60, 0.72], [0.28, 0.86],
+                                     [0.10, 0.56], [-0.10, 0.56], [-0.28, 0.86], [-0.60, 0.72]];
+                        const d = 'M ' + pts.map(q => g.po(q[0], 1, q[1])).join(' L ') + ' Z';
+                        return `<path d="${d}" fill="${g.C.cloth[900]}" stroke="${g.ink}"
+                                  stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+                    }
+                }
             }
         },
 
@@ -216,8 +308,12 @@ const WormCosmetics = {
         // потому самый тщеславный: она ничего не значит и надета затем, чтобы
         // её увидели. Оба конца стоят на u = ±1, то есть РОВНО на краю тела:
         // лента через плечо тем и лента, что уходит за бока.
+        // Лента — не верхняя одежда, а украшение поверх: она занимает одну
+        // половину гнезда. Верхняя одежда (пиджаки, фраки, куртки) обязана
+        // занимать обе — иначе костюм снова разорвётся.
         'sash': {
-            kind: 'cloth', cover: [-0.80, 0.80],
+            kind: 'cloth', parts: { lower: {
+            cover: [-0.80, 0.80],
             base: g => g.C.silk[500],
             // Через плечо, а не поперёк пояса: правый конец высоко, левый
             // низко. Уклон был в девять градусов и читался ремнём.
@@ -234,7 +330,7 @@ const WormCosmetics = {
                           fill="${g.C.gold[500]}" stroke="${g.C.gold[700]}" stroke-width="${STROKE.detail}"/>
                     <circle cx="${q.x.toFixed(2)}" cy="${q.y.toFixed(2)}" r="${(r * 0.46).toFixed(2)}"
                           fill="${g.C.gold[300]}"/>`;
-            }
+            } } }
         },
 
         // ---------- ХВОСТ ----------
@@ -258,7 +354,7 @@ const WormCosmetics = {
         // Бант — твёрдая вещь: он СИДИТ на хвосте узлом, петли уходят вверх,
         // концы свисают и качаются.
         'tail-bow': {
-            kind: 'rigid', seat: 'axis', halfW: 1.7, swing: 1.3,
+            kind: 'rigid', halfW: 1.7, swing: 1.3,
             draw(g) {
                 const C = g.C, w = g.rx * 1.7, h = g.ry * 1.15, up = -g.ry * 0.3;
                 const loop = (dir) => `<path d="M 0 0 Q ${dir * w} ${-h} ${dir * w * 0.86} 0
