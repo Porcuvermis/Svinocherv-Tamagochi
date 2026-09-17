@@ -2422,7 +2422,7 @@ function buildTailNode(tail, ctx, attachRadius) {
     // висеть горизонтально — приколоченными к экрану, а не к телу.
     const scarLayer = svgEl('g', { 'data-anchor': 'tail-scars', class: 'worm-scar-layer' });
     bendGroup.appendChild(scarLayer);
-    return { group, path, bendGroup, scarLayer, baseRadius: Rbase, anat };
+    return { group, path, bendGroup, scarLayer, baseRadius: Rbase, length: L, anat };
 }
 
 // ---------- ПОСТРОЕНИЕ ОДНОГО ГЛАЗА (склера, радужка, зрачок, веко-шторка) ----------
@@ -4618,6 +4618,21 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
     // ПОД телом, чтобы наружу выходила только кайма.)
     root.appendChild(rings.group);
 
+    // ---------- НАДЕТОЕ ЛЕЖИТ ПОВЕРХ КОЖИ ----------
+    // Одежда жила внутри слоя своей части — и тем самым ПОД кольцами, кишкой
+    // и едой в ней: все три слоя общие для всего тела и рисуются после
+    // сегментов. Сквозь фрак просвечивали борозды между звеньями и блик
+    // живота, и ткань читалась плёнкой, а не тканью. Ткань непрозрачна —
+    // значит она выше кожи, и слой у неё отдельный.
+    //
+    // Платой за переезд был бы пересчёт положения части: узел больше не
+    // ребёнок своей группы и её transform не наследует. Считать его заново
+    // нельзя — раскладок у цепочки три, и четвёртая копия разошлась бы с
+    // ними в первую же правку. Поэтому узел не считает, а СПИСЫВАЕТ: берёт
+    // строку transform у самой части (см. tick, «надетое повторяет часть»).
+    const wearLayer = svgEl('g', { class: 'worm-wear-layer' });
+    root.appendChild(wearLayer);
+
     // Голова — последняя, поверх всего.
     const headBuilt = buildHeadNode(model, ctx);
     root.appendChild(headBuilt.group);
@@ -4642,7 +4657,16 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                 eyeX: (model.eyes && model.eyes.left && model.eyes.left.offsetX) || 0,
                 eyeR: 8 * ((model.eyes && model.eyes.left && model.eyes.left.stretchX) || 1)
                         * ((model.eyes && model.eyes.left && model.eyes.left.scale) || 1) },
-        tail: { rx: tailBuilt.baseRadius, ry: tailBuilt.baseRadius }
+        // ---------- У ХВОСТА ДВА РАЗМЕРА, А НЕ ОДИН ----------
+        // Хвост — не шар, а длинная капля, и «радиус» у него только
+        // поперечный. Пока габарит был один, гетра выходила колечком у
+        // основания: движок кроя считал часть кругом в один Rbase.
+        // long — половина длины куска, который вообще можно одеть, cx — его
+        // середина (у самого основания хвост слишком толст, у кончика
+        // слишком тонок).
+        tail: { rx: tailBuilt.baseRadius, ry: tailBuilt.baseRadius,
+                long: tailBuilt.length * 0.24, cx: -tailBuilt.length * 0.36,
+                longRy: tailBuilt.baseRadius * 0.78 }
     };
     const skinByPart = { head: model.head.fill, tail: model.tail.fill };
     segmentRefs.forEach(seg => {
@@ -4728,12 +4752,19 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
             const g = svgEl('g', { 'data-cosmetic': slotKey,
                                    transform: `translate(${(place.x * hostR).toFixed(2)},0)` });
             g.innerHTML = art;
-            host.appendChild(g);
             // Надетое на ТЕЛО поворачивается вместе с осью части.
             if (place.part !== 'head') {
                 const seg = segmentRefs.filter(sg => sg.name === place.part)[0];
+                // Зеркало части: чьи transform списывать каждый кадр. У
+                // хвоста их два — положение звена и его изгиб.
+                const mirror = place.part === 'tail'
+                    ? [tailBuilt.group, tailBuilt.bendGroup]
+                    : (seg ? [seg.group] : []);
+                const hostNode = svgEl('g', { class: 'worm-wear-host' });
+                hostNode.appendChild(g);
+                wearLayer.appendChild(hostNode);
                 wearOnBody.push({
-                    node: g, part: place.part,
+                    node: g, hostNode, mirror, mirrored: null, part: place.part,
                     idx: place.part === "tail" ? tailIdx : (seg ? seg.idx : null),
                     baseX: place.x * hostR,
                     // Подвижные детали: банты, фалды, подвески. Их качает
@@ -4747,7 +4778,10 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                 });
             }
             // Надетое на ГОЛОВУ едет вместе с лицом — как глаза, уши и шрамы.
+            // Голова рисуется последней и поверх колец сама, поэтому её
+            // наряд остаётся жить внутри неё.
             if (place.part === 'head') {
+                host.appendChild(g);
                 headBuilt.wear = headBuilt.wear || [];
                 headBuilt.wear.push({
                     node: g, fit: WormCosmetics.fit(itemId), x: place.x * hostR,
@@ -6722,6 +6756,20 @@ const WormRenderer = {
                         if (w.idx == null) return;
                         const me = hullCircles[w.idx];
                         if (!me) return;
+                        // ---------- НАДЕТОЕ ПОВТОРЯЕТ ЧАСТЬ ----------
+                        // Слой одежды лежит выше кожи и потому вне группы
+                        // части. Положение он не вычисляет, а списывает у
+                        // самой части: раскладок у цепочки три (прямая линия,
+                        // вертикаль, цепь с глубиной), и четвёртая копия
+                        // расчёта разошлась бы с ними в первую же правку.
+                        // Чтение атрибута не трогает раскладку и стоит ноль.
+                        if (w.mirror && w.mirror.length) {
+                            let t = '';
+                            for (let m = 0; m < w.mirror.length; m++) {
+                                t += (w.mirror[m].getAttribute('transform') || '') + ' ';
+                            }
+                            if (t !== w.mirrored) { w.mirrored = t; setAttr(w.hostNode, 'transform', t); }
+                        }
                         // Хвост живёт в своей группе изгиба — она его и
                         // поворачивает; тело поворота не имеет вовсе.
                         if (w.part !== 'tail') {

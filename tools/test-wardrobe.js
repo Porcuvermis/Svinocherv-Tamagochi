@@ -104,6 +104,62 @@ const { viewport, prepare } = require('./harness');
 
       // Доля ЖИВОТА, закрытая надетым. Живот — вершина силуэта, затянуть его
       // целиком нельзя.
+      // Доля ТОЛЩИНЫ части, закрытая тканью там, где ткань лежит. Одежда
+      // обязана доходить до краёв: то, что кончается внутри части, читается
+      // наклейкой. Меряется по настоящему силуэту (isPointInFill), а не по
+      // габаритному прямоугольнику: у хвоста-капли прямоугольник вдвое выше
+      // самого хвоста в том месте, где надета гетра.
+      //
+      // Висящее ([data-swing]) не в счёт — оно и должно выходить за тело.
+      // Часть спрашивается у того же WormMarks.resolveSlot, что и у
+      // рендерера: угадывать её «ближайшей к предмету» значило бы завести
+      // второе описание.
+      clothSpan(slot, along) {
+        const svg = document.querySelector('#game-container svg');
+        const g = this.q('[data-cosmetic="' + slot + '"]');
+        const place = WormMarks.resolveSlot(MainWormHandle.model || GameState.data.worm, slot);
+        if (!g || !place || !svg) return null;
+        const holder = this.q('[data-part="' + place.part + '"]');
+        const shape = holder && holder.querySelector('.worm-part-shape');
+        if (!shape) return null;
+        const cloth = [...g.querySelectorAll('path,rect,circle,ellipse,polygon')]
+          .filter(el => !el.closest('[data-swing]'));
+        if (!cloth.length) return null;
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        cloth.forEach(el => {
+          const r = el.getBoundingClientRect();
+          if (!r.width && !r.height) return;
+          x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.right);
+          y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.bottom);
+        });
+        if (x1 <= x0) return null;
+        // Разрез через середину ткани: у длинной части (хвост) поперёк неё,
+        // у обычной — по ширине.
+        const pr = shape.getBoundingClientRect();
+        const pt = svg.createSVGPoint(), inv = shape.getScreenCTM().inverse();
+        const hit = (sx, sy) => {
+          pt.x = sx; pt.y = sy;
+          const loc = pt.matrixTransform(inv);
+          const q = svg.createSVGPoint(); q.x = loc.x; q.y = loc.y;
+          return shape.isPointInFill(q);
+        };
+        const N = 200;
+        let a = null, b = null;
+        for (let i = 0; i <= N; i++) {
+          const t = i / N;
+          const sx = along ? (x0 + x1) / 2 : pr.x + pr.width * t;
+          const sy = along ? pr.y + pr.height * t : (y0 + y1) / 2;
+          if (!hit(sx, sy)) continue;
+          const v = along ? sy : sx;
+          if (a == null) a = v;
+          b = v;
+        }
+        if (a == null || b <= a) return null;
+        const c0 = along ? y0 : x0, c1 = along ? y1 : x1;
+        const cover = Math.min(c1, b) - Math.max(c0, a);
+        return +(cover / (b - a)).toFixed(3);
+      },
+
       bellyCovered() {
         const svg = document.querySelector('#game-container svg');
         const g = this.q('[data-cosmetic="body"]');
@@ -182,6 +238,52 @@ const { viewport, prepare } = require('./harness');
 
   const catalog = await page.evaluate(() => PRIDE_WARDROBE.items.map(i => ({ id: i.id, slot: i.slot, sits: i.sits })));
   const YAWS = [-1, -0.5, 0, 0.5, 1];
+
+  // ---------- 0. КАЖДАЯ ВЕЩЬ ИДЁТ ПО РЕЛЬСАМ ----------
+  // Проверяется не картинка, а КРОЙ — то, что должно достаться новой вещи
+  // само, без отладки. Три правила:
+  //
+  //   1. каталог и картинки не разъехались: у каждого купленного предмета
+  //      есть выкройка, и род у неё объявлен;
+  //   2. у ткани объявлен ОХВАТ — докуда по части она идёт. Вещь без охвата
+  //      кроится наугад;
+  //   3. ткань ДОХОДИТ ДО КРАЁВ части. Это и отличает одежду от нашлёпки:
+  //      фрак занимал два узких клина у краёв живота, между ними и телом
+  //      оставалась голая кожа, и вся вещь читалась галстуком-бабочкой.
+  console.log('\n--- крой: вещь скроена по телу, а не наклеена ---');
+  const rails = await page.evaluate(ids => ids.map(id => {
+    const p = WormCosmetics.ITEMS[id];
+    if (!p) return { id, есть: false };
+    const cover = p.cover || null;
+    return {
+      id, есть: true, kind: p.kind || null, along: !!p.along,
+      охват: p.kind === 'cloth' ? (cover && cover.length === 2
+             && cover[0] >= -1 && cover[1] <= 1 && cover[1] > cover[0]) : true
+    };
+  }), catalog.map(i => i.id));
+  rails.forEach(r => {
+    check(r.есть && (r.kind === 'cloth' || r.kind === 'rigid'),
+      `у «${r.id}» есть выкройка и объявлен род: ${r.kind}`);
+    check(r.охват, `у «${r.id}» объявлен охват по части`);
+  });
+  // Замер идёт СТРОГО В АНФАС: при повороте тела вещь законно сужается до
+  // двух третей, и проверка «доходит ли до краёв» в три четверти мерила бы
+  // ракурс, а не крой.
+  for (const item of catalog) {
+    const p = rails.filter(r => r.id === item.id)[0];
+    if (!p || p.kind !== 'cloth') continue;
+    const set = {}; set[item.slot] = item.id;
+    await dress(set);
+    await page.evaluate(async () => {
+      MainWormHandle.setLivePose({ bodyYaw: 0 });
+      for (let i = 0; i < 6; i++) await new Promise(r => requestAnimationFrame(r));
+    });
+    const w = await page.evaluate(a => window.__wear.clothSpan(a[0], a[1]),
+                                  [item.slot, !!p.along]);
+    check(w != null && w >= 0.85,
+      `«${item.id}» доходит до краёв части: ${w} её толщины`);
+  }
+  await page.evaluate(() => MainWormHandle.setLivePose({ bodyYaw: null }));
 
   // ---------- 1. ВСЁ ЛЕЖИТ НА ТЕЛЕ ----------
   console.log('\n--- предмет лежит на теле, а не рядом ---');
@@ -305,6 +407,16 @@ const { viewport, prepare } = require('./harness');
     for (let i = 0; i < 420; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
     if (MainWormHandle.walkTo) MainWormHandle.walkTo(70, 700);
     for (let i = 0; i < 420; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
+    // ---------- РАКУРС ЗАДАЁТСЯ, А НЕ ВЫХАЖИВАЕТСЯ ----------
+    // Сужение — это ответ на РАКУРС ТЕЛА, и мерить его ходьбой было
+    // гаданием: разворот в конце прохода то успевал за отведённые кадры, то
+    // нет, и проверка краснела через раз на ровном месте. Ход остаётся для
+    // качания (оно и правда от скорости), а ракурс задаётся прямо.
+    for (const k of [-1, 0, 1, 0]) {
+      MainWormHandle.setLivePose({ bodyYaw: k });
+      for (let i = 0; i < 12; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
+    }
+    MainWormHandle.setLivePose({ bodyYaw: null });
     const worstHang = {};
     Object.keys(hang).forEach(k => worstHang[k] = +Math.max(Math.abs(hang[k].min), Math.abs(hang[k].max)).toFixed(1));
     return { turn: span(turn), swing: span(swing), squash: span(squash), hang: worstHang };
