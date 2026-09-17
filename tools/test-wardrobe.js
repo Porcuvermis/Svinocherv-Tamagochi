@@ -39,6 +39,10 @@ const { viewport, prepare } = require('./harness');
     window.__wear = {
       // Доля площади предмета, лежащая на теле. Тело — объединение силуэтов
       // частей; точки берутся сеткой по каждой фигуре предмета.
+      //
+      // ВИСЯЩИЕ части ([data-swing]) в счёт не идут: лента, качнувшаяся в
+      // сторону, ЗАКОННО уходит с тела — на то она и висит. За них отвечает
+      // отдельная проверка: пришитый конец обязан быть на теле.
       onBody(slot) {
         const svg = document.querySelector('#game-container svg');
         const g = document.querySelector('[data-cosmetic="' + slot + '"]');
@@ -47,7 +51,7 @@ const { viewport, prepare } = require('./harness');
         let inside = 0, total = 0;
         const pt = svg.createSVGPoint();
         [...g.querySelectorAll('path,rect,circle,ellipse,polygon')].forEach(sh => {
-          if (!sh.isPointInFill) return;
+          if (!sh.isPointInFill || sh.closest('[data-swing]')) return;
           const bb = sh.getBBox(), N = 14;
           for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
             pt.x = bb.x + bb.width * i / N; pt.y = bb.y + bb.height * j / N;
@@ -117,6 +121,28 @@ const { viewport, prepare } = require('./harness');
         return inside ? +(covered / inside).toFixed(3) : null;
       },
 
+      // Пришитый конец висящей детали — на теле? Берём точку крепления
+      // (начало координат её группы) и спрашиваем силуэты частей.
+      hangRoots(slot) {
+        const svg = document.querySelector('#game-container svg');
+        const g = document.querySelector('[data-cosmetic="' + slot + '"]');
+        if (!g || !svg) return null;
+        const parts = [...document.querySelectorAll('.worm-part-shape')];
+        const out = [];
+        [...g.querySelectorAll('[data-swing]')].forEach(el => {
+          const m = el.getScreenCTM(); if (!m) return;
+          const p = svg.createSVGPoint(); p.x = 0; p.y = 0;
+          const scr = p.matrixTransform(m);
+          out.push(parts.some(pt => {
+            const pm = pt.getScreenCTM(); if (!pm) return false;
+            const loc = scr.matrixTransform(pm.inverse());
+            const q = svg.createSVGPoint(); q.x = loc.x; q.y = loc.y;
+            return pt.isPointInFill(q);
+          }));
+        });
+        return out;
+      },
+
       // Где предмет стоит ОТНОСИТЕЛЬНО ГОЛОВЫ. Не на экране: червь ходит по
       // комнате, и экранный сдвиг считался бы от его шагов, а не от поворота.
       centre(slot) {
@@ -166,6 +192,20 @@ const { viewport, prepare } = require('./harness');
       `«${item.id}» лежит на теле: ${v} при заявленных ${item.sits}`);
   });
 
+  console.log('\n--- висящее пришито к телу ---');
+  for (const [slot, id] of [['neck', 'chain'], ['body', 'tux'], ['tail', 'tail-bow']]) {
+    const set = {}; set[slot] = id;
+    await dress(set);
+    let bad = 0, total = 0;
+    for (const yaw of YAWS) {
+      await setYaw(yaw);
+      const r = await page.evaluate(s => window.__wear.hangRoots(s), slot);
+      (r || []).forEach(ok => { total++; if (!ok) bad++; });
+    }
+    check(total > 0 && bad === 0,
+      `у «${id}» пришитый конец висящей детали на теле: ${total - bad} из ${total}`);
+  }
+
   // ---------- 2. ГОЛОВНОЕ ЕДЕТ ВМЕСТЕ С ЛИЦОМ ----------
   console.log('\n--- надетое на голову едет с лицом ---');
   for (const id of ['top-hat', 'shades']) {
@@ -198,29 +238,41 @@ const { viewport, prepare } = require('./harness');
   }
 
   // ---------- 5. НАРЯД ЖИВЁТ ВМЕСТЕ С ТЕЛОМ ----------
-  // Жалоба была ровно такая: «вся остальная одежда приколочена, бантик на
-  // хвосте всегда горизонтальный относительно ЭКРАНА, а не относительно тела».
-  // Поэтому мерим поворот предмета В ЭКРАННЫХ координатах: так всё равно,
-  // какой из предков его повернул, — важно, что он поворачивается.
-  console.log('\n--- наряд поворачивается вместе с телом ---');
+  // Жалоб было две, и они про РАЗНОЕ.
+  //
+  // «Бантик на хвосте всегда горизонтальный относительно экрана» — хвост
+  // по-настоящему гнётся на экране, и надетое на него обязано гнуться с ним.
+  //
+  // «Фрак не должен крутиться вокруг своей оси» — а вот тело НЕ крутится:
+  // для игрока червь стоит вертикально и поворачивается целиком. Фрак должен
+  // уезжать вбок и сужаться, как очки на лице, и при этом НЕ вращаться.
+  //
+  // Поэтому у тела и у хвоста проверки разные, и это не поблажка, а два
+  // разных движения.
+  console.log('\n--- наряд живёт вместе с телом ---');
   await dress({ neck: 'chain', body: 'tux', tail: 'tail-bow' });
   const live = await page.evaluate(async () => {
-    const turn = {}, swing = {};
+    const turn = {}, swing = {}, squash = {}, hang = {};
+    const span = (o) => { const r = {}; Object.keys(o).forEach(k => r[k] = +(o[k].max - o[k].min).toFixed(1)); return r; };
     const note = () => {
       document.querySelectorAll('[data-cosmetic]').forEach(g => {
         const m = g.getScreenCTM(); if (!m) return;
         const k = g.getAttribute('data-cosmetic');
         const deg = Math.atan2(m.b, m.a) * 180 / Math.PI;
-        // Разворачиваем угол: atan2 прыгает через ±180, и размах без этого
-        // показывает 360 у предмета, который качнулся на градус.
-        if (!turn[k]) { turn[k] = { prev: deg, acc: 0, min: 0, max: 0 }; return; }
-        let d = deg - turn[k].prev;
-        while (d > 180) d -= 360;
-        while (d < -180) d += 360;
-        turn[k].prev = deg;
-        turn[k].acc += d;
-        turn[k].min = Math.min(turn[k].min, turn[k].acc);
-        turn[k].max = Math.max(turn[k].max, turn[k].acc);
+        if (!turn[k]) { turn[k] = { prev: deg, acc: 0, min: 0, max: 0 }; }
+        else {
+          let d = deg - turn[k].prev;
+          while (d > 180) d -= 360;
+          while (d < -180) d += 360;
+          turn[k].prev = deg; turn[k].acc += d;
+          turn[k].min = Math.min(turn[k].min, turn[k].acc);
+          turn[k].max = Math.max(turn[k].max, turn[k].acc);
+        }
+        // Сужение при повороте тела — своим transform, не экранным.
+        const sm = /scale\(([-0-9.]+)/.exec(g.getAttribute('transform') || '');
+        const sx = sm ? parseFloat(sm[1]) : 1;
+        squash[k] = squash[k] || { min: sx, max: sx };
+        squash[k].min = Math.min(squash[k].min, sx); squash[k].max = Math.max(squash[k].max, sx);
       });
       document.querySelectorAll('[data-swing]').forEach(el => {
         const host = el.closest('[data-cosmetic]');
@@ -229,23 +281,67 @@ const { viewport, prepare } = require('./harness');
         const v = m ? parseFloat(m[1]) : 0;
         swing[k] = swing[k] || { min: v, max: v };
         swing[k].min = Math.min(swing[k].min, v); swing[k].max = Math.max(swing[k].max, v);
+        // А ВИСИТ ли оно вниз по экрану: берём накопленный поворот самой
+        // подвески вместе со всеми предками.
+        const ctm = el.getScreenCTM();
+        if (ctm) {
+          const deg = Math.atan2(ctm.b, ctm.a) * 180 / Math.PI;
+          hang[k] = hang[k] || { min: deg, max: deg };
+          hang[k].min = Math.min(hang[k].min, deg); hang[k].max = Math.max(hang[k].max, deg);
+        }
       });
     };
     if (MainWormHandle.walkTo) MainWormHandle.walkTo(320, 700);
     for (let i = 0; i < 420; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
     if (MainWormHandle.walkTo) MainWormHandle.walkTo(70, 700);
     for (let i = 0; i < 420; i++) { await new Promise(r => requestAnimationFrame(r)); note(); }
-    const span = (o) => { const r = {}; Object.keys(o).forEach(k => r[k] = +(o[k].max - o[k].min).toFixed(1)); return r; };
-    return { turn: span(turn), swing: span(swing) };
+    const worstHang = {};
+    Object.keys(hang).forEach(k => worstHang[k] = +Math.max(Math.abs(hang[k].min), Math.abs(hang[k].max)).toFixed(1));
+    return { turn: span(turn), swing: span(swing), squash: span(squash), hang: worstHang };
   });
-  ['neck', 'body', 'tail'].forEach(slot => {
-    check((live.turn[slot] || 0) > 5,
-      `«${slot}» поворачивается вместе с телом, а не стоит по экрану: ${live.turn[slot]}°`);
+  ['neck', 'body'].forEach(slot => {
+    check((live.turn[slot] || 0) < 8,
+      `«${slot}» НЕ крутится вокруг своей оси: ${live.turn[slot]}°`);
+    check((live.squash[slot] || 0) > 0.12,
+      `«${slot}» отзывается на поворот тела сужением: размах ${live.squash[slot]}`);
   });
+  check((live.turn.tail || 0) > 20,
+    `«tail» гнётся вместе с хвостом: ${live.turn.tail}°`);
   ['neck', 'body', 'tail'].forEach(slot => {
     check((live.swing[slot] || 0) > 2,
       `у «${slot}» есть подвижная деталь и её качает ход: ${live.swing[slot]}°`);
+    check((live.hang[slot] || 99) < 34,
+      `висящее у «${slot}» висит ВНИЗ ПО ЭКРАНУ, а не по своей части: худший наклон ${live.hang[slot]}°`);
   });
+
+  // ---------- 6. НАКЛОН ТЕЛЕФОНА ----------
+  // Висящее слушается не только ходьбы, но и того, как завален сам телефон.
+  // Датчика в прогоне нет — подаём событие руками: проверяется не железо, а
+  // то, что число с датчика доезжает до ткани и разводит её в РАЗНЫЕ стороны.
+  // И что без датчика всё работает как раньше: это штатный режим.
+  console.log('\n--- наклон телефона отклоняет висящее ---');
+  await dress({ body: 'tux' });
+  const tilt = await page.evaluate(async () => {
+    const quiet = { alive: Tilt.alive(), x: Tilt.x() };
+    const fire = (g) => window.dispatchEvent(Object.assign(new Event('deviceorientation'),
+                                                           { gamma: g, beta: 0, alpha: 0 }));
+    const read = () => {
+      const el = document.querySelector('[data-cosmetic="body"] [data-swing]');
+      const m = el && /rotate\(([-0-9.]+)/.exec(el.getAttribute('transform') || '');
+      return m ? parseFloat(m[1]) : null;
+    };
+    fire(-30);
+    for (let i = 0; i < 150; i++) await new Promise(r => requestAnimationFrame(r));
+    const left = read();
+    fire(30);
+    for (let i = 0; i < 150; i++) await new Promise(r => requestAnimationFrame(r));
+    const right = read();
+    return { quiet, alive: Tilt.alive(), left, right };
+  });
+  check(tilt.quiet.alive === false && tilt.quiet.x === 0,
+    'без датчика наклон равен нулю и ничего не ломает');
+  check(tilt.left != null && tilt.right != null && tilt.right - tilt.left > 12,
+    `наклон телефона отводит фалды в разные стороны: ${tilt.left}° → ${tilt.right}°`);
 
   // ---------- СНИМКИ ----------
   for (const [name, set] of [

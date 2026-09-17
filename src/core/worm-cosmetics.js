@@ -33,7 +33,12 @@ const WormCosmetics = {
 
     // Полуширина предмета в долях радиуса части. По ней надетое на лицо
     // прижимается к контуру при повороте — как дальний глаз.
-    HALF_WIDTH: { 'shades': 0.72, 'top-hat': 1.02 },
+    HALF_WIDTH: {
+        'shades': 0.72, 'top-hat': 1.02,
+        'bow-tie': 0.82, 'chain': 0.9,
+        'tux': 0.94, 'sash': 0.98,
+        'tail-sock': 1.1, 'tail-bow': 1.7
+    },
     halfWidth(itemId) {
         return this.HALF_WIDTH[itemId] || 0;
     },

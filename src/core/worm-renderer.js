@@ -4738,10 +4738,12 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                     baseX: place.x * hostR,
                     // Подвижные детали: банты, фалды, подвески. Их качает
                     // ходьба — тем и отличается наряд от наклейки.
+                    halfW: WormCosmetics.halfWidth(itemId),
                     swings: [...g.querySelectorAll('[data-swing]')].map(el => ({
-                        el, k: parseFloat(el.getAttribute('data-swing')) || 1, now: 0
+                        el, k: parseFloat(el.getAttribute('data-swing')) || 1,
+                        ang: 0, vel: 0, now: 0
                     })),
-                    prevX: null, swing: 0, angle: 0
+                    shownX: null, shownSq: null
                 });
             }
             // Надетое на ГОЛОВУ едет вместе с лицом — как глаза, уши и шрамы.
@@ -6480,6 +6482,7 @@ const WormRenderer = {
                         x: tsx, y: tsy, r: state.built.tail.baseRadius, color: mm.tail.fill
                     };
                     if (state.built.tail.bendGroup) {
+                        state.tailWearRot = state.livePose.tailBendAngle;
                         setAttr(state.built.tail.bendGroup, 'transform', `rotate(${state.livePose.tailBendAngle.toFixed(1)})`);
                     }
                 } else {
@@ -6612,6 +6615,7 @@ const WormRenderer = {
                     if (state.built.tail.bendGroup) {
                         const extraWag = opts.idleWave ? Math.sin(state.tailWagPhase + 1.7) * tailExtraWagDeg : 0;
                         const totalRotate = (tailAngleDeg - 180) + extraWag + state.livePose.tailBendAngle;
+                        state.tailWearRot = totalRotate;
                         setAttr(state.built.tail.bendGroup, 'transform', `rotate(${totalRotate.toFixed(1)})`);
                     }
 
@@ -6682,48 +6686,59 @@ const WormRenderer = {
                 // Угол части берём из положения соседей — из тех же кругов,
                 // что и силуэт, так что расходиться нечему.
                 if (state.built.wearOnBody && state.built.wearOnBody.length) {
-                    // ---------- КАЧАНИЕ ----------
-                    // Считается от ХОДА ПЕРСОНАЖА ПО КОМНАТЕ, а не от местных
-                    // координат частей: при ходьбе двигается весь червь
-                    // целиком (один трансформ на корне), и местные координаты
-                    // почти не меняются — первая версия качала фалды на две
-                    // десятых градуса. Плюс еле заметное покачивание на месте:
-                    // наряд не должен выглядеть приклеенным у стоящего червя.
-                    const vx = state.wearPrevX == null ? 0 : (state.wormX - state.wearPrevX);
+                    // ---------- ТЕЛО ПОВОРАЧИВАЕТСЯ, А НЕ КРУТИТСЯ ----------
+                    // Первая версия поворачивала одежду по оси части — и это
+                    // читалось как шарик, крутящийся под фраком. Для игрока
+                    // червь стоит вертикально и поворачивается ЦЕЛИКОМ, как
+                    // очки на лице: предмет уезжает вбок и сужается, показывая
+                    // то один бок, то другой. Ракурс тела — тот же признак, по
+                    // которому доворачивается грудная клетка.
+                    const live = state.livePose.bodyYaw;
+                    const bodyK = live != null ? Math.max(-1, Math.min(1, live))
+                                               : -Math.cos(state.tailAngle * Math.PI / 180);
+
+                    // ---------- ВИСЯЩЕЕ СЛУШАЕТСЯ ТЯЖЕСТИ ----------
+                    // Фалды, ленты и подвески висят ВНИЗ ПО ЭКРАНУ, а не по
+                    // своей части: один конец пришит к телу, второй свободен.
+                    // Угол считается пружиной с затуханием — отсюда и упругость,
+                    // и раскачка после остановки. Ведёт её скорость персонажа
+                    // по сцене и наклон телефона (если он есть).
+                    const dt = Math.max(0.001, Math.min(0.05, geomDtSec || 0.016));
+                    const vx = state.wearPrevX == null ? 0 : (state.wormX - state.wearPrevX) / dt;
                     state.wearPrevX = state.wormX;
-                    const idle = opts.idleWave ? Math.sin(state.animTime * 1.25) * 2.4 : 0;
-                    const swingTarget = Math.max(-20, Math.min(20, -vx * 1.6)) + idle;
-                    state.wearSwing = (state.wearSwing || 0) + (swingTarget - (state.wearSwing || 0)) * 0.12;
+                    const tiltDeg = (typeof Tilt !== 'undefined' && Tilt.x) ? Tilt.x() * 16 : 0;
+                    const target = Math.max(-24, Math.min(24, -vx * 0.035)) + tiltDeg;
 
                     state.built.wearOnBody.forEach(w => {
                         if (w.idx == null) return;
                         const me = hullCircles[w.idx];
                         if (!me) return;
-                        // У хвоста собственный поворот уже есть: слой кожи
-                        // лежит внутри группы изгиба и гнётся вместе с ним.
-                        // Добавлять сюда ещё и угол по соседям значит
-                        // повернуть дважды.
+                        // Хвост живёт в своей группе изгиба — она его и
+                        // поворачивает; тело поворота не имеет вовсе.
                         if (w.part !== 'tail') {
-                            const a = hullCircles[w.idx - 1] || me;
-                            const b = hullCircles[w.idx + 1] || me;
-                            if (a !== b) {
-                                // Ось части — направление «от предыдущего
-                                // соседа к следующему». Одежда сидит ПОПЕРЁК
-                                // неё, а ось тела у стоящего червя идёт вниз,
-                                // отсюда −90°.
-                                const deg = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI - 90;
-                                if (w.angleSet !== true || Math.abs(deg - w.angle) > 0.2) {
-                                    w.angle = deg;
-                                    w.angleSet = true;
-                                    setAttr(w.node, 'transform',
-                                        `translate(${w.baseX.toFixed(2)},0) rotate(${deg.toFixed(1)})`);
-                                }
+                            const p = WormSilhouette.wearBodyPlace(bodyK, w.halfW);
+                            if (w.shownX !== p.x || w.shownSq !== p.squash) {
+                                w.shownX = p.x; w.shownSq = p.squash;
+                                setAttr(w.node, 'transform',
+                                    `translate(${(w.baseX + p.x * (me.r || 1)).toFixed(2)},0)`
+                                    + ` scale(${p.squash.toFixed(3)},1)`);
                             }
                         }
+                        // Куда повёрнут сам носитель: висящее обязано это
+                        // вычесть, иначе оно висит «вниз по хвосту», а не вниз.
+                        const host = w.part === 'tail' ? (state.tailWearRot || 0) : 0;
                         for (let k = 0; k < w.swings.length; k++) {
                             const sw = w.swings[k];
-                            const want = state.wearSwing * sw.k;
-                            if (Math.abs(want - sw.now) < 0.15) continue;
+                            // Пружина: тянет к цели, гасится, потому качается.
+                            // Чем дальше по подвеске, тем мягче — так цепочка
+                            // из нескольких звеньев изгибается, а не едет одним
+                            // куском.
+                            const stiff = 46 / (1 + k * 0.9), damp = 7.5 + k * 1.2;
+                            sw.vel = (sw.vel || 0) + ((target * sw.k - (sw.ang || 0)) * stiff
+                                                     - (sw.vel || 0) * damp) * dt;
+                            sw.ang = (sw.ang || 0) + sw.vel * dt;
+                            const want = sw.ang - host;
+                            if (Math.abs(want - sw.now) < 0.2) continue;
                             sw.now = want;
                             setAttr(sw.el, 'transform', `rotate(${want.toFixed(1)})`);
                         }
