@@ -1279,14 +1279,16 @@ const WormRenderer = {
                         const sx = -(seg.idx * WORM_SEGMENT_SPACING + WORM_CHAIN_HEAD_GAP + extraGap);
                         const sy = opts.idleWave ? (Math.sin(state.animTime + seg.idx * 0.6) * 12 + seg.idx * 4) : 0;
                         setAttr(seg.group, 'transform', `translate(${sx.toFixed(1)},${sy.toFixed(1)})`);
-                        hullCircles[seg.idx] = { x: sx, y: sy, r: seg.baseRx, color: seg.fillColor };
+                        hullCircles[seg.idx] = { x: sx, y: sy, r: seg.baseRx, color: seg.fillColor,
+                                                 br: seg.baseRx, gs: 1, wk: 1 };
                     });
 
                     const tsx = -(state.built.tail.idx * WORM_SEGMENT_SPACING + WORM_CHAIN_HEAD_GAP + bellyPushGap);
                     const tsy = opts.idleWave ? (Math.sin(state.animTime + state.built.tail.idx * 0.6) * 12 + state.built.tail.idx * 4) : 0;
                     setAttr(state.built.tail.group, 'transform', `translate(${tsx.toFixed(1)},${tsy.toFixed(1)})`);
                     hullCircles[state.built.tail.idx] = {
-                        x: tsx, y: tsy, r: state.built.tail.baseRadius, color: mm.tail.fill
+                        x: tsx, y: tsy, r: state.built.tail.baseRadius, color: mm.tail.fill,
+                        br: state.built.tail.baseRadius, gs: 1, wk: 1
                     };
                     if (state.built.tail.bendGroup) {
                         state.tailWearRot = state.livePose.tailBendAngle;
@@ -1329,11 +1331,18 @@ const WormRenderer = {
                         const vy = seg.idx * WORM_VERTICAL_SPACING + WORM_CHAIN_HEAD_GAP;
                         const vx = spineLeanMag(bellyIdx > 0 ? seg.idx / bellyIdx : 0) * leanDir;
                         setAttr(seg.group, 'transform', `translate(${vx.toFixed(1)},${vy.toFixed(1)})`);
-                        hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor };
+                        hullCircles[seg.idx] = { x: vx, y: vy, r: seg.baseRx, color: seg.fillColor,
+                                                 br: seg.baseRx, gs: 1, wk: 1 };
                         const breathRatio = WORM_BREATH_RATIO[seg.name];
                         if (breathRatio != null) {
                             const breathFactor = 1 + breathWave * breathAmp * breathRatio;
                             hullCircles[seg.idx].r = seg.baseRx * breathFactor;
+                            // Дыхание меняет РАЗМЕР части, а группа сегмента
+                            // при этом не трогается: раздувается эллипс. Надетое
+                            // живёт вне группы части и само бы не узнало об этом
+                            // — поэтому живой масштаб записывается сюда, откуда
+                            // его берёт слой одежды.
+                            hullCircles[seg.idx].wk = breathFactor;
                             setAttr(seg.ellipse, 'rx', (seg.baseRx * breathFactor).toFixed(2));
                             setAttr(seg.ellipse, 'ry', (seg.baseRy * breathFactor).toFixed(2));
                             // Анатомические слои дышат ВМЕСТЕ с сегментом:
@@ -1395,7 +1404,13 @@ const WormRenderer = {
                         setAttr(seg.group, 'transform', depth
                             ? `translate(${chainX.toFixed(1)},${chainY.toFixed(1)}) scale(${k.toFixed(3)})`
                             : `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
-                        hullCircles[seg.idx] = { x: chainX, y: chainY, r: radius, color: seg.fillColor };
+                        // gs — масштаб, который уже несёт САМА группа звена
+                        // (глубина). Слой одежды списывает трансформ группы
+                        // целиком, поэтому добавлять его второй раз не надо;
+                        // знать о нём нужно только для перевода корневых
+                        // расстояний в местные.
+                        hullCircles[seg.idx] = { x: chainX, y: chainY, r: radius, color: seg.fillColor,
+                                                 br: seg.baseRx, gs: depth ? k : 1, wk: 1 };
                         prevRadius = radius;
                         if (seg.name === lastGrowingName) {
                             lastGrowLocal = { x: chainX, y: chainY };
@@ -1417,7 +1432,8 @@ const WormRenderer = {
                         ? `translate(${chainX.toFixed(1)},${chainY.toFixed(1)}) scale(${tailK.toFixed(3)})`
                         : `translate(${chainX.toFixed(1)},${chainY.toFixed(1)})`);
                     hullCircles[state.built.tail.idx] = {
-                        x: chainX, y: chainY, r: tailRadius, color: mm.tail.fill
+                        x: chainX, y: chainY, r: tailRadius, color: mm.tail.fill,
+                        br: state.built.tail.baseRadius, gs: depth ? tailK : 1, wk: 1
                     };
                     if (state.built.tail.bendGroup) {
                         const extraWag = opts.idleWave ? Math.sin(state.tailWagPhase + 1.7) * tailExtraWagDeg : 0;
@@ -1483,6 +1499,17 @@ const WormRenderer = {
                         bellyCircle.x += cx;
                         bellyCircle.y += cy;
                         bellyCircle.r = Math.max(newRx, newRy);
+                        // ---------- ОДЕЖДА РАСТЁТ ВМЕСТЕ С ЖИВОТОМ ----------
+                        // Раздутие живота — это новые rx/ry/cx/cy у ЭЛЛИПСА;
+                        // группа сегмента не меняется вовсе. Наряд лежит вне
+                        // группы части (он выше колец и кишки), поэтому сам
+                        // об этом не узнаёт: накормленный червь вылезал из
+                        // фрака голым животом. Живой масштаб и смещение
+                        // центра пишутся сюда — слой одежды надевает их
+                        // поверх трансформа части.
+                        bellyCircle.wk = effectiveBellyFactor;
+                        bellyCircle.ox = cx;
+                        bellyCircle.oy = cy;
                     }
                 }
 
@@ -1537,13 +1564,32 @@ const WormRenderer = {
                         // вертикаль, цепь с глубиной), и четвёртая копия
                         // расчёта разошлась бы с ними в первую же правку.
                         // Чтение атрибута не трогает раскладку и стоит ноль.
-                        if (w.mirror && w.mirror.length) {
+                        //
+                        // ---------- ВЕЩЬ ЖИВЁТ И РАЗМЕРОМ ЧАСТИ ТОЖЕ ----------
+                        // Списать трансформ группы мало: часть меняет размер
+                        // НЕ трансформом группы, а своим эллипсом — дыхание
+                        // и раздутие живота переписывают rx/ry/cx/cy. Одежда
+                        // об этом не узнавала и оставалась прежнего размера:
+                        // накормленный червь вылезал из фрака голым животом.
+                        // Живой масштаб и смещение центра лежат в круге
+                        // силуэта (wk / ox / oy) — надеваем их поверх.
+                        const wk = me.wk || 1, ox = me.ox || 0, oy = me.oy || 0;
+                        {
                             let t = '';
-                            for (let m = 0; m < w.mirror.length; m++) {
+                            for (let m = 0; w.mirror && m < w.mirror.length; m++) {
                                 t += (w.mirror[m].getAttribute('transform') || '') + ' ';
+                            }
+                            if (wk !== 1 || ox || oy) {
+                                t += `translate(${ox.toFixed(2)},${oy.toFixed(2)}) scale(${wk.toFixed(4)})`;
                             }
                             if (t !== w.mirrored) { w.mirrored = t; setAttr(w.hostNode, 'transform', t); }
                         }
+                        // Полный масштаб от корня до местных координат вещи:
+                        // к живому размеру части добавляется то, что уже несёт
+                        // её группа (глубина у звеньев на полу). Нужен он
+                        // ровно для одного — перевести корневое расстояние
+                        // между частями в местные единицы.
+                        const sc = (me.gs || 1) * wk;
                         // Хвост живёт в своей группе изгиба — она его и
                         // поворачивает; тело поворота не имеет вовсе.
                         // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------
@@ -1557,23 +1603,35 @@ const WormRenderer = {
                         const half = w.faceNode ? w.faceHalf : w.halfW;
                         if (w.part !== 'tail' || w.faceNode) {
                             const p = WormSilhouette.wearBodyPlace(bodyK, half, !!w.faceNode);
-                            const refNow = (w.faceNode && w.refIdx != null) ? hullCircles[w.refIdx] : null;
-                            const dxNow = refNow ? +(refNow.x - me.x).toFixed(2) : 0;
-                            if (w.shownX !== p.x || w.shownSq !== p.squash || w.shownDx !== dxNow) {
-                                w.shownX = p.x; w.shownSq = p.squash; w.shownDx = dxNow;
-                                // Половины одной вещи двигаются в ОДНИХ
-                                // единицах: иначе манишка сверху уезжает не
-                                // настолько, насколько снизу, и рвётся по шву.
-                                const unit = (w.faceNode && w.faceR) || me.r || 1;
-                                // Лицо половины выстраивается по оси ОПОРНОЙ
-                                // части вещи: сегменты не стоят на одной
-                                // вертикали, и манишка, отцентрованная по
-                                // каждому своему, шла по шву зигзагом.
-                                const ref = (w.faceNode && w.refIdx != null) ? hullCircles[w.refIdx] : null;
+                            // Лицо половины выстраивается по оси ОПОРНОЙ
+                            // части вещи: сегменты не стоят на одной
+                            // вертикали, и манишка, отцентрованная по
+                            // каждому своему, шла по шву зигзагом.
+                            const ref = (w.faceNode && w.refIdx != null) ? hullCircles[w.refIdx] : null;
+                            const scRef = ref ? ((ref.gs || 1) * (ref.wk || 1)) : sc;
+                            let x;
+                            if (w.faceNode) {
+                                // Ось опорной части и ракурсный сдвиг — оба в
+                                // КОРНЕВЫХ единицах (раздутый живот уезжает
+                                // вбок, и лицо обязано уехать с ним), поэтому
+                                // в местные переводятся делением на свой
+                                // масштаб. Пока деления не было, накормленный
+                                // живот утаскивал манишку верхней половины, а
+                                // нижняя оставалась на месте — вещь рвалась
+                                // пополам и половины расходились в стороны.
                                 const dx = ref ? (ref.x - me.x) : 0;
+                                x = (dx + p.x * (w.faceR || 1) * scRef) / (sc || 1);
+                            } else {
+                                // Обшивка живёт целиком в местных единицах
+                                // части: её мера — РОДНОЙ радиус (br), а не
+                                // живой. Живой уже учтён масштабом узла.
+                                x = w.baseX + p.x * (me.br || me.r || 1);
+                            }
+                            const shown = +x.toFixed(2);
+                            if (w.shownX !== shown || w.shownSq !== p.squash) {
+                                w.shownX = shown; w.shownSq = p.squash;
                                 setAttr(moved, 'transform',
-                                    `translate(${((w.faceNode ? dx : w.baseX) + p.x * unit).toFixed(2)},0)`
-                                    + ` scale(${p.squash.toFixed(3)},1)`);
+                                    `translate(${shown},0) scale(${p.squash.toFixed(3)},1)`);
                             }
                         }
                     });

@@ -191,6 +191,43 @@ const { viewport, prepare } = require('./harness');
         return +(cover / (b - a)).toFixed(3);
       },
 
+      // Экранная ширина ОБШИВКИ вещи (без подола) и центр её лица.
+      // По первой видно, растёт ли одежда вместе с частью, по второму —
+      // не разошлись ли половины одной вещи.
+      clothWidth(slot, sub) {
+        const g = this.q('[data-cosmetic="' + slot + '"]'
+                         + (sub ? '[data-sub="' + sub + '"]' : ''));
+        if (!g) return null;
+        const cloth = [...g.querySelectorAll('path,rect,circle,ellipse,polygon')]
+          .filter(el => !el.closest('[data-swing]'));
+        let x0 = 1e9, x1 = -1e9;
+        cloth.forEach(el => {
+          const r = el.getBoundingClientRect();
+          if (!r.width && !r.height) return;
+          x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.right);
+        });
+        return x1 > x0 ? +(x1 - x0).toFixed(2) : null;
+      },
+      faceCentre(slot, sub) {
+        const g = this.q('[data-cosmetic="' + slot + '"]'
+                         + (sub ? '[data-sub="' + sub + '"]' : ''));
+        const f = g && g.querySelector('[data-face]');
+        if (!f) return null;
+        const r = f.getBoundingClientRect();
+        return r.width ? +(r.x + r.width / 2).toFixed(2) : null;
+      },
+      // Ширина самой ЧАСТИ на экране — мера, с которой сверяется одежда.
+      partWidth(slot, sub) {
+        const places = WormMarks.resolveSlot(MainWormHandle.model || GameState.data.worm, slot) || [];
+        const place = sub ? places.filter(pl => pl.sub === sub)[0] : places[0];
+        if (!place) return null;
+        const holder = this.q('[data-part="' + place.part + '"]');
+        const shape = holder && holder.querySelector('.worm-part-shape');
+        if (!shape) return null;
+        const r = shape.getBoundingClientRect();
+        return r.width ? +r.width.toFixed(2) : null;
+      },
+
       bellyCovered() {
         const svg = document.querySelector('#game-container svg');
         const g = this.q('[data-cosmetic="coat"][data-sub="lower"]');
@@ -484,6 +521,63 @@ const { viewport, prepare } = require('./harness');
     const v = await page.evaluate(() => window.__wear.bellyCovered());
     check(v != null && v < 0.7, `«${id}» не затягивает живот целиком: закрыто ${v}`);
   }
+
+  // ---------- 4а. ВЕЩЬ РАСТЁТ ВМЕСТЕ С ЧАСТЬЮ ----------
+  // Накормленный червь вылезал из фрака голым животом: раздутие живота — это
+  // новые rx/ry у ЭЛЛИПСА части, а не трансформ её группы, и слой одежды
+  // (он лежит выше колец и кишки, то есть вне группы) об этом не узнавал.
+  //
+  // Мерятся две разные вещи, и обе нужны:
+  //   ДОЛЯ — какую часть поперечника части занимает ткань. Она обязана
+  //   остаться ТОЙ ЖЕ: вещь скроена по телу, а не по числу;
+  //   ШИРИНА на экране — обязана вырасти во столько же раз, во сколько
+  //   выросла сама часть. Без неё проверка доли зелена и у одежды, которая
+  //   вообще не меняется (доля считается от ткани, а ткань постоянна).
+  //
+  // Третьим пунктом — шов: половины одной вещи обязаны остаться на одной
+  // оси. Раздутый живот уезжает вбок, и пока сдвиг доставался только верхней
+  // половине, фрак рвался пополам и половины расходились в стороны.
+  console.log('\n--- одежда растёт вместе с частью ---');
+  await dress({ coat: 'tux' });
+  await setYaw(0);
+  // ---------- РАЗДУТИЕ НАДО ДЕРЖАТЬ, А НЕ ПОСТАВИТЬ ----------
+  // Самочувствие (WormCondition) переписывает bellyScale своим числом — так и
+  // задумано: худоба от голода идёт тем же каналом, что раздутие от еды, и
+  // кухня поэтому давит на него КАЖДЫЙ кадр. Прогон, который выставил его
+  // один раз, мерил не раздутый живот, а обычный — и показывал красивые
+  // числа ни о чём.
+  const setBelly = (v) => page.evaluate(async b => {
+    for (let i = 0; i < 30; i++) {
+      MainWormHandle.setLivePose({ bellyScale: b });
+      await new Promise(r => requestAnimationFrame(r));
+    }
+  }, v);
+
+  const grow = {};
+  for (const bs of [1, 1.9]) {
+    await setBelly(bs);
+    grow[bs] = await page.evaluate(b => (MainWormHandle.setLivePose({ bellyScale: b }), {
+      span: window.__wear.clothSpan('coat', false, 'lower'),
+      cloth: window.__wear.clothWidth('coat', 'lower'),
+      part: window.__wear.partWidth('coat', 'lower'),
+      gapFace: (() => {
+        const a = window.__wear.faceCentre('coat', 'upper');
+        const b = window.__wear.faceCentre('coat', 'lower');
+        return (a == null || b == null) ? null : +Math.abs(a - b).toFixed(2);
+      })()
+    }), bs);
+  }
+  await setBelly(1);
+
+  const thin = grow[1], fat = grow[1.9];
+  check(thin.span != null && fat.span != null && Math.abs(fat.span - thin.span) < 0.06,
+    `доля поперечника под тканью не поехала от раздутия: ${thin.span} → ${fat.span}`);
+  const clothK = fat.cloth / thin.cloth, partK = fat.part / thin.part;
+  check(partK > 1.3, `живот в проверке действительно раздулся: часть ×${partK.toFixed(2)}`);
+  check(Math.abs(clothK - partK) / partK < 0.12,
+    `ткань выросла во столько же раз, во сколько часть: ×${clothK.toFixed(2)} против ×${partK.toFixed(2)}`);
+  check(fat.gapFace != null && fat.gapFace < 6,
+    `половины фрака не разъехались на раздутом животе: лица врозь на ${fat.gapFace}`);
 
   // ---------- 5. НАРЯД ЖИВЁТ ВМЕСТЕ С ТЕЛОМ ----------
   // Жалоб было две, и они про РАЗНОЕ.
