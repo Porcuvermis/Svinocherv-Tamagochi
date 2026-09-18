@@ -356,3 +356,289 @@
 }
 
 #gluttony-game #kt-debug button:active { background: rgba(255, 255, 255, 0.2); }
+
+/* ================= МАГАЗИН: ТЕЛЕФОН С ПРИЛОЖЕНИЕМ ================= */
+/* Пародия на приложение доставки еды, и узнаётся она двумя вещами:
+   кислотно-зелёным фирменным цветом и белыми карточками на белом фоне.
+
+   ---------- ПОЧЕМУ ТУТ ВСЁ ПЛОСКОЕ ----------
+   Вся остальная кухня — градиенты, фаски и свет сверху-слева. Здесь их нет
+   ни одного, и это не лень: экран телефона обязан выглядеть ЭКРАНОМ. Дай
+   карточкам объём — и приложение станет ещё одним предметом обстановки,
+   а нужен предмет из другого мира, который принесли в комнату.
+
+   Цвета продублированы сюда переменными из PALETTE.kitchenApp: вёрстке
+   палитра недоступна, а разъехаться двум спискам нельзя — поэтому список
+   один, и он в palette.js, а здесь его отражение с этой пометкой. */
+#gluttony-game .kt-shop {
+    --bf-brand: #34d186;
+    --bf-brand-lo: #25a96b;
+    --bf-ink: #1a1a1a;
+    --bf-bg: #ffffff;
+    --bf-tile: #f2f3f5;
+    --bf-line: #e3e5e8;
+    --bf-muted: #9aa0a6;
+    --bf-case: #22262b;
+
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Комната гаснет, но не исчезает: игрок держит телефон В КУХНЕ, и она
+       обязана остаться за ним. */
+    background: rgba(12, 9, 6, 0.55);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.26s ease, visibility 0s linear 0.26s;
+    touch-action: none;
+}
+#gluttony-game .kt-shop.on {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.26s ease, visibility 0s;
+}
+
+/* Телефон ВЫЕЗЖАЕТ из того угла, где лежал, а не появляется в середине:
+   по движению видно, что открыли именно его. */
+#gluttony-game .kt-shop-phone {
+    width: 300px;
+    height: 620px;
+    max-height: 88%;
+    border-radius: 34px;
+    background: var(--bf-case);
+    padding: 9px;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+    transform: translate(42px, 130px) scale(0.72) rotate(-14deg);
+    opacity: 0;
+    transition: transform 0.34s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.2s ease;
+}
+#gluttony-game .kt-shop.on .kt-shop-phone {
+    transform: none;
+    opacity: 1;
+}
+
+#gluttony-game .kt-shop-screen {
+    width: 100%;
+    height: 100%;
+    border-radius: 26px;
+    background: var(--bf-bg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---------- ШАПКА ---------- */
+#gluttony-game .bf-top {
+    flex: 0 0 auto;
+    background: var(--bf-brand);
+    padding: 16px 14px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+/* ЛОГОТИП — единственные буквы в игре (инвариант 9, объявленное
+   исключение). Шрифт системный жирный с поджатым трекингом: своего файла
+   шрифта в проекте нет и быть не должно — это запрос в сеть до первого
+   кадра, ровно то, из-за чего экран загрузки написан инлайном. */
+#gluttony-game .bf-brand {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 800;
+    font-size: 25px;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    white-space: nowrap;
+}
+#gluttony-game .bf-brand span:first-child { color: #ffffff; }
+#gluttony-game .bf-brand span:last-child  { color: var(--bf-case); }
+
+#gluttony-game .bf-wallet {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--bf-ink);
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-weight: 800;
+    font-size: 15px;
+    line-height: 1;
+}
+#gluttony-game .bf-wallet .mark-token { width: 17px; height: 17px; display: block; }
+#gluttony-game .bf-wallet .coin-gold { width: 15px; height: 15px; }
+
+/* Отказ показывается ТАМ, ГДЕ ЛЕЖИТ НЕДОСТАЮЩЕЕ (docs/traps.md, п. 91):
+   вздрагивает сам кошелёк, а не строка под пальцем. */
+@keyframes bf-lack {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-5px); }
+    45% { transform: translateX(5px); }
+    70% { transform: translateX(-3px); }
+}
+#gluttony-game .bf-wallet.lack {
+    animation: bf-lack 0.45s ease;
+    background: #ffd7d7;
+    color: #b4232b;
+}
+
+/* ---------- ВКЛАДКИ ---------- */
+/* Пилюли, как категории в приложении доставки. Значок и есть имя: 🍳 —
+   утварь, 🥕 — продукты (инвариант 9). */
+#gluttony-game .bf-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 8px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--bf-line);
+}
+#gluttony-game .bf-tab {
+    flex: 1 1 0;
+    border: 0;
+    border-radius: 999px;
+    background: var(--bf-tile);
+    color: var(--bf-ink);
+    padding: 9px 0;
+    font-size: 21px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.16s ease, transform 0.12s ease;
+}
+#gluttony-game .bf-tab.on { background: var(--bf-brand); }
+#gluttony-game .bf-tab:active { transform: scale(0.96); }
+
+/* ---------- ВИТРИНА ---------- */
+#gluttony-game .bf-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+/* Карточка нажимается ЦЕЛИКОМ. Не по карману или некуда класть —
+   приглушена, но живая: тап всё равно отвечает (docs/traps.md, п. 91). */
+#gluttony-game .bf-card {
+    display: grid;
+    grid-template-columns: 62px 1fr auto;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    border: 1px solid var(--bf-line);
+    border-radius: 15px;
+    background: var(--bf-bg);
+    padding: 9px 11px 9px 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.16s ease;
+}
+#gluttony-game .bf-card:active { transform: scale(0.985); border-color: var(--bf-brand); }
+#gluttony-game .bf-card.poor { opacity: 0.45; }
+
+#gluttony-game .bf-pic {
+    width: 62px;
+    height: 62px;
+    border-radius: 11px;
+    background: var(--bf-tile);
+    padding: 5px;
+    box-sizing: border-box;
+    display: block;
+}
+
+#gluttony-game .bf-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* Ступени утвари — точками, как в прокачке гнева: сколько залито, столько
+   куплено, и сразу видно, где потолок. Одна и та же вещь в игре обязана
+   выглядеть одинаково. */
+#gluttony-game .bf-pips { display: flex; gap: 5px; }
+#gluttony-game .bf-pips i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bf-line);
+}
+#gluttony-game .bf-pips i.on { background: var(--bf-brand); }
+
+/* Остаток в кладовой и её потолок: «сколько уже есть» из «сколько влезет».
+   Покупка в полный холодильник — отданное золото за ничто, и узнать об этом
+   игрок обязан ДО тапа. */
+#gluttony-game .bf-have {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 800;
+    font-size: 17px;
+    color: var(--bf-ink);
+    line-height: 1;
+    border-radius: 8px;
+    padding: 2px 4px;
+}
+#gluttony-game .bf-have i {
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--bf-muted);
+}
+#gluttony-game .bf-have i::before { content: "/"; margin-right: 2px; }
+#gluttony-game .bf-have.full { color: var(--bf-muted); }
+#gluttony-game .bf-have.lack { animation: bf-lack 0.45s ease; background: #ffd7d7; color: #b4232b; }
+
+/* Цена стоит на том, чем платят, и больше нигде (docs/traps.md, п. 83).
+   Значок валюты не повторяется в каждой строке: он один, в шапке, и
+   объясняет всю вкладку разом. */
+#gluttony-game .bf-buy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--bf-brand);
+    color: #ffffff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 800;
+    font-size: 16px;
+    line-height: 1;
+}
+#gluttony-game .bf-card:active .bf-buy { background: var(--bf-brand-lo); }
+#gluttony-game .bf-card.poor .bf-buy { background: var(--bf-muted); }
+
+#gluttony-game .bf-empty {
+    text-align: center;
+    padding: 40px 0;
+    font-size: 34px;
+    color: var(--bf-brand);
+}
+
+/* Телефон в углу общего вида: появляется и гаснет вместе с фазой. */
+#gluttony-game #kt-phone {
+    transition: opacity 0.3s ease, transform 0.42s cubic-bezier(0.3, 0.7, 0.25, 1);
+    cursor: pointer;
+}
+
+/* Что утварь меняет: было → станет. «Обмен через стрелку» — один из трёх
+   приёмов, которые вообще работают без слов (docs/traps.md, п. 82). Чего
+   именно станет столько, говорит картинка слева: взмахов ножом, качелей
+   ложкой, места в холодильнике. */
+#gluttony-game .bf-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-weight: 800;
+    font-size: 17px;
+    line-height: 1;
+    color: var(--bf-muted);
+}
+#gluttony-game .bf-step i { font-style: normal; font-size: 14px; }
+#gluttony-game .bf-step b.next { color: var(--bf-ink); font-size: 20px; }

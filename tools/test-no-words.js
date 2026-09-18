@@ -51,6 +51,17 @@ const { chromium } = require('playwright');
       // Текст ВНУТРИ svg — это не подпись на экране, а содержимое рисунка
       // (у нас там ничего нет, но <title> и <desc> легальны и невидимы).
       if (el.closest('svg')) continue;
+      // ---------- ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ ИЗ ИНВАРИАНТА 9 ----------
+      // Логотип приложения доставки в телефоне кухни. Это КАРТИНКА, а не
+      // подпись: он ничего не объясняет, не переводится и узнаётся
+      // с полувзгляда — в этом вся шутка (разбор в
+      // src/minigames/gluttony/kitchen-shop.js).
+      //
+      // Исключение названо ПОИМЁННО и по классу, а не «буквы в магазине
+      // можно»: любое другое слово на этом же экране по-прежнему валит
+      // прогон. Исключение, снимающее проверку с целого экрана, — это
+      // отменённая проверка, а не исключение.
+      if (el.closest('.bf-brand')) continue;
       const style = getComputedStyle(el);
       if (style.visibility === 'hidden' || style.display === 'none') continue;
       const leak = /<\/?[a-z][\s\S]*>|&lt;|class\s*=\s*["']/i.test(t);
@@ -181,11 +192,29 @@ const { chromium } = require('playwright');
   found.kitchen = await scan('gluttony-game');
   await page.screenshot({ path: out + 'nw-k1-kitchen.png' });
 
+  // Магазин: приложение в телефоне. Здесь живёт единственное исключение из
+  // инварианта (логотип), и именно поэтому экран обязан проверяться — чтобы
+  // рядом с разрешённым логотипом не завелось неразрешённых подписей.
+  await page.evaluate(() => {
+    Backend.grantCurrency('gold', 200);
+    Backend.grantCurrency('glut_token', 9);
+    KitchenShop.show();
+  });
+  await page.waitForTimeout(500);
+  found.shopGear = await scan('gluttony-game');
+  await page.screenshot({ path: out + 'nw-k2-shop-gear.png' });
+  await page.evaluate(() => { KitchenShop.tab = 'food'; KitchenShop.render(); });
+  await page.waitForTimeout(300);
+  found.shopFood = await scan('gluttony-game');
+  await page.screenshot({ path: out + 'nw-k3-shop-food.png' });
+  await page.evaluate(() => KitchenShop.close());
+  await page.waitForTimeout(300);
+
   // Холодильник открывается тапом по себе — кнопки нет и не должно быть.
   await page.evaluate(() => GluttonyMinigame.openFridge());
   await page.waitForTimeout(1400);
   found.fridge = await scan('gluttony-game');
-  await page.screenshot({ path: out + 'nw-k2-fridge.png' });
+  await page.screenshot({ path: out + 'nw-k4-fridge.png' });
   // ---------- ЛЕНЬ: САД ----------
   // Сад собирался сразу без слов: у прежней мини-игры внизу висела строка
   // «ПЕРЕТАЩИ ЛЕЙКУ НА ГОРШОК», и она же была единственным объяснением

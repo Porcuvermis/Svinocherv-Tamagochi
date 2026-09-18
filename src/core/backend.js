@@ -673,8 +673,45 @@ const LocalBackend = {
     },
 
     pantryCap() {
-        const lvl = ((GameState.data.upgrades || {}).fridge) || 0;
-        return GARDEN.PANTRY_CAP[Math.min(lvl, GARDEN.PANTRY_CAP.length - 1)];
+        // Ступени лежат на общем станке прокачки, вместе со своей ценой
+        // (ECONOMY.minigames.gluttony.upgrades.fridge). Своего списка у
+        // кладовой нет: пока он был в GARDEN.PANTRY_CAP, а цена появилась
+        // в конфиге магазина, у одной величины оказалось бы два описания.
+        return this.upgradeValue('gluttony', 'fridge');
+    },
+
+    // ---------- МАГАЗИН КУХНИ: ПРОДУКТЫ ----------
+    // Расходуемое из приложения на телефоне. Утварь покупает общий
+    // buyUpgrade(key, 'gluttony') — отдельной функции ей не нужно.
+    //
+    // Возвращает, сколько ВЛЕЗЛО: кладовая с потолком, и покупка в полный
+    // холодильник — это отданное золото за ничто. Поэтому кончается она
+    // отказом ДО списания, а не молчаливой пропажей товара.
+    buyKitchenFood(key) {
+        const good = ((KITCHEN.shop || {}).food || []).find(g => g.key === key);
+        if (!good) return { ok: false, error: 'unknown_good' };
+
+        const cur = (KITCHEN.shop.categories.find(c => c.key === 'food') || {}).currency || 'gold';
+        if (GameState.currency(cur) < good.price) {
+            return { ok: false, error: 'not_enough', currency: cur };
+        }
+        // Место проверяется ЗАРАНЕЕ и по той же формуле, по которой кладут:
+        // иначе «купил и не влезло» превращается в пропажу денег.
+        if (this.pantryCount(key) >= this.pantryCap()) {
+            return { ok: false, error: 'full', cap: this.pantryCap() };
+        }
+
+        const requestId = newRequestId();
+        GameState.addCurrency(cur, -good.price);
+        GameState.pushLedger({
+            currency: cur,
+            delta: -good.price,
+            reason: 'shop.kitchen.' + key,
+            client_request_id: requestId
+        });
+        const got = this.pantryStore(key, 1);
+        GameState.save();
+        return { ok: true, key, got, count: this.pantryCount(key), currency: cur };
     },
 
     // Что попалось в земле. Бросок идёт ПО ОЧЕРЕДИ, от редкого к частому, и

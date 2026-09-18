@@ -68,7 +68,12 @@ const GluttonyMinigame = {
     STREAM_BOW: 0.45,      // насколько струя выгибается по ходу вытекания
     FEED_STREAM_REF: 190,  // «обычная» длина струи в рот, от неё считается скорость
 
-    CHOPS_TOTAL: 12,       // взмахов на полную нарезку: 6 до крупных, 6 до мелких
+    // ---------- ЧИСЛА, КОТОРЫЕ ДВИГАЕТ КУПЛЕННАЯ УТВАРЬ ----------
+    // Взмахов на полную нарезку и качелей ложкой. Значения тут НЕ стоят:
+    // база и ступени лежат в ECONOMY.minigames.gluttony.upgrades, а сюда
+    // приезжают в resetAll() через Backend.upgradeValue. Иначе купленный нож
+    // ничего бы не менял, а число оказалось бы описано дважды.
+    CHOPS_TOTAL: 0,
     // Лезвие смотрит ВЛЕВО, а положительный поворот в SVG — по часовой, то
     // есть левый конец идёт ВВЕРХ. Поэтому поднятый нож — это ПЛЮС, а не
     // минус. В первой версии знаки были перепутаны, и свайп вверх опускал
@@ -79,7 +84,7 @@ const GluttonyMinigame = {
     // доской, и удар не читался ударом.
     KNIFE_DOWN: -6,
     KNIFE_SENS: 0.5,       // градусов на пиксель пальца: весь размах ≈ 100 px
-    STIR_SWINGS: 6,
+    STIR_SWINGS: 0,
     HINT_DELAY: 1500,
 
     // ---------- ГЕОМЕТРИЯ КАРТИНКИ ЗДЕСЬ НЕ ЖИВЁТ ----------
@@ -173,6 +178,7 @@ const GluttonyMinigame = {
             ref: this.POT_STREAM_REF
         });
 
+        if (typeof KitchenShop !== 'undefined') KitchenShop.init(this);
         // Своя debug-панель: кладовая расходуется каждой готовкой, и без
         // кнопок её приходилось бы наполнять сбросом всего прогресса.
         if (typeof KitchenDebug !== 'undefined') KitchenDebug.init(this.screenElement);
@@ -190,6 +196,9 @@ const GluttonyMinigame = {
     },
 
     close() {
+        // Закрытая мини-игра ничего не оставляет открытым внутри себя:
+        // приложение, забытое поднятым, встретит игрока в следующий заход.
+        if (typeof KitchenShop !== 'undefined') KitchenShop.close();
         this.stopFeedTick();
         this.stopPour();
         this.stopWormWalk();
@@ -199,7 +208,12 @@ const GluttonyMinigame = {
     },
 
     resetAll() {
+        if (typeof KitchenShop !== 'undefined') KitchenShop.close();
         this.phase = 'overview';
+        // Купленная утварь читается ПРИ КАЖДОМ заходе, а не один раз на
+        // старте: магазин открывается прямо отсюда, и нож, купленный минуту
+        // назад, обязан резать быстрее уже в этой готовке.
+        this.applyGear();
         this.locked = false;
         this.onBoard = [];
         this.chops = 0;
@@ -242,10 +256,61 @@ const GluttonyMinigame = {
         this.moveTo(this.el('kt-board-rest'), KITCHEN_ART.SLOTS.boardRest);
         this.moveTo(this.el('kt-board'), KITCHEN_ART.FG.board.hidden);
         this.setOpacity('kt-table-set', 1);
+        this.placePhone();
         this.buildBottles();
         this.setCamera('overview', true);
         if (typeof KitchenDebug !== 'undefined') KitchenDebug.render();
         this.touched();
+    },
+
+    // Значения купленной утвари → в числа этой сессии. Пол в двойке и
+    // единице: ступень с нулём взмахов означала бы этап, который проходится
+    // сам, а такой этап надо убирать, а не покупать.
+    applyGear() {
+        this.CHOPS_TOTAL = Math.max(2, Backend.upgradeValue('gluttony', 'knife'));
+        this.STIR_SWINGS = Math.max(1, Backend.upgradeValue('gluttony', 'pot'));
+    },
+
+    // Магазин живёт в своём модуле (kitchen-shop.js): кухня только открывает
+    // его и на этом про него забывает.
+    openShop() {
+        if (typeof KitchenShop !== 'undefined') KitchenShop.show();
+    },
+
+    // ---------- ТЕЛЕФОН В УГЛУ ----------
+    // Разметка лежит в KITCHEN_ART.FG.phone вместе с самим рисунком: здесь
+    // только «поставь туда, где сказано».
+    placePhone() {
+        const node = this.el('kt-phone');
+        if (!node) return;
+        this.moveTo(node, KITCHEN_ART.FG.phone, KITCHEN_ART.FG.phone.rot);
+        this.showPhone(true);
+    },
+
+    // Телефон живёт только на общем виде. Дальше начинается готовка, и там
+    // он мешает дважды: закрывает угол, откуда въезжает доска, и предлагает
+    // уйти в магазин с полными руками.
+    showPhone(on) {
+        const node = this.el('kt-phone');
+        if (!node) return;
+        node.style.opacity = on ? '1' : '0';
+        // ---------- ПОЧЕМУ display, А НЕ pointer-events И НЕ visibility ----------
+        // Спрятанный телефон продолжал ЛОВИТЬ пальцы, и не по разу:
+        //
+        //   pointer-events: none на группе — в SVG значение ребёнка перебивает
+        //     родительское, а у зоны захвата телефона стоит своё
+        //     pointer-events="all";
+        //   visibility: hidden — по спецификации значения painted/fill/stroke/all
+        //     видимость ИГНОРИРУЮТ, и «all» продолжал отвечать сквозь невидимость.
+        //
+        // Зона телефона накрывает ручку доски в фазе холодильника, поэтому цена
+        // ошибки была не косметическая: доску нельзя было отодвинуть вовсе, и
+        // прогон кухни вставал ровно на этом шаге.
+        //
+        // Ловушка №94 («скрытая кнопка держит своё место») здесь не работает:
+        // она про раскладку, где сосед забирает освободившееся место. Группа
+        // svg стоит в абсолютных координатах, отдавать ей нечего и некому.
+        node.style.display = on ? '' : 'none';
     },
 
     // ================= МЕЛОЧИ =================
@@ -466,6 +531,7 @@ const GluttonyMinigame = {
         // Доска со стола уходит В РУКИ: набор на столе гаснет, иначе она
         // лежит на столе и одновременно едет к игроку.
         this.setOpacity('kt-table-set', 0);
+        this.showPhone(false);
         this.phase = 'fridge';
         this.setCamera('fridge');
         this.el('kt-fridge').classList.add('open');
@@ -491,6 +557,7 @@ const GluttonyMinigame = {
         this.onBoard = [];
         // Доска возвращается на стол: передумали — значит и не брали.
         this.setOpacity('kt-table-set', 1);
+        this.showPhone(true);
         this.phase = 'overview';
         this.setCamera('overview');
         this.touched();
@@ -966,6 +1033,10 @@ const GluttonyMinigame = {
         const inId = (id) => !!(t.closest && t.closest('#' + id));
 
         if (this.phase === 'overview') {
+            // Телефон проверяется ПЕРВЫМ: на общем виде тап по чему угодно
+            // открывает холодильник, и без этой строки телефон нажать
+            // нельзя вовсе.
+            if (inId('kt-phone')) { this.pop(this.el('kt-phone')); this.openShop(); return; }
             this.pop(this.el('kt-fridge'));
             this.openFridge();
             return;

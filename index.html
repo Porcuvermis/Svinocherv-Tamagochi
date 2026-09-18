@@ -841,6 +841,35 @@
             </div>
         </div>
 
+        <!-- МАГАЗИН КУХНИ: ТЕЛЕФОН С ПРИЛОЖЕНИЕМ ДОСТАВКИ.
+             Вход — телефон, выглядывающий из нижнего правого угла общего
+             вида (рисунок в kitchen-art.js). Тап поднимает его к лицу.
+
+             Приложение свёрстано, а не нарисовано: это ЭКРАН, и вести себя
+             он обязан как экран — прокручиваться, нажиматься, подсвечивать
+             нажатое. Нарисованный в svg, он бы всё это изображал.
+
+             Логотип — единственные буквы в игре, объявленное исключение из
+             инварианта 9 (разбор в src/minigames/gluttony/kitchen-shop.js).
+             Закрывается тапом мимо телефона: своего крестика у приложения
+             нет, крестик в окне уже есть и закрывает всю мини-игру. -->
+        <div class="kt-shop" id="kt-shop">
+            <div class="kt-shop-phone" id="kt-shop-phone">
+                <div class="kt-shop-screen">
+                    <div class="bf-top">
+                        <div class="bf-brand"><span>Bold</span><span>Fuuu</span></div>
+                        <!-- data-cur на всём чипе: по этой метке WalletFx
+                             находит счётчик и сам выбрасывает из него
+                             потраченное. Валюта подставляется по открытой
+                             вкладке (KitchenShop.renderWallet). -->
+                        <div class="bf-wallet" id="bf-wallet" data-cur="gold"></div>
+                    </div>
+                    <div class="bf-tabs" id="bf-tabs"></div>
+                    <div class="bf-list" id="bf-list"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- ИТОГ БЕЗ СЛОВ: размер кучки и сколько осколков она принесла -->
         <div class="glut-win-overlay" id="glut-win-overlay">
             <div class="kt-result" id="kt-result"></div>
@@ -1025,6 +1054,7 @@
      вызывает при сборке экрана. -->
 <script src="src/minigames/gluttony/kitchen-objects.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/kitchen-art.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/kitchen-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/kitchen-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/gluttony.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-art.js?v=__BUILD__"></script>

@@ -1139,23 +1139,6 @@ const KITCHEN_OBJECTS = {
         }
     },
 
-    // Блик-искорка на полу. Единственный предмет без прообраза в вещах:
-    // это отсвет, четырёхлучевая звезда с тонкими лучами.
-    sparkle: {
-        // Мягкий предмет: сливаться с фоном — его работа, а не брак.
-        merge: 60,
-        box: { x: 576, y: 1282, w: 50, h: 56 },
-        draw() {
-            const g = koUid('spk');
-            return `<g class="ko ko-sparkle">
-    <defs>${koRad(g, 601, 1310, 26, [
-        [0, '#ffffff', 0.85], [0.45, '#e6dccb', 0.5], [1, '#e6dccb', 0]])}</defs>
-    <path d="M601 1284 q6 20 24 26 q-18 6 -24 26 q-6 -20 -24 -26 q18 -6 24 -26 Z"
-          fill="url(#${g})"/>
-</g>`;
-        }
-    },
-
     // ================================================================
     //         ПРЕДМЕТЫ ПОД МЕХАНИКУ (в референсе их нет)
     // ================================================================
@@ -1332,7 +1315,7 @@ const KITCHEN_OBJECTS = {
         'spiceJarA', 'spiceJarB', 'bottleGreen', 'bottleYellow',
         'fridgeBody', 'fridgeDoorTop', 'fridgeDoorBottom',
         'fridgeHandleTop', 'fridgeHandleBottom',
-        'table', 'boardShadow', 'board', 'knife', 'sparkle'
+        'table', 'boardShadow', 'board', 'knife'
     ],
 
     scene() {
