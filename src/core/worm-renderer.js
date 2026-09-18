@@ -1510,6 +1510,11 @@ const WormRenderer = {
                         bellyCircle.wk = effectiveBellyFactor;
                         bellyCircle.ox = cx;
                         bellyCircle.oy = cy;
+                        // Полуоси — для выреза в одежде соседей: круг из
+                        // max(rx,ry) срезал бы больше, чем закрывает живот.
+                        bellyCircle.erx = newRx;
+                        bellyCircle.ery = newRy;
+                        bellyCircle.front = true;
                     }
                 }
 
@@ -1553,6 +1558,20 @@ const WormRenderer = {
                     const tiltDeg = (typeof Tilt !== 'undefined' && Tilt.x) ? Tilt.x() * 16 : 0;
                     const target = Math.max(-24, Math.min(24, -vx * 0.035)) + tiltDeg;
 
+                    // ---------- КТО СТОИТ ВПЕРЕДИ ВСЕХ ----------
+                    // Слой одежды один на всё тело: он лежит выше КАЖДОЙ
+                    // части, потому что обязан лежать выше колец, кишки и еды
+                    // в ней (они тоже общие и рисуются после частей). Пока
+                    // части не налезали друг на друга, порядок внутри слоя
+                    // значения не имел.
+                    //
+                    // Живот — единственная часть, которая меняет размер и при
+                    // этом нарисована ПОСЛЕ всех остальных, то есть стоит
+                    // впереди них. Раздувшись, он закрывает соседей телом —
+                    // но не их одеждой: та лежит в общем слое и оставалась
+                    // нашлёпкой поверх живота. Поэтому одежда всех прочих
+                    // частей режется его силуэтом.
+                    const front = bellySeg ? hullCircles[bellySeg.idx] : null;
                     state.built.wearOnBody.forEach(w => {
                         if (w.idx == null) return;
                         const me = hullCircles[w.idx];
@@ -1590,6 +1609,33 @@ const WormRenderer = {
                         // ровно для одного — перевести корневое расстояние
                         // между частями в местные единицы.
                         const sc = (me.gs || 1) * wk;
+
+                        // ---------- ВЫРЕЗ ПО СИЛУЭТУ ПЕРЕДНЕЙ ЧАСТИ ----------
+                        // Считается в местных координатах вещи — там же, где
+                        // она нарисована. Пока живот далеко, выреза нет вовсе:
+                        // атрибут не ставится, и стоит это ноль.
+                        if (w.clipPath && front && front !== me) {
+                            const dxF = front.x - me.x, dyF = front.y - me.y;
+                            const near = Math.hypot(dxF, dyF) < (front.r + (me.r || 0) * 1.25);
+                            if (!near) {
+                                if (w.clipOn) { w.clipOn = false; w.clipWrap.removeAttribute('clip-path'); }
+                            } else {
+                                const k = sc || 1;
+                                const cxF = dxF / k, cyF = dyF / k;
+                                const rxF = (front.erx || front.r) / k, ryF = (front.ery || front.r) / k;
+                                // Прямоугольник во весь свет МИНУС эллипс
+                                // живота: evenodd делает из двух контуров
+                                // «всё, кроме». Числа округлены до десятых —
+                                // иначе дыхание переписывало бы путь каждый
+                                // кадр ради невидимого глазу.
+                                const d = 'M -9999 -9999 H 9999 V 9999 H -9999 Z'
+                                    + ` M ${(cxF - rxF).toFixed(1)} ${cyF.toFixed(1)}`
+                                    + ` a ${rxF.toFixed(1)} ${ryF.toFixed(1)} 0 1 0 ${(rxF * 2).toFixed(1)} 0`
+                                    + ` a ${rxF.toFixed(1)} ${ryF.toFixed(1)} 0 1 0 ${(-rxF * 2).toFixed(1)} 0 Z`;
+                                if (d !== w.clipShown) { w.clipShown = d; setAttr(w.clipPath, 'd', d); }
+                                if (!w.clipOn) { w.clipOn = true; setAttr(w.clipWrap, 'clip-path', w.clipRef); }
+                            }
+                        }
                         // Хвост живёт в своей группе изгиба — она его и
                         // поворачивает; тело поворота не имеет вовсе.
                         // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------

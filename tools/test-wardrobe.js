@@ -228,6 +228,35 @@ const { viewport, prepare } = require('./harness');
         return r.width ? +r.width.toFixed(2) : null;
       },
 
+      // Сколько точек ВНУТРИ раздутого живота занято одеждой ЧУЖОЙ части.
+      // Слой одежды один на всё тело и лежит выше каждой части разом, так
+      // что пиджак соседнего сегмента — сам-то скрытый за животом — может
+      // остаться лежать поверх живота отдельной нашлёпкой.
+      //
+      // Мерится не деревом, а тем, что РЕАЛЬНО видно в точке: у выреза
+      // (clip-path) в дереве ничего не меняется, и любая проверка по узлам
+      // была бы зелена и до правки, и после.
+      overFront(exceptSub) {
+        const root = this.root();
+        const svg = document.querySelector('#game-container svg');
+        const belly = root.querySelector('[data-part="belly"] .worm-part-shape');
+        if (!belly || !svg) return null;
+        const bb = belly.getBBox(), m = belly.getScreenCTM(), N = 40;
+        const pt = svg.createSVGPoint();
+        let inside = 0, over = 0;
+        for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+          pt.x = bb.x + bb.width * i / N; pt.y = bb.y + bb.height * j / N;
+          if (!belly.isPointInFill(pt)) continue;
+          inside++;
+          const s = pt.matrixTransform(m);
+          const el = document.elementFromPoint(s.x, s.y);
+          const g = el && el.closest && el.closest('[data-cosmetic]');
+          if (!g) continue;
+          if (g.getAttribute('data-sub') !== exceptSub) over++;
+        }
+        return { inside, over };
+      },
+
       bellyCovered() {
         const svg = document.querySelector('#game-container svg');
         const g = this.q('[data-cosmetic="coat"][data-sub="lower"]');
@@ -578,6 +607,33 @@ const { viewport, prepare } = require('./harness');
     `ткань выросла во столько же раз, во сколько часть: ×${clothK.toFixed(2)} против ×${partK.toFixed(2)}`);
   check(fat.gapFace != null && fat.gapFace < 6,
     `половины фрака не разъехались на раздутом животе: лица врозь на ${fat.gapFace}`);
+
+  // ---------- ПУЗО ЗАСЛОНЯЕТ СОСЕДА ВМЕСТЕ С ЕГО ОДЕЖДОЙ ----------
+  // Тело это делало и раньше — порядок частей верный. А одежда нет: слой у
+  // неё ОДИН на всё тело (иначе сквозь неё просвечивают кольца и кишка), и
+  // пиджак соседнего сегмента, сам-то скрытый за животом, оставался лежать
+  // поверх живота отдельной нашлёпкой.
+  //
+  // Проверка спрашивает у браузера, ЧТО ВИДНО в точке: вырез не меняет
+  // дерева, и проверка по узлам была бы зелена в обоих случаях.
+  // Перебираются НЕСКОЛЬКО размеров: дефект сильнее всего на СРЕДНЕМ
+  // раздутии. К двум живот уезжает вперёд настолько, что сосед выходит из-под
+  // него сам, и одного замера «на самом толстом» хватило бы, чтобы проверка
+  // была зелена при живой ошибке (на 1.3 её двадцать четыре точки из ста).
+  const frontWorst = { over: 0, at: null, inside: 0 };
+  for (const bs of [1.25, 1.5, 1.8]) {
+    await setBelly(bs);
+    const f = await page.evaluate(b => (MainWormHandle.setLivePose({ bellyScale: b }),
+                                        window.__wear.overFront('lower')), bs);
+    if (!f) continue;
+    frontWorst.inside = Math.max(frontWorst.inside, f.inside);
+    if (f.over >= frontWorst.over) { frontWorst.over = f.over; frontWorst.at = bs; }
+  }
+  await setBelly(1);
+  check(frontWorst.inside > 200,
+    `раздутый живот нашёлся и по нему есть что мерить: точек ${frontWorst.inside}`);
+  check(frontWorst.over === 0,
+    `на раздутом животе не лежит одежда чужой части: худшее ${frontWorst.over} точек (живот ×${frontWorst.at})`);
 
   // ---------- 5. НАРЯД ЖИВЁТ ВМЕСТЕ С ТЕЛОМ ----------
   // Жалоб было две, и они про РАЗНОЕ.

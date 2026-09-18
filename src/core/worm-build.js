@@ -407,11 +407,32 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
                         ? [tailBuilt.group, tailBuilt.bendGroup]
                         : (seg ? [seg.group] : []);
                     const hostNode = svgEl('g', { class: 'worm-wear-host' });
-                    hostNode.appendChild(g);
+                    // ---------- ЧТО ВПЕРЕДИ — ТО И ЗАСЛОНЯЕТ ----------
+                    // Слой одежды ОДИН на всё тело и лежит выше всех частей
+                    // разом. Пока части не налезали друг на друга, это было
+                    // незаметно; раздутый живот налезает — и пиджак соседнего
+                    // сегмента, который сам-то скрыт за животом, продолжал
+                    // лежать поверх живота отдельной нашлёпкой.
+                    //
+                    // Вырез по силуэту живота решает это на месте, не трогая
+                    // порядок слоёв (одежда обязана остаться выше колец,
+                    // кишки и еды в ней — иначе сквозь неё просвечивают
+                    // борозды). Обёртка нужна своя и БЕЗ трансформа: вырез
+                    // живёт в её системе координат, и лишний трансформ на том
+                    // же узле сделал бы её двусмысленной.
+                    const clipWrap = svgEl('g', { class: 'worm-wear-cut' });
+                    clipWrap.appendChild(g);
+                    hostNode.appendChild(clipWrap);
                     wearLayer.appendChild(hostNode);
+                    const clipId = `worm-wear-cut-${instanceId}-${slotKey}-${place.sub || 'x'}`;
+                    const clipPath = svgEl('path', { 'clip-rule': 'evenodd' });
+                    const clipNode = svgEl('clipPath', { id: clipId, clipPathUnits: 'userSpaceOnUse' });
+                    clipNode.appendChild(clipPath);
+                    defs.appendChild(clipNode);
                     collectSwings(g, place.part);
                     wearOnBody.push({
                         node: g, hostNode, mirror, mirrored: null, part: place.part,
+                        clipWrap, clipPath, clipRef: `url(#${clipId})`, clipShown: null, clipOn: false,
                         idx: place.part === 'tail' ? tailIdx : (seg ? seg.idx : null),
                         baseX: place.x * hostR + along,
                         // ---------- РАКУРС ДВИГАЕТ ЛИЦО, А НЕ ВСЮ ВЕЩЬ ----------
