@@ -75,7 +75,7 @@ const SlothMinigame = {
         if (!this.svgEl) return;
 
         this.beds = (typeof GARDEN !== 'undefined') ? GARDEN.BEDS_TOTAL : 6;
-        this.camEl.innerHTML = GARDEN_ART.scene(this.beds);
+        this.buildScene();
 
         if (typeof SlothShop !== 'undefined') SlothShop.init(this);
 
@@ -93,11 +93,18 @@ const SlothMinigame = {
         if (!this.screenElement) this.init();
         this.screenElement.classList.add('active');
         this.camX = 0;
+        // Заходим всегда на первую грядку: «где я остановился в прошлый раз»
+        // — вопрос, которого у сада нет, а память о нём сделала бы вход
+        // непредсказуемым.
+        this.bed = 0;
         this.drag = null;
         this.locked = false;
         // Метка пребывания ставится ЗАНОВО при каждом открытии: время, пока
         // сад был закрыт, лени не засчитывается.
         this.watchMark = GameTime.now();
+        // Мгновенно: переезд при входе выглядел бы как «камера куда-то
+        // поехала», хотя игрок ещё ничего не нажимал.
+        this.goToBed(0, true);
         this.render();
         if (typeof GardenDebug !== 'undefined') GardenDebug.render();
         // Один кадровый цикл на весь сад: он двигает только КАРТИНКУ —
@@ -165,10 +172,101 @@ const SlothMinigame = {
         return { x: p.x + (this.camX || 0), y: p.y };
     },
 
+    // ---------- СБОРКА СЛОЁВ ----------
+    // Каждый слой глубины живёт в своей группе и получает свой transform.
+    // Узлы слоёв лежат в разметке (index.html), а не создаются здесь: их
+    // порядок — это глубина, и задавать её сборкой строк значило бы прятать
+    // её в коде.
+    buildScene() {
+        const html = GARDEN_ART.sceneLayers(this.beds);
+        this.layerEls = {};
+        GARDEN_ART.LAYERS.forEach(L => {
+            const el = document.getElementById(L.key === 'front' ? 'gd-cam' : 'gd-' + L.key);
+            if (!el) return;
+            el.innerHTML = html[L.key];
+            this.layerEls[L.key] = el;
+        });
+    },
+
+    // Низкоуровневый сдвиг камеры. Переднему слою достаётся весь ход, дальним
+    // — их доля: из этого и получается глубина (GARDEN_ART.LAYERS).
+    //
+    // Оставлен открытым (им пользуется прогон сада), но игрок сюда не
+    // попадает: свободной панорамы больше нет, камера ездит только по
+    // грядкам — см. goToBed.
     setCam(x) {
         const maxX = Math.max(0, GARDEN_ART.sceneW(this.beds) - 390);
         this.camX = Math.max(0, Math.min(maxX, x));
-        this.camEl.setAttribute('transform', `translate(${(-this.camX).toFixed(1)} 0)`);
+        GARDEN_ART.LAYERS.forEach(L => {
+            const el = (this.layerEls || {})[L.key];
+            if (el) el.setAttribute('transform',
+                `translate(${(-this.camX * L.factor).toFixed(1)} 0)`);
+        });
+    },
+
+    // ---------- ПЕРЕХОД МЕЖДУ ГРЯДКАМИ ----------
+    // В центре внимания ВСЕГДА одна грядка. Свободная панорама была и убрана:
+    // ею игрок ставил участок в любое положение, в том числе в такое, где
+    // работать неудобно — полгрядки за краем, — и сам же этого не замечал.
+    // Разбор — docs/plan/19-sloth-garden.md, раздел 1а.
+    //
+    // До какой грядки можно дойти: до всех открытых и ОДНОЙ закрытой справа.
+    // Одна закрытая нужна затем, чтобы расширение участка было видно: цена
+    // стоит на самом завале, и не дойдя до него, игрок не узнает, что участок
+    // вообще растёт. Дальше второй закрытой хода нет — иначе видно пустую
+    // даль, в которую ещё десять покупок.
+    lastBed() {
+        let lastOpen = -1;
+        for (let i = 0; i < this.beds; i++) {
+            const b = Backend.gardenBed(i);
+            if (b && b.stage !== 'locked') lastOpen = i;
+        }
+        return Math.min(this.beds - 1, lastOpen + 1);
+    },
+
+    // Камера так, чтобы грядка стояла ПОСЕРЕДИНЕ экрана. Крайние грядки
+    // упираются в края участка и оказываются чуть в стороне от центра — это
+    // не дефект: за краем участка ничего нет, и показывать там пустоту хуже,
+    // чем сместить грядку.
+    goToBed(i, instant) {
+        const want = Math.max(0, Math.min(this.lastBed(), i | 0));
+        this.bed = want;
+        // Класс висит на ЭКРАНЕ, а не на одном слое: переход снимать надо у
+        // всех четырёх сразу, иначе дальние поедут, а передний прыгнет.
+        const host = this.screenElement;
+        if (host && instant) host.classList.add('gd-instant');
+        this.setCam(GARDEN_ART.bedX(want) - 195);
+        if (host && instant) {
+            // Снять надо ПОСЛЕ того, как браузер применил новое положение:
+            // иначе класс уйдёт в том же кадре и переезд всё равно
+            // проиграется.
+            void host.getBoundingClientRect();
+            host.classList.remove('gd-instant');
+        }
+        this.renderArrows();
+    },
+
+    step(dir) {
+        const want = this.bed + dir;
+        if (want < 0 || want > this.lastBed()) return;
+        this.goToBed(want);
+        if (typeof Haptics !== 'undefined') Haptics.tick();
+    },
+
+    // Стрелки живут в ПЕРЕДНЕМ ПЛАНЕ, в координатах экрана: они не часть
+    // участка и ездить вместе с ним не должны.
+    //
+    // Стрелки, которой некуда вести, не существует вовсе. Приглушённая
+    // стрелка в никуда была бы вопросом без ответа: игрок жмёт, ничего не
+    // происходит, и показать причину нечем. Место она при этом не отдаёт —
+    // обе стоят в своих углах намертво (docs/traps.md, п. 94).
+    renderArrows() {
+        const layer = document.getElementById('gd-fg-nav');
+        if (!layer) return;
+        const last = this.lastBed();
+        layer.innerHTML =
+            (this.bed > 0 ? GARDEN_ART.navArrow(-1) : '') +
+            (this.bed < last ? GARDEN_ART.navArrow(1) : '');
     },
 
     // ---------- ОТРИСОВКА ----------
@@ -204,6 +302,10 @@ const SlothMinigame = {
         this.renderTools();
         this.renderGauge();
         this.renderWallet();
+        // Стрелки зависят от того, сколько грядок открыто: разобрал завал —
+        // справа появилась следующая. Без этого правая стрелка возникала бы
+        // только при следующем заходе.
+        this.renderArrows();
     },
 
     // Что грядка просит прямо сейчас. Одна таблица на всё: если состоянию
@@ -343,6 +445,7 @@ const SlothMinigame = {
         this.fgEl.innerHTML =
             `<g id="gd-fg-wet"></g>
              <g id="gd-fg-stream" filter="url(#gd-goo)" fill="${PALETTE.garden.water[500]}"></g>
+             <g id="gd-fg-nav"></g>
              <g id="gd-fg-tools"></g>
              <g id="gd-fg-sack"></g>`;
         this.wetEl = document.getElementById('gd-fg-wet');
@@ -471,6 +574,16 @@ const SlothMinigame = {
         if (this.locked) return;
         const t = e.target;
 
+        // ---- стрелки перехода ----
+        // Первыми: они лежат поверх всего и перекрывают края соседних
+        // грядок, а дело у них своё.
+        const arrow = t.closest ? t.closest('.gd-arrow') : null;
+        if (arrow && !this.work) {
+            e.preventDefault();
+            this.step(+arrow.dataset.dir);
+            return;
+        }
+
         // ---- открытый мешок ----
         if (this.sackOpen) {
             const cell = t.closest ? t.closest('.gd-sack-cell') : null;
@@ -537,8 +650,9 @@ const SlothMinigame = {
             if (state && state.stage === 'ripe') { this.startWork(bedIdx, 'harvest'); this.strokeStart(e); return; }
         }
 
-        // Всё остальное — панорама: сад разглядывают, ведя пальцем вбок.
-        this.drag = { kind: 'pan', from: this.toStage(e).x, base: this.camX };
+        // Свободной панорамы нет: всё остальное — просто промах мимо
+        // грядки, и он ничего не делает. Переезд к соседней грядке живёт на
+        // стрелках (проверяются в самом начале onDown).
     },
 
     // Предмет в руке. Один вход на всё, что можно взять: инструмент с полки и
@@ -573,10 +687,6 @@ const SlothMinigame = {
     onMove(e) {
         if (this.stroke) { this.strokeMove(e); return; }
         if (!this.drag) return;
-        if (this.drag.kind === 'pan') {
-            this.setCam(this.drag.base - (this.toStage(e).x - this.drag.from));
-            return;
-        }
         const d = this.drag;
         const p = this.toStage(e);
         d.x = p.x; d.y = p.y;
@@ -606,7 +716,6 @@ const SlothMinigame = {
         this.drag = null;
         if (!d) return;
         Array.from(document.querySelectorAll('.gd-bed')).forEach(g => g.classList.remove('gd-target'));
-        if (d.kind === 'pan') return;
         d.node.remove();
 
         const i = this.bedUnder(e, d.tool === 'can');

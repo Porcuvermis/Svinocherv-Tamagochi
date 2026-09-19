@@ -59,7 +59,12 @@ const GARDEN_ART = {
     // требует целиться.
     BED_W: 216,
     BED_STEP: 238,
-    BED_X0: 136,          // центр первой грядки в координатах сцены
+    // Центр ПЕРВОЙ грядки, и он ровно в середине экрана (390/2). Было 136 —
+    // и первая грядка не вставала по центру никогда: камера упиралась в край
+    // участка раньше, чем довозила её. Теперь поля участка по краям равны
+    // половине экрана, и любая грядка, включая крайние, встаёт ровно
+    // посередине.
+    BED_X0: 195,
     SOIL_Y: 618,          // линия земли
     // Горизонт низко: между ним и грядками должна остаться полоса газона, а
     // не половина экрана. При высоком горизонте участок читался пустым полем,
@@ -69,10 +74,223 @@ const GARDEN_ART = {
     bedX(i) { return this.BED_X0 + i * this.BED_STEP; },
     sceneW(n) { return this.BED_X0 * 2 + (n - 1) * this.BED_STEP; },
 
+    // ---------- ЧЕТЫРЕ СЛОЯ ГЛУБИНЫ ----------
+    // Участок разложен на слои, и каждый едет за камерой со СВОЕЙ долей её
+    // хода. Дальнее смещается меньше ближнего — из этого и получается
+    // ощущение глубины, единственное доступное плоской картинке даром.
+    //
+    //   front (1.00) — грядки, трава переднего плана, инструменты. Это тот
+    //                  самый #gd-cam, в координатах которого считается ВСЁ:
+    //                  палец, зоны захвата, положение работы. Его доля
+    //                  обязана остаться единицей, иначе придётся переписать
+    //                  перевод «экран → сцена» (SlothMinigame.toScene).
+    //   near  (0.55) — деревья, кусты, цветы, колодец: то, что стоит сразу
+    //                  за грядками.
+    //   mid   (0.28) — сама земля, дальние поля и полоса леса на горизонте.
+    //                  Земля живёт ЗДЕСЬ, а не в переднем слое: сплошная
+    //                  заливка из переднего слоя закрыла бы собой оба
+    //                  дальних, а её собственное движение всё равно не
+    //                  видно — у однотонного поля нет примет.
+    //   sky   (0.08) — небо и облака.
+    //
+    // Доли подобраны по картинке, но не на глаз: между соседними слоями
+    // разница должна быть примерно вдвое, иначе они едут «почти одинаково» и
+    // глубины не читается вовсе.
+    LAYERS: [
+        { key: 'sky',   factor: 0.08 },
+        { key: 'mid',   factor: 0.28 },
+        { key: 'near',  factor: 0.55 },
+        { key: 'front', factor: 1 }
+    ],
+
+    // Сколько ширины нужно слою. Дальний слой ездит меньше, значит и полотно
+    // ему нужно короче: рисовать всем по ширине участка значило бы рисовать
+    // впустую тем больше, чем дальше слой.
+    layerW(bedCount, factor) {
+        const travel = Math.max(0, this.sceneW(bedCount) - 390);
+        return 390 + travel * factor;
+    },
+
     // ---------- УЧАСТОК ----------
-    scene(bedCount) {
+    // Возвращает разметку КАЖДОГО слоя по отдельности: собирает их экран
+    // (SlothMinigame.buildScene), потому что каждому нужен свой transform.
+    sceneLayers(bedCount) {
+        return {
+            sky:   this.skyLayer(bedCount),
+            mid:   this.midLayer(bedCount),
+            near:  this.nearLayer(bedCount),
+            front: this.frontLayer(bedCount)
+        };
+    },
+
+    // ---------- НЕБО ----------
+    // Заливка нарочно шире и выше нужного: слой ездит, и любой край,
+    // показавшийся из-под соседнего, читался бы дырой.
+    skyLayer(bedCount) {
+        const k = gdPal();
+        const W = this.layerW(bedCount, 0.08);
+        const rng = gdRng(11);
+        const parts = [`<rect x="-500" y="-500" width="${(W + 1000).toFixed(0)}" height="${this.SOIL_Y + 900}"
+                              fill="${k.sky[300]}"/>`];
+        // Облака редкие и крупные: мелкие на дальнем слое читаются шумом.
+        for (let i = 0; i < 6; i++) {
+            const cx = -60 + i * ((W + 120) / 5.5);
+            const cy = 60 + rng() * 110;
+            const r = 26 + rng() * 24;
+            parts.push(`<g opacity="0.92">
+                <ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${(r * 1.8).toFixed(0)}" ry="${r.toFixed(0)}" fill="${k.sky[100]}"/>
+                <ellipse cx="${(cx + r).toFixed(0)}" cy="${(cy - r * 0.45).toFixed(0)}" rx="${(r * 1.05).toFixed(0)}" ry="${(r * 0.78).toFixed(0)}" fill="${k.sky[100]}"/>
+                <ellipse cx="${(cx - r * 1.1).toFixed(0)}" cy="${(cy - r * 0.2).toFixed(0)}" rx="${(r * 0.8).toFixed(0)}" ry="${(r * 0.6).toFixed(0)}" fill="${k.sky[100]}"/>
+            </g>`);
+        }
+        return parts.join('');
+    },
+
+    // ---------- ДАЛЬНИЙ ПЛАН: ЗЕМЛЯ, ПОЛЯ, ЛЕС ----------
+    midLayer(bedCount) {
+        const k = gdPal(), S = gdS();
+        const W = this.layerW(bedCount, 0.28);
+        const rng = gdRng(23);
+        const parts = [];
+
+        // Холмы ЗА линией горизонта: они выступают в небо и потому рисуются
+        // до земли.
+        for (let i = 0; i < 8; i++) {
+            const cx = -220 + i * ((W + 440) / 7);
+            const rx = 170 + rng() * 150, ry = 44 + rng() * 50;
+            parts.push(`<ellipse cx="${cx.toFixed(0)}" cy="${this.SKY_H}" rx="${rx.toFixed(0)}" ry="${ry.toFixed(0)}"
+                                 fill="${k.turf[700]}" opacity="0.42"/>`);
+        }
+
+        // Полоса леса на самом горизонте: ряд тёмных крон, из-за которых
+        // дальний план перестаёт быть пустым скатом.
+        for (let i = 0; i < 34; i++) {
+            const tx = -200 + i * ((W + 400) / 33);
+            const th = 14 + rng() * 16;
+            parts.push(`<ellipse cx="${tx.toFixed(0)}" cy="${(this.SKY_H - th * 0.4).toFixed(0)}"
+                                 rx="${(th * 0.8).toFixed(0)}" ry="${th.toFixed(0)}"
+                                 fill="${k.turf[700]}" opacity="0.6"/>`);
+        }
+
+        // ЗЕМЛЯ. Она в этом слое, а не в переднем: сплошная заливка из
+        // переднего закрыла бы собой небо и лес, а собственного движения у
+        // однотонного поля не видно.
+        parts.push(`<rect x="-500" y="${this.SKY_H}" width="${(W + 1000).toFixed(0)}"
+                          height="${this.SOIL_Y - this.SKY_H + 900}" fill="${k.turf[500]}"/>`);
+        parts.push(`<path d="M-500 ${this.SKY_H} H${(W + 500).toFixed(0)}"
+                          stroke="${k.turf[700]}" stroke-width="${S.structure}"/>`);
+
+        // Дальние поля: широкие пологие полосы другого оттенка сразу за
+        // горизонтом. Они и читаются как «поля», а не как пятна на газоне.
+        for (let i = 0; i < 9; i++) {
+            const fx = -180 + i * ((W + 360) / 8.5);
+            const fw = 150 + rng() * 190;
+            const fy = this.SKY_H + 12 + rng() * 34;
+            parts.push(`<ellipse cx="${fx.toFixed(0)}" cy="${fy.toFixed(0)}"
+                                 rx="${(fw / 2).toFixed(0)}" ry="${(16 + rng() * 14).toFixed(0)}"
+                                 fill="${k.turf[300]}" opacity="0.3"/>`);
+        }
+        return parts.join('');
+    },
+
+    // ---------- БЛИЖНИЙ ФОН: ТО, ЧТО СТОИТ ЗА ГРЯДКАМИ ----------
+    // Деревья, кусты, цветы и колодец. Стоят ВЫШЕ грядок по экрану (то есть
+    // дальше) и рисуются до них, поэтому грядка всегда закрывает собой то,
+    // что за ней.
+    nearLayer(bedCount) {
         const k = gdPal(), ink = gdInk(), S = gdS();
+        const W = this.layerW(bedCount, 0.55);
+        const rng = gdRng(41);
+        const parts = [];
+        // Линия, на которой всё стоит. Выше грядок почти на сотню единиц, и
+        // это не «подальше для красоты»: ровно над грядкой висит значок её
+        // просьбы (какой инструмент она ждёт), и куст на той же высоте
+        // превращал его в кашу. Фон обязан уступать тому, с чем работают.
+        const BASE = this.SOIL_Y - 104;
+
+        // Изгородь во всю длину: она связывает разрозненные предметы в один
+        // участок. Без неё деревья выглядят случайно расставленными.
+        parts.push(`<path d="M-200 ${BASE - 6} H${(W + 200).toFixed(0)}"
+                          stroke="${k.wood[500]}" stroke-width="5" opacity="0.85"/>`);
+        for (let x = -180; x < W + 200; x += 62) {
+            parts.push(`<rect x="${x.toFixed(0)}" y="${(BASE - 26).toFixed(0)}" width="7" height="30" rx="3"
+                              fill="${k.wood[500]}" opacity="0.85"/>`);
+        }
+
+        // Предметы по кругу: дерево, куст, куст с цветами, колодец. Порядок
+        // повторяется, но размер и наклон у каждого свои — ряд одинаковых
+        // деревьев читается обоями, а не садом.
+        const kinds = ['tree', 'bush', 'flowers', 'tree', 'well', 'bush'];
+        // Шаг крупный: частый ряд предметов на дальнем плане читается
+        // забором из кустов, а не садом.
+        for (let i = 0; i < Math.ceil((W + 300) / 186); i++) {
+            const x = -120 + i * 186 + rng() * 46;
+            const kind = kinds[i % kinds.length];
+            const sc = 0.8 + rng() * 0.45;
+            parts.push(`<g transform="translate(${x.toFixed(0)} ${BASE}) scale(${sc.toFixed(2)})">
+                ${this.backdropThing(kind, rng)}</g>`);
+        }
+        return parts.join('');
+    },
+
+    // Один предмет ближнего фона. Рисуется от своей ПОДОШВЫ (0,0 — там, где
+    // он стоит на земле): иначе каждый предмет пришлось бы сажать на линию
+    // вручную, и они разъехались бы по высоте.
+    backdropThing(kind, rng) {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        const line = `stroke="${ink}" stroke-width="${S.detail}" stroke-linejoin="round"`;
+
+        if (kind === 'tree') {
+            const h = 96 + rng() * 34;
+            const r = 34 + rng() * 12;
+            return `<g>
+                <path d="M-5 0 V${(-h * 0.55).toFixed(0)} q0 -6 5 -6 q5 0 5 6 V0 Z" fill="${k.wood[700]}"/>
+                <ellipse cx="0" cy="${(-h * 0.72).toFixed(0)}" rx="${r.toFixed(0)}" ry="${(r * 0.92).toFixed(0)}"
+                         fill="${k.turf[700]}" ${line}/>
+                <ellipse cx="${(-r * 0.55).toFixed(0)}" cy="${(-h * 0.6).toFixed(0)}" rx="${(r * 0.62).toFixed(0)}" ry="${(r * 0.56).toFixed(0)}"
+                         fill="${k.turf[500]}"/>
+                <ellipse cx="${(r * 0.5).toFixed(0)}" cy="${(-h * 0.84).toFixed(0)}" rx="${(r * 0.5).toFixed(0)}" ry="${(r * 0.46).toFixed(0)}"
+                         fill="${k.turf[500]}" opacity="0.8"/>
+            </g>`;
+        }
+        if (kind === 'bush') {
+            const r = 24 + rng() * 10;
+            return `<g>
+                <ellipse cx="0" cy="${(-r * 0.7).toFixed(0)}" rx="${(r * 1.3).toFixed(0)}" ry="${r.toFixed(0)}"
+                         fill="${k.turf[700]}" ${line}/>
+                <ellipse cx="${(-r * 0.5).toFixed(0)}" cy="${(-r * 0.85).toFixed(0)}" rx="${(r * 0.7).toFixed(0)}" ry="${(r * 0.6).toFixed(0)}"
+                         fill="${k.turf[500]}"/>
+            </g>`;
+        }
+        if (kind === 'flowers') {
+            const out = [`<ellipse cx="0" cy="-12" rx="30" ry="14" fill="${k.turf[700]}" opacity="0.9"/>`];
+            const tint = [k.coin[300], k.shard[300], k.sky[100]];
+            for (let i = 0; i < 7; i++) {
+                const fx = -26 + i * 9 + rng() * 4;
+                const fy = -18 - rng() * 16;
+                out.push(`<path d="M${fx.toFixed(0)} -8 V${fy.toFixed(0)}" stroke="${k.turf[500]}" stroke-width="2"/>
+                          <circle cx="${fx.toFixed(0)}" cy="${fy.toFixed(0)}" r="4"
+                                  fill="${tint[i % tint.length]}" ${line}/>`);
+            }
+            return `<g>${out.join('')}</g>`;
+        }
+        // Колодец: единственный рукотворный предмет фона. Он и делает поле
+        // садом — по нему видно, что здесь кто-то живёт.
+        return `<g>
+            <path d="M-24 0 H24 V-30 H-24 Z" fill="${k.iron[500]}" ${line}/>
+            <path d="M-24 -30 H24" stroke="${k.iron[700]}" stroke-width="4"/>
+            <path d="M-18 -30 V-58 M18 -30 V-58" stroke="${k.wood[700]}" stroke-width="5"/>
+            <path d="M-30 -58 L0 -76 L30 -58 Z" fill="${k.wood[500]}" ${line}/>
+        </g>`;
+    },
+
+    // ---------- ПЕРЕДНИЙ ПЛАН ----------
+    // Всё, с чем работает палец. Координаты этого слоя и есть координаты
+    // сцены: доля хода камеры у него ровно единица.
+    frontLayer(bedCount) {
+        const k = gdPal(), S = gdS();
         const W = this.sceneW(bedCount);
+        const rng = gdRng(7);
         const parts = [];
 
         parts.push(`
@@ -87,35 +305,13 @@ const GARDEN_ART = {
                     0 0 1 0 0
                     0 0 0 26 -11"/>
             </filter>
-        </defs>
+        </defs>`);
 
-        <rect x="-400" y="-400" width="${W + 800}" height="${this.SOIL_Y + 400}" fill="${k.sky[300]}"/>
-        <rect x="-400" y="${this.SKY_H}" width="${W + 800}" height="${this.SOIL_Y - this.SKY_H + 900}"
-              fill="${k.turf[500]}"/>
-        <path d="M-400 ${this.SKY_H} H${W + 400}" stroke="${k.turf[700]}" stroke-width="${S.structure}"/>`);
-
-        // Далёкие холмы: горизонт нужен, чтобы небо не было плоской заливкой,
-        // а участок читался как место под открытым небом.
-        const rng = gdRng(7);
-        for (let i = 0; i < 7; i++) {
-            const cx = -200 + i * ((W + 400) / 6);
-            const rx = 150 + rng() * 130, ry = 40 + rng() * 46;
-            parts.push(`<ellipse cx="${cx.toFixed(0)}" cy="${this.SKY_H}" rx="${rx.toFixed(0)}" ry="${ry.toFixed(0)}"
-                                 fill="${k.turf[700]}" opacity="0.45"/>`);
-        }
-        for (let i = 0; i < 5; i++) {
-            const cx = 40 + i * ((W + 200) / 4.5);
-            const cy = 70 + rng() * 90;
-            const r = 26 + rng() * 22;
-            parts.push(`<g opacity="0.9">
-                <ellipse cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${(r * 1.7).toFixed(0)}" ry="${r.toFixed(0)}" fill="${k.sky[100]}"/>
-                <ellipse cx="${(cx + r).toFixed(0)}" cy="${(cy - r * 0.4).toFixed(0)}" rx="${r.toFixed(0)}" ry="${(r * 0.75).toFixed(0)}" fill="${k.sky[100]}"/>
-            </g>`);
-        }
-
-        // Трава на переднем плане: без неё нижняя треть экрана — плоская
+        // Трава переднего плана: без неё нижняя треть экрана — плоская
         // заливка, и участок не читается как земля, по которой ходят.
-        for (let i = 0; i < 140; i++) {
+        // Здесь же она и держит ощущение хода: у травинок есть приметы, и
+        // именно по ним видно, что передний слой едет быстрее дальних.
+        for (let i = 0; i < 170; i++) {
             const gx = -180 + rng() * (W + 360);
             const gy = this.SOIL_Y + 40 + rng() * 190;
             const gh = 8 + rng() * 14;
@@ -938,6 +1134,46 @@ const GARDEN_ART = {
             y: S.cy - S.h / 2 + ch * (row + 0.5),
             w: cw, h: ch
         };
+    },
+
+    // ---------- СТРЕЛКИ ПЕРЕХОДА МЕЖДУ ГРЯДКАМИ ----------
+    // Свободной панорамы у сада больше нет: в центре внимания ВСЕГДА одна
+    // грядка, к соседней переезжают стрелкой. Разбор почему —
+    // docs/plan/19-sloth-garden.md, раздел 1а.
+    //
+    // Полоса, а не кружок: она занимает край экрана целиком по высоте
+    // грядки, и попасть в неё можно не целясь. Заметная, но приглушённая —
+    // это не главный предмет экрана, а способ добраться до главного.
+    //
+    // Стрелки НЕ ВИДНО там, где идти некуда. Приглушённая стрелка в никуда
+    // была бы вопросом без ответа: игрок жмёт, ничего не происходит, и
+    // причину показать нечем — направления, которого нет, не существует
+    // (в отличие от цены, которой не хватило: её можно вздрогнуть).
+    ARROW: { w: 40, y: 372, h: 250, pad: 5 },
+
+    navArrow(dir) {
+        const A = this.ARROW, ink = gdInk(), k = gdPal();
+        const x = dir < 0 ? A.pad : 390 - A.pad - A.w;
+        // Галочка рисуется от центра полосы и поворачивается зеркалом:
+        // два отдельных пути разъехались бы по толщине и наклону.
+        //
+        // Знак проверен НА ЭКРАНЕ, а не выведен в уме: остриё галочки — это
+        // средняя точка пути, и при tip = −9 у стрелки «влево» оно уезжало
+        // ВПРАВО. Сторону в этом проекте проверяют, а не считают
+        // (CLAUDE.md, «правило направления»).
+        const cx = x + A.w / 2, cy = A.y + A.h / 2;
+        const tip = dir < 0 ? 9 : -9;
+        return `<g class="gd-arrow" data-dir="${dir}">
+            <rect x="${x}" y="${A.y}" width="${A.w}" height="${A.h}" rx="${(A.w / 2).toFixed(0)}"
+                  fill="${ink}" fill-opacity="0.26"/>
+            <rect x="${x}" y="${A.y}" width="${A.w}" height="${A.h}" rx="${(A.w / 2).toFixed(0)}"
+                  fill="none" stroke="${k.sky[100]}" stroke-width="2" opacity="0.5"/>
+            <path d="M${(cx + tip).toFixed(0)} ${(cy - 13).toFixed(0)}
+                     L${(cx - tip).toFixed(0)} ${cy}
+                     L${(cx + tip).toFixed(0)} ${(cy + 13).toFixed(0)}"
+                  fill="none" stroke="${k.sky[100]}" stroke-width="4"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+        </g>`;
     },
 
     // ---------- ВХОД В МАГАЗИН ----------

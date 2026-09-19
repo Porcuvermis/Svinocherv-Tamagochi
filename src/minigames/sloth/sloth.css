@@ -491,3 +491,34 @@
     font-size: 30px;
     color: #8bab5a;
 }
+
+/* ================= ПЕРЕЕЗД МЕЖДУ ГРЯДКАМИ ================= */
+/* Камера не прыгает, а ПЕРЕЕЗЖАЕТ: по движению видно, что участок один и
+   длинный, а грядки — места на нём. Прыжок читался бы сменой экрана.
+
+   Переход висит на всех четырёх слоях глубины: они обязаны ехать вместе,
+   иначе дальний догоняет ближний и глубина распадается. */
+#sloth-game #gd-sky,
+#sloth-game #gd-mid,
+#sloth-game #gd-near,
+#sloth-game #gd-cam {
+    transition: transform 0.42s cubic-bezier(0.32, 0.72, 0.2, 1);
+}
+/* Вход в сад и отладочные перескоки — без переезда: камера, поехавшая до
+   первого касания, выглядит поломкой. */
+#sloth-game #gd-cam.gd-instant,
+#sloth-game.gd-instant #gd-sky,
+#sloth-game.gd-instant #gd-mid,
+#sloth-game.gd-instant #gd-near,
+#sloth-game.gd-instant #gd-cam {
+    transition: none;
+}
+
+/* ---------- СТРЕЛКИ ---------- */
+/* Полосы по краям: попасть в них можно не целясь, а внимание они не
+   перетягивают — это способ добраться до главного, а не само главное. */
+#sloth-game .gd-arrow {
+    cursor: pointer;
+    transition: opacity 0.16s ease;
+}
+#sloth-game .gd-arrow:active { opacity: 0.6; }
