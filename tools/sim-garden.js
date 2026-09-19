@@ -39,7 +39,7 @@ const H = 60;                       // час в минутах
 // какашках, разошлась с кухней, и «круг не печатает» проверялось по числу,
 // которого в игре нет (docs/traps.md, п. 11).
 const CANS  = GARDEN.CAN_TIERS.map(t => t.hours * H);   // лейка: база этапа 1
-const RAKES = GARDEN.RAKE_MINUTES;                      // грабли: этап 2, минуты
+const RAKES = GARDEN.RAKE_TIERS.map(t => t.minutes);    // грабли: этап 2, минуты
 // Сколько минут игрок готов ждать в саду, не уходя. Это НЕ константа игры, а
 // свойство живого человека: у одного три минуты, у другого пятнадцать.
 // Поэтому грабли меряются не одним порогом, а полосой — см. таблицу внизу.
@@ -242,9 +242,9 @@ console.log('  Числа прикидочные: сток (цены апгре�
 // её надо держать в уме рядом с пропускной способностью участка, иначе
 // участок либо раскрывается за пять минут, либо не раскрывается никогда.
 const perToken = 3;                        // ECONOMY.exchange: три осколка = жетон
-const harvestsPerBed = (GARDEN.BED_COST.amount * perToken) / GARDEN.HARVEST_SHARDS;
+const harvestsPerBed = (GARDEN.BED_COST.amounts[0] * perToken) / GARDEN.HARVEST_SHARDS;
 console.log('\nЦЕНА НОВОЙ ГРЯДКИ');
-console.log(`  ${GARDEN.BED_COST.amount} жетон = ${harvestsPerBed} собранных урожая ` +
+console.log(`  ${GARDEN.BED_COST.amounts[0]} жетона = ${harvestsPerBed} собранных урожая ` +
             `(осколок за урожай, ${perToken} осколка в жетоне)`);
 [1, 2, 3].forEach(visits => {
     const res = simulate(0, 0, SCHEDULES[visits === 1 ? 'раз в день' : visits === 2 ? 'два раза' : 'три раза'], 'none', 99);
@@ -265,7 +265,7 @@ console.log(`  Все ${GARDEN.BEDS_TOTAL - GARDEN.BEDS_OPEN} заваленны
 // даёт 1/(1−шанс) посадок, и без притока вид ВЫМИРАЕТ. Приток до магазина
 // один — находки в земле.
 console.log('\nСЕМЕНА: СКОЛЬКО ЖИВЁТ ОДИН ВИД');
-GARDEN.SEED_RETURN.forEach((p, i) => {
+GARDEN.SEED_TIERS.map(t => t.chance).forEach((p, i) => {
     const perSeed = 1 / (1 - p);
     // Копка лунки идёт перед каждой посадкой, значит на посадку приходится
     // ровно один шанс найти семечко (см. таблицу находок выше).

@@ -34,11 +34,12 @@ const fs = require('fs');
 const root = __dirname + '/..';
 const src = fs.readFileSync(root + '/src/config/kitchen.js', 'utf8') + '\n'
           + fs.readFileSync(root + '/src/config/wrath-gear.js', 'utf8') + '\n'
+          + fs.readFileSync(root + '/src/config/garden.js', 'utf8') + '\n'
           + fs.readFileSync(root + '/src/config/economy.js', 'utf8') + '\n'
-          + 'module.exports = { KITCHEN, WRATH_GEAR, ECONOMY };';
+          + 'module.exports = { KITCHEN, WRATH_GEAR, GARDEN, ECONOMY };';
 const mod = { exports: {} };
 new Function('module', 'window', src)(mod, {});
-const { KITCHEN, WRATH_GEAR, ECONOMY } = mod.exports;
+const { KITCHEN, WRATH_GEAR, GARDEN, ECONOMY } = mod.exports;
 
 const say = console.log;
 let bad = 0;
@@ -123,6 +124,24 @@ const INCOME = {
         return (1.86 + (2.55 - 1.86) * share) * visits / PROFILES['средний'];
     },
 
+    // ---------- ЛЕНЬ ----------
+    // Осколок лени падает за СОБРАННЫЙ ПЛОД, три осколка — жетон. Урожаев в
+    // сутки с грядки считает tools/sim-garden.js: около 0.5 при заходе раз в
+    // день и около 1.5 при трёх — числа взяты оттуда, а не выведены заново.
+    //
+    // Доход растёт вдвойне: от КОЛИЧЕСТВА грядок (их покупают тут же) и от
+    // граблей, которые вводят второй этап в полосу терпения игрока. Трава
+    // сюда не считается вовсе — она даёт сено, но ни плода, ни осколка.
+    sloth(levels, conf) {
+        const beds = GARDEN.BEDS_OPEN + (levels.beds || 0);
+        // Грабли ниже порога терпения (8 мин) удваивают число урожаев: игрок
+        // дожидается второго этапа, не уходя.
+        const rakeMin = GARDEN.RAKE_TIERS[Math.min(levels.rake || 0,
+                        GARDEN.RAKE_TIERS.length - 1)].minutes;
+        const perBed = (rakeMin <= 8 ? 1.0 : 0.5) * visits;
+        return beds * perBed * GARDEN.HARVEST_SHARDS / ECONOMY.exchange.sloth_shard.per;
+    },
+
     // ---------- ТЩЕСЛАВИЕ ----------
     // Поцелуи за выход, размена на жетоны нет — валюта прямая. Темп и здесь
     // держит не число заходов, а порог голода: платят только за выход, до
@@ -138,6 +157,33 @@ const INCOME = {
         return Math.min(visits, runsCap) * perRun;
     }
 };
+
+// ---------- ЛЕСТНИЦЫ САДА ----------
+// У лени нет записи в ECONOMY.minigames: её ступени живут в GARDEN рядом с
+// тем, что они меняют (миллисекунды полива, минуты прополки, циклы копания,
+// шанс возврата семечки), а не отдельной таблицей бонусов. Собираем их к
+// общей форме здесь — в календаре важна только ЦЕНА.
+//
+// Сюда же идут грядки и открытие новых видов: для игрока это такие же
+// покупки за жетон, и пропустить их значит посчитать половину сада.
+function slothLadders() {
+    const price = (p) => ({ price: p });
+    const out = {
+        can:   { levels: GARDEN.CAN_TIERS.slice(1).map(t => price(t.price)) },
+        rake:  { levels: GARDEN.RAKE_TIERS.slice(1).map(t => price(t.price)) },
+        seed:  { levels: GARDEN.SEED_TIERS.slice(1).map(t => price(t.price)) },
+        spade: { levels: (GARDEN.work.dig.price || []).filter(Boolean).map(price) },
+        beds:  { levels: GARDEN.BED_COST.amounts.map(
+                    n => price({ [GARDEN.BED_COST.currency]: n })) }
+    };
+    // Виды: каждый — своя одноступенчатая «лестница». Порядок в кошельке
+    // игрока они делят с остальным, и жадная покупка возьмёт самый дешёвый.
+    Object.keys(GARDEN.species).forEach(key => {
+        const sp = GARDEN.species[key];
+        if (sp.unlock) out['species_' + key] = { levels: [price(sp.unlock)] };
+    });
+    return out;
+}
 
 // Снаряжение гнева, разложенное по слотам, — те же лестницы: в слоте
 // покупают по порядку, от дешёвого к дорогому.
@@ -164,7 +210,12 @@ const bulkWorst = (gaps) => {
 // Жадная покупка: каждый день копим доход, потом берём всё, на что хватает,
 // начиная с самой дешёвой доступной ступени.
 function run(sinKey) {
-    const base = ECONOMY.minigames[sinKey] && ECONOMY.minigames[sinKey].upgrades;
+    // У лени лестницы лежат не в ECONOMY, а в GARDEN — рядом с тем, что они
+    // меняют. Собираем их к общей форме (см. slothLadders).
+    const base = (sinKey === 'sloth')
+        ? Object.assign({ order: [] }, slothLadders(),
+                        { order: Object.keys(slothLadders()) })
+        : (ECONOMY.minigames[sinKey] && ECONOMY.minigames[sinKey].upgrades);
     if (!base || !INCOME[sinKey]) return null;
 
     // У гнева половина покупок — это НЕ прокачка, а снаряжение: оно
@@ -225,7 +276,7 @@ function run(sinKey) {
 // сколько раз расходятся сроки, но целиться можно только в одну точку.
 function report(name) {
     visits = PROFILES[name];
-    const runs = Object.keys(ECONOMY.minigames).map(run).filter(Boolean);
+    const runs = Object.keys(ECONOMY.minigames).concat(['sloth']).map(run).filter(Boolean);
 
     const all = [].concat(...runs.map(r => r.buys)).sort((a, b) => a - b);
     const gaps = [];

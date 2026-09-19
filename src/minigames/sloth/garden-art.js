@@ -714,7 +714,7 @@ const GARDEN_ART = {
             return `<g class="gd-badge gd-badge-need">
                 <circle r="26" fill="${k.soil[700]}" opacity="${enough ? 0.55 : 0.7}"/>
                 <g transform="translate(0 -6) scale(0.85)">${this.token(enough)}</g>
-                <text class="gd-price" x="0" y="19">${GARDEN.BED_COST.amount}</text>
+                <text class="gd-price" x="0" y="19">${Backend.gardenBedCost().amount}</text>
             </g>`;
         }
         // Значок инструмента — тот же рисунок, что на полке, только мельче:
@@ -887,6 +887,43 @@ const GARDEN_ART = {
     // снаружи. Форма подчиняется раскладке, а не наоборот.
     SACK: { cx: 195, cy: 688, w: 336, h: 212, cols: 4, rows: 2 },
 
+    // ---------- ЦЕННИК НА ПОЛКЕ ----------
+    // Магазин лени не экран, а ЦЕННИКИ на тех же предметах, которыми
+    // работают (план, раздел 6). Причина та же, по которой мешок открывается
+    // тапом: отдельный экран покупок — это меню, а сад про предметы.
+    //
+    // Ценник висит НАД инструментом и нажимается сам по себе: тап по
+    // инструменту берёт его в руку, тап по ценнику покупает ступень. Две
+    // разные цели у двух разных дел — иначе пришлось бы заводить жест-
+    // исключение, а он стоит дороже того, что защищает (раздел 4а).
+    //
+    // Не по карману — ценник приглушён и жетон серый, но ОСТАЁТСЯ нажимаемым:
+    // выключенный ценник молчит, а молчание читается поломкой
+    // (docs/traps.md, п. 91).
+    priceTag(price, enough) {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        const cur = Object.keys(price || {})[0];
+        const n = price ? price[cur] : 0;
+        return `<g class="gd-tag${enough ? '' : ' gd-poor'}">
+            ${gdGrab(0, 0, 30, 20)}
+            <rect x="-27" y="-15" width="54" height="30" rx="13"
+                  fill="${k.wood[300]}" stroke="${ink}" stroke-width="${S.structure}"/>
+            <g transform="translate(-11 0) scale(0.62)">${this.token(enough)}</g>
+            <text class="gd-price gd-tag-n" x="10" y="6">${n}</text>
+        </g>`;
+    },
+
+    // Ступень выкуплена до потолка — вместо ценника галочка. Пустое место
+    // читалось бы как «ценник не нарисовался», а галочка говорит «всё».
+    tagDone() {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        return `<g class="gd-tag gd-tag-done">
+            <circle r="13" fill="${k.turf[300]}" stroke="${ink}" stroke-width="${S.structure}"/>
+            <path d="M-6 0 l4 5 l8 -10" fill="none" stroke="${ink}"
+                  stroke-width="${S.structure}" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>`;
+    },
+
     // Центр ячейки по её номеру. Место каждого вида ЗАКРЕПЛЕНО (порядок
     // берётся из таблицы видов): через неделю игрок помнит, что помидор лежит
     // второй во втором ряду, и тянется туда не глядя. Сетка при этом не
@@ -950,14 +987,36 @@ const GARDEN_ART = {
             </g>`);
         }
 
+        // ---------- ЯЧЕЙКА — ЭТО И ПОЛКА, И ПРИЛАВОК ----------
+        // Место каждого вида закреплено, поэтому ячейка никуда не девается,
+        // что бы с ней ни было. Три состояния, и у каждого свой ответ на тап:
+        //
+        //   have   — семена есть: ячейку ТЯНУТ на грядку;
+        //   empty  — вид открыт, семена кончились: под ним цена в СЕНЕ,
+        //            тап покупает одну;
+        //   locked — вид ещё не открыт: силуэт и цена в ЖЕТОНАХ, тап
+        //            открывает вид и сразу кладёт первую семечку.
+        //
+        // Пустая ячейка и раньше оставалась на месте («вид знаком, семечек
+        // нет»), но молчала. Теперь она говорит, чем её наполнить, — и это
+        // ровно то место, где игрок об этом думает.
         (items || []).forEach((it, n) => {
             const c = this.sackCell(n);
-            const empty = it.count === 0;
-            out.push(`<g class="gd-sack-cell${empty ? ' gd-empty' : ''}" data-key="${it.key}"
+            const price = it.price || null;
+            const cur = price ? Object.keys(price)[0] : null;
+            const mark = cur === 'hay'
+                ? `<g transform="translate(-11 0) scale(0.5)">${this.hay()}</g>`
+                : `<g transform="translate(-11 0) scale(0.5)">${this.token(it.enough)}</g>`;
+            out.push(`<g class="gd-sack-cell gd-${it.state}${it.enough === false ? ' gd-poor' : ''}"
+                         data-key="${it.key}" data-state="${it.state}"
                          transform="translate(${c.x.toFixed(1)} ${c.y.toFixed(1)})">
                 ${gdGrab(0, 0, c.w / 2 - 2, c.h / 2 - 2)}
-                <g transform="translate(0 -6)">${this.seedItem(it.key)}</g>
-                ${it.count === null ? '' : `<text class="gd-seed-count" x="0" y="32">${it.count}</text>`}
+                <g transform="translate(0 -8)">${this.seedItem(it.key)}</g>
+                ${it.state === 'have' && it.count !== null
+                    ? `<text class="gd-seed-count" x="0" y="32">${it.count}</text>` : ''}
+                ${price ? `<g transform="translate(0 30)">
+                    ${mark}<text class="gd-price gd-tag-n" x="8" y="5">${price[cur]}</text>
+                </g>` : ''}
             </g>`);
         });
         return out.join('');

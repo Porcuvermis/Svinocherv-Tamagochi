@@ -708,6 +708,20 @@
         <div class="gd-gauge-wrap" id="gd-gauge-wrap">
             <div class="gd-gauge-bar" id="gd-gauge-bar"></div>
         </div>
+
+        <!-- КОШЕЛЁК САДА: сено и жетон лени.
+             Заведён вместе с магазином, и не для красоты. Покупки в саду
+             висят на предметах — ценники на полке, цены в мешке, цена грядки
+             на самой грядке, — а отказ «не хватило» обязан показываться ТАМ,
+             ГДЕ ЛЕЖИТ НЕДОСТАЮЩЕЕ, а не под пальцем (docs/traps.md, п. 91).
+             До кошелька показывать его было негде.
+
+             data-cur на всём чипе: по этой метке WalletFx находит счётчик и
+             сам выбрасывает из него потраченное. -->
+        <div class="gd-wallet" id="gd-wallet">
+            <span class="gd-coin" data-cur="hay" id="gd-w-hay"></span>
+            <span class="gd-coin" data-cur="sloth_token" id="gd-w-token"></span>
+        </div>
     </div>
 
     <!-- ПОХОТЬ: ВАННАЯ.

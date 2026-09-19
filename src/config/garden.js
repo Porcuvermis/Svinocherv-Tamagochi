@@ -39,7 +39,11 @@ const GARDEN = {
     // урожай — значит новая грядка стоит примерно трёх урожаев со старых.
     // Раньше завал разбирался просто так, и шесть грядок открывались за
     // первые две минуты, обесценивая весь остальной прогресс сада.
-    BED_COST: { currency: 'sloth_token', amount: 1 },
+    // Цена РАСТЁТ с каждой открытой грядкой, а не стоит на месте. Плоский
+    // жетон за любую означал бы, что шестая грядка достаётся так же легко,
+    // как третья, — а к шестой у игрока вчетверо больше дохода. Индекс —
+    // сколько грядок уже открыто сверх стартовых.
+    BED_COST: { currency: 'sloth_token', amounts: [4, 9, 18, 32] },
     // Сколько осколков лени даёт один собранный плод.
     HARVEST_SHARDS: 1,
 
@@ -79,9 +83,16 @@ const GARDEN = {
     // читалась бы как несправедливость, а не как баланс.
     work: {
         clear:     { axis: 'x', min: 40, cycles: [10] },              // раскидать завал
-        dig:       { axis: 'y', min: 34, cycles: [10, 7, 5], tool: 'spade' },
+        // price — цена перехода на ступень с тем же номером, что и в cycles.
+        // Лежит рядом с cycles намеренно: разъехаться двум соседним строкам
+        // труднее, чем двум спискам в разных концах файла.
+        dig:       { axis: 'y', min: 34, cycles: [10, 7, 5], tool: 'spade',
+                     price: [null, { sloth_token: 8 }, { sloth_token: 20 }] },
         sow:       { axis: 'x', min: 36, cycles: [10] },              // примять землю
         fertilize: { axis: 'x', min: 36, cycles: [10] },              // растереть какашку
+        // У граблей своя лестница минут (RAKE_TIERS), и покупается она там же.
+        // Здесь цен нет: ступень одна на инструмент, а не по одной на каждое
+        // его применение.
         weed:      { axis: 'y', min: 34, cycles: [10, 7, 5], tool: 'rake' },
         harvest:   { axis: 'y', min: 70, dir: -1, pulls: 1 }          // рывок вверх
     },
@@ -100,12 +111,15 @@ const GARDEN = {
     //
     // pour — сколько миллисекунд надо держать лейку над грядкой;
     // hours — сколько часов идёт этап 1.
+    // price — чем платят за ПЕРЕХОД на эту ступень. Стоит рядом со ступенью,
+    // а не отдельным списком цен: два списка одинаковой длины разъезжаются на
+    // первой же вставленной ступени, и заметить это нечем.
     CAN_TIERS: [
-        { pour: 4000, hours: 3 },
-        { pour: 2600, hours: 3 },
-        { pour: 1600, hours: 3 },
-        { pour: 1600, hours: 2 },
-        { pour: 1200, hours: 1 }
+        { pour: 4000, hours: 3 },                                // стартовая
+        { pour: 2600, hours: 3, price: { sloth_token: 1 } },
+        { pour: 1600, hours: 3, price: { sloth_token: 6 } },
+        { pour: 1600, hours: 2, price: { sloth_token: 15 } },
+        { pour: 1200, hours: 1, price: { sloth_token: 30 } }
     ],
     // Сколько часов снимает одна какашка. Единица — и в этом сейчас долг:
     // на верхней ступени лейки круг начинает печатать ресурсы
@@ -115,7 +129,15 @@ const GARDEN = {
     // ---------- ЭТАП 2: МИНУТЫ ----------
     // Ступени граблей. Каждая захватывает новый кусок полосы терпения:
     // 25 не окупается почти ни у кого, 3 окупается у всех.
-    RAKE_MINUTES: [25, 12, 6, 3],
+    // Та же форма, что у лейки: минуты и цена перехода в одной записи.
+    // Раньше это был голый массив чисел; цену пришлось бы класть вторым
+    // списком, а он живёт ровно до первой вставленной ступени.
+    RAKE_TIERS: [
+        { minutes: 25 },                                         // стартовая
+        { minutes: 12, price: { sloth_token: 4 } },
+        { minutes: 6,  price: { sloth_token: 12 } },
+        { minutes: 3,  price: { sloth_token: 26 } }
+    ],
 
     // ---------- ШКАЛА ЛЕНИ ----------
     // Единственный грех, который наполняется САМИМ ПРЕБЫВАНИЕМ на экране, и
@@ -187,6 +209,7 @@ const GARDEN = {
         // Приземистый раскидистый куст: густая широкая листва, бледный цветок.
         potato: {
             fruit: 'potato', hay: 1,
+            seedPrice: { hay: 4 },
             hue: [72, 104], sat: [28, 44], light: [24, 34],
             stems: ['straight', 'zigzag'], leaves: ['oval', 'pointed'],
             arrangements: ['alternate', 'opposite'],
@@ -197,6 +220,8 @@ const GARDEN = {
         // Ботва: высокая, тонкая, перистая, почти без цветка.
         carrot: {
             fruit: 'carrot', hay: 1,
+            seedPrice: { hay: 5 },
+            unlock: { sloth_token: 6 },
             hue: [96, 132], sat: [34, 52], light: [26, 36],
             stems: ['straight'], leaves: ['fern'],
             arrangements: ['whorled', 'alternate'],
@@ -207,6 +232,8 @@ const GARDEN = {
         // Лиана: длинный дугой стебель, крупные сердцевидные листья.
         tomato: {
             fruit: 'tomato', hay: 1,
+            seedPrice: { hay: 6 },
+            unlock: { sloth_token: 11 },
             hue: [100, 138], sat: [36, 56], light: [24, 34],
             stems: ['arching', 'zigzag'], leaves: ['heart', 'fern'],
             arrangements: ['alternate', 'opposite'],
@@ -217,6 +244,8 @@ const GARDEN = {
         // Кустик с изломом: мелкая округлая листва, яркий цветок.
         berry: {
             fruit: 'berry', hay: 1,
+            seedPrice: { hay: 8 },
+            unlock: { sloth_token: 19 },
             hue: [118, 168], sat: [30, 48], light: [22, 32],
             stems: ['zigzag', 'spiral'], leaves: ['oval'],
             arrangements: ['alternate'],
@@ -227,6 +256,7 @@ const GARDEN = {
         // Пучок травы: низкий, витой, густой, соцветие мелкое.
         herb: {
             fruit: 'herb', hay: 1,
+            seedPrice: { hay: 4 },
             hue: [78, 118], sat: [40, 60], light: [26, 38],
             stems: ['spiral', 'zigzag'], leaves: ['fern', 'pointed'],
             arrangements: ['whorled', 'opposite'],
@@ -237,6 +267,8 @@ const GARDEN = {
         // Жёсткий куст: дуга, редкие острые листья, тёплый оттенок.
         pepper: {
             fruit: 'pepper', hay: 1,
+            seedPrice: { hay: 7 },
+            unlock: { sloth_token: 30 },
             hue: [44, 84], sat: [38, 58], light: [22, 32],
             stems: ['arching', 'straight'], leaves: ['pointed', 'heart'],
             arrangements: ['alternate', 'opposite'],
@@ -255,7 +287,11 @@ const GARDEN = {
     // процентов на старте: одна семечка даёт в среднем 1.1 посадки, то есть
     // найденный вид — это одна-две грядки, а не бесконечный источник. Дальше
     // игрок сам покупает прокачку за жетоны.
-    SEED_RETURN: [0.10, 0.25, 0.40],
+    SEED_TIERS: [
+        { chance: 0.10 },                                        // стартовая
+        { chance: 0.25, price: { sloth_token: 11 } },
+        { chance: 0.40, price: { sloth_token: 28 } }
+    ],
 
     // С чего начинается кладовая семян. Трава сюда НЕ пишется: она
     // бесконечная, и её бесконечность живёт в таблице видов (infinite), а не

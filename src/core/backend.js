@@ -395,7 +395,7 @@ const LocalBackend = {
     // Шанс вернуть семечку при сборе — ступенями, как и всё остальное в саду.
     gardenSeedReturn() {
         const lvl = this.gardenTools().seed || 0;
-        return GARDEN.SEED_RETURN[Math.min(lvl, GARDEN.SEED_RETURN.length - 1)];
+        return GARDEN.SEED_TIERS[Math.min(lvl, GARDEN.SEED_TIERS.length - 1)].chance;
     },
 
     // Ступень лейки целиком: сколько держать полив и сколько идут часы роста.
@@ -439,7 +439,7 @@ const LocalBackend = {
             return bed.at + Math.max(0, hours - paid) * 3600000 - GameTime.now();
         }
         if (bed.stage === 'ripening') {
-            const mins = GARDEN.RAKE_MINUTES[Math.min(tools.rake, GARDEN.RAKE_MINUTES.length - 1)];
+            const mins = GARDEN.RAKE_TIERS[Math.min(tools.rake, GARDEN.RAKE_TIERS.length - 1)].minutes;
             const sp = (GARDEN.species[bed.species] || {}).stage2 || 1;
             return bed.at + mins * sp * 60000 - GameTime.now();
         }
@@ -513,6 +513,112 @@ const LocalBackend = {
         fertilize: 'growing', weed: 'weedy', harvest: 'ripe'
     },
 
+    // ---------- МАГАЗИН ЛЕНИ ----------
+    // Своего экрана у магазина нет: покупки висят на тех же предметах, что и
+    // работа (docs/plan/19-sloth-garden.md, раздел 6). Семена и виды — в
+    // мешке, ступени инструментов — ценниками на полке. Списание при этом
+    // всё равно здесь: экран никогда не говорит «выдай мне», он говорит
+    // «купи вот это» (инвариант 2).
+
+    // Цена СЛЕДУЮЩЕЙ грядки. Растёт с каждой открытой: к шестой у игрока
+    // вчетверо больше дохода, чем к третьей, и плоская цена означала бы, что
+    // расширение участка дешевеет по ходу игры.
+    gardenBedCost() {
+        const beds = (GameState.data.garden && GameState.data.garden.beds) || [];
+        const open = beds.filter(b => b && b.stage !== 'locked').length;
+        const bought = Math.max(0, open - GARDEN.BEDS_OPEN);
+        const list = GARDEN.BED_COST.amounts;
+        return { currency: GARDEN.BED_COST.currency,
+                 amount: list[Math.min(bought, list.length - 1)] };
+    },
+
+    // Лестница инструмента: её ступени и текущий уровень одним ответом.
+    // Экран спрашивает «что дальше и почём», а не собирает это из трёх
+    // разных таблиц.
+    gardenToolLadder(tool) {
+        const tiers = {
+            can:   GARDEN.CAN_TIERS,
+            rake:  GARDEN.RAKE_TIERS,
+            seed:  GARDEN.SEED_TIERS,
+            // У лопаты лестница живёт не отдельным списком, а в самой работе:
+            // она сокращает ЦИКЛЫ копания. Цена лежит там же, строкой ниже.
+            spade: (GARDEN.work.dig.cycles || []).map((c, i) => ({
+                cycles: c, price: (GARDEN.work.dig.price || [])[i] || null
+            }))
+        }[tool];
+        if (!tiers) return null;
+        const level = this.gardenTools()[tool] || 0;
+        return { tool, level, tiers, next: tiers[level + 1] || null,
+                 maxed: level >= tiers.length - 1 };
+    },
+
+    // Купить следующую ступень инструмента.
+    buyGardenTool(tool) {
+        const ladder = this.gardenToolLadder(tool);
+        if (!ladder) return { ok: false, error: 'unknown_tool' };
+        if (!ladder.next) return { ok: false, error: 'maxed' };
+
+        const price = ladder.next.price || {};
+        const short = Object.keys(price).find(cur => GameState.currency(cur) < price[cur]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(cur => {
+            GameState.addCurrency(cur, -price[cur]);
+            GameState.pushLedger({ currency: cur, delta: -price[cur],
+                                   reason: 'shop.garden.' + tool, client_request_id: requestId });
+        });
+        GameState.data.garden.tools = GameState.data.garden.tools || {};
+        GameState.data.garden.tools[tool] = ladder.level + 1;
+        GameState.save();
+        return { ok: true, tool, level: ladder.level + 1 };
+    },
+
+    // Купить одну семечку уже открытого вида. Платится СЕНОМ: сено на
+    // расход, жетон на доступ (план, раздел 4а).
+    buyGardenSeed(key) {
+        const sp = GARDEN.species[key];
+        if (!sp || sp.infinite) return { ok: false, error: 'unknown_species' };
+        if (this.gardenSeedKeys().indexOf(key) === -1) return { ok: false, error: 'locked' };
+
+        const price = sp.seedPrice || {};
+        const short = Object.keys(price).find(cur => GameState.currency(cur) < price[cur]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(cur => {
+            GameState.addCurrency(cur, -price[cur]);
+            GameState.pushLedger({ currency: cur, delta: -price[cur],
+                                   reason: 'shop.garden.seed.' + key, client_request_id: requestId });
+        });
+        this.gardenSeedAdd(key, 1);
+        GameState.save();
+        return { ok: true, key, count: this.gardenSeedCount(key) };
+    },
+
+    // Открыть новый вид. Платится ЖЕТОНОМ и выдаёт сразу одну семечку:
+    // открытый вид с пустой ячейкой — это покупка, после которой ничего не
+    // произошло, и выглядит она как сбой.
+    unlockGardenSpecies(key) {
+        const sp = GARDEN.species[key];
+        if (!sp || sp.infinite) return { ok: false, error: 'unknown_species' };
+        if (this.gardenSeedKeys().indexOf(key) !== -1) return { ok: false, error: 'already_open' };
+
+        const price = sp.unlock || {};
+        const short = Object.keys(price).find(cur => GameState.currency(cur) < price[cur]);
+        if (short) return { ok: false, error: 'not_enough', currency: short };
+
+        const requestId = newRequestId();
+        Object.keys(price).forEach(cur => {
+            GameState.addCurrency(cur, -price[cur]);
+            GameState.pushLedger({ currency: cur, delta: -price[cur],
+                                   reason: 'shop.garden.unlock.' + key, client_request_id: requestId });
+        });
+        this.gardenSeedAdd(key, 1);
+        GameState.save();
+        return { ok: true, key, count: this.gardenSeedCount(key) };
+    },
+
     // Можно ли это действие прямо сейчас — вместе с ценой. Спрашивается ДО
     // того, как инструмент встанет в рабочее положение: заставить игрока
     // разгребать завал, за который нечем заплатить, значит соврать ему.
@@ -520,7 +626,8 @@ const LocalBackend = {
         const bed = this.gardenBed(i);
         if (!bed || bed.stage !== this.GARDEN_NEEDS[action]) return false;
         if (action === 'clear') {
-            return GameState.currency(GARDEN.BED_COST.currency) >= GARDEN.BED_COST.amount;
+            const cost = this.gardenBedCost();
+            return GameState.currency(cost.currency) >= cost.amount;
         }
         if (action === 'fertilize') return GameState.currency('dung') >= 1;
         if (action === 'sow') {
@@ -551,7 +658,7 @@ const LocalBackend = {
             // осколков за собранный урожай, то есть новая грядка стоит труда
             // на старых. Пока она была бесплатной, все шесть открывались за
             // первые две минуты и обесценивали весь остальной прогресс сада.
-            const cost = GARDEN.BED_COST;
+            const cost = this.gardenBedCost();
             if (GameState.currency(cost.currency) < cost.amount) {
                 return { ok: false, reason: 'no-token' };
             }

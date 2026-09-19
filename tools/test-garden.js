@@ -430,7 +430,7 @@ const harness = require('./harness');
   // Возврат семечки — редкий и ступенчатый.
   const ret = await page.evaluate(() => {
     const out = [];
-    for (let lvl = 0; lvl < GARDEN.SEED_RETURN.length; lvl++) {
+    for (let lvl = 0; lvl < GARDEN.SEED_TIERS.length; lvl++) {
       GameState.data.garden.tools.seed = lvl;
       out.push(Math.round(Backend.gardenSeedReturn() * 100) + '%');
     }

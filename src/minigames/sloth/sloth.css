@@ -143,7 +143,10 @@
 
 /* Пустая ячейка приглушена: вид знаком, но семечек нет. Значок остаётся на
    месте — по нему видно, что искать. */
-#sloth-game .gd-sack-cell.gd-empty { opacity: 0.32; }
+/* Пустая ячейка приглушена, но не погашена: под семечкой теперь стоит ЦЕНА,
+   и прочесть её игрок обязан. 0.32 (было, пока ячейка только молчала) цену
+   съедало. */
+#sloth-game .gd-sack-cell.gd-empty { opacity: 0.62; }
 
 #sloth-game .gd-sack-cell.gd-no { animation: gd-no 0.32s ease; }
 
@@ -277,3 +280,56 @@
     color: rgba(255, 255, 255, 0.6);
     white-space: pre-wrap;
 }
+
+/* ================= КОШЕЛЁК И ЦЕННИКИ ================= */
+/* Кошелёк заведён вместе с магазином: отказ «не хватило» показывается там,
+   где лежит недостающее, а не под пальцем (docs/traps.md, п. 91). */
+#sloth-game .gd-wallet {
+    position: absolute;
+    top: 46px;
+    right: 12px;
+    display: flex;
+    gap: 7px;
+    pointer-events: none;
+}
+#sloth-game .gd-coin {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 9px 3px 5px;
+    border-radius: 999px;
+    background: rgba(24, 38, 20, 0.55);
+    color: #f2f6ec;
+    font-weight: 800;
+    font-size: 15px;
+    line-height: 1;
+}
+#sloth-game .gd-coin-art { width: 19px; height: 19px; display: block; }
+
+/* Отказ: вздрагивает сама валюта. Тот же приём и тот же размах, что у
+   ячейки мешка, — одинаковое «нет» на все отказы сада. */
+@keyframes gd-lack {
+    0%, 100% { transform: translateX(0); }
+    22% { transform: translateX(-5px); }
+    48% { transform: translateX(5px); }
+    74% { transform: translateX(-3px); }
+}
+#sloth-game .gd-coin.gd-no,
+#sloth-game .gd-wallet.gd-no {
+    animation: gd-lack 0.45s ease;
+    background: rgba(150, 38, 34, 0.75);
+}
+
+/* Ценник на полке. Нажимается сам по себе — поэтому pointer-events здесь
+   включены явно: у переднего плана они по умолчанию не у всех групп. */
+#sloth-game .gd-tag-wrap { cursor: pointer; }
+#sloth-game .gd-tag-n { font-weight: 800; }
+/* Не по карману — приглушён, но ЖИВОЙ: выключенный ценник молчит, а
+   молчание читается поломкой (docs/traps.md, п. 91). */
+#sloth-game .gd-tag.gd-poor { opacity: 0.5; }
+#sloth-game .gd-tag-wrap:active { transform-box: fill-box; }
+
+/* Ячейка мешка: закрытый вид — силуэт, у пустой и закрытой под семечкой
+   стоит цена. Приглушение говорит «этого нет», а не «сюда нельзя». */
+#sloth-game .gd-sack-cell.gd-locked { opacity: 0.45; }
+#sloth-game .gd-sack-cell.gd-locked .gd-seed-shape { opacity: 0.35; }

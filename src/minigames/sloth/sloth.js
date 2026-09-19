@@ -198,6 +198,7 @@ const SlothMinigame = {
         });
         this.renderTools();
         this.renderGauge();
+        this.renderWallet();
     },
 
     // Что грядка просит прямо сейчас. Одна таблица на всё: если состоянию
@@ -223,7 +224,7 @@ const SlothMinigame = {
         // Заваленная грядка просит не руку, а ЖЕТОН: она стоит денег, и
         // узнать об этом игрок должен до того, как начнёт её разгребать.
         if (bed.stage === 'locked') {
-            const cost = GARDEN.BED_COST;
+            const cost = Backend.gardenBedCost();
             const enough = GameState.currency(cost.currency) >= cost.amount;
             return `<g transform="translate(0 ${(GARDEN_ART.SOIL_Y - 92).toFixed(0)})">${
                 GARDEN_ART.badge('price', 0, enough)}</g>`;
@@ -299,7 +300,7 @@ const SlothMinigame = {
         if (bed.stage === 'weedy') return this.GROW_STAGE1;
         if (bed.stage === 'ripening') {
             if (!bed.at) return this.GROW_STAGE1;
-            const mins = GARDEN.RAKE_MINUTES[Math.min(tools.rake, GARDEN.RAKE_MINUTES.length - 1)];
+            const mins = GARDEN.RAKE_TIERS[Math.min(tools.rake, GARDEN.RAKE_TIERS.length - 1)].minutes;
             const total = mins * ((GARDEN.species[bed.species] || {}).stage2 || 1) * 60000;
             const done = Math.max(0, Math.min(1, 1 - left / total));
             return this.GROW_STAGE1 + done * (1 - this.GROW_STAGE1);
@@ -348,6 +349,11 @@ const SlothMinigame = {
         });
     },
 
+    // У какого предмета полки какая лестница. Мешок качает ВОЗВРАТ СЕМЯН:
+    // это единственная ступень, которой не соответствует отдельный предмет,
+    // а по смыслу она именно про семена — им и место.
+    TOOL_LADDER: { spade: 'spade', sack: 'seed', can: 'can', rake: 'rake' },
+
     renderTools() {
         this.buildFg();
         const list = this.tools();
@@ -359,6 +365,32 @@ const SlothMinigame = {
                 ? `<text class="gd-count" x="0" y="34">${GameState.currency('dung')}</text>` : '';
             return `<g class="gd-tool" data-kind="${t.kind}"
                         transform="translate(${(x0 + i * step).toFixed(1)} 782)">${art}${badge}</g>`;
+        }).join('') + this.tagsHtml(list, x0, step);
+    },
+
+    // ---------- ЦЕННИКИ ----------
+    // Отдельным слоем ПОВЕРХ инструментов, а не внутри них: ценник нажимается
+    // сам по себе, и, лежи он внутри группы инструмента, тап по нему брал бы
+    // инструмент в руку.
+    //
+    // Ценник не показывается, пока мешок открыт: он закрывает собой ровно тот
+    // мешок, в который игрок сейчас смотрит.
+    tagsHtml(list, x0, step) {
+        if (this.sackOpen) return '';
+        return list.map((t, i) => {
+            const key = this.TOOL_LADDER[t.kind];
+            if (!key) return '';
+            const ladder = Backend.gardenToolLadder(key);
+            if (!ladder) return '';
+            const x = (x0 + i * step).toFixed(1);
+            if (!ladder.next) {
+                return `<g class="gd-tag-wrap gd-done" data-tool="${key}"
+                           transform="translate(${x} 726)">${GARDEN_ART.tagDone()}</g>`;
+            }
+            const price = ladder.next.price || {};
+            return `<g class="gd-tag-wrap" data-tool="${key}" transform="translate(${x} 726)">
+                ${GARDEN_ART.priceTag(price, this.affordable(price))}
+            </g>`;
         }).join('');
     },
 
@@ -370,15 +402,41 @@ const SlothMinigame = {
     // Что лежит в мешке. Порядок ячеек — порядок видов в конфиге, и он
     // ПОСТОЯНЕН: место каждого вида закреплено, чтобы через неделю игрок
     // тянулся за помидором не глядя.
+    // Ячейка есть у КАЖДОГО вида, даже у неоткрытого: место закреплено, и
+    // пропадающая ячейка сдвинула бы все соседние — через неделю игрок
+    // тянулся бы за помидором не глядя и промахивался.
+    //
+    // Три состояния и три разных ответа на палец:
+    //   have   — семена есть, ячейку тянут на грядку;
+    //   empty  — вид открыт, семена кончились: цена в СЕНЕ, тап покупает;
+    //   locked — вид не открыт: цена в ЖЕТОНАХ, тап открывает и даёт семечку.
     sackItems() {
-        return Object.keys(GARDEN.species)
-            .filter(key => Backend.gardenSeedKeys().indexOf(key) !== -1)
-            .map(key => {
-                const n = Backend.gardenSeedCount(key);
-                // null — «бесконечно»: у травы счётчика нет, как у пищеблока
-                // в холодильнике. Цифра «∞» была бы значком без смысла.
-                return { key, count: n === Infinity ? null : n };
-            });
+        const known = Backend.gardenSeedKeys();
+        return Object.keys(GARDEN.species).map(key => {
+            const sp = GARDEN.species[key];
+            const open = known.indexOf(key) !== -1;
+            const n = Backend.gardenSeedCount(key);
+            // null — «бесконечно»: у травы счётчика нет, как у пищеблока
+            // в холодильнике. Цифра «∞» была бы значком без смысла.
+            const count = n === Infinity ? null : n;
+            if (!open) {
+                const price = sp.unlock || null;
+                return { key, count: 0, state: 'locked', price,
+                         enough: price ? this.affordable(price) : false };
+            }
+            if (count === 0) {
+                const price = sp.seedPrice || null;
+                return { key, count: 0, state: 'empty', price,
+                         enough: price ? this.affordable(price) : false };
+            }
+            return { key, count, state: 'have', price: null, enough: true };
+        });
+    },
+
+    // Хватает ли на цену. Одна читалка на мешок и на ценники полки: две
+    // разошлись бы на первой же валюте, добавленной в одну из них.
+    affordable(price) {
+        return !Object.keys(price || {}).some(cur => GameState.currency(cur) < price[cur]);
     },
 
     openSack() {
@@ -395,6 +453,67 @@ const SlothMinigame = {
         this.renderTools();
     },
 
+    // ---------- КОШЕЛЁК ----------
+    // Сено и жетон лени. Заведён вместе с магазином, и не для красоты: отказ
+    // «не хватило» обязан показываться ТАМ, ГДЕ ЛЕЖИТ НЕДОСТАЮЩЕЕ, а не под
+    // пальцем (docs/traps.md, п. 91). Покупки в саду разбросаны по предметам —
+    // ценники на полке, цены в мешке, цена грядки на самой грядке, — и общего
+    // места для отказа до него не было.
+    renderWallet() {
+        const hay = document.getElementById('gd-w-hay');
+        const tok = document.getElementById('gd-w-token');
+        if (!hay || !tok) return;
+        // Значки рисуются тем же кодом, что и в саду: жетон лени на полке и
+        // жетон лени в кошельке — один предмет (docs/traps.md, п. 83).
+        const svg = (inner) => `<svg viewBox="-20 -20 40 40" class="gd-coin-art">${inner}</svg>`;
+        hay.innerHTML = svg(GARDEN_ART.hay()) + `<b>${GameState.currency('hay')}</b>`;
+        tok.innerHTML = svg(GARDEN_ART.token(true)) + `<b>${GameState.currency('sloth_token')}</b>`;
+    },
+
+    // Вздрогнуть валютой, которой не хватило. Запасной адресат — весь
+    // кошелёк: пункт 99 из граблей, ответ рисуется на том, что есть ВСЕГДА.
+    flashLack(cur) {
+        const el = document.querySelector(`.gd-coin[data-cur="${cur}"]`)
+                || document.getElementById('gd-wallet');
+        if (!el) return;
+        el.classList.remove('gd-no');
+        void el.offsetWidth;
+        el.classList.add('gd-no');
+        clearTimeout(this._lackTimer);
+        this._lackTimer = setTimeout(() => el.classList.remove('gd-no'), 900);
+        if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
+    },
+
+    // ---------- ПОКУПКИ ----------
+    // Экран только просит: проверка цены и списание живут в переходнике
+    // (инвариант 2). Здесь остаётся показать ответ — и показать ОБА ответа,
+    // удачу и отказ, иначе тап выглядит непрошедшим.
+    buyTool(tool) {
+        const answer = Backend.buyGardenTool(tool);
+        if (!answer.ok) {
+            if (answer.currency) this.flashLack(answer.currency);
+            return;
+        }
+        if (typeof Haptics !== 'undefined') Haptics.notify('success');
+        this.render();
+    },
+
+    // Семечка или целый вид — решает состояние ячейки, а не отдельная кнопка.
+    // Мешок при этом остаётся ОТКРЫТЫМ: купил одну, видно остальные ячейки,
+    // можно купить ещё. Закрывается он только тогда, когда семечку вынули.
+    buySeed(key, cell) {
+        const known = Backend.gardenSeedKeys().indexOf(key) !== -1;
+        const answer = known ? Backend.buyGardenSeed(key) : Backend.unlockGardenSpecies(key);
+        if (!answer.ok) {
+            if (answer.currency) this.flashLack(answer.currency);
+            else if (cell) this.refuseSack(cell);
+            return;
+        }
+        if (typeof Haptics !== 'undefined') Haptics.notify('success');
+        this.openSack();              // перерисовать содержимое мешка
+        this.renderWallet();
+    },
+
     // ---------- ВВОД ----------    // ---------- ВВОД ----------
     onDown(e) {
         if (this.locked) return;
@@ -406,9 +525,10 @@ const SlothMinigame = {
             if (cell) {
                 e.preventDefault();
                 const key = cell.dataset.key;
-                // Пустая ячейка не тянется: семечки этого вида нет, и рука
-                // должна это чувствовать, а не узнавать после броска.
-                if (Backend.gardenSeedCount(key) <= 0) { this.refuseSack(cell); return; }
+                // Ячейка без семян не тянется, а ПОКУПАЕТСЯ: у неё есть цена,
+                // и тап по ней — это тап по ценнику. Мешок при этом остаётся
+                // открытым: купил одну, видно остальные, можно купить ещё.
+                if (cell.dataset.state !== 'have') { this.buySeed(key, cell); return; }
                 this.closeSack();
                 this.startDrag(e, 'seed', key, GARDEN_ART.seedItem(key));
                 return;
@@ -416,6 +536,17 @@ const SlothMinigame = {
             // Нажатие мимо мешка — закрыть. Крестика у него нет и не будет:
             // это мешок, а не окно.
             this.closeSack();
+            return;
+        }
+
+        // ---- ценник на полке ----
+        // Проверяется ДО инструмента: ценник висит над ним и попадает в тот
+        // же закрывающий узел, а дела у них разные — тап по инструменту
+        // берёт его в руку, тап по ценнику покупает ступень.
+        const tag = t.closest ? t.closest('.gd-tag-wrap') : null;
+        if (tag && !this.work) {
+            e.preventDefault();
+            if (!tag.classList.contains('gd-done')) this.buyTool(tag.dataset.tool);
             return;
         }
 
