@@ -156,7 +156,9 @@ const harness = require('./harness');
     Array.from(document.querySelectorAll('#gd-fg-tools .gd-tool')).map(g => g.dataset.kind).join(','));
   // Какашка на полке появляется, только если она есть, поэтому сверяется не
   // точный список, а ПОРЯДОК: лопата → семена → лейка → какашка → грабли.
-  const ORDER = ['spade', 'sack', 'can', 'dung', 'rake'];
+  // Корзина магазина стоит на полке последней: она не инструмент, а вход в
+  // отдельный экран, и место ей за рядом того, чем работают.
+  const ORDER = ['spade', 'sack', 'can', 'dung', 'rake', 'shop'];
   const idx = shelf.split(',').map(k => ORDER.indexOf(k));
   const sorted = idx.every((v, n) => n === 0 || v >= idx[n - 1]);
   say('полка: ' + shelf + (sorted ? '  ✓ по порядку применения' : '  ✗ ПОРЯДОК НЕ ТОТ'));
@@ -167,9 +169,11 @@ const harness = require('./harness');
   // считающий матрицей, промахнётся вместе с ней и обвинит игру
   // (см. tools/harness.js).
   const bedPoint = (i, dy) => page.evaluate(([i, dy]) => {
-    const q = SvgSpace.toClient(document.getElementById('gd-svg'),
-                                GARDEN_ART.bedX(i) - (SlothMinigame.camX || 0),
-                                GARDEN_ART.SOIL_Y - 12);
+    // Перевод «сцена → экран» берётся у САМОЙ ИГРЫ (toStagePoint): камера у
+    // сада не только ездит, но и приближена, и списанная сюда формула
+    // разъехалась бы с ней при первой же правке зума.
+    const p = SlothMinigame.toStagePoint(GARDEN_ART.bedX(i), GARDEN_ART.SOIL_Y - 12);
+    const q = SvgSpace.toClient(document.getElementById('gd-svg'), p.x, p.y);
     return { x: q.x, y: q.y + (dy || 0) };
   }, [i, dy || 0]);
   const toolPoint = (kind) => page.evaluate((kind) => {
@@ -184,7 +188,7 @@ const harness = require('./harness');
   // Камера — обязательный шаг: грядки со второй стоят за краем экрана, и клик
   // по ним уходит мимо окна. Один раз это уже выглядело как «код не работает».
   const lookAt = async (i) => {
-    await page.evaluate((i) => SlothMinigame.setCam(Math.max(0, GARDEN_ART.bedX(i) - 195)), i);
+    await page.evaluate((i) => SlothMinigame.setCam(GARDEN_ART.camXForBed(i)), i);
     await page.waitForTimeout(200);
   };
 
@@ -262,7 +266,14 @@ const harness = require('./harness');
   await page.waitForTimeout(300);
   say('завал без жетона:  работа «' + await workOf() + '», грядка ' + await stageOf(0) +
       (await workOf() === 'нет' ? '  ✓ не начали' : '  ✗ РАЗГРЕБАЕМ БЕСПЛАТНО'));
-  await page.evaluate(() => { Backend.award({ currencies: {} }, 'sloth_token', 1, 'test'); GameState.save(); });
+  // Кладём РОВНО столько, сколько просит завал, и спрашиваем цену у самой
+  // игры: она растёт с каждой открытой грядкой, и вписанная сюда единица
+  // молча превращала весь прогон в «ничего не работает».
+  await page.evaluate(() => {
+    const c = Backend.gardenBedCost();
+    Backend.award({ currencies: {} }, c.currency, c.amount, 'test');
+    GameState.save();
+  });
   await page.mouse.click(p0.x, p0.y);
   await page.waitForTimeout(250);
   say('завал с жетоном:   работа «' + await workOf() + '»' +
@@ -290,7 +301,11 @@ const harness = require('./harness');
   // ---------- ПОСЕВ ИЗ МЕШКА ----------
   say('тап по мешку: ' + (await tapSack() ? 'открылся  ✓' : '✗ НЕ ОТКРЫЛСЯ'));
   // Тап мимо закрывает: крестика у мешка нет и не будет.
-  const away = await bedPoint(1, -300);
+  // Мимо — это НЕБО НАД ТЕКУЩЕЙ грядкой, а не соседняя грядка: камера
+  // приближена, соседней в кадре нет вовсе, и тап по её координатам уходил
+  // за окно — мешок оставался открытым, а за ним сыпался весь остаток
+  // прогона.
+  const away = await bedPoint(0, -330);
   await page.mouse.click(away.x, away.y);
   await page.waitForTimeout(200);
   say('тап мимо мешка: ' + (await sackOpen() ? '✗ ОСТАЛСЯ ОТКРЫТ' : 'закрылся  ✓'));
@@ -516,7 +531,15 @@ const harness = require('./harness');
       await page.waitForTimeout(3000);
     }
     const v1 = await page.evaluate(() => GameState.sinValue('sloth') + SlothMinigame.pendingWatch());
-    const bar = await page.evaluate(() => parseFloat(document.getElementById('gd-gauge-bar').style.width));
+    // Полоса живёт РАСТЯЖЕНИЕМ, а не шириной: ширина — свойство раскладки, и
+    // пересчитывать её шестьдесят раз в секунду дороже всей отрисовки сада.
+    // Прогон читал style.width, получал NaN и ругался на начисление —
+    // проверка была зелена ровно до тех пор, пока её предмет не переехал.
+    const bar = await page.evaluate(() => {
+      const t = document.getElementById('gd-gauge-bar').style.transform || '';
+      const m = /scaleX\(([\d.]+)\)/.exec(t);
+      return m ? parseFloat(m[1]) * 100 : NaN;
+    });
     const dt = (Date.now() - t0) / 1000;
     return { перс: (v1 - v0) / dt, полоса: bar / dt };
   };

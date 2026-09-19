@@ -49,7 +49,11 @@ const harness = require('./harness');
     await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
     for (let i = 0; i < 40; i++) {
       if (await page.evaluate(() => SlothMinigame.bed) !== was) {
-        await page.waitForTimeout(450);      // дать переезду доехать
+        // Переезд считается покадрово, и пока он идёт, camX — промежуточный.
+        // Ждём ИМЕННО его конца (camRaf обнуляется на последнем кадре), а не
+        // «примерно столько же миллисекунд»: длительность переезда правят, а
+        // про прогон при этом забывают.
+        await page.waitForFunction(() => !SlothMinigame.camRaf, null, { timeout: 4000 });
         return true;
       }
       await page.waitForTimeout(50);
@@ -72,7 +76,7 @@ const harness = require('./harness');
     const last = SlothMinigame.lastBed();
     for (let i = 0; i <= last; i++) {
       SlothMinigame.goToBed(i, true);
-      res.push({ i, onScreen: +(GARDEN_ART.bedX(i) - SlothMinigame.camX).toFixed(1) });
+      res.push({ i, onScreen: +SlothMinigame.toStagePoint(GARDEN_ART.bedX(i), 0).x.toFixed(1) });
     }
     SlothMinigame.goToBed(0, true);
     return res;
@@ -86,7 +90,7 @@ const harness = require('./harness');
     SlothMinigame.render();
     const i = GARDEN.BEDS_TOTAL - 1;
     SlothMinigame.goToBed(i, true);
-    return { i, onScreen: +(GARDEN_ART.bedX(i) - SlothMinigame.camX).toFixed(1) };
+    return { i, onScreen: +SlothMinigame.toStagePoint(GARDEN_ART.bedX(i), 0).x.toFixed(1) };
   });
   check(Math.abs(far.onScreen - 195) < 1,
         `последняя грядка (${far.i}) тоже встаёт по центру: x=${far.onScreen}`);
@@ -163,7 +167,35 @@ const harness = require('./harness');
   check(await page.evaluate(() => SlothMinigame.camX) === camWas,
         'палец через весь экран не сдвинул камеру ни на единицу');
 
-  // ---------- 5. ГЛУБИНА ----------
+  // ---------- 5. ЗУМ: СОСЕДНЕЙ ГРЯДКИ В КАДРЕ НЕТ ----------
+  // Ради этого зум и вводился. Считается по РЕАЛЬНОМУ положению грядок на
+  // экране, а не по формуле из того же файла: формула и проверка, списанные
+  // друг с друга, согласны всегда.
+  say('');
+  say('======== СОСЕДНЕЙ ГРЯДКИ НЕ ВИДНО ========');
+  const frame = await page.evaluate(() => {
+    SlothMinigame.goToBed(1, true);
+    const hw = GARDEN_ART.BED_W / 2;
+    const at = (i) => ({
+      l: SlothMinigame.toStagePoint(GARDEN_ART.bedX(i) - hw, 0).x,
+      r: SlothMinigame.toStagePoint(GARDEN_ART.bedX(i) + hw, 0).x
+    });
+    return { zoom: GARDEN_ART.ZOOM, mid: at(1), left: at(0), right: at(2) };
+  });
+  say(`  зум камеры ×${frame.zoom}`);
+  say(`  грядка в центре занимает ${frame.mid.l.toFixed(0)} … ${frame.mid.r.toFixed(0)} из 0 … 390`);
+  check(frame.zoom > 1, `камера приближена (×${frame.zoom}), а не стоит один к одному`);
+  check(frame.left.r < 0 && frame.right.l > 390,
+        `соседние грядки за кадром: левая кончается на ${frame.left.r.toFixed(0)}, ` +
+        `правая начинается на ${frame.right.l.toFixed(0)}`);
+  // И сама грядка при этом целиком в кадре: зум, срезавший её края, лечил бы
+  // одно другим.
+  check(frame.mid.l > 0 && frame.mid.r < 390,
+        'а та, что в центре, влезает целиком — зум не срезал её краёв');
+  await page.evaluate(() => SlothMinigame.goToBed(0, true));
+  await page.screenshot({ path: out + '3-zoom.png' });
+
+  // ---------- 6. ГЛУБИНА ----------
   say('');
   say('======== ЧЕТЫРЕ СЛОЯ ЕДУТ С РАЗНОЙ СКОРОСТЬЮ ========');
   const depth = await page.evaluate(() => {
@@ -174,23 +206,32 @@ const harness = require('./harness');
         const el = document.getElementById(L.key === 'front' ? 'gd-cam' : 'gd-' + L.key);
         const m = /translate\(([-\d.]+)/.exec(el.getAttribute('transform') || 'translate(0');
         out[L.key] = m ? Math.abs(parseFloat(m[1])) : 0;
+        // Зум обязан быть ОДИН на все слои: разный масштаб у соседних слоёв
+        // — это не глубина, а разъехавшаяся сцена.
+        const z = /scale\(([-\d.]+)/.exec(el.getAttribute('transform') || '');
+        out[L.key + '@'] = z ? parseFloat(z[1]) : 1;
       });
       return out;
     };
-    const at0 = read();
+    const at0 = read(), cam0 = SlothMinigame.camX;
     SlothMinigame.goToBed(SlothMinigame.lastBed(), true);
     const at1 = read();
-    return { camX: SlothMinigame.camX, at0, at1,
+    // Ход камеры — это РАЗНИЦА, а не конечное значение: при зуме камера и на
+    // первой грядке стоит не в нуле (полэкрана сцены остаётся слева).
+    return { camX: SlothMinigame.camX - cam0, at0, at1, zoom: GARDEN_ART.ZOOM,
              order: GARDEN_ART.LAYERS.map(L => L.key) };
   });
 
   const moved = {};
   depth.order.forEach(k => { moved[k] = depth.at1[k] - depth.at0[k]; });
+  check(depth.order.every(k => Math.abs(depth.at1[k + '@'] - depth.zoom) < 0.001),
+        `зум одинаков у всех четырёх слоёв (×${depth.zoom})`);
   depth.order.forEach(k =>
     say(`  ${k.padEnd(6)} сдвинулся на ${moved[k].toFixed(1)} при ходе камеры ${depth.camX.toFixed(0)}`));
 
-  check(Math.abs(moved.front - depth.camX) < 0.5,
-        'передний слой едет РОВНО один к одному — в его координатах считается палец');
+  check(Math.abs(moved.front - depth.camX * depth.zoom) < 0.5,
+        'передний слой едет РОВНО на ход камеры (в масштабе зума) — в его ' +
+        'координатах считается палец');
   check(moved.near < moved.front && moved.mid < moved.near && moved.sky < moved.mid,
         'каждый следующий слой едет медленнее предыдущего');
   check(moved.sky > 0, 'и самый дальний всё-таки едет, а не стоит: небо тоже часть хода');

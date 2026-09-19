@@ -50,6 +50,7 @@ const SlothMinigame = {
     DRAG_SCALE: 1.6,
 
     camX: 0,
+    camRaf: 0,
     drag: null,
     locked: false,
     tickId: null,
@@ -136,6 +137,7 @@ const SlothMinigame = {
         if (this.tickId) { clearInterval(this.tickId); this.tickId = null; }
         if (this.gaugeRaf) { cancelAnimationFrame(this.gaugeRaf); this.gaugeRaf = 0; }
         if (this.pourRaf) { cancelAnimationFrame(this.pourRaf); this.pourRaf = 0; }
+        this.stopCam();
         this.work = null;
         this.stroke = null;
         this.sackOpen = false;
@@ -163,13 +165,29 @@ const SlothMinigame = {
     // браузера (src/core/svg-space.js). Внутри Telegram, где масштаб холста
     // перестал быть единицей, лопата от этого повисала в стороне от пальца.
     //
-    // Камера сада — только сдвиг вбок на camX (см. setCam), поэтому обратный
-    // перевод — одно сложение, без матриц.
+    // Камера сада — сдвиг вбок на camX И ЗУМ (см. setCam), одинаковый по
+    // обеим осям, с неподвижной линией земли. Значит перевод в обе стороны —
+    // это умножение и сложение, без матриц; но написан он РОВНО ОДИН РАЗ и
+    // в двух направлениях. Пока зума не было, обратный перевод был «плюс
+    // camX», и его переписали по месту в трёх файлах — ровно так и
+    // расходятся описания одного и того же.
     toStage(e) { return SvgSpace.fromClient(this.svgEl, e.clientX, e.clientY); },
+
+    // сцена → экран
+    toStagePoint(x, y) {
+        const Z = GARDEN_ART.ZOOM, zy = GARDEN_ART.zoomY();
+        return { x: (x - (this.camX || 0)) * Z, y: zy + (y - zy) * Z };
+    },
+
+    // экран → сцена
+    fromStagePoint(x, y) {
+        const Z = GARDEN_ART.ZOOM, zy = GARDEN_ART.zoomY();
+        return { x: x / Z + (this.camX || 0), y: zy + (y - zy) / Z };
+    },
 
     toScene(e) {
         const p = this.toStage(e);
-        return { x: p.x + (this.camX || 0), y: p.y };
+        return this.fromStagePoint(p.x, p.y);
     },
 
     // ---------- СБОРКА СЛОЁВ ----------
@@ -195,13 +213,49 @@ const SlothMinigame = {
     // попадает: свободной панорамы больше нет, камера ездит только по
     // грядкам — см. goToBed.
     setCam(x) {
-        const maxX = Math.max(0, GARDEN_ART.sceneW(this.beds) - 390);
+        const maxX = GARDEN_ART.camXMax(this.beds);
         this.camX = Math.max(0, Math.min(maxX, x));
         GARDEN_ART.LAYERS.forEach(L => {
             const el = (this.layerEls || {})[L.key];
             if (el) el.setAttribute('transform',
-                `translate(${(-this.camX * L.factor).toFixed(1)} 0)`);
+                GARDEN_ART.layerTransform(this.camX, L.factor));
         });
+    },
+
+    // ---------- ПЕРЕЕЗД ----------
+    // Переезд считается покадрово здесь, а НЕ css-переходом на transform, и
+    // причины тому две.
+    //
+    // Первая: css-переход двигает только картинку, а camX прыгал бы в
+    // конечное значение сразу — и тап посреди переезда попадал бы в грядку,
+    // которой под пальцем ещё нет. Перевод «экран → сцена» врал бы ровно
+    // полсекунды, и поймать это было бы нечем.
+    //
+    // Вторая: transform у svg — атрибут, и переход по нему браузеры
+    // анимируют кто как. На компьютере переезд шёл, а на телефоне — тот
+    // самый скачок, на который и пожаловались.
+    CAM_MS: 620,
+
+    stopCam() {
+        if (this.camRaf) { cancelAnimationFrame(this.camRaf); this.camRaf = 0; }
+    },
+
+    glideCam(to) {
+        this.stopCam();
+        const from = this.camX || 0;
+        if (Math.abs(to - from) < 0.5) { this.setCam(to); return; }
+        const t0 = performance.now(), ms = this.CAM_MS;
+        const step = () => {
+            const p = Math.min(1, (performance.now() - t0) / ms);
+            // Разгон и торможение: ради них переезд и затевался. Ровное
+            // движение читается как рывок карты, а не как «камера поехала»,
+            // и разницы в скорости слоёв на нём не разглядеть.
+            const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+            this.setCam(from + (to - from) * e);
+            if (p < 1) this.camRaf = requestAnimationFrame(step);
+            else this.camRaf = 0;
+        };
+        this.camRaf = requestAnimationFrame(step);
     },
 
     // ---------- ПЕРЕХОД МЕЖДУ ГРЯДКАМИ ----------
@@ -224,25 +278,15 @@ const SlothMinigame = {
         return Math.min(this.beds - 1, lastOpen + 1);
     },
 
-    // Камера так, чтобы грядка стояла ПОСЕРЕДИНЕ экрана. Крайние грядки
-    // упираются в края участка и оказываются чуть в стороне от центра — это
-    // не дефект: за краем участка ничего нет, и показывать там пустоту хуже,
-    // чем сместить грядку.
+    // Камера так, чтобы грядка стояла ПОСЕРЕДИНЕ экрана — любая, включая
+    // крайние: поля участка по краям шире, чем видимая при зуме полоса, и в
+    // упор камера не утыкается.
     goToBed(i, instant) {
         const want = Math.max(0, Math.min(this.lastBed(), i | 0));
         this.bed = want;
-        // Класс висит на ЭКРАНЕ, а не на одном слое: переход снимать надо у
-        // всех четырёх сразу, иначе дальние поедут, а передний прыгнет.
-        const host = this.screenElement;
-        if (host && instant) host.classList.add('gd-instant');
-        this.setCam(GARDEN_ART.bedX(want) - 195);
-        if (host && instant) {
-            // Снять надо ПОСЛЕ того, как браузер применил новое положение:
-            // иначе класс уйдёт в том же кадре и переезд всё равно
-            // проиграется.
-            void host.getBoundingClientRect();
-            host.classList.remove('gd-instant');
-        }
+        const to = GARDEN_ART.camXForBed(want);
+        if (instant) { this.stopCam(); this.setCam(to); }
+        else this.glideCam(to);
         this.renderArrows();
     },
 
@@ -1019,7 +1063,7 @@ const SlothMinigame = {
 
         // Куда льём: земля грядки в координатах ЭКРАНА. По вертикали сцена и
         // экран совпадают, по горизонтали разъезжаются ровно на камеру.
-        const to = { x: GARDEN_ART.bedX(d.pourBed) - this.camX, y: GARDEN_ART.SOIL_Y - 10 };
+        const to = this.toStagePoint(GARDEN_ART.bedX(d.pourBed), GARDEN_ART.SOIL_Y - 10);
         const from = this.spoutPoint(d);
         LiquidStream.tick(this.stream, dt, from, to);
 
