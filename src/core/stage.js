@@ -28,6 +28,7 @@ const STAGE_H = 844;
 
 const Stage = {
     overlay: null,
+    probe: null,
 
     init() {
         this.overlay = document.getElementById('rotate-overlay');
@@ -67,12 +68,28 @@ const Stage = {
     //                          В обычном (не полноэкранном) режиме нули,
     //                          но вычитать их надо: полноэкранный режим —
     //                          вопрос одной строки в будущем.
+    //
+    // ---------- И ОДНО МЕСТО НА ВСЕ БЕЗОПАСНЫЕ ЗОНЫ ----------
+    // Чёлка и полоска «домой» вычитаются ЗДЕСЬ, и только здесь. Внутри
+    // холста никаких env(safe-area-inset-*) быть не должно: он уже вписан в
+    // безопасную область целиком, и второй отступ отъедает место повторно —
+    // да ещё в настоящих пикселях устройства, а холст масштабирован
+    // (docs/traps.md, п. 134). Стережёт это tools/test-stage-fit.js.
+    //
+    // Вне Telegram зоны берутся у самого браузера: в мини-приложении,
+    // добавленном на домашний экран, видимая область включает чёлку, и без
+    // этого вычитания крестик выхода оказался бы под ней.
     viewport() {
         const vv = window.visualViewport;
         let w = Math.max(1, vv ? vv.width : window.innerWidth);
         let h = Math.max(1, vv ? vv.height : window.innerHeight);
 
         const tg = window.Telegram && window.Telegram.WebApp;
+        if (!tg) {
+            const css = this.cssSafeArea();
+            h = Math.max(1, h - css.top - css.bottom);
+            w = Math.max(1, w - css.left - css.right);
+        }
         if (tg) {
             const stable = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
             if (stable > 0) h = Math.min(h, stable);
@@ -90,6 +107,32 @@ const Stage = {
         return { w, h };
     },
 
+    // ---------- БЕЗОПАСНЫЕ ЗОНЫ ОТ БРАУЗЕРА ----------
+    // Прочитать env(safe-area-inset-*) из js напрямую нельзя — это значение
+    // css. Поэтому в разметке живёт невидимая пробка, у которой эти отступы
+    // проставлены, и мы читаем её посчитанный стиль.
+    //
+    // Пробка создаётся ОДИН раз и остаётся в дереве: значения меняются при
+    // повороте телефона, и пересоздавать её на каждый resize значило бы
+    // трогать дерево там, где достаточно прочитать.
+    cssSafeArea() {
+        if (!this.probe) {
+            const el = document.createElement('div');
+            el.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;' +
+                'visibility:hidden;pointer-events:none;' +
+                'padding-top:env(safe-area-inset-top);' +
+                'padding-right:env(safe-area-inset-right);' +
+                'padding-bottom:env(safe-area-inset-bottom);' +
+                'padding-left:env(safe-area-inset-left);';
+            document.body.appendChild(el);
+            this.probe = el;
+        }
+        const cs = getComputedStyle(this.probe);
+        const n = (v) => Number.parseFloat(v) || 0;
+        return { top: n(cs.paddingTop), right: n(cs.paddingRight),
+                 bottom: n(cs.paddingBottom), left: n(cs.paddingLeft) };
+    },
+
     apply() {
         const { w, h } = this.viewport();
         // Вписываем целиком: масштаб по меньшей из двух сторон. Не «заполнить
@@ -100,23 +143,22 @@ const Stage = {
 
         // ---------- ЦЕНТР ВИДИМОГО, А НЕ ЦЕНТР СТРАНИЦЫ ----------
         // Холст стоит серединой в середине родителя, и обычно это одно и то
-        // же. В Telegram — нет: страница выше видимой области, и «середина
-        // страницы» оказывается ниже «середины экрана». Игру из-за этого
-        // сдвигало вниз поверх правильного масштаба.
-        //
-        // Считается по верхней безопасной зоне (если клиент закрывает верх
-        // своей шапкой) и видимой высоте. Когда прятать нечего, выходит
-        // ровно 50% — то есть вне Telegram ничего не меняется.
+        // же. Не одно и то же в двух случаях: в Telegram страница выше
+        // видимой области (середина страницы оказывается ниже середины
+        // экрана), а на телефоне с чёлкой видимая область смещена вниз
+        // относительно окна. Оба случая — один и тот же расчёт: центр
+        // безопасной полосы это её верх плюс половина высоты.
         const tg = window.Telegram && window.Telegram.WebApp;
         const root = document.documentElement;
+        let top;
         if (tg) {
             const safe = tg.safeAreaInset || {};
             const content = tg.contentSafeAreaInset || {};
-            const top = (Number(safe.top) || 0) + (Number(content.top) || 0);
-            root.style.setProperty('--stage-top', (top + h / 2).toFixed(1) + 'px');
+            top = (Number(safe.top) || 0) + (Number(content.top) || 0);
         } else {
-            root.style.setProperty('--stage-top', '50%');
+            top = this.cssSafeArea().top;
         }
+        root.style.setProperty('--stage-top', (top + h / 2).toFixed(1) + 'px');
 
         this.updateRotateHint(w, h);
     },

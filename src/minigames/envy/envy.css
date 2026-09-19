@@ -36,7 +36,9 @@
 /* ============ КРЕСТИК ЗАКРЫТИЯ ============ */
 .envy-close-btn {
     position: absolute;
-    top: max(15px, env(safe-area-inset-top));
+    /* Без env(safe-area-inset-*): холст уже вписан в безопасную область
+       целиком (Stage.apply) — docs/traps.md, п. 134. */
+    top: 15px;
     right: 16px;
     background: rgba(255, 68, 68, 0.85);
     border: 2px solid #fff;
@@ -59,7 +61,7 @@
     position: absolute;
     left: 7%;
     right: 7%;
-    bottom: max(18px, env(safe-area-inset-bottom));
+    bottom: 18px;
     height: 18px;
     background: #0a0f0a;
     border-radius: 12px;

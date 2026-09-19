@@ -173,7 +173,10 @@ canvas {
    Поэтому кошелёк переехал наверх — под ним больше ничего не висит. */
 #wallet {
     position: absolute;
-    top: max(15px, env(safe-area-inset-top));
+    /* Без env(safe-area-inset-*): холст уже вписан в безопасную область
+       целиком (Stage.apply), и второй отступ внутри него отъедает место
+       повторно и в чужих единицах — docs/traps.md, п. 134. */
+    top: 15px;
     right: 5%;
     display: flex;
     align-items: center;
@@ -260,7 +263,7 @@ body.worm-dead #wallet {
 .debug-toggle-btn {
     position: fixed;
     left: 10px;
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: 10px;
     width: 34px;
     height: 34px;
     border-radius: 50%;
@@ -295,7 +298,7 @@ body.worm-dead #wallet {
        Отступ слева — чтобы не залезать на кнопку 🐞. */
     position: fixed;
     left: 52px;
-    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    bottom: 12px;
     z-index: 9999998;
     display: none;
     padding: 3px 7px;
@@ -317,7 +320,7 @@ body.debug-mode #build-stamp {
 #debug-state-panel {
     position: fixed;
     left: 10px;
-    bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 42px);
+    bottom: 52px;
     z-index: 9999998;
     display: none;
     gap: 6px;

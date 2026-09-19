@@ -361,6 +361,17 @@ const SlothMinigame = {
         });
     },
 
+    // ---------- ПОЧЕМУ ПОЛКА НЕ У САМОЙ КРОМКИ ----------
+    // Холст 844 единицы высотой, но мини-игра видит НЕ ВЕСЬ: шапку окна
+    // занимает заголовок с крестиком, а svg сцены растянут по ширине
+    // (preserveAspectRatio="slice") и потому срезан сверху и снизу примерно
+    // на два десятка единиц. Полка стояла на 782 и упиралась в этот срез с
+    // запасом в три единицы — на телефоне её срезало (docs/traps.md, п. 134).
+    //
+    // 770 даёт полтора десятка единиц запаса. Ровнять по 844 нельзя: до
+    // нижней кромки холста полка никогда не доходит.
+    SHELF_Y: 770,
+
     renderTools() {
         this.buildFg();
         const list = this.tools();
@@ -371,7 +382,7 @@ const SlothMinigame = {
             const badge = t.kind === 'dung'
                 ? `<text class="gd-count" x="0" y="34">${GameState.currency('dung')}</text>` : '';
             return `<g class="gd-tool" data-kind="${t.kind}"
-                        transform="translate(${(x0 + i * step).toFixed(1)} 782)">${art}${badge}</g>`;
+                        transform="translate(${(x0 + i * step).toFixed(1)} ${this.SHELF_Y})">${art}${badge}</g>`;
         }).join('');
     },
 
