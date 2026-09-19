@@ -2,25 +2,24 @@ const { chromium } = require('playwright');
 const harness = require('./harness');
 
 // ================= ПРОВЕРКА: МАГАЗИН ЛЕНИ =================
-// У сада нет экрана магазина: покупки висят на тех же предметах, которыми
-// работают (docs/plan/19-sloth-garden.md, раздел 6). Ценники над полкой
-// покупают ступени инструментов, ячейки мешка — семена и новые виды.
+// Всё покупаемое в саду — за корзиной на полке, одним экраном
+// (src/minigames/sloth/sloth-shop.js, замысел — docs/plan/19-sloth-garden.md,
+// раздел 6а).
 //
 // ---------- ЧТО ПРОВЕРЯЕТСЯ И ПОЧЕМУ ИМЕННО ЭТО ----------
-//   1. Ценник покупает ступень, а НЕ берёт инструмент в руку. Два дела на
-//      одном предмете — главный риск этой затеи: промахнись цель, и вместо
-//      покупки игрок получает лопату в руке.
+//   1. Корзина открывает магазин, а НЕ берётся в руку. Она стоит в одном
+//      ряду с инструментами, и общий обработчик полки норовит утащить её
+//      в руку вместо открытия.
 //   2. Купленная ступень СДВИГАЕТ ЧИСЛО игры — миллисекунды полива, минуты
 //      прополки, циклы копания, шанс возврата семечки. Апгрейд, который
 //      ничего не меняет, — проданная пустота, и в саду это уже было:
 //      лестница возврата семян существовала, а `seed` забыли прочитать, и
 //      все её ступени давали одно и то же.
-//   3. Ячейка мешка покупает по СВОЕМУ состоянию: закрытый вид открывается
-//      жетоном и сразу даёт семечку, пустая ячейка докупается сеном.
-//      Открытый вид с пустой ячейкой — покупка, после которой ничего не
-//      произошло, и выглядит она как сбой.
-//   4. Мешок остаётся ОТКРЫТЫМ после покупки: купил одну — видно остальные.
-//      Закрывается он только тогда, когда семечку вынули.
+//   3. Семена: открытый вид докупается СЕНОМ, закрытый открывается ЖЕТОНОМ
+//      и сразу даёт первую семечку. Открытый вид с пустой ячейкой — покупка,
+//      после которой ничего не произошло, и выглядит она как сбой.
+//   4. Купленное видно в САДУ, а не только в магазине: семечка ложится в
+//      мешок, ступень меняет работу инструмента.
 //   5. Отказ ВИДЕН и ничего не списывает. Проверяется на ПУСТОМ кошельке —
 //      именно в нём игрок живёт большую часть времени (docs/traps.md, п. 99),
 //      а проверка на богатом состоянии этого не ловит вовсе.
@@ -51,132 +50,145 @@ const harness = require('./harness');
   await page.goto('http://127.0.0.1:8777/index.html');
   await page.waitForTimeout(2300);
   await page.evaluate(() => {
-    Backend.grantCurrency('sloth_token', 60);
+    Backend.grantCurrency('sloth_token', 80);
     Backend.grantCurrency('hay', 40);
     GameManager.handleSinAction('sloth');
   });
   await page.waitForTimeout(1200);
   await page.screenshot({ path: out + '1-shelf.png' });
 
-  // ---------- 1–2. ЦЕННИК ПОКУПАЕТ СТУПЕНЬ И ДВИГАЕТ ЧИСЛО ----------
-  // Что читать у каждой лестницы. Не «уровень вырос», а САМО ЧИСЛО игры:
-  // уровень может расти, пока его никто не читает, — так уже было с возвратом
-  // семечки, у которого все ступени давали одно и то же.
-  const NUMBERS = { can: true, rake: true, spade: true, seed: false };  // true = должно УМЕНЬШИТЬСЯ
+  // ---------- 1. КОРЗИНА ОТКРЫВАЕТ МАГАЗИН, А НЕ БЕРЁТСЯ В РУКУ ----------
+  // Она стоит в одном ряду с инструментами, и общий обработчик полки норовит
+  // утащить её в руку вместо открытия.
+  await tapMid('.gd-tool[data-kind="shop"]');
+  const opened = await page.evaluate(() => ({
+    open: SlothShop.open, inHand: !!document.querySelector('.gd-dragging')
+  }));
+  check(opened.open, 'тап по корзине открыл магазин');
+  check(!opened.inHand, 'и НЕ взял её в руку');
+  await page.screenshot({ path: out + '2-tools.png' });
 
-  for (const tool of Object.keys(NUMBERS)) {
-    const was = await page.evaluate((t) => ({
-      lvl: Backend.gardenTools()[t],
-      tok: GameState.currency('sloth_token'),
-      n: t === 'can' ? Backend.gardenPourMs()
-        : t === 'rake' ? GARDEN.RAKE_TIERS[Backend.gardenTools().rake].minutes
-        : t === 'spade' ? Backend.gardenWorkNeed('dig')
-        : Backend.gardenSeedReturn()
+  // ---------- 2. СТУПЕНЬ ДВИГАЕТ ЧИСЛО ИГРЫ ----------
+  // Не «уровень вырос», а САМО ЧИСЛО: уровень может расти, пока его никто не
+  // читает, — так уже было с возвратом семечки, у которого все ступени
+  // давали одно и то же.
+  const readNum = (t) => page.evaluate((k) => (
+    k === 'can' ? Backend.gardenPourMs()
+    : k === 'rake' ? GARDEN.RAKE_TIERS[Backend.gardenTools().rake].minutes
+    : k === 'spade' ? Backend.gardenWorkNeed('dig')
+    : Backend.gardenSeedReturn()), t);
+  const SMALLER = { can: true, rake: true, spade: true, seed: false };
+
+  for (const tool of Object.keys(SMALLER)) {
+    const wasN = await readNum(tool);
+    const wasT = await page.evaluate((t) => ({
+      lvl: Backend.gardenTools()[t], tok: GameState.currency('sloth_token')
     }), tool);
-    if (!await tapMid(`.gd-tag-wrap[data-tool="${tool}"]`)) continue;
-    const now = await page.evaluate((t) => ({
-      lvl: Backend.gardenTools()[t],
-      tok: GameState.currency('sloth_token'),
-      n: t === 'can' ? Backend.gardenPourMs()
-        : t === 'rake' ? GARDEN.RAKE_TIERS[Backend.gardenTools().rake].minutes
-        : t === 'spade' ? Backend.gardenWorkNeed('dig')
-        : Backend.gardenSeedReturn(),
-      inHand: !!document.querySelector('.gd-dragging')
+    if (!await tapMid(`.gs-row[data-key="${tool}"]`)) continue;
+    const nowN = await readNum(tool);
+    const nowT = await page.evaluate((t) => ({
+      lvl: Backend.gardenTools()[t], tok: GameState.currency('sloth_token')
     }), tool);
-    check(now.lvl === was.lvl + 1, `${tool}: ступень выросла (${was.lvl} → ${now.lvl})`);
-    check(now.tok < was.tok, `${tool}: жетоны списаны (${was.tok} → ${now.tok})`);
-    const moved = NUMBERS[tool] ? now.n < was.n : now.n > was.n;
-    check(moved, `${tool}: число игры сдвинулось (${was.n} → ${now.n})`);
-    check(!now.inHand, `${tool}: тап по ценнику НЕ взял инструмент в руку`);
+    check(nowT.lvl === wasT.lvl + 1, `${tool}: ступень выросла (${wasT.lvl} → ${nowT.lvl})`);
+    check(nowT.tok < wasT.tok, `${tool}: жетоны списаны (${wasT.tok} → ${nowT.tok})`);
+    check(SMALLER[tool] ? nowN < wasN : nowN > wasN,
+          `${tool}: число игры сдвинулось (${wasN} → ${nowN})`);
   }
 
-  // ---------- ВЫКУПЛЕННАЯ ЛЕСТНИЦА: ГАЛОЧКА ВМЕСТО ЦЕННИКА ----------
+  // Выкупленная до потолка ветка УХОДИТ с прилавка: смотреть на то, что уже
+  // своё, незачем.
   await page.evaluate(() => {
-    const t = GameState.data.garden.tools;
-    t.can = GARDEN.CAN_TIERS.length - 1;
-    SlothMinigame.render();
+    GameState.data.garden.tools.can = GARDEN.CAN_TIERS.length - 1;
+    SlothShop.render();
   });
   await page.waitForTimeout(300);
-  const done = await page.evaluate(() =>
-    document.querySelector('.gd-tag-wrap[data-tool="can"]').classList.contains('gd-done'));
-  check(done, 'выкупленная лестница показывает галочку, а не пустое место');
-  const tokBefore = await page.evaluate(() => GameState.currency('sloth_token'));
-  await tapMid('.gd-tag-wrap[data-tool="can"]');
-  check(await page.evaluate(() => GameState.currency('sloth_token')) === tokBefore,
-        'и тап по галочке ничего не списывает');
+  check(await page.evaluate(() => !document.querySelector('.gs-row[data-key="can"]')),
+        'выкупленная лестница ушла с прилавка');
 
-  // ---------- 3–4. МЕШОК: ОТКРЫТЬ ВИД И ДОКУПИТЬ СЕМЕЧКУ ----------
-  await page.evaluate(() => SlothMinigame.openSack());
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: out + '2-sack.png' });
+  // ---------- 3. СЕМЕНА: ВИД ЗА ЖЕТОН, СЕМЕЧКА ЗА СЕНО ----------
+  await page.evaluate(() => { SlothShop.tab = 'seeds'; SlothShop.render(); });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: out + '3-seeds.png' });
 
   const locked = await page.evaluate(() => {
-    const el = document.querySelector('.gd-sack-cell[data-state="locked"]');
+    const el = document.querySelector('.gs-row.gs-locked');
     return el ? el.dataset.key : null;
   });
-  check(!!locked, 'в мешке есть ячейка закрытого вида: ' + locked);
+  check(!!locked, 'на прилавке есть закрытый вид: ' + locked);
   if (locked) {
     const was = await page.evaluate(() => GameState.currency('sloth_token'));
-    await tapMid(`.gd-sack-cell[data-key="${locked}"]`);
+    await tapMid(`.gs-row[data-key="${locked}"]`);
     const now = await page.evaluate((k) => ({
-      seeds: Backend.gardenSeedCount(k),
-      tok: GameState.currency('sloth_token'),
-      open: SlothMinigame.sackOpen,
-      state: document.querySelector(`.gd-sack-cell[data-key="${k}"]`).dataset.state
+      seeds: Backend.gardenSeedCount(k), tok: GameState.currency('sloth_token'),
+      known: Backend.gardenSeedKeys().indexOf(k) !== -1
     }), locked);
-    check(now.seeds === 1, `${locked}: вид открыт и первая семечка выдана`);
+    check(now.known && now.seeds === 1, `${locked}: вид открыт и первая семечка выдана`);
     check(now.tok < was, `${locked}: жетоны списаны (${was} → ${now.tok})`);
-    check(now.open, 'мешок остался открытым: видно, что ещё можно купить');
-    check(now.state === 'have', 'ячейка перестала быть закрытой');
   }
 
-  // Пустая ячейка докупается СЕНОМ. Опустошаем вид, который точно открыт.
-  await page.evaluate(() => {
-    GameState.data.garden.seeds.potato = 0;
-    SlothMinigame.openSack();
-  });
-  await page.waitForTimeout(300);
+  // Открытый вид докупается СЕНОМ.
   const hayWas = await page.evaluate(() => GameState.currency('hay'));
-  check(await page.evaluate(() =>
-        document.querySelector('.gd-sack-cell[data-key="potato"]').dataset.state === 'empty'),
-        'кончившийся вид остаётся в мешке пустой ячейкой с ценой');
-  await tapMid('.gd-sack-cell[data-key="potato"]');
+  const seedWas = await page.evaluate(() => Backend.gardenSeedCount('potato'));
+  await tapMid('.gs-row[data-key="potato"]');
   const seedNow = await page.evaluate(() => ({
     n: Backend.gardenSeedCount('potato'), hay: GameState.currency('hay')
   }));
-  check(seedNow.n === 1, 'семечка докуплена');
+  check(seedNow.n === seedWas + 1, `семечка докуплена (${seedWas} → ${seedNow.n})`);
   check(seedNow.hay < hayWas, `сено списано (${hayWas} → ${seedNow.hay})`);
 
+  // ---------- 4. КУПЛЕННОЕ ВИДНО В САДУ ----------
+  // Магазин, из которого покупка не доходит до грядки, — это красивый экран
+  // и ничего больше.
+  await page.evaluate(() => SlothShop.close());
+  await page.waitForTimeout(400);
+  check(await page.evaluate(() => !SlothShop.open), 'магазин закрылся');
+  await page.evaluate(() => SlothMinigame.openSack());
+  await page.waitForTimeout(400);
+  const inSack = await page.evaluate((k) =>
+    !!document.querySelector(`.gd-sack-cell[data-key="${k}"]`), locked || 'potato');
+  check(inSack, 'купленный вид появился в мешке');
+  await page.evaluate(() => SlothMinigame.closeSack());
+  await page.waitForTimeout(300);
+
   // ---------- 5. ОТКАЗ НА ПУСТОМ КОШЕЛЬКЕ ----------
-  // Проверка стоит здесь навсегда: жест, проверенный только на полном
-  // кошельке, у игрока выглядит выключенным (docs/traps.md, п. 99).
+  // Проверка стоит здесь навсегда: покупка, проверенная только на полном
+  // кошельке, у игрока выглядит выключенной (docs/traps.md, п. 99).
   await page.evaluate(() => {
     GameState.addCurrency('hay', -GameState.currency('hay'));
-    GameState.data.garden.seeds.potato = 0;
-    SlothMinigame.openSack();
-  });
-  await page.waitForTimeout(300);
-  await tapMid('.gd-sack-cell[data-key="potato"]');
-  check(await page.evaluate(() =>
-        !!document.querySelector('.gd-coin[data-cur="hay"].gd-no')),
-        'не хватило сена — вздрогнул кошелёк, а не ячейка под пальцем');
-  check(await page.evaluate(() => Backend.gardenSeedCount('potato')) === 0,
-        'и семечка не выдана');
-  await page.screenshot({ path: out + '3-lack.png' });
-
-  await page.evaluate(() => {
-    SlothMinigame.closeSack();
     GameState.addCurrency('sloth_token', -GameState.currency('sloth_token'));
-    SlothMinigame.render();
+    SlothShop.show();
+    SlothShop.tab = 'seeds';
+    SlothShop.render();
   });
-  await page.waitForTimeout(300);
-  const lvlWas = await page.evaluate(() => Backend.gardenTools().rake);
-  await tapMid('.gd-tag-wrap[data-tool="rake"]');
+  await page.waitForTimeout(400);
+  const potWas = await page.evaluate(() => Backend.gardenSeedCount('potato'));
+  await tapMid('.gs-row[data-key="potato"]');
   check(await page.evaluate(() =>
-        !!document.querySelector('.gd-coin[data-cur="sloth_token"].gd-no')),
+        !!document.querySelector('.gs-coin[data-cur="hay"].gs-no')),
+        'не хватило сена — вздрогнул кошелёк, а не строка под пальцем');
+  check(await page.evaluate(() => Backend.gardenSeedCount('potato')) === potWas,
+        'и семечка не выдана');
+  await page.screenshot({ path: out + '4-lack.png' });
+
+  await page.evaluate(() => { SlothShop.tab = 'tools'; SlothShop.render(); });
+  await page.waitForTimeout(300);
+  const rakeWas = await page.evaluate(() => Backend.gardenTools().rake);
+  await tapMid('.gs-row[data-key="rake"]');
+  check(await page.evaluate(() =>
+        !!document.querySelector('.gs-coin[data-cur="sloth_token"].gs-no')),
         'не хватило жетонов — вздрогнул кошелёк');
-  check(await page.evaluate(() => Backend.gardenTools().rake) === lvlWas,
+  check(await page.evaluate(() => Backend.gardenTools().rake) === rakeWas,
         'и ступень не выдана');
+
+  // ---------- ЗАКРЫТИЕ ТАПОМ МИМО ----------
+  // Мимо — это ВПРИТЫК слева от прилавка, а не «где-то в левой половине
+  // окна»: на узком экране холст стоит в «письме», и половина ширины окна
+  // оказывается ЗА сценой — тап туда не доходит до затемнения вовсе. Прогон
+  // на этом и споткнулся, промахнувшись сам.
+  const panel = await page.locator('#gd-shop-panel').boundingBox();
+  await page.mouse.click(panel.x - 12, panel.y + panel.height / 2);
+  await page.waitForTimeout(400);
+  check(await page.evaluate(() => !SlothShop.open), 'тап мимо прилавка закрыл магазин');
 
   // ---------- 6. ЦЕНА ГРЯДКИ РАСТЁТ ----------
   const costs = await page.evaluate(() => {

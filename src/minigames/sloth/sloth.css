@@ -320,16 +320,174 @@
     background: rgba(150, 38, 34, 0.75);
 }
 
-/* Ценник на полке. Нажимается сам по себе — поэтому pointer-events здесь
-   включены явно: у переднего плана они по умолчанию не у всех групп. */
-#sloth-game .gd-tag-wrap { cursor: pointer; }
-#sloth-game .gd-tag-n { font-weight: 800; }
-/* Не по карману — приглушён, но ЖИВОЙ: выключенный ценник молчит, а
-   молчание читается поломкой (docs/traps.md, п. 91). */
-#sloth-game .gd-tag.gd-poor { opacity: 0.5; }
-#sloth-game .gd-tag-wrap:active { transform-box: fill-box; }
 
-/* Ячейка мешка: закрытый вид — силуэт, у пустой и закрытой под семечкой
-   стоит цена. Приглушение говорит «этого нет», а не «сюда нельзя». */
-#sloth-game .gd-sack-cell.gd-locked { opacity: 0.45; }
-#sloth-game .gd-sack-cell.gd-locked .gd-seed-shape { opacity: 0.35; }
+
+/* ================= МАГАЗИН ЛЕНИ ================= */
+/* Прилавок намеренно скупой: сейчас нужна работающая механика, а нарративный
+   вид магазина — отдельная работа. Цвета — те же, что у сада, чтобы экран
+   не выглядел вырезанным из другой игры (в отличие от кухни, где чужой вид
+   телефона и есть шутка). */
+#sloth-game .gd-shop {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(16, 28, 14, 0.58);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.24s ease, visibility 0s linear 0.24s;
+    touch-action: none;
+}
+#sloth-game .gd-shop.on {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.24s ease, visibility 0s;
+}
+
+#sloth-game .gd-shop-panel {
+    width: 320px;
+    max-width: 86%;
+    max-height: 80%;
+    display: flex;
+    flex-direction: column;
+    border-radius: 22px;
+    background: #f3ecdc;
+    border: 3px solid #2b2016;
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    transform: translateY(24px) scale(0.94);
+    transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+#sloth-game .gd-shop.on .gd-shop-panel { transform: none; }
+
+#sloth-game .gs-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #e2d7c0;
+    border-bottom: 2px solid #c3b596;
+}
+#sloth-game .gs-tabs { display: flex; gap: 6px; }
+#sloth-game .gs-tab {
+    border: 0;
+    border-radius: 999px;
+    background: #cfc0a2;
+    padding: 6px 14px;
+    font-size: 19px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.16s ease, transform 0.12s ease;
+}
+#sloth-game .gs-tab.on { background: #8bab5a; }
+#sloth-game .gs-tab:active { transform: scale(0.95); }
+
+#sloth-game .gs-wallet { display: flex; gap: 6px; }
+#sloth-game .gs-coin {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px 3px 4px;
+    border-radius: 999px;
+    background: #fbf6ea;
+    color: #2b2016;
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1;
+}
+#sloth-game .gs-coin-art { width: 17px; height: 17px; display: block; }
+
+/* Отказ вздрагивает ТОЙ валютой, которой не хватило, а не строкой под
+   пальцем (docs/traps.md, п. 91). */
+#sloth-game .gs-coin.gs-no,
+#sloth-game .gs-wallet.gs-no {
+    animation: gd-lack 0.45s ease;
+    background: #f0c4c1;
+    color: #8f211d;
+}
+
+#sloth-game .gs-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Строка нажимается ЦЕЛИКОМ. Не по карману — приглушена, но живая: тап всё
+   равно отвечает (docs/traps.md, п. 91). */
+#sloth-game .gs-row {
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: 2px solid #d6c9ac;
+    border-radius: 14px;
+    background: #fbf6ea;
+    padding: 7px 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.16s ease;
+}
+#sloth-game .gs-row:active { transform: scale(0.985); border-color: #8bab5a; }
+#sloth-game .gs-row.gs-poor { opacity: 0.48; }
+/* Закрытый вид — силуэтом: видно, ЧТО откроется, но что его ещё нет. */
+#sloth-game .gs-row.gs-locked .gs-pic { opacity: 0.4; }
+
+#sloth-game .gs-pic { width: 52px; height: 52px; display: block; }
+#sloth-game .gs-pic svg { width: 100%; height: 100%; display: block; }
+
+#sloth-game .gs-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+/* «Было → станет»: обмен через стрелку — один из трёх приёмов, которые
+   вообще работают без слов (docs/traps.md, п. 82). Чего именно станет
+   столько, говорит картинка слева. */
+#sloth-game .gs-step {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-weight: 800;
+    font-size: 16px;
+    color: #8a7f68;
+    line-height: 1;
+}
+#sloth-game .gs-step i { font-style: normal; font-size: 13px; }
+#sloth-game .gs-step b.gs-next { color: #2b2016; font-size: 19px; }
+
+#sloth-game .gs-have { font-weight: 800; font-size: 17px; color: #2b2016; line-height: 1; }
+
+#sloth-game .gs-pips { display: flex; gap: 4px; }
+#sloth-game .gs-pips i {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #d6c9ac;
+}
+#sloth-game .gs-pips i.on { background: #8bab5a; }
+
+#sloth-game .gs-buy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 54px;
+    justify-content: center;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: #8bab5a;
+    color: #1d2a12;
+    font-weight: 800;
+    font-size: 15px;
+    line-height: 1;
+}
+#sloth-game .gs-row.gs-poor .gs-buy { background: #bdb49f; }
+
+#sloth-game .gs-empty {
+    text-align: center;
+    padding: 32px 0;
+    font-size: 30px;
+    color: #8bab5a;
+}

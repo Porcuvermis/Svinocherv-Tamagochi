@@ -815,6 +815,7 @@ const GARDEN_ART = {
     tool(kind) {
         const k = gdPal(), ink = gdInk(), S = gdS();
         const line = `stroke="${ink}" stroke-width="${S.structure}" stroke-linejoin="round"`;
+        if (kind === 'shop') return this.shopBasket();
         switch (kind) {
             case 'spade':
                 return `${gdGrab(0, 0, 26, 34)}
@@ -939,6 +940,22 @@ const GARDEN_ART = {
         };
     },
 
+    // ---------- ВХОД В МАГАЗИН ----------
+    // Корзина на полке. Намеренно самая простая вещь в саду: магазин пока
+    // нужен работающим, а не красивым, и оформлять его будут отдельно.
+    // Рисуется в тех же габаритах, что остальные предметы полки.
+    shopBasket() {
+        const k = gdPal(), ink = gdInk(), S = gdS();
+        return `${gdGrab(0, 0, 30, 32)}
+            <path d="M-22 -6 H22 L17 20 H-17 Z" fill="${k.wood[300]}"
+                  stroke="${ink}" stroke-width="${S.contour}" stroke-linejoin="round"/>
+            <path d="M-14 -6 q0 -16 14 -16 q14 0 14 16" fill="none"
+                  stroke="${ink}" stroke-width="${S.structure}" stroke-linecap="round"/>
+            <path d="M-22 2 H22 M-9 -6 L-7 20 M9 -6 L7 20" fill="none"
+                  stroke="${k.wood[500]}" stroke-width="${S.detail}"/>
+        </g>`.replace('</g>', '');
+    },
+
     // Закрытый мешок: перевязанный горловиной куль. Рисуется в тех же
     // габаритах, что и остальные инструменты на полке.
     sackClosed() {
@@ -987,36 +1004,19 @@ const GARDEN_ART = {
             </g>`);
         }
 
-        // ---------- ЯЧЕЙКА — ЭТО И ПОЛКА, И ПРИЛАВОК ----------
         // Место каждого вида закреплено, поэтому ячейка никуда не девается,
-        // что бы с ней ни было. Три состояния, и у каждого свой ответ на тап:
-        //
-        //   have   — семена есть: ячейку ТЯНУТ на грядку;
-        //   empty  — вид открыт, семена кончились: под ним цена в СЕНЕ,
-        //            тап покупает одну;
-        //   locked — вид ещё не открыт: силуэт и цена в ЖЕТОНАХ, тап
-        //            открывает вид и сразу кладёт первую семечку.
-        //
-        // Пустая ячейка и раньше оставалась на месте («вид знаком, семечек
-        // нет»), но молчала. Теперь она говорит, чем её наполнить, — и это
-        // ровно то место, где игрок об этом думает.
+        // что бы с ней ни было. Пустая приглушена, но остаётся: вид знаком,
+        // семечек нет, — по ней видно, что искать. Купить её тут нельзя:
+        // покупки живут в магазине (sloth-shop.js), и одно и то же не должно
+        // продаваться в двух местах.
         (items || []).forEach((it, n) => {
             const c = this.sackCell(n);
-            const price = it.price || null;
-            const cur = price ? Object.keys(price)[0] : null;
-            const mark = cur === 'hay'
-                ? `<g transform="translate(-11 0) scale(0.5)">${this.hay()}</g>`
-                : `<g transform="translate(-11 0) scale(0.5)">${this.token(it.enough)}</g>`;
-            out.push(`<g class="gd-sack-cell gd-${it.state}${it.enough === false ? ' gd-poor' : ''}"
-                         data-key="${it.key}" data-state="${it.state}"
+            out.push(`<g class="gd-sack-cell gd-${it.state}" data-key="${it.key}"
+                         data-state="${it.state}"
                          transform="translate(${c.x.toFixed(1)} ${c.y.toFixed(1)})">
                 ${gdGrab(0, 0, c.w / 2 - 2, c.h / 2 - 2)}
-                <g transform="translate(0 -8)">${this.seedItem(it.key)}</g>
-                ${it.state === 'have' && it.count !== null
-                    ? `<text class="gd-seed-count" x="0" y="32">${it.count}</text>` : ''}
-                ${price ? `<g transform="translate(0 30)">
-                    ${mark}<text class="gd-price gd-tag-n" x="8" y="5">${price[cur]}</text>
-                </g>` : ''}
+                <g transform="translate(0 -6)">${this.seedItem(it.key)}</g>
+                ${it.count === null ? '' : `<text class="gd-seed-count" x="0" y="32">${it.count}</text>`}
             </g>`);
         });
         return out.join('');

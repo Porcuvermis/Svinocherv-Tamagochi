@@ -722,6 +722,30 @@
             <span class="gd-coin" data-cur="hay" id="gd-w-hay"></span>
             <span class="gd-coin" data-cur="sloth_token" id="gd-w-token"></span>
         </div>
+
+        <!-- МАГАЗИН ЛЕНИ. Всё покупаемое в саду одним экраном, за корзиной
+             на полке: ступени инструментов за жетоны, семена за сено, новые
+             виды за жетоны.
+
+             Сначала покупки висели прямо на предметах — ценник над
+             инструментом, цена в пустой ячейке мешка. Диегетично и без
+             единого меню, но РАЗБРОСАНО: чтобы узнать, что вообще можно
+             купить, приходилось обойти полку и открыть мешок, а сравнить
+             покупки между собой было негде.
+
+             Вид намеренно простой: сейчас нужна работающая механика, а
+             нарративное оформление магазина — отдельная работа.
+
+             Закрывается тапом мимо прилавка, как и мешок. -->
+        <div class="gd-shop" id="gd-shop">
+            <div class="gd-shop-panel" id="gd-shop-panel">
+                <div class="gs-top">
+                    <div class="gs-tabs" id="gs-tabs"></div>
+                    <div class="gs-wallet" id="gs-wallet"></div>
+                </div>
+                <div class="gs-list" id="gs-list"></div>
+            </div>
+        </div>
     </div>
 
     <!-- ПОХОТЬ: ВАННАЯ.
@@ -1056,6 +1080,7 @@
 <script src="src/minigames/wrath/wrath.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/plant-model.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/garden-art.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/sloth-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/garden-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/sloth.js?v=__BUILD__"></script>
 <!-- Запечённая графика ванной: сгенерирована из 3д-моделей

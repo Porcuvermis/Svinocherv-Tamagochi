@@ -77,6 +77,8 @@ const SlothMinigame = {
         this.beds = (typeof GARDEN !== 'undefined') ? GARDEN.BEDS_TOTAL : 6;
         this.camEl.innerHTML = GARDEN_ART.scene(this.beds);
 
+        if (typeof SlothShop !== 'undefined') SlothShop.init(this);
+
         // Своя debug-панель: сад меряется часами, и без отмотки времени
         // проверить его нельзя вообще никак.
         if (typeof GardenDebug !== 'undefined') GardenDebug.init(this.screenElement);
@@ -115,6 +117,9 @@ const SlothMinigame = {
     },
 
     close() {
+        // Закрытая мини-игра ничего не оставляет открытым внутри себя:
+        // магазин, забытый поднятым, встретит игрока в следующий заход.
+        if (typeof SlothShop !== 'undefined') SlothShop.close();
         // Досчитать пребывание за последний неполный кусок и записать: иначе
         // секунды между последней отрисовкой и выходом пропадают.
         this.settleWatch();
@@ -319,6 +324,13 @@ const SlothMinigame = {
         const list = [{ kind: 'spade' }, { kind: 'sack' }, { kind: 'can' }];
         if (GameState.currency('dung') > 0) list.push({ kind: 'dung' });
         list.push({ kind: 'rake' });
+        // Вход в магазин — последним в ряду. Он не инструмент и в круг грядки
+        // не входит, поэтому и стоит с краю, а не между лейкой и граблями:
+        // порядок полки объясняет цикл, и чужой предмет в середине его рвёт.
+        //
+        // Сейчас это просто корзина. Нарративное оформление магазина —
+        // отдельная работа; здесь нужна работающая механика, а не вид.
+        list.push({ kind: 'shop' });
         return list;
     },
 
@@ -349,11 +361,6 @@ const SlothMinigame = {
         });
     },
 
-    // У какого предмета полки какая лестница. Мешок качает ВОЗВРАТ СЕМЯН:
-    // это единственная ступень, которой не соответствует отдельный предмет,
-    // а по смыслу она именно про семена — им и место.
-    TOOL_LADDER: { spade: 'spade', sack: 'seed', can: 'can', rake: 'rake' },
-
     renderTools() {
         this.buildFg();
         const list = this.tools();
@@ -365,32 +372,6 @@ const SlothMinigame = {
                 ? `<text class="gd-count" x="0" y="34">${GameState.currency('dung')}</text>` : '';
             return `<g class="gd-tool" data-kind="${t.kind}"
                         transform="translate(${(x0 + i * step).toFixed(1)} 782)">${art}${badge}</g>`;
-        }).join('') + this.tagsHtml(list, x0, step);
-    },
-
-    // ---------- ЦЕННИКИ ----------
-    // Отдельным слоем ПОВЕРХ инструментов, а не внутри них: ценник нажимается
-    // сам по себе, и, лежи он внутри группы инструмента, тап по нему брал бы
-    // инструмент в руку.
-    //
-    // Ценник не показывается, пока мешок открыт: он закрывает собой ровно тот
-    // мешок, в который игрок сейчас смотрит.
-    tagsHtml(list, x0, step) {
-        if (this.sackOpen) return '';
-        return list.map((t, i) => {
-            const key = this.TOOL_LADDER[t.kind];
-            if (!key) return '';
-            const ladder = Backend.gardenToolLadder(key);
-            if (!ladder) return '';
-            const x = (x0 + i * step).toFixed(1);
-            if (!ladder.next) {
-                return `<g class="gd-tag-wrap gd-done" data-tool="${key}"
-                           transform="translate(${x} 726)">${GARDEN_ART.tagDone()}</g>`;
-            }
-            const price = ladder.next.price || {};
-            return `<g class="gd-tag-wrap" data-tool="${key}" transform="translate(${x} 726)">
-                ${GARDEN_ART.priceTag(price, this.affordable(price))}
-            </g>`;
         }).join('');
     },
 
@@ -402,35 +383,25 @@ const SlothMinigame = {
     // Что лежит в мешке. Порядок ячеек — порядок видов в конфиге, и он
     // ПОСТОЯНЕН: место каждого вида закреплено, чтобы через неделю игрок
     // тянулся за помидором не глядя.
-    // Ячейка есть у КАЖДОГО вида, даже у неоткрытого: место закреплено, и
-    // пропадающая ячейка сдвинула бы все соседние — через неделю игрок
-    // тянулся бы за помидором не глядя и промахивался.
+    // Что лежит в мешке. Порядок ячеек — порядок видов в конфиге, и он
+    // ПОСТОЯНЕН: место каждого вида закреплено, чтобы через неделю игрок
+    // тянулся за помидором не глядя.
     //
-    // Три состояния и три разных ответа на палец:
-    //   have   — семена есть, ячейку тянут на грядку;
-    //   empty  — вид открыт, семена кончились: цена в СЕНЕ, тап покупает;
-    //   locked — вид не открыт: цена в ЖЕТОНАХ, тап открывает и даёт семечку.
+    // Показываются только ОТКРЫТЫЕ виды: мешок — это склад, а не витрина.
+    // Покупка семян и открытие новых видов живут в магазине
+    // (src/minigames/sloth/sloth-shop.js), и цен здесь нет намеренно —
+    // иначе одно и то же покупалось бы в двух местах.
     sackItems() {
         const known = Backend.gardenSeedKeys();
-        return Object.keys(GARDEN.species).map(key => {
-            const sp = GARDEN.species[key];
-            const open = known.indexOf(key) !== -1;
-            const n = Backend.gardenSeedCount(key);
-            // null — «бесконечно»: у травы счётчика нет, как у пищеблока
-            // в холодильнике. Цифра «∞» была бы значком без смысла.
-            const count = n === Infinity ? null : n;
-            if (!open) {
-                const price = sp.unlock || null;
-                return { key, count: 0, state: 'locked', price,
-                         enough: price ? this.affordable(price) : false };
-            }
-            if (count === 0) {
-                const price = sp.seedPrice || null;
-                return { key, count: 0, state: 'empty', price,
-                         enough: price ? this.affordable(price) : false };
-            }
-            return { key, count, state: 'have', price: null, enough: true };
-        });
+        return Object.keys(GARDEN.species)
+            .filter(key => known.indexOf(key) !== -1)
+            .map(key => {
+                const n = Backend.gardenSeedCount(key);
+                // null — «бесконечно»: у травы счётчика нет, как у пищеблока
+                // в холодильнике. Цифра «∞» была бы значком без смысла.
+                const count = n === Infinity ? null : n;
+                return { key, count, state: count === 0 ? 'empty' : 'have' };
+            });
     },
 
     // Хватает ли на цену. Одна читалка на мешок и на ценники полки: две
@@ -484,36 +455,6 @@ const SlothMinigame = {
         if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
     },
 
-    // ---------- ПОКУПКИ ----------
-    // Экран только просит: проверка цены и списание живут в переходнике
-    // (инвариант 2). Здесь остаётся показать ответ — и показать ОБА ответа,
-    // удачу и отказ, иначе тап выглядит непрошедшим.
-    buyTool(tool) {
-        const answer = Backend.buyGardenTool(tool);
-        if (!answer.ok) {
-            if (answer.currency) this.flashLack(answer.currency);
-            return;
-        }
-        if (typeof Haptics !== 'undefined') Haptics.notify('success');
-        this.render();
-    },
-
-    // Семечка или целый вид — решает состояние ячейки, а не отдельная кнопка.
-    // Мешок при этом остаётся ОТКРЫТЫМ: купил одну, видно остальные ячейки,
-    // можно купить ещё. Закрывается он только тогда, когда семечку вынули.
-    buySeed(key, cell) {
-        const known = Backend.gardenSeedKeys().indexOf(key) !== -1;
-        const answer = known ? Backend.buyGardenSeed(key) : Backend.unlockGardenSpecies(key);
-        if (!answer.ok) {
-            if (answer.currency) this.flashLack(answer.currency);
-            else if (cell) this.refuseSack(cell);
-            return;
-        }
-        if (typeof Haptics !== 'undefined') Haptics.notify('success');
-        this.openSack();              // перерисовать содержимое мешка
-        this.renderWallet();
-    },
-
     // ---------- ВВОД ----------    // ---------- ВВОД ----------
     onDown(e) {
         if (this.locked) return;
@@ -525,10 +466,10 @@ const SlothMinigame = {
             if (cell) {
                 e.preventDefault();
                 const key = cell.dataset.key;
-                // Ячейка без семян не тянется, а ПОКУПАЕТСЯ: у неё есть цена,
-                // и тап по ней — это тап по ценнику. Мешок при этом остаётся
-                // открытым: купил одну, видно остальные, можно купить ещё.
-                if (cell.dataset.state !== 'have') { this.buySeed(key, cell); return; }
+                // Пустая ячейка не тянется: семечки этого вида нет, и рука
+                // должна это чувствовать, а не узнавать после броска. Купить
+                // её можно в магазине — мешок только выдаёт.
+                if (cell.dataset.state !== 'have') { this.refuseSack(cell); return; }
                 this.closeSack();
                 this.startDrag(e, 'seed', key, GARDEN_ART.seedItem(key));
                 return;
@@ -536,17 +477,6 @@ const SlothMinigame = {
             // Нажатие мимо мешка — закрыть. Крестика у него нет и не будет:
             // это мешок, а не окно.
             this.closeSack();
-            return;
-        }
-
-        // ---- ценник на полке ----
-        // Проверяется ДО инструмента: ценник висит над ним и попадает в тот
-        // же закрывающий узел, а дела у них разные — тап по инструменту
-        // берёт его в руку, тап по ценнику покупает ступень.
-        const tag = t.closest ? t.closest('.gd-tag-wrap') : null;
-        if (tag && !this.work) {
-            e.preventDefault();
-            if (!tag.classList.contains('gd-done')) this.buyTool(tag.dataset.tool);
             return;
         }
 
@@ -559,6 +489,14 @@ const SlothMinigame = {
         if (tool && tool.dataset.kind === 'sack' && !this.work) {
             e.preventDefault();
             this.openSack();
+            return;
+        }
+
+        // ---- магазин ----
+        // Корзину нельзя взять в руку: это не инструмент, а дверь.
+        if (tool && tool.dataset.kind === 'shop' && !this.work) {
+            e.preventDefault();
+            if (typeof SlothShop !== 'undefined') SlothShop.show();
             return;
         }
 
