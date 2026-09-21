@@ -131,8 +131,9 @@ const LustMinigame = {
     // экране меняет размер, а «мыло берёт клетку с окрестностью» — нет.
     stageRadius() {
         const C = this.cfg(), b = this.coverBox(), G = this.grid();
-        const cells = this.phase === 'cloth' ? (C.clothCells || 0.75)
-                                             : (C.soapCells || 1.15);
+        // Радиус — КУПЛЕННЫЙ: мыло и мочалка качаются каждая своей полкой.
+        const cells = this.phase === 'cloth' ? this.up('cloth', C.clothCells || 1.0)
+                                             : this.up('soap', C.soapCells || 1.15);
         return cells * Math.max(b.w / G.nx, b.h / G.ny);
     },
 
@@ -192,6 +193,8 @@ const LustMinigame = {
         this.camEl.innerHTML = BATH_ART.sceneFront();
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
 
+        if (typeof LustShop !== 'undefined') LustShop.init(this);
+
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
         window.addEventListener('pointerup', () => this.onUp());
@@ -206,6 +209,7 @@ const LustMinigame = {
 
         this.phase = 'idle';
         this.drag = null;
+        if (typeof LustShop !== 'undefined') LustShop.close();
         this.resetCover();
         this.wipeLather();
         this.el('bt-bubbles').innerHTML = '';
@@ -247,6 +251,9 @@ const LustMinigame = {
 
     close() {
         this.screenElement.classList.remove('active');
+        // Прилавок закрывается ВМЕСТЕ с игрой. Иначе он встретит игрока
+        // открытым в следующий заход — поверх ещё не начавшегося забега.
+        if (typeof LustShop !== 'undefined') LustShop.close();
         this.stopClocks();
         this.stopPanting();
         this.drag = null;
@@ -916,6 +923,18 @@ const LustMinigame = {
         const p = this.toScene(e);
         const A = BATH_ART.slots();
 
+        // Магазин открывается ФЛАКОНОМ и только в двух местах забега: пока
+        // вода не включена и после того, как она выключилась. Проверка стоит
+        // ПЕРЕД разбором этапов, а не внутри ветки 'idle', потому что мест
+        // два, а не одно: после финала фаза 'done', и тот же флакон обязан
+        // открываться ровно так же (docs/plan/21-lust-bath.md, разд. 6).
+        if (this.phase === 'idle' || this.phase === 'done') {
+            const f = BATH_ART.flaskAt();
+            if (Math.hypot(p.x - f.x, p.y - (f.y - 14)) < 46) {
+                if (typeof LustShop !== 'undefined') LustShop.show();
+                return;
+            }
+        }
         if (this.phase === 'idle') {
             // Душ включает воду — это и есть старт забега.
             if (Math.hypot(p.x - A.showerHead.x, p.y - A.showerHead.y) < 96)
@@ -1332,7 +1351,7 @@ const LustMinigame = {
         if (a.dist > reach) { this.drag.t = null; return; }
         if (this.drag.t != null && a.t !== this.drag.t) {
             this.charge = Math.min(1, this.charge
-                + Math.abs(a.t - this.drag.t) * (C.rubGain || 0.09));
+                + Math.abs(a.t - this.drag.t) * this.up('oil', C.rubGain || 0.09));
             this.rubMoved = performance.now();
         }
         this.drag.t = a.t;
@@ -1573,7 +1592,7 @@ const LustMinigame = {
     shoot() {
         if (this.phase !== 'aim') return;
         const C = this.cfg();
-        const t = (C.tiers || [{}])[this.tier()] || {};
+        const t = this.aimTier();
         const s = this.tipState();
         const v = LustShot.launch(C, t, s.dir);
         this.drops.push({ x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0,
@@ -1821,13 +1840,24 @@ const LustMinigame = {
             mouthFill: v, mouthFillColor: PALETTE.bathScene.milk[500] });
     },
 
-    // Купленная ступень прокачки. Магазина ещё нет — до него ступень всегда
-    // стартовая, и это ровно то, подо что считался баланс.
-    tier() {
-        const lvl = (typeof GameState !== 'undefined' && GameState.upgradeLevel)
-            ? GameState.upgradeLevel('lust_aim') : 0;
-        const n = ((this.cfg().tiers || []).length || 1) - 1;
-        return Math.max(0, Math.min(n, lvl));
+    // ---------- КУПЛЕННЫЕ СТУПЕНИ ----------
+    // Один вход на все четыре полки магазина. Читается КАЖДЫЙ РАЗ, а не
+    // запоминается на входе в забег: покупка случается между забегами, и
+    // кешированное здесь значение отстало бы ровно на один заход.
+    //
+    // Backend.upgradeValue отдаёт ЗНАЧЕНИЕ ступени, а не прибавку, — у
+    // прицела это объект из трёх чисел, у остальных одно число.
+    up(key, fallback) {
+        if (typeof Backend === 'undefined' || !Backend.upgradeValue) return fallback;
+        const v = Backend.upgradeValue('lust', key);
+        return (v === 0 || v) ? v : fallback;
+    },
+
+    // Прицел: сила, разброс струи и податливость хвоста одной ступенью.
+    // Почему одной, а не тремя полками — в комментарии у лестницы
+    // (src/config/economy.js, ECONOMY.minigames.lust.upgrades).
+    aimTier() {
+        return this.up('aim', { minPower: 0, spread: 32, slop: 15.3 }) || {};
     },
 
     drawGauge() {

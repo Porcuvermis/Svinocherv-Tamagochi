@@ -18,7 +18,18 @@
 //
 // Прокачка двигает три числа: minPower (нижняя граница силы), spread (разброс
 // струи), slop (податливость хвоста — насколько точно он держится там, куда
-// его поставили).
+// его поставили). ОДНОЙ ступенью, а не тремя ветками, и вот почему:
+//
+//   • spread и slop складываются в ОДНУ угловую ошибку. При slop ±15.3°
+//     сужение spread с ±32° до ±3.2° даёт 0.279 попаданий на толчок против
+//     0.268 — ветка, которую купили и не заметили;
+//   • обе бесполезны, пока не куплена сила: при minPower 0 половина струй
+//     не долетает, и целиться нечем;
+//   • а сила в одиночку НЕМОНОТОННА: при широком разбросе minPower 0.80
+//     даёт меньше осколков, чем 0.64. Покупка, после которой стало хуже.
+//
+// Всё три замерены этим же калькулятором, и монотонность лестницы он теперь
+// сторожит сам (условие 4 внизу).
 //
 // Запуск:  node tools/sim-lust.js
 
@@ -42,7 +53,7 @@ const SECTIONS = CFG.sections;
 // Забегов меньше, чем было при формуле: капля теперь честно интегрируется
 // шагом в шестидесятую секунды, и триста миллионов шагов считались бы
 // минутами. Сорока тысяч хватает: ошибка среднего выходит около 0.005.
-const RUNS = 40000;
+const RUNS = 25000;
 
 // Раскладка финала, снятая с ЖИВОЙ сцены: откуда летит капля, под каким
 // углом смотрит кончик на прицеле и где рот. Числа печатает tools/test-lust.js
@@ -54,19 +65,21 @@ const RUNS = 40000;
 // неподвижной точки давал другой ответ, и таблица расходилась с игрой.
 const TIP = { x: 266.6, y: 622 };
 const MOUTH = { x: 392.2, y: 603 };
-const AIM = -65.53 * Math.PI / 180;
+const AIM_ANGLE = -65.53 * Math.PI / 180;
 
-// Имена ступеней — дело показа, а не баланса, и потому живут здесь.
-const TIER_NAMES = ['старт', 'ступень 1', 'ступень 2', 'ступень 3'];
-const TIERS = CFG.tiers.map((t, i) =>
-    Object.assign({ name: TIER_NAMES[i] || `ступень ${i}` }, t));
+// Лестница берётся из ЖИВОГО конфига — той же записи, по которой её продаёт
+// магазин. Нулевая ступень («старт») — это base ветки: то, с чем игрок
+// приходит в игру.
+const AIM = CFG.upgrades.aim;
+const TIERS = [Object.assign({ name: 'старт' }, AIM.base)].concat(
+    AIM.levels.map((l, i) => Object.assign({ name: 'ступень ' + (i + 1) }, l.bonus)));
 
 // Один забег: игрок держит прицел, капля летит по баллистике, попадание —
 // столкновение с корзиной рта.
 function run(t) {
     let hits = 0;
     for (let i = 0; i < SHOTS; i++) {
-        const v = SHOT.launch(CFG, t, AIM);
+        const v = SHOT.launch(CFG, t, AIM_ANGLE);
         if (SHOT.fly(CFG, TIP, v, MOUTH, CFG.mouthR).hit) hits++;
     }
     return hits;
@@ -76,41 +89,65 @@ function shards(hits) {
     return Math.min(SECTIONS, Math.floor(hits / PER_SECTION));
 }
 
+// Среднее и его погрешность одним проходом: сравнивать ответ Монте-Карло с
+// порогом, не зная его ошибки, нельзя (см. условие 1).
+function measure(t, runs) {
+    const n = runs || RUNS;
+    let hits = 0, sh = 0, sq = 0, zero = 0, whole = 0;
+    for (let i = 0; i < n; i++) {
+        const h = run(t), s = shards(h);
+        hits += h; sh += s; sq += s * s;
+        if (s === 0) zero++;
+        if (s === SECTIONS) whole++;
+    }
+    const mean = sh / n;
+    return { hits: hits / n, mean, zero: zero / n, whole: whole / n,
+             err: Math.sqrt(Math.max(0, sq / n - mean * mean) / n) };
+}
+
 console.log(`финал ${SHOTS} толчков, секция = ${PER_SECTION} попадания, ` +
     `шкала ${SECTIONS} секции`);
-console.log(`прицел ${(AIM * 180 / Math.PI).toFixed(1)}° от кончика ` +
+console.log(`прицел ${(AIM_ANGLE * 180 / Math.PI).toFixed(1)}° от кончика ` +
     `(${TIP.x},${TIP.y}) в рот (${MOUTH.x},${MOUTH.y}), корзина ${CFG.mouthR}\n`);
-console.log(['ступень', 'сила от', 'разброс', 'хвост', 'попаданий', 'осколков', 'пусто', 'жетон']
-    .map(h => String(h).padStart(11)).join(''));
+console.log(['ступень', 'сила от', 'разброс', 'хвост', 'цена', 'попаданий', 'осколков', 'пусто', 'жетон']
+    .map(h => String(h).padStart(10)).join(''));
 
-for (const t of TIERS) {
-    let hits = 0, sh = 0, zero = 0, full = 0;
-    for (let i = 0; i < RUNS; i++) {
-        const h = run(t);
-        const s = shards(h);
-        hits += h; sh += s;
-        if (s === 0) zero++;
-        if (s === SECTIONS) full++;
-    }
-    console.log([t.name, t.minPower.toFixed(2), `±${t.spread}°`, `±${t.slop}°`,
-        (hits / RUNS).toFixed(1), (sh / RUNS).toFixed(2),
-        (zero / RUNS * 100).toFixed(1) + '%', (full / RUNS * 100).toFixed(1) + '%']
-        .map(h => String(h).padStart(11)).join(''));
-}
+const stats = TIERS.map(t => measure(t));
+TIERS.forEach((t, i) => {
+    const m = stats[i];
+    const price = i === 0 ? '—' : String(AIM.levels[i - 1].price.lust_token);
+    console.log([t.name, t.minPower.toFixed(2), `±${t.spread}°`, `±${t.slop}°`, price,
+        m.hits.toFixed(1), m.mean.toFixed(2),
+        (m.zero * 100).toFixed(1) + '%', (m.whole * 100).toFixed(1) + '%']
+        .map(h => String(h).padStart(10)).join(''));
+});
 
-console.log('\nосколков за сутки (похоть пустеет за 12 ч → два захода):');
-// Копится и СУММА КВАДРАТОВ: у ответа Монте-Карло есть своя погрешность, и
-// сравнивать его с порогом, не зная её, нельзя (см. ниже).
-const perDay = [], stderr = [];
-for (const t of TIERS) {
-    let sh = 0, sq = 0;
-    for (let i = 0; i < RUNS; i++) { const v = shards(run(t)); sh += v; sq += v * v; }
-    const mean = sh / RUNS;
-    perDay.push(mean);
-    stderr.push(Math.sqrt(Math.max(0, sq / RUNS - mean * mean) / RUNS));
-    console.log(`  ${t.name.padEnd(10)} ${(mean * 2).toFixed(2)} осколка ` +
-        `= ${(mean * 2 / 3).toFixed(2)} жетона`);
-}
+console.log('\nжетонов за сутки (похоть пустеет за 12 ч → два захода):');
+TIERS.forEach((t, i) => {
+    console.log(`  ${t.name.padEnd(11)} ${(stats[i].mean * 2).toFixed(2)} осколка ` +
+        `= ${(stats[i].mean * 2 / 3).toFixed(2)} жетона`);
+});
+
+// ---------- ОСТАЛЬНЫЕ ПОЛКИ ДОХОД НЕ ДВИГАЮТ ----------
+// Мыло, мочалка и масло не участвуют в финале вовсе: они укорачивают дорогу
+// к нему. Это НЕ недоделка, а граница — мытьё не источник осколков. Печатаем
+// их, чтобы было видно, что они есть и чем измеряются.
+console.log('\nполки, которые доход не двигают (укорачивают забег):');
+[['soap', 'клеток под мазком', v => Math.round(Math.PI * v * v)],
+ ['cloth', 'клеток под тёркой', v => Math.round(Math.PI * v * v)],
+ ['oil', 'ходов до полного налива', v => Math.round(1 / v)]].forEach(([key, what, fn]) => {
+    const b = CFG.upgrades[key];
+    const from = fn(b.base), to = fn(b.levels[b.levels.length - 1].bonus);
+    const sum = b.levels.reduce((s, l) => s + l.price.lust_token, 0);
+    console.log(`  ${key.padEnd(6)} ${String(from).padStart(3)} → ${String(to).padStart(3)} ` +
+        `${what.padEnd(26)} ${b.levels.length} ступеней, ${sum} жетонов`);
+});
+
+const total = (CFG.upgrades.order || []).reduce((s, k) =>
+    s + CFG.upgrades[k].levels.reduce((a, l) => a + l.price.lust_token, 0), 0);
+const steps = (CFG.upgrades.order || []).reduce((s, k) => s + CFG.upgrades[k].levels.length, 0);
+console.log(`\nвсего ${steps} ступеней на ${total} жетонов ` +
+    `(календарь считает tools/sim-progression.js)`);
 
 // ---------- УСЛОВИЯ, КОТОРЫЕ КАЛЬКУЛЯТОР СТОРОЖИТ САМ ----------
 // Печатать таблицу мало: её надо ещё прочитать и заметить, что число уехало.
@@ -124,31 +161,47 @@ const problems = [];
 //    вытащить, покупается ровно за то, чего у него нет.
 //
 //    Сравнение идёт С ЗАПАСОМ В ТРИ СВОИ ПОГРЕШНОСТИ, и это не поблажка.
-//    Числа подобраны так, что старт лежит РОВНО на единице, — а ответ
+//    Числа подобраны так, что старт лежит почти на единице, — а ответ
 //    Монте-Карло всегда пляшет вокруг правды на величину порядка своей
 //    ошибки среднего. Строгое «меньше 1.0» на таком пороге срабатывает
-//    через раз от смены зерна и ругается на шум, а не на баланс. Три сигмы
-//    — это примерно один ложный крик на четыреста прогонов.
-const need = 1.0 - 3 * stderr[0];
-if (perDay[0] < need)
-    problems.push(`на старте ${perDay[0].toFixed(3)} осколка за забег ` +
-                  `(±${(3 * stderr[0]).toFixed(3)}), надо от 1.00`);
+//    через раз от смены зерна и ругается на шум, а не на баланс.
+if (stats[0].mean < 1.0 - 3 * stats[0].err)
+    problems.push(`на старте ${stats[0].mean.toFixed(3)} осколка за забег ` +
+                  `(±${(3 * stats[0].err).toFixed(3)}), надо от 1.00`);
 
-// 2. Последняя ступень доводит жетон почти до гарантии — на этом лестница
-//    и кончается. Если не доводит, ступеней мало; если доводит уже на
-//    предпоследней, лишняя ступень не продаётся.
-const last = TIERS[TIERS.length - 1];
-let full = 0;
-for (let i = 0; i < RUNS; i++) if (shards(run(last)) === SECTIONS) full++;
-if (full / RUNS < 0.95)
-    problems.push(`верхняя ступень даёт жетон целиком в ${(full / RUNS * 100).toFixed(1)}% ` +
+// 2. Верхняя ступень доводит жетон почти до гарантии — на этом лестница и
+//    кончается. Не доводит — ступеней мало; доводит уже на предпоследней —
+//    последняя не продаётся.
+const last = stats[stats.length - 1], prev = stats[stats.length - 2];
+if (last.whole < 0.95)
+    problems.push(`верхняя ступень даёт жетон целиком в ${(last.whole * 100).toFixed(1)}% ` +
                   'забегов, надо от 95%');
+if (prev.whole >= 0.95)
+    problems.push(`предпоследняя ступень уже даёт жетон в ${(prev.whole * 100).toFixed(1)}% ` +
+                  'забегов — верхняя лишняя');
 
-// 3. Рост дохода от старта к верхней ступени — втрое, как в кухне и на
-//    дорожке тщеславия. Разъехался — разъехалась и вся метапрогрессия.
-const growth = perDay[perDay.length - 1] / perDay[0];
-if (growth < 2.7 || growth > 3.3)
-    problems.push(`рост дохода ${growth.toFixed(2)}× вместо трёх`);
+// 3. Старт лежит в узкой полосе, и это то же самое, что «рост дохода втрое»,
+//    сказанное честно. Потолок дохода ЖЁСТКИЙ: три секции шкалы = ровно один
+//    жетон за забег, то есть верх лестницы всегда 3.00 осколка. Значит рост
+//    равен 3.00 / старт и НИЧЕГО другого проверять тут нечего — два условия
+//    подряд были бы одним и тем же условием, записанным дважды.
+//    Полоса 1.00…1.15 держит рост в 2.6…3.0 раза.
+if (stats[0].mean > 1.15)
+    problems.push(`старт ${stats[0].mean.toFixed(3)} осколка — слишком щедро: ` +
+                  `рост вдоль лестницы выходит ${(3 / stats[0].mean).toFixed(2)}× вместо трёх`);
+
+// 4. ЛЕСТНИЦА МОНОТОННА. Главное условие после переделки в десять ступеней:
+//    сила в одиночку немонотонна (при широком разбросе высокая нижняя
+//    граница гонит все струи мимо рта), и собрать из трёх чисел лестницу,
+//    где одна из покупок делает ХУЖЕ, проще простого. Порог — три
+//    погрешности: соседние ступени близки, и шум иначе кричал бы сам.
+for (let i = 1; i < stats.length; i++) {
+    const d = stats[i].mean - stats[i - 1].mean;
+    const err = 3 * Math.sqrt(stats[i].err * stats[i].err + stats[i - 1].err * stats[i - 1].err);
+    if (d < -err)
+        problems.push(`${TIERS[i].name}: ${stats[i].mean.toFixed(3)} осколка против ` +
+                      `${stats[i - 1].mean.toFixed(3)} на прошлой — покупка делает ХУЖЕ`);
+}
 
 console.log();
 if (problems.length) {

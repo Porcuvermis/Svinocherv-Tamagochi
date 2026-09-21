@@ -863,6 +863,19 @@
             <g id="bt-cam-over"></g>
         </svg>
         </div>
+
+        <!-- МАГАЗИН ПОХОТИ. Лежит ВНУТРИ экрана мини-игры, поверх сцены, и
+             открывается флаконом на верхней полке — только до забега и
+             после него. Свой крестик не рисует: закрывается тапом мимо
+             прилавка, а крестик окна закрывает всю мини-игру (инвариант 8). -->
+        <div class="bt-shop" id="bt-shop">
+            <div class="bt-shop-panel" id="bt-shop-panel">
+                <div class="ls-top">
+                    <div class="ls-wallet" id="ls-wallet"></div>
+                </div>
+                <div class="ls-list" id="ls-list"></div>
+            </div>
+        </div>
     </div>
 
     <!-- ЧРЕВОУГОДИЕ: КУХНЯ.
@@ -1116,6 +1129,7 @@
 <script src="src/minigames/lust/bath-baked.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-shot.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-art.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust.js?v=__BUILD__"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->

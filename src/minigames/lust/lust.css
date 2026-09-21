@@ -208,3 +208,167 @@ html.dbg-no-scene #lust-game #bt-cam,
 html.dbg-no-scene #lust-game #bt-cam-back,
 html.dbg-no-scene #lust-game #bt-cam-under,
 html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }
+
+/* ================= МАГАЗИН ПОХОТИ ================= */
+/* Форма прилавка — ТА ЖЕ, что в саду и на кухне: строка «картинка — было →
+   станет — цена», точки ступеней, отказ вздрагивает валютой. Одна и та же
+   вещь в игре обязана выглядеть одинаково, и магазин тут не исключение.
+   Разная у них только палитра: сад тёплый и земляной, ванная холодная и
+   кафельная. Числа в px — это единицы ХОЛСТА (390×844), который целиком
+   масштабируется под окно (инвариант 11), поэтому резиновая вёрстка здесь
+   не нужна. */
+#lust-game .bt-shop {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(18, 30, 38, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.24s ease, visibility 0s linear 0.24s;
+    touch-action: none;
+}
+#lust-game .bt-shop.on {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.24s ease, visibility 0s;
+}
+
+#lust-game .bt-shop-panel {
+    width: 320px;
+    max-width: 86%;
+    max-height: 80%;
+    display: flex;
+    flex-direction: column;
+    border-radius: 22px;
+    background: #eef4f7;
+    border: 3px solid #23101d;
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    transform: translateY(24px) scale(0.94);
+    transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+#lust-game .bt-shop.on .bt-shop-panel { transform: none; }
+
+/* Вкладок нет: полок четыре, все одной валютой, и делить их не на что.
+   Шапка занята одним кошельком. */
+#lust-game .ls-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 10px 12px;
+    background: #d6e0e5;
+    border-bottom: 2px solid #aebec8;
+}
+
+#lust-game .ls-wallet { display: flex; gap: 6px; }
+#lust-game .ls-coin {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px 3px 4px;
+    border-radius: 999px;
+    background: #fbfeff;
+    color: #23101d;
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1;
+}
+#lust-game .ls-coin .token-art { width: 17px; height: 17px; display: block; }
+
+/* Отказ вздрагивает ТОЙ валютой, которой не хватило, а не строкой под
+   пальцем (docs/traps.md, п. 91). */
+#lust-game .ls-coin.ls-no,
+#lust-game .ls-wallet.ls-no {
+    animation: bt-lack 0.45s ease;
+    background: #f0c4c1;
+    color: #8f211d;
+}
+@keyframes bt-lack {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    50% { transform: translateX(4px); }
+    80% { transform: translateX(-2px); }
+}
+
+#lust-game .ls-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Строка нажимается ЦЕЛИКОМ. Не по карману — приглушена, но живая: тап всё
+   равно отвечает (docs/traps.md, п. 91). */
+#lust-game .ls-row {
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: 2px solid #c4d1d8;
+    border-radius: 14px;
+    background: #fbfeff;
+    padding: 7px 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.16s ease;
+}
+#lust-game .ls-row:active { transform: scale(0.985); border-color: #c75d9e; }
+#lust-game .ls-row.ls-poor { opacity: 0.48; }
+
+#lust-game .ls-pic { width: 52px; height: 52px; display: block; }
+#lust-game .ls-pic svg { width: 100%; height: 100%; display: block; }
+
+#lust-game .ls-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+/* «Было → станет»: обмен через стрелку — один из трёх приёмов, которые
+   вообще работают без слов (docs/traps.md, п. 82). Чего именно станет
+   столько, говорит картинка слева. */
+#lust-game .ls-step {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-weight: 800;
+    font-size: 16px;
+    color: #7c8a94;
+    line-height: 1;
+}
+#lust-game .ls-step i { font-style: normal; font-size: 13px; }
+#lust-game .ls-step b.ls-next { color: #23101d; font-size: 19px; }
+
+#lust-game .ls-pips { display: flex; gap: 4px; flex-wrap: wrap; }
+#lust-game .ls-pips i {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #c4d1d8;
+}
+#lust-game .ls-pips i.on { background: #c75d9e; }
+
+#lust-game .ls-buy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 54px;
+    justify-content: center;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: #c75d9e;
+    color: #2b0f21;
+    font-weight: 800;
+    font-size: 15px;
+    line-height: 1;
+}
+#lust-game .ls-buy .token-art { width: 17px; height: 17px; display: block; }
+#lust-game .ls-row.ls-poor .ls-buy { background: #aab6bd; }
+
+#lust-game .ls-empty {
+    text-align: center;
+    padding: 32px 0;
+    font-size: 30px;
+    color: #c75d9e;
+}
