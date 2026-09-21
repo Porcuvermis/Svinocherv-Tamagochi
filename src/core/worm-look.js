@@ -129,9 +129,9 @@ const WORM_LOOK_KNOBS = [
     // ---------- ПОВЕРХНОСТЬ ----------
     { key: 'gloss',   title: 'блеск',      group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.slimeGloss'] },
     { key: 'matte',   title: 'матовость',  group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.matte'] },
-    { key: 'rings',   title: 'кольца',     group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.rings'] },
-    { key: 'bristle', title: 'щетина',     group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.bristle'] },
-    { key: 'folds',   title: 'складки',    group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.folds'] },
+    // Ручек «кольца», «щетина» и «складки» больше нет: эффекты, которые они
+    // крутили, убраны с рисования целиком (docs/traps.md, п. 148). Ручка,
+    // ведущая в никуда, хуже отсутствующей — она обещает.
     { key: 'detail',  title: 'детальность', group: 'поверхность', kind: 'count', paths: ['anatomy.muscle.bundles'] },
     { key: 'skinTone', title: 'пестрота кожи', group: 'поверхность', kind: 'add01',
       paths: ['anatomy.skin.toneVariation'] },

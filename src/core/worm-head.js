@@ -978,10 +978,6 @@ function buildHeadNeckTransition(ctx, headRx, headRy, neckColor, skullClipId) {
 function buildHeadDetailLayer(ctx, rx, ry, skullPathD, skullClipId) {
     const anatomy = ctx.anatomy;
     if (!anatomy.enabled) return null;
-    const coat = anatomy.coat || {};
-    const folds = coat.folds != null ? coat.folds : 0.5;
-    const bristle = coat.bristle != null ? coat.bristle : 0.45;
-    const rng = anatRng(anatomy, 'head', 'detail');
 
     // Своя копия контура здесь была бы ВТОРЫМ его описанием, причём
     // застывшим на момент сборки: живой поворот переписывает череп, а копия
@@ -1009,32 +1005,14 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD, skullClipId) {
         }));
     });
 
-    // Складки лба — две несимметричные дуги над бровями.
-    // Одна пара дуг вместо двух: лоб небольшой, две пары на нём читаются
-    // штриховкой, а не складками.
-    if (folds > 0.01) {
-        for (let i = 0; i < 1; i++) {
-            const y = -ry * (0.52 + i * 0.12);
-            const w = rx * (0.4 - i * 0.07);
-            const shift = (rng() - 0.5) * rx * 0.12;
-            group.appendChild(svgEl('path', {
-                d: `M ${(-w + shift).toFixed(1)},${y.toFixed(1)} Q ${shift.toFixed(1)},${(y - ry * 0.09).toFixed(1)} ${(w + shift).toFixed(1)},${y.toFixed(1)}`,
-                fill: 'none', stroke: GRIME_SHADOW, 'stroke-width': SW.detail,
-                opacity: (0.14 * folds).toFixed(3), 'stroke-linecap': 'round'
-            }));
-            group.appendChild(svgEl('path', {
-                d: `M ${(-w + shift).toFixed(1)},${(y + 1.6).toFixed(1)} Q ${shift.toFixed(1)},${(y - ry * 0.09 + 1.6).toFixed(1)} ${(w + shift).toFixed(1)},${(y + 1.6).toFixed(1)}`,
-                fill: 'none', stroke: GRIME_HIGHLIGHT, 'stroke-width': SW.hairline,
-                opacity: (0.1 * folds).toFixed(3), 'stroke-linecap': 'round'
-            }));
-        }
-    }
-
-    // ---------- ВИБРИССЫ УБРАНЫ НАМЕРЕННО ----------
-    // Были четыре длинных волоска по щекам. Убраны по тому же правилу, что и
-    // складки: на лице в размер экрана это не волоски, а четыре диагональные
-    // царапины. Отличить одно от другого невозможно — значит рисовать нечего.
-    // Переменная bristle осталась: щетина по-прежнему идёт по телу.
+    // ---------- СКЛАДОК ЛБА И ВИБРИСС ЗДЕСЬ НЕТ ----------
+    // Вибриссы (четыре длинных волоска по щекам) убрали раньше: на лице в
+    // размер экрана это не волоски, а четыре диагональные царапины. Складки
+    // лба ушли следом и по той же причине — пара дуг над бровями читалась
+    // штриховкой. Отличить деталь от царапины нельзя — значит рисовать
+    // нечего (docs/traps.md, п. 148).
+    // Тень у основания ушей осталась: она мягкое пятно, а не штрих, и решает
+    // настоящую задачу — уши растут ИЗ головы, а не приставлены к ней.
 
     return group;
 }
@@ -1119,22 +1097,23 @@ function buildHeadNode(model, ctx) {
         skullClipShape = ctx.gradCache[skullClipId];
     }
 
-    // ---------- БЛИК НА ЧЕРЕПЕ ----------
-    // Стоял НЕПОДВИЖНО и БЕЗ ОБРЕЗКИ. Две беды сразу:
-    //   • голова поворачивается, а блик остаётся на месте — то есть свет
-    //     будто прилеплен к экрану, а не лежит на поверхности. Всё
-    //     остальное на коже (шрамы, глаза, морщины) при повороте едет;
-    //   • череп при повороте асимметричен и с одной стороны уже, а блик
-    //     этого не знал и вылезал за контур светлым туманом.
-    // Теперь он едет по той же поверхности, что и черты лица, и обрезан
-    // ЖИВЫМ силуэтом черепа.
-    const HEAD_SHINE_PHI = -20;            // азимут блика от плоскости лица
-    const headShine = svgEl('ellipse', {
-        cx: (-rx * 0.28).toFixed(2), cy: (-ry * 0.52).toFixed(2),
-        rx: (rx * 0.3).toFixed(2), ry: (ry * 0.16).toFixed(2),
-        fill: SPEC, opacity: 0.16,
-        'clip-path': `url(#${skullClipId})`
-    });
+    // ---------- БЛИКА НА ЧЕРЕПЕ ЗДЕСЬ БОЛЬШЕ НЕТ ----------
+    // Его чинили дважды: сперва он стоял неподвижно и вылезал за контур
+    // головы светлым туманом (починили клипом и ездой по поверхности), потом
+    // улетал на тысячу пикселей от лишнего умножения на rx (п. 144). Обе
+    // починки были про то, ГДЕ он лежит, и ни одна — про то, ЧЕМ он выглядит.
+    //
+    // А выглядел он так: ровный эллипс в 16% белого поверх кожи, с чёткой
+    // кромкой по всему периметру. Блик — это место, где поверхность
+    // поворачивается к свету, у него нет замкнутого края; эллипс с краем
+    // читается пятном на лбу, и ровно так его и описал человек, глядя на
+    // экран: «область с рассеянным туманом». Убран по правилу п. 148 —
+    // назвали бликом, нарисовали пятно.
+    //
+    // Объём голове даёт не он: его держат рельеф черепа (мягкие пятна скул,
+    // висков и надбровий) и отражённый свет по кромке силуэта. Снимок без
+    // блика от снимка с бликом отличается ровно на это пятно и выглядит
+    // чище — проверено глазами, а не рассуждением.
 
     // ---------- УШИ ----------
     // Крепятся к верхним углам черепа и по умолчанию развёрнуты наружу:
@@ -1241,27 +1220,13 @@ function buildHeadNode(model, ctx) {
         earGroup.appendChild(earRidge);
         const vessels = buildEarVessels(ctx, mirror, side);
         if (vessels) earGroup.appendChild(vessels);
-        // Щетина по краю раковины — у свиньи ухо опушено по контуру.
-        if (anatomy.enabled && (anatomy.coat && (anatomy.coat.bristle || 0) > 0.01) && ear.visible) {
-            const brng = anatRng(anatomy, `ear-${side}`, 'fringe');
-            const fringe = svgEl('g', { class: 'worm-ear-fringe' });
-            // Бахрома растёт ВНУТРЬ контура уха: любая деталь, торчащая
-            // наружу, увеличивает измеримый габарит персонажа, а на него
-            // завязаны раскладки мини-игр.
-            for (let i = 0; i < 5; i++) {
-                const t = i / 4;
-                // Разброс по длине и завалу: ровный частокол одинаковых
-                // штрихов читается хирургическим швом, а не щетиной.
-                const bx = mirror * (-7 + t * 18), by = 1 - t * 19;
-                const len = 1.6 + brng() * 2;
-                fringe.appendChild(svgEl('path', {
-                    d: `M ${bx.toFixed(1)},${by.toFixed(1)} l ${(-mirror * len * 0.6).toFixed(1)},${(-len).toFixed(1)}`,
-                    stroke: GRIME_SHADOW, 'stroke-width': SW.hairline, fill: 'none',
-                    opacity: (0.3 * anatomy.coat.bristle).toFixed(3), 'stroke-linecap': 'round'
-                }));
-            }
-            earGroup.appendChild(fringe);
-        }
+        // ---------- ОПУШКИ УХА ЗДЕСЬ БОЛЬШЕ НЕТ ----------
+        // Пять штрихов «внутрь раковины» — и оговорка в старом комментарии
+        // («ровный частокол читается хирургическим швом») оказалась точным
+        // описанием результата, а не предупреждением, которого удалось
+        // избежать: разброс по длине частокол не разбивал. В размер экрана
+        // внутри уха это трещины, а не щетина. Убрано вместе с остальной
+        // щетиной (docs/traps.md, п. 148).
         earsGroup.appendChild(earGroup);
         // ВАЖНО: в refs кладётся ПОЛНЫЙ масштаб — с калибровкой формы и с
         // ракурсным сжатием. Раньше тут лежал только ear.scale*stretchX, а
@@ -1306,7 +1271,12 @@ function buildHeadNode(model, ctx) {
         // отметина на нём становится СЧИТАЕМОЙ — то есть перестаёт быть
         // текстурой и начинает спорить с глазами и ртом за внимание.
         // Рельеф морде даёт затенение мягкими пятнами, а не штрихи.
-        coat: { rings: false, folds: false, bristle: false }
+        //
+        // С тех пор по тому же правилу убрали кольца, складки и щетину и с
+        // ТЕЛА тоже (docs/traps.md, п. 148), так что глушить здесь стало
+        // нечего — но сам вывод про масштаб лица остаётся в силе и стоит
+        // тут как предупреждение следующей попытке.
+        coat: {}
     });
 
     // ---------- РЕЛЬЕФ ЧЕРЕПА ----------
@@ -1508,25 +1478,11 @@ function buildHeadNode(model, ctx) {
     snoutGroup.appendChild(nostrilR);
     snoutGroup.appendChild(nostrilShade);
     snoutGroup.appendChild(philtrum);
-    if (anatomy.enabled && (anatomy.coat && (anatomy.coat.folds || 0) > 0.01)) {
-        const rng = anatRng(anatomy, 'snout', 'radial');
-        const wrinkles = svgEl('g', { class: 'worm-snout-wrinkles' });
-        // Морщинок было шесть-восемь; на пятачке в размер экрана они
-        // сливались с порами в общую рябь. Четыре читаются как расходящиеся
-        // складки кожи — то, чем они и являются.
-        const count = 4 + Math.floor(rng() * 2);
-        for (let i = 0; i < count; i++) {
-            const a = (i / count) * Math.PI * 2 + rng() * 0.2;
-            const r0 = snoutRx * 1.05, r1 = r0 + 2 + rng() * 2.2;
-            wrinkles.appendChild(svgEl('path', {
-                d: `M ${(Math.cos(a) * r0).toFixed(1)},${(Math.sin(a) * r0 * 0.72).toFixed(1)} ` +
-                   `L ${(Math.cos(a) * r1).toFixed(1)},${(Math.sin(a) * r1 * 0.72).toFixed(1)}`,
-                stroke: GRIME_SHADOW, 'stroke-width': SW.hairline, fill: 'none',
-                opacity: (0.16 * anatomy.coat.folds).toFixed(3), 'stroke-linecap': 'round'
-            }));
-        }
-        snoutGroup.appendChild(wrinkles);
-    }
+    // ---------- РАДИАЛЬНЫХ МОРЩИНОК ВОКРУГ ПЯТАЧКА НЕТ ----------
+    // Их уже резали с восьми до четырёх, чтобы они не сливались с порами в
+    // рябь, — не помогло: четыре коротких луча по кругу читаются царапинами
+    // вокруг пятачка, а не складками кожи. Пятачок держат пора, ноздря,
+    // блик и philtrum; этого хватает (docs/traps.md, п. 148).
 
     // ---------- РОТ ----------
     const mouth = head.mouth;
@@ -1595,7 +1551,6 @@ function buildHeadNode(model, ctx) {
     tiltGroup.appendChild(earsFront);
     tiltGroup.appendChild(muzzleGroup);
     tiltGroup.appendChild(jawGroup);
-    tiltGroup.appendChild(headShine);
     tiltGroup.appendChild(mouthAnchor);
     tiltGroup.appendChild(snoutGroup);
     tiltGroup.appendChild(eyesGroup);
@@ -1618,7 +1573,7 @@ function buildHeadNode(model, ctx) {
 
     const headRef = {
         group, tiltGroup, skull, ears: earRefs, snoutGroup,
-        headShine, shinePhi: HEAD_SHINE_PHI, earsGroup, earsFront,
+        earsGroup, earsFront,
         muzzleGroup, muzzleShift, jawGroup, jawShift,
         mouth: mouthBuilt, mouthAnchor, skullClipShape, eyes: { left: eyeLeft, right: eyeRight },
         scarLayer, rx, ry, snoutY, anat: headAnat,
@@ -1955,20 +1910,6 @@ function applyHeadYaw(headRef, yaw) {
         applyEarStroke(ear);
     });
     applyHeadEarDepth(headRef, yaw);
-
-    // Блик едет по поверхности черепа — тем же поворотом, что двигает черты
-    // лица. Неподвижный блик читается пятном на стекле перед персонажем, а
-    // не светом на его голове.
-    if (headRef.headShine) {
-        // yawProject отдаёт x В ПИКСЕЛЯХ (он уже умножен на радиус) — как
-        // им и пользуются пятачок с мордой. Лишнее умножение на rx угоняло
-        // блик за тысячу пикселей: на экране этого не видно, клип его
-        // прячет, зато ГАБАРИТ головы вырастал в шестнадцать раз — и ломал
-        // всё, что по нему считается, от посадки шляпы до кастрюли кухни.
-        const sp = yawProject(rx, headRef.shinePhi, yaw, 0);
-        setAttr(headRef.headShine, 'cx', (sp.x * 0.62).toFixed(2));
-        setAttr(headRef.headShine, 'rx', (rx * 0.3 * Math.max(0.35, Math.abs(sp.squash))).toFixed(2));
-    }
 
     // Пятачок и морда: выступающие черты, уезжают сильнее прочих. Сам
     // трансформ пятачка тоже собирает tick() (принюхивание), поэтому здесь

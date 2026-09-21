@@ -409,7 +409,7 @@ shadow: 0.34`. Индивидуальные `cx/cy` в `ensureVolumeGradient` **
 | ручка | во что раскладывается |
 |---|---|
 | `volume` | `LIGHT.highlight`/`shadow` + ширина серпа + контактные тени |
-| `relief` | `skull.relief`, `muscle.tone`, `coat.folds` |
+| `relief` | `skull.relief`, `muscle.tone` (по умолчанию 0 — traps, п. 148) |
 | `gloss` | `coat.slimeGloss` (и только влажное — кожа остаётся матовой) |
 | `matte` | `coat.matte` |
 | `lightAngle` | `LIGHT.dirX/dirY` **для всей сцены сразу** |

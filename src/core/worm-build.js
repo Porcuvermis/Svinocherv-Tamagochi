@@ -73,7 +73,7 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
         const opts = {
             axis: isVertical ? 'y' : 'x',
             organZone: null,
-            coat: { rings: true, vessel: !isVertical },
+            coat: { vessel: !isVertical },
             surface: {}
         };
         if (name === 'belly') {
@@ -82,13 +82,9 @@ function buildWormSVGGroup(model, instanceId, headFlip) {
             opts.coat.vessel = true;
         } else if (name === 'segment-1') {
             opts.organZone = 'neck';
-            opts.coat.folds = true;    // свиные складки у "плеча"
-            opts.coat.bristle = true;  // и щетина — ближе к голове кожа свиная
-            opts.coat.rings = true;
             opts.surface.contactTop = true; // тень от головы, лежащей сверху
         } else if (name === 'segment-2') {
             opts.organZone = 'neck';
-            opts.coat.folds = true;
             opts.coat.clitellum = true; // поясок-воротник: граница двух типов кожи
             opts.surface.contactTop = true;
             opts.surface.contactStrength = 0.5;

@@ -147,18 +147,20 @@ const WORM_LAYER_PARTS = [
     { cls: 'worm-wear-layer',    title: 'наряд',              knobs: [] },
     { cls: 'worm-scar-layer',    title: 'шрамы',              knobs: [] },
     { cls: 'worm-surface-layer', title: 'блик и матовость',   knobs: ['gloss', 'matte'] },
-    { cls: 'worm-coat-layer',    title: 'покров кожи',        knobs: ['detail', 'rings', 'bristle', 'folds'] },
+    { cls: 'worm-coat-layer',    title: 'покров кожи',        knobs: [] },
     { cls: 'worm-head-detail',   title: 'детали головы',      knobs: ['detail'] },
     { cls: 'worm-skull-shading', title: 'рельеф черепа',      knobs: ['relief'] },
-    { cls: 'worm-snout-wrinkles', title: 'морщины пятачка',   knobs: ['detail'] },
     { cls: 'worm-snout-pores',   title: 'поры пятачка',       knobs: ['detail'] },
     { cls: 'worm-teeth',         title: 'зубы',               knobs: [] },
     { cls: 'worm-eye-veins',     title: 'сосуды глаза',       knobs: ['detail'] },
     { cls: 'worm-eye-lashes',    title: 'ресницы',            knobs: ['detail'] },
     { cls: 'worm-eye-folds',     title: 'складки века',       knobs: ['detail'] },
     { cls: 'worm-ear-vessels',   title: 'сосуды уха',         knobs: ['detail'] },
-    { cls: 'worm-ear-fringe',    title: 'опушка уха',         knobs: ['bristle'] },
-    { cls: 'worm-body-rings',    title: 'кольца сегментации', knobs: ['rings'] },
+    // Перетяжки между частями. Ручки у них нет и не было: число колец
+    // равно числу частей тела, а его двигает взросление, а не пульт. Стояла
+    // ручка `rings` — она крутила совсем другой слой (`coat.rings`, ныне
+    // удалённый) и на эти кольца не влияла никогда.
+    { cls: 'worm-body-rings',    title: 'перетяжки тела',     knobs: [] },
     { cls: 'worm-skin-tone',     title: 'тон кожи',           knobs: ['skinTone', 'detail'] },
     { cls: 'worm-neck-blend',    title: 'переход шеи',        knobs: [] },
     { cls: 'worm-muscle-layer',  title: 'мышцы',              knobs: ['relief', 'detail'] },
