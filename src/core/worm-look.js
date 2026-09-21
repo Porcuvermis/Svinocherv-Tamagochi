@@ -258,7 +258,7 @@ const WormLook = {
     },
 
     // ---------- СОБРАТЬ И ОТДАТЬ ----------
-    push(handle) {
+    push(handle, opts) {
         const base = this.baseModel(handle);
         if (!base) return;
         const over = JSON.parse(JSON.stringify(this.foreign || {}));
@@ -284,8 +284,45 @@ const WormLook = {
         }
 
         this.applyLight();
-        handle.setOverride(over);
+        // Живое — сразу: оно переставляет атрибуты уже созданных узлов и
+        // пересборки не требует.
         if (Object.keys(live).length && handle.setLivePose) handle.setLivePose(live);
+
+        // ---------- ПЕРЕСБОРКА НЕ ЧАЩЕ КАДРА ----------
+        // setOverride собирает персонажа ЦЕЛИКОМ — шестьсот с лишним узлов.
+        // Ползунок шлёт события быстрее, чем идут кадры: замер дал 23 полных
+        // пересборки в секунду. Копим последнее состояние и отдаём его раз в
+        // кадр; промежуточных всё равно никто не увидит.
+        //
+        // И не отдаём вовсе, если получилось то же самое: соседние шаги
+        // ползунка часто дают одинаковые числа после округления, а
+        // пересборка ради того же результата — чистая трата.
+        const json = JSON.stringify(over);
+        // Совпало с тем, что УЖЕ на персонаже — отдавать нечего. Но и
+        // копить нечего тоже: отложенное состояние здесь обязано погибнуть.
+        // Пока оно просто оставалось в очереди, кадр спустя прилетала
+        // отменённая правка — сброс отрабатывал, а следом червь молча
+        // возвращался к значению, которое сброс только что снял.
+        if (json === this.lastJson) { this.pending = null; return; }
+        this.pending = { handle, over, json };
+        if (opts && opts.immediate) { this.flush(); return; }
+        if (!this.pendingRaf) {
+            this.pendingRaf = requestAnimationFrame(() => {
+                this.pendingRaf = 0;
+                this.flush();
+            });
+        }
+    },
+
+    // Отдать накопленное. Зовётся раз в кадр, а на отпускании ползунка и на
+    // любой разовой правке — сразу: последнее значение обязано долететь, даже
+    // если кадров больше не будет.
+    flush() {
+        const p = this.pending;
+        if (!p) return;
+        this.pending = null;
+        this.lastJson = p.json;
+        p.handle.setOverride(p.over);
     },
 
     value(k, base, v) {
@@ -346,7 +383,7 @@ const WormLook = {
         this.history.push({ at: Date.now(), patch: { [key]: delta },
                             snapshot: Object.assign({}, this.values),
                             skew: Object.assign({}, this.skew) });
-        this.push(handle);
+        this.push(handle, { immediate: true });
         return this.skew[key];
     },
 
@@ -357,7 +394,7 @@ const WormLook = {
         const prev = this.history[this.history.length - 1];
         this.values = prev ? Object.assign({}, prev.snapshot) : {};
         this.skew = prev && prev.skew ? Object.assign({}, prev.skew) : null;
-        this.push(handle);
+        this.push(handle, { immediate: true });
         return true;
     },
 
@@ -365,7 +402,7 @@ const WormLook = {
         this.values = {};
         this.skew = null;
         this.history = [];
-        this.push(handle);
+        this.push(handle, { immediate: true });
         return true;
     },
 
@@ -411,9 +448,10 @@ const WormLook = {
             if (name) {
                 const before = this.skew ? Object.assign({}, this.skew) : null;
                 this.setSkew(handle, name, e.skull.side, H);
+                this.flush();
                 const p1 = WormParts.client(handle, entityKey);
                 this.skew = before;
-                this.push(handle);
+                this.push(handle, { immediate: true });
                 if (p1) drag.axes.push({ kind: 'skew', name, side: e.skull.side,
                                          dx: (p1.x - p0.x) / H, dy: (p1.y - p0.y) / H });
             }
@@ -426,10 +464,10 @@ const WormLook = {
             if (!k || k.kind === 'light' || this.isLocked(key)) return;
             const was = this.values[key] || 0;
             this.values[key] = Math.max(-1, Math.min(1, was + H));
-            this.push(handle);
+            this.push(handle, { immediate: true });
             const p1 = WormParts.client(handle, entityKey);
             this.values[key] = was;
-            this.push(handle);
+            this.push(handle, { immediate: true });
             if (!p1) return;
             const dx = (p1.x - p0.x) / H, dy = (p1.y - p0.y) / H;
             // Ручка, которая точку не двигает, в перетаскивании не участвует:

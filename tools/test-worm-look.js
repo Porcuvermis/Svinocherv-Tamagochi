@@ -195,6 +195,72 @@ const harness = require('./harness');
   check(Math.abs(stable.назад - stable.было) < 0.5,
         `ноль возвращает ровно исходный размер: ${stable.назад} против ${stable.было}`);
 
+  // ---------- 2б2. ОТМЕНЁННАЯ ПРАВКА НЕ ВОСКРЕСАЕТ ----------
+  // Пересборка копится и уходит раз в кадр, а совпавшее с уже показанным
+  // не уходит вовсе. Вторая половина этого правила однажды выходила из
+  // двери, не погасив за собой свет: ранний выход отдавал управление, но
+  // ОСТАВЛЯЛ в очереди отложенное состояние. Сброс срабатывал честно, а
+  // кадром позже очередь доносила снятую правку обратно — и «ноль»
+  // показывал раздутую голову. Ловится только так: правка и отмена в
+  // ОДНОМ синхронном куске, замер — через несколько кадров.
+  say('');
+  say('======== ОТМЕНЁННАЯ ПРАВКА НЕ ВОСКРЕСАЕТ КАДРОМ ПОЗЖЕ ========');
+  const ghost = await page.evaluate(async () => {
+    const h = window.MainWormHandle;
+    const W = () => +document.querySelector('.worm-root [data-part="head"]')
+      .getBoundingClientRect().width.toFixed(1);
+    WormLook.reset(h);
+    await new Promise(r => setTimeout(r, 200));
+    const было = W();
+    // Ровно то, что делает ползунок: несколько правок подряд и отмена,
+    // всё в одном куске, без единого кадра между ними.
+    WormLook.apply(h, { headSize: 0.3 });
+    WormLook.apply(h, { headSize: 0.9 }, { absolute: true });
+    WormLook.reset(h);
+    await new Promise(r => setTimeout(r, 300));
+    return { было, после: W() };
+  });
+  say(`  до правки ${ghost.было}, после «правка и сразу сброс» ${ghost.после}`);
+  check(Math.abs(ghost.после - ghost.было) < 0.5,
+        'сброс держится и через кадр — отложенная пересборка не вернула снятое');
+
+  // ---------- 2в. ПЕРСОНАЖ НЕ МИГАЕТ ПРИ ПРАВКЕ ----------
+  // Из сборщика персонаж выходит СЛОЖЕННЫМ: положение звеньев, силуэт и
+  // цвет доводил tick(), то есть СЛЕДУЮЩИЙ кадр. Поодиночке это вспышка,
+  // которой годами не замечали; при правке ползунком пересборок два десятка
+  // в секунду — и червь стробоскопил. Замер: высота сразу после пересборки
+  // 112 точек против 213 через три кадра.
+  //
+  // Проверка держит значение НЕИЗМЕННЫМ и смотрит габарит каждый кадр:
+  // всё, что дрогнет, — это мигание, а не работа ручки.
+  say('');
+  say('======== ПЕРСОНАЖ НЕ МИГАЕТ ПРИ ПРАВКЕ ========');
+  const flicker = await page.evaluate(async () => {
+    const h = window.MainWormHandle;
+    WormLook.reset(h);
+    await new Promise(r => setTimeout(r, 300));
+    const H = () => +document.querySelector('.worm-root').getBoundingClientRect().height.toFixed(1);
+    const ряд = [];
+    let i = 0;
+    await new Promise(done => {
+      const step = () => {
+        if (i++ > 30) return done();
+        WormLook.apply(h, { earSize: 0.3 }, { absolute: true });
+        WormLook.flush();
+        ряд.push(H());
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    WormLook.reset(h);
+    return ряд;
+  });
+  const lo = Math.min(...flicker), hi = Math.max(...flicker);
+  say(`  габарит по ${flicker.length} кадрам: от ${lo} до ${hi}`);
+  check(hi - lo < 2,
+        `при неизменном значении габарит не дрожит: размах ${(hi - lo).toFixed(1)} точек`);
+  check(lo > 150, 'и персонаж ни на одном кадре не сложен к началу координат');
+
   // ---------- 3. ЗАМОРОЗКА ----------
   say('');
   say('======== ЗАМОРОЗКА НАСТОЯЩАЯ ========');
