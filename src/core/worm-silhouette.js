@@ -35,8 +35,28 @@ function wormSkullCfg(p) {
         cheek:  (p.cheekWidth  != null ? p.cheekWidth  : 1),
         jaw:    (p.jawWidth    != null ? p.jawWidth    : 0.78),
         muzzle: (p.muzzleWidth != null ? p.muzzleWidth : 0.46),
-        chin:   (p.chinDrop    != null ? p.chinDrop    : 1.04)
+        chin:   (p.chinDrop    != null ? p.chinDrop    : 1.04),
+        // ---------- ПЕРЕКОС ПО СТОРОНАМ ----------
+        // Прибавка к ширине ОТДЕЛЬНО для левой и правой половины. По
+        // умолчанию нули, и тогда череп ровно тот же, что был: поле
+        // добавочное, старые сохранения его просто не имеют.
+        //
+        // Заведено ради прямого редактирования: «потянуть левую скулу» без
+        // него двигало бы и правую, потому что обе половины читают ОДИН
+        // `cheekWidth`. Асимметрия здесь же и ограничена — она прибавка, а
+        // не отдельное описание половины: два описания одного контура
+        // разъехались бы, и это ровно та беда, от которой лечили голову.
+        skew:   p.skew || null
     };
+}
+
+// Прибавка к ширине конкретной черты на конкретной стороне.
+// side: −1 левая, +1 правая (та же сторона, что у `eye-left`/`ear-left`).
+function wormSkullSkew(cfg, name, side) {
+    const sk = cfg.skew;
+    if (!sk) return 0;
+    const v = sk[name + (side < 0 ? 'L' : 'R')];
+    return typeof v === 'number' ? v : 0;
 }
 
 // ---------- ПОЛОВИНА КОНТУРА ----------
@@ -52,13 +72,20 @@ function wormSkullHalf(cfg, yaw, side) {
     const up = 1 + (isFace ? WORM_SKULL_YAW_TOP_FACE : WORM_SKULL_YAW_TOP_BACK) * t;
     const lo = 1 + (isFace ? WORM_SKULL_YAW_LOW_FACE : WORM_SKULL_YAW_LOW_BACK) * t;
     const k = side;
+    // Ширины ЭТОЙ половины: номинал плюс перекос стороны. Прибавка входит
+    // ровно там же, где стоит номинал, поэтому кривые остаются теми же
+    // кривыми, а не превращаются во второе описание контура.
+    const w = (name, base) => base + wormSkullSkew(c, name, side);
+    const brow = w('brow', c.brow), temple = w('temple', c.temple);
+    const cheek = w('cheek', c.cheek), jaw = w('jaw', c.jaw);
+    const muzzle = w('muzzle', c.muzzle);
     return [
         // свод → виски → скулы
-        { c1: [k * c.brow * up, -0.99], c2: [k * c.temple * up, -0.72], p: [k * c.cheek * up, -0.08] },
+        { c1: [k * brow * up, -0.99], c2: [k * temple * up, -0.72], p: [k * cheek * up, -0.08] },
         // скулы → брыли → морда
-        { c1: [k * c.cheek * 0.99 * lo, 0.3], c2: [k * c.jaw * lo, 0.56], p: [k * c.muzzle * lo, 0.84] },
+        { c1: [k * cheek * 0.99 * lo, 0.3], c2: [k * jaw * lo, 0.56], p: [k * muzzle * lo, 0.84] },
         // морда → подбородок
-        { c1: [k * c.muzzle * 0.92 * lo, c.chin * 0.97], c2: [k * c.muzzle * 0.45 * lo, c.chin], p: [0, c.chin] }
+        { c1: [k * muzzle * 0.92 * lo, c.chin * 0.97], c2: [k * muzzle * 0.45 * lo, c.chin], p: [0, c.chin] }
     ];
 }
 
@@ -147,7 +174,14 @@ const WormSkullPolyCache = {};
 
 function wormSkullPolyCached(cfg, yaw) {
     const c = wormSkullCfg(cfg);
-    const key = [c.brow, c.temple, c.cheek, c.jaw, c.muzzle, c.chin, Math.round(yaw * 100)].join(':');
+    // Перекос ВХОДИТ В КЛЮЧ. Без него кэш отдавал бы многоугольник ровного
+    // черепа на перекошенный, и «точка внутри?» отвечала бы по старому
+    // контуру — то есть шрамы ложились бы мимо, причём молча и только на
+    // асимметричной голове.
+    const sk = c.skew ? ['brow', 'temple', 'cheek', 'jaw', 'muzzle']
+        .map(n => (c.skew[n + 'L'] || 0) + '/' + (c.skew[n + 'R'] || 0)).join(',') : '';
+    const key = [c.brow, c.temple, c.cheek, c.jaw, c.muzzle, c.chin,
+                 Math.round(yaw * 100), sk].join(':');
     if (!WormSkullPolyCache[key]) WormSkullPolyCache[key] = wormSkullPolygon(cfg, yaw);
     return WormSkullPolyCache[key];
 }

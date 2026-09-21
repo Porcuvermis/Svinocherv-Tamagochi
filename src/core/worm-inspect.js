@@ -90,6 +90,11 @@ const WormInspect = {
         this.root.addEventListener('pointermove', (e) => this.onMove(e));
         this.root.addEventListener('pointerdown', (e) => this.onDown(e));
         this.root.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+        // Отпускание ловим на ОКНЕ, а не на накладке: мышку отпускают где
+        // угодно, в том числе за её краем, и брошенное перетаскивание
+        // продолжало бы тянуть внешность за каждым движением.
+        window.addEventListener('pointerup', () => this.onUp());
+        window.addEventListener('pointercancel', () => this.onUp());
 
         if (typeof DebugMode !== 'undefined') DebugMode.onChange(() => this.sync());
         this.sync();
@@ -103,6 +108,7 @@ const WormInspect = {
                 <button data-act="toggle" class="wi-main">Инспектор</button>
                 <button data-act="mode-pick">элемент</button>
                 <button data-act="mode-problem">проблема</button>
+                <button data-act="mode-edit">правка</button>
             </div>
             <div class="wi-body">
                 <div class="wi-row wi-ovs">${ov}</div>
@@ -113,6 +119,12 @@ const WormInspect = {
                     <button data-act="yaw-auto">авто</button>
                 </div>
                 <div class="wi-pick" data-out="pick">ничего не выбрано</div>
+                <div class="wi-knobs" data-out="knobs"></div>
+                <div class="wi-row">
+                    <button data-act="undo">← откат</button>
+                    <button data-act="reset">сбросить всё</button>
+                    <span class="wi-val" data-out="steps"></span>
+                </div>
                 <div class="wi-row">
                     <button data-act="copy">Скопировать контекст</button>
                     <button data-act="ctx">показать</button>
@@ -193,6 +205,20 @@ const WormInspect = {
         if (act === 'toggle') { this.on ? this.close() : this.open(); this.renderPanel(); return; }
         if (act === 'mode-pick') { this.mode = 'pick'; this.depth = 0; this.renderPanel(); return; }
         if (act === 'mode-problem') { this.mode = 'problem'; this.renderPanel(); return; }
+        if (act === 'mode-edit') { this.mode = 'edit'; this.depth = 0; this.renderPanel(); return; }
+        if (act === 'undo') {
+            WormLook.undo(this.handle());
+            this.note('откат');
+            this.buildContext(); this.renderPanel();
+            return;
+        }
+        if (act === 'reset') {
+            WormLook.reset(this.handle());
+            this.history.length = 0;
+            this.note('сброс всего');
+            this.buildContext(); this.renderPanel();
+            return;
+        }
         if (act === 'yaw-auto') {
             const h = this.handle();
             if (h && h.setHeadPose) h.setHeadPose('auto');
@@ -204,7 +230,33 @@ const WormInspect = {
     },
 
     onPanelInput(e) {
-        if (!e.target || e.target.getAttribute('data-in') !== 'yaw') return;
+        if (!e.target) return;
+        const skew = e.target.getAttribute('data-skew');
+        if (skew) {
+            const v = parseFloat(e.target.value);
+            const name = skew.slice(0, -1), side = skew.slice(-1) === 'L' ? -1 : 1;
+            const h = this.handle();
+            // Ползунок ставит РОВНО столько, поэтому сначала снимаем
+            // накопленное: setSkew прибавляет.
+            if (WormLook.skew) WormLook.skew[skew] = 0;
+            WormLook.setSkew(h, name, side, v);
+            this.note(skew + ' → ' + v.toFixed(2));
+            this.buildContext();
+            this.renderPanel();
+            return;
+        }
+        const knob = e.target.getAttribute('data-knob');
+        if (knob) {
+            const v = parseFloat(e.target.value);
+            // absolute: ползунок говорит «поставь ровно столько», а не
+            // «прибавь». Накопление тут читалось бы как убегающая ручка.
+            WormLook.apply(this.handle(), { [knob]: v }, { absolute: true });
+            this.note(knob + ' → ' + v.toFixed(2));
+            this.buildContext();
+            this.renderPanel();
+            return;
+        }
+        if (e.target.getAttribute('data-in') !== 'yaw') return;
         const v = parseFloat(e.target.value);
         const h = this.handle();
         if (h && h.setHeadPose) h.setHeadPose(v);
@@ -224,8 +276,32 @@ const WormInspect = {
 
     // ---------- ПАЛЕЦ ----------
     onMove(e) {
-        if (!this.on || this.mode !== 'pick') return;
+        if (!this.on) return;
+        if (this.drag) {
+            const applied = WormLook.dragTo(this.handle(), this.drag, e.clientX, e.clientY);
+            if (applied && applied.length) {
+                this.note('тянем ' + this.picked.title + ' → ' + applied.map(a => a.knob).join(', '));
+            }
+            return;
+        }
+        if (this.mode !== 'pick') return;
         this.hover = { x: e.clientX, y: e.clientY };
+    },
+
+    onUp() {
+        if (!this.drag) return;
+        this.drag = null;
+        this.buildContext();
+        this.renderPanel();
+    },
+
+    // Палец лёг рядом с уже выбранным? Меряется до ЕГО точки, а не до
+    // габарита: у ориентира габарита нет вовсе.
+    nearPicked(h, x, y, r) {
+        if (!this.picked) return false;
+        const c = WormParts.client(h, this.picked.entity.key);
+        if (!c) return false;
+        return Math.hypot(c.x - x, c.y - y) <= r;
     },
 
     onDown(e) {
@@ -235,6 +311,29 @@ const WormInspect = {
         const h = this.handle();
         if (!h) return;
         const st = WormParts.stack(h, e.clientX, e.clientY);
+
+        // ---------- ПРАВКА: ТЯНЕМ МЫШКОЙ ----------
+        // Берём то, что уже выбрано, если палец лёг рядом с ним: иначе
+        // каждое движение начиналось бы с перевыбора, и вещь, стоящую под
+        // другой, схватить было бы нельзя вовсе.
+        if (this.mode === 'edit') {
+            let key = this.picked ? this.picked.entity.key : null;
+            const near = key && this.nearPicked(h, e.clientX, e.clientY, 26);
+            if (!near) {
+                this.stackAt = st;
+                this.depth = 0;
+                this.picked = st[0] || null;
+                key = this.picked ? this.picked.entity.key : null;
+            }
+            if (!key) { this.renderPanel(); return; }
+            this.drag = WormLook.dragStart(h, key);
+            if (!this.drag) {
+                this.note('нечем двигать → ' + this.picked.title);
+            }
+            this.buildContext();
+            this.renderPanel();
+            return;
+        }
         if (this.mode === 'problem') {
             this.picked = st.length ? st[0] : null;
             this.point = { x: e.clientX, y: e.clientY };
@@ -295,10 +394,14 @@ const WormInspect = {
             живыеКаналы: Object.keys(live).filter(k => live[k] != null)
                 .reduce((o, k) => (o[k] = live[k], o), {}),
             кадры: typeof h.getFrameStats === 'function' ? h.getFrameStats() : null,
+            накопленныйПатч: (typeof WormLook !== 'undefined') ? WormLook.patch() : null,
+            заморожено: (typeof WormLook !== 'undefined') ? WormLook.locks.slice() : [],
             история: this.history.slice(),
-            нельзя: ['свет по частям — только общий LIGHT',
-                     'hex мимо палитры',
-                     'свой силуэт у сегмента']
+            // Не «не советуем», а отказ с причиной: список живёт в пульте,
+            // потому что там он и проверяется.
+            нельзя: (typeof WormLook !== 'undefined')
+                ? WormLook.forbidden()
+                : { 'light.part': 'свет один на сцену' }
         };
     },
 
@@ -533,9 +636,12 @@ const WormInspect = {
 
     // ---------- ПАНЕЛЬ ----------
     renderPanel() {
+        this.root.classList.toggle('wi-edit', this.mode === 'edit');
+        this.root.classList.toggle('wi-dragging', !!this.drag);
         this.panel.querySelector('.wi-main').classList.toggle('active', this.on);
         this.panel.querySelector('[data-act="mode-pick"]').classList.toggle('active', this.mode === 'pick');
         this.panel.querySelector('[data-act="mode-problem"]').classList.toggle('active', this.mode === 'problem');
+        this.panel.querySelector('[data-act="mode-edit"]').classList.toggle('active', this.mode === 'edit');
         WORM_INSPECT_OVERLAYS.forEach(o =>
             this.panel.querySelector(`[data-ov="${o.key}"]`).classList.toggle('active', !!this.overlays[o.key]));
 
@@ -549,8 +655,55 @@ const WormInspect = {
             out.innerHTML = `<b>${p.title}</b> <span class="wi-dim">(${p.entity.kind})</span>${deep}`
                 + (k.length ? `<br><span class="wi-dim">ручки: ${k.join(', ')}</span>` : '');
         }
+        this.renderKnobs();
+        const steps = this.panel.querySelector('[data-out="steps"]');
+        const patch = WormLook.patch();
+        const n = Object.keys(patch).filter(k => k !== 'lock').length;
+        steps.textContent = n ? `${n} правок` : 'без правок';
+
         const ta = this.panel.querySelector('[data-out="ctx"]');
         ta.value = this.ctx ? JSON.stringify(this.ctx, null, 1) : '';
+    },
+
+    // ---------- РУЧКИ ВЫБРАННОГО ----------
+    // Показываются ТОЛЬКО те, что влияют на выбранное. Список из тридцати
+    // ползунков — это не пульт, а приборная доска самолёта: искать в нём
+    // нужный дольше, чем править число руками.
+    renderKnobs() {
+        const host = this.panel.querySelector('[data-out="knobs"]');
+        const p = this.picked;
+        if (!p) { host.innerHTML = ''; return; }
+        // У ориентира черепа своя ручка — ПЕРЕКОС его стороны, и он не из
+        // общего списка. Показать его надо обязательно: именно он двигается
+        // при перетаскивании, и панель, где после рывка мышкой всё осталось
+        // на нуле, выглядит сломанной.
+        let skewRow = '';
+        if (p.entity.kind === 'landmark' && p.entity.skull && p.entity.skull.side !== 0) {
+            const name = { forehead: 'brow', temple: 'temple', cheek: 'cheek',
+                           jowl: 'jaw', 'muzzle-edge': 'muzzle' }[p.entity.key.replace(/-(left|right)$/, '')];
+            if (name) {
+                const sk = name + (p.entity.skull.side < 0 ? 'L' : 'R');
+                const v = (WormLook.skew && WormLook.skew[sk]) || 0;
+                skewRow = `<div class="wi-row">
+                    <span class="wi-lbl" title="${sk}">перекос</span>
+                    <input type="range" data-skew="${sk}" min="-0.6" max="0.6" step="0.02" value="${v}">
+                    <span class="wi-val">${v >= 0 ? '+' : ''}${v.toFixed(2)}</span>
+                </div>`;
+            }
+        }
+        const keys = (p.entity.knobs || []).filter(k => WormLook.knob(k));
+        if (!keys.length && !skewRow) { host.innerHTML = '<span class="wi-dim">у этой вещи ручек нет</span>'; return; }
+        host.innerHTML = skewRow + keys.map(key => {
+            const k = WormLook.knob(key);
+            const v = WormLook.values[key] || 0;
+            const locked = WormLook.isLocked(key);
+            return `<div class="wi-row">
+                <span class="wi-lbl" title="${key}">${k.title}</span>
+                <input type="range" data-knob="${key}" min="-1" max="1" step="0.02"
+                       value="${v}"${locked ? ' disabled' : ''}>
+                <span class="wi-val">${v >= 0 ? '+' : ''}${v.toFixed(2)}</span>
+            </div>`;
+        }).join('');
     }
 };
 

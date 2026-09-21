@@ -92,13 +92,24 @@ const harness = require('./harness');
   say('======== КИСТЬ ПЕРЕБИРАЕТ СЛОИ ========');
   // Целимся в ГОЛОВУ по её настоящему габариту, а не в долю экрана: доля
   // экрана попадает то в червя, то мимо, и прогон начинает мерить удачу.
-  const headPt = await page.evaluate(() => {
+  // Точка головы берётся ЗАНОВО перед каждым тыком. Червь бродит по
+  // комнате, и координата, снятая в начале прогона, через пару секунд
+  // указывает в пол: прогон честно сообщал «кисть ничего не нашла», а
+  // виноват был он сам. Та же ловушка, что и с грядкой, — мерить и
+  // действовать надо по одному и тому же моменту.
+  const headPoint = () => page.evaluate(() => {
     const el = document.querySelector('.worm-root [data-part="head"]');
     const r = el.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height * 0.45 };
   });
+  let headPt = await headPoint();
   await page.evaluate(() => { WormInspect.mode = 'pick'; });
 
+  // Внутри цикла точка НЕ обновляется намеренно: «повторный тап в то же
+  // место» — это и есть проверяемое поведение. Червя на время осмотра
+  // останавливаем, чтобы место осталось тем же.
+  await page.evaluate(() => window.MainWormHandle.setOptions({ wander: false }));
+  headPt = await headPoint();
   const cycle = [];
   for (let i = 0; i < 5; i++) {
     await page.mouse.click(headPt.x, headPt.y);
@@ -161,6 +172,7 @@ const harness = require('./harness');
   say('');
   say('======== КОНТЕКСТ ДЛЯ АГЕНТА ========');
   await page.evaluate(() => { WormInspect.mode = 'problem'; });
+  headPt = await headPoint();
   await page.mouse.click(headPt.x, headPt.y);
   await page.waitForTimeout(200);
   const ctx = await page.evaluate(() => {

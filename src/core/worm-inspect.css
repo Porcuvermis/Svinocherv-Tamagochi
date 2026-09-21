@@ -115,6 +115,17 @@ body.wi-on #debug-state-panel { display: none !important; }
     flex-direction: column;
     gap: 5px;
     max-width: 330px;
+    /* Выше этого панель не растёт, а прокручивается: с раскрытыми ручками и
+       полем контекста она иначе уходит на весь экран и снова накрывает
+       червя — ту самую беду, ради которой её и подняли наверх. */
+    max-height: 46vh;
+    overflow-y: auto;
+    /* Подложка НА ВСЮ панель, а не на отдельные строки. Без неё подписи
+       ползунков лежали прямо на комнате и читались как часть сцены. */
+    background: rgba(14, 14, 17, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9px;
+    padding: 6px 7px;
     font: 500 11px/1.35 -apple-system, system-ui, sans-serif;
     color: #e8e8e8;
 }
@@ -166,6 +177,23 @@ body.wi-on #debug-state-panel { display: none !important; }
 }
 
 #wi-panel .wi-dim { opacity: 0.62; }
+
+/* ---------- РУЧКИ ВЫБРАННОГО ---------- */
+/* Показываются только те, что влияют на выбранное: тридцать ползунков
+   разом — это приборная доска самолёта, а не пульт. */
+#wi-panel .wi-knobs {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+#wi-panel .wi-knobs .wi-lbl { min-width: 96px; }
+#wi-panel .wi-knobs .wi-val { min-width: 42px; text-align: right; }
+#wi-panel input[type="range"]:disabled { opacity: 0.35; }
+
+/* Курсор в режиме правки говорит, что вещь можно тащить. */
+#wi-root.wi-edit { cursor: grab; }
+#wi-root.wi-edit.wi-dragging { cursor: grabbing; }
 
 /* Контекст лежит в поле, а не только в буфере: буфер может быть запрещён
    (нет https, нет разрешения), и «скопировано» без текста на экране — это
