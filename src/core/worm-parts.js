@@ -109,13 +109,13 @@ const WORM_SKULL_MARKS = [
 // Имя в дереве → имя для человека. Здесь только то, что игрок назвал бы
 // частью тела: обёртки в список не попадают по определению.
 const WORM_NODE_PARTS = [
-    { part: 'head',      title: 'голова',      knobs: ['headSize', 'volume', 'relief'] },
-    { part: 'snout',     title: 'пятачок',     parent: 'head', yawRole: 'surface', knobs: ['snout'] },
-    { part: 'mouth',     title: 'рот',         parent: 'head', yawRole: 'surface', knobs: ['mood'] },
-    { part: 'jaw',       title: 'челюсть',     parent: 'head', yawRole: 'face',    knobs: ['jaw'] },
-    { part: 'muzzle',    title: 'морда',       parent: 'head', yawRole: 'face',    knobs: ['snout', 'jaw'] },
-    { part: 'eye-left',  title: 'левый глаз',  parent: 'head', yawRole: 'surface', knobs: ['eyeSize', 'eyePlace'] },
-    { part: 'eye-right', title: 'правый глаз', parent: 'head', yawRole: 'surface', knobs: ['eyeSize', 'eyePlace'] },
+    { part: 'head',      title: 'голова',      knobs: ['headSize', 'headWide', 'headHeight', 'volume', 'relief'] },
+    { part: 'snout',     title: 'пятачок',     parent: 'head', yawRole: 'surface', knobs: ['snout', 'snoutWide'] },
+    { part: 'mouth',     title: 'рот',         parent: 'head', yawRole: 'surface', knobs: ['mood', 'mouthWidth'] },
+    { part: 'jaw',       title: 'челюсть',     parent: 'head', yawRole: 'face',    knobs: ['headWidthJaw', 'headChin'] },
+    { part: 'muzzle',    title: 'морда',       parent: 'head', yawRole: 'face',    knobs: ['headWidthMuzzle', 'snout'] },
+    { part: 'eye-left',  title: 'левый глаз',  parent: 'head', yawRole: 'surface', knobs: ['eyeSize', 'eyePlace', 'eyeHeight'] },
+    { part: 'eye-right', title: 'правый глаз', parent: 'head', yawRole: 'surface', knobs: ['eyeSize', 'eyePlace', 'eyeHeight'] },
     { part: 'brow-left', title: 'левая бровь', parent: 'head', yawRole: 'surface', knobs: ['mood'] },
     { part: 'brow-right', title: 'правая бровь', parent: 'head', yawRole: 'surface', knobs: ['mood'] },
     { part: 'eyelid-left', title: 'левое веко', parent: 'head', yawRole: 'surface', knobs: ['mood'] },
@@ -141,7 +141,7 @@ const WORM_GROWING_MAX = 12;
 // сначала то, что ближе к глазу.
 const WORM_LAYER_PARTS = [
     { cls: 'worm-wear-layer',    title: 'наряд',              knobs: [] },
-    { cls: 'worm-scar-layer',    title: 'шрамы',              knobs: ['wear'] },
+    { cls: 'worm-scar-layer',    title: 'шрамы',              knobs: [] },
     { cls: 'worm-surface-layer', title: 'блик и матовость',   knobs: ['gloss', 'matte'] },
     { cls: 'worm-coat-layer',    title: 'покров кожи',        knobs: ['detail', 'rings', 'bristle', 'folds'] },
     { cls: 'worm-head-detail',   title: 'детали головы',      knobs: ['detail'] },
@@ -216,7 +216,7 @@ const WormParts = {
                 part: `growing-${i}`,
                 parent: null,
                 yawRole: null,
-                knobs: ['thickness', 'length']
+                knobs: ['thickness']
             });
         }
 

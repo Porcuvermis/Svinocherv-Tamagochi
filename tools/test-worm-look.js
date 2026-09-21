@@ -78,6 +78,38 @@ const harness = require('./harness');
   check(reg.zeroed, 'все стоят на нуле: ноль — это «как задумано»');
   check(reg.forbidden.length >= 3, `запреты объявлены: ${reg.forbidden.join(', ')}`);
 
+  // ---------- 0б. ТАБЛИЦА НЕ ОБЕЩАЕТ ТОГО, ЧЕГО НЕТ ----------
+  // Таблица сущностей (worm-parts.js) называет у каждой вещи свои ручки.
+  // Это ОБЕЩАНИЕ, и оно молча нарушалось: семь имён — `snout`, `jaw`,
+  // `eyePlace`, `length`, `headHeight`, `skinTone`, `wear` — в пульте не
+  // существовали вовсе. Панель фильтрует несуществующие молча, и на
+  // пятачке, челюсти и морде честно писала «у этой вещи ручек нет»: три
+  // части тела нельзя было тронуть вообще, и выглядело это как задумка.
+  //
+  // Проверка сверяет два списка. Нужна ровно потому, что расходятся они
+  // беззвучно: ни ошибки в консоли, ни пустого экрана.
+  say('');
+  say('======== КАЖДОЕ ИМЯ ИЗ ТАБЛИЦЫ ЕСТЬ В ПУЛЬТЕ ========');
+  const promise = await page.evaluate(() => {
+    const miss = {}, dead = [];
+    WormParts.list().forEach(e => {
+      (e.knobs || []).forEach(k => {
+        if (!WormLook.knob(k)) (miss[k] = miss[k] || []).push(e.key);
+      });
+      // Часть тела, которую нельзя тронуть ничем, — тупик редактора.
+      // Процедурной массе (`layer`) это позволено: её и правда крутят
+      // только целиком, и у некоторых слоёв крутить нечего.
+      if (e.kind !== 'layer' && !(e.knobs || []).some(k => WormLook.knob(k))) dead.push(e.key);
+    });
+    return { miss: Object.keys(miss).map(k => `${k} (у ${miss[k].length})`), dead };
+  });
+  check(promise.miss.length === 0,
+        promise.miss.length ? `таблица обещает несуществующее: ${promise.miss.join(', ')}`
+                            : 'ни одного имени мимо пульта');
+  check(promise.dead.length === 0,
+        promise.dead.length ? `части тела без единой рабочей ручки: ${promise.dead.join(', ')}`
+                            : 'у каждой части тела есть чем её тронуть');
+
   // ---------- 1. РУЧКА ДВИГАЕТ ПЕРСОНАЖА ----------
   // Не «значение выросло», а САМА ГЕОМЕТРИЯ. Уровень может расти, пока его
   // никто не читает.
@@ -87,7 +119,13 @@ const harness = require('./harness');
     { key: 'headSize',  measure: 'headW',  dir: 'up' },
     { key: 'bellySize', measure: 'bellyW', dir: 'up' },
     { key: 'tailLength', measure: 'tailW', dir: 'up' },
-    { key: 'headWidthCheek', measure: 'cheekSpan', dir: 'up' }
+    { key: 'headWidthCheek', measure: 'cheekSpan', dir: 'up' },
+    // Лицевые заведены последними и проверяются наравне: ручка, которую
+    // никто не читает, — это и есть та самая проданная пустота.
+    { key: 'snout',     measure: 'snoutW', dir: 'up' },
+    { key: 'snoutWide', measure: 'snoutW', dir: 'up' },
+    { key: 'headWide',  measure: 'headW',  dir: 'up' },
+    { key: 'eyePlace',  measure: 'eyeSpan', dir: 'up' }
   ];
   for (const p of PROBE) {
     const r = await page.evaluate(async (p) => {
@@ -100,7 +138,12 @@ const harness = require('./harness');
         const a = WormParts.client(h, 'cheek-left'), b = WormParts.client(h, 'cheek-right');
         return (a && b) ? Math.abs(a.x - b.x) : 0;
       };
-      const read = () => ({ headW: W('head'), bellyW: W('belly'), tailW: W('tail'), cheekSpan: span() });
+      const eyeSpan = () => {
+        const a = WormParts.client(h, 'eye-left'), b = WormParts.client(h, 'eye-right');
+        return (a && b) ? Math.abs(a.x - b.x) : 0;
+      };
+      const read = () => ({ headW: W('head'), bellyW: W('belly'), tailW: W('tail'),
+                            snoutW: W('snout'), cheekSpan: span(), eyeSpan: eyeSpan() });
       WormLook.reset(h);
       await new Promise(r => setTimeout(r, 120));
       const was = read();

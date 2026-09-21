@@ -57,6 +57,29 @@ const WORM_LOOK_KNOBS = [
     { key: 'earSize', title: 'размер ушей', group: 'габариты', kind: 'mul',
       paths: ['head.ears.left.scale', 'head.ears.right.scale'] },
 
+    // ---------- ЛИЦО ----------
+    // Заведены позже остальных и по неприятному поводу: таблица сущностей
+    // НАЗЫВАЛА эти ручки, а пульт их не знал. Панель молча показывала «у
+    // этой вещи ручек нет» на пятачке, челюсти и морде — то есть обещание
+    // было продано, а товара не было. Стережёт test-worm-look.js: каждое имя
+    // из таблицы обязано находиться в пульте.
+    { key: 'headWide',   title: 'ширина головы', group: 'габариты', kind: 'mul',
+      paths: ['head.stretchX'] },
+    { key: 'headHeight', title: 'высота головы', group: 'габариты', kind: 'mul',
+      paths: ['head.stretchY'] },
+    { key: 'snout',      title: 'пятачок',        group: 'лицо', kind: 'mul',
+      paths: ['head.snout.scale'] },
+    { key: 'snoutWide',  title: 'ширина пятачка', group: 'лицо', kind: 'mul',
+      paths: ['head.snout.stretchX'] },
+    { key: 'mouthWidth', title: 'ширина рта',     group: 'лицо', kind: 'mul',
+      paths: ['head.mouth.stretchX'] },
+    // Посадка глаз — ДВЕ разные ручки, и путать их нельзя: «шире посажены»
+    // и «выше посажены» меняют лицо совершенно по-разному.
+    { key: 'eyePlace',   title: 'расстановка глаз', group: 'лицо', kind: 'mul',
+      paths: ['eyes.left.offsetX', 'eyes.right.offsetX'] },
+    { key: 'eyeHeight',  title: 'высота глаз',      group: 'лицо', kind: 'mul',
+      paths: ['eyes.left.offsetY', 'eyes.right.offsetY'] },
+
     // ---------- ЧЕРЕП ----------
     // Ширины идут парами «обе стороны» и «одна сторона». Общая двигает
     // номинал, боковая — перекос (head.skull.skew), и только она позволяет
@@ -85,6 +108,8 @@ const WORM_LOOK_KNOBS = [
     { key: 'bristle', title: 'щетина',     group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.bristle'] },
     { key: 'folds',   title: 'складки',    group: 'поверхность', kind: 'add01', paths: ['anatomy.coat.folds'] },
     { key: 'detail',  title: 'детальность', group: 'поверхность', kind: 'count', paths: ['anatomy.muscle.bundles'] },
+    { key: 'skinTone', title: 'пестрота кожи', group: 'поверхность', kind: 'add01',
+      paths: ['anatomy.skin.toneVariation'] },
 
     // ---------- НУТРО ----------
     { key: 'organs', title: 'органы', group: 'нутро', kind: 'add01',
