@@ -4,8 +4,13 @@
    №134). Второе вычитание невидимо на компьютере и срезает раскладку на
    телефоне. Размеры экрана приходят из js, здесь только вид. */
 
+/* Экран лежит ВНУТРИ `#game-container`, то есть в единицах холста
+   (390×844) и под его масштабом — как вся остальная игра. В <body> он
+   верстался бы в пикселях экрана, а их в Telegram на айфоне всего 238:
+   подписи ручек резало на «размер го…», значения на «+0». */
 #ws-root {
-    position: fixed;
+    position: absolute;
+    inset: 0;
     display: none;
     flex-direction: column;
     z-index: 4200;                 /* выше панелей инспектора и состояния */
@@ -18,15 +23,29 @@
 #ws-root.active { display: flex; }
 
 /* Студия — ОТДЕЛЬНЫЙ экран, а не слой поверх игры: всё, что игра рисует
-   сама себе поверх холста, на время правки уходит. */
+   сама себе поверх холста, на время правки уходит.
+
+   Перечислять по именам бесполезно — их прибавляется. Гасим ВСЁ, кроме
+   самой студии, ровно как это делает `.mg-open` под открытой мини-игрой:
+   кнопка 🐞, полоска сборки и счётчик кошелька иначе лежат поверх нижней
+   панели и попадают под палец вместо ползунка.
+
+   `visibility` вместо `display`: комната не пересобирается, а рендерер
+   видит, что его не видно, и сам останавливает кадровый цикл. */
+#game-container.ws-open > *:not(#ws-root) { visibility: hidden; }
 body.ws-on #debug-state-panel,
 body.ws-on #wi-panel,
 body.ws-on #wi-root { display: none !important; }
 
-/* ---------- ШАПКА ---------- */
+/* ---------- ШАПКА ----------
+   Одна строка на 44: выход, имя выбранного и — только когда есть что
+   откатывать — счётчик с откатом и сбросом. Шести кнопок здесь было
+   больше, чем дел: стоп и зум уехали на рейку поверх вида (они про
+   взгляд, а не про правку), а переключатель ручек контура исчез вовсе —
+   ручки появляются сами. */
 .ws-top {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 8px;
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 6px;
     background: #1e1e24;
     border-bottom: 1px solid #2c2c34;
     flex: 0 0 auto;
@@ -36,6 +55,15 @@ body.ws-on #wi-root { display: none !important; }
     font-size: 15px; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.ws-edits { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.ws-twin { min-width: 38px; height: 38px; font-size: 15px; }
+.ws-count {
+    color: #ffd45c; font-variant-numeric: tabular-nums;
+    font-size: 13px; padding: 0 2px;
+}
+/* Пустое место лучше неактивной кнопки: серая кнопка всё равно просит
+   по себе попасть, а места в холсте Telegram нет. */
+.ws-hide { display: none !important; }
 
 /* Кнопка — 44 точки. Ниже этого палец промахивается, и никакие подписи не
    помогают. */
@@ -64,7 +92,13 @@ body.ws-on #wi-root { display: none !important; }
 .ws-worm { position: absolute; inset: 0; }
 /* Накладка с ручками контура лежит РОВНО поверх персонажа и тем же
    viewBox'ом: иначе ручка стоит не там, где точка, которую она двигает. */
-.ws-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ws-fx {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    transition: opacity 0.14s;
+}
+/* Ручки уходят на время движения ползунка: там смотрят на результат. */
+.ws-fx.ws-away { opacity: 0; pointer-events: none !important; }
 .ws-h {
     fill: rgba(255,255,255,0.14);
     stroke: #ffd45c;
@@ -73,12 +107,30 @@ body.ws-on #wi-root { display: none !important; }
 }
 .ws-h.sel { fill: rgba(255,212,92,0.35); stroke: #fff; }
 
-.ws-zoom {
-    position: absolute; right: 8px; bottom: 8px;
-    display: flex; flex-direction: column; gap: 6px;
+/* Рейка взгляда: стоп и камера. Поверх вида, а не в панели — место внизу
+   дорого, а у вида края всё равно пустые. Полупрозрачная, чтобы не
+   спорить с персонажем.
+
+   В УГЛУ, а не посередине правого края: ручки контура окружают предмет, а
+   предмет стоит в середине кадра — на середине правого края рейка накрывала
+   собой ручку уха. Угол — самое редкое для них место. Вдобавок камера
+   вычитает ширину рейки из кадра (railInset), поэтому предмет под неё не
+   заезжает вовсе. */
+.ws-rail {
+    position: absolute; right: 6px; top: 6px;
+    display: flex; flex-direction: column; gap: 4px;
+}
+.ws-rail .ws-icon {
+    min-width: 40px; width: 40px; height: 40px;
+    background: rgba(28,28,34,0.72);
+    border-color: rgba(255,255,255,0.12);
+    backdrop-filter: blur(6px);
 }
 
 /* ---------- НИЖНЯЯ ПАНЕЛЬ ---------- */
+/* Только про ПРАВКУ: где я в персонаже и что кручу. Потолок в 42% — это
+   не вкус, а замер: в холсте Telegram (514 точек) при 46% персонажу
+   оставалось 221, а ракурс уезжал на 79 точек ниже экрана. */
 .ws-sheet {
     flex: 0 0 auto;
     max-height: 46%;
@@ -87,41 +139,56 @@ body.ws-on #wi-root { display: none !important; }
     touch-action: pan-y;
     background: #1b1b21;
     border-top: 1px solid #2c2c34;
-    padding: 8px;
+    padding: 5px 8px;
 }
-.ws-rows, .ws-chips {
+.ws-nav {
     display: flex; gap: 6px;
     overflow-x: auto; overflow-y: hidden;
     touch-action: pan-x;
-    padding-bottom: 6px;
+    padding-bottom: 4px;
     scrollbar-width: none;
+    /* Ряд, упирающийся в край экрана, читается как обрезанный. Затухание
+       по ОБОИМ краям говорит «тут ещё есть» без единого слова и без
+       стрелок — и по обоим потому, что ряд подкручивается к выбранному и
+       уезжает в обе стороны. */
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 18px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 18px), transparent);
 }
-.ws-rows::-webkit-scrollbar, .ws-chips::-webkit-scrollbar { display: none; }
-.ws-rows button, .ws-chips button {
+.ws-nav::-webkit-scrollbar { display: none; }
+.ws-nav button {
     flex: 0 0 auto;
-    min-height: 44px; padding: 0 14px;
+    min-height: 44px; padding: 0 13px;
     border: 1px solid #34343e; border-radius: 22px;
     background: #24242c; color: #cfcfda;
     font-size: 14px; cursor: pointer;
     white-space: nowrap;
 }
-.ws-rows button.on { background: #3a6ea5; border-color: #4e86c4; color: #fff; }
-.ws-chips button.on { background: #b8873a; border-color: #d6a44e; color: #fff; }
+.ws-nav button.on { background: #b8873a; border-color: #d6a44e; color: #fff; }
+/* Кнопка возврата несёт на себе имя раздела: иначе, уйдя в части, не
+   видно, где стоишь. */
+.ws-nav .ws-back { background: #3a6ea5; border-color: #4e86c4; color: #fff; }
 
-/* ---------- РУЧКА ---------- */
+/* ---------- РУЧКА ----------
+   Строка ровно в 40 точек. Подпись в две строки («размер\nголовы»)
+   раздувала ряд вдвое, и пять ручек переставали влезать в панель —
+   поэтому имя в одну строку с многоточием, а целиком оно всё равно
+   стоит в шапке. */
 .ws-knob {
-    display: flex; align-items: center; gap: 6px;
-    padding: 3px 0;
+    display: flex; align-items: center; gap: 5px;
+    height: 36px;
 }
-.ws-lbl { flex: 0 0 84px; color: #a8a8b6; font-size: 12px; }
-.ws-val { flex: 0 0 46px; text-align: right; color: #ffd45c; font-variant-numeric: tabular-nums; }
-.ws-dim { color: #75757f; padding: 8px 2px; }
+.ws-lbl {
+    flex: 0 0 104px; color: #a8a8b6; font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ws-val { flex: 0 0 38px; text-align: right; color: #ffd45c; font-variant-numeric: tabular-nums; font-size: 13px; }
+.ws-dim { color: #75757f; padding: 8px 2px; font-size: 13px; }
 
 /* Шаг ручки: ползунком точнее 0.05 пальцем не попасть, а доводка нужна
    именно такая. */
 .ws-step {
     flex: 0 0 auto;
-    width: 34px; height: 34px;
+    width: 32px; height: 32px;
     border: 1px solid #34343e; border-radius: 8px;
     background: #24242c; color: #e9e9ee;
     font-size: 17px; line-height: 1; cursor: pointer; padding: 0;
@@ -140,8 +207,11 @@ body.ws-on #wi-root { display: none !important; }
 }
 .ws-knob input[disabled] { opacity: 0.35; }
 
+/* Ракурс — только на голове (см. syncContext). */
 .ws-foot {
-    display: flex; align-items: center; gap: 6px;
-    margin-top: 6px; padding-top: 6px;
+    display: flex; align-items: center; gap: 5px;
+    height: 40px;
+    margin-top: 3px; padding-top: 3px;
     border-top: 1px solid #2c2c34;
 }
+.ws-foot .ws-icon { min-width: 40px; height: 36px; }

@@ -109,7 +109,11 @@ const WORM_SKULL_MARKS = [
 // Имя в дереве → имя для человека. Здесь только то, что игрок назвал бы
 // частью тела: обёртки в список не попадают по определению.
 const WORM_NODE_PARTS = [
-    { part: 'head',      title: 'голова',      knobs: ['headSize', 'headWide', 'headHeight', 'volume', 'relief'] },
+    // `volume` и `relief` здесь НЕ лежат намеренно: это свойства СВЕТА, а не
+    // головы, и живут они в своём ряду. Продублировать их сюда значит
+    // показывать пять ползунков там, где по делу три, — а в холсте Telegram
+    // каждая лишняя строка съедает персонажа.
+    { part: 'head',      title: 'голова',      knobs: ['headSize', 'headWide', 'headHeight'] },
     { part: 'snout',     title: 'пятачок',     parent: 'head', yawRole: 'surface', knobs: ['snout', 'snoutWide'] },
     { part: 'mouth',     title: 'рот',         parent: 'head', yawRole: 'surface', knobs: ['mood', 'mouthWidth'] },
     { part: 'jaw',       title: 'челюсть',     parent: 'head', yawRole: 'face',    knobs: ['headWidthJaw', 'headChin'] },

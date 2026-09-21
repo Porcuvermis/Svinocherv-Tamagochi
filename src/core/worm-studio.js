@@ -23,20 +23,39 @@
 // Плитки по рядам. Ряд — не «папка», а ответ на вопрос «что я сейчас
 // правлю»: лицо, череп, тело, кожа. Свет стоит отдельным рядом, потому что
 // он ничей: один на всю сцену и не лежит в модели.
+// ---------- ЧТО ПОКАЗЫВАТЬ В КАЖДОМ РЯДУ ----------
+// Плитка на КАЖДУЮ сторону — это по тринадцать штук в ряду черепа: ряд
+// уезжает за край, и найти в нём что-нибудь нельзя. Между тем правая скула
+// правится ровно так же, как левая, и ручки у них общие; врозь они живут
+// только в перекосе и в форме, а туда попадают НЕ плиткой, а пальцем по
+// самой ручке на персонаже.
+//
+// Поэтому парные вещи стоят одной плиткой, и та ведёт на левую. Вторая
+// сторона — либо тык в персонажа, либо кнопка «⇄» рядом с ручками: она
+// появляется сама, когда у выбранного есть близнец.
 const WORM_STUDIO_ROWS = [
-    { key: 'face',  title: 'лицо',
-      keys: ['eye-left', 'eye-right', 'brow-left', 'brow-right',
-             'ear-left', 'ear-right', 'snout', 'mouth', 'jaw'] },
-    { key: 'skull', title: 'череп',
-      keys: ['head', 'crown', 'forehead-left', 'forehead-right',
-             'temple-left', 'temple-right', 'cheek-left', 'cheek-right',
-             'jowl-left', 'jowl-right', 'muzzle-edge-left', 'muzzle-edge-right', 'chin'] },
-    { key: 'body',  title: 'тело',
-      keys: ['segment-1', 'segment-2', 'belly', 'tail',
-             'growing-1', 'growing-2', 'growing-3', 'growing-4'] },
-    { key: 'skin',  title: 'кожа',
-      keys: ['surface-layer', 'coat-layer', 'skin-tone', 'body-rings', 'muscle-layer',
-             'organ-layer', 'gut-tract', 'scar-layer', 'hull-outline'] },
+    { key: 'face',  title: 'лицо', keys: [
+        { k: 'eye-left',  t: 'глаза' },
+        { k: 'brow-left', t: 'брови' },
+        { k: 'ear-left',  t: 'уши' },
+        { k: 'snout' }, { k: 'mouth' }, { k: 'jaw' } ] },
+    { key: 'skull', title: 'череп', keys: [
+        { k: 'head' }, { k: 'crown' },
+        { k: 'forehead-left',    t: 'лоб' },
+        { k: 'temple-left',      t: 'виски' },
+        { k: 'cheek-left',       t: 'скулы' },
+        { k: 'jowl-left',        t: 'брыли' },
+        { k: 'muzzle-edge-left', t: 'морда' },
+        { k: 'chin' } ] },
+    { key: 'body',  title: 'тело', keys: [
+        { k: 'segment-1' }, { k: 'segment-2' }, { k: 'belly' }, { k: 'tail' },
+        { k: 'growing-1' }, { k: 'growing-2' }, { k: 'growing-3' }, { k: 'growing-4' } ] },
+    { key: 'skin',  title: 'кожа', keys: [
+        { k: 'surface-layer' }, { k: 'coat-layer' }, { k: 'skin-tone' },
+        { k: 'body-rings' }, { k: 'muscle-layer' }, { k: 'organ-layer' },
+        { k: 'gut-tract' }, { k: 'scar-layer' }, { k: 'hull-outline' } ] },
+    // У света своего предмета нет: он один на сцену и ничему не принадлежит.
+    // Плиток в этом ряду поэтому не бывает вовсе — сразу ручки.
     { key: 'light', title: 'свет', knobs: ['volume', 'contrast', 'lightAngle', 'relief'] }
 ];
 
@@ -66,7 +85,10 @@ const WormStudio = {
     row: 'face',
     picked: null,       // ключ выбранной сущности ('' = ряд света)
     frozen: true,
-    shape: true,        // показывать ли ручки контура
+    // Ручки контура не переключаются кнопкой: они появляются сами у того,
+    // у кого есть что тянуть, и УХОДЯТ на время движения ползунка — там
+    // смотрят на результат, а дюжина кружков поверх морды мешает смотреть.
+    busy: 0,            // метка времени последнего движения ползунка
     drag: null,
     cam: null,          // текущее положение камеры (единицы viewBox)
     camTo: null,        // куда едет
@@ -83,6 +105,8 @@ const WormStudio = {
         // Панель состояния и панель инспектора уходят: студия — отдельный
         // экран, а не ещё один слой поверх игры.
         document.body.classList.add('ws-on');
+        const stage = document.getElementById('game-container');
+        if (stage) stage.classList.add('ws-open');
         this.mount();
         this.frameAll(true);
         // Открываемся на голове: её правят чаще всего, а пустой ряд ручек
@@ -103,6 +127,8 @@ const WormStudio = {
         if (this.handle) { this.handle.destroy(); this.handle = null; }
         this.root.classList.remove('active');
         document.body.classList.remove('ws-on');
+        const stage = document.getElementById('game-container');
+        if (stage) stage.classList.remove('ws-open');
     },
 
     toggle() { this.on ? this.close() : this.open(); },
@@ -112,36 +138,68 @@ const WormStudio = {
         if (this.root) { this.place(); return; }
         this.root = document.createElement('div');
         this.root.id = 'ws-root';
+        // ---------- ЧТО ГДЕ ЛЕЖИТ ----------
+        // Первая версия держала на экране всё сразу: шесть кнопок в шапке,
+        // два ряда плиток, пять ручек и ракурс — и всё это не влезало в
+        // холст Telegram (514 точек), где ракурс уезжал на 79 точек ниже
+        // экрана, а персонажу оставалось 221.
+        //
+        // Разложено по принадлежности, и это же решает тесноту:
+        //   шапка   — только выход и ИМЯ выбранного. Откат и сброс тут же,
+        //             но лишь когда есть что откатывать;
+        //   рейка   — то, что про ВЗГЛЯД, а не про правку: стоп, наезд,
+        //             отъезд, «целиком». Поверх вида, а не в панели: место
+        //             внизу дорого, а вид пустой по краям;
+        //   панель  — только про ПРАВКУ: где я в персонаже и что кручу.
+        //             Ракурс живёт здесь же, но появляется лишь на голове:
+        //             для тела и кожи он ничего не значит.
         this.root.innerHTML = `
             <div class="ws-top">
                 <button class="ws-icon" data-act="close" title="закрыть">✕</button>
                 <div class="ws-title" data-out="title">студия</div>
-                <button class="ws-icon" data-act="freeze" title="остановить персонажа">⏸</button>
-                <button class="ws-icon" data-act="shape" title="ручки контура">◌</button>
-                <button class="ws-icon" data-act="undo" title="откат">↶</button>
-                <button class="ws-icon" data-act="reset" title="сбросить всё">⟲</button>
+                <button class="ws-icon ws-twin" data-act="twin" data-out="twin" title="другая сторона">⇄</button>
+                <div class="ws-edits" data-out="edits">
+                    <span class="ws-count" data-out="steps"></span>
+                    <button class="ws-icon" data-act="undo" title="откат">↶</button>
+                    <button class="ws-icon" data-act="reset" title="сбросить всё">⟲</button>
+                </div>
             </div>
             <div class="ws-view">
                 <div class="ws-worm"></div>
                 <svg class="ws-fx"></svg>
-                <div class="ws-zoom">
+                <div class="ws-rail">
+                    <button class="ws-icon" data-act="freeze" title="остановить персонажа">⏸</button>
                     <button class="ws-icon" data-act="zoom-in">+</button>
                     <button class="ws-icon" data-act="zoom-out">−</button>
                     <button class="ws-icon" data-act="zoom-all" title="целиком">⛶</button>
                 </div>
             </div>
             <div class="ws-sheet">
-                <div class="ws-rows" data-out="rows"></div>
-                <div class="ws-chips" data-out="chips"></div>
+                <div class="ws-nav" data-out="nav"></div>
                 <div class="ws-knobs" data-out="knobs"></div>
-                <div class="ws-foot">
+                <div class="ws-foot" data-out="foot">
                     <span class="ws-lbl">ракурс</span>
                     <input type="range" data-in="yaw" min="-1" max="1" step="0.05" value="0">
                     <button class="ws-icon" data-act="yaw-auto" title="автоматика">↻</button>
-                    <span class="ws-val" data-out="steps"></span>
                 </div>
             </div>`;
-        document.body.appendChild(this.root);
+        // ---------- ВНУТРИ ХОЛСТА, А НЕ ПОВЕРХ ОКНА ----------
+        // Панель инспектора лежит в <body> и стоит по прямоугольнику холста
+        // — ей так и надо: она маленькая накладка поверх игры.
+        //
+        // Студия — ЭКРАН во весь холст, и в <body> она верстается в пикселях
+        // ЭКРАНА. А холст масштабируется под окно (инвариант 11): в Telegram
+        // на айфоне масштаб выходит 0.6, и экран студии, оставаясь 390
+        // единиц по замыслу, получал 238 настоящих пикселей. Раскладка в
+        // них не влезала: подписи ручек резало на «размер го…», значения на
+        // «+0».
+        //
+        // Внутри `#game-container` этой беды нет по построению: там единицы
+        // холста, 390×844, и масштаб накладывается на всё разом — ровно как
+        // на игру. Заодно исчезает вопрос про безопасную зону: холст уже
+        // стоит в ней целиком и вычитается она ровно один раз (ловушка 134).
+        const stage = document.getElementById('game-container') || document.body;
+        stage.appendChild(this.root);
         this.wormHost = this.root.querySelector('.ws-worm');
         this.fx = this.root.querySelector('.ws-fx');
 
@@ -157,20 +215,14 @@ const WormStudio = {
         this.place();
     },
 
-    // Экран студии стоит ПО ХОЛСТУ, а не по окну: верх окна в Telegram занят
-    // шапкой клиента и чёлкой, а холст уже вычтен из безопасной зоны ровно
-    // один раз (инвариант 11). Спрашиваем готовый ответ, а не считаем заново
-    // через env() — второе вычитание это ловушка №134.
+    // Внутри холста ставить нечего: `inset: 0` и есть «по холсту». Метод
+    // остался затем, что его зовут снаружи (поворот телефона, смена высоты
+    // окна в Telegram) — и затем, что студия, открытая ДО появления холста,
+    // должна в него переехать.
     place() {
         if (!this.root) return;
-        const host = document.getElementById('game-container');
-        if (!host) return;
-        const r = host.getBoundingClientRect();
-        if (!r.width || !r.height) return;
-        this.root.style.left = r.left + 'px';
-        this.root.style.top = r.top + 'px';
-        this.root.style.width = r.width + 'px';
-        this.root.style.height = r.height + 'px';
+        const stage = document.getElementById('game-container');
+        if (stage && this.root.parentNode !== stage) stage.appendChild(this.root);
     },
 
     // ---------- СВОЙ ПЕРСОНАЖ ----------
@@ -198,9 +250,21 @@ const WormStudio = {
     // Зум — это viewBox корневого svg. Не css-трансформация: через viewBox
     // умеет считать SvgSpace, а css-масштаб предка WebKit в getScreenCTM не
     // учитывает, и палец начал бы промахиваться ровно на величину наезда.
+    // Рейка стоит ПОВЕРХ вида, то есть отъедает у него полосу справа.
+    // Камера обязана про неё знать: иначе предмет, честно поставленный в
+    // середину кадра, наполовину оказывается под кнопками.
+    RAIL: 52,
+
     box() {
         const c = this.wormHost;
         return { w: Math.max(1, c.clientWidth), h: Math.max(1, c.clientHeight) };
+    },
+
+    // Свободная часть кадра и её середина — в единицах viewBox.
+    free() {
+        const b = this.box();
+        const k = this.cam ? this.cam.z : 1;
+        return { w: Math.max(40, b.w - this.RAIL), h: b.h, shift: this.RAIL / 2 / k };
     },
 
     applyCam() {
@@ -241,8 +305,11 @@ const WormStudio = {
         if (!wb) { this.camTo = { x: b.w / 2, y: b.h / 2, z: 1 }; if (instant) this.cam = Object.assign({}, this.camTo); this.applyCam(); return; }
         // Персонаж занимает экран, но с полями: вплотную к кромке ничего не
         // разглядеть, а ручки контура должны куда-то лечь.
-        const z = Math.min(b.w / (wb.w * 1.25), b.h / (wb.h * 1.15));
-        this.camTo = { x: wb.x, y: wb.y, z: Math.max(0.5, Math.min(8, z)) };
+        const f = this.free();
+        const z = Math.max(0.5, Math.min(8, Math.min(f.w / (wb.w * 1.25), f.h / (wb.h * 1.15))));
+        // Сдвиг вправо в единицах viewBox зависит от зума, поэтому считается
+        // ПОСЛЕ него, а не из this.cam (там ещё старый).
+        this.camTo = { x: wb.x + this.RAIL / 2 / z, y: wb.y, z };
         if (instant) this.cam = Object.assign({}, this.camTo);
         this.applyCam();
     },
@@ -277,8 +344,9 @@ const WormStudio = {
                 span = Math.max(40, Math.max(r.width, r.height) / (f.m * f.k) * 1.5);
             } catch (err) { /* не нашли габарит — останется умолчание */ }
         }
-        const z = Math.max(0.6, Math.min(8, Math.min(b.w, b.h) / span));
-        this.camTo = { x: p.x, y: p.y, z };
+        const f = this.free();
+        const z = Math.max(0.6, Math.min(8, Math.min(f.w, f.h) / span));
+        this.camTo = { x: p.x + this.RAIL / 2 / z, y: p.y, z };
     },
 
     // ---------- ПОКАДРОВОЕ ----------
@@ -308,11 +376,11 @@ const WormStudio = {
         if (!h || typeof WormParts === 'undefined') { this.fx.innerHTML = ''; return; }
         const want = [];
         const ear = this.earOf(this.picked);
-        if (this.shape && this.isChainish(this.picked)) {
+        if (this.isChainish(this.picked)) {
             this.chainKeys().forEach(k => want.push({ key: k }));
-        } else if (this.shape && ear) {
+        } else if (ear) {
             WORM_STUDIO_EAR.forEach(k => want.push({ key: k + '-' + ear }));
-        } else if (this.shape && this.picked && this.isSkullish(this.picked)) {
+        } else if (this.picked && this.isSkullish(this.picked)) {
             WORM_STUDIO_SKULL.forEach(k => want.push({ key: k }));
         } else if (this.picked) {
             want.push({ key: this.picked });
@@ -322,12 +390,23 @@ const WormStudio = {
         want.forEach(w => {
             const p = WormParts.at(h, w.key);
             if (!p) return;
-            const sel = w.key === this.picked;
+            // Выбранная ручка белая. Сверяем ПРЕДМЕТОМ, а не ключом: на
+            // животе выбран `belly`, а ручка зовётся `girth-belly`, и по
+            // ключу не совпадало бы ничего — все ручки стояли одинаковыми,
+            // и какую сейчас правят, было не видно.
+            const sel = w.key === this.picked || this.sameSubject(w.key, this.picked)
+                     || this.sameSubject(this.picked, w.key);
             html += `<circle class="ws-h${sel ? ' sel' : ''}" data-h="${w.key}"
                        cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}"
                        r="${(13 * r).toFixed(2)}" stroke-width="${(2 * r).toFixed(2)}"></circle>`;
         });
         this.fx.innerHTML = html;
+        // Пока крутят ползунок — ручки уходят. Смотрят в этот момент на
+        // результат, и дюжина кружков поверх морды ровно тому и мешает.
+        // Возвращаются сами, через полсекунды после последнего движения:
+        // отдельной кнопкой это было бы ещё одним переключателем, который
+        // надо не забыть выключить.
+        this.fx.classList.toggle('ws-away', Date.now() - this.busy < 500);
     },
 
     isSkullish(key) {
@@ -451,12 +530,12 @@ const WormStudio = {
         // Ряд переключается САМ на тот, где лежит выбранное. Иначе тык в ухо
         // оставляет открытым ряд черепа, и плитка выбранной вещи не видна:
         // экран показывает одно, а правишь другое.
-        const row = WORM_STUDIO_ROWS.find(r => r.keys && r.keys.indexOf(key) >= 0);
+        const row = WORM_STUDIO_ROWS.find(r => r.keys && r.keys.some(c => this.sameSubject(c.k, key)));
         if (row) this.row = row.key;
         const e = (typeof WormParts !== 'undefined') ? WormParts.get(key) : null;
         this.title(e ? e.title : key);
         if (!(opts && opts.noZoom)) this.frameEntity(key);
-        this.renderRows();
+        this.renderNav();
         this.renderKnobs(true);
     },
 
@@ -465,38 +544,71 @@ const WormStudio = {
         if (out) out.textContent = text;
     },
 
-    // ---------- РЯДЫ И ПЛИТКИ ----------
-    renderRows() {
-        const rows = this.root.querySelector('[data-out="rows"]');
-        rows.innerHTML = WORM_STUDIO_ROWS.map(r =>
-            `<button data-row="${r.key}" class="${r.key === this.row ? 'on' : ''}">${r.title}</button>`).join('');
-
-        const chips = this.root.querySelector('[data-out="chips"]');
+    // ---------- НАВИГАЦИЯ: ОДИН ЯРУС ----------
+    // Было два ряда сразу: пять разделов и плитки открытого раздела. Вместе
+    // они съедали девяносто точек из двухсот пятнадцати, которые есть у
+    // панели в холсте Telegram, — то есть почти половину места отдавали
+    // тому, что уже выбрано и менять его не собираются.
+    //
+    // Теперь ярус один: либо разделы, либо «‹ раздел» и его части. Куда
+    // нажали, там и стоишь, а название раздела написано на кнопке возврата —
+    // потеряться негде.
+    renderNav() {
+        const nav = this.root.querySelector('[data-out="nav"]');
+        if (!this.row) {
+            nav.innerHTML = WORM_STUDIO_ROWS.map(r =>
+                `<button data-row="${r.key}">${r.title}</button>`).join('');
+            nav.scrollLeft = 0;
+            return;
+        }
         const row = WORM_STUDIO_ROWS.find(r => r.key === this.row);
-        if (!row || !row.keys) { chips.innerHTML = ''; return; }
+        if (!row) { this.row = null; this.renderNav(); return; }
+        let html = `<button data-row="" class="ws-back">‹ ${row.title}</button>`;
         // Показываем только то, что СЕЙЧАС есть на экране: растущих сегментов
         // может не вырасти, ухо бывает спрятано шляпой. Плитка, ведущая в
         // никуда, хуже отсутствующей.
-        chips.innerHTML = row.keys.map(k => {
-            const e = (typeof WormParts !== 'undefined') ? WormParts.get(k) : null;
-            if (!e) return '';
-            if (this.handle && !WormParts.at(this.handle, k)) return '';
-            // Плитка горит и тогда, когда выбрана ТОЧКА её контура: «кончик
-            // левого уха» своей плитки не имеет и иметь не должен, но ухо,
-            // которое сейчас правят, показать обязано.
-            const on = k === this.picked
-                    || (this.earOf(this.picked) && k === 'ear-' + this.earOf(this.picked))
-                    || (this.isSkullish(this.picked) && k === 'head' && this.picked !== 'head');
-            return `<button data-chip="${k}" class="${on ? 'on' : ''}">${e.title}</button>`;
-        }).join('');
+        (row.keys || []).forEach(c => {
+            const e = (typeof WormParts !== 'undefined') ? WormParts.get(c.k) : null;
+            if (!e) return;
+            if (this.handle && !WormParts.at(this.handle, c.k)) return;
+            const on = this.sameSubject(c.k, this.picked);
+            html += `<button data-chip="${c.k}" class="${on ? 'on' : ''}">${c.t || e.title}</button>`;
+        });
+        nav.innerHTML = html;
 
         // Выбранная плитка подъезжает в середину ряда. Без этого тык в
-        // персонажа переключал ряд, а сама плитка оставалась за краем — и
+        // персонажа переключал раздел, а сама плитка оставалась за краем — и
         // выходило, что выбранного на экране не видно вовсе.
         // Считаем сдвиг руками, а не scrollIntoView: тот заодно прокручивает
         // всех предков, а студия — экран, который не скроллится.
-        const on = chips.querySelector('.on');
-        if (on) chips.scrollLeft = Math.max(0, on.offsetLeft - (chips.clientWidth - on.offsetWidth) / 2);
+        const on = nav.querySelector('.on');
+        if (on) nav.scrollLeft = Math.max(0, on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2);
+    },
+
+    // ---------- ОДИН ЛИ ЭТО ПРЕДМЕТ ----------
+    // Плитка «скулы» обязана гореть и на левой скуле, и на правой, и на
+    // голове, когда тянут её контур. Иначе экран показывает одно, а правят
+    // другое — а это первое, на что смотрит глаз.
+    sameSubject(chipKey, picked) {
+        if (!chipKey || !picked) return false;
+        if (chipKey === picked) return true;
+        if (this.twin(picked) === chipKey) return true;
+        const ear = this.earOf(picked);
+        if (ear) return chipKey === 'ear-' + ear || chipKey === 'ear-left';
+        if (this.isChainish(picked)) return picked.replace(/^girth-/, '') === chipKey;
+        // Контур черепа тянут, оставаясь «на голове»: точка сама по себе
+        // плитки не имеет.
+        if (this.isSkullish(picked) && chipKey === 'head') return picked === 'head';
+        return false;
+    },
+
+    // Близнец с другой стороны: у пар это половина смысла экрана, а отдельной
+    // плитки им не полагается — ряд от этого уезжал за край.
+    twin(key) {
+        if (!key) return null;
+        if (/-left$/.test(key)) return key.replace(/-left$/, '-right');
+        if (/-right$/.test(key)) return key.replace(/-right$/, '-left');
+        return null;
     },
 
     // ---------- РУЧКИ ----------
@@ -555,6 +667,37 @@ const WormStudio = {
         host.innerHTML = rows.length ? rows.join('')
             : '<div class="ws-dim">у этой вещи ручек нет — её крутят только целиком</div>';
         this.syncSteps();
+        this.syncContext();
+    },
+
+    // ---------- ЧТО СЕЙЧАС УМЕСТНО ----------
+    // Ракурс имеет смысл только на голове: там половина ошибок видна лишь
+    // на повороте. Для тела, кожи и света это лишняя строка, которая в
+    // холсте Telegram стоила ровно того места, которого не хватало.
+    //
+    // Откат и сброс — только когда есть что откатывать. Кнопка, которая
+    // ничего не делает, обязана отсутствовать, а не быть серой.
+    syncContext() {
+        // Вторая сторона — кнопкой в шапке, рядом с именем: это про то, КОГО
+        // правят, а не про то, что крутят. Плитки у правой скулы нет
+        // намеренно — с ней ряд уезжал за край экрана.
+        const tw = this.twin(this.picked);
+        const swap = this.root.querySelector('[data-out="twin"]');
+        if (swap) {
+            swap.classList.toggle('ws-hide', !(tw && WormParts.get(tw)));
+            if (tw && WormParts.get(tw)) swap.title = WormParts.get(tw).title;
+        }
+        const foot = this.root.querySelector('[data-out="foot"]');
+        if (foot) foot.classList.toggle('ws-hide', !this.headish(this.picked));
+        const edits = this.root.querySelector('[data-out="edits"]');
+        if (edits) edits.classList.toggle('ws-hide', !Object.keys(WormLook.patch()).length);
+    },
+
+    headish(key) {
+        if (!key) return this.row === 'face' || this.row === 'skull';
+        if (this.isSkullish(key) || this.earOf(key)) return true;
+        const e = (typeof WormParts !== 'undefined') ? WormParts.get(key) : null;
+        return !!(e && (e.parent === 'head' || e.key === 'head'));
     },
 
     knobRow(title, attr, v, min, max, locked) {
@@ -586,8 +729,13 @@ const WormStudio = {
     },
 
     syncSteps() {
+        const n = Object.keys(WormLook.patch()).length;
         const out = this.root.querySelector('[data-out="steps"]');
-        if (out) out.textContent = Object.keys(WormLook.patch()).length + ' правок';
+        // Цифра без слова: место в шапке меряется буквами, а «правок» тут
+        // ничего не объясняет — число стоит рядом с откатом и сбросом.
+        if (out) out.textContent = n ? String(n) : '';
+        const edits = this.root.querySelector('[data-out="edits"]');
+        if (edits) edits.classList.toggle('ws-hide', !n);
     },
 
     // ---------- КНОПКИ ----------
@@ -598,13 +746,13 @@ const WormStudio = {
         const chip = t.getAttribute && t.getAttribute('data-chip');
         const step = t.getAttribute && t.getAttribute('data-step');
         const act = t.getAttribute && t.getAttribute('data-act');
-        if (row) { this.row = row; if (row === 'light') this.picked = null; this.renderRows(); this.renderKnobs(true); return; }
+        if (row) { this.row = row; if (row === 'light') this.picked = null; this.renderNav(); this.renderKnobs(true); return; }
         if (chip) { this.select(chip); return; }
         if (step) { this.bump(t, +step * 0.05); return; }
         if (!act) return;
+        if (act === 'twin') { const t = this.twin(this.picked); if (t) this.select(t); return; }
         if (act === 'close') this.close();
         else if (act === 'freeze') this.setFrozen(!this.frozen);
-        else if (act === 'shape') { this.shape = !this.shape; this.syncIcons(); }
         else if (act === 'undo') { WormLook.undo(this.handle); this.renderKnobs(true); }
         else if (act === 'reset') { WormLook.reset(this.handle); this.renderKnobs(true); }
         else if (act === 'zoom-in') this.zoomBy(1.4);
@@ -635,6 +783,7 @@ const WormStudio = {
     onInput(e) {
         const inp = e.target;
         if (!inp || inp.tagName !== 'INPUT') return;
+        this.busy = Date.now();
         const v = parseFloat(inp.value);
         if (inp.getAttribute('data-in') === 'yaw') {
             if (this.handle) this.handle.setHeadPose(v);
@@ -676,8 +825,7 @@ const WormStudio = {
     syncIcons() {
         const f = this.root.querySelector('[data-act="freeze"]');
         if (f) { f.textContent = this.frozen ? '⏸' : '▶'; f.classList.toggle('on', this.frozen); }
-        const s = this.root.querySelector('[data-act="shape"]');
-        if (s) s.classList.toggle('on', this.shape);
+
     }
 };
 

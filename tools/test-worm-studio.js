@@ -117,7 +117,7 @@ const harness = require('./harness');
     WormStudio.frameAll(true);
     await new Promise(r => setTimeout(r, 400));
     const было = W();
-    WormStudio.row = 'face'; WormStudio.renderRows();
+    WormStudio.row = 'face'; WormStudio.renderNav();
     WormStudio.select('ear-left');
     // Камера ПОДЪЕЗЖАЕТ, а не прыгает: ждём, пока доедет.
     await new Promise(r => setTimeout(r, 900));
@@ -145,7 +145,7 @@ const harness = require('./harness');
   say('======== ФОРМУ ЧЕРЕПА ТЯНУТ ЗА КОНТУР ========');
   await page.evaluate(() => {
     WormLook.reset(WormStudio.handle);
-    WormStudio.row = 'skull'; WormStudio.renderRows();
+    WormStudio.row = 'skull'; WormStudio.renderNav();
     WormStudio.select('cheek-left');
   });
   await page.waitForTimeout(900);
@@ -277,7 +277,7 @@ const harness = require('./harness');
   say('======== ПРОФИЛЬ ТЕЛА ТЯНУТ ПО ЗВЕНЬЯМ ========');
   await page.evaluate(() => {
     WormLook.reset(WormStudio.handle);
-    WormStudio.row = 'body'; WormStudio.renderRows();
+    WormStudio.row = 'body'; WormStudio.renderNav();
     WormStudio.select('belly');
   });
   await page.waitForTimeout(900);
@@ -337,21 +337,92 @@ const harness = require('./harness');
     await page.screenshot({ path: out + '6-girth.png' });
   }
 
+  // ---------- 6г. ПОКАЗЫВАЕТСЯ ТОЛЬКО УМЕСТНОЕ ----------
+  // Первая версия студии держала на экране всё сразу: шесть кнопок в шапке,
+  // два ряда плиток, пять ручек и ракурс. Это Windows 95 — приборная доска
+  // вместо инструмента, и вдобавок она не влезала в холст.
+  //
+  // Проверяется не «красиво», а три правила, каждое из которых проверяемо:
+  // ракурс имеет смысл только на голове; откат и сброс — только когда есть
+  // что откатывать; вторая сторона — кнопкой, и только у парных вещей.
+  say('');
+  say('======== НА ЭКРАНЕ ТОЛЬКО УМЕСТНОЕ ========');
+  const ctx = await page.evaluate(async () => {
+    const видно = (sel) => {
+      const el = document.querySelector(sel);
+      return !!(el && el.offsetParent !== null && !el.classList.contains('ws-hide'));
+    };
+    const снять = async (row, key) => {
+      WormStudio.row = row; WormStudio.renderNav();
+      if (key) WormStudio.select(key, { noZoom: true });
+      await new Promise(r => setTimeout(r, 160));
+      return { ракурс: видно('[data-out="foot"]'), правки: видно('[data-out="edits"]'),
+               близнец: видно('[data-out="twin"]') };
+    };
+    WormLook.reset(WormStudio.handle);
+    await new Promise(r => setTimeout(r, 200));
+    const голова = await снять('skull', 'head');
+    const ухо = await снять('face', 'ear-left');
+    const живот = await снять('body', 'belly');
+    const кожа = await снять('skin', 'coat-layer');
+    WormLook.apply(WormStudio.handle, { headSize: 0.2 });
+    const сПравкой = await снять('skull', 'head');
+    WormLook.reset(WormStudio.handle);
+    await new Promise(r => setTimeout(r, 200));
+    const послеСброса = await снять('skull', 'head');
+    return { голова, ухо, живот, кожа, сПравкой, послеСброса };
+  });
+  check(ctx.голова.ракурс && ctx.ухо.ракурс, 'ракурс есть на голове и на ухе — там половина ошибок видна только на повороте');
+  check(!ctx.живот.ракурс && !ctx.кожа.ракурс, 'и его НЕТ на теле и коже: там он ничего не значит');
+  check(!ctx.голова.правки && ctx.сПравкой.правки,
+        'откат и сброс появляются только когда есть что откатывать');
+  check(!ctx.послеСброса.правки, 'и уходят после сброса');
+  check(ctx.ухо.близнец && !ctx.живот.близнец,
+        'кнопка второй стороны есть у парного и отсутствует у непарного');
+
+  // ---------- 6д. РУЧКИ УХОДЯТ, ПОКА КРУТЯТ ПОЛЗУНОК ----------
+  // Дюжина кружков поверх морды мешает смотреть ровно тогда, когда смотрят:
+  // при движении ползунка. Отдельной кнопкой это было бы ещё одним
+  // переключателем, который надо не забыть выключить.
+  const fade = await page.evaluate(async () => {
+    WormStudio.row = 'skull'; WormStudio.renderNav();
+    WormStudio.select('head', { noZoom: true });
+    await new Promise(r => setTimeout(r, 300));
+    const fx = document.querySelector('.ws-fx');
+    const было = fx.classList.contains('ws-away');
+    const inp = document.querySelector('.ws-knob input[data-knob]');
+    inp.value = '0.3';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 120));
+    const вовремя = document.querySelector('.ws-fx').classList.contains('ws-away');
+    await new Promise(r => setTimeout(r, 700));
+    const после = document.querySelector('.ws-fx').classList.contains('ws-away');
+    WormLook.reset(WormStudio.handle);
+    return { было, вовремя, после };
+  });
+  check(!fade.было && fade.вовремя, 'при движении ползунка ручки контура уходят');
+  check(!fade.после, 'и возвращаются сами, без единой кнопки');
+
   // ---------- 7. ПЛИТКИ ----------
   say('');
   say('======== ПЛИТКИ ВЫБИРАЮТ БЕЗ ПИКСЕЛЬ-ХАНТИНГА ========');
   const chips = await page.evaluate(() => {
     const all = [...document.querySelectorAll('[data-chip]')];
+    // Меряем в ЕДИНИЦАХ ХОЛСТА, а не в пикселях экрана: холст
+    // масштабируется под окно целиком (инвариант 11), и в коротком окне вся
+    // игра идёт на 61–83%. Проверка в пикселях краснела бы не на студии, а
+    // на форме окна — то есть винила бы игру за замер.
+    const k = document.getElementById('game-container').getBoundingClientRect().width / 390;
     return { n: all.length,
-             small: all.filter(b => b.getBoundingClientRect().height < 44).length,
+             small: all.filter(b => b.getBoundingClientRect().height / k < 43.5).length,
              rows: [...document.querySelectorAll('[data-row]')].length };
   });
   say(`  плиток в ряду «череп»: ${chips.n}, рядов ${chips.rows}`);
   check(chips.n >= 5, 'плиток хватает, чтобы не целиться пальцем в персонажа');
-  check(chips.small === 0, 'и ни одна не ниже сорока четырёх точек');
+  check(chips.small === 0, 'и ни одна не ниже сорока четырёх единиц холста');
 
   const byChip = await page.evaluate(async () => {
-    WormStudio.row = 'skull'; WormStudio.renderRows();
+    WormStudio.row = 'skull'; WormStudio.renderNav();
     const b = [...document.querySelectorAll('[data-chip]')].find(x => x.getAttribute('data-chip') === 'chin');
     if (!b) return null;
     b.click();
@@ -427,6 +498,70 @@ const harness = require('./harness');
   check(tg.экран >= tg.занято, 'верх студии НЕ под шапкой клиента и не под чёлкой');
   check(tg.крестик >= tg.занято, 'и кнопка «закрыть» доступна — иначе из студии не выйти');
   check(tg.внутри, 'экран целиком внутри холста');
+
+  // ---------- И ВЛЕЗАЕТ ЦЕЛИКОМ, НА ЛЮБОЙ ПЛИТКЕ ----------
+  // Здесь холст всего 514 точек высотой, и именно здесь панель вылезала:
+  // она просила 373 при 235, ракурс уезжал на 79 точек НИЖЕ экрана, а
+  // персонажу доставалось 221. Проверять надо не один открытый экран, а
+  // КАЖДЫЙ: у разных вещей разное число ручек, и не влезает самая полная.
+  say('');
+  say('======== И ВЛЕЗАЕТ ЦЕЛИКОМ, НА ЛЮБОЙ ПЛИТКЕ ========');
+  const walk = await page.evaluate(async () => {
+    WormStudio.open();
+    await new Promise(r => setTimeout(r, 600));
+    const плохо = [];
+    let экранов = 0, минВид = 1e9, максПанель = 0;
+    const проверить = (имя) => {
+      экранов++;
+      const gc = document.getElementById('game-container').getBoundingClientRect();
+      const k = gc.width / 390;          // холст масштабируется целиком (инвариант 11)
+      const sheet = document.querySelector('.ws-sheet');
+      минВид = Math.min(минВид, document.querySelector('.ws-view').getBoundingClientRect().height / k);
+      максПанель = Math.max(максПанель, sheet.getBoundingClientRect().height / k);
+      if (sheet.scrollHeight > sheet.clientHeight + 1)
+        плохо.push(`${имя}: панель просит ${sheet.scrollHeight} при ${sheet.clientHeight}`);
+      document.querySelectorAll('#ws-root button, #ws-root input').forEach(el => {
+        if (el.offsetParent === null) return;
+        const r = el.getBoundingClientRect();
+        // Ряд навигации едет вбок нарочно — это не обрезка.
+        const вРяду = !!el.closest('.ws-nav');
+        if (r.bottom > gc.bottom + 1 || r.top < gc.top - 1
+            || (!вРяду && (r.right > gc.right + 1 || r.left < gc.left - 1)))
+          плохо.push(`${имя}: «${(el.textContent || el.type).trim().slice(0, 12)}» за краем холста`);
+        if (r.height / k < 29.5)
+          плохо.push(`${имя}: «${(el.textContent || el.type).trim().slice(0, 12)}» мельче 30 единиц`);
+      });
+    };
+    for (const row of ['face', 'skull', 'body', 'skin', 'light']) {
+      WormStudio.row = row; WormStudio.renderNav(); WormStudio.renderKnobs(true);
+      await new Promise(r => setTimeout(r, 100));
+      проверить('раздел ' + row);
+      for (const c of [...document.querySelectorAll('[data-chip]')].map(e => e.getAttribute('data-chip'))) {
+        WormStudio.select(c, { noZoom: true });
+        await new Promise(r => setTimeout(r, 100));
+        проверить(c);
+      }
+    }
+    // И с правками: в шапке прибавляются счётчик, откат и сброс.
+    WormLook.apply(WormStudio.handle, { headSize: 0.2 });
+    WormStudio.select('head', { noZoom: true });
+    await new Promise(r => setTimeout(r, 200));
+    проверить('с правками');
+    WormLook.reset(WormStudio.handle);
+    WormStudio.close();
+    return { плохо, экранов, минВид: Math.round(минВид), максПанель: Math.round(максПанель) };
+  });
+  say(`  обойдено экранов: ${walk.экранов}, персонажу не меньше ${walk.минВид} единиц, панели не больше ${walk.максПанель}`);
+  check(walk.плохо.length === 0,
+        walk.плохо.length ? `не влезает: ${walk.плохо.slice(0, 5).join(' · ')}`
+                          : 'ни одна панель не обрезана и ни одна кнопка не мельче тридцати единиц');
+  // Не «больше половины», а с запасом: студия — экран ПЕРСОНАЖА, панель на
+  // нём гостья. Потолок в 260 единиц из 844 — это те самые «не больше
+  // трети», при которых самый полный набор ручек ещё влезает без прокрутки.
+  // Проверка на прокрутку одна этого не ловит: панель просто растёт до
+  // своего потолка и молча съедает вид.
+  check(walk.максПанель <= 260, `панель не разрослась: ${walk.максПанель} единиц из 844`);
+  check(walk.минВид > 560, `и персонажу всегда остаётся ${walk.минВид} единиц — больше двух третей экрана`);
 
   if (errors.length) { say('\nОШИБКИ СТРАНИЦЫ:\n' + errors.join('\n')); bad += errors.length; }
   say('\n' + (bad ? `ПРОВАЛЕНО: ${bad}` : 'ВСЁ СОШЛОСЬ'));
