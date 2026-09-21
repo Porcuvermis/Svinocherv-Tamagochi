@@ -27,6 +27,7 @@
 | | |
 |---|---|
 | **имена для человека и агента** | **`src/core/worm-parts.js`** — см. ниже, разд. 1а |
+| **зачем визуальный слой и почему он устроен так** | `docs/worm-render-audit.md` (разбор конвейера), `docs/worm-visual-control.md` (замысел) |
 | модель (данные червя) | `src/core/worm-model.js`, `src/core/worm.js` |
 | контур частей и разметка лица | `src/core/worm-silhouette.js` |
 | довольность, истощение, смерть | `src/core/worm-condition.js` |

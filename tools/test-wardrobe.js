@@ -154,14 +154,27 @@ const { viewport, prepare } = require('./harness');
         // Ось части знает её матрица: (a, b) — куда смотрит местный x на
         // экране, (c, d) — местный y. Режем вдоль них.
         const m = shape.getScreenCTM();
-        const inv = m.inverse();
         const ax = Math.hypot(m.a, m.b) || 1, ay = Math.hypot(m.c, m.d) || 1;
         const dir = along ? { x: m.c / ay, y: m.d / ay }    // поперёк длинной части
                           : { x: m.a / ax, y: m.b / ax };   // поперёк обычной
+        // ---------- ЭКРАН → ЧАСТЬ: БЕЗ СЫРОГО getScreenCTM ----------
+        // Точки сюда приходят ЭКРАННЫЕ (getBoundingClientRect), а перевод шёл
+        // одной обратной матрицей части. Обе величины меряют разное: рамка
+        // учитывает css-трансформацию холста всегда, а учитывает ли её CTM —
+        // вопрос браузера. При масштабе холста РОВНО ЕДИНИЦА разницы нет, и
+        // прогон был зелёным годами; стоило прогнать его «по-айфонски»
+        // (SVINO_FAKE_CTM=1), и разрез не попадал в часть ни разу — шесть
+        // проверок отвечали «null её толщины» и винили крой.
+        //
+        // Считаем в два шага, и оба безопасны: экран → корневой svg через
+        // SvgSpace (он вообще без матриц), дальше svg → часть ОТНОШЕНИЕМ двух
+        // CTM, в котором множитель предка сокращается.
+        const toPart = shape.getScreenCTM().inverse().multiply(svg.getScreenCTM());
         const pt = svg.createSVGPoint();
         const hit = (sx, sy) => {
-          pt.x = sx; pt.y = sy;
-          const loc = pt.matrixTransform(inv);
+          const v = SvgSpace.fromClient(svg, sx, sy);
+          pt.x = v.x; pt.y = v.y;
+          const loc = pt.matrixTransform(toPart);
           const q = svg.createSVGPoint(); q.x = loc.x; q.y = loc.y;
           return shape.isPointInFill(q);
         };
@@ -244,8 +257,19 @@ const { viewport, prepare } = require('./harness');
         const bb = belly.getBBox(), m = belly.getScreenCTM(), N = 40;
         const pt = svg.createSVGPoint();
         let inside = 0, over = 0;
-        for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
-          pt.x = bb.x + bb.width * i / N; pt.y = bb.y + bb.height * j / N;
+        // Сетка идёт по СЕРЕДИНАМ клеток, а не по их углам. Угловая сетка
+        // начинается ровно на кромке габарита живота — а там законно лежит
+        // одежда СОСЕДНЕГО сегмента: сегменты перекрываются, на то они и
+        // цепочка. Замер это и показал: нарушение всегда приходило в одну и
+        // ту же точку верхнего ряда (j = 0) и только при ×1.25, то есть
+        // проверка при допуске «ровно ноль» решкой падала, а орлом проходила.
+        //
+        // Порог остался НОЛЬ — ослаблять его нельзя, дефект был настоящий и
+        // стоил двадцати четырёх точек из ста. Поменялось только то, ГДЕ
+        // задаётся вопрос: в теле живота, а не на его шве.
+        for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+          pt.x = bb.x + bb.width * (i + 0.5) / N;
+          pt.y = bb.y + bb.height * (j + 0.5) / N;
           if (!belly.isPointInFill(pt)) continue;
           inside++;
           const s = pt.matrixTransform(m);
@@ -334,18 +358,43 @@ const { viewport, prepare } = require('./harness');
       // и «едет вместе с головой» им не подходит: их черта сама ездит, и
       // относительно неё вещь обязана СТОЯТЬ. Заодно видно, что черта и
       // правда двигалась, — иначе проверка мерила бы неподвижность.
+      // У ВИСЯЩЕГО мерится ТОЧКА КРЕПЛЕНИЯ, а не середина габарита. Серьга
+      // висит, а висящее держится вниз ПО ЭКРАНУ, а не по своей детали
+      // (docs/bench/turn.md): когда ухо разворачивается, тело серьги
+      // законно уезжает относительно него. Мерить это как «уход» — значит
+      // мерить задуманное поведение и называть его дефектом.
+      //
+      // Замер показал разницу: середина габарита гуляла на 4.94 при пороге
+      // «меньше 5» — то есть проверка проходила или падала по случайности.
+      // Крепление на тех же пяти ракурсах гуляет на 0.40. Порог перестал
+      // быть монеткой, а проверка стала отвечать на свой вопрос: серьга
+      // ПРИШИТА к уху и с него не съезжает.
       rides(slot, hostSel, side) {
         const g = side ? this.q('[data-cosmetic="' + slot + '"][data-side="' + side + '"]')
                        : this.q('[data-cosmetic="' + slot + '"]');
         const host = this.q(hostSel);
         if (!g || !host) return null;
-        const r = g.getBoundingClientRect(), h = host.getBoundingClientRect();
+        const h = host.getBoundingClientRect();
         const skull = this.q('[data-part="head-tilt"]');
         const s0 = skull ? skull.getBoundingClientRect() : h;
-        return {
-          от: +((r.x + r.width / 2) - (h.x + h.width / 2)).toFixed(1),
-          черта: +((h.x + h.width / 2) - (s0.x + s0.width / 2)).toFixed(1)
-        };
+        const черта = +((h.x + h.width / 2) - (s0.x + s0.width / 2)).toFixed(1);
+
+        // Крепление — начало координат узла подвески, пересчитанное в
+        // систему САМОЙ ЧЕРТЫ. Отношение двух матриц, поэтому масштаб
+        // холста сокращается.
+        const svg = this.root();
+        const sw = g.querySelector('[data-swing]');
+        if (sw && svg && sw.getScreenCTM && host.getScreenCTM) {
+          const m = sw.getScreenCTM(), hm = host.getScreenCTM();
+          if (m && hm) {
+            const p = svg.createSVGPoint(); p.x = 0; p.y = 0;
+            const loc = p.matrixTransform(m).matrixTransform(hm.inverse());
+            return { от: +loc.x.toFixed(2), черта, крепление: true };
+          }
+        }
+        // У неподвижной вещи крепления нет — меряем как раньше, серединой.
+        const r = g.getBoundingClientRect();
+        return { от: +((r.x + r.width / 2) - (h.x + h.width / 2)).toFixed(1), черта, крепление: false };
       },
 
       // Симметричную пару (серьги) мерить надо по ОДНОЙ стороне: середина
@@ -362,11 +411,30 @@ const { viewport, prepare } = require('./harness');
     };
   ` });
 
+  // Ждём не только СОСТОЯНИЕ, но и его отрисовку. Персонаж пересчитывается
+  // на своей частоте (по умолчанию 30 Гц), а опрос идёт кадрами страницы
+  // (60 Гц): «ракурс доехал» становится правдой на кадр раньше, чем узлы
+  // встают на новые места. Замер, сделанный в этот зазор, снимает
+  // ПРЕДЫДУЩИЙ ракурс — и проверка с тесным порогом решкой падает, а орлом
+  // проходит. Отсюда и брался плавающий провал: то серьга, то цепь, то
+  // ничего.
+  //
+  // Ждём, пока измеряемое перестанет меняться, а не фиксированную паузу:
+  // частоту пересчёта правят, а про прогон при этом забывают.
   const setYaw = (v) => page.evaluate(async t => {
     MainWormHandle.setLivePose({ headYaw: t });
     for (let i = 0; i < 240; i++) {
-      if (Math.abs(MainWormHandle.getHeadPose().current - t) < 0.01) return;
+      if (Math.abs(MainWormHandle.getHeadPose().current - t) < 0.01) break;
       await new Promise(r => requestAnimationFrame(r));
+    }
+    const head = document.querySelector('[data-part="head-tilt"]');
+    let prev = null, same = 0;
+    for (let i = 0; i < 120 && same < 3; i++) {
+      await new Promise(r => requestAnimationFrame(r));
+      const r = head ? head.getBoundingClientRect() : null;
+      const now = r ? `${r.x.toFixed(2)}|${r.width.toFixed(2)}|${r.height.toFixed(2)}` : '';
+      same = (now === prev) ? same + 1 : 0;
+      prev = now;
     }
   }, v);
 
@@ -508,8 +576,12 @@ const { viewport, prepare } = require('./harness');
     const drift = offs.length ? Math.max(...offs) - Math.min(...offs) : null;
     check(seen.length === YAWS.length && hostMoved > 4,
       `черта под «${item.id}» и правда ездит: размах ${hostMoved.toFixed(1)}`);
-    check(drift != null && drift < 5,
-      `«${item.id}» едет вместе со своей чертой: уход ${drift}`);
+    // Порог тесный НАМЕРЕННО: меряется крепление, а оно обязано стоять
+    // намертво. Прежние «меньше 5» стояли на измеренных 4.94 — запас в один
+    // процент, то есть монетка (см. rides).
+    const pinned = seen.every(v => v.крепление);
+    check(drift != null && drift < (pinned ? 1.5 : 5),
+      `«${item.id}» ${pinned ? 'пришита к своей черте: крепление гуляет на' : 'едет вместе со своей чертой: уход'} ${drift}`);
   }
 
   // ---------- 2в. ТОРЧАЩЕЕ ДЕРЖИТСЯ ЛИЦА ----------
