@@ -1,0 +1,188 @@
+/* ================= ИНСПЕКТОР ПЕРСОНАЖА ================= */
+/* Инструмент, а не игра: слова и рамки здесь разрешены (инвариант 9
+   выводит debug-панели из-под запрета).
+
+   Накладка лежит ПОВЕРХ страницы и вне холста — не потому, что так проще, а
+   потому что на слое, который меняется каждый кадр, не должно быть ни
+   фильтра, ни маски, ни лишней группы: цена там за сам факт отдельного
+   буфера (docs/traps.md, п. 73). Подсветка внутри персонажа стоила бы кадров
+   всегда, а не только когда на неё смотрят. */
+
+#wi-root {
+    position: fixed;
+    inset: 0;
+    z-index: 9999990;
+    /* Пальцы не ловит, пока инспектор закрыт: иначе накладка накрывает собой
+       всю игру и в комнату не ткнуть вовсе. */
+    pointer-events: none;
+    display: none;
+}
+
+#wi-root.active {
+    display: block;
+    pointer-events: auto;
+    cursor: crosshair;
+}
+
+#wi-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ---------- ПОДСВЕТКА ВЫБРАННОГО ---------- */
+.wi-box {
+    fill: none;
+    stroke: #00e0ff;
+    stroke-width: 1.5;
+    stroke-dasharray: 5 3;
+}
+
+/* Ориентир — точка НА контуре, а не рамка вокруг: он там и лежит, а рамка
+   читалась бы как «выбран кусок головы». */
+.wi-mark {
+    fill: none;
+    stroke: #00e0ff;
+    stroke-width: 2.5;
+}
+
+.wi-tag {
+    font: 700 11px/1 -apple-system, system-ui, sans-serif;
+    fill: #00e0ff;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.75);
+    stroke-width: 3px;
+}
+
+/* ---------- НАКЛАДКА «СВЕТ» ---------- */
+/* Блики всех частей обязаны лечь на ОДНУ линию. Ломаная показывает это
+   сразу; по числам такое не проверяется никогда. */
+.wi-spec { fill: #fff36b; stroke: rgba(0, 0, 0, 0.5); stroke-width: 1; }
+.wi-specline { fill: none; stroke: #fff36b; stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 0.85; }
+.wi-ray { stroke: #fff36b; stroke-width: 2; opacity: 0.9; }
+.wi-sun { fill: #fff36b; }
+
+/* ---------- НАКЛАДКА «РАКУРС» ---------- */
+.wi-role { stroke: rgba(0, 0, 0, 0.55); stroke-width: 1; }
+
+/* ---------- НАКЛАДКА «ГЛУБИНА» ---------- */
+.wi-depth {
+    font: 600 10px/1 -apple-system, system-ui, sans-serif;
+    fill: #d8d8d8;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.8);
+    stroke-width: 3px;
+}
+
+/* ---------- НАКЛАДКА «СИЛУЭТ» ---------- */
+/* Заливка чёрным — самый дешёвый способ увидеть форму: цвет маскирует
+   плоскость, светлота — нет. Одна вершина на животе или плато из бус видно
+   мгновенно. Красится САМ червь, поэтому класс снимается при закрытии
+   инспектора: иначе игра останется чёрной. */
+body.wi-silhouette .worm-root * {
+    fill: #000 !important;
+    stroke: #000 !important;
+    filter: none !important;
+    opacity: 1 !important;
+}
+
+/* Тень на полу из заливки ИСКЛЮЧЕНА: она не часть силуэта, а то, что он
+   отбрасывает. Закрашенная вместе с телом, она прирастает к нему снизу
+   лишним чёрным пятном — и форма, ради которой всё затевалось, читается
+   уже неправильно. */
+body.wi-silhouette .worm-floor-shadow { display: none !important; }
+
+/* ---------- ПАНЕЛЬ СОСТОЯНИЯ УХОДИТ НА ВРЕМЯ ОСМОТРА ---------- */
+/* Она стоит внизу и переносится на несколько рядов кнопок, то есть
+   занимает нижние две трети экрана — там же, где червь. Тык в голову
+   попадал в её кнопки, и в том числе в «Шрам»: осмотр тихо менял
+   персонажа. Два инструмента на одном экране не помещаются, и уступает
+   тот, которым сейчас не пользуются. */
+body.wi-on #debug-state-panel { display: none !important; }
+
+/* ---------- ПАНЕЛЬ ---------- */
+/* СВЕРХУ, а не снизу, и это не вкусовщина. Внизу стоит панель состояния, а
+   в нижних двух третях экрана живёт сам червь — панель, поставленная там,
+   накрывала его собой, и тык в голову попадал в поле контекста. Инструмент,
+   закрывающий предмет измерения, не инструмент. Сторожит это
+   tools/test-worm-inspect.js. */
+#wi-panel {
+    position: fixed;
+    left: 10px;
+    top: 8px;
+    z-index: 9999999;
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    max-width: 330px;
+    font: 500 11px/1.35 -apple-system, system-ui, sans-serif;
+    color: #e8e8e8;
+}
+
+#wi-panel.visible { display: flex; }
+
+/* Тело панели раскрывается только когда инспектор включён: закрытым он
+   занимает одну кнопку и не спорит за место с панелью состояния. */
+#wi-panel .wi-body { display: none; }
+#wi-panel.wi-open .wi-body { display: flex; flex-direction: column; gap: 5px; }
+
+#wi-panel .wi-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+#wi-panel button {
+    background: rgba(20, 20, 24, 0.86);
+    color: #cfcfcf;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px;
+    padding: 3px 7px;
+    font: 600 11px/1 -apple-system, system-ui, sans-serif;
+    cursor: pointer;
+}
+
+#wi-panel button.active {
+    background: #00707d;
+    color: #fff;
+    border-color: #00e0ff;
+}
+
+#wi-panel .wi-main { font-weight: 800; }
+
+#wi-panel .wi-lbl, #wi-panel .wi-val {
+    opacity: 0.75;
+    min-width: 34px;
+}
+
+#wi-panel input[type="range"] { flex: 1; min-width: 90px; }
+
+#wi-panel .wi-pick {
+    background: rgba(20, 20, 24, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    padding: 5px 7px;
+}
+
+#wi-panel .wi-dim { opacity: 0.62; }
+
+/* Контекст лежит в поле, а не только в буфере: буфер может быть запрещён
+   (нет https, нет разрешения), и «скопировано» без текста на экране — это
+   обещание, которое нечем проверить. */
+/* Поле контекста показывается по требованию: само по себе оно занимает
+   полпанели, а нужно только в тот момент, когда контекст забирают. */
+#wi-panel textarea { display: none; }
+#wi-panel.wi-ctx textarea { display: block; }
+
+#wi-panel textarea {
+    width: 100%;
+    height: 132px;
+    background: rgba(12, 12, 14, 0.94);
+    color: #b8e8ef;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    padding: 5px 6px;
+    font: 500 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+    resize: vertical;
+}

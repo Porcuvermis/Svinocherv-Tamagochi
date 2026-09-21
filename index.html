@@ -206,6 +206,9 @@
     <link rel="stylesheet" href="src/minigames/gluttony/kitchen.css?v=__BUILD__" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/pride/pride.css?v=__BUILD__" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="src/minigames/envy/envy.css?v=__BUILD__" media="print" onload="this.media='all'">
+    <!-- Инспектор персонажа: инструмент, живёт внутри debug-режима. Грузится
+         отложенно вместе с остальными — до первого кадра он не нужен. -->
+    <link rel="stylesheet" href="src/core/worm-inspect.css?v=__BUILD__" media="print" onload="this.media='all'">
 </head>
 <body>
 
@@ -1072,6 +1075,9 @@
 <!-- Таблица визуальных сущностей: имена для человека и агента. Рендерер о
      ней не знает — это слой поверх, и убрать его можно без последствий. -->
 <script src="src/core/worm-parts.js?v=__BUILD__"></script>
+<!-- Инспектор: накладка поверх персонажа и сбор контекста. Только читает —
+     правки внешности будет вносить пульт, и только он. -->
+<script src="src/core/worm-inspect.js?v=__BUILD__"></script>
 <script src="src/core/worm.js?v=__BUILD__"></script>
 <script src="src/core/debug.js?v=__BUILD__"></script>
 <script src="src/core/sins-menu.js?v=__BUILD__"></script>
