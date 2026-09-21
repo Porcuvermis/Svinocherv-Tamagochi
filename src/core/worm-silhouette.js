@@ -62,6 +62,19 @@ function wormSkullHalf(cfg, yaw, side) {
     ];
 }
 
+// ---------- РАЗМЕРЫ ГОЛОВЫ ----------
+// Радиусы головы выводятся из модели ЗДЕСЬ, а не в рендерере, по той же
+// причине, по которой здесь живут высоты черт лица: их спрашивает не только
+// рисование. Инспектору (src/core/worm-parts.js) надо знать, где на экране
+// скула, и считать её он обязан теми же радиусами, какими её нарисовали, —
+// иначе ручка встанет рядом с контуром, а не на нём.
+function wormHeadRadii(head) {
+    const h = head || {};
+    const R = WORM_HEAD_R * (h.scale != null ? h.scale : 1);
+    return { R, rx: R * (h.stretchX != null ? h.stretchX : 1),
+                ry: R * (h.stretchY != null ? h.stretchY : 1) };
+}
+
 // ---------- ПУТЬ ДЛЯ ОТРИСОВКИ ----------
 // Вниз по правой половине, обратно вверх по левой. Левая проходится в
 // обратном направлении теми же кривыми — иначе контур пришлось бы
@@ -510,6 +523,13 @@ function wormHeadSkinPoint(phiDeg, v, cfg, yaw, ratio, halfX, halfY) {
 
 const WormSilhouette = {
     skullPath: wormSkullPath,
+    // Половина контура черепа КРИВЫМИ — то, из чего складывается skullPath.
+    // Наружу отдано затем, что «скула» и «висок» не узлы дерева, а точки на
+    // этих кривых: показать их на экране можно только отсюда. Считать их
+    // второй раз в другом файле нельзя — это ровно тот случай, когда два
+    // описания одного расходятся молча.
+    skullHalf: wormSkullHalf,
+    headRadii: wormHeadRadii,
     yawProject: wormYawProject,
     skinPoint: wormHeadSkinPoint,
     skullHalfWidth: wormSkullHalfWidth,

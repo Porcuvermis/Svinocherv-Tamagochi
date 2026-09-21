@@ -998,9 +998,9 @@ function buildHeadNode(model, ctx) {
     if (flipGroup) { group.appendChild(flipGroup); flipGroup.appendChild(tiltGroup); }
     else group.appendChild(tiltGroup);
 
-    const R = WormSilhouette.face.headR * head.scale;
-    const rx = R * head.stretchX;
-    const ry = R * head.stretchY;
+    // Радиусы — из worm-silhouette.js, а не тремя строчками здесь: их же
+    // спрашивает инспектор, когда считает, где на экране скула.
+    const { rx, ry } = WormSilhouette.headRadii(head);
     const skullD = skullPathData(rx, ry, skullCfg, headYaw);
 
     const headGradId = `worm-head-grad-${ctx.instanceId}`;
