@@ -87,6 +87,28 @@ const harness = require('./harness');
   say(`  перекрытие панели и червя: ${cover.overlap} из ${cover.area} точек`);
   check(cover.overlap === 0, 'панель не перекрывает персонажа ни одной точкой');
 
+  // ---------- И ЛЕЖИТ ВНУТРИ ХОЛСТА ----------
+  // Панель `position: fixed` в <body>, то есть привязана к ОКНУ. А верх окна
+  // на айфоне в Telegram занят шапкой клиента и чёлкой: панель, стоявшая на
+  // `top: 8px`, уезжала прямо под них, и на телефоне её было не прочесть и
+  // не нажать. Холст уже стоит в безопасной области целиком (инвариант 11),
+  // поэтому единственное верное место — внутри него.
+  //
+  // Проверка идёт и «по-айфонски» (SVINO_VIEWPORT), где масштаб холста не
+  // единица и он не совпадает с окном: только там ошибка и видна.
+  const inStage = await page.evaluate(() => {
+    const p = document.getElementById('wi-panel').getBoundingClientRect();
+    const g = document.getElementById('game-container').getBoundingClientRect();
+    return {
+      панель: { l: +p.left.toFixed(0), t: +p.top.toFixed(0), r: +p.right.toFixed(0), b: +p.bottom.toFixed(0) },
+      холст: { l: +g.left.toFixed(0), t: +g.top.toFixed(0), r: +g.right.toFixed(0), b: +g.bottom.toFixed(0) },
+      внутри: p.left >= g.left - 1 && p.top >= g.top - 1
+           && p.right <= g.right + 1 && p.bottom <= g.bottom + 1
+    };
+  });
+  say(`  панель ${JSON.stringify(inStage.панель)} в холсте ${JSON.stringify(inStage.холст)}`);
+  check(inStage.внутри, 'панель целиком внутри холста — значит внутри безопасной области');
+
   // ---------- 3. КИСТЬ: ПЕРЕБОР СЛОЁВ ----------
   say('');
   say('======== КИСТЬ ПЕРЕБИРАЕТ СЛОИ ========');
@@ -251,6 +273,42 @@ const harness = require('./harness');
         `узлов столько же, сколько до инспектора: ${after.nodes} (было ${idle.nodes})`);
   const skullNow = await page.evaluate(() => JSON.stringify(WormModelAPI.createDefaultWormModel().head.skull));
   check(after.skull === skullNow, 'модель не поехала: череп тот же, что по умолчанию');
+
+  // ---------- ПАНЕЛЬ В TELEGRAM НА АЙФОНЕ ----------
+  // Стоит последней: она подделывает клиент Telegram и пересобирает холст,
+  // после чего мерить что-либо ещё нельзя.
+  //
+  // Без неё проверка «панель внутри холста» ничего не доказывает: на
+  // компьютере холст начинается от самого верха окна, и панель на `top: 8px`
+  // проходит её даром. Настоящая беда видна ТОЛЬКО там, где верх окна занят
+  // чужим: чёлка плюс шапка клиента Telegram. Ровно туда панель и уезжала —
+  // на телефоне её было не прочесть и не нажать.
+  say('');
+  say('======== ПАНЕЛЬ НЕ ЛЕЗЕТ ПОД ШАПКУ TELEGRAM ========');
+  const tg = await page.evaluate(async () => {
+    const CHROME = { notch: 60, header: 56 };
+    window.Telegram = { WebApp: {
+      viewportStableHeight: window.innerHeight - 180,
+      safeAreaInset: { top: CHROME.notch, bottom: 34, left: 0, right: 0 },
+      contentSafeAreaInset: { top: CHROME.header, bottom: 0, left: 0, right: 0 }
+    } };
+    Stage.apply();
+    WormInspect.open();
+    await new Promise(r => setTimeout(r, 400));
+    const p = document.getElementById('wi-panel').getBoundingClientRect();
+    const g = document.getElementById('game-container').getBoundingClientRect();
+    WormInspect.close();
+    return {
+      занято: CHROME.notch + CHROME.header,
+      холст: +g.top.toFixed(0),
+      панель: +p.top.toFixed(0),
+      внутри: p.top >= g.top - 1 && p.bottom <= g.bottom + 1
+           && p.left >= g.left - 1 && p.right <= g.right + 1
+    };
+  });
+  say(`  верх окна занят чужим на ${tg.занято}, холст начинается с ${tg.холст}, панель с ${tg.панель}`);
+  check(tg.панель >= tg.занято, 'панель НЕ под шапкой клиента и не под чёлкой');
+  check(tg.внутри, 'и по-прежнему целиком внутри холста');
 
   if (errors.length) { say('\nОШИБКИ СТРАНИЦЫ:\n' + errors.join('\n')); bad += errors.length; }
   say('\n' + (bad ? `ПРОВАЛЕНО: ${bad}` : 'ВСЁ СОШЛОСЬ'));

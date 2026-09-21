@@ -97,7 +97,42 @@ const WormInspect = {
         window.addEventListener('pointercancel', () => this.onUp());
 
         if (typeof DebugMode !== 'undefined') DebugMode.onChange(() => this.sync());
+        // Холст переезжает при повороте телефона и при смене высоты окна в
+        // Telegram — панель обязана переехать с ним.
+        window.addEventListener('resize', () => this.placePanel());
+        window.addEventListener('orientationchange', () => setTimeout(() => this.placePanel(), 150));
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => this.placePanel());
+        }
         this.sync();
+    },
+
+    // ---------- ПАНЕЛЬ СТОИТ ПО ХОЛСТУ, А НЕ ПО ОКНУ ----------
+    // Она лежит в <body> и потому `position: fixed` у неё настоящий,
+    // оконный. Верх окна в Telegram на айфоне занят шапкой клиента и чёлкой,
+    // и панель, поставленная на `top: 8px`, уезжала прямо под них.
+    //
+    // Холст (`#game-container`) уже стоит в безопасной области целиком:
+    // Stage.viewport() вычитает и чёлку, и шапку клиента, и делает это РОВНО
+    // ОДИН РАЗ (инвариант 11). Значит правильный ответ на вопрос «где можно
+    // рисовать» у игры уже есть — надо не считать его заново, а спросить.
+    //
+    // Через `getBoundingClientRect` холста, а не через env() в стилях: env()
+    // внутри css дал бы ВТОРОЕ вычитание безопасной зоны, и это ровно та
+    // ловушка №134, из-за которой у сада срезало полку.
+    placePanel() {
+        if (!this.panel) return;
+        const host = document.getElementById('game-container');
+        if (!host) return;
+        const r = host.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        const pad = Math.round(Math.min(10, r.width * 0.03));
+        this.panel.style.left = (r.left + pad) + 'px';
+        this.panel.style.top = (r.top + pad) + 'px';
+        this.panel.style.maxWidth = Math.round(r.width - pad * 2) + 'px';
+        // Выше половины холста не растёт: ниже живёт червь, а закрывать
+        // предмет измерения инструменту нельзя.
+        this.panel.style.maxHeight = Math.round(r.height * 0.5) + 'px';
     },
 
     panelMarkup() {
@@ -159,6 +194,7 @@ const WormInspect = {
     // ---------- ВКЛ/ВЫКЛ ----------
     sync() {
         const dbg = (typeof DebugMode !== 'undefined') && DebugMode.enabled;
+        this.placePanel();
         // Инспектор живёт внутри debug-режима: своей кнопки на игровом
         // экране он не заводит — там место червю, а не инструментам.
         this.panel.classList.toggle('visible', dbg);
@@ -167,6 +203,7 @@ const WormInspect = {
 
     open() {
         this.on = true;
+        this.placePanel();
         this.root.classList.add('active');
         this.panel.classList.add('wi-open');
         // Панель состояния уходит на время осмотра. Она стоит внизу и

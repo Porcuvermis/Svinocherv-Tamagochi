@@ -101,11 +101,15 @@ body.wi-silhouette .worm-floor-shadow { display: none !important; }
 body.wi-on #debug-state-panel { display: none !important; }
 
 /* ---------- ПАНЕЛЬ ---------- */
-/* СВЕРХУ, а не снизу, и это не вкусовщина. Внизу стоит панель состояния, а
-   в нижних двух третях экрана живёт сам червь — панель, поставленная там,
-   накрывала его собой, и тык в голову попадал в поле контекста. Инструмент,
-   закрывающий предмет измерения, не инструмент. Сторожит это
-   tools/test-worm-inspect.js. */
+/* Наверху холста, и это не вкусовщина. Внизу стоит панель состояния, а в
+   нижних двух третях живёт сам червь — панель, поставленная там, накрывала
+   его собой, и тык в голову попадал в поле контекста. Инструмент,
+   закрывающий предмет измерения, не инструмент.
+
+   Координаты ей ставит JS по холсту (WormInspect.placePanel), а не эти
+   стили: холст уже стоит в безопасной области, а верх ОКНА в Telegram на
+   айфоне занят шапкой клиента и чёлкой. Значения ниже — только запасной
+   вариант на случай, если холста ещё нет. Сторожит tools/test-worm-inspect.js. */
 #wi-panel {
     position: fixed;
     left: 10px;
@@ -118,7 +122,7 @@ body.wi-on #debug-state-panel { display: none !important; }
     /* Выше этого панель не растёт, а прокручивается: с раскрытыми ручками и
        полем контекста она иначе уходит на весь экран и снова накрывает
        червя — ту самую беду, ради которой её и подняли наверх. */
-    max-height: 46vh;
+    max-height: 50%;
     overflow-y: auto;
     /* Подложка НА ВСЮ панель, а не на отдельные строки. Без неё подписи
        ползунков лежали прямо на комнате и читались как часть сцены. */
@@ -149,9 +153,10 @@ body.wi-on #debug-state-panel { display: none !important; }
     color: #cfcfcf;
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 6px;
-    padding: 3px 7px;
-    font: 600 11px/1 -apple-system, system-ui, sans-serif;
+    padding: 3px 6px;
+    font: 600 10.5px/1 -apple-system, system-ui, sans-serif;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 #wi-panel button.active {
@@ -187,8 +192,21 @@ body.wi-on #debug-state-panel { display: none !important; }
     gap: 3px;
 }
 
-#wi-panel .wi-knobs .wi-lbl { min-width: 96px; }
-#wi-panel .wi-knobs .wi-val { min-width: 42px; text-align: right; }
+/* Строка ручки обязана влезать в ОДНУ строку на узком холсте: подпись,
+   ползунок и число. Перенос делит ручку пополам, и «+0.00» повисает под
+   ней отдельной строкой — панель вырастает вдвое и читается как список
+   обрывков. Ширины подобраны под самый узкий случай (холст в Telegram на
+   айфоне, ~300 точек за вычетом полей). */
+#wi-panel .wi-knobs .wi-lbl {
+    min-width: 0;
+    flex: 0 1 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#wi-panel .wi-knobs .wi-row { flex-wrap: nowrap; }
+#wi-panel .wi-knobs input[type="range"] { min-width: 60px; }
+#wi-panel .wi-knobs .wi-val { min-width: 38px; text-align: right; flex: 0 0 auto; }
 #wi-panel input[type="range"]:disabled { opacity: 0.35; }
 
 /* Курсор в режиме правки говорит, что вещь можно тащить. */
