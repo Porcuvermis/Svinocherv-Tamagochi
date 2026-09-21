@@ -119,6 +119,11 @@ function createDefaultEar() {
         scale: 0.95,
         // 0 = остриём вверх (стандарт). Прижатое ухо — отрицательный угол.
         rotation: 0,
+        // Сдвиги опорных точек КОНТУРА: { 'ear-tip': {x,y}, … }. null —
+        // форма ровно такая, как задумана (WORM_EAR_ANCHORS в worm-head.js).
+        // Здесь именно сдвиги, а не сами точки: так форма остаётся
+        // относительной и переживает правку базового контура.
+        form: null,
         fill: WORM_PAL.flesh[300],
         stroke: WORM_PAL.ink,
         visible: true

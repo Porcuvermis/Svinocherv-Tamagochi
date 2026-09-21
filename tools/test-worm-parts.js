@@ -119,7 +119,10 @@ const harness = require('./harness');
   const marks = await page.evaluate(() => {
     const h = window.MainWormHandle;
     const m = WormParts.model(h), yaw = WormParts.yaw(h);
-    return WormParts.list().filter(e => e.kind === 'landmark').map(e => {
+    // Только ЧЕРЕПНЫЕ: у точек контура уха своя кривая и своя система
+    // координат (местная, самого уха), и спрашивать с них череп — значит
+    // проверять не то.
+    return WormParts.list().filter(e => e.kind === 'landmark' && e.skull).map(e => {
       const p = WormParts.at(h, e.key);
       if (!p || !p.local) return { key: e.key, err: 'не нашлось' };
       const n = p.local;
@@ -137,6 +140,45 @@ const harness = require('./harness');
     check(mk.inside && mk.outside,
           `${mk.title.padEnd(16)} (${mk.x}, ${mk.y}) — на кромке черепа` +
           (mk.inside ? '' : ' [точка НЕ внутри]') + (mk.outside ? '' : ' [точка НЕ у края]'));
+  });
+
+  // ---------- 2б. ТОЧКИ КОНТУРА УХА ЛЕЖАТ НА УХЕ ----------
+  // Та же мысль, что и у черепа, но контур другой: спрашиваем САМ
+  // нарисованный путь уха, а не повторяем здесь его числа. Ручка, стоящая
+  // не на контуре, двигает не то, на что показывает, — и увидеть это
+  // глазом нельзя: она всё равно где-то рядом с ухом.
+  say('');
+  say('======== ТОЧКИ КОНТУРА УХА ЛЕЖАТ НА КОНТУРЕ УХА ========');
+  const ears = await page.evaluate(() => {
+    const h = window.MainWormHandle;
+    const root = h.svgRoot.querySelector('.worm-root');
+    return WormParts.list().filter(e => e.kind === 'landmark' && e.form).map(e => {
+      const p = WormParts.at(h, e.key);
+      if (!p || !p.local) return { key: e.key, err: 'не нашлось' };
+      const host = root.querySelector(`[data-part="${e.form.host}"]`);
+      const path = host && host.querySelector('path');
+      if (!path) return { key: e.key, err: 'у уха нет пути' };
+      const pt = h.svgRoot.createSVGPoint();
+      pt.x = p.local.x; pt.y = p.local.y;
+      // Чуть внутрь от центра уха — внутри; чуть наружу — снаружи.
+      const C = { x: 4, y: -8 };   // середина клина
+      const k = (f) => {
+        const q = h.svgRoot.createSVGPoint();
+        q.x = C.x + (p.local.x - C.x) * f;
+        q.y = C.y + (p.local.y - C.y) * f;
+        return path.isPointInFill(q);
+      };
+      return { key: e.key, title: e.title,
+               x: +p.local.x.toFixed(1), y: +p.local.y.toFixed(1),
+               inside: k(0.88), outside: !k(1.18) };
+    });
+  });
+  check(ears.length === 10, `точек контура уха: ${ears.length} — по пять на сторону`);
+  ears.forEach(mk => {
+    if (mk.err) { check(false, `${mk.key}: ${mk.err}`); return; }
+    check(mk.inside && mk.outside,
+          `${mk.title.padEnd(22)} (${mk.x}, ${mk.y}) — на кромке уха` +
+          (mk.inside ? '' : ' [точка НЕ внутри]') + (mk.outside ? '' : ' [снаружи тоже внутри]'));
   });
 
   // ---------- 3. ЛЕВОЕ ЕСТЬ ЛЕВОЕ ----------

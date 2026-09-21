@@ -140,49 +140,108 @@ function earPlacement(ref, yaw) {
 }
 
 // ---------- ЛОКАЛЬНЫЕ ФОРМЫ (до позиционирования) ----------
-function earPathData(mirror) {
-    // mirror: 1 = правое ухо, -1 = левое. Точка (0,0) — место крепления.
-    //
-    // Тест «залей силуэт чёрным» показывал кошку: ухо было тонким шипом с
-    // узким основанием и острой вершиной вверх. Свинья узнавалась только по
-    // пятачку ВНУТРИ контура — то есть опознавательный признак сидел не там,
-    // где его читает глаз (art-direction.md §4.1).
-    //
-    // Разница кошка/свинья в силуэте — это ПРОПОРЦИИ КЛИНА, а не скругления:
-    //   • кошка: основание узкое, ухо заметно выше своей ширины, тонкий шип;
-    //   • свинья: основание широченное (почти половина ширины черепа), ухо
-    //     примерно квадратное в габаритах, это тяжёлый мясистый клин.
-    // Плюс кончик: у кошки это остриё в зенит, у свиньи вершина
-    // перекатывается и уходит НАРУЖУ, а задняя кромка провисает вниз.
-    // Ключ к прочтению — ПРЯМЫЕ РЁБРА И УГОЛ. Выпуклая дуга по задней кромке
-    // читается шариком независимо от габаритов; прямая кромка с изломом у
-    // основания читается клином. Плюс ухо должно ВЫХОДИТЬ за череп: пока оно
-    // сидит внутри купола, наружу торчит только скруглённая макушка и вся
-    // работа над формой пропадает.
-    const s = mirror;
-    return `M ${(-s * 19).toFixed(1)},11 ` +
-        // передняя кромка — длинная и почти прямая
-        `C ${(-s * 18).toFixed(1)},-3 ${(-s * 12).toFixed(1)},-18 ${(-s * 3).toFixed(1)},-27 ` +
-        // короткий перекат через вершину, наружу
-        `C ${(s * 4).toFixed(1)},-34 ${(s * 14).toFixed(1)},-36 ${(s * 19).toFixed(1)},-32 ` +
-        // задняя кромка — почти прямая, идёт вниз-наружу до излома
-        `C ${(s * 23).toFixed(1)},-24 ${(s * 26).toFixed(1)},-13 ${(s * 27).toFixed(1)},-3 ` +
-        // излом у основания: угол, а не скругление
-        `C ${(s * 27).toFixed(1)},5 ${(s * 20).toFixed(1)},11 ${(s * 12).toFixed(1)},12 ` +
-        // широкое мясистое основание
-        `C ${(s * 2).toFixed(1)},13 ${(-s * 10).toFixed(1)},13 ${(-s * 19).toFixed(1)},11 Z`;
-}
-
+// ---------- КОНТУР УХА: ПЯТЬ ТОЧЕК, КОТОРЫЕ МОЖНО ТЯНУТЬ ----------
+// Раньше путь уха был строкой с полусотней чисел прямо в коде. Форму такой
+// вещи может менять только тот, кто эти числа читает, — то есть просьба
+// «сделай ухо поострее, а мочку ниже» всегда возвращалась ко мне.
+//
+// Теперь у контура есть ИМЕНА. Пять опорных точек с человеческими
+// названиями, и к каждой можно добавить сдвиг из модели
+// (`head.ears.<сторона>.form`). Сдвиг ОТНОСИТЕЛЬНЫЙ и по умолчанию его нет
+// вовсе: `form: null` — это ровно та форма, что была, до последней цифры.
+//
+// Числа — из старого пути слово в слово. Разбор, почему клин именно такой,
+// остался там же, где был, и повторять его здесь незачем:
+//   • кошка: основание узкое, ухо выше своей ширины, тонкий шип;
+//   • свинья: основание широченное, ухо квадратное в габаритах, тяжёлый
+//     мясистый клин, вершина перекатывается НАРУЖУ, задняя кромка провисает.
+// Ключ к прочтению — ПРЯМЫЕ РЁБРА И УГОЛ: выпуклая дуга по задней кромке
+// читается шариком независимо от габаритов.
+const WORM_EAR_ANCHORS = [
+    { key: 'ear-base',  title: 'основание', x: -19, y:  11 },
+    { key: 'ear-front', title: 'передний край', x: -3, y: -27 },
+    { key: 'ear-tip',   title: 'кончик',    x:  19, y: -32 },
+    { key: 'ear-break', title: 'излом',     x:  27, y:  -3 },
+    { key: 'ear-lobe',  title: 'мочка',     x:  12, y:  12 }
+];
+// Управляющие точки кривых, по две на сегмент. Сами по себе имени не имеют:
+// их двигает не палец, а соседние якоря (см. earShift).
+const WORM_EAR_CTRL = [
+    [{ x: -18, y:  -3 }, { x: -12, y: -18 }],
+    [{ x:   4, y: -34 }, { x:  14, y: -36 }],
+    [{ x:  23, y: -24 }, { x:  26, y: -13 }],
+    [{ x:  27, y:   5 }, { x:  20, y:  11 }],
+    [{ x:   2, y:  13 }, { x: -10, y:  13 }]
+];
 // Раковина — углублённая часть уха: повторяет внешний контур с отступом
 // внутрь, за счёт чего у уха появляется толщина, а не плоская заливка.
-function earInnerPathData(mirror) {
+const WORM_EAR_INNER = [
+    { x: -11, y:   7 },
+    [{ x: -10, y:  -3 }, { x:  -6, y: -15 }, { x:   1, y: -22 }],
+    [{ x:   6, y: -27 }, { x:  13, y: -28 }, { x:  16, y: -25 }],
+    [{ x:  19, y: -19 }, { x:  21, y: -10 }, { x:  21, y:  -3 }],
+    [{ x:  21, y:   3 }, { x:  16, y:   7 }, { x:   9, y:   8 }],
+    [{ x:   1, y:   9 }, { x:  -5, y:   9 }, { x: -11, y:   7 }]
+];
+// Дальше сдвинутого якоря форму не растягиваем: ухо — часть силуэта, и за
+// этой границей оно перестаёт читаться ухом вовсе.
+const WORM_EAR_FORM_MAX = 18;
+
+// Сдвиг произвольной точки контура от сдвинутых якорей. Вес — обратный
+// квадрат расстояния, поэтому САМ якорь уезжает ровно на свой сдвиг, а
+// управляющие точки и раковина едут за ним тем меньше, чем дальше стоят.
+//
+// Считать «какая кривая чья» отдельно не надо: одна формула на внешний
+// контур, его управляющие точки и раковину. Пока их правили по отдельности,
+// раковина вылезала за контур при первом же движении кончика.
+function earShift(px, py, form) {
+    if (!form) return { x: px, y: py };
+    let sx = 0, sy = 0, wsum = 0;
+    for (let i = 0; i < WORM_EAR_ANCHORS.length; i++) {
+        const a = WORM_EAR_ANCHORS[i];
+        const d = form[a.key];
+        const dx = px - a.x, dy = py - a.y;
+        const w = 1 / (dx * dx + dy * dy + 4);
+        wsum += w;
+        if (!d) continue;
+        sx += w * Math.max(-WORM_EAR_FORM_MAX, Math.min(WORM_EAR_FORM_MAX, d.x || 0));
+        sy += w * Math.max(-WORM_EAR_FORM_MAX, Math.min(WORM_EAR_FORM_MAX, d.y || 0));
+    }
+    if (!wsum) return { x: px, y: py };
+    return { x: px + sx / wsum, y: py + sy / wsum };
+}
+
+// Где точка контура лежит на самом деле — с учётом сдвигов и зеркала.
+// Спрашивает студия, чтобы поставить ручку РОВНО на неё: ручка, стоящая не
+// там, где точка, двигает не то, на что показывает.
+function wormEarPoint(mirror, form, key) {
+    const a = WORM_EAR_ANCHORS.find(p => p.key === key);
+    if (!a) return null;
+    const p = earShift(a.x, a.y, form);
+    return { x: mirror * p.x, y: p.y };
+}
+
+function earPathData(mirror, form) {
     const s = mirror;
-    return `M ${(-s * 11).toFixed(1)},7 ` +
-        `C ${(-s * 10).toFixed(1)},-3 ${(-s * 6).toFixed(1)},-15 ${(s * 1).toFixed(1)},-22 ` +
-        `C ${(s * 6).toFixed(1)},-27 ${(s * 13).toFixed(1)},-28 ${(s * 16).toFixed(1)},-25 ` +
-        `C ${(s * 19).toFixed(1)},-19 ${(s * 21).toFixed(1)},-10 ${(s * 21).toFixed(1)},-3 ` +
-        `C ${(s * 21).toFixed(1)},3 ${(s * 16).toFixed(1)},7 ${(s * 9).toFixed(1)},8 ` +
-        `C ${(s * 1).toFixed(1)},9 ${(-s * 5).toFixed(1)},9 ${(-s * 11).toFixed(1)},7 Z`;
+    const P = (pt) => { const q = earShift(pt.x, pt.y, form); return `${(s * q.x).toFixed(1)},${q.y.toFixed(1)}`; };
+    let d = `M ${P(WORM_EAR_ANCHORS[0])} `;
+    for (let i = 0; i < 5; i++) {
+        const c = WORM_EAR_CTRL[i];
+        const to = WORM_EAR_ANCHORS[(i + 1) % 5];
+        d += `C ${P(c[0])} ${P(c[1])} ${P(to)} `;
+    }
+    return d + 'Z';
+}
+
+function earInnerPathData(mirror, form) {
+    const s = mirror;
+    const P = (pt) => { const q = earShift(pt.x, pt.y, form); return `${(s * q.x).toFixed(1)},${q.y.toFixed(1)}`; };
+    let d = `M ${P(WORM_EAR_INNER[0])} `;
+    for (let i = 1; i < WORM_EAR_INNER.length; i++) {
+        const seg = WORM_EAR_INNER[i];
+        d += `C ${P(seg[0])} ${P(seg[1])} ${P(seg[2])} `;
+    }
+    return d + 'Z';
 }
 
 // Сосудики внутри уха: у свиньи ухо — самая тонкая кожа на всём теле, оно
@@ -1107,10 +1166,10 @@ function buildHeadNode(model, ctx) {
             highlight: 0.2, highlightTint: GRIME_HIGHLIGHT,
             shadow: -0.32, shadowTint: GRIME_SHADOW
         });
-        const earShape = svgEl('path', { d: earPathData(mirror), fill: earFill, stroke: ear.stroke, 'stroke-width': (SW.contour * earStrokeK).toFixed(2), 'stroke-linejoin': 'round' });
-        const earInner = svgEl('path', { d: earInnerPathData(mirror), fill: mixColor(ear.fill, GRIME_SHADOW, 0.32), opacity: 0.6 });
+        const earShape = svgEl('path', { d: earPathData(mirror, ear.form), fill: earFill, stroke: ear.stroke, 'stroke-width': (SW.contour * earStrokeK).toFixed(2), 'stroke-linejoin': 'round' });
+        const earInner = svgEl('path', { d: earInnerPathData(mirror, ear.form), fill: mixColor(ear.fill, GRIME_SHADOW, 0.32), opacity: 0.6 });
         const earRidge = svgEl('path', {
-            d: earInnerPathData(mirror), fill: 'none',
+            d: earInnerPathData(mirror, ear.form), fill: 'none',
             stroke: mixColor(ear.fill, GRIME_HIGHLIGHT, 0.55), 'stroke-width': (SW.detail * earStrokeK).toFixed(2), opacity: 0.45
         });
         earGroup.appendChild(earShape);

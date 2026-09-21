@@ -49,6 +49,10 @@ const WORM_STUDIO_SKULL = [
     'muzzle-edge-left', 'muzzle-edge-right', 'chin'
 ];
 
+// Точки контура уха — то же самое для уха. Показываются все пять разом:
+// форму не правят по одной точке, её видно только целиком.
+const WORM_STUDIO_EAR = ['ear-base', 'ear-front', 'ear-tip', 'ear-break', 'ear-lobe'];
+
 const WormStudio = {
     on: false,
     root: null,
@@ -245,6 +249,8 @@ const WormStudio = {
         // глядя на весь контур сразу, а не на один его миллиметр. Камера
         // показывает голову целиком, а выбранная точка просто подсвечена.
         if (this.isSkullish(key)) key = 'head';
+        const ear = this.earOf(key);
+        if (ear) key = 'ear-' + ear;
         const p = WormParts.at(this.handle, key);
         if (!p) return;
         const b = this.box();
@@ -292,10 +298,13 @@ const WormStudio = {
         const h = this.handle;
         if (!h || typeof WormParts === 'undefined') { this.fx.innerHTML = ''; return; }
         const want = [];
-        if (this.shape && this.picked && this.isSkullish(this.picked)) {
-            WORM_STUDIO_SKULL.forEach(k => want.push({ key: k, grab: true }));
+        const ear = this.earOf(this.picked);
+        if (this.shape && ear) {
+            WORM_STUDIO_EAR.forEach(k => want.push({ key: k + '-' + ear }));
+        } else if (this.shape && this.picked && this.isSkullish(this.picked)) {
+            WORM_STUDIO_SKULL.forEach(k => want.push({ key: k }));
         } else if (this.picked) {
-            want.push({ key: this.picked, grab: false });
+            want.push({ key: this.picked });
         }
         const r = 1 / (this.cam ? this.cam.z : 1);   // ручка одного размера НА ЭКРАНЕ
         let html = '';
@@ -314,6 +323,14 @@ const WormStudio = {
         return key === 'head' || WORM_STUDIO_SKULL.indexOf(key) >= 0;
     },
 
+    // Какое ухо сейчас правим: само ухо или любая точка его контура.
+    earOf(key) {
+        if (!key) return null;
+        if (key === 'ear-left' || key === 'ear-right') return key.replace('ear-', '');
+        const m = /^(?:ear-(?:base|front|tip|break|lobe))-(left|right)$/.exec(key);
+        return m ? m[1] : null;
+    },
+
     // ---------- ПАЛЕЦ ПО ПЕРСОНАЖУ ----------
     onDown(e) {
         if (!this.on || !this.handle) return;
@@ -323,8 +340,18 @@ const WormStudio = {
         if (hit) {
             const key = hit.getAttribute('data-h');
             this.select(key, { noZoom: true });
-            this.drag = WormLook.dragStart(this.handle, key);
-            if (!this.drag) this.title('нечем двигать');
+            const ent = WormParts.get(key);
+            if (ent && ent.form) {
+                // Точку контура не «двигают ручкой»: палец переводится прямо
+                // в местные координаты части, и сдвиг считается вычитанием.
+                // Замер чувствительности здесь был бы вторым описанием того
+                // же — и врал бы на повороте головы.
+                WormLook.formStep();
+                this.drag = { form: ent.form, key, host: ent.form.host };
+            } else {
+                this.drag = WormLook.dragStart(this.handle, key);
+                if (!this.drag) this.title('нечем двигать');
+            }
             e.preventDefault();
             return;
         }
@@ -337,8 +364,26 @@ const WormStudio = {
 
     onMove(e) {
         if (!this.drag || !this.handle) return;
+        if (this.drag.form) { this.dragForm(e.clientX, e.clientY); return; }
         WormLook.dragTo(this.handle, this.drag, e.clientX, e.clientY);
         this.syncKnobs();
+    },
+
+    // Палец → местные координаты части → сдвиг относительно задуманной
+    // точки. Зеркало левой стороны снимается тем же множителем, каким оно
+    // накладывается при рисовании: иначе левое ухо тянулось бы в обратную
+    // сторону (ловушка «сторону проверяют, а не выводят в уме»).
+    dragForm(cx, cy) {
+        const el = this.handle.svgRoot.querySelector(`.worm-root [data-part="${this.drag.host}"]`);
+        if (!el) return;
+        const loc = WormParts.localIn(this.handle, el, cx, cy);
+        if (!loc) return;
+        const base = (typeof WORM_EAR_ANCHORS !== 'undefined')
+            ? WORM_EAR_ANCHORS.find(a => a.key === this.drag.form.point) : null;
+        if (!base) return;
+        const s = this.drag.form.side;
+        WormLook.setForm(this.handle, this.drag.host, this.drag.form.point,
+                         loc.x * s - base.x, loc.y - base.y);
     },
 
     onUp() {
@@ -384,7 +429,13 @@ const WormStudio = {
             const e = (typeof WormParts !== 'undefined') ? WormParts.get(k) : null;
             if (!e) return '';
             if (this.handle && !WormParts.at(this.handle, k)) return '';
-            return `<button data-chip="${k}" class="${k === this.picked ? 'on' : ''}">${e.title}</button>`;
+            // Плитка горит и тогда, когда выбрана ТОЧКА её контура: «кончик
+            // левого уха» своей плитки не имеет и иметь не должен, но ухо,
+            // которое сейчас правят, показать обязано.
+            const on = k === this.picked
+                    || (this.earOf(this.picked) && k === 'ear-' + this.earOf(this.picked))
+                    || (this.isSkullish(this.picked) && k === 'head' && this.picked !== 'head');
+            return `<button data-chip="${k}" class="${on ? 'on' : ''}">${e.title}</button>`;
         }).join('');
 
         // Выбранная плитка подъезжает в середину ряда. Без этого тык в

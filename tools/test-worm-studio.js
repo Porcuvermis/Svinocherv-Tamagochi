@@ -192,6 +192,82 @@ const harness = require('./harness');
   check(!!(after.skew && Object.keys(after.skew).length), `правка легла в перекос: ${JSON.stringify(after.skew)}`);
   await page.screenshot({ path: out + '3-drag.png' });
 
+  // ---------- 6б. ФОРМА УХА ----------
+  // Ради этого всё и затевалось: «сделай ухо поострее, а мочку пониже» —
+  // это «потяни кончик вверх, а мочку вниз», и делается пальцем, а не
+  // просьбой ко мне.
+  //
+  // Проверяется САМ ПУТЬ уха, а не число в модели: число может лечь, а
+  // рисование его не прочесть — ровно так контур и жил, пока был строкой с
+  // полусотней чисел в коде.
+  say('');
+  say('======== ФОРМУ УХА ТЯНУТ ЗА КОНТУР ========');
+  await page.evaluate(() => {
+    WormLook.reset(WormStudio.handle);
+    WormStudio.select('ear-left');
+  });
+  await page.waitForTimeout(900);
+  const earHs = await page.evaluate(() => {
+    const d = () => {
+      const p = WormStudio.handle.svgRoot.querySelector('.worm-root [data-part="ear-left"] path');
+      return p ? p.getAttribute('d') : '';
+    };
+    return { было: d(),
+             hs: [...document.querySelectorAll('.ws-h')].map(c => {
+               const r = c.getBoundingClientRect();
+               return { k: c.getAttribute('data-h'), x: r.left + r.width / 2, y: r.top + r.height / 2 };
+             }) };
+  });
+  say(`  ручек на контуре уха: ${earHs.hs.length}`);
+  check(earHs.hs.length === 5, 'все пять точек показаны разом — форму видно целиком');
+
+  const tip = earHs.hs.find(h => h.k === 'ear-tip-left');
+  check(!!tip, 'кончик среди них есть');
+  if (tip) {
+    const tx = tip.x - 18, ty = tip.y - 42;   // «поострее и повыше»
+    await page.mouse.move(tip.x, tip.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(tip.x + (tx - tip.x) * i / 8, tip.y + (ty - tip.y) * i / 8);
+      await page.waitForTimeout(35);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const p = WormStudio.handle.svgRoot.querySelector('.worm-root [data-part="ear-left"] path');
+      const inner = WormStudio.handle.svgRoot.querySelector('.worm-root [data-part="ear-left"] path:nth-of-type(2)');
+      return { d: p ? p.getAttribute('d') : '', inner: inner ? inner.getAttribute('d') : '',
+               точка: WormParts.client(WormStudio.handle, 'ear-tip-left'),
+               форма: WormLook.form,
+               // Вторая сторона обязана остаться нетронутой: правят ОДНО ухо.
+               правое: WormParts.client(WormStudio.handle, 'ear-tip-right') };
+    });
+    say(`  кончик: был ${tip.x.toFixed(1)},${tip.y.toFixed(1)} → целились ${tx.toFixed(1)},${ty.toFixed(1)} → стал ${r.точка.x.toFixed(1)},${r.точка.y.toFixed(1)}`);
+    check(r.d !== earHs.было, 'путь уха перерисован — сдвиг дошёл до рисования, а не осел в модели');
+    check(Math.hypot(r.точка.x - tx, r.точка.y - ty) < 12,
+          `кончик доехал до пальца: промах ${Math.hypot(r.точка.x - tx, r.точка.y - ty).toFixed(0)} точек`);
+    check(!!(r.форма && r.форма['ear-left'] && r.форма['ear-left']['ear-tip']),
+          `правка легла в форму: ${JSON.stringify(r.форма)}`);
+    // Раковина обязана ехать за контуром: пока их правили порознь, она
+    // вылезала за ухо при первом же движении кончика.
+    check(/-?\d/.test(r.inner) && r.inner !== '', 'раковина тоже перерисована');
+    await page.screenshot({ path: out + '5-ear.png' });
+
+    // Откат снимает ВЕСЬ жест, а не последний его миллиметр.
+    const undone = await page.evaluate(async () => {
+      WormLook.undo(WormStudio.handle);
+      WormLook.flush();
+      await new Promise(r => setTimeout(r, 300));
+      const p = WormStudio.handle.svgRoot.querySelector('.worm-root [data-part="ear-left"] path');
+      return { d: p ? p.getAttribute('d') : '', форма: WormLook.form };
+    });
+    check(undone.d === earHs.было, 'откат вернул ухо целиком — жест снят одним шагом, а не по миллиметру');
+  }
+
+  // Правое ухо не поехало: форма односторонняя.
+  const other = await page.evaluate(() => WormLook.form);
+  check(!other || !other['ear-right'], 'правое ухо не тронуто — форма у каждой стороны своя');
+
   // ---------- 7. ПЛИТКИ ----------
   say('');
   say('======== ПЛИТКИ ВЫБИРАЮТ БЕЗ ПИКСЕЛЬ-ХАНТИНГА ========');
@@ -206,6 +282,7 @@ const harness = require('./harness');
   check(chips.small === 0, 'и ни одна не ниже сорока четырёх точек');
 
   const byChip = await page.evaluate(async () => {
+    WormStudio.row = 'skull'; WormStudio.renderRows();
     const b = [...document.querySelectorAll('[data-chip]')].find(x => x.getAttribute('data-chip') === 'chin');
     if (!b) return null;
     b.click();
@@ -220,6 +297,9 @@ const harness = require('./harness');
   say('======== ЗАКРЫЛИ — ПРАВКА УЕХАЛА В ИГРУ ========');
   const closed = await page.evaluate(async () => {
     const before = window.MainWormHandle.getOverride();
+    // Что-нибудь непустое, иначе проверять нечего: откат в разделе про ухо
+    // вернул внешность к исходной.
+    WormLook.setSkew(WormStudio.handle, 'cheek', -1, 0.2);
     WormStudio.close();
     await new Promise(r => setTimeout(r, 400));
     const el = document.elementFromPoint(195, 500);

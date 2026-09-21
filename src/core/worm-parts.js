@@ -168,6 +168,22 @@ const WORM_LAYER_PARTS = [
     { cls: 'worm-slime-layer',   title: 'след слизи',         knobs: [] }
 ];
 
+// ---------- ТОЧКИ КОНТУРА УХА ----------
+// Второй сорт ориентиров, после черепа. Разница в том, где они живут: у
+// черепа точка считается формулой по кривой, у уха — лежит в МЕСТНЫХ
+// координатах самого уха (WORM_EAR_ANCHORS в worm-head.js), и двигается не
+// ручкой-числом, а прямым сдвигом.
+//
+// Ради них всё и затевалось: «сделай ухо поострее, а мочку ниже» — это
+// «потяни кончик вверх, а мочку вниз», и делается пальцем.
+const WORM_EAR_MARKS = [
+    { key: 'ear-base',  title: 'основание уха' },
+    { key: 'ear-front', title: 'передний край уха' },
+    { key: 'ear-tip',   title: 'кончик уха' },
+    { key: 'ear-break', title: 'излом уха' },
+    { key: 'ear-lobe',  title: 'мочка уха' }
+];
+
 const WormParts = {
 
     WRAPPERS: WORM_PART_WRAPPERS,
@@ -227,6 +243,23 @@ const WormParts = {
             });
         });
 
+        // Точки контура уха — по пять на сторону. `form: true` отличает их
+        // от черепных: тащатся они прямым сдвигом, а не ручкой.
+        WORM_EAR_MARKS.forEach(m => {
+            [{ s: -1, k: 'left', t: 'левого' }, { s: 1, k: 'right', t: 'правого' }].forEach(side => {
+                out.push({
+                    key: m.key + '-' + side.k,
+                    title: m.title.replace(' уха', ' ' + side.t + ' уха'),
+                    kind: 'landmark',
+                    part: 'ear-' + side.k,
+                    parent: 'head',
+                    yawRole: 'surface',
+                    knobs: ['earSize'],
+                    form: { point: m.key, side: side.s, host: 'ear-' + side.k }
+                });
+            });
+        });
+
         WORM_LAYER_PARTS.forEach((l, i) => out.push({
             key: l.cls.replace(/^worm-/, ''),
             title: l.title,
@@ -257,7 +290,10 @@ const WormParts = {
         const root = svg.querySelector('.worm-root');
         if (!root) return null;
 
-        if (e.kind === 'landmark') return this._atLandmark(handle, svg, root, e);
+        if (e.kind === 'landmark') {
+            return e.form ? this._atForm(handle, svg, root, e)
+                          : this._atLandmark(handle, svg, root, e);
+        }
 
         const el = this.find(root, e);
         if (!el) return null;
@@ -284,6 +320,39 @@ const WormParts = {
         const r = WormSilhouette.headRadii(model.head);
         const p = wormPointIn(svg, host, n.x * r.rx, n.y * r.ry);
         return p ? { x: p.x, y: p.y, el: host, entity: e, local: n } : null;
+    },
+
+    // Точка контура части тела (сейчас — уха). Живёт в МЕСТНЫХ координатах
+    // самого узла: ровно там, где её рисуют, поэтому зеркало, поворот и
+    // масштаб учитывать отдельно не надо — их уже держит трансформ узла.
+    _atForm(handle, svg, root, e) {
+        const host = root.querySelector(`[data-part="${e.form.host}"]`);
+        if (!host || typeof wormEarPoint !== 'function') return null;
+        const model = this.model(handle);
+        const side = e.form.host.replace('ear-', '');
+        const ear = model && model.head && model.head.ears ? model.head.ears[side] : null;
+        if (!ear || ear.visible === false) return null;
+        const n = wormEarPoint(e.form.side, ear.form, e.form.point);
+        if (!n) return null;
+        const p = wormPointIn(svg, host, n.x, n.y);
+        return p ? { x: p.x, y: p.y, el: host, entity: e, local: n } : null;
+    },
+
+    // Экран → МЕСТНЫЕ координаты узла. Обратная сторона wormPointIn, и
+    // считается так же — отношением двух CTM, чтобы множитель css-масштаба
+    // холста сократился. Нужна перетаскиванию точек контура: там палец
+    // переводится прямо в числа формы, без замера чувствительности.
+    localIn(handle, el, clientX, clientY) {
+        const svg = handle && handle.svgRoot;
+        if (!svg || !el || typeof SvgSpace === 'undefined') return null;
+        const v = SvgSpace.fromClient(svg, clientX, clientY);
+        const m = el.getScreenCTM();
+        const s = svg.getScreenCTM();
+        if (!m || !s) return null;
+        const pt = svg.createSVGPoint();
+        pt.x = v.x; pt.y = v.y;
+        const q = pt.matrixTransform(m.inverse().multiply(s));
+        return { x: q.x, y: q.y };
     },
 
     // То же, но в экранных координатах. Через SvgSpace, а не через CTM:

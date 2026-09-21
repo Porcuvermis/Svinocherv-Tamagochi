@@ -283,6 +283,21 @@ const WormLook = {
             Object.keys(this.skew).forEach(n => lookSet(over, 'head.skull.skew.' + n, this.skew[n]));
         }
 
+        // Форма контура — тоже не ручка: сдвиг точки в местных координатах
+        // части. Кладётся как есть, по тому же правилу «ноль это как
+        // задумано»: пустая форма не пишется вовсе.
+        if (this.form) {
+            Object.keys(this.form).forEach(host => {
+                const pts = this.form[host];
+                if (!pts || !Object.keys(pts).length) return;
+                const side = host.replace('ear-', '');
+                Object.keys(pts).forEach(pt => {
+                    lookSet(over, `head.ears.${side}.form.${pt}.x`, +pts[pt].x.toFixed(3));
+                    lookSet(over, `head.ears.${side}.form.${pt}.y`, +pts[pt].y.toFixed(3));
+                });
+            });
+        }
+
         this.applyLight();
         // Живое — сразу: оно переставляет атрибуты уже созданных узлов и
         // пересборки не требует.
@@ -382,13 +397,39 @@ const WormLook = {
     // только она позволяет тянуть левую скулу, не утаскивая правую.
     skew: null,
 
+    // ---------- ФОРМА КОНТУРА ----------
+    // { 'ear-left': { 'ear-tip': {x,y}, … } } — сдвиги опорных точек в
+    // МЕСТНЫХ координатах части. Не ручка и не число: у формы нет «больше»
+    // и «меньше», у неё есть «вот сюда».
+    form: null,
+
+    setForm(handle, host, point, x, y) {
+        if (!this.form) this.form = {};
+        if (!this.form[host]) this.form[host] = {};
+        const L = 18;   // дальше ухо перестаёт читаться ухом
+        this.form[host][point] = { x: Math.max(-L, Math.min(L, x)),
+                                   y: Math.max(-L, Math.min(L, y)) };
+        this.push(handle);
+        return this.form[host][point];
+    },
+
+    // Шаг формы в историю кладётся ОДИН на жест, а не на каждое движение
+    // пальца: иначе откат снимал бы жест по миллиметру.
+    formStep() {
+        this.history.push({ at: Date.now(), patch: { форма: true },
+                            snapshot: Object.assign({}, this.values),
+                            skew: this.skew ? Object.assign({}, this.skew) : null,
+                            form: this.form ? JSON.parse(JSON.stringify(this.form)) : null });
+    },
+
     setSkew(handle, name, side, delta) {
         if (!this.skew) this.skew = {};
         const key = name + (side < 0 ? 'L' : 'R');
         this.skew[key] = Math.max(-0.6, Math.min(0.6, (this.skew[key] || 0) + delta));
         this.history.push({ at: Date.now(), patch: { [key]: delta },
                             snapshot: Object.assign({}, this.values),
-                            skew: Object.assign({}, this.skew) });
+                            skew: Object.assign({}, this.skew),
+                            form: this.form ? JSON.parse(JSON.stringify(this.form)) : null });
         this.push(handle, { immediate: true });
         return this.skew[key];
     },
@@ -400,6 +441,7 @@ const WormLook = {
         const prev = this.history[this.history.length - 1];
         this.values = prev ? Object.assign({}, prev.snapshot) : {};
         this.skew = prev && prev.skew ? Object.assign({}, prev.skew) : null;
+        this.form = prev && prev.form ? JSON.parse(JSON.stringify(prev.form)) : null;
         this.push(handle, { immediate: true });
         return true;
     },
@@ -407,6 +449,7 @@ const WormLook = {
     reset(handle) {
         this.values = {};
         this.skew = null;
+        this.form = null;
         this.history = [];
         this.push(handle, { immediate: true });
         return true;
@@ -419,6 +462,7 @@ const WormLook = {
         const out = {};
         Object.keys(this.values).forEach(k => { if (this.values[k]) out[k] = +this.values[k].toFixed(3); });
         if (this.skew && Object.keys(this.skew).length) out.skew = Object.assign({}, this.skew);
+        if (this.form && Object.keys(this.form).length) out.form = JSON.parse(JSON.stringify(this.form));
         if (this.locks.length) out.lock = this.locks.slice();
         return out;
     },
