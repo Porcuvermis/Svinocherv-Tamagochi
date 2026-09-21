@@ -268,6 +268,75 @@ const harness = require('./harness');
   const other = await page.evaluate(() => WormLook.form);
   check(!other || !other['ear-right'], 'правое ухо не тронуто — форма у каждой стороны своя');
 
+  // ---------- 6в. ПРОФИЛЬ ТЕЛА ----------
+  // «Толщина тела» двигает всю цепочку разом и форму сохраняет. А профиль
+  // силуэта — где толще, где тоньше — выводился из сида и руками не
+  // правился вовсе, хотя именно он и есть фигура: горб на загривке,
+  // перехват за животом, сужение к хвосту.
+  say('');
+  say('======== ПРОФИЛЬ ТЕЛА ТЯНУТ ПО ЗВЕНЬЯМ ========');
+  await page.evaluate(() => {
+    WormLook.reset(WormStudio.handle);
+    WormStudio.row = 'body'; WormStudio.renderRows();
+    WormStudio.select('belly');
+  });
+  await page.waitForTimeout(900);
+  const chain = await page.evaluate(() => {
+    const W = (p) => {
+      const el = WormStudio.handle.svgRoot.querySelector(`.worm-root [data-part="${p}"]`);
+      return el ? +el.getBoundingClientRect().height.toFixed(1) : 0;
+    };
+    return { hs: [...document.querySelectorAll('.ws-h')].map(c => {
+               const r = c.getBoundingClientRect();
+               return { k: c.getAttribute('data-h'), x: r.left + r.width / 2, y: r.top + r.height / 2 };
+             }),
+             живот: W('belly'), сосед: W('segment-2') };
+  });
+  say(`  обхватов на цепочке: ${chain.hs.length}`);
+  check(chain.hs.length >= 4, 'обхваты всех звеньев показаны разом — профиль видно целиком');
+  check(chain.hs.every(h => /^girth-/.test(h.k)), 'и это именно обхваты, а не сами звенья');
+
+  const belly = chain.hs.find(h => h.k === 'girth-belly');
+  check(!!belly, 'живот среди них есть');
+  if (belly) {
+    // Тянем кромку живота ВВЕРХ — он обязан стать толще, а соседнее звено
+    // остаться прежним: обхват односторонний, иначе это просто «толщина».
+    const ty = belly.y - 16;
+    await page.mouse.move(belly.x, belly.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(belly.x, belly.y + (ty - belly.y) * i / 6);
+      await page.waitForTimeout(35);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const W = (p) => {
+        const el = WormStudio.handle.svgRoot.querySelector(`.worm-root [data-part="${p}"]`);
+        return el ? +el.getBoundingClientRect().height.toFixed(1) : 0;
+      };
+      const root = WormStudio.handle.svgRoot.querySelector('.worm-root');
+      let nan = 0;
+      root.querySelectorAll('*').forEach(el => {
+        for (const a of el.attributes) if (a.value.indexOf('NaN') >= 0) nan++;
+      });
+      return { живот: W('belly'), сосед: W('segment-2'), girth: WormLook.girth, nan,
+               узлов: root.querySelectorAll('*').length,
+               ползунок: !!document.querySelector('.ws-knob input[data-girth]') };
+    });
+    say(`  живот ${chain.живот} → ${r.живот}, соседнее звено ${chain.сосед} → ${r.сосед}`);
+    check(r.живот > chain.живот + 3, 'живот стал толще — кромка потянулась за пальцем');
+    check(Math.abs(r.сосед - chain.сосед) < 2.5, 'а соседнее звено осталось прежним: обхват — у каждого свой');
+    check(!!(r.girth && r.girth.belly), `правка легла в обхват: ${JSON.stringify(r.girth)}`);
+    // Сегменты лежат в модели МАССИВАМИ, а слияние патча заменяет массив
+    // целиком: неполный элемент оставлял от цепочки одно звено и уводил
+    // всего персонажа в NaN (docs/traps.md, п. 143).
+    check(r.nan === 0 && r.узлов > 400,
+          `персонаж цел после правки цепочки: ${r.узлов} узлов, NaN в атрибутах ${r.nan}`);
+    check(r.ползунок, 'и обхват виден ползунком — правка есть, значит её показывают');
+    await page.screenshot({ path: out + '6-girth.png' });
+  }
+
   // ---------- 7. ПЛИТКИ ----------
   say('');
   say('======== ПЛИТКИ ВЫБИРАЮТ БЕЗ ПИКСЕЛЬ-ХАНТИНГА ========');

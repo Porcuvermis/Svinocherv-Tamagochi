@@ -125,7 +125,12 @@ const harness = require('./harness');
     { key: 'snout',     measure: 'snoutW', dir: 'up' },
     { key: 'snoutWide', measure: 'snoutW', dir: 'up' },
     { key: 'headWide',  measure: 'headW',  dir: 'up' },
-    { key: 'eyePlace',  measure: 'eyeSpan', dir: 'up' }
+    { key: 'eyePlace',  measure: 'eyeSpan', dir: 'up' },
+    // Толщина тела не проверялась НИ РАЗУ — и всё это время не работала
+    // вовсе: она пишет радиусы цепочки, то есть элементы МАССИВОВ, а
+    // слияние патча заменяет массив целиком. От сегмента оставался один
+    // радиус, весь персонаж уходил в NaN (docs/traps.md, п. 143).
+    { key: 'thickness', measure: 'segW', dir: 'up' }
   ];
   for (const p of PROBE) {
     const r = await page.evaluate(async (p) => {
@@ -143,7 +148,8 @@ const harness = require('./harness');
         return (a && b) ? Math.abs(a.x - b.x) : 0;
       };
       const read = () => ({ headW: W('head'), bellyW: W('belly'), tailW: W('tail'),
-                            snoutW: W('snout'), cheekSpan: span(), eyeSpan: eyeSpan() });
+                            snoutW: W('snout'), segW: W('growing-1'),
+                            cheekSpan: span(), eyeSpan: eyeSpan() });
       WormLook.reset(h);
       await new Promise(r => setTimeout(r, 120));
       const was = read();
@@ -175,6 +181,68 @@ const harness = require('./harness');
         `объём поднял блик и тень: ${light.was.hi} → ${light.now.hi.toFixed(3)}`);
   check(Math.abs(light.back.hi - light.was.hi) < 1e-9,
         'и сброс вернул свет ровно на место — он не в модели, откатывать его надо вручную');
+
+  // ---------- 1б. НИ ОДНА РУЧКА НЕ ЛОМАЕТ ПЕРСОНАЖА ----------
+  // Проверка, которой не хватило дороже всего. «Толщина тела» схлопывала
+  // червя в NaN с самого своего появления — и ни один прогон этого не
+  // видел: проверяли по одной те ручки, про которые думали, а сломанная в
+  // список не попала. Ошибка при этом ГРОМКАЯ (консоль полна «Expected
+  // length, NaN»), но консоль никто не читает.
+  //
+  // Поэтому перебираются ВСЕ ручки подряд, в обе стороны, и с каждой
+  // спрашивается одно: остался ли персонаж персонажем. Это единственная
+  // проверка в файле, которая растёт сама вместе со словарём.
+  say('');
+  say('======== НИ ОДНА РУЧКА НЕ ЛОМАЕТ ПЕРСОНАЖА ========');
+  const broke = await page.evaluate(async () => {
+    const h = window.MainWormHandle;
+    const плохо = [];
+    const целость = () => {
+      const root = document.querySelector('.worm-root');
+      if (!root) return 'персонажа нет';
+      const nodes = root.querySelectorAll('*');
+      if (nodes.length < 400) return `узлов всего ${nodes.length}`;
+      // NaN в атрибуте — это и есть «развалился»: браузер такой атрибут
+      // отбрасывает, и фигура пропадает с экрана.
+      for (const el of nodes) {
+        for (const a of el.attributes) {
+          if (a.value.indexOf('NaN') >= 0) return `${el.tagName}.${a.name} = ${a.value.slice(0, 24)}`;
+        }
+      }
+      const r = root.getBoundingClientRect();
+      if (r.height < 80 || r.width < 80) return `габарит ${r.width.toFixed(0)}×${r.height.toFixed(0)}`;
+      return null;
+    };
+    for (const k of WormLook.registry(h)) {
+      for (const v of [0.6, -0.6]) {
+        WormLook.reset(h);
+        await new Promise(r => setTimeout(r, 60));
+        WormLook.apply(h, { [k.key]: v }, { absolute: true });
+        WormLook.flush();
+        await new Promise(r => setTimeout(r, 120));
+        const beda = целость();
+        if (beda) плохо.push(`${k.key} ${v > 0 ? '+' : ''}${v}: ${beda}`);
+      }
+    }
+    // И обхват звена — он не ручка, но пишет в ту же цепочку.
+    for (const path of ['belly', 'fixedSegments.0', 'growingSegments.0']) {
+      for (const v of [1.2, -0.7]) {
+        WormLook.reset(h);
+        await new Promise(r => setTimeout(r, 60));
+        WormLook.setGirth(h, path, v);
+        WormLook.flush();
+        await new Promise(r => setTimeout(r, 120));
+        const beda = целость();
+        if (beda) плохо.push(`обхват ${path} ${v}: ${beda}`);
+      }
+    }
+    WormLook.reset(h);
+    await new Promise(r => setTimeout(r, 150));
+    return плохо;
+  });
+  check(broke.length === 0,
+        broke.length ? `персонаж разваливается от: ${broke.slice(0, 6).join(' · ')}`
+                     : 'все ручки и обхваты проверены в обе стороны — персонаж цел');
 
   // ---------- 2. ОТНОСИТЕЛЬНЫЕ И НАКАПЛИВАЮТСЯ ----------
   say('');

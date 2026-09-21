@@ -53,6 +53,12 @@ const WORM_STUDIO_SKULL = [
 // форму не правят по одной точке, её видно только целиком.
 const WORM_STUDIO_EAR = ['ear-base', 'ear-front', 'ear-tip', 'ear-break', 'ear-lobe'];
 
+// Звенья цепочки: их обхваты показываются все разом, как ориентиры черепа.
+// Профиль силуэта — «где толще, где тоньше» — единственное, что видно
+// только целиком: один горб посреди ровного тела читается как ошибка, а
+// тот же горб в череде сужений — как фигура.
+const WORM_STUDIO_CHAIN = ['segment-1', 'segment-2', 'belly'];
+
 const WormStudio = {
     on: false,
     root: null,
@@ -251,6 +257,9 @@ const WormStudio = {
         if (this.isSkullish(key)) key = 'head';
         const ear = this.earOf(key);
         if (ear) key = 'ear-' + ear;
+        // Профиль правят, глядя на ВСЁ тело: наезд на одно звено прячет
+        // соседей, а горб читается только в череде сужений.
+        if (this.isChainish(key)) { this.frameAll(); return; }
         const p = WormParts.at(this.handle, key);
         if (!p) return;
         const b = this.box();
@@ -299,7 +308,9 @@ const WormStudio = {
         if (!h || typeof WormParts === 'undefined') { this.fx.innerHTML = ''; return; }
         const want = [];
         const ear = this.earOf(this.picked);
-        if (this.shape && ear) {
+        if (this.shape && this.isChainish(this.picked)) {
+            this.chainKeys().forEach(k => want.push({ key: k }));
+        } else if (this.shape && ear) {
             WORM_STUDIO_EAR.forEach(k => want.push({ key: k + '-' + ear }));
         } else if (this.shape && this.picked && this.isSkullish(this.picked)) {
             WORM_STUDIO_SKULL.forEach(k => want.push({ key: k }));
@@ -323,6 +334,21 @@ const WormStudio = {
         return key === 'head' || WORM_STUDIO_SKULL.indexOf(key) >= 0;
     },
 
+    // Правим ли сейчас профиль тела: звено цепочки или его обхват.
+    isChainish(key) {
+        if (!key) return false;
+        if (/^girth-/.test(key)) return true;
+        return key === 'belly' || /^segment-\d+$/.test(key) || /^growing-\d+$/.test(key);
+    },
+
+    // Какие обхваты сейчас есть на экране. Растущих сегментов бывает от нуля
+    // до десяти, поэтому список считается от персонажа, а не пишется руками.
+    chainKeys() {
+        const out = WORM_STUDIO_CHAIN.map(k => 'girth-' + k);
+        for (let i = 1; i <= 12; i++) out.push('girth-growing-' + i);
+        return out.filter(k => WormParts.get(k) && WormParts.at(this.handle, k));
+    },
+
     // Какое ухо сейчас правим: само ухо или любая точка его контура.
     earOf(key) {
         if (!key) return null;
@@ -341,7 +367,20 @@ const WormStudio = {
             const key = hit.getAttribute('data-h');
             this.select(key, { noZoom: true });
             const ent = WormParts.get(key);
-            if (ent && ent.form) {
+            if (ent && ent.girth) {
+                // Замер чувствительности здесь не нужен: обхват — это и есть
+                // расстояние от середины звена до кромки, и новое значение
+                // выходит отношением «куда тянут» к «где сейчас».
+                WormLook.formStep();
+                const p = WormParts.at(this.handle, key);
+                const c = p && p.centre ? SvgSpace.toClient(this.handle.svgRoot, p.centre.x, p.centre.y) : null;
+                const e0 = p ? SvgSpace.toClient(this.handle.svgRoot, p.x, p.y) : null;
+                this.drag = (c && e0)
+                    ? { girth: ent.girth, key, cy: c.y, was: Math.abs(c.y - e0.y),
+                        v0: (WormLook.girth && WormLook.girth[ent.girth.path]) || 0 }
+                    : null;
+                if (!this.drag) this.title('нечем двигать');
+            } else if (ent && ent.form) {
                 // Точку контура не «двигают ручкой»: палец переводится прямо
                 // в местные координаты части, и сдвиг считается вычитанием.
                 // Замер чувствительности здесь был бы вторым описанием того
@@ -364,9 +403,22 @@ const WormStudio = {
 
     onMove(e) {
         if (!this.drag || !this.handle) return;
+        if (this.drag.girth) { this.dragGirth(e.clientY); return; }
         if (this.drag.form) { this.dragForm(e.clientX, e.clientY); return; }
         WormLook.dragTo(this.handle, this.drag, e.clientX, e.clientY);
         this.syncKnobs();
+    },
+
+    // Тянем верхнюю кромку звена: во сколько раз палец дальше от середины,
+    // во столько же раз толще становится звено. Множитель накапливается на
+    // том, что уже стояло, — иначе второе перетаскивание отсчитывало бы от
+    // исходного и отменяло первое.
+    dragGirth(cy) {
+        const d = this.drag;
+        if (!d.was) return;
+        const want = Math.abs(d.cy - cy);
+        const k = Math.max(0.2, Math.min(2.5, want / d.was));
+        WormLook.setGirth(this.handle, d.girth.path, (1 + d.v0) * k - 1);
     },
 
     // Палец → местные координаты части → сдвиг относительно задуманной
@@ -460,6 +512,14 @@ const WormStudio = {
         return (e.knobs || []).filter(k => WormLook.knob(k));
     },
 
+    // Обхват выбранного звена — своя строка ползунка, как перекос у черепа.
+    // Без неё панель после перетаскивания стоит на нуле и выглядит
+    // сломанной: правка есть, а показать её нечем.
+    girthKey() {
+        const e = this.picked && typeof WormParts !== 'undefined' ? WormParts.get(this.picked) : null;
+        return (e && e.girth) ? e.girth.path : null;
+    },
+
     skewKey() {
         const e = this.picked && typeof WormParts !== 'undefined' ? WormParts.get(this.picked) : null;
         if (!e || e.kind !== 'landmark' || !e.skull || e.skull.side === 0) return null;
@@ -477,6 +537,11 @@ const WormStudio = {
         this.knobsFor = sig;
 
         const rows = [];
+        const gk = this.girthKey();
+        if (gk) {
+            const v = (WormLook.girth && WormLook.girth[gk]) || 0;
+            rows.push(this.knobRow('обхват', `data-girth="${gk}"`, v, -0.8, 1.5, false));
+        }
         const sk = this.skewKey();
         if (sk) {
             const v = (WormLook.skew && WormLook.skew[sk]) || 0;
@@ -509,7 +574,10 @@ const WormStudio = {
     syncKnobs() {
         this.root.querySelectorAll('.ws-knob input').forEach(inp => {
             const k = inp.getAttribute('data-knob'), s = inp.getAttribute('data-skew');
-            const v = k ? (WormLook.values[k] || 0) : ((WormLook.skew && WormLook.skew[s]) || 0);
+            const g = inp.getAttribute('data-girth');
+            const v = k ? (WormLook.values[k] || 0)
+                    : g ? ((WormLook.girth && WormLook.girth[g]) || 0)
+                        : ((WormLook.skew && WormLook.skew[s]) || 0);
             if (document.activeElement !== inp) inp.value = String(v);
             const out = inp.parentNode.querySelector('.ws-val');
             if (out) out.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
@@ -551,7 +619,10 @@ const WormStudio = {
 
     bump(btn, d) {
         const k = btn.getAttribute('data-knob'), s = btn.getAttribute('data-skew');
-        if (k) {
+        const g = btn.getAttribute('data-girth');
+        if (g) {
+            WormLook.setGirth(this.handle, g, ((WormLook.girth && WormLook.girth[g]) || 0) + d);
+        } else if (k) {
             WormLook.apply(this.handle, { [k]: d });
         } else if (s) {
             const name = s.slice(0, -1), side = s.slice(-1) === 'L' ? -1 : 1;
@@ -570,7 +641,9 @@ const WormStudio = {
             return;
         }
         const k = inp.getAttribute('data-knob'), s = inp.getAttribute('data-skew');
-        if (k) WormLook.apply(this.handle, { [k]: v }, { absolute: true });
+        const g = inp.getAttribute('data-girth');
+        if (g) WormLook.setGirth(this.handle, g, v);
+        else if (k) WormLook.apply(this.handle, { [k]: v }, { absolute: true });
         else if (s) {
             const name = s.slice(0, -1), side = s.slice(-1) === 'L' ? -1 : 1;
             if (!WormLook.skew) WormLook.skew = {};

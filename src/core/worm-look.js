@@ -147,6 +147,43 @@ function lookGet(obj, path) {
     return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
 }
 
+// ---------- ЭЛЕМЕНТ МАССИВА КЛАДЁТСЯ ЦЕЛИКОМ ----------
+// Слияние патча с моделью заменяет МАССИВ ЦЕЛИКОМ, а не сливает его по
+// элементам (deepMergeWormObjects: `if (Array.isArray(patch)) return
+// patch.slice()`). Это осознанное решение — список шрамов должен
+// заменяться, а не дополняться.
+//
+// Но у сегментов тела кроме радиуса есть scale, stretchX, stretchY, fill и
+// stroke. Патч `{ growingSegments: [{ radius: 28 }] }` подменял собой весь
+// массив: у первого звена оставался ОДИН радиус, остальные звенья исчезали
+// вовсе — и персонаж уходил в NaN целиком. Так ручка «толщина тела» не
+// работала с самого своего появления: она пишет радиусы всей цепочки, то
+// есть попадала в эту яму при первом же движении.
+//
+// Поэтому, дописав что-нибудь в элемент массива, надо ДОПОЛНИТЬ его
+// остальным из базы — и заодно выписать элементы, которых патч не касался.
+function lookFillArrays(over, base) {
+    if (!over || !base || typeof over !== 'object') return;
+    Object.keys(over).forEach(k => {
+        const b = base[k], o = over[k];
+        if (!b || typeof b !== 'object' || !o || typeof o !== 'object') return;
+        if (Array.isArray(b)) {
+            if (!Array.isArray(o)) return;
+            for (let i = 0; i < b.length; i++) {
+                const bi = b[i];
+                if (bi && typeof bi === 'object' && !Array.isArray(bi)) {
+                    o[i] = Object.assign({}, bi, o[i] || {});
+                } else if (o[i] === undefined) {
+                    o[i] = bi;
+                }
+            }
+            o.length = Math.max(o.length, b.length);
+        } else {
+            lookFillArrays(o, b);
+        }
+    });
+}
+
 function lookSet(obj, path, value) {
     const keys = path.split('.');
     let cur = obj;
@@ -308,6 +345,22 @@ const WormLook = {
             Object.keys(this.skew).forEach(n => lookSet(over, 'head.skull.skew.' + n, this.skew[n]));
         }
 
+        // Обхват звена — множитель поверх всего остального. Читается то, что
+        // УЖЕ легло в патч (толщина тела могла его тронуть), и только если
+        // там пусто — берётся база. Иначе обхват затирал бы «толщину тела»,
+        // и две ручки на одно число дрались бы за него молча.
+        if (this.girth && Object.keys(this.girth).some(k => this.girth[k])) {
+            Object.keys(this.girth).forEach(path => {
+                const v = this.girth[path];
+                if (!v) return;
+                const key = path + '.radius';
+                const cur = lookGet(over, key);
+                const b = typeof cur === 'number' ? cur : lookGet(base, key);
+                if (typeof b !== 'number') return;
+                lookSet(over, key, +(b * (1 + v)).toFixed(3));
+            });
+        }
+
         // Форма контура — тоже не ручка: сдвиг точки в местных координатах
         // части. Кладётся как есть, по тому же правилу «ноль это как
         // задумано»: пустая форма не пишется вовсе.
@@ -322,6 +375,11 @@ const WormLook = {
                 });
             });
         }
+
+        // Элементы массивов — целиком (см. lookFillArrays). Делается ОДИН
+        // раз на весь патч, а не в каждом писателе: забыть в одном месте
+        // значит получить NaN во всём персонаже.
+        lookFillArrays(over, base);
 
         this.applyLight();
         // Живое — сразу: оно переставляет атрибуты уже созданных узлов и
@@ -422,6 +480,20 @@ const WormLook = {
     // только она позволяет тянуть левую скулу, не утаскивая правую.
     skew: null,
 
+    // ---------- ОБХВАТ ЗВЕНА ----------
+    // { 'belly': 0.2, 'growingSegments.0': -0.15 } — множитель толщины
+    // ОДНОГО звена. Не ручка: звеньев от четырёх до двенадцати, и список
+    // ручек переписывался бы при каждом взрослении.
+    girth: null,
+
+    setGirth(handle, path, v) {
+        if (!this.girth) this.girth = {};
+        // Ниже −0.8 звено схлопывается в нить, выше +1.5 — рвёт силуэт.
+        this.girth[path] = Math.max(-0.8, Math.min(1.5, v));
+        this.push(handle);
+        return this.girth[path];
+    },
+
     // ---------- ФОРМА КОНТУРА ----------
     // { 'ear-left': { 'ear-tip': {x,y}, … } } — сдвиги опорных точек в
     // МЕСТНЫХ координатах части. Не ручка и не число: у формы нет «больше»
@@ -444,7 +516,8 @@ const WormLook = {
         this.history.push({ at: Date.now(), patch: { форма: true },
                             snapshot: Object.assign({}, this.values),
                             skew: this.skew ? Object.assign({}, this.skew) : null,
-                            form: this.form ? JSON.parse(JSON.stringify(this.form)) : null });
+                            form: this.form ? JSON.parse(JSON.stringify(this.form)) : null,
+                            girth: this.girth ? Object.assign({}, this.girth) : null });
     },
 
     setSkew(handle, name, side, delta) {
@@ -454,7 +527,8 @@ const WormLook = {
         this.history.push({ at: Date.now(), patch: { [key]: delta },
                             snapshot: Object.assign({}, this.values),
                             skew: Object.assign({}, this.skew),
-                            form: this.form ? JSON.parse(JSON.stringify(this.form)) : null });
+                            form: this.form ? JSON.parse(JSON.stringify(this.form)) : null,
+                            girth: this.girth ? Object.assign({}, this.girth) : null });
         this.push(handle, { immediate: true });
         return this.skew[key];
     },
@@ -467,6 +541,7 @@ const WormLook = {
         this.values = prev ? Object.assign({}, prev.snapshot) : {};
         this.skew = prev && prev.skew ? Object.assign({}, prev.skew) : null;
         this.form = prev && prev.form ? JSON.parse(JSON.stringify(prev.form)) : null;
+        this.girth = prev && prev.girth ? Object.assign({}, prev.girth) : null;
         this.push(handle, { immediate: true });
         return true;
     },
@@ -475,6 +550,7 @@ const WormLook = {
         this.values = {};
         this.skew = null;
         this.form = null;
+        this.girth = null;
         this.history = [];
         this.push(handle, { immediate: true });
         return true;
@@ -488,6 +564,7 @@ const WormLook = {
         Object.keys(this.values).forEach(k => { if (this.values[k]) out[k] = +this.values[k].toFixed(3); });
         if (this.skew && Object.keys(this.skew).length) out.skew = Object.assign({}, this.skew);
         if (this.form && Object.keys(this.form).length) out.form = JSON.parse(JSON.stringify(this.form));
+        if (this.girth && Object.keys(this.girth).length) out.girth = Object.assign({}, this.girth);
         if (this.locks.length) out.lock = this.locks.slice();
         return out;
     },

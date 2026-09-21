@@ -184,6 +184,26 @@ const WORM_EAR_MARKS = [
     { key: 'ear-lobe',  title: 'мочка уха' }
 ];
 
+// ---------- ОБХВАТ ЗВЕНА ----------
+// Третий сорт ориентиров. Череп — точка на кривой, ухо — точка в местных
+// координатах части, а это — ВЕРХНЯЯ КРОМКА одного звена цепочки.
+//
+// Зачем отдельно от ручки «толщина тела». Та двигает всю цепочку разом и
+// форму сохраняет: тело становится толще или тоньше целиком. А профиль
+// силуэта — «где толще, где тоньше» — выводился из сида и руками не
+// правился вовсе. Между тем именно он и есть фигура: горб на загривке,
+// перехват за животом, сужение к хвосту.
+//
+// Ручку на звено заводить нельзя: звеньев от четырёх до двенадцати, и
+// список ручек переписывался бы при каждом взрослении. Поэтому обхват —
+// не ручка, а прямое значение на пути модели, как форма уха.
+const WORM_GIRTH_LINKS = [
+    { part: 'belly', path: 'belly', title: 'обхват живота' }
+];
+// Остальные звенья именуются по номеру — их количество меняется со
+// взрослением (см. WORM_GROWING_MAX).
+const WORM_GIRTH_FIXED = 2;
+
 const WormParts = {
 
     WRAPPERS: WORM_PART_WRAPPERS,
@@ -260,6 +280,29 @@ const WormParts = {
             });
         });
 
+        // Обхват звена: верхняя кромка силуэта в этом месте. Считается от
+        // габарита самого узла, а не от чисел модели: узел уже стоит там,
+        // где его поставила цепочка, с дыханием и деформацией.
+        const girth = WORM_GIRTH_LINKS.slice();
+        for (let i = 1; i <= WORM_GIRTH_FIXED; i++) {
+            girth.push({ part: `segment-${i}`, path: `fixedSegments.${i - 1}`,
+                         title: i === 1 ? 'обхват шеи' : 'обхват загривка' });
+        }
+        for (let i = 1; i <= WORM_GROWING_MAX; i++) {
+            girth.push({ part: `growing-${i}`, path: `growingSegments.${i - 1}`,
+                         title: `обхват сегмента ${i}` });
+        }
+        girth.forEach(g => out.push({
+            key: 'girth-' + g.part,
+            title: g.title,
+            kind: 'landmark',
+            part: g.part,
+            parent: null,
+            yawRole: null,
+            knobs: ['thickness'],
+            girth: { part: g.part, path: g.path }
+        }));
+
         WORM_LAYER_PARTS.forEach((l, i) => out.push({
             key: l.cls.replace(/^worm-/, ''),
             title: l.title,
@@ -291,8 +334,9 @@ const WormParts = {
         if (!root) return null;
 
         if (e.kind === 'landmark') {
-            return e.form ? this._atForm(handle, svg, root, e)
-                          : this._atLandmark(handle, svg, root, e);
+            if (e.form) return this._atForm(handle, svg, root, e);
+            if (e.girth) return this._atGirth(handle, svg, root, e);
+            return this._atLandmark(handle, svg, root, e);
         }
 
         const el = this.find(root, e);
@@ -336,6 +380,26 @@ const WormParts = {
         if (!n) return null;
         const p = wormPointIn(svg, host, n.x, n.y);
         return p ? { x: p.x, y: p.y, el: host, entity: e, local: n } : null;
+    },
+
+    // Верхняя кромка звена цепочки. Не из чисел модели, а из ГАБАРИТА узла:
+    // звено уже стоит там, куда его поставила цепочка, с дыханием и
+    // деформацией. Считать его положение заново значило бы завести второе
+    // описание позы — ровно ту ошибку, из-за которой шрамы висели в воздухе
+    // рядом с головой (ловушка 103).
+    _atGirth(handle, svg, root, e) {
+        const el = root.querySelector(`[data-part="${e.girth.part}"]`);
+        if (!el) return null;
+        let box;
+        try { box = el.getBBox(); } catch (err) { return null; }
+        if (!box.width || !box.height) return null;
+        const cx = box.x + box.width / 2;
+        const top = wormPointIn(svg, el, cx, box.y);
+        const mid = wormPointIn(svg, el, cx, box.y + box.height / 2);
+        if (!top || !mid) return null;
+        // `centre` нужен перетаскиванию: обхват меряется расстоянием от
+        // середины звена до кромки, а не абсолютной высотой на экране.
+        return { x: top.x, y: top.y, el, entity: e, centre: mid };
     },
 
     // Экран → МЕСТНЫЕ координаты узла. Обратная сторона wormPointIn, и
