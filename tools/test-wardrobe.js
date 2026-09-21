@@ -421,7 +421,12 @@ const { viewport, prepare } = require('./harness');
   //
   // Ждём, пока измеряемое перестанет меняться, а не фиксированную паузу:
   // частоту пересчёта правят, а про прогон при этом забывают.
-  const setYaw = (v) => page.evaluate(async t => {
+  const setYaw = (v) => page.evaluate(async t0 => {
+    // Просим не «сколько хочется», а СКОЛЬКО ИГРА ДАЁТ: дальше своего предела
+    // голова не поворачивается ни у кого (worm-paint.js, WORM_HEAD_YAW_LIMIT),
+    // и ожидание «пока доедет до 1» не кончалось бы никогда.
+    const L = MainWormHandle.getHeadPose().limit || 1;
+    const t = Math.max(-L, Math.min(L, t0));
     MainWormHandle.setLivePose({ headYaw: t });
     for (let i = 0; i < 240; i++) {
       if (Math.abs(MainWormHandle.getHeadPose().current - t) < 0.01) break;
@@ -446,6 +451,8 @@ const { viewport, prepare } = require('./harness');
   }, c);
 
   const catalog = await page.evaluate(() => PRIDE_WARDROBE.items.map(i => ({ id: i.id, slot: i.slot, sits: i.sits })));
+  // Пять ракурсов В ДОЛЯХ ПРЕДЕЛА, а не в абсолютных числах: предел живёт в
+  // игре (worm-paint.js), и прогон обязан спрашивать его, а не знать своё.
   const YAWS = [-1, -0.5, 0, 0.5, 1];
 
   // ---------- 0. КАЖДАЯ ВЕЩЬ ИДЁТ ПО РЕЛЬСАМ ----------

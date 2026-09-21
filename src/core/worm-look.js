@@ -34,6 +34,10 @@
 //   add01  — доли 0…1 (блеск, матовость, видимость органов): base + v,
 //            с зажимом. Умножение здесь врёт: у нуля умножать нечего, и
 //            ручка на выключенном эффекте переставала бы работать вовсе.
+//   add    — прибавка с объявленным размахом: base + v*span. Нужен там, где
+//            умножать не от чего: у наклона брови исходное значение НОЛЬ, и
+//            `mul` на нём не работает вовсе. Размах объявлен у ручки, а не
+//            выведен из базы, — иначе он был бы равен нулю вместе с ней.
 //   count  — штуки (мышечные тяжи): округление, минимум один.
 //   light  — общий свет сцены. Живёт НЕ в модели, поэтому правится и
 //            откатывается отдельно (см. applyLight).
@@ -79,6 +83,23 @@ const WORM_LOOK_KNOBS = [
       paths: ['eyes.left.offsetX', 'eyes.right.offsetX'] },
     { key: 'eyeHeight',  title: 'высота глаз',      group: 'лицо', kind: 'mul',
       paths: ['eyes.left.offsetY', 'eyes.right.offsetY'] },
+
+    // ---------- БРОВИ ----------
+    // Раньше у брови в модели был один угол, а в таблице сущностей ей была
+    // назначена ручка «настроение» — то есть изгиб РТА. Ползунок «брови»
+    // честно двигался и не делал ровным счётом ничего.
+    //
+    // Наклон и высота — прибавки: исходные значения нулевые, умножать не от
+    // чего. Знак наклона считается в понятиях игрока (плюс — внешний конец
+    // ВВЕРХ, «удивление»), а зеркалит его рисование, один раз на выходе.
+    { key: 'browAngle', title: 'наклон бровей', group: 'лицо', kind: 'add', span: 24,
+      paths: ['eyes.left.brow.angle', 'eyes.right.brow.angle'] },
+    { key: 'browLift',  title: 'высота бровей', group: 'лицо', kind: 'add', span: 7,
+      paths: ['eyes.left.brow.lift', 'eyes.right.brow.lift'] },
+    { key: 'browArc',   title: 'изгиб бровей',  group: 'лицо', kind: 'mul',
+      paths: ['eyes.left.brow.arc', 'eyes.right.brow.arc'] },
+    { key: 'browThick', title: 'густота бровей', group: 'лицо', kind: 'mul',
+      paths: ['eyes.left.brow.thickness', 'eyes.right.brow.thickness'] },
 
     // ---------- ЧЕРЕП ----------
     // Ширины идут парами «обе стороны» и «одна сторона». Общая двигает
@@ -431,6 +452,7 @@ const WormLook = {
 
     value(k, base, v) {
         if (k.kind === 'mul') return base * (1 + v);
+        if (k.kind === 'add') return base + v * (k.span || 1);
         if (k.kind === 'add01') return Math.max(0, Math.min(1, base + v));
         if (k.kind === 'count') return Math.max(1, Math.round(base * (1 + v)));
         return base;

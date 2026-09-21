@@ -1880,13 +1880,13 @@ const WormRenderer = {
                     // сначала повернулась вперёд, потом в новую сторону.
                     let yawTarget;
                     if (state.livePose.headYaw != null) {
-                        yawTarget = state.livePose.headYaw;
+                        yawTarget = wormClampYaw(state.livePose.headYaw);
                     } else if (!state.headYawAuto && state.headYawTarget != null) {
                         yawTarget = state.headYawTarget;
                     } else if (state.headYawAuto && opts.wander) {
                         yawTarget = WORM_HEAD_YAW_FOLLOW * -Math.cos(state.tailAngle * Math.PI / 180);
                     } else {
-                        yawTarget = mm.head.yaw != null ? mm.head.yaw : 0;
+                        yawTarget = wormClampYaw(mm.head.yaw != null ? mm.head.yaw : 0);
                     }
                     if (state.headYawCurrent == null) state.headYawCurrent = yawTarget;
                     const yawK = 1 - Math.pow(WORM_HEAD_YAW_BASE, geomDtSec);
@@ -1967,13 +1967,14 @@ const WormRenderer = {
                             setAttr(eyeRef.gazeGroup, 'transform',
                                 (dx || dy) ? `translate(${dx.toFixed(2)},${dy.toFixed(2)})` : '');
                         }
+                        // Трансформ брови собирает ОДНА функция в worm-head.js
+                        // (applyBrowTransform): здесь только живой канал.
+                        // Пока он собирался и тут тоже, эта версия каждый кадр
+                        // затирала и высоту брови из модели, и подбор по
+                        // контуру — бровь возвращалась за край головы.
                         if (browRaise != null && eyeRef.browGroup) {
-                            const eyeModel = mm.eyes[side];
-                            const mirror = side === 'left' ? -1 : 1;
-                            const lift = -browRaise * 4;
-                            const angle = eyeModel.brow.angle * mirror - browRaise * 6 * mirror;
-                            setAttr(eyeRef.browGroup, 'transform',
-                                `translate(0,${(-eyeRef.ry - 7 + lift).toFixed(2)}) rotate(${angle.toFixed(2)})`);
+                            eyeRef.browRaise = browRaise;
+                            applyBrowTransform(eyeRef);
                         }
                     });
                 }
@@ -2078,8 +2079,11 @@ const WormRenderer = {
                     state.headYawTarget = null;
                     return;
                 }
+                // Зажим по ЕДИНОМУ пределу (worm-paint.js): дальше голова не
+                // поворачивается ни у кого — ни у автоповорота, ни у поз, ни
+                // у ползунка в студии.
                 const v = typeof pose === 'number'
-                    ? Math.max(-1, Math.min(1, pose))
+                    ? wormClampYaw(pose)
                     : (WORM_HEAD_POSES[pose] != null ? WORM_HEAD_POSES[pose] : 0);
                 state.headYawAuto = false;
                 state.headYawTarget = v;
@@ -2091,6 +2095,9 @@ const WormRenderer = {
                 return {
                     current: state.headYawCurrent,
                     target: state.headYawTarget,
+                    // Предел отдаётся наружу, чтобы студия не заводила своё
+                    // число: два предела рано или поздно разъедутся.
+                    limit: WORM_HEAD_YAW_LIMIT,
                     poses: Object.assign({}, WORM_HEAD_POSES)
                 };
             },

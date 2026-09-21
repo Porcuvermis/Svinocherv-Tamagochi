@@ -101,7 +101,14 @@ function createDefaultEye() {
         scale: 0.95,
         visible: true,
         color: WORM_PAL.flesh[900],
-        brow: { angle: 0, visible: true },
+        // ---------- БРОВЬ ----------
+        // angle — наклон (градусы, + внешний конец вверх);
+        // lift — насколько поднята над глазом (единицы);
+        // arc — изгиб дуги в долях полуширины глаза;
+        // thickness — толщина у носового конца.
+        // Одного угла не хватало: половину мимики нельзя настроить, а
+        // редактор показывал ползунок, который ничего не делал.
+        brow: { angle: 0, lift: 0, arc: 0.5, thickness: 3.6, visible: true },
         // 0 = веко полностью поднято (не видно), 1 = глаз полностью закрыт
         eyelid: { level: 0 }
     };
@@ -526,6 +533,14 @@ function loadWormModel() {
         // (или с частично вырезанным блоком): недостающие ветки достраиваются
         // дефолтами, уже имеющиеся значения игрока сохраняются.
         parsed.anatomy = deepMergeWormObjects(createDefaultAnatomy(), parsed.anatomy || {});
+        // Бровь обросла полями (lift/arc/thickness) уже после того, как
+        // сохранения разошлись по телефонам. Номер схемы ради этого менять
+        // нельзя — он сбросил бы накопленную внешность, — поэтому поля
+        // достраиваются на месте, как anatomy выше.
+        if (parsed.eyes) ['left', 'right'].forEach(side => {
+            const e = parsed.eyes[side];
+            if (e) e.brow = Object.assign({ angle: 0, lift: 0, arc: 0.5, thickness: 3.6, visible: true }, e.brow || {});
+        });
         return withCosmetics(parsed);
     } catch (err) {
         return withCosmetics(createDefaultWormModel());

@@ -377,7 +377,11 @@ const harness = require('./harness');
   say('======== ЗАМОРОЗКА НАСТОЯЩАЯ ========');
   const lock = await page.evaluate(async () => {
     const h = window.MainWormHandle;
-    const eyeW = () => document.querySelector('.worm-root [data-part="eye-left"]')
+    // Меряем САМ ГЛАЗ, а не группу: в группе глаза лежит ещё и бровь, а она
+    // подбирается по контуру черепа — то есть меняется от размера ГОЛОВЫ,
+    // как ей и положено. Габарит группы из-за этого ездил бы и при
+    // замороженных глазах, и проверка винила бы заморозку.
+    const eyeW = () => document.querySelector('.worm-root [data-part="eye-left"] ellipse')
       .getBoundingClientRect().width;
     WormLook.reset(h);
     // Ждём ПОСЛЕ сброса, а не меряем сразу: сброс — это setOverride, то есть

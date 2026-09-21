@@ -108,6 +108,7 @@ const WormStudio = {
         const stage = document.getElementById('game-container');
         if (stage) stage.classList.add('ws-open');
         this.mount();
+        this.syncYawRange();
         this.frameAll(true);
         // Открываемся на голове: её правят чаще всего, а пустой ряд ручек
         // выглядит сломанным инструментом.
@@ -179,7 +180,7 @@ const WormStudio = {
                 <div class="ws-knobs" data-out="knobs"></div>
                 <div class="ws-foot" data-out="foot">
                     <span class="ws-lbl">ракурс</span>
-                    <input type="range" data-in="yaw" min="-1" max="1" step="0.05" value="0">
+                    <input type="range" data-in="yaw" min="-0.5" max="0.5" step="0.02" value="0">
                     <button class="ws-icon" data-act="yaw-auto" title="автоматика">↻</button>
                 </div>
             </div>`;
@@ -244,6 +245,23 @@ const WormStudio = {
         // Накопленный патч пульта на своего червя: студия открывается там же,
         // где её закрыли.
         if (typeof WormLook !== 'undefined') WormLook.push(this.handle, { immediate: true });
+    },
+
+    // ---------- РАКУРС: ЧУЖОЙ ПРЕДЕЛ, А НЕ СВОЙ ----------
+    // Ползунок ходил до ±1, а игра дальше ±0.5 голову не поворачивает
+    // НИКОГДА — ни автоповоротом, ни позами. Получалось, что внешность
+    // правят на ракурсах, которых в игре не бывает: 42° против 21°.
+    //
+    // Предел спрашивается у рендерера, а не пишется здесь числом: два
+    // предела рано или поздно разъедутся, и разъехались бы молча.
+    syncYawRange() {
+        const r = this.root.querySelector('[data-in="yaw"]');
+        if (!r || !this.handle || typeof this.handle.getHeadPose !== 'function') return;
+        const L = this.handle.getHeadPose().limit;
+        if (!(L > 0)) return;
+        r.min = String(-L);
+        r.max = String(L);
+        r.step = String(+(L / 25).toFixed(4));
     },
 
     // ---------- КАМЕРА ----------

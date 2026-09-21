@@ -525,17 +525,27 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     // Теперь бровь — не обводка, а ЗАЛИТАЯ ФОРМА с сужением: толстая у носа,
     // сходящая в остриё к виску (так растёт настоящая бровь). Цвет —
     // осветлённый контурный тон, на ступень светлее силуэта.
+    // ---------- ЧЕМ БРОВЬ ПРАВИТСЯ ----------
+    // Долго в модели у брови был ОДИН угол, и в редакторе ползунок «брови»
+    // не делал ничего: он был привязан к настроению, то есть к изгибу рта.
+    // Бровь — половина мимики, и настраиваться она обязана тем же набором,
+    // каким её описал бы человек: где сидит, насколько задрана, как изогнута
+    // и насколько густая.
+    const brow = eye.brow || {};
+    const bLift = brow.lift != null ? brow.lift : 0;          // выше/ниже над глазом
+    const bArcK = brow.arc != null ? brow.arc : 0.5;          // изгиб дуги
+    const bThick = brow.thickness != null ? brow.thickness : 3.6;
     const browGroup = svgEl('g', {
         'data-part': `brow-${eyeKey}`,
-        transform: `translate(0,${(-ry - 7).toFixed(2)}) rotate(${eye.brow.angle * mirror})`,
-        visibility: eye.brow.visible ? 'visible' : 'hidden'
+        transform: `translate(0,${(-ry - 7 - bLift).toFixed(2)}) rotate(${(brow.angle || 0) * mirror})`,
+        visibility: brow.visible === false ? 'hidden' : 'visible'
     });
     // s = 1 указывает НАРУЖУ (к виску), -s — к носу.
     const s = mirror;
     const bIn = -s * rx * 1.12;   // конец у носа — толстый
     const bOut = s * rx * 1.02;   // конец у виска — остриё
-    const bArc = -rx * 0.5;       // высота подъёма дуги
-    const bT = 3.6;               // толщина у носового конца
+    const bArc = -rx * bArcK;     // высота подъёма дуги
+    const bT = bThick;            // толщина у носового конца
     // Верхняя кромка брови как квадратичная кривая — её же потом
     // используем, чтобы САЖАТЬ щетинки точно на край, а не рядом.
     const bp0 = { x: bIn, y: 2.0 - bT * 0.5 };
@@ -733,6 +743,16 @@ function buildEyeNode(eye, mirror, instanceId, eyeKey, defs, yawCtx) {
     // ЖИВОМ повороте головы, не пересобирая его внутренности.
     return { group, sclera, iris, pupil, gazeGroup, lidTrack, smileTrack, smileTravel,
              browGroup, rx, ry, lidHeight,
+             // Для подбора брови при повороте: её наружный конец и высота, на
+             // которой он стоит, в координатах головы.
+             browOut: bOut, browIn: bIn, browTipY: -ry - 7 - bLift + bp1.y,
+             browAngle: (brow.angle || 0) * mirror,
+             browBaseY: -ry - 7 - bLift, browMirror: mirror,
+             // Живые каналы брови и подбор по контуру живут в РЕФЕ, а
+             // трансформ собирает одна функция (applyBrowTransform): пока
+             // его писали в двух местах, кадровый цикл каждый кадр затирал
+             // и подбор, и высоту брови из модели.
+             browSqueeze: 1, browShift: 0, browRaise: 0,
              yawPhi: phi, offsetY: y, baseRx: rx };
 }
 
@@ -908,7 +928,7 @@ function updateMouthGeometry(mouthBuilt, bend, gap, fill, color) {
 //      "воротником" — естественной границей между двумя типами кожи.
 // Пятачок при этом читается как передний конец ЧЕРВЯ (радиальные морщинки
 // вокруг него — как у ротового конца), а не как приклеенная деталь свиньи.
-function buildHeadNeckTransition(ctx, headRx, headRy, neckColor) {
+function buildHeadNeckTransition(ctx, headRx, headRy, neckColor, skullClipId) {
     const anatomy = ctx.anatomy;
     if (!anatomy.enabled) return null;
     // Клип по силуэту черепа. Без него "юбка" перехода выступает ниже
@@ -916,8 +936,14 @@ function buildHeadNeckTransition(ctx, headRx, headRy, neckColor) {
     // Чревоугодия (кастрюля ставится строго над макушкой). Косметика не
     // имеет права менять измеримые габариты частей: это ровно тот класс
     // поломок, которые проявляются не тут, а в чужой мини-игре.
-    const clipId = `worm-neck-clip-${ctx.instanceId}`;
-    if (!ctx.gradCache[clipId]) {
+    //
+    // Обрезка идёт по ЖИВОМУ силуэту черепа, а не по вписанному эллипсу.
+    // Эллипс был симметричным и неподвижным, а повёрнутый череп — ни то,
+    // ни другое: юбка вылезала за контур светлым туманом с той стороны, где
+    // череп уже. Ровно та же беда, из-за которой существует этот файл:
+    // двух описаний одной формы не бывает, одно обязательно врёт.
+    const clipId = skullClipId || `worm-neck-clip-${ctx.instanceId}`;
+    if (!skullClipId && !ctx.gradCache[clipId]) {
         const clip = svgEl('clipPath', { id: clipId });
         clip.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: headRx.toFixed(2), ry: headRy.toFixed(2) }));
         ctx.defs.appendChild(clip);
@@ -949,7 +975,7 @@ function buildHeadNeckTransition(ctx, headRx, headRy, neckColor) {
 // Складки лба, вибриссы, тень у основания ушей. Всё внутри клипа по черепу:
 // ни одна деталь не имеет права выйти за габарит головы, потому что по её
 // bbox Чревоугодие ставит кастрюлю над макушкой.
-function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
+function buildHeadDetailLayer(ctx, rx, ry, skullPathD, skullClipId) {
     const anatomy = ctx.anatomy;
     if (!anatomy.enabled) return null;
     const coat = anatomy.coat || {};
@@ -957,8 +983,12 @@ function buildHeadDetailLayer(ctx, rx, ry, skullPathD) {
     const bristle = coat.bristle != null ? coat.bristle : 0.45;
     const rng = anatRng(anatomy, 'head', 'detail');
 
-    const clipId = `worm-head-detail-clip-${ctx.instanceId}`;
-    if (!ctx.gradCache[clipId]) {
+    // Своя копия контура здесь была бы ВТОРЫМ его описанием, причём
+    // застывшим на момент сборки: живой поворот переписывает череп, а копия
+    // остаётся прежней, и складки со щетиной обрезаются по форме, которой на
+    // экране уже нет. Берём ЖИВОЙ клип, если он есть.
+    const clipId = skullClipId || `worm-head-detail-clip-${ctx.instanceId}`;
+    if (!skullClipId && !ctx.gradCache[clipId]) {
         const clip = svgEl('clipPath', { id: clipId });
         // Клип по РЕАЛЬНОМУ силуэту черепа, а не по вписанному эллипсу:
         // иначе складки и щетина обрезались бы по чужой форме.
@@ -1089,10 +1119,21 @@ function buildHeadNode(model, ctx) {
         skullClipShape = ctx.gradCache[skullClipId];
     }
 
+    // ---------- БЛИК НА ЧЕРЕПЕ ----------
+    // Стоял НЕПОДВИЖНО и БЕЗ ОБРЕЗКИ. Две беды сразу:
+    //   • голова поворачивается, а блик остаётся на месте — то есть свет
+    //     будто прилеплен к экрану, а не лежит на поверхности. Всё
+    //     остальное на коже (шрамы, глаза, морщины) при повороте едет;
+    //   • череп при повороте асимметричен и с одной стороны уже, а блик
+    //     этого не знал и вылезал за контур светлым туманом.
+    // Теперь он едет по той же поверхности, что и черты лица, и обрезан
+    // ЖИВЫМ силуэтом черепа.
+    const HEAD_SHINE_PHI = -20;            // азимут блика от плоскости лица
     const headShine = svgEl('ellipse', {
         cx: (-rx * 0.28).toFixed(2), cy: (-ry * 0.52).toFixed(2),
         rx: (rx * 0.3).toFixed(2), ry: (ry * 0.16).toFixed(2),
-        fill: SPEC, opacity: 0.16
+        fill: SPEC, opacity: 0.16,
+        'clip-path': `url(#${skullClipId})`
     });
 
     // ---------- УШИ ----------
@@ -1115,6 +1156,17 @@ function buildHeadNode(model, ctx) {
     // реально было на экране и было одобрено.
     const EAR_FORM_SCALE = 1;
     const earsGroup = svgEl('g', { 'data-part': 'ears' });
+    // ---------- КУДА КЛАСТЬ БЛИЖНЕЕ УХО ----------
+    // Уши лежали ОДНОЙ группой в самом низу стопки, то есть всегда ЗА
+    // головой. При анфасе это верно: уши растут из боков черепа и их корни
+    // прячутся за ним. Но при полном развороте ближнее ухо выходит вперёд —
+    // оно физически ближе к зрителю, чем скула, — а оно продолжало торчать
+    // из-за затылка, и голова читалась вывернутой наизнанку.
+    //
+    // Поэтому групп ДВЕ: одна под головой, другая поверх её массы. Сам узел
+    // уха переезжает между ними при живом повороте (applyHeadEarDepth) —
+    // переезд стоит одной операции и только в момент смены стороны.
+    const earsFront = svgEl('g', { 'data-part': 'ears-front' });
     const earRefs = {};
     ['left', 'right'].forEach(side => {
         const mirror = side === 'left' ? -1 : 1;
@@ -1226,6 +1278,7 @@ function buildHeadNode(model, ctx) {
         organZone: null,
         muscle: false,
         clipPathData: skullD,
+        clipId: skullClipId,
         // ---------- НА МОРДЕ НЕ РИСУЮТ ЛИНИЙ ----------
         // Складки и щетина здесь ВЫКЛЮЧЕНЫ, и это не экономия. Правило
         // сформулировано двумя абзацами ниже — «любая нарисованная линия на
@@ -1488,7 +1541,11 @@ function buildHeadNode(model, ctx) {
         mouthBuilt.MAX_GAP * clamp01(mouth.openness || 0));
 
     // ---------- ГЛАЗА ----------
-    const eyesGroup = svgEl('g', { 'data-part': 'eyes' });
+    // Обрезка по силуэту черепа. Бровь ШИРЕ глаза (её концы уходят к носу и
+    // к виску), а к контуру прижимается только глаз — по своей полуширине.
+    // На повороте наружный конец брови поэтому выезжал за голову и висел в
+    // воздухе рядом с ухом. Черта лица не имеет права оказаться вне лица.
+    const eyesGroup = svgEl('g', { 'data-part': 'eyes', 'clip-path': `url(#${skullClipId})` });
     // Полуширина черепа на высоте глаз (между виском и скулой) и с поправкой
     // на сужение повёрнутой стороны — она же служит ограничителем.
     const EYE_SURFACE_K = WormSilhouette.face.eyeSurfaceK;
@@ -1513,17 +1570,32 @@ function buildHeadNode(model, ctx) {
     if (headAnat) tiltGroup.appendChild(headAnat.group);
     if (skullShading) tiltGroup.appendChild(skullShading);
     if (ctx.neckColor) {
-        const neck = buildHeadNeckTransition(ctx, rx, ry, ctx.neckColor);
+        const neck = buildHeadNeckTransition(ctx, rx, ry, ctx.neckColor, skullClipId);
         if (neck) tiltGroup.appendChild(neck);
     }
+    // Ближнее ухо ложится ПОВЕРХ МАССЫ головы, но ПОД чертами лица: кожа,
+    // рельеф и переход в шею оказываются за ним, а глаза, брови, пятачок и
+    // рот — перед. Иначе развёрнутая голова теряет глаз: ухо своим полотном
+    // заезжает на морду и закрывает его.
+    tiltGroup.appendChild(earsFront);
     tiltGroup.appendChild(muzzleGroup);
     tiltGroup.appendChild(jawGroup);
     tiltGroup.appendChild(headShine);
     tiltGroup.appendChild(mouthAnchor);
     tiltGroup.appendChild(snoutGroup);
     tiltGroup.appendChild(eyesGroup);
-    const headDetail = buildHeadDetailLayer(ctx, rx, ry, skullD);
+    const headDetail = buildHeadDetailLayer(ctx, rx, ry, skullD, skullClipId);
     if (headDetail) tiltGroup.appendChild(headDetail);
+    // ---------- КУДА КЛАСТЬ БЛИЖНЕЕ УХО ----------
+    // Уши лежали ОДНОЙ группой в самом низу стопки, то есть всегда ЗА
+    // головой. При анфасе это верно: уши растут из боков черепа и их корни
+    // прячутся за ним. Но при развороте ближнее ухо выходит вперёд — оно
+    // физически ближе к зрителю, чем скула, — а оно продолжало торчать
+    // из-за затылка, и голова читалась вывернутой наизнанку.
+    //
+    // Поэтому групп ДВЕ: одна под головой, другая поверх лица. Сам узел уха
+    // переезжает между ними при живом повороте (см. applyHeadEarDepth) —
+    // переезд стоит одной операции и только в момент смены стороны.
     tiltGroup.appendChild(hatAnchor);
 
     const scarLayer = svgEl('g', { 'data-anchor': 'head-scars', class: 'worm-scar-layer' });
@@ -1531,6 +1603,7 @@ function buildHeadNode(model, ctx) {
 
     const headRef = {
         group, tiltGroup, skull, ears: earRefs, snoutGroup,
+        headShine, shinePhi: HEAD_SHINE_PHI, earsGroup, earsFront,
         muzzleGroup, muzzleShift, jawGroup, jawShift,
         mouth: mouthBuilt, mouthAnchor, skullClipShape, eyes: { left: eyeLeft, right: eyeRight },
         scarLayer, rx, ry, snoutY, anat: headAnat,
@@ -1550,7 +1623,120 @@ function buildHeadNode(model, ctx) {
         mouthSquash: mouthYawSquash,
         mouthBaseScale: { x: mouth.scale * mouth.stretchX, y: mouth.scale * mouth.stretchY }
     };
+
+    // ---------- ТО ЖЕ САМОЕ НА СБОРКЕ ----------
+    // Живой пересчёт (applyHeadYaw) выходит рано, когда ракурс не менялся, —
+    // а голова ПЕРЕСОБИРАЕТСЯ уже повёрнутой: смена косметики, правка в
+    // студии, открытие мини-игры. Тогда живой путь не срабатывает ни разу, и
+    // всё, что он делает, на экран не попадает вовсе.
+    //
+    // Ровно на этом уже обжигались с калибровкой уха (см. EAR_FORM_SCALE):
+    // значение месяц не доезжало до экрана. Поэтому глубина уха и подбор
+    // брови зовутся и здесь, теми же функциями.
+    applyHeadEarDepth(headRef, headYaw);
+    ['left', 'right'].forEach(side => {
+        const e = headRef.eyes[side];
+        if (!e) return;
+        applyBrowFit(headRef, e, WormSilhouette.eyePlace(e.yawPhi, headYaw, e.baseRx / rx), headYaw);
+    });
     return headRef;
+}
+
+// ---------- БРОВЬ ПОДБИРАЕТСЯ, А НЕ ОБРУБАЕТСЯ ----------
+// К контуру прижимается только ГЛАЗ — по своей полуширине (eyePlace). Бровь
+// шире: её концы уходят к носу и к виску, и на повороте наружный конец
+// выезжал за голову и висел в воздухе рядом с ухом.
+//
+// Обрезка силуэтом это прячет, но оставляет вертикальный срез поперёк
+// брови — видно, что её отрубили. Поэтому бровь ещё и ПОДБИРАЕТСЯ: сжимается
+// по горизонтали ровно настолько, чтобы её кончик остался внутри. Ширину
+// спрашиваем у САМОГО контура (skullHalfWidth) — не у второй формулы,
+// которая с ним разойдётся.
+const BROW_TIP_PAD = 0.96;    // запас между кончиком брови и кромкой
+const BROW_SQUEEZE_MIN = 0.4; // сильнее сжатая бровь читается обрубком
+
+// ЕДИНСТВЕННОЕ место, где собирается трансформ брови. Слагаемых три:
+// посадка из модели, живое «поднять бровь» и подбор по контуру. Пока их
+// складывали в двух местах, кадровый цикл писал свою версию поверх — и
+// высота брови из модели не доезжала до экрана вовсе, а подбор снимался
+// через кадр после поворота.
+function applyBrowTransform(e) {
+    if (!e || !e.browGroup) return;
+    const raise = e.browRaise || 0;
+    const y = e.browBaseY - raise * 4;
+    const a = e.browAngle - raise * 6 * (e.browMirror || 1);
+    const k = e.browSqueeze != null ? e.browSqueeze : 1;
+    const dx = e.browShift || 0;
+    setAttr(e.browGroup, 'transform',
+        `translate(${dx.toFixed(2)},${y.toFixed(2)}) rotate(${a.toFixed(2)})` +
+        (Math.abs(k - 1) > 0.002 ? ` scale(${k.toFixed(3)},1)` : ''));
+}
+
+function applyBrowFit(headRef, e, place, yaw) {
+    if (!e || !e.browGroup || !e.browOut) return;
+    const rx = headRef.rx, ry = headRef.ry;
+    const yNorm = (e.offsetY + e.browTipY) / ry;
+    // Полоса, в которой на ЭТОЙ высоте вообще есть голова. При повороте она
+    // несимметрична: одна половина черепа уже другой. Спрашиваем сам контур.
+    const R = WormSilhouette.skullHalfWidth(yNorm, headRef.skullCfg, yaw, 1) * rx * BROW_TIP_PAD;
+    const L = WormSilhouette.skullHalfWidth(yNorm, headRef.skullCfg, yaw, -1) * rx * BROW_TIP_PAD;
+    let k = 1, dx = 0;
+    if (R > 0 && L > 0) {
+        const sq = place.squash;
+        const width = Math.abs(sq * (e.browOut - e.browIn));
+        const band = R + L;
+        // Шире полосы — сжимаем. Не влезает даже сжатая — значит на этой
+        // высоте головы почти нет, и бровь честно становится коротким мазком.
+        if (width > band) k = Math.max(BROW_SQUEEZE_MIN, band / width);
+        const eyeX = place.x * rx;
+        const a1 = eyeX + sq * k * e.browIn, a2 = eyeX + sq * k * e.browOut;
+        const hi = Math.max(a1, a2), lo = Math.min(a1, a2);
+        // Сдвиг ВНУТРЬ: одного сжатия мало, потому что сжимается бровь вокруг
+        // центра глаза — а центр глаза на высоте брови сам может оказаться за
+        // кромкой (глаз прижат к контуру по СВОЕЙ высоте, где череп шире).
+        if (hi > R) dx = R - hi;
+        if (lo + dx < -L) dx = -L - lo;
+        // В местные координаты брови: группа глаза сжата по x на squash.
+        dx = sq > 0.05 ? dx / sq : 0;
+    }
+    e.browSqueeze = k;
+    e.browShift = dx;
+    applyBrowTransform(e);
+}
+
+// ---------- ГЛУБИНА УХА ПРИ ПОВОРОТЕ ----------
+// Ближнее ухо при развороте выходит ПЕРЕД массой головы, дальнее остаётся за
+// ней. Пока обе группы лежали под черепом, повёрнутая голова читалась
+// вывернутой: ухо со стороны зрителя торчало откуда-то из-за затылка.
+//
+// Порог высокий: ухо сидит на азимуте около 63° от плоскости лица, и его
+// корень прячется за скулой почти до самого предела поворота. Переезд —
+// событие крайнего ракурса, а не постоянное переключение.
+//
+// Гистерезис обязателен: без него на самом пороге ухо мигало бы туда-сюда
+// каждый кадр — голова всё время чуть поводит.
+const EAR_FRONT_ON = 0.78;    // доля предела поворота, после которой ухо впереди
+const EAR_FRONT_OFF = 0.62;   // и до которой возвращается назад
+
+function applyHeadEarDepth(headRef, yaw) {
+    const front = headRef.earsFront, back = headRef.earsGroup;
+    if (!front || !back) return;
+    const limit = (typeof WORM_HEAD_YAW_LIMIT === 'number') ? WORM_HEAD_YAW_LIMIT : 1;
+    const t = Math.abs(yaw || 0) / (limit || 1);
+    const было = headRef.earFrontSide || 0;
+    let надо = было;
+    if (t >= EAR_FRONT_ON) надо = (yaw >= 0 ? 1 : -1);
+    else if (t <= EAR_FRONT_OFF) надо = 0;
+    else if (было !== 0 && Math.sign(yaw || 0) !== было) надо = 0;
+    if (надо === было) return;
+    headRef.earFrontSide = надо;
+    ['left', 'right'].forEach(side => {
+        const ear = headRef.ears[side];
+        if (!ear || !ear.group) return;
+        const mirror = side === 'left' ? -1 : 1;
+        const host = (надо !== 0 && mirror === надо) ? front : back;
+        if (ear.group.parentNode !== host) host.appendChild(ear.group);
+    });
 }
 
 // ---------- ЖИВОЙ ПЕРЕСЧЁТ ПОВОРОТА ГОЛОВЫ ----------
@@ -1676,6 +1862,7 @@ function applyHeadYaw(headRef, yaw) {
         const place = WormSilhouette.eyePlace(e.yawPhi, yaw, e.baseRx / rx);
         setAttr(e.group, 'transform',
             `translate(${(place.x * rx).toFixed(2)},${e.offsetY}) scale(${place.squash.toFixed(3)},1)`);
+        applyBrowFit(headRef, e, place, yaw);
     });
 
     // Уши: пересчитываем якорь и сжатие, но САМ трансформ не пишем — его
@@ -1695,6 +1882,21 @@ function applyHeadYaw(headRef, yaw) {
             `rotate(${ear.baseAngle.toFixed(1)}) ` +
             `scale(${ear.scaleX.toFixed(3)},${ear.scaleY.toFixed(3)})`);
     });
+    applyHeadEarDepth(headRef, yaw);
+
+    // Блик едет по поверхности черепа — тем же поворотом, что двигает черты
+    // лица. Неподвижный блик читается пятном на стекле перед персонажем, а
+    // не светом на его голове.
+    if (headRef.headShine) {
+        // yawProject отдаёт x В ПИКСЕЛЯХ (он уже умножен на радиус) — как
+        // им и пользуются пятачок с мордой. Лишнее умножение на rx угоняло
+        // блик за тысячу пикселей: на экране этого не видно, клип его
+        // прячет, зато ГАБАРИТ головы вырастал в шестнадцать раз — и ломал
+        // всё, что по нему считается, от посадки шляпы до кастрюли кухни.
+        const sp = yawProject(rx, headRef.shinePhi, yaw, 0);
+        setAttr(headRef.headShine, 'cx', (sp.x * 0.62).toFixed(2));
+        setAttr(headRef.headShine, 'rx', (rx * 0.3 * Math.max(0.35, Math.abs(sp.squash))).toFixed(2));
+    }
 
     // Пятачок и морда: выступающие черты, уезжают сильнее прочих. Сам
     // трансформ пятачка тоже собирает tick() (принюхивание), поэтому здесь

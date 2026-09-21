@@ -947,14 +947,21 @@ function buildAnatomyStack(ctx, partName, opts) {
 
     // Клип по силуэту части — гарантия, что ни один слой не вылезет на
     // соседний сегмент, какие бы параметры ни выставили.
-    const clipId = `worm-anat-clip-${ctx.instanceId}-${partName}`;
-    const clip = svgEl('clipPath', { id: clipId });
-    if (opts.clipPathData) {
-        clip.appendChild(svgEl('path', { d: opts.clipPathData }));
-    } else {
-        clip.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: rx.toFixed(2), ry: ry.toFixed(2) }));
+    // `clipId` — ГОТОВЫЙ живой клип хозяина части. Голова передаёт сюда свой:
+    // её силуэт при повороте переписывается каждый кадр, а собственная копия
+    // контура застыла бы на моменте сборки, и слои кожи обрезались бы по
+    // форме, которой на экране уже нет.
+    let clipId = opts.clipId;
+    if (!clipId) {
+        clipId = `worm-anat-clip-${ctx.instanceId}-${partName}`;
+        const clip = svgEl('clipPath', { id: clipId });
+        if (opts.clipPathData) {
+            clip.appendChild(svgEl('path', { d: opts.clipPathData }));
+        } else {
+            clip.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: rx.toFixed(2), ry: ry.toFixed(2) }));
+        }
+        ctx.defs.appendChild(clip);
     }
-    ctx.defs.appendChild(clip);
 
     // Внешняя группа — её масштабирует tick() (дыхание/раздутие живота).
     // Внутренняя — держит клип, ещё внутри — разворот вдоль оси тела.
