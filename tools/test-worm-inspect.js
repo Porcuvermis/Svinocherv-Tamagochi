@@ -190,6 +190,56 @@ const harness = require('./harness');
   });
   check(auto === null, '«авто» вернуло управление ракурсом автоматике');
 
+  // ---------- ПОЛЗУНОК ТАЩИТСЯ, А НЕ ТОЛЬКО ТЫКАЕТСЯ ----------
+  // Панель перерисовывала ряд ручек через innerHTML на КАЖДОЕ событие
+  // ползунка — то есть уничтожала и создавала его узел прямо под пальцем.
+  // Жест обрывался: работали отдельные тычки, а перетаскивание нет. Замер:
+  // протащили через треть дорожки, получили 0.08 вместо 0.64.
+  //
+  // Проверяется настоящим перетаскиванием, а не установкой value: установка
+  // value из кода проходит и на сломанном коде.
+  say('');
+  say('======== ПОЛЗУНОК ТАЩИТСЯ ========');
+  const drag = await page.evaluate(() => {
+    WormLook.reset(WormInspect.handle());
+    WormInspect.mode = 'edit';
+    WormInspect.picked = { entity: WormParts.get('head'), title: 'голова', part: WormParts.get('head') };
+    WormInspect.stackAt = [WormInspect.picked];
+    WormInspect.buildContext(); WormInspect.renderPanel();
+  });
+  await page.waitForTimeout(300);
+  const sl = await page.locator('#wi-panel input[data-knob="headSize"]').boundingBox();
+  if (!sl) check(false, 'ползунка размера головы нет на панели');
+  else {
+    const y = sl.y + sl.height / 2;
+    await page.mouse.move(sl.x + sl.width / 2, y);
+    await page.mouse.down();
+    // Треть дорожки вправо, маленькими шагами — как ведёт палец.
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(sl.x + sl.width * (0.5 + 0.04 * i), y);
+      await page.waitForTimeout(25);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    const v = await page.evaluate(() => +(WormLook.values.headSize || 0).toFixed(2));
+    say(`  протащили через треть дорожки → ручка встала на ${v}`);
+    check(v > 0.4, 'ручка прошла ВЕСЬ путь за пальцем, а не оборвалась на первом шаге');
+    // Высота под палец и touch-action: без них на телефоне жест забирает
+    // прокрутка панели, и ползунок отвечает только на тычки.
+    const touch = await page.evaluate(() => {
+      const el = document.querySelector('#wi-panel input[data-knob="headSize"]');
+      const cs = getComputedStyle(el);
+      return { action: cs.touchAction, h: el.getBoundingClientRect().height,
+               панель: getComputedStyle(document.getElementById('wi-panel')).touchAction };
+    });
+    check(touch.action === 'none',
+          `у ползунка touch-action: ${touch.action} — прокрутка панели не отбирает жест`);
+    check(touch.панель !== 'none', 'а сама панель при этом по-прежнему прокручивается');
+    check(touch.h >= 24, `высота ползунка под палец: ${touch.h.toFixed(0)} точек`);
+    await page.evaluate(() => { WormLook.reset(WormInspect.handle()); WormInspect.mode = 'pick'; });
+    await page.waitForTimeout(200);
+  }
+
   // ---------- 4. КОНТЕКСТ ДЛЯ АГЕНТА ----------
   say('');
   say('======== КОНТЕКСТ ДЛЯ АГЕНТА ========');

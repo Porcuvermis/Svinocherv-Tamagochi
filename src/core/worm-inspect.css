@@ -172,7 +172,59 @@ body.wi-on #debug-state-panel { display: none !important; }
     min-width: 34px;
 }
 
-#wi-panel input[type="range"] { flex: 1; min-width: 90px; }
+/* ---------- ПОЛЗУНОК ТАЩИТСЯ ПАЛЬЦЕМ ---------- */
+/* `touch-action: none` — не украшение, а единственное, что заставляет
+   ползунок работать на телефоне. Панель прокручиваемая (`overflow-y`), и
+   система забирает жест себе под прокрутку раньше, чем его увидит ползунок:
+   тап срабатывает, а перетаскивание — нет. Ровно эта жалоба и пришла с
+   айфона. Свойство стоит ТОЛЬКО на самих ползунках, поэтому панель
+   по-прежнему прокручивается.
+
+   Высота — под палец, а не под мышь: у ползунка в 16 точек промахиваешься
+   чаще, чем попадаешь. Ползунок в панели инструмента может позволить себе
+   быть крупным: здесь не тесно. */
+#wi-panel input[type="range"] {
+    flex: 1;
+    min-width: 90px;
+    touch-action: none;
+    height: 26px;
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+}
+
+#wi-panel input[type="range"]::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+/* Бегунок крупный намеренно: попасть в него пальцем надо с первого раза. */
+#wi-panel input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    margin-top: -8.5px;
+    border-radius: 50%;
+    background: #00e0ff;
+    border: 2px solid rgba(0, 0, 0, 0.5);
+}
+
+#wi-panel input[type="range"]::-moz-range-track {
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+#wi-panel input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #00e0ff;
+    border: 2px solid rgba(0, 0, 0, 0.5);
+}
 
 #wi-panel .wi-pick {
     background: rgba(20, 20, 24, 0.86);

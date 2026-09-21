@@ -278,8 +278,7 @@ const WormInspect = {
             if (WormLook.skew) WormLook.skew[skew] = 0;
             WormLook.setSkew(h, name, side, v);
             this.note(skew + ' → ' + v.toFixed(2));
-            this.buildContext();
-            this.renderPanel();
+            this.afterKnob(e.target, v);
             return;
         }
         const knob = e.target.getAttribute('data-knob');
@@ -289,8 +288,7 @@ const WormInspect = {
             // «прибавь». Накопление тут читалось бы как убегающая ручка.
             WormLook.apply(this.handle(), { [knob]: v }, { absolute: true });
             this.note(knob + ' → ' + v.toFixed(2));
-            this.buildContext();
-            this.renderPanel();
+            this.afterKnob(e.target, v);
             return;
         }
         if (e.target.getAttribute('data-in') !== 'yaw') return;
@@ -299,6 +297,31 @@ const WormInspect = {
         if (h && h.setHeadPose) h.setHeadPose(v);
         this.panel.querySelector('[data-out="yaw"]').textContent = v.toFixed(2);
         this.note('ракурс → ' + v.toFixed(2));
+    },
+
+    // ---------- ПОСЛЕ ДВИЖЕНИЯ РУЧКИ ----------
+    // Обновляем ЧИСЛО рядом с ползунком и счётчик правок — и НИЧЕГО БОЛЬШЕ.
+    //
+    // Раньше здесь стоял полный renderPanel(), а он пересобирает ряд ручек
+    // через innerHTML. То есть узел ползунка УНИЧТОЖАЛСЯ и создавался заново
+    // на каждое его же событие — прямо под пальцем. Жест обрывался, и
+    // ползунок «не тащился»: работали только отдельные тычки. Замер:
+    // перетаскивание через треть дорожки давало 0.08 вместо 0.64.
+    //
+    // Отсюда общее правило: узел, которым сейчас управляют, перерисовывать
+    // нельзя. Обновлять надо то, что рядом.
+    afterKnob(input, v) {
+        const row = input.closest('.wi-row');
+        const out = row && row.querySelector('.wi-val');
+        if (out) out.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
+        this.buildContext();
+        const steps = this.panel.querySelector('[data-out="steps"]');
+        if (steps) {
+            const n = Object.keys(WormLook.patch()).filter(k => k !== 'lock').length;
+            steps.textContent = n ? `${n} правок` : 'без правок';
+        }
+        const ta = this.panel.querySelector('[data-out="ctx"]');
+        if (ta) ta.value = this.ctx ? JSON.stringify(this.ctx, null, 1) : '';
     },
 
     // Запись в историю. Схлопывает подряд идущие однотипные: двадцать шагов
@@ -709,6 +732,12 @@ const WormInspect = {
     renderKnobs() {
         const host = this.panel.querySelector('[data-out="knobs"]');
         const p = this.picked;
+        const key = p ? p.entity.key : '';
+        // Пересобираем ряд ТОЛЬКО когда сменилось выбранное. Пока выбрано то
+        // же самое, обновляются числа, а узлы ползунков остаются на месте:
+        // пересобранный под пальцем ползунок обрывает перетаскивание.
+        if (key === this.knobsFor && host.children.length) { this.syncKnobs(host); return; }
+        this.knobsFor = key;
         if (!p) { host.innerHTML = ''; return; }
         // У ориентира черепа своя ручка — ПЕРЕКОС его стороны, и он не из
         // общего списка. Показать его надо обязательно: именно он двигается
@@ -741,6 +770,22 @@ const WormInspect = {
                 <span class="wi-val">${v >= 0 ? '+' : ''}${v.toFixed(2)}</span>
             </div>`;
         }).join('');
+    },
+
+    // Обновление чисел без пересборки. Ползунок, которым СЕЙЧАС управляют,
+    // не трогаем вовсе: запись в `value` посреди жеста дёргает бегунок.
+    syncKnobs(host) {
+        host.querySelectorAll('input[data-knob],input[data-skew]').forEach(inp => {
+            const k = inp.getAttribute('data-knob');
+            const sk = inp.getAttribute('data-skew');
+            const v = k ? (WormLook.values[k] || 0)
+                        : ((WormLook.skew && WormLook.skew[sk]) || 0);
+            if (document.activeElement !== inp) inp.value = String(v);
+            const out = inp.closest('.wi-row').querySelector('.wi-val');
+            if (out) out.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
+            const locked = k ? WormLook.isLocked(k) : false;
+            inp.disabled = locked;
+        });
     }
 };
 

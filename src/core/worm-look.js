@@ -163,11 +163,14 @@ const WormLook = {
     // где стоит сейчас и с чем связано. Агент не угадывает имена — он их
     // спрашивает.
     registry(handle) {
-        const m = handle ? (typeof handle.getModel === 'function' ? handle.getModel() : null) : null;
+        // От ИСХОДНОЙ, а не от текущей: `now` обязан показывать, во что
+        // ручка превратит задуманное значение, а не во что превратит уже
+        // превращённое.
+        const m = handle ? this.baseModel(handle) : null;
         return WORM_LOOK_KNOBS.map(k => ({
             key: k.key, title: k.title, group: k.group, kind: k.kind,
             value: this.values[k.key] || 0,
-            range: k.kind === 'add01' ? [-1, 1] : [-1, 1],
+            range: [-1, 1],
             linked: k.linked || [],
             locked: this.isLocked(k.key),
             now: m ? this.absolute(m, k) : null
@@ -231,9 +234,32 @@ const WormLook = {
         return { changed, refused };
     },
 
+    // ---------- ИСХОДНАЯ МОДЕЛЬ ----------
+    // «Как задумано»: базовая модель плюс чужой оверрайд (подмена внешности
+    // мини-игрой), но БЕЗ того, что написал сам пульт.
+    //
+    // Это самое важное место файла. Пока здесь стоял `getModel()`, пульт
+    // читал модель С УЖЕ НАЛОЖЕННЫМ СВОИМ ПАТЧЕМ и множил её ещё раз на
+    // каждом движении ползунка: ручка стояла на +0.5, а голова шла
+    // 1.5 → 2.25 → 3.375 → 5.06 → 7.59. Вернуть её было нельзя ничем, кроме
+    // полного сброса: любое ненулевое значение продолжало множить от
+    // раздутого, а ноль просто убирал ключ из патча.
+    //
+    // Относительная ручка обязана отсчитывать от НЕПОДВИЖНОЙ точки. Иначе
+    // это не ручка, а педаль газа.
+    baseModel(handle) {
+        const api = window.WormModelAPI;
+        if (typeof handle.getBaseModel === 'function' && api) {
+            return api.mergeWormOverride(handle.getBaseModel(), this.foreign);
+        }
+        // Ручка старая и исходной модели не отдаёт. Честнее взять
+        // сохранённую, чем считать от собственного патча.
+        return api ? api.loadWormModel() : null;
+    },
+
     // ---------- СОБРАТЬ И ОТДАТЬ ----------
     push(handle) {
-        const base = typeof handle.getModel === 'function' ? handle.getModel() : null;
+        const base = this.baseModel(handle);
         if (!base) return;
         const over = JSON.parse(JSON.stringify(this.foreign || {}));
         const live = {};
