@@ -114,7 +114,28 @@ function createDefaultEye() {
     };
 }
 
-function createDefaultEar() {
+// ---------- ФОРМА УШЕЙ, ПРИНЯТАЯ ЗА ОСНОВУ ----------
+// Настроено руками в студии и одобрено глазами — то есть ровно тот случай,
+// ради которого редактор и делался: не «перерисуй мне ухо», а «вот так, и
+// пусть теперь так и будет».
+//
+// Что изменилось против канонического контура (WORM_EAR_ANCHORS): передний
+// угол основания ушёл внутрь и вверх — ухо стало сидеть уже и выше; у
+// правого вдобавок отвисла мочка сзади.
+//
+// Стороны РАЗНЫЕ, и это не ошибка переноса: левому мочку не трогали. Живое
+// лицо несимметрично, и настоящая асимметрия лучше выверенной ровности —
+// но если это был недосмотр, правится одной строкой здесь.
+//
+// Числа в НЕЗЕРКАЛЕННОЙ системе координат уха, той же, в которой лежат
+// WORM_EAR_ANCHORS: зеркало накладывает рисование, один раз на выходе.
+const WORM_EAR_DEFAULT_FORM = {
+    left:  { 'ear-base': { x: 12.695, y: -7.282 } },
+    right: { 'ear-base': { x: 10.389, y: -6.630 },
+             'ear-lobe': { x:  2.662, y:  6.656 } }
+};
+
+function createDefaultEar(side) {
     return {
         shape: 'default',
         stretchX: 1,
@@ -126,11 +147,13 @@ function createDefaultEar() {
         scale: 0.95,
         // 0 = остриём вверх (стандарт). Прижатое ухо — отрицательный угол.
         rotation: 0,
-        // Сдвиги опорных точек КОНТУРА: { 'ear-tip': {x,y}, … }. null —
+        // Сдвиги опорных точек КОНТУРА: { 'ear-tip': {x,y}, … }. Пусто —
         // форма ровно такая, как задумана (WORM_EAR_ANCHORS в worm-head.js).
         // Здесь именно сдвиги, а не сами точки: так форма остаётся
-        // относительной и переживает правку базового контура.
-        form: null,
+        // относительной и переживает правку базового контура — и ровно
+        // поэтому настроенную в студии внешность можно принять за основу,
+        // не переписывая канонический контур.
+        form: JSON.parse(JSON.stringify(WORM_EAR_DEFAULT_FORM[side] || {})),
         fill: WORM_PAL.flesh[300],
         stroke: WORM_PAL.ink,
         visible: true
@@ -358,8 +381,8 @@ function createDefaultWormModel() {
                 skew: null
             },
             ears: {
-                left: createDefaultEar(),
-                right: createDefaultEar()
+                left: createDefaultEar('left'),
+                right: createDefaultEar('right')
             },
             snout: {
                 stretchX: 1,
@@ -540,6 +563,18 @@ function loadWormModel() {
         if (parsed.eyes) ['left', 'right'].forEach(side => {
             const e = parsed.eyes[side];
             if (e) e.brow = Object.assign({ angle: 0, lift: 0, arc: 0.5, thickness: 3.6, visible: true }, e.brow || {});
+        });
+        // Форма ушей принята за основу уже после того, как сохранения
+        // разошлись по телефонам. Достраиваем на месте, как anatomy и бровь:
+        // номер схемы ради внешности не меняем — он сбросил бы накопленный
+        // прогресс. Тронутую форму НЕ перетираем: если у уха уже что-то
+        // лежит, значит её правили, и это правка игрока.
+        if (parsed.head && parsed.head.ears) ['left', 'right'].forEach(side => {
+            const ear = parsed.head.ears[side];
+            if (!ear) return;
+            if (!ear.form || !Object.keys(ear.form).length) {
+                ear.form = JSON.parse(JSON.stringify(WORM_EAR_DEFAULT_FORM[side] || {}));
+            }
         });
         return withCosmetics(parsed);
     } catch (err) {
