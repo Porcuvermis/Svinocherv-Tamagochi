@@ -55,6 +55,7 @@ const WormInspect = {
     depth: 0,                // на сколько слоёв вглубь спустилась кисть
     picked: null,            // что выбрано
     overlays: {},            // какие накладки включены
+    frozen: false,           // остановлен ли персонаж на время правки
     raf: 0,
     // История — ПОКА только того, что делает сам инспектор. Настоящая
     // история правок появится вместе с пультом: там она достаётся даром,
@@ -144,6 +145,8 @@ const WormInspect = {
                 <button data-act="mode-pick">элемент</button>
                 <button data-act="mode-problem">проблема</button>
                 <button data-act="mode-edit">правка</button>
+                <button data-act="freeze" title="остановить персонажа">стоп</button>
+                <button data-act="studio" title="отдельный экран редактора">студия</button>
             </div>
             <div class="wi-body">
                 <div class="wi-row wi-ovs">${ov}</div>
@@ -260,6 +263,23 @@ const WormInspect = {
             const h = this.handle();
             if (h && h.setHeadPose) h.setHeadPose('auto');
             this.note('ракурс → авто');
+            return;
+        }
+        // ---------- СТОП ----------
+        // В движущуюся цель не попасть ни пальцем, ни глазом: червь дышит,
+        // моргает и бродит по комнате, а правят внешность по неподвижному.
+        // Опции читаются рендерером каждый кадр, поэтому персонажа не
+        // разбирают — просто следующий кадр считает его застывшим.
+        if (act === 'freeze') {
+            const h = this.handle();
+            this.frozen = !this.frozen;
+            if (h && h.setOptions) h.setOptions({ idleWave: !this.frozen, blink: !this.frozen, wander: !this.frozen });
+            this.note(this.frozen ? 'персонаж остановлен' : 'персонаж ожил');
+            this.renderPanel();
+            return;
+        }
+        if (act === 'studio') {
+            if (typeof WormStudio !== 'undefined') WormStudio.open();
             return;
         }
         if (act === 'ctx') { this.panel.classList.toggle('wi-ctx'); return; }
@@ -702,6 +722,7 @@ const WormInspect = {
         this.panel.querySelector('[data-act="mode-pick"]').classList.toggle('active', this.mode === 'pick');
         this.panel.querySelector('[data-act="mode-problem"]').classList.toggle('active', this.mode === 'problem');
         this.panel.querySelector('[data-act="mode-edit"]').classList.toggle('active', this.mode === 'edit');
+        this.panel.querySelector('[data-act="freeze"]').classList.toggle('active', !!this.frozen);
         WORM_INSPECT_OVERLAYS.forEach(o =>
             this.panel.querySelector(`[data-ov="${o.key}"]`).classList.toggle('active', !!this.overlays[o.key]));
 
