@@ -199,25 +199,44 @@ const harness = require('./harness');
   }
 
   // ---------- 4. БЛИЖНЕЕ УХО ВЫХОДИТ ВПЕРЁД ----------
+  // Первая версия решала это ЗНАКОМ ракурса и ошиблась стороной: вперёд
+  // выходило ДАЛЬНЕЕ ухо. «Голова повернулась вправо» и «правое ухо ближе»
+  // — разные утверждения: нос уезжает вправо, а к зрителю разворачивается
+  // ЛЕВАЯ щека.
+  //
+  // Поэтому проверка не повторяет за кодом «при плюсе — правое». Она
+  // спрашивает КАРТИНКУ, с какой стороны головы видно больше, и требует,
+  // чтобы спереди оказалось ухо ИМЕННО ОТТУДА. Перепутать сторону так
+  // нельзя: обе величины меряются на экране, и обе — следствия, а не
+  // договорённости.
   say('');
-  say('======== НА ПОЛНОМ РАЗВОРОТЕ БЛИЖНЕЕ УХО — ПЕРЕД ГОЛОВОЙ ========');
+  say('======== ВПЕРЁД ВЫХОДИТ УХО С ВИДИМОЙ СТОРОНЫ ========');
   const ears = await page.evaluate(async () => {
     const h = window.MainWormHandle;
     const L = h.getHeadPose().limit;
     const снять = async (v) => {
       h.setHeadPose(v, { instant: true });
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 320));
       const root = h.svgRoot.querySelector('.worm-root');
       const tilt = root.querySelector('[data-part="head-tilt"]');
       const дети = [...tilt.children];
       const скулаI = дети.findIndex(c => c.tagName === 'path');
-      const где = {};
+      const sb = дети[скулаI].getBoundingClientRect();
+      const sn = root.querySelector('[data-part="snout"]').getBoundingClientRect();
+      const нос = sn.x + sn.width / 2;
+      const где = {}, ширина = {};
       ['left', 'right'].forEach(side => {
         const g = root.querySelector(`[data-part="ear-${side}"]`);
         let c = g; while (c.parentNode !== tilt) c = c.parentNode;
         где[side] = дети.indexOf(c) > скулаI ? 'перед' : 'за';
+        ширина[side] = +g.getBoundingClientRect().width.toFixed(1);
       });
-      return где;
+      return {
+        где, ширина,
+        // Сколько головы видно по каждую сторону от пятачка. Больше —
+        // значит эта щека развёрнута к зрителю.
+        щека: { left: +(нос - sb.left).toFixed(1), right: +(sb.right - нос).toFixed(1) }
+      };
     };
     const анфас = await снять(0);
     const вправо = await снять(L);
@@ -225,13 +244,18 @@ const harness = require('./harness');
     h.setHeadPose(0, { instant: true });
     return { анфас, вправо, влево, L };
   });
-  say(`  анфас ${JSON.stringify(ears.анфас)}, вправо ${JSON.stringify(ears.вправо)}, влево ${JSON.stringify(ears.влево)}`);
-  check(ears.анфас.left === 'за' && ears.анфас.right === 'за',
+  check(ears.анфас.где.left === 'за' && ears.анфас.где.right === 'за',
         'при анфасе оба уха за головой — их корни и правда за черепом');
-  check(ears.вправо.right === 'перед' && ears.вправо.за !== 'перед' && ears.вправо.left === 'за',
-        'повернул вправо — правое ухо вышло вперёд, левое осталось за головой');
-  check(ears.влево.left === 'перед' && ears.влево.right === 'за',
-        'и зеркально в другую сторону');
+  [['вправо', ears.вправо], ['влево', ears.влево]].forEach(([имя, r]) => {
+    const видно = r.щека.left > r.щека.right ? 'left' : 'right';
+    const дальний = видно === 'left' ? 'right' : 'left';
+    say(`  ${имя}: щека слева ${r.щека.left}, справа ${r.щека.right}; ` +
+        `ухо left ${r.где.left} (${r.ширина.left}), right ${r.где.right} (${r.ширина.right})`);
+    check(r.где[видно] === 'перед' && r.где[дальний] === 'за',
+          `${имя}: вперёд вышло ухо с той стороны, где видно больше головы (${видно})`);
+    check(r.ширина[видно] > r.ширина[дальний] * 1.3,
+          `${имя}: и это действительно ближнее ухо — оно развёрнуто к зрителю, а дальнее стоит ребром`);
+  });
 
   // ---------- 5. БРОВЬ ОСТАЁТСЯ НА ГОЛОВЕ ----------
   say('');
