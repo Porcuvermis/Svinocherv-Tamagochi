@@ -403,6 +403,107 @@ const harness = require('./harness');
   check(!fade.было && fade.вовремя, 'при движении ползунка ручки контура уходят');
   check(!fade.после, 'и возвращаются сами, без единой кнопки');
 
+  // ---------- 6е. ПРЕСЕТЫ ----------
+  // Внешность правят по кусочкам: полчаса над ухом, потом полчаса над
+  // черепом. Если сохранять можно только всё разом, каждая удачная находка
+  // тащит за собой весь остальной персонаж — и собрать «то ухо с этим
+  // черепом» нельзя вовсе.
+  //
+  // Поэтому проверяется не «кнопка нажимается», а три свойства, без
+  // которых пресеты бесполезны: сохранённое ВОЗВРАЩАЕТСЯ, «по умолчанию»
+  // есть всегда и снимает правку, и чужая часть при загрузке НЕ ЕДЕТ.
+  say('');
+  say('======== ПРЕСЕТЫ ЧАСТЕЙ ТЕЛА ========');
+  page.on('dialog', d => d.accept('проба'));
+  const preset = await page.evaluate(async () => {
+    const h = WormStudio.handle;
+    const W = (p) => {
+      const el = h.svgRoot.querySelector(`.worm-root [data-part="${p}"]`);
+      return el ? +el.getBoundingClientRect().width.toFixed(1) : 0;
+    };
+    WormLook.reset(h); WormLook.flush();
+    WormStudio.row = 'face'; WormStudio.renderNav();
+    WormStudio.select('ear-left', { noZoom: true });
+    await new Promise(r => setTimeout(r, 300));
+    const было = { ухо: W('ear-left'), пятачок: W('snout') };
+
+    // Правим УХО и сохраняем его как пресет.
+    WormLook.apply(h, { earSize: 0.5 }, { absolute: true }); WormLook.flush();
+    await new Promise(r => setTimeout(r, 250));
+    const сПравкой = { ухо: W('ear-left'), пятачок: W('snout') };
+    WormStudio.savePreset();
+    const список = WormPresets.names(WormPresets.scopeOf('ear-left'));
+
+    // «По умолчанию» обязано быть всегда и обязано снимать правку.
+    WormStudio.loadPreset(WormPresets.DEFAULT); WormLook.flush();
+    await new Promise(r => setTimeout(r, 300));
+    const умолчание = { ухо: W('ear-left'), пятачок: W('snout') };
+
+    // А сохранённое — возвращаться.
+    WormStudio.loadPreset('проба'); WormLook.flush();
+    await new Promise(r => setTimeout(r, 300));
+    const назад = { ухо: W('ear-left'), пятачок: W('snout') };
+
+    // Теперь правим ПЯТАЧОК и грузим пресет уха: пятачок ехать не должен.
+    WormStudio.select('snout', { noZoom: true });
+    WormLook.apply(h, { snout: 0.5 }, { absolute: true }); WormLook.flush();
+    await new Promise(r => setTimeout(r, 250));
+    const сПятачком = W('snout');
+    WormStudio.select('ear-left', { noZoom: true });
+    WormStudio.loadPreset(WormPresets.DEFAULT); WormLook.flush();
+    await new Promise(r => setTimeout(r, 300));
+    const чужой = { ухо: W('ear-left'), пятачок: W('snout') };
+
+    // И область «весь червь» — отдельная от части.
+    WormStudio.scopeAll = true; WormStudio.renderPresets();
+    const областьВсего = WormStudio.scopeTitle();
+    const складДо = Object.keys(WormPresets.all());
+    WormStudio.savePreset();
+    const складПосле = Object.keys(WormPresets.all());
+    WormStudio.scopeAll = false;
+    WormLook.reset(h); WormLook.flush();
+    await new Promise(r => setTimeout(r, 250));
+    return { было, сПравкой, умолчание, назад, сПятачком, чужой, список,
+             областьВсего, складДо, складПосле };
+  });
+  say(`  ухо: ${preset.было.ухо} → правка ${preset.сПравкой.ухо} → умолчание ${preset.умолчание.ухо} → пресет ${preset.назад.ухо}`);
+  check(preset.сПравкой.ухо > preset.было.ухо + 3, 'правка уха видна на самом ухе');
+  check(preset.список[0] === 'по умолчанию' && preset.список.indexOf('проба') > 0,
+        `«по умолчанию» первое и всегда есть, сохранённое рядом: ${preset.список.join(', ')}`);
+  check(Math.abs(preset.умолчание.ухо - preset.было.ухо) < 2,
+        '«по умолчанию» возвращает задуманный вид — и ничего для этого сохранять не надо');
+  check(Math.abs(preset.назад.ухо - preset.сПравкой.ухо) < 2,
+        'а сохранённый пресет возвращает ровно то, что в него положили');
+  say(`  пятачок при загрузке пресета УХА: ${preset.сПятачком} → ${preset.чужой.пятачок}`);
+  check(Math.abs(preset.чужой.пятачок - preset.сПятачком) < 2,
+        'пресет уха НЕ трогает пятачок — область правки своя у каждой части');
+  check(preset.областьВсего === 'весь червь'
+        && preset.складПосле.length > preset.складДо.length,
+        `и есть отдельная область на всего червя: ${preset.складПосле.join(', ')}`);
+
+  // ---------- 6ж. КОНТЕКСТ ДЛЯ АГЕНТА ----------
+  // Разбор, который уносят в чат: что выбрано, какой ракурс, какие ручки и
+  // что с ними сейчас. Собирает его инспектор — второй такой сборщик
+  // разошёлся бы с этим при первой же правке.
+  say('');
+  say('======== КОНТЕКСТ ДЛЯ АГЕНТА СОБИРАЕТСЯ ========');
+  const ctxOut = await page.evaluate(async () => {
+    WormStudio.select('ear-left', { noZoom: true });
+    await new Promise(r => setTimeout(r, 200));
+    const ta = document.querySelector('#ws-root textarea');
+    const спрятан = ta.classList.contains('ws-hide');
+    document.querySelector('[data-act="ctx"]').click();
+    await new Promise(r => setTimeout(r, 200));
+    let v = null;
+    try { v = JSON.parse(ta.value); } catch (e) { v = null; }
+    return { спрятан, виден: !ta.classList.contains('ws-hide'), ключи: v ? Object.keys(v) : [],
+             выбрано: v ? v.выбрано : null, ракурс: v ? v.ракурс : null };
+  });
+  check(ctxOut.спрятан && ctxOut.виден, 'поле контекста закрыто, пока не позвали, и открывается по кнопке');
+  check(ctxOut.выбрано === 'левое ухо' && typeof ctxOut.ракурс === 'number',
+        `контекст про ВЫБРАННУЮ вещь и с ракурсом: ${ctxOut.выбрано}, ракурс ${ctxOut.ракурс}`);
+  check(ctxOut.ключи.length >= 8, `и он полный: ${ctxOut.ключи.length} разделов`);
+
   // ---------- 7. ПЛИТКИ ----------
   say('');
   say('======== ПЛИТКИ ВЫБИРАЮТ БЕЗ ПИКСЕЛЬ-ХАНТИНГА ========');
@@ -560,8 +661,8 @@ const harness = require('./harness');
   // трети», при которых самый полный набор ручек ещё влезает без прокрутки.
   // Проверка на прокрутку одна этого не ловит: панель просто растёт до
   // своего потолка и молча съедает вид.
-  check(walk.максПанель <= 260, `панель не разрослась: ${walk.максПанель} единиц из 844`);
-  check(walk.минВид > 520, `и персонажу всегда остаётся ${walk.минВид} единиц — больше шестидесяти процентов экрана`);
+  check(walk.максПанель <= 280, `панель не разрослась: ${walk.максПанель} единиц из 844`);
+  check(walk.минВид > 515, `и персонажу всегда остаётся ${walk.минВид} единиц — почти две трети экрана`);
 
   if (errors.length) { say('\nОШИБКИ СТРАНИЦЫ:\n' + errors.join('\n')); bad += errors.length; }
   say('\n' + (bad ? `ПРОВАЛЕНО: ${bad}` : 'ВСЁ СОШЛОСЬ'));

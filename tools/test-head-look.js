@@ -257,6 +257,50 @@ const harness = require('./harness');
           `${имя}: и это действительно ближнее ухо — оно развёрнуто к зрителю, а дальнее стоит ребром`);
   });
 
+  // ---------- 4б. ОБВОДКА УШЕЙ ОДИНАКОВАЯ ----------
+  // Группа уха масштабируется, вместе с ней и обводка. Компенсация была, но
+  // считалась РОВНО ОДИН РАЗ на сборке — и замораживала тот ракурс, в
+  // котором голову собрали. У правого уха оказалось вписано 3.85, у левого
+  // 2.63: разница в 46% держалась даже на анфасе, где уши одинаковы.
+  //
+  // Меряется ЭКРАННАЯ толщина (номинал × масштаб группы), а не записанное
+  // число: записанное как раз и обязано отличаться, чтобы экранное совпало.
+  say('');
+  say('======== ОБВОДКА УШЕЙ ОДНОГО ВЕСА ========');
+  const stroke = await page.evaluate(async () => {
+    const h = window.MainWormHandle;
+    const L = h.getHeadPose().limit;
+    const ряд = [];
+    for (const yaw of [0, L, -L]) {
+      h.setHeadPose(yaw, { instant: true });
+      await new Promise(r => setTimeout(r, 300));
+      const root = h.svgRoot.querySelector('.worm-root');
+      const по = {};
+      ['left', 'right'].forEach(side => {
+        const g = root.querySelector(`[data-part="ear-${side}"]`);
+        const path = g.querySelector('path');
+        const m = /scale\(([-\d.]+),([-\d.]+)\)/.exec(g.getAttribute('transform')) || [];
+        const sw = +path.getAttribute('stroke-width');
+        по[side] = { x: +(sw * Math.abs(+m[1])).toFixed(2), y: +(sw * Math.abs(+m[2])).toFixed(2) };
+      });
+      ряд.push({ yaw: +yaw.toFixed(2), по });
+    }
+    h.setHeadPose(0, { instant: true });
+    return { ряд, номинал: +(STROKE && STROKE.contour ? STROKE.contour : 2.6) };
+  });
+  const все = [];
+  stroke.ряд.forEach(r => {
+    все.push(r.по.left.x, r.по.left.y, r.по.right.x, r.по.right.y);
+    say(`  ракурс ${r.yaw}: слева ${r.по.left.x}/${r.по.left.y}, справа ${r.по.right.x}/${r.по.right.y}`);
+  });
+  const анфас = stroke.ряд[0].по;
+  check(Math.abs(анфас.left.x - анфас.right.x) < 0.15 && Math.abs(анфас.left.y - анфас.right.y) < 0.15,
+        'на анфасе обводка обоих ушей одного веса');
+  // Толще номинала не бывает НИКОГДА: где ухо сжато, линия утончается вместе
+  // с ним, а раздуваться ей не с чего.
+  check(Math.max(...все) <= stroke.номинал + 0.15,
+        `и нигде не толще номинала ${stroke.номинал}: худшее ${Math.max(...все)}`);
+
   // ---------- 5. БРОВЬ ОСТАЁТСЯ НА ГОЛОВЕ ----------
   say('');
   say('======== БРОВЬ НЕ ВЫЕЗЖАЕТ ЗА ГОЛОВУ ========');

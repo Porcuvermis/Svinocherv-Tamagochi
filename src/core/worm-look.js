@@ -100,6 +100,10 @@ const WORM_LOOK_KNOBS = [
       paths: ['eyes.left.brow.arc', 'eyes.right.brow.arc'] },
     { key: 'browThick', title: 'густота бровей', group: 'лицо', kind: 'mul',
       paths: ['eyes.left.brow.thickness', 'eyes.right.brow.thickness'] },
+    // Уху была назначена ручка «настроение» — то есть изгиб РТА. Прижатые
+    // уши это отдельное состояние мимики, и живёт оно в повороте уха.
+    { key: 'earTilt', title: 'разворот ушей', group: 'лицо', kind: 'add', span: 26,
+      paths: ['head.ears.left.rotation', 'head.ears.right.rotation'] },
 
     // ---------- ЧЕРЕП ----------
     // Ширины идут парами «обе стороны» и «одна сторона». Общая двигает

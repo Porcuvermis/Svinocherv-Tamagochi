@@ -1205,7 +1205,19 @@ function buildHeadNode(model, ctx) {
         // участках — ровно тот дефект, который чинили в прошлый заход.
         const earSx = ear.scale * ear.stretchX * EAR_FORM_SCALE * earYawSquash;
         const earSy = ear.scale * ear.stretchY * EAR_FORM_SCALE;
-        const earStrokeK = 2 / (Math.abs(earSx) + Math.abs(earSy) || 1);
+        // ---------- ОБВОДКА УХА НЕ ЗАВИСИТ ОТ РАКУРСА ----------
+        // Группа уха масштабируется, а вместе с ней масштабируется и
+        // обводка. Компенсация есть, но считалась она РОВНО ОДИН РАЗ, на
+        // сборке, — и замораживала тот ракурс, в котором голову собрали.
+        //
+        // Чем это кончилось: у правого уха в обводку было вписано 3.85, у
+        // левого 2.63, и разница в 46% оставалась даже на анфасе, когда оба
+        // уха одинаковы. Голову собирают чаще всего повёрнутой (она сама
+        // доворачивается за ходьбой), и какое ухо окажется толще — лотерея.
+        //
+        // Теперь толщина пересчитывается там же, где трансформ, — живым
+        // путём (см. applyEarStroke).
+        const earStrokeK = earStrokeComp(earSx, earSy);
         const earGroup = svgEl('g', {
             'data-part': `ear-${side}`,
             'data-anchor': `ear-${side}`,
@@ -1259,6 +1271,9 @@ function buildHeadNode(model, ctx) {
         // явно повёрнутой голове.
         earRefs[side] = {
             group: earGroup, shape: earShape, inner: earInner,
+            // Узлы с обводкой и их НОМИНАЛЬНАЯ толщина: по ним живой путь
+            // пересчитывает компенсацию масштаба.
+            strokes: [{ el: earShape, base: SW.contour }, { el: earRidge, base: SW.detail }],
             anchorX, anchorY, baseAngle,
             // Всё, что нужно earPlacement, чтобы пересчитать посадку на
             // повороте, лежит здесь: живой пересчёт обязан получить ровно те
@@ -1634,6 +1649,7 @@ function buildHeadNode(model, ctx) {
     // значение месяц не доезжало до экрана. Поэтому глубина уха и подбор
     // брови зовутся и здесь, теми же функциями.
     applyHeadEarDepth(headRef, headYaw);
+    ['left', 'right'].forEach(side => applyEarStroke(headRef.ears[side]));
     ['left', 'right'].forEach(side => {
         const e = headRef.eyes[side];
         if (!e) return;
@@ -1702,6 +1718,38 @@ function applyBrowFit(headRef, e, place, yaw) {
     e.browSqueeze = k;
     e.browShift = dx;
     applyBrowTransform(e);
+}
+
+// ---------- КОМПЕНСАЦИЯ МАСШТАБА У ОБВОДКИ ----------
+// Ухо рисуется в своих координатах и ставится на место масштабом. Обводка
+// масштабируется вместе с ним, поэтому номинал делится на средний масштаб —
+// тогда на экране линия остаётся той толщины, какую назначила иерархия
+// линий (docs/art-direction.md).
+//
+// Делим на БОЛЬШИЙ из двух масштабов, а не на среднее. Масштаб
+// неравномерный: при развороте ухо сжимается по x и не сжимается по y, и
+// «одной толщины» на всех кромках тут не существует в принципе.
+//
+// Среднее давало худший из возможных ответов: у отвёрнутого уха боковые
+// кромки утончались до 1.5, а ВЕРХНЯЯ И НИЖНЯЯ раздувались до 3.7 при
+// номинале 2.5 — и ухо читалось обведённым жирнее соседнего. Ровно на это
+// и жаловались.
+//
+// По большему масштабу толще номинала не выходит НИКОГДА: где ухо сжато,
+// линия честно утончается вместе с ним (так и ведёт себя повёрнутая
+// плоскость), а где не сжато — стоит ровно тот вес, который назначила
+// иерархия линий (docs/art-direction.md).
+function earStrokeComp(sx, sy) {
+    return 1 / (Math.max(Math.abs(sx), Math.abs(sy)) || 1);
+}
+
+function applyEarStroke(ear) {
+    if (!ear || !ear.strokes) return;
+    const k = earStrokeComp(ear.scaleX, ear.scaleY);
+    for (let i = 0; i < ear.strokes.length; i++) {
+        const s = ear.strokes[i];
+        if (s.el) setAttr(s.el, 'stroke-width', (s.base * k).toFixed(2));
+    }
 }
 
 // ---------- ГЛУБИНА УХА ПРИ ПОВОРОТЕ ----------
@@ -1902,6 +1950,9 @@ function applyHeadYaw(headRef, yaw) {
             `translate(${ear.anchorX.toFixed(2)},${ear.anchorY.toFixed(2)}) ` +
             `rotate(${ear.baseAngle.toFixed(1)}) ` +
             `scale(${ear.scaleX.toFixed(3)},${ear.scaleY.toFixed(3)})`);
+        // Толщина обводки — там же, где масштаб: иначе она застывает на том
+        // ракурсе, в котором ухо собрали.
+        applyEarStroke(ear);
     });
     applyHeadEarDepth(headRef, yaw);
 

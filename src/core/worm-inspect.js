@@ -176,7 +176,24 @@ const WormInspect = {
     // Червей на экране может быть несколько (комната, ванная, дорожка,
     // лобби гнева). Берём того, кто СЕЙЧАС виден: у закрытой мини-игры
     // контейнер нулевого размера, и спрашивать её бессмысленно.
+    // Контекст для агента по ЧУЖОМУ выбору — тот же разбор, что собирает
+    // инспектор, но про персонажа и вещь, которые назвали снаружи. Нужен
+    // студии: она сама ничего не считает, а второй такой сборщик разошёлся
+    // бы с этим при первой же правке.
+    contextFor(handle, entityKey) {
+        const e = (typeof WormParts !== 'undefined') ? WormParts.get(entityKey) : null;
+        const hH = this._forceHandle, hP = this.picked, hS = this.stackAt;
+        this._forceHandle = handle;
+        this.picked = e ? { title: e.title, entity: e, part: null } : null;
+        this.stackAt = null;
+        this.buildContext();
+        const c = this.ctx;
+        this._forceHandle = hH; this.picked = hP; this.stackAt = hS;
+        return c;
+    },
+
     handle() {
+        if (this._forceHandle) return this._forceHandle;
         const cand = [
             window.MainWormHandle,
             (typeof LustMinigame !== 'undefined') ? LustMinigame.wormHandle : null,

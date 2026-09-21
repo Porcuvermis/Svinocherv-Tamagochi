@@ -89,6 +89,8 @@ const WormStudio = {
     // у кого есть что тянуть, и УХОДЯТ на время движения ползунка — там
     // смотрят на результат, а дюжина кружков поверх морды мешает смотреть.
     busy: 0,            // метка времени последнего движения ползунка
+    // Область пресетов: false — выбранная часть, true — весь червь.
+    scopeAll: false,
     drag: null,
     cam: null,          // текущее положение камеры (единицы viewBox)
     camTo: null,        // куда едет
@@ -159,6 +161,7 @@ const WormStudio = {
                 <button class="ws-icon" data-act="close" title="закрыть">✕</button>
                 <div class="ws-title" data-out="title">студия</div>
                 <button class="ws-icon ws-twin" data-act="twin" data-out="twin" title="другая сторона">⇄</button>
+                <button class="ws-icon ws-twin" data-act="ctx" title="контекст для агента">⧉</button>
                 <div class="ws-edits" data-out="edits">
                     <span class="ws-count" data-out="steps"></span>
                     <button class="ws-icon" data-act="undo" title="откат">↶</button>
@@ -178,6 +181,13 @@ const WormStudio = {
             <div class="ws-sheet">
                 <div class="ws-nav" data-out="nav"></div>
                 <div class="ws-knobs" data-out="knobs"></div>
+                <div class="ws-row ws-presets">
+                    <button class="ws-scope" data-act="scope" data-out="scope">часть</button>
+                    <select data-in="preset" data-out="preset"></select>
+                    <button class="ws-icon" data-act="preset-save" title="сохранить как">＋</button>
+                    <button class="ws-icon" data-act="preset-del" title="удалить">－</button>
+                </div>
+                <textarea data-out="ctx" readonly spellcheck="false" class="ws-hide"></textarea>
                 <div class="ws-foot" data-out="foot">
                     <span class="ws-lbl">ракурс</span>
                     <input type="range" data-in="yaw" min="-0.5" max="0.5" step="0.02" value="0">
@@ -206,6 +216,9 @@ const WormStudio = {
 
         this.root.addEventListener('click', (e) => this.onClick(e));
         this.root.addEventListener('input', (e) => this.onInput(e));
+        this.root.addEventListener('change', (e) => {
+            if (e.target && e.target.getAttribute('data-in') === 'preset') this.loadPreset(e.target.value);
+        });
         const view = this.root.querySelector('.ws-view');
         view.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
@@ -545,6 +558,7 @@ const WormStudio = {
     // ---------- ВЫБОР ----------
     select(key, opts) {
         this.picked = key;
+        this.hideContext();
         // Ряд переключается САМ на тот, где лежит выбранное. Иначе тык в ухо
         // оставляет открытым ряд черепа, и плитка выбранной вещи не видна:
         // экран показывает одно, а правишь другое.
@@ -686,6 +700,7 @@ const WormStudio = {
             : '<div class="ws-dim">у этой вещи ручек нет — её крутят только целиком</div>';
         this.syncSteps();
         this.syncContext();
+        this.renderPresets();
     },
 
     // ---------- ЧТО СЕЙЧАС УМЕСТНО ----------
@@ -709,6 +724,88 @@ const WormStudio = {
         if (foot) foot.classList.toggle('ws-hide', !this.headish(this.picked));
         const edits = this.root.querySelector('[data-out="edits"]');
         if (edits) edits.classList.toggle('ws-hide', !Object.keys(WormLook.patch()).length);
+    },
+
+    // ---------- ПРЕСЕТЫ ----------
+    // Область — либо выбранная часть, либо весь червь. Переключатель один и
+    // подписан тем, что сейчас сохранится: гадать, на что нажимаешь
+    // «сохранить», не надо.
+    scope() {
+        if (this.scopeAll || !this.picked) return WormPresets.ALL;
+        return WormPresets.scopeOf(this.picked);
+    },
+
+    scopeTitle() {
+        if (this.scope() === WormPresets.ALL) return 'весь червь';
+        const e = WormParts.get(this.picked);
+        return e ? e.title : this.picked;
+    },
+
+    renderPresets() {
+        if (typeof WormPresets === 'undefined') return;
+        const sc = this.scope();
+        const btn = this.root.querySelector('[data-out="scope"]');
+        if (btn) btn.textContent = this.scopeTitle();
+        const sel = this.root.querySelector('[data-out="preset"]');
+        if (!sel) return;
+        const было = sel.value;
+        const имена = WormPresets.names(sc);
+        sel.innerHTML = имена.map(n => `<option value="${n}">${n}</option>`).join('');
+        sel.value = имена.indexOf(было) >= 0 ? было : WormPresets.DEFAULT;
+    },
+
+    loadPreset(name) {
+        if (!this.handle) return;
+        WormPresets.load(this.handle, this.scope(), name);
+        WormLook.flush();
+        this.renderKnobs(true);
+    },
+
+    savePreset() {
+        const sc = this.scope();
+        // Диалог именно здесь и именно prompt: студия — инструмент отладки,
+        // своё окно ввода ей заводить не за чем.
+        const name = window.prompt('Имя пресета для «' + this.scopeTitle() + '»:', '');
+        if (!WormPresets.save(sc, name)) return;
+        this.renderPresets();
+        const sel = this.root.querySelector('[data-out="preset"]');
+        if (sel) sel.value = String(name).trim();
+    },
+
+    delPreset() {
+        const sel = this.root.querySelector('[data-out="preset"]');
+        if (!sel || sel.value === WormPresets.DEFAULT) return;
+        if (!window.confirm('Удалить пресет «' + sel.value + '»?')) return;
+        WormPresets.remove(this.scope(), sel.value);
+        this.renderPresets();
+    },
+
+    // ---------- КОНТЕКСТ ДЛЯ АГЕНТА ----------
+    // Не «персонаж выглядит плоским», а разбор: что выбрано, что под ним,
+    // какой ракурс, какие ручки на это влияют и что с ними сейчас. Собирает
+    // его инспектор — второй такой сборщик разошёлся бы с этим при первой
+    // же правке.
+    showContext() {
+        const ta = this.root.querySelector('[data-out="ctx"]');
+        if (!ta || typeof WormInspect === 'undefined') return;
+        if (!ta.classList.contains('ws-hide')) { this.hideContext(); return; }
+        const c = WormInspect.contextFor(this.handle, this.picked);
+        ta.value = JSON.stringify(c, null, 1);
+        ta.classList.remove('ws-hide');
+        // Пока читают разбор — ручки, пресеты и ракурс уходят. Не ради
+        // красоты: вместе они не влезают в панель, а крутить что-то,
+        // одновременно читая JSON, всё равно никто не станет.
+        this.root.querySelector('.ws-sheet').classList.add('ws-ctx');
+        ta.focus(); ta.select();
+        // Буфер бывает запрещён — тогда текст просто выделен, копируй руками.
+        try { navigator.clipboard.writeText(ta.value); } catch (err) { /* и ладно */ }
+    },
+
+    hideContext() {
+        const ta = this.root.querySelector('[data-out="ctx"]');
+        if (ta) ta.classList.add('ws-hide');
+        const sh = this.root.querySelector('.ws-sheet');
+        if (sh) sh.classList.remove('ws-ctx');
     },
 
     headish(key) {
@@ -769,6 +866,10 @@ const WormStudio = {
         if (step) { this.bump(t, +step * 0.05); return; }
         if (!act) return;
         if (act === 'twin') { const t = this.twin(this.picked); if (t) this.select(t); return; }
+        if (act === 'scope') { this.scopeAll = !this.scopeAll; this.renderPresets(); return; }
+        if (act === 'preset-save') { this.savePreset(); return; }
+        if (act === 'preset-del') { this.delPreset(); return; }
+        if (act === 'ctx') { this.showContext(); return; }
         if (act === 'close') this.close();
         else if (act === 'freeze') this.setFrozen(!this.frozen);
         else if (act === 'undo') { WormLook.undo(this.handle); this.renderKnobs(true); }
