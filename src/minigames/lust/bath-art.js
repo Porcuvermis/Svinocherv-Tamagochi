@@ -156,11 +156,6 @@ const BATH_ART = {
             ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>
         <g id="bt-cloth-home">${B.draw('cloth')}
             ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>
-        <!-- Флакон масла — он же вход в магазин. Тапается только до забега
-             и после него: посреди мытья магазина нет
-             (docs/plan/21-lust-bath.md, разд. 6). -->
-        <g id="bt-flask-home">${this.flask()}
-            ${btGrab(26, 40, this.flaskAt().x, this.flaskAt().y - 14)}</g>
 
         <!-- Бортик доски ПОВЕРХ предметов: перекрытый низ — единственное,
              чем в лоб «на полке» отличается от «перед полкой». -->
@@ -334,79 +329,6 @@ const BATH_ART = {
         // должен сидеть в НУЛЕ группы, поэтому сдвигается на своё же гнездо.
         return `<g transform="scale(${k.toFixed(4)}) translate(${-a.x} ${-a.y})">`
              + B.draw(kind) + `</g>`;
-    },
-
-    // ---------- ФЛАКОН МАСЛА: ВХОД В МАГАЗИН ----------
-    // Стоит на верхней полке слева от мыла. Не запечён из 3д, как остальная
-    // обстановка, и это осознанно: запекание правится моделями в tools/ и
-    // гоняет three.js, а флакону нужны три фигуры и блик. Предмет, который
-    // рисуется десятью строками, не стоит целого конвейера.
-    //
-    // Место — НЕ якорь запекания (их правит запекание), а своя точка, но
-    // считанная ОТ ЯКОРЯ МЫЛА: полка одна, и если она переедет, флакон
-    // обязан переехать с ней.
-    FLASK: { dx: -52, dy: 2, w: 30, h: 62 },
-
-    flaskAt() {
-        const a = btBake().anchors.soap;
-        return { x: a.x + this.FLASK.dx, y: a.y + this.FLASK.dy };
-    },
-
-    // Рисуется от ОСНОВАНИЯ: флакон стоит на полке, и подошва — это то
-    // место, которое обязано остаться на доске при любой высоте бутылки.
-    // Отсюда же требование арт-дирекции: у предмета есть подошва, а не
-    // ровный низ (docs/bench/art.md).
-    flask() {
-        const P = btPal(), F = this.FLASK;
-        const c = this.flaskAt();
-        const w = F.w, h = F.h;
-        // Обводка — ТА ЖЕ, что у запечённых предметов: своя линия рядом с
-        // ними читалась бы предметом из другой игры. Приём оттуда же
-        // (BATH_BAKED.draw): контур идёт ПЕРВЫМ и вдвое толще, наружу торчит
-        // ровно половина, а внутренние края закрывает заливка.
-        // Низ флакона на уровне гнезда мыла плюс половина его высоты: мыло
-        // лежит плашмя, флакон стоит, и общий у них только пол полки.
-        const y1 = c.y + 16, y0 = y1 - h;         // верх и низ корпуса
-        const neck = y0 + h * 0.26;               // где плечо переходит в горло
-        const nw = w * 0.30;
-        return `
-        <g class="bt-flask">
-            <!-- Тень на доске: без неё флакон висит в воздухе. -->
-            <ellipse cx="${c.x}" cy="${y1 + 1}" rx="${(w * 0.54).toFixed(1)}" ry="3.4"
-                     fill="${P.shadow}" opacity="0.3"/>
-            <!-- Корпус: плечи скруглены сильнее низа — так бутылка стоит, а
-                 не лежит на боку. -->
-            <path d="M ${c.x - w / 2},${y1 - 4}
-                     L ${c.x - w / 2},${neck + 7}
-                     Q ${c.x - w / 2},${neck - 3} ${c.x - nw},${neck - 7}
-                     L ${c.x + nw},${neck - 7}
-                     Q ${c.x + w / 2},${neck - 3} ${c.x + w / 2},${neck + 7}
-                     L ${c.x + w / 2},${y1 - 4}
-                     Q ${c.x + w / 2},${y1} ${c.x + w / 2 - 4},${y1}
-                     L ${c.x - w / 2 + 4},${y1}
-                     Q ${c.x - w / 2},${y1} ${c.x - w / 2},${y1 - 4} Z"
-                  fill="${P.flask[2]}" stroke="${btBake().ink}" stroke-width="5.4"
-                  stroke-linejoin="round" paint-order="stroke"/>
-            <!-- Объём: тёмная щека справа и светлая полоса слева. Стекло
-                 читается не заливкой, а ПЕРЕПАДОМ вдоль бока. -->
-            <path d="M ${c.x + w / 2 - 7},${neck - 4} L ${c.x + w / 2 - 1},${neck + 8}
-                     L ${c.x + w / 2 - 1},${y1 - 5} L ${c.x + w / 2 - 7},${y1 - 3} Z"
-                  fill="${P.flask[1]}" opacity="0.85"/>
-            <rect x="${c.x - w / 2 + 4}" y="${neck + 4}" width="4"
-                  height="${(y1 - neck - 12).toFixed(1)}" rx="2" fill="${P.flask[4]}" opacity="0.8"/>
-            <rect x="${c.x - w / 2 + 4}" y="${neck + 4}" width="2"
-                  height="${(y1 - neck - 12).toFixed(1)}" rx="1" fill="${P.flaskLit}" opacity="0.9"/>
-            <!-- Горло и крышка. Крышка ШИРЕ горла — иначе она читается
-                 продолжением бутылки, а не надетой сверху. -->
-            <rect x="${c.x - nw}" y="${y0 + 9}" width="${nw * 2}" height="${(neck - y0 - 8).toFixed(1)}"
-                  fill="${P.flask[1]}" stroke="${btBake().ink}" stroke-width="3.4"
-                  paint-order="stroke"/>
-            <rect x="${c.x - nw - 3}" y="${y0}" width="${nw * 2 + 6}" height="11" rx="2.5"
-                  fill="${P.flaskCap[1]}" stroke="${btBake().ink}" stroke-width="3.4"
-                  paint-order="stroke"/>
-            <rect x="${c.x - nw - 1}" y="${y0 + 2}" width="4" height="7" rx="2"
-                  fill="${P.flaskCap[2]}" opacity="0.9"/>
-        </g>`;
     },
 
     // ---------- МЫЛЬНАЯ МУТЬ И ПЕНА ----------
@@ -788,21 +710,56 @@ const BATH_ART = {
         return out.join('');
     },
 
-    // ---------- ШКАЛА ФИНАЛА ----------
-    // Три секции, и ни одной буквы: сколько налито — столько и горит
-    // (инвариант 9). Наполняется снизу вверх, как всё, что наливают.
-    gauge(x, y, sections, filled) {
-        const p = btPal(), h = 34, gap = 7, w = 26;
-        const out = [];
-        for (let i = 0; i < sections; i++) {
-            const cy = y - i * (h + gap);
-            const on = i < filled;
-            out.push(`<rect x="${(x - w / 2).toFixed(1)}" y="${(cy - h).toFixed(1)}"
-                            width="${w}" height="${h}" rx="7"
-                            fill="${on ? p.water.surfHi : p.shadow}"
-                            fill-opacity="${on ? 0.95 : 0.35}"
-                            stroke="${p.foam.rim}" stroke-width="2"/>`);
-        }
+    // ---------- ШКАЛА НАД ГОЛОВОЙ: ЖЕТОН ИЗ ТРЁХ ЧАСТЕЙ ----------
+    // Жетон — кольцо из трёх равных третей, и каждая треть поделена на
+    // СТОЛЬКО долек, сколько попаданий она стоит (2, 5, 8). Цена части видна
+    // без единого слова: крупные дольки набираются быстро, мелкие — долго
+    // (инвариант 9). Части закрываются по порядку, от верха по часовой
+    // стрелке, — так же, как заполняется жетон в кошельке (docs/token-art.md).
+    //
+    // Вид временный: форма та же, что у жетона в кошельке, но без его
+    // перемычек и объёма. Красивая шкала — отдельная работа.
+    //
+    // x, y — точка ПОД жетоном: он стоит над головой, и снизу у него опора.
+    // steps — цены частей, hits — сколько попаданий за забег.
+    gauge(x, y, steps, hits) {
+        const R = 44, r = 19, cy = y - R;
+        const color = (typeof TokenArt !== 'undefined')
+            ? TokenArt.color('lust_token') : btPal().milk.hi;
+        const ink = btBake().ink;
+        const GROUP = 12, PIECE = 3;          // просветы, градусы
+        const n = steps.length, third = 360 / n;
+        const st = LustShot.gaugeState(hits, steps);
+        const pt = (deg, rad) => {
+            const a = (deg - 90) * Math.PI / 180;
+            return `${(x + Math.cos(a) * rad).toFixed(1)},${(cy + Math.sin(a) * rad).toFixed(1)}`;
+        };
+        const wedge = (a0, a1) => {
+            const big = (a1 - a0) > 180 ? 1 : 0;
+            return `M ${pt(a0, R)} A ${R} ${R} 0 ${big} 1 ${pt(a1, R)} `
+                 + `L ${pt(a1, r)} A ${r} ${r} 0 ${big} 0 ${pt(a0, r)} Z`;
+        };
+        const out = [`<circle cx="${x}" cy="${cy.toFixed(1)}" r="${R + 5}"
+                              fill="${btPal().shadow}" fill-opacity="0.28"/>`];
+        steps.forEach((cost, part) => {
+            const from = part * third + GROUP / 2, to = (part + 1) * third - GROUP / 2;
+            const slice = (to - from) / cost;
+            // Сколько долек этой части уже закрашено: прошлые части целиком,
+            // текущая — сколько набрано, будущие — ноль.
+            const lit = part < st.done ? cost : (part === st.done ? st.inPart : 0);
+            for (let i = 0; i < cost; i++) {
+                const a0 = from + i * slice + PIECE / 2, a1 = from + (i + 1) * slice - PIECE / 2;
+                const on = i < lit;
+                out.push(on
+                    ? `<path d="${wedge(a0, a1)}" fill="${color}" stroke="${ink}"
+                             stroke-width="2" stroke-linejoin="round"/>`
+                    // Незакрашенная долька ВИДНА: иначе не понять, сколько
+                    // осталось. Но бледная — чтобы не спорить с набранным.
+                    : `<path d="${wedge(a0, a1)}" fill="${color}" fill-opacity="0.12"
+                             stroke="${color}" stroke-opacity="0.55" stroke-width="1.6"
+                             stroke-linejoin="round"/>`);
+            }
+        });
         return out.join('');
     },
 

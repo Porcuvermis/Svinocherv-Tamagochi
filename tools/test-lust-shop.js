@@ -2,17 +2,15 @@ const { chromium } = require('playwright');
 const harness = require('./harness');
 
 // ================= ПРОВЕРКА: МАГАЗИН ПОХОТИ =================
-// Всё покупаемое в ванной — за флаконом на верхней полке, одним экраном
-// (src/minigames/lust/lust-shop.js, замысел — docs/plan/21-lust-bath.md,
-// разделы 1 и 6).
+// Всё покупаемое в ванной — одним экраном за кнопкой в углу (временный
+// вход, потом переедет в предмет сцены). Код — src/minigames/lust/lust-shop.js,
+// замысел — docs/plan/21-lust-bath.md, разделы 6 и 7.
 //
 // ---------- ЧТО ПРОВЕРЯЕТСЯ И ПОЧЕМУ ИМЕННО ЭТО ----------
-//   1. Флакон открывает МАГАЗИН, а не берётся в руку и не включает душ. Он
-//      стоит на той же полке, что мыло и мочалка, а рядом висит лейка, тап
-//      по которой стартует забег: три соседних обработчика на одном экране.
-//   2. Посреди забега магазина НЕТ. «Готовятся до, тратят после» — прямой
-//      запрет из раздела 6 плана, и нарушить его проще всего случайно:
-//      обработчик флакона легко переживает смену фазы.
+//   1. Кнопка открывает МАГАЗИН и не включает душ: тап по ней не должен
+//      провалиться в сцену под ней.
+//   2. Посреди забега кнопки НЕТ. «Готовятся до, тратят после» — прямой
+//      запрет из раздела 6 плана. Кнопка не глохнет, а уходит с экрана.
 //   3. После финала магазин открывается СНОВА. Мест два, а не одно, и
 //      второе забывается первым.
 //   4. Купленная ступень СДВИГАЕТ ЧИСЛО ИГРЫ, а не только цифру на
@@ -40,13 +38,18 @@ const harness = require('./harness');
   const say = console.log;
   const check = (ok, text) => { say((ok ? '  ✓ ' : '  ✗ ') + text); if (!ok) bad++; };
 
-  // Палец водится ПО КООРДИНАТАМ предмета, а не жмёт селектор: это заодно
-  // проверка, что перевод «экран → сцена» не врёт (правило проекта).
-  const tapFlask = async () => {
-    const b = await page.locator('#bt-flask-home').boundingBox();
-    if (!b) { check(false, 'флакона нет на экране'); return; }
-    await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  // Палец водится ПО КООРДИНАТАМ кнопки, а не жмёт селектор: проверяется
+  // заодно, что кнопка ВИДНА и её ничто не накрывает.
+  const tapButton = async () => {
+    const b = await page.evaluate(() => {
+      const el = document.getElementById('bt-shop-btn');
+      const r = el.getBoundingClientRect();
+      const on = getComputedStyle(el).visibility === 'visible';
+      return on && r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+    });
+    if (b) await page.mouse.click(b.x, b.y);
     await page.waitForTimeout(400);
+    return !!b;
   };
 
   await page.goto('http://127.0.0.1:8777/index.html');
@@ -55,15 +58,11 @@ const harness = require('./harness');
   await page.waitForTimeout(1000);
 
   // ================= 1. ФЛАКОН ОТКРЫВАЕТ МАГАЗИН =================
-  say('\n======== ФЛАКОН ОТКРЫВАЕТ ПРИЛАВОК, А НЕ ЗАБЕГ ========');
-  await tapFlask();
-  let st = await page.evaluate(() => ({
-    open: LustShop.open, phase: LustMinigame.phase,
-    inHand: document.getElementById('bt-fg').innerHTML.length
-  }));
+  say('\n======== КНОПКА ОТКРЫВАЕТ ПРИЛАВОК, А НЕ ЗАБЕГ ========');
+  check(await tapButton(), 'до забега кнопка на экране');
+  let st = await page.evaluate(() => ({ open: LustShop.open, phase: LustMinigame.phase }));
   check(st.open, 'прилавок открылся');
   check(st.phase === 'idle', `душ не включился (фаза ${st.phase})`);
-  check(st.inHand === 0, 'флакон не уехал в руку');
   await page.screenshot({ path: out + '1-shop.png' });
 
   // ---------- ПОЛКИ: СТОЛЬКО, СКОЛЬКО В КОНФИГЕ ----------
@@ -91,38 +90,43 @@ const harness = require('./harness');
   say('\n======== ПОСРЕДИ ЗАБЕГА ПРИЛАВКА НЕТ ========');
   await page.evaluate(() => LustMinigame.startWater());
   await page.waitForTimeout(1400);
-  await tapFlask();
+  const shown = await tapButton();
   st = await page.evaluate(() => ({ open: LustShop.open, phase: LustMinigame.phase }));
-  check(!st.open, `на этапе «${st.phase}» флакон не открывает прилавок`);
+  check(!shown && !st.open, `на этапе «${st.phase}» кнопки нет и прилавок не открыт`);
 
   // ================= 4. ПОКУПКА ДВИГАЕТ ЧИСЛО ИГРЫ =================
   // Меряется НЕ цифра на прилавке, а то, чем игра пользуется: ступень
   // прицела, которой стреляет финал, и радиус мазка, которым красится тело.
   say('\n======== КУПЛЕННАЯ СТУПЕНЬ ДВИГАЕТ ИГРУ ========');
-  const before = await page.evaluate(() => ({
-    aim: LustMinigame.aimTier(),
+  const read = () => page.evaluate(() => ({
+    tail: LustMinigame.tailTier(),
+    shotMs: LustMinigame.shotMs(),
     soap: (LustMinigame.phase = 'soap', LustMinigame.stageRadius()),
-    oil: LustMinigame.up('oil', 0)
+    cloth: (LustMinigame.phase = 'cloth', LustMinigame.stageRadius())
   }));
+  const before = await read();
   const buy = await page.evaluate(() => {
     Backend.grantCurrency('lust_token', 60);
     const r = {};
-    ['aim', 'soap', 'oil'].forEach(k => { r[k] = Backend.buyUpgrade(k, 'lust').ok; });
+    ['tail', 'soap', 'cloth'].forEach(k => { r[k] = Backend.buyUpgrade(k, 'lust').ok; });
     return r;
   });
-  check(buy.aim && buy.soap && buy.oil, 'три покупки прошли');
-  const after = await page.evaluate(() => ({
-    aim: LustMinigame.aimTier(),
-    soap: (LustMinigame.phase = 'soap', LustMinigame.stageRadius()),
-    oil: LustMinigame.up('oil', 0)
-  }));
-  check(after.aim.spread < before.aim.spread && after.aim.minPower > before.aim.minPower,
-        `прицел стал точнее: ±${before.aim.spread}° → ±${after.aim.spread}°, ` +
-        `сила от ${before.aim.minPower} → ${after.aim.minPower}`);
+  check(buy.tail && buy.soap && buy.cloth, 'три покупки прошли');
+  const after = await read();
+  check(after.tail.shots === before.tail.shots + 1,
+        `толчков стало больше: ${before.tail.shots} → ${after.tail.shots}`);
+  check(after.shotMs < before.shotMs,
+        `пауза между толчками короче, финал той же длины: ${Math.round(before.shotMs)} → ${Math.round(after.shotMs)} мс`);
+  check(after.tail.spread < before.tail.spread && after.tail.gain > before.tail.gain
+        && after.tail.relax < before.tail.relax,
+        `разброс уже (±${before.tail.spread}° → ±${after.tail.spread}°), свайп даёт больше ` +
+        `(${before.tail.gain} → ${after.tail.gain}), хвост выпрямляется медленнее ` +
+        `(${before.tail.relax} → ${after.tail.relax})`);
   check(after.soap > before.soap,
         `мазок мылом шире: ${before.soap.toFixed(1)} → ${after.soap.toFixed(1)} точек сцены`);
-  check(after.oil > before.oil,
-        `хвост наливается быстрее: ${before.oil} → ${after.oil} за ход`);
+  check(after.cloth > before.cloth,
+        `тёрка мочалкой шире: ${before.cloth.toFixed(1)} → ${after.cloth.toFixed(1)} точек сцены`);
+  await page.evaluate(() => { LustMinigame.phase = 'soap'; });
 
   // Списание настоящее: жетоны ушли из кошелька.
   const spent = await page.evaluate(() => 60 - GameState.currency('lust_token'));
@@ -132,7 +136,7 @@ const harness = require('./harness');
   say('\n======== ПОСЛЕ ФИНАЛА ПРИЛАВОК ОТКРЫВАЕТСЯ СНОВА ========');
   await page.evaluate(() => LustMinigame.done());
   await page.waitForTimeout(600);
-  await tapFlask();
+  await tapButton();
   st = await page.evaluate(() => ({ open: LustShop.open, phase: LustMinigame.phase }));
   check(st.open && st.phase === 'done', `на фазе «${st.phase}» прилавок открылся`);
   await page.screenshot({ path: out + '2-after.png' });
@@ -145,11 +149,11 @@ const harness = require('./harness');
     LustShop.render();
     const row = document.querySelector('.ls-row');
     const dim = row && row.classList.contains('ls-poor');
-    const lvlBefore = GameState.upgradeLevel('lust_aim');
+    const lvlBefore = GameState.upgradeLevel('lust_tail');
     row.click();
     await new Promise(r => setTimeout(r, 120));
     const flashed = !!document.querySelector('.ls-coin.ls-no, .ls-wallet.ls-no');
-    return { dim, flashed, spent: GameState.upgradeLevel('lust_aim') !== lvlBefore,
+    return { dim, flashed, spent: GameState.upgradeLevel('lust_tail') !== lvlBefore,
              purse: GameState.currency('lust_token') };
   });
   check(poor.dim, 'строка не по карману приглушена');
@@ -161,13 +165,13 @@ const harness = require('./harness');
   say('\n======== ВЫКУПЛЕННАЯ ДО ПОТОЛКА ПОЛКА УХОДИТ ========');
   const maxed = await page.evaluate(() => {
     const u = ECONOMY.minigames.lust.upgrades;
-    GameState.data.upgrades.lust_oil = u.oil.levels.length;
+    GameState.data.upgrades.lust_cloth = u.cloth.levels.length;
     GameState.save();
     LustShop.render();
     const keys = [...document.querySelectorAll('.ls-row')].map(r => r.dataset.key);
     return { keys, всего: u.order.length };
   });
-  check(maxed.keys.indexOf('oil') === -1 && maxed.keys.length === maxed.всего - 1,
+  check(maxed.keys.indexOf('cloth') === -1 && maxed.keys.length === maxed.всего - 1,
         `выкупленная полка ушла с прилавка (осталось ${maxed.keys.join(', ')})`);
   // И когда выкуплено ВСЁ — прилавок не пустой экран, а знак «больше нечего».
   const done = await page.evaluate(() => {

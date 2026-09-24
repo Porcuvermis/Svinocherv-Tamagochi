@@ -372,3 +372,33 @@ html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }
     font-size: 30px;
     color: #c75d9e;
 }
+
+/* Вход в магазин — ВРЕМЕННАЯ кнопка, до нарративного входа в сцене.
+   Правый нижний угол: верх занят шапкой окна, левый низ — кнопкой 🐞, а
+   в правом низу на общем плане нет ничего, во что игрок целится. */
+#lust-game .bt-shop-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 22px;
+    z-index: 6;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 3px solid #23101d;
+    background: #eef4f7;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(0.8);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+#lust-game .bt-shop-btn.on {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
+}
+#lust-game .bt-shop-btn:active { transform: scale(0.94); }

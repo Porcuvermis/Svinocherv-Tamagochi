@@ -279,13 +279,21 @@ const harness = require('./harness');
   const s0 = await toScreen(await arcPoint(0.05, R));
   await page.mouse.move(s0.x, s0.y);
   await page.mouse.down();
-  const shots = await page.evaluate(() => LustMinigame.cfg().shots);
+  // Толчков столько, сколько даёт ступень хвоста, а финал длится всегда
+  // одинаково (finalMs): ждём по длине финала, а не по числу толчков.
+  const fin = await page.evaluate(() => ({
+    shots: LustMinigame.tailTier().shots, ms: LustMinigame.cfg().finalMs || 15000,
+    gap: LustMinigame.shotMs() }));
+  const shots = fin.shots;
+  ok(Math.abs(fin.gap * fin.shots - fin.ms) < 1,
+     'финал длится столько, сколько задано, при любом числе толчков',
+     `${fin.shots} толчков по ${Math.round(fin.gap)} мс`);
   const t0 = Date.now();
   let held0 = 0, held0n = 0;
   // Меряем удержание ТОЛЬКО пока идут толчки. После последнего игра
   // доигрывает капли ('settle'), хвост при этом сам опадает к нулю — считать
   // это промахом игрока незачем.
-  while (Date.now() - t0 < (shots + 2) * 1500) {
+  while (Date.now() - t0 < fin.ms + 3000) {
     const st = await page.evaluate(() => ({ b: LustMinigame.bend, p: LustMinigame.phase }));
     if (st.p !== 'aim') break;
     const b = st.b;
@@ -322,40 +330,44 @@ const harness = require('./harness');
   // Живой забег — выборка из десяти толчков, и ноль попаданий в ней бывает
   // законно. Поэтому проверяется МОДЕЛЬ на большой выборке: та же физика,
   // тот же прицел, та же корзина, что и в игре, — и доля попаданий обязана
-  // сойтись с той, по которой считан баланс в tools/sim-lust.js.
-  const shotInfo = await page.evaluate(() => {
-    // Ступень берётся ТА ЖЕ, что у игры, — через её собственный вход.
-    // Своя копия «нулевой ступени» здесь однажды разошлась бы с лестницей
-    // в конфиге и уверенно докладывала бы, что всё сходится.
-    const L = LustMinigame, C = L.cfg(), t = L.aimTier();
-    // Геометрию меряем при ПОЛНОМ хвосте: забег уже кончился, и хвост к
-    // этому моменту опадает обратно к исходному размеру. Стрелял он
-    // налитым — по нему и считается.
-    const keep = L.charge;
+  // ---------- ШКАЛА: ЖЕТОН ИЗ ЧАСТЕЙ РАЗНОЙ ЦЕНЫ ----------
+  // Сколько частей закрыто, считается по ценам из конфига (2, 5, 8) — по
+  // порядку и с нуля. Проверяется НАЧИСЛЕННОЕ, а не нарисованное: осколков
+  // пришло ровно столько, сколько частей закрыли пойманные капли.
+  const gauge = await page.evaluate((h) => {
+    const steps = LustMinigame.gaugeSteps();
+    return { steps, done: LustShot.gaugeState(h, steps).done,
+             wedges: document.querySelectorAll('#bt-gauge path').length };
+  }, res.hits);
+  ok(gauge.wedges === gauge.steps.reduce((a, b) => a + b, 0),
+     'над головой жетон, поделённый на дольки по ценам частей',
+     `${gauge.wedges} долек при ценах ${gauge.steps.join('/')}`);
+  ok(res.shard + 3 * res.token === gauge.done,
+     'осколков начислено столько, сколько частей закрыто',
+     `${res.hits} попаданий → ${gauge.done} частей, в кошельке ${res.shard} + ${res.token}×3`);
+
+  // ---------- ГЕОМЕТРИЯ ФИНАЛА СОВПАДАЕТ С КАЛЬКУЛЯТОРОМ ----------
+  // tools/sim-lust.js держит раскладку финала своими константами (кончик при
+  // каждом изгибе и рот). Если сцена переехала, а они нет, баланс считается
+  // для геометрии, которой в игре больше нет.
+  const geo = await page.evaluate(() => {
+    const L = LustMinigame, keep = L.charge;
+    // Геометрию меряем при ПОЛНОМ хвосте: стрелял он налитым.
     L.charge = 1;
-    const s = L.tipState(L.bendAim), m = L.mouthPoint();
+    const m = L.mouthPoint(), s = L.tipState(L.bendAim), z = L.tipState(0);
     L.charge = keep;
-    let hit = 0, N = 4000;
-    for (let i = 0; i < N; i++) {
-      const v = LustShot.launch(C, t, s.dir);
-      if (LustShot.fly(C, s, v, m, C.mouthR).hit) hit++;
-    }
-    // Точность НЕ округляется до целых градусов и точек: окно попадания у
-    // навесной дуги — единицы градусов, и калькулятор, взяв округлённые
-    // числа, считает баланс для прицела на краю окна, а не в середине.
-    return { rate: hit / N, tip: { x: +s.x.toFixed(1), y: +s.y.toFixed(1) },
-             mouth: { x: +m.x.toFixed(1), y: +m.y.toFixed(1) },
-             dir: +(s.dir * 180 / Math.PI).toFixed(3) };
+    return { mouth: { x: +m.x.toFixed(1), y: +m.y.toFixed(1) }, aim: +L.bendAim.toFixed(3),
+             tip: { x: +s.x.toFixed(1), y: +s.y.toFixed(1) },
+             tip0: { x: +z.x.toFixed(1), y: +z.y.toFixed(1) } };
   });
-  ok(shotInfo.rate > 0.2 && shotInfo.rate < 0.36,
-     'на удержанном прицеле попадает как в расчёте',
-     `${(shotInfo.rate * 100).toFixed(0)}% толчков, живой забег дал ${res.hits} из ${shots}`);
-  // Калькулятор считает баланс по ЖИВОЙ раскладке, а числа раскладки он
-  // держит своими константами: если сцена переехала, а он нет, таблица
-  // баланса считается для геометрии, которой в игре больше нет.
-  console.log(`  инфо  кончик на прицеле (${shotInfo.tip.x},${shotInfo.tip.y}) под`
-    + ` ${shotInfo.dir}°, рот (${shotInfo.mouth.x},${shotInfo.mouth.y})`
-    + ` — эти три числа стоят в tools/sim-lust.js`);
+  ok(Math.hypot(geo.mouth.x - 392.8, geo.mouth.y - 603.6) < 3,
+     'рот стоит там же, где у калькулятора', `(${geo.mouth.x},${geo.mouth.y})`);
+  ok(Math.hypot(geo.tip0.x - 238, geo.tip0.y - 617.4) < 3,
+     'прямой хвост стоит там же, где у калькулятора', `(${geo.tip0.x},${geo.tip0.y})`);
+  ok(Math.abs(geo.aim - 0.412) < 0.03,
+     'прицел тот же, что у калькулятора', `изгиб ${geo.aim}`);
+  console.log(`  инфо  прицел — изгиб ${geo.aim}, кончик (${geo.tip.x},${geo.tip.y}), `
+    + `рот (${geo.mouth.x},${geo.mouth.y}); таблица кончика и рот стоят в tools/sim-lust.js`);
 
   await page.screenshot({ path: out + '4-done.png' });
 
