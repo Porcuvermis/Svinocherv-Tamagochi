@@ -341,6 +341,11 @@ html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }
 }
 #lust-game .ls-step i { font-style: normal; font-size: 13px; }
 #lust-game .ls-step b.ls-next { color: #23101d; font-size: 19px; }
+/* Часы мыла и мочалки — вторая строка, мельче: их игрок почувствует между
+   заходами, а клетки — в самом забеге. */
+#lust-game .ls-hours { font-size: 13px; gap: 4px; }
+#lust-game .ls-hours em { font-style: normal; font-size: 12px; }
+#lust-game .ls-hours b.ls-next { font-size: 15px; }
 
 #lust-game .ls-pips { display: flex; gap: 4px; flex-wrap: wrap; }
 #lust-game .ls-pips i {

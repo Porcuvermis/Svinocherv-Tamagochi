@@ -220,6 +220,15 @@ const LocalBackend = {
         // съедал доход у будущего оплаченного.
         if (pays) GameState.bumpCounter(sin + '.' + mode + '.' + outcome, 1);
 
+        // Таймер награды тратит только тот исход, который ЗА НЕЁ играли
+        // (claimsReward). Забег «только помыть» у похоти его не тратит: иначе
+        // таймер, открывшийся, пока червя мыли, съедался бы заходом, за
+        // который ничего не дали.
+        if (pays && reward.claimsReward && ECONOMY.sins[sin].rewardEvery) {
+            GameState.claimReward(sin);
+            awarded.claimed = true;
+        }
+
         GameState.markProcessed(requestId);
         GameState.touch();
         GameState.save();
@@ -2025,6 +2034,14 @@ const LocalBackend = {
             });
         });
 
+        // Ступень, которая меняет СКОРОСТЬ шкалы (у похоти — мыло), сперва
+        // фиксирует шкалу на сейчас. Значение считается формулой от метки
+        // времени, и новая скорость, применённая к старой метке, пересчитала
+        // бы задним числом всё прошедшее время: шкала прыгнула бы вверх в
+        // момент покупки.
+        const sinConf = ECONOMY.sins[sinKey] || {};
+        if (sinConf.drainUpgrade === key) GameState.setSinValue(sinKey, GameState.sinValue(sinKey));
+
         GameState.data.upgrades[stateKey] = level + 1;
         GameState.save();
         return { ok: true, key, sin: sinKey, level: level + 1,
@@ -2322,8 +2339,24 @@ const LocalBackend = {
     // не перешёл — сыграй сколько хочешь, но кошелёк не тронется.
     sinPays(sinKey) {
         const cfg = (ECONOMY.sins && ECONOMY.sins[sinKey]) || {};
+        // Грех со своим таймером награды (у похоти): платят, когда таймер
+        // истёк, и шкала тут ни при чём — потребность и награда разведены
+        // (docs/plan/21-lust-bath.md, разд. 7а).
+        if (cfg.rewardEvery) return GameTime.now() >= GameState.rewardReadyAt(sinKey);
         if (cfg.payAt == null) return true;
         return GameState.sinValue(sinKey) <= cfg.payAt;
+    },
+
+    // ---------- ГОТОВНОСТЬ ПОХОТИ ДЛЯ КОЛЕСА ГРЕХОВ ----------
+    // Узел горит по ТАЙМЕРУ НАГРАДЫ, а не по шкале: шкала у похоти — это
+    // потребность, и её просадка больше ничего не открывает. По лучу течёт
+    // то, сколько таймера уже прошло: пустой луч — только что сыграли на
+    // жетон, полный — награда готова.
+    rewardReady(sinKey) {
+        const hours = GameState.rewardCooldownHours(sinKey) || 1;
+        const at = GameState.rewardReadyAt(sinKey);
+        const left = Math.max(0, (at - GameTime.now()) / 3600000);
+        return { fill: 100 * (1 - Math.min(1, left / hours)), ready: left <= 0, hoursLeft: left };
     },
 
     // Всё, что нужно экрану, чтобы показать это правило: где сейчас шкала,
@@ -2340,8 +2373,13 @@ const LocalBackend = {
         const cfg = (ECONOMY.sins && ECONOMY.sins[sinKey]) || {};
         const max = GameState.maxValue(sinKey);
         const value = GameState.sinValue(sinKey);
+        if (cfg.rewardEvery) {
+            const r = this.rewardReady(sinKey);
+            return { pays: r.ready, value, max, threshold: null, hoursLeft: r.hoursLeft };
+        }
         if (cfg.payAt == null) return { pays: true, value, max, threshold: null, hoursLeft: 0 };
-        const perHour = cfg.drainHours ? max / cfg.drainHours : 0;
+        const hours = GameState.drainHours(sinKey);
+        const perHour = hours ? max / hours : 0;
         const left = perHour > 0 ? Math.max(0, (value - cfg.payAt) / perHour) : 0;
         return { pays: value <= cfg.payAt, value, max, threshold: cfg.payAt, hoursLeft: left };
     },

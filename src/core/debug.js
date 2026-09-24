@@ -303,7 +303,12 @@ const DebugState = {
         if (act === 'hour' || act === 'shift') {
             const hours = act === 'hour' ? 1 : 8;
             Object.keys(GameState.data.sins).forEach(key => {
-                GameState.data.sins[key].updated_at -= hours * 3600 * 1000;
+                const sin = GameState.data.sins[key];
+                sin.updated_at -= hours * 3600 * 1000;
+                // Таймер награды (у похоти) отматывается вместе со шкалой:
+                // иначе «−8 ч» опустошало бы шкалу, а награда так и стояла бы
+                // закрытой.
+                if (sin.paid_at != null) sin.paid_at -= hours * 3600 * 1000;
             });
             // Пищеварение отматывается вместе со шкалами: цикл длиной в час,
             // и ждать его вживую ради проверки — то же самое, что ждать

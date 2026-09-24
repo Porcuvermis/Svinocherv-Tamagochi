@@ -138,8 +138,9 @@ const LustMinigame = {
     stageRadius() {
         const C = this.cfg(), b = this.coverBox(), G = this.grid();
         // Радиус — КУПЛЕННЫЙ: мыло и мочалка качаются каждая своей полкой.
-        const cells = this.phase === 'cloth' ? this.up('cloth', C.clothCells || 1.0)
-                                             : this.up('soap', C.soapCells || 1.15);
+        const t = this.up(this.phase === 'cloth' ? 'cloth' : 'soap', null) || {};
+        const cells = this.phase === 'cloth' ? (t.radius || C.clothCells || 1.0)
+                                             : (t.radius || C.soapCells || 1.15);
         return cells * Math.max(b.w / G.nx, b.h / G.ny);
     },
 
@@ -200,6 +201,13 @@ const LustMinigame = {
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
 
         if (typeof LustShop !== 'undefined') LustShop.init(this);
+
+        // ---------- УЗЕЛ ПОХОТИ В КОЛЕСЕ ГРЕХОВ ----------
+        // Горит по ТАЙМЕРУ НАГРАДЫ, а не по шкале: у похоти потребность и
+        // награда разведены. Что считать готовностью, знает переходник.
+        if (typeof SinsMenu !== 'undefined' && typeof Backend !== 'undefined') {
+            SinsMenu.readers.lust = () => Backend.rewardReady('lust');
+        }
         // Вход в магазин — ПОКА кнопка. Потом он переедет в предмет сцены
         // (нарративный вход — отдельная работа); до тех пор главное, чтобы он
         // был доступен ровно тогда, когда положено: до забега и после него.
@@ -927,7 +935,10 @@ const LustMinigame = {
 
     wipeLather() {
         const n = this.el('bt-wash');
-        if (n) n.style.opacity = '1';
+        // Переход снимается: его ставит конец забега «только помыть», и без
+        // сброса следующий забег начинался бы с того, что пена медленно
+        // проявляется из ниоткуда.
+        if (n) { n.style.transition = ''; n.style.opacity = '1'; }
         if (this.washCtx) this.washCtx.clearRect(0, 0, n.width, n.height);
         this.filmCells = null;
     },
@@ -1009,6 +1020,13 @@ const LustMinigame = {
     startWater() {
         this.phase = 'rinse';
         this.syncShopButton();
+        // Играется ли забег НА ЖЕТОН — решается в момент, когда полилась вода,
+        // и дальше не меняется. У похоти награда на своём таймере, и если он
+        // ещё не истёк, червя только моют: хвоста, пузырей и финала не будет
+        // (docs/plan/21-lust-bath.md, разд. 7а). Решать в конце мытья
+        // нельзя: горка пены над хвостом копится ВО ВРЕМЯ мочалки, и её
+        // надо либо строить, либо нет с самого начала.
+        this.paidRun = (typeof Backend === 'undefined') || Backend.sinPays('lust');
         this.ready(null);
         this.setOpacity('bt-rain-far', 1);
         this.setOpacity('bt-rain-near', 1);
@@ -1062,7 +1080,7 @@ const LustMinigame = {
             // Горка пены над будущим хвостом собирается ЗАРАНЕЕ, пока червя
             // трут мочалкой. К моменту, когда хвост всплывает, она уже
             // непроницаема, и его появления не видно.
-            this.buildPile();
+            if (this.paidRun) this.buildPile();
             // Мочалка снимает мыло и оставляет пену: муть гасится, чтобы
             // второй этап был виден.
             // Что намылено — запоминается: на этапе мочалки это фон, по
@@ -1075,7 +1093,35 @@ const LustMinigame = {
             this.armHint();
             return;
         }
-        this.raiseTail();
+        if (this.paidRun) this.raiseTail();
+        else this.finishWash();
+    },
+
+    // ---------- ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» ----------
+    // Награда ещё не готова — червя вымыли, и на этом всё. Сказано без
+    // единого слова (инвариант 9): вода выключается, пена сходит с тела,
+    // камера отъезжает на общий план, кнопка магазина возвращается. Хвост не
+    // всплывает — ширмы над ним и не копилось.
+    //
+    // Шкала потребности закрывается, как после любого захода: червь чистый.
+    // Таймер награды НЕ тратится (rewards.lust.wash без claimsReward).
+    finishWash() {
+        this.phase = 'done';
+        this.stopClocks();
+        this.ready(null);
+        this.setOpacity('bt-rain-far', 0);
+        this.setOpacity('bt-rain-near', 0);
+        this.setOpacity('bt-rain-veil', 0);
+        const wash = this.el('bt-wash');
+        if (wash) {
+            wash.style.transition = 'opacity 1.2s ease';
+            wash.style.opacity = '0';
+        }
+        this.setCamera('overview', 900);
+        GameEvents.emit('minigame:result', {
+            sin: 'lust', mode: 'wash', outcome: 'win', meta: { wash: true }
+        });
+        this.syncShopButton();
     },
 
     // ---------- ПОДСКАЗКА: ГДЕ НЕ ДОМЫЛИ ----------

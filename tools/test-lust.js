@@ -354,13 +354,17 @@ const harness = require('./harness');
     const L = LustMinigame, keep = L.charge;
     // Геометрию меряем при ПОЛНОМ хвосте: стрелял он налитым.
     L.charge = 1;
-    const m = L.mouthPoint(), s = L.tipState(L.bendAim), z = L.tipState(0);
+    // Рот берётся ТОТ, по которому игра считала попадания весь финал
+    // (mouthAt — снят один раз на входе в финал), а не спрашивается заново:
+    // сейчас червь тяжело дышит после забега, морда ходит на вдохе, и
+    // замер «на ходу» гулял на пять точек от прогона к прогону (traps, п. 137).
+    const m = L.mouthAt || L.mouthPoint(), s = L.tipState(L.bendAim), z = L.tipState(0);
     L.charge = keep;
     return { mouth: { x: +m.x.toFixed(1), y: +m.y.toFixed(1) }, aim: +L.bendAim.toFixed(3),
              tip: { x: +s.x.toFixed(1), y: +s.y.toFixed(1) },
              tip0: { x: +z.x.toFixed(1), y: +z.y.toFixed(1) } };
   });
-  ok(Math.hypot(geo.mouth.x - 392.8, geo.mouth.y - 603.6) < 3,
+  ok(Math.hypot(geo.mouth.x - 388.3, geo.mouth.y - 598.0) < 3,
      'рот стоит там же, где у калькулятора', `(${geo.mouth.x},${geo.mouth.y})`);
   ok(Math.hypot(geo.tip0.x - 238, geo.tip0.y - 617.4) < 3,
      'прямой хвост стоит там же, где у калькулятора', `(${geo.tip0.x},${geo.tip0.y})`);
@@ -370,6 +374,60 @@ const harness = require('./harness');
     + `рот (${geo.mouth.x},${geo.mouth.y}); таблица кончика и рот стоят в tools/sim-lust.js`);
 
   await page.screenshot({ path: out + '4-done.png' });
+
+  // ================= ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» =================
+  // Награда у похоти на своём таймере (docs/plan/21-lust-bath.md, разд. 7а).
+  // Только что сыграли на жетон — значит, следующий заход приходится на «ещё
+  // рано»: червя моют, и на этом всё. Мытьё здесь не водится пальцем заново:
+  // его проверяет забег выше, а тут проверяется развилка ПОСЛЕ мочалки.
+  const wash = await page.evaluate(async () => {
+    const L = LustMinigame;
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const before = {
+      shard: GameState.currency('lust_shard'), token: GameState.currency('lust_token'),
+      paidAt: GameState.data.sins.lust.paid_at
+    };
+    L.close(); L.open();
+    await wait(400);
+    // Дадим шкале просесть: забег обязан её закрыть и без награды.
+    GameState.data.sins.lust.updated_at -= 6 * 3600 * 1000;
+    const readyAtStart = Backend.sinPays('lust');
+    L.startWater();
+    await wait(1200);
+    L.finishStage('soap');
+    const pile = !!L.pile;
+    L.finishStage('cloth');
+    await wait(1500);
+    return {
+      readyAtStart, pile, phase: L.phase,
+      tail: +(document.getElementById('bt-tail').style.opacity || 0),
+      shop: document.getElementById('bt-shop-btn').classList.contains('on'),
+      sin: Math.round(GameState.sinValue('lust')),
+      shard: GameState.currency('lust_shard'), token: GameState.currency('lust_token'),
+      paidAt: GameState.data.sins.lust.paid_at, before,
+      wheel: Backend.rewardReady('lust')
+    };
+  });
+  ok(!wash.readyAtStart, 'сразу после игры на жетон награда ещё не готова');
+  ok(!wash.pile && wash.phase === 'done' && wash.tail === 0,
+     'без награды забег кончается после мочалки: ни горки пены, ни хвоста',
+     `фаза ${wash.phase}, горка ${wash.pile}, хвост ${wash.tail}`);
+  ok(wash.sin === 100, 'червь вымыт — шкала закрыта и без награды', `шкала ${wash.sin}`);
+  ok(wash.shard === wash.before.shard && wash.token === wash.before.token,
+     'за «только помыть» ничего не начислено');
+  ok(wash.paidAt === wash.before.paidAt, 'таймер награды не потрачен');
+  ok(wash.shop, 'после забега снова виден вход в магазин');
+  ok(!wash.wheel.ready && wash.wheel.fill < 100,
+     'узел похоти в колесе не горит, луч налит по таймеру',
+     `налито ${wash.wheel.fill.toFixed(0)}%, осталось ${wash.wheel.hoursLeft.toFixed(1)} ч`);
+  // Таймер истёк — награда снова готова, и колесо об этом знает.
+  const later = await page.evaluate(() => {
+    GameState.data.sins.lust.paid_at -= GameState.rewardCooldownHours('lust') * 3600 * 1000 + 1000;
+    return { pays: Backend.sinPays('lust'), wheel: SinsMenu.read('lust') };
+  });
+  ok(later.pays && later.wheel.ready && later.wheel.fill === 100,
+     'таймер истёк — награда готова и узел горит');
+  await page.screenshot({ path: out + '5-wash-only.png' });
 
   console.log(errs.length ? '\nОШИБКИ:\n  ' + errs.join('\n  ') : '\nошибок нет');
   await browser.close();

@@ -99,11 +99,17 @@ const harness = require('./harness');
   // прицела, которой стреляет финал, и радиус мазка, которым красится тело.
   say('\n======== КУПЛЕННАЯ СТУПЕНЬ ДВИГАЕТ ИГРУ ========');
   const read = () => page.evaluate(() => ({
+    drain: GameState.drainHours('lust'),
+    cooldown: GameState.rewardCooldownHours('lust'),
+    sin: GameState.sinValue('lust'),
     tail: LustMinigame.tailTier(),
     shotMs: LustMinigame.shotMs(),
     soap: (LustMinigame.phase = 'soap', LustMinigame.stageRadius()),
     cloth: (LustMinigame.phase = 'cloth', LustMinigame.stageRadius())
   }));
+  // Шкала просела пять часов назад: иначе прыжок от смены скорости не с чего
+  // увидеть — он растёт вместе с прошедшим временем.
+  await page.evaluate(() => { GameState.data.sins.lust.updated_at -= 5 * 3600 * 1000; });
   const before = await read();
   const buy = await page.evaluate(() => {
     Backend.grantCurrency('lust_token', 60);
@@ -126,6 +132,16 @@ const harness = require('./harness');
         `мазок мылом шире: ${before.soap.toFixed(1)} → ${after.soap.toFixed(1)} точек сцены`);
   check(after.cloth > before.cloth,
         `тёрка мочалкой шире: ${before.cloth.toFixed(1)} → ${after.cloth.toFixed(1)} точек сцены`);
+  // Вторая половина мыла и мочалки — таймеры, и они разведены: мыло
+  // замедляет потребность, мочалка ускоряет награду.
+  check(after.drain > before.drain,
+        `шкала похоти пустеет медленнее: за ${before.drain} → ${after.drain} ч`);
+  check(after.cooldown < before.cooldown,
+        `награда снова доступна раньше: через ${before.cooldown} → ${after.cooldown} ч`);
+  // Покупка мыла меняет СКОРОСТЬ шкалы, а значение считается формулой от
+  // метки: без фиксации на момент покупки шкала прыгнула бы задним числом.
+  check(Math.abs(after.sin - before.sin) < 0.5,
+        `шкала не прыгнула в момент покупки: ${before.sin.toFixed(1)} → ${after.sin.toFixed(1)}`);
   await page.evaluate(() => { LustMinigame.phase = 'soap'; });
 
   // Списание настоящее: жетоны ушли из кошелька.
