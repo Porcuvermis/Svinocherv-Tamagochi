@@ -853,42 +853,40 @@ const BATH_ART = {
                 <path id="bt-fly-hi" d="" fill="${m.hi}"/>`;
     },
 
-    // trail — точки следа от головы назад, r — радиус головы, seed — фаза
-    // бусин.
+    // ---------- СТРУЯ: ОДНА ЛЕНТА ----------
+    // Толчок — это не цепочка капель, а одна длинная лента жижи: толстая
+    // голова, сужающееся тело, скруглённый хвост. Вторая версия рисовала
+    // хвост кометы бусами — перетяжка, бусина, перетяжка, — и струя
+    // читалась нанизанными шариками, а не жидкостью. Капли от струи
+    // отрываются, но оторвавшаяся — это уже отдельная капля (lust.js,
+    // shedStream); пока капля в струе, её не видно: лента цельная.
     //
-    // ---------- БУСЫ НА НИТКЕ ----------
-    // Вязкая струя не сужается гладким конусом: нить между каплями
-    // истончается перетяжками, и вдоль неё встают бусины — так рвётся любая
-    // тягучая жидкость, а у этой особенно (капиллярный распад: у воды
-    // перетяжки рвутся сразу, у вязкой нити бусы висят на ней долго).
-    // Толщина вдоль хвоста поэтому ходит волной, и в перетяжках нить почти
-    // исчезает. Бусины стоят на месте ОТНОСИТЕЛЬНО головы — едут вместе со
-    // струёй, как и положено.
-    cometD(x, y, r, trail, seed) {
-        const pts = [{ x, y }].concat(trail || []);
-        if (pts.length < 3) return this.gooCurve(this.gooOval(x, y, r, r, 0, 8));
-        // Контур по часовой: одна сторона хвоста к голове, полукруг головы
-        // впереди, другая сторона назад.
-        const L = [], R = [], ph = (seed || 0) * 6.28;
-        for (let i = 0; i < pts.length; i++) {
-            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    // pts — точки оси от головы к хвосту, ws — полуширина в каждой,
+    // dir — направление полёта на случай, когда ось ещё не вытянулась
+    // (первые мгновения: вся струя стоит у кончика).
+    streamD(pts, ws, dir) {
+        const n = pts.length, L = [], R = [];
+        let tx0 = Math.cos(dir || 0), ty0 = Math.sin(dir || 0);
+        for (let i = 0; i < n; i++) {
+            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
             let tx = a.x - b.x, ty = a.y - b.y;
-            const l = Math.hypot(tx, ty) || 1;
-            tx /= l; ty /= l;
-            // У головы во всю толщину, к хвосту — в нитку, и по пути бусы.
-            const f = i / (pts.length - 1);
-            const bead = 0.62 + 0.38 * Math.cos(ph + i * 1.35);
-            const w = i === 0 ? r : r * 0.9 * Math.pow(1 - f, 1.2) * (i > 1 ? bead : 1) + 0.25;
-            L.push({ x: pts[i].x - ty * w, y: pts[i].y + tx * w });
-            R.push({ x: pts[i].x + ty * w, y: pts[i].y - tx * w });
+            const l = Math.hypot(tx, ty);
+            if (l > 1e-3) { tx /= l; ty /= l; tx0 = tx; ty0 = ty; } else { tx = tx0; ty = ty0; }
+            L.push({ x: pts[i].x - ty * ws[i], y: pts[i].y + tx * ws[i], tx, ty });
+            R.push({ x: pts[i].x + ty * ws[i], y: pts[i].y - tx * ws[i], tx, ty });
         }
-        const a0 = Math.atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
-        const head = [];
-        for (let i = 1; i < 6; i++) {
-            const a = a0 + Math.PI / 2 - Math.PI * i / 6;
-            head.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
-        }
-        return this.gooCurve(L.slice().reverse().concat(head, R));
+        // Скругления на концах: голова — полукруг вперёд, хвост — назад.
+        const cap = (p, w, tx, ty, back) => {
+            const a0 = Math.atan2(ty, tx) + (back ? Math.PI : 0), out = [];
+            for (let i = 1; i < 5; i++) {
+                const a = a0 + Math.PI / 2 - Math.PI * i / 5;
+                out.push({ x: p.x + Math.cos(a) * w, y: p.y + Math.sin(a) * w });
+            }
+            return out;
+        };
+        const head = cap(pts[0], ws[0], L[0].tx, L[0].ty, false);
+        const tail = cap(pts[n - 1], ws[n - 1], L[n - 1].tx, L[n - 1].ty, true);
+        return this.gooCurve(L.slice().reverse().concat(head, R, tail));
     },
 
     cometHi(x, y, r) {

@@ -651,6 +651,57 @@ const harness = require('./harness');
   ok(Object.values(goo.afterClose).every(v => v === 0), 'уход из ванной смывает все следы',
      JSON.stringify(goo.afterClose));
 
+  // ================= СТРУЯ — ОДНА ЛЕНТА =================
+  // Струя не нанизанные бусы, а цельная лента: в полёте она в разы длиннее
+  // своей толщины. Капля, оторвавшись, становится ОТДЕЛЬНОЙ каплей в полёте,
+  // а лента после этого короче.
+  const jet = await page.evaluate(() => {
+    const L = LustMinigame, C = L.cfg();
+    const v = C.speedMin + 0.95 * (C.speedMax - C.speedMin), a = -1.0;
+    const keep = L.drops;
+    L.drops = [];
+    const d = { x: 250, y: 620, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, r: 11,
+                main: true, trail: [], shed: 0, shedT: 0,
+                stream: { x0: 250, y0: 620, vx: Math.cos(a) * v, vy: Math.sin(a) * v, back: 1 } };
+    const len = () => { let s = 0, p = L.streamAt(d, 0);
+      for (let i = 1; i <= 10; i++) { const q = L.streamAt(d, d.stream.back * i / 10);
+        s += Math.hypot(q.x - p.x, q.y - p.y); p = q; } return s; };
+    while (d.t < L.STREAM.emit + 0.03) LustShot.step(d, C);
+    const long = len() / (2 * d.r * 0.72);
+    const back0 = d.stream.back, n0 = L.drops.length;
+    d.shedT = -1;
+    L.shedStream(d);
+    const out = { long, shorter: d.stream.back < back0, dropped: L.drops.length - n0,
+                  apart: L.drops[0] ? !L.drops[0].stream : false };
+    L.drops = keep;
+    return out;
+  });
+  ok(jet.long > 3.5, 'струя — вытянутая лента, а не шарик', `длина — ${jet.long.toFixed(1)} толщины`);
+  ok(jet.dropped === 1 && jet.apart && jet.shorter,
+     'оторвавшаяся капля летит сама, а лента после неё короче');
+
+  // ================= В ВАННОЙ РАЗДЕВАЮТСЯ =================
+  // Надетое снаружи в ванную не попадает: червь моется голым. Но наряд не
+  // теряется — он в состоянии игрока и вернётся, как только выйдет.
+  const naked = await page.evaluate(async () => {
+    const L = LustMinigame, wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const was = GameState.data.cosmetics;
+    GameState.data.cosmetics = { hat: 'top-hat', neck: 'bow-tie' };
+    L.close(); L.open();
+    await wait(600);
+    const worn = L.wormHandle.svgRoot.querySelectorAll('[data-cosmetic]').length;
+    const kept = JSON.stringify(GameState.data.cosmetics);
+    const room = window.WormModelAPI.loadWormModel().cosmetics;
+    GameState.data.cosmetics = was;
+    L.close(); L.open();
+    await wait(300);
+    return { worn, kept, room: Object.keys(room || {}).length };
+  });
+  ok(naked.worn === 0, 'в ванной червь голый, что бы на нём ни было надето',
+     `${naked.worn} надетых вещей на черве в ванной`);
+  ok(naked.kept.includes('top-hat') && naked.room === 2, 'наряд не пропал: снаружи червь одет',
+     naked.kept);
+
   // ================= ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» =================
   // Награда у похоти на своём таймере (docs/plan/21-lust-bath.md, разд. 7а).
   // Только что сыграли на жетон — значит, следующий заход приходится на «ещё

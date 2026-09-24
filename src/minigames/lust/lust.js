@@ -482,10 +482,24 @@ const LustMinigame = {
     },
 
     // ---------- ЧЕРВЬ ----------
+    // ---------- В ВАННОЙ РАЗДЕВАЮТСЯ ----------
+    // Червь в ванной ВСЕГДА голый, что бы на нём ни было надето снаружи. Наряд
+    // подставляет общая загрузка модели (withCosmetics в worm-model.js) — ей и
+    // положено: купленное носится во всех грехах. Здесь он снимается с
+    // КОПИИ, которую монтирует ванная; в состоянии игрока наряд остаётся, и
+    // из ванной червь выходит одетым.
+    //
+    // Шрамы — не одежда, они на коже и остаются.
+    bathModel() {
+        const model = window.WormModelAPI.loadWormModel();
+        model.cosmetics = {};
+        return model;
+    },
+
     mountWorm() {
         if (!window.WormModelAPI || !window.WormRenderer || !this.wormHost) return;
         if (!this.wormHandle) {
-            const model = window.WormModelAPI.loadWormModel();
+            const model = this.bathModel();
             this.wormHandle = window.WormRenderer.mount(this.wormHost, model, {
                 context: 'lust',
                 // Смотрит ВЛЕВО — но развёрнута только ГОЛОВА. Полное
@@ -510,7 +524,7 @@ const LustMinigame = {
                 idleWave: false
             });
         } else {
-            this.wormHandle.update(window.WormModelAPI.loadWormModel());
+            this.wormHandle.update(this.bathModel());
         }
         this.applyCondition();
         this.layoutWorm();
@@ -1243,7 +1257,7 @@ const LustMinigame = {
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
         // и работает (блаженство, открытый рот).
         this.el('bt-wash').style.opacity = '0';
-        const model = window.WormModelAPI ? window.WormModelAPI.loadWormModel() : null;
+        const model = window.WormModelAPI ? this.bathModel() : null;
         this.tailModel = model;
         this.bend = 0;
         this.bendHand = null;
@@ -1722,7 +1736,10 @@ const LustMinigame = {
         const m = this.mouthAt || this.mouthPoint();
         const main = { x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0, r: 11,
                        main: true, trail: [], shed: 0, shedT: 0, seed: Math.random(),
-                       willHit: LustShot.fly(C, { x: s.x, y: s.y }, v, m, C.mouthR).hit };
+                       willHit: LustShot.fly(C, { x: s.x, y: s.y }, v, m, C.mouthR).hit,
+                       // Струя за головой: откуда и с какой скоростью
+                       // вылетела, и какая доля её ещё цела (1 — вся).
+                       stream: { x0: s.x, y0: s.y, vx: v.vx, vy: v.vy, back: 1 } };
         if (typeof LustGoo !== 'undefined') LustGoo.arm(main);
         this.drops.push(main);
         // Мелкие брызги рядом — только вид. На счёт они не влияют: иначе
@@ -1842,11 +1859,12 @@ const LustMinigame = {
             this.dropAcc -= C.dt;
             for (let i = this.drops.length - 1; i >= 0; i--) {
                 const d = this.drops[i];
-                d.trail.unshift({ x: d.x, y: d.y });
+                if (!d.stream) d.trail.unshift({ x: d.x, y: d.y });
                 LustShot.step(d, C);
-                this.trimTrail(d);
+                if (!d.stream) this.trimTrail(d);
                 if (d.main && LustShot.inMouth(d, m, C.mouthR)) {
                     this.drops.splice(i, 1);
+                    this.breakStream(d);
                     this.hits++;
                     this.drawGauge();
                     this.splats.push({ x: m.x, y: m.y, r: 16, t: 0, gulp: true });
@@ -1859,11 +1877,14 @@ const LustMinigame = {
                     this.drops.splice(i, 1);
                     continue;
                 }
-                if (d.main) this.shed(d);
+                if (d.stream) this.shedStream(d);
                 // Долетающую каплю ничто не ловит по дороге (см. shoot).
                 const over = d.willHit ? LustShot.spent(d, C)
                            : goo ? goo.hit(d) : LustShot.spent(d, C);
-                if (over) this.drops.splice(i, 1);
+                if (over) {
+                    this.drops.splice(i, 1);
+                    if (d.stream) this.breakStream(d);
+                }
             }
         }
         // Вспышка попадания гаснет сама. Промахи сюда больше не попадают:
@@ -1892,7 +1913,8 @@ const LustMinigame = {
     // длине, а не по числу: на быстрой капле он длиннее, чем на
     // зависшей в верхней точке дуги, — так и видно скорость.
     trimTrail(d) {
-        const max = d.r * (d.main ? 6.5 : 3.5);
+        // Хвост мелкой капли — в два её радиуса: длиннее он читался шипом.
+        const max = d.r * (d.main ? 6.5 : 2.2);
         let len = 0, px = d.x, py = d.y;
         for (let k = 0; k < d.trail.length; k++) {
             const q = d.trail[k];
@@ -1902,21 +1924,85 @@ const LustMinigame = {
         }
     },
 
-    // Хвост кометы РВЁТСЯ на капли: от него отрываются мелкие, отстают и
-    // падают сами по себе. Скорость у оторвавшейся — доля скорости кометы,
-    // поэтому она отстаёт и ложится раньше, веером под траекторией.
-    SHED_EVERY: 0.07,
-    SHED_MAX: 6,
-    shed(d) {
-        if (d.t < 0.1 || d.shed >= this.SHED_MAX || d.t - d.shedT < this.SHED_EVERY) return;
-        const q = d.trail[Math.floor(d.trail.length * 0.6)];
-        if (!q) return;
+    // ---------- СТРУЯ: ЛЕНТА, ОТ КОТОРОЙ ОТРЫВАЮТСЯ КАПЛИ ----------
+    // Толчок — один выплеск: жижа выходит из кончика не мгновенно, а за
+    // долю секунды (STREAM.emit), и чем позже вышла, тем медленнее летит
+    // (STREAM.slow — во сколько раз хвост ленты медленнее головы). Отсюда
+    // вся форма: сначала лента тянется от кончика, потом отрывается от него
+    // и вытягивается по дуге, потому что голова уходит вперёд.
+    //
+    // Точка ленты u (0 — голова, 1 — самый хвост) — это частица, вылетевшая
+    // позже на u·emit со скоростью (1 − (1 − slow)·u). Её место — формула
+    // баллистики от момента вылета, без шагов и без хранения: лента из
+    // десяти точек стоит десять формул за кадр.
+    //
+    // Голова — это та самая капля, по которой считается попадание, и её путь
+    // обязан совпадать с калькулятором (LustShot.fly). Поэтому ленту строит
+    // формула, а к голове она лишь подтягивается поправкой: шаги полёта
+    // головы и точная формула за секунду расходятся на несколько единиц.
+    // Первая подборка (0.12 с, хвост в 0.62 скорости) давала ленту в
+    // полсотни единиц длиной и два десятка толщиной — короткий крючок, а не
+    // струю. Струя читается струёй, когда она раз в пять-шесть длиннее
+    // своей толщины.
+    STREAM: { emit: 0.22, slow: 0.5, points: 12, pinch: 0.07, pieces: 6 },
+
+    streamAt(d, u) {
+        const S = d.stream, C = this.cfg(), T = this.STREAM;
+        const k = 1 - (1 - T.slow) * u, tt = Math.max(0, d.t - u * T.emit);
+        const g = C.gravity;
+        // Поправка к голове: разница между шагами полёта и формулой.
+        const hx = S.x0 + S.vx * d.t, hy = S.y0 + S.vy * d.t + 0.5 * g * d.t * d.t;
+        const w = 1 - u;
+        return { x: S.x0 + S.vx * k * tt + (d.x - hx) * w,
+                 y: S.y0 + S.vy * k * tt + 0.5 * g * tt * tt + (d.y - hy) * w,
+                 vx: S.vx * k, vy: S.vy * k + g * tt, out: d.t >= u * T.emit };
+    },
+
+    // Хвост ленты РВЁТСЯ: как только лента оторвалась от кончика, с её
+    // заднего конца раз в pinch секунд отщипывается капля. Оторвавшаяся —
+    // уже отдельная капля: своя скорость (та, с какой летел этот кусок
+    // ленты), своя дуга, свой след. Лента после этого короче и тоньше: у
+    // неё меньше массы и нет самого медленного хвоста.
+    shedStream(d) {
+        const S = d.stream, T = this.STREAM;
+        if (d.shed >= T.pieces || d.t < T.emit + 0.04 || d.t - d.shedT < T.pinch) return;
+        const q = this.streamAt(d, S.back);
         d.shed++;
         d.shedT = d.t;
-        const k = 0.5 + Math.random() * 0.25;
-        this.spawnDrop(q.x, q.y, d.vx * k + (Math.random() - 0.5) * 50,
-                       d.vy * k + (Math.random() - 0.5) * 50,
-                       2.2 + Math.random() * 1.6);
+        S.back = Math.max(0.2, S.back - 0.8 / T.pieces);
+        this.spawnDrop(q.x, q.y, q.vx + (Math.random() - 0.5) * 30,
+                       q.vy + (Math.random() - 0.5) * 30, 2.4 + Math.random() * 1.6);
+    },
+
+    // Голова приземлилась (в рот, на тело, на борт) — остаток ленты в
+    // воздухе не исчезает, а распадается на капли, каждая со скоростью
+    // своего куска. Иначе вся струя пропадала в одном кадре с головой.
+    breakStream(d) {
+        const S = d.stream;
+        if (!S) return;
+        for (const u of [S.back * 0.45, S.back]) {
+            const q = this.streamAt(d, u);
+            if (!q.out) continue;
+            this.spawnDrop(q.x, q.y, q.vx, q.vy, 2.6 + 3 * S.back * (1 - u));
+        }
+        d.stream = null;
+    },
+
+    // Ось и полуширина ленты для рисунка. Голова тоньше, когда лента
+    // растеряла массу; хвост скруглён и тонок — там она и рвётся.
+    streamShape(d, scale) {
+        const S = d.stream, T = this.STREAM, n = T.points;
+        const pts = [], ws = [];
+        const head = d.r * 0.72 * (0.85 + 0.15 * S.back);
+        for (let i = 0; i < n; i++) {
+            const u = S.back * i / (n - 1);
+            const q = this.streamAt(d, u);
+            pts.push(q);
+            // Сужение — по ОСТАВШЕЙСЯ ленте: растеряв хвост, она всё равно
+            // сужается к концу, а не становится палочкой ровной толщины.
+            ws.push(head * (1 - 0.6 * Math.pow(u / S.back, 0.8)) * scale);
+        }
+        return BATH_ART.streamD(pts, ws, Math.atan2(S.vy, S.vx));
     },
 
     // ---------- ЖИВОЙ СЛОЙ ВЫСТРЕЛА: УЗЛЫ, А НЕ РАЗМЕТКА ----------
@@ -1969,8 +2055,18 @@ const LustMinigame = {
         // Блик — только у крупных.
         let d = '', core = '', hi = '';
         for (const q of this.drops) {
-            d += BATH_ART.cometD(q.x, q.y, q.r, q.trail, q.seed);
-            core += BATH_ART.cometD(q.x, q.y, q.r * 0.55, q.trail, q.seed);
+            if (q.stream) {
+                d += this.streamShape(q, 1);
+                core += this.streamShape(q, 0.5);
+            } else {
+                // Мелкая капля — капля, а не шип: хвост по её следу
+                // сужается вдвое, а не в точку, и кончик скруглён.
+                const pts = [q].concat(q.trail), n = pts.length - 1;
+                const ws = pts.map((_, i) => q.r * (1 - 0.55 * (n ? i / n : 0)));
+                const dir = Math.atan2(q.vy, q.vx);
+                d += BATH_ART.streamD(pts, ws, dir);
+                core += BATH_ART.streamD(pts, ws.map(w => w * 0.55), dir);
+            }
             if (q.r > 5) hi += BATH_ART.cometHi(q.x, q.y, q.r);
         }
         this.setFly(d, hi, core);
