@@ -390,7 +390,10 @@ function createGutTract(ctx, thinByIdx) {
 // Пересчёт всех трёх копий силуэта + перетяжек + отражённого света + тени.
 // Вызывается раз за кадр из tick(): создаётся ноль новых узлов, меняются
 // только атрибуты уже существующих.
-function updateBodyHull(built, circles) {
+// shadowCircles — по чему класть тень на полу, если не по тем же кругам:
+// у тела, которое кончается животом (opts.endAtBelly), тень остаётся от
+// ПОЛНОЙ цепочки, чтобы габарит и раскладка персонажа не поехали.
+function updateBodyHull(built, circles, shadowCircles) {
     const hull = built.hull, rings = built.rings, rim = built.rim;
     if (!hull) return;
     const W = hull.outlineWidth;
@@ -468,7 +471,7 @@ function updateBodyHull(built, circles) {
     // Тень на полу — по нижнему краю напольной части.
     if (built.floorShadow) {
         let minX = Infinity, maxX = -Infinity, bottom = -Infinity;
-        circles.forEach(c => {
+        (shadowCircles || circles).forEach(c => {
             if (!c || !(c.r > 0)) return;
             minX = Math.min(minX, c.x - c.r); maxX = Math.max(maxX, c.x + c.r);
             bottom = Math.max(bottom, c.y + c.r);
