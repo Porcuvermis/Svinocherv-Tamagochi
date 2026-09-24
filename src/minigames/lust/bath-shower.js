@@ -1,314 +1,317 @@
-// ================= ВАННАЯ: ДУШЕВАЯ СТОЙКА ОДНИМ ПРЕДМЕТОМ =================
-// Смеситель, стояк, колено, рукав, гайка, шарнир и лейка — ОДИН предмет, и
-// нарисован он ОДНИМ способом. Первая перерисовка собирала душ из кусков,
-// каждый своим приёмом: труба — полосами обводки, лейка — плоским конусом с
-// жирной каймой, шарнир — кружком, кран остался запечённым из 3д гранями.
-// Ни одна часть не стыковалась с соседней, и стойка читалась детским
-// рисунком, который забывал, что рисует.
+// ================= ВАННАЯ: ДУШЕВАЯ СТОЙКА =================
+// Стойка по референсу: классическая душевая колонна. Термостат внизу —
+// корпус на стояке, подводки из стены с розетками, крестовая ручка
+// спереди, рычаги сверху и снизу. Стояк вверх с держателем на стене,
+// ступенька вбок, «гусиная шея» и круглая верхняя лейка. Сбоку — ручная
+// лейка с белой керамической ручкой на своём держателе и металлический
+// шланг, провисающий петлёй за ванну.
 //
-// Поэтому здесь нет рисования по частям. Есть ОДИН станок — тело вращения
-// вокруг оси (tube): ось, радиус вдоль оси, и всё. Труба — тело вращения
-// постоянного радиуса, гайка — короткое толстое, раструб лейки — с
-// растущим радиусом, корпус смесителя — с круглыми торцами, шар —
-// крошечная ось с радиусом по окружности. Розетки на стене — то же тело,
-// повёрнутое осью на зрителя (disc).
+// Как рисуется — после двух отклонённых попыток:
+//   1. Куски разными приёмами (труба полосами обводки, лейка плоским
+//      конусом, запечённый кран гранями): части не стыковались.
+//   2. Один станок «тело вращения», покрашенное мелкими гранями по свету:
+//      стиль стал единым, но это та же имитация грубого 3д — на изгибах
+//      и раструбе лесенка граней.
+// Теперь — ВЕКТОР С НАСТОЯЩИМИ ГРАДИЕНТАМИ. Хром — это один профиль
+// поперёк трубы (profile): тёмная кромка, яркий блик ближе к свету,
+// тёмная полоса отражённого пола, отсвет у дальней кромки. Прямой кусок
+// трубы красится линейным градиентом поперёк оси, дуга — радиальным из
+// центра дуги: профиль сам поворачивается вместе с трубой, и стык прямой
+// с дугой бесшовный. Круглое, что смотрит на зрителя (розетки, шары,
+// колпачки), — радиальным со смещённым к свету фокусом. Единство стиля —
+// следствие: у всех частей один и тот же профиль.
 //
-// И ОДИН свет на всё: цвет точки считается из нормали поверхности одной
-// функцией (shade) — отражение комнаты плюс блик от одной лампы. Поэтому
-// блик на колене сам переезжает с бока стояка на верх рукава, раструб
-// светлее сверху, чем снизу, а у всех частей тень и блик с одной стороны.
-// Одинаковость здесь не договорённость, а следствие: другого способа
-// покрасить часть просто нет.
-//
-// Цвет берётся из рампы хрома (PALETTE.bathScene.chrome) и квантуется на
-// LEVELS ступеней: соседние ступени неотличимы глазом, зато участки одной
-// ступени сливаются в один путь — предмет стоит пару сотен узлов, а не
-// тысячи. Считается один раз при постройке сцены.
+// Геометрия — «черепахой»: прямо, поворот с радиусом, прямо. Длины
+// ступеньки и стояка ВЫЧИСЛЯЮТСЯ так, чтобы лицо верхней лейки встало
+// точно в гнездо showerHead: под ним льётся дождь и вуаль.
 
 const BATH_SHOWER = {
-    LEVELS: 48,
-    // Свет в ванной сверху-слева и чуть от зрителя — тот же, что у фаски
-    // плиток (светлая кромка сверху-слева).
-    LIGHT: (() => { const v = [-0.62, -0.55, 0.56], l = Math.hypot(...v); return v.map(c => c / l); })(),
-    R: 8,                 // радиус трубы
+    X: 196,          // ось стояка: левее червя, в видимой части кадра
+    MIX_Y: 640,      // ось термостата: над бортом, с местом под нижний рычаг
+    R: 6,            // радиус трубы стояка
+    HEAD_R: 46,      // радиус верхней лейки
 
-    // ---------- СВЕТ ----------
-    // n — нормаль в пространстве экрана: x вправо, y ВНИЗ, z на зрителя.
-    // Хром не освещается, а ОТРАЖАЕТ: цвет решает, куда смотрит отражённый
-    // луч. Вверх — светлый потолок, вбок — средняя кафельная стена, вниз —
-    // тёмный пол. Поверх — рассеянный свет лампы (иначе вертикальная труба,
-    // у которой отражение смотрит только вбок, вышла бы ровной серой
-    // палкой) и жёсткий блик там, где отражение попадает в саму лампу.
-    shade(n) {
-        const L = this.LIGHT;
-        const nz = n[2];
-        const R = [2 * nz * n[0], 2 * nz * n[1], 2 * nz * n[2] - 1];
-        const up = -R[1];
-        // Вбок влево отражается светлая стена у лампы, вправо — тень угла.
-        const env = (up > 0 ? 0.55 + 0.4 * Math.min(1, up * 1.4)
-                            : 0.55 - 0.5 * Math.min(1, -up * 1.6)) - 0.18 * R[0];
-        const d = Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
-        const rl = R[0] * L[0] + R[1] * L[1] + R[2] * L[2];
-        const spec = Math.max(0, Math.min(1, (rl - 0.72) / 0.08));
-        // Отсвет по теневой кромке — кафель за трубой светлее её тени.
-        const rim = Math.max(0, Math.min(1, (0.35 - nz) / 0.3)) * Math.max(0, -(n[0] * L[0] + n[1] * L[1])) ;
-        let v = 0.55 * env + 0.45 * d + 0.18 * rim;
-        v = v + (1.02 - v) * spec;
-        return Math.max(0, Math.min(1, v));
-    },
-
-    ramp() {
+    // Профиль хрома поперёк трубы: u от −1 (сторона к свету) до +1.
+    // Ступени рампы, а не выдуманные цвета.
+    profile() {
         const C = btPal().chrome;
-        return [C[900], C[700], C[500], C[300], C[100]];
-    },
-    tone(level) {
-        const R = this.ramp(), t = level / (this.LEVELS - 1) * (R.length - 1);
-        const i = Math.min(R.length - 2, Math.floor(t));
-        return mixColor(R[i], R[i + 1], t - i);
+        return [[-1, C[700]], [-0.8, C[500]], [-0.52, C[100]], [-0.3, C[300]],
+                [0.05, C[500]], [0.42, C[900]], [0.7, C[700]], [0.9, C[300]], [1, C[500]]];
     },
 
-    // ---------- ОСЬ ----------
-    // Ось задаётся кусками: прямая (две точки, свет вдоль неё не меняется)
-    // и дуга (точка каждые несколько градусов). Прямая не дробится — это
-    // половина экономии.
-    line(a, b) { return [a, b]; },
-    arc(c, r, a0, a1) {
-        const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 3));
-        const out = [];
-        for (let i = 0; i <= n; i++) {
-            const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180;
-            out.push({ x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) });
+    // ---------- ГРАДИЕНТЫ ----------
+    defs: null,
+    gid: 0,
+    grad(markup) {
+        const id = `bs-g${this.gid++}`;
+        this.defs.push(markup.replace('ID', id));
+        return `url(#${id})`;
+    },
+    stops(list) {
+        return list.map(([o, c]) => `<stop offset="${o.toFixed(4)}" stop-color="${c}"/>`).join('');
+    },
+    // Поперёк прямого куска: от стороны света (a) к теневой (b).
+    linear(a, b) {
+        return this.grad(`<linearGradient id="ID" gradientUnits="userSpaceOnUse" x1="${a.x.toFixed(2)}" y1="${a.y.toFixed(2)}" x2="${b.x.toFixed(2)}" y2="${b.y.toFixed(2)}">`
+            + this.stops(this.profile().map(([u, c]) => [(u + 1) / 2, c])) + `</linearGradient>`);
+    },
+    // Поперёк дуги: радиус от центра. lightOut — свет на внешней стороне.
+    radial(c, rho, r, lightOut) {
+        const R = rho + r;
+        const st = this.profile().map(([u, col]) => [(lightOut ? rho - u * r : rho + u * r) / R, col])
+            .sort((p, q) => p[0] - q[0]);
+        return this.grad(`<radialGradient id="ID" gradientUnits="userSpaceOnUse" cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" r="${R.toFixed(2)}">`
+            + this.stops(st) + `</radialGradient>`);
+    },
+    // Шар или круглое лицом к зрителю: фокус смещён к свету (вверх-влево).
+    orb(c, r, ramp) {
+        const C = ramp || btPal().chrome;
+        return this.grad(`<radialGradient id="ID" gradientUnits="userSpaceOnUse" cx="${c.x.toFixed(2)}" cy="${c.y.toFixed(2)}" r="${r.toFixed(2)}" fx="${(c.x - r * 0.4).toFixed(2)}" fy="${(c.y - r * 0.45).toFixed(2)}">`
+            + this.stops([[0, C[100]], [0.35, C[300]], [0.7, C[500]], [0.9, C[700]], [1, C[900]]]) + `</radialGradient>`);
+    },
+
+    // ---------- ТРУБА ЧЕРЕПАХОЙ ----------
+    // steps: ['go', длина] | ['turn', градусы (+ направо), радиус].
+    // Возвращает заливку кусками, силуэт и конечную точку.
+    pipe(start, heading, r, steps) {
+        const f = (v) => v.toFixed(2), rad = Math.PI / 180;
+        let p = { ...start }, h = heading * rad;
+        let fill = '';
+        const left = [], right = [];
+        const L = (hh) => ({ x: Math.cos(hh - Math.PI / 2), y: Math.sin(hh - Math.PI / 2) });
+        const edge = (q, hh) => { const n = L(hh); left.push({ x: q.x + n.x * r, y: q.y + n.y * r }); right.push({ x: q.x - n.x * r, y: q.y - n.y * r }); };
+        edge(p, h);
+        for (const s of steps) {
+            if (s[0] === 'go') {
+                const q = { x: p.x + s[1] * Math.cos(h), y: p.y + s[1] * Math.sin(h) };
+                const n = L(h);
+                // Кусок чуть длиннее с обоих концов: стык закрыт внахлёст.
+                const e = { x: Math.cos(h) * 0.4, y: Math.sin(h) * 0.4 };
+                const a1 = { x: p.x - e.x + n.x * r, y: p.y - e.y + n.y * r }, a2 = { x: q.x + e.x + n.x * r, y: q.y + e.y + n.y * r };
+                const b2 = { x: q.x + e.x - n.x * r, y: q.y + e.y - n.y * r }, b1 = { x: p.x - e.x - n.x * r, y: p.y - e.y - n.y * r };
+                const g = this.linear({ x: p.x + n.x * r, y: p.y + n.y * r }, { x: p.x - n.x * r, y: p.y - n.y * r });
+                fill += `<path d="M${f(a1.x)} ${f(a1.y)}L${f(a2.x)} ${f(a2.y)}L${f(b2.x)} ${f(b2.y)}L${f(b1.x)} ${f(b1.y)}Z" fill="${g}"/>`;
+                p = q; edge(p, h);
+            } else {
+                const d = s[1] * rad, rho = s[2], dir = Math.sign(d);
+                const c = { x: p.x + rho * Math.cos(h + dir * Math.PI / 2), y: p.y + rho * Math.sin(h + dir * Math.PI / 2) };
+                const phi0 = Math.atan2(p.y - c.y, p.x - c.x), phi1 = phi0 + d;
+                const pt = (rr, ph) => ({ x: c.x + rr * Math.cos(ph), y: c.y + rr * Math.sin(ph) });
+                // Направо — свет (левая сторона хода) снаружи дуги.
+                const g = this.radial(c, rho, r, dir > 0);
+                const ov = 0.4 / rho * dir;           // внахлёст на соседей
+                const o0 = pt(rho + r, phi0 - ov), o1 = pt(rho + r, phi1 + ov);
+                const i1 = pt(rho - r, phi1 + ov), i0 = pt(rho - r, phi0 - ov);
+                const sw = dir > 0 ? 1 : 0, big = Math.abs(d) > Math.PI ? 1 : 0;
+                fill += `<path d="M${f(o0.x)} ${f(o0.y)}A${f(rho + r)} ${f(rho + r)} 0 ${big} ${sw} ${f(o1.x)} ${f(o1.y)}`
+                      + `L${f(i1.x)} ${f(i1.y)}A${f(rho - r)} ${f(rho - r)} 0 ${big} ${1 - sw} ${f(i0.x)} ${f(i0.y)}Z" fill="${g}"/>`;
+                const n = Math.max(2, Math.ceil(Math.abs(s[1]) / 4));
+                for (let k = 1; k <= n; k++) edge(pt(rho, phi0 + d * k / n), h + d * k / n);
+                p = pt(rho, phi1); h += d;
+            }
         }
-        return out;
+        const pts = left.concat(right.reverse());
+        const sil = pts.map((q, i) => `${i ? 'L' : 'M'}${f(q.x)} ${f(q.y)}`).join('') + 'Z';
+        return { fill, sil, end: p, heading: h / rad };
     },
-    // Сшивка кусков в одну ось: стык не повторяется дважды.
-    spine(...parts) {
-        const out = [];
-        for (const p of parts) for (const q of p) {
-            const l = out[out.length - 1];
-            if (!l || Math.hypot(l.x - q.x, l.y - q.y) > 0.01) out.push(q);
+    // Где окажется конец трубы — без рисования: для подгонки длин.
+    endOf(start, heading, steps) {
+        const rad = Math.PI / 180;
+        let p = { ...start }, h = heading * rad;
+        for (const s of steps) {
+            if (s[0] === 'go') p = { x: p.x + s[1] * Math.cos(h), y: p.y + s[1] * Math.sin(h) };
+            else {
+                const d = s[1] * rad, dir = Math.sign(d), rho = s[2];
+                const c = { x: p.x + rho * Math.cos(h + dir * Math.PI / 2), y: p.y + rho * Math.sin(h + dir * Math.PI / 2) };
+                const ph = Math.atan2(p.y - c.y, p.x - c.x) + d;
+                p = { x: c.x + rho * Math.cos(ph), y: c.y + rho * Math.sin(ph) }; h += d;
+            }
         }
-        return out;
+        return p;
     },
 
-    // ---------- ТЕЛО ВРАЩЕНИЯ ----------
-    // pts — ось, rad(i, s) — радиус в точке оси (s — длина от начала).
-    // Возвращает { fill: {уровень: путь}, edge: силуэт }.
-    tube(pts, rad) {
-        const f = (v) => v.toFixed(1);
-        const len = [0];
-        for (let i = 1; i < pts.length; i++)
-            len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
-        const r = pts.map((p, i) => rad(i, len[i]));
-        // Касательная и нормаль в каждой точке оси.
-        const T = pts.map((p, i) => {
-            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-            const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-            return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
-        });
-        // Наклон поверхности из-за изменения радиуса: расширяющийся раструб
-        // смотрит нормалью назад по оси — поэтому он светлее сверху.
-        const slope = pts.map((p, i) => {
-            const a = Math.max(0, i - 1), b = Math.min(pts.length - 1, i + 1);
-            const ds = len[b] - len[a];
-            return ds > 0 ? Math.atan2(r[b] - r[a], ds) : 0;
-        });
-        const K = 24;                         // полос поперёк
-        const th = (j) => -Math.PI / 2 + Math.PI * j / K;
-        const at = (i, j) => {
-            const s = Math.sin(th(j));
-            return { x: pts[i].x - T[i].y * r[i] * s, y: pts[i].y + T[i].x * r[i] * s };
-        };
-        const fill = {};
-        for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < K; j++) {
-            const tm = (th(j) + th(j + 1)) / 2;
-            const Tm = { x: (T[i].x + T[i + 1].x) / 2, y: (T[i].y + T[i + 1].y) / 2 };
-            const al = (slope[i] + slope[i + 1]) / 2;
-            const ca = Math.cos(al), sa = Math.sin(al);
-            // Нормаль: поперёк оси (sin θ), на зрителя (cos θ), наклон по оси.
-            const n = [(-Tm.y * Math.sin(tm)) * ca - Tm.x * sa,
-                       (Tm.x * Math.sin(tm)) * ca - Tm.y * sa,
-                       Math.cos(tm) * ca];
-            const lv = Math.round(this.shade(n) * (this.LEVELS - 1));
-            const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1);
-            fill[lv] = (fill[lv] || '') + `M${f(a.x)} ${f(a.y)}L${f(b.x)} ${f(b.y)}L${f(c.x)} ${f(c.y)}L${f(d.x)} ${f(d.y)}Z`;
-        }
-        let edge = '';
-        for (let i = 0; i < pts.length; i++) { const p = at(i, 0); edge += `${i ? 'L' : 'M'}${f(p.x)} ${f(p.y)}`; }
-        for (let i = pts.length - 1; i >= 0; i--) { const p = at(i, K); edge += `L${f(p.x)} ${f(p.y)}`; }
-        return { fill, edge: edge + 'Z' };
+    // Короткий точёный цилиндр вдоль оси a→b (муфта, гайка, корпус, рычаг):
+    // прямой кусок того же профиля со скруглёнными углами.
+    collar(a, b, r, round) {
+        const f = (v) => v.toFixed(2);
+        const l = Math.hypot(b.x - a.x, b.y - a.y), t = { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+        const n = { x: t.y, y: -t.x };                    // левая сторона хода
+        const rr = Math.min(round == null ? 2 : round, l / 2, r);
+        const P = (s, u) => ({ x: a.x + t.x * s + n.x * u, y: a.y + t.y * s + n.y * u });
+        const q = [P(0, r - rr), P(rr, r), P(l - rr, r), P(l, r - rr), P(l, -r + rr), P(l - rr, -r), P(rr, -r), P(0, -r + rr)];
+        const k = (p) => `${f(p.x)} ${f(p.y)}`;
+        const d = `M${k(q[0])}Q${k(P(0, r))} ${k(q[1])}L${k(q[2])}Q${k(P(l, r))} ${k(q[3])}L${k(q[4])}`
+                + `Q${k(P(l, -r))} ${k(q[5])}L${k(q[6])}Q${k(P(0, -r))} ${k(q[7])}Z`;
+        return { fill: `<path d="${d}" fill="${this.linear(P(0, r), P(0, -r))}"/>`, sil: d, a: P(0, r), b: P(0, -r) };
     },
-
-    // Диск на стене осью на зрителя: плоское лицо со скруглённой кромкой.
-    // bevel — доля радиуса, по которой кромка заваливается к стене.
-    disc(c, R, bevel) {
-        const f = (v) => v.toFixed(1), K = 56, M = bevel >= 1 ? 16 : 9;
-        const fill = {};
-        const ring = (k) => 1 - bevel + bevel * k / M;           // радиус кольца, доля
-        const tilt = (k) => Math.asin(Math.min(1, k / M));       // наклон кромки
-        const P = (rr, a) => ({ x: c.x + R * rr * Math.cos(a), y: c.y + R * rr * Math.sin(a) });
-        // Плоское лицо — один цвет.
-        const face = Math.round(this.shade([0, 0, 1]) * (this.LEVELS - 1));
-        let d0 = '';
-        for (let i = 0; i < K; i++) { const p = P(1 - bevel, 2 * Math.PI * i / K); d0 += `${i ? 'L' : 'M'}${f(p.x)} ${f(p.y)}`; }
-        fill[face] = d0 + 'Z';
-        for (let k = 0; k < M; k++) for (let i = 0; i < K; i++) {
-            const a0 = 2 * Math.PI * i / K, a1 = 2 * Math.PI * (i + 1) / K, am = (a0 + a1) / 2;
-            const tl = (tilt(k) + tilt(k + 1)) / 2;
-            const n = [Math.cos(am) * Math.sin(tl), Math.sin(am) * Math.sin(tl), Math.cos(tl)];
-            const lv = Math.round(this.shade(n) * (this.LEVELS - 1));
-            const a = P(ring(k), a0), b = P(ring(k + 1), a0), cc = P(ring(k + 1), a1), d = P(ring(k), a1);
-            fill[lv] = (fill[lv] || '') + `M${f(a.x)} ${f(a.y)}L${f(b.x)} ${f(b.y)}L${f(cc.x)} ${f(cc.y)}L${f(d.x)} ${f(d.y)}Z`;
-        }
-        return { fill, edge: `M${f(c.x - R)} ${f(c.y)}a${R} ${R} 0 1 0 ${2 * R} 0a${R} ${R} 0 1 0 ${-2 * R} 0Z` };
+    // Круг лицом к зрителю: колпачок, шарик.
+    disc(c, r, ramp) {
+        const f = (v) => v.toFixed(2);
+        const d = `M${f(c.x - r)} ${f(c.y)}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`;
+        return { fill: `<path d="${d}" fill="${this.orb(c, r, ramp)}"/>`, sil: d };
     },
-
-    // Шар — тот же диск, у которого «кромка» — весь радиус.
-    ball(c, R) { return this.disc(c, R, 1); },
-
-    // Часть в разметку. Швы между полосами закрыты обводкой того же цвета:
-    // без неё сквозь стыки просвечивает стена тонкой сеткой.
-    paint(part) {
-        let out = '';
-        for (const lv of Object.keys(part.fill).sort((a, b) => a - b)) {
-            const col = this.tone(+lv);
-            out += `<path d="${part.fill[lv]}" fill="${col}" stroke="${col}" stroke-width="0.7" stroke-linejoin="round"/>`;
-        }
-        return out;
-    },
-
-    // Радиус со скруглёнными краями: деталь не рубленая, а точёная.
-    rounded(s, L, R, rr) {
-        const e = Math.min(s, L - s);
-        return e >= rr ? R : R - rr + Math.sqrt(Math.max(0, rr * rr - (rr - e) * (rr - e)));
-    },
-    // Прямая ось с частыми точками — для деталей с переменным радиусом.
-    rod(a, b, n) {
-        const out = [];
-        for (let i = 0; i <= n; i++) out.push({ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n });
-        return out;
+    // Розетка на стене: плоский диск с блестящей фаской по краю.
+    rosette(c, r) {
+        const C = btPal().chrome, f = (v) => v.toFixed(2);
+        const base = this.disc(c, r);
+        const ri = r * 0.62;
+        const ring = `M${f(c.x - ri)} ${f(c.y)}a${f(ri)} ${f(ri)} 0 1 0 ${f(2 * ri)} 0a${f(ri)} ${f(ri)} 0 1 0 ${f(-2 * ri)} 0Z`;
+        const flat = this.grad(`<linearGradient id="ID" gradientUnits="userSpaceOnUse" x1="${f(c.x - ri)}" y1="${f(c.y - ri)}" x2="${f(c.x + ri)}" y2="${f(c.y + ri)}">`
+            + this.stops([[0, C[300]], [0.5, C[500]], [1, C[700]]]) + `</linearGradient>`);
+        return { fill: base.fill + `<path d="${ring}" fill="${flat}"/>`, sil: base.sil, line: ring };
     },
 
     // ---------- СТОЙКА ----------
-    // Стоит там, где её ВИДНО: в обычном кадре ванной видна середина стены,
-    // и стойка у самого края комнаты оставляла в игре один рукав, торчащий
-    // из ниоткуда. Стояк — левее червя, над бортом; лейка — над чашей.
-    X: 178,               // ось стояка
-    MIX_Y: 652,           // ось смесителя
-    TOP: 196,             // где стояк начинает гнуться в рукав
-    BEND: 44,             // радиус колена
-
     draw() {
-        const ink = PALETTE.ink, C = btPal().chrome, T = btPal().tile, Wt = btPal().water;
-        const V = btPal().valve;
-        const S = BATH_BAKED.anchors.showerHead;
+        this.defs = []; this.gid = 0;
+        const ink = PALETTE.ink, C = btPal().chrome, T = btPal().tile, Wt = btPal().water, V = btPal().valve;
+        const En = btPal().enamel;
         const inner = mixColor(ink, C[900], 0.35);
-        const R = this.R, f = (v) => v.toFixed(1);
-        const X = this.X, MY = this.MIX_Y, top = this.TOP, bend = this.BEND;
+        const S = BATH_BAKED.anchors.showerHead;
+        const f = (v) => v.toFixed(2);
+        const X = this.X, MY = this.MIX_Y, r = this.R, HR = this.HEAD_R;
+        const parts = [];                    // сзади вперёд: { fill, sil, line? }
 
-        // Смеситель — термостатическая планка: цилиндр вдоль стены, на
-        // торцах соосные ручки чуть толще корпуса, между ними проточка.
-        // Подводки уходят в стену ЗА корпусом, их не видно. Всё — одна ось,
-        // профиль задаётся радиусом.
-        const ML = 84, KN = 15;                        // длина планки, длина ручки
-        const mixPts = this.rod({ x: X - ML / 2, y: MY }, { x: X + ML / 2, y: MY }, 84);
-        const mixer = this.tube(mixPts, (i, s) => {
-            const e = Math.min(s, ML - s);
-            if (e < KN) return this.rounded(Math.min(e, KN - 0.001), KN, 12.5, 3.2) ;
-            if (e < KN + 2.2) return 9;                // проточка
-            return 10.5;
-        });
-        // Насечка на ручках: продольные риски — хват, по которому ручку
-        // узнают. И эмалевая метка у внутреннего края: горячая слева.
-        let grip = '';
+        // Лицо лейки — в гнезде showerHead. Над ним обод, купол и муфта,
+        // в муфту сверху входит шея.
+        const faceY = S.y, rimTop = faceY - 7, domeTop = rimTop - 15, neckEnd = domeTop - 6;
+
+        // Труба: стояк вверх → ступенька вправо-вверх → снова вверх →
+        // гусиная шея через верх вниз в лейку. Длины подгоняются под лейку.
+        const jog = 42, jr = 12, arch = 48;
+        const route = (up, diag) => [['go', up], ['turn', jog, jr], ['go', diag], ['turn', -jog, jr],
+                                     ['go', 34], ['turn', 180, arch], ['go', 14]];
+        const start = { x: X, y: MY - 30 };
+        // x конца линеен по длине ступеньки, y — по длине стояка.
+        const x0 = this.endOf(start, -90, route(100, 0)).x, x1 = this.endOf(start, -90, route(100, 10)).x;
+        const diag = (S.x - x0) / ((x1 - x0) / 10);
+        const y0 = this.endOf(start, -90, route(100, diag)).y;
+        const up = 100 + (y0 - neckEnd);
+        const tube = this.pipe(start, -90, r, route(up, diag));
+
+        // Подводки из стены с розетками по бокам термостата.
         for (const side of [-1, 1]) {
-            const x0 = X + side * (ML / 2 - 3), x1 = X + side * (ML / 2 - KN + 3);
-            for (const a of [-50, -25, 0, 25, 50]) {
-                const y = MY + 12.5 * Math.sin(a * Math.PI / 180);
-                grip += `M${f(x0)} ${f(y)}L${f(x1)} ${f(y)}`;
-            }
+            parts.push(this.rosette({ x: X + side * 44, y: MY }, 11));
+            parts.push(this.collar({ x: X + side * 12, y: MY }, { x: X + side * 44, y: MY }, 4.6, 1));
         }
-        const band = (side, col) => {
-            const xa = X + side * (ML / 2 - KN + 1.2);
-            const xb = X + side * (ML / 2 - KN + 3.6);
-            const x = Math.min(xa, xb), w = Math.abs(xb - xa);
-            return `<rect x="${f(x)}" y="${f(MY - 12.2)}" width="${f(w)}" height="24.4" rx="1" fill="${col}"/>
-                    <rect x="${f(x)}" y="${f(MY + 3)}" width="${f(w)}" height="9.2" fill="${C[900]}" fill-opacity="0.35"/>
-                    <rect x="${f(x)}" y="${f(MY - 9)}" width="${f(w)}" height="2.2" fill="${C[100]}" fill-opacity="0.7"/>`;
-        };
-        // Выход на стояк: точёная гайка на верху корпуса.
-        const nutLow = this.tube(this.rod({ x: X, y: MY - 7 }, { x: X, y: MY - 21 }, 14),
-            (i, s) => this.rounded(s, 14, R + 3.2, 2.4));
+        const TUBE = { fill: tube.fill, sil: tube.sil, bare: true };
+        parts.push(TUBE);
+        // Держатель на стене посередине стояка: розетка слева, короткий
+        // кронштейн, хомут на трубе, барашек винта справа.
+        const midY = MY - 270;
+        parts.push(this.rosette({ x: X - 30, y: midY }, 8.5));
+        parts.push(this.collar({ x: X - 6, y: midY }, { x: X - 30, y: midY }, 3, 1));
+        parts.push(this.collar({ x: X, y: midY + 8 }, { x: X, y: midY - 8 }, r + 3, 1.6));
+        parts.push(this.collar({ x: X + 8, y: midY }, { x: X + 15, y: midY }, 2.2, 0.8));
+        parts.push(this.disc({ x: X + 17, y: midY }, 3.4));
 
-        // Стояк, колено, рукав и спуск к лейке — ОДНА ось: труба гнётся, а
-        // не собирается из кусков с гайками на каждом углу.
-        const armY0 = top - bend, headX = S.x, armY1 = armY0 + 10;
-        const drop = 16;                                  // радиус спуска к лейке
-        const ang = Math.atan2(armY1 - armY0, headX - drop - (X + bend)) * 180 / Math.PI;
-        const pipe = this.tube(this.spine(
-            this.line({ x: X, y: MY - 10 }, { x: X, y: top }),
-            this.arc({ x: X + bend, y: top }, bend, 180, 270),
-            this.line({ x: X + bend, y: armY0 }, { x: headX - drop, y: armY1 }),
-            this.arc({ x: headX - drop, y: armY1 + drop }, drop, 270 + ang, 360)
-        ), () => R);
-        const jointY = armY1 + drop;
-        // Хомуты: розетка на стене за трубой и кольцо поверх неё.
-        const clamp = (y) => ({
-            ros: this.disc({ x: X, y }, 13, 0.5),
-            ring: this.tube(this.rod({ x: X, y: y - 5 }, { x: X, y: y + 5 }, 10), (i, s) => this.rounded(s, 10, R + 2.6, 1.6))
-        });
-        const cl = [clamp(MY - 170), clamp(top + 90)];
+        // Держатель ручной лейки: хомут на стояке, барашек слева, рожок
+        // вправо.
+        const hY = MY - 130;
+        parts.push(this.collar({ x: X, y: hY + 8 }, { x: X, y: hY - 8 }, r + 3, 1.6));
+        parts.push(this.collar({ x: X - 8, y: hY }, { x: X - 14, y: hY }, 2.2, 0.8));
+        parts.push(this.disc({ x: X - 16, y: hY }, 3.4));
+        parts.push(this.collar({ x: X + 6, y: hY }, { x: X + 26, y: hY }, 2.6, 1));
 
-        // Лейка: гайка, шар шарнира, раструб с растущим радиусом.
-        const nut = this.tube(this.rod({ x: headX, y: jointY - 2 }, { x: headX, y: jointY + 9 }, 11),
-            (i, s) => this.rounded(s, 11, R + 3, 2.2));
-        const ballC = { x: headX, y: jointY + 13.5 };
-        const joint = this.ball(ballC, 8.2);
-        const faceY = S.y - 2, faceR = 40, faceRy = 11;
-        const bellLen = faceY - ballC.y - 4;
-        // Профиль раструба вогнутый: узкая шейка, потом быстро расходится.
-        const bell = this.tube(this.rod({ x: headX, y: ballC.y + 4 }, { x: headX, y: faceY }, 24),
-            (i, s) => 6.2 + (faceR - 6.2) * Math.pow(s / bellLen, 1.9));
+        // Термостат: корпус на стояке, толще его, муфты сверху и снизу.
+        parts.push(this.collar({ x: X, y: MY + 20 }, { x: X, y: MY - 20 }, 12, 4));
+        parts.push(this.collar({ x: X, y: MY - 19 }, { x: X, y: MY - 31 }, 8.5, 2));
+        parts.push(this.collar({ x: X, y: MY + 19 }, { x: X, y: MY + 32 }, 8.5, 2));
+        // Рычаг-переключатель сверху — вправо; рычаг снизу — вниз-вправо.
+        parts.push(this.collar({ x: X + 6, y: MY - 26 }, { x: X + 24, y: MY - 32 }, 2.6, 2.3));
+        parts.push(this.disc({ x: X + 25, y: MY - 32.5 }, 3.6));
+        parts.push(this.collar({ x: X + 5, y: MY + 28 }, { x: X + 14, y: MY + 50 }, 2.8, 2.5));
+        parts.push(this.disc({ x: X + 14.5, y: MY + 51 }, 3.8));
+        // Выход на шланг внизу корпуса.
+        parts.push(this.collar({ x: X, y: MY + 31 }, { x: X, y: MY + 42 }, 4.2, 1.2));
 
-        // Лицо лейки видно снизу: горизонт на уровне борта, лейка сильно
-        // выше. Кольцо, пластина, сопла кольцами; часть сопел забита.
+        // Крестовая ручка спереди: четыре спицы с шариками, колпачок с
+        // меткой горячей и холодной.
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            parts.push(this.collar({ x: X, y: MY }, { x: X + dx * 13, y: MY + dy * 13 }, 2.1, 1));
+            parts.push(this.disc({ x: X + dx * 14, y: MY + dy * 14 }, 3.2));
+        }
+        parts.push(this.disc({ x: X, y: MY }, 5.4));
+        const cap = `<path d="M${f(X - 2.6)} ${f(MY)}a2.6 2.6 0 0 1 5.2 0Z" fill="${V.hot}"/>`
+                  + `<path d="M${f(X - 2.6)} ${f(MY)}a2.6 2.6 0 0 0 5.2 0Z" fill="${V.cold}"/>`;
+
+        // Шланг: металлическая оплётка от выхода термостата петлёй вниз (за
+        // бортом её прячет ванна) и вверх к ручке лейки.
+        const hs = { x: X + 34, y: hY + 22 };                   // низ ручки
+        const hoseD = `M${f(X)} ${f(MY + 42)}C${f(X - 2)} ${f(MY + 150)} ${f(X + 44)} ${f(MY + 160)} ${f(X + 42)} ${f(MY + 70)}`
+                    + `C${f(X + 40)} ${f(MY + 10)} ${f(hs.x + 1)} ${f(hs.y + 60)} ${f(hs.x)} ${f(hs.y + 9)}`;
+
+        // Ручная лейка: белая керамическая ручка, хромовая шейка, круглая
+        // головка лицом к ванне.
+        const hCollar = this.collar({ x: hs.x, y: hs.y + 10 }, { x: hs.x + 0.2, y: hs.y + 4 }, 5.6, 1.4);
+        const handle = this.collar({ x: hs.x, y: hs.y + 5 }, { x: hs.x + 3, y: hs.y - 26 }, 5, 4.5);
+        const en = [[0, En[3]], [0.28, En[5]], [0.55, En[4]], [0.85, En[2]], [1, En[3]]];
+        handle.fill = handle.fill.replace(/url\(#bs-g\d+\)/, this.grad(
+            `<linearGradient id="ID" gradientUnits="userSpaceOnUse" x1="${f(handle.a.x)}" y1="${f(handle.a.y)}" x2="${f(handle.b.x)}" y2="${f(handle.b.y)}">`
+            + this.stops(en) + `</linearGradient>`));
+        const hNeck = this.collar({ x: hs.x + 3, y: hs.y - 25 }, { x: hs.x + 5, y: hs.y - 37 }, 3.2, 1);
+        const hHead = { x: hs.x + 6, y: hs.y - 49 };
+        const hHeadBack = this.disc(hHead, 13.5);
+        const hFace = `M${f(hHead.x - 8.5)} ${f(hHead.y)}a8.5 11.5 0 1 0 17 0a8.5 11.5 0 1 0 -17 0Z`;
+
+        // Верхняя лейка.
+        const neckCollar = this.collar({ x: S.x, y: domeTop + 1 }, { x: S.x, y: neckEnd - 4 }, r + 2.6, 1.4);
+        const domeD = `M${f(S.x - HR + 2)} ${f(rimTop)}C${f(S.x - HR + 6)} ${f(domeTop + 2)} ${f(S.x - 14)} ${f(domeTop)} ${f(S.x)} ${f(domeTop)}`
+                    + `C${f(S.x + 14)} ${f(domeTop)} ${f(S.x + HR - 6)} ${f(domeTop + 2)} ${f(S.x + HR - 2)} ${f(rimTop)}Z`;
+        const dome = { fill: `<path d="${domeD}" fill="${this.linear({ x: S.x - HR, y: 0 }, { x: S.x + HR, y: 0 })}"/>`, sil: domeD };
+        // Обод: боковина цилиндра между верхним краем и лицом. Снизу ближний
+        // край лица выше дальнего, поэтому видна верхняя дуга лица.
+        const ry = 10;
+        const rimD = `M${f(S.x - HR)} ${f(rimTop)}A${HR} ${ry} 0 0 1 ${f(S.x + HR)} ${f(rimTop)}`
+                   + `L${f(S.x + HR)} ${f(faceY)}A${HR} ${ry} 0 0 0 ${f(S.x - HR)} ${f(faceY)}Z`;
+        const rim = { fill: `<path d="${rimD}" fill="${this.linear({ x: S.x - HR, y: 0 }, { x: S.x + HR, y: 0 })}"/>`, sil: rimD };
+        const rimLo = `M${f(S.x - HR)} ${f(faceY)}A${HR} ${ry} 0 0 0 ${f(S.x + HR)} ${f(faceY)}A${HR} ${ry} 0 0 0 ${f(S.x - HR)} ${f(faceY)}Z`;
+        const faceIn = `M${f(S.x - HR + 5)} ${f(faceY)}a${HR - 5} ${ry - 2.2} 0 1 0 ${2 * (HR - 5)} 0a${HR - 5} ${ry - 2.2} 0 1 0 ${-2 * (HR - 5)} 0Z`;
+        const faceG = this.grad(`<radialGradient id="ID" gradientUnits="userSpaceOnUse" cx="${f(S.x - 8)}" cy="${f(faceY - 2)}" r="${HR}" gradientTransform="translate(0 ${f(faceY)}) scale(1 ${(ry / HR).toFixed(3)}) translate(0 ${f(-faceY)})">`
+            + this.stops([[0, C[700]], [0.7, C[900]], [1, mixColor(C[900], ink, 0.3)]]) + `</radialGradient>`);
+        // Сопла кольцами; часть забита известью.
         let holes = '', lime = '';
         const rnd = btRng(53);
-        for (const [k, n] of [[0.3, 6], [0.58, 11], [0.82, 16]]) for (let i = 0; i < n; i++) {
+        for (const [k, n] of [[0.18, 6], [0.4, 12], [0.6, 18], [0.8, 24]]) for (let i = 0; i < n; i++) {
             const a = 2 * Math.PI * (i + 0.5 * k) / n;
-            const q = { x: headX + Math.cos(a) * faceR * k * 0.86, y: faceY + Math.sin(a) * faceRy * k * 0.86 };
-            if (rnd() < 0.22) lime += `M${f(q.x - 2.3)} ${f(q.y)}a2.3 1.1 0 1 0 4.6 0a2.3 1.1 0 1 0 -4.6 0Z`;
-            else holes += `M${f(q.x - 1.3)} ${f(q.y)}a1.3 0.6 0 1 0 2.6 0a1.3 0.6 0 1 0 -2.6 0Z`;
+            const q = { x: S.x + Math.cos(a) * (HR - 5) * k, y: faceY + Math.sin(a) * (ry - 2.2) * k };
+            if (rnd() < 0.18) lime += `M${f(q.x - 1.8)} ${f(q.y)}a1.8 0.8 0 1 0 3.6 0a1.8 0.8 0 1 0 -3.6 0Z`;
+            else holes += `M${f(q.x - 1.1)} ${f(q.y)}a1.1 0.5 0 1 0 2.2 0a1.1 0.5 0 1 0 -2.2 0Z`;
         }
-        const dx = headX + 9, dy = faceY + faceRy - 1;
-        const drip = `M${f(dx - 2.2)} ${f(dy + 1.5)}Q${f(dx)} ${f(dy - 1)} ${f(dx + 2.2)} ${f(dy + 1.5)}`
-                   + `Q${f(dx + 3.2)} ${f(dy + 6.5)} ${f(dx)} ${f(dy + 7.5)}`
-                   + `Q${f(dx - 3.2)} ${f(dy + 6.5)} ${f(dx - 2.2)} ${f(dy + 1.5)}Z`;
+        const dx = S.x + 12, dy = faceY + ry - 1;
+        const drip = `M${f(dx - 2)} ${f(dy + 1.5)}Q${f(dx)} ${f(dy - 1)} ${f(dx + 2)} ${f(dy + 1.5)}`
+                   + `Q${f(dx + 3)} ${f(dy + 6)} ${f(dx)} ${f(dy + 7)}Q${f(dx - 3)} ${f(dy + 6)} ${f(dx - 2)} ${f(dy + 1.5)}Z`;
 
-        // Порядок сзади вперёд. Внешний контур — ОДИН проход толстой линией
-        // по всем силуэтам ПОД заливками: заливки съедают внутреннюю
-        // половину, и снаружи остаётся общий контур всей стойки, без
-        // швов между частями. Стыки частей внутри силуэта — тонкой
-        // линией тоном тени, как требует иерархия линий.
-        const order = [cl[0].ros, cl[1].ros, pipe, nutLow, mixer, cl[0].ring, cl[1].ring, nut, bell, joint];
-        const halo = order.map(p => p.edge).join('');
-        const ell = (cx, cy, rx, ry) => `M${f(cx - rx)} ${f(cy)}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0Z`;
-        const faceD = ell(headX, faceY, faceR, faceRy);
-        const faceIn = ell(headX, faceY + 0.6, faceR - 5, faceRy - 3);
-        let parts = '';
-        for (const p of order) {
-            parts += this.paint(p);
-            if (p === mixer) parts += `${band(-1, V.hot)}${band(1, V.cold)}
-                <path d="${grip}" fill="none" stroke="${inner}" stroke-width="${STROKE.hairline}" stroke-opacity="0.6"/>`;
-            if (p !== pipe) parts += `<path d="${p.edge}" fill="none" stroke="${inner}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
-        }
+        // Порядок и контур. Толстый внешний контур — ОДНИМ проходом по всем
+        // силуэтам ПОД заливками: снаружи остаётся общий контур стойки без
+        // швов. Стыки частей внутри — тонкой линией тоном тени.
+        const hand = [hCollar, handle, hNeck, hHeadBack];
+        const head = [neckCollar, dome, rim];
+        const all = parts.concat(hand, head);
+        const halo = all.map(p => p.sil).join('') + rimLo;
+        const seam = (p) => p.bare ? '' : `<path d="${p.sil}" fill="none" stroke="${inner}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+        const paint = (list) => list.map(p => p.fill + seam(p)
+            + (p.line ? `<path d="${p.line}" fill="none" stroke="${inner}" stroke-width="${STROKE.hairline}"/>` : '')).join('');
+        // Оплётка: тёмное тело, светлый бок к свету и мелкая насечка по
+        // блику — видно, что шланг витой, но полос «молнией» нет.
+        const hose = `
+            <path d="${hoseD}" fill="none" stroke="${ink}" stroke-width="${5.6 + 2 * STROKE.contour}" stroke-linecap="round"/>
+            <path d="${hoseD}" fill="none" stroke="${C[700]}" stroke-width="5.6" stroke-linecap="round"/>
+            <path d="${hoseD}" fill="none" stroke="${C[500]}" stroke-width="3.4" stroke-linecap="round" transform="translate(-0.8 0)"/>
+            <path d="${hoseD}" fill="none" stroke="${C[100]}" stroke-width="1.5" stroke-dasharray="0.9 1.3" stroke-opacity="0.8" transform="translate(-1.3 0)"/>`;
         return `
         <g class="bt-shower-art">
-            <path d="${halo}${faceD}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            ${parts}
-            <path d="${faceD}" fill="${C[700]}" stroke="${inner}" stroke-width="${STROKE.structure}"/>
-            <path d="${faceIn}" fill="${C[900]}"/>
-            <path d="${holes}" fill="${C[500]}"/>
+            <defs>${this.defs.join('')}</defs>
+            <path d="${halo}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            ${paint(parts)}${cap}
+            ${hose}
+            ${paint(hand)}
+            <path d="${hFace}" fill="${C[900]}" stroke="${inner}" stroke-width="${STROKE.detail}"/>
+            <path d="M${f(hHead.x - 5.5)} ${f(hHead.y)}a5.5 8 0 1 0 11 0a5.5 8 0 1 0 -11 0Z" fill="none" stroke="${C[300]}" stroke-width="1.3" stroke-dasharray="0.1 2.3" stroke-linecap="round"/>
+            ${paint(head)}
+            <path d="${rimLo}" fill="${C[500]}" stroke="${inner}" stroke-width="${STROKE.structure}"/>
+            <path d="${faceIn}" fill="${faceG}"/>
+            <path d="${holes}" fill="${C[300]}" fill-opacity="0.9"/>
             <path d="${lime}" fill="${T.scale}"/>
             <path d="${drip}" fill="${Wt.surfHi}" stroke="${Wt.edge}" stroke-width="0.8"/>
         </g>`;
