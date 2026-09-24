@@ -251,6 +251,28 @@ const { chromium } = require('playwright');
   found.bath = await scan('lust-game');
   await page.screenshot({ path: out + 'nw-l1-bath.png' });
 
+  // Прилавок ванной: четыре полки, «было → станет» и ценники. Место, где
+  // соблазн подписать «сила», «разброс» и «не хватает» сильнее всего — и
+  // ровно поэтому проверяются ОБА состояния, с деньгами и без.
+  await page.evaluate(() => {
+    Backend.grantCurrency('lust_token', 12);
+    LustShop.show();
+  });
+  await page.waitForTimeout(500);
+  found.bathShop = await scan('lust-game');
+  await page.screenshot({ path: out + 'nw-l1b-shop.png' });
+  await page.evaluate(() => {
+    GameState.data.currencies.lust_token = 0;
+    LustShop.render();
+    const row = document.querySelector('.ls-row');
+    if (row) row.click();
+  });
+  await page.waitForTimeout(400);
+  found.bathShopLack = await scan('lust-game');
+  await page.screenshot({ path: out + 'nw-l1c-shop-lack.png' });
+  await page.evaluate(() => LustShop.close());
+  await page.waitForTimeout(300);
+
   // Ванна с водой: этап мытья со всем, что на нём появляется.
   await page.evaluate(() => LustMinigame.startWater());
   await page.waitForTimeout(2800);

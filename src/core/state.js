@@ -334,6 +334,12 @@ const GameState = {
             if (typeof sin.updated_at !== 'number' || !isFinite(sin.updated_at)) sin.updated_at = now;
             if (typeof sin.decay_mult !== 'number' || !isFinite(sin.decay_mult)) sin.decay_mult = 1;
             if (typeof sin.max_bonus !== 'number' || !isFinite(sin.max_bonus)) sin.max_bonus = 0;
+            // Метка последней ОПЛАЧЕННОЙ игры — для греха с отдельным
+            // таймером награды (ECONOMY.sins.<грех>.rewardEvery). Появилась
+            // позже прочих полей, поэтому достраивается на месте, без смены
+            // номера схемы (инвариант 5). Пустая — награда готова сразу:
+            // первый заход в жизни всегда оплачен.
+            if (typeof sin.paid_at !== 'number' || !isFinite(sin.paid_at)) sin.paid_at = null;
         });
     },
 
@@ -358,7 +364,54 @@ const GameState = {
     decayRate(sinKey) {
         const sin = this.data ? this.data.sins[sinKey] : null;
         const mult = sin && typeof sin.decay_mult === 'number' ? sin.decay_mult : 1;
-        return sinDecayRate(sinKey) * mult;
+        const conf = ECONOMY.sins[sinKey];
+        if (!conf) return 0;
+        return conf.max / (this.drainHours(sinKey) * 3600) * mult;
+    },
+
+    // ---------- КУПЛЕННОЕ ЗНАЧЕНИЕ ПОЛЯ ----------
+    // Ступень прокачки греха, как её видит состояние: поле `field` из bonus
+    // купленной ступени ветки `branch`, а до первой покупки — из base. Живёт
+    // здесь, а не в Backend.upgradeValue, потому что таймеры шкалы и награды
+    // считаются ЗДЕСЬ, и тянуть за ними переходник значило бы завести
+    // зависимость ядра от того, кто начисляет.
+    upgradeField(sinKey, branch, field, fallback) {
+        const up = ECONOMY.minigames && ECONOMY.minigames[sinKey]
+                && ECONOMY.minigames[sinKey].upgrades && ECONOMY.minigames[sinKey].upgrades[branch];
+        if (!up) return fallback;
+        const lvl = Math.min(this.upgradeLevel(sinKey + '_' + branch), up.levels.length);
+        const v = lvl > 0 ? up.levels[lvl - 1].bonus : up.base;
+        return (v && v[field] != null) ? v[field] : fallback;
+    },
+
+    // За сколько часов шкала пустеет целиком. У греха с drainUpgrade это
+    // КУПЛЕННОЕ число (у похоти — мыло), у остальных — из конфига.
+    drainHours(sinKey) {
+        const conf = ECONOMY.sins[sinKey] || {};
+        if (!conf.drainUpgrade) return conf.drainHours;
+        return this.upgradeField(sinKey, conf.drainUpgrade, 'drain', conf.drainHours);
+    },
+
+    // ---------- ТАЙМЕР НАГРАДЫ ----------
+    // Отдельный от шкалы: у греха с rewardEvery награду открывает время от
+    // последней ОПЛАЧЕННОЙ игры, а не просевшая потребность. Считается
+    // формулой от метки, не тикает (инвариант 1).
+    rewardCooldownHours(sinKey) {
+        const r = (ECONOMY.sins[sinKey] || {}).rewardEvery;
+        if (!r) return 0;
+        return r.upgrade ? this.upgradeField(sinKey, r.upgrade, 'cooldown', r.hours) : r.hours;
+    },
+
+    // Когда награда снова будет готова (мс). Пустая метка — готова всегда.
+    rewardReadyAt(sinKey) {
+        const sin = this.data ? this.data.sins[sinKey] : null;
+        if (!sin || sin.paid_at == null) return -Infinity;
+        return sin.paid_at + this.rewardCooldownHours(sinKey) * 3600 * 1000;
+    },
+
+    claimReward(sinKey) {
+        const sin = this.data ? this.data.sins[sinKey] : null;
+        if (sin) sin.paid_at = GameTime.now();
     },
 
     // Актуальное значение шкалы. Не хранится — вычисляется от метки времени.

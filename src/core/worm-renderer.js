@@ -11,6 +11,23 @@
 // нему видно, на какой ступени лестницы идёт игра на этом устройстве.
 let geomFrameTotal = 0;
 
+// Звенья за животом и хвост — со сборки, до первого кадра: спрятать их
+// после монтажа значило бы показать на кадр-другой (opts.endAtBelly).
+function hideAfterBelly(built) {
+    const belly = built.segments.find(sg => sg.name === 'belly');
+    if (!belly) return;
+    for (const sg of built.segments) if (sg.idx > belly.idx && sg.group) sg.group.style.display = 'none';
+    if (built.tail && built.tail.group) built.tail.group.style.display = 'none';
+    // Невидимая рамка по всей цепочке — держит габарит (см. tick). Ничего
+    // не рисует и пальцев не ловит.
+    const ext = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    ext.setAttribute('class', 'worm-extent');
+    ext.setAttribute('fill', 'none');
+    ext.setAttribute('pointer-events', 'none');
+    built.root.insertBefore(ext, built.root.firstChild);
+    built.extent = ext;
+}
+
 const WormRenderer = {
     // Общий счётчик кадров деформации (см. geomFrameTotal).
     geomFrames() { return geomFrameTotal; },
@@ -54,7 +71,14 @@ const WormRenderer = {
             // только вверх. 'top' — наоборот.
             bellyGrowthAnchor: 'center',
             // 'standing' (по умолчанию) / 'lying' (Чревоугодие).
-            pose: 'standing'
+            pose: 'standing',
+            // Тело КОНЧАЕТСЯ ЖИВОТОМ: всего, что за ним (растущие звенья и
+            // хвост), нет вовсе — ни звеньев, ни общих для тела слоёв
+            // (силуэт, перетяжки, кишка, тень). Ванна: червь сидит в ней по
+            // живот, а хвост у неё свой, отдельный. Прятать одни группы
+            // звеньев мало — силуэт и кольца строятся по всей цепочке и
+            // лежали над бортом «колбасой» без звеньев.
+            endAtBelly: false
         }, opts || {});
         const instanceId = ++wormInstanceCounter;
 
@@ -802,6 +826,7 @@ const WormRenderer = {
             const m = mergedModel();
             while (charLayer.firstChild) charLayer.removeChild(charLayer.firstChild);
             state.built = buildWormSVGGroup(m, instanceId, opts.headFlip);
+            if (opts.endAtBelly) hideAfterBelly(state.built);
             charLayer.appendChild(state.built.root);
             setAttr(state.built.root, 'transform', rootTransform());
             // Тело пересобрано — прежние габариты недействительны, границы
@@ -1746,8 +1771,37 @@ const WormRenderer = {
                     }
                 }
 
+                // Тело кончается животом: круги за ним гасятся ДО всех, кто
+                // строит общие для тела слои, — силуэт, перетяжки, маска и
+                // ось кишки пустые круги уже умеют пропускать.
+                //
+                // А ГАБАРИТ персонажа остаётся от полной цепочки: по нему
+                // мини-игра раскладывает червя в сцене, и стоило бы ему
+                // сжаться до живота — червь вырос бы и съехал, а с ним рот и
+                // вся геометрия финала. Держат габарит тень на полу (её
+                // спрятанную ванну не видно) и невидимая рамка по кругам.
+                let fullCircles = null;
+                if (opts.endAtBelly && bellySeg) {
+                    fullCircles = hullCircles.slice();
+                    for (let i = bellySeg.idx + 1; i < hullCircles.length; i++) hullCircles[i] = null;
+                    const ext = state.built.extent;
+                    if (ext) {
+                        const W = state.built.hull ? state.built.hull.outlineWidth : 0;
+                        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+                        for (const c of fullCircles) {
+                            if (!c || !(c.r > 0)) continue;
+                            x0 = Math.min(x0, c.x - c.r - W); x1 = Math.max(x1, c.x + c.r + W);
+                            y0 = Math.min(y0, c.y - c.r - W); y1 = Math.max(y1, c.y + c.r + W);
+                        }
+                        if (x0 < x1) {
+                            setAttr(ext, 'x', x0.toFixed(1)); setAttr(ext, 'y', y0.toFixed(1));
+                            setAttr(ext, 'width', (x1 - x0).toFixed(1)); setAttr(ext, 'height', (y1 - y0).toFixed(1));
+                        }
+                    }
+                }
+
                 // Единый силуэт, перетяжки, отражённый свет и тень на полу.
-                updateBodyHull(state.built, hullCircles);
+                updateBodyHull(state.built, hullCircles, fullCircles);
 
                 // ---------- ЕДИНЫЙ КИШЕЧНЫЙ ТРАКТ ----------
                 // Пересчитывается из тех же кругов, что и силуэт, поэтому

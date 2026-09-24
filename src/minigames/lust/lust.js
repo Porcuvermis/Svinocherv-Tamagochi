@@ -78,9 +78,13 @@ const LustMinigame = {
     shotTimer: 0,
     hintTimer: 0,
 
-    // Между толчками. Десять толчков — это четверть минуты: реже станет
-    // ожиданием, чаще — не успеть довести хвост против его сопротивления.
-    SHOT_MS: 1500,
+    // Между толчками. Финал длится ВСЕГДА одинаково (finalMs в конфиге), а
+    // толчков столько, сколько даёт ступень хвоста: лишние толчки сокращают
+    // паузу, и растёт темп, а не длина этапа.
+    shotMs() {
+        const C = this.cfg();
+        return (C.finalMs || 15000) / Math.max(1, this.tailTier().shots || 10);
+    },
 
     // ---------- УПРУГОСТЬ ХВОСТА ----------
     // Хвост НЕ идёт туда, куда показывает палец, и НЕ стоит там, куда его
@@ -105,12 +109,14 @@ const LustMinigame = {
     // Ход пальца переводится в наклон с ЗАПАСОМ НА ТОЧНОСТЬ: окно попадания
     // по изгибу — четверть радиана, и толчок должен быть заметно мельче него,
     // иначе прицел проскакивается одним движением.
-    BEND_GAIN: 0.55,   // сколько наклона даёт радиан хода пальца по дуге
+    // Отдача свайпа и скорость выпрямления — НЕ здесь, а в ступени хвоста
+    // (ECONOMY.minigames.lust.upgrades.tail: gain, relax) и считаются
+    // LustShot.pushBend / relaxBend. Нынешние 0.55 и 0.20 — это третья
+    // ступень: по замыслу середина лестницы, а не её начало.
     // Выпрямление подобрано под ход пальца: чтобы держать прицел, хватает
     // подталкивания примерно дважды в секунду. Быстрее — рука не успевает,
     // медленнее — можно поставить и забыть, а это уже было и не игралось.
-    BEND_RELAX: 0.20,  // как быстро выпрямляется у корня
-    BEND_HARD: 1.3,    // насколько быстрее — на пределе
+    BEND_HARD: 1.3,    // насколько быстрее выпрямляется на пределе
     // Ближе этого к корню угол пальца скачет от любого дрожания, и толчок
     // выходит случайным.
     BEND_MIN_R: 45,
@@ -131,8 +137,10 @@ const LustMinigame = {
     // экране меняет размер, а «мыло берёт клетку с окрестностью» — нет.
     stageRadius() {
         const C = this.cfg(), b = this.coverBox(), G = this.grid();
-        const cells = this.phase === 'cloth' ? (C.clothCells || 0.75)
-                                             : (C.soapCells || 1.15);
+        // Радиус — КУПЛЕННЫЙ: мыло и мочалка качаются каждая своей полкой.
+        const t = this.up(this.phase === 'cloth' ? 'cloth' : 'soap', null) || {};
+        const cells = this.phase === 'cloth' ? (t.radius || C.clothCells || 1.0)
+                                             : (t.radius || C.soapCells || 1.15);
         return cells * Math.max(b.w / G.nx, b.h / G.ny);
     },
 
@@ -192,6 +200,25 @@ const LustMinigame = {
         this.camEl.innerHTML = BATH_ART.sceneFront();
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
 
+        if (typeof LustGoo !== 'undefined') LustGoo.init(this);
+        if (typeof LustShop !== 'undefined') LustShop.init(this);
+        if (typeof LustDebug !== 'undefined') LustDebug.init(this.screenElement);
+
+        // ---------- УЗЕЛ ПОХОТИ В КОЛЕСЕ ГРЕХОВ ----------
+        // Горит по ТАЙМЕРУ НАГРАДЫ, а не по шкале: у похоти потребность и
+        // награда разведены. Что считать готовностью, знает переходник.
+        if (typeof SinsMenu !== 'undefined' && typeof Backend !== 'undefined') {
+            SinsMenu.readers.lust = () => Backend.rewardReady('lust');
+        }
+        // Вход в магазин — ПОКА кнопка. Потом он переедет в предмет сцены
+        // (нарративный вход — отдельная работа); до тех пор главное, чтобы он
+        // был доступен ровно тогда, когда положено: до забега и после него.
+        this.shopBtn = document.getElementById('bt-shop-btn');
+        if (this.shopBtn) this.shopBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.shopAllowed() && typeof LustShop !== 'undefined') LustShop.show();
+        });
+
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
         window.addEventListener('pointerup', () => this.onUp());
@@ -206,13 +233,18 @@ const LustMinigame = {
 
         this.phase = 'idle';
         this.drag = null;
+        if (typeof LustShop !== 'undefined') LustShop.close();
+        if (typeof LustDebug !== 'undefined') LustDebug.render();
+        this.syncShopButton();
         this.resetCover();
         this.wipeLather();
         this.el('bt-bubbles').innerHTML = '';
         this.el('bt-cam-rain-far').innerHTML = BATH_ART.rain(false);
         this.el('bt-cam-rain-near').innerHTML = BATH_ART.rain(true);
+        // bt-splats здесь НЕТ: там разметка слоя потёков, её чистит
+        // LustGoo.reset(), а не выбрасывает.
         for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
-                          'bt-splats', 'bt-gauge', 'bt-spot'])
+                          'bt-gauge', 'bt-spot'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.el('bt-tail').removeAttribute('transform');
@@ -233,6 +265,11 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
+        this.drops = [];
+        this.splats = [];
+        this.setFly('', '');
+        // Следы прошлого захода смыты: они живут, пока игрок в ванной.
+        if (typeof LustGoo !== 'undefined') LustGoo.reset();
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(8);
         this.stopPanting();
         this.blurFar(0, 0);
@@ -247,8 +284,13 @@ const LustMinigame = {
 
     close() {
         this.screenElement.classList.remove('active');
+        // Прилавок закрывается ВМЕСТЕ с игрой. Иначе он встретит игрока
+        // открытым в следующий заход — поверх ещё не начавшегося забега.
+        if (typeof LustShop !== 'undefined') LustShop.close();
         this.stopClocks();
         this.stopPanting();
+        // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
+        if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.drag = null;
         this.fgEl.innerHTML = '';
         if (typeof MinigameWindow !== 'undefined') {
@@ -322,24 +364,72 @@ const LustMinigame = {
         const from = this.cam, body = this.stageEl;
         if (!ms || !from || !body) { this.camAt(to.s, to.tx, to.ty); return; }
 
-        // Разница двух кадров в ЭКРАННЫХ точках. Камера живёт в единицах
-        // холста (q = s·p + t), значит переход «откуда → куда» — это
-        // D(q) = c·q + (t₁ − c·t₀) при c = s₁/s₀. Осталось перевести это в
-        // пиксели: холст вписан в окно с обрезкой, отсюда масштаб m и
-        // отступ off.
+        // ---------- ПЕРЕЕЗД ЕДЕТ ПО КАДРУ С ЗАПАСОМ ----------
+        // Слои едут ГОТОВЫМИ ТЕКСТУРАМИ, и в текстуре есть только то, что
+        // было в кадре на момент старта. Всё, что въезжает в кадр по дороге,
+        // нарисовать было не из чего: на переезде «мытьё → хвост» левый край
+        // оставался чёрным (17% кадра посреди движения), а поверх черноты
+        // торчал кусок тела — червь лежит своим слоем и шире ванны, которая
+        // его обычно закрывает.
+        //
+        // Поэтому перед переездом сцена ОДИН РАЗ рисуется камерой, в которую
+        // влезают оба кадра сразу, — «откуда» и «куда». Дальше та же
+        // css-анимация, только от этой общей картинки: сперва она без
+        // перехода подгоняется так, чтобы выглядеть ровно как «откуда», потом
+        // едет к «куда». Всё, что появится в кадре по пути, в ней уже есть.
+        // Цена — растр на время движения чуть мягче (он рисовался мельче), а
+        // по прибытии числа камеры проставляются начисто, и картинка снова
+        // резкая.
+        const both = this.camUnion(from, to, body);
+        this.camAt(both.s, both.tx, both.ty);
+        body.style.willChange = 'transform';
+        body.style.transition = 'none';
+        body.style.transform = this.camDelta(both, from, body);
+        // Стартовое положение обязано примениться ДО того, как включится
+        // переход: иначе браузер склеит две записи и поедет от «общего»
+        // кадра, а не от «откуда», — картинка дёрнется на старте.
+        void body.offsetWidth;
+
+        this.camTo = to;
+        body.style.transition = `transform ${ms}ms cubic-bezier(0.65, 0, 0.35, 1)`;
+        body.style.transform = this.camDelta(both, to, body);
+        this.camTimer = setTimeout(() => this.endCamMove(), ms + 40);
+    },
+
+    // Преобразование обёртки, при котором картинка, нарисованная камерой A,
+    // выглядит как картинка камеры B. Камера живёт в единицах холста
+    // (q = s·p + t), значит переход — это D(q) = c·q + (t_B − c·t_A) при
+    // c = s_B/s_A. Осталось перевести это в пиксели: холст вписан в окно с
+    // обрезкой, отсюда масштаб m и отступ off.
+    camDelta(A, B, body) {
         const W = body.clientWidth, H = body.clientHeight;
         const m = Math.max(W / 390, H / 844);
         const offX = (W - 390 * m) / 2, offY = (H - 844 * m) / 2;
-        const c = to.s / from.s;
-        const ax = m * (to.tx - c * from.tx) + offX * (1 - c);
-        const ay = m * (to.ty - c * from.ty) + offY * (1 - c);
+        const c = B.s / A.s;
+        const ax = m * (B.tx - c * A.tx) + offX * (1 - c);
+        const ay = m * (B.ty - c * A.ty) + offY * (1 - c);
+        return `translate(${ax.toFixed(2)}px, ${ay.toFixed(2)}px) scale(${c.toFixed(5)})`;
+    },
 
-        this.camTo = to;
-        body.style.willChange = 'transform';
-        body.style.transition = `transform ${ms}ms cubic-bezier(0.65, 0, 0.35, 1)`;
-        body.style.transform =
-            `translate(${ax.toFixed(2)}px, ${ay.toFixed(2)}px) scale(${c.toFixed(5)})`;
-        this.camTimer = setTimeout(() => this.endCamMove(), ms + 40);
+    // Камера, в кадр которой влезает всё, что видят обе камеры. Видимая
+    // часть холста — не весь холст 390×844: он вписан в окно с обрезкой, и
+    // на вытянутом экране срезаются бока или верх с низом. Поэтому
+    // сравниваются именно ВИДИМЫЕ прямоугольники сцены, а общая камера
+    // вписывает их объединение в ту же видимую часть.
+    camUnion(A, B, body) {
+        const W = body.clientWidth, H = body.clientHeight;
+        const m = Math.max(W / 390, H / 844);
+        const offX = (W - 390 * m) / 2, offY = (H - 844 * m) / 2;
+        const v = { x0: -offX / m, y0: -offY / m, x1: (W - offX) / m, y1: (H - offY) / m };
+        const seen = (c) => ({ x0: (v.x0 - c.tx) / c.s, y0: (v.y0 - c.ty) / c.s,
+                               x1: (v.x1 - c.tx) / c.s, y1: (v.y1 - c.ty) / c.s });
+        const a = seen(A), b = seen(B);
+        const r = { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0),
+                    x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+        const s = Math.min((v.x1 - v.x0) / (r.x1 - r.x0), (v.y1 - v.y0) / (r.y1 - r.y0));
+        return { s,
+                 tx: (v.x0 + v.x1) / 2 - s * (r.x0 + r.x1) / 2,
+                 ty: (v.y0 + v.y1) / 2 - s * (r.y0 + r.y1) / 2 };
     },
 
     // Приехали (или переезд прервали новым): обёртка сбрасывается, а числа
@@ -392,10 +482,24 @@ const LustMinigame = {
     },
 
     // ---------- ЧЕРВЬ ----------
+    // ---------- В ВАННОЙ РАЗДЕВАЮТСЯ ----------
+    // Червь в ванной ВСЕГДА голый, что бы на нём ни было надето снаружи. Наряд
+    // подставляет общая загрузка модели (withCosmetics в worm-model.js) — ей и
+    // положено: купленное носится во всех грехах. Здесь он снимается с
+    // КОПИИ, которую монтирует ванная; в состоянии игрока наряд остаётся, и
+    // из ванной червь выходит одетым.
+    //
+    // Шрамы — не одежда, они на коже и остаются.
+    bathModel() {
+        const model = window.WormModelAPI.loadWormModel();
+        model.cosmetics = {};
+        return model;
+    },
+
     mountWorm() {
         if (!window.WormModelAPI || !window.WormRenderer || !this.wormHost) return;
         if (!this.wormHandle) {
-            const model = window.WormModelAPI.loadWormModel();
+            const model = this.bathModel();
             this.wormHandle = window.WormRenderer.mount(this.wormHost, model, {
                 context: 'lust',
                 // Смотрит ВЛЕВО — но развёрнута только ГОЛОВА. Полное
@@ -405,6 +509,10 @@ const LustMinigame = {
                 // этом никуда поворачиваться не должно: червь просто
                 // повернул морду.
                 headFlip: true,
+                // Червь сидит в ванне по живот: хвоста и звеньев за животом
+                // у него нет ВОВСЕ — ни звеньев, ни силуэта, ни колец.
+                // Хвост в финале свой, отдельный (BATH_ART.tail).
+                endAtBelly: true,
                 // Червь тут ПОЧТИ НЕ ДВИЖЕТСЯ: не бродит, не покачивается,
                 // мимика меняется медленно. Шестьдесят пересчётов в секунду
                 // ему не нужны, а стоит он дороже всей остальной сцены
@@ -420,7 +528,7 @@ const LustMinigame = {
                 idleWave: false
             });
         } else {
-            this.wormHandle.update(window.WormModelAPI.loadWormModel());
+            this.wormHandle.update(this.bathModel());
         }
         this.applyCondition();
         this.layoutWorm();
@@ -429,7 +537,6 @@ const LustMinigame = {
         // отдаёт одну голову. Раскладка по такому габариту выходила вчетверо
         // крупнее нужной, а мылить давали только морду.
         requestAnimationFrame(() => requestAnimationFrame(() => {
-            this.hideSunk();
             this._bbox = null;
             this._cover = null;
             this.layoutWorm();
@@ -527,20 +634,12 @@ const LustMinigame = {
     // колбасой. Опустить его под борт нельзя, не утопив заодно голову:
     // тело жёсткое, а линия среза одна.
     //
-    // Прятать надо в САМОМ РЕНДЕРЕРЕ, а не обрезкой слоя: обрезка снова
-    // даёт прямую линию поперёк тела, а скрытая часть выпадает и из
-    // габарита, и из маски — то есть и из раскладки, и из учёта мытья.
-    // Мини-игра монтирует собственного червя в свой холст, поэтому на
-    // комнату это не влияет.
-    hideSunk() {
-        const root = this.wormHandle && this.wormHandle.svgRoot;
-        if (!root) return;
-        for (const n of root.querySelectorAll('[data-part]')) {
-            const p = n.getAttribute('data-part') || '';
-            if (p === 'tail' || p.indexOf('growing-') === 0)
-                n.style.display = 'none';
-        }
-    },
+    // Прячет САМ РЕНДЕРЕР (opts.endAtBelly), со сборки. Раньше здесь
+    // прятались одни группы звеньев после монтажа — а единый силуэт,
+    // перетяжки и кишка строятся по всей цепочке и продолжали лежать над
+    // бортом «колбасой» без звеньев (видно было на этапе хвоста). Габарит
+    // рендерер при этом держит от полной цепочки: по нему раскладывается
+    // червь, и рот финала не сдвинулся.
 
     // Габарит НАРИСОВАННОГО червя в единицах его холста. Кэшируется: он не
     // меняется, пока модель та же.
@@ -594,6 +693,13 @@ const LustMinigame = {
         // Холст мытья — в тех же единицах, значит и преобразование то же.
         const w = this.el('bt-wash');
         if (w) w.style.transform = t;
+        // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
+        const wall = this.el('bt-goo-wall');
+        if (wall) {
+            const o = this.sceneToHost({ x: 0, y: 0 });
+            wall.style.transform = `translate(${o.x.toFixed(1)}px, ${o.y.toFixed(1)}px) `
+                                 + `scale(${((c.x - a.x) / 100 || 1).toFixed(4)})`;
+        }
     },
 
     // Обрезка верха и длина хода — в экранных точках, поэтому пересчитываются
@@ -641,7 +747,7 @@ const LustMinigame = {
         // разрешаются: клонируется весь корень вместе с defs.
         //
         // Убирается только display:none — им спрятаны утопленные части
-        // (hideSunk), и в маске их быть не должно тем более.
+        // (opts.endAtBelly), и в маске их быть не должно тем более.
         const all = copy.querySelectorAll('*');
         for (const n of all) {
             const tag = n.tagName.toLowerCase();
@@ -656,6 +762,9 @@ const LustMinigame = {
             if (n.hasAttribute('fill') || tag !== 'g') n.setAttribute('fill', '#000');
             if (n.hasAttribute('stroke')) n.setAttribute('stroke', '#000');
         }
+        // Рамка габарита (opts.endAtBelly) после перекраски стала бы чёрным
+        // прямоугольником во всю маску.
+        for (const n of copy.querySelectorAll('.worm-extent')) n.remove();
         // Спрятанное остаётся спрятанным: style снят выше со всех, поэтому
         // прячем заново уже в клоне.
         for (const n of copy.querySelectorAll('[data-part]')) {
@@ -905,7 +1014,10 @@ const LustMinigame = {
 
     wipeLather() {
         const n = this.el('bt-wash');
-        if (n) n.style.opacity = '1';
+        // Переход снимается: его ставит конец забега «только помыть», и без
+        // сброса следующий забег начинался бы с того, что пена медленно
+        // проявляется из ниоткуда.
+        if (n) { n.style.transition = ''; n.style.opacity = '1'; }
         if (this.washCtx) this.washCtx.clearRect(0, 0, n.width, n.height);
         this.filmCells = null;
     },
@@ -986,6 +1098,16 @@ const LustMinigame = {
     // теперь просто ИДЁТ ИЗ ЛЕЙКИ, а забег начинается сразу.
     startWater() {
         this.phase = 'rinse';
+        this.syncShopButton();
+        // Играется ли забег НА ЖЕТОН — решается в момент, когда полилась вода,
+        // и дальше не меняется. У похоти награда на своём таймере, и если он
+        // ещё не истёк, червя только моют: хвоста, пузырей и финала не будет
+        // (docs/plan/21-lust-bath.md, разд. 7а). Решать в конце мытья
+        // нельзя: горка пены над хвостом копится ВО ВРЕМЯ мочалки, и её
+        // надо либо строить, либо нет с самого начала.
+        this.paidRun = (typeof Backend === 'undefined') || Backend.sinPays('lust');
+        // Душ смывает всё, что осталось от прошлого забега в этот же заход.
+        if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.ready(null);
         this.setOpacity('bt-rain-far', 1);
         this.setOpacity('bt-rain-near', 1);
@@ -1039,7 +1161,7 @@ const LustMinigame = {
             // Горка пены над будущим хвостом собирается ЗАРАНЕЕ, пока червя
             // трут мочалкой. К моменту, когда хвост всплывает, она уже
             // непроницаема, и его появления не видно.
-            this.buildPile();
+            if (this.paidRun) this.buildPile();
             // Мочалка снимает мыло и оставляет пену: муть гасится, чтобы
             // второй этап был виден.
             // Что намылено — запоминается: на этапе мочалки это фон, по
@@ -1052,7 +1174,35 @@ const LustMinigame = {
             this.armHint();
             return;
         }
-        this.raiseTail();
+        if (this.paidRun) this.raiseTail();
+        else this.finishWash();
+    },
+
+    // ---------- ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» ----------
+    // Награда ещё не готова — червя вымыли, и на этом всё. Сказано без
+    // единого слова (инвариант 9): вода выключается, пена сходит с тела,
+    // камера отъезжает на общий план, кнопка магазина возвращается. Хвост не
+    // всплывает — ширмы над ним и не копилось.
+    //
+    // Шкала потребности закрывается, как после любого захода: червь чистый.
+    // Таймер награды НЕ тратится (rewards.lust.wash без claimsReward).
+    finishWash() {
+        this.phase = 'done';
+        this.stopClocks();
+        this.ready(null);
+        this.setOpacity('bt-rain-far', 0);
+        this.setOpacity('bt-rain-near', 0);
+        this.setOpacity('bt-rain-veil', 0);
+        const wash = this.el('bt-wash');
+        if (wash) {
+            wash.style.transition = 'opacity 1.2s ease';
+            wash.style.opacity = '0';
+        }
+        this.setCamera('overview', 900);
+        GameEvents.emit('minigame:result', {
+            sin: 'lust', mode: 'wash', outcome: 'win', meta: { wash: true }
+        });
+        this.syncShopButton();
     },
 
     // ---------- ПОДСКАЗКА: ГДЕ НЕ ДОМЫЛИ ----------
@@ -1100,12 +1250,12 @@ const LustMinigame = {
         // живой персонаж 24 кадра, замерший 60.
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
         this.wormHost.classList.add('bt-soft');
-        this.blurFar(2.6, 900);
+        this.blurFar(BATH_ART.FAR_BLUR, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
         // и работает (блаженство, открытый рот).
         this.el('bt-wash').style.opacity = '0';
-        const model = window.WormModelAPI ? window.WormModelAPI.loadWormModel() : null;
+        const model = window.WormModelAPI ? this.bathModel() : null;
         this.tailModel = model;
         this.bend = 0;
         this.bendHand = null;
@@ -1155,7 +1305,7 @@ const LustMinigame = {
             // Швы гаснут вместе с наводкой: на полном размытии от них
             // остаётся четверть, то есть намёк на кафель, а не сетка.
             if (lines) lines.setAttribute('opacity',
-                (1 - 0.75 * Math.min(1, v / 2.6)).toFixed(3));
+                (1 - 0.75 * Math.min(1, v / BATH_ART.FAR_BLUR)).toFixed(3));
         };
         const from = parseFloat(n.getAttribute('stdDeviation')) || 0;
         if (!ms) { set(to); return; }
@@ -1412,6 +1562,8 @@ const LustMinigame = {
         const d = BATH_ART.tailD(this.bend, this.tailGrow());
         this.el('bt-tail-body').setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
+        // Прилипшее к хвосту едет вместе с ним.
+        if (typeof LustGoo !== 'undefined') LustGoo.drawTail(force);
     },
 
     // ---------- ПУЗЫРИ ----------
@@ -1468,6 +1620,11 @@ const LustMinigame = {
     },
 
     // ---------- ФИНАЛ: ТОЛЧКИ И ЛОВЛЯ ----------
+    // Через сколько после входа в финал снимается точка рта: две с лишним
+    // перерисовки червя на его пяти кадрах в секунду. Меньше первой паузы
+    // между толчками (0.75 с на верхней ступени).
+    MOUTH_SETTLE: 450,
+
     startFinale() {
         this.phase = 'aim';
         // Кадр НЕ МЕНЯЕТСЯ и расфокус НЕ СНИМАЕТСЯ: пузыри, поглаживание и
@@ -1478,13 +1635,12 @@ const LustMinigame = {
         this.hits = 0;
         this.drops = [];
         this.splats = [];
-        this.el('bt-splats').innerHTML = '';
         // Рот пуст: канал живой, значит его надо явно опустошить, иначе в
         // следующий забег червь входит с чужой лужицей.
         this.mouthFill = null;
         this.setMouthFill(0);
         this.dropAcc = 0;
-        this.shotsLeft = this.cfg().shots || 10;
+        this.shotsLeft = this.tailTier().shots || 10;
 
         // Блаженство: рот открыт, глаза зажмурены. Сказано позой, а не
         // подписью (инвариант 9).
@@ -1497,8 +1653,18 @@ const LustMinigame = {
         // Рот считается ОДИН РАЗ на весь финал: он стоит на месте, а его
         // запрос дёргает раскладку страницы. По нему же решается и прицел —
         // так цель у прицела и у попадания заведомо одна.
-        this.mouthAt = this.mouthPoint();
-        this.bendAim = this.solveBend(this.mouthAt);
+        //
+        // Но НЕ СРАЗУ. Поза с открытым ртом только что заказана, а червь в
+        // финале перерисовывается пять раз в секунду (setFrameHz в
+        // raiseTail): замер в этот же миг ловил рот таким, каким его
+        // нарисовали в последний раз, — то есть зависел от того, как шло
+        // поглаживание. Цель прицела гуляла на пять единиц от захода к
+        // заходу, а сверка с калькулятором краснела через раз. Замер ждёт,
+        // пока поза точно нарисуется (MOUTH_SETTLE); первый толчок всё равно
+        // позже. До замера прицел считается по текущему рту — прикидкой.
+        this.mouthAt = null;
+        this.mouthDue = performance.now() + this.MOUTH_SETTLE;
+        this.bendAim = this.solveBend(this.mouthPoint());
         this.drawGauge();
 
         this.aimLast = performance.now();
@@ -1507,6 +1673,10 @@ const LustMinigame = {
             // иначе становится другой физикой.
             const dt = Math.min(0.05, (now - this.aimLast) / 1000);
             this.aimLast = now;
+            if (!this.mouthAt && now >= this.mouthDue) {
+                this.mouthAt = this.mouthPoint();
+                this.bendAim = this.solveBend(this.mouthAt);
+            }
             // На доигрывании хвостом распоряжается relaxTail: он опадает, а
             // не слушается упругости. Двое пишущих в bend дёргали бы его.
             if (this.phase === 'aim') {
@@ -1519,7 +1689,7 @@ const LustMinigame = {
             this.aimRaf = requestAnimationFrame(tick);
         };
         this.aimRaf = requestAnimationFrame(tick);
-        this.shotTimer = setTimeout(() => this.shoot(), this.SHOT_MS);
+        this.shotTimer = setTimeout(() => this.shoot(), this.shotMs());
     },
 
     // Шаг упругости. Палец тянет с ПОСТОЯННОЙ силой, упругость тянет обратно
@@ -1534,10 +1704,9 @@ const LustMinigame = {
     // разница с прежней версией, где неподвижный палец держал угол сам.
     stepBend(dt) {
         const was = this.bend;
-        const u = Math.max(0, this.bend) / this.BEND_MAX;
-        this.bend -= this.bend * this.BEND_RELAX * (1 + this.BEND_HARD * u * u) * dt;
-        if (this.bend < 0) this.bend = 0;
-        if (this.bend > this.BEND_MAX) this.bend = this.BEND_MAX;
+        const t = this.tailTier();
+        this.bend = LustShot.relaxBend(this.bend, dt,
+            { relax: t.relax, hard: this.BEND_HARD }, this.BEND_MAX);
         // Насколько хвост сдвинулся за этот шаг: по этому числу кадровый цикл
         // решает, дорисовывать ли его начисто (см. drawTail).
         this.bendStep = Math.abs(this.bend - was);
@@ -1552,18 +1721,18 @@ const LustMinigame = {
         return Math.atan2(dx, dy);
     },
 
-    // Палец ТОЛКАЕТ хвост: наклон прибавляется от пройденного по дуге пути, а
-    // не от того, где палец остановился. Ход назад ничего не убавляет — он
-    // просто заново заводит руку, и получается поглаживание: провёл, отпустил,
-    // провёл снова. Ровно этим движением хвост и удерживают на нужном угле.
+    // Палец ВЕДЁТ хвост: наклон меняется от пройденного по дуге пути, а не
+    // от того, где палец остановился, — и в ОБЕ стороны. Ход к морде гнёт,
+    // ход обратно разгибает, и разгибание складывается с собственным
+    // выпрямлением хвоста. Отдача в обе стороны одна — из ступени хвоста.
+    // Завести руку заново — оторвать палец: пока он в воздухе, хода нет.
     aimAt(p) {
         const a = this.handAngle(p);
         if (a == null) return;
         if (this.bendHand == null) { this.bendHand = a; return; }
         const d = a - this.bendHand;
         this.bendHand = a;
-        if (d > 0) this.bend = Math.min(this.BEND_MAX,
-                                        this.bend + d * this.BEND_GAIN);
+        if (d) this.bend = LustShot.pushBend(this.bend, d, this.tailTier(), this.BEND_MAX);
     },
 
     // Один толчок. Из кончика вылетает КАПЛЯ-СНАРЯД: дальше она живёт по
@@ -1573,37 +1742,46 @@ const LustMinigame = {
     shoot() {
         if (this.phase !== 'aim') return;
         const C = this.cfg();
-        const t = (C.tiers || [{}])[this.tier()] || {};
+        const t = this.tailTier();
         const s = this.tipState();
         const v = LustShot.launch(C, t, s.dir);
-        this.drops.push({ x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0,
-                          r: 11, main: true });
+        // Попадёт ли — решается ЗДЕСЬ, тем же полётом, что у калькулятора
+        // (LustShot.fly): шаг фиксированный, случайности после вылета нет,
+        // значит и путь тот же самый. Капле, которая долетит, ничто больше
+        // не мешает: иначе морда вокруг рта ловила бы её раньше корзины, и
+        // игра засчитывала бы меньше, чем посчитал баланс.
+        const m = this.mouthAt || this.mouthPoint();
+        const main = { x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0, r: 11,
+                       main: true, trail: [], shed: 0, shedT: 0, seed: Math.random(),
+                       willHit: LustShot.fly(C, { x: s.x, y: s.y }, v, m, C.mouthR).hit,
+                       // Струя за головой: откуда и с какой скоростью
+                       // вылетела, и какая доля её ещё цела (1 — вся).
+                       stream: { x0: s.x, y0: s.y, vx: v.vx, vy: v.vy, back: 1 } };
+        if (typeof LustGoo !== 'undefined') LustGoo.arm(main);
+        this.drops.push(main);
         // Мелкие брызги рядом — только вид. На счёт они не влияют: иначе
         // десять толчков превращаются в полсотни попыток.
         for (let i = 0; i < (C.spray || 0); i++) {
             const a = v.angle + (Math.random() - 0.5) * 0.22;
             const k = 0.82 + Math.random() * 0.3;
             const sp = Math.hypot(v.vx, v.vy) * k;
-            this.drops.push({ x: s.x, y: s.y, vx: Math.cos(a) * sp,
-                              vy: Math.sin(a) * sp, t: 0,
-                              r: 4 + Math.random() * 3, main: false });
+            this.spawnDrop(s.x, s.y, Math.cos(a) * sp, Math.sin(a) * sp,
+                           4 + Math.random() * 3);
         }
 
         if (--this.shotsLeft > 0) {
-            this.shotTimer = setTimeout(() => this.shoot(), this.SHOT_MS);
+            this.shotTimer = setTimeout(() => this.shoot(), this.shotMs());
         } else {
             this.startSettle();
         }
     },
 
-    // Потёк перестал сползать — дописываем его узлом и забываем о нём.
-    // Потолок нужен и здесь: за забег их набирается до сорока, а узлы
-    // остаются в дереве до конца игры.
-    freezeSplat(sp) {
-        const g = this.el('bt-splats');
-        if (!g) return;
-        g.insertAdjacentHTML('beforeend', BATH_ART.splat(sp));
-        while (g.childNodes.length > 40) g.removeChild(g.firstChild);
+    // Мелкая капля: брызги у кончика и то, что отрывается от хвоста кометы.
+    spawnDrop(x, y, vx, vy, r) {
+        const d = { x, y, vx, vy, t: 0, r, main: false, trail: [], seed: Math.random() };
+        if (typeof LustGoo !== 'undefined') LustGoo.arm(d);
+        this.drops.push(d);
+        return d;
     },
 
     // ---------- ДОИГРЫВАНИЕ ----------
@@ -1691,47 +1869,48 @@ const LustMinigame = {
         // браузер пересчитать раскладку — по три раза за кадр только ради
         // точки, которая весь финал стоит на месте.
         const C = this.cfg(), m = this.mouthAt || this.mouthPoint();
+        const goo = typeof LustGoo !== 'undefined' ? LustGoo : null;
         this.dropAcc = (this.dropAcc || 0) + dt;
         let guard = 12;
         while (this.dropAcc >= C.dt && guard-- > 0) {
             this.dropAcc -= C.dt;
             for (let i = this.drops.length - 1; i >= 0; i--) {
                 const d = this.drops[i];
+                if (!d.stream) d.trail.unshift({ x: d.x, y: d.y });
                 LustShot.step(d, C);
+                if (!d.stream) this.trimTrail(d);
                 if (d.main && LustShot.inMouth(d, m, C.mouthR)) {
                     this.drops.splice(i, 1);
+                    this.breakStream(d);
                     this.hits++;
                     this.drawGauge();
                     this.splats.push({ x: m.x, y: m.y, r: 16, t: 0, gulp: true });
                     continue;
                 }
-                if (LustShot.spent(d, C)) {
+                // Брызги, залетевшие в рот, он тоже глотает — но НЕ
+                // засчитывает: иначе десять толчков стали бы полусотней
+                // попыток.
+                if (!d.main && LustShot.inMouth(d, m, C.mouthR * 0.8)) {
                     this.drops.splice(i, 1);
-                    // Не долетела — прилипает там, где кончилась, и стекает.
-                    this.splats.push({ x: d.x, y: Math.min(d.y, C.floorY),
-                                       r: d.r * 1.3, t: 0 });
+                    continue;
+                }
+                if (d.stream) this.shedStream(d);
+                // Долетающую каплю ничто не ловит по дороге (см. shoot).
+                const over = d.willHit ? LustShot.spent(d, C)
+                           : goo ? goo.hit(d) : LustShot.spent(d, C);
+                if (over) {
+                    this.drops.splice(i, 1);
+                    if (d.stream) this.breakStream(d);
                 }
             }
         }
-        // Потёк СТЕКАЕТ и застывает, но не исчезает: к концу забега по
-        // стене видна вся история промахов. Тающие потёки означали стрельбу
-        // в пустоту — попал или нет, через три секунды одинаково.
-        //
-        // Застывший потёк УХОДИТ ИЗ СПИСКА ЖИВЫХ и дописывается узлом в свой
-        // слой. Дальше он не стоит ничего: браузер про него просто помнит.
-        // Пока все потёки пересобирались каждый кадр, к концу забега это
-        // были семь килобайт разметки на кадр — их парсили заново шестьдесят
-        // раз в секунду ради четырёх сдвинувшихся капель.
+        // Вспышка попадания гаснет сама. Промахи сюда больше не попадают:
+        // они прилипают к тому, во что упёрлись, и дальше ими ведает
+        // LustGoo — у каждой поверхности свой слой глубины.
         for (let i = this.splats.length - 1; i >= 0; i--) {
             const sp = this.splats[i];
             sp.t += dt;
-            if (sp.gulp) {
-                if (sp.t > 0.45) this.splats.splice(i, 1);
-                continue;
-            }
-            if (sp.t < 1.4) { sp.y += 30 * dt; continue; }
-            this.splats.splice(i, 1);
-            this.freezeSplat(sp);
+            if (sp.t > 0.45) this.splats.splice(i, 1);
         }
         this.renderShots();
 
@@ -1740,7 +1919,107 @@ const LustMinigame = {
         // камеры, обрезается его же губами и уходит в расфокус вместе с ним.
         // Пока её рисовала мини-игра в своём слое, она жила отдельной
         // жизнью и на камере, собранной под хвост, оказывалась на щеке.
-        this.setMouthFill(this.hits / ((C.sections || 3) * (C.perSection || 2)));
+        // Лужа растёт до полной на ПОЛНОМ жетоне, то есть по сумме цен всех
+        // частей шкалы, а не по числу толчков.
+        const full = this.gaugeSteps().reduce((a, b) => a + b, 0) || 1;
+        this.setMouthFill(this.hits / full);
+    },
+
+    // ---------- КОМЕТА ----------
+    // Хвост кометы — это просто прошлые положения капли, обрезанные по
+    // длине, а не по числу: на быстрой капле он длиннее, чем на
+    // зависшей в верхней точке дуги, — так и видно скорость.
+    trimTrail(d) {
+        // Хвост мелкой капли — в два её радиуса: длиннее он читался шипом.
+        const max = d.r * (d.main ? 6.5 : 2.2);
+        let len = 0, px = d.x, py = d.y;
+        for (let k = 0; k < d.trail.length; k++) {
+            const q = d.trail[k];
+            len += Math.hypot(q.x - px, q.y - py);
+            px = q.x; py = q.y;
+            if (len > max) { d.trail.length = k + 1; return; }
+        }
+    },
+
+    // ---------- СТРУЯ: ЛЕНТА, ОТ КОТОРОЙ ОТРЫВАЮТСЯ КАПЛИ ----------
+    // Толчок — один выплеск: жижа выходит из кончика не мгновенно, а за
+    // долю секунды (STREAM.emit), и чем позже вышла, тем медленнее летит
+    // (STREAM.slow — во сколько раз хвост ленты медленнее головы). Отсюда
+    // вся форма: сначала лента тянется от кончика, потом отрывается от него
+    // и вытягивается по дуге, потому что голова уходит вперёд.
+    //
+    // Точка ленты u (0 — голова, 1 — самый хвост) — это частица, вылетевшая
+    // позже на u·emit со скоростью (1 − (1 − slow)·u). Её место — формула
+    // баллистики от момента вылета, без шагов и без хранения: лента из
+    // десяти точек стоит десять формул за кадр.
+    //
+    // Голова — это та самая капля, по которой считается попадание, и её путь
+    // обязан совпадать с калькулятором (LustShot.fly). Поэтому ленту строит
+    // формула, а к голове она лишь подтягивается поправкой: шаги полёта
+    // головы и точная формула за секунду расходятся на несколько единиц.
+    // Первая подборка (0.12 с, хвост в 0.62 скорости) давала ленту в
+    // полсотни единиц длиной и два десятка толщиной — короткий крючок, а не
+    // струю. Струя читается струёй, когда она раз в пять-шесть длиннее
+    // своей толщины.
+    STREAM: { emit: 0.22, slow: 0.5, points: 12, pinch: 0.07, pieces: 6 },
+
+    streamAt(d, u) {
+        const S = d.stream, C = this.cfg(), T = this.STREAM;
+        const k = 1 - (1 - T.slow) * u, tt = Math.max(0, d.t - u * T.emit);
+        const g = C.gravity;
+        // Поправка к голове: разница между шагами полёта и формулой.
+        const hx = S.x0 + S.vx * d.t, hy = S.y0 + S.vy * d.t + 0.5 * g * d.t * d.t;
+        const w = 1 - u;
+        return { x: S.x0 + S.vx * k * tt + (d.x - hx) * w,
+                 y: S.y0 + S.vy * k * tt + 0.5 * g * tt * tt + (d.y - hy) * w,
+                 vx: S.vx * k, vy: S.vy * k + g * tt, out: d.t >= u * T.emit };
+    },
+
+    // Хвост ленты РВЁТСЯ: как только лента оторвалась от кончика, с её
+    // заднего конца раз в pinch секунд отщипывается капля. Оторвавшаяся —
+    // уже отдельная капля: своя скорость (та, с какой летел этот кусок
+    // ленты), своя дуга, свой след. Лента после этого короче и тоньше: у
+    // неё меньше массы и нет самого медленного хвоста.
+    shedStream(d) {
+        const S = d.stream, T = this.STREAM;
+        if (d.shed >= T.pieces || d.t < T.emit + 0.04 || d.t - d.shedT < T.pinch) return;
+        const q = this.streamAt(d, S.back);
+        d.shed++;
+        d.shedT = d.t;
+        S.back = Math.max(0.2, S.back - 0.8 / T.pieces);
+        this.spawnDrop(q.x, q.y, q.vx + (Math.random() - 0.5) * 30,
+                       q.vy + (Math.random() - 0.5) * 30, 2.4 + Math.random() * 1.6);
+    },
+
+    // Голова приземлилась (в рот, на тело, на борт) — остаток ленты в
+    // воздухе не исчезает, а распадается на капли, каждая со скоростью
+    // своего куска. Иначе вся струя пропадала в одном кадре с головой.
+    breakStream(d) {
+        const S = d.stream;
+        if (!S) return;
+        for (const u of [S.back * 0.45, S.back]) {
+            const q = this.streamAt(d, u);
+            if (!q.out) continue;
+            this.spawnDrop(q.x, q.y, q.vx, q.vy, 2.6 + 3 * S.back * (1 - u));
+        }
+        d.stream = null;
+    },
+
+    // Ось и полуширина ленты для рисунка. Голова тоньше, когда лента
+    // растеряла массу; хвост скруглён и тонок — там она и рвётся.
+    streamShape(d, scale) {
+        const S = d.stream, T = this.STREAM, n = T.points;
+        const pts = [], ws = [];
+        const head = d.r * 0.72 * (0.85 + 0.15 * S.back);
+        for (let i = 0; i < n; i++) {
+            const u = S.back * i / (n - 1);
+            const q = this.streamAt(d, u);
+            pts.push(q);
+            // Сужение — по ОСТАВШЕЙСЯ ленте: растеряв хвост, она всё равно
+            // сужается к концу, а не становится палочкой ровной толщины.
+            ws.push(head * (1 - 0.6 * Math.pow(u / S.back, 0.8)) * scale);
+        }
+        return BATH_ART.streamD(pts, ws, Math.atan2(S.vy, S.vx));
     },
 
     // ---------- ЖИВОЙ СЛОЙ ВЫСТРЕЛА: УЗЛЫ, А НЕ РАЗМЕТКА ----------
@@ -1770,44 +2049,52 @@ const LustMinigame = {
     },
 
     renderShots() {
-        let flash = 0, splat = 0;
+        let flash = 0;
         for (const s of this.splats) {
-            if (s.gulp) {
-                // Попадание: короткая вспышка в самой корзине рта.
-                const n = this.shotNode('flash', flash++, () => BATH_ART.flashNode());
-                if (!n) continue;
-                const k = 1 - s.t / 0.45;
-                n.setAttribute('cx', s.x.toFixed(1));
-                n.setAttribute('cy', s.y.toFixed(1));
-                n.setAttribute('r', (s.r * (1.6 - k)).toFixed(1));
-                n.setAttribute('opacity', (k * 0.9).toFixed(2));
-                n.removeAttribute('display');
-                continue;
-            }
-            const n = this.shotNode('splat', splat++, () => BATH_ART.splatNode());
+            // Попадание: короткая вспышка в самой корзине рта.
+            const n = this.shotNode('flash', flash++, () => BATH_ART.flashNode());
             if (!n) continue;
-            n.setAttribute('d', BATH_ART.splatD(s));
+            const k = 1 - s.t / 0.45;
+            n.setAttribute('cx', s.x.toFixed(1));
+            n.setAttribute('cy', s.y.toFixed(1));
+            n.setAttribute('r', (s.r * (1.6 - k)).toFixed(1));
+            n.setAttribute('opacity', (k * 0.9).toFixed(2));
             n.removeAttribute('display');
         }
         this.hideRest('flash', flash);
-        this.hideRest('splat', splat);
 
-        let drop = 0;
-        for (const d of this.drops) {
-            const n = this.shotNode('drop', drop++, () => BATH_ART.dropNode());
-            if (!n) continue;
-            const sp = Math.hypot(d.vx, d.vy) || 1;
-            const L = d.r * 1.7;
-            n.setAttribute('cx', d.x.toFixed(1));
-            n.setAttribute('cy', d.y.toFixed(1));
-            n.setAttribute('rx', (d.r + L).toFixed(1));
-            n.setAttribute('ry', d.r.toFixed(1));
-            n.setAttribute('transform',
-                'rotate(' + (Math.atan2(d.vy / sp, d.vx / sp) * 180 / Math.PI).toFixed(1)
-                + ' ' + d.x.toFixed(1) + ' ' + d.y.toFixed(1) + ')');
-            n.removeAttribute('display');
+        // Все капли в полёте — ОДНИМ путём: одна запись атрибута за кадр,
+        // сколько бы их ни летело. С отрывающимися от кометы каплями их в
+        // воздухе бывает под два десятка, и узел на каждую был бы два
+        // десятка записей.
+        // Тень — тот же путь со сдвигом узла. Ядро — та же комета, вдвое
+        // тоньше: по оси струи жижа толще и мутнее, к краям просвечивает.
+        // Блик — только у крупных.
+        let d = '', core = '', hi = '';
+        for (const q of this.drops) {
+            if (q.stream) {
+                d += this.streamShape(q, 1);
+                core += this.streamShape(q, 0.5);
+            } else {
+                // Мелкая капля — капля, а не шип: хвост по её следу
+                // сужается вдвое, а не в точку, и кончик скруглён.
+                const pts = [q].concat(q.trail), n = pts.length - 1;
+                const ws = pts.map((_, i) => q.r * (1 - 0.55 * (n ? i / n : 0)));
+                const dir = Math.atan2(q.vy, q.vx);
+                d += BATH_ART.streamD(pts, ws, dir);
+                core += BATH_ART.streamD(pts, ws.map(w => w * 0.55), dir);
+            }
+            if (q.r > 5) hi += BATH_ART.cometHi(q.x, q.y, q.r);
         }
-        this.hideRest('drop', drop);
+        this.setFly(d, hi, core);
+    },
+
+    setFly(d, hi, core) {
+        for (const [id, v] of [['bt-fly', d], ['bt-fly-sh', d], ['bt-fly-hi', hi],
+                               ['bt-fly-core', core || '']]) {
+            const n = this.el(id);
+            if (n && n.getAttribute('d') !== v) n.setAttribute('d', v);
+        }
     },
 
     // Уровень жидкости во рту. Отдельным методом, потому что его дёргают из
@@ -1821,25 +2108,56 @@ const LustMinigame = {
             mouthFill: v, mouthFillColor: PALETTE.bathScene.milk[500] });
     },
 
-    // Купленная ступень прокачки. Магазина ещё нет — до него ступень всегда
-    // стартовая, и это ровно то, подо что считался баланс.
-    tier() {
-        const lvl = (typeof GameState !== 'undefined' && GameState.upgradeLevel)
-            ? GameState.upgradeLevel('lust_aim') : 0;
-        const n = ((this.cfg().tiers || []).length || 1) - 1;
-        return Math.max(0, Math.min(n, lvl));
+    // ---------- ВХОД В МАГАЗИН ----------
+    // Только до забега и после него: «готовятся до, тратят после»
+    // (docs/plan/21-lust-bath.md, разд. 6). Кнопка не просто глохнет, а
+    // УХОДИТ с экрана — неживая кнопка посреди мытья читалась бы поломкой.
+    shopAllowed() {
+        return this.phase === 'idle' || this.phase === 'done';
     },
 
+    syncShopButton() {
+        if (!this.shopBtn) this.shopBtn = document.getElementById('bt-shop-btn');
+        if (this.shopBtn) this.shopBtn.classList.toggle('on', this.shopAllowed());
+    },
+
+    // ---------- КУПЛЕННЫЕ СТУПЕНИ ----------
+    // Один вход на все четыре полки магазина. Читается КАЖДЫЙ РАЗ, а не
+    // запоминается на входе в забег: покупка случается между забегами, и
+    // кешированное здесь значение отстало бы ровно на один заход.
+    //
+    // Backend.upgradeValue отдаёт ЗНАЧЕНИЕ ступени, а не прибавку, — у
+    // хвоста это объект из шести чисел, у мыла и мочалки одно число.
+    up(key, fallback) {
+        if (typeof Backend === 'undefined' || !Backend.upgradeValue) return fallback;
+        const v = Backend.upgradeValue('lust', key);
+        return (v === 0 || v) ? v : fallback;
+    },
+
+    // Ступень хвоста: толчки, сила, разброс и послушность одной записью.
+    // Почему одной, а не четырьмя полками — в комментарии у лестницы
+    // (src/config/economy.js, ECONOMY.minigames.lust.upgrades.tail).
+    tailTier() {
+        return this.up('tail', { shots: 10, minPower: 0, maxPower: 0.9,
+                                 spread: 45, gain: 0.35, relax: 0.30 }) || {};
+    },
+
+    // Цены делений шкалы: сколько попаданий стоит каждое. Набираются по
+    // порядку и с нуля (LustShot.gaugeState).
+    gaugeSteps() {
+        return this.cfg().gauge || [2, 5, 8];
+    },
+
+    // Шкала над головой — жетон из трёх частей разной цены. Рисуется
+    // заново на каждое попадание: попаданий за забег не больше двадцати, и
+    // строка в шестьдесят узлов раз в полсекунды ничего не стоит.
     drawGauge() {
-        const C = this.cfg(), m = this.mouthPoint();
-        const box = this.wormBoxScene();
-        const filled = Math.min(C.sections || 3,
-            Math.floor(this.hits / (C.perSection || 2)));
+        const m = this.mouthPoint();
         // Над головой, считая от ВЕРХА нарисованного червя: доля от холста
         // персонажа уводила шкалу за кадр, стоило поменять его посадку.
         const top = this.coverBox().y;
         this.el('bt-gauge').innerHTML =
-            BATH_ART.gauge(m.x, top - 26, C.sections || 3, filled);
+            BATH_ART.gauge(m.x, top - 40, this.gaugeSteps(), this.hits);
     },
 
     // Дыхание живёт ДОЛЬШЕ остальных часов: оно продолжается и на итоговом
@@ -1867,15 +2185,15 @@ const LustMinigame = {
         this.phase = 'done';
         this.stopClocks();
         this.relaxTail();
-        const C = this.cfg();
-        const sections = Math.min(C.sections || 3,
-            Math.floor(this.hits / (C.perSection || 2)));
+        const sections = LustShot.gaugeState(this.hits, this.gaugeSteps()).done;
         // Мини-игра НИЧЕГО не начисляет сама (инвариант 2): она сообщает,
-        // сколько поймано, а что за это дать — решает конфиг наград.
+        // сколько частей жетона закрыто, а что за это дать — решает конфиг
+        // наград (осколок за каждую).
         GameEvents.emit('minigame:result', {
             sin: 'lust', mode: 'bath', outcome: 'win',
-            meta: { hits: this.hits, sections, shots: C.shots || 10 }
+            meta: { hits: this.hits, sections, shots: this.tailTier().shots || 10 }
         });
+        this.syncShopButton();
     },
 
     // Забег кончился — хвост опадает: сдувается до исходного размера и
@@ -1892,7 +2210,10 @@ const LustMinigame = {
             const e = 1 - Math.pow(1 - k, 3);
             this.charge = from * (1 - e);
             this.bend = bend0 * (1 - e);
-            this.drawTail();
+            // Последний кадр опадания — начисто (force): иначе частота
+            // перерисовки хвоста могла бы его пропустить, и хвост вместе с
+            // пятнами на нём застыл бы чуть согнутым.
+            this.drawTail(k >= 1);
             this.relaxRaf = k < 1 ? requestAnimationFrame(step) : 0;
         };
         this.relaxRaf = requestAnimationFrame(step);

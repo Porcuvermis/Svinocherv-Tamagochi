@@ -794,6 +794,12 @@
             <!-- Комната и чаша: координаты сцены, по ней ездит камера. -->
             <g id="bt-cam-back"></g>
         </svg>
+        <!-- ПОТЁКИ НА СТЕНЕ — свой холст сразу за комнатой, а не группа в ней.
+             Стена лежит ЗА червём, значит и то, что на неё прилипло, обязано
+             прятаться за ним. Холст, а не svg: стена в расфокусе, и пятна на
+             ней размыты по-настоящему — тенью холста, одним проходом при
+             застывании (lust-goo.js). -->
+        <canvas id="bt-goo-wall" class="bt-lather"></canvas>
         <!-- ДОЖДЬ ЖИВЁТ В СВОИХ ХОЛСТАХ, а не в группах комнаты, и это не
              вкусовщина, а самая дорогая правка кадра во всей ванной.
 
@@ -862,6 +868,23 @@
              preserveAspectRatio="xMidYMid slice">
             <g id="bt-cam-over"></g>
         </svg>
+        </div>
+
+        <!-- ВХОД В МАГАЗИН — временная кнопка. Потом вход переедет в предмет
+             сцены; пока важно одно: он есть до забега и после, а посреди
+             забега его нет. Значок, а не подпись (инвариант 9). -->
+        <button type="button" class="bt-shop-btn" id="bt-shop-btn">🏪</button>
+
+        <!-- МАГАЗИН ПОХОТИ. Лежит ВНУТРИ экрана мини-игры, поверх сцены.
+             Свой крестик не рисует: закрывается тапом мимо прилавка, а
+             крестик окна закрывает всю мини-игру (инвариант 8). -->
+        <div class="bt-shop" id="bt-shop">
+            <div class="bt-shop-panel" id="bt-shop-panel">
+                <div class="ls-top">
+                    <div class="ls-wallet" id="ls-wallet"></div>
+                </div>
+                <div class="ls-list" id="ls-list"></div>
+            </div>
         </div>
     </div>
 
@@ -1116,6 +1139,13 @@
 <script src="src/minigames/lust/bath-baked.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-shot.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-art.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-room.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-shower.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-shelf.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-tub.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-shop.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-debug.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-goo.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust.js?v=__BUILD__"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->

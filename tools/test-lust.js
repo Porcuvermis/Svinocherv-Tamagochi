@@ -180,6 +180,22 @@ const harness = require('./harness');
      `${taps} тапов на ${bubbles}`);
   await page.screenshot({ path: out + '3-rub.png' });
 
+  // Сколько капель ОБЕЩАНО рту при вылете. Попадёт ли капля, игра решает
+  // в момент толчка тем же полётом, что у калькулятора (LustShot.fly), и
+  // дальше такую каплю ничто не ловит. Если по дороге её перехватит морда
+  // или хвост, попаданий станет меньше обещанного — и баланс, посчитанный
+  // калькулятором, разойдётся с игрой. Считаются только вызовы из толчка:
+  // прицел на входе в финал тоже зовёт fly, но ничего не обещает.
+  await page.evaluate(() => {
+    const fly = LustShot.fly;
+    window.__promised = 0;
+    LustShot.fly = function (...a) {
+      const r = fly.apply(this, a);
+      if (r.hit && /shoot/.test(new Error().stack)) window.__promised++;
+      return r;
+    };
+  });
+
   // ---------- ПОГЛАЖИВАНИЕ ----------
   // Хвост наливается от ПУТИ пальца вдоль него и спадает, пока палец стоит.
   // Проверяем обе половины: иначе достаточно положить палец и ждать.
@@ -226,8 +242,22 @@ const harness = require('./harness');
   }, [a, r]);
   const R = 190;
 
-  // Один проход пальцем по дуге: наклоняет хвост.
+  // Один проход пальцем по дуге. Руку заводят ПО ВОЗДУХУ: палец в обе
+  // стороны работает — ход назад разгибает хвост, — поэтому вернуться к
+  // началу дуги, не отрывая пальца, значило бы отменить только что
+  // сделанное. Так и играет человек: провёл, оторвал, провёл снова.
+  const glide = async (from, to, steps) => {
+    for (let i = 0; i <= (steps || 8); i++) {
+      const p2 = await arcPoint(from + (to - from) * i / (steps || 8), R);
+      const s2 = await toScreen(p2);
+      await page.mouse.move(s2.x, s2.y);
+    }
+  };
   const stroke = async (from, to, steps) => {
+    const p0 = await toScreen(await arcPoint(from, R));
+    await page.mouse.up();
+    await page.mouse.move(p0.x, p0.y);
+    await page.mouse.down();
     for (let i = 0; i <= (steps || 8); i++) {
       const p2 = await arcPoint(from + (to - from) * i / (steps || 8), R);
       const s2 = await toScreen(p2);
@@ -274,18 +304,50 @@ const harness = require('./harness');
   ok(back < over * 0.5, 'отпущенный хвост выпрямляется',
      `${over.toFixed(2)} → ${back.toFixed(2)}`);
 
+  // Палец ведёт угол В ОБЕ СТОРОНЫ: согнули, и тем же пальцем, не отрывая,
+  // ведём обратно — хвост разгибается быстрее, чем выпрямился бы сам.
+  // Сравнивается с его СОБСТВЕННЫМ выпрямлением за то же время, посчитанным
+  // той же формулой: «уменьшился» было бы зелёным и без пальца.
+  for (let i = 0; i < 6; i++) await stroke(0.05, 1.3, 8);
+  const bent = await page.evaluate(() => ({ b: LustMinigame.bend, t: performance.now() }));
+  await glide(1.3, 0.05, 8);
+  const unbent = await page.evaluate((b0) => {
+    const L = LustMinigame, t = L.tailTier();
+    const el = (performance.now() - b0.t) / 1000;
+    let b = b0.b;
+    for (let k = 0; k < Math.ceil(el * 120); k++)
+      b = LustShot.relaxBend(b, el / Math.ceil(el * 120),
+                             { relax: t.relax, hard: L.BEND_HARD }, L.BEND_MAX);
+    return { b: L.bend, alone: b, el };
+  }, bent);
+  ok(unbent.b < unbent.alone - 0.15, 'ход пальца назад разгибает хвост',
+     `${bent.b.toFixed(2)} → ${unbent.b.toFixed(2)} за ${unbent.el.toFixed(2)} с; сам бы выпрямился до ${unbent.alone.toFixed(2)}`);
+  // Дальше прямого хвост не уходит: разгибание кончается вертикалью.
+  await glide(0.05, -0.9, 6);
+  const floor = await page.evaluate(() => LustMinigame.bend);
+  ok(floor >= 0, 'разогнуть можно до прямого, не дальше', floor.toFixed(3));
+  await page.mouse.up();
+
   // Весь финал: держим прицел подталкиваниями — это и есть умелая игра, под
   // которую считан баланс в tools/sim-lust.js.
   const s0 = await toScreen(await arcPoint(0.05, R));
   await page.mouse.move(s0.x, s0.y);
   await page.mouse.down();
-  const shots = await page.evaluate(() => LustMinigame.cfg().shots);
+  // Толчков столько, сколько даёт ступень хвоста, а финал длится всегда
+  // одинаково (finalMs): ждём по длине финала, а не по числу толчков.
+  const fin = await page.evaluate(() => ({
+    shots: LustMinigame.tailTier().shots, ms: LustMinigame.cfg().finalMs || 15000,
+    gap: LustMinigame.shotMs() }));
+  const shots = fin.shots;
+  ok(Math.abs(fin.gap * fin.shots - fin.ms) < 1,
+     'финал длится столько, сколько задано, при любом числе толчков',
+     `${fin.shots} толчков по ${Math.round(fin.gap)} мс`);
   const t0 = Date.now();
   let held0 = 0, held0n = 0;
   // Меряем удержание ТОЛЬКО пока идут толчки. После последнего игра
   // доигрывает капли ('settle'), хвост при этом сам опадает к нулю — считать
   // это промахом игрока незачем.
-  while (Date.now() - t0 < (shots + 2) * 1500) {
+  while (Date.now() - t0 < fin.ms + 3000) {
     const st = await page.evaluate(() => ({ b: LustMinigame.bend, p: LustMinigame.phase }));
     if (st.p !== 'aim') break;
     const b = st.b;
@@ -319,42 +381,411 @@ const harness = require('./harness');
   // не успевшие долететь, ЗАМИРАЛИ в воздухе до конца экрана.
   ok(res.flying === 0, 'все капли долетели', `${res.flying} в воздухе`);
   ok(res.rain < 0.05, 'душ выключен на доигрывании', `прозрачность ${res.rain}`);
+  const promised = await page.evaluate(() => window.__promised);
+  ok(promised === res.hits, 'рот поймал ровно столько, сколько обещал полёт калькулятора',
+     `${res.hits} из ${promised}: ни морда, ни хвост долетающую каплю не перехватили`);
   // Живой забег — выборка из десяти толчков, и ноль попаданий в ней бывает
   // законно. Поэтому проверяется МОДЕЛЬ на большой выборке: та же физика,
   // тот же прицел, та же корзина, что и в игре, — и доля попаданий обязана
-  // сойтись с той, по которой считан баланс в tools/sim-lust.js.
-  const shotInfo = await page.evaluate(() => {
-    const L = LustMinigame, C = L.cfg(), t = C.tiers[0];
-    // Геометрию меряем при ПОЛНОМ хвосте: забег уже кончился, и хвост к
-    // этому моменту опадает обратно к исходному размеру. Стрелял он
-    // налитым — по нему и считается.
-    const keep = L.charge;
+  // ---------- ШКАЛА: ЖЕТОН ИЗ ЧАСТЕЙ РАЗНОЙ ЦЕНЫ ----------
+  // Сколько частей закрыто, считается по ценам из конфига (2, 5, 8) — по
+  // порядку и с нуля. Проверяется НАЧИСЛЕННОЕ, а не нарисованное: осколков
+  // пришло ровно столько, сколько частей закрыли пойманные капли.
+  const gauge = await page.evaluate((h) => {
+    const steps = LustMinigame.gaugeSteps();
+    return { steps, done: LustShot.gaugeState(h, steps).done,
+             wedges: document.querySelectorAll('#bt-gauge path').length };
+  }, res.hits);
+  ok(gauge.wedges === gauge.steps.reduce((a, b) => a + b, 0),
+     'над головой жетон, поделённый на дольки по ценам частей',
+     `${gauge.wedges} долек при ценах ${gauge.steps.join('/')}`);
+  ok(res.shard + 3 * res.token === gauge.done,
+     'осколков начислено столько, сколько частей закрыто',
+     `${res.hits} попаданий → ${gauge.done} частей, в кошельке ${res.shard} + ${res.token}×3`);
+
+  // ---------- ГЕОМЕТРИЯ ФИНАЛА СОВПАДАЕТ С КАЛЬКУЛЯТОРОМ ----------
+  // tools/sim-lust.js держит раскладку финала своими константами (кончик при
+  // каждом изгибе и рот). Если сцена переехала, а они нет, баланс считается
+  // для геометрии, которой в игре больше нет.
+  const geo = await page.evaluate(() => {
+    const L = LustMinigame, keep = L.charge;
+    // Геометрию меряем при ПОЛНОМ хвосте: стрелял он налитым.
     L.charge = 1;
-    const s = L.tipState(L.bendAim), m = L.mouthPoint();
+    // Рот берётся ТОТ, по которому игра считала попадания весь финал
+    // (mouthAt — снят один раз на входе в финал), а не спрашивается заново:
+    // сейчас червь тяжело дышит после забега, морда ходит на вдохе, и
+    // замер «на ходу» гулял на пять точек от прогона к прогону (traps, п. 137).
+    const m = L.mouthAt || L.mouthPoint(), s = L.tipState(L.bendAim), z = L.tipState(0);
     L.charge = keep;
-    let hit = 0, N = 4000;
-    for (let i = 0; i < N; i++) {
-      const v = LustShot.launch(C, t, s.dir);
-      if (LustShot.fly(C, s, v, m, C.mouthR).hit) hit++;
-    }
-    // Точность НЕ округляется до целых градусов и точек: окно попадания у
-    // навесной дуги — единицы градусов, и калькулятор, взяв округлённые
-    // числа, считает баланс для прицела на краю окна, а не в середине.
-    return { rate: hit / N, tip: { x: +s.x.toFixed(1), y: +s.y.toFixed(1) },
-             mouth: { x: +m.x.toFixed(1), y: +m.y.toFixed(1) },
-             dir: +(s.dir * 180 / Math.PI).toFixed(3) };
+    return { mouth: { x: +m.x.toFixed(1), y: +m.y.toFixed(1) }, aim: +L.bendAim.toFixed(3),
+             tip: { x: +s.x.toFixed(1), y: +s.y.toFixed(1) },
+             tip0: { x: +z.x.toFixed(1), y: +z.y.toFixed(1) } };
   });
-  ok(shotInfo.rate > 0.2 && shotInfo.rate < 0.36,
-     'на удержанном прицеле попадает как в расчёте',
-     `${(shotInfo.rate * 100).toFixed(0)}% толчков, живой забег дал ${res.hits} из ${shots}`);
-  // Калькулятор считает баланс по ЖИВОЙ раскладке, а числа раскладки он
-  // держит своими константами: если сцена переехала, а он нет, таблица
-  // баланса считается для геометрии, которой в игре больше нет.
-  console.log(`  инфо  кончик на прицеле (${shotInfo.tip.x},${shotInfo.tip.y}) под`
-    + ` ${shotInfo.dir}°, рот (${shotInfo.mouth.x},${shotInfo.mouth.y})`
-    + ` — эти три числа стоят в tools/sim-lust.js`);
+  ok(Math.hypot(geo.mouth.x - 388.3, geo.mouth.y - 598.0) < 3,
+     'рот стоит там же, где у калькулятора', `(${geo.mouth.x},${geo.mouth.y})`);
+  ok(Math.hypot(geo.tip0.x - 238, geo.tip0.y - 617.4) < 3,
+     'прямой хвост стоит там же, где у калькулятора', `(${geo.tip0.x},${geo.tip0.y})`);
+  ok(Math.abs(geo.aim - 0.412) < 0.03,
+     'прицел тот же, что у калькулятора', `изгиб ${geo.aim}`);
+  console.log(`  инфо  прицел — изгиб ${geo.aim}, кончик (${geo.tip.x},${geo.tip.y}), `
+    + `рот (${geo.mouth.x},${geo.mouth.y}); таблица кончика и рот стоят в tools/sim-lust.js`);
 
   await page.screenshot({ path: out + '4-done.png' });
+
+  // ================= СЛЕДЫ СТРУИ =================
+  // Промах прилипает к ПЕРВОМУ, во что упёрся, и живёт в плане этой
+  // поверхности (src/minigames/lust/lust-goo.js). Капли здесь ставятся
+  // руками в известные точки: живой забег случаен, и в нём не каждая
+  // поверхность успевает поймать хоть что-то.
+  const goo = await page.evaluate(async () => {
+    const L = LustMinigame, G = LustGoo, A2 = BATH_ART.slots();
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const drop = (x, y, extra) => Object.assign(
+      { x, y, vx: 0, vy: 120, t: 1, r: 6, main: false, trail: [] }, extra || {});
+    const land = (d) => { G.arm(d); d.wallAt = null; Object.assign(d, d._after || {});
+                          const n = G.live.length; const over = G.hit(d);
+                          return { over, surf: G.live.length > n ? G.live[G.live.length - 1].surf : null }; };
+    const out = {};
+    // Тело: точка ПОСЕРЕДИНЕ силуэта, по той же маске, что у мыла.
+    const mb = L.maskBounds(), box = L.wormBoxScene(), B = L.WORM_BASE, S = L.MASK_SCALE;
+    const inMask = (p) => { const k = B.w / box.w;
+      const x = Math.round((p.x - box.x) * k * S), y = Math.round((p.y - box.y) * k * S);
+      return L.maskAlpha[y * L.mask.width + x] > 0; };
+    let body = null;
+    for (let f = 0.5; f < 0.9 && !body; f += 0.05) {
+      const p = { x: mb.x + mb.w * 0.55, y: mb.y + mb.h * f };
+      if (inMask(p)) body = p;
+    }
+    // ГДЕ садятся: капли летят поперёк тела по одной прямой. Раньше все
+    // садились в первом пикселе силуэта — бусами вдоль контура.
+    {
+      const C = L.cfg(), y = body.y;
+      let x0 = body.x; while (inMask({ x: x0 - 1, y })) x0--;
+      let x1 = body.x; while (inMask({ x: x1 + 1, y })) x1++;
+      const depth = [];
+      let pass = 0;
+      const N = 300;
+      // Гравитация на время замера снята: иначе капля за пролёт проседает и
+      // выходит из тела снизу раньше дальнего края, и медиана глубины
+      // уезжает к кромке не из-за игры, а из-за замера (traps, п. 137).
+      const g0 = C.gravity;
+      C.gravity = 0;
+      for (let i = 0; i < N; i++) {
+        // Ровно горизонтально: ширина тела на пути — это x0..x1.
+        const d = drop(x0 - 12, y, { vx: 600, vy: 0 }); G.arm(d); d.wallAt = null;
+        const n = G.live.length; let over = false;
+        for (let k = 0; k < 400 && !over; k++) { LustShot.step(d, C); over = G.hit(d); }
+        const s = G.live.length > n ? G.live[G.live.length - 1] : null;
+        if (s && s.surf === 'worm') depth.push((d.x - x0) / Math.max(1, x1 - x0));
+        else pass++;
+      }
+      C.gravity = g0;
+      depth.sort((a, b) => a - b);
+      out.spread = { pass: pass / N, n: depth.length, width: x1 - x0,
+                     q25: depth[Math.floor(depth.length * 0.25)],
+                     q50: depth[Math.floor(depth.length * 0.5)],
+                     q75: depth[Math.floor(depth.length * 0.75)] };
+      G.reset();
+    }
+    // Капля над телом садится не сразу: точку выбирает на своём пути.
+    const keepPass = G.PASS_CHANCE;
+    G.PASS_CHANCE = 0;
+    {
+      const d = drop(body.x, body.y); G.arm(d); d.wallAt = null;
+      const n = G.live.length; let over = false;
+      for (let i = 0; i < 400 && !over; i++) { LustShot.step(d, L.cfg()); over = G.hit(d); }
+      out.worm = { over, surf: G.live.length > n ? G.live[G.live.length - 1].surf : null };
+    }
+    G.PASS_CHANCE = keepPass;
+    // Хвост: середина его оси при текущем изгибе.
+    const sp = BATH_ART.tailSpine(L.bend, L.tailGrow()), mid = sp[Math.round(sp.length / 2)];
+    out.tail = land(drop(A2.tail.x + mid.x, A2.tail.y + mid.y));
+    // Борт: капля переходит линию борта сверху вниз правее червя.
+    const rimY = A2.rimFront.y, rx = A2.rimR.x - 30;
+    const keep = G.RIM_CHANCE;
+    G.RIM_CHANCE = 1;
+    const dr = drop(rx, rimY + 2); G.arm(dr); dr.wallAt = null; dr.prevY = rimY - 3;
+    const n0 = G.live.length; out.rim = { over: G.hit(dr), surf: G.live.length > n0 ? G.live[G.live.length - 1].surf : null };
+    G.RIM_CHANCE = 0;
+    const di = drop(rx, rimY + 2); G.arm(di); di.wallAt = null; di.prevY = rimY - 3;
+    const n1 = G.live.length; out.inside = { over: G.hit(di), added: G.live.length - n1 };
+    G.RIM_CHANCE = keep;
+    // Стена: опустилась после верха дуги на заданную глубину.
+    const dw = drop(A2.rimL.x + 20, 420); G.arm(dw); dw.apexY = 360; dw.wallAt = 50;
+    const n2 = G.live.length; out.wall = { over: G.hit(dw), surf: G.live.length > n2 ? G.live[G.live.length - 1].surf : null };
+
+    // Хвост согнули — пятна на нём поехали следом.
+    await wait(2500);
+    const tailD0 = document.getElementById('bt-tail-goo-done').getAttribute('d');
+    const b0 = L.bend; L.bend = 0.6; L._tailKey = null; L.drawTail(true);
+    const tailD1 = document.getElementById('bt-tail-goo-done').getAttribute('d');
+    L.bend = b0; L._tailKey = null; L.drawTail(true);
+    out.tailMoves = !!tailD0 && tailD0 !== tailD1;
+    out.live = G.live.length;
+    const inked = (id) => { const k = document.getElementById(id);
+      const px = k.getContext('2d').getImageData(0, 0, k.width, k.height).data;
+      let n = 0; for (let i = 3; i < px.length; i += 4) if (px[i]) n++; return n; };
+    out.wallNodes = inked('bt-goo-wall');
+    // Размыто ли: у пятна на стене обязан быть ПЛАВНЫЙ край — много точек
+    // промежуточной прозрачности, а не резкая кромка.
+    {
+      const k = document.getElementById('bt-goo-wall');
+      const px = k.getContext('2d').getImageData(0, 0, k.width, k.height).data;
+      let soft = 0, all = 0;
+      for (let i = 3; i < px.length; i += 4) if (px[i]) { all++; if (px[i] < 200) soft++; }
+      out.wallSoft = all ? soft / all : 0;
+    }
+    out.rimNodes = G.rimDone.length;
+    out.tailDone = G.tailDone.length;
+    // ---------- НЕ ВЫЛЕЗАЕТ ЗА СВОЙ ПРЕДМЕТ ----------
+    // Спрашивается КАРТИНКА: по контуру застывших пятен идём точками и
+    // каждую проверяем фигурой предмета — части тела, хвоста, борта. Не
+    // «поджатие вызывалось», а «на экране ничего не висит в воздухе».
+    const walk = (path, n, test) => {
+      let a = 0, b = 0;
+      const len = path ? path.getTotalLength() : 0;
+      for (let i = 0; len && i < n; i++) {
+        const q = path.getPointAtLength(len * (i + 0.5) / n);
+        test(q) ? a++ : b++;
+      }
+      return { on: a, off: b };
+    };
+    const hostsU = [...new Set(Object.values(G.hosts))];
+    const onBody = { on: 0, off: 0 };
+    for (const h of hostsU) {
+      const path = document.getElementById(h.id + '-done');
+      const shapes = G.parts().filter(c => c.host === h.el).map(c => c.shape);
+      const r = walk(path, 400, (q) => shapes.some(sh => sh.isPointInFill(
+        new DOMPoint(q.x, q.y).matrixTransform(G.rel(path, sh)))));
+      onBody.on += r.on; onBody.off += r.off;
+    }
+    out.wormPx = onBody;
+    const tailBody = document.getElementById('bt-tail-body');
+    const tailIn = () => walk(document.getElementById('bt-tail-goo-done'), 400,
+      (q) => tailBody.isPointInFill(new DOMPoint(q.x, q.y)));
+    out.tailIn = tailIn();
+    { const b0 = L.bend; L.bend = 0.7; L._tailKey = null; L.drawTail(true);
+      out.tailInBent = tailIn();
+      L.bend = b0; L._tailKey = null; L.drawTail(true); }
+    const rimTop = BATH_ART.box('tub').y;
+    out.rimIn = walk(document.getElementById('bt-goo-rim-done'), 400, (q) => q.y >= rimTop);
+
+    // ---------- ДЫШИТ ВМЕСТЕ С ТЕЛОМ ----------
+    // Червь в конце тяжело дышит, звенья раздуваются. След на звене обязан
+    // расти вместе с ним: меряется ширина звена и ширина следов на нём в
+    // самой узкой и самой широкой фазе вдоха. Холст поверх червя (первая
+    // версия) давал следам отношение ровно единица — они висели коркой.
+    // Капля — точно в середину живота: именно он раздувается сильнее всех.
+    {
+      const root = L.wormHandle.svgRoot, B2 = L.WORM_BASE, bx = L.wormBoxScene();
+      const belly = root.querySelector('[data-part="belly"] > .worm-part-shape');
+      const bb = belly.getBBox();
+      const c = new DOMPoint(bb.x + bb.width / 2, bb.y + bb.height * 0.35)
+        .matrixTransform(G.rel(belly, root));
+      G.stick('worm', drop(bx.x + c.x * bx.w / B2.w, bx.y + c.y * bx.w / B2.w,
+                           { r: 8, main: true, vx: 200, vy: 0 }));
+      await wait(3500);
+    }
+    const bodyHost = [...new Set(Object.values(G.hosts))].find(h => h.id === 'bt-wgoo-belly' && h.done.length);
+    if (bodyHost) {
+      const part = G.parts().find(c => c.host === bodyHost.el);
+      const gp = document.getElementById(bodyHost.id + '-done');
+      let lo = null, hi = null;
+      for (let i = 0; i < 45; i++) {
+        const sw = part.shape.getBoundingClientRect().width, gw = gp.getBoundingClientRect().width;
+        if (!lo || sw < lo.s) lo = { s: sw, g: gw };
+        if (!hi || sw > hi.s) hi = { s: sw, g: gw };
+        await wait(40);
+      }
+      out.breath = { part: part.key, shape: hi.s / lo.s, goo: hi.g / lo.g };
+    }
+
+    // Брызги, залетевшие в рот, глотаются, но НЕ засчитываются.
+    const m = L.mouthAt || L.mouthPoint(), h0 = L.hits;
+    L.drops = [{ x: m.x, y: m.y, vx: 0, vy: 0, t: 0.5, r: 4, main: false, trail: [] }];
+    L.stepDrops(L.cfg().dt * 1.01);
+    out.spray = { hits: L.hits - h0, left: L.drops.length };
+
+    // Уход из ванной смывает всё (вариант «а»).
+    L.close();
+    const paint = document.querySelectorAll('.bt-goo-host').length;
+    out.afterClose = {
+      wall: inked('bt-goo-wall'),
+      rim: G.rimDone.length + (document.getElementById('bt-goo-rim-done').getAttribute('d') || '').length,
+      tail: G.tailDone.length, live: G.live.length, worm: paint
+    };
+    L.open();
+    await wait(300);
+    return out;
+  });
+  ok(goo.worm.over && goo.worm.surf === 'worm', 'капля в тело прилипает к телу');
+  // Равномерно по пути над телом — квартили около четверти, половины и трёх
+  // четвертей ширины; насквозь — около PASS_CHANCE (0.3).
+  ok(goo.spread.q25 > 0.12 && goo.spread.q25 < 0.38 && goo.spread.q50 > 0.36
+     && goo.spread.q50 < 0.64 && goo.spread.q75 > 0.62,
+     'капля садится по ВСЕМУ телу, а не вдоль контура',
+     `квартили глубины ${goo.spread.q25.toFixed(2)} / ${goo.spread.q50.toFixed(2)} / ${goo.spread.q75.toFixed(2)} при ширине ${goo.spread.width}`);
+  ok(goo.spread.pass > 0.2 && goo.spread.pass < 0.4, 'часть капель пролетает тело насквозь',
+     `${(goo.spread.pass * 100).toFixed(0)}% пролетели`);
+  ok(goo.tail.over && goo.tail.surf === 'tail', 'капля в хвост прилипает к хвосту');
+  ok(goo.rim.over && goo.rim.surf === 'rim', 'капля на борт прилипает к борту');
+  ok(goo.inside.over && goo.inside.added === 0, 'перелетевшая борт уходит в ванну и не рисуется поверх чаши');
+  ok(goo.wall.over && goo.wall.surf === 'wall', 'капля за верхом дуги прилипает к стене');
+  ok(goo.live === 0 && goo.wallNodes >= 1 && goo.rimNodes >= 1 && goo.tailDone >= 1,
+     'стёкшие потёки застыли и легли каждый в свой слой',
+     `стена ${goo.wallNodes} точек, борт ${goo.rimNodes}, хвост ${goo.tailDone}, живых ${goo.live}`);
+  ok(goo.tailMoves, 'пятна на хвосте едут вместе с его изгибом');
+  ok(goo.wallSoft > 0.3, 'пятно на стене размыто плавно, как сама стена',
+     `${(goo.wallSoft * 100).toFixed(0)}% точек с частичной прозрачностью`);
+  ok(goo.wormPx.on > 50 && goo.wormPx.off === 0, 'след на теле не вылезает за свою часть',
+     `${goo.wormPx.on} точек контура внутри, ${goo.wormPx.off} снаружи`);
+  ok(goo.tailIn.on > 50 && goo.tailIn.off === 0 && goo.tailInBent.off === 0,
+     'след на хвосте не вылезает за хвост — и когда хвост согнули',
+     `прямо: ${goo.tailIn.off} снаружи из ${goo.tailIn.on + goo.tailIn.off}; согнутый: ${goo.tailInBent.off}`);
+  ok(goo.rimIn.on > 20 && goo.rimIn.off === 0, 'над кромкой борта следа нет',
+     `${goo.rimIn.off} точек выше кромки из ${goo.rimIn.on + goo.rimIn.off}`);
+  ok(goo.breath && goo.breath.shape > 1.04 && Math.abs(goo.breath.goo - goo.breath.shape) < 0.03,
+     'след на теле дышит вместе с частью',
+     goo.breath ? `${goo.breath.part}: часть ×${goo.breath.shape.toFixed(3)}, следы ×${goo.breath.goo.toFixed(3)}` : 'нет следа на звене');
+  ok(goo.spray.hits === 0 && goo.spray.left === 0, 'брызги во рту проглочены, но не засчитаны');
+  ok(Object.values(goo.afterClose).every(v => v === 0), 'уход из ванной смывает все следы',
+     JSON.stringify(goo.afterClose));
+
+  // ================= СТРУЯ — ОДНА ЛЕНТА =================
+  // Струя не нанизанные бусы, а цельная лента: в полёте она в разы длиннее
+  // своей толщины. Капля, оторвавшись, становится ОТДЕЛЬНОЙ каплей в полёте,
+  // а лента после этого короче.
+  const jet = await page.evaluate(() => {
+    const L = LustMinigame, C = L.cfg();
+    const v = C.speedMin + 0.95 * (C.speedMax - C.speedMin), a = -1.0;
+    const keep = L.drops;
+    L.drops = [];
+    const d = { x: 250, y: 620, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, r: 11,
+                main: true, trail: [], shed: 0, shedT: 0,
+                stream: { x0: 250, y0: 620, vx: Math.cos(a) * v, vy: Math.sin(a) * v, back: 1 } };
+    const len = () => { let s = 0, p = L.streamAt(d, 0);
+      for (let i = 1; i <= 10; i++) { const q = L.streamAt(d, d.stream.back * i / 10);
+        s += Math.hypot(q.x - p.x, q.y - p.y); p = q; } return s; };
+    while (d.t < L.STREAM.emit + 0.03) LustShot.step(d, C);
+    const long = len() / (2 * d.r * 0.72);
+    const back0 = d.stream.back, n0 = L.drops.length;
+    d.shedT = -1;
+    L.shedStream(d);
+    const out = { long, shorter: d.stream.back < back0, dropped: L.drops.length - n0,
+                  apart: L.drops[0] ? !L.drops[0].stream : false };
+    L.drops = keep;
+    return out;
+  });
+  ok(jet.long > 3.5, 'струя — вытянутая лента, а не шарик', `длина — ${jet.long.toFixed(1)} толщины`);
+  ok(jet.dropped === 1 && jet.apart && jet.shorter,
+     'оторвавшаяся капля летит сама, а лента после неё короче');
+
+  // ================= В ВАННОЙ РАЗДЕВАЮТСЯ =================
+  // Надетое снаружи в ванную не попадает: червь моется голым. Но наряд не
+  // теряется — он в состоянии игрока и вернётся, как только выйдет.
+  const naked = await page.evaluate(async () => {
+    const L = LustMinigame, wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const was = GameState.data.cosmetics;
+    GameState.data.cosmetics = { hat: 'top-hat', neck: 'bow-tie' };
+    L.close(); L.open();
+    await wait(600);
+    const worn = L.wormHandle.svgRoot.querySelectorAll('[data-cosmetic]').length;
+    const kept = JSON.stringify(GameState.data.cosmetics);
+    const room = window.WormModelAPI.loadWormModel().cosmetics;
+    GameState.data.cosmetics = was;
+    L.close(); L.open();
+    await wait(300);
+    return { worn, kept, room: Object.keys(room || {}).length };
+  });
+  ok(naked.worn === 0, 'в ванной червь голый, что бы на нём ни было надето',
+     `${naked.worn} надетых вещей на черве в ванной`);
+  ok(naked.kept.includes('top-hat') && naked.room === 2, 'наряд не пропал: снаружи червь одет',
+     naked.kept);
+
+  // ================= ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» =================
+  // Награда у похоти на своём таймере (docs/plan/21-lust-bath.md, разд. 7а).
+  // Только что сыграли на жетон — значит, следующий заход приходится на «ещё
+  // рано»: червя моют, и на этом всё. Мытьё здесь не водится пальцем заново:
+  // его проверяет забег выше, а тут проверяется развилка ПОСЛЕ мочалки.
+  const wash = await page.evaluate(async () => {
+    const L = LustMinigame;
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const before = {
+      shard: GameState.currency('lust_shard'), token: GameState.currency('lust_token'),
+      paidAt: GameState.data.sins.lust.paid_at
+    };
+    L.close(); L.open();
+    await wait(400);
+    // Дадим шкале просесть: забег обязан её закрыть и без награды.
+    GameState.data.sins.lust.updated_at -= 6 * 3600 * 1000;
+    const readyAtStart = Backend.sinPays('lust');
+    L.startWater();
+    await wait(1200);
+    L.finishStage('soap');
+    const pile = !!L.pile;
+    L.finishStage('cloth');
+    await wait(1500);
+    return {
+      readyAtStart, pile, phase: L.phase,
+      tail: +(document.getElementById('bt-tail').style.opacity || 0),
+      shop: document.getElementById('bt-shop-btn').classList.contains('on'),
+      sin: Math.round(GameState.sinValue('lust')),
+      shard: GameState.currency('lust_shard'), token: GameState.currency('lust_token'),
+      paidAt: GameState.data.sins.lust.paid_at, before,
+      wheel: Backend.rewardReady('lust')
+    };
+  });
+  ok(!wash.readyAtStart, 'сразу после игры на жетон награда ещё не готова');
+  ok(!wash.pile && wash.phase === 'done' && wash.tail === 0,
+     'без награды забег кончается после мочалки: ни горки пены, ни хвоста',
+     `фаза ${wash.phase}, горка ${wash.pile}, хвост ${wash.tail}`);
+  ok(wash.sin === 100, 'червь вымыт — шкала закрыта и без награды', `шкала ${wash.sin}`);
+  ok(wash.shard === wash.before.shard && wash.token === wash.before.token,
+     'за «только помыть» ничего не начислено');
+  ok(wash.paidAt === wash.before.paidAt, 'таймер награды не потрачен');
+  ok(wash.shop, 'после забега снова виден вход в магазин');
+  ok(!wash.wheel.ready && wash.wheel.fill < 100,
+     'узел похоти в колесе не горит, луч налит по таймеру',
+     `налито ${wash.wheel.fill.toFixed(0)}%, осталось ${wash.wheel.hoursLeft.toFixed(1)} ч`);
+  // Таймер истёк — награда снова готова, и колесо об этом знает.
+  const later = await page.evaluate(() => {
+    GameState.data.sins.lust.paid_at -= GameState.rewardCooldownHours('lust') * 3600 * 1000 + 1000;
+    return { pays: Backend.sinPays('lust'), wheel: SinsMenu.read('lust') };
+  });
+  ok(later.pays && later.wheel.ready && later.wheel.fill === 100,
+     'таймер истёк — награда готова и узел горит');
+  await page.screenshot({ path: out + '5-wash-only.png' });
+
+  // ================= ПЕРЕЕЗД КАМЕРЫ БЕЗ ЧЁРНЫХ КРАЁВ =================
+  // Камера едет css-анимацией готовых текстур. Пока текстура рисовалась
+  // только кадром «откуда», всё, что въезжало в кадр по дороге, было
+  // чёрным: на «мытьё → хвост» пятая часть кадра, на «хвост → общий план»
+  // две трети, и поверх черноты торчал кусок тела. Меряется доля тёмных
+  // точек сцены посреди движения; сама сцена даёт около 2% (контуры,
+  // тени), битый переезд — от 20%.
+  const darkShare = async () => {
+    const buf = await page.screenshot();
+    return page.evaluate(async (b64) => {
+      const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const top = Math.round(img.height * 0.07);          // без шапки окна
+      const d = x.getImageData(0, top, c.width, c.height - top).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 90) n++;
+      return n / (d.length / 4);
+    }, buf.toString('base64'));
+  };
+  for (const [a, b] of [['body', 'tail'], ['body', 'overview'], ['tail', 'overview']]) {
+    await page.evaluate((n) => LustMinigame.setCamera(n), a);
+    await page.waitForTimeout(400);
+    await page.evaluate((n) => LustMinigame.setCamera(n, 1000), b);
+    let worst = 0;
+    for (let i = 0; i < 7; i++) { await page.waitForTimeout(120); worst = Math.max(worst, await darkShare()); }
+    await page.waitForTimeout(300);
+    ok(worst < 0.06, `переезд «${a} → ${b}» без чёрных краёв`,
+       `худший кадр ${(worst * 100).toFixed(1)}% тёмного`);
+  }
 
   console.log(errs.length ? '\nОШИБКИ:\n  ' + errs.join('\n  ') : '\nошибок нет');
   await browser.close();
