@@ -1564,27 +1564,17 @@ const LustMinigame = {
         const edge = this.el('bt-tail-edge');
         if (edge) edge.setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
-        // Звенья и валики: тот же изгиб, что у контура (BATH_ART.tailPads).
-        const P = BATH_ART.tailPads(d.curve, this.tailGrow()), f1 = (v) => v.toFixed(1);
-        P.pads.forEach((p, i) => {
-            const e = this.el(`bt-tail-pad-${i}`);
-            if (!e) return;
-            e.setAttribute('x', f1(-p.rx)); e.setAttribute('y', f1(-p.ry));
-            e.setAttribute('width', f1(2 * p.rx)); e.setAttribute('height', f1(2 * p.ry));
-            e.setAttribute('transform', `translate(${f1(p.x)} ${f1(p.y)}) rotate(${f1(p.deg)})`);
-        });
-        P.rings.forEach((r, i) => {
-            const g2 = this.el(`bt-tail-ring-${i}`);
-            if (!g2) return;
-            const [sh, li] = g2.children;
-            // Тень ПЕРЕД валиком (ниже по хвосту), подсветка ПОСЛЕ (к кончику):
-            // вмятина читается, только если свет и тень разведены по оси.
-            sh.setAttribute('rx', f1(r.half * 1.05)); sh.setAttribute('ry', f1(r.w));
-            sh.setAttribute('cy', f1(r.w * 0.35));
-            li.setAttribute('rx', f1(r.half * 0.95)); li.setAttribute('ry', f1(r.w * 0.7));
-            li.setAttribute('cy', f1(-r.w * 0.9));
-            g2.setAttribute('transform', `translate(${f1(r.x)} ${f1(r.y)}) rotate(${f1(r.deg)})`);
-        });
+        // Звенья, головка, тень под венчиком и блик — из того же контура.
+        const P = BATH_ART.tailPieces(d.curve, this.tailGrow()), f1 = (v) => v.toFixed(1);
+        P.segs.forEach((sd, i) => { const e = this.el(`bt-tail-seg-${i}`); if (e) e.setAttribute('d', sd); });
+        const gl = this.el('bt-tail-glans');
+        if (gl) gl.setAttribute('d', P.glans);
+        for (const [id, q] of [['bt-tail-neck', P.neck], ['bt-tail-wet', P.wet]]) {
+            const e = this.el(id);
+            if (!e) continue;
+            e.setAttribute('rx', f1(q.rx)); e.setAttribute('ry', f1(q.ry));
+            e.setAttribute('transform', `translate(${f1(q.x)} ${f1(q.y)}) rotate(${f1(q.deg)})`);
+        }
         // Прилипшее к хвосту едет вместе с ним.
         if (typeof LustGoo !== 'undefined') LustGoo.drawTail(force);
     },

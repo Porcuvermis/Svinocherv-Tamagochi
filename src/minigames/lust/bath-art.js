@@ -515,40 +515,40 @@ const BATH_ART = {
     },
 
     // Контур прута: осевая линия, разведённая на полутолщину по нормали.
+    // Толщина — ОДНА функция tailHalf на всех: по ней же садятся следы и
+    // пузыри, так что они повторяют форму сами.
+    //
+    // Контур снимается ЧАЩЕ, чем точки оси (TAIL_SAMPLES против T.seg):
+    // у головки резкий венчик и купол, на двадцати двух точках они
+    // выходили ломаными. Саму ось не трогаем — по её концу летит капля и
+    // считает калькулятор, а число её шагов меняет изгиб.
+    TAIL_SAMPLES: 72,
+    tailAt(pts, t) {
+        const n = pts.length - 1, f = Math.min(n, Math.max(0, t * n));
+        const i = Math.min(n - 1, Math.floor(f)), u = f - i, a = pts[i], b = pts[i + 1];
+        return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, a: a.a + (b.a - a.a) * u };
+    },
     tailCurve(bend, grow) {
-        const T = this.TAIL, g = grow || 1;
-        const pts = this.tailSpine(bend, g), n = pts.length - 1;
-        // Сужение с лёгкой выпуклостью в середине и ОСТРЫМ кончиком.
-        // Линейное давало ровный треугольник — плавник, а не хвост; степень
-        // без множителя оставляла кончик тупым, и изгиб на нём не читался.
-        // Толщина растёт МЕДЛЕННЕЕ длины (степень меньше единицы): налив —
-        // это прежде всего длина, а толщина идёт следом, чтобы хвост
-        // набухал, а не масштабировался целиком. Было наоборот, степенью
-        // 1.7, и выросший хвост оказывался с голову шириной.
-        const half = (t) => (T.base / 2) * Math.pow(g, 0.7) * Math.pow(1 - t, 0.72)
-                          * (1 + 0.28 * Math.sin(Math.PI * t));
-        const left = [], right = [];
-        // Кончик СКРУГЛЁН: последние точки контура не сходятся в иглу, а
-        // замыкаются дугой. Острый кончик делал хвост рогом или шипом.
-        // Ось и её конец (tip) те же — по ним летит капля и считает
-        // калькулятор; дуга лишь чуть выходит за конец оси.
-        const m = n - 1;
-        for (let i = 0; i <= m; i++) {
-            const p = pts[i], w = half(i / n);
-            const nx = (T.side || 1) * Math.cos(p.a), ny = Math.sin(p.a);
-            left.push(`${(p.x - nx * w).toFixed(1)} ${(p.y - ny * w).toFixed(1)}`);
-            right.push(`${(p.x + nx * w).toFixed(1)} ${(p.y + ny * w).toFixed(1)}`);
+        const T = this.TAIL, g = grow || 1, side = T.side || 1;
+        const pts = this.tailSpine(bend, g), n = pts.length - 1, M = this.TAIL_SAMPLES;
+        const left = [], right = [], ts = [];
+        for (let k = 0; k <= M; k++) {
+            const t = k / M, p = this.tailAt(pts, t), w = this.tailHalf(t, g);
+            const nx = side * Math.cos(p.a), ny = Math.sin(p.a);
+            left.push({ x: p.x - nx * w, y: p.y - ny * w });
+            right.push({ x: p.x + nx * w, y: p.y + ny * w });
+            ts.push(t);
         }
-        const rTip = Math.max(0.8, half(m / n));
+        const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
         // Низ уходит под воду, поэтому основание закрывается прямой: закруглять
-        // то, чего не видно, незачем.
-        const d = `M${left.join('L')}A${rTip.toFixed(1)} ${rTip.toFixed(1)} 0 0 ${(T.side || 1) > 0 ? 1 : 0} ${right[m]}`
-                + `L${right.reverse().join('L')}Z`;
+        // то, чего не видно, незачем. Купол головки сходится сам (толщина к
+        // концу — ноль по окружности).
+        const d = `M${left.map(P).join('L')}L${right.slice().reverse().map(P).join('L')}Z`;
         const tip = pts[n];
-        return { d, spine: pts, tip,
+        return { d, spine: pts, tip, left, right, ts,
                  // Направление кончика в координатах сцены: фигура смотрит
                  // ВВЕРХ, то есть в −y.
-                 dir: Math.atan2(-Math.cos(tip.a), (T.side || 1) * Math.sin(tip.a)) };
+                 dir: Math.atan2(-Math.cos(tip.a), side * Math.sin(tip.a)) };
     },
 
     // Две линии хвоста при заданном изгибе: сам прут и блик по нему. Блик
@@ -557,127 +557,139 @@ const BATH_ART = {
     // Полуширина хвоста в доле t вдоль оси. Пузыри садятся ПО НЕЙ, а не по
     // постоянной: у основания хвост вдвое толще, чем у кончика, и общая
     // ширина сажала половину пены мимо, на плитку.
+    // ПРОФИЛЬ ХВОСТА: ствол из звеньев и головка.
+    //   * Ствол — TAIL_SEGS настоящих звеньев: каждое вздуто посередине и
+    //     перехвачено на стыке с соседом. Полосками по гладкой трубе
+    //     членение читалось нарисованным, а не телесным.
+    //   * Ствол сужается к головке и перед ней перехвачен шейкой.
+    //   * Головка (от TAIL_GLANS до конца): венчик резко выступает шире
+    //     шейки, дальше — округлый купол.
+    TAIL_SEGS: 5,
+    TAIL_GLANS: 0.72,
     tailHalf(t, grow) {
-        const g = grow || 1;
-        return (this.TAIL.base / 2) * Math.pow(g, 0.7)
-             * Math.pow(1 - t, 0.72) * (1 + 0.28 * Math.sin(Math.PI * t));
+        const B = (this.TAIL.base / 2) * Math.pow(grow || 1, 0.7);
+        const G = this.TAIL_GLANS, S = this.TAIL_SEGS;
+        const tt = Math.max(0, Math.min(1, t));
+        if (tt < G) {
+            const f = (tt / G) * S, u = f - Math.floor(f);
+            const taper = 1 - 0.3 * (tt / G);
+            // Вздутие звена: 0.84 на стыке, 1 посередине.
+            return B * taper * (0.84 + 0.16 * Math.sin(Math.PI * u));
+        }
+        const u = (tt - G) / (1 - G);
+        const neck = 0.6, corona = 0.9;
+        // Венчик выходит из шейки на первой десятой головки, дальше купол.
+        if (u < 0.1) {
+            const k = u / 0.1, s2 = k * k * (3 - 2 * k);
+            return B * (neck + (corona - neck) * s2);
+        }
+        const v = (u - 0.1) / 0.9;
+        return B * corona * Math.sqrt(Math.max(0, 1 - Math.pow(v, 2.2)));
     },
 
     tailD(bend, grow) {
         const c = this.tailCurve(bend || 0, grow);
-        const shine = c.spine.filter((p, i) => i > 1 && i < c.spine.length - 3)
+        // Блик идёт по стволу и кончается у шейки: у головки свой, влажный.
+        const lastT = this.TAIL_GLANS - 0.04;
+        const shine = c.spine.filter((p, i) => i > 1 && i / (c.spine.length - 1) < lastT)
             .map(p => `${(p.x - (this.TAIL.side || 1) * Math.cos(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)} `
                     + `${(p.y - Math.sin(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)}`);
         return { body: c.d, shine: 'M' + shine.join('L'), curve: c };
     },
 
-    // ---------- ХВОСТ — ПРОДОЛЖЕНИЕ ТЕЛА ----------
-    // Первая версия была плоским клином с обводкой и одной линией блика: в
-    // кадре финала она читалась тёмным шипом, а не хвостом червя. Теперь
-    // хвост нарисован ТЕМИ ЖЕ средствами, что и тело: звенья с объёмом от
-    // общего света (LIGHT) и валики-перетяжки между ними — тень перед
-    // валиком и подсветка после, как у worm-hull. Звенья мельчают к
-    // кончику вместе с толщиной.
+    // ---------- ХВОСТ: ЗВЕНЬЯ И ГОЛОВКА ----------
+    // Хвост — гибрид червя и фаллоса: ствол из настоящих звеньев (у каждого
+    // свой объём и свой контур) и головка с венчиком. Нарисован теми же
+    // средствами, что тело: свет слева, мягкий объём, перетяжки на стыках.
     //
-    // Силуэт НЕ поменялся: контур — прежний путь bt-tail-body (по нему
-    // считаются полёт капли, калькулятор, следы на хвосте и их обрезка).
-    // Звенья и валики лежат ВНУТРИ него, обрезанные по нему же. Это
-    // обрезка, а не маска и не фильтр: отдельного буфера на живом слое она
-    // не заводит (docs/traps.md, п. 73).
-    TAIL_PADS: 6,
-
-    // Разметка хвоста собирается ОДИН РАЗ, дальше меняются только атрибуты.
-    // Пересобирать её каждый кадр значит парсить строку шестьдесят раз в
-    // секунду ради двух чисел — на телефоне это заметно.
+    // Каждое звено — СВОЙ кусок контура между двумя перехватами, со своей
+    // заливкой объёма и тонкой линией стыка. Головка — отдельный кусок,
+    // розовее и с влажным бликом: глянец в игре — привилегия влажного
+    // (docs/art-direction.md). Силуэт — общий путь bt-tail-body: по нему
+    // считаются следы на хвосте и их обрезка.
+    //
+    // Пути кусков переписываются вместе с контуром (drawTail), обрезки и
+    // масок нет — на живом слое они стоили бы отдельного буфера.
     tail(model) {
         const m = (model && model.tail) || {};
-        // Оттенок берётся у предхвостового сегмента тела, а не у собственного
-        // хвоста модели: тот покрашен в самую тёмную ступень мяса, и хвост
-        // такого размера читался тёмным клинком, а не частью червя.
-        //
-        // Теперь — у ЖИВОТА: хвост торчит прямо из него (звеньев между ними
-        // в ванне нет вовсе, opts.endAtBelly), и предхвостовое звено,
-        // покрашенное на ступень темнее, давало хвост заметно темнее тела.
+        // Оттенок — у ЖИВОТА: хвост растёт прямо из него (звеньев между ними
+        // в ванне нет, opts.endAtBelly). Собственный хвост модели покрашен в
+        // самую тёмную ступень мяса и читался тёмным шипом.
         const seg = (model && model.belly)
                  || (model && model.growingSegments && model.growingSegments[0]) || null;
         const fill = (seg && seg.fill) || m.fill || PALETTE.flesh[500];
         const ink = (seg && seg.stroke) || m.stroke || PALETTE.ink;
-        const F = PALETTE.flesh;
-        // Свет слева, как у всей комнаты и у тела.
-        // Перепад внутри звена мягкий: членение дают валики, а не края звеньев.
-        // С тёмным краем звенья складывались в стопку чашек — шишку.
-        const hi = mixColor(fill, F[100], 0.4), lo = mixColor(fill, F[900], 0.22);
-        let pads = '', rings = '';
-        for (let i = 0; i < this.TAIL_PADS; i++)
-            pads += `<rect id="bt-tail-pad-${i}" width="0" height="0" fill="url(#bt-tail-vol)"/>`;
-        for (let i = 0; i < this.TAIL_PADS - 1; i++)
-            rings += `<g id="bt-tail-ring-${i}">
-                <ellipse class="sh" cx="0" cy="0" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
-                <ellipse class="li" cx="0" cy="0" rx="0" ry="0" fill="url(#bt-tail-light)"/>
-            </g>`;
+        const F = PALETTE.flesh, V = PALETTE.viscera;
+        const hi = mixColor(fill, F[100], 0.42), lo = mixColor(fill, F[900], 0.3);
+        const inner = mixColor(ink, lo, 0.35);
+        // Головка — кровь ближе к коже: розовее и темнее ствола.
+        const gFill = mixColor(fill, F[300], 0.25), gHot = mixColor(gFill, V[500], 0.18);
+        let segs = '';
+        for (let i = 0; i < this.TAIL_SEGS; i++)
+            segs += `<path id="bt-tail-seg-${i}" d="" fill="url(#bt-tail-vol)" stroke="${inner}" stroke-width="1.2" stroke-linejoin="round"/>`;
         return `
         <defs>
-            <!-- Объём ПОПЕРЁК хвоста, вдоль — ровно: полосы звеньев стыкуются
-                 без шва, и членение дают только валики. Звенья-эллипсы с
-                 объёмом во все стороны складывались в стопку чашек. -->
+            <!-- Объём поперёк: свет слева, теневой бок справа, отсвет у
+                 самого края. Звенья отличаются контуром, а не заливкой. -->
             <linearGradient id="bt-tail-vol" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0" stop-color="${lo}"/>
                 <stop offset="0.2" stop-color="${hi}"/>
-                <stop offset="0.48" stop-color="${fill}"/>
-                <stop offset="0.85" stop-color="${lo}"/>
+                <stop offset="0.5" stop-color="${fill}"/>
+                <stop offset="0.86" stop-color="${lo}"/>
                 <stop offset="1" stop-color="${mixColor(lo, F[900], 0.3)}"/>
             </linearGradient>
-            <!-- Валик: мягкие пятна, сходящие на нет, а не полоса — жёсткая
-                 полоса поперёк читается швом или ремнём. -->
+            <radialGradient id="bt-tail-glans-g" cx="38%" cy="35%" r="75%">
+                <stop offset="0" stop-color="${mixColor(gFill, F[100], 0.45)}"/>
+                <stop offset="0.45" stop-color="${gHot}"/>
+                <stop offset="1" stop-color="${mixColor(gHot, F[900], 0.45)}"/>
+            </radialGradient>
+            <!-- Тень под венчиком и на перехватах: мягкое пятно. -->
             <radialGradient id="bt-tail-shade">
-                <stop offset="0" stop-color="${F[900]}" stop-opacity="0.5"/>
+                <stop offset="0" stop-color="${F[900]}" stop-opacity="0.55"/>
                 <stop offset="1" stop-color="${F[900]}" stop-opacity="0"/>
             </radialGradient>
-            <radialGradient id="bt-tail-light">
-                <stop offset="0" stop-color="${F[100]}" stop-opacity="0.4"/>
-                <stop offset="1" stop-color="${F[100]}" stop-opacity="0"/>
-            </radialGradient>
-            <clipPath id="bt-tail-clip"><use href="#bt-tail-body"/></clipPath>
         </defs>
         <path id="bt-tail-body" d="" fill="${lo}" stroke="${ink}"
               stroke-width="3" stroke-linejoin="round"/>
-        <g clip-path="url(#bt-tail-clip)">${pads}${rings}</g>
-        <!-- Контур ещё раз ПОВЕРХ звеньев: обрезка режет их ровно по оси
-             линии, и половина обводки иначе оказывалась под ними. -->
+        ${segs}
+        <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
+        <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)" stroke="${inner}" stroke-width="1.4" stroke-linejoin="round"/>
+        <!-- Влажный блик на головке. -->
+        <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${F[100]}" opacity="0.75"/>
+        <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
+             перебивали бы его. -->
         <path id="bt-tail-edge" d="" fill="none" stroke="${ink}"
               stroke-width="3" stroke-linejoin="round"/>
         <path id="bt-tail-shine" d="" fill="none" stroke="${F[100]}"
-              stroke-width="2.6" stroke-linecap="round" opacity="0.3"/>
+              stroke-width="2.4" stroke-linecap="round" opacity="0.28"/>
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
              ним (lust-goo.js). -->
         ${this.gooLive('bt-tail-goo')}`;
     },
 
-    // Где стоят звенья и валики при данном изгибе: точка на оси, угол и
-    // полуширина. Звено длиной в шаг, чуть шире хвоста — край срежет
-    // обрезка, и объём доходит до самого контура.
-    tailPads(curve, grow) {
-        const pts = curve.spine, n = pts.length - 1, N = this.TAIL_PADS, side = this.TAIL.side || 1;
-        const at = (t) => {
-            const f = t * n, i = Math.min(n - 1, Math.floor(f)), u = f - i;
-            const a = pts[i], b = pts[i + 1];
-            return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u,
-                     deg: side * (a.a + (b.a - a.a) * u) * 180 / Math.PI };
+    // Куски хвоста при данном изгибе: пути звеньев и головки, тень под
+    // венчиком и влажный блик. Всё — из того же контура, что силуэт.
+    tailPieces(curve, grow) {
+        const L = curve.left, R = curve.right, M = L.length - 1;
+        const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
+        const slice = (t0, t1) => {
+            const a = Math.round(t0 * M), b = Math.round(t1 * M);
+            const l = L.slice(a, b + 1), r = R.slice(a, b + 1).reverse();
+            return `M${l.map(P).join('L')}L${r.map(P).join('L')}Z`;
         };
-        // Звенья короче к кончику: шаг по оси убывает вместе с толщиной.
-        const edges = [0];
-        for (let i = 1; i <= N; i++) edges.push(1 - Math.pow(1 - i / N, 1.35));
-        const len = this.TAIL.len * (grow || 1);
-        const pads = [], rings = [];
-        for (let i = 0; i < N; i++) {
-            const t0 = edges[i], t1 = edges[i + 1], tm = (t0 + t1) / 2, p = at(tm);
-            pads.push({ ...p, rx: this.tailHalf(t0, grow) * 1.2, ry: (t1 - t0) * len * 0.62 });
-            if (i < N - 1) {
-                const q = at(t1);
-                rings.push({ ...q, half: this.tailHalf(t1, grow), w: Math.max(1.6, (t1 - t0) * len * 0.16) });
-            }
-        }
-        return { pads, rings };
+        const G = this.TAIL_GLANS, S = this.TAIL_SEGS, segs = [];
+        for (let i = 0; i < S; i++) segs.push(slice(G * i / S, G * (i + 1) / S));
+        const glans = slice(G, 1);
+        const pts = curve.spine, side = this.TAIL.side || 1;
+        const at = (t) => this.tailAt(pts, t);
+        const nk = at(G + 0.02), wet = at(G + (1 - G) * 0.45);
+        const deg = (p) => side * p.a * 180 / Math.PI;
+        const B = this.tailHalf(G + (1 - G) * 0.12, grow);
+        return { segs, glans,
+                 neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.05, ry: B * 0.32 },
+                 // Блик сдвинут к свету (влево) и вверх по головке.
+                 wet: { x: wet.x - side * Math.cos(wet.a) * B * 0.42, y: wet.y - Math.sin(wet.a) * B * 0.42,
+                        deg: deg(wet), rx: B * 0.2, ry: B * 0.34 } };
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
