@@ -1726,7 +1726,7 @@ const LustMinigame = {
         // игра засчитывала бы меньше, чем посчитал баланс.
         const m = this.mouthAt || this.mouthPoint();
         const main = { x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0, r: 11,
-                       main: true, trail: [], shed: 0, shedT: 0,
+                       main: true, trail: [], shed: 0, shedT: 0, seed: Math.random(),
                        willHit: LustShot.fly(C, { x: s.x, y: s.y }, v, m, C.mouthR).hit };
         if (typeof LustGoo !== 'undefined') LustGoo.arm(main);
         this.drops.push(main);
@@ -1749,7 +1749,7 @@ const LustMinigame = {
 
     // Мелкая капля: брызги у кончика и то, что отрывается от хвоста кометы.
     spawnDrop(x, y, vx, vy, r) {
-        const d = { x, y, vx, vy, t: 0, r, main: false, trail: [] };
+        const d = { x, y, vx, vy, t: 0, r, main: false, trail: [], seed: Math.random() };
         if (typeof LustGoo !== 'undefined') LustGoo.arm(d);
         this.drops.push(d);
         return d;
@@ -1969,17 +1969,21 @@ const LustMinigame = {
         // сколько бы их ни летело. С отрывающимися от кометы каплями их в
         // воздухе бывает под два десятка, и узел на каждую был бы два
         // десятка записей.
-        // Тень — тот же путь со сдвигом узла, блик — только у крупных.
-        let d = '', hi = '';
+        // Тень — тот же путь со сдвигом узла. Ядро — та же комета, вдвое
+        // тоньше: по оси струи жижа толще и мутнее, к краям просвечивает.
+        // Блик — только у крупных.
+        let d = '', core = '', hi = '';
         for (const q of this.drops) {
-            d += BATH_ART.cometD(q.x, q.y, q.r, q.trail);
+            d += BATH_ART.cometD(q.x, q.y, q.r, q.trail, q.seed);
+            core += BATH_ART.cometD(q.x, q.y, q.r * 0.55, q.trail, q.seed);
             if (q.r > 5) hi += BATH_ART.cometHi(q.x, q.y, q.r);
         }
-        this.setFly(d, hi);
+        this.setFly(d, hi, core);
     },
 
-    setFly(d, hi) {
-        for (const [id, v] of [['bt-fly', d], ['bt-fly-sh', d], ['bt-fly-hi', hi]]) {
+    setFly(d, hi, core) {
+        for (const [id, v] of [['bt-fly', d], ['bt-fly-sh', d], ['bt-fly-hi', hi],
+                               ['bt-fly-core', core || '']]) {
             const n = this.el(id);
             if (n && n.getAttribute('d') !== v) n.setAttribute('d', v);
         }

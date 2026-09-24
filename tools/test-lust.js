@@ -516,9 +516,9 @@ const harness = require('./harness');
 
     // Хвост согнули — пятна на нём поехали следом.
     await wait(2500);
-    const tailD0 = document.getElementById('bt-tail-goo').getAttribute('d');
+    const tailD0 = document.getElementById('bt-tail-goo-done').getAttribute('d');
     const b0 = L.bend; L.bend = 0.6; L._tailKey = null; L.drawTail(true);
-    const tailD1 = document.getElementById('bt-tail-goo').getAttribute('d');
+    const tailD1 = document.getElementById('bt-tail-goo-done').getAttribute('d');
     L.bend = b0; L._tailKey = null; L.drawTail(true);
     out.tailMoves = !!tailD0 && tailD0 !== tailD1;
     out.live = G.live.length;
@@ -535,7 +535,7 @@ const harness = require('./harness');
       for (let i = 3; i < px.length; i += 4) if (px[i]) { all++; if (px[i] < 200) soft++; }
       out.wallSoft = all ? soft / all : 0;
     }
-    out.rimNodes = document.getElementById('bt-goo-rim-done').childNodes.length;
+    out.rimNodes = G.rimDone.length;
     out.tailDone = G.tailDone.length;
     // На теле — ни одной краски за силуэтом.
     const c = document.getElementById('bt-goo'), px = c.getContext('2d')
@@ -560,7 +560,7 @@ const harness = require('./harness');
     for (let i = 3; i < clean.length; i += 4) if (clean[i]) paint++;
     out.afterClose = {
       wall: inked('bt-goo-wall'),
-      rim: document.getElementById('bt-goo-rim-done').childNodes.length,
+      rim: G.rimDone.length + (document.getElementById('bt-goo-rim-done').getAttribute('d') || '').length,
       tail: G.tailDone.length, live: G.live.length, worm: paint
     };
     L.open();

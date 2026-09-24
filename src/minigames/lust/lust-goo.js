@@ -60,8 +60,11 @@ const LustGoo = {
         // Стена — в единицах сцены, размыта как стена. Разрешение вдвое ниже
         // сцены: размытое деталей не держит, а холст во всю стену в полном
         // разрешении стоил бы памяти ни за что.
+        // Обновляется РЕЖЕ тела — 12 раз в секунду: пятно на стене далеко и
+        // в расфокусе, шаг его нитки за такой кадр не виден, а размытие
+        // тенью холста — самое дорогое рисование в следах.
         this.wall = this.canvas('bt-goo-wall', BATH_ART.W, BATH_ART.H, 0.5,
-                                { blur: BATH_ART.FAR_BLUR });
+                                { blur: BATH_ART.FAR_BLUR, hz: 12 });
         this.reset();
     },
 
@@ -90,13 +93,14 @@ const LustGoo = {
         el.style.width = w + 'px'; el.style.height = h + 'px';
         const C = { el, ctx: el.getContext('2d'), S, opt,
                     body: mk(), rect: null, force: false, ts: 0 };
-        if (opt.shade) { C.sh = mk(); C.done = mk(); }
+        C.core = mk(); C.done = mk();
+        if (opt.shade) C.sh = mk();
         return C;
     },
 
     clearCanvas(C) {
         if (!C) return;
-        for (const c of [C.el, C.body, C.sh, C.done])
+        for (const c of [C.el, C.body, C.core, C.sh, C.done])
             if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
         C.rect = null; C.force = false;
     },
@@ -105,12 +109,11 @@ const LustGoo = {
         cancelAnimationFrame(this.raf); this.raf = 0;
         this.live = [];
         this.tailDone = [];
-        this.setLayer('rim', '', '');
-        this.setLayer('tail', '', '');
-        for (const id of ['bt-goo-rim-done-sh', 'bt-goo-rim-done', 'bt-goo-rim-done-hi']) {
-            const g = document.getElementById(id);
-            if (g) g.innerHTML = '';
-        }
+        this.rimDone = [];
+        this.setLayer('rim', null);
+        this.setLayer('tail', null);
+        this.setLayer('rim', null, '-done');
+        this.setLayer('tail', null, '-done');
         this.clearCanvas(this.worm);
         this.clearCanvas(this.wall);
     },
@@ -120,13 +123,22 @@ const LustGoo = {
         if (n && n.getAttribute('d') !== d) n.setAttribute('d', d);
     },
 
-    // Живой слой резкого плана: тень и тело — один и тот же путь (тень
-    // сдвинута группой), блик отдельно.
-    setLayer(which, body, hi) {
-        const id = which === 'rim' ? 'bt-goo-rim' : 'bt-tail-goo';
-        this.setD(id + '-sh', body);
-        this.setD(id, body);
-        this.setD(id + '-hi', hi);
+    // Слой резкого плана: по пути на тон — тень (тот же путь, что край,
+    // сдвинута группой), край, ядро, блик. suf '-done' — застывшие.
+    setLayer(which, d, suf) {
+        const id = (which === 'rim' ? 'bt-goo-rim' : 'bt-tail-goo') + (suf || '');
+        d = d || { body: '', core: '', hi: '' };
+        this.setD(id + '-sh', d.body);
+        this.setD(id, d.body);
+        this.setD(id + '-core', d.core);
+        this.setD(id + '-hi', d.hi);
+    },
+
+    // Склеить формы нескольких пятен по тонам: ОДИН путь на тон.
+    join(list) {
+        const out = { body: '', core: '', hi: '' };
+        for (const d of list) { out.body += d.body; out.core += d.core; out.hi += d.hi; }
+        return out;
     },
 
     // Судьба капли в полёте: сколько опуститься до стены. Решается при
@@ -301,7 +313,15 @@ const LustGoo = {
             s.r = s.r0 * (0.5 + 0.5 * Math.min(1, s.t / 0.1));
             if (s.t > 0.15 && s.v > 0) {
                 // Стекает с ТОРМОЖЕНИЕМ: густое тянется, редеет и встаёт.
-                s.len += s.v * dt;
+                //
+                // И РЫВКАМИ. Вязкая капля не едет ровно: она держится на
+                // поверхности, пока вес капли на конце не пересилит
+                // сцепление, срывается, проскальзывает и снова цепляется.
+                // Ровное сползание читалось анимацией, рывки — жидкостью.
+                // Скорость ходит волной от почти нуля до полной; средняя
+                // выходит вдвое ниже, поэтому и множитель вдвое больше.
+                const w = 0.5 + 0.5 * Math.sin(s.t * 5.5 + s.seed * 40);
+                s.len += s.v * dt * 2 * (0.08 + 0.92 * w * w * w);
                 s.v *= Math.exp(-1.3 * dt);
             }
             if (s.surf === 'tail') tail = true;
@@ -354,31 +374,34 @@ const LustGoo = {
         const p = this.tailPoint(s.at);
         const d = s.shape || this.shapeOf({ r: s.r, len: Math.min(s.len, s.r * 2.2),
             seed: s.seed, ang: s.ang, _cache: s._cache || (s._cache = {}) }, 0, 0, 1);
-        return { body: BATH_ART.gooMove(d.body, p.x, p.y), hi: BATH_ART.gooMove(d.hi, p.x, p.y) };
+        return { body: BATH_ART.gooMove(d.body, p.x, p.y), core: BATH_ART.gooMove(d.core, p.x, p.y),
+                 hi: BATH_ART.gooMove(d.hi, p.x, p.y) };
     },
 
     // Хвост перерисован (изгиб, налив, опадание) — пятна едут следом.
+    // Застывшие и ползущие — РАЗНЫЕ пути: ползущие меняются каждый кадр,
+    // застывших до сорока, и склеивать их все ради одной ползущей нитки
+    // значило бы каждый кадр переписывать десятки килобайт пути.
     drawTail() {
-        if (!this.tailDone || (!this.tailDone.length && !this.live.some(s => s.surf === 'tail'))) return;
-        let body = '', hi = '';
-        for (const s of this.tailDone.concat(this.live.filter(q => q.surf === 'tail'))) {
-            const d = this.tailShape(s);
-            body += d.body; hi += d.hi;
-        }
-        this.setLayer('tail', body, hi);
+        if (!this.tailDone) return;
+        this.setLayer('tail', this.join(this.tailDone.map(s => this.tailShape(s))), '-done');
+        this.drawTailLive();
+    },
+
+    drawTailLive() {
+        this.setLayer('tail', this.join(this.live.filter(q => q.surf === 'tail')
+            .map(s => this.tailShape(s))));
     },
 
     render(tail) {
-        let rim = '', rimHi = '';
+        const rim = [];
         for (const s of this.live) {
-            if (s.surf === 'rim') {
-                const d = this.shapeOf(s, s.x, s.y, 1);
-                rim += d.body; rimHi += d.hi;
-            } else if (s.surf === 'worm') this.dirty(this.worm, s);
+            if (s.surf === 'rim') rim.push(this.shapeOf(s, s.x, s.y, 1));
+            else if (s.surf === 'worm') this.dirty(this.worm, s);
             else if (s.surf === 'wall') this.dirty(this.wall, s);
         }
-        this.setLayer('rim', rim, rimHi);
-        if (tail) this.drawTail();
+        this.setLayer('rim', this.join(rim));
+        if (tail) this.drawTailLive();
         this.draw(this.worm, 'worm');
         this.draw(this.wall, 'wall');
     },
@@ -410,7 +433,7 @@ const LustGoo = {
     draw(C, surf) {
         if (!C || !C.rect) return;
         const now = performance.now();
-        if (!C.force && now - C.ts < 50) return;
+        if (!C.force && now - C.ts < 1000 / (C.opt.hz || 20)) return;
         C.ts = now; C.force = false;
         const R = C.rect;
         C.rect = null;
@@ -422,15 +445,21 @@ const LustGoo = {
         c.save();
         c.beginPath(); c.rect(x, y, w, h); c.clip();
         c.clearRect(x, y, w, h);
-        if (C.done) {
-            c.drawImage(C.done, x, y, w, h, x, y, w, h);
+        c.drawImage(C.done, x, y, w, h, x, y, w, h);
+        // Ползущие — прямо с прозрачностью тона. Пока ползёт, пятно может
+        // лечь на соседнее чуть плотнее, чем надо, но это секунды: при
+        // застывании оно сведётся со всеми (compose).
+        const T = BATH_ART.GOO_TONE;
+        if (C.sh) {
             c.globalAlpha = BATH_ART.GOO_SHADE.alpha;
             for (const s of live) this.paintShade(c, C, s);
-            c.globalAlpha = 1;
-        } else {
-            c.drawImage(C.body, x, y, w, h, x, y, w, h);
         }
-        for (const s of live) this.paintBody(c, C, s);
+        c.globalAlpha = T.thin;
+        for (const s of live) this.paintTone(c, C, s, 'body');
+        c.globalAlpha = T.core;
+        for (const s of live) this.paintTone(c, C, s, 'core');
+        c.globalAlpha = 1;
+        for (const s of live) this.paintTone(c, C, s, 'hi');
         const mask = C.opt.mask && C.opt.mask();
         if (mask) {
             c.globalCompositeOperation = 'destination-in';
@@ -446,18 +475,24 @@ const LustGoo = {
         const x = Math.max(0, Math.floor(R.x0)), y = Math.max(0, Math.floor(R.y0));
         const w = Math.min(W, Math.ceil(R.x1)) - x, h = Math.min(H, Math.ceil(R.y1)) - y;
         if (w <= 0 || h <= 0) return;
-        const c = C.done.getContext('2d');
+        const c = C.done.getContext('2d'), T = BATH_ART.GOO_TONE;
         c.clearRect(x, y, w, h);
-        c.globalAlpha = BATH_ART.GOO_SHADE.alpha;
-        c.drawImage(C.sh, x, y, w, h, x, y, w, h);
-        c.globalAlpha = 1;
+        if (C.sh) {
+            c.globalAlpha = BATH_ART.GOO_SHADE.alpha;
+            c.drawImage(C.sh, x, y, w, h, x, y, w, h);
+        }
+        c.globalAlpha = T.thin;
         c.drawImage(C.body, x, y, w, h, x, y, w, h);
+        c.globalAlpha = T.core;
+        c.drawImage(C.core, x, y, w, h, x, y, w, h);
+        c.globalAlpha = 1;
     },
 
     shapesFor(C, s) {
         const S = C.S, k = s.k * S;
         const d = this.shapeOf(s, s.x * S, s.y * S, k);
-        if (!d._p) d._p = { body: new Path2D(d.body), hi: d.hi ? new Path2D(d.hi) : null };
+        if (!d._p) d._p = { body: new Path2D(d.body), core: new Path2D(d.core),
+                            hi: d.hi ? new Path2D(d.hi) : null };
         return d._p;
     },
 
@@ -476,23 +511,23 @@ const LustGoo = {
     // (ctx.filter) на айфоне появился только недавно. Стопка из трёх
     // раздутых ореолов, которая была до этого, читалась набором светлых
     // окантовок, а не расфокусом.
-    paintBody(c, C, s) {
+    paintTone(c, C, s, tone) {
         const p = this.shapesFor(C, s), m = btPal().milk;
         const blur = C.opt.blur ? C.opt.blur * C.S : 0;
+        const col = tone === 'body' ? m.thin : tone === 'core' ? m.core : m.hi;
+        if (!p[tone]) return;
+        // Блика на размытой стене нет: расфокус съедает искру раньше всего.
+        if (blur && tone === 'hi') return;
         c.save();
-        c.fillStyle = m[500];
+        c.fillStyle = col;
         if (blur) {
             const OFF = 20000;
-            c.shadowColor = m[500];
+            c.shadowColor = col;
             c.shadowBlur = blur * 2;          // shadowBlur — это две сигмы
             c.shadowOffsetX = OFF;
             c.translate(-OFF, 0);
-            c.fill(p.body);
-            c.restore();
-            return;
         }
-        c.fill(p.body);
-        if (p.hi) { c.fillStyle = m.hi; c.fill(p.hi); }
+        c.fill(p[tone]);
         c.restore();
     },
 
@@ -500,11 +535,17 @@ const LustGoo = {
         if (s.surf === 'worm' || s.surf === 'wall') {
             const C = this[s.surf];
             if (!C) return;
+            // Тона запекаются НЕПРОЗРАЧНЫМИ, каждый в свой холст, и только
+            // при сведении получают прозрачность — одну на все пятна. Так
+            // слипшиеся пятна дают одну массу, а не стопку.
             if (C.sh) this.paintShade(C.sh.getContext('2d'), C, s);
-            this.paintBody(C.body.getContext('2d'), C, s);
+            this.paintTone(C.body.getContext('2d'), C, s, 'body');
+            const core = C.core.getContext('2d');
+            this.paintTone(core, C, s, 'core');
+            this.paintTone(core, C, s, 'hi');
             this.dirty(C, s);
             C.force = true;
-            if (C.done) this.compose(C, C.rect);
+            this.compose(C, C.rect);
             return;
         }
         if (s.surf === 'tail') {
@@ -514,15 +555,11 @@ const LustGoo = {
             this.drawTail();
             return;
         }
-        // Борт: узлом в три общие группы — тень, тело, блик.
-        const d = BATH_ART.goo(s.x, s.y, s.r, s.len, s.seed, s.ang, 0);
-        const groups = ['bt-goo-rim-done-sh', 'bt-goo-rim-done', 'bt-goo-rim-done-hi']
-            .map(id => document.getElementById(id));
-        if (groups.some(g => !g)) return;
-        groups[0].insertAdjacentHTML('beforeend', `<path d="${d.body}"/>`);
-        groups[1].insertAdjacentHTML('beforeend', `<path d="${d.body}"/>`);
-        groups[2].insertAdjacentHTML('beforeend', `<path d="${d.hi}"/>`);
-        for (const g of groups)
-            while (g.childNodes.length > this.CAP.rim) g.removeChild(g.firstChild);
+        // Борт: застывшие — ОДИН путь на тон, переписывается при каждом
+        // застывании. Путь на пятно был бы стопкой: полупрозрачный край
+        // соседних пятен темнел бы там, где они легли друг на друга.
+        this.rimDone.push(BATH_ART.goo(s.x, s.y, s.r, s.len, s.seed, s.ang, 0));
+        if (this.rimDone.length > this.CAP.rim) this.rimDone.shift();
+        this.setLayer('rim', this.join(this.rimDone), '-done');
     }
 };
