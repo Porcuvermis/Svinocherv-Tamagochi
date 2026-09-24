@@ -1561,7 +1561,30 @@ const LustMinigame = {
         g.setAttribute('transform', `translate(${A.tail.x} ${A.tail.y})`);
         const d = BATH_ART.tailD(this.bend, this.tailGrow());
         this.el('bt-tail-body').setAttribute('d', d.body);
+        const edge = this.el('bt-tail-edge');
+        if (edge) edge.setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
+        // Звенья и валики: тот же изгиб, что у контура (BATH_ART.tailPads).
+        const P = BATH_ART.tailPads(d.curve, this.tailGrow()), f1 = (v) => v.toFixed(1);
+        P.pads.forEach((p, i) => {
+            const e = this.el(`bt-tail-pad-${i}`);
+            if (!e) return;
+            e.setAttribute('x', f1(-p.rx)); e.setAttribute('y', f1(-p.ry));
+            e.setAttribute('width', f1(2 * p.rx)); e.setAttribute('height', f1(2 * p.ry));
+            e.setAttribute('transform', `translate(${f1(p.x)} ${f1(p.y)}) rotate(${f1(p.deg)})`);
+        });
+        P.rings.forEach((r, i) => {
+            const g2 = this.el(`bt-tail-ring-${i}`);
+            if (!g2) return;
+            const [sh, li] = g2.children;
+            // Тень ПЕРЕД валиком (ниже по хвосту), подсветка ПОСЛЕ (к кончику):
+            // вмятина читается, только если свет и тень разведены по оси.
+            sh.setAttribute('rx', f1(r.half * 1.05)); sh.setAttribute('ry', f1(r.w));
+            sh.setAttribute('cy', f1(r.w * 0.35));
+            li.setAttribute('rx', f1(r.half * 0.95)); li.setAttribute('ry', f1(r.w * 0.7));
+            li.setAttribute('cy', f1(-r.w * 0.9));
+            g2.setAttribute('transform', `translate(${f1(r.x)} ${f1(r.y)}) rotate(${f1(r.deg)})`);
+        });
         // Прилипшее к хвосту едет вместе с ним.
         if (typeof LustGoo !== 'undefined') LustGoo.drawTail(force);
     },
