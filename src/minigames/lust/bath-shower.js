@@ -206,22 +206,22 @@ const BATH_SHOWER = {
         parts.push(this.disc({ x: X + 17, y: midY }, 3.4));
 
         // Держатель ручной лейки: хомут на стояке, барашек слева, рожок
-        // вправо.
+        // вправо до ЧАШКИ, в которой стоит ручка (чашка — ниже, поверх
+        // ручки). Первая версия обрывала рожок в воздухе рядом с лейкой, и
+        // лейка висела ни на чём.
         const hY = MY - 130;
         parts.push(this.collar({ x: X, y: hY + 8 }, { x: X, y: hY - 8 }, r + 3, 1.6));
         parts.push(this.collar({ x: X - 8, y: hY }, { x: X - 14, y: hY }, 2.2, 0.8));
         parts.push(this.disc({ x: X - 16, y: hY }, 3.4));
-        parts.push(this.collar({ x: X + 6, y: hY }, { x: X + 26, y: hY }, 2.6, 1));
+        parts.push(this.collar({ x: X + 6, y: hY }, { x: X + 25, y: hY }, 2.6, 1));
 
         // Термостат: корпус на стояке, толще его, муфты сверху и снизу.
         parts.push(this.collar({ x: X, y: MY + 20 }, { x: X, y: MY - 20 }, 12, 4));
         parts.push(this.collar({ x: X, y: MY - 19 }, { x: X, y: MY - 31 }, 8.5, 2));
         parts.push(this.collar({ x: X, y: MY + 19 }, { x: X, y: MY + 32 }, 8.5, 2));
-        // Рычаг-переключатель сверху — вправо; рычаг снизу — вниз-вправо.
-        parts.push(this.collar({ x: X + 6, y: MY - 26 }, { x: X + 24, y: MY - 32 }, 2.6, 2.3));
-        parts.push(this.disc({ x: X + 25, y: MY - 32.5 }, 3.6));
-        parts.push(this.collar({ x: X + 5, y: MY + 28 }, { x: X + 14, y: MY + 50 }, 2.8, 2.5));
-        parts.push(this.disc({ x: X + 14.5, y: MY + 51 }, 3.8));
+        // Рычагов сверху и снизу, как на референсе, НЕТ: в этом масштабе и
+        // в фас они читались случайными трубками, торчащими вбок. Вода
+        // включается крестом — он один и узнаётся сразу.
         // Выход на шланг внизу корпуса.
         parts.push(this.collar({ x: X, y: MY + 31 }, { x: X, y: MY + 42 }, 4.2, 1.2));
 
@@ -237,7 +237,7 @@ const BATH_SHOWER = {
 
         // Шланг: металлическая оплётка от выхода термостата петлёй вниз (за
         // бортом её прячет ванна) и вверх к ручке лейки.
-        const hs = { x: X + 34, y: hY + 22 };                   // низ ручки
+        const hs = { x: X + 29, y: hY + 18 };                   // низ ручки
         const hoseD = `M${f(X)} ${f(MY + 42)}C${f(X - 2)} ${f(MY + 150)} ${f(X + 44)} ${f(MY + 160)} ${f(X + 42)} ${f(MY + 70)}`
                     + `C${f(X + 40)} ${f(MY + 10)} ${f(hs.x + 1)} ${f(hs.y + 60)} ${f(hs.x)} ${f(hs.y + 9)}`;
 
@@ -252,6 +252,20 @@ const BATH_SHOWER = {
         const hNeck = this.collar({ x: hs.x + 3, y: hs.y - 25 }, { x: hs.x + 5, y: hs.y - 37 }, 3.2, 1);
         const hHead = { x: hs.x + 6, y: hs.y - 49 };
         const hHeadBack = this.disc(hHead, 13.5);
+        // Чашка держателя: сужается книзу, обнимает ручку под шейкой.
+        // Ручка сидит в ней, а не висит рядом: левый бок чашки — продолжение
+        // рожка.
+        const cupAt = (y) => ({ x: hs.x + 3 * (hs.y + 5 - y) / 31, y });
+        const cA = cupAt(hY - 5), cB = cupAt(hY + 6);
+        const cup = (() => {
+            const t = { x: cB.x - cA.x, y: cB.y - cA.y }, l = Math.hypot(t.x, t.y);
+            const n = { x: t.y / l, y: -t.x / l };
+            const P = (p, u) => ({ x: p.x + n.x * u, y: p.y + n.y * u });
+            const q = [P(cA, 7.6), P(cB, 6.2), P(cB, -6.2), P(cA, -7.6)];
+            const d = `M${f(q[0].x)} ${f(q[0].y)}L${f(q[1].x)} ${f(q[1].y)}Q${f(cB.x)} ${f(cB.y + 2.4)} ${f(q[2].x)} ${f(q[2].y)}L${f(q[3].x)} ${f(q[3].y)}Z`;
+            return { fill: `<path d="${d}" fill="${this.linear(P(cA, 7.6), P(cA, -7.6))}"/>`, sil: d,
+                     line: `M${f(q[3].x)} ${f(q[3].y)}Q${f(cA.x)} ${f(cA.y + 2.6)} ${f(q[0].x)} ${f(q[0].y)}` };
+        })();
         const hFace = `M${f(hHead.x - 8.5)} ${f(hHead.y)}a8.5 11.5 0 1 0 17 0a8.5 11.5 0 1 0 -17 0Z`;
 
         // Верхняя лейка.
@@ -285,7 +299,7 @@ const BATH_SHOWER = {
         // Порядок и контур. Толстый внешний контур — ОДНИМ проходом по всем
         // силуэтам ПОД заливками: снаружи остаётся общий контур стойки без
         // швов. Стыки частей внутри — тонкой линией тоном тени.
-        const hand = [hCollar, handle, hNeck, hHeadBack];
+        const hand = [hCollar, handle, hNeck, hHeadBack, cup];
         const head = [neckCollar, dome, rim];
         const all = parts.concat(hand, head);
         const halo = all.map(p => p.sil).join('') + rimLo;
