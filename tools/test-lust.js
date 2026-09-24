@@ -537,15 +537,68 @@ const harness = require('./harness');
     }
     out.rimNodes = G.rimDone.length;
     out.tailDone = G.tailDone.length;
-    // На теле — ни одной краски за силуэтом.
-    const c = document.getElementById('bt-goo'), px = c.getContext('2d')
-      .getImageData(0, 0, c.width, c.height).data;
-    let on = 0, off = 0;
-    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
-      if (!px[i + 3]) continue;
-      if (L.maskAlpha[j]) on++; else off++;
+    // ---------- НЕ ВЫЛЕЗАЕТ ЗА СВОЙ ПРЕДМЕТ ----------
+    // Спрашивается КАРТИНКА: по контуру застывших пятен идём точками и
+    // каждую проверяем фигурой предмета — части тела, хвоста, борта. Не
+    // «поджатие вызывалось», а «на экране ничего не висит в воздухе».
+    const walk = (path, n, test) => {
+      let a = 0, b = 0;
+      const len = path ? path.getTotalLength() : 0;
+      for (let i = 0; len && i < n; i++) {
+        const q = path.getPointAtLength(len * (i + 0.5) / n);
+        test(q) ? a++ : b++;
+      }
+      return { on: a, off: b };
+    };
+    const hostsU = [...new Set(Object.values(G.hosts))];
+    const onBody = { on: 0, off: 0 };
+    for (const h of hostsU) {
+      const path = document.getElementById(h.id + '-done');
+      const shapes = G.parts().filter(c => c.host === h.el).map(c => c.shape);
+      const r = walk(path, 400, (q) => shapes.some(sh => sh.isPointInFill(
+        new DOMPoint(q.x, q.y).matrixTransform(G.rel(path, sh)))));
+      onBody.on += r.on; onBody.off += r.off;
     }
-    out.wormPx = { on, off };
+    out.wormPx = onBody;
+    const tailBody = document.getElementById('bt-tail-body');
+    const tailIn = () => walk(document.getElementById('bt-tail-goo-done'), 400,
+      (q) => tailBody.isPointInFill(new DOMPoint(q.x, q.y)));
+    out.tailIn = tailIn();
+    { const b0 = L.bend; L.bend = 0.7; L._tailKey = null; L.drawTail(true);
+      out.tailInBent = tailIn();
+      L.bend = b0; L._tailKey = null; L.drawTail(true); }
+    const rimTop = BATH_ART.box('tub').y;
+    out.rimIn = walk(document.getElementById('bt-goo-rim-done'), 400, (q) => q.y >= rimTop);
+
+    // ---------- ДЫШИТ ВМЕСТЕ С ТЕЛОМ ----------
+    // Червь в конце тяжело дышит, звенья раздуваются. След на звене обязан
+    // расти вместе с ним: меряется ширина звена и ширина следов на нём в
+    // самой узкой и самой широкой фазе вдоха. Холст поверх червя (первая
+    // версия) давал следам отношение ровно единица — они висели коркой.
+    // Капля — точно в середину живота: именно он раздувается сильнее всех.
+    {
+      const root = L.wormHandle.svgRoot, B2 = L.WORM_BASE, bx = L.wormBoxScene();
+      const belly = root.querySelector('[data-part="belly"] > .worm-part-shape');
+      const bb = belly.getBBox();
+      const c = new DOMPoint(bb.x + bb.width / 2, bb.y + bb.height * 0.35)
+        .matrixTransform(G.rel(belly, root));
+      G.stick('worm', drop(bx.x + c.x * bx.w / B2.w, bx.y + c.y * bx.w / B2.w,
+                           { r: 8, main: true, vx: 200, vy: 0 }));
+      await wait(3500);
+    }
+    const bodyHost = [...new Set(Object.values(G.hosts))].find(h => h.id === 'bt-wgoo-belly' && h.done.length);
+    if (bodyHost) {
+      const part = G.parts().find(c => c.host === bodyHost.el);
+      const gp = document.getElementById(bodyHost.id + '-done');
+      let lo = null, hi = null;
+      for (let i = 0; i < 45; i++) {
+        const sw = part.shape.getBoundingClientRect().width, gw = gp.getBoundingClientRect().width;
+        if (!lo || sw < lo.s) lo = { s: sw, g: gw };
+        if (!hi || sw > hi.s) hi = { s: sw, g: gw };
+        await wait(40);
+      }
+      out.breath = { part: part.key, shape: hi.s / lo.s, goo: hi.g / lo.g };
+    }
 
     // Брызги, залетевшие в рот, глотаются, но НЕ засчитываются.
     const m = L.mouthAt || L.mouthPoint(), h0 = L.hits;
@@ -555,9 +608,7 @@ const harness = require('./harness');
 
     // Уход из ванной смывает всё (вариант «а»).
     L.close();
-    const clean = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    let paint = 0;
-    for (let i = 3; i < clean.length; i += 4) if (clean[i]) paint++;
+    const paint = document.querySelectorAll('.bt-goo-host').length;
     out.afterClose = {
       wall: inked('bt-goo-wall'),
       rim: G.rimDone.length + (document.getElementById('bt-goo-rim-done').getAttribute('d') || '').length,
@@ -586,8 +637,16 @@ const harness = require('./harness');
   ok(goo.tailMoves, 'пятна на хвосте едут вместе с его изгибом');
   ok(goo.wallSoft > 0.3, 'пятно на стене размыто плавно, как сама стена',
      `${(goo.wallSoft * 100).toFixed(0)}% точек с частичной прозрачностью`);
-  ok(goo.wormPx.on > 50 && goo.wormPx.off === 0, 'потёк на теле не вылезает за силуэт',
-     `${goo.wormPx.on} точек на теле, ${goo.wormPx.off} за ним`);
+  ok(goo.wormPx.on > 50 && goo.wormPx.off === 0, 'след на теле не вылезает за свою часть',
+     `${goo.wormPx.on} точек контура внутри, ${goo.wormPx.off} снаружи`);
+  ok(goo.tailIn.on > 50 && goo.tailIn.off === 0 && goo.tailInBent.off === 0,
+     'след на хвосте не вылезает за хвост — и когда хвост согнули',
+     `прямо: ${goo.tailIn.off} снаружи из ${goo.tailIn.on + goo.tailIn.off}; согнутый: ${goo.tailInBent.off}`);
+  ok(goo.rimIn.on > 20 && goo.rimIn.off === 0, 'над кромкой борта следа нет',
+     `${goo.rimIn.off} точек выше кромки из ${goo.rimIn.on + goo.rimIn.off}`);
+  ok(goo.breath && goo.breath.shape > 1.04 && Math.abs(goo.breath.goo - goo.breath.shape) < 0.03,
+     'след на теле дышит вместе с частью',
+     goo.breath ? `${goo.breath.part}: часть ×${goo.breath.shape.toFixed(3)}, следы ×${goo.breath.goo.toFixed(3)}` : 'нет следа на звене');
   ok(goo.spray.hits === 0 && goo.spray.left === 0, 'брызги во рту проглочены, но не засчитаны');
   ok(Object.values(goo.afterClose).every(v => v === 0), 'уход из ванной смывает все следы',
      JSON.stringify(goo.afterClose));

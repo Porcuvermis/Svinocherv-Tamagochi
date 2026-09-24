@@ -681,6 +681,7 @@ const BATH_ART = {
     // Несколько замкнутых кусков одним путём: первый от абсолютной точки,
     // остальные — относительным переходом от начала предыдущего.
     gooCurves(list) {
+        if (!list) return '';
         let d = '', prev = null;
         for (const pts of list) { d += this.gooCurve(pts, prev); prev = pts[0]; }
         return d;
@@ -732,7 +733,24 @@ const BATH_ART = {
     // форма не дрожала от кадра к кадру; ang — направление удара.
     // g — раздуть все края на g единиц.
     // Отдаёт три пути: body (край, вся форма), core (ядро), hi (блики).
-    goo(x, y, r, len, seed, ang, g) {
+    //
+    // fit — необязательная «поверхность»: функция точка → точка, через
+    // которую проходит КАЖДАЯ точка контура до того, как по ним ляжет
+    // кривая. Ею пятно поджимается к своему предмету (lust-goo.js, fitter):
+    // у края борта, хвоста, части тела оно не обрезается, а мягко
+    // закругляется с отступом — как капля, которую держит натяжение.
+    // Поджать точки, а не обрезать готовую фигуру, — вся разница: сплайн
+    // по поджатым точкам сам даёт скруглённый край.
+    goo(x, y, r, len, seed, ang, g, fit) {
+        const p = this.gooPts(x, y, r, len, seed, ang, g, fit);
+        return { body: this.gooCurves(p.body), core: this.gooCurves(p.core),
+                 hi: this.gooCurves(p.hi) };
+    },
+
+    // То же пятно ТОЧКАМИ, до кривой: кому надо двигать пятно за
+    // поверхностью (хвост гнётся и опадает), тот держит точки и гонит их
+    // через своё преобразование, а кривую строит уже по результату.
+    gooPts(x, y, r, len, seed, ang, g, fit) {
         g = g || 0;
         const rnd = btRng(1 + Math.floor(seed * 1e6));
         const parts = [], core = [];
@@ -783,7 +801,8 @@ const BATH_ART = {
             parts.push(drip(1, 1));
             core.push(drip(0.45, 0.72));
         }
-        const out = { body: this.gooCurves(parts), core: this.gooCurves(core), hi: '' };
+        const F = fit ? (list) => list.map(pts => pts.map(fit)) : (list) => list;
+        const out = { body: F(parts), core: F(core), hi: [] };
         if (g) return out;
         // Блики. Жидкость глянцевая: резкая искра на верхней кромке кляксы,
         // вторая, мельче, рядом — отражение окна дробится на выпуклости, —
@@ -795,7 +814,7 @@ const BATH_ART = {
             const bx = cxOf(1), by = y0 + L;
             his.push(this.gooOval(bx - rbOf * 0.35, by - rbOf * 0.35, rbOf * 0.26, rbOf * 0.18, -0.6, 6));
         }
-        out.hi = this.gooCurves(his);
+        out.hi = F(his);
         return out;
     },
 

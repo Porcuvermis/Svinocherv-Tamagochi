@@ -265,7 +265,6 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
-        this.el('bt-goo').classList.remove('bt-soft');
         this.drops = [];
         this.splats = [];
         this.setFly('', '');
@@ -685,9 +684,6 @@ const LustMinigame = {
         // Холст мытья — в тех же единицах, значит и преобразование то же.
         const w = this.el('bt-wash');
         if (w) w.style.transform = t;
-        // Потёки на теле — тоже в единицах персонажа.
-        const g = this.el('bt-goo');
-        if (g) g.style.transform = t;
         // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
         const wall = this.el('bt-goo-wall');
         if (wall) {
@@ -1242,7 +1238,6 @@ const LustMinigame = {
         // живой персонаж 24 кадра, замерший 60.
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
         this.wormHost.classList.add('bt-soft');
-        this.el('bt-goo').classList.add('bt-soft');
         this.blurFar(BATH_ART.FAR_BLUR, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
@@ -1556,7 +1551,7 @@ const LustMinigame = {
         this.el('bt-tail-body').setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
         // Прилипшее к хвосту едет вместе с ним.
-        if (typeof LustGoo !== 'undefined') LustGoo.drawTail();
+        if (typeof LustGoo !== 'undefined') LustGoo.drawTail(force);
     },
 
     // ---------- ПУЗЫРИ ----------
@@ -2102,7 +2097,10 @@ const LustMinigame = {
             const e = 1 - Math.pow(1 - k, 3);
             this.charge = from * (1 - e);
             this.bend = bend0 * (1 - e);
-            this.drawTail();
+            // Последний кадр опадания — начисто (force): иначе частота
+            // перерисовки хвоста могла бы его пропустить, и хвост вместе с
+            // пятнами на нём застыл бы чуть согнутым.
+            this.drawTail(k >= 1);
             this.relaxRaf = k < 1 ? requestAnimationFrame(step) : 0;
         };
         this.relaxRaf = requestAnimationFrame(step);
