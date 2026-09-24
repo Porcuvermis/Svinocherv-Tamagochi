@@ -13,7 +13,7 @@
 // стене прячется за червём. Пока все потёки жили в одном слое поверх сцены,
 // пятно на стене висело перед мордой, а пятно на хвосте оставалось в
 // воздухе, когда хвост опадал.
-//   стена и пол — свой холст сразу за комнатой (#bt-cam-goo);
+//   стена и пол — свой холст сразу за комнатой (#bt-goo-wall), размыт как стена;
 //   тело        — холст в единицах персонажа, ездит с ним одним
 //                 преобразованием и обрезается его силуэтом (#bt-goo);
 //                 капля над телом сама выбирает, где сесть, — у кромки,
@@ -43,8 +43,8 @@ const LustGoo = {
     // Капля над телом: с этой долей пролетает его насквозь, иначе садится в
     // случайную точку своего пути над ним (см. wormPlan).
     PASS_CHANCE: 0.3,
-    // Потолки застывшего по слоям. Тело — растр, ему потолок не нужен.
-    CAP: { wall: 70, rim: 30, tail: 40 },
+    // Потолки застывшего по слоям. Стена и тело — растр, им потолок не нужен.
+    CAP: { rim: 30, tail: 40 },
 
     game: null,
     live: null,       // ещё растекаются или стекают
@@ -53,40 +53,66 @@ const LustGoo = {
 
     init(game) {
         this.game = game;
-        const wall = document.getElementById('bt-cam-goo');
-        if (wall) wall.innerHTML = `<g id="bt-goo-wall-done"></g>
-            ${BATH_ART.gooFarLive('bt-goo-wall-live')}`;
-        const B = game.WORM_BASE, S = game.MASK_SCALE;
-        const c = document.getElementById('bt-goo');
-        if (c) {
-            c.width = B.w * S; c.height = B.h * S;
-            c.style.width = B.w + 'px'; c.style.height = B.h + 'px';
-            this.ctx = c.getContext('2d');
-            // Застывшее на теле копится во втором, невидимом холсте: живой
-            // потёк перерисовывает видимый каждый кадр, и пересобирать ради
-            // него все застывшие пятна незачем.
-            this.baked = document.createElement('canvas');
-            this.baked.width = c.width; this.baked.height = c.height;
-            this.bakedCtx = this.baked.getContext('2d');
-        }
+        const B = game.WORM_BASE;
+        // Тело — в единицах холста персонажа, обрезано его силуэтом, с тенью.
+        this.worm = this.canvas('bt-goo', B.w, B.h, game.MASK_SCALE,
+                                { shade: true, mask: () => game.mask });
+        // Стена — в единицах сцены, размыта как стена. Разрешение вдвое ниже
+        // сцены: размытое деталей не держит, а холст во всю стену в полном
+        // разрешении стоил бы памяти ни за что.
+        this.wall = this.canvas('bt-goo-wall', BATH_ART.W, BATH_ART.H, 0.5,
+                                { blur: BATH_ART.FAR_BLUR });
         this.reset();
+    },
+
+    // ---------- ХОЛСТ ПОТЁКОВ ----------
+    // Одно устройство на тело и на стену. Застывшее ЗАПЕКАЕТСЯ во
+    // внеэкранные холсты один раз; видимый перерисовывается только в
+    // прямоугольнике вокруг ползущих пятен и не чаще двадцати раз в секунду
+    // (см. draw).
+    //
+    // Слипание — как у слизи в комнате: тела пятен НЕПРОЗРАЧНЫ, и где два
+    // пятна перекрылись, получается одна лужа, а не стопка. Тени пятен тоже
+    // рисуются непрозрачными — в отдельный холст, — и прозрачность им
+    // даётся ОДИН РАЗ, всем вместе. Так тень у слипшейся массы одна.
+    //
+    // Сведение «тени вместе, потом тела» делается при ЗАСТЫВАНИИ, в готовый
+    // холст (C.done), а не каждый кадр: кадр только кладёт готовое и поверх
+    // — ползущие. У ползущего тень кладётся сразу полупрозрачной; пока он
+    // ползёт, она может лечь на соседнюю, но это секунды, а сводить тени
+    // каждый кадр стоило двух кадров из шестидесяти.
+    canvas(id, w, h, S, opt) {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        const mk = () => { const c = document.createElement('canvas');
+                           c.width = Math.ceil(w * S); c.height = Math.ceil(h * S); return c; };
+        el.width = Math.ceil(w * S); el.height = Math.ceil(h * S);
+        el.style.width = w + 'px'; el.style.height = h + 'px';
+        const C = { el, ctx: el.getContext('2d'), S, opt,
+                    body: mk(), rect: null, force: false, ts: 0 };
+        if (opt.shade) { C.sh = mk(); C.done = mk(); }
+        return C;
+    },
+
+    clearCanvas(C) {
+        if (!C) return;
+        for (const c of [C.el, C.body, C.sh, C.done])
+            if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+        C.rect = null; C.force = false;
     },
 
     reset() {
         cancelAnimationFrame(this.raf); this.raf = 0;
         this.live = [];
-        this.wormRect = null;
-        this.wormForce = false;
         this.tailDone = [];
         this.setLayer('rim', '', '');
         this.setLayer('tail', '', '');
-        this.setWall([]);
-        const w = document.getElementById('bt-goo-wall-done');
-        if (w) w.innerHTML = '';
-        const s = document.getElementById('bt-splats');
-        if (s) s.innerHTML = '';
-        if (this.ctx) this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
-        if (this.bakedCtx) this.bakedCtx.clearRect(0, 0, this.baked.width, this.baked.height);
+        for (const id of ['bt-goo-rim-done-sh', 'bt-goo-rim-done', 'bt-goo-rim-done-hi']) {
+            const g = document.getElementById(id);
+            if (g) g.innerHTML = '';
+        }
+        this.clearCanvas(this.worm);
+        this.clearCanvas(this.wall);
     },
 
     setD(id, d) {
@@ -95,21 +121,12 @@ const LustGoo = {
     },
 
     // Живой слой резкого плана: тень и тело — один и тот же путь (тень
-    // сдвинута преобразованием узла), блик отдельно.
+    // сдвинута группой), блик отдельно.
     setLayer(which, body, hi) {
-        const id = which === 'rim' ? 'bt-goo-rim-live' : 'bt-tail-goo';
+        const id = which === 'rim' ? 'bt-goo-rim' : 'bt-tail-goo';
         this.setD(id + '-sh', body);
         this.setD(id, body);
         this.setD(id + '-hi', hi);
-    },
-
-    // Живой слой стены: стопка расфокуса, по пути на каждое кольцо.
-    setWall(list) {
-        BATH_ART.GOO_FAR.forEach(([k], i) => {
-            let d = '';
-            for (const s of list) d += this.shapeOf(s, s.x, s.y, 1, k * BATH_ART.FAR_BLUR).body;
-            this.setD('bt-goo-wall-live-' + i, d);
-        });
     },
 
     // Судьба капли в полёте: сколько опуститься до стены. Решается при
@@ -352,103 +369,142 @@ const LustGoo = {
     },
 
     render(tail) {
-        const wall = [];
         let rim = '', rimHi = '';
         for (const s of this.live) {
-            if (s.surf === 'wall') wall.push(s);
-            else if (s.surf === 'rim') {
+            if (s.surf === 'rim') {
                 const d = this.shapeOf(s, s.x, s.y, 1);
                 rim += d.body; rimHi += d.hi;
-            } else if (s.surf === 'worm') this.dirty(s);
+            } else if (s.surf === 'worm') this.dirty(this.worm, s);
+            else if (s.surf === 'wall') this.dirty(this.wall, s);
         }
-        this.setWall(wall);
         this.setLayer('rim', rim, rimHi);
         if (tail) this.drawTail();
-        // Холст тела — не чаще двадцати раз в секунду. Любая его правка, даже
-        // в прямоугольник с ноготь, заново отдаёт видеокарте ВЕСЬ холст, и
-        // под замедлением это стоило пяти кадров из шестидесяти. Потёк
-        // ползёт медленно — единица сцены за такой шаг, — и разницы с
-        // шестьюдесятью не видно. Застывание дорисовывается сразу (force),
-        // иначе последний кадр пятна мог бы не попасть на экран.
-        const now = performance.now();
-        if (this.wormRect && (this.wormForce || now - (this.wormTs || 0) >= 50)) {
-            this.wormTs = now;
-            this.wormForce = false;
-            this.drawWorm();
-        }
+        this.draw(this.worm, 'worm');
+        this.draw(this.wall, 'wall');
     },
 
-    // Прямоугольник холста тела, который надо перерисовать ради этого
-    // пятна. Берётся по ПОЛНОМУ размеру с брызгами и текущей длине нитки:
-    // пятно только растёт вниз, значит прошлый кадр в него заведомо входит.
-    dirty(s) {
-        const S = this.game.MASK_SCALE, k = s.k * S, R0 = s.r0 * 2.6 * k, pad = 4 * S;
+    // Прямоугольник холста, который надо перерисовать ради этого пятна.
+    // Берётся по ПОЛНОМУ размеру с брызгами, текущей длине нитки и
+    // размытию: пятно только растёт вниз, значит прошлый кадр в него
+    // заведомо входит.
+    dirty(C, s) {
+        if (!C) return;
+        const S = C.S, k = s.k * S, R0 = s.r0 * 2.6 * k,
+              pad = 4 * S + 3 * (C.opt.blur || 0) * S;
         const x0 = s.x * S - R0 - pad, x1 = s.x * S + R0 + pad;
         const y0 = s.y * S - R0 - pad, y1 = s.y * S + (s.len + s.r0) * k + R0 + pad;
-        const R = this.wormRect;
-        this.wormRect = R
+        const R = C.rect;
+        C.rect = R
             ? { x0: Math.min(R.x0, x0), y0: Math.min(R.y0, y0),
                 x1: Math.max(R.x1, x1), y1: Math.max(R.y1, y1) }
             : { x0, y0, x1, y1 };
     },
 
-    // Тело: запечённое + живое, всё вместе обрезается силуэтом. Обрезка по
-    // маске, а не по габариту: пятно у края морды не вылезает на воздух.
-    //
-    // Перерисовывается ТОЛЬКО прямоугольник вокруг ползущих пятен. Весь
-    // холст (720×960) каждый кадр — очистка, запечённое, маска — стоил
-    // половины кадров финала: под замедлением ×6 было 59 кадров без следов и
-    // 33 с ними. Живых пятен на теле одно-два, и их прямоугольник — сотая
-    // доля холста.
-    drawWorm() {
-        const c = this.ctx, R = this.wormRect;
-        this.wormRect = null;
-        if (!c || !R) return;
-        const W = c.canvas.width, H = c.canvas.height;
+    // Перерисовка ТОЛЬКО прямоугольника вокруг ползущих пятен и не чаще
+    // двадцати раз в секунду. Весь холст тела каждый кадр стоил половины
+    // кадров финала (под замедлением ×6 было 59 без следов и 33 с ними), а
+    // любая правка холста, даже в ноготь, заново отдаёт видеокарте весь
+    // холст. Потёк ползёт медленно, и разницы с шестьюдесятью не видно.
+    // Застывание дорисовывается сразу (force): иначе последний кадр пятна
+    // мог бы не попасть на экран.
+    draw(C, surf) {
+        if (!C || !C.rect) return;
+        const now = performance.now();
+        if (!C.force && now - C.ts < 50) return;
+        C.ts = now; C.force = false;
+        const R = C.rect;
+        C.rect = null;
+        const c = C.ctx, W = C.el.width, H = C.el.height;
         const x = Math.max(0, Math.floor(R.x0)), y = Math.max(0, Math.floor(R.y0));
         const w = Math.min(W, Math.ceil(R.x1)) - x, h = Math.min(H, Math.ceil(R.y1)) - y;
         if (w <= 0 || h <= 0) return;
-        const S = this.game.MASK_SCALE;
+        const live = this.live.filter(s => s.surf === surf);
         c.save();
-        c.beginPath();
-        c.rect(x, y, w, h);
-        c.clip();
+        c.beginPath(); c.rect(x, y, w, h); c.clip();
         c.clearRect(x, y, w, h);
-        c.drawImage(this.baked, x, y, w, h, x, y, w, h);
-        for (const s of this.live) if (s.surf === 'worm') this.paint(c, s, S);
-        if (this.game.mask) {
+        if (C.done) {
+            c.drawImage(C.done, x, y, w, h, x, y, w, h);
+            c.globalAlpha = BATH_ART.GOO_SHADE.alpha;
+            for (const s of live) this.paintShade(c, C, s);
+            c.globalAlpha = 1;
+        } else {
+            c.drawImage(C.body, x, y, w, h, x, y, w, h);
+        }
+        for (const s of live) this.paintBody(c, C, s);
+        const mask = C.opt.mask && C.opt.mask();
+        if (mask) {
             c.globalCompositeOperation = 'destination-in';
-            c.drawImage(this.game.mask, x, y, w, h, x, y, w, h);
+            c.drawImage(mask, x, y, w, h, x, y, w, h);
         }
         c.restore();
     },
 
-    // То же, что узел в svg, но кистью холста: тень, тело, блик.
-    paint(c, s, S) {
-        const m = btPal().milk, k = s.k * S;
+    // Готовый слой застывшего: все тени разом с одной прозрачностью, поверх
+    // — тела. Пересобирается только в прямоугольнике нового пятна.
+    compose(C, R) {
+        const W = C.el.width, H = C.el.height;
+        const x = Math.max(0, Math.floor(R.x0)), y = Math.max(0, Math.floor(R.y0));
+        const w = Math.min(W, Math.ceil(R.x1)) - x, h = Math.min(H, Math.ceil(R.y1)) - y;
+        if (w <= 0 || h <= 0) return;
+        const c = C.done.getContext('2d');
+        c.clearRect(x, y, w, h);
+        c.globalAlpha = BATH_ART.GOO_SHADE.alpha;
+        c.drawImage(C.sh, x, y, w, h, x, y, w, h);
+        c.globalAlpha = 1;
+        c.drawImage(C.body, x, y, w, h, x, y, w, h);
+    },
+
+    shapesFor(C, s) {
+        const S = C.S, k = s.k * S;
         const d = this.shapeOf(s, s.x * S, s.y * S, k);
-        const body = new Path2D(d.body);
+        if (!d._p) d._p = { body: new Path2D(d.body), hi: d.hi ? new Path2D(d.hi) : null };
+        return d._p;
+    },
+
+    paintShade(c, C, s) {
+        const p = this.shapesFor(C, s), SH = BATH_ART.GOO_SHADE, k = s.k * C.S;
         c.save();
-        c.globalAlpha = 0.26;
-        c.fillStyle = m.shade;
-        c.translate(1.2 * k, 1.8 * k);
-        c.fill(body);
+        c.translate(SH.dx * k, SH.dy * k);
+        c.fillStyle = btPal().milk.shade;
+        c.fill(p.body);
         c.restore();
+    },
+
+    // Тело пятна. На стене — РАЗМЫТОЕ, и размыто тенью холста: фигура
+    // уносится за край, на месте остаётся только её тень с размытием. Так
+    // размытие честное и плавное, а работает везде: фильтр холста
+    // (ctx.filter) на айфоне появился только недавно. Стопка из трёх
+    // раздутых ореолов, которая была до этого, читалась набором светлых
+    // окантовок, а не расфокусом.
+    paintBody(c, C, s) {
+        const p = this.shapesFor(C, s), m = btPal().milk;
+        const blur = C.opt.blur ? C.opt.blur * C.S : 0;
         c.save();
-        c.globalAlpha = 0.88;
         c.fillStyle = m[500];
-        c.fill(body);
-        c.globalAlpha = 0.9;
-        c.fillStyle = m.hi;
-        c.fill(new Path2D(d.hi));
+        if (blur) {
+            const OFF = 20000;
+            c.shadowColor = m[500];
+            c.shadowBlur = blur * 2;          // shadowBlur — это две сигмы
+            c.shadowOffsetX = OFF;
+            c.translate(-OFF, 0);
+            c.fill(p.body);
+            c.restore();
+            return;
+        }
+        c.fill(p.body);
+        if (p.hi) { c.fillStyle = m.hi; c.fill(p.hi); }
         c.restore();
     },
 
     freeze(s) {
-        if (s.surf === 'worm') {
-            this.paint(this.bakedCtx, s, this.game.MASK_SCALE);
-            this.dirty(s);
-            this.wormForce = true;
+        if (s.surf === 'worm' || s.surf === 'wall') {
+            const C = this[s.surf];
+            if (!C) return;
+            if (C.sh) this.paintShade(C.sh.getContext('2d'), C, s);
+            this.paintBody(C.body.getContext('2d'), C, s);
+            this.dirty(C, s);
+            C.force = true;
+            if (C.done) this.compose(C, C.rect);
             return;
         }
         if (s.surf === 'tail') {
@@ -458,11 +514,15 @@ const LustGoo = {
             this.drawTail();
             return;
         }
-        const far = s.surf === 'wall';
-        const g = document.getElementById(far ? 'bt-goo-wall-done' : 'bt-splats');
-        if (!g) return;
-        g.insertAdjacentHTML('beforeend',
-            BATH_ART.gooNode(s.x, s.y, s.r, s.len, s.seed, s.ang, far));
-        while (g.childNodes.length > this.CAP[far ? 'wall' : 'rim']) g.removeChild(g.firstChild);
+        // Борт: узлом в три общие группы — тень, тело, блик.
+        const d = BATH_ART.goo(s.x, s.y, s.r, s.len, s.seed, s.ang, 0);
+        const groups = ['bt-goo-rim-done-sh', 'bt-goo-rim-done', 'bt-goo-rim-done-hi']
+            .map(id => document.getElementById(id));
+        if (groups.some(g => !g)) return;
+        groups[0].insertAdjacentHTML('beforeend', `<path d="${d.body}"/>`);
+        groups[1].insertAdjacentHTML('beforeend', `<path d="${d.body}"/>`);
+        groups[2].insertAdjacentHTML('beforeend', `<path d="${d.hi}"/>`);
+        for (const g of groups)
+            while (g.childNodes.length > this.CAP.rim) g.removeChild(g.firstChild);
     }
 };

@@ -174,8 +174,7 @@ const LustMinigame = {
         this.camRainEls = [document.getElementById('bt-cam-rain-far'),
                            document.getElementById('bt-cam-rain-near'),
                            document.getElementById('bt-cam-under'),
-                           document.getElementById('bt-cam-over'),
-                           document.getElementById('bt-cam-goo')];
+                           document.getElementById('bt-cam-over')];
         // Пары «неподвижная обёртка — едущий холст». Обёртке задаётся
         // обрезка верха, холсту — на сколько ехать и за сколько.
         this.rainLayers = [
@@ -242,8 +241,10 @@ const LustMinigame = {
         this.el('bt-bubbles').innerHTML = '';
         this.el('bt-cam-rain-far').innerHTML = BATH_ART.rain(false);
         this.el('bt-cam-rain-near').innerHTML = BATH_ART.rain(true);
+        // bt-splats здесь НЕТ: там разметка слоя потёков, её чистит
+        // LustGoo.reset(), а не выбрасывает.
         for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
-                          'bt-splats', 'bt-gauge', 'bt-spot'])
+                          'bt-gauge', 'bt-spot'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.el('bt-tail').removeAttribute('transform');
@@ -687,6 +688,13 @@ const LustMinigame = {
         // Потёки на теле — тоже в единицах персонажа.
         const g = this.el('bt-goo');
         if (g) g.style.transform = t;
+        // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
+        const wall = this.el('bt-goo-wall');
+        if (wall) {
+            const o = this.sceneToHost({ x: 0, y: 0 });
+            wall.style.transform = `translate(${o.x.toFixed(1)}px, ${o.y.toFixed(1)}px) `
+                                 + `scale(${((c.x - a.x) / 100 || 1).toFixed(4)})`;
+        }
     },
 
     // Обрезка верха и длина хода — в экранных точках, поэтому пересчитываются

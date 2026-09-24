@@ -484,8 +484,20 @@ const harness = require('./harness');
     L.bend = b0; L._tailKey = null; L.drawTail(true);
     out.tailMoves = !!tailD0 && tailD0 !== tailD1;
     out.live = G.live.length;
-    out.wallNodes = document.getElementById('bt-goo-wall-done').childNodes.length;
-    out.rimNodes = document.getElementById('bt-splats').childNodes.length;
+    const inked = (id) => { const k = document.getElementById(id);
+      const px = k.getContext('2d').getImageData(0, 0, k.width, k.height).data;
+      let n = 0; for (let i = 3; i < px.length; i += 4) if (px[i]) n++; return n; };
+    out.wallNodes = inked('bt-goo-wall');
+    // Размыто ли: у пятна на стене обязан быть ПЛАВНЫЙ край — много точек
+    // промежуточной прозрачности, а не резкая кромка.
+    {
+      const k = document.getElementById('bt-goo-wall');
+      const px = k.getContext('2d').getImageData(0, 0, k.width, k.height).data;
+      let soft = 0, all = 0;
+      for (let i = 3; i < px.length; i += 4) if (px[i]) { all++; if (px[i] < 200) soft++; }
+      out.wallSoft = all ? soft / all : 0;
+    }
+    out.rimNodes = document.getElementById('bt-goo-rim-done').childNodes.length;
     out.tailDone = G.tailDone.length;
     // На теле — ни одной краски за силуэтом.
     const c = document.getElementById('bt-goo'), px = c.getContext('2d')
@@ -509,8 +521,8 @@ const harness = require('./harness');
     let paint = 0;
     for (let i = 3; i < clean.length; i += 4) if (clean[i]) paint++;
     out.afterClose = {
-      wall: document.getElementById('bt-goo-wall-done').childNodes.length,
-      rim: document.getElementById('bt-splats').childNodes.length,
+      wall: inked('bt-goo-wall'),
+      rim: document.getElementById('bt-goo-rim-done').childNodes.length,
       tail: G.tailDone.length, live: G.live.length, worm: paint
     };
     L.open();
@@ -532,8 +544,10 @@ const harness = require('./harness');
   ok(goo.wall.over && goo.wall.surf === 'wall', 'капля за верхом дуги прилипает к стене');
   ok(goo.live === 0 && goo.wallNodes >= 1 && goo.rimNodes >= 1 && goo.tailDone >= 1,
      'стёкшие потёки застыли и легли каждый в свой слой',
-     `стена ${goo.wallNodes}, борт ${goo.rimNodes}, хвост ${goo.tailDone}, живых ${goo.live}`);
+     `стена ${goo.wallNodes} точек, борт ${goo.rimNodes}, хвост ${goo.tailDone}, живых ${goo.live}`);
   ok(goo.tailMoves, 'пятна на хвосте едут вместе с его изгибом');
+  ok(goo.wallSoft > 0.3, 'пятно на стене размыто плавно, как сама стена',
+     `${(goo.wallSoft * 100).toFixed(0)}% точек с частичной прозрачностью`);
   ok(goo.wormPx.on > 50 && goo.wormPx.off === 0, 'потёк на теле не вылезает за силуэт',
      `${goo.wormPx.on} точек на теле, ${goo.wormPx.off} за ним`);
   ok(goo.spray.hits === 0 && goo.spray.left === 0, 'брызги во рту проглочены, но не засчитаны');
