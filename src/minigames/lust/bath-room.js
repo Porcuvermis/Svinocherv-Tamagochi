@@ -215,5 +215,163 @@ const BATH_ROOM = {
             </defs>
             <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${G.bottom - b.y}"
                   fill="url(#bt-wall-shade)"/>`;
+    },
+
+    // ---------- ПОЛ: ТА ЖЕ КЛАДКА, В ПЕРСПЕКТИВЕ ----------
+    // Сетка — лучи и ряды запекания: лучи сходятся в ту же точку, что у всей
+    // комнаты, ряды сжимаются с глубиной. Плитка внутри ячейки задаётся
+    // ДОЛЯМИ ячейки (u, v от 0 до 1) и переводится в сцену
+    // билинейно по её четырём углам — так перспектива у каждой плитки своя и
+    // правильная, а шов, фаска и люфт считаются в долях.
+    //
+    // Шов в долях постоянный: плитка квадратная, и шов на ней занимает одну
+    // и ту же долю, как бы далеко она ни лежала. В пикселях он сам тоньшает
+    // к стене — ровно так, как должна вести себя перспектива.
+    FLOOR_SEED: 13,
+    FLOOR_GAP: 0.05,     // шов, доля плитки
+    FLOOR_ROUND: 0.07,   // скругление угла, доля плитки
+
+    floorGrid() {
+        if (this._floor) return this._floor;
+        const B = BATH_BAKED;
+        const rays = B.seams.filter(t => Math.abs(t[1] - t[3]) > 0.01)
+            .map(t => ({ xt: t[0], yt: t[1], xb: t[2], yb: t[3] }))
+            .sort((a, b) => a.xt - b.xt);
+        const rows = B.seams.filter(t => Math.abs(t[1] - t[3]) <= 0.01)
+            .map(t => t[1]).sort((a, b) => a - b);
+        const at = (i, y) => { const r = rays[i]; return { x: r.xt + (r.xb - r.xt) * (y - r.yt) / (r.yb - r.yt), y }; };
+        return (this._floor = { rays, rows, at, top: rows[0] });
+    },
+
+    // Плитки пола: четыре угла ячейки и свой люфт в долях.
+    floorTiles() {
+        if (this._floorTiles) return this._floorTiles;
+        const F = this.floorGrid(), rnd = btRng(this.FLOOR_SEED), out = [];
+        for (let i = 0; i < F.rays.length - 1; i++) for (let j = 0; j < F.rows.length - 1; j++) {
+            const a = F.at(i, F.rows[j]), b = F.at(i + 1, F.rows[j]),
+                  c = F.at(i + 1, F.rows[j + 1]), d = F.at(i, F.rows[j + 1]);
+            const loose = rnd() < 0.1, m = loose ? 0.02 : 0.006;
+            const du = (rnd() - 0.5) * 2 * m, dv = (rnd() - 0.5) * 2 * m, sk = (rnd() - 0.5) * 2 * m;
+            // Точка плитки (u, v) в сцене: билинейно по углам ячейки, с
+            // люфтом — сдвигом и лёгким перекосом.
+            const map = (u, v) => {
+                u += du + sk * (v - 0.5); v += dv;
+                const top = { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+                const bot = { x: d.x + (c.x - d.x) * u, y: d.y + (c.y - d.y) * u };
+                return { x: top.x + (bot.x - top.x) * v, y: top.y + (bot.y - top.y) * v };
+            };
+            out.push({ i, j, map });
+        }
+        return (this._floorTiles = out);
+    },
+
+    // Контур плитки в долях: скруглённый квадрат, ужатый на полшва.
+    floorPath(t) {
+        const f = (v) => v.toFixed(1), g = this.FLOOR_GAP / 2, r = this.FLOOR_ROUND;
+        const lo = g, hi = 1 - g, pts = [];
+        const arc = (cu, cv, a0) => {
+            for (let k = 0; k <= 3; k++) {
+                const a = a0 + Math.PI / 2 * k / 3;
+                pts.push(t.map(cu + Math.cos(a) * r, cv + Math.sin(a) * r));
+            }
+        };
+        arc(hi - r, lo + r, -Math.PI / 2);
+        arc(hi - r, hi - r, 0);
+        arc(lo + r, hi - r, Math.PI / 2);
+        arc(lo + r, lo + r, Math.PI);
+        return 'M' + pts.map(p => `${f(p.x)} ${f(p.y)}`).join('L') + 'Z';
+    },
+
+    // Заливка пола — тон плитки: как у стены, всё мелкое лежит поверх, в
+    // группе дальнего плана.
+    floorBase() {
+        const F = this.floorGrid(), T = btPal().floor, f = (v) => v.toFixed(1);
+        const L = F.rays[0], R = F.rays[F.rays.length - 1], H = 1500;
+        const x = (r, y) => r.xt + (r.xb - r.xt) * (y - r.yt) / (r.yb - r.yt);
+        return `<path fill="${T[500]}" d="M${f(L.xt)} ${f(F.top)}L${f(R.xt)} ${f(F.top)}`
+             + `L${f(x(R, H))} ${H}L${f(x(L, H))} ${H}Z"/>`;
+    },
+
+    floorPlate() {
+        const F = this.floorGrid(), f = (v) => v.toFixed(1);
+        const L = F.rays[0], R = F.rays[F.rays.length - 1], H = 1500;
+        const x = (r, y) => r.xt + (r.xb - r.xt) * (y - r.yt) / (r.yb - r.yt);
+        return `M${f(L.xt)} ${f(F.top)}L${f(R.xt)} ${f(F.top)}L${f(x(R, H))} ${H}L${f(x(L, H))} ${H}Z`;
+    },
+
+    // Пол: затирка, плитки, фаски, лужи.
+    floorTiles2() {
+        const T = btPal().floor, rnd = btRng(this.FLOOR_SEED + 5), f = (v) => v.toFixed(1);
+        let base = '', light = '', dark = '', hiEdge = '', loEdge = '';
+        const g = this.FLOOR_GAP / 2 + 0.03, r = this.FLOOR_ROUND;
+        for (const t of this.floorTiles()) {
+            base += this.floorPath(t);
+            const tone = rnd();
+            if (tone < 0.15) light += this.floorPath(t);
+            else if (tone < 0.3) dark += this.floorPath(t);
+            // Фаска: дальняя кромка светлая (свет сверху), ближняя тёмная.
+            const P = (u, v) => { const q = t.map(u, v); return `${f(q.x)} ${f(q.y)}`; };
+            hiEdge += `M${P(g + r, g)}L${P(1 - g - r, g)}`;
+            loEdge += `M${P(g + r, 1 - g)}L${P(1 - g - r, 1 - g)}`;
+        }
+        return `<path fill="${T.seam}" d="${this.floorPlate()}"/>
+            <path fill="${T[500]}" d="${base}"/>
+            <path fill="${T.hi}" fill-opacity="0.5" d="${light}"/>
+            <path fill="${T.lo}" fill-opacity="0.45" d="${dark}"/>
+            <path fill="none" stroke="${T.hi}" stroke-width="1.4" stroke-linecap="round" d="${hiEdge}"/>
+            <path fill="none" stroke="${T.lo}" stroke-width="1.4" stroke-linecap="round" d="${loEdge}"/>
+            ${this.floorWet()}`;
+    },
+
+    // Лужицы у ванны: натекло с душа. Тёмное мокрое пятно, приплюснутое
+    // перспективой, и блик окна на нём; рядом отдельные капли.
+    floorWet() {
+        const T = btPal().floor, rnd = btRng(this.FLOOR_SEED + 9), A = BATH_BAKED.anchors;
+        const tub = BATH_BAKED.items.tub.box, f = (v) => v.toFixed(1);
+        const floorY = tub.y + tub.h;
+        let wet = '', glint = '';
+        const blob = (cx, cy, rx, ry) => {
+            const n = 9, pts = [];
+            for (let k = 0; k < n; k++) {
+                const a = 2 * Math.PI * k / n, q = 0.7 + rnd() * 0.5;
+                pts.push({ x: cx + Math.cos(a) * rx * q, y: cy + Math.sin(a) * ry * q });
+            }
+            return BATH_ART.gooCurve(pts);
+        };
+        for (const [u, w] of [[0.12, 120], [0.66, 160], [0.95, 70]]) {
+            const cx = tub.x + tub.w * u, cy = floorY + 22 + rnd() * 22;
+            wet += blob(cx, cy, w, w * 0.16);
+            glint += blob(cx - w * 0.25, cy - w * 0.03, w * 0.4, w * 0.035);
+        }
+        for (let k = 0; k < 14; k++) {
+            const cx = tub.x - 30 + rnd() * (tub.w + 60), cy = floorY + 10 + rnd() * 80, rr = 3 + rnd() * 5;
+            wet += blob(cx, cy, rr, rr * 0.35);
+        }
+        // Мокрое темнее сухого, а блик на луже — это отражённый свет, он
+        // холодный и светлее самой плитки: по нему лужа и читается водой.
+        const W = btPal().water;
+        return `<path fill="${T.shade}" fill-opacity="0.32" d="${wet}"/>
+            <path fill="${W.surfHi}" fill-opacity="0.6" d="${glint}"/>`;
+    },
+
+    // Свет на полу: угол у стены темнее, под ванной — тень, в которой она
+    // стоит. Без неё чаша висела над полом.
+    floorShade() {
+        const F = this.floorGrid(), T = btPal().floor, tub = BATH_BAKED.items.tub.box;
+        const floorY = tub.y + tub.h, f = (v) => v.toFixed(1);
+        return `<defs>
+                <linearGradient id="bt-floor-corner" x1="0" y1="${F.top}" x2="0" y2="${F.top + 40}"
+                                gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="${T.shade}" stop-opacity="0.55"/>
+                    <stop offset="1" stop-color="${T.shade}" stop-opacity="0"/>
+                </linearGradient>
+                <radialGradient id="bt-floor-tub" cx="0.5" cy="0.5" r="0.5">
+                    <stop offset="0.35" stop-color="${T.shade}" stop-opacity="0.75"/>
+                    <stop offset="1" stop-color="${T.shade}" stop-opacity="0"/>
+                </radialGradient>
+            </defs>
+            <path fill="url(#bt-floor-corner)" d="${this.floorPlate()}"/>
+            <ellipse cx="${f(tub.x + tub.w / 2)}" cy="${f(floorY - 2)}" rx="${f(tub.w * 0.58)}"
+                     ry="26" fill="url(#bt-floor-tub)"/>`;
     }
 };

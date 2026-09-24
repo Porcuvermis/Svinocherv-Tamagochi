@@ -126,13 +126,14 @@ const BATH_ART = {
         </defs>
 
         ${BATH_ROOM.wallBase()}
-        ${B.draw('floor')}
+        ${BATH_ROOM.floorBase()}
         <g id="bt-far-lines">
         ${BATH_ROOM.wallTiles()}
         ${BATH_ROOM.wallGrime()}
-        ${B.drawSeams()}
+        ${BATH_ROOM.floorTiles2()}
         </g>
         ${BATH_ROOM.wallShade()}
+        ${BATH_ROOM.floorShade()}
         <!-- Душ — единственный предмет дальнего плана с формой и контуром,
              поэтому только он и мылится по-настоящему. Он же подсказка на
              старте (bt-ready дышит), значит рисунок обязан лежать ИМЕННО в
