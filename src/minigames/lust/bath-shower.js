@@ -43,7 +43,7 @@ const BATH_SHOWER = {
     defs: null,
     gid: 0,
     grad(markup) {
-        const id = `bs-g${this.gid++}`;
+        const id = `${this.prefix || 'bs-g'}${this.gid++}`;
         this.defs.push(markup.replace('ID', id));
         return `url(#${id})`;
     },

@@ -152,15 +152,15 @@ const BATH_ART = {
             ${btGrab(64, 78, A.showerHead.x, A.showerHead.y - 20)}
         </g>
 
-        ${B.draw('shelf')}
+        ${BATH_SHELF.backLayer()}
         <g id="bt-soap-home">${B.draw('soap')}
             ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>
         <g id="bt-cloth-home">${B.draw('cloth')}
             ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>
 
-        <!-- Бортик доски ПОВЕРХ предметов: перекрытый низ — единственное,
-             чем в лоб «на полке» отличается от «перед полкой». -->
-        ${B.draw('shelfRail')}
+        <!-- Передняя сетка корзин ПОВЕРХ предметов: перекрытый низ —
+             единственное, чем в лоб «в корзине» отличается от «перед ней». -->
+        ${BATH_SHELF.frontLayer()}
         `;
     },
 
