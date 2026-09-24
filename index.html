@@ -794,6 +794,15 @@
             <!-- Комната и чаша: координаты сцены, по ней ездит камера. -->
             <g id="bt-cam-back"></g>
         </svg>
+        <!-- ПОТЁКИ НА СТЕНЕ — свой холст сразу за комнатой, а не группа в ней.
+             Стена лежит ЗА червём, значит и то, что на неё прилипло, обязано
+             прятаться за ним. А отдельным холстом — потому что живой потёк
+             меняется каждый кадр, и внутри комнаты он заставлял бы
+             перерисовывать все её две тысячи узлов (docs/traps.md, п. 37). -->
+        <svg id="bt-goo-back" class="bt-svg bt-fast" viewBox="0 0 390 844"
+             preserveAspectRatio="xMidYMid slice">
+            <g id="bt-cam-goo"></g>
+        </svg>
         <!-- ДОЖДЬ ЖИВЁТ В СВОИХ ХОЛСТАХ, а не в группах комнаты, и это не
              вкусовщина, а самая дорогая правка кадра во всей ванной.
 
@@ -830,6 +839,9 @@
              вид. Холст, а не фигуры в svg: след обязан обрезаться по силуэту
              червя, а сотни полупрозрачных пятен убивали кадры. -->
         <canvas id="bt-wash" class="bt-lather"></canvas>
+        <!-- Потёки на теле: в единицах персонажа, его же преобразованием и
+             обрезаны его силуэтом (lust-goo.js). -->
+        <canvas id="bt-goo" class="bt-lather"></canvas>
         <div id="bt-rain-near" class="bt-rain-clip">
             <svg class="bt-rain-move" viewBox="0 0 390 844"
                  preserveAspectRatio="xMidYMid slice">
@@ -1135,6 +1147,7 @@
 <script src="src/minigames/lust/bath-art.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-debug.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-goo.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust.js?v=__BUILD__"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->

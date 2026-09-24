@@ -98,6 +98,13 @@
 #lust-game .bt-worm-host.bt-soft {
     opacity: 0.72;
 }
+/* Потёки на теле уходят в глубину ВМЕСТЕ с телом: резкое пятно на
+   полупрозрачном черве выскакивало бы вперёд, к хвосту. Но слабее, чем сам
+   червь: на 0.72 белое поверх бурого становилось серым, и потёк читался
+   пузырём воды, а не тем, что прилипло. */
+#lust-game #bt-goo.bt-soft {
+    opacity: 0.88;
+}
 
 /* ---------- ДОЖДЬ ИЗ ЛЕЙКИ ---------- */
 /* Душ включают один раз и больше не выключают, поэтому вся вода в кадре —
@@ -206,6 +213,7 @@ html.dbg-no-trail #lust-game #bt-bubbles { display: none !important; }
 
 html.dbg-no-scene #lust-game #bt-cam,
 html.dbg-no-scene #lust-game #bt-cam-back,
+html.dbg-no-scene #lust-game #bt-goo-back,
 html.dbg-no-scene #lust-game #bt-cam-under,
 html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }
 

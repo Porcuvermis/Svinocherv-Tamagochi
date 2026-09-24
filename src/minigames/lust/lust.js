@@ -174,7 +174,8 @@ const LustMinigame = {
         this.camRainEls = [document.getElementById('bt-cam-rain-far'),
                            document.getElementById('bt-cam-rain-near'),
                            document.getElementById('bt-cam-under'),
-                           document.getElementById('bt-cam-over')];
+                           document.getElementById('bt-cam-over'),
+                           document.getElementById('bt-cam-goo')];
         // Пары «неподвижная обёртка — едущий холст». Обёртке задаётся
         // обрезка верха, холсту — на сколько ехать и за сколько.
         this.rainLayers = [
@@ -200,6 +201,7 @@ const LustMinigame = {
         this.camEl.innerHTML = BATH_ART.sceneFront();
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
 
+        if (typeof LustGoo !== 'undefined') LustGoo.init(this);
         if (typeof LustShop !== 'undefined') LustShop.init(this);
         if (typeof LustDebug !== 'undefined') LustDebug.init(this.screenElement);
 
@@ -262,6 +264,12 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
+        this.el('bt-goo').classList.remove('bt-soft');
+        this.drops = [];
+        this.splats = [];
+        this.el('bt-fly').setAttribute('d', '');
+        // Следы прошлого захода смыты: они живут, пока игрок в ванной.
+        if (typeof LustGoo !== 'undefined') LustGoo.reset();
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(8);
         this.stopPanting();
         this.blurFar(0, 0);
@@ -281,6 +289,8 @@ const LustMinigame = {
         if (typeof LustShop !== 'undefined') LustShop.close();
         this.stopClocks();
         this.stopPanting();
+        // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
+        if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.drag = null;
         this.fgEl.innerHTML = '';
         if (typeof MinigameWindow !== 'undefined') {
@@ -674,6 +684,9 @@ const LustMinigame = {
         // Холст мытья — в тех же единицах, значит и преобразование то же.
         const w = this.el('bt-wash');
         if (w) w.style.transform = t;
+        // Потёки на теле — тоже в единицах персонажа.
+        const g = this.el('bt-goo');
+        if (g) g.style.transform = t;
     },
 
     // Обрезка верха и длина хода — в экранных точках, поэтому пересчитываются
@@ -1077,6 +1090,8 @@ const LustMinigame = {
         // нельзя: горка пены над хвостом копится ВО ВРЕМЯ мочалки, и её
         // надо либо строить, либо нет с самого начала.
         this.paidRun = (typeof Backend === 'undefined') || Backend.sinPays('lust');
+        // Душ смывает всё, что осталось от прошлого забега в этот же заход.
+        if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.ready(null);
         this.setOpacity('bt-rain-far', 1);
         this.setOpacity('bt-rain-near', 1);
@@ -1219,6 +1234,7 @@ const LustMinigame = {
         // живой персонаж 24 кадра, замерший 60.
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
         this.wormHost.classList.add('bt-soft');
+        this.el('bt-goo').classList.add('bt-soft');
         this.blurFar(2.6, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
@@ -1531,6 +1547,8 @@ const LustMinigame = {
         const d = BATH_ART.tailD(this.bend, this.tailGrow());
         this.el('bt-tail-body').setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
+        // Прилипшее к хвосту едет вместе с ним.
+        if (typeof LustGoo !== 'undefined') LustGoo.drawTail();
     },
 
     // ---------- ПУЗЫРИ ----------
@@ -1597,7 +1615,6 @@ const LustMinigame = {
         this.hits = 0;
         this.drops = [];
         this.splats = [];
-        this.el('bt-splats').innerHTML = '';
         // Рот пуст: канал живой, значит его надо явно опустошить, иначе в
         // следующий забег червь входит с чужой лужицей.
         this.mouthFill = null;
@@ -1693,17 +1710,25 @@ const LustMinigame = {
         const t = this.tailTier();
         const s = this.tipState();
         const v = LustShot.launch(C, t, s.dir);
-        this.drops.push({ x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0,
-                          r: 11, main: true });
+        // Попадёт ли — решается ЗДЕСЬ, тем же полётом, что у калькулятора
+        // (LustShot.fly): шаг фиксированный, случайности после вылета нет,
+        // значит и путь тот же самый. Капле, которая долетит, ничто больше
+        // не мешает: иначе морда вокруг рта ловила бы её раньше корзины, и
+        // игра засчитывала бы меньше, чем посчитал баланс.
+        const m = this.mouthAt || this.mouthPoint();
+        const main = { x: s.x, y: s.y, vx: v.vx, vy: v.vy, t: 0, r: 11,
+                       main: true, trail: [], shed: 0, shedT: 0,
+                       willHit: LustShot.fly(C, { x: s.x, y: s.y }, v, m, C.mouthR).hit };
+        if (typeof LustGoo !== 'undefined') LustGoo.arm(main);
+        this.drops.push(main);
         // Мелкие брызги рядом — только вид. На счёт они не влияют: иначе
         // десять толчков превращаются в полсотни попыток.
         for (let i = 0; i < (C.spray || 0); i++) {
             const a = v.angle + (Math.random() - 0.5) * 0.22;
             const k = 0.82 + Math.random() * 0.3;
             const sp = Math.hypot(v.vx, v.vy) * k;
-            this.drops.push({ x: s.x, y: s.y, vx: Math.cos(a) * sp,
-                              vy: Math.sin(a) * sp, t: 0,
-                              r: 4 + Math.random() * 3, main: false });
+            this.spawnDrop(s.x, s.y, Math.cos(a) * sp, Math.sin(a) * sp,
+                           4 + Math.random() * 3);
         }
 
         if (--this.shotsLeft > 0) {
@@ -1713,14 +1738,12 @@ const LustMinigame = {
         }
     },
 
-    // Потёк перестал сползать — дописываем его узлом и забываем о нём.
-    // Потолок нужен и здесь: за забег их набирается до сорока, а узлы
-    // остаются в дереве до конца игры.
-    freezeSplat(sp) {
-        const g = this.el('bt-splats');
-        if (!g) return;
-        g.insertAdjacentHTML('beforeend', BATH_ART.splat(sp));
-        while (g.childNodes.length > 40) g.removeChild(g.firstChild);
+    // Мелкая капля: брызги у кончика и то, что отрывается от хвоста кометы.
+    spawnDrop(x, y, vx, vy, r) {
+        const d = { x, y, vx, vy, t: 0, r, main: false, trail: [] };
+        if (typeof LustGoo !== 'undefined') LustGoo.arm(d);
+        this.drops.push(d);
+        return d;
     },
 
     // ---------- ДОИГРЫВАНИЕ ----------
@@ -1808,13 +1831,16 @@ const LustMinigame = {
         // браузер пересчитать раскладку — по три раза за кадр только ради
         // точки, которая весь финал стоит на месте.
         const C = this.cfg(), m = this.mouthAt || this.mouthPoint();
+        const goo = typeof LustGoo !== 'undefined' ? LustGoo : null;
         this.dropAcc = (this.dropAcc || 0) + dt;
         let guard = 12;
         while (this.dropAcc >= C.dt && guard-- > 0) {
             this.dropAcc -= C.dt;
             for (let i = this.drops.length - 1; i >= 0; i--) {
                 const d = this.drops[i];
+                d.trail.unshift({ x: d.x, y: d.y });
                 LustShot.step(d, C);
+                this.trimTrail(d);
                 if (d.main && LustShot.inMouth(d, m, C.mouthR)) {
                     this.drops.splice(i, 1);
                     this.hits++;
@@ -1822,33 +1848,27 @@ const LustMinigame = {
                     this.splats.push({ x: m.x, y: m.y, r: 16, t: 0, gulp: true });
                     continue;
                 }
-                if (LustShot.spent(d, C)) {
+                // Брызги, залетевшие в рот, он тоже глотает — но НЕ
+                // засчитывает: иначе десять толчков стали бы полусотней
+                // попыток.
+                if (!d.main && LustShot.inMouth(d, m, C.mouthR * 0.8)) {
                     this.drops.splice(i, 1);
-                    // Не долетела — прилипает там, где кончилась, и стекает.
-                    this.splats.push({ x: d.x, y: Math.min(d.y, C.floorY),
-                                       r: d.r * 1.3, t: 0 });
+                    continue;
                 }
+                if (d.main) this.shed(d);
+                // Долетающую каплю ничто не ловит по дороге (см. shoot).
+                const over = d.willHit ? LustShot.spent(d, C)
+                           : goo ? goo.hit(d) : LustShot.spent(d, C);
+                if (over) this.drops.splice(i, 1);
             }
         }
-        // Потёк СТЕКАЕТ и застывает, но не исчезает: к концу забега по
-        // стене видна вся история промахов. Тающие потёки означали стрельбу
-        // в пустоту — попал или нет, через три секунды одинаково.
-        //
-        // Застывший потёк УХОДИТ ИЗ СПИСКА ЖИВЫХ и дописывается узлом в свой
-        // слой. Дальше он не стоит ничего: браузер про него просто помнит.
-        // Пока все потёки пересобирались каждый кадр, к концу забега это
-        // были семь килобайт разметки на кадр — их парсили заново шестьдесят
-        // раз в секунду ради четырёх сдвинувшихся капель.
+        // Вспышка попадания гаснет сама. Промахи сюда больше не попадают:
+        // они прилипают к тому, во что упёрлись, и дальше ими ведает
+        // LustGoo — у каждой поверхности свой слой глубины.
         for (let i = this.splats.length - 1; i >= 0; i--) {
             const sp = this.splats[i];
             sp.t += dt;
-            if (sp.gulp) {
-                if (sp.t > 0.45) this.splats.splice(i, 1);
-                continue;
-            }
-            if (sp.t < 1.4) { sp.y += 30 * dt; continue; }
-            this.splats.splice(i, 1);
-            this.freezeSplat(sp);
+            if (sp.t > 0.45) this.splats.splice(i, 1);
         }
         this.renderShots();
 
@@ -1861,6 +1881,38 @@ const LustMinigame = {
         // частей шкалы, а не по числу толчков.
         const full = this.gaugeSteps().reduce((a, b) => a + b, 0) || 1;
         this.setMouthFill(this.hits / full);
+    },
+
+    // ---------- КОМЕТА ----------
+    // Хвост кометы — это просто прошлые положения капли, обрезанные по
+    // длине, а не по числу: на быстрой капле он длиннее, чем на
+    // зависшей в верхней точке дуги, — так и видно скорость.
+    trimTrail(d) {
+        const max = d.r * (d.main ? 6.5 : 3.5);
+        let len = 0, px = d.x, py = d.y;
+        for (let k = 0; k < d.trail.length; k++) {
+            const q = d.trail[k];
+            len += Math.hypot(q.x - px, q.y - py);
+            px = q.x; py = q.y;
+            if (len > max) { d.trail.length = k + 1; return; }
+        }
+    },
+
+    // Хвост кометы РВЁТСЯ на капли: от него отрываются мелкие, отстают и
+    // падают сами по себе. Скорость у оторвавшейся — доля скорости кометы,
+    // поэтому она отстаёт и ложится раньше, веером под траекторией.
+    SHED_EVERY: 0.07,
+    SHED_MAX: 6,
+    shed(d) {
+        if (d.t < 0.1 || d.shed >= this.SHED_MAX || d.t - d.shedT < this.SHED_EVERY) return;
+        const q = d.trail[Math.floor(d.trail.length * 0.6)];
+        if (!q) return;
+        d.shed++;
+        d.shedT = d.t;
+        const k = 0.5 + Math.random() * 0.25;
+        this.spawnDrop(q.x, q.y, d.vx * k + (Math.random() - 0.5) * 50,
+                       d.vy * k + (Math.random() - 0.5) * 50,
+                       2.2 + Math.random() * 1.6);
     },
 
     // ---------- ЖИВОЙ СЛОЙ ВЫСТРЕЛА: УЗЛЫ, А НЕ РАЗМЕТКА ----------
@@ -1890,44 +1942,28 @@ const LustMinigame = {
     },
 
     renderShots() {
-        let flash = 0, splat = 0;
+        let flash = 0;
         for (const s of this.splats) {
-            if (s.gulp) {
-                // Попадание: короткая вспышка в самой корзине рта.
-                const n = this.shotNode('flash', flash++, () => BATH_ART.flashNode());
-                if (!n) continue;
-                const k = 1 - s.t / 0.45;
-                n.setAttribute('cx', s.x.toFixed(1));
-                n.setAttribute('cy', s.y.toFixed(1));
-                n.setAttribute('r', (s.r * (1.6 - k)).toFixed(1));
-                n.setAttribute('opacity', (k * 0.9).toFixed(2));
-                n.removeAttribute('display');
-                continue;
-            }
-            const n = this.shotNode('splat', splat++, () => BATH_ART.splatNode());
+            // Попадание: короткая вспышка в самой корзине рта.
+            const n = this.shotNode('flash', flash++, () => BATH_ART.flashNode());
             if (!n) continue;
-            n.setAttribute('d', BATH_ART.splatD(s));
+            const k = 1 - s.t / 0.45;
+            n.setAttribute('cx', s.x.toFixed(1));
+            n.setAttribute('cy', s.y.toFixed(1));
+            n.setAttribute('r', (s.r * (1.6 - k)).toFixed(1));
+            n.setAttribute('opacity', (k * 0.9).toFixed(2));
             n.removeAttribute('display');
         }
         this.hideRest('flash', flash);
-        this.hideRest('splat', splat);
 
-        let drop = 0;
-        for (const d of this.drops) {
-            const n = this.shotNode('drop', drop++, () => BATH_ART.dropNode());
-            if (!n) continue;
-            const sp = Math.hypot(d.vx, d.vy) || 1;
-            const L = d.r * 1.7;
-            n.setAttribute('cx', d.x.toFixed(1));
-            n.setAttribute('cy', d.y.toFixed(1));
-            n.setAttribute('rx', (d.r + L).toFixed(1));
-            n.setAttribute('ry', d.r.toFixed(1));
-            n.setAttribute('transform',
-                'rotate(' + (Math.atan2(d.vy / sp, d.vx / sp) * 180 / Math.PI).toFixed(1)
-                + ' ' + d.x.toFixed(1) + ' ' + d.y.toFixed(1) + ')');
-            n.removeAttribute('display');
-        }
-        this.hideRest('drop', drop);
+        // Все капли в полёте — ОДНИМ путём: одна запись атрибута за кадр,
+        // сколько бы их ни летело. С отрывающимися от кометы каплями их в
+        // воздухе бывает под два десятка, и узел на каждую был бы два
+        // десятка записей.
+        let d = '';
+        for (const q of this.drops) d += BATH_ART.cometD(q.x, q.y, q.r, q.trail);
+        const fly = this.el('bt-fly');
+        if (fly && (d || fly.getAttribute('d'))) fly.setAttribute('d', d);
     },
 
     // Уровень жидкости во рту. Отдельным методом, потому что его дёргают из

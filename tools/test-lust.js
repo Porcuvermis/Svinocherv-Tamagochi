@@ -180,6 +180,22 @@ const harness = require('./harness');
      `${taps} тапов на ${bubbles}`);
   await page.screenshot({ path: out + '3-rub.png' });
 
+  // Сколько капель ОБЕЩАНО рту при вылете. Попадёт ли капля, игра решает
+  // в момент толчка тем же полётом, что у калькулятора (LustShot.fly), и
+  // дальше такую каплю ничто не ловит. Если по дороге её перехватит морда
+  // или хвост, попаданий станет меньше обещанного — и баланс, посчитанный
+  // калькулятором, разойдётся с игрой. Считаются только вызовы из толчка:
+  // прицел на входе в финал тоже зовёт fly, но ничего не обещает.
+  await page.evaluate(() => {
+    const fly = LustShot.fly;
+    window.__promised = 0;
+    LustShot.fly = function (...a) {
+      const r = fly.apply(this, a);
+      if (r.hit && /shoot/.test(new Error().stack)) window.__promised++;
+      return r;
+    };
+  });
+
   // ---------- ПОГЛАЖИВАНИЕ ----------
   // Хвост наливается от ПУТИ пальца вдоль него и спадает, пока палец стоит.
   // Проверяем обе половины: иначе достаточно положить палец и ждать.
@@ -327,6 +343,9 @@ const harness = require('./harness');
   // не успевшие долететь, ЗАМИРАЛИ в воздухе до конца экрана.
   ok(res.flying === 0, 'все капли долетели', `${res.flying} в воздухе`);
   ok(res.rain < 0.05, 'душ выключен на доигрывании', `прозрачность ${res.rain}`);
+  const promised = await page.evaluate(() => window.__promised);
+  ok(promised === res.hits, 'рот поймал ровно столько, сколько обещал полёт калькулятора',
+     `${res.hits} из ${promised}: ни морда, ни хвост долетающую каплю не перехватили`);
   // Живой забег — выборка из десяти толчков, и ноль попаданий в ней бывает
   // законно. Поэтому проверяется МОДЕЛЬ на большой выборке: та же физика,
   // тот же прицел, та же корзина, что и в игре, — и доля попаданий обязана
@@ -374,6 +393,104 @@ const harness = require('./harness');
     + `рот (${geo.mouth.x},${geo.mouth.y}); таблица кончика и рот стоят в tools/sim-lust.js`);
 
   await page.screenshot({ path: out + '4-done.png' });
+
+  // ================= СЛЕДЫ СТРУИ =================
+  // Промах прилипает к ПЕРВОМУ, во что упёрся, и живёт в плане этой
+  // поверхности (src/minigames/lust/lust-goo.js). Капли здесь ставятся
+  // руками в известные точки: живой забег случаен, и в нём не каждая
+  // поверхность успевает поймать хоть что-то.
+  const goo = await page.evaluate(async () => {
+    const L = LustMinigame, G = LustGoo, A2 = BATH_ART.slots();
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const drop = (x, y, extra) => Object.assign(
+      { x, y, vx: 0, vy: 120, t: 1, r: 6, main: false, trail: [] }, extra || {});
+    const land = (d) => { G.arm(d); d.wallAt = null; Object.assign(d, d._after || {});
+                          const n = G.live.length; const over = G.hit(d);
+                          return { over, surf: G.live.length > n ? G.live[G.live.length - 1].surf : null }; };
+    const out = {};
+    // Тело: точка ПОСЕРЕДИНЕ силуэта, по той же маске, что у мыла.
+    const mb = L.maskBounds(), box = L.wormBoxScene(), B = L.WORM_BASE, S = L.MASK_SCALE;
+    const inMask = (p) => { const k = B.w / box.w;
+      const x = Math.round((p.x - box.x) * k * S), y = Math.round((p.y - box.y) * k * S);
+      return L.maskAlpha[y * L.mask.width + x] > 0; };
+    let body = null;
+    for (let f = 0.5; f < 0.9 && !body; f += 0.05) {
+      const p = { x: mb.x + mb.w * 0.55, y: mb.y + mb.h * f };
+      if (inMask(p)) body = p;
+    }
+    out.worm = land(drop(body.x, body.y));
+    // Хвост: середина его оси при текущем изгибе.
+    const sp = BATH_ART.tailSpine(L.bend, L.tailGrow()), mid = sp[Math.round(sp.length / 2)];
+    out.tail = land(drop(A2.tail.x + mid.x, A2.tail.y + mid.y));
+    // Борт: капля переходит линию борта сверху вниз правее червя.
+    const rimY = A2.rimFront.y, rx = A2.rimR.x - 30;
+    const keep = G.RIM_CHANCE;
+    G.RIM_CHANCE = 1;
+    const dr = drop(rx, rimY + 2); G.arm(dr); dr.wallAt = null; dr.prevY = rimY - 3;
+    const n0 = G.live.length; out.rim = { over: G.hit(dr), surf: G.live.length > n0 ? G.live[G.live.length - 1].surf : null };
+    G.RIM_CHANCE = 0;
+    const di = drop(rx, rimY + 2); G.arm(di); di.wallAt = null; di.prevY = rimY - 3;
+    const n1 = G.live.length; out.inside = { over: G.hit(di), added: G.live.length - n1 };
+    G.RIM_CHANCE = keep;
+    // Стена: опустилась после верха дуги на заданную глубину.
+    const dw = drop(A2.rimL.x + 20, 420); G.arm(dw); dw.apexY = 360; dw.wallAt = 50;
+    const n2 = G.live.length; out.wall = { over: G.hit(dw), surf: G.live.length > n2 ? G.live[G.live.length - 1].surf : null };
+
+    // Хвост согнули — пятна на нём поехали следом.
+    await wait(2500);
+    const tailD0 = document.getElementById('bt-tail-goo').getAttribute('d');
+    const b0 = L.bend; L.bend = 0.6; L._tailKey = null; L.drawTail(true);
+    const tailD1 = document.getElementById('bt-tail-goo').getAttribute('d');
+    L.bend = b0; L._tailKey = null; L.drawTail(true);
+    out.tailMoves = !!tailD0 && tailD0 !== tailD1;
+    out.live = G.live.length;
+    out.wallNodes = document.getElementById('bt-goo-wall-done').childNodes.length;
+    out.rimNodes = document.getElementById('bt-splats').childNodes.length;
+    out.tailDone = G.tailDone.length;
+    // На теле — ни одной краски за силуэтом.
+    const c = document.getElementById('bt-goo'), px = c.getContext('2d')
+      .getImageData(0, 0, c.width, c.height).data;
+    let on = 0, off = 0;
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      if (!px[i + 3]) continue;
+      if (L.maskAlpha[j]) on++; else off++;
+    }
+    out.wormPx = { on, off };
+
+    // Брызги, залетевшие в рот, глотаются, но НЕ засчитываются.
+    const m = L.mouthAt || L.mouthPoint(), h0 = L.hits;
+    L.drops = [{ x: m.x, y: m.y, vx: 0, vy: 0, t: 0.5, r: 4, main: false, trail: [] }];
+    L.stepDrops(L.cfg().dt * 1.01);
+    out.spray = { hits: L.hits - h0, left: L.drops.length };
+
+    // Уход из ванной смывает всё (вариант «а»).
+    L.close();
+    const clean = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let paint = 0;
+    for (let i = 3; i < clean.length; i += 4) if (clean[i]) paint++;
+    out.afterClose = {
+      wall: document.getElementById('bt-goo-wall-done').childNodes.length,
+      rim: document.getElementById('bt-splats').childNodes.length,
+      tail: G.tailDone.length, live: G.live.length, worm: paint
+    };
+    L.open();
+    await wait(300);
+    return out;
+  });
+  ok(goo.worm.over && goo.worm.surf === 'worm', 'капля в тело прилипает к телу');
+  ok(goo.tail.over && goo.tail.surf === 'tail', 'капля в хвост прилипает к хвосту');
+  ok(goo.rim.over && goo.rim.surf === 'rim', 'капля на борт прилипает к борту');
+  ok(goo.inside.over && goo.inside.added === 0, 'перелетевшая борт уходит в ванну и не рисуется поверх чаши');
+  ok(goo.wall.over && goo.wall.surf === 'wall', 'капля за верхом дуги прилипает к стене');
+  ok(goo.live === 0 && goo.wallNodes >= 1 && goo.rimNodes >= 1 && goo.tailDone >= 1,
+     'стёкшие потёки застыли и легли каждый в свой слой',
+     `стена ${goo.wallNodes}, борт ${goo.rimNodes}, хвост ${goo.tailDone}, живых ${goo.live}`);
+  ok(goo.tailMoves, 'пятна на хвосте едут вместе с его изгибом');
+  ok(goo.wormPx.on > 50 && goo.wormPx.off === 0, 'потёк на теле не вылезает за силуэт',
+     `${goo.wormPx.on} точек на теле, ${goo.wormPx.off} за ним`);
+  ok(goo.spray.hits === 0 && goo.spray.left === 0, 'брызги во рту проглочены, но не засчитаны');
+  ok(Object.values(goo.afterClose).every(v => v === 0), 'уход из ванной смывает все следы',
+     JSON.stringify(goo.afterClose));
 
   // ================= ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» =================
   // Награда у похоти на своём таймере (docs/plan/21-lust-bath.md, разд. 7а).

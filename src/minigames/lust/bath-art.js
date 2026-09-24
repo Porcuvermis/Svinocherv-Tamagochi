@@ -211,8 +211,13 @@ const BATH_ART = {
              дописывается сюда узлом один раз, когда перестал сползать, и
              больше не трогается никогда. -->
         <g id="bt-splats"></g>
+        <!-- Ещё стекающие по борту — ОДНИМ путём на все: за кадр одна запись
+             атрибута, сколько бы их ни ползло (lust-goo.js). -->
+        <path id="bt-goo-rim-live" d="" ${this.gooStyle(false)}/>
         <!-- Струи и шкала — поверх всего: они не в комнате, они про игру. -->
         <g id="bt-shots"></g>
+        <!-- Капли в полёте: ОДИН путь на все, с хвостами-кометами. -->
+        <path id="bt-fly" d="" ${this.flyStyle()}/>
         <g id="bt-gauge"></g>
         <g id="bt-spot"></g>
         `;
@@ -573,7 +578,10 @@ const BATH_ART = {
         <path id="bt-tail-body" d="" fill="${fill}" stroke="${ink}"
               stroke-width="3" stroke-linejoin="round"/>
         <path id="bt-tail-shine" d="" fill="none" stroke="${PALETTE.flesh[100]}"
-              stroke-width="7" stroke-linecap="round" opacity="0.38"/>`;
+              stroke-width="7" stroke-linecap="round" opacity="0.38"/>
+        <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
+             ним (lust-goo.js). -->
+        <path id="bt-tail-goo" d="" ${this.gooStyle(false)}/>`;
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
@@ -626,88 +634,75 @@ const BATH_ART = {
         return `<g opacity="${(0.35 + 0.65 * g).toFixed(2)}">${out.join('')}</g>`;
     },
 
-    // ---------- КАПЛИ И ПОТЁКИ ----------
-    // Капля в полёте — густая, с вытянутым по скорости телом: по форме видно,
-    // куда она летит. Потёк — то, что не попало: прилипло к поверхности и
-    // ползёт вниз, оставляя хвост.
-    //
-    // Рисуется одной строкой на кадр: капель единицы, и держать их узлами
-    // ради этого незачем.
     // Лужицы во рту здесь НЕТ и быть не может: она — часть самого рта
     // (worm-renderer, mouthFill), а не пятно поверх морды. Пока её рисовали
     // тут, её приходилось наводить на рот числами после каждого переезда
     // камеры, она не размывалась вместе с червём и при малейшем расхождении
     // оказывалась на щеке.
-    // Разметка ОДНОГО потёка. Отдельным методом, потому что застывший потёк
-    // рисуется РОВНО ОДИН РАЗ и дальше живёт узлом: он больше не меняется,
-    // и пересобирать его каждый кадр незачем.
-    // Путь потёка отдельно от разметки: живые потёки ползут каждый кадр, и
-    // им переписывается ОДИН атрибут `d`, а не пересобирается узел. Разметка
-    // ниже нужна застывшим — те дописываются в слой один раз и больше не
-    // трогаются.
-    splatD(s) {
-        return `M${(s.x - s.r).toFixed(1)} ${s.y.toFixed(1)}
-                a${s.r.toFixed(1)} ${s.r.toFixed(1)} 0 1 0 ${(s.r * 2).toFixed(1)} 0
-                l${(-s.r).toFixed(1)} ${(s.r * 2.2).toFixed(1)} Z`;
-    },
 
-    splat(s) {
+    // ---------- ПОТЁКИ И КОМЕТА ----------
+    // Путь потёка собран из кусков (пятно, нитка, капля на конце), и обводка
+    // у него идёт ПОД заливкой (paint-order): внутренние швы между кусками
+    // закрываются, снаружи остаётся один общий контур. Иначе каждое пятно
+    // читалось бы тремя обведёнными фигурками.
+    //
+    // far — потёк на стене. Стена в финале в расфокусе, и расфокус там
+    // сказан пропавшим КОНТРАСТОМ, а не гауссианом (см. blurFar в lust.js):
+    // потёк на ней бледнее и без блика. Резкое пятно на размытой стене
+    // выскакивало бы вперёд, к хвосту.
+    gooStyle(far) {
         const m = btPal().milk;
-        return `<path d="${this.splatD(s)}"
-                    fill="${m[500]}" stroke="${m.edge}" stroke-width="1.6"
-                    opacity="0.88"/>`;
+        return far
+            ? `fill="${m[500]}" stroke="${m.far}" stroke-width="3" paint-order="stroke"
+               stroke-linejoin="round" opacity="0.8"`
+            : `fill="${m[500]}" stroke="${m.edge}" stroke-width="3" paint-order="stroke"
+               stroke-linejoin="round" opacity="0.94"`;
     },
 
-    // Заготовки узлов для живого слоя: создаются по одному разу, дальше им
+    // Застывший потёк: путь и блик. Дописывается в слой ОДИН раз.
+    gooNode(d, far, hx, hy, hr) {
+        const m = btPal().milk;
+        const hi = far ? '' : `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}"
+                   r="${Math.max(0.8, hr).toFixed(1)}" fill="${m.hi}"/>`;
+        return `<g><path d="${d}" ${this.gooStyle(far)}/>${hi}</g>`;
+    },
+
+    // Капля в полёте — КОМЕТА: густая голова и сужающийся хвост по следу
+    // полёта. Хвост и голова — один путь, обводка под заливкой, как у
+    // потёков.
+    flyStyle() {
+        const m = btPal().milk;
+        return `fill="${m.hi}" stroke="${m.edge}" stroke-width="2.6" paint-order="stroke"
+                stroke-linejoin="round"`;
+    },
+
+    // trail — точки следа от головы назад, r — радиус головы.
+    cometD(x, y, r, trail) {
+        const f = (v) => v.toFixed(1);
+        let d = `M${f(x - r)} ${f(y)}a${f(r)} ${f(r)} 0 1 0 ${f(2 * r)} 0`
+              + `a${f(r)} ${f(r)} 0 1 0 ${f(-2 * r)} 0Z`;
+        const n = trail ? trail.length : 0;
+        if (n < 2) return d;
+        const L = [], R = [];
+        const pts = [{ x, y }].concat(trail);
+        for (let i = 0; i < pts.length; i++) {
+            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+            let tx = a.x - b.x, ty = a.y - b.y;
+            const l = Math.hypot(tx, ty) || 1;
+            tx /= l; ty /= l;
+            // Сужение к хвосту: у головы почти во всю толщину, к концу нитка.
+            const w = r * 0.92 * Math.pow(1 - i / (pts.length - 1), 1.3);
+            L.push(`${f(pts[i].x - ty * w)} ${f(pts[i].y + tx * w)}`);
+            R.push(`${f(pts[i].x + ty * w)} ${f(pts[i].y - tx * w)}`);
+        }
+        return d + `M${L.join('L')}L${R.reverse().join('L')}Z`;
+    },
+
+    // Заготовка узла вспышки попадания: создаётся один раз, дальше ей
     // правятся только координаты (см. renderShots в lust.js).
-    dropNode() {
-        const m = btPal().milk;
-        return `<ellipse rx="1" ry="1" fill="${m.hi}" stroke="${m.edge}" stroke-width="1.4"/>`;
-    },
-
     flashNode() {
         const m = btPal().milk;
         return `<circle r="1" fill="none" stroke="${m.hi}" stroke-width="5"/>`;
-    },
-
-    splatNode() {
-        const m = btPal().milk;
-        return `<path fill="${m[500]}" stroke="${m.edge}" stroke-width="1.6" opacity="0.88"/>`;
-    },
-
-    // Только ЖИВОЕ: капли в полёте, ещё сползающие потёки и вспышка
-    // попадания. Застывшие потёки сюда не попадают — они уже лежат готовыми
-    // узлами в своём слое.
-    //
-    // Раньше здесь собиралась вся картина разом, и в финале это давало
-    // семь килобайт разметки НА КАЖДЫЙ КАДР: браузер парсил их заново
-    // шестьдесят раз в секунду ради четырёх сдвинувшихся капель. Ровно
-    // поэтому вода из душа шла идеально (она едет на видеокарте), а всё
-    // остальное ползло.
-    drops(flying, live) {
-        const m = btPal().milk, out = [];
-        for (const s of (live || [])) {
-            if (s.gulp) {
-                // Попадание: короткая вспышка в самой корзине рта.
-                const k = 1 - s.t / 0.45;
-                out.push(`<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}"
-                                  r="${(s.r * (1.6 - k)).toFixed(1)}" fill="none"
-                                  stroke="${m.hi}" stroke-width="5"
-                                  opacity="${(k * 0.9).toFixed(2)}"/>`);
-                continue;
-            }
-            out.push(this.splat(s));
-        }
-        for (const d of (flying || [])) {
-            const sp = Math.hypot(d.vx, d.vy) || 1;
-            const ex = d.vx / sp, ey = d.vy / sp, L = d.r * 1.7;
-            out.push(`<ellipse cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}"
-                               rx="${(d.r + L).toFixed(1)}" ry="${d.r.toFixed(1)}"
-                               fill="${m.hi}" stroke="${m.edge}" stroke-width="1.4"
-                               transform="rotate(${(Math.atan2(ey, ex) * 180 / Math.PI).toFixed(1)}
-                                          ${d.x.toFixed(1)} ${d.y.toFixed(1)})"/>`);
-        }
-        return out.join('');
     },
 
     // ---------- ШКАЛА НАД ГОЛОВОЙ: ЖЕТОН ИЗ ТРЁХ ЧАСТЕЙ ----------
