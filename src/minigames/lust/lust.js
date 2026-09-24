@@ -354,24 +354,72 @@ const LustMinigame = {
         const from = this.cam, body = this.stageEl;
         if (!ms || !from || !body) { this.camAt(to.s, to.tx, to.ty); return; }
 
-        // Разница двух кадров в ЭКРАННЫХ точках. Камера живёт в единицах
-        // холста (q = s·p + t), значит переход «откуда → куда» — это
-        // D(q) = c·q + (t₁ − c·t₀) при c = s₁/s₀. Осталось перевести это в
-        // пиксели: холст вписан в окно с обрезкой, отсюда масштаб m и
-        // отступ off.
+        // ---------- ПЕРЕЕЗД ЕДЕТ ПО КАДРУ С ЗАПАСОМ ----------
+        // Слои едут ГОТОВЫМИ ТЕКСТУРАМИ, и в текстуре есть только то, что
+        // было в кадре на момент старта. Всё, что въезжает в кадр по дороге,
+        // нарисовать было не из чего: на переезде «мытьё → хвост» левый край
+        // оставался чёрным (17% кадра посреди движения), а поверх черноты
+        // торчал кусок тела — червь лежит своим слоем и шире ванны, которая
+        // его обычно закрывает.
+        //
+        // Поэтому перед переездом сцена ОДИН РАЗ рисуется камерой, в которую
+        // влезают оба кадра сразу, — «откуда» и «куда». Дальше та же
+        // css-анимация, только от этой общей картинки: сперва она без
+        // перехода подгоняется так, чтобы выглядеть ровно как «откуда», потом
+        // едет к «куда». Всё, что появится в кадре по пути, в ней уже есть.
+        // Цена — растр на время движения чуть мягче (он рисовался мельче), а
+        // по прибытии числа камеры проставляются начисто, и картинка снова
+        // резкая.
+        const both = this.camUnion(from, to, body);
+        this.camAt(both.s, both.tx, both.ty);
+        body.style.willChange = 'transform';
+        body.style.transition = 'none';
+        body.style.transform = this.camDelta(both, from, body);
+        // Стартовое положение обязано примениться ДО того, как включится
+        // переход: иначе браузер склеит две записи и поедет от «общего»
+        // кадра, а не от «откуда», — картинка дёрнется на старте.
+        void body.offsetWidth;
+
+        this.camTo = to;
+        body.style.transition = `transform ${ms}ms cubic-bezier(0.65, 0, 0.35, 1)`;
+        body.style.transform = this.camDelta(both, to, body);
+        this.camTimer = setTimeout(() => this.endCamMove(), ms + 40);
+    },
+
+    // Преобразование обёртки, при котором картинка, нарисованная камерой A,
+    // выглядит как картинка камеры B. Камера живёт в единицах холста
+    // (q = s·p + t), значит переход — это D(q) = c·q + (t_B − c·t_A) при
+    // c = s_B/s_A. Осталось перевести это в пиксели: холст вписан в окно с
+    // обрезкой, отсюда масштаб m и отступ off.
+    camDelta(A, B, body) {
         const W = body.clientWidth, H = body.clientHeight;
         const m = Math.max(W / 390, H / 844);
         const offX = (W - 390 * m) / 2, offY = (H - 844 * m) / 2;
-        const c = to.s / from.s;
-        const ax = m * (to.tx - c * from.tx) + offX * (1 - c);
-        const ay = m * (to.ty - c * from.ty) + offY * (1 - c);
+        const c = B.s / A.s;
+        const ax = m * (B.tx - c * A.tx) + offX * (1 - c);
+        const ay = m * (B.ty - c * A.ty) + offY * (1 - c);
+        return `translate(${ax.toFixed(2)}px, ${ay.toFixed(2)}px) scale(${c.toFixed(5)})`;
+    },
 
-        this.camTo = to;
-        body.style.willChange = 'transform';
-        body.style.transition = `transform ${ms}ms cubic-bezier(0.65, 0, 0.35, 1)`;
-        body.style.transform =
-            `translate(${ax.toFixed(2)}px, ${ay.toFixed(2)}px) scale(${c.toFixed(5)})`;
-        this.camTimer = setTimeout(() => this.endCamMove(), ms + 40);
+    // Камера, в кадр которой влезает всё, что видят обе камеры. Видимая
+    // часть холста — не весь холст 390×844: он вписан в окно с обрезкой, и
+    // на вытянутом экране срезаются бока или верх с низом. Поэтому
+    // сравниваются именно ВИДИМЫЕ прямоугольники сцены, а общая камера
+    // вписывает их объединение в ту же видимую часть.
+    camUnion(A, B, body) {
+        const W = body.clientWidth, H = body.clientHeight;
+        const m = Math.max(W / 390, H / 844);
+        const offX = (W - 390 * m) / 2, offY = (H - 844 * m) / 2;
+        const v = { x0: -offX / m, y0: -offY / m, x1: (W - offX) / m, y1: (H - offY) / m };
+        const seen = (c) => ({ x0: (v.x0 - c.tx) / c.s, y0: (v.y0 - c.ty) / c.s,
+                               x1: (v.x1 - c.tx) / c.s, y1: (v.y1 - c.ty) / c.s });
+        const a = seen(A), b = seen(B);
+        const r = { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0),
+                    x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+        const s = Math.min((v.x1 - v.x0) / (r.x1 - r.x0), (v.y1 - v.y0) / (r.y1 - r.y0));
+        return { s,
+                 tx: (v.x0 + v.x1) / 2 - s * (r.x0 + r.x1) / 2,
+                 ty: (v.y0 + v.y1) / 2 - s * (r.y0 + r.y1) / 2 };
     },
 
     // Приехали (или переезд прервали новым): обёртка сбрасывается, а числа

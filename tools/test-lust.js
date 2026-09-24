@@ -429,6 +429,37 @@ const harness = require('./harness');
      'таймер истёк — награда готова и узел горит');
   await page.screenshot({ path: out + '5-wash-only.png' });
 
+  // ================= ПЕРЕЕЗД КАМЕРЫ БЕЗ ЧЁРНЫХ КРАЁВ =================
+  // Камера едет css-анимацией готовых текстур. Пока текстура рисовалась
+  // только кадром «откуда», всё, что въезжало в кадр по дороге, было
+  // чёрным: на «мытьё → хвост» пятая часть кадра, на «хвост → общий план»
+  // две трети, и поверх черноты торчал кусок тела. Меряется доля тёмных
+  // точек сцены посреди движения; сама сцена даёт около 2% (контуры,
+  // тени), битый переезд — от 20%.
+  const darkShare = async () => {
+    const buf = await page.screenshot();
+    return page.evaluate(async (b64) => {
+      const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const top = Math.round(img.height * 0.07);          // без шапки окна
+      const d = x.getImageData(0, top, c.width, c.height - top).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 90) n++;
+      return n / (d.length / 4);
+    }, buf.toString('base64'));
+  };
+  for (const [a, b] of [['body', 'tail'], ['body', 'overview'], ['tail', 'overview']]) {
+    await page.evaluate((n) => LustMinigame.setCamera(n), a);
+    await page.waitForTimeout(400);
+    await page.evaluate((n) => LustMinigame.setCamera(n, 1000), b);
+    let worst = 0;
+    for (let i = 0; i < 7; i++) { await page.waitForTimeout(120); worst = Math.max(worst, await darkShare()); }
+    await page.waitForTimeout(300);
+    ok(worst < 0.06, `переезд «${a} → ${b}» без чёрных краёв`,
+       `худший кадр ${(worst * 100).toFixed(1)}% тёмного`);
+  }
+
   console.log(errs.length ? '\nОШИБКИ:\n  ' + errs.join('\n  ') : '\nошибок нет');
   await browser.close();
   if (fail.length || errs.length) process.exit(1);
