@@ -201,6 +201,7 @@ const LustMinigame = {
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
 
         if (typeof LustShop !== 'undefined') LustShop.init(this);
+        if (typeof LustDebug !== 'undefined') LustDebug.init(this.screenElement);
 
         // ---------- УЗЕЛ ПОХОТИ В КОЛЕСЕ ГРЕХОВ ----------
         // Горит по ТАЙМЕРУ НАГРАДЫ, а не по шкале: у похоти потребность и
@@ -232,6 +233,7 @@ const LustMinigame = {
         this.phase = 'idle';
         this.drag = null;
         if (typeof LustShop !== 'undefined') LustShop.close();
+        if (typeof LustDebug !== 'undefined') LustDebug.render();
         this.syncShopButton();
         this.resetCover();
         this.wipeLather();

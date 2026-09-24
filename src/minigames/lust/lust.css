@@ -407,3 +407,40 @@ html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }
     transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
 }
 #lust-game .bt-shop-btn:active { transform: scale(0.94); }
+
+/* ================= DEBUG-ПАНЕЛЬ ================= */
+/* Та же, что у тщеславия и сада: полоса сверху, внутри рамки окна (иначе на
+   телефоне её верх уходит под чёлку). Видна только в debug-режиме. */
+#lust-game #lu-debug {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px 5px;
+    background: rgba(0, 0, 0, 0.78);
+    border-radius: 0 0 8px 8px;
+    -webkit-tap-highlight-color: transparent;
+}
+#lust-game #lu-debug.visible { display: flex; }
+#lust-game .lu-debug-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-items: center;
+}
+#lust-game #lu-debug button {
+    padding: 3px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+    font: 12px/1 monospace;
+}
+#lust-game #lu-debug button:active { background: rgba(255, 255, 255, 0.2); }
+#lust-game .lu-debug-tag {
+    color: rgba(255, 255, 255, 0.75);
+    font: 11px/1.6 monospace;
+    padding: 0 3px;
+}

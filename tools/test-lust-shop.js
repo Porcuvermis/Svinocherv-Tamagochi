@@ -201,6 +201,55 @@ const harness = require('./harness');
   check(done.rows === 0 && done.empty, 'всё выкуплено — на прилавке знак, а не пустота');
   await page.screenshot({ path: out + '4-maxed.png' });
 
+  // ================= 8. DEBUG-ПАНЕЛЬ ПОХОТИ =================
+  // Инструмент автора: ступени хвоста, мыла и мочалки кнопками, жетоны, и
+  // сразу в финал — чтобы сравнить хвост на нуле и на максимуме рукой.
+  // Проверяется, что кнопки НАЖИМАЮТСЯ (панель инспектора висит поверх всего
+  // и однажды уже перехватывала её первую строку) и что делают своё.
+  say('\n======== DEBUG-ПАНЕЛЬ ПОХОТИ ========');
+  await page.evaluate(() => {
+    const u = ECONOMY.minigames.lust.upgrades;
+    u.order.forEach(k => { GameState.data.upgrades['lust_' + k] = 0; });
+    GameState.data.currencies.lust_token = 0;
+    LustMinigame.close(); LustMinigame.open();
+    if (!DebugMode.enabled) DebugMode.toggle();
+  });
+  await page.waitForTimeout(800);
+  const press = async (act) => {
+    const b = await page.evaluate((a) => {
+      const el = document.querySelector(`#lu-debug [data-act="${a}"]`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const x = r.x + r.width / 2, y = r.y + r.height / 2;
+      const top = document.elementFromPoint(x, y);
+      return { x, y, mine: top === el };
+    }, act);
+    if (!b) { check(false, 'нет кнопки ' + act); return false; }
+    await page.mouse.click(b.x, b.y);
+    await page.waitForTimeout(250);
+    return b.mine;
+  };
+  const reachable = await press('tok:10');
+  check(reachable, 'первую строку панели ничто не накрывает');
+  const dbg1 = await page.evaluate(() => GameState.currency('lust_token'));
+  check(dbg1 === 10, `жетоны выдаются кнопкой (${dbg1})`);
+  await press('allmax');
+  await press('finale');
+  await page.waitForTimeout(900);
+  const dbg2 = await page.evaluate(() => ({
+    tail: GameState.upgradeLevel('lust_tail'), top: ECONOMY.minigames.lust.upgrades.tail.levels.length,
+    phase: LustMinigame.phase,
+    shots: LustMinigame.shotsLeft, gain: LustMinigame.tailTier().gain }));
+  check(dbg2.tail === dbg2.top,
+        `«всё макс» ставит верхнюю ступень хвоста (${dbg2.tail})`);
+  check(dbg2.phase === 'aim' && dbg2.shots >= 18,
+        `«сразу в финал» ведёт в финал на купленной ступени (${dbg2.phase}, толчков осталось ${dbg2.shots})`);
+  await press('allmin');
+  const dbg3 = await page.evaluate(() => LustMinigame.tailTier().gain);
+  check(dbg3 < dbg2.gain, `«всё 0» возвращает тугой хвост прямо в финале (отдача ${dbg2.gain} → ${dbg3})`);
+  await page.screenshot({ path: out + '5-debug.png' });
+  await page.evaluate(() => { if (DebugMode.enabled) DebugMode.toggle(); });
+
   say(errors.length ? '\nОШИБКИ:\n  ' + errors.join('\n  ') : '\nошибок в консоли нет');
   await browser.close();
   if (bad || errors.length) process.exit(1);
