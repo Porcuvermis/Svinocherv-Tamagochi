@@ -139,7 +139,7 @@ const BATH_ART = {
              старте (bt-ready дышит), значит рисунок обязан лежать ИМЕННО в
              этой группе: пустая группа с одной зоной захвата дышала бы
              невидимо. -->
-        <g id="bt-shower">${BATH_ROOM.shower()}</g>
+        <g id="bt-shower">${BATH_SHOWER.draw()}</g>
 
         <!-- Вуаль струи: статичный конус от раструба. Живёт в комнате, а не
              в едущем холсте дождя — иначе она отрывалась бы от лейки. -->
@@ -151,8 +151,6 @@ const BATH_ART = {
         <g id="bt-shower-grab">
             ${btGrab(64, 78, A.showerHead.x, A.showerHead.y - 20)}
         </g>
-
-        ${B.draw('faucet')}
 
         ${B.draw('shelf')}
         <g id="bt-soap-home">${B.draw('soap')}
