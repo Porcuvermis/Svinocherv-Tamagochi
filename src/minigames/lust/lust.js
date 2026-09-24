@@ -1257,6 +1257,8 @@ const LustMinigame = {
         this.el('bt-wash').style.opacity = '0';
         const model = window.WormModelAPI ? this.bathModel() : null;
         this.tailModel = model;
+        // Вид хвоста — по купленной ступени (BATH_ART.TAIL_LOOKS).
+        BATH_ART.setTailLevel(this.tailLevel());
         this.bend = 0;
         this.bendHand = null;
 
@@ -2154,6 +2156,12 @@ const LustMinigame = {
     // Ступень хвоста: толчки, сила, разброс и послушность одной записью.
     // Почему одной, а не четырьмя полками — в комментарии у лестницы
     // (src/config/economy.js, ECONOMY.minigames.lust.upgrades.tail).
+    // Номер ступени хвоста (0 — ничего не куплено) — для его вида.
+    tailLevel() {
+        if (typeof GameState === 'undefined' || !GameState.upgradeLevel || typeof Backend === 'undefined') return 5;
+        return GameState.upgradeLevel(Backend.upgradeKey('lust', 'tail')) || 0;
+    },
+
     tailTier() {
         return this.up('tail', { shots: 10, minPower: 0, maxPower: 0.9,
                                  spread: 45, gain: 0.35, relax: 0.30 }) || {};

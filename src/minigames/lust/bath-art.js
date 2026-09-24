@@ -561,25 +561,50 @@ const BATH_ART = {
     // ПРОФИЛЬ ХВОСТА: ствол из звеньев и головка.
     //   * Ствол — настоящие звенья: каждое вздуто и перехвачено на стыке.
     //     Полосками по гладкой трубе членение читалось нарисованным.
-    //   * Звенья РАЗНЫЕ: своя длина (TAIL_EDGES), своя сила вздутия
-    //     (TAIL_BULGE), вершина вздутия сдвинута то вверх, то вниз.
+    //   * Звенья РАЗНЫЕ: своя длина (edges), своя сила вздутия
+    //     (bulge), вершина вздутия сдвинута то вверх, то вниз.
     //   * Бока РАЗНЫЕ: у левого и правого края свой плавный «гуляющий»
     //     профиль. Ровный симметричный хвост читался отлитой деталью, а не
     //     плотью.
     //   * Головка скромная: из шейки выходит плавно, венчик едва шире
     //     ствола. Выступающая шляпка была вычурной и спорила со всем кадром.
-    TAIL_EDGES: [0, 0.16, 0.3, 0.43, 0.545, 0.645],
-    TAIL_BULGE: [0.15, 0.1, 0.17, 0.11, 0.13],
-    TAIL_GLANS: 0.7,
+    //
+    // ВИД ХВОСТА ПО СТУПЕНЯМ ПРОКАЧКИ (docs/plan/21-lust-bath.md, разд. 5б).
+    // Эталон — ступень 5; остальные делаются по одной и сверяются с ней.
+    // Ступень, у которой записи ещё нет, показывается эталоном.
+    //   edges    — границы звеньев вдоль хвоста, последняя — начало шейки;
+    //   bulge    — сила вздутия каждого звена;
+    //   glansAt  — где начинается головка; neck/corona — толщина шейки и
+    //              венчика в долях основания;
+    //   width    — налитость (доля эталонной толщины), taper — сужение
+    //              ствола к головке, irreg — насколько гуляют бока;
+    //   pale/flush — бледность низов и прилив крови верхов;
+    //   gloss    — сила блика ствола, wet — размер влажного блика головки.
+    // Ось и длина одни на все ступени: по ним летит капля и считает
+    // калькулятор. Меняется только толщина и рисунок.
+    TAIL_LOOKS: {
+        4: { edges: [0, 0.19, 0.36, 0.52, 0.655], bulge: [0.16, 0.11, 0.18, 0.12],
+             glansAt: 0.71, neck: 0.58, corona: 0.64,
+             width: 0.96, taper: 0.33, irreg: 1.18, pale: 0.09, flush: 0, gloss: 0.26, wet: 0.8 },
+        5: { edges: [0, 0.16, 0.3, 0.43, 0.545, 0.645], bulge: [0.15, 0.1, 0.17, 0.11, 0.13],
+             glansAt: 0.7, neck: 0.62, corona: 0.7,
+             width: 1, taper: 0.28, irreg: 1, pale: 0, flush: 0, gloss: 0.28, wet: 1 }
+    },
+    tailLevel: 5,
+    // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
+    // лету вид не меняется, а профиль спрашивают сотни раз за кадр.
+    setTailLevel(L) { this.tailLevel = Math.max(0, Math.min(10, L | 0)); },
+    look() { return this.TAIL_LOOKS[this.tailLevel] || this.TAIL_LOOKS[5]; },
     // sd: −1 — левый край, +1 — правый.
     tailHalfSide(t, grow, sd) {
-        const B = (this.TAIL.base / 2) * Math.pow(grow || 1, 0.7);
-        const E = this.TAIL_EDGES, BU = this.TAIL_BULGE, G = this.TAIL_GLANS;
+        const K = this.look();
+        const B = (this.TAIL.base / 2) * Math.pow(grow || 1, 0.7) * K.width;
+        const E = K.edges, BU = K.bulge, G = K.glansAt;
         const tt = Math.max(0, Math.min(1, t)), TAU = Math.PI * 2;
-        const wob = sd > 0
+        const wob = (sd > 0
             ? 0.055 * Math.sin(TAU * (1.3 * tt + 0.15)) + 0.03 * Math.sin(TAU * (3.1 * tt + 0.6))
-            : 0.045 * Math.sin(TAU * (1.1 * tt + 0.55)) + 0.035 * Math.sin(TAU * (2.7 * tt + 0.1));
-        const neckEnd = E[E.length - 1], NECK = 0.62, CORONA = 0.7;
+            : 0.045 * Math.sin(TAU * (1.1 * tt + 0.55)) + 0.035 * Math.sin(TAU * (2.7 * tt + 0.1))) * K.irreg;
+        const neckEnd = E[E.length - 1], NECK = K.neck, CORONA = K.corona;
         let w;
         if (tt < neckEnd) {
             let k = 0;
@@ -588,12 +613,12 @@ const BATH_ART = {
             // Вершина вздутия смещена: у чётных звеньев ближе к корню, у
             // нечётных — к кончику.
             const uu = Math.pow(u, k % 2 ? 1.25 : 0.8);
-            const taper = 1 - 0.28 * (tt / G);
+            const taper = 1 - K.taper * (tt / G);
             w = B * taper * (1 - BU[k] + BU[k] * Math.sin(Math.PI * uu));
         } else if (tt < G) {
             // Шейка: от конца последнего звена к узкому месту перед головкой.
             const k = (tt - neckEnd) / (G - neckEnd);
-            const from = (1 - 0.28 * (neckEnd / G)) * (1 - BU[BU.length - 1]);
+            const from = (1 - K.taper * (neckEnd / G)) * (1 - BU[BU.length - 1]);
             w = B * (from + (NECK - from) * k);
         } else {
             const u = (tt - G) / (1 - G);
@@ -616,7 +641,7 @@ const BATH_ART = {
     tailD(bend, grow) {
         const c = this.tailCurve(bend || 0, grow);
         // Блик идёт по стволу и кончается у шейки: у головки свой, влажный.
-        const lastT = this.TAIL_GLANS - 0.04;
+        const lastT = this.look().glansAt - 0.04;
         const shine = c.spine.filter((p, i) => i > 1 && i / (c.spine.length - 1) < lastT)
             .map(p => `${(p.x - (this.TAIL.side || 1) * Math.cos(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)} `
                     + `${(p.y - Math.sin(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)}`);
@@ -643,15 +668,21 @@ const BATH_ART = {
         // самую тёмную ступень мяса и читался тёмным шипом.
         const seg = (model && model.belly)
                  || (model && model.growingSegments && model.growingSegments[0]) || null;
-        const fill = (seg && seg.fill) || m.fill || PALETTE.flesh[500];
+        const fill0 = (seg && seg.fill) || m.fill || PALETTE.flesh[500];
         const ink = (seg && seg.stroke) || m.stroke || PALETTE.ink;
-        const F = PALETTE.flesh, V = PALETTE.viscera;
+        const F = PALETTE.flesh, V = PALETTE.viscera, K = this.look();
+        // Бледность низов — тот же пересчёт цвета, что у истощённого червя
+        // (witherColor), и чуть к свету: хвост слабый, а не мёртвый.
+        // Прилив верхов — к цвету нутра.
+        let fill = fill0;
+        if (K.pale > 0) fill = mixColor(witherColor(fill, 1 - K.pale * 1.6) || fill, F[100], K.pale * 0.5);
+        if (K.flush > 0) fill = mixColor(fill, V[500], K.flush);
         const hi = mixColor(fill, F[100], 0.42), lo = mixColor(fill, F[900], 0.3);
         const inner = mixColor(ink, lo, 0.35);
         // Головка — кровь ближе к коже: розовее и темнее ствола.
         const gFill = mixColor(fill, F[300], 0.15), gHot = mixColor(gFill, V[500], 0.1);
         let segs = '';
-        for (let i = 0; i < this.TAIL_EDGES.length - 1; i++)
+        for (let i = 0; i < this.look().edges.length - 1; i++)
             segs += `<path id="bt-tail-seg-${i}" d="" fill="url(#bt-tail-vol)"/>`;
         return `
         <defs>
@@ -686,13 +717,13 @@ const BATH_ART = {
         <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
         <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)"/>
         <!-- Влажный блик на головке. -->
-        <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${F[100]}" opacity="0.75"/>
+        <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${F[100]}" opacity="${(0.75 * Math.min(1, K.wet)).toFixed(2)}"/>
         <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
              перебивали бы его. -->
         <path id="bt-tail-edge" d="" fill="none" stroke="${ink}"
               stroke-width="3" stroke-linejoin="round"/>
         <path id="bt-tail-shine" d="" fill="none" stroke="${F[100]}"
-              stroke-width="2.4" stroke-linecap="round" opacity="0.28"/>
+              stroke-width="2.4" stroke-linecap="round" opacity="${K.gloss.toFixed(2)}"/>
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
              ним (lust-goo.js). -->
         ${this.gooLive('bt-tail-goo')}`;
@@ -709,7 +740,7 @@ const BATH_ART = {
             const l = L.slice(a, b + 1), r = R.slice(a, b + 1).reverse();
             return `M${l.map(P).join('L')}L${r.map(P).join('L')}Z`;
         };
-        const E = this.TAIL_EDGES, G = this.TAIL_GLANS, segs = [];
+        const E = this.look().edges, G = this.look().glansAt, segs = [];
         for (let i = 0; i < E.length - 1; i++)
             segs.push(slice(E[i], i === E.length - 2 ? G : E[i + 1]));
         const glans = slice(G, 1);
@@ -736,7 +767,7 @@ const BATH_ART = {
                  neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 },
                  // Блик сдвинут к свету (влево) и вверх по головке.
                  wet: { x: wet.x - side * Math.cos(wet.a) * B * 0.4, y: wet.y - Math.sin(wet.a) * B * 0.4,
-                        deg: deg(wet) - 12, rx: B * 0.16, ry: B * 0.3 } };
+                        deg: deg(wet) - 12, rx: B * 0.16 * this.look().wet, ry: B * 0.3 * this.look().wet } };
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
