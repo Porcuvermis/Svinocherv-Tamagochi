@@ -16,6 +16,8 @@
 //   стена и пол — свой холст сразу за комнатой (#bt-cam-goo);
 //   тело        — холст в единицах персонажа, ездит с ним одним
 //                 преобразованием и обрезается его силуэтом (#bt-goo);
+//                 капля над телом сама выбирает, где сесть, — у кромки,
+//                 посередине, у дальнего края — или пролетает насквозь;
 //   хвост       — внутри группы хвоста, привязан к оси ДОЛЕЙ ДЛИНЫ и
 //                 поперечным смещением, а не координатой;
 //   борт        — поверх чаши (#bt-splats), стекает по её передней стенке.
@@ -38,6 +40,9 @@ const LustGoo = {
     WALL_CHANCE: 0.5,
     WALL_DROP: [30, 230],     // на сколько единиц после верха дуги
     RIM_CHANCE: 0.4,          // доля упавших на борт; остальное — внутрь
+    // Капля над телом: с этой долей пролетает его насквозь, иначе садится в
+    // случайную точку своего пути над ним (см. wormPlan).
+    PASS_CHANCE: 0.3,
     // Потолки застывшего по слоям. Тело — растр, ему потолок не нужен.
     CAP: { wall: 70, rim: 30, tail: 40 },
 
@@ -50,7 +55,7 @@ const LustGoo = {
         this.game = game;
         const wall = document.getElementById('bt-cam-goo');
         if (wall) wall.innerHTML = `<g id="bt-goo-wall-done"></g>
-            <path id="bt-goo-wall-live" d="" ${BATH_ART.gooStyle(true)}/>`;
+            ${BATH_ART.gooFarLive('bt-goo-wall-live')}`;
         const B = game.WORM_BASE, S = game.MASK_SCALE;
         const c = document.getElementById('bt-goo');
         if (c) {
@@ -71,21 +76,40 @@ const LustGoo = {
         cancelAnimationFrame(this.raf); this.raf = 0;
         this.live = [];
         this.wormRect = null;
+        this.wormForce = false;
         this.tailDone = [];
-        for (const id of ['bt-goo-wall-live', 'bt-goo-rim-live'])
-            this.setD(id, '');
+        this.setLayer('rim', '', '');
+        this.setLayer('tail', '', '');
+        this.setWall([]);
         const w = document.getElementById('bt-goo-wall-done');
         if (w) w.innerHTML = '';
         const s = document.getElementById('bt-splats');
         if (s) s.innerHTML = '';
         if (this.ctx) this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
         if (this.bakedCtx) this.bakedCtx.clearRect(0, 0, this.baked.width, this.baked.height);
-        this.setD('bt-tail-goo', '');
     },
 
     setD(id, d) {
         const n = document.getElementById(id);
         if (n && n.getAttribute('d') !== d) n.setAttribute('d', d);
+    },
+
+    // Живой слой резкого плана: тень и тело — один и тот же путь (тень
+    // сдвинута преобразованием узла), блик отдельно.
+    setLayer(which, body, hi) {
+        const id = which === 'rim' ? 'bt-goo-rim-live' : 'bt-tail-goo';
+        this.setD(id + '-sh', body);
+        this.setD(id, body);
+        this.setD(id + '-hi', hi);
+    },
+
+    // Живой слой стены: стопка расфокуса, по пути на каждое кольцо.
+    setWall(list) {
+        BATH_ART.GOO_FAR.forEach(([k], i) => {
+            let d = '';
+            for (const s of list) d += this.shapeOf(s, s.x, s.y, 1, k * BATH_ART.FAR_BLUR).body;
+            this.setD('bt-goo-wall-live-' + i, d);
+        });
     },
 
     // Судьба капли в полёте: сколько опуститься до стены. Решается при
@@ -96,6 +120,7 @@ const LustGoo = {
             ? this.WALL_DROP[0] + Math.random() * (this.WALL_DROP[1] - this.WALL_DROP[0])
             : null;
         d.prevY = d.y;
+        d.wormPlan = null;
     },
 
     // ---------- СТОЛКНОВЕНИЯ ----------
@@ -113,8 +138,8 @@ const LustGoo = {
             const at = this.onTail(d);
             if (at) { this.stick('tail', d, at); return true; }
         }
-        // Тело: по силуэту персонажа, той же маской, что и мыло.
-        if (this.onWorm(d)) { this.stick('worm', d); return true; }
+        // Тело.
+        if (this.wormPlan(d)) { this.stick('worm', d); return true; }
 
         // Борт — прямая по верху передней стенки чаши. Перелетевшая через
         // него капля уходит ВНУТРЬ, за переднюю стенку: рисовать её дальше
@@ -137,6 +162,45 @@ const LustGoo = {
             return true;
         }
         return LustShot.spent(d, C);
+    },
+
+    // ---------- КУДА САДИТСЯ КАПЛЯ НАД ТЕЛОМ ----------
+    // Камера смотрит на червя спереди, а капля летит в плоскости между ним
+    // и зрителем, — значит, над телом она может шлёпнуться В ЛЮБОЙ точке
+    // своего пути: у ближней кромки, посередине, у дальнего края. Или
+    // пролететь над ним целиком и сесть уже на стену или борт.
+    //
+    // Первая версия ловила каплю в первом же пикселе силуэта, и все пятна
+    // ложились рядом ВДОЛЬ КОНТУРА — бусами по краю тела, ни одного на
+    // середине.
+    //
+    // Решение принимается ОДИН РАЗ, на входе в силуэт: путь над телом
+    // просчитывается вперёд той же физикой (шаг фиксированный, случайности
+    // в полёте нет), и точка посадки выбирается равномерно по нему. Решать
+    // «сесть или нет» на каждом шаге нельзя: тогда шанс сесть рос бы с
+    // длиной пути, и почти все садились бы у кромки.
+    wormPlan(d) {
+        if (!this.onWorm(d)) {
+            // Вылетела из силуэта — пролёт кончился. Над телом можно
+            // оказаться и второй раз (дуга вернулась), и решение тогда новое.
+            if (d.wormPlan && d.wormPlan.pass) d.wormPlan = null;
+            return false;
+        }
+        if (!d.wormPlan) {
+            const C = this.game.cfg();
+            const q = { x: d.x, y: d.y, vx: d.vx, vy: d.vy, t: d.t };
+            let n = 0;
+            while (n < 200 && !LustShot.spent(q, C)) {
+                LustShot.step(q, C);
+                if (!this.onWorm(q)) break;
+                n++;
+            }
+            d.wormPlan = Math.random() < this.PASS_CHANCE
+                ? { pass: true }
+                : { at: d.t + Math.floor(Math.random() * (n + 1)) * C.dt };
+        }
+        if (d.wormPlan.pass) return false;
+        return d.t >= d.wormPlan.at - 1e-6;
     },
 
     // Точка капли на хвосте: доля длины t и поперечное u в полутолщинах.
@@ -177,26 +241,18 @@ const LustGoo = {
 
     // ---------- ПРИЛИПАНИЕ ----------
     // Пятно сначала РАСТЕКАЕТСЯ (удар), потом — не всегда — стекает: мелкие
-    // капли чаще так и застывают круглыми, крупные тянут за собой нитку.
+    // капли чаще так и застывают, крупные тянут за собой нитку.
     stick(surf, d, at) {
         const r0 = d.r * (d.main ? 0.85 : 1.1);
-        const s = { surf, r0, r: r0 * 0.5, len: 0, t: 0,
-                    v: 0, maxLen: 0, seed: Math.random() };
+        const s = { surf, r0, r: r0 * 0.5, len: 0, t: 0, v: 0, maxLen: 0,
+                    seed: Math.random(), ang: Math.atan2(d.vy, d.vx) };
         const drips = Math.random() < (d.main ? 0.85 : 0.45);
         if (drips) {
             s.v = (10 + Math.random() * 22) * Math.min(1.4, Math.max(0.6, r0 / 7));
             s.maxLen = r0 * (1.6 + Math.random() * 3.2);
         }
         if (surf === 'worm') {
-            // Капля ловится В ПЕРВОМ пикселе силуэта, то есть на самой
-            // кромке, — и пятно обрезалось маской ровно пополам: по краю тела
-            // шёл ряд полукружий. Удар сдвигается внутрь по ходу полёта на
-            // размер пятна: капля летела дальше и шлёпнулась уже на тело.
-            const v = Math.hypot(d.vx, d.vy) || 1;
-            const k = r0 * 0.9;
-            const probe = { x: d.x + d.vx / v * k, y: d.y + d.vy / v * k };
-            const at = this.onWorm(probe) ? probe : d;
-            const q = this.toWorm(at.x, at.y);
+            const q = this.toWorm(d.x, d.y);
             s.x = q.x; s.y = q.y; s.k = q.k;
         } else if (surf === 'tail') {
             s.at = at;
@@ -241,24 +297,24 @@ const LustGoo = {
         this.render(tail);
     },
 
-    // ---------- ФОРМА ПОТЁКА ----------
-    // Пятно, от него вниз нитка, на конце капля. Одним путём из нескольких
-    // кусков: у пути paint-order stroke, поэтому обводка рисуется ПОД
-    // заливкой и внутренние швы между кусками закрываются — снаружи остаётся
-    // один общий контур.
-    shape(x, y, r, len, seed) {
-        const f = (v) => v.toFixed(1);
-        const ry = r * (0.78 + 0.2 * seed);
-        let d = `M${f(x - r)} ${f(y)}a${f(r)} ${f(ry)} 0 1 0 ${f(2 * r)} 0`
-              + `a${f(r)} ${f(ry)} 0 1 0 ${f(-2 * r)} 0Z`;
-        if (len > r * 0.3) {
-            const w0 = r * 0.5, w1 = r * 0.22, yb = y + len;
-            const bead = r * (0.3 + 0.2 * Math.min(1, len / (3 * r)));
-            d += `M${f(x - w0)} ${f(y)}L${f(x - w1)} ${f(yb)}L${f(x + w1)} ${f(yb)}`
-               + `L${f(x + w0)} ${f(y)}Z`
-               + `M${f(x - bead)} ${f(yb)}a${f(bead)} ${f(bead)} 0 1 0 ${f(2 * bead)} 0`
-               + `a${f(bead)} ${f(bead)} 0 1 0 ${f(-2 * bead)} 0Z`;
-        }
+    // Форма пятна в заданной точке и масштабе (k — во сколько раз крупнее
+    // единиц сцены: на теле пятно рисуется в единицах холста персонажа).
+    //
+    // Форма ЖИВОГО пятна пересчитывается, только когда оно заметно
+    // изменилось: размер — с шагом в четверть единицы, нитка — в половину.
+    // Пятно стоит на месте, а нитка ползёт единицами в секунду, так что
+    // между пересчётами проходят кадры. Пока форма считалась каждый кадр
+    // (сплайн, по полсотни чисел на пятно, стена ещё и втрое), живые потёки
+    // стоили трёх кадров из шестидесяти.
+    shapeOf(s, x, y, k, blur) {
+        const r = Math.round(s.r * 4) / 4, len = Math.round(s.len * 2) / 2;
+        const slot = (blur || 0) + '|' + k + '|' + x + '|' + y;
+        const key = r + '|' + len;
+        const c = s._cache || (s._cache = {});
+        const hit = c[slot];
+        if (hit && hit.key === key) return hit.d;
+        const d = BATH_ART.goo(x, y, r * k, len * k, s.seed, s.ang, blur || 0);
+        c[slot] = { key, d };
         return d;
     },
 
@@ -273,42 +329,62 @@ const LustGoo = {
                  y: p.y + Math.sin(p.a) * at.u * half };
     },
 
+    // Нитка на хвосте короче: по пруту она ползёт вдоль него и далеко от
+    // пятна не уходит. Форма считается в нуле и ПЕРЕНОСИТСЯ в точку на
+    // хвосте (BATH_ART.gooMove); у застывшего она больше не меняется и
+    // считается один раз.
     tailShape(s) {
         const p = this.tailPoint(s.at);
-        // Нитка на хвосте короче: по вертикальному пруту она ползёт вдоль
-        // него и далеко от пятна не уходит.
-        return this.shape(p.x, p.y, s.r, Math.min(s.len, s.r * 2.2), s.seed);
+        const d = s.shape || this.shapeOf({ r: s.r, len: Math.min(s.len, s.r * 2.2),
+            seed: s.seed, ang: s.ang, _cache: s._cache || (s._cache = {}) }, 0, 0, 1);
+        return { body: BATH_ART.gooMove(d.body, p.x, p.y), hi: BATH_ART.gooMove(d.hi, p.x, p.y) };
     },
 
     // Хвост перерисован (изгиб, налив, опадание) — пятна едут следом.
     drawTail() {
         if (!this.tailDone || (!this.tailDone.length && !this.live.some(s => s.surf === 'tail'))) return;
-        let d = '';
-        for (const s of this.tailDone) d += this.tailShape(s);
-        for (const s of this.live) if (s.surf === 'tail') d += this.tailShape(s);
-        this.setD('bt-tail-goo', d);
+        let body = '', hi = '';
+        for (const s of this.tailDone.concat(this.live.filter(q => q.surf === 'tail'))) {
+            const d = this.tailShape(s);
+            body += d.body; hi += d.hi;
+        }
+        this.setLayer('tail', body, hi);
     },
 
     render(tail) {
-        let wall = '', rim = '';
+        const wall = [];
+        let rim = '', rimHi = '';
         for (const s of this.live) {
-            if (s.surf === 'wall') wall += this.shape(s.x, s.y, s.r, s.len, s.seed);
-            else if (s.surf === 'rim') rim += this.shape(s.x, s.y, s.r, s.len, s.seed);
-            else if (s.surf === 'worm') this.dirty(s);
+            if (s.surf === 'wall') wall.push(s);
+            else if (s.surf === 'rim') {
+                const d = this.shapeOf(s, s.x, s.y, 1);
+                rim += d.body; rimHi += d.hi;
+            } else if (s.surf === 'worm') this.dirty(s);
         }
-        this.setD('bt-goo-wall-live', wall);
-        this.setD('bt-goo-rim-live', rim);
+        this.setWall(wall);
+        this.setLayer('rim', rim, rimHi);
         if (tail) this.drawTail();
-        if (this.wormRect) this.drawWorm();
+        // Холст тела — не чаще двадцати раз в секунду. Любая его правка, даже
+        // в прямоугольник с ноготь, заново отдаёт видеокарте ВЕСЬ холст, и
+        // под замедлением это стоило пяти кадров из шестидесяти. Потёк
+        // ползёт медленно — единица сцены за такой шаг, — и разницы с
+        // шестьюдесятью не видно. Застывание дорисовывается сразу (force),
+        // иначе последний кадр пятна мог бы не попасть на экран.
+        const now = performance.now();
+        if (this.wormRect && (this.wormForce || now - (this.wormTs || 0) >= 50)) {
+            this.wormTs = now;
+            this.wormForce = false;
+            this.drawWorm();
+        }
     },
 
     // Прямоугольник холста тела, который надо перерисовать ради этого
-    // пятна. Берётся по ПОЛНОМУ радиусу и текущей длине нитки: пятно только
-    // растёт вниз, значит прошлый кадр в него заведомо входит.
+    // пятна. Берётся по ПОЛНОМУ размеру с брызгами и текущей длине нитки:
+    // пятно только растёт вниз, значит прошлый кадр в него заведомо входит.
     dirty(s) {
-        const S = this.game.MASK_SCALE, k = s.k * S, pad = 4 * S;
-        const x0 = s.x * S - s.r0 * k - pad, x1 = s.x * S + s.r0 * k + pad;
-        const y0 = s.y * S - s.r0 * k - pad, y1 = s.y * S + (s.len + s.r0) * k + pad;
+        const S = this.game.MASK_SCALE, k = s.k * S, R0 = s.r0 * 2.6 * k, pad = 4 * S;
+        const x0 = s.x * S - R0 - pad, x1 = s.x * S + R0 + pad;
+        const y0 = s.y * S - R0 - pad, y1 = s.y * S + (s.len + s.r0) * k + R0 + pad;
         const R = this.wormRect;
         this.wormRect = R
             ? { x0: Math.min(R.x0, x0), y0: Math.min(R.y0, y0),
@@ -347,30 +423,36 @@ const LustGoo = {
         c.restore();
     },
 
+    // То же, что узел в svg, но кистью холста: тень, тело, блик.
     paint(c, s, S) {
-        const m = btPal().milk;
-        const p = new Path2D(this.shape(s.x * S, s.y * S, s.r * s.k * S,
-                                        s.len * s.k * S, s.seed));
-        c.lineJoin = 'round';
-        c.lineWidth = 2.6 * S;
-        c.strokeStyle = m.edge;
-        c.stroke(p);
+        const m = btPal().milk, k = s.k * S;
+        const d = this.shapeOf(s, s.x * S, s.y * S, k);
+        const body = new Path2D(d.body);
+        c.save();
+        c.globalAlpha = 0.26;
+        c.fillStyle = m.shade;
+        c.translate(1.2 * k, 1.8 * k);
+        c.fill(body);
+        c.restore();
+        c.save();
+        c.globalAlpha = 0.88;
         c.fillStyle = m[500];
-        c.fill(p);
+        c.fill(body);
+        c.globalAlpha = 0.9;
         c.fillStyle = m.hi;
-        c.beginPath();
-        c.arc((s.x - s.r * 0.3) * S, (s.y - s.r * 0.3) * S,
-              Math.max(0.6, s.r * s.k * 0.28) * S, 0, Math.PI * 2);
-        c.fill();
+        c.fill(new Path2D(d.hi));
+        c.restore();
     },
 
     freeze(s) {
         if (s.surf === 'worm') {
             this.paint(this.bakedCtx, s, this.game.MASK_SCALE);
             this.dirty(s);
+            this.wormForce = true;
             return;
         }
         if (s.surf === 'tail') {
+            s.shape = BATH_ART.goo(0, 0, s.r, Math.min(s.len, s.r * 2.2), s.seed, s.ang, 0);
             this.tailDone.push(s);
             if (this.tailDone.length > this.CAP.tail) this.tailDone.shift();
             this.drawTail();
@@ -380,8 +462,7 @@ const LustGoo = {
         const g = document.getElementById(far ? 'bt-goo-wall-done' : 'bt-splats');
         if (!g) return;
         g.insertAdjacentHTML('beforeend',
-            BATH_ART.gooNode(this.shape(s.x, s.y, s.r, s.len, s.seed), far,
-                             s.x - s.r * 0.3, s.y - s.r * 0.3, s.r * 0.28));
+            BATH_ART.gooNode(s.x, s.y, s.r, s.len, s.seed, s.ang, far));
         while (g.childNodes.length > this.CAP[far ? 'wall' : 'rim']) g.removeChild(g.firstChild);
     }
 };

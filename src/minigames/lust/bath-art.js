@@ -213,11 +213,11 @@ const BATH_ART = {
         <g id="bt-splats"></g>
         <!-- Ещё стекающие по борту — ОДНИМ путём на все: за кадр одна запись
              атрибута, сколько бы их ни ползло (lust-goo.js). -->
-        <path id="bt-goo-rim-live" d="" ${this.gooStyle(false)}/>
+        ${this.gooLive('bt-goo-rim-live')}
         <!-- Струи и шкала — поверх всего: они не в комнате, они про игру. -->
         <g id="bt-shots"></g>
         <!-- Капли в полёте: ОДИН путь на все, с хвостами-кометами. -->
-        <path id="bt-fly" d="" ${this.flyStyle()}/>
+        ${this.flyLive()}
         <g id="bt-gauge"></g>
         <g id="bt-spot"></g>
         `;
@@ -581,7 +581,7 @@ const BATH_ART = {
               stroke-width="7" stroke-linecap="round" opacity="0.38"/>
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
              ним (lust-goo.js). -->
-        <path id="bt-tail-goo" d="" ${this.gooStyle(false)}/>`;
+        ${this.gooLive('bt-tail-goo')}`;
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
@@ -641,61 +641,206 @@ const BATH_ART = {
     // оказывалась на щеке.
 
     // ---------- ПОТЁКИ И КОМЕТА ----------
-    // Путь потёка собран из кусков (пятно, нитка, капля на конце), и обводка
-    // у него идёт ПОД заливкой (paint-order): внутренние швы между кусками
-    // закрываются, снаружи остаётся один общий контур. Иначе каждое пятно
-    // читалось бы тремя обведёнными фигурками.
+    // ЖИДКОСТЬ, А НЕ ЗНАЧОК. Первая версия рисовала пятно правильным кругом,
+    // нитку трапецией и каплю кружком, всё с толстой обводкой, — и читалось
+    // это набором пиктограмм, а не тем, что шлёпнулось и течёт. Жидкость
+    // выдают три вещи, и все три здесь:
+    //   * НЕРОВНЫЙ край — клякса вытянута по ходу удара, радиус гуляет от
+    //     точки к точке, вокруг разлетаются мелкие брызги;
+    //   * ОДНА гладкая кривая на всё — пятно, нитка и капля на конце не
+    //     склеены из фигур, а обведены одним контуром через сплайн;
+    //   * объём СВЕТОМ, а не обводкой: мягкая тень чуть ниже и блик сверху.
+    //     Контур у жидкости не нарисован — его видно по тени.
     //
-    // far — потёк на стене. Стена в финале в расфокусе, и расфокус там
-    // сказан пропавшим КОНТРАСТОМ, а не гауссианом (см. blurFar в lust.js):
-    // потёк на ней бледнее и без блика. Резкое пятно на размытой стене
-    // выскакивало бы вперёд, к хвосту.
-    gooStyle(far) {
-        const m = btPal().milk;
-        return far
-            ? `fill="${m[500]}" stroke="${m.far}" stroke-width="3" paint-order="stroke"
-               stroke-linejoin="round" opacity="0.8"`
-            : `fill="${m[500]}" stroke="${m.edge}" stroke-width="3" paint-order="stroke"
-               stroke-linejoin="round" opacity="0.94"`;
+    // Все куски пятна (клякса, брызги, нитка) обходятся В ОДНУ СТОРОНУ и
+    // лежат в одном пути: при правиле nonzero перекрытия сливаются, и
+    // полупрозрачная заливка не темнеет там, где нитка входит в кляксу.
+
+    // Расфокус дальнего плана, в единицах сцены. Одно число на стену
+    // (svg-фильтр душа, см. blurFar в lust.js) и на потёки по ней.
+    FAR_BLUR: 2.6,
+
+    // Замкнутый сплайн Катмулла — Рома через точки, кубическими кривыми.
+    //
+    // Команды ОТНОСИТЕЛЬНЫЕ, и переход к следующему куску — тоже (m от
+    // начала прошлого: после z перо стоит именно там). Тогда во всём пути
+    // абсолютна одна первая точка, и пятно переносится заменой ЕЁ одной
+    // (gooMove). Пятна на хвосте едут за ним каждый кадр изгиба, и
+    // пересчитывать ради этого все сплайны стоило четырёх кадров из
+    // шестидесяти.
+    gooCurve(pts, from) {
+        const n = pts.length, f = (v) => v.toFixed(2);
+        let d = from ? `m${f(pts[0].x - from.x)} ${f(pts[0].y - from.y)}`
+                     : `M${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+        for (let i = 0; i < n; i++) {
+            const p0 = pts[(i - 1 + n) % n], p1 = pts[i],
+                  p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+            d += `c${f((p2.x - p0.x) / 6)} ${f((p2.y - p0.y) / 6)} `
+               + `${f(p2.x - (p3.x - p1.x) / 6 - p1.x)} ${f(p2.y - (p3.y - p1.y) / 6 - p1.y)} `
+               + `${f(p2.x - p1.x)} ${f(p2.y - p1.y)}`;
+        }
+        return d + 'z';
     },
 
-    // Застывший потёк: путь и блик. Дописывается в слой ОДИН раз.
-    gooNode(d, far, hx, hy, hr) {
+    // Несколько замкнутых кусков одним путём: первый от абсолютной точки,
+    // остальные — относительным переходом от начала предыдущего.
+    gooCurves(list) {
+        let d = '', prev = null;
+        for (const pts of list) { d += this.gooCurve(pts, prev); prev = pts[0]; }
+        return d;
+    },
+
+    // Пятно, нарисованное в (0, 0), переносится в (x, y) заменой первой
+    // точки: всё остальное в пути относительное.
+    gooMove(d, x, y) {
+        if (!d) return '';
+        const m = /^M(-?[\d.]+) (-?[\d.]+)/.exec(d);
+        if (!m) return d;
+        return `M${(+m[1] + x).toFixed(1)} ${(+m[2] + y).toFixed(1)}` + d.slice(m[0].length);
+    },
+
+    // Овал точками по часовой стрелке (ось y вниз), повёрнутый на rot.
+    gooOval(x, y, rx, ry, rot, n) {
+        const c = Math.cos(rot || 0), s = Math.sin(rot || 0), out = [];
+        for (let i = 0; i < (n || 8); i++) {
+            const a = 2 * Math.PI * i / (n || 8);
+            const u = Math.cos(a) * rx, v = Math.sin(a) * ry;
+            out.push({ x: x + u * c - v * s, y: y + u * s + v * c });
+        }
+        return out;
+    },
+
+    // Путь пятна. x, y — куда шлёпнулось; r — размер; len — насколько
+    // стекло; seed — своё у каждого пятна, из него вся неровность, чтобы
+    // форма не дрожала от кадра к кадру; ang — направление удара.
+    // g — раздуть все края на g единиц: так рисуется расфокус (см. gooFar).
+    goo(x, y, r, len, seed, ang, g) {
+        g = g || 0;
+        const rnd = btRng(1 + Math.floor(seed * 1e6));
+        const parts = [];
+        // Клякса: вытянута по удару, край гуляет.
+        const n = 11, c = Math.cos(ang || 0), s = Math.sin(ang || 0), blob = [];
+        for (let i = 0; i < n; i++) {
+            const a = 2 * Math.PI * i / n, k = 0.78 + 0.4 * rnd();
+            const u = Math.cos(a) * (r * k * 1.25 + g), v = Math.sin(a) * (r * k * 0.8 + g);
+            blob.push({ x: x + u * c - v * s, y: y + u * s + v * c });
+        }
+        parts.push(blob);
+        // Брызги: мелкие капли, разлетевшиеся по ходу удара.
+        const sat = r > 4.5 ? 1 + Math.floor(rnd() * 3) : (rnd() < 0.35 ? 1 : 0);
+        for (let i = 0; i < sat; i++) {
+            const a = (ang || 0) + (rnd() - 0.5) * 1.6, dd = r * (1.45 + rnd() * 0.8);
+            const rr = r * (0.1 + rnd() * 0.13) + g * 0.7;
+            parts.push(this.gooOval(x + Math.cos(a) * dd, y + Math.sin(a) * dd, rr, rr * 0.85, a, 7));
+        }
+        // Нитка с каплей на конце: одним контуром — правый край вниз, капля,
+        // левый край вверх. Нитка чуть виляет и сужается, капля на конце
+        // растёт вместе с длиной: тяжелеет.
+        if (len > r * 0.25) {
+            const m = 7, y0 = y - r * 0.15, L = len + r * 0.15;
+            const cx = (t) => x + r * 0.14 * Math.sin(seed * 9 + t * 2.6) * t;
+            const hw = (t) => r * 0.42 * (1 - 0.72 * Math.pow(t, 0.8)) + g;
+            const rb = r * (0.24 + 0.2 * Math.min(1, len / (3 * r))) + g;
+            const pts = [];
+            for (let i = 0; i < m; i++) { const t = i / m; pts.push({ x: cx(t) + hw(t), y: y0 + t * L }); }
+            const bx = cx(1), by = y0 + L;
+            for (let i = 0; i <= 6; i++) {
+                const a = -0.35 + (Math.PI + 0.7) * i / 6;
+                pts.push({ x: bx + Math.cos(a) * rb, y: by + Math.sin(a) * rb });
+            }
+            for (let i = m - 1; i >= 0; i--) { const t = i / m; pts.push({ x: cx(t) - hw(t), y: y0 + t * L }); }
+            parts.push(pts);
+        }
+        const body = this.gooCurves(parts);
+        if (g) return { body, hi: '' };
+        // Блик: вытянутая искра на верхней кромке кляксы и точка на капле.
+        const his = [this.gooOval(x - r * 0.3, y - r * 0.32, r * 0.3, r * 0.12, -0.45, 7)];
+        if (len > r * 0.6) {
+            const rb = r * (0.24 + 0.2 * Math.min(1, len / (3 * r)));
+            const bx = x + r * 0.14 * Math.sin(seed * 9 + 2.6), by = y - r * 0.15 + len + r * 0.15;
+            his.push(this.gooOval(bx - rb * 0.35, by - rb * 0.35, rb * 0.26, rb * 0.18, -0.6, 6));
+        }
+        return { body, hi: this.gooCurves(his) };
+    },
+
+    // Живые пути одного слоя: тень, тело, блик — по одному на ВСЕ живые
+    // пятна слоя, одна запись атрибута на путь за кадр.
+    gooLive(id) {
         const m = btPal().milk;
-        const hi = far ? '' : `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}"
-                   r="${Math.max(0.8, hr).toFixed(1)}" fill="${m.hi}"/>`;
-        return `<g><path d="${d}" ${this.gooStyle(far)}/>${hi}</g>`;
+        return `<path id="${id}-sh" d="" fill="${m.shade}" fill-opacity="0.26"
+                      transform="translate(1.2 1.8)"/>
+                <path id="${id}" d="" fill="${m[500]}" fill-opacity="0.88"/>
+                <path id="${id}-hi" d="" fill="${m.hi}" fill-opacity="0.9"/>`;
+    },
+
+    // ---------- РАСФОКУС БЕЗ ФИЛЬТРА ----------
+    // Пятно на стене обязано быть размыто так же, как стена. Честный фильтр
+    // на слое, который меняется каждый кадр, — ровно та цена, от которой
+    // ушли в этой же ванной (docs/traps.md, п. 73: размытие червя стоило
+    // семи кадров из восьми). Размытие рисуется СТОПКОЙ: сжатое ядро и два
+    // раздутых на долю сигмы полупрозрачных ореола. Три пути вместо фильтра,
+    // и край тает так же, как у гауссиана той же ширины.
+    GOO_FAR: [[-0.4, 0.5], [0.35, 0.3], [1.0, 0.16]],
+
+    gooFarLive(id) {
+        const m = btPal().milk;
+        return this.GOO_FAR.map((_, i) =>
+            `<path id="${id}-${i}" d="" fill="${m[500]}" fill-opacity="${this.GOO_FAR[i][1]}"/>`).join('');
+    },
+
+    // Застывшее пятно узлом: дописывается в слой один раз.
+    gooNode(x, y, r, len, seed, ang, far) {
+        const m = btPal().milk;
+        if (far) {
+            return '<g>' + this.GOO_FAR.map(([k, o]) =>
+                `<path d="${this.goo(x, y, r, len, seed, ang, k * this.FAR_BLUR).body}"
+                       fill="${m[500]}" fill-opacity="${o}"/>`).join('') + '</g>';
+        }
+        const d = this.goo(x, y, r, len, seed, ang, 0);
+        return `<g><path d="${d.body}" fill="${m.shade}" fill-opacity="0.26"
+                         transform="translate(1.2 1.8)"/>
+                   <path d="${d.body}" fill="${m[500]}" fill-opacity="0.88"/>
+                   <path d="${d.hi}" fill="${m.hi}" fill-opacity="0.9"/></g>`;
     },
 
     // Капля в полёте — КОМЕТА: густая голова и сужающийся хвост по следу
-    // полёта. Хвост и голова — один путь, обводка под заливкой, как у
-    // потёков.
-    flyStyle() {
+    // полёта, одним контуром. Обводки нет и здесь: объём — тенью и бликом.
+    flyLive() {
         const m = btPal().milk;
-        return `fill="${m.hi}" stroke="${m.edge}" stroke-width="2.6" paint-order="stroke"
-                stroke-linejoin="round"`;
+        return `<path id="bt-fly-sh" d="" fill="${m.shade}" fill-opacity="0.3"
+                      transform="translate(1.4 2)"/>
+                <path id="bt-fly" d="" fill="${m[500]}" fill-opacity="0.95"/>
+                <path id="bt-fly-hi" d="" fill="${m.hi}"/>`;
     },
 
     // trail — точки следа от головы назад, r — радиус головы.
     cometD(x, y, r, trail) {
-        const f = (v) => v.toFixed(1);
-        let d = `M${f(x - r)} ${f(y)}a${f(r)} ${f(r)} 0 1 0 ${f(2 * r)} 0`
-              + `a${f(r)} ${f(r)} 0 1 0 ${f(-2 * r)} 0Z`;
-        const n = trail ? trail.length : 0;
-        if (n < 2) return d;
+        const pts = [{ x, y }].concat(trail || []);
+        if (pts.length < 3) return this.gooCurve(this.gooOval(x, y, r, r, 0, 8));
+        // Контур по часовой: одна сторона хвоста к голове, полукруг головы
+        // впереди, другая сторона назад.
         const L = [], R = [];
-        const pts = [{ x, y }].concat(trail);
         for (let i = 0; i < pts.length; i++) {
             const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
             let tx = a.x - b.x, ty = a.y - b.y;
             const l = Math.hypot(tx, ty) || 1;
             tx /= l; ty /= l;
-            // Сужение к хвосту: у головы почти во всю толщину, к концу нитка.
-            const w = r * 0.92 * Math.pow(1 - i / (pts.length - 1), 1.3);
-            L.push(`${f(pts[i].x - ty * w)} ${f(pts[i].y + tx * w)}`);
-            R.push(`${f(pts[i].x + ty * w)} ${f(pts[i].y - tx * w)}`);
+            // У головы во всю толщину, к хвосту — в нитку.
+            const w = i === 0 ? r : r * 0.9 * Math.pow(1 - i / (pts.length - 1), 1.4) + 0.3;
+            L.push({ x: pts[i].x - ty * w, y: pts[i].y + tx * w });
+            R.push({ x: pts[i].x + ty * w, y: pts[i].y - tx * w });
         }
-        return d + `M${L.join('L')}L${R.reverse().join('L')}Z`;
+        const a0 = Math.atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
+        const head = [];
+        for (let i = 1; i < 6; i++) {
+            const a = a0 + Math.PI / 2 - Math.PI * i / 6;
+            head.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+        }
+        return this.gooCurve(L.slice().reverse().concat(head, R));
+    },
+
+    cometHi(x, y, r) {
+        return this.gooCurve(this.gooOval(x - r * 0.3, y - r * 0.35, r * 0.34, r * 0.2, -0.5, 6));
     },
 
     // Заготовка узла вспышки попадания: создаётся один раз, дальше ей

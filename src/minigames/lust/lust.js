@@ -267,7 +267,7 @@ const LustMinigame = {
         this.el('bt-goo').classList.remove('bt-soft');
         this.drops = [];
         this.splats = [];
-        this.el('bt-fly').setAttribute('d', '');
+        this.setFly('', '');
         // Следы прошлого захода смыты: они живут, пока игрок в ванной.
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(8);
@@ -1235,7 +1235,7 @@ const LustMinigame = {
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
         this.wormHost.classList.add('bt-soft');
         this.el('bt-goo').classList.add('bt-soft');
-        this.blurFar(2.6, 900);
+        this.blurFar(BATH_ART.FAR_BLUR, 900);
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
         // и работает (блаженство, открытый рот).
@@ -1290,7 +1290,7 @@ const LustMinigame = {
             // Швы гаснут вместе с наводкой: на полном размытии от них
             // остаётся четверть, то есть намёк на кафель, а не сетка.
             if (lines) lines.setAttribute('opacity',
-                (1 - 0.75 * Math.min(1, v / 2.6)).toFixed(3));
+                (1 - 0.75 * Math.min(1, v / BATH_ART.FAR_BLUR)).toFixed(3));
         };
         const from = parseFloat(n.getAttribute('stdDeviation')) || 0;
         if (!ms) { set(to); return; }
@@ -1960,10 +1960,20 @@ const LustMinigame = {
         // сколько бы их ни летело. С отрывающимися от кометы каплями их в
         // воздухе бывает под два десятка, и узел на каждую был бы два
         // десятка записей.
-        let d = '';
-        for (const q of this.drops) d += BATH_ART.cometD(q.x, q.y, q.r, q.trail);
-        const fly = this.el('bt-fly');
-        if (fly && (d || fly.getAttribute('d'))) fly.setAttribute('d', d);
+        // Тень — тот же путь со сдвигом узла, блик — только у крупных.
+        let d = '', hi = '';
+        for (const q of this.drops) {
+            d += BATH_ART.cometD(q.x, q.y, q.r, q.trail);
+            if (q.r > 5) hi += BATH_ART.cometHi(q.x, q.y, q.r);
+        }
+        this.setFly(d, hi);
+    },
+
+    setFly(d, hi) {
+        for (const [id, v] of [['bt-fly', d], ['bt-fly-sh', d], ['bt-fly-hi', hi]]) {
+            const n = this.el(id);
+            if (n && n.getAttribute('d') !== v) n.setAttribute('d', v);
+        }
     },
 
     // Уровень жидкости во рту. Отдельным методом, потому что его дёргают из

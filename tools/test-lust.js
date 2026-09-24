@@ -418,7 +418,47 @@ const harness = require('./harness');
       const p = { x: mb.x + mb.w * 0.55, y: mb.y + mb.h * f };
       if (inMask(p)) body = p;
     }
-    out.worm = land(drop(body.x, body.y));
+    // ГДЕ садятся: капли летят поперёк тела по одной прямой. Раньше все
+    // садились в первом пикселе силуэта — бусами вдоль контура.
+    {
+      const C = L.cfg(), y = body.y;
+      let x0 = body.x; while (inMask({ x: x0 - 1, y })) x0--;
+      let x1 = body.x; while (inMask({ x: x1 + 1, y })) x1++;
+      const depth = [];
+      let pass = 0;
+      const N = 300;
+      // Гравитация на время замера снята: иначе капля за пролёт проседает и
+      // выходит из тела снизу раньше дальнего края, и медиана глубины
+      // уезжает к кромке не из-за игры, а из-за замера (traps, п. 137).
+      const g0 = C.gravity;
+      C.gravity = 0;
+      for (let i = 0; i < N; i++) {
+        // Ровно горизонтально: ширина тела на пути — это x0..x1.
+        const d = drop(x0 - 12, y, { vx: 600, vy: 0 }); G.arm(d); d.wallAt = null;
+        const n = G.live.length; let over = false;
+        for (let k = 0; k < 400 && !over; k++) { LustShot.step(d, C); over = G.hit(d); }
+        const s = G.live.length > n ? G.live[G.live.length - 1] : null;
+        if (s && s.surf === 'worm') depth.push((d.x - x0) / Math.max(1, x1 - x0));
+        else pass++;
+      }
+      C.gravity = g0;
+      depth.sort((a, b) => a - b);
+      out.spread = { pass: pass / N, n: depth.length, width: x1 - x0,
+                     q25: depth[Math.floor(depth.length * 0.25)],
+                     q50: depth[Math.floor(depth.length * 0.5)],
+                     q75: depth[Math.floor(depth.length * 0.75)] };
+      G.reset();
+    }
+    // Капля над телом садится не сразу: точку выбирает на своём пути.
+    const keepPass = G.PASS_CHANCE;
+    G.PASS_CHANCE = 0;
+    {
+      const d = drop(body.x, body.y); G.arm(d); d.wallAt = null;
+      const n = G.live.length; let over = false;
+      for (let i = 0; i < 400 && !over; i++) { LustShot.step(d, L.cfg()); over = G.hit(d); }
+      out.worm = { over, surf: G.live.length > n ? G.live[G.live.length - 1].surf : null };
+    }
+    G.PASS_CHANCE = keepPass;
     // Хвост: середина его оси при текущем изгибе.
     const sp = BATH_ART.tailSpine(L.bend, L.tailGrow()), mid = sp[Math.round(sp.length / 2)];
     out.tail = land(drop(A2.tail.x + mid.x, A2.tail.y + mid.y));
@@ -478,6 +518,14 @@ const harness = require('./harness');
     return out;
   });
   ok(goo.worm.over && goo.worm.surf === 'worm', 'капля в тело прилипает к телу');
+  // Равномерно по пути над телом — квартили около четверти, половины и трёх
+  // четвертей ширины; насквозь — около PASS_CHANCE (0.3).
+  ok(goo.spread.q25 > 0.12 && goo.spread.q25 < 0.38 && goo.spread.q50 > 0.36
+     && goo.spread.q50 < 0.64 && goo.spread.q75 > 0.62,
+     'капля садится по ВСЕМУ телу, а не вдоль контура',
+     `квартили глубины ${goo.spread.q25.toFixed(2)} / ${goo.spread.q50.toFixed(2)} / ${goo.spread.q75.toFixed(2)} при ширине ${goo.spread.width}`);
+  ok(goo.spread.pass > 0.2 && goo.spread.pass < 0.4, 'часть капель пролетает тело насквозь',
+     `${(goo.spread.pass * 100).toFixed(0)}% пролетели`);
   ok(goo.tail.over && goo.tail.surf === 'tail', 'капля в хвост прилипает к хвосту');
   ok(goo.rim.over && goo.rim.surf === 'rim', 'капля на борт прилипает к борту');
   ok(goo.inside.over && goo.inside.added === 0, 'перелетевшая борт уходит в ванну и не рисуется поверх чаши');
