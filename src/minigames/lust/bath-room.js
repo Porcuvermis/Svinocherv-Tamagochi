@@ -18,125 +18,137 @@
 const BATH_ROOM = {
 
     // ---------- СТЕНА: КАФЕЛЬ, ПОЛОЖЕННЫЙ РУКОЙ ----------
-    // Сетка — та же, что у запекания (шаг и начало берутся у его швов), но
-    // каждый узел сетки сдвинут на пару единиц, а вся стена чуть «ведёт»
-    // волной: так кладут плитку люди, а не программа. Швы идут ломаными
-    // через узлы — плитка сама прямая, неровность живёт на стыках.
+    // Кафель кладут так: сетка ровная, но КАЖДАЯ плитка — отдельный предмет,
+    // положенный руками, а между ними промазан шов. Отсюда вся жизнь стены:
+    //   * плитка прямая, со скруглёнными углами и фаской — светлая кромка
+    //     сверху-слева, тёмная снизу-справа: видно, что она лежит на стене,
+    //     а не нарисована на ней;
+    //   * у каждой свой крошечный люфт — сдвиг в доли единицы и поворот в
+    //     доли градуса, у редких заметнее. Не у всех: люфт возможен, но не
+    //     обязателен;
+    //   * шов — не линия, а ЗАТИРКА: промежуток своего цвета, который виден
+    //     между плитками. Внизу, у воды, она темнее — не просыхает.
     //
-    // Нижний ряд узлов НЕ сдвигается: по нему к стене примыкает пол, и там
-    // обязан быть ровный стык.
+    // Первая версия гнула саму сетку — узлы вразброс и волна по всей стене,
+    // швы ломаными линиями. Вся стена «плыла», и это било по глазам сильнее
+    // идеальной сетки: так не кладут, так рисуют сон.
+    //
+    // Работа делается один раз, как ремонт: раскладка считается при постройке
+    // сцены и дальше не трогается — ни одного пересчёта за кадр.
     WALL_SEED: 7,
-    // Больше этого швы читаются уже не небрежной кладкой, а кривой сеткой
-    // из детского рисунка.
-    JIT: 1.3,            // сдвиг узла сетки, единиц сцены
-    SWAY: 2.0,           // волна всей стены
+    GAP: 3.4,            // ширина шва, единиц сцены
+    ROUND: 3,            // скругление угла плитки
+    PLAY: { shift: 0.45, turn: 0.35, loose: 0.1, looseTurn: 1.1 },
 
     grid() {
         if (this._grid) return this._grid;
         const B = BATH_BAKED, box = B.items.wall.box;
         const xs = [...new Set(B.tiles.filter(t => t[0] === t[2]).map(t => t[0]))].sort((a, b) => a - b);
         const ys = [...new Set(B.tiles.filter(t => t[1] === t[3]).map(t => t[1]))].sort((a, b) => a - b);
-        const rnd = btRng(this.WALL_SEED);
-        const bottom = ys[ys.length - 1];
-        const node = [];
-        for (let i = 0; i < xs.length; i++) {
-            node.push([]);
-            for (let j = 0; j < ys.length; j++) {
-                const x = xs[i], y = ys[j];
-                const edge = j === ys.length - 1;
-                const jx = (rnd() - 0.5) * 2 * this.JIT, jy = (rnd() - 0.5) * 2 * this.JIT;
-                node[i].push({
-                    x: x + jx + this.SWAY * Math.sin(y * 0.011 + 1.7),
-                    y: edge ? bottom : y + jy + this.SWAY * 0.7 * Math.sin(x * 0.009 + 0.4)
-                });
-            }
-        }
-        return (this._grid = { xs, ys, node, box, bottom });
+        return (this._grid = { xs, ys, box, bottom: ys[ys.length - 1] });
     },
 
-    // Заливка стены — тон плитки: швы, трещины и блики лежат поверх и в
-    // расфокусе гаснут, оставляя ровный кафельный тон (см. blurFar).
+    // Плитки: у каждой четыре угла после люфта. Считается один раз.
+    tiles() {
+        if (this._tiles) return this._tiles;
+        const G = this.grid(), P = this.PLAY, rnd = btRng(this.WALL_SEED);
+        const h = this.GAP / 2, out = [];
+        for (let i = 0; i < G.xs.length - 1; i++) for (let j = 0; j < G.ys.length - 1; j++) {
+            const x0 = G.xs[i] + h, x1 = G.xs[i + 1] - h, y0 = G.ys[j] + h, y1 = G.ys[j + 1] - h;
+            const loose = rnd() < P.loose;
+            const turn = (rnd() - 0.5) * 2 * (loose ? P.looseTurn : P.turn) * Math.PI / 180;
+            const dx = (rnd() - 0.5) * 2 * P.shift, dy = (rnd() - 0.5) * 2 * P.shift;
+            const cx = (x0 + x1) / 2 + dx, cy = (y0 + y1) / 2 + dy;
+            const c = Math.cos(turn), s = Math.sin(turn), hw = (x1 - x0) / 2, hh = (y1 - y0) / 2;
+            const at = (u, v) => ({ x: cx + u * c - v * s, y: cy + u * s + v * c });
+            out.push({ i, j, cx, cy, hw, hh, at,
+                       corners: [at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh)] });
+        }
+        return (this._tiles = out);
+    },
+
+    // Путь плитки со скруглёнными углами. k — ужать к центру (0 — как есть).
+    tilePath(t, k) {
+        const f = (v) => v.toFixed(1), r = this.ROUND, sh = 1 - (k || 0);
+        const hw = t.hw * sh, hh = t.hh * sh;
+        const P = (u, v) => { const q = t.at(u, v); return `${f(q.x)} ${f(q.y)}`; };
+        return `M${P(-hw + r, -hh)}L${P(hw - r, -hh)}Q${P(hw, -hh)} ${P(hw, -hh + r)}`
+             + `L${P(hw, hh - r)}Q${P(hw, hh)} ${P(hw - r, hh)}`
+             + `L${P(-hw + r, hh)}Q${P(-hw, hh)} ${P(-hw, hh - r)}`
+             + `L${P(-hw, -hh + r)}Q${P(-hw, -hh)} ${P(-hw + r, -hh)}Z`;
+    },
+
+    // Заливка стены — тон плитки. Затирка, фаски и всё мелкое лежат поверх,
+    // в группе дальнего плана, и в расфокусе гаснут до ровного кафельного
+    // тона (см. blurFar).
     wallBase() {
         const b = this.grid().box, T = btPal().tile;
         return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="${T[500]}"/>`;
     },
 
-    // Всё, что делает кафель кафелем: тон каждой плитки, швы, сколы,
-    // трещины, глазурь. Лежит в группе дальнего плана — в финале гаснет
-    // вместе с ней.
+    // Кафель: затирка, плитки поверх неё, фаски, глазурь, сколы, трещины.
     wallTiles() {
         const G = this.grid(), T = btPal().tile, rnd = btRng(this.WALL_SEED + 11);
-        const f = (v) => v.toFixed(1);
-        const quad = (a, b, c, d, k) => {
-            // Плитка чуть меньше своей ячейки: край уходит под затирку.
-            const cx = (a.x + b.x + c.x + d.x) / 4, cy = (a.y + b.y + c.y + d.y) / 4;
-            const p = (q) => `${f(q.x + (cx - q.x) * k)} ${f(q.y + (cy - q.y) * k)}`;
-            return `M${p(a)}L${p(b)}L${p(c)}L${p(d)}Z`;
-        };
-        let light = '', dark = '', odd = '', glaze = '', chip = '', crack = '';
-        const I = G.xs.length - 1, J = G.ys.length - 1;
-        for (let i = 0; i < I; i++) for (let j = 0; j < J; j++) {
-            const a = G.node[i][j], b = G.node[i + 1][j], c = G.node[i + 1][j + 1], d = G.node[i][j + 1];
-            const r = rnd();
+        const f = (v) => v.toFixed(1), b = G.box;
+        let base = '', light = '', dark = '', odd = '';
+        let hiEdge = '', loEdge = '', glaze = '', chip = '', crack = '';
+        const r = this.ROUND;
+        for (const t of this.tiles()) {
+            const d = this.tilePath(t);
+            const tone = rnd();
             // Тон плитки: большинство как есть, часть на полтона светлее или
             // темнее — партии кафеля никогда не одного цвета.
-            if (r < 0.16) light += quad(a, b, c, d, 0.02);
-            else if (r < 0.3) dark += quad(a, b, c, d, 0.02);
-            else if (r < 0.315) odd += quad(a, b, c, d, 0.02);   // переложенная, из другой партии
-            // Глазурь: блик у верхнего края — плитка блестит, а не
-            // покрашена. Не на каждой и каждый свой: одинаковые косые
-            // штрихи на половине плиток читались дождём, а не глянцем.
+            // Разброс — полутоном ПОВЕРХ общего: светлая и тёмная плитка
+            // целиком другим цветом рябила стену шахматкой.
+            base += d;
+            if (tone < 0.14) light += d;
+            else if (tone < 0.27) dark += d;
+            else if (tone < 0.285) odd += d;     // переложенная, из другой партии
+            // Фаска: светлая кромка сверху и слева, тёмная снизу и справа.
+            const P = (u, v) => { const q = t.at(u, v); return `${f(q.x)} ${f(q.y)}`; };
+            const e = 1.1, hw = t.hw - e, hh = t.hh - e;
+            hiEdge += `M${P(-hw, hh - r)}L${P(-hw, -hh + r)}Q${P(-hw, -hh)} ${P(-hw + r, -hh)}L${P(hw - r, -hh)}`;
+            loEdge += `M${P(hw, -hh + r)}L${P(hw, hh - r)}Q${P(hw, hh)} ${P(hw - r, hh)}L${P(-hw + r, hh)}`;
+            // Глазурь: блик у верхнего края, не на каждой и каждый свой.
             if (rnd() < 0.22) {
-                const u = 0.08 + rnd() * 0.35, w = 0.06 + rnd() * 0.1;
-                const lean = 0.05 + rnd() * 0.2, len = 0.25 + rnd() * 0.35;
-                const P = (s, t) => ({ x: a.x + (b.x - a.x) * s + (d.x - a.x) * t,
-                                       y: a.y + (b.y - a.y) * s + (d.y - a.y) * t });
-                const q1 = P(u, 0.08), q2 = P(u + w, 0.08),
-                      q3 = P(u + w * 0.6 - lean, 0.08 + len), q4 = P(u - lean, 0.08 + len);
-                glaze += `M${f(q1.x)} ${f(q1.y)}L${f(q2.x)} ${f(q2.y)}L${f(q3.x)} ${f(q3.y)}L${f(q4.x)} ${f(q4.y)}Z`;
+                const u = -0.7 + rnd() * 0.8, w = 0.12 + rnd() * 0.15, lean = 0.1 + rnd() * 0.3;
+                const len = 0.4 + rnd() * 0.6;
+                glaze += `M${P(t.hw * u, -t.hh * 0.84)}L${P(t.hw * (u + w), -t.hh * 0.84)}`
+                       + `L${P(t.hw * (u + w * 0.6 - lean), -t.hh * (0.84 - len))}`
+                       + `L${P(t.hw * (u - lean), -t.hh * (0.84 - len))}Z`;
             }
-            // Скол угла: треугольник, из-под которого видно основу.
+            // Скол угла: кусок эмали отлетел, в углу видна затирка.
             if (rnd() < 0.05) {
-                const s = 5 + rnd() * 6;
-                const corner = [a, b, c, d][Math.floor(rnd() * 4)];
-                const cx = (a.x + c.x) / 2, cy = (a.y + c.y) / 2;
-                const ux = Math.sign(cx - corner.x), uy = Math.sign(cy - corner.y);
-                chip += `M${f(corner.x)} ${f(corner.y)}L${f(corner.x + ux * s)} ${f(corner.y + uy * 1.5)}`
-                      + `L${f(corner.x + ux * 1.2)} ${f(corner.y + uy * s * 0.8)}Z`;
+                const sx = rnd() < 0.5 ? -1 : 1, sy = rnd() < 0.5 ? -1 : 1, s = 4 + rnd() * 5;
+                chip += `M${P(sx * t.hw, sy * t.hh)}L${P(sx * (t.hw - s), sy * t.hh)}`
+                      + `Q${P(sx * (t.hw - s * 0.4), sy * (t.hh - s * 0.3))} ${P(sx * t.hw, sy * (t.hh - s * 0.8))}Z`;
             }
-            // Трещина: ломаная через плитку от края до края.
-            if (rnd() < 0.018) {
-                let x = a.x + (b.x - a.x) * (0.2 + rnd() * 0.6), y = a.y + 2;
-                crack += `M${f(x)} ${f(y)}`;
+            // Трещина: ломаная через плитку.
+            if (rnd() < 0.02) {
+                let u = (rnd() - 0.5) * t.hw, v = -t.hh + 2;
+                crack += `M${P(u, v)}`;
                 for (let k = 0; k < 5; k++) {
-                    x += (rnd() - 0.5) * 14; y += (d.y - a.y) / 5;
-                    crack += `L${f(x)} ${f(y)}`;
+                    u += (rnd() - 0.5) * 12; v += (t.hh * 2 - 4) / 5;
+                    crack += `L${P(u, v)}`;
                 }
             }
         }
-        // Швы: ломаные через узлы, каждая линия сетки — один кусок пути.
-        let grout = '';
-        for (let i = 0; i <= I; i++)
-            grout += 'M' + G.node[i].map(p => `${f(p.x)} ${f(p.y)}`).join('L');
-        for (let j = 0; j <= J; j++)
-            grout += 'M' + G.node.map(col => `${f(col[j].x)} ${f(col[j].y)}`).join('L');
-        // Сырость: затирка нижних рядов темнее — у воды она не просыхает.
-        let mold = '';
-        for (let j = Math.max(0, J - 3); j <= J; j++)
-            mold += 'M' + G.node.map(col => `${f(col[j].x)} ${f(col[j].y)}`).join('L');
-        for (let i = 0; i < G.xs.length; i++) {
-            const col = G.node[i].slice(Math.max(0, J - 3));
-            mold += 'M' + col.map(p => `${f(p.x)} ${f(p.y)}`).join('L');
-        }
-        return `<path fill="${T.hi}" fill-opacity="0.55" d="${light}"/>
-            <path fill="${T.lo}" fill-opacity="0.5" d="${dark}"/>
+        // Сырость: затирка трёх нижних рядов темнее. Рисуется ПОД плитками —
+        // видна только в швах.
+        const wetTop = G.ys[Math.max(0, G.ys.length - 4)];
+        return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${G.bottom - b.y}" fill="${T.grout}"/>
+            <rect x="${b.x}" y="${f(wetTop)}" width="${b.w}" height="${f(G.bottom - wetTop)}"
+                  fill="${T.mold}" fill-opacity="0.3"/>
+            <path fill="${T[500]}" d="${base}"/>
+            <path fill="${T.hi}" fill-opacity="0.55" d="${light}"/>
+            <path fill="${T.lo}" fill-opacity="0.4" d="${dark}"/>
             <path fill="${T.odd}" d="${odd}"/>
-            <path fill="${T.hi}" fill-opacity="0.5" d="${glaze}"/>
-            <path fill="none" stroke="${T.grout}" stroke-width="2.6" stroke-linejoin="round"
-                  stroke-linecap="round" d="${grout}"/>
-            <path fill="none" stroke="${T.mold}" stroke-opacity="0.35" stroke-width="2.6"
-                  stroke-linejoin="round" d="${mold}"/>
-            <path fill="${T.chip}" d="${chip}"/>
+            <path fill="none" stroke="${T.hi}" stroke-width="1.6" stroke-linecap="round"
+                  stroke-linejoin="round" stroke-opacity="0.9" d="${hiEdge}"/>
+            <path fill="none" stroke="${T.lo}" stroke-width="1.6" stroke-linecap="round"
+                  stroke-linejoin="round" d="${loEdge}"/>
+            <path fill="${T.hi}" fill-opacity="0.55" d="${glaze}"/>
+            <path fill="${T.grout}" d="${chip}"/>
             <path fill="none" stroke="${T.crack}" stroke-width="1" stroke-linejoin="round"
                   stroke-linecap="round" d="${crack}"/>`;
     },
