@@ -1569,6 +1569,10 @@ const LustMinigame = {
         P.segs.forEach((sd, i) => { const e = this.el(`bt-tail-seg-${i}`); if (e) e.setAttribute('d', sd); });
         const gl = this.el('bt-tail-glans');
         if (gl) gl.setAttribute('d', P.glans);
+        for (const id of ['bt-tail-crease', 'bt-tail-crease-line']) {
+            const e = this.el(id);
+            if (e) e.setAttribute('d', P.creases);
+        }
         for (const [id, q] of [['bt-tail-neck', P.neck], ['bt-tail-wet', P.wet]]) {
             const e = this.el(id);
             if (!e) continue;

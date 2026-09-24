@@ -533,10 +533,11 @@ const BATH_ART = {
         const pts = this.tailSpine(bend, g), n = pts.length - 1, M = this.TAIL_SAMPLES;
         const left = [], right = [], ts = [];
         for (let k = 0; k <= M; k++) {
-            const t = k / M, p = this.tailAt(pts, t), w = this.tailHalf(t, g);
+            const t = k / M, p = this.tailAt(pts, t);
+            const wl = this.tailHalfSide(t, g, -side), wr = this.tailHalfSide(t, g, side);
             const nx = side * Math.cos(p.a), ny = Math.sin(p.a);
-            left.push({ x: p.x - nx * w, y: p.y - ny * w });
-            right.push({ x: p.x + nx * w, y: p.y + ny * w });
+            left.push({ x: p.x - nx * wl, y: p.y - ny * wl });
+            right.push({ x: p.x + nx * wr, y: p.y + ny * wr });
             ts.push(t);
         }
         const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
@@ -558,33 +559,58 @@ const BATH_ART = {
     // постоянной: у основания хвост вдвое толще, чем у кончика, и общая
     // ширина сажала половину пены мимо, на плитку.
     // ПРОФИЛЬ ХВОСТА: ствол из звеньев и головка.
-    //   * Ствол — TAIL_SEGS настоящих звеньев: каждое вздуто посередине и
-    //     перехвачено на стыке с соседом. Полосками по гладкой трубе
-    //     членение читалось нарисованным, а не телесным.
-    //   * Ствол сужается к головке и перед ней перехвачен шейкой.
-    //   * Головка (от TAIL_GLANS до конца): венчик резко выступает шире
-    //     шейки, дальше — округлый купол.
-    TAIL_SEGS: 5,
-    TAIL_GLANS: 0.72,
-    tailHalf(t, grow) {
+    //   * Ствол — настоящие звенья: каждое вздуто и перехвачено на стыке.
+    //     Полосками по гладкой трубе членение читалось нарисованным.
+    //   * Звенья РАЗНЫЕ: своя длина (TAIL_EDGES), своя сила вздутия
+    //     (TAIL_BULGE), вершина вздутия сдвинута то вверх, то вниз.
+    //   * Бока РАЗНЫЕ: у левого и правого края свой плавный «гуляющий»
+    //     профиль. Ровный симметричный хвост читался отлитой деталью, а не
+    //     плотью.
+    //   * Головка скромная: из шейки выходит плавно, венчик едва шире
+    //     ствола. Выступающая шляпка была вычурной и спорила со всем кадром.
+    TAIL_EDGES: [0, 0.16, 0.3, 0.43, 0.545, 0.645],
+    TAIL_BULGE: [0.15, 0.1, 0.17, 0.11, 0.13],
+    TAIL_GLANS: 0.7,
+    // sd: −1 — левый край, +1 — правый.
+    tailHalfSide(t, grow, sd) {
         const B = (this.TAIL.base / 2) * Math.pow(grow || 1, 0.7);
-        const G = this.TAIL_GLANS, S = this.TAIL_SEGS;
-        const tt = Math.max(0, Math.min(1, t));
-        if (tt < G) {
-            const f = (tt / G) * S, u = f - Math.floor(f);
-            const taper = 1 - 0.3 * (tt / G);
-            // Вздутие звена: 0.84 на стыке, 1 посередине.
-            return B * taper * (0.84 + 0.16 * Math.sin(Math.PI * u));
+        const E = this.TAIL_EDGES, BU = this.TAIL_BULGE, G = this.TAIL_GLANS;
+        const tt = Math.max(0, Math.min(1, t)), TAU = Math.PI * 2;
+        const wob = sd > 0
+            ? 0.055 * Math.sin(TAU * (1.3 * tt + 0.15)) + 0.03 * Math.sin(TAU * (3.1 * tt + 0.6))
+            : 0.045 * Math.sin(TAU * (1.1 * tt + 0.55)) + 0.035 * Math.sin(TAU * (2.7 * tt + 0.1));
+        const neckEnd = E[E.length - 1], NECK = 0.62, CORONA = 0.7;
+        let w;
+        if (tt < neckEnd) {
+            let k = 0;
+            while (k < BU.length - 1 && tt >= E[k + 1]) k++;
+            const u = (tt - E[k]) / (E[k + 1] - E[k]);
+            // Вершина вздутия смещена: у чётных звеньев ближе к корню, у
+            // нечётных — к кончику.
+            const uu = Math.pow(u, k % 2 ? 1.25 : 0.8);
+            const taper = 1 - 0.28 * (tt / G);
+            w = B * taper * (1 - BU[k] + BU[k] * Math.sin(Math.PI * uu));
+        } else if (tt < G) {
+            // Шейка: от конца последнего звена к узкому месту перед головкой.
+            const k = (tt - neckEnd) / (G - neckEnd);
+            const from = (1 - 0.28 * (neckEnd / G)) * (1 - BU[BU.length - 1]);
+            w = B * (from + (NECK - from) * k);
+        } else {
+            const u = (tt - G) / (1 - G);
+            if (u < 0.3) {
+                const k = u / 0.3, s2 = k * k * (3 - 2 * k);
+                w = B * (NECK + (CORONA - NECK) * s2);
+            } else {
+                const v = (u - 0.3) / 0.7;
+                w = B * CORONA * Math.pow(Math.max(0, 1 - Math.pow(v, 1.9)), 0.55);
+            }
         }
-        const u = (tt - G) / (1 - G);
-        const neck = 0.6, corona = 0.9;
-        // Венчик выходит из шейки на первой десятой головки, дальше купол.
-        if (u < 0.1) {
-            const k = u / 0.1, s2 = k * k * (3 - 2 * k);
-            return B * (neck + (corona - neck) * s2);
-        }
-        const v = (u - 0.1) / 0.9;
-        return B * corona * Math.sqrt(Math.max(0, 1 - Math.pow(v, 2.2)));
+        return w * (1 + wob);
+    },
+    // Полуширина для следов и пузырей — по УЖЕЙ стороне: они садятся
+    // симметрично от оси и не должны вылезать за край.
+    tailHalf(t, grow) {
+        return Math.min(this.tailHalfSide(t, grow, -1), this.tailHalfSide(t, grow, 1));
     },
 
     tailD(bend, grow) {
@@ -623,10 +649,10 @@ const BATH_ART = {
         const hi = mixColor(fill, F[100], 0.42), lo = mixColor(fill, F[900], 0.3);
         const inner = mixColor(ink, lo, 0.35);
         // Головка — кровь ближе к коже: розовее и темнее ствола.
-        const gFill = mixColor(fill, F[300], 0.25), gHot = mixColor(gFill, V[500], 0.18);
+        const gFill = mixColor(fill, F[300], 0.15), gHot = mixColor(gFill, V[500], 0.1);
         let segs = '';
-        for (let i = 0; i < this.TAIL_SEGS; i++)
-            segs += `<path id="bt-tail-seg-${i}" d="" fill="url(#bt-tail-vol)" stroke="${inner}" stroke-width="1.2" stroke-linejoin="round"/>`;
+        for (let i = 0; i < this.TAIL_EDGES.length - 1; i++)
+            segs += `<path id="bt-tail-seg-${i}" d="" fill="url(#bt-tail-vol)"/>`;
         return `
         <defs>
             <!-- Объём поперёк: свет слева, теневой бок справа, отсвет у
@@ -652,8 +678,13 @@ const BATH_ART = {
         <path id="bt-tail-body" d="" fill="${lo}" stroke="${ink}"
               stroke-width="3" stroke-linejoin="round"/>
         ${segs}
+        <!-- Складки на стыках звеньев: мягкая тень и под ней тонкая линия. -->
+        <path id="bt-tail-crease" d="" fill="none" stroke="${F[900]}" stroke-width="4"
+              stroke-linecap="round" stroke-opacity="0.18"/>
+        <path id="bt-tail-crease-line" d="" fill="none" stroke="${inner}" stroke-width="1.1"
+              stroke-linecap="round" stroke-opacity="0.55"/>
         <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
-        <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)" stroke="${inner}" stroke-width="1.4" stroke-linejoin="round"/>
+        <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)"/>
         <!-- Влажный блик на головке. -->
         <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${F[100]}" opacity="0.75"/>
         <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
@@ -667,29 +698,45 @@ const BATH_ART = {
         ${this.gooLive('bt-tail-goo')}`;
     },
 
-    // Куски хвоста при данном изгибе: пути звеньев и головки, тень под
-    // венчиком и влажный блик. Всё — из того же контура, что силуэт.
+    // Куски хвоста при данном изгибе: пути звеньев и головки, складки на
+    // стыках, тень под венчиком и влажный блик. Всё — из того же контура.
     tailPieces(curve, grow) {
         const L = curve.left, R = curve.right, M = L.length - 1;
         const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
+        const idx = (t) => Math.max(0, Math.min(M, Math.round(t * M)));
         const slice = (t0, t1) => {
-            const a = Math.round(t0 * M), b = Math.round(t1 * M);
+            const a = idx(t0), b = idx(t1);
             const l = L.slice(a, b + 1), r = R.slice(a, b + 1).reverse();
             return `M${l.map(P).join('L')}L${r.map(P).join('L')}Z`;
         };
-        const G = this.TAIL_GLANS, S = this.TAIL_SEGS, segs = [];
-        for (let i = 0; i < S; i++) segs.push(slice(G * i / S, G * (i + 1) / S));
+        const E = this.TAIL_EDGES, G = this.TAIL_GLANS, segs = [];
+        for (let i = 0; i < E.length - 1; i++)
+            segs.push(slice(E[i], i === E.length - 2 ? G : E[i + 1]));
         const glans = slice(G, 1);
+        // Складка — не линия во всю ширину, а вмятина: начинается чуть
+        // отступив от освещённого края, выгибается к кончику (хвост выше
+        // глаза — ближняя сторона кольца видна выше боков) и уходит в тень.
+        const crease = (t, bow) => {
+            const a = L[idx(t)], b = R[idx(t)], p = this.tailAt(curve.spine, t);
+            const lerp = (u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+            const s0 = lerp(0.12), s1 = lerp(0.96), mid = lerp(0.55);
+            const w = Math.hypot(b.x - a.x, b.y - a.y), side = this.TAIL.side || 1;
+            const up = { x: side * Math.sin(p.a), y: -Math.cos(p.a) };
+            const c = { x: mid.x + up.x * w * bow, y: mid.y + up.y * w * bow };
+            return `M${P(s0)}Q${P(c)} ${P(s1)}`;
+        };
+        let creases = '';
+        for (let i = 1; i < E.length - 1; i++) creases += crease(E[i], 0.1 + 0.05 * (i % 2));
         const pts = curve.spine, side = this.TAIL.side || 1;
         const at = (t) => this.tailAt(pts, t);
-        const nk = at(G + 0.02), wet = at(G + (1 - G) * 0.45);
+        const nk = at(G + 0.01), wet = at(G + (1 - G) * 0.5);
         const deg = (p) => side * p.a * 180 / Math.PI;
-        const B = this.tailHalf(G + (1 - G) * 0.12, grow);
-        return { segs, glans,
-                 neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.05, ry: B * 0.32 },
+        const B = this.tailHalf(G + (1 - G) * 0.3, grow);
+        return { segs, glans, creases,
+                 neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 },
                  // Блик сдвинут к свету (влево) и вверх по головке.
-                 wet: { x: wet.x - side * Math.cos(wet.a) * B * 0.42, y: wet.y - Math.sin(wet.a) * B * 0.42,
-                        deg: deg(wet), rx: B * 0.2, ry: B * 0.34 } };
+                 wet: { x: wet.x - side * Math.cos(wet.a) * B * 0.4, y: wet.y - Math.sin(wet.a) * B * 0.4,
+                        deg: deg(wet) - 12, rx: B * 0.16, ry: B * 0.3 } };
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
