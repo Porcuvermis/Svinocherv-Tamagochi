@@ -88,7 +88,7 @@ function solveAim() {
 }
 const AIM = solveAim();
 
-const PLAYER = { rate: 3, arcMax: 1.2, noise: 0.30, bias: 0.035 };
+const PLAYER = { rate: 3, arcMax: 1.2, noise: 0.30, bias: 0.035, over: 0.06 };
 const gauss = () => { let s = 0; for (let i = 0; i < 6; i++) s += Math.random(); return s - 3; };
 
 // ---------- ОДИН ФИНАЛ ----------
@@ -100,12 +100,18 @@ function runOnce(t) {
     while (fired < N) {
         bend = SHOT.relaxBend(bend, DT, hard, BEND_MAX);
         // Игрок подталкивает, как только прицел просел, — но не чаще, чем
-        // успевает рука, и не размашистее, чем позволяет дуга.
-        if (bend < target && time - last >= 1 / PLAYER.rate) {
-            const arc = Math.min((target - bend) / t.gain, PLAYER.arcMax)
-                      * Math.max(0, 1 + PLAYER.noise * gauss());
-            bend = SHOT.pushBend(bend, arc, t, BEND_MAX);
-            last = time;
+        // успевает рука, и не размашистее, чем позволяет дуга. Перегнул
+        // заметно — отводит назад: ход пальца работает в обе стороны
+        // (LustShot.pushBend). Заметно — это больше PLAYER.over: мелкий
+        // перегиб рука не ловит, его и так снимет выпрямление.
+        if (time - last >= 1 / PLAYER.rate) {
+            const miss = target - bend;
+            if (miss > 0 || -miss > PLAYER.over) {
+                const arc = Math.sign(miss) * Math.min(Math.abs(miss) / t.gain, PLAYER.arcMax)
+                          * Math.max(0, 1 + PLAYER.noise * gauss());
+                bend = SHOT.pushBend(bend, arc, t, BEND_MAX);
+                last = time;
+            }
         }
         time += DT;
         if (time >= next - 1e-9) {

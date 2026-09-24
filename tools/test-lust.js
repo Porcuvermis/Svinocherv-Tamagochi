@@ -242,8 +242,22 @@ const harness = require('./harness');
   }, [a, r]);
   const R = 190;
 
-  // Один проход пальцем по дуге: наклоняет хвост.
+  // Один проход пальцем по дуге. Руку заводят ПО ВОЗДУХУ: палец в обе
+  // стороны работает — ход назад разгибает хвост, — поэтому вернуться к
+  // началу дуги, не отрывая пальца, значило бы отменить только что
+  // сделанное. Так и играет человек: провёл, оторвал, провёл снова.
+  const glide = async (from, to, steps) => {
+    for (let i = 0; i <= (steps || 8); i++) {
+      const p2 = await arcPoint(from + (to - from) * i / (steps || 8), R);
+      const s2 = await toScreen(p2);
+      await page.mouse.move(s2.x, s2.y);
+    }
+  };
   const stroke = async (from, to, steps) => {
+    const p0 = await toScreen(await arcPoint(from, R));
+    await page.mouse.up();
+    await page.mouse.move(p0.x, p0.y);
+    await page.mouse.down();
     for (let i = 0; i <= (steps || 8); i++) {
       const p2 = await arcPoint(from + (to - from) * i / (steps || 8), R);
       const s2 = await toScreen(p2);
@@ -289,6 +303,30 @@ const harness = require('./harness');
   const back = await page.evaluate(() => LustMinigame.bend);
   ok(back < over * 0.5, 'отпущенный хвост выпрямляется',
      `${over.toFixed(2)} → ${back.toFixed(2)}`);
+
+  // Палец ведёт угол В ОБЕ СТОРОНЫ: согнули, и тем же пальцем, не отрывая,
+  // ведём обратно — хвост разгибается быстрее, чем выпрямился бы сам.
+  // Сравнивается с его СОБСТВЕННЫМ выпрямлением за то же время, посчитанным
+  // той же формулой: «уменьшился» было бы зелёным и без пальца.
+  for (let i = 0; i < 6; i++) await stroke(0.05, 1.3, 8);
+  const bent = await page.evaluate(() => ({ b: LustMinigame.bend, t: performance.now() }));
+  await glide(1.3, 0.05, 8);
+  const unbent = await page.evaluate((b0) => {
+    const L = LustMinigame, t = L.tailTier();
+    const el = (performance.now() - b0.t) / 1000;
+    let b = b0.b;
+    for (let k = 0; k < Math.ceil(el * 120); k++)
+      b = LustShot.relaxBend(b, el / Math.ceil(el * 120),
+                             { relax: t.relax, hard: L.BEND_HARD }, L.BEND_MAX);
+    return { b: L.bend, alone: b, el };
+  }, bent);
+  ok(unbent.b < unbent.alone - 0.15, 'ход пальца назад разгибает хвост',
+     `${bent.b.toFixed(2)} → ${unbent.b.toFixed(2)} за ${unbent.el.toFixed(2)} с; сам бы выпрямился до ${unbent.alone.toFixed(2)}`);
+  // Дальше прямого хвост не уходит: разгибание кончается вертикалью.
+  await glide(0.05, -0.9, 6);
+  const floor = await page.evaluate(() => LustMinigame.bend);
+  ok(floor >= 0, 'разогнуть можно до прямого, не дальше', floor.toFixed(3));
+  await page.mouse.up();
 
   // Весь финал: держим прицел подталкиваниями — это и есть умелая игра, под
   // которую считан баланс в tools/sim-lust.js.
