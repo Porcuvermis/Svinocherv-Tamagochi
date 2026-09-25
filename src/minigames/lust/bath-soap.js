@@ -13,7 +13,7 @@
 const BATH_SOAP = {
     // Вид на каждой ступени. Ещё не нарисованные ступени берут запечённый
     // брусок — пока лестница не закончена.
-    TIERS: ['stub', 'bar', 'toilet', 'baked', 'baked', 'baked', 'baked', 'baked', 'baked'],
+    TIERS: ['stub', 'bar', 'toilet', 'pump', 'baked', 'baked', 'baked', 'baked', 'baked'],
     uid: 0,
 
     level() {
@@ -32,6 +32,7 @@ const BATH_SOAP = {
         if (kind === 'stub') return this.stub(where);
         if (kind === 'bar') return this.bar();
         if (kind === 'toilet') return this.toilet(where);
+        if (kind === 'pump') return this.pump();
         return BATH_BAKED.draw('soap');
     },
 
@@ -41,6 +42,7 @@ const BATH_SOAP = {
         if (kind === 'stub') return { x: 546, y: 322, w: 60, h: 44 };
         if (kind === 'bar') return { x: 536, y: 314, w: 92, h: 64 };
         if (kind === 'toilet') return { x: 532, y: 313, w: 84, h: 38 };
+        if (kind === 'pump') return { x: 550, y: 284, w: 54, h: 90 };
         return BATH_BAKED.box('soap');
     },
 
@@ -64,6 +66,105 @@ const BATH_SOAP = {
             d += (i ? 'L' : 'M') + pt(p0) + 'Q' + pt(p) + ' ' + pt(p1);
         }
         return d + 'Z';
+    },
+
+    // ---------- 3. ЖИДКОЕ ----------
+    // Флакон с дозатором-помпой: первая ступень, где мыло — жидкость. Что
+    // делает его дозатором, а не просто бутылкой:
+    //   * головка помпы с носиком вбок, на носике висит капля; под головкой
+    //     шток и рифлёный воротник на горлышке;
+    //   * флакон прозрачный — внутри видна жижа, её поверхность и трубка,
+    //     уходящая ко дну;
+    //   * цилиндр, а не плашка: объём сказан вертикальными полосами света
+    //     (блик слева, отражение справа, тёмные края).
+    // Стоит в корзине, помпа чуть выше стоек — это разрешено (разд. 5в).
+    pump() {
+        const P = btPal(), W = P.soapPump, G = P.soapBottle, L = P.soapPeach, F = P.foam, ink = PALETTE.ink;
+        const id = 'bsp' + (this.uid++);
+        const A = BATH_ART.slots().soap;
+        const f = (v) => v.toFixed(1);
+
+        // Корпус: плечики скруглены, дно на полу корзины (низ за сеткой).
+        const bx = 18, sh = -22, bot = 29;
+        const body = `M${-bx} ${bot - 4}V${sh + 8}Q${-bx} ${sh} ${-bx + 8} ${sh - 2}H${bx - 8}Q${bx} ${sh} ${bx} ${sh + 8}V${bot - 4}`
+                   + `Q${bx} ${bot} ${bx - 4} ${bot}H${-bx + 4}Q${-bx} ${bot} ${-bx} ${bot - 4}Z`;
+        // Жижа: до уровня lv, поверхность — узкий эллипс (снизу видна
+        // своей нижней кромкой).
+        const lv = -11;
+        const liq = `M${-bx + 1.2} ${lv}Q0 ${lv + 2.6} ${bx - 1.2} ${lv}V${bot - 4}Q${bx - 1.2} ${bot - 1.2} ${bx - 5} ${bot - 1.2}H${-bx + 5}Q${-bx + 1.2} ${bot - 1.2} ${-bx + 1.2} ${bot - 4}Z`;
+        // Воротник, шток, головка и носик.
+        const collar = `M-10 ${sh - 12}H10V${sh - 1}H-10Z`;
+        const stem = `M-2.6 ${sh - 21}H2.6V${sh - 12}H-2.6Z`;
+        const head = `M-9 ${sh - 21}V${sh - 29}Q-9 ${sh - 33} -5 ${sh - 33}H6Q9 ${sh - 33} 10 ${sh - 30}`
+                   + `H24Q27 ${sh - 30} 27 ${sh - 27}V${sh - 25}H10V${sh - 21}Z`;
+        let ribs = '';
+        for (let x = -8; x <= 8; x += 2.7) ribs += `M${f(x)} ${sh - 11}V${sh - 2}`;
+        // Трубка: от штока ко дну, чуть изогнута.
+        const tube = `M0 ${sh - 1}C1 ${sh + 14} -3 ${bot - 16} -1 ${bot - 3}`;
+
+        return `
+        <g class="bt-soap bt-soap-pump" transform="translate(${A.x - 2} ${A.y + 2})">
+            <defs>
+                <!-- Прозрачная стенка: края плотнее (там взгляд идёт через
+                     больше пластика), середина почти пустая. -->
+                <linearGradient id="${id}-wall" gradientUnits="userSpaceOnUse" x1="${-bx}" y1="0" x2="${bx}" y2="0">
+                    <stop offset="0" stop-color="${G.edge}" stop-opacity="0.75"/>
+                    <stop offset="0.18" stop-color="${G.wall}" stop-opacity="0.35"/>
+                    <stop offset="0.7" stop-color="${G.wall}" stop-opacity="0.2"/>
+                    <stop offset="1" stop-color="${G.edge}" stop-opacity="0.8"/>
+                </linearGradient>
+                <!-- Жижа — цилиндр: светлее в середине, темнее к стенкам. -->
+                <linearGradient id="${id}-liq" gradientUnits="userSpaceOnUse" x1="${-bx}" y1="0" x2="${bx}" y2="0">
+                    <stop offset="0" stop-color="${L[1]}"/>
+                    <stop offset="0.35" stop-color="${L[3]}"/>
+                    <stop offset="0.65" stop-color="${L[2]}"/>
+                    <stop offset="1" stop-color="${L[0]}"/>
+                </linearGradient>
+                <!-- Белый пластик помпы: тот же цилиндрический свет. -->
+                <linearGradient id="${id}-cap" gradientUnits="userSpaceOnUse" x1="-10" y1="0" x2="10" y2="0">
+                    <stop offset="0" stop-color="${W[1]}"/>
+                    <stop offset="0.3" stop-color="${W[4]}"/>
+                    <stop offset="0.7" stop-color="${W[3]}"/>
+                    <stop offset="1" stop-color="${W[1]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-head" gradientUnits="userSpaceOnUse" x1="0" y1="${sh - 33}" x2="0" y2="${sh - 21}">
+                    <stop offset="0" stop-color="${W[4]}"/>
+                    <stop offset="0.6" stop-color="${W[3]}"/>
+                    <stop offset="1" stop-color="${W[1]}"/>
+                </linearGradient>
+                <clipPath id="${id}-clip"><path d="${body}"/></clipPath>
+            </defs>
+            <path d="${body}${collar}${stem}${head}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            <path d="${body}" fill="url(#${id}-wall)"/>
+            <g clip-path="url(#${id}-clip)">
+                <path d="${tube}" fill="none" stroke="${G.edge}" stroke-width="2" stroke-opacity="0.7" stroke-linecap="round"/>
+                <path d="${liq}" fill="url(#${id}-liq)" fill-opacity="0.92"/>
+                <!-- Перламутр: мягкая светлая жилка в толще. -->
+                <path d="M-8 ${lv + 8}C-2 ${lv + 14} 4 ${lv + 4} 9 ${lv + 12}" fill="none" stroke="${L[4]}" stroke-width="3" stroke-opacity="0.45" stroke-linecap="round"/>
+                <!-- Трубка сквозь жижу: темнее. -->
+                <path d="${tube}" fill="none" stroke="${L[0]}" stroke-width="1.6" stroke-opacity="0.55" stroke-linecap="round"
+                      clip-path="url(#${id}-clip)"/>
+                <!-- Поверхность жижи: светлая кромка. -->
+                <path d="M${-bx + 1.2} ${lv}Q0 ${lv + 2.6} ${bx - 1.2} ${lv}" fill="none" stroke="${L[4]}" stroke-width="1.4"/>
+                <!-- Блик стенки слева и отражение справа — это и делает цилиндр. -->
+                <path d="M${-bx + 5} ${sh + 4}V${bot - 6}" stroke="${G.hi}" stroke-width="3" stroke-opacity="0.8" stroke-linecap="round"/>
+                <path d="M${-bx + 9} ${sh + 6}V${sh + 22}" stroke="${G.hi}" stroke-width="1.2" stroke-opacity="0.6" stroke-linecap="round"/>
+                <path d="M${bx - 4} ${sh + 6}V${bot - 8}" stroke="${G.hi}" stroke-width="1.4" stroke-opacity="0.45" stroke-linecap="round"/>
+            </g>
+            <path d="${body}" fill="none" stroke="${mixColor(ink, G.edge, 0.5)}" stroke-width="${STROKE.hairline}"/>
+            <!-- Воротник с рифлением. -->
+            <path d="${collar}" fill="url(#${id}-cap)"/>
+            <path d="${ribs}" stroke="${W[1]}" stroke-width="0.9"/>
+            <path d="M-10 ${sh - 1}H10" stroke="${W[0]}" stroke-width="1.2" stroke-opacity="0.6"/>
+            <path d="${stem}" fill="url(#${id}-cap)"/>
+            <path d="${head}" fill="url(#${id}-head)"/>
+            <path d="M-6 ${sh - 31}H5" stroke="${W[4]}" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="${head}" fill="none" stroke="${mixColor(ink, W[0], 0.5)}" stroke-width="${STROKE.hairline}"/>
+            <!-- Капля на носике. -->
+            <path d="M24 ${sh - 25}C24 ${sh - 22} 22.2 ${sh - 20.5} 22.2 ${sh - 18.8}A1.9 1.9 0 0 0 26 ${sh - 18.8}C26 ${sh - 20.5} 24.2 ${sh - 22} 24.2 ${sh - 25}Z"
+                  fill="${L[2]}" stroke="${mixColor(ink, L[0], 0.4)}" stroke-width="0.7"/>
+            <circle cx="23.4" cy="${sh - 19.6}" r="0.6" fill="${F.hi}"/>
+        </g>`;
     },
 
     // ---------- 2. ТУАЛЕТНОЕ ----------
