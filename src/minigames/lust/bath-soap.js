@@ -38,7 +38,7 @@ const BATH_SOAP = {
     box(level) {
         const kind = this.TIERS[this.tier(level)];
         if (kind === 'stub') return { x: 546, y: 322, w: 60, h: 44 };
-        if (kind === 'bar') return { x: 522, y: 306, w: 106, h: 68 };
+        if (kind === 'bar') return { x: 536, y: 314, w: 92, h: 64 };
         return BATH_BAKED.box('soap');
     },
 
@@ -50,101 +50,147 @@ const BATH_SOAP = {
     },
 
     // ---------- 1. ХОЗЯЙСТВЕННОЕ ----------
-    // Свежий целый брусок «72%». После обмылка это достаток: кусок большой,
-    // рёбра ровные, клеймо глубокое и целиком. Обёртку пробовали — лишнее:
-    // вещь должна читаться самим мылом.
-    //   * Стоит на длинном ребре лицом к нам — лёжа он весь ушёл бы за
-    //     переднюю сетку корзины.
-    //   * Перспектива комнаты: корзина правее точки схода, поэтому виден
-    //     ЛЕВЫЙ торец — узкая полоса, уходящая вниз-влево к точке схода.
-    //     Верх не виден: корзина выше глаза.
-    //   * Рёбра срезаны узкой фаской: свет сверху-слева, поэтому верхняя и
-    //     левая фаски светлые, нижняя и правая — тёмные. Фаска и делает
-    //     брусок бруском, а не плоской плашкой.
-    //   * Клеймо вдавлено: верхняя стенка канавки в тени, нижняя на свету.
-    //   * Свежее мыло чуть восковое — мягкий отлив, и редкие поры.
+    // Целый брусок «72%». Две прежние попытки провалились, и обе поучительны:
+    //   * в обёртке — лишнее: вещь должна читаться самим мылом;
+    //   * лицом к нам, светло-жёлтый, с ровными яркими фасками и крупным
+    //     «72%» по центру — золотой слиток или табличка «скидка 72%».
+    //     Плоская грань в лоб — это плашка, а не кирпич.
+    // Что делает его мылом:
+    //   * брусок развёрнут углом, видны ДВЕ грани — длинная и торец — и
+    //     ближнее ребро выше всего: корзина выше глаза, поэтому верхние
+    //     рёбра уходят вниз от ближнего угла (крыша «домиком»). Низ закрыт
+    //     сеткой, как и у всего в корзине;
+    //   * цвет тёмный коричнево-охристый и матовый, рёбра мягкие —
+    //     скруглённые светом, а не срезанные фаской;
+    //   * белёсый содовый налёт пятнами — по нему хозяйственное мыло
+    //     узнаётся сразу;
+    //   * клеймо небольшое и лежит В грани — наклонено вместе с ней.
     bar() {
-        const P = btPal(), R = P.soap, ink = PALETTE.ink;
+        const P = btPal(), S = P.soapBar, R = S.ramp, ink = PALETTE.ink;
         const id = 'bsp' + (this.uid++);
         const A = BATH_ART.slots().soap;
-        const X0 = -45, X1 = 45, Y0 = -28, Y1 = 28, r = 3, b = 3.2;
+        const f = (v) => v.toFixed(1);
+        const pt = (p) => `${f(p[0])} ${f(p[1])}`;
 
-        const rect = (x0, y0, x1, y1, q) =>
-            `M${x0 + q} ${y0}H${x1 - q}Q${x1} ${y0} ${x1} ${y0 + q}V${y1 - q}Q${x1} ${y1} ${x1 - q} ${y1}`
-          + `H${x0 + q}Q${x0} ${y1} ${x0} ${y1 - q}V${y0 + q}Q${x0} ${y0} ${x0 + q} ${y0}Z`;
-        const face = rect(X0, Y0, X1, Y1, r);
-        const top = rect(X0 + b, Y0 + b, X1 - b, Y1 - b, 1.5);   // плоскость внутри фасок
-        // Фаски — четыре трапеции между внешним контуром и плоскостью.
-        const bev = (pts) => 'M' + pts.map(p => p.join(' ')).join('L') + 'Z';
-        const bevTop = bev([[X0 + 1, Y0], [X1 - 1, Y0], [X1 - b, Y0 + b], [X0 + b, Y0 + b]]);
-        const bevLeft = bev([[X0, Y0 + 1], [X0 + b, Y0 + b], [X0 + b, Y1 - b], [X0, Y1 - 1]]);
-        const bevRight = bev([[X1, Y0 + 1], [X1, Y1 - 1], [X1 - b, Y1 - b], [X1 - b, Y0 + b]]);
-        const bevBot = bev([[X0 + 1, Y1], [X0 + b, Y1 - b], [X1 - b, Y1 - b], [X1 - 1, Y1]]);
-        // Левый торец: ребро, сдвинутое к точке схода на глубину бруска.
-        // Низ срезан на уровне передней перекладины дна: ниже он торчал бы
-        // из-под корзины тёмным хвостиком.
-        const D = { x: -4.5, y: 8.8 };
-        const end = `M${X0} ${Y0 + r}L${X0 + D.x} ${Y0 + r + D.y}V${Y1 + 3}L${X0} ${Y1}Z`;
+        // Углы. N — ближнее вертикальное ребро, L — дальний конец торца
+        // (слева), Rr — дальний конец длинной грани (справа). Верхние рёбра
+        // уходят вниз круче нижних: верх дальше от горизонта.
+        // Снизу видно и ДНО (Bb — дальний нижний угол): без третьей грани
+        // брусок читался согнутым листом картона. На полке дно закрыто
+        // сеткой; ничего не опускается ниже 33 — иначе торчит из-под корзины.
+        const Nt = [-12, -24], Nb = [-12, 18];
+        const Rt = [50, -14.5], Rb = [50, 23];
+        const Lt = [-34, -12.5], Lb = [-34, 24];
+        const Bb = [Lb[0] + Rb[0] - Nb[0], Lb[1] + Rb[1] - Nb[1] + 3];
+        const longF = `M${pt(Nt)}L${pt(Rt)}L${pt(Rb)}L${pt(Nb)}Z`;
+        const endF = `M${pt(Lt)}L${pt(Nt)}L${pt(Nb)}L${pt(Lb)}Z`;
+        const botF = `M${pt(Lb)}L${pt(Nb)}L${pt(Rb)}L${pt(Bb)}Z`;
+        // Силуэт со скруглёнными углами: у мыла нет острых вершин.
+        const round = (pts, q) => {
+            let d = '';
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[(i + pts.length - 1) % pts.length], p = pts[i], c = pts[(i + 1) % pts.length];
+                const ka = q / Math.hypot(a[0] - p[0], a[1] - p[1]), kc = q / Math.hypot(c[0] - p[0], c[1] - p[1]);
+                const p0 = [p[0] + (a[0] - p[0]) * ka, p[1] + (a[1] - p[1]) * ka];
+                const p1 = [p[0] + (c[0] - p[0]) * kc, p[1] + (c[1] - p[1]) * kc];
+                d += (i ? 'L' : 'M') + pt(p0) + 'Q' + pt(p) + ' ' + pt(p1);
+            }
+            return d + 'Z';
+        };
+        const sil = round([Lt, Nt, Rt, Rb, Bb, Lb], 4);
 
-        // Клеймо «72%» — почти по центру лица, чуть выше: на полке низ
-        // бруска закрыт сеткой, а в руке виден целиком, и клеймо должно
-        // сидеть прилично в обоих случаях.
+        // Налёт: неровные пятна, гуще у рёбер — там мыло сохнет первым.
+        const rnd = btRng(1972);
+        const blobs = [];
+        const blob = (cx, cy, rx, ry) => {
+            const n = 7, q = [];
+            for (let i = 0; i < n; i++) {
+                const a = 2 * Math.PI * i / n, k = 0.6 + rnd() * 0.6;
+                q.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]);
+            }
+            let d = `M${pt([(q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2])}`;
+            for (let i = 1; i <= n; i++) {
+                const p = q[i % n], c = q[(i + 1) % n];
+                d += `Q${pt(p)} ${pt([(p[0] + c[0]) / 2, (p[1] + c[1]) / 2])}`;
+            }
+            return d + 'Z';
+        };
+        for (const [x, y, rx, ry] of [[-9, -17, 9, 5], [44, -9, 7, 7], [22, -15, 11, 4], [-29, -5, 5, 8], [-21, 8, 4, 8],
+                                      [36, 6, 7, 5], [2, 10, 8, 4], [12, -4, 5, 3], [-4, 0, 4, 5]])
+            blobs.push(blob(x, y, rx, ry));
+        // Поры и мелкие вмятинки.
+        let pores = '';
+        for (let i = 0; i < 10; i++) {
+            const x = -32 + rnd() * 80, y = -18 + rnd() * 34, q = 0.35 + rnd() * 0.45;
+            pores += `M${f(x - q)} ${f(y)}a${q.toFixed(2)} ${q.toFixed(2)} 0 1 0 ${(2 * q).toFixed(2)} 0a${q.toFixed(2)} ${q.toFixed(2)} 0 1 0 ${(-2 * q).toFixed(2)} 0Z`;
+        }
+
+        // Клеймо — в плоскости длинной грани: сдвиг по её наклону, сжатие
+        // по ширине. Небольшое — это клеймо, а не вывеска.
+        const slope = (Rt[1] - Nt[1]) / (Rt[0] - Nt[0]);
         const mark = 'M-24 -14L-12 -14L-19 4'
                    + 'M-7 -10.5Q-5 -15 -0.5 -14.5Q4 -14 3 -8.5L-7 4L4 4'
                    + 'M9 4L21 -14'
                    + 'M8.1 -10a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0'
                    + 'M17.1 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0';
-        // Поры: редкие мелкие точки, из сида.
-        const rnd = btRng(72);
-        let pores = '';
-        for (let i = 0; i < 16; i++) {
-            const x = X0 + 6 + rnd() * (X1 - X0 - 12), y = Y0 + 5 + rnd() * (Y1 - Y0 - 10), q = 0.35 + rnd() * 0.4;
-            pores += `M${(x - q).toFixed(1)} ${y.toFixed(1)}a${q.toFixed(2)} ${q.toFixed(2)} 0 1 0 ${(2 * q).toFixed(2)} 0a${q.toFixed(2)} ${q.toFixed(2)} 0 1 0 ${(-2 * q).toFixed(2)} 0Z`;
-        }
+        const mT = `translate(19 -3) skewY(${(Math.atan(slope) * 180 / Math.PI).toFixed(1)}) scale(0.6 0.62) translate(1 5)`;
 
         return `
         <g class="bt-soap bt-soap-bar" transform="translate(${A.x} ${A.y + 2})">
             <defs>
-                <!-- Плоскость: сверху светлее (лампа над ванной), к низу и
-                     вправо темнеет. -->
-                <linearGradient id="${id}-face" gradientUnits="userSpaceOnUse" x1="${X0}" y1="${Y0}" x2="${X1 - 20}" y2="${Y1}">
-                    <stop offset="0" stop-color="${R[3]}"/>
-                    <stop offset="0.55" stop-color="${R[2]}"/>
-                    <stop offset="1" stop-color="${R[1]}"/>
-                </linearGradient>
-                <!-- Восковой отлив — мягкое пятно, без края. -->
-                <radialGradient id="${id}-wax" gradientUnits="userSpaceOnUse" cx="-18" cy="-14" r="30"
-                                gradientTransform="translate(-18 -14) scale(1.5 0.55) translate(18 14)">
-                    <stop offset="0" stop-color="${R[4]}" stop-opacity="0.85"/>
-                    <stop offset="1" stop-color="${R[4]}" stop-opacity="0"/>
-                </radialGradient>
-                <linearGradient id="${id}-end" gradientUnits="userSpaceOnUse" x1="0" y1="${Y0}" x2="0" y2="${Y1 + 3}">
+                <!-- Длинная грань смотрит вперёд-вправо: средний тон, к
+                     дальнему концу темнее. -->
+                <linearGradient id="${id}-long" gradientUnits="userSpaceOnUse" x1="${Nt[0]}" y1="0" x2="${Rt[0]}" y2="0">
                     <stop offset="0" stop-color="${R[2]}"/>
-                    <stop offset="1" stop-color="${R[0]}"/>
+                    <stop offset="0.3" stop-color="${R[2]}"/>
+                    <stop offset="1" stop-color="${mixColor(R[1], R[0], 0.35)}"/>
                 </linearGradient>
-                <clipPath id="${id}-clip"><path d="${top}"/></clipPath>
+                <!-- Торец смотрит влево, к свету: светлее. -->
+                <linearGradient id="${id}-end" gradientUnits="userSpaceOnUse" x1="${Lt[0]}" y1="${Lt[1]}" x2="${Nb[0]}" y2="${Nb[1]}">
+                    <stop offset="0" stop-color="${mixColor(R[4], S.bloom, 0.12)}"/>
+                    <stop offset="1" stop-color="${R[4]}"/>
+                </linearGradient>
+                <!-- Мягкое скруглённое ребро: свет растекается с него на обе
+                     грани, без резкой кромки. -->
+                <linearGradient id="${id}-edge" gradientUnits="userSpaceOnUse" x1="${Nt[0] - 3.5}" y1="0" x2="${Nt[0] + 1.5}" y2="0">
+                    <stop offset="0" stop-color="${R[4]}" stop-opacity="0"/>
+                    <stop offset="0.6" stop-color="${mixColor(R[4], S.bloom, 0.3)}" stop-opacity="0.9"/>
+                    <stop offset="1" stop-color="${R[4]}" stop-opacity="0"/>
+                </linearGradient>
+                <!-- Налёт пыльный: пятно без края, плотнее к середине. -->
+                <radialGradient id="${id}-bloom">
+                    <stop offset="0" stop-color="${S.bloom}" stop-opacity="0.45"/>
+                    <stop offset="0.6" stop-color="${S.bloom}" stop-opacity="0.22"/>
+                    <stop offset="1" stop-color="${S.bloom}" stop-opacity="0"/>
+                </radialGradient>
+                <clipPath id="${id}-clip"><path d="${sil}"/></clipPath>
+                <clipPath id="${id}-long-clip"><path d="${longF}"/></clipPath>
             </defs>
-            <path d="${end}${face}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            <path d="${end}" fill="url(#${id}-end)"/>
-            <path d="${face}" fill="${R[2]}"/>
-            <path d="${bevTop}" fill="${P.soapLit}"/>
-            <path d="${bevLeft}" fill="${R[4]}"/>
-            <path d="${bevRight}" fill="${R[1]}"/>
-            <path d="${bevBot}" fill="${R[0]}"/>
-            <path d="${top}" fill="url(#${id}-face)"/>
+            <path d="${sil}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
             <g clip-path="url(#${id}-clip)">
-                <path d="${top}" fill="url(#${id}-wax)"/>
-                <path d="${pores}" fill="${R[0]}" fill-opacity="0.45"/>
-                <!-- Канавка клейма: светлая нижняя стенка, тёмное дно, тень
-                     под верхней стенкой. -->
-                <path d="${mark}" fill="none" stroke="${P.soapLit}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"
-                      transform="translate(0.5 0.9)"/>
-                <path d="${mark}" fill="none" stroke="${R[1]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="${mark}" fill="none" stroke="${P.soapMark}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                      transform="translate(-0.3 -0.5)"/>
+                <path d="${longF}" fill="url(#${id}-long)"/>
+                <path d="${endF}" fill="url(#${id}-end)"/>
+                <!-- Дно смотрит вниз, от лампы: самое тёмное. -->
+                <path d="${botF}" fill="${R[0]}"/>
+                <path d="M${pt(Lb)}L${pt(Nb)}L${pt(Rb)}" fill="none" stroke="${R[2]}" stroke-width="1.6" stroke-opacity="0.6" stroke-linejoin="round"/>
+                <rect x="${Nt[0] - 3.5}" y="${Nt[1] - 2}" width="5" height="${Nb[1] - Nt[1] + 2}" fill="url(#${id}-edge)"/>
+                <!-- Верхние рёбра скруглены: узкий свет вдоль кромки. -->
+                <path d="M${pt([Lt[0], Lt[1] + 1.6])}L${pt([Nt[0], Nt[1] + 1.6])}L${pt([Rt[0], Rt[1] + 1.6])}" fill="none"
+                      stroke="${R[4]}" stroke-width="2.4" stroke-opacity="0.55" stroke-linejoin="round"/>
+                <path d="${pores}" fill="${R[0]}" fill-opacity="0.3"/>
+                <g clip-path="url(#${id}-long-clip)">
+                    <g transform="${mT}">
+                        <path d="${mark}" fill="none" stroke="${R[3]}" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"
+                              transform="translate(0.6 1)" stroke-opacity="0.8"/>
+                        <path d="${mark}" fill="none" stroke="${S.mark}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                              stroke-opacity="0.75"/>
+                    </g>
+                </g>
+                ${blobs.map(d => `<path d="${d}" fill="url(#${id}-bloom)"/>`).join('')}
             </g>
-            <path d="${top}" fill="none" stroke="${mixColor(ink, R[1], 0.55)}" stroke-width="${STROKE.hairline}" stroke-opacity="0.6"/>
-            <path d="M${X0} ${Y0 + r}L${X0 + D.x} ${Y0 + r + D.y}" stroke="${R[3]}" stroke-width="1" stroke-linecap="round"/>
+            <!-- Граница граней — не линия, а стык тонов; тонкая тень только
+                 внизу, где ребро уходит от света. -->
+            <path d="${sil}" fill="none" stroke="${mixColor(ink, R[1], 0.5)}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
         </g>`;
     },
 
