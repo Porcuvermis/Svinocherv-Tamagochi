@@ -1617,7 +1617,6 @@ const LustMinigame = {
         }
         const edge = this.el('bt-tail-edge');
         if (edge) edge.setAttribute('d', d.body);
-        this.el('bt-tail-shine').setAttribute('d', d.shine);
         // Звенья, головка, тень под венчиком и блик — из того же контура.
         const P = BATH_ART.tailPieces(d.curve, this.tailGrow()), f1 = (v) => v.toFixed(1);
         P.segs.forEach((sd, i) => { const e = this.el(`bt-tail-seg-${i}`); if (e) e.setAttribute('d', sd); });
@@ -1628,7 +1627,12 @@ const LustMinigame = {
             if (a) { a.setAttribute('d', c.d); a.setAttribute('stroke-opacity', (0.3 * c.k).toFixed(3)); }
             if (b) { b.setAttribute('d', c.d); b.setAttribute('stroke-opacity', (0.55 * c.k).toFixed(3)); }
         });
-        for (const [id, q] of [['bt-tail-neck', P.neck], ['bt-tail-wet', P.wet]]) {
+        for (const [id, k] of [['bt-tail-sheen', 'sheen'], ['bt-tail-shine', 'shine'],
+                               ['bt-tail-gwet', 'gwet'], ['bt-tail-grim', 'grim'], ['bt-tail-gspark', 'spark']]) {
+            const e = this.el(id);
+            if (e) e.setAttribute('d', P.lights[k]);
+        }
+        for (const [id, q] of [['bt-tail-neck', P.neck]]) {
             const e = this.el(id);
             if (!e) continue;
             e.setAttribute('rx', f1(q.rx)); e.setAttribute('ry', f1(q.ry));

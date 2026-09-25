@@ -701,12 +701,7 @@ const BATH_ART = {
 
     tailD(bend, grow) {
         const c = this.tailCurve(bend || 0, grow);
-        // Блик идёт по стволу и кончается у шейки: у головки свой, влажный.
-        const lastT = this.look().glansAt - 0.04;
-        const shine = c.spine.filter((p, i) => i > 1 && i / (c.spine.length - 1) < lastT)
-            .map(p => `${(p.x - (this.TAIL.side || 1) * Math.cos(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)} `
-                    + `${(p.y - Math.sin(p.a) * this.TAIL.base * 0.17 * (grow || 1)).toFixed(1)}`);
-        return { body: c.d, shine: 'M' + shine.join('L'), curve: c };
+        return { body: c.d, curve: c };
     },
 
     // ---------- ХВОСТ: ЗВЕНЬЯ И ГОЛОВКА ----------
@@ -754,7 +749,8 @@ const BATH_ART = {
             fill: W(lo),
             glans: [W(mixColor(glans, lift, 0.45)), W(glans), W(mixColor(glans, ink0, 0.4))],
             shade: W(mixColor(base, ink0, 0.62)),
-            shine: W(mixColor(base, lift, 0.75))
+            shine: W(mixColor(base, lift, 0.75)),
+            spark: W(mixColor(glans, lift, 0.92))
         };
     },
     // Перекраска уже собранного хвоста: только атрибуты цвета, разметка та
@@ -771,8 +767,8 @@ const BATH_ART = {
             set(`bt-tail-cr-${i}`, 'stroke', tone.shade);
             set(`bt-tail-crl-${i}`, 'stroke', tone.inner);
         }
-        set('bt-tail-wet', 'fill', tone.shine);
-        set('bt-tail-shine', 'stroke', tone.shine);
+        for (const id of ['bt-tail-sheen', 'bt-tail-shine', 'bt-tail-gwet', 'bt-tail-grim']) set(id, 'fill', tone.shine);
+        set('bt-tail-gspark', 'fill', tone.spark);
     },
 
     // Разметка хвоста собирается ОДИН РАЗ, дальше меняются только атрибуты.
@@ -816,14 +812,18 @@ const BATH_ART = {
         ${creases}
         <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
         <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)"/>
-        <!-- Влажный блик на головке. -->
-        <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${C.shine}" opacity="${(0.75 * Math.min(1, K.wet)).toFixed(2)}"/>
+        <!-- Блики — по форме, см. tailLights. Ствол полуматовый: широкий
+             мягкий отлив и узкое ядро, по линзе на звено. Головка влажная:
+             серп по куполу, яркая точка и отражённый свет с теневого бока. -->
+        <path id="bt-tail-sheen" d="" fill="${C.shine}" fill-opacity="${(K.gloss * 0.3).toFixed(2)}"/>
+        <path id="bt-tail-shine" d="" fill="${C.shine}" fill-opacity="${Math.min(0.8, K.gloss * 1.3).toFixed(2)}"/>
+        <path id="bt-tail-grim" d="" fill="${C.shine}" fill-opacity="${(0.22 * Math.min(1, K.wet)).toFixed(2)}"/>
+        <path id="bt-tail-gwet" d="" fill="${C.shine}" fill-opacity="${(0.28 * Math.min(1, K.wet)).toFixed(2)}"/>
+        <path id="bt-tail-gspark" d="" fill="${C.spark}" fill-opacity="${(0.9 * Math.min(1, K.wet)).toFixed(2)}"/>
         <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
              перебивали бы его. -->
         <path id="bt-tail-edge" d="" fill="none" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
-        <path id="bt-tail-shine" d="" fill="none" stroke="${C.shine}"
-              stroke-width="2.4" stroke-linecap="round" opacity="${K.gloss.toFixed(2)}"/>
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
              ним (lust-goo.js). -->
         ${this.gooLive('bt-tail-goo')}`;
@@ -867,14 +867,71 @@ const BATH_ART = {
         for (let i = 1; i < E.length - 1; i++) creases.push(crease(E[i], 0.1 + 0.05 * (i % 2)));
         const pts = curve.spine, side = this.TAIL.side || 1;
         const at = (t) => this.tailAt(pts, t);
-        const nk = at(G + 0.01), wet = at(G + (1 - G) * 0.5);
+        const nk = at(G + 0.01);
         const deg = (p) => side * p.a * 180 / Math.PI;
         const B = this.tailHalf(G + (1 - G) * 0.3, grow);
-        return { segs, glans, creases,
-                 neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 },
-                 // Блик сдвинут к свету (влево) и вверх по головке.
-                 wet: { x: wet.x - side * Math.cos(wet.a) * B * 0.4, y: wet.y - Math.sin(wet.a) * B * 0.4,
-                        deg: deg(wet) - 12, rx: B * 0.16 * this.look().wet, ry: B * 0.3 * this.look().wet } };
+        return { segs, glans, creases, lights: this.tailLights(curve, E, G),
+                 neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 } };
+    },
+
+    // ---------- БЛИКИ ПО ФОРМЕ ----------
+    // Прежний блик был ОДНОЙ линией на постоянном расстоянии от оси: прямой,
+    // как палка, одной ширины от корня до шейки и не замечал ни вздутий, ни
+    // складок. Блик — это место, где поверхность смотрит на свет, и
+    // считается он от самой поверхности:
+    //   * ГДЕ — на доле местной ширины со стороны света (свет слева), а не
+    //     на расстоянии от оси: блик повторяет вздутия, изгиб и сужение;
+    //   * СКОЛЬКО — у звена поверхность смотрит на свет на гребне и
+    //     отворачивается к складке: блик у каждого звена свой, линзой,
+    //     толще на гребне и сходит на нет у складок;
+    //   * ФАКТУРА — кожа ствола полуматовая: широкий слабый отлив и узкое
+    //     ядро, края чуть неровные (детерминированно, не мигают); головка
+    //     влажная: узкий серп по куполу, яркая точка и отражённый свет по
+    //     теневому краю — глянец в игре привилегия влажного
+    //     (docs/art-direction.md);
+    //   * ГЛЯНЕЦ ступени — прозрачностью (look().gloss, look().wet).
+    // Всё строится из тех же краёв контура (curve.left/right), что и
+    // силуэт, поэтому блик едет с изгибом хвоста и с кольцом под пальцем.
+    tailLights(curve, E, G) {
+        const L = curve.left, R = curve.right, M = L.length - 1;
+        const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
+        const across = (i, a) => ({ x: L[i].x + (R[i].x - L[i].x) * a, y: L[i].y + (R[i].y - L[i].y) * a });
+        // Линза от t0 до t1: центр на доле a поперёк, полутолщина — доля
+        // местной ширины hmax, профиль sin^p (p больше — острее концы).
+        const lens = (t0, t1, a, hmax, p, seed) => {
+            const i0 = Math.ceil(t0 * M), i1 = Math.floor(t1 * M);
+            if (i1 - i0 < 2) return '';
+            const up = [], dn = [];
+            for (let i = i0; i <= i1; i++) {
+                const u = (i - i0) / (i1 - i0), prof = Math.pow(Math.sin(Math.PI * u), p);
+                // Фактура — ПЛАВНАЯ и редкая: частая дрожь края давала зубцы,
+                // и блик читался гранью кристалла.
+                const tex = 0.007 * Math.sin(i * 0.33 + seed) + 0.004 * Math.sin(i * 0.71 + seed * 2);
+                const h = hmax * prof;
+                up.push(across(i, a + tex - h));
+                dn.push(across(i, a + tex + h));
+            }
+            return `M${up.map(P).join('L')}L${dn.reverse().map(P).join('L')}Z`;
+        };
+        // Мягкость — НАЛОЖЕНИЕМ: три вложенные линзы со слабой прозрачностью
+        // складываются в плавный спад от центра к краю. Одна заливка давала
+        // жёсткий край, а фильтр размытия на живом слое стоит кадров.
+        const soft = (t0, t1, a, hmax, p, seed) =>
+            [1, 0.66, 0.36].map(k => lens(t0, t1, a, hmax * k, p * (1 + (1 - k)), seed));
+        const sheen = ['', '', ''], shine = [];
+        for (let i = 0; i < E.length - 1; i++) {
+            const t0 = E[i] + 0.006, t1 = (i === E.length - 2 ? Math.min(E[i + 1] + 0.02, G - 0.01) : E[i + 1]) - 0.006;
+            soft(t0, t1, 0.3, 0.15, 0.7, i).forEach((d, k) => { sheen[k] += d; });
+            shine.push(lens(t0 + 0.015, t1 - 0.015, 0.26, 0.022, 1.8, i + 3));
+        }
+        // Головка: мягкий серп по освещённому краю купола, точка ближе к
+        // свету и отражённый свет по теневому краю.
+        const gw = soft(G + 0.05, 0.965, 0.25, 0.085, 0.9, 7);
+        const grim = lens(G + 0.1, 0.9, 0.87, 0.025, 1.4, 9);
+        const sp = Math.round((G + (1 - G) * 0.42) * M);
+        const c = across(sp, 0.3), r = Math.hypot(R[sp].x - L[sp].x, R[sp].y - L[sp].y) * 0.045 * this.look().wet;
+        const spark = `M${(c.x - r).toFixed(1)} ${c.y.toFixed(1)}a${r.toFixed(1)} ${(r * 1.3).toFixed(1)} 0 1 0 ${(2 * r).toFixed(1)} 0a${r.toFixed(1)} ${(r * 1.3).toFixed(1)} 0 1 0 ${(-2 * r).toFixed(1)} 0Z`;
+        return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark };
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
