@@ -609,7 +609,8 @@ const BATH_ART = {
     //              кольцо без складок и морщин, своего, более тёплого тона;
     //              clitSwell — насколько он вздут (1 — как у ступени 8);
     //   legend   — вершина лестницы: ореол, блеск-проход, искорки, светящаяся
-    //              порция (tailLegend).
+    //              порция (tailLegend);
+    //   piercing — кольцо в головке, вверху сбоку (tailPiercing).
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
@@ -691,7 +692,7 @@ const BATH_ART = {
               glansAt: 0.655, neck: 0.7, corona: 0.88,
               width: 1.26, taper: 0.16, irreg: 0.6, tone: { chroma: 0.2, blood: 0.13 }, gloss: 0.5, wet: 1.45,
               firm: 1.4, pulse: 1.4, veins: 2, veinPower: 1.6, veinBranch: true, clitellum: [1, 3], clitSwell: 1.6,
-              legend: true }
+              legend: true, piercing: true }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -822,7 +823,7 @@ const BATH_ART = {
             const CL = K.clitellum;
             if (CL && tt > E[CL[0]] && tt < E[CL[1]]) {
                 const cu = (tt - E[CL[0]]) / (E[CL[1]] - E[CL[0]]);
-                const band = B * taper * (1 + 0.09 * (K.clitSwell || 1) * (1 - FL) * Math.pow(Math.sin(Math.PI * cu), 0.6));
+                const band = B * taper * (1 + 0.075 * (K.clitSwell || 1) * (1 - FL) * Math.sin(Math.PI * cu));
                 // К краям пояска гладкость сходит на нет — стыкуется с
                 // перехватами соседних звеньев без ступеньки.
                 const e = Math.min(1, Math.min(cu, 1 - cu) / 0.12), es = e * e * (3 - 2 * e);
@@ -905,10 +906,8 @@ const BATH_ART = {
             ink,
             inner: W(mixColor((seg && seg.stroke) || ink0, lo, 0.35)),
             vol: [W(lo), W(hi), W(base), W(lo), W(mixColor(lo, ink0, 0.3))],
-            // Поясок: теплее и чуть светлее кожи — тот же объём, свой тон.
-            clit: (() => { const cb = T.shift(base, { light: 0.07, chroma: 0.2, blood: 0.1 });
-                           const ch = mixColor(cb, lift, 0.42), cl = mixColor(cb, ink0, 0.27);
-                           return [W(cl), W(ch), W(cb), W(cl), W(mixColor(cl, ink0, 0.3))]; })(),
+            // Поясок: тёплый тон кожи — оттенок крови, чуть светлее.
+            clit: W(T.shift(base, { light: 0.07, chroma: 0.3, blood: 0.2 })),
             fill: W(lo),
             glans: [W(mixColor(glans, lift, 0.45)), W(glans), W(mixColor(glans, ink0, 0.4))],
             shade: W(mixColor(base, ink0, 0.62)),
@@ -926,7 +925,7 @@ const BATH_ART = {
     paintTail(tone) {
         const set = (id, a, v) => { const n = document.getElementById(id); if (n) n.setAttribute(a, v); };
         tone.vol.forEach((c, i) => set(`bt-tail-vol-${i}`, 'stop-color', c));
-        tone.clit.forEach((c, i) => set(`bt-tail-cl-${i}`, 'stop-color', c));
+        set('bt-tail-clit', 'fill', tone.clit);
         tone.glans.forEach((c, i) => set(`bt-tail-gl-${i}`, 'stop-color', c));
         set('bt-tail-shade-0', 'stop-color', tone.shade);
         set('bt-tail-shade-1', 'stop-color', tone.shade);
@@ -953,7 +952,7 @@ const BATH_ART = {
     // Пересобирать её каждый кадр значит парсить строку шестьдесят раз в
     // секунду ради двух чисел — на телефоне это заметно.
     tail(model, sat) {
-        const K = this.look(), C = this.tailTone(model, sat, 0), VP = K.veinPower || 1;
+        const K = this.look(), C = this.tailTone(model, sat, 0), VP = K.veinPower || 1, CH = btPal().chrome;
         // Складки — по паре путей на каждую: своя прозрачность у каждой,
         // потому что кольцо разглаживает их по одной. Прозрачность пишется
         // в stroke-opacity самих путей, а не группе: у группы на живом слое
@@ -975,9 +974,6 @@ const BATH_ART = {
             <linearGradient id="bt-tail-vol" x1="0" y1="0" x2="1" y2="0">
                 ${[0, 0.2, 0.5, 0.86, 1].map((o, i) => stop(`bt-tail-vol-${i}`, o, C.vol[i])).join('')}
             </linearGradient>
-            <linearGradient id="bt-tail-clit-g" x1="0" y1="0" x2="1" y2="0">
-                ${[0, 0.2, 0.5, 0.86, 1].map((o, i) => stop(`bt-tail-cl-${i}`, o, C.clit[i])).join('')}
-            </linearGradient>
             <radialGradient id="bt-tail-glans-g" cx="38%" cy="35%" r="75%">
                 ${[0, 0.45, 1].map((o, i) => stop(`bt-tail-gl-${i}`, o, C.glans[i])).join('')}
             </radialGradient>
@@ -992,9 +988,19 @@ const BATH_ART = {
         <!-- Ореол легенды: мягкое пятно света ЗА хвостом. Градиент, а не
              фильтр: слой живой. -->
         <ellipse id="bt-tail-halo" rx="0" ry="0" fill="url(#bt-tail-halo-g)"/>` : ''}
+        ${K.piercing ? `<!-- Пирсинг: дальняя половина кольца — ЗА хвостом. -->
+        <path id="bt-tail-ring-back" d="" fill="none" stroke="${PALETTE.ink}" stroke-width="4.4" stroke-linecap="round"/>
+        <path id="bt-tail-ring-back-m" d="" fill="none" stroke="${CH[700]}" stroke-width="2.4" stroke-linecap="round"/>` : ''}
         <path id="bt-tail-body" d="" fill="${C.fill}" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
         ${segs}
+        <!-- Поясок (look().clitellum) — ЧАСТЬ КОЖИ: плавное вздутие в профиле
+             и тёплый тон, сходящий на нет к краям (три вложенные полосы
+             слабой плотности). Первая версия была отдельной заливкой с
+             чёткими краями поверх звеньев, вены уходили под неё — и кольцо
+             читалось пластиковой насадкой. Вены теперь идут поверх него,
+             по коже. -->
+        <path id="bt-tail-clit" d="" fill="${C.clit}" fill-opacity="0.4"/>
         <!-- Складки на стыках звеньев: мягкая тень и под ней тонкая линия. -->
         ${creases}
         <!-- Вены (look().veins): выпуклые — тень под веной и блик по её
@@ -1005,11 +1011,6 @@ const BATH_ART = {
               stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${Math.min(0.9, 0.75 * VP).toFixed(2)}"/>
         <path id="bt-tail-vein-hi" d="" fill="none" stroke="${C.shine}" stroke-width="${(0.9 * VP).toFixed(2)}"
               stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.45"/>
-        <!-- Поясок (look().clitellum): гладкое кольцо своего тона поверх
-             звеньев, которые он накрывает, И поверх вен: вены угадываются под
-             гладким кольцом (оно чуть прозрачное), и поясок читается
-             отдельной вещью, а вены не обрываются о него. -->
-        <path id="bt-tail-clit" d="" fill="url(#bt-tail-clit-g)" fill-opacity="0.8"/>
         ${K.legend ? `<!-- Свет порции сквозь кожу (легенда). -->
         <path id="bt-tail-glow" d="" fill="${C.glow}" fill-opacity="0.3"/>` : ''}
         <!-- Мелкие морщины дряблой кожи (look().wrinkles). -->
@@ -1032,6 +1033,16 @@ const BATH_ART = {
              перебивали бы его. -->
         <path id="bt-tail-edge" d="" fill="none" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
+        ${K.piercing ? `<!-- Пирсинг: проколы, ближняя половина кольца поверх головки и
+             бусина. Металл — хром ванной, а не тон кожи: он отражает свет. -->
+        <path id="bt-tail-holes" d="" fill="${C.shade}" fill-opacity="0.75"/>
+        <path id="bt-tail-ring" d="" fill="none" stroke="${PALETTE.ink}" stroke-width="4.4" stroke-linecap="round"/>
+        <path id="bt-tail-ring-m" d="" fill="none" stroke="${CH[500]}" stroke-width="2.4" stroke-linecap="round"/>
+        <path id="bt-tail-ring-hi" d="" fill="none" stroke="${CH[100]}" stroke-width="0.9" stroke-linecap="round"/>
+        <circle id="bt-tail-bead" r="0" fill="url(#bt-tail-bead-g)" stroke="${PALETTE.ink}" stroke-width="1.6"/>
+        <defs><radialGradient id="bt-tail-bead-g" cx="35%" cy="30%" r="75%">
+            <stop offset="0" stop-color="${CH[100]}"/><stop offset="0.5" stop-color="${CH[500]}"/><stop offset="1" stop-color="${CH[900]}"/>
+        </radialGradient></defs>` : ''}
         ${K.legend ? `<!-- Искорки у головки легенды — поверх контура, в воздухе. -->
         <path id="bt-tail-stars" d="" fill="${C.star}" stroke="${C.glow}" stroke-width="0.8" stroke-linejoin="round"/>` : ''}
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
@@ -1079,7 +1090,14 @@ const BATH_ART = {
         // складка), по ним пишутся пути (lust.js).
         for (let i = 1; i < E.length - 1; i++)
             creases.push(CL && i > CL[0] && i < CL[1] ? { d: '', k: 0 } : crease(E[i], 0.1 + 0.05 * (i % 2)));
-        const clit = CL ? slice(E[CL[0]], E[CL[1]]) : '';
+        // Поясок — три вложенные полосы: плотность копится к середине и
+        // сходит на нет к краям, без границы.
+        let clit = '';
+        if (CL) {
+            const c0 = E[CL[0]], c1 = E[CL[1]], mid = (c0 + c1) / 2, hw = (c1 - c0) / 2;
+            for (const k of [1.05, 0.8, 0.55])
+                clit += this.tailBand(curve, mid - hw * k, mid + hw * k, 0.01, 0.99);
+        }
         // Морщины: короткие дужки МЕЖДУ складками — по три-четыре на звено,
         // разной длины и со сдвигом, чтобы не складывались в штриховку. Как
         // и складки, под кольцом разглаживаются (короче).
@@ -1156,7 +1174,8 @@ const BATH_ART = {
             }
         }
         const legend = this.look().legend ? this.tailLegend(curve, performance.now()) : null;
-        return { segs, glans, clit, creases, wrinkles, vein, veinHi, veinSh, legend, lights: this.tailLights(curve, E, G),
+        const piercing = this.look().piercing ? this.tailPiercing(curve) : null;
+        return { segs, glans, clit, creases, wrinkles, vein, veinHi, veinSh, legend, piercing, lights: this.tailLights(curve, E, G),
                  neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 } };
     },
 
@@ -1241,6 +1260,64 @@ const BATH_ART = {
     //           едет вместе с ней, ярче на рывке;
     //   stars — четыре четырёхлучевые искорки вокруг головки, вспыхивают по
     //           очереди.
+    // ---------- ПИРСИНГ (ступень 10) ----------
+    // Кольцо проходит сквозь головку вверху сбоку: прокол входит у края
+    // купола и выходит чуть ниже по нему. Кольцо — эллипс (видим его под
+    // углом), половина от прокола к проколу снаружи — спереди, другая —
+    // за головкой. Всё от краёв контура: кольцо едет с изгибом хвоста.
+    tailPiercing(curve) {
+        const L = curve.left, R = curve.right, M = L.length - 1, G = this.look().glansAt;
+        const idx = (t) => Math.max(0, Math.min(M, Math.round(t * M)));
+        const across = (i, a) => ({ x: L[i].x + (R[i].x - L[i].x) * a, y: L[i].y + (R[i].y - L[i].y) * a });
+        const f = (v) => v.toFixed(1), P = (q) => `${f(q.x)} ${f(q.y)}`;
+        const side = this.TAIL.side || 1;
+        // Проколы: у правого края купола, ближе к вершине — и пониже.
+        const iA = idx(G + (1 - G) * 0.8), iB = idx(G + (1 - G) * 0.6);
+        const A = across(iA, 0.78), B = across(iB, 0.93);
+        const w = Math.hypot(R[iB].x - L[iB].x, R[iB].y - L[iB].y);
+        // Центр кольца — снаружи, в сторону от головки: кольцо висит.
+        const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+        const nx = (R[iB].x - L[iB].x) / w, ny = (R[iB].y - L[iB].y) / w;
+        const r = w * 0.2, c = { x: mx + nx * r * 0.7, y: my + ny * r * 0.7 + r * 0.25 };
+        // Эллипс через оба прокола: радиус по ним, сплющен поперёк оси.
+        const ang = Math.atan2(B.y - A.y, B.x - A.x);
+        const a0 = Math.atan2(A.y - c.y, A.x - c.x), a1 = Math.atan2(B.y - c.y, B.x - c.x);
+        const pt = (t) => ({ x: c.x + Math.cos(t) * r * 1.05, y: c.y + Math.sin(t) * r * 0.9 });
+        const arc = (from, to) => {
+            let d = to - from; while (d <= 0) d += Math.PI * 2;
+            let out = '';
+            for (let k = 0; k <= 16; k++) out += `${k ? 'L' : 'M'}${P(pt(from + d * k / 16))}`;
+            return out;
+        };
+        // Передняя половина — снаружи головки (от прокола A через дальнюю от
+        // головки сторону к B), задняя — остальное.
+        const front = arc(a0, a1), back = arc(a1, a0);
+        // Бусина — внизу наружной дуги.
+        let d = a1 - a0; while (d <= 0) d += Math.PI * 2;
+        const bead = pt(a0 + d * 0.5);
+        const hole = (q) => `M${f(q.x - 1.6)} ${f(q.y)}a1.6 1.1 0 1 0 3.2 0a1.6 1.1 0 1 0 -3.2 0Z`;
+        return { front, back, holes: hole(A) + hole(B), bead: { x: bead.x, y: bead.y, r: r * 0.32 }, ang };
+    },
+
+    // Поперечная полоса на коже от t0 до t1 на долях ширины a0..a1: толще в
+    // середине ширины (кольцо на круглом стволе видно дугой). Общая для
+    // пояска и блеска легенды.
+    tailBand(curve, t0, t1, a0, a1) {
+        const L = curve.left, R = curve.right, M = L.length - 1;
+        const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
+        const idx = (t) => Math.max(0, Math.min(M, Math.round(t * M)));
+        const across = (i, a) => ({ x: L[i].x + (R[i].x - L[i].x) * a, y: L[i].y + (R[i].y - L[i].y) * a });
+        const i0 = idx(t0), i1 = idx(t1);
+        if (i1 <= i0) return '';
+        const up = [], dn = [], n = 10;
+        for (let j = 0; j <= n; j++) {
+            const a = a0 + (a1 - a0) * j / n, bulge = Math.sin(Math.PI * j / n);
+            const k0 = Math.round(i0 + (i1 - i0) * (0.5 - 0.5 * bulge)), k1 = Math.round(i1 - (i1 - i0) * (0.5 - 0.5 * bulge));
+            up.push(across(k0, a)); dn.push(across(k1, a));
+        }
+        return `M${up.map(P).join('L')}L${dn.reverse().map(P).join('L')}Z`;
+    },
+
     tailLegend(curve, now) {
         const L = curve.left, R = curve.right, M = L.length - 1, G = this.look().glansAt;
         const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;

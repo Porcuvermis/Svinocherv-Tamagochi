@@ -1709,6 +1709,16 @@ const LustMinigame = {
             const e = this.el(id);
             if (e) e.setAttribute('d', P.lights[k]);
         }
+        if (P.piercing) {
+            const Pc = P.piercing;
+            for (const [id, k] of [['bt-tail-ring-back', 'back'], ['bt-tail-ring-back-m', 'back'], ['bt-tail-ring', 'front'],
+                                   ['bt-tail-ring-m', 'front'], ['bt-tail-ring-hi', 'front'], ['bt-tail-holes', 'holes']]) {
+                const e = this.el(id);
+                if (e) e.setAttribute('d', Pc[k]);
+            }
+            const b = this.el('bt-tail-bead');
+            if (b) { b.setAttribute('cx', f1(Pc.bead.x)); b.setAttribute('cy', f1(Pc.bead.y)); b.setAttribute('r', f1(Pc.bead.r)); }
+        }
         if (P.legend) {
             const Lg = P.legend;
             for (const [id, k] of [['bt-tail-sweep', 'sweep'], ['bt-tail-glow', 'glow'], ['bt-tail-stars', 'stars']]) {
