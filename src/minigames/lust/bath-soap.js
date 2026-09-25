@@ -40,7 +40,7 @@ const BATH_SOAP = {
         const kind = this.TIERS[this.tier(level)];
         if (kind === 'stub') return { x: 546, y: 322, w: 60, h: 44 };
         if (kind === 'bar') return { x: 536, y: 314, w: 92, h: 64 };
-        if (kind === 'toilet') return { x: 534, y: 310, w: 80, h: 52 };
+        if (kind === 'toilet') return { x: 532, y: 313, w: 84, h: 38 };
         return BATH_BAKED.box('soap');
     },
 
@@ -79,8 +79,9 @@ const BATH_SOAP = {
     //     нижней;
     //   * полуглянец (мягкий отлив и точечный блик) и пара пузырьков пены у
     //     борта — им только что мылись.
-    // Брусок развёрнут углом, как хозяйственный (урок ступени 1: плашка в лоб
-    // — не вещь), но грани не встречаются ребром — брусок «подушкой».
+    // Брусок — плоская овальная подушка лицом к нам (не углом: так он уходил
+    // в глубину кирпичом). Плашкой в лоб он не выглядит, потому что объём
+    // держит купол светотенью и поясок толщины снизу.
     toilet(where) {
         const P = btPal(), K = P.soapPink, Dc = P.soapDish, F = P.foam, ink = PALETTE.ink;
         const id = 'bsp' + (this.uid++);
@@ -88,16 +89,24 @@ const BATH_SOAP = {
         const f = (v) => v.toFixed(1);
         const pt = (p) => `${f(p[0])} ${f(p[1])}`;
 
-        // Брусок: ближнее ребро выше всего, как у хозяйственного, дно видно
-        // снизу (в руке; на полке его закрывает борт мыльницы).
-        const Nt = [-8, -28], Nb = [-8, 3];
-        const Rt = [36, -21.5], Rb = [36, 7.5];
-        const Lt = [-34, -18.5], Lb = [-34, 8.5];
-        const Bb = [Lb[0] + Rb[0] - Nb[0], Lb[1] + Rb[1] - Nb[1] + 2];
-        const sil = this.roundPoly([Lt, Nt, Rt, Rb, Bb, Lb], 12);
-        const endF = `M${pt(Lt)}L${pt(Nt)}L${pt(Nb)}L${pt(Lb)}Z`;
-        const botF = `M${pt(Lb)}L${pt(Nb)}L${pt(Rb)}L${pt(Bb)}Z`;
-        const slope = (Rt[1] - Nt[1]) / (Rt[0] - Nt[0]);
+        // Брусок — невысокая овальная «подушка» лицом к нам. Развёрнутый
+        // углом, как хозяйственный, он уходил в глубину кирпичом: туалетное
+        // мыло плоское и круглое, и объём ему даёт купол светотенью, а не
+        // торец. Силуэт — суперэллипс (между овалом и прямоугольником с
+        // круглыми углами); купол — такой же, чуть меньше и выше, а полоса
+        // между ними внизу — боковой поясок толщины.
+        const oval = (cx, cy, rx, ry, n) => {
+            let d = '';
+            for (let i = 0; i < 48; i++) {
+                const a = 2 * Math.PI * i / 48, c = Math.cos(a), sn = Math.sin(a);
+                const x = cx + rx * Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
+                const y = cy + ry * Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
+                d += (i ? 'L' : 'M') + pt([x, y]);
+            }
+            return d + 'Z';
+        };
+        const sil = oval(0, -12, 40, 17, 3.2);
+        const dome = oval(0, -14.5, 38.5, 14.5, 3.2);
 
         // Эмблема: овальная рамка и цветок из пяти лепестков.
         let petals = '';
@@ -106,7 +115,7 @@ const BATH_SOAP = {
             petals += `M${f(x - 2.2)} ${f(y)}a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0 -4.4 0`;
         }
         const emblem = `M-12 0a12 7.5 0 1 0 24 0a12 7.5 0 1 0 -24 0` + petals + 'M-1.2 0a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0 -2.4 0';
-        const eT = `translate(15 -12) skewY(${(Math.atan(slope) * 180 / Math.PI).toFixed(1)}) scale(0.85 0.95)`;
+        const eT = 'translate(3 -14)';
 
         // Мыльница.
         let dish = '';
@@ -147,25 +156,18 @@ const BATH_SOAP = {
         return `
         <g class="bt-soap bt-soap-toilet" transform="translate(${A.x} ${A.y + 2})">
             <defs>
-                <linearGradient id="${id}-long" gradientUnits="userSpaceOnUse" x1="${Nt[0]}" y1="0" x2="${Rt[0]}" y2="0">
-                    <stop offset="0" stop-color="${K[3]}"/>
-                    <stop offset="0.45" stop-color="${K[2]}"/>
+                <!-- Купол: свет сверху-слева, к краям подушка уходит в тень. -->
+                <radialGradient id="${id}-dome" gradientUnits="userSpaceOnUse" cx="-12" cy="-22" r="48"
+                                gradientTransform="translate(-12 -22) scale(1 0.6) translate(12 22)">
+                    <stop offset="0" stop-color="${K[4]}"/>
+                    <stop offset="0.45" stop-color="${K[3]}"/>
+                    <stop offset="0.8" stop-color="${K[2]}"/>
                     <stop offset="1" stop-color="${K[1]}"/>
-                </linearGradient>
-                <linearGradient id="${id}-end" gradientUnits="userSpaceOnUse" x1="${Lt[0]}" y1="0" x2="${Nt[0]}" y2="0">
-                    <stop offset="0" stop-color="${K[3]}"/>
-                    <stop offset="1" stop-color="${K[4]}"/>
-                </linearGradient>
-                <!-- Подушка: грани перетекают друг в друга без ребра. -->
-                <linearGradient id="${id}-soft" gradientUnits="userSpaceOnUse" x1="${Nt[0] - 9}" y1="0" x2="${Nt[0] + 9}" y2="0">
-                    <stop offset="0" stop-color="${K[4]}" stop-opacity="0"/>
-                    <stop offset="0.45" stop-color="${K[4]}" stop-opacity="0.8"/>
-                    <stop offset="1" stop-color="${K[4]}" stop-opacity="0"/>
-                </linearGradient>
-                <!-- Полуглянец: мягкий отлив по верху. -->
-                <radialGradient id="${id}-sheen" gradientUnits="userSpaceOnUse" cx="4" cy="-22" r="22"
-                                gradientTransform="translate(4 -22) scale(1.4 0.45) translate(-4 22)">
-                    <stop offset="0" stop-color="${F.hi}" stop-opacity="0.7"/>
+                </radialGradient>
+                <!-- Полуглянец: мягкий отлив по верху купола. -->
+                <radialGradient id="${id}-sheen" gradientUnits="userSpaceOnUse" cx="-12" cy="-24" r="20"
+                                gradientTransform="translate(-12 -24) scale(1.3 0.35) translate(12 24)">
+                    <stop offset="0" stop-color="${F.hi}" stop-opacity="0.8"/>
                     <stop offset="1" stop-color="${F.hi}" stop-opacity="0"/>
                 </radialGradient>
                 <linearGradient id="${id}-dish" gradientUnits="userSpaceOnUse" x1="0" y1="-6" x2="0" y2="31">
@@ -182,20 +184,21 @@ const BATH_SOAP = {
 
             </defs>
             <path d="${sil}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            <path d="${sil}" fill="url(#${id}-long)"/>
+            <!-- Поясок толщины: темнее купола, снизу отсвет от мыльницы. -->
+            <path d="${sil}" fill="${K[1]}"/>
             <g clip-path="url(#${id}-clip)">
-                <path d="${endF}" fill="url(#${id}-end)"/>
-                <path d="${botF}" fill="${mixColor(K[1], K[2], 0.4)}"/>
-                <path d="M${pt(Lb)}L${pt(Nb)}L${pt(Rb)}" fill="none" stroke="${K[2]}" stroke-width="3" stroke-opacity="0.8" stroke-linejoin="round"/>
-                <rect x="${Nt[0] - 9}" y="-40" width="18" height="60" fill="url(#${id}-soft)"/>
+                <path d="M-40 1Q0 9 40 1" fill="none" stroke="${K[2]}" stroke-width="2.2" stroke-opacity="0.8"/>
+                <path d="${dome}" fill="url(#${id}-dome)"/>
+                <!-- Кромка купола: мягкий переход в поясок, а не ребро. -->
+                <path d="${dome}" fill="none" stroke="${K[2]}" stroke-width="1.4" stroke-opacity="0.7"/>
                 <!-- Эмблема выпуклая: свет сверху-слева, тень снизу-справа. -->
                 <g transform="${eT}">
-                    <path d="${emblem}" fill="none" stroke="${K[0]}" stroke-width="1.3" stroke-opacity="0.55" transform="translate(0.6 0.7)"/>
+                    <path d="${emblem}" fill="none" stroke="${K[1]}" stroke-width="1.3" stroke-opacity="0.6" transform="translate(0.6 0.7)"/>
                     <path d="${emblem}" fill="none" stroke="${K[4]}" stroke-width="1.3" transform="translate(-0.5 -0.6)"/>
-                    <path d="${emblem}" fill="none" stroke="${K[2]}" stroke-width="1"/>
+                    <path d="${emblem}" fill="none" stroke="${K[3]}" stroke-width="1"/>
                 </g>
-                <path d="${sil}" fill="url(#${id}-sheen)"/>
-                <ellipse cx="-1" cy="-23" rx="4" ry="1.3" fill="${F.hi}" fill-opacity="0.9" transform="rotate(${(Math.atan(slope) * 180 / Math.PI).toFixed(1)} -1 -23)"/>
+                <path d="${dome}" fill="url(#${id}-sheen)"/>
+                <ellipse cx="-17" cy="-24.5" rx="4.5" ry="1.4" fill="${F.hi}" fill-opacity="0.9" transform="rotate(-6 -17 -24.5)"/>
             </g>
             <path d="${sil}" fill="none" stroke="${mixColor(ink, K[0], 0.5)}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
             ${where === 'shelf' ? `
