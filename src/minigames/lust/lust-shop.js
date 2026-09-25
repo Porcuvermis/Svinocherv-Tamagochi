@@ -206,12 +206,14 @@ const LustShop = {
     // Запечённый предмет нарисован на своём месте на полке — в иконке он
     // должен сидеть в НУЛЕ группы, поэтому сдвигается на своё же гнездо и
     // ужимается под клетку 68×68.
+    // Мыло на полке — СЛЕДУЮЩЕЙ ступени: покупают вид, который получат.
     bakedIcon(kind) {
         const a = BATH_ART.slots()[kind];
-        const box = BATH_ART.box(kind);
+        const next = kind === 'soap' ? BATH_SOAP.level() + 1 : 0;
+        const box = kind === 'soap' ? BATH_SOAP.box(next) : BATH_ART.box(kind);
         const k = 56 / Math.max(box.w, box.h);
         return `<g transform="scale(${k.toFixed(3)}) translate(${-a.x} ${-a.y})">`
-             + BATH_BAKED.draw(kind) + `</g>`;
+             + (kind === 'soap' ? BATH_SOAP.draw(next) : BATH_BAKED.draw(kind)) + `</g>`;
     },
 
     // Хвост: кончик, из которого бьёт капля, её дуга и раскрытая пасть. Это
@@ -254,6 +256,7 @@ const LustShop = {
         const res = Backend.buyUpgrade(key, 'lust');
         if (res && res.ok) {
             if (typeof Haptics !== 'undefined') Haptics.notify('success');
+            if (key === 'soap' && typeof BATH_SOAP !== 'undefined') BATH_SOAP.refresh();
             this.render();
             return;
         }

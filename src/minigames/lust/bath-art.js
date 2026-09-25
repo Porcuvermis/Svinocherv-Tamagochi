@@ -158,7 +158,7 @@ const BATH_ART = {
         </g>
 
         ${BATH_SHELF.backLayer()}
-        <g id="bt-soap-home">${B.draw('soap')}
+        <g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw()}</g>
             ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>
         <g id="bt-cloth-home">${B.draw('cloth')}
             ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>
@@ -343,7 +343,7 @@ const BATH_ART = {
         // Запечённый предмет нарисован на своём месте на полке; в руке он
         // должен сидеть в НУЛЕ группы, поэтому сдвигается на своё же гнездо.
         return `<g transform="scale(${k.toFixed(4)}) translate(${-a.x} ${-a.y})">`
-             + B.draw(kind) + `</g>`;
+             + (kind === 'soap' ? BATH_SOAP.draw() : B.draw(kind)) + `</g>`;
     },
 
     // ---------- МЫЛЬНАЯ МУТЬ И ПЕНА ----------
