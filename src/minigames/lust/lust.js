@@ -1567,34 +1567,46 @@ const LustMinigame = {
     // Положение порции считается ОТ ВРЕМЕНИ до ближайшего толчка, а не
     // накапливается: так она приходит к шейке ровно к выстрелу при любом
     // интервале между толчками (он зависит от ступени) и не уплывает от
-    // рваных кадров. Путь занимает до 0.6 с, но не больше 80% интервала —
-    // на верхних ступенях толчки чаще, и порции не должны наезжать друг на
-    // друга.
-    //   t    — от корня (0.05) до шейки, с ускорением к концу (u²), у шейки
-    //          — за мгновение до выстрела;
-    //   a    — вздутие нарастает в первой трети пути и держится;
-    //   after — опадание ствола 0.25 с после выстрела.
+    // рваных кадров. Путь занимает до 0.7 с, но не больше 85% интервала —
+    // на верхних ступенях толчки чаще, и порции не должны наезжать.
+    //
+    // РЫВКАМИ, а не ровно: путь — плавная «лестница» u − sin(2πnu)/(2πn),
+    // у которой скорость то растёт, то почти замирает, но никогда не идёт
+    // назад. На каждом рывке порция распирает стенки (a растёт до 1), в
+    // паузе упруго отпускает (до 0.55). Весь ствол вздрагивает в такт.
+    //   t    — от корня к шейке; к шейке — за мгновение до выстрела;
+    //   a    — сила распирания; нарастает с началом пути, мягко;
+    //   after — опадание ствола 0.3 с после выстрела; сама порция при этом
+    //          не пропадает разом, а за 0.12 с гаснет у шейки.
+    PULSE_SURGES: 3,
     stepPulse(now) {
-        const G = BATH_ART.look().glansAt;
-        let t = 0, a = 0, after = 0;
+        const G = BATH_ART.look().glansAt, n = this.PULSE_SURGES, TAU = Math.PI * 2;
+        let t = 0, a = 0, after = 0, throb = 0;
         this.pulseU = 0;
+        const t0 = 0.06, t1 = G - 0.035;
         if (this.nextShotAt) {
-            const travel = Math.min(600, this.shotMs() * 0.8);
+            const travel = Math.min(700, this.shotMs() * 0.85);
             const u = 1 - (this.nextShotAt - now) / travel;
             if (u > 0 && u <= 1.02) {
                 // Доходит к шейке на 92% пути и ждёт там выстрела — «за
                 // мгновение до», а не впритык к нему.
                 const uu = Math.min(1, u / 0.92);
                 this.pulseU = uu;
-                t = 0.05 + (G - 0.03 - 0.05) * uu * uu;
-                a = Math.min(1, uu * 3);
+                const stair = uu - Math.sin(TAU * n * uu) / (TAU * n);
+                t = t0 + (t1 - t0) * stair;
+                const surge = (1 - Math.cos(TAU * n * uu)) / 2;      // 0 в паузе, 1 на рывке
+                const ramp = Math.min(1, uu / 0.2), rs = ramp * ramp * (3 - 2 * ramp);
+                a = rs * (0.55 + 0.45 * surge);
+                throb = rs * surge;
             }
         }
         if (this.shotAt) {
-            const k = (now - this.shotAt) / 250;
+            const e = now - this.shotAt;
+            if (e >= 0 && e < 120 && !a) { const k = 1 - e / 120; t = t1; a = 0.8 * k * k; }
+            const k = e / 300;
             if (k >= 0 && k < 1) after = Math.sin(Math.PI * k);
         }
-        BATH_ART.setPulse(t, a, after);
+        BATH_ART.setPulse(t, a, after, throb);
     },
 
     // ---------- КОЛЬЦО ПОД ПАЛЬЦЕМ (BATH_ART.RING) ----------
@@ -1640,7 +1652,7 @@ const LustMinigame = {
         const R = BATH_ART.ring;
         const Pu = BATH_ART.pulse;
         const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}|${R.t.toFixed(3)}|${R.s.toFixed(3)}|${R.v.toFixed(2)}`
-                  + `|${Pu.t.toFixed(3)}|${Pu.a.toFixed(3)}|${Pu.after.toFixed(3)}`;
+                  + `|${Pu.t.toFixed(3)}|${Pu.a.toFixed(3)}|${Pu.after.toFixed(3)}|${Pu.throb.toFixed(3)}`;
         if (key === this._tailKey) return;
 
         // ---------- И НЕ ЧАЩЕ ТРИДЦАТИ РАЗ В СЕКУНДУ ----------

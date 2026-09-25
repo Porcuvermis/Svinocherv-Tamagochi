@@ -650,30 +650,40 @@ const BATH_ART = {
     // grow — прибавка толщины от выдавленной плоти.
     // ---------- ПОРЦИЯ ПЕРЕД ВЫСТРЕЛОМ ----------
     // В финале кольца нет: палец там наклоняет хвост, а не мнёт его. Вместо
-    // него перед каждым толчком изнутри ствола от корня к головке едет
-    // ПОРЦИЯ — вздутие, распирающее стенки, с ускорением к концу, как
-    // проталкиваемая жидкость. Подходит к шейке за мгновение до выстрела и
-    // с выстрелом уходит; ствол после этого на миг опадает (after) и
-    // возвращается. Головка не расширяется — тот же сторож, что у кольца.
-    // Меняется только толщина: ось, длина и полёт капли те же.
-    //   width — полуширина вздутия вдоль хвоста; swell — прибавка толщины;
-    //   trail — второй, слабый горб позади (порция не монолит);
-    //   after — насколько ствол опадает сразу после выстрела.
-    PULSE: { width: 0.08, swell: 0.26, trail: 0.35, after: 0.05 },
-    pulse: { t: 0, a: 0, after: 0 },
-    setPulse(t, a, after) { this.pulse = { t, a, after: after || 0 }; },
+    // него перед каждым толчком изнутри ствола к головке идёт ПОРЦИЯ.
+    //
+    // Вторая версия. Первая — один большой горб, ровно едущий к головке, —
+    // читалась топорно: как шар в шланге. Живое проталкивание — это
+    // ПУЛЬСАЦИЯ: порция идёт рывками (lust.js, stepPulse), на каждом рывке
+    // распирает стенки изнутри и упруго отпускает в паузе; за ней стенка
+    // чуть проседает и возвращается (след); весь ствол едва вздрагивает в
+    // такт. Амплитуда вдвое меньше, форма шире и мягче.
+    // Головка не расширяется — тот же сторож, что у кольца. Меняется только
+    // толщина: ось, длина и полёт капли те же.
+    //   width — полуширина вздутия вдоль хвоста; swell — прибавка толщины
+    //           на пике рывка; wake — провал стенки за порцией (доля swell);
+    //   throb — вздрагивание всего ствола на рывке; after — насколько ствол
+    //           опадает сразу после выстрела.
+    PULSE: { width: 0.1, swell: 0.12, wake: 0.3, throb: 0.018, after: 0.03 },
+    pulse: { t: 0, a: 0, throb: 0, after: 0 },
+    setPulse(t, a, after, throb) { this.pulse = { t, a, after: after || 0, throb: throb || 0 }; },
     guardAt(t, span) {
         const G = this.look().glansAt, u = Math.max(0, Math.min(1, (G - t) / span));
         return u * u * (3 - 2 * u);
     },
     pulseAt(t) {
         const P = this.pulse, R = this.PULSE;
-        if (!P.a && !P.after) return 0;
+        if (!P.a && !P.after && !P.throb) return 0;
         const g = (x, sg) => Math.exp(-Math.pow(x / sg, 2));
-        const guard = this.guardAt(t, 0.06);
-        const main = P.a * R.swell * g(t - P.t, R.width);
-        const trail = P.a * R.swell * R.trail * g(t - (P.t - 2.6 * R.width), R.width * 1.3);
-        return (main + trail) * guard - P.after * R.after * guard;
+        const guard = this.guardAt(t, 0.07);
+        // Вздутие чуть вытянуто назад: спереди стенку распирает круче, сзади
+        // она сходит полого.
+        const d = t - P.t, sg = d > 0 ? R.width * 0.85 : R.width * 1.25;
+        const main = P.a * R.swell * g(d, sg);
+        // Упругий след: стенка за порцией чуть проседает и тут же выпрямляется.
+        const wake = -P.a * R.swell * R.wake * g(t - (P.t - 2.2 * R.width), R.width);
+        const throb = P.throb * R.throb * (t < P.t ? 1 : 0.4);
+        return (main + wake + throb) * guard - P.after * R.after * guard;
     },
 
     ringAt(t) {
@@ -975,7 +985,7 @@ const BATH_ART = {
         let stretch = '';
         if (Pu.a > 0.02) {
             const w = this.PULSE.width * 1.5;
-            stretch = soft(Math.max(0, Pu.t - w), Math.min(G - 0.01, Pu.t + w), 0.32, 0.12 * Pu.a, 0.6, 5).join('');
+            stretch = soft(Math.max(0, Pu.t - w), Math.min(G - 0.01, Pu.t + w), 0.32, 0.1 * Pu.a, 0.6, 5).join('');
         }
         return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark, stretch };
     },
