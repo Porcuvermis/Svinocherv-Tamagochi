@@ -606,7 +606,8 @@ const BATH_ART = {
     //              плотность, 1 — как у ступени 6); veinBranch — у вены
     //              есть боковая ветка;
     //   clitellum — ПОЯСОК: [с какого звена, до какого] — гладкое вздутое
-    //              кольцо без складок и морщин, своего, более тёплого тона.
+    //              кольцо без складок и морщин, своего, более тёплого тона;
+    //              clitSwell — насколько он вздут (1 — как у ступени 8).
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
@@ -671,7 +672,14 @@ const BATH_ART = {
         8: { edges: [0, 0.1, 0.2, 0.3, 0.39, 0.475, 0.555, 0.625], bulge: [0.12, 0.1, 0.1, 0.12, 0.1, 0.12, 0.1],
              glansAt: 0.67, neck: 0.68, corona: 0.81,
              width: 1.15, taper: 0.2, irreg: 0.75, tone: { chroma: 0.13, blood: 0.09 }, gloss: 0.4, wet: 1.28,
-             firm: 1.22, pulse: 1.22, veins: 2, veinPower: 1.35, veinBranch: true, clitellum: [1, 3] }
+             firm: 1.22, pulse: 1.22, veins: 2, veinPower: 1.35, veinBranch: true, clitellum: [1, 3] },
+        // 9 — зрелый на пике: те же семь звеньев и поясок (выразительнее),
+        // толще, сочнее и ровнее, головка крупнее с заметным венчиком, обе
+        // вены проступают сильнее, плоть упругая.
+        9: { edges: [0, 0.1, 0.2, 0.3, 0.385, 0.47, 0.548, 0.615], bulge: [0.11, 0.09, 0.09, 0.11, 0.1, 0.11, 0.1],
+             glansAt: 0.66, neck: 0.69, corona: 0.85,
+             width: 1.2, taper: 0.18, irreg: 0.68, tone: { chroma: 0.16, blood: 0.11 }, gloss: 0.44, wet: 1.36,
+             firm: 1.3, pulse: 1.3, veins: 2, veinPower: 1.5, veinBranch: true, clitellum: [1, 3], clitSwell: 1.4 }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -802,7 +810,7 @@ const BATH_ART = {
             const CL = K.clitellum;
             if (CL && tt > E[CL[0]] && tt < E[CL[1]]) {
                 const cu = (tt - E[CL[0]]) / (E[CL[1]] - E[CL[0]]);
-                const band = B * taper * (1 + 0.09 * (1 - FL) * Math.pow(Math.sin(Math.PI * cu), 0.6));
+                const band = B * taper * (1 + 0.09 * (K.clitSwell || 1) * (1 - FL) * Math.pow(Math.sin(Math.PI * cu), 0.6));
                 // К краям пояска гладкость сходит на нет — стыкуется с
                 // перехватами соседних звеньев без ступеньки.
                 const e = Math.min(1, Math.min(cu, 1 - cu) / 0.12), es = e * e * (3 - 2 * e);
