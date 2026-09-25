@@ -593,10 +593,20 @@ const BATH_ART = {
     //              глубже, а отпущенный он дрожит дольше (lust.js,
     //              stepRing); у налитого — наоборот;
     //   pulse    — сила порции перед выстрелом: у слабого хвоста она
-    //              скромнее, у мощного ощутимее.
+    //              скромнее, у мощного ощутимее;
+    //   wrinkles — мелкие морщины между складками (0 — гладкая кожа):
+    //              у самых слабых ступеней кожа дряблая;
+    //   glansTint — насколько головка отличается цветом от ствола (1 —
+    //              полностью, по GLANS_TONE): у зачаточной головки меньше.
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
+        // 2 — почти червь: головки нет, только округлый кончик чуть розовее
+        // ствола; тонкий, бледный, кривой, кожа в мелких морщинах.
+        2: { edges: [0, 0.21, 0.41, 0.59, 0.74], bulge: [0.18, 0.11, 0.2, 0.13],
+             glansAt: 0.79, neck: 0.53, corona: 0.53,
+             width: 0.86, taper: 0.44, irreg: 1.5, tone: { light: 0.03, chroma: -0.32 }, gloss: 0.17, wet: 0.45,
+             firm: 0.74, pulse: 0.74, wrinkles: 0.8, glansTint: 0.45 },
         // 3 — «проклюнулся»: головка только намечается (едва шире шейки,
         // короче), ствол тоньше, бледнее и кривее, звенья неровные, блеск
         // слабый, плоть мягкая.
@@ -799,7 +809,8 @@ const BATH_ART = {
         const scale = (o, k) => o ? { light: (o.light || 0) * k, chroma: (o.chroma || 0) * k, blood: (o.blood || 0) * k } : null;
         const skin = T.skin(model, 'belly');
         const base = T.shift(skin, T.sum(K.tone, scale(this.CHARGE_TONE, c)));
-        const glans = T.shift(base, T.sum(this.GLANS_TONE, scale(this.CHARGE_GLANS, c)));
+        const gt = K.glansTint == null ? 1 : K.glansTint;
+        const glans = T.shift(base, T.sum(scale(this.GLANS_TONE, gt), scale(this.CHARGE_GLANS, c)));
         const seg = model && model.belly;
         const ink = W((seg && seg.stroke) || ink0);
         const hi = mixColor(base, lift, 0.42), lo = mixColor(base, ink0, 0.27);
@@ -823,6 +834,7 @@ const BATH_ART = {
         set('bt-tail-shade-0', 'stop-color', tone.shade);
         set('bt-tail-shade-1', 'stop-color', tone.shade);
         set('bt-tail-body', 'fill', tone.fill);
+        set('bt-tail-wrinkle', 'stroke', tone.inner);
         for (const id of ['bt-tail-body', 'bt-tail-edge']) set(id, 'stroke', tone.ink);
         for (let i = 0; i < this.look().edges.length - 2; i++) {
             set(`bt-tail-cr-${i}`, 'stroke', tone.shade);
@@ -871,6 +883,9 @@ const BATH_ART = {
         ${segs}
         <!-- Складки на стыках звеньев: мягкая тень и под ней тонкая линия. -->
         ${creases}
+        <!-- Мелкие морщины дряблой кожи (look().wrinkles). -->
+        <path id="bt-tail-wrinkle" d="" fill="none" stroke="${C.inner}" stroke-width="0.8"
+              stroke-linecap="round" stroke-opacity="${(0.4 * (K.wrinkles || 0)).toFixed(2)}"/>
         <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
         <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)"/>
         <!-- Блики — по форме, см. tailLights. Ствол полуматовый: широкий
@@ -927,12 +942,39 @@ const BATH_ART = {
         };
         const creases = [];
         for (let i = 1; i < E.length - 1; i++) creases.push(crease(E[i], 0.1 + 0.05 * (i % 2)));
+        // Морщины: короткие дужки МЕЖДУ складками — по три-четыре на звено,
+        // разной длины и со сдвигом, чтобы не складывались в штриховку. Как
+        // и складки, под кольцом разглаживаются (короче).
+        let wrinkles = '';
+        const WR = this.look().wrinkles || 0;
+        if (WR > 0) {
+            const q = btRng(19);
+            for (let i = 0; i < E.length - 1; i++) {
+                const n = 3 + (i % 2);
+                for (let j = 1; j <= n; j++) {
+                    const t = E[i] + (E[i + 1] - E[i]) * (j / (n + 1)) + (q() - 0.5) * 0.012;
+                    const a = L[idx(t)], b = R[idx(t)];
+                    // Под кольцом кожа натянута: морщина короче, а придавленная
+                    // сильно — пропадает. Сжимать её до нуля нельзя: остаются
+                    // точки, отдельные метки на коже.
+                    const f = Math.max(0, Math.min(1, this.ringAt(t).f));
+                    if (f > 0.45) continue;
+                    const k = Math.max(0.55, 1 - f) * WR;
+                    const c0 = 0.2 + q() * 0.3, len = (0.18 + q() * 0.22) * k;
+                    const at = (u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+                    const s0 = at(c0), s1 = at(Math.min(0.95, c0 + len)), m = at(c0 + len / 2);
+                    const p = this.tailAt(curve.spine, t), side = this.TAIL.side || 1;
+                    const w = Math.hypot(b.x - a.x, b.y - a.y) * 0.05;
+                    wrinkles += `M${P(s0)}Q${(m.x + side * Math.sin(p.a) * w).toFixed(1)} ${(m.y - Math.cos(p.a) * w).toFixed(1)} ${P(s1)}`;
+                }
+            }
+        }
         const pts = curve.spine, side = this.TAIL.side || 1;
         const at = (t) => this.tailAt(pts, t);
         const nk = at(G + 0.01);
         const deg = (p) => side * p.a * 180 / Math.PI;
         const B = this.tailHalf(G + (1 - G) * 0.3, grow);
-        return { segs, glans, creases, lights: this.tailLights(curve, E, G),
+        return { segs, glans, creases, wrinkles, lights: this.tailLights(curve, E, G),
                  neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 } };
     },
 

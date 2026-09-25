@@ -1689,6 +1689,8 @@ const LustMinigame = {
         P.segs.forEach((sd, i) => { const e = this.el(`bt-tail-seg-${i}`); if (e) e.setAttribute('d', sd); });
         const gl = this.el('bt-tail-glans');
         if (gl) gl.setAttribute('d', P.glans);
+        const wr = this.el('bt-tail-wrinkle');
+        if (wr) wr.setAttribute('d', P.wrinkles);
         P.creases.forEach((c, i) => {
             const a = this.el(`bt-tail-cr-${i}`), b = this.el(`bt-tail-crl-${i}`);
             if (a) { a.setAttribute('d', c.d); a.setAttribute('stroke-opacity', (0.3 * c.k).toFixed(3)); }
