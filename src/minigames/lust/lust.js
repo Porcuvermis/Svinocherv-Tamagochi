@@ -235,6 +235,10 @@ const LustMinigame = {
         this.drag = null;
         if (typeof LustShop !== 'undefined') LustShop.close();
         if (typeof LustDebug !== 'undefined') LustDebug.render();
+        // Сцена собрана один раз, а ступень мыла могла смениться, пока
+        // ванная была закрыта (сейв подтянулся позже сборки, покупка в
+        // другом месте) — предмет на полке берётся свежим на каждом входе.
+        if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.refresh();
         this.syncShopButton();
         this.resetCover();
         this.wipeLather();
