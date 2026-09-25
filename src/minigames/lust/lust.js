@@ -1655,7 +1655,9 @@ const LustMinigame = {
         const R = BATH_ART.ring;
         const Pu = BATH_ART.pulse;
         const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}|${R.t.toFixed(3)}|${R.s.toFixed(3)}|${R.v.toFixed(2)}`
-                  + `|${Pu.t.toFixed(3)}|${Pu.a.toFixed(3)}|${Pu.after.toFixed(3)}|${Pu.throb.toFixed(3)}`;
+                  + `|${Pu.t.toFixed(3)}|${Pu.a.toFixed(3)}|${Pu.after.toFixed(3)}|${Pu.throb.toFixed(3)}`
+                  // Легенда живёт и в покое: блеск, искорки, ореол — от времени.
+                  + (BATH_ART.look().legend ? `|${Math.floor(performance.now() / 33)}` : '');
         if (key === this._tailKey) return;
 
         // ---------- И НЕ ЧАЩЕ ТРИДЦАТИ РАЗ В СЕКУНДУ ----------
@@ -1706,6 +1708,18 @@ const LustMinigame = {
                                ['bt-tail-gwet', 'gwet'], ['bt-tail-grim', 'grim'], ['bt-tail-gspark', 'spark']]) {
             const e = this.el(id);
             if (e) e.setAttribute('d', P.lights[k]);
+        }
+        if (P.legend) {
+            const Lg = P.legend;
+            for (const [id, k] of [['bt-tail-sweep', 'sweep'], ['bt-tail-glow', 'glow'], ['bt-tail-stars', 'stars']]) {
+                const e = this.el(id);
+                if (e) e.setAttribute('d', Lg[k]);
+            }
+            const h = this.el('bt-tail-halo');
+            if (h) {
+                h.setAttribute('rx', f1(Lg.halo.rx)); h.setAttribute('ry', f1(Lg.halo.ry));
+                h.setAttribute('transform', `translate(${f1(Lg.halo.x)} ${f1(Lg.halo.y)}) rotate(${f1(Lg.halo.deg)})`);
+            }
         }
         for (const [id, q] of [['bt-tail-neck', P.neck]]) {
             const e = this.el(id);

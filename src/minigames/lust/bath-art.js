@@ -607,7 +607,9 @@ const BATH_ART = {
     //              есть боковая ветка;
     //   clitellum — ПОЯСОК: [с какого звена, до какого] — гладкое вздутое
     //              кольцо без складок и морщин, своего, более тёплого тона;
-    //              clitSwell — насколько он вздут (1 — как у ступени 8).
+    //              clitSwell — насколько он вздут (1 — как у ступени 8);
+    //   legend   — вершина лестницы: ореол, блеск-проход, искорки, светящаяся
+    //              порция (tailLegend).
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
@@ -679,7 +681,17 @@ const BATH_ART = {
         9: { edges: [0, 0.1, 0.2, 0.3, 0.385, 0.47, 0.548, 0.615], bulge: [0.11, 0.09, 0.09, 0.11, 0.1, 0.11, 0.1],
              glansAt: 0.66, neck: 0.69, corona: 0.85,
              width: 1.2, taper: 0.18, irreg: 0.68, tone: { chroma: 0.16, blood: 0.11 }, gloss: 0.44, wet: 1.36,
-             firm: 1.3, pulse: 1.3, veins: 2, veinPower: 1.5, veinBranch: true, clitellum: [1, 3], clitSwell: 1.4 }
+             firm: 1.3, pulse: 1.3, veins: 2, veinPower: 1.5, veinBranch: true, clitellum: [1, 3], clitSwell: 1.4 },
+        // 10 — «легенда»: предел налитости и глянца, поясок вздут сильнее
+        // всех, вены проступают сильнее всех. И то, что делает её легендой
+        // (legend): мягкий ореол, блеск-проход по коже от корня к головке,
+        // искорки у головки и — главное — порция в финале СВЕТИТСЯ изнутри,
+        // просвечивая сквозь кожу, пока идёт к головке.
+        10: { edges: [0, 0.1, 0.2, 0.3, 0.382, 0.465, 0.542, 0.61], bulge: [0.1, 0.09, 0.09, 0.1, 0.09, 0.1, 0.09],
+              glansAt: 0.655, neck: 0.7, corona: 0.88,
+              width: 1.26, taper: 0.16, irreg: 0.6, tone: { chroma: 0.2, blood: 0.13 }, gloss: 0.5, wet: 1.45,
+              firm: 1.4, pulse: 1.4, veins: 2, veinPower: 1.6, veinBranch: true, clitellum: [1, 3], clitSwell: 1.6,
+              legend: true }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -903,7 +915,10 @@ const BATH_ART = {
             shine: W(mixColor(base, lift, 0.75)),
             spark: W(mixColor(glans, lift, 0.92)),
             // Вена — кровь под кожей: темнее и сочнее кожи, того же оттенка.
-            vein: W(T.shift(base, { light: -0.1, chroma: 0.18 }))
+            vein: W(T.shift(base, { light: -0.1, chroma: 0.18 })),
+            // Свет порции у легенды — тёплый и яркий, того же оттенка, что кожа.
+            glow: W(T.shift(base, { light: 0.3, chroma: 0.25, blood: 0.18 })),
+            star: W(mixColor(glans, lift, 0.97))
         };
     },
     // Перекраска уже собранного хвоста: только атрибуты цвета, разметка та
@@ -927,6 +942,11 @@ const BATH_ART = {
         }
         for (const id of ['bt-tail-sheen', 'bt-tail-shine', 'bt-tail-stretch', 'bt-tail-gwet', 'bt-tail-grim']) set(id, 'fill', tone.shine);
         set('bt-tail-gspark', 'fill', tone.spark);
+        set('bt-tail-sweep', 'fill', tone.star);
+        set('bt-tail-stars', 'fill', tone.star);
+        set('bt-tail-glow', 'fill', tone.glow);
+        set('bt-tail-halo-0', 'stop-color', tone.glow);
+        set('bt-tail-halo-1', 'stop-color', tone.glow);
     },
 
     // Разметка хвоста собирается ОДИН РАЗ, дальше меняются только атрибуты.
@@ -966,6 +986,12 @@ const BATH_ART = {
                 ${stop('bt-tail-shade-0', 0, C.shade, 0.55)}${stop('bt-tail-shade-1', 1, C.shade, 0)}
             </radialGradient>
         </defs>
+        ${K.legend ? `<defs><radialGradient id="bt-tail-halo-g">
+                ${stop('bt-tail-halo-0', 0.35, C.glow, 0.55)}${stop('bt-tail-halo-1', 1, C.glow, 0)}
+            </radialGradient></defs>
+        <!-- Ореол легенды: мягкое пятно света ЗА хвостом. Градиент, а не
+             фильтр: слой живой. -->
+        <ellipse id="bt-tail-halo" rx="0" ry="0" fill="url(#bt-tail-halo-g)"/>` : ''}
         <path id="bt-tail-body" d="" fill="${C.fill}" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
         ${segs}
@@ -984,6 +1010,8 @@ const BATH_ART = {
              гладким кольцом (оно чуть прозрачное), и поясок читается
              отдельной вещью, а вены не обрываются о него. -->
         <path id="bt-tail-clit" d="" fill="url(#bt-tail-clit-g)" fill-opacity="0.8"/>
+        ${K.legend ? `<!-- Свет порции сквозь кожу (легенда). -->
+        <path id="bt-tail-glow" d="" fill="${C.glow}" fill-opacity="0.3"/>` : ''}
         <!-- Мелкие морщины дряблой кожи (look().wrinkles). -->
         <path id="bt-tail-wrinkle" d="" fill="none" stroke="${C.inner}" stroke-width="0.8"
               stroke-linecap="round" stroke-opacity="${(0.4 * (K.wrinkles || 0)).toFixed(2)}"/>
@@ -998,10 +1026,14 @@ const BATH_ART = {
         <path id="bt-tail-grim" d="" fill="${C.shine}" fill-opacity="${(0.22 * Math.min(1, K.wet)).toFixed(2)}"/>
         <path id="bt-tail-gwet" d="" fill="${C.shine}" fill-opacity="${(0.28 * Math.min(1, K.wet)).toFixed(2)}"/>
         <path id="bt-tail-gspark" d="" fill="${C.spark}" fill-opacity="${(0.9 * Math.min(1, K.wet)).toFixed(2)}"/>
+        ${K.legend ? `<!-- Блеск-проход легенды: светлое кольцо бежит от корня к головке. -->
+        <path id="bt-tail-sweep" d="" fill="${C.star}" fill-opacity="0.2"/>` : ''}
         <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
              перебивали бы его. -->
         <path id="bt-tail-edge" d="" fill="none" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
+        ${K.legend ? `<!-- Искорки у головки легенды — поверх контура, в воздухе. -->
+        <path id="bt-tail-stars" d="" fill="${C.star}" stroke="${C.glow}" stroke-width="0.8" stroke-linejoin="round"/>` : ''}
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
              ним (lust-goo.js). -->
         ${this.gooLive('bt-tail-goo')}`;
@@ -1123,7 +1155,8 @@ const BATH_ART = {
                 vein += bd; veinHi += bh; veinSh += bs;
             }
         }
-        return { segs, glans, clit, creases, wrinkles, vein, veinHi, veinSh, lights: this.tailLights(curve, E, G),
+        const legend = this.look().legend ? this.tailLegend(curve, performance.now()) : null;
+        return { segs, glans, clit, creases, wrinkles, vein, veinHi, veinSh, legend, lights: this.tailLights(curve, E, G),
                  neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 } };
     },
 
@@ -1194,6 +1227,77 @@ const BATH_ART = {
             stretch = soft(Math.max(0, Pu.t - w), Math.min(G - 0.01, Pu.t + w), 0.32, 0.1 * Pu.a, 0.6, 5).join('');
         }
         return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark, stretch };
+    },
+
+    // ---------- ЛЕГЕНДА (ступень 10) ----------
+    // Всё — от тех же краёв контура, что силуэт, и от времени кадра: это
+    // анимация, а не состояние (инвариант 1 о ней молчит). Хвост легенды
+    // перерисовывается и в покое (lust.js, ключ кадра в drawTail), но только
+    // он, и не чаще тридцати раз в секунду.
+    //   halo  — ореол за хвостом, дышит медленно;
+    //   sweep — светлое кольцо поперёк ствола, пробегает корень → головка за
+    //           ~0.9 с раз в 2.6 с, три мягких слоя;
+    //   glow  — порция светится сквозь кожу: светлое пятно на всю ширину,
+    //           едет вместе с ней, ярче на рывке;
+    //   stars — четыре четырёхлучевые искорки вокруг головки, вспыхивают по
+    //           очереди.
+    tailLegend(curve, now) {
+        const L = curve.left, R = curve.right, M = L.length - 1, G = this.look().glansAt;
+        const P = (q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`;
+        const idx = (t) => Math.max(0, Math.min(M, Math.round(t * M)));
+        const across = (i, a) => ({ x: L[i].x + (R[i].x - L[i].x) * a, y: L[i].y + (R[i].y - L[i].y) * a });
+        // Поперечная полоса от t0 до t1 на долях ширины a0..a1: толще в
+        // середине ширины (кольцо на круглом стволе видно дугой).
+        const band = (t0, t1, a0, a1) => {
+            const i0 = idx(t0), i1 = idx(t1);
+            if (i1 <= i0) return '';
+            const up = [], dn = [], n = 10;
+            for (let j = 0; j <= n; j++) {
+                const a = a0 + (a1 - a0) * j / n, bulge = Math.sin(Math.PI * j / n);
+                const k0 = Math.round(i0 + (i1 - i0) * (0.5 - 0.5 * bulge)), k1 = Math.round(i1 - (i1 - i0) * (0.5 - 0.5 * bulge));
+                up.push(across(k0, a)); dn.push(across(k1, a));
+            }
+            return `M${up.map(P).join('L')}L${dn.reverse().map(P).join('L')}Z`;
+        };
+        const pts = curve.spine, mid = this.tailAt(pts, 0.5), side = this.TAIL.side || 1;
+        const w0 = Math.hypot(R[idx(0.3)].x - L[idx(0.3)].x, R[idx(0.3)].y - L[idx(0.3)].y);
+        const breath = 1 + 0.06 * Math.sin(now / 900);
+        const halo = { x: mid.x, y: mid.y, deg: side * mid.a * 180 / Math.PI,
+                       rx: w0 * 2.3 * breath, ry: this.TAIL.len * 0.85 * breath };
+        // Блеск-проход.
+        const ph = (now % 2600) / 2600;
+        let sweep = '';
+        if (ph < 0.36) {
+            const u = ph / 0.36, t = 0.04 + (G + 0.2) * u, fade = Math.sin(Math.PI * u);
+            for (const [wt, a0, a1] of [[0.05, 0.06, 0.94], [0.03, 0.12, 0.88], [0.015, 0.2, 0.8]])
+                sweep += band(t - wt * fade, t + wt * fade, a0, a1);
+        }
+        // Свет порции.
+        const Pu = this.pulse;
+        let glow = '';
+        if (Pu.a > 0.02) {
+            const wt = this.PULSE.width * (1.1 + 0.5 * Pu.throb);
+            for (const k of [1, 0.65, 0.35])
+                glow += band(Pu.t - wt * k, Math.min(G - 0.01, Pu.t + wt * k), 0.5 - 0.42 * k, 0.5 + 0.42 * k);
+        }
+        // Искорки: вокруг головки, чуть за контуром.
+        const star = (c, r) => r < 0.3 ? '' : `M${(c.x).toFixed(1)} ${(c.y - r).toFixed(1)}`
+            + `Q${c.x.toFixed(1)} ${c.y.toFixed(1)} ${(c.x + r).toFixed(1)} ${c.y.toFixed(1)}`
+            + `Q${c.x.toFixed(1)} ${c.y.toFixed(1)} ${c.x.toFixed(1)} ${(c.y + r).toFixed(1)}`
+            + `Q${c.x.toFixed(1)} ${c.y.toFixed(1)} ${(c.x - r).toFixed(1)} ${c.y.toFixed(1)}`
+            + `Q${c.x.toFixed(1)} ${c.y.toFixed(1)} ${c.x.toFixed(1)} ${(c.y - r).toFixed(1)}Z`;
+        const tip = pts[pts.length - 1], dir = { x: side * Math.sin(tip.a), y: -Math.cos(tip.a) };
+        const spots = [
+            across(idx(G + (1 - G) * 0.35), -0.32), across(idx(G + (1 - G) * 0.62), 1.3),
+            { x: tip.x + dir.x * 9 - dir.y * 7, y: tip.y + dir.y * 9 + dir.x * 7 },
+            across(idx(G - 0.06), 1.22)
+        ];
+        let stars = '';
+        spots.forEach((c, k) => {
+            const s2 = Math.max(0, Math.sin(2 * Math.PI * (now / 1700 + k / 4)));
+            stars += star(c, 9 * Math.pow(s2, 3));
+        });
+        return { halo, sweep, glow, stars };
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
