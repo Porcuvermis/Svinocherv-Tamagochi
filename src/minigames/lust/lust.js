@@ -1478,7 +1478,7 @@ const LustMinigame = {
     // Столбик налива СЛЕВА ОТ ХВОСТА: работа идёт по хвосту, туда игрок и
     // смотрит. Высота столбика — по самому хвосту, чтобы он не жил в кадре
     // отдельной деталью.
-    drawRubGauge(level, ticks) {
+    drawRubGauge(level) {
         const A = BATH_ART.slots(), T = BATH_ART.TAIL;
         const h = T.len * 1.05;
         // Столбик стоит с ВНЕШНЕЙ стороны хвоста — той, куда хвост НЕ гнётся:
@@ -1486,7 +1486,7 @@ const LustMinigame = {
         // где идёт вся работа.
         this.el('bt-ammo').innerHTML = BATH_ART.rubGauge(
             A.tail.x + (T.side || 1) * T.base * 0.95 * -1,
-            A.tail.y - h - 6, h, level == null ? this.charge : level, ticks || 0);
+            A.tail.y - h - 6, h, level == null ? this.charge : level);
     },
 
     // ---------- ЗАПАС ВЫСТРЕЛОВ ----------
@@ -1500,7 +1500,7 @@ const LustMinigame = {
         const key = Math.round(level * 400);
         if (key === this._ammoKey) return;
         this._ammoKey = key;
-        this.drawRubGauge(level, total);
+        this.drawRubGauge(level);
     },
 
     rubMove(p) {

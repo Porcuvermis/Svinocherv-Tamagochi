@@ -259,12 +259,11 @@ const harness = require('./harness');
   // Отпущенный хвост расправляется: кольцо гаснет пружиной за секунду с
   // небольшим (пружина мягкая, с одним-двумя покачиваниями).
   await page.waitForTimeout(1500);
-  // Шкала налива в финале — запас выстрелов: полная, с делением на каждый.
+  // Шкала налива в финале — запас выстрелов, без делений.
   const ammoLevel = () => page.evaluate(() => {
     const r = document.querySelectorAll('#bt-ammo rect');
     if (r.length < 2) return null;
-    return { level: +(r[1].height.baseVal.value / (r[0].height.baseVal.value - 6)).toFixed(2),
-             ticks: (document.querySelector('#bt-ammo path') || { getAttribute: () => '' }).getAttribute('d').split('M').length - 1 };
+    return { level: +(r[1].height.baseVal.value / (r[0].height.baseVal.value - 6)).toFixed(2) };
   });
   // Сравнивается с тем, что ОСТАЛОСЬ по состоянию игры, а не с «полной»:
   // к замеру первая порция уже может быть в пути, и белое честно уходит.
@@ -272,9 +271,9 @@ const harness = require('./harness');
   const ammo0 = await ammoLevel();
   const st0 = await page.evaluate(() => ({ total: LustMinigame.shotsTotal, left: LustMinigame.shotsLeft, u: LustMinigame.pulseU || 0 }));
   const want0 = (st0.left - st0.u) / st0.total;
-  ok(ammo0 && Math.abs(ammo0.level - want0) < 0.04 && ammo0.ticks === st0.total - 1,
-     'в финале шкала — запас выстрелов, деление на каждый',
-     ammo0 && `уровень ${ammo0.level} при ожидаемом ${want0.toFixed(2)}, делений ${ammo0.ticks + 1} из ${st0.total}`);
+  ok(ammo0 && Math.abs(ammo0.level - want0) < 0.04,
+     'в финале шкала — запас выстрелов',
+     ammo0 && `уровень ${ammo0.level} при ожидаемом ${want0.toFixed(2)}`);
   const ringOff = await page.evaluate(() => BATH_ART.ring.s);
   ok(Math.abs(ringOff) < 0.02, 'отпущенный хвост расправляется', `сила кольца ${ringOff.toFixed(3)}`);
 

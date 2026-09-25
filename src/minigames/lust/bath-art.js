@@ -313,21 +313,12 @@ const BATH_ART = {
     // Рядом, а не над головой: работа идёт по хвосту, и смотреть игрок
     // должен туда же (инвариант 9 — ни одной подписи, только столбик).
     //
-    // В финале тот же столбик — ЗАПАС ВЫСТРЕЛОВ: ticks — сколько их было,
-    // поперёк стоит деление на каждый, и белое уходит по одному делению на
-    // толчок. Число видно без цифр: пустые деления остаются на месте.
-    rubGauge(x, y, h, k, ticks) {
+    // В финале тот же столбик — ЗАПАС ВЫСТРЕЛОВ: белое уходит по доле на
+    // толчок. Делений нет: их было по одному на выстрел, но считать их
+    // игрок не станет — «сколько осталось» и так видно по уровню.
+    rubGauge(x, y, h, k) {
         const p = btPal(), w = 15, r = w / 2;
         const fill = Math.max(0, Math.min(1, k));
-        let lines = '';
-        if (ticks > 1) {
-            const H = h - 6;
-            for (let i = 1; i < ticks; i++) {
-                const yy = y + 3 + H * i / ticks;
-                lines += `M${(x - r + 3).toFixed(1)} ${yy.toFixed(1)}h${w - 6}`;
-            }
-            lines = `<path d="${lines}" stroke="${PALETTE.ink}" stroke-width="1" stroke-opacity="0.45"/>`;
-        }
         return `<g id="bt-rubgauge">
             <rect x="${(x - r).toFixed(1)}" y="${y.toFixed(1)}"
                   width="${w}" height="${h.toFixed(1)}" rx="${r}"
@@ -337,7 +328,6 @@ const BATH_ART = {
                   y="${(y + 3 + (h - 6) * (1 - fill)).toFixed(1)}"
                   width="${w - 6}" height="${((h - 6) * fill).toFixed(1)}"
                   rx="${r - 3}" fill="${p.foam.hi}" opacity="0.9"/>
-            ${lines}
         </g>`;
     },
 
