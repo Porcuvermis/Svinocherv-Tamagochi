@@ -602,7 +602,9 @@ const BATH_ART = {
     //   tipSag   — кончик скошен набок: один бок у кончика толще, другой
     //              тоньше. Скос — РИСУНКОМ, ось та же: по ней летит капля;
     //   veins    — сколько вен идёт по стволу (0 — ни одной): у налитого
-    //              хвоста они проступают.
+    //              хвоста они проступают; veinPower — насколько (толщина и
+    //              плотность, 1 — как у ступени 6); veinBranch — у вены
+    //              есть боковая ветка.
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
@@ -652,7 +654,14 @@ const BATH_ART = {
         6: { edges: [0, 0.13, 0.25, 0.36, 0.46, 0.555, 0.64], bulge: [0.14, 0.1, 0.15, 0.1, 0.13, 0.11],
              glansAt: 0.69, neck: 0.64, corona: 0.74,
              width: 1.05, taper: 0.25, irreg: 0.9, tone: { chroma: 0.06, blood: 0.04 }, gloss: 0.33, wet: 1.1,
-             firm: 1.08, pulse: 1.08, veins: 1 }
+             firm: 1.08, pulse: 1.08, veins: 1 },
+        // 7 — налитой сильнее: те же шесть звеньев, но толще, сочнее и
+        // ровнее, головка крупнее, плоть упруже; вена проступает сильнее и
+        // даёт боковую ветку.
+        7: { edges: [0, 0.125, 0.24, 0.35, 0.45, 0.545, 0.63], bulge: [0.13, 0.1, 0.14, 0.1, 0.12, 0.11],
+             glansAt: 0.68, neck: 0.66, corona: 0.78,
+             width: 1.1, taper: 0.22, irreg: 0.82, tone: { chroma: 0.1, blood: 0.07 }, gloss: 0.37, wet: 1.2,
+             firm: 1.15, pulse: 1.15, veins: 1, veinPower: 1.3, veinBranch: true }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -890,7 +899,7 @@ const BATH_ART = {
     // Пересобирать её каждый кадр значит парсить строку шестьдесят раз в
     // секунду ради двух чисел — на телефоне это заметно.
     tail(model, sat) {
-        const K = this.look(), C = this.tailTone(model, sat, 0);
+        const K = this.look(), C = this.tailTone(model, sat, 0), VP = K.veinPower || 1;
         // Складки — по паре путей на каждую: своя прозрачность у каждой,
         // потому что кольцо разглаживает их по одной. Прозрачность пишется
         // в stroke-opacity самих путей, а не группе: у группы на живом слое
@@ -927,11 +936,11 @@ const BATH_ART = {
         ${creases}
         <!-- Вены (look().veins): выпуклые — тень под веной и блик по её
              освещённому краю, а не нарисованная линия. -->
-        <path id="bt-tail-vein-sh" d="" fill="none" stroke="${C.shade}" stroke-width="2.4"
-              stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.3"/>
-        <path id="bt-tail-vein" d="" fill="none" stroke="${C.vein}" stroke-width="3.2"
-              stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.75"/>
-        <path id="bt-tail-vein-hi" d="" fill="none" stroke="${C.shine}" stroke-width="0.9"
+        <path id="bt-tail-vein-sh" d="" fill="none" stroke="${C.shade}" stroke-width="${(2.4 * VP).toFixed(2)}"
+              stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${Math.min(0.5, 0.3 * VP).toFixed(2)}"/>
+        <path id="bt-tail-vein" d="" fill="none" stroke="${C.vein}" stroke-width="${(3.2 * VP).toFixed(2)}"
+              stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${Math.min(0.9, 0.75 * VP).toFixed(2)}"/>
+        <path id="bt-tail-vein-hi" d="" fill="none" stroke="${C.shine}" stroke-width="${(0.9 * VP).toFixed(2)}"
               stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.45"/>
         <!-- Мелкие морщины дряблой кожи (look().wrinkles). -->
         <path id="bt-tail-wrinkle" d="" fill="none" stroke="${C.inner}" stroke-width="0.8"
@@ -1047,6 +1056,21 @@ const BATH_ART = {
                 sh += `${c}${P(pt(i, 0.034))}`;
             }
             vein += d; veinHi += h; veinSh += sh;
+            // Боковая ветка: отходит от вены на трети пути и уходит к свету и
+            // вверх, сужаясь по ширине поперёк; тот же приём — доля ширины.
+            if (this.look().veinBranch && v === 0) {
+                const b0 = idx(t0 + (t1 - t0) * 0.3), b1 = idx(t0 + (t1 - t0) * 0.58);
+                const base = a0 + 0.07 * Math.sin(b0 / M * 13 + ph) + 0.04 * Math.sin(b0 / M * 29 + ph * 2);
+                let bd = '', bh = '', bs = '';
+                for (let i = b0; i <= b1; i++) {
+                    const k = (i - b0) / Math.max(1, b1 - b0), sm = k * k * (3 - 2 * k);
+                    const u = base - 0.26 * sm + 0.02 * Math.sin(k * 7);
+                    const at = (sh2) => ({ x: L[i].x + (R[i].x - L[i].x) * (u + sh2), y: L[i].y + (R[i].y - L[i].y) * (u + sh2) });
+                    const c = i === b0 ? 'M' : 'L';
+                    bd += `${c}${P(at(0))}`; bh += `${c}${P(at(-0.024))}`; bs += `${c}${P(at(0.028))}`;
+                }
+                vein += bd; veinHi += bh; veinSh += bs;
+            }
         }
         return { segs, glans, creases, wrinkles, vein, veinHi, veinSh, lights: this.tailLights(curve, E, G),
                  neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 } };
