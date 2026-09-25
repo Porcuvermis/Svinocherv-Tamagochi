@@ -230,12 +230,20 @@ const harness = require('./harness');
     const tr = 0.35, ahead = tr + 1.9 * BATH_ART.RING.width;
     BATH_ART.setRing(tr, 1, BATH_ART.RING.vRef); const aheadMoving = w(ahead);
     BATH_ART.setRing(tr, 0, 0); const aheadBare = w(ahead);
+    // Головка не сминается: кольцо прямо на ней — толщина та же.
+    const G = BATH_ART.look().glansAt, tg = G + (1 - G) * 0.35;
+    BATH_ART.setRing(tg, 1, 0); const glansRing = w(tg);
+    BATH_ART.setRing(tg, 0, 0); const glansBare = w(tg);
     BATH_ART.setRing(keep.t, keep.s, keep.v);
-    return { s: keep.s, t: +t0.toFixed(2), squeeze: +(under / bare).toFixed(2), bulge: +(aheadMoving / aheadBare).toFixed(2) };
+    return { s: keep.s, t: +t0.toFixed(2), squeeze: +(under / bare).toFixed(2), bulge: +(aheadMoving / aheadBare).toFixed(2),
+             glans: +(glansRing / glansBare).toFixed(3) };
   });
   ok(ringHold.s > 0.9, 'палец на хвосте включает кольцо', `сила ${ringHold.s.toFixed(2)} на доле ${ringHold.t}`);
-  ok(ringHold.squeeze < 0.9, 'под кольцом хвост приминается', `толщина ×${ringHold.squeeze}`);
-  ok(ringHold.bulge > 1.05, 'выдавленная плоть собирается валиком по ходу', `толщина впереди ×${ringHold.bulge}`);
+  // Пороги — с запасом от замера (×0.89 и ×1.11): кольцо намеренно мягкое,
+  // и проверка сторожит, что оно ЕСТЬ, а не его точную силу.
+  ok(ringHold.squeeze < 0.95, 'под кольцом хвост приминается', `толщина ×${ringHold.squeeze}`);
+  ok(ringHold.bulge > 1.04, 'выдавленная плоть собирается валиком по ходу', `толщина впереди ×${ringHold.bulge}`);
+  ok(Math.abs(ringHold.glans - 1) < 0.01, 'головка под кольцом не сминается', `толщина ×${ringHold.glans}`);
   // Ведём вдоль хвоста туда-обратно.
   let strokes = 0;
   for (let n = 0; n < 80 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
@@ -248,8 +256,9 @@ const harness = require('./harness');
   await page.mouse.up();
   await page.waitForTimeout(200);
   ok(await phase() === 'aim', 'хвост налился, начался финал', await phase());
-  // Отпущенный хвост расправляется: кольцо гаснет пружиной за доли секунды.
-  await page.waitForTimeout(700);
+  // Отпущенный хвост расправляется: кольцо гаснет пружиной за секунду с
+  // небольшим (пружина мягкая, с одним-двумя покачиваниями).
+  await page.waitForTimeout(1500);
   const ringOff = await page.evaluate(() => BATH_ART.ring.s);
   ok(Math.abs(ringOff) < 0.02, 'отпущенный хвост расправляется', `сила кольца ${ringOff.toFixed(3)}`);
   // Этап обязан ТЯНУТЬСЯ: в нём всё удовольствие, и проскакивать его

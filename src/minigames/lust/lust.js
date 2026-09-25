@@ -1553,15 +1553,18 @@ const LustMinigame = {
     // недодемпфированием: плоть проминается мягко, а отпущенная
     // расправляется с лёгкой дрожью. Шаг по времени, как у всей упругости
     // в финале.
-    RING_K: 320, RING_C: 13,
+    // Мягче первой версии (320/13): плоть проминается не мгновенно, а
+    // отпущенная возвращается одним-двумя плавными покачиваниями.
+    RING_K: 110, RING_C: 8.5,
     stepRing(dt) {
         const f = this.ringFinger, on = !!(f && f.on);
         let s = this.ringS || 0, sv = this.ringSV || 0, t = this.ringT, v = this.ringVel || 0;
         sv += ((on ? 1 : 0) - s) * this.RING_K * dt - sv * this.RING_C * dt;
-        s = Math.max(-0.3, Math.min(1.15, s + sv * dt));
+        s = Math.max(-0.2, Math.min(1.1, s + sv * dt));
         if (on) {
             if (t == null) t = f.t;
-            const k = 1 - Math.exp(-dt / 0.04), nt = t + (f.t - t) * k;
+            // Плоть чуть отстаёт от пальца — это и читается упругостью.
+            const k = 1 - Math.exp(-dt / 0.08), nt = t + (f.t - t) * k;
             // Скорость хода — сглаженная: у пальца на телефоне рваные события.
             v += ((nt - t) / Math.max(dt, 1e-3) - v) * (1 - Math.exp(-dt / 0.08));
             t = nt;
@@ -1620,10 +1623,11 @@ const LustMinigame = {
         P.segs.forEach((sd, i) => { const e = this.el(`bt-tail-seg-${i}`); if (e) e.setAttribute('d', sd); });
         const gl = this.el('bt-tail-glans');
         if (gl) gl.setAttribute('d', P.glans);
-        for (const id of ['bt-tail-crease', 'bt-tail-crease-line']) {
-            const e = this.el(id);
-            if (e) e.setAttribute('d', P.creases);
-        }
+        P.creases.forEach((c, i) => {
+            const a = this.el(`bt-tail-cr-${i}`), b = this.el(`bt-tail-crl-${i}`);
+            if (a) { a.setAttribute('d', c.d); a.setAttribute('stroke-opacity', (0.3 * c.k).toFixed(3)); }
+            if (b) { b.setAttribute('d', c.d); b.setAttribute('stroke-opacity', (0.55 * c.k).toFixed(3)); }
+        });
         for (const [id, q] of [['bt-tail-neck', P.neck], ['bt-tail-wet', P.wet]]) {
             const e = this.el(id);
             if (!e) continue;

@@ -615,8 +615,14 @@ const BATH_ART = {
     //               у стоящего кольца;
     //   drag      — насколько кожа съезжает за пальцем; dragWidth — докуда;
     //   vRef      — скорость (долей длины в секунду), при которой ход полный.
-    RING: { width: 0.065, flatten: 1, squeeze: 0.2, push: 0.22, rest: 0.08,
-            drag: 0.04, dragWidth: 0.14, vRef: 1.2 },
+    //
+    // Вторая версия. Первая (узкое кольцо, звено до складки, сжатие на
+    // пятую часть, головка под кольцом тоже) читалась резкой перетяжкой
+    // ремнём, а не пальцами по плоти. Теперь кольцо широкое и мягкое:
+    // звено сминается наполовину, валик пологий, а головка не сминается
+    // вовсе — влияние кольца гаснет к шейке (glansGuard).
+    RING: { width: 0.1, flatten: 0.55, squeeze: 0.09, push: 0.09, rest: 0.035,
+            drag: 0.025, dragWidth: 0.16, vRef: 1.2, glansGuard: 0.1 },
     ring: { t: 0.5, s: 0, v: 0 },
     setRing(t, s, v) { this.ring = { t, s, v }; this._ringE = null; },
     ringDir() { return Math.max(-1, Math.min(1, this.ring.v / this.RING.vRef)); },
@@ -639,10 +645,14 @@ const BATH_ART = {
         if (!r.s) return { f: 0, grow: 0 };
         const R = this.RING, w = R.width, dir = this.ringDir();
         const g = (x, sg) => Math.exp(-Math.pow(x / sg, 2));
-        const f = r.s * g(t - r.t, w);
-        const ahead = r.s * R.push * Math.abs(dir) * g(t - r.t - Math.sign(dir) * 1.9 * w, 1.2 * w);
-        const sides = r.s * R.rest * (1 - Math.abs(dir)) * (g(t - r.t - 1.7 * w, w) + g(t - r.t + 1.7 * w, w));
-        return { f, grow: ahead + sides };
+        // Головка не сминается: всё, что делает кольцо, плавно гаснет от
+        // конца звеньев к шейке (smoothstep, без ступеньки на контуре).
+        const G = this.look().glansAt, u = Math.max(0, Math.min(1, (G - t) / R.glansGuard));
+        const guard = u * u * (3 - 2 * u);
+        const f = r.s * g(t - r.t, w) * guard;
+        const ahead = r.s * R.push * Math.abs(dir) * g(t - r.t - Math.sign(dir) * 1.6 * w, 1.4 * w);
+        const sides = r.s * R.rest * (1 - Math.abs(dir)) * (g(t - r.t - 1.5 * w, 1.2 * w) + g(t - r.t + 1.5 * w, 1.2 * w));
+        return { f, grow: (ahead + sides) * guard };
     },
     // sd: −1 — левый край, +1 — правый.
     tailHalfSide(t, grow, sd) {
@@ -757,8 +767,10 @@ const BATH_ART = {
         set('bt-tail-shade-1', 'stop-color', tone.shade);
         set('bt-tail-body', 'fill', tone.fill);
         for (const id of ['bt-tail-body', 'bt-tail-edge']) set(id, 'stroke', tone.ink);
-        set('bt-tail-crease', 'stroke', tone.shade);
-        set('bt-tail-crease-line', 'stroke', tone.inner);
+        for (let i = 0; i < this.look().edges.length - 2; i++) {
+            set(`bt-tail-cr-${i}`, 'stroke', tone.shade);
+            set(`bt-tail-crl-${i}`, 'stroke', tone.inner);
+        }
         set('bt-tail-wet', 'fill', tone.shine);
         set('bt-tail-shine', 'stroke', tone.shine);
     },
@@ -768,6 +780,16 @@ const BATH_ART = {
     // секунду ради двух чисел — на телефоне это заметно.
     tail(model, sat) {
         const K = this.look(), C = this.tailTone(model, sat, 0);
+        // Складки — по паре путей на каждую: своя прозрачность у каждой,
+        // потому что кольцо разглаживает их по одной. Прозрачность пишется
+        // в stroke-opacity самих путей, а не группе: у группы на живом слое
+        // был бы свой буфер (docs/traps.md, п. 73).
+        let creases = '';
+        for (let i = 0; i < K.edges.length - 2; i++)
+            creases += `<path id="bt-tail-cr-${i}" d="" fill="none" stroke="${C.shade}" stroke-width="4"
+                  stroke-linecap="round" stroke-opacity="0.3"/>
+            <path id="bt-tail-crl-${i}" d="" fill="none" stroke="${C.inner}" stroke-width="1.1"
+                  stroke-linecap="round" stroke-opacity="0.55"/>`;
         let segs = '';
         for (let i = 0; i < K.edges.length - 1; i++)
             segs += `<path id="bt-tail-seg-${i}" d="" fill="url(#bt-tail-vol)"/>`;
@@ -791,10 +813,7 @@ const BATH_ART = {
               stroke-width="3" stroke-linejoin="round"/>
         ${segs}
         <!-- Складки на стыках звеньев: мягкая тень и под ней тонкая линия. -->
-        <path id="bt-tail-crease" d="" fill="none" stroke="${C.shade}" stroke-width="4"
-              stroke-linecap="round" stroke-opacity="0.3"/>
-        <path id="bt-tail-crease-line" d="" fill="none" stroke="${C.inner}" stroke-width="1.1"
-              stroke-linecap="round" stroke-opacity="0.55"/>
+        ${creases}
         <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
         <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)"/>
         <!-- Влажный блик на головке. -->
@@ -831,19 +850,21 @@ const BATH_ART = {
         const crease = (t, bow) => {
             const a = L[idx(t)], b = R[idx(t)], p = this.tailAt(curve.spine, t);
             const lerp = (u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
-            // Под кольцом кожа натянута, и складка разглаживается: она
-            // УКОРАЧИВАЕТСЯ к середине, а не пропадает скачком.
-            const f = Math.max(0, Math.min(1, this.ringAt(t).f)), k = 1 - 0.85 * f;
-            if (k < 0.08) return '';
-            const s0 = lerp(0.55 - 0.43 * k), s1 = lerp(0.55 + 0.41 * k), mid = lerp(0.55);
+            // Под кольцом кожа натянута, и складка разглаживается: мельче
+            // выгиб, чуть короче, и она БЛЕДНЕЕТ (k — её доля, пишется в
+            // прозрачность). Первая версия только укорачивала её — и под
+            // широким кольцом оставалась одинокая чёрточка, отдельная метка.
+            const f = Math.max(0, Math.min(1, this.ringAt(t).f)), k = 1 - 0.9 * f;
+            const span = 0.75 + 0.25 * k;
+            const s0 = lerp(0.55 - 0.43 * span), s1 = lerp(0.55 + 0.41 * span), mid = lerp(0.55);
             bow *= k;
             const w = Math.hypot(b.x - a.x, b.y - a.y), side = this.TAIL.side || 1;
             const up = { x: side * Math.sin(p.a), y: -Math.cos(p.a) };
             const c = { x: mid.x + up.x * w * bow, y: mid.y + up.y * w * bow };
-            return `M${P(s0)}Q${P(c)} ${P(s1)}`;
+            return { d: `M${P(s0)}Q${P(c)} ${P(s1)}`, k };
         };
-        let creases = '';
-        for (let i = 1; i < E.length - 1; i++) creases += crease(E[i], 0.1 + 0.05 * (i % 2));
+        const creases = [];
+        for (let i = 1; i < E.length - 1; i++) creases.push(crease(E[i], 0.1 + 0.05 * (i % 2)));
         const pts = curve.spine, side = this.TAIL.side || 1;
         const at = (t) => this.tailAt(pts, t);
         const nk = at(G + 0.01), wet = at(G + (1 - G) * 0.5);
