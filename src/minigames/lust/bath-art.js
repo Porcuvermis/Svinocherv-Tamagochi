@@ -596,11 +596,60 @@ const BATH_ART = {
     // лету вид не меняется, а профиль спрашивают сотни раз за кадр.
     setTailLevel(L) { this.tailLevel = Math.max(0, Math.min(10, L | 0)); },
     look() { return this.TAIL_LOOKS[this.tailLevel] || this.TAIL_LOOKS[5]; },
+
+    // ---------- СЖИМАЮЩЕЕ КОЛЬЦО ПОД ПАЛЬЦЕМ ----------
+    // Палец на хвосте — это невидимое кольцо, которое ходит по нему вверх
+    // и вниз. Под кольцом вздутие звена ПРИМИНАЕТСЯ до уровня складки и
+    // ствол чуть сжимается; выдавленная плоть собирается валиком ВПЕРЕДИ по
+    // ходу (стоит палец — расходится в обе стороны поровну); кожа под
+    // кольцом тянется за ним, и ближние складки съезжают по ходу.
+    //
+    // Меняется только ТОЛЩИНА: ось и длина те же, по ним летит капля и
+    // считает калькулятор. Сила кольца s — пружина (lust.js, stepRing):
+    // отпущенная плоть расправляется с лёгкой дрожью, s на миг уходит в
+    // минус, и звено на мгновение вздувается сильнее обычного.
+    //   width     — полуширина кольца вдоль хвоста (доля длины);
+    //   flatten   — насколько кольцо гасит вздутие звена (1 — до складки);
+    //   squeeze   — насколько сжимает ствол целиком;
+    //   push      — валик впереди на полном ходу; rest — валики по бокам
+    //               у стоящего кольца;
+    //   drag      — насколько кожа съезжает за пальцем; dragWidth — докуда;
+    //   vRef      — скорость (долей длины в секунду), при которой ход полный.
+    RING: { width: 0.065, flatten: 1, squeeze: 0.2, push: 0.22, rest: 0.08,
+            drag: 0.04, dragWidth: 0.14, vRef: 1.2 },
+    ring: { t: 0.5, s: 0, v: 0 },
+    setRing(t, s, v) { this.ring = { t, s, v }; this._ringE = null; },
+    ringDir() { return Math.max(-1, Math.min(1, this.ring.v / this.RING.vRef)); },
+    // Границы звеньев с учётом кожи, съехавшей за кольцом. Считаются раз на
+    // положение кольца: профиль спрашивают сотни раз за кадр.
+    ringEdges() {
+        if (this._ringE && this._ringLook === this.tailLevel) return this._ringE;
+        const E0 = this.look().edges, R = this.RING, r = this.ring, dir = this.ringDir();
+        const E = E0.map((e, i) => (i === 0 || !r.s) ? e
+            : e + r.s * R.drag * dir * Math.exp(-Math.pow((e - r.t) / R.dragWidth, 2)));
+        // Порядок звеньев не ломается никогда: сдвиг меньше половины звена.
+        for (let i = 1; i < E.length; i++) E[i] = Math.max(E[i], E[i - 1] + 0.02);
+        this._ringLook = this.tailLevel;
+        return (this._ringE = E);
+    },
+    // Что кольцо делает в точке t: f — доля приминания (0 — не трогает),
+    // grow — прибавка толщины от выдавленной плоти.
+    ringAt(t) {
+        const r = this.ring;
+        if (!r.s) return { f: 0, grow: 0 };
+        const R = this.RING, w = R.width, dir = this.ringDir();
+        const g = (x, sg) => Math.exp(-Math.pow(x / sg, 2));
+        const f = r.s * g(t - r.t, w);
+        const ahead = r.s * R.push * Math.abs(dir) * g(t - r.t - Math.sign(dir) * 1.9 * w, 1.2 * w);
+        const sides = r.s * R.rest * (1 - Math.abs(dir)) * (g(t - r.t - 1.7 * w, w) + g(t - r.t + 1.7 * w, w));
+        return { f, grow: ahead + sides };
+    },
     // sd: −1 — левый край, +1 — правый.
     tailHalfSide(t, grow, sd) {
         const K = this.look();
         const B = (this.TAIL.base / 2) * Math.pow(grow || 1, 0.7) * K.width;
-        const E = K.edges, BU = K.bulge, G = K.glansAt;
+        const E = this.ringEdges(), BU = K.bulge, G = K.glansAt;
+        const RG = this.ringAt(t), SQ = 1 - this.RING.squeeze * RG.f, FL = this.RING.flatten * RG.f;
         const tt = Math.max(0, Math.min(1, t)), TAU = Math.PI * 2;
         const wob = (sd > 0
             ? 0.055 * Math.sin(TAU * (1.3 * tt + 0.15)) + 0.03 * Math.sin(TAU * (3.1 * tt + 0.6))
@@ -615,7 +664,8 @@ const BATH_ART = {
             // нечётных — к кончику.
             const uu = Math.pow(u, k % 2 ? 1.25 : 0.8);
             const taper = 1 - K.taper * (tt / G);
-            w = B * taper * (1 - BU[k] + BU[k] * Math.sin(Math.PI * uu));
+            // Под кольцом вздутие гаснет до уровня складки (FL).
+            w = B * taper * (1 - BU[k] + BU[k] * Math.sin(Math.PI * uu) * (1 - FL));
         } else if (tt < G) {
             // Шейка: от конца последнего звена к узкому месту перед головкой.
             const k = (tt - neckEnd) / (G - neckEnd);
@@ -631,7 +681,7 @@ const BATH_ART = {
                 w = B * CORONA * Math.pow(Math.max(0, 1 - Math.pow(v, 1.9)), 0.55);
             }
         }
-        return w * (1 + wob);
+        return w * (1 + wob) * SQ * (1 + RG.grow);
     },
     // Полуширина для следов и пузырей — по УЖЕЙ стороне: они садятся
     // симметрично от оси и не должны вылезать за край.
@@ -771,7 +821,7 @@ const BATH_ART = {
             const l = L.slice(a, b + 1), r = R.slice(a, b + 1).reverse();
             return `M${l.map(P).join('L')}L${r.map(P).join('L')}Z`;
         };
-        const E = this.look().edges, G = this.look().glansAt, segs = [];
+        const E = this.ringEdges(), G = this.look().glansAt, segs = [];
         for (let i = 0; i < E.length - 1; i++)
             segs.push(slice(E[i], i === E.length - 2 ? G : E[i + 1]));
         const glans = slice(G, 1);
@@ -781,7 +831,12 @@ const BATH_ART = {
         const crease = (t, bow) => {
             const a = L[idx(t)], b = R[idx(t)], p = this.tailAt(curve.spine, t);
             const lerp = (u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
-            const s0 = lerp(0.12), s1 = lerp(0.96), mid = lerp(0.55);
+            // Под кольцом кожа натянута, и складка разглаживается: она
+            // УКОРАЧИВАЕТСЯ к середине, а не пропадает скачком.
+            const f = Math.max(0, Math.min(1, this.ringAt(t).f)), k = 1 - 0.85 * f;
+            if (k < 0.08) return '';
+            const s0 = lerp(0.55 - 0.43 * k), s1 = lerp(0.55 + 0.41 * k), mid = lerp(0.55);
+            bow *= k;
             const w = Math.hypot(b.x - a.x, b.y - a.y), side = this.TAIL.side || 1;
             const up = { x: side * Math.sin(p.a), y: -Math.cos(p.a) };
             const c = { x: mid.x + up.x * w * bow, y: mid.y + up.y * w * bow };

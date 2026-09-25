@@ -213,6 +213,29 @@ const harness = require('./harness');
   await page.waitForTimeout(700);
   const still = await page.evaluate(() => LustMinigame.charge);
   ok(still < 0.02, 'неподвижный палец хвост не наливает', still.toFixed(3));
+
+  // ---------- КОЛЬЦО ПОД ПАЛЬЦЕМ ----------
+  // Палец на хвосте — невидимое сжимающее кольцо (BATH_ART.RING): под ним
+  // хвост ТОНЬШЕ, чем был бы без пальца, выдавленная плоть собирается
+  // ВАЛИКОМ по ходу, а отпущенный хвост расправляется сам. Толщина
+  // сравнивается с той же точкой без кольца — иначе звено и складка
+  // спорили бы с кольцом, и проверка мерила бы не его.
+  const ringHold = await page.evaluate(() => {
+    const R = BATH_ART.ring, L = LustMinigame, g = L.tailGrow();
+    const w = (t) => BATH_ART.tailHalfSide(t, g, 1) + BATH_ART.tailHalfSide(t, g, -1);
+    const keep = { ...R };
+    const t0 = R.t, under = w(t0);
+    BATH_ART.setRing(t0, 0, 0); const bare = w(t0);
+    // Ход к кончику: валик впереди, то есть ВЫШЕ кольца.
+    const tr = 0.35, ahead = tr + 1.9 * BATH_ART.RING.width;
+    BATH_ART.setRing(tr, 1, BATH_ART.RING.vRef); const aheadMoving = w(ahead);
+    BATH_ART.setRing(tr, 0, 0); const aheadBare = w(ahead);
+    BATH_ART.setRing(keep.t, keep.s, keep.v);
+    return { s: keep.s, t: +t0.toFixed(2), squeeze: +(under / bare).toFixed(2), bulge: +(aheadMoving / aheadBare).toFixed(2) };
+  });
+  ok(ringHold.s > 0.9, 'палец на хвосте включает кольцо', `сила ${ringHold.s.toFixed(2)} на доле ${ringHold.t}`);
+  ok(ringHold.squeeze < 0.9, 'под кольцом хвост приминается', `толщина ×${ringHold.squeeze}`);
+  ok(ringHold.bulge > 1.05, 'выдавленная плоть собирается валиком по ходу', `толщина впереди ×${ringHold.bulge}`);
   // Ведём вдоль хвоста туда-обратно.
   let strokes = 0;
   for (let n = 0; n < 80 && await page.evaluate(() => LustMinigame.phase) === 'rub'; n++) {
@@ -225,6 +248,10 @@ const harness = require('./harness');
   await page.mouse.up();
   await page.waitForTimeout(200);
   ok(await phase() === 'aim', 'хвост налился, начался финал', await phase());
+  // Отпущенный хвост расправляется: кольцо гаснет пружиной за доли секунды.
+  await page.waitForTimeout(700);
+  const ringOff = await page.evaluate(() => BATH_ART.ring.s);
+  ok(Math.abs(ringOff) < 0.02, 'отпущенный хвост расправляется', `сила кольца ${ringOff.toFixed(3)}`);
   // Этап обязан ТЯНУТЬСЯ: в нём всё удовольствие, и проскакивать его
   // незачем. На живом прогоне выходит быстрее, чем здесь: рука ведёт
   // длинными ходами, а тест — аккуратными пятиточечными.

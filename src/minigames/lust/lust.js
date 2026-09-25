@@ -1088,6 +1088,7 @@ const LustMinigame = {
     onUp() {
         if (!this.drag) return;
         this.bendHand = null;
+        this.ringTouch(null);
         if (this.drag.kind !== 'tail' && this.drag.kind !== 'rub') {
             this.fgEl.innerHTML = '';
             this.showTools(true);
@@ -1265,6 +1266,8 @@ const LustMinigame = {
         BATH_ART.setTailLevel(this.tailLevel());
         this.bend = 0;
         this.bendHand = null;
+        this.ringFinger = null; this.ringS = 0; this.ringSV = 0; this.ringT = null; this.ringVel = 0;
+        BATH_ART.setRing(0.5, 0, 0);
 
         this.el('bt-tail').innerHTML =
             `<g id="bt-tail-pivot">${BATH_ART.tail(model, this.skinSat)}</g>`;
@@ -1433,6 +1436,7 @@ const LustMinigame = {
             // прирост за ход мелкий — мгновенный спад не давал набрать вовсе.
             if ((now - this.rubMoved) / 1000 > (C.rubIdle || 1.1))
                 this.charge = Math.max(0, this.charge - (C.rubRelax || 0.06) * dt);
+            this.stepRing(dt);
             this.drawTail();
             this.drawRubGauge();
             // Веки опускаются ВМЕСТЕ с наливом: тот же прогресс, сказанный
@@ -1486,6 +1490,7 @@ const LustMinigame = {
     rubMove(p) {
         const C = this.cfg(), a = this.rubAt(p);
         const reach = BATH_ART.TAIL.base * this.tailGrow() * 1.3;
+        this.ringFinger = { t: a.t, on: a.dist <= reach };
         if (a.dist > reach) { this.drag.t = null; return; }
         if (this.drag.t != null && a.t !== this.drag.t) {
             this.charge = Math.min(1, this.charge
@@ -1542,6 +1547,36 @@ const LustMinigame = {
     },
 
 
+    // ---------- КОЛЬЦО ПОД ПАЛЬЦЕМ (BATH_ART.RING) ----------
+    // Палец на хвосте задаёт, ГДЕ кольцо (ringFinger); здесь оно доезжает
+    // до пальца, меряет скорость хода и набирает силу пружиной. Пружина с
+    // недодемпфированием: плоть проминается мягко, а отпущенная
+    // расправляется с лёгкой дрожью. Шаг по времени, как у всей упругости
+    // в финале.
+    RING_K: 320, RING_C: 13,
+    stepRing(dt) {
+        const f = this.ringFinger, on = !!(f && f.on);
+        let s = this.ringS || 0, sv = this.ringSV || 0, t = this.ringT, v = this.ringVel || 0;
+        sv += ((on ? 1 : 0) - s) * this.RING_K * dt - sv * this.RING_C * dt;
+        s = Math.max(-0.3, Math.min(1.15, s + sv * dt));
+        if (on) {
+            if (t == null) t = f.t;
+            const k = 1 - Math.exp(-dt / 0.04), nt = t + (f.t - t) * k;
+            // Скорость хода — сглаженная: у пальца на телефоне рваные события.
+            v += ((nt - t) / Math.max(dt, 1e-3) - v) * (1 - Math.exp(-dt / 0.08));
+            t = nt;
+        } else v *= Math.exp(-dt / 0.12);
+        if (Math.abs(s) < 0.002 && Math.abs(sv) < 0.01 && !on) { s = 0; sv = 0; }
+        this.ringS = s; this.ringSV = sv; this.ringT = t; this.ringVel = v;
+        BATH_ART.setRing(t == null ? 0.5 : t, s, v);
+    },
+    // Где палец на хвосте — или null, если он не на хвосте.
+    ringTouch(p) {
+        if (!p) { if (this.ringFinger) this.ringFinger.on = false; return; }
+        const a = this.rubAt(p), reach = BATH_ART.TAIL.base * this.tailGrow() * 1.3;
+        this.ringFinger = { t: a.t, on: a.dist <= reach };
+    },
+
     drawTail(force) {
         const A = BATH_ART.slots(), g = this.el('bt-tail-pivot');
         if (!g) return;
@@ -1549,7 +1584,8 @@ const LustMinigame = {
         // Кадров, где палец стоит, а хвост уже выпрямился, за забег набегает
         // половина, и каждый из них стоил двух сотен toFixed и двух записей
         // в дерево.
-        const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}`;
+        const R = BATH_ART.ring;
+        const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}|${R.t.toFixed(3)}|${R.s.toFixed(3)}|${R.v.toFixed(2)}`;
         if (key === this._tailKey) return;
 
         // ---------- И НЕ ЧАЩЕ ТРИДЦАТИ РАЗ В СЕКУНДУ ----------
@@ -1713,6 +1749,7 @@ const LustMinigame = {
             // не слушается упругости. Двое пишущих в bend дёргали бы его.
             if (this.phase === 'aim') {
                 this.stepBend(dt);
+                this.stepRing(dt);
                 // Хвост стоит — дорисовать начисто, дальше ключ всё равно
                 // совпадёт и записи не будет.
                 this.drawTail((this.bendStep || 0) < 0.0005);
@@ -1759,6 +1796,8 @@ const LustMinigame = {
     // выпрямлением хвоста. Отдача в обе стороны одна — из ступени хвоста.
     // Завести руку заново — оторвать палец: пока он в воздухе, хода нет.
     aimAt(p) {
+        // Палец лёг на сам хвост — кольцо обжимает его и в финале.
+        this.ringTouch(p);
         const a = this.handAngle(p);
         if (a == null) return;
         if (this.bendHand == null) { this.bendHand = a; return; }
