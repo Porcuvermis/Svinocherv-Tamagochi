@@ -588,16 +588,23 @@ const BATH_ART = {
     //              ствола к головке, irreg — насколько гуляют бока;
     //   tone     — свой тон ступени поверх кожи персонажа (SkinTone.shift):
     //              бледнее и слабее внизу, сочнее и с приливом вверху;
-    //   gloss    — сила блика ствола, wet — размер влажного блика головки.
+    //   gloss    — сила блика ствола, wet — размер влажного блика головки;
+    //   firm     — упругость плоти: у слабого хвоста кольцо проминает
+    //              глубже, а отпущенный он дрожит дольше (lust.js,
+    //              stepRing); у налитого — наоборот;
+    //   pulse    — сила порции перед выстрелом: у слабого хвоста она
+    //              скромнее, у мощного ощутимее.
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
         4: { edges: [0, 0.19, 0.36, 0.52, 0.655], bulge: [0.16, 0.11, 0.18, 0.12],
              glansAt: 0.71, neck: 0.58, corona: 0.64,
-             width: 0.96, taper: 0.33, irreg: 1.18, tone: { light: 0.01, chroma: -0.1 }, gloss: 0.26, wet: 0.8 },
+             width: 0.96, taper: 0.33, irreg: 1.18, tone: { light: 0.01, chroma: -0.1 }, gloss: 0.26, wet: 0.8,
+             firm: 0.9, pulse: 0.9 },
         5: { edges: [0, 0.16, 0.3, 0.43, 0.545, 0.645], bulge: [0.15, 0.1, 0.17, 0.11, 0.13],
              glansAt: 0.7, neck: 0.62, corona: 0.7,
-             width: 1, taper: 0.28, irreg: 1, tone: null, gloss: 0.28, wet: 1 }
+             width: 1, taper: 0.28, irreg: 1, tone: null, gloss: 0.28, wet: 1,
+             firm: 1, pulse: 1 }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -679,9 +686,10 @@ const BATH_ART = {
         // Вздутие чуть вытянуто назад: спереди стенку распирает круче, сзади
         // она сходит полого.
         const d = t - P.t, sg = d > 0 ? R.width * 0.85 : R.width * 1.25;
-        const main = P.a * R.swell * g(d, sg);
+        const pw = this.look().pulse || 1;
+        const main = P.a * R.swell * pw * g(d, sg);
         // Упругий след: стенка за порцией чуть проседает и тут же выпрямляется.
-        const wake = -P.a * R.swell * R.wake * g(t - (P.t - 2.2 * R.width), R.width);
+        const wake = -P.a * R.swell * pw * R.wake * g(t - (P.t - 2.2 * R.width), R.width);
         const throb = P.throb * R.throb * (t < P.t ? 1 : 0.4);
         return (main + wake + throb) * guard - P.after * R.after * guard;
     },
@@ -705,7 +713,7 @@ const BATH_ART = {
         const K = this.look();
         const B = (this.TAIL.base / 2) * Math.pow(grow || 1, 0.7) * K.width;
         const E = this.ringEdges(), BU = K.bulge, G = K.glansAt;
-        const RG = this.ringAt(t), SQ = 1 - this.RING.squeeze * RG.f, FL = this.RING.flatten * RG.f;
+        const RG = this.ringAt(t), SQ = 1 - this.RING.squeeze / K.firm * RG.f, FL = Math.min(1, this.RING.flatten / K.firm) * RG.f;
         const tt = Math.max(0, Math.min(1, t)), TAU = Math.PI * 2;
         const wob = (sd > 0
             ? 0.055 * Math.sin(TAU * (1.3 * tt + 0.15)) + 0.03 * Math.sin(TAU * (3.1 * tt + 0.6))

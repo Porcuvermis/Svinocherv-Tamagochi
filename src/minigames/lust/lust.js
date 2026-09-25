@@ -1621,7 +1621,10 @@ const LustMinigame = {
     stepRing(dt) {
         const f = this.ringFinger, on = !!(f && f.on);
         let s = this.ringS || 0, sv = this.ringSV || 0, t = this.ringT, v = this.ringVel || 0;
-        sv += ((on ? 1 : 0) - s) * this.RING_K * dt - sv * this.RING_C * dt;
+        // Упругость ступени (look().firm): у налитого хвоста пружина жёстче
+        // и гасится быстрее, у слабого — мягче и дрожит дольше.
+        const fm = BATH_ART.look().firm || 1;
+        sv += ((on ? 1 : 0) - s) * this.RING_K * fm * fm * dt - sv * this.RING_C * fm * dt;
         s = Math.max(-0.2, Math.min(1.1, s + sv * dt));
         if (on) {
             if (t == null) t = f.t;
