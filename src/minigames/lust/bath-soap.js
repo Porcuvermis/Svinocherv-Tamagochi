@@ -13,7 +13,7 @@
 const BATH_SOAP = {
     // Вид на каждой ступени. Ещё не нарисованные ступени берут запечённый
     // брусок — пока лестница не закончена.
-    TIERS: ['stub', 'bar', 'toilet', 'pump', 'baked', 'baked', 'baked', 'baked', 'baked'],
+    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'baked', 'baked', 'baked', 'baked'],
     uid: 0,
 
     level() {
@@ -33,6 +33,7 @@ const BATH_SOAP = {
         if (kind === 'bar') return this.bar();
         if (kind === 'toilet') return this.toilet(where);
         if (kind === 'pump') return this.pump();
+        if (kind === 'gel') return this.gel();
         return BATH_BAKED.draw('soap');
     },
 
@@ -43,6 +44,7 @@ const BATH_SOAP = {
         if (kind === 'bar') return { x: 536, y: 314, w: 92, h: 64 };
         if (kind === 'toilet') return { x: 532, y: 313, w: 84, h: 38 };
         if (kind === 'pump') return { x: 550, y: 284, w: 54, h: 90 };
+        if (kind === 'gel') return { x: 546, y: 292, w: 56, h: 84 };
         return BATH_BAKED.box('soap');
     },
 
@@ -66,6 +68,87 @@ const BATH_SOAP = {
             d += (i ? 'L' : 'M') + pt(p0) + 'Q' + pt(p) + ' ' + pt(p1);
         }
         return d + 'Z';
+    },
+
+    // ---------- 4. ГЕЛЬ ----------
+    // Мягкая бутылка геля для душа, стоящая крышкой вниз, — как её и держат
+    // в ванной, чтобы гель стекал к горлышку. Что делает её гелем:
+    //   * перевёрнутый силуэт: широко вверху, книзу сужается к широкой
+    //     откидной крышке (на полке крышка за сеткой — её видно в руке, а
+    //     силуэт работает и без неё);
+    //   * мягкий пластик: вмятина на боку — бутылку уже сжимали;
+    //   * яркий глянцевый непрозрачный цвет и этикетка без букв — белая
+    //     волна с пузырьками.
+    gel() {
+        const P = btPal(), C = P.soapGel, W = P.soapPump, F = P.foam, ink = PALETTE.ink;
+        const id = 'bsp' + (this.uid++);
+        const A = BATH_ART.slots().soap;
+
+        // Тело: горлышко у крышки (y 17) → плечи наверху → скруглённый верх.
+        // Широкая и невысокая: узкая и высокая читалась вазой.
+        const top = -48;
+        const body = `M-12 17C-14 7 -23 -6 -23 -22C-23 -36 -21 ${top + 3} -12 ${top}H12C21 ${top + 3} 23 -36 23 -22`
+                   + `C23 -6 14 7 12 17Z`;
+        // Крышка-откидушка: широкий низ, шов шарнира.
+        const cap = `M-13 17H13Q15 17 15 19.5V26.5Q15 29 12.5 29H-12.5Q-15 29 -15 26.5V19.5Q-15 17 -13 17Z`;
+        // Этикетка: полоса поперёк тела с волной по верхнему краю.
+        // Этикетка — поясом, а не во всё тело: бутылка должна остаться
+        // бирюзовой.
+        const label = `M-24 -24C-12 -29 -3 -20 8 -25S19 -27 24 -25V-2H-24Z`;
+        const wave = `M-24 -14C-14 -19 -5 -9 6 -14S17 -17 24 -14V-9C18 -12 12 -6 5 -9S-13 -13 -24 -8Z`;
+
+        return `
+        <g class="bt-soap bt-soap-gel" transform="translate(${A.x - 2} ${A.y + 2})">
+            <defs>
+                <!-- Цилиндр глянцевого пластика: тёмные края, светлая треть
+                     слева, мягкое отражение справа. -->
+                <linearGradient id="${id}-body" gradientUnits="userSpaceOnUse" x1="-23" y1="0" x2="23" y2="0">
+                    <stop offset="0" stop-color="${C[0]}"/>
+                    <stop offset="0.22" stop-color="${C[3]}"/>
+                    <stop offset="0.5" stop-color="${C[2]}"/>
+                    <stop offset="0.85" stop-color="${C[1]}"/>
+                    <stop offset="1" stop-color="${C[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-label" gradientUnits="userSpaceOnUse" x1="-24" y1="0" x2="24" y2="0">
+                    <stop offset="0" stop-color="${W[1]}"/>
+                    <stop offset="0.25" stop-color="${W[4]}"/>
+                    <stop offset="0.8" stop-color="${W[3]}"/>
+                    <stop offset="1" stop-color="${W[1]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-cap" gradientUnits="userSpaceOnUse" x1="-15" y1="0" x2="15" y2="0">
+                    <stop offset="0" stop-color="${W[1]}"/>
+                    <stop offset="0.3" stop-color="${W[4]}"/>
+                    <stop offset="1" stop-color="${W[1]}"/>
+                </linearGradient>
+                <clipPath id="${id}-clip"><path d="${body}"/></clipPath>
+            </defs>
+            <path d="${body}${cap}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            <path d="${body}" fill="url(#${id}-body)"/>
+            <g clip-path="url(#${id}-clip)">
+                <path d="${label}" fill="url(#${id}-label)"/>
+                <path d="${wave}" fill="${C[2]}"/>
+                <path d="M-24 -8C-13 -13 -5 -3 6 -9S17 -12 24 -9" fill="none" stroke="${C[1]}" stroke-width="1.2" stroke-opacity="0.7"/>
+                <!-- Пузырьки на этикетке. -->
+                ${[[-9, -4.5, 2.6], [1, -6, 1.8], [10, -4.5, 2.3]].map(([x, y, r]) =>
+                    `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${C[2]}" stroke-width="1.1"/>
+                     <circle cx="${x - r * 0.35}" cy="${y - r * 0.35}" r="${r * 0.28}" fill="${C[3]}"/>`).join('')}
+                <!-- Край этикетки — тонкий шов. -->
+                <path d="M-24 -2H24" stroke="${C[0]}" stroke-width="0.8" stroke-opacity="0.5"/>
+                <!-- Вмятина от пальцев: тёмная ложбинка и светлый край. -->
+                <path d="M23 -40C16 -37 15 -31 22 -27" fill="none" stroke="${C[0]}" stroke-width="3.2" stroke-opacity="0.45" stroke-linecap="round"/>
+                <path d="M20.5 -41C14 -37 13.5 -32 19 -28" fill="none" stroke="${C[4]}" stroke-width="1.3" stroke-opacity="0.8" stroke-linecap="round"/>
+                <!-- Глянец: длинный блик слева и горячая точка у плеча. -->
+                <path d="M-15 -40C-17 -28 -17 -14 -12 4" fill="none" stroke="${C[4]}" stroke-width="3.2" stroke-opacity="0.75" stroke-linecap="round"/>
+                <ellipse cx="-10" cy="-43" rx="3.4" ry="1.5" fill="${F.hi}" fill-opacity="0.95" transform="rotate(-15 -10 -43)"/>
+                <!-- Горлышко темнее: туда стекает гель, стенка там толще. -->
+                <path d="M-12 12H12" stroke="${C[0]}" stroke-width="6" stroke-opacity="0.35"/>
+            </g>
+            <path d="${body}" fill="none" stroke="${mixColor(ink, C[0], 0.5)}" stroke-width="${STROKE.hairline}"/>
+            <path d="${cap}" fill="url(#${id}-cap)"/>
+            <path d="M-15 22.5H15" stroke="${W[1]}" stroke-width="1"/>
+            <path d="M-4 22.5V29" stroke="${W[1]}" stroke-width="0.8"/>
+            <path d="${cap}" fill="none" stroke="${mixColor(ink, W[0], 0.5)}" stroke-width="${STROKE.hairline}"/>
+        </g>`;
     },
 
     // ---------- 3. ЖИДКОЕ ----------
