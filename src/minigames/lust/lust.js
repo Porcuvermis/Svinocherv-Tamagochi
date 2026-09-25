@@ -244,7 +244,7 @@ const LustMinigame = {
         // bt-splats здесь НЕТ: там разметка слоя потёков, её чистит
         // LustGoo.reset(), а не выбрасывает.
         for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
-                          'bt-gauge', 'bt-spot'])
+                          'bt-gauge', 'bt-ammo', 'bt-spot'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.el('bt-tail').removeAttribute('transform');
@@ -1478,15 +1478,29 @@ const LustMinigame = {
     // Столбик налива СЛЕВА ОТ ХВОСТА: работа идёт по хвосту, туда игрок и
     // смотрит. Высота столбика — по самому хвосту, чтобы он не жил в кадре
     // отдельной деталью.
-    drawRubGauge() {
+    drawRubGauge(level, ticks) {
         const A = BATH_ART.slots(), T = BATH_ART.TAIL;
         const h = T.len * 1.05;
         // Столбик стоит с ВНЕШНЕЙ стороны хвоста — той, куда хвост НЕ гнётся:
         // иначе он оказывается между хвостом и мордой, ровно в том коридоре,
         // где идёт вся работа.
-        this.el('bt-gauge').innerHTML = BATH_ART.rubGauge(
+        this.el('bt-ammo').innerHTML = BATH_ART.rubGauge(
             A.tail.x + (T.side || 1) * T.base * 0.95 * -1,
-            A.tail.y - h - 6, h, this.charge);
+            A.tail.y - h - 6, h, level == null ? this.charge : level, ticks || 0);
+    },
+
+    // ---------- ЗАПАС ВЫСТРЕЛОВ ----------
+    // Та же шкала в финале: сколько толчков осталось. Белое уходит ПОКА
+    // порция идёт по стволу (pulseU — доля её пути), а не скачком на
+    // выстреле: видно, что белое перетекает из шкалы в хвост. Перерисовка —
+    // только при заметной смене уровня.
+    drawAmmo() {
+        const total = this.shotsTotal || 1;
+        const level = Math.max(0, (this.shotsLeft - (this.pulseU || 0)) / total);
+        const key = Math.round(level * 400);
+        if (key === this._ammoKey) return;
+        this._ammoKey = key;
+        this.drawRubGauge(level, total);
     },
 
     rubMove(p) {
@@ -1563,6 +1577,7 @@ const LustMinigame = {
     stepPulse(now) {
         const G = BATH_ART.look().glansAt;
         let t = 0, a = 0, after = 0;
+        this.pulseU = 0;
         if (this.nextShotAt) {
             const travel = Math.min(600, this.shotMs() * 0.8);
             const u = 1 - (this.nextShotAt - now) / travel;
@@ -1570,6 +1585,7 @@ const LustMinigame = {
                 // Доходит к шейке на 92% пути и ждёт там выстрела — «за
                 // мгновение до», а не впритык к нему.
                 const uu = Math.min(1, u / 0.92);
+                this.pulseU = uu;
                 t = 0.05 + (G - 0.03 - 0.05) * uu * uu;
                 a = Math.min(1, uu * 3);
             }
@@ -1753,6 +1769,8 @@ const LustMinigame = {
         this.setMouthFill(0);
         this.dropAcc = 0;
         this.shotsLeft = this.tailTier().shots || 10;
+        this.shotsTotal = this.shotsLeft;
+        this._ammoKey = null;
 
         // Блаженство: рот открыт, глаза зажмурены. Сказано позой, а не
         // подписью (инвариант 9).
@@ -1797,6 +1815,7 @@ const LustMinigame = {
             // Порция считается и на доигрывании: последний выстрел оставил
             // бы её висеть у шейки, если бы счёт остановился вместе с ним.
             this.stepPulse(now);
+            if (this.phase === 'aim' || this.phase === 'settle') this.drawAmmo();
             if (this.phase === 'aim') {
                 this.stepBend(dt);
                 this.stepRing(dt);

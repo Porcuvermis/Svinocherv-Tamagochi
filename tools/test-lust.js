@@ -259,6 +259,22 @@ const harness = require('./harness');
   // Отпущенный хвост расправляется: кольцо гаснет пружиной за секунду с
   // небольшим (пружина мягкая, с одним-двумя покачиваниями).
   await page.waitForTimeout(1500);
+  // Шкала налива в финале — запас выстрелов: полная, с делением на каждый.
+  const ammoLevel = () => page.evaluate(() => {
+    const r = document.querySelectorAll('#bt-ammo rect');
+    if (r.length < 2) return null;
+    return { level: +(r[1].height.baseVal.value / (r[0].height.baseVal.value - 6)).toFixed(2),
+             ticks: (document.querySelector('#bt-ammo path') || { getAttribute: () => '' }).getAttribute('d').split('M').length - 1 };
+  });
+  // Сравнивается с тем, что ОСТАЛОСЬ по состоянию игры, а не с «полной»:
+  // к замеру первая порция уже может быть в пути, и белое честно уходит.
+  await page.waitForTimeout(100);
+  const ammo0 = await ammoLevel();
+  const st0 = await page.evaluate(() => ({ total: LustMinigame.shotsTotal, left: LustMinigame.shotsLeft, u: LustMinigame.pulseU || 0 }));
+  const want0 = (st0.left - st0.u) / st0.total;
+  ok(ammo0 && Math.abs(ammo0.level - want0) < 0.04 && ammo0.ticks === st0.total - 1,
+     'в финале шкала — запас выстрелов, деление на каждый',
+     ammo0 && `уровень ${ammo0.level} при ожидаемом ${want0.toFixed(2)}, делений ${ammo0.ticks + 1} из ${st0.total}`);
   const ringOff = await page.evaluate(() => BATH_ART.ring.s);
   ok(Math.abs(ringOff) < 0.02, 'отпущенный хвост расправляется', `сила кольца ${ringOff.toFixed(3)}`);
 
@@ -440,6 +456,8 @@ const harness = require('./harness');
     rain: +(document.getElementById('bt-rain-far').style.opacity || 1)
   }));
   ok(res.phase === 'done', 'финал доигран', res.phase);
+  const ammo1 = await ammoLevel();
+  ok(ammo1 && ammo1.level < 0.02, 'к концу финала запас выстрелов израсходован', ammo1 && `уровень ${ammo1.level}`);
   // Ни одной капли в воздухе: игра не считается доигранной, пока последняя
   // не приземлилась. Раньше кадровый цикл гасили по таймеру, и капли,
   // не успевшие долететь, ЗАМИРАЛИ в воздухе до конца экрана.
