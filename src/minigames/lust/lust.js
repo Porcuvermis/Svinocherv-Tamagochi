@@ -1811,6 +1811,7 @@ const LustMinigame = {
         // позже. До замера прицел считается по текущему рту — прикидкой.
         this.mouthAt = null;
         this.mouthDue = performance.now() + this.MOUTH_SETTLE;
+        this.mouthFrames = (window.WormRenderer && WormRenderer.geomFrames) ? WormRenderer.geomFrames() : null;
         this.bendAim = this.solveBend(this.mouthPoint());
         this.drawGauge();
 
@@ -1823,7 +1824,16 @@ const LustMinigame = {
             // иначе становится другой физикой.
             const dt = Math.min(0.05, (now - this.aimLast) / 1000);
             this.aimLast = now;
-            if (!this.mouthAt && now >= this.mouthDue) {
+            // Замер ждёт не только время, но и КАДРЫ: под нагрузкой червь на
+            // пяти кадрах в секунду не всегда успевал дорисовать позу за
+            // MOUTH_SETTLE, и рот замерялся прежним (сверка с калькулятором
+            // краснела раз в десяток прогонов). Три кадра деформации после
+            // смены позы — поза точно на экране. Страховка: не позже секунды
+            // с половиной, если счётчика кадров нет или он стоит.
+            const framesOk = this.mouthFrames == null
+                || WormRenderer.geomFrames() - this.mouthFrames >= 3
+                || now >= this.mouthDue + 1000;
+            if (!this.mouthAt && now >= this.mouthDue && framesOk) {
                 this.mouthAt = this.mouthPoint();
                 this.bendAim = this.solveBend(this.mouthAt);
             }
