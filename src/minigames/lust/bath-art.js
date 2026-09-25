@@ -158,7 +158,7 @@ const BATH_ART = {
         </g>
 
         ${BATH_SHELF.backLayer()}
-        <g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw()}</g>
+        <g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw(null, 'shelf')}</g>
             ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>
         <g id="bt-cloth-home">${B.draw('cloth')}
             ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>

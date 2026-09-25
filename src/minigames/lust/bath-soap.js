@@ -25,16 +25,18 @@ const BATH_SOAP = {
         return Math.max(0, Math.min(this.TIERS.length - 1, L | 0));
     },
 
-    draw(level) {
+    // where === 'shelf' — предмет на полке: у него есть то, чего нет в руке
+    // и на иконке (сопля обмылка из корзины).
+    draw(level, where) {
         const kind = this.TIERS[this.tier(level)];
-        if (kind === 'stub') return this.stub();
+        if (kind === 'stub') return this.stub(where);
         return BATH_BAKED.draw('soap');
     },
 
     // Габарит на сцене — по нему иконка магазина ужимает вещь под клетку.
     box(level) {
         const kind = this.TIERS[this.tier(level)];
-        if (kind === 'stub') return { x: 532, y: 300, w: 86, h: 73 };
+        if (kind === 'stub') return { x: 546, y: 322, w: 60, h: 44 };
         return BATH_BAKED.box('soap');
     },
 
@@ -42,113 +44,119 @@ const BATH_SOAP = {
     // меняется, пока ванная открыта.
     refresh() {
         const el = typeof document !== 'undefined' && document.getElementById('bt-soap-art');
-        if (el) el.innerHTML = this.draw();
+        if (el) el.innerHTML = this.draw(null, 'shelf');
     },
 
     // ---------- 0. ОБМЫЛОК ----------
-    // Тонкий засохший кусок хозяйственного «72%», прислонённый к стенке
-    // корзины. Что делает его обмылком, а не просто маленьким бруском:
-    //   * края стёрты в округлость — им мылись годами;
-    //   * угол отколот, и скол СВЕТЛЕЕ поверхности — видно, что откололся;
-    //   * толщина — узкая полоса торца: кусок тонкий, почти пластинка;
-    //   * сквозная трещина от верхнего края и сетка сухих трещинок —
-    //     хозяйственное мыло, высыхая, трескается паутиной;
-    //   * клеймо стёрто наполовину, а «%» срезан сколом;
-    //   * прилипший волос.
-    stub() {
+    // Жалкий огрызок хозяйственного «72%»: то, что остаётся, когда мылом
+    // мылись годами и выбросить всё жалко. Узнаётся по цвету и по обрывку
+    // клейма, а жалким его делает всё остальное:
+    //   * он МАЛЕНЬКИЙ — вдвое меньше бруска, и тонкий: торец — ниточка,
+    //     края просвечивают (истёртое мыло на краю стекленеет);
+    //   * покороблен и завален набок — стоять ровно ему уже нечем;
+    //   * угол отколот, скол светлее — внутри мыло ещё свежее;
+    //   * от клейма осталась «7» и кусок «2»;
+    //   * трещина насквозь, сухие трещинки, въевшаяся грязь;
+    //   * прилипший волос свешивается через край;
+    //   * на полке — мыльная сопля тянется из корзины вниз.
+    // Кусок стоит на ребре у стенки корзины: плашмя он целиком прятался бы
+    // за передней сеткой (она закрывает нижние 17 единиц).
+    stub(where) {
         const P = btPal(), S = P.soapStub, R = S.ramp, ink = PALETTE.ink;
         const id = 'bsp' + (this.uid++);
         const A = BATH_ART.slots().soap;
-        const f = (v) => v.toFixed(1);
 
-        // Лицевая сторона. Кусок стоит на ребре, прислонённый к стенке
-        // корзины: плашмя тонкий обмылок целиком прятался бы за передней
-        // сеткой (она закрывает нижние 17 единиц). Скол — острыми
-        // вершинами, всё остальное стёрто кривыми: у старого мыла нет ни
-        // одного острого угла, кроме свежего.
-        const CHIP = [[14, -36], [19, -27], [24, -29], [30, -21]];
-        const face = 'M-26 -34Q-4 -38 14 -36'
+        // Лицо: кривой обкатанный лоскут. Острые только вершины скола.
+        const CHIP = [[6, -17], [10, -11], [14, -13], [19, -7]];
+        // Форма — всё ещё брусок (плоский, шире, чем выше), только стёртый:
+        // круглый огрызок читался картофелиной, а не мылом.
+        const face = 'M-24 -12Q-22 -17 -14 -16.5Q-4 -15 6 -17'
             + CHIP.slice(1).map(p => `L${p[0]} ${p[1]}`).join('')
-            + 'Q36 -16 36 -4Q37 16 32 24Q0 28 -30 26Q-37 24 -36 8Q-37 -20 -34 -28Q-32 -33 -26 -34Z';
-        // Торец: та же форма, сдвинутая назад-вправо, — толщина пластинки.
-        const T = { x: 4, y: 2.5 };
+            + 'Q24 -4 24 4Q24 13 16 15L-16 16Q-25 16 -25 6Q-26 -6 -24 -12Z';
+        // Торец — ниточка: кусок почти прозрачный по толщине.
+        const T = { x: 2, y: 1.3 };
         const back = `<path d="${face}" transform="translate(${T.x} ${T.y})"`;
-        // Скол по толщине: полоса между краем скола и его копией на заднем
-        // слое. И след скола на лице — неглубокая светлая выемка: откололся
-        // не только угол, но и кусок лицевой стороны, и под ним свежее,
-        // ещё не потемневшее мыло. Внутренний край выемки — ступенька.
         const c0 = CHIP.map(p => `${p[0]} ${p[1]}`), c1 = CHIP.map(p => `${p[0] + T.x} ${p[1] + T.y}`).reverse();
         const fracture = `M${c0.join('L')}L${c1.join('L')}Z`;
-        const scarRim = 'M30 -21L26.5 -16.5L21 -18.5L15.5 -23L10 -33L14 -36';
-        const scar = `M${c0.join('L')}` + scarRim.replace(/^M30 -21/, '') + 'Z';
+        const scarRim = 'M19 -7L16 -4L11.5 -6L7.5 -10L3.5 -16L6 -17';
+        const scar = `M${c0.join('L')}` + scarRim.replace(/^M19 -7/, '') + 'Z';
 
-        // Сухие трещинки у краёв — хозяйственное мыло, высыхая, трескается.
-        // Короткие, ветвистые, от кромки внутрь.
-        const craq = 'M36 -3L30.5 -1L26 -3.5L21 0.5M30.5 -1L28.5 5'
-                   + 'M36.5 8L31 9.5L27 13M-36.5 1L-31 3.5L-27.5 0.5M-31 3.5L-29 8';
-        // Сквозная трещина от верхнего края вниз, зигзагом между цифрами.
-        const crack = 'M-8 -36.5L-10 -29L-6 -23L-8 -16L-5 -8L-7 1';
-
-        // Клеймо «72%» — канавка: тёмное дно и светлая нижняя стенка, как на
-        // запечённом бруске. Стёрто — полупрозрачное; верх «%» ушёл со
-        // сколом (выемка рисуется поверх).
-        const mark = 'M-26 -26L-16 -26L-21 -12'
-                   + 'M-11 -23Q-9 -27 -5 -26.5Q-1 -26 -2 -21.5L-11 -12L-2 -12'
-                   + 'M5 -12L17 -28'
-                   + 'M5 -24a2 2 0 1 0 4 0a2 2 0 1 0 -4 0'
-                   + 'M13 -14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0';
+        const craq = 'M24 2L19.5 3.5L16 1.5M19.5 3.5L18.5 8M-25 3L-21 4.5L-18.5 2';
+        const crack = 'M-4 -15.5L-6 -10L-2 -5L-4 1L-1 7';
+        // Обрывок клейма: «7» и начало «2», стёртые почти до гладкого.
+        const mark = 'M-20 -10L-12 -10L-16 1M-8 -7.5Q-6.5 -11 -3.5 -10.5Q-1 -10 -2 -6';
+        // Въевшаяся грязь: серые точки в порах.
+        const rnd = btRng(27);
+        let dirt = '';
+        for (let i = 0; i < 14; i++) {
+            const x = -21 + rnd() * 42, y = -13 + rnd() * 25, r = 0.4 + rnd() * 0.7;
+            dirt += `M${(x - r).toFixed(1)} ${y.toFixed(1)}a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(2 * r).toFixed(2)} 0a${r.toFixed(2)} ${r.toFixed(2)} 0 1 0 ${(-2 * r).toFixed(2)} 0Z`;
+        }
+        // Мыльная сопля из корзины: только на полке. Висит из-под дна
+        // (передний край дна — BATH_SHELF.FLOORS[0]) и собирается в каплю.
+        let goo = '';
+        if (where === 'shelf') {
+            const fy = BATH_SHELF.FLOORS[0], x = A.x + 6;
+            const d = `M${x - 3.2} ${fy}C${x - 3} ${fy + 5} ${x - 1.2} ${fy + 7} ${x - 1.5} ${fy + 10}`
+                    + `C${x - 3.4} ${fy + 12} ${x - 2.6} ${fy + 16.5} ${x} ${fy + 16.5}`
+                    + `C${x + 2.6} ${fy + 16.5} ${x + 3.2} ${fy + 12} ${x + 1.3} ${fy + 10}`
+                    + `C${x + 1} ${fy + 7} ${x + 3} ${fy + 5} ${x + 3.2} ${fy}Z`;
+            goo = `<g class="bt-soap-goo">
+                <path d="${d}" fill="none" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-opacity="0.6"/>
+                <path d="${d}" fill="${S.fresh}" fill-opacity="0.8"/>
+                <path d="M${x - 0.9} ${fy + 11.8}q-0.6 1.6 0.4 2.8" fill="none" stroke="${P.soapLit}" stroke-width="0.9" stroke-linecap="round"/>
+            </g>`;
+        }
 
         return `
-        <g class="bt-soap bt-soap-stub" transform="translate(${A.x} ${A.y + 1}) rotate(-6)">
+        <g class="bt-soap bt-soap-stub" transform="translate(${A.x + 2} ${A.y + 3}) rotate(-7)">
             <defs>
-                <!-- Свет сверху-слева: светлый угол, тёмный противоположный. -->
-                <linearGradient id="${id}-face" gradientUnits="userSpaceOnUse" x1="-34" y1="-36" x2="32" y2="26">
-                    <stop offset="0" stop-color="${R[4]}"/>
-                    <stop offset="0.35" stop-color="${R[3]}"/>
-                    <stop offset="0.75" stop-color="${R[2]}"/>
+                <!-- Свет сверху-слева; покоробленный кусок темнеет к
+                     завёрнутому краю. -->
+                <linearGradient id="${id}-face" gradientUnits="userSpaceOnUse" x1="-24" y1="-17" x2="22" y2="16">
+                    <stop offset="0" stop-color="${R[3]}"/>
+                    <stop offset="0.45" stop-color="${R[2]}"/>
                     <stop offset="1" stop-color="${R[1]}"/>
                 </linearGradient>
-                <!-- Затёртое место посередине — восковой отлив, которым мыло
-                     блестит там, где им тёрли. -->
-                <radialGradient id="${id}-wax" gradientUnits="userSpaceOnUse" cx="-12" cy="-18" r="26"
-                                gradientTransform="translate(-12 -18) scale(1.2 0.8) translate(12 18)">
-                    <stop offset="0" stop-color="${P.soapLit}" stop-opacity="0.55"/>
+                <!-- Затёртая середина — тусклый восковой отлив. -->
+                <radialGradient id="${id}-wax" gradientUnits="userSpaceOnUse" cx="-9" cy="-7" r="14"
+                                gradientTransform="translate(-9 -7) scale(1.4 0.8) translate(9 7)">
+                    <stop offset="0" stop-color="${P.soapLit}" stop-opacity="0.4"/>
                     <stop offset="1" stop-color="${P.soapLit}" stop-opacity="0"/>
                 </radialGradient>
-                <!-- Выемка скола: светлая у сломанного края, к ступеньке
-                     темнеет — она ниже лица и уходит в тень. -->
-                <linearGradient id="${id}-scar" gradientUnits="userSpaceOnUse" x1="24" y1="-31" x2="17" y2="-20">
+                <linearGradient id="${id}-scar" gradientUnits="userSpaceOnUse" x1="12" y1="-14" x2="8" y2="-7">
                     <stop offset="0" stop-color="${S.fresh}"/>
                     <stop offset="1" stop-color="${mixColor(S.fresh, R[2], 0.55)}"/>
                 </linearGradient>
                 <clipPath id="${id}-clip"><path d="${face}"/></clipPath>
             </defs>
-            <!-- Контур вокруг лица и торца разом — наружу торчит половина. -->
             ${back} fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
             <path d="${face}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
             ${back} fill="${R[0]}"/>
-            <path d="${fracture}" fill="${S.fresh}" stroke="${mixColor(S.fresh, R[0], 0.5)}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
+            <path d="${fracture}" fill="${S.fresh}"/>
             <path d="${face}" fill="url(#${id}-face)"/>
             <g clip-path="url(#${id}-clip)">
+                <!-- Истёртый край просвечивает: светлая стеклянная кайма. -->
+                <path d="${face}" fill="none" stroke="${S.fresh}" stroke-width="4.5" stroke-opacity="0.45"/>
+                <!-- Покороблен: вдоль изгиба — тень прогиба. -->
+                <path d="M-25 7Q0 2 24 -1" fill="none" stroke="${R[0]}" stroke-width="7" stroke-opacity="0.18" stroke-linecap="round"/>
                 <path d="${face}" fill="url(#${id}-wax)"/>
-                <path d="${mark}" fill="none" stroke="${P.soapLit}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
-                      stroke-opacity="0.35" transform="translate(0.7 0.8)"/>
-                <path d="${mark}" fill="none" stroke="${P.soapMark}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
-                      stroke-opacity="0.45"/>
+                <path d="${mark}" fill="none" stroke="${P.soapLit}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                      stroke-opacity="0.4" transform="translate(0.5 0.6)"/>
+                <path d="${mark}" fill="none" stroke="${P.soapMark}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                      stroke-opacity="0.6"/>
+                <path d="${dirt}" fill="${S.crack}" fill-opacity="0.45"/>
                 <path d="${scar}" fill="url(#${id}-scar)"/>
-                <path d="${scarRim}" fill="none" stroke="${S.crack}" stroke-width="${STROKE.detail}" stroke-linejoin="round" stroke-opacity="0.7"/>
-                <path d="${scarRim}" fill="none" stroke="${P.soapLit}" stroke-width="0.8" stroke-opacity="0.8" transform="translate(-0.9 0.6)"/>
-                <path d="${craq}" fill="none" stroke="${S.crack}" stroke-width="${STROKE.detail}" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round"/>
-                <path d="${crack}" fill="none" stroke="${P.soapLit}" stroke-width="0.8" stroke-opacity="0.6" transform="translate(0.8 0.5)"/>
-                <path d="${crack}" fill="none" stroke="${S.crack}" stroke-width="1.4" stroke-linejoin="round"/>
-                <!-- Кромка у торца светлее — стёртый край ловит свет. -->
-                <path d="M-33 -27Q-31 -32 -25 -32.5Q-8 -36 11 -34" fill="none" stroke="${R[4]}" stroke-width="2.2"
-                      stroke-linecap="round" stroke-opacity="0.8" transform="translate(0.8 1.4)"/>
+                <path d="${scarRim}" fill="none" stroke="${S.crack}" stroke-width="${STROKE.hairline}" stroke-linejoin="round" stroke-opacity="0.8"/>
+                <path d="${craq}" fill="none" stroke="${S.crack}" stroke-width="${STROKE.hairline}" stroke-opacity="0.7" stroke-linecap="round"/>
+                <path d="${crack}" fill="none" stroke="${P.soapLit}" stroke-width="0.6" stroke-opacity="0.5" transform="translate(0.6 0.4)"/>
+                <path d="${crack}" fill="none" stroke="${S.crack}" stroke-width="1.1" stroke-linejoin="round"/>
             </g>
             <path d="${face}" fill="none" stroke="${mixColor(ink, R[1], 0.4)}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
-            <!-- Волос, прилипший к мылу. -->
-            <path d="M-31 -6C-23 -12 -19 -2 -11 -8S1 -4 5 -10Q8 -14 12 -11" fill="none" stroke="${S.hair}" stroke-width="0.6" stroke-opacity="0.85" stroke-linecap="round"/>
-        </g>`;
+            <!-- Волос: прилип к лицу и свешивается через край. -->
+            <path d="M-14 -2C-8 -7 -4 1 2 -3S10 0 13 5Q17 11 15 18Q13 24 17 29" fill="none" stroke="${S.hair}"
+                  stroke-width="0.55" stroke-linecap="round"/>
+        </g>${goo}`;
     }
 };
 
