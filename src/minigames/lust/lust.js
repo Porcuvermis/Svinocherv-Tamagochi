@@ -1689,6 +1689,8 @@ const LustMinigame = {
         P.segs.forEach((sd, i) => { const e = this.el(`bt-tail-seg-${i}`); if (e) e.setAttribute('d', sd); });
         const gl = this.el('bt-tail-glans');
         if (gl) gl.setAttribute('d', P.glans);
+        const cl = this.el('bt-tail-clit');
+        if (cl) cl.setAttribute('d', P.clit);
         const wr = this.el('bt-tail-wrinkle');
         if (wr) wr.setAttribute('d', P.wrinkles);
         for (const [id, k] of [['bt-tail-vein-sh', 'veinSh'], ['bt-tail-vein', 'vein'], ['bt-tail-vein-hi', 'veinHi']]) {

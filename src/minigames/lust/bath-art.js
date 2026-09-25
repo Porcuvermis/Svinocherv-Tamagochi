@@ -604,7 +604,9 @@ const BATH_ART = {
     //   veins    — сколько вен идёт по стволу (0 — ни одной): у налитого
     //              хвоста они проступают; veinPower — насколько (толщина и
     //              плотность, 1 — как у ступени 6); veinBranch — у вены
-    //              есть боковая ветка.
+    //              есть боковая ветка;
+    //   clitellum — ПОЯСОК: [с какого звена, до какого] — гладкое вздутое
+    //              кольцо без складок и морщин, своего, более тёплого тона.
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
@@ -661,7 +663,15 @@ const BATH_ART = {
         7: { edges: [0, 0.125, 0.24, 0.35, 0.45, 0.545, 0.63], bulge: [0.13, 0.1, 0.14, 0.1, 0.12, 0.11],
              glansAt: 0.68, neck: 0.66, corona: 0.78,
              width: 1.1, taper: 0.22, irreg: 0.82, tone: { chroma: 0.1, blood: 0.07 }, gloss: 0.37, wet: 1.2,
-             firm: 1.15, pulse: 1.15, veins: 1, veinPower: 1.3, veinBranch: true }
+             firm: 1.15, pulse: 1.15, veins: 1, veinPower: 1.3, veinBranch: true },
+        // 8 — «зрелый»: семь звеньев, ПОЯСОК на втором-третьем (гладкое
+        // вздутое кольцо без складок, теплее кожи — у дождевого червя это
+        // метка зрелости), вторая вена; толще, сочнее, упруже, головка
+        // крупнее.
+        8: { edges: [0, 0.1, 0.2, 0.3, 0.39, 0.475, 0.555, 0.625], bulge: [0.12, 0.1, 0.1, 0.12, 0.1, 0.12, 0.1],
+             glansAt: 0.67, neck: 0.68, corona: 0.81,
+             width: 1.15, taper: 0.2, irreg: 0.75, tone: { chroma: 0.13, blood: 0.09 }, gloss: 0.4, wet: 1.28,
+             firm: 1.22, pulse: 1.22, veins: 2, veinPower: 1.35, veinBranch: true, clitellum: [1, 3] }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -787,6 +797,17 @@ const BATH_ART = {
             const taper = 1 - K.taper * (tt / G);
             // Под кольцом вздутие гаснет до уровня складки (FL).
             w = B * taper * (1 - BU[k] + BU[k] * Math.sin(Math.PI * uu) * (1 - FL));
+            // Поясок: одно гладкое вздутие на несколько звеньев — перехваты
+            // между ними пропадают, кольцо чуть толще соседей.
+            const CL = K.clitellum;
+            if (CL && tt > E[CL[0]] && tt < E[CL[1]]) {
+                const cu = (tt - E[CL[0]]) / (E[CL[1]] - E[CL[0]]);
+                const band = B * taper * (1 + 0.09 * (1 - FL) * Math.pow(Math.sin(Math.PI * cu), 0.6));
+                // К краям пояска гладкость сходит на нет — стыкуется с
+                // перехватами соседних звеньев без ступеньки.
+                const e = Math.min(1, Math.min(cu, 1 - cu) / 0.12), es = e * e * (3 - 2 * e);
+                w = w + (band - w) * es;
+            }
         } else if (tt < G) {
             // Шейка: от конца последнего звена к узкому месту перед головкой.
             const k = (tt - neckEnd) / (G - neckEnd);
@@ -864,6 +885,10 @@ const BATH_ART = {
             ink,
             inner: W(mixColor((seg && seg.stroke) || ink0, lo, 0.35)),
             vol: [W(lo), W(hi), W(base), W(lo), W(mixColor(lo, ink0, 0.3))],
+            // Поясок: теплее и чуть светлее кожи — тот же объём, свой тон.
+            clit: (() => { const cb = T.shift(base, { light: 0.07, chroma: 0.2, blood: 0.1 });
+                           const ch = mixColor(cb, lift, 0.42), cl = mixColor(cb, ink0, 0.27);
+                           return [W(cl), W(ch), W(cb), W(cl), W(mixColor(cl, ink0, 0.3))]; })(),
             fill: W(lo),
             glans: [W(mixColor(glans, lift, 0.45)), W(glans), W(mixColor(glans, ink0, 0.4))],
             shade: W(mixColor(base, ink0, 0.62)),
@@ -878,6 +903,7 @@ const BATH_ART = {
     paintTail(tone) {
         const set = (id, a, v) => { const n = document.getElementById(id); if (n) n.setAttribute(a, v); };
         tone.vol.forEach((c, i) => set(`bt-tail-vol-${i}`, 'stop-color', c));
+        tone.clit.forEach((c, i) => set(`bt-tail-cl-${i}`, 'stop-color', c));
         tone.glans.forEach((c, i) => set(`bt-tail-gl-${i}`, 'stop-color', c));
         set('bt-tail-shade-0', 'stop-color', tone.shade);
         set('bt-tail-shade-1', 'stop-color', tone.shade);
@@ -921,6 +947,9 @@ const BATH_ART = {
             <linearGradient id="bt-tail-vol" x1="0" y1="0" x2="1" y2="0">
                 ${[0, 0.2, 0.5, 0.86, 1].map((o, i) => stop(`bt-tail-vol-${i}`, o, C.vol[i])).join('')}
             </linearGradient>
+            <linearGradient id="bt-tail-clit-g" x1="0" y1="0" x2="1" y2="0">
+                ${[0, 0.2, 0.5, 0.86, 1].map((o, i) => stop(`bt-tail-cl-${i}`, o, C.clit[i])).join('')}
+            </linearGradient>
             <radialGradient id="bt-tail-glans-g" cx="38%" cy="35%" r="75%">
                 ${[0, 0.45, 1].map((o, i) => stop(`bt-tail-gl-${i}`, o, C.glans[i])).join('')}
             </radialGradient>
@@ -942,6 +971,11 @@ const BATH_ART = {
               stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${Math.min(0.9, 0.75 * VP).toFixed(2)}"/>
         <path id="bt-tail-vein-hi" d="" fill="none" stroke="${C.shine}" stroke-width="${(0.9 * VP).toFixed(2)}"
               stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.45"/>
+        <!-- Поясок (look().clitellum): гладкое кольцо своего тона поверх
+             звеньев, которые он накрывает, И поверх вен: вены угадываются под
+             гладким кольцом (оно чуть прозрачное), и поясок читается
+             отдельной вещью, а вены не обрываются о него. -->
+        <path id="bt-tail-clit" d="" fill="url(#bt-tail-clit-g)" fill-opacity="0.8"/>
         <!-- Мелкие морщины дряблой кожи (look().wrinkles). -->
         <path id="bt-tail-wrinkle" d="" fill="none" stroke="${C.inner}" stroke-width="0.8"
               stroke-linecap="round" stroke-opacity="${(0.4 * (K.wrinkles || 0)).toFixed(2)}"/>
@@ -1000,7 +1034,12 @@ const BATH_ART = {
             return { d: `M${P(s0)}Q${P(c)} ${P(s1)}`, k };
         };
         const creases = [];
-        for (let i = 1; i < E.length - 1; i++) creases.push(crease(E[i], 0.1 + 0.05 * (i % 2)));
+        const CL = this.look().clitellum;
+        // Внутри пояска складок нет: индексы при этом сохраняются (пустая
+        // складка), по ним пишутся пути (lust.js).
+        for (let i = 1; i < E.length - 1; i++)
+            creases.push(CL && i > CL[0] && i < CL[1] ? { d: '', k: 0 } : crease(E[i], 0.1 + 0.05 * (i % 2)));
+        const clit = CL ? slice(E[CL[0]], E[CL[1]]) : '';
         // Морщины: короткие дужки МЕЖДУ складками — по три-четыре на звено,
         // разной длины и со сдвигом, чтобы не складывались в штриховку. Как
         // и складки, под кольцом разглаживаются (короче).
@@ -1009,6 +1048,7 @@ const BATH_ART = {
         if (WR > 0) {
             const q = btRng(19);
             for (let i = 0; i < E.length - 1; i++) {
+                if (CL && i >= CL[0] && i < CL[1]) continue;
                 const n = 3 + (i % 2);
                 for (let j = 1; j <= n; j++) {
                     const t = E[i] + (E[i + 1] - E[i]) * (j / (n + 1)) + (q() - 0.5) * 0.012;
@@ -1040,11 +1080,14 @@ const BATH_ART = {
         let vein = '', veinHi = '', veinSh = '';
         const VN = this.look().veins || 0;
         for (let v = 0; v < VN; v++) {
-            const a0 = v ? 0.36 : 0.66, ph = v ? 2.1 : 0.4, t0 = 0.06 + 0.05 * v, t1 = E[E.length - 1] - 0.02;
+            // Вторая вена — у самого теневого края и короче: на светлой
+            // стороне она скрещивалась с веткой первой и путалась с бликом.
+            const a0 = v ? 0.86 : 0.64, ph = v ? 2.1 : 0.4, t0 = v ? 0.14 : 0.06, t1 = E[E.length - 1] - (v ? 0.08 : 0.02);
+            const amp = v ? 0.5 : 1;          // у края вена извивается меньше
             const i0 = idx(t0), i1 = idx(t1);
             const pt = (i, shift) => {
                 const t = i / M;
-                const u = a0 + 0.07 * Math.sin(t * 13 + ph) + 0.04 * Math.sin(t * 29 + ph * 2) + shift;
+                const u = a0 + amp * (0.07 * Math.sin(t * 13 + ph) + 0.04 * Math.sin(t * 29 + ph * 2)) + shift;
                 return { x: L[i].x + (R[i].x - L[i].x) * u, y: L[i].y + (R[i].y - L[i].y) * u };
             };
             // Тело вены, блик по краю к свету и тень по краю от света.
@@ -1072,7 +1115,7 @@ const BATH_ART = {
                 vein += bd; veinHi += bh; veinSh += bs;
             }
         }
-        return { segs, glans, creases, wrinkles, vein, veinHi, veinSh, lights: this.tailLights(curve, E, G),
+        return { segs, glans, clit, creases, wrinkles, vein, veinHi, veinSh, lights: this.tailLights(curve, E, G),
                  neck: { x: nk.x, y: nk.y, deg: deg(nk), rx: B * 1.0, ry: B * 0.26 } };
     },
 
