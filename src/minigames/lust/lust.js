@@ -1691,6 +1691,10 @@ const LustMinigame = {
         if (gl) gl.setAttribute('d', P.glans);
         const wr = this.el('bt-tail-wrinkle');
         if (wr) wr.setAttribute('d', P.wrinkles);
+        for (const [id, k] of [['bt-tail-vein-sh', 'veinSh'], ['bt-tail-vein', 'vein'], ['bt-tail-vein-hi', 'veinHi']]) {
+            const e = this.el(id);
+            if (e) e.setAttribute('d', P[k]);
+        }
         P.creases.forEach((c, i) => {
             const a = this.el(`bt-tail-cr-${i}`), b = this.el(`bt-tail-crl-${i}`);
             if (a) { a.setAttribute('d', c.d); a.setAttribute('stroke-opacity', (0.3 * c.k).toFixed(3)); }
