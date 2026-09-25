@@ -261,6 +261,34 @@ const harness = require('./harness');
   await page.waitForTimeout(1500);
   const ringOff = await page.evaluate(() => BATH_ART.ring.s);
   ok(Math.abs(ringOff) < 0.02, 'отпущенный хвост расправляется', `сила кольца ${ringOff.toFixed(3)}`);
+
+  // ---------- ФИНАЛ: КОЛЬЦА НЕТ, ИДУТ ПОРЦИИ ----------
+  // Палец в финале наклоняет хвост, а по стволу к каждому толчку подходит
+  // порция (BATH_ART.PULSE). Порция считается от времени до толчка, так что
+  // проверяется на подставленных моментах: вздутие едет к головке, к
+  // выстрелу стоит у шейки, а сама головка от неё не раздувается.
+  const pulse = await page.evaluate(() => {
+    const L = LustMinigame, g = L.tailGrow();
+    const w = (t) => BATH_ART.tailHalfSide(t, g, 1) + BATH_ART.tailHalfSide(t, g, -1);
+    // Палец на самом хвосте в финале кольца не включает.
+    const A = BATH_ART.slots(), sp = BATH_ART.tailSpine(L.bend, g), q = sp[Math.round(sp.length * 0.4)];
+    L.aimAt({ x: A.tail.x + q.x, y: A.tail.y + q.y });
+    for (let i = 0; i < 20; i++) L.stepRing(0.016);
+    const ringS = BATH_ART.ring.s;
+    const keep = { next: L.nextShotAt, shot: L.shotAt }, T0 = 1e6;
+    L.nextShotAt = T0; L.shotAt = null;
+    const G = BATH_ART.look().glansAt, tg = G + (1 - G) * 0.4;
+    const pos = [], ms = [500, 300, 150, 30];
+    for (const m of ms) { L.stepPulse(T0 - m); pos.push(+BATH_ART.pulse.t.toFixed(3)); }
+    const atNeck = BATH_ART.pulse.t, glansWith = w(tg);
+    BATH_ART.setPulse(0, 0, 0); const glansBare = w(tg);
+    L.nextShotAt = keep.next; L.shotAt = keep.shot; L.stepPulse(performance.now());
+    return { ringS: +ringS.toFixed(3), pos, gap: +(G - atNeck).toFixed(3), glans: +(glansWith / glansBare).toFixed(3) };
+  });
+  ok(Math.abs(pulse.ringS) < 0.02, 'в финале палец на хвосте его не мнёт', `сила кольца ${pulse.ringS}`);
+  ok(pulse.pos.every((v, i) => !i || v > pulse.pos[i - 1]), 'порция едет к головке', pulse.pos.join(' → '));
+  ok(pulse.gap > 0 && pulse.gap < 0.08, 'к выстрелу порция стоит у шейки', `до головки ${pulse.gap} длины`);
+  ok(Math.abs(pulse.glans - 1) < 0.01, 'головка от порции не раздувается', `толщина ×${pulse.glans}`);
   // Этап обязан ТЯНУТЬСЯ: в нём всё удовольствие, и проскакивать его
   // незачем. На живом прогоне выходит быстрее, чем здесь: рука ведёт
   // длинными ходами, а тест — аккуратными пятиточечными.

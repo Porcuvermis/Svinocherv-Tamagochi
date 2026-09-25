@@ -1268,6 +1268,8 @@ const LustMinigame = {
         this.bendHand = null;
         this.ringFinger = null; this.ringS = 0; this.ringSV = 0; this.ringT = null; this.ringVel = 0;
         BATH_ART.setRing(0.5, 0, 0);
+        BATH_ART.setPulse(0, 0, 0);
+        this.nextShotAt = null; this.shotAt = null;
 
         this.el('bt-tail').innerHTML =
             `<g id="bt-tail-pivot">${BATH_ART.tail(model, this.skinSat)}</g>`;
@@ -1547,6 +1549,38 @@ const LustMinigame = {
     },
 
 
+    // ---------- ПОРЦИЯ ПЕРЕД ВЫСТРЕЛОМ (BATH_ART.PULSE) ----------
+    // Положение порции считается ОТ ВРЕМЕНИ до ближайшего толчка, а не
+    // накапливается: так она приходит к шейке ровно к выстрелу при любом
+    // интервале между толчками (он зависит от ступени) и не уплывает от
+    // рваных кадров. Путь занимает до 0.6 с, но не больше 80% интервала —
+    // на верхних ступенях толчки чаще, и порции не должны наезжать друг на
+    // друга.
+    //   t    — от корня (0.05) до шейки, с ускорением к концу (u²), у шейки
+    //          — за мгновение до выстрела;
+    //   a    — вздутие нарастает в первой трети пути и держится;
+    //   after — опадание ствола 0.25 с после выстрела.
+    stepPulse(now) {
+        const G = BATH_ART.look().glansAt;
+        let t = 0, a = 0, after = 0;
+        if (this.nextShotAt) {
+            const travel = Math.min(600, this.shotMs() * 0.8);
+            const u = 1 - (this.nextShotAt - now) / travel;
+            if (u > 0 && u <= 1.02) {
+                // Доходит к шейке на 92% пути и ждёт там выстрела — «за
+                // мгновение до», а не впритык к нему.
+                const uu = Math.min(1, u / 0.92);
+                t = 0.05 + (G - 0.03 - 0.05) * uu * uu;
+                a = Math.min(1, uu * 3);
+            }
+        }
+        if (this.shotAt) {
+            const k = (now - this.shotAt) / 250;
+            if (k >= 0 && k < 1) after = Math.sin(Math.PI * k);
+        }
+        BATH_ART.setPulse(t, a, after);
+    },
+
     // ---------- КОЛЬЦО ПОД ПАЛЬЦЕМ (BATH_ART.RING) ----------
     // Палец на хвосте задаёт, ГДЕ кольцо (ringFinger); здесь оно доезжает
     // до пальца, меряет скорость хода и набирает силу пружиной. Пружина с
@@ -1588,7 +1622,9 @@ const LustMinigame = {
         // половина, и каждый из них стоил двух сотен toFixed и двух записей
         // в дерево.
         const R = BATH_ART.ring;
-        const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}|${R.t.toFixed(3)}|${R.s.toFixed(3)}|${R.v.toFixed(2)}`;
+        const Pu = BATH_ART.pulse;
+        const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}|${R.t.toFixed(3)}|${R.s.toFixed(3)}|${R.v.toFixed(2)}`
+                  + `|${Pu.t.toFixed(3)}|${Pu.a.toFixed(3)}|${Pu.after.toFixed(3)}`;
         if (key === this._tailKey) return;
 
         // ---------- И НЕ ЧАЩЕ ТРИДЦАТИ РАЗ В СЕКУНДУ ----------
@@ -1627,7 +1663,7 @@ const LustMinigame = {
             if (a) { a.setAttribute('d', c.d); a.setAttribute('stroke-opacity', (0.3 * c.k).toFixed(3)); }
             if (b) { b.setAttribute('d', c.d); b.setAttribute('stroke-opacity', (0.55 * c.k).toFixed(3)); }
         });
-        for (const [id, k] of [['bt-tail-sheen', 'sheen'], ['bt-tail-shine', 'shine'],
+        for (const [id, k] of [['bt-tail-sheen', 'sheen'], ['bt-tail-shine', 'shine'], ['bt-tail-stretch', 'stretch'],
                                ['bt-tail-gwet', 'gwet'], ['bt-tail-grim', 'grim'], ['bt-tail-gspark', 'spark']]) {
             const e = this.el(id);
             if (e) e.setAttribute('d', P.lights[k]);
@@ -1743,6 +1779,9 @@ const LustMinigame = {
         this.bendAim = this.solveBend(this.mouthPoint());
         this.drawGauge();
 
+        // Кольцо с поглаживания отпускается: в финале его нет.
+        this.ringTouch(null);
+        this.shotAt = null;
         this.aimLast = performance.now();
         const tick = (now) => {
             // Шаг по времени, а не по кадру: на медленном телефоне упругость
@@ -1755,6 +1794,9 @@ const LustMinigame = {
             }
             // На доигрывании хвостом распоряжается relaxTail: он опадает, а
             // не слушается упругости. Двое пишущих в bend дёргали бы его.
+            // Порция считается и на доигрывании: последний выстрел оставил
+            // бы её висеть у шейки, если бы счёт остановился вместе с ним.
+            this.stepPulse(now);
             if (this.phase === 'aim') {
                 this.stepBend(dt);
                 this.stepRing(dt);
@@ -1767,6 +1809,7 @@ const LustMinigame = {
         };
         this.aimRaf = requestAnimationFrame(tick);
         this.shotTimer = setTimeout(() => this.shoot(), this.shotMs());
+        this.nextShotAt = performance.now() + this.shotMs();
     },
 
     // Шаг упругости. Палец тянет с ПОСТОЯННОЙ силой, упругость тянет обратно
@@ -1804,8 +1847,9 @@ const LustMinigame = {
     // выпрямлением хвоста. Отдача в обе стороны одна — из ступени хвоста.
     // Завести руку заново — оторвать палец: пока он в воздухе, хода нет.
     aimAt(p) {
-        // Палец лёг на сам хвост — кольцо обжимает его и в финале.
-        this.ringTouch(p);
+        // Кольца в финале НЕТ: палец здесь наклоняет хвост, а по стволу идут
+        // порции (stepPulse) — мять его пальцем поверх них значило бы
+        // спорить с ними за одну и ту же толщину.
         const a = this.handAngle(p);
         if (a == null) return;
         if (this.bendHand == null) { this.bendHand = a; return; }
@@ -1848,9 +1892,13 @@ const LustMinigame = {
                            4 + Math.random() * 3);
         }
 
+        // Порция ушла с выстрелом: ствол на миг опадает (BATH_ART.PULSE.after).
+        this.shotAt = performance.now();
         if (--this.shotsLeft > 0) {
             this.shotTimer = setTimeout(() => this.shoot(), this.shotMs());
+            this.nextShotAt = performance.now() + this.shotMs();
         } else {
+            this.nextShotAt = null;
             this.startSettle();
         }
     },
@@ -2263,6 +2311,7 @@ const LustMinigame = {
         if (this.settleRaf) { cancelAnimationFrame(this.settleRaf); this.settleRaf = 0; }
         if (this.relaxRaf) { cancelAnimationFrame(this.relaxRaf); this.relaxRaf = 0; }
         clearTimeout(this.shotTimer); this.shotTimer = 0;
+        this.nextShotAt = null; this.shotAt = null;
         this.clearHint();
     },
 

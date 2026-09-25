@@ -640,6 +640,34 @@ const BATH_ART = {
     },
     // Что кольцо делает в точке t: f — доля приминания (0 — не трогает),
     // grow — прибавка толщины от выдавленной плоти.
+    // ---------- ПОРЦИЯ ПЕРЕД ВЫСТРЕЛОМ ----------
+    // В финале кольца нет: палец там наклоняет хвост, а не мнёт его. Вместо
+    // него перед каждым толчком изнутри ствола от корня к головке едет
+    // ПОРЦИЯ — вздутие, распирающее стенки, с ускорением к концу, как
+    // проталкиваемая жидкость. Подходит к шейке за мгновение до выстрела и
+    // с выстрелом уходит; ствол после этого на миг опадает (after) и
+    // возвращается. Головка не расширяется — тот же сторож, что у кольца.
+    // Меняется только толщина: ось, длина и полёт капли те же.
+    //   width — полуширина вздутия вдоль хвоста; swell — прибавка толщины;
+    //   trail — второй, слабый горб позади (порция не монолит);
+    //   after — насколько ствол опадает сразу после выстрела.
+    PULSE: { width: 0.08, swell: 0.26, trail: 0.35, after: 0.05 },
+    pulse: { t: 0, a: 0, after: 0 },
+    setPulse(t, a, after) { this.pulse = { t, a, after: after || 0 }; },
+    guardAt(t, span) {
+        const G = this.look().glansAt, u = Math.max(0, Math.min(1, (G - t) / span));
+        return u * u * (3 - 2 * u);
+    },
+    pulseAt(t) {
+        const P = this.pulse, R = this.PULSE;
+        if (!P.a && !P.after) return 0;
+        const g = (x, sg) => Math.exp(-Math.pow(x / sg, 2));
+        const guard = this.guardAt(t, 0.06);
+        const main = P.a * R.swell * g(t - P.t, R.width);
+        const trail = P.a * R.swell * R.trail * g(t - (P.t - 2.6 * R.width), R.width * 1.3);
+        return (main + trail) * guard - P.after * R.after * guard;
+    },
+
     ringAt(t) {
         const r = this.ring;
         if (!r.s) return { f: 0, grow: 0 };
@@ -691,7 +719,7 @@ const BATH_ART = {
                 w = B * CORONA * Math.pow(Math.max(0, 1 - Math.pow(v, 1.9)), 0.55);
             }
         }
-        return w * (1 + wob) * SQ * (1 + RG.grow);
+        return w * (1 + wob) * SQ * (1 + RG.grow) * (1 + this.pulseAt(tt));
     },
     // Полуширина для следов и пузырей — по УЖЕЙ стороне: они садятся
     // симметрично от оси и не должны вылезать за край.
@@ -767,7 +795,7 @@ const BATH_ART = {
             set(`bt-tail-cr-${i}`, 'stroke', tone.shade);
             set(`bt-tail-crl-${i}`, 'stroke', tone.inner);
         }
-        for (const id of ['bt-tail-sheen', 'bt-tail-shine', 'bt-tail-gwet', 'bt-tail-grim']) set(id, 'fill', tone.shine);
+        for (const id of ['bt-tail-sheen', 'bt-tail-shine', 'bt-tail-stretch', 'bt-tail-gwet', 'bt-tail-grim']) set(id, 'fill', tone.shine);
         set('bt-tail-gspark', 'fill', tone.spark);
     },
 
@@ -817,6 +845,7 @@ const BATH_ART = {
              серп по куполу, яркая точка и отражённый свет с теневого бока. -->
         <path id="bt-tail-sheen" d="" fill="${C.shine}" fill-opacity="${(K.gloss * 0.3).toFixed(2)}"/>
         <path id="bt-tail-shine" d="" fill="${C.shine}" fill-opacity="${Math.min(0.8, K.gloss * 1.3).toFixed(2)}"/>
+        <path id="bt-tail-stretch" d="" fill="${C.shine}" fill-opacity="${(0.08 + K.gloss * 0.2).toFixed(2)}"/>
         <path id="bt-tail-grim" d="" fill="${C.shine}" fill-opacity="${(0.22 * Math.min(1, K.wet)).toFixed(2)}"/>
         <path id="bt-tail-gwet" d="" fill="${C.shine}" fill-opacity="${(0.28 * Math.min(1, K.wet)).toFixed(2)}"/>
         <path id="bt-tail-gspark" d="" fill="${C.spark}" fill-opacity="${(0.9 * Math.min(1, K.wet)).toFixed(2)}"/>
@@ -931,7 +960,16 @@ const BATH_ART = {
         const sp = Math.round((G + (1 - G) * 0.42) * M);
         const c = across(sp, 0.3), r = Math.hypot(R[sp].x - L[sp].x, R[sp].y - L[sp].y) * 0.045 * this.look().wet;
         const spark = `M${(c.x - r).toFixed(1)} ${c.y.toFixed(1)}a${r.toFixed(1)} ${(r * 1.3).toFixed(1)} 0 1 0 ${(2 * r).toFixed(1)} 0a${r.toFixed(1)} ${(r * 1.3).toFixed(1)} 0 1 0 ${(-2 * r).toFixed(1)} 0Z`;
-        return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark };
+        // Натяжение кожи над порцией: там, где распирает изнутри, кожа
+        // тоньше и глаже — светлее и блестит сильнее. Линза едет с порцией
+        // и растёт вместе с её вздутием.
+        const Pu = this.pulse;
+        let stretch = '';
+        if (Pu.a > 0.02) {
+            const w = this.PULSE.width * 1.5;
+            stretch = soft(Math.max(0, Pu.t - w), Math.min(G - 0.01, Pu.t + w), 0.32, 0.12 * Pu.a, 0.6, 5).join('');
+        }
+        return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark, stretch };
     },
 
     // ---------- ПУЗЫРИ ПЕНЫ ----------
