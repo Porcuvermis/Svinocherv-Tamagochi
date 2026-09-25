@@ -403,6 +403,33 @@ const harness = require('./harness');
      'осколков начислено столько, сколько частей закрыто',
      `${res.hits} попаданий → ${gauge.done} частей, в кошельке ${res.shard} + ${res.token}×3`);
 
+  // ---------- ТОН ХВОСТА — ОТ КОЖИ ПЕРСОНАЖА ----------
+  // Хвост рисуется не рендерером, и его цвет обязан СЛЕДОВАТЬ за кожей
+  // особи, а не лежать в палитре: у синего червя — синий хвост, у
+  // истощённого — серый, налитой — сочнее. Проверяется функция тона на
+  // подменённых моделях; сравнение в OKLCH — тем же пространством, что и
+  // сам тон, иначе «тот же оттенок» мерился бы по-разному у разных цветов.
+  const tone = await page.evaluate(() => {
+    const T = SkinTone, m0 = LustMinigame.bathModel();
+    const withSkin = (css) => { const m = JSON.parse(JSON.stringify(m0)); m.belly.fill = css; return m; };
+    const hueGap = (a, b) => { const d = T.toLch(a).H - T.toLch(b).H; return Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) * 180 / Math.PI; };
+    const out = {};
+    for (const [k, css] of [['pink', m0.belly.fill], ['blue', 'hsl(200, 40%, 46%)'], ['green', 'hsl(120, 38%, 44%)']]) {
+      const t = BATH_ART.tailTone(withSkin(css), 1, 0);
+      out[k] = { body: +hueGap(t.vol[2], css).toFixed(1), glans: +hueGap(t.glans[1], css).toFixed(1) };
+    }
+    const c = (x) => T.toLch(x).C;
+    const base = BATH_ART.tailTone(m0, 1, 0).vol[2];
+    out.witherC = +(c(BATH_ART.tailTone(m0, 0.3, 0).vol[2]) / c(base)).toFixed(2);
+    out.chargeC = +(c(BATH_ART.tailTone(m0, 1, 1).vol[2]) / c(base)).toFixed(2);
+    return out;
+  });
+  ok(['pink', 'blue', 'green'].every(k => tone[k].body < 12 && tone[k].glans < 25),
+     'хвост того же оттенка, что кожа червя, у любой особи',
+     `разница оттенка тело/головка: розовый ${tone.pink.body}°/${tone.pink.glans}°, синий ${tone.blue.body}°/${tone.blue.glans}°, зелёный ${tone.green.body}°/${tone.green.glans}°`);
+  ok(tone.witherC < 0.6, 'у истощённого червя хвост бледнеет вместе с телом', `насыщенность ×${tone.witherC}`);
+  ok(tone.chargeC > 1.08, 'налитой хвост сочнее', `насыщенность ×${tone.chargeC}`);
+
   // ---------- ГЕОМЕТРИЯ ФИНАЛА СОВПАДАЕТ С КАЛЬКУЛЯТОРОМ ----------
   // tools/sim-lust.js держит раскладку финала своими константами (кончик при
   // каждом изгибе и рот). Если сцена переехала, а они нет, баланс считается

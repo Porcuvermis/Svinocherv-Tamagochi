@@ -578,17 +578,18 @@ const BATH_ART = {
     //              венчика в долях основания;
     //   width    — налитость (доля эталонной толщины), taper — сужение
     //              ствола к головке, irreg — насколько гуляют бока;
-    //   pale/flush — бледность низов и прилив крови верхов;
+    //   tone     — свой тон ступени поверх кожи персонажа (SkinTone.shift):
+    //              бледнее и слабее внизу, сочнее и с приливом вверху;
     //   gloss    — сила блика ствола, wet — размер влажного блика головки.
     // Ось и длина одни на все ступени: по ним летит капля и считает
     // калькулятор. Меняется только толщина и рисунок.
     TAIL_LOOKS: {
         4: { edges: [0, 0.19, 0.36, 0.52, 0.655], bulge: [0.16, 0.11, 0.18, 0.12],
              glansAt: 0.71, neck: 0.58, corona: 0.64,
-             width: 0.96, taper: 0.33, irreg: 1.18, pale: 0.09, flush: 0, gloss: 0.26, wet: 0.8 },
+             width: 0.96, taper: 0.33, irreg: 1.18, tone: { light: 0.01, chroma: -0.1 }, gloss: 0.26, wet: 0.8 },
         5: { edges: [0, 0.16, 0.3, 0.43, 0.545, 0.645], bulge: [0.15, 0.1, 0.17, 0.11, 0.13],
              glansAt: 0.7, neck: 0.62, corona: 0.7,
-             width: 1, taper: 0.28, irreg: 1, pale: 0, flush: 0, gloss: 0.28, wet: 1 }
+             width: 1, taper: 0.28, irreg: 1, tone: null, gloss: 0.28, wet: 1 }
     },
     tailLevel: 5,
     // Ступень берётся ОДИН раз на всплытии хвоста (lust.js, raiseTail): на
@@ -661,68 +662,98 @@ const BATH_ART = {
     //
     // Пути кусков переписываются вместе с контуром (drawTail), обрезки и
     // масок нет — на живом слое они стоили бы отдельного буфера.
-    tail(model) {
-        const m = (model && model.tail) || {};
-        // Оттенок — у ЖИВОТА: хвост растёт прямо из него (звеньев между ними
-        // в ванне нет, opts.endAtBelly). Собственный хвост модели покрашен в
-        // самую тёмную ступень мяса и читался тёмным шипом.
-        const seg = (model && model.belly)
-                 || (model && model.growingSegments && model.growingSegments[0]) || null;
-        const fill0 = (seg && seg.fill) || m.fill || PALETTE.flesh[500];
-        const ink = (seg && seg.stroke) || m.stroke || PALETTE.ink;
-        const F = PALETTE.flesh, V = PALETTE.viscera, K = this.look();
-        // Бледность низов — тот же пересчёт цвета, что у истощённого червя
-        // (witherColor), и чуть к свету: хвост слабый, а не мёртвый.
-        // Прилив верхов — к цвету нутра.
-        let fill = fill0;
-        if (K.pale > 0) fill = mixColor(witherColor(fill, 1 - K.pale * 1.6) || fill, F[100], K.pale * 0.5);
-        if (K.flush > 0) fill = mixColor(fill, V[500], K.flush);
-        const hi = mixColor(fill, F[100], 0.42), lo = mixColor(fill, F[900], 0.3);
-        const inner = mixColor(ink, lo, 0.35);
-        // Головка — кровь ближе к коже: розовее и темнее ствола.
-        const gFill = mixColor(fill, F[300], 0.15), gHot = mixColor(gFill, V[500], 0.1);
+    // ---------- ТОН ХВОСТА ----------
+    // Ни одного цвета из палитры напрямую: всё — от кожи персонажа
+    // (SkinTone). Слои по порядку: кожа живота → свой тон ступени → налив
+    // (ситуация) → самочувствие червя. Свет и тень — к тем же целям, что у
+    // тела (SPEC и INK, worm-basis.js), поэтому хвост и тело освещены одной
+    // лампой при любом цвете кожи.
+    //
+    // Хвост растёт из ЖИВОТА (звеньев между ними в ванне нет,
+    // opts.endAtBelly) — его цвет и берётся за кожу. Собственный хвост
+    // модели покрашен в самую тёмную ступень и читался тёмным шипом.
+    GLANS_TONE: { blood: 0.2, chroma: 0.1, light: 0.01 },
+    // Налив при поглаживании: ствол сочнее и чуть темнее, головка краснеет.
+    CHARGE_TONE: { chroma: 0.15, blood: 0.08, light: -0.015 },
+    CHARGE_GLANS: { blood: 0.14 },
+    tailTone(model, sat, charge) {
+        const T = SkinTone, K = this.look(), c = Math.max(0, Math.min(1, charge || 0));
+        const W = (css) => T.wither(css, sat);
+        const lift = PALETTE.flesh[100], ink0 = PALETTE.ink;   // = SPEC и INK тела
+        const scale = (o, k) => o ? { light: (o.light || 0) * k, chroma: (o.chroma || 0) * k, blood: (o.blood || 0) * k } : null;
+        const skin = T.skin(model, 'belly');
+        const base = T.shift(skin, T.sum(K.tone, scale(this.CHARGE_TONE, c)));
+        const glans = T.shift(base, T.sum(this.GLANS_TONE, scale(this.CHARGE_GLANS, c)));
+        const seg = model && model.belly;
+        const ink = W((seg && seg.stroke) || ink0);
+        const hi = mixColor(base, lift, 0.42), lo = mixColor(base, ink0, 0.27);
+        return {
+            ink,
+            inner: W(mixColor((seg && seg.stroke) || ink0, lo, 0.35)),
+            vol: [W(lo), W(hi), W(base), W(lo), W(mixColor(lo, ink0, 0.3))],
+            fill: W(lo),
+            glans: [W(mixColor(glans, lift, 0.45)), W(glans), W(mixColor(glans, ink0, 0.4))],
+            shade: W(mixColor(base, ink0, 0.62)),
+            shine: W(mixColor(base, lift, 0.75))
+        };
+    },
+    // Перекраска уже собранного хвоста: только атрибуты цвета, разметка та
+    // же. Зовётся при смене налива (lust.js, drawTail), не каждый кадр.
+    paintTail(tone) {
+        const set = (id, a, v) => { const n = document.getElementById(id); if (n) n.setAttribute(a, v); };
+        tone.vol.forEach((c, i) => set(`bt-tail-vol-${i}`, 'stop-color', c));
+        tone.glans.forEach((c, i) => set(`bt-tail-gl-${i}`, 'stop-color', c));
+        set('bt-tail-shade-0', 'stop-color', tone.shade);
+        set('bt-tail-shade-1', 'stop-color', tone.shade);
+        set('bt-tail-body', 'fill', tone.fill);
+        for (const id of ['bt-tail-body', 'bt-tail-edge']) set(id, 'stroke', tone.ink);
+        set('bt-tail-crease', 'stroke', tone.shade);
+        set('bt-tail-crease-line', 'stroke', tone.inner);
+        set('bt-tail-wet', 'fill', tone.shine);
+        set('bt-tail-shine', 'stroke', tone.shine);
+    },
+
+    // Разметка хвоста собирается ОДИН РАЗ, дальше меняются только атрибуты.
+    // Пересобирать её каждый кадр значит парсить строку шестьдесят раз в
+    // секунду ради двух чисел — на телефоне это заметно.
+    tail(model, sat) {
+        const K = this.look(), C = this.tailTone(model, sat, 0);
         let segs = '';
-        for (let i = 0; i < this.look().edges.length - 1; i++)
+        for (let i = 0; i < K.edges.length - 1; i++)
             segs += `<path id="bt-tail-seg-${i}" d="" fill="url(#bt-tail-vol)"/>`;
+        const stop = (id, off, col, op) => `<stop id="${id}" offset="${off}" stop-color="${col}"${op != null ? ` stop-opacity="${op}"` : ''}/>`;
         return `
         <defs>
             <!-- Объём поперёк: свет слева, теневой бок справа, отсвет у
                  самого края. Звенья отличаются контуром, а не заливкой. -->
             <linearGradient id="bt-tail-vol" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stop-color="${lo}"/>
-                <stop offset="0.2" stop-color="${hi}"/>
-                <stop offset="0.5" stop-color="${fill}"/>
-                <stop offset="0.86" stop-color="${lo}"/>
-                <stop offset="1" stop-color="${mixColor(lo, F[900], 0.3)}"/>
+                ${[0, 0.2, 0.5, 0.86, 1].map((o, i) => stop(`bt-tail-vol-${i}`, o, C.vol[i])).join('')}
             </linearGradient>
             <radialGradient id="bt-tail-glans-g" cx="38%" cy="35%" r="75%">
-                <stop offset="0" stop-color="${mixColor(gFill, F[100], 0.45)}"/>
-                <stop offset="0.45" stop-color="${gHot}"/>
-                <stop offset="1" stop-color="${mixColor(gHot, F[900], 0.45)}"/>
+                ${[0, 0.45, 1].map((o, i) => stop(`bt-tail-gl-${i}`, o, C.glans[i])).join('')}
             </radialGradient>
             <!-- Тень под венчиком и на перехватах: мягкое пятно. -->
             <radialGradient id="bt-tail-shade">
-                <stop offset="0" stop-color="${F[900]}" stop-opacity="0.55"/>
-                <stop offset="1" stop-color="${F[900]}" stop-opacity="0"/>
+                ${stop('bt-tail-shade-0', 0, C.shade, 0.55)}${stop('bt-tail-shade-1', 1, C.shade, 0)}
             </radialGradient>
         </defs>
-        <path id="bt-tail-body" d="" fill="${lo}" stroke="${ink}"
+        <path id="bt-tail-body" d="" fill="${C.fill}" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
         ${segs}
         <!-- Складки на стыках звеньев: мягкая тень и под ней тонкая линия. -->
-        <path id="bt-tail-crease" d="" fill="none" stroke="${F[900]}" stroke-width="4"
-              stroke-linecap="round" stroke-opacity="0.18"/>
-        <path id="bt-tail-crease-line" d="" fill="none" stroke="${inner}" stroke-width="1.1"
+        <path id="bt-tail-crease" d="" fill="none" stroke="${C.shade}" stroke-width="4"
+              stroke-linecap="round" stroke-opacity="0.3"/>
+        <path id="bt-tail-crease-line" d="" fill="none" stroke="${C.inner}" stroke-width="1.1"
               stroke-linecap="round" stroke-opacity="0.55"/>
         <ellipse id="bt-tail-neck" rx="0" ry="0" fill="url(#bt-tail-shade)"/>
         <path id="bt-tail-glans" d="" fill="url(#bt-tail-glans-g)"/>
         <!-- Влажный блик на головке. -->
-        <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${F[100]}" opacity="${(0.75 * Math.min(1, K.wet)).toFixed(2)}"/>
+        <ellipse id="bt-tail-wet" rx="0" ry="0" fill="${C.shine}" opacity="${(0.75 * Math.min(1, K.wet)).toFixed(2)}"/>
         <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
              перебивали бы его. -->
-        <path id="bt-tail-edge" d="" fill="none" stroke="${ink}"
+        <path id="bt-tail-edge" d="" fill="none" stroke="${C.ink}"
               stroke-width="3" stroke-linejoin="round"/>
-        <path id="bt-tail-shine" d="" fill="none" stroke="${F[100]}"
+        <path id="bt-tail-shine" d="" fill="none" stroke="${C.shine}"
               stroke-width="2.4" stroke-linecap="round" opacity="${K.gloss.toFixed(2)}"/>
         <!-- Потёки на хвосте — ВНУТРИ его группы: гнутся и опадают вместе с
              ним (lust-goo.js). -->

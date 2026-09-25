@@ -574,6 +574,10 @@ const LustMinigame = {
             }
         }
         if (h.setWither) h.setWither(sat);
+        // Хвост рисуется не рендерером и обесцвечивается сам, тем же числом
+        // (BATH_ART.tailTone) — иначе у уставшего серого червя торчал бы
+        // сочный розовый хвост.
+        this.skinSat = sat;
         h.setLivePose({
             bellyScale: belly,
             // Всё остальное — начисто. null значит «решает модель».
@@ -1263,7 +1267,8 @@ const LustMinigame = {
         this.bendHand = null;
 
         this.el('bt-tail').innerHTML =
-            `<g id="bt-tail-pivot">${BATH_ART.tail(model)}</g>`;
+            `<g id="bt-tail-pivot">${BATH_ART.tail(model, this.skinSat)}</g>`;
+        this._toneKey = null;
         this.drawTail();
         this.setOpacity('bt-tail', 1);
 
@@ -1563,6 +1568,14 @@ const LustMinigame = {
         g.setAttribute('transform', `translate(${A.tail.x} ${A.tail.y})`);
         const d = BATH_ART.tailD(this.bend, this.tailGrow());
         this.el('bt-tail-body').setAttribute('d', d.body);
+        // Налив меняет тон (BATH_ART.CHARGE_TONE). Перекраска — ступенями по
+        // двадцатой доле: глаз разницы не видит, а записей в дерево в
+        // десятки раз меньше, чем если красить каждый кадр.
+        const toneKey = Math.round(this.charge * 20);
+        if (toneKey !== this._toneKey) {
+            this._toneKey = toneKey;
+            BATH_ART.paintTail(BATH_ART.tailTone(this.tailModel, this.skinSat, toneKey / 20));
+        }
         const edge = this.el('bt-tail-edge');
         if (edge) edge.setAttribute('d', d.body);
         this.el('bt-tail-shine').setAttribute('d', d.shine);
