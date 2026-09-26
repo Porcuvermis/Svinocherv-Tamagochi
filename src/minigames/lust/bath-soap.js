@@ -13,7 +13,7 @@
 const BATH_SOAP = {
     // Вид на каждой ступени. Ещё не нарисованные ступени берут запечённый
     // брусок — пока лестница не закончена.
-    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'premium', 'elixir', 'baked', 'baked'],
+    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'premium', 'elixir', 'flask', 'baked'],
     uid: 0,
 
     level() {
@@ -36,6 +36,7 @@ const BATH_SOAP = {
         if (kind === 'gel') return this.gel();
         if (kind === 'premium') return this.premium();
         if (kind === 'elixir') return this.elixir();
+        if (kind === 'flask') return this.flask();
         return BATH_BAKED.draw('soap');
     },
 
@@ -49,6 +50,7 @@ const BATH_SOAP = {
         if (kind === 'gel') return { x: 548, y: 276, w: 52, h: 100 };
         if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
         if (kind === 'elixir') return { x: 548, y: 270, w: 62, h: 106 };
+        if (kind === 'flask') return { x: 544, y: 280, w: 60, h: 96 };
         return BATH_BAKED.box('soap');
     },
 
@@ -72,6 +74,158 @@ const BATH_SOAP = {
             d += (i ? 'L' : 'M') + pt(p0) + 'Q' + pt(p) + ' ' + pt(p1);
         }
         return d + 'Z';
+    },
+
+    // ---------- 7. КОЛБА ----------
+    // Алхимическая колба с круглым дном: светящаяся розовая жижа, пузыри,
+    // пробка под сургучом. Качество — по уроку эликсира: толщина стекла,
+    // блики слоями, свечение КОНТРАСТОМ.
+    //   * шар тонкого прозрачного стекла: края плотнее, изгибом идёт
+    //     блик-окошко — главный признак сферы; внутренняя стенка линией;
+    //   * жижа светится: белёсое ядро, густые малиновые края, мениск снизу
+    //     светлым эллипсом, розовый отсвет по стенке шара;
+    //   * пузыри столбиком поднимаются со дна, кверху крупнее. Неподвижные:
+    //     бесконечная css-анимация внутри общего svg красит всю сцену
+    //     (docs/traps.md, пп. 36–38) — оживлять будем на ступени 8 иначе;
+    //   * пробка — корка, сверху сургуч с потёками по горлу;
+    //   * стоит на пробковом кольце — круглое дно само не стоит (на полке
+    //     кольцо за сеткой, видно в руке);
+    //   * ореол сильнее, чем у эликсира: волшебства больше.
+    flask() {
+        const P = btPal(), M = P.soapMagic, G = P.soapBottle, Ck = P.soapCork, Wx = P.soapWax, F = P.foam, ink = PALETTE.ink;
+        const id = 'bsp' + (this.uid++);
+        const A = BATH_ART.slots().soap;
+        const f = (v) => v.toFixed(1);
+
+        const R = 23, CY = 5;                      // шар
+        const NX = 5.5, NT = -45;                  // горло
+        const ny = CY - Math.sqrt(R * R - NX * NX);  // где горло входит в шар
+        const flask = `M${-NX} ${f(ny)}A${R} ${R} 0 1 0 ${NX} ${f(ny)}V${NT}H${-NX}Z`;
+        const innerR = R - 1.8;
+        // Налита высоко: нижнюю половину шара закрывает сетка корзины, и
+        // при уровне посередине над сеткой светилась одна полоска.
+        const lv = -11;
+        const half = Math.sqrt(innerR * innerR - (lv - CY) * (lv - CY));
+        const liq = `M${f(-half)} ${lv}A${innerR} ${innerR} 0 1 0 ${f(half)} ${lv}Z`;
+        // Раструб горла и пробка.
+        const lipD = `M-7.5 ${NT}Q-8.5 ${NT} -8.5 ${NT - 1.5}Q-8.5 ${NT - 3} -7 ${NT - 3}H7Q8.5 ${NT - 3} 8.5 ${NT - 1.5}Q8.5 ${NT} 7.5 ${NT}Z`;
+        const cork = `M-5 ${NT - 2}L-6.6 ${NT - 11}Q-6.6 ${NT - 12.5} -5 ${NT - 12.5}H5Q6.6 ${NT - 12.5} 6.6 ${NT - 11}L5 ${NT - 2}Z`;
+        // Сургуч: шапка на пробке и раструбе, два потёка по горлу.
+        const wax = `M-8 ${NT - 9}Q-8.4 ${NT - 14.5} 0 ${NT - 15}Q8.4 ${NT - 14.5} 8 ${NT - 9}`
+                  + `L8.6 ${NT - 1}Q8.8 ${NT + 1} 7.4 ${NT + 1.2}L6.6 ${NT + 1.2}Q6.2 ${NT + 6} 5.2 ${NT + 6.5}Q4 ${NT + 6} 4.2 ${NT + 1.4}`
+                  + `L-2.5 ${NT + 1.4}Q-2.8 ${NT + 3.6} -3.6 ${NT + 3.8}Q-4.5 ${NT + 3.5} -4.6 ${NT + 1.3}L-7.6 ${NT + 1}Q-8.8 ${NT + 0.8} -8.6 ${NT - 1}Z`;
+        // Пробковое кольцо под шаром.
+        const ring = `M-15 ${CY + R - 3}Q0 ${CY + R - 6} 15 ${CY + R - 3}L16 ${CY + R + 1.5}Q0 ${CY + R + 5} -16 ${CY + R + 1.5}Z`;
+
+        // Пузыри: столбиком от дна к поверхности, кверху крупнее, и россыпь.
+        const rnd = btRng(707);
+        let bub = '';
+        const bubble = (x, y, r) =>
+            `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${M[4]}" fill-opacity="0.25" stroke="${M[4]}" stroke-width="0.6" stroke-opacity="0.9"/>`
+          + `<circle cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.35)}" r="${f(Math.max(0.35, r * 0.28))}" fill="${F.hi}"/>`;
+        for (let i = 0; i < 7; i++) {
+            const t = i / 6, y = CY + R - 5 - t * (CY + R - 5 - lv - 3), x = -2 + Math.sin(i * 1.7) * 1.8, r = 0.8 + t * 1.9;
+            bub += bubble(x, y, r);
+        }
+        for (let i = 0; i < 6; i++) {
+            const a = rnd() * Math.PI * 2, d = 5 + rnd() * 11;
+            const x = Math.cos(a) * d, y = CY + 6 + Math.sin(a) * d * 0.7;
+            if (y > lv + 3) bub += bubble(x, y, 0.6 + rnd() * 1.1);
+        }
+        let motes = '';
+        for (let i = 0; i < 7; i++) {
+            const x = -15 + rnd() * 30, y = lv + 5 + rnd() * 20;
+            motes += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(0.35 + rnd() * 0.6)}" fill="${M[4]}"/>`;
+        }
+        let pores = '';
+        for (let i = 0; i < 8; i++) pores += `<circle cx="${f(-4.5 + rnd() * 9)}" cy="${f(NT - 3.5 - rnd() * 5)}" r="0.45" fill="${Ck[0]}"/>`;
+
+        return `
+        <g class="bt-soap bt-soap-flask" transform="translate(${A.x} ${A.y + 2})">
+            <defs>
+                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="${CY}" r="58">
+                    <stop offset="0" stop-color="${M[2]}" stop-opacity="0.6"/>
+                    <stop offset="0.45" stop-color="${M[2]}" stop-opacity="0.22"/>
+                    <stop offset="1" stop-color="${M[2]}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-halo2" gradientUnits="userSpaceOnUse" cx="0" cy="${CY + 4}" r="32">
+                    <stop offset="0" stop-color="${M[3]}" stop-opacity="0.65"/>
+                    <stop offset="1" stop-color="${M[3]}" stop-opacity="0"/>
+                </radialGradient>
+                <!-- Жижа: белёсое ядро, густые края — свет, а не краска. -->
+                <radialGradient id="${id}-liq" gradientUnits="userSpaceOnUse" cx="-3" cy="${CY + 6}" r="${R}">
+                    <stop offset="0" stop-color="${M[4]}"/>
+                    <stop offset="0.2" stop-color="${M[3]}"/>
+                    <stop offset="0.55" stop-color="${M[2]}"/>
+                    <stop offset="0.85" stop-color="${M[1]}"/>
+                    <stop offset="1" stop-color="${M[0]}"/>
+                </radialGradient>
+                <!-- Стекло шара: прозрачная середина, плотные края. -->
+                <radialGradient id="${id}-glass" gradientUnits="userSpaceOnUse" cx="0" cy="${CY}" r="${R}">
+                    <stop offset="0" stop-color="${G.wall}" stop-opacity="0.12"/>
+                    <stop offset="0.75" stop-color="${G.wall}" stop-opacity="0.25"/>
+                    <stop offset="1" stop-color="${G.edge}" stop-opacity="0.85"/>
+                </radialGradient>
+                <linearGradient id="${id}-neck" gradientUnits="userSpaceOnUse" x1="${-NX}" y1="0" x2="${NX}" y2="0">
+                    <stop offset="0" stop-color="${G.edge}" stop-opacity="0.85"/>
+                    <stop offset="0.35" stop-color="${G.wall}" stop-opacity="0.25"/>
+                    <stop offset="1" stop-color="${G.edge}" stop-opacity="0.9"/>
+                </linearGradient>
+                <linearGradient id="${id}-cork" gradientUnits="userSpaceOnUse" x1="-6.6" y1="0" x2="6.6" y2="0">
+                    <stop offset="0" stop-color="${Ck[0]}"/>
+                    <stop offset="0.35" stop-color="${Ck[2]}"/>
+                    <stop offset="1" stop-color="${Ck[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-wax" gradientUnits="userSpaceOnUse" x1="-8.6" y1="0" x2="8.6" y2="0">
+                    <stop offset="0" stop-color="${Wx[0]}"/>
+                    <stop offset="0.3" stop-color="${Wx[2]}"/>
+                    <stop offset="0.6" stop-color="${Wx[1]}"/>
+                    <stop offset="1" stop-color="${Wx[0]}"/>
+                </linearGradient>
+                <clipPath id="${id}-ball"><circle cx="0" cy="${CY}" r="${R}"/></clipPath>
+            </defs>
+            <circle cx="0" cy="${CY}" r="58" fill="url(#${id}-halo)"/>
+            <circle cx="0" cy="${CY + 4}" r="32" fill="url(#${id}-halo2)"/>
+
+            <path d="${ring}${flask}${lipD}${wax}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            <!-- Пробковое кольцо (на полке — за сеткой). -->
+            <path d="${ring}" fill="url(#${id}-cork)"/>
+            <!-- Жижа и всё, что в ней. -->
+            <path d="${liq}" fill="url(#${id}-liq)"/>
+            <g clip-path="url(#${id}-ball)">
+                ${motes}
+                ${bub}
+                <!-- Мениск снизу: светлый эллипс. -->
+                <ellipse cx="0" cy="${lv}" rx="${f(half)}" ry="2.6" fill="${M[3]}" fill-opacity="0.6" stroke="${M[4]}" stroke-width="1"/>
+            </g>
+            <!-- Стекло поверх: шар и горло. -->
+            <circle cx="0" cy="${CY}" r="${R}" fill="url(#${id}-glass)"/>
+            <path d="M${-NX} ${NT}V${f(ny + 1)}H${NX}V${NT}Z" fill="url(#${id}-neck)"/>
+            <g clip-path="url(#${id}-ball)">
+                <!-- Толщина стенки и розовый отсвет жижи по ней. -->
+                <circle cx="0" cy="${CY}" r="${innerR}" fill="none" stroke="${G.hi}" stroke-width="0.7" stroke-opacity="0.6"/>
+                <path d="M${f(-half)} ${lv + 1}A${innerR} ${innerR} 0 0 0 ${f(half)} ${lv + 1}" fill="none" stroke="${M[3]}" stroke-width="2.4" stroke-opacity="0.5"/>
+                <!-- Блик-окошко изгибом по сфере — главный признак шара. -->
+                <path d="M-17 -7C-15 -12 -11 -15.5 -6 -17L-5 -14.2C-9 -13 -12 -10.5 -14 -6.4Z" fill="${F.hi}" fill-opacity="0.85"/>
+                <path d="M-19.5 1Q-20 5 -18.8 9" fill="none" stroke="${F.hi}" stroke-width="1.4" stroke-opacity="0.8" stroke-linecap="round"/>
+                <!-- Отражение снизу справа — слабее. -->
+                <path d="M11 22Q16 19 18.5 13" fill="none" stroke="${F.hi}" stroke-width="1.6" stroke-opacity="0.45" stroke-linecap="round"/>
+            </g>
+            <!-- Горло: стенки и блик. -->
+            <path d="M${-NX + 1.6} ${NT + 1}V${f(ny + 2)}" stroke="${F.hi}" stroke-width="1.3" stroke-opacity="0.85" stroke-linecap="round"/>
+            <path d="M${NX - 1.2} ${NT + 1}V${f(ny + 2)}" stroke="${G.edge}" stroke-width="0.8"/>
+            <path d="M${-NX} ${f(ny)}A${R} ${R} 0 1 0 ${NX} ${f(ny)}" fill="none" stroke="${mixColor(ink, G.edge, 0.5)}" stroke-width="${STROKE.hairline}"/>
+            <!-- Раструб, пробка, сургуч. -->
+            <path d="${lipD}" fill="url(#${id}-neck)" stroke="${G.edge}" stroke-width="0.6"/>
+            <path d="${cork}" fill="url(#${id}-cork)"/>
+            ${pores}
+            <path d="${wax}" fill="url(#${id}-wax)"/>
+            <path d="M-5.5 ${NT - 12.5}Q-2 ${NT - 14} 2.5 ${NT - 13.4}" fill="none" stroke="${Wx[2]}" stroke-width="1.3" stroke-linecap="round"/>
+            <ellipse cx="-3.8" cy="${NT - 11.2}" rx="1.4" ry="0.7" fill="${F.hi}" fill-opacity="0.7" transform="rotate(-20 -3.8 ${NT - 11.2})"/>
+            <!-- Оттиск печати на сургуче: кружок со звездой. -->
+            <circle cx="0.5" cy="${NT - 6}" r="3.2" fill="none" stroke="${Wx[0]}" stroke-width="0.8"/>
+            <path d="M0.5 ${NT - 8.2}L1.1 ${NT - 6.6}L2.7 ${NT - 6.6}L1.4 ${NT - 5.6}L1.9 ${NT - 4}L0.5 ${NT - 5}L-0.9 ${NT - 4}L-0.4 ${NT - 5.6}L-1.7 ${NT - 6.6}L-0.1 ${NT - 6.6}Z" fill="${Wx[0]}"/>
+        </g>`;
     },
 
     // ---------- 6. ЭЛИКСИР ----------
