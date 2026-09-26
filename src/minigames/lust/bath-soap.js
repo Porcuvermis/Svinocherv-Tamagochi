@@ -48,7 +48,7 @@ const BATH_SOAP = {
         if (kind === 'pump') return { x: 550, y: 284, w: 54, h: 90 };
         if (kind === 'gel') return { x: 548, y: 276, w: 52, h: 100 };
         if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
-        if (kind === 'elixir') return { x: 546, y: 272, w: 56, h: 104 };
+        if (kind === 'elixir') return { x: 548, y: 270, w: 62, h: 106 };
         return BATH_BAKED.box('soap');
     },
 
@@ -76,105 +76,177 @@ const BATH_SOAP = {
 
     // ---------- 6. ЭЛИКСИР ----------
     // Аптечная склянка тёмного стекла с пипеткой — здесь мыло впервые
-    // перестаёт быть бытовой химией. Что делает её эликсиром:
-    //   * круглая склянка с покатыми плечами и коротким горлом, стекло
-    //     тёмно-янтарное (толстые тёмные края, резкий блик);
-    //   * пипетка: чёрный рифлёный воротник и резиновая груша, внутри —
-    //     стеклянная трубка;
-    //   * жижа зелёная и СЛАБО светится: светлее к середине, мягкий ореол
-    //     вокруг склянки. Ореол — радиальный градиент, без фильтра: слой
-    //     статичный, но правило одно на всю игру (docs/traps.md, п. 73);
-    //   * пергаментная этикетка с листиком вместо надписи, бечёвка на горле.
+    // перестаёт быть бытовой химией. Первая версия была «слабой моделькой»:
+    // янтарный прямоугольник, жижа ровной полосой, пипетка из чёрных
+    // брусков, этикетка за сеткой. Что держит качество теперь:
+    //   * СТЕКЛО: видна толщина — внутренняя стенка светлой линией и толстое
+    //     дно; края тёмные (там взгляд проходит больше стекла), середина
+    //     прозрачная; блики двумя слоями (широкий мягкий и узкий резкий),
+    //     окошко на плече; венчик-валик на горле;
+    //   * ЖИЖА светится изнутри: ядро ярче краёв, мениск снизу — светлый
+    //     эллипс (поверхность ловит свет изнутри), в толще — искры, по
+    //     стенкам — зелёный отсвет, в толстом дне — светлый серп;
+    //   * трубка пипетки на входе в жижу смещена — преломление;
+    //   * пипетка: воротник с мелким рифлением и скруглённым верхом, груша
+    //     с раструбом и двумя кольцами у основания;
+    //   * бирка на бечёвке висит с плеча — поверх сетки её видно всегда
+    //     (наклеенная этикетка пряталась за сеткой);
+    //   * ореол двумя слоями — широкий слабый и тесный поярче. Градиенты, без
+    //     фильтра (docs/traps.md, п. 73).
     elixir() {
         const P = btPal(), Am = P.soapAmber, Gl = P.soapGlow, Pa = P.soapParch, Ru = P.soapRubber, F = P.foam, ink = PALETTE.ink;
         const id = 'bsp' + (this.uid++);
         const A = BATH_ART.slots().soap;
+        const f = (v) => v.toFixed(1);
 
-        const bx = 19, bot = 29, sh = -22;
-        // Бостонская круглая склянка: прямые бока, круглые плечи, короткое горло.
-        const body = `M${-bx} ${bot - 4}V${sh}C${-bx} ${sh - 10} -12 ${sh - 13} -7 ${sh - 14}V${sh - 19}H7V${sh - 14}`
-                   + `C12 ${sh - 13} ${bx} ${sh - 10} ${bx} ${sh}V${bot - 4}Q${bx} ${bot} ${bx - 4} ${bot}H${-bx + 4}Q${-bx} ${bot} ${-bx} ${bot - 4}Z`;
-        const lv = sh + 6;
-        const liq = `M${-bx + 3} ${lv}Q0 ${lv + 2} ${bx - 3} ${lv}V${bot - 6}Q${bx - 3} ${bot - 3} ${bx - 6} ${bot - 3}H${-bx + 6}Q${-bx + 3} ${bot - 3} ${-bx + 3} ${bot - 6}Z`;
-        const collar = `M-9 ${sh - 19}V${sh - 28}H9V${sh - 19}Z`;
-        const bulb = `M-5.5 ${sh - 28}C-6.5 ${sh - 36} -7 ${sh - 42} -3.5 ${sh - 45}Q0 ${sh - 47.5} 3.5 ${sh - 45}C7 ${sh - 42} 6.5 ${sh - 36} 5.5 ${sh - 28}Z`;
+        // Бостонская круглая склянка: прямые бока, круглые плечи, горло.
+        const bottle = (bx, bot, r, sh, nx, ny) =>
+            `M${-bx} ${bot - r}V${sh}C${-bx} ${sh - 9} ${-nx - 6} ${ny + 1} ${-nx} ${ny}V${ny - 7}H${nx}V${ny}`
+          + `C${nx + 6} ${ny + 1} ${bx} ${sh - 9} ${bx} ${sh}V${bot - r}Q${bx} ${bot} ${bx - r} ${bot}H${-bx + r}Q${-bx} ${bot} ${-bx} ${bot - r}Z`;
+        const BX = 22, BOT = 29, SH = -14, NX = 7.5, NY = -30;
+        const body = bottle(BX, BOT, 5, SH, NX, NY);
+        const inner = bottle(BX - 2.6, BOT - 5, 4, SH, NX - 2.4, NY + 2);   // полость: стенки и толстое дно
+        const lv = -8;                                                       // уровень жижи
+        const lip = `M-9.5 ${NY - 7}Q-10.5 ${NY - 7} -10.5 ${NY - 8.8}Q-10.5 ${NY - 10.5} -9.5 ${NY - 10.5}H9.5Q10.5 ${NY - 10.5} 10.5 ${NY - 8.8}Q10.5 ${NY - 7} 9.5 ${NY - 7}Z`;
+        const CT = NY - 10.5, CB = CT - 10;                                  // воротник пипетки
+        const collar = `M-10 ${CT}V${CB + 2}Q-10 ${CB} -8 ${CB}H8Q10 ${CB} 10 ${CB + 2}V${CT}Z`;
+        const bulb = `M-7 ${CB}C-5 ${CB - 1} -4.8 ${CB - 2.5} -5 ${CB - 4}C-7.8 ${CB - 7} -8 ${CB - 13} -5.5 ${CB - 17}`
+                   + `Q0 ${CB - 22} 5.5 ${CB - 17}C8 ${CB - 13} 7.8 ${CB - 7} 5 ${CB - 4}C4.8 ${CB - 2.5} 5 ${CB - 1} 7 ${CB}Z`;
         let ribs = '';
-        for (let x = -7.5; x <= 7.6; x += 2.5) ribs += `M${x} ${sh - 27}V${sh - 20}`;
-        const label = `M-10.5 1H10.5V14H-10.5Z`;
-        // Листик на этикетке: ось и две половинки.
-        const leaf = 'M-4.5 7C-3 1 2 -2.5 5.5 -3C5 1.5 1.5 6 -4.5 7ZM-4.5 7L3 -1.5';
+        for (let x = -8.6; x <= 8.7; x += 1.9) ribs += `M${f(x)} ${CB + 2.5}V${CT - 0.8}`;
+
+        // Искры в жиже: из сида, мелкие; у двух — крестик.
+        const rnd = btRng(606);
+        let motes = '';
+        for (let i = 0; i < 10; i++) {
+            const x = -BX + 6 + rnd() * (2 * BX - 12), y = lv + 5 + rnd() * (BOT - lv - 14), r = 0.4 + rnd() * 0.8;
+            motes += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${Gl[4]}" fill-opacity="${(0.6 + rnd() * 0.4).toFixed(2)}"/>`;
+            if (i < 2) motes += `<path d="M${f(x - 2.6)} ${f(y)}H${f(x + 2.6)}M${f(x)} ${f(y - 2.6)}V${f(y + 2.6)}" stroke="${Gl[4]}" stroke-width="0.5" stroke-linecap="round"/>`;
+        }
+        // Бирка: форма бирки со срезанными углами, дырочка с кольцом.
+        const tag = 'M0 0H11L13 2.5V15H0Z';
 
         return `
         <g class="bt-soap bt-soap-elixir" transform="translate(${A.x} ${A.y + 2})">
             <defs>
-                <!-- Ореол: слабое свечение жижи на кафеле вокруг. -->
-                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="4" r="42">
-                    <stop offset="0" stop-color="${Gl[2]}" stop-opacity="0.55"/>
-                    <stop offset="0.5" stop-color="${Gl[2]}" stop-opacity="0.2"/>
+                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="8" r="52">
+                    <stop offset="0" stop-color="${Gl[2]}" stop-opacity="0.6"/>
+                    <stop offset="0.45" stop-color="${Gl[2]}" stop-opacity="0.24"/>
                     <stop offset="1" stop-color="${Gl[2]}" stop-opacity="0"/>
                 </radialGradient>
-                <!-- Тёмное стекло: толстые края почти чёрные. -->
-                <linearGradient id="${id}-glass" gradientUnits="userSpaceOnUse" x1="${-bx}" y1="0" x2="${bx}" y2="0">
-                    <stop offset="0" stop-color="${Am[0]}"/>
-                    <stop offset="0.2" stop-color="${Am[3]}"/>
-                    <stop offset="0.55" stop-color="${Am[2]}"/>
-                    <stop offset="1" stop-color="${Am[0]}"/>
-                </linearGradient>
-                <!-- Жижа светится изнутри: ярче в середине. -->
-                <radialGradient id="${id}-liq" gradientUnits="userSpaceOnUse" cx="-2" cy="${lv + 12}" r="22">
+                <radialGradient id="${id}-halo2" gradientUnits="userSpaceOnUse" cx="0" cy="10" r="30">
+                    <stop offset="0" stop-color="${Gl[3]}" stop-opacity="0.6"/>
+                    <stop offset="1" stop-color="${Gl[3]}" stop-opacity="0"/>
+                </radialGradient>
+                <!-- Жижа светится изнутри: ядро светлее краёв. -->
+                <!-- Свечение — это КОНТРАСТ: белёсое ядро и густые края.
+                     Ровная мятная заливка читалась краской, а не светом. -->
+                <radialGradient id="${id}-liq" gradientUnits="userSpaceOnUse" cx="-3" cy="6" r="21"
+                                gradientTransform="translate(-3 6) scale(1.15 1) translate(3 -6)">
                     <stop offset="0" stop-color="${Gl[4]}"/>
-                    <stop offset="0.25" stop-color="${Gl[3]}"/>
+                    <stop offset="0.18" stop-color="${Gl[3]}"/>
                     <stop offset="0.5" stop-color="${Gl[2]}"/>
+                    <stop offset="0.82" stop-color="${Gl[1]}"/>
                     <stop offset="1" stop-color="${Gl[0]}"/>
                 </radialGradient>
-                <linearGradient id="${id}-tint" gradientUnits="userSpaceOnUse" x1="${-bx}" y1="0" x2="${bx}" y2="0">
-                    <stop offset="0" stop-color="${Am[0]}" stop-opacity="0.85"/>
-                    <stop offset="0.25" stop-color="${Am[2]}" stop-opacity="0.08"/>
-                    <stop offset="0.7" stop-color="${Am[2]}" stop-opacity="0.12"/>
-                    <stop offset="1" stop-color="${Am[0]}" stop-opacity="0.9"/>
+                <!-- Янтарь стекла поверх: края густые, середина прозрачная. -->
+                <linearGradient id="${id}-amber" gradientUnits="userSpaceOnUse" x1="${-BX}" y1="0" x2="${BX}" y2="0">
+                    <stop offset="0" stop-color="${Am[0]}" stop-opacity="0.95"/>
+                    <stop offset="0.1" stop-color="${Am[1]}" stop-opacity="0.6"/>
+                    <stop offset="0.3" stop-color="${Am[3]}" stop-opacity="0.18"/>
+                    <stop offset="0.72" stop-color="${Am[3]}" stop-opacity="0.22"/>
+                    <stop offset="0.9" stop-color="${Am[1]}" stop-opacity="0.65"/>
+                    <stop offset="1" stop-color="${Am[0]}" stop-opacity="0.95"/>
                 </linearGradient>
-                <linearGradient id="${id}-rubber" gradientUnits="userSpaceOnUse" x1="-7" y1="0" x2="7" y2="0">
+                <!-- Пустое стекло над жижей: тёмный янтарь. -->
+                <linearGradient id="${id}-empty" gradientUnits="userSpaceOnUse" x1="${-BX}" y1="0" x2="${BX}" y2="0">
+                    <stop offset="0" stop-color="${Am[0]}"/>
+                    <stop offset="0.28" stop-color="${Am[3]}"/>
+                    <stop offset="0.6" stop-color="${Am[2]}"/>
+                    <stop offset="1" stop-color="${Am[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-rub" gradientUnits="userSpaceOnUse" x1="-10" y1="0" x2="10" y2="0">
                     <stop offset="0" stop-color="${Ru[0]}"/>
-                    <stop offset="0.3" stop-color="${Ru[2]}"/>
+                    <stop offset="0.28" stop-color="${Ru[2]}"/>
+                    <stop offset="0.45" stop-color="${Ru[1]}"/>
                     <stop offset="1" stop-color="${Ru[0]}"/>
                 </linearGradient>
-                <linearGradient id="${id}-parch" gradientUnits="userSpaceOnUse" x1="-10.5" y1="0" x2="10.5" y2="0">
-                    <stop offset="0" stop-color="${Pa[0]}"/>
-                    <stop offset="0.3" stop-color="${Pa[2]}"/>
-                    <stop offset="1" stop-color="${Pa[0]}"/>
+                <linearGradient id="${id}-lip" gradientUnits="userSpaceOnUse" x1="0" y1="${NY - 10.5}" x2="0" y2="${NY - 7}">
+                    <stop offset="0" stop-color="${Am[4]}"/>
+                    <stop offset="0.45" stop-color="${Am[2]}"/>
+                    <stop offset="1" stop-color="${Am[0]}"/>
                 </linearGradient>
-                <clipPath id="${id}-clip"><path d="${body}"/></clipPath>
+                <linearGradient id="${id}-tag" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="13" y2="15">
+                    <stop offset="0" stop-color="${Pa[2]}"/>
+                    <stop offset="1" stop-color="${Pa[1]}"/>
+                </linearGradient>
+                <clipPath id="${id}-in"><path d="${inner}"/></clipPath>
+                <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
-            <ellipse cx="0" cy="4" rx="42" ry="42" fill="url(#${id}-halo)"/>
-            <path d="${body}${collar}${bulb}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            <path d="${body}" fill="url(#${id}-glass)"/>
-            <g clip-path="url(#${id}-clip)">
-                <path d="${liq}" fill="url(#${id}-liq)"/>
-                <!-- Трубка пипетки сквозь жижу. -->
-                <path d="M-1.5 ${sh - 19}V${bot - 10}Q0 ${bot - 7} 1.5 ${bot - 10}V${sh - 19}" fill="${Gl[1]}" fill-opacity="0.5" stroke="${Gl[4]}" stroke-width="0.6" stroke-opacity="0.7"/>
-                <!-- Стекло поверх жижи: янтарный тон и тёмные края. -->
-                <path d="${body}" fill="url(#${id}-tint)"/>
-                <path d="M${-bx + 3} ${lv}Q0 ${lv + 2} ${bx - 3} ${lv}" fill="none" stroke="${Gl[3]}" stroke-width="1.2" stroke-opacity="0.9"/>
-                <!-- Этикетка: пергамент, рамка, листик. -->
-                <path d="${label}" fill="url(#${id}-parch)"/>
-                <path d="M-9 2.5H9V12.5H-9Z" fill="none" stroke="${Pa[0]}" stroke-width="0.7"/>
-                <path d="${leaf}" fill="${Gl[1]}" stroke="${Gl[0]}" stroke-width="0.6" stroke-linejoin="round" transform="translate(0 7.5) scale(0.8)"/>
-                <!-- Блики стекла: резкий слева, короткий на плече. -->
-                <path d="M${-bx + 4.5} ${sh + 2}V${bot - 7}" stroke="${F.hi}" stroke-width="2" stroke-opacity="0.75" stroke-linecap="round"/>
-                <path d="M-15 ${sh - 4}C-13 ${sh - 9} -10 ${sh - 11} -7.5 ${sh - 12}" fill="none" stroke="${F.hi}" stroke-width="1.4" stroke-opacity="0.8" stroke-linecap="round"/>
-                <path d="M${bx - 3.5} ${sh + 4}V${bot - 9}" stroke="${Am[4]}" stroke-width="1.1" stroke-opacity="0.7" stroke-linecap="round"/>
+            <!-- Ореол на кафеле. -->
+            <circle cx="0" cy="8" r="52" fill="url(#${id}-halo)"/>
+            <circle cx="0" cy="10" r="30" fill="url(#${id}-halo2)"/>
+
+            <path d="${body}${lip}${collar}${bulb}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            <!-- Стекло: тёмное целиком, полость — светящаяся жижа. -->
+            <path d="${body}" fill="url(#${id}-empty)"/>
+            <g clip-path="url(#${id}-in)">
+                <rect x="${-BX}" y="${lv}" width="${2 * BX}" height="${BOT - lv}" fill="url(#${id}-liq)"/>
+                ${motes}
+                <!-- Трубка пипетки: над жижей — стекло, в жиже — сдвинута
+                     преломлением и налита светом. -->
+                <path d="M-1.6 ${NY - 8}V${lv}M1.6 ${NY - 8}V${lv}" stroke="${Am[4]}" stroke-width="0.7" stroke-opacity="0.8"/>
+                <path d="M-0.4 ${lv}V${BOT - 12}Q1 ${BOT - 9.5} 2.4 ${BOT - 12}V${lv}" fill="${Gl[4]}" fill-opacity="0.55" stroke="${Gl[1]}" stroke-width="0.6"/>
+                <!-- Мениск снизу: светлый эллипс — поверхность ловит свет изнутри. -->
+                <ellipse cx="0" cy="${lv}" rx="${BX - 2.6}" ry="2.4" fill="${Gl[3]}" fill-opacity="0.55" stroke="${Gl[4]}" stroke-width="1"/>
+                <!-- Отсвет жижи по стенкам. -->
+                <path d="${inner}" fill="none" stroke="${Gl[3]}" stroke-width="2.2" stroke-opacity="0.35"/>
+            </g>
+            <!-- Янтарь поверх всего тела: края густые. -->
+            <path d="${body}" fill="url(#${id}-amber)"/>
+            <g clip-path="url(#${id}-body)">
+                <!-- Толщина стекла: внутренняя стенка светлой линией. -->
+                <path d="${inner}" fill="none" stroke="${Am[4]}" stroke-width="0.8" stroke-opacity="0.55"/>
+                <!-- Толстое дно: серп света от жижи. -->
+                <path d="M${-BX + 6} ${BOT - 2.5}Q0 ${BOT - 0.5} ${BX - 6} ${BOT - 2.5}" fill="none" stroke="${Gl[3]}" stroke-width="1.6" stroke-opacity="0.8" stroke-linecap="round"/>
+                <!-- Блики: широкий мягкий, узкий резкий, окошко на плече. -->
+                <path d="M${-BX + 6.5} ${SH - 2}V${BOT - 8}" stroke="${F.hi}" stroke-width="5" stroke-opacity="0.16" stroke-linecap="round"/>
+                <path d="M${-BX + 5} ${SH}V${BOT - 9}" stroke="${F.hi}" stroke-width="1.6" stroke-opacity="0.9" stroke-linecap="round"/>
+                <path d="M${-BX + 9} ${SH + 3}V${SH + 9}" stroke="${F.hi}" stroke-width="1.2" stroke-opacity="0.7" stroke-linecap="round"/>
+                <path d="M-17 ${SH - 7}C-15 ${SH - 12} -12 ${NY + 3} -9 ${NY + 1.5}" fill="none" stroke="${F.hi}" stroke-width="1.5" stroke-opacity="0.85" stroke-linecap="round"/>
+                <!-- Справа край ловит зелёный свет изнутри. -->
+                <path d="M${BX - 2} ${SH + 2}V${BOT - 7}" stroke="${Gl[3]}" stroke-width="1.1" stroke-opacity="0.75" stroke-linecap="round"/>
             </g>
             <path d="${body}" fill="none" stroke="${mixColor(ink, Am[0], 0.5)}" stroke-width="${STROKE.hairline}"/>
-            <!-- Бечёвка на горле: два витка и узелок с хвостиками. -->
-            <path d="M-7.5 ${sh - 16}Q0 ${sh - 14} 7.5 ${sh - 16}M-7.5 ${sh - 14}Q0 ${sh - 12} 7.5 ${sh - 14}" fill="none" stroke="${P.soapTwine}" stroke-width="1.3"/>
-            <path d="M5 ${sh - 14.5}q3 3 1.5 8M6 ${sh - 14.5}q4.5 2 5 7" fill="none" stroke="${P.soapTwine}" stroke-width="1" stroke-linecap="round"/>
-            <circle cx="5.5" cy="${sh - 14.8}" r="1.3" fill="${P.soapTwine}"/>
-            <!-- Пипетка: воротник с рифлением и груша. -->
-            <path d="${collar}" fill="url(#${id}-rubber)"/>
-            <path d="${ribs}" stroke="${Ru[2]}" stroke-width="0.7"/>
-            <path d="${bulb}" fill="url(#${id}-rubber)"/>
-            <path d="M-3.5 ${sh - 43}Q-4.8 ${sh - 38} -4 ${sh - 31}" fill="none" stroke="${Ru[2]}" stroke-width="1.4" stroke-linecap="round"/>
-            <path d="M-3 ${sh - 43.5}Q-2 ${sh - 44.6} -0.5 ${sh - 44.8}" fill="none" stroke="${F.hi}" stroke-width="0.9" stroke-opacity="0.7" stroke-linecap="round"/>
+            <!-- Венчик горла. -->
+            <path d="${lip}" fill="url(#${id}-lip)"/>
+            <path d="M-8 ${NY - 9.4}H6" stroke="${Am[4]}" stroke-width="0.8" stroke-linecap="round" stroke-opacity="0.9"/>
+            <!-- Бечёвка: два витка на горле, узелок, свисает к бирке. -->
+            <path d="M-7.5 ${NY + 2.5}Q0 ${NY + 4.5} 7.5 ${NY + 2.5}M-7.8 ${NY + 5}Q0 ${NY + 7} 8 ${NY + 5}" fill="none" stroke="${mixColor(P.soapTwine, ink, 0.35)}" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M-7.5 ${NY + 2.5}Q0 ${NY + 4.5} 7.5 ${NY + 2.5}M-7.8 ${NY + 5}Q0 ${NY + 7} 8 ${NY + 5}" fill="none" stroke="${P.soapTwine}" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M7 ${NY + 4}C12 ${NY + 6} 17 ${NY + 9} 21.5 ${NY + 13.5}" fill="none" stroke="${P.soapTwine}" stroke-width="1" stroke-linecap="round"/>
+            <path d="M7 ${NY + 4}q-1 5 1.5 8" fill="none" stroke="${P.soapTwine}" stroke-width="1" stroke-linecap="round"/>
+            <circle cx="7" cy="${NY + 4}" r="1.5" fill="${P.soapTwine}" stroke="${mixColor(P.soapTwine, ink, 0.4)}" stroke-width="0.5"/>
+            <!-- Бирка висит с плеча, поверх сетки её видно всегда. -->
+            <g transform="translate(17 ${NY + 12}) rotate(14)">
+                <path d="${tag}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
+                <path d="${tag}" fill="url(#${id}-tag)"/>
+                <path d="M11 0L13 2.5H11Z" fill="${Pa[0]}"/>
+                <circle cx="4.5" cy="2.8" r="1.6" fill="${Pa[0]}"/>
+                <circle cx="4.5" cy="2.8" r="0.8" fill="${Am[1]}"/>
+                <path d="M3 13C3.5 9 7 6.5 10.5 6.5C10 10 7 12.8 3 13ZM3 13L8.5 8.3" fill="${Gl[1]}" stroke="${Gl[0]}" stroke-width="0.5" stroke-linejoin="round"/>
+                <path d="${tag}" fill="none" stroke="${Pa[0]}" stroke-width="0.6"/>
+            </g>
+            <!-- Воротник пипетки. -->
+            <path d="${collar}" fill="url(#${id}-rub)"/>
+            <path d="${ribs}" stroke="${Ru[0]}" stroke-width="0.6" stroke-opacity="0.9"/>
+            <path d="M-7 ${CB + 1}H6" stroke="${Ru[2]}" stroke-width="1" stroke-linecap="round"/>
+            <path d="M-10 ${CT - 0.6}H10" stroke="${Ru[2]}" stroke-width="0.8"/>
+            <!-- Груша: раструб, два кольца у основания, мягкий матовый блик. -->
+            <path d="${bulb}" fill="url(#${id}-rub)"/>
+            <path d="M-5.6 ${CB - 2}Q0 ${CB - 1} 5.6 ${CB - 2}M-5 ${CB - 4}Q0 ${CB - 3} 5 ${CB - 4}" fill="none" stroke="${Ru[0]}" stroke-width="0.8"/>
+            <path d="M-4.8 ${CB - 15}Q-6.4 ${CB - 11} -5.4 ${CB - 6}" fill="none" stroke="${Ru[2]}" stroke-width="2" stroke-linecap="round" stroke-opacity="0.9"/>
+            <ellipse cx="-2.6" cy="${CB - 17.5}" rx="1.6" ry="0.8" fill="${F.hi}" fill-opacity="0.55" transform="rotate(-30 -2.6 ${CB - 17.5})"/>
         </g>`;
     },
 
