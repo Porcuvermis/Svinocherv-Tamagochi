@@ -213,8 +213,15 @@ const BATH_SOAP = {
         const rnd = btRng(8888);
         const SH = this.magicShape();
         const body = poly(SH.outline), cav = poly(SH.cav);
-        const star4 = (r, w) => `M0 ${-r}Q${w} ${-w} ${r} 0Q${w} ${w} 0 ${r}Q${-w} ${w} ${-r} 0Q${-w} ${-w} 0 ${-r}Z`;
 
+        // Блик-звезда — ИГЛЫ, а не звёздочка: крест из тонких ромбов,
+        // сужающихся к концам. Длинная бледная пара и короткая яркая — так
+        // луч гаснет к концу без градиента. Звёздочка из кривых (star4) у
+        // центра толстая по самой форме и читалась мультяшным ромбом.
+        const needle = (L, w) => `M${-L} 0L0 ${-w}L${L} 0L0 ${w}ZM0 ${-L}L${w} 0L0 ${L}L${-w} 0Z`;
+        const flare = (L, col, o) =>
+            `<path d="${needle(L, Math.max(0.1, L * 0.022))}" fill="${col}" fill-opacity="${(0.5 * o).toFixed(2)}"/>`
+          + `<path d="${needle(L * 0.42, Math.max(0.16, L * 0.04))}" fill="${col}" fill-opacity="${(0.95 * o).toFixed(2)}"/>`;
         // Где луч из точки упирается в силуэт.
         const hit = (pts, ox, oy, a) => {
             const dx = Math.cos(a), dy = Math.sin(a);
@@ -301,15 +308,29 @@ const BATH_SOAP = {
                   fill="none" stroke="${C.dust}" stroke-width="2.8" stroke-opacity="0.35" stroke-linecap="round"/>`;
         for (let i = 0; i < 320; i++) {
             const x = -50 + rnd() * 100, y = -56 + rnd() * 96, r = 0.2 + rnd() * 0.42;
-            far += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${(0.35 + rnd() * 0.6).toFixed(2)}"/>`;
+            // Настоящие звёзды разного цвета: большинство белые, часть
+            // голубее, часть теплее.
+            const q = rnd(), col = q < 0.7 ? C.glow : q < 0.86 ? C.cyan : C.core;
+            far += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r * 0.85)}" fill="${col}" fill-opacity="${(0.3 + rnd() * 0.6).toFixed(2)}"/>`;
         }
-        const GL = [C.glow, C.core, C.cyan, C.blush, C.prism[1], C.glow];
+        // Ближние звёзды — как на снимке космоса, а не блёстки: маленькое
+        // яркое ядро и мягкое свечение вокруг; у немногих самых ярких —
+        // тонкие иглы дифракционного креста. Толстые ромбы читались
+        // мультяшными наклейками и убивали ощущение глубины.
+        const GLOW = ['wh', 'bl', 'wm', 'pk'];
         let near = '';
-        for (let i = 0; i < 48; i++) {
-            const x = -44 + rnd() * 88, y = -46 + rnd() * 78, r = 0.7 + rnd() * 1.2;
+        for (let i = 0; i < 64; i++) {
+            const x = -44 + rnd() * 88, y = -46 + rnd() * 78;
+            const bright = i < 14, r = bright ? 0.65 + rnd() * 0.35 : 0.32 + rnd() * 0.32;
+            const g = GLOW[Math.floor(rnd() * GLOW.length)];
             const tw = i < M.TWINKLE;
-            near += `<g transform="translate(${f(x)} ${f(y)})"><path ${tw ? `class="bsm-tw" data-i="${i}" ` : ''}d="${star4(r * 2, r * 0.22)}" fill="${GL[i % GL.length]}" fill-opacity="${tw ? Fr.twinkle[i] : '0.85'}"/>`
-                  + `<circle r="${f(r * 0.4)}" fill="#ffffff"/></g>`;
+            let st = `<circle ${tw ? `class="bsm-tw" data-i="${i}" ` : ''}r="${f(r * (bright ? 7 : 5))}" fill="url(#${id}-st-${g})" fill-opacity="${tw ? Fr.twinkle[i] : '0.9'}"/>`;
+            if (bright) {
+                const L1 = 4 + rnd() * 3.5, rot = (rnd() - 0.5) * 20;
+                st += `<g transform="rotate(${f(rot)})">${flare(L1, '#ffffff', 0.9)}</g>`;
+            }
+            st += `<circle r="${f(r)}" fill="#ffffff"/>`;
+            near += `<g transform="translate(${f(x)} ${f(y)})">${st}</g>`;
         }
         // Галактика: две спиральные ветви в наклоне, в центре линзы.
         const arm = (a0) => {
@@ -348,9 +369,9 @@ const BATH_SOAP = {
 
         const bubs = Fr.bubs.map(b =>
             `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><circle r="${b.r}" fill="${C.cyan}" fill-opacity="${(b.o * 0.45).toFixed(2)}" stroke="${C.glow}" stroke-width="0.8" stroke-opacity="${b.o}"/>`
-          + `<path d="${star4(3, 0.35)}" fill="${C.glow}" fill-opacity="${b.pop}"/></g>`).join('');
+          + `<path d="${needle(3, 0.2)}" fill="${C.glow}" fill-opacity="${b.pop}"/></g>`).join('');
         const sparks = Fr.sparks.map((sp, i) =>
-            `<path class="bsm-spark" d="${star4(M.SPARKS[i][2], M.SPARKS[i][2] * 0.14)}" transform="${sp.tr}" fill="${C.glow}" fill-opacity="${sp.o}"/>`).join('');
+            `<path class="bsm-spark" d="${needle(M.SPARKS[i][2] * 1.2, 0.2)}" transform="${sp.tr}" fill="${C.glow}" fill-opacity="${sp.o}"/>`).join('');
 
         // ---------- пьедестал: толстое дно с вертикальными насечками ----------
         const ped = `M-15.5 17H15.5L19.5 27L19 ${M.FLOOR}H-19L-19.5 27Z`;
@@ -395,6 +416,13 @@ const BATH_SOAP = {
                     <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.8"/>
                     <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
                 </radialGradient>
+                ${[['wh', C.glow], ['bl', C.cyan], ['wm', C.core], ['pk', C.blush]].map(([k, c]) => `
+                <radialGradient id="${id}-st-${k}" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${c}" stop-opacity="1"/>
+                    <stop offset="0.16" stop-color="${c}" stop-opacity="0.6"/>
+                    <stop offset="0.45" stop-color="${c}" stop-opacity="0.16"/>
+                    <stop offset="1" stop-color="${c}" stop-opacity="0"/>
+                </radialGradient>`).join('')}
                 <radialGradient id="${id}-core" gradientUnits="objectBoundingBox">
                     <stop offset="0" stop-color="${C.core}"/>
                     <stop offset="0.35" stop-color="${C.core}" stop-opacity="0.7"/>
@@ -522,7 +550,7 @@ const BATH_SOAP = {
             <path d="M${LN.cx - LN.rx * 0.82} ${LN.cy - LN.ry * 0.3}Q${LN.cx - LN.rx * 0.7} ${LN.cy - LN.ry * 0.85} ${LN.cx - LN.rx * 0.15} ${LN.cy - LN.ry * 0.93}"
                   fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.9"/>
             <path d="${body}" fill="none" stroke="${C.glow}" stroke-width="0.7" stroke-opacity="0.7" stroke-linejoin="round"/>
-            ${[[-19, -12, 2.6], [-24, 4, 2], [12, -23, 1.7], [22, 9, 1.4]].map(([x, y, r]) => `<path d="${star4(r, r * 0.16)}" transform="translate(${x} ${y})" fill="#ffffff"/>`).join('')}
+            ${[[-19, -12, 2.4], [-24, 4, 1.8], [12, -23, 1.6], [22, 9, 1.3]].map(([x, y, r]) => `<g transform="translate(${x} ${y})">${flare(r * 1.5, '#ffffff', 0.85)}<circle r="0.4" fill="#ffffff"/></g>`).join('')}
 
             <!-- ГОРЛО: стекло, высокий золотой воротник, хрустальный венчик. -->
             <path d="${neck}" fill="url(#${id}-neckV)"/>
@@ -561,7 +589,7 @@ const BATH_SOAP = {
                     <path d="M-5 ${S - 9.4}H4" stroke="${Au[4]}" stroke-width="0.6"/>
                     <path d="M-5.4 ${S - 10.6}L-6.6 ${GR - 1.5}M5.4 ${S - 10.6}L6.6 ${GR - 1.5}" stroke="${Au[2]}" stroke-width="1.4" stroke-linecap="round"/>
                     <path d="M-3.6 ${GS + 1}L-1.2 ${GT + 4}" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-opacity="0.9"/>
-                    <path d="${star4(2.4, 0.3)}" transform="translate(-1.8 ${GS - 1})" fill="#ffffff"/>
+                    <g transform="translate(-1.8 ${GS - 1})">${flare(3, '#ffffff', 1)}</g>
                 </g>
             </g>
         </g>`;
