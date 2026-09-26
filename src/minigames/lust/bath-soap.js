@@ -117,8 +117,11 @@ const BATH_SOAP = {
         // космос, и мелким его не разглядеть (решение игрока: вершина
         // лестницы может стоять выше стоек).
         SCALE: 1.5,
-        // Глубина: насколько сдвигаются слои при полном наклоне.
-        PLX: { far: 11, near: 4.5 },
+        // Глубина: насколько сдвигаются слои при полном наклоне, и насколько
+        // флакон чувствительнее общего датчика. У датчика полный наклон — 35°
+        // (так висит одежда), а глубину при нём приходилось «выкручивать»
+        // телефоном (замечание игрока): у флакона полный сдвиг уже при ~15°.
+        PLX: { far: 18, near: 7, gain: 2.4 },
         BUBS: 6, TWINKLE: 12,
         SPARKS: [[-41, -26, 4.5], [41, -12, 3.6], [-39, 8, 3], [42, 10, 2.6], [-22, -64, 3.2], [22, -78, 4]]
     },
@@ -285,22 +288,25 @@ const BATH_SOAP = {
         let far = `<g class="bsm-nebA" fill-opacity="${Fr.nebA}">
                 <ellipse cx="-12" cy="-10" rx="30" ry="10" fill="url(#${id}-pink)" transform="rotate(-24 -12 -10)"/>
                 <ellipse cx="16" cy="10" rx="22" ry="8" fill="url(#${id}-pink)" transform="rotate(20 16 10)"/>
+                <ellipse cx="-20" cy="30" rx="22" ry="7" fill="url(#${id}-pink)" transform="rotate(-10 -20 30)"/>
             </g>
             <g class="bsm-nebB" fill-opacity="${Fr.nebB}">
                 <ellipse cx="14" cy="-16" rx="28" ry="9" fill="url(#${id}-cyan)" transform="rotate(14 14 -16)"/>
                 <ellipse cx="-16" cy="12" rx="24" ry="8" fill="url(#${id}-cyan)" transform="rotate(-12 -16 12)"/>
+                <ellipse cx="22" cy="30" rx="22" ry="7" fill="url(#${id}-cyan)" transform="rotate(12 22 30)"/>
+                <ellipse cx="-6" cy="-40" rx="26" ry="7" fill="url(#${id}-cyan)" transform="rotate(8 -6 -40)"/>
             </g>
             <!-- Пылевые прожилки: темнее основы — дают туманности глубину. -->
-            <path d="M-46 -6C-30 -12 -14 2 2 -5S28 -16 46 -9M-42 12C-24 5 -6 20 12 12S34 6 46 13M-44 -26C-26 -32 -10 -22 8 -28"
+            <path d="M-46 -6C-30 -12 -14 2 2 -5S28 -16 46 -9M-42 12C-24 5 -6 20 12 12S34 6 46 13M-44 -26C-26 -32 -10 -22 8 -28M-40 28C-22 22 -6 32 14 26S36 22 48 28"
                   fill="none" stroke="${C.dust}" stroke-width="2.8" stroke-opacity="0.35" stroke-linecap="round"/>`;
-        for (let i = 0; i < 300; i++) {
-            const x = -48 + rnd() * 96, y = -50 + rnd() * 80, r = 0.2 + rnd() * 0.42;
+        for (let i = 0; i < 320; i++) {
+            const x = -50 + rnd() * 100, y = -56 + rnd() * 96, r = 0.2 + rnd() * 0.42;
             far += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${(0.35 + rnd() * 0.6).toFixed(2)}"/>`;
         }
         const GL = [C.glow, C.core, C.cyan, C.blush, C.prism[1], C.glow];
         let near = '';
-        for (let i = 0; i < 44; i++) {
-            const x = -42 + rnd() * 84, y = -44 + rnd() * 70, r = 0.7 + rnd() * 1.2;
+        for (let i = 0; i < 48; i++) {
+            const x = -44 + rnd() * 88, y = -46 + rnd() * 78, r = 0.7 + rnd() * 1.2;
             const tw = i < M.TWINKLE;
             near += `<g transform="translate(${f(x)} ${f(y)})"><path ${tw ? `class="bsm-tw" data-i="${i}" ` : ''}d="${star4(r * 2, r * 0.22)}" fill="${GL[i % GL.length]}" fill-opacity="${tw ? Fr.twinkle[i] : '0.85'}"/>`
                   + `<circle r="${f(r * 0.4)}" fill="#ffffff"/></g>`;
@@ -568,7 +574,8 @@ const BATH_SOAP = {
     // слой медленно плывёт сам, чтобы флакон не выглядел плоским.
     lean(t) {
         const T = typeof Tilt !== 'undefined' && Tilt.lean ? Tilt.lean() : null;
-        if (T && T.live) return { x: T.x, y: T.y };
+        const g = this.MAGIC.PLX.gain, cl = (v) => Math.max(-1, Math.min(1, v * g));
+        if (T && T.live) return { x: cl(T.x), y: cl(T.y) };
         return { x: 0.55 * Math.sin(t * 0.35), y: 0.4 * Math.sin(t * 0.23) };
     },
 
