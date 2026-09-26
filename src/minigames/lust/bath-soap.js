@@ -44,7 +44,7 @@ const BATH_SOAP = {
         if (kind === 'bar') return { x: 536, y: 314, w: 92, h: 64 };
         if (kind === 'toilet') return { x: 532, y: 313, w: 84, h: 38 };
         if (kind === 'pump') return { x: 550, y: 284, w: 54, h: 90 };
-        if (kind === 'gel') return { x: 546, y: 292, w: 56, h: 84 };
+        if (kind === 'gel') return { x: 548, y: 276, w: 52, h: 100 };
         return BATH_BAKED.box('soap');
     },
 
@@ -85,17 +85,19 @@ const BATH_SOAP = {
         const A = BATH_ART.slots().soap;
 
         // Тело: горлышко у крышки (y 17) → плечи наверху → скруглённый верх.
-        // Широкая и невысокая: узкая и высокая читалась вазой.
-        const top = -48;
-        const body = `M-12 17C-14 7 -23 -6 -23 -22C-23 -36 -21 ${top + 3} -12 ${top}H12C21 ${top + 3} 23 -36 23 -22`
-                   + `C23 -6 14 7 12 17Z`;
+        // Вытянутая: такие бутылки геля высокие. Узкая и высокая с
+        // перехватом посередине читалась вазой, приземистая — не гелем;
+        // здесь бока почти прямые, перехват только к горлышку.
+        const top = -64;
+        const body = `M-12 17C-14 8 -21 -2 -21 -18C-21 -44 -20 ${top + 3} -12 ${top}H12C20 ${top + 3} 21 -44 21 -18`
+                   + `C21 -2 14 8 12 17Z`;
         // Крышка-откидушка: широкий низ, шов шарнира.
         const cap = `M-13 17H13Q15 17 15 19.5V26.5Q15 29 12.5 29H-12.5Q-15 29 -15 26.5V19.5Q-15 17 -13 17Z`;
         // Этикетка: полоса поперёк тела с волной по верхнему краю.
         // Этикетка — поясом, а не во всё тело: бутылка должна остаться
         // бирюзовой.
-        const label = `M-24 -24C-12 -29 -3 -20 8 -25S19 -27 24 -25V-2H-24Z`;
-        const wave = `M-24 -14C-14 -19 -5 -9 6 -14S17 -17 24 -14V-9C18 -12 12 -6 5 -9S-13 -13 -24 -8Z`;
+        const label = `M-24 -32C-12 -37 -3 -28 8 -33S19 -35 24 -33V-6H-24Z`;
+        const wave = `M-24 -22C-14 -27 -5 -17 6 -22S17 -25 24 -22V-17C18 -20 12 -14 5 -17S-13 -21 -24 -16Z`;
 
         return `
         <g class="bt-soap bt-soap-gel" transform="translate(${A.x - 2} ${A.y + 2})">
@@ -127,19 +129,19 @@ const BATH_SOAP = {
             <g clip-path="url(#${id}-clip)">
                 <path d="${label}" fill="url(#${id}-label)"/>
                 <path d="${wave}" fill="${C[2]}"/>
-                <path d="M-24 -8C-13 -13 -5 -3 6 -9S17 -12 24 -9" fill="none" stroke="${C[1]}" stroke-width="1.2" stroke-opacity="0.7"/>
+                <path d="M-24 -16C-13 -21 -5 -11 6 -17S17 -20 24 -17" fill="none" stroke="${C[1]}" stroke-width="1.2" stroke-opacity="0.7"/>
                 <!-- Пузырьки на этикетке. -->
-                ${[[-9, -4.5, 2.6], [1, -6, 1.8], [10, -4.5, 2.3]].map(([x, y, r]) =>
+                ${[[-8, -10, 2.6], [1, -12, 1.8], [9, -10, 2.3]].map(([x, y, r]) =>
                     `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${C[2]}" stroke-width="1.1"/>
                      <circle cx="${x - r * 0.35}" cy="${y - r * 0.35}" r="${r * 0.28}" fill="${C[3]}"/>`).join('')}
                 <!-- Край этикетки — тонкий шов. -->
-                <path d="M-24 -2H24" stroke="${C[0]}" stroke-width="0.8" stroke-opacity="0.5"/>
+                <path d="M-24 -6H24" stroke="${C[0]}" stroke-width="0.8" stroke-opacity="0.5"/>
                 <!-- Вмятина от пальцев: тёмная ложбинка и светлый край. -->
-                <path d="M23 -40C16 -37 15 -31 22 -27" fill="none" stroke="${C[0]}" stroke-width="3.2" stroke-opacity="0.45" stroke-linecap="round"/>
-                <path d="M20.5 -41C14 -37 13.5 -32 19 -28" fill="none" stroke="${C[4]}" stroke-width="1.3" stroke-opacity="0.8" stroke-linecap="round"/>
+                <path d="M21 -54C14 -51 13 -45 20 -41" fill="none" stroke="${C[0]}" stroke-width="3.2" stroke-opacity="0.45" stroke-linecap="round"/>
+                <path d="M18.5 -55C12 -51 11.5 -46 17 -42" fill="none" stroke="${C[4]}" stroke-width="1.3" stroke-opacity="0.8" stroke-linecap="round"/>
                 <!-- Глянец: длинный блик слева и горячая точка у плеча. -->
-                <path d="M-15 -40C-17 -28 -17 -14 -12 4" fill="none" stroke="${C[4]}" stroke-width="3.2" stroke-opacity="0.75" stroke-linecap="round"/>
-                <ellipse cx="-10" cy="-43" rx="3.4" ry="1.5" fill="${F.hi}" fill-opacity="0.95" transform="rotate(-15 -10 -43)"/>
+                <path d="M-14 -56C-16 -38 -16 -16 -12 4" fill="none" stroke="${C[4]}" stroke-width="3.2" stroke-opacity="0.75" stroke-linecap="round"/>
+                <ellipse cx="-9" cy="-59" rx="3.4" ry="1.5" fill="${F.hi}" fill-opacity="0.95" transform="rotate(-15 -9 -59)"/>
                 <!-- Горлышко темнее: туда стекает гель, стенка там толще. -->
                 <path d="M-12 12H12" stroke="${C[0]}" stroke-width="6" stroke-opacity="0.35"/>
             </g>
