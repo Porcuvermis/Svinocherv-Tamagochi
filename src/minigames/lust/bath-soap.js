@@ -13,7 +13,7 @@
 const BATH_SOAP = {
     // Вид на каждой ступени. Ещё не нарисованные ступени берут запечённый
     // брусок — пока лестница не закончена.
-    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'baked', 'baked', 'baked', 'baked'],
+    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'premium', 'baked', 'baked', 'baked'],
     uid: 0,
 
     level() {
@@ -34,6 +34,7 @@ const BATH_SOAP = {
         if (kind === 'toilet') return this.toilet(where);
         if (kind === 'pump') return this.pump();
         if (kind === 'gel') return this.gel();
+        if (kind === 'premium') return this.premium();
         return BATH_BAKED.draw('soap');
     },
 
@@ -45,6 +46,7 @@ const BATH_SOAP = {
         if (kind === 'toilet') return { x: 532, y: 313, w: 84, h: 38 };
         if (kind === 'pump') return { x: 550, y: 284, w: 54, h: 90 };
         if (kind === 'gel') return { x: 548, y: 276, w: 52, h: 100 };
+        if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
         return BATH_BAKED.box('soap');
     },
 
@@ -68,6 +70,102 @@ const BATH_SOAP = {
             d += (i ? 'L' : 'M') + pt(p0) + 'Q' + pt(p) + ' ' + pt(p1);
         }
         return d + 'Z';
+    },
+
+    // ---------- 5. ПРЕМИУМ-ГЕЛЬ ----------
+    // Прозрачный флакон с фиолетовым гелем и золотой крышкой. Отличие от
+    // простого геля — не цвет, а материал и сдержанность:
+    //   * стекло толстое: вокруг геля светлая кайма стенок, блики резкие
+    //     (у мягкого пластика они были размытые);
+    //   * в геле застыли пузырьки — примета дорогого геля;
+    //   * крышка — высокий золотой колпачок: металл с резким перепадом
+    //     света и рифлением;
+    //   * этикетки нет — только маленькая золотая эмблема на стекле.
+    // Стоит крышкой вверх: дорогую вещь ставят на показ.
+    premium() {
+        const P = btPal(), V = P.soapViolet, Au = P.soapGold, G = P.soapBottle, F = P.foam, ink = PALETTE.ink;
+        const id = 'bsp' + (this.uid++);
+        const A = BATH_ART.slots().soap;
+        const f = (v) => v.toFixed(1);
+
+        const bx = 18, sh = -38, bot = 29;
+        // Плечи — крутой изгиб к горлышку, бока прямые.
+        const body = `M${-bx} ${bot - 3}V${sh + 9}C${-bx} ${sh + 2} -12 ${sh - 2} -8 ${sh - 3}V${sh - 7}H8V${sh - 3}`
+                   + `C12 ${sh - 2} ${bx} ${sh + 2} ${bx} ${sh + 9}V${bot - 3}Q${bx} ${bot} ${bx - 3} ${bot}H${-bx + 3}Q${-bx} ${bot} ${-bx} ${bot - 3}Z`;
+        // Гель: внутри толстых стенок (кайма 3), налит почти до горлышка.
+        const w = 3, lv = sh + 5;
+        const gel = `M${-bx + w} ${lv}Q0 ${lv + 2} ${bx - w} ${lv}V${bot - 7}Q${bx - w} ${bot - 5} ${bx - w - 3} ${bot - 5}`
+                  + `H${-bx + w + 3}Q${-bx + w} ${bot - 5} ${-bx + w} ${bot - 7}Z`;
+        const cap = `M-9 ${sh - 7}V${sh - 27}Q-9 ${sh - 30} -6 ${sh - 30}H6Q9 ${sh - 30} 9 ${sh - 27}V${sh - 7}Z`;
+        let ribs = '';
+        for (let x = -7.5; x <= 7.6; x += 2.5) ribs += `M${f(x)} ${sh - 15}V${sh - 8}`;
+
+        // Пузырьки в геле — из сида, мелкие и разные.
+        const rnd = btRng(55);
+        let bub = '';
+        for (let i = 0; i < 11; i++) {
+            const x = -bx + w + 3 + rnd() * (2 * (bx - w) - 6), y = lv + 4 + rnd() * (bot - lv - 14), r = 0.7 + rnd() * 1.7;
+            bub += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${V[3]}" fill-opacity="0.5" stroke="${V[4]}" stroke-width="0.5"/>`
+                 + `<circle cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.35)}" r="${f(r * 0.3)}" fill="${F.hi}" fill-opacity="0.9"/>`;
+        }
+        // Эмблема: золотой ромб-кристалл с гранью внутри. Листок в кольце
+        // читался глазом.
+        const emb = 'M0 -6L4.2 0L0 6L-4.2 0ZM0 -3L2.1 0L0 3L-2.1 0Z';
+
+        return `
+        <g class="bt-soap bt-soap-premium" transform="translate(${A.x} ${A.y + 2})">
+            <defs>
+                <linearGradient id="${id}-wall" gradientUnits="userSpaceOnUse" x1="${-bx}" y1="0" x2="${bx}" y2="0">
+                    <stop offset="0" stop-color="${G.edge}" stop-opacity="0.8"/>
+                    <stop offset="0.15" stop-color="${G.wall}" stop-opacity="0.4"/>
+                    <stop offset="0.85" stop-color="${G.wall}" stop-opacity="0.3"/>
+                    <stop offset="1" stop-color="${G.edge}" stop-opacity="0.85"/>
+                </linearGradient>
+                <!-- Гель — цилиндр: светлая середина, глубокие края. -->
+                <linearGradient id="${id}-gel" gradientUnits="userSpaceOnUse" x1="${-bx + w}" y1="0" x2="${bx - w}" y2="0">
+                    <stop offset="0" stop-color="${V[0]}"/>
+                    <stop offset="0.3" stop-color="${V[2]}"/>
+                    <stop offset="0.55" stop-color="${V[3]}"/>
+                    <stop offset="1" stop-color="${V[0]}"/>
+                </linearGradient>
+                <!-- Золото: резкий перепад — металл, а не жёлтый пластик. -->
+                <linearGradient id="${id}-gold" gradientUnits="userSpaceOnUse" x1="-9" y1="0" x2="9" y2="0">
+                    <stop offset="0" stop-color="${Au[0]}"/>
+                    <stop offset="0.2" stop-color="${Au[3]}"/>
+                    <stop offset="0.32" stop-color="${Au[4]}"/>
+                    <stop offset="0.45" stop-color="${Au[2]}"/>
+                    <stop offset="0.8" stop-color="${Au[1]}"/>
+                    <stop offset="0.9" stop-color="${Au[3]}"/>
+                    <stop offset="1" stop-color="${Au[0]}"/>
+                </linearGradient>
+                <clipPath id="${id}-clip"><path d="${body}"/></clipPath>
+            </defs>
+            <path d="${body}${cap}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            <path d="${body}" fill="url(#${id}-wall)"/>
+            <g clip-path="url(#${id}-clip)">
+                <path d="${gel}" fill="url(#${id}-gel)" fill-opacity="0.95"/>
+                ${bub}
+                <path d="M${-bx + w} ${lv}Q0 ${lv + 2} ${bx - w} ${lv}" fill="none" stroke="${V[4]}" stroke-width="1.2"/>
+                <!-- Эмблема на стекле. -->
+                <g transform="translate(0 -12)">
+                    <path d="${emb}" fill="none" stroke="${Au[0]}" stroke-width="1.4" transform="translate(0.4 0.5)"/>
+                    <path d="${emb}" fill="none" stroke="${Au[3]}" stroke-width="1"/>
+                </g>
+                <!-- Стекло: резкий блик слева, тонкое отражение справа, свет
+                     по плечу. -->
+                <path d="M${-bx + 4.5} ${sh + 8}V${bot - 6}" stroke="${G.hi}" stroke-width="2.2" stroke-opacity="0.95" stroke-linecap="round"/>
+                <path d="M${-bx + 8} ${sh + 10}V${sh + 26}" stroke="${G.hi}" stroke-width="0.9" stroke-opacity="0.8" stroke-linecap="round"/>
+                <path d="M${bx - 3.5} ${sh + 10}V${bot - 8}" stroke="${G.hi}" stroke-width="1.1" stroke-opacity="0.6" stroke-linecap="round"/>
+                <path d="M-14 ${sh + 4}C-12 ${sh} -9 ${sh - 1.5} -7 ${sh - 2}" fill="none" stroke="${G.hi}" stroke-width="1.4" stroke-opacity="0.9" stroke-linecap="round"/>
+            </g>
+            <path d="${body}" fill="none" stroke="${mixColor(ink, G.edge, 0.5)}" stroke-width="${STROKE.hairline}"/>
+            <!-- Колпачок. -->
+            <path d="${cap}" fill="url(#${id}-gold)"/>
+            <path d="${ribs}" stroke="${Au[0]}" stroke-width="0.8" stroke-opacity="0.7"/>
+            <path d="M-9 ${sh - 16}H9" stroke="${Au[4]}" stroke-width="0.9" stroke-opacity="0.8"/>
+            <path d="M-6 ${sh - 28.5}H5" stroke="${Au[4]}" stroke-width="1.2" stroke-linecap="round"/>
+            <path d="${cap}" fill="none" stroke="${mixColor(ink, Au[0], 0.5)}" stroke-width="${STROKE.hairline}"/>
+        </g>`;
     },
 
     // ---------- 4. ГЕЛЬ ----------
