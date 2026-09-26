@@ -293,6 +293,9 @@ const LustMinigame = {
         if (typeof LustShop !== 'undefined') LustShop.close();
         this.stopClocks();
         this.stopPanting();
+        // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
+        // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
+        if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.drag = null;

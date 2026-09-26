@@ -13,7 +13,7 @@
 const BATH_SOAP = {
     // Вид на каждой ступени. Ещё не нарисованные ступени берут запечённый
     // брусок — пока лестница не закончена.
-    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'premium', 'elixir', 'flask', 'baked'],
+    TIERS: ['stub', 'bar', 'toilet', 'pump', 'gel', 'premium', 'elixir', 'flask', 'magic'],
     uid: 0,
 
     level() {
@@ -37,6 +37,7 @@ const BATH_SOAP = {
         if (kind === 'premium') return this.premium();
         if (kind === 'elixir') return this.elixir();
         if (kind === 'flask') return this.flask();
+        if (kind === 'magic') { this.wake(); return this.magic(); }
         return BATH_BAKED.draw('soap');
     },
 
@@ -51,6 +52,7 @@ const BATH_SOAP = {
         if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
         if (kind === 'elixir') return { x: 548, y: 270, w: 62, h: 106 };
         if (kind === 'flask') return { x: 544, y: 280, w: 60, h: 96 };
+        if (kind === 'magic') return { x: 546, y: 264, w: 56, h: 112 };
         return BATH_BAKED.box('soap');
     },
 
@@ -74,6 +76,286 @@ const BATH_SOAP = {
             d += (i ? 'L' : 'M') + pt(p0) + 'Q' + pt(p) + ' ' + pt(p1);
         }
         return d + 'Z';
+    },
+
+    // ---------- 8. ВОЛШЕБНЫЙ ФЛАКОН ----------
+    // Вершина лестницы. Хрустальный гранёный флакон, и в нём — не жижа, а
+    // маленький космос. Две изюминки:
+    //   * ПРОБКА ПАРИТ. Кристалл-аметист висит над открытым горлом, и держат
+    //     его светящиеся пузыри пара, поднимающиеся из флакона: он
+    //     покачивается и поворачивается, пузыри обтекают его и тают выше.
+    //   * ВНУТРИ ПЛАВАЕТ ДУХ СВИНОЧЕРВЯ. Крошечный светящийся червь — голова
+    //     с ушками и пятачком, звенья за ней — плывёт восьмёркой сквозь
+    //     звёздную туманность и изгибается на ходу. Мыло этой ступени — из
+    //     того же вещества, что сам персонаж.
+    // Хрусталь: грани разной яркости (свет сверху-слева), у части —
+    // радужный отлив (дисперсия), рёбра светлые, а не чернильные.
+    //
+    // Живость — покадрово из кода (wake/tick), до 30 кадров, и только
+    // transform, координаты и fill-opacity мелких узлов: ни фильтра, ни
+    // маски, ни прозрачности группы на живом слое (docs/traps.md, п. 73).
+    // Ванная закрылась — цикл стоит (lust.js, close → stop).
+    MAGIC: {
+        stopperY: -62,              // центр пробки: зазор над кольцом ~12, иначе парение не читается
+        // Восьмёрка духа: ниже сетка корзины (с локальной 12), выше —
+        // поверхность (−13) и уши не должны её пробивать.
+        worm: (s) => ({ x: 12 * Math.sin(s), y: 0.5 + 4.5 * Math.sin(2 * s) }),
+        SEG: [2.4, 2.1, 1.8, 1.45, 1.1],
+        STARS: 12, BUBS: 5,
+        SPARKS: [[-30, -30], [31, -18], [-32, -4], [31, 2], [-22, -52], [24, -60]]   // все выше сетки корзины
+    },
+
+    // Покадровая геометрия — одна функция и для первого кадра (строкой),
+    // и для живого (атрибутами): картинка в магазине и на полке совпадают.
+    magicFrame(t) {
+        const M = this.MAGIC, out = {};
+        out.stopper = `translate(0 ${(Math.sin(t * 1.6) * 2.2).toFixed(2)}) rotate(${(Math.sin(t * 0.9) * 5).toFixed(2)} 0 ${M.stopperY})`;
+        const k = 1 + 0.06 * Math.sin(t * 1.3);
+        out.halo = `translate(0 2) scale(${k.toFixed(3)}) translate(0 -2)`;
+        out.neb = `rotate(${((t * 9) % 360).toFixed(1)} 0 8)`;
+        out.stars = [];
+        for (let i = 0; i < M.STARS; i++) out.stars.push((0.25 + 0.75 * Math.abs(Math.sin(t * 1.7 + i * 1.9))).toFixed(2));
+        out.sparks = M.SPARKS.map(([x, y], i) => {
+            const v = Math.max(0, Math.sin(t * 1.4 + i * 2.3));
+            return { tr: `translate(${x} ${y}) scale(${(0.25 + 0.75 * v).toFixed(3)})`, o: (0.15 + 0.85 * v).toFixed(2) };
+        });
+        out.bubs = [];
+        for (let i = 0; i < M.BUBS; i++) {
+            const u = (t * 0.28 + i / M.BUBS) % 1;
+            const side = i % 2 ? 1 : -1;
+            // Пузыри обтекают пробку: расходятся в стороны, пока идут мимо неё.
+            const around = Math.sin(Math.min(1, u / 0.6) * Math.PI) * 10;
+            out.bubs.push({
+                x: (side * around + Math.sin(u * 7 + i) * 2.2).toFixed(2),
+                y: (-37 - u * 66).toFixed(2),
+                r: (1.3 + u * 2.4).toFixed(2),
+                o: (u < 0.12 ? u / 0.12 : Math.max(0, 1 - (u - 0.12) / 0.88)).toFixed(2)
+            });
+        }
+        const s = t * 0.75, P = [];
+        for (let i = 0; i <= M.SEG.length; i++) P.push(M.worm(s - i * 0.26));
+        const h = P[0], hb = M.worm(s - 0.06);
+        const ang = Math.atan2(h.y - hb.y, h.x - hb.x) * 180 / Math.PI;
+        const flip = Math.abs(ang) > 90 ? -1 : 1;
+        out.head = `translate(${h.x.toFixed(2)} ${h.y.toFixed(2)}) rotate(${ang.toFixed(1)}) scale(1 ${flip})`;
+        out.segs = P.slice(1).map(p => ({ x: p.x.toFixed(2), y: p.y.toFixed(2) }));
+        out.aura = { x: h.x.toFixed(2), y: h.y.toFixed(2) };
+        return out;
+    },
+
+    magic() {
+        const P = btPal(), C = P.soapCosmos, D = C.deep, Am = C.amethyst, Au = P.soapGold, ink = PALETTE.ink;
+        const id = 'bsp' + (this.uid++);
+        const A = BATH_ART.slots().soap, M = this.MAGIC;
+        const f = (v) => v.toFixed(1);
+        const Fr = this.magicFrame(0);
+
+        // Силуэт кристалла: плечи, широкий пояс, гранёный низ.
+        const O = [[-5, -33], [-5, -27], [-13, -22], [-21, -12], [-24, 3], [-19, 19], [-9, 29],
+                   [9, 29], [19, 19], [24, 3], [21, -12], [13, -22], [5, -27], [5, -33]];
+        const poly = (pts) => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+        const body = poly(O);
+        const inner = poly(O.map(([x, y]) => [x * 0.88, y < 0 ? y * 0.95 + 0.5 : y * 0.9]));
+        const lv = -13;
+        // Грани: внутренние точки «бриллианта» и тона граней. Свет сверху-
+        // слева; у трёх граней — радужный отлив.
+        const T = [0, -22], Lm = [-11, 3], Rm = [11, 3], Bm = [0, 24];
+        const facets = [
+            [[[-13, -22], [-21, -12], Lm], C.glow, 0.22],
+            [[[-21, -12], [-24, 3], Lm], C.cyan, 0.16],
+            [[[-24, 3], [-19, 19], Lm], C.glow, 0.07],
+            [[[-19, 19], [-9, 29], Bm, Lm], C.glow, 0.03],
+            [[[-13, -22], Lm, T], C.glow, 0.13],
+            [[T, Lm, Bm, Rm], C.glow, 0.05],
+            [[[13, -22], [21, -12], Rm], C.pink, 0.12],
+            [[[21, -12], [24, 3], Rm], C.glow, 0.04],
+            [[[24, 3], [19, 19], Rm], Am[2], 0.14],
+            [[[19, 19], [9, 29], Bm, Rm], C.glow, 0.02],
+            [[[13, -22], Rm, T], C.glow, 0.07],
+            [[[-9, 29], [9, 29], Bm], C.glow, 0.04]
+        ];
+        let facetFill = '', ridges = '';
+        for (const [pts, col, a] of facets) facetFill += `<path d="${poly(pts)}" fill="${col}" fill-opacity="${a}"/>`;
+        for (const q of [[-13, -22], [-21, -12], [-24, 3], [-19, 19], [-9, 29]]) ridges += `M${q[0]} ${q[1]}L${Lm[0]} ${Lm[1]}`;
+        for (const q of [[13, -22], [21, -12], [24, 3], [19, 19], [9, 29]]) ridges += `M${q[0]} ${q[1]}L${Rm[0]} ${Rm[1]}`;
+        ridges += `M${T[0]} ${T[1]}L${Lm[0]} ${Lm[1]}L${Bm[0]} ${Bm[1]}L${Rm[0]} ${Rm[1]}Z`
+                + `M-13 -22L${T[0]} ${T[1]}L13 -22M-9 29L${Bm[0]} ${Bm[1]}L9 29`;
+
+        // Звёзды и туманность — из сида.
+        const rnd = btRng(888);
+        let stars = '';
+        for (let i = 0; i < M.STARS; i++) {
+            const x = -17 + rnd() * 34, y = lv + 3 + rnd() * 36, r = 0.35 + rnd() * 0.65;
+            stars += `<circle class="bsm-star" cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${Fr.stars[i]}"/>`;
+        }
+        const star4 = (r) => `M0 ${-r}Q0.25 -0.25 ${r} 0Q0.25 0.25 0 ${r}Q-0.25 0.25 ${-r} 0Q-0.25 -0.25 0 ${-r}Z`;
+
+        // Дух свиночервя: голова смотрит вдоль +x.
+        // Уши с розовым нутром и пятачок — по ним дух узнаётся свиночервем,
+        // а не белой гусеницей.
+        const head = `<path d="M-2.2 -2.6L-3.6 -6.6L-0.2 -3.4ZM0.8 -3.2L0.8 -7L3 -2.6Z" fill="${C.glow}"/>`
+            + `<path d="M-2.2 -3.4L-3 -5.6L-1 -3.7ZM1.2 -3.5L1.2 -5.9L2.4 -3.2Z" fill="${C.pink}"/>`
+            + `<circle r="3.7" fill="${C.glow}"/>`
+            + `<ellipse cx="3.6" cy="0.5" rx="1.6" ry="1.4" fill="${C.pink}"/>`
+            + `<circle cx="4" cy="0.1" r="0.35" fill="${D[1]}"/><circle cx="4" cy="0.95" r="0.35" fill="${D[1]}"/>`
+            + `<circle cx="1.2" cy="-1.1" r="0.55" fill="${D[1]}"/>`;
+        const segs = M.SEG.map((r, i) =>
+            `<circle class="bsm-seg" cx="${Fr.segs[i].x}" cy="${Fr.segs[i].y}" r="${r}" fill="${C.glow}" fill-opacity="${(0.95 - i * 0.12).toFixed(2)}"/>`).reverse().join('');
+
+        const bubs = Fr.bubs.map(b =>
+            `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><circle r="${b.r}" fill="${C.cyan}" fill-opacity="${(b.o * 0.5).toFixed(2)}" stroke="${C.glow}" stroke-width="0.9" stroke-opacity="${b.o}"/></g>`).join('');
+        const sparks = Fr.sparks.map(sp =>
+            `<path class="bsm-spark" d="${star4(4)}" transform="${sp.tr}" fill="${C.glow}" fill-opacity="${sp.o}"/>`).join('');
+
+        // Пробка-аметист: гранёный кристалл, острым концом вниз.
+        const SY = M.stopperY;
+        const stopper = `M0 ${SY + 13}L-7 ${SY + 3}L-5.5 ${SY - 7}L0 ${SY - 13}L5.5 ${SY - 7}L7 ${SY + 3}Z`;
+
+        return `
+        <g class="bt-soap bt-soap-magic" transform="translate(${A.x} ${A.y + 2})">
+            <defs>
+                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="2" r="62">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.6"/>
+                    <stop offset="0.35" stop-color="${Am[2]}" stop-opacity="0.34"/>
+                    <stop offset="1" stop-color="${Am[2]}" stop-opacity="0"/>
+                </radialGradient>
+                <!-- Космос: светлая бирюза под поверхностью уходит в индиго. -->
+                <linearGradient id="${id}-deep" gradientUnits="userSpaceOnUse" x1="0" y1="${lv}" x2="0" y2="29">
+                    <stop offset="0" stop-color="${D[3]}"/>
+                    <stop offset="0.35" stop-color="${D[2]}"/>
+                    <stop offset="1" stop-color="${D[0]}"/>
+                </linearGradient>
+                <radialGradient id="${id}-nebA" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${C.pink}" stop-opacity="0.75"/>
+                    <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-nebB" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.7"/>
+                    <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-aura" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0.8"/>
+                    <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-vapor" gradientUnits="userSpaceOnUse" cx="0" cy="-42" r="12"
+                                gradientTransform="translate(0 -42) scale(0.8 1) translate(0 42)">
+                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0.8"/>
+                    <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
+                </radialGradient>
+                <linearGradient id="${id}-ame" gradientUnits="userSpaceOnUse" x1="-7" y1="0" x2="7" y2="0">
+                    <stop offset="0" stop-color="${Am[1]}"/>
+                    <stop offset="0.35" stop-color="${Am[3]}"/>
+                    <stop offset="0.55" stop-color="${Am[2]}"/>
+                    <stop offset="1" stop-color="${Am[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-gold" gradientUnits="userSpaceOnUse" x1="-7.5" y1="0" x2="7.5" y2="0">
+                    <stop offset="0" stop-color="${Au[0]}"/>
+                    <stop offset="0.25" stop-color="${Au[4]}"/>
+                    <stop offset="0.5" stop-color="${Au[2]}"/>
+                    <stop offset="1" stop-color="${Au[0]}"/>
+                </linearGradient>
+                <clipPath id="${id}-in"><path d="${inner}"/></clipPath>
+            </defs>
+            <!-- Ореол дышит. -->
+            <circle class="bsm-halo" cx="0" cy="2" r="62" fill="url(#${id}-halo)" transform="${Fr.halo}"/>
+            <!-- Искры вокруг. -->
+            ${sparks}
+            <path d="${body}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
+            <!-- Хрусталь пустой (над жижей) — светлый, чуть голубой. -->
+            <path d="${body}" fill="${C.crystal}" fill-opacity="0.6"/>
+            <g clip-path="url(#${id}-in)">
+                <rect x="-26" y="${lv}" width="52" height="44" fill="url(#${id}-deep)"/>
+                <g class="bsm-neb" transform="${Fr.neb}">
+                    <ellipse cx="-7" cy="4" rx="13" ry="7" fill="url(#${id}-nebA)" transform="rotate(-25 -7 4)"/>
+                    <ellipse cx="8" cy="14" rx="12" ry="6" fill="url(#${id}-nebB)" transform="rotate(20 8 14)"/>
+                    <ellipse cx="4" cy="-4" rx="8" ry="4" fill="url(#${id}-nebB)"/>
+                </g>
+                ${stars}
+                <!-- Дух свиночервя: свечение вокруг головы, звенья, голова. -->
+                <circle class="bsm-aura" cx="${Fr.aura.x}" cy="${Fr.aura.y}" r="10" fill="url(#${id}-aura)"/>
+                ${segs}
+                <g class="bsm-head" transform="${Fr.head}">${head}</g>
+                <!-- Поверхность снизу: светлый эллипс. -->
+                <ellipse cx="0" cy="${lv}" rx="19" ry="2.2" fill="${C.cyan}" fill-opacity="0.45" stroke="${C.glow}" stroke-width="0.9"/>
+            </g>
+            <!-- Грани поверх: каждая своей яркости, у трёх — радуга. -->
+            ${facetFill}
+            <path d="${ridges}" fill="none" stroke="${C.glow}" stroke-width="0.6" stroke-opacity="0.55" stroke-linejoin="round"/>
+            <path d="M-18 -15L-22 1" stroke="${C.glow}" stroke-width="1.6" stroke-opacity="0.95" stroke-linecap="round"/>
+            <path d="M-11 -20L-15 -15" stroke="${C.glow}" stroke-width="1.1" stroke-opacity="0.8" stroke-linecap="round"/>
+            <path d="${body}" fill="none" stroke="${C.glow}" stroke-width="0.8" stroke-opacity="0.6" stroke-linejoin="round"/>
+            <!-- Золотое кольцо на горле с камушком. -->
+            <path d="M-7 -36H7Q8 -36 8 -35V-32.5Q8 -31.5 7 -31.5H-7Q-8 -31.5 -8 -32.5V-35Q-8 -36 -7 -36Z" fill="url(#${id}-gold)" stroke="${ink}" stroke-width="1.2"/>
+            <circle cx="0" cy="-33.8" r="1.3" fill="${C.pink}" stroke="${Au[0]}" stroke-width="0.5"/>
+            <circle cx="-0.4" cy="-34.2" r="0.4" fill="${C.glow}"/>
+            <!-- Пар из открытого горла: он и держит пробку. -->
+            <ellipse cx="0" cy="-42" rx="9.6" ry="12" fill="url(#${id}-vapor)"/>
+            ${bubs}
+            <!-- Пробка парит. -->
+            <g class="bsm-stopper" transform="${Fr.stopper}">
+                <path d="${stopper}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
+                <path d="${stopper}" fill="url(#${id}-ame)"/>
+                <path d="M0 ${SY + 13}L-2 ${SY + 3}L0 ${SY - 13}M0 ${SY + 13}L2 ${SY + 3}L0 ${SY - 13}M-7 ${SY + 3}H7M-5.5 ${SY - 7}L-2 ${SY + 3}M5.5 ${SY - 7}L2 ${SY + 3}"
+                      fill="none" stroke="${Am[3]}" stroke-width="0.6" stroke-opacity="0.8"/>
+                <path d="M-5 ${SY - 5}L-3 ${SY - 10}" stroke="${C.glow}" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="0" cy="${SY + 3}" r="1" fill="${C.glow}"/>
+            </g>
+        </g>`;
+    },
+
+    // ---------- живость флакона ----------
+    live: { raf: 0, last: 0, cache: new WeakMap() },
+
+    // Проснуться: цикл нужен, пока на экране есть живой флакон. Зовётся из
+    // draw, поэтому узлы появятся чуть позже — первый кадр подождёт.
+    wake() {
+        if (this.live.raf || typeof requestAnimationFrame === 'undefined') return;
+        const step = (now) => {
+            const roots = document.querySelectorAll('.bt-soap-magic');
+            if (!roots.length) { this.live.raf = 0; return; }
+            // 30 кадров хватает: флакон — украшение, а не игра.
+            if (now - this.live.last >= 33) {
+                this.live.last = now;
+                const Fr = this.magicFrame(now / 1000);
+                roots.forEach(r => this.applyFrame(r, Fr));
+            }
+            this.live.raf = requestAnimationFrame(step);
+        };
+        this.live.raf = requestAnimationFrame(step);
+    },
+
+    stop() {
+        if (this.live.raf) cancelAnimationFrame(this.live.raf);
+        this.live.raf = 0;
+    },
+
+    applyFrame(root, Fr) {
+        let c = this.live.cache.get(root);
+        if (!c) {
+            const q = (sel) => Array.from(root.querySelectorAll(sel));
+            c = { stopper: root.querySelector('.bsm-stopper'), halo: root.querySelector('.bsm-halo'),
+                  neb: root.querySelector('.bsm-neb'), head: root.querySelector('.bsm-head'),
+                  aura: root.querySelector('.bsm-aura'), stars: q('.bsm-star'), segs: q('.bsm-seg').reverse(),
+                  bubs: q('.bsm-bub'), sparks: q('.bsm-spark') };
+            c.bubC = c.bubs.map(g => g.firstChild);
+            this.live.cache.set(root, c);
+        }
+        const set = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
+        set(c.stopper, 'transform', Fr.stopper);
+        set(c.halo, 'transform', Fr.halo);
+        set(c.neb, 'transform', Fr.neb);
+        set(c.head, 'transform', Fr.head);
+        set(c.aura, 'cx', Fr.aura.x); set(c.aura, 'cy', Fr.aura.y);
+        c.stars.forEach((el, i) => set(el, 'fill-opacity', Fr.stars[i]));
+        c.segs.forEach((el, i) => { set(el, 'cx', Fr.segs[i].x); set(el, 'cy', Fr.segs[i].y); });
+        c.sparks.forEach((el, i) => { set(el, 'transform', Fr.sparks[i].tr); set(el, 'fill-opacity', Fr.sparks[i].o); });
+        c.bubs.forEach((g, i) => {
+            const b = Fr.bubs[i], ci = c.bubC[i];
+            set(g, 'transform', `translate(${b.x} ${b.y})`);
+            set(ci, 'r', b.r);
+            set(ci, 'fill-opacity', (b.o * 0.5).toFixed(2));
+            set(ci, 'stroke-opacity', b.o);
+        });
     },
 
     // ---------- 7. КОЛБА ----------
