@@ -10,6 +10,130 @@
 //
 // Гнездо и зона захвата не двигаются от ступени — меняется только картинка.
 
+// ================= НЕБО ЗА ВОЛШЕБНЫМ ФЛАКОНОМ =================
+// Чистая функция: рисует две картинки неба (дальнюю и ближнюю) и ничего не
+// берёт снаружи — ни палитру, ни шум, ни DOM. Поэтому её же текст уходит в
+// фоновый поток (Worker + OffscreenCanvas): растр неба — десятки и сотни
+// миллисекунд, и в основном потоке это заминка при входе в ванную.
+//   mk(w, h) — фабрика холста; a — { T, C, seed }.
+function bathSkyPaint(mk, a) {
+    const T = a.T, C = a.C, D = C.deep;
+    let seed = a.seed >>> 0;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const rgba = (hex, al) => {
+        const n = parseInt(hex.slice(1), 16);
+        return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${al})`;
+    };
+    const canvas = (px) => {
+        const cv = mk(Math.round(T.w * px), Math.round(T.h * px));
+        const g = cv.getContext('2d');
+        g.scale(px, px); g.translate(-T.x, -T.y);
+        return [cv, g];
+    };
+    const blob = (g, x, y, r, col, al) => {
+        const gr = g.createRadialGradient(x, y, 0, x, y, r);
+        gr.addColorStop(0, rgba(col, al)); gr.addColorStop(0.5, rgba(col, al * 0.45)); gr.addColorStop(1, rgba(col, 0));
+        g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    };
+    // Кривая, вдоль которой лежат туманность, пыль и Млечный путь.
+    const curve = (x0, y0, x1, y1, bend, t) => {
+        const mx = (x0 + x1) / 2 - (y1 - y0) * bend, my = (y0 + y1) / 2 + (x1 - x0) * bend, u = 1 - t;
+        return [u * u * x0 + 2 * u * t * mx + t * t * x1, u * u * y0 + 2 * u * t * my + t * t * y1];
+    };
+    const X0 = T.x, Y0 = T.y, X1 = T.x + T.w, Y1 = T.y + T.h;
+
+    // ---- мягкое: тон неба, туманности, пыль — на маленьком холсте ----
+    // Мягкое по природе рисуется в низком разрешении и растягивается: на
+    // полном сотни крупных размытых пятен стоили основное время растра.
+    const [low, gl] = canvas(0.6);
+    gl.fillStyle = D[0]; gl.fillRect(X0, Y0, T.w, T.h);
+    // Тональные облака глубины: космос не ровно-чёрный.
+    for (let i = 0; i < 22; i++) blob(gl, X0 + rnd() * T.w, Y0 + rnd() * T.h, 90 + rnd() * 170, rnd() < 0.5 ? D[1] : D[2], 0.5 + rnd() * 0.3);
+    // Млечный путь — диагональная полоса, где светлее и звёзд больше.
+    const band = (t) => curve(X0 - 40, Y1 - 160, X1 + 40, Y0 + 220, 0.12, t);
+    gl.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 90; i++) { const [x, y] = band(rnd()); blob(gl, x + (rnd() - 0.5) * 70, y + (rnd() - 0.5) * 70, 30 + rnd() * 60, D[3], 0.09); }
+    // Туманности — волокна из облачков вдоль кривых, разных тонов.
+    const fil = (x0, y0, x1, y1, bend, col, n, al) => {
+        for (let i = 0; i < n; i++) {
+            const [x, y] = curve(x0, y0, x1, y1, bend, rnd());
+            blob(gl, x + (rnd() - 0.5) * 40, y + (rnd() - 0.5) * 40, 14 + rnd() * 46, col, al * (0.5 + rnd()));
+        }
+    };
+    fil(X0, 180, 330, 40, 0.25, C.pink, 70, 0.07);
+    fil(40, 620, X1, 360, -0.2, C.cyan, 70, 0.06);
+    fil(-20, 420, 300, 520, 0.3, C.violet, 50, 0.06);
+    fil(120, Y1, 420, 700, 0.2, C.pink, 50, 0.06);
+    fil(200, Y0, 60, 260, -0.3, C.cyan, 45, 0.05);
+    gl.globalCompositeOperation = 'source-over';
+    // Пыль — тёмные прожилки поверх свечения: без них туманность плоская.
+    const dust = (x0, y0, x1, y1, bend, n) => {
+        for (let i = 0; i < n; i++) {
+            const [x, y] = curve(x0, y0, x1, y1, bend, rnd());
+            blob(gl, x + (rnd() - 0.5) * 16, y + (rnd() - 0.5) * 16, 8 + rnd() * 20, C.dust, 0.35);
+        }
+    };
+    dust(X0, 230, 360, 90, 0.2, 90);
+    dust(60, 600, X1, 400, -0.15, 90);
+    dust(150, Y1 - 60, 430, 740, 0.25, 60);
+
+    // ---- резкое: на полном разрешении ----
+    const [far, gf] = canvas(T.px);
+    gf.imageSmoothingEnabled = true;
+    gf.drawImage(low, T.x, T.y, T.w, T.h);
+    // Далёкие галактики — крошечные светлые пятнышки-эллипсы.
+    for (let i = 0; i < 9; i++) {
+        const x = X0 + rnd() * T.w, y = Y0 + rnd() * T.h;
+        gf.save(); gf.translate(x, y); gf.rotate(rnd() * Math.PI); gf.scale(1, 0.35 + rnd() * 0.3);
+        blob(gf, 0, 0, 3 + rnd() * 3, C.core, 0.7); gf.restore();
+    }
+    // Звёзды: тысячи, яркость по степенному закону (тусклых много, ярких
+    // мало), гуще в полосе Млечного пути, цвет — от голубого до тёплого.
+    // Рисуются ПАЧКАМИ «цвет × яркость», один путь на пачку: по одной
+    // (fillStyle + fill на каждую) небо стоило треть секунды.
+    const cols = ['#ffffff', C.glow, C.cyan, C.core], ALV = [0.3, 0.5, 0.75, 1];
+    const packs = cols.map(() => ALV.map(() => []));
+    for (let i = 0; i < 11000; i++) {
+        let x, y;
+        if (rnd() < 0.35) { const p = band(rnd()); x = p[0] + (rnd() - 0.5) * 120; y = p[1] + (rnd() - 0.5) * 120; }
+        else { x = X0 + rnd() * T.w; y = Y0 + rnd() * T.h; }
+        const b = Math.pow(rnd(), 3.2), q = rnd();
+        const ci = q < 0.62 ? 0 : q < 0.8 ? 1 : q < 0.92 ? 2 : 3;
+        const ai = Math.min(3, Math.floor((b * 2.2 + rnd() * 0.3) * 4));
+        packs[ci][ai].push(x, y, 0.18 + b * 0.55);
+    }
+    packs.forEach((row, ci) => row.forEach((arr, ai) => {
+        gf.fillStyle = rgba(cols[ci], ALV[ai]); gf.beginPath();
+        for (let k = 0; k < arr.length; k += 3) { gf.moveTo(arr[k] + arr[k + 2], arr[k + 1]); gf.arc(arr[k], arr[k + 1], arr[k + 2], 0, Math.PI * 2); }
+        gf.fill();
+    }));
+
+    // ---- ближний слой (прозрачный): яркие звёзды со свечением и иглами ----
+    const [near, gn] = canvas(T.px);
+    // Иглы — крест из тонких ромбов, сужающихся к концам: длинная бледная
+    // пара и короткая яркая, так луч гаснет без градиента.
+    const needle = (x, y, L, w, rot, al) => {
+        gn.save(); gn.translate(x, y); gn.rotate(rot); gn.fillStyle = rgba('#ffffff', al);
+        gn.beginPath(); gn.moveTo(-L, 0); gn.lineTo(0, -w); gn.lineTo(L, 0); gn.lineTo(0, w); gn.closePath();
+        gn.moveTo(0, -L); gn.lineTo(w, 0); gn.lineTo(0, L); gn.lineTo(-w, 0); gn.closePath(); gn.fill(); gn.restore();
+    };
+    const glows = ['#ffffff', C.glow, C.cyan, C.core, C.blush];
+    for (let i = 0; i < 260; i++) {
+        const x = X0 + rnd() * T.w, y = Y0 + rnd() * T.h;
+        const bright = rnd() < 0.14, r = bright ? 0.6 + rnd() * 0.4 : 0.3 + rnd() * 0.3;
+        gn.globalCompositeOperation = 'lighter';
+        blob(gn, x, y, r * (bright ? 8 : 5.5), glows[Math.floor(rnd() * glows.length)], bright ? 0.55 : 0.4);
+        gn.globalCompositeOperation = 'source-over';
+        if (bright) {
+            const L = 5 + rnd() * 5, rot = (rnd() - 0.5) * 0.35;
+            needle(x, y, L, Math.max(0.09, L * 0.018), rot, 0.45);
+            needle(x, y, L * 0.42, Math.max(0.14, L * 0.035), rot, 0.9);
+        }
+        gn.fillStyle = '#ffffff'; gn.beginPath(); gn.arc(x, y, r, 0, Math.PI * 2); gn.fill();
+    }
+    return { far, near };
+}
+
 const BATH_SOAP = {
     // Вид на каждой ступени. Ещё не нарисованные ступени берут запечённый
     // брусок — пока лестница не закончена.
@@ -117,13 +241,118 @@ const BATH_SOAP = {
         // космос, и мелким его не разглядеть (решение игрока: вершина
         // лестницы может стоять выше стоек).
         SCALE: 1.5,
-        // Глубина: насколько сдвигаются слои при полном наклоне, и насколько
-        // флакон чувствительнее общего датчика. У датчика полный наклон — 35°
+        // Глубина: насколько сдвигаются слои неба при полном наклоне (в
+        // единицах холста), и насколько флакон чувствительнее общего датчика. У датчика полный наклон — 35°
         // (так висит одежда), а глубину при нём приходилось «выкручивать»
         // телефоном (замечание игрока): у флакона полный сдвиг уже при ~15°.
-        PLX: { far: 18, near: 7, gain: 2.4 },
+        PLX: { far: 30, near: 12, gain: 2.4 },
         BUBS: 6, TWINKLE: 12,
-        SPARKS: [[-41, -26, 4.5], [41, -12, 3.6], [-39, 8, 3], [42, 10, 2.6], [-22, -64, 3.2], [22, -78, 4]]
+        TWINKLERS: 40                    // мерцающих звёзд по всему небу
+    },
+
+    // ---------- космос на весь экран ----------
+    // Космос — не картинка ВО флаконе, а небо ЗА ним, привязанное к экрану:
+    // флакон — окно, и, двигая его (в руке, камерой), игрок буквально
+    // разглядывает разные участки неба. Поэтому небо одно на весь холст
+    // (390×844, с запасом на наклон), нарисовано ОДИН раз на холсте-canvas
+    // и лежит двумя картинками: дальняя (фон, туманности, пыль, тысячи
+    // звёзд) и ближняя (яркие звёзды со свечением и иглами, прозрачная).
+    // Картинка вместо тысяч svg-кружков: сдвиг одной картинки дёшев, а
+    // тысячи узлов под клипом перерисовывались бы на каждом кадре.
+    TEX: { x: -80, y: -80, w: 550, h: 1004, px: 2.4 },
+
+    buildTex() {
+        if (typeof document === 'undefined') return;
+        const C = btPal().soapCosmos;
+        const args = { T: this.TEX, seed: 20260926,
+                       C: { deep: C.deep, pink: C.pink, cyan: C.cyan, glow: C.glow, core: C.core, dust: C.dust,
+                            blush: C.blush, violet: C.amethyst[2] } };
+        // В blob-URL, а не в data-URL: мегабайтная строка в атрибуте
+        // копировалась бы в каждую перерисовку полки и руки.
+        const done = (bf, bn) => {
+            if (!bf || !bn) return;
+            this._tex = { far: URL.createObjectURL(bf), near: URL.createObjectURL(bn) };
+            this.applyTex();
+        };
+        const main = () => {
+            try {
+                const r = bathSkyPaint((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }, args);
+                r.far.toBlob((bf) => r.near.toBlob((bn) => done(bf, bn), 'image/png'), 'image/jpeg', 0.9);
+            } catch (e) { /* нет canvas — флакон живёт на своей основе космоса */ }
+        };
+        // Главный путь — фоновый поток: кадр не ждёт растра неба вовсе.
+        if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+            try {
+                const src = `const bathSkyPaint = ${bathSkyPaint.toString()};
+onmessage = async (e) => {
+    try {
+        const r = bathSkyPaint((w, h) => new OffscreenCanvas(w, h), e.data);
+        const bf = await r.far.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+        const bn = await r.near.convertToBlob({ type: 'image/png' });
+        postMessage({ bf, bn });
+    } catch (err) { postMessage({ fail: true }); }
+};`;
+                const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+                const w = new Worker(url);
+                const end = () => { w.terminate(); URL.revokeObjectURL(url); };
+                w.onmessage = (e) => { end(); if (e.data && !e.data.fail) done(e.data.bf, e.data.bn); else main(); };
+                w.onerror = () => { end(); main(); };
+                w.postMessage(args);
+                return;
+            } catch (e) { /* поток не поднялся — рисуем здесь */ }
+        }
+        main();
+    },
+
+    // Небо рисуется не в момент отрисовки флакона, а чуть позже и один раз
+    // за сессию: флакон появляется сразу (полость — своя основа космоса), а
+    // картинки подставляются, как только готовы.
+    cosmosTex() {
+        if (this._tex) return this._tex;
+        if (!this._texStarted && typeof setTimeout !== 'undefined') {
+            this._texStarted = true;
+            setTimeout(() => this.buildTex(), 30);
+        }
+        return null;
+    },
+
+    applyTex() {
+        const T = this._tex;
+        if (!T || typeof document === 'undefined') return;
+        document.querySelectorAll('.bsm-tf').forEach(el => el.setAttribute('href', T.far));
+        document.querySelectorAll('.bsm-tn').forEach(el => el.setAttribute('href', T.near));
+    },
+
+    // Как локальные единицы флакона ложатся на холст ванной (390×844):
+    // произведение transform всех предков до корневого svg. Читаются только
+    // атрибуты — ни раскладки, ни getScreenCTM (на айфоне он врёт). Не в
+    // ванной (иконка магазина) — условное место в середине неба.
+    worldMatrix(root) {
+        const svg = root && root.ownerSVGElement;
+        const vb = svg && svg.viewBox && svg.viewBox.baseVal;
+        if (!vb || Math.abs(vb.width - 390) > 1 || typeof DOMMatrix === 'undefined') {
+            return typeof DOMMatrix === 'undefined' ? null : new DOMMatrix([1.4, 0, 0, 1.4, 195, 300]);
+        }
+        let m = new DOMMatrix();
+        for (let el = root; el && el !== svg; el = el.parentNode) {
+            const tl = el.transform && el.transform.baseVal;
+            if (!tl) continue;
+            for (let i = tl.numberOfItems - 1; i >= 0; i--) {
+                const q = tl.getItem(i).matrix;
+                m = new DOMMatrix([q.a, q.b, q.c, q.d, q.e, q.f]).multiply(m);
+            }
+        }
+        return m;
+    },
+
+    // Слой неба в координатах флакона: обратное к «флакон → холст», плюс
+    // сдвиг глубины от наклона (в единицах холста).
+    layerTr(m, k) {
+        const L = this.live, f4 = (v) => v.toFixed(4);
+        const sh = `translate(${(-L.px * k).toFixed(2)} ${(-L.py * k).toFixed(2)})`;
+        if (!m) return sh;
+        const i = m.inverse();
+        return `matrix(${[i.a, i.b, i.c, i.d, i.e, i.f].map(f4).join(' ')}) ${sh}`;
     },
 
     // Силуэт и полость — точками (их же спрашивают огранка и поверхность).
@@ -165,23 +394,9 @@ const BATH_SOAP = {
         out.ringDash = f2(-(t * 9) % 40);
         out.ringScale = `translate(0 ${M.STOP + 3}) scale(${(1 + 0.05 * Math.sin(t * 3)).toFixed(3)}) translate(0 ${-(M.STOP + 3)})`;
         out.vapor = (0.55 + 0.25 * Math.sin(t * 2.2)).toFixed(2);
-        const k = 1 + 0.05 * Math.sin(t * 1.2);
-        out.halo = `translate(0 ${M.CY}) scale(${k.toFixed(3)}) translate(0 ${-M.CY})`;
-        // Туманность дышит двумя тонами по очереди.
-        out.nebA = (0.55 + 0.4 * Math.sin(t * 0.7)).toFixed(2);
-        out.nebB = (0.55 - 0.4 * Math.sin(t * 0.7)).toFixed(2);
         out.gal = ((t * 12) % 360).toFixed(1);
-        // Глубина: сдвиг ПРОТИВ наклона — окно повернули, и за ним видно
-        // другую часть космоса. Наклон приходит сглаженным из wake().
-        const L = this.live;
-        out.far = `translate(${f2(-L.px * M.PLX.far)} ${f2(-L.py * M.PLX.far)})`;
-        out.near = `translate(${f2(-L.px * M.PLX.near)} ${f2(-L.py * M.PLX.near)})`;
         out.twinkle = [];
         for (let i = 0; i < M.TWINKLE; i++) out.twinkle.push((0.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + i * 2.1))).toFixed(2));
-        out.sparks = M.SPARKS.map(([x, y], i) => {
-            const v = Math.max(0, Math.sin(t * 1.25 + i * 2.4));
-            return { tr: `translate(${x} ${y}) rotate(${(t * 20 + i * 30) % 90}) scale(${(0.2 + 0.8 * v).toFixed(3)})`, o: (0.1 + 0.9 * v).toFixed(2) };
-        });
         // Вспышка по огранке: раз в 5 с проходит слева направо за 1.2 с.
         const ph = (t % 5) / 1.2;
         out.sweep = `translate(${ph < 1 ? f2(-46 + ph * 92) : 90} 0)`;
@@ -267,7 +482,6 @@ const BATH_SOAP = {
             const jit = (rnd() - 0.5) * 0.06;
             if (d > 0.1) facets += `<path d="${dpath}" fill="${C.glow}" fill-opacity="${Math.max(0.02, Math.min(0.34, 0.02 + 0.2 * d * d + 0.45 * sp + jit)).toFixed(3)}"/>`;
             else facets += `<path d="${dpath}" fill="${C.dust}" fill-opacity="${(0.17 + jit).toFixed(3)}"/>`;
-            if (rnd() < 0.14) facets += `<path d="${dpath}" fill="${C.prism[Math.floor(rnd() * C.prism.length)]}" fill-opacity="0.16"/>`;
         };
         for (let k = 0; k < N; k++) {
             tri(Lp(k), Lp(k + 1), Mp(k + 0.5), 1);
@@ -289,49 +503,21 @@ const BATH_SOAP = {
         const menisGlow = 'M' + steps.map(([x, y]) => pt([x, y + 1.6])).join('L');
         const empty = `M-40 -60H40V${f(steps[steps.length - 1][1])}` + steps.slice().reverse().map(p => 'L' + pt(p)).join('') + 'Z';
 
-        // ---------- космос за стеклом ----------
-        // Два слоя больше полости, с запасом на полный сдвиг: край не должен
-        // показаться никогда.
-        let far = `<g class="bsm-nebA" fill-opacity="${Fr.nebA}">
-                <ellipse cx="-12" cy="-10" rx="30" ry="10" fill="url(#${id}-pink)" transform="rotate(-24 -12 -10)"/>
-                <ellipse cx="16" cy="10" rx="22" ry="8" fill="url(#${id}-pink)" transform="rotate(20 16 10)"/>
-                <ellipse cx="-20" cy="30" rx="22" ry="7" fill="url(#${id}-pink)" transform="rotate(-10 -20 30)"/>
-            </g>
-            <g class="bsm-nebB" fill-opacity="${Fr.nebB}">
-                <ellipse cx="14" cy="-16" rx="28" ry="9" fill="url(#${id}-cyan)" transform="rotate(14 14 -16)"/>
-                <ellipse cx="-16" cy="12" rx="24" ry="8" fill="url(#${id}-cyan)" transform="rotate(-12 -16 12)"/>
-                <ellipse cx="22" cy="30" rx="22" ry="7" fill="url(#${id}-cyan)" transform="rotate(12 22 30)"/>
-                <ellipse cx="-6" cy="-40" rx="26" ry="7" fill="url(#${id}-cyan)" transform="rotate(8 -6 -40)"/>
-            </g>
-            <!-- Пылевые прожилки: темнее основы — дают туманности глубину. -->
-            <path d="M-46 -6C-30 -12 -14 2 2 -5S28 -16 46 -9M-42 12C-24 5 -6 20 12 12S34 6 46 13M-44 -26C-26 -32 -10 -22 8 -28M-40 28C-22 22 -6 32 14 26S36 22 48 28"
-                  fill="none" stroke="${C.dust}" stroke-width="2.8" stroke-opacity="0.35" stroke-linecap="round"/>`;
-        for (let i = 0; i < 320; i++) {
-            const x = -50 + rnd() * 100, y = -56 + rnd() * 96, r = 0.2 + rnd() * 0.42;
-            // Настоящие звёзды разного цвета: большинство белые, часть
-            // голубее, часть теплее.
-            const q = rnd(), col = q < 0.7 ? C.glow : q < 0.86 ? C.cyan : C.core;
-            far += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r * 0.85)}" fill="${col}" fill-opacity="${(0.3 + rnd() * 0.6).toFixed(2)}"/>`;
-        }
-        // Ближние звёзды — как на снимке космоса, а не блёстки: маленькое
-        // яркое ядро и мягкое свечение вокруг; у немногих самых ярких —
-        // тонкие иглы дифракционного креста. Толстые ромбы читались
-        // мультяшными наклейками и убивали ощущение глубины.
+        // ---------- небо за стеклом ----------
+        // Две картинки на весь холст (cosmosTex) и мерцающие звёзды поверх
+        // ближней — они же в координатах холста.
+        const TX = this.TEX, tex = this.cosmosTex();
+        const img = (cls, u) => `<image class="${cls}"${u ? ` href="${u}"` : ''} x="${TX.x}" y="${TX.y}" width="${TX.w}" height="${TX.h}" preserveAspectRatio="none"/>`;
+        const far = img('bsm-tf', tex && tex.far);
         const GLOW = ['wh', 'bl', 'wm', 'pk'];
-        let near = '';
-        for (let i = 0; i < 64; i++) {
-            const x = -44 + rnd() * 88, y = -46 + rnd() * 78;
-            const bright = i < 14, r = bright ? 0.65 + rnd() * 0.35 : 0.32 + rnd() * 0.32;
-            const g = GLOW[Math.floor(rnd() * GLOW.length)];
-            const tw = i < M.TWINKLE;
-            let st = `<circle ${tw ? `class="bsm-tw" data-i="${i}" ` : ''}r="${f(r * (bright ? 7 : 5))}" fill="url(#${id}-st-${g})" fill-opacity="${tw ? Fr.twinkle[i] : '0.9'}"/>`;
-            if (bright) {
-                const L1 = 4 + rnd() * 3.5, rot = (rnd() - 0.5) * 20;
-                st += `<g transform="rotate(${f(rot)})">${flare(L1, '#ffffff', 0.9)}</g>`;
-            }
-            st += `<circle r="${f(r)}" fill="#ffffff"/>`;
-            near += `<g transform="translate(${f(x)} ${f(y)})">${st}</g>`;
+        let near = img('bsm-tn', tex && tex.near);
+        for (let i = 0; i < M.TWINKLERS; i++) {
+            const x = TX.x + rnd() * TX.w, y = TX.y + rnd() * TX.h, r = 0.5 + rnd() * 0.35;
+            const g = GLOW[Math.floor(rnd() * GLOW.length)], ti = i % M.TWINKLE;
+            near += `<g transform="translate(${f(x)} ${f(y)})"><circle class="bsm-tw" data-i="${ti}" r="${f(r * 6)}" fill="url(#${id}-st-${g})" fill-opacity="${Fr.twinkle[ti]}"/>`
+                  + `<circle r="${f(r)}" fill="#ffffff"/></g>`;
         }
+        const layer0 = (k) => this.layerTr(this.worldMatrix(null), k);
         // Галактика: две спиральные ветви в наклоне, в центре линзы.
         const arm = (a0) => {
             let d = '';
@@ -370,51 +556,27 @@ const BATH_SOAP = {
         const bubs = Fr.bubs.map(b =>
             `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><circle r="${b.r}" fill="${C.cyan}" fill-opacity="${(b.o * 0.45).toFixed(2)}" stroke="${C.glow}" stroke-width="0.8" stroke-opacity="${b.o}"/>`
           + `<path d="${needle(3, 0.2)}" fill="${C.glow}" fill-opacity="${b.pop}"/></g>`).join('');
-        const sparks = Fr.sparks.map((sp, i) =>
-            `<path class="bsm-spark" d="${needle(M.SPARKS[i][2] * 1.2, 0.2)}" transform="${sp.tr}" fill="${C.glow}" fill-opacity="${sp.o}"/>`).join('');
 
         // ---------- пьедестал: толстое дно с вертикальными насечками ----------
         const ped = `M-15.5 17H15.5L19.5 27L19 ${M.FLOOR}H-19L-19.5 27Z`;
         let cuts = '';
         for (let x = -15; x <= 15.1; x += 3.75) cuts += `M${f(x * 0.95)} 18.5L${f(x * 1.22)} 27.5`;
 
-        // Радужная кайма по краям пуза (дисперсия): те же точки, чуть внутрь.
         const inset = (pts, k) => pts.map(([x, y]) => [x * k, M.CY + (y - M.CY) * k]);
-        const Lside = inset(SH.L.filter(p => p[1] < 14), 0.965), Rside = inset(SH.R.filter(p => p[1] < 14), 0.965);
-        const Lside2 = inset(SH.L.filter(p => p[1] < 14), 0.94), Rside2 = inset(SH.R.filter(p => p[1] < 14), 0.94);
         const line = (pts) => 'M' + pts.map(pt).join('L');
         // Блик пуза: широкая дуга по левому-нижнему краю и узкая — по плечу.
         const bellyHi = line(inset(SH.L.filter(p => p[1] > -2 && p[1] < 14), 0.86));
 
-        const caustic = (x, y, w, h, a, o) =>
-            `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="url(#${id}-prism)" fill-opacity="${o}" transform="translate(${x} ${y}) rotate(${a})"/>`;
 
         return `
         <g class="bt-soap bt-soap-magic" transform="translate(${A.x} ${A.y + 2 + M.FLOOR * (1 - M.SCALE)}) scale(${M.SCALE})">
             <defs>
-                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="${M.CY}" r="72">
-                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.45"/>
-                    <stop offset="0.3" stop-color="${Am[2]}" stop-opacity="0.28"/>
-                    <stop offset="0.65" stop-color="${C.pink}" stop-opacity="0.1"/>
-                    <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
-                </radialGradient>
-                <linearGradient id="${id}-prism" x1="0" y1="0" x2="1" y2="0">
-                    ${C.prism.map((c, i) => `<stop offset="${(i / (C.prism.length - 1)).toFixed(2)}" stop-color="${c}"/>`).join('')}
-                </linearGradient>
                 <!-- Основа космоса: светлее за линзой, в индиго к краям. -->
                 <radialGradient id="${id}-deep" gradientUnits="userSpaceOnUse" cx="${LN.cx}" cy="${LN.cy}" r="32">
                     <stop offset="0" stop-color="${D[3]}"/>
                     <stop offset="0.4" stop-color="${D[2]}"/>
                     <stop offset="0.78" stop-color="${D[1]}"/>
                     <stop offset="1" stop-color="${D[0]}"/>
-                </radialGradient>
-                <radialGradient id="${id}-pink" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="${C.pink}" stop-opacity="0.85"/>
-                    <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
-                </radialGradient>
-                <radialGradient id="${id}-cyan" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.8"/>
-                    <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
                 </radialGradient>
                 ${[['wh', C.glow], ['bl', C.cyan], ['wm', C.core], ['pk', C.blush]].map(([k, c]) => `
                 <radialGradient id="${id}-st-${k}" gradientUnits="objectBoundingBox">
@@ -493,11 +655,6 @@ const BATH_SOAP = {
                 <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
 
-            <!-- ОКРУЖЕНИЕ: ореол и радуга на кафеле — свет сквозь хрусталь. -->
-            <circle class="bsm-halo" cx="0" cy="${M.CY}" r="72" fill="url(#${id}-halo)" transform="${Fr.halo}"/>
-            ${caustic(-45, -2, 24, 2.8, -62, 0.38)}${caustic(-48, 12, 15, 1.9, -58, 0.28)}${caustic(45, -18, 18, 2.3, 58, 0.3)}
-            ${sparks}
-
             <!-- ТЕЛО. -->
             <path d="${neck}${lip}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
             <path d="${body}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
@@ -508,14 +665,14 @@ const BATH_SOAP = {
             <path d="${cav}" fill="url(#${id}-deep)"/>
             <g clip-path="url(#${id}-cav)">
                 <!-- Космос за стеклом: два слоя глубины. -->
-                <g class="bsm-far" transform="${Fr.far}">${far}</g>
-                <g class="bsm-near" transform="${Fr.near}">${near}</g>
+                <g class="bsm-far" transform="${layer0(M.PLX.far)}">${far}</g>
+                <g class="bsm-near" transform="${layer0(M.PLX.near)}">${near}</g>
                 <!-- Линза: те же слои, крупнее — увеличительное стекло. -->
                 <g clip-path="url(#${id}-lens)">
                     <ellipse cx="${LN.cx}" cy="${LN.cy}" rx="${LN.rx}" ry="${LN.ry}" fill="url(#${id}-deep)"/>
                     <g transform="${lensZ}">
-                        <g class="bsm-far" transform="${Fr.far}">${far}</g>
-                        <g class="bsm-near" transform="${Fr.near}">${near}</g>
+                        <g class="bsm-far" transform="${layer0(M.PLX.far)}">${far}</g>
+                        <g class="bsm-near" transform="${layer0(M.PLX.near)}">${near}</g>
                     </g>
                     ${galaxy}
                     <ellipse cx="${LN.cx}" cy="${LN.cy}" rx="${LN.rx}" ry="${LN.ry}" fill="url(#${id}-lensV)"/>
@@ -537,10 +694,6 @@ const BATH_SOAP = {
                 <g class="bsm-sweep" transform="${Fr.sweep}">
                     <rect x="-5" y="-70" width="10" height="120" fill="url(#${id}-sweep)" transform="rotate(22)"/>
                 </g>
-                <path d="${line(Lside)}" fill="none" stroke="${C.prism[3]}" stroke-width="0.8" stroke-opacity="0.6"/>
-                <path d="${line(Lside2)}" fill="none" stroke="${C.prism[0]}" stroke-width="0.6" stroke-opacity="0.45"/>
-                <path d="${line(Rside)}" fill="none" stroke="${C.prism[1]}" stroke-width="0.8" stroke-opacity="0.55"/>
-                <path d="${line(Rside2)}" fill="none" stroke="${C.prism[2]}" stroke-width="0.6" stroke-opacity="0.45"/>
                 <path d="${bellyHi}" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.55" stroke-linecap="round"/>
                 <path d="M-8 -30L-17.5 -25.5L-25.5 -15.8" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>
             </g>
@@ -639,9 +792,9 @@ const BATH_SOAP = {
             const one = (s) => root.querySelector(s), all = (s) => Array.from(root.querySelectorAll(s));
             // Слои космоса — в двух копиях (окно и линза), поэтому списками.
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
-                  vapor: one('.bsm-vapor'), halo: one('.bsm-halo'), nebA: all('.bsm-nebA'), nebB: all('.bsm-nebB'),
+                  vapor: one('.bsm-vapor'),
                   gal: one('.bsm-gal'), far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
-                  tw: all('.bsm-tw'), bubs: all('.bsm-bub'), sparks: all('.bsm-spark') };
+                  tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
             c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);
             this.live.cache.set(root, c);
         }
@@ -651,15 +804,14 @@ const BATH_SOAP = {
         set(c.ring, 'transform', Fr.ringScale);
         set(c.ringd, 'stroke-dashoffset', Fr.ringDash);
         set(c.vapor, 'fill-opacity', Fr.vapor);
-        set(c.halo, 'transform', Fr.halo);
-        c.nebA.forEach(el => set(el, 'fill-opacity', Fr.nebA));
-        c.nebB.forEach(el => set(el, 'fill-opacity', Fr.nebB));
         set(c.gal, 'transform', `rotate(${Fr.gal})`);
-        c.far.forEach(el => set(el, 'transform', Fr.far));
-        c.near.forEach(el => set(el, 'transform', Fr.near));
+        // Небо привязано к холсту: флакон двигается — окно едет по небу.
+        const m = this.worldMatrix(root), P = this.MAGIC.PLX;
+        const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
+        c.far.forEach(el => set(el, 'transform', tf));
+        c.near.forEach(el => set(el, 'transform', tn));
         set(c.sweep, 'transform', Fr.sweep);
         c.tw.forEach(el => set(el, 'fill-opacity', Fr.twinkle[+el.dataset.i]));
-        c.sparks.forEach((el, i) => { set(el, 'transform', Fr.sparks[i].tr); set(el, 'fill-opacity', Fr.sparks[i].o); });
         c.bubs.forEach((g, i) => {
             const b = Fr.bubs[i], [ci, st] = c.bubParts[i];
             set(g, 'transform', `translate(${b.x} ${b.y})`);
