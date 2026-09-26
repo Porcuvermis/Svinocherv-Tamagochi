@@ -52,7 +52,7 @@ const BATH_SOAP = {
         if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
         if (kind === 'elixir') return { x: 548, y: 270, w: 62, h: 106 };
         if (kind === 'flask') return { x: 544, y: 280, w: 60, h: 96 };
-        if (kind === 'magic') return { x: 546, y: 264, w: 56, h: 112 };
+        if (kind === 'magic') return { x: 548, y: 262, w: 54, h: 114 };
         return BATH_BAKED.box('soap');
     },
 
@@ -79,67 +79,108 @@ const BATH_SOAP = {
     },
 
     // ---------- 8. ВОЛШЕБНЫЙ ФЛАКОН ----------
-    // Вершина лестницы. Хрустальный гранёный флакон, и в нём — не жижа, а
-    // маленький космос. Две изюминки:
-    //   * ПРОБКА ПАРИТ. Кристалл-аметист висит над открытым горлом, и держат
-    //     его светящиеся пузыри пара, поднимающиеся из флакона: он
-    //     покачивается и поворачивается, пузыри обтекают его и тают выше.
-    //   * ВНУТРИ ПЛАВАЕТ ДУХ СВИНОЧЕРВЯ. Крошечный светящийся червь — голова
-    //     с ушками и пятачком, звенья за ней — плывёт восьмёркой сквозь
-    //     звёздную туманность и изгибается на ходу. Мыло этой ступени — из
-    //     того же вещества, что сам персонаж.
-    // Хрусталь: грани разной яркости (свет сверху-слева), у части —
-    // радужный отлив (дисперсия), рёбра светлые, а не чернильные.
+    // Вершина лестницы. Замысел по частям — docs/plan/21-lust-bath.md,
+    // разд. 5в, ступень 8; здесь — почему каждая часть устроена так.
     //
-    // Живость — покадрово из кода (wake/tick), до 30 кадров, и только
-    // transform, координаты и fill-opacity мелких узлов: ни фильтра, ни
+    // СИЛУЭТ сверху вниз: парящий камень → горло с бусиной и золотым
+    // венчиком → гранёная «луковица» → золотая ножка с когтями. Ножка не для
+    // красоты: она поднимает тело над передней сеткой корзины, которая иначе
+    // съедает нижнюю треть флакона.
+    //
+    // ОГРАНКА выводится из формы: тело вращения задано рядами (y, r), грани —
+    // треугольники между соседними рядами со сдвигом на полграни (как у
+    // бриллианта), а свет грани считается из её нормали. Руками расставленные
+    // грани в первой версии выглядели сеткой на банке. Блеск огранки — это
+    // чередование светлых и тёмных граней, поэтому тёмные отражения так же
+    // важны, как блики.
+    //
+    // ПРЕЛОМЛЕНИЕ сказано самым дешёвым способом: поверхность жижи ломается
+    // на границах граней — каждая колонка показывает её со своим сдвигом.
+    //
+    // ЖИВОСТЬ — покадрово из кода (wake/tick), до 30 кадров, и только
+    // transform, координаты и fill-opacity отдельных узлов: ни фильтра, ни
     // маски, ни прозрачности группы на живом слое (docs/traps.md, п. 73).
-    // Ванная закрылась — цикл стоит (lust.js, close → stop).
+    // Огранка статична. Ванная закрылась — цикл стоит (lust.js, close → stop).
     MAGIC: {
-        stopperY: -62,              // центр пробки: зазор над кольцом ~12, иначе парение не читается
-        // Восьмёрка духа: ниже сетка корзины (с локальной 12), выше —
-        // поверхность (−13) и уши не должны её пробивать.
-        worm: (s) => ({ x: 12 * Math.sin(s), y: 0.5 + 4.5 * Math.sin(2 * s) }),
-        SEG: [2.4, 2.1, 1.8, 1.45, 1.1],
-        STARS: 12, BUBS: 5,
-        SPARKS: [[-30, -30], [31, -18], [-32, -4], [31, 2], [-22, -52], [24, -60]]   // все выше сетки корзины
+        // Профиль тела (y, r): донце, пузо, вогнутое плечо, горло.
+        // Граней немного и они крупные: мелкая ровная сетка читалась
+        // геодезическим куполом, а не огранкой.
+        ROWS: [[15, 8], [8, 17.5], [-2, 21.5], [-12, 19.8], [-22, 12.8], [-30, 4.8]],
+        COLS: 6,
+        // Полость под жижу: толстое хрустальное дно и стенки.
+        CAV: [[7, 11], [3, 17.6], [-5, 18.8], [-13, 16.4], [-20, 11.4], [-26, 6], [-30, 2.8]],
+        LV: -23,                        // уровень жижи: до плеча — иначе флакон читается полупустым
+        NECK: { r: 4.2, top: -45, bead: -38 },
+        STOP: -60,                      // низ хвостовика пробки
+        // Тело поднято над сеткой корзины на ножке: сетка закрывает нижние 17
+        // единиц, и без подъёма пряталась треть луковицы. Всё, кроме ножки,
+        // сдвинуто на LIFT, а флакон целиком чуть ужат, чтобы камень не
+        // улетал далеко выше стоек этажерки.
+        LIFT: 7, SCALE: 0.92,
+        // Дух кружит по орбите вокруг галактики, как спутник. Восьмёркой он
+        // нырял в золотую чашу и закрывал галактику собой. Орбита ниже
+        // поверхности (уши её не пробивают) и выше чаши.
+        GAL: [1, -11],
+        worm: (s) => ({ x: 1 + 12.5 * Math.cos(s), y: -10 + 4.2 * Math.sin(s) }),
+        SEG: [3.1, 2.75, 2.4, 2.05, 1.7, 1.35],
+        TRAIL: 6, BUBS: 6,
+        TWINKLE: 9,
+        SPARKS: [[-33, -26, 4.5], [33, -14, 3.6], [-31, 2, 3], [34, 6, 2.6], [-20, -60, 3.2], [22, -74, 4]]
     },
 
-    // Покадровая геометрия — одна функция и для первого кадра (строкой),
-    // и для живого (атрибутами): картинка в магазине и на полке совпадают.
+    // Покадровая геометрия — одна функция и для первого кадра (строкой), и
+    // для живого (атрибутами): картинка на иконке и на полке совпадают.
     magicFrame(t) {
-        const M = this.MAGIC, out = {};
-        out.stopper = `translate(0 ${(Math.sin(t * 1.6) * 2.2).toFixed(2)}) rotate(${(Math.sin(t * 0.9) * 5).toFixed(2)} 0 ${M.stopperY})`;
-        const k = 1 + 0.06 * Math.sin(t * 1.3);
-        out.halo = `translate(0 2) scale(${k.toFixed(3)}) translate(0 -2)`;
-        out.neb = `rotate(${((t * 9) % 360).toFixed(1)} 0 8)`;
-        out.stars = [];
-        for (let i = 0; i < M.STARS; i++) out.stars.push((0.25 + 0.75 * Math.abs(Math.sin(t * 1.7 + i * 1.9))).toFixed(2));
-        out.sparks = M.SPARKS.map(([x, y], i) => {
-            const v = Math.max(0, Math.sin(t * 1.4 + i * 2.3));
-            return { tr: `translate(${x} ${y}) scale(${(0.25 + 0.75 * v).toFixed(3)})`, o: (0.15 + 0.85 * v).toFixed(2) };
+        const M = this.MAGIC, out = {}, f2 = (v) => v.toFixed(2);
+        // Пробка: качается, «вращается» (сжатие по ширине — дёшево и читается
+        // как оборот камня), наклоняется.
+        const bob = Math.sin(t * 1.5) * 2;
+        out.stopper = `translate(0 ${f2(bob)}) rotate(${f2(Math.sin(t * 0.8) * 4)} 0 ${M.STOP - 12})`;
+        out.gemSpin = `scale(${(0.78 + 0.22 * Math.abs(Math.cos(t * 0.9))).toFixed(3)} 1)`;
+        out.ringDash = f2(-(t * 9) % 40);
+        out.ringScale = `translate(0 ${M.STOP + 3}) scale(${(1 + 0.05 * Math.sin(t * 3)).toFixed(3)}) translate(0 ${-(M.STOP + 3)})`;
+        out.vapor = (0.55 + 0.25 * Math.sin(t * 2.2)).toFixed(2);
+        const k = 1 + 0.05 * Math.sin(t * 1.2);
+        out.halo = `translate(0 -8) scale(${k.toFixed(3)}) translate(0 8)`;
+        // Туманность дышит двумя тонами по очереди.
+        out.nebA = (0.55 + 0.4 * Math.sin(t * 0.7)).toFixed(2);
+        out.nebB = (0.55 - 0.4 * Math.sin(t * 0.7)).toFixed(2);
+        out.gal = ((t * 14) % 360).toFixed(1);
+        out.twinkle = [];
+        for (let i = 0; i < M.TWINKLE; i++) out.twinkle.push((0.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + i * 2.1))).toFixed(2));
+        out.sparks = M.SPARKS.map(([x, y, r], i) => {
+            const v = Math.max(0, Math.sin(t * 1.25 + i * 2.4));
+            return { tr: `translate(${x} ${y}) rotate(${(t * 20 + i * 30) % 90}) scale(${(0.2 + 0.8 * v).toFixed(3)})`, o: (0.1 + 0.9 * v).toFixed(2) };
         });
+        // Вспышка по огранке: раз в 5 с проходит слева направо за 1.1 с.
+        const ph = (t % 5) / 1.1;
+        out.sweep = `translate(${ph < 1 ? f2(-38 + ph * 76) : 80} 0)`;
+        // Пузыри пара: из горла, обтекают камень, наверху лопаются искрой.
         out.bubs = [];
         for (let i = 0; i < M.BUBS; i++) {
-            const u = (t * 0.28 + i / M.BUBS) % 1;
-            const side = i % 2 ? 1 : -1;
-            // Пузыри обтекают пробку: расходятся в стороны, пока идут мимо неё.
-            const around = Math.sin(Math.min(1, u / 0.6) * Math.PI) * 10;
+            const u = (t * 0.26 + i / M.BUBS) % 1, side = i % 2 ? 1 : -1;
+            const around = Math.sin(Math.min(1, u / 0.7) * Math.PI) * 12;
+            const pop = u > 0.86;
             out.bubs.push({
-                x: (side * around + Math.sin(u * 7 + i) * 2.2).toFixed(2),
-                y: (-37 - u * 66).toFixed(2),
-                r: (1.3 + u * 2.4).toFixed(2),
-                o: (u < 0.12 ? u / 0.12 : Math.max(0, 1 - (u - 0.12) / 0.88)).toFixed(2)
+                x: f2(side * around + Math.sin(u * 8 + i) * 2),
+                y: f2(M.NECK.top - 4 - u * 60),
+                r: pop ? '0' : f2(0.9 + u * 2.4),
+                o: f2(u < 0.1 ? u / 0.1 : 1),
+                pop: pop ? f2(1 - (u - 0.86) / 0.14) : '0'
             });
         }
-        const s = t * 0.75, P = [];
-        for (let i = 0; i <= M.SEG.length; i++) P.push(M.worm(s - i * 0.26));
-        const h = P[0], hb = M.worm(s - 0.06);
+        // Дух: голова и звенья по одной кривой с отставанием; хвост —
+        // звёздная пыль ещё дальше по той же кривой.
+        const s = t * 0.7, gap = 0.27, P = [];
+        for (let i = 0; i <= M.SEG.length + M.TRAIL; i++) P.push(M.worm(s - i * gap));
+        const h = P[0], hb = M.worm(s - 0.05);
         const ang = Math.atan2(h.y - hb.y, h.x - hb.x) * 180 / Math.PI;
         const flip = Math.abs(ang) > 90 ? -1 : 1;
-        out.head = `translate(${h.x.toFixed(2)} ${h.y.toFixed(2)}) rotate(${ang.toFixed(1)}) scale(1 ${flip})`;
-        out.segs = P.slice(1).map(p => ({ x: p.x.toFixed(2), y: p.y.toFixed(2) }));
-        out.aura = { x: h.x.toFixed(2), y: h.y.toFixed(2) };
+        const sw = 1 + 0.06 * Math.sin(t * 6);                       // гребок: голова чуть сжимается
+        out.head = `translate(${f2(h.x)} ${f2(h.y)}) rotate(${ang.toFixed(1)}) scale(${sw.toFixed(3)} ${(flip / sw).toFixed(3)})`;
+        out.segs = P.slice(1, M.SEG.length + 1).map(p => ({ x: f2(p.x), y: f2(p.y) }));
+        out.trail = P.slice(M.SEG.length + 1).map(p => ({ x: f2(p.x), y: f2(p.y) }));
+        out.aura = { x: f2(h.x), y: f2(h.y) };
         return out;
     },
 
@@ -147,159 +188,422 @@ const BATH_SOAP = {
         const P = btPal(), C = P.soapCosmos, D = C.deep, Am = C.amethyst, Au = P.soapGold, ink = PALETTE.ink;
         const id = 'bsp' + (this.uid++);
         const A = BATH_ART.slots().soap, M = this.MAGIC;
-        const f = (v) => v.toFixed(1);
+        const f = (v) => v.toFixed(2);
+        const pt = (p) => `${f(p[0])} ${f(p[1])}`;
         const Fr = this.magicFrame(0);
+        const rnd = btRng(8888);
 
-        // Силуэт кристалла: плечи, широкий пояс, гранёный низ.
-        const O = [[-5, -33], [-5, -27], [-13, -22], [-21, -12], [-24, 3], [-19, 19], [-9, 29],
-                   [9, 29], [19, 19], [24, 3], [21, -12], [13, -22], [5, -27], [5, -33]];
-        const poly = (pts) => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
-        const body = poly(O);
-        const inner = poly(O.map(([x, y]) => [x * 0.88, y < 0 ? y * 0.95 + 0.5 : y * 0.9]));
-        const lv = -13;
-        // Грани: внутренние точки «бриллианта» и тона граней. Свет сверху-
-        // слева; у трёх граней — радужный отлив.
-        const T = [0, -22], Lm = [-11, 3], Rm = [11, 3], Bm = [0, 24];
-        const facets = [
-            [[[-13, -22], [-21, -12], Lm], C.glow, 0.22],
-            [[[-21, -12], [-24, 3], Lm], C.cyan, 0.16],
-            [[[-24, 3], [-19, 19], Lm], C.glow, 0.07],
-            [[[-19, 19], [-9, 29], Bm, Lm], C.glow, 0.03],
-            [[[-13, -22], Lm, T], C.glow, 0.13],
-            [[T, Lm, Bm, Rm], C.glow, 0.05],
-            [[[13, -22], [21, -12], Rm], C.pink, 0.12],
-            [[[21, -12], [24, 3], Rm], C.glow, 0.04],
-            [[[24, 3], [19, 19], Rm], Am[2], 0.14],
-            [[[19, 19], [9, 29], Bm, Rm], C.glow, 0.02],
-            [[[13, -22], Rm, T], C.glow, 0.07],
-            [[[-9, 29], [9, 29], Bm], C.glow, 0.04]
-        ];
-        let facetFill = '', ridges = '';
-        for (const [pts, col, a] of facets) facetFill += `<path d="${poly(pts)}" fill="${col}" fill-opacity="${a}"/>`;
-        for (const q of [[-13, -22], [-21, -12], [-24, 3], [-19, 19], [-9, 29]]) ridges += `M${q[0]} ${q[1]}L${Lm[0]} ${Lm[1]}`;
-        for (const q of [[13, -22], [21, -12], [24, 3], [19, 19], [9, 29]]) ridges += `M${q[0]} ${q[1]}L${Rm[0]} ${Rm[1]}`;
-        ridges += `M${T[0]} ${T[1]}L${Lm[0]} ${Lm[1]}L${Bm[0]} ${Bm[1]}L${Rm[0]} ${Rm[1]}Z`
-                + `M-13 -22L${T[0]} ${T[1]}L13 -22M-9 29L${Bm[0]} ${Bm[1]}L9 29`;
-
-        // Звёзды и туманность — из сида.
-        const rnd = btRng(888);
-        let stars = '';
-        for (let i = 0; i < M.STARS; i++) {
-            const x = -17 + rnd() * 34, y = lv + 3 + rnd() * 36, r = 0.35 + rnd() * 0.65;
-            stars += `<circle class="bsm-star" cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${Fr.stars[i]}"/>`;
+        // ---------- огранка ----------
+        // Ряды точек: чётные ряды — узлы на целых шагах угла, нечётные —
+        // на полушагах (+ края), так между рядами встают треугольники.
+        const N = M.COLS, R = M.ROWS;
+        const ring = (y, r, odd) => {
+            const th = [];
+            if (!odd) for (let k = 0; k <= N; k++) th.push(-Math.PI / 2 + Math.PI * k / N);
+            else { th.push(-Math.PI / 2); for (let k = 0; k < N; k++) th.push(-Math.PI / 2 + Math.PI * (k + 0.5) / N); th.push(Math.PI / 2); }
+            return th.map(a => ({ a, x: r * Math.sin(a), y }));
+        };
+        const rows = R.map(([y, r], i) => ring(y, r, i % 2 === 1));
+        // Свет: сверху-слева-спереди. Нормаль тела вращения:
+        // (sinθ, −dr/dy, cosθ) при оси y вниз.
+        const Lv = (() => { const v = [-0.55, -0.65, 0.52], l = Math.hypot(...v); return v.map(c => c / l); })();
+        const Hv = (() => { const v = [Lv[0], Lv[1], Lv[2] + 1], l = Math.hypot(...v); return v.map(c => c / l); })();
+        let facets = '', edges = '';
+        const tri = (p, q, w, slope) => {
+            const a = (p.a + q.a + w.a) / 3;
+            const n = [Math.sin(a), -slope, Math.cos(a)], nl = Math.hypot(...n);
+            const d = (n[0] * Lv[0] + n[1] * Lv[1] + n[2] * Lv[2]) / nl;
+            const sp = Math.pow(Math.max(0, (n[0] * Hv[0] + n[1] * Hv[1] + n[2] * Hv[2]) / nl), 18);
+            const jit = (rnd() - 0.5) * 0.08;
+            const dpath = `M${pt([p.x, p.y])}L${pt([q.x, q.y])}L${pt([w.x, w.y])}Z`;
+            if (d > 0.05) {
+                const o = Math.min(0.55, 0.03 + 0.26 * d * d + 0.55 * sp + jit);
+                facets += `<path d="${dpath}" fill="${C.glow}" fill-opacity="${Math.max(0.02, o).toFixed(3)}"/>`;
+            } else {
+                // Тёмное отражение — без него огранка не блестит, а белеет.
+                facets += `<path d="${dpath}" fill="${C.dust}" fill-opacity="${(0.24 + jit).toFixed(3)}"/>`;
+            }
+            // Радуга: немногие грани у края ловят дисперсию.
+            if (Math.abs(Math.sin(a)) > 0.55 && rnd() < 0.2)
+                facets += `<path d="${dpath}" fill="${C.prism[Math.floor(rnd() * C.prism.length)]}" fill-opacity="0.2"/>`;
+        };
+        for (let i = 0; i < rows.length - 1; i++) {
+            const A0 = rows[i], B0 = rows[i + 1];
+            const slope = (R[i + 1][1] - R[i][1]) / (R[i + 1][0] - R[i][0]);   // dr/dy
+            let a = 0, b = 0;
+            while (a < A0.length - 1 || b < B0.length - 1) {
+                const nextA = a < A0.length - 1 ? A0[a + 1].a : Infinity;
+                const nextB = b < B0.length - 1 ? B0[b + 1].a : Infinity;
+                if (nextA <= nextB) { tri(A0[a], A0[a + 1], B0[b], slope); edges += `M${pt([A0[a + 1].x, A0[a + 1].y])}L${pt([B0[b].x, B0[b].y])}`; a++; }
+                else { tri(A0[a], B0[b + 1], B0[b], slope); edges += `M${pt([A0[a].x, A0[a].y])}L${pt([B0[b + 1].x, B0[b + 1].y])}`; b++; }
+            }
+            edges += 'M' + A0.map(p => pt([p.x, p.y])).join('L');
         }
-        const star4 = (r) => `M0 ${-r}Q0.25 -0.25 ${r} 0Q0.25 0.25 0 ${r}Q-0.25 0.25 ${-r} 0Q-0.25 -0.25 0 ${-r}Z`;
+        // Силуэт: края рядов, горло, венчик.
+        const NK = M.NECK;
+        const left = R.map(([y, r]) => [-r, y]), right = R.map(([y, r]) => [r, y]).reverse();
+        const body = 'M' + [...right, ...left].map(pt).join('L') + 'Z';
+        const cav = 'M' + [...M.CAV.map(([y, r]) => [r, y]).reverse(), ...M.CAV.map(([y, r]) => [-r, y])].map(pt).join('L') + 'Z';
+        const neck = `M${-NK.r} ${R[R.length - 1][0] + 0.5}V${NK.top}H${NK.r}V${R[R.length - 1][0] + 0.5}Z`;
+        const bead = `M${-NK.r} ${NK.bead + 2}L-6.2 ${NK.bead}L${-NK.r} ${NK.bead - 2}H${NK.r}L6.2 ${NK.bead}L${NK.r} ${NK.bead + 2}Z`;
+        const lip = `M-5 ${NK.top}L-7 ${NK.top - 2}Q-7.4 ${NK.top - 3.6} -6 ${NK.top - 3.8}H6Q7.4 ${NK.top - 3.6} 7 ${NK.top - 2}L5 ${NK.top}Z`;
 
-        // Дух свиночервя: голова смотрит вдоль +x.
-        // Уши с розовым нутром и пятачок — по ним дух узнаётся свиночервем,
-        // а не белой гусеницей.
-        const head = `<path d="M-2.2 -2.6L-3.6 -6.6L-0.2 -3.4ZM0.8 -3.2L0.8 -7L3 -2.6Z" fill="${C.glow}"/>`
-            + `<path d="M-2.2 -3.4L-3 -5.6L-1 -3.7ZM1.2 -3.5L1.2 -5.9L2.4 -3.2Z" fill="${C.pink}"/>`
-            + `<circle r="3.7" fill="${C.glow}"/>`
-            + `<ellipse cx="3.6" cy="0.5" rx="1.6" ry="1.4" fill="${C.pink}"/>`
-            + `<circle cx="4" cy="0.1" r="0.35" fill="${D[1]}"/><circle cx="4" cy="0.95" r="0.35" fill="${D[1]}"/>`
-            + `<circle cx="1.2" cy="-1.1" r="0.55" fill="${D[1]}"/>`;
+        // Поверхность жижи ломается на границах граней (преломление): для
+        // каждой колонки своя высота.
+        const LV = M.LV;
+        const cavR = (y) => {   // радиус полости на высоте y
+            const C2 = M.CAV;
+            for (let i = 0; i < C2.length - 1; i++) {
+                const [y0, r0] = C2[i], [y1, r1] = C2[i + 1];
+                if ((y <= y0 && y >= y1)) return r0 + (r1 - r0) * (y - y0) / (y1 - y0);
+            }
+            return C2[C2.length - 1][1];
+        };
+        const lr = cavR(LV);
+        // Одна непрерывная ломаная: по колонке — ровно, на границе грани —
+        // короткая ступенька. Отдельные отрезки читались белыми чёрточками.
+        const steps = [];
+        for (let k = 0; k < N; k++) {
+            const x0 = lr * Math.sin(-Math.PI / 2 + Math.PI * k / N), x1 = lr * Math.sin(-Math.PI / 2 + Math.PI * (k + 1) / N);
+            const dy = Math.sin(k * 2.3 + 0.7) * 0.45;
+            steps.push([x0, LV + dy], [x1, LV + dy]);
+        }
+        const menis = 'M' + steps.map(pt).join('L');
+        const menisGlow = 'M' + steps.map(([x, y]) => pt([x, y + 1.6])).join('L');
+        // Пустота полости над жижей — многоугольник до ломаной, а не
+        // прямоугольник поверх: хрусталь там прозрачный, с лёгким отсветом.
+        const empty = `M-30 -40H30V${f(steps[steps.length - 1][1])}` + steps.slice().reverse().map(p => 'L' + pt(p)).join('') + 'Z';
+
+        // ---------- космос ----------
+        let stars = '', tw = '';
+        for (let i = 0; i < 26; i++) {
+            const x = -17 + rnd() * 34, y = LV + 2 + rnd() * 30, r = 0.22 + rnd() * 0.45;
+            stars += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${(0.4 + rnd() * 0.5).toFixed(2)}"/>`;
+        }
+        const star4 = (r, w) => `M0 ${-r}Q${w} ${-w} ${r} 0Q${w} ${w} 0 ${r}Q${-w} ${w} ${-r} 0Q${-w} ${-w} 0 ${-r}Z`;
+        const TW = [[-13, -12, 1.3], [12, -1, 1.1], [-7, 5, 0.9], [15, -14, 0.8], [4, -17, 1], [-16, -2, 0.8], [8, 8, 0.8], [-3, -9, 0.7], [16, 4, 0.7]];
+        TW.forEach(([x, y, r], i) => {
+            tw += `<g transform="translate(${x} ${y})"><path class="bsm-tw" d="${star4(r * 2.2, r * 0.26)}" fill="${C.glow}" fill-opacity="${Fr.twinkle[i]}"/>`
+                + `<circle r="${f(r * 0.45)}" fill="${C.glow}"/></g>`;
+        });
+        // Галактика: две спиральные ветви в наклоне.
+        const arm = (a0) => {
+            let d = '';
+            for (let i = 0; i <= 28; i++) {
+                const rr = 1.2 + i * 0.36, a = a0 + i * 0.22;
+                d += (i ? 'L' : 'M') + f(rr * Math.cos(a)) + ' ' + f(rr * Math.sin(a));
+            }
+            return d;
+        };
+        const arms = arm(0) + arm(Math.PI);
+        const [GX, GY] = M.GAL;
+
+        // ---------- дух свиночервя ----------
+        const head = `<path d="M-2.6 -3L-4.4 -7.6L-0.4 -3.9ZM0.8 -3.7L1 -8.2L3.5 -3.1Z" fill="${C.glow}"/>`
+            + `<path d="M-2.6 -4L-3.7 -6.5L-1.3 -4.3ZM1.3 -4.3L1.4 -7L2.7 -3.9Z" fill="${C.blush}"/>`
+            + `<circle r="4.2" fill="url(#${id}-wg)"/>`
+            + `<ellipse cx="4.1" cy="0.6" rx="1.9" ry="1.65" fill="${C.blush}"/>`
+            + `<ellipse cx="4.6" cy="0.15" rx="0.36" ry="0.45" fill="${D[1]}"/><ellipse cx="4.6" cy="1.1" rx="0.36" ry="0.45" fill="${D[1]}"/>`
+            + `<path d="M0.2 -1.5Q1.2 -2.5 2.2 -1.5" fill="none" stroke="${D[1]}" stroke-width="0.55" stroke-linecap="round"/>`
+            + `<circle cx="1.4" cy="1.4" r="0.9" fill="${C.blush}" fill-opacity="0.55"/>`;
         const segs = M.SEG.map((r, i) =>
-            `<circle class="bsm-seg" cx="${Fr.segs[i].x}" cy="${Fr.segs[i].y}" r="${r}" fill="${C.glow}" fill-opacity="${(0.95 - i * 0.12).toFixed(2)}"/>`).reverse().join('');
+            `<circle class="bsm-seg" cx="${Fr.segs[i].x}" cy="${Fr.segs[i].y}" r="${r}" fill="url(#${id}-wg)" fill-opacity="${(1 - i * 0.07).toFixed(2)}"/>`).reverse().join('');
+        const trail = Fr.trail.map((p, i) =>
+            `<circle class="bsm-trail" cx="${p.x}" cy="${p.y}" r="${(1 - i * 0.14).toFixed(2)}" fill="${C.glow}" fill-opacity="${(0.8 - i * 0.12).toFixed(2)}"/>`).join('');
+
+        // ---------- пробка ----------
+        const S = M.STOP;
+        const stem = `M-2.6 ${S}L-4 ${S - 8}H4L2.6 ${S}Z`;
+        const setting = `M-5.8 ${S - 8}H5.8L5 ${S - 11}H-5Z`;
+        // Аметист: павильон (низ) и корона (верх) вокруг рундиста.
+        // Камень вытянутый и остроконечный: приземистый шестигранник
+        // читался гайкой. Рундист низко, корона высокая, к острию.
+        const G0 = S - 11, GR = S - 15, GS = S - 26, GT = S - 33;
+        const gem = `M-5 ${G0}L-7 ${GR}L-5.6 ${GS}L0 ${GT}L5.6 ${GS}L7 ${GR}L5 ${G0}Z`;
+        const gemLines = `M-7 ${GR}H7M-5.6 ${GS}L-2.2 ${GR}L0 ${GT}L2.2 ${GR}L5.6 ${GS}M-2.2 ${GR}L0 ${G0}L2.2 ${GR}M-5 ${G0}L-2.2 ${GR}M5 ${G0}L2.2 ${GR}M0 ${GT}V${GR}`;
 
         const bubs = Fr.bubs.map(b =>
-            `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><circle r="${b.r}" fill="${C.cyan}" fill-opacity="${(b.o * 0.5).toFixed(2)}" stroke="${C.glow}" stroke-width="0.9" stroke-opacity="${b.o}"/></g>`).join('');
-        const sparks = Fr.sparks.map(sp =>
-            `<path class="bsm-spark" d="${star4(4)}" transform="${sp.tr}" fill="${C.glow}" fill-opacity="${sp.o}"/>`).join('');
+            `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><circle r="${b.r}" fill="${C.cyan}" fill-opacity="${(b.o * 0.45).toFixed(2)}" stroke="${C.glow}" stroke-width="0.8" stroke-opacity="${b.o}"/>`
+          + `<path d="${star4(3, 0.35)}" fill="${C.glow}" fill-opacity="${b.pop}"/></g>`).join('');
+        const sparks = Fr.sparks.map((sp, i) =>
+            `<path class="bsm-spark" d="${star4(M.SPARKS[i][2], M.SPARKS[i][2] * 0.14)}" transform="${sp.tr}" fill="${C.glow}" fill-opacity="${sp.o}"/>`).join('');
 
-        // Пробка-аметист: гранёный кристалл, острым концом вниз.
-        const SY = M.stopperY;
-        const stopper = `M0 ${SY + 13}L-7 ${SY + 3}L-5.5 ${SY - 7}L0 ${SY - 13}L5.5 ${SY - 7}L7 ${SY + 3}Z`;
+        // ---------- золото ----------
+        const collarY = R[R.length - 1][0];
+        const collar = `M-6.4 ${collarY + 1.2}H6.4Q7.6 ${collarY + 1.2} 7.6 ${collarY}Q7.6 ${collarY - 1.4} 6.4 ${collarY - 1.4}H-6.4Q-7.6 ${collarY - 1.4} -7.6 ${collarY}Q-7.6 ${collarY + 1.2} -6.4 ${collarY + 1.2}Z`;
+        const drop = (x, y, l) => `M${x} ${y}C${x + 1.6} ${y + l * 0.55} ${x + 1.4} ${y + l} ${x} ${y + l}C${x - 1.4} ${y + l} ${x - 1.6} ${y + l * 0.55} ${x} ${y}Z`;
+        const drops = drop(-5, collarY + 1.2, 4.4) + drop(0, collarY + 1.2, 5.6) + drop(5, collarY + 1.2, 4.4);
+        // Когти ножки обнимают низ тела (сама ножка за сеткой, видна в руке).
+        // Чаша-лотос: золото обнимает низ луковицы лепестками. Когти по
+        // бокам торчали ручками кувшина, по переду — щипцами; чаша читается
+        // оправой драгоценности. Край лепестков — по дуге (ближний выше),
+        // бока идут по силуэту тела чуть снаружи.
+        const calR = (y) => { for (let i = 0; i < R.length - 1; i++) { const [y0, r0] = R[i], [y1, r1] = R[i + 1]; if (y <= y0 && y >= y1) return r0 + (r1 - r0) * (y - y0) / (y1 - y0); } return R[0][1]; };
+        const CT = 5, PET = 5;
+        let calyx = `M${f(-calR(CT) - 0.8)} ${CT + 1}`;
+        for (let i = 0; i < PET; i++) {
+            const a0 = -Math.PI / 2 + Math.PI * i / PET, a1 = -Math.PI / 2 + Math.PI * (i + 1) / PET, am = (a0 + a1) / 2;
+            const rr = calR(CT) + 0.8, xm = rr * Math.sin(am), x1 = rr * Math.sin(a1);
+            const tip = CT - 4.2 * Math.cos(am) - 0.6;
+            calyx += `Q${f(rr * Math.sin(a0) + (xm - rr * Math.sin(a0)) * 0.55)} ${f(CT + 0.6)} ${f(xm)} ${f(tip)}`
+                   + `Q${f(xm + (x1 - xm) * 0.45)} ${f(CT + 0.6)} ${f(x1)} ${f(CT + 1 + (i === PET - 1 ? 0 : 0.2))}`;
+        }
+        calyx += `L${f(calR(10) + 0.8)} 10L${f(R[0][1] + 0.8)} ${R[0][0] + 0.5}H${f(-R[0][1] - 0.8)}L${f(-calR(10) - 0.8)} 10Z`;
+        let calLines = '';
+        for (let i = 0; i < PET; i++) {
+            const am = -Math.PI / 2 + Math.PI * (i + 0.5) / PET, rr = calR(CT) + 0.8;
+            calLines += `M${f(rr * Math.sin(am))} ${f(CT - 3.2 * Math.cos(am))}L${f(rr * 0.7 * Math.sin(am))} ${R[0][0]}`;
+        }
+        const FL = 29 + M.LIFT;   // пол корзины в координатах тела
+        const foot = `M-6 14H6L4 18.5H-4Z M-2.6 18.5H2.6V${FL - 7}H-2.6Z`
+                   + `M-11 ${FL - 7}H11Q13 ${FL - 7} 13 ${FL - 5}V${FL - 2}Q13 ${FL} 11 ${FL}H-11Q-13 ${FL} -13 ${FL - 2}V${FL - 5}Q-13 ${FL - 7} -11 ${FL - 7}Z`;
+
+        // ---------- радужные блики на кафеле ----------
+        const caustic = (x, y, w, h, a, o) =>
+            `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="url(#${id}-prism)" fill-opacity="${o}" transform="translate(${x} ${y}) rotate(${a})"/>`;
 
         return `
-        <g class="bt-soap bt-soap-magic" transform="translate(${A.x} ${A.y + 2})">
+        <g class="bt-soap bt-soap-magic" transform="translate(${A.x} ${A.y + 2 + 29 * (1 - M.SCALE)}) scale(${M.SCALE})">
+        <g transform="translate(0 ${-M.LIFT})">
             <defs>
-                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="2" r="62">
-                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.6"/>
-                    <stop offset="0.35" stop-color="${Am[2]}" stop-opacity="0.34"/>
-                    <stop offset="1" stop-color="${Am[2]}" stop-opacity="0"/>
-                </radialGradient>
-                <!-- Космос: светлая бирюза под поверхностью уходит в индиго. -->
-                <linearGradient id="${id}-deep" gradientUnits="userSpaceOnUse" x1="0" y1="${lv}" x2="0" y2="29">
-                    <stop offset="0" stop-color="${D[3]}"/>
-                    <stop offset="0.35" stop-color="${D[2]}"/>
-                    <stop offset="1" stop-color="${D[0]}"/>
-                </linearGradient>
-                <radialGradient id="${id}-nebA" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="${C.pink}" stop-opacity="0.75"/>
+                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="-8" r="66">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.5"/>
+                    <stop offset="0.3" stop-color="${Am[2]}" stop-opacity="0.3"/>
+                    <stop offset="0.65" stop-color="${C.pink}" stop-opacity="0.1"/>
                     <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
                 </radialGradient>
-                <radialGradient id="${id}-nebB" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.7"/>
+                <linearGradient id="${id}-prism" x1="0" y1="0" x2="1" y2="0">
+                    ${C.prism.map((c, i) => `<stop offset="${(i / (C.prism.length - 1)).toFixed(2)}" stop-color="${c}"/>`).join('')}
+                </linearGradient>
+                <!-- Глубина космоса: светлее к середине, в индиго к стенкам. -->
+                <radialGradient id="${id}-deep" gradientUnits="userSpaceOnUse" cx="0" cy="-2" r="24">
+                    <stop offset="0" stop-color="${D[3]}"/>
+                    <stop offset="0.45" stop-color="${D[2]}"/>
+                    <stop offset="0.8" stop-color="${D[1]}"/>
+                    <stop offset="1" stop-color="${D[0]}"/>
+                </radialGradient>
+                <radialGradient id="${id}-pink" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${C.pink}" stop-opacity="0.85"/>
+                    <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-cyan" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.8"/>
                     <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-core" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="${C.core}"/>
+                    <stop offset="0.35" stop-color="${C.core}" stop-opacity="0.7"/>
+                    <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
+                </radialGradient>
+                <!-- Тело духа: белое светящееся ядро, розовая кромка. -->
+                <radialGradient id="${id}-wg" gradientUnits="objectBoundingBox" cx="0.4" cy="0.38">
+                    <stop offset="0" stop-color="#ffffff"/>
+                    <stop offset="0.55" stop-color="${C.glow}"/>
+                    <stop offset="1" stop-color="${C.blush}"/>
                 </radialGradient>
                 <radialGradient id="${id}-aura" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0.8"/>
+                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0.75"/>
+                    <stop offset="0.5" stop-color="${C.blush}" stop-opacity="0.25"/>
+                    <stop offset="1" stop-color="${C.blush}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-vapor" gradientUnits="userSpaceOnUse" cx="0" cy="${NK.top - 8}" r="12"
+                                gradientTransform="translate(0 ${NK.top - 8}) scale(0.75 1) translate(0 ${-(NK.top - 8)})">
+                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0.9"/>
+                    <stop offset="0.5" stop-color="${C.cyan}" stop-opacity="0.35"/>
                     <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
                 </radialGradient>
-                <radialGradient id="${id}-vapor" gradientUnits="userSpaceOnUse" cx="0" cy="-42" r="12"
-                                gradientTransform="translate(0 -42) scale(0.8 1) translate(0 42)">
-                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0.8"/>
-                    <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
-                </radialGradient>
-                <linearGradient id="${id}-ame" gradientUnits="userSpaceOnUse" x1="-7" y1="0" x2="7" y2="0">
+                <linearGradient id="${id}-glassN" gradientUnits="userSpaceOnUse" x1="${-NK.r}" y1="0" x2="${NK.r}" y2="0">
+                    <stop offset="0" stop-color="${C.crystal}" stop-opacity="0.9"/>
+                    <stop offset="0.3" stop-color="${C.glow}" stop-opacity="0.35"/>
+                    <stop offset="0.7" stop-color="${C.crystal}" stop-opacity="0.3"/>
+                    <stop offset="1" stop-color="${Am[2]}" stop-opacity="0.55"/>
+                </linearGradient>
+                <linearGradient id="${id}-ame" gradientUnits="userSpaceOnUse" x1="-7.6" y1="0" x2="7.6" y2="0">
                     <stop offset="0" stop-color="${Am[1]}"/>
-                    <stop offset="0.35" stop-color="${Am[3]}"/>
-                    <stop offset="0.55" stop-color="${Am[2]}"/>
+                    <stop offset="0.3" stop-color="${Am[3]}"/>
+                    <stop offset="0.5" stop-color="${Am[2]}"/>
+                    <stop offset="0.75" stop-color="${Am[1]}"/>
                     <stop offset="1" stop-color="${Am[0]}"/>
                 </linearGradient>
-                <linearGradient id="${id}-gold" gradientUnits="userSpaceOnUse" x1="-7.5" y1="0" x2="7.5" y2="0">
+                <!-- Золото — металл: резкий перепад, два блика. -->
+                <linearGradient id="${id}-gold" gradientUnits="userSpaceOnUse" x1="-8" y1="0" x2="8" y2="0">
                     <stop offset="0" stop-color="${Au[0]}"/>
-                    <stop offset="0.25" stop-color="${Au[4]}"/>
-                    <stop offset="0.5" stop-color="${Au[2]}"/>
+                    <stop offset="0.18" stop-color="${Au[3]}"/>
+                    <stop offset="0.3" stop-color="${Au[4]}"/>
+                    <stop offset="0.45" stop-color="${Au[2]}"/>
+                    <stop offset="0.75" stop-color="${Au[1]}"/>
+                    <stop offset="0.88" stop-color="${Au[3]}"/>
                     <stop offset="1" stop-color="${Au[0]}"/>
                 </linearGradient>
-                <clipPath id="${id}-in"><path d="${inner}"/></clipPath>
+                <linearGradient id="${id}-goldV" gradientUnits="userSpaceOnUse" x1="-13" y1="0" x2="13" y2="0">
+                    <stop offset="0" stop-color="${Au[1]}"/>
+                    <stop offset="0.3" stop-color="${Au[4]}"/>
+                    <stop offset="0.55" stop-color="${Au[2]}"/>
+                    <stop offset="1" stop-color="${Au[0]}"/>
+                </linearGradient>
+                <!-- Горло светится снизу: свет космоса поднимается по толстому
+                     стеклу и гаснет к венчику. Плоская серая заливка читалась
+                     коробкой. -->
+                <linearGradient id="${id}-neckV" gradientUnits="userSpaceOnUse" x1="0" y1="${R[R.length - 1][0]}" x2="0" y2="${NK.top}">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.75"/>
+                    <stop offset="0.5" stop-color="${C.crystal}" stop-opacity="0.6"/>
+                    <stop offset="1" stop-color="${C.glow}" stop-opacity="0.85"/>
+                </linearGradient>
+                <!-- Хвостовик пробки: стекло, снизу подсвечено паром. -->
+                <linearGradient id="${id}-stemV" gradientUnits="userSpaceOnUse" x1="0" y1="${M.STOP}" x2="0" y2="${M.STOP - 8}">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.9"/>
+                    <stop offset="0.6" stop-color="${C.crystal}" stop-opacity="0.75"/>
+                    <stop offset="1" stop-color="${Am[3]}" stop-opacity="0.9"/>
+                </linearGradient>
+                <linearGradient id="${id}-shadeR" gradientUnits="userSpaceOnUse" x1="-22" y1="0" x2="22" y2="0">
+                    <stop offset="0" stop-color="${D[0]}" stop-opacity="0"/>
+                    <stop offset="0.55" stop-color="${D[0]}" stop-opacity="0"/>
+                    <stop offset="1" stop-color="${D[0]}" stop-opacity="0.32"/>
+                </linearGradient>
+                <linearGradient id="${id}-calyx" gradientUnits="userSpaceOnUse" x1="-20" y1="0" x2="20" y2="0">
+                    <stop offset="0" stop-color="${Au[0]}"/>
+                    <stop offset="0.2" stop-color="${Au[3]}"/>
+                    <stop offset="0.32" stop-color="${Au[4]}"/>
+                    <stop offset="0.5" stop-color="${Au[2]}"/>
+                    <stop offset="0.8" stop-color="${Au[1]}"/>
+                    <stop offset="1" stop-color="${Au[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-sweep" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0"/>
+                    <stop offset="0.5" stop-color="${C.glow}" stop-opacity="0.75"/>
+                    <stop offset="1" stop-color="${C.glow}" stop-opacity="0"/>
+                </linearGradient>
+                <linearGradient id="${id}-emptyG" gradientUnits="userSpaceOnUse" x1="0" y1="-32" x2="0" y2="${LV}">
+                    <stop offset="0" stop-color="${C.crystal}" stop-opacity="0.7"/>
+                    <stop offset="0.75" stop-color="${C.crystal}" stop-opacity="0.6"/>
+                    <stop offset="1" stop-color="${C.cyan}" stop-opacity="0.45"/>
+                </linearGradient>
+                <clipPath id="${id}-cav"><path d="${cav}"/></clipPath>
+                <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
-            <!-- Ореол дышит. -->
-            <circle class="bsm-halo" cx="0" cy="2" r="62" fill="url(#${id}-halo)" transform="${Fr.halo}"/>
-            <!-- Искры вокруг. -->
+
+            <!-- ОКРУЖЕНИЕ: ореол и радуга на кафеле — свет сквозь хрусталь. -->
+            <circle class="bsm-halo" cx="0" cy="-8" r="66" fill="url(#${id}-halo)" transform="${Fr.halo}"/>
+            ${caustic(-36, -4, 22, 2.6, -62, 0.4)}${caustic(-40, 10, 14, 1.8, -58, 0.3)}${caustic(37, -18, 16, 2.2, 58, 0.32)}
             ${sparks}
+
+            <!-- НОЖКА (за сеткой; видна в руке). -->
+            <path d="${foot}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
+            <path d="${foot}" fill="url(#${id}-goldV)"/>
+
+            <!-- ТЕЛО: контур, хрусталь поверх кафеля, полость с космосом. -->
+            <!-- Контур: тело — внешним весом; горло, бусина и венчик тоньше,
+                 иначе толстая обводка превращала прозрачное горло в чёрное. -->
+            <path d="${neck}${lip}${bead}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
             <path d="${body}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            <!-- Хрусталь пустой (над жижей) — светлый, чуть голубой. -->
-            <path d="${body}" fill="${C.crystal}" fill-opacity="0.6"/>
-            <g clip-path="url(#${id}-in)">
-                <rect x="-26" y="${lv}" width="52" height="44" fill="url(#${id}-deep)"/>
-                <g class="bsm-neb" transform="${Fr.neb}">
-                    <ellipse cx="-7" cy="4" rx="13" ry="7" fill="url(#${id}-nebA)" transform="rotate(-25 -7 4)"/>
-                    <ellipse cx="8" cy="14" rx="12" ry="6" fill="url(#${id}-nebB)" transform="rotate(20 8 14)"/>
-                    <ellipse cx="4" cy="-4" rx="8" ry="4" fill="url(#${id}-nebB)"/>
+            <path d="${body}" fill="${C.crystal}" fill-opacity="0.55"/>
+            <path d="${cav}" fill="url(#${id}-deep)"/>
+            <g clip-path="url(#${id}-cav)">
+                <g class="bsm-nebA" fill-opacity="${Fr.nebA}">
+                    <ellipse cx="-8" cy="-6" rx="14" ry="7" fill="url(#${id}-pink)" transform="rotate(-28 -8 -6)"/>
+                    <ellipse cx="10" cy="7" rx="10" ry="5" fill="url(#${id}-pink)" transform="rotate(24 10 7)"/>
                 </g>
+                <g class="bsm-nebB" fill-opacity="${Fr.nebB}">
+                    <ellipse cx="9" cy="-9" rx="13" ry="6" fill="url(#${id}-cyan)" transform="rotate(18 9 -9)"/>
+                    <ellipse cx="-9" cy="8" rx="11" ry="5" fill="url(#${id}-cyan)" transform="rotate(-15 -9 8)"/>
+                </g>
+                <!-- Пылевые прожилки: темнее основы — дают туманности глубину. -->
+                <path d="M-19 -1C-11 -5 -4 3 4 -1S15 -8 20 -4M-16 10C-8 6 0 13 9 8" fill="none" stroke="${C.dust}" stroke-width="2.4" stroke-opacity="0.35" stroke-linecap="round"/>
                 ${stars}
-                <!-- Дух свиночервя: свечение вокруг головы, звенья, голова. -->
-                <circle class="bsm-aura" cx="${Fr.aura.x}" cy="${Fr.aura.y}" r="10" fill="url(#${id}-aura)"/>
+                <!-- Галактика в наклоне. -->
+                <g transform="translate(${GX} ${GY}) rotate(-22) scale(1 0.45)">
+                    <g class="bsm-gal" transform="rotate(${Fr.gal})">
+                        <path d="${arms}" fill="none" stroke="${C.pink}" stroke-width="2.6" stroke-opacity="0.35" stroke-linecap="round"/>
+                        <path d="${arms}" fill="none" stroke="${C.glow}" stroke-width="0.9" stroke-opacity="0.8" stroke-linecap="round"/>
+                    </g>
+                </g>
+                <ellipse cx="${GX}" cy="${GY}" rx="5.5" ry="3" fill="url(#${id}-core)" transform="rotate(-22 ${GX} ${GY})"/>
+                ${tw}
+                <!-- Дух свиночервя. -->
+                <circle class="bsm-aura" cx="${Fr.aura.x}" cy="${Fr.aura.y}" r="13" fill="url(#${id}-aura)"/>
+                ${trail}
                 ${segs}
                 <g class="bsm-head" transform="${Fr.head}">${head}</g>
-                <!-- Поверхность снизу: светлый эллипс. -->
-                <ellipse cx="0" cy="${lv}" rx="19" ry="2.2" fill="${C.cyan}" fill-opacity="0.45" stroke="${C.glow}" stroke-width="0.9"/>
+                <!-- Отсвет космоса по стенкам полости. -->
+                <path d="${cav}" fill="none" stroke="${C.cyan}" stroke-width="2.6" stroke-opacity="0.3"/>
+                <!-- Пустота над жижей: прозрачный хрусталь с отсветом снизу. -->
+                <path d="${empty}" fill="url(#${id}-emptyG)"/>
             </g>
-            <!-- Грани поверх: каждая своей яркости, у трёх — радуга. -->
-            ${facetFill}
-            <path d="${ridges}" fill="none" stroke="${C.glow}" stroke-width="0.6" stroke-opacity="0.55" stroke-linejoin="round"/>
-            <path d="M-18 -15L-22 1" stroke="${C.glow}" stroke-width="1.6" stroke-opacity="0.95" stroke-linecap="round"/>
-            <path d="M-11 -20L-15 -15" stroke="${C.glow}" stroke-width="1.1" stroke-opacity="0.8" stroke-linecap="round"/>
-            <path d="${body}" fill="none" stroke="${C.glow}" stroke-width="0.8" stroke-opacity="0.6" stroke-linejoin="round"/>
-            <!-- Золотое кольцо на горле с камушком. -->
-            <path d="M-7 -36H7Q8 -36 8 -35V-32.5Q8 -31.5 7 -31.5H-7Q-8 -31.5 -8 -32.5V-35Q-8 -36 -7 -36Z" fill="url(#${id}-gold)" stroke="${ink}" stroke-width="1.2"/>
-            <circle cx="0" cy="-33.8" r="1.3" fill="${C.pink}" stroke="${Au[0]}" stroke-width="0.5"/>
-            <circle cx="-0.4" cy="-34.2" r="0.4" fill="${C.glow}"/>
-            <!-- Пар из открытого горла: он и держит пробку. -->
-            <ellipse cx="0" cy="-42" rx="9.6" ry="12" fill="url(#${id}-vapor)"/>
+            <!-- Поверхность, сломанная гранями. -->
+            <path d="${menisGlow}" fill="none" stroke="${C.cyan}" stroke-width="2.2" stroke-opacity="0.35" stroke-linejoin="round"/>
+            <path d="${menis}" fill="none" stroke="${C.glow}" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.9"/>
+
+            <!-- ОГРАНКА поверх: грани, рёбра, вспышка. -->
+            ${facets}
+            <path d="${edges}" fill="none" stroke="${C.glow}" stroke-width="0.55" stroke-opacity="0.38" stroke-linejoin="round"/>
+            <g clip-path="url(#${id}-body)">
+                <!-- Объём: правый бок отвернулся от света. -->
+                <rect x="-24" y="-32" width="48" height="50" fill="url(#${id}-shadeR)"/>
+                <g class="bsm-sweep" transform="${Fr.sweep}">
+                    <rect x="-5" y="-60" width="10" height="110" fill="url(#${id}-sweep)" transform="rotate(22)"/>
+                </g>
+                <!-- Радужная кайма по краям силуэта — дисперсия. -->
+                <path d="M${-R[3][1] + 1.2} ${R[3][0]}L${-R[2][1] + 1.2} ${R[2][0]}L${-R[1][1] + 1.6} ${R[1][0]}" fill="none" stroke="${C.prism[3]}" stroke-width="0.7" stroke-opacity="0.6"/>
+                <path d="M${-R[3][1] + 2.4} ${R[3][0]}L${-R[2][1] + 2.4} ${R[2][0]}L${-R[1][1] + 2.8} ${R[1][0]}" fill="none" stroke="${C.prism[0]}" stroke-width="0.6" stroke-opacity="0.45"/>
+                <path d="M${R[4][1] - 1.2} ${R[4][0]}L${R[3][1] - 1.2} ${R[3][0]}L${R[2][1] - 1.2} ${R[2][0]}" fill="none" stroke="${C.prism[1]}" stroke-width="0.7" stroke-opacity="0.55"/>
+                <path d="M${R[4][1] - 2.4} ${R[4][0]}L${R[3][1] - 2.4} ${R[3][0]}L${R[2][1] - 2.4} ${R[2][0]}" fill="none" stroke="${C.prism[2]}" stroke-width="0.6" stroke-opacity="0.45"/>
+            </g>
+            <path d="${body}" fill="none" stroke="${C.glow}" stroke-width="0.7" stroke-opacity="0.7" stroke-linejoin="round"/>
+            <!-- Звёздочки-блики на узлах огранки. -->
+            ${[[-14, -12, 2.6], [-19, 1, 2], [9, -19, 1.6]].map(([x, y, r]) => `<path d="${star4(r, r * 0.16)}" transform="translate(${x} ${y})" fill="#ffffff"/>`).join('')}
+
+            <!-- ГОРЛО: стекло, бусина, золотой воротник с подвесками, венчик. -->
+            <path d="${neck}" fill="url(#${id}-neckV)"/>
+            <path d="${neck}" fill="url(#${id}-glassN)" fill-opacity="0.55"/>
+            <!-- Канал внутри толстого горла: две тонкие стенки, между ними
+                 отсвет космоса снизу. Без канала горло читалось плоской
+                 серой вставкой. -->
+            <path d="M-1.4 ${NK.top + 0.6}V${collarY - 1}H1.4V${NK.top + 0.6}Z" fill="${C.cyan}" fill-opacity="0.18"/>
+            <path d="M${-NK.r + 1} ${NK.top + 1}V${collarY - 2}" stroke="#ffffff" stroke-width="0.9" stroke-opacity="0.95" stroke-linecap="round"/>
+            <path d="M${NK.r - 0.9} ${NK.top + 1}V${collarY - 2}" stroke="${C.cyan}" stroke-width="0.6" stroke-opacity="0.8" stroke-linecap="round"/>
+            <path d="${bead}" fill="url(#${id}-neckV)" stroke="${C.glow}" stroke-width="0.5"/>
+            <path d="M-5.6 ${NK.bead}H5.6" stroke="${C.glow}" stroke-width="0.5" stroke-opacity="0.8"/>
+            <path d="${drops}" fill="url(#${id}-gold)" stroke="${ink}" stroke-width="0.9"/>
+            <path d="${collar}" fill="url(#${id}-gold)" stroke="${ink}" stroke-width="1.1"/>
+            <circle cx="0" cy="${collarY - 0.1}" r="1" fill="${C.pink}"/>
+            <!-- Чаша-лотос. -->
+            <path d="${calyx}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
+            <path d="${calyx}" fill="url(#${id}-calyx)"/>
+            <path d="${calLines}" fill="none" stroke="${Au[0]}" stroke-width="0.6" stroke-opacity="0.7"/>
+            <path d="${calLines}" fill="none" stroke="${Au[4]}" stroke-width="0.5" stroke-opacity="0.7" transform="translate(-0.5 0)"/>
+            <path d="${lip}" fill="url(#${id}-gold)" stroke="${ink}" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M-5.2 ${NK.top - 3}H4" stroke="${Au[4]}" stroke-width="0.7" stroke-linecap="round"/>
+
+            <!-- ЛЕВИТАЦИЯ: пар из горла, кольцо с бегущими точками, пузыри. -->
+            <ellipse class="bsm-vapor" cx="0" cy="${NK.top - 8}" rx="9" ry="12" fill="url(#${id}-vapor)" fill-opacity="${Fr.vapor}"/>
+            <g class="bsm-ring" transform="${Fr.ringScale}">
+                <ellipse cx="0" cy="${S + 3}" rx="10.5" ry="2.6" fill="none" stroke="${C.cyan}" stroke-width="2.2" stroke-opacity="0.35"/>
+                <ellipse class="bsm-ringd" cx="0" cy="${S + 3}" rx="10.5" ry="2.6" fill="none" stroke="${C.glow}" stroke-width="0.9"
+                         stroke-dasharray="0.6 3.4" stroke-dashoffset="${Fr.ringDash}" stroke-linecap="round"/>
+            </g>
             ${bubs}
-            <!-- Пробка парит. -->
+            <!-- ПРОБКА парит. -->
             <g class="bsm-stopper" transform="${Fr.stopper}">
-                <path d="${stopper}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
-                <path d="${stopper}" fill="url(#${id}-ame)"/>
-                <path d="M0 ${SY + 13}L-2 ${SY + 3}L0 ${SY - 13}M0 ${SY + 13}L2 ${SY + 3}L0 ${SY - 13}M-7 ${SY + 3}H7M-5.5 ${SY - 7}L-2 ${SY + 3}M5.5 ${SY - 7}L2 ${SY + 3}"
-                      fill="none" stroke="${Am[3]}" stroke-width="0.6" stroke-opacity="0.8"/>
-                <path d="M-5 ${SY - 5}L-3 ${SY - 10}" stroke="${C.glow}" stroke-width="1.2" stroke-linecap="round"/>
-                <circle cx="0" cy="${SY + 3}" r="1" fill="${C.glow}"/>
+                <path d="${stem}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
+                <path d="${stem}" fill="url(#${id}-stemV)"/>
+                <path d="M1.6 ${S - 0.8}L2.6 ${S - 7.4}" stroke="${Am[2]}" stroke-width="0.6" stroke-opacity="0.8" stroke-linecap="round"/>
+                <path d="M-1.9 ${S - 1}L-2.9 ${S - 7}" stroke="#ffffff" stroke-width="0.7" stroke-linecap="round"/>
+                <g class="bsm-gem" transform="${Fr.gemSpin}">
+                    <path d="${gem}${setting}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
+                    <path d="${gem}" fill="url(#${id}-ame)"/>
+                    <path d="M-7 ${GR}L-5.6 ${GS}L0 ${GT}L-2.2 ${GR}Z" fill="${Am[3]}" fill-opacity="0.5"/>
+                    <path d="M2.2 ${GR}L5.6 ${GS}L7 ${GR}Z" fill="${Am[0]}" fill-opacity="0.4"/>
+                    <path d="M2.2 ${GR}L7 ${GR}L5 ${G0}L0 ${G0}Z" fill="${Am[0]}" fill-opacity="0.35"/>
+                    <path d="${gemLines}" fill="none" stroke="${Am[3]}" stroke-width="0.5" stroke-opacity="0.9"/>
+                    <path d="${setting}" fill="url(#${id}-gold)"/>
+                    <path d="M-5 ${S - 9.4}H4" stroke="${Au[4]}" stroke-width="0.6"/>
+                    <!-- Золотые крапаны держат камень. -->
+                    <path d="M-5.4 ${S - 10.6}L-6.6 ${GR - 1.5}M5.4 ${S - 10.6}L6.6 ${GR - 1.5}" stroke="${Au[2]}" stroke-width="1.4" stroke-linecap="round"/>
+                    <path d="M-3.6 ${GS + 1}L-1.2 ${GT + 4}" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-opacity="0.9"/>
+                    <path d="${star4(2.4, 0.3)}" transform="translate(-1.8 ${GS - 1})" fill="#ffffff"/>
+                </g>
             </g>
+        </g>
         </g>`;
     },
 
@@ -332,29 +636,39 @@ const BATH_SOAP = {
     applyFrame(root, Fr) {
         let c = this.live.cache.get(root);
         if (!c) {
-            const q = (sel) => Array.from(root.querySelectorAll(sel));
-            c = { stopper: root.querySelector('.bsm-stopper'), halo: root.querySelector('.bsm-halo'),
-                  neb: root.querySelector('.bsm-neb'), head: root.querySelector('.bsm-head'),
-                  aura: root.querySelector('.bsm-aura'), stars: q('.bsm-star'), segs: q('.bsm-seg').reverse(),
-                  bubs: q('.bsm-bub'), sparks: q('.bsm-spark') };
-            c.bubC = c.bubs.map(g => g.firstChild);
+            const one = (s) => root.querySelector(s), all = (s) => Array.from(root.querySelectorAll(s));
+            c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
+                  vapor: one('.bsm-vapor'), halo: one('.bsm-halo'), nebA: one('.bsm-nebA'), nebB: one('.bsm-nebB'),
+                  gal: one('.bsm-gal'), sweep: one('.bsm-sweep'), head: one('.bsm-head'), aura: one('.bsm-aura'),
+                  tw: all('.bsm-tw'), segs: all('.bsm-seg').reverse(), trail: all('.bsm-trail'),
+                  bubs: all('.bsm-bub'), sparks: all('.bsm-spark') };
+            c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);
             this.live.cache.set(root, c);
         }
         const set = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
         set(c.stopper, 'transform', Fr.stopper);
+        set(c.gem, 'transform', Fr.gemSpin);
+        set(c.ring, 'transform', Fr.ringScale);
+        set(c.ringd, 'stroke-dashoffset', Fr.ringDash);
+        set(c.vapor, 'fill-opacity', Fr.vapor);
         set(c.halo, 'transform', Fr.halo);
-        set(c.neb, 'transform', Fr.neb);
+        set(c.nebA, 'fill-opacity', Fr.nebA);
+        set(c.nebB, 'fill-opacity', Fr.nebB);
+        set(c.gal, 'transform', `rotate(${Fr.gal})`);
+        set(c.sweep, 'transform', Fr.sweep);
         set(c.head, 'transform', Fr.head);
         set(c.aura, 'cx', Fr.aura.x); set(c.aura, 'cy', Fr.aura.y);
-        c.stars.forEach((el, i) => set(el, 'fill-opacity', Fr.stars[i]));
+        c.tw.forEach((el, i) => set(el, 'fill-opacity', Fr.twinkle[i]));
         c.segs.forEach((el, i) => { set(el, 'cx', Fr.segs[i].x); set(el, 'cy', Fr.segs[i].y); });
+        c.trail.forEach((el, i) => { set(el, 'cx', Fr.trail[i].x); set(el, 'cy', Fr.trail[i].y); });
         c.sparks.forEach((el, i) => { set(el, 'transform', Fr.sparks[i].tr); set(el, 'fill-opacity', Fr.sparks[i].o); });
         c.bubs.forEach((g, i) => {
-            const b = Fr.bubs[i], ci = c.bubC[i];
+            const b = Fr.bubs[i], [ci, st] = c.bubParts[i];
             set(g, 'transform', `translate(${b.x} ${b.y})`);
             set(ci, 'r', b.r);
-            set(ci, 'fill-opacity', (b.o * 0.5).toFixed(2));
+            set(ci, 'fill-opacity', (b.o * 0.45).toFixed(2));
             set(ci, 'stroke-opacity', b.o);
+            set(st, 'fill-opacity', b.pop);
         });
     },
 
