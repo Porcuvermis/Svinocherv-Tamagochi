@@ -212,7 +212,10 @@ const LustShop = {
         const next = kind === 'soap' ? BATH_SOAP.level() + 1 : 0;
         const box = kind === 'soap' ? BATH_SOAP.box(next) : BATH_ART.box(kind);
         const k = 56 / Math.max(box.w, box.h);
-        return `<g transform="scale(${k.toFixed(3)}) translate(${-a.x} ${-a.y})">`
+        // Мыло центрируется по своему габариту, а не по гнезду: высокие
+        // флаконы растут от гнезда вверх, и по гнезду верх уходил за клетку.
+        const cx = kind === 'soap' ? box.x + box.w / 2 : a.x, cy = kind === 'soap' ? box.y + box.h / 2 : a.y;
+        return `<g transform="scale(${k.toFixed(3)}) translate(${-cx} ${-cy})">`
              + (kind === 'soap' ? BATH_SOAP.draw(next) : BATH_BAKED.draw(kind)) + `</g>`;
     },
 

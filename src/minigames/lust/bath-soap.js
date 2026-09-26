@@ -52,7 +52,7 @@ const BATH_SOAP = {
         if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
         if (kind === 'elixir') return { x: 548, y: 270, w: 62, h: 106 };
         if (kind === 'flask') return { x: 544, y: 280, w: 60, h: 96 };
-        if (kind === 'magic') return { x: 548, y: 262, w: 54, h: 114 };
+        if (kind === 'magic') return { x: 540, y: 180, w: 68, h: 196 };
         return BATH_BAKED.box('soap');
     },
 
@@ -114,9 +114,14 @@ const BATH_SOAP = {
         STOP: -60,                      // низ хвостовика пробки
         // Тело поднято над сеткой корзины на ножке: сетка закрывает нижние 17
         // единиц, и без подъёма пряталась треть луковицы. Всё, кроме ножки,
-        // сдвинуто на LIFT, а флакон целиком чуть ужат, чтобы камень не
-        // улетал далеко выше стоек этажерки.
-        LIFT: 7, SCALE: 0.92,
+        // сдвинуто на LIFT. Флакон крупный — в полтора раза больше своих
+        // единиц: внутри живёт космос, и в масштабе 0.92 его было не
+        // разглядеть (решение игрока: вершина лестницы может стоять выше стоек).
+        LIFT: 7, SCALE: 1.5,
+        // Глубина: насколько сдвигаются слои космоса при полном наклоне.
+        // Дальний сильнее ближнего — разница скоростей и читается объёмом;
+        // галактика и дух стоят на месте, то есть «у самого стекла».
+        PLX: { far: 11, near: 4.5 },
         // Дух кружит по орбите вокруг галактики, как спутник. Восьмёркой он
         // нырял в золотую чашу и закрывал галактику собой. Орбита ниже
         // поверхности (уши её не пробивают) и выше чаши.
@@ -146,6 +151,11 @@ const BATH_SOAP = {
         out.nebA = (0.55 + 0.4 * Math.sin(t * 0.7)).toFixed(2);
         out.nebB = (0.55 - 0.4 * Math.sin(t * 0.7)).toFixed(2);
         out.gal = ((t * 14) % 360).toFixed(1);
+        // Глубина: сдвиг ПРОТИВ наклона — окно повернули, и за ним видно
+        // другую часть космоса. Наклон приходит сглаженным из wake().
+        const L = this.live;
+        out.far = `translate(${f2(-L.px * M.PLX.far)} ${f2(-L.py * M.PLX.far)})`;
+        out.near = `translate(${f2(-L.px * M.PLX.near)} ${f2(-L.py * M.PLX.near)})`;
         out.twinkle = [];
         for (let i = 0; i < M.TWINKLE; i++) out.twinkle.push((0.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + i * 2.1))).toFixed(2));
         out.sparks = M.SPARKS.map(([x, y, r], i) => {
@@ -275,17 +285,38 @@ const BATH_SOAP = {
         const empty = `M-30 -40H30V${f(steps[steps.length - 1][1])}` + steps.slice().reverse().map(p => 'L' + pt(p)).join('') + 'Z';
 
         // ---------- космос ----------
-        let stars = '', tw = '';
-        for (let i = 0; i < 26; i++) {
-            const x = -17 + rnd() * 34, y = LV + 2 + rnd() * 30, r = 0.22 + rnd() * 0.45;
-            stars += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${(0.4 + rnd() * 0.5).toFixed(2)}"/>`;
-        }
+        // Звёзды и туманность лежат не во флаконе, а ЗА НИМ: два слоя больше
+        // полости, видные только сквозь неё и сдвигаемые наклоном телефона
+        // (эффект глубины). Во флаконе остаются лишь галактика и дух — они
+        // неподвижны, то есть у самого стекла. Звёзд внутри флакона нет
+        // вовсе: неподвижные спорили бы с движущимися, и глубина пропадала.
+        // Слои с запасом на полный сдвиг: край не должен показаться никогда.
         const star4 = (r, w) => `M0 ${-r}Q${w} ${-w} ${r} 0Q${w} ${w} 0 ${r}Q${-w} ${w} ${-r} 0Q${-w} ${-w} 0 ${-r}Z`;
-        const TW = [[-13, -12, 1.3], [12, -1, 1.1], [-7, 5, 0.9], [15, -14, 0.8], [4, -17, 1], [-16, -2, 0.8], [8, 8, 0.8], [-3, -9, 0.7], [16, 4, 0.7]];
-        TW.forEach(([x, y, r], i) => {
-            tw += `<g transform="translate(${x} ${y})"><path class="bsm-tw" d="${star4(r * 2.2, r * 0.26)}" fill="${C.glow}" fill-opacity="${Fr.twinkle[i]}"/>`
-                + `<circle r="${f(r * 0.45)}" fill="${C.glow}"/></g>`;
-        });
+        let far = `<g class="bsm-nebA" fill-opacity="${Fr.nebA}">
+                <ellipse cx="-10" cy="-8" rx="26" ry="9" fill="url(#${id}-pink)" transform="rotate(-26 -10 -8)"/>
+                <ellipse cx="14" cy="8" rx="18" ry="7" fill="url(#${id}-pink)" transform="rotate(22 14 8)"/>
+            </g>
+            <g class="bsm-nebB" fill-opacity="${Fr.nebB}">
+                <ellipse cx="12" cy="-14" rx="24" ry="8" fill="url(#${id}-cyan)" transform="rotate(16 12 -14)"/>
+                <ellipse cx="-14" cy="10" rx="20" ry="7" fill="url(#${id}-cyan)" transform="rotate(-14 -14 10)"/>
+            </g>
+            <!-- Пылевые прожилки: темнее основы — дают туманности глубину. -->
+            <path d="M-38 -4C-24 -10 -12 2 2 -4S24 -14 38 -8M-34 12C-20 6 -4 18 12 11S30 6 38 12M-36 -24C-22 -30 -8 -20 8 -26"
+                  fill="none" stroke="${C.dust}" stroke-width="2.6" stroke-opacity="0.35" stroke-linecap="round"/>`;
+        for (let i = 0; i < 230; i++) {
+            const x = -40 + rnd() * 80, y = -52 + rnd() * 84, r = 0.2 + rnd() * 0.42;
+            far += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${C.glow}" fill-opacity="${(0.35 + rnd() * 0.6).toFixed(2)}"/>`;
+        }
+        // Ближний слой: блёстки — крупнее, разного цвета, с лучами. Первые
+        // TWINKLE мерцают.
+        const GL = [C.glow, C.core, C.cyan, C.blush, C.prism[1], C.glow];
+        let near = '';
+        for (let i = 0; i < 34; i++) {
+            const x = -34 + rnd() * 68, y = -44 + rnd() * 68, r = 0.7 + rnd() * 1.2;
+            const tw = i < M.TWINKLE;
+            near += `<g transform="translate(${f(x)} ${f(y)})"><path ${tw ? 'class="bsm-tw" ' : ''}d="${star4(r * 2, r * 0.22)}" fill="${GL[i % GL.length]}" fill-opacity="${tw ? Fr.twinkle[i] : '0.85'}"/>`
+                  + `<circle r="${f(r * 0.4)}" fill="#ffffff"/></g>`;
+        }
         // Галактика: две спиральные ветви в наклоне.
         const arm = (a0) => {
             let d = '';
@@ -339,7 +370,7 @@ const BATH_SOAP = {
         // оправой драгоценности. Край лепестков — по дуге (ближний выше),
         // бока идут по силуэту тела чуть снаружи.
         const calR = (y) => { for (let i = 0; i < R.length - 1; i++) { const [y0, r0] = R[i], [y1, r1] = R[i + 1]; if (y <= y0 && y >= y1) return r0 + (r1 - r0) * (y - y0) / (y1 - y0); } return R[0][1]; };
-        const CT = 5, PET = 5;
+        const CT = 8.5, PET = 5;   // чаша низко: выше она закрывала треть космоса
         let calyx = `M${f(-calR(CT) - 0.8)} ${CT + 1}`;
         for (let i = 0; i < PET; i++) {
             const a0 = -Math.PI / 2 + Math.PI * i / PET, a1 = -Math.PI / 2 + Math.PI * (i + 1) / PET, am = (a0 + a1) / 2;
@@ -499,17 +530,9 @@ const BATH_SOAP = {
             <path d="${body}" fill="${C.crystal}" fill-opacity="0.55"/>
             <path d="${cav}" fill="url(#${id}-deep)"/>
             <g clip-path="url(#${id}-cav)">
-                <g class="bsm-nebA" fill-opacity="${Fr.nebA}">
-                    <ellipse cx="-8" cy="-6" rx="14" ry="7" fill="url(#${id}-pink)" transform="rotate(-28 -8 -6)"/>
-                    <ellipse cx="10" cy="7" rx="10" ry="5" fill="url(#${id}-pink)" transform="rotate(24 10 7)"/>
-                </g>
-                <g class="bsm-nebB" fill-opacity="${Fr.nebB}">
-                    <ellipse cx="9" cy="-9" rx="13" ry="6" fill="url(#${id}-cyan)" transform="rotate(18 9 -9)"/>
-                    <ellipse cx="-9" cy="8" rx="11" ry="5" fill="url(#${id}-cyan)" transform="rotate(-15 -9 8)"/>
-                </g>
-                <!-- Пылевые прожилки: темнее основы — дают туманности глубину. -->
-                <path d="M-19 -1C-11 -5 -4 3 4 -1S15 -8 20 -4M-16 10C-8 6 0 13 9 8" fill="none" stroke="${C.dust}" stroke-width="2.4" stroke-opacity="0.35" stroke-linecap="round"/>
-                ${stars}
+                <!-- Космос за стеклом: два слоя глубины. -->
+                <g class="bsm-far" transform="${Fr.far}">${far}</g>
+                <g class="bsm-near" transform="${Fr.near}">${near}</g>
                 <!-- Галактика в наклоне. -->
                 <g transform="translate(${GX} ${GY}) rotate(-22) scale(1 0.45)">
                     <g class="bsm-gal" transform="rotate(${Fr.gal})">
@@ -518,7 +541,6 @@ const BATH_SOAP = {
                     </g>
                 </g>
                 <ellipse cx="${GX}" cy="${GY}" rx="5.5" ry="3" fill="url(#${id}-core)" transform="rotate(-22 ${GX} ${GY})"/>
-                ${tw}
                 <!-- Дух свиночервя. -->
                 <circle class="bsm-aura" cx="${Fr.aura.x}" cy="${Fr.aura.y}" r="13" fill="url(#${id}-aura)"/>
                 ${trail}
@@ -608,7 +630,15 @@ const BATH_SOAP = {
     },
 
     // ---------- живость флакона ----------
-    live: { raf: 0, last: 0, cache: new WeakMap() },
+    live: { raf: 0, last: 0, px: 0, py: 0, cache: new WeakMap() },
+
+    // Наклон для глубины. Датчика нет (компьютер, отказ в разрешении) —
+    // слой медленно плывёт сам, чтобы флакон не выглядел плоским.
+    lean(t) {
+        const T = typeof Tilt !== 'undefined' && Tilt.lean ? Tilt.lean() : null;
+        if (T && T.live) return { x: T.x, y: T.y };
+        return { x: 0.55 * Math.sin(t * 0.35), y: 0.4 * Math.sin(t * 0.23) };
+    },
 
     // Проснуться: цикл нужен, пока на экране есть живой флакон. Зовётся из
     // draw, поэтому узлы появятся чуть позже — первый кадр подождёт.
@@ -620,6 +650,9 @@ const BATH_SOAP = {
             // 30 кадров хватает: флакон — украшение, а не игра.
             if (now - this.live.last >= 33) {
                 this.live.last = now;
+                const L = this.lean(now / 1000), k = 0.2;
+                this.live.px += (L.x - this.live.px) * k;
+                this.live.py += (L.y - this.live.py) * k;
                 const Fr = this.magicFrame(now / 1000);
                 roots.forEach(r => this.applyFrame(r, Fr));
             }
@@ -639,7 +672,7 @@ const BATH_SOAP = {
             const one = (s) => root.querySelector(s), all = (s) => Array.from(root.querySelectorAll(s));
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
                   vapor: one('.bsm-vapor'), halo: one('.bsm-halo'), nebA: one('.bsm-nebA'), nebB: one('.bsm-nebB'),
-                  gal: one('.bsm-gal'), sweep: one('.bsm-sweep'), head: one('.bsm-head'), aura: one('.bsm-aura'),
+                  gal: one('.bsm-gal'), far: one('.bsm-far'), near: one('.bsm-near'), sweep: one('.bsm-sweep'), head: one('.bsm-head'), aura: one('.bsm-aura'),
                   tw: all('.bsm-tw'), segs: all('.bsm-seg').reverse(), trail: all('.bsm-trail'),
                   bubs: all('.bsm-bub'), sparks: all('.bsm-spark') };
             c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);
@@ -655,6 +688,8 @@ const BATH_SOAP = {
         set(c.nebA, 'fill-opacity', Fr.nebA);
         set(c.nebB, 'fill-opacity', Fr.nebB);
         set(c.gal, 'transform', `rotate(${Fr.gal})`);
+        set(c.far, 'transform', Fr.far);
+        set(c.near, 'transform', Fr.near);
         set(c.sweep, 'transform', Fr.sweep);
         set(c.head, 'transform', Fr.head);
         set(c.aura, 'cx', Fr.aura.x); set(c.aura, 'cy', Fr.aura.y);

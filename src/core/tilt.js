@@ -32,6 +32,13 @@ const Tilt = (function () {
     const RAD_LIMIT = 3.2;      // больше π — значит это точно не радианы
 
     let raw = 0;        // −1..1, уже приведённое к долям
+    // Наклон вперёд-назад (beta). Его «ноль» — не горизонт, а то, как игрок
+    // держит телефон: кто-то лёжа, кто-то сидя, под 30° или под 70°. Поэтому
+    // отдаётся ОТКЛОНЕНИЕ от медленно ползущей средней: держишь ровно —
+    // ноль, качнул — видно, продолжаешь держать по-новому — через несколько
+    // секунд снова ноль. Так делает и эффект глубины на обоях айфона.
+    let rawY = 0, baseY = null;
+    const BASE_K = 0.006;      // ~3 с на подстройку при 60 событиях в секунду
     let smooth = 0;
     let live = false;
     let unit = null;    // 'deg' | 'rad' | null пока не решили
@@ -57,7 +64,15 @@ const Tilt = (function () {
         live = true;
     }
 
-    function onOrient(e) { if (e) feed(e.gamma); }
+    function feedY(v) {
+        if (typeof v !== 'number' || !isFinite(v) || unit === null) return;
+        const deg = unit === 'rad' ? v * 180 / Math.PI : v;
+        if (baseY === null) baseY = deg;
+        baseY += (deg - baseY) * BASE_K;
+        rawY = Math.max(-1, Math.min(1, (deg - baseY) / FULL_DEG));
+    }
+
+    function onOrient(e) { if (e) { feed(e.gamma); feedY(e.beta); } }
 
     function listenWeb(tag) {
         if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -92,6 +107,13 @@ const Tilt = (function () {
             return smooth;
         },
 
+        // Обе оси сразу и БЕЗ сглаживания: x() сглаживает при каждом вызове,
+        // и второй потребитель ускорил бы его для первого. Кто берёт lean(),
+        // сглаживает у себя. y > 0 — верх телефона пошёл к игроку.
+        lean() {
+            return { live: live && unit !== null, x: raw, y: rawY };
+        },
+
         // Для debug-панели: откуда пришёл наклон и что с ним сейчас. Панель —
         // не игра, слова там разрешены.
         info() {
@@ -109,7 +131,7 @@ const Tilt = (function () {
             if (!dev || typeof dev.start !== 'function') return false;
             try {
                 if (app.onEvent) {
-                    app.onEvent('deviceOrientationChanged', () => feed(dev.gamma));
+                    app.onEvent('deviceOrientationChanged', () => { feed(dev.gamma); feedY(dev.beta); });
                     // Не вышло — не беда: остаётся обычное событие, оно уже
                     // подписано. Молчать об этом нельзя только в debug-панели.
                     app.onEvent('deviceOrientationFailed', () => { source += ' (Telegram отказал)'; });
