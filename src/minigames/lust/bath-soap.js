@@ -110,13 +110,6 @@ function bathSkyPaint(mk, a) {
 
     // ---- ближний слой (прозрачный): яркие звёзды со свечением и иглами ----
     const [near, gn] = canvas(T.px);
-    // Иглы — крест из тонких ромбов, сужающихся к концам: длинная бледная
-    // пара и короткая яркая, так луч гаснет без градиента.
-    const needle = (x, y, L, w, rot, al) => {
-        gn.save(); gn.translate(x, y); gn.rotate(rot); gn.fillStyle = rgba('#ffffff', al);
-        gn.beginPath(); gn.moveTo(-L, 0); gn.lineTo(0, -w); gn.lineTo(L, 0); gn.lineTo(0, w); gn.closePath();
-        gn.moveTo(0, -L); gn.lineTo(w, 0); gn.lineTo(0, L); gn.lineTo(-w, 0); gn.closePath(); gn.fill(); gn.restore();
-    };
     const glows = ['#ffffff', C.glow, C.cyan, C.core, C.blush];
     for (let i = 0; i < 260; i++) {
         const x = X0 + rnd() * T.w, y = Y0 + rnd() * T.h;
@@ -125,9 +118,17 @@ function bathSkyPaint(mk, a) {
         blob(gn, x, y, r * (bright ? 8 : 5.5), glows[Math.floor(rnd() * glows.length)], bright ? 0.55 : 0.4);
         gn.globalCompositeOperation = 'source-over';
         if (bright) {
-            const L = 5 + rnd() * 5, rot = (rnd() - 0.5) * 0.35;
-            needle(x, y, L, Math.max(0.09, L * 0.018), rot, 0.45);
-            needle(x, y, L * 0.42, Math.max(0.14, L * 0.035), rot, 0.9);
+            // Лучи короткие и гаснут к концам градиентом — длинные иглы с
+            // резким концом торчали палками.
+            const L = 3 + rnd() * 3, rot = (rnd() - 0.5) * 0.35;
+            gn.save(); gn.translate(x, y); gn.rotate(rot);
+            for (const [ax, ay] of [[1, 0], [0, 1]]) {
+                const gr = gn.createLinearGradient(-L * ax, -L * ay, L * ax, L * ay);
+                gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+                gn.fillStyle = gr; gn.beginPath();
+                gn.ellipse(0, 0, ax ? L : 0.18, ay ? L : 0.18, 0, 0, Math.PI * 2); gn.fill();
+            }
+            gn.restore();
         }
         gn.fillStyle = '#ffffff'; gn.beginPath(); gn.arc(x, y, r, 0, Math.PI * 2); gn.fill();
     }
@@ -215,7 +216,7 @@ const BATH_SOAP = {
     //
     // ГЛУБИНА: звёзды и туманность лежат ЗА стеклом двумя слоями, видны
     // только сквозь полость и сдвигаются против наклона телефона (дальний
-    // сильнее ближнего). Неподвижна только галактика — она «у стекла».
+    // сильнее ближнего).
     // Линза в центре — увеличительное стекло: за ней те же слои, но крупнее
     // и со своим сдвигом, как у настоящей линзы.
     //
@@ -403,7 +404,6 @@ onmessage = async (e) => {
         out.ringDash = f2(-(t * 9) % 40);
         out.ringScale = `translate(0 ${M.STOP + 3}) scale(${(1 + 0.05 * Math.sin(t * 3)).toFixed(3)}) translate(0 ${-(M.STOP + 3)})`;
         out.vapor = (0.55 + 0.25 * Math.sin(t * 2.2)).toFixed(2);
-        out.gal = ((t * 12) % 360).toFixed(1);
         out.twinkle = [];
         for (let i = 0; i < M.TWINKLE; i++) out.twinkle.push((0.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + i * 2.1))).toFixed(2));
         // Вспышка по огранке: раз в 5 с проходит слева направо за 1.2 с.
@@ -460,7 +460,9 @@ onmessage = async (e) => {
             const p = ol[(cyc * 7 + i * 11) % ol.length], life = u < 0.4 ? Math.sin(u / 0.4 * Math.PI) : 0;
             const nx = p[0], ny = p[1] - M.CY, nl = Math.hypot(nx, ny) || 1;
             out.glints.push({
-                tr: `translate(${f2(p[0] + nx / nl * 1.5)} ${f2(p[1] + ny / nl * 1.5)}) rotate(${f2(u * 90)}) scale(${(0.05 + life).toFixed(3)})`,
+                // На самом стекле (чуть внутрь контура): снаружи вспышка
+                // висела в воздухе.
+                tr: `translate(${f2(p[0] - nx / nl * 1.2)} ${f2(p[1] - ny / nl * 1.2)}) rotate(${f2(u * 40)}) scale(${(0.05 + life).toFixed(3)})`,
                 o: f2(life)
             });
         }
@@ -493,10 +495,12 @@ onmessage = async (e) => {
         // сужающихся к концам. Длинная бледная пара и короткая яркая — так
         // луч гаснет к концу без градиента. Звёздочка из кривых (star4) у
         // центра толстая по самой форме и читалась мультяшным ромбом.
-        const needle = (L, w) => `M${-L} 0L0 ${-w}L${L} 0L0 ${w}ZM0 ${-L}L${w} 0L0 ${L}L${-w} 0Z`;
-        const flare = (L, col, o) =>
-            `<path d="${needle(L, Math.max(0.1, L * 0.022))}" fill="${col}" fill-opacity="${(0.5 * o).toFixed(2)}"/>`
-          + `<path d="${needle(L * 0.42, Math.max(0.16, L * 0.04))}" fill="${col}" fill-opacity="${(0.95 * o).toFixed(2)}"/>`;
+        // Блик — МЯГКИЙ крест: два узких эллипса с радиальной заливкой по
+        // собственной рамке, гаснущие ко всем краям. Иглы-ромбы с острым
+        // концом висели в воздухе палками (замечание игрока). Прозрачность
+        // не задаётся — наследуется от группы, чтобы её можно было оживлять.
+        const flare = (L) => `<ellipse rx="${f(L)}" ry="${f(Math.max(0.35, L * 0.1))}" fill="url(#${id}-soft)"/>`
+            + `<ellipse rx="${f(Math.max(0.35, L * 0.1))}" ry="${f(L)}" fill="url(#${id}-soft)"/>`;
         // Где луч из точки упирается в силуэт.
         const hit = (pts, ox, oy, a) => {
             const dx = Math.cos(a), dy = Math.sin(a);
@@ -580,25 +584,18 @@ onmessage = async (e) => {
         const layer0 = (k) => this.layerTr(this.worldMatrix(null), k);
 
         // ---------- убранство вокруг ----------
-        // Лучи — тонкие клинья от центра, разной длины и ширины: ровный
-        // частокол читался бы колесом.
-        const wedge = (a, L, w) => { const c = Math.cos(a), sn = Math.sin(a), c1 = Math.cos(a - w), s1 = Math.sin(a - w), c2 = Math.cos(a + w), s2 = Math.sin(a + w);
-            return `M${f(c * 6)} ${f(sn * 6)}L${f(c1 * L)} ${f(s1 * L)}Q${f(c * L * 1.04)} ${f(sn * L * 1.04)} ${f(c2 * L)} ${f(s2 * L)}Z`; };
-        // Луч мягкий: три клина одной оси — широкий бледный ореол, средний и
-        // узкое яркое ядро. Один клин с резкими краями читался нарисованным
-        // «солнечным веером».
-        const soft = [[2.4, 0.18], [1.3, 0.35], [0.45, 0.9]];
-        const rays1 = soft.map(() => []), rays2 = soft.map(() => []);
+        // Луч — не клин, а СВЕТОВОЙ ЛЕПЕСТОК: вытянутый эллипс с радиальной
+        // заливкой по своей рамке и фокусом у флакона. Он гаснет ко всем
+        // краям, поэтому не имеет контура вовсе. Клинья с прямыми краями —
+        // даже мягкие, из трёх слоёв — висели в воздухе палками.
+        const beam = (a, L, w) => `<ellipse cx="${f(L * 0.46)}" rx="${f(L * 0.54)}" ry="${f(w)}" transform="rotate(${f(a * 180 / Math.PI)})"/>`;
+        let rays1 = '', rays2 = '';
         for (let i = 0; i < M.RAYS; i++) {
             const a = 2 * Math.PI * i / M.RAYS;
-            const L1 = 54 + (i % 3) * 12 + rnd() * 8, w1 = 0.03 + rnd() * 0.03;
-            const L2 = 42 + (i % 2) * 12 + rnd() * 8, w2 = 0.025 + rnd() * 0.025;
-            soft.forEach(([k], j) => {
-                rays1[j].push(wedge(a, L1 * (1 - j * 0.04), w1 * k));
-                rays2[j].push(wedge(a + Math.PI / M.RAYS, L2 * (1 - j * 0.04), w2 * k));
-            });
+            rays1 += beam(a + (rnd() - 0.5) * 0.2, 58 + (i % 3) * 12 + rnd() * 10, 3.2 + rnd() * 2.4);
+            rays2 += beam(a + Math.PI / M.RAYS + (rnd() - 0.5) * 0.2, 44 + (i % 2) * 12 + rnd() * 8, 2.6 + rnd() * 1.8);
         }
-        const raysSvg = (arr) => arr.map((ds, j) => `<path d="${ds.join('')}" fill-opacity="${soft[j][1]}"/>`).join('');
+        const raysSvg = (x) => x;
         // Зайчик на кафеле: спектральная полоса с мягкими краями.
         const caus = M.CAUSTICS.map(([, , w, h], i) => `<g class="bsm-caus" transform="${Fr.caus[i].tr}" fill-opacity="${Fr.caus[i].o}">
                 <rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="url(#${id}-spec)"/>
@@ -610,31 +607,13 @@ onmessage = async (e) => {
           + (j === 0 ? `<circle r="5.5" fill="url(#${id}-${['mote', 'moteP', 'moteG'][i % 3]})"/><circle r="1" fill="#ffffff"/>` : `<circle r="${(3 - j * 0.6).toFixed(1)}" fill="url(#${id}-${['mote', 'moteP', 'moteG'][i % 3]})"/>`)
           + `</g>`).join('')).join('');
         const glints = Fr.glints.map(g => `<g class="bsm-glint" transform="${g.tr}" fill-opacity="${g.o}">
-                <circle r="6" fill="url(#${id}-mote)"/>
-                <path d="${needle(11, 0.35)}" fill="#ffffff"/>
-                <path d="${needle(5, 0.3)}" fill="#ffffff" transform="rotate(45)"/>
-                <circle r="1.1" fill="#ffffff"/>
+                <circle r="4.5" fill="url(#${id}-mote)"/>
+                ${flare(7)}
+                <circle r="0.9" fill="#ffffff"/>
             </g>`).join('');
         const dust = Fr.dust.map((d, i) => `<g class="bsm-dust" transform="${d.tr}" fill-opacity="${d.o}">
                 <circle r="2.6" fill="url(#${id}-${['mote', 'moteP', 'moteG'][i % 3]})"/><circle r="0.6" fill="#ffffff"/>
             </g>`).join('');
-        // Галактика: две спиральные ветви в наклоне, в центре линзы.
-        const arm = (a0) => {
-            let d = '';
-            for (let i = 0; i <= 28; i++) {
-                const rr = 1.3 + i * 0.36, a = a0 + i * 0.22;
-                d += (i ? 'L' : 'M') + f(rr * Math.cos(a)) + ' ' + f(rr * Math.sin(a));
-            }
-            return d;
-        };
-        const arms = arm(0) + arm(Math.PI);
-        const galaxy = `<g transform="translate(${LN.cx} ${LN.cy}) rotate(-22) scale(1 0.45)">
-                    <g class="bsm-gal" transform="rotate(${Fr.gal})">
-                        <path d="${arms}" fill="none" stroke="${C.pink}" stroke-width="2.6" stroke-opacity="0.4" stroke-linecap="round"/>
-                        <path d="${arms}" fill="none" stroke="${C.glow}" stroke-width="0.9" stroke-opacity="0.85" stroke-linecap="round"/>
-                    </g>
-                </g>
-                <ellipse cx="${LN.cx}" cy="${LN.cy}" rx="5.5" ry="3.1" fill="url(#${id}-core)" transform="rotate(-22 ${LN.cx} ${LN.cy})"/>`;
         const lensZ = `translate(${LN.cx} ${LN.cy}) scale(${LN.zoom}) translate(${-LN.cx} ${-LN.cy})`;
 
         // ---------- горло, воротник, пробка ----------
@@ -659,7 +638,7 @@ onmessage = async (e) => {
             `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><g transform="scale(${b.r})" fill-opacity="${b.o}" stroke-opacity="${b.o}">`
           + `<circle r="1" fill="url(#${id}-bubG)"/><circle r="0.94" fill="none" stroke="url(#${id}-bubRim)" stroke-width="0.14"/>`
           + `<ellipse cx="-0.38" cy="-0.42" rx="0.3" ry="0.16" fill="#ffffff" transform="rotate(-35 -0.38 -0.42)"/></g>`
-          + `<path d="${needle(3.4, 0.22)}" fill="${C.glow}" fill-opacity="${b.pop}"/></g>`).join('');
+          + `<g fill-opacity="${b.pop}">${flare(3.4)}</g></g>`).join('');
 
         // ---------- пьедестал: толстое дно с вертикальными насечками ----------
         const ped = `M-15.5 17H15.5L19.5 27L19 ${M.FLOOR}H-19L-19.5 27Z`;
@@ -689,11 +668,6 @@ onmessage = async (e) => {
                     <stop offset="0.45" stop-color="${c}" stop-opacity="0.16"/>
                     <stop offset="1" stop-color="${c}" stop-opacity="0"/>
                 </radialGradient>`).join('')}
-                <radialGradient id="${id}-core" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="${C.core}"/>
-                    <stop offset="0.35" stop-color="${C.core}" stop-opacity="0.7"/>
-                    <stop offset="1" stop-color="${C.pink}" stop-opacity="0"/>
-                </radialGradient>
                 <!-- Линза: край темнее (толщина выпуклого стекла), середина
                      светлее — так гладкое окно читается выпуклым. -->
                 <radialGradient id="${id}-lensV" gradientUnits="objectBoundingBox" cx="0.42" cy="0.38">
@@ -760,15 +734,22 @@ onmessage = async (e) => {
                     <stop offset="0.62" stop-color="${C.cyan}" stop-opacity="0.12"/>
                     <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
                 </radialGradient>
-                <radialGradient id="${id}-ray" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="78">
-                    <stop offset="0.15" stop-color="${C.cyan}" stop-opacity="0.8"/>
-                    <stop offset="0.5" stop-color="${Am[1]}" stop-opacity="0.35"/>
+                <!-- Лепесток света: радиальная заливка по своей рамке, фокус у
+                     флакона — ярко у основания, ноль на всей кромке. -->
+                <radialGradient id="${id}-ray" gradientUnits="objectBoundingBox" cx="0.5" cy="0.5" r="0.5" fx="0.1" fy="0.5">
+                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.55"/>
+                    <stop offset="0.45" stop-color="${Am[1]}" stop-opacity="0.22"/>
                     <stop offset="1" stop-color="${Am[1]}" stop-opacity="0"/>
                 </radialGradient>
-                <radialGradient id="${id}-rayP" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="66">
-                    <stop offset="0.15" stop-color="${C.pink}" stop-opacity="0.7"/>
-                    <stop offset="0.55" stop-color="${Am[1]}" stop-opacity="0.28"/>
+                <radialGradient id="${id}-rayP" gradientUnits="objectBoundingBox" cx="0.5" cy="0.5" r="0.5" fx="0.1" fy="0.5">
+                    <stop offset="0" stop-color="${C.pink}" stop-opacity="0.5"/>
+                    <stop offset="0.45" stop-color="${Am[1]}" stop-opacity="0.2"/>
                     <stop offset="1" stop-color="${Am[1]}" stop-opacity="0"/>
+                </radialGradient>
+                <radialGradient id="${id}-soft" gradientUnits="objectBoundingBox">
+                    <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+                    <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.55"/>
+                    <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
                 </radialGradient>
                 <radialGradient id="${id}-mote" gradientUnits="objectBoundingBox">
                     <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
@@ -836,7 +817,6 @@ onmessage = async (e) => {
                         <g class="bsm-far" transform="${layer0(M.PLX.far)}">${far}</g>
                         <g class="bsm-near" transform="${layer0(M.PLX.near)}">${near}</g>
                     </g>
-                    ${galaxy}
                     <ellipse cx="${LN.cx}" cy="${LN.cy}" rx="${LN.rx}" ry="${LN.ry}" fill="url(#${id}-lensV)"/>
                 </g>
                 <!-- Отсвет космоса по стенкам полости. -->
@@ -865,7 +845,7 @@ onmessage = async (e) => {
             <path d="M${LN.cx - LN.rx * 0.82} ${LN.cy - LN.ry * 0.3}Q${LN.cx - LN.rx * 0.7} ${LN.cy - LN.ry * 0.85} ${LN.cx - LN.rx * 0.15} ${LN.cy - LN.ry * 0.93}"
                   fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.9"/>
             <path d="${body}" fill="none" stroke="${C.glow}" stroke-width="0.7" stroke-opacity="0.7" stroke-linejoin="round"/>
-            ${[[-19, -12, 2.4], [-24, 4, 1.8], [12, -23, 1.6], [22, 9, 1.3]].map(([x, y, r]) => `<g transform="translate(${x} ${y})">${flare(r * 1.5, '#ffffff', 0.85)}<circle r="0.4" fill="#ffffff"/></g>`).join('')}
+            ${[[-19, -12, 2.4], [-24, 4, 1.8], [12, -23, 1.6], [22, 9, 1.3]].map(([x, y, r]) => `<g transform="translate(${x} ${y})" fill-opacity="0.85">${flare(r * 1.5)}<circle r="0.4" fill="#ffffff"/></g>`).join('')}
 
             <!-- ГОРЛО: стекло, высокий золотой воротник, хрустальный венчик. -->
             <path d="${neck}" fill="url(#${id}-neckV)"/>
@@ -909,7 +889,7 @@ onmessage = async (e) => {
                     <path d="M-5 ${S - 9.4}H4" stroke="${Au[4]}" stroke-width="0.6"/>
                     <path d="M-5.4 ${S - 10.6}L-6.6 ${GR - 1.5}M5.4 ${S - 10.6}L6.6 ${GR - 1.5}" stroke="${Au[2]}" stroke-width="1.4" stroke-linecap="round"/>
                     <path d="M-3.6 ${GS + 1}L-1.2 ${GT + 4}" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-opacity="0.9"/>
-                    <g transform="translate(-1.8 ${GS - 1})">${flare(3, '#ffffff', 1)}</g>
+                    <g transform="translate(-1.8 ${GS - 1})">${flare(3)}</g>
                 </g>
             </g>
         </g>`;
@@ -960,7 +940,7 @@ onmessage = async (e) => {
             // Слои космоса — в двух копиях (окно и линза), поэтому списками.
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
                   vapor: one('.bsm-vapor'),
-                  gal: one('.bsm-gal'), far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
+                  far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
                   aura: one('.bsm-aura'), rays1: one('.bsm-rays1'), rays2: one('.bsm-rays2'), caus: all('.bsm-caus'),
                   moteF: all('.bsm-mote-f'), moteB: all('.bsm-mote-b'), glints: all('.bsm-glint'), dust: all('.bsm-dust'),
                   tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
@@ -973,7 +953,6 @@ onmessage = async (e) => {
         set(c.ring, 'transform', Fr.ringScale);
         set(c.ringd, 'stroke-dashoffset', Fr.ringDash);
         set(c.vapor, 'fill-opacity', Fr.vapor);
-        set(c.gal, 'transform', `rotate(${Fr.gal})`);
         // Небо привязано к холсту: флакон двигается — окно едет по небу.
         const m = this.worldMatrix(root), P = this.MAGIC.PLX;
         const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
