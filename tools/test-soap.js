@@ -440,7 +440,10 @@ const harness = require('./harness');
     for (let i = 1; i <= 30; i++) L.growTo('soap', i / 30);
     L.glintBubble = o;
     // Плёнка — как её видит игрок: после растворения у глаз.
-    const film = L._grows.soap.film.getContext('2d');
+    // Муть — одним слоем, по пикселю на клетку карты: точка холста мытья
+    // переводится в клетку.
+    const Fl = L._grows.soap.film;
+    const film = { getImageData: (x, y) => ({ data: [0, 0, 0, 255 * Fl.a[Math.floor(y / Fl.S) * Fl.gw + Math.floor(x / Fl.S)]] }) };
     const ring = (ctx, e, k) => { let s = 0;
       for (let a = 0; a < 24; a++) { const t = a / 24 * Math.PI * 2;
         s += ctx.getImageData(Math.round(e.x + Math.cos(t) * e.rx * k), Math.round(e.y + Math.sin(t) * e.ry * k), 1, 1).data[3]; }
@@ -459,6 +462,43 @@ const harness = require('./harness');
         `пузыри на глазу лопнуты, рядом с глазом целые (на глазу ${eyes.map(e => e.onEye).join('/')}, рядом ${eyes.map(e => e.near).join('/')})`);
   check(eyes.every(e => e.fIn < 4 && e.fMid > e.fOut * 0.25 && e.fMid < e.fOut * 0.85),
         `плёнка тает с запасом до глаза, а не вырезана по нему (у края ${eyes.map(e => e.fIn.toFixed(0)).join('/')}, пояс ${eyes.map(e => e.fMid.toFixed(0)).join('/')}, снаружи ${eyes.map(e => e.fOut.toFixed(0)).join('/')})`);
+
+  // ================= 10б. МУТЬ РАЗЛИВАЕТСЯ ОДНИМ СЛОЕМ =================
+  // Муть не кладётся стопкой полупрозрачных кружков, а разливается из
+  // нескольких очагов, как пятно воды, пока не зальёт силуэт (замечание
+  // игрока). Меряется сам слой: на раннем этапе — несколько отдельных пятен
+  // (не одно и не россыпь), к концу — покрыт весь силуэт, а рост монотонный.
+  const spread = await page.evaluate(() => {
+    const L = LustMinigame;
+    L.growReset();
+    const Fl = L._grows.soap.film, out = [];
+    for (const p of [0.12, 0.5, 1]) {
+      for (let i = 1; i <= 20; i++) L.growTo('soap', (out.length ? [0.12, 0.5][out.length - 1] : 0) + (p - (out.length ? [0.12, 0.5][out.length - 1] : 0)) * i / 20);
+      const on = new Uint8Array(Fl.gw * Fl.gh);
+      let n = 0;
+      for (const k of Fl.cells) if (Fl.a[k] > 0.5 * Fl.dens[k] && Fl.dens[k] > 0.05) { on[k] = 1; n++; }
+      // Пятна — связные области (4-соседство), мелочь меньше десятка клеток
+      // не в счёт.
+      const seen = new Uint8Array(on.length); let blobs = 0;
+      for (let k = 0; k < on.length; k++) {
+        if (!on[k] || seen[k]) continue;
+        let size = 0; const st = [k]; seen[k] = 1;
+        while (st.length) { const q = st.pop(); size++;
+          const i = q % Fl.gw, j = (q / Fl.gw) | 0;
+          for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const a = i + di, b = j + dj, r = b * Fl.gw + a;
+            if (a >= 0 && b >= 0 && a < Fl.gw && b < Fl.gh && on[r] && !seen[r]) { seen[r] = 1; st.push(r); } } }
+        if (size >= 10) blobs++;
+      }
+      const live = Fl.cells.filter(k => Fl.dens[k] > 0.05).length;
+      out.push({ p, cover: n / Math.max(1, live), blobs });
+    }
+    return out;
+  });
+  say(`  разлив: ${spread.map(s => `${Math.round(s.p * 100)}% → покрыто ${(s.cover * 100).toFixed(0)}%, пятен ${s.blobs}`).join('; ')}`);
+  check(spread[0].blobs >= 2 && spread[0].blobs <= 12, `в начале муть — несколько отдельных очагов (${spread[0].blobs})`);
+  check(spread[0].cover < spread[1].cover && spread[1].cover < spread[2].cover, 'разлив растёт монотонно');
+  check(spread[2].cover > 0.97, `к концу залит весь силуэт (${(spread[2].cover * 100).toFixed(1)}%)`);
 
   // ================= 11. БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА =================
   // У каждого пузыря свой блик, он ходит от наклона ВНУТРИ своего пузыря

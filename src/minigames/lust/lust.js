@@ -185,6 +185,10 @@ const LustMinigame = {
         c.width = B.w * S; c.height = B.h * S;
         c.style.width = B.w + 'px'; c.style.height = B.h + 'px';
         this.washCtx = c.getContext('2d');
+        // Холсты мути — того же размера на экране, их точки — клетки карты
+        // (размер в точках ставит filmLayer).
+        const fl = this.el('bt-film');
+        if (fl) { fl.style.width = B.w + 'px'; fl.style.height = B.h + 'px'; }
         // Слои бликов — вдвое мельче холста мытья: блик — мягкая точка, резкость
         // ему не нужна, а память трёх полноразмерных слоёв на айфоне дорога.
         const gw = this.el('bt-glint');
@@ -708,6 +712,8 @@ const LustMinigame = {
         // Холст мытья — в тех же единицах, значит и преобразование то же.
         const w = this.el('bt-wash');
         if (w) w.style.transform = t;
+        const fl = this.el('bt-film');
+        if (fl) fl.style.transform = t;
         const gl = this.el('bt-glint');
         if (gl) gl.style.transform = t;
         // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
@@ -930,10 +936,10 @@ const LustMinigame = {
     },
 
     // ---------- СЛЕД НА ХОЛСТЕ ----------
-    // Видимый холст мытья — сумма выращенного: сперва плёнки (муть мыла,
-    // подложка пены мочалки; обе обрезаны силуэтом), поверх — пузыри (не
-    // обрезаны: выпуклые, у края тела торчат наружу). Пена мочалки ложится
-    // ПОВЕРХ мути — тем и видно, где уже оттёрто.
+    // Видимый холст мытья — пузыри мути и пены (не обрезаны: выпуклые, у
+    // края тела торчат наружу). Сами плёнки — своими холстами ПОД ним
+    // (filmLayer): пена мочалки ложится поверх мути — тем и видно, где уже
+    // оттёрто.
     composeWash() {
         const ctx = this.washCtx;
         if (!ctx) return;
@@ -944,7 +950,7 @@ const LustMinigame = {
         // силуэт уже лежат на плёнке (growTo). Сборка идёт на каждое движение
         // пальца, и каждый лишний проход по всему холсту здесь — это кадры
         // (на волшебном мыле их съедало видно глазу).
-        for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].film, 0, 0);
+        // Муть — не здесь: у неё свои холсты на странице (filmLayer).
         for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].foam, 0, 0);
     },
 
@@ -966,7 +972,8 @@ const LustMinigame = {
         const conf = BATH_ART.LATHER_GROW[kind] || BATH_ART.LATHER_GROW.soap;
         const W = this.mask.width, H = this.mask.height;
         const F = LatherGrow.field(this.maskAlpha, W, H, conf.seeds,
-                                   { seed: conf.seed, noise: conf.noise, speed: conf.speed });
+                                   { seed: conf.seed, noise: conf.noise, speed: conf.speed,
+                                     fine: conf.fine, fineGrain: conf.fineGrain });
         if (!F) return null;
         // Клетка пены — та же величина, что у прежней сетки: виды мути
         // подобраны под неё (BATH_ART.LATHER).
@@ -976,7 +983,7 @@ const LustMinigame = {
         const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
         const A = this.maskAlpha;
         const G = {
-            mask: this.mask, key, kind, look, F, cell, film: mk(), foam: mk(), idx: 0, p: 0,
+            mask: this.mask, key, kind, look, F, cell, film: this.filmLayer(F, look, kind, cell), foam: mk(), idx: 0, p: 0,
             sprites: LatherGrow.sprites(F, cell, { seed: conf.seed * 31 + 5, whip: kind === 'cloth' }),
             // Пузырь садится только на тело и НЕ на глаз: пузырь с центром
             // на глазу не рождается вовсе, как лопнутый пальцем. Соседние
@@ -1053,129 +1060,138 @@ const LustMinigame = {
         return out;
     },
 
-    // Маска плёнки у глаз: силуэт тела, растворённый у глаз. Строится один
-    // раз на тело (глаза снимаются вместе с маской тела). Накладывается
-    // только на мазки у глаза и ОДИН раз на мазок (growTo): наложение на
-    // весь холст плёнки на каждом шаге копилось — отсюда были «очки».
-    // Пузыри не трогает: их на глазу просто нет.
-    filmMask() {
-        const eyes = this.eyeSpots(), m = this.mask;
-        if (!eyes.length || !m) return null;
-        const c = this._eyeFade, W = m.width, H = m.height;
-        if (c && c._mask === m && c._eyes === eyes) return c;
-        const cv = c || document.createElement('canvas');
-        cv.width = W; cv.height = H; cv._eyes = eyes; cv._mask = m;
-        const g = cv.getContext('2d'), E = this.EYE_CLEAR;
-        g.drawImage(m, 0, 0);
-        g.globalCompositeOperation = 'destination-out';
-        for (const e of eyes) {
-            g.save();
-            g.translate(e.x, e.y);
-            g.scale(e.rx, e.ry);
-            const gr = g.createRadialGradient(0, 0, 0, 0, 0, E.outer);
-            gr.addColorStop(0, 'rgba(0,0,0,1)');
-            // Ступенька smoothstep по точкам: стёрто 1 − s(u).
-            for (let i = 0; i <= 8; i++) {
-                const u = i / 8, sm = u * u * (3 - 2 * u), r = E.inner + (E.outer - E.inner) * u;
-                gr.addColorStop(r / E.outer, `rgba(0,0,0,${(1 - sm).toFixed(3)})`);
-            }
-            g.fillStyle = gr;
-            g.beginPath(); g.arc(0, 0, E.outer, 0, Math.PI * 2); g.fill();
-            g.restore();
-        }
-        g.globalCompositeOperation = 'source-over';
-        this._eyeFade = cv;
-        return cv;
-    },
-
-    // Черновик для мазков плёнки у глаз — один на игру, всегда чистый между
-    // шагами роста.
-    filmScratch(W, H) {
-        const c = this._scratch = this._scratch || document.createElement('canvas');
-        if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
-        return c.getContext('2d');
-    },
-
     // Новый забег: выращенное стирается, карты остаются (тело то же).
     growReset() {
         this.glintClear();
         for (const G of Object.values(this._grows || {})) {
-            G.film.getContext('2d').clearRect(0, 0, G.film.width, G.film.height);
             G.foam.getContext('2d').clearRect(0, 0, G.foam.width, G.foam.height);
             G.idx = 0;
             G.p = 0;
+            this.filmUpdate(G, 0, true);
         }
     },
 
     // Показать этап p ∈ [0, 1]. Назад — только сбросом (рост монотонный).
+    // Муть — одним слоем по карте времени (filmUpdate), пузыри и мелочь
+    // поверх неё — частицами, чьё время пришло.
     growTo(kind, p) {
         const G = this.growth(kind);
         if (!G) return;
-        const fc = G.film.getContext('2d'), oc = G.foam.getContext('2d');
+        const oc = G.foam.getContext('2d');
         if (p < G.p) {
-            fc.clearRect(0, 0, G.film.width, G.film.height);
             oc.clearRect(0, 0, G.foam.width, G.foam.height);
             G.idx = 0;
         }
         const was = G.p;
         G.p = p;
-        let film = false, foam = false;
+        let foam = false;
         const tool = kind === 'cloth' ? 'cloth' : 'soap';
         const sink = (bx, by, r, pc) => this.glintBubble(G, bx, by, r, pc);
-        // Мазок плёнки у глаза рисуется на черновик и растворяется там ОДИН
-        // раз, остальные — прямо на плёнку. Силуэт и растворение — только по
-        // участку, куда легли новые мазки, а не по всему холсту: шаг роста
-        // идёт на каждое движение пальца.
-        const R = G.cell * 1.4, E = this.EYE_CLEAR;
-        const eyes = this.eyeSpots(), fm = eyes.length ? this.filmMask() : null;
-        const nearEye = (x, y) => eyes.some(e => Math.abs(x - e.x) < E.outer * e.rx + R && Math.abs(y - e.y) < E.outer * e.ry + R);
-        const box = () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
-        const grow = (b, x, y) => { b.x0 = Math.min(b.x0, x - R); b.y0 = Math.min(b.y0, y - R); b.x1 = Math.max(b.x1, x + R); b.y1 = Math.max(b.y1, y + R); };
-        const bf = box(), be = box();
-        let sc = null;
         while (G.idx < G.sprites.length && G.sprites[G.idx].t <= p) {
             const s = G.sprites[G.idx++];
-            let ctx = oc;
-            if (s.part === 'base') {
-                film = true;
-                if (fm && nearEye(s.x, s.y)) {
-                    if (!sc) sc = this.filmScratch(G.film.width, G.film.height);
-                    ctx = sc; grow(be, s.x, s.y);
-                } else { ctx = fc; grow(bf, s.x, s.y); }
-            } else foam = true;
-            BATH_ART.washCell(ctx, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
+            foam = true;
+            BATH_ART.washCell(oc, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
                               s.seed, s.part, G.inside, G.look, s.part === 'foam' ? sink : null);
         }
-        const clip = (b) => {
-            const x = Math.max(0, Math.floor(b.x0)), y = Math.max(0, Math.floor(b.y0));
-            const w = Math.min(G.film.width, Math.ceil(b.x1)) - x, h = Math.min(G.film.height, Math.ceil(b.y1)) - y;
-            return w > 0 && h > 0 ? [x, y, w, h] : null;
-        };
-        // destination-in действует на ВЕСЬ холст, а не на рамку рисунка:
-        // вне рамки он стирает всё. Поэтому наложение — под клипом рамки.
-        const maskIn = (ctx, m, r) => {
-            ctx.save();
-            ctx.beginPath(); ctx.rect(...r); ctx.clip();
-            ctx.globalCompositeOperation = 'destination-in';
-            ctx.drawImage(m, ...r, ...r);
-            ctx.restore();
-        };
-        // Маска силуэта двоичная (maskFromWorm): повторное наложение на уже
-        // обрезанное ничего не меняет — копиться нечему.
-        const cf = clip(bf);
-        if (cf) maskIn(fc, this.mask, cf);
-        // Растворение у глаз не двоичное — поэтому только на черновике, где
-        // лежат лишь новые мазки.
-        const ce = sc && clip(be);
-        if (ce) {
-            maskIn(sc, fm, ce);
-            fc.drawImage(sc.canvas, ...ce, ...ce);
-            sc.clearRect(...ce);
-        }
+        this.filmUpdate(G, p);
         if (foam) this.glintStart();
-        // Холст мытья собирается, только когда что-то дорисовалось — или
-        // когда слой впервые появился (p был 0).
-        if (film || foam || (was <= 0 && p > 0)) this.composeWash();
+        // Холст мытья собирается, только когда дорисовались пузыри — или
+        // когда слой впервые появился (p был 0). Муть его не трогает.
+        if (foam || (was <= 0 && p > 0)) this.composeWash();
+    },
+
+    // ---------- МУТЬ ОДНИМ СЛОЕМ ----------
+    // Муть не накладывается кружками, а РАЗЛИВАЕТСЯ: из нескольких очагов
+    // (семена карты роста) одним слоем, неровным краем, как колония в
+    // пробирке или вода при разливе с высоты, пока не зальёт весь силуэт
+    // (замечание игрока: стопка полупрозрачных кружков читалась дёшево).
+    // Карта времени уже есть — клетка заливается, когда её τ пришло.
+    //
+    // Как дёшево: картинка — по пикселю на клетку карты (120×160), цвет и
+    // густота каждой клетки считаются ОДИН раз (BATH_ART.filmCell), а шаг
+    // роста меняет только прозрачность и кладёт картинку целиком
+    // (putImageData маленького холста). Холст — свой на странице, и на
+    // экран его растягивает видеокарта со сглаживанием: край мягкий без
+    // единого градиента, а холст мытья не пересобирается. Первая версия
+    // рисовала слой В холст мытья — и пересобирала его на каждое движение
+    // пальца: кадров вышло меньше, чем у кружков (замер, 4× замедление).
+    //
+    // Силуэт — долей тела в клетке (крайние клетки полупрозрачны),
+    // глаза — растворением с запасом (EYE_CLEAR): всё это множитель густоты
+    // клетки, считается один раз, ничего не копится.
+    FILM_EDGE: 0.012,        // ширина мягкого края разлива, в долях этапа
+    filmLayer(F, look, kind, cell) {
+        const S = F.S, gw = F.gw, gh = F.gh, A = this.maskAlpha, W = F.W, H = F.H;
+        const eyes = kind === 'soap' || kind === 'cloth' ? this.eyeSpots() : [], E = this.EYE_CLEAR;
+        const col = new Uint8ClampedArray(gw * gh * 3);
+        const cells = [], tau = new Float32Array(gw * gh), dens = new Float32Array(gw * gh);
+        const at = (i, j) => (i >= 0 && j >= 0 && i < gw && j < gh && F.inside[j * gw + i]) ? F.tau[j * gw + i] : Infinity;
+        for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+            const k = j * gw + i;
+            // Доля тела в клетке — по 4×4 точкам маски: край силуэта мягкий,
+            // а не ступеньками клеток.
+            let inn = 0;
+            for (let v = 0; v < 4; v++) for (let u = 0; u < 4; u++) {
+                const px = Math.min(W - 1, i * S + ((u + 0.5) * S >> 2)), py = Math.min(H - 1, j * S + ((v + 0.5) * S >> 2));
+                if (A[py * W + px]) inn++;
+            }
+            if (!inn) continue;
+            // Время клетки на краю, чей центр мимо тела, — у соседа на теле.
+            let t = at(i, j);
+            if (t === Infinity) for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) t = Math.min(t, at(i + di, j + dj));
+            if (t === Infinity) continue;
+            const x = i * S + S / 2, y = j * S + S / 2;
+            let fe = 1;
+            for (const e of eyes) {
+                const q = Math.hypot((x - e.x) / e.rx, (y - e.y) / e.ry);
+                const u = Math.max(0, Math.min(1, (q - E.inner) / (E.outer - E.inner)));
+                fe *= u * u * (3 - 2 * u);
+            }
+            const fc = BATH_ART.filmCell(look, kind, x, y, cell), w = inn / 16 * fe;
+            col[k * 3] = fc[0]; col[k * 3 + 1] = fc[1]; col[k * 3 + 2] = fc[2];
+            dens[k] = fc[3] * w;
+            tau[k] = t;
+            cells.push(k);
+        }
+        return { col, cells, tau, dens, a: new Float32Array(gw * gh), gw, gh, S, p: -1 };
+    },
+
+    // Общий холст мути: подложка пены мочалки поверх мути мыла, смешанные
+    // в самой картинке (обычное «поверх» по клетке). Холст на странице один.
+    filmPaint() {
+        const g = this._grows || {}, S0 = g.soap && g.soap.film, C0 = g.cloth && g.cloth.film, any = S0 || C0;
+        const cv = this.el('bt-film');
+        if (!cv || !any) return;
+        if (cv.width !== any.gw || cv.height !== any.gh) { cv.width = any.gw; cv.height = any.gh; this._filmImg = null; }
+        const ctx = cv.getContext('2d');
+        const img = this._filmImg || (this._filmImg = ctx.createImageData(any.gw, any.gh)), d = img.data;
+        const n = any.gw * any.gh;
+        for (let k = 0; k < n; k++) {
+            const as = S0 ? S0.a[k] : 0, ac = C0 && C0.gw === any.gw ? C0.a[k] : 0;
+            const ao = ac + as * (1 - ac);
+            if (ao <= 0) { d[k * 4 + 3] = 0; continue; }
+            const ws = as * (1 - ac) / ao, wc = ac / ao;
+            for (let q = 0; q < 3; q++)
+                d[k * 4 + q] = (S0 ? S0.col[k * 3 + q] : 0) * ws + (ac ? C0.col[k * 3 + q] : 0) * wc;
+            d[k * 4 + 3] = 255 * ao;
+        }
+        ctx.putImageData(img, 0, 0);
+    },
+
+    // Разлить муть до этапа p. true — если картинка изменилась.
+    filmUpdate(G, p, force) {
+        const L = G.film;
+        if (!L) return false;
+        if (!force && Math.abs(p - L.p) < 0.0015 && !(p >= 1 && L.p < 1)) return false;
+        L.p = p;
+        const Ew = this.FILM_EDGE;
+        for (const k of L.cells) {
+            let u = (p - L.tau[k]) / Ew;
+            u = u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
+            L.a[k] = L.dens[k] * u;
+        }
+        this.filmPaint();
+        return true;
     },
 
     // ---------- БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА ----------
@@ -1491,7 +1507,7 @@ const LustMinigame = {
 
     // Муть, пена и их блики видны и гаснут ВМЕСТЕ: это один след на теле.
     washShown(on, fadeMs) {
-        for (const id of ['bt-wash', 'bt-glint']) {
+        for (const id of ['bt-film', 'bt-wash', 'bt-glint']) {
             const n = this.el(id);
             if (!n) continue;
             n.style.transition = fadeMs ? `opacity ${fadeMs / 1000}s ease` : '';

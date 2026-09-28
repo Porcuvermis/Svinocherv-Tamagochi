@@ -25,6 +25,16 @@ function btGrab(rx, ry, cx, cy) {
 // Детерминированный шум: раскладка пены и пузырей выводится из сида, а не
 // берётся из Math.random — иначе она меняется на каждой перерисовке и
 // картинка мигает.
+// Плавный шум значений (0..1) для полей мути: ровный, без швов по клеткам.
+function btVNoise(x, y) {
+    const h = (i, j) => { let v = (i * 374761393 + j * 668265263) >>> 0; v = ((v ^ (v >>> 13)) * 1274126177) >>> 0;
+                          return ((v ^ (v >>> 16)) >>> 0) / 4294967296; };
+    const i = Math.floor(x), j = Math.floor(y), tx = x - i, ty = y - j;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = h(i, j), b = h(i + 1, j), c = h(i, j + 1), d = h(i + 1, j + 1);
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
 function btRng(seed) {
     let s = (seed || 1) >>> 0;
     return () => {
@@ -431,7 +441,7 @@ const BATH_ART = {
         // мелкие пузырьки комочками (clump), у каждого тень снизу (shade):
         // объём пены сказан тенью, а не бликом — блик дал бы глянец, а это
         // мыло матовое.
-        { key: 'house',  film: 0.13, mottle: 4, n: 13, big: 0.3, small: 0.06, A: 0.42, rim: 0.55, shine: 0.55,
+        { key: 'house', filmA: 0.5,  film: 0.13, mottle: 4, n: 13, big: 0.3, small: 0.06, A: 0.42, rim: 0.55, shine: 0.55,
           shade: 0.9, clump: 0.55,
           glint: { k: 0.3, size: 0.16, second: 0, halo: 0, min: 0.24 } },
         // 2 — туалетная: СЛИВОЧНАЯ и полуглянцевая. От хозяйственной отличается
@@ -439,7 +449,7 @@ const BATH_ART = {
         // меньше, пузырьки круглее и с мягким бликом, а по плёнке идёт
         // перламутровый отлив (sheen) — у туалетного и жидкого мыла он есть,
         // у «72%» нет.
-        { key: 'pink',   film: 0.2, mottle: 2, n: 9, big: 0.36, small: 0.08, A: 0.36, rim: 1.1, shine: 1.2,
+        { key: 'pink', filmA: 0.5,   film: 0.2, mottle: 2, n: 9, big: 0.36, small: 0.08, A: 0.36, rim: 1.1, shine: 1.2,
           shade: 0.5, clump: 0.3, sheen: 0.34,
           glint: { k: 0.6, size: 0.2, second: 0.2, halo: 0, min: 0.22 } },
         // 4 — гель: плёнка цветная, прозрачная и МОКРАЯ — глянец узкими
@@ -448,7 +458,7 @@ const BATH_ART = {
         // светлой изнутри и тёмной снаружи (edge), иначе прозрачный пузырь
         // на прозрачной плёнке пропадает, — и острым бликом даже у мелких
         // (spec — с какого размера блик есть).
-        { key: 'gel',    film: 0.2, mottle: 2, n: 6, big: 0.6, small: 0.1, A: 0.07, rim: 4.5, shine: 5,
+        { key: 'gel', filmA: 0.4,    film: 0.2, mottle: 2, n: 6, big: 0.6, small: 0.1, A: 0.07, rim: 4.5, shine: 5,
           edge: 3.2, spec: 0.12, gloss: 0.55,
           glint: { k: 1, size: 0.26, second: 0.45, halo: 0, min: 0.18 } },
         // 6 — эликсир: светится. Поверх плёнки мягкий зелёный свет.
@@ -456,7 +466,7 @@ const BATH_ART = {
         // средним тоном (средний зелёный поверх розовой кожи давал болотную
         // слизь), сияние изнутри гуще, пузыри светлые, а по кромке тела
         // мягкий ореол чуть выходит за силуэт (aura) — так читается свет.
-        { key: 'elixir', film: 0.2, filmGlow: true, n: 5, big: 0.5,  small: 0.12, A: 0.14, bodyGlow: true,
+        { key: 'elixir', filmA: 0.46, film: 0.2, filmGlow: true, n: 5, big: 0.5,  small: 0.12, A: 0.14, bodyGlow: true,
           rim: 2.6, shine: 2.2, glow: 0.55, aura: 0.3,
           glint: { k: 1, size: 0.28, second: 0.45, halo: { w: 2.4, a: 0.45 }, min: 0.16 } },
         // 8 — волшебная: КОСМОС, как небо в окне флакона (выбор игрока из
@@ -465,7 +475,7 @@ const BATH_ART = {
         // «сыпь»), по ней неподвижные звёзды с лучиками (stars) — мерцают не
         // сами, над ними пляшут блики пены. Кромки пузырей радужные, по
         // кромке тела ореол, как у эликсира.
-        { key: 'magic',  film: 0.24, nebula: 2, stars: 0.5, aura: 0.35, n: 5, big: 0.52, small: 0.12, A: 0.1,
+        { key: 'magic', filmA: 0.46,  film: 0.24, nebula: 2, stars: 0.5, aura: 0.35, n: 5, big: 0.52, small: 0.12, A: 0.1,
           rim: 2.4, shine: 2.2, glow: 0.15, prism: true, spark: 0.2,
           glint: { k: 1, size: 0.3, second: 0.55, halo: { w: 2.6, a: 0.6 }, min: 0.15 } }
     ],
@@ -485,7 +495,7 @@ const BATH_ART = {
         // пятна в ТРИ разных места (голова, щека, тело), расползаются они
         // медленно (speed), и между ними остаётся место для следующих.
         soap: {
-            seed: 7, noise: 0.6, speed: 0.05,
+            seed: 7, noise: 0.6, speed: 0.05, fine: 0.9, fineGrain: 0.035,
             seeds: [
                 { u: 0.45, v: 0.20, t: 1,   r: 1 },      // лоб — первое касание
                 { u: 0.66, v: 0.45, t: 1.2, r: 1 },      // правая щека
@@ -518,7 +528,7 @@ const BATH_ART = {
         // щеки — мочалка начинает с пятачка, уха и низа тела, идёт снизу
         // вверх и кончает лбом.
         cloth: {
-            seed: 23, noise: 0.6, speed: 0.05,
+            seed: 23, noise: 0.6, speed: 0.05, fine: 0.9, fineGrain: 0.035,
             seeds: [
                 { u: 0.26, v: 0.48, t: 1,   r: 1 },      // пятачок
                 { u: 0.80, v: 0.18, t: 1.3, r: 0.9 },    // правое ухо
@@ -568,7 +578,7 @@ const BATH_ART = {
 
     // Насколько муть мыла тише своего вида (множители). Искр у мути нет вовсе
     // — они у пены.
-    LATHER_DIM: { film: 0.8, A: 0.75, rim: 0.7, shine: 0.7, glow: 0.55, aura: 0.45, stars: 0.4, n: 0.75,
+    LATHER_DIM: { film: 0.8, filmA: 0.8, A: 0.75, rim: 0.7, shine: 0.7, glow: 0.55, aura: 0.45, stars: 0.4, n: 0.75,
                   gloss: 0.7, sheen: 0.8, iris: 0.7, spark: 0.5,
                   glint: { k: 0.45, size: 0.85, halo: 0.5 } },
 
@@ -583,6 +593,58 @@ const BATH_ART = {
         return (cache[look.key] = { 500: mixColor(f[500], m[500], 0.35), hi: mixColor(f.hi, m.hi, 0.5),
             lo: mixColor(f.lo, m.lo, 0.45), rim: mixColor(f.rim, m.lo, 0.4), glow: m.glow || null });
     },
+
+    // ---------- МУТЬ ОДНИМ СЛОЕМ: ЦВЕТ И ГУСТОТА КЛЕТКИ ----------
+    // Клетка карты роста (lust.js, filmLayer) спрашивает: какого цвета муть
+    // в этой точке тела и насколько она густая, когда пришла целиком.
+    // Всё, что раньше делали стопки кружков, — здесь ПОЛЯМИ от места:
+    // неровная густота хозяйственной (mottle), перламутровый отлив
+    // туалетной (sheen), туманность волшебной (nebula), радужный перелив
+    // (iris), свет эликсира (glow). Поля плавные, поэтому шва между
+    // клетками нет. Ответ — [r, g, b, a].
+    filmCell(look, kind, x, y, cell) {
+        const P = btPal(), cloth = kind === 'cloth';
+        const V = cloth ? null : look, Eff = look;
+        const c = cloth ? (look ? this.latherColors(look, 'cloth') : P.foam) : P.soapLather[V.key];
+        const field = (sx, sy, sh) => 0.5 + 0.5 * Math.sin(x / (cell * sx) + 1.3 * Math.sin(y / (cell * sy) + sh));
+        const noise = (sc, o) => btVNoise(x / (cell * sc) + o, y / (cell * sc) - o);
+        let col = V && V.filmGlow && c.glow ? c.glow : c[500];
+        let a = cloth ? this.FILM.cloth : (V.filmA != null ? V.filmA : this.FILM.soap);
+        if (V && V.nebula) {
+            const Cz = P.soapCosmos, t = field(5.5, 7.3, 0.7) * 2, far = V.nebula === 2 ? Cz.amethyst[2] : Cz.pink;
+            col = t < 1 ? mixColor(Cz.deep[3], Cz.cyan, t) : mixColor(Cz.cyan, far, t - 1);
+        }
+        // Неровная густота: мыльная плёнка всегда в разводах, а не ровной
+        // краской. Два масштаба шума — крупные пятна и мелкая рябь.
+        const mot = cloth ? 0.5 : Math.min(1, 0.35 + (V.mottle || 0) * 0.16);
+        a *= 1 - mot * 0.5 + mot * (0.75 * noise(2.2, 3.1) + 0.25 * noise(0.7, 9.4));
+        if (V && V.sheen) {
+            // Отлив — косые светлые полосы в одну сторону (свет один на сцену).
+            const band = Math.pow(Math.max(0, Math.sin((x * 0.8 - y * 0.6) / (cell * 1.4) + 2 * noise(3, 1.7))), 3);
+            col = mixColor(col, c.hi, Math.min(1, V.sheen * 1.6 * band));
+        }
+        if (V && V.iris) {
+            const pr = P.soapCosmos.prism, t = field(3.1, 4.4, 2.1) * (pr.length - 1);
+            const i = Math.min(pr.length - 2, Math.floor(t));
+            col = mixColor(col, mixColor(pr[i], pr[i + 1], t - i), Math.min(1, V.iris * 1.4));
+        }
+        if (cloth) col = mixColor(col, c.hi, 0.5 * noise(1.3, 5.5));
+        // Свет эликсира и волшебной — запечён в цвет и густоту слоя: слой
+        // сложения поверх живой мути стоил бы отдельного буфера на каждое
+        // движение (docs/traps.md, п. 73). Муть светлеет к цвету свечения и
+        // гуще там, где светит сильнее, — пятнами, а не ровно.
+        if (Eff && Eff.glow && c.glow) {
+            const g = Eff.glow * (0.7 + 0.6 * noise(1.8, 7.2));
+            col = mixColor(col, c.glow, Math.min(0.85, g * 1.3));
+            a += g * 0.35;
+        }
+        const q = parseCssColor(col);
+        return [q.r, q.g, q.b, Math.max(0, Math.min(1, a))];
+    },
+
+    // Густота мути одним слоем там, где она пришла целиком. Одна кружка
+    // была полупрозрачной, но они ложились в два-три слоя — отсюда числа.
+    FILM: { soap: 0.46, cloth: 0.42 },
 
     // sink(bx, by, r, color) — куда отдать каждый нарисованный пузырь: по ним
     // рисуются слои бликов от наклона (lust.js, glintBubble).
@@ -609,72 +671,29 @@ const BATH_ART = {
         // пена занимает МЕНЬШЕ МЕСТА: между такими клетками остаются тёмные
         // прогалы мыльной плёнки, и недотёртое читается прямо на картинке.
         const spread = cloth ? 0.5 + 0.5 * k : 1;
-        // Подложка под пузырями. Одни пузыри оставляют между собой голую
-        // кожу, и намыленный червь читается обсыпанным, а не намыленным.
-        // Слабая заливка по клетке закрывает эти просветы, не съедая
-        // пузыри: они всё равно ярче и с краем.
-        // Крупные поля по телу для волшебной мути: плавные, без шва между
-        // клетками — считаются от места, а не от клетки.
-        const field = (sx, sy, sh) => 0.5 + 0.5 * Math.sin(x / (cell * sx) + 1.3 * Math.sin(y / (cell * sy) + sh));
+        // Сама муть (и подложка пены мочалки) — ОДНИМ СЛОЕМ, а не кружками:
+        // клетки карты роста заливаются по мере прихода времени, как пятно
+        // воды с высоты (lust.js, filmLayer; цвет и густота клетки —
+        // filmCell ниже). Первая версия клала на каждую частицу
+        // полупрозрачный диск с пятнами, и муть читалась стопкой правильных
+        // кружков — «дёшево» (замечание игрока). Здесь от частицы осталась
+        // только мелочь поверх мути: мокрый глянец геля и звёзды.
         if (part !== 'foam') {
-            ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : V.film;
-            ctx.fillStyle = V && V.filmGlow && c.glow ? c.glow : c[500];
-            // Туманность: плёнка плывёт между цветами неба во флаконе
-            // (индиго → бирюза → розовый), как космос в его окне.
-            if (V && V.nebula) {
-                const Cz = P.soapCosmos, t = field(5.5, 7.3, 0.7) * 2, far = V.nebula === 2 ? Cz.amethyst[2] : Cz.pink;
-                ctx.fillStyle = t < 1 ? mixColor(Cz.deep[3], Cz.cyan, t) : mixColor(Cz.cyan, far, t - 1);
-            }
-            ctx.beginPath();
-            ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
-            // Неровная густота: поверх диска — пятна разной плотности со
-            // сдвигом. Ровный диск на каждую клетку складывался в ровную
-            // заливку, как краска, а мыльная плёнка всегда в разводах.
-            for (let m = 0; V && m < (V.mottle || 0); m++) {
-                const ma = rng() * Math.PI * 2, md = rng() * cell * 0.55;
-                ctx.globalAlpha = V.film * (0.4 + rng() * 1.1);
-                ctx.beginPath();
-                ctx.arc(x + Math.cos(ma) * md, y + Math.sin(ma) * md, cell * (0.35 + rng() * 0.4), 0, Math.PI * 2);
-                ctx.fill();
-            }
-            // Перламутровый отлив: косой светлый мазок, у всех клеток в ОДНУ
-            // сторону (свет один на сцену) — складывается в атласный блеск
-            // по всему намыленному, а не в пятна.
-            if (V && V.sheen) {
-                ctx.globalAlpha = V.sheen * (0.6 + rng() * 0.6);
-                ctx.fillStyle = c.hi;
-                ctx.beginPath();
-                ctx.ellipse(x - cell * 0.12, y - cell * 0.18, cell * 0.62, cell * 0.16, -0.6, 0, Math.PI * 2);
-                ctx.fill();
-            }
             // Мокрый глянец геля: узкая яркая полоса, не в каждой клетке и
             // с разной длиной — на мокром блик ломаный, а не ровный атлас.
             if (V && V.gloss && rng() < 0.55) {
-                ctx.globalAlpha = V.gloss * (0.5 + rng() * 0.5);
-                ctx.strokeStyle = c.hi;
-                ctx.lineCap = 'round';
-                ctx.lineWidth = Math.max(1, cell * 0.07);
                 const gx = x + (rng() - 0.5) * cell * 0.6, gy = y + (rng() - 0.5) * cell * 0.6;
                 const gl = cell * (0.25 + rng() * 0.35);
-                ctx.beginPath();
-                ctx.moveTo(gx - gl * 0.8, gy + gl * 0.55);
-                ctx.quadraticCurveTo(gx, gy - gl * 0.15, gx + gl * 0.8, gy - gl * 0.55);
-                ctx.stroke();
-            }
-            // Радужный перелив тонкой плёнки — как на настоящем мыльном
-            // пузыре: полосы цвета идут по телу крупными разводами (поле от
-            // места), каждая клетка кладёт мазок своего цвета полосы.
-            // «Экраном», а не краской: перелив светлит, а не мажет.
-            if (V && V.iris) {
-                const pr = P.soapCosmos.prism, t = field(3.1, 4.4, 2.1) * (pr.length - 1);
-                const i = Math.min(pr.length - 2, Math.floor(t));
-                ctx.globalCompositeOperation = V.irisOp || 'screen';
-                ctx.globalAlpha = V.iris * (0.6 + rng() * 0.5);
-                ctx.fillStyle = mixColor(pr[i], pr[i + 1], t - i);
-                ctx.beginPath();
-                ctx.ellipse(x, y, cell * 0.85, cell * 0.42, field(2.3, 3.7, 0.4) * Math.PI, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalCompositeOperation = 'source-over';
+                if (!inside || inside(gx, gy)) {
+                    ctx.globalAlpha = V.gloss * (0.5 + rng() * 0.5);
+                    ctx.strokeStyle = c.hi;
+                    ctx.lineCap = 'round';
+                    ctx.lineWidth = Math.max(1, cell * 0.07);
+                    ctx.beginPath();
+                    ctx.moveTo(gx - gl * 0.8, gy + gl * 0.55);
+                    ctx.quadraticCurveTo(gx, gy - gl * 0.15, gx + gl * 0.8, gy - gl * 0.55);
+                    ctx.stroke();
+                }
             }
             // Звёзды в мути — неподвижные точки с крестиком лучей, как в
             // окне флакона. Мерцают не сами: над ними пляшут блики пены.
@@ -694,18 +713,6 @@ const BATH_ART = {
                     ctx.stroke();
                     ctx.globalCompositeOperation = 'source-over';
                 }
-            }
-            // Свет эликсира и волшебной мути — СЛОЖЕНИЕМ: светится, а не
-            // закрашивает. Краской тот же цвет ложился бы бледной плёнкой.
-            if (Eff && Eff.glow && c.glow) {
-                const g = ctx.createRadialGradient(x, y, 0, x, y, cell * 1.1);
-                g.addColorStop(0, c.glow);
-                g.addColorStop(1, 'rgba(0,0,0,0)');
-                ctx.globalCompositeOperation = 'lighter';
-                ctx.globalAlpha = Eff.glow;
-                ctx.fillStyle = g;
-                ctx.beginPath(); ctx.arc(x, y, cell * 1.1, 0, Math.PI * 2); ctx.fill();
-                ctx.globalCompositeOperation = 'source-over';
             }
         }
         if (part === 'base') { ctx.globalAlpha = 1; return; }

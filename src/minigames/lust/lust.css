@@ -231,6 +231,7 @@ html.dbg-no-rain #lust-game #bt-rain-veil { display: none !important; }
 
 html.dbg-no-worm #lust-game #bt-worm { display: none !important; }
 
+html.dbg-no-trail #lust-game .bt-film,
 html.dbg-no-trail #lust-game #bt-wash,
 html.dbg-no-trail #lust-game #bt-glint,
 html.dbg-no-trail #lust-game #bt-bubbles { display: none !important; }

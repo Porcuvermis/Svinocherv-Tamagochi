@@ -75,6 +75,7 @@ const LatherGrow = {
             const a = hash(i, j), b = hash(i + 1, j), c = hash(i, j + 1), d = hash(i + 1, j + 1);
             return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
         };
+        const fine = o.fine || 0, fk = o.fineGrain ? (o.grain || 0.14) / o.fineGrain : 4;
         // Сырое время: раньше всех — то семя, что родилось раньше и ближе.
         // Скорость — доля высоты тела за «ключ».
         const V = o.speed || 0.1;
@@ -91,7 +92,11 @@ const LatherGrow = {
                     const t = p.t + d / (V * p.r);
                     if (t < best) best = t;
                 }
-                raw[k] = best + amp * (vnoise(x, y) + 0.5 * vnoise(x * 2.1 + 31, y * 2.1 + 17) - 0.75);
+                raw[k] = best + amp * (vnoise(x, y) + 0.5 * vnoise(x * 2.1 + 31, y * 2.1 + 17) - 0.75)
+                    // Мелкий рваный край: разлив и колония растут не
+                    // кругом, а языками и заливами. Без этого пятна мути
+                    // одним слоем выходили гладкими кругами.
+                    + fine * (vnoise(x * fk + 53, y * fk + 11) + 0.55 * vnoise(x * fk * 2.3 + 7, y * fk * 2.3 + 91) - 0.775);
                 cells.push(k);
             }
         }
