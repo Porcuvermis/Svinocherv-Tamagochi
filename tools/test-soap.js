@@ -178,38 +178,60 @@ const harness = require('./harness');
   check(Math.abs(fx) > Math.abs(nx) * 1.5 && Math.abs(fy) > Math.abs(ny) * 1.5,
         `дальний слой едет сильнее ближнего (${Math.abs(fx).toFixed(1)} против ${Math.abs(nx).toFixed(1)})`);
 
-  // ================= 6. ФЛАКОН ДЕРЖАТ ЗА ГОРЛЫШКО =================
-  // Пузо флакона — окно в небо; палец посреди него закрывал бы то, ради
-  // чего ступень покупали. Палец берёт воротник прямо на полке, в руке
-  // воротник остаётся под пальцем, а мылит ПУЗО — ниже пальца.
-  say('\n======== ФЛАКОН ЗА ГОРЛЫШКО, МЫЛИТ ПУЗО ========');
+  // ================= 6. ПРЕДМЕТ ДЕРЖАТ ТАМ, ГДЕ ВЗЯЛИ =================
+  // Пузо флакона — окно в небо. Взял за горлышко — палец остаётся на
+  // горлышке: предмет не прыгает серединой под палец (замечание игрока,
+  // первая попытка — хват всегда за воротник — прыгала, если взять за
+  // пузо). Мерится КАРТИНКА: пробка относительно пальца до хвата и после
+  // (в руке предмет крупнее в DRAG_SCALE — и настолько же дальше от
+  // пальца). Мылит при этом сам предмет, а не палец.
+  say('\n======== ДЕРЖИТСЯ ТЕМ МЕСТОМ, ЗА КОТОРОЕ ВЗЯЛИ ========');
   await page.evaluate(() => { LustDebug.setLevel('soap', BATH_SOAP.TIERS.length - 1); BATH_SOAP.refresh(); LustMinigame.startWater(); });
   for (let i = 0; i < 40 && await page.evaluate(() => LustMinigame.phase) !== 'soap'; i++) await page.waitForTimeout(250);
   await page.waitForTimeout(1200);
   const toC = (x, y) => page.evaluate(([x, y]) => { const L = LustMinigame, c = L.cam;
     return SvgSpace.toClient(L.svgEl, c.tx + c.s * x, c.ty + c.s * y); }, [x, y]);
-  const g0 = await page.evaluate(() => BATH_SOAP.grip());
-  const gc = await toC(g0.x, g0.y);
   await page.evaluate(() => { const L = LustMinigame, o = L.paint; window.__paint = [];
     L.paint = function (x, y, ...r) { window.__paint.push({ x, y }); return o.call(this, x, y, ...r); }; });
-  await page.mouse.move(gc.x, gc.y); await page.mouse.down();
-  const took = await page.evaluate(() => !!(LustMinigame.drag && LustMinigame.drag.kind === 'soap'));
-  check(took, 'флакон взят с полки за горлышко');
-  const cb = await page.evaluate(() => LustMinigame.coverBox());
-  const tg = await toC(cb.x + cb.w * 0.5, cb.y + cb.h * 0.25);
-  for (let i = 1; i <= 12; i++) { await page.mouse.move(gc.x + (tg.x - gc.x) * i / 12, gc.y + (tg.y - gc.y) * i / 12); await page.waitForTimeout(30); }
-  await page.waitForTimeout(300);
-  const hold = await page.evaluate(() => {
-    const s = document.querySelector('#bt-held .bsm-stopper').getBoundingClientRect();
-    return { stopBottom: s.y + s.height, stopX: s.x + s.width / 2, paint: window.__paint.slice(-1)[0] };
+  const stopAt = (sel) => page.evaluate((sel) => {
+    const r = document.querySelector(sel + ' .bsm-stopper').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, sel);
+  // Горлышко и пузо — точки сцены на рисунке полки, из того же конфига.
+  const spots = await page.evaluate(() => {
+    const A = BATH_ART.slots().soap, M = BATH_SOAP.MAGIC, y0 = A.y + 2 + M.FLOOR * (1 - M.SCALE);
+    return { 'горлышко': { x: A.x, y: y0 + M.SCALE * (M.NECK.collar[0] + M.NECK.collar[1]) / 2 },
+             'пузо': { x: A.x + 6, y: y0 + M.SCALE * M.CY } };
   });
-  const fin = await page.evaluate(([x, y]) => LustMinigame.toScene({ clientX: x, clientY: y }), [tg.x, tg.y]);
-  await page.mouse.up();
-  await page.evaluate(() => { delete LustMinigame.paint; });
-  const below = hold.stopBottom < tg.y && tg.y - hold.stopBottom < 60 && Math.abs(hold.stopX - tg.x) < 12;
-  check(below, `в руке палец под самой пробкой — на воротнике (${(tg.y - hold.stopBottom).toFixed(0)} px ниже пробки)`);
-  const dy = hold.paint ? hold.paint.y - fin.y : 0;
-  check(hold.paint && dy > 40 && Math.abs(hold.paint.x - fin.x) < 2, `мылит пузо, ниже пальца на ${dy.toFixed(0)} ед. сцены`);
+  const k = await page.evaluate(() => BATH_ART.DRAG_SCALE);
+  // Пробка левитирует сама — на время замера флакон стоит (п. 137).
+  await page.evaluate(() => { BATH_SOAP.frozen = true; });
+  for (const [name, sp] of Object.entries(spots)) {
+    await page.waitForTimeout(300);
+    const f = await toC(sp.x, sp.y);
+    const s0 = await stopAt('#bt-soap-home');
+    await page.mouse.move(f.x, f.y); await page.mouse.down();
+    await page.waitForTimeout(100);
+    const s1 = await stopAt('#bt-held');
+    const ex = { x: f.x + (s0.x - f.x) * k, y: f.y + (s0.y - f.y) * k };
+    const jump = Math.hypot(s1.x - ex.x, s1.y - ex.y);
+    check(jump < 3, `взял за ${name} — предмет не прыгнул (${jump.toFixed(1)} px)`);
+    if (name === 'горлышко') {
+      const cb = await page.evaluate(() => LustMinigame.coverBox());
+      const tg = await toC(cb.x + cb.w * 0.5, cb.y + cb.h * 0.25);
+      for (let i = 1; i <= 12; i++) { await page.mouse.move(f.x + (tg.x - f.x) * i / 12, f.y + (tg.y - f.y) * i / 12); await page.waitForTimeout(30); }
+      await page.waitForTimeout(200);
+      const s2 = await stopAt('#bt-held');
+      const kept = Math.hypot((s2.x - tg.x) - (s1.x - f.x), (s2.y - tg.y) - (s1.y - f.y));
+      check(kept < 1.5, `на ходу палец остаётся на горлышке (${kept.toFixed(1)} px)`);
+      const fin = await page.evaluate(([x, y]) => LustMinigame.toScene({ clientX: x, clientY: y }), [tg.x, tg.y]);
+      const pt = await page.evaluate(() => window.__paint.slice(-1)[0]);
+      const dy = pt ? pt.y - fin.y : 0;
+      check(pt && dy > 40, `мылит пузо, ниже пальца на ${dy.toFixed(0)} ед. сцены`);
+    }
+    await page.mouse.up();
+  }
+  await page.evaluate(() => { delete LustMinigame.paint; BATH_SOAP.frozen = false; });
 
   // ================= 7. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());

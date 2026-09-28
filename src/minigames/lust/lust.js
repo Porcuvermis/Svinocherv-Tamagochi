@@ -1150,15 +1150,23 @@ const LustMinigame = {
     },
 
     takeTool(kind, e) {
-        // Хват и касание — разные точки: флакон держат за горлышко, а мылит
-        // пузо. Смещение в единицах сцены: предмет в руке крупнее полочного
-        // в DRAG_SCALE, и настолько же дальше от пальца его пузо.
-        const a = BATH_ART.slots()[kind], g = BATH_ART.grip(kind), k = BATH_ART.DRAG_SCALE;
+        // Предмет держат ТОЙ точкой, за которую взяли: не прыгает центром
+        // под палец. У флакона это главное — пузо окно в небо, и палец,
+        // взявший горлышко, обязан остаться на горлышке (замечание игрока).
+        // Точка берётся внутри габарита: тап рядом с предметом не вешает
+        // его в стороне от пальца.
+        // Хват и касание — разные точки: мылит сам предмет (гнездо — его
+        // середина), где бы ни лежал палец. Смещение в единицах сцены:
+        // предмет в руке крупнее полочного в DRAG_SCALE, и настолько же
+        // дальше от пальца его середина.
+        const a = BATH_ART.slots()[kind], k = BATH_ART.DRAG_SCALE;
+        const b = kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(kind), q = this.toScene(e);
+        const g = { x: Math.max(b.x, Math.min(b.x + b.w, q.x)), y: Math.max(b.y, Math.min(b.y + b.h, q.y)) };
         this.drag = { kind, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
         this.showTools(false, kind);
         this.ready(null);
         this.fgEl.innerHTML =
-            `<g id="bt-held">${BATH_ART.held(kind, this.cam ? this.cam.s : 1)}</g>`;
+            `<g id="bt-held">${BATH_ART.held(kind, this.cam ? this.cam.s : 1, g)}</g>`;
         this.moveTool(this.toStage(e));
     },
 

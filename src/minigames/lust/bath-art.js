@@ -74,12 +74,6 @@ const BATH_ART = {
     // Ни одного своего числа: всё приходит из якорей запекания.
     slots() { return btBake().anchors; },
 
-    // Точка хвата: где предмет под пальцем. У всего, кроме флакона, это
-    // гнездо — середина предмета (BATH_SOAP.grip).
-    grip(kind) {
-        return (kind === 'soap' && BATH_SOAP.grip()) || this.slots()[kind];
-    },
-
     // Габарит предмета в сцене — тоже из запекания.
     box(name) { return btBake().box(name); },
 
@@ -351,12 +345,12 @@ const BATH_ART = {
     // camScale — во сколько раз сцена уменьшена текущим наездом. Без него
     // предмет в руке был бы нарисован в единицах сцены поверх экрана и
     // оказывался бы во столько же раз крупнее, во сколько камера отъехала.
-    held(kind, camScale) {
-        const B = btBake(), a = this.grip(kind);
+    held(kind, camScale, at) {
+        const B = btBake(), a = at || this.slots()[kind];
         const k = (camScale || 1) * this.DRAG_SCALE;
         // Запечённый предмет нарисован на своём месте на полке; в руке он
         // должен сидеть в НУЛЕ группы — под пальцем, — поэтому сдвигается
-        // на точку хвата.
+        // на точку, за которую его взяли (lust.js, takeTool).
         return `<g transform="scale(${k.toFixed(4)}) translate(${-a.x} ${-a.y})">`
              + (kind === 'soap' ? BATH_SOAP.draw() : B.draw(kind)) + `</g>`;
     },
