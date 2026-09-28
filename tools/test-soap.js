@@ -456,32 +456,48 @@ const harness = require('./harness');
         `плёнка тает с запасом до глаза, а не вырезана по нему (у края ${eyes.map(e => e.fIn.toFixed(0)).join('/')}, пояс ${eyes.map(e => e.fMid.toFixed(0)).join('/')}, снаружи ${eyes.map(e => e.fOut.toFixed(0)).join('/')})`);
 
   // ================= 11. БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА =================
-  // Три слоя бликов, у каждого свой угол света; наклон перетекает свет между
-  // ними. Мерится СТОРОНА (п. 116): наклон вправо поворачивает к свету ЛЕВЫЙ
-  // бок пузыря — ярче всех слой «свет слева», и наоборот.
-  say('\n======== БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА ========');
-  const gl = await page.evaluate(() => {
-    const els = LustMinigame.glintEls || [];
-    const ink = els.map(c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-      let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 20) n++; return n; });
-    return { ink, live: document.getElementById('bt-glint').classList.contains('bt-glint-live'), raf: !!LustMinigame.glintRaf };
-  });
-  check(gl.ink.length === 3 && gl.ink.every(n => n > 50), `блики нарисованы во всех трёх слоях (${gl.ink.join(' / ')} точек)`);
-  check(gl.live && gl.raf, 'пока пена на теле — слои живые и слушают наклон');
-  const glintAt = async (x) => {
-    await page.evaluate((x) => { window.__lean = { live: true, x, y: 0 }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, x);
+  // У каждого пузыря свой блик, он ходит от наклона ВНУТРИ своего пузыря
+  // (макет принят игроком). Мерится КАРТИНКА у самого крупного пузыря: куда
+  // сместился яркий центр холста бликов. Сторона — не «лишь бы менялось»
+  // (п. 116): наклон вправо — блик на левом боку, влево — на правом.
+  say('\n======== БЛИК У КАЖДОГО ПУЗЫРЯ, ХОДИТ ОТ НАКЛОНА ========');
+  await page.evaluate(() => { const L = LustMinigame; L.growReset(); L.growTo('soap', 1); });
+  const glintAt = async (x, y) => {
+    await page.evaluate(([x, y]) => { window.__lean = { live: true, x, y }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, [x, y]);
     await page.waitForTimeout(900);
-    return page.evaluate(() => LustMinigame.glintEls.map(c => +getComputedStyle(c).opacity));
+    return page.evaluate(() => {
+      const L = LustMinigame, bs = L.glintBubs || [], ctx = L.glintCtx;
+      // Самый крупный пузырь, которого не перекрывают соседи крупнее четверти его.
+      const alone = bs.filter(b => !bs.some(o => o !== b && o.r > b.r * 0.25 && Math.hypot(o.x - b.x, o.y - b.y) < (o.r + b.r) * 0.9));
+      const b = (alone.length ? alone : bs).reduce((m, q) => q.r > m.r ? q : m, { r: 0 });
+      const R = Math.ceil(b.r * 1.05), x0 = Math.round(b.x - R), y0 = Math.round(b.y - R);
+      const d = ctx.getImageData(x0, y0, R * 2, R * 2).data;
+      let sx = 0, sy = 0, sw = 0, far = 0;
+      for (let j = 0; j < R * 2; j++) for (let i = 0; i < R * 2; i++) {
+        const w = d[(j * R * 2 + i) * 4 + 3]; if (w < 12) continue;
+        const px = x0 + i + 0.5 - b.x, py = y0 + j + 0.5 - b.y;
+        if (Math.hypot(px, py) > b.r) far++;
+        sx += px * w; sy += py * w; sw += w; }
+      return { n: bs.length, r: b.r, cx: sw ? sx / sw / b.r : 0, cy: sw ? sy / sw / b.r : 0, far, draws: L.glintDraws || 0 };
+    });
   };
-  const gR = await glintAt(0.4), gL = await glintAt(-0.4);
+  const g0 = await glintAt(0, 0), gR = await glintAt(0.4, 0), gL = await glintAt(-0.4, 0), gD = await glintAt(0, 0.4);
+  check(g0.n > 30, `блик есть у каждого заметного пузыря (${g0.n})`);
+  check(g0.cx < -0.1 && g0.cy < -0.1, `в покое блик сверху слева (${g0.cx.toFixed(2)}, ${g0.cy.toFixed(2)} радиуса)`);
+  check(gR.cx < gL.cx - 0.2, `наклон вправо — блик на ЛЕВОМ боку, влево — на правом (${gR.cx.toFixed(2)} против ${gL.cx.toFixed(2)})`);
+  check(gD.cy > g0.cy + 0.1, `верх к себе — блик ниже (${g0.cy.toFixed(2)} → ${gD.cy.toFixed(2)})`);
+  check([g0, gR, gL, gD].every(g => g.far === 0), 'блик не выходит за свой пузырь');
+  // Телефон неподвижен — холст бликов не перерисовывается.
+  // Сглаживание наклона доезжает не сразу — ждём устоявшегося (п. 137).
+  await page.waitForTimeout(1200);
+  const dr0 = await page.evaluate(() => LustMinigame.glintDraws);
+  await page.waitForTimeout(800);
+  const dr1 = await page.evaluate(() => LustMinigame.glintDraws);
+  check(dr1 === dr0, `телефон неподвижен — ни одной перерисовки бликов (${dr1 - dr0})`);
   await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
-  check(gR[0] > gR[2] + 0.3, `наклон вправо — блик уходит на ЛЕВЫЙ бок пузырей (слои ${gR.map(v => v.toFixed(2)).join(' / ')})`);
-  check(gL[2] > gL[0] + 0.3, `наклон влево — на правый (слои ${gL.map(v => v.toFixed(2)).join(' / ')})`);
-  // Смыли — цикл встал, слой композитора снят.
+  // Смыли — цикл встал.
   await page.evaluate(() => LustMinigame.washShown(false));
-  const gOff = await page.evaluate(() => ({ raf: !!LustMinigame.glintRaf,
-    live: document.getElementById('bt-glint').classList.contains('bt-glint-live') }));
-  check(!gOff.raf && !gOff.live, 'след смыт — цикл бликов встал, слоя композитора нет');
+  check(!(await page.evaluate(() => LustMinigame.glintRaf)), 'след смыт — цикл бликов встал');
 
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());

@@ -189,9 +189,9 @@ const LustMinigame = {
         // ему не нужна, а память трёх полноразмерных слоёв на айфоне дорога.
         const gw = this.el('bt-glint');
         if (gw) {
+            gw.width = B.w * S; gw.height = B.h * S;
             gw.style.width = B.w + 'px'; gw.style.height = B.h + 'px';
-            this.glintEls = Array.from(gw.querySelectorAll('canvas'));
-            this.glintEls.forEach(g => { g.width = B.w * S / 2; g.height = B.h * S / 2; });
+            this.glintCtx = gw.getContext('2d');
         }
 
         this.camBackEl.innerHTML = BATH_ART.sceneBack();
@@ -1107,55 +1107,117 @@ const LustMinigame = {
     },
 
     // ---------- БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА ----------
-    // У каждого пузыря три блика — по одному на слой, у слоя свой угол
-    // света (слева сверху, сверху, справа сверху). Наклон телефона плавно
-    // перетекает свет между слоями: блик бежит по пузырям, как от
-    // настоящего источника. Рисуется всё один раз, вместе с пузырём; на ходу
-    // меняются только прозрачность и сдвиг слоёв — видеокарта, без
-    // перерисовки. Сила блика — у вида мути (LATHER.glint) и у пены мочалки.
+    // У КАЖДОГО пузыря свой блик, «дочерний» ему (решение игрока, макет
+    // принят): он ходит от наклона телефона внутри круга reach·r своего
+    // пузыря и ведёт себя как отражение на шаре — к краю сплющивается
+    // поперёк, мельчает и тускнеет; напротив — слабое второе отражение. В
+    // покое свет сверху слева, как во всей игре: блик посередине читался
+    // линзой, а не шаром.
+    //
+    // Первая версия — три слоя бликов с перетеканием прозрачности — была
+    // отвергнута: блик жил не в пузыре, а в слое поверх всей пены.
+    //
+    // Как это дёшево: форма блика у всех пузырей ОДНА (свет один), разнится
+    // только масштаб. Поэтому за кадр рисуется одна заготовка (на цвет) и
+    // штампуется на каждый пузырь — drawImage, самое быстрое, что есть у
+    // холста. Холст — в разрешении холста мытья: пузыри в игре мелкие (радиус
+    // в несколько точек), и на половинном блик выходил в полпикселя.
+    // Перерисовка — только когда свет сдвинулся или появились пузыри; мелким
+    // пузырям блика нет.
     GLINT: {
-        angles: [-150, -95, -40],    // угол света слоя, градусы (0 — вправо, −90 — вверх)
-        sharp: 8,                    // как резко свет переходит между слоями
-        gain: 2.4,                   // чувствительность к наклону, как у флакона
-        shift: 1.5,                  // сдвиг слоя при полном наклоне, ед. холста червя
-        foam: 0.7                    // сила блика пены мочалки
+        rest: { x: -0.42, y: -0.42 },       // покой: сверху слева (доля круга хода)
+        tilt: 0.6,                          // сколько круга проходит блик от полного наклона
+        gain: 2.4,                          // чувствительность к наклону, как у флакона
+        reach: 0.6,                         // круг хода блика, в радиусах пузыря
+        size: 0.24,                         // полуось блика, в радиусах пузыря
+        second: { at: 0.72, size: 0.12, alpha: 0.35 },   // второе отражение напротив
+        min: 0.18,                          // пузыри мельче min·клетки блика не получают
+        // Бликов не больше cap — у самых КРУПНЫХ пузырей. Замер (4× замедление,
+        // червь в пене целиком, 1819 пузырей): со всеми бликами 20 кадров
+        // из 60, с 400 крупнейшими — 53. Платится не рисование заготовки,
+        // а отрисовка видимым холстом каждого штампа; у мелких пузырей блик
+        // всё равно в точку.
+        cap: 420,
+        foam: 0.7                           // сила блика пены мочалки
     },
 
     glintBubble(G, bx, by, r, pc) {
-        const els = this.glintEls;
-        if (!els || r < G.cell * 0.1) return;
+        if (r < G.cell * this.GLINT.min) return;
         const k = G.kind === 'cloth' ? this.GLINT.foam : ((G.look && G.look.glint) || 0.3);
         if (k <= 0) return;
-        const P = btPal(), hi = pc || (G.kind === 'cloth' ? P.foam.hi : P.soapLather[G.look.key].hi);
-        this.GLINT.angles.forEach((deg, i) => {
-            const ctx = els[i] && els[i].getContext('2d');
-            if (!ctx) return;
-            const a = deg * Math.PI / 180;
-            // Холст бликов вдвое мельче холста мытья.
-            const x = (bx + Math.cos(a) * r * 0.52) / 2, y = (by + Math.sin(a) * r * 0.52) / 2;
-            const rr = Math.max(0.9, r * 0.38 / 2);
-            const g = ctx.createRadialGradient(x, y, 0, x, y, rr);
-            g.addColorStop(0, hi);
-            g.addColorStop(0.35, hi);
-            g.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.globalAlpha = k;
-            ctx.fillStyle = g;
-            ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill();
-            ctx.globalAlpha = 1;
-        });
+        const P = btPal(), col = pc || (G.kind === 'cloth' ? P.foam.hi : P.soapLather[G.look.key].hi);
+        (this.glintBubs = this.glintBubs || []).push({ x: bx, y: by, r, k, col });
+        this.glintDirty = true;
     },
 
     glintClear() {
-        (this.glintEls || []).forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
+        this.glintBubs = [];
+        this._glintTop = null;
+        this.glintDirty = true;
+        const c = this.glintCtx;
+        if (c) c.clearRect(0, 0, c.canvas.width, c.canvas.height);
     },
 
-    // Цикл наклона: живёт, пока на теле есть пена. 30 кадров хватает.
+    // Заготовка блика для единичного пузыря радиуса R0 в центре холста 2C×2C.
+    // (lx, ly) — где свет в круге хода: 0 — середина, 1 — край.
+    GLINT_R0: 24, GLINT_C: 32,
+    glintStamp(col, lx, ly) {
+        const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_C;
+        const cv = (this._stamps = this._stamps || {})[col] || document.createElement('canvas');
+        this._stamps[col] = cv;
+        cv.width = cv.height = C * 2;
+        const g = cv.getContext('2d');
+        const d = Math.min(0.99, Math.hypot(lx, ly)), z = Math.sqrt(1 - d * d);
+        const ang = Math.atan2(ly, lx);
+        const spot = (x, y, a, squash, alpha) => {
+            g.save();
+            g.translate(x, y); g.rotate(ang); g.scale(squash, 1);   // сжатие вдоль радиуса
+            const gr = g.createRadialGradient(0, 0, 0, 0, 0, a);
+            gr.addColorStop(0, col); gr.addColorStop(0.45, col); gr.addColorStop(1, 'rgba(255,255,255,0)');
+            g.globalAlpha = alpha;
+            g.fillStyle = gr; g.beginPath(); g.arc(0, 0, a, 0, Math.PI * 2); g.fill();
+            g.restore();
+        };
+        // Главный: к краю сплющен поперёк в √(1−d²), мельче и тусклее.
+        const a = Gc.size * R0 * (0.8 + 0.2 * z);
+        spot(C + lx * Gc.reach * R0, C + ly * Gc.reach * R0, a, Math.max(0.28, z), 0.55 + 0.45 * z);
+        // Второе отражение — слабый серпик у кромки напротив.
+        const S2 = Gc.second;
+        spot(C - lx * S2.at * R0, C - ly * S2.at * R0, S2.size * R0, 0.35, S2.alpha);
+        return cv;
+    },
+
+    glintRedraw(lx, ly) {
+        const ctx = this.glintCtx;
+        if (!ctx) return;
+        const t0 = performance.now();
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        const K = this.GLINT_C / this.GLINT_R0, stamps = {};
+        // Кому достаётся блик — пересчитывается, только когда появились
+        // пузыри, а не каждый кадр.
+        if (!this._glintTop || this._glintTopN !== (this.glintBubs || []).length) {
+            const all = this.glintBubs || [];
+            this._glintTop = all.length <= this.GLINT.cap ? all
+                : all.slice().sort((a, b) => b.r - a.r).slice(0, this.GLINT.cap);
+            this._glintTopN = all.length;
+        }
+        for (const b of this._glintTop) {
+            const st = stamps[b.col] || (stamps[b.col] = this.glintStamp(b.col, lx, ly));
+            const w = b.r * K;
+            ctx.globalAlpha = b.k;
+            ctx.drawImage(st, b.x - w, b.y - w, w * 2, w * 2);
+        }
+        ctx.globalAlpha = 1;
+        this.glintDraws = (this.glintDraws || 0) + 1;
+        this.glintMs = performance.now() - t0;
+    },
+
+    // Цикл наклона: живёт, пока на теле есть пена. Не чаще 30 раз в секунду
+    // и только если свет сдвинулся или добавились пузыри.
     glintStart() {
-        if (this.glintRaf || !this.glintEls || typeof requestAnimationFrame === 'undefined') return;
-        const wrap = this.el('bt-glint');
-        if (wrap) wrap.classList.add('bt-glint-live');
-        const Gc = this.GLINT, th = Gc.angles.map(d => d * Math.PI / 180);
-        const L = this.glintLean = this.glintLean || { x: 0, y: 0, last: 0, op: [], tr: '' };
+        if (this.glintRaf || !this.glintCtx || typeof requestAnimationFrame === 'undefined') return;
+        const Gc = this.GLINT;
+        const L = this.glintLean = this.glintLean || { x: 0, y: 0, last: 0, lx: null, ly: null };
         const step = (now) => {
             this.glintRaf = requestAnimationFrame(step);
             if (now - L.last < 33) return;
@@ -1169,16 +1231,16 @@ const LustMinigame = {
             L.x += (tx - L.x) * 0.2;
             L.y += (ty - L.y) * 0.2;
             // Наклон вправо (правый край вниз) — к свету поворачивается ЛЕВЫЙ
-            // бок пузыря, и блик уезжает влево. Сторона проверяется прогоном
-            // (test-soap.js), а не выводится в уме (docs/traps.md, п. 116).
-            const phi = Math.atan2(-1 + 0.8 * L.y, -0.35 - 1.1 * L.x);
-            const tr = `translate(${(-L.x * Gc.shift).toFixed(2)}px, ${(-L.y * Gc.shift).toFixed(2)}px)`;
-            this.glintEls.forEach((c, i) => {
-                const op = Math.pow(Math.max(0, Math.cos(phi - th[i])), Gc.sharp).toFixed(2);
-                if (L.op[i] !== op) { c.style.opacity = op; L.op[i] = op; }
-                if (L.tr !== tr) c.style.transform = tr;
-            });
-            L.tr = tr;
+            // бок пузыря, блик уходит влево; верх к себе — блик вниз.
+            // Сторона проверяется прогоном (test-soap.js), а не выводится в
+            // уме (docs/traps.md, п. 116).
+            let lx = Gc.rest.x - Gc.tilt * L.x, ly = Gc.rest.y + Gc.tilt * L.y;
+            const m = Math.hypot(lx, ly);
+            if (m > 0.99) { lx *= 0.99 / m; ly *= 0.99 / m; }
+            if (!this.glintDirty && L.lx != null && Math.abs(lx - L.lx) + Math.abs(ly - L.ly) < 0.008) return;
+            L.lx = lx; L.ly = ly;
+            this.glintDirty = false;
+            this.glintRedraw(lx, ly);
         };
         this.glintRaf = requestAnimationFrame(step);
     },
@@ -1186,10 +1248,7 @@ const LustMinigame = {
     glintStop() {
         if (this.glintRaf) cancelAnimationFrame(this.glintRaf);
         this.glintRaf = 0;
-        const wrap = this.el('bt-glint');
-        if (wrap) wrap.classList.remove('bt-glint-live');
-        // Прозрачность слоёв НЕ сбрасывается: при затухании следа они гаснут
-        // вместе с обёрткой, а не пропадают раньше неё.
+        if (this.glintLean) this.glintLean.lx = null;
     },
 
     // Муть, пена и их блики видны и гаснут ВМЕСТЕ: это один след на теле.
@@ -1201,10 +1260,6 @@ const LustMinigame = {
             n.style.opacity = on ? '1' : '0';
         }
         if (!on) this.glintStop();
-        else if (this.glintLean) {
-            this.glintLean.op = []; this.glintLean.tr = '';
-            (this.glintEls || []).forEach(c => { c.style.opacity = '0'; c.style.transform = ''; });
-        }
     },
 
     wipeLather() {

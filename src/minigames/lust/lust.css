@@ -178,19 +178,6 @@
     transition: opacity 0.6s ease;
     pointer-events: none;
 }
-/* Слои бликов лежат в обёртке размером с холст червя; прозрачность и сдвиг
-   каждого ставит наклон телефона. Слоем композитора — только пока пена на
-   теле (.bt-glint-live): постоянный слой на айфоне роняет кадры и даёт
-   чёрное моргание (docs/traps.md, п. 152). */
-#lust-game #bt-glint canvas {
-    position: absolute;
-    left: 0; top: 0;
-    width: 100%; height: 100%;
-    background: none;
-    opacity: 0;
-    pointer-events: none;
-}
-#lust-game #bt-glint.bt-glint-live canvas { will-change: transform, opacity; }
 
 /* Предмет в руке кликов не ловит: под пальцем должно оказываться тело, а
    не мыло, которое этим же пальцем держат. */
