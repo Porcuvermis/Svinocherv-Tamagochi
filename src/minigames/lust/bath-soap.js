@@ -269,7 +269,9 @@ const BATH_SOAP = {
     // звёзд) и ближняя (яркие звёзды со свечением и иглами, прозрачная).
     // Картинка вместо тысяч svg-кружков: сдвиг одной картинки дёшев, а
     // тысячи узлов под клипом перерисовывались бы на каждом кадре.
-    TEX: { x: -80, y: -80, w: 550, h: 1004, px: 2.4 },
+    // Плотность 2 пикселя на единицу: при 2.4 две картинки неба занимали
+    // 25 МБ декодированной памяти, а видеопамять айфона в финале на пределе.
+    TEX: { x: -80, y: -80, w: 550, h: 1004, px: 2 },
 
     buildTex() {
         if (typeof document === 'undefined') return;
@@ -929,7 +931,7 @@ onmessage = async (e) => {
                 Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic'));
                 Lv.dirty = false;
             }
-            if (!Lv.roots.length) { Lv.raf = 0; return; }
+            if (!Lv.roots.length) { Lv.raf = 0; this.layers([]); return; }
             // 30 кадров хватает: флакон — украшение, а не игра.
             if (now - Lv.last >= 33) {
                 Lv.last = now; Lv.n = (Lv.n || 0) + 1;
@@ -939,7 +941,19 @@ onmessage = async (e) => {
                 // Спрятанный флакон не крутится: пока мыло в руке, копия на
                 // полке стоит с нулевой прозрачностью, и её анимация удваивала
                 // работу ровно тогда, когда кадр и так тяжелее всего.
-                const vis = Lv.roots.filter(r => { const h = r.closest('#bt-soap-home'); return !h || h.style.opacity !== '0'; });
+                // И флакон за кадром не крутится: в финале камера смотрит на
+                // хвост, полка далеко за краем, а анимация шла бы вхолостую.
+                const vis = Lv.roots.filter(r => {
+                    const h = r.closest('#bt-soap-home');
+                    if (h && h.style.opacity === '0') return false;
+                    const m = this.worldMatrix(r);
+                    if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
+                    // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
+                    // с лучами полка в финале считалась видимой.
+                    const x = m.c * -30 + m.e, y = m.d * -30 + m.f, R = 50 * Math.abs(m.a);
+                    return x > -R && x < 390 + R && y > -R && y < 844 + R;
+                });
+                this.layers(vis);
                 if (vis.length) {
                     const Fr = this.magicFrame(now / 1000);
                     vis.forEach(r => this.applyFrame(r, Fr));
@@ -953,6 +967,19 @@ onmessage = async (e) => {
     stop() {
         if (this.live.raf) cancelAnimationFrame(this.live.raf);
         this.live.raf = 0;
+        this.layers([]);
+    },
+
+    // Холсты полки и руки — слоем композитора ТОЛЬКО пока на них живой и
+    // видимый флакон (комментарий в index.html у #bt-shelf).
+    layers(vis) {
+        if (typeof document === 'undefined') return;
+        for (const id of ['bt-shelf', 'bt-hand']) {
+            const svg = document.getElementById(id);
+            if (!svg) continue;
+            const on = vis.some(r => svg.contains(r));
+            if (svg.classList.contains('bt-live') !== on) svg.classList.toggle('bt-live', on);
+        }
     },
 
     applyFrame(root, Fr) {
