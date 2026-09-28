@@ -241,9 +241,13 @@ const DebugState = {
             // дорого ПЕРЕСЧИТЫВАТЬ его каждый кадр или дорого РИСОВАТЬ его
             // вообще. Замер на телефоне: погас — 60, замер — 24 → чинить
             // надо картинку; замер — 60 → чинить частоту.
+            // «Мыло замерло» — то же разделение для живого волшебного флакона:
+            // дорого его перерисовывать каждый кадр или дорого рисовать вообще.
             const modes = ['всё', 'без дождя', 'без червя', 'без следа', 'без сцены',
+                           'без неба во флаконе', 'без убранства флакона', 'мыло замерло',
                            'червь замер', 'только фон'];
             const classes = ['', 'dbg-no-rain', 'dbg-no-worm', 'dbg-no-trail', 'dbg-no-scene',
+                             'dbg-no-sky', 'dbg-no-decor', '',
                              '', 'dbg-no-rain dbg-no-worm dbg-no-trail'];
             this.layerMode = ((this.layerMode || 0) + 1) % modes.length;
             const root = document.documentElement;
@@ -252,6 +256,7 @@ const DebugState = {
             classes[this.layerMode].split(' ').filter(Boolean)
                 .forEach(c => root.classList.add(c));
             this.freezeWorms(modes[this.layerMode] === 'червь замер');
+            if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.frozen = modes[this.layerMode] === 'мыло замерло';
             const btn = this.panel && this.panel.querySelector('[data-act="layers"]');
             if (btn) btn.textContent = 'Слои: ' + modes[this.layerMode];
             return;

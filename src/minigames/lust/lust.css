@@ -196,6 +196,12 @@
     animation: bt-ready 1.6s ease-in-out infinite;
 }
 
+/* Мигание прозрачностью ВСЕЙ группы — не для живого волшебного флакона:
+   прозрачность группы с живым внутри гонит его через отдельный буфер на
+   каждом кадре (docs/traps.md, пп. 37 и 73). Флакон светится сам; свою
+   подсказку левитацией вещи получат отдельной задачей. */
+#lust-game #bt-soap-home.bt-ready.bt-soap-live { animation: none; }
+
 @keyframes bt-ready {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.62; }
@@ -221,6 +227,19 @@ html.dbg-no-scene #lust-game #bt-cam-shelf,
 html.dbg-no-scene #lust-game #bt-goo-wall,
 html.dbg-no-scene #lust-game #bt-cam-under,
 html.dbg-no-scene #lust-game #bt-cam-over { display: none !important; }
+
+/* Волшебный флакон мыла: небо за стеклом и убранство вокруг — по отдельности
+   (docs/traps.md, п. 73: подозреваемых снимают по одному на телефоне). */
+html.dbg-no-sky #lust-game .bsm-far,
+html.dbg-no-sky #lust-game .bsm-near { display: none !important; }
+html.dbg-no-decor #lust-game .bsm-aura,
+html.dbg-no-decor #lust-game .bsm-rays1,
+html.dbg-no-decor #lust-game .bsm-rays2,
+html.dbg-no-decor #lust-game .bsm-caus,
+html.dbg-no-decor #lust-game .bsm-motes-f,
+html.dbg-no-decor #lust-game .bsm-motes-b,
+html.dbg-no-decor #lust-game .bsm-dust,
+html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
 
 /* ================= МАГАЗИН ПОХОТИ ================= */
 /* Форма прилавка — ТА ЖЕ, что в саду и на кухне: строка «картинка — было →

@@ -186,6 +186,8 @@ const BATH_SOAP = {
     refresh() {
         const el = typeof document !== 'undefined' && document.getElementById('bt-soap-art');
         if (el) el.innerHTML = this.draw(null, 'shelf');
+        const home = el && el.closest('#bt-soap-home');
+        if (home) home.classList.toggle('bt-soap-live', this.TIERS[this.tier()] === 'magic');
     },
 
     // Многоугольник со скруглёнными вершинами: у мыла острых углов нет.
@@ -933,7 +935,14 @@ onmessage = async (e) => {
             }
             if (!Lv.roots.length) { Lv.raf = 0; this.layers([]); return; }
             // 30 кадров хватает: флакон — украшение, а не игра.
-            if (now - Lv.last >= 33) {
+            // Замер с телефона («Слои → мыло замерло»), переезд камеры:
+            // флакон не трогается. Во время переезда сцена едет ГОТОВОЙ
+            // текстурой (lust.js, camMove), и любая перемена внутри —
+            // анимация или включение слоя — перерисовывала бы её прямо на
+            // ходу (docs/traps.md, пп. 150 и 152).
+            const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
+            const hold = this.frozen || (L0 && L0.camTimer);
+            if (!hold && now - Lv.last >= 33) {
                 Lv.last = now; Lv.n = (Lv.n || 0) + 1;
                 const L = this.lean(now / 1000), k = 0.2;
                 Lv.px += (L.x - Lv.px) * k;
@@ -943,7 +952,11 @@ onmessage = async (e) => {
                 // работу ровно тогда, когда кадр и так тяжелее всего.
                 // И флакон за кадром не крутится: в финале камера смотрит на
                 // хвост, полка далеко за краем, а анимация шла бы вхолостую.
+                // Под открытым магазином полку не видно — анимирует только
+                // иконка (docs/traps.md, п. 68).
+                const shop = typeof LustShop !== 'undefined' && LustShop.open;
                 const vis = Lv.roots.filter(r => {
+                    if (shop && !r.closest('#bt-shop')) return false;
                     const h = r.closest('#bt-soap-home');
                     if (h && h.style.opacity === '0') return false;
                     const m = this.worldMatrix(r);
@@ -1162,8 +1175,8 @@ onmessage = async (e) => {
                 </linearGradient>
                 <clipPath id="${id}-ball"><circle cx="0" cy="${CY}" r="${R}"/></clipPath>
             </defs>
-            <circle cx="0" cy="${CY}" r="58" fill="url(#${id}-halo)"/>
-            <circle cx="0" cy="${CY + 4}" r="32" fill="url(#${id}-halo2)"/>
+            <circle class="bs-over" cx="0" cy="${CY}" r="58" fill="url(#${id}-halo)"/>
+            <circle class="bs-over" cx="0" cy="${CY + 4}" r="32" fill="url(#${id}-halo2)"/>
 
             <path d="${ring}${flask}${lipD}${wax}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
             <!-- Пробковое кольцо (на полке — за сеткой). -->
@@ -1316,8 +1329,8 @@ onmessage = async (e) => {
                 <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
             <!-- Ореол на кафеле. -->
-            <circle cx="0" cy="8" r="52" fill="url(#${id}-halo)"/>
-            <circle cx="0" cy="10" r="30" fill="url(#${id}-halo2)"/>
+            <circle class="bs-over" cx="0" cy="8" r="52" fill="url(#${id}-halo)"/>
+            <circle class="bs-over" cx="0" cy="10" r="30" fill="url(#${id}-halo2)"/>
 
             <path d="${body}${lip}${collar}${bulb}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
             <!-- Стекло: тёмное целиком, полость — светящаяся жижа. -->
@@ -2058,7 +2071,7 @@ onmessage = async (e) => {
             </g>
             <path d="${face}" fill="none" stroke="${mixColor(ink, R[1], 0.4)}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
             <!-- Волос: прилип к лицу и свешивается через край. -->
-            <path d="M-14 -2C-8 -7 -4 1 2 -3S10 0 13 5Q17 11 15 18Q13 24 17 29" fill="none" stroke="${S.hair}"
+            <path class="bs-over" d="M-14 -2C-8 -7 -4 1 2 -3S10 0 13 5Q17 11 15 18Q13 24 17 29" fill="none" stroke="${S.hair}"
                   stroke-width="0.55" stroke-linecap="round"/>
         </g>${goo}`;
     }
