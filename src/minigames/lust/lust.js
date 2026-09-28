@@ -26,6 +26,9 @@ const LustMinigame = {
     camEl: null,
     camBackEl: null,
     fgEl: null,
+    // Мыло или мочалка, отпущенные посреди этапа: где лежат и за какую
+    // точку рисунка их брали (onUp, looseHit).
+    loose: null,
     wormHost: null,
     wormHandle: null,
 
@@ -235,6 +238,7 @@ const LustMinigame = {
 
         this.phase = 'idle';
         this.drag = null;
+        this.loose = null;
         if (typeof LustShop !== 'undefined') LustShop.close();
         if (typeof LustDebug !== 'undefined') LustDebug.render();
         // Сцена собрана один раз, а ступень мыла могла смениться, пока
@@ -301,6 +305,7 @@ const LustMinigame = {
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.drag = null;
+        this.loose = null;
         this.fgEl.innerHTML = '';
         if (typeof MinigameWindow !== 'undefined') {
             MinigameWindow.resumeRoom();
@@ -1049,6 +1054,13 @@ const LustMinigame = {
         }
         if (this.phase === 'soap' || this.phase === 'cloth') {
             const kind = this.phase;
+            // Предмет отпущен посреди этапа — он лежит там, где его оставили,
+            // а на полке его нет: брать его можно только оттуда.
+            if (this.loose) {
+                const at = this.looseHit(this.toStage(e));
+                if (at) this.takeTool(kind, e, at);
+                return;
+            }
             // Высокий флакон берут и за горлышко — оно далеко от гнезда,
             // поэтому попадание считается и по габариту предмета.
             const b = kind === 'soap' ? BATH_SOAP.box() : null;
@@ -1103,11 +1115,36 @@ const LustMinigame = {
         if (!this.drag) return;
         this.bendHand = null;
         this.ringTouch(null);
-        if (this.drag.kind !== 'tail' && this.drag.kind !== 'rub') {
-            this.fgEl.innerHTML = '';
-            this.showTools(true);
-        }
+        // Мыло и мочалка, отпущенные посреди своего этапа, ОСТАЮТСЯ там, где
+        // их отпустили (просьба игрока): возврат на полку после каждого
+        // отрыва пальца заставлял тянуться к полке снова и снова. Домой
+        // предмет уходит только с концом этапа (returnTool).
+        const d = this.drag;
+        if ((d.kind === 'soap' || d.kind === 'cloth') && d.pos)
+            this.loose = { kind: d.kind, at: d.at, pos: d.pos, k: d.k };
         this.drag = null;
+    },
+
+    // Попал ли палец (точка ХОЛСТА) в лежащий предмет. Ответ — точка на
+    // рисунке полки, за которую его возьмут, чтобы он не прыгнул (takeTool).
+    // Предмет лежит в масштабе руки: точка холста переводится обратно тем же
+    // масштабом, каким он нарисован.
+    looseHit(q) {
+        const L = this.loose;
+        if (!L) return null;
+        const a = BATH_ART.slots()[L.kind];
+        const art = { x: L.at.x + (q.x - L.pos.x) / L.k, y: L.at.y + (q.y - L.pos.y) / L.k };
+        const b = L.kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(L.kind);
+        const inBox = art.x > b.x - 12 && art.x < b.x + b.w + 12 && art.y > b.y - 12 && art.y < b.y + b.h + 12;
+        return inBox || Math.hypot(art.x - a.x, art.y - a.y) < 70 ? art : null;
+    },
+
+    // Этап кончился — предмет возвращается на полку.
+    returnTool() {
+        this.drag = null;
+        this.loose = null;
+        this.fgEl.innerHTML = '';
+        this.showTools(true);
     },
 
     // ---------- ЭТАПЫ ----------
@@ -1149,7 +1186,7 @@ const LustMinigame = {
         this.fillRaf = requestAnimationFrame(step);
     },
 
-    takeTool(kind, e) {
+    takeTool(kind, e, at) {
         // Предмет держат ТОЙ точкой, за которую взяли: не прыгает центром
         // под палец. У флакона это главное — пузо окно в небо, и палец,
         // взявший горлышко, обязан остаться на горлышке (замечание игрока).
@@ -1160,19 +1197,23 @@ const LustMinigame = {
         // предмет в руке крупнее полочного в DRAG_SCALE, и настолько же
         // дальше от пальца его середина.
         const a = BATH_ART.slots()[kind], k = BATH_ART.DRAG_SCALE;
-        const b = kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(kind), q = this.toScene(e);
+        // at — точка, за которую берут лежащий на экране предмет (looseHit).
+        const b = kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(kind), q = at || this.toScene(e);
         const g = { x: Math.max(b.x, Math.min(b.x + b.w, q.x)), y: Math.max(b.y, Math.min(b.y + b.h, q.y)) };
-        this.drag = { kind, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
+        const s = this.cam ? this.cam.s : 1;
+        this.loose = null;
+        this.drag = { kind, at: g, k: s * k, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
         this.showTools(false, kind);
         this.ready(null);
         this.fgEl.innerHTML =
-            `<g id="bt-held">${BATH_ART.held(kind, this.cam ? this.cam.s : 1, g)}</g>`;
+            `<g id="bt-held">${BATH_ART.held(kind, s, g)}</g>`;
         this.moveTool(this.toStage(e));
     },
 
     // Предмет в руке живёт в координатах ХОЛСТА: его держат перед собой, и
     // камере он не подчиняется.
     moveTool(p) {
+        if (this.drag) this.drag.pos = p;
         const held = this.el('bt-held');
         if (held) held.setAttribute('transform',
             `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
@@ -1186,7 +1227,7 @@ const LustMinigame = {
     },
 
     finishStage(kind) {
-        this.onUp();
+        this.returnTool();
         this.clearHint();
         if (kind === 'soap') {
             // Горка пены над будущим хвостом собирается ЗАРАНЕЕ, пока червя

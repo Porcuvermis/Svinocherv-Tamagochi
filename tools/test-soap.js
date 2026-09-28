@@ -191,11 +191,12 @@ const harness = require('./harness');
   await page.waitForTimeout(1200);
   const toC = (x, y) => page.evaluate(([x, y]) => { const L = LustMinigame, c = L.cam;
     return SvgSpace.toClient(L.svgEl, c.tx + c.s * x, c.ty + c.s * y); }, [x, y]);
-  await page.evaluate(() => { const L = LustMinigame, o = L.paint; window.__paint = [];
+  await page.evaluate(() => { const L = LustMinigame, o = L.paint; window.__paint = []; window.__paintOrig = o;
     L.paint = function (x, y, ...r) { window.__paint.push({ x, y }); return o.call(this, x, y, ...r); }; });
-  const stopAt = (sel) => page.evaluate((sel) => {
-    const r = document.querySelector(sel + ' .bsm-stopper').getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  const collarAt = (sel) => page.evaluate((sel) => {
+    // Воротник, а не пробка: пробка левитирует сама, и замер ловил её фазу.
+    const r = document.querySelector(sel + ' .bsm-collar').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, h: r.height };
   }, sel);
   // Горлышко и пузо — точки сцены на рисунке полки, из того же конфига.
   const spots = await page.evaluate(() => {
@@ -204,34 +205,83 @@ const harness = require('./harness');
              'пузо': { x: A.x + 6, y: y0 + M.SCALE * M.CY } };
   });
   const k = await page.evaluate(() => BATH_ART.DRAG_SCALE);
-  // Пробка левитирует сама — на время замера флакон стоит (п. 137).
+  // Флакон живёт сам — на время замера он стоит (п. 137).
   await page.evaluate(() => { BATH_SOAP.frozen = true; });
   for (const [name, sp] of Object.entries(spots)) {
     await page.waitForTimeout(300);
     const f = await toC(sp.x, sp.y);
-    const s0 = await stopAt('#bt-soap-home');
+    const s0 = await collarAt('#bt-soap-home');
     await page.mouse.move(f.x, f.y); await page.mouse.down();
     await page.waitForTimeout(100);
-    const s1 = await stopAt('#bt-held');
+    const s1 = await collarAt('#bt-held');
     const ex = { x: f.x + (s0.x - f.x) * k, y: f.y + (s0.y - f.y) * k };
     const jump = Math.hypot(s1.x - ex.x, s1.y - ex.y);
-    check(jump < 3, `взял за ${name} — предмет не прыгнул (${jump.toFixed(1)} px)`);
+    check(jump < 1.5, `взял за ${name} — предмет не прыгнул (${jump.toFixed(1)} px)`);
     if (name === 'горлышко') {
       const cb = await page.evaluate(() => LustMinigame.coverBox());
       const tg = await toC(cb.x + cb.w * 0.5, cb.y + cb.h * 0.25);
       for (let i = 1; i <= 12; i++) { await page.mouse.move(f.x + (tg.x - f.x) * i / 12, f.y + (tg.y - f.y) * i / 12); await page.waitForTimeout(30); }
       await page.waitForTimeout(200);
-      const s2 = await stopAt('#bt-held');
+      const s2 = await collarAt('#bt-held');
       const kept = Math.hypot((s2.x - tg.x) - (s1.x - f.x), (s2.y - tg.y) - (s1.y - f.y));
       check(kept < 1.5, `на ходу палец остаётся на горлышке (${kept.toFixed(1)} px)`);
       const fin = await page.evaluate(([x, y]) => LustMinigame.toScene({ clientX: x, clientY: y }), [tg.x, tg.y]);
       const pt = await page.evaluate(() => window.__paint.slice(-1)[0]);
       const dy = pt ? pt.y - fin.y : 0;
       check(pt && dy > 40, `мылит пузо, ниже пальца на ${dy.toFixed(0)} ед. сцены`);
+
+      // Отпустил посреди этапа — предмет ОСТАЁТСЯ, где отпустили, а не
+      // уезжает на полку (просьба игрока). Подхватывается с того места, за
+      // которое взяли снова, — тоже без прыжка.
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+      const s3 = await collarAt('#bt-held').catch(() => null);
+      const home = await page.evaluate(() => document.getElementById('bt-soap-home').style.opacity);
+      check(s3 && Math.hypot(s3.x - s2.x, s3.y - s2.y) < 1.5 && home === '0',
+            'отпустил — флакон лежит там же, на полке его нет');
+      // Середина пуза — от размера самого флакона на экране: число
+      // пикселей уводило точку за край при масштабе холста не единица.
+      const u = await page.evaluate(() => { const M = BATH_SOAP.MAGIC, [c0, c1] = M.NECK.collar;
+        return { collar: c0 - c1, belly: (c0 + c1) / 2 - M.CY }; });
+      const f2 = { x: s3.x + 2, y: s3.y - s3.h / u.collar * u.belly };
+      await page.mouse.move(f2.x, f2.y); await page.mouse.down();
+      await page.waitForTimeout(100);
+      const again = await page.evaluate(() => !!(LustMinigame.drag && LustMinigame.drag.kind === 'soap'));
+      const s4 = await collarAt('#bt-held');
+      check(again && Math.hypot(s4.x - s3.x, s4.y - s3.y) < 1.5, `подхватил снова за пузо — не прыгнул (${again ? Math.hypot(s4.x - s3.x, s4.y - s3.y).toFixed(1) + ' px' : 'не взял'})`);
+      await page.mouse.up();
+      const miss = { x: s3.x - 150, y: s3.y - 200 };
+      await page.mouse.click(miss.x, miss.y);
+      const idle = await page.evaluate(() => !LustMinigame.drag && !!LustMinigame.loose);
+      check(idle, 'тап мимо лежащего флакона его не берёт');
+      await page.evaluate(() => LustMinigame.returnTool());
+      await page.waitForTimeout(200);
+      const back = await page.evaluate(() => ({ held: !!document.getElementById('bt-held'),
+        home: document.getElementById('bt-soap-home').style.opacity }));
+      check(!back.held && back.home === '1', 'конец этапа — флакон снова на полке');
+      continue;
     }
     await page.mouse.up();
   }
-  await page.evaluate(() => { delete LustMinigame.paint; BATH_SOAP.frozen = false; });
+  await page.evaluate(() => { LustMinigame.paint = window.__paintOrig; BATH_SOAP.frozen = false; });
+
+  // Мочалка — то же самое: отпущенная лежит до конца своего этапа.
+  await page.evaluate(() => LustMinigame.finishStage('soap'));
+  await page.waitForTimeout(600);
+  const ca = await page.evaluate(() => BATH_ART.slots().cloth);
+  const cc = await toC(ca.x, ca.y);
+  await page.mouse.move(cc.x, cc.y); await page.mouse.down();
+  await page.mouse.move(cc.x - 120, cc.y + 60, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const cl = await page.evaluate(() => ({ phase: LustMinigame.phase, held: !!document.getElementById('bt-held'),
+    home: document.getElementById('bt-cloth-home').style.opacity }));
+  check(cl.phase === 'cloth' && cl.held && cl.home === '0', 'отпущенная мочалка лежит там же, на полке её нет');
+  await page.evaluate(() => LustMinigame.finishStage('cloth'));
+  await page.waitForTimeout(200);
+  const cb2 = await page.evaluate(() => ({ held: !!document.getElementById('bt-held'),
+    home: document.getElementById('bt-cloth-home').style.opacity }));
+  check(!cb2.held && cb2.home === '1', 'конец этапа — мочалка снова на полке');
 
   // ================= 7. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());

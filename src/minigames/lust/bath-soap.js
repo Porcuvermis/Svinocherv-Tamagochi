@@ -862,7 +862,7 @@ onmessage = async (e) => {
             <!-- ГОРЛО: стекло, высокий золотой воротник, хрустальный венчик. -->
             <path d="${neck}" fill="url(#${id}-neckV)"/>
             <path d="M${-NK.r + 1} -31V${c0}" stroke="#ffffff" stroke-width="0.9" stroke-linecap="round"/>
-            <path d="${collar}" fill="url(#${id}-gold)"/>
+            <path class="bsm-collar" d="${collar}" fill="url(#${id}-gold)"/>
             <path d="${ribs}" stroke="${Au[0]}" stroke-width="0.55" stroke-opacity="0.75"/>
             <path d="M-6.8 ${c1 + 6.5}H6.8M-6.8 ${c0 - 6.5}H6.8" stroke="${Au[4]}" stroke-width="0.7" stroke-opacity="0.9"/>
             <!-- Камень-кабошон в середине воротника. -->
