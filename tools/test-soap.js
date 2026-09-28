@@ -461,7 +461,10 @@ const harness = require('./harness');
   // сместился яркий центр холста бликов. Сторона — не «лишь бы менялось»
   // (п. 116): наклон вправо — блик на левом боку, влево — на правом.
   say('\n======== БЛИК У КАЖДОГО ПУЗЫРЯ, ХОДИТ ОТ НАКЛОНА ========');
-  await page.evaluate(() => { const L = LustMinigame; L.growReset(); L.growTo('soap', 1); });
+  // Механика меряется на ГЕЛЕ (ступень 4): у матового хозяйственного блик
+  // нарочно редкий и тусклый — прогресс блеска по ступеням.
+  await page.evaluate(() => { const L = LustMinigame; LustDebug.setLevel('soap', 4); BATH_SOAP.refresh();
+    L.growReset(); L.growTo('soap', 1); });
   const glintAt = async (x, y) => {
     await page.evaluate(([x, y]) => { window.__lean = { live: true, x, y }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, [x, y]);
     await page.waitForTimeout(900);
@@ -472,11 +475,15 @@ const harness = require('./harness');
       const b = (alone.length ? alone : bs).reduce((m, q) => q.r > m.r ? q : m, { r: 0 });
       const R = Math.ceil(b.r * 1.05), x0 = Math.round(b.x - R), y0 = Math.round(b.y - R);
       const d = ctx.getImageData(x0, y0, R * 2, R * 2).data;
+      // Главный блик — по самым ярким точкам: второе отражение напротив
+      // тусклее и иначе тянет центр яркости в обратную сторону.
+      let top = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > top) top = d[i];
       let sx = 0, sy = 0, sw = 0, far = 0;
       for (let j = 0; j < R * 2; j++) for (let i = 0; i < R * 2; i++) {
         const w = d[(j * R * 2 + i) * 4 + 3]; if (w < 12) continue;
+        if (Math.hypot(x0 + i + 0.5 - b.x, y0 + j + 0.5 - b.y) > b.r) far++;
+        if (w < top * 0.7) continue;
         const px = x0 + i + 0.5 - b.x, py = y0 + j + 0.5 - b.y;
-        if (Math.hypot(px, py) > b.r) far++;
         sx += px * w; sy += py * w; sw += w; }
       return { n: bs.length, r: b.r, cx: sw ? sx / sw / b.r : 0, cy: sw ? sy / sw / b.r : 0, far, draws: L.glintDraws || 0 };
     });

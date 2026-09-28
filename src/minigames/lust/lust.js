@@ -1129,24 +1129,28 @@ const LustMinigame = {
         tilt: 0.6,                          // сколько круга проходит блик от полного наклона
         gain: 2.4,                          // чувствительность к наклону, как у флакона
         reach: 0.6,                         // круг хода блика, в радиусах пузыря
-        size: 0.24,                         // полуось блика, в радиусах пузыря
-        second: { at: 0.72, size: 0.12, alpha: 0.35 },   // второе отражение напротив
-        min: 0.18,                          // пузыри мельче min·клетки блика не получают
+        // Где второе отражение и его размер; сила, размер главного блика,
+        // ореол и порог размера пузыря — у вида (LATHER.glint).
+        second: { at: 0.72, size: 0.12 },
         // Бликов не больше cap — у самых КРУПНЫХ пузырей. Замер (4× замедление,
         // червь в пене целиком, 1819 пузырей): со всеми бликами 20 кадров
         // из 60, с 400 крупнейшими — 53. Платится не рисование заготовки,
         // а отрисовка видимым холстом каждого штампа; у мелких пузырей блик
         // всё равно в точку.
         cap: 420,
-        foam: 0.7                           // сила блика пены мочалки
+        // Блик пены мочалки (пока один вид — лестница мочалки впереди).
+        foam: { k: 0.7, size: 0.24, second: 0.35, halo: 0, min: 0.18 }
     },
 
     glintBubble(G, bx, by, r, pc) {
-        if (r < G.cell * this.GLINT.min) return;
-        const k = G.kind === 'cloth' ? this.GLINT.foam : ((G.look && G.look.glint) || 0.3);
-        if (k <= 0) return;
-        const P = btPal(), col = pc || (G.kind === 'cloth' ? P.foam.hi : P.soapLather[G.look.key].hi);
-        (this.glintBubs = this.glintBubs || []).push({ x: bx, y: by, r, k, col });
+        const gp = G.kind === 'cloth' ? this.GLINT.foam : ((G.look && G.look.glint) || this.GLINT.foam);
+        if (!gp.k || r < G.cell * gp.min) return;
+        const P = btPal(), c = G.kind === 'cloth' ? P.foam : P.soapLather[G.look.key];
+        // Ядро блика — светлое; ореол — в цвет свечения вида или, у
+        // волшебной мути, в радужный цвет кромки своего пузыря.
+        const halo = gp.halo ? (pc || c.glow || c.hi) : null;
+        (this.glintBubs = this.glintBubs || []).push({ x: bx, y: by, r, k: gp.k, gp, core: c.hi, halo,
+                                                      key: (G.look ? G.look.key : 'foam') + '|' + (halo || '') });
         this.glintDirty = true;
     },
 
@@ -1161,29 +1165,32 @@ const LustMinigame = {
     // Заготовка блика для единичного пузыря радиуса R0 в центре холста 2C×2C.
     // (lx, ly) — где свет в круге хода: 0 — середина, 1 — край.
     GLINT_R0: 24, GLINT_C: 32,
-    glintStamp(col, lx, ly) {
-        const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_C;
-        const cv = (this._stamps = this._stamps || {})[col] || document.createElement('canvas');
-        this._stamps[col] = cv;
+    glintStamp(b, lx, ly) {
+        const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_C, gp = b.gp, col = b.core;
+        const cv = (this._stamps = this._stamps || {})[b.key] || document.createElement('canvas');
+        this._stamps[b.key] = cv;
         cv.width = cv.height = C * 2;
         const g = cv.getContext('2d');
         const d = Math.min(0.99, Math.hypot(lx, ly)), z = Math.sqrt(1 - d * d);
         const ang = Math.atan2(ly, lx);
-        const spot = (x, y, a, squash, alpha) => {
+        const spot = (x, y, a, squash, alpha, color, soft) => {
             g.save();
             g.translate(x, y); g.rotate(ang); g.scale(squash, 1);   // сжатие вдоль радиуса
             const gr = g.createRadialGradient(0, 0, 0, 0, 0, a);
-            gr.addColorStop(0, col); gr.addColorStop(0.45, col); gr.addColorStop(1, 'rgba(255,255,255,0)');
+            gr.addColorStop(0, color); gr.addColorStop(soft ? 0.1 : 0.45, color); gr.addColorStop(1, 'rgba(255,255,255,0)');
             g.globalAlpha = alpha;
             g.fillStyle = gr; g.beginPath(); g.arc(0, 0, a, 0, Math.PI * 2); g.fill();
             g.restore();
         };
         // Главный: к краю сплющен поперёк в √(1−d²), мельче и тусклее.
-        const a = Gc.size * R0 * (0.8 + 0.2 * z);
-        spot(C + lx * Gc.reach * R0, C + ly * Gc.reach * R0, a, Math.max(0.28, z), 0.55 + 0.45 * z);
+        const a = gp.size * R0 * (0.8 + 0.2 * z);
+        const mx = C + lx * Gc.reach * R0, my = C + ly * Gc.reach * R0, sq = Math.max(0.28, z);
+        // Ореол светящихся видов — под ядром, шире и мягче: блик светится,
+        // а не просто блестит.
+        if (gp.halo && b.halo) spot(mx, my, Math.min(C * 0.95, a * gp.halo.w), Math.max(0.5, sq), gp.halo.a, b.halo, true);
+        spot(mx, my, a, sq, 0.55 + 0.45 * z, col);
         // Второе отражение — слабый серпик у кромки напротив.
-        const S2 = Gc.second;
-        spot(C - lx * S2.at * R0, C - ly * S2.at * R0, S2.size * R0, 0.35, S2.alpha);
+        if (gp.second) spot(C - lx * Gc.second.at * R0, C - ly * Gc.second.at * R0, Gc.second.size * R0, 0.35, gp.second, col);
         return cv;
     },
 
@@ -1202,7 +1209,7 @@ const LustMinigame = {
             this._glintTopN = all.length;
         }
         for (const b of this._glintTop) {
-            const st = stamps[b.col] || (stamps[b.col] = this.glintStamp(b.col, lx, ly));
+            const st = stamps[b.key] || (stamps[b.key] = this.glintStamp(b, lx, ly));
             const w = b.r * K;
             ctx.globalAlpha = b.k;
             ctx.drawImage(st, b.x - w, b.y - w, w * 2, w * 2);
