@@ -414,8 +414,15 @@ const BATH_ART = {
     //   prism — кромка пузыря радужная, у каждого свой цвет;
     //   spark — доля клеток с искрой.
     LATHER: [
-        // 0 — хозяйственная: густая мелкая матовая пена, блик слабый.
-        { key: 'house',  film: 0.2,  n: 7, big: 0.42, small: 0.1,  A: 0.32, rim: 1.0, shine: 0.9 },
+        // 0 — хозяйственная: густая мелкая МАТОВАЯ пена. Первая версия —
+        // редкие крупные кружки с бликом — читалась «обсыпанным», а не
+        // намыленным. Эта пена — молочная плёнка НЕРОВНОЙ густоты (mottle —
+        // несколько пятен разной плотности вместо одного диска), по ней
+        // мелкие пузырьки комочками (clump), у каждого тень снизу (shade):
+        // объём пены сказан тенью, а не бликом — блик дал бы глянец, а это
+        // мыло матовое.
+        { key: 'house',  film: 0.13, mottle: 4, n: 13, big: 0.3, small: 0.06, A: 0.42, rim: 0.55, shine: 0.55,
+          shade: 0.9, clump: 0.55 },
         // 2 — туалетная: сливочная, чуть крупнее и мягче.
         { key: 'pink',   film: 0.2,  n: 6, big: 0.48, small: 0.12, A: 0.34, rim: 1.1, shine: 1.3 },
         // 4 — гель: плёнка цветная и прозрачная, пузыри редкие, крупные и
@@ -463,6 +470,16 @@ const BATH_ART = {
             ctx.fillStyle = c[500];
             ctx.beginPath();
             ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
+            // Неровная густота: поверх диска — пятна разной плотности со
+            // сдвигом. Ровный диск на каждую клетку складывался в ровную
+            // заливку, как краска, а мыльная плёнка всегда в разводах.
+            for (let m = 0; V && m < (V.mottle || 0); m++) {
+                const ma = rng() * Math.PI * 2, md = rng() * cell * 0.55;
+                ctx.globalAlpha = V.film * (0.4 + rng() * 1.1);
+                ctx.beginPath();
+                ctx.arc(x + Math.cos(ma) * md, y + Math.sin(ma) * md, cell * (0.35 + rng() * 0.4), 0, Math.PI * 2);
+                ctx.fill();
+            }
             // Свет эликсира и волшебной мути — СЛОЖЕНИЕМ: светится, а не
             // закрашивает. Краской тот же цвет ложился бы бледной плёнкой.
             if (V && V.glow) {
@@ -478,11 +495,19 @@ const BATH_ART = {
         }
         if (part === 'base') { ctx.globalAlpha = 1; return; }
         const prism = V && V.prism ? P.soapCosmos.prism : null;
+        let prev = null;
         for (let i = 0; i < n; i++) {
             const r = (small + Math.pow(rng(), 2.1) * (big - small)) * spread;
             const a = rng() * Math.PI * 2;
             const d = Math.pow(rng(), 0.6) * cell * 0.72 * spread;
-            const bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
+            let bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
+            // Комочек: пузырёк прилипает к соседу, а не рассыпается по
+            // клетке сам по себе — пена держится гроздьями.
+            if (V && V.clump && prev && rng() < V.clump) {
+                const ca = rng() * Math.PI * 2, cd = (r + prev.r) * 0.85;
+                bx = prev.x + Math.cos(ca) * cd; by = prev.y + Math.sin(ca) * cd;
+            }
+            prev = { x: bx, y: by, r };
             // Пузырь садится на тело, а не цепляется за него краем: мало
             // того, что центр на силуэте, — половина пузыря обязана лежать
             // на нём же. Без второго условия крупный пузырь, чей центр попал
@@ -500,6 +525,14 @@ const BATH_ART = {
             ctx.globalAlpha = A;
             ctx.fillStyle = c[500];
             ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+            // Тень снизу-справа (свет в игре сверху-слева): объём матовой
+            // пены сказан ей, а не бликом.
+            if (V && V.shade) {
+                ctx.globalAlpha = Math.min(1, A * V.shade);
+                ctx.lineWidth = Math.max(0.8, r * 0.28);
+                ctx.strokeStyle = c.lo;
+                ctx.beginPath(); ctx.arc(bx, by, r * 0.86, Math.PI * 0.05, Math.PI * 0.8); ctx.stroke();
+            }
             // Кромка. У пустого пузыря геля она и есть весь пузырь; у
             // волшебной мути — радужная, у каждого пузыря свой цвет (по
             // сиду: перерисовка не должна перекрашивать пену).
