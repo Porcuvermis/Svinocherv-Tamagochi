@@ -402,17 +402,51 @@ const BATH_ART = {
     // inside(x, y) — необязательная проверка «точка на теле»: пузырь, чей
     // ЦЕНТР за силуэтом, не рисуется вовсе. Край при этом торчать наружу
     // может и должен — пузырь выпуклый, у кромки тела половина его снаружи.
-    washCell(ctx, kind, x, y, cell, t, seed, part, inside) {
+    // ---------- ВИД МЫЛЬНОЙ МУТИ ----------
+    // Муть идёт за лестницей мыла, но вдвое реже: вид меняется на ступенях
+    // 0, 2, 4, 6, 8 (решение игрока, docs/plan/21-lust-bath.md, 5в). Размер
+    // мазка вид НЕ трогает — его двигают числа ступени; вид — только
+    // картинка.
+    //   film  — плотность подложки (плёнка на коже);
+    //   n, big, small — пузырей в клетке и их размер в долях клетки;
+    //   A     — плотность тела пузыря, rim — его кромки, shine — блика;
+    //   glow  — свечение сложением цвета (эликсир, волшебная);
+    //   prism — кромка пузыря радужная, у каждого свой цвет;
+    //   spark — доля клеток с искрой.
+    LATHER: [
+        // 0 — хозяйственная: густая мелкая матовая пена, блик слабый.
+        { key: 'house',  film: 0.2,  n: 7, big: 0.42, small: 0.1,  A: 0.32, rim: 1.0, shine: 0.9 },
+        // 2 — туалетная: сливочная, чуть крупнее и мягче.
+        { key: 'pink',   film: 0.2,  n: 6, big: 0.48, small: 0.12, A: 0.34, rim: 1.1, shine: 1.3 },
+        // 4 — гель: плёнка цветная и прозрачная, пузыри редкие, крупные и
+        // ПУСТЫЕ внутри — видна кромка и острый блик, как у пузыря в геле.
+        { key: 'gel',    film: 0.24, n: 5, big: 0.56, small: 0.12, A: 0.12, rim: 2.2, shine: 2.4 },
+        // 6 — эликсир: светится. Поверх плёнки мягкий зелёный свет.
+        { key: 'elixir', film: 0.18, n: 5, big: 0.5,  small: 0.12, A: 0.16, rim: 2.2, shine: 2.2, glow: 0.4 },
+        // 8 — волшебная: фиолет, радужные кромки, искры.
+        { key: 'magic',  film: 0.15, n: 5, big: 0.52, small: 0.12, A: 0.1, rim: 2.4, shine: 2.2, glow: 0.26,
+          prism: true, spark: 0.2 }
+    ],
+
+    // Вид мути по ступени мыла: 0–1 → 0, 2–3 → 1, … 8 → 4.
+    latherLook(level) {
+        const L = level == null && typeof BATH_SOAP !== 'undefined' ? BATH_SOAP.tier() : (level | 0);
+        return this.LATHER[Math.max(0, Math.min(this.LATHER.length - 1, L >> 1))];
+    },
+
+    washCell(ctx, kind, x, y, cell, t, seed, part, inside, look) {
         const cloth = kind === 'cloth';
-        const c = btPal()[cloth ? 'foam' : 'soapFilm'];
+        const P = btPal();
+        const V = cloth ? null : (look || this.LATHER[0]);
+        const c = cloth ? P.foam : P.soapLather[V.key];
         const rng = btRng(seed);
         const k = t == null ? 1 : Math.max(0, Math.min(1, t));
         // Мыло — плёнка: пузырьков много и они мелкие. Мочалка взбивает:
         // пузыри крупнее, ярче и с краем, и тем гуще, чем больше тёрок.
-        const n = cloth ? 4 + Math.round(k * 4) : 6;
-        const big = cell * (cloth ? 0.66 : 0.46);
-        const small = cell * (cloth ? 0.16 : 0.11);
-        const A = cloth ? 0.34 + k * 0.3 : 0.3;
+        const n = cloth ? 4 + Math.round(k * 4) : V.n;
+        const big = cell * (cloth ? 0.66 : V.big);
+        const small = cell * (cloth ? 0.16 : V.small);
+        const A = cloth ? 0.34 + k * 0.3 : V.A;
         // Недотёртая клетка обязана быть ВИДНО недотёртой. Раньше разница
         // между одной тёркой и тремя была в числе пузырей и в яркости —
         // на глаз это одна и та же пена, и игрок водил мочалкой по уже
@@ -425,12 +459,25 @@ const BATH_ART = {
         // Слабая заливка по клетке закрывает эти просветы, не съедая
         // пузыри: они всё равно ярче и с краем.
         if (part !== 'foam') {
-            ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : 0.16;
+            ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : V.film;
             ctx.fillStyle = c[500];
             ctx.beginPath();
             ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
+            // Свет эликсира и волшебной мути — СЛОЖЕНИЕМ: светится, а не
+            // закрашивает. Краской тот же цвет ложился бы бледной плёнкой.
+            if (V && V.glow) {
+                const g = ctx.createRadialGradient(x, y, 0, x, y, cell * 1.1);
+                g.addColorStop(0, c.glow);
+                g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = V.glow;
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.arc(x, y, cell * 1.1, 0, Math.PI * 2); ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+            }
         }
         if (part === 'base') { ctx.globalAlpha = 1; return; }
+        const prism = V && V.prism ? P.soapCosmos.prism : null;
         for (let i = 0; i < n; i++) {
             const r = (small + Math.pow(rng(), 2.1) * (big - small)) * spread;
             const a = rng() * Math.PI * 2;
@@ -453,17 +500,38 @@ const BATH_ART = {
             ctx.globalAlpha = A;
             ctx.fillStyle = c[500];
             ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
-            ctx.globalAlpha = A * (cloth ? 1.5 : 1.1);
+            // Кромка. У пустого пузыря геля она и есть весь пузырь; у
+            // волшебной мути — радужная, у каждого пузыря свой цвет (по
+            // сиду: перерисовка не должна перекрашивать пену).
+            const pc = prism ? prism[Math.floor(rng() * prism.length)] : null;
+            ctx.globalAlpha = Math.min(1, A * (cloth ? 1.5 : V.rim) * (pc ? 1.6 : 1));
             ctx.lineWidth = Math.max(1, r * 0.16);
-            ctx.strokeStyle = c.hi;
+            ctx.strokeStyle = pc || c.hi;
             ctx.beginPath(); ctx.arc(bx, by, r * 0.94, 0, Math.PI * 2); ctx.stroke();
             // Блик — только у крупных: на мелком он превращается в шум.
             if (r > cell * 0.3) {
-                ctx.globalAlpha = A * 1.7;
+                ctx.globalAlpha = Math.min(1, A * (cloth ? 1.7 : V.shine * 1.5));
                 ctx.fillStyle = c.hi;
                 ctx.beginPath();
                 ctx.arc(bx - r * 0.32, by - r * 0.34, r * 0.26, 0, Math.PI * 2);
                 ctx.fill();
+            }
+        }
+        // Искра волшебной мути — мягкая светящаяся точка, без лучей и
+        // ромбов: лучи на флаконе уже читались «палками», ромб — мультяшно.
+        if (V && V.spark && rng() < V.spark) {
+            const sx = x + (rng() - 0.5) * cell, sy = y + (rng() - 0.5) * cell;
+            if (!inside || inside(sx, sy)) {
+                const sr = cell * (0.22 + rng() * 0.18);
+                const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+                g.addColorStop(0, c.glow);
+                g.addColorStop(0.25, c.glow);
+                g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.9;
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
             }
         }
         ctx.globalAlpha = 1;

@@ -974,6 +974,8 @@ const LustMinigame = {
         const cw = b.w / G.nx, ch = b.h / G.ny;
         const r = Math.max(cw, ch) * 0.78 * k;
         const cloth = this.phase === 'cloth';
+        // Вид мути — по ступени мыла (BATH_ART.LATHER).
+        const look = BATH_ART.latherLook();
 
         // ДВА ПРОХОДА, и разница между ними — обрезка силуэтом.
         //
@@ -1014,7 +1016,7 @@ const LustMinigame = {
                     // проступают поверх неё яркой пеной — тем и видно разницу.
                     if (filmed)
                         BATH_ART.washCell(ctx, 'soap', x, y, r, 1,
-                                          idx * 7 + 3, part, inside);
+                                          idx * 7 + 3, part, inside, look);
                     if (cloth && rubs)
                         BATH_ART.washCell(ctx, 'cloth', x, y, r, rubs / need,
                                           idx * 13 + 91, part, inside);
