@@ -85,12 +85,18 @@ const harness = require('./harness');
     await page.mouse.up();
     return moves;
   };
-  const soapMoves = await scrub('soap', 4);
-  ok(await phase() === 'cloth', 'мыло покрыло тело и передало мочалке', await phase());
-  // Этап не должен проходиться одним движением. Порог по ЧИСЛУ мазков, а не
-  // по секундам: секунды в headless свои, а работа — та же.
+  // Мыло — время трения (решение игрока), а не закраска клеток. Змейка
+  // возит пальцем БЫСТРЕЕ спокойного трения, поэтому этап обязан занять не
+  // меньше секунд своей ступени: засчитанная скорость ограничена сверху.
+  const rubSec = await page.evaluate(() => LustMinigame.stageRub());
+  const tSoap = Date.now();
+  const soapMoves = await scrub('soap', 8);
+  const soapSec = (Date.now() - tSoap) / 1000;
+  ok(await phase() === 'cloth', 'мыло натёрло тело и передало мочалке', await phase());
   ok(soapMoves > 30, 'намыливание требует работы, а не одного мазка',
      `${soapMoves} движений`);
+  ok(soapSec >= rubSec * 0.95, 'быстрее ступени не намылить, как ни три',
+     `${soapSec.toFixed(1)} с при ступени ${rubSec} с`);
   const nodesAfterSoap = await nodesNow();
 
   // Мыло обязано лежать НА ЧЕРВЕ. Проверка буквальная: сравниваем пиксели
@@ -139,8 +145,7 @@ const harness = require('./harness');
   // она и была длиннее — ценой того, что игрок доводил её пиксель-хантингом
   // по уже сплошь намыленному червю. Разница между мылом и мочалкой в
   // ДВИЖЕНИИ (широкий мазок против частой тёрки), а не в минутах.
-  ok(clothMoves >= soapMoves * 0.9, 'мочалка требует своей работы',
-     `${clothMoves} против ${soapMoves} у мыла`);
+  ok(clothMoves > 30, 'мочалка требует своей работы', `${clothMoves} движений`);
   await page.waitForTimeout(1600);
   const bubbles = await page.evaluate(() => (LustMinigame.bubbles || []).length);
   ok(await phase() === 'pop', 'мочалка домыла, хвост всплыл', await phase());

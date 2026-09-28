@@ -221,8 +221,9 @@ const harness = require('./harness');
   // Точка рисунка → экран, пока вещь висит в воздухе (loose).
   const airC2 = (x, y) => page.evaluate(([x, y]) => { const L = LustMinigame, o = L.loose;
     return SvgSpace.toClient(L.svgEl, o.pos.x + (x - o.at.x) * o.k, o.pos.y + (y - o.at.y) * o.k); }, [x, y]);
-  await page.evaluate(() => { const L = LustMinigame, o = L.paint; window.__paint = []; window.__paintOrig = o;
-    L.paint = function (x, y, ...r) { window.__paint.push({ x, y }); return o.call(this, x, y, ...r); }; });
+  // Где мылит — видно по точке касания, которую получает трение (soapRub).
+  await page.evaluate(() => { const L = LustMinigame, o = L.soapRub; window.__paint = []; window.__paintOrig = o;
+    L.soapRub = function (p, ...r) { window.__paint.push({ x: p.x, y: p.y }); return o.call(this, p, ...r); }; });
   // Горлышко и пузо — точки на рисунке полки, из того же конфига.
   const spots = await page.evaluate(() => {
     const A = BATH_ART.slots().soap, M = BATH_SOAP.MAGIC, y0 = A.y + 2 + M.FLOOR * (1 - M.SCALE);
@@ -297,7 +298,7 @@ const harness = require('./harness');
     }
     await page.mouse.up();
   }
-  await page.evaluate(() => { LustMinigame.paint = window.__paintOrig; });
+  await page.evaluate(() => { LustMinigame.soapRub = window.__paintOrig; });
   await still(false);
 
   // Мочалка — то же самое: взлетает сама, светится ТЕНЬЮ (картинка её
@@ -368,6 +369,60 @@ const harness = require('./harness');
   check(ac && ac.move > 5 && ac.lift > 10, `конец этапа — мочалка летит на полку по дуге (выше концов на ${ac ? ac.lift.toFixed(0) : 0} ед.)`);
   check(!fc.twin && !fc.glow && fc.home === '1' && !fc.held && !fc.homing, 'и приземляется на полку без двойника, по пути не светясь');
   check(fc.phase !== 'cloth' && fc.phase !== 'return', `после приземления забег идёт дальше (фаза ${fc.phase})`);
+
+  // ================= 10. МЫЛО — ЭТО ТРЕНИЕ, А НЕ ЗАКРАСКА =================
+  // Прогресс этапа мыла копится от ДВИЖЕНИЯ пальца с мылом по телу (решение
+  // игрока: закраска клеток вырождалась в поиск пикселя). Засчитывается
+  // только живой палец — оставленное на черве мыло парит и ничего не
+  // натирает само. Быстрее ступени не натереть: скорость ограничена.
+  say('\n======== МЫЛО — ТРЕНИЕ ПАЛЬЦЕМ ПО ТЕЛУ ========');
+  await page.evaluate(() => { LustMinigame.close(); LustMinigame.open();
+    LustDebug.setLevel('soap', 0); BATH_SOAP.refresh(); LustMinigame.startWater(); });
+  for (let i = 0; i < 40 && await page.evaluate(() => LustMinigame.phase) !== 'soap'; i++) await page.waitForTimeout(250);
+  await page.waitForTimeout(1300);
+  const rubNow = () => page.evaluate(() => LustMinigame.rub);
+  // Покрытие холста мытья: доля непрозрачных точек (сама картинка, а не число).
+  const cover = () => page.evaluate(() => { const c = document.getElementById('bt-wash');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0;
+    for (let i = 3; i < d.length; i += 16) if (d[i] > 8) n++; return n; });
+  const bodyC = async (u, v) => page.evaluate(([u, v]) => { const L = LustMinigame, b = L.coverBox(), c = L.cam;
+    return SvgSpace.toClient(L.svgEl, c.tx + c.s * (b.x + b.w * u), c.ty + c.s * (b.y + b.h * v)); }, [u, v]);
+  // Берём мыло из воздуха и ведём пальцем так, чтобы пузо (точка касания)
+  // шло по середине тела: хват — в гнезде, значит пузо под пальцем.
+  const soapAt = await page.evaluate(() => { const L = LustMinigame, o = L.loose;
+    return SvgSpace.toClient(L.svgEl, o.pos.x, o.pos.y); });
+  await page.mouse.move(soapAt.x, soapAt.y); await page.mouse.down();
+  const mid = await bodyC(0.42, 0.45);
+  await page.mouse.move(mid.x, mid.y, { steps: 8 });
+  const r0 = await rubNow();
+  await page.waitForTimeout(1500);
+  check(Math.abs((await rubNow()) - r0) < 1e-6, 'палец стоит на теле — прогресса нет');
+  // Мимо тела: вода и плитка справа от червя.
+  const off = await bodyC(1.25, 0.9), off2 = await bodyC(1.25, 0.6);
+  await page.mouse.move(off.x, off.y, { steps: 6 });
+  const r1 = await rubNow();
+  for (let i = 0; i < 20; i++) { await page.mouse.move(i % 2 ? off.x : off2.x, i % 2 ? off.y : off2.y, { steps: 3 }); await page.waitForTimeout(30); }
+  check(Math.abs((await rubNow()) - r1) < 1e-6, 'трение мимо тела не считается');
+  // Трение по телу: ~2 секунды туда-сюда.
+  const a = await bodyC(0.3, 0.35), b2 = await bodyC(0.6, 0.5);
+  const c0 = await cover(), rA = await rubNow(), tA = Date.now();
+  for (let i = 0; i < 40; i++) { const q = i % 2 ? a : b2; await page.mouse.move(q.x, q.y, { steps: 4 }); }
+  const rB = await rubNow(), secB = (Date.now() - tA) / 1000, c1 = await cover();
+  const rubS = await page.evaluate(() => LustMinigame.stageRub());
+  check(rB > rA + 0.05, `трение по телу копит прогресс (${(rA * 100).toFixed(0)} → ${(rB * 100).toFixed(0)}%)`);
+  check(rB - rA <= secB / rubS * 1.05 + 0.01,
+        `не быстрее ступени: +${((rB - rA) * 100).toFixed(0)}% за ${secB.toFixed(1)} с при ${rubS} с на этап`);
+  check(c1 > c0, `пена на теле растёт вместе с прогрессом (${c0} → ${c1} точек)`);
+  const spot = await page.evaluate(() => document.getElementById('bt-spot').innerHTML.length);
+  // Оставил мыло НА черве — оно парит там и не трёт само.
+  await page.mouse.move(mid.x, mid.y, { steps: 4 });
+  await page.mouse.up();
+  const rC = await rubNow();
+  await page.waitForTimeout(3000);
+  const loose = await page.evaluate(() => !!LustMinigame.loose && document.getElementById('bt-hand').classList.contains('bt-float'));
+  check(loose && Math.abs((await rubNow()) - rC) < 1e-6, 'мыло, оставленное на черве, парит и само не натирает');
+  check(spot === 0 && (await page.evaluate(() => document.getElementById('bt-spot').innerHTML.length)) === 0,
+        'кольца-подсказки «где не домыл» у мыла нет');
 
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());

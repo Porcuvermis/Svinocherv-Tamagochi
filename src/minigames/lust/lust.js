@@ -136,8 +136,15 @@ const LustMinigame = {
         return this.phase === 'cloth' ? (this.cfg().clothRubs || 3) : 1;
     },
 
+    // Сколько секунд тереть червя мылом — куплено ступенью мыла.
+    stageRub() {
+        const t = this.up('soap', null) || {};
+        return t.rub || 9;
+    },
+
     // Радиус мазка в точках сцены. В конфиге он задан В КЛЕТКАХ: червь на
     // экране меняет размер, а «мыло берёт клетку с окрестностью» — нет.
+    // Этап мыла им больше не пользуется (трение, rubMove) — только мочалка.
     stageRadius() {
         const C = this.cfg(), b = this.coverBox(), G = this.grid();
         // Радиус — КУПЛЕННЫЙ: мыло и мочалка качаются каждая своей полкой.
@@ -919,6 +926,42 @@ const LustMinigame = {
         this.cells = new Array(G.nx * G.ny).fill(0);
         this.covered = 0;
         this.dirty = false;
+        this.rub = 0;
+        this.rubLast = null;
+    },
+
+    // ---------- ТРЕНИЕ ----------
+    // Мытьё мылом — время трения по телу (решение игрока): где тереть, не
+    // важно, важно СКОЛЬКО. Засчитывается ТОЛЬКО живой палец: сюда приходят
+    // лишь движения указателя с инструментом в руке, а оставленное на черве
+    // мыло (парит, loose) пальцем не ведётся и ничего не натирает само.
+    //
+    // p — точка касания в сцене (там, где пузо инструмента, а не палец),
+    // t — время события, мс. Засчитывается путь по телу, но не больше
+    // speed·dt, а dt одного события — не больше step: быстрее ступени этап
+    // не пройти, а рывок после паузы трением не считается.
+    // (rubMove — другое: это трение хвоста в финале.)
+    soapRub(p, t) {
+        const last = this.rubLast;
+        const on = this.onBody(p);
+        this.rubLast = { x: p.x, y: p.y, t, on };
+        if (!last || !on || !last.on) return 0;
+        const R = this.cfg().rub || { speed: 220, step: 0.1 };
+        const dt = Math.min(R.step, Math.max(0, (t - last.t) / 1000));
+        const d = Math.min(Math.hypot(p.x - last.x, p.y - last.y), R.speed * dt);
+        if (d <= 0) return 0;
+        this.rub = Math.min(1, this.rub + d / (R.speed * this.stageRub()));
+        return d;
+    },
+
+    // Лежит ли точка сцены на теле — по той же маске, что режет муть.
+    onBody(p) {
+        const A = this.maskAlpha;
+        if (!A || !this.mask) return true;          // маски нет — не мешаем мыть
+        const box = this.wormBoxScene(), B = this.WORM_BASE, S = this.MASK_SCALE;
+        const k = B.w / box.w * S, W = this.mask.width, H = this.mask.height;
+        const i = Math.round((p.x - box.x) * k), j = Math.round((p.y - box.y) * k);
+        return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0;
     },
 
     // Пометить клетки под мазком. Возвращает долю покрытого — от клеток НА
@@ -974,6 +1017,7 @@ const LustMinigame = {
         const cw = b.w / G.nx, ch = b.h / G.ny;
         const r = Math.max(cw, ch) * 0.78 * k;
         const cloth = this.phase === 'cloth';
+        const grown = cloth && this._grow && this._grow.p > 0 ? this._grow : null;
         // Вид мути — по ступени мыла (BATH_ART.LATHER).
         const look = BATH_ART.latherLook();
 
@@ -1007,7 +1051,11 @@ const LustMinigame = {
                     const idx = j * G.nx + i;
                     if (this.cellOn && !this.cellOn[idx]) continue;
                     const rubs = this.cells[idx] || 0;
-                    const filmed = cloth ? (this.filmCells && this.filmCells[idx])
+                    // Муть под мочалкой — выращенная (lather-grow.js); по
+                    // клеткам она рисуется, только если её вырастить не из
+                    // чего (маски не было).
+                    const filmed = grown ? false
+                                 : cloth ? (this.filmCells && this.filmCells[idx])
                                          : rubs > 0;
                     if (!rubs && !filmed) continue;
                     const x = (b.x + (i + 0.5) * cw - box.x) * k;
@@ -1026,12 +1074,14 @@ const LustMinigame = {
 
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, B.w * S, B.h * S);
+        if (grown) ctx.drawImage(grown.film, 0, 0);
         paint('base');
         if (this.mask) {
             ctx.globalCompositeOperation = 'destination-in';
             ctx.drawImage(this.mask, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
         }
+        if (grown) ctx.drawImage(grown.foam, 0, 0);
         paint('foam');
     },
 
@@ -1069,6 +1119,16 @@ const LustMinigame = {
         };
         this._grow = G;
         return G;
+    },
+
+    // Новый забег: выращенное стирается, карта остаётся (тело то же).
+    growReset() {
+        const G = this._grow;
+        if (!G) return;
+        G.film.getContext('2d').clearRect(0, 0, G.film.width, G.film.height);
+        G.foam.getContext('2d').clearRect(0, 0, G.foam.width, G.foam.height);
+        G.idx = 0;
+        G.p = 0;
     },
 
     // Показать этап p ∈ [0, 1]. Назад — только сбросом (рост монотонный).
@@ -1110,6 +1170,7 @@ const LustMinigame = {
         if (n) { n.style.transition = ''; n.style.opacity = '1'; }
         if (this.washCtx) this.washCtx.clearRect(0, 0, n.width, n.height);
         this.filmCells = null;
+        this.growReset();
     },
 
     // ---------- ВВОД ----------
@@ -1162,8 +1223,16 @@ const LustMinigame = {
 
         const f = this.toScene(e), o = this.drag.off || { x: 0, y: 0 };
         const p = { x: f.x + o.x, y: f.y + o.y };
-        this.armHint();
         const C = this.cfg(), kind = this.drag.kind;
+        // Мыло — трение: прогресс от пути по телу, пена растёт заготовкой
+        // (lather-grow.js). Клеток и подсказки у этого этапа больше нет.
+        if (kind === 'soap') {
+            if (!this.soapRub(p, e.timeStamp || performance.now())) return;
+            this.growTo('soap', this.rub);
+            if (this.rub >= 1) this.finishStage('soap');
+            return;
+        }
+        this.armHint();
         const radius = this.stageRadius();
 
         // Мазок засчитывается не на каждое событие указателя, а раз в треть
@@ -1336,6 +1405,7 @@ const LustMinigame = {
             this.fillRaf = 0;
             this.phase = 'soap';
             this.resetCover();
+            this.growReset();
             this.liftTool('soap');
             this.armHint();
         };
@@ -1488,6 +1558,9 @@ const LustMinigame = {
             // второй этап был виден.
             // Что намылено — запоминается: на этапе мочалки это фон, по
             // которому видно, где пена уже проступила, а где ещё нет.
+            // Муть доращивается до конца: этап мог кончиться и не трением
+            // (debug-перескок), а мочалка трёт по ГОТОВОЙ мути.
+            this.growTo('soap', 1);
             this.filmCells = this.cells.slice();
             this.phase = 'cloth';
             this.resetCover();
@@ -1542,9 +1615,11 @@ const LustMinigame = {
     // Порог 92% без подсказки превращается в поиск пикселя: игрок водит
     // пальцем и не понимает, почему этап не кончается (план, §1). Кольцо
     // показывается на самой недомытой клетке — без слов и без стрелок.
+    // У мыла подсказки нет: мыть можно где угодно, искать нечего (трение,
+    // soapRub). Осталась у мочалки, пока та на клетках.
     armHint() {
         this.clearHint();
-        if (this.phase !== 'soap' && this.phase !== 'cloth') return;
+        if (this.phase !== 'cloth') return;
         this.hintTimer = setTimeout(() => this.showHint(), this.cfg().hintMs || 2200);
     },
 
