@@ -846,6 +846,11 @@
              вид. Холст, а не фигуры в svg: след обязан обрезаться по силуэту
              червя, а сотни полупрозрачных пятен убивали кадры. -->
         <canvas id="bt-wash" class="bt-lather"></canvas>
+        <!-- Блики пузырей: три слоя, у каждого свой угол света. Нарисованы
+             один раз вместе с пузырями; наклон телефона меняет только их
+             прозрачность и сдвиг — это видеокарта, без перерисовки
+             (lust.js, glint*). -->
+        <div id="bt-glint" class="bt-lather"><canvas></canvas><canvas></canvas><canvas></canvas></div>
         <div id="bt-rain-near" class="bt-rain-clip">
             <svg class="bt-rain-move" viewBox="0 0 390 844"
                  preserveAspectRatio="xMidYMid slice">

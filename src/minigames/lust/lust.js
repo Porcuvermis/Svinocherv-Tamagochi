@@ -185,6 +185,14 @@ const LustMinigame = {
         c.width = B.w * S; c.height = B.h * S;
         c.style.width = B.w + 'px'; c.style.height = B.h + 'px';
         this.washCtx = c.getContext('2d');
+        // Слои бликов — вдвое мельче холста мытья: блик — мягкая точка, резкость
+        // ему не нужна, а память трёх полноразмерных слоёв на айфоне дорога.
+        const gw = this.el('bt-glint');
+        if (gw) {
+            gw.style.width = B.w + 'px'; gw.style.height = B.h + 'px';
+            this.glintEls = Array.from(gw.querySelectorAll('canvas'));
+            this.glintEls.forEach(g => { g.width = B.w * S / 2; g.height = B.h * S / 2; });
+        }
 
         this.camBackEl.innerHTML = BATH_ART.sceneBack();
         document.getElementById('bt-cam-shelf').innerHTML = BATH_ART.sceneShelf();
@@ -291,6 +299,7 @@ const LustMinigame = {
         // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
         // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
+        this.glintStop();
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.drag = null;
@@ -699,6 +708,8 @@ const LustMinigame = {
         // Холст мытья — в тех же единицах, значит и преобразование то же.
         const w = this.el('bt-wash');
         if (w) w.style.transform = t;
+        const gl = this.el('bt-glint');
+        if (gl) gl.style.transform = t;
         // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
         const wall = this.el('bt-goo-wall');
         if (wall) {
@@ -972,6 +983,7 @@ const LustMinigame = {
 
     // Новый забег: выращенное стирается, карты остаются (тело то же).
     growReset() {
+        this.glintClear();
         for (const G of Object.values(this._grows || {})) {
             G.film.getContext('2d').clearRect(0, 0, G.film.width, G.film.height);
             G.foam.getContext('2d').clearRect(0, 0, G.foam.width, G.foam.height);
@@ -994,12 +1006,14 @@ const LustMinigame = {
         G.p = p;
         let film = false, foam = false;
         const tool = kind === 'cloth' ? 'cloth' : 'soap';
+        const sink = (bx, by, r, pc) => this.glintBubble(G, bx, by, r, pc);
         while (G.idx < G.sprites.length && G.sprites[G.idx].t <= p) {
             const s = G.sprites[G.idx++];
             if (s.part === 'base') film = true; else foam = true;
             BATH_ART.washCell(s.part === 'base' ? fc : oc, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
-                              s.seed, s.part, G.inside, G.look);
+                              s.seed, s.part, G.inside, G.look, s.part === 'foam' ? sink : null);
         }
+        if (foam) this.glintStart();
         if (film) {
             fc.globalCompositeOperation = 'destination-in';
             fc.drawImage(this.mask, 0, 0);
@@ -1010,12 +1024,114 @@ const LustMinigame = {
         if (film || foam || (was <= 0 && p > 0)) this.composeWash();
     },
 
+    // ---------- БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА ----------
+    // У каждого пузыря три блика — по одному на слой, у слоя свой угол
+    // света (слева сверху, сверху, справа сверху). Наклон телефона плавно
+    // перетекает свет между слоями: блик бежит по пузырям, как от
+    // настоящего источника. Рисуется всё один раз, вместе с пузырём; на ходу
+    // меняются только прозрачность и сдвиг слоёв — видеокарта, без
+    // перерисовки. Сила блика — у вида мути (LATHER.glint) и у пены мочалки.
+    GLINT: {
+        angles: [-150, -95, -40],    // угол света слоя, градусы (0 — вправо, −90 — вверх)
+        sharp: 8,                    // как резко свет переходит между слоями
+        gain: 2.4,                   // чувствительность к наклону, как у флакона
+        shift: 1.5,                  // сдвиг слоя при полном наклоне, ед. холста червя
+        foam: 0.7                    // сила блика пены мочалки
+    },
+
+    glintBubble(G, bx, by, r, pc) {
+        const els = this.glintEls;
+        if (!els || r < G.cell * 0.1) return;
+        const k = G.kind === 'cloth' ? this.GLINT.foam : ((G.look && G.look.glint) || 0.3);
+        if (k <= 0) return;
+        const P = btPal(), hi = pc || (G.kind === 'cloth' ? P.foam.hi : P.soapLather[G.look.key].hi);
+        this.GLINT.angles.forEach((deg, i) => {
+            const ctx = els[i] && els[i].getContext('2d');
+            if (!ctx) return;
+            const a = deg * Math.PI / 180;
+            // Холст бликов вдвое мельче холста мытья.
+            const x = (bx + Math.cos(a) * r * 0.52) / 2, y = (by + Math.sin(a) * r * 0.52) / 2;
+            const rr = Math.max(0.9, r * 0.38 / 2);
+            const g = ctx.createRadialGradient(x, y, 0, x, y, rr);
+            g.addColorStop(0, hi);
+            g.addColorStop(0.35, hi);
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.globalAlpha = k;
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 1;
+        });
+    },
+
+    glintClear() {
+        (this.glintEls || []).forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
+    },
+
+    // Цикл наклона: живёт, пока на теле есть пена. 30 кадров хватает.
+    glintStart() {
+        if (this.glintRaf || !this.glintEls || typeof requestAnimationFrame === 'undefined') return;
+        const wrap = this.el('bt-glint');
+        if (wrap) wrap.classList.add('bt-glint-live');
+        const Gc = this.GLINT, th = Gc.angles.map(d => d * Math.PI / 180);
+        const L = this.glintLean = this.glintLean || { x: 0, y: 0, last: 0, op: [], tr: '' };
+        const step = (now) => {
+            this.glintRaf = requestAnimationFrame(step);
+            if (now - L.last < 33) return;
+            L.last = now;
+            const T = typeof Tilt !== 'undefined' && Tilt.lean ? Tilt.lean() : null;
+            const cl = (v) => Math.max(-1, Math.min(1, v * Gc.gain));
+            // Датчика нет (компьютер, отказ в разрешении) — свет плывёт сам,
+            // чтобы пена не стояла мёртвой.
+            const tx = T && T.live ? cl(T.x) : 0.8 * Math.sin(now / 1000 * 0.5);
+            const ty = T && T.live ? cl(T.y) : 0.5 * Math.sin(now / 1000 * 0.31);
+            L.x += (tx - L.x) * 0.2;
+            L.y += (ty - L.y) * 0.2;
+            // Наклон вправо (правый край вниз) — к свету поворачивается ЛЕВЫЙ
+            // бок пузыря, и блик уезжает влево. Сторона проверяется прогоном
+            // (test-soap.js), а не выводится в уме (docs/traps.md, п. 116).
+            const phi = Math.atan2(-1 + 0.8 * L.y, -0.35 - 1.1 * L.x);
+            const tr = `translate(${(-L.x * Gc.shift).toFixed(2)}px, ${(-L.y * Gc.shift).toFixed(2)}px)`;
+            this.glintEls.forEach((c, i) => {
+                const op = Math.pow(Math.max(0, Math.cos(phi - th[i])), Gc.sharp).toFixed(2);
+                if (L.op[i] !== op) { c.style.opacity = op; L.op[i] = op; }
+                if (L.tr !== tr) c.style.transform = tr;
+            });
+            L.tr = tr;
+        };
+        this.glintRaf = requestAnimationFrame(step);
+    },
+
+    glintStop() {
+        if (this.glintRaf) cancelAnimationFrame(this.glintRaf);
+        this.glintRaf = 0;
+        const wrap = this.el('bt-glint');
+        if (wrap) wrap.classList.remove('bt-glint-live');
+        // Прозрачность слоёв НЕ сбрасывается: при затухании следа они гаснут
+        // вместе с обёрткой, а не пропадают раньше неё.
+    },
+
+    // Муть, пена и их блики видны и гаснут ВМЕСТЕ: это один след на теле.
+    washShown(on, fadeMs) {
+        for (const id of ['bt-wash', 'bt-glint']) {
+            const n = this.el(id);
+            if (!n) continue;
+            n.style.transition = fadeMs ? `opacity ${fadeMs / 1000}s ease` : '';
+            n.style.opacity = on ? '1' : '0';
+        }
+        if (!on) this.glintStop();
+        else if (this.glintLean) {
+            this.glintLean.op = []; this.glintLean.tr = '';
+            (this.glintEls || []).forEach(c => { c.style.opacity = '0'; c.style.transform = ''; });
+        }
+    },
+
     wipeLather() {
         const n = this.el('bt-wash');
         // Переход снимается: его ставит конец забега «только помыть», и без
         // сброса следующий забег начинался бы с того, что пена медленно
         // проявляется из ниоткуда.
-        if (n) { n.style.transition = ''; n.style.opacity = '1'; }
+        this.glintStop();
+        this.washShown(true);
         if (this.washCtx) this.washCtx.clearRect(0, 0, n.width, n.height);
         this.growReset();
     },
@@ -1431,8 +1547,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         const wash = this.el('bt-wash');
         if (wash) {
-            wash.style.transition = 'opacity 1.2s ease';
-            wash.style.opacity = '0';
+            this.washShown(false, 1200);
         }
         this.setCamera('overview', 900);
         GameEvents.emit('minigame:result', {
@@ -1471,7 +1586,7 @@ const LustMinigame = {
         // Червя ополаскивают: муть и пена сходят. Оставить их — значит
         // держать белую вуаль поверх морды весь финал, а именно морда в нём
         // и работает (блаженство, открытый рот).
-        this.el('bt-wash').style.opacity = '0';
+        this.washShown(false);
         const model = window.WormModelAPI ? this.bathModel() : null;
         this.tailModel = model;
         // Вид хвоста — по купленной ступени (BATH_ART.TAIL_LOOKS).

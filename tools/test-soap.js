@@ -424,6 +424,34 @@ const harness = require('./harness');
   check(spot === 0 && (await page.evaluate(() => document.getElementById('bt-spot').innerHTML.length)) === 0,
         'кольца-подсказки «где не домыл» у мыла нет');
 
+  // ================= 11. БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА =================
+  // Три слоя бликов, у каждого свой угол света; наклон перетекает свет между
+  // ними. Мерится СТОРОНА (п. 116): наклон вправо поворачивает к свету ЛЕВЫЙ
+  // бок пузыря — ярче всех слой «свет слева», и наоборот.
+  say('\n======== БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА ========');
+  const gl = await page.evaluate(() => {
+    const els = LustMinigame.glintEls || [];
+    const ink = els.map(c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 20) n++; return n; });
+    return { ink, live: document.getElementById('bt-glint').classList.contains('bt-glint-live'), raf: !!LustMinigame.glintRaf };
+  });
+  check(gl.ink.length === 3 && gl.ink.every(n => n > 50), `блики нарисованы во всех трёх слоях (${gl.ink.join(' / ')} точек)`);
+  check(gl.live && gl.raf, 'пока пена на теле — слои живые и слушают наклон');
+  const glintAt = async (x) => {
+    await page.evaluate((x) => { window.__lean = { live: true, x, y: 0 }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, x);
+    await page.waitForTimeout(900);
+    return page.evaluate(() => LustMinigame.glintEls.map(c => +getComputedStyle(c).opacity));
+  };
+  const gR = await glintAt(0.4), gL = await glintAt(-0.4);
+  await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
+  check(gR[0] > gR[2] + 0.3, `наклон вправо — блик уходит на ЛЕВЫЙ бок пузырей (слои ${gR.map(v => v.toFixed(2)).join(' / ')})`);
+  check(gL[2] > gL[0] + 0.3, `наклон влево — на правый (слои ${gL.map(v => v.toFixed(2)).join(' / ')})`);
+  // Смыли — цикл встал, слой композитора снят.
+  await page.evaluate(() => LustMinigame.washShown(false));
+  const gOff = await page.evaluate(() => ({ raf: !!LustMinigame.glintRaf,
+    live: document.getElementById('bt-glint').classList.contains('bt-glint-live') }));
+  check(!gOff.raf && !gOff.live, 'след смыт — цикл бликов встал, слоя композитора нет');
+
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);
