@@ -465,38 +465,88 @@ const harness = require('./harness');
   // нарочно редкий и тусклый — прогресс блеска по ступеням.
   await page.evaluate(() => { const L = LustMinigame; LustDebug.setLevel('soap', 4); BATH_SOAP.refresh();
     L.growReset(); L.growTo('soap', 1); });
+  // Мерится у самого крупного одинокого пузыря В КАЖДОЙ из трёх групп:
+  // у групп свой покой блика и своя вязкость.
   const glintAt = async (x, y) => {
     await page.evaluate(([x, y]) => { window.__lean = { live: true, x, y }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, [x, y]);
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1400);
     return page.evaluate(() => {
-      const L = LustMinigame, bs = L.glintBubs || [], ctx = L.glintCtx;
-      // Самый крупный пузырь, которого не перекрывают соседи крупнее четверти его.
+      const L = LustMinigame, bs = L._glintTop || [], ctx = L.glintCtx;
+      // Одинокий — чей блик не перекрывают блики соседей (блик рисуется
+      // только у отобранных, остальные пузыри холст бликов не трогают).
       const alone = bs.filter(b => !bs.some(o => o !== b && o.r > b.r * 0.25 && Math.hypot(o.x - b.x, o.y - b.y) < (o.r + b.r) * 0.9));
-      const b = (alone.length ? alone : bs).reduce((m, q) => q.r > m.r ? q : m, { r: 0 });
-      const R = Math.ceil(b.r * 1.05), x0 = Math.round(b.x - R), y0 = Math.round(b.y - R);
-      const d = ctx.getImageData(x0, y0, R * 2, R * 2).data;
-      // Главный блик — по самым ярким точкам: второе отражение напротив
-      // тусклее и иначе тянет центр яркости в обратную сторону.
-      let top = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > top) top = d[i];
-      let sx = 0, sy = 0, sw = 0, far = 0;
-      for (let j = 0; j < R * 2; j++) for (let i = 0; i < R * 2; i++) {
-        const w = d[(j * R * 2 + i) * 4 + 3]; if (w < 12) continue;
-        if (Math.hypot(x0 + i + 0.5 - b.x, y0 + j + 0.5 - b.y) > b.r) far++;
-        if (w < top * 0.7) continue;
-        const px = x0 + i + 0.5 - b.x, py = y0 + j + 0.5 - b.y;
-        sx += px * w; sy += py * w; sw += w; }
-      return { n: bs.length, r: b.r, cx: sw ? sx / sw / b.r : 0, cy: sw ? sy / sw / b.r : 0, far, draws: L.glintDraws || 0 };
+      const at = (b) => {
+        const R = Math.ceil(b.r * 1.05), x0 = Math.round(b.x - R), y0 = Math.round(b.y - R);
+        const d = ctx.getImageData(x0, y0, R * 2, R * 2).data;
+        // Главный блик — по самым ярким точкам: второе отражение напротив
+        // тусклее и иначе тянет центр яркости в обратную сторону.
+        let top = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > top) top = d[i];
+        let sx = 0, sy = 0, sw = 0, far = 0;
+        for (let j = 0; j < R * 2; j++) for (let i = 0; i < R * 2; i++) {
+          const w = d[(j * R * 2 + i) * 4 + 3]; if (w < 12) continue;
+          if (Math.hypot(x0 + i + 0.5 - b.x, y0 + j + 0.5 - b.y) > b.r) far++;
+          if (w < top * 0.7) continue;
+          const px = x0 + i + 0.5 - b.x, py = y0 + j + 0.5 - b.y;
+          sx += px * w; sy += py * w; sw += w; }
+        return { cx: sw ? sx / sw / b.r : 0, cy: sw ? sy / sw / b.r : 0, far };
+      };
+      const G = [0, 1, 2].map(g => {
+        const c = alone.filter(b => b.g === g);
+        return c.length ? at(c.reduce((m, q) => q.r > m.r ? q : m)) : null;
+      });
+      return { n: bs.length, G, far: G.reduce((s, g) => s + (g ? g.far : 0), 0), draws: L.glintDraws || 0 };
     });
   };
   const g0 = await glintAt(0, 0), gR = await glintAt(0.4, 0), gL = await glintAt(-0.4, 0), gD = await glintAt(0, 0.4);
+  const f2 = (g) => g ? `${g.cx.toFixed(2)}, ${g.cy.toFixed(2)}` : '—';
   check(g0.n > 30, `блик есть у каждого заметного пузыря (${g0.n})`);
-  check(g0.cx < -0.1 && g0.cy < -0.1, `в покое блик сверху слева (${g0.cx.toFixed(2)}, ${g0.cy.toFixed(2)} радиуса)`);
-  check(gR.cx < gL.cx - 0.2, `наклон вправо — блик на ЛЕВОМ боку, влево — на правом (${gR.cx.toFixed(2)} против ${gL.cx.toFixed(2)})`);
-  check(gD.cy > g0.cy + 0.1, `верх к себе — блик ниже (${g0.cy.toFixed(2)} → ${gD.cy.toFixed(2)})`);
+  check(g0.G.every(Boolean), 'одинокий пузырь нашёлся в каждой из трёх групп');
+  if (g0.G.every(Boolean)) {
+    const [B, M, S] = g0.G;
+    check(g0.G.every(g => g.cx < -0.05 && g.cy < -0.05), `в покое блик у всех групп сверху слева (${g0.G.map(f2).join(' | ')})`);
+    check(B.cy < S.cy - 0.12 && S.cx < B.cx - 0.12, `группы разнесены: у крупных блик выше и правее, у мелких ниже и левее (крупные ${f2(B)}, мелкие ${f2(S)})`);
+    const m = (g) => g.G[1] || { cx: 0, cy: 0 };
+    check(m(gR).cx < m(gL).cx - 0.2, `наклон вправо — блик на ЛЕВОМ боку, влево — на правом (${m(gR).cx.toFixed(2)} против ${m(gL).cx.toFixed(2)})`);
+    check(m(gD).cy > M.cy + 0.1, `верх к себе — блик ниже (${M.cy.toFixed(2)} → ${m(gD).cy.toFixed(2)})`);
+    check([0, 2].every(i => gR.G[i] && gL.G[i] && gR.G[i].cx < gL.G[i].cx - 0.1), 'крупные и мелкие тоже уходят на ЛЕВЫЙ бок от наклона вправо');
+  }
   check([g0, gR, gL, gD].every(g => g.far === 0), 'блик не выходит за свой пузырь');
+
+  // ТАНЕЦ. Вспышку дают не угол, а ДВИЖЕНИЕ: держишь ровно — ни одной,
+  // дрогнула рука на пару градусов — вспыхнула часть пузырей (не все),
+  // дрогнула в другую сторону — вспыхнули ДРУГИЕ. Меряется сила штампа
+  // каждого пузыря прямо в перерисовке.
+  const alphas = async (x, y, wait) => page.evaluate(async ([x, y, wait]) => {
+    const L = LustMinigame, ctx = L.glintCtx, orig = ctx.drawImage;
+    window.__lean = { live: true, x, y };
+    let rec = null;
+    ctx.drawImage = function (...a) { if (rec) rec.push(ctx.globalAlpha); return orig.apply(this, a); };
+    await new Promise(r => setTimeout(r, wait));
+    rec = [];
+    const d0 = L.glintDraws;
+    await new Promise(r => { const w = () => (L.glintDraws > d0 ? r() : requestAnimationFrame(w)); w(); setTimeout(r, 300); });
+    ctx.drawImage = orig;
+    const bs = L._glintTop, base = L.GLINT.flash.base;
+    // Вспыхнул — ярче своей ровной силы в 1.25 раза.
+    const lit = rec.length === bs.length ? bs.map((b, i) => rec[i] > Math.min(1, b.k * L.GLINT.groups[b.g].k * base) * 1.25 + 1e-6) : null;
+    return { n: rec.length, lit };
+  }, [x, y, wait]);
+  await page.evaluate(() => { window.__lean = { live: true, x: 0.1, y: 0 }; });
+  await page.waitForTimeout(4000);
+  const steady = await alphas(0.1, 0, 0);
+  const jigR = await alphas(0.1 + 0.05, 0, 90);
+  await page.waitForTimeout(4000);
+  const jigL = await alphas(0.1, 0, 90);
+  const frac = (a) => a && a.lit ? a.lit.filter(Boolean).length / a.lit.length : -1;
+  say(`  вспыхнуло: ровно ${steady.n ? frac(steady).toFixed(2) : "0 (не перерисовано)"}, дрожь вправо ${frac(jigR).toFixed(2)}, назад ${frac(jigL).toFixed(2)}`);
+  check(steady.n === 0 || frac(steady) === 0, `телефон держат ровно под наклоном — вспышек нет (${steady.n ? frac(steady).toFixed(2) : 'ни одной перерисовки'})`);
+  check(frac(jigR) > 0.05 && frac(jigR) < 0.6, `рука дрогнула на 1.75° — вспыхнула часть пузырей, а не все (${frac(jigR).toFixed(2)})`);
+  const both = jigR.lit && jigL.lit ? jigR.lit.filter((v, i) => v && jigL.lit[i]).length : -1;
+  const litR = jigR.lit ? jigR.lit.filter(Boolean).length : 0;
+  check(frac(jigL) > 0.05 && both >= 0 && both < litR * 0.3, `дрогнула обратно — вспыхнули ДРУГИЕ (общих ${both} из ${litR})`);
   // Телефон неподвижен — холст бликов не перерисовывается.
   // Сглаживание наклона доезжает не сразу — ждём устоявшегося (п. 137).
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(2500);
   const dr0 = await page.evaluate(() => LustMinigame.glintDraws);
   await page.waitForTimeout(800);
   const dr1 = await page.evaluate(() => LustMinigame.glintDraws);

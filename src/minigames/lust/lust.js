@@ -1125,7 +1125,7 @@ const LustMinigame = {
     // Перерисовка — только когда свет сдвинулся или появились пузыри; мелким
     // пузырям блика нет.
     GLINT: {
-        rest: { x: -0.42, y: -0.42 },       // покой: сверху слева (доля круга хода)
+        // Покой блика — у каждой группы свой (groups ниже), все сверху слева.
         tilt: 0.6,                          // сколько круга проходит блик от полного наклона
         gain: 2.4,                          // чувствительность к наклону, как у флакона
         reach: 0.6,                         // круг хода блика, в радиусах пузыря
@@ -1139,7 +1139,25 @@ const LustMinigame = {
         // всё равно в точку.
         cap: 420,
         // Блик пены мочалки (пока один вид — лестница мочалки впереди).
-        foam: { k: 0.7, size: 0.24, second: 0.35, halo: 0, min: 0.18 }
+        foam: { k: 0.7, size: 0.24, second: 0.35, halo: 0, min: 0.18 },
+        // ТАНЕЦ: пузыри с бликом делятся по размеру на три группы, и у
+        // каждой свой покой блика, своя сила и своя вязкость. Одна и та же
+        // рука качает их по-разному: крупные тяжёлые отстают, мелкие
+        // вертлявые забегают вперёд, — и пена не вспыхивает вся разом.
+        // Покой — доля круга хода, как rest; k — множитель силы вида.
+        groups: [
+            { rest: { x: -0.25, y: -0.62 }, k: 0.8, lag: 0.1, tilt: 0.8 },    // крупные: выше и правее, тяжёлые
+            { rest: { x: -0.3,  y: -0.3  }, k: 1,   lag: 0.2, tilt: 1 },      // средние: ближе к зениту, ярче всех
+            { rest: { x: -0.62, y: -0.14 }, k: 0.9, lag: 0.38, tilt: 1.25 }   // мелкие: ниже и левее, вертлявые
+        ],
+        // ВСПЫШКИ. У каждого пузыря своя «точка вспышки» на кольце в
+        // пространстве КАЧАНИЯ: качнул руку туда — вспыхнули пузыри, чья
+        // точка там. Меряется не угол, а ДВИЖЕНИЕ — наклон минус его
+        // медленная средняя (slow — доля за кадр, ~полсекунды): держишь
+        // ровно под любым углом — вспышек нет, а естественная дрожь руки
+        // (градус-два) уже водит их по пене. gain — сколько кольца на единицу
+        // наклона (единица = 35°): 9 — градус дрожи даёт четверть кольца.
+        flash: { gain: 9, slow: 0.06, ring: [0.18, 0.75], sigma: 0.22, base: 0.5, boost: 1 }
     },
 
     glintBubble(G, bx, by, r, pc) {
@@ -1165,10 +1183,11 @@ const LustMinigame = {
     // Заготовка блика для единичного пузыря радиуса R0 в центре холста 2C×2C.
     // (lx, ly) — где свет в круге хода: 0 — середина, 1 — край.
     GLINT_R0: 24, GLINT_C: 32,
-    glintStamp(b, lx, ly) {
+    glintStamp(b, lx, ly, sk) {
         const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_C, gp = b.gp, col = b.core;
-        const cv = (this._stamps = this._stamps || {})[b.key] || document.createElement('canvas');
-        this._stamps[b.key] = cv;
+        sk = sk || b.key;
+        const cv = (this._stamps = this._stamps || {})[sk] || document.createElement('canvas');
+        this._stamps[sk] = cv;
         cv.width = cv.height = C * 2;
         const g = cv.getContext('2d');
         const d = Math.min(0.99, Math.hypot(lx, ly)), z = Math.sqrt(1 - d * d);
@@ -1194,24 +1213,44 @@ const LustMinigame = {
         return cv;
     },
 
-    glintRedraw(lx, ly) {
+    // Кому достаётся блик, в какой он группе и где его точка вспышки —
+    // пересчитывается, только когда появились пузыри, а не каждый кадр.
+    glintPick() {
+        const all = this.glintBubs || [], Gc = this.GLINT, F = Gc.flash;
+        const top = all.slice().sort((a, b) => b.r - a.r).slice(0, Gc.cap);
+        const n = top.length;
+        top.forEach((b, i) => {
+            b.g = Math.min(2, Math.floor(i * 3 / Math.max(1, n)));
+            // Точка вспышки — от места пузыря, а не от случая: одна и та же
+            // пена танцует одинаково, и прогон повторим.
+            const h = Math.sin(b.x * 12.9898 + b.y * 78.233) * 43758.5453, h1 = h - Math.floor(h);
+            const q = Math.sin(b.x * 39.3468 + b.y * 11.135) * 24634.6345, h2 = q - Math.floor(q);
+            const a = h1 * Math.PI * 2, rho = F.ring[0] + h2 * (F.ring[1] - F.ring[0]);
+            b.hx = Math.cos(a) * rho; b.hy = Math.sin(a) * rho;
+        });
+        this._glintTop = top;
+        this._glintTopN = all.length;
+    },
+
+    // P — где свет у каждой группы ([{lx, ly}] ×3), (dx, dy) — качание.
+    glintRedraw(P, dx, dy) {
         const ctx = this.glintCtx;
         if (!ctx) return;
         const t0 = performance.now();
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        const K = this.GLINT_C / this.GLINT_R0, stamps = {};
-        // Кому достаётся блик — пересчитывается, только когда появились
-        // пузыри, а не каждый кадр.
-        if (!this._glintTop || this._glintTopN !== (this.glintBubs || []).length) {
-            const all = this.glintBubs || [];
-            this._glintTop = all.length <= this.GLINT.cap ? all
-                : all.slice().sort((a, b) => b.r - a.r).slice(0, this.GLINT.cap);
-            this._glintTopN = all.length;
-        }
+        const K = this.GLINT_C / this.GLINT_R0, stamps = {}, Gc = this.GLINT, F = Gc.flash;
+        const s2 = F.sigma * F.sigma;
+        if (!this._glintTop || this._glintTopN !== (this.glintBubs || []).length) this.glintPick();
+        // Заготовка на цвет И группу: у групп свет в разных местах. Это три
+        // рисования заготовки за кадр вместо одного — копейки против сотен
+        // штампов.
         for (const b of this._glintTop) {
-            const st = stamps[b.key] || (stamps[b.key] = this.glintStamp(b, lx, ly));
-            const w = b.r * K;
-            ctx.globalAlpha = b.k;
+            const sk = b.key + '#' + b.g, gl = P[b.g];
+            const st = stamps[sk] || (stamps[sk] = this.glintStamp(b, gl.lx, gl.ly, sk));
+            const w = b.r * K, ex = dx - b.hx, ey = dy - b.hy;
+            const f = Math.exp(-(ex * ex + ey * ey) / s2);
+            // globalAlpha вне 0..1 холст молча игнорирует — отсюда min.
+            ctx.globalAlpha = Math.min(1, b.k * Gc.groups[b.g].k * (F.base + F.boost * f));
             ctx.drawImage(st, b.x - w, b.y - w, w * 2, w * 2);
         }
         ctx.globalAlpha = 1;
@@ -1223,31 +1262,48 @@ const LustMinigame = {
     // и только если свет сдвинулся или добавились пузыри.
     glintStart() {
         if (this.glintRaf || !this.glintCtx || typeof requestAnimationFrame === 'undefined') return;
-        const Gc = this.GLINT;
-        const L = this.glintLean = this.glintLean || { x: 0, y: 0, last: 0, lx: null, ly: null };
+        const Gc = this.GLINT, F = Gc.flash;
+        const L = this.glintLean = this.glintLean ||
+            { g: Gc.groups.map(() => ({ x: 0, y: 0 })), sx: null, sy: 0, dx: 0, dy: 0, last: 0, key: null };
+        const cl = (v, m) => Math.max(-m, Math.min(m, v));
         const step = (now) => {
             this.glintRaf = requestAnimationFrame(step);
             if (now - L.last < 33) return;
             L.last = now;
             const T = typeof Tilt !== 'undefined' && Tilt.lean ? Tilt.lean() : null;
-            const cl = (v) => Math.max(-1, Math.min(1, v * Gc.gain));
-            // Датчика нет (компьютер, отказ в разрешении) — свет плывёт сам,
-            // чтобы пена не стояла мёртвой.
-            const tx = T && T.live ? cl(T.x) : 0.8 * Math.sin(now / 1000 * 0.5);
-            const ty = T && T.live ? cl(T.y) : 0.5 * Math.sin(now / 1000 * 0.31);
-            L.x += (tx - L.x) * 0.2;
-            L.y += (ty - L.y) * 0.2;
+            // Датчика нет (компьютер, отказ в разрешении) — свет плывёт сам и
+            // чуть дрожит, как в руке, чтобы пена не стояла мёртвой.
+            const t = now / 1000;
+            const rx = T && T.live ? T.x : 0.33 * Math.sin(t * 0.5) + 0.02 * Math.sin(t * 2.3 + 1) + 0.012 * Math.sin(t * 3.7);
+            const ry = T && T.live ? T.y : 0.2 * Math.sin(t * 0.31) + 0.018 * Math.sin(t * 1.9 + 2) + 0.01 * Math.sin(t * 4.3);
+            // Качание: наклон минус медленная средняя. Совсем мелкое — ноль,
+            // иначе цикл перерисовывал бы вечно доползающий хвост средней.
+            if (L.sx === null) { L.sx = rx; L.sy = ry; }
+            L.sx += (rx - L.sx) * F.slow; L.sy += (ry - L.sy) * F.slow;
+            let dx = cl((rx - L.sx) * F.gain, 1), dy = cl((ry - L.sy) * F.gain, 1);
+            if (Math.abs(dx) < 0.05) dx = 0;
+            if (Math.abs(dy) < 0.05) dy = 0;
+            const tx = cl(rx * Gc.gain, 1), ty = cl(ry * Gc.gain, 1);
             // Наклон вправо (правый край вниз) — к свету поворачивается ЛЕВЫЙ
             // бок пузыря, блик уходит влево; верх к себе — блик вниз.
             // Сторона проверяется прогоном (test-soap.js), а не выводится в
-            // уме (docs/traps.md, п. 116).
-            let lx = Gc.rest.x - Gc.tilt * L.x, ly = Gc.rest.y + Gc.tilt * L.y;
-            const m = Math.hypot(lx, ly);
-            if (m > 0.99) { lx *= 0.99 / m; ly *= 0.99 / m; }
-            if (!this.glintDirty && L.lx != null && Math.abs(lx - L.lx) + Math.abs(ly - L.ly) < 0.008) return;
-            L.lx = lx; L.ly = ly;
+            // уме (docs/traps.md, п. 116). Каждая группа догоняет наклон со
+            // своей вязкостью и ходит на свою долю.
+            let moved = Math.abs(dx - L.dx) + Math.abs(dy - L.dy) > 0.004;
+            const P = Gc.groups.map((G, i) => {
+                const q = L.g[i];
+                q.x += (tx - q.x) * G.lag; q.y += (ty - q.y) * G.lag;
+                let lx = G.rest.x - Gc.tilt * G.tilt * q.x, ly = G.rest.y + Gc.tilt * G.tilt * q.y;
+                const m = Math.hypot(lx, ly);
+                if (m > 0.99) { lx *= 0.99 / m; ly *= 0.99 / m; }
+                if (q.lx == null || Math.abs(lx - q.lx) + Math.abs(ly - q.ly) > 0.008) moved = true;
+                return { lx, ly };
+            });
+            if (!this.glintDirty && !moved) return;
+            P.forEach((p, i) => { L.g[i].lx = p.lx; L.g[i].ly = p.ly; });
+            L.dx = dx; L.dy = dy;
             this.glintDirty = false;
-            this.glintRedraw(lx, ly);
+            this.glintRedraw(P, dx, dy);
         };
         this.glintRaf = requestAnimationFrame(step);
     },
@@ -1255,7 +1311,7 @@ const LustMinigame = {
     glintStop() {
         if (this.glintRaf) cancelAnimationFrame(this.glintRaf);
         this.glintRaf = 0;
-        if (this.glintLean) this.glintLean.lx = null;
+        if (this.glintLean) this.glintLean.g.forEach(q => { q.lx = null; });
     },
 
     // Муть, пена и их блики видны и гаснут ВМЕСТЕ: это один след на теле.
