@@ -408,7 +408,7 @@ const harness = require('./harness');
   const c0 = await cover(), rA = await rubNow(), tA = Date.now();
   for (let i = 0; i < 40; i++) { const q = i % 2 ? a : b2; await page.mouse.move(q.x, q.y, { steps: 4 }); }
   const rB = await rubNow(), secB = (Date.now() - tA) / 1000, c1 = await cover();
-  const rubS = await page.evaluate(() => LustMinigame.stageRub());
+  const rubS = await page.evaluate(() => LustMinigame.stageRub('soap'));
   check(rB > rA + 0.05, `трение по телу копит прогресс (${(rA * 100).toFixed(0)} → ${(rB * 100).toFixed(0)}%)`);
   check(rB - rA <= secB / rubS * 1.05 + 0.01,
         `не быстрее ступени: +${((rB - rA) * 100).toFixed(0)}% за ${secB.toFixed(1)} с при ${rubS} с на этап`);

@@ -129,7 +129,14 @@ const LatherGrow = {
                 if (t >= 1) continue;
                 const j = (rng() - 0.5) * 0.012;
                 out.push({ x: px, y: py, t: Math.max(0, t + j), part: 'base', seed: n * 7 + 3 });
-                out.push({ x: px, y: py, t: Math.min(0.999, t + lag * (0.4 + rng() * 0.6)), part: 'foam', seed: n * 7 + 3 });
+                // Мочалка ВЗБИВАЕТ (whip): на месте сперва редкая мелкая пена,
+                // потом поверх — густая крупная. Мыло кладёт пузыри один раз.
+                if (o.whip) {
+                    out.push({ x: px, y: py, t: Math.min(0.999, t + lag * (0.2 + rng() * 0.3)), part: 'foam', k: 0.35, seed: n * 7 + 3 });
+                    out.push({ x: px, y: py, t: Math.min(0.999, t + lag * (0.7 + rng() * 0.3)), part: 'foam', k: 1, seed: n * 7 + 5 });
+                } else {
+                    out.push({ x: px, y: py, t: Math.min(0.999, t + lag * (0.4 + rng() * 0.6)), part: 'foam', seed: n * 7 + 3 });
+                }
             }
         }
         out.sort((a, b) => a.t - b.t);

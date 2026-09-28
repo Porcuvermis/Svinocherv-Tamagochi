@@ -139,7 +139,13 @@ const harness = require('./harness');
   ok(spill.over <= 34, 'кайма не дальше одного пузыря от тела',
      `${spill.over} точек холста`);
 
-  const clothMoves = await scrub('cloth', 8);
+  // Мочалка — тоже трение: не быстрее своей ступени.
+  const clothSec0 = await page.evaluate(() => LustMinigame.stageRub('cloth'));
+  const tCloth = Date.now();
+  const clothMoves = await scrub('cloth', 10);
+  const clothSec = (Date.now() - tCloth) / 1000;
+  ok(clothSec >= clothSec0 * 0.95, 'мочалкой быстрее ступени не натереть',
+     `${clothSec.toFixed(1)} с при ступени ${clothSec0} с`);
   // Мочалка НЕ обязана быть длиннее мыла — она обязана быть НЕ КОРОЧЕ и
   // требовать своей работы. Пока с неё спрашивали три тёрки узким пятном,
   // она и была длиннее — ценой того, что игрок доводил её пиксель-хантингом

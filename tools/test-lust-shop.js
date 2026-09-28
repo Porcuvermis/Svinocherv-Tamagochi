@@ -96,8 +96,7 @@ const harness = require('./harness');
 
   // ================= 4. ПОКУПКА ДВИГАЕТ ЧИСЛО ИГРЫ =================
   // Меряется НЕ цифра на прилавке, а то, чем игра пользуется: ступень
-  // прицела, которой стреляет финал, секунды трения мылом и радиус тёрки
-  // мочалкой.
+  // прицела, которой стреляет финал, и секунды трения мылом и мочалкой.
   say('\n======== КУПЛЕННАЯ СТУПЕНЬ ДВИГАЕТ ИГРУ ========');
   const read = () => page.evaluate(() => ({
     drain: GameState.drainHours('lust'),
@@ -106,7 +105,7 @@ const harness = require('./harness');
     tail: LustMinigame.tailTier(),
     shotMs: LustMinigame.shotMs(),
     soap: (LustMinigame.phase = 'soap', LustMinigame.stageRub()),
-    cloth: (LustMinigame.phase = 'cloth', LustMinigame.stageRadius())
+    cloth: (LustMinigame.phase = 'cloth', LustMinigame.stageRub())
   }));
   // Шкала просела пять часов назад: иначе прыжок от смены скорости не с чего
   // увидеть — он растёт вместе с прошедшим временем.
@@ -131,8 +130,8 @@ const harness = require('./harness');
         `(${before.tail.relax} → ${after.tail.relax})`);
   check(after.soap < before.soap,
         `мылить короче: ${before.soap} → ${after.soap} с трения`);
-  check(after.cloth > before.cloth,
-        `тёрка мочалкой шире: ${before.cloth.toFixed(1)} → ${after.cloth.toFixed(1)} точек сцены`);
+  check(after.cloth < before.cloth,
+        `тереть мочалкой короче: ${before.cloth} → ${after.cloth} с трения`);
   // Вторая половина мыла и мочалки — таймеры, и они разведены: мыло
   // замедляет потребность, мочалка ускоряет награду.
   check(after.drain > before.drain,
