@@ -672,8 +672,11 @@ const harness = require('./harness');
     hide.forEach(el => el.removeAttribute('display'));
     const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(h.getAttribute('transform') || '');
     const x = b.x + (m ? +m[1] : 0), y = b.y + (m ? +m[2] : 0);
-    const W = STAGE_W, H = STAGE_H;
-    return { l: -x / b.width, r: (x + b.width - W) / b.width, t: -y / b.height, b: (y + b.height - H) / b.height };
+    // Край — видимая область svg руки (он вписан с обрезкой под шапкой
+    // окна), а не рамка холста.
+    const V = L.handView();
+    return { l: (V.x - x) / b.width, r: (x + b.width - V.x - V.w) / b.width,
+             t: (V.y - y) / b.height, b: (y + b.height - V.y - V.h) / b.height, V };
   }, NOT_BODY);
   const edgeRun = async (kind) => {
     const at = await page.evaluate(() => { const L = LustMinigame, o = L.loose;

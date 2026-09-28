@@ -1790,17 +1790,31 @@ const LustMinigame = {
     // перетаскивании, то и оставленный парить предмет лежит в пределах
     // (onUp берёт то же место). Сверху запас на покачивание парящего
     // (bt-float, 5 единиц вверх).
+    //
+    // Край — не рамка 390×844, а то, что ВИДНО: сцена ванной лежит под
+    // шапкой окна мини-игры, и svg руки вписан с обрезкой (slice) — верх и
+    // низ его видимой области срезаны. По рамке холста пробка флакона
+    // уезжала под шапку (снимок прогона).
     HOLD_OUT: 0.05,
     HOLD_BOB: 5,
+    handView() {
+        const n = this.el('bt-hand'), W = typeof STAGE_W !== 'undefined' ? STAGE_W : 390;
+        const H = typeof STAGE_H !== 'undefined' ? STAGE_H : 844;
+        const r = n && n.getBoundingClientRect();
+        if (!r || !r.width || !r.height) return { x: 0, y: 0, w: W, h: H };
+        // Та же пропорция, что у видимой области: slice масштабирует по
+        // большему, лишнее по другой оси срезано поровну.
+        const sc = Math.max(r.width / W, r.height / H), vw = r.width / sc, vh = r.height / sc;
+        return { x: (W - vw) / 2, y: (H - vh) / 2, w: vw, h: vh };
+    },
     clampHeld(p, d) {
         if (!p || !d || !d.at) return p;
         const b = d.kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(d.kind), K = d.k;
         const w = b.w * K, h = b.h * K, ox = (b.x - d.at.x) * K, oy = (b.y - d.at.y) * K;
-        const tx = w * this.HOLD_OUT, ty = h * this.HOLD_OUT;
-        const W = typeof STAGE_W !== 'undefined' ? STAGE_W : 390, H = typeof STAGE_H !== 'undefined' ? STAGE_H : 844;
+        const tx = w * this.HOLD_OUT, ty = h * this.HOLD_OUT, V = this.handView();
         return {
-            x: Math.max(-tx - ox, Math.min(W + tx - ox - w, p.x)),
-            y: Math.max(-ty + this.HOLD_BOB - oy, Math.min(H + ty - oy - h, p.y))
+            x: Math.max(V.x - tx - ox, Math.min(V.x + V.w + tx - ox - w, p.x)),
+            y: Math.max(V.y - ty + this.HOLD_BOB - oy, Math.min(V.y + V.h + ty - oy - h, p.y))
         };
     },
 
