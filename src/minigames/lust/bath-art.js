@@ -430,9 +430,14 @@ const BATH_ART = {
         // у «72%» нет.
         { key: 'pink',   film: 0.2, mottle: 2, n: 9, big: 0.36, small: 0.08, A: 0.36, rim: 1.1, shine: 1.2,
           shade: 0.5, clump: 0.3, sheen: 0.34 },
-        // 4 — гель: плёнка цветная и прозрачная, пузыри редкие, крупные и
-        // ПУСТЫЕ внутри — видна кромка и острый блик, как у пузыря в геле.
-        { key: 'gel',    film: 0.24, n: 5, big: 0.56, small: 0.12, A: 0.12, rim: 2.2, shine: 2.4 },
+        // 4 — гель: плёнка цветная, прозрачная и МОКРАЯ — глянец узкими
+        // яркими полосами (gloss), а не атласным разводом. Пузыри редкие,
+        // крупные и ПУСТЫЕ: тело почти прозрачное, пузырь сказан кромкой —
+        // светлой изнутри и тёмной снаружи (edge), иначе прозрачный пузырь
+        // на прозрачной плёнке пропадает, — и острым бликом даже у мелких
+        // (spec — с какого размера блик есть).
+        { key: 'gel',    film: 0.2, mottle: 2, n: 6, big: 0.6, small: 0.1, A: 0.07, rim: 4.5, shine: 5,
+          edge: 3.2, spec: 0.12, gloss: 0.55 },
         // 6 — эликсир: светится. Поверх плёнки мягкий зелёный свет.
         { key: 'elixir', film: 0.18, n: 5, big: 0.5,  small: 0.12, A: 0.16, rim: 2.2, shine: 2.2, glow: 0.4 },
         // 8 — волшебная: фиолет, радужные кромки, искры.
@@ -495,6 +500,20 @@ const BATH_ART = {
                 ctx.ellipse(x - cell * 0.12, y - cell * 0.18, cell * 0.62, cell * 0.16, -0.6, 0, Math.PI * 2);
                 ctx.fill();
             }
+            // Мокрый глянец геля: узкая яркая полоса, не в каждой клетке и
+            // с разной длиной — на мокром блик ломаный, а не ровный атлас.
+            if (V && V.gloss && rng() < 0.55) {
+                ctx.globalAlpha = V.gloss * (0.5 + rng() * 0.5);
+                ctx.strokeStyle = c.hi;
+                ctx.lineCap = 'round';
+                ctx.lineWidth = Math.max(1, cell * 0.07);
+                const gx = x + (rng() - 0.5) * cell * 0.6, gy = y + (rng() - 0.5) * cell * 0.6;
+                const gl = cell * (0.25 + rng() * 0.35);
+                ctx.beginPath();
+                ctx.moveTo(gx - gl * 0.8, gy + gl * 0.55);
+                ctx.quadraticCurveTo(gx, gy - gl * 0.15, gx + gl * 0.8, gy - gl * 0.55);
+                ctx.stroke();
+            }
             // Свет эликсира и волшебной мути — СЛОЖЕНИЕМ: светится, а не
             // закрашивает. Краской тот же цвет ложился бы бледной плёнкой.
             if (V && V.glow) {
@@ -552,12 +571,21 @@ const BATH_ART = {
             // волшебной мути — радужная, у каждого пузыря свой цвет (по
             // сиду: перерисовка не должна перекрашивать пену).
             const pc = prism ? prism[Math.floor(rng() * prism.length)] : null;
+            // Тёмная кромка снаружи — прозрачный пузырь отделяется ей от
+            // такой же прозрачной плёнки (гель).
+            if (V && V.edge) {
+                ctx.globalAlpha = Math.min(1, A * V.edge);
+                ctx.lineWidth = Math.max(0.8, r * 0.09);
+                ctx.strokeStyle = c.lo;
+                ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.stroke();
+            }
             ctx.globalAlpha = Math.min(1, A * (cloth ? 1.5 : V.rim) * (pc ? 1.6 : 1));
             ctx.lineWidth = Math.max(1, r * 0.16);
             ctx.strokeStyle = pc || c.hi;
             ctx.beginPath(); ctx.arc(bx, by, r * 0.94, 0, Math.PI * 2); ctx.stroke();
-            // Блик — только у крупных: на мелком он превращается в шум.
-            if (r > cell * 0.3) {
+            // Блик — только у крупных: на мелком он превращается в шум. У
+            // глянцевых видов (spec) порог ниже: мокрый пузырь блестит и мелким.
+            if (r > cell * (V && V.spec != null ? V.spec : 0.3)) {
                 ctx.globalAlpha = Math.min(1, A * (cloth ? 1.7 : V.shine * 1.5));
                 ctx.fillStyle = c.hi;
                 ctx.beginPath();
