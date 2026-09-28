@@ -26,9 +26,25 @@ const BATH_CLOTH = {
         return Math.max(0, Math.min(this.TIERS.length - 1, L | 0));
     },
 
-    // where === 'shelf' — предмет на полке: ступень может показать там то,
-    // чего нет в руке и на иконке (как мыльная сопля у обмылка).
+    // Вещь ступени — из двух частей: основная (лежит в корзине, за передней
+    // сеткой) и передняя (свисает через край корзины наружу, поверх сетки).
+    // На полке они в разных слоях сцены (bt-cloth-art и bt-cloth-front), в
+    // руке и на иконке — вместе: это одна и та же вещь. Функция ступени
+    // возвращает строку (всё — основная часть) или { main, front }.
+    parts(level, where) {
+        const r = this.tierArt(level, where);
+        return typeof r === 'string' ? { main: r, front: '' } : r;
+    },
+    drawFront(level) { return this.parts(level, 'shelf').front; },
+
+    // where === 'shelf' — предмет на полке: там основная часть без передней
+    // (передняя — своим слоем поверх сетки), и ступень может показать там
+    // то, чего нет в руке и на иконке. Иначе — обе части вместе.
     draw(level, where) {
+        const p = this.parts(level, where);
+        return where === 'shelf' ? p.main : p.main + p.front;
+    },
+    tierArt(level, where) {
         const kind = this.TIERS[this.tier(level)];
         if (kind === 'rag') return this.rag(where);
         return BATH_BAKED.draw('cloth');
@@ -43,8 +59,11 @@ const BATH_CLOTH = {
 
     // Полка перерисовывается после покупки и после debug-панели.
     refresh() {
-        const el = typeof document !== 'undefined' && document.getElementById('bt-cloth-art');
-        if (el) el.innerHTML = this.draw(null, 'shelf');
+        if (typeof document === 'undefined') return;
+        const p = this.parts(null, 'shelf'), el = document.getElementById('bt-cloth-art');
+        const fr = document.getElementById('bt-cloth-front');
+        if (el) el.innerHTML = p.main;
+        if (fr) fr.innerHTML = p.front;
     },
 
     // ---------- 0. ВЕТОШЬ ----------

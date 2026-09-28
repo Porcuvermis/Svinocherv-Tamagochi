@@ -1903,11 +1903,15 @@ const LustMinigame = {
     // instant — без плавного перехода: когда на том же месте в тот же миг
     // появляется или исчезает летящая копия, переход читается миганием.
     homeShown(kind, on, instant) {
-        const n = this.el(`bt-${kind}-home`);
-        if (!n) return;
-        if (instant) n.style.transition = 'none';
-        n.style.opacity = on ? '1' : '0';
-        if (instant) { void n.getBoundingClientRect(); n.style.transition = ''; }
+        // У мочалки на полке две части в разных слоях: в корзине и
+        // свисающая через край поверх сетки (bt-cloth-front). Прячутся вместе.
+        for (const id of [`bt-${kind}-home`, `bt-${kind}-front`]) {
+            const n = this.el(id);
+            if (!n) continue;
+            if (instant) n.style.transition = 'none';
+            n.style.opacity = on ? '1' : '0';
+            if (instant) { void n.getBoundingClientRect(); n.style.transition = ''; }
+        }
     },
 
     // ---------- ДОМОЙ ПО ДУГЕ ----------
@@ -1989,8 +1993,8 @@ const LustMinigame = {
     },
 
     showTools(show, except) {
-        for (const k of ['soap', 'cloth']) {
-            const n = this.el(`bt-${k}-home`);
+        for (const k of ['soap', 'cloth']) for (const id of [`bt-${k}-home`, `bt-${k}-front`]) {
+            const n = this.el(id);
             if (n) n.style.opacity = (show || k !== except) ? '1' : '0';
         }
     },
