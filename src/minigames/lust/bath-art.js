@@ -452,7 +452,12 @@ const BATH_ART = {
           edge: 3.2, spec: 0.12, gloss: 0.55,
           glint: { k: 1, size: 0.26, second: 0.45, halo: 0, min: 0.18 } },
         // 6 — эликсир: светится. Поверх плёнки мягкий зелёный свет.
-        { key: 'elixir', film: 0.18, n: 5, big: 0.5,  small: 0.12, A: 0.16, rim: 2.2, shine: 2.2, glow: 0.4,
+        // Светится, а не красит: плёнка — цветом СВЕЧЕНИЯ (filmGlow), а не
+        // средним тоном (средний зелёный поверх розовой кожи давал болотную
+        // слизь), сияние изнутри гуще, пузыри светлые, а по кромке тела
+        // мягкий ореол чуть выходит за силуэт (aura) — так читается свет.
+        { key: 'elixir', film: 0.2, filmGlow: true, n: 5, big: 0.5,  small: 0.12, A: 0.14, bodyGlow: true,
+          rim: 2.6, shine: 2.2, glow: 0.55, aura: 0.3,
           glint: { k: 1, size: 0.28, second: 0.45, halo: { w: 2.4, a: 0.45 }, min: 0.16 } },
         // 8 — волшебная: фиолет, радужные кромки, искры.
         { key: 'magic',  film: 0.15, n: 5, big: 0.52, small: 0.12, A: 0.1, rim: 2.4, shine: 2.2, glow: 0.26,
@@ -534,10 +539,15 @@ const BATH_ART = {
         }
     },
 
-    // Вид мути по ступени мыла: 0–1 → 0, 2–3 → 1, … 8 → 4.
+    // Вид мути по ступени мыла: 0–1 → 0, 2–3 → 1, … 8 → 4. Фактура меняется
+    // раз в две ступени, а ЦВЕТ — от мыла своей ступени (решение игрока):
+    // у нечётных, чей цвет с парой не совпадает, свой ключ палитры.
+    LATHER_TINT: { 5: 'gelViolet', 7: 'elixirPink' },
     latherLook(level) {
         const L = level == null && typeof BATH_SOAP !== 'undefined' ? BATH_SOAP.tier() : (level | 0);
-        return this.LATHER[Math.max(0, Math.min(this.LATHER.length - 1, L >> 1))];
+        const base = this.LATHER[Math.max(0, Math.min(this.LATHER.length - 1, L >> 1))];
+        const tint = this.LATHER_TINT[L];
+        return tint ? Object.assign({}, base, { key: tint }) : base;
     },
 
     // sink(bx, by, r, color) — куда отдать каждый нарисованный пузырь: по ним
@@ -568,7 +578,7 @@ const BATH_ART = {
         // пузыри: они всё равно ярче и с краем.
         if (part !== 'foam') {
             ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : V.film;
-            ctx.fillStyle = c[500];
+            ctx.fillStyle = V && V.filmGlow && c.glow ? c.glow : c[500];
             ctx.beginPath();
             ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
             // Неровная густота: поверх диска — пятна разной плотности со
@@ -619,6 +629,20 @@ const BATH_ART = {
             }
         }
         if (part === 'base') { ctx.globalAlpha = 1; return; }
+        // Ореол по кромке тела (светящиеся виды): у частицы, что лежит у края,
+        // мягкий свет выходит за силуэт. Рисуется в слой пузырей — его силуэт
+        // не режет. Внутри тела не рисуется: там он лишь замыливал бы муть.
+        if (V && V.aura && inside) {
+            const e = cell * 1.3;
+            if (!inside(x + e, y) || !inside(x - e, y) || !inside(x, y + e) || !inside(x, y - e)) {
+                const g = ctx.createRadialGradient(x, y, 0, x, y, cell * 1.7);
+                g.addColorStop(0, c.glow);
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.globalAlpha = V.aura;
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.arc(x, y, cell * 1.7, 0, Math.PI * 2); ctx.fill();
+            }
+        }
         const prism = V && V.prism ? P.soapCosmos.prism : null;
         let prev = null;
         for (let i = 0; i < n; i++) {
@@ -648,7 +672,7 @@ const BATH_ART = {
                 if (n2 < 2) continue;
             }
             ctx.globalAlpha = A;
-            ctx.fillStyle = c[500];
+            ctx.fillStyle = V && V.bodyGlow && c.glow ? c.glow : c[500];
             ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
             // Тень снизу-справа (свет в игре сверху-слева): объём матовой
             // пены сказан ей, а не бликом.

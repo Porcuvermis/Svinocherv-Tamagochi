@@ -435,6 +435,11 @@ const PALETTE = {
             pink:   { 500: '#f1c6d1', hi: '#fff1f5', lo: '#d6939f' },
             gel:    { 500: '#74d3dc', hi: '#effdfe', lo: '#1f9fae' },
             elixir: { 500: '#78e0a8', hi: '#effff6', lo: '#2ea463', glow: '#a9f4c8' },
+            // Нечётные ступени берут ФАКТУРУ пары, а цвет — своего мыла
+            // (решение игрока): премиум-гель фиолетовый (soapViolet), колба —
+            // розовый свет (soapMagic).
+            gelViolet:  { 500: '#c29be3', hi: '#f6ecfd', lo: '#672a8c' },
+            elixirPink: { 500: '#ff9fce', hi: '#fff0f8', lo: '#b52d7a', glow: '#ffc4e3' },
             magic:  { 500: '#b497ea', hi: '#f6efff', lo: '#6f36b4', glow: '#e6fdff' }
         },
         // Жижа финала. БЕЛАЯ, а не водяная: это не вода из душа, и путать их
