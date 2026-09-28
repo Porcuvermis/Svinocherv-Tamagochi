@@ -157,6 +157,14 @@ const BATH_ART = {
             ${btGrab(64, 78, A.showerHead.x, A.showerHead.y - 20)}
         </g>
 
+        `;
+    },
+
+    // Этажерка с мылом и мочалкой — отдельным быстрым холстом (#bt-shelf,
+    // комментарий в index.html): живое мыло не должно перерисовывать комнату.
+    sceneShelf() {
+        const B = btBake(), A = B.anchors;
+        return `
         ${BATH_SHELF.backLayer()}
         <g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw(null, 'shelf')}</g>
             ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>

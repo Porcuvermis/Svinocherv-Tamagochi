@@ -174,6 +174,7 @@ const LustMinigame = {
         this.camRainEls = [document.getElementById('bt-cam-rain-far'),
                            document.getElementById('bt-cam-rain-near'),
                            document.getElementById('bt-cam-under'),
+                           document.getElementById('bt-cam-shelf'),
                            document.getElementById('bt-cam-over')];
         // Пары «неподвижная обёртка — едущий холст». Обёртке задаётся
         // обрезка верха, холсту — на сколько ехать и за сколько.
@@ -196,6 +197,7 @@ const LustMinigame = {
         this.washCtx = c.getContext('2d');
 
         this.camBackEl.innerHTML = BATH_ART.sceneBack();
+        document.getElementById('bt-cam-shelf').innerHTML = BATH_ART.sceneShelf();
         this.el('bt-cam-under').innerHTML = BATH_ART.sceneUnder();
         this.camEl.innerHTML = BATH_ART.sceneFront();
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();

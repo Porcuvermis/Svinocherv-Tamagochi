@@ -441,15 +441,17 @@ onmessage = async (e) => {
         // — в переднем. Каждый в обоих, видимость решает сторона орбиты.
         const O = M.ORBIT, ca = Math.cos(O.tilt * Math.PI / 180), sa = Math.sin(O.tilt * Math.PI / 180);
         const orb = (a) => { const x = O.rx * Math.cos(a), y = O.ry * Math.sin(a); return [x * ca - y * sa, O.cy + x * sa + y * ca, Math.sin(a)]; };
+        // Каждый огонёк — ОДИН узел (голова и два шлейфа), который
+        // перекладывается между задним и передним слоем в момент, когда
+        // уходит за флакон. Две копии с переключаемой прозрачностью писали
+        // вдвое больше атрибутов на каждом кадре.
         out.motes = [];
         for (let i = 0; i < M.MOTES; i++) {
             const a0 = t * 0.75 + i * 2 * Math.PI / M.MOTES + (i % 2) * 0.35;
-            const pts = [0, 0.13, 0.26, 0.39].map(d => orb(a0 - d));
-            const front = pts[0][2] > 0, k = 0.75 + 0.35 * pts[0][2];
-            out.motes.push(pts.map(([x, y, z], j) => ({
-                tr: `translate(${f2(x)} ${f2(y)}) scale(${(k * (1 - j * 0.2)).toFixed(3)})`,
-                f: f2((front ? 1 : 0) * (1 - j * 0.28)), b: f2((front ? 0 : 0.8) * (1 - j * 0.28))
-            })));
+            const pts = [0, 0.14, 0.28].map(d => orb(a0 - d));
+            const k = 0.75 + 0.35 * pts[0][2];
+            out.motes.push({ front: pts[0][2] > 0,
+                pts: pts.map(([x, y], j) => `translate(${f2(x)} ${f2(y)}) scale(${(k * (1 - j * 0.22)).toFixed(3)})`) });
         }
         // Вспышки: у каждой своё окно жизни, место берётся по номеру окна —
         // каждый раз новое, но детерминированно (без Math.random).
@@ -480,6 +482,7 @@ onmessage = async (e) => {
     },
 
     magic() {
+        this.live.dirty = true;
         const P = btPal(), C = P.soapCosmos, D = C.deep, Am = C.amethyst, Au = P.soapGold, ink = PALETTE.ink;
         const id = 'bsp' + (this.uid++);
         const A = BATH_ART.slots().soap, M = this.MAGIC, LN = M.LENS, NK = M.NECK;
@@ -602,10 +605,15 @@ onmessage = async (e) => {
                 <ellipse rx="${w * 0.32}" ry="${h * 0.3}" fill="url(#${id}-specSoft)"/>
             </g>`).join('');
         // Огонёк и три точки шлейфа, в заднем ('b') и переднем ('f') слое.
-        const motes = (side) => Fr.motes.map((pts, i) => pts.map((p, j) =>
-            `<g class="bsm-mote-${side}" transform="${p.tr}" fill-opacity="${side === 'f' ? p.f : p.b}">`
-          + (j === 0 ? `<circle r="5.5" fill="url(#${id}-${['mote', 'moteP', 'moteG'][i % 3]})"/><circle r="1" fill="#ffffff"/>` : `<circle r="${(3 - j * 0.6).toFixed(1)}" fill="url(#${id}-${['mote', 'moteP', 'moteG'][i % 3]})"/>`)
-          + `</g>`).join('')).join('');
+        const moteSvg = (m, i) => {
+            const g = ['mote', 'moteP', 'moteG'][i % 3];
+            return `<g class="bsm-mote" data-i="${i}" fill-opacity="${m.front ? 1 : 0.8}">`
+                + m.pts.map((tr, j) => `<g transform="${tr}" fill-opacity="${[1, 0.7, 0.42][j]}">`
+                    + (j === 0 ? `<circle r="5.5" fill="url(#${id}-${g})"/><circle r="1" fill="#ffffff"/>` : `<circle r="${(3 - j * 0.6).toFixed(1)}" fill="url(#${id}-${g})"/>`)
+                    + `</g>`).join('') + `</g>`;
+        };
+        const motes = (side) => `<g class="bsm-motes-${side}">`
+            + Fr.motes.map((m, i) => ((side === 'f') === m.front ? moteSvg(m, i) : '')).join('') + `</g>`;
         const glints = Fr.glints.map(g => `<g class="bsm-glint" transform="${g.tr}" fill-opacity="${g.o}">
                 <circle r="4.5" fill="url(#${id}-mote)"/>
                 ${flare(7)}
@@ -912,18 +920,32 @@ onmessage = async (e) => {
     wake() {
         if (this.live.raf || typeof requestAnimationFrame === 'undefined') return;
         const step = (now) => {
-            const roots = document.querySelectorAll('.bt-soap-magic');
-            if (!roots.length) { this.live.raf = 0; return; }
-            // 30 кадров хватает: флакон — украшение, а не игра.
-            if (now - this.live.last >= 33) {
-                this.live.last = now;
-                const L = this.lean(now / 1000), k = 0.2;
-                this.live.px += (L.x - this.live.px) * k;
-                this.live.py += (L.y - this.live.py) * k;
-                const Fr = this.magicFrame(now / 1000);
-                roots.forEach(r => this.applyFrame(r, Fr));
+            // Флаконы ищутся в документе не на каждом кадре экрана, а когда
+            // их перерисовали (live.dirty из magic()) или один из прежних
+            // вынули из дерева. querySelectorAll на каждом кадре стоил
+            // заметную долю скрипта.
+            const Lv = this.live;
+            if (Lv.dirty || !Lv.roots || Lv.roots.some(r => !r.isConnected)) {
+                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic'));
+                Lv.dirty = false;
             }
-            this.live.raf = requestAnimationFrame(step);
+            if (!Lv.roots.length) { Lv.raf = 0; return; }
+            // 30 кадров хватает: флакон — украшение, а не игра.
+            if (now - Lv.last >= 33) {
+                Lv.last = now; Lv.n = (Lv.n || 0) + 1;
+                const L = this.lean(now / 1000), k = 0.2;
+                Lv.px += (L.x - Lv.px) * k;
+                Lv.py += (L.y - Lv.py) * k;
+                // Спрятанный флакон не крутится: пока мыло в руке, копия на
+                // полке стоит с нулевой прозрачностью, и её анимация удваивала
+                // работу ровно тогда, когда кадр и так тяжелее всего.
+                const vis = Lv.roots.filter(r => { const h = r.closest('#bt-soap-home'); return !h || h.style.opacity !== '0'; });
+                if (vis.length) {
+                    const Fr = this.magicFrame(now / 1000);
+                    vis.forEach(r => this.applyFrame(r, Fr));
+                }
+            }
+            Lv.raf = requestAnimationFrame(step);
         };
         this.live.raf = requestAnimationFrame(step);
     },
@@ -942,9 +964,21 @@ onmessage = async (e) => {
                   vapor: one('.bsm-vapor'),
                   far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
                   aura: one('.bsm-aura'), rays1: one('.bsm-rays1'), rays2: one('.bsm-rays2'), caus: all('.bsm-caus'),
-                  moteF: all('.bsm-mote-f'), moteB: all('.bsm-mote-b'), glints: all('.bsm-glint'), dust: all('.bsm-dust'),
+                  motes: all('.bsm-mote'), motesF: one('.bsm-motes-f'), motesB: one('.bsm-motes-b'),
+                  glints: all('.bsm-glint'), dust: all('.bsm-dust'),
                   tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
             c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);   // пузырь (масштаб) и искра
+            // Огоньки — в порядке номера (разметка раскладывает их по двум
+            // слоям, а кадр перечисляет по номеру).
+            c.motes.sort((a, b) => +a.dataset.i - +b.dataset.i);
+            c.moteParts = c.motes.map(g => Array.from(g.children));
+            // В руке убранство не нужно: флакон едет за пальцем и
+            // перерисовывается целиком на каждом кадре, а лучи, сияние,
+            // зайчики, огоньки и пыль — самое дорогое в этой перерисовке. По
+            // замыслу игрока вещь в руке и не светится (светится оставленная).
+            c.held = !!root.closest('#bt-held');
+            if (c.held) [c.aura, c.rays1, c.rays2, ...c.caus, c.motesF, c.motesB, ...c.dust, ...c.glints]
+                .forEach(el => el && el.setAttribute('display', 'none'));
             this.live.cache.set(root, c);
         }
         const set = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
@@ -961,16 +995,28 @@ onmessage = async (e) => {
         set(c.sweep, 'transform', Fr.sweep);
         // Убранство. fill-opacity на группе — наследуемый атрибут детям, а не
         // прозрачность группы: отдельного буфера нет (docs/traps.md, п. 73).
-        set(c.aura, 'transform', Fr.aura);
-        set(c.rays1, 'transform', Fr.rays1);
-        set(c.rays2, 'transform', Fr.rays2);
-        c.caus.forEach((el, i) => { set(el, 'transform', Fr.caus[i].tr); set(el, 'fill-opacity', Fr.caus[i].o); });
-        const flat = Fr.motes.flat();
-        c.moteF.forEach((el, i) => { set(el, 'transform', flat[i].tr); set(el, 'fill-opacity', flat[i].f); });
-        c.moteB.forEach((el, i) => { set(el, 'transform', flat[i].tr); set(el, 'fill-opacity', flat[i].b); });
-        c.glints.forEach((el, i) => { set(el, 'transform', Fr.glints[i].tr); set(el, 'fill-opacity', Fr.glints[i].o); });
-        c.dust.forEach((el, i) => { set(el, 'transform', Fr.dust[i].tr); set(el, 'fill-opacity', Fr.dust[i].o); });
-        c.tw.forEach(el => set(el, 'fill-opacity', Fr.twinkle[+el.dataset.i]));
+        // Медленное (лучи, сияние, зайчики) — через кадр: вращение в
+        // несколько градусов в секунду на 15 кадрах не отличить от 30, а
+        // перерисовка этих больших градиентов — самая дорогая в убранстве.
+        const n = this.live.n || 0;
+        if (!c.held && n % 2 === 0) {
+            set(c.aura, 'transform', Fr.aura);
+            set(c.rays1, 'transform', Fr.rays1);
+            set(c.rays2, 'transform', Fr.rays2);
+            c.caus.forEach((el, i) => { set(el, 'transform', Fr.caus[i].tr); set(el, 'fill-opacity', Fr.caus[i].o); });
+        }
+        if (!c.held) c.motes.forEach((g, i) => {
+            const m = Fr.motes[i], box = m.front ? c.motesF : c.motesB;
+            if (g.parentNode !== box) { box.appendChild(g); set(g, 'fill-opacity', m.front ? '1' : '0.8'); }
+            c.moteParts[i].forEach((el, j) => set(el, 'transform', m.pts[j]));
+        });
+        if (!c.held) {
+            c.glints.forEach((el, i) => { set(el, 'transform', Fr.glints[i].tr); set(el, 'fill-opacity', Fr.glints[i].o); });
+            c.dust.forEach((el, i) => { set(el, 'transform', Fr.dust[i].tr); set(el, 'fill-opacity', Fr.dust[i].o); });
+        }
+        // Мерцающих звёзд десятки в двух копиях — каждая переписывается раз в
+        // три кадра (по трети за кадр): мерцание медленное, разницы не видно.
+        c.tw.forEach((el, i) => { if (i % 3 === n % 3) set(el, 'fill-opacity', Fr.twinkle[+el.dataset.i]); });
         c.bubs.forEach((g, i) => {
             const b = Fr.bubs[i], [ci, st] = c.bubParts[i];
             set(g, 'transform', `translate(${b.x} ${b.y})`);
