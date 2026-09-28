@@ -651,6 +651,60 @@ const harness = require('./harness');
   await page.evaluate(() => LustMinigame.washShown(false));
   check(!(await page.evaluate(() => LustMinigame.glintRaf)), 'след смыт — цикл бликов встал');
 
+  // ================= 12. ЗА КРАЙ ЭКРАНА НЕ УХОДИТ =================
+  // Мыло и мочалку можно было увести за край экрана и потерять (замечание
+  // игрока). Палец доходит до края окна, предмет останавливается: формой за
+  // край холста — не больше 5% своего размера. Отпущенный там же парит в
+  // пределах (сверху — с запасом на покачивание). Меряется НАРИСОВАННЫЙ
+  // предмет (без ореола и убранства), флакон — самый крупный, ступень 8.
+  say('\n======== МЫЛО И МОЧАЛКА НЕ УХОДЯТ ЗА КРАЙ ========');
+  await page.evaluate(() => { const L = LustMinigame; L.close(); L.open();
+    LustDebug.setLevel('soap', 8); BATH_SOAP.refresh(); L.startWater(); });
+  for (let i = 0; i < 40 && await page.evaluate(() => LustMinigame.phase) !== 'soap'; i++) await page.waitForTimeout(250);
+  await page.waitForTimeout(1300);
+  const heldOut = () => page.evaluate((NOT_BODY) => {
+    const L = LustMinigame, h = document.getElementById('bt-held');
+    if (!h) return null;
+    // Пар из горла флакона (пузыри, поднимающиеся над пробкой) — не тело.
+    const hide = Array.from(h.querySelectorAll(NOT_BODY + ', .bsm-bub, .bsm-vapor')).filter(el => el.getAttribute('display') !== 'none');
+    hide.forEach(el => el.setAttribute('display', 'none'));
+    const b = h.getBBox();
+    hide.forEach(el => el.removeAttribute('display'));
+    const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(h.getAttribute('transform') || '');
+    const x = b.x + (m ? +m[1] : 0), y = b.y + (m ? +m[2] : 0);
+    const W = STAGE_W, H = STAGE_H;
+    return { l: -x / b.width, r: (x + b.width - W) / b.width, t: -y / b.height, b: (y + b.height - H) / b.height };
+  }, NOT_BODY);
+  const edgeRun = async (kind) => {
+    const at = await page.evaluate(() => { const L = LustMinigame, o = L.loose;
+      return SvgSpace.toClient(L.svgEl, o.pos.x, o.pos.y); });
+    await page.mouse.move(at.x, at.y); await page.mouse.down();
+    const vw = page.viewportSize().width, vh = page.viewportSize().height;
+    const out = {};
+    for (const [side, x, y] of [['l', 1, vh / 2], ['r', vw - 1, vh / 2], ['t', vw / 2, 1], ['b', vw / 2, vh - 1]]) {
+      await page.mouse.move(x, y, { steps: 10 });
+      await page.waitForTimeout(60);
+      const o = await heldOut();
+      out[side] = o ? o[side] : 9;
+    }
+    // Отпущен в углу — парит в пределах.
+    await page.mouse.move(1, 1, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const loose = await heldOut();
+    say(`  ${kind}: за край ${Object.entries(out).map(([k, v]) => k + ' ' + (v * 100).toFixed(1) + '%').join(', ')}; отпущен в углу: слева ${(loose.l * 100).toFixed(1)}%, сверху ${(loose.t * 100).toFixed(1)}%`);
+    // Упирается — дошёл до края (сверху держится запас на покачивание, там
+    // может остаться чуть внутри), и за край не дальше 5%.
+    check(Object.values(out).every(v => v <= 0.055) && out.l > 0 && out.r > 0 && out.b > 0,
+          `${kind}: палец у края — предмет упирается, за край не больше 5% формы (${Object.values(out).map(v => (v * 100).toFixed(1)).join('/')}%)`);
+    check(loose && loose.l <= 0.055 && loose.t <= 0.055, `${kind}: отпущенный у края парит в пределах экрана`);
+  };
+  await edgeRun('мыло');
+  await page.evaluate(() => { const L = LustMinigame; L.rub = 1; L.growTo('soap', 1); L.finishStage('soap'); });
+  for (let i = 0; i < 60 && !(await page.evaluate(() => LustMinigame.phase === 'cloth' && LustMinigame.loose && !LustMinigame.liftRaf)); i++) await page.waitForTimeout(200);
+  await page.waitForTimeout(600);
+  await edgeRun('мочалка');
+
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);

@@ -1576,10 +1576,13 @@ const LustMinigame = {
         // Когда палец последний раз вёл вещь: пока трут, флакон в руке стоит
         // (bath-soap.js, wake), а блики обновляются реже (glintStart).
         this.rubMovedAt = performance.now();
-        this.moveTool(this.toStage(e));
+        const ps = this.toStage(e), pc = this.clampHeld(ps, this.drag);
+        this.moveTool(pc);
 
-        const f = this.toScene(e), o = this.drag.off || { x: 0, y: 0 };
-        const p = { x: f.x + o.x, y: f.y + o.y };
+        // Точка касания — середина предмета: если край экрана его
+        // остановил, а палец ушёл дальше, мылит предмет там, где он стоит.
+        const f = this.toScene(e), o = this.drag.off || { x: 0, y: 0 }, cs = this.cam ? this.cam.s : 1;
+        const p = { x: f.x + o.x + (pc.x - ps.x) / cs, y: f.y + o.y + (pc.y - ps.y) / cs };
         const kind = this.drag.kind;
         // Мыло и мочалка — трение: прогресс от пути по телу, пена растёт
         // заготовкой (lather-grow.js). Клеток и подсказки больше нет.
@@ -1776,7 +1779,29 @@ const LustMinigame = {
         this.homeShown(kind, false);
         this.ready(null);
         this.setHeld(BATH_ART.held(kind, s, g));
-        this.moveTool(this.toStage(e));
+        this.moveTool(this.clampHeld(this.toStage(e), this.drag));
+    },
+
+    // ---------- ЗА КРАЙ ЭКРАНА НЕ УХОДИТ ----------
+    // Мыло и мочалку можно было увести за край экрана и потерять: достать
+    // их оттуда нечем (замечание игрока). Теперь предмет останавливается у
+    // края: формой за край заходит не больше HOLD_OUT своего размера — ровно
+    // «чуть-чуть», чтобы край не читался стенкой. Раз остановлено при
+    // перетаскивании, то и оставленный парить предмет лежит в пределах
+    // (onUp берёт то же место). Сверху запас на покачивание парящего
+    // (bt-float, 5 единиц вверх).
+    HOLD_OUT: 0.05,
+    HOLD_BOB: 5,
+    clampHeld(p, d) {
+        if (!p || !d || !d.at) return p;
+        const b = d.kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(d.kind), K = d.k;
+        const w = b.w * K, h = b.h * K, ox = (b.x - d.at.x) * K, oy = (b.y - d.at.y) * K;
+        const tx = w * this.HOLD_OUT, ty = h * this.HOLD_OUT;
+        const W = typeof STAGE_W !== 'undefined' ? STAGE_W : 390, H = typeof STAGE_H !== 'undefined' ? STAGE_H : 844;
+        return {
+            x: Math.max(-tx - ox, Math.min(W + tx - ox - w, p.x)),
+            y: Math.max(-ty + this.HOLD_BOB - oy, Math.min(H + ty - oy - h, p.y))
+        };
     },
 
     // Вещь в руке — одна. Заменяется ТОЛЬКО она: рядом может ещё лететь на
