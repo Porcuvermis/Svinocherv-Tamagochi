@@ -72,7 +72,57 @@ const Tilt = (function () {
         rawY = Math.max(-1, Math.min(1, (deg - baseY) / FULL_DEG));
     }
 
-    function onOrient(e) { if (e) { feed(e.gamma); feedY(e.beta); } }
+    // ПОВОРОТ ОТ ПОЗЫ ХВАТА — для бликов. Телефон никогда не лежит экраном
+    // вверх: его держат почти стоймя, чуть запрокинув экран, и ЭТО — ноль
+    // (замечание игрока). У стоящего телефона самое естественное движение
+    // руки — поворот вокруг вертикали, и в gamma его нет вовсе: он уходит в
+    // alpha. Поэтому здесь полная ориентация (alpha, beta, gamma → матрица) и
+    // отклонение от медленно ползущей позы хвата, в осях САМОГО телефона:
+    // x — поворот вокруг его длинной оси (для лежащего это тот же gamma),
+    // y — вокруг поперечной (для лежащего — beta). Ориентация матрицей, а не
+    // углами: у стоящего телефона углы вырождаются (gamma и alpha скачут
+    // вместе), а матрица — нет.
+    const TURN_TAU = 3000;      // мс: за сколько поза хвата догоняет новую
+    let turnB = null, turnAt = 0, turnX = 0, turnY = 0, turnLive = false;
+    function rotm(a, b, g) {
+        const r = Math.PI / 180, ca = Math.cos(a * r), sa = Math.sin(a * r), cb = Math.cos(b * r),
+              sb = Math.sin(b * r), cg = Math.cos(g * r), sg = Math.sin(g * r);
+        // R = Rz(alpha) · Rx(beta) · Ry(gamma) — как в спецификации W3C.
+        return [ca * cg - sa * sb * sg, -sa * cb, ca * sg + sa * sb * cg,
+                sa * cg + ca * sb * sg,  ca * cb, sa * sg - ca * sb * cg,
+                -cb * sg,                sb,      cb * cg];
+    }
+    function orth(m) {
+        // Грам — Шмидт по столбцам: среднее матриц — уже не поворот.
+        const c = [[m[0], m[3], m[6]], [m[1], m[4], m[7]]];
+        const n = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return v.map(x => x / l); };
+        const x = n(c[0]), d = x[0] * c[1][0] + x[1] * c[1][1] + x[2] * c[1][2];
+        const y = n([c[1][0] - d * x[0], c[1][1] - d * x[1], c[1][2] - d * x[2]]);
+        const z = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
+        return [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+    }
+    function feedTurn(a, b, g) {
+        if (typeof b !== 'number' || typeof g !== 'number' || !isFinite(b) || !isFinite(g) || unit === null) return;
+        const k = unit === 'rad' ? 180 / Math.PI : 1;
+        const R = rotm((typeof a === 'number' && isFinite(a) ? a : 0) * k, b * k, g * k);
+        const now = Date.now();
+        if (!turnB) turnB = R.slice();
+        else {
+            const w = 1 - Math.exp(-Math.min(500, now - turnAt) / TURN_TAU);
+            turnB = orth(turnB.map((v, i) => v + (R[i] - v) * w));
+        }
+        turnAt = now;
+        // D = Bᵀ·R — поворот от позы хвата в осях телефона; при малых углах
+        // D ≈ I + [ω]×, отсюда ω.
+        const B = turnB, D = (i, j) => B[i] * R[j] + B[3 + i] * R[3 + j] + B[6 + i] * R[6 + j];
+        const wx = (D(2, 1) - D(1, 2)) / 2, wy = (D(0, 2) - D(2, 0)) / 2;
+        const full = FULL_DEG * Math.PI / 180;
+        turnX = Math.max(-1, Math.min(1, wy / full));
+        turnY = Math.max(-1, Math.min(1, wx / full));
+        turnLive = true;
+    }
+
+    function onOrient(e) { if (e) { feed(e.gamma); feedY(e.beta); feedTurn(e.alpha, e.beta, e.gamma); } }
 
     function listenWeb(tag) {
         if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -114,6 +164,14 @@ const Tilt = (function () {
             return { live: live && unit !== null, x: raw, y: rawY };
         },
 
+        // Поворот от позы хвата по обеим осям телефона, −1..1 (единица —
+        // 35°), без сглаживания. Знаки как у lean(): x > 0 — правый край
+        // уходит назад-вниз, y > 0 — верх к игроку. Держишь как держал —
+        // через несколько секунд снова ноль.
+        turn() {
+            return { live: live && turnLive && unit !== null, x: turnX, y: turnY };
+        },
+
         // Для debug-панели: откуда пришёл наклон и что с ним сейчас. Панель —
         // не игра, слова там разрешены.
         info() {
@@ -131,7 +189,7 @@ const Tilt = (function () {
             if (!dev || typeof dev.start !== 'function') return false;
             try {
                 if (app.onEvent) {
-                    app.onEvent('deviceOrientationChanged', () => { feed(dev.gamma); feedY(dev.beta); });
+                    app.onEvent('deviceOrientationChanged', () => { feed(dev.gamma); feedY(dev.beta); feedTurn(dev.alpha, dev.beta, dev.gamma); });
                     // Не вышло — не беда: остаётся обычное событие, оно уже
                     // подписано. Молчать об этом нельзя только в debug-панели.
                     app.onEvent('deviceOrientationFailed', () => { source += ' (Telegram отказал)'; });

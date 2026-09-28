@@ -473,8 +473,10 @@ const harness = require('./harness');
   // Мерится у самого крупного одинокого пузыря В КАЖДОЙ из трёх групп:
   // у групп свой покой блика и своя вязкость.
   const glintAt = async (x, y) => {
-    await page.evaluate(([x, y]) => { window.__lean = { live: true, x, y }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, [x, y]);
-    await page.waitForTimeout(1400);
+    await page.evaluate(([x, y]) => { window.__lean = { live: true, x, y }; Tilt.__origT = Tilt.__origT || Tilt.turn; Tilt.turn = () => window.__lean; }, [x, y]);
+    // Ждём, пока уляжется и вспышка от самого шага: искра нарочно шире
+    // пузыря, а здесь мерится блик.
+    await page.waitForTimeout(3400);
     return page.evaluate(() => {
       const L = LustMinigame, bs = L._glintTop || [], ctx = L.glintCtx;
       // Одинокий — чей блик не перекрывают блики соседей (блик рисуется
@@ -513,19 +515,24 @@ const harness = require('./harness');
     const m = (g) => g.G[1] || { cx: 0, cy: 0 };
     check(m(gR).cx < m(gL).cx - 0.2, `наклон вправо — блик на ЛЕВОМ боку, влево — на правом (${m(gR).cx.toFixed(2)} против ${m(gL).cx.toFixed(2)})`);
     check(m(gD).cy > M.cy + 0.1, `верх к себе — блик ниже (${M.cy.toFixed(2)} → ${m(gD).cy.toFixed(2)})`);
-    check([0, 2].every(i => gR.G[i] && gL.G[i] && gR.G[i].cx < gL.G[i].cx - 0.1), 'крупные и мелкие тоже уходят на ЛЕВЫЙ бок от наклона вправо');
+    check([0, 2].every(i => gR.G[i] && gL.G[i] && gR.G[i].cx < gL.G[i].cx - 0.1), `крупные и мелкие тоже уходят на ЛЕВЫЙ бок от наклона вправо (${[0, 2].map(i => f2(gR.G[i]) + ' против ' + f2(gL.G[i])).join('; ')})`);
   }
-  check([g0, gR, gL, gD].every(g => g.far === 0), 'блик не выходит за свой пузырь');
+  check([g0, gR, gL, gD].every(g => g.far === 0), `блик не выходит за свой пузырь (${[g0, gR, gL, gD].map(g => g.far).join('/')})`);
 
   // ТАНЕЦ. Вспышку дают не угол, а ДВИЖЕНИЕ: держишь ровно — ни одной,
   // дрогнула рука на пару градусов — вспыхнула часть пузырей (не все),
   // дрогнула в другую сторону — вспыхнули ДРУГИЕ. Меряется сила штампа
   // каждого пузыря прямо в перерисовке.
-  const alphas = async (x, y, wait) => page.evaluate(async ([x, y, wait]) => {
+  const alphas = async (x, y, wait, force) => page.evaluate(async ([x, y, wait, force]) => {
     const L = LustMinigame, ctx = L.glintCtx, orig = ctx.drawImage;
     window.__lean = { live: true, x, y };
-    let rec = null;
-    ctx.drawImage = function (...a) { if (rec) rec.push(ctx.globalAlpha); return orig.apply(this, a); };
+    // В покое холст не перерисовывается — перерисовка вынуждается, иначе
+    // проверять нечего (так и пропустили вспышки на неподвижном телефоне).
+    if (force) L.glintDirty = true;
+    let rec = null, stars = 0;
+    // Искры вспыхнувших — отдельные штампы; сила пузыря — по его блику.
+    const isStar = (img) => Object.entries(L._stamps || {}).some(([k, v]) => v === img && k.startsWith('star|'));
+    ctx.drawImage = function (...a) { if (rec) { if (isStar(a[0])) stars++; else rec.push(ctx.globalAlpha); } return orig.apply(this, a); };
     await new Promise(r => setTimeout(r, wait));
     rec = [];
     const d0 = L.glintDraws;
@@ -534,21 +541,23 @@ const harness = require('./harness');
     const bs = L._glintTop, base = L.GLINT.flash.base;
     // Вспыхнул — ярче своей ровной силы в 1.25 раза.
     const lit = rec.length === bs.length ? bs.map((b, i) => rec[i] > Math.min(1, b.k * L.GLINT.groups[b.g].k * base) * 1.25 + 1e-6) : null;
-    return { n: rec.length, lit };
-  }, [x, y, wait]);
+    return { n: rec.length, lit, stars };
+  }, [x, y, wait, force]);
   await page.evaluate(() => { window.__lean = { live: true, x: 0.1, y: 0 }; });
   await page.waitForTimeout(4000);
-  const steady = await alphas(0.1, 0, 0);
+  const steady = await alphas(0.1, 0, 0, true);
   const jigR = await alphas(0.1 + 0.05, 0, 90);
   await page.waitForTimeout(4000);
   const jigL = await alphas(0.1, 0, 90);
   const frac = (a) => a && a.lit ? a.lit.filter(Boolean).length / a.lit.length : -1;
-  say(`  вспыхнуло: ровно ${steady.n ? frac(steady).toFixed(2) : "0 (не перерисовано)"}, дрожь вправо ${frac(jigR).toFixed(2)}, назад ${frac(jigL).toFixed(2)}`);
-  check(steady.n === 0 || frac(steady) === 0, `телефон держат ровно под наклоном — вспышек нет (${steady.n ? frac(steady).toFixed(2) : 'ни одной перерисовки'})`);
+  say(`  вспыхнуло: ровно ${frac(steady).toFixed(2)}, дрожь вправо ${frac(jigR).toFixed(2)}, назад ${frac(jigL).toFixed(2)}`);
+  check(steady.n > 0 && frac(steady) === 0 && steady.stars === 0, `телефон держат ровно под наклоном — вспышек и искр нет (${frac(steady).toFixed(2)}, искр ${steady.stars})`);
   check(frac(jigR) > 0.05 && frac(jigR) < 0.6, `рука дрогнула на 1.75° — вспыхнула часть пузырей, а не все (${frac(jigR).toFixed(2)})`);
   const both = jigR.lit && jigL.lit ? jigR.lit.filter((v, i) => v && jigL.lit[i]).length : -1;
   const litR = jigR.lit ? jigR.lit.filter(Boolean).length : 0;
   check(frac(jigL) > 0.05 && both >= 0 && both < litR * 0.3, `дрогнула обратно — вспыхнули ДРУГИЕ (общих ${both} из ${litR})`);
+  check(jigR.stars > 0 && jigR.stars <= litR * 1.5 && !steady.stars, `на вспыхнувших загораются искры (${jigR.stars}), на ровном телефоне их нет`);
+
   // Телефон неподвижен — холст бликов не перерисовывается.
   // Сглаживание наклона доезжает не сразу — ждём устоявшегося (п. 137).
   await page.waitForTimeout(2500);
@@ -556,7 +565,31 @@ const harness = require('./harness');
   await page.waitForTimeout(800);
   const dr1 = await page.evaluate(() => LustMinigame.glintDraws);
   check(dr1 === dr0, `телефон неподвижен — ни одной перерисовки бликов (${dr1 - dr0})`);
-  await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
+  await page.evaluate(() => { if (Tilt.__origT) Tilt.turn = Tilt.__origT; });
+
+  // НАСТОЯЩИЙ ДАТЧИК, ТЕЛЕФОН СТОЙМЯ. Телефон держат почти вертикально, чуть
+  // запрокинув экран, — это и есть ноль (замечание игрока). Главный жест
+  // руки тогда — поворот вокруг вертикали: он приходит в alpha, а в gamma
+  // его нет. Блики обязаны его видеть. События — настоящие deviceorientation.
+  const orient = (a, b, g) => page.evaluate(([a, b, g]) =>
+    window.dispatchEvent(Object.assign(new Event('deviceorientation'), { alpha: a, beta: b, gamma: g })), [a, b, g]);
+  const held = async (a, b, g, ms) => { const t = Date.now(); while (Date.now() - t < ms) { await orient(a, b, g); await page.waitForTimeout(30); } };
+  await held(0, 70, 8, 200); await held(0, 70, 0, 3800);   // первое событие с размахом — единица «градусы»
+  await held(0, 75, 0, 9000);                                // поза хвата устоялась
+  const T0 = await page.evaluate(() => ({ t: Tilt.turn(), l: Tilt.lean() }));
+  await held(6, 75, 0, 150);                                 // повернул вокруг вертикали на 6°
+  const T1 = await page.evaluate(() => ({ t: Tilt.turn(), l: Tilt.lean() }));
+  say(`  стоймя: поворот ${T0.t.x.toFixed(3)} → ${T1.t.x.toFixed(3)}, завал вбок ${T0.l.x.toFixed(3)} → ${T1.l.x.toFixed(3)}`);
+  check(T0.t.live && Math.abs(T0.t.x) < 0.02 && Math.abs(T0.t.y) < 0.02, `телефон стоймя в позе хвата — поворот ноль (${T0.t.x.toFixed(3)}, ${T0.t.y.toFixed(3)})`);
+  check(T1.t.x > 0.1 && Math.abs(T1.l.x) < 0.01, `поворот стоящего телефона вокруг вертикали виден блику (${T1.t.x.toFixed(2)}), хотя завала вбок нет`);
+  // Сторона: для лежащего телефона поворот совпадает с завалом вбок (gamma).
+  await held(0, 5, 0, 4000); await held(0, 5, 0, 9000);
+  await held(0, 5, 6, 150);
+  const T2 = await page.evaluate(() => Tilt.turn());
+  check(T2.x > 0.1, `лежащий телефон: правый край вниз — поворот того же знака, что gamma (${T2.x.toFixed(2)})`);
+  await held(0, 5, 0, 150); await held(0, 11, 0, 150);
+  const T3 = await page.evaluate(() => Tilt.turn());
+  check(T3.y > 0.1, `верх к себе — y поворота положителен, как у lean (${T3.y.toFixed(2)})`);
   // Смыли — цикл встал.
   await page.evaluate(() => LustMinigame.washShown(false));
   check(!(await page.evaluate(() => LustMinigame.glintRaf)), 'след смыт — цикл бликов встал');

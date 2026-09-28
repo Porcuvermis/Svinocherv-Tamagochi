@@ -1186,8 +1186,25 @@ const LustMinigame = {
         // медленная средняя (slow — доля за кадр, ~полсекунды): держишь
         // ровно под любым углом — вспышек нет, а естественная дрожь руки
         // (градус-два) уже водит их по пене. gain — сколько кольца на единицу
-        // наклона (единица = 35°): 9 — градус дрожи даёт четверть кольца.
-        flash: { gain: 9, slow: 0.06, ring: [0.18, 0.75], sigma: 0.22, base: 0.5, boost: 1 }
+        // поворота (единица = 35°): 18 — ближний край кольца от 0.7° дрожи,
+        // дальний от 1.8°. Кольцо начинается не ближе двух sigma от нуля:
+        // иначе пузыри с ближней точкой светились бы и на неподвижном
+        // телефоне (так и было — проверка молчала, потому что в покое холст
+        // не перерисовывается).
+        // Большой поворот не уводит качание за кольцо, а мягко упирается в
+        // его край (tanh): повёл телефон — горят пузыри этой стороны.
+        // Поворот — от ПОЗЫ ХВАТА по всем осям (Tilt.turn): телефон держат
+        // стоймя, и главный жест руки — поворот вокруг вертикали, которого в
+        // завале вбок нет вовсе.
+        // star — искра на вспыхнувшем пузыре: четыре луча из точки блика
+        // (half — полудлина луча в радиусах пузыря, thin — толщина к длине).
+        // Одной яркости было мало: вспышку не замечали, сколько ни вертели
+        // телефон. Искра нарочно шире пузыря — это отблеск, а пузыри в игре
+        // в несколько точек, и луч внутри пузыря терялся в пикселе. Искр за
+        // кадр не больше cap: штамп искры вчетверо больше блика по площади, и
+        // без потолка перерисовка дорожала вдвое (замер под 4× замедлением).
+        flash: { gain: 18, slow: 0.06, ring: [0.35, 0.9], sigma: 0.17, base: 0.5, boost: 1,
+                 star: { half: 1.5, thin: 0.11, from: 0.3, cap: 40 } }
     },
 
     glintBubble(G, bx, by, r, pc) {
@@ -1218,8 +1235,12 @@ const LustMinigame = {
         sk = sk || b.key;
         const cv = (this._stamps = this._stamps || {})[sk] || document.createElement('canvas');
         this._stamps[sk] = cv;
-        cv.width = cv.height = C * 2;
+        // Холст заготовки не перевыделяется каждый кадр: смена размера — это
+        // новый буфер, а размер у заготовки постоянный.
+        if (cv.width !== C * 2) cv.width = cv.height = C * 2;
         const g = cv.getContext('2d');
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, C * 2, C * 2);
         const d = Math.min(0.99, Math.hypot(lx, ly)), z = Math.sqrt(1 - d * d);
         const ang = Math.atan2(ly, lx);
         const spot = (x, y, a, squash, alpha, color, soft) => {
@@ -1263,6 +1284,34 @@ const LustMinigame = {
     },
 
     // P — где свет у каждой группы ([{lx, ly}] ×3), (dx, dy) — качание.
+    // Искра — четыре мягких луча и яркая точка в месте главного блика своей
+    // группы. Заготовка своя и крупнее блика: лучи выходят за пузырь.
+    GLINT_SC: 52,
+    glintStar(col, lx, ly, sk) {
+        const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_SC, St = Gc.flash.star;
+        const cv = (this._stamps = this._stamps || {})[sk] || document.createElement('canvas');
+        this._stamps[sk] = cv;
+        // Холст заготовки не перевыделяется каждый кадр: смена размера — это
+        // новый буфер, а размер у заготовки постоянный.
+        if (cv.width !== C * 2) cv.width = cv.height = C * 2;
+        const g = cv.getContext('2d');
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, C * 2, C * 2);
+        const h = St.half * R0;
+        g.translate(C + lx * Gc.reach * R0, C + ly * Gc.reach * R0);
+        for (const rot of [Math.PI / 4, -Math.PI / 4]) {
+            g.save(); g.rotate(rot); g.scale(1, St.thin);
+            const gr = g.createRadialGradient(0, 0, 0, 0, 0, h);
+            gr.addColorStop(0, '#fff'); gr.addColorStop(0.25, col); gr.addColorStop(1, 'rgba(255,255,255,0)');
+            g.fillStyle = gr; g.beginPath(); g.arc(0, 0, h, 0, Math.PI * 2); g.fill();
+            g.restore();
+        }
+        const gr = g.createRadialGradient(0, 0, 0, 0, 0, h * 0.3);
+        gr.addColorStop(0, '#fff'); gr.addColorStop(0.4, 'rgba(255,255,255,0.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(0, 0, h * 0.3, 0, Math.PI * 2); g.fill();
+        return cv;
+    },
+
     glintRedraw(P, dx, dy) {
         const ctx = this.glintCtx;
         if (!ctx) return;
@@ -1271,6 +1320,7 @@ const LustMinigame = {
         const K = this.GLINT_C / this.GLINT_R0, stamps = {}, Gc = this.GLINT, F = Gc.flash;
         const s2 = F.sigma * F.sigma;
         if (!this._glintTop || this._glintTopN !== (this.glintBubs || []).length) this.glintPick();
+        let nStar = 0;
         // Заготовка на цвет И группу: у групп свет в разных местах. Это три
         // рисования заготовки за кадр вместо одного — копейки против сотен
         // штампов.
@@ -1280,8 +1330,18 @@ const LustMinigame = {
             const w = b.r * K, ex = dx - b.hx, ey = dy - b.hy;
             const f = Math.exp(-(ex * ex + ey * ey) / s2);
             // globalAlpha вне 0..1 холст молча игнорирует — отсюда min.
-            ctx.globalAlpha = Math.min(1, b.k * Gc.groups[b.g].k * (F.base + F.boost * f));
+            const kk = b.k * Gc.groups[b.g].k;
+            ctx.globalAlpha = Math.min(1, kk * (F.base + F.boost * f));
             ctx.drawImage(st, b.x - w, b.y - w, w * 2, w * 2);
+            // Искра — только у вспыхнувших: лишний штамп у малой доли пены.
+            if (f > F.star.from && nStar < F.star.cap) {
+                nStar++;
+                const zk = 'star|' + b.core + '#' + b.g;
+                const zs = stamps[zk] || (stamps[zk] = this.glintStar(b.core, gl.lx, gl.ly, zk));
+                const ws = b.r * this.GLINT_SC / this.GLINT_R0;
+                ctx.globalAlpha = Math.min(1, kk * f);
+                ctx.drawImage(zs, b.x - ws, b.y - ws, ws * 2, ws * 2);
+            }
         }
         ctx.globalAlpha = 1;
         this.glintDraws = (this.glintDraws || 0) + 1;
@@ -1300,7 +1360,7 @@ const LustMinigame = {
             this.glintRaf = requestAnimationFrame(step);
             if (now - L.last < 33) return;
             L.last = now;
-            const T = typeof Tilt !== 'undefined' && Tilt.lean ? Tilt.lean() : null;
+            const T = typeof Tilt === 'undefined' ? null : Tilt.turn ? Tilt.turn() : Tilt.lean ? Tilt.lean() : null;
             // Датчика нет (компьютер, отказ в разрешении) — свет плывёт сам и
             // чуть дрожит, как в руке, чтобы пена не стояла мёртвой.
             const t = now / 1000;
@@ -1310,7 +1370,9 @@ const LustMinigame = {
             // иначе цикл перерисовывал бы вечно доползающий хвост средней.
             if (L.sx === null) { L.sx = rx; L.sy = ry; }
             L.sx += (rx - L.sx) * F.slow; L.sy += (ry - L.sy) * F.slow;
-            let dx = cl((rx - L.sx) * F.gain, 1), dy = cl((ry - L.sy) * F.gain, 1);
+            let dx = (rx - L.sx) * F.gain, dy = (ry - L.sy) * F.gain;
+            const dm = Math.hypot(dx, dy), R1 = F.ring[1];
+            if (dm > 1e-9) { const k = R1 * Math.tanh(dm / R1) / dm; dx *= k; dy *= k; }
             if (Math.abs(dx) < 0.05) dx = 0;
             if (Math.abs(dy) < 0.05) dy = 0;
             const tx = cl(rx * Gc.gain, 1), ty = cl(ry * Gc.gain, 1);
