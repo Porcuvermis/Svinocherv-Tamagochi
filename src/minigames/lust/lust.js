@@ -1049,7 +1049,11 @@ const LustMinigame = {
         }
         if (this.phase === 'soap' || this.phase === 'cloth') {
             const kind = this.phase;
-            if (Math.hypot(p.x - A[kind].x, p.y - A[kind].y) < 70) this.takeTool(kind, e);
+            // Высокий флакон берут и за горлышко — оно далеко от гнезда,
+            // поэтому попадание считается и по габариту предмета.
+            const b = kind === 'soap' ? BATH_SOAP.box() : null;
+            const inBox = b && p.x > b.x - 12 && p.x < b.x + b.w + 12 && p.y > b.y - 12 && p.y < b.y + b.h + 12;
+            if (inBox || Math.hypot(p.x - A[kind].x, p.y - A[kind].y) < 70) this.takeTool(kind, e);
             return;
         }
         if (this.phase === 'pop') { this.pop(p); return; }
@@ -1072,7 +1076,8 @@ const LustMinigame = {
         if (this.drag.kind === 'tail') { this.aimAt(this.toScene(e)); return; }
         this.moveTool(this.toStage(e));
 
-        const p = this.toScene(e);
+        const f = this.toScene(e), o = this.drag.off || { x: 0, y: 0 };
+        const p = { x: f.x + o.x, y: f.y + o.y };
         this.armHint();
         const C = this.cfg(), kind = this.drag.kind;
         const radius = this.stageRadius();
@@ -1145,7 +1150,11 @@ const LustMinigame = {
     },
 
     takeTool(kind, e) {
-        this.drag = { kind };
+        // Хват и касание — разные точки: флакон держат за горлышко, а мылит
+        // пузо. Смещение в единицах сцены: предмет в руке крупнее полочного
+        // в DRAG_SCALE, и настолько же дальше от пальца его пузо.
+        const a = BATH_ART.slots()[kind], g = BATH_ART.grip(kind), k = BATH_ART.DRAG_SCALE;
+        this.drag = { kind, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
         this.showTools(false, kind);
         this.ready(null);
         this.fgEl.innerHTML =
