@@ -641,6 +641,29 @@ const BATH_ART = {
         return [q.r, q.g, q.b, Math.max(0, Math.min(1, a))];
     },
 
+    // ---------- ПЕНА МОЧАЛКИ ПО СТУПЕНЯМ ----------
+    // Лестница мочалки двигает не цвет пены (он от мыла), а её ТЕЛО: сколько
+    // пузырей, какие крупные, есть ли объём. Вид меняется раз в две ступени,
+    // как у мути: 0, 2, 4, 6, 8.
+    //   n, big, small — пузырей на клетку и их размер (в клетках);
+    //   A — густота заливки пузыря; spread — как тесно пена сбита вначале;
+    //   shade — тень снизу (объём), clump — гроздья;
+    //   stack — второй ярус пузырей поверх: пена растёт горкой;
+    //   over — доля пузырей, выступающих за силуэт шапкой.
+    FOAM: [
+        { n: 6,  big: 0.5,  small: 0.13, A: 0.42, spread: 0.45, shade: 0.3,  clump: 0.2,  stack: 0,    over: 0 },
+        { n: 8,  big: 0.6,  small: 0.15, A: 0.5,  spread: 0.5,  shade: 0.5,  clump: 0.35, stack: 0.15, over: 0 },
+        { n: 10, big: 0.66, small: 0.16, A: 0.56, spread: 0.55, shade: 0.65, clump: 0.45, stack: 0.3,  over: 0.15 },
+        { n: 12, big: 0.74, small: 0.17, A: 0.62, spread: 0.6,  shade: 0.75, clump: 0.55, stack: 0.45, over: 0.3 },
+        { n: 14, big: 0.82, small: 0.18, A: 0.68, spread: 0.65, shade: 0.85, clump: 0.6,  stack: 0.6,  over: 0.5 }
+    ],
+    foamLook(level) {
+        const L = level != null ? level : (typeof GameState !== 'undefined' && GameState.upgradeLevel && typeof Backend !== 'undefined'
+            ? GameState.upgradeLevel(Backend.upgradeKey('lust', 'cloth')) || 0 : 0);
+        const i = Math.max(0, Math.min(this.FOAM.length - 1, (L | 0) >> 1));
+        return Object.assign({ i }, this.FOAM[i]);
+    },
+
     // Густота мути одним слоем там, где она пришла целиком. Одна кружка
     // была полупрозрачной, но они ложились в два-три слоя — отсюда числа.
     FILM: { soap: 0.46, cloth: 0.42 },
@@ -659,17 +682,20 @@ const BATH_ART = {
         const k = t == null ? 1 : Math.max(0, Math.min(1, t));
         // Мыло — плёнка: пузырьков много и они мелкие. Мочалка взбивает:
         // пузыри крупнее, ярче и с краем, и тем гуще, чем больше тёрок.
-        const n = cloth ? 4 + Math.round(k * 4) : V.n;
-        const big = cell * (cloth ? 0.66 : V.big);
-        const small = cell * (cloth ? 0.16 : V.small);
-        const A = cloth ? 0.34 + k * 0.3 : V.A;
+        // Пена мочалки — вид своей ступени МОЧАЛКИ (FOAM): густота, размер,
+        // объём. Цвет и эффекты — от мыла (F выше).
+        const FL = cloth ? ((look && look.foam) || this.FOAM[2]) : null, St = V || FL;
+        const n = cloth ? Math.round(FL.n * (0.45 + 0.55 * k)) : V.n;
+        const big = cell * (cloth ? FL.big : V.big);
+        const small = cell * (cloth ? FL.small : V.small);
+        const A = cloth ? FL.A * (0.62 + 0.38 * k) : V.A;
         // Недотёртая клетка обязана быть ВИДНО недотёртой. Раньше разница
         // между одной тёркой и тремя была в числе пузырей и в яркости —
         // на глаз это одна и та же пена, и игрок водил мочалкой по уже
         // «готовому» червю, ища невидимые клетки. Теперь у неполной клетки
         // пена занимает МЕНЬШЕ МЕСТА: между такими клетками остаются тёмные
         // прогалы мыльной плёнки, и недотёртое читается прямо на картинке.
-        const spread = cloth ? 0.5 + 0.5 * k : 1;
+        const spread = cloth ? FL.spread + (1 - FL.spread) * k : 1;
         // Сама муть (и подложка пены мочалки) — ОДНИМ СЛОЕМ, а не кружками:
         // клетки карты роста заливаются по мере прихода времени, как пятно
         // воды с высоты (lust.js, filmLayer; цвет и густота клетки —
@@ -731,39 +757,16 @@ const BATH_ART = {
         }
         const prism = Eff && Eff.prism ? P.soapCosmos.prism : null;
         let prev = null;
-        for (let i = 0; i < n; i++) {
-            const r = (small + Math.pow(rng(), 2.1) * (big - small)) * spread;
-            const a = rng() * Math.PI * 2;
-            const d = Math.pow(rng(), 0.6) * cell * 0.72 * spread;
-            let bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
-            // Комочек: пузырёк прилипает к соседу, а не рассыпается по
-            // клетке сам по себе — пена держится гроздьями.
-            if (V && V.clump && prev && rng() < V.clump) {
-                const ca = rng() * Math.PI * 2, cd = (r + prev.r) * 0.85;
-                bx = prev.x + Math.cos(ca) * cd; by = prev.y + Math.sin(ca) * cd;
-            }
-            prev = { x: bx, y: by, r };
-            // Пузырь садится на тело, а не цепляется за него краем: мало
-            // того, что центр на силуэте, — половина пузыря обязана лежать
-            // на нём же. Без второго условия крупный пузырь, чей центр попал
-            // на кончик уха, висел в воздухе отдельным кольцом.
-            if (inside) {
-                if (!inside(bx, by)) continue;
-                const q = r * 0.7;
-                let n2 = 0;
-                if (inside(bx - q, by)) n2++;
-                if (inside(bx + q, by)) n2++;
-                if (inside(bx, by - q)) n2++;
-                if (inside(bx, by + q)) n2++;
-                if (n2 < 2) continue;
-            }
+        // Один пузырь: заливка, тень, кромка, блик. Отдельной функцией —
+        // второй ярус пены (stack) рисуется тем же пузырём поверх.
+        const bubble = (bx, by, r) => {
             ctx.globalAlpha = A;
             ctx.fillStyle = V && V.bodyGlow && c.glow ? c.glow : c[500];
             ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
             // Тень снизу-справа (свет в игре сверху-слева): объём матовой
             // пены сказан ей, а не бликом.
-            if (V && V.shade) {
-                ctx.globalAlpha = Math.min(1, A * V.shade);
+            if (St && St.shade) {
+                ctx.globalAlpha = Math.min(1, A * St.shade);
                 ctx.lineWidth = Math.max(0.8, r * 0.28);
                 ctx.strokeStyle = c.lo;
                 ctx.beginPath(); ctx.arc(bx, by, r * 0.86, Math.PI * 0.05, Math.PI * 0.8); ctx.stroke();
@@ -800,6 +803,44 @@ const BATH_ART = {
                 ctx.fill();
             }
             if (sink) sink(bx, by, r, pc);
+        };
+        // Пузырь садится на тело, а не цепляется за него краем: мало того,
+        // что центр на силуэте, — половина пузыря обязана лежать на нём же.
+        // Без второго условия крупный пузырь, чей центр попал на кончик уха,
+        // висел в воздухе отдельным кольцом. Густая пена верхних ступеней
+        // мочалки (over) может ВЫСТУПАТЬ за силуэт шапкой: центр за краем,
+        // но половина всё равно на теле.
+        const sits = (bx, by, r, over) => {
+            if (!inside) return true;
+            const q = r * 0.7;
+            let n2 = 0;
+            if (inside(bx - q, by)) n2++;
+            if (inside(bx + q, by)) n2++;
+            if (inside(bx, by - q)) n2++;
+            if (inside(bx, by + q)) n2++;
+            return inside(bx, by) ? n2 >= 2 : over && n2 >= 2;
+        };
+        for (let i = 0; i < n; i++) {
+            const r = (small + Math.pow(rng(), 2.1) * (big - small)) * spread;
+            const a = rng() * Math.PI * 2;
+            const d = Math.pow(rng(), 0.6) * cell * 0.72 * spread;
+            let bx = x + Math.cos(a) * d, by = y + Math.sin(a) * d;
+            // Комочек: пузырёк прилипает к соседу, а не рассыпается по
+            // клетке сам по себе — пена держится гроздьями.
+            if (St && St.clump && prev && rng() < St.clump) {
+                const ca = rng() * Math.PI * 2, cd = (r + prev.r) * 0.85;
+                bx = prev.x + Math.cos(ca) * cd; by = prev.y + Math.sin(ca) * cd;
+            }
+            prev = { x: bx, y: by, r };
+            const over = cloth && FL.over && rng() < FL.over;
+            if (!sits(bx, by, r, over)) continue;
+            bubble(bx, by, r);
+            // Второй ярус: поверх пузыря садится меньший, чуть выше — пена
+            // растёт ВВЕРХ горкой, а не лежит плоской плёнкой пузырей.
+            if (cloth && FL.stack && rng() < FL.stack * k) {
+                const r2 = r * (0.5 + rng() * 0.2), sx = bx + (rng() - 0.5) * r * 0.6, sy = by - r * (0.45 + rng() * 0.2);
+                if (sits(sx, sy, r2, over)) bubble(sx, sy, r2);
+            }
         }
         // Искра волшебной мути — мягкая светящаяся точка, без лучей и
         // ромбов: лучи на флаконе уже читались «палками», ромб — мультяшно.

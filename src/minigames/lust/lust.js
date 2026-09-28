@@ -963,8 +963,10 @@ const LustMinigame = {
         if (!this.mask || !this.maskAlpha || !this.washCtx) return null;
         // Вид — по ступени мыла у обоих: пена мочалки взбита из того же мыла
         // (цвет и эффекты его), громкость у мути и пены разная (latherLook).
-        const look = BATH_ART.latherLook(null, kind);
-        const key = kind + '|' + look.key;
+        let look = BATH_ART.latherLook(null, kind);
+        // Пене мочалки — ещё и вид ступени мочалки (густота и объём).
+        if (kind === 'cloth') look = Object.assign({}, look, { foam: BATH_ART.foamLook() });
+        const key = kind + '|' + look.key + (look.foam ? '|f' + look.foam.i : '');
         this._grows = this._grows || {};
         const G0 = this._grows[kind];
         if (G0 && G0.mask === this.mask && G0.key === key) return G0;
