@@ -965,9 +965,21 @@ onmessage = async (e) => {
                     return x > -R && x < 390 + R && y > -R && y < 844 + R;
                 });
                 this.layers(vis);
+                // Флакон в руке, которой ТРУТ, стоит: он едет за пальцем и
+                // перерисовывается целиком на каждом движении, а его живость
+                // (пробка, камень, небо в двух копиях, звёзды) добавляла к
+                // этому ещё столько же — на ступени 8 кадры при намыливании
+                // падали втрое против седьмой (замер лестницы, 4×
+                // замедление). Трущий палец смотрит на пену, а не на флакон;
+                // остановился — флакон ожил, небо доехало на место (glide).
+                const rub = L0 && L0.drag && (L0.drag.kind === 'soap') && now - (L0.rubMovedAt || 0) < 250;
                 if (vis.length) {
                     const Fr = this.magicFrame(now / 1000);
-                    vis.forEach(r => this.applyFrame(r, Fr));
+                    vis.forEach(r => {
+                        const c = rub && this.live.cache.get(r);
+                        if (c && c.held && r.closest('#bt-held')) { c.glide = true; return; }
+                        this.applyFrame(r, Fr);
+                    });
                 }
             }
             Lv.raf = requestAnimationFrame(step);
@@ -1031,7 +1043,18 @@ onmessage = async (e) => {
         set(c.ringd, 'stroke-dashoffset', Fr.ringDash);
         set(c.vapor, 'fill-opacity', Fr.vapor);
         // Небо привязано к холсту: флакон двигается — окно едет по небу.
-        const m = this.worldMatrix(root), P = this.MAGIC.PLX;
+        // После стоянки (флакон стоял, пока им тёрли) небо не прыгает на
+        // место, а доезжает за несколько кадров.
+        let m = this.worldMatrix(root);
+        const P = this.MAGIC.PLX;
+        if (m) {
+            if (c.glide && c.mE != null) {
+                c.mE += (m.e - c.mE) * 0.25; c.mF += (m.f - c.mF) * 0.25;
+                if (Math.abs(m.e - c.mE) + Math.abs(m.f - c.mF) < 0.3) c.glide = false;
+                else m = new DOMMatrix([m.a, m.b, m.c, m.d, c.mE, c.mF]);
+            } else c.glide = false;
+            if (!c.glide) { c.mE = m.e; c.mF = m.f; }
+        }
         const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
         c.far.forEach(el => set(el, 'transform', tf));
         c.near.forEach(el => set(el, 'transform', tn));

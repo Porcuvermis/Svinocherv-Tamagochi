@@ -1263,7 +1263,12 @@ const LustMinigame = {
 
     // Заготовка блика для единичного пузыря радиуса R0 в центре холста 2C×2C.
     // (lx, ly) — где свет в круге хода: 0 — середина, 1 — край.
-    GLINT_R0: 24, GLINT_C: 32,
+    // Заготовка — ровно квадрат пузыря (C = R0): платится смешивание КАЖДОГО
+    // пикселя штампа, а почти весь штамп прозрачен. С запасом в треть
+    // радиуса (C 32) штамп был в 1.8 раза больше, а на волшебной мути с её
+    // крупными пузырями это съедало кадры. Всё, что нужно, внутри пузыря:
+    // блик за пузырь не выходит (test-soap), ореол у кромки обрезается.
+    GLINT_R0: 24, GLINT_C: 24,
     glintStamp(b, lx, ly, sk) {
         const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_C, gp = b.gp, col = b.core;
         sk = sk || b.key;
@@ -1319,6 +1324,11 @@ const LustMinigame = {
             const a = h1 * Math.PI * 2, rho = F.ring[0] + h2 * (F.ring[1] - F.ring[0]);
             b.hx = Math.cos(a) * rho; b.hy = Math.sin(a) * rho;
         });
+        // Порядок штамповки — по заготовке (цвет, группа): подряд идущие
+        // штампы с одного источника холст рисует пачкой, чередование
+        // источников — каждый отдельно. У волшебной мути заготовок
+        // пятнадцать (цвет кромки × группа).
+        top.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.g - b.g));
         this._glintTop = top;
         this._glintTopN = all.length;
     },
@@ -1363,7 +1373,7 @@ const LustMinigame = {
         const K = this.GLINT_C / this.GLINT_R0, stamps = {}, Gc = this.GLINT, F = Gc.flash;
         const s2 = F.sigma * F.sigma;
         if (!this._glintTop || this._glintTopN !== (this.glintBubs || []).length) this.glintPick();
-        let nStar = 0;
+        const stars = [];
         // Заготовка на цвет И группу: у групп свет в разных местах. Это три
         // рисования заготовки за кадр вместо одного — копейки против сотен
         // штампов.
@@ -1377,14 +1387,16 @@ const LustMinigame = {
             ctx.globalAlpha = Math.min(1, kk * (F.base + F.boost * f));
             ctx.drawImage(st, b.x - w, b.y - w, w * 2, w * 2);
             // Искра — только у вспыхнувших: лишний штамп у малой доли пены.
-            if (f > F.star.from && nStar < F.star.cap) {
-                nStar++;
-                const zk = 'star|' + b.core + '#' + b.g;
-                const zs = stamps[zk] || (stamps[zk] = this.glintStar(b.core, gl.lx, gl.ly, zk));
-                const ws = b.r * this.GLINT_SC / this.GLINT_R0;
-                ctx.globalAlpha = Math.min(1, kk * f);
-                ctx.drawImage(zs, b.x - ws, b.y - ws, ws * 2, ws * 2);
-            }
+            // Искры — вторым проходом, чтобы не рвать пачки штампов бликов.
+            if (f > F.star.from && stars.length < F.star.cap) stars.push(b, kk * f);
+        }
+        for (let i = 0; i < stars.length; i += 2) {
+            const b = stars[i], gl = P[b.g];
+            const zk = 'star|' + b.core + '#' + b.g;
+            const zs = stamps[zk] || (stamps[zk] = this.glintStar(b.core, gl.lx, gl.ly, zk));
+            const ws = b.r * this.GLINT_SC / this.GLINT_R0;
+            ctx.globalAlpha = Math.min(1, stars[i + 1]);
+            ctx.drawImage(zs, b.x - ws, b.y - ws, ws * 2, ws * 2);
         }
         ctx.globalAlpha = 1;
         this.glintDraws = (this.glintDraws || 0) + 1;
@@ -1401,7 +1413,11 @@ const LustMinigame = {
         const cl = (v, m) => Math.max(-m, Math.min(m, v));
         const step = (now) => {
             this.glintRaf = requestAnimationFrame(step);
-            if (now - L.last < 33) return;
+            // Пока трут — 20 раз в секунду, а не 30: кадр в это время и так
+            // самый тяжёлый (пена растёт, вещь едет за пальцем), а мерцание
+            // на двадцати не отличить.
+            const rub = this.drag && now - (this.rubMovedAt || 0) < 250;
+            if (now - L.last < (rub ? 50 : 33)) return;
             L.last = now;
             const T = typeof Tilt === 'undefined' ? null : Tilt.turn ? Tilt.turn() : Tilt.lean ? Tilt.lean() : null;
             // Датчика нет (компьютер, отказ в разрешении) — свет плывёт сам и
@@ -1431,6 +1447,11 @@ const LustMinigame = {
                 let lx = G.rest.x - Gc.tilt * G.tilt * q.x, ly = G.rest.y + Gc.tilt * G.tilt * q.y;
                 const m = Math.hypot(lx, ly);
                 if (m > 0.99) { lx *= 0.99 / m; ly *= 0.99 / m; }
+                // Шаг света — 1/40 круга хода, у крупного пузыря это пятая
+                // доля пикселя: глазу не видно, а заготовки (у волшебной мути
+                // их пятнадцать, с ореолом) не перестраиваются на каждый
+                // дрожащий сдвиг сглаживания.
+                lx = Math.round(lx * 40) / 40; ly = Math.round(ly * 40) / 40;
                 if (q.lx == null || Math.abs(lx - q.lx) + Math.abs(ly - q.ly) > 0.008) moved = true;
                 return { lx, ly };
             });
@@ -1522,6 +1543,9 @@ const LustMinigame = {
         e.preventDefault();
         if (this.drag.kind === 'rub') { this.rubMove(this.toScene(e)); return; }
         if (this.drag.kind === 'tail') { this.aimAt(this.toScene(e)); return; }
+        // Когда палец последний раз вёл вещь: пока трут, флакон в руке стоит
+        // (bath-soap.js, wake), а блики обновляются реже (glintStart).
+        this.rubMovedAt = performance.now();
         this.moveTool(this.toStage(e));
 
         const f = this.toScene(e), o = this.drag.off || { x: 0, y: 0 };
