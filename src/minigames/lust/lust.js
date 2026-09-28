@@ -73,7 +73,6 @@ const LustMinigame = {
     aimRaf: 0,
     aimLast: 0,
     shotTimer: 0,
-    hintTimer: 0,
 
     // Между толчками. Финал длится ВСЕГДА одинаково (finalMs в конфиге), а
     // толчков столько, сколько даёт ступень хвоста: лишние толчки сокращают
@@ -254,7 +253,7 @@ const LustMinigame = {
         // bt-splats здесь НЕТ: там разметка слоя потёков, её чистит
         // LustGoo.reset(), а не выбрасывает.
         for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
-                          'bt-gauge', 'bt-ammo', 'bt-spot'])
+                          'bt-gauge', 'bt-ammo'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.el('bt-tail').removeAttribute('transform');
@@ -1925,7 +1924,6 @@ const LustMinigame = {
     },
 
     finishStage(kind) {
-        this.clearHint();
         if (kind === 'soap') {
             // Мыло летит домой (ниже, flyHome), и мочалка поднимается, когда
             // оно уже на полке, а не вместе с ним: у обеих один холст руки, и
@@ -1987,18 +1985,6 @@ const LustMinigame = {
             sin: 'lust', mode: 'wash', outcome: 'win', meta: { wash: true }
         });
         this.syncShopButton();
-    },
-
-    // ---------- ПОДСКАЗКИ «ГДЕ НЕ ДОМЫЛИ» БОЛЬШЕ НЕТ ----------
-    // Было кольцо на самой недомытой клетке: без него порог покрытия
-    // превращался в поиск пикселя. Мытьё теперь — трение где угодно, искать
-    // нечего, и кольцо ушло вместе с клетками. clearHint остался: им
-    // чистится слой bt-spot при уходе и смене этапа.
-    clearHint() {
-        clearTimeout(this.hintTimer);
-        this.hintTimer = 0;
-        const n = this.el('bt-spot');
-        if (n) n.innerHTML = '';
     },
 
     // ---------- ХВОСТ ВСПЛЫВАЕТ ----------
@@ -3148,7 +3134,6 @@ const LustMinigame = {
         if (this.relaxRaf) { cancelAnimationFrame(this.relaxRaf); this.relaxRaf = 0; }
         clearTimeout(this.shotTimer); this.shotTimer = 0;
         this.nextShotAt = null; this.shotAt = null;
-        this.clearHint();
     },
 
     done() {

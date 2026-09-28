@@ -243,7 +243,6 @@ const BATH_ART = {
              и раньше стирал её. -->
         <g id="bt-ammo"></g>
         <g id="bt-gauge"></g>
-        <g id="bt-spot"></g>
         `;
     },
 

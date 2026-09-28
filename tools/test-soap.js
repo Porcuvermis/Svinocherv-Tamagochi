@@ -413,7 +413,6 @@ const harness = require('./harness');
   check(rB - rA <= secB / rubS * 1.05 + 0.01,
         `не быстрее ступени: +${((rB - rA) * 100).toFixed(0)}% за ${secB.toFixed(1)} с при ${rubS} с на этап`);
   check(c1 > c0, `пена на теле растёт вместе с прогрессом (${c0} → ${c1} точек)`);
-  const spot = await page.evaluate(() => document.getElementById('bt-spot').innerHTML.length);
   // Оставил мыло НА черве — оно парит там и не трёт само.
   await page.mouse.move(mid.x, mid.y, { steps: 4 });
   await page.mouse.up();
@@ -421,7 +420,8 @@ const harness = require('./harness');
   await page.waitForTimeout(3000);
   const loose = await page.evaluate(() => !!LustMinigame.loose && document.getElementById('bt-hand').classList.contains('bt-float'));
   check(loose && Math.abs((await rubNow()) - rC) < 1e-6, 'мыло, оставленное на черве, парит и само не натирает');
-  check(spot === 0 && (await page.evaluate(() => document.getElementById('bt-spot').innerHTML.length)) === 0,
+  // Кольца «где не домыл» нет вовсе — нет и его слоя.
+  check(!(await page.evaluate(() => document.getElementById('bt-spot'))),
         'кольца-подсказки «где не домыл» у мыла нет');
 
   // ================= 10а. ГЛАЗА ЧИСТЫЕ, КРАЙ МЯГКИЙ =================
