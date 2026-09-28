@@ -276,6 +276,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-far', 0);
         this.setOpacity('bt-rain-near', 0);
         this.setOpacity('bt-rain-veil', 0);
+        this.clearHoming();
         this.fgEl.innerHTML = '';
         this.wormHost.classList.remove('bt-soft');
         this.drops = [];
@@ -310,6 +311,7 @@ const LustMinigame = {
         this.drag = null;
         this.loose = null;
         this.floatTool(false);
+        this.clearHoming();
         this.fgEl.innerHTML = '';
         if (typeof MinigameWindow !== 'undefined') {
             MinigameWindow.resumeRoom();
@@ -1170,8 +1172,10 @@ const LustMinigame = {
         const a = BATH_ART.slots()[kind], c = this.cam, K = BATH_ART.DRAG_SCALE;
         const from = { x: c.tx + c.s * a.x, y: c.ty + c.s * a.y };
         const to = { x: from.x, y: from.y - this.LIFT };
-        this.showTools(false, kind);
-        this.fgEl.innerHTML = `<g id="bt-held">${BATH_ART.held(kind, c.s, a)}</g>`;
+        // Полочная копия прячется СРАЗУ: летящая начинает ровно с её места и
+        // размера, и плавное угасание дало бы на миг двойника.
+        this.homeShown(kind, false, true);
+        this.setHeld(BATH_ART.held(kind, c.s, a));
         this.loose = { kind, at: a, pos: to, k: c.s * K };
         const held = this.el('bt-held'), t0 = performance.now();
         // Вещь в воздухе крупнее полочной (она «в руке» у игры), поэтому
@@ -1219,11 +1223,13 @@ const LustMinigame = {
         return t && t !== 'none' ? new DOMMatrixReadOnly(t).f : 0;
     },
 
-    // Этап кончился — предмет возвращается на полку.
+    // Всё сразу на полку, без полёта: сброс забега и проверки. Конец этапа
+    // возвращает вещь по дуге — flyHome.
     returnTool() {
         this.drag = null;
         this.loose = null;
         this.floatTool(false);
+        this.clearHoming();
         this.fgEl.innerHTML = '';
         this.showTools(true);
     },
@@ -1285,11 +1291,100 @@ const LustMinigame = {
         this.loose = null;
         this.floatTool(false);
         this.drag = { kind, at: g, k: s * k, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
-        this.showTools(false, kind);
+        this.homeShown(kind, false);
         this.ready(null);
-        this.fgEl.innerHTML =
-            `<g id="bt-held">${BATH_ART.held(kind, s, g)}</g>`;
+        this.setHeld(BATH_ART.held(kind, s, g));
         this.moveTool(this.toStage(e));
+    },
+
+    // Вещь в руке — одна. Заменяется ТОЛЬКО она: рядом может ещё лететь на
+    // полку прошлая вещь (flyHome), и стирать весь холст руки нельзя.
+    setHeld(html) {
+        const old = this.el('bt-held');
+        if (old) old.remove();
+        this.fgEl.insertAdjacentHTML('beforeend', `<g id="bt-held">${html}</g>`);
+    },
+
+    // Вещь на полке видна или нет. Только СВОЯ: мыло летит домой, пока
+    // мочалка уже поднялась, — показать «все, кроме» значило бы вернуть на
+    // полку мыло, которое ещё в воздухе (двойник).
+    // instant — без плавного перехода: когда на том же месте в тот же миг
+    // появляется или исчезает летящая копия, переход читается миганием.
+    homeShown(kind, on, instant) {
+        const n = this.el(`bt-${kind}-home`);
+        if (!n) return;
+        if (instant) n.style.transition = 'none';
+        n.style.opacity = on ? '1' : '0';
+        if (instant) { void n.getBoundingClientRect(); n.style.transition = ''; }
+    },
+
+    // ---------- ДОМОЙ ПО ДУГЕ ----------
+    // Этап кончился — вещь не телепортируется на полку, а летит туда сама
+    // (просьба игрока): по дуге, а не напрямую, и к концу пути ужимается из
+    // «ручного» размера в полочный. Приземлилась — копия на полке
+    // появляется мгновенно, а летевшая убирается: одна и та же картинка на
+    // одном и том же месте, подмены не видно.
+    //
+    // Летит своим узлом (#bt-homing), а не #bt-held: следующая вещь в это
+    // время уже поднимается с полки, и у каждой своя дорога.
+    HOME_MS: [480, 820],       // короткий путь — быстрее, длинный — дольше
+
+    flyHome(done) {
+        const held = this.el('bt-held'), d = this.drag, o = this.loose;
+        const kind = (d || o || {}).kind;
+        const at = d ? d.at : o && o.at;
+        // Откуда: из-под пальца или оттуда, где вещь парит (с качанием —
+        // иначе она дёрнется на старте).
+        const from = d && d.pos ? d.pos : o ? { x: o.pos.x, y: o.pos.y + this.bobY() } : null;
+        this.drag = null;
+        this.loose = null;
+        this.floatTool(false);
+        this.clearHoming();
+        const c = this.cam;
+        if (!held || !kind || !at || !from || !c) {
+            if (held) held.remove();
+            if (kind) this.homeShown(kind, true);
+            if (done) done();
+            return;
+        }
+        held.id = 'bt-homing';
+        // Куда: та точка рисунка, за которую вещь держали, в том месте, где
+        // она лежит на полке. Нарисована вещь «ручным» размером (камера ×
+        // DRAG_SCALE) — на полке она в DRAG_SCALE раз меньше.
+        const to = { x: c.tx + c.s * at.x, y: c.ty + c.s * at.y };
+        const dist = Math.hypot(to.x - from.x, to.y - from.y);
+        // Вершина дуги — над серединой пути и выше обоих концов: вещь
+        // подбрасывают на полку, а не тащат по прямой.
+        const top = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 40 - 0.25 * dist };
+        const [m0, m1] = this.HOME_MS, dur = Math.min(m1, m0 + dist * 0.8);
+        const K = BATH_ART.DRAG_SCALE, t0 = performance.now();
+        const step = (t) => {
+            if (!held.isConnected) { this.homeRaf = 0; return; }
+            const u = Math.min(1, (t - t0) / dur);
+            const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+            const q = 1 - e;
+            const x = q * q * from.x + 2 * q * e * top.x + e * e * to.x;
+            const y = q * q * from.y + 2 * q * e * top.y + e * e * to.y;
+            const m = 1 + (1 / K - 1) * e;
+            held.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${m.toFixed(4)})`);
+            if (u < 1) { this.homeRaf = requestAnimationFrame(step); return; }
+            this.homeRaf = 0;
+            // Полка — сразу, без плавного проявления: летевшая копия стоит
+            // ровно там же и в том же размере, и проявление читалось бы
+            // миганием.
+            this.homeShown(kind, true, true);
+            held.remove();
+            if (done) done();
+        };
+        this.homeRaf = requestAnimationFrame(step);
+    },
+
+    // Прервать полёт домой (уход из ванной, новый забег): вещь сразу на полке.
+    clearHoming() {
+        cancelAnimationFrame(this.homeRaf);
+        this.homeRaf = 0;
+        const n = this.el('bt-homing');
+        if (n) n.remove();
     },
 
     // Предмет в руке живёт в координатах ХОЛСТА: его держат перед собой, и
@@ -1309,9 +1404,13 @@ const LustMinigame = {
     },
 
     finishStage(kind) {
-        this.returnTool();
         this.clearHint();
         if (kind === 'soap') {
+            // Мыло летит домой (ниже, flyHome), и мочалка поднимается, когда
+            // оно уже на полке, а не вместе с ним: у обеих один холст руки, и
+            // парение со свечением мочалки досталось бы летящему мылу — оно
+            // светилось бы как «бери меня» по дороге домой. Взять мочалку с
+            // полки можно и раньше: тогда поднимать уже нечего.
             // Горка пены над будущим хвостом собирается ЗАРАНЕЕ, пока червя
             // трут мочалкой. К моменту, когда хвост всплывает, она уже
             // непроницаема, и его появления не видно.
@@ -1324,12 +1423,23 @@ const LustMinigame = {
             this.phase = 'cloth';
             this.resetCover();
             this.renderLather();
-            this.liftTool('cloth');
+            this.flyHome(() => {
+                if (this.phase === 'cloth' && !this.drag && !this.loose) this.liftTool('cloth');
+            });
             this.armHint();
             return;
         }
-        if (this.paidRun) this.raiseTail();
-        else this.finishWash();
+        // Дальше камера отъезжает (к хвосту или на общий план) — и едет
+        // готовой текстурой: вещь, летящая в это время, перерисовывала бы
+        // холст посреди переезда (docs/traps.md, п. 150). Поэтому сперва
+        // мочалка долетает до полки, потом всё остальное. Пока летит, палец
+        // ничего не берёт: фаза уже не «мочалка».
+        this.phase = 'return';
+        this.flyHome(() => {
+            if (this.phase !== 'return') return;       // успели уйти из ванной
+            if (this.paidRun) this.raiseTail();
+            else this.finishWash();
+        });
     },
 
     // ---------- ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» ----------

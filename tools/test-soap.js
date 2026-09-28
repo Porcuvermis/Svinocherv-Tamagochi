@@ -302,8 +302,49 @@ const harness = require('./harness');
 
   // Мочалка — то же самое: взлетает сама, светится ТЕНЬЮ (картинка её
   // стоит — тень рисуется один раз), отпущенная лежит до конца этапа.
-  await page.evaluate(() => { if (LustMinigame.loose) LustMinigame.returnTool(); LustMinigame.finishStage('soap'); });
-  await page.waitForTimeout(900);
+  // ================= 9. КОНЕЦ ЭТАПА — ДОМОЙ ПО ДУГЕ =================
+  // Вещь не телепортируется на полку, а летит туда сама — по дуге, а не по
+  // прямой (просьба игрока). Мерится ПУТЬ: кадр за кадром, где летящий узел.
+  // Мочалка поднимается, только когда мыло село: у них один холст руки, и
+  // парение со свечением мочалки досталось бы летящему мылу. Мыло на полке
+  // не должно появиться, пока его копия ещё в воздухе (двойник).
+  say('\n======== КОНЕЦ ЭТАПА — ДОМОЙ ПО ДУГЕ ========');
+  const flight = (stage) => page.evaluate((stage) => new Promise(res => {
+    const L = LustMinigame, kind = stage, out = [];
+    let twin = false, glow = false;
+    L.finishStage(stage);
+    const t0 = performance.now();
+    const tick = () => {
+      const n = document.getElementById('bt-homing');
+      const home = document.getElementById(`bt-${kind}-home`).style.opacity;
+      if (n) {
+        const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(n.getAttribute('transform') || '');
+        if (m) out.push({ x: +m[1], y: +m[2] });
+        if (home !== '0') twin = true;
+        if (document.getElementById('bt-hand').classList.contains('bt-float')) glow = true;
+      }
+      if (performance.now() - t0 < 1600) requestAnimationFrame(tick);
+      else res({ path: out, twin, glow, home, phase: L.phase,
+                 held: !!document.getElementById('bt-held'), homing: !!document.getElementById('bt-homing') });
+    };
+    requestAnimationFrame(tick);
+  }), stage);
+  const arc = (p) => {
+    if (p.length < 8) return null;
+    const a = p[0], b = p[p.length - 1];
+    return { frames: p.length, lift: Math.min(a.y, b.y) - Math.min(...p.map(q => q.y)), move: Math.hypot(b.x - a.x, b.y - a.y) };
+  };
+  if (!(await page.evaluate(() => !!LustMinigame.loose))) {
+    await page.evaluate(() => LustMinigame.liftTool('soap'));
+    await page.waitForTimeout(800);
+  }
+  const fs = await flight('soap');
+  const as = arc(fs.path);
+  check(as && as.move > 5, `мыло летит на полку, а не телепортируется (${as ? as.frames : 0} кадров пути)`);
+  check(as && as.lift > 10, `по дуге — выше обоих концов пути на ${as ? as.lift.toFixed(0) : 0} ед.`);
+  check(!fs.twin && fs.home === '1' && !fs.homing, 'на полке появляется ровно в миг приземления, двойника нет');
+  check(!fs.glow, 'летит домой не паря и не светясь');
+  check(fs.held && fs.phase === 'cloth', 'мыло село — и только тогда поднялась мочалка');
   const cUp = await page.evaluate(() => { const h = document.getElementById('bt-hand');
     return { loose: !!LustMinigame.loose && LustMinigame.loose.kind === 'cloth', float: h.classList.contains('bt-float'),
              filter: getComputedStyle(h).filter, home: document.getElementById('bt-cloth-home').style.opacity }; });
@@ -322,11 +363,11 @@ const harness = require('./harness');
     float: document.getElementById('bt-hand').classList.contains('bt-float'),
     home: document.getElementById('bt-cloth-home').style.opacity }));
   check(cl.phase === 'cloth' && cl.held && cl.home === '0' && cl.float, 'отпущенная мочалка лежит там же и снова парит');
-  await page.evaluate(() => LustMinigame.finishStage('cloth'));
-  await page.waitForTimeout(200);
-  const cb2 = await page.evaluate(() => ({ held: !!document.getElementById('bt-held'),
-    home: document.getElementById('bt-cloth-home').style.opacity }));
-  check(!cb2.held && cb2.home === '1', 'конец этапа — мочалка снова на полке');
+  const fc = await flight('cloth');
+  const ac = arc(fc.path);
+  check(ac && ac.move > 5 && ac.lift > 10, `конец этапа — мочалка летит на полку по дуге (выше концов на ${ac ? ac.lift.toFixed(0) : 0} ед.)`);
+  check(!fc.twin && !fc.glow && fc.home === '1' && !fc.held && !fc.homing, 'и приземляется на полку без двойника, по пути не светясь');
+  check(fc.phase !== 'cloth' && fc.phase !== 'return', `после приземления забег идёт дальше (фаза ${fc.phase})`);
 
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
