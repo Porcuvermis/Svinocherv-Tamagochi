@@ -85,7 +85,12 @@ const BATH_ART = {
     slots() { return btBake().anchors; },
 
     // Габарит предмета в сцене — тоже из запекания.
-    box(name) { return btBake().box(name); },
+    // Мочалка — своей лестницей вида (bath-cloth.js): габарит у каждой
+    // ступени свой, по нему захват и упор в край экрана.
+    box(name) {
+        if (name === 'cloth' && typeof BATH_CLOTH !== 'undefined') return BATH_CLOTH.box();
+        return btBake().box(name);
+    },
 
     // Во сколько раз предмет в руке крупнее, чем на полке. Немного, а не
     // вдвое: предмет живёт в координатах ХОЛСТА, поэтому наезд камеры его не
@@ -178,7 +183,7 @@ const BATH_ART = {
         ${BATH_SHELF.backLayer()}
         <g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw(null, 'shelf')}</g>
             ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>
-        <g id="bt-cloth-home">${B.draw('cloth')}
+        <g id="bt-cloth-home"><g id="bt-cloth-art">${BATH_CLOTH.draw(null, 'shelf')}</g>
             ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>
 
         <!-- Передняя сетка корзин ПОВЕРХ предметов: перекрытый низ —
@@ -361,7 +366,7 @@ const BATH_ART = {
         // должен сидеть в НУЛЕ группы — под пальцем, — поэтому сдвигается
         // на точку, за которую его взяли (lust.js, takeTool).
         return `<g transform="scale(${k.toFixed(4)}) translate(${-a.x} ${-a.y})">`
-             + (kind === 'soap' ? BATH_SOAP.draw() : B.draw(kind)) + `</g>`;
+             + (kind === 'soap' ? BATH_SOAP.draw() : kind === 'cloth' ? BATH_CLOTH.draw() : B.draw(kind)) + `</g>`;
     },
 
     // ---------- МЫЛЬНАЯ МУТЬ И ПЕНА ----------

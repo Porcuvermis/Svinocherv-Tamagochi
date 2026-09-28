@@ -85,6 +85,7 @@ const LustDebug = {
         // Прилавок, если открыт, обязан показать новые ступени и кошелёк.
         if (typeof LustShop !== 'undefined' && LustShop.open) LustShop.render();
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.refresh();
+        if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.refresh();
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
         this.render();
     },

@@ -209,15 +209,13 @@ const LustShop = {
     // ужимается под клетку 68×68.
     // Мыло на полке — СЛЕДУЮЩЕЙ ступени: покупают вид, который получат.
     bakedIcon(kind) {
-        const a = BATH_ART.slots()[kind];
-        const next = kind === 'soap' ? BATH_SOAP.level() + 1 : 0;
-        const box = kind === 'soap' ? BATH_SOAP.box(next) : BATH_ART.box(kind);
+        const L = kind === 'soap' ? BATH_SOAP : BATH_CLOTH;
+        const next = L.level() + 1, box = L.box(next);
         const k = 56 / Math.max(box.w, box.h);
-        // Мыло центрируется по своему габариту, а не по гнезду: высокие
-        // флаконы растут от гнезда вверх, и по гнезду верх уходил за клетку.
-        const cx = kind === 'soap' ? box.x + box.w / 2 : a.x, cy = kind === 'soap' ? box.y + box.h / 2 : a.y;
-        return `<g transform="scale(${k.toFixed(3)}) translate(${-cx} ${-cy})">`
-             + (kind === 'soap' ? BATH_SOAP.draw(next) : BATH_BAKED.draw(kind)) + `</g>`;
+        // Центр — по габариту вещи, а не по гнезду: высокие флаконы растут
+        // от гнезда вверх, и по гнезду верх уходил за клетку.
+        const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+        return `<g transform="scale(${k.toFixed(3)}) translate(${-cx} ${-cy})">` + L.draw(next) + `</g>`;
     },
 
     // Хвост: кончик, из которого бьёт капля, её дуга и раскрытая пасть. Это
@@ -261,6 +259,7 @@ const LustShop = {
         if (res && res.ok) {
             if (typeof Haptics !== 'undefined') Haptics.notify('success');
             if (key === 'soap' && typeof BATH_SOAP !== 'undefined') BATH_SOAP.refresh();
+            if (key === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.refresh();
             this.render();
             return;
         }
