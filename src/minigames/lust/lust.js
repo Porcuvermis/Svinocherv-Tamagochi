@@ -973,9 +973,12 @@ const LustMinigame = {
         const G = {
             mask: this.mask, key, kind, look, F, cell, film: mk(), foam: mk(), idx: 0, p: 0,
             sprites: LatherGrow.sprites(F, cell, { seed: conf.seed * 31 + 5, whip: kind === 'cloth' }),
+            // Пузырь садится только на тело и НЕ на глаз: пузырь с центром
+            // на глазу не рождается вовсе, как лопнутый пальцем. Соседние
+            // целые — и краем заходят на глаз (ГЛАЗА ЧИСТЫЕ, ниже).
             inside: (px, py) => {
                 const i = Math.round(px), j = Math.round(py);
-                return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0;
+                return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0 && !this.onEye(px, py);
             }
         };
         this._grows[kind] = G;
@@ -983,14 +986,31 @@ const LustMinigame = {
     },
 
     // ---------- ГЛАЗА ЧИСТЫЕ ----------
-    // Пены на глазах нет (просьба игрока): вокруг каждого глаза она мягко
-    // редеет и сходит на нет к его середине. Не вырезается жёстко — жёсткая
-    // дыра в пене читалась бы маской, а не пеной, которую протёрли.
+    // Пены на глазах нет (просьба игрока), и сделано это РАЗНО для плёнки и
+    // для пузырей — по тому, как ведёт себя настоящая пена:
+    //   * пузырь, чей центр на глазу, не рождается вовсе — будто его лопнули
+    //     пальцем (growth, inside). Соседние целые и краем заходят на глаз;
+    //   * плёнка тает С ЗАПАСОМ до глаза и к краю глаза уже прозрачна; место
+    //     таяния прикрыто соседними пузырями, и перехода не видно.
+    // Два провала до этого. Стирание всего подряд мягким кругом давало
+    // полупрозрачные огрызки пузырей — «аномалию прозрачности». Вырез плёнки
+    // ровно по глазу читался вырезом, а мыло так не выглядит.
     // Глаза снимаются с НАРИСОВАННОГО червя (части eye-left / eye-right),
     // по экранным рамкам: они верны и на айфоне, где getScreenCTM врёт, и
     // не зависят от масштаба слоя червя — берётся доля от рамки его холста.
     // Ответ — в пикселях холста мытья.
-    EYE_CLEAR: { inner: 0.95, outer: 1.9 },    // в радиусах глаза: чисто → пена как была
+    // В радиусах глаза: до inner плёнки нет, к mid её половина, к outer —
+    // полная.
+    EYE_CLEAR: { inner: 1.0, mid: 1.45, outer: 2.1 },
+
+    // Лежит ли точка холста мытья на глазном яблоке.
+    onEye(x, y) {
+        for (const e of this.eyeSpots()) {
+            const dx = (x - e.x) / e.rx, dy = (y - e.y) / e.ry;
+            if (dx * dx + dy * dy <= 1) return true;
+        }
+        return false;
+    },
 
     eyeSpots() {
         if (this._eyes) return this._eyes;
@@ -1020,7 +1040,8 @@ const LustMinigame = {
         return out;
     },
 
-    // Стереть пену вокруг глаз на холсте ctx (s — его масштаб к холсту мытья).
+    // Растворить ПЛЁНКУ вокруг глаз на холсте ctx (s — масштаб к холсту
+    // мытья). Пузыри не трогает: их на глазу просто нет.
     clearEyes(ctx, s) {
         const E = this.EYE_CLEAR, sc = s || 1;
         for (const e of this.eyeSpots()) {
@@ -1031,9 +1052,9 @@ const LustMinigame = {
             const g = ctx.createRadialGradient(0, 0, 0, 0, 0, E.outer);
             g.addColorStop(0, 'rgba(0,0,0,1)');
             g.addColorStop(E.inner / E.outer, 'rgba(0,0,0,1)');
-            // Край — не прямая рампа, а мягкое плечо: пена у глаза тает, как
+            // Край — не прямая рампа, а мягкое плечо: плёнка тает, как
             // протёртая, а не обрывается кольцом.
-            g.addColorStop((E.inner + (E.outer - E.inner) * 0.45) / E.outer, 'rgba(0,0,0,0.45)');
+            g.addColorStop(E.mid / E.outer, 'rgba(0,0,0,0.55)');
             g.addColorStop(1, 'rgba(0,0,0,0)');
             ctx.fillStyle = g;
             ctx.beginPath(); ctx.arc(0, 0, E.outer, 0, Math.PI * 2); ctx.fill();
@@ -1079,11 +1100,7 @@ const LustMinigame = {
             fc.globalCompositeOperation = 'source-over';
             this.clearEyes(fc);
         }
-        if (foam) {
-            this.clearEyes(oc);
-            (this.glintEls || []).forEach(c => this.clearEyes(c.getContext('2d'), 0.5));
-            this.glintStart();
-        }
+        if (foam) this.glintStart();
         // Холст мытья собирается, только когда что-то дорисовалось — или
         // когда слой впервые появился (p был 0).
         if (film || foam || (was <= 0 && p > 0)) this.composeWash();
