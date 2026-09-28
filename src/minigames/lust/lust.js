@@ -188,6 +188,8 @@ const LustMinigame = {
               step: BATH_ART.RAIN.step.near, dur: BATH_ART.RAIN.dur.near }
         ];
         this.fgEl = document.getElementById('bt-fg');
+        // Цвет свечения ждущей вещи — из палитры, а не числом в css.
+        this.screenElement.style.setProperty('--bt-ready', PALETTE.bathScene.bathReady);
         this.wormHost = document.getElementById('bt-worm');
         if (!this.svgEl || !this.backEl) return;
 
@@ -239,6 +241,7 @@ const LustMinigame = {
         this.phase = 'idle';
         this.drag = null;
         this.loose = null;
+        this.floatTool(false);
         if (typeof LustShop !== 'undefined') LustShop.close();
         if (typeof LustDebug !== 'undefined') LustDebug.render();
         // Сцена собрана один раз, а ступень мыла могла смениться, пока
@@ -306,6 +309,7 @@ const LustMinigame = {
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
         this.drag = null;
         this.loose = null;
+        this.floatTool(false);
         this.fgEl.innerHTML = '';
         if (typeof MinigameWindow !== 'undefined') {
             MinigameWindow.resumeRoom();
@@ -319,14 +323,11 @@ const LustMinigame = {
     setOpacity(id, v) { const n = this.el(id); if (n) n.style.opacity = String(v); },
 
     // Что сейчас трогать. Подсказка без слов и без указателя: нужная вещь
-    // дышит, остальные стоят смирно (инвариант 9).
+    // дышит, остальные стоят смирно (инвариант 9). Мыло и мочалка зовут
+    // иначе — сами поднимаются с полки и парят (liftTool); здесь только душ.
     ready(what) {
-        for (const [key, id] of [['shower', 'bt-shower'],
-                                 ['soap', 'bt-soap-home'],
-                                 ['cloth', 'bt-cloth-home']]) {
-            const n = this.el(id);
-            if (n) n.classList.toggle('bt-ready', key === what);
-        }
+        const n = this.el('bt-shower');
+        if (n) n.classList.toggle('bt-ready', what === 'shower');
     },
 
     // ---------- КАМЕРА ----------
@@ -1120,8 +1121,10 @@ const LustMinigame = {
         // отрыва пальца заставлял тянуться к полке снова и снова. Домой
         // предмет уходит только с концом этапа (returnTool).
         const d = this.drag;
-        if ((d.kind === 'soap' || d.kind === 'cloth') && d.pos)
+        if ((d.kind === 'soap' || d.kind === 'cloth') && d.pos) {
             this.loose = { kind: d.kind, at: d.at, pos: d.pos, k: d.k };
+            this.floatTool(true);
+        }
         this.drag = null;
     },
 
@@ -1133,16 +1136,94 @@ const LustMinigame = {
         const L = this.loose;
         if (!L) return null;
         const a = BATH_ART.slots()[L.kind];
-        const art = { x: L.at.x + (q.x - L.pos.x) / L.k, y: L.at.y + (q.y - L.pos.y) / L.k };
+        // Предмет покачивается в воздухе: палец целится в то место, где он
+        // СЕЙЧАС, а не в середину размаха — иначе при подхвате он дёрнется.
+        const bob = this.bobY();
+        const art = { x: L.at.x + (q.x - L.pos.x) / L.k, y: L.at.y + (q.y - bob - L.pos.y) / L.k };
         const b = L.kind === 'soap' ? BATH_SOAP.box() : BATH_ART.box(L.kind);
         const inBox = art.x > b.x - 12 && art.x < b.x + b.w + 12 && art.y > b.y - 12 && art.y < b.y + b.h + 12;
         return inBox || Math.hypot(art.x - a.x, art.y - a.y) < 70 ? art : null;
+    },
+
+    // ---------- ПРЕДМЕТ ЖДЁТ В ВОЗДУХЕ ----------
+    // Этап начался — игра сама снимает нужную вещь с полки и держит её над
+    // ней: вещь парит и светится по контуру (просьба игрока). Это подсказка
+    // «бери меня», сказанная движением, без слов (инвариант 9). Взятая
+    // пальцем вещь не парит и не светится; оставленная где угодно — снова
+    // парит и светится там, где лежит (onUp).
+    //
+    // Поднятая вещь сразу ЛЕЖИТ на экране (loose) — ровно как оставленная
+    // пальцем: подхват, попадание и возврат у них один и тот же путь.
+    LIFT: 18,          // на сколько единиц холста вещь поднимается над полкой
+    LIFT_MS: 520,
+
+    liftTool(kind) {
+        cancelAnimationFrame(this.liftRaf);
+        // Во время переезда камеры кадр сцены ещё не встал: вещь поднялась
+        // бы не с того места, где полка окажется. Подъём ждёт камеру — заодно
+        // ничего не меняется посреди переезда (docs/traps.md, п. 150).
+        if (this.camTimer || !this.cam) {
+            this.liftRaf = requestAnimationFrame(() => this.liftTool(kind));
+            return;
+        }
+        this.ready(null);
+        const a = BATH_ART.slots()[kind], c = this.cam, K = BATH_ART.DRAG_SCALE;
+        const from = { x: c.tx + c.s * a.x, y: c.ty + c.s * a.y };
+        const to = { x: from.x, y: from.y - this.LIFT };
+        this.showTools(false, kind);
+        this.fgEl.innerHTML = `<g id="bt-held">${BATH_ART.held(kind, c.s, a)}</g>`;
+        this.loose = { kind, at: a, pos: to, k: c.s * K };
+        const held = this.el('bt-held'), t0 = performance.now();
+        // Вещь в воздухе крупнее полочной (она «в руке» у игры), поэтому
+        // подъём начинается с полочного размера: на старте картинка ровно
+        // та, что лежала, и скачка нет.
+        const step = (t) => {
+            const u = Math.min(1, (t - t0) / this.LIFT_MS), e = 1 - Math.pow(1 - u, 3);
+            const m = 1 / K + (1 - 1 / K) * e, y = from.y + (to.y - from.y) * e;
+            if (this.el('bt-held') !== held || !this.loose) { this.liftRaf = 0; return; }
+            held.setAttribute('transform',
+                `translate(${from.x.toFixed(1)} ${y.toFixed(1)}) scale(${m.toFixed(4)})`);
+            if (u < 1) { this.liftRaf = requestAnimationFrame(step); return; }
+            this.liftRaf = 0;
+            this.floatTool(true);
+        };
+        this.liftRaf = requestAnimationFrame(step);
+    },
+
+    // Парение и свечение. Качается НЕ группа внутри svg, а сам холст руки
+    // целиком: на нём ничего, кроме вещи, а css-анимация transform у
+    // элемента страницы едет на видеокарте без единой перерисовки.
+    // Анимация внутри svg перерисовывала бы весь холст на каждом кадре
+    // (docs/traps.md, пп. 37 и 73), а атрибут transform группы ещё и
+    // затёрла бы (пп. 2 и 50). Свечение — тень-ореол того же холста:
+    // картинка вещи стоит, и тень рисуется один раз.
+    // У волшебного флакона тени нет: его холст перерисовывается на каждом
+    // его кадре, а светится он сам — сиянием и лучами вокруг, которые
+    // возвращаются, как только флакон отпущен (bath-soap.js, applyFrame).
+    floatTool(on) {
+        if (!on) { cancelAnimationFrame(this.liftRaf); this.liftRaf = 0; }
+        const n = this.el('bt-hand');
+        if (!n) return;
+        const magic = on && this.loose && this.loose.kind === 'soap' && typeof BATH_SOAP !== 'undefined'
+                    && BATH_SOAP.TIERS[BATH_SOAP.tier()] === 'magic';
+        n.classList.toggle('bt-float', !!on);
+        n.classList.toggle('bt-float-magic', !!magic);
+    },
+
+    // Где сейчас качание по высоте. В единицах холста: холст руки ровно с
+    // холст игры, и пиксель css внутри него — единица.
+    bobY() {
+        const n = this.el('bt-hand');
+        if (!n || !n.classList.contains('bt-float')) return 0;
+        const t = getComputedStyle(n).transform;
+        return t && t !== 'none' ? new DOMMatrixReadOnly(t).f : 0;
     },
 
     // Этап кончился — предмет возвращается на полку.
     returnTool() {
         this.drag = null;
         this.loose = null;
+        this.floatTool(false);
         this.fgEl.innerHTML = '';
         this.showTools(true);
     },
@@ -1180,7 +1261,7 @@ const LustMinigame = {
             this.fillRaf = 0;
             this.phase = 'soap';
             this.resetCover();
-            this.ready('soap');
+            this.liftTool('soap');
             this.armHint();
         };
         this.fillRaf = requestAnimationFrame(step);
@@ -1202,6 +1283,7 @@ const LustMinigame = {
         const g = { x: Math.max(b.x, Math.min(b.x + b.w, q.x)), y: Math.max(b.y, Math.min(b.y + b.h, q.y)) };
         const s = this.cam ? this.cam.s : 1;
         this.loose = null;
+        this.floatTool(false);
         this.drag = { kind, at: g, k: s * k, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
         this.showTools(false, kind);
         this.ready(null);
@@ -1242,7 +1324,7 @@ const LustMinigame = {
             this.phase = 'cloth';
             this.resetCover();
             this.renderLather();
-            this.ready('cloth');
+            this.liftTool('cloth');
             this.armHint();
             return;
         }

@@ -186,8 +186,6 @@ const BATH_SOAP = {
     refresh() {
         const el = typeof document !== 'undefined' && document.getElementById('bt-soap-art');
         if (el) el.innerHTML = this.draw(null, 'shelf');
-        const home = el && el.closest('#bt-soap-home');
-        if (home) home.classList.toggle('bt-soap-live', this.TIERS[this.tier()] === 'magic');
     },
 
     // Многоугольник со скруглёнными вершинами: у мыла острых углов нет.
@@ -1012,14 +1010,19 @@ onmessage = async (e) => {
             // слоям, а кадр перечисляет по номеру).
             c.motes.sort((a, b) => +a.dataset.i - +b.dataset.i);
             c.moteParts = c.motes.map(g => Array.from(g.children));
-            // В руке убранство не нужно: флакон едет за пальцем и
-            // перерисовывается целиком на каждом кадре, а лучи, сияние,
-            // зайчики, огоньки и пыль — самое дорогое в этой перерисовке. По
-            // замыслу игрока вещь в руке и не светится (светится оставленная).
-            c.held = !!root.closest('#bt-held');
-            if (c.held) [c.aura, c.rays1, c.rays2, ...c.caus, c.motesF, c.motesB, ...c.dust, ...c.glints]
-                .forEach(el => el && el.setAttribute('display', 'none'));
             this.live.cache.set(root, c);
+        }
+        // Под пальцем убранство не нужно: флакон едет за пальцем и
+        // перерисовывается целиком на каждом кадре, а лучи, сияние,
+        // зайчики, огоньки и пыль — самое дорогое в этой перерисовке. По
+        // замыслу игрока вещь в руке и не светится — светится оставленная:
+        // парящий флакон (холст руки с .bt-float) возвращает убранство, это
+        // и есть его свечение (lust.js, floatTool).
+        const held = !!root.closest('#bt-held') && !root.closest('.bt-float');
+        if (c.held !== held) {
+            c.held = held;
+            [c.aura, c.rays1, c.rays2, ...c.caus, c.motesF, c.motesB, ...c.dust, ...c.glints]
+                .forEach(el => el && (held ? el.setAttribute('display', 'none') : el.removeAttribute('display')));
         }
         const set = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
         set(c.stopper, 'transform', Fr.stopper);

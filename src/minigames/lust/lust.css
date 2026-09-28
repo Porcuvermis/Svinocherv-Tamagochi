@@ -196,11 +196,24 @@
     animation: bt-ready 1.6s ease-in-out infinite;
 }
 
-/* Мигание прозрачностью ВСЕЙ группы — не для живого волшебного флакона:
-   прозрачность группы с живым внутри гонит его через отдельный буфер на
-   каждом кадре (docs/traps.md, пп. 37 и 73). Флакон светится сам; свою
-   подсказку левитацией вещи получат отдельной задачей. */
-#lust-game #bt-soap-home.bt-ready.bt-soap-live { animation: none; }
+/* Мыло и мочалка зовут не миганием, а сами: поднимаются с полки и парят,
+   светясь по контуру (lust.js, liftTool и floatTool). Качается холст руки
+   ЦЕЛИКОМ — на нём ничего, кроме вещи, — и анимируется только transform
+   элемента страницы: это едет на видеокарте без перерисовки. Анимация
+   внутри svg перерисовывала бы весь холст (docs/traps.md, пп. 37 и 73).
+   Ореол — тень того же холста: картинка вещи стоит, тень рисуется один раз.
+   У волшебного флакона тени нет: его холст перерисовывается на каждом
+   кадре, а светится он сам — сиянием и лучами вокруг. */
+#lust-game #bt-hand.bt-float {
+    animation: bt-float 2.8s ease-in-out infinite;
+    filter: drop-shadow(0 0 1.5px var(--bt-ready)) drop-shadow(0 0 6px var(--bt-ready));
+}
+#lust-game #bt-hand.bt-float.bt-float-magic { filter: none; }
+
+@keyframes bt-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
+}
 
 @keyframes bt-ready {
     0%, 100% { opacity: 1; }
