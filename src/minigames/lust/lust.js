@@ -1035,6 +1035,73 @@ const LustMinigame = {
         paint('foam');
     },
 
+    // ---------- РОСТ ПЕНЫ ПО ЗАГОТОВКЕ (lather-grow.js) ----------
+    // Карта времени строится один раз на маску тела и вид мути; дальше
+    // показ этапа p — это дорисовка частиц, чьё время пришло. Плёнка и
+    // пузыри копятся на СВОИХ холстах: плёнку режет силуэт (она на коже),
+    // пузыри — нет (выпуклые, у края тела торчат наружу); видимый холст мытья
+    // — их сумма.
+    growth(kind) {
+        if (!this.mask || !this.maskAlpha || !this.washCtx) return null;
+        const look = BATH_ART.latherLook();
+        const key = kind + '|' + look.key;
+        const G0 = this._grow;
+        if (G0 && G0.mask === this.mask && G0.key === key) return G0;
+        const conf = BATH_ART.LATHER_GROW[kind] || BATH_ART.LATHER_GROW.soap;
+        const W = this.mask.width, H = this.mask.height;
+        const F = LatherGrow.field(this.maskAlpha, W, H, conf.seeds,
+                                   { seed: conf.seed, noise: conf.noise, speed: conf.speed });
+        if (!F) return null;
+        // Клетка пены — та же величина, что у прежней сетки: виды мути
+        // подобраны под неё (BATH_ART.LATHER).
+        const box = this.wormBoxScene(), B = this.WORM_BASE, S = this.MASK_SCALE;
+        const b = this.coverBox(), Gd = this.grid();
+        const cell = Math.max(b.w / Gd.nx, b.h / Gd.ny) * 0.78 * (B.w / box.w * S);
+        const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+        const A = this.maskAlpha;
+        const G = {
+            mask: this.mask, key, kind, look, F, cell, film: mk(), foam: mk(), idx: 0, p: 0,
+            sprites: LatherGrow.sprites(F, cell, { seed: conf.seed * 31 + 5 }),
+            inside: (px, py) => {
+                const i = Math.round(px), j = Math.round(py);
+                return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0;
+            }
+        };
+        this._grow = G;
+        return G;
+    },
+
+    // Показать этап p ∈ [0, 1]. Назад — только сбросом (рост монотонный).
+    growTo(kind, p) {
+        const G = this.growth(kind);
+        if (!G) return;
+        const fc = G.film.getContext('2d'), oc = G.foam.getContext('2d');
+        if (p < G.p) {
+            fc.clearRect(0, 0, G.film.width, G.film.height);
+            oc.clearRect(0, 0, G.foam.width, G.foam.height);
+            G.idx = 0;
+        }
+        G.p = p;
+        let film = false, foam = false;
+        while (G.idx < G.sprites.length && G.sprites[G.idx].t <= p) {
+            const s = G.sprites[G.idx++];
+            if (s.part === 'base') film = true; else foam = true;
+            BATH_ART.washCell(s.part === 'base' ? fc : oc, 'soap', s.x, s.y, G.cell, 1,
+                              s.seed, s.part, G.inside, G.look);
+        }
+        if (!film && !foam) return;
+        if (film) {
+            fc.globalCompositeOperation = 'destination-in';
+            fc.drawImage(this.mask, 0, 0);
+            fc.globalCompositeOperation = 'source-over';
+        }
+        const ctx = this.washCtx;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.clearRect(0, 0, G.film.width, G.film.height);
+        ctx.drawImage(G.film, 0, 0);
+        ctx.drawImage(G.foam, 0, 0);
+    },
+
     wipeLather() {
         const n = this.el('bt-wash');
         // Переход снимается: его ставит конец забега «только помыть», и без
