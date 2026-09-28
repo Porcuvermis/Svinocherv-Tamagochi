@@ -940,7 +940,24 @@ const LustMinigame = {
         const W = ctx.canvas.width, H = ctx.canvas.height, g = this._grows || {};
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, W, H);
-        for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].film, 0, 0);
+        // Плёнки растворяются у глаз ЗДЕСЬ, один раз на сборку, а не на
+        // своих холстах: те дорисовываются шагами, и стирание на каждом шаге
+        // копилось — мягкий край к концу этапа выжигался в резкий круг
+        // («очки», замечание игрока с айфона).
+        const fade = this.eyeFade(W, H);
+        let view = null;
+        if (fade) {
+            view = this._filmView = this._filmView || document.createElement('canvas');
+            if (view.width !== W || view.height !== H) { view.width = W; view.height = H; }
+            const v = view.getContext('2d');
+            v.globalCompositeOperation = 'source-over';
+            v.clearRect(0, 0, W, H);
+            for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) v.drawImage(g[k].film, 0, 0);
+            v.globalCompositeOperation = 'destination-in';
+            v.drawImage(fade, 0, 0);
+            v.globalCompositeOperation = 'source-over';
+            ctx.drawImage(view, 0, 0);
+        } else for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].film, 0, 0);
         for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].foam, 0, 0);
     },
 
@@ -999,9 +1016,10 @@ const LustMinigame = {
     // по экранным рамкам: они верны и на айфоне, где getScreenCTM врёт, и
     // не зависят от масштаба слоя червя — берётся доля от рамки его холста.
     // Ответ — в пикселях холста мытья.
-    // В радиусах глаза: до inner плёнки нет, к mid её половина, к outer —
-    // полная.
-    EYE_CLEAR: { inner: 1.0, mid: 1.45, outer: 2.1 },
+    // В радиусах глаза: до inner плёнки нет, к outer она полная; между —
+    // плавная ступенька (smoothstep), без излома на обоих краях. inner
+    // больше единицы: плёнка кончается, НЕ ДОХОДЯ до глаза.
+    EYE_CLEAR: { inner: 1.12, outer: 1.8 },
 
     // Лежит ли точка холста мытья на глазном яблоке.
     onEye(x, y) {
@@ -1040,26 +1058,39 @@ const LustMinigame = {
         return out;
     },
 
-    // Растворить ПЛЁНКУ вокруг глаз на холсте ctx (s — масштаб к холсту
-    // мытья). Пузыри не трогает: их на глазу просто нет.
-    clearEyes(ctx, s) {
-        const E = this.EYE_CLEAR, sc = s || 1;
-        for (const e of this.eyeSpots()) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.translate(e.x * sc, e.y * sc);
-            ctx.scale(e.rx * sc, e.ry * sc);
-            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, E.outer);
-            g.addColorStop(0, 'rgba(0,0,0,1)');
-            g.addColorStop(E.inner / E.outer, 'rgba(0,0,0,1)');
-            // Край — не прямая рампа, а мягкое плечо: плёнка тает, как
-            // протёртая, а не обрывается кольцом.
-            g.addColorStop(E.mid / E.outer, 'rgba(0,0,0,0.55)');
-            g.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = g;
-            ctx.beginPath(); ctx.arc(0, 0, E.outer, 0, Math.PI * 2); ctx.fill();
-            ctx.restore();
+    // Маска растворения плёнки у глаз: непрозрачна везде, кроме глаз.
+    // Строится один раз на тело (глаза снимаются вместе с маской тела) и
+    // накладывается при сборке ОДИН раз — повторное наложение копится.
+    // Пузыри не трогает: их на глазу просто нет.
+    eyeFade(W, H) {
+        const eyes = this.eyeSpots();
+        if (!eyes.length) return null;
+        const c = this._eyeFade;
+        if (c && c.width === W && c.height === H && c._eyes === eyes) return c;
+        const cv = c || document.createElement('canvas');
+        cv.width = W; cv.height = H; cv._eyes = eyes;
+        const g = cv.getContext('2d'), E = this.EYE_CLEAR;
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, W, H);
+        g.globalCompositeOperation = 'destination-out';
+        for (const e of eyes) {
+            g.save();
+            g.translate(e.x, e.y);
+            g.scale(e.rx, e.ry);
+            const gr = g.createRadialGradient(0, 0, 0, 0, 0, E.outer);
+            gr.addColorStop(0, 'rgba(0,0,0,1)');
+            // Ступенька smoothstep по точкам: стёрто 1 − s(u).
+            for (let i = 0; i <= 8; i++) {
+                const u = i / 8, sm = u * u * (3 - 2 * u), r = E.inner + (E.outer - E.inner) * u;
+                gr.addColorStop(r / E.outer, `rgba(0,0,0,${(1 - sm).toFixed(3)})`);
+            }
+            g.fillStyle = gr;
+            g.beginPath(); g.arc(0, 0, E.outer, 0, Math.PI * 2); g.fill();
+            g.restore();
         }
+        g.globalCompositeOperation = 'source-over';
+        this._eyeFade = cv;
+        return cv;
     },
 
     // Новый забег: выращенное стирается, карты остаются (тело то же).
@@ -1098,7 +1129,6 @@ const LustMinigame = {
             fc.globalCompositeOperation = 'destination-in';
             fc.drawImage(this.mask, 0, 0);
             fc.globalCompositeOperation = 'source-over';
-            this.clearEyes(fc);
         }
         if (foam) this.glintStart();
         // Холст мытья собирается, только когда что-то дорисовалось — или

@@ -433,9 +433,14 @@ const harness = require('./harness');
   const eyes = await page.evaluate(() => {
     const L = LustMinigame, bubbles = [], o = L.glintBubble;
     L.glintBubble = function (G, bx, by, r, pc) { bubbles.push({ x: bx, y: by, r }); return o.call(this, G, bx, by, r, pc); };
-    L.growReset(); L.growTo('soap', 1);
+    // Растёт ПО ШАГАМ, как в игре: стирание у глаз на каждом шаге копилось,
+    // и мягкий край к концу этапа становился резким кругом — «очками»
+    // (замечание игрока с айфона). Одним шагом этого не видно.
+    L.growReset();
+    for (let i = 1; i <= 30; i++) L.growTo('soap', i / 30);
     L.glintBubble = o;
-    const film = L._grows.soap.film.getContext('2d');
+    // Плёнка — как её видит игрок: после растворения у глаз.
+    const film = (L._filmView || L._grows.soap.film).getContext('2d');
     const ring = (ctx, e, k) => { let s = 0;
       for (let a = 0; a < 24; a++) { const t = a / 24 * Math.PI * 2;
         s += ctx.getImageData(Math.round(e.x + Math.cos(t) * e.rx * k), Math.round(e.y + Math.sin(t) * e.ry * k), 1, 1).data[3]; }
@@ -452,7 +457,7 @@ const harness = require('./harness');
   check(eyes.every(e => e.core < 8), `в глазах пены нет (${eyes.map(e => e.core.toFixed(0)).join(' / ')})`);
   check(eyes.every(e => e.onEye === 0 && e.near > 0),
         `пузыри на глазу лопнуты, рядом с глазом целые (на глазу ${eyes.map(e => e.onEye).join('/')}, рядом ${eyes.map(e => e.near).join('/')})`);
-  check(eyes.every(e => e.fIn < 4 && e.fMid > 2 && e.fMid < e.fOut * 0.85),
+  check(eyes.every(e => e.fIn < 4 && e.fMid > e.fOut * 0.25 && e.fMid < e.fOut * 0.85),
         `плёнка тает с запасом до глаза, а не вырезана по нему (у края ${eyes.map(e => e.fIn.toFixed(0)).join('/')}, пояс ${eyes.map(e => e.fMid.toFixed(0)).join('/')}, снаружи ${eyes.map(e => e.fOut.toFixed(0)).join('/')})`);
 
   // ================= 11. БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА =================
