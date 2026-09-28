@@ -942,6 +942,7 @@ const LustMinigame = {
     composeWash() {
         const ctx = this.washCtx;
         if (!ctx) return;
+        this._washOk = true;
         const W = ctx.canvas.width, H = ctx.canvas.height, g = this._grows || {};
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, W, H);
@@ -1002,6 +1003,7 @@ const LustMinigame = {
             return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0;
         };
         this._grows[kind] = G;
+        this._washOk = false;
         return G;
     },
 
@@ -1064,6 +1066,7 @@ const LustMinigame = {
     // Новый забег: выращенное стирается, карты остаются (тело то же).
     growReset() {
         this.glintClear();
+        this._washOk = false;
         for (const G of Object.values(this._grows || {})) {
             G.foam.getContext('2d').clearRect(0, 0, G.foam.width, G.foam.height);
             G.idx = 0;
@@ -1082,24 +1085,35 @@ const LustMinigame = {
         if (p < G.p) {
             oc.clearRect(0, 0, G.foam.width, G.foam.height);
             G.idx = 0;
+            this._washOk = false;
         }
-        const was = G.p;
         G.p = p;
         let foam = false;
         const tool = kind === 'cloth' ? 'cloth' : 'soap';
         const sink = (bx, by, r, pc) => this.glintBubble(G, bx, by, r, pc);
+        // Пока пена только РАСТЁТ, новые пузыри дорисовываются прямо на
+        // видимый холст мытья поверх уже нарисованного — «поверх» в холсте
+        // сочетательно, картинка та же, что у полной сборки. Полная сборка
+        // (очистка и оба слоя пены целиком) была на каждом шаге роста и на
+        // мочалке ступени 8 стоила 51 мс/с под 4× замедлением. Теперь она
+        // только после сброса. Мыло дорисовывать поверх уже лежащей пены
+        // мочалки нельзя — оно легло бы сверху; такой случай собирается
+        // целиком.
+        const g = this._grows || {}, wc = this.washCtx;
+        const append = this._washOk && wc && (kind === 'cloth' || !(g.cloth && g.cloth.p > 0));
         while (G.idx < G.sprites.length && G.sprites[G.idx].t <= p) {
             const s = G.sprites[G.idx++];
             foam = true;
-            BATH_ART.washCell(oc, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
-                              s.seed, s.part, G.inside, G.look, s.part === 'foam' ? sink : null);
+            const k = s.k == null ? 1 : s.k, bub = s.part === 'foam';
+            BATH_ART.washCell(oc, tool, s.x, s.y, G.cell, k, s.seed, s.part, G.inside, G.look, bub ? sink : null);
+            if (append) BATH_ART.washCell(wc, tool, s.x, s.y, G.cell, k, s.seed, s.part, G.inside, G.look, bub ? this._noSink : null);
         }
         this.filmUpdate(G, p);
         if (foam) this.glintStart();
-        // Холст мытья собирается, только когда дорисовались пузыри — или
-        // когда слой впервые появился (p был 0). Муть его не трогает.
-        if (foam || (was <= 0 && p > 0)) this.composeWash();
+        if (!append && (foam || !this._washOk)) this.composeWash();
     },
+    // Вторая дорисовка того же пузыря на видимый холст: блик ему уже выдан.
+    _noSink() {},
 
     // ---------- МУТЬ ОДНИМ СЛОЕМ ----------
     // Муть не накладывается кружками, а РАЗЛИВАЕТСЯ: из нескольких очагов
@@ -1279,12 +1293,48 @@ const LustMinigame = {
         // Ядро блика — светлое; ореол — в цвет свечения вида или, у
         // волшебной мути, в радужный цвет кромки своего пузыря.
         const halo = gp.halo ? (pc || c.glow || c.hi) : null;
-        (this.glintBubs = this.glintBubs || []).push({ x: bx, y: by, r, k: gp.k, gp, core: c.hi, halo,
-                                                      key: G.kind + '|' + (G.look ? G.look.key : 'foam') + '|' + (halo || '') });
+        const b = { x: bx, y: by, r, k: gp.k, gp, core: c.hi, halo,
+                    key: G.kind + '|' + (G.look ? G.look.key : 'foam') + '|' + (halo || '') };
+        (this.glintBubs = this.glintBubs || []).push(b);
+        this.glintOcclude(b);
         this.glintDirty = true;
     },
 
+    // ---------- ЗАКРЫТОЕ НЕ БЛЕСТИТ ----------
+    // Пузыри рисуются по очереди, и новый ложится ПОВЕРХ старых. Блик же
+    // живёт на своём холсте над всей пеной — и блик пузыря, накрытого
+    // новым, рисовался поверх накрывшего: и лишняя работа, и ошибка
+    // картинки. На мочалке ступени 8 пузырей к концу ~4000, пена растёт
+    // горкой, и заметная доля 420 бликов доставалась закрытым (замер).
+    // Поэтому пузырь, на чей центр сел новый пузырь не мельче его,
+    // помечается закрытым и из бликов выходит. Пропадает блик ровно в миг,
+    // когда его накрыли, — подмены не видно. Так же выходят и пузыри мути
+    // мыла под пеной мочалки: закрыты — не блестят.
+    // Соседи ищутся по сетке, а не перебором: пузырей тысячи.
+    GLINT_GRID: 32,
+    glintOcclude(b) {
+        const S = this.GLINT_GRID, Gm = this._glintGrid = this._glintGrid || new Map();
+        const i0 = Math.floor((b.x - b.r) / S), i1 = Math.floor((b.x + b.r) / S);
+        const j0 = Math.floor((b.y - b.r) / S), j1 = Math.floor((b.y + b.r) / S);
+        const R = b.r * 0.75;
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+            const cell = Gm.get(i + ',' + j);
+            if (!cell) continue;
+            for (const o of cell) {
+                if (o.hidden || b.r < o.r * 0.6) continue;
+                const dx = o.x - b.x, dy = o.y - b.y;
+                if (dx * dx + dy * dy < R * R) { o.hidden = true; this.glintHidden = (this.glintHidden || 0) + 1; }
+            }
+        }
+        const key = Math.floor(b.x / S) + ',' + Math.floor(b.y / S);
+        let cell = Gm.get(key);
+        if (!cell) Gm.set(key, cell = []);
+        cell.push(b);
+    },
+
     glintClear() {
+        this._glintGrid = null;
+        this.glintHidden = 0;
         this.glintBubs = [];
         this._glintTop = null;
         this.glintDirty = true;
@@ -1344,7 +1394,7 @@ const LustMinigame = {
     // пересчитывается, только когда появились пузыри, а не каждый кадр.
     glintPick() {
         const all = this.glintBubs || [], Gc = this.GLINT, F = Gc.flash;
-        const top = all.slice().sort((a, b) => b.r - a.r).slice(0, Gc.cap);
+        const top = all.filter(b => !b.hidden).sort((a, b) => b.r - a.r).slice(0, Gc.cap);
         const n = top.length;
         top.forEach((b, i) => {
             b.g = Math.min(2, Math.floor(i * 3 / Math.max(1, n)));
@@ -1525,6 +1575,7 @@ const LustMinigame = {
         this.glintStop();
         this.washShown(true);
         if (this.washCtx) this.washCtx.clearRect(0, 0, n.width, n.height);
+        this._washOk = false;
         this.growReset();
     },
 
