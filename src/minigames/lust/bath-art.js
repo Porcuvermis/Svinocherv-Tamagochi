@@ -576,9 +576,18 @@ const BATH_ART = {
         // кожу, и намыленный червь читается обсыпанным, а не намыленным.
         // Слабая заливка по клетке закрывает эти просветы, не съедая
         // пузыри: они всё равно ярче и с краем.
+        // Крупные поля по телу для волшебной мути: плавные, без шва между
+        // клетками — считаются от места, а не от клетки.
+        const field = (sx, sy, sh) => 0.5 + 0.5 * Math.sin(x / (cell * sx) + 1.3 * Math.sin(y / (cell * sy) + sh));
         if (part !== 'foam') {
             ctx.globalAlpha = cloth ? 0.14 + k * 0.16 : V.film;
             ctx.fillStyle = V && V.filmGlow && c.glow ? c.glow : c[500];
+            // Туманность: плёнка плывёт между цветами неба во флаконе
+            // (индиго → бирюза → розовый), как космос в его окне.
+            if (V && V.nebula) {
+                const Cz = P.soapCosmos, t = field(5.5, 7.3, 0.7) * 2, far = V.nebula === 2 ? Cz.amethyst[2] : Cz.pink;
+                ctx.fillStyle = t < 1 ? mixColor(Cz.deep[3], Cz.cyan, t) : mixColor(Cz.cyan, far, t - 1);
+            }
             ctx.beginPath();
             ctx.arc(x, y, cell * 0.95 * spread, 0, Math.PI * 2); ctx.fill();
             // Неровная густота: поверх диска — пятна разной плотности со
@@ -615,6 +624,40 @@ const BATH_ART = {
                 ctx.quadraticCurveTo(gx, gy - gl * 0.15, gx + gl * 0.8, gy - gl * 0.55);
                 ctx.stroke();
             }
+            // Радужный перелив тонкой плёнки — как на настоящем мыльном
+            // пузыре: полосы цвета идут по телу крупными разводами (поле от
+            // места), каждая клетка кладёт мазок своего цвета полосы.
+            // «Экраном», а не краской: перелив светлит, а не мажет.
+            if (V && V.iris) {
+                const pr = P.soapCosmos.prism, t = field(3.1, 4.4, 2.1) * (pr.length - 1);
+                const i = Math.min(pr.length - 2, Math.floor(t));
+                ctx.globalCompositeOperation = V.irisOp || 'screen';
+                ctx.globalAlpha = V.iris * (0.6 + rng() * 0.5);
+                ctx.fillStyle = mixColor(pr[i], pr[i + 1], t - i);
+                ctx.beginPath();
+                ctx.ellipse(x, y, cell * 0.85, cell * 0.42, field(2.3, 3.7, 0.4) * Math.PI, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+            }
+            // Звёзды в мути — неподвижные точки с крестиком лучей, как в
+            // окне флакона. Мерцают не сами: над ними пляшут блики пены.
+            if (V && V.stars && rng() < V.stars) {
+                const sx = x + (rng() - 0.5) * cell * 1.2, sy = y + (rng() - 0.5) * cell * 1.2;
+                if (!inside || inside(sx, sy)) {
+                    const sr = cell * (0.1 + rng() * 0.1), Cz = P.soapCosmos;
+                    ctx.globalCompositeOperation = 'lighter';
+                    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+                    g.addColorStop(0, Cz.glow); g.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.globalAlpha = 0.95; ctx.fillStyle = g;
+                    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+                    ctx.globalAlpha = 0.55; ctx.strokeStyle = Cz.glow; ctx.lineWidth = Math.max(0.6, sr * 0.22);
+                    ctx.beginPath();
+                    ctx.moveTo(sx - sr * 2.6, sy); ctx.lineTo(sx + sr * 2.6, sy);
+                    ctx.moveTo(sx, sy - sr * 2.6); ctx.lineTo(sx, sy + sr * 2.6);
+                    ctx.stroke();
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            }
             // Свет эликсира и волшебной мути — СЛОЖЕНИЕМ: светится, а не
             // закрашивает. Краской тот же цвет ложился бы бледной плёнкой.
             if (V && V.glow) {
@@ -633,8 +676,8 @@ const BATH_ART = {
         // мягкий свет выходит за силуэт. Рисуется в слой пузырей — его силуэт
         // не режет. Внутри тела не рисуется: там он лишь замыливал бы муть.
         if (V && V.aura && inside) {
-            const e = cell * 1.3;
-            if (!inside(x + e, y) || !inside(x - e, y) || !inside(x, y + e) || !inside(x, y - e)) {
+            const e = cell * 1.3, body = inside.body || inside;
+            if (!body(x + e, y) || !body(x - e, y) || !body(x, y + e) || !body(x, y - e)) {
                 const g = ctx.createRadialGradient(x, y, 0, x, y, cell * 1.7);
                 g.addColorStop(0, c.glow);
                 g.addColorStop(1, 'rgba(255,255,255,0)');

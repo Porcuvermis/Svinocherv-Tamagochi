@@ -985,6 +985,13 @@ const LustMinigame = {
                 return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0 && !this.onEye(px, py);
             }
         };
+        // Край ТЕЛА — без глаз. Ореол светящейся мути ищет кромку силуэта, и
+        // с глазом в «не теле» пузыри вокруг глаза считали его краем и
+        // светили ореолом прямо на глаз — белёсая вуаль на глазах эликсира.
+        G.inside.body = (px, py) => {
+            const i = Math.round(px), j = Math.round(py);
+            return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0;
+        };
         this._grows[kind] = G;
         return G;
     },
