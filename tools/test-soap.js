@@ -424,6 +424,24 @@ const harness = require('./harness');
   check(spot === 0 && (await page.evaluate(() => document.getElementById('bt-spot').innerHTML.length)) === 0,
         'кольца-подсказки «где не домыл» у мыла нет');
 
+  // ================= 10а. ГЛАЗА ЧИСТЫЕ, КРАЙ МЯГКИЙ =================
+  // Пены на глазах нет (просьба игрока), и вырезана она не дырой: к глазу
+  // пена редеет плавно. Мерится холст мытья: в середине глаза пусто, в
+  // поясе между глазом и нетронутой пеной — меньше, чем снаружи, но не ноль.
+  const eyes = await page.evaluate(() => {
+    const L = LustMinigame; L.growTo('soap', 1);
+    const c = document.getElementById('bt-wash'), g = c.getContext('2d');
+    const ring = (e, k) => { let s = 0, n = 0;
+      for (let a = 0; a < 24; a++) { const t = a / 24 * Math.PI * 2;
+        const x = Math.round(e.x + Math.cos(t) * e.rx * k), y = Math.round(e.y + Math.sin(t) * e.ry * k);
+        s += g.getImageData(x, y, 1, 1).data[3]; n++; } return s / n; };
+    return L.eyeSpots().map(e => ({ core: ring(e, 0.3), mid: ring(e, 1.45), out: ring(e, 2.4) }));
+  });
+  check(eyes.length === 2, `глаза найдены на нарисованном черве (${eyes.length})`);
+  check(eyes.every(e => e.core < 8), `в глазах пены нет (${eyes.map(e => e.core.toFixed(0)).join(' / ')})`);
+  check(eyes.every(e => e.mid > 2 && e.mid < e.out * 0.85),
+        `к глазу пена редеет плавно, а не обрывается (пояс ${eyes.map(e => e.mid.toFixed(0)).join(' / ')} против ${eyes.map(e => e.out.toFixed(0)).join(' / ')} снаружи)`);
+
   // ================= 11. БЛЕСК ПУЗЫРЕЙ ОТ НАКЛОНА =================
   // Три слоя бликов, у каждого свой угол света; наклон перетекает свет между
   // ними. Мерится СТОРОНА (п. 116): наклон вправо поворачивает к свету ЛЕВЫЙ

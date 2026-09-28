@@ -836,6 +836,7 @@ const LustMinigame = {
     // новому телу, и то, что успели натереть до этого, дорастает сразу.
     maskReady() {
         this._grows = null;
+        this._eyes = null;
         if (this.phase === 'soap') this.growTo('soap', this.rub);
         else if (this.phase === 'cloth') { this.growTo('soap', 1); this.growTo('cloth', this.rub); }
     },
@@ -981,6 +982,65 @@ const LustMinigame = {
         return G;
     },
 
+    // ---------- ГЛАЗА ЧИСТЫЕ ----------
+    // Пены на глазах нет (просьба игрока): вокруг каждого глаза она мягко
+    // редеет и сходит на нет к его середине. Не вырезается жёстко — жёсткая
+    // дыра в пене читалась бы маской, а не пеной, которую протёрли.
+    // Глаза снимаются с НАРИСОВАННОГО червя (части eye-left / eye-right),
+    // по экранным рамкам: они верны и на айфоне, где getScreenCTM врёт, и
+    // не зависят от масштаба слоя червя — берётся доля от рамки его холста.
+    // Ответ — в пикселях холста мытья.
+    EYE_CLEAR: { inner: 0.95, outer: 1.9 },    // в радиусах глаза: чисто → пена как была
+
+    eyeSpots() {
+        if (this._eyes) return this._eyes;
+        const root = this.wormHandle && this.wormHandle.svgRoot;
+        if (!root) return [];
+        const rr = root.getBoundingClientRect();
+        if (!rr.width) return [];
+        const B = this.WORM_BASE, S = this.MASK_SCALE, k = B.w / rr.width * S;
+        const out = [];
+        for (const part of root.querySelectorAll('[data-part="eye-left"], [data-part="eye-right"]')) {
+            // Мерится САМО ГЛАЗНОЕ ЯБЛОКО — крупнейший эллипс прямо в части
+            // глаза. Рамка всей части втрое выше глаза: в неё входят веко,
+            // складка улыбки под глазом и бровь, и по ней стиралась вся
+            // середина морды до пятачка.
+            let el = part, best = 0;
+            for (const c of part.children) {
+                if (c.tagName.toLowerCase() !== 'ellipse') continue;
+                const b = c.getBoundingClientRect();
+                if (b.width * b.height > best) { best = b.width * b.height; el = c; }
+            }
+            const r = el.getBoundingClientRect();
+            if (!r.width || !r.height) continue;
+            out.push({ x: (r.left + r.width / 2 - rr.left) * k, y: (r.top + r.height / 2 - rr.top) * k,
+                       rx: r.width / 2 * k, ry: r.height / 2 * k });
+        }
+        this._eyes = out;
+        return out;
+    },
+
+    // Стереть пену вокруг глаз на холсте ctx (s — его масштаб к холсту мытья).
+    clearEyes(ctx, s) {
+        const E = this.EYE_CLEAR, sc = s || 1;
+        for (const e of this.eyeSpots()) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.translate(e.x * sc, e.y * sc);
+            ctx.scale(e.rx * sc, e.ry * sc);
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, E.outer);
+            g.addColorStop(0, 'rgba(0,0,0,1)');
+            g.addColorStop(E.inner / E.outer, 'rgba(0,0,0,1)');
+            // Край — не прямая рампа, а мягкое плечо: пена у глаза тает, как
+            // протёртая, а не обрывается кольцом.
+            g.addColorStop((E.inner + (E.outer - E.inner) * 0.45) / E.outer, 'rgba(0,0,0,0.45)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(0, 0, E.outer, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
+    },
+
     // Новый забег: выращенное стирается, карты остаются (тело то же).
     growReset() {
         this.glintClear();
@@ -1013,11 +1073,16 @@ const LustMinigame = {
             BATH_ART.washCell(s.part === 'base' ? fc : oc, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
                               s.seed, s.part, G.inside, G.look, s.part === 'foam' ? sink : null);
         }
-        if (foam) this.glintStart();
         if (film) {
             fc.globalCompositeOperation = 'destination-in';
             fc.drawImage(this.mask, 0, 0);
             fc.globalCompositeOperation = 'source-over';
+            this.clearEyes(fc);
+        }
+        if (foam) {
+            this.clearEyes(oc);
+            (this.glintEls || []).forEach(c => this.clearEyes(c.getContext('2d'), 0.5));
+            this.glintStart();
         }
         // Холст мытья собирается, только когда что-то дорисовалось — или
         // когда слой впервые появился (p был 0).
