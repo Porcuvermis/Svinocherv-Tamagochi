@@ -1241,6 +1241,16 @@ const LustMinigame = {
         // а отрисовка видимым холстом каждого штампа; у мелких пузырей блик
         // всё равно в точку.
         cap: 420,
+        // На мочалке лимит падает по мере того, как пена густеет (выбор
+        // игрока, вариант А): в густой пене 420 бликов сливаются в мелкую
+        // рябь, а стоят как 420. Густота — доля натёртого мочалкой, умноженная
+        // на густоту пены её ступени (FOAM: 0 у редкой ступени 0, 1 у
+        // верхней). Густая пена густеет не к концу, а к середине этапа
+        // (второй ярус, шапка), поэтому лимит доходит до denseCap уже к
+        // denseAt натёртого. Замер одной перерисовки бликов на вспененном
+        // теле (4× замедление): 420 бликов — 47 мс кадра, 200 — 37, 100 — 32.
+        denseCap: 180,
+        denseAt: 0.6,
         // Блик пены мочалки (пока один вид — лестница мочалки впереди).
         foam: { k: 0.7, size: 0.24, second: 0.35, halo: 0, min: 0.18 },
         // ТАНЕЦ: пузыри с бликом делятся по размеру на три группы, и у
@@ -1392,9 +1402,18 @@ const LustMinigame = {
 
     // Кому достаётся блик, в какой он группе и где его точка вспышки —
     // пересчитывается, только когда появились пузыри, а не каждый кадр.
+    glintCap() {
+        const Gc = this.GLINT, C = this._grows && this._grows.cloth;
+        if (!C || !(C.p > 0) || !C.look || !C.look.foam) return Gc.cap;
+        const dens = C.look.foam.i / (BATH_ART.FOAM.length - 1);
+        let u = Math.min(1, C.p / Gc.denseAt);
+        u = u * u * (3 - 2 * u);
+        return Math.round(Gc.cap - (Gc.cap - Gc.denseCap) * u * dens);
+    },
+
     glintPick() {
         const all = this.glintBubs || [], Gc = this.GLINT, F = Gc.flash;
-        const top = all.filter(b => !b.hidden).sort((a, b) => b.r - a.r).slice(0, Gc.cap);
+        const top = all.filter(b => !b.hidden).sort((a, b) => b.r - a.r).slice(0, this.glintCap());
         const n = top.length;
         top.forEach((b, i) => {
             b.g = Math.min(2, Math.floor(i * 3 / Math.max(1, n)));
