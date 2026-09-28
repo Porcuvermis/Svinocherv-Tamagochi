@@ -467,7 +467,10 @@ const harness = require('./harness');
   // (п. 116): наклон вправо — блик на левом боку, влево — на правом.
   say('\n======== БЛИК У КАЖДОГО ПУЗЫРЯ, ХОДИТ ОТ НАКЛОНА ========');
   // Механика меряется на ГЕЛЕ (ступень 4): у матового хозяйственного блик
-  // нарочно редкий и тусклый — прогресс блеска по ступеням.
+  // нарочно редкий и тусклый — прогресс блеска по ступеням. Место блика —
+  // на мути (там пузыри стоят поодиночке), вспышки и искры — на ПЕНЕ
+  // мочалки: блеск и искры у пены, муть нарочно тише (решение игрока,
+  // BATH_ART.LATHER_DIM).
   await page.evaluate(() => { const L = LustMinigame; LustDebug.setLevel('soap', 4); BATH_SOAP.refresh();
     L.growReset(); L.growTo('soap', 1); });
   // Мерится у самого крупного одинокого пузыря В КАЖДОЙ из трёх групп:
@@ -501,7 +504,8 @@ const harness = require('./harness');
         const c = alone.filter(b => b.g === g);
         return c.length ? at(c.reduce((m, q) => q.r > m.r ? q : m)) : null;
       });
-      return { n: bs.length, G, far: G.reduce((s, g) => s + (g ? g.far : 0), 0), draws: L.glintDraws || 0 };
+      return { n: bs.length, G, far: G.reduce((s, g) => s + (g ? g.far : 0), 0), draws: L.glintDraws || 0,
+               light: L.glintLean.g.map(q => q.lx) };
     });
   };
   const g0 = await glintAt(0, 0), gR = await glintAt(0.4, 0), gL = await glintAt(-0.4, 0), gD = await glintAt(0, 0.4);
@@ -515,9 +519,15 @@ const harness = require('./harness');
     const m = (g) => g.G[1] || { cx: 0, cy: 0 };
     check(m(gR).cx < m(gL).cx - 0.2, `наклон вправо — блик на ЛЕВОМ боку, влево — на правом (${m(gR).cx.toFixed(2)} против ${m(gL).cx.toFixed(2)})`);
     check(m(gD).cy > M.cy + 0.1, `верх к себе — блик ниже (${M.cy.toFixed(2)} → ${m(gD).cy.toFixed(2)})`);
-    check([0, 2].every(i => gR.G[i] && gL.G[i] && gR.G[i].cx < gL.G[i].cx - 0.1), `крупные и мелкие тоже уходят на ЛЕВЫЙ бок от наклона вправо (${[0, 2].map(i => f2(gR.G[i]) + ' против ' + f2(gL.G[i])).join('; ')})`);
+    // У крупных и мелких — по свету группы, а не по картинке: у края круга
+    // хода главный блик сплющен и тускл, и второе отражение напротив
+    // перетягивало замер яркости в обратную сторону (плавало от прогона к
+    // прогону). Картинку уже проверили у средних, выше.
+    check([0, 2].every(i => gR.light[i] < gL.light[i] - 0.2), `крупные и мелкие тоже уходят на ЛЕВЫЙ бок от наклона вправо (свет ${[0, 2].map(i => gR.light[i].toFixed(2) + ' против ' + gL.light[i].toFixed(2)).join('; ')})`);
   }
-  check([g0, gR, gL, gD].every(g => g.far === 0), `блик не выходит за свой пузырь (${[g0, gR, gL, gD].map(g => g.far).join('/')})`);
+  // До двух точек — сглаживание края штампа при масштабировании (заготовка
+  // ровно в квадрат пузыря), а не блик за кромкой.
+  check([g0, gR, gL, gD].every(g => g.far <= 2), `блик не выходит за свой пузырь (${[g0, gR, gL, gD].map(g => g.far).join('/')})`);
 
   // ТАНЕЦ. Вспышку дают не угол, а ДВИЖЕНИЕ: держишь ровно — ни одной,
   // дрогнула рука на пару градусов — вспыхнула часть пузырей (не все),
@@ -543,6 +553,13 @@ const harness = require('./harness');
     const lit = rec.length === bs.length ? bs.map((b, i) => rec[i] > Math.min(1, b.k * L.GLINT.groups[b.g].k * base) * 1.25 + 1e-6) : null;
     return { n: rec.length, lit, stars };
   }, [x, y, wait, force]);
+  // Муть тише пены: блики на ней вспыхивают, но искр у мути нет — искры
+  // только у пены мочалки (решение игрока).
+  await page.evaluate(() => { window.__lean = { live: true, x: 0.1, y: 0 }; });
+  await page.waitForTimeout(4000);
+  const soapJig = await alphas(0.1 + 0.05, 0, 90);
+  check(soapJig.stars === 0 && soapJig.n > 0, `у мути мыла искр нет, даже когда рука дрогнула (искр ${soapJig.stars})`);
+  await page.evaluate(() => LustMinigame.growTo('cloth', 1));
   await page.evaluate(() => { window.__lean = { live: true, x: 0.1, y: 0 }; });
   await page.waitForTimeout(4000);
   const steady = await alphas(0.1, 0, 0, true);

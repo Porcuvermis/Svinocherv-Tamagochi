@@ -459,9 +459,14 @@ const BATH_ART = {
         { key: 'elixir', film: 0.2, filmGlow: true, n: 5, big: 0.5,  small: 0.12, A: 0.14, bodyGlow: true,
           rim: 2.6, shine: 2.2, glow: 0.55, aura: 0.3,
           glint: { k: 1, size: 0.28, second: 0.45, halo: { w: 2.4, a: 0.45 }, min: 0.16 } },
-        // 8 — волшебная: фиолет, радужные кромки, искры.
-        { key: 'magic',  film: 0.15, n: 5, big: 0.52, small: 0.12, A: 0.1, rim: 2.4, shine: 2.2, glow: 0.26,
-          prism: true, spark: 0.2,
+        // 8 — волшебная: КОСМОС, как небо в окне флакона (выбор игрока из
+        // трёх макетов: радуга, космос, смесь). Плёнка — туманность
+        // индиго → бирюза → аметист (nebula; розовый давал на пятачке
+        // «сыпь»), по ней неподвижные звёзды с лучиками (stars) — мерцают не
+        // сами, над ними пляшут блики пены. Кромки пузырей радужные, по
+        // кромке тела ореол, как у эликсира.
+        { key: 'magic',  film: 0.24, nebula: 2, stars: 0.5, aura: 0.35, n: 5, big: 0.52, small: 0.12, A: 0.1,
+          rim: 2.4, shine: 2.2, glow: 0.15, prism: true, spark: 0.2,
           glint: { k: 1, size: 0.3, second: 0.55, halo: { w: 2.6, a: 0.6 }, min: 0.15 } }
     ],
 
@@ -543,11 +548,40 @@ const BATH_ART = {
     // раз в две ступени, а ЦВЕТ — от мыла своей ступени (решение игрока):
     // у нечётных, чей цвет с парой не совпадает, свой ключ палитры.
     LATHER_TINT: { 5: 'gelViolet', 7: 'elixirPink' },
-    latherLook(level) {
+    // stage — чей это след: 'soap' (муть) или 'cloth' (пена мочалки). Пена
+    // взбивается ИЗ мыла, поэтому вид у них один — ступень мыла, — но
+    // громкость разная (решение игрока): муть тихая, а весь блеск, свет и
+    // искры — в пене. Иначе второй этап выглядел шагом назад после первого.
+    latherLook(level, stage) {
         const L = level == null && typeof BATH_SOAP !== 'undefined' ? BATH_SOAP.tier() : (level | 0);
         const base = this.LATHER[Math.max(0, Math.min(this.LATHER.length - 1, L >> 1))];
         const tint = this.LATHER_TINT[L];
-        return tint ? Object.assign({}, base, { key: tint }) : base;
+        const look = tint ? Object.assign({}, base, { key: tint }) : base;
+        if (stage !== 'soap') return look;
+        const D = this.LATHER_DIM, out = Object.assign({}, look);
+        for (const k of Object.keys(D)) if (k !== 'glint' && typeof out[k] === 'number') out[k] *= D[k];
+        const g = look.glint;
+        if (g) out.glint = Object.assign({}, g, { k: g.k * D.glint.k, size: g.size * D.glint.size,
+            halo: g.halo ? { w: g.halo.w, a: g.halo.a * D.glint.halo } : 0, star: false });
+        return out;
+    },
+
+    // Насколько муть мыла тише своего вида (множители). Искр у мути нет вовсе
+    // — они у пены.
+    LATHER_DIM: { film: 0.8, A: 0.75, rim: 0.7, shine: 0.7, glow: 0.55, aura: 0.45, stars: 0.4, n: 0.75,
+                  gloss: 0.7, sheen: 0.8, iris: 0.7, spark: 0.5,
+                  glint: { k: 0.45, size: 0.85, halo: 0.5 } },
+
+    // Цвета пены мочалки: белая пена с оттенком мыла, из которого взбита
+    // (смешение цветов палитры, своих цветов не заводит). Свечение — от мыла.
+    latherColors(look, kind) {
+        const P = btPal();
+        if (kind !== 'cloth') return P.soapLather[look.key];
+        const cache = this._foamC = this._foamC || {};
+        if (cache[look.key]) return cache[look.key];
+        const f = P.foam, m = P.soapLather[look.key];
+        return (cache[look.key] = { 500: mixColor(f[500], m[500], 0.35), hi: mixColor(f.hi, m.hi, 0.5),
+            lo: mixColor(f.lo, m.lo, 0.45), rim: mixColor(f.rim, m.lo, 0.4), glow: m.glow || null });
     },
 
     // sink(bx, by, r, color) — куда отдать каждый нарисованный пузырь: по ним
@@ -556,7 +590,10 @@ const BATH_ART = {
         const cloth = kind === 'cloth';
         const P = btPal();
         const V = cloth ? null : (look || this.LATHER[0]);
-        const c = cloth ? P.foam : P.soapLather[V.key];
+        // F — вид мыла, из которого взбита пена мочалки: её цвет и эффекты.
+        const F = cloth ? look : null;
+        const c = cloth ? (F ? this.latherColors(F, 'cloth') : P.foam) : P.soapLather[V.key];
+        const Eff = V || F;
         const rng = btRng(seed);
         const k = t == null ? 1 : Math.max(0, Math.min(1, t));
         // Мыло — плёнка: пузырьков много и они мелкие. Мочалка взбивает:
@@ -641,7 +678,7 @@ const BATH_ART = {
             }
             // Звёзды в мути — неподвижные точки с крестиком лучей, как в
             // окне флакона. Мерцают не сами: над ними пляшут блики пены.
-            if (V && V.stars && rng() < V.stars) {
+            if (Eff && Eff.stars && rng() < Eff.stars) {
                 const sx = x + (rng() - 0.5) * cell * 1.2, sy = y + (rng() - 0.5) * cell * 1.2;
                 if (!inside || inside(sx, sy)) {
                     const sr = cell * (0.1 + rng() * 0.1), Cz = P.soapCosmos;
@@ -660,12 +697,12 @@ const BATH_ART = {
             }
             // Свет эликсира и волшебной мути — СЛОЖЕНИЕМ: светится, а не
             // закрашивает. Краской тот же цвет ложился бы бледной плёнкой.
-            if (V && V.glow) {
+            if (Eff && Eff.glow && c.glow) {
                 const g = ctx.createRadialGradient(x, y, 0, x, y, cell * 1.1);
                 g.addColorStop(0, c.glow);
                 g.addColorStop(1, 'rgba(0,0,0,0)');
                 ctx.globalCompositeOperation = 'lighter';
-                ctx.globalAlpha = V.glow;
+                ctx.globalAlpha = Eff.glow;
                 ctx.fillStyle = g;
                 ctx.beginPath(); ctx.arc(x, y, cell * 1.1, 0, Math.PI * 2); ctx.fill();
                 ctx.globalCompositeOperation = 'source-over';
@@ -675,18 +712,18 @@ const BATH_ART = {
         // Ореол по кромке тела (светящиеся виды): у частицы, что лежит у края,
         // мягкий свет выходит за силуэт. Рисуется в слой пузырей — его силуэт
         // не режет. Внутри тела не рисуется: там он лишь замыливал бы муть.
-        if (V && V.aura && inside) {
+        if (Eff && Eff.aura && inside && c.glow) {
             const e = cell * 1.3, body = inside.body || inside;
             if (!body(x + e, y) || !body(x - e, y) || !body(x, y + e) || !body(x, y - e)) {
                 const g = ctx.createRadialGradient(x, y, 0, x, y, cell * 1.7);
                 g.addColorStop(0, c.glow);
                 g.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.globalAlpha = V.aura;
+                ctx.globalAlpha = Eff.aura;
                 ctx.fillStyle = g;
                 ctx.beginPath(); ctx.arc(x, y, cell * 1.7, 0, Math.PI * 2); ctx.fill();
             }
         }
-        const prism = V && V.prism ? P.soapCosmos.prism : null;
+        const prism = Eff && Eff.prism ? P.soapCosmos.prism : null;
         let prev = null;
         for (let i = 0; i < n; i++) {
             const r = (small + Math.pow(rng(), 2.1) * (big - small)) * spread;
@@ -728,7 +765,10 @@ const BATH_ART = {
             // Кромка. У пустого пузыря геля она и есть весь пузырь; у
             // волшебной мути — радужная, у каждого пузыря свой цвет (по
             // сиду: перерисовка не должна перекрашивать пену).
-            const pc = prism ? prism[Math.floor(rng() * prism.length)] : null;
+            let pc = prism ? prism[Math.floor(rng() * prism.length)] : null;
+            // У пены радуга — отлив белого пузыря, а не цветное кольцо:
+            // чистые цвета кромок на густой пене читались конфетти.
+            if (pc && cloth) pc = mixColor(pc, c.hi, 0.45);
             // Тёмная кромка снаружи — прозрачный пузырь отделяется ей от
             // такой же прозрачной плёнки (гель).
             if (V && V.edge) {
@@ -737,7 +777,7 @@ const BATH_ART = {
                 ctx.strokeStyle = c.lo;
                 ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.stroke();
             }
-            ctx.globalAlpha = Math.min(1, A * (cloth ? 1.5 : V.rim) * (pc ? 1.6 : 1));
+            ctx.globalAlpha = Math.min(1, A * (cloth ? 1.5 : V.rim) * (pc && !cloth ? 1.6 : 1));
             ctx.lineWidth = Math.max(1, r * 0.16);
             ctx.strokeStyle = pc || c.hi;
             ctx.beginPath(); ctx.arc(bx, by, r * 0.94, 0, Math.PI * 2); ctx.stroke();
@@ -757,7 +797,7 @@ const BATH_ART = {
         }
         // Искра волшебной мути — мягкая светящаяся точка, без лучей и
         // ромбов: лучи на флаконе уже читались «палками», ромб — мультяшно.
-        if (V && V.spark && rng() < V.spark) {
+        if (Eff && Eff.spark && c.glow && rng() < Eff.spark) {
             const sx = x + (rng() - 0.5) * cell, sy = y + (rng() - 0.5) * cell;
             if (!inside || inside(sx, sy)) {
                 const sr = cell * (0.22 + rng() * 0.18);

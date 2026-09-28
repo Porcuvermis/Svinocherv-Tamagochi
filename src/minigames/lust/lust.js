@@ -956,9 +956,10 @@ const LustMinigame = {
     // — их сумма.
     growth(kind) {
         if (!this.mask || !this.maskAlpha || !this.washCtx) return null;
-        // Вид мути — по ступени мыла; у пены мочалки вид пока один.
-        const look = kind === 'soap' ? BATH_ART.latherLook() : null;
-        const key = kind + '|' + (look ? look.key : 'foam');
+        // Вид — по ступени мыла у обоих: пена мочалки взбита из того же мыла
+        // (цвет и эффекты его), громкость у мути и пены разная (latherLook).
+        const look = BATH_ART.latherLook(null, kind);
+        const key = kind + '|' + look.key;
         this._grows = this._grows || {};
         const G0 = this._grows[kind];
         if (G0 && G0.mask === this.mask && G0.key === key) return G0;
@@ -1249,14 +1250,20 @@ const LustMinigame = {
     },
 
     glintBubble(G, bx, by, r, pc) {
-        const gp = G.kind === 'cloth' ? this.GLINT.foam : ((G.look && G.look.glint) || this.GLINT.foam);
+        // Блик пены мочалки — от вида мыла, но не тусклее прежнего общего
+        // блика пены: пена всегда блестит, даже из хозяйственного.
+        const lg = G.look && G.look.glint, Fg = this.GLINT.foam;
+        const gp = G.kind === 'cloth'
+            ? Object.assign({}, Fg, lg || {}, { k: Math.max(Fg.k, lg ? lg.k : 0), size: Math.max(Fg.size, lg ? lg.size : 0),
+                                                second: Math.max(Fg.second, lg ? lg.second : 0), min: Fg.min })
+            : (lg || Fg);
         if (!gp.k || r < G.cell * gp.min) return;
-        const P = btPal(), c = G.kind === 'cloth' ? P.foam : P.soapLather[G.look.key];
+        const c = BATH_ART.latherColors(G.look, G.kind);
         // Ядро блика — светлое; ореол — в цвет свечения вида или, у
         // волшебной мути, в радужный цвет кромки своего пузыря.
         const halo = gp.halo ? (pc || c.glow || c.hi) : null;
         (this.glintBubs = this.glintBubs || []).push({ x: bx, y: by, r, k: gp.k, gp, core: c.hi, halo,
-                                                      key: (G.look ? G.look.key : 'foam') + '|' + (halo || '') });
+                                                      key: G.kind + '|' + (G.look ? G.look.key : 'foam') + '|' + (halo || '') });
         this.glintDirty = true;
     },
 
@@ -1395,7 +1402,7 @@ const LustMinigame = {
             ctx.drawImage(st, b.x - w, b.y - w, w * 2, w * 2);
             // Искра — только у вспыхнувших: лишний штамп у малой доли пены.
             // Искры — вторым проходом, чтобы не рвать пачки штампов бликов.
-            if (f > F.star.from && stars.length < F.star.cap) stars.push(b, kk * f);
+            if (b.gp.star !== false && f > F.star.from && stars.length < F.star.cap) stars.push(b, kk * f);
         }
         for (let i = 0; i < stars.length; i += 2) {
             const b = stars[i], gl = P[b.g];
