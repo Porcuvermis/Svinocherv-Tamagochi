@@ -940,24 +940,11 @@ const LustMinigame = {
         const W = ctx.canvas.width, H = ctx.canvas.height, g = this._grows || {};
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, W, H);
-        // Плёнки растворяются у глаз ЗДЕСЬ, один раз на сборку, а не на
-        // своих холстах: те дорисовываются шагами, и стирание на каждом шаге
-        // копилось — мягкий край к концу этапа выжигался в резкий круг
-        // («очки», замечание игрока с айфона).
-        const fade = this.eyeFade(W, H);
-        let view = null;
-        if (fade) {
-            view = this._filmView = this._filmView || document.createElement('canvas');
-            if (view.width !== W || view.height !== H) { view.width = W; view.height = H; }
-            const v = view.getContext('2d');
-            v.globalCompositeOperation = 'source-over';
-            v.clearRect(0, 0, W, H);
-            for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) v.drawImage(g[k].film, 0, 0);
-            v.globalCompositeOperation = 'destination-in';
-            v.drawImage(fade, 0, 0);
-            v.globalCompositeOperation = 'source-over';
-            ctx.drawImage(view, 0, 0);
-        } else for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].film, 0, 0);
+        // Сборка — только сложение готовых слоёв: растворение у глаз и
+        // силуэт уже лежат на плёнке (growTo). Сборка идёт на каждое движение
+        // пальца, и каждый лишний проход по всему холсту здесь — это кадры
+        // (на волшебном мыле их съедало видно глазу).
+        for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].film, 0, 0);
         for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].foam, 0, 0);
     },
 
@@ -1058,20 +1045,20 @@ const LustMinigame = {
         return out;
     },
 
-    // Маска растворения плёнки у глаз: непрозрачна везде, кроме глаз.
-    // Строится один раз на тело (глаза снимаются вместе с маской тела) и
-    // накладывается при сборке ОДИН раз — повторное наложение копится.
+    // Маска плёнки у глаз: силуэт тела, растворённый у глаз. Строится один
+    // раз на тело (глаза снимаются вместе с маской тела). Накладывается
+    // только на мазки у глаза и ОДИН раз на мазок (growTo): наложение на
+    // весь холст плёнки на каждом шаге копилось — отсюда были «очки».
     // Пузыри не трогает: их на глазу просто нет.
-    eyeFade(W, H) {
-        const eyes = this.eyeSpots();
-        if (!eyes.length) return null;
-        const c = this._eyeFade;
-        if (c && c.width === W && c.height === H && c._eyes === eyes) return c;
+    filmMask() {
+        const eyes = this.eyeSpots(), m = this.mask;
+        if (!eyes.length || !m) return null;
+        const c = this._eyeFade, W = m.width, H = m.height;
+        if (c && c._mask === m && c._eyes === eyes) return c;
         const cv = c || document.createElement('canvas');
-        cv.width = W; cv.height = H; cv._eyes = eyes;
+        cv.width = W; cv.height = H; cv._eyes = eyes; cv._mask = m;
         const g = cv.getContext('2d'), E = this.EYE_CLEAR;
-        g.fillStyle = '#000';
-        g.fillRect(0, 0, W, H);
+        g.drawImage(m, 0, 0);
         g.globalCompositeOperation = 'destination-out';
         for (const e of eyes) {
             g.save();
@@ -1091,6 +1078,14 @@ const LustMinigame = {
         g.globalCompositeOperation = 'source-over';
         this._eyeFade = cv;
         return cv;
+    },
+
+    // Черновик для мазков плёнки у глаз — один на игру, всегда чистый между
+    // шагами роста.
+    filmScratch(W, H) {
+        const c = this._scratch = this._scratch || document.createElement('canvas');
+        if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+        return c.getContext('2d');
     },
 
     // Новый забег: выращенное стирается, карты остаются (тело то же).
@@ -1119,16 +1114,55 @@ const LustMinigame = {
         let film = false, foam = false;
         const tool = kind === 'cloth' ? 'cloth' : 'soap';
         const sink = (bx, by, r, pc) => this.glintBubble(G, bx, by, r, pc);
+        // Мазок плёнки у глаза рисуется на черновик и растворяется там ОДИН
+        // раз, остальные — прямо на плёнку. Силуэт и растворение — только по
+        // участку, куда легли новые мазки, а не по всему холсту: шаг роста
+        // идёт на каждое движение пальца.
+        const R = G.cell * 1.4, E = this.EYE_CLEAR;
+        const eyes = this.eyeSpots(), fm = eyes.length ? this.filmMask() : null;
+        const nearEye = (x, y) => eyes.some(e => Math.abs(x - e.x) < E.outer * e.rx + R && Math.abs(y - e.y) < E.outer * e.ry + R);
+        const box = () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+        const grow = (b, x, y) => { b.x0 = Math.min(b.x0, x - R); b.y0 = Math.min(b.y0, y - R); b.x1 = Math.max(b.x1, x + R); b.y1 = Math.max(b.y1, y + R); };
+        const bf = box(), be = box();
+        let sc = null;
         while (G.idx < G.sprites.length && G.sprites[G.idx].t <= p) {
             const s = G.sprites[G.idx++];
-            if (s.part === 'base') film = true; else foam = true;
-            BATH_ART.washCell(s.part === 'base' ? fc : oc, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
+            let ctx = oc;
+            if (s.part === 'base') {
+                film = true;
+                if (fm && nearEye(s.x, s.y)) {
+                    if (!sc) sc = this.filmScratch(G.film.width, G.film.height);
+                    ctx = sc; grow(be, s.x, s.y);
+                } else { ctx = fc; grow(bf, s.x, s.y); }
+            } else foam = true;
+            BATH_ART.washCell(ctx, tool, s.x, s.y, G.cell, s.k == null ? 1 : s.k,
                               s.seed, s.part, G.inside, G.look, s.part === 'foam' ? sink : null);
         }
-        if (film) {
-            fc.globalCompositeOperation = 'destination-in';
-            fc.drawImage(this.mask, 0, 0);
-            fc.globalCompositeOperation = 'source-over';
+        const clip = (b) => {
+            const x = Math.max(0, Math.floor(b.x0)), y = Math.max(0, Math.floor(b.y0));
+            const w = Math.min(G.film.width, Math.ceil(b.x1)) - x, h = Math.min(G.film.height, Math.ceil(b.y1)) - y;
+            return w > 0 && h > 0 ? [x, y, w, h] : null;
+        };
+        // destination-in действует на ВЕСЬ холст, а не на рамку рисунка:
+        // вне рамки он стирает всё. Поэтому наложение — под клипом рамки.
+        const maskIn = (ctx, m, r) => {
+            ctx.save();
+            ctx.beginPath(); ctx.rect(...r); ctx.clip();
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.drawImage(m, ...r, ...r);
+            ctx.restore();
+        };
+        // Маска силуэта двоичная (maskFromWorm): повторное наложение на уже
+        // обрезанное ничего не меняет — копиться нечему.
+        const cf = clip(bf);
+        if (cf) maskIn(fc, this.mask, cf);
+        // Растворение у глаз не двоичное — поэтому только на черновике, где
+        // лежат лишь новые мазки.
+        const ce = sc && clip(be);
+        if (ce) {
+            maskIn(sc, fm, ce);
+            fc.drawImage(sc.canvas, ...ce, ...ce);
+            sc.clearRect(...ce);
         }
         if (foam) this.glintStart();
         // Холст мытья собирается, только когда что-то дорисовалось — или
@@ -1235,6 +1269,12 @@ const LustMinigame = {
         sk = sk || b.key;
         const cv = (this._stamps = this._stamps || {})[sk] || document.createElement('canvas');
         this._stamps[sk] = cv;
+        // Свет на месте — заготовка та же. Без этого она рисовалась заново на
+        // каждый новый пузырь, а у волшебной мути их по заготовке на цвет
+        // кромки и группу.
+        const at = `${lx.toFixed(3)},${ly.toFixed(3)},${col},${gp.size}`;
+        if (cv._at === at) return cv;
+        cv._at = at;
         // Холст заготовки не перевыделяется каждый кадр: смена размера — это
         // новый буфер, а размер у заготовки постоянный.
         if (cv.width !== C * 2) cv.width = cv.height = C * 2;
@@ -1291,8 +1331,11 @@ const LustMinigame = {
         const Gc = this.GLINT, R0 = this.GLINT_R0, C = this.GLINT_SC, St = Gc.flash.star;
         const cv = (this._stamps = this._stamps || {})[sk] || document.createElement('canvas');
         this._stamps[sk] = cv;
-        // Холст заготовки не перевыделяется каждый кадр: смена размера — это
-        // новый буфер, а размер у заготовки постоянный.
+        const at = `${lx.toFixed(3)},${ly.toFixed(3)},${col}`;
+        if (cv._at === at) return cv;
+        cv._at = at;
+        // Холст заготовки не перевыделяется: смена размера — это новый
+        // буфер, а размер у заготовки постоянный.
         if (cv.width !== C * 2) cv.width = cv.height = C * 2;
         const g = cv.getContext('2d');
         g.setTransform(1, 0, 0, 1, 0, 0);
@@ -1392,6 +1435,11 @@ const LustMinigame = {
                 return { lx, ly };
             });
             if (!this.glintDirty && !moved) return;
+            // Телефон стоит, а пузыри прибывают (намыливают) — их блики
+            // догоняют не каждый кадр, а ~8 раз в секунду: перерисовка всех
+            // бликов на каждый новый пузырь ела кадры именно пока мылят.
+            if (!moved && now - (L.drawn || 0) < 120) return;
+            L.drawn = now;
             P.forEach((p, i) => { L.g[i].lx = p.lx; L.g[i].ly = p.ly; });
             L.dx = dx; L.dy = dy;
             this.glintDirty = false;

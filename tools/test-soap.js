@@ -440,7 +440,7 @@ const harness = require('./harness');
     for (let i = 1; i <= 30; i++) L.growTo('soap', i / 30);
     L.glintBubble = o;
     // Плёнка — как её видит игрок: после растворения у глаз.
-    const film = (L._filmView || L._grows.soap.film).getContext('2d');
+    const film = L._grows.soap.film.getContext('2d');
     const ring = (ctx, e, k) => { let s = 0;
       for (let a = 0; a < 24; a++) { const t = a / 24 * Math.PI * 2;
         s += ctx.getImageData(Math.round(e.x + Math.cos(t) * e.rx * k), Math.round(e.y + Math.sin(t) * e.ry * k), 1, 1).data[3]; }
