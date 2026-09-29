@@ -49,6 +49,7 @@ const BATH_CLOTH = {
         if (kind === 'kitchen') return this.kitchen();
         if (kind === 'brick') return this.bath();
         if (kind === 'puff') return this.puff();
+        if (kind === 'sea') return this.sea();
         return BATH_BAKED.draw('cloth');
     },
 
@@ -67,6 +68,9 @@ const BATH_CLOTH = {
         // Пуф — getBBox шара и петли вместе (x 552.3–643.8, y 454.4–549.3;
         // низ — петля под перекладиной), округлено наружу.
         if (kind === 'puff') return { x: 552, y: 454, w: 92, h: 96 };
+        // Морская губка — getBBox кома (x 548.7–641.7, y 449.9–522.1; низ —
+        // приплюснут дном корзины), округлено наружу.
+        if (kind === 'sea') return { x: 548, y: 449, w: 94, h: 74 };
         return BATH_BAKED.box('cloth');
     },
 
@@ -329,7 +333,75 @@ const BATH_CLOTH = {
             };
             return () => ((u32() >>> 5) * 67108864 + (u32() >>> 6)) / 9007199254740992;
         };
-        return (this._kit = { f, clamp, poly, fill, line, ink, lin, crPts, crPath, inside, edge, bbox, along, cells, mulberry, pyRandom });
+        // ---- поле и его изолинии (морская губка, ступень 4) ----
+        // Градиентный шум Перлина по сиду. Случай — mulberry, и тасовка и
+        // векторы берутся в том же порядке, что в наброске игрока: с другим
+        // ходом случая поры легли бы иначе — «похоже», но не те.
+        const perlin = (seed) => {
+            const R = mulberry(seed), p = Array.from({ length: 256 }, (_, i) => i);
+            for (let i = 255; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+            const Pm = new Int32Array(512), gx = new Float64Array(256), gy = new Float64Array(256);
+            for (let i = 0; i < 512; i++) Pm[i] = p[i & 255];
+            for (let i = 0; i < 256; i++) { const a = R() * Math.PI * 2; gx[i] = Math.cos(a); gy[i] = Math.sin(a); }
+            const fade = t => t * t * t * (t * (t * 6 - 15) + 10), lerp = (a, b, t) => a + (b - a) * t;
+            const g = (ix, iy, dx, dy) => { const k = Pm[Pm[ix] + iy] & 255; return gx[k] * dx + gy[k] * dy; };
+            return (x, y) => {
+                const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, X = xi & 255, Y = yi & 255;
+                const u = fade(xf), v = fade(yf);
+                return lerp(lerp(g(X, Y, xf, yf), g(X + 1, Y, xf - 1, yf), u),
+                            lerp(g(X, Y + 1, xf, yf - 1), g(X + 1, Y + 1, xf - 1, yf - 1), u), v) * 1.4;
+            };
+        };
+        // Марширующие квадраты: замкнутые изолинии уровня t поля F (узлы
+        // сетки nx×ny с шагом h от x0, y0). «Выше порога» — слева по ходу.
+        // Ребро — целое число (2·узел, +1 у вертикального), а не строка, как
+        // в наброске: там контуры считались вдесятеро дольше. Порядок обхода
+        // (первое ещё не пройденное ребро в порядке появления) — тот же, что
+        // у Map наброска, поэтому и начала контуров те же.
+        const isolines = (F, x0, y0, nx, ny, h, t) => {
+            const W = nx + 1, next = new Int32Array(W * (ny + 1) * 2).fill(-1), order = [], out = [];
+            const link = (a, b) => { if (next[a] < 0) order.push(a); next[a] = b; };
+            for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+                const k = j * W + i;
+                const c = (F[k] - t > 0 ? 8 : 0) | (F[k + 1] - t > 0 ? 4 : 0) | (F[k + W + 1] - t > 0 ? 2 : 0) | (F[k + W] - t > 0 ? 1 : 0);
+                const T = 2 * k, Rr = 2 * (k + 1) + 1, B = 2 * (k + W), L = 2 * k + 1;
+                switch (c) {
+                    case 1: link(L, B); break; case 2: link(B, Rr); break; case 3: link(L, Rr); break;
+                    case 4: link(Rr, T); break; case 5: link(L, T); link(Rr, B); break; case 6: link(B, T); break;
+                    case 7: link(L, T); break; case 8: link(T, L); break; case 9: link(T, B); break;
+                    case 10: link(T, Rr); link(B, L); break; case 11: link(T, Rr); break; case 12: link(Rr, L); break;
+                    case 13: link(Rr, B); break; case 14: link(B, L); break;
+                }
+            }
+            const pt = (e) => {
+                const n = e >> 1, i = n % W, j = (n - i) / W, a = F[n] - t, b = (e & 1 ? F[n + W] : F[n + 1]) - t, s = a / (a - b);
+                return e & 1 ? [x0 + i * h, y0 + (j + s) * h] : [x0 + (i + s) * h, y0 + j * h];
+            };
+            for (const s0 of order) {
+                if (next[s0] < 0) continue;
+                let k = s0; const loop = [];
+                while (next[k] >= 0) { const n = next[k]; next[k] = -1; loop.push(pt(k)); k = n; if (k === s0) break; }
+                if (loop.length > 3) out.push(loop);
+            }
+            return out;
+        };
+        const area = (Q) => Q.reduce((s, p, i) => { const q = Q[(i + 1) % Q.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
+        // Прореживание замкнутого контура (Рамер — Дуглас — Пекер), две
+        // половины по отдельности: точки, отходящие от хорды меньше eps, лишние.
+        const simplify = (Q, eps) => {
+            const open = (S) => {
+                const seg = (a, b) => {
+                    let dmax = 0, k = -1; const [ax, ay] = S[a], [bx, by] = S[b], dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1e-9;
+                    for (let i = a + 1; i < b; i++) { const d = Math.abs((S[i][0] - ax) * dy - (S[i][1] - ay) * dx) / L; if (d > dmax) { dmax = d; k = i; } }
+                    return dmax > eps ? [...seg(a, k).slice(0, -1), ...seg(k, b)] : [S[a], S[b]];
+                };
+                return seg(0, S.length - 1);
+            };
+            const m = Q.length >> 1, a = open(Q.slice(0, m + 1)), b = open(Q.slice(m).concat([Q[0]]));
+            return [...a.slice(0, -1), ...b.slice(0, -1)];
+        };
+        return (this._kit = { f, clamp, poly, fill, line, ink, lin, crPts, crPath, inside, edge, bbox, along, cells, mulberry, pyRandom,
+                              perlin, isolines, area, simplify });
     },
 
     // Шаблон на гнездо. Градиенты ищутся по id, а вещь бывает в документе
@@ -604,6 +676,160 @@ const BATH_CLOTH = {
         const loop = 'M53 17C57 30 56 46 50 54C44 61 36 56 38 46C40 36 47 24 51 18', w = 2.2 * STROKE.detail;
         const front = line(loop, P.puffCordInk, f(w + 2 * STROKE.detail)) + line(loop, P.puffCord, f(w));
         return { main, front };
+    },
+
+    // ---------- 4. МОРСКАЯ ГУБКА ----------
+    // Натуральная губка тёплого жёлто-абрикосового цвета: округлый ком,
+    // приплюснутый дном корзины, весь в мелких частых порах. Набросок игрока
+    // (круг «один паттерн», u2) один в один: генератор тот же, сид тот же.
+    //
+    // Что держит вещь и чего нельзя потерять — принцип игрока: ОДИН рисунок
+    // пор от центра до края. Меняются только его параметры по положению на
+    // форме, а не сам рисунок: в центре провалы раскрыты и глубже всего, к
+    // краю сжаты ракурсом купола, мельче, светлее и прозрачнее — контраст
+    // падает к кромке сам. Силуэт — контур того же поля у кромки: где к краю
+    // подошёл провал, он чуть проседает, где гребень — чуть выступает, а
+    // светлая полупрозрачная кромка сверху гасит неровность.
+    //
+    // Что было до и почему теперь так (около тридцати вариантов, sp4b):
+    // * тёмная подложка с «плёнкой» гребней поверх и редкие крупные тёмные
+    //   дыры читались выпечкой — печенье, булка, крекер, крампет;
+    // * шипы, лопасти и пучки по краю — ежом и дурианом, окантовка — плотным
+    //   комом;
+    // * провалы, гаснущие у края в ноль, давали пустую гладкую кромку —
+    //   «булку». Поэтому у кромки провал остаётся, только светлый;
+    // * крупные ячейки к центру — «сыр/хлеб». Игрок выбрал мелкие поры:
+    //   «без крупных провалов, более однородный».
+    //
+    // Устроено как кухонная губка: переносится ГЕНЕРАТОР, а не выхлоп —
+    // выхлоп наброска весил 178 КБ. Поры — изолинии поля шума, провал —
+    // вложенные уровни того же поля (глубже — темнее и чуть сдвинут к свету:
+    // верхняя стенка в тени). Цвет уровня — градиент ОТ ЦЕНТРА губки. Считается
+    // один раз и кешируется. Все поры одного уровня — ОДНИМ путём: 6 фигур
+    // на всю губку; без фильтров, масок и прозрачности группы (traps, п. 73) —
+    // прозрачность только в стопах градиентов. Тени на дне нет — в руке и на
+    // иконке ей неоткуда взяться, а на полке её не было и в наброске.
+    sea() {
+        if (!this._sea) this._sea = this.seaArt();
+        return this.stamp(this._sea, 'bt-cloth-sea', 'bcs');
+    },
+
+    // Шаблон морской губки в координатах гнезда; '@ID' — место под id градиентов.
+    seaArt() {
+        const C = btPal().seaSponge, { f, mulberry, perlin, isolines, area, simplify } = this.kit();
+        // Рампа тёмное → светлое (palette.js): дно пор, тень шара, стенка
+        // глубокого уровня, провал в центре, провал у кромки, провал на
+        // полпути, тело, кромка, свет.
+        const [deep, shade, deepWall, pit, edgePit, pitWall, body, rim, light] = C;
+        // Набросок считался в координатах СЦЕНЫ вокруг гнезда (573, 492), и
+        // волокна шума берут абсолютные x, y — поэтому поле считается там же,
+        // а гнездо вычитается на выходе.
+        const O = [573, 492];
+        // Форма: округлый ком чуть шире высоты, низ приплюснут дном корзины.
+        const cx = 597, cy = 488, rx = 46, ry = 36, floor = 521;
+        const seed = 41, freq = 13, h = 0.34;
+        const R = mulberry(seed), ph = [R() * 6.3, R() * 6.3, R() * 6.3];
+        const N1 = perlin(seed + 1), N2 = perlin(seed + 2), N3 = perlin(seed + 3);
+        // Нормированный «радиус» точки в коме с наплывами; ниже дна — резко наружу.
+        const shapeR = (x, y) => {
+            const u = (x - cx) / rx, v = (y - cy) / ry, a = Math.atan2(v, u);
+            const k = 1 + 0.06 * Math.sin(3 * a + ph[0]) + 0.035 * Math.sin(5 * a + ph[1]) + 0.02 * Math.sin(8 * a + ph[2]);
+            let r = Math.hypot(u, v) / k;
+            if (y > floor) r += (y - floor) / ry * 2.2;
+            return r;
+        };
+        const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+        // Поле пор: гребнистый шум на куполе — высокое материал, низкое
+        // провал. Float32, как в наброске: на нём лежат изолинии, и с другой
+        // точностью контуры сдвинулись бы на волос.
+        const x0 = cx - rx * 1.12, y0 = cy - ry * 1.14, nx = Math.ceil(rx * 2.24 / h), ny = Math.ceil((floor + 3 - y0) / h), W = nx + 1;
+        const Pf = new Float32Array(W * (ny + 1)), G = new Float32Array(W * (ny + 1)), Rr = new Float64Array(W * (ny + 1));
+        const inside = new Float64Array(W * (ny + 1));
+        let nIn = 0;
+        for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
+            const x = x0 + i * h, y = y0 + j * h, r = shapeR(x, y), k = j * W + i;
+            // Ракурс купола: к кромке рисунок сжат; за кромкой продолжается.
+            const rho = r < 0.999 ? Math.asin(r) / (Math.PI / 2) : 1 + (r - 0.999) * 3, s = r > 0 ? rho / r : 1;
+            const u = (x - cx) / rx * s, v = (y - cy) / ry * s;
+            const n = N1(u * freq + 11.3, v * freq * 0.9 + 3.7) + 0.35 * N2(u * freq * 2.1 + 5.1, v * freq * 2.1 + 8.2);
+            let val = 1 - Math.abs(n) + 0.05 * N3(x * 2.2, y * 2.2);
+            val += 0.08 * sstep(0.5, 1.02, r);               // к краю провалы мельче и реже — тот же рисунок
+            val -= 0.06 * (1 - Math.min(r, 1));               // в центре — раскрыты
+            if (r < 0.9) inside[nIn++] = val;
+            Pf[k] = val + 6 * Math.max(0, r - 0.985);         // за силуэтом провалов нет
+            G[k] = val; Rr[k] = r;
+        }
+        // Порог — по доле площади: провалы занимают половину губки.
+        const t = inside.subarray(0, nIn).sort()[Math.floor(nIn * 0.5)];
+        // Силуэт — кромка r = 1, чуть проседающая там, где к ней подошёл провал.
+        for (let k = 0; k < G.length; k++) G[k] = (1 - Rr[k]) * 14 + 0.6 * Math.max(-0.4, Math.min(0.3, G[k] - t));
+        const loops = (F, lev, minA) => isolines(F, x0, y0, nx, ny, h, lev).filter(L => Math.abs(area(L)) > minA).map(L => simplify(L, 0.12));
+
+        // Контур → путь: квадратичный сплайн через середины отрезков, опоры —
+        // точки контура (как в наброске). У такого сплайна следующая опора —
+        // ровно отражение предыдущей через середину, то есть то, что
+        // подставляет команда t: после первой q идут одни t, по паре чисел на
+        // точку вместо четырёх. Опоры округлены до десятой, как в наброске;
+        // середины тогда лежат на сетке 0,05 точно и отражение не копит
+        // ошибку. Числа в двадцатых долях — целые, пишутся относительными.
+        // Двадцатые доли → «-1.35», «.4», «2»: без ведущего нуля и без
+        // регулярок — чисел тринадцать тысяч, и строка с регуляркой стоила
+        // заметную долю всей сборки.
+        const num = (v) => {
+            const c = Math.abs(v) * 5, i = Math.floor(c / 100), r = c - i * 100;
+            const fr = r === 0 ? '' : r % 10 === 0 ? '.' + r / 10 : r < 10 ? '.0' + r : '.' + r;
+            return (v < 0 ? '-' : '') + (i || !fr ? i : '') + fr;
+        };
+        const paths = (Ls, dx, dy) => {
+            let d = '', prev = null, at = [0, 0];
+            const cmd = (c) => { d += c; prev = null; };
+            const put = (v) => {
+                const s = num(v);
+                // Разделитель нужен, только если число иначе слипнется с прошлым.
+                if (prev != null && (/\d/.test(s[0]) || (s[0] === '.' && prev.indexOf('.') < 0))) d += ' ';
+                d += s; prev = s;
+            };
+            for (const L of Ls) {
+                if (L.length < 3) continue;
+                const q = L.map(p => [Math.round((p[0] + dx - O[0]) * 10) * 2, Math.round((p[1] + dy - O[1]) * 10) * 2]), n = q.length;
+                const m = (i) => { const a = q[(i + n) % n], b = q[(i + 1) % n]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+                const s = m(n - 1), m0 = m(0);
+                cmd('m'); put(s[0] - at[0]); put(s[1] - at[1]);
+                cmd('q'); put(q[0][0] - s[0]); put(q[0][1] - s[1]); put(m0[0] - s[0]); put(m0[1] - s[1]);
+                cmd('t');
+                for (let i = 1; i < n; i++) { const a = m(i - 1), b = m(i); put(b[0] - a[0]); put(b[1] - a[1]); }
+                cmd('z'); at = s;
+            }
+            return d;
+        };
+        const B = paths(loops(G, 0, 20), 0, 0);
+        // Провал — НИЖЕ порога: изолинии поля «−P» выше «−t». Второй уровень
+        // глубже на 0,16 и сдвинут к свету: верхняя стенка поры в тени.
+        const NP = Pf.map(v => -v);
+        const lev = [{ dt: 0, minA: 0.5, c0: pit, c1: pitWall }, { dt: 0.16, minA: 0.3, dx: -0.3, dy: -0.4, c0: deep, c1: deepWall }]
+            .map(L => ({ ...L, d: paths(loops(NP, -(t - L.dt), L.minA), L.dx || 0, L.dy || 0) }));
+
+        // Градиенты — в координатах гнезда (userSpaceOnUse: группа stamp сдвигает их вместе с вещью).
+        const X = (v) => f(v - O[0]), Y = (v) => f(v - O[1]);
+        const radial = (id, stops, x, y, r) => `<radialGradient id="@ID-${id}" gradientUnits="userSpaceOnUse" cx="${X(x)}" cy="${Y(y)}" r="${f(r)}">`
+            + stops.map(([o, c, a]) => `<stop offset="${o}" stop-color="${c}"${a != null ? ` stop-opacity="${a}"` : ''}/>`).join('') + `</radialGradient>`;
+        const gx = cx, gy = cy - 2, gr = rx * 1.02, lx = cx - rx * 0.45, ly = cy - ry * 0.55;
+        const use = (g) => `<use href="#@ID-B" fill="url(#@ID-${g})"/>`;
+        return `<defs><path id="@ID-B" d="${B}"/>`
+            // Тело: ровный тёплый цвет, к кромке светлее и прозрачнее — просвечивает.
+            + radial('b', [[0, body], [0.72, body], [0.9, rim, 0.85], [1, rim, 0.45]], gx, gy, gr)
+            // Уровни провала: в центре тёмные, к краю почти цвет тела и
+            // полупрозрачные — у кромки провал есть, но не спорит с ней.
+            + lev.map((L, k) => radial('p' + k, [[0, L.c0], [0.55, L.c1], [1, edgePit, 0.55]], gx, gy, gr)).join('')
+            // Объём шара — накладками: свет сверху-слева, тень снизу-справа.
+            + radial('l', [[0, light, 0.5], [0.55, light, 0]], lx, ly, rx * 1.3)
+            + radial('s', [[0.5, shade, 0], [1, shade, 0.35]], lx, ly, rx * 1.9)
+            // Кромка: светлая полупрозрачная — гасит неровность и контраст пор у края.
+            + radial('e', [[0.82, rim, 0], [1, rim, 0.45]], gx, gy, gr)
+            + `</defs>` + use('b')
+            + lev.map((L, k) => `<path d="${L.d}" fill="url(#@ID-p${k})" fill-rule="evenodd"/>`).join('')
+            + use('s') + use('l') + use('e');
     }
 };
 
