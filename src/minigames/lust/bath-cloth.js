@@ -245,9 +245,11 @@ const BATH_CLOTH = {
         // Перевал через перекладину: короткий блик слева и короткая тень под
         // перекладиной у ПРАВОГО края. Ровная дуга на всю ширину крупно
         // читалась ртом, сдвинутая вправо дуга — всё ещё улыбкой; поэтому тень
-        // не дуга, а загиб, уходящий вниз в правую складку лоскута.
-        const bendLit = 'M592,507 C597,504 603,503 609,504';
-        const bendShade = 'M610,514.5 C614,515.8 616.8,517.2 618.3,520.8';
+        // не дуга, а загиб, уходящий вниз в правую складку лоскута. Загиб —
+        // узкий клин-заливка: штрихом той же формы крупно выходила бровь.
+        // Блик короткий: длинный давал край «крышки».
+        const bendLit = 'M592,507 C595,505 599,504 603,504';
+        const bendShade = 'M609,514 C614,515 617,517 619,522 L617,523 C615,519 612,517 609,516 Z';
 
         const main = `
             <defs>
@@ -275,7 +277,7 @@ const BATH_CLOTH = {
             <path d="${S(flap)}" fill="${R[2]}"/>
             <g clip-path="url(#§-flap)">
                 <path d="${S(bendLit)}" fill="none" stroke="${R[3]}" stroke-width="2.4" stroke-linecap="round"/>
-                <path d="${S(bendShade)}" fill="none" stroke="${R[1]}" stroke-width="1.6" stroke-linecap="round"/>
+                <path d="${S(bendShade)}" fill="${R[1]}"/>
                 <path d="${S(flapLit)}" fill="${R[3]}"/>
                 <path d="${S(flapFolds)}" fill="${R[1]}"/>
                 <path d="${S(flapV)}" fill="${CK}" fill-opacity="${OP}"/>
