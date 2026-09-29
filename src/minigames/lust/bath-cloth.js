@@ -46,6 +46,7 @@ const BATH_CLOTH = {
     tierArt(level, where) {
         const kind = this.TIERS[this.tier(level)];
         if (kind === 'rag') return this.rag(where);
+        if (kind === 'kitchen') return this.kitchen();
         return BATH_BAKED.draw('cloth');
     },
 
@@ -55,6 +56,9 @@ const BATH_CLOTH = {
         // Тряпка — по нарисованному: getBBox листа и висящего полотна вместе
         // (x 546.9–650.6, y 473.5–572.9, края — пух оверлока), округлено наружу.
         if (kind === 'rag') return { x: 546, y: 473, w: 105, h: 100 };
+        // Губка — тоже по нарисованному: getBBox бруска с волосками абразива,
+        // выбившимися за контур (x 547.4–647.0, y 460.2–529.8), округлено наружу.
+        if (kind === 'kitchen') return { x: 547, y: 460, w: 100, h: 70 };
         return BATH_BAKED.box('cloth');
     },
 
@@ -160,6 +164,204 @@ const BATH_CLOTH = {
             + line(Fl.bend, Ln.bend, 1.3 * STROKE.detail, RC + op(0.9));
 
         return { main, front };
+    },
+
+    // ---------- 1. НОВАЯ КУХОННАЯ ГУБКА ----------
+    // Жёлтый поролоновый брусок плашмя, зелёный абразив сверху, вид чуть
+    // сверху — «первая ассоциация у простого человека». Набросок игрока
+    // (прогон губки, v1) один в один.
+    //
+    // Что было до и почему теперь так. Запечённая 3д-губка: абразив читался
+    // газоном (стебли торчком), поролон — сыром (редкие крупные дыры разного
+    // вида), контур толстый чёрный, форма — твёрдая коробка. Губку узнают
+    // по двум слоям РАЗНОЙ природы в пропорции ~1:4, склеенным по прямой:
+    // поролон — мелкие частые поры по ВСЕЙ площади (на свету реже и
+    // бледнее), абразив — спутанный войлок из коротких волокон во все
+    // стороны, низкого контраста, с волосками за контур. Кромка поролона
+    // чуть дрожит (пористый край), углы скруглены — брусок мягкий.
+    //
+    // В отличие от тряпки, сюда перенесён ГЕНЕРАТОР наброска, а не его
+    // выхлоп: пути поролона и войлока — это сотни мелких ячеек, готовыми
+    // данными они весили бы 150 КБ. Случай детерминированный (btRng с теми
+    // же семенами и в том же порядке вызовов, что в наброске), поэтому вид
+    // одинаков между запусками и совпадает с выбранным игроком. Считается
+    // один раз (~полмиллисекунды на тысячу ячеек) и кешируется.
+    //
+    // Однотипные штрихи одного цвета — одним путём: вся губка — 20 путей.
+    // Без фильтров, масок и прозрачности группы (docs/traps.md, п. 73).
+    // Градиенты нужны (мягкий объём без ступенек), а вещь бывает в
+    // документе дважды (полка и рука) — поэтому id у каждого вызова свои.
+    kitchen() {
+        const A = BATH_ART.slots().cloth;
+        if (!this._kitchen) this._kitchen = this.kitchenArt();
+        const id = 'bck' + (this._kid = (this._kid || 0) + 1);
+        return `<g class="bt-cloth bt-cloth-kitchen" transform="translate(${A.x} ${A.y})">${this._kitchen.split('@ID').join(id)}</g>`;
+    },
+
+    // Шаблон губки в координатах гнезда; '@ID' — место под id градиентов.
+    kitchenArt() {
+        const P = btPal(), Y = P.sponge, G = P.scour, H = STROKE.hairline;
+        const f = (n) => (Math.round(n * 100) / 100).toString();
+        const clamp = (v) => Math.max(0, Math.min(1, v));
+        const poly = (Q) => 'M' + Q.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+        const fill = (d, c, op) => d ? `<path d="${d}" fill="${c}"${op != null ? ` fill-opacity="${op}"` : ''}/>` : '';
+        const line = (d, c, w, op) => d ? `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"${op != null ? ` stroke-opacity="${op}"` : ''}/>` : '';
+
+        // Замкнутый Catmull-Rom: точки (для «внутри» и кромок) и кубики (для
+        // гладкого контура абразива) — по одним и тем же опорам.
+        const cr = (Q, i, t) => {
+            const N = Q.length, a = Q[(i - 1 + N) % N], b = Q[i], c = Q[(i + 1) % N], d = Q[(i + 2) % N], t2 = t * t, t3 = t2 * t;
+            return [0, 1].map(k => 0.5 * (2 * b[k] + (-a[k] + c[k]) * t + (2 * a[k] - 5 * b[k] + 4 * c[k] - d[k]) * t2
+                + (-a[k] + 3 * b[k] - 3 * c[k] + d[k]) * t3));
+        };
+        const crPts = (Q, n) => { const o = []; for (let i = 0; i < Q.length; i++) for (let k = 0; k < n; k++) o.push(cr(Q, i, k / n)); return o; };
+        const crPath = (Q) => {
+            const N = Q.length; let d = `M${f(Q[0][0])} ${f(Q[0][1])}`;
+            for (let i = 0; i < N; i++) {
+                const a = Q[(i - 1 + N) % N], b = Q[i], c = Q[(i + 1) % N], e = Q[(i + 2) % N];
+                d += `C${f(b[0] + (c[0] - a[0]) / 6)} ${f(b[1] + (c[1] - a[1]) / 6)} ${f(c[0] - (e[0] - b[0]) / 6)} ${f(c[1] - (e[1] - b[1]) / 6)} ${f(c[0])} ${f(c[1])}`;
+            }
+            return d + 'Z';
+        };
+        const inside = (Q, x, y) => {
+            let c = false;
+            for (let i = 0, j = Q.length - 1; i < Q.length; j = i++) {
+                const [xi, yi] = Q[i], [xj, yj] = Q[j];
+                if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+            }
+            return c;
+        };
+        const edge = (Q, x, y) => {
+            let m = 1e9;
+            for (let i = 0, j = Q.length - 1; i < Q.length; j = i++) {
+                const [ax, ay] = Q[j], dx = Q[i][0] - ax, dy = Q[i][1] - ay;
+                const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+                m = Math.min(m, Math.hypot(x - ax - t * dx, y - ay - t * dy));
+            }
+            return m;
+        };
+        const bbox = (Q) => ({ x0: Math.min(...Q.map(p => p[0])), y0: Math.min(...Q.map(p => p[1])),
+                               x1: Math.max(...Q.map(p => p[0])), y1: Math.max(...Q.map(p => p[1])) });
+        // Кромка через равные шаги; jit — дрожь поперёк (пористый край
+        // поролона) или null (ровные точки для волосков абразива).
+        const along = (Q, step, jit) => {
+            const o = [];
+            for (let i = 0; i < Q.length; i++) {
+                const a = Q[i], b = Q[(i + 1) % Q.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+                const n = Math.max(1, Math.round(L / step)), nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+                for (let k = 0; k < n; k++) {
+                    if (!jit) { o.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); continue; }
+                    const t = k / n, j = (jit.r() - 0.5) * 2 * jit.amp;
+                    o.push([a[0] + (b[0] - a[0]) * t + nx * j, a[1] + (b[1] - a[1]) * t + ny * j]);
+                }
+            }
+            return o;
+        };
+
+        // Чертёж наброска относительно гнезда (573, 492): поролон, абразив и
+        // светлая верхняя грань абразива — опоры сплайна.
+        const foamK = [[-20, -16], [24, -17.5], [68, -16], [72.5, 10], [68.5, 35], [24, 37], [-20.5, 35], [-24.5, 10]];
+        const greenK = [[-17, -28.5], [25, -30.5], [66, -28.5], [72, -23.5], [71.8, -17], [67, -12.5], [24, -11.5],
+                        [-19, -12.5], [-23.8, -17], [-23.5, -23.5]];
+        const topK = [[-16, -27.7], [25, -29.7], [65, -27.7], [70.8, -23], [25, -20.4], [-22, -23]];
+        // Свет сверху-слева: 1 — свет, 0 — тень.
+        const light = (x, y) => clamp(1.15 - (x + 23) / 95 * 0.6 - (y + 16) / 52 * 0.75);
+        const foam = crPts(foamK, 8), green = crPts(greenK, 8);
+        const foamD = poly(along(foam, 1.6, { r: btRng(12), amp: 0.24 }));
+
+        // Поры: мелкие частые ячейки по дрожащей сетке. Не «сыр» (редкие
+        // крупные дыры) и не «крекер» (ровная сетка одинаковых точек):
+        // размер, вытянутость и форма у каждой свои, ячейка — неправильный
+        // четырёх-пятиугольник, а не кружок-«кнопка». На свету пор меньше и
+        // они бледнее (три корзины прозрачности); у части ячеек светлая
+        // кромка снизу-справа — ячейка, а не дырка.
+        const pores = (() => {
+            const r = btRng(13), bb = bbox(foam), step = 1.8, size = 0.5, dark = [[], [], []], rim = [];
+            for (let y = bb.y0 + step / 2; y < bb.y1; y += step * 0.87) {
+                const row = Math.round((y - bb.y0) / step);
+                for (let x = bb.x0 + (row % 2 ? step / 2 : 0); x < bb.x1; x += step) {
+                    const px = x + (r() - 0.5) * step * 0.9, py = y + (r() - 0.5) * step * 0.8;
+                    if (!inside(foam, px, py) || edge(foam, px, py) < 1.2) continue;
+                    const L = light(px, py);
+                    if (r() < 0.18 + L * 0.3) continue;
+                    const s = size * (0.6 + r() * 0.8), a = r() * Math.PI, e = 0.55 + r() * 0.45;
+                    const n = 4 + (r() < 0.5 ? 1 : 0), pts = [];
+                    for (let k = 0; k < n; k++) {
+                        const t = a + k * 2 * Math.PI / n + (r() - 0.5) * 0.7, rr = s * (0.75 + r() * 0.5);
+                        pts.push([px + Math.cos(t) * rr, py + Math.sin(t) * rr * e]);
+                    }
+                    dark[L > 0.62 ? 0 : L > 0.32 ? 1 : 2].push(poly(pts));
+                    if (L > 0.3 && r() < 0.35) rim.push(`M${f(px - s * 0.7)} ${f(py + s * 0.55)}q${f(s * 0.7)} ${f(s * 0.55)} ${f(s * 1.4)} ${f(-s * 0.2)}`);
+                }
+            }
+            return { dark: dark.map(a => a.join('')), rim: rim.join('') };
+        })();
+
+        // Войлок абразива: короткие изогнутые волокна во ВСЕ стороны, разной
+        // длины. Стебли вверх читались газоном, одинаковые чёрточки —
+        // посыпкой. Три тона; светлые — только на свету.
+        const felt = (() => {
+            const r = btRng(14), bb = bbox(green), dk = [], md = [], lt = [];
+            for (let y = bb.y0; y < bb.y1; y += 1) for (let x = bb.x0; x < bb.x1; x += 1) {
+                const px = x + (r() - 0.5), py = y + (r() - 0.5);
+                if (!inside(green, px, py) || edge(green, px, py) < 0.7) continue;
+                const L = light(px, py);
+                const len = 1.1 + r() * 1.3, a = r() * Math.PI * 2, bend = (r() - 0.5) * 1.6;
+                const ex = Math.cos(a) * len, ey = Math.sin(a) * len;
+                const s = `M${f(px - ex / 2)} ${f(py - ey / 2)}q${f(ex / 2 - Math.sin(a) * bend)} ${f(ey / 2 + Math.cos(a) * bend)} ${f(ex)} ${f(ey)}`;
+                const q = r();
+                if (q < 0.45 - L * 0.2) dk.push(s); else if (q < 0.8) md.push(s); else if (r() < L * 0.9) lt.push(s);
+            }
+            return { dk: dk.join(''), md: md.join(''), lt: lt.join('') };
+        })();
+
+        // Лохматая кромка: волоски абразива выбиваются за контур наружу.
+        const fringe = (() => {
+            const r = btRng(15), c = along(green, 1.1, null), o = [];
+            for (let i = 1; i < c.length - 1; i++) {
+                if (r() > 0.55) continue;
+                const [x, y] = c[i], [ax, ay] = c[i - 1], [bx, by] = c[i + 1];
+                let nx = by - ay, ny = -(bx - ax); const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
+                const a = Math.atan2(ny, nx) + (r() - 0.5) * 1.6, len = 0.9 + r() * 1.3;
+                const qx = Math.cos(a) * len * 0.5 + (r() - 0.5), qy = Math.sin(a) * len * 0.5 + (r() - 0.5);
+                o.push(`M${f(x - nx * 0.6)} ${f(y - ny * 0.6)}q${f(qx)} ${f(qy)} ${f(Math.cos(a) * len)} ${f(Math.sin(a) * len)}`);
+            }
+            return o.join('');
+        })();
+
+        // Тень, которую абразив кладёт на поролон под швом: четыре
+        // полупрозрачные полосы разной глубины вместо одной — мягкий спад,
+        // без ступеньки. Шов чуть провисает к краям (брусок выпуклый).
+        const glue = [];
+        for (let x = -23.5; x <= 72.6; x += 4) { const t = (x - 24) / 48; glue.push([x, -11 - 1.6 * t * t]); }
+        const shadow = [1, 0.75, 0.5, 0.28].map(k =>
+            fill(poly(glue.concat(glue.map(([x, y]) => [x, y + 8 * k]).reverse())), Y[0], 0.13)).join('');
+        const greenD = crPath(greenK);
+
+        // Контур тонкий и в тёмном тоне своего слоя, а не чёрный: чёрный
+        // толстый делал губку твёрдой коробкой (так же у тряпки).
+        return `<defs>`
+            + `<linearGradient id="@ID-fy" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="${Y[3]}"/>`
+            + `<stop offset="0.45" stop-color="${Y[2]}"/><stop offset="1" stop-color="${Y[1]}"/></linearGradient>`
+            // Поперечный объём поролона: свет слева, тень справа, середина чистая.
+            + `<linearGradient id="@ID-fx" x1="0" y1="0" x2="1" y2="0">`
+            + `<stop offset="0" stop-color="${Y[4]}" stop-opacity="0.55"/><stop offset="0.3" stop-color="${Y[4]}" stop-opacity="0"/>`
+            + `<stop offset="0.7" stop-color="${Y[0]}" stop-opacity="0"/><stop offset="1" stop-color="${Y[0]}" stop-opacity="0.4"/></linearGradient>`
+            + `<linearGradient id="@ID-g" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="${G[3]}"/>`
+            + `<stop offset="0.5" stop-color="${G[2]}"/><stop offset="1" stop-color="${G[1]}"/></linearGradient></defs>`
+            + fill(foamD, 'url(#@ID-fy)') + fill(foamD, 'url(#@ID-fx)')
+            + fill(pores.dark[0], P.spongePore, 0.28) + fill(pores.dark[1], P.spongePore, 0.45) + fill(pores.dark[2], P.spongePore, 0.6)
+            + line(pores.rim, P.spongeLit, 0.8 * H, 0.55)
+            + shadow
+            + `<path d="${foamD}" fill="none" stroke="${P.spongeInk}" stroke-width="${STROKE.contour * 0.77}" stroke-linejoin="round"/>`
+            + fill(greenD, 'url(#@ID-g)')
+            // Верхняя грань абразива — светлее боковой полосы: вид чуть сверху.
+            + fill(crPath(topK), G[4], 0.5) + line('M-22.5 -22.5C2 -19.8 47 -19.8 71.5 -22.5', G[1], STROKE.detail, 0.35)
+            + line(felt.dk, P.scourFuzz, 1.15 * H, 0.5) + line(felt.md, G[3], 1.15 * H, 0.55) + line(felt.lt, P.scourLit, H, 0.5)
+            + line(fringe, G[1], 1.2 * H)
+            + `<path d="${greenD}" fill="none" stroke="${P.scourInk}" stroke-width="${STROKE.contour * 0.5}" stroke-linejoin="round"/>`
+            // Блик по левой кромке поролона: мягкий объём, а не грань.
+            + line('M-21.4 28C-22.6 18 -22.4 4 -21 -6', P.spongeLit, STROKE.contour * 0.5, 0.55);
     }
 };
 
