@@ -13,7 +13,9 @@
 // Фрагмент — содержимое без обёртки <svg>: пути, группы, defs. Строка
 // <!--FRONT--> делит его на часть в корзине (за передней сеткой) и часть,
 // свисающую через край наружу (поверх сетки) — так вещь живёт на полке. Цвета можно
-// брать из палитры через плейсхолдеры {rag0}…{rag4}, {ink} — подставятся.
+// брать из палитры плейсхолдерами: {ink}, {имя} для строки btPal() и {имяN}
+// для N-й ступени рампы ({rag0}…{rag4}). В наброске допустим и прямой hex —
+// это черновик; в код игры цвет попадает только через палитру.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const harness = require('./harness');
@@ -29,7 +31,10 @@ const harness = require('./harness');
   // Плейсхолдеры цветов — из живой палитры.
   const frag = await page.evaluate((f) => {
     const P = btPal(), map = { ink: PALETTE.ink };
-    (P.rag || []).forEach((c, i) => { map['rag' + i] = c; });
+    for (const [k, v] of Object.entries(P)) {
+      if (typeof v === 'string') map[k] = v;
+      else if (Array.isArray(v)) v.forEach((c, i) => { if (typeof c === 'string') map[k + i] = c; });
+    }
     return f.replace(/\{(\w+)\}/g, (m, k) => map[k] || m);
   }, frag0);
   // Подмена мочалки: рисунок — фрагмент, габарит — его getBBox.
