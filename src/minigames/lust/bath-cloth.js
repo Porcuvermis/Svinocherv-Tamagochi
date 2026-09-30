@@ -1,7 +1,7 @@
 // ================= МОЧАЛКА: ЛЕСТНИЦА ВИДА =================
 // Мочалка прокачивает время трения и таймер награды, и с каждой покупкой
 // меняется сам ПРЕДМЕТ (docs/plan/21-lust-bath.md, разд. 5д): половая
-// тряпка → кухонная губка → банная губка → пуф → морская губка → люфа →
+// тряпка → кухонная губка → банная губка → пуф → морская губка → пуф-оборка →
 // рукавица → губка конняку → волшебное облачко. Все вещи — в одном формате
 // (овал или прямоугольник одного габарита): узкое и длинное выбивалось бы
 // на полке и в руке.
@@ -12,9 +12,9 @@
 // сами и ничего не знают о ступенях. Гнездо и зона захвата не двигаются от
 // ступени — меняется только картинка. Так же устроено мыло (bath-soap.js).
 const BATH_CLOTH = {
-    // Вид на каждой ступени. Нарисованы 0–3; ещё не нарисованные берут
+    // Вид на каждой ступени. Нарисованы 0–5; ещё не нарисованные берут
     // запечённую губку — пока лестница не закончена.
-    TIERS: ['rag', 'kitchen', 'brick', 'puff', 'sea', 'luffa', 'mitt', 'konjac', 'cloud'],
+    TIERS: ['rag', 'kitchen', 'brick', 'puff', 'sea', 'ruffle', 'mitt', 'konjac', 'cloud'],
 
     level() {
         if (typeof GameState === 'undefined' || !GameState.upgradeLevel || typeof Backend === 'undefined') return 0;
@@ -50,6 +50,7 @@ const BATH_CLOTH = {
         if (kind === 'brick') return this.bath();
         if (kind === 'puff') return this.puff();
         if (kind === 'sea') return this.sea();
+        if (kind === 'ruffle') return this.ruffle();
         return BATH_BAKED.draw('cloth');
     },
 
@@ -71,6 +72,9 @@ const BATH_CLOTH = {
         // Морская губка — getBBox кома (x 548.7–641.7, y 449.9–522.1; низ —
         // приплюснут дном корзины), округлено наружу.
         if (kind === 'sea') return { x: 548, y: 449, w: 94, h: 74 };
+        // Пуф-оборка — getBBox шара со шнурком и пухом края (x 546.8–642.5,
+        // y 442.3–532.5; слева и снизу — шнурок), округлено наружу.
+        if (kind === 'ruffle') return { x: 546, y: 442, w: 97, h: 91 };
         return BATH_BAKED.box('cloth');
     },
 
@@ -830,6 +834,368 @@ const BATH_CLOTH = {
             + `</defs>` + use('b')
             + lev.map((L, k) => `<path d="${L.d}" fill="url(#@ID-p${k})" fill-rule="evenodd"/>`).join('')
             + use('s') + use('l') + use('e');
+    },
+
+    // ---------- 5. ПУФ-ОБОРКА ----------
+    // Пышная мочалка из бирюзовой сетки: шар, собранный из коротких лент,
+    // у каждой ленты сиреневая кромка, сзади торчит белый шнурок. Набросок
+    // игрока (тренировка художника, t16) один в один: генератор тот же, ход
+    // случая тот же. Слепой судья: «мочалка», край мягкий, глубокий.
+    //
+    // Что держит вещь (docs/bench/artist.md, art-pair.md; карта
+    // прозрачности — заметки художника к t16):
+    // * СЕТКА — ДЫРКИ, а не наклейка: ячейка — тёмная дыра, нить — светлый
+    //   промежуток, узор повёрнут вдоль ленты и крупнее у крупных. Сквозь
+    //   дыру видна следующая лента — поэтому провал между лентами тоже сетка,
+    //   только глубже, а не пустая чёрная фигура.
+    // * ТРИ СЛОЯ ГЛУБИНЫ: подмалёвок шара (плотный в середине, к краю в
+    //   прозрачность), слой 2 — те же ленты, сдвинутые вглубь и потемневшие
+    //   (у верха почти чёрные: свет туда не доходит), и лицевые ленты.
+    // * ПРОЗРАЧНОСТЬ ПО ЧИСЛУ СЛОЁВ на луче взгляда: кайма из бугров силуэта
+    //   — две фигуры (чётные и нечётные бугры), в нахлёсте плотнее сама;
+    //   сверху-слева кайма светлая и прозрачная, снизу-справа плотная. Если
+    //   высветлить всё — туман, если сделать прозрачным всё — нет объёма.
+    // * Край пушистый: петельки-нити по силуэту, со стороны света светлее.
+    //
+    // Жить в игре: без фильтров, масок и прозрачности групп (traps, п. 73) —
+    // прозрачность только на фигурах и в стопах. Один клип стоит на группе
+    // слоя 2 (без прозрачности это не отдельный буфер смешивания): без него
+    // сдвинутые вглубь ленты вылезали бы за силуэт. Классы наброска (.e, .q)
+    // возвращены в атрибуты: <style> во встроенном svg действует на весь
+    // документ, а вставка стиля заставляет пересчитать стили всей страницы —
+    // вещь же вставляется заново при каждом подъёме в руку. Слой 2 берёт
+    // заливку и штрих у группы по наследованию, а не 27 копиями.
+    //
+    // Рисуется в своей сетке наброска (шар ~540 единиц) и сводится к гнезду
+    // одним transform, как лежал в наброске: числа генератора не пересчитаны,
+    // иначе округление легло бы иначе. Тени и толщины — тоже в его единицах.
+    ruffle() {
+        if (!this._ruffle) this._ruffle = this.ruffleArt();
+        return this.stamp(this._ruffle, 'bt-cloth-ruffle', 'bcr');
+    },
+
+    // Шаблон пуфа-оборки в координатах гнезда; '@ID' — место под id.
+    ruffleArt() {
+        const P = btPal();
+        const [deepTop, tubeIn, core, deepMid, holeC, core2, deep, shadow, mid, lit, hi] = P.ruffle;
+        const [vio, vioLt] = P.ruffleRim, [ropeDk, rope] = P.ruffleCord;
+        const C = { deep, shadow, mid, lit, hi, vio, vioLt };
+        const I = (s) => '@ID-' + s;
+        const r = Math.round, pt = (p) => `${r(p[0])} ${r(p[1])}`, K6 = 1 / 6;
+        // Кривая Катмулла-Рома в ОТНОСИТЕЛЬНЫХ командах (первый сегмент c,
+        // дальше s — у КР контрольные точки по обе стороны узла симметричны).
+        // Разности — между уже округлёнными точками: ошибка не копится. Не
+        // crPath из kit(): тот пишет абсолютные числа с сотыми, а вид набросок
+        // получил с этим округлением.
+        const crRel = (Pp, closed) => {
+            const n = Pp.length, Q = closed ? (i) => Pp[(i + n) % n] : (i) => Pp[Math.max(0, Math.min(n - 1, i))];
+            const R2 = (p) => [r(p[0]), r(p[1])], d2 = (p, o) => `${p[0] - o[0]} ${p[1] - o[1]}`.replace(/ -/g, '-');
+            let d = '', cur = R2(Pp[0]);
+            for (let i = 0; i < (closed ? n : n - 1); i++) {
+                const p0 = Q(i - 1), p1 = Q(i), p2 = Q(i + 1), p3 = Q(i + 2);
+                const c2 = R2([p2[0] - (p3[0] - p1[0]) * K6, p2[1] - (p3[1] - p1[1]) * K6]), e = R2(p2);
+                if (i === 0) { const c1 = R2([p1[0] + (p2[0] - p0[0]) * K6, p1[1] + (p2[1] - p0[1]) * K6]); d += `c${d2(c1, cur)} ${d2(c2, cur)} ${d2(e, cur)}`; }
+                else d += `s${d2(c2, cur)} ${d2(e, cur)}`;
+                cur = e;
+            }
+            return d;
+        };
+        const crOpen = (Pp) => crRel(Pp, false);
+        const crClosed = (Pp) => `M${pt(Pp[0])}${crRel(Pp, true)}Z`;
+        // Смешивание палитровых тонов с округлением наброска (не mixColor:
+        // иное округление — другой байт цвета).
+        const mix = (a, b, k) => '#' + [1, 3, 5].map((i) => r(parseInt(a.substr(i, 2), 16) * (1 - k) + parseInt(b.substr(i, 2), 16) * k).toString(16).padStart(2, '0')).join('');
+        const out = [], defs = [];
+
+        // ---- шнурок: два штриха, позади шара ----
+        const cord = 'M205 428C150 408 70 392 30 400C8 405 10 432 40 437C90 444 150 440 215 446';
+        out.push(`<path d="${cord}" fill="none" stroke="${ropeDk}" stroke-width="30" stroke-linecap="round"/>`);
+        out.push(`<path d="${cord}" fill="none" stroke="${rope}" stroke-width="23" stroke-linecap="round"/>`);
+
+        // ---- силуэт ----
+        // Бугры: [угол°, высота, наклон]. Шаг и высота неравные; наклон
+        // сдвигает гребень к краю бугра. Торчат -72, -28 и 184; низ (40…124)
+        // примят — шар сидит на дне корзины.
+        const BUMPS = [[-112, 12, 0.25], [-94, 7, -0.2], [-72, 22, 0.35], [-50, 9, -0.1], [-28, 20, -0.3], [-6, 11, 0.25], [14, 15, -0.2], [40, 4, 0], [66, 3, 0], [96, 3, 0], [124, 6, 0.2], [146, 14, -0.3], [168, 9, 0.3], [184, 19, -0.2], [208, 8, 0.1], [228, 18, -0.35]];
+        const SIL = [];
+        const NB = BUMPS.length, prevA = (i) => BUMPS[(i + NB - 1) % NB][0] - (i === 0 ? 360 : 0), nextA = (i) => BUMPS[(i + 1) % NB][0] + (i === NB - 1 ? 360 : 0);
+        const crestA = (i) => { const [a, , sk] = BUMPS[i]; return a + sk * (sk > 0 ? nextA(i) - a : a - prevA(i)) / 2; };
+        BUMPS.forEach(([a, h], i) => {
+            const rad = (g) => g * Math.PI / 180, c = crestA(i), m = (a + nextA(i)) / 2;
+            const at = (g, rr) => [272 + Math.cos(rad(g)) * rr, 236 + Math.sin(rad(g)) * rr], q = (nextA(i) - prevA(i)) * 0.17;
+            // Торчащая петля — лопасть с круглым верхом (плечи), а не шип.
+            if (h > 18) SIL.push(at(c - q, 209 + h * 0.85), at(c, 210 + h), at(c + q, 209 + h * 0.85));
+            else SIL.push(at(c, 210 + h));
+            SIL.push([272 + Math.cos(rad(m)) * 206, 236 + Math.sin(rad(m)) * 206]);
+        });
+        defs.push(`<path id="${I('s')}" d="${crClosed(SIL)}"/>`, `<clipPath id="${I('sc')}"><use href="#${I('s')}"/></clipPath>`,
+            `<clipPath id="${I('sk')}"><use href="#${I('s')}" transform="translate(272 236) scale(.88) translate(-272 -236)"/></clipPath>`);
+        // Подмалёвок: плотный тёмный в середине, к кромке в прозрачность —
+        // под наружными петлями его нет, и сквозь них виден фон.
+        defs.push(`<radialGradient id="${I('b')}" gradientUnits="userSpaceOnUse" cx="285" cy="262" r="240"><stop offset="0" stop-color="${core}"/><stop offset=".62" stop-color="${core2}"/><stop offset=".78" stop-color="${shadow}" stop-opacity=".9"/><stop offset=".9" stop-color="${mid}" stop-opacity=".55"/><stop offset="1" stop-color="${mid}" stop-opacity="0"/></radialGradient>`);
+        out.push(`<use href="#${I('s')}" fill="url(#${I('b')})"/>`);
+
+        // ---- общие градиенты ----
+        // Лицо: свет у кромки → средний → тень там, где полотно уходит под
+        // соседа. Габарит фигуры ставит градиент на КАЖДОЕ полотно, поэтому
+        // хватает одного на (направление × пояс шара × кромка × сирень).
+        const faceGrad = {};
+        const face = (dir, shade, rim, tint, dense) => {
+            const belt = shade < 0.45 ? 0 : 1, key = dir + belt + (rim ? 'r' : '') + (tint ? 'v' : '') + (dense ? 'p' : '');
+            if (!faceGrad[key]) {
+                const s = [0.2, 0.65][belt];
+                const litTop = mix(mix(rim ? C.hi : C.lit, C.hi, rim ? 0.3 : 0.28), C.mid, s * 0.6), low = mix(C.shadow, C.deep, 0.2 + s * 0.5);
+                const xy = { u: 'x1="0" y1="1" x2="0" y2="0"', d: 'x1="0" y1="0" x2="0" y2="1"', r: 'x1="0" y1="0" x2="1" y2="0"', l: 'x1="1" y1="0" x2="0" y2="0"' }[dir];
+                defs.push(`<linearGradient id="${I(key)}" ${xy}><stop offset="0" stop-color="${mix(litTop, C.vio, tint ? 0.68 : 0.55)}"/><stop offset="${tint ? .24 : .16}" stop-color="${mix(litTop, C.vio, tint ? 0.42 : 0.3)}"/><stop offset="${tint ? .46 : .32}" stop-color="${litTop}"/><stop offset=".62" stop-color="${mix(litTop, C.mid, 0.45)}"/><stop offset=".8" stop-color="${low}" stop-opacity=".9"/><stop offset="1" stop-color="${C.deep}" stop-opacity="${dense ? .9 : 0}"/></linearGradient>`);
+                faceGrad[key] = 1;
+            }
+            return I(key);
+        };
+        // Складка — узкая тень от впадины кромки вниз.
+        defs.push(`<linearGradient id="${I('cg')}" x2="0" y2="1"><stop offset="0" stop-color="${C.deep}" stop-opacity=".4"/><stop offset="1" stop-color="${C.deep}" stop-opacity="0"/></linearGradient>`);
+        // Тень-накладка лица по направлению ленты.
+        ['d', 'u', 'r', 'l'].forEach((dd) => {
+            const xy = { u: 'y1="1" x2="0" y2="0"', d: 'x2="0" y2="1"', r: '', l: 'x1="1" x2="0"' }[dd];
+            defs.push(`<linearGradient id="${I('sh' + dd)}" ${xy}><stop offset=".5" stop-color="${C.deep}" stop-opacity="0"/><stop offset="1" stop-color="${C.deep}" stop-opacity=".5"/></linearGradient>`);
+        });
+        // Кромка: сирень пятнами вдоль длины, к ОБОИМ концам — в бирюзу
+        // полотна: короткое полотно не кончается червячком.
+        const TIES = [
+            [[0, 'lit'], [0.16, 'vio'], [0.4, 'vioLt'], [0.62, 'vio'], [0.84, 'vioLt'], [1, 'lit']],
+            [[0, 'lit'], [0.18, 'vioLt'], [0.4, 'vio'], [0.66, 'vioLt'], [0.84, 'vio'], [1, 'lit']],
+        ];
+        TIES.forEach((T, i) => defs.push(`<linearGradient id="${I('k' + i)}" x2="1" y2="1">${T.map(([p, c]) => `<stop offset="${p}" stop-color="${C[c]}"/>`).join('')}</linearGradient>`));
+
+        // ---- сетка по форме ----
+        // Ячейка — дыра (тёмный вытянутый ромб), нить — промежуток: сквозь
+        // сетку видно то, что глубже. Узор общий на (угол ленты шагом 45° ×
+        // крупность), повёрнут вдоль ленты. Дырка (пять эллипсов) описана
+        // один раз, узоры ссылаются на неё.
+        const netPat = {};
+        const net = (ang, big) => {
+            const a = ((Math.round(ang / 45) * 45) % 180 + 180) % 180, key = 'n' + a + (big === 3 ? 'f' : big === 2 ? 's' : big ? 'b' : '');
+            if (!netPat[key]) {
+                // big: 1 — крупная, 0 — средняя, 2 — мелкая сжатая, 3 — сплюснутая (кромки).
+                const sc = big === 3 ? 'scale(1.05 .45)' : big === 2 ? 'scale(.62 .5)' : big ? 'scale(1.3)' : '';
+                const e = (x, y) => `M${x - 3.6} ${y}a3.6 1.25 0 1 0 7.2 0a3.6 1.25 0 1 0-7.2 0`;
+                // Дыра — слабая тень глубины, нить — слабый свет: на свету нить
+                // читается светлой, в тени тонет вместе с лицом.
+                if (!netPat.ho) { defs.push(`<path id="${I('ho')}" d="${e(0, 0)}${e(10, 0)}${e(0, 5.2)}${e(10, 5.2)}${e(5, 2.6)}"/>`); netPat.ho = 1; }
+                defs.push(`<pattern id="${I(key)}" patternUnits="userSpaceOnUse" width="10" height="5.2" patternTransform="rotate(${a}) ${sc}"><use href="#${I('ho')}" fill="${C.deep}" fill-opacity=".22"/><path d="M0 2.6Q2.5 .4 5 0Q7.5 .4 10 2.6Q7.5 4.8 5 5.2Q2.5 4.8 0 2.6" stroke="${C.hi}" stroke-width=".75" stroke-opacity=".42" fill="none"/></pattern>`);
+                netPat[key] = 1;
+            }
+            return I(key);
+        };
+        // Случай наброска — Парк — Миллер с тем же зерном и в том же порядке
+        // вызовов: с другим ходом случая слой 2, губы и пух легли бы иначе.
+        let seed = 7;
+        const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+        // Слой 2 копится сюда и встаёт на место маркера — под каймой и лентами.
+        const DEEP = []; out.push('<!--DEEP-->');
+        // Слой 2 у верха — под нависающей лентой — почти чёрный, ниже светлеет.
+        defs.push(`<linearGradient id="${I('dp')}" x2="0" y2="1"><stop offset=".3" stop-color="${deepTop}"/><stop offset=".5" stop-color="${deepMid}"/><stop offset=".75" stop-color="${C.shadow}"/><stop offset="1" stop-color="${mix(C.shadow, C.mid, 0.5)}"/></linearGradient>`);
+        // Светлый край лица (в наброске — класс .e).
+        const edgeAttr = ` stroke="${C.hi}" stroke-width="2.2" stroke-opacity=".26"`;
+        let ribId = 0;
+        // ---- полотно: лента с кромкой L, шириной d, лицо уходит по hint ----
+        const rib = (o) => {
+            const { L, d, hint = [0, 1], holes = [], rim = false, tie = 0, crease = !rim && d >= 56 } = o;
+            const n = L.length, hn = Math.hypot(hint[0], hint[1]), hx = hint[0] / hn, hy = hint[1] / hn;
+            const midP = L[(n - 1) >> 1];
+            const shade = Math.max(0, Math.min(1, ((midP[0] - 150) * 0.5 + (midP[1] - 110)) / 420));
+            const bot = L.map((p, i) => {
+                if (i === 0 || i === n - 1) return rim || o.lips === undefined ? p : [p[0] + hx * d * 0.3, p[1] + hy * d * 0.3];
+                const a = L[i - 1], b = L[i + 1];
+                let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const l = Math.hypot(nx, ny) || 1;
+                nx = nx / l * 0.35 + hx * 0.65; ny = ny / l * 0.35 + hy * 0.65;
+                if (nx * hx + ny * hy < 0) { nx = hx; ny = hy; }
+                const l2 = Math.hypot(nx, ny);
+                return [p[0] + nx / l2 * d, p[1] + ny / l2 * d];
+            });
+            const top = crOpen(L);
+            const dir = Math.abs(hx) > 0.7 ? (hx > 0 ? 'r' : 'l') : hy > 0 ? 'd' : 'u';
+            if (o.sink) { o.sink.f += `M${pt(L[0])}${top}L${pt(bot[n - 1])}${crOpen(bot.slice().reverse())}Z`; o.sink.k[tie % 3] += `M${pt(L[0])}${top}`; return; }
+            const fid = I('f' + (ribId++));
+            defs.push(`<path id="${fid}" d="M${pt(L[0])}${top}L${pt(bot[n - 1])}${crOpen(bot.slice().reverse())}Z"/>`);
+            if (!rim) {
+                // Слой 2: та же лента глубже — сдвиг по ходу ленты вниз и вбок,
+                // поворот на пару градусов вокруг середины; у каждой свой.
+                const k = 0.32 + rnd() * 0.2, sx = (rnd() - 0.5) * 22, rot = (rnd() - 0.5) * 16;
+                DEEP.push(`<use href="#${fid}" transform="translate(${r(hx * d * k + sx)} ${r(hy * d * k)}) rotate(${r(rot)} ${r(midP[0])} ${r(midP[1])})"/>`);
+            }
+            out.push(`<use href="#${fid}" fill="url(#${face(dir, shade, rim, tie !== 1, false)})"${Math.hypot(midP[0] - 272, midP[1] - 236) > 158 && midP[1] < 350 ? ' fill-opacity=".82"' : ''}${rim ? '' : edgeAttr}/>`);
+            if (!rim) {
+                // Сетка у ВСЕХ лент (без неё мелкая лента вблизи — пластиковая
+                // «лодочка»), по всему лицу; поверх — тень-накладка: нить в
+                // тени гаснет вместе с лицом.
+                const ang = Math.atan2(L[n - 1][1] - L[0][1], L[n - 1][0] - L[0][0]) * 180 / Math.PI;
+                out.push(`<use href="#${fid}" fill="url(#${net(ang, d > 66)})"/>`);
+                out.push(`<use href="#${fid}" fill="url(#${I('sh' + dir)})"/>`);
+            }
+            // Складка: впадина кромки — полотно заломлено внутрь, от неё вниз
+            // уходит узкая тень; у крупных лент длиннее.
+            if (crease) {
+                let dd = '', k = 0;
+                for (let i = 1; i < n - 1; i++) {
+                    const a = L[i - 1], b = L[i + 1], p = L[i];
+                    if ((p[0] - (a[0] + b[0]) / 2) * hx + (p[1] - (a[1] + b[1]) / 2) * hy < 4 || k++ % 2) continue;
+                    const w = Math.min(Math.hypot(b[0] - a[0], b[1] - a[1]) * 0.09, 7), len = d * 0.44, px = -hy, py = hx;
+                    const l = [p[0] + px * w, p[1] + py * w], rr = [p[0] - px * w, p[1] - py * w], e = [p[0] + hx * len, p[1] + hy * len];
+                    dd += `M${pt(l)}Q${pt([l[0] + hx * len * 0.55, l[1] + hy * len * 0.55])} ${pt(e)}Q${pt([rr[0] + hx * len * 0.55, rr[1] + hy * len * 0.55])} ${pt(rr)}Z`;
+                }
+                if (dd) out.push(`<path d="${dd}" fill="url(#${I('cg')})"/>`);
+            }
+            // Дыра под сгибом: сквозь неё — глубина.
+            for (const h of holes) {
+                const A = L[h - 1], B = L[h + 1], Pp = L[h];
+                const a = [Pp[0] + (A[0] - Pp[0]) * 0.8 + hx * 5, Pp[1] + (A[1] - Pp[1]) * 0.8 + hy * 5], b = [Pp[0] + (B[0] - Pp[0]) * 0.8 + hx * 5, Pp[1] + (B[1] - Pp[1]) * 0.8 + hy * 5];
+                const top2 = [Pp[0] + hx * 5, Pp[1] + hy * 5], bottom = [Pp[0] + hx * (5 + d * 0.55), Pp[1] + hy * (5 + d * 0.55)];
+                const q = (M) => [2 * M[0] - (a[0] + b[0]) / 2, 2 * M[1] - (a[1] + b[1]) / 2];
+                out.push(`<path d="M${pt(a)}Q${pt(q(top2))} ${pt(b)}Q${pt(q(bottom))} ${pt(a)}Z" fill="${holeC}" fill-opacity=".8"/>`);
+            }
+            // Кромка — живая полоса разной ширины (копится в общий путь
+            // группы), по гребню — сгиб для дымки и блика. Кайма свою кромку
+            // сложила выше (sink), других лент нет.
+            if (o.lips) {
+                const lwF = o.lipW || 10, kk = L.map(() => 0.55 + rnd() * 0.9);
+                const offs = (m) => L.map((p, i) => i === 0 || i === n - 1 ? p : [p[0] + (bot[i][0] - p[0]) / d * lwF * kk[i] * m, p[1] + (bot[i][1] - p[1]) / d * lwF * kk[i] * m]);
+                o.lips.push(`M${pt(L[0])}${top}${crOpen(offs(1).slice().reverse())}Z`);
+                o.haze.push(`M${pt(L[0])}${top}`);
+            }
+        };
+
+        // ---- кайма: из самих бугров силуэта ----
+        // Каждый бугор — дальняя петля, кромка идёт по его дуге, лицо смотрит
+        // внутрь шара: силуэт сложен из тех же полотен, а не вырезан. Две
+        // фигуры (чётные и нечётные) — в нахлёсте плотность складывается сама.
+        const KA = [{ f: '', k: ['', '', ''] }, { f: '', k: ['', '', ''] }];
+        BUMPS.forEach(([a, h], i) => {
+            const at = (g, rr) => [272 + Math.cos(g * Math.PI / 180) * rr, 236 + Math.sin(g * Math.PI / 180) * rr];
+            const a0 = (a + prevA(i)) / 2 + 2, a1 = (a + nextA(i)) / 2 - 2, c = crestA(i);
+            const g = a * Math.PI / 180;
+            rib({ L: [at(a0, 200), at(c, 203 + h * 0.92), at(a1, 200)], d: 30 + h, hint: [-Math.cos(g), -Math.sin(g)], tie: i % 3, sink: KA[i % 2], rim: true });
+        });
+        {   // Свет каймы — один радиальный градиент со смещённым вниз-вправо
+            // центром: сверху слева светло и прозрачно, снизу справа плотно.
+            const kl = mix(C.lit, C.mid, 0.12);
+            defs.push(`<radialGradient id="${I('kf')}" gradientUnits="userSpaceOnUse" cx="295" cy="270" r="252"><stop offset=".62" stop-color="${mix(C.shadow, C.mid, 0.3)}" stop-opacity=".9"/><stop offset=".76" stop-color="${mix(kl, C.mid, 0.55)}" stop-opacity=".82"/><stop offset=".88" stop-color="${kl}" stop-opacity=".64"/><stop offset=".98" stop-color="${mix(kl, C.hi, 0.15)}" stop-opacity=".52"/></radialGradient>`);
+            KA.forEach((Ka, i) => { defs.push(`<path id="${I('ka' + i)}" d="${Ka.f}"/>`); out.push(`<use href="#${I('ka' + i)}" fill="url(#${I('kf')})"/>`); });
+            KA.forEach((Ka, i) => out.push(`<use href="#${I('ka' + i)}" fill="url(#${net(0, false)})"/>`));
+            defs.push(`<radialGradient id="${I('kk')}" gradientUnits="userSpaceOnUse" cx="295" cy="270" r="252"><stop offset=".72" stop-color="${C.vio}"/><stop offset=".86" stop-color="${mix(C.vioLt, C.lit, 0.4)}"/><stop offset=".97" stop-color="${mix(C.lit, C.hi, 0.35)}"/></radialGradient>`);
+            out.push(`<path d="${[0, 1, 2].map((i) => KA[0].k[i] + KA[1].k[i]).join('')}" fill="none" stroke="url(#${I('kk')})" stroke-width="3" stroke-linecap="round" stroke-opacity=".8"/>`);
+        }
+
+        // ---- среднее кольцо: короткие полотна, стыки вразбежку ----
+        // Левые и правые — со своим шагом, общей линии стыков нет.
+        const LR = [], LD = [], HR = [], HD = [];
+        const mr = (o) => rib({ lips: LR, haze: HR, ...o });
+        mr({ L: [[128, 132], [150, 106], [186, 114], [216, 94]], d: 50, hint: [0.2, 1], tie: 1 });
+        mr({ L: [[206, 100], [236, 80], [272, 94], [302, 74]], d: 48, tie: 2 });
+        mr({ L: [[294, 86], [330, 72], [370, 92]], d: 46, hint: [-0.2, 1] });
+        mr({ L: [[360, 96], [392, 96], [422, 118], [446, 150]], d: 44, hint: [-0.5, 1], tie: 1 });
+        mr({ L: [[100, 166], [114, 204], [98, 246]], d: 44, hint: [1, 0.2], tie: 2 });
+        mr({ L: [[176, 122], [150, 166], [162, 208], [140, 250]], d: 60, hint: [1, 0.35] });
+        mr({ L: [[318, 116], [356, 100], [398, 126], [440, 164]], d: 62, hint: [-0.4, 1], tie: 1 });
+        mr({ L: [[450, 178], [474, 210], [484, 248]], d: 40, hint: [-1, 0.3], tie: 2 });
+        mr({ L: [[392, 190], [428, 190], [458, 222], [480, 264]], d: 58, hint: [-0.55, 1] });
+        mr({ L: [[96, 262], [114, 298], [104, 336]], d: 42, hint: [1, 0], tie: 1 });
+        mr({ L: [[118, 302], [146, 270], [186, 284], [212, 266]], d: 56, hint: [0.3, 1], tie: 2 });
+        mr({ L: [[456, 266], [478, 296], [474, 334]], d: 40, hint: [-1, 0.2] });
+        mr({ L: [[380, 286], [418, 280], [450, 308], [470, 342]], d: 54, hint: [-0.5, 1], tie: 1 });
+        mr({ L: [[112, 354], [138, 338], [168, 358]], d: 42, tie: 2 });
+        mr({ L: [[150, 358], [180, 330], [218, 348]], d: 52, hint: [0.1, 1] });
+        mr({ L: [[340, 338], [376, 322], [412, 342], [438, 336]], d: 50, hint: [-0.2, 1], tie: 1 });
+        mr({ L: [[408, 364], [436, 354], [460, 378]], d: 38, hint: [-0.5, 1], tie: 2 });
+        mr({ L: [[254, 380], [288, 356], [332, 374], [360, 362]], d: 48 });
+        mr({ L: [[160, 404], [190, 386], [226, 400], [252, 390]], d: 38, tie: 1 });
+        mr({ L: [[330, 400], [366, 384], [404, 400]], d: 36, tie: 2 });
+        mr({ L: [[240, 426], [276, 404], [318, 414], [352, 426]], d: 32 });
+        // Сгибы группы — один путь: по нему сиреневая дымка (краска
+        // растекается в обе стороны от сгиба) и блик.
+        defs.push(`<path id="${I('hr')}" d="${HR.join('')}"/>`);
+        out.push(`<use href="#${I('hr')}" fill="none" stroke="${C.vio}" stroke-width="16" stroke-opacity=".17" stroke-linecap="round" clip-path="url(#${I('sc')})"/>`);
+        out.push(`<path id="${I('lr')}" d="${LR.join('')}" fill="url(#${I('k1')})" fill-opacity=".62"/>`, `<use href="#${I('lr')}" fill="url(#${net(0, 3)})"/>`);
+
+        // ---- доминанты центра: крупные петли поверх соседей ----
+        const dr = (o) => rib({ lipW: 12, lips: LD, haze: HD, ...o });
+        dr({ L: [[184, 182], [220, 146], [266, 158], [298, 138]], d: 80, tie: 2, holes: [1] });
+        dr({ L: [[284, 162], [320, 142], [358, 172], [392, 162]], d: 70, tie: 0, holes: [2] });
+        dr({ L: [[196, 250], [238, 212], [286, 232], [320, 208]], d: 82, tie: 1, holes: [2] });
+        dr({ L: [[304, 230], [344, 210], [384, 238], [424, 236]], d: 72, hint: [-0.15, 1], tie: 2 });
+        dr({ L: [[212, 318], [252, 284], [298, 302], [332, 288]], d: 74, tie: 0 });
+        dr({ L: [[310, 302], [346, 282], [384, 306]], d: 58, tie: 1 });
+        defs.push(`<path id="${I('hd')}" d="${HD.join('')}"/>`);
+        out.push(`<use href="#${I('hd')}" fill="none" stroke="${C.vio}" stroke-width="20" stroke-opacity=".18" stroke-linecap="round" clip-path="url(#${I('sc')})"/>`);
+        out.push(`<path id="${I('ld')}" d="${LD.join('')}" fill="url(#${I('k0')})" fill-opacity=".7"/>`, `<use href="#${I('ld')}" fill="url(#${net(0, 3)})"/>`);
+        // Блик по сгибу: тонкая светлая нить на гребне всех полотен середины.
+        ['hr', 'hd'].forEach((h) => out.push(`<use href="#${I(h)}" fill="none" stroke="${C.hi}" stroke-width="1.4" stroke-opacity=".45" stroke-linecap="round"/>`));
+
+        // ---- трубки-устья ----
+        // Устье — не дырка в поверхности, а лента, свёрнутая в трубку: верх —
+        // сгиб (дуга высоко, кромка толще, сирень), низ — край нижней стенки
+        // (полого, тоньше, светлее). Кромка сгиба НЕ замыкается вокруг устья
+        // (иначе — глаз): она уходит за концы устья вниз по полотну.
+        const TU = { in: '', top: '', low: '' };
+        const tube = (cx, cy, w, h, rot, lean) => {
+            const g = rot * Math.PI / 180, cs = Math.cos(g), sn = Math.sin(g);
+            const T = (x, y) => [cx + x * cs - y * sn, cy + x * sn + y * cs];
+            // lean — один конец выше другого: устье не симметричный миндаль.
+            const A = T(-w, h * lean), B = T(w, -h * lean);
+            const top = `M${pt(A)}C${pt(T(-w * 0.6, -h * 1.6))} ${pt(T(w * 0.45, -h * 1.65))} ${pt(B)}`;
+            const bot = `C${pt(T(w * 0.5, h * 0.75))} ${pt(T(-w * 0.55, h * 0.8))} ${pt(A)}`;
+            TU.in += `${top}${bot}Z`;
+            const E0 = T(-w * 1.55, h * lean + h * 0.9), E1 = T(w * 1.5, -h * lean + h * 0.8);
+            TU.top += `M${pt(E0)}Q${pt(T(-w * 1.15, h * lean - h * 0.2))} ${pt(A)}${top.slice(top.indexOf('C'))}Q${pt(T(w * 1.2, -h * lean - h * 0.1))} ${pt(E1)}`;
+            TU.low += `M${pt(T(w * 0.7, h * 0.25))}C${pt(T(w * 0.3, h * 0.75))} ${pt(T(-w * 0.5, h * 0.8))} ${pt(T(-w * 1.25, h * 0.65))}`;
+        };
+        tube(288, 294, 40, 22, -8, 0.3);
+        tube(425, 340, 26, 14, 18, -0.4);
+        tube(206, 232, 30, 16, -22, 0.2);
+        tube(356, 148, 22, 8, 4, -0.2);
+        tube(238, 414, 22, 9, -4, 0.35);
+        out.push(`<path d="${TU.in}" fill="${tubeIn}"/>`);
+        out.push(`<path d="${TU.in}" fill="url(#${net(-8, true)})" fill-opacity=".6"/>`);
+        out.push(`<path d="${TU.low}" fill="none" stroke="${mix(C.lit, C.vioLt, 0.35)}" stroke-width="4" stroke-linecap="round"/>`);
+        out.push(`<path d="${TU.top}" fill="none" stroke="url(#${I('k0')})" stroke-width="9" stroke-linecap="round"/>`);
+
+        // ---- пушистый край ----
+        // Тонкие полупрозрачные петельки-нити по силуэту: шаг, размер и
+        // наклон у каждой свой; со стороны света их больше и они светлее,
+        // внизу у опоры — почти нет (примято).
+        {
+            const rad = (g) => g * Math.PI / 180, polar = SIL.map((p) => [Math.atan2(p[1] - 236, p[0] - 272), Math.hypot(p[0] - 272, p[1] - 236)]).sort((x, y) => x[0] - y[0]);
+            const edge = (t) => {
+                for (let i = 0; i < polar.length; i++) {
+                    const A = polar[i], B = polar[(i + 1) % polar.length], b0 = i === polar.length - 1 ? B[0] + 2 * Math.PI : B[0];
+                    let tt = t; if (tt < A[0]) tt += 2 * Math.PI;
+                    if (tt >= A[0] && tt <= b0) return A[1] + (B[1] - A[1]) * (tt - A[0]) / (b0 - A[0]);
+                }
+                return 210;
+            };
+            let fr = '', fr2 = '';
+            for (let t = -Math.PI; t < Math.PI;) {
+                const light = Math.cos(t - rad(-135)), bottom = Math.sin(t) > 0.55;
+                const step = (bottom ? 0.14 : 0.045) * (0.6 + rnd() * 0.9);
+                const w = 0.015 + rnd() * 0.03, R0 = edge(t) - 4, out2 = 2 + rnd() * 6 * (bottom ? 0.3 : 1), tilt = (rnd() - 0.5) * 0.06;
+                const Pq = (tt, rr) => [272 + Math.cos(tt) * rr, 236 + Math.sin(tt) * rr];
+                const seg = `M${pt(Pq(t - w, R0))}Q${pt(Pq(t + tilt, R0 + out2 * 2))} ${pt(Pq(t + w, R0))}`;
+                if (light > 0.2) fr += seg; else fr2 += seg;
+                t += step;
+            }
+            out.push(`<path d="${fr}" fill="none" stroke="${mix(C.lit, C.hi, 0.5)}" stroke-width="1.1" stroke-opacity=".38"/>`);
+            out.push(`<path d="${fr2}" fill="none" stroke="${mix(C.lit, C.vio, 0.35)}" stroke-width="1.1" stroke-opacity=".32"/>`);
+        }
+
+        // Слой 2 — под каймой и лентами, в клипе чуть меньше силуэта; заливка
+        // и штрих у группы, ленты берут их по наследованию. Поверх — мелкая
+        // сжатая сетка: сквозь неё глубина тоже сетка, а не пустота.
+        out.splice(out.indexOf('<!--DEEP-->'), 1,
+            `<g clip-path="url(#${I('sk')})" fill="url(#${I('dp')})" stroke="${C.lit}" stroke-width="1.5" stroke-opacity=".18">`, ...DEEP, '</g>',
+            `<use href="#${I('s')}" transform="translate(272 236) scale(.86) translate(-272 -236)" fill="url(#${net(0, 2)})"/>`);
+        // Сетка наброска (шар ~540 единиц) сводится к гнезду: набросок стоял
+        // в сцене translate(598 486) при гнезде (573, 492).
+        return `<defs>${defs.join('')}</defs><g transform="translate(25 -6) scale(.2) translate(-271 -233)">${out.join('')}</g>`;
     }
 };
 
