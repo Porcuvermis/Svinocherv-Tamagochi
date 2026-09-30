@@ -51,6 +51,7 @@ const BATH_CLOTH = {
         if (kind === 'puff') return this.puff();
         if (kind === 'sea') return this.sea();
         if (kind === 'ruffle') return this.ruffle();
+        if (kind === 'mitt') return this.mitt();
         return BATH_BAKED.draw('cloth');
     },
 
@@ -75,6 +76,9 @@ const BATH_CLOTH = {
         // Пуф-оборка — getBBox шара со шнурком и пухом края (x 546.8–642.5,
         // y 442.3–532.5; слева и снизу — шнурок), округлено наружу.
         if (kind === 'ruffle') return { x: 546, y: 442, w: 97, h: 91 };
+        // Рукавица — getBBox рукавицы и петли вместе (x 559.8–642.0,
+        // y 435.1–539.3; низ — петля под перекладиной), округлено наружу.
+        if (kind === 'mitt') return { x: 559, y: 435, w: 84, h: 105 };
         return BATH_BAKED.box('cloth');
     },
 
@@ -1196,6 +1200,310 @@ const BATH_CLOTH = {
         // Сетка наброска (шар ~540 единиц) сводится к гнезду: набросок стоял
         // в сцене translate(598 486) при гнезде (573, 492).
         return `<defs>${defs.join('')}</defs><g transform="translate(25 -6) scale(.2) translate(-271 -233)">${out.join('')}</g>`;
+    },
+
+    // ---------- 6. МАХРОВАЯ РУКАВИЦА ----------
+    // Винная (бордо) банная рукавица из толстой махры с лоском, манжета
+    // обшита бордюром пудровой шампани, на шве — тесьма-петелька. Лежит
+    // наискосок на задней сетке: пальцы вверх-влево, манжета вниз-вправо.
+    // Набросок игрока (sp6, круг 2, w2) один в один: генератор тот же, ход
+    // случая тот же. Слепой судья: «рукавица», махровая ткань, мягкая.
+    //
+    // Что держит вещь (заметки художника к sp6):
+    // * РУКАВИЦУ делает большой палец: карман без пальца со скруглённым
+    //   верхом читался шапкой и грелкой на чайник. Палец короткий и прижат —
+    //   силуэт компактный, в формате остальных ступеней.
+    // * БАННУЮ вещь, а не зимнюю варежку и не прихватку, делает тканый
+    //   бордюр манжеты и тесьма-петля: признаки полотенца.
+    // * Махра — мелкая дужка петли на ступень светлее основы и полумесяц
+    //   тени на ступень темнее; крупные завитки читались овчиной, ровные ряды
+    //   дужек — чешуёй. На глубоком цвете тёмный полумесяц в тени не виден,
+    //   поэтому там фактуру держит тусклая светлая верхушка: иначе тень
+    //   становилась гладкой, как резина.
+    // * ЛОСК — не блик. Глянец (маленькое резкое белое пятно на вершине) —
+    //   это пластик и стекло; несколько отдельных пятен лоска читались
+    //   кожей и латексом. Лоск дорогой махры — ОДНА широкая мягкая полоса
+    //   света своего цвета вдоль выпуклости со стороны света, край размыт в
+    //   ноль, а рвут её сами петли: светлеют кончики петель, и редкие из них
+    //   загораются искрой. Ни одной резкой границы света — мягкость цела.
+    // * Край без обводки: мягкое держит форму светотенью, край — пух петель
+    //   наполовину за контуром, со стороны света светлый (велюр виден вбок).
+    //   Тёмные полумесяцы по всему силуэту складывались в пунктирную
+    //   обводку. Нормаль пуха смотрит НАРУЖУ — в круге 1 знак был перевёрнут,
+    //   и светлая сторона получала тёмный пунктир.
+    //
+    // Как ruffle и sea — переносится ГЕНЕРАТОР, а не выхлоп: петли — тысячи
+    // дужек. Считается один раз и кешируется. Дужки одного цвета — ОДНИМ
+    // путём (15 путей на всю махру), в долях 0,2 единицы под scale(.2):
+    // целые числа без точек, путь на треть короче. Без фильтров, масок и
+    // прозрачности групп (traps, п. 73): прозрачность только на фигурах и
+    // в стопах. Один клип по силуэту — на группе без прозрачности (не
+    // отдельный буфер смешивания): без него обод тени и полосы лоска
+    // вылезали бы за край.
+    //
+    // Две части: main — рукавица (в корзине, за передней сеткой), front —
+    // петля, свисающая через перекладину (поверх сетки).
+    mitt() {
+        if (!this._mitt) this._mitt = this.mittArt();
+        return { main: this.stamp(this._mitt.main, 'bt-cloth-mitt', 'bcm'),
+                 front: this.stamp(this._mitt.front, 'bt-cloth-mitt-loop', 'bcm') };
+    },
+
+    // Шаблон рукавицы { main, front } в координатах гнезда; '@ID' — место под id.
+    mittArt() {
+        const P = btPal(), ramp = P.mitt, tones = P.mittMass, [sheenC, sparkC] = P.mittSheen;
+        const bind = P.mittBind, mouthC = P.mittMouth;
+        const I = (s) => '@ID-' + s;
+        // Случай — mulberry32 с зерном наброска и в том же порядке вызовов:
+        // с другим ходом петли легли бы иначе, чем выбрал игрок.
+        const R = this.kit().mulberry(7);
+        // Округление наброска (до десятой): с другим — другой байт пути.
+        const f = (v) => (Math.round(v * 10) / 10).toString(), K6 = 1 / 6;
+        const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+        const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+        // Кривая Катмулла — Рома по опорам: путь и точки (для «внутри»,
+        // расстояния до края и пуха). Не crPath из kit(): тот пишет сотые.
+        const cr = (Q, closed) => {
+            const n = Q.length, q = closed ? (i) => Q[(i + n) % n] : (i) => Q[Math.max(0, Math.min(n - 1, i))];
+            let d = `M${f(Q[0][0])} ${f(Q[0][1])}`;
+            for (let i = 0; i < (closed ? n : n - 1); i++) {
+                const p0 = q(i - 1), p1 = q(i), p2 = q(i + 1), p3 = q(i + 2);
+                d += `C${f(p1[0] + (p2[0] - p0[0]) * K6)} ${f(p1[1] + (p2[1] - p0[1]) * K6)} ${f(p2[0] - (p3[0] - p1[0]) * K6)} ${f(p2[1] - (p3[1] - p1[1]) * K6)} ${f(p2[0])} ${f(p2[1])}`;
+            }
+            return d + (closed ? 'Z' : '');
+        };
+        const sampleCR = (Q, closed, per) => {
+            const n = Q.length, q = closed ? (i) => Q[(i + n) % n] : (i) => Q[Math.max(0, Math.min(n - 1, i))], out = [];
+            for (let i = 0; i < (closed ? n : n - 1); i++) {
+                const p0 = q(i - 1), p1 = q(i), p2 = q(i + 1), p3 = q(i + 2);
+                for (let k = 0; k < per; k++) {
+                    const t = k / per, t2 = t * t, t3 = t2 * t;
+                    const c = (a, b, c_, d_) => 0.5 * (2 * b + (-a + c_) * t + (2 * a - 5 * b + 4 * c_ - d_) * t2 + (-a + 3 * b - 3 * c_ + d_) * t3);
+                    out.push([c(p0[0], p1[0], p2[0], p3[0]), c(p0[1], p1[1], p2[1], p3[1])]);
+                }
+            }
+            if (!closed) out.push(Q[n - 1]);
+            return out;
+        };
+        const inside = (Q, x, y) => {
+            let c = false;
+            for (let i = 0, j = Q.length - 1; i < Q.length; j = i++) {
+                const [xi, yi] = Q[i], [xj, yj] = Q[j];
+                if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+            }
+            return c;
+        };
+        // Ближайшая точка контура. Отрезки считаются один раз на контур, а
+        // hypot зовётся, только если квадрат расстояния не хуже лучшего с
+        // запасом: ответ тот же до бита, что у наброска (там hypot на каждом
+        // отрезке), но вдесятеро дешевле — это было две трети всей сборки.
+        const segs = new Map();
+        const nearest = (Q, x, y) => {
+            let S = segs.get(Q);
+            if (!S) {
+                S = new Float64Array(Q.length * 5);
+                Q.forEach((a, i) => { const b = Q[(i + 1) % Q.length], dx = b[0] - a[0], dy = b[1] - a[1]; S.set([a[0], a[1], dx, dy, dx * dx + dy * dy || 1], i * 5); });
+                segs.set(Q, S);
+            }
+            let bd = 1e9, bd2 = Infinity, bx = 0, by = 0;
+            for (let k = 0; k < S.length; k += 5) {
+                const ax = S[k], ay = S[k + 1], dx = S[k + 2], dy = S[k + 3], L = S[k + 4];
+                const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L));
+                const qx = ax + dx * t, qy = ay + dy * t, ex = x - qx, ey = y - qy;
+                if (ex * ex + ey * ey > bd2) continue;
+                const d = Math.hypot(ex, ey);
+                if (d < bd) { bd = d; bx = qx; by = qy; bd2 = d * d * (1 + 1e-9); }
+            }
+            return { d: bd, qx: bx, qy: by };
+        };
+        const isCW = (Q) => { let a = 0; for (let i = 0; i < Q.length; i++) { const p = Q[i], q = Q[(i + 1) % Q.length]; a += p[0] * q[1] - q[0] * p[1]; } return a > 0; };
+
+        // Свет сверху-слева, чуть на нас.
+        const LIGHT = (() => { const v = [-0.55, -0.65, 0.55], l = Math.hypot(...v); return v.map((c) => c / l); })();
+        // Освещённость подушки: у края форма уходит от нас (нормаль наружу),
+        // в середине смотрит на нас, плюс изгиб большого эллипса — середина
+        // не плоская. D — «толщина» подушки.
+        const shadeAt = (Q, x, y, o) => {
+            const nq = nearest(Q, x, y);
+            let ox = nq.qx - x, oy = nq.qy - y; const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+            const tilt = 1 - smooth(0, o.D, nq.d);
+            const ex = (x - o.cx) / o.rx, ey = (y - o.cy) / o.ry;
+            let nx = ox * tilt * 0.85 + ex * 0.35, ny = oy * tilt * 0.85 + ey * 0.35;
+            const nl = Math.hypot(nx, ny); if (nl > 0.95) { nx *= 0.95 / nl; ny *= 0.95 / nl; }
+            const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+            const lam = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
+            return { v: clamp(0.5 + 0.62 * (lam - 0.55) / 0.45 * 0.5 + 0.12), d: nq.d };
+        };
+
+        // Махра. У петли ОДНА дужка там, где вторая не видна (на свету —
+        // светлая верхушка, в тени — тусклая светлая верхушка), обе — только
+        // на полутоне, где и живёт фактура; на свету и в глубокой тени петли
+        // редеют. В зоне лоска верхушки светлее, часть — искра. Дужка —
+        // квадратичная кривая через вершину: вдвое короче дуги «a», на глаз та же.
+        const terry = (Q, o, pts) => {
+            const bins = {}, N = ramp.length - 1;
+            const add = (col, s) => { (bins[col] = bins[col] || []).push(s); };
+            const loop = (x, y, r, v, sn, edge, ang, lit) => {
+                const lvl = clamp(Math.round(v * N), 0, N);
+                const a = (ang != null ? ang : -0.5 * Math.PI) + (R() - 0.5) * o.wob;
+                const rx = r, ry = r * (0.7 + R() * 0.45);
+                const p = (t, dx = 0, dy = 0) => [x + dx + Math.cos(a + t) * rx, y + dy + Math.sin(a + t) * ry];
+                // Искра — редкая и своего тона, только в сердце лоска: белая и
+                // частая читалась блёстками.
+                const hiOn = edge ? lit : true, loOn = edge ? !lit : v > 0.34 && v < 0.7;
+                if (hiOn) {
+                    const spark = sn > 0.5 && R() < 0.22 * sn;
+                    add(spark ? sparkC : ramp[Math.min(N, lvl + (edge || v < 0.4 ? 2 : 1))], [p(-1.5), p(0), p(1.5)]);
+                }
+                if (loOn) add(ramp[Math.max(0, lvl - 1)], [p(1.6, 0.3, 0.4), p(2.2, 0.3, 0.4), p(2.8, 0.3, 0.4)]);
+            };
+            for (const q of pts) {
+                if (!inside(Q, q.x, q.y)) continue;
+                const sh = shadeAt(Q, q.x, q.y, o);
+                if (sh.d < 0.9) continue;
+                const sn = o.sheen(q.x, q.y), v = clamp(sh.v + 0.24 * sn);
+                if (R() < 0.2 + 0.45 * smooth(0.72, 0.98, v) + 0.15 * (1 - smooth(0.1, 0.3, v))) continue;
+                loop(q.x, q.y, q.r, v, sn, false, q.a);
+            }
+            // Пух по силуэту: петли наполовину за краем, шаг неровный.
+            for (let i = 0; i < Q.length; i++) {
+                if (R() < o.edgeSkip) continue;
+                const a = Q[i], b = Q[(i + 1) % Q.length];
+                let nx = b[1] - a[1], ny = -(b[0] - a[0]); const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+                // Нормаль НАРУЖУ: у контура по часовой на экране это (−dy, dx).
+                if (o.cw) { nx = -nx; ny = -ny; }
+                nx = -nx; ny = -ny;
+                const x = a[0] + nx * (0.1 + R() * 0.4), y = a[1] + ny * (0.1 + R() * 0.4);
+                if (o.noEdge(x, y)) continue;
+                const lam = nx * LIGHT[0] + ny * LIGHT[1];
+                loop(x, y, o.step * (0.28 + R() * 0.16), clamp(0.5 + lam * 0.55), lam > 0.2 ? 0.6 : 0, true, Math.atan2(ny, nx), lam > -0.15);
+            }
+            // Координаты — целые в долях 0,2 единицы (группа scale(.2)):
+            // петель тысячи, и без точек и дробей путь короче на треть, а
+            // 0,2 единицы не видно ни на полке, ни в руке.
+            const rd = (v) => Math.round(v * 5);
+            let out = '';
+            for (const [col, arr] of Object.entries(bins)) {
+                let d = '', cx = 0, cy = 0;
+                arr.sort((A, B) => A[0][1] - B[0][1] || A[0][0] - B[0][0]);
+                for (const [a0, pk, a1] of arr) {
+                    const x0 = rd(a0[0]), y0 = rd(a0[1]), x1 = rd(a1[0]), y1 = rd(a1[1]);
+                    const qx = rd(2 * pk[0] - (a0[0] + a1[0]) / 2), qy = rd(2 * pk[1] - (a0[1] + a1[1]) / 2);
+                    d += (d ? `m${x0 - cx} ${y0 - cy}` : `M${x0} ${y0}`) + `q${qx - x0} ${qy - y0} ${x1 - x0} ${y1 - y0}`;
+                    cx = x1; cy = y1;
+                }
+                out += `<path d="${d.replace(/ -/g, '-')}" stroke="${col}"/>`;
+            }
+            return `<g transform="scale(.2)" fill="none" stroke-width="${o.sw * 5}" stroke-linecap="round">${out}</g>`;
+        };
+
+        // Плоская тесьма-петля: тёмная кромка, лицо, светлая нить строчкой.
+        const tape = (d, c) => `<path d="${d}" fill="none" stroke="${c[0]}" stroke-width="3.6" stroke-linecap="round"/>`
+            + `<path d="${d}" fill="none" stroke="${c[1]}" stroke-width="2.6" stroke-linecap="round"/>`
+            + `<path d="${d}" fill="none" stroke="${c[2]}" stroke-width=".6" stroke-linecap="round" stroke-dasharray="2.2 1.1"/>`;
+        // Складка «большой палец поверх ладони»: тень на ладони у кромки
+        // пальца и светлый край самого пальца — палец ближе и перекрывает.
+        const crease = (pts, c) => {
+            const d = cr(pts, false);
+            return `<path d="${d}" fill="none" stroke="${c[0]}" stroke-opacity=".45" stroke-width="3" stroke-linecap="round" transform="translate(-1.2 .6)"/>`
+                + `<path d="${d}" fill="none" stroke="${c[0]}" stroke-opacity=".6" stroke-width="1" stroke-linecap="round"/>`
+                + `<path d="${d}" fill="none" stroke="${c[1]}" stroke-opacity=".7" stroke-width=".8" stroke-linecap="round" transform="translate(1 -.2)"/>`;
+        };
+
+        // Чертёж — в координатах рукавицы, повёрнутой на −24° вокруг
+        // (596, 474) в сцене; набросок считался в сцене вокруг гнезда
+        // (573, 492), и гнездо вычитается одной группой на выходе — так
+        // округление ложится ровно как у наброска.
+        const th = -24 * Math.PI / 180, C = Math.cos(th), S = Math.sin(th), X0 = 596, Y0 = 474;
+        const T = ([x, y]) => [X0 + x * C - y * S, Y0 + x * S + y * C];
+        const Ti = (x, y) => [(x - X0) * C + (y - Y0) * S, -(x - X0) * S + (y - Y0) * C];
+        // Силуэт: ладонь, большой палец вправо-вверх, манжета внизу.
+        const L = [[-26, 42], [-27, 28], [-31, 10], [-32, -8], [-28, -24], [-19, -35], [-5, -40], [9, -38], [20, -30], [25, -16], [26, -5], [28, 1],
+            [33, -8], [39, -16], [45, -18], [48, -12], [47, -2], [42, 10], [35, 20], [29, 29], [28, 42], [1, 43.5]];
+        const Pp = L.map(T), d = cr(Pp, true);
+        const poly = sampleCR(Pp, true, 5), cw = isCW(poly);
+        // Лоск ОДНОЙ полосой — дуга в 6–7 единицах от края со стороны
+        // света, к концам гаснет; плюс слабое широкое пятно на пузе и узкое
+        // на пальце. SH — [cx, cy, rx, ry, поворот°, сила] в координатах рукавицы.
+        const ARC = [[-24.5, 17], [-25.5, 2], [-22, -14], [-13.5, -26.5], [-1, -32.5], [10, -30.5]];
+        const arcPts = sampleCR(ARC, false, 8);
+        // Сила полосы вдоль дуги: к концам гаснет.
+        const arcK = arcPts.map((p, i) => Math.sin(Math.PI * (0.08 + 0.84 * (i / (arcPts.length - 1)))));
+        const SH = [[-6, -4, 17, 22, 0, 0.3], [40, -8, 3.6, 9, 18, 0.75]];
+        const sheen = (x, y) => {
+            const [u, v] = Ti(x, y); let m = 0;
+            for (let i = 0; i < arcPts.length; i++) {
+                const [ax, ay] = arcPts[i];
+                m = Math.max(m, arcK[i] * Math.exp(-((u - ax) ** 2 + (v - ay) ** 2) / 26));
+            }
+            for (const [cx, cy, rx, ry, rot, k] of SH) {
+                const a = rot * Math.PI / 180, du = u - cx, dv = v - cy;
+                const pu = (du * Math.cos(a) + dv * Math.sin(a)) / rx, pv = (-du * Math.sin(a) + dv * Math.cos(a)) / ry;
+                m = Math.max(m, k * Math.exp(-(pu * pu + pv * pv) * 1.2));
+            }
+            return m;
+        };
+        // Раскладка петель — ряды поперёк рукавицы, как у полотенца, но
+        // только намёком: поперёк ряда петля гуляет почти на полшага, шаг
+        // рядов неровный, ряд гнётся по форме — ровные ряды читались чешуёй.
+        const pts = [];
+        for (let y = -44; y < 40; y += 1.5 + R() * 1.0) {
+            let x = -36 + R() * 1.5;
+            const bow = 0.005 + R() * 0.005;
+            while (x < 50) {
+                const q = T([x + (R() - 0.5) * 0.7, y + bow * x * x - 3 + (R() - 0.5) * 1.1]);
+                pts.push({ x: q[0], y: q[1], r: 0.5 + R() * 0.3, a: -Math.PI / 2 + th });
+                x += 1.3 + R() * 0.8;
+            }
+        }
+        const binding = (x, y) => Ti(x, y)[1] > 36.5;
+        const o = { D: 13, cx: X0, cy: Y0, rx: 44, ry: 48, step: 1.6, sw: 0.45, cw, wob: 1.0,
+            edgeSkip: 0.42, noEdge: binding, sheen };
+
+        // Тональные массы подушки: середина, свет пятном сверху-слева, тень
+        // снизу-справа и потемнение уходящего края — мягкими градиентами, без
+        // обводки. Лоск — радиальные пятна и полоса-дуга своего светлого
+        // тона (край в ноль); велюровая кромка — светлый обод со стороны света.
+        const [deep, shadow, mid, lit, hi] = tones;
+        const arcD = cr(ARC.map(T), false), a0 = T(ARC[0]), a1 = T(ARC[ARC.length - 1]);
+        const gl = SH.map(([cx, cy, rx, ry, rot, k]) => {
+            const c = T([cx, cy]);
+            // Прозрачность — заливки, а не фигуры: у эллипса без штриха это
+            // одно и то же, но без отдельного слоя смешивания.
+            return `<ellipse cx="${f(c[0])}" cy="${f(c[1])}" rx="${rx}" ry="${ry}" transform="rotate(${f(rot - 24)} ${f(c[0])} ${f(c[1])})" fill="url(#${I('g')})" fill-opacity="${(0.55 * k).toFixed(2)}"/>`;
+        }).join('');
+        const defs = `<defs><clipPath id="${I('c')}"><path d="${d}"/></clipPath>`
+            + `<radialGradient id="${I('l')}" cx="572" cy="452" r="46" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${hi}"/><stop offset=".45" stop-color="${lit}" stop-opacity=".85"/><stop offset="1" stop-color="${lit}" stop-opacity="0"/></radialGradient>`
+            + `<linearGradient id="${I('s')}" x1="580" y1="455" x2="640" y2="515" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${shadow}" stop-opacity="0"/><stop offset=".55" stop-color="${shadow}" stop-opacity=".55"/><stop offset="1" stop-color="${deep}" stop-opacity=".9"/></linearGradient>`
+            + `<radialGradient id="${I('g')}"><stop offset="0" stop-color="${sheenC}" stop-opacity=".8"/><stop offset=".55" stop-color="${sheenC}" stop-opacity=".3"/><stop offset="1" stop-color="${sheenC}" stop-opacity="0"/></radialGradient>`
+            + `<linearGradient id="${I('r')}" x1="560" y1="445" x2="615" y2="500" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${sheenC}" stop-opacity=".35"/><stop offset=".6" stop-color="${sheenC}" stop-opacity="0"/></linearGradient>`
+            + `<linearGradient id="${I('a')}" x1="${f(a0[0])}" y1="${f(a0[1])}" x2="${f(a1[0])}" y2="${f(a1[1])}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${sheenC}" stop-opacity="0"/><stop offset=".45" stop-color="${sheenC}"/><stop offset="1" stop-color="${sheenC}" stop-opacity="0"/></linearGradient></defs>`;
+        // Всё, что внутри силуэта, — одной группой с одним клипом (в
+        // наброске их было две подряд с тем же клипом; вид тот же).
+        const body = `<path d="${d}" fill="${mid}"/>`
+            + `<g clip-path="url(#${I('c')})">`
+            + `<path d="${d}" fill="url(#${I('s')})"/><path d="${d}" fill="url(#${I('l')})"/>`
+            + `<path d="${d}" fill="none" stroke="url(#${I('s')})" stroke-width="8"/>`
+            + gl
+            + [[13, 0.1], [8, 0.13], [4, 0.14]].map(([w, op]) => `<path d="${arcD}" fill="none" stroke="url(#${I('a')})" stroke-opacity="${op}" stroke-width="${w}" stroke-linecap="round"/>`).join('')
+            + `<path d="${d}" fill="none" stroke="url(#${I('r')})" stroke-width="2.4"/></g>`;
+        const cz = crease([[28, 2], [29.5, 12], [30, 22]].map(T), [ramp[0], ramp[6]]);
+        const t = terry(poly, o, pts.filter((q) => !binding(q.x, q.y)));
+        // Бордюр манжеты: гладкая полоса пудровой шампани по нижней кромке,
+        // строчка по ней, под ней — узкая тёмная щель входа.
+        const [bdk, bface, bhi] = bind;
+        const bl = [[-27, 39], [-10, 40.3], [8, 40.3], [28.5, 39]].map(T), br = [[-26.5, 43.5], [-10, 45], [8, 45], [28, 43.5]].map(T);
+        const bd = cr(bl, false) + cr(br.slice().reverse(), false).replace(/^M/, 'L') + 'Z';
+        const mouth = cr([[-24, 44], [-8, 46.8], [10, 46.8], [26, 44]].map(T), false);
+        const cuff = `<path d="${mouth}" fill="none" stroke="${mouthC}" stroke-width="1.6" stroke-linecap="round"/>`
+            + `<path d="${bd}" fill="${bface}"/><path d="${cr(bl, false)}" fill="none" stroke="${bhi}" stroke-width=".9"/>`
+            + `<path d="${cr([[-26, 42.3], [-10, 43.6], [8, 43.6], [27.5, 42.3]].map(T), false)}" fill="none" stroke="${bdk}" stroke-width=".45" stroke-dasharray="1.6 .9"/>`
+            + `<path d="${cr(br, false)}" fill="none" stroke="${bdk}" stroke-width=".8"/>`;
+        // Петля со шва манжеты — свисает через перекладину, поверх сетки.
+        const h = T([27, 41]), hx = h[0], hy = h[1];
+        const loop = tape(`M${f(hx)} ${f(hy)}C${f(hx + 5)} ${f(hy + 10)} ${f(hx + 6)} ${f(hy + 26)} ${f(hx + 3)} ${f(hy + 36)}C${f(hx)} ${f(hy + 42)} ${f(hx - 6)} ${f(hy + 38)} ${f(hx - 5)} ${f(hy + 30)}C${f(hx - 4)} ${f(hy + 20)} ${f(hx - 3)} ${f(hy + 10)} ${f(hx - 2)} ${f(hy + 3)}`, bind);
+        const home = (s) => `<g transform="translate(-573 -492)">${s}</g>`;
+        return { main: home(defs + body + cz + t + cuff), front: home(loop) };
     }
 };
 
