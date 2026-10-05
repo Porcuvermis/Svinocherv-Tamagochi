@@ -917,8 +917,14 @@ onmessage = async (e) => {
         return { x: 0.55 * Math.sin(t * 0.35), y: 0.4 * Math.sin(t * 0.23) };
     },
 
-    // Проснуться: цикл нужен, пока на экране есть живой флакон. Зовётся из
+    // Проснуться: цикл нужен, пока на экране есть живая вещь. Зовётся из
     // draw, поэтому узлы появятся чуть позже — первый кадр подождёт.
+    //
+    // Цикл ОДИН на все живые вещи ванной: волшебный флакон (мыло, ступень 8)
+    // и губка конняку (мочалка, ступень 7, BATH_CLOTH.liveTick). Правила у
+    // них общие — стоят за закрытой дверью, под магазином, на переезде
+    // камеры и за кадром, — и холст полки становится слоем композитора по
+    // объединению видимых вещей: два цикла спорили бы за класс .bt-live.
     wake() {
         if (this.live.raf || typeof requestAnimationFrame === 'undefined') return;
         const step = (now) => {
@@ -928,17 +934,21 @@ onmessage = async (e) => {
             // заметную долю скрипта.
             const Lv = this.live;
             if (Lv.dirty || !Lv.roots || Lv.roots.some(r => !r.isConnected)) {
-                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic'));
+                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic, .bt-cloth-konjac'));
                 Lv.dirty = false;
             }
-            if (!Lv.roots.length) { Lv.raf = 0; this.layers([]); return; }
+            // Ванная закрыта — цикл встаёт. Сцена собирается при загрузке
+            // страницы, и живая вещь на полке крутилась бы до первого входа;
+            // вход перерисовывает полку (lust.js, open) и будит цикл снова.
+            const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
+            const closed = L0 && L0.screenElement && !L0.screenElement.classList.contains('active');
+            if (!Lv.roots.length || closed) { Lv.raf = 0; this.layers([]); return; }
             // 30 кадров хватает: флакон — украшение, а не игра.
             // Замер с телефона («Слои → мыло замерло»), переезд камеры:
             // флакон не трогается. Во время переезда сцена едет ГОТОВОЙ
             // текстурой (lust.js, camMove), и любая перемена внутри —
             // анимация или включение слоя — перерисовывала бы её прямо на
             // ходу (docs/traps.md, пп. 150 и 152).
-            const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
             const hold = this.frozen || (L0 && L0.camTimer);
             if (!hold && now - Lv.last >= 33) {
                 Lv.last = now; Lv.n = (Lv.n || 0) + 1;
@@ -953,15 +963,30 @@ onmessage = async (e) => {
                 // Под открытым магазином полку не видно — анимирует только
                 // иконка (docs/traps.md, п. 68).
                 const shop = typeof LustShop !== 'undefined' && LustShop.open;
+                // Пока трут, конняку стоит целиком (BATH_CLOTH.liveTick), и
+                // если флакона нет, искать видимые незачем: трение — самый
+                // тяжёлый кадр ванной, и цикл в нём только сверяет часы.
+                const rub = L0 && L0.drag && (L0.drag.kind === 'soap' || L0.drag.kind === 'cloth')
+                    && now - (L0.rubMovedAt || 0) < 250;
+                if (rub && Lv.roots.every(r => r.classList.contains('bt-cloth-konjac'))) {
+                    if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick([], now, true);
+                    Lv.raf = requestAnimationFrame(step);
+                    return;
+                }
                 const vis = Lv.roots.filter(r => {
+                    // Конняку на иконке магазина — шар без движения.
+                    const kj = r.classList.contains('bt-cloth-konjac');
+                    if (kj && r.closest('#bt-shop')) return false;
                     if (shop && !r.closest('#bt-shop')) return false;
-                    const h = r.closest('#bt-soap-home');
+                    const h = r.closest('#bt-soap-home, #bt-cloth-home');
                     if (h && h.style.opacity === '0') return false;
                     const m = this.worldMatrix(r);
                     if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
                     // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
-                    // с лучами полка в финале считалась видимой.
-                    const x = m.c * -30 + m.e, y = m.d * -30 + m.f, R = 50 * Math.abs(m.a);
+                    // с лучами полка в финале считалась видимой. У конняку —
+                    // шар вокруг своей середины (от гнезда +16, −10).
+                    const [ox, oy] = kj ? [16, -10] : [0, -30];
+                    const x = m.a * ox + m.c * oy + m.e, y = m.b * ox + m.d * oy + m.f, R = 50 * Math.abs(m.a);
                     return x > -R && x < 390 + R && y > -R && y < 844 + R;
                 });
                 this.layers(vis);
@@ -976,11 +1001,12 @@ onmessage = async (e) => {
                 // не на флакон; остановился — флакон ожил, небо доехало на
                 // место (glide). Иконка магазина не в счёт: под магазином
                 // не трут.
-                const rub = L0 && L0.drag && (L0.drag.kind === 'soap' || L0.drag.kind === 'cloth')
-                    && now - (L0.rubMovedAt || 0) < 250;
-                if (vis.length) {
+                const kon = vis.filter(r => r.classList.contains('bt-cloth-konjac'));
+                if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(kon, now, rub);
+                const mag = vis.filter(r => !r.classList.contains('bt-cloth-konjac'));
+                if (mag.length) {
                     const Fr = this.magicFrame(now / 1000);
-                    vis.forEach(r => {
+                    mag.forEach(r => {
                         const c = rub && this.live.cache.get(r);
                         // В руке — только когда убранство уже снято (c.held):
                         // первый кадр в руке обязан его снять.

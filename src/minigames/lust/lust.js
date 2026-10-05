@@ -244,6 +244,9 @@ const LustMinigame = {
         // ванная была закрыта (сейв подтянулся позже сборки, покупка в
         // другом месте) — предмет на полке берётся свежим на каждом входе.
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.refresh();
+        // Мочалка — так же; заодно будит живой цикл, если на полке живая
+        // вещь (конняку): за закрытой дверью он стоял.
+        if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.refresh();
         this.syncShopButton();
         this.resetCover();
         this.wipeLather();
@@ -302,6 +305,7 @@ const LustMinigame = {
         // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
         // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
+        if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.stop();
         this.glintStop();
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
@@ -1734,6 +1738,9 @@ const LustMinigame = {
         this.setHeld(BATH_ART.held(kind, c.s, a));
         this.loose = { kind, at: a, pos: to, k: c.s * K };
         const held = this.el('bt-held'), t0 = performance.now();
+        // Мягкая вещь (конняку) снятая с полки округляется: на полке она
+        // осела под своим весом, в воздухе — шар.
+        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'lift');
         // Вещь в воздухе крупнее полочной (она «в руке» у игры), поэтому
         // подъём начинается с полочного размера: на старте картинка ровно
         // та, что лежала, и скачка нет.
@@ -1850,6 +1857,9 @@ const LustMinigame = {
         this.homeShown(kind, false);
         this.ready(null);
         this.setHeld(BATH_ART.held(kind, s, g));
+        // С полки — округляется, как при подъёме (liftTool). Лежавшая на
+        // экране уже круглая.
+        if (kind === 'cloth' && !at && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(this.el('bt-held'), 'lift');
         this.moveTool(this.clampHeld(this.toStage(e), this.drag));
     },
 
@@ -1954,6 +1964,11 @@ const LustMinigame = {
         const top = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 40 - 0.25 * dist };
         const [m0, m1] = this.HOME_MS, dur = Math.min(m1, m0 + dist * 0.8);
         const K = BATH_ART.DRAG_SCALE, t0 = performance.now();
+        // Мягкая вещь (конняку) оседает к посадке и садится уже осевшей, как
+        // копия на полке: подмены не видно. Оседать ПОСЛЕ посадки нельзя —
+        // за мочалкой сразу отъезжает камера (finishStage), а на переезде
+        // сцена едет готовой текстурой.
+        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'land', dur);
         const step = (t) => {
             if (!held.isConnected) { this.homeRaf = 0; return; }
             const u = Math.min(1, (t - t0) / dur);
@@ -1969,6 +1984,7 @@ const LustMinigame = {
             // ровно там же и в том же размере, и проявление читалось бы
             // миганием.
             this.homeShown(kind, true, true);
+            if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.syncPose(this.el('bt-cloth-art'));
             held.remove();
             if (done) done();
         };

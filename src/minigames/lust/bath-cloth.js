@@ -12,7 +12,7 @@
 // сами и ничего не знают о ступенях. Гнездо и зона захвата не двигаются от
 // ступени — меняется только картинка. Так же устроено мыло (bath-soap.js).
 const BATH_CLOTH = {
-    // Вид на каждой ступени. Нарисованы 0–5; ещё не нарисованные берут
+    // Вид на каждой ступени. Нарисованы 0–7; ещё не нарисованные берут
     // запечённую губку — пока лестница не закончена.
     TIERS: ['rag', 'kitchen', 'brick', 'puff', 'sea', 'ruffle', 'mitt', 'konjac', 'cloud'],
 
@@ -52,6 +52,7 @@ const BATH_CLOTH = {
         if (kind === 'sea') return this.sea();
         if (kind === 'ruffle') return this.ruffle();
         if (kind === 'mitt') return this.mitt();
+        if (kind === 'konjac') return this.konjac(where);
         return BATH_BAKED.draw('cloth');
     },
 
@@ -79,6 +80,11 @@ const BATH_CLOTH = {
         // Рукавица — getBBox рукавицы и петли вместе (x 559.8–642.0,
         // y 435.1–539.3; низ — петля под перекладиной), округлено наружу.
         if (kind === 'mitt') return { x: 559, y: 435, w: 84, h: 105 };
+        // Конняку — getBBox обеих посадок вместе: осевшая на полке
+        // (x 540.4–637.6, y 439–527.3) и шар в руке (x 543–635, y 436–528).
+        // Габарит один на обе: по нему захват, упор в край и иконка; середина
+        // совпадает с центром шара (589, 482).
+        if (kind === 'konjac') return { x: 540, y: 436, w: 98, h: 92 };
         return BATH_BAKED.box('cloth');
     },
 
@@ -1504,6 +1510,339 @@ const BATH_CLOTH = {
         const loop = tape(`M${f(hx)} ${f(hy)}C${f(hx + 5)} ${f(hy + 10)} ${f(hx + 6)} ${f(hy + 26)} ${f(hx + 3)} ${f(hy + 36)}C${f(hx)} ${f(hy + 42)} ${f(hx - 6)} ${f(hy + 38)} ${f(hx - 5)} ${f(hy + 30)}C${f(hx - 4)} ${f(hy + 20)} ${f(hx - 3)} ${f(hy + 10)} ${f(hx - 2)} ${f(hy + 3)}`, bind);
         const home = (s) => `<g transform="translate(-573 -492)">${s}</g>`;
         return { main: home(defs + body + cz + t + cuff), front: home(loop) };
+    },
+
+    // ---------- 7. ГУБКА КОНЯКУ ----------
+    // Прозрачный фиолетово-лазурный пузырь-кисель, а в нём семь комочков
+    // губки, которые медленно плавают (цикл 8 с). Спа-вещь, мостик к
+    // волшебному облачку. Набросок игрока (художник-агент, заход 4, d2) один
+    // в один: генератор тот же, ход случая тот же.
+    //
+    // Что держит вещь (заметки художника, sp7/notes4.md):
+    // * ОДНА мягкая вещь в двух посадках. На полке осела под своим весом
+    //   (sag = 1: тяжёлое дно), в руке и на иконке — полный шар (sag = 0;
+    //   просьба игрока: «в руке полностью круглая»). Подняли — округлилась
+    //   с упругим качем, положили — осела. Поэтому контур и ВСЁ, что к нему
+    //   привязано (кисель, вуаль, стенка, клип, перелив, налёт, нити света,
+    //   каустика), строится одной функцией от sag с постоянным числом узлов,
+    //   а комочки при оседании сплющиваются вместе с киселём одной матрицей.
+    // * Цвет — КОНТРАСТОМ: темнее всего край и дно (там толща), лазурный
+    //   свет в середине и у макушки, комочки фиолетовые и гуще киселя;
+    //   дальние растворены вуалью, ближний самый контрастный. Обводка почти
+    //   погашена, блеск — широкая полоса налёта и нить света, а не точечный
+    //   блик (с ним — «таблетка»).
+    //
+    // Жить в игре. Двигаются ТОЛЬКО transform комочков ([data-lump]) — общим
+    // живым циклом ванной (bath-soap.js, wake): пока ванная открыта и вещь
+    // видна, не под магазином и не на переезде камеры. Иконка магазина —
+    // шар без движения. Посадка меняется правкой `d` ТОЛЬКО во время
+    // перехода (reshape: подняли, положили), дальше — ни одной записи. Без
+    // фильтров, масок и прозрачности групп (traps, п. 73): прозрачность на
+    // фигурах и в стопах. Клип по внутренней стенке — на двух группах без
+    // прозрачности (не отдельный буфер смешивания): без него комочки
+    // вылезали бы за пузырь.
+    //
+    // Рисуется в координатах сцены, как в наброске, и сводится к гнезду
+    // одним transform (как рукавица).
+    KONJAC: { T: 8, LIFT_MS: 1600 },
+    kt: 0,              // часы комочков: идут, только пока они двигаются
+    ktShown: 0,         // поза, записанная последней (пишется реже, чем идут часы)
+
+    konjac(where) {
+        if (!this._konjac) this._konjac = this.konjacArt();
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.wake) { BATH_SOAP.live.dirty = true; BATH_SOAP.wake(); }
+        // Комочки — в той позе, в какой их видно сейчас: вещь, перерисованная
+        // в руку, не дёргается относительно полочной.
+        return this.stamp(this._konjac.frag(where === 'shelf' ? 1 : 0, this.ktShown), 'bt-cloth-konjac', 'bcj');
+    },
+
+    // Генератор наброска d2: { frag(sag, t), geo(sag), pose(t) }; '@ID' —
+    // место под id. Числа, случай и округление — как у художника: с другим
+    // ходом случая поры легли бы иначе, чем выбрал игрок.
+    konjacArt() {
+        const P = btPal(), A = BATH_ART.slots().cloth, T = this.KONJAC.T, W = STROKE.detail;
+        const [lit, cauC, lowC, edgeC] = P.konjacLight, [pd, pl] = P.konjacPore;
+        const [h0, h1] = P.konjacHalo, Ki = P.konjacKisel, Ve = P.konjacVeil, Wa = P.konjacWall, Ir = P.konjacIri;
+        const f = (v) => +(+v).toFixed(2);
+        // Случай наброска — линейный конгруэнтный, не mulberry и не btRng.
+        const rng = (seed) => { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+        const st = (S) => S.map(([o, c, a = 1]) => `<stop offset="${o}" stop-color="${c}" stop-opacity="${a}"/>`).join('');
+        const rg = (id, cx, cy, r, S, ex = '') => `<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}" ${ex}>${st(S)}</radialGradient>`;
+        const lg = (id, x1, y1, x2, y2, S, ex = '') => `<linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${ex}>${st(S)}</linearGradient>`;
+        const US = 'gradientUnits="userSpaceOnUse"';
+        const inside = (Q, x, y) => { let c = false; for (let i = 0, j = Q.length - 1; i < Q.length; j = i++) { const [xi, yi] = Q[i], [xj, yj] = Q[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+        const cub = (a, b, c, d, t) => { const m = 1 - t; return [m * m * m * a[0] + 3 * m * m * t * b[0] + 3 * m * t * t * c[0] + t * t * t * d[0], m * m * m * a[1] + 3 * m * m * t * b[1] + 3 * m * t * t * c[1] + t * t * t * d[1]]; };
+        const lerp = (a, b, s) => a + (b - a) * s;
+
+        // ---- оболочка: шар ↔ осевшая капля, 16 точек (5 кубиков) у обеих ----
+        const SHELF = [[589, 439], [613, 439], [633, 458], [637, 482], [640, 502], [632, 520], [612, 525], [600, 528], [578, 528], [566, 525], [546, 520], [538, 502], [541, 482], [545, 458], [565, 439], [589, 439]];
+        const BALL = (() => {
+            const c = [589, 482], R = 46, An = [-90, 0, 62, 118, 180, 270].map(a => a * Math.PI / 180), Q = [];
+            const pt = (a) => [c[0] + R * Math.cos(a), c[1] + R * Math.sin(a)], tg = (a) => [-Math.sin(a), Math.cos(a)];
+            Q.push(pt(An[0]));
+            for (let i = 0; i < 5; i++) {
+                const a0 = An[i], a1 = An[i + 1], k = 4 / 3 * Math.tan((a1 - a0) / 4) * R, p0 = pt(a0), p1 = pt(a1), t0 = tg(a0), t1 = tg(a1);
+                Q.push([p0[0] + k * t0[0], p0[1] + k * t0[1]], [p1[0] - k * t1[0], p1[1] - k * t1[1]], p1);
+            }
+            return Q;
+        })();
+        const shell = (s) => BALL.map((p, i) => [lerp(p[0], SHELF[i][0], s), lerp(p[1], SHELF[i][1], s)]);
+        const center = (s) => [589, lerp(482, 484, s)];
+        const scaleP = (Q, k, c) => Q.map(([x, y]) => [c[0] + (x - c[0]) * k, c[1] + (y - c[1]) * k]);
+        const dS = (S) => { let d = `M${S[0].map(f).join(' ')}`; for (let i = 1; i < S.length; i += 3) d += `C${[S[i], S[i + 1], S[i + 2]].map(p => p.map(f).join(' ')).join(' ')}`; return d + 'Z'; };
+        const poly = (S, n = 24) => { const Q = []; for (let i = 1; i < S.length; i += 3) for (let k = 0; k < n; k++) Q.push(cub(S[i - 1], S[i], S[i + 1], S[i + 2], k / n)); return Q; };
+        // Гладкая кривая через точки (Катмулл — Ром); число узлов — от числа точек.
+        const smooth = (Q, closed) => {
+            const n = Q.length, g = (i) => Q[closed ? (i + n) % n : Math.max(0, Math.min(n - 1, i))];
+            let d = `M${Q[0].map(f).join(' ')}`;
+            for (let i = 0; i < (closed ? n : n - 1); i++) {
+                const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2);
+                d += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+            }
+            return d + (closed ? 'Z' : '');
+        };
+        const idx = (a, b, step) => { const r = []; for (let i = a; ; i += step) { r.push(((i % 120) + 120) % 120); if (i >= b) break; } return r; };
+
+        // ---- комочек ----
+        const blobPts = (r, seed) => {
+            const q = rng(seed), a2 = 0.05 + 0.05 * q(), p2 = 6.3 * q(), a3 = 0.03 + 0.04 * q(), p3 = 6.3 * q();
+            return Array.from({ length: 10 }, (_, k) => { const t = 2 * Math.PI * k / 10, R = r * (1 + a2 * Math.cos(2 * t + p2) + a3 * Math.cos(3 * t + p3)); return [R * Math.cos(t), R * Math.sin(t)]; });
+        };
+        const pores = (Q, r, o) => {
+            const q = rng(o.seed), out = [];
+            for (let t = 0; t < o.n * 60 && out.length < o.n; t++) {
+                const x = (q() * 2 - 1) * r, y = (q() * 2 - 1) * r;
+                if (!inside(Q, x, y)) continue;
+                const u = Math.hypot(x, y) / r;
+                if (u > 0.93) continue;
+                const z = q(), s = z < 0.12 ? 1.9 : z < 0.45 ? 1.25 : 0.8, rr = o.pr * s * (1.05 - 0.45 * u * u) * (0.85 + 0.3 * q());
+                if (out.some(p => Math.hypot(p.x - x, p.y - y) < (p.r + rr) * 1.55 + q() * 0.5)) continue;
+                out.push({ x, y, r: rr, u, a: Math.atan2(y, x), j: q() });
+            }
+            return out;
+        };
+        // Пора — круг под матрицей: к краю комочка сплющена вдоль кромки
+        // (сфера в ракурсе), на свету бледнее; три ступени по глубине.
+        // В наброске пора — <use> шаблона из двух эллипсов (провал и светлая
+        // стенка), и их под две сотни на вещь: живой комочек перерисовывал
+        // их на каждом кадре, и кадр с конняку в руке падал вдвое против
+        // рукавицы (замер, 4× замедление). Здесь те же эллипсы под той же
+        // матрицей посчитаны в путь (образ эллипса под аффинной матрицей —
+        // эллипс: оси — сингулярное разложение), и поры одной ступени и
+        // одного тона — ОДНИМ путём. Поры не налегают друг на друга, поэтому
+        // «все провалы, потом все стенки» рисуют то же, что «пора за порой».
+        const ell = (m, cx, cy, rx, ry) => {
+            const p = m[0] * rx, q = m[2] * ry, r = m[1] * rx, s = m[3] * ry;
+            const E = (p + s) / 2, F = (p - s) / 2, G = (r + q) / 2, H = (r - q) / 2, Qh = Math.hypot(E, H), Rh = Math.hypot(F, G);
+            const s1 = Qh + Rh, s2 = Math.abs(Qh - Rh), th = (Math.atan2(H, E) + Math.atan2(G, F)) / 2;
+            const X = m[0] * cx + m[2] * cy + m[4], Y = m[1] * cx + m[3] * cy + m[5], ux = Math.cos(th) * s1, uy = Math.sin(th) * s1;
+            // Две половины дугами; второй набор чисел — та же команда `a`
+            // (повтор команды по правилам пути), угол — до градуса, ноль перед
+            // точкой срезан: путей много, и каждый символ — на каждой вставке.
+            // Пробел опускается только перед минусом: «0» и «.82» без пробела
+            // читаются одним числом «0.82», и путь обрывался.
+            const n = (v) => String(f(v)).replace(/^(-?)0\./, '$1.'), sp = (v) => (v < 0 ? '' : ' ') + n(v);
+            const arc = `${n(s1)} ${n(s2)} ${Math.round(th * 180 / Math.PI)} 0 1`;
+            return `M${n(X + ux)}${sp(Y + uy)}a${arc}${sp(-2 * ux)}${sp(-2 * uy)} ${arc}${sp(2 * ux)}${sp(2 * uy)}z`;
+        };
+        const PORE = [[0.12, 0.3], [0.24, 0.5], [0.4, 0.72]];      // [провал, стенка] — прозрачность по ступени
+        const poreAt = (p, r, fade) => {
+            const sq = 1 - 0.55 * p.u * p.u, c = Math.cos(p.a), n = Math.sin(p.a);
+            const a = p.r * (c * c * sq + n * n), b = p.r * c * n * (sq - 1), d = p.r * (n * n * sq + c * c);
+            const lt = Math.max(0, 1 - Math.hypot(p.x + 0.35 * r, p.y + 0.4 * r) / (1.5 * r));
+            const w = ((1 - 0.8 * p.u * p.u) * (0.55 + 0.45 * lt) + 0.25 * (p.j - 0.5)) * fade;
+            if (w < 0.16) return null;
+            const m = [f(a), f(b), f(b), f(d), f(p.x), f(p.y)];
+            return { k: w > 0.62 ? 2 : w > 0.38 ? 1 : 0, dark: ell(m, 0, 0, 1, 1), lit: ell(m, 0.38, 0.42, 0.55, 0.4) };
+        };
+        const lump = (id, i, L) => {
+            const Q = blobPts(L.r, L.seed), D = L.dens, ps = pores(Q, L.r, { seed: L.seed + 3, n: Math.round(L.r * L.r * 0.55), pr: 0.42 + L.r * 0.032 });
+            const Al = (a) => f(a * (0.45 + 0.55 * D)), [c0, c1, c2, c3] = P.konjacLump;
+            const def = rg(`${id}l${i}`, 0.42, 0.4, 0.66, [[0, c0, Al(1)], [0.45, c1, Al(0.96)], [0.8, c2, Al(0.92)], [0.93, c3, f(0.3 + 0.6 * D)], [1, c3, f(0.12 + 0.4 * D)]]);
+            let s = `<circle r="${f(L.r * 1.6)}" fill="url(#${id}h)" fill-opacity="${f(0.3 + 0.6 * D)}"/>`;
+            s += `<path d="${smooth(Q, true)}" fill="url(#${id}l${i})"/>`;
+            const dk = ['', '', ''], li = ['', '', ''];
+            ps.forEach(p => { const o = poreAt(p, L.r, 0.45 + 0.55 * D); if (o) { dk[o.k] += o.dark; li[o.k] += o.lit; } });
+            s += dk.map((d, k) => d ? `<path d="${d}" fill="${pd}" fill-opacity="${PORE[k][0]}"/>` : '').join('');
+            s += li.map((d, k) => d ? `<path d="${d}" fill="${pl}" fill-opacity="${PORE[k][1]}"/>` : '').join('');
+            s += `<ellipse cx="${f(L.r * 0.3)}" cy="${f(L.r * 0.36)}" rx="${f(L.r * 0.42)}" ry="${f(L.r * 0.26)}" transform="rotate(-35 ${f(L.r * 0.3)} ${f(L.r * 0.36)})" fill="url(#${id}c)"/>`;
+            s += `<ellipse cx="${f(-L.r * 0.34)}" cy="${f(-L.r * 0.4)}" rx="${f(L.r * 0.5)}" ry="${f(L.r * 0.3)}" transform="rotate(-35 ${f(-L.r * 0.34)} ${f(-L.r * 0.4)})" fill="url(#${id}s)"/>`;
+            return { def, body: s };
+        };
+
+        // ---- движение: две гармоники по осям, поворот и дыхание ----
+        const makePose = (Ls) => {
+            const w = 2 * Math.PI / T;
+            return (t) => Ls.map(L => {
+                const m = L.m;
+                const x = L.x + m.ax * Math.sin(m.nx * w * t + m.px) + m.bx * Math.sin(m.mx * w * t + m.qx);
+                const y = L.y + m.ay * Math.sin(m.ny * w * t + m.py) + m.by * Math.sin(m.my * w * t + m.qy);
+                const rot = m.rot * Math.sin(m.nr * w * t + m.pr), sq = m.sq * Math.sin(m.ns * w * t + m.ps);
+                return { tr: `translate(${f(x)} ${f(y)}) rotate(${f(rot)}) scale(${f(1 + sq)} ${f(1 / (1 + sq))})` };
+            });
+        };
+        const motion = (L, seed) => {
+            const q = rng(seed), k = 1 - 0.45 * L.dens * Math.min(1, L.r / 14), h = () => 1 + Math.floor(q() * 2), ph = () => 6.283 * q();
+            return { ax: (2.6 + 3 * q()) * k * L.amp, bx: (0.8 + 1.2 * q()) * k * L.amp, ay: (2 + 2.4 * q()) * k * L.amp, by: (0.6 + 1 * q()) * k * L.amp,
+                nx: h(), mx: 3, ny: h(), my: 2 + Math.floor(q() * 2), px: ph(), qx: ph(), py: ph(), qy: ph(),
+                rot: 4 + 6 * q(), nr: 1, pr: ph(), sq: 0.025 + 0.035 * (1 - L.dens * 0.5), ns: 2 + Math.floor(q() * 2), ps: ph() };
+        };
+        // Оседание сплющивает комочки вместе с киселём: одна матрица на
+        // группу (шире, ниже, чуть вниз).
+        const sagM = (s) => { const a = 1 + 0.1 * s, d = 1 - 0.06 * s; return { a, d, e: 589 * (1 - a), f: 528 * (1 - d) + 1.5 * s }; };
+        const sagStr = (s) => { const m = sagM(s); return `matrix(${f(m.a)} 0 0 ${f(m.d)} ${f(m.e)} ${f(m.f)})`; };
+
+        // Партия комочков: координаты заданы на полке и переведены в шар
+        // обратной матрицей. [x, y, радиус, густота, дальний, зерно, размах].
+        const id = '@ID-', M1 = sagM(1);
+        const Ls = [[570, 467, 8.5, 0.15, 1, 21], [621, 489, 6, 0.85, 1, 22], [600, 458, 5, 0.3, 1, 26],
+            [580, 486, 13, 1, 0, 23, 0.8], [609, 471, 9.5, 0.35, 0, 24, 0.75], [604, 501, 5.5, 0.9, 0, 25], [563, 503, 4.2, 0.4, 0, 27]]
+            .map(([x, y, r, dens, far, seed, amp = 1]) => ({ x: (x - M1.e) / M1.a, y: (y - M1.f) / M1.d, r, dens, far: !!far, seed, amp }));
+        Ls.forEach((L, i) => { L.m = motion(L, 2 * 31 + i * 7); });
+        const pose = makePose(Ls), parts = Ls.map((L, i) => lump(id, i, L));
+        const defs = parts.map(p => p.def).join('')
+            + rg(id + 'c', 0.5, 0.5, 0.5, [[0, cauC, 0.55], [1, cauC, 0]])
+            + rg(id + 's', 0.5, 0.5, 0.5, [[0, lit, 0.42], [0.6, lit, 0.12], [1, lit, 0]])
+            + rg(id + 'h', 0.5, 0.5, 0.5, [[0, h0, 0.5], [0.55, h1, 0.26], [1, h1, 0]])
+            + rg(id + 'k', 0.46, 0.4, 0.62, [[0, Ki[0], 0.6], [0.45, Ki[1], 0.5], [0.78, Ki[2], 0.55], [1, Ki[3], 0.78]])
+            + rg(id + 'v', 0.46, 0.4, 0.62, [[0, Ve[0], 0.3], [0.7, Ve[1], 0.32], [1, Ve[2], 0.4]])
+            + rg(id + 'o', 0.46, 0.4, 0.62, [[0, lit, 0], [0.66, Wa[0], 0.05], [0.84, Wa[1], 0.3], [0.95, Wa[2], 0.72], [1, Wa[3], 0.88]])
+            + rg(id + 'g', 0.5, 0.5, 0.5, [[0, cauC, 0.6], [1, cauC, 0]])
+            + lg(id + 'r', 541, 505, 610, 440, [[0, lit, 0], [0.35, lit, 0.75], [1, lit, 0]], US)
+            + lg(id + 'i', 540, 440, 640, 528, [[0, Ir[0]], [0.25, Ir[1]], [0.42, Ir[2]], [0.6, Ir[3]], [0.8, Ir[4]], [1, Ir[0]]], US);
+
+        // Всё, что зависит от посадки, — функция sag с постоянным числом
+        // узлов: переход правит те же атрибуты, что рисует первый кадр.
+        const geo = (s) => {
+            const S = shell(s), c = center(s), Q = poly(S), IN = scaleP(S, 0.94, c);
+            const at = (I, k, dy = 0) => I.map(i => [c[0] + (Q[i][0] - c[0]) * k, c[1] + (Q[i][1] - c[1]) * k + dy]);
+            const bandO = at(idx(102, 136, 3), 0.93), bandI = at(idx(102, 136, 3), 0.83, 2.5).reverse();
+            const cau = at([38], 0.72)[0];
+            return {
+                s: dS(S), in: dS(IN),
+                lit: smooth(at(idx(86, 128, 4), 0.955), false),        // нить света: слева-снизу через макушку
+                low: smooth(at(idx(28, 48, 4), 0.95), false),          // отражённая нить внизу справа
+                band: smooth(bandO.concat(bandI), true),               // широкая полоса налёта по макушке
+                iri: smooth(at(idx(0, 119, 4), 0.975), true),          // перелив — чуть ВНУТРИ тёмного края
+                cx: f(cau[0]), cy: f(cau[1]), cau: `rotate(-35 ${f(cau[0])} ${f(cau[1])})`,
+                sag: sagStr(s)
+            };
+        };
+        const frag = (s, t = 0) => {
+            const G = geo(s), Q = pose(t);
+            const lumpG = (sel) => `<g data-j="sag" transform="${G.sag}">` + Ls.map((L, i) => sel(L) ? `<g data-lump="${i}" transform="${Q[i].tr}">${parts[i].body}</g>` : '').join('') + `</g>`;
+            let o = `<defs>${defs}<clipPath id="${id}q"><path data-j="in" d="${G.in}"/></clipPath></defs>`;
+            o += `<path data-j="s" d="${G.s}" fill="url(#${id}k)"/>`;
+            o += `<g clip-path="url(#${id}q)">${lumpG(L => L.far)}</g>`;
+            o += `<path data-j="in" d="${G.in}" fill="url(#${id}v)"/>`;
+            o += `<g clip-path="url(#${id}q)">${lumpG(L => !L.far)}</g>`;
+            o += `<path data-j="s" d="${G.s}" fill="url(#${id}o)"/>`;
+            o += `<path data-j="s" d="${G.s}" fill="none" stroke="${edgeC}" stroke-opacity=".16" stroke-width="${W}"/>`;
+            o += `<path data-j="iri" d="${G.iri}" fill="none" stroke="url(#${id}i)" stroke-opacity=".75" stroke-width="${1.1 * W}"/>`;
+            o += `<path data-j="band" d="${G.band}" fill="${lit}" fill-opacity=".18"/>`;
+            o += `<path data-j="lit" d="${G.lit}" fill="none" stroke="url(#${id}r)" stroke-width="${2 * W}" stroke-linecap="round"/>`;
+            o += `<ellipse data-j="cau" cx="${G.cx}" cy="${G.cy}" rx="13" ry="6" transform="${G.cau}" fill="url(#${id}g)"/>`;
+            o += `<path data-j="low" d="${G.low}" fill="none" stroke="${lowC}" stroke-opacity=".3" stroke-width="${1.1 * W}" stroke-linecap="round"/>`;
+            return `<g transform="translate(${-A.x} ${-A.y})">${o}</g>`;
+        };
+        return { frag, geo, pose };
+    },
+
+    // Узлы живой копии, найденные один раз.
+    konjacNodes(r) {
+        const C = this._kjNodes || (this._kjNodes = new WeakMap());
+        let c = C.get(r);
+        if (!c) {
+            const all = (s) => Array.from(r.querySelectorAll(s));
+            c = { lumps: all('[data-lump]') };
+            for (const k of ['s', 'in', 'iri', 'band', 'lit', 'low', 'cau', 'sag']) c[k] = all(`[data-j="${k}"]`);
+            C.set(r, c);
+        }
+        return c;
+    },
+
+    // Шаг живого цикла (bath-soap.js, wake): roots — видимые копии.
+    // Комочки стоят, пока вещью трут (как флакон: палец смотрит на пену) и
+    // пока она парит: у парящего холста ореол — тень-фильтр, и живая
+    // картинка под ним пересчитывала бы тень на каждом кадре. Часы
+    // комочков в это время тоже стоят — поэтому вещь, перерисованная в
+    // руку, продолжает с той же позы, без скачка.
+    liveTick(roots, now, rub) {
+        const dt = this._liveAt ? Math.min(0.1, (now - this._liveAt) / 1000) : 0;
+        this._liveAt = now;
+        if (!this._konjac || rub) return;
+        const run = roots.filter(r => !r.closest('.bt-float'));
+        if (!run.length) return;
+        this.kt = (this.kt + dt) % this.KONJAC.T;
+        // 15 кадров хватает: комочек проплывает за секунду пару единиц, и
+        // шаг в десятую долю единицы на глаз не отличить от вдвое меньшего,
+        // а каждая запись — перерисовка всей вещи (замер: с 30 кадрами
+        // полка рисовалась вдвое дольше, чем с рукавицей).
+        if (now - (this._kjWrote || 0) < 60) return;
+        this._kjWrote = now;
+        this.ktShown = this.kt;
+        const Q = this._konjac.pose(this.kt);
+        const set = (el, k, v) => { if (el.getAttribute(k) !== v) el.setAttribute(k, v); };
+        run.forEach(r => this.konjacNodes(r).lumps.forEach(g => set(g, 'transform', Q[+g.dataset.lump].tr)));
+    },
+
+    // Копия на полке встаёт в позу летевшей: пока вещь была в руке, полочная
+    // стояла спрятанной, и комочки в ней остались там, где их взяли.
+    // Посадка (lust.js, flyHome) — подмена одной копии другой, и скачок
+    // комочков был бы виден; сразу после неё едет камера, и цикл стоит.
+    syncPose(root) {
+        const r = root && root.querySelector && root.querySelector('.bt-cloth-konjac');
+        if (!r || !this._konjac) return;
+        const Q = this._konjac.pose(this.ktShown);
+        this.konjacNodes(r).lumps.forEach(g => { const v = Q[+g.dataset.lump].tr; if (g.getAttribute('transform') !== v) g.setAttribute('transform', v); });
+    },
+
+    // Посадка: sag → атрибуты контура и всего, что к нему привязано.
+    // Пишется только изменившееся.
+    sagTo(r, s) {
+        const c = this.konjacNodes(r), G = this._konjac.geo(s);
+        const set = (el, k, v) => { if (el.getAttribute(k) !== v) el.setAttribute(k, v); };
+        for (const k of ['s', 'in', 'iri', 'band', 'lit', 'low']) c[k].forEach(el => set(el, 'd', G[k]));
+        c.cau.forEach(el => { set(el, 'cx', String(G.cx)); set(el, 'cy', String(G.cy)); set(el, 'transform', G.cau); });
+        c.sag.forEach(el => set(el, 'transform', G.sag));
+    },
+
+    // Переход посадки — ТОЛЬКО пока вещь поднимают или кладут, потом ни
+    // одной записи. root — холст или группа, где лежит копия (без конняку —
+    // ничего). 'lift': полка → рука, осевшая округляется с упругим качем
+    // (вытянется и вернётся); первый кадр ставится сразу, до отрисовки.
+    // 'land': рука → полка за dur мс полёта домой; вторую половину пути
+    // оседает с качем и к посадке ровно осевшая — копия на полке встаёт на
+    // её место без подмены. На переезде камеры переход доводится сразу:
+    // сцена едет готовой текстурой (docs/traps.md, п. 150).
+    reshape(root, mode, dur) {
+        const r = root && (root.classList && root.classList.contains('bt-cloth-konjac') ? root
+                  : root.querySelector && root.querySelector('.bt-cloth-konjac'));
+        if (!r || !this._konjac || typeof requestAnimationFrame === 'undefined') return;
+        const lift = mode === 'lift', ms = lift ? this.KONJAC.LIFT_MS : Math.max(1, dur || 600);
+        const curve = lift
+            ? (u) => Math.exp(-3.6 * u) * Math.cos(2 * Math.PI * 1.25 * u) * (1 - u * u * u)
+            : (u) => { const v = Math.max(0, (u - 0.5) / 0.5); return 1 - Math.exp(-4 * v) * Math.cos(2 * Math.PI * 1.2 * v) * (1 - v * v * v); };
+        const M = this._morphs || (this._morphs = new Map());
+        if (M.has(r)) cancelAnimationFrame(M.get(r).raf);
+        const job = { end: () => this.sagTo(r, lift ? 0 : 1), raf: 0 }, t0 = performance.now();
+        const step = (t) => {
+            if (!r.isConnected) { M.delete(r); return; }
+            const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
+            const u = L0 && L0.camTimer ? 1 : Math.min(1, (t - t0) / ms);
+            this.sagTo(r, curve(u));
+            if (u < 1) job.raf = requestAnimationFrame(step); else M.delete(r);
+        };
+        this.sagTo(r, curve(0));
+        M.set(r, job);
+        job.raf = requestAnimationFrame(step);
+    },
+
+    // Ушли из ванной — переходы доводятся сразу и больше не крутятся.
+    stop() {
+        if (!this._morphs) return;
+        this._morphs.forEach((job, r) => { cancelAnimationFrame(job.raf); if (r.isConnected) job.end(); });
+        this._morphs.clear();
     }
 };
 
