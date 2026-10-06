@@ -1771,8 +1771,11 @@ const LustMinigame = {
         if (!on) { cancelAnimationFrame(this.liftRaf); this.liftRaf = 0; }
         const n = this.el('bt-hand');
         if (!n) return;
-        const magic = on && this.loose && this.loose.kind === 'soap' && typeof BATH_SOAP !== 'undefined'
-                    && BATH_SOAP.TIERS[BATH_SOAP.tier()] === 'magic';
+        // Облако из ночи (мочалка, ступень 8) — так же: светится своим
+        // ореолом и течёт в воздухе (bath-cloth.js, liveTick).
+        const magic = on && this.loose && (this.loose.kind === 'soap'
+                    ? typeof BATH_SOAP !== 'undefined' && BATH_SOAP.TIERS[BATH_SOAP.tier()] === 'magic'
+                    : typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.TIERS[BATH_CLOTH.tier()] === 'cloud');
         n.classList.toggle('bt-float', !!on);
         n.classList.toggle('bt-float-magic', !!magic);
     },

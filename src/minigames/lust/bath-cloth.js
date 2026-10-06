@@ -12,8 +12,8 @@
 // сами и ничего не знают о ступенях. Гнездо и зона захвата не двигаются от
 // ступени — меняется только картинка. Так же устроено мыло (bath-soap.js).
 const BATH_CLOTH = {
-    // Вид на каждой ступени. Нарисованы 0–7; ещё не нарисованные берут
-    // запечённую губку — пока лестница не закончена.
+    // Вид на каждой ступени. Нарисованы все девять; запечённая губка
+    // осталась только запасным ответом на неизвестный вид.
     TIERS: ['rag', 'kitchen', 'brick', 'puff', 'sea', 'ruffle', 'mitt', 'konjac', 'cloud'],
 
     level() {
@@ -53,6 +53,7 @@ const BATH_CLOTH = {
         if (kind === 'ruffle') return this.ruffle();
         if (kind === 'mitt') return this.mitt();
         if (kind === 'konjac') return this.konjac(where);
+        if (kind === 'cloud') return this.cloud(where);
         return BATH_BAKED.draw('cloth');
     },
 
@@ -85,6 +86,11 @@ const BATH_CLOTH = {
         // Габарит один на обе: по нему захват, упор в край и иконка; середина
         // совпадает с центром шара (589, 482).
         if (kind === 'konjac') return { x: 540, y: 436, w: 98, h: 92 };
+        // Облако — тело течёт, поэтому габарит по всему циклу (600 кадров)
+        // и по обеим посадкам: ядро и клубы с заполнителями — x 538.3–642.8,
+        // y 435.4–524.4. Пух (+2.4, мягкий спад в ноль) и сияние вокруг —
+        // свечение, а не вещь: за них не берут, и иконку они не ужимают.
+        if (kind === 'cloud') return { x: 538, y: 435, w: 105, h: 90 };
         return BATH_BAKED.box('cloth');
     },
 
@@ -1631,20 +1637,7 @@ const BATH_CLOTH = {
         // эллипс: оси — сингулярное разложение), и поры одной ступени и
         // одного тона — ОДНИМ путём. Поры не налегают друг на друга, поэтому
         // «все провалы, потом все стенки» рисуют то же, что «пора за порой».
-        const ell = (m, cx, cy, rx, ry) => {
-            const p = m[0] * rx, q = m[2] * ry, r = m[1] * rx, s = m[3] * ry;
-            const E = (p + s) / 2, F = (p - s) / 2, G = (r + q) / 2, H = (r - q) / 2, Qh = Math.hypot(E, H), Rh = Math.hypot(F, G);
-            const s1 = Qh + Rh, s2 = Math.abs(Qh - Rh), th = (Math.atan2(H, E) + Math.atan2(G, F)) / 2;
-            const X = m[0] * cx + m[2] * cy + m[4], Y = m[1] * cx + m[3] * cy + m[5], ux = Math.cos(th) * s1, uy = Math.sin(th) * s1;
-            // Две половины дугами; второй набор чисел — та же команда `a`
-            // (повтор команды по правилам пути), угол — до градуса, ноль перед
-            // точкой срезан: путей много, и каждый символ — на каждой вставке.
-            // Пробел опускается только перед минусом: «0» и «.82» без пробела
-            // читаются одним числом «0.82», и путь обрывался.
-            const n = (v) => String(f(v)).replace(/^(-?)0\./, '$1.'), sp = (v) => (v < 0 ? '' : ' ') + n(v);
-            const arc = `${n(s1)} ${n(s2)} ${Math.round(th * 180 / Math.PI)} 0 1`;
-            return `M${n(X + ux)}${sp(Y + uy)}a${arc}${sp(-2 * ux)}${sp(-2 * uy)} ${arc}${sp(2 * ux)}${sp(2 * uy)}z`;
-        };
+        const ell = (m, cx, cy, rx, ry) => this.ellPath(m, cx, cy, rx, ry);
         const PORE = [[0.12, 0.3], [0.24, 0.5], [0.4, 0.72]];      // [провал, стенка] — прозрачность по ступени
         const poreAt = (p, r, fade) => {
             const sq = 1 - 0.55 * p.u * p.u, c = Math.cos(p.a), n = Math.sin(p.a);
@@ -1745,80 +1738,307 @@ const BATH_CLOTH = {
             o += `<path data-j="low" d="${G.low}" fill="none" stroke="${lowC}" stroke-opacity=".3" stroke-width="${1.1 * W}" stroke-linecap="round"/>`;
             return `<g transform="translate(${-A.x} ${-A.y})">${o}</g>`;
         };
-        return { frag, geo, pose };
+        // Живая часть (общий цикл ванной, liveTick): узлы, кадр и посадка.
+        const nodes = (r) => {
+            const all = (q) => Array.from(r.querySelectorAll(q)), c = { lumps: all('[data-lump]') };
+            for (const k of ['s', 'in', 'iri', 'band', 'lit', 'low', 'cau', 'sag']) c[k] = all(`[data-j="${k}"]`);
+            return c;
+        };
+        const put = (c, Q, set) => c.lumps.forEach(g => set(g, 'transform', Q[+g.dataset.lump].tr));
+        const sag = (c, s, set) => {
+            const G = geo(s);
+            for (const k of ['s', 'in', 'iri', 'band', 'lit', 'low']) c[k].forEach(el => set(el, 'd', G[k]));
+            c.cau.forEach(el => { set(el, 'cx', String(G.cx)); set(el, 'cy', String(G.cy)); set(el, 'transform', G.cau); });
+            c.sag.forEach(el => set(el, 'transform', G.sag));
+        };
+        return { frag, geo, pose, nodes, put, sag };
     },
 
-    // Узлы живой копии, найденные один раз.
-    konjacNodes(r) {
-        const C = this._kjNodes || (this._kjNodes = new WeakMap());
-        let c = C.get(r);
-        if (!c) {
-            const all = (s) => Array.from(r.querySelectorAll(s));
-            c = { lumps: all('[data-lump]') };
-            for (const k of ['s', 'in', 'iri', 'band', 'lit', 'low', 'cau', 'sag']) c[k] = all(`[data-j="${k}"]`);
-            C.set(r, c);
+    // ---------- 8. ОБЛАКО ИЗ НОЧИ ----------
+    // Аморфное облако, сквозь которое видно ночное небо: туманность, звёзды
+    // дальние и ближние, а по силуэту плывут клубы. Пара волшебному флакону
+    // мыла (8). Набросок игрока (художник-агент, вариант b) — генератор тот
+    // же, ход случая тот же.
+    //
+    // Что держит вещь (заметки художника, sp8/notes3.md):
+    // * ФОН СТОИТ, ОКНА ПЛЫВУТ. Космос — одна неподвижная группа под клипом
+    //   тела: ночь (радиальная заливка, к краю светлеет — это и есть
+    //   светящийся край), туманности, звёзды. Тело = неподвижное ядро-овал ∪
+    //   12 клубов и заполнители пазух между ними; двигаются только круги
+    //   клипа. Клуб, выплывший наружу, сам открывает светлый край заливки.
+    // * Клубы дрейфуют вдоль ВСЕГО периметра (снизу тоже — плоское дно
+    //   читалось обрезанным) и всегда держатся на границе тела: утонуть и
+    //   стать «икрой» внутри не могут. Пазухи закрыты — иначе силуэт рвался
+    //   выемками («амёба»).
+    // * Свет сверху-слева: макушка клуба — его же transform плюс масштаб к
+    //   её верхнему-левому краю: сверху полная, к низу гаснет. Низ —
+    //   теневая сторона, глубокая ночь. Пух по силуэту едет с клубом.
+    //
+    // Жить в игре — общим живым циклом, как конняку (liveTick): кадр — запись
+    // transform кругов клипа, макушек, пуха, ближних звёзд и искр; `d` не
+    // правится вовсе. На полке облако чуть осело (одна матрица на группу
+    // тела), в руке и на иконке — нет; переход — та же запись одной матрицы.
+    // Своё сияние у облака есть (ореол вокруг), поэтому парящее оно не
+    // тенью-фильтром светится, а само, как волшебный флакон (lust.js,
+    // floatTool), — и течёт и в воздухе.
+    cloud(where) {
+        if (!this._cloud) this._cloud = this.cloudArt();
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.wake) { BATH_SOAP.live.dirty = true; BATH_SOAP.wake(); }
+        return this.stamp(this._cloud.frag(where === 'shelf' ? 1 : 0, this.ktShown), 'bt-cloth-cloud', 'bcc');
+    },
+
+    // Генератор наброска b: { frag(sag, t), pose(t) } и живая часть; '@ID' —
+    // место под id. Числа и ход случая — художника.
+    cloudArt() {
+        const P = btPal(), A = BATH_ART.slots().cloth;
+        const MASS = P.cloudMass, [pd, pl] = P.cloudPore, SC = P.cloudStars, [sw, sfl, shl] = P.cloudStar;
+        const [c0, c1, c2] = P.cloudCap, fzC = P.cloudFuzz, [a0, a1] = P.cloudAura, [nb1, nb2] = P.cloudNebula, [m0, m1] = P.cloudMote;
+        const f = (v) => +(+v).toFixed(2);
+        const rng = (seed) => { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+        const st = (S) => S.map(([o, c, a = 1]) => `<stop offset="${f(o)}" stop-color="${c}"${a === 1 ? '' : ` stop-opacity="${f(a)}"`}/>`).join('');
+        const rg = (id, cx, cy, r, S, ex = '') => `<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}" ${ex}>${st(S)}</radialGradient>`;
+        const TAU = Math.PI * 2, AX = 590, AY = 528;
+        // Осадка на полке: шире на 6%, ниже на 8%, к дну корзины.
+        const sagStr = (s) => { const a = 1 + 0.06 * s, d = 1 - 0.08 * s; return `matrix(${f(a)} 0 0 ${f(d)} ${f(AX * (1 - a))} ${f(AY * (1 - d))})`; };
+
+        // ---- клубы: дрейф по периметру ядра ----
+        const CORE = { x: 590, y: 485, rx: 29, ry: 25 }, N = 12, T = 24;
+        const DR = (() => {
+            const q = rng(91);
+            return [...Array(N).keys()].map(i => {
+                const a0 = -Math.PI / 2 + i * TAU / N + (q() - 0.5) * 0.16;
+                return { a0, r0: 12 + 3 * Math.max(0, -Math.sin(a0)) - 2.6 * Math.max(0, Math.sin(a0)), na: 1 + Math.floor(q() * 2), pa: TAU * q(),
+                         nr: 1 + Math.floor(q() * 3), pr: TAU * q(), ar: 0.15 + 0.1 * q() };
+            });
+        })();
+        // Свет макушки по углу: сверху-слева 1, к горизонту гаснет, снизу 0.
+        const litAt = (a) => { const up = -Math.sin(a + 0.35); return Math.max(0, Math.min(1, (up + 0.15) / 0.75)); };
+        const drift = (t) => {
+            const w = TAU / T;
+            return DR.map(m => {
+                const g = Math.sin(m.nr * w * t + m.pr) + 0.4 * Math.sin((m.nr + 2) * w * t + m.pr * 1.3);
+                const a = m.a0 + 0.22 * Math.sin(m.na * w * t + m.pa), r = m.r0 * (1 + m.ar * g);
+                const out = r * (0.3 + 0.1 * g / 1.4 - 0.08 * Math.max(0, Math.sin(a))) - 0.5;
+                return { x: CORE.x + (CORE.rx + out) * Math.cos(a), y: CORE.y + (CORE.ry + out) * Math.sin(a), r, lit: litAt(a) };
+            });
+        };
+        // Заполнители пазух между соседями (по кругу), только в теле; низ —
+        // не ниже дна корзины.
+        const clubs = (t) => {
+            const C = drift(t), out = C.slice();
+            for (let i = 0; i < C.length; i++) {
+                const a = C[i], b = C[(i + 1) % C.length], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                out.push({ x: mx + (CORE.x - mx) * 0.12, y: my + (CORE.y - my) * 0.12, r: (a.r + b.r) * 0.44, fill: 1 });
+            }
+            return out.map(c => c.y + c.r > 527.5 ? { ...c, y: 527.5 - c.r } : c);
+        };
+
+        const id = '@ID-', q = rng(17);
+        const inCore = (x, y, m) => Math.pow((x - CORE.x) / (CORE.rx - m), 2) + Math.pow((y - CORE.y) / (CORE.ry - m), 2) <= 1;
+        // Дальние звёзды — по цвету тремя путями (точка — крошечный круг из двух дуг).
+        const cols = ['', '', ''];
+        for (let k = 0; k < 90; k++) {
+            const x = 545 + q() * 100, y = 432 + q() * 96, r = 0.3 + q() * q() * 0.55, c = q() < 0.16 ? 1 : q() < 0.22 ? 2 : 0;
+            cols[c] += `M${f(x - r)} ${f(y)}a${f(r)} ${f(r)} 0 1 0 ${f(2 * r)} 0a${f(r)} ${f(r)} 0 1 0 ${f(-2 * r)} 0`;
         }
+        const far = cols.map((d, i) => `<path d="${d}" fill="${SC[i]}" fill-opacity="${[0.75, 0.6, 0.55][i]}"/>`).join('');
+        // Ближние звёзды — только в ядре (видны всегда), мерцают на месте.
+        const NS = [[582, 492, 1.25], [604, 480, 0.85], [570, 482, 0.6], [605, 496, 0.6], [592, 472, 0.5]]
+            .map(([x, y, s]) => ({ x, y, s, n: 1 + Math.floor(q() * 2), p: TAU * q() }))
+            .filter(s => inCore(s.x, s.y, 4));
+        // Поры на макушке клуба — в единицах клуба (круг r = 1), левый верх.
+        // В наброске пора — <use> из двух эллипсов, девять на клуб: сотня
+        // узлов, едущих каждый кадр. Здесь те же эллипсы под той же матрицей
+        // посчитаны в пути (ellPath) — шесть путей одним шаблоном, и клуб
+        // ставит его одним <use>.
+        const qp = rng(5), dk = ['', '', ''], li = ['', '', ''];
+        for (let k = 0, n = 0; k < 400 && n < 9; k++) {
+            const a = -Math.PI * (0.25 + 0.6 * qp()), u = 0.25 + 0.6 * Math.sqrt(qp()), x = u * Math.cos(a), y = u * Math.sin(a), r = 0.036 * (0.7 + 0.7 * qp());
+            const m = [+(r * (1 - 0.4 * u * u)).toFixed(3), 0, 0, +r.toFixed(3), f(x), f(y)];
+            dk[n % 3] += this.ellPath(m, 0, 0, 1, 1, 4); li[n % 3] += this.ellPath(m, 0.4, 0.45, 0.55, 0.38, 4); n++;
+        }
+        const PORE = [[0.05, 0.22], [0.09, 0.34], [0.14, 0.46]];
+        const defs = `<g id="${id}pz">` + dk.map((d, k) => `<path d="${d}" fill="${pd}" fill-opacity="${PORE[k][0]}"/>`).join('')
+            + li.map((d, k) => `<path d="${d}" fill="${pl}" fill-opacity="${PORE[k][1]}"/>`).join('') + `</g>`
+            + rg(id + 'sf', 0.5, 0.5, 0.5, [[0, sw], [0.35, sfl, 0.85], [1, sfl, 0]])
+            + rg(id + 'sh', 0.5, 0.5, 0.5, [[0, shl, 0.6], [0.4, shl, 0.22], [1, shl, 0]])
+            + `<g id="${id}st"><circle r="5.5" fill="url(#${id}sh)"/><ellipse rx="4.4" ry=".45" fill="url(#${id}sf)"/><ellipse rx=".45" ry="4.4" fill="url(#${id}sf)"/>`
+            + `<ellipse rx="1.8" ry=".32" transform="rotate(45)" fill="url(#${id}sf)"/><ellipse rx="1.8" ry=".32" transform="rotate(-45)" fill="url(#${id}sf)"/><circle r=".8" fill="${sw}"/></g>`
+            + rg(id + 'm', 0, 0, 1, [0, 0.42, 0.66, 0.84, 0.95, 1].map((o, i) => [o, MASS[i]]), `gradientUnits="userSpaceOnUse" gradientTransform="translate(590 484) scale(54 52)" fx="-0.08" fy="-0.06"`)
+            + rg(id + 'cap', 0.44, 0.18, 0.76, [[0, c0, 0.78], [0.34, c1, 0.42], [0.6, c2, 0.12], [0.84, c2, 0]])
+            + rg(id + 'fz', 0.5, 0.5, 0.5, [[0, fzC, 0.36], [0.86, fzC, 0.36], [1, fzC, 0]])
+            + rg(id + 'au', 0.5, 0.5, 0.5, [[0, a0, 0.38], [0.55, a1, 0.16], [1, a1, 0]])
+            + rg(id + 'n1', 0.5, 0.5, 0.5, [[0, nb1, 0.42], [1, nb1, 0]]) + rg(id + 'n2', 0.5, 0.5, 0.5, [[0, nb2, 0.3], [1, nb2, 0]])
+            + rg(id + 'mo', 0.5, 0.5, 0.5, [[0, m0], [0.4, m1, 0.75], [1, m1, 0]])
+            // Космос узором: начало плитки — её левый верхний угол, поэтому
+            // содержимое сдвинуто на (−530, −420); плитка больше тела с
+            // запасом, повтор не виден.
+            + `<pattern id="${id}u" patternUnits="userSpaceOnUse" x="530" y="420" width="125" height="112"><g transform="translate(-530 -420)">`
+            + `<rect x="530" y="420" width="125" height="112" fill="url(#${id}m)"/>`
+            + `<ellipse cx="582" cy="494" rx="22" ry="13" fill="url(#${id}n1)"/><ellipse cx="604" cy="480" rx="17" ry="12" fill="url(#${id}n2)"/>${far}</g></pattern>`;
+        const FZ = 2.4, w = TAU / T;
+        // Искры поднимаются над облаком и гаснут.
+        const sparks = [0, 1, 2, 3].map(i => ({ x: 574 + i * 11, ph: i * 0.27 + 0.1, sp: [3, 4, 5, 6][i] }));
+        const core = `M${CORE.x - CORE.rx} ${CORE.y}a${CORE.rx} ${CORE.ry} 0 1 0 ${2 * CORE.rx} 0a${CORE.rx} ${CORE.ry} 0 1 0 ${-2 * CORE.rx} 0z`;
+        const pose = (t) => {
+            const C = clubs(t);
+            return {
+                fill: C.map(c => !!c.fill),
+                cap: C.map(c => `translate(-0.55 -0.75) scale(${(c.lit || 0).toFixed(3)}) translate(0.55 0.75)`),
+                clip: C.map(c => `translate(${f(c.x)} ${f(c.y)}) scale(${f(c.r)})`),
+                // Тело — ядро и все круги ОДНИМ путём (каждый — две дуги в
+                // одну сторону, ненулевое правило их объединяет).
+                body: core + C.map(c => `M${f(c.x - c.r)} ${f(c.y)}a${f(c.r)} ${f(c.r)} 0 1 0 ${f(2 * c.r)} 0a${f(c.r)} ${f(c.r)} 0 1 0 ${f(-2 * c.r)} 0z`).join(''),
+                fz: C.map(c => `translate(${f(c.x)} ${f(c.y)}) scale(${f(c.r + FZ)})`),
+                stars: NS.map(s => { const k = 0.5 + 0.5 * Math.sin(s.n * 3 * w * t + s.p); return `translate(${s.x} ${s.y}) rotate(${f(14 * Math.sin(2 * w * t + s.p))}) scale(${(s.s * (0.45 + 0.7 * k * k)).toFixed(3)})`; }),
+                sparks: sparks.map((s, i) => { const u = ((t / T) * s.sp + s.ph) % 1; return `translate(${f(s.x + 3 * Math.sin(u * 6.3 + i))} ${f(508 - u * 70)}) scale(${(Math.sin(u * Math.PI) * 0.9).toFixed(3)})`; })
+            };
+        };
+        const frag = (s, t = 0) => {
+            const Q = pose(t);
+            let o = `<defs>${defs}</defs>`;
+            o += `<ellipse cx="590" cy="484" rx="64" ry="60" fill="url(#${id}au)"/>`;
+            o += `<g data-j="sag" transform="${sagStr(s)}">`;
+            o += `<g fill="url(#${id}fz)"><ellipse cx="${CORE.x}" cy="${CORE.y}" rx="${CORE.rx + FZ}" ry="${CORE.ry + FZ}"/>${Q.fz.map((tr, i) => `<circle data-fz="${i}" r="1" transform="${tr}"/>`).join('')}</g>`;
+            // Космос неподвижен — плывут только окна. В наброске это клип
+            // тела над группой космоса, и клип из двадцати пяти кругов,
+            // меняясь каждый кадр, стоил больше всей остальной вещи (замер:
+            // PrePaint вчетверо против конняку, кадр в руке 37 против 50).
+            // Здесь космос — узор в координатах сцены (userSpaceOnUse), а
+            // тело — один путь, залитый этим узором: путь едет, узор стоит —
+            // то же «окно в небо», одна запись `d` за кадр. Космос
+            // непрозрачен, поэтому нахлёст кругов шва не даёт. Ближние
+            // звёзды мерцают — они не в узоре (иначе узор растрировался бы
+            // заново), а поверх тела: живут в ядре, и тело их всегда
+            // закрывает собой.
+            o += `<path data-j="body" d="${Q.body}" fill="url(#${id}u)"/>`
+                + NS.map((st_, j) => `<use data-star="${j}" href="#${id}st" transform="${Q.stars[j]}"/>`).join('');
+            // Свет клуба едет с клубом; макушка гаснет масштабом к своему
+            // верхнему-левому краю, когда клуб уходит на теневую сторону.
+            o += Q.clip.map((tr, i) => Q.fill[i] ? '' : `<g data-club="${i}" transform="${tr}"><g data-cap="${i}" transform="${Q.cap[i]}"><circle r="1" fill="url(#${id}cap)"/><use href="#${id}pz"/></g></g>`).join('');
+            o += `</g>`;
+            o += Q.sparks.map((tr, i) => `<circle data-spark="${i}" r="1.4" fill="url(#${id}mo)" transform="${tr}"/>`).join('');
+            return `<g transform="translate(${-A.x} ${-A.y})">${o}</g>`;
+        };
+        const nodes = (r) => {
+            const all = (k) => Array.from(r.querySelectorAll(`[data-${k}]`));
+            return { body: Array.from(r.querySelectorAll('[data-j="body"]')), fz: all('fz'), club: all('club'), cap: all('cap'),
+                     star: all('star'), spark: all('spark'), sag: Array.from(r.querySelectorAll('[data-j="sag"]')) };
+        };
+        const put = (c, Q, set) => {
+            c.body.forEach(n => set(n, 'd', Q.body));
+            c.club.forEach(n => set(n, 'transform', Q.clip[+n.dataset.club]));
+            c.fz.forEach(n => set(n, 'transform', Q.fz[+n.dataset.fz]));
+            c.cap.forEach(n => set(n, 'transform', Q.cap[+n.dataset.cap]));
+            c.star.forEach(n => set(n, 'transform', Q.stars[+n.dataset.star]));
+            c.spark.forEach(n => set(n, 'transform', Q.sparks[+n.dataset.spark]));
+        };
+        const sag = (c, s, set) => c.sag.forEach(n => set(n, 'transform', sagStr(s)));
+        return { frag, pose, nodes, put, sag, clubs, CORE, FZ, sagM: (s) => ({ a: 1 + 0.06 * s, d: 1 - 0.08 * s, e: AX * (1 - (1 + 0.06 * s)), f: AY * (1 - (1 - 0.08 * s)) }) };
+    },
+
+    // Эллипс (cx, cy, rx, ry) под матрицей m = [a b c d e f] — путём: образ
+    // эллипса под аффинной матрицей — эллипс, его оси — сингулярное
+    // разложение. Поры конняку и облака: <use> с матрицей, сотнями на вещь,
+    // перерисовывались на каждом кадре, а путь — один узел на много пор.
+    // dp — знаков после точки: поры облака заданы в единицах клуба (радиус
+    // пятисотые), им нужно четыре.
+    ellPath(m, cx, cy, rx, ry, dp = 2) {
+        const f = (v) => +(+v).toFixed(dp);
+        const p = m[0] * rx, q = m[2] * ry, r = m[1] * rx, s = m[3] * ry;
+        const E = (p + s) / 2, F = (p - s) / 2, G = (r + q) / 2, H = (r - q) / 2, Qh = Math.hypot(E, H), Rh = Math.hypot(F, G);
+        const s1 = Qh + Rh, s2 = Math.abs(Qh - Rh), th = (Math.atan2(H, E) + Math.atan2(G, F)) / 2;
+        const X = m[0] * cx + m[2] * cy + m[4], Y = m[1] * cx + m[3] * cy + m[5], ux = Math.cos(th) * s1, uy = Math.sin(th) * s1;
+        // Две половины дугами; второй набор чисел — та же команда `a`
+        // (повтор команды по правилам пути), угол — до градуса, ноль перед
+        // точкой срезан: путей много, и каждый символ — на каждой вставке.
+        // Пробел опускается только перед минусом: «0» и «.82» без пробела
+        // читаются одним числом «0.82», и путь обрывался.
+        const n = (v) => String(f(v)).replace(/^(-?)0\./, '$1.'), sp = (v) => (v < 0 ? '' : ' ') + n(v);
+        const arc = `${n(s1)} ${n(s2)} ${Math.round(th * 180 / Math.PI)} 0 1`;
+        return `M${n(X + ux)}${sp(Y + uy)}a${arc}${sp(-2 * ux)}${sp(-2 * uy)} ${arc}${sp(2 * ux)}${sp(2 * uy)}z`;
+    },
+
+    // ---------- ЖИВЫЕ СТУПЕНИ: КОНЯКУ (7) И ОБЛАКО (8) ----------
+    // Обе двигаются общим циклом ванной (bath-soap.js, wake) по одним
+    // правилам; генератор ступени отдаёт узлы (nodes), кадр (put) и посадку
+    // (sag), а цикл, часы, переход посадки и подмена при посадке — здесь,
+    // одни на обе.
+    LIVE_SEL: '.bt-cloth-konjac, .bt-cloth-cloud',
+    LIVE_T: 24,         // период часов: 8 с у конняку, 24 с у облака
+
+    liveArt(r) {
+        return r.classList.contains('bt-cloth-konjac') ? this._konjac : r.classList.contains('bt-cloth-cloud') ? this._cloud : null;
+    },
+    liveRoot(root) {
+        if (!root) return null;
+        if (root.matches && root.matches(this.LIVE_SEL)) return root;
+        return root.querySelector ? root.querySelector(this.LIVE_SEL) : null;
+    },
+    // Узлы живой копии, найденные один раз.
+    liveNodes(r, art) {
+        const C = this._liveNodes || (this._liveNodes = new WeakMap());
+        let c = C.get(r);
+        if (!c) { c = art.nodes(r); C.set(r, c); }
         return c;
     },
+    liveSet(el, k, v) { if (el.getAttribute(k) !== v) el.setAttribute(k, v); },
 
     // Шаг живого цикла (bath-soap.js, wake): roots — видимые копии.
-    // Комочки стоят, пока вещью трут (как флакон: палец смотрит на пену) и
-    // пока она парит: у парящего холста ореол — тень-фильтр, и живая
-    // картинка под ним пересчитывала бы тень на каждом кадре. Часы
-    // комочков в это время тоже стоят — поэтому вещь, перерисованная в
-    // руку, продолжает с той же позы, без скачка.
+    // Всё стоит, пока вещью трут (как флакон: палец смотрит на пену).
+    // Конняку стоит и пока парит: у парящего холста ореол — тень-фильтр, и
+    // живая картинка под ним пересчитывала бы тень на каждом кадре. Облако
+    // светится само (.bt-float-magic — фильтра нет) и течёт и в воздухе.
+    // Часы в это время тоже стоят — поэтому вещь, перерисованная в руку,
+    // продолжает с той же позы, без скачка.
     liveTick(roots, now, rub) {
         const dt = this._liveAt ? Math.min(0.1, (now - this._liveAt) / 1000) : 0;
         this._liveAt = now;
-        if (!this._konjac || rub) return;
-        const run = roots.filter(r => !r.closest('.bt-float'));
+        if (rub) return;
+        const run = roots.filter(r => this.liveArt(r) && !r.closest('.bt-float:not(.bt-float-magic)'));
         if (!run.length) return;
-        this.kt = (this.kt + dt) % this.KONJAC.T;
-        // 15 кадров хватает: комочек проплывает за секунду пару единиц, и
-        // шаг в десятую долю единицы на глаз не отличить от вдвое меньшего,
-        // а каждая запись — перерисовка всей вещи (замер: с 30 кадрами
-        // полка рисовалась вдвое дольше, чем с рукавицей).
+        this.kt = (this.kt + dt) % this.LIVE_T;
+        // 15 кадров хватает: движение медленное (комочек проплывает пару
+        // единиц за секунду), а каждая запись — перерисовка всей вещи
+        // (замер: с 30 кадрами полка рисовалась вдвое дольше, чем с рукавицей).
         if (now - (this._kjWrote || 0) < 60) return;
         this._kjWrote = now;
         this.ktShown = this.kt;
-        const Q = this._konjac.pose(this.kt);
-        const set = (el, k, v) => { if (el.getAttribute(k) !== v) el.setAttribute(k, v); };
-        run.forEach(r => this.konjacNodes(r).lumps.forEach(g => set(g, 'transform', Q[+g.dataset.lump].tr)));
+        const Q = new Map();
+        run.forEach(r => {
+            const art = this.liveArt(r);
+            if (!Q.has(art)) Q.set(art, art.pose(this.kt));
+            art.put(this.liveNodes(r, art), Q.get(art), this.liveSet);
+        });
     },
 
     // Копия на полке встаёт в позу летевшей: пока вещь была в руке, полочная
-    // стояла спрятанной, и комочки в ней остались там, где их взяли.
-    // Посадка (lust.js, flyHome) — подмена одной копии другой, и скачок
-    // комочков был бы виден; сразу после неё едет камера, и цикл стоит.
+    // стояла спрятанной и осталась в той позе, в какой её взяли. Посадка
+    // (lust.js, flyHome) — подмена одной копии другой, и скачок был бы
+    // виден; сразу после неё едет камера, и цикл стоит.
     syncPose(root) {
-        const r = root && root.querySelector && root.querySelector('.bt-cloth-konjac');
-        if (!r || !this._konjac) return;
-        const Q = this._konjac.pose(this.ktShown);
-        this.konjacNodes(r).lumps.forEach(g => { const v = Q[+g.dataset.lump].tr; if (g.getAttribute('transform') !== v) g.setAttribute('transform', v); });
+        const r = this.liveRoot(root), art = r && this.liveArt(r);
+        if (art) art.put(this.liveNodes(r, art), art.pose(this.ktShown), this.liveSet);
     },
 
     // Посадка: sag → атрибуты контура и всего, что к нему привязано.
     // Пишется только изменившееся.
     sagTo(r, s) {
-        const c = this.konjacNodes(r), G = this._konjac.geo(s);
-        const set = (el, k, v) => { if (el.getAttribute(k) !== v) el.setAttribute(k, v); };
-        for (const k of ['s', 'in', 'iri', 'band', 'lit', 'low']) c[k].forEach(el => set(el, 'd', G[k]));
-        c.cau.forEach(el => { set(el, 'cx', String(G.cx)); set(el, 'cy', String(G.cy)); set(el, 'transform', G.cau); });
-        c.sag.forEach(el => set(el, 'transform', G.sag));
+        const art = this.liveArt(r);
+        if (art) art.sag(this.liveNodes(r, art), s, this.liveSet);
     },
 
     // Переход посадки — ТОЛЬКО пока вещь поднимают или кладут, потом ни
-    // одной записи. root — холст или группа, где лежит копия (без конняку —
-    // ничего). 'lift': полка → рука, осевшая округляется с упругим качем
-    // (вытянется и вернётся); первый кадр ставится сразу, до отрисовки.
-    // 'land': рука → полка за dur мс полёта домой; вторую половину пути
-    // оседает с качем и к посадке ровно осевшая — копия на полке встаёт на
-    // её место без подмены. На переезде камеры переход доводится сразу:
-    // сцена едет готовой текстурой (docs/traps.md, п. 150).
+    // одной записи. root — холст или группа, где лежит копия (без живой
+    // ступени — ничего). 'lift': полка → рука, осевшая округляется с
+    // упругим качем (вытянется и вернётся); первый кадр ставится сразу, до
+    // отрисовки. 'land': рука → полка за dur мс полёта домой; вторую
+    // половину пути оседает с качем и к посадке ровно осевшая — копия на
+    // полке встаёт на её место без подмены. На переезде камеры переход
+    // доводится сразу: сцена едет готовой текстурой (docs/traps.md, п. 150).
     reshape(root, mode, dur) {
-        const r = root && (root.classList && root.classList.contains('bt-cloth-konjac') ? root
-                  : root.querySelector && root.querySelector('.bt-cloth-konjac'));
-        if (!r || !this._konjac || typeof requestAnimationFrame === 'undefined') return;
+        const r = this.liveRoot(root);
+        if (!r || !this.liveArt(r) || typeof requestAnimationFrame === 'undefined') return;
         const lift = mode === 'lift', ms = lift ? this.KONJAC.LIFT_MS : Math.max(1, dur || 600);
         const curve = lift
             ? (u) => Math.exp(-3.6 * u) * Math.cos(2 * Math.PI * 1.25 * u) * (1 - u * u * u)

@@ -921,7 +921,7 @@ onmessage = async (e) => {
     // draw, поэтому узлы появятся чуть позже — первый кадр подождёт.
     //
     // Цикл ОДИН на все живые вещи ванной: волшебный флакон (мыло, ступень 8)
-    // и губка конняку (мочалка, ступень 7, BATH_CLOTH.liveTick). Правила у
+    // и живые мочалки — конняку и облако (ступени 7 и 8, BATH_CLOTH.liveTick). Правила у
     // них общие — стоят за закрытой дверью, под магазином, на переезде
     // камеры и за кадром, — и холст полки становится слоем композитора по
     // объединению видимых вещей: два цикла спорили бы за класс .bt-live.
@@ -934,7 +934,8 @@ onmessage = async (e) => {
             // заметную долю скрипта.
             const Lv = this.live;
             if (Lv.dirty || !Lv.roots || Lv.roots.some(r => !r.isConnected)) {
-                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic, .bt-cloth-konjac'));
+                const CL = typeof BATH_CLOTH !== 'undefined' ? ', ' + BATH_CLOTH.LIVE_SEL : '';
+                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic' + CL));
                 Lv.dirty = false;
             }
             // Ванная закрыта — цикл встаёт. Сцена собирается при загрузке
@@ -963,19 +964,20 @@ onmessage = async (e) => {
                 // Под открытым магазином полку не видно — анимирует только
                 // иконка (docs/traps.md, п. 68).
                 const shop = typeof LustShop !== 'undefined' && LustShop.open;
-                // Пока трут, конняку стоит целиком (BATH_CLOTH.liveTick), и
-                // если флакона нет, искать видимые незачем: трение — самый
+                // Пока трут, живая мочалка стоит целиком (BATH_CLOTH.liveTick),
+                // и если флакона нет, искать видимые незачем: трение — самый
                 // тяжёлый кадр ванной, и цикл в нём только сверяет часы.
                 const rub = L0 && L0.drag && (L0.drag.kind === 'soap' || L0.drag.kind === 'cloth')
                     && now - (L0.rubMovedAt || 0) < 250;
-                if (rub && Lv.roots.every(r => r.classList.contains('bt-cloth-konjac'))) {
+                const cloth = (r) => !r.classList.contains('bt-soap-magic');
+                if (rub && Lv.roots.every(cloth)) {
                     if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick([], now, true);
                     Lv.raf = requestAnimationFrame(step);
                     return;
                 }
                 const vis = Lv.roots.filter(r => {
-                    // Конняку на иконке магазина — шар без движения.
-                    const kj = r.classList.contains('bt-cloth-konjac');
+                    // Живая мочалка на иконке магазина стоит.
+                    const kj = cloth(r);
                     if (kj && r.closest('#bt-shop')) return false;
                     if (shop && !r.closest('#bt-shop')) return false;
                     const h = r.closest('#bt-soap-home, #bt-cloth-home');
@@ -983,8 +985,8 @@ onmessage = async (e) => {
                     const m = this.worldMatrix(r);
                     if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
                     // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
-                    // с лучами полка в финале считалась видимой. У конняку —
-                    // шар вокруг своей середины (от гнезда +16, −10).
+                    // с лучами полка в финале считалась видимой. У мочалки —
+                    // вещь вокруг своей середины (от гнезда +16, −10).
                     const [ox, oy] = kj ? [16, -10] : [0, -30];
                     const x = m.a * ox + m.c * oy + m.e, y = m.b * ox + m.d * oy + m.f, R = 50 * Math.abs(m.a);
                     return x > -R && x < 390 + R && y > -R && y < 844 + R;
@@ -1001,9 +1003,8 @@ onmessage = async (e) => {
                 // не на флакон; остановился — флакон ожил, небо доехало на
                 // место (glide). Иконка магазина не в счёт: под магазином
                 // не трут.
-                const kon = vis.filter(r => r.classList.contains('bt-cloth-konjac'));
-                if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(kon, now, rub);
-                const mag = vis.filter(r => !r.classList.contains('bt-cloth-konjac'));
+                if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(vis.filter(cloth), now, rub);
+                const mag = vis.filter(r => !cloth(r));
                 if (mag.length) {
                     const Fr = this.magicFrame(now / 1000);
                     mag.forEach(r => {
