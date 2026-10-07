@@ -979,8 +979,13 @@ onmessage = async (e) => {
                 // колышется ровно тогда — это и есть её живость. Цена — один
                 // transform группы на холсте руки, который и так
                 // перерисовывается за пальцем.
+                // Живая мочалка в руке на трении ТОЖЕ живёт (игрок: «когда
+                // перетаскиваешь облако, все анимации в нём останавливаются —
+                // это тупо»), только реже (BATH_CLOTH.liveTick). Видимость
+                // считать незачем: под пальцем вещь на экране по определению.
                 if (rub && Lv.roots.every(cloth)) {
-                    if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick([], now, true);
+                    if (typeof BATH_CLOTH !== 'undefined')
+                        BATH_CLOTH.liveTick(Lv.roots.filter(r => r.closest('#bt-held')), now, true);
                     Lv.raf = requestAnimationFrame(step);
                     return;
                 }
