@@ -61,7 +61,7 @@ const harness = require('./harness');
   // Водит инструментом змейкой по всей коробке покрытия, шагом в полклетки:
   // мельче шага мазок всё равно не засчитывается. Возвращает, сколько
   // движений понадобилось — по этому числу видно, мгновенный этап или нет.
-  const scrub = async (kind, maxPasses) => {
+  const scrub = async (kind, maxPasses, onRow) => {
     const box = await page.evaluate(() => LustMinigame.coverBox());
     const G = await page.evaluate(() => LustMinigame.grid());
     const q = await toScreen(A[kind]);
@@ -80,6 +80,7 @@ const harness = require('./harness');
         // Проверяем после КАЖДОГО ряда, а не прохода: иначе счётчик работы
         // округляется до целого прохода и этапы становятся неразличимы.
         if (await phase() !== kind) done = true;
+        else if (onRow) await onRow();
       }
     }
     await page.mouse.up();
@@ -142,7 +143,16 @@ const harness = require('./harness');
   // Мочалка — тоже трение: не быстрее своей ступени.
   const clothSec0 = await page.evaluate(() => LustMinigame.stageRub('cloth'));
   const tCloth = Date.now();
-  const clothMoves = await scrub('cloth', 10);
+  // По ходу мочалки снимается картинка горки над хвостом (#bt-pile).
+  const pileGrowth = [];
+  const clothMoves = await scrub('cloth', 10, async () => pileGrowth.push(await page.evaluate(() => {
+    const c = document.getElementById('bt-pile');
+    if (!c || !c.width) return { n: 0, top: 1e9, rub: LustMinigame.rub };
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0, top = 1e9;
+    for (let i = 3, p = 0; i < d.length; i += 4, p++) if (d[i] > 40) { n++; top = Math.min(top, (p / c.width) | 0); }
+    return { n, top, rub: LustMinigame.rub };
+  })));
   const clothSec = (Date.now() - tCloth) / 1000;
   ok(clothSec >= clothSec0 * 0.95, 'мочалкой быстрее ступени не натереть',
      `${clothSec.toFixed(1)} с при ступени ${clothSec0} с`);
@@ -152,43 +162,162 @@ const harness = require('./harness');
   // по уже сплошь намыленному червю. Разница между мылом и мочалкой в
   // ДВИЖЕНИИ (широкий мазок против частой тёрки), а не в минутах.
   ok(clothMoves > 30, 'мочалка требует своей работы', `${clothMoves} движений`);
+
+  // ---------- ГОРКА НАД ХВОСТОМ РОСЛА ВО ВРЕМЯ МОЧАЛКИ ----------
+  // Спрашивается картинка горки (#bt-pile), снятая по ходу тёрки: пена над
+  // гнездом хвоста копится по доле натёртого, а не возникает готовой.
+  const growS = pileGrowth.filter(s => s.rub > 0.02);
+  const gEnd = growS.length ? growS[growS.length - 1] : { n: 0 };
+  const mid = growS.filter(s => s.rub > 0.25 && s.rub < 0.6);
+  ok(gEnd.n > 2000 && mid.length && mid.every(s => s.n > gEnd.n * 0.08 && s.n < gEnd.n * 0.9),
+     'горка растёт по ходу мочалки: на середине этапа — часть горки',
+     `в середине ${mid.map(s => Math.round(s.n / Math.max(1, gEnd.n) * 100) + '%').join(' ')}`);
+  ok(growS.every((s, i) => !i || (s.n >= growS[i - 1].n * 0.98 && s.top <= growS[i - 1].top + 1)),
+     'горка только прибывает и только вверх');
   await page.waitForTimeout(1600);
-  const bubbles = await page.evaluate(() => (LustMinigame.bubbles || []).length);
   ok(await phase() === 'pop', 'мочалка домыла, хвост всплыл', await phase());
-  const BUB = await page.evaluate(() => LustMinigame.cfg());
-  ok(bubbles >= BUB.bubblesMin && bubbles <= BUB.bubblesMax,
-     `пузырей ${BUB.bubblesMin}–${BUB.bubblesMax}`, String(bubbles));
-  // Калибр РАЗНЫЙ: одинаковые кружки складываются в бусы, а не в пену.
-  const rr = await page.evaluate(() => (LustMinigame.bubbles || []).map(b => b.r));
-  ok(Math.max(...rr) / Math.min(...rr) > 1.8, 'пузыри разного калибра',
-     `${Math.min(...rr).toFixed(0)}…${Math.max(...rr).toFixed(0)}`);
+  const N = await page.evaluate(() => LustMinigame.foamGroups());
+
+  // ---------- ГРУППАМИ, СНИЗУ ВВЕРХ ----------
+  // Тот же рост ещё раз, мелкими шагами доли натёртого, и после каждого шага
+  // — картинка. Муть на это время отложена за конец этапа (она проступает
+  // своими ступенями и спорила бы с пузырями): смотрим только на пузыри.
+  // Группа приходит ЦЕЛИКОМ — картинка меняется ровно N раз из 400 шагов, —
+  // и каждая следующая ложится ВЫШЕ прошлой; первая — у борта.
+  const groups = await page.evaluate(() => {
+    const L = LustMinigame, H = L.pile, PL = BATH_ART.PILE, film = PL.film;
+    const c = document.getElementById('bt-pile'), x = c.getContext('2d');
+    const snap = () => { const d = x.getImageData(0, 0, c.width, c.height).data, a = new Uint8Array(c.width * c.height);
+      for (let i = 3, p = 0; i < d.length; i += 4, p++) a[p] = d[i] > 40 ? 1 : 0; return a; };
+    PL.film = [2, 3];
+    H.shown = 0; H.fade = 0; L.pileDraw();
+    let prev = snap();
+    const ev = [];
+    for (let p = 0.0025; p <= 1.0001; p += 0.0025) {
+      L.pileShow(Math.min(1, p));
+      const a = snap();
+      let add = 0, sy = 0, diff = 0;
+      for (let k = 0; k < a.length; k++) if (a[k] !== prev[k]) { diff++; if (a[k]) { add++; sy += (k / c.width) | 0; } }
+      if (diff) ev.push({ add, y: add ? sy / add : 0 });
+      prev = a;
+    }
+    PL.film = film;
+    H.fade = -1; L.pileShow(1);
+    return { ev, h: c.height };
+  });
+  const evs = groups.ev;
+  ok(evs.length === N && evs.every((e, i) => e.add > 0 && (!i || e.y < evs[i - 1].y)),
+     `горка растёт группами: ${N} скачков, каждый выше прошлого`,
+     `${evs.length} перемен картинки из 400 шагов, середины: ${evs.map(e => Math.round(e.y)).join(' ')}`);
+  ok(evs.length && evs[0].y > groups.h * 0.6,
+     'первая группа ложится у борта, а не висит в воздухе',
+     evs.length ? `середина первой группы на ${Math.round(evs[0].y / groups.h * 100)}% высоты холста сверху` : '');
   await page.screenshot({ path: out + '2-tail.png' });
 
-  // ---------- ПУЗЫРИ ----------
-  // Лопаются ПО ОДНОМУ за касание: щелчок по пузырю — само по себе
-  // удовольствие, ради которого этап и существует.
-  let taps = 0;
-  for (let n = 0; n < 50; n++) {
-    const b = await page.evaluate(() =>
-      (LustMinigame.bubbles || []).filter(x => x.alive)[0] || null);
-    if (!b) break;
-    const s = await toScreen(b);
-    await page.mouse.click(s.x, s.y);
-    taps++;
-    await page.waitForTimeout(80);
+  // ---------- ЛОПАНЬЕ ГРУППАМИ И СМЫВ ПЕНЫ С ТЕЛА ----------
+  // Картинки: горка (#bt-pile) и пена на теле (пузыри #bt-wash, муть
+  // #bt-film). Тап — в РАЗНЫЕ места горки, по точкам, где на картинке есть
+  // пена: снизу, сверху, сбоку.
+  const pileShot = () => page.evaluate(() => {
+    const c = document.getElementById('bt-pile'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const prev = window.__pileA, a = new Uint8Array(c.width * c.height);
+    let n = 0, gone = 0, goneY = 0, keepY = 0, back = 0;
+    for (let i = 3, p = 0; i < d.length; i += 4, p++) {
+      a[p] = d[i] > 40 ? 1 : 0;
+      const y = (p / c.width) | 0;
+      if (a[p]) { n++; keepY += y; }
+      if (prev && prev[p] && !a[p]) { gone++; goneY += y; }
+      if (prev && !prev[p] && a[p]) back++;
+    }
+    window.__pileA = a;
+    return { n, gone, back, goneY: gone ? goneY / gone : 0, keepY: n ? keepY / n : 0 };
+  });
+  const bodyFoam = () => page.evaluate(() => {
+    const cnt = (id, thr) => { const c = document.getElementById(id), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > thr) n++; return n; };
+    return { bub: cnt('bt-wash', 24), film: cnt('bt-film', 16) };
+  });
+  // Точка горки, где на картинке есть пена: доля по высоте среди строк с
+  // пеной (0 — верх, 1 — низ) и сторона.
+  const pileSpot = (fy, fx) => page.evaluate(([fy, fx]) => {
+    const L = LustMinigame, H = L.pile, c = document.getElementById('bt-pile');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, W = c.width;
+    const rows = [];
+    for (let y = 0; y < c.height; y += 3) { const xs = []; for (let x = 0; x < W; x += 3) if (d[(y * W + x) * 4 + 3] > 120) xs.push(x); if (xs.length > 4) rows.push({ y, xs }); }
+    if (!rows.length) return null;
+    // Нижние строки уходят под борт — берётся видимая часть, выше борта.
+    const vis = rows.filter(r => H.pb.y + r.y / H.R < L.visibleLine() - 12);
+    const R = vis[Math.min(vis.length - 1, Math.floor(fy * vis.length))] || rows[0];
+    const x = R.xs[Math.min(R.xs.length - 1, Math.floor(fx * R.xs.length))];
+    return { x: H.pb.x + x / H.R, y: H.pb.y + R.y / H.R };
+  }, [fy, fx]);
+  const foam0 = await bodyFoam();
+  await pileShot();
+  // Мимо горки — ничего не лопается и не смывается.
+  const miss = await toScreen({ x: A.tail.x + 150, y: A.tail.y - 250 });
+  await page.mouse.click(miss.x, miss.y);
+  await page.waitForTimeout(120);
+  const missShot = await pileShot(), missFoam = await bodyFoam();
+  ok(missShot.gone === 0 && missFoam.bub === foam0.bub, 'тап мимо горки ничего не лопает и не смывает');
+  ok(foam0.bub > 5000 && foam0.film > 1000, 'после мочалки пена на теле осталась',
+     `пузырей ${foam0.bub} точек, мути ${foam0.film} клеток`);
+  const spots = [[0.9, 0.5], [0.1, 0.5], [0.5, 0.1], [0.5, 0.9], [0.95, 0.15], [0.3, 0.7]];
+  const pops = [];
+  let slide = null;
+  for (let i = 0; i < N + 4 && await phase() === 'pop'; i++) {
+    const sp = await pileSpot(...spots[i % spots.length]);
+    if (!sp) break;
+    const sc = await toScreen(sp);
+    const before = await bodyFoam();
+    await page.mouse.click(sc.x, sc.y);
+    // Сползающий кусок: едет ВНИЗ и тает, потом его нет вовсе.
+    if (i === 1) slide = await page.evaluate(async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const all = () => Array.from(document.querySelectorAll('#lust-game .bt-slough'));
+      const look = () => all().map(n => ({ top: n.getBoundingClientRect().top, op: +getComputedStyle(n).opacity }));
+      await wait(60);
+      const n0 = all()[all().length - 1];
+      let fill = 0;
+      if (n0) { const d = n0.getContext('2d').getImageData(0, 0, n0.width, n0.height).data; for (let k = 3; k < d.length; k += 4) if (d[k] > 24) fill++; }
+      const a = look();
+      await wait(600);
+      const b = look();
+      await wait(900);
+      return { a, b, fill, left: all().length };
+    });
+    else await page.waitForTimeout(150);
+    pops.push({ ...(await pileShot()), ...(await bodyFoam()), was: before });
   }
-  await page.waitForTimeout(300);
-  ok(await phase() === 'rub', 'пузыри лопнули, начались поглаживания',
-     await phase());
-  // След от мыла и мочалки раньше копился ОТДЕЛЬНЫМИ полупрозрачными
-  // фигурами — к концу мытья их набиралось за две сотни, и на телефоне кадры
-  // умирали. Теперь весь след — два холста, и дерево сцены от мытья не
-  // меняется вовсе. Сравниваем с замером ДО мытья: абсолютное число зависит
-  // от того, что ещё нарисовано в кадре, а прирост — только от следа.
+  ok(pops.length === N && await phase() === 'rub', `горка разобрана ровно за ${N} тапов`,
+     `${pops.length} тапов, фаза ${await phase()}`);
+  // «Возврат» — точки, где пены не было, а стала: открылся край нижнего
+  // пузыря, который закрывала лопнувшая группа. Это доли процента; кучка,
+  // выросшая заново, дала бы десятки.
+  ok(pops.every(q => q.gone > 0 && q.back < q.gone * 0.03), 'каждый тап лопает кучку пузырей, ничего не выращивая',
+     pops.map(q => `−${q.gone}/+${q.back}`).join(' '));
+  ok(pops.slice(0, -1).every(q => q.goneY < q.keepY),
+     'лопается ВЕРХНЯЯ из оставшихся групп, в какое место горки ни тапни',
+     pops.slice(0, -1).map(q => `${Math.round(q.goneY)}<${Math.round(q.keepY)}`).join(' '));
+  const lastPop = pops[pops.length - 1] || { n: 1 };
+  const tailOp = await page.evaluate(() => +(document.getElementById('bt-tail').style.opacity || 0));
+  ok(lastPop.n === 0 && tailOp === 1, 'горки больше нет — хвост открыт', `осталось ${lastPop.n} точек пены`);
+  const share = pops.map(q => (q.was.bub - q.bub) / foam0.bub);
+  ok(share.every(s => s > 0.25 / N && s < 2.6 / N),
+     `каждый тап смывает с тела примерно 1/${N} пены`,
+     share.map(s => (s * 100).toFixed(0) + '%').join(' '));
+  ok(lastPop.bub < foam0.bub * 0.01 && lastPop.film === 0, 'горка лопнута до конца — тело чистое',
+     `пузырей ${lastPop.bub}, мути ${lastPop.film}`);
+  ok(slide && slide.a.length && slide.fill > 200 && slide.b.length
+     && slide.b[slide.b.length - 1].top > slide.a[slide.a.length - 1].top + 3
+     && slide.b[slide.b.length - 1].op < slide.a[slide.a.length - 1].op && slide.left === 0,
+     'смытый кусок — цельная картинка, сползает ВНИЗ, тает и исчезает',
+     slide ? `точек ${slide.fill}, сдвиг ${(slide.b.at(-1).top - slide.a.at(-1).top).toFixed(0)} px, `
+             + `прозрачность ${slide.a.at(-1).op.toFixed(2)} → ${slide.b.at(-1).op.toFixed(2)}, после — ${slide.left}` : '');
+  // Дерево сцены не распухает от следа: весь след — холсты. Сравниваем с
+  // замером ДО мытья: абсолютное число зависит от того, что ещё нарисовано
+  // в кадре, а прирост — только от следа.
   ok(nodesAfterSoap === nodesBefore, 'дерево сцены не распухает от следа',
      `${nodesAfterSoap} против ${nodesBefore}`);
-  ok(taps === bubbles, 'лопались по одному за касание',
-     `${taps} тапов на ${bubbles}`);
   await page.screenshot({ path: out + '3-rub.png' });
 
   // Сколько капель ОБЕЩАНО рту при вылете. Попадёт ли капля, игра решает
@@ -826,7 +955,7 @@ const harness = require('./harness');
   // Только что сыграли на жетон — значит, следующий заход приходится на «ещё
   // рано»: червя моют, и на этом всё. Мытьё здесь не водится пальцем заново:
   // его проверяет забег выше, а тут проверяется развилка ПОСЛЕ мочалки.
-  const wash = await page.evaluate(async () => {
+  const wash0 = await page.evaluate(async () => {
     const L = LustMinigame;
     const wait = (ms) => new Promise(r => setTimeout(r, ms));
     const before = {
@@ -834,7 +963,7 @@ const harness = require('./harness');
       paidAt: GameState.data.sins.lust.paid_at
     };
     L.close(); L.open();
-    await wait(400);
+    await wait(600);
     // Дадим шкале просесть: забег обязан её закрыть и без награды.
     GameState.data.sins.lust.updated_at -= 6 * 3600 * 1000;
     const readyAtStart = Backend.sinPays('lust');
@@ -842,18 +971,62 @@ const harness = require('./harness');
     await wait(1200);
     L.finishStage('soap');
     const pile = !!L.pile;
+    // Мочалка домыта — пена на теле полная (тёрка проверена забегом выше).
+    L.rub = 1; L.growTo('cloth', 1);
     L.finishStage('cloth');
     await wait(1500);
+    return { readyAtStart, pile, phase: L.phase, before };
+  });
+  ok(wash0.phase === 'wipe', 'без награды после мочалки пену смывают тапами по червю', `фаза ${wash0.phase}`);
+  // Точка тела, где на картинке ещё есть пена (пузыри #bt-wash на силуэте).
+  const foamSpot = (k) => page.evaluate((k) => {
+    const L = LustMinigame, c = document.getElementById('bt-wash');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, A = L.maskAlpha, W = c.width;
+    const pts = [];
+    for (let y = 0; y < c.height; y += 9) for (let x = 0; x < W; x += 9)
+      if (d[(y * W + x) * 4 + 3] > 120 && A[y * W + x]) pts.push({ x, y });
+    if (!pts.length) return null;
+    const q = pts[Math.floor(((k * 0.618) % 1) * pts.length)];
+    const box = L.wormBoxScene(), s = L.WORM_BASE.w / box.w * L.MASK_SCALE;
+    return { x: box.x + q.x / s, y: box.y + q.y / s };
+  }, k);
+  const wf0 = await bodyFoam();
+  // Мимо персонажа — ничего не смывается.
+  const offBody = await toScreen({ x: A.tail.x - 40, y: 420 });
+  await page.mouse.click(offBody.x, offBody.y);
+  await page.waitForTimeout(150);
+  const wfMiss = await bodyFoam();
+  ok(wfMiss.bub === wf0.bub, 'тап мимо персонажа пену не смывает');
+  const wipes = [];
+  for (let i = 0; i < N + 4 && await phase() === 'wipe'; i++) {
+    const sp = await foamSpot(i + 1);
+    if (!sp) break;
+    const sc = await toScreen(sp);
+    const was = await bodyFoam();
+    await page.mouse.click(sc.x, sc.y);
+    await page.waitForTimeout(150);
+    const now = await bodyFoam();
+    wipes.push((was.bub - now.bub) / wf0.bub);
+  }
+  ok(wipes.length === N && wipes.every(s => s > 0.25 / N && s < 2.6 / N),
+     `«только помыть»: каждый тап по червю смывает примерно 1/${N}, за ${N} тапов тело чистое`,
+     `${wipes.length} тапов: ${wipes.map(s => (s * 100).toFixed(0) + '%').join(' ')}`);
+  await page.waitForTimeout(1600);
+  const wash = await page.evaluate((w0) => {
+    const L = LustMinigame;
     return {
-      readyAtStart, pile, phase: L.phase,
+      ...w0, phase: L.phase,
       tail: +(document.getElementById('bt-tail').style.opacity || 0),
       shop: document.getElementById('bt-shop-btn').classList.contains('on'),
       sin: Math.round(GameState.sinValue('lust')),
       shard: GameState.currency('lust_shard'), token: GameState.currency('lust_token'),
-      paidAt: GameState.data.sins.lust.paid_at, before,
+      paidAt: GameState.data.sins.lust.paid_at,
       wheel: Backend.rewardReady('lust')
     };
-  });
+  }, wash0);
+  const wfEnd = await bodyFoam();
+  ok(wfEnd.bub < wf0.bub * 0.01 && wfEnd.film === 0 && wash.phase === 'done',
+     'тело чистое — забег окончен', `пузырей ${wfEnd.bub}, мути ${wfEnd.film}, фаза ${wash.phase}`);
   ok(!wash.readyAtStart, 'сразу после игры на жетон награда ещё не готова');
   ok(!wash.pile && wash.phase === 'done' && wash.tail === 0,
      'без награды забег кончается после мочалки: ни горки пены, ни хвоста',

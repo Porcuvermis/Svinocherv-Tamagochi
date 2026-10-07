@@ -80,17 +80,25 @@ const LatherGrow = {
         // Скорость — доля высоты тела за «ключ».
         const V = o.speed || 0.1;
         const raw = new Float32Array(gw * gh).fill(Infinity);
+        // Чьё это место: семя, пришедшее первым. По этой карте пена потом
+        // СХОДИТ кусками (chunks ниже) — теми же пятнами, что росли. Граница
+        // между соседними пятнами чуть шумит: ровная дуга на стыке двух
+        // кругов читалась бы вырезом по циркулю.
+        const own = new Int16Array(gw * gh).fill(-1);
         const cells = [];
         for (let j = 0; j < gh; j++) {
             for (let i = 0; i < gw; i++) {
                 const k = j * gw + i;
                 if (!inside[k]) continue;
                 const x = i * S + S / 2, y = j * S + S / 2;
-                let best = Infinity;
-                for (const p of pts) {
+                let best = Infinity, ob = Infinity;
+                for (let q = 0; q < pts.length; q++) {
+                    const p = pts[q];
                     const d = Math.hypot(x - p.x, y - p.y) / bh;
                     const t = p.t + d / (V * p.r);
                     if (t < best) best = t;
+                    const to = t + 0.6 * amp * (vnoise(x * 1.7 + q * 37, y * 1.7 - q * 23) - 0.5);
+                    if (to < ob) { ob = to; own[k] = q; }
                 }
                 raw[k] = best + amp * (vnoise(x, y) + 0.5 * vnoise(x * 2.1 + 31, y * 2.1 + 17) - 0.75)
                     // Мелкий рваный край: разлив и колония растут не
@@ -105,7 +113,120 @@ const LatherGrow = {
         const tau = new Float32Array(gw * gh).fill(1);
         const top = o.top == null ? 0.9 : o.top;
         for (let n = 0; n < cells.length; n++) tau[cells[n]] = top * n / Math.max(1, cells.length - 1);
-        return { tau, inside, gw, gh, S, W, H, box: { x: x0, y: y0, w: bw, h: bh }, seeds: pts };
+        return { tau, own, inside, gw, gh, S, W, H, box: { x: x0, y: y0, w: bw, h: bh }, seeds: pts };
+    },
+
+    // ---------- ПЕНА СХОДИТ КУСКАМИ ----------
+    // Пена с тела смывается не разом и не россыпью, а n цельными кусками
+    // (docs/plan/21-lust-bath.md, разд. 5г) — нарезанными по ТОЙ ЖЕ карте,
+    // по которой она росла. Кусок — это пятно одного семени (own) или
+    // несколько соседних, сросшихся: семян двадцать, кусков десять.
+    //
+    // Почему не полосы карты времени: доля τ ∈ [a, b) — это не пятно, а
+    // кольца вокруг всех уже живых пятен разом, и кусок выходил тонкими
+    // серпами по всему телу — та самая россыпь.
+    //
+    // Куски выравниваются по площади: каждый тап смывает примерно 1/n.
+    // Самое мелкое пятно сливается с самым мелким соседом, пока кусков
+    // больше n; слишком крупное (раннее семя успевает разрастись) режется
+    // пополам поперёк своей длинной оси. Ответ:
+    //   lab   — номер куска на клетку карты (−1 — не тело);
+    //   order — в каком порядке куски сходят: последним выросший — первым
+    //           (обратный порядок появления, как у горки над хвостом);
+    //   area  — сколько клеток в каждом куске.
+    chunks(F, n) {
+        const { gw, gh, inside, own, tau } = F, N = gw * gh;
+        const lab = new Int16Array(N).fill(-1);
+        for (let k = 0; k < N; k++) if (inside[k]) lab[k] = own ? Math.max(0, own[k]) : 0;
+        // Сводка по кускам — типизированными массивами: перебор идёт десятки
+        // раз, и на Map с соседями он стоил сотню миллисекунд.
+        const L = 128, area = new Float64Array(L), sx = new Float64Array(L), sy = new Float64Array(L),
+              st = new Float64Array(L), adj = new Uint32Array(L * L);
+        const stats = () => {
+            area.fill(0); sx.fill(0); sy.fill(0); st.fill(0); adj.fill(0);
+            for (let k = 0; k < N; k++) {
+                const l = lab[k];
+                if (l < 0) continue;
+                const i = k % gw, j = (k / gw) | 0;
+                area[l]++; sx[l] += i; sy[l] += j; st[l] += tau[k];
+                if (i < gw - 1) { const o = lab[k + 1]; if (o >= 0 && o !== l) { adj[l * L + o]++; adj[o * L + l]++; } }
+                if (k + gw < N) { const o = lab[k + gw]; if (o >= 0 && o !== l) { adj[l * L + o]++; adj[o * L + l]++; } }
+            }
+            const R = [];
+            for (let l = 0; l < L; l++) if (area[l] > 0) R.push(l);
+            R.sort((a, b) => area[a] - area[b]);
+            return R;
+        };
+        const relabel = (from, to) => { for (let k = 0; k < N; k++) if (lab[k] === from) lab[k] = to; };
+        // Мелкое — к самому мелкому соседу по общей границе; без соседей
+        // (оторванный кусочек уха) — к ближайшему по середине.
+        const mergeSmallest = (R) => {
+            const r = R[0];
+            let to = -1;
+            for (const o of R) if (o !== r && adj[r * L + o] && (to < 0 || area[o] < area[to])) to = o;
+            if (to < 0) {
+                let best = Infinity;
+                for (const o of R) if (o !== r) {
+                    const d = Math.hypot(sx[o] / area[o] - sx[r] / area[r], sy[o] / area[o] - sy[r] / area[r]);
+                    if (d < best) { best = d; to = o; }
+                }
+            }
+            relabel(r, to);
+        };
+        let next = 1 + Math.max(0, ...Array.from(lab));
+        // Слияние и разрез могут ходить по кругу; из всех нарезок ровно на n
+        // кусков берётся самая ровная (меньше всего разброс площади).
+        let best = null, bestQ = Infinity;
+        for (let guard = 0; guard < 40 && next < L; guard++) {
+            const R = stats();
+            const total = R.reduce((s2, l) => s2 + area[l], 0), target = total / n;
+            if (R.length === n) {
+                const q = area[R[R.length - 1]] / Math.max(1, area[R[0]]);
+                if (q < bestQ) { bestQ = q; best = lab.slice(); }
+                if (q < 1.6) break;
+            }
+            if (R.length > n) { mergeSmallest(R); continue; }
+            const big = R[R.length - 1];
+            // Мешает мелкое, а крупных нет — мелкое сливается, и пополам на
+            // следующем шаге идёт самое крупное: кусков снова n.
+            if (R.length === n && area[big] < target * 1.3) { mergeSmallest(R); continue; }
+            // Крупное — пополам поперёк длинной оси, по медиане.
+            const cx = sx[big] / area[big], cy = sy[big] / area[big];
+            let xx = 0, yy = 0, xy = 0;
+            const ks = [];
+            for (let k = 0; k < N; k++) if (lab[k] === big) {
+                const dx = k % gw - cx, dy = ((k / gw) | 0) - cy;
+                xx += dx * dx; yy += dy * dy; xy += dx * dy; ks.push(k);
+            }
+            const ang = 0.5 * Math.atan2(2 * xy, xx - yy), ux = Math.cos(ang), uy = Math.sin(ang);
+            const pr = ks.map(k => (k % gw - cx) * ux + (((k / gw) | 0) - cy) * uy);
+            const med = pr.slice().sort((a, b) => a - b)[pr.length >> 1];
+            ks.forEach((k, q) => { if (pr[q] > med) lab[k] = next; });
+            next++;
+        }
+        if (best) lab.set(best);
+        // Номера кусков — подряд, порядок схода — от выросшего последним.
+        const R = stats().sort((a, b) => st[b] / area[b] - st[a] / area[a]);
+        const remap = new Int16Array(L).fill(-1);
+        R.forEach((l, i) => { remap[l] = i; });
+        for (let k = 0; k < N; k++) if (lab[k] >= 0) lab[k] = remap[lab[k]];
+        return { lab, n: R.length, area: R.map(l => area[l]), gw, gh, S: F.S };
+    },
+
+    // Номер куска в точке холста. Точка за телом (пузырь у кромки, краевая
+    // клетка мути) берёт кусок ближайшей клетки тела рядом.
+    chunkAt(C, x, y) {
+        const i0 = Math.floor(x / C.S), j0 = Math.floor(y / C.S);
+        for (let r = 0; r <= 3; r++) {
+            for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+                if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+                const i = i0 + di, j = j0 + dj;
+                if (i < 0 || j < 0 || i >= C.gw || j >= C.gh) continue;
+                const l = C.lab[j * C.gw + i];
+                if (l >= 0) return l;
+            }
+        }
+        return 0;
     },
 
     // τ в точке холста (за телом — 1: там пены не бывает).

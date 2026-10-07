@@ -106,12 +106,11 @@ const LustDebug = {
         // startWater через секунду переводит забег к мылу — здесь это лишнее.
         if (L.fillRaf) { cancelAnimationFrame(L.fillRaf); L.fillRaf = 0; }
         L.paidRun = true;
-        L.pile = null;
+        L.pileClear();
         L.raiseTail();
-        // Пузырей и горки не будет: хвост сразу открыт.
-        L.bubbles = [];
-        L.el('bt-foam').innerHTML = '';
-        L.el('bt-bubbles').innerHTML = '';
+        // Горки не будет: хвост сразу открыт, пены на теле нет.
+        L.pileClear();
+        L.wipeLather();
         L.charge = 1;
         L.startFinale();
     },

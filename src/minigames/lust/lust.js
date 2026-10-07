@@ -33,6 +33,7 @@ const LustMinigame = {
     wormHandle: null,
 
     // Ступени забега. Держатся строкой, а не числом: в отладке видно, где ты.
+    // Без награды (7а): … → cloth → wipe (тапы по червю смывают пену) → done.
     phase: 'idle',      // idle → rinse → soap → cloth → tail → pop → rub → aim → done
     drag: null,
     fillRaf: 0,
@@ -63,7 +64,6 @@ const LustMinigame = {
     bend: 0,           // на сколько радиан уведён кончик от вертикали
     bendHand: null,    // угол пальца вокруг корня на прошлом событии
     bendAim: 0,        // изгиб, при котором кончик смотрит в рот
-    bubbles: null,
     charge: 0,          // 0..1, насколько хвост налит поглаживанием
     drops: null,       // капли в полёте
     splats: null,      // куда не попали: прилипло и стекает
@@ -250,18 +250,15 @@ const LustMinigame = {
         this.syncShopButton();
         this.resetCover();
         this.wipeLather();
-        this.el('bt-bubbles').innerHTML = '';
+        this.pileClear();
         this.el('bt-cam-rain-far').innerHTML = BATH_ART.rain(false);
         this.el('bt-cam-rain-near').innerHTML = BATH_ART.rain(true);
         // bt-splats здесь НЕТ: там разметка слоя потёков, её чистит
         // LustGoo.reset(), а не выбрасывает.
-        for (const id of ['bt-tail', 'bt-foam', 'bt-bubbles', 'bt-shots',
-                          'bt-gauge', 'bt-ammo'])
+        for (const id of ['bt-tail', 'bt-shots', 'bt-gauge', 'bt-ammo'])
             this.el(id).innerHTML = '';
         this.setOpacity('bt-tail', 0);
         this.el('bt-tail').removeAttribute('transform');
-        this.bubbles = null;
-        this.pile = null;
         this.mouthFill = null;
         this.mouthAt = null;
         // Слои очищены — значит и пул узлов живого слоя больше ни на что не
@@ -719,6 +716,7 @@ const LustMinigame = {
         if (fl) fl.style.transform = t;
         const gl = this.el('bt-glint');
         if (gl) gl.style.transform = t;
+        this.layoutPile((c.x - a.x) / 100 || 1);
         // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
         const wall = this.el('bt-goo-wall');
         if (wall) {
@@ -846,6 +844,10 @@ const LustMinigame = {
     maskReady() {
         this._grows = null;
         this._eyes = null;
+        // Карты роста и нарезка пены на куски — сразу, пока ванная только
+        // открылась: первым касанием мыла они стоили бы заметную заминку
+        // (две карты и нарезка — десятки миллисекунд).
+        if (this.phase === 'idle') { this.growField('soap'); this.washChunks(); }
         if (this.phase === 'soap') this.growTo('soap', this.rub);
         else if (this.phase === 'cloth') { this.growTo('soap', 1); this.growTo('cloth', this.rub); }
     },
@@ -900,7 +902,6 @@ const LustMinigame = {
     resetCover() {
         this.rub = 0;
         this.rubLast = null;
-        this._pileQ = -1;
     },
 
     // ---------- ТРЕНИЕ ----------
@@ -955,7 +956,11 @@ const LustMinigame = {
         // пальца, и каждый лишний проход по всему холсту здесь — это кадры
         // (на волшебном мыле их съедало видно глазу).
         // Муть — не здесь: у неё свои холсты на странице (filmLayer).
-        for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0) ctx.drawImage(g[k].foam, 0, 0);
+        // Пена каждого вида лежит КУСКАМИ (washChunks): кусок — свой
+        // холст по своей рамке. Смытый кусок просто не кладётся.
+        const gone = this._chunks && this._chunks.gone;
+        for (const k of ['soap', 'cloth']) if (g[k] && g[k].p > 0)
+            for (const P of g[k].parts) if (P && P.cv && !(gone && gone[P.ch])) ctx.drawImage(P.cv, P.x, P.y);
     },
 
     // ---------- РОСТ ПЕНЫ ПО ЗАГОТОВКЕ (lather-grow.js) ----------
@@ -977,19 +982,20 @@ const LustMinigame = {
         if (G0 && G0.mask === this.mask && G0.key === key) return G0;
         const conf = BATH_ART.LATHER_GROW[kind] || BATH_ART.LATHER_GROW.soap;
         const W = this.mask.width, H = this.mask.height;
-        const F = LatherGrow.field(this.maskAlpha, W, H, conf.seeds,
-                                   { seed: conf.seed, noise: conf.noise, speed: conf.speed,
-                                     fine: conf.fine, fineGrain: conf.fineGrain });
+        const F = this.growField(kind);
         if (!F) return null;
+        // Куски, которыми пена потом сойдёт (washChunks), — по карте
+        // мочалки. Нужны уже на мыле: пузырь мути уходит с тем куском, на
+        // котором лежит, а помечается он при рождении.
+        const CH = this.washChunks();
         // Клетка пены — та же величина, что у прежней сетки: виды мути
         // подобраны под неё (BATH_ART.LATHER).
         const box = this.wormBoxScene(), B = this.WORM_BASE, S = this.MASK_SCALE;
         const b = this.coverBox(), Gd = this.grid();
         const cell = Math.max(b.w / Gd.nx, b.h / Gd.ny) * 0.78 * (B.w / box.w * S);
-        const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
         const A = this.maskAlpha;
         const G = {
-            mask: this.mask, key, kind, look, F, cell, film: this.filmLayer(F, look, kind, cell), foam: mk(), idx: 0, p: 0,
+            mask: this.mask, key, kind, look, F, cell, film: this.filmLayer(F, look, kind, cell), parts: [], idx: 0, p: 0,
             sprites: LatherGrow.sprites(F, cell, { seed: conf.seed * 31 + 5, whip: kind === 'cloth' }),
             // Пузырь садится только на тело и НЕ на глаз: пузырь с центром
             // на глазу не рождается вовсе, как лопнутый пальцем. Соседние
@@ -1006,9 +1012,100 @@ const LustMinigame = {
             const i = Math.round(px), j = Math.round(py);
             return i >= 0 && j >= 0 && i < W && j < H && A[j * W + i] > 0;
         };
+        if (CH) for (const sp of G.sprites) sp.ch = LatherGrow.chunkAt(CH, sp.x, sp.y);
+        else for (const sp of G.sprites) sp.ch = 0;
         this._grows[kind] = G;
         this._washOk = false;
         return G;
+    },
+
+    // Карта роста — одна на маску тела и вид: её спрашивают и рост пены, и
+    // нарезка на куски (washChunks).
+    growField(kind) {
+        const f = this._fields = (this._fields && this._fields.mask === this.mask) ? this._fields : { mask: this.mask };
+        if (f[kind]) return f[kind];
+        const conf = BATH_ART.LATHER_GROW[kind] || BATH_ART.LATHER_GROW.soap;
+        return (f[kind] = LatherGrow.field(this.maskAlpha, this.mask.width, this.mask.height, conf.seeds,
+                                           { seed: conf.seed, noise: conf.noise, speed: conf.speed,
+                                             fine: conf.fine, fineGrain: conf.fineGrain }));
+    },
+
+    // Холст куска пены вида G. Пузыри копятся НЕ на одном холсте вида, а
+    // по кускам — каждый кусок на своём, по рамке куска с запасом на
+    // пузыри, вылезающие за его край. Так смыть кусок — это не перерисовать
+    // тело (на волшебном мыле с густой мочалкой это тысячи пузырей:
+    // 40–100 мс на компьютере за тап), а просто его больше не класть
+    // (composeWash), а сползающему куску — взять готовую картинку.
+    partCtx(G, ch) {
+        const P = G.parts[ch] || (G.parts[ch] = { ch, cv: null });
+        if (!P.cv) {
+            const C = this._chunks, W = this.mask.width, H = this.mask.height, m = Math.ceil(2.5 * G.cell);
+            const r = C && C.rect && C.rect[ch] ? C.rect[ch] : { x0: 0, y0: 0, x1: W, y1: H };
+            P.x = Math.max(0, r.x0 - m); P.y = Math.max(0, r.y0 - m);
+            const cv = document.createElement('canvas');
+            cv.width = Math.min(W, r.x1 + m) - P.x; cv.height = Math.min(H, r.y1 + m) - P.y;
+            P.cv = cv;
+            P.ctx = cv.getContext('2d');
+            P.ctx.setTransform(1, 0, 0, 1, -P.x, -P.y);
+        }
+        return P.ctx;
+    },
+
+    // ---------- ПЕНА СХОДИТ С ТЕЛА КУСКАМИ ----------
+    // После мочалки пена НЕ гаснет разом (docs/plan/21-lust-bath.md, 5г):
+    // каждый тап смывает с тела 1/N — цельный кусок, муть и пузыри вместе,
+    // и он сползает вниз и тает. Куски нарезаны по карте роста мочалки
+    // (LatherGrow.chunks): это те же пятна, которыми пена появлялась.
+    // N — ECONOMY.minigames.lust.foamGroups, столько же, сколько групп у
+    // горки над хвостом: тап по горке лопает группу и смывает кусок.
+    washChunks() {
+        if (this._chunks && this._chunks.mask === this.mask) return this._chunks;
+        const F = this.mask && this.maskAlpha ? this.growField('cloth') : null;
+        if (!F) return null;
+        const C = LatherGrow.chunks(F, this.foamGroups());
+        C.mask = this.mask;
+        // Кусок на каждую клетку карты, включая краевые (центр мимо тела,
+        // а муть в них есть): по ним гасится муть (filmPaint).
+        C.cell = new Int16Array(C.gw * C.gh);
+        for (let k = 0; k < C.cell.length; k++)
+            C.cell[k] = LatherGrow.chunkAt(C, (k % C.gw) * C.S + C.S / 2, ((k / C.gw) | 0) * C.S + C.S / 2);
+        C.gone = new Uint8Array(C.n);
+        // Рамка каждого куска в точках холста мытья — по ней его холсты
+        // (partCtx).
+        C.rect = Array.from({ length: C.n }, () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }));
+        for (let k = 0; k < C.lab.length; k++) {
+            const l = C.lab[k];
+            if (l < 0) continue;
+            const r = C.rect[l], x = (k % C.gw) * C.S, y = ((k / C.gw) | 0) * C.S;
+            r.x0 = Math.min(r.x0, x); r.y0 = Math.min(r.y0, y);
+            r.x1 = Math.max(r.x1, x + C.S); r.y1 = Math.max(r.y1, y + C.S);
+        }
+        return (this._chunks = C);
+    },
+
+    foamGroups() { return Math.max(1, this.cfg().foamGroups || 10); },
+
+    // ---------- КУСКИ ПЕНЫ ПРОГРЕВАЮТСЯ ЗАРАНЕЕ ----------
+    // Холст браузер растрирует не в момент рисования, а когда картинку
+    // спросили: до того он копит команды. Видимый холст мытья спрашивают
+    // каждый кадр, а холсты кусков — впервые на первом тапе по пене, и
+    // этот тап платил разом за всю пену этапа (замер на волшебном мыле с
+    // густой мочалкой: 120 мс на компьютере). Поэтому, пока мочалка летит
+    // на полку, куски спрашиваются по одному за кадр.
+    warmParts() {
+        const g = this._grows || {}, q = [];
+        for (const k of ['soap', 'cloth']) if (g[k]) for (const P of g[k].parts) if (P && P.cv) q.push(P.cv);
+        const sink = this._warmCv || (this._warmCv = document.createElement('canvas'));
+        sink.width = sink.height = 1;
+        const sc = sink.getContext('2d');
+        cancelAnimationFrame(this.warmRaf || 0);
+        const step = () => {
+            const cv = q.shift();
+            if (!cv) { this.warmRaf = 0; return; }
+            sc.drawImage(cv, 0, 0, 1, 1);
+            this.warmRaf = requestAnimationFrame(step);
+        };
+        this.warmRaf = requestAnimationFrame(step);
     },
 
     // ---------- ГЛАЗА ЧИСТЫЕ ----------
@@ -1071,8 +1168,12 @@ const LustMinigame = {
     growReset() {
         this.glintClear();
         this._washOk = false;
+        if (this._chunks) this._chunks.gone.fill(0);
+        this.sloughClear();
         for (const G of Object.values(this._grows || {})) {
-            G.foam.getContext('2d').clearRect(0, 0, G.foam.width, G.foam.height);
+            // Холсты кусков выбрасываются: они создаются заново, когда в
+            // кусок придёт первый пузырь.
+            G.parts = [];
             G.idx = 0;
             G.p = 0;
             this.filmUpdate(G, 0, true);
@@ -1085,9 +1186,8 @@ const LustMinigame = {
     growTo(kind, p) {
         const G = this.growth(kind);
         if (!G) return;
-        const oc = G.foam.getContext('2d');
         if (p < G.p) {
-            oc.clearRect(0, 0, G.foam.width, G.foam.height);
+            G.parts = [];
             G.idx = 0;
             this._washOk = false;
         }
@@ -1109,9 +1209,11 @@ const LustMinigame = {
             const s = G.sprites[G.idx++];
             foam = true;
             const k = s.k == null ? 1 : s.k, bub = s.part === 'foam';
-            BATH_ART.washCell(oc, tool, s.x, s.y, G.cell, k, s.seed, s.part, G.inside, G.look, bub ? sink : null);
+            this._sinkCh = s.ch;
+            BATH_ART.washCell(this.partCtx(G, s.ch), tool, s.x, s.y, G.cell, k, s.seed, s.part, G.inside, G.look, bub ? sink : null);
             if (append) BATH_ART.washCell(wc, tool, s.x, s.y, G.cell, k, s.seed, s.part, G.inside, G.look, bub ? this._noSink : null);
         }
+        this._sinkCh = undefined;
         this.filmUpdate(G, p);
         if (foam) this.glintStart();
         if (!append && (foam || !this._washOk)) this.composeWash();
@@ -1185,7 +1287,10 @@ const LustMinigame = {
         const ctx = cv.getContext('2d');
         const img = this._filmImg || (this._filmImg = ctx.createImageData(any.gw, any.gh)), d = img.data;
         const n = any.gw * any.gh;
+        // Смытые куски (washChunk) — без мути: она ушла вместе с пузырями.
+        const CH = this._chunks, gone = CH && CH.gw === any.gw && CH.gone.some(v => v) ? CH : null;
         for (let k = 0; k < n; k++) {
+            if (gone && gone.gone[gone.cell[k]]) { d[k * 4 + 3] = 0; continue; }
             const as = S0 ? S0.a[k] : 0, ac = C0 && C0.gw === any.gw ? C0.a[k] : 0;
             const ao = ac + as * (1 - ac);
             if (ao <= 0) { d[k * 4 + 3] = 0; continue; }
@@ -1255,6 +1360,12 @@ const LustMinigame = {
         // теле (4× замедление): 420 бликов — 47 мс кадра, 200 — 37, 100 — 32.
         denseCap: 180,
         denseAt: 0.6,
+        // Горке над хвостом — свой лимит: она маленькая, и пузырей в ней
+        // сотни, а не тысячи.
+        pileCap: 140,
+        // Пока пену смывают: как часто перерисовывать блики (мс) и у
+        // скольких пузырей тела они есть (glintStart, glintCap).
+        wipe: { every: 80, cap: 160 },
         // Блик пены мочалки (пока один вид — лестница мочалки впереди).
         foam: { k: 0.7, size: 0.24, second: 0.35, halo: 0, min: 0.18 },
         // ТАНЕЦ: пузыри с бликом делятся по размеру на три группы, и у
@@ -1307,10 +1418,12 @@ const LustMinigame = {
         // Ядро блика — светлое; ореол — в цвет свечения вида или, у
         // волшебной мути, в радужный цвет кромки своего пузыря.
         const halo = gp.halo ? (pc || c.glow || c.hi) : null;
-        const b = { x: bx, y: by, r, k: gp.k, gp, core: c.hi, halo,
+        const b = { x: bx, y: by, r, k: gp.k, gp, core: c.hi, halo, ch: this._sinkCh,
                     key: G.kind + '|' + (G.look ? G.look.key : 'foam') + '|' + (halo || '') };
-        (this.glintBubs = this.glintBubs || []).push(b);
-        this.glintOcclude(b);
+        // У горки над хвостом свой список и своя сетка (G.glints, G.grid):
+        // она лежит своим холстом, и блики её штампуются туда же.
+        if (G.glints) { G.glints.push(b); this.glintOcclude(b, G.grid); G.top = null; }
+        else { (this.glintBubs = this.glintBubs || []).push(b); this.glintOcclude(b); }
         this.glintDirty = true;
     },
 
@@ -1326,8 +1439,8 @@ const LustMinigame = {
     // мыла под пеной мочалки: закрыты — не блестят.
     // Соседи ищутся по сетке, а не перебором: пузырей тысячи.
     GLINT_GRID: 32,
-    glintOcclude(b) {
-        const S = this.GLINT_GRID, Gm = this._glintGrid = this._glintGrid || new Map();
+    glintOcclude(b, grid) {
+        const S = this.GLINT_GRID, Gm = grid || (this._glintGrid = this._glintGrid || new Map());
         const i0 = Math.floor((b.x - b.r) / S), i1 = Math.floor((b.x + b.r) / S);
         const j0 = Math.floor((b.y - b.r) / S), j1 = Math.floor((b.y + b.r) / S);
         const R = b.r * 0.75;
@@ -1408,6 +1521,7 @@ const LustMinigame = {
     // пересчитывается, только когда появились пузыри, а не каждый кадр.
     glintCap() {
         const Gc = this.GLINT, C = this._grows && this._grows.cloth;
+        if (this.phase === 'pop' || this.phase === 'wipe' || this.phase === 'rinsed') return Gc.wipe.cap;
         if (!C || !(C.p > 0) || !C.look || !C.look.foam) return Gc.cap;
         const dens = C.look.foam.i / (BATH_ART.FOAM.length - 1);
         let u = Math.min(1, C.p / Gc.denseAt);
@@ -1415,9 +1529,9 @@ const LustMinigame = {
         return Math.round(Gc.cap - (Gc.cap - Gc.denseCap) * u * dens);
     },
 
-    glintPick() {
-        const all = this.glintBubs || [], Gc = this.GLINT, F = Gc.flash;
-        const top = all.filter(b => !b.hidden).sort((a, b) => b.r - a.r).slice(0, this.glintCap());
+    glintPick(list, cap) {
+        const all = list || this.glintBubs || [], Gc = this.GLINT, F = Gc.flash;
+        const top = all.filter(b => !b.hidden).sort((a, b) => b.r - a.r).slice(0, cap || this.glintCap());
         const n = top.length;
         top.forEach((b, i) => {
             b.g = Math.min(2, Math.floor(i * 3 / Math.max(1, n)));
@@ -1433,8 +1547,10 @@ const LustMinigame = {
         // источников — каждый отдельно. У волшебной мути заготовок
         // пятнадцать (цвет кромки × группа).
         top.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.g - b.g));
+        if (list) return top;
         this._glintTop = top;
         this._glintTopN = all.length;
+        return top;
     },
 
     // P — где свет у каждой группы ([{lx, ly}] ×3), (dx, dy) — качание.
@@ -1474,14 +1590,32 @@ const LustMinigame = {
         if (!ctx) return;
         const t0 = performance.now();
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        const K = this.GLINT_C / this.GLINT_R0, stamps = {}, Gc = this.GLINT, F = Gc.flash;
-        const s2 = F.sigma * F.sigma;
+        const stamps = {};
         if (!this._glintTop || this._glintTopN !== (this.glintBubs || []).length) this.glintPick();
+        this.glintPaint(ctx, this._glintTop, P, dx, dy, stamps);
+        // Горка над хвостом блестит ТЕМ ЖЕ светом, что пена на теле: это та
+        // же пена. Холст у неё свой — она лежит под чашей, а не на черве.
+        const pc = this.pileGlintCtx, H = this.pile;
+        if (pc && H) {
+            pc.clearRect(0, 0, pc.canvas.width, pc.canvas.height);
+            if (!H.top || H.topN !== H.glints.length) { H.top = this.glintPick(H.glints, this.GLINT.pileCap); H.topN = H.glints.length; }
+            this.glintPaint(pc, H.top, P, dx, dy, stamps);
+        }
+        this.glintDraws = (this.glintDraws || 0) + 1;
+        this.glintMs = performance.now() - t0;
+    },
+
+    // Штамповка бликов списка top на холст ctx: свет групп P, качание
+    // (dx, dy). Одна на тело, горку и сползающий кусок пены.
+    glintPaint(ctx, top, P, dx, dy, stamps) {
+        const K = this.GLINT_C / this.GLINT_R0, Gc = this.GLINT, F = Gc.flash;
+        const s2 = F.sigma * F.sigma;
+        stamps = stamps || {};
         const stars = [];
         // Заготовка на цвет И группу: у групп свет в разных местах. Это три
         // рисования заготовки за кадр вместо одного — копейки против сотен
         // штампов.
-        for (const b of this._glintTop) {
+        for (const b of top) {
             const sk = b.key + '#' + b.g, gl = P[b.g];
             const st = stamps[sk] || (stamps[sk] = this.glintStamp(b, gl.lx, gl.ly, sk));
             const w = b.r * K, ex = dx - b.hx, ey = dy - b.hy;
@@ -1503,8 +1637,6 @@ const LustMinigame = {
             ctx.drawImage(zs, b.x - ws, b.y - ws, ws * 2, ws * 2);
         }
         ctx.globalAlpha = 1;
-        this.glintDraws = (this.glintDraws || 0) + 1;
-        this.glintMs = performance.now() - t0;
     },
 
     // Цикл наклона: живёт, пока на теле есть пена. Не чаще 30 раз в секунду
@@ -1521,7 +1653,12 @@ const LustMinigame = {
             // самый тяжёлый (пена растёт, вещь едет за пальцем), а мерцание
             // на двадцати не отличить.
             const rub = this.drag && now - (this.rubMovedAt || 0) < 250;
-            if (now - L.last < (rub ? 50 : 33)) return;
+            // Пока пену смывают (горка, тапы по червю), блеск — 12 раз в
+            // секунду и у меньшего числа пузырей (GLINT.wipe): этот этап —
+            // на крупном плане, холсты пены на экране вдвое больше, и с
+            // полным блеском кадров под 4× замедлением было 20 против 60.
+            const wiping = this.phase === 'pop' || this.phase === 'wipe' || this.phase === 'rinsed';
+            if (now - L.last < (wiping ? this.GLINT.wipe.every : rub ? 50 : 33)) return;
             L.last = now;
             const T = typeof Tilt === 'undefined' ? null : Tilt.turn ? Tilt.turn() : Tilt.lean ? Tilt.lean() : null;
             // Датчика нет (компьютер, отказ в разрешении) — свет плывёт сам и
@@ -1602,6 +1739,178 @@ const LustMinigame = {
         this.growReset();
     },
 
+    // ---------- СМЫТЬ КУСОК ПЕНЫ ----------
+    // Сколько кусков пены ещё на теле.
+    washLeft() {
+        const C = this._chunks;
+        if (!C) return 0;
+        let n = 0;
+        for (const v of C.gone) if (!v) n++;
+        return n;
+    },
+
+    // Кусок под точкой сцены: номер, −1 — тело, но пена тут уже смыта,
+    // null — мимо персонажа. Палец толстый: тело ищется и чуть рядом.
+    chunkUnder(p) {
+        const C = this.washChunks();
+        if (!C) return null;
+        const r = this.cfg().wipeReach || 12;
+        for (const [dx, dy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+            const q = { x: p.x + dx, y: p.y + dy };
+            if (!this.onBody(q)) continue;
+            const box = this.wormBoxScene(), k = this.WORM_BASE.w / box.w * this.MASK_SCALE;
+            const c = LatherGrow.chunkAt(C, (q.x - box.x) * k, (q.y - box.y) * k);
+            return C.gone[c] ? -1 : c;
+        }
+        return null;
+    },
+
+    // Смыть кусок c (или, если он уже смыт или не задан, — следующий по
+    // порядку: выросший последним сходит первым). Кусок — муть, пузыри и
+    // их блики вместе — отделяется своим холстом и сползает вниз, тая
+    // (sloughStart); с тела он снимается в тот же миг. Пузыри куска и так
+    // лежат своими холстами (partCtx): с тела он уходит пересборкой из
+    // готовых картинок, без единого нарисованного заново пузыря.
+    washChunk(c) {
+        const C = this.washChunks();
+        if (!C) return false;
+        if (c == null || c < 0 || C.gone[c]) c = C.gone.indexOf(0);
+        if (c < 0) return false;
+        this.sloughStart(c);
+        C.gone[c] = 1;
+        this.filmPaint();
+        this._washOk = false;
+        this.composeWash();
+        // Блики смытого куска уходят вместе с ним (их копия — на сползающем
+        // куске).
+        this.glintBubs = (this.glintBubs || []).filter(b => b.ch !== c);
+        this._glintTop = null;
+        this.glintDirty = true;
+        if (typeof Haptics !== 'undefined') Haptics.impact('light');
+        return true;
+    },
+
+    // ---------- СПОЛЗАЮЩИЙ КУСОК ----------
+    // Свой маленький холст на кусок, в тех же единицах, что холст мытья, и
+    // на том же месте. Едет вниз и тает css-переходом transform и opacity:
+    // это работа композитора над готовой текстурой, ни одной перерисовки за
+    // кадр. Прозрачность здесь — у ОТДЕЛЬНОГО холста, а не у группы в живом
+    // svg (docs/traps.md, п. 73), и слой живёт ровно время сползания
+    // (п. 152): по концу холст выбрасывается.
+    sloughStart(c) {
+        const S = this.MASK_SCALE, Wm = this.mask.width, Hm = this.mask.height;
+        const C = this._chunks, g = this._grows || {}, S0 = g.soap && g.soap.film, C0 = g.cloth && g.cloth.film;
+        const kinds = ['soap', 'cloth'].map(k => g[k]).filter(G => G && G.p > 0 && G.parts[c] && G.parts[c].cv);
+        // Муть куска — клетки карты с этим номером, где она есть.
+        const fcells = [];
+        let i0 = Infinity, j0 = Infinity, i1 = -1, j1 = -1;
+        if (S0 || C0) for (let k = 0; k < C.cell.length; k++) {
+            if (C.cell[k] !== c || ((S0 ? S0.a[k] : 0) + (C0 ? C0.a[k] : 0)) <= 0) continue;
+            fcells.push(k);
+            const i = k % C.gw, j = (k / C.gw) | 0;
+            i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j);
+        }
+        let x0 = fcells.length ? (i0 - 1) * C.S : Infinity, y0 = fcells.length ? (j0 - 1) * C.S : Infinity;
+        let x1 = fcells.length ? (i1 + 2) * C.S : -Infinity, y1 = fcells.length ? (j1 + 2) * C.S : -Infinity;
+        for (const G of kinds) {
+            const P = G.parts[c];
+            x0 = Math.min(x0, P.x); y0 = Math.min(y0, P.y);
+            x1 = Math.max(x1, P.x + P.cv.width); y1 = Math.max(y1, P.y + P.cv.height);
+        }
+        x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+        x1 = Math.min(Wm, Math.ceil(x1)); y1 = Math.min(Hm, Math.ceil(y1));
+        const w = x1 - x0, h = y1 - y0;
+        if (!(w > 0 && h > 0)) return;
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        ctx.translate(-x0, -y0);
+        // Муть — тем же смешением, что на теле (filmPaint), картинкой по
+        // пикселю на клетку, растянутой со сглаживанием.
+        if (fcells.length) {
+            const fw = i1 - i0 + 1, fh = j1 - j0 + 1, fc = document.createElement('canvas');
+            fc.width = fw; fc.height = fh;
+            const fx = fc.getContext('2d'), img = fx.createImageData(fw, fh), d = img.data;
+            for (const k of fcells) {
+                const as = S0 ? S0.a[k] : 0, ac = C0 ? C0.a[k] : 0, ao = ac + as * (1 - ac);
+                const ws = as * (1 - ac) / ao, wc = ac / ao, q = (((k / C.gw) | 0) - j0) * fw + (k % C.gw - i0);
+                for (let u = 0; u < 3; u++) d[q * 4 + u] = (S0 ? S0.col[k * 3 + u] : 0) * ws + (ac ? C0.col[k * 3 + u] : 0) * wc;
+                d[q * 4 + 3] = 255 * ao;
+            }
+            fx.putImageData(img, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(fc, i0 * C.S, j0 * C.S, fw * C.S, fh * C.S);
+        }
+        // Пузыри — готовыми картинками куска.
+        for (const G of kinds) ctx.drawImage(G.parts[c].cv, G.parts[c].x, G.parts[c].y);
+        // Свои блики — те, что горели на этом куске, в том свете, в каком
+        // их застал тап.
+        const L = this.glintLean, top = (this._glintTop || []).filter(b => b.ch === c);
+        if (L && top.length) {
+            const P = L.g.map((q, i) => q.lx == null
+                ? { lx: this.GLINT.groups[i].rest.x, ly: this.GLINT.groups[i].rest.y } : { lx: q.lx, ly: q.ly });
+            this.glintPaint(ctx, top, P, L.dx || 0, L.dy || 0);
+        }
+        // На место: те же единицы и то же преобразование, что у холста мытья.
+        const SL = BATH_ART.SLOUGH, box = this.wormBoxScene(), drop = SL.drop * this.WORM_BASE.w / box.w;
+        const at = (dy) => `${this._wormT || ''} translate(${(x0 / S).toFixed(2)}px, ${(y0 / S + dy).toFixed(2)}px)`;
+        cv.className = 'bt-lather bt-slough';
+        cv.style.width = (w / S) + 'px';
+        cv.style.height = (h / S) + 'px';
+        cv.style.transition = 'none';
+        cv.style.transform = at(0);
+        cv.style.opacity = '1';
+        const after = this.el('bt-glint');
+        if (!after || !after.parentNode) return;
+        after.parentNode.insertBefore(cv, after.nextSibling);
+        void cv.offsetWidth;
+        cv.style.transition = `transform ${SL.ms}ms ${SL.ease}, opacity ${SL.ms}ms ${SL.fade}`;
+        cv.style.transform = at(drop);
+        cv.style.opacity = '0';
+        (this._sloughs = this._sloughs || []).push(cv);
+        // Таймер — только чтобы убрать отыгравший холст (анимация, не
+        // состояние: инвариант 1).
+        setTimeout(() => {
+            cv.remove();
+            if (this._sloughs) this._sloughs = this._sloughs.filter(n => n !== cv);
+        }, SL.ms + 80);
+    },
+
+    sloughClear() {
+        for (const n of this._sloughs || []) n.remove();
+        this._sloughs = [];
+    },
+
+    // ---------- ЗАБЕГ «ТОЛЬКО ПОМЫТЬ»: ТАПЫ ПО ПЕРСОНАЖУ ----------
+    // Хвоста не будет — горки тоже, и смывать пену тапают по самому червю.
+    // Тап по пене смывает кусок под пальцем; по уже чистому месту — следующий
+    // по порядку: тап по червю всегда что-то смывает. Чистое тело — забег
+    // окончен.
+    startWipe() {
+        this.phase = 'wipe';
+        this._glintTop = null;
+        this.washChunks();
+        if (!this.washLeft()) this.finishWash();
+    },
+
+    wipeAt(p) {
+        const c = this.chunkUnder(p);
+        if (c === null) return;
+        this.washChunk(c);
+        if (!this.washLeft()) this.wipeDone();
+    },
+
+    // Последний кусок ещё сползает — вода выключается и камера отъезжает,
+    // когда он сошёл: иначе отъезд камеры увёз бы его с собой.
+    wipeDone() {
+        this.phase = 'rinsed';
+        clearTimeout(this.wipeTimer);
+        this.wipeTimer = setTimeout(() => {
+            this.wipeTimer = 0;
+            if (this.phase === 'rinsed') this.finishWash();
+        }, BATH_ART.SLOUGH.ms);
+    },
+
     // ---------- ВВОД ----------
     onDown(e) {
         if (this.win && this.win.isConfirmOpen && this.win.isConfirmOpen()) return;
@@ -1631,6 +1940,7 @@ const LustMinigame = {
             return;
         }
         if (this.phase === 'pop') { this.pop(p); return; }
+        if (this.phase === 'wipe') { this.wipeAt(p); return; }
         if (this.phase === 'rub') {
             this.drag = { kind: 'rub', t: null };
             this.rubMove(p);
@@ -1665,12 +1975,9 @@ const LustMinigame = {
         this.growTo(kind, this.rub);
         // Пена копится НЕ ТОЛЬКО на черве: над будущим хвостом растёт горка —
         // по той же доле натёртого, чтобы было видно, что она от работы
-        // игрока. Горка — svg и пересобирается целиком, поэтому не на
-        // каждое движение пальца, а сорок раз за этап.
-        if (kind === 'cloth') {
-            const q = Math.floor(this.rub * 40);
-            if (q !== this._pileQ) { this._pileQ = q; this.pileShow(this.rub); }
-        }
+        // игрока. Перерисовывается она, только когда пришла новая группа
+        // или шаг мути (pileShow сам решает).
+        if (kind === 'cloth') this.pileShow(this.rub);
         if (this.rub >= 1) this.finishStage(kind);
     },
 
@@ -2049,18 +2356,20 @@ const LustMinigame = {
         // мочалка долетает до полки, потом всё остальное. Пока летит, палец
         // ничего не берёт: фаза уже не «мочалка».
         this.phase = 'return';
+        this.warmParts();
         this.flyHome(() => {
             if (this.phase !== 'return') return;       // успели уйти из ванной
             if (this.paidRun) this.raiseTail();
-            else this.finishWash();
+            else this.startWipe();
         });
     },
 
     // ---------- ЗАБЕГ «ТОЛЬКО ПОМЫТЬ» ----------
     // Награда ещё не готова — червя вымыли, и на этом всё. Сказано без
-    // единого слова (инвариант 9): вода выключается, пена сходит с тела,
-    // камера отъезжает на общий план, кнопка магазина возвращается. Хвост не
-    // всплывает — ширмы над ним и не копилось.
+    // единого слова (инвариант 9): пену игрок смыл сам, тапами по червю
+    // (startWipe), вода выключается, камера отъезжает на общий план, кнопка
+    // магазина возвращается. Хвост не всплывает — ширмы над ним и не
+    // копилось.
     //
     // Шкала потребности закрывается, как после любого захода: червь чистый.
     // Таймер награды НЕ тратится (rewards.lust.wash без claimsReward).
@@ -2097,10 +2406,10 @@ const LustMinigame = {
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
         this.wormHost.classList.add('bt-soft');
         this.blurFar(BATH_ART.FAR_BLUR, 900);
-        // Червя ополаскивают: муть и пена сходят. Оставить их — значит
-        // держать белую вуаль поверх морды весь финал, а именно морда в нём
-        // и работает (блаженство, открытый рот).
-        this.washShown(false);
+        // Пена с тела НЕ сходит разом (docs/plan/21-lust-bath.md, 5г): её
+        // смывают тапы по горке, кусок за группой (pop). К поглаживанию тело
+        // чистое — вуали поверх морды в финале нет, а именно морда в нём и
+        // работает (блаженство, открытый рот).
         const model = window.WormModelAPI ? this.bathModel() : null;
         this.tailModel = model;
         // Вид хвоста — по купленной ступени (BATH_ART.TAIL_LOOKS).
@@ -2125,7 +2434,7 @@ const LustMinigame = {
         // прячут, не нужно анимировать — его нужно не показывать.
         const g = this.el('bt-tail');
         g.removeAttribute('transform');
-        this.spawnBubbles();
+        this.startPop();
     },
 
     // Размытие ДАЛЬНЕГО плана. Стена с плиткой стоит дальше всех, значит и
@@ -2171,57 +2480,229 @@ const LustMinigame = {
         this.blurRaf = requestAnimationFrame(step);
     },
 
-    // ---------- ГОРКА ПЕНЫ ----------
-    // Список пузырей собирается ОДИН РАЗ, ещё на этапе мочалки, и потом
-    // только показывается по частям. Так горка растёт на глазах, а не
-    // возникает готовой в момент, когда её нужно лопать.
+    // ---------- ГОРКА ПЕНЫ НАД ХВОСТОМ ----------
+    // ШИРМА, под которой всплывает хвост (docs/plan/21-lust-bath.md, 5г).
+    // Это ТА ЖЕ пена, что на теле: те же пузыри тем же рисовальщиком
+    // (BATH_ART.washCell — цвет и эффекты от мыла, густота и объём от
+    // мочалки), те же блики от наклона. Своя у неё только форма:
+    //   * пузыри — пирамидкой острием кверху, плотно, и делятся на N групп
+    //     снизу вверх. Растут группами по доле натёртого мочалкой и лопаются
+    //     группами в обратном порядке, сверху вниз;
+    //   * муть под ними — не облако, а раздутый скруглённый СИЛУЭТ ХВОСТА,
+    //     каким он всплывёт (маленьким), цвета мыльной мути. Проступает к
+    //     концу мочалки и прячет появление хвоста; тает вместе с группами —
+    //     срезана по верху оставшейся пены.
+    // Холст свой, под чашей и над хвостом (#bt-pile), в единицах сцены.
+    // Собирается ОДИН РАЗ, ещё на этапе мочалки; дальше только показывается
+    // нужное число групп.
     buildPile() {
-        const C = this.cfg(), T = BATH_ART.TAIL;
-        const lo = C.bubblesMin || 16, hi = C.bubblesMax || 20;
-        const n = lo + Math.floor(Math.random() * (hi - lo + 1));
-        const A = BATH_ART.slots();
-        // Горка обязана закрывать НЕВЫРОСШИЙ хвост целиком, с запасом:
-        // всплывает он маленьким.
-        this.pileW = T.base * 2.4;
-        this.pileH = T.len * 1.15;
-        this.pileSeed = 1 + Math.floor(Math.random() * 999);
-        this.pile = [];
-        for (let i = 0; i < n; i++) {
-            // Кладутся по той же горке, что и комки: доля вдоль высоты, и
-            // чем выше, тем уже разброс. Иначе пузыри висят по краям над
-            // пустотой, а сама горка остаётся голой.
-            const t = Math.pow((i + 0.5) / n, 0.8);
-            const half = (this.pileW / 2) * (1 - 0.55 * t);
-            this.pile.push({
-                x: A.tail.x + (Math.random() - 0.5) * 2 * half,
-                y: A.tail.y - t * this.pileH - 4,
-                // Порядок ПОЯВЛЕНИЯ — по высоте, снизу вверх: пена не
-                // возникает в воздухе, она нарастает от борта ванны, комок
-                // на комок. Порядок ОТРИСОВКИ другой (крупные первыми), и
-                // путать их нельзя: иначе мелкий тонет под соседним крупным
-                // и по нему нечем попасть.
-                ord: i,
-                // Мельче прежних (было 4…15): хвост стал вдвое короче, и
-                // старый калибр закрывал его целиком. Попадать по ним от
-                // размера не зависит — зона срабатывания общая (popReach).
-                r: 5 + Math.pow(Math.random(), 1.6) * 9,
-                alive: true, seed: i * 37 + 5
-            });
+        const A = BATH_ART.slots(), T = BATH_ART.TAIL, PL = BATH_ART.PILE, N = this.foamGroups();
+        const R = PL.res, cv = this.el('bt-pile'), gl = this.el('bt-pile-glint');
+        if (!cv) return;
+        // Клетка пены — та же величина, что на теле (growth), в единицах
+        // сцены: пузыри горки того же калибра, что на черве.
+        const b = this.coverBox(), Gd = this.grid();
+        const cellScene = Math.max(b.w / Gd.nx, b.h / Gd.ny) * 0.78 * PL.cell;
+        const Hh = T.len * PL.tall, W0 = T.base * PL.wide, m = cellScene * 1.8;
+        // Низ горки — у кромки борта, а не у корня хвоста: корень под
+        // бортом, и пена ниже кромки (а с ней вся первая группа) была бы
+        // не видна вовсе.
+        const tub = BATH_ART.box('tub'), low = Math.min(A.tail.y, tub ? tub.y : A.tail.y) + PL.below - A.tail.y;
+        const pb = { x: A.tail.x - W0 - m, y: A.tail.y - Hh - m, w: 2 * (W0 + m), h: Hh + m + Math.max(0, low) + m * 0.5 };
+        const pw = Math.ceil(pb.w * R), ph = Math.ceil(pb.h * R), cell = cellScene * R;
+        const ox = (A.tail.x - pb.x) * R, oy = (A.tail.y - pb.y) * R;
+        const mk = () => { const c = document.createElement('canvas'); c.width = pw; c.height = ph; return c; };
+        // Раздутый хвост: контур в том виде, каким всплывёт (без изгиба и
+        // налива), обведённый толстой круглой линией — раздут на pad и
+        // скруглён на углах.
+        const tl = mk(), tc = tl.getContext('2d'), path = new Path2D(BATH_ART.tailCurve(0, 1).d);
+        tc.setTransform(R, 0, 0, R, ox, oy);
+        tc.fillStyle = tc.strokeStyle = '#000';
+        tc.lineJoin = tc.lineCap = 'round';
+        tc.lineWidth = PL.pad * 2;
+        tc.fill(path); tc.stroke(path);
+        // Место пены: пирамидка над гнездом плюс раздутый хвост.
+        const rg = mk(), rc = rg.getContext('2d');
+        rc.setTransform(R, 0, 0, R, ox, oy);
+        rc.fillStyle = '#000';
+        rc.beginPath();
+        // Пирамидка: от кромки борта (low) до острия над кончиком хвоста.
+        const yAt = (h) => low + (-Hh - low) * h;
+        for (let i = 0; i <= 24; i++) { const h = i / 24; rc.lineTo(-W0 * Math.pow(1 - h, PL.taper), yAt(h)); }
+        for (let i = 24; i >= 0; i--) { const h = i / 24; rc.lineTo(W0 * Math.pow(1 - h, PL.taper), yAt(h)); }
+        rc.closePath(); rc.fill();
+        rc.setTransform(1, 0, 0, 1, 0, 0);
+        rc.drawImage(tl, 0, 0);
+        const RA = rc.getImageData(0, 0, pw, ph).data, TA = tc.getImageData(0, 0, pw, ph).data;
+        const inside = (x, y) => {
+            const i = Math.round(x), j = Math.round(y);
+            return i >= 0 && j >= 0 && i < pw && j < ph && RA[(j * pw + i) * 4 + 3] > 0;
+        };
+        inside.body = inside;
+        // Частицы — сеткой с дрожанием, гуще, чем на теле (PL.step):
+        // кучка плотная. Группы — по высоте снизу вверх, поровну частиц;
+        // граница между группами неровная (дрожь в ключе сортировки).
+        const seed = 1 + Math.floor(Math.random() * 999), rng = btRng(seed);
+        const step = cell * PL.step, parts = [];
+        let n = 0;
+        for (let y = 0, row = 0; y < ph; y += step * 0.87, row++) {
+            for (let x = -step; x < pw + step; x += step) {
+                const px = x + (row % 2) * step * 0.5 + (rng() - 0.5) * step * 0.6;
+                const py = y + (rng() - 0.5) * step * 0.6;
+                n++;
+                if (!inside(px, py) || py > oy + low * R) continue;
+                parts.push({ x: px, y: py, seed: seed * 13 + n * 7, key: py + (rng() - 0.5) * step * 1.4 });
+            }
         }
-        this.pile.sort((a, b) => b.r - a.r);
-        this.pileShow(0);
+        parts.sort((a, c) => c.key - a.key);
+        const tops = new Array(N).fill(Infinity);
+        // Рамка каждой группы — по её частицам с запасом на пузыри: группа
+        // рисуется своим холстом один раз (pileGroup), а горка складывается
+        // из готовых картинок групп.
+        const groups = Array.from({ length: N }, () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, cv: null, glints: [] }));
+        parts.forEach((q, i) => {
+            q.g = Math.min(N - 1, Math.floor(i * N / parts.length));
+            tops[q.g] = Math.min(tops[q.g], q.y);
+            const G = groups[q.g], e = cell * 2.5;
+            G.x0 = Math.min(G.x0, q.x - e); G.y0 = Math.min(G.y0, q.y - e);
+            G.x1 = Math.max(G.x1, q.x + e); G.y1 = Math.max(G.y1, q.y + e);
+        });
+        // Муть — картинкой по пикселю на клетку (как муть на теле), цвет —
+        // мыльной мути этого забега, густота — доля раздутого хвоста в клетке.
+        const fs = Math.max(2, Math.round(PL.filmStep * R)), fw = Math.ceil(pw / fs), fh = Math.ceil(ph / fs);
+        const soapLook = BATH_ART.latherLook(null, 'soap'), film = [];
+        for (let j = 0; j < fh; j++) for (let i = 0; i < fw; i++) {
+            let cov = 0;
+            for (let v = 0; v < 4; v++) for (let u = 0; u < 4; u++) {
+                const x = Math.min(pw - 1, Math.floor(i * fs + (u + 0.5) * fs / 4)), y = Math.min(ph - 1, Math.floor(j * fs + (v + 0.5) * fs / 4));
+                if (TA[(y * pw + x) * 4 + 3]) cov++;
+            }
+            if (!cov) continue;
+            const x = i * fs + fs / 2, y = j * fs + fs / 2, c = BATH_ART.filmCell(soapLook, 'soap', x, y, cell);
+            film.push({ k: j * fw + i, y, r: c[0], g: c[1], b: c[2], a: cov / 16 * PL.filmA });
+        }
+        const fc = document.createElement('canvas');
+        fc.width = fw; fc.height = fh;
+        cv.width = gl.width = pw; cv.height = gl.height = ph;
+        this.pileCtx = cv.getContext('2d');
+        this.pileGlintCtx = gl.getContext('2d');
+        this.pile = {
+            N, pb, pw, ph, R, cell, parts, tops, groups, inside, kind: 'cloth',
+            look: Object.assign({}, BATH_ART.latherLook(null, 'cloth'), { foam: BATH_ART.foamLook() }),
+            film, fs, fw, fh, fc, shown: 0, alive: N, fade: 0, glints: [], grid: new Map(), top: null
+        };
+        this.layoutPile();
+        this.pileDraw();
     },
 
-    // Показать долю k горки: сама горка растёт, пузыри проступают по одному.
-    pileShow(k) {
-        if (!this.pile) return;
-        const A = BATH_ART.slots(), g = Math.max(0, Math.min(1, k));
-        this.el('bt-foam').innerHTML = BATH_ART.foamMound(
-            A.tail.x, A.tail.y, this.pileW, this.pileH, g, this.pileSeed);
-        const upto = Math.round(g * this.pile.length);
-        this.el('bt-bubbles').innerHTML = this.pile
-            .filter(b => b.ord < upto && b.alive)
-            .map(b => BATH_ART.bubble(b.x, b.y, b.r, b.seed)).join('');
+    // Холст горки — в единицах сцены, той же камерой, что и всё остальное.
+    layoutPile(pxPerScene) {
+        const H = this.pile;
+        if (!H) return;
+        if (pxPerScene == null) {
+            const a = this.sceneToHost({ x: 0, y: 0 }), c = this.sceneToHost({ x: 100, y: 0 });
+            pxPerScene = (c.x - a.x) / 100 || 1;
+        }
+        const o = this.sceneToHost({ x: H.pb.x, y: H.pb.y });
+        const t = `translate(${o.x.toFixed(1)}px, ${o.y.toFixed(1)}px) scale(${pxPerScene.toFixed(4)})`;
+        for (const id of ['bt-pile', 'bt-pile-glint']) {
+            const n = this.el(id);
+            if (!n) continue;
+            n.style.width = H.pb.w + 'px';
+            n.style.height = H.pb.h + 'px';
+            n.style.transform = t;
+            n.style.opacity = '1';
+        }
+    },
+
+    // Нарисовать горку: группы [0, min(shown, alive)) и муть под ними.
+    pileDraw() {
+        const H = this.pile, ctx = this.pileCtx, PL = BATH_ART.PILE;
+        if (!H || !ctx) return;
+        ctx.clearRect(0, 0, H.pw, H.ph);
+        H.glints = []; H.grid = new Map(); H.top = null;
+        const upto = Math.min(H.shown, H.alive);
+        if (H.fade > 0 && upto > 0) {
+            // Муть срезана по верху оставшейся пены, мягко; и бледнеет, пока
+            // горку разбирают: тает вместе с группами.
+            const cut = H.tops[upto - 1], soft = H.cell * PL.soft;
+            const k = H.fade * (PL.thin + (1 - PL.thin) * H.alive / H.N);
+            const fx = H.fc.getContext('2d'), img = fx.createImageData(H.fw, H.fh), d = img.data;
+            for (const f of H.film) {
+                let u = (f.y - cut) / soft + 0.5;
+                u = u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
+                if (!u) continue;
+                d[f.k * 4] = f.r; d[f.k * 4 + 1] = f.g; d[f.k * 4 + 2] = f.b; d[f.k * 4 + 3] = 255 * f.a * k * u;
+            }
+            fx.putImageData(img, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(H.fc, 0, 0, H.fw * H.fs, H.fh * H.fs);
+        }
+        // Пузыри — готовыми картинками групп, снизу вверх; блики — их же,
+        // и закрытость пересчитывается заново: лопнула верхняя группа —
+        // блестят те, кого она накрывала.
+        for (let g = 0; g < upto; g++) {
+            const G = this.pileGroup(g);
+            if (G.cv) ctx.drawImage(G.cv, G.x, G.y);
+            for (const b of G.glints) { b.hidden = false; H.glints.push(b); this.glintOcclude(b, H.grid); }
+        }
+        const gc = this.pileGlintCtx;
+        if (gc) gc.clearRect(0, 0, H.pw, H.ph);
+        this.glintDirty = true;
+        if (H.glints.length) this.glintStart();
+    },
+
+    // Картинка группы g горки — рисуется один раз, тем же рисовальщиком,
+    // что пена на теле; её блики копятся в группе.
+    pileGroup(g) {
+        const H = this.pile, G = H.groups[g];
+        if (G.cv || !(G.x1 > G.x0)) return G;
+        G.x = Math.max(0, Math.floor(G.x0)); G.y = Math.max(0, Math.floor(G.y0));
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.min(H.pw, Math.ceil(G.x1)) - G.x);
+        cv.height = Math.max(1, Math.min(H.ph, Math.ceil(G.y1)) - G.y);
+        const ctx = cv.getContext('2d');
+        ctx.translate(-G.x, -G.y);
+        const T = { look: H.look, kind: H.kind, cell: H.cell, glints: G.glints, grid: new Map() };
+        const sink = (bx, by, r, pc) => this.glintBubble(T, bx, by, r, pc);
+        for (const q of H.parts) if (q.g === g)
+            BATH_ART.washCell(ctx, 'cloth', q.x, q.y, H.cell, 1, q.seed, undefined, H.inside, H.look, sink);
+        G.cv = cv;
+        return G;
+    },
+
+    // Горка во время мочалки: доля натёртого p. Группа приходит целиком,
+    // в свою долю; муть — к концу этапа, ступенями по восьмой.
+    pileShow(p) {
+        const H = this.pile, PL = BATH_ART.PILE;
+        if (!H) return;
+        let shown = 0;
+        for (let g = 0; g < H.N; g++)
+            if (p >= PL.grow[0] + (PL.grow[1] - PL.grow[0]) * g / Math.max(1, H.N - 1)) shown = g + 1;
+        let u = Math.max(0, Math.min(1, (p - PL.film[0]) / (PL.film[1] - PL.film[0])));
+        u = Math.round(u * u * (3 - 2 * u) * 8) / 8;
+        if (shown === H.shown && u === H.fade) return;
+        H.shown = shown; H.fade = u;
+        this.pileDraw();
+    },
+
+    pileClear() {
+        this.pile = null;
+        for (const id of ['bt-pile', 'bt-pile-glint']) {
+            const n = this.el(id);
+            if (n) n.getContext('2d').clearRect(0, 0, n.width, n.height);
+        }
+    },
+
+    // Попал ли тап в горку: в ЛЮБОЕ её место, с запасом popReach вокруг
+    // оставшейся пены (пузыри мелкие, палец толстый).
+    pileHit(p) {
+        const H = this.pile;
+        if (!H || !H.alive) return false;
+        const A = BATH_ART.slots(), reach = this.cfg().popReach || 34;
+        const W0 = BATH_ART.TAIL.base * BATH_ART.PILE.wide;
+        const top = H.pb.y + H.tops[Math.min(H.shown, H.alive) - 1] / H.R;
+        return Math.abs(p.x - A.tail.x) <= W0 + reach && p.y >= top - reach && p.y <= A.tail.y + reach;
     },
 
     // Точка рта червя. Считается по НАРИСОВАННОМУ рту, а не по числу: рот
@@ -2267,7 +2748,9 @@ const LustMinigame = {
             this.wormHandle.setLivePose({ mouthOpenness: 0.3, eyelidLevel: 0.55 });
         // Червь уходит в расфокус: главный в кадре — хвост.
         this.wormHost.classList.add('bt-soft');
-        this.el('bt-bubbles').innerHTML = '';
+        // Горка разобрана, тело чистое — блеска больше нечему давать.
+        this.pileClear();
+        this.glintStop();
         this.rubLast = performance.now();
         this.rubMoved = this.rubLast;
         const tick = (now) => {
@@ -2587,52 +3070,33 @@ const LustMinigame = {
     // складываются в бусы, а не в пену. Доля возводится в степень, поэтому
     // мелких много, крупных единицы.
     //
-    // Лопаются ПО ОДНОМУ за касание. Пачкой было быстрее, но щелчок по
-    // пузырю — сам по себе удовольствие, ради которого этап и существует;
-    // пачка съедала его ради экономии десятка тапов.
-    // Горка уже стоит и уже полная — здесь только отдаётся управление
-    // игроку. Новых пузырей не появляется: те же, что копились под мочалкой,
-    // теперь можно лопать.
-    spawnBubbles() {
+    // ---------- ГОРКА ЛОПАЕТСЯ ГРУППАМИ ----------
+    // Тап в любое место горки лопает целую группу — верхнюю из оставшихся,
+    // в обратном порядке появления — и смывает с тела кусок пены (washChunk):
+    // сколько групп, столько кусков (foamGroups). Правило «щелчок — само
+    // удовольствие» не отменено, а умножено: за щелчок лопается не один
+    // пузырь, а кучка. Горка уже стоит полная — новых пузырей не появляется.
+    startPop() {
         this.phase = 'pop';
+        this._glintTop = null;
         if (!this.pile) this.buildPile();
-        this.bubbles = this.pile;
-        this.pileShow(1);
-    },
-
-    // Горка тает вместе с пузырями: её доля — это доля целых. Иначе игрок
-    // разобрал бы всю пену, а ширма осталась бы стоять поверх хвоста.
-    drawBubbles() {
-        const A = BATH_ART.slots();
-        const alive = this.bubbles.filter(b => b.alive);
-        this.el('bt-bubbles').innerHTML = alive
-            .map(b => BATH_ART.bubble(b.x, b.y, b.r, b.seed)).join('');
-        this.el('bt-foam').innerHTML = BATH_ART.foamMound(
-            A.tail.x, A.tail.y, this.pileW, this.pileH,
-            alive.length / Math.max(1, this.bubbles.length), this.pileSeed);
+        const H = this.pile;
+        if (H) { H.shown = H.N; H.fade = 1; this.pileDraw(); }
+        this.washChunks();
     },
 
     pop(p) {
-        // ОДИН за касание, и ближайший: под пальцем часто оказываются два, и
-        // лопаться должен тот, по которому целились.
-        //
-        // Зона срабатывания ОДНА НА ВСЕХ и не зависит от радиуса пузыря.
-        // Пока она была «радиус плюс немного», по мелким было физически не
-        // попасть: палец закрывает их целиком, а засчитывалось попадание в
-        // круг вдвое меньше подушечки. Ближайший всё равно один, так что
-        // широкая зона ничего не путает — она снимает прицеливание.
-        const reach = this.cfg().popReach || 34;
-        let hit = null, best = Infinity;
-        for (const b of this.bubbles) {
-            if (!b.alive) continue;
-            const d = Math.hypot(b.x - p.x, b.y - p.y);
-            if (d > reach || d >= best) continue;
-            best = d; hit = b;
+        const H = this.pile;
+        if (!H || !this.pileHit(p)) return;
+        H.alive--;
+        this.pileDraw();
+        this.washChunk(null);
+        if (!H.alive) {
+            // Хвостом можно браться, даже пока последний кусок пены ещё
+            // сползает с морды: тело для учёта уже чистое.
+            while (this.washLeft()) this.washChunk(null);
+            this.startRub();
         }
-        if (!hit) return;
-        hit.alive = false;
-        this.drawBubbles();
-        if (!this.bubbles.some(b => b.alive)) this.startRub();
     },
 
     // ---------- ФИНАЛ: ТОЛЧКИ И ЛОВЛЯ ----------
@@ -3228,6 +3692,8 @@ const LustMinigame = {
         if (this.settleRaf) { cancelAnimationFrame(this.settleRaf); this.settleRaf = 0; }
         if (this.relaxRaf) { cancelAnimationFrame(this.relaxRaf); this.relaxRaf = 0; }
         clearTimeout(this.shotTimer); this.shotTimer = 0;
+        clearTimeout(this.wipeTimer); this.wipeTimer = 0;
+        if (this.warmRaf) { cancelAnimationFrame(this.warmRaf); this.warmRaf = 0; }
         this.nextShotAt = null; this.shotAt = null;
     },
 
