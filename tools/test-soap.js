@@ -21,6 +21,9 @@ const harness = require('./harness');
 //   5. СТОРОНА сдвига неба от наклона — а не «лишь бы менялось»: проверка
 //      на размах зелена при любом знаке (п. 116). Дальний слой сдвигается
 //      сильнее ближнего — иначе глубины нет.
+//   5а. Колба (ступень 7): жижа стекает к той стороне шара, что ниже, —
+//      по снимку, а не по числу в коде; после рывка колышется и
+//      успокаивается, в покое ни одной записи, на иконке стоит.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-soap.js /tmp/soap-
@@ -54,7 +57,7 @@ const harness = require('./harness');
   // волос, свисающий с обмылка), небо внутри флакона (обрезано полостью, но
   // getBBox обрезки не знает) и убранство вокруг. Всё это выходит за
   // предмет намеренно, box() описывает сам предмет.
-  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura, .bsm-halo, .bsm-beads, .bsm-motes-f, .bsm-motes-b, .bsm-dust, .bsm-glint';
+  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura, .bsm-beads, .bsm-motes-f, .bsm-motes-b, .bsm-dust, .bsm-glint';
   for (let n = 0; n < tiers; n++) {
     await setTier(n);
     await page.waitForTimeout(150);
@@ -177,6 +180,128 @@ const harness = require('./harness');
   check(fy < -2, `верх телефона к себе — небо уезжает ВВЕРХ (${fy.toFixed(1)} px)`);
   check(Math.abs(fx) > Math.abs(nx) * 1.5 && Math.abs(fy) > Math.abs(ny) * 1.5,
         `дальний слой едет сильнее ближнего (${Math.abs(fx).toFixed(1)} против ${Math.abs(nx).toFixed(1)})`);
+
+  // ================= 5а. КОЛБА: ЖИЖА ПОДЧИНЯЕТСЯ ТЯЖЕСТИ =================
+  // Ступень 7: жижа стремится вниз при наклоне телефона и колышется после
+  // рывка (просьба игрока). Спрашивается КАРТИНКА: снимок шара, и в нём —
+  // где розовая (нижняя) жижа и где лиловый (верхний) слой относительно
+  // центра шара. Наклон — настоящими событиями датчика. Знак записан один
+  // раз здесь: завалил правый край вниз — жижа стекает к ПРАВОМУ краю шара
+  // (п. 116; проверка на размах зелена при любом знаке).
+  say('\n======== КОЛБА: ЖИЖА СТЕКАЕТ ВНИЗ И КОЛЫШЕТСЯ ========');
+  await setTier(7);
+  await page.waitForTimeout(400);
+  const orientF = (a, b, g) => page.evaluate(([a, b, g]) =>
+    window.dispatchEvent(Object.assign(new Event('deviceorientation'), { alpha: a, beta: b, gamma: g })), [a, b, g]);
+  const heldF = async (a, b, g, ms) => { const t = Date.now(); while (Date.now() - t < ms) { await orientF(a, b, g); await page.waitForTimeout(30); } };
+  // Где жижа на снимке шара: центр масс розовых и лиловых пикселей в долях
+  // радиуса (x вправо). Шар — стеклянный круг сразу за группой жижи.
+  const liquidAt = async (sel) => {
+    const c = await page.evaluate((sel) => {
+      const liq = document.querySelector(sel + ' .bsf-liq'), ball = liq && liq.nextElementSibling;
+      if (!ball) return null;
+      const r = ball.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, r: r.width / 2 };
+    }, sel);
+    if (!c) return null;
+    const png = await page.screenshot({ clip: { x: c.x - c.r, y: c.y - c.r, width: 2 * c.r, height: 2 * c.r } });
+    return page.evaluate(async (b64) => {
+      const im = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + b64; });
+      const w = im.width, h = im.height, cv = new OffscreenCanvas(w, h), x = cv.getContext('2d');
+      x.drawImage(im, 0, 0);
+      const d = x.getImageData(0, 0, w, h).data, R = w / 2;
+      const acc = { pink: [0, 0, 0], violet: [0, 0, 0] };
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+        const dx = (i + 0.5 - R) / R, dy = (j + 0.5 - R) / R;
+        if (dx * dx + dy * dy > 0.85) continue;
+        const k = 4 * (j * w + i), r = d[k], g = d[k + 1], b = d[k + 2];
+        const kind = r > 170 && b > 90 && b - g > 25 && r - g > 70 ? 'pink' : b >= r && b - g > 40 ? 'violet' : null;
+        if (kind) { const A = acc[kind]; A[0] += dx; A[1] += dy; A[2]++; }
+      }
+      const m = (A) => A[2] ? { x: A[0] / A[2], y: A[1] / A[2], n: A[2] } : { x: 0, y: 0, n: 0 };
+      return { pink: m(acc.pink), violet: m(acc.violet) };
+    }, png.toString('base64'));
+  };
+  // Телефон держат под 45° от стола; правый край вниз на 40° — тяжесть в
+  // плоскости экрана уходит вправо на ~32°.
+  await heldF(0, 45, 8, 200); await heldF(0, 45, 0, 2500);
+  const lvl = await liquidAt('#bt-soap-home');
+  await heldF(0, 45, 40, 3500);
+  const toR = await liquidAt('#bt-soap-home');
+  await heldF(0, 45, -40, 3500);
+  const toL = await liquidAt('#bt-soap-home');
+  const fmt = (q) => q ? `розовая ${q.pink.x.toFixed(2)}, лиловая ${q.violet.x.toFixed(2)}` : 'нет';
+  say(`  ровно: ${fmt(lvl)}; вправо: ${fmt(toR)}; влево: ${fmt(toL)}`);
+  // Сторона — от ровного положения: рисунок не симметричен (печать на
+  // шнуре закрывает правый край шара), и «ноль» розового не в центре.
+  check(lvl && lvl.violet.y < lvl.pink.y - 0.2, `телефон стоймя — лиловый слой над розовым`);
+  check(lvl && toR && toR.pink.x - lvl.pink.x > 0.05 && toR.violet.x - lvl.violet.x < -0.05,
+        `правый край вниз — жижа стекает к ПРАВОМУ краю шара, лиловый верх уходит влево (${fmt(toR)})`);
+  check(lvl && toL && toL.pink.x - lvl.pink.x < -0.05 && toL.violet.x - lvl.violet.x > 0.05,
+        `левый край вниз — к левому (${fmt(toL)})`);
+  // Неподвижен телефон — ни одной записи в узлы жижи (как у бликов пены).
+  await heldF(0, 45, 0, 4500);
+  const writesIn = (sel, ms) => page.evaluate(([sel, ms]) => new Promise(res => {
+    const els = Array.from(document.querySelectorAll(sel)); let n = 0;
+    const mo = new MutationObserver(l => { n += l.length; });
+    els.forEach(el => mo.observe(el, { attributes: true, subtree: true }));
+    setTimeout(() => { mo.disconnect(); res({ n, els: els.length }); }, ms);
+  }), [sel, ms]);
+  const calm = await writesIn('#bt-soap-home .bsf-liq', 1000);
+  check(calm.els === 1 && calm.n === 0, `телефон неподвижен — ни одной записи в жижу за секунду (${calm.n})`);
+  check((await liveLayers()).join() === 'bt-shelf', `колба на полке — живая вещь, слоем только полка (${(await liveLayers()).join() || 'ничего'})`);
+
+  // Рывок пальцем: взял парящую колбу, резко повёл влево и отпустил на
+  // ходу. Жижа обязана КАЧНУТЬСЯ туда-обратно (наклон меняет сторону не
+  // раз) и успокоиться — и тогда снова ни одной записи. Наклон по снимку —
+  // разница «лиловый минус розовый» по x: у почти полного шара центр масс
+  // розового сдвигается мало, а лиловая полоса у поверхности — заметно.
+  // Отсчёт — от того же шара до рывка: рисунок не симметричен (печать
+  // справа закрывает край шара).
+  await page.evaluate(() => LustMinigame.startWater());
+  for (let i = 0; i < 40 && !(await page.evaluate(() => LustMinigame.phase === 'soap' && LustMinigame.loose && !LustMinigame.liftRaf)); i++) await page.waitForTimeout(250);
+  await page.waitForTimeout(1500);
+  // Парящий холст качается — на время замера он стоит (п. 137).
+  await page.evaluate(() => { document.getElementById('bt-hand').style.animation = 'none'; window.__fin = LustMinigame.finishStage; LustMinigame.finishStage = () => {}; });
+  await page.waitForTimeout(300);
+  const tiltOf = (q) => q ? q.violet.x - q.pink.x : null;
+  const base = tiltOf(await liquidAt('#bt-held'));
+  const atF = await page.evaluate(() => { const L = LustMinigame, o = L.loose; return SvgSpace.toClient(L.svgEl, o.pos.x, o.pos.y); });
+  await page.mouse.move(atF.x, atF.y); await page.mouse.down();
+  for (let i = 1; i <= 10; i++) { await page.mouse.move(atF.x - 18 * i, atF.y + 3 * i); await page.waitForTimeout(16); }
+  await page.mouse.up();
+  const swing = [];
+  const t0s = Date.now();
+  while (Date.now() - t0s < 2400) { const q = await liquidAt('#bt-held'); if (q) swing.push(tiltOf(q) - base); }
+  let flips = 0, last = 0;
+  for (const v of swing) { const s = Math.abs(v) < 0.04 ? 0 : Math.sign(v); if (s && last && s !== last) flips++; if (s) last = s; }
+  const peak = Math.max(...swing.map(Math.abs));
+  say(`  после рывка (${swing.length} снимков, наклон от покоя): ${swing.map(v => v.toFixed(2)).join(' ')}`);
+  check(peak > 0.12 && flips >= 2, `после рывка жижа колышется туда-обратно (размах ${peak.toFixed(2)}, перемен стороны ${flips})`);
+  await page.waitForTimeout(3000);
+  const settled = tiltOf(await liquidAt('#bt-held')) - base;
+  const rest = await writesIn('#bt-held .bsf-liq', 1000);
+  check(Math.abs(settled) < 0.04 && rest.n === 0,
+        `и успокаивается: снова ровно (${settled.toFixed(2)}), записей нет (${rest.n})`);
+  await page.evaluate(() => { document.getElementById('bt-hand').style.animation = ''; LustMinigame.finishStage = window.__fin; LustMinigame.returnTool(); });
+  // Иконка магазина (колба — следующая ступень после эликсира) стоит.
+  await setTier(6);
+  await page.evaluate(() => LustShop.show());
+  await page.waitForTimeout(300);
+  await heldF(0, 45, 30, 800);
+  const icon = await writesIn('#bt-shop .bsf-liq', 600);
+  await page.evaluate(() => LustShop.close());
+  check(icon.els === 1 && icon.n === 0, `на иконке магазина колба стоит (${icon.els} иконка, записей ${icon.n})`);
+  await heldF(0, 45, 0, 300);
+  // Закрыли ванную — цикл встал.
+  await setTier(7);
+  await page.evaluate(() => LustMinigame.close());
+  await page.waitForTimeout(300);
+  const shut = await page.evaluate(() => ({ raf: BATH_SOAP.live.raf,
+    layers: ['bt-shelf', 'bt-hand'].filter(id => document.getElementById(id).classList.contains('bt-live')) }));
+  check(!shut.raf && !shut.layers.length, 'ванная закрыта — цикл колбы стоит, слоёв нет');
+  await page.evaluate(() => LustMinigame.open());
+  await page.waitForTimeout(600);
 
   // ================= 6. ЭТАП НАЧАЛСЯ — ВЕЩЬ САМА ВЗЛЕТАЕТ С ПОЛКИ =================
   // Подсказка «бери меня» — движением, без слов: нужная вещь поднимается

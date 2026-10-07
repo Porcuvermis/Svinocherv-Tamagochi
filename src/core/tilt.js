@@ -46,11 +46,16 @@ const Tilt = (function () {
     let firstAt = 0;
     let source = 'нет';
 
-    function feed(v) {
+    // b — наклон от стола (beta): только для решения о единице. Телефон
+    // держат ровно — gamma секунду меньше π даже в градусах, и единица
+    // решалась «радианы»: дальше 60° от стола читались как 60 радиан, и
+    // жижа колбы вставала вверх ногами (поймано съёмкой). Держат его при
+    // этом под 30–80° от стола, а в радианах beta не бывает больше π.
+    function feed(v, b) {
         if (typeof v !== 'number' || !isFinite(v)) return;
         const now = Date.now();
         if (!firstAt) firstAt = now;
-        const abs = Math.abs(v);
+        const abs = Math.max(Math.abs(v), typeof b === 'number' && isFinite(b) ? Math.abs(b) : 0);
         if (seenMax < abs) seenMax = abs;
 
         if (unit === null) {
@@ -122,7 +127,20 @@ const Tilt = (function () {
         turnLive = true;
     }
 
-    function onOrient(e) { if (e) { feed(e.gamma); feedY(e.beta); feedTurn(e.alpha, e.beta, e.gamma); } }
+    // НАПРАВЛЕНИЕ ТЯЖЕСТИ в плоскости экрана — для жижи во флаконе, которая
+    // «стремится вниз». Не отклонение от позы хвата, а честная тяжесть: по
+    // W3C тяжесть в осях телефона — (cosβ·sinγ, −sinβ, −cosβ·cosγ), ось y
+    // телефона смотрит ВВЕРХ экрана, поэтому на экране (y вниз) это
+    // (cosβ·sinγ, sinβ). Стоймя — (0, 1); завалил правый край вниз — x > 0;
+    // лёг на стол — короткий вектор (тяжесть уходит в спину телефона).
+    let downB = null, downG = 0;
+    function feedDown(b, g) {
+        if (typeof b !== 'number' || typeof g !== 'number' || !isFinite(b) || !isFinite(g) || unit === null) return;
+        const k = unit === 'rad' ? 1 : Math.PI / 180;
+        downB = b * k; downG = g * k;
+    }
+
+    function onOrient(e) { if (e) { feed(e.gamma, e.beta); feedY(e.beta); feedTurn(e.alpha, e.beta, e.gamma); feedDown(e.beta, e.gamma); } }
 
     function listenWeb(tag) {
         if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -172,6 +190,13 @@ const Tilt = (function () {
             return { live: live && turnLive && unit !== null, x: turnX, y: turnY };
         },
 
+        // Тяжесть в плоскости экрана: x вправо, y вниз, длина ≤ 1 (единица —
+        // телефон стоймя). Без датчика — live: false и «прямо вниз».
+        down() {
+            if (!live || unit === null || downB === null) return { live: false, x: 0, y: 1 };
+            return { live: true, x: Math.cos(downB) * Math.sin(downG), y: Math.sin(downB) };
+        },
+
         // Для debug-панели: откуда пришёл наклон и что с ним сейчас. Панель —
         // не игра, слова там разрешены.
         info() {
@@ -189,7 +214,7 @@ const Tilt = (function () {
             if (!dev || typeof dev.start !== 'function') return false;
             try {
                 if (app.onEvent) {
-                    app.onEvent('deviceOrientationChanged', () => { feed(dev.gamma); feedY(dev.beta); feedTurn(dev.alpha, dev.beta, dev.gamma); });
+                    app.onEvent('deviceOrientationChanged', () => { feed(dev.gamma, dev.beta); feedY(dev.beta); feedTurn(dev.alpha, dev.beta, dev.gamma); feedDown(dev.beta, dev.gamma); });
                     // Не вышло — не беда: остаётся обычное событие, оно уже
                     // подписано. Молчать об этом нельзя только в debug-панели.
                     app.onEvent('deviceOrientationFailed', () => { source += ' (Telegram отказал)'; });

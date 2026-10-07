@@ -161,7 +161,7 @@ const BATH_SOAP = {
         if (kind === 'gel') return this.gel();
         if (kind === 'premium') return this.premium();
         if (kind === 'elixir') return this.elixir();
-        if (kind === 'flask') return this.flask();
+        if (kind === 'flask') { this.wake(); return this.flask(level == null); }
         if (kind === 'magic') { this.wake(); return this.magic(); }
         return BATH_BAKED.draw('soap');
     },
@@ -176,7 +176,7 @@ const BATH_SOAP = {
         if (kind === 'gel') return { x: 548, y: 276, w: 52, h: 100 };
         if (kind === 'premium') return { x: 551, y: 272, w: 46, h: 104 };
         if (kind === 'elixir') return { x: 548, y: 270, w: 62, h: 106 };
-        if (kind === 'flask') return { x: 544, y: 280, w: 60, h: 96 };
+        if (kind === 'flask') return { x: 546, y: 250, w: 57, h: 110 };
         if (kind === 'magic') return { x: 527, y: 180, w: 94, h: 196 };
         return BATH_BAKED.box('soap');
     },
@@ -255,9 +255,12 @@ const BATH_SOAP = {
         // зайчики на кафеле были здесь раньше и читались мусором вокруг вещи,
         // а не сиянием (замечание игрока): веер крутился сам по себе, а
         // зайчики висели на стене оторванными полосками — и в руке над
-        // червём тоже. Сияние теперь — ореол ПО СИЛУЭТУ (дышит) и искра,
-        // бегущие по кромке хрусталя огоньки.
-        HALO: [[18, 0.16], [10, 0.26], [4.5, 0.42]],    // [толщина, прозрачность] — от внешнего к внутреннему
+        // червём тоже. Сияние теперь — круглое, дышит, и огоньки, бегущие
+        // по кромке хрусталя.
+        // Ореола по силуэту (три полупрозрачные обводки пуза с горлом) больше
+        // нет: без размытия он читался плотной каймой — графическим
+        // артефактом, а не свечением (замечание игрока). Свечение держат
+        // круглое сияние (aura), огоньки по кромке и орбита.
         // Огоньки по кромке: два, на противоположных сторонах силуэта, с
         // хвостиком из двух точек; скорость — единиц силуэта в секунду.
         // Штрих обводки вместо них (пробовали) ломался углом на горле и
@@ -402,8 +405,7 @@ onmessage = async (e) => {
             .map(([x, y]) => [x * 0.9, M.CY + (y - M.CY) * 0.9])
             .map(([x, y]) => [x, Math.min(y, 15)]);
         // Силуэт целиком — пузо и горло с воротником и венчиком одним
-        // контуром: по нему лежит ореол и бежит искра. Пузо и горло
-        // отдельными путями давали бы под ореолом двойную яркость на стыке.
+        // контуром: по нему бегут огоньки (раньше по нему лежал и ореол).
         const K = M.NECK, [k0, k1] = K.collar;
         const neckL = [[-K.r, k0], [-6.8, k0], [-6.8, k1], [-7.8, k1 - 1.2], [-7, K.top]];
         const sil = [...outline, ...neckL, ...neckL.slice().reverse().map(([x, y]) => [-x, y])];
@@ -452,9 +454,8 @@ onmessage = async (e) => {
             });
         }
         // ---- убранство ----
-        // Сияние и ореол по силуэту дышат вместе.
+        // Сияние дышит.
         out.aura = `translate(0 ${M.CY}) scale(${(1 + 0.07 * Math.sin(t * 1.1)).toFixed(3)})`;
-        out.breath = 0.78 + 0.22 * Math.sin(t * 1.1);
         // Огоньки по кромке: голова и хвостик — точки силуэта позади неё.
         const SHb = this.magicShape(), B = M.BEADS;
         out.beads = [];
@@ -612,14 +613,6 @@ onmessage = async (e) => {
         const layer0 = (k) => this.layerTr(this.worldMatrix(null), k);
 
         // ---------- убранство вокруг ----------
-        // Ореол ПО СИЛУЭТУ: три обводки силуэта, от широкой бледной
-        // аметистовой до узкой светлой — свет растекается от кромки, а не
-        // висит кругом рядом. Без фильтра: размытие на живом слое — отдельный
-        // буфер на каждый кадр (docs/traps.md, п. 73). Внутренняя половина
-        // обводок ложится под стекло и подкрашивает толщу хрусталя.
-        const sil = poly(SH.sil), HC = [Am[1], C.cyan, C.glow];
-        const halo = `<g class="bsm-halo" fill="none" stroke-linejoin="round">`
-            + M.HALO.map(([w, o], i) => `<path d="${sil}" stroke="${HC[i]}" stroke-width="${w}" stroke-opacity="${(o * Fr.breath).toFixed(3)}"/>`).join('') + `</g>`;
         // Огоньки, бегущие по кромке хрусталя: мягкая точка света, а не
         // штрих — гаснет ко всем краям.
         const beads = `<g class="bsm-beads">` + Fr.beads.map((q, j) => `<g transform="translate(${q.x} ${q.y}) scale(${q.s})">`
@@ -799,10 +792,8 @@ onmessage = async (e) => {
                 <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
 
-            <!-- УБРАНСТВО СЗАДИ: сияние, ореол по силуэту, задняя половина
-                 орбиты огоньков. -->
+            <!-- УБРАНСТВО СЗАДИ: сияние и задняя половина орбиты огоньков. -->
             <circle class="bsm-aura" r="74" fill="url(#${id}-aura)" transform="${Fr.aura}"/>
-            ${halo}
             ${motes('b')}
             <!-- ТЕЛО. -->
             <path d="${neck}${lip}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
@@ -916,8 +907,9 @@ onmessage = async (e) => {
     // Проснуться: цикл нужен, пока на экране есть живая вещь. Зовётся из
     // draw, поэтому узлы появятся чуть позже — первый кадр подождёт.
     //
-    // Цикл ОДИН на все живые вещи ванной: волшебный флакон (мыло, ступень 8)
-    // и живые мочалки — конняку и облако (ступени 7 и 8, BATH_CLOTH.liveTick). Правила у
+    // Цикл ОДИН на все живые вещи ванной: волшебный флакон (мыло, ступень 8),
+    // колба с жижей, подчинённой тяжести (мыло, ступень 7, flaskTick), и
+    // живые мочалки — конняку и облако (ступени 7 и 8, BATH_CLOTH.liveTick). Правила у
     // них общие — стоят за закрытой дверью, под магазином, на переезде
     // камеры и за кадром, — и холст полки становится слоем композитора по
     // объединению видимых вещей: два цикла спорили бы за класс .bt-live.
@@ -931,7 +923,7 @@ onmessage = async (e) => {
             const Lv = this.live;
             if (Lv.dirty || !Lv.roots || Lv.roots.some(r => !r.isConnected)) {
                 const CL = typeof BATH_CLOTH !== 'undefined' ? ', ' + BATH_CLOTH.LIVE_SEL : '';
-                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic' + CL));
+                Lv.roots = Array.from(document.querySelectorAll('.bt-soap-magic, .bt-soap-flask' + CL));
                 Lv.dirty = false;
             }
             // Ванная закрыта — цикл встаёт. Сцена собирается при загрузке
@@ -980,29 +972,43 @@ onmessage = async (e) => {
                 const L = this.lean(Lv.mt), k = 0.2;
                 Lv.px += (L.x - Lv.px) * k;
                 Lv.py += (L.y - Lv.py) * k;
-                const cloth = (r) => !r.classList.contains('bt-soap-magic');
+                const isMagic = (r) => r.classList.contains('bt-soap-magic');
+                const isFlask = (r) => r.classList.contains('bt-soap-flask');
+                const cloth = (r) => !isMagic(r) && !isFlask(r);
+                // Колба на трении НЕ стоит: она едет за пальцем, и жижа в ней
+                // колышется ровно тогда — это и есть её живость. Цена — один
+                // transform группы на холсте руки, который и так
+                // перерисовывается за пальцем.
                 if (rub && Lv.roots.every(cloth)) {
                     if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick([], now, true);
                     Lv.raf = requestAnimationFrame(step);
                     return;
                 }
+                const hiddenFl = [], mats = new Map();
                 const vis = Lv.roots.filter(r => {
-                    // Живая мочалка на иконке магазина стоит.
-                    const kj = cloth(r);
-                    if (kj && r.closest('#bt-shop')) return false;
+                    // Живая мочалка и колба на иконке магазина стоят.
+                    const kj = cloth(r), fl = isFlask(r);
+                    if ((kj || fl) && r.closest('#bt-shop')) return false;
                     if (shop && !r.closest('#bt-shop')) return false;
                     const h = r.closest('#bt-soap-home, #bt-cloth-home');
-                    if (h && h.style.opacity === '0') { if (!kj) this.unlit(r); return false; }
+                    if (h && h.style.opacity === '0') { if (fl) hiddenFl.push(r); else if (!kj) this.unlit(r); return false; }
                     const m = this.worldMatrix(r);
+                    if (fl) mats.set(r, m);
                     if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
                     // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
                     // с лучами полка в финале считалась видимой. У мочалки —
                     // вещь вокруг своей середины (от гнезда +16, −10).
-                    const [ox, oy] = kj ? [16, -10] : [0, -30];
+                    // У колбы — центр шара.
+                    const [ox, oy] = kj ? [16, -10] : fl ? [0, this.FLASK.CY] : [0, -30];
                     const x = m.a * ox + m.c * oy + m.e, y = m.b * ox + m.d * oy + m.f, R = 50 * Math.abs(m.a);
                     return x > -R && x < 390 + R && y > -R && y < 844 + R;
                 });
-                this.layers(vis);
+                // Колба под парящим холстом руки (тень-фильтр .bt-float) слоем
+                // его не делает: слой с фильтром и качанием перерисовывал тень
+                // на каждом кадре — замер под 4×: 22 кадра вместо 54. Колба
+                // в это время стоит, а редкая запись от наклона телефона
+                // пересчитает тень один раз.
+                this.layers(vis.filter(r => !isFlask(r) || !r.closest('.bt-float:not(.bt-float-magic)')));
                 // Пока ТРУТ (мылом или мочалкой), флакон в ванной замедляется
                 // до остановки — и в руке, и на полке (часы выше). В руке он
                 // едет за пальцем и перерисовывается целиком на каждом
@@ -1013,7 +1019,9 @@ onmessage = async (e) => {
                 // вместе с пальцем всегда — стоявшее небо потом «доезжало» на
                 // место, и это тоже читалось рывком.
                 if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(vis.filter(cloth), now, rub);
-                const mag = vis.filter(r => !cloth(r));
+                const fls = vis.filter(isFlask);
+                if (fls.length || hiddenFl.length) this.flaskTick(fls, hiddenFl, now, dt, mats);
+                const mag = vis.filter(isMagic);
                 if (mag.length) {
                     // Кадр — от часов флакона; стоят часы — кадр тот же.
                     if (Lv.frT !== Lv.mt || !Lv.fr) { Lv.fr = this.magicFrame(Lv.mt); Lv.frT = Lv.mt; }
@@ -1060,7 +1068,7 @@ onmessage = async (e) => {
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
                   vapor: one('.bsm-vapor'),
                   far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
-                  aura: one('.bsm-aura'), halo: one('.bsm-halo'), haloP: all('.bsm-halo path'), beadG: one('.bsm-beads'),
+                  aura: one('.bsm-aura'), beadG: one('.bsm-beads'),
                   motes: all('.bsm-mote'), motesF: one('.bsm-motes-f'), motesB: one('.bsm-motes-b'), fx: one('.bsm-fx'),
                   glints: all('.bsm-glint'), dust: all('.bsm-dust'),
                   tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
@@ -1070,7 +1078,7 @@ onmessage = async (e) => {
             c.motes.sort((a, b) => +a.dataset.i - +b.dataset.i);
             c.moteParts = c.motes.map(g => Array.from(g.children));
             c.beads = c.beadG ? Array.from(c.beadG.children) : [];
-            c.deco = [c.aura, c.halo, c.beadG, c.motesF, c.motesB, c.fx].filter(Boolean);
+            c.deco = [c.aura, c.beadG, c.motesF, c.motesB, c.fx].filter(Boolean);
             this.live.cache.set(root, c);
         }
         const M = this.MAGIC;
@@ -1080,7 +1088,7 @@ onmessage = async (e) => {
         // не светится — светится оставленная: парящий флакон (холст руки с
         // .bt-float) возвращает убранство, это и есть его свечение (lust.js,
         // floatTool). Гаснет и загорается оно ПЛАВНО (c.pres, FADE):
-        // сияние и ореол — прозрачностью, огоньки и пыль собираются к
+        // сияние — прозрачностью, огоньки и пыль собираются к
         // флакону масштабом. Разом появлявшееся убранство читалось рывком.
         // «Под пальцем» — и летящий домой (он тоже не светится), но не
         // поднимающийся с полки: тот уже зовёт «бери меня».
@@ -1122,13 +1130,12 @@ onmessage = async (e) => {
         // нет (docs/traps.md, п. 73).
         if (show) {
             const n = this.live.n || 0, e = c.pres * c.pres * (3 - 2 * c.pres);
-            // Медленное (сияние, ореол) — через кадр, пока не идёт
+            // Медленное (сияние) — через кадр, пока не идёт
             // проявление: дыхание в секунду на 15 кадрах не отличить от 30,
             // а перерисовка больших градиентов — самая дорогая в убранстве.
             if (n % 2 === 0 || e < 1) {
                 set(c.aura, 'transform', Fr.aura);
                 set(c.aura, 'fill-opacity', e.toFixed(2));
-                c.haloP.forEach((el, i) => set(el, 'stroke-opacity', (M.HALO[i][1] * Fr.breath * e).toFixed(3)));
             }
             const gather = `translate(0 ${M.CY}) scale(${(0.5 + 0.5 * e).toFixed(3)}) translate(0 ${-M.CY})`;
             [c.motesF, c.motesB, c.fx].forEach(el => set(el, 'transform', gather));
@@ -1158,155 +1165,378 @@ onmessage = async (e) => {
     },
 
     // ---------- 7. КОЛБА ----------
-    // Алхимическая колба с круглым дном: светящаяся розовая жижа, пузыри,
-    // пробка под сургучом. Качество — по уроку эликсира: толщина стекла,
-    // блики слоями, свечение КОНТРАСТОМ.
-    //   * шар тонкого прозрачного стекла: края плотнее, изгибом идёт
-    //     блик-окошко — главный признак сферы; внутренняя стенка линией;
-    //   * жижа светится: белёсое ядро, густые малиновые края, мениск снизу
-    //     светлым эллипсом, розовый отсвет по стенке шара;
-    //   * пузыри столбиком поднимаются со дна, кверху крупнее. Неподвижные:
-    //     бесконечная css-анимация внутри общего svg красит всю сцену
-    //     (docs/traps.md, пп. 36–38) — оживлять будем на ступени 8 иначе;
-    //   * пробка — корка, сверху сургуч с потёками по горлу;
-    //   * стоит на пробковом кольце — круглое дно само не стоит (на полке
-    //     кольцо за сеткой, видно в руке);
-    //   * ореол сильнее, чем у эликсира: волшебства больше.
-    flask() {
-        const P = btPal(), M = P.soapMagic, G = P.soapBottle, Ck = P.soapCork, Wx = P.soapWax, F = P.foam, ink = PALETTE.ink;
+    // Алхимическая колба в медной оплётке — предпоследняя ступень, мостик к
+    // волшебному флакону. Вариант «c2» художника (генератор gen2.js,
+    // перенесён генератором, а не готовой строкой). Чем богаче эликсира:
+    //   * СИЛУЭТ: шар крупнее и поднят над сеткой корзины, горло толще и
+    //     короче, на горле шар-перетяжка с розовой дымкой, сверху пробка под
+    //     сургучом с оттиском солнца; с воротника на правое плечо свисает
+    //     сургучная печать на шнуре (видна поверх сетки);
+    //   * МАТЕРИАЛ: медная оплётка — пояс по экватору с заклёпками, четыре
+    //     меридиана от воротника, воротник с заклёпками. Медь — тёмная
+    //     опора тона, которой у прежней колбы не было (рампа soapCopper);
+    //   * ЖИЖА в два слоя: тёмный лиловый сверху (масса, родство с
+    //     лиловой восьмой), светящийся розовый снизу — граница волной над
+    //     поясом, свет виден и над сеткой; пузыри столбиками, искры.
+    //
+    // ЖИЖА ПОДЧИНЯЕТСЯ ТЯЖЕСТИ (просьба игрока): стремится вниз при наклоне
+    // телефона и колышется после движения. Шар — круг, а плоскость уровня,
+    // повёрнутая вокруг ЦЕНТРА шара, сохраняет объём. Поэтому вся жижа (оба
+    // слоя, граница, мениск, пузыри и искры — пузыри поднимаются против
+    // тяжести, им и положено поворачиваться вместе) лежит в одной группе
+    // .bsf-liq и живёт ОДНИМ transform rotate вокруг центра шара — ни одного
+    // `d` на кадре. Клип — круг внутренней стенки с тем же центром: поворот
+    // его не меняет, жижа не выливается ни в горло, ни за стенку. Кадр —
+    // flaskTick (общий живой цикл, wake).
+    FLASK: {
+        R: 27, CY: -12,                  // шар
+        NX: 6.5, NT: -76,                // горло: полуширина, верх
+        BULB: { cy: -58, r: 7.8 },       // шар-перетяжка на горле
+        LV: -27, MID: -17,               // уровень жижи и граница слоёв
+        // Колыхание — маятник: «низ» жижи тянется к направлению тяжести
+        // пружиной с демпфером. hz — своя частота (≈1.4 качания в секунду —
+        // шар с ладонь, а не ведро), zeta — затухание (0.13: три-четыре
+        // заметных качания, ~2.5 с до покоя). g — тяжесть игры в единицах
+        // холста за с²: она же решает, НАСКОЛЬКО ускорение вещи на экране
+        // качает жижу. Настоящая (≈54 000 ед/с² при 390 ед на 7 см экрана)
+        // гасила бы рывок пальцем до пары градусов — глазу не видно; при
+        // 9 000 остановка пальца с 600 ед/с качает жижу на ≈30° (при 12 000
+        // качание в руке на экране читалось едва-едва — по съёмке).
+        // kick — потолок перемены скорости за кадр (ед/с): подмена копии
+        // или скачок камеры — не рывок. jump — скачок места за кадр, после
+        // которого вещь считается переставленной, а не брошенной. still —
+        // ниже этого (рад, рад/с) жижа стоит и записей нет. flat — длина
+        // проекции тяжести, ниже которой телефон считается лежащим: тяжесть
+        // ушла в спину телефона, и жижа плавно возвращается к «вниз по
+        // экрану», а не мечется от дрожи руки. smooth — доля за кадр,
+        // которой жижа догоняет датчик (дрожь руки не дёргает поверхность).
+        // fric — сухое трение (рад/с²): одно вязкое затухание тянуло хвост
+        // качаний в доли градуса ещё секунд пять, и всё это время шли
+        // записи; сухое трение гасит хвост за конечное время (≈1° за
+        // качание) и держит жижу на месте, пока телефон дрожит в пределах
+        // fric/ω² ≈ 0.25°. still — ближе этого к равновесию (рад) жижа
+        // встаёт в него ровно.
+        SLOSH: { hz: 1.4, zeta: 0.13, g: 9000, kick: 900, jump: 60, fric: 0.34, still: 0.005, flat: [0.15, 0.45], smooth: 0.3, step: 0.1 }
+    },
+
+    // Парк — Миллер, как в генераторе художника: картинка совпадает с c2.
+    flaskRng(s) { return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; },
+
+    // live — копия в ванной (полка, рука): рисуется с нынешним углом жижи.
+    flask(live) {
+        this.live.dirty = true;
+        const P = btPal(), M = P.soapMagic, V = P.soapViolet, Wx = P.soapWax, Ck = P.soapCork, CU = P.soapCopper,
+              G = P.soapBottle, HI = G.hi, SPARK = P.soapGold[4], ink = PALETTE.ink;
+        const SC = STROKE.contour, SS = STROKE.structure;
         const id = 'bsp' + (this.uid++);
-        const A = BATH_ART.slots().soap;
-        const f = (v) => v.toFixed(1);
+        const A = BATH_ART.slots().soap, K = this.FLASK;
+        const f = (v) => (+v).toFixed(1);
+        const { R, CY, NX, NT, LV: lv, MID: mid } = K, BC = K.BULB.cy, BR = K.BULB.r;
 
-        const R = 23, CY = 5;                      // шар
-        const NX = 5.5, NT = -45;                  // горло
-        const ny = CY - Math.sqrt(R * R - NX * NX);  // где горло входит в шар
+        // ---- станки генератора (gen.js художника) ----
+        const ny = CY - Math.sqrt(R * R - NX * NX);
         const flask = `M${-NX} ${f(ny)}A${R} ${R} 0 1 0 ${NX} ${f(ny)}V${NT}H${-NX}Z`;
-        const innerR = R - 1.8;
-        // Налита высоко: нижнюю половину шара закрывает сетка корзины, и
-        // при уровне посередине над сеткой светилась одна полоска.
-        const lv = -11;
-        const half = Math.sqrt(innerR * innerR - (lv - CY) * (lv - CY));
-        const liq = `M${f(-half)} ${lv}A${innerR} ${innerR} 0 1 0 ${f(half)} ${lv}Z`;
-        // Раструб горла и пробка.
-        const lipD = `M-7.5 ${NT}Q-8.5 ${NT} -8.5 ${NT - 1.5}Q-8.5 ${NT - 3} -7 ${NT - 3}H7Q8.5 ${NT - 3} 8.5 ${NT - 1.5}Q8.5 ${NT} 7.5 ${NT}Z`;
-        const cork = `M-5 ${NT - 2}L-6.6 ${NT - 11}Q-6.6 ${NT - 12.5} -5 ${NT - 12.5}H5Q6.6 ${NT - 12.5} 6.6 ${NT - 11}L5 ${NT - 2}Z`;
-        // Сургуч: шапка на пробке и раструбе, два потёка по горлу.
-        const wax = `M-8 ${NT - 9}Q-8.4 ${NT - 14.5} 0 ${NT - 15}Q8.4 ${NT - 14.5} 8 ${NT - 9}`
-                  + `L8.6 ${NT - 1}Q8.8 ${NT + 1} 7.4 ${NT + 1.2}L6.6 ${NT + 1.2}Q6.2 ${NT + 6} 5.2 ${NT + 6.5}Q4 ${NT + 6} 4.2 ${NT + 1.4}`
-                  + `L-2.5 ${NT + 1.4}Q-2.8 ${NT + 3.6} -3.6 ${NT + 3.8}Q-4.5 ${NT + 3.5} -4.6 ${NT + 1.3}L-7.6 ${NT + 1}Q-8.8 ${NT + 0.8} -8.6 ${NT - 1}Z`;
-        // Пробковое кольцо под шаром.
-        const ring = `M-15 ${CY + R - 3}Q0 ${CY + R - 6} 15 ${CY + R - 3}L16 ${CY + R + 1.5}Q0 ${CY + R + 5} -16 ${CY + R + 1.5}Z`;
+        const lipPath = (T, w) => `M${-w} ${T}Q${-w - 1} ${T} ${-w - 1} ${T - 1.6}Q${-w - 1} ${T - 3.2} ${-w + 0.5} ${T - 3.2}H${w - 0.5}Q${w + 1} ${T - 3.2} ${w + 1} ${T - 1.6}Q${w + 1} ${T} ${w} ${T}Z`;
+        const corkPath = (T, w) => `M${-w} ${T}L${-w - 1.6} ${T - 9}Q${-w - 1.6} ${T - 10.5} ${-w} ${T - 10.5}H${w}Q${w + 1.6} ${T - 10.5} ${w + 1.6} ${T - 9}L${w} ${T}Z`;
+        // Сургуч: шапка с наплывом и потёки разной длины [x, длина, ширина].
+        const waxPath = (T, w, drips) => {
+            let d = `M${-w - 0.5} ${T - 8}Q${-w - 1} ${T - 14} 0 ${T - 14.6}Q${w + 1} ${T - 14} ${w + 0.5} ${T - 8}L${w + 1.2} ${T - 0.5}Q${w + 1.3} ${T + 1.2} ${w} ${T + 1.3}`;
+            for (const [x, len, wd] of drips) d += `L${f(x + wd)} ${T + 1.3}Q${f(x + wd)} ${f(T + len)} ${f(x)} ${f(T + len + 0.6)}Q${f(x - wd)} ${f(T + len)} ${f(x - wd)} ${T + 1.3}`;
+            return d + `L${-w} ${T + 1.1}Q${-w - 1.4} ${T + 0.9} ${-w - 1.2} ${T - 0.8}Z`;
+        };
+        // Алхимические знаки — символы, не буквы (инвариант 9).
+        const sun = (x, y, s) => `M${f(x + s)} ${f(y)}A${s} ${s} 0 1 0 ${f(x - s)} ${f(y)}A${s} ${s} 0 1 0 ${f(x + s)} ${f(y)}M${f(x + 0.4)} ${f(y)}A0.4 0.4 0 1 0 ${f(x - 0.4)} ${f(y)}A0.4 0.4 0 1 0 ${f(x + 0.4)} ${f(y)}`;
+        const mercury = (x, y, s) => `M${f(x + s * 0.55)} ${f(y - s * 0.2)}A${s * 0.55} ${s * 0.55} 0 1 0 ${f(x - s * 0.55)} ${f(y - s * 0.2)}A${s * 0.55} ${s * 0.55} 0 1 0 ${f(x + s * 0.55)} ${f(y - s * 0.2)}M${f(x)} ${f(y + s * 0.35)}V${f(y + s * 1.2)}M${f(x - s * 0.4)} ${f(y + s * 0.8)}H${f(x + s * 0.4)}M${f(x - s * 0.55)} ${f(y - s * 1.15)}Q${f(x)} ${f(y - s * 0.55)} ${f(x + s * 0.55)} ${f(y - s * 1.15)}`;
+        // Пузырь: прозрачный, кромка светлая, искра-блик. Искра — крестик.
+        const bubble = (x, y, r, col) =>
+            `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${col}" fill-opacity="0.22" stroke="${col}" stroke-width="${r > 1.5 ? 0.7 : 0.5}" stroke-opacity="0.95"/>`
+          + `<circle cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.38)}" r="${f(Math.max(0.3, r * 0.3))}" fill="${HI}"/>`;
+        const spark = (x, y, s, col, o) => `<path d="M${f(x - s)} ${f(y)}Q${f(x)} ${f(y)} ${f(x)} ${f(y - s)}Q${f(x)} ${f(y)} ${f(x + s)} ${f(y)}Q${f(x)} ${f(y)} ${f(x)} ${f(y + s)}Q${f(x)} ${f(y)} ${f(x - s)} ${f(y)}Z" fill="${col}" fill-opacity="${o || 1}"/>`;
+        // Столбик пузырей: шаг и размер НЕ равные, столбик чуть гуляет.
+        const bubbleColumn = (x0, yBot, yTop, seed, col) => {
+            const r = this.flaskRng(seed); let out = '', y = yBot, i = 0;
+            while (y > yTop + 2) {
+                const t = (yBot - y) / (yBot - yTop), rad = 0.7 + t * 1.8 + r() * 0.5;
+                out += bubble(x0 + Math.sin(i * 1.9 + r()) * 1.6, y, rad, col);
+                y -= rad * 2 + 1 + r() * 3.2; i++;
+            }
+            return out;
+        };
+        const motes = (n, x0, x1, y0, y1, seed, col, ok) => {
+            const r = this.flaskRng(seed); let out = '';
+            for (let i = 0; i < n; i++) {
+                const x = x0 + r() * (x1 - x0), y = y0 + r() * (y1 - y0);
+                if (ok && !ok(x, y)) continue;
+                const k = r();
+                out += k < 0.2 ? spark(x, y, 1.6 + r() * 1.2, col, 0.95) : `<circle cx="${f(x)}" cy="${f(y)}" r="${f(0.35 + r() * 0.7)}" fill="${col}" fill-opacity="${(0.55 + r() * 0.45).toFixed(2)}"/>`;
+            }
+            return out;
+        };
 
-        // Пузыри: столбиком от дна к поверхности, кверху крупнее, и россыпь.
-        const rnd = btRng(707);
-        let bub = '';
-        const bubble = (x, y, r) =>
-            `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${M[4]}" fill-opacity="0.25" stroke="${M[4]}" stroke-width="0.6" stroke-opacity="0.9"/>`
-          + `<circle cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.35)}" r="${f(Math.max(0.35, r * 0.28))}" fill="${F.hi}"/>`;
-        for (let i = 0; i < 7; i++) {
-            const t = i / 6, y = CY + R - 5 - t * (CY + R - 5 - lv - 3), x = -2 + Math.sin(i * 1.7) * 1.8, r = 0.8 + t * 1.9;
-            bub += bubble(x, y, r);
+        // ---- жижа ----
+        const r = R - 1.9;
+        const hT = Math.sqrt(r * r - (lv - CY) ** 2), hM = Math.sqrt(r * r - (mid - CY) ** 2);
+        const liqAll = `M${f(-hT)} ${lv}A${r} ${r} 0 1 0 ${f(hT)} ${lv}Z`;
+        const wave = `M${f(-hM)} ${mid}Q${f(-hM * 0.5)} ${mid - 2.6} 0 ${mid - 0.6}Q${f(hM * 0.5)} ${mid + 1.5} ${f(hM)} ${mid - 0.9}`;
+        const liqLow = `${wave}A${r} ${r} 0 1 1 ${f(-hM)} ${mid}Z`;
+        const inBall = (x, y) => Math.hypot(x, y - CY) < R - 4;
+        const bubs = bubbleColumn(-3, 10, mid + 2, 81, M[4]) + bubbleColumn(9, 9, mid + 6, 85, M[4]).split('<circle').slice(0, 7).join('<circle');
+        const bubsTop = bubbleColumn(-2.4, mid - 2, lv + 2, 83, V[4]);
+        const mo = motes(8, -20, 20, mid + 2, 12, 87, M[4], inBall) + motes(6, -18, 18, lv + 2, mid - 2, 89, SPARK, inBall);
+
+        // ---- верх: венчик, пробка, сургуч с оттиском ----
+        const W = NT - 3;
+        const lip = lipPath(NT, NX + 1.6), cork = corkPath(W, NX - 0.4), wax = waxPath(W, NX + 1.8, [[5.4, 6.4, 1.2], [-1.6, 3.4, 1.1]]);
+        const bulb = `M${BR} ${BC}A${BR} ${BR} 0 1 0 ${-BR} ${BC}A${BR} ${BR} 0 1 0 ${BR} ${BC}Z`;
+
+        // ---- оплётка ----
+        // Пояс по экватору дугой (корзина выше глаза — видно низ кольца).
+        const B0 = CY + 4, BH = 6.5;
+        const band = `M${-R - 1} ${B0}Q0 ${B0 - 7} ${R + 1} ${B0}L${R + 1} ${B0 + BH}Q0 ${B0 + BH - 7} ${-R - 1} ${B0 + BH}Z`;
+        const bandY = (x) => B0 + BH / 2 - 3.5 * (1 - (x / R) ** 2) + 0.3;
+        let mer = '';
+        for (const a of [-62, -24, 18, 57]) {
+            const s = Math.sin(a * Math.PI / 180), xb = (R + 0.6) * s, yb = B0 - 3.5 * (1 - s * s) + 0.5;
+            mer += `M${f(s * 7)} ${f(ny + 1)}Q${f(xb * 1.08)} ${f(CY - R * 0.62)} ${f(xb)} ${f(yb)}`;
         }
-        for (let i = 0; i < 6; i++) {
-            const a = rnd() * Math.PI * 2, d = 5 + rnd() * 11;
-            const x = Math.cos(a) * d, y = CY + 6 + Math.sin(a) * d * 0.7;
-            if (y > lv + 3) bub += bubble(x, y, 0.6 + rnd() * 1.1);
-        }
-        let motes = '';
-        for (let i = 0; i < 7; i++) {
-            const x = -15 + rnd() * 30, y = lv + 5 + rnd() * 20;
-            motes += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(0.35 + rnd() * 0.6)}" fill="${M[4]}"/>`;
-        }
-        let pores = '';
-        for (let i = 0; i < 8; i++) pores += `<circle cx="${f(-4.5 + rnd() * 9)}" cy="${f(NT - 3.5 - rnd() * 5)}" r="0.45" fill="${Ck[0]}"/>`;
+        const C0 = ny - 1.5, CH = 7;
+        const collar = `M-8.5 ${f(C0)}V${f(C0 - CH + 1.5)}Q-8.5 ${f(C0 - CH)} -7 ${f(C0 - CH)}H7Q8.5 ${f(C0 - CH)} 8.5 ${f(C0 - CH + 1.5)}V${f(C0)}Q0 ${f(C0 + 1.6)} -8.5 ${f(C0)}Z`;
+        const rv = (x, y) => `<circle cx="${f(x)}" cy="${f(y)}" r="0.95" fill="${CU[0]}"/><circle cx="${f(x - 0.3)}" cy="${f(y - 0.3)}" r="0.42" fill="${CU[4]}"/>`;
+        let rivets = '';
+        for (const x of [-5.6, -0.4, 5]) rivets += rv(x, C0 - CH / 2 + 0.3);
+        for (const x of [-21, -8, 6.5, 19.5]) rivets += rv(x, bandY(x));
+
+        // ---- печать на шнуре: продет в воротник справа, лежит на плече ----
+        const SX = 19.5, SY = -25;
+        const seal = `M${SX + 6.6} ${SY}C${SX + 6.8} ${SY + 4.1} ${SX + 3.1} ${SY + 7} ${SX - 0.6} ${SY + 6.6}C${SX - 4.6} ${SY + 6.8} ${SX - 7} ${SY + 3.1} ${SX - 6.5} ${SY - 0.6}C${SX - 6.8} ${SY - 4.7} ${SX - 3.1} ${SY - 6.8} ${SX + 0.4} ${SY - 6.5}C${SX + 4.5} ${SY - 6.7} ${SX + 7.1} ${SY - 3.5} ${SX + 6.6} ${SY}Z`;
+        const cy0 = C0 - CH / 2;
+        const cord = `M8.4 ${f(cy0)}C12.5 ${f(cy0 + 1)} 15.5 ${f(cy0 + 5)} ${SX - 1.5} ${SY - 6}M8.4 ${f(cy0 + 1.2)}C10.5 ${f(cy0 + 5)} 12.5 ${f(cy0 + 8)} ${SX - 4} ${SY - 4.6}`;
+
+        // Блики шара: окошко изгибом по сфере (главный признак), мягкий
+        // широкий и узкий резкий слои, отражение жижи снизу справа.
+        const gloss = `
+            <path d="M${f(-R * 0.72)} ${f(CY - R * 0.36)}C${f(-R * 0.64)} ${f(CY - R * 0.6)} ${f(-R * 0.46)} ${f(CY - R * 0.76)} ${f(-R * 0.25)} ${f(CY - R * 0.84)}L${f(-R * 0.2)} ${f(CY - R * 0.71)}C${f(-R * 0.37)} ${f(CY - R * 0.64)} ${f(-R * 0.5)} ${f(CY - R * 0.52)} ${f(-R * 0.59)} ${f(CY - R * 0.32)}Z" fill="${HI}" fill-opacity="0.9"/>
+            <path d="M${f(-R * 0.86)} ${f(CY - R * 0.05)}Q${f(-R * 0.88)} ${f(CY + R * 0.18)} ${f(-R * 0.8)} ${f(CY + R * 0.38)}" fill="none" stroke="${HI}" stroke-width="1.5" stroke-opacity="0.85" stroke-linecap="round"/>
+            <path d="M${f(-R * 0.62)} ${f(CY - R * 0.5)}Q${f(-R * 0.82)} ${f(CY - R * 0.1)} ${f(-R * 0.7)} ${f(CY + R * 0.3)}" fill="none" stroke="${HI}" stroke-width="6" stroke-opacity="0.13" stroke-linecap="round"/>
+            <circle cx="${f(-R * 0.12)}" cy="${f(CY - R * 0.62)}" r="1.1" fill="${HI}" fill-opacity="0.85"/>
+            <path d="M${f(R * 0.42)} ${f(CY + R * 0.8)}Q${f(R * 0.72)} ${f(CY + R * 0.6)} ${f(R * 0.84)} ${f(CY + R * 0.3)}" fill="none" stroke="${M[4]}" stroke-width="1.8" stroke-opacity="0.75" stroke-linecap="round"/>`;
+
+        // Угол жижи на момент рисования — тот, что сейчас у живой: вещь,
+        // перерисованная в руку, продолжает с того же наклона, без скачка.
+        // На иконке магазина колба стоит (вне ванной кадров нет) — ровно.
+        const ang = this.flaskRot(live && this.live.slosh ? this.live.slosh.a : 0);
 
         return `
         <g class="bt-soap bt-soap-flask" transform="translate(${A.x} ${A.y + 2})">
             <defs>
-                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="${CY}" r="58">
-                    <stop offset="0" stop-color="${M[2]}" stop-opacity="0.6"/>
-                    <stop offset="0.45" stop-color="${M[2]}" stop-opacity="0.22"/>
-                    <stop offset="1" stop-color="${M[2]}" stop-opacity="0"/>
+                <radialGradient id="${id}-halo" gradientUnits="userSpaceOnUse" cx="0" cy="${CY - 8}" r="66">
+                    <stop offset="0" stop-color="${M[2]}" stop-opacity="0.62"/><stop offset="0.45" stop-color="${M[2]}" stop-opacity="0.24"/><stop offset="1" stop-color="${M[2]}" stop-opacity="0"/>
                 </radialGradient>
-                <radialGradient id="${id}-halo2" gradientUnits="userSpaceOnUse" cx="0" cy="${CY + 4}" r="32">
-                    <stop offset="0" stop-color="${M[3]}" stop-opacity="0.65"/>
-                    <stop offset="1" stop-color="${M[3]}" stop-opacity="0"/>
+                <radialGradient id="${id}-halo2" gradientUnits="userSpaceOnUse" cx="0" cy="${CY - 6}" r="36">
+                    <stop offset="0" stop-color="${M[3]}" stop-opacity="0.7"/><stop offset="1" stop-color="${M[3]}" stop-opacity="0"/>
                 </radialGradient>
-                <!-- Жижа: белёсое ядро, густые края — свет, а не краска. -->
-                <radialGradient id="${id}-liq" gradientUnits="userSpaceOnUse" cx="-3" cy="${CY + 6}" r="${R}">
-                    <stop offset="0" stop-color="${M[4]}"/>
-                    <stop offset="0.2" stop-color="${M[3]}"/>
-                    <stop offset="0.55" stop-color="${M[2]}"/>
-                    <stop offset="0.85" stop-color="${M[1]}"/>
-                    <stop offset="1" stop-color="${M[0]}"/>
+                <!-- Жижа: белёсое ядро, густые малиновые края — свет, а не краска. -->
+                <radialGradient id="${id}-liq" gradientUnits="userSpaceOnUse" cx="-3" cy="${CY + 9}" r="${R}">
+                    <stop offset="0" stop-color="${M[4]}"/><stop offset="0.18" stop-color="${M[3]}"/><stop offset="0.45" stop-color="${M[2]}"/>
+                    <stop offset="0.72" stop-color="${M[1]}"/><stop offset="1" stop-color="${M[0]}"/>
                 </radialGradient>
-                <!-- Стекло шара: прозрачная середина, плотные края. -->
-                <radialGradient id="${id}-glass" gradientUnits="userSpaceOnUse" cx="0" cy="${CY}" r="${R}">
-                    <stop offset="0" stop-color="${G.wall}" stop-opacity="0.12"/>
-                    <stop offset="0.75" stop-color="${G.wall}" stop-opacity="0.25"/>
-                    <stop offset="1" stop-color="${G.edge}" stop-opacity="0.85"/>
+                <!-- Стекло: прозрачная середина, края уходят в густую малину. -->
+                <radialGradient id="${id}-glass" gradientUnits="userSpaceOnUse" cx="-3" cy="${CY - 3}" r="${R + 1}">
+                    <stop offset="0" stop-color="${G.wall}" stop-opacity="0.1"/>
+                    <stop offset="0.68" stop-color="${G.wall}" stop-opacity="0.2"/>
+                    <stop offset="0.86" stop-color="${M[1]}" stop-opacity="0.45"/>
+                    <stop offset="1" stop-color="${M[0]}" stop-opacity="0.95"/>
                 </radialGradient>
-                <linearGradient id="${id}-neck" gradientUnits="userSpaceOnUse" x1="${-NX}" y1="0" x2="${NX}" y2="0">
-                    <stop offset="0" stop-color="${G.edge}" stop-opacity="0.85"/>
-                    <stop offset="0.35" stop-color="${G.wall}" stop-opacity="0.25"/>
-                    <stop offset="1" stop-color="${G.edge}" stop-opacity="0.9"/>
+                <linearGradient id="${id}-neck" gradientUnits="userSpaceOnUse" x1="-6" y1="0" x2="6" y2="0">
+                    <stop offset="0" stop-color="${G.edge}" stop-opacity="0.95"/><stop offset="0.3" stop-color="${G.wall}" stop-opacity="0.3"/>
+                    <stop offset="0.75" stop-color="${G.wall}" stop-opacity="0.25"/><stop offset="1" stop-color="${G.edge}" stop-opacity="0.95"/>
                 </linearGradient>
-                <linearGradient id="${id}-cork" gradientUnits="userSpaceOnUse" x1="-6.6" y1="0" x2="6.6" y2="0">
-                    <stop offset="0" stop-color="${Ck[0]}"/>
-                    <stop offset="0.35" stop-color="${Ck[2]}"/>
-                    <stop offset="1" stop-color="${Ck[0]}"/>
+                <linearGradient id="${id}-wax" gradientUnits="userSpaceOnUse" x1="-9" y1="0" x2="9" y2="0">
+                    <stop offset="0" stop-color="${Wx[0]}"/><stop offset="0.3" stop-color="${Wx[2]}"/>
+                    <stop offset="0.65" stop-color="${Wx[1]}"/><stop offset="1" stop-color="${Wx[0]}"/>
                 </linearGradient>
-                <linearGradient id="${id}-wax" gradientUnits="userSpaceOnUse" x1="-8.6" y1="0" x2="8.6" y2="0">
-                    <stop offset="0" stop-color="${Wx[0]}"/>
-                    <stop offset="0.3" stop-color="${Wx[2]}"/>
-                    <stop offset="0.6" stop-color="${Wx[1]}"/>
-                    <stop offset="1" stop-color="${Wx[0]}"/>
+                <linearGradient id="${id}-cork" gradientUnits="userSpaceOnUse" x1="-7" y1="0" x2="7" y2="0">
+                    <stop offset="0" stop-color="${Ck[0]}"/><stop offset="0.35" stop-color="${Ck[2]}"/><stop offset="1" stop-color="${Ck[0]}"/>
                 </linearGradient>
+                <linearGradient id="${id}-cuH" gradientUnits="userSpaceOnUse" x1="-26" y1="0" x2="26" y2="0">
+                    <stop offset="0" stop-color="${CU[0]}"/><stop offset="0.22" stop-color="${CU[3]}"/><stop offset="0.32" stop-color="${CU[4]}"/>
+                    <stop offset="0.45" stop-color="${CU[2]}"/><stop offset="0.85" stop-color="${CU[1]}"/><stop offset="1" stop-color="${CU[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-top" gradientUnits="userSpaceOnUse" x1="0" y1="${lv}" x2="0" y2="${mid}">
+                    <stop offset="0" stop-color="${V[2]}"/><stop offset="0.55" stop-color="${V[1]}"/><stop offset="1" stop-color="${V[0]}"/>
+                </linearGradient>
+                <linearGradient id="${id}-band" gradientUnits="userSpaceOnUse" x1="0" y1="${B0 - 4}" x2="0" y2="${B0 + BH}">
+                    <stop offset="0" stop-color="${CU[4]}"/><stop offset="0.35" stop-color="${CU[3]}"/><stop offset="0.7" stop-color="${CU[2]}"/><stop offset="1" stop-color="${CU[1]}"/>
+                </linearGradient>
+                <radialGradient id="${id}-mist" gradientUnits="userSpaceOnUse" cx="-1" cy="${BC + 1}" r="${BR}">
+                    <stop offset="0" stop-color="${M[4]}" stop-opacity="0.9"/><stop offset="0.6" stop-color="${M[3]}" stop-opacity="0.5"/><stop offset="1" stop-color="${M[2]}" stop-opacity="0.2"/>
+                </radialGradient>
+                <radialGradient id="${id}-bglass" gradientUnits="userSpaceOnUse" cx="-1" cy="${BC - 1}" r="${BR + 0.5}">
+                    <stop offset="0" stop-color="${G.wall}" stop-opacity="0.05"/><stop offset="0.72" stop-color="${G.wall}" stop-opacity="0.2"/><stop offset="1" stop-color="${M[0]}" stop-opacity="0.85"/>
+                </radialGradient>
+                <radialGradient id="${id}-seal" gradientUnits="userSpaceOnUse" cx="${SX - 2}" cy="${SY - 2.5}" r="8.5">
+                    <stop offset="0" stop-color="${Wx[2]}"/><stop offset="0.6" stop-color="${Wx[1]}"/><stop offset="1" stop-color="${Wx[0]}"/>
+                </radialGradient>
                 <clipPath id="${id}-ball"><circle cx="0" cy="${CY}" r="${R}"/></clipPath>
+                <clipPath id="${id}-ball2"><circle cx="0" cy="${CY}" r="${R + 1.2}"/></clipPath>
             </defs>
-            <circle class="bs-over" cx="0" cy="${CY}" r="58" fill="url(#${id}-halo)"/>
-            <circle class="bs-over" cx="0" cy="${CY + 4}" r="32" fill="url(#${id}-halo2)"/>
-
-            <path d="${ring}${flask}${lipD}${wax}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            <!-- Пробковое кольцо (на полке — за сеткой). -->
-            <path d="${ring}" fill="url(#${id}-cork)"/>
-            <!-- Жижа и всё, что в ней. -->
-            <path d="${liq}" fill="url(#${id}-liq)"/>
-            <g clip-path="url(#${id}-ball)">
-                ${motes}
-                ${bub}
-                <!-- Мениск снизу: светлый эллипс. -->
-                <ellipse cx="0" cy="${lv}" rx="${f(half)}" ry="2.6" fill="${M[3]}" fill-opacity="0.6" stroke="${M[4]}" stroke-width="1"/>
+            <circle class="bs-over" cx="0" cy="${CY - 8}" r="66" fill="url(#${id}-halo)"/>
+            <circle class="bs-over" cx="0" cy="${CY - 6}" r="36" fill="url(#${id}-halo2)"/>
+            <path d="${flask}${bulb}${lip}${wax}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * SC}" stroke-linejoin="round"/>
+            <path d="${band}" fill="none" stroke="${ink}" stroke-width="${2 * SS}" stroke-linejoin="round"/>
+            <path d="${seal}" fill="none" stroke="${ink}" stroke-width="${2 * SS}"/>
+            <!-- ЖИЖА: лиловый слой сверху, розовый светится снизу. Вся — одна
+                 группа под кругом внутренней стенки; живёт поворотом вокруг
+                 центра шара (flaskTick). -->
+            <g class="bsf-liq" transform="${ang}">
+                <path d="${liqAll}" fill="url(#${id}-top)"/>
+                <path d="${liqLow}" fill="url(#${id}-liq)"/>
+                <g clip-path="url(#${id}-ball)">
+                    ${mo}${bubs}${bubsTop}
+                    <path d="${wave}" fill="none" stroke="${M[4]}" stroke-width="1.3" stroke-opacity="0.95"/>
+                    <ellipse cx="0" cy="${lv}" rx="${f(hT)}" ry="2.7" fill="${V[3]}" fill-opacity="0.65" stroke="${V[4]}" stroke-width="1"/>
+                </g>
             </g>
-            <!-- Стекло поверх: шар и горло. -->
+            <!-- Стекло поверх: шар, горло, шар-перетяжка. -->
             <circle cx="0" cy="${CY}" r="${R}" fill="url(#${id}-glass)"/>
             <path d="M${-NX} ${NT}V${f(ny + 1)}H${NX}V${NT}Z" fill="url(#${id}-neck)"/>
+            <circle cx="0" cy="${BC}" r="${BR}" fill="url(#${id}-mist)"/>
+            <circle cx="0" cy="${BC}" r="${BR}" fill="url(#${id}-bglass)"/>
+            ${bubble(1.2, BC + 2.4, 1.3, M[4])}${bubble(-2.3, BC - 2.2, 0.8, M[4])}
+            <path d="M${-BR + 2.2} ${BC - 2.5}Q${-BR + 2.6} ${BC - 5.4} ${-BR + 5.3} ${BC - 6.3}" fill="none" stroke="${HI}" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.9"/>
+            <path d="M${BR - 2} ${BC + 3}Q${BR - 1.2} ${BC + 1} ${BR - 1.5} ${BC - 1}" fill="none" stroke="${M[3]}" stroke-width="1.1" stroke-linecap="round"/>
             <g clip-path="url(#${id}-ball)">
-                <!-- Толщина стенки и розовый отсвет жижи по ней. -->
-                <circle cx="0" cy="${CY}" r="${innerR}" fill="none" stroke="${G.hi}" stroke-width="0.7" stroke-opacity="0.6"/>
-                <path d="M${f(-half)} ${lv + 1}A${innerR} ${innerR} 0 0 0 ${f(half)} ${lv + 1}" fill="none" stroke="${M[3]}" stroke-width="2.4" stroke-opacity="0.5"/>
-                <!-- Блик-окошко изгибом по сфере — главный признак шара. -->
-                <path d="M-17 -7C-15 -12 -11 -15.5 -6 -17L-5 -14.2C-9 -13 -12 -10.5 -14 -6.4Z" fill="${F.hi}" fill-opacity="0.85"/>
-                <path d="M-19.5 1Q-20 5 -18.8 9" fill="none" stroke="${F.hi}" stroke-width="1.4" stroke-opacity="0.8" stroke-linecap="round"/>
-                <!-- Отражение снизу справа — слабее. -->
-                <path d="M11 22Q16 19 18.5 13" fill="none" stroke="${F.hi}" stroke-width="1.6" stroke-opacity="0.45" stroke-linecap="round"/>
+                <circle cx="0" cy="${CY}" r="${f(r)}" fill="none" stroke="${HI}" stroke-width="0.7" stroke-opacity="0.6"/>
+                ${gloss}
             </g>
-            <!-- Горло: стенки и блик. -->
-            <path d="M${-NX + 1.6} ${NT + 1}V${f(ny + 2)}" stroke="${F.hi}" stroke-width="1.3" stroke-opacity="0.85" stroke-linecap="round"/>
-            <path d="M${NX - 1.2} ${NT + 1}V${f(ny + 2)}" stroke="${G.edge}" stroke-width="0.8"/>
-            <path d="M${-NX} ${f(ny)}A${R} ${R} 0 1 0 ${NX} ${f(ny)}" fill="none" stroke="${mixColor(ink, G.edge, 0.5)}" stroke-width="${STROKE.hairline}"/>
-            <!-- Раструб, пробка, сургуч. -->
-            <path d="${lipD}" fill="url(#${id}-neck)" stroke="${G.edge}" stroke-width="0.6"/>
+            <path d="M${-NX + 1.6} ${NT + 1}V${BC - BR - 0.4}M${-NX + 1.6} ${BC + BR + 0.4}V${f(C0 - CH - 0.4)}" stroke="${HI}" stroke-width="1.4" stroke-opacity="0.85" stroke-linecap="round"/>
+            <path d="M${NX - 1.2} ${NT + 1}V${BC - BR}M${NX - 1.2} ${BC + BR}V${f(C0 - CH)}" stroke="${G.edge}" stroke-width="0.8"/>
+            <!-- Оплётка: меридианы, пояс, воротник с заклёпками. -->
+            <g clip-path="url(#${id}-ball2)">
+                <path d="${mer}" fill="none" stroke="${ink}" stroke-width="4.2" stroke-linecap="round"/>
+                <path d="${mer}" fill="none" stroke="${CU[2]}" stroke-width="2.6"/>
+                <path d="${mer}" fill="none" stroke="${CU[4]}" stroke-width="0.6" transform="translate(-0.5 -0.2)"/>
+            </g>
+            <path d="${band}" fill="url(#${id}-band)"/>
+            <path d="M${-R + 1} ${B0 + 0.4}Q0 ${B0 - 6.2} ${R - 1} ${B0 + 0.4}" fill="none" stroke="${CU[4]}" stroke-width="0.9" stroke-opacity="0.9"/>
+            <path d="M${-R} ${B0 + BH - 0.8}Q0 ${B0 + BH - 7.6} ${R} ${B0 + BH - 0.8}" fill="none" stroke="${CU[0]}" stroke-width="0.8"/>
+            <path d="${collar}" fill="url(#${id}-cuH)"/>
+            <path d="M-7.4 ${f(C0 - CH + 1)}H6.4" stroke="${CU[4]}" stroke-width="0.8" stroke-linecap="round"/>
+            ${rivets}
+            <!-- Венчик, пробка, сургуч с оттиском солнца. -->
+            <path d="${lip}" fill="url(#${id}-neck)" stroke="${G.edge}" stroke-width="0.6"/>
+            <path d="M${-NX - 0.2} ${NT - 1.7}H${NX - 0.8}" stroke="${HI}" stroke-width="0.8" stroke-opacity="0.9" stroke-linecap="round"/>
             <path d="${cork}" fill="url(#${id}-cork)"/>
-            ${pores}
             <path d="${wax}" fill="url(#${id}-wax)"/>
-            <path d="M-5.5 ${NT - 12.5}Q-2 ${NT - 14} 2.5 ${NT - 13.4}" fill="none" stroke="${Wx[2]}" stroke-width="1.3" stroke-linecap="round"/>
-            <ellipse cx="-3.8" cy="${NT - 11.2}" rx="1.4" ry="0.7" fill="${F.hi}" fill-opacity="0.7" transform="rotate(-20 -3.8 ${NT - 11.2})"/>
-            <!-- Оттиск печати на сургуче: кружок со звездой. -->
-            <circle cx="0.5" cy="${NT - 6}" r="3.2" fill="none" stroke="${Wx[0]}" stroke-width="0.8"/>
-            <path d="M0.5 ${NT - 8.2}L1.1 ${NT - 6.6}L2.7 ${NT - 6.6}L1.4 ${NT - 5.6}L1.9 ${NT - 4}L0.5 ${NT - 5}L-0.9 ${NT - 4}L-0.4 ${NT - 5.6}L-1.7 ${NT - 6.6}L-0.1 ${NT - 6.6}Z" fill="${Wx[0]}"/>
+            <path d="M${-NX - 0.6} ${W - 12.4}Q${-NX + 2} ${W - 14.3} 2 ${W - 13.8}" fill="none" stroke="${Wx[2]}" stroke-width="1.3" stroke-linecap="round"/>
+            <ellipse cx="${-NX + 1.6}" cy="${W - 11.4}" rx="1.5" ry="0.75" fill="${HI}" fill-opacity="0.7" transform="rotate(-20 ${-NX + 1.6} ${W - 11.4})"/>
+            <circle cx="0.4" cy="${W - 6.2}" r="3.4" fill="${Wx[1]}" stroke="${Wx[0]}" stroke-width="0.8"/>
+            <path d="${sun(0.4, W - 6.2, 2.1)}" fill="none" stroke="${Wx[0]}" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="M-2.6 ${W - 4.4}A3.4 3.4 0 0 0 3.2 ${W - 4.6}" fill="none" stroke="${Wx[2]}" stroke-width="0.6"/>
+            <!-- Печать на шнуре. -->
+            <path d="${cord}" fill="none" stroke="${Wx[0]}" stroke-width="2" stroke-linecap="round"/>
+            <path d="${cord}" fill="none" stroke="${Wx[1]}" stroke-width="1.1" stroke-linecap="round"/>
+            <path d="${seal}" fill="url(#${id}-seal)"/>
+            <circle cx="${SX}" cy="${SY}" r="4.2" fill="none" stroke="${Wx[0]}" stroke-width="0.9"/>
+            <path d="${mercury(SX, SY - 0.2, 2.3)}" fill="none" stroke="${Wx[0]}" stroke-width="0.75" stroke-linecap="round"/>
+            <path d="M${SX - 4.7} ${SY - 2.6}Q${SX - 3} ${SY - 5.5} ${SX + 0.4} ${SY - 5.4}" fill="none" stroke="${Wx[2]}" stroke-width="1" stroke-linecap="round" stroke-opacity="0.9"/>
         </g>`;
+    },
+
+    // Угол жижи → transform. Угол — в понятиях игрока: куда ушёл «низ»
+    // жижи, ПЛЮС — вправо по экрану (docs/traps.md, п. 116). У svg ось y
+    // вниз, и rotate(+α) уводит низ ВЛЕВО, поэтому знак меняется ровно
+    // здесь, один раз. Шаг 0.1° — мельче глазу не видно, а дрожь руки не
+    // пишет атрибут на каждом кадре.
+    flaskRot(a) {
+        const d = Math.round(-a * 1800 / Math.PI) / 10;
+        return `rotate(${(d === 0 ? 0 : d).toFixed(1)} 0 ${this.FLASK.CY})`;
+    },
+
+    // ---------- живость колбы: тяжесть и колыхание ----------
+    // Шаг общего цикла (wake). roots — видимые копии, hidden — спрятанные
+    // (полочная, пока колба в руке): пока колба летит домой, им пишется тот
+    // же угол, чтобы в миг посадки полочная копия встала с тем же
+    // наклоном, что у летевшей.
+    //
+    // Модель — маятник: «низ» жижи (угол a, плюс — вправо) тянется к
+    // направлению ДЕЙСТВУЮЩЕЙ тяжести g_eff = g·down − ускорение вещи:
+    //   a'' = ω²/g · (g_eff.x·cos a − g_eff.y·sin a) − 2ζω·a'.
+    // Тяжесть — Tilt.down() (наклон телефона), ускорение — из того, как
+    // сама вещь едет по холсту (её матрица, worldMatrix): палец, взлёт с
+    // полки, полёт домой, камера. Поэтому lust.js о колбе ничего не знает.
+    // Ускорение входит толчком: перемена скорости за кадр сразу в a', а не
+    // второй разностью мест — та шумит от неровного шага кадров.
+    // Покой — ни одной записи (как блики пены: телефон неподвижен — ни
+    // одной перерисовки).
+    flaskTick(roots, hidden, now, dt, mats) {
+        const S = this.FLASK.SLOSH, CY = this.FLASK.CY, Lv = this.live;
+        const st = Lv.slosh || (Lv.slosh = { a: 0, w: 0, gx: 0, gy: 1 });
+        // Тяжесть с датчика. Лёг на стол — проекция короткая: направление
+        // плавно уходит к «вниз по экрану», иначе жижа металась бы от дрожи.
+        const D = typeof Tilt !== 'undefined' && Tilt.down ? Tilt.down() : null;
+        let gx = 0, gy = 1;
+        if (D && D.live) {
+            const m = Math.hypot(D.x, D.y), [f0, f1] = S.flat;
+            const u = Math.max(0, Math.min(1, (m - f0) / (f1 - f0))), w = u * u * (3 - 2 * u);
+            const ax = m > 1e-6 ? D.x / m : 0, ay = m > 1e-6 ? D.y / m : 1;
+            const nx = ax * w, ny = ay * w + (1 - w), nl = Math.hypot(nx, ny) || 1;
+            gx = nx / nl; gy = ny / nl;
+        }
+        st.gx += (gx - st.gx) * S.smooth; st.gy += (gy - st.gy) * S.smooth;
+        // Толчок: перемена скорости центра шара на холсте. Копия, которая
+        // давно не жила (спрятанная, переезд камеры) или прыгнула, — без
+        // толчка: её переставили, а не бросили.
+        let dvx = 0, dvy = 0;
+        roots.forEach(r => {
+            let c = Lv.cache.get(r);
+            if (!c) { c = { liq: r.querySelector('.bsf-liq') }; Lv.cache.set(r, c); }
+            // Матрица уже посчитана циклом (видимость) — второй обход предков
+            // с DOMMatrix на каждом кадре стоил заметную долю скрипта.
+            const m = mats && mats.has(r) ? mats.get(r) : this.worldMatrix(r);
+            if (!m || !r.closest('.bt-svg')) return;
+            const x = m.c * CY + m.e, y = m.d * CY + m.f, h = (now - (c.at || 0)) / 1000;
+            if (!c.p || h > 0.12 || h <= 0 || Math.hypot(x - c.p[0], y - c.p[1]) > S.jump) {
+                c.p = [x, y]; c.v = [0, 0]; c.at = now; return;
+            }
+            const vx = (x - c.p[0]) / h, vy = (y - c.p[1]) / h;
+            let ex = vx - c.v[0], ey = vy - c.v[1];
+            const el = Math.hypot(ex, ey);
+            if (el > S.kick) { ex *= S.kick / el; ey *= S.kick / el; }
+            if (Math.hypot(ex, ey) > Math.hypot(dvx, dvy)) { dvx = ex; dvy = ey; }
+            c.p = [x, y]; c.v = [vx, vy]; c.at = now;
+        });
+        const om = 2 * Math.PI * S.hz, k = om * om, damp = 2 * S.zeta * om, L = S.g / k;
+        st.w -= (dvx * Math.cos(st.a) - dvy * Math.sin(st.a)) / L;
+        const n = Math.max(1, Math.ceil(dt / (S.step / om)));
+        for (let i = 0; i < n; i++) {
+            const h = dt / n, fd = S.fric * h;
+            let w = st.w + (k * (st.gx * Math.cos(st.a) - st.gy * Math.sin(st.a)) - damp * st.w) * h;
+            // Сухое трение: меньше него — стоит, больше — вычитается.
+            w = Math.abs(w) <= fd ? 0 : w - fd * Math.sign(w);
+            st.w = w;
+            st.a += w * h;
+        }
+        // Встала рядом с равновесием — ровно в него, и больше не пишется.
+        const eq = Math.atan2(st.gx, st.gy);
+        if (st.w === 0 && Math.abs(st.a - eq) < S.still) st.a = eq;
+        // Пока трут — запись через кадр цикла (15 в секунду), как небо
+        // флакона 8: трение — самый тяжёлый кадр ванной, а поворот жижи
+        // перерисовывает весь шар с градиентами (замер под 4×: 34 кадра без
+        // записей, 29 с записью на каждом). Счёт при этом идёт каждый кадр —
+        // качание не замедляется, только реже показывается.
+        if (Lv.rub && (Lv.n || 0) % 2) return;
+        const tr = this.flaskRot(st.a);
+        const put = (r) => {
+            let c = Lv.cache.get(r);
+            if (!c) { c = { liq: r.querySelector('.bsf-liq') }; Lv.cache.set(r, c); }
+            if (c.liq && c.tr !== tr) { c.tr = tr; c.liq.setAttribute('transform', tr); Lv.flaskWrites = (Lv.flaskWrites || 0) + 1; }
+        };
+        roots.forEach(put);
+        // Спрятанной полочной копии угол нужен только к посадке летящей
+        // домой (lust.js, flyHome): в остальное время запись в неё — лишняя
+        // перерисовка полки на самом тяжёлом кадре (трение).
+        if (roots.some(r => r.closest('#bt-homing'))) hidden.forEach(put);
     },
 
     // ---------- 6. ЭЛИКСИР ----------
