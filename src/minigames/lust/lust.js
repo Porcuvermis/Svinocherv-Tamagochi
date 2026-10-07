@@ -2056,8 +2056,16 @@ const LustMinigame = {
         // Вещь в воздухе крупнее полочной (она «в руке» у игры), поэтому
         // подъём начинается с полочного размера: на старте картинка ровно
         // та, что лежала, и скачка нет.
+        // Время кадра (t у requestAnimationFrame) — НАЧАЛО кадра, и оно
+        // бывает РАНЬШЕ t0, снятого через performance.now(): доля пути тогда
+        // отрицательная, а кривая её не прощает — за пределами [0, 1] она
+        // выносит вещь за путь. Полёт домой однажды поставил мыло на высоту
+        // 11234 при масштабе 2.3; на айфоне кадры реже, разрыв больше, и
+        // мочалку в начале подъёма «трясло». Поэтому доля всюду зажата снизу
+        // нулём. И первый кадр ставится СРАЗУ: без transform вещь на кадр
+        // рисовалась в углу холста, а полочная уже спрятана — мигание.
         const step = (t) => {
-            const u = Math.min(1, (t - t0) / this.LIFT_MS), e = 1 - Math.pow(1 - u, 3);
+            const u = Math.max(0, Math.min(1, (t - t0) / this.LIFT_MS)), e = 1 - Math.pow(1 - u, 3);
             const m = 1 / K + (1 - 1 / K) * e, y = from.y + (to.y - from.y) * e;
             if (this.el('bt-held') !== held || !this.loose) { this.liftRaf = 0; return; }
             held.setAttribute('transform',
@@ -2066,6 +2074,7 @@ const LustMinigame = {
             this.liftRaf = 0;
             this.floatTool(true);
         };
+        held.setAttribute('transform', `translate(${from.x.toFixed(1)} ${from.y.toFixed(1)}) scale(${(1 / K).toFixed(4)})`);
         this.liftRaf = requestAnimationFrame(step);
     },
 
@@ -2286,7 +2295,7 @@ const LustMinigame = {
         if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'land', dur);
         const step = (t) => {
             if (!held.isConnected) { this.homeRaf = 0; return; }
-            const u = Math.min(1, (t - t0) / dur);
+            const u = Math.max(0, Math.min(1, (t - t0) / dur));
             const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
             const q = 1 - e;
             const x = q * q * from.x + 2 * q * e * top.x + e * e * to.x;
@@ -2478,7 +2487,7 @@ const LustMinigame = {
         if (!ms) { set(to); return; }
         const t0 = performance.now();
         const step = (now) => {
-            const k = Math.min(1, (now - t0) / ms);
+            const k = Math.max(0, Math.min(1, (now - t0) / ms));
             set(from + (to - from) * k * k * (3 - 2 * k));
             this.blurRaf = k < 1 ? requestAnimationFrame(step) : 0;
         };
@@ -3440,7 +3449,7 @@ const LustMinigame = {
         const step = (now) => {
             // Та же однополярная волна и та же частота, что у рендерера, —
             // иначе морда дышала бы отдельно от тела.
-            const t = (now - t0) / 1000;
+            const t = Math.max(0, now - t0) / 1000;
             const w = (1 - Math.cos(t * this.PANT_HZ * Math.PI * 2)) / 2;
             if (this.wormHandle && this.wormHandle.setLivePose) {
                 this.wormHandle.setLivePose({
@@ -3810,7 +3819,7 @@ const LustMinigame = {
         const from = this.charge, bend0 = this.bend, DUR = 900;
         const t0 = performance.now();
         const step = (now) => {
-            const k = Math.min(1, (now - t0) / DUR);
+            const k = Math.max(0, Math.min(1, (now - t0) / DUR));
             const e = 1 - Math.pow(1 - k, 3);
             this.charge = from * (1 - e);
             this.bend = bend0 * (1 - e);

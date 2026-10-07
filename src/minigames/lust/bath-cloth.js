@@ -2053,7 +2053,10 @@ const BATH_CLOTH = {
         const step = (t) => {
             if (!r.isConnected) { M.delete(r); return; }
             const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
-            const u = L0 && L0.camTimer ? 1 : Math.min(1, (t - t0) / ms);
+            // Доля зажата снизу нулём: время кадра бывает раньше t0, а
+            // упругая кривая за пределами [0, 1] раскачивает вещь (lust.js,
+            // liftTool).
+            const u = L0 && L0.camTimer ? 1 : Math.max(0, Math.min(1, (t - t0) / ms));
             this.sagTo(r, curve(u));
             if (u < 1) job.raf = requestAnimationFrame(step); else M.delete(r);
         };
