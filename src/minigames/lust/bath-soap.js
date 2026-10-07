@@ -1238,7 +1238,21 @@ onmessage = async (e) => {
         // стенки.
         SLOSH: { kick: 900, jump: 60, still: 0.005, flat: [0.15, 0.45], smooth: 0.3, step: 0.1, margin: 0.85,
                  top: { hz: 1.4, zeta: 0.13, g: 9000, fric: 0.34 },
-                 mid: { hz: 0.6, zeta: 0.12, g: 4500, fric: 0.15 } }
+                 mid: { hz: 0.6, zeta: 0.12, g: 4500, fric: 0.15 } },
+        // ВАТЕРЛИНИИ (замечание игрока): в покое обе линии — поверхность и
+        // граница слоёв — РОВНЫЕ; шевельнулась жидкость — линия чуть
+        // волнится, успокоилась — выпрямляется. Размах — от живости СВОЕГО
+        // маятника (отклонение от равновесия плюс скорость, в радианах), с
+        // огибающей: набирается сразу, спадает с долей rel за кадр, ниже off
+        // — ровно ноль, точная прямая и больше ни одной записи. Волна бежит
+        // вдоль линии (speed — рад/с фазы, len — длина волны в единицах) и
+        // гаснет к стенкам (концы линии стоят на окружности стенки). Верх —
+        // мельче, короче и быстрее; граница — крупнее, длиннее, ленивее и
+        // спадает дольше: по характеру своих маятников. amp — потолок
+        // размаха (ед.): «чуть-чуть», пара единиц.
+        WAVE: { n: 32, off: 0.08,
+                top: { amp: 1.6, gain: 3, len: 16, speed: 8, rel: 0.12 },
+                mid: { amp: 2.2, gain: 3.5, len: 30, speed: 3, rel: 0.05 } }
     },
 
     // Парк — Миллер, как в генераторе художника: картинка совпадает с c2.
@@ -1297,10 +1311,10 @@ onmessage = async (e) => {
 
         // ---- жижа ----
         const r = R - 1.9;
-        const hT = Math.sqrt(r * r - (lv - CY) ** 2), hM = Math.sqrt(r * r - (mid - CY) ** 2);
-        const liqAll = `M${f(-hT)} ${lv}A${r} ${r} 0 1 0 ${f(hT)} ${lv}Z`;
-        const wave = `M${f(-hM)} ${mid}Q${f(-hM * 0.5)} ${mid - 2.6} 0 ${mid - 0.6}Q${f(hM * 0.5)} ${mid + 1.5} ${f(hM)} ${mid - 0.9}`;
-        const liqLow = `${wave}A${r} ${r} 0 1 1 ${f(-hM)} ${mid}Z`;
+        // Линии жижи — из того же станка, что живой кадр (flaskLines): на
+        // полке и в руке картинка совпадает с той, что пишет цикл.
+        const sl0 = live && this.live.slosh;
+        const LN = this.flaskLines(sl0 ? sl0.w1A : 0, sl0 ? sl0.w1P : 0, sl0 ? sl0.w2A : 0, sl0 ? sl0.w2P : 0);
         const inBall = (x, y) => Math.hypot(x, y - CY) < R - 4;
         const bubs = bubbleColumn(-3, 10, mid + 2, 81, M[4]) + bubbleColumn(9, 9, mid + 6, 85, M[4]).split('<circle').slice(0, 7).join('<circle');
         const bubsTop = bubbleColumn(-2.4, mid - 2, lv + 2, 83, V[4]);
@@ -1416,14 +1430,14 @@ onmessage = async (e) => {
                  срезал, а на парящем холсте каждый лишний клип — цена
                  растра на каждом кадре качания. -->
             <g class="bsf-liq" transform="${ang}">
-                <path d="${liqAll}" fill="url(#${id}-top)"/>
+                <path class="bsf-surf" d="${LN.all}" fill="url(#${id}-top)"/>
                 ${moTop}${bubsTop}
                 <g class="bsf-low" transform="${ang2}">
-                    <path d="${liqLow}" fill="url(#${id}-liq)"/>
+                    <path class="bsf-pink" d="${LN.low}" fill="url(#${id}-liq)"/>
                     ${moLow}${bubs}
-                    <path d="${wave}" fill="none" stroke="${M[4]}" stroke-width="1.3" stroke-opacity="0.95"/>
+                    <path class="bsf-wave" d="${LN.wave}" fill="none" stroke="${M[4]}" stroke-width="1.3" stroke-opacity="0.95"/>
                 </g>
-                <ellipse cx="0" cy="${lv}" rx="${f(hT)}" ry="2.7" fill="${V[3]}" fill-opacity="0.65" stroke="${V[4]}" stroke-width="1"/>
+                <path class="bsf-men" d="${LN.men}" fill="${V[3]}" fill-opacity="0.65" stroke="${V[4]}" stroke-width="1"/>
             </g>
             <!-- Стекло поверх: шар, горло, шар-перетяжка. -->
             <circle cx="0" cy="${CY}" r="${R}" fill="url(#${id}-glass)"/>
@@ -1482,7 +1496,47 @@ onmessage = async (e) => {
     },
 
     // ---------- живость колбы: тяжесть и колыхание ----------
-    flaskNodes(r) { return { liq: r.querySelector('.bsf-liq'), low: r.querySelector('.bsf-low') }; },
+    flaskNodes(r) {
+        const q = (s) => r.querySelector(s);
+        return { liq: q('.bsf-liq'), low: q('.bsf-low'), surf: q('.bsf-surf'), men: q('.bsf-men'), pink: q('.bsf-pink'), wave: q('.bsf-wave') };
+    },
+
+    // Пути жижи при размахе волн A1 (поверхность) и A2 (граница) и их
+    // фазах. Ровно ноль — точная прямая: заливка — хорда и дуга, мениск —
+    // настоящий эллипс дугами, как в рисунке художника. Иначе — ломаная
+    // из n точек; волна гаснет к стенкам синусом, концы стоят на стенке.
+    // Розовая граница в покое тоже прямая: постоянная волна у неё убрана
+    // (замечание игрока — шевеление искривляет линию, а не она сама).
+    flaskLines(A1, P1, A2, P2) {
+        const K = this.FLASK, W = K.WAVE, r = K.R - 1.9, f = (v) => (+v).toFixed(1), g = (v) => (+v).toFixed(2);
+        const lv = K.LV, mid = K.MID;
+        const hT = Math.sqrt(r * r - (lv - K.CY) ** 2), hM = Math.sqrt(r * r - (mid - K.CY) ** 2);
+        const line = (h, y0, A, P, w) => {
+            if (!A) return null;
+            const out = [], k = 2 * Math.PI / w.len;
+            for (let i = 0; i <= W.n; i++) {
+                const u = i / W.n, x = -h + 2 * h * u;
+                // Плюс к y — вниз (svg): гребни и впадины одинаковы.
+                const y = y0 - A * Math.sin(Math.PI * u) * (Math.sin(k * x - P) + 0.35 * Math.sin(2.3 * k * x - 1.7 * P + 1));
+                out.push([x, y]);
+            }
+            return out;
+        };
+        const t = line(hT, lv, A1, P1, W.top), m = line(hM, mid, A2, P2, W.mid);
+        const pl = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + g(p[0]) + ' ' + g(p[1])).join('');
+        const all = (t ? pl(t) : `M${f(-hT)} ${lv}L${f(hT)} ${lv}`) + `A${r} ${r} 0 1 1 ${f(-hT)} ${lv}Z`;
+        const wave = m ? pl(m) : `M${f(-hM)} ${mid}L${f(hM)} ${mid}`;
+        const low = wave + `A${r} ${r} 0 1 1 ${f(-hM)} ${mid}Z`;
+        // Мениск — линза вокруг поверхности: толщина по эллипсу.
+        const RY = 2.7;
+        let men;
+        if (!t) men = `M${f(-hT)} ${lv}A${f(hT)} ${RY} 0 1 0 ${f(hT)} ${lv}A${f(hT)} ${RY} 0 1 0 ${f(-hT)} ${lv}Z`;
+        else {
+            const th = (x) => RY * Math.sqrt(Math.max(0, 1 - (x / hT) ** 2));
+            men = pl(t.map(([x, y]) => [x, y - th(x)])) + t.slice().reverse().map(([x, y]) => 'L' + g(x) + ' ' + g(y + th(x))).join('') + 'Z';
+        }
+        return { all, low, wave, men };
+    },
 
     // Числа маятника из частоты, затухания и тяжести: k = ω², длина L = g/ω²
     // (толчок скорости Δv поворачивает на Δv/L).
@@ -1493,13 +1547,15 @@ onmessage = async (e) => {
 
     // Наибольшая разница углов поверхности и границы, при которой линии ещё
     // не сходятся внутри шара. Поверхность — хорда на расстоянии d1 от
-    // центра, граница — d2 (по ВЫСШЕЙ точке её волны, с запасом); при
+    // центра, граница — d2 (с запасом на волны обеих линий); при
     // разнице Δ они пересекаются на расстоянии
     //   √(d1² + d2² − 2·d1·d2·cosΔ) / sinΔ
     // от центра, и оно обязано остаться не меньше радиуса стенки r.
     flaskGap() {
         if (this._gap) return this._gap;
-        const K = this.FLASK, r = K.R - 1.9, d1 = K.CY - K.LV, d2 = K.CY - (K.MID - 2.6);
+        // Граница с волной поднимается на свой потолок размаха, поверхность
+        // опускается на свой — запас на обе волны сразу.
+        const K = this.FLASK, r = K.R - 1.9, d1 = K.CY - K.LV, d2 = K.CY - K.MID + K.WAVE.top.amp + K.WAVE.mid.amp;
         const c = (d1 * d2 + Math.sqrt(d1 * d1 * d2 * d2 - r * r * (d1 * d1 + d2 * d2 - r * r))) / (r * r);
         return (this._gap = Math.acos(Math.min(1, c)) * K.SLOSH.margin);
     },
@@ -1520,7 +1576,7 @@ onmessage = async (e) => {
     // одной перерисовки).
     flaskTick(roots, hidden, now, dt, mats) {
         const S = this.FLASK.SLOSH, CY = this.FLASK.CY, Lv = this.live;
-        const st = Lv.slosh || (Lv.slosh = { a: 0, w: 0, a2: 0, w2: 0, gx: 0, gy: 1 });
+        const st = Lv.slosh || (Lv.slosh = { a: 0, w: 0, a2: 0, w2: 0, gx: 0, gy: 1, w1A: 0, w1P: 0, w2A: 0, w2P: 0 });
         // Тяжесть с датчика. Лёг на стол — проекция короткая: направление
         // плавно уходит к «вниз по экрану», иначе жижа металась бы от дрожи.
         const D = typeof Tilt !== 'undefined' && Tilt.down ? Tilt.down() : null;
@@ -1579,6 +1635,22 @@ onmessage = async (e) => {
         const eq = Math.atan2(st.gx, st.gy);
         if (st.w === 0 && Math.abs(st.a - eq) < S.still) st.a = eq;
         if (st.w2 === 0 && Math.abs(st.a2 - eq) < S.still) st.a2 = eq;
+        // Волны ватерлиний — от живости своего маятника (WAVE).
+        const WV = this.FLASK.WAVE;
+        const env = (A, a, w, om, Wp) => {
+            const live = Math.hypot(a - eq, w / om), want = Math.min(Wp.amp, Wp.gain * live);
+            A = want > A ? want : A + (want - A) * Wp.rel;
+            return A < WV.off ? 0 : A;
+        };
+        const was1 = st.w1A, was2 = st.w2A;
+        st.w1A = env(st.w1A, st.a, st.w, P1.om, WV.top);
+        st.w2A = env(st.w2A, st.a2, st.w2, P2.om, WV.mid);
+        if (st.w1A) st.w1P += WV.top.speed * dt;
+        if (st.w2A) st.w2P += WV.mid.speed * dt;
+        // Линии переписываются 15 раз в секунду, пока волна жива, и один
+        // раз в миг, когда она стала ровно нулём, — точная прямая.
+        const waveNow = ((st.w1A || st.w2A) && !((Lv.n || 0) % 2)) || (was1 && !st.w1A) || (was2 && !st.w2A);
+        const LN = waveNow ? this.flaskLines(st.w1A, st.w1P, st.w2A, st.w2P) : null;
         // Пока трут — запись через кадр цикла (15 в секунду), как небо
         // флакона 8: трение — самый тяжёлый кадр ванной, а поворот жижи
         // перерисовывает весь шар с градиентами (замер под 4×: 34 кадра без
@@ -1589,6 +1661,13 @@ onmessage = async (e) => {
         // качается она секунд пять после каждого рывка — замер «в руке
         // после рывка» под 4×: 45 кадров с записью на каждом, против 53 до
         // второй жидкости.
+        const putLines = (r) => {
+            let c = Lv.cache.get(r);
+            if (!c) { c = this.flaskNodes(r); Lv.cache.set(r, c); }
+            const set = (el, k, v) => { if (el && c[k] !== v) { c[k] = v; el.setAttribute('d', v); Lv.flaskWrites = (Lv.flaskWrites || 0) + 1; } };
+            set(c.surf, 'dAll', LN.all); set(c.men, 'dMen', LN.men); set(c.pink, 'dLow', LN.low); set(c.wave, 'dWave', LN.wave);
+        };
+        if (LN) { roots.forEach(putLines); if (roots.some(r => r.closest('#bt-homing'))) hidden.forEach(putLines); }
         if ((Lv.rub || (st.w === 0 && st.a2 !== st.a)) && (Lv.n || 0) % 2) return;
         const tr = this.flaskRot(st.a), tr2 = this.flaskRot(st.a2 - st.a);
         const put = (r) => {

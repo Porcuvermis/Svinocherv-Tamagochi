@@ -24,8 +24,9 @@ const harness = require('./harness');
 //   5а. Колба (ступень 7): жижа стекает к той стороне шара, что ниже, —
 //      по снимку, а не по числу в коде; обе линии (поверхность и граница
 //      двух жидкостей) — в ту же сторону; после рывка граница качается
-//      реже и стихает позже поверхности и не выходит за неё; в покое ни
-//      одной записи, на иконке стоит.
+//      реже и стихает позже поверхности и не выходит за неё; ватерлинии в
+//      покое прямые, после рывка волнятся, верх выпрямляется раньше; в
+//      покое ни одной записи, на иконке стоит.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-soap.js /tmp/soap-
@@ -236,18 +237,25 @@ const harness = require('./harness');
   const linesAt = (sel, ms) => page.evaluate(([sel, ms]) => new Promise(res => {
     const liq = document.querySelector(sel + ' .bsf-liq'), low = liq && liq.querySelector('.bsf-low');
     if (!low) return res(null);
-    const men = liq.querySelector(':scope > ellipse'), wave = low.querySelector(':scope > path[fill="none"]');
-    const L = wave.getTotalLength(), pts = Array.from({ length: 25 }, (_, i) => wave.getPointAtLength(L * i / 24));
-    const lv = +men.getAttribute('cy'), rx = +men.getAttribute('rx'), cx = +men.getAttribute('cx');
+    const surf = liq.querySelector('.bsf-surf'), wave = low.querySelector('.bsf-wave');
+    // Точки линии — из нарисованного пути: поверхность — край заливки до
+    // дуги стенки, граница — сама волна.
+    const pts = (el) => { const d = el.getAttribute('d').split('A')[0], n = d.match(/-?[\d.]+/g).map(Number), o = [];
+      for (let i = 0; i + 1 < n.length; i += 2) o.push({ x: n[i], y: n[i + 1] }); return o; };
     const M = (el) => { const c = el.transform.baseVal.consolidate(); return c ? c.matrix : new DOMMatrix(); };
-    const ang = (m, a, b) => { const p = new DOMPoint(a.x, a.y).matrixTransform(m), q = new DOMPoint(b.x, b.y).matrixTransform(m); return Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI; };
+    const tr = (m, p) => { const q = new DOMPoint(p.x, p.y).matrixTransform(m); return { x: q.x, y: q.y }; };
+    const ang = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+    // Кривизна линии: наибольшее отклонение точек от прямой между концами.
+    const dev = (P) => { const a = P[0], b = P[P.length - 1], L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      return Math.max(...P.map(p => Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / L)); };
     const one = () => {
-      const m1 = M(liq), m2 = M(low), m12 = m1.multiply(m2);
-      // Зазор — в системе лиловой группы, где поверхность лежит на y = lv.
-      const gap = Math.min(...pts.map(p => new DOMPoint(p.x, p.y).matrixTransform(m2).y - lv));
-      // Волна в покое и сама чуть наклонна (концы на разной высоте) — её
-      // наклон отсчитывается от собственного покоя.
-      return { top: ang(m1, { x: cx - rx, y: lv }, { x: cx + rx, y: lv }), mid: ang(m12, pts[0], pts[24]) - ang(new DOMMatrix(), pts[0], pts[24]), gap };
+      const m1 = M(liq), m2 = M(low), T = pts(surf), W = pts(wave);
+      // Зазор — в системе лиловой группы, где поверхность — ломаная T:
+      // насколько каждая точка границы ниже поверхности над ней.
+      const yT = (x) => { for (let i = 1; i < T.length; i++) if (x <= T[i].x) { const u = (x - T[i - 1].x) / ((T[i].x - T[i - 1].x) || 1); return T[i - 1].y + (T[i].y - T[i - 1].y) * u; } return T[T.length - 1].y; };
+      const gap = Math.min(...W.map(p => tr(m2, p)).map(p => p.y - yT(p.x)));
+      const tw = T.map(p => tr(m1, p)), ww = W.map(p => tr(m1.multiply(m2), p));
+      return { top: ang(tw[0], tw[tw.length - 1]), mid: ang(ww[0], ww[ww.length - 1]), gap, dTop: dev(T), dMid: dev(W) };
     };
     if (!ms) return res(one());
     const out = [], t0 = performance.now();
@@ -285,6 +293,8 @@ const harness = require('./harness');
     setTimeout(() => { mo.disconnect(); res({ n, els: els.length }); }, ms);
   }), [sel, ms]);
   const calm = await writesIn('#bt-soap-home .bsf-liq', 1000);
+  const flat = await linesAt('#bt-soap-home');
+  check(flat && flat.dTop < 0.01 && flat.dMid < 0.01, `в покое обе ватерлинии ПРЯМЫЕ: поверхность ${flat ? flat.dTop.toFixed(2) : '—'}, граница ${flat ? flat.dMid.toFixed(2) : '—'} ед. от прямой`);
   check(calm.els === 1 && calm.n === 0, `телефон неподвижен — ни одной записи в жижу (обе группы) за секунду (${calm.n})`);
   check((await liveLayers()).join() === 'bt-shelf', `колба на полке — живая вещь, слоем только полка (${(await liveLayers()).join() || 'ничего'})`);
 
@@ -331,6 +341,14 @@ const harness = require('./harness');
     return { half, n: cross.length, calm: still.length ? still[still.length - 1] : 0, peak: Math.max(...ser.map(q => Math.abs(q[k]))) };
   };
   const cT = char('top'), cM = char('mid', cT.calm), gapMin = Math.min(...ser.map(q => q.gap));
+  // Волна ватерлиний: после рывка обе искривились, верх выпрямился раньше
+  // границы, и к концу обе снова ровно прямые.
+  const wav = (k) => { const v = ser.filter(q => q[k] > 0.01).map(q => q.t); return { peak: Math.max(...ser.map(q => q[k])), flat: v.length ? v[v.length - 1] : 0, end: ser[ser.length - 1][k] }; };
+  const vT = wav('dTop'), vM = wav('dMid');
+  say(`  волна: поверхность до ${vT.peak.toFixed(1)} ед., прямая с ${(vT.flat / 1000).toFixed(1)} с; граница до ${vM.peak.toFixed(1)} ед., прямая с ${(vM.flat / 1000).toFixed(1)} с`);
+  check(vT.peak > 0.4 && vM.peak > 0.4 && vT.peak < 3 && vM.peak < 4, `после рывка обе ватерлинии чуть волнятся (${vT.peak.toFixed(1)} и ${vM.peak.toFixed(1)} ед.)`);
+  check(vT.flat < vM.flat, `верх выпрямляется раньше границы (${(vT.flat / 1000).toFixed(1)} с против ${(vM.flat / 1000).toFixed(1)} с)`);
+  check(vT.end === 0 && vM.end === 0 && vM.flat < WIN - 500, `успокоились — обе снова ровно прямые (${vT.end}, ${vM.end})`);
   say(`  поверхность: полупериод ${cT.half.toFixed(0)} мс (${cT.n} перемен), размах ${cT.peak.toFixed(0)}°, стихла к ${(cT.calm / 1000).toFixed(1)} с; `
     + `граница: полупериод ${cM.half.toFixed(0)} мс (${cM.n}), размах ${cM.peak.toFixed(0)}°, стихла к ${(cM.calm / 1000).toFixed(1)} с; зазор не меньше ${gapMin.toFixed(1)} ед.`);
   check(cT.n >= 2 && cM.n >= 2 && cM.half > 1.8 * cT.half,
@@ -345,7 +363,7 @@ const harness = require('./harness');
   const settled = tiltOf(await liquidAt('#bt-held')) - base;
   const rest = await writesIn('#bt-held .bsf-liq', 1000);
   check(Math.abs(settled) < 0.04 && rest.n === 0,
-        `и успокаивается: снова ровно (${settled.toFixed(2)}), записей нет (${rest.n})`);
+        `и успокаивается: снова ровно (${settled.toFixed(2)}), записей нет — ни поворотов, ни линий (${rest.n})`);
   await page.evaluate(() => { document.getElementById('bt-hand').style.animation = ''; LustMinigame.finishStage = window.__fin; LustMinigame.returnTool(); });
   // Иконка магазина (колба — следующая ступень после эликсира) стоит.
   await setTier(6);
