@@ -22,8 +22,10 @@ const harness = require('./harness');
 //      на размах зелена при любом знаке (п. 116). Дальний слой сдвигается
 //      сильнее ближнего — иначе глубины нет.
 //   5а. Колба (ступень 7): жижа стекает к той стороне шара, что ниже, —
-//      по снимку, а не по числу в коде; после рывка колышется и
-//      успокаивается, в покое ни одной записи, на иконке стоит.
+//      по снимку, а не по числу в коде; обе линии (поверхность и граница
+//      двух жидкостей) — в ту же сторону; после рывка граница качается
+//      реже и стихает позже поверхности и не выходит за неё; в покое ни
+//      одной записи, на иконке стоит.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-soap.js /tmp/soap-
@@ -188,6 +190,11 @@ const harness = require('./harness');
   // центра шара. Наклон — настоящими событиями датчика. Знак записан один
   // раз здесь: завалил правый край вниз — жижа стекает к ПРАВОМУ краю шара
   // (п. 116; проверка на размах зелена при любом знаке).
+  // Жидкостей ДВЕ, и характер у них разный: верхняя поверхность быстрая,
+  // граница лилового и розового — медленная и ленивая. Обе линии меряются
+  // по нарисованному: мениск (поверхность) и волна границы, пропущенные
+  // через transform своих групп, — наклон каждой и где волна относительно
+  // поверхности.
   say('\n======== КОЛБА: ЖИЖА СТЕКАЕТ ВНИЗ И КОЛЫШЕТСЯ ========');
   await setTier(7);
   await page.waitForTimeout(400);
@@ -222,14 +229,40 @@ const harness = require('./harness');
       return { pink: m(acc.pink), violet: m(acc.violet) };
     }, png.toString('base64'));
   };
+  // Наклон обеих линий в градусах (плюс — правый конец НИЖЕ, у svg ось y
+  // вниз) и зазор: насколько самая высокая точка волны границы ниже
+  // поверхности (в единицах колбы; меньше нуля — розовое вылезло над
+  // поверхностью). Ряд по кадрам — за ms миллисекунд.
+  const linesAt = (sel, ms) => page.evaluate(([sel, ms]) => new Promise(res => {
+    const liq = document.querySelector(sel + ' .bsf-liq'), low = liq && liq.querySelector('.bsf-low');
+    if (!low) return res(null);
+    const men = liq.querySelector(':scope > ellipse'), wave = low.querySelector(':scope > path[fill="none"]');
+    const L = wave.getTotalLength(), pts = Array.from({ length: 25 }, (_, i) => wave.getPointAtLength(L * i / 24));
+    const lv = +men.getAttribute('cy'), rx = +men.getAttribute('rx'), cx = +men.getAttribute('cx');
+    const M = (el) => { const c = el.transform.baseVal.consolidate(); return c ? c.matrix : new DOMMatrix(); };
+    const ang = (m, a, b) => { const p = new DOMPoint(a.x, a.y).matrixTransform(m), q = new DOMPoint(b.x, b.y).matrixTransform(m); return Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI; };
+    const one = () => {
+      const m1 = M(liq), m2 = M(low), m12 = m1.multiply(m2);
+      // Зазор — в системе лиловой группы, где поверхность лежит на y = lv.
+      const gap = Math.min(...pts.map(p => new DOMPoint(p.x, p.y).matrixTransform(m2).y - lv));
+      // Волна в покое и сама чуть наклонна (концы на разной высоте) — её
+      // наклон отсчитывается от собственного покоя.
+      return { top: ang(m1, { x: cx - rx, y: lv }, { x: cx + rx, y: lv }), mid: ang(m12, pts[0], pts[24]) - ang(new DOMMatrix(), pts[0], pts[24]), gap };
+    };
+    if (!ms) return res(one());
+    const out = [], t0 = performance.now();
+    const tick = (t) => { out.push(Object.assign({ t: t - t0 }, one())); if (t - t0 < ms) requestAnimationFrame(tick); else res(out); };
+    requestAnimationFrame(tick);
+  }), [sel, ms || 0]);
   // Телефон держат под 45° от стола; правый край вниз на 40° — тяжесть в
-  // плоскости экрана уходит вправо на ~32°.
+  // плоскости экрана уходит вправо на ~32°. Граница медленная — ждём, пока
+  // встанет и она.
   await heldF(0, 45, 8, 200); await heldF(0, 45, 0, 2500);
   const lvl = await liquidAt('#bt-soap-home');
-  await heldF(0, 45, 40, 3500);
-  const toR = await liquidAt('#bt-soap-home');
-  await heldF(0, 45, -40, 3500);
-  const toL = await liquidAt('#bt-soap-home');
+  await heldF(0, 45, 40, 6000);
+  const toR = await liquidAt('#bt-soap-home'), lnR = await linesAt('#bt-soap-home');
+  await heldF(0, 45, -40, 6000);
+  const toL = await liquidAt('#bt-soap-home'), lnL = await linesAt('#bt-soap-home');
   const fmt = (q) => q ? `розовая ${q.pink.x.toFixed(2)}, лиловая ${q.violet.x.toFixed(2)}` : 'нет';
   say(`  ровно: ${fmt(lvl)}; вправо: ${fmt(toR)}; влево: ${fmt(toL)}`);
   // Сторона — от ровного положения: рисунок не симметричен (печать на
@@ -239,8 +272,12 @@ const harness = require('./harness');
         `правый край вниз — жижа стекает к ПРАВОМУ краю шара, лиловый верх уходит влево (${fmt(toR)})`);
   check(lvl && toL && toL.pink.x - lvl.pink.x < -0.05 && toL.violet.x - lvl.violet.x > 0.05,
         `левый край вниз — к левому (${fmt(toL)})`);
+  const fl = (q) => q ? `верх ${q.top.toFixed(1)}°, граница ${q.mid.toFixed(1)}°` : 'нет';
+  check(lnR && lnR.top < -10 && lnR.mid < -10, `правый край вниз — ОБЕ линии поднимаются к правому краю: и поверхность, и граница (${fl(lnR)})`);
+  check(lnL && lnL.top > 10 && lnL.mid > 10, `левый край вниз — обе к левому (${fl(lnL)})`);
   // Неподвижен телефон — ни одной записи в узлы жижи (как у бликов пены).
-  await heldF(0, 45, 0, 4500);
+  // Граница медленная и колышется долго — ждём, пока встанет.
+  await heldF(0, 45, 0, 9000);
   const writesIn = (sel, ms) => page.evaluate(([sel, ms]) => new Promise(res => {
     const els = Array.from(document.querySelectorAll(sel)); let n = 0;
     const mo = new MutationObserver(l => { n += l.length; });
@@ -248,7 +285,7 @@ const harness = require('./harness');
     setTimeout(() => { mo.disconnect(); res({ n, els: els.length }); }, ms);
   }), [sel, ms]);
   const calm = await writesIn('#bt-soap-home .bsf-liq', 1000);
-  check(calm.els === 1 && calm.n === 0, `телефон неподвижен — ни одной записи в жижу за секунду (${calm.n})`);
+  check(calm.els === 1 && calm.n === 0, `телефон неподвижен — ни одной записи в жижу (обе группы) за секунду (${calm.n})`);
   check((await liveLayers()).join() === 'bt-shelf', `колба на полке — живая вещь, слоем только полка (${(await liveLayers()).join() || 'ничего'})`);
 
   // Рывок пальцем: взял парящую колбу, резко повёл влево и отпустил на
@@ -273,12 +310,38 @@ const harness = require('./harness');
   const swing = [];
   const t0s = Date.now();
   while (Date.now() - t0s < 2400) { const q = await liquidAt('#bt-held'); if (q) swing.push(tiltOf(q) - base); }
+  // Второй рывок — для двух линий: ряд по кадрам 8 с. Граница обязана
+  // качаться РЕЖЕ поверхности (полупериод — между переменами стороны) и
+  // стихать ПОЗЖЕ; и ни в одном кадре волна границы не выходит за
+  // поверхность.
+  await page.waitForTimeout(6000);
+  const at2 = await page.evaluate(() => { const L = LustMinigame, o = L.loose; return o && SvgSpace.toClient(L.svgEl, o.pos.x, o.pos.y); });
+  await page.mouse.move(at2.x, at2.y); await page.mouse.down();
+  for (let i = 1; i <= 10; i++) { await page.mouse.move(at2.x + 18 * i, at2.y - 3 * i); await page.waitForTimeout(16); }
+  await page.mouse.up();
+  const WIN = 10000, ser = await linesAt('#bt-held', WIN);
+  // Полупериод — по переменам стороны. У границы — только ПОСЛЕ того, как
+  // верх стих: пока верх качается, граница упирается в него и идёт с ним
+  // (зазор), а свой ход у неё — тот, что остаётся потом.
+  const char = (k, from) => {
+    const cross = []; let last = 0;
+    for (const q of ser) { if (q.t < (from || 0)) continue; const s = Math.abs(q[k]) < 1 ? 0 : Math.sign(q[k]); if (s && last && s !== last) cross.push(q.t); if (s) last = s; }
+    const half = cross.length > 1 ? (cross[cross.length - 1] - cross[0]) / (cross.length - 1) : 0;
+    const still = ser.filter(q => Math.abs(q[k]) > 1).map(q => q.t);
+    return { half, n: cross.length, calm: still.length ? still[still.length - 1] : 0, peak: Math.max(...ser.map(q => Math.abs(q[k]))) };
+  };
+  const cT = char('top'), cM = char('mid', cT.calm), gapMin = Math.min(...ser.map(q => q.gap));
+  say(`  поверхность: полупериод ${cT.half.toFixed(0)} мс (${cT.n} перемен), размах ${cT.peak.toFixed(0)}°, стихла к ${(cT.calm / 1000).toFixed(1)} с; `
+    + `граница: полупериод ${cM.half.toFixed(0)} мс (${cM.n}), размах ${cM.peak.toFixed(0)}°, стихла к ${(cM.calm / 1000).toFixed(1)} с; зазор не меньше ${gapMin.toFixed(1)} ед.`);
+  check(cT.n >= 2 && cM.n >= 2 && cM.half > 1.8 * cT.half,
+        `граница качается медленнее поверхности: полупериод ${cM.half.toFixed(0)} (после того, как верх стих) против ${cT.half.toFixed(0)} мс`);
+  check(cM.calm > cT.calm + 1500 && cM.calm < WIN - 1000, `граница стихает позже, но стихает: ${(cM.calm / 1000).toFixed(1)} с против ${(cT.calm / 1000).toFixed(1)} с`);
+  check(gapMin > 0.3, `волна границы ни в одном кадре не вышла за поверхность внутри шара (зазор ${gapMin.toFixed(1)} ед.)`);
   let flips = 0, last = 0;
   for (const v of swing) { const s = Math.abs(v) < 0.04 ? 0 : Math.sign(v); if (s && last && s !== last) flips++; if (s) last = s; }
   const peak = Math.max(...swing.map(Math.abs));
   say(`  после рывка (${swing.length} снимков, наклон от покоя): ${swing.map(v => v.toFixed(2)).join(' ')}`);
   check(peak > 0.12 && flips >= 2, `после рывка жижа колышется туда-обратно (размах ${peak.toFixed(2)}, перемен стороны ${flips})`);
-  await page.waitForTimeout(3000);
   const settled = tiltOf(await liquidAt('#bt-held')) - base;
   const rest = await writesIn('#bt-held .bsf-liq', 1000);
   check(Math.abs(settled) < 0.04 && rest.n === 0,

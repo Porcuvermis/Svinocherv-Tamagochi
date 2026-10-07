@@ -1180,14 +1180,25 @@ onmessage = async (e) => {
     //     поясом, свет виден и над сеткой; пузыри столбиками, искры.
     //
     // ЖИЖА ПОДЧИНЯЕТСЯ ТЯЖЕСТИ (просьба игрока): стремится вниз при наклоне
-    // телефона и колышется после движения. Шар — круг, а плоскость уровня,
-    // повёрнутая вокруг ЦЕНТРА шара, сохраняет объём. Поэтому вся жижа (оба
-    // слоя, граница, мениск, пузыри и искры — пузыри поднимаются против
-    // тяжести, им и положено поворачиваться вместе) лежит в одной группе
-    // .bsf-liq и живёт ОДНИМ transform rotate вокруг центра шара — ни одного
-    // `d` на кадре. Клип — круг внутренней стенки с тем же центром: поворот
-    // его не меняет, жижа не выливается ни в горло, ни за стенку. Кадр —
-    // flaskTick (общий живой цикл, wake).
+    // телефона и колышется после движения. Шар — круг, а плоскость,
+    // повёрнутая вокруг ЦЕНТРА шара, сохраняет объём под собой. Поэтому
+    // каждый слой живёт ОДНИМ transform rotate вокруг центра шара — ни
+    // одного `d` на кадре. Клип — круг стенки с тем же центром: поворот его
+    // не меняет, жижа не выливается ни в горло, ни за стенку.
+    //
+    // ДВЕ НЕСМЕШИВАЮЩИЕСЯ ЖИДКОСТИ ведут себя по-разному (просьба игрока),
+    // как в бутылке «волна» — масло над подкрашенной водой. Верхняя
+    // поверхность (воздух над лиловым) — быстрая: качается часто и стихает
+    // за пару секунд. Граница лилового и розового — медленная и ленивая:
+    // плотности близки, тяжесть для неё «ослаблена», поэтому она качается
+    // вдвое-втрое реже, отстаёт, перелетает дальше и долго колышется плавной
+    // волной, когда верх уже встал. Это и делает такие бутылки красивыми.
+    // Устроено вложением: .bsf-liq — всё ниже поверхности (лиловый слой,
+    // его пузыри и искры, мениск), повёрнуто на угол верха; внутри него
+    // .bsf-low — всё ниже границы (розовый, его пузыри, волна), повёрнуто
+    // ещё на разницу углов. Граница не может выйти за поверхность внутри
+    // шара: разница углов ограничена зазором из геометрии (flaskGap).
+    // Кадр — flaskTick (общий живой цикл, wake).
     FLASK: {
         R: 27, CY: -12,                  // шар
         NX: 6.5, NT: -76,                // горло: полуширина, верх
@@ -1216,7 +1227,18 @@ onmessage = async (e) => {
         // качание) и держит жижу на месте, пока телефон дрожит в пределах
         // fric/ω² ≈ 0.25°. still — ближе этого к равновесию (рад) жижа
         // встаёт в него ровно.
-        SLOSH: { hz: 1.4, zeta: 0.13, g: 9000, kick: 900, jump: 60, fric: 0.34, still: 0.005, flat: [0.15, 0.45], smooth: 0.3, step: 0.1 }
+        // top — верхняя поверхность; mid — граница слоёв: частота 0.6
+        // (втрое реже), тяжесть вдвое слабее (близкие плотности: тот же
+        // толчок качает её дальше), затухание и сухое трение меньше —
+        // колышется после рывка ещё секунды три после того, как верх встал
+        // (калькулятор двух маятников, рывок 600 ед/с: верх стих к 2.9 с,
+        // граница к ~5.5 с; меньшее трение тянуло её до восьми секунд записей).
+        // margin — доля геометрического зазора, до которой граница может
+        // разойтись с поверхностью (flaskGap): ближе — линии сошлись бы у
+        // стенки.
+        SLOSH: { kick: 900, jump: 60, still: 0.005, flat: [0.15, 0.45], smooth: 0.3, step: 0.1, margin: 0.85,
+                 top: { hz: 1.4, zeta: 0.13, g: 9000, fric: 0.34 },
+                 mid: { hz: 0.6, zeta: 0.12, g: 4500, fric: 0.15 } }
     },
 
     // Парк — Миллер, как в генераторе художника: картинка совпадает с c2.
@@ -1282,7 +1304,7 @@ onmessage = async (e) => {
         const inBall = (x, y) => Math.hypot(x, y - CY) < R - 4;
         const bubs = bubbleColumn(-3, 10, mid + 2, 81, M[4]) + bubbleColumn(9, 9, mid + 6, 85, M[4]).split('<circle').slice(0, 7).join('<circle');
         const bubsTop = bubbleColumn(-2.4, mid - 2, lv + 2, 83, V[4]);
-        const mo = motes(8, -20, 20, mid + 2, 12, 87, M[4], inBall) + motes(6, -18, 18, lv + 2, mid - 2, 89, SPARK, inBall);
+        const moLow = motes(8, -20, 20, mid + 2, 12, 87, M[4], inBall), moTop = motes(6, -18, 18, lv + 2, mid - 2, 89, SPARK, inBall);
 
         // ---- верх: венчик, пробка, сургуч с оттиском ----
         const W = NT - 3;
@@ -1324,7 +1346,7 @@ onmessage = async (e) => {
         // Угол жижи на момент рисования — тот, что сейчас у живой: вещь,
         // перерисованная в руку, продолжает с того же наклона, без скачка.
         // На иконке магазина колба стоит (вне ванной кадров нет) — ровно.
-        const ang = this.flaskRot(live && this.live.slosh ? this.live.slosh.a : 0);
+        const sl = live && this.live.slosh, ang = this.flaskRot(sl ? sl.a : 0), ang2 = this.flaskRot(sl ? sl.a2 - sl.a : 0);
 
         return `
         <g class="bt-soap bt-soap-flask" transform="translate(${A.x} ${A.y + 2})">
@@ -1385,17 +1407,23 @@ onmessage = async (e) => {
             <path d="${flask}${bulb}${lip}${wax}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * SC}" stroke-linejoin="round"/>
             <path d="${band}" fill="none" stroke="${ink}" stroke-width="${2 * SS}" stroke-linejoin="round"/>
             <path d="${seal}" fill="none" stroke="${ink}" stroke-width="${2 * SS}"/>
-            <!-- ЖИЖА: лиловый слой сверху, розовый светится снизу. Вся — одна
-                 группа под кругом внутренней стенки; живёт поворотом вокруг
-                 центра шара (flaskTick). -->
+            <!-- ЖИЖА: лиловый слой сверху, розовый светится снизу. Лиловый —
+                 всё ниже поверхности, повёрнут на угол верха; розовый вложен
+                 в него и повёрнут ещё на разницу углов (flaskTick). Клипа нет:
+                 всё лежит внутри круга стенки (искры — по inBall, пузыри и
+                 мениск — внутри радиуса), а поворот вокруг центра круга
+                 оставляет их внутри. Клип в генераторе художника ничего не
+                 срезал, а на парящем холсте каждый лишний клип — цена
+                 растра на каждом кадре качания. -->
             <g class="bsf-liq" transform="${ang}">
                 <path d="${liqAll}" fill="url(#${id}-top)"/>
-                <path d="${liqLow}" fill="url(#${id}-liq)"/>
-                <g clip-path="url(#${id}-ball)">
-                    ${mo}${bubs}${bubsTop}
+                ${moTop}${bubsTop}
+                <g class="bsf-low" transform="${ang2}">
+                    <path d="${liqLow}" fill="url(#${id}-liq)"/>
+                    ${moLow}${bubs}
                     <path d="${wave}" fill="none" stroke="${M[4]}" stroke-width="1.3" stroke-opacity="0.95"/>
-                    <ellipse cx="0" cy="${lv}" rx="${f(hT)}" ry="2.7" fill="${V[3]}" fill-opacity="0.65" stroke="${V[4]}" stroke-width="1"/>
                 </g>
+                <ellipse cx="0" cy="${lv}" rx="${f(hT)}" ry="2.7" fill="${V[3]}" fill-opacity="0.65" stroke="${V[4]}" stroke-width="1"/>
             </g>
             <!-- Стекло поверх: шар, горло, шар-перетяжка. -->
             <circle cx="0" cy="${CY}" r="${R}" fill="url(#${id}-glass)"/>
@@ -1454,12 +1482,33 @@ onmessage = async (e) => {
     },
 
     // ---------- живость колбы: тяжесть и колыхание ----------
+    flaskNodes(r) { return { liq: r.querySelector('.bsf-liq'), low: r.querySelector('.bsf-low') }; },
+
+    // Числа маятника из частоты, затухания и тяжести: k = ω², длина L = g/ω²
+    // (толчок скорости Δv поворачивает на Δv/L).
+    pend(p) {
+        const om = 2 * Math.PI * p.hz, k = om * om;
+        return { om, k, damp: 2 * p.zeta * om, L: p.g / k, fric: p.fric };
+    },
+
+    // Наибольшая разница углов поверхности и границы, при которой линии ещё
+    // не сходятся внутри шара. Поверхность — хорда на расстоянии d1 от
+    // центра, граница — d2 (по ВЫСШЕЙ точке её волны, с запасом); при
+    // разнице Δ они пересекаются на расстоянии
+    //   √(d1² + d2² − 2·d1·d2·cosΔ) / sinΔ
+    // от центра, и оно обязано остаться не меньше радиуса стенки r.
+    flaskGap() {
+        if (this._gap) return this._gap;
+        const K = this.FLASK, r = K.R - 1.9, d1 = K.CY - K.LV, d2 = K.CY - (K.MID - 2.6);
+        const c = (d1 * d2 + Math.sqrt(d1 * d1 * d2 * d2 - r * r * (d1 * d1 + d2 * d2 - r * r))) / (r * r);
+        return (this._gap = Math.acos(Math.min(1, c)) * K.SLOSH.margin);
+    },
     // Шаг общего цикла (wake). roots — видимые копии, hidden — спрятанные
     // (полочная, пока колба в руке): пока колба летит домой, им пишется тот
     // же угол, чтобы в миг посадки полочная копия встала с тем же
     // наклоном, что у летевшей.
     //
-    // Модель — маятник: «низ» жижи (угол a, плюс — вправо) тянется к
+    // Модель — маятник (у каждого из двух слоёв свой): «низ» жижи (угол a, плюс — вправо) тянется к
     // направлению ДЕЙСТВУЮЩЕЙ тяжести g_eff = g·down − ускорение вещи:
     //   a'' = ω²/g · (g_eff.x·cos a − g_eff.y·sin a) − 2ζω·a'.
     // Тяжесть — Tilt.down() (наклон телефона), ускорение — из того, как
@@ -1471,7 +1520,7 @@ onmessage = async (e) => {
     // одной перерисовки).
     flaskTick(roots, hidden, now, dt, mats) {
         const S = this.FLASK.SLOSH, CY = this.FLASK.CY, Lv = this.live;
-        const st = Lv.slosh || (Lv.slosh = { a: 0, w: 0, gx: 0, gy: 1 });
+        const st = Lv.slosh || (Lv.slosh = { a: 0, w: 0, a2: 0, w2: 0, gx: 0, gy: 1 });
         // Тяжесть с датчика. Лёг на стол — проекция короткая: направление
         // плавно уходит к «вниз по экрану», иначе жижа металась бы от дрожи.
         const D = typeof Tilt !== 'undefined' && Tilt.down ? Tilt.down() : null;
@@ -1490,7 +1539,7 @@ onmessage = async (e) => {
         let dvx = 0, dvy = 0;
         roots.forEach(r => {
             let c = Lv.cache.get(r);
-            if (!c) { c = { liq: r.querySelector('.bsf-liq') }; Lv.cache.set(r, c); }
+            if (!c) { c = this.flaskNodes(r); Lv.cache.set(r, c); }
             // Матрица уже посчитана циклом (видимость) — второй обход предков
             // с DOMMatrix на каждом кадре стоил заметную долю скрипта.
             const m = mats && mats.has(r) ? mats.get(r) : this.worldMatrix(r);
@@ -1506,31 +1555,47 @@ onmessage = async (e) => {
             if (Math.hypot(ex, ey) > Math.hypot(dvx, dvy)) { dvx = ex; dvy = ey; }
             c.p = [x, y]; c.v = [vx, vy]; c.at = now;
         });
-        const om = 2 * Math.PI * S.hz, k = om * om, damp = 2 * S.zeta * om, L = S.g / k;
-        st.w -= (dvx * Math.cos(st.a) - dvy * Math.sin(st.a)) / L;
-        const n = Math.max(1, Math.ceil(dt / (S.step / om)));
-        for (let i = 0; i < n; i++) {
-            const h = dt / n, fd = S.fric * h;
-            let w = st.w + (k * (st.gx * Math.cos(st.a) - st.gy * Math.sin(st.a)) - damp * st.w) * h;
+        // Два маятника — верх (a) и граница (a2): та же тяжесть и тот же
+        // толчок, свои частота, затухание и сила тяжести.
+        const P1 = this.pend(S.top), P2 = this.pend(S.mid), GAP = this.flaskGap();
+        st.w -= (dvx * Math.cos(st.a) - dvy * Math.sin(st.a)) / P1.L;
+        st.w2 -= (dvx * Math.cos(st.a2) - dvy * Math.sin(st.a2)) / P2.L;
+        const n = Math.max(1, Math.ceil(dt / (S.step / P1.om)));
+        const swing = (P, a, w, h) => {
+            const v = w + (P.k * (st.gx * Math.cos(a) - st.gy * Math.sin(a)) - P.damp * w) * h, fd = P.fric * h;
             // Сухое трение: меньше него — стоит, больше — вычитается.
-            w = Math.abs(w) <= fd ? 0 : w - fd * Math.sign(w);
-            st.w = w;
-            st.a += w * h;
+            return Math.abs(v) <= fd ? 0 : v - fd * Math.sign(v);
+        };
+        for (let i = 0; i < n; i++) {
+            const h = dt / n;
+            st.w = swing(P1, st.a, st.w, h); st.a += st.w * h;
+            st.w2 = swing(P2, st.a2, st.w2, h); st.a2 += st.w2 * h;
+            // Граница упёрлась в поверхность — дальше её несёт верх (удар
+            // без отскока): лиловый слой у стенки истончается, но не рвётся.
+            const d = st.a2 - st.a;
+            if (Math.abs(d) > GAP) { st.a2 = st.a + Math.sign(d) * GAP; st.w2 = st.w; }
         }
         // Встала рядом с равновесием — ровно в него, и больше не пишется.
         const eq = Math.atan2(st.gx, st.gy);
         if (st.w === 0 && Math.abs(st.a - eq) < S.still) st.a = eq;
+        if (st.w2 === 0 && Math.abs(st.a2 - eq) < S.still) st.a2 = eq;
         // Пока трут — запись через кадр цикла (15 в секунду), как небо
         // флакона 8: трение — самый тяжёлый кадр ванной, а поворот жижи
         // перерисовывает весь шар с градиентами (замер под 4×: 34 кадра без
         // записей, 29 с записью на каждом). Счёт при этом идёт каждый кадр —
         // качание не замедляется, только реже показывается.
-        if (Lv.rub && (Lv.n || 0) % 2) return;
-        const tr = this.flaskRot(st.a);
+        // Так же — когда верх уже стоит и колышется одна граница: она
+        // медленная (0.6 качания в секунду), и 15 кадров её не рвут, а
+        // качается она секунд пять после каждого рывка — замер «в руке
+        // после рывка» под 4×: 45 кадров с записью на каждом, против 53 до
+        // второй жидкости.
+        if ((Lv.rub || (st.w === 0 && st.a2 !== st.a)) && (Lv.n || 0) % 2) return;
+        const tr = this.flaskRot(st.a), tr2 = this.flaskRot(st.a2 - st.a);
         const put = (r) => {
             let c = Lv.cache.get(r);
-            if (!c) { c = { liq: r.querySelector('.bsf-liq') }; Lv.cache.set(r, c); }
+            if (!c) { c = this.flaskNodes(r); Lv.cache.set(r, c); }
             if (c.liq && c.tr !== tr) { c.tr = tr; c.liq.setAttribute('transform', tr); Lv.flaskWrites = (Lv.flaskWrites || 0) + 1; }
+            if (c.low && c.tr2 !== tr2) { c.tr2 = tr2; c.low.setAttribute('transform', tr2); Lv.flaskWrites = (Lv.flaskWrites || 0) + 1; }
         };
         roots.forEach(put);
         // Спрятанной полочной копии угол нужен только к посадке летящей
