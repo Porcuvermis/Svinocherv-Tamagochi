@@ -282,7 +282,7 @@ const harness = require('./harness');
       const a = look();
       await wait(600);
       const b = look();
-      await wait(900);
+      await wait(BATH_ART.SLOUGH.ms - 660 + 300);
       return { a, b, fill, left: all().length };
     });
     else await page.waitForTimeout(150);
@@ -1011,7 +1011,8 @@ const harness = require('./harness');
   ok(wipes.length === N && wipes.every(s => s > 0.25 / N && s < 2.6 / N),
      `«только помыть»: каждый тап по червю смывает примерно 1/${N}, за ${N} тапов тело чистое`,
      `${wipes.length} тапов: ${wipes.map(s => (s * 100).toFixed(0) + '%').join(' ')}`);
-  await page.waitForTimeout(1600);
+  // Конец забега ждёт, пока сползёт последний кусок (wipeDone).
+  await page.waitForTimeout(await page.evaluate(() => BATH_ART.SLOUGH.ms) + 500);
   const wash = await page.evaluate((w0) => {
     const L = LustMinigame;
     return {

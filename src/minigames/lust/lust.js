@@ -1853,19 +1853,19 @@ const LustMinigame = {
         }
         // На место: те же единицы и то же преобразование, что у холста мытья.
         const SL = BATH_ART.SLOUGH, box = this.wormBoxScene(), drop = SL.drop * this.WORM_BASE.w / box.w;
-        const at = (dy) => `${this._wormT || ''} translate(${(x0 / S).toFixed(2)}px, ${(y0 / S + dy).toFixed(2)}px)`;
+        const at = (dy, k) => `${this._wormT || ''} translate(${(x0 / S).toFixed(2)}px, ${(y0 / S + dy).toFixed(2)}px) scale(1, ${k})`;
         cv.className = 'bt-lather bt-slough';
         cv.style.width = (w / S) + 'px';
         cv.style.height = (h / S) + 'px';
         cv.style.transition = 'none';
-        cv.style.transform = at(0);
+        cv.style.transform = at(0, 1);
         cv.style.opacity = '1';
         const after = this.el('bt-glint');
         if (!after || !after.parentNode) return;
         after.parentNode.insertBefore(cv, after.nextSibling);
         void cv.offsetWidth;
         cv.style.transition = `transform ${SL.ms}ms ${SL.ease}, opacity ${SL.ms}ms ${SL.fade}`;
-        cv.style.transform = at(drop);
+        cv.style.transform = at(drop, SL.stretch);
         cv.style.opacity = '0';
         (this._sloughs = this._sloughs || []).push(cv);
         // Таймер — только чтобы убрать отыгравший холст (анимация, не
@@ -2664,7 +2664,10 @@ const LustMinigame = {
         const ctx = cv.getContext('2d');
         ctx.translate(-G.x, -G.y);
         const T = { look: H.look, kind: H.kind, cell: H.cell, glints: G.glints, grid: new Map() };
-        const sink = (bx, by, r, pc) => this.glintBubble(T, bx, by, r, pc);
+        // Каждый пузырь группы запоминается — по ним она потом лопается
+        // (pileBurst): кольцо и брызги стоят там, где был пузырь.
+        G.bubs = [];
+        const sink = (bx, by, r, pc) => { G.bubs.push(bx, by, r); this.glintBubble(T, bx, by, r, pc); };
         for (const q of H.parts) if (q.g === g)
             BATH_ART.washCell(ctx, 'cloth', q.x, q.y, H.cell, 1, q.seed, undefined, H.inside, H.look, sink);
         G.cv = cv;
@@ -2688,6 +2691,8 @@ const LustMinigame = {
 
     pileClear() {
         this.pile = null;
+        for (const n of this._bursts || []) n.remove();
+        this._bursts = [];
         for (const id of ['bt-pile', 'bt-pile-glint']) {
             const n = this.el(id);
             if (n) n.getContext('2d').clearRect(0, 0, n.width, n.height);
@@ -3090,6 +3095,7 @@ const LustMinigame = {
         if (!H || !this.pileHit(p)) return;
         H.alive--;
         this.pileDraw();
+        this.pileBurst(H.alive);
         this.washChunk(null);
         if (!H.alive) {
             // Хвостом можно браться, даже пока последний кусок пены ещё
@@ -3097,6 +3103,83 @@ const LustMinigame = {
             while (this.washLeft()) this.washChunk(null);
             this.startRub();
         }
+    },
+
+    // ---------- КАК ЛОПАЕТСЯ ГРУППА ----------
+    // Группа уходит с горки сразу (pileDraw её больше не кладёт), а её
+    // картинка остаётся на своём маленьком холсте поверх горки и лопается
+    // каскадом сверху вниз: на месте каждого пузыря — тонкое кольцо, которое
+    // раздаётся и гаснет, у крупных ещё брызги, падающие вниз. Лопнувший
+    // пузырь вырезается из картинки. Холст живёт полсекунды и выбрасывается
+    // (docs/traps.md, п. 152); рисует только он сам, горка и тело не
+    // перерисовываются ни разу. Таймер — анимация, не состояние (инвариант 1).
+    pileBurst(g) {
+        const H = this.pile, G = H && H.groups[g], B = BATH_ART.BURST;
+        const host = this.el('bt-pile'), after = this.el('bt-pile-glint');
+        if (!G || !G.cv || !G.bubs || !host || !after || !after.parentNode) return;
+        const R = H.R, cell = H.cell, m = Math.ceil(cell * 3);
+        const x0 = Math.max(0, G.x - m), y0 = Math.max(0, G.y - m);
+        const w = Math.min(H.pw, G.x + G.cv.width + m) - x0, h = Math.min(H.ph, G.y + G.cv.height + m * 2) - y0;
+        if (!(w > 0 && h > 0)) return;
+        const cv = document.createElement('canvas'), rest = document.createElement('canvas');
+        cv.width = rest.width = w; cv.height = rest.height = h;
+        const ctx = cv.getContext('2d'), rc = rest.getContext('2d');
+        rc.drawImage(G.cv, G.x - x0, G.y - y0);
+        rc.globalCompositeOperation = 'destination-out';
+        cv.className = 'bt-lather';
+        cv.style.width = (w / R) + 'px';
+        cv.style.height = (h / R) + 'px';
+        cv.style.transform = `${host.style.transform} translate(${(x0 / R).toFixed(2)}px, ${(y0 / R).toFixed(2)}px)`;
+        after.parentNode.insertBefore(cv, after.nextSibling);
+        (this._bursts = this._bursts || []).push(cv);
+        // Пузыри: когда лопается (верхний раньше), и брызги крупных.
+        const col = BATH_ART.latherColors(H.look, H.kind), rng = btRng(g * 97 + 13);
+        const bs = G.bubs, n = bs.length / 3;
+        let yMin = Infinity, yMax = -Infinity;
+        for (let i = 0; i < n; i++) { yMin = Math.min(yMin, bs[i * 3 + 1]); yMax = Math.max(yMax, bs[i * 3 + 1]); }
+        const span = Math.max(1, yMax - yMin), list = [];
+        for (let i = 0; i < n; i++) {
+            const x = bs[i * 3] - x0, y = bs[i * 3 + 1] - y0, r = bs[i * 3 + 2];
+            const at = (bs[i * 3 + 1] - yMin) / span * B.spread * 0.75 + rng() * B.spread * 0.25;
+            const spl = [];
+            if (r >= cell * B.drop) for (let k = 2 + (rng() < 0.5 ? 1 : 0); k > 0; k--) {
+                const a = -Math.PI * (0.1 + 0.8 * rng()) + (rng() < 0.3 ? Math.PI * 0.6 : 0);
+                spl.push({ dx: Math.cos(a), dy: Math.sin(a), d: r * (0.9 + 0.8 * rng()), s: Math.max(0.6 * R, r * (0.1 + 0.06 * rng())) });
+            }
+            list.push({ x, y, r, at, cut: false, spl });
+        }
+        const t0 = performance.now(), end = B.spread + Math.max(B.ring, B.fly);
+        const step = () => {
+            if (!cv.isConnected) return;
+            const t = performance.now() - t0;
+            ctx.clearRect(0, 0, w, h);
+            for (const q of list) if (!q.cut && t >= q.at) {
+                q.cut = true;
+                rc.beginPath(); rc.arc(q.x, q.y, q.r * 1.08, 0, Math.PI * 2); rc.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.drawImage(rest, 0, 0);
+            ctx.strokeStyle = col.hi; ctx.fillStyle = col.hi;
+            for (const q of list) {
+                const u = (t - q.at) / B.ring;
+                if (u >= 0 && u < 1 && q.r >= cell * B.min) {
+                    const e = 1 - (1 - u) * (1 - u);
+                    ctx.globalAlpha = 0.85 * (1 - u) * (1 - u);
+                    ctx.lineWidth = Math.max(0.5 * R, q.r * 0.16 * (1 - u));
+                    ctx.beginPath(); ctx.arc(q.x, q.y, q.r * (1 + B.grow * e), 0, Math.PI * 2); ctx.stroke();
+                }
+                const v = (t - q.at) / B.fly;
+                if (v >= 0 && v < 1) for (const s of q.spl) {
+                    ctx.globalAlpha = 1 - v;
+                    const d = s.d * (1 - (1 - v) * (1 - v)), fall = cell * 1.6 * v * v;
+                    ctx.beginPath(); ctx.arc(q.x + s.dx * (q.r + d), q.y + s.dy * (q.r + d) + fall, s.s * (1 - 0.4 * v), 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            if (t < end) { requestAnimationFrame(step); return; }
+            cv.remove();
+            if (this._bursts) this._bursts = this._bursts.filter(k => k !== cv);
+        };
+        requestAnimationFrame(step);
     },
 
     // ---------- ФИНАЛ: ТОЛЧКИ И ЛОВЛЯ ----------
