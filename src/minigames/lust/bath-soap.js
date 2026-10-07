@@ -251,13 +251,23 @@ const BATH_SOAP = {
         TWINKLERS: 40,                   // мерцающих звёзд по всему небу
         // ---- убранство вокруг ----
         // Всё живое, и живёт только сдвигом и прозрачностью отдельных узлов.
-        RAYS: 14,                        // лучей в каждом из двух вееров
+        // Всё — ПРИВЯЗАНО к флакону. Два вращающихся веера лучей и радужные
+        // зайчики на кафеле были здесь раньше и читались мусором вокруг вещи,
+        // а не сиянием (замечание игрока): веер крутился сам по себе, а
+        // зайчики висели на стене оторванными полосками — и в руке над
+        // червём тоже. Сияние теперь — ореол ПО СИЛУЭТУ (дышит) и искра,
+        // бегущие по кромке хрусталя огоньки.
+        HALO: [[18, 0.16], [10, 0.26], [4.5, 0.42]],    // [толщина, прозрачность] — от внешнего к внутреннему
+        // Огоньки по кромке: два, на противоположных сторонах силуэта, с
+        // хвостиком из двух точек; скорость — единиц силуэта в секунду.
+        // Штрих обводки вместо них (пробовали) ломался углом на горле и
+        // читался неоновой рамкой выделения.
+        BEADS: { n: 2, speed: 22, tail: 5 },
+        FADE: [0.25, 0.4],               // убранство гаснет под пальцем и загорается, отпущенное (с)
         MOTES: 8,                        // огоньков на орбите
         ORBIT: { rx: 42, ry: 9, cy: 4, tilt: -12 },
         GLINTS: 6,                       // одновременных вспышек на контуре
-        DUST: 16,                        // пылинок, поднимающихся от плеч
-        // Радужные зайчики на кафеле: где лежат и как вытянуты.
-        CAUSTICS: [[-50, -6, 30, 4.2, -62], [-54, 16, 18, 3, -58], [50, -20, 24, 3.8, 58], [48, 6, 14, 2.6, 64]]
+        DUST: 16                         // пылинок, поднимающихся от плеч
     },
 
     // ---------- космос на весь экран ----------
@@ -391,7 +401,23 @@ onmessage = async (e) => {
         const cav = [...shR, ...R.slice(1), ...L.slice(0, -1), ...shR.slice().reverse().map(([x, y]) => [-x, y])]
             .map(([x, y]) => [x * 0.9, M.CY + (y - M.CY) * 0.9])
             .map(([x, y]) => [x, Math.min(y, 15)]);
-        return (this._shape = { outline, cav, R, L });
+        // Силуэт целиком — пузо и горло с воротником и венчиком одним
+        // контуром: по нему лежит ореол и бежит искра. Пузо и горло
+        // отдельными путями давали бы под ореолом двойную яркость на стыке.
+        const K = M.NECK, [k0, k1] = K.collar;
+        const neckL = [[-K.r, k0], [-6.8, k0], [-6.8, k1], [-7.8, k1 - 1.2], [-7, K.top]];
+        const sil = [...outline, ...neckL, ...neckL.slice().reverse().map(([x, y]) => [-x, y])];
+        let silLen = 0;
+        const cum = [0];
+        for (let i = 0; i < sil.length; i++) { const a = sil[i], b = sil[(i + 1) % sil.length]; silLen += Math.hypot(b[0] - a[0], b[1] - a[1]); cum.push(silLen); }
+        // Точка силуэта на расстоянии d от начала (по кругу).
+        const silAt = (d) => {
+            d = ((d % silLen) + silLen) % silLen;
+            let i = 0; while (cum[i + 1] < d) i++;
+            const a = sil[i], b = sil[(i + 1) % sil.length], u = (d - cum[i]) / ((cum[i + 1] - cum[i]) || 1);
+            return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+        };
+        return (this._shape = { outline, cav, R, L, sil, silLen, silAt });
     },
 
     // Покадровая геометрия — одна функция и для первого кадра (строкой), и
@@ -426,19 +452,16 @@ onmessage = async (e) => {
             });
         }
         // ---- убранство ----
-        const L = this.live;
-        // Два веера лучей навстречу друг другу; наклон их чуть доворачивает.
-        // Лучи дышат длиной, по очереди: у каждого слоя луча своя
-        // прозрачность, общей на группе нет.
-        out.rays1 = `translate(0 ${M.CY}) rotate(${f2((t * 7 + L.px * 18) % 360)}) scale(${(0.9 + 0.12 * Math.sin(t * 0.9)).toFixed(3)})`;
-        out.rays2 = `translate(0 ${M.CY}) rotate(${f2((-t * 4.5 + L.px * 12) % 360)}) scale(${(0.9 - 0.12 * Math.sin(t * 0.9)).toFixed(3)})`;
+        // Сияние и ореол по силуэту дышат вместе.
         out.aura = `translate(0 ${M.CY}) scale(${(1 + 0.07 * Math.sin(t * 1.1)).toFixed(3)})`;
-        // Зайчики едут по стене против наклона (свет сквозь хрусталь) и
-        // переливаются.
-        out.caus = M.CAUSTICS.map(([x, y, w, h, a], i) => ({
-            tr: `translate(${f2(x - L.px * 9 + Math.sin(t * 0.5 + i) * 1.5)} ${f2(y - L.py * 7)}) rotate(${a}) scale(${(1 + 0.12 * Math.sin(t * 1.3 + i * 1.7)).toFixed(3)} 1)`,
-            o: f2(0.45 + 0.5 * Math.max(0, Math.sin(t * 0.8 + i * 1.9)))
-        }));
+        out.breath = 0.78 + 0.22 * Math.sin(t * 1.1);
+        // Огоньки по кромке: голова и хвостик — точки силуэта позади неё.
+        const SHb = this.magicShape(), B = M.BEADS;
+        out.beads = [];
+        for (let i = 0; i < B.n; i++) {
+            const d0 = t * B.speed + i * SHb.silLen / B.n;
+            [0, 1, 2].forEach(j => { const p = SHb.silAt(d0 - j * B.tail); out.beads.push({ x: f2(p[0]), y: f2(p[1]), s: [1, 0.62, 0.38][j] }); });
+        }
         // Огоньки по наклонной орбите: сзади флакона — в заднем слое, спереди
         // — в переднем. Каждый в обоих, видимость решает сторона орбиты.
         const O = M.ORBIT, ca = Math.cos(O.tilt * Math.PI / 180), sa = Math.sin(O.tilt * Math.PI / 180);
@@ -589,23 +612,18 @@ onmessage = async (e) => {
         const layer0 = (k) => this.layerTr(this.worldMatrix(null), k);
 
         // ---------- убранство вокруг ----------
-        // Луч — не клин, а СВЕТОВОЙ ЛЕПЕСТОК: вытянутый эллипс с радиальной
-        // заливкой по своей рамке и фокусом у флакона. Он гаснет ко всем
-        // краям, поэтому не имеет контура вовсе. Клинья с прямыми краями —
-        // даже мягкие, из трёх слоёв — висели в воздухе палками.
-        const beam = (a, L, w) => `<ellipse cx="${f(L * 0.46)}" rx="${f(L * 0.54)}" ry="${f(w)}" transform="rotate(${f(a * 180 / Math.PI)})"/>`;
-        let rays1 = '', rays2 = '';
-        for (let i = 0; i < M.RAYS; i++) {
-            const a = 2 * Math.PI * i / M.RAYS;
-            rays1 += beam(a + (rnd() - 0.5) * 0.2, 58 + (i % 3) * 12 + rnd() * 10, 3.2 + rnd() * 2.4);
-            rays2 += beam(a + Math.PI / M.RAYS + (rnd() - 0.5) * 0.2, 44 + (i % 2) * 12 + rnd() * 8, 2.6 + rnd() * 1.8);
-        }
-        const raysSvg = (x) => x;
-        // Зайчик на кафеле: спектральная полоса с мягкими краями.
-        const caus = M.CAUSTICS.map(([, , w, h], i) => `<g class="bsm-caus" transform="${Fr.caus[i].tr}" fill-opacity="${Fr.caus[i].o}">
-                <rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="${h / 2}" fill="url(#${id}-spec)"/>
-                <ellipse rx="${w * 0.32}" ry="${h * 0.3}" fill="url(#${id}-specSoft)"/>
-            </g>`).join('');
+        // Ореол ПО СИЛУЭТУ: три обводки силуэта, от широкой бледной
+        // аметистовой до узкой светлой — свет растекается от кромки, а не
+        // висит кругом рядом. Без фильтра: размытие на живом слое — отдельный
+        // буфер на каждый кадр (docs/traps.md, п. 73). Внутренняя половина
+        // обводок ложится под стекло и подкрашивает толщу хрусталя.
+        const sil = poly(SH.sil), HC = [Am[1], C.cyan, C.glow];
+        const halo = `<g class="bsm-halo" fill="none" stroke-linejoin="round">`
+            + M.HALO.map(([w, o], i) => `<path d="${sil}" stroke="${HC[i]}" stroke-width="${w}" stroke-opacity="${(o * Fr.breath).toFixed(3)}"/>`).join('') + `</g>`;
+        // Огоньки, бегущие по кромке хрусталя: мягкая точка света, а не
+        // штрих — гаснет ко всем краям.
+        const beads = `<g class="bsm-beads">` + Fr.beads.map((q, j) => `<g transform="translate(${q.x} ${q.y}) scale(${q.s})">`
+            + `<circle r="5" fill="url(#${id}-mote)"/>${j % 3 ? '' : '<circle r="0.9" fill="#ffffff"/>'}</g>`).join('') + `</g>`;
         // Огонёк и три точки шлейфа, в заднем ('b') и переднем ('f') слое.
         const moteSvg = (m, i) => {
             const g = ['mote', 'moteP', 'moteG'][i % 3];
@@ -744,18 +762,6 @@ onmessage = async (e) => {
                     <stop offset="0.62" stop-color="${C.cyan}" stop-opacity="0.12"/>
                     <stop offset="1" stop-color="${C.cyan}" stop-opacity="0"/>
                 </radialGradient>
-                <!-- Лепесток света: радиальная заливка по своей рамке, фокус у
-                     флакона — ярко у основания, ноль на всей кромке. -->
-                <radialGradient id="${id}-ray" gradientUnits="objectBoundingBox" cx="0.5" cy="0.5" r="0.5" fx="0.1" fy="0.5">
-                    <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.55"/>
-                    <stop offset="0.45" stop-color="${Am[1]}" stop-opacity="0.22"/>
-                    <stop offset="1" stop-color="${Am[1]}" stop-opacity="0"/>
-                </radialGradient>
-                <radialGradient id="${id}-rayP" gradientUnits="objectBoundingBox" cx="0.5" cy="0.5" r="0.5" fx="0.1" fy="0.5">
-                    <stop offset="0" stop-color="${C.pink}" stop-opacity="0.5"/>
-                    <stop offset="0.45" stop-color="${Am[1]}" stop-opacity="0.2"/>
-                    <stop offset="1" stop-color="${Am[1]}" stop-opacity="0"/>
-                </radialGradient>
                 <radialGradient id="${id}-soft" gradientUnits="objectBoundingBox">
                     <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
                     <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.55"/>
@@ -779,14 +785,6 @@ onmessage = async (e) => {
                     <stop offset="0.55" stop-color="${Au[1]}" stop-opacity="0.4"/>
                     <stop offset="1" stop-color="${Au[1]}" stop-opacity="0"/>
                 </radialGradient>
-                <!-- Зайчик: спектр поперёк, мягкие края вдоль. -->
-                <linearGradient id="${id}-spec" x1="0" y1="0" x2="0" y2="1">
-                    ${C.prism.map((c, i) => `<stop offset="${(i / (C.prism.length - 1)).toFixed(2)}" stop-color="${c}"/>`).join('')}
-                </linearGradient>
-                <radialGradient id="${id}-specSoft" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="0.8"/>
-                    <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-                </radialGradient>
                 <radialGradient id="${id}-bubG" gradientUnits="objectBoundingBox">
                     <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.04"/>
                     <stop offset="0.72" stop-color="${C.cyan}" stop-opacity="0.14"/>
@@ -801,12 +799,10 @@ onmessage = async (e) => {
                 <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
 
-            <!-- УБРАНСТВО СЗАДИ: сияние, два веера лучей, зайчики на кафеле,
-                 задняя половина орбиты огоньков. -->
+            <!-- УБРАНСТВО СЗАДИ: сияние, ореол по силуэту, задняя половина
+                 орбиты огоньков. -->
             <circle class="bsm-aura" r="74" fill="url(#${id}-aura)" transform="${Fr.aura}"/>
-            <g class="bsm-rays1" transform="${Fr.rays1}" fill="url(#${id}-ray)">${raysSvg(rays1)}</g>
-            <g class="bsm-rays2" transform="${Fr.rays2}" fill="url(#${id}-rayP)">${raysSvg(rays2)}</g>
-            ${caus}
+            ${halo}
             ${motes('b')}
             <!-- ТЕЛО. -->
             <path d="${neck}${lip}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
@@ -870,11 +866,11 @@ onmessage = async (e) => {
             <path d="${lip}" fill="url(#${id}-neckV)" stroke="${C.glow}" stroke-width="0.5"/>
             <path d="M-6.4 ${NK.top + 1}H5.5" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round"/>
 
-            <!-- УБРАНСТВО СПЕРЕДИ: передняя половина орбиты, вспышки на
-                 контуре, звёздная пыль. -->
+            <!-- УБРАНСТВО СПЕРЕДИ: огоньки по кромке, передняя половина
+                 орбиты, вспышки на контуре, звёздная пыль. -->
+            ${beads}
             ${motes('f')}
-            ${glints}
-            ${dust}
+            <g class="bsm-fx">${glints}${dust}</g>
             <!-- ЛЕВИТАЦИЯ: пар из горла, кольцо с бегущими точками, пузыри. -->
             <ellipse class="bsm-vapor" cx="0" cy="${NK.top - 7}" rx="9" ry="11" fill="url(#${id}-vapor)" fill-opacity="${Fr.vapor}"/>
             <g class="bsm-ring" transform="${Fr.ringScale}">
@@ -952,10 +948,8 @@ onmessage = async (e) => {
             // ходу (docs/traps.md, пп. 150 и 152).
             const hold = this.frozen || (L0 && L0.camTimer);
             if (!hold && now - Lv.last >= 33) {
+                const dt = Lv.last ? Math.min(0.1, (now - Lv.last) / 1000) : 0;
                 Lv.last = now; Lv.n = (Lv.n || 0) + 1;
-                const L = this.lean(now / 1000), k = 0.2;
-                Lv.px += (L.x - Lv.px) * k;
-                Lv.py += (L.y - Lv.py) * k;
                 // Спрятанный флакон не крутится: пока мыло в руке, копия на
                 // полке стоит с нулевой прозрачностью, и её анимация удваивала
                 // работу ровно тогда, когда кадр и так тяжелее всего.
@@ -969,6 +963,23 @@ onmessage = async (e) => {
                 // тяжёлый кадр ванной, и цикл в нём только сверяет часы.
                 const rub = L0 && L0.drag && (L0.drag.kind === 'soap' || L0.drag.kind === 'cloth')
                     && now - (L0.rubMovedAt || 0) < 250;
+                // Часы флакона — СВОИ (Lv.mt), а не часы экрана, и идут они с
+                // переменной скоростью: пока трут, плавно замедляются до
+                // остановки, палец замер — так же плавно разгоняются (FADE за
+                // ~0,4 с). Раньше убранство на трении вставало намертво, а с
+                // остановкой пальца оживало разом: часы экрана ушли вперёд, и
+                // пробка, камень и пузыри прыгали в новую фазу — читалось
+                // рывками (замечание игрока). Стоять на трении флакону по-
+                // прежнему выгодно (кадр трения самый тяжёлый): при нулевой
+                // скорости кадр тот же, и записей нет. Камера и «мыло
+                // замерло» часы тоже не двигают — после них флакон
+                // продолжает с той же фазы.
+                Lv.rub = rub;
+                Lv.sp = Math.max(0, Math.min(1, (Lv.sp == null ? 1 : Lv.sp) + (rub ? -dt : dt) / 0.4));
+                Lv.mt = (Lv.mt || 0) + dt * Lv.sp * Lv.sp * (3 - 2 * Lv.sp);
+                const L = this.lean(Lv.mt), k = 0.2;
+                Lv.px += (L.x - Lv.px) * k;
+                Lv.py += (L.y - Lv.py) * k;
                 const cloth = (r) => !r.classList.contains('bt-soap-magic');
                 if (rub && Lv.roots.every(cloth)) {
                     if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick([], now, true);
@@ -981,7 +992,7 @@ onmessage = async (e) => {
                     if (kj && r.closest('#bt-shop')) return false;
                     if (shop && !r.closest('#bt-shop')) return false;
                     const h = r.closest('#bt-soap-home, #bt-cloth-home');
-                    if (h && h.style.opacity === '0') return false;
+                    if (h && h.style.opacity === '0') { if (!kj) this.unlit(r); return false; }
                     const m = this.worldMatrix(r);
                     if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
                     // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
@@ -992,28 +1003,21 @@ onmessage = async (e) => {
                     return x > -R && x < 390 + R && y > -R && y < 844 + R;
                 });
                 this.layers(vis);
-                // Пока ТРУТ (мылом или мочалкой), флакон в ванной стоит — и в
-                // руке, и на полке. В руке он едет за пальцем и
-                // перерисовывается целиком на каждом движении, а его живость
-                // (пробка, камень, небо в двух копиях, звёзды) добавляла к
-                // этому ещё столько же; на полке во время мочалки крутится
-                // всё убранство — лучи, сияние, огоньки. На ступени 8 кадры
-                // падали вдвое против седьмой и на мыле, и на мочалке (замер
-                // лестницы, 4× замедление). Трущий палец смотрит на пену, а
-                // не на флакон; остановился — флакон ожил, небо доехало на
-                // место (glide). Иконка магазина не в счёт: под магазином
-                // не трут.
+                // Пока ТРУТ (мылом или мочалкой), флакон в ванной замедляется
+                // до остановки — и в руке, и на полке (часы выше). В руке он
+                // едет за пальцем и перерисовывается целиком на каждом
+                // движении, а его живость (пробка, камень, пузыри, звёзды)
+                // добавляла к этому ещё столько же: на ступени 8 кадры падали
+                // вдвое против седьмой (замер лестницы, 4× замедление). Небо
+                // за стеклом при этом НЕ стоит: оно привязано к экрану и едет
+                // вместе с пальцем всегда — стоявшее небо потом «доезжало» на
+                // место, и это тоже читалось рывком.
                 if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(vis.filter(cloth), now, rub);
                 const mag = vis.filter(r => !cloth(r));
                 if (mag.length) {
-                    const Fr = this.magicFrame(now / 1000);
-                    mag.forEach(r => {
-                        const c = rub && this.live.cache.get(r);
-                        // В руке — только когда убранство уже снято (c.held):
-                        // первый кадр в руке обязан его снять.
-                        if (c && (r.closest('#bt-soap-home') || (c.held && r.closest('#bt-held')))) { c.glide = true; return; }
-                        this.applyFrame(r, Fr);
-                    });
+                    // Кадр — от часов флакона; стоят часы — кадр тот же.
+                    if (Lv.frT !== Lv.mt || !Lv.fr) { Lv.fr = this.magicFrame(Lv.mt); Lv.frT = Lv.mt; }
+                    mag.forEach(r => this.applyFrame(r, Lv.fr, dt));
                 }
             }
             Lv.raf = requestAnimationFrame(step);
@@ -1039,7 +1043,16 @@ onmessage = async (e) => {
         }
     },
 
-    applyFrame(root, Fr) {
+    // Спрятанная копия на полке гаснет сразу: вернётся — загорится плавно,
+    // а не вспыхнет в миг посадки.
+    unlit(root) {
+        const c = this.live.cache.get(root);
+        if (!c || c.pres === 0) return;
+        c.pres = 0; c.shown = false;
+        c.deco.forEach(el => el.setAttribute('display', 'none'));
+    },
+
+    applyFrame(root, Fr, dt) {
         let c = this.live.cache.get(root);
         if (!c) {
             const one = (s) => root.querySelector(s), all = (s) => Array.from(root.querySelectorAll(s));
@@ -1047,8 +1060,8 @@ onmessage = async (e) => {
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
                   vapor: one('.bsm-vapor'),
                   far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
-                  aura: one('.bsm-aura'), rays1: one('.bsm-rays1'), rays2: one('.bsm-rays2'), caus: all('.bsm-caus'),
-                  motes: all('.bsm-mote'), motesF: one('.bsm-motes-f'), motesB: one('.bsm-motes-b'),
+                  aura: one('.bsm-aura'), halo: one('.bsm-halo'), haloP: all('.bsm-halo path'), beadG: one('.bsm-beads'),
+                  motes: all('.bsm-mote'), motesF: one('.bsm-motes-f'), motesB: one('.bsm-motes-b'), fx: one('.bsm-fx'),
                   glints: all('.bsm-glint'), dust: all('.bsm-dust'),
                   tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
             c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);   // пузырь (масштаб) и искра
@@ -1056,19 +1069,33 @@ onmessage = async (e) => {
             // слоям, а кадр перечисляет по номеру).
             c.motes.sort((a, b) => +a.dataset.i - +b.dataset.i);
             c.moteParts = c.motes.map(g => Array.from(g.children));
+            c.beads = c.beadG ? Array.from(c.beadG.children) : [];
+            c.deco = [c.aura, c.halo, c.beadG, c.motesF, c.motesB, c.fx].filter(Boolean);
             this.live.cache.set(root, c);
         }
+        const M = this.MAGIC;
         // Под пальцем убранство не нужно: флакон едет за пальцем и
-        // перерисовывается целиком на каждом кадре, а лучи, сияние,
-        // зайчики, огоньки и пыль — самое дорогое в этой перерисовке. По
-        // замыслу игрока вещь в руке и не светится — светится оставленная:
-        // парящий флакон (холст руки с .bt-float) возвращает убранство, это
-        // и есть его свечение (lust.js, floatTool).
-        const held = !!root.closest('#bt-held') && !root.closest('.bt-float');
-        if (c.held !== held) {
-            c.held = held;
-            [c.aura, c.rays1, c.rays2, ...c.caus, c.motesF, c.motesB, ...c.dust, ...c.glints]
-                .forEach(el => el && (held ? el.setAttribute('display', 'none') : el.removeAttribute('display')));
+        // перерисовывается целиком на каждом кадре, а сияние, огоньки и пыль
+        // — самое дорогое в этой перерисовке. По замыслу игрока вещь в руке и
+        // не светится — светится оставленная: парящий флакон (холст руки с
+        // .bt-float) возвращает убранство, это и есть его свечение (lust.js,
+        // floatTool). Гаснет и загорается оно ПЛАВНО (c.pres, FADE):
+        // сияние и ореол — прозрачностью, огоньки и пыль собираются к
+        // флакону масштабом. Разом появлявшееся убранство читалось рывком.
+        // «Под пальцем» — и летящий домой (он тоже не светится), но не
+        // поднимающийся с полки: тот уже зовёт «бери меня».
+        const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
+        const held = !!root.closest('#bt-homing')
+            || (!!root.closest('#bt-held') && !root.closest('.bt-float') && !(L0 && L0.liftRaf));
+        // Новая копия (вещь перерисована в руку) продолжает с той яркости,
+        // что была у прежней, — иначе подхват гасил бы сияние разом.
+        if (c.pres == null) c.pres = this.live.lastPres != null ? this.live.lastPres : held ? 0 : 1;
+        const [fOut, fIn] = M.FADE;
+        c.pres = Math.max(0, Math.min(1, c.pres + (held ? -(dt || 0) / fOut : (dt || 0) / fIn)));
+        const show = c.pres > 0;
+        if (c.shown !== show) {
+            c.shown = show;
+            c.deco.forEach(el => show ? el.removeAttribute('display') : el.setAttribute('display', 'none'));
         }
         const set = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
         set(c.stopper, 'transform', Fr.stopper);
@@ -1077,45 +1104,48 @@ onmessage = async (e) => {
         set(c.ringd, 'stroke-dashoffset', Fr.ringDash);
         set(c.vapor, 'fill-opacity', Fr.vapor);
         // Небо привязано к холсту: флакон двигается — окно едет по небу.
-        // После стоянки (флакон стоял, пока им тёрли) небо не прыгает на
-        // место, а доезжает за несколько кадров.
-        let m = this.worldMatrix(root);
-        const P = this.MAGIC.PLX;
-        if (m) {
-            if (c.glide && c.mE != null) {
-                c.mE += (m.e - c.mE) * 0.25; c.mF += (m.f - c.mF) * 0.25;
-                if (Math.abs(m.e - c.mE) + Math.abs(m.f - c.mF) < 0.3) c.glide = false;
-                else m = new DOMMatrix([m.a, m.b, m.c, m.d, c.mE, c.mF]);
-            } else c.glide = false;
-            if (!c.glide) { c.mE = m.e; c.mF = m.f; }
+        // Всегда, без стоянок и догоняний (часы выше).
+        // Пока трут — через кадр цикла (15 в секунду): правка неба
+        // перезаписывает обе его копии (окно и линза) с картинками и
+        // звёздами, а трение — самый тяжёлый кадр ванной. Так трение стоит
+        // столько же, сколько с замершим флаконом (замер, 4×); палец в это
+        // время смотрит на пену, ступенька неба мала, а догоняния нет.
+        if (!(this.live.rub && (this.live.n || 0) % 2)) {
+            const m = this.worldMatrix(root), P = M.PLX;
+            const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
+            c.far.forEach(el => set(el, 'transform', tf));
+            c.near.forEach(el => set(el, 'transform', tn));
         }
-        const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
-        c.far.forEach(el => set(el, 'transform', tf));
-        c.near.forEach(el => set(el, 'transform', tn));
         set(c.sweep, 'transform', Fr.sweep);
-        // Убранство. fill-opacity на группе — наследуемый атрибут детям, а не
-        // прозрачность группы: отдельного буфера нет (docs/traps.md, п. 73).
-        // Медленное (лучи, сияние, зайчики) — через кадр: вращение в
-        // несколько градусов в секунду на 15 кадрах не отличить от 30, а
-        // перерисовка этих больших градиентов — самая дорогая в убранстве.
-        const n = this.live.n || 0;
-        if (!c.held && n % 2 === 0) {
-            set(c.aura, 'transform', Fr.aura);
-            set(c.rays1, 'transform', Fr.rays1);
-            set(c.rays2, 'transform', Fr.rays2);
-            c.caus.forEach((el, i) => { set(el, 'transform', Fr.caus[i].tr); set(el, 'fill-opacity', Fr.caus[i].o); });
-        }
-        if (!c.held) c.motes.forEach((g, i) => {
-            const m = Fr.motes[i], box = m.front ? c.motesF : c.motesB;
-            if (g.parentNode !== box) { box.appendChild(g); set(g, 'fill-opacity', m.front ? '1' : '0.8'); }
-            c.moteParts[i].forEach((el, j) => set(el, 'transform', m.pts[j]));
-        });
-        if (!c.held) {
+        // Убранство. fill-opacity и stroke-opacity — у самих фигур или
+        // наследуемым атрибутом, а не прозрачность группы: отдельного буфера
+        // нет (docs/traps.md, п. 73).
+        if (show) {
+            const n = this.live.n || 0, e = c.pres * c.pres * (3 - 2 * c.pres);
+            // Медленное (сияние, ореол) — через кадр, пока не идёт
+            // проявление: дыхание в секунду на 15 кадрах не отличить от 30,
+            // а перерисовка больших градиентов — самая дорогая в убранстве.
+            if (n % 2 === 0 || e < 1) {
+                set(c.aura, 'transform', Fr.aura);
+                set(c.aura, 'fill-opacity', e.toFixed(2));
+                c.haloP.forEach((el, i) => set(el, 'stroke-opacity', (M.HALO[i][1] * Fr.breath * e).toFixed(3)));
+            }
+            const gather = `translate(0 ${M.CY}) scale(${(0.5 + 0.5 * e).toFixed(3)}) translate(0 ${-M.CY})`;
+            [c.motesF, c.motesB, c.fx].forEach(el => set(el, 'transform', gather));
+            // Огоньки на кромке гаснут и загораются размером.
+            c.beads.forEach((el, i) => { const q = Fr.beads[i]; set(el, 'transform', `translate(${q.x} ${q.y}) scale(${(q.s * e).toFixed(3)})`); });
+            c.motes.forEach((g, i) => {
+                const mo = Fr.motes[i], box = mo.front ? c.motesF : c.motesB;
+                if (g.parentNode !== box) { box.appendChild(g); set(g, 'fill-opacity', mo.front ? '1' : '0.8'); }
+                c.moteParts[i].forEach((el, j) => set(el, 'transform', mo.pts[j]));
+            });
             c.glints.forEach((el, i) => { set(el, 'transform', Fr.glints[i].tr); set(el, 'fill-opacity', Fr.glints[i].o); });
             c.dust.forEach((el, i) => { set(el, 'transform', Fr.dust[i].tr); set(el, 'fill-opacity', Fr.dust[i].o); });
         }
+        this.live.lastPres = c.pres;
         // Мерцающих звёзд десятки в двух копиях — каждая переписывается раз в
         // три кадра (по трети за кадр): мерцание медленное, разницы не видно.
+        const n = this.live.n || 0;
         c.tw.forEach((el, i) => { if (i % 3 === n % 3) set(el, 'fill-opacity', Fr.twinkle[+el.dataset.i]); });
         c.bubs.forEach((g, i) => {
             const b = Fr.bubs[i], [ci, st] = c.bubParts[i];

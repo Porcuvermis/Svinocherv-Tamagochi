@@ -54,7 +54,7 @@ const harness = require('./harness');
   // волос, свисающий с обмылка), небо внутри флакона (обрезано полостью, но
   // getBBox обрезки не знает) и убранство вокруг. Всё это выходит за
   // предмет намеренно, box() описывает сам предмет.
-  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura, .bsm-rays1, .bsm-rays2, .bsm-caus, .bsm-motes-f, .bsm-motes-b, .bsm-dust, .bsm-glint';
+  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura, .bsm-halo, .bsm-beads, .bsm-motes-f, .bsm-motes-b, .bsm-dust, .bsm-glint';
   for (let n = 0; n < tiers; n++) {
     await setTier(n);
     await page.waitForTimeout(150);
@@ -249,6 +249,10 @@ const harness = require('./harness');
     const s1 = await collarAt('#bt-held');
     const jump = Math.hypot(s1.x - s0.x, s1.y - s0.y);
     check(jump < 1.5, `взял за ${name} — предмет не прыгнул (${jump.toFixed(1)} px)`);
+    // Убранство под пальцем гаснет ПЛАВНО (MAGIC.FADE[0], замечание игрока:
+    // разом гаснущее и вспыхивающее сияние читалось рывком) — спрашиваем,
+    // когда угасание прошло.
+    await page.waitForTimeout(await page.evaluate(() => BATH_SOAP.MAGIC.FADE[0] * 1000 + 150));
     const held = await floatState();
     check(!held.float && !held.aura, `под пальцем не парит и не светится`);
     if (name === 'горлышко') {
