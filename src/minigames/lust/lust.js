@@ -1786,6 +1786,11 @@ const LustMinigame = {
         this.glintBubs = (this.glintBubs || []).filter(b => b.ch !== c);
         this._glintTop = null;
         this.glintDirty = true;
+        // Тело чистое — холст бликов стирается СРАЗУ, не дожидаясь цикла:
+        // за последним тапом горки тут же идёт startRub, он останавливает
+        // цикл бликов, и последняя картинка искр оставалась висеть на
+        // чистой морде (снимок с айфона).
+        if (!this.washLeft()) this.glintClear();
         if (typeof Haptics !== 'undefined') Haptics.impact('light');
         return true;
     },

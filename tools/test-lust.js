@@ -235,7 +235,7 @@ const harness = require('./harness');
   const bodyFoam = () => page.evaluate(() => {
     const cnt = (id, thr) => { const c = document.getElementById(id), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > thr) n++; return n; };
-    return { bub: cnt('bt-wash', 24), film: cnt('bt-film', 16) };
+    return { bub: cnt('bt-wash', 24), film: cnt('bt-film', 16), glint: cnt('bt-glint', 16) };
   });
   // Точка горки, где на картинке есть пена: доля по высоте среди строк с
   // пеной (0 — верх, 1 — низ) и сторона.
@@ -307,6 +307,12 @@ const harness = require('./harness');
      share.map(s => (s * 100).toFixed(0) + '%').join(' '));
   ok(lastPop.bub < foam0.bub * 0.01 && lastPop.film === 0, 'горка лопнута до конца — тело чистое',
      `пузырей ${lastPop.bub}, мути ${lastPop.film}`);
+  // Блики живут на своём холсте и своим циклом; цикл встаёт с переходом к
+  // хвосту, и без явной очистки искры оставались на чистой морде.
+  await page.waitForTimeout(400);
+  const glintLeft = (await bodyFoam()).glint;
+  ok(foam0.glint > 0 && glintLeft === 0, 'на чистом теле не осталось ни одной искры',
+     `было ${foam0.glint}, осталось ${glintLeft}`);
   ok(slide && slide.a.length && slide.fill > 200 && slide.b.length
      && slide.b[slide.b.length - 1].top > slide.a[slide.a.length - 1].top + 3
      && slide.b[slide.b.length - 1].op < slide.a[slide.a.length - 1].op && slide.left === 0,
