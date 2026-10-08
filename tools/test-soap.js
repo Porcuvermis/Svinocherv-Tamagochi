@@ -178,6 +178,24 @@ const harness = require('./harness');
   check(await stillWhile('BATH_SOAP.frozen = true', 'BATH_SOAP.frozen = false'), '«мыло замерло» — флакон не меняется');
   check(await stillWhile('window.__ct = LustMinigame.camTimer; LustMinigame.camTimer = 1',
                          'LustMinigame.camTimer = window.__ct'), 'на переезде камеры флакон не меняется');
+  // Пока в работе мочалка, флакон на полке СПИТ (bath-soap.js, wake): его
+  // правки на айфоне давали длинный кадр через кадр, и облако в руке
+  // тряслось. Засыпает плавно — меряется после угасания, — и просыпается
+  // с концом этапа. Спрашивается сам факт правок, а не один атрибут.
+  const shelfWrites = (ms) => page.evaluate((ms) => new Promise(res => {
+    let n = 0;
+    const mo = new MutationObserver(m => { n += m.length; });
+    mo.observe(document.getElementById('bt-soap-box'), { attributes: true, subtree: true });
+    setTimeout(() => { mo.disconnect(); res(n); }, ms);
+  }), ms);
+  const ph0 = await page.evaluate(() => { const p = LustMinigame.phase; LustMinigame.phase = 'cloth'; return p; });
+  await page.waitForTimeout(800);
+  const zzz = await shelfWrites(800), zzzL = (await liveLayers()).length;
+  await page.evaluate((p) => { LustMinigame.phase = p; }, ph0);
+  await page.waitForTimeout(500);
+  const woke = await shelfWrites(800);
+  check(zzz === 0 && zzzL === 0 && woke > 50,
+    `в этапе мочалки флакон на полке спит (правок ${zzz}, слоёв ${zzzL}) и просыпается после (${woke})`);
 
   // ================= 4. НЕБО ПОЛУЧИЛО КАРТИНКУ =================
   const hrefs = await page.evaluate(() => Array.from(document.querySelectorAll('#bt-soap-home .bsm-tf, #bt-soap-home .bsm-tn'))

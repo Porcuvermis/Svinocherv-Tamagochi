@@ -1003,8 +1003,24 @@ onmessage = async (e) => {
                 // скорости кадр тот же, и записей нет. Камера и «мыло
                 // замерло» часы тоже не двигают — после них флакон
                 // продолжает с той же фазы.
+                // ВЕЩЬ НА ПОЛКЕ СПИТ, ПОКА В РАБОТЕ ДРУГАЯ. Самописец с айфона:
+                // облако парит, а каждый второй кадр 35–70 мс — ровно те, где
+                // правился волшебный флакон на полке (одно облако на полке —
+                // ровные 16–21 мс). Тот же замер под 4×: облако в воздухе при
+                // живом флаконе — 35–42 кадра и худший 50–83 мс, при
+                // спрятанном — 50–56 и 33. На айфоне длинный кадр посреди
+                // подъёма и парения читается тряской вещи в руке — кадр
+                // отнимает у неё вещь, на которую никто не смотрит. Флакон
+                // засыпает плавно (часы — как на трении, убранство гаснет),
+                // облако и конняку просто встают: их часы стоят вместе с ними,
+                // и проснувшиеся продолжают с той же позы. Колба (ступень 7)
+                // не спит: её жижа отвечает телефону, а не часам, и в покое
+                // не пишет ничего.
+                const work = L0 && (L0.phase === 'soap' || L0.phase === 'cloth') ? L0.phase : null;
+                Lv.away = work ? (work === 'soap' ? '#bt-cloth-home' : '#bt-soap-home') : null;
+                const doze = !!Lv.away && Lv.roots.some(r => r.classList.contains('bt-soap-magic') && r.closest(Lv.away));
                 Lv.rub = rub;
-                Lv.sp = Math.max(0, Math.min(1, (Lv.sp == null ? 1 : Lv.sp) + (rub ? -dt : dt) / 0.4));
+                Lv.sp = Math.max(0, Math.min(1, (Lv.sp == null ? 1 : Lv.sp) + (rub || doze ? -dt : dt) / 0.4));
                 Lv.mt = (Lv.mt || 0) + dt * Lv.sp * Lv.sp * (3 - 2 * Lv.sp);
                 const L = this.lean(Lv.mt), k = 0.2;
                 Lv.px += (L.x - Lv.px) * k;
@@ -1034,6 +1050,12 @@ onmessage = async (e) => {
                     if (shop && !r.closest('#bt-shop')) return false;
                     const h = r.closest('#bt-soap-home, #bt-cloth-home');
                     if (h && h.style.opacity === '0') { if (fl) hiddenFl.push(r); else if (!kj) this.unlit(r); return false; }
+                    // Спит (см. выше): мочалка сразу, флакон — когда догас.
+                    if (h && Lv.away && !fl && r.closest(Lv.away)) {
+                        if (kj) return false;
+                        const lc = this.live.cache.get(r);
+                        if (Lv.sp === 0 && lc && lc.pres === 0) return false;
+                    }
                     const m = this.worldMatrix(r);
                     if (fl) mats.set(r, m);
                     if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
@@ -1141,7 +1163,8 @@ onmessage = async (e) => {
         // поднимающийся с полки: тот уже зовёт «бери меня».
         const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
         const held = !!root.closest('#bt-homing')
-            || (!!root.closest('#bt-held') && !root.closest('.bt-float') && !(L0 && L0.liftRaf));
+            || (!!root.closest('#bt-held') && !root.closest('.bt-float') && !(L0 && L0.liftRaf))
+            || (!!this.live.away && !!root.closest(this.live.away));          // спит на полке (wake)
         // Новая копия (вещь перерисована в руку) продолжает с той яркости,
         // что была у прежней, — иначе подхват гасил бы сияние разом.
         if (c.pres == null) c.pres = this.live.lastPres != null ? this.live.lastPres : held ? 0 : 1;
