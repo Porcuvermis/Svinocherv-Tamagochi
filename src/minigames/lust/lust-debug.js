@@ -189,4 +189,75 @@ LustDebug.placeBelowInspector = function () {
     this.panel.style.top = top.toFixed(0) + 'px';
 };
 
+// ================= ЩУП САМОПИСЦА: ВАННАЯ =================
+// Что ванная отдаёт самописцу на каждом кадре записи
+// (src/core/flight-recorder.js). Заведён ради бед, видных только на айфоне:
+// мочалку при подъёме с полки водило на 2–3 точки, а со стартом парения она
+// прыгала ещё — нашли по видео, разбирая его покадрово. Здесь ровно то, что
+// для этого пришлось бы угадывать по картинке:
+//   held / homing — где вещь НА ЭКРАНЕ (getBoundingClientRect: со всеми
+//                   css-трансформами холста руки, подъёмом и парением), в
+//                   точках экрана, и атрибут transform её группы;
+//   hand          — классы холста руки, его посчитанный transform и точка
+//                   опоры, анимации на нём (подъём WAAPI, парение css);
+//   raf           — живы ли сторож подъёма и полёт домой;
+//   cam           — камера и идёт ли переезд;
+//   loose / drag  — вещь лежит сама или в пальце;
+//   tilt          — наклон телефона тремя способами (turn, lean, down);
+//   live          — живой цикл мыла и мочалки, и какие холсты слоем (bt-live).
+// Только читает. Закрытая ванная — null, щуп молчит.
+if (typeof FlightRecorder !== 'undefined') {
+    FlightRecorder.register('ванная', () => {
+        const L = (typeof LustMinigame !== 'undefined') ? LustMinigame : null;
+        if (!L || !L.screenElement || !L.screenElement.classList.contains('active')) return null;
+        const f1 = (v) => (Math.round(v * 10) / 10).toString();
+        const f2 = (v) => (+v || 0).toFixed(2);
+        const box = (id) => {
+            const n = document.getElementById(id);
+            if (!n) return null;
+            const r = n.getBoundingClientRect();
+            return { at: f1(r.left + r.width / 2) + ',' + f1(r.top + r.height / 2),
+                     size: f1(r.width) + 'x' + f1(r.height),
+                     tf: n.getAttribute('transform') || '-' };
+        };
+        // Нет вещи — нет и ключей: в отчёте это «held=∅», а не три прочерка.
+        const out = { ph: L.phase };
+        const held = box('bt-held'), homing = box('bt-homing');
+        if (held) out.held = held;
+        if (homing) out.homing = homing;
+        const hand = document.getElementById('bt-hand');
+        if (hand) {
+            const cs = getComputedStyle(hand);
+            const anims = typeof hand.getAnimations === 'function' ? hand.getAnimations() : [];
+            out.hand = {
+                cls: Array.from(hand.classList).sort().join(','),
+                tf: cs.transform,
+                org: cs.transformOrigin,
+                anim: anims.map(a => (a.animationName || 'waapi') + ':' + a.playState).join(',') || '-'
+            };
+            const A = L.liftAnim;
+            out.lift = A ? A.playState + ' ' + Math.round(+A.currentTime || 0) : '-';
+        }
+        out.raf = 'lift' + (L.liftRaf ? 1 : 0) + ' home' + (L.homeRaf ? 1 : 0);
+        const c = L.cam;
+        out.cam = c ? f1(c.tx) + ',' + f1(c.ty) + ' s' + c.s.toFixed(3) + (L.camTimer ? ' едет' : '') : '-';
+        out.loose = L.loose ? L.loose.kind : '-';
+        out.drag = L.drag ? (L.drag.kind || '?') : '-';
+        if (typeof Tilt !== 'undefined') {
+            const t = Tilt.turn(), l = Tilt.lean(), d = Tilt.down();
+            const one = (o) => o.live ? f2(o.x) + ',' + f2(o.y) : 'нет';
+            out.tilt = 't' + one(t) + ' l' + one(l) + ' d' + one(d);
+        }
+        if (typeof BATH_SOAP !== 'undefined') {
+            const Lv = BATH_SOAP.live;
+            out.live = (Lv.raf ? 'цикл' : 'стоит') + ' ' + ((Lv.roots && Lv.roots.length) || 0)
+                     + ' слой:' + (['bt-shelf', 'bt-hand'].filter(id => {
+                         const n = document.getElementById(id);
+                         return n && n.classList.contains('bt-live');
+                     }).join(',') || '-');
+        }
+        return out;
+    }, { watch: ['#bt-hand', '#bt-shelf', '#bt-held', '#bt-homing'] });
+}
+
 if (typeof window !== 'undefined') window.LustDebug = LustDebug;

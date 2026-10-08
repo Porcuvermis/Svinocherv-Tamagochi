@@ -67,6 +67,7 @@ const DebugState = {
             <button data-act="strip-filter">−фильтр</button>
             <button data-act="strip-clip">−обрезка</button>
             <button data-act="strip-grad">−градиенты</button>
+            <button data-act="rec" class="dbg-rec">Самописец ●</button>
             <span id="debug-fps">— fps</span>
         `;
         this.panel.addEventListener('click', (e) => {
@@ -234,6 +235,13 @@ const DebugState = {
         // Кнопка гасит слои по одному, рядом живой счётчик кадров: снял
         // число — нажал ещё раз. Классы вешаются на <html>, правила лежат
         // рядом с самой сценой (пример — lust.css).
+        // Самописец: старт через три секунды, стоп — той же кнопкой
+        // (src/core/flight-recorder.js, интерфейс — DebugRecorder ниже).
+        if (act === 'rec') {
+            if (typeof FlightRecorder !== 'undefined') FlightRecorder.toggle();
+            return;
+        }
+
         if (act === 'layers') {
             // «Червь замер» — не гашение, а ОСТАНОВКА: персонаж на месте и
             // виден, но кадры по нему не идут. Этим режимом разделяются две
@@ -456,10 +464,149 @@ const DebugTiming = {
     }
 };
 
+// ================= САМОПИСЕЦ: КНОПКА И ОКОШКО ОТЧЁТА =================
+// Запись делает src/core/flight-recorder.js, здесь только то, чем игрок её
+// включает и как забирает отчёт.
+//
+// ---------- КАК ПОЛЬЗОВАТЬСЯ (айфон, Telegram) ----------
+// 🐞 → «Самописец ●» → три секунды на то, чтобы закрыть debug (🐞) и
+// встать к месту беды → 12 секунд записи → окошко с отчётом сам собой →
+// «Копировать» → вставить в чат. Остановить раньше — 🐞 и та же кнопка.
+// Пока идёт запись, кнопка 🐞 обведена красным: видно и при выключенном
+// debug, а сама обводка неподвижна и кадров не стоит.
+//
+// ---------- ПОЧЕМУ ОКОШКО В ХОЛСТЕ ----------
+// Оно лежит ВНУТРИ #game-container, в единицах холста (инвариант 11; образец
+// — студия): в <body> оно верстается в пикселях экрана, а их в Telegram на
+// айфоне меньше, чем единиц холста, — кнопки вышли бы мельче пальца. Холст
+// уже стоит в безопасной области, поэтому под шапку Telegram окошко не
+// заезжает и своих отступов от чёлки ему не нужно.
+//
+// ---------- ПОЧЕМУ КОПИРОВАНИЕ ДВУМЯ ПУТЯМИ ----------
+// navigator.clipboard во вебвью Telegram на iOS бывает недоступен или
+// отказывает. Тогда — старый путь: выделить текст и execCommand('copy'). Не
+// вышло и так — текст остаётся ВЫДЕЛЕННЫМ, и его можно скопировать из
+// системного меню долгим нажатием.
+const DebugRecorder = {
+    btn: null,
+    root: null,
+    prev: 'off',
+    labelTimer: 0,
+
+    init(panel) {
+        if (typeof FlightRecorder === 'undefined' || !panel) return;
+        this.btn = panel.querySelector('[data-act="rec"]');
+        FlightRecorder.onChange((state) => this.onState(state));
+    },
+
+    onState(state) {
+        const was = this.prev;
+        this.prev = state;
+        const bug = document.getElementById('debug-toggle-btn');
+        if (bug) bug.classList.toggle('rec', state !== 'off');
+        if (this.btn) this.btn.classList.toggle('on', state !== 'off');
+        // Обратный отсчёт на кнопке — таймер ТОЛЬКО для надписи и только
+        // пока запись взведена или идёт.
+        clearInterval(this.labelTimer);
+        this.labelTimer = 0;
+        this.label();
+        if (state !== 'off') this.labelTimer = setInterval(() => this.label(), 500);
+        if (was === 'rec' && state === 'off') this.show(FlightRecorder.last);
+    },
+
+    label() {
+        if (!this.btn) return;
+        const st = FlightRecorder.state, sec = Math.ceil(FlightRecorder.remaining() / 1000);
+        this.btn.textContent = st === 'armed' ? 'Самописец: старт через ' + sec
+                             : st === 'rec' ? 'Самописец ■ ' + sec + ' с'
+                             : 'Самописец ●';
+    },
+
+    build() {
+        const host = document.getElementById('game-container') || document.body;
+        const root = document.createElement('div');
+        root.id = 'fr-root';
+        root.innerHTML = `
+            <div class="fr-card">
+                <div class="fr-top">
+                    <span class="fr-title"></span>
+                    <button class="fr-x" data-fr="close" aria-label="Закрыть">✕</button>
+                </div>
+                <textarea class="fr-text" readonly spellcheck="false"></textarea>
+                <div class="fr-status"></div>
+                <div class="fr-row">
+                    <button data-fr="copy">Копировать</button>
+                    <button data-fr="close">Закрыть</button>
+                </div>
+            </div>`;
+        // Пальцы окошка не доходят до сцены под ним: тап по «Копировать»
+        // иначе заодно брал бы мыло с полки.
+        ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown'].forEach(ev =>
+            root.addEventListener(ev, (e) => e.stopPropagation()));
+        root.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const act = e.target && e.target.getAttribute('data-fr');
+            if (act === 'copy') this.copy();
+            else if (act === 'close') this.close();
+        });
+        host.appendChild(root);
+        this.root = root;
+        this.ta = root.querySelector('.fr-text');
+        this.status = root.querySelector('.fr-status');
+        return root;
+    },
+
+    show(text) {
+        const root = this.root || this.build();
+        const lines = (text || '').split('\n');
+        const frames = (/кадров (\d+)/.exec(text || '') || [])[1] || '0';
+        root.querySelector('.fr-title').textContent =
+            'Самописец · ' + frames + ' кадров · ' + Math.round((text || '').length / 100) / 10 + ' тыс. знаков';
+        this.ta.value = text || '';
+        this.ta.scrollTop = 0;
+        this.status.textContent = lines.length + ' строк. «Копировать» — и вставить в чат.';
+        root.classList.add('open');
+        // Панель инспектора живёт в <body> поверх всего и накрывала шапку
+        // окошка вместе с крестиком (тап уходил инспектору).
+        document.body.classList.add('fr-on');
+    },
+
+    close() {
+        if (this.root) this.root.classList.remove('open');
+        document.body.classList.remove('fr-on');
+    },
+
+    copy() {
+        const text = this.ta ? this.ta.value : '';
+        const done = (how) => { this.status.textContent = 'Скопировано (' + how + '). Вставьте в чат.'; };
+        const fallback = () => {
+            let ok = false;
+            try {
+                // Выделение у textarea только для чтения на iOS работает
+                // через setSelectionRange, а не select().
+                this.ta.focus();
+                this.ta.select();
+                this.ta.setSelectionRange(0, text.length);
+                ok = document.execCommand && document.execCommand('copy');
+            } catch (err) { ok = false; }
+            if (ok) done('выделением');
+            else this.status.textContent = 'Не вышло скопировать само: текст выделен — долгое нажатие → «Скопировать».';
+        };
+        try {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                navigator.clipboard.writeText(text).then(() => done('буфер'), fallback);
+                return;
+            }
+        } catch (err) { /* нет доступа к буферу — старым путём */ }
+        fallback();
+    }
+};
+
 function initDebugModules() {
     DebugMode.init();
     DebugState.init();
     DebugTiming.init(DebugState.panel);
+    DebugRecorder.init(DebugState.panel);
 }
 
 if (document.readyState === 'loading') {

@@ -140,7 +140,7 @@ canvas {
    Слой кошелька (#wallet-fx) в исключениях по той же причине, что и кнопка
    🐞: это не обстановка комнаты, а надпись поверх ВСЕЙ игры. Кошельки есть
    и внутри мини-игр (шапка гнева), и цифра обязана вылетать из них тоже. */
-#game-container.mg-open > *:not(.minigame-screen):not(.debug-toggle-btn):not(#debug-state-panel):not(#wallet-fx) {
+#game-container.mg-open > *:not(.minigame-screen):not(.debug-toggle-btn):not(#debug-state-panel):not(#wallet-fx):not(#fr-root) {
     visibility: hidden;
 }
 
@@ -368,6 +368,91 @@ body.debug-mode #build-stamp {
     font: 11px/1 monospace;
     white-space: nowrap;
 }
+
+/* ---------- САМОПИСЕЦ (src/core/flight-recorder.js) ----------
+   Кнопка в панели и окошко с отчётом. Пока идёт запись, 🐞 обведена красным
+   — видно и при выключенном debug. Обводка неподвижная: мигание стоило бы
+   кадров ровно тогда, когда их меряют. */
+#debug-state-panel button.dbg-rec.on {
+    border-color: #ff4d4d;
+    color: #ffb3b3;
+}
+.debug-toggle-btn.rec {
+    border-color: #ff4d4d;
+    box-shadow: 0 0 0 2px rgba(255, 77, 77, 0.6);
+}
+
+/* Окошко отчёта ВНУТРИ холста, в его единицах (инвариант 11; образец —
+   студия). Ни одного env(safe-area-inset): холст уже стоит в безопасной
+   области, второй отступ срезал бы раскладку на телефоне (ловушка 134).
+   Выше кнопки 🐞 и панели: окошко модальное, под ним ничего не ловится. */
+#fr-root {
+    position: absolute;
+    inset: 0;
+    z-index: 10000001;
+    display: none;
+    padding: 16px 12px;
+    background: rgba(0, 0, 0, 0.55);
+    box-sizing: border-box;
+}
+#fr-root.open { display: flex; }
+/* Панель инспектора в <body> лежит поверх холста и накрывала крестик. */
+body.fr-on #wi-panel,
+body.fr-on #wi-root { display: none !important; }
+#fr-root .fr-card {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    background: rgba(16, 16, 20, 0.96);
+    color: rgba(255, 255, 255, 0.85);
+    font: 12px/1.3 monospace;
+}
+#fr-root .fr-top { display: flex; align-items: center; gap: 8px; }
+#fr-root .fr-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#fr-root button {
+    /* 48, а не ровно 44: порог пальца с запасом, а не на самой границе. */
+    min-width: 48px;
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65);
+    color: rgba(255, 255, 255, 0.9);
+    font: 14px/1 monospace;
+    -webkit-tap-highlight-color: transparent;
+}
+#fr-root button:active { background: rgba(255, 255, 255, 0.2); }
+#fr-root .fr-x { flex: 0 0 48px; width: 48px; padding: 0; font-size: 18px; }
+#fr-root .fr-text {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    background: #0b0b0e;
+    color: rgba(255, 255, 255, 0.8);
+    font: 10px/1.35 monospace;
+    white-space: pre;
+    overflow: auto;
+    touch-action: pan-x pan-y;
+    /* Общее правило игры запрещает выделение и системное меню долгого
+       нажатия (* в начале файла). Отчёт — единственное, что надо уметь
+       выделить и скопировать руками, если буфер откажет. */
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+}
+#fr-root .fr-status { min-height: 1.3em; color: rgba(255, 255, 255, 0.65); font-size: 11px; }
+#fr-root .fr-row { display: flex; gap: 8px; }
+#fr-root .fr-row button { flex: 1 1 0; }
 
 
 /* ---------- «ПОВЕРНИ ТЕЛЕФОН» ----------
