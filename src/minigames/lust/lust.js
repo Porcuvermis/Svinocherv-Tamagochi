@@ -2525,7 +2525,9 @@ const LustMinigame = {
         // сцены: пузыри горки того же калибра, что на черве.
         const b = this.coverBox(), Gd = this.grid();
         const cellScene = Math.max(b.w / Gd.nx, b.h / Gd.ny) * 0.78 * PL.cell;
-        const Hh = T.len * PL.tall, W0 = T.base * PL.wide, m = cellScene * 1.8;
+        // Запас холста вокруг горки — с крупнейший пузырь с кромкой: при
+        // 1.8 клетки верхние пузыри высоких ступеней срезались краем холста.
+        const Hh = T.len * PL.tall, W0 = T.base * PL.wide, m = cellScene * 2.8;
         // Низ горки — у кромки борта, а не у корня хвоста: корень под
         // бортом, и пена ниже кромки (а с ней вся первая группа) была бы
         // не видна вовсе.
@@ -2676,23 +2678,40 @@ const LustMinigame = {
 
     // Картинка группы g горки — рисуется один раз, тем же рисовальщиком,
     // что пена на теле; её блики копятся в группе.
+    // Рамка группы — по НАСТОЯЩИМ краям её пузырей, а не по центрам частиц с
+    // запасом: на высоких ступенях пена крупнее и пышнее (над частицей
+    // пузыри ярусом), и запас в 2.5 клетки срезал крупный пузырь ровной
+    // линией (снимок игрока; замер: на ступенях 7–8 2–3 пузыря на горку).
+    // Поэтому группа рисуется на общем черновике размером с горку, а её
+    // картинка вырезается по краям пузырей с толщиной кромки.
     pileGroup(g) {
         const H = this.pile, G = H.groups[g];
         if (G.cv || !(G.x1 > G.x0)) return G;
-        G.x = Math.max(0, Math.floor(G.x0)); G.y = Math.max(0, Math.floor(G.y0));
-        const cv = document.createElement('canvas');
-        cv.width = Math.max(1, Math.min(H.pw, Math.ceil(G.x1)) - G.x);
-        cv.height = Math.max(1, Math.min(H.ph, Math.ceil(G.y1)) - G.y);
-        const ctx = cv.getContext('2d');
-        ctx.translate(-G.x, -G.y);
+        let D = H.draft;
+        if (!D) { D = H.draft = document.createElement('canvas'); D.width = H.pw; D.height = H.ph; }
+        const dc = D.getContext('2d');
+        dc.clearRect(0, 0, H.pw, H.ph);
         const T = { look: H.look, kind: H.kind, cell: H.cell, glints: G.glints, grid: new Map() };
         // Каждый пузырь группы запоминается — по ним она потом лопается
         // (pileBurst): кольцо и брызги стоят там, где был пузырь.
         G.bubs = [];
         const sink = (bx, by, r, pc) => { G.bubs.push(bx, by, r); this.glintBubble(T, bx, by, r, pc); };
         for (const q of H.parts) if (q.g === g)
-            BATH_ART.washCell(ctx, 'cloth', q.x, q.y, H.cell, 1, q.seed, undefined, H.inside, H.look, sink);
+            BATH_ART.washCell(dc, 'cloth', q.x, q.y, H.cell, 1, q.seed, undefined, H.inside, H.look, sink);
+        let x0 = G.x0, y0 = G.y0, x1 = G.x1, y1 = G.y1;
+        for (let i = 0; i < G.bubs.length; i += 3) {
+            const r = G.bubs[i + 2] * 1.1 + 2;
+            x0 = Math.min(x0, G.bubs[i] - r); x1 = Math.max(x1, G.bubs[i] + r);
+            y0 = Math.min(y0, G.bubs[i + 1] - r); y1 = Math.max(y1, G.bubs[i + 1] + r);
+        }
+        G.x = Math.max(0, Math.floor(x0)); G.y = Math.max(0, Math.floor(y0));
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.min(H.pw, Math.ceil(x1)) - G.x);
+        cv.height = Math.max(1, Math.min(H.ph, Math.ceil(y1)) - G.y);
+        cv.getContext('2d').drawImage(D, G.x, G.y, cv.width, cv.height, 0, 0, cv.width, cv.height);
         G.cv = cv;
+        // Все группы нарисованы — черновик больше не нужен.
+        if (H.groups.every(q => q.cv || !(q.x1 > q.x0))) { D.width = D.height = 0; H.draft = null; }
         return G;
     },
 

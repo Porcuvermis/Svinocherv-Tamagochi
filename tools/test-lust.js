@@ -1089,6 +1089,34 @@ const harness = require('./harness');
        `худший кадр ${(worst * 100).toFixed(1)}% тёмного`);
   }
 
+  // Ни один пузырь горки не срезан краем холста — ни своей группы, ни всей
+  // горки (снимок игрока: крупный пузырь срезан ровной линией). Срез был
+  // только на высоких ступенях — там пена крупнее и пышнее, — поэтому горка
+  // собирается заново на нескольких ступенях; спрашиваются настоящие края
+  // нарисованных пузырей, а не запас вокруг частиц. В конце прогона: сборка
+  // горки ломает текущий забег.
+  for (const [st, ct] of [[0, 0], [6, 7], [8, 8]]) {
+    const pc = await page.evaluate(([st, ct]) => {
+      const L = LustMinigame;
+      GameState.data.upgrades.lust_soap = st; GameState.data.upgrades.lust_cloth = ct;
+      L.buildPile();
+      const H = L.pile;
+      let cut = 0, all = 0;
+      for (let gi = 0; gi < H.N; gi++) {
+        const G = L.pileGroup(gi), bs = G.bubs || [];
+        for (let i = 0; i < bs.length; i += 3) {
+          all++;
+          const x = bs[i], y = bs[i + 1], r = bs[i + 2];
+          if (x - r < G.x - 0.5 || x + r > G.x + G.cv.width + 0.5 || y - r < G.y - 0.5 || y + r > G.y + G.cv.height + 0.5
+              || x - r < -0.5 || x + r > H.pw + 0.5 || y - r < -0.5 || y + r > H.ph + 0.5) cut++;
+        }
+      }
+      return { cut, all };
+    }, [st, ct]);
+    ok(pc.all > 0 && pc.cut === 0, `мыло ${st}, мочалка ${ct}: ни один пузырь горки не срезан краем холста`,
+       `срезано ${pc.cut} из ${pc.all}`);
+  }
+
   console.log(errs.length ? '\nОШИБКИ:\n  ' + errs.join('\n  ') : '\nошибок нет');
   await browser.close();
   if (fail.length || errs.length) process.exit(1);
