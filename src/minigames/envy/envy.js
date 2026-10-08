@@ -80,6 +80,7 @@ const EnvyTearShader = {
     fragmentShader: `
         uniform sampler2D tScene;
         uniform sampler2D tSig;
+        uniform sampler2D tBg;     // фон-пустота (buildBackground)
         uniform float uAspect;
         uniform float uTime;
         uniform vec2 uHalo;        // центр ореола в UV
@@ -91,9 +92,13 @@ const EnvyTearShader = {
 
         void main() {
             vec4 sceneColor = texture2D(tScene, vUv);
+            // Фон кладётся ЗДЕСЬ, под сцену, а не своим проходом: это та же
+            // формула, что делало смешивание (premultiplied «поверх»), только
+            // без второго полноэкранного прямоугольника.
+            vec4 bg = texture2D(tBg, vUv);
 
             if (uHaloI <= 0.001) {
-                gl_FragColor = sceneColor;
+                gl_FragColor = sceneColor + bg * (1.0 - sceneColor.a);
                 return;
             }
 
@@ -115,7 +120,8 @@ const EnvyTearShader = {
             // premultiplied — гасить надо и цвет, и альфу, иначе по краю
             // ореола остаётся светлая кайма.
             vec4 sigColor = texture2D(tSig, vUv);
-            gl_FragColor = sceneColor * mask + sigColor * (1.0 - mask);
+            vec4 c = sceneColor * mask + sigColor * (1.0 - mask);
+            gl_FragColor = c + bg * (1.0 - c.a);
         }
     `
 };
@@ -139,7 +145,7 @@ const EnvyMinigame = {
     renderer: null,
     scene: null,
     camera: null,
-    bgScene: null,
+    bgTexture: null,
     flatCamera: null,
     rtAll: null,
     rtSig: null,
@@ -351,7 +357,13 @@ const EnvyMinigame = {
     buildThree() {
         if (this.renderer) return;
 
-        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+        // Сглаживание (MSAA) не нужно: в экранный буфер рисуется ОДИН
+        // полноэкранный прямоугольник шейдера разрыва, у которого нет ни
+        // одной кромки внутри кадра, а сцена с краями наклеек рисуется в
+        // render target — его этот флаг не сглаживал и раньше. Платилось им
+        // вчетверо больше точек на каждый проход по экрану и разрешение
+        // буфера на каждом кадре — даром (замер — docs/plan/00-done.md, п. 6).
+        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, alpha: true });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.autoClear = false;
@@ -388,17 +400,17 @@ const EnvyMinigame = {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, size, size);
 
-        this.bgScene = new THREE.Scene();
-        this.bgScene.add(new THREE.Mesh(
-            new THREE.PlaneGeometry(2, 2),
-            new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, depthWrite: false })
-        ));
+        // Фон — текстура для шейдера разрыва, а не отдельная сцена: свой
+        // полноэкранный проход стоил заливки целого экрана на каждом кадре,
+        // а зависть упирается именно в заливку (п. 44).
+        this.bgTexture = new THREE.CanvasTexture(canvas);
     },
 
     buildPostChain() {
         const uniforms = {
             tScene: { value: null },
             tSig: { value: null },
+            tBg: { value: this.bgTexture },
             uAspect: { value: 1 },
             uTime: { value: 0 },
             uHalo: { value: new THREE.Vector2(0.5, 0.5) },
@@ -464,6 +476,10 @@ const EnvyMinigame = {
     // процессор, а в ЗАЛИВКУ: за кадр рисуются два полноэкранных прохода
     // сцены (общий и значимые) плюс два полноэкранных прямоугольника
     // (фон и шейдер разрыва). При плотности 2 это пять мегапикселей на кадр.
+    // (Второй проход оптимизации: фон теперь кладёт сам шейдер разрыва,
+    // кадр значимых рисуется только при горящем ореоле, сглаживание
+    // экранного буфера снято — заливки за кадр почти вдвое меньше, а
+    // картинка та же до единицы яркости; docs/plan/00-done.md, п. 6.)
     //
     // Замер на замедленной машине: плотность 2 — 6 кадров, 1.5 — 12,
     // 1.25 — 17, 1 — 22. Зависимость чисто квадратичная, то есть заливка и
@@ -1237,9 +1253,12 @@ const EnvyMinigame = {
         r.clear(true, true, false);
         r.render(this.scene, this.camera);
 
-        r.setRenderTarget(this.rtSig);
-        r.clear(true, true, false);
+        // Кадр значимых нужен, только пока горит ореол: погасший шейдер его
+        // не читает вовсе (uHaloI ≤ 0.001 — ранний выход). Раньше он
+        // очищался КАЖДЫЙ кадр — ещё один полноэкранный проход даром.
         if (cloud && this.postMaterial.uniforms.uHaloI.value > 0.001) {
+            r.setRenderTarget(this.rtSig);
+            r.clear(true, true, false);
             const nextVisible = this.clouds.next && this.clouds.next.group.visible;
             const prevVisible = this.clouds.prev && this.clouds.prev.group.visible;
             if (nextVisible) this.clouds.next.group.visible = false;
@@ -1264,7 +1283,6 @@ const EnvyMinigame = {
 
         r.setRenderTarget(null);
         r.clear(true, true, false);
-        r.render(this.bgScene, this.flatCamera);
 
         this.postMaterial.uniforms.tScene.value = this.rtAll.texture;
         this.postMaterial.uniforms.tSig.value = this.rtSig.texture;
