@@ -13,6 +13,7 @@
 //   soap-L    трут мылом (палец 60 Гц туда-обратно по телу; первая секунда —
 //             разогрев, мерится следующее окно)
 //   cloth-L   трут мочалкой (то же)
+//   air-L     мочалка поднялась с полки и парит (мыло уже на полке)
 //   pop-L     горка пены над хвостом, тап по ней в начале окна
 //   wipe-L    «только помыть»: награда не готова, тап по пене на теле
 //   finale-L  финал (debug «сразу в финал»)
@@ -30,6 +31,12 @@
 //   NOTRACE=1     без трассировки (кадры чище; с ней печатается разбор
 //                 по статьям — Paint, Style, Layerize, JS)
 //   PROFILE=1     профиль скрипта за окно: собственное и полное время
+//   PAINT=1       ПЛОЩАДЬ перерисовки: какие узлы перезаписывались (событие
+//                 Paint трассировки — узел и прямоугольник записи) и какие
+//                 слои композитора есть и сколько в них растрировалось
+//                 (LayerTree.layerPainted). Отвечает на вопрос «правка
+//                 маленькой вещи красит её габарит или весь экран»: доля —
+//                 от холста 390×844 (docs/traps.md, п. 156)
 //
 // Запуск (из корня, при поднятом python3 -m http.server 8777):
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/bench-bath.js 8777 cloth-8
@@ -89,7 +96,7 @@ const env = process.env;
     await wait(500);
   }
   if (KIND === 'soap') action = await rubbing();
-  if (KIND === 'cloth' || KIND === 'pop' || KIND === 'wipe') {
+  if (KIND === 'cloth' || KIND === 'air' || KIND === 'pop' || KIND === 'wipe') {
     await page.evaluate(() => { const L = LustMinigame; L.rub = 1; L.growTo('soap', 1); L.finishStage('soap'); });
     await until(() => LustMinigame.phase === 'cloth' && LustMinigame.loose && !LustMinigame.liftRaf);
     await wait(400);
@@ -131,6 +138,19 @@ const env = process.env;
   // ---- окно замера ----
   const events = [];
   cdp.on('Tracing.dataCollected', (d) => events.push(...d.value));
+  // Слои композитора и растр по слоям — только с PAINT=1: LayerTree сам
+  // стоит кадров.
+  let layers = [];
+  const rastered = new Map();
+  if (env.PAINT) {
+    await cdp.send('DOM.getDocument', { depth: 0 });
+    await cdp.send('LayerTree.enable');
+    cdp.on('LayerTree.layerTreeDidChange', (e) => { if (e.layers) layers = e.layers; });
+    cdp.on('LayerTree.layerPainted', (e) => {
+      const q = rastered.get(e.layerId) || { n: 0, area: 0 };
+      q.n++; q.area += e.clip.width * e.clip.height; rastered.set(e.layerId, q);
+    });
+  }
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOW });
   await page.evaluate(() => {
     window.__f = 0; window.__dts = []; let last = performance.now();
@@ -139,14 +159,14 @@ const env = process.env;
   });
   if (env.PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
   const TR = !env.NOTRACE;
-  if (TR) await cdp.send('Tracing.start', { categories: 'devtools.timeline', transferMode: 'ReportEvents' });
+  if (TR || env.PAINT) await cdp.send('Tracing.start', { categories: 'devtools.timeline', transferMode: 'ReportEvents' });
   const start = Date.now();
   if (action) await action(start + MS);
   if (start + MS > Date.now()) await wait(start + MS - Date.now());
   const prof = env.PROFILE ? (await cdp.send('Profiler.stop')).profile : null;
   const r = await page.evaluate(() => { window.__stop = 1; const d = window.__dts.slice(1).sort((a, b) => b - a); return { f: window.__f, worst: d[0] || 0 }; });
   const real = Date.now() - start;
-  if (TR) { const done = new Promise(res => cdp.once('Tracing.tracingComplete', res)); await cdp.send('Tracing.end'); await done; }
+  if (TR || env.PAINT) { const done = new Promise(res => cdp.once('Tracing.tracingComplete', res)); await cdp.send('Tracing.end'); await done; }
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 
   const sum = {};
@@ -157,6 +177,39 @@ const env = process.env;
     ...(TR ? { js: ms('FunctionCall') + ms('FireAnimationFrame') + ms('EventDispatch') + ms('TimerFire'), paint: ms('Paint'),
                style: ms('UpdateLayoutTree'), layerize: ms('Layerize') } : {}),
     ...info, errs: errs.slice(0, 2) }));
+  if (env.PAINT) {
+    // Запись (Paint): узел и прямоугольник, который перезаписан. Прямоугольник
+    // обрезан холстом 390×844 (у едущего дождя он бесконечный).
+    const FULL = 390 * 844, byNode = {};
+    for (const e of events) {
+      if (e.name !== 'Paint' || !e.args || !e.args.data || !e.args.data.clip) continue;
+      const c = e.args.data.clip, xs = [c[0], c[2], c[4], c[6]], ys = [c[1], c[3], c[5], c[7]];
+      const w = Math.max(0, Math.min(390, Math.max(...xs)) - Math.max(0, Math.min(...xs)));
+      const h = Math.max(0, Math.min(844, Math.max(...ys)) - Math.max(0, Math.min(...ys)));
+      const k = (e.args.data.nodeName || '?').replace(/ class='[^']*'/, '').slice(0, 40);
+      const q = byNode[k] || (byNode[k] = { n: 0, area: 0, w: 0, h: 0 });
+      q.n++; q.area += w * h; q.w = Math.round(w); q.h = Math.round(h);
+    }
+    console.log('ЗАПИСЬ (Paint): узел · раз · средняя площадь (доля холста) · последний прямоугольник');
+    Object.entries(byNode).sort((a, b) => b[1].area - a[1].area).slice(0, 8).forEach(([k, q]) =>
+      console.log(`  ${k.padEnd(40)} ${String(q.n).padStart(4)} · ${(q.area / q.n / FULL * 100).toFixed(1).padStart(5)}% · ${q.w}×${q.h}`));
+    // Слои: у кого есть содержимое; имя — id узла (через DOM.describeNode).
+    const named = [];
+    for (const l of layers) {
+      if (!l.drawsContent || !l.width || !l.height) continue;
+      let name = '#' + l.layerId;
+      if (l.backendNodeId) {
+        const d = await cdp.send('DOM.describeNode', { backendNodeId: l.backendNodeId }).catch(() => null);
+        const a = d && d.node && d.node.attributes || [], i = a.indexOf('id'), c = a.indexOf('class');
+        name = d ? (d.node.localName + (i >= 0 ? '#' + a[i + 1] : c >= 0 ? '.' + a[c + 1].split(' ')[0] : '')) : name;
+      }
+      const r = rastered.get(l.layerId) || { n: 0, area: 0 };
+      named.push({ name, w: Math.round(l.width), h: Math.round(l.height), n: r.n, area: r.area });
+    }
+    console.log('СЛОИ: узел · размер · растров за окно · средняя площадь растра (доля холста)');
+    named.sort((a, b) => b.area - a.area).slice(0, 14).forEach(q =>
+      console.log(`  ${q.name.slice(0, 40).padEnd(40)} ${(q.w + '×' + q.h).padStart(9)} · ${String(q.n).padStart(4)} · ${q.n ? (q.area / q.n / FULL * 100).toFixed(1) : '-'}%`));
+  }
   if (prof) {
     const dt = {}, parent = new Map(), byId = new Map(prof.nodes.map(n => [n.id, n]));
     prof.samples.forEach((id, i) => { dt[id] = (dt[id] || 0) + (prof.timeDeltas[i] || 0); });

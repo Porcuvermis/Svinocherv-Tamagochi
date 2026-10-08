@@ -199,6 +199,12 @@ const LustMinigame = {
 
         this.camBackEl.innerHTML = BATH_ART.sceneBack();
         document.getElementById('bt-cam-shelf').innerHTML = BATH_ART.sceneShelf();
+        // Мыло, мочалка и передняя сетка — на своих холстах размером с себя
+        // (комментарий в index.html у #bt-shelf); место им ставит камера
+        // (placeShelf из camAt).
+        this.el('bt-soap-box').innerHTML = BATH_ART.shelfSoap();
+        this.el('bt-cloth-box').innerHTML = BATH_ART.shelfCloth();
+        this.el('bt-shelf-front').innerHTML = BATH_ART.shelfFront();
         this.el('bt-cam-under').innerHTML = BATH_ART.sceneUnder();
         this.camEl.innerHTML = BATH_ART.sceneFront();
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
@@ -273,7 +279,7 @@ const LustMinigame = {
         this.setOpacity('bt-rain-near', 0);
         this.setOpacity('bt-rain-veil', 0);
         this.clearHoming();
-        this.fgEl.innerHTML = '';
+        this.dropHeld();
         this.wormHost.classList.remove('bt-soft');
         this.drops = [];
         this.splats = [];
@@ -310,7 +316,7 @@ const LustMinigame = {
         this.loose = null;
         this.floatTool(false);
         this.clearHoming();
-        this.fgEl.innerHTML = '';
+        this.dropHeld();
         if (typeof MinigameWindow !== 'undefined') {
             MinigameWindow.resumeRoom();
             MinigameWindow.restoreHud();
@@ -351,7 +357,108 @@ const LustMinigame = {
         this.camEl.setAttribute('transform', t);
         this.camBackEl.setAttribute('transform', t);
         for (const n of (this.camRainEls || [])) if (n) n.setAttribute('transform', t);
+        this._sm = null;
+        this.placeShelf();
         this.layoutWorm();
+    },
+
+    // ---------- ХОЛСТЫ РАЗМЕРОМ С ВЕЩЬ ----------
+    // Мыло и мочалка на полке и вещь в руке живут на своих маленьких svg, а
+    // не на холстах во весь экран: правка живой вещи перерисовывает холст
+    // размером с неё (docs/traps.md, п. 156). Такой холст — элемент
+    // страницы, поэтому место ему ставится в точках обёртки сцены, а не в
+    // единицах холста ванной.
+    //
+    // Единицы холста ванной (390×844) → точки обёртки сцены: холсты во весь
+    // экран вписаны с обрезкой (slice) — масштаб по большей стороне, лишнее
+    // срезано поровну (как camDelta). Размер обёртки меняется только с
+    // окном, поэтому число держится до следующей камеры.
+    stageMap() {
+        if (this._sm) return this._sm;
+        const b = this.stageEl, W = (b && b.clientWidth) || 390, H = (b && b.clientHeight) || 844;
+        const m = Math.max(W / 390, H / 844);
+        // g — точек экрана в точке обёртки: плотность × масштаб холста игры
+        // (stage.js). По ней холст вещи в руке встаёт в целую точку ЭКРАНА.
+        const gc = typeof document !== 'undefined' && document.getElementById('game-container');
+        const sc = gc && gc.offsetWidth ? gc.getBoundingClientRect().width / gc.offsetWidth : 1;
+        const g = ((typeof window !== 'undefined' && window.devicePixelRatio) || 1) * (sc || 1);
+        return (this._sm = { m, g, ox: (W - 390 * m) / 2, oy: (H - 844 * m) / 2 });
+    },
+
+    // Холсты полки: окно — в единицах СЦЕНЫ (то, что вещь рисует), место —
+    // камерой. Своей группы-камеры у них нет: камеру им ставит место на
+    // экране, а не transform внутри, — правка камеры двигает холст, а не
+    // перерисовывает. _btWorld — «единицы холста → холст ванной», по нему
+    // живая вещь считает, где она на экране (BATH_SOAP.worldMatrix).
+    placeShelf() {
+        const c = this.cam;
+        if (!c || typeof BATH_ART === 'undefined' || !BATH_ART.shelfFrontBox) return;
+        const M = this.stageMap(), k = M.m * c.s, x0 = M.ox + M.m * c.tx, y0 = M.oy + M.m * c.ty;
+        const boxes = [['bt-soap-box', BATH_SOAP.paint()], ['bt-cloth-box', BATH_CLOTH.paint()],
+                       ['bt-shelf-front', BATH_ART.shelfFrontBox()]];
+        for (const [id, R] of boxes) {
+            const svg = this.el(id);
+            if (!svg) continue;
+            // Холст — по ЦЕЛЫМ точкам, а окно расширено до них: дробный угол
+            // браузер округляет сам, и вещь съезжала на полточки против
+            // прежнего общего холста — тонкие прутья сетки двоились на
+            // сравнении снимков. Целый угол даёт ту же картинку, что
+            // полноэкранный холст (у того угол — начало обёртки, тоже целый).
+            const L = Math.floor(x0 + k * R.x), T = Math.floor(y0 + k * R.y);
+            const W = Math.ceil(x0 + k * (R.x + R.w)) - L, H = Math.ceil(y0 + k * (R.y + R.h)) - T;
+            const vb = [(L - x0) / k, (T - y0) / k, W / k, H / k].map(v => v.toFixed(4)).join(' ');
+            if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
+            const st = svg.style;
+            st.left = L + 'px'; st.top = T + 'px'; st.width = W + 'px'; st.height = H + 'px';
+            svg._btWorld = [c.s, 0, 0, c.s, c.tx, c.ty];
+        }
+    },
+
+    // Холст вещи в руке: окно R — в единицах её группы (начало — точка
+    // хвата, BATH_ART.heldBox; единица группы — единица холста ванной).
+    // Холст лежит в обёртке, начало которой — точка хвата на экране; его
+    // угол и размер — в ЦЕЛЫХ точках (дробный угол браузер округлил бы сам,
+    // и вещь съехала бы на полточки), окно расширено до них.
+    fitCarry(svg, R) {
+        if (!svg || !R) return;
+        const m = this.stageMap().m;
+        const L = Math.floor(R.x * m), T = Math.floor(R.y * m);
+        const W = Math.ceil((R.x + R.w) * m) - L, H = Math.ceil((R.y + R.h) * m) - T;
+        const st = svg.style;
+        st.left = L + 'px'; st.top = T + 'px'; st.width = W + 'px'; st.height = H + 'px';
+        svg.setAttribute('viewBox', [L / m, T / m, W / m, H / m].map(v => v.toFixed(4)).join(' '));
+        svg._btR = R;
+        // Точка хвата в холсте — в точках от его угла (опора подъёма).
+        svg._btO = { x: -L, y: -T };
+        svg.parentNode.classList.add('bt-on');
+    },
+    // Поставить точку хвата в p (единицы холста ванной) с масштабом k
+    // (полёт домой ужимает вещь). Только transform обёртки — без
+    // перерисовки вещи. Обёртка встаёт в целую точку ЭКРАНА (ошибка — до
+    // полуточки экрана, глазу не видна): слой, стоящий в дробной точке,
+    // видеокарта пересэмплирует, и вещь в руке выходила мыльнее, чем на
+    // прежнем холсте во весь экран, где её каждый раз рисовали заново.
+    placeCarry(svg, p, k) {
+        if (!svg || !svg._btR) return;
+        const M = this.stageMap(), q = k || 1, g = M.g;
+        const X = Math.round((M.ox + M.m * p.x) * g) / g, Y = Math.round((M.oy + M.m * p.y) * g) / g;
+        svg.parentNode.style.transform = `translate(${X.toFixed(3)}px, ${Y.toFixed(3)}px)` + (q !== 1 ? ` scale(${q.toFixed(4)})` : '');
+        svg._btWorld = [q, 0, 0, q, p.x, p.y];
+    },
+    // Холст пуст — слой снят, размер ноль.
+    emptyCarry(svg) {
+        if (!svg) return;
+        const st = svg.style;
+        st.left = st.top = st.width = st.height = '';
+        svg.removeAttribute('viewBox');
+        svg._btR = svg._btO = svg._btWorld = null;
+        svg.parentNode.classList.remove('bt-on');
+        svg.parentNode.style.transform = '';
+    },
+    // Вещь из руки убрана целиком (сброс, вход, уход).
+    dropHeld() {
+        this.fgEl.innerHTML = '';
+        this.emptyCarry(this.el('bt-hand'));
     },
 
     camFor(name) {
@@ -2055,7 +2162,7 @@ const LustMinigame = {
         // Полочная копия прячется СРАЗУ: летящая начинает ровно с её места и
         // размера, и плавное угасание дало бы на миг двойника.
         this.homeShown(kind, false, true);
-        this.setHeld(BATH_ART.held(kind, c.s, a));
+        this.setHeld(kind, c.s, a);
         this.loose = { kind, at: a, pos: to, k: c.s * K };
         const held = this.el('bt-held'), hand = this.el('bt-hand');
         // Мягкая вещь (конняку) снятая с полки округляется: на полке она
@@ -2070,15 +2177,18 @@ const LustMinigame = {
         // водило влево-вправо на 2–3 точки, а со стартом парения она
         // прыгала ещё на 3–4 (запись экрана игрока; в Chromium этого нет).
         // Заодно подъём ничего не перерисовывает.
-        held.setAttribute('transform', `translate(${to.x.toFixed(1)} ${to.y.toFixed(1)})`);
+        this.placeCarry(hand, to);
         if (!hand || typeof hand.animate !== 'function') { this.floatTool(true); return; }
         this.liftStop();
-        // Холст руки в единицах сцены: пиксель css внутри него — единица.
-        // Начало — полочная копия: тот же низ (from) и полочный масштаб
-        // вокруг точки, за которую вещь держат.
-        hand.style.transformOrigin = `${to.x.toFixed(1)}px ${to.y.toFixed(1)}px`;
+        // Холст руки — размером с вещь, в обёртке, начало которой — точка
+        // хвата. Подъём начинается с полочной копии: тот же низ (from) и
+        // полочный масштаб вокруг точки, за которую вещь держат, — она
+        // лежит в холсте в _btO от его угла (fitCarry). Сдвиг — в точках
+        // обёртки сцены (единица холста ванной × m).
+        const O = hand._btO || { x: 0, y: 0 }, m = this.stageMap().m;
+        hand.style.transformOrigin = `${O.x.toFixed(2)}px ${O.y.toFixed(2)}px`;
         this.liftAnim = hand.animate([
-            { transform: `translate(0px, ${(from.y - to.y).toFixed(1)}px) scale(${(1 / K).toFixed(4)})` },
+            { transform: `translate(0px, ${((from.y - to.y) * m).toFixed(2)}px) scale(${(1 / K).toFixed(4)})` },
             { transform: 'translate(0px, 0px) scale(1)' }
         ], { duration: this.LIFT_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
         // Цикл — только сторож: кончился подъём — парение; вещь взяли или
@@ -2127,13 +2237,13 @@ const LustMinigame = {
         n.classList.toggle('bt-float-magic', !!magic);
     },
 
-    // Где сейчас качание по высоте. В единицах холста: холст руки ровно с
-    // холст игры, и пиксель css внутри него — единица.
+    // Где сейчас качание по высоте. В единицах холста: качание — в точках
+    // обёртки сцены, а в единице холста их m.
     bobY() {
         const n = this.el('bt-hand');
         if (!n || !n.classList.contains('bt-float')) return 0;
         const t = getComputedStyle(n).transform;
-        return t && t !== 'none' ? new DOMMatrixReadOnly(t).f : 0;
+        return t && t !== 'none' ? new DOMMatrixReadOnly(t).f / this.stageMap().m : 0;
     },
 
     // Всё сразу на полку, без полёта: сброс забега и проверки. Конец этапа
@@ -2143,7 +2253,7 @@ const LustMinigame = {
         this.loose = null;
         this.floatTool(false);
         this.clearHoming();
-        this.fgEl.innerHTML = '';
+        this.dropHeld();
         this.showTools(true);
     },
 
@@ -2206,7 +2316,7 @@ const LustMinigame = {
         this.drag = { kind, at: g, k: s * k, off: { x: (a.x - g.x) * k, y: (a.y - g.y) * k } };
         this.homeShown(kind, false);
         this.ready(null);
-        this.setHeld(BATH_ART.held(kind, s, g));
+        this.setHeld(kind, s, g);
         // С полки — округляется, как при подъёме (liftTool). Лежавшая на
         // экране уже круглая.
         if (kind === 'cloth' && !at && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(this.el('bt-held'), 'lift');
@@ -2229,7 +2339,9 @@ const LustMinigame = {
     HOLD_OUT: 0.05,
     HOLD_BOB: 5,
     handView() {
-        const n = this.el('bt-hand'), W = typeof STAGE_W !== 'undefined' ? STAGE_W : 390;
+        // Холст руки теперь размером с вещь — видимую область меряет холст
+        // чаши: он во весь экран и вписан так же (slice).
+        const n = this.svgEl, W = typeof STAGE_W !== 'undefined' ? STAGE_W : 390;
         const H = typeof STAGE_H !== 'undefined' ? STAGE_H : 844;
         const r = n && n.getBoundingClientRect();
         if (!r || !r.width || !r.height) return { x: 0, y: 0, w: W, h: H };
@@ -2251,12 +2363,16 @@ const LustMinigame = {
 
     // Вещь в руке — одна. Заменяется ТОЛЬКО она: рядом может ещё лететь на
     // полку прошлая вещь (flyHome), и стирать весь холст руки нельзя.
-    setHeld(html) {
+    // Холст руки — размером с вещь (BATH_ART.heldBox): правка живой вещи в
+    // руке перерисовывает его, а не экран (docs/traps.md, п. 156). Место
+    // ставит moveTool / liftTool.
+    setHeld(kind, s, at) {
         // Новая вещь в руке не едет с холстом недоигранного подъёма.
         if (this.liftAnim) this.liftStop();
         const old = this.el('bt-held');
         if (old) old.remove();
-        this.fgEl.insertAdjacentHTML('beforeend', `<g id="bt-held">${html}</g>`);
+        this.fgEl.insertAdjacentHTML('beforeend', `<g id="bt-held">${BATH_ART.held(kind, s, at)}</g>`);
+        this.fitCarry(this.el('bt-hand'), BATH_ART.heldBox(kind, s, at));
     },
 
     // Вещь на полке видна или нет. Только СВОЯ: мыло летит домой, пока
@@ -2299,13 +2415,21 @@ const LustMinigame = {
         this.floatTool(false);
         this.clearHoming();
         const c = this.cam;
-        if (!held || !kind || !at || !from || !c) {
+        const hand = this.el('bt-hand'), home = this.el('bt-hand-home');
+        if (!held || !kind || !at || !from || !c || !home) {
             if (held) held.remove();
+            this.emptyCarry(hand);
             if (kind) this.homeShown(kind, true);
             if (done) done();
             return;
         }
+        // Вещь переезжает на свой холст полёта — того же размера, — а холст
+        // руки освобождается под следующую.
         held.id = 'bt-homing';
+        this.fitCarry(home, hand._btR);
+        home.appendChild(held);
+        this.emptyCarry(hand);
+        this.placeCarry(home, from);
         // Куда: та точка рисунка, за которую вещь держали, в том месте, где
         // она лежит на полке. Нарисована вещь «ручным» размером (камера ×
         // DRAG_SCALE) — на полке она в DRAG_SCALE раз меньше.
@@ -2329,7 +2453,7 @@ const LustMinigame = {
             const x = q * q * from.x + 2 * q * e * top.x + e * e * to.x;
             const y = q * q * from.y + 2 * q * e * top.y + e * e * to.y;
             const m = 1 + (1 / K - 1) * e;
-            held.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${m.toFixed(4)})`);
+            this.placeCarry(home, { x, y }, m);
             if (u < 1) { this.homeRaf = requestAnimationFrame(step); return; }
             this.homeRaf = 0;
             // Полка — сразу, без плавного проявления: летевшая копия стоит
@@ -2338,6 +2462,7 @@ const LustMinigame = {
             this.homeShown(kind, true, true);
             if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.syncPose(this.el('bt-cloth-art'));
             held.remove();
+            this.emptyCarry(home);
             if (done) done();
         };
         this.homeRaf = requestAnimationFrame(step);
@@ -2349,15 +2474,16 @@ const LustMinigame = {
         this.homeRaf = 0;
         const n = this.el('bt-homing');
         if (n) n.remove();
+        this.emptyCarry(this.el('bt-hand-home'));
     },
 
     // Предмет в руке живёт в координатах ХОЛСТА: его держат перед собой, и
     // камере он не подчиняется.
+    // Двигается не группа внутри svg, а холст вещи целиком (transform
+    // обёртки): перетаскивание делает видеокарта.
     moveTool(p) {
         if (this.drag) this.drag.pos = p;
-        const held = this.el('bt-held');
-        if (held) held.setAttribute('transform',
-            `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
+        if (this.el('bt-held')) this.placeCarry(this.el('bt-hand'), p);
     },
 
     showTools(show, except) {

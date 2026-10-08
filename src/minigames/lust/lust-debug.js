@@ -197,7 +197,8 @@ LustDebug.placeBelowInspector = function () {
 // для этого пришлось бы угадывать по картинке:
 //   held / homing — где вещь НА ЭКРАНЕ (getBoundingClientRect: со всеми
 //                   css-трансформами холста руки, подъёмом и парением), в
-//                   точках экрана, и атрибут transform её группы;
+//                   точках экрана, и transform обёртки её холста (вещь едет
+//                   обёрткой, а не атрибутом группы — docs/traps.md, п. 156);
 //   hand          — классы холста руки, его посчитанный transform и точка
 //                   опоры, анимации на нём (подъём WAAPI, парение css);
 //   raf           — живы ли сторож подъёма и полёт домой;
@@ -205,6 +206,9 @@ LustDebug.placeBelowInspector = function () {
 //   loose / drag  — вещь лежит сама или в пальце;
 //   tilt          — наклон телефона тремя способами (turn, lean, down);
 //   live          — живой цикл мыла и мочалки, и какие холсты слоем (bt-live).
+//   box           — холсты вещей: какой величины холст перерисовывает правка
+//                   вещи (в единицах холста ванной) и слой ли он (*). У живой
+//                   вещи он обязан быть размером с неё, а не 390×844.
 // Только читает. Закрытая ванная — null, щуп молчит.
 if (typeof FlightRecorder !== 'undefined') {
     FlightRecorder.register('ванная', () => {
@@ -216,9 +220,10 @@ if (typeof FlightRecorder !== 'undefined') {
             const n = document.getElementById(id);
             if (!n) return null;
             const r = n.getBoundingClientRect();
+            const carry = n.closest('.bt-carry');
             return { at: f1(r.left + r.width / 2) + ',' + f1(r.top + r.height / 2),
                      size: f1(r.width) + 'x' + f1(r.height),
-                     tf: n.getAttribute('transform') || '-' };
+                     tf: (carry && carry.style.transform) || n.getAttribute('transform') || '-' };
         };
         // Нет вещи — нет и ключей: в отчёте это «held=∅», а не три прочерка.
         const out = { ph: L.phase };
@@ -251,13 +256,23 @@ if (typeof FlightRecorder !== 'undefined') {
         if (typeof BATH_SOAP !== 'undefined') {
             const Lv = BATH_SOAP.live;
             out.live = (Lv.raf ? 'цикл' : 'стоит') + ' ' + ((Lv.roots && Lv.roots.length) || 0)
-                     + ' слой:' + (['bt-shelf', 'bt-hand'].filter(id => {
+                     + ' слой:' + (BATH_SOAP.LIVE_BOXES.filter(id => {
                          const n = document.getElementById(id);
                          return n && n.classList.contains('bt-live');
                      }).join(',') || '-');
         }
+        // Холсты вещей: окно (единицы холста ванной — для руки с масштабом
+        // камеры) и слой ли. Пустой холст руки не печатается.
+        const boxes = [['мыло', 'bt-soap-box'], ['мочалка', 'bt-cloth-box'], ['рука', 'bt-hand'], ['домой', 'bt-hand-home']];
+        out.box = boxes.map(([name, id]) => {
+            const n = document.getElementById(id), vb = n && n.viewBox && n.viewBox.baseVal;
+            if (!n || !vb || !vb.width) return null;
+            const W = n._btWorld, k = W ? Math.abs(W[0]) : 1;
+            const layer = n.classList.contains('bt-live') || (n.parentNode && n.parentNode.classList && n.parentNode.classList.contains('bt-on'));
+            return name + ' ' + Math.round(vb.width * k) + 'x' + Math.round(vb.height * k) + (layer ? '*' : '');
+        }).filter(Boolean).join(' ') || '-';
         return out;
-    }, { watch: ['#bt-hand', '#bt-shelf', '#bt-held', '#bt-homing'] });
+    }, { watch: ['#bt-hand', '#bt-hand-at', '#bt-hand-home-at', '#bt-soap-box', '#bt-cloth-box', '#bt-held', '#bt-homing'] });
 }
 
 if (typeof window !== 'undefined') window.LustDebug = LustDebug;

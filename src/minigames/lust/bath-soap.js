@@ -181,11 +181,31 @@ const BATH_SOAP = {
         return BATH_BAKED.box('soap');
     },
 
+    // Сколько вещь рисует ВОКРУГ своего габарита: ореол и сияние, огоньки
+    // на орбите, сопля обмылка, капли — [слева, сверху, справа, снизу], в
+    // единицах сцены. По этому окну вещи дают СВОЙ холст — на полке и в руке
+    // (lust.js, placeShelf и setHeld): правка живой вещи перерисовывает
+    // холст размером с неё, а не весь экран (docs/traps.md, п. 156).
+    // Числа — ЗАМЕР, а не прикидка: вещь одна на прозрачном фоне, камера
+    // ×1, десять секунд живого цикла, всё с ненулевой альфой, округлено
+    // наружу. Волшебному флакону столько потому, что его сияние — круг
+    // r≈74×1.5 и дышит. Запас PAINT_M — на сглаживание краёв и упругий
+    // подъём; что ничего не срезано, проверяет tools/test-soap.js.
+    PAD: { stub: [0, 0, 0, 26], bar: [0, 0, 0, 2], toilet: [10, 2, 10, 28], pump: [0, 0, 0, 4], gel: [2, 0, 0, 2],
+           premium: [0, 0, 0, 2], elixir: [26, 0, 16, 28], flask: [38, 4, 38, 30], magic: [72, 32, 72, 66] },
+    PAINT_M: 6,
+    paint(level) {
+        const b = this.box(level), p = this.PAD[this.TIERS[this.tier(level)]] || [0, 0, 0, 0], M = this.PAINT_M;
+        return { x: b.x - p[0] - M, y: b.y - p[1] - M, w: b.w + p[0] + p[2] + 2 * M, h: b.h + p[1] + p[3] + 2 * M };
+    },
+
     // Полка перерисовывается после покупки и после debug-панели: ступень
-    // меняется, пока ванная открыта.
+    // меняется, пока ванная открыта. У новой ступени своё окно — холст
+    // вещи на полке подгоняется под него.
     refresh() {
         const el = typeof document !== 'undefined' && document.getElementById('bt-soap-art');
         if (el) el.innerHTML = this.draw(null, 'shelf');
+        if (typeof LustMinigame !== 'undefined' && LustMinigame.placeShelf) LustMinigame.placeShelf();
     },
 
     // Многоугольник со скруглёнными вершинами: у мыла острых углов нет.
@@ -352,12 +372,16 @@ onmessage = async (e) => {
     // произведение transform всех предков до корневого svg. Читаются только
     // атрибуты — ни раскладки, ни getScreenCTM (на айфоне он врёт). Не в
     // ванной (иконка магазина) — условное место в середине неба.
+    // Живые вещи лежат на СВОИХ маленьких холстах (полка — окно в единицах
+    // сцены, рука — в единицах вещи, docs/traps.md, п. 156): как единицы
+    // такого холста ложатся на холст ванной, знает сам холст (_btWorld —
+    // ставят lust.js, placeShelf и placeCarry; там же, где его двигают).
     worldMatrix(root) {
         const svg = root && root.ownerSVGElement;
         const vb = svg && svg.viewBox && svg.viewBox.baseVal;
-        if (!vb || Math.abs(vb.width - 390) > 1 || typeof DOMMatrix === 'undefined') {
-            return typeof DOMMatrix === 'undefined' ? null : new DOMMatrix([1.4, 0, 0, 1.4, 195, 300]);
-        }
+        const W = svg && svg._btWorld;
+        if (typeof DOMMatrix === 'undefined') return null;
+        if (!W && (!vb || Math.abs(vb.width - 390) > 1)) return new DOMMatrix([1.4, 0, 0, 1.4, 195, 300]);
         let m = new DOMMatrix();
         for (let el = root; el && el !== svg; el = el.parentNode) {
             const tl = el.transform && el.transform.baseVal;
@@ -367,7 +391,7 @@ onmessage = async (e) => {
                 m = new DOMMatrix([q.a, q.b, q.c, q.d, q.e, q.f]).multiply(m);
             }
         }
-        return m;
+        return W ? new DOMMatrix(W).multiply(m) : m;
     },
 
     // Слой неба в координатах флакона: обратное к «флакон → холст», плюс
@@ -1021,12 +1045,12 @@ onmessage = async (e) => {
                     const x = m.a * ox + m.c * oy + m.e, y = m.b * ox + m.d * oy + m.f, R = 50 * Math.abs(m.a);
                     return x > -R && x < 390 + R && y > -R && y < 844 + R;
                 });
-                // Колба под парящим холстом руки (тень-фильтр .bt-float) слоем
-                // его не делает: слой с фильтром и качанием перерисовывал тень
-                // на каждом кадре — замер под 4×: 22 кадра вместо 54. Колба
-                // в это время стоит, а редкая запись от наклона телефона
-                // пересчитает тень один раз.
-                this.layers(vis.filter(r => !isFlask(r) || !r.closest('.bt-float:not(.bt-float-magic)')));
+                // Слоем — только холсты полки с видимой живой вещью. Холст
+                // руки здесь не решается: он слой, пока в руке что-то есть
+                // (lust.js, setHeld), и размером с вещь — колба под парящим
+                // холстом с тенью-ореолом больше не заставляет пересчитывать
+                // тень во весь экран (было: 22 кадра вместо 54 под 4×).
+                this.layers(vis);
                 // Пока ТРУТ (мылом или мочалкой), флакон в ванной замедляется
                 // до остановки — и в руке, и на полке (часы выше). В руке он
                 // едет за пальцем и перерисовывается целиком на каждом
@@ -1057,11 +1081,16 @@ onmessage = async (e) => {
         this.layers([]);
     },
 
-    // Холсты полки и руки — слоем композитора ТОЛЬКО пока на них живой и
-    // видимый флакон (комментарий в index.html у #bt-shelf).
+    // Холсты живых вещей на полке — слоем композитора ТОЛЬКО пока на них
+    // живая и видимая вещь (комментарий в index.html у #bt-soap-box). Холст
+    // каждой вещи — размером с неё, поэтому и слой размером с неё, а не с
+    // экран (docs/traps.md, п. 156). Вещь в руке — на своём холсте, слоем
+    // он стоит, пока в руке что-то есть (lust.js, setHeld): его двигают за
+    // пальцем, и ехать ему положено на видеокарте.
+    LIVE_BOXES: ['bt-soap-box', 'bt-cloth-box'],
     layers(vis) {
         if (typeof document === 'undefined') return;
-        for (const id of ['bt-shelf', 'bt-hand']) {
+        for (const id of this.LIVE_BOXES) {
             const svg = document.getElementById(id);
             if (!svg) continue;
             const on = vis.some(r => svg.contains(r));

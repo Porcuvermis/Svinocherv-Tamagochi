@@ -175,24 +175,55 @@ const BATH_ART = {
         `;
     },
 
-    // Этажерка с мылом и мочалкой — отдельным быстрым холстом (#bt-shelf,
-    // комментарий в index.html): живое мыло не должно перерисовывать комнату.
+    // Этажерка с мылом и мочалкой — отдельными холстами (комментарий в
+    // index.html у #bt-shelf): живое мыло не должно перерисовывать комнату,
+    // а его кадр — весь экран. Четыре холста, порядок тот же, что был внутри
+    // одного: задняя часть этажерки (полноэкранный, с камерой), мыло и
+    // мочалка — каждая на своём холсте размером с то, что она рисует, и
+    // передняя сетка с тем, что свисает через неё, — поверх обеих.
+    // У маленьких холстов своей камеры-группы нет: их окно (viewBox) задано
+    // прямо в единицах сцены, и камеру им ставит место холста на экране
+    // (lust.js, placeShelf).
     sceneShelf() {
-        const B = btBake(), A = B.anchors;
+        return BATH_SHELF.backLayer();
+    },
+    shelfSoap() {
+        const A = btBake().anchors;
+        return `<g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw(null, 'shelf')}</g>
+            ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>`;
+    },
+    shelfCloth() {
+        const A = btBake().anchors;
+        return `<g id="bt-cloth-home"><g id="bt-cloth-art">${BATH_CLOTH.draw(null, 'shelf')}</g>
+            ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>`;
+    },
+    shelfFront() {
         return `
-        ${BATH_SHELF.backLayer()}
-        <g id="bt-soap-home"><g id="bt-soap-art">${BATH_SOAP.draw(null, 'shelf')}</g>
-            ${btGrab(46, 34, A.soap.x, A.soap.y)}</g>
-        <g id="bt-cloth-home"><g id="bt-cloth-art">${BATH_CLOTH.draw(null, 'shelf')}</g>
-            ${btGrab(42, 40, A.cloth.x, A.cloth.y)}</g>
-
         <!-- Передняя сетка корзин ПОВЕРХ предметов: перекрытый низ —
              единственное, чем в лоб «в корзине» отличается от «перед ней». -->
         ${BATH_SHELF.frontLayer()}
         <!-- То, что свисает с корзины наружу (лоскут тряпки через край), —
              поверх сетки. В руке это та же вещь целиком (BATH_CLOTH.draw). -->
-        <g id="bt-cloth-front">${BATH_CLOTH.drawFront()}</g>
-        `;
+        <g id="bt-cloth-front">${BATH_CLOTH.drawFront()}</g>`;
+    },
+    // Окно холста передней сетки (единицы сцены): сетка обеих корзин и
+    // то, что свисает через неё (габарит мочалки по рисунку). Холст не
+    // живой и слоем сам не бывает, но лежит ПОВЕРХ живых вещей — и браузер
+    // поднимает в слой всё, что накрывает слой под собой. Поэтому он
+    // размером с этажерку, а не с экран (docs/traps.md, п. 156).
+    shelfFrontBox() {
+        const S = BATH_SHELF, P = 8, c = BATH_CLOTH.paint();
+        const x0 = Math.min(S.POSTS[0] - P, c.x), x1 = Math.max(S.POSTS[1] + P, c.x + c.w);
+        const y0 = Math.min(S.FLOORS[0] - S.WALL_H - P, c.y), y1 = Math.max(S.FLOORS[1] + P, c.y + c.h);
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    },
+    // Окно холста вещи в руке — в единицах её группы (held ниже): то, что
+    // вещь рисует, в том масштабе и от той точки хвата, с какими она
+    // нарисована.
+    heldBox(kind, camScale, at) {
+        const a = at || this.slots()[kind], k = (camScale || 1) * this.DRAG_SCALE;
+        const P = kind === 'soap' ? BATH_SOAP.paint() : BATH_CLOTH.paint();
+        return { x: (P.x - a.x) * k, y: (P.y - a.y) * k, w: P.w * k, h: P.h * k };
     },
 
     // ---------- ТРИ ХОЛСТА ВМЕСТО ОДНОГО ----------

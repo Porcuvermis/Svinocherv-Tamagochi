@@ -150,7 +150,20 @@ const BATH_CLOTH = {
 
     deferHeavy: true,
 
-    // Полка перерисовывается после покупки и после debug-панели.
+    // Сколько вещь рисует вокруг своего габарита — [слева, сверху, справа,
+    // снизу], единицы сцены; окно её собственного холста на полке и в руке.
+    // Замер и запас — как у мыла (BATH_SOAP.PAD). Облаку — его пух и
+    // сияние; остальным — сглаживание края и волоски за контуром.
+    PAD: { rag: [2, 2, 2, 2], kitchen: [2, 2, 2, 2], brick: [2, 2, 2, 2], puff: [2, 2, 2, 4], sea: [2, 0, 2, 0],
+           ruffle: [4, 2, 2, 0], mitt: [2, 2, 2, 4], konjac: [2, 0, 2, 2], cloud: [12, 12, 12, 20] },
+    paint(level) {
+        const b = this.box(level), p = this.PAD[this.TIERS[this.tier(level)]] || [0, 0, 0, 0];
+        const M = typeof BATH_SOAP !== 'undefined' ? BATH_SOAP.PAINT_M : 6;
+        return { x: b.x - p[0] - M, y: b.y - p[1] - M, w: b.w + p[0] + p[2] + 2 * M, h: b.h + p[1] + p[3] + 2 * M };
+    },
+
+    // Полка перерисовывается после покупки и после debug-панели. Холст
+    // вещи подгоняется под окно новой ступени (lust.js, placeShelf).
     refresh() {
         if (typeof document === 'undefined') return;
         this.deferHeavy = false;
@@ -158,6 +171,7 @@ const BATH_CLOTH = {
         const fr = document.getElementById('bt-cloth-front');
         if (el) el.innerHTML = p.main;
         if (fr) fr.innerHTML = p.front;
+        if (typeof LustMinigame !== 'undefined' && LustMinigame.placeShelf) LustMinigame.placeShelf();
         // Ступень могла смениться (покупка, debug) — следующие готовятся
         // заранее, пока игрок смотрит на новую.
         this.warm();

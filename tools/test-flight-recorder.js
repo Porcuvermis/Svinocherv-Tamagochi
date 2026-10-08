@@ -131,6 +131,11 @@ const harness = require('./harness');
   check(cls.some(l => /\+bt-float/.test(l)), `переключения классов #bt-hand — отдельной строкой с кадром: ${cls.slice(0, 3).join(' | ')}`);
   check(lines.some(l => /^!\d+;[\d.]+;#bt-(held|homing) (появился|исчез|заменён)/.test(l)), 'замена узла вещи отмечена');
   check(frames.some(l => /hand\.anim=.*waapi:running/.test(l)), 'подъём видно: анимация холста руки идёт');
+  // Щуп ванной называет холсты вещей и их размер (docs/traps.md, п. 156):
+  // вещь в руке перерисовывает холст размером с себя, а не 390×844.
+  const handBox = frames.map(l => /box=[^;]*?рука (\d+)x(\d+)\*/.exec(l)).filter(Boolean);
+  check(handBox.length > 0 && handBox.every(m => +m[1] < 390 && +m[2] < 844 && +m[1] * +m[2] < 390 * 844 / 3),
+        `щуп: холст вещи в руке — слой размером с вещь (${handBox.slice(0, 3).map(m => m[1] + '×' + m[2]).join(', ') || 'нет'})`);
   check(frames.some(l => /ph=cloth/.test(l)) && frames.some(l => /loose=cloth/.test(l)), 'фаза и вещь в воздухе меняются в строках кадров');
   // Только изменения: ключ, не менявшийся с прошлого кадра, повторно не пишется.
   const repeat = frames.slice(1).filter((l, i) => {

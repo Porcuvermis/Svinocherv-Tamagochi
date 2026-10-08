@@ -11,10 +11,13 @@ const harness = require('./harness');
 //      с разумным габаритом. Лестница из девяти картинок, до которых игрок
 //      доберётся через месяцы, — ровно то, что ломается молча
 //      (docs/traps.md, пп. 12а и 128).
-//   2. Холст полки становится слоем композитора ТОЛЬКО пока на нём живой
-//      флакон: слой, державшийся всегда, давал на айфоне чёрное моргание
-//      (п. 152). Под открытым магазином полка не анимирует (п. 68), при
-//      закрытии ванной цикл встаёт.
+//   2. Холст вещи становится слоем композитора ТОЛЬКО пока на нём живой
+//      флакон, и слой этот — размером с вещь, а не с экран: слой,
+//      державшийся всегда, давал на айфоне чёрное моргание (п. 152), а
+//      полноэкранный холст под живой вещью перерисовывался целиком на
+//      каждой её правке (п. 156). Под открытым магазином полка не анимирует
+//      (п. 68), при закрытии ванной цикл встаёт. Окно холста вещи ничего
+//      не срезает — на полке (все ступени) и в руке (живые).
 //   3. Во время переезда камеры и в режиме «мыло замерло» флакон не
 //      трогается (пп. 150 и 152).
 //   4. Небо получает картинку (её печёт Worker; без картинки флакон пуст).
@@ -50,8 +53,28 @@ const harness = require('./harness');
   const setTier = (n) => page.evaluate((n) => {
     LustDebug.setLevel('soap', n); BATH_SOAP.refresh();
   }, n);
-  const liveLayers = () => page.evaluate(() => ['bt-shelf', 'bt-hand']
-    .filter(id => document.getElementById(id).classList.contains('bt-live')));
+  // Слои «по требованию»: холсты сцены, которые сейчас подняты в слой
+  // композитора (will-change), КРОМЕ тех, что слой всегда по замыслу (.bt-fast
+  // — хвост и струи; едущий дождь). Правило (docs/traps.md, пп. 152 и 156):
+  // слой — только у живой ВИДИМОЙ вещи и только РАЗМЕРОМ С НЕЁ. Поэтому
+  // ответ — не только «кто», но и какую долю видимой сцены он занимает.
+  // У обёртки вещи в руке (.bt-carry) своего размера нет — меряется её холст.
+  const layersNow = () => page.evaluate(() => {
+    const st = document.getElementById('bt-stage'), S = st.getBoundingClientRect(), A = S.width * S.height;
+    return Array.from(st.children)
+      .filter(n => !n.matches('.bt-fast, .bt-rain-clip') && (getComputedStyle(n).willChange || '').includes('transform'))
+      .map(n => { const r = (n.matches('.bt-carry') ? n.firstElementChild : n).getBoundingClientRect();
+        return { id: n.id, share: r.width * r.height / A }; });
+  });
+  const liveLayers = async () => (await layersNow()).map(l => l.id);
+  // «Слоем только холст этой вещи, и он размером с вещь»: доля сцены — не
+  // больше четверти (волшебный флакон с сиянием — около шестой части на
+  // общем плане), а не холст во весь экран, как было.
+  const onlyLayer = async (id) => {
+    const L = await layersNow();
+    return { ok: L.length === 1 && L[0].id === id && L[0].share < 0.25,
+             text: L.map(l => `${l.id} ${(l.share * 100).toFixed(0)}%`).join(', ') || 'ничего' };
+  };
 
   // ================= 1. КАЖДАЯ СТУПЕНЬ НА ПОЛКЕ И В МАГАЗИНЕ =================
   say('\n======== ДЕВЯТЬ СТУПЕНЕЙ: ПОЛКА И ИКОНКА ========');
@@ -120,7 +143,8 @@ const harness = require('./harness');
   check((await liveLayers()).length === 0, 'на нулевой ступени слоёв нет');
   await setTier(tiers - 1);
   await page.waitForTimeout(400);
-  check((await liveLayers()).join() === 'bt-shelf', `флакон на полке — слоем только полка (${(await liveLayers()).join() || 'ничего'})`);
+  const lyF = await onlyLayer('bt-soap-box');
+  check(lyF.ok, `флакон на полке — слоем только его холст, размером с него (${lyF.text})`);
   await page.screenshot({ path: out + '1-shelf.png' });
 
   // Под магазином полку не видно — и анимировать её незачем. На верхней
@@ -296,7 +320,8 @@ const harness = require('./harness');
   const flat = await linesAt('#bt-soap-home');
   check(flat && flat.dTop < 0.01 && flat.dMid < 0.01, `в покое обе ватерлинии ПРЯМЫЕ: поверхность ${flat ? flat.dTop.toFixed(2) : '—'}, граница ${flat ? flat.dMid.toFixed(2) : '—'} ед. от прямой`);
   check(calm.els === 1 && calm.n === 0, `телефон неподвижен — ни одной записи в жижу (обе группы) за секунду (${calm.n})`);
-  check((await liveLayers()).join() === 'bt-shelf', `колба на полке — живая вещь, слоем только полка (${(await liveLayers()).join() || 'ничего'})`);
+  const lyK = await onlyLayer('bt-soap-box');
+  check(lyK.ok, `колба на полке — живая вещь, слоем только её холст, размером с неё (${lyK.text})`);
 
   // Рывок пальцем: взял парящую колбу, резко повёл влево и отпустил на
   // ходу. Жижа обязана КАЧНУТЬСЯ туда-обратно (наклон меняет сторону не
@@ -378,9 +403,8 @@ const harness = require('./harness');
   await setTier(7);
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);
-  const shut = await page.evaluate(() => ({ raf: BATH_SOAP.live.raf,
-    layers: ['bt-shelf', 'bt-hand'].filter(id => document.getElementById(id).classList.contains('bt-live')) }));
-  check(!shut.raf && !shut.layers.length, 'ванная закрыта — цикл колбы стоит, слоёв нет');
+  const shut = await page.evaluate(() => ({ raf: BATH_SOAP.live.raf }));
+  check(!shut.raf && !(await liveLayers()).length, 'ванная закрыта — цикл колбы стоит, слоёв нет');
   await page.evaluate(() => LustMinigame.open());
   await page.waitForTimeout(600);
 
@@ -520,7 +544,7 @@ const harness = require('./harness');
   // парение со свечением мочалки досталось бы летящему мылу. Мыло на полке
   // не должно появиться, пока его копия ещё в воздухе (двойник).
   say('\n======== КОНЕЦ ЭТАПА — ДОМОЙ ПО ДУГЕ ========');
-  const flight = (stage) => page.evaluate((stage) => new Promise(res => {
+  const flight = (stage) => page.evaluate(([stage, NOT_BODY]) => new Promise(res => {
     const L = LustMinigame, kind = stage, out = [];
     let twin = false, glow = false;
     L.finishStage(stage);
@@ -529,8 +553,23 @@ const harness = require('./harness');
       const n = document.getElementById('bt-homing');
       const home = document.getElementById(`bt-${kind}-home`).style.opacity;
       if (n) {
-        const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(n.getAttribute('transform') || '');
-        if (m) out.push({ x: +m[1], y: +m[2] });
+        // Где летящая вещь ВИДНА (середина габарита её ТЕЛА на экране →
+        // единицы холста), а не чем её двигают: атрибут группы, transform
+        // обёртки — это устройство, а путь — то, что видит игрок. Небо
+        // флакона и сияние — не тело (небо привязано к экрану и стоит).
+        const hide = Array.from(n.querySelectorAll(NOT_BODY)).filter(el => el.getAttribute('display') !== 'none');
+        hide.forEach(el => el.setAttribute('display', 'none'));
+        // Мерится точка хвата — та, что летит по дуге: вещь ужимается к
+        // полке ВОКРУГ неё, и середина габарита на ужатии сползает. Где она
+        // на экране, видно из двух габаритов тела: на экране (r) и в своих
+        // единицах (b, начало — точка хвата): масштаб — их отношение.
+        const r = n.getBoundingClientRect(), b = n.getBBox();
+        hide.forEach(el => el.removeAttribute('display'));
+        if (r.width && b.width) {
+          const p0 = SvgSpace.fromClient(L.svgEl, r.x, r.y), p1 = SvgSpace.fromClient(L.svgEl, r.x + r.width, r.y + r.height);
+          const k = (p1.x - p0.x) / b.width;
+          out.push({ x: p0.x - b.x * k, y: p0.y - b.y * k });
+        }
         if (home !== '0') twin = true;
         if (document.getElementById('bt-hand').classList.contains('bt-float')) glow = true;
       }
@@ -539,7 +578,7 @@ const harness = require('./harness');
                  held: !!document.getElementById('bt-held'), homing: !!document.getElementById('bt-homing') });
     };
     requestAnimationFrame(tick);
-  }), stage);
+  }), [stage, NOT_BODY]);
   const arc = (p) => {
     if (p.length < 8) return null;
     const a = p[0], b = p[p.length - 1];
@@ -730,6 +769,20 @@ const harness = require('./harness');
     // Ждём, пока уляжется и вспышка от самого шага: искра нарочно шире
     // пузыря, а здесь мерится блик.
     await page.waitForTimeout(3400);
+    // Три снимка с паузой, по каждой группе — медиана: один снимок мог
+    // попасть на кадр со вспышкой или на шаг перерисовки (блики пишутся не
+    // каждый кадр), и «в покое сверху слева» плавало (−0.46, −0.02 у одной
+    // группы при остальных верных) — замер на ходу, а не беда игры
+    // (CLAUDE.md, правило замера).
+    const shots = [];
+    for (let k = 0; k < 3; k++) { if (k) await page.waitForTimeout(180); shots.push(await shot()); }
+    const med = (v) => v.slice().sort((a, b) => a - b)[1];
+    const G = [0, 1, 2].map(g => shots.every(s => s.G[g])
+      ? { cx: med(shots.map(s => s.G[g].cx)), cy: med(shots.map(s => s.G[g].cy)), far: med(shots.map(s => s.G[g].far)) }
+      : shots[0].G[g]);
+    return Object.assign({}, shots[2], { G, far: G.reduce((s, g) => s + (g ? g.far : 0), 0) });
+  };
+  const shot = () => {
     return page.evaluate(() => {
       const L = LustMinigame, bs = L._glintTop || [], ctx = L.glintCtx;
       // Одинокий — чей блик не перекрывают блики соседей (блик рисуется
@@ -764,7 +817,13 @@ const harness = require('./harness');
   check(g0.G.every(Boolean), 'одинокий пузырь нашёлся в каждой из трёх групп');
   if (g0.G.every(Boolean)) {
     const [B, M, S] = g0.G;
-    check(g0.G.every(g => g.cx < -0.05 && g.cy < -0.05), `в покое блик у всех групп сверху слева (${g0.G.map(f2).join(' | ')})`);
+    // Мелкие по замыслу лежат «ниже и левее» (покой y −0.14, GLINT.groups),
+    // а центр яркости маленького пузыря по нескольким точкам сжимается к
+    // середине: замер −0.08 при пороге −0.05 был монеткой (CLAUDE.md,
+    // правило замера), и смена выбранного пузыря давала −0.02. Поэтому у
+    // мелких сторона «слева» строгая, а «сверху» — «не ниже середины».
+    check(g0.G.every((g, i) => g.cx < -0.05 && g.cy < (i === 2 ? 0.03 : -0.05)),
+          `в покое блик у всех групп сверху слева (мелкие — слева и не ниже середины) (${g0.G.map(f2).join(' | ')})`);
     check(B.cy < S.cy - 0.12 && S.cx < B.cx - 0.12, `группы разнесены: у крупных блик выше и правее, у мелких ниже и левее (крупные ${f2(B)}, мелкие ${f2(S)})`);
     const m = (g) => g.G[1] || { cx: 0, cy: 0 };
     check(m(gR).cx < m(gL).cx - 0.2, `наклон вправо — блик на ЛЕВОМ боку, влево — на правом (${m(gR).cx.toFixed(2)} против ${m(gL).cx.toFixed(2)})`);
@@ -867,6 +926,126 @@ const harness = require('./harness');
   // край холста — не больше 5% своего размера. Отпущенный там же парит в
   // пределах (сверху — с запасом на покачивание). Меряется НАРИСОВАННЫЙ
   // предмет (без ореола и убранства), флакон — самый крупный, ступень 8.
+  // ================= 7а. ХОЛСТ РАЗМЕРОМ С ВЕЩЬ =================
+  // Живые вещи (колба, волшебный флакон, конняку, облако) лежат на СВОИХ
+  // маленьких холстах — на полке и в руке, — чтобы их правка перерисовывала
+  // холст размером с вещь, а не весь экран (docs/traps.md, п. 156). Окно
+  // холста взято замером с запасом (BATH_SOAP.PAD, BATH_CLOTH.PAD) — и
+  // проверяется здесь: снимок вещи с обрезкой по её холсту и без обрезки
+  // (overflow: visible) обязан совпасть ДО ТОЧКИ. Живые ступени — в
+  // нескольких кадрах своего цикла: сияние дышит, облако течёт.
+  // И слой: только у живой видимой вещи и размером с неё (layersNow).
+  say('\n======== ХОЛСТ РАЗМЕРОМ С ВЕЩЬ: НИЧЕГО НЕ СРЕЗАНО, СЛОЙ МАЛЕНЬКИЙ ========');
+  const clipSame = async (id) => {
+    const r = await page.evaluate((id) => {
+      BATH_SOAP.frozen = true;
+      window.__anims = document.getAnimations().filter(a => a.playState === 'running');
+      window.__anims.forEach(a => a.pause());
+      // Червь — display, а не visibility и не прозрачностью: ухо у него с
+      // visibility: visible и из-под скрытого предка вылезает (docs/traps.md,
+      // п. 96), а прозрачность хоста перебивает его же анимация прозрачности,
+      // поставленная на паузу строкой выше (пауза держит своё значение). Тогда
+      // ухо оставалось видно и шевелилось между двумя снимками — проверка
+      // плавала, называя ухо срезом вещи.
+      const w = document.getElementById('bt-worm').style; w.display = 'none';
+      const b = document.getElementById(id).getBoundingClientRect();
+      return { x: b.x, y: b.y, w: b.width, h: b.height };
+    }, id);
+    const V = page.viewportSize(), M = 60;
+    const x = Math.max(0, Math.floor(r.x - M)), y = Math.max(0, Math.floor(r.y - M));
+    const clip = { x, y, width: Math.min(V.width, Math.ceil(r.x + r.w + M)) - x, height: Math.min(V.height, Math.ceil(r.y + r.h + M)) - y };
+    await page.waitForTimeout(80);
+    const a = await page.screenshot({ clip });
+    await page.evaluate((id) => { document.getElementById(id).style.overflow = 'visible'; }, id);
+    await page.waitForTimeout(80);
+    const b = await page.screenshot({ clip });
+    await page.evaluate((id) => {
+      document.getElementById(id).style.overflow = '';
+      document.getElementById('bt-worm').style.display = '';
+      (window.__anims || []).forEach(a => a.play());
+      BATH_SOAP.frozen = false;
+    }, id);
+    if (r.w <= 0) return false;
+    if (a.equals(b)) return true;
+    // Не совпало байт в байт — смотрим, ГДЕ разошлось. Смена обрезки сама
+    // перерастрирует холст, и внутри окна точки расходятся на единицы–
+    // десятки яркости (сглаживание полупрозрачного под масштабом холста) —
+    // это не срез. Срез — то, что без обрезки появилось ЗА окном: точки
+    // снаружи прямоугольника холста (с точкой запаса на сглаживание края).
+    // Вкл. CLIPDBG=1 — снимки провала кладутся рядом с остальными.
+    const n = await page.evaluate(async ([A, B, box]) => {
+      const load = async (b64) => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode();
+        const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+        const x = c.getContext('2d'); x.drawImage(im, 0, 0); return { d: x.getImageData(0, 0, c.width, c.height).data, w: c.width }; };
+      const P = await load(A), Q = await load(B), p = P.d, q = Q.d, W = P.w, k = W / box.cw;
+      const x0 = (box.x - 1) * k, y0 = (box.y - 1) * k, x1 = (box.x + box.w + 1) * k, y1 = (box.y + box.h + 1) * k;
+      // Только кольцо вокруг холста (40 точек): срезанное лежит у его краёв,
+      // а дальше в снимок попадает чужое (кромка дождя, вуаль), что живёт
+      // своей жизнью.
+      const R = 40 * k;
+      let n = 0;
+      for (let i = 0; i < p.length; i += 4) {
+        const x = (i / 4) % W, y = Math.floor(i / 4 / W);
+        if (x >= x0 && x < x1 && y >= y0 && y < y1) continue;
+        if (x < x0 - R || x >= x1 + R || y < y0 - R || y >= y1 + R) continue;
+        if (Math.max(Math.abs(p[i] - q[i]), Math.abs(p[i + 1] - q[i + 1]), Math.abs(p[i + 2] - q[i + 2])) > 24) n++;
+      }
+      return n;
+    }, [a.toString('base64'), b.toString('base64'), { x: r.x - clip.x, y: r.y - clip.y, w: r.w, h: r.h, cw: clip.width }]);
+    if (n >= 4 && process.env.CLIPDBG) { require('fs').writeFileSync(out + `clip-${id}-a.png`, a); require('fs').writeFileSync(out + `clip-${id}-b.png`, b); say(`    срез ${id}: ${n} точек, холст ${JSON.stringify(r)} снимок ${JSON.stringify(clip)}`); }
+    return n < 4;
+  };
+  // Ступени возвращаются после раздела: дальше проверки ведут вещь к краю
+  // экрана и меряют её ТЕЛО, а у облака пух и сияние в тело не входят.
+  const lv0 = await page.evaluate(() => ({ soap: BATH_SOAP.level(), cloth: BATH_CLOTH.level() }));
+  await page.evaluate(() => { const L = LustMinigame; L.close(); L.open(); });
+  await page.waitForTimeout(600);
+  const clipBad = [];
+  for (let n = 0; n < tiers; n++) {
+    await page.evaluate((n) => { LustDebug.setLevel('soap', n); LustDebug.setLevel('cloth', n);
+      BATH_SOAP.refresh(); BATH_CLOTH.refresh(); }, n);
+    const live = n >= 7;
+    // Живой вещи — время прийти в себя: небо флакона подставляется
+    // картинкой позже (Worker), и снимок посреди подстановки — не срез.
+    await page.waitForTimeout(live ? 900 : 300);
+    for (let k = 0; k < (live ? 4 : 1); k++) {
+      for (const id of ['bt-soap-box', 'bt-cloth-box']) if (!(await clipSame(id))) clipBad.push(`${id}:${n}`);
+      if (live) await page.waitForTimeout(700);
+    }
+  }
+  check(!clipBad.length, `на полке холст вещи ничего не срезает (9 + 9 ступеней, живые — 4 кадра цикла): ${clipBad.join(', ') || 'всё целое'}`);
+  const shelfL = await layersNow();
+  check(shelfL.length === 2 && shelfL.every(l => /^bt-(soap|cloth)-box$/.test(l.id) && l.share < 0.25),
+        `на полке живые мыло и мочалка — слоем ровно их холсты, каждый меньше четверти сцены (${shelfL.map(l => `${l.id} ${(l.share * 100).toFixed(0)}%`).join(', ')})`);
+  const handBad = [], handL = [];
+  for (const n of [7, 8]) {
+    await page.evaluate((n) => { const L = LustMinigame; L.close(); L.open();
+      LustDebug.setLevel('soap', n); LustDebug.setLevel('cloth', n); BATH_SOAP.refresh(); BATH_CLOTH.refresh(); L.startWater(); }, n);
+    for (const kind of ['soap', 'cloth']) {
+      if (kind === 'cloth') await page.evaluate(() => { const L = LustMinigame; L.rub = 1; L.growTo('soap', 1); L.finishStage('soap'); });
+      for (let i = 0; i < 60 && !(await page.evaluate((k) => LustMinigame.phase === k && LustMinigame.loose && !LustMinigame.liftRaf, kind)); i++) await page.waitForTimeout(200);
+      // Мягкая вещь, снятая с полки, ещё секунду округляется упругим качем
+      // (BATH_CLOTH.reshape) — своим циклом, который «мыло замерло» не
+      // останавливает: снимки посреди кача разошлись бы и без всякого среза.
+      await page.waitForTimeout(1500);
+      for (let k = 0; k < 4; k++) {
+        if (!(await clipSame('bt-hand'))) handBad.push(`${kind}:${n}`);
+        await page.waitForTimeout(600);
+      }
+      handL.push(`${kind} ${n}: ` + (await layersNow()).map(l => `${l.id} ${(l.share * 100).toFixed(0)}%`).join(', '));
+      const L = await layersNow();
+      // Порог — треть сцены, а не четверть: волшебный флакон в руке на
+      // плане мытья вместе со своим сиянием — около 23% (замер), и порог
+      // на самом замере был бы монеткой (docs/traps.md, п. 137). Прежний
+      // холст руки — 100%.
+      if (!L.some(l => l.id === 'bt-hand-at') || !L.every(l => /^bt-(soap-box|cloth-box|hand-at)$/.test(l.id) && l.share < 1 / 3)) handBad.push(`слои ${kind}:${n}`);
+    }
+  }
+  say('  ' + handL.join(' | '));
+  await page.evaluate((v) => { LustMinigame.returnTool(); LustDebug.setLevel('soap', v.soap); LustDebug.setLevel('cloth', v.cloth);
+    BATH_SOAP.refresh(); BATH_CLOTH.refresh(); }, lv0);
+  check(!handBad.length, `в руке (парит) холст вещи ничего не срезает и он — слой размером с вещь (меньше трети сцены), полноэкранных слоёв нет (колба, флакон, конняку, облако): ${handBad.join(', ') || 'всё целое'}`);
+
   say('\n======== МЫЛО И МОЧАЛКА НЕ УХОДЯТ ЗА КРАЙ ========');
   await page.evaluate(() => { const L = LustMinigame; L.close(); L.open();
     LustDebug.setLevel('soap', 8); BATH_SOAP.refresh(); L.startWater(); });
@@ -878,10 +1057,13 @@ const harness = require('./harness');
     // Пар из горла флакона (пузыри, поднимающиеся над пробкой) — не тело.
     const hide = Array.from(h.querySelectorAll(NOT_BODY + ', .bsm-bub, .bsm-vapor')).filter(el => el.getAttribute('display') !== 'none');
     hide.forEach(el => el.setAttribute('display', 'none'));
-    const b = h.getBBox();
+    // Габарит тела НА ЭКРАНЕ → единицы холста ванной (как палец прогона,
+    // через SvgSpace): чем вещь двигают — атрибутом или обёрткой, — проверке
+    // всё равно.
+    const r = h.getBoundingClientRect();
     hide.forEach(el => el.removeAttribute('display'));
-    const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(h.getAttribute('transform') || '');
-    const x = b.x + (m ? +m[1] : 0), y = b.y + (m ? +m[2] : 0);
+    const p0 = SvgSpace.fromClient(L.svgEl, r.x, r.y), p1 = SvgSpace.fromClient(L.svgEl, r.x + r.width, r.y + r.height);
+    const b = { width: p1.x - p0.x, height: p1.y - p0.y }, x = p0.x, y = p0.y;
     // Край — видимая область svg руки (он вписан с обрезкой под шапкой
     // окна), а не рамка холста.
     const V = L.handView();
@@ -922,9 +1104,9 @@ const harness = require('./harness');
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);
   const after = await page.evaluate(() => ({ raf: BATH_SOAP.live.raf,
-    float: document.getElementById('bt-hand').classList.contains('bt-float'),
-    layers: ['bt-shelf', 'bt-hand'].filter(id => document.getElementById(id).classList.contains('bt-live')) }));
-  check(!after.raf && !after.layers.length && !after.float, 'ванная закрыта — цикл стоит, слоёв нет, ничего не парит');
+    float: document.getElementById('bt-hand').classList.contains('bt-float') }));
+  const afterL = await liveLayers();
+  check(!after.raf && !afterL.length && !after.float, `ванная закрыта — цикл стоит, слоёв нет, ничего не парит (${afterL.join() || 'слоёв нет'})`);
 
   say('');
   errors.forEach(e => say('  ' + e));
