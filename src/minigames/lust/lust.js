@@ -2057,33 +2057,51 @@ const LustMinigame = {
         this.homeShown(kind, false, true);
         this.setHeld(BATH_ART.held(kind, c.s, a));
         this.loose = { kind, at: a, pos: to, k: c.s * K };
-        const held = this.el('bt-held'), t0 = performance.now();
+        const held = this.el('bt-held'), hand = this.el('bt-hand');
         // Мягкая вещь (конняку) снятая с полки округляется: на полке она
         // осела под своим весом, в воздухе — шар.
         if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'lift');
-        // Вещь в воздухе крупнее полочной (она «в руке» у игры), поэтому
-        // подъём начинается с полочного размера: на старте картинка ровно
-        // та, что лежала, и скачка нет.
-        // Время кадра (t у requestAnimationFrame) — НАЧАЛО кадра, и оно
-        // бывает РАНЬШЕ t0, снятого через performance.now(): доля пути тогда
-        // отрицательная, а кривая её не прощает — за пределами [0, 1] она
-        // выносит вещь за путь. Полёт домой однажды поставил мыло на высоту
-        // 11234 при масштабе 2.3; на айфоне кадры реже, разрыв больше, и
-        // мочалку в начале подъёма «трясло». Поэтому доля всюду зажата снизу
-        // нулём. И первый кадр ставится СРАЗУ: без transform вещь на кадр
-        // рисовалась в углу холста, а полочная уже спрятана — мигание.
-        const step = (t) => {
-            const u = Math.max(0, Math.min(1, (t - t0) / this.LIFT_MS)), e = 1 - Math.pow(1 - u, 3);
-            const m = 1 / K + (1 - 1 / K) * e, y = from.y + (to.y - from.y) * e;
-            if (this.el('bt-held') !== held || !this.loose) { this.liftRaf = 0; return; }
-            held.setAttribute('transform',
-                `translate(${from.x.toFixed(1)} ${y.toFixed(1)}) scale(${m.toFixed(4)})`);
-            if (u < 1) { this.liftRaf = requestAnimationFrame(step); return; }
-            this.liftRaf = 0;
+        // Подъём делает НЕ атрибут вещи внутри svg, а видеокарта — тем же
+        // приёмом, что и парение: вещь сразу стоит на своём месте и в своём
+        // размере, а весь холст руки едет снизу и растёт из полочного
+        // размера (css-transform элемента страницы, WAAPI). Пока подъём писал
+        // transform группы каждый кадр, айфон (WebKit) рисовал холст руки
+        // со сдвигом, который менялся вместе с картинкой: мочалку на подъёме
+        // водило влево-вправо на 2–3 точки, а со стартом парения она
+        // прыгала ещё на 3–4 (запись экрана игрока; в Chromium этого нет).
+        // Заодно подъём ничего не перерисовывает.
+        held.setAttribute('transform', `translate(${to.x.toFixed(1)} ${to.y.toFixed(1)})`);
+        if (!hand || typeof hand.animate !== 'function') { this.floatTool(true); return; }
+        this.liftStop();
+        // Холст руки в единицах сцены: пиксель css внутри него — единица.
+        // Начало — полочная копия: тот же низ (from) и полочный масштаб
+        // вокруг точки, за которую вещь держат.
+        hand.style.transformOrigin = `${to.x.toFixed(1)}px ${to.y.toFixed(1)}px`;
+        this.liftAnim = hand.animate([
+            { transform: `translate(0px, ${(from.y - to.y).toFixed(1)}px) scale(${(1 / K).toFixed(4)})` },
+            { transform: 'translate(0px, 0px) scale(1)' }
+        ], { duration: this.LIFT_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
+        // Цикл — только сторож: кончился подъём — парение; вещь взяли или
+        // сменили — подъём снят (liftStop). liftRaf живёт, пока идёт подъём:
+        // по нему ждут и игра, и прогоны.
+        const step = () => {
+            if (this.el('bt-held') !== held || !this.loose) { this.liftStop(); return; }
+            const A = this.liftAnim;
+            if (A && A.playState !== 'finished') { this.liftRaf = requestAnimationFrame(step); return; }
+            this.liftStop();
             this.floatTool(true);
         };
-        held.setAttribute('transform', `translate(${from.x.toFixed(1)} ${from.y.toFixed(1)}) scale(${(1 / K).toFixed(4)})`);
         this.liftRaf = requestAnimationFrame(step);
+    },
+
+    // Снять подъём: сторож и анимацию холста руки. Без этого вещь, взятая
+    // пальцем посреди подъёма, ехала бы ещё и вместе с холстом.
+    liftStop() {
+        cancelAnimationFrame(this.liftRaf);
+        this.liftRaf = 0;
+        if (this.liftAnim) { this.liftAnim.cancel(); this.liftAnim = null; }
+        const hand = this.el('bt-hand');
+        if (hand) hand.style.transformOrigin = '';
     },
 
     // Парение и свечение. Качается НЕ группа внутри svg, а сам холст руки
@@ -2097,7 +2115,7 @@ const LustMinigame = {
     // его кадре, а светится он сам — сиянием и лучами вокруг, которые
     // возвращаются, как только флакон отпущен (bath-soap.js, applyFrame).
     floatTool(on) {
-        if (!on) { cancelAnimationFrame(this.liftRaf); this.liftRaf = 0; }
+        if (!on) this.liftStop();
         const n = this.el('bt-hand');
         if (!n) return;
         // Облако из ночи (мочалка, ступень 8) — так же: светится своим
@@ -2234,6 +2252,8 @@ const LustMinigame = {
     // Вещь в руке — одна. Заменяется ТОЛЬКО она: рядом может ещё лететь на
     // полку прошлая вещь (flyHome), и стирать весь холст руки нельзя.
     setHeld(html) {
+        // Новая вещь в руке не едет с холстом недоигранного подъёма.
+        if (this.liftAnim) this.liftStop();
         const old = this.el('bt-held');
         if (old) old.remove();
         this.fgEl.insertAdjacentHTML('beforeend', `<g id="bt-held">${html}</g>`);
