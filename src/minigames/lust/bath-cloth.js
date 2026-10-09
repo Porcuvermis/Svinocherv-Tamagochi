@@ -1789,8 +1789,8 @@ const BATH_CLOTH = {
     // Жить в игре. Двигаются ТОЛЬКО transform комочков ([data-lump]) — общим
     // живым циклом ванной (bath-soap.js, wake): пока ванная открыта и вещь
     // видна, не под магазином и не на переезде камеры. Иконка магазина —
-    // шар без движения. Посадка меняется правкой `d` ТОЛЬКО во время
-    // перехода (reshape: подняли, положили), дальше — ни одной записи. Без
+    // шар без движения. Посадка (полка — осела, рука — шар) рисуется сразу
+    // нужной, а переход между ними — масштабом холста (squashOf). Без
     // фильтров, масок и прозрачности групп (traps, п. 73): прозрачность на
     // фигурах и в стопах. Клип по внутренней стенке — на двух группах без
     // прозрачности (не отдельный буфер смешивания): без него комочки
@@ -1798,7 +1798,7 @@ const BATH_CLOTH = {
     //
     // Рисуется в координатах сцены, как в наброске, и сводится к гнезду
     // одним transform (как рукавица).
-    KONJAC: { T: 8, LIFT_MS: 1600 },
+    KONJAC: { T: 8 },
     kt: 0,              // часы комочков: идут, только пока они двигаются
     ktShown: 0,         // поза, записанная последней (пишется реже, чем идут часы)
 
@@ -2273,62 +2273,29 @@ const BATH_CLOTH = {
         if (art) art.put(this.liveNodes(r, art), art.pose(this.ktShown), this.liveSet);
     },
 
-    // Посадка: sag → атрибуты контура и всего, что к нему привязано.
-    // Пишется только изменившееся.
-    sagTo(r, s) {
-        const art = this.liveArt(r);
-        if (art) art.sag(this.liveNodes(r, art), s, this.liveSet);
-    },
+    // Осадка мягкой мочалки в руке и в полёте — масштабом холста, а не
+    // правкой картинки (lust.js, squashTf: правка всей формы на каждом
+    // кадре на айфоне скакала). Здесь — чем её изобразить: насколько вещь
+    // на полке шире и ниже шара (как её осадка sag = 1 — у облака матрица
+    // группы, у конняку та же матрица комочков, контур чуть шире) и вокруг
+    // какой точки — середины низа вещи, где осадка и закреплена.
+    //
+    // Точка берётся с ЭКРАНА — по габариту того, что оседает (у конняку —
+    // контур пузыря, у облака — группа осадки), в точках холста от его угла:
+    // так её ждёт transform-origin. getCTM для этого не годится: у
+    // внешнего svg Chromium включает в него окно холста (viewBox), и точка
+    // уезжала на полвещи вниз; как это делает WebKit — вопрос браузера.
+    SQUASH: { konjac: { k: [1.08, 0.93], el: 's' }, cloud: { k: [1.06, 0.92], el: 'sag' } },
 
-    // Переход посадки — ТОЛЬКО пока вещь поднимают или кладут, потом ни
-    // одной записи. root — холст или группа, где лежит копия (без живой
-    // ступени — ничего). 'lift': полка → рука, осевшая округляется с
-    // упругим качем (вытянется и вернётся); первый кадр ставится сразу, до
-    // отрисовки. 'land': рука → полка за dur мс полёта домой; вторую
-    // половину пути оседает с качем и к посадке ровно осевшая — копия на
-    // полке встаёт на её место без подмены. На переезде камеры переход
-    // доводится сразу: сцена едет готовой текстурой (docs/traps.md, п. 150).
-    // hold — переход стоит в начальной форме, пока его не пустят
-    // (reshapeGo): подъём трогается не сразу, а когда тяжёлый кадр сборки
-    // вещи в руке уже показан (lust.js, liftTool), и часы у них общие.
-    reshape(root, mode, dur, hold) {
-        const r = this.liveRoot(root);
-        if (!r || !this.liveArt(r) || typeof requestAnimationFrame === 'undefined') return;
-        const lift = mode === 'lift', ms = lift ? this.KONJAC.LIFT_MS : Math.max(1, dur || 600);
-        const curve = lift
-            ? (u) => Math.exp(-3.6 * u) * Math.cos(2 * Math.PI * 1.25 * u) * (1 - u * u * u)
-            : (u) => { const v = Math.max(0, (u - 0.5) / 0.5); return 1 - Math.exp(-4 * v) * Math.cos(2 * Math.PI * 1.2 * v) * (1 - v * v * v); };
-        const M = this._morphs || (this._morphs = new Map());
-        if (M.has(r)) cancelAnimationFrame(M.get(r).raf);
-        const job = { end: () => this.sagTo(r, lift ? 0 : 1), raf: 0, hold: !!hold, t0: performance.now() };
-        const step = (t) => {
-            if (!r.isConnected) { M.delete(r); return; }
-            if (job.hold) { job.raf = requestAnimationFrame(step); return; }
-            const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
-            // Доля зажата снизу нулём: время кадра бывает раньше t0, а
-            // упругая кривая за пределами [0, 1] раскачивает вещь (lust.js,
-            // liftTool).
-            const u = L0 && L0.camTimer ? 1 : Math.max(0, Math.min(1, (t - job.t0) / ms));
-            this.sagTo(r, curve(u));
-            if (u < 1) job.raf = requestAnimationFrame(step); else M.delete(r);
-        };
-        this.sagTo(r, curve(0));
-        M.set(r, job);
-        job.raf = requestAnimationFrame(step);
-    },
-
-    // Пустить переход, стоявший в начальной форме (reshape с hold), с
-    // момента t — времени кадра, в котором тронулся подъём.
-    reshapeGo(root, t) {
-        const r = this.liveRoot(root), job = r && this._morphs && this._morphs.get(r);
-        if (job && job.hold) { job.hold = false; job.t0 = t != null ? t : performance.now(); }
-    },
-
-    // Ушли из ванной — переходы доводятся сразу и больше не крутятся.
-    stop() {
-        if (!this._morphs) return;
-        this._morphs.forEach((job, r) => { cancelAnimationFrame(job.raf); if (r.isConnected) job.end(); });
-        this._morphs.clear();
+    squashOf(svg) {
+        const r = this.liveRoot(svg);
+        const S = r && this.SQUASH[r.classList.contains('bt-cloth-konjac') ? 'konjac' : r.classList.contains('bt-cloth-cloud') ? 'cloud' : ''];
+        const g = S && r.querySelector(`[data-j="${S.el}"]`);
+        if (!g) return null;
+        const sr = svg.getBoundingClientRect(), gr = g.getBoundingClientRect();
+        if (!sr.width || !gr.width) return null;
+        const k = (parseFloat(svg.style.width) || svg.clientWidth) / sr.width;
+        return { sx: S.k[0], sy: S.k[1], x: ((gr.left + gr.right) / 2 - sr.left) * k, y: (gr.bottom - sr.top) * k };
     }
 };
 

@@ -1019,14 +1019,9 @@ onmessage = async (e) => {
                 const work = L0 && (L0.phase === 'soap' || L0.phase === 'cloth') ? L0.phase : null;
                 Lv.away = work ? (work === 'soap' ? '#bt-cloth-home' : '#bt-soap-home') : null;
                 const doze = !!Lv.away && Lv.roots.some(r => r.classList.contains('bt-soap-magic') && r.closest(Lv.away));
-                // Вещь в руке поднимается с полки — её картинка стоит, и часы
-                // флакона тоже (lust.js, liftTool: правка масштабируемого
-                // холста на айфоне сдвигает его, вещь «прыгает»). Других живых
-                // копий на экране в это время нет: полочная спрятана.
-                const lifting = !!(L0 && L0.liftAnim);
                 Lv.rub = rub;
                 Lv.sp = Math.max(0, Math.min(1, (Lv.sp == null ? 1 : Lv.sp) + (rub || doze ? -dt : dt) / 0.4));
-                if (!lifting) Lv.mt = (Lv.mt || 0) + dt * Lv.sp * Lv.sp * (3 - 2 * Lv.sp);
+                Lv.mt = (Lv.mt || 0) + dt * Lv.sp * Lv.sp * (3 - 2 * Lv.sp);
                 const L = this.lean(Lv.mt), k = 0.2;
                 Lv.px += (L.x - Lv.px) * k;
                 Lv.py += (L.y - Lv.py) * k;
@@ -1051,7 +1046,6 @@ onmessage = async (e) => {
                 const vis = Lv.roots.filter(r => {
                     // Живая мочалка и колба на иконке магазина стоят.
                     const kj = cloth(r), fl = isFlask(r);
-                    if (lifting && r.closest('#bt-held')) return false;
                     if ((kj || fl) && r.closest('#bt-shop')) return false;
                     if (shop && !r.closest('#bt-shop')) return false;
                     const h = r.closest('#bt-soap-home, #bt-cloth-home');

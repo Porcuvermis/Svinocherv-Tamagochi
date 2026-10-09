@@ -308,7 +308,6 @@ const LustMinigame = {
         // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
         // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
-        if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.stop();
         this.glintStop();
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
@@ -2159,17 +2158,9 @@ const LustMinigame = {
         const a = BATH_ART.slots()[kind], c = this.cam, K = BATH_ART.DRAG_SCALE;
         const from = { x: c.tx + c.s * a.x, y: c.ty + c.s * a.y };
         const to = { x: from.x, y: from.y - this.LIFT };
-        // Полочная копия прячется СРАЗУ: летящая начинает ровно с её места и
-        // размера, и плавное угасание дало бы на миг двойника.
-        this.homeShown(kind, false, true);
         this.setHeld(kind, c.s, a);
         this.loose = { kind, at: a, pos: to, k: c.s * K };
         const held = this.el('bt-held'), hand = this.el('bt-hand');
-        // Мягкая вещь (конняку) снятая с полки округляется: на полке она
-        // осела под своим весом, в воздухе — шар.
-        // Скругление стоит в полочной форме весь подъём и начинается с
-        // парением (ниже).
-        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'lift', 0, true);
         // Подъём делает НЕ атрибут вещи внутри svg, а видеокарта — тем же
         // приёмом, что и парение: вещь сразу стоит на своём месте и в своём
         // размере, а весь холст руки едет снизу и растёт из полочного
@@ -2181,70 +2172,115 @@ const LustMinigame = {
         // Заодно подъём ничего не перерисовывает.
         this.placeCarry(hand, to);
         if (!hand || typeof hand.animate !== 'function') {
-            if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(held);
+            this.homeShown(kind, false, true);
             this.floatTool(true);
             return;
         }
         this.liftStop();
-        // Холст руки — размером с вещь, в обёртке, начало которой — точка
-        // хвата. Подъём начинается с полочной копии: тот же низ (from) и
-        // полочный масштаб вокруг точки, за которую вещь держат, — она
-        // лежит в холсте в _btO от его угла (fitCarry). Сдвиг — в точках
-        // обёртки сцены (единица холста ванной × m).
-        const O = hand._btO || { x: 0, y: 0 }, m = this.stageMap().m;
-        hand.style.transformOrigin = `${O.x.toFixed(2)}px ${O.y.toFixed(2)}px`;
-        this.liftAnim = hand.animate([
-            { transform: `translate(0px, ${((from.y - to.y) * m).toFixed(2)}px) scale(${(1 / K).toFixed(4)})` },
-            { transform: 'translate(0px, 0px) scale(1)' }
-        ], { duration: this.LIFT_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
         // Подъём ТРОГАЕТСЯ не здесь, а через кадр. Кадр, в котором вещь
         // собирается в руке (новый холст, его слой, снятый слой полки), на
-        // айфоне длится 70 мс (самописец, мочалка 7), а часы анимации в это
-        // время уже шли: первым показанным кадром вещь оказывалась на трети
-        // пути и на 5% крупнее — скачок с полки, а дальше плавно. Поэтому
-        // подъём стоит на начале, пока тяжёлый кадр не показан, и только со
-        // следующего кадра идёт с нуля.
-        //
-        // ПОКА ХОЛСТ МАСШТАБИРУЕТСЯ, КАРТИНКА НА НЁМ СТОИТ. Игрок: «мочалка
-        // прыгает от взлёта до начала спокойного парения». Парение — тот же
-        // холст, та же видеокарта, и картинка на нём живёт (облако течёт,
-        // конняку доскругляется) — и оно спокойное. Отличие подъёма — МАСШТАБ
-        // холста: WebKit, перерисовывая масштабируемый слой, ставит его со
-        // сдвигом, который меняется с каждой новой картинкой (тот же сдвиг на
-        // 2–3 точки, что был, пока подъём писал transform группы, выше).
-        // Поэтому всё, что правит вещь в руке, на подъёме молчит: живой цикл
-        // её пропускает и не двигает её часы (BATH_SOAP.wake), а упругое
-        // скругление мягкой мочалки начинается вместе с парением.
-        this.liftAnim.pause();
-        this.liftAnim.currentTime = 0;
+        // айфоне длится 70–100 мс (самописец), и часы, пущенные до него,
+        // показывали первым кадром уже треть подъёма (docs/traps.md, п. 158).
+        // Пока он рисуется, на экране — ПОЛОЧНАЯ копия, а холст руки
+        // прозрачен (прозрачность слоя — видеокарта, без перерисовки).
+        // Анимация на паузе в нуле для этого не годится: остановленную
+        // WAAPI-анимацию WebKit рисует сам, главным потоком, и на видео
+        // игрока мочалка в эти три кадра стояла на 4 точки ниже полочной.
+        hand.parentNode.style.opacity = '0';
+        this.liftPending = kind;
         let wait = 2;
         // Цикл — только сторож: кончился подъём — парение; вещь взяли или
         // сменили — подъём снят (liftStop). liftRaf живёт, пока идёт подъём:
         // по нему ждут и игра, и прогоны.
-        const step = (t) => {
+        const step = () => {
             if (this.el('bt-held') !== held || !this.loose) { this.liftStop(); return; }
+            if (wait && --wait) { this.liftRaf = requestAnimationFrame(step); return; }
+            if (this.liftPending) this.liftGo(kind, hand, from, to);
             const A = this.liftAnim;
-            if (wait && --wait === 0 && A) A.play();
             if (A && A.playState !== 'finished') { this.liftRaf = requestAnimationFrame(step); return; }
-            this.liftStop(t);
+            this.liftStop();
             this.floatTool(true);
         };
         this.liftRaf = requestAnimationFrame(step);
     },
 
+    // Подъём тронулся: полочная копия прячется и холст руки появляется в
+    // одном кадре — летящая начинает ровно с её места и размера, а плавное
+    // угасание дало бы на миг двойника.
+    //
+    // Холст руки — размером с вещь, в обёртке, начало которой — точка хвата.
+    // Подъём начинается с полочной копии: тот же низ (from) и полочный
+    // масштаб вокруг точки, за которую вещь держат, — она лежит в холсте в
+    // _btO от его угла (fitCarry). Сдвиг — в точках обёртки сцены (единица
+    // холста ванной × m). Мягкая мочалка вдобавок расправляется из осевшей
+    // в шар (squashKeys) — той же анимацией, поэтому кадры — выборка кривых
+    // с линейным ходом между ними.
+    liftGo(kind, hand, from, to) {
+        this.liftPending = null;
+        this.homeShown(kind, false, true);
+        hand.parentNode.style.opacity = '';
+        const K = BATH_ART.DRAG_SCALE, O = hand._btO || { x: 0, y: 0 }, m = this.stageMap().m;
+        const Q = kind === 'cloth' && typeof BATH_CLOTH !== 'undefined' ? BATH_CLOTH.squashOf(hand) : null;
+        const TY = (from.y - to.y) * m, N = Q ? 24 : 1, keys = [];
+        hand.style.transformOrigin = `${O.x.toFixed(2)}px ${O.y.toFixed(2)}px`;
+        for (let i = 0; i <= N; i++) {
+            const u = i / N, e = Q ? 1 - Math.pow(1 - u, 3) : u;
+            keys.push({ transform: `translate(0px, ${(TY * (1 - e)).toFixed(2)}px) scale(${(1 / K + (1 - 1 / K) * e).toFixed(4)})`
+                + (Q ? this.squashTf(Q, O, this.squashQ(u)) : '') });
+        }
+        // Без мягкой мочалки — два кадра и та же кривая замедления.
+        this.liftAnim = hand.animate(keys, { duration: this.LIFT_MS, easing: Q ? 'linear' : 'cubic-bezier(0.33, 1, 0.68, 1)' });
+    },
+
+    // ОСАДКА МЯГКОЙ МОЧАЛКИ — ВИДЕОКАРТОЙ. Конняку и облако на полке осели
+    // (шире и ниже), в руке — шар. Раньше переход правил саму картинку на
+    // каждом кадре (группу осадки, у конняку — и контур). Видео с айфона:
+    // пока шёл этот переход, мочалка 7 и 8 скакала на ±5% ширины и ±6
+    // точек от кадра к кадру, хотя записанные значения шли плавно
+    // (1.06 → 1 → 0.98); переехал переход на начало парения — туда же
+    // переехали и скачки. Мыло 8 правит себя не меньше, но мелкими
+    // вещицами, а не формой целиком, и не скакало ни разу. Значит, WebKit
+    // не успевает за картинкой, у которой каждый кадр меняется ВСЯ форма.
+    // Теперь картинка в руке и в полёте не меняется вовсе: нарисован шар, а
+    // осадку даёт масштаб холста вокруг низа вещи (BATH_CLOTH.squashOf).
+    //
+    // q — доля осадки: 1 — как на полке, 0 — шар. С полки: из осевшей в шар
+    // с одним мягким перелётом (вытянулась на десятую долю осадки и
+    // вернулась) и нулевой скоростью в конце.
+    squashQ(u) {
+        return Math.pow(1 - u, 2) * Math.cos(1.5 * Math.PI * u);
+    },
+    squashTf(Q, O, q) {
+        const dx = Q.x - O.x, dy = Q.y - O.y;
+        const sx = 1 + (Q.sx - 1) * q, sy = 1 + (Q.sy - 1) * q;
+        return ` translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)}) translate(${(-dx).toFixed(2)}px, ${(-dy).toFixed(2)}px)`;
+    },
+    // Осадка одной анимацией на холсте, без подъёма: взятая с полки пальцем
+    // расправляется (up), летящая домой оседает ко второй половине пути
+    // (down), к посадке — ровно как полочная копия.
+    squashAnim(svg, dir, ms) {
+        const Q = svg && typeof svg.animate === 'function' && typeof BATH_CLOTH !== 'undefined' ? BATH_CLOTH.squashOf(svg) : null;
+        if (!Q) return null;
+        const O = { x: Q.x, y: Q.y }, N = 24, keys = [];
+        svg.style.transformOrigin = `${O.x.toFixed(2)}px ${O.y.toFixed(2)}px`;
+        for (let i = 0; i <= N; i++) {
+            const u = i / N, v = Math.max(0, (u - 0.5) / 0.5);
+            keys.push({ transform: this.squashTf(Q, O, dir === 'up' ? this.squashQ(u) : 1 - this.squashQ(v)).trim() });
+        }
+        return svg.animate(keys, { duration: ms, easing: 'linear', fill: 'forwards' });
+    },
+
     // Снять подъём: сторож и анимацию холста руки. Без этого вещь, взятая
-    // пальцем посреди подъёма, ехала бы ещё и вместе с холстом.
-    // Скругление мягкой мочалки, стоявшее весь подъём, пускается здесь — и
-    // когда подъём дошёл (t — время его последнего кадра), и когда вещь
-    // взяли пальцем посреди него: иначе она осталась бы осевшей в руке.
-    liftStop(t) {
+    // пальцем посреди подъёма, ехала бы ещё и вместе с холстом. Не
+    // тронувшийся подъём отдаёт место холсту руки: полочная копия прячется,
+    // холст руки виден.
+    liftStop() {
         cancelAnimationFrame(this.liftRaf);
         this.liftRaf = 0;
-        const wasLift = !!this.liftAnim;
         if (this.liftAnim) { this.liftAnim.cancel(); this.liftAnim = null; }
-        if (wasLift && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(this.el('bt-held'), t);
         const hand = this.el('bt-hand');
-        if (hand) hand.style.transformOrigin = '';
+        if (hand) { hand.style.transformOrigin = ''; hand.parentNode.style.opacity = ''; }
+        if (this.liftPending) { this.homeShown(this.liftPending, false, true); this.liftPending = null; }
     },
 
     // Парение и свечение. Качается НЕ группа внутри svg, а сам холст руки
@@ -2352,7 +2388,7 @@ const LustMinigame = {
         this.setHeld(kind, s, g);
         // С полки — округляется, как при подъёме (liftTool). Лежавшая на
         // экране уже круглая.
-        if (kind === 'cloth' && !at && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(this.el('bt-held'), 'lift');
+        if (kind === 'cloth' && !at) this.squashAnim(this.el('bt-hand'), 'up', 420);
         this.moveTool(this.clampHeld(this.toStage(e), this.drag));
     },
 
@@ -2482,13 +2518,12 @@ const LustMinigame = {
         // копия на полке: подмены не видно. Оседать ПОСЛЕ посадки нельзя —
         // за мочалкой сразу отъезжает камера (finishStage), а на переезде
         // сцена едет готовой текстурой.
-        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'land', dur, true);
         const step = (t) => {
             if (!held.isConnected) { this.homeRaf = 0; return; }
             if (wait) { wait--; this.homeRaf = requestAnimationFrame(step); return; }
             if (t0 == null) {
                 t0 = t;
-                if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(held, t);
+                if (kind === 'cloth') this.homeSq = this.squashAnim(home, 'down', dur);
             }
             const u = Math.max(0, Math.min(1, (t - t0) / dur));
             const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
@@ -2505,16 +2540,25 @@ const LustMinigame = {
             this.homeShown(kind, true, true);
             if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.syncPose(this.el('bt-cloth-art'));
             held.remove();
+            this.homeSqStop();
             this.emptyCarry(home);
             if (done) done();
         };
         this.homeRaf = requestAnimationFrame(step);
     },
 
+    // Снять осадку летевшей домой: холст полёта общий и служит следующей.
+    homeSqStop() {
+        if (this.homeSq) { this.homeSq.cancel(); this.homeSq = null; }
+        const home = this.el('bt-hand-home');
+        if (home) home.style.transformOrigin = '';
+    },
+
     // Прервать полёт домой (уход из ванной, новый забег): вещь сразу на полке.
     clearHoming() {
         cancelAnimationFrame(this.homeRaf);
         this.homeRaf = 0;
+        this.homeSqStop();
         const n = this.el('bt-homing');
         if (n) n.remove();
         this.emptyCarry(this.el('bt-hand-home'));

@@ -1042,9 +1042,8 @@ const harness = require('./harness');
     for (const kind of ['soap', 'cloth']) {
       if (kind === 'cloth') await page.evaluate(() => { const L = LustMinigame; L.rub = 1; L.growTo('soap', 1); L.finishStage('soap'); });
       for (let i = 0; i < 60 && !(await page.evaluate((k) => LustMinigame.phase === k && LustMinigame.loose && !LustMinigame.liftRaf, kind)); i++) await page.waitForTimeout(200);
-      // Мягкая вещь, снятая с полки, ещё секунду округляется упругим качем
-      // (BATH_CLOTH.reshape) — своим циклом, который «мыло замерло» не
-      // останавливает: снимки посреди кача разошлись бы и без всякого среза.
+      // Мягкая вещь, снятая с полки, полсекунды расправляется (lust.js,
+      // squashTf) — снимки посреди этого разошлись бы и без всякого среза.
       await page.waitForTimeout(1500);
       for (let k = 0; k < 4; k++) {
         if (!(await clipSame('bt-hand'))) handBad.push(`${kind}:${n}`);
@@ -1120,15 +1119,17 @@ const harness = require('./harness');
 
   // ================= 7а. ПОДЪЁМ И ПОЛЁТ ТРОГАЮТСЯ С МЕСТА =================
   // Кадр, где вещь собирается в руке или переезжает на холст полёта, на
-  // айфоне длится 55–73 мс (самописец). Часы, пущенные до него, показывали
-  // первым кадром уже треть подъёма — мочалка «прыгала» с полки. Здесь
-  // отрисовка этого кадра делается длинной нарочно (80 мс в кадре вызова), и
-  // спрашивается картинка: в первом кадре ПОСЛЕ длинного вещь ещё на месте.
-  // У подъёма Chromium сам ждёт отрисовки до старта WAAPI (WebKit — нет),
-  // так что здесь он сторожит только от поломки; у полёта домой часы свои,
-  // и прежний код проваливал эту проверку и в Chromium.
+  // айфоне длится 55–100 мс (самописец). Часы, пущенные до него, показывали
+  // первым кадром уже треть подъёма — мочалка «прыгала» с полки (traps,
+  // п. 158). Здесь отрисовка этого кадра делается длинной нарочно (80 мс в
+  // кадре вызова), и спрашивается картинка: пока холст руки не показан,
+  // видна полочная копия, а в первом кадре, где он показан, — полочный
+  // размер. У полёта домой часы свои: в первом кадре после длинного вещь
+  // ещё на месте.
   say('\n======== ПОДЪЁМ И ПОЛЁТ ТРОГАЮТСЯ С МЕСТА ========');
-  await page.evaluate(() => LustMinigame.returnTool());
+  const resetCloth = (lv) => page.evaluate((lv) => { const L = LustMinigame; L.returnTool();
+    LustDebug.setLevel('cloth', lv); BATH_CLOTH.refresh(); L.phase = 'cloth'; }, lv);
+  await resetCloth(3);
   await page.waitForTimeout(300);
   const startRun = (which) => page.evaluate((which) => new Promise(res => {
     const L = LustMinigame;
@@ -1137,40 +1138,54 @@ const harness = require('./harness');
     const el = document.getElementById(which === 'lift' ? 'bt-hand' : 'bt-hand-home-at'), out = [];
     const tick = () => {
       const t = getComputedStyle(el).transform, m = new DOMMatrixReadOnly(t === 'none' ? undefined : t);
-      out.push(which === 'lift' ? m.a : Math.hypot(m.e, m.f));
+      out.push({ v: which === 'lift' ? m.a : Math.hypot(m.e, m.f), hand: getComputedStyle(el.parentNode).opacity !== '0',
+                 shelf: document.getElementById('bt-cloth-home').style.opacity !== '0' });
       if (out.length < 9) requestAnimationFrame(tick); else res(out);
     };
     requestAnimationFrame(tick);
   }), which);
-  // out[0] — кадр вызова (до его длинной отрисовки), out[1] — первый после.
-  const lift = await startRun('lift');
-  check(Math.abs(lift[1] - 1 / 1.15) < 0.004 && lift[8] > lift[1] + 0.02,
-    `подъём мочалки: в первом кадре после длинного — полочный размер (${lift[1].toFixed(3)}), потом растёт (${lift[8].toFixed(3)})`);
+  const lift = await startRun('lift'), first = lift.findIndex(f => f.hand);
+  check(first >= 1 && lift.slice(0, first).every(f => f.shelf) && !lift[first].shelf
+        && Math.abs(lift[first].v - 1 / 1.15) < 0.004 && lift[8].v > lift[first].v + 0.02,
+    `подъём: пока холст руки не показан (${first} кадра), видна полочная копия; в первом показанном — полочный размер (${first >= 0 ? lift[first].v.toFixed(3) : '—'}), потом растёт (${lift[8].v.toFixed(3)})`);
   for (let i = 0; i < 40 && await page.evaluate(() => !!LustMinigame.liftRaf); i++) await page.waitForTimeout(100);
-  // Пока холст масштабируется на подъёме, картинка вещи на нём СТОИТ: WebKit
-  // ставит перерисованный масштабируемый слой со сдвигом, и вещь «прыгала»
-  // весь подъём (игрок). С парением вещь снова живёт.
-  await page.evaluate(() => LustMinigame.returnTool());
-  await page.waitForTimeout(300);
-  const quiet = await page.evaluate(() => new Promise(res => {
-    const L = LustMinigame;
-    LustDebug.setLevel('cloth', 7); BATH_CLOTH.refresh();      // живая мочалка: конняку
-    L.liftTool('cloth');
-    let lift = 0, after = 0, up = true;
-    const mo = new MutationObserver(m => { if (up) lift += m.length; else after += m.length; });
-    mo.observe(document.getElementById('bt-hand'), { attributes: true, subtree: true, attributeFilter: ['d', 'transform', 'fill-opacity', 'opacity', 'display'] });
-    const tick = () => {
-      if (L.liftRaf) { requestAnimationFrame(tick); return; }
-      up = false;
-      setTimeout(() => { mo.disconnect(); res({ lift, after }); }, 1000);
-    };
-    requestAnimationFrame(tick);
-  }));
-  check(quiet.lift === 0 && quiet.after > 0, `на подъёме картинка мочалки стоит (правок ${quiet.lift}), с парением живёт (${quiet.after})`);
-  const home = await startRun('home');
+  const home = (await startRun('home')).map(f => f.v);
   check(Math.abs(home[1] - home[0]) < 0.01 && Math.abs(home[8] - home[0]) > 1.5,
     `полёт домой: в первом кадре после длинного — на месте (сдвиг ${Math.abs(home[1] - home[0]).toFixed(2)}), потом летит (${Math.abs(home[8] - home[0]).toFixed(1)})`);
   for (let i = 0; i < 40 && await page.evaluate(() => !!LustMinigame.homeRaf); i++) await page.waitForTimeout(100);
+
+  // ФОРМА МЯГКОЙ МОЧАЛКИ МЕНЯЕТСЯ ВИДЕОКАРТОЙ. Видео с айфона: пока переход
+  // «осела на полке → шар в руке» правил саму картинку на каждом кадре,
+  // мочалка 7 и 8 скакала на ±5% ширины от кадра к кадру. Теперь в руке и
+  // в полёте ни одной правки того, что зависит от осадки ([data-j], кроме
+  // течения облака — body), а осадку даёт масштаб холста. И подъём
+  // начинается там, где лежала полочная копия: низ и середина — на месте,
+  // размер — как у осевшей.
+  for (const lv of [7, 8]) {
+    await resetCloth(lv);
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => new Promise(res => {
+      const L = LustMinigame, el = (k) => BATH_CLOTH.SQUASH[k].el;
+      const kind = document.querySelector('#bt-cloth-home .bt-cloth-konjac') ? 'konjac' : 'cloud';
+      const rect = (root) => root.querySelector(`[data-j="${el(kind)}"]`).getBoundingClientRect();
+      const shelf = rect(document.getElementById('bt-cloth-home'));
+      let shape = 0, start = null;
+      const mo = new MutationObserver(m => m.forEach(x => { const j = x.target.getAttribute && x.target.getAttribute('data-j'); if (j && j !== 'body') shape++; }));
+      ['bt-hand', 'bt-hand-home'].forEach(id => mo.observe(document.getElementById(id), { attributes: true, subtree: true }));
+      const go = L.liftGo.bind(L);
+      L.liftGo = (...a) => { go(...a); L.liftGo = go; L.liftAnim.pause(); L.liftAnim.currentTime = 0;
+        start = rect(document.getElementById('bt-hand')); L.liftAnim.play(); };
+      L.liftTool('cloth');
+      setTimeout(() => { L.flyHome(() => {}); setTimeout(() => { mo.disconnect();
+        const f = (b) => ({ cx: (b.left + b.right) / 2, bottom: b.bottom, w: b.width, h: b.height });
+        res({ kind, shape, shelf: f(shelf), start: start && f(start) }); }, 1300); }, 1600);
+    }));
+    const S = r.shelf, T = r.start;
+    say(`  ${r.kind}: полка ${S.cx.toFixed(1)}/${S.bottom.toFixed(1)} ${S.w.toFixed(1)}×${S.h.toFixed(1)}, старт ${T ? `${T.cx.toFixed(1)}/${T.bottom.toFixed(1)} ${T.w.toFixed(1)}×${T.h.toFixed(1)}` : '—'}`);
+    check(r.shape === 0, `мочалка ${lv}: на подъёме, в парении и в полёте домой форма не правится ни разу (правок ${r.shape})`);
+    check(T && Math.abs(T.cx - S.cx) < 2 && Math.abs(T.bottom - S.bottom) < 2 && Math.abs(T.w / S.w - 1) < 0.06 && Math.abs(T.h / S.h - 1) < 0.06,
+      `мочалка ${lv}: подъём начинается на месте полочной — середина и низ в пределах 2 точек, размер в пределах 6%`);
+  }
 
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
