@@ -2297,11 +2297,14 @@ const LustMinigame = {
         if (!on) this.liftStop();
         const n = this.el('bt-hand');
         if (!n) return;
-        // Облако из ночи (мочалка, ступень 8) — так же: светится своим
-        // ореолом и течёт в воздухе (bath-cloth.js, liveTick).
+        // Живые мочалки (конняку и облако, ступени 7 и 8) — так же: светятся
+        // своим ореолом и живут в воздухе (bath-cloth.js, liveTick). Под
+        // тенью-фильтром живая картинка пересчитывала бы тень каждый кадр,
+        // и конняку парил замёрзшим и мутным (замечание игрока).
+        const T = on && this.loose && this.loose.kind === 'cloth' && typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.TIERS[BATH_CLOTH.tier()];
         const magic = on && this.loose && (this.loose.kind === 'soap'
                     ? typeof BATH_SOAP !== 'undefined' && BATH_SOAP.TIERS[BATH_SOAP.tier()] === 'magic'
-                    : typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.TIERS[BATH_CLOTH.tier()] === 'cloud');
+                    : T === 'cloud' || T === 'konjac');
         n.classList.toggle('bt-float', !!on);
         n.classList.toggle('bt-float-magic', !!magic);
     },

@@ -1807,7 +1807,7 @@ const BATH_CLOTH = {
         if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.wake) { BATH_SOAP.live.dirty = true; BATH_SOAP.wake(); }
         // Комочки — в той позе, в какой их видно сейчас: вещь, перерисованная
         // в руку, не дёргается относительно полочной.
-        return this.stamp(this._konjac.frag(where === 'shelf' ? 1 : 0, this.ktShown), 'bt-cloth-konjac', 'bcj');
+        return this.stamp(this._konjac.frag(where === 'shelf' ? 1 : 0, this.ktShown, where !== 'shelf'), 'bt-cloth-konjac', 'bcj');
     },
 
     // Генератор наброска d2: { frag(sag, t), geo(sag), pose(t) }; '@ID' —
@@ -1817,6 +1817,7 @@ const BATH_CLOTH = {
         const P = btPal(), A = BATH_ART.slots().cloth, T = this.KONJAC.T, W = STROKE.detail;
         const [lit, cauC, lowC, edgeC] = P.konjacLight, [pd, pl] = P.konjacPore;
         const [h0, h1] = P.konjacHalo, Ki = P.konjacKisel, Ve = P.konjacVeil, Wa = P.konjacWall, Ir = P.konjacIri;
+        const ready = P.bathReady;
         const f = (v) => +(+v).toFixed(2);
         // Случай наброска — линейный конгруэнтный, не mulberry и не btRng.
         const rng = (seed) => { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
@@ -1969,10 +1970,24 @@ const BATH_CLOTH = {
                 sag: sagStr(s)
             };
         };
-        const frag = (s, t = 0) => {
+        // Свечение «бери меня» у парящего пузыря — СВОЁ кольцо вокруг стенки,
+        // а не тень-фильтр холста, как у прочих мочалок (lust.css, .bt-float).
+        // Фильтр на холсте, который правит себя 15 раз в секунду, пересчитывал
+        // бы тень на каждом кадре, поэтому парящий конняку раньше стоял
+        // намертво; и тень заливала прозрачный пузырь изнутри — он мутнел
+        // (замечание игрока: «живёт, только пока тащишь, в покое замирает и
+        // становится непрозрачной»). Кольцо прозрачно внутри стенки, видно
+        // только снаружи; показывает его css, пока холст руки парит
+        // (.bt-own-glow), — правки картинки нет. Пузырь в руке — круг
+        // r 46 вокруг (589, 482), замер getBBox.
+        const ring = `<radialGradient id="${id}rg" cx="589" cy="482" r="58" gradientUnits="userSpaceOnUse">`
+            + `<stop offset=".78" stop-color="${ready}" stop-opacity="0"/><stop offset=".8" stop-color="${ready}" stop-opacity=".75"/>`
+            + `<stop offset=".88" stop-color="${ready}" stop-opacity=".3"/><stop offset="1" stop-color="${ready}" stop-opacity="0"/></radialGradient>`;
+        const frag = (s, t = 0, glow = false) => {
             const G = geo(s), Q = pose(t);
             const lumpG = (sel) => `<g data-j="sag" transform="${G.sag}">` + Ls.map((L, i) => sel(L) ? `<g data-lump="${i}" transform="${Q[i].tr}">${parts[i].body}</g>` : '').join('') + `</g>`;
-            let o = `<defs>${defs}<clipPath id="${id}q"><path data-j="in" d="${G.in}"/></clipPath></defs>`;
+            let o = `<defs>${defs}${glow ? ring : ''}<clipPath id="${id}q"><path data-j="in" d="${G.in}"/></clipPath></defs>`;
+            if (glow) o += `<circle class="bt-own-glow" cx="589" cy="482" r="58" fill="url(#${id}rg)"/>`;
             o += `<path data-j="s" d="${G.s}" fill="url(#${id}k)"/>`;
             o += `<g clip-path="url(#${id}q)">${lumpG(L => L.far)}</g>`;
             o += `<path data-j="in" d="${G.in}" fill="url(#${id}v)"/>`;
@@ -2235,11 +2250,11 @@ const BATH_CLOTH = {
     // Шаг живого цикла (bath-soap.js, wake): roots — видимые копии.
     // На трении вещь живёт дальше, только реже пишется (под пальцем она
     // на экране по определению — wake передаёт копию в руке без проверки
-    // видимости). Конняку стоит, пока парит: у парящего холста ореол — тень-фильтр, и
-    // живая картинка под ним пересчитывала бы тень на каждом кадре. Облако
-    // светится само (.bt-float-magic — фильтра нет) и течёт и в воздухе.
-    // Часы в это время тоже стоят — поэтому вещь, перерисованная в руку,
-    // продолжает с той же позы, без скачка.
+    // видимости). Обе живые мочалки светятся сами (.bt-float-magic —
+    // тени-фильтра на холсте нет: облако — сиянием, конняку — кольцом,
+    // konjacArt) и живут и в воздухе. Вещь под тенью-фильтром здесь всё
+    // равно стоит — фильтр пересчитывался бы на каждом кадре; часы в это
+    // время тоже стоят, и вещь продолжает с той же позы, без скачка.
     liveTick(roots, now, rub) {
         const dt = this._liveAt ? Math.min(0.1, (now - this._liveAt) / 1000) : 0;
         this._liveAt = now;

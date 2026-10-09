@@ -245,6 +245,10 @@
     filter: drop-shadow(0 0 1.5px var(--bt-ready)) drop-shadow(0 0 6px var(--bt-ready));
 }
 #lust-game #bt-hand.bt-float.bt-float-magic { filter: none; }
+/* Своё свечение вещи (кольцо конняку, bath-cloth.js) — только пока холст
+   руки парит: взятая пальцем и летящая домой не светятся. */
+#lust-game .bt-own-glow { display: none; }
+#lust-game #bt-hand.bt-float .bt-own-glow { display: inline; }
 
 @keyframes bt-float {
     0%, 100% { transform: translateY(0); }

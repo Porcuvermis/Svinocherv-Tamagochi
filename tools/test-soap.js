@@ -1169,20 +1169,27 @@ const harness = require('./harness');
       const kind = document.querySelector('#bt-cloth-home .bt-cloth-konjac') ? 'konjac' : 'cloud';
       const rect = (root) => root.querySelector(`[data-j="${el(kind)}"]`).getBoundingClientRect();
       const shelf = rect(document.getElementById('bt-cloth-home'));
-      let shape = 0, start = null;
-      const mo = new MutationObserver(m => m.forEach(x => { const j = x.target.getAttribute && x.target.getAttribute('data-j'); if (j && j !== 'body') shape++; }));
+      let shape = 0, start = null, live = 0, floatF = null;
+      const mo = new MutationObserver(m => m.forEach(x => { const j = x.target.getAttribute && x.target.getAttribute('data-j'); if (j && j !== 'body') shape++; else if (!L.liftRaf) live++; }));
       ['bt-hand', 'bt-hand-home'].forEach(id => mo.observe(document.getElementById(id), { attributes: true, subtree: true }));
       const go = L.liftGo.bind(L);
       L.liftGo = (...a) => { go(...a); L.liftGo = go; L.liftAnim.pause(); L.liftAnim.currentTime = 0;
         start = rect(document.getElementById('bt-hand')); L.liftAnim.play(); };
       L.liftTool('cloth');
-      setTimeout(() => { L.flyHome(() => {}); setTimeout(() => { mo.disconnect();
+      setTimeout(() => { const h = document.getElementById('bt-hand'), g = h.querySelector('.bt-own-glow');
+        floatF = { filter: getComputedStyle(h).filter, glow: !g || getComputedStyle(g).display !== 'none', live };
+        L.flyHome(() => {}); setTimeout(() => { mo.disconnect();
         const f = (b) => ({ cx: (b.left + b.right) / 2, bottom: b.bottom, w: b.width, h: b.height });
-        res({ kind, shape, shelf: f(shelf), start: start && f(start) }); }, 1300); }, 1600);
+        res({ kind, shape, floatF, shelf: f(shelf), start: start && f(start) }); }, 1300); }, 1600);
     }));
     const S = r.shelf, T = r.start;
     say(`  ${r.kind}: полка ${S.cx.toFixed(1)}/${S.bottom.toFixed(1)} ${S.w.toFixed(1)}×${S.h.toFixed(1)}, старт ${T ? `${T.cx.toFixed(1)}/${T.bottom.toFixed(1)} ${T.w.toFixed(1)}×${T.h.toFixed(1)}` : '—'}`);
     check(r.shape === 0, `мочалка ${lv}: на подъёме, в парении и в полёте домой форма не правится ни разу (правок ${r.shape})`);
+    // Парит ЖИВОЙ и прозрачной: без тени-фильтра на холсте (под ним живая
+    // картинка стояла бы, а тень заливала пузырь — игрок: «в покое замирает
+    // и становится непрозрачной»), со своим свечением.
+    check(r.floatF.filter === 'none' && r.floatF.glow && r.floatF.live > 10,
+      `мочалка ${lv}: парит живой (правок ${r.floatF.live}), без тени-фильтра (${r.floatF.filter}), со своим свечением`);
     check(T && Math.abs(T.cx - S.cx) < 2 && Math.abs(T.bottom - S.bottom) < 2 && Math.abs(T.w / S.w - 1) < 0.06 && Math.abs(T.h / S.h - 1) < 0.06,
       `мочалка ${lv}: подъём начинается на месте полочной — середина и низ в пределах 2 точек, размер в пределах 6%`);
   }
