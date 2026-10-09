@@ -1118,6 +1118,40 @@ const harness = require('./harness');
   await page.waitForTimeout(600);
   await edgeRun('мочалка');
 
+  // ================= 7а. ПОДЪЁМ И ПОЛЁТ ТРОГАЮТСЯ С МЕСТА =================
+  // Кадр, где вещь собирается в руке или переезжает на холст полёта, на
+  // айфоне длится 55–73 мс (самописец). Часы, пущенные до него, показывали
+  // первым кадром уже треть подъёма — мочалка «прыгала» с полки. Здесь
+  // отрисовка этого кадра делается длинной нарочно (80 мс в кадре вызова), и
+  // спрашивается картинка: в первом кадре ПОСЛЕ длинного вещь ещё на месте.
+  // У подъёма Chromium сам ждёт отрисовки до старта WAAPI (WebKit — нет),
+  // так что здесь он сторожит только от поломки; у полёта домой часы свои,
+  // и прежний код проваливал эту проверку и в Chromium.
+  say('\n======== ПОДЪЁМ И ПОЛЁТ ТРОГАЮТСЯ С МЕСТА ========');
+  await page.evaluate(() => LustMinigame.returnTool());
+  await page.waitForTimeout(300);
+  const startRun = (which) => page.evaluate((which) => new Promise(res => {
+    const L = LustMinigame;
+    if (which === 'lift') L.liftTool('cloth'); else L.flyHome();
+    requestAnimationFrame(() => { const t = performance.now(); while (performance.now() - t < 80); });
+    const el = document.getElementById(which === 'lift' ? 'bt-hand' : 'bt-hand-home-at'), out = [];
+    const tick = () => {
+      const t = getComputedStyle(el).transform, m = new DOMMatrixReadOnly(t === 'none' ? undefined : t);
+      out.push(which === 'lift' ? m.a : Math.hypot(m.e, m.f));
+      if (out.length < 9) requestAnimationFrame(tick); else res(out);
+    };
+    requestAnimationFrame(tick);
+  }), which);
+  // out[0] — кадр вызова (до его длинной отрисовки), out[1] — первый после.
+  const lift = await startRun('lift');
+  check(Math.abs(lift[1] - 1 / 1.15) < 0.004 && lift[8] > lift[1] + 0.02,
+    `подъём мочалки: в первом кадре после длинного — полочный размер (${lift[1].toFixed(3)}), потом растёт (${lift[8].toFixed(3)})`);
+  for (let i = 0; i < 40 && await page.evaluate(() => !!LustMinigame.liftRaf); i++) await page.waitForTimeout(100);
+  const home = await startRun('home');
+  check(Math.abs(home[1] - home[0]) < 0.01 && Math.abs(home[8] - home[0]) > 1.5,
+    `полёт домой: в первом кадре после длинного — на месте (сдвиг ${Math.abs(home[1] - home[0]).toFixed(2)}), потом летит (${Math.abs(home[8] - home[0]).toFixed(1)})`);
+  for (let i = 0; i < 40 && await page.evaluate(() => !!LustMinigame.homeRaf); i++) await page.waitForTimeout(100);
+
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);

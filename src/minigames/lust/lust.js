@@ -2167,7 +2167,8 @@ const LustMinigame = {
         const held = this.el('bt-held'), hand = this.el('bt-hand');
         // Мягкая вещь (конняку) снятая с полки округляется: на полке она
         // осела под своим весом, в воздухе — шар.
-        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'lift');
+        // Скругление стоит в полочной форме, пока не тронулся подъём (ниже).
+        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'lift', 0, true);
         // Подъём делает НЕ атрибут вещи внутри svg, а видеокарта — тем же
         // приёмом, что и парение: вещь сразу стоит на своём месте и в своём
         // размере, а весь холст руки едет снизу и растёт из полочного
@@ -2191,12 +2192,27 @@ const LustMinigame = {
             { transform: `translate(0px, ${((from.y - to.y) * m).toFixed(2)}px) scale(${(1 / K).toFixed(4)})` },
             { transform: 'translate(0px, 0px) scale(1)' }
         ], { duration: this.LIFT_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
+        // Подъём ТРОГАЕТСЯ не здесь, а через кадр. Кадр, в котором вещь
+        // собирается в руке (новый холст, его слой, снятый слой полки), на
+        // айфоне длится 70 мс (самописец, мочалка 7), а часы анимации в это
+        // время уже шли: первым показанным кадром вещь оказывалась на трети
+        // пути и на 5% крупнее — скачок с полки, а дальше плавно. Поэтому
+        // подъём стоит на начале, пока тяжёлый кадр не показан, и только со
+        // следующего кадра идёт с нуля; вместе с ним — упругое скругление
+        // мягкой мочалки (BATH_CLOTH.reshape), у которого те же часы.
+        this.liftAnim.pause();
+        this.liftAnim.currentTime = 0;
+        let wait = 2;
         // Цикл — только сторож: кончился подъём — парение; вещь взяли или
         // сменили — подъём снят (liftStop). liftRaf живёт, пока идёт подъём:
         // по нему ждут и игра, и прогоны.
-        const step = () => {
+        const step = (t) => {
             if (this.el('bt-held') !== held || !this.loose) { this.liftStop(); return; }
             const A = this.liftAnim;
+            if (wait && --wait === 0 && A) {
+                A.play();
+                if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(held, t);
+            }
             if (A && A.playState !== 'finished') { this.liftRaf = requestAnimationFrame(step); return; }
             this.liftStop();
             this.floatTool(true);
@@ -2439,14 +2455,24 @@ const LustMinigame = {
         // подбрасывают на полку, а не тащат по прямой.
         const top = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 40 - 0.25 * dist };
         const [m0, m1] = this.HOME_MS, dur = Math.min(m1, m0 + dist * 0.8);
-        const K = BATH_ART.DRAG_SCALE, t0 = performance.now();
+        const K = BATH_ART.DRAG_SCALE;
+        // Часы полёта пускаются со ВТОРОГО кадра, как у подъёма (liftTool):
+        // кадр, где вещь переезжает на холст полёта, а слои меняются, на
+        // айфоне длится 55–73 мс (самописец), и полёт с часами от вызова
+        // начинался скачком на 20 точек.
+        let t0 = null, wait = 1;
         // Мягкая вещь (конняку) оседает к посадке и садится уже осевшей, как
         // копия на полке: подмены не видно. Оседать ПОСЛЕ посадки нельзя —
         // за мочалкой сразу отъезжает камера (finishStage), а на переезде
         // сцена едет готовой текстурой.
-        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'land', dur);
+        if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'land', dur, true);
         const step = (t) => {
             if (!held.isConnected) { this.homeRaf = 0; return; }
+            if (wait) { wait--; this.homeRaf = requestAnimationFrame(step); return; }
+            if (t0 == null) {
+                t0 = t;
+                if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(held, t);
+            }
             const u = Math.max(0, Math.min(1, (t - t0) / dur));
             const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
             const q = 1 - e;

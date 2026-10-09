@@ -2288,7 +2288,10 @@ const BATH_CLOTH = {
     // половину пути оседает с качем и к посадке ровно осевшая — копия на
     // полке встаёт на её место без подмены. На переезде камеры переход
     // доводится сразу: сцена едет готовой текстурой (docs/traps.md, п. 150).
-    reshape(root, mode, dur) {
+    // hold — переход стоит в начальной форме, пока его не пустят
+    // (reshapeGo): подъём трогается не сразу, а когда тяжёлый кадр сборки
+    // вещи в руке уже показан (lust.js, liftTool), и часы у них общие.
+    reshape(root, mode, dur, hold) {
         const r = this.liveRoot(root);
         if (!r || !this.liveArt(r) || typeof requestAnimationFrame === 'undefined') return;
         const lift = mode === 'lift', ms = lift ? this.KONJAC.LIFT_MS : Math.max(1, dur || 600);
@@ -2297,20 +2300,28 @@ const BATH_CLOTH = {
             : (u) => { const v = Math.max(0, (u - 0.5) / 0.5); return 1 - Math.exp(-4 * v) * Math.cos(2 * Math.PI * 1.2 * v) * (1 - v * v * v); };
         const M = this._morphs || (this._morphs = new Map());
         if (M.has(r)) cancelAnimationFrame(M.get(r).raf);
-        const job = { end: () => this.sagTo(r, lift ? 0 : 1), raf: 0 }, t0 = performance.now();
+        const job = { end: () => this.sagTo(r, lift ? 0 : 1), raf: 0, hold: !!hold, t0: performance.now() };
         const step = (t) => {
             if (!r.isConnected) { M.delete(r); return; }
+            if (job.hold) { job.raf = requestAnimationFrame(step); return; }
             const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
             // Доля зажата снизу нулём: время кадра бывает раньше t0, а
             // упругая кривая за пределами [0, 1] раскачивает вещь (lust.js,
             // liftTool).
-            const u = L0 && L0.camTimer ? 1 : Math.max(0, Math.min(1, (t - t0) / ms));
+            const u = L0 && L0.camTimer ? 1 : Math.max(0, Math.min(1, (t - job.t0) / ms));
             this.sagTo(r, curve(u));
             if (u < 1) job.raf = requestAnimationFrame(step); else M.delete(r);
         };
         this.sagTo(r, curve(0));
         M.set(r, job);
         job.raf = requestAnimationFrame(step);
+    },
+
+    // Пустить переход, стоявший в начальной форме (reshape с hold), с
+    // момента t — времени кадра, в котором тронулся подъём.
+    reshapeGo(root, t) {
+        const r = this.liveRoot(root), job = r && this._morphs && this._morphs.get(r);
+        if (job && job.hold) { job.hold = false; job.t0 = t != null ? t : performance.now(); }
     },
 
     // Ушли из ванной — переходы доводятся сразу и больше не крутятся.
