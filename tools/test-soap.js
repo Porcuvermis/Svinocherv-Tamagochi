@@ -1147,6 +1147,26 @@ const harness = require('./harness');
   check(Math.abs(lift[1] - 1 / 1.15) < 0.004 && lift[8] > lift[1] + 0.02,
     `подъём мочалки: в первом кадре после длинного — полочный размер (${lift[1].toFixed(3)}), потом растёт (${lift[8].toFixed(3)})`);
   for (let i = 0; i < 40 && await page.evaluate(() => !!LustMinigame.liftRaf); i++) await page.waitForTimeout(100);
+  // Пока холст масштабируется на подъёме, картинка вещи на нём СТОИТ: WebKit
+  // ставит перерисованный масштабируемый слой со сдвигом, и вещь «прыгала»
+  // весь подъём (игрок). С парением вещь снова живёт.
+  await page.evaluate(() => LustMinigame.returnTool());
+  await page.waitForTimeout(300);
+  const quiet = await page.evaluate(() => new Promise(res => {
+    const L = LustMinigame;
+    LustDebug.setLevel('cloth', 7); BATH_CLOTH.refresh();      // живая мочалка: конняку
+    L.liftTool('cloth');
+    let lift = 0, after = 0, up = true;
+    const mo = new MutationObserver(m => { if (up) lift += m.length; else after += m.length; });
+    mo.observe(document.getElementById('bt-hand'), { attributes: true, subtree: true, attributeFilter: ['d', 'transform', 'fill-opacity', 'opacity', 'display'] });
+    const tick = () => {
+      if (L.liftRaf) { requestAnimationFrame(tick); return; }
+      up = false;
+      setTimeout(() => { mo.disconnect(); res({ lift, after }); }, 1000);
+    };
+    requestAnimationFrame(tick);
+  }));
+  check(quiet.lift === 0 && quiet.after > 0, `на подъёме картинка мочалки стоит (правок ${quiet.lift}), с парением живёт (${quiet.after})`);
   const home = await startRun('home');
   check(Math.abs(home[1] - home[0]) < 0.01 && Math.abs(home[8] - home[0]) > 1.5,
     `полёт домой: в первом кадре после длинного — на месте (сдвиг ${Math.abs(home[1] - home[0]).toFixed(2)}), потом летит (${Math.abs(home[8] - home[0]).toFixed(1)})`);

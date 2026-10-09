@@ -2167,7 +2167,8 @@ const LustMinigame = {
         const held = this.el('bt-held'), hand = this.el('bt-hand');
         // Мягкая вещь (конняку) снятая с полки округляется: на полке она
         // осела под своим весом, в воздухе — шар.
-        // Скругление стоит в полочной форме, пока не тронулся подъём (ниже).
+        // Скругление стоит в полочной форме весь подъём и начинается с
+        // парением (ниже).
         if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshape(held, 'lift', 0, true);
         // Подъём делает НЕ атрибут вещи внутри svg, а видеокарта — тем же
         // приёмом, что и парение: вещь сразу стоит на своём месте и в своём
@@ -2179,7 +2180,11 @@ const LustMinigame = {
         // прыгала ещё на 3–4 (запись экрана игрока; в Chromium этого нет).
         // Заодно подъём ничего не перерисовывает.
         this.placeCarry(hand, to);
-        if (!hand || typeof hand.animate !== 'function') { this.floatTool(true); return; }
+        if (!hand || typeof hand.animate !== 'function') {
+            if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(held);
+            this.floatTool(true);
+            return;
+        }
         this.liftStop();
         // Холст руки — размером с вещь, в обёртке, начало которой — точка
         // хвата. Подъём начинается с полочной копии: тот же низ (from) и
@@ -2198,8 +2203,18 @@ const LustMinigame = {
         // время уже шли: первым показанным кадром вещь оказывалась на трети
         // пути и на 5% крупнее — скачок с полки, а дальше плавно. Поэтому
         // подъём стоит на начале, пока тяжёлый кадр не показан, и только со
-        // следующего кадра идёт с нуля; вместе с ним — упругое скругление
-        // мягкой мочалки (BATH_CLOTH.reshape), у которого те же часы.
+        // следующего кадра идёт с нуля.
+        //
+        // ПОКА ХОЛСТ МАСШТАБИРУЕТСЯ, КАРТИНКА НА НЁМ СТОИТ. Игрок: «мочалка
+        // прыгает от взлёта до начала спокойного парения». Парение — тот же
+        // холст, та же видеокарта, и картинка на нём живёт (облако течёт,
+        // конняку доскругляется) — и оно спокойное. Отличие подъёма — МАСШТАБ
+        // холста: WebKit, перерисовывая масштабируемый слой, ставит его со
+        // сдвигом, который меняется с каждой новой картинкой (тот же сдвиг на
+        // 2–3 точки, что был, пока подъём писал transform группы, выше).
+        // Поэтому всё, что правит вещь в руке, на подъёме молчит: живой цикл
+        // её пропускает и не двигает её часы (BATH_SOAP.wake), а упругое
+        // скругление мягкой мочалки начинается вместе с парением.
         this.liftAnim.pause();
         this.liftAnim.currentTime = 0;
         let wait = 2;
@@ -2209,12 +2224,9 @@ const LustMinigame = {
         const step = (t) => {
             if (this.el('bt-held') !== held || !this.loose) { this.liftStop(); return; }
             const A = this.liftAnim;
-            if (wait && --wait === 0 && A) {
-                A.play();
-                if (kind === 'cloth' && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(held, t);
-            }
+            if (wait && --wait === 0 && A) A.play();
             if (A && A.playState !== 'finished') { this.liftRaf = requestAnimationFrame(step); return; }
-            this.liftStop();
+            this.liftStop(t);
             this.floatTool(true);
         };
         this.liftRaf = requestAnimationFrame(step);
@@ -2222,10 +2234,15 @@ const LustMinigame = {
 
     // Снять подъём: сторож и анимацию холста руки. Без этого вещь, взятая
     // пальцем посреди подъёма, ехала бы ещё и вместе с холстом.
-    liftStop() {
+    // Скругление мягкой мочалки, стоявшее весь подъём, пускается здесь — и
+    // когда подъём дошёл (t — время его последнего кадра), и когда вещь
+    // взяли пальцем посреди него: иначе она осталась бы осевшей в руке.
+    liftStop(t) {
         cancelAnimationFrame(this.liftRaf);
         this.liftRaf = 0;
+        const wasLift = !!this.liftAnim;
         if (this.liftAnim) { this.liftAnim.cancel(); this.liftAnim = null; }
+        if (wasLift && typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.reshapeGo(this.el('bt-held'), t);
         const hand = this.el('bt-hand');
         if (hand) hand.style.transformOrigin = '';
     },
