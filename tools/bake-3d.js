@@ -51,7 +51,7 @@ const VIEW = {
 // shelfRail идёт ПОСЛЕ мыла и мочалки нарочно: бортик доски обязан
 // перекрывать их низ, иначе в лоб не отличить «на полке» от «перед полкой».
 const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
-               'shelfRail', 'tub'];
+               'shelfRail', 'tub', 'toilet'];
 
 (async () => {
     const browser = await chromium.launch({
@@ -87,6 +87,8 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
             cloth:  { root: M.cloth(),
                       ramp: B.sponge, ramps: { scour: B.scour },
                       marks: M.clothMarks() },
+            // Унитаз — та же эмаль, что у ванны: одна сантехника.
+            toilet: { root: M.toilet(), ramp: B.enamel },
             tub:    { root: M.tub(tubOpts), ramp: B.enamel,
                       // Нутро чаши — своя, тёмная рампа. В лоб его почти не
                       // видно, но «почти» — это торцы борта, и на них разница

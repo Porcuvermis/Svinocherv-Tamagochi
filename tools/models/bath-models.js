@@ -191,7 +191,16 @@ const BATH_MODELS = {
         // Ярусы стоят БЛИЖЕ ДРУГ К ДРУГУ, чем стояли: разнесённые на семь
         // единиц, они читались двумя отдельными полками на общей стене, а
         // между ними висело пустое поле плитки. Полка — один предмет.
-        shelf:  { x: 5.6, lo: 10.2, hi: 14.4, w: 3.0 }
+        shelf:  { x: 5.6, lo: 10.2, hi: 14.4, w: 3.0 },
+        // Унитаз — вход в магазин (журнал на крышке, docs/plan/21-lust-bath.md,
+        // разд. 7б). Справа от ванны, БОКОМ: чаша к ванне, бачок к правому
+        // краю кадра. Стоит БЛИЖЕ ванны, на полу у нижнего края кадра — место
+        // выбрал игрок по наброску. Камера смотрит в лоб, поэтому так низко
+        // на экране стоит только близкий предмет, а близкий натуральный
+        // унитаз закрыл бы червя: модель уменьшена (s) — как полка и мыло,
+        // она стилизована, а не в натуру. Перспектива при этом настоящая:
+        // та же камера, грани сходятся, как у ванны.
+        toilet: { x: 1.5, z: 25.8, s: 0.38 }
     },
 
     // Якоря: точки МИРА, которые запекание переводит в координаты сцены.
@@ -889,6 +898,88 @@ const BATH_MODELS = {
         const m = new THREE.Mesh(geo);
         m.userData.outline = geo.userData.outline;
         return m;
+    },
+
+    // ---------- УНИТАЗ ----------
+    // Натуральные размеры в дециметрах, длинной осью по X: чаша смотрит
+    // влево (-x), бачок справа. Группа уменьшается и ставится по LAYOUT.
+    //
+    // Чаша — НЕ протяжка одного контура: у унитаза нога стоит под задней
+    // частью, а передок навис над полом. Поэтому чаша — стопка колец-яиц
+    // (loft) от кромки до ноги, и каждое кольцо со своим центром: книзу
+    // центр уходит назад, к бачку. В плане кольцо — яйцо: к носу уже.
+    // Верх чаши закрыт сиденьем и крышкой — внутренность не нужна.
+    TOILET_RINGS: [
+        // [высота, центр по x, полудлина, полуширина]
+        [4.00, 0.00, 2.42, 1.82],
+        [3.88, 0.00, 2.50, 1.88],      // валик кромки
+        [3.55, 0.00, 2.46, 1.85],
+        [2.90, 0.18, 2.24, 1.72],
+        [2.15, 0.48, 1.80, 1.46],
+        [1.40, 0.70, 1.34, 1.16],
+        [0.70, 0.78, 1.12, 1.02],      // нога
+        [0.22, 0.78, 1.16, 1.06],
+        [0.00, 0.78, 1.30, 1.16]       // подошва расширяется к полу
+    ],
+    eggRing(cx, a, b, y, n) {
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            const t = (i / n) * Math.PI * 2;
+            // Яйцо: сзади (cos > 0) шире, к носу (cos < 0) уже.
+            pts.push(new THREE.Vector3(cx + a * Math.cos(t), y, b * Math.sin(t) * (1 + 0.1 * Math.cos(t))));
+        }
+        return pts;
+    },
+    // Стопка колец в одну поверхность. Кольца идут СВЕРХУ ВНИЗ, наружная
+    // сторона — лицевая.
+    loft(rings) {
+        const n = rings[0].length, v = [], idx = [];
+        rings.forEach(r => r.forEach(p => v.push(p.x, p.y, p.z)));
+        for (let k = 0; k < rings.length - 1; k++) {
+            for (let i = 0; i < n; i++) {
+                const i2 = (i + 1) % n;
+                const a = k * n + i, b = k * n + i2, c = (k + 1) * n + i, d = (k + 1) * n + i2;
+                idx.push(a, c, b, b, c, d);
+            }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        return geo;
+    },
+    // Плита в плане-яйце: сиденье и крышка.
+    eggSlab(cx, a, b, y, h, bevel) {
+        const shape = new THREE.Shape();
+        BATH_MODELS.eggRing(cx, a, b, 0, 48).forEach((p, i) => i ? shape.lineTo(p.x, -p.z) : shape.moveTo(p.x, -p.z));
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: true, bevelThickness: bevel,
+            bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+        geo.rotateX(-Math.PI / 2);
+        geo.translate(0, y, 0);
+        return geo;
+    },
+    toilet() {
+        const g = new THREE.Group(), N = 48;
+        const rings = BATH_MODELS.TOILET_RINGS.map(([y, cx, a, b]) => BATH_MODELS.eggRing(cx, a, b, y, N));
+        g.add(new THREE.Mesh(BATH_MODELS.loft(rings)));
+        // Сиденье и крышка (закрыта): крышка чуть меньше сиденья.
+        g.add(new THREE.Mesh(BATH_MODELS.eggSlab(0.05, 2.36, 1.78, 4.0, 0.14, 0.05)));
+        g.add(new THREE.Mesh(BATH_MODELS.eggSlab(0.12, 2.26, 1.72, 4.22, 0.16, 0.07)));
+        // Бачок: скруглённая коробка на задней части чаши, сверху крышка
+        // с кнопкой.
+        const tank = new THREE.Mesh(BATH_MODELS.roundedBox(1.7, 3.3, 3.7, 0.4, 6, 0.12));
+        tank.position.set(3.15, 4.0 + 3.3 / 2, 0);
+        g.add(tank);
+        const lid = new THREE.Mesh(BATH_MODELS.roundedBox(1.95, 0.22, 3.95, 0.3, 6, 0.06));
+        lid.position.set(3.15, 7.45 + 0.11, 0);
+        g.add(lid);
+        const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.12, 24));
+        btn.position.set(3.15, 7.75, 0);
+        g.add(btn);
+        const L = BATH_MODELS.LAYOUT.toilet;
+        g.scale.setScalar(L.s);
+        g.position.set(L.x, 0, L.z);
+        return g;
     },
 
     // ---------- ВСПОМОГАТЕЛЬНОЕ ----------
