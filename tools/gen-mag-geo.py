@@ -255,6 +255,20 @@ def top_mag(te, l, w, t, sa, sc, droop, Ytop, dr=0.0):
     out['center'] = R1([S2(*pt((sc + w) / 2, l / 2, t))])[0]
     out['size'] = [CW, CH]
     out['flap'] = flap_frames(pt, frame, l, w, t, solve, grow)
+    # Взлёт (lust-mag.js): журнал в ПРОСТРАНСТВЕ, в единицах мира и той же
+    # камерой, что и картинка. В css-3d камера запекания повторяется точно:
+    # перспектива K, начало перспективы — точка (360, 760) сцены, точка мира
+    # (X, Y, Z) ставится в (X, −(Y − 4.2), K − (46 − Z)). Журнал — две
+    # пластины: от стопки до кромки носика (A) и висящая часть (B), каждая —
+    # хордой своего куска; на взлёте B выпрямляется к A.
+    def css3(q):
+        X_, Y_, Z_ = W(*q)
+        return [round(X_, 5), round(-(Y_ - 4.2), 5), round(K - (46 - Z_), 5)]
+    def plate(s0, s1):
+        a, b, c = css3(pt(s0, 0, t)), css3(pt(s0, l, t)), css3(pt(s1, 0, t))
+        return dict(p0=a, e1=[b[i] - a[i] for i in range(3)], e2=[c[i] - a[i] for i in range(3)])
+    out['fly'] = dict(K=round(K, 4), origin=[360, 760], split=round(sc / w * CH, 2),
+                      A=plate(0.0, sc), B=plate(sc, w))
     top_mag.pt = pt                                  # для постановки стопки под ним
     return out
 
@@ -358,7 +372,7 @@ out = dict(stack=[blue, yel], top=top)
 # должен: всё, что выше низа кадра финала, — правее его края. Кадр точный
 # (холст постоянного размера, по бокам не срезается) — запас 3 единицы.
 def all_pts(o):
-    if isinstance(o, dict): return [p for k, v in o.items() if k not in ('size', 'm', 'uv', 'flap') for p in all_pts(v)]
+    if isinstance(o, dict): return [p for k, v in o.items() if k not in ('size', 'm', 'uv', 'flap', 'fly') for p in all_pts(v)]
     if isinstance(o, list) and o and isinstance(o[0], (int, float)): return [o]
     if isinstance(o, list): return [p for v in o for p in all_pts(v)]
     return []

@@ -212,6 +212,7 @@ const LustMinigame = {
 
         if (typeof LustGoo !== 'undefined') LustGoo.init(this);
         if (typeof LustShop !== 'undefined') LustShop.init(this);
+        if (typeof LustMag !== 'undefined') LustMag.init(this);
         if (typeof LustDebug !== 'undefined') LustDebug.init(this.screenElement);
 
         // ---------- УЗЕЛ ПОХОТИ В КОЛЕСЕ ГРЕХОВ ----------
@@ -312,6 +313,7 @@ const LustMinigame = {
         // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
         if (typeof BATH_MAG !== 'undefined') BATH_MAG.call.stop();
+        if (typeof LustMag !== 'undefined') LustMag.hide();
         this.glintStop();
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
@@ -2042,11 +2044,10 @@ const LustMinigame = {
         const A = BATH_ART.slots();
 
         // Журнал на унитазе — вход в магазин, пока магазин открыт (до забега
-        // и после). Пока журнал не раскрывается сам (разд. 7б), он открывает
-        // прежний прилавок.
+        // и после): взлетает и раскрывается прилавком (lust-mag.js).
         if (this.shopAllowed() && typeof BATH_MAG !== 'undefined' && BATH_MAG.hit(p)
-            && typeof LustShop !== 'undefined') {
-            LustShop.show();
+            && typeof LustMag !== 'undefined') {
+            LustMag.open();
             return;
         }
 

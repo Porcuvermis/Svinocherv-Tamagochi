@@ -25,7 +25,9 @@ const harness = require('./harness');
 //      два списка одного и того же однажды разойдутся молча.
 //   8. Журнал на унитазе зовёт, только когда есть что купить и магазин
 //      открыт; зов живёт на холсте размером с журнал и слоем — лишь на время
-//      захода; тап по журналу открывает прилавок.
+//      захода. Тап по журналу — он взлетает и раскрывается прилавком во весь
+//      размер; тап по рекламе подсвечивает корзинку, по корзинке — покупает;
+//      мимо — журнал улетает обратно на унитаз.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-lust-shop.js /tmp/shots-
@@ -129,11 +131,58 @@ const harness = require('./harness');
     return SvgSpace.toClient(document.getElementById('bt-svg'), c.tx + c.s * C[0], c.ty + c.s * C[1]);
   });
   await page.mouse.click(magAt.x, magAt.y);
-  await page.waitForTimeout(400);
-  st = await page.evaluate(() => ({ open: LustShop.open, phase: LustMinigame.phase }));
-  check(st.open && st.phase === 'idle', 'тап по журналу открывает прилавок и не включает душ');
-  // Кошелёк — как был (пустой): дальше прогон считает списание от нуля.
-  await page.evaluate(() => { LustShop.close(); GameState.addCurrency('lust_token', -GameState.currency('lust_token')); });
+  await page.waitForTimeout(150);
+  const flying = await page.evaluate(() => ({ open: LustMag.isOpen, busy: LustMag.busy, phase: LustMinigame.phase,
+    sceneHidden: document.getElementById('bt-mag-top').style.visibility === 'hidden' }));
+  check(flying.open && flying.busy && flying.phase === 'idle' && flying.sceneHidden,
+        'тап по журналу: журнал взлетает (на унитазе его больше нет), душ не включился');
+  await page.waitForTimeout(2200);
+  // Журнал раскрылся: перед игроком страница-прилавок во весь размер, по
+  // центру, и ни одна пролистанная страница её не накрывает.
+  const spread = await page.evaluate(() => {
+    const r = document.querySelector('.bm-shop').getBoundingClientRect();
+    const st = document.getElementById('bt-stage').getBoundingClientRect();
+    // Реклама на виду: в её середине — страница журнала (тап разбирает она
+    // сама по прямоугольникам), а не затемнение и не пролистанная страница.
+    const ads = [...document.querySelectorAll('.bm-ad')].map(a => {
+      const b = a.getBoundingClientRect(), el = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+      return !!el && !!el.closest('.bm-shop');
+    });
+    const pages = [...document.querySelectorAll('.bm-page, .bm-cover')].map(p => getComputedStyle(p).visibility);
+    return { busy: LustMag.busy, w: r.width / st.width, cx: (r.x + r.width / 2 - st.x) / st.width, ads, pages };
+  });
+  check(!spread.busy && spread.w > 0.7 && Math.abs(spread.cx - 0.5) < 0.05,
+        `журнал встал по центру во весь размер меню (${(spread.w * 100).toFixed(0)}% ширины)`);
+  check(spread.ads.length === 3 && spread.ads.every(Boolean), 'все три рекламы на виду и в них попадает палец');
+  check(spread.pages.every(v => v === 'hidden'), 'обложка и пролистанные страницы ушли за журнал');
+  // Тап по рекламе НЕ покупает, а подсвечивает корзинку; тап по корзинке —
+  // покупает. Пальцем по координатам.
+  const adAt = await page.evaluate(() => { const b = document.querySelector('.bm-ad .bm-field').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+  const lv0 = await page.evaluate(() => GameState.upgradeLevel('lust_' + document.querySelector('.bm-ad').dataset.key));
+  await page.mouse.click(adAt.x, adAt.y);
+  await page.waitForTimeout(120);
+  const glow = await page.evaluate((lv0) => ({ glow: !!document.querySelector('.bm-cart.bm-glow'),
+    same: GameState.upgradeLevel('lust_' + document.querySelector('.bm-ad').dataset.key) === lv0 }), lv0);
+  check(glow.glow && glow.same, 'тап по рекламе подсвечивает корзинку и ничего не покупает');
+  const cartAt = await page.evaluate(() => { const b = document.querySelector('.bm-ad .bm-cart').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+  await page.mouse.click(cartAt.x, cartAt.y);
+  await page.waitForTimeout(200);
+  const bought = await page.evaluate(() => GameState.upgradeLevel('lust_' + document.querySelector('.bm-ad').dataset.key));
+  check(bought === lv0 + 1, `тап по корзинке покупает (ступень ${lv0} → ${bought})`);
+  await page.screenshot({ path: out + '2b-spread.png' });
+  // Мимо журнала — закрывается и ложится обратно на унитаз. Точка — от
+  // затемнения и журнала, а не числом: в окне не 390×844 холст игры
+  // масштабирован и отцентрован, и «x = 8» уходит мимо игры вовсе.
+  const outAt = await page.evaluate(() => {
+    const d = document.querySelector('.bm-dim').getBoundingClientRect(), m = document.querySelector('.bm-mag').getBoundingClientRect();
+    return { x: (d.left + m.left) / 2, y: m.top + m.height / 2 };
+  });
+  await page.mouse.click(outAt.x, outAt.y);
+  await page.waitForTimeout(1300);
+  const back = await page.evaluate(() => ({ open: LustMag.isOpen, scene: document.getElementById('bt-mag-top').style.visibility !== 'hidden' }));
+  check(!back.open && back.scene, 'тап мимо журнала — он улетает обратно и снова лежит на унитазе');
+  // Покупка выше вернёт ступень: прогон дальше считает от нуля.
+  await page.evaluate(() => { const k = document.querySelector('.bm-ad').dataset.key; GameState.data.upgrades['lust_' + k] = 0; GameState.addCurrency('lust_token', -GameState.currency('lust_token')); GameState.save(); });
   await page.waitForTimeout(300);
 
   // ================= 3. ПОСРЕДИ ЗАБЕГА МАГАЗИНА НЕТ =================
