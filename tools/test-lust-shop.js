@@ -134,6 +134,19 @@ const harness = require('./harness');
     const c = LustMinigame.cam, b = BATH_MAG.callBox(), C = BATH_MAG.GEO.top.center;
     return SvgSpace.toClient(document.getElementById('bt-svg'), c.tx + c.s * C[0], c.ty + c.s * C[1]);
   });
+  // Взлёт начинается С УНИТАЗА: журнал полёта в начальной позе лежит там же,
+  // где журнал сцены. Без этой проверки журнал «телепортировался» в позу над
+  // унитазом — его слой сидел в других координатах, чем холсты сцены.
+  const startAt = await page.evaluate(() => {
+    const sc = document.getElementById('bt-mag-top').getBoundingClientRect();
+    LustMag.open(); LustMag.stopAnims();
+    const a = document.querySelector('.bm-a').getBoundingClientRect();
+    LustMag.hide();
+    const cx = a.x + a.width / 2, cy = a.y + a.height / 2;
+    return { inside: cx > sc.left && cx < sc.right && cy > sc.top && cy < sc.bottom,
+             d: Math.round(Math.hypot(cx - (sc.x + sc.width * 0.55), cy - (sc.y + sc.height * 0.4))) };
+  });
+  check(startAt.inside, `начальная поза полёта — на журнале сцены (середина пластины в его габарите, ${startAt.d} точек от центра)`);
   await page.mouse.click(magAt.x, magAt.y);
   await page.waitForTimeout(150);
   const flying = await page.evaluate(() => ({ open: LustMag.isOpen, busy: LustMag.busy, phase: LustMinigame.phase,

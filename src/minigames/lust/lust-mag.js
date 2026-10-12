@@ -29,6 +29,7 @@
 const LustMag = {
     FLY: 1000,          // полёт до места меню, мс
     STRAIGHT: 420,      // висящая часть выпрямляется
+    GHOST: 150,         // подмена журнала сцены журналом полёта
     OPEN_AT: 780,       // обложка начинает открываться — чуть раньше остановки
     TURN: 680,          // одна страница от закрытой до «за журналом»
     STAGGER: 115,       // следующая страница — вдогонку
@@ -47,13 +48,17 @@ const LustMag = {
         R.className = 'bm-fly';
         R.innerHTML = `
             <div class="bm-dim"></div>
-            <div class="bm-space"><div class="bm-persp"><div class="bm-mag">
+            <div class="bm-space"><img class="bm-ghost" alt=""><div class="bm-persp"><div class="bm-mag">
                 <div class="bm-back"></div>
                 <div class="bm-shop"></div>
                 ${Array.from({ length: this.PAGES }, (_, i) => `<div class="bm-page" data-i="${i}"><div class="bm-f"></div><div class="bm-r"></div></div>`).join('')}
                 <div class="bm-cover"><div class="bm-a"></div><div class="bm-b"></div><div class="bm-in"></div></div>
             </div></div></div>`;
-        scr.appendChild(R);
+        // Внутрь обёртки сцены (#bt-stage), а не экрана мини-игры: точки
+        // журнала должны совпадать с точками холстов сцены. Обёртка сдвинута
+        // рамкой окна, и на экране мини-игры журнал взлетал не с унитаза, а
+        // на полсотни точек выше — с бортика ванны.
+        (document.getElementById('bt-stage') || scr).appendChild(R);
         this.root = R;
         this.$ = (sel) => R.querySelector(sel);
         // Тап мимо журнала — закрыть. По журналу тапы ловит прилавок.
@@ -130,6 +135,18 @@ const LustMag = {
         // места, что считала раскладка, и не прятал обороты страниц.
         this.renderShop();
         this.resetPages();
+        this._inner = null; this.inner(false);
+        // Призрак — та же запечённая картинка, что лежит в сцене, на её
+        // точном месте: журнал полёта — две плоские пластины, и подмена в
+        // момент тапа была бы видна. Призрак растворяется, пока журнал
+        // только отрывается (GHOST мс), на закрытии — проявляется.
+        const gh = this.$('.bm-ghost'), B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED.top : null;
+        if (B) {
+            const c = G.c;
+            gh.src = B.src;
+            Object.assign(gh.style, { left: (c.tx + c.s * B.x) + 'px', top: (c.ty + c.s * B.y) + 'px',
+                                      width: (c.s * B.w) + 'px', height: (c.s * B.h) + 'px' });
+        }
         this.put(mag, 'transform', this.matrix(P0, G));
         this.put(b, 'transform', `rotateX(${P0.beta}rad)`);
         this.put(this.$('.bm-dim'), 'opacity', '0');
@@ -157,10 +174,34 @@ const LustMag = {
         const s = Math.min(1, e / this.STRAIGHT);
         this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * (1 - this.easeOut(s))).toFixed(4)}rad)`);
         this.put(this.$('.bm-dim'), 'opacity', Math.min(1, e / this.FLY).toFixed(2));
+        this.ghost(1 - Math.min(1, e / this.GHOST));
+        // Нутро журнала (страницы, прилавок, задник) — плоское во всю длину,
+        // а висящая часть обложки на старте согнута: пока она не выпрямилась,
+        // нутро торчало бы из-под сгиба красной полосой. Видно — после.
+        this.inner(e >= this.STRAIGHT);
         // Обложка и страницы: от 0 до −340° вокруг корешка — открываются и
         // заворачиваются за журнал. До своего начала их не трогают.
         this.turn(this.$('.bm-cover'), e - this.OPEN_AT);
-        this.pages.forEach((p, i) => this.turn(p, e - this.OPEN_AT - this.STAGGER * (i + 1)));
+        if (this._inner) this.pages.forEach((p, i) => this.turn(p, e - this.OPEN_AT - this.STAGGER * (i + 1)));
+    },
+    // Призрак виден на a (0…1), лицо обложки — на 1 − a. Обложку гасит её
+    // лицо, а не журнал целиком: прозрачность на .bm-mag сплющила бы его 3d.
+    ghost(a) {
+        const v = a.toFixed(2), w = (1 - a).toFixed(2);
+        this.put(this.$('.bm-ghost'), 'opacity', v);
+        if (!this._faceA) this._faceA = [this.$('.bm-a'), this.$('.bm-b')];
+        if (this.$('.bm-cover')._a === 0) this._faceA.forEach(f => this.put(f, 'opacity', w));
+    },
+    inner(on) {
+        if (on === this._inner) return;
+        this._inner = on;
+        for (const el of [this.$('.bm-shop'), this.$('.bm-back')]) this.put(el, 'opacity', on ? '1' : '0');
+        this.pages.forEach(p => {
+            p._a = null;
+            if (on) { this.setTurn(p, 0); return; }
+            if (!p._faces) this.setTurn(p, 0);
+            p._faces.forEach(list => list.forEach(f => this.put(f, 'opacity', '0')));
+        });
     },
     turn(el, t) {
         if (t <= 0 && el._a === 0) return;
@@ -200,6 +241,9 @@ const LustMag = {
             const c = Math.min(1, e / 260);
             this.setTurn(this.$('.bm-cover'), -340 * (1 - this.ease(c)));
             const f = Math.max(0, Math.min(1, (e - 160) / T)), u = this.ease(f), V = this.vec;
+            // висящая часть снова сгибается — нутро прячется под обложку
+            this.inner(f < 0.5);
+            this.ghost(Math.max(0, Math.min(1, (e - (T + 260 - this.GHOST)) / this.GHOST)));
             const C = V.add(V.lerp(this.P1.C, this.P0.C, u), [0, -Math.sin(Math.PI * u) * 0.2 * this.P0.k * G.LW, 0]);
             this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C }, G));
             this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * Math.max(0, (f - 0.55) / 0.45)).toFixed(4)}rad)`);

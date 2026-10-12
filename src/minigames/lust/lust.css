@@ -563,6 +563,7 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     transform-origin: 0 0;
     pointer-events: none;
 }
+#lust-game .bm-ghost { position: absolute; opacity: 0; pointer-events: none; }
 #lust-game .bm-persp {
     position: absolute;
     left: 0;
