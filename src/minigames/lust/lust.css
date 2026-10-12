@@ -579,6 +579,9 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     transform-style: preserve-3d;
     pointer-events: auto;
 }
+/* Обложке и пролистанным страницам пальцы не нужны: погасшая прозрачностью
+   страница остаётся за журналом и ловила тап «мимо» как тап по журналу. */
+#lust-game .bm-cover, #lust-game .bm-page, #lust-game .bm-back { pointer-events: none; }
 #lust-game .bm-mag > div {
     position: absolute;
     left: 0;
@@ -707,3 +710,24 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     40%  { box-shadow: 0 0 0 10px rgba(80, 220, 120, 0.45); }
     100% { box-shadow: 0 0 0 18px rgba(80, 220, 120, 0); }
 }
+
+/* Пока журнал открыт, сцена за ним спит: ни одного css-цикла под затемнением
+   (lust-mag.js, sleepScene). */
+#lust-game.bm-reading *,
+#lust-game.bm-reading *::before,
+#lust-game.bm-reading *::after { animation-play-state: paused !important; }
+#lust-game.bm-reading .bm-fly *,
+#lust-game.bm-reading .bm-fly *::before,
+#lust-game.bm-reading .bm-fly *::after { animation-play-state: running !important; }
+
+/* Зов журнала (BATH_MAG.call): HTML-холст размером с журнал, части двигает
+   видеокарта. Погасшее по умолчанию — opacity 0: вне захода не видно ничего. */
+#lust-game .bmc { position: absolute; overflow: hidden; pointer-events: none; }
+#lust-game .bmc-in { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+#lust-game .bmc-flap { position: absolute; overflow: hidden; opacity: 0; }
+#lust-game .bmc-flap img { position: absolute; left: 0; top: 0; display: block; max-width: none; }
+#lust-game .bmc-streak {
+    position: absolute; left: -11px; top: -2.5px; width: 22px; height: 5px;
+    border-radius: 3px; opacity: 0; transform-origin: 11px 2.5px;
+}
+#lust-game .bmc-spark { position: absolute; width: 0; height: 0; opacity: 0; }

@@ -914,9 +914,10 @@
         <!-- ЗОВ ЖУРНАЛА — свой холст размером с журнал на унитазе, поверх
              сцены: блик по контуру и отгибающийся уголок, когда в магазине
              есть что купить (BATH_MAG.call). На холсте сцены каждый кадр зова
-             перерисовывал бы весь экран (docs/traps.md, п. 156); слоем холст
-             становится только на время захода. -->
-        <svg id="bt-mag-call" class="bt-svg bt-box bt-quiet" preserveAspectRatio="none"></svg>
+             перерисовывал бы весь экран (docs/traps.md, п. 156). Это HTML, а
+             не svg: заход двигает видеокарта (Web Animations), слои у его
+             частей есть, только пока идёт анимация. -->
+        <div id="bt-mag-call" class="bt-box bmc"></div>
         <div id="bt-hand-home-at" class="bt-carry">
             <svg id="bt-hand-home" class="bt-svg bt-box bt-quiet" preserveAspectRatio="none"></svg>
         </div>
@@ -1212,6 +1213,7 @@
 <script src="src/minigames/lust/bath-tub.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-toilet.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-mag.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-mag-baked.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-mag.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-soap.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-cloth.js?v=__BUILD__"></script>

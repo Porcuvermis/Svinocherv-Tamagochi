@@ -413,7 +413,12 @@ const LustMinigame = {
             const L = Math.floor(x0 + k * R.x), T = Math.floor(y0 + k * R.y);
             const W = Math.ceil(x0 + k * (R.x + R.w)) - L, H = Math.ceil(y0 + k * (R.y + R.h)) - T;
             const vb = [(L - x0) / k, (T - y0) / k, W / k, H / k].map(v => v.toFixed(4)).join(' ');
-            if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
+            if (svg.tagName === 'DIV') {
+                // HTML-холст (зов журнала): единицы сцены внутри масштабирует
+                // .bmc-in так же, как окно viewBox у svg.
+                const inn = svg.firstElementChild;
+                if (inn) inn.style.transform = `scale(${k.toFixed(5)}) translate(${(-(L - x0) / k).toFixed(3)}px, ${(-(T - y0) / k).toFixed(3)}px)`;
+            } else if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
             const st = svg.style;
             st.left = L + 'px'; st.top = T + 'px'; st.width = W + 'px'; st.height = H + 'px';
             svg._btWorld = [c.s, 0, 0, c.s, c.tx, c.ty];
@@ -4000,6 +4005,8 @@ const LustMinigame = {
     },
 
     syncShopButton() {
+        // Магазин закрылся (забег начался) — зов журнала гаснет сразу.
+        if (!this.shopAllowed() && typeof BATH_MAG !== 'undefined') BATH_MAG.call.reset();
         if (!this.shopBtn) this.shopBtn = document.getElementById('bt-shop-btn');
         if (this.shopBtn) this.shopBtn.classList.toggle('on', this.shopAllowed());
     },

@@ -130,9 +130,11 @@ const LustMag = {
         // места, что считала раскладка, и не прятал обороты страниц.
         this.renderShop();
         this.resetPages();
-        mag.style.transform = this.matrix(P0, G);
-        b.style.transform = `rotateX(${P0.beta}rad)`;
+        this.put(mag, 'transform', this.matrix(P0, G));
+        this.put(b, 'transform', `rotateX(${P0.beta}rad)`);
+        this.put(this.$('.bm-dim'), 'opacity', '0');
         R.classList.add('on');
+        this.sleepScene(true);
         this.isOpen = true; this.busy = true;
         // Журнал на унитазе прячется: летит он сам. Холст сцены
         // перерисуется один раз — это не покадровая правка.
@@ -151,17 +153,17 @@ const LustMag = {
         // Левитация у места: лёгкое покачивание, гаснущее к концу.
         const wob = f > 0.75 ? Math.sin((e - 0.75 * this.FLY) / 140) * 0.03 * (1 - Math.min(1, (e - this.FLY) / 900)) : 0;
         const Rw = wob ? this.mulR(R, this.rotX(wob)) : R;
-        this.$('.bm-mag').style.transform = this.matrix({ R: Rw, k: this.P0.k, C }, G);
+        this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: Rw, k: this.P0.k, C }, G));
         const s = Math.min(1, e / this.STRAIGHT);
-        this.$('.bm-b').style.transform = `rotateX(${(this.P0.beta * (1 - this.easeOut(s))).toFixed(4)}rad)`;
-        this.$('.bm-dim').style.opacity = Math.min(1, e / this.FLY).toFixed(3);
+        this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * (1 - this.easeOut(s))).toFixed(4)}rad)`);
+        this.put(this.$('.bm-dim'), 'opacity', Math.min(1, e / this.FLY).toFixed(2));
         // Обложка и страницы: от 0 до −340° вокруг корешка — открываются и
-        // заворачиваются за журнал.
-        this.turn('.bm-cover', e - this.OPEN_AT);
-        this.$$('.bm-page').forEach((p, i) => this.turn(p, e - this.OPEN_AT - this.STAGGER * (i + 1)));
+        // заворачиваются за журнал. До своего начала их не трогают.
+        this.turn(this.$('.bm-cover'), e - this.OPEN_AT);
+        this.pages.forEach((p, i) => this.turn(p, e - this.OPEN_AT - this.STAGGER * (i + 1)));
     },
     turn(el, t) {
-        if (typeof el === 'string') el = this.$(el);
+        if (t <= 0 && el._a === 0) return;
         const u = Math.max(0, Math.min(1, t / this.TURN));
         this.setTurn(el, -340 * this.ease(u));
     },
@@ -174,14 +176,17 @@ const LustMag = {
     //   −90…−265°  — оборот (страница ушла влево и смотрит изнанкой);
     //   дальше     — за журналом, не видна.
     setTurn(el, a) {
-        el.style.transform = `translateZ(${el.dataset.z || 0}px) rotateY(${a.toFixed(2)}deg)`;
+        if (el._a === a) return;
+        el._a = a;
         const face = a > -90, gone = a <= -265;
-        el.style.visibility = gone ? 'hidden' : '';
-        const isCover = el.classList.contains('bm-cover');
-        const fronts = isCover ? el.querySelectorAll('.bm-a, .bm-b') : el.querySelectorAll('.bm-f');
-        const backs = isCover ? el.querySelectorAll('.bm-in') : el.querySelectorAll('.bm-r');
-        fronts.forEach(f => { f.style.display = face ? '' : 'none'; });
-        backs.forEach(b => { b.style.display = face ? 'none' : ''; });
+        if (!gone) this.put(el, 'transform', `translateZ(${el.dataset.z || 0}px) rotateY(${a.toFixed(1)}deg)`);
+        if (!el._faces) {
+            const isCover = el.classList.contains('bm-cover');
+            el._faces = [el.querySelectorAll(isCover ? '.bm-a, .bm-b' : '.bm-f'), el.querySelectorAll(isCover ? '.bm-in' : '.bm-r')];
+        }
+        // Стороны — прозрачностью (её анимирует композитор), а не display.
+        el._faces[0].forEach(f => this.put(f, 'opacity', !gone && face ? '1' : '0'));
+        el._faces[1].forEach(b => this.put(b, 'opacity', !gone && !face ? '1' : '0'));
     },
 
     // ---------- ЗАКРЫТЬ ----------
@@ -189,29 +194,41 @@ const LustMag = {
         if (this.busy || !this.isOpen) return;
         this.busy = true;
         const G = this.G, T = this.BACK;
-        this.$$('.bm-page').forEach(p => { p.style.visibility = 'hidden'; });
+        this.pages.forEach(p => { p._a = null; this.setTurn(p, -340); });
         this.run(T + 260, (e) => {
             // Обложка возвращается на место, журнал летит обратно и ложится.
             const c = Math.min(1, e / 260);
             this.setTurn(this.$('.bm-cover'), -340 * (1 - this.ease(c)));
             const f = Math.max(0, Math.min(1, (e - 160) / T)), u = this.ease(f), V = this.vec;
             const C = V.add(V.lerp(this.P1.C, this.P0.C, u), [0, -Math.sin(Math.PI * u) * 0.2 * this.P0.k * G.LW, 0]);
-            this.$('.bm-mag').style.transform = this.matrix({ R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C }, G);
-            this.$('.bm-b').style.transform = `rotateX(${(this.P0.beta * Math.max(0, (f - 0.55) / 0.45)).toFixed(4)}rad)`;
-            this.$('.bm-dim').style.opacity = (1 - f).toFixed(3);
+            this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C }, G));
+            this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * Math.max(0, (f - 0.55) / 0.45)).toFixed(4)}rad)`);
+            this.put(this.$('.bm-dim'), 'opacity', (1 - f).toFixed(2));
         }, () => {
             this.root.classList.remove('on');
             this.sceneMag(true);
+            this.sleepScene(false);
             this.isOpen = false; this.busy = false;
         });
     },
 
     // Сброс без анимации — игра закрылась посреди полёта.
     hide() {
-        cancelAnimationFrame(this.raf); this.raf = 0;
+        this.stopAnims(); this.raf = 0;
         if (this.root) this.root.classList.remove('on');
         this.sceneMag(true);
+        this.sleepScene(false);
         this.isOpen = false; this.busy = false;
+    },
+
+    // Пока журнал открыт, сцена за затемнением СПИТ: червь не пересчитывает
+    // кадры, живые вещи на полке стоят, дождь и прочие css-циклы на паузе
+    // (lust.css, .bm-reading). Крутить их под журналом — греть телефон зря.
+    sleepScene(on) {
+        const h = this.host;
+        if (h.screenElement) h.screenElement.classList.toggle('bm-reading', on);
+        if (h.wormHandle && h.wormHandle.setPaused) h.wormHandle.setPaused(on);
+        if (typeof BATH_SOAP !== 'undefined') { if (on) BATH_SOAP.stop(); else BATH_SOAP.wake(); }
     },
 
     sceneMag(on) {
@@ -219,9 +236,11 @@ const LustMag = {
         if (g) g.style.visibility = on ? '' : 'hidden';
     },
     resetPages() {
+        this.stopAnims();
         const cov = this.$('.bm-cover');
-        cov.dataset.z = 4; this.setTurn(cov, 0);
-        this.$$('.bm-page').forEach((p, i) => { p.dataset.z = 3 - i * 0.8; this.setTurn(p, 0); });
+        this.pages = this.$$('.bm-page');
+        cov.dataset.z = 4; cov._a = null; this.setTurn(cov, 0);
+        this.pages.forEach((p, i) => { p.dataset.z = 3 - i * 0.8; p._a = null; this.setTurn(p, 0); });
     },
 
     // ---------- ПРИЛАВОК НА СТРАНИЦЕ ----------
@@ -266,19 +285,60 @@ const LustMag = {
         };
     },
 
-    // ---------- ЧАСЫ ----------
+    // ---------- ЧАСЫ: ВСЁ ДВИЖЕНИЕ — НА ВИДЕОКАРТЕ ----------
+    // Кадр полёта не считается на каждом кадре экрана. Вся анимация один раз
+    // раскладывается в ключевые кадры (каждые 25 мс: transform и opacity
+    // каждого элемента журнала) и отдаётся Web Animations — их проигрывает
+    // поток композитора, главный поток на кадре не делает ничего. Пока полёт
+    // вёл скрипт, каждый кадр пересылал дерево слоёв в композитор (Commit +
+    // Layerize — 8 мс кадра под замедлением), и на айфоне журнал летел в три
+    // кадра. Анимация стартует, когда её первый кадр уже собран, — прыжка от
+    // долгого первого кадра нет сама собой (docs/traps.md, п. 158).
     run(ms, frame, done) {
-        cancelAnimationFrame(this.raf);
-        const t0 = performance.now();
-        const step = (now) => {
-            const e = now - t0;
-            frame(Math.min(e, ms));
-            if (e < ms) { this.raf = requestAnimationFrame(step); return; }
-            this.raf = 0; if (done) done();
-        };
-        this.raf = requestAnimationFrame(step);
+        this.stopAnims();
+        const N = Math.max(2, Math.ceil(ms / 25)), rec = new Map();
+        this.rec = { rec, i: 0 };
+        for (let i = 0; i <= N; i++) { this.rec.i = i; frame(ms * i / N); }
+        this.rec = null;
+        const anims = [];
+        rec.forEach((props, el) => {
+            const kf = [], last = {}, c = el._bm || (el._bm = {});
+            for (let i = 0; i <= N; i++) {
+                const k = { offset: i / N };
+                for (const prop of Object.keys(props)) {
+                    let v = props[prop][i];
+                    if (v === undefined) v = prop in last ? last[prop] : (c[prop] != null ? c[prop] : (prop === 'opacity' ? '1' : 'none'));
+                    last[prop] = v; k[prop] = v;
+                }
+                kf.push(k);
+            }
+            Object.assign(c, last);                        // кеш записей — по конечному кадру
+            anims.push(el.animate(kf, { duration: ms, easing: 'linear', fill: 'forwards' }));
+        });
+        this.anims = anims;
+        const fin = () => { if (this.anims === anims) { this.raf = 0; if (done) done(); } };
+        if (!anims.length) { fin(); return; }
+        Promise.all(anims.map(a => a.finished)).then(fin, () => {});
+    },
+    // Снять анимации, оставив элементы там, где их застали.
+    stopAnims() {
+        for (const a of this.anims || []) { try { a.commitStyles(); } catch (e) {} a.cancel(); }
+        this.anims = [];
     },
     $$(sel) { return Array.from(this.root.querySelectorAll(sel)); },
+    // Стиль пишется, только если значение другое: каждая запись в слой с
+    // 3d-преобразованием — пересборка дерева слоёв (Commit + Layerize были
+    // самой дорогой частью кадра полёта).
+    put(el, prop, val) {
+        if (this.rec) {                                    // раскладка анимации в кадры
+            const m = this.rec.rec, p = m.get(el) || (m.set(el, {}), m.get(el));
+            (p[prop] || (p[prop] = []))[this.rec.i] = val;
+            return;
+        }
+        const c = el._bm || (el._bm = {});
+        if (c[prop] === val) return;
+        c[prop] = val; el.style[prop] = val;
+    },
     ease(u) { return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; },
     easeOut(u) { return 1 - Math.pow(1 - u, 3); },
 

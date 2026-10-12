@@ -215,7 +215,31 @@ const BATH_MAG = {
             <path d="${this.line(bot)}" fill="none" stroke="${coverRamp.lo}" stroke-width="0.9" stroke-linecap="round"/>`;
     },
 
+    // ---------- ЧТО ВИДИТ ИГРА: ЗАПЕЧЁННЫЕ КАРТИНКИ ----------
+    // В сцене журналы — ДВЕ растровые картинки (стопка и верхний), а не
+    // векторная натяжка. Вектор (drawVector) — исходник: его один раз
+    // рендерит tools/bake-mag.js в PNG (BATH_MAG_BAKED — окна картинок в
+    // единицах сцены).
+    //
+    // Почему так: обложки натянуты кусками, у каждого свой перенос и
+    // заливка-узор с картинкой обложки (п. 160). WebKit заводит под КАЖДОЕ
+    // такое применение узора свою растровую плитку размером с обложку в его
+    // масштабе — около шестидесяти кусков давали сотни мегабайт видеопамяти,
+    // и на айфоне через полминуты простоя пропадал фон, потом чернел журнал
+    // (docs/traps.md, п. 162). Две картинки стоят две текстуры.
     draw() {
+        const B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED : null;
+        if (!B) return this.drawVector();
+        const T = this.GEO.top, img = (r) =>
+            `<image href="${r.src}" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" preserveAspectRatio="none"/>`;
+        return `
+        <g class="bt-mag">
+            <g id="bt-mag-stack">${img(B.stack)}</g>
+            <g id="bt-mag-top" data-px="${T.pivot[0]}" data-py="${T.pivot[1]}" data-cx="${T.center[0]}" data-cy="${T.center[1]}">${img(B.top)}</g>
+        </g>`;
+    },
+
+    drawVector() {
         const G = this.GEO, Mg = PALETTE.bathScene.magazine, P = Mg.paper, ink = PALETTE.ink, f = (v) => v.toFixed(1);
         if (!G.top) return '';
         const [TW, TH] = G.top.size, [SW, SH] = [210, 280];
@@ -299,9 +323,10 @@ const BATH_MAG = {
     //
     // Живёт на СВОЁМ холсте размером с журнал (#bt-mag-call, окно — callBox):
     // на холсте сцены каждый кадр зова перерисовывал бы весь экран (docs/
-    // traps.md, п. 156). Слоем холст становится только на время захода
-    // (.bt-live). Кадры уголка посчитаны генератором (GEO.top.flap) — здесь
-    // они только переключаются; лицо лоскута — та же обложка узором (п. 160).
+    // traps.md, п. 156). Весь заход — Web Animations по transform и opacity
+    // (play): двигает видеокарта, главный поток на кадре ничего не делает, и
+    // слои у частей есть, только пока идёт анимация. Кадры уголка запечены
+    // лентой (tools/bake-mag.js) — кадр это сдвиг ленты.
     callBox() {
         const T = this.GEO.top, F = T.flap, P = 14;
         const pts = T.cover.concat(T.near || [], ...F.frames.map(f => f.edge));
@@ -309,41 +334,47 @@ const BATH_MAG = {
         const x = Math.min(...xs) - P, y = Math.min(...ys) - P;
         return { x, y, w: Math.max(...xs) + P - x, h: Math.max(...ys) + P - y };
     },
-    callArt() {
+    // Уголок зова в векторе — исходник для запекания (tools/bake-mag.js):
+    // страница под уголком (under) и кадры лоскута (frames, без нулевого).
+    flapVector() {
         const T = this.GEO.top, F = T.flap, [TW, TH] = T.size;
-        const Mg = PALETTE.bathScene.magazine, P = Mg.paper, C = Mg.call, ink = PALETTE.ink;
+        const Mg = PALETTE.bathScene.magazine, P = Mg.paper, ink = PALETTE.ink;
         const inner = mixColor(ink, P.lo, 0.5);
         // Изнанка обложки — глянцевая, с отпечатком рекламы: розоватая, а не
         // бумажная. Одного цвета со страницей под ней она сливалась с ней.
         const back = { lo: mixColor(Mg.pinup.hi, P.lo, 0.5), hi: mixColor(Mg.pinup.hi, P.hi, 0.55) };
-        const frames = F.frames.map((fr, k) => {
-            const tri = fr.tris.map(t => t.f
+        const frames = F.frames.slice(1).map(fr => fr.tris.map(t => t.f
                 ? `<path transform="matrix(${t.m.join(' ')})" d="${this.poly(t.uv)}" fill="url(#btmc-art)"/>`
-                : `<path d="${this.poly(t.p)}" fill="${mixColor(back.lo, back.hi, Math.max(0, Math.min(1, (t.tone + 0.4) / 1.2)))}"/>`).join('');
-            return `<g data-k="${k}" style="display:none">${tri}<path d="${this.poly(fr.edge)}" fill="none" stroke="${ink}" stroke-width="${STROKE.contour}" stroke-linejoin="round"/></g>`;
-        }).join('');
-        const [cx, cy] = F.corner, r = 7;
-        const star = `M0 ${-r}Q1 -1 ${r} 0Q1 1 0 ${r}Q-1 1 ${-r} 0Q-1 -1 0 ${-r}Z`;
-        return `
-            <defs>${this.pattern('btmc-art', TW, TH, this.covers.top(TW, TH))}
-                <radialGradient id="btmc-bloom"><stop offset="0" stop-color="${C.glint}"/><stop offset="1" stop-color="${C.halo}" stop-opacity="0"/></radialGradient>
-            </defs>
-            <g id="btmc-flap" style="display:none">
-                <!-- под отогнутым уголком — страница, а не дыра -->
+                : `<path d="${this.poly(t.p)}" fill="${mixColor(back.lo, back.hi, Math.max(0, Math.min(1, (t.tone + 0.4) / 1.2)))}"/>`).join('')
+            + `<path d="${this.poly(fr.edge)}" fill="none" stroke="${ink}" stroke-width="${STROKE.contour}" stroke-linejoin="round"/>`);
+        const under = `
                 <path d="${this.poly(F.page)}" fill="${P[500]}" stroke="${inner}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
                 <path d="${F.rows.map(r => this.line(r)).join('')}" fill="none" stroke="${P.line}" stroke-width="1.4" stroke-linecap="round"/>
                 <path d="${this.poly(F.shadow)}" fill="${ink}" fill-opacity="0.22"/>
-                <path d="${this.line(F.fold)}" fill="none" stroke="${P.lo}" stroke-width="2.2" stroke-linecap="round"/>
-                ${frames}
-            </g>
-            <g id="btmc-glint" style="display:none">
-                <path class="btmc-g" d="${this.poly(T.cover)}" fill="none" stroke="${C.halo}" stroke-width="5" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>
-                <path class="btmc-g" d="${this.poly(T.cover)}" fill="none" stroke="${C.glint}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </g>
-            <g id="btmc-spark" style="display:none" transform="translate(${cx} ${cy}) scale(0)">
-                <circle r="${r * 1.6}" fill="url(#btmc-bloom)" opacity="0.8"/>
-                <path d="${star}" fill="${C.glint}"/>
-            </g>`;
+                <path d="${this.line(F.fold)}" fill="none" stroke="${P.lo}" stroke-width="2.2" stroke-linecap="round"/>`;
+        return { defs: this.pattern('btmc-art', TW, TH, this.covers.top(TW, TH)), under, frames };
+    },
+    // Холст зова — HTML, а не svg: двигает его ВИДЕОКАРТА (Web Animations
+    // по transform и opacity). У svg-элементов анимацию считает главный
+    // поток с перерисовкой, и каждый заход зова пересылал дерево слоёв
+    // десятки раз в секунду. Координаты внутри — единицы сцены (.bmc-in
+    // масштабирует их в точки, ставит lust.js, placeShelf).
+    callArt() {
+        const F = this.GEO.top.flap, C = PALETTE.bathScene.magazine.call;
+        const B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED.flap : null;
+        const [cx, cy] = F.corner, r = 7;
+        const star = `M0 ${-r}Q1 -1 ${r} 0Q1 1 0 ${r}Q-1 1 ${-r} 0Q-1 -1 0 ${-r}Z`;
+        return `<div class="bmc-in">
+            ${B ? `<div class="bmc-flap" style="left:${B.x}px;top:${B.y}px;width:${B.w}px;height:${B.h}px">
+                <img src="${B.src}" alt="" style="width:${B.w}px;height:${B.h * B.n}px"></div>` : ''}
+            <div class="bmc-streak" style="background:linear-gradient(90deg, transparent, ${C.glint} 45%, ${C.glint} 55%, transparent);
+                 box-shadow:0 0 5px 2px ${C.halo}"></div>
+            <div class="bmc-spark" style="left:${cx}px;top:${cy}px">
+                <svg viewBox="-12 -12 24 24" width="24" height="24" style="position:absolute;left:-12px;top:-12px;overflow:visible">
+                    <defs><radialGradient id="btmc-bloom"><stop offset="0" stop-color="${C.glint}"/><stop offset="1" stop-color="${C.halo}" stop-opacity="0"/></radialGradient></defs>
+                    <circle r="${r * 1.6}" fill="url(#btmc-bloom)" opacity="0.8"/><path d="${star}" fill="${C.glint}"/>
+                </svg></div>
+        </div>`;
     },
     // Попадание пальцем: габарит журналов с запасом — вещь маленькая, а
     // палец толстый.
@@ -365,7 +396,7 @@ const BATH_MAG = {
         // подпрыгнув. Пауза между заходами — PAUSE + до PAUSE_RND.
         GLINT: [0, 900], SPARK: [650, 1250], UP: [1350, 2050], HOLD: 3150, DOWN: 3650, BOUNCE: 3950,
         PAUSE: 7000, PAUSE_RND: 3000, FIRST: 2500,
-        host: null, svg: null, timer: 0, raf: 0, k: 0, len: 0,
+        host: null, svg: null, timer: 0, k: 0, anims: [],
 
         start(host) {
             this.stop();
@@ -375,8 +406,8 @@ const BATH_MAG = {
             this.timer = setTimeout(() => this.cycle(), this.FIRST);
         },
         stop() {
-            clearTimeout(this.timer); cancelAnimationFrame(this.raf);
-            this.timer = this.raf = 0;
+            clearTimeout(this.timer);
+            this.timer = 0;
             this.reset();
         },
         wanted() {
@@ -395,70 +426,57 @@ const BATH_MAG = {
         next() {
             this.timer = setTimeout(() => this.cycle(), this.PAUSE + Math.random() * this.PAUSE_RND);
         },
+        // Заход целиком раскладывается в ключевые кадры и отдаётся Web
+        // Animations: уголок — лента кадров, сдвигаемая ступеньками; блик —
+        // светящийся штрих, бегущий по контуру; вспышка — масштаб и
+        // прозрачность. Главный поток во время захода не делает ничего.
         play() {
-            const svg = this.svg, $ = (id) => svg.querySelector('#' + id);
-            const glint = $('btmc-glint'), spark = $('btmc-spark'), flap = $('btmc-flap');
-            const paths = glint.querySelectorAll('.btmc-g');
-            if (!this.len) this.len = paths[0].getTotalLength ? paths[0].getTotalLength() : 600;
-            const L = this.len, seg = L * 0.14;
-            paths.forEach(p => p.setAttribute('stroke-dasharray', `${seg.toFixed(1)} ${(L + seg).toFixed(1)}`));
-            svg.classList.add('bt-live');
-            const t0 = performance.now(), [cx, cy] = BATH_MAG.GEO.top.flap.corner;
+            const box = this.svg, G = BATH_MAG.GEO.top, B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED.flap : null;
+            const D = this.BOUNCE, dt = 25, N = Math.ceil(D / dt);
             const ease = (u) => u * u * (3 - 2 * u);
-            const step = (now) => {
-                const e = now - t0;
-                // Магазин закрылся посреди захода (забег начался, игрок ушёл) — зов гаснет сразу.
-                if (!this.host.shopAllowed() || (typeof LustShop !== 'undefined' && LustShop.open)
-                    || (typeof LustMag !== 'undefined' && LustMag.isOpen)) { this.reset(); this.next(); return; }
-                // блик бежит по контуру
+            // контур журнала: длины по ходу — для бегущего блика
+            const P = G.cover.concat([G.cover[0]]), acc = [0];
+            for (let i = 1; i < P.length; i++) acc.push(acc[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+            const L = acc[acc.length - 1];
+            const at = (d) => {
+                let i = 1; while (i < acc.length - 1 && acc[i] < d) i++;
+                const u = (d - acc[i - 1]) / ((acc[i] - acc[i - 1]) || 1), a = P[i - 1], b = P[i];
+                return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI];
+            };
+            const kStreak = [], kSpark = [], kFlap = [], kStrip = [];
+            for (let i = 0; i <= N; i++) {
+                const e = Math.min(D, i * dt), off = i / N;
                 const [g0, g1] = this.GLINT;
-                if (e >= g0 && e < g1) {
-                    const u = (e - g0) / (g1 - g0);
-                    glint.style.display = '';
-                    glint.style.opacity = Math.min(1, Math.min(u, 1 - u) * 5).toFixed(3);
-                    const off = (seg - (L + seg) * u).toFixed(1);
-                    paths.forEach(p => p.setAttribute('stroke-dashoffset', off));
-                } else glint.style.display = 'none';
-                // вспышка на уголке
-                const [s0, s1] = this.SPARK;
-                if (e >= s0 && e < s1) {
-                    const u = (e - s0) / (s1 - s0), k = Math.sin(Math.PI * u);
-                    spark.style.display = '';
-                    spark.setAttribute('transform', `translate(${cx} ${cy}) rotate(${(u * 90).toFixed(1)}) scale(${(k * 1.15).toFixed(3)})`);
-                } else spark.style.display = 'none';
-                // уголок
+                const ug = Math.max(0, Math.min(1, (e - g0) / (g1 - g0)));
+                const [x, y, ang] = at(L * ug);
+                kStreak.push({ offset: off, transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${ang.toFixed(1)}deg)`,
+                               opacity: (e >= g0 && e < g1) ? Math.min(1, Math.min(ug, 1 - ug) * 5).toFixed(2) : '0' });
+                const [s0, s1] = this.SPARK, us = Math.max(0, Math.min(1, (e - s0) / (s1 - s0))), ks = Math.sin(Math.PI * us);
+                kSpark.push({ offset: off, transform: `rotate(${(us * 90).toFixed(1)}deg) scale(${(ks * 1.15).toFixed(3)})`, opacity: (e > s0 && e < s1) ? '1' : '0' });
                 let f = 0;
                 const [u0, u1] = this.UP;
                 if (e >= u0 && e < u1) f = 1 - Math.pow(1 - (e - u0) / (u1 - u0), 3);
                 else if (e >= u1 && e < this.HOLD) f = 1 - 0.08 * (0.5 - 0.5 * Math.cos(2 * Math.PI * (e - u1) / 550));
                 else if (e >= this.HOLD && e < this.DOWN) f = 1 - ease((e - this.HOLD) / (this.DOWN - this.HOLD));
                 else if (e >= this.DOWN && e < this.BOUNCE) f = 0.14 * Math.sin(Math.PI * (e - this.DOWN) / (this.BOUNCE - this.DOWN));
-                this.showFlap(flap, f);
-                if (e < this.BOUNCE) { this.raf = requestAnimationFrame(step); return; }
-                this.reset();
-                this.next();
-            };
-            this.raf = requestAnimationFrame(step);
+                const k = B ? Math.max(0, Math.min(B.n, Math.round(f * B.n))) : 0;
+                // кадры уголка — ступеньками, без промежуточных
+                kFlap.push({ offset: off, opacity: k > 0 ? '1' : '0', easing: 'steps(1, end)' });
+                kStrip.push({ offset: off, transform: `translateY(${(-(Math.max(1, k) - 1) * (B ? B.h : 0)).toFixed(2)}px)`, easing: 'steps(1, end)' });
+            }
+            const opt = { duration: D, fill: 'none', easing: 'linear' };
+            const q = (sel) => box.querySelector(sel);
+            this.anims = [q('.bmc-streak').animate(kStreak, opt), q('.bmc-spark').animate(kSpark, opt)];
+            if (B) this.anims.push(q('.bmc-flap').animate(kFlap, opt), q('.bmc-flap img').animate(kStrip, opt));
+            this.k = 1;
+            const mine = this.anims;
+            Promise.all(mine.map(a => a.finished)).then(() => { if (this.anims === mine) { this.anims = []; this.k = 0; this.next(); } }, () => {});
         },
-        // Кадр уголка: f — доля подъёма (0…1) → ближайший посчитанный кадр.
-        showFlap(flap, f) {
-            const n = BATH_MAG.GEO.top.flap.frames.length - 1;
-            const k = Math.max(0, Math.min(n, Math.round(f * n)));
-            if (k === this.k) return;
-            const old = flap.querySelector(`[data-k="${this.k}"]`), cur = flap.querySelector(`[data-k="${k}"]`);
-            if (old) old.style.display = 'none';
-            if (cur && k > 0) cur.style.display = '';
-            flap.style.display = k > 0 ? '' : 'none';
-            this.k = k;
-        },
+        // Снять заход: анимации отменены, всё погасло (opacity по умолчанию — 0).
         reset() {
-            const svg = this.svg;
-            cancelAnimationFrame(this.raf); this.raf = 0;
-            if (!svg) return;
-            const flap = svg.querySelector('#btmc-flap');
-            if (flap) this.showFlap(flap, 0);
-            for (const id of ['btmc-glint', 'btmc-spark']) { const g = svg.querySelector('#' + id); if (g) g.style.display = 'none'; }
-            svg.classList.remove('bt-live');
+            for (const a of this.anims || []) a.cancel();
+            this.anims = [];
+            this.k = 0;
         }
     }
 };

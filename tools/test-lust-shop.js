@@ -24,8 +24,8 @@ const harness = require('./harness');
 //   7. Полок ровно столько, сколько объявлено в конфиге, и ни одной лишней:
 //      два списка одного и того же однажды разойдутся молча.
 //   8. Журнал на унитазе зовёт, только когда есть что купить и магазин
-//      открыт; зов живёт на холсте размером с журнал и слоем — лишь на время
-//      захода. Тап по журналу — он взлетает и раскрывается прилавком во весь
+//      открыт; зов живёт на холсте размером с журнал, и двигают его
+//      анимации видеокарты — между заходами их нет вовсе. Тап по журналу — он взлетает и раскрывается прилавком во весь
 //      размер; тап по рекламе подсвечивает корзинку, по корзинке — покупает;
 //      мимо — журнал улетает обратно на унитаз.
 //
@@ -104,28 +104,32 @@ const harness = require('./harness');
   check(!poor0.afford && !poor0.wanted, 'пустой кошелёк — купить нечего, журнал не зовёт');
   const rich0 = await page.evaluate(() => {
     Backend.grantCurrency('lust_token', 3);
-    const svg = document.getElementById('bt-mag-call'), r = svg.getBoundingClientRect();
+    const box = document.getElementById('bt-mag-call'), r = box.getBoundingClientRect();
     const st = document.getElementById('bt-stage').getBoundingClientRect();
     return { afford: LustShop.anyAffordable(), wanted: BATH_MAG.call.wanted(),
-             share: (r.width * r.height) / (st.width * st.height), live: svg.classList.contains('bt-live') };
+             share: (r.width * r.height) / (st.width * st.height), anims: box.getAnimations({ subtree: true }).length };
   });
   check(rich0.afford && rich0.wanted, 'есть что купить — журнал зовёт');
   check(rich0.share > 0 && rich0.share < 0.08,
         `холст зова размером с журнал, а не с экран (${(rich0.share * 100).toFixed(1)}% экрана)`);
-  check(!rich0.live, 'между заходами холст зова — не слой');
+  check(rich0.anims === 0, 'между заходами у холста зова ни одной анимации');
   await page.evaluate(() => { clearTimeout(BATH_MAG.call.timer); BATH_MAG.call.play(); });
   await page.waitForTimeout(2500);
+  // Посреди захода уголок поднят: окно ленты видно, лента сдвинута на кадр
+  // подъёма; заход идёт анимациями видеокарты, а не кадрами скрипта.
   const mid = await page.evaluate(() => {
-    const svg = document.getElementById('bt-mag-call');
-    return { live: svg.classList.contains('bt-live'), k: BATH_MAG.call.k,
-             flap: getComputedStyle(svg.querySelector('#btmc-flap')).display !== 'none' };
+    const box = document.getElementById('bt-mag-call'), fl = box.querySelector('.bmc-flap');
+    const m = new DOMMatrix(getComputedStyle(fl.querySelector('img')).transform);
+    return { anims: box.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length,
+             flap: +getComputedStyle(fl).opacity, shift: m.m42 };
   });
-  check(mid.live && mid.k > 0 && mid.flap, `посреди захода уголок отогнут (кадр ${mid.k}), холст — слой`);
+  check(mid.anims >= 3 && mid.flap > 0.5 && mid.shift < 0,
+        `посреди захода уголок отогнут (лента сдвинута на ${mid.shift.toFixed(0)}), двигают анимации (${mid.anims})`);
   await page.screenshot({ path: out + '2a-call.png' });
   await page.waitForTimeout(2000);
-  const end = await page.evaluate(() => ({ live: document.getElementById('bt-mag-call').classList.contains('bt-live'),
-                                         k: BATH_MAG.call.k, next: !!BATH_MAG.call.timer }));
-  check(!end.live && end.k === 0 && end.next, 'заход кончился: уголок лёг, слой снят, следующий назначен');
+  const end = await page.evaluate(() => { const box = document.getElementById('bt-mag-call');
+    return { anims: box.getAnimations({ subtree: true }).length, flap: +getComputedStyle(box.querySelector('.bmc-flap')).opacity, next: !!BATH_MAG.call.timer }; });
+  check(end.anims === 0 && end.flap === 0 && end.next, 'заход кончился: уголок лёг, анимаций нет, следующий назначен');
   const magAt = await page.evaluate(() => {
     const c = LustMinigame.cam, b = BATH_MAG.callBox(), C = BATH_MAG.GEO.top.center;
     return SvgSpace.toClient(document.getElementById('bt-svg'), c.tx + c.s * C[0], c.ty + c.s * C[1]);
@@ -148,7 +152,9 @@ const harness = require('./harness');
       const b = a.getBoundingClientRect(), el = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
       return !!el && !!el.closest('.bm-shop');
     });
-    const pages = [...document.querySelectorAll('.bm-page, .bm-cover')].map(p => getComputedStyle(p).visibility);
+    // Ушедшая за журнал страница гаснет прозрачностью своих сторон.
+    const pages = [...document.querySelectorAll('.bm-page, .bm-cover')].map(p =>
+      [...p.querySelectorAll('.bm-f, .bm-r, .bm-a, .bm-b, .bm-in')].every(f => +getComputedStyle(f).opacity === 0) ? 'hidden' : 'shown');
     return { busy: LustMag.busy, w: r.width / st.width, cx: (r.x + r.width / 2 - st.x) / st.width, ads, pages };
   });
   check(!spread.busy && spread.w > 0.7 && Math.abs(spread.cx - 0.5) < 0.05,
