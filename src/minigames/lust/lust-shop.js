@@ -249,6 +249,16 @@ const LustShop = {
         return out;
     },
 
+    // Есть ли на прилавке хоть одна ступень по карману — по ней зовёт журнал
+    // на унитазе (BATH_MAG.call).
+    anyAffordable() {
+        const u = this.conf();
+        return this.branches().some(key => {
+            const lv = u[key].levels[this.level(key)];
+            return !!(lv && lv.price) && this.affordable(lv.price);
+        });
+    },
+
     affordable(price) {
         return !Object.keys(price || {}).some(cur => GameState.currency(cur) < price[cur]);
     },

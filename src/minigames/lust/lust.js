@@ -208,6 +208,7 @@ const LustMinigame = {
         this.el('bt-cam-under').innerHTML = BATH_ART.sceneUnder();
         this.camEl.innerHTML = BATH_ART.sceneFront();
         this.el('bt-cam-over').innerHTML = BATH_ART.sceneOver();
+        if (typeof BATH_MAG !== 'undefined') this.el('bt-mag-call').innerHTML = BATH_MAG.callArt();
 
         if (typeof LustGoo !== 'undefined') LustGoo.init(this);
         if (typeof LustShop !== 'undefined') LustShop.init(this);
@@ -254,6 +255,8 @@ const LustMinigame = {
         // вещь (конняку): за закрытой дверью он стоял.
         if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.refresh();
         this.syncShopButton();
+        // Журнал на унитазе зовёт, пока магазин открыт и в нём есть что купить.
+        if (typeof BATH_MAG !== 'undefined') BATH_MAG.call.start(this);
         this.resetCover();
         this.wipeLather();
         this.pileClear();
@@ -308,6 +311,7 @@ const LustMinigame = {
         // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
         // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
+        if (typeof BATH_MAG !== 'undefined') BATH_MAG.call.stop();
         this.glintStop();
         // Ушёл из ванной — следы смыты (docs/plan/21-lust-bath.md, разд. 3в).
         if (typeof LustGoo !== 'undefined') LustGoo.reset();
@@ -395,6 +399,7 @@ const LustMinigame = {
         const M = this.stageMap(), k = M.m * c.s, x0 = M.ox + M.m * c.tx, y0 = M.oy + M.m * c.ty;
         const boxes = [['bt-soap-box', BATH_SOAP.paint()], ['bt-cloth-box', BATH_CLOTH.paint()],
                        ['bt-shelf-front', BATH_ART.shelfFrontBox()]];
+        if (typeof BATH_MAG !== 'undefined') boxes.push(['bt-mag-call', BATH_MAG.callBox()]);
         for (const [id, R] of boxes) {
             const svg = this.el(id);
             if (!svg) continue;
@@ -2035,6 +2040,15 @@ const LustMinigame = {
         if (this.win && this.win.isConfirmOpen && this.win.isConfirmOpen()) return;
         const p = this.toScene(e);
         const A = BATH_ART.slots();
+
+        // Журнал на унитазе — вход в магазин, пока магазин открыт (до забега
+        // и после). Пока журнал не раскрывается сам (разд. 7б), он открывает
+        // прежний прилавок.
+        if (this.shopAllowed() && typeof BATH_MAG !== 'undefined' && BATH_MAG.hit(p)
+            && typeof LustShop !== 'undefined') {
+            LustShop.show();
+            return;
+        }
 
         if (this.phase === 'idle') {
             // Душ включает воду — это и есть старт забега.

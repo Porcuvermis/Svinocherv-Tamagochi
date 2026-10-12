@@ -254,8 +254,88 @@ def top_mag(te, l, w, t, sa, sc, droop, Ytop, dr=0.0):
     out['pivot'] = R1([S2(*pt(sc, l / 2, t))])[0]
     out['center'] = R1([S2(*pt((sc + w) / 2, l / 2, t))])[0]
     out['size'] = [CW, CH]
+    out['flap'] = flap_frames(pt, frame, l, w, t, solve, grow)
     top_mag.pt = pt                                  # для постановки стопки под ним
     return out
+
+# ---------- ЗОВ: УГОЛОК ОБЛОЖКИ ПОРЫВАЕТСЯ ОТКРЫТЬСЯ ----------
+# Замысел игрока: «уголок верхней страницы чуть левитирует — взмывает и
+# задерживается, будто страничка вот-вот сама откроется; коснись — и
+# откроется». Уголок — у свободного края висящей части со стороны страниц
+# (s = w, r = l): он смотрит на игрока и в кадре. Лоскут — треугольник с
+# катетами FA по ширине и FB по длине; линия сгиба — его гипотенуза.
+# Лоскут поворачивается вокруг сгиба КАК ЖЁСТКИЙ (форма провиса сохраняется)
+# на угол φ наружу, от страниц. Кадры считаются здесь той же камерой; в игре
+# они только переключаются — ни одной формулы на кадре.
+FA, FB, FN, FPHI, FFR = 0.72, 0.92, 3, 78.0, 12
+def flap_frames(pt, frame, l, w, t, solve, grow):
+    C, P1, P2 = (w, l), (w - FA, l), (w, l - FB)       # (s, r): угол и концы сгиба
+    def sr(i, j):                                       # узлы треугольной сетки лоскута
+        a, b = i / FN, j / FN
+        return (C[0] + a * (P1[0] - C[0]) + b * (P2[0] - C[0]), C[1] + a * (P1[1] - C[1]) + b * (P2[1] - C[1]))
+    tris = []
+    for i in range(FN):
+        for j in range(FN - i):
+            tris.append(((i, j), (i + 1, j), (i, j + 1)))
+            if i + j + 1 < FN: tris.append(((i + 1, j), (i + 1, j + 1), (i, j + 1)))
+    A3, B3 = pt(P1[0], P1[1], t), pt(P2[0], P2[1], t)
+    ax = unit(sub(B3, A3))
+    def rotp(X, phi):                                   # Родриг вокруг сгиба A3→B3
+        v = sub(X, A3); c, s_ = math.cos(phi), math.sin(phi)
+        return add(A3, mul(v, c), mul(cross(ax, v), s_), mul(ax, dot(ax, v) * (1 - c)))
+    # Знак — наружу: угол лоскута уходит по нормали обложки, от страниц.
+    nC = frame(C[0])[1]; Cp = pt(C[0], C[1], t)
+    sgn = 1 if dot(sub(rotp(Cp, 0.2), Cp), nC) > 0 else -1
+    def uv(q): return (q[1] / l * CW, q[0] / w * CH)
+    # Открывшаяся страница — тот же треугольник чуть ниже обложки: под
+    # лоскутом бумага, а не дыра.
+    page = [S2(*pt(*sr(i, 0), t * 0.85)) for i in range(FN + 1)] + \
+           [S2(*pt(*sr(FN - j, j), t * 0.85)) for j in range(1, FN + 1)] + \
+           [S2(*pt(*sr(0, FN - j), t * 0.85)) for j in range(1, FN)]
+    frames = []
+    for k in range(FFR + 1):
+        phi = sgn * math.radians(FPHI) * k / FFR
+        P = {}
+        for i in range(FN + 1):
+            for j in range(FN + 1 - i):
+                P[(i, j)] = rotp(pt(*sr(i, j), t), phi)
+        fr = []
+        for tri in tris:
+            X = [P[q] for q in tri]
+            n_ = unit(cross(sub(X[1], X[0]), sub(X[2], X[0])))
+            cen = mul(add(X[0], X[1], X[2]), 1 / 3)
+            # Лицо треугольника смотрит туда же, куда обложка в его месте
+            # (сетка обходит треугольник в одну сторону): знак — по исходной
+            # нормали, повёрнутой вместе с лоскутом.
+            n0 = frame(sr(*tri[0])[0])[1]
+            n_rot = sub(rotp(add(pt(*sr(*tri[0]), t), n0), phi), rotp(pt(*sr(*tri[0]), t), phi))
+            vis = dot(unit(n_rot), unit(sub(CAM, W(*cen))))
+            S3 = [S2(*q) for q in X]
+            if vis > 0:
+                m = solve(S3, [uv(sr(*q)) for q in tri])
+                a_, b_, c_, d_, e_, f_ = m; dt = a_ * d_ - b_ * c_
+                if abs(dt) < 1e-9: continue
+                inv = lambda Q: (((Q[0] - e_) * d_ - (Q[1] - f_) * c_) / dt, ((Q[1] - f_) * a_ - (Q[0] - e_) * b_) / dt)
+                fr.append(dict(f=1, uv=[[round(q[0], 1), round(q[1], 1)] for q in map(inv, grow(S3))],
+                               m=[round(x, 5) for x in m]))
+            else:
+                fr.append(dict(f=0, p=R1(grow(S3)), tone=round(tone(cen, mul(n_rot, -1)), 2)))
+        edge = [P[(i, 0)] for i in range(FN + 1)] + [P[(FN - j, j)] for j in range(1, FN + 1)] + [P[(0, FN - j)] for j in range(1, FN)]
+        frames.append(dict(tris=fr, edge=R1([S2(*q) for q in edge])))
+    # Строки на открывшейся странице (без букв — полосы набора) и тень от
+    # лоскута у сгиба: без них страница и изнанка обложки сливались в одно
+    # светлое пятно, и подъём читался загнутым внутрь уголком.
+    rows = []
+    for k in (0.3, 0.5, 0.7):
+        a_, b_ = sr(0, 0), sr(0, FN)                       # от угла к концам: строки параллельны сгибу
+        q0 = (C[0] + (P1[0] - C[0]) * k * 0.9, C[1] + (P1[1] - C[1]) * k * 0.9)
+        q1 = (C[0] + (P2[0] - C[0]) * k * 0.9, C[1] + (P2[1] - C[1]) * k * 0.9)
+        rows.append(R1([S2(*pt(*q0, t * 0.85)), S2(*pt(*q1, t * 0.85))]))
+    sh = lambda k: [(P1[0] + (C[0] - P1[0]) * k, P1[1] + (C[1] - P1[1]) * k), (P2[0] + (C[0] - P2[0]) * k, P2[1] + (C[1] - P2[1]) * k)]
+    a0, b0 = sh(0.0); a1, b1 = sh(0.35)
+    shadow = R1([S2(*pt(*a0, t * 0.85)), S2(*pt(*b0, t * 0.85)), S2(*pt(*b1, t * 0.85)), S2(*pt(*a1, t * 0.85))])
+    return dict(page=R1(page), fold=R1([S2(*A3), S2(*B3)]), corner=R1([S2(*Cp)])[0], frames=frames, phi=FPHI,
+                rows=rows, shadow=shadow)
 
 # ---------- F2 ----------
 # Верхний: кромка носика в точке te (параметр яйца крышки); на стопке до sa,
@@ -278,7 +358,7 @@ out = dict(stack=[blue, yel], top=top)
 # должен: всё, что выше низа кадра финала, — правее его края. Кадр точный
 # (холст постоянного размера, по бокам не срезается) — запас 3 единицы.
 def all_pts(o):
-    if isinstance(o, dict): return [p for k, v in o.items() if k not in ('size', 'm', 'uv') for p in all_pts(v)]
+    if isinstance(o, dict): return [p for k, v in o.items() if k not in ('size', 'm', 'uv', 'flap') for p in all_pts(v)]
     if isinstance(o, list) and o and isinstance(o[0], (int, float)): return [o]
     if isinstance(o, list): return [p for v in o for p in all_pts(v)]
     return []

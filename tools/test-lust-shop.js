@@ -23,6 +23,9 @@ const harness = require('./harness');
 //      уже своё, незачем.
 //   7. Полок ровно столько, сколько объявлено в конфиге, и ни одной лишней:
 //      два списка одного и того же однажды разойдутся молча.
+//   8. Журнал на унитазе зовёт, только когда есть что купить и магазин
+//      открыт; зов живёт на холсте размером с журнал и слоем — лишь на время
+//      захода; тап по журналу открывает прилавок.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-lust-shop.js /tmp/shots-
@@ -86,6 +89,53 @@ const harness = require('./harness');
   await page.waitForTimeout(350);
   check(!(await page.evaluate(() => LustShop.open)), 'закрылся тапом мимо прилавка');
 
+  // ================= 2а. ЖУРНАЛ НА УНИТАЗЕ ЗОВЁТ И ОТКРЫВАЕТ ПРИЛАВОК =================
+  // Зов (BATH_MAG.call): блик по контуру и отгибающийся уголок — только когда
+  // в магазине есть что купить. Живёт на СВОЁМ холсте размером с журнал
+  // (п. 156) и слоем становится лишь на время захода (п. 152). Тап по журналу
+  // — по координатам сцены, как палец.
+  say('\n======== ЖУРНАЛ НА УНИТАЗЕ: ЗОВ И ВХОД ========');
+  const poor0 = await page.evaluate(() => {
+    for (const cur of ['lust_token', 'lust_shard']) GameState.addCurrency(cur, -GameState.currency(cur));
+    return { afford: LustShop.anyAffordable(), wanted: BATH_MAG.call.wanted() };
+  });
+  check(!poor0.afford && !poor0.wanted, 'пустой кошелёк — купить нечего, журнал не зовёт');
+  const rich0 = await page.evaluate(() => {
+    Backend.grantCurrency('lust_token', 3);
+    const svg = document.getElementById('bt-mag-call'), r = svg.getBoundingClientRect();
+    const st = document.getElementById('bt-stage').getBoundingClientRect();
+    return { afford: LustShop.anyAffordable(), wanted: BATH_MAG.call.wanted(),
+             share: (r.width * r.height) / (st.width * st.height), live: svg.classList.contains('bt-live') };
+  });
+  check(rich0.afford && rich0.wanted, 'есть что купить — журнал зовёт');
+  check(rich0.share > 0 && rich0.share < 0.08,
+        `холст зова размером с журнал, а не с экран (${(rich0.share * 100).toFixed(1)}% экрана)`);
+  check(!rich0.live, 'между заходами холст зова — не слой');
+  await page.evaluate(() => { clearTimeout(BATH_MAG.call.timer); BATH_MAG.call.play(); });
+  await page.waitForTimeout(2500);
+  const mid = await page.evaluate(() => {
+    const svg = document.getElementById('bt-mag-call');
+    return { live: svg.classList.contains('bt-live'), k: BATH_MAG.call.k,
+             flap: getComputedStyle(svg.querySelector('#btmc-flap')).display !== 'none' };
+  });
+  check(mid.live && mid.k > 0 && mid.flap, `посреди захода уголок отогнут (кадр ${mid.k}), холст — слой`);
+  await page.screenshot({ path: out + '2a-call.png' });
+  await page.waitForTimeout(2000);
+  const end = await page.evaluate(() => ({ live: document.getElementById('bt-mag-call').classList.contains('bt-live'),
+                                         k: BATH_MAG.call.k, next: !!BATH_MAG.call.timer }));
+  check(!end.live && end.k === 0 && end.next, 'заход кончился: уголок лёг, слой снят, следующий назначен');
+  const magAt = await page.evaluate(() => {
+    const c = LustMinigame.cam, b = BATH_MAG.callBox(), C = BATH_MAG.GEO.top.center;
+    return SvgSpace.toClient(document.getElementById('bt-svg'), c.tx + c.s * C[0], c.ty + c.s * C[1]);
+  });
+  await page.mouse.click(magAt.x, magAt.y);
+  await page.waitForTimeout(400);
+  st = await page.evaluate(() => ({ open: LustShop.open, phase: LustMinigame.phase }));
+  check(st.open && st.phase === 'idle', 'тап по журналу открывает прилавок и не включает душ');
+  // Кошелёк — как был (пустой): дальше прогон считает списание от нуля.
+  await page.evaluate(() => { LustShop.close(); GameState.addCurrency('lust_token', -GameState.currency('lust_token')); });
+  await page.waitForTimeout(300);
+
   // ================= 3. ПОСРЕДИ ЗАБЕГА МАГАЗИНА НЕТ =================
   say('\n======== ПОСРЕДИ ЗАБЕГА ПРИЛАВКА НЕТ ========');
   await page.evaluate(() => LustMinigame.startWater());
@@ -93,6 +143,8 @@ const harness = require('./harness');
   const shown = await tapButton();
   st = await page.evaluate(() => ({ open: LustShop.open, phase: LustMinigame.phase }));
   check(!shown && !st.open, `на этапе «${st.phase}» кнопки нет и прилавок не открыт`);
+  const midRun = await page.evaluate(() => ({ wanted: BATH_MAG.call.wanted() }));
+  check(!midRun.wanted, 'посреди забега журнал не зовёт');
 
   // ================= 4. ПОКУПКА ДВИГАЕТ ЧИСЛО ИГРЫ =================
   // Меряется НЕ цифра на прилавке, а то, чем игра пользуется: ступень
