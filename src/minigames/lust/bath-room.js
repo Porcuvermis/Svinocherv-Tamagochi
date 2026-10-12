@@ -372,6 +372,21 @@ const BATH_ROOM = {
             </defs>
             <path fill="url(#bt-floor-corner)" d="${this.floorPlate()}"/>
             <ellipse cx="${f(tub.x + tub.w / 2)}" cy="${f(floorY - 2)}" rx="${f(tub.w * 0.58)}"
-                     ry="26" fill="url(#bt-floor-tub)"/>`;
+                     ry="26" fill="url(#bt-floor-tub)"/>
+            ${this.toiletShade()}`;
+    },
+
+    // Тень унитаза на полу — тем же градиентом, что у ванны, и в слое ПОЛА, а
+    // не в группе унитаза: ванна стоит дальше и обязана её перекрывать, а не
+    // наоборот. Без тени унитаз висел над плиткой. Числа — из якорей модели:
+    // пятно вдоль предмета от носа до зада бачка, плотное ядро — под ногой.
+    toiletShade() {
+        const A = BATH_BAKED.anchors, n = A.toiletNose, b = A.toiletBack, ft = A.toiletFoot;
+        if (!n || !b || !ft) return '';
+        const f = (v) => v.toFixed(1), rx = Math.abs(b.x - n.x) * 0.6;
+        return `<ellipse cx="${f((n.x + b.x) / 2)}" cy="${f(ft.y + 2)}" rx="${f(rx)}" ry="${f(rx * 0.17)}"
+                     fill="url(#bt-floor-tub)" opacity="0.8"/>
+            <ellipse cx="${f(ft.x - 6)}" cy="${f(ft.y + 3)}" rx="${f(rx * 0.43)}" ry="${f(rx * 0.06)}"
+                     fill="url(#bt-floor-tub)"/>`;
     },
 };
