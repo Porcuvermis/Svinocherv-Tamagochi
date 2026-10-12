@@ -3,8 +3,16 @@
 #
 # Постановка F2 (утверждена игроком, docs/plan/21-lust-bath.md, разд. 7б):
 # два нижних журнала лежат вразнобой корешками к камере, верхний лежит на
-# стопке косо, съехал к носику крышки и МЯГКО свисает через край обложкой к
-# игроку. Числа — в координатах МОДЕЛИ унитаза (до масштаба, поворота и
+# стопке косо, съехал к носику крышки и свисает через край обложкой к игроку.
+# Лежит ФИЗИЧНО: со стопки сходит S-кривой на крышку, по крышке доходит до
+# кромки носика и там перегибается вниз. Висел бы в воздухе — игрок это видит
+# сразу (первый чистовик висел над крышкой у носика без касания).
+#
+# Обложки — плоские картинки (BATH_MAG.covers), а не рисунок по проекции:
+# генератор отдаёт, как натянуть плоскую обложку на поверхность — полосы по
+# провису, у каждой аффинный перенос (обложка → сцена) и обрезка по полосе.
+# Одна и та же обложка нужна и на стопке, и в руке, когда журнал взлетит и
+# раскроется (разд. 7б), поэтому рисуется она один раз, плоско. Числа — в координатах МОДЕЛИ унитаза (до масштаба, поворота и
 # наклона), поэтому стопка едет вместе с унитазом при любой его постановке.
 #
 # Проекция НЕ повторяется здесь, а берётся у tools/gen-toilet-geo.py (его голова
@@ -53,6 +61,11 @@ def facing(p, n):
 def tone(p, n):
     return dot(world_normal(p, n), LIGHT)
 
+# Обложки в своих единицах (1 = 1 мм журнала): нижние 210 × 280, верхний
+# 205 × 275 — в пропорции l × w модели и картинки обложки (896 × 1200).
+SCW, SCH = 210.0, 280.0
+CW, CH = 205.0, 275.0
+
 def R1(pts): return [[round(x, 1), round(y, 1)] for x, y in pts]
 def scr(pts3): return R1([S2(*p) for p in pts3])
 
@@ -89,100 +102,188 @@ def slab_mag(o, ang, l, w, t):
                 a = add(q[0], mul(sub(q[3], q[0]), h)); b = add(q[1], mul(sub(q[2], q[1]), h))
                 lines.append(scr([add(a, mul(sub(b, a), 0.06)), add(a, mul(sub(b, a), 0.94))]))
     out['pageLines'] = lines
+    # Обложка: корешок — ближний бок (+ez), u от него к краю; v вдоль длины,
+    # направление — то, при котором натяжка не зеркалит картинку.
+    S0, Sx = c(0, 1, 1), c(0, 0, 1)
+    for V0, V1 in ((c(0, 1, 1), c(1, 1, 1)), (c(1, 1, 1), c(0, 1, 1))):
+        A, B, D = S2(*V0), S2(*add(V0, sub(Sx, S0))), S2(*V1)
+        a, b, cc, d = (B[0]-A[0])/SCW, (B[1]-A[1])/SCW, (D[0]-A[0])/SCH, (D[1]-A[1])/SCH
+        if a * d - b * cc > 0:
+            out['cover'] = dict(uv=[[0, 0], [SCW, 0], [SCW, SCH], [0, SCH]], m=[round(x, 5) for x in (a, b, cc, d, A[0], A[1])])
+            break
     return out
 
-# ---------- ВЕРХНИЙ ЖУРНАЛ С ПРОВИСОМ ----------
-# Лежит плашмя до доли v0 ширины, дальше гладкой дугой (постоянный радиус,
-# длина дуги = остаток ширины) перегибается вниз на deg. s — вдоль ширины (в
-# сторону носика крышки), r — вдоль длины, h — по толщине (0 низ, t обложка).
-def top_mag(o, ang, l, w, t, v0, deg):
-    eu = unit(rot((0, 0, 1), ang)); er = unit(rot((1, 0, 0), ang))
-    s0 = w * v0; th = math.radians(deg); R = (w - s0) / th
+# ---------- ВЕРХНИЙ ЖУРНАЛ: УПРУГИЙ ПРОВИС ----------
+# Журнал — упругая пластина, а не ткань. Профиль по ширине s (к носику)
+# задаётся углом наклона θ(s), положение — интегралом, и θ ТОЛЬКО РАСТЁТ:
+# на стопке 0; от края стопки (sa) до кромки носика (sc) плавно набирает θe
+# — пролёт без опоры, θe подбирается так, чтобы к кромке спуститься ровно на
+# высоту стопки и лечь на неё; за кромкой — вылет, который провисает под
+# своим весом ещё на droop: кривизна у опоры наибольшая, к концу сходит на
+# нет (как у консоли).
+#
+# Почему так: был профиль «S-кривая со стопки → плашмя по крышке → дуга через
+# кромку → отвес». Игрок: «принимает форму лесенки, как будто журнал из
+# мягкой ткани; провисать может, но не складывается лесенкой — он упругий».
+# Лесенку даёт θ, который растёт и снова падает до нуля: у упругого листа на
+# двух опорах так не бывает. Кромка — точка яйца крышки te, направление
+# сползания — наружная нормаль кромки там же.
+def lid_edge(t):
+    cx, a, b = 0.12, 2.26, 1.72                     # яйцо крышки (eggSlab)
+    return (cx + a * math.cos(t), b * math.sin(t) * (1 + 0.1 * math.cos(t)))
+
+def profile(w, sa, sc, droop, drop, ds=0.002):
+    def theta(s, the):
+        if s < sa: return 0.0
+        if s < sc: return the * (1 - math.cos(math.pi * (s - sa) / (sc - sa))) / 2
+        y = (s - sc) / (w - sc)
+        return the + droop * (1 - (1 - y) ** 3)
+    def run(the):
+        hx, hy, s, out = 0.0, 0.0, 0.0, [(0.0, 0.0, 0.0, 0.0)]
+        while s < w - 1e-9:
+            st = min(ds, w - s); tm = theta(s + st / 2, the)
+            hx += math.cos(tm) * st; hy -= math.sin(tm) * st; s += st
+            out.append((s, hx, hy, theta(s, the)))
+        return out
+    def drop_at_sc(the):
+        return -min((p for p in run(the) if p[0] <= sc + 1e-6), key=lambda p: abs(p[0] - sc))[2]
+    lo, hi = 0.0, 1.4
+    for _ in range(50):
+        m = (lo + hi) / 2
+        if drop_at_sc(m) < drop: lo = m
+        else: hi = m
+    return run((lo + hi) / 2)
+
+def top_mag(te, l, w, t, sa, sc, droop, Ytop, dr=0.0):
+    prof = profile(w, sa, sc, math.radians(droop), Ytop - Y)
+    def at(s):
+        return prof[min(len(prof) - 1, max(0, int(round(s / w * (len(prof) - 1)))))]
+    E, E2 = lid_edge(te), lid_edge(te + 1e-4)
+    eu = unit((E2[1] - E[1], 0, -(E2[0] - E[0])))
+    if eu[0] > 0: eu = mul(eu, -1)                  # наружу — к носику (−x)
+    er = unit(cross(UP, eu))
+    o = add((E[0], Ytop, E[1]), mul(eu, -at(sc)[1]), mul(er, dr - l / 2))
     def frame(s):
-        if s <= s0: return add(o, mul(eu, s)), UP
-        a = (s - s0) / R
-        pos = add(o, mul(eu, s0 + R * math.sin(a)), mul(UP, -R * (1 - math.cos(a))))
-        return pos, add(mul(UP, math.cos(a)), mul(eu, math.sin(a)))
+        _, hx, hy, th = at(s)
+        return add(o, mul(eu, hx), mul(UP, hy)), add(mul(UP, math.cos(th)), mul(eu, math.sin(th)))
     def pt(s, r, h):
-        pos, n = frame(s)
-        return add(pos, mul(er, r), mul(n, h))
-    ss = [s0 * k / 4 for k in range(4)] + [s0 + (w - s0) * k / 20 for k in range(21)]
-    cover = [pt(s, 0, t) for s in ss] + [pt(s, l, t) for s in ss[::-1]]
-    out = {'cover': scr(cover)}
-    # Какие бока видны — по нормали в середине.
-    sides = {
-        'near': (lambda s, h: pt(s, l, h), er),     # бок вдоль ширины у r = l
-        'far':  (lambda s, h: pt(s, 0, h), mul(er, -1)),
-    }
-    for k, (f, n) in sides.items():
+        p, n = frame(s); return add(p, mul(er, r), mul(n, h))
+    ss = sorted(set([0.0, sa * 0.5, sa] + [sa + (sc - sa) * k / 14 for k in range(15)]
+                    + [sc + (w - sc) * k / 12 for k in range(13)]))
+    ss = [round(s, 6) for s in ss if s <= w + 1e-9]
+    out = {'cover': scr([pt(s, 0, t) for s in ss] + [pt(s, l, t) for s in ss[::-1]])}
+    # Бока: у r = l — торец страниц, у r = 0 — корешок (u = 0 обложки).
+    for k, f, n in (('near', lambda s, h: pt(s, l, h), er), ('far', lambda s, h: pt(s, 0, h), mul(er, -1))):
         cen = f(w * 0.5, t / 2)
         if facing(cen, n) > 0:
             out[k] = scr([f(s, t) for s in ss] + [f(s, 0) for s in ss[::-1]])
             out[k + 'Lines'] = [scr([f(s, t * h) for s in ss[1:-1]]) for h in (0.3, 0.55, 0.8)]
             out[k + 'Tone'] = round(tone(cen, n), 3)
-    # Свободный край (s = w) и дальний (s = 0).
-    pe, ne = frame(w); te = unit(add(mul(eu, math.cos(th)), mul(UP, -math.sin(th))))
-    if facing(add(pe, mul(er, l / 2)), te) > 0:
+    pe, ne = frame(w); th = at(w)[3]
+    te_ = unit(add(mul(eu, math.cos(th)), mul(UP, -math.sin(th))))
+    if facing(add(pe, mul(er, l / 2)), te_) > 0:
         out['end'] = scr([pt(w, 0, 0), pt(w, l, 0), pt(w, l, t), pt(w, 0, t)])
-    # Перелив света по провису: тон обложки по s — для градиента.
-    out['coverTone'] = [[round(s / w, 3), round(tone(frame(s)[0], frame(s)[1]), 3)] for s in (0, s0, s0 + (w - s0) * 0.33, s0 + (w - s0) * 0.66, w)]
-    out['coverGrad'] = R1([S2(*pt(0, l / 2, t)), S2(*pt(w, l / 2, t))])
-    # Блик глянца — полоса поперёк журнала там, где обложка, перегибаясь,
-    # смотрит прямо на свет (максимум тона по провису — треть дуги).
-    sg = s0 + (w - s0) * 0.3
-    out['gloss'] = scr([pt(sg - 0.03, l * 0.05, t + 0.004), pt(sg - 0.03, l * 0.95, t + 0.004),
-                        pt(sg + 0.03, l * 0.95, t + 0.004), pt(sg + 0.03, l * 0.05, t + 0.004)])
-    # ---- обложка без слов: плашка, пин-ап-силуэт червя, звезда-всплеск с цифрой.
-    # Всё лежит на висящей части (её видно лучше всего) и рисуется в
-    # координатах обложки (s, r), а потом проецируется — гнётся вместе с ней.
-    arc0, arc1 = s0, w
-    def on(s, r): return pt(s, r, t + 0.006)
-    A = lambda k: arc0 + (arc1 - arc0) * k
-    # Плашка — светлая полоса у нижнего края висящей обложки: там обложка
-    # уходит в тень, и светлое на тёмном читается издали.
-    out['plate'] = scr([on(A(0.84), l * 0.05), on(A(0.84), l * 0.95), on(A(0.95), l * 0.95), on(A(0.95), l * 0.05)])
-    # Червь лежит вдоль обложки в позе пин-ап: тело — вытянутая капля, голова
-    # с ушами у правого края, хвостик-завиток у левого. Контур — точками.
-    body = []
-    for k in range(25):
-        a = 2 * math.pi * k / 24
-        rr = l * (0.40 + 0.22 * math.cos(a)); ss_ = A(0.62 + 0.14 * math.sin(a) * (1 - 0.35 * math.cos(a)))
-        body.append(on(ss_, rr))
-    out['worm'] = scr(body)
-    # Хвостик пин-ап — завиток вверх у левого конца тела: поза, а не «косточка».
-    out['wormTail'] = scr([on(A(0.62 - 0.02 * k), l * (0.18 - 0.035 * k) ) if k < 3 else on(A(0.56 - 0.07 * (k - 2)), l * (0.08 + 0.02 * (k - 2))) for k in range(6)])
-    hc = (A(0.5), l * 0.66)
-    out['wormHead'] = scr([on(hc[0] + 0.13 * math.sin(2 * math.pi * k / 16), hc[1] + 0.15 * math.cos(2 * math.pi * k / 16)) for k in range(16)])
-    out['wormEar'] = scr([on(hc[0] - 0.10, hc[1] + 0.02), on(hc[0] - 0.24, hc[1] + 0.10), on(hc[0] - 0.08, hc[1] + 0.14)])
-    sc, rc, R0, R1_ = A(0.6), l * 0.86, 0.17, 0.09
-    burst = []
-    for k in range(20):
-        rad = R0 if k % 2 == 0 else R1_
-        a = 2 * math.pi * k / 20
-        burst.append(on(sc + rad * math.sin(a), rc + rad * math.cos(a)))
-    out['burst'] = scr(burst)
-    # Цифра — не слово (инвариант 9): «9» — кружок с хвостиком, штрихом.
-    out['digit'] = scr([on(sc - 0.03, rc + 0.03), on(sc - 0.06, rc), on(sc - 0.03, rc - 0.03), on(sc, rc),
-                        on(sc - 0.03, rc + 0.03), on(sc + 0.06, rc + 0.02)])
-    out['pivot'] = R1([S2(*pt(s0, l / 2, t))])[0]
-    out['center'] = R1([S2(*pt(A(0.5), l / 2, t))])[0]
+    # Натяжка обложки: на каждый отрезок ss — ДВА треугольника, у каждого свой
+    # аффинный перенос (обложка → сцена), точный во всех трёх его вершинах. С
+    # одним переносом на полосу четвёртый угол на изгибе съезжал, и рисунок на
+    # стыках полос рвался — на краях форм обложки читалось лесенкой. У
+    # треугольников общие рёбра отображаются одинаково с обеих сторон, и
+    # картинка непрерывна. u = r / l · CW (корешок у r = 0: при этом знаке
+    # картинка не зеркалится), v = s / w · CH (верх обложки — дальний, низ
+    # свисает к игроку). Обрезка треугольника раздута наружу на OV ПИКСЕЛЕЙ
+    # экрана честным отступом каждого ребра (а не от центра: у длинных тонких
+    # треугольников отступ от центра уходит вдоль, а поперёк остаётся щель), —
+    # иначе на стыках светятся волоски фона. Нахлёст в единицах модели не
+    # годится: на плоской части ракурс сжимает его до сотых пикселя.
+    OV = 0.6
+    def solve(P3, U3):
+        # x = a·u + c·v + e, y = b·u + d·v + f по трём парам точек
+        (u0, v0), (u1, v1), (u2, v2) = U3
+        det = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0)
+        def coef(k):
+            q0, q1, q2 = P3[0][k], P3[1][k], P3[2][k]
+            A = ((q1 - q0) * (v2 - v0) - (q2 - q0) * (v1 - v0)) / det
+            C = ((u1 - u0) * (q2 - q0) - (u2 - u0) * (q1 - q0)) / det
+            return A, C, q0 - A * u0 - C * v0
+        a, c, e = coef(0); b, d, f = coef(1)
+        return a, b, c, d, e, f
+    def grow(P3):
+        # отступ рёбер наружу на OV; острый угол срезается фаской (не дальше 3·OV)
+        n = len(P3); area = sum(P3[i][0] * P3[(i + 1) % n][1] - P3[(i + 1) % n][0] * P3[i][1] for i in range(n))
+        sg = 1 if area > 0 else -1
+        def off(i):
+            p, q = P3[i], P3[(i + 1) % n]; dx, dy = q[0] - p[0], q[1] - p[1]; L = math.hypot(dx, dy) or 1
+            nx, ny = dy / L * sg, -dx / L * sg
+            return (p[0] + nx * OV, p[1] + ny * OV), (dx, dy), (nx, ny)
+        res = []
+        for i in range(n):
+            (p1, d1, n1), (p2, d2, n2) = off(i - 1), off(i)
+            cr = d1[0] * d2[1] - d1[1] * d2[0]
+            v = P3[i]
+            if abs(cr) > 1e-9:
+                t_ = ((p2[0] - p1[0]) * d2[1] - (p2[1] - p1[1]) * d2[0]) / cr
+                X = (p1[0] + d1[0] * t_, p1[1] + d1[1] * t_)
+                if math.hypot(X[0] - v[0], X[1] - v[1]) <= 3 * OV:
+                    res.append(X); continue
+            res.append((v[0] + n1[0] * OV, v[1] + n1[1] * OV)); res.append((v[0] + n2[0] * OV, v[1] + n2[1] * OV))
+        return res
+    strips = []
+    for s0, s1 in zip(ss, ss[1:]):
+        A, B = S2(*pt(s0, 0, t)), S2(*pt(s0, l, t))
+        C, D = S2(*pt(s1, l, t)), S2(*pt(s1, 0, t))
+        v0, v1 = s0 / w * CH, s1 / w * CH
+        sm = (s0 + s1) / 2; pm, nm = frame(sm)
+        tn = round(tone(add(pm, mul(er, l / 2)), nm), 3)
+        for P3, U3 in (((A, B, C), ((0, v0), (CW, v0), (CW, v1))), ((A, C, D), ((0, v0), (CW, v1), (0, v1)))):
+            m = solve(P3, U3)
+            if m[0] * m[3] - m[1] * m[2] <= 0: sys.exit('натяжка обложки зеркалит картинку')
+            # Обрезка — в координатах ОБЛОЖКИ: кусок рисуется фигурой с
+            # переносом m и заливкой-узором обложки (см. bath-mag.js), так что
+            # раздутый на экране треугольник переводится обратно в (u, v).
+            a_, b_, c_, d_, e_, f_ = m; dt = a_ * d_ - b_ * c_
+            inv = lambda X: (((X[0] - e_) * d_ - (X[1] - f_) * c_) / dt, ((X[1] - f_) * a_ - (X[0] - e_) * b_) / dt)
+            strips.append(dict(uv=[[round(q[0], 2), round(q[1], 2)] for q in map(inv, grow(P3))],
+                               m=[round(x, 5) for x in m], tone=tn))
+    out['strips'] = strips
+    # Где журнал касается крышки (под ним — тень касания) и где сходит со
+    # стопки (ступенька — тень на нижнем журнале).
+    # Опора на кромку — узкая полоса у sc: журнал лежит на ребре, а не плашмя.
+    out['lidContact'] = scr([pt(sc - 0.12, 0, 0), pt(sc - 0.12, l, 0), pt(sc + 0.04, l, 0), pt(sc + 0.04, 0, 0)])
+    out['stackStep'] = scr([pt(sa, 0, 0), pt(sa, l, 0)])
+    out['hangEdge'] = scr([pt(w, 0, 0), pt(w, l, 0)])
+    out['pivot'] = R1([S2(*pt(sc, l / 2, t))])[0]
+    out['center'] = R1([S2(*pt((sc + w) / 2, l / 2, t))])[0]
+    out['size'] = [CW, CH]
+    top_mag.pt = pt                                  # для постановки стопки под ним
     return out
 
 # ---------- F2 ----------
-blue = slab_mag((-1.5, Y, -0.75), 0, 2.8, 2.1, 0.16)
-yel = slab_mag((-1.4, Y + 0.16, -0.70), 12, 2.75, 2.05, 0.16)
-top = top_mag((0.45, Y + 0.32, -1.1), 78, 1.9, 2.75, 0.14, 0.76, 70)
+# Верхний: кромка носика в точке te (параметр яйца крышки); на стопке до sa,
+# пролётом до кромки sc, за ней провисает ещё на droop градусов.
+top = top_mag(math.radians(172), 2.05, 2.75, 0.12, 0.75, 2.1, 28, Y + 0.26, dr=0.3)
+# Стопка — под ним до sa: её левый край ровно там, где верхний с неё сходит
+# (иначе он либо висит в воздухе, либо лежит на пустоте), корешки на четверть
+# журнала ближе к камере, чем его торец страниц.
+_pt = top_mag.pt
+_edge = _pt(0.75, 2.05 / 2, 0)                       # sa, середина длины
+_near = max(_pt(s_, 2.05, 0)[2] for s_ in (0.0, 0.4, 0.75))
+# Поворот и длина подобраны перебором: все углы на крышке (крышка — яйцо,
+# к бачку сужается, и длинный ровный журнал свисал там почти целиком), корешки
+# впереди бока верхнего.
+blue = slab_mag((_edge[0] + 0.02, Y, _near + 0.25 - 2.1 - 0.6), 15, 2.6, 2.1, 0.13)
+yel = slab_mag((_edge[0] + 0.1, Y + 0.13, _near + 0.3 - 2.05 - 0.5), 6, 2.45, 2.05, 0.13)
 
 out = dict(stack=[blue, yel], top=top)
 # Финал (FOCUS tail/finish: x 145…455 сцены, y 179…850) журнал задевать не
-# должен: всё, что выше низа кадра финала, — правее его края с запасом.
+# должен: всё, что выше низа кадра финала, — правее его края. Кадр точный
+# (холст постоянного размера, по бокам не срезается) — запас 3 единицы.
 def all_pts(o):
-    if isinstance(o, dict): return [p for k, v in o.items() if k != 'coverTone' for p in all_pts(v)]
+    if isinstance(o, dict): return [p for k, v in o.items() if k not in ('size', 'm', 'uv') for p in all_pts(v)]
     if isinstance(o, list) and o and isinstance(o[0], (int, float)): return [o]
     if isinstance(o, list): return [p for v in o for p in all_pts(v)]
     return []
-pts = [p for p in all_pts(out) if len(p) == 2]
-hit = [p for p in pts if p[0] < 455 + 8 and p[1] < 850]
+pts = [p for p in all_pts(out) if len(p) == 2] + [list(p) for st in top['strips'] for p in [(st['m'][0]*u + st['m'][2]*v + st['m'][4], st['m'][1]*u + st['m'][3]*v + st['m'][5]) for u, v in st['uv']]]
+hit = [p for p in pts if p[0] < 455 + 3 and p[1] < 850]
 if hit: sys.exit('журнал лезет в кадр финала: %s' % hit[:3])
 dst = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'src/minigames/lust/bath-mag.js')
 src = open(dst).read()
@@ -193,4 +294,4 @@ open(dst, 'w').write(new)
 xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
 print('GEO обновлён: габарит x %.0f…%.0f, y %.0f…%.0f' % (min(xs), max(xs), min(ys), max(ys)),
       '| видимые грани:', [sorted(k for k in m if k != 'pageLines') for m in out['stack']],
-      '| верхний:', sorted(k for k in top if isinstance(top[k], list) and k not in ('coverTone',)))
+      '| верхний:', sorted(k for k in top if isinstance(top[k], list)), '| полос натяжки:', len(top['strips']))
