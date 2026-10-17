@@ -34,7 +34,7 @@
 
 const fs = require('fs');
 const root = __dirname + '/..';
-const CFG = eval(fs.readFileSync(root + '/src/config/economy.js', 'utf8')
+const CFG = eval(require('./economy-src.js')
     + '\nECONOMY').minigames.lust;
 const SHOT = eval(fs.readFileSync(root + '/src/minigames/lust/lust-shot.js', 'utf8')
     + '\nLustShot');

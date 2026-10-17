@@ -10,7 +10,7 @@
 
 const fs = require('fs');
 const src = fs.readFileSync(__dirname + '/../src/config/wrath-gear.js', 'utf8') + '\n'
-          + fs.readFileSync(__dirname + '/../src/config/economy.js', 'utf8') + '\n'
+          + require('./economy-src.js') + '\n'
           + 'module.exports = { WRATH_GEAR, ECONOMY };';
 const mod = { exports: {} };
 new Function('module', 'window', src)(mod, {});

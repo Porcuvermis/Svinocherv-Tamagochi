@@ -9,7 +9,7 @@
 
 | | |
 |---|---|
-| **все числа баланса** | `src/config/economy.js` |
+| **все числа баланса** | `src/config/economy.js` (общее) + `economy-<грех>.js` (мини-игра греха; калькуляторы читают всё через `tools/economy-src.js`) |
 | снаряжение гнева | `src/config/wrath-gear.js` |
 | гардероб тщеславия | `src/config/pride-wardrobe.js` |
 | кухня: ингредиенты, качество блюда | `src/config/kitchen.js` |
