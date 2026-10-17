@@ -8,7 +8,8 @@ const path = require('path');
 (async () => {
     const step = process.argv[2] || 'frames';
     const out = process.argv[3] || '/tmp';
-    const zoom = { tail: [12, 12, 306, 180], cloth: [12, 202, 148, 228], soap: [170, 202, 148, 228], frames: [0, 0, 165, 221], stars: [12, 12, 306, 180] }[step];
+    const state = process.argv[4] || '';
+    const zoom = { tail: [12, 12, 306, 180], cloth: [12, 202, 148, 228], soap: [170, 202, 148, 228], frames: [0, 0, 165, 221], stars: [12, 12, 306, 180], cart: [12, 12, 306, 418] }[step];
     const browser = await chromium.launch();
     for (const [scale, name, clip] of [[3, 'page', null], [6, 'zoom', zoom]]) {
         if (!clip && name === 'zoom') continue;
@@ -18,7 +19,7 @@ const path = require('path');
         await page.goto('http://localhost:8777/tools/mag-ad.html?step=' + step);
         await page.waitForFunction(() => document.title === 'ready');
         if (errs.length) { console.error(errs.join('\n')); process.exit(1); }
-        const file = path.join(out, `ad-${step}-${name}.png`);
+        const file = path.join(out, `ad-${step}${state ? '-' + state : ''}-${name}.png`);
         await page.screenshot({ path: file, clip: clip ? { x: clip[0], y: clip[1], width: clip[2], height: clip[3] } : undefined });
         console.log(file);
         await page.close();

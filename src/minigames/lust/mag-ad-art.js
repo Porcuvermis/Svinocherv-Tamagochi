@@ -429,6 +429,89 @@ const MAG_AD = {
         });
         return s;
     }
+    ,
+    // ---------- МОНЕТА-ЦЕНА ----------
+    // Литой золотой: гурт насечкой, бортик, цифра выбита рельефом — тёмная
+    // выемка и свет по нижней кромке (лампа сверху-слева, свет ложится на
+    // ДАЛЬНЮЮ от неё стенку выемки). Только цифра: валюта у листа одна.
+    coin(cx, cy, r, num) {
+        const C = this.C(), S = STROKE, I = this.ID, G = C.gold, n = (v) => this.n(v);
+        let mill = '';
+        const N = Math.round(r * 3.2);
+        for (let i = 0; i < N; i++) {
+            const a = i * Math.PI * 2 / N;
+            mill += `M${n(cx + Math.cos(a) * (r - 1.6))},${n(cy + Math.sin(a) * (r - 1.6))} L${n(cx + Math.cos(a) * r)},${n(cy + Math.sin(a) * r)} `;
+        }
+        const fs = n(r * (String(num).length > 1 ? 0.95 : 1.15));
+        const txt = (dx, dy, fill, op) => `<text x="${n(cx + dx)}" y="${n(cy + r * 0.36 + dy)}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${fs}" fill="${fill}"${op != null ? ` fill-opacity="${op}"` : ''}>${num}</text>`;
+        return `<circle cx="${n(cx + 0.9)}" cy="${n(cy + 1.4)}" r="${r}" fill="${C.velvet.deep}" opacity="0.55"/>
+            <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${I}-goldR)"/>
+            <path d="${mill}" stroke="${G.lo}" stroke-width="${S.hairline}"/>
+            <circle cx="${cx}" cy="${cy}" r="${n(r - 2.2)}" fill="url(#${I}-gold)" stroke="${G.deep}" stroke-opacity="0.55" stroke-width="${S.hairline}"/>
+            <circle cx="${cx}" cy="${cy}" r="${n(r - 3.6)}" fill="url(#${I}-goldR)"/>
+            ${txt(0.5, 0.6, G.glint, 0.75)}${txt(0, 0, G.deep)}`;
+    },
+
+    // ---------- ПЕЧАТЬ-КОРЗИНКА ----------
+    // Сургучная печать на ленте. Появляется, только когда цена по карману
+    // (решение игрока): печать — это «можно купить», и вплетена в рамку —
+    // ленты ложатся ПОВЕРХ золотого бортика окна, как настоящая печать на
+    // документе, а не кнопка поверх картинки.
+    //   key — окно: хвосту рубиновый сургуч, мылу и мочалке изумрудный;
+    //   tails — куда свисают ленты (угол в градусах от вертикали вниз);
+    //   len   — длина лент в радиусах печати.
+    seal(cx, cy, r, key, tails, len) {
+        const C = this.C(), S = STROKE, I = this.ID, G = C.gold, n = (v) => this.n(v);
+        const W = key === 'tail' ? C.ruby : C.emerald;
+        const gid = `${I}-wax-${key}`;
+        // Ленты: широкая полоса с вырезом «ласточкин хвост» на конце.
+        const ribbon = (deg, len) => {
+            const a = deg * Math.PI / 180, ux = Math.sin(a), uy = Math.cos(a), px = uy, py = -ux, w = r * 0.42;
+            const P = (t, s) => `${n(cx + ux * t + px * s)},${n(cy + uy * t + py * s)}`;
+            const body = `M${P(0, -w)} L${P(len, -w)} L${P(len - w * 0.9, 0)} L${P(len, w)} L${P(0, w)}Z`;
+            return `<path d="${body}" fill="${W.lo}" stroke="${G[500]}" stroke-width="${S.hairline}" stroke-linejoin="round"/>
+                <path d="M${P(r * 0.6, -w * 0.45)} L${P(len - w * 0.4, -w * 0.45)}" stroke="${W[500]}" stroke-width="${n(w * 0.5)}" stroke-opacity="0.8"/>
+                <path d="M${P(r * 0.6, -w + 0.9)} L${P(len - 0.6, -w + 0.9)}" stroke="${G.hi}" stroke-opacity="0.55" stroke-width="${S.hairline}"/>`;
+        };
+        // Край сургуча — неровный натёк: круг с двумя гармониками, по
+        // сотне точек, сглаженный — не зубчатая шестерёнка.
+        let blob = '';
+        for (let i = 0; i <= 96; i++) {
+            const a = i * Math.PI * 2 / 96;
+            const rr = r * (1 + 0.055 * Math.sin(5 * a + 0.7) + 0.035 * Math.sin(9 * a + 2.1) + 0.02 * Math.sin(14 * a));
+            blob += (i ? 'L' : 'M') + n(cx + Math.cos(a) * rr) + ',' + n(cy + Math.sin(a) * rr);
+        }
+        blob += 'Z';
+        const ri = r * 0.7;
+        return `<defs><radialGradient id="${gid}" cx="0.38" cy="0.32" r="0.8">
+                <stop offset="0" stop-color="${W.hi}"/><stop offset="0.5" stop-color="${W[500]}"/><stop offset="1" stop-color="${W.lo}"/></radialGradient></defs>
+            ${(tails || [24, -24]).map(d => ribbon(d, r * (len || 2.05))).join('')}
+            <path d="${blob}" fill="${C.velvet.deep}" opacity="0.55" transform="translate(1 1.6)"/>
+            <path d="${blob}" fill="url(#${gid})"/>
+            <path d="${blob}" fill="none" stroke="${W.deep}" stroke-opacity="0.5" stroke-width="${S.hairline}"/>
+            <circle cx="${n(cx + 0.5)}" cy="${n(cy + 0.6)}" r="${n(ri)}" fill="none" stroke="${W.hi}" stroke-opacity="0.55" stroke-width="${S.detail}"/>
+            <circle cx="${cx}" cy="${cy}" r="${n(ri)}" fill="${W.lo}" fill-opacity="0.45" stroke="${W.deep}" stroke-width="${S.detail}"/>
+            <path d="M${n(cx - r * 0.55)},${n(cy - r * 0.62)} q${n(r * 0.3)},${n(-r * 0.22)} ${n(r * 0.62)},${n(-r * 0.2)}" fill="none" stroke="${W.hi}" stroke-opacity="0.6" stroke-width="${S.detail}" stroke-linecap="round"/>
+            ${this.basket(cx, cy + r * 0.04, ri * 0.82)}`;
+    },
+
+    // Корзинка, вытиснутая золотом на сургуче: плетёный короб с ручкой.
+    // Плетение — перекрёстные пряди внутри короба, иначе это ведёрко.
+    basket(cx, cy, s) {
+        const C = this.C(), S = STROKE, I = this.ID, G = C.gold, n = (v) => this.n(v);
+        const X = (v) => n(cx + v * s), Y = (v) => n(cy + v * s);
+        const body = `M${X(-0.86)},${Y(-0.08)} L${X(0.86)},${Y(-0.08)} L${X(0.64)},${Y(0.72)} Q${X(0.6)},${Y(0.82)} ${X(0.5)},${Y(0.82)} L${X(-0.5)},${Y(0.82)} Q${X(-0.6)},${Y(0.82)} ${X(-0.64)},${Y(0.72)}Z`;
+        const clipId = `${I}-bk-${Math.round(cx)}-${Math.round(cy)}`;
+        let weave = '';
+        for (let k = -1.6; k <= 1.6; k += 0.32) weave += `M${X(k - 0.5)},${Y(-0.1)} L${X(k + 0.5)},${Y(0.84)} M${X(k + 0.5)},${Y(-0.1)} L${X(k - 0.5)},${Y(0.84)} `;
+        return `<defs><clipPath id="${clipId}"><path d="${body}"/></clipPath></defs>
+            <path d="M${X(-0.56)},${Y(-0.08)} C${X(-0.56)},${Y(-0.92)} ${X(0.56)},${Y(-0.92)} ${X(0.56)},${Y(-0.08)}" fill="none" stroke="${G.deep}" stroke-width="${n(s * 0.2)}" stroke-linecap="round" transform="translate(0.4 0.5)"/>
+            <path d="M${X(-0.56)},${Y(-0.08)} C${X(-0.56)},${Y(-0.92)} ${X(0.56)},${Y(-0.92)} ${X(0.56)},${Y(-0.08)}" fill="none" stroke="url(#${I}-goldV)" stroke-width="${n(s * 0.16)}" stroke-linecap="round"/>
+            <path d="${body}" fill="${G.deep}" transform="translate(0.4 0.5)"/>
+            <path d="${body}" fill="url(#${I}-goldR)"/>
+            <path d="${weave}" stroke="${G.lo}" stroke-width="${S.hairline}" clip-path="url(#${clipId})"/>
+            <path d="M${X(-0.92)},${Y(-0.1)} H${X(0.92)}" stroke="url(#${I}-gold)" stroke-width="${n(s * 0.2)}" stroke-linecap="round"/>`;
+    }
 };
 
 if (typeof window !== 'undefined') window.MAG_AD = MAG_AD;

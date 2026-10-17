@@ -36,6 +36,23 @@
     cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl') + A.stars('cloth', w / 2, 118, steps('cloth')) + coin(50, 200, 14) + seal(98, 200, 16, C.rose.lo),
     soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart') + A.stars('soap', w / 2, 118, steps('soap')) + coin(50, 200, 14) + seal(98, 200, 16, C.plum.lo)
   } };
+  // Монета и печать в трёх состояниях (?state=): buy — по карману, печать
+  // стоит; poor — не хватает, печати нет; max — всё выкуплено, ни цены, ни
+  // печати, все звёзды литые. В медальоне будет СЛЕДУЮЩАЯ ступень товара —
+  // здесь он пока пуст.
+  const state = new URLSearchParams(location.search).get('state') || 'buy';
+  const lvl = (k) => state === 'max' ? steps(k) : 3;
+  const price = (k) => { const p = U[k].levels[lvl(k)].price; return p[Object.keys(p)[0]]; };
+  const shop = (k, cx, cy, sx, sy, r, sealArgs) => state === 'max' ? '' :
+      A.coin(cx, cy, r, price(k)) + (state === 'buy' ? A.seal(sx, sy, r + 2, k, ...sealArgs) : '');
+  A.bench.cart = {
+    tail:  (w, h) => A.medal(100, h / 2, 58, 'deco') + rule(184, 274, 84) + A.stars('tail', 228, 108, lvl('tail')) +
+                     shop('tail', 204, 50, 258, 18, 17, [[26, -26], 1.9]),
+    cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl') + A.stars('cloth', w / 2, 118, lvl('cloth')) +
+                     shop('cloth', 46, 204, 100, 204, 14, [[22, -22], 1.6]),
+    soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart') + A.stars('soap', w / 2, 118, lvl('soap')) +
+                     shop('soap', 46, 204, 100, 204, 14, [[22, -22], 1.6])
+  };
   document.getElementById('sheet').innerHTML = A.page({ windows: (A.bench && A.bench[step]) || empty });
   document.title = 'ready';
 </script>
