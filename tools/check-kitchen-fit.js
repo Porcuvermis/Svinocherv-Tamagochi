@@ -29,6 +29,7 @@ const scope = eval(
     load('src/minigames/gluttony/kitchen-table.js') + '\n' +
     load('src/config/kitchen.js') + '\n' +
     load('src/minigames/gluttony/kitchen-art.js') + '\n' +
+    load('src/minigames/gluttony/kitchen-art-food.js') + '\n' +
     '({ KO: KITCHEN_OBJECTS, ART: KITCHEN_ART, CFG: KITCHEN, PAL: PALETTE })');
 const KO = scope.KO, ART = scope.ART, CFG = scope.CFG, PAL = scope.PAL;
 

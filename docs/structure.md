@@ -38,6 +38,8 @@ src/core/           ядро, общее для всех экранов:
   worm-paint.js       setAttr (не пишет то, что уже стоит), смешивание цвета,
                       детерминированный шум, ориентация тела
   worm-anatomy.js     слои под кожей (docs/worm-anatomy-layers.md)
+  worm-ribs.js        грудная клетка: ось и рёбра в ракурсе
+  worm-skin.js        мышцы, тон кожи, покров, поверхность
   worm-head.js        череп, уши, глаза, пасть, поворот головы. Всё, что
                       зависит от ракурса, собирается ОДНОЙ функцией на вещь
                       (applyBrowTransform, applyHeadEarDepth, applyBrowFit) и
@@ -142,7 +144,8 @@ src/minigames/<грех>/   каждая мини-игра в своей пап�
   lust/ — lust-wash, lust-tail, lust-finale; gluttony/ — gluttony-cook,
   gluttony-input, gluttony-feed, kitchen-counter, kitchen-table;
   pride/ — pride-show, pride-store; sloth/ — sloth-work, garden-art-bed,
-  garden-art-ui.
+  garden-art-ui; kitchen-art-food; bath-art-wash; envy/ — envy-play;
+  wrath/ — wrath-rogue-screens; core — worm-studio-panel.
   greed/                автомат: экран НИЧЕГО не решает — просит крутку у
                         Backend.greedSpin() и показывает три символа с
                         выплатой; веса и таблица выплат в конфиге

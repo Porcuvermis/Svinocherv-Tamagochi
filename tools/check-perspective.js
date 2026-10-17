@@ -29,6 +29,7 @@ const scope = eval(
     load('src/minigames/gluttony/kitchen-counter.js') + '\n' +
     load('src/minigames/gluttony/kitchen-table.js') + '\n' +
     load('src/minigames/gluttony/kitchen-art.js') + '\n' +
+    load('src/minigames/gluttony/kitchen-art-food.js') + '\n' +
     '({ KO: KITCHEN_OBJECTS, ART: KITCHEN_ART })');
 const KO = scope.KO;
 const verbose = process.argv[2] === 'подробно';
