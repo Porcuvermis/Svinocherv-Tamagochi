@@ -7,7 +7,9 @@
 //   node tools/split-object.js <исходник.js> <Obj> <новый.js> <выбор> [--title "строка"]...
 //
 // <выбор> — имена через запятую; «a..b» — все свойства подряд от a до b
-// включительно. Геттеры и сеттеры не переносятся (Object.assign снял бы с
+// включительно. «@РАЗДЕЛ» — весь раздел (заголовок «// ---- РАЗДЕЛ ----» над
+// свойством, как их печатает outline.js --sections), «@А..@Б» — разделы от А
+// до Б включительно; хватает начала названия. Геттеры и сеттеры не переносятся (Object.assign снял бы с
 // них значение) — инструмент откажет.
 //
 // Новый файл подключается в index.html СРАЗУ после исходника: свойства
@@ -19,6 +21,10 @@ const ts = require(require.resolve('typescript', { paths: [process.env.NODE_PATH
 
 const args = process.argv.slice(2);
 const titles = [];
+// --move-tail: код после объекта (запуск init()) уезжает в конец нового файла.
+// Ставить на ПОСЛЕДНЕМ разрезе файла — новый файл подключается последним.
+const moveTail = args.includes('--move-tail');
+if (moveTail) args.splice(args.indexOf('--move-tail'), 1);
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--title') { titles.push(args[i + 1]); args.splice(i, 2); i--; }
 }
@@ -39,9 +45,28 @@ if (!obj) { console.error(`нет объекта ${objName} в ${src}`); process
 
 const props = obj.properties;
 const names = props.map(p => (p.name ? p.name.getText(sf) : null));
+// Раздел свойства: номер последнего заголовка над ним.
+const secTitle = [];
+const secOf = [];
+props.forEach((p, k) => {
+    const lead = text.slice(p.getFullStart(), p.getStart());
+    const m = lead.match(/\/\/ *[-=]{3,} *(.+?) *[-=]{3,}/g);
+    if (m || !k) secTitle.push(m ? m[m.length - 1].replace(/\/\/ *[-=]+ *| *[-=]+$/g, '') : '');
+    secOf.push(secTitle.length - 1);
+});
+const secIdx = (q) => {
+    const hits = secTitle.map((t, i) => (t.startsWith(q) ? i : -1)).filter(i => i >= 0);
+    if (hits.length !== 1) { console.error(`раздел «${q}»: найдено ${hits.length}`); process.exit(1); }
+    return hits[0];
+};
 const chosen = new Set();
 for (const part of pick.split(',').map(s => s.trim()).filter(Boolean)) {
     const [a, b] = part.split('..');
+    if (a.startsWith('@')) {
+        const s0 = secIdx(a.slice(1)), s1 = b ? secIdx(b.replace(/^@/, '')) : s0;
+        props.forEach((p, k) => { if (secOf[k] >= s0 && secOf[k] <= s1) chosen.add(k); });
+        continue;
+    }
     const i = names.indexOf(a), j = b ? names.indexOf(b) : i;
     if (i < 0 || j < 0) { console.error('нет свойства: ' + part); process.exit(1); }
     for (let k = i; k <= j; k++) chosen.add(k);
@@ -65,13 +90,25 @@ for (const k of [...chosen].sort((x, y) => x - y)) {
 let rest = text;
 for (const [a, b] of cut.slice().reverse()) rest = rest.slice(0, a) + rest.slice(b);
 
+const tailSt = sf.statements.filter(st => st.getStart() > obj.getEnd() && !ts.isFunctionDeclaration(st)
+    && !ts.isVariableStatement(st));
+let tailText = '';
+if (moveTail && tailSt.length) {
+    const a = tailSt[0].getFullStart(), b = tailSt[tailSt.length - 1].getEnd();
+    // Срез идёт по исходному тексту; вырезанные свойства лежат раньше, поэтому
+    // сдвиг считается от длины, на которую текст уже укоротился.
+    const shift = text.length - rest.length;
+    tailText = text.slice(a, b).replace(/^\s*\n/, '');
+    rest = rest.slice(0, a - shift).replace(/\s*$/, '\n\n') + '// Запуск — в конце ' + path.basename(out)
+        + ': он подключается последним из продолжений,\n// и к этому моменту все методы уже на объекте.\n' + rest.slice(b - shift).replace(/^\s*/, '');
+}
 const header = titles.length ? titles.map(t => '// ' + t).join('\n') + '\n' : '';
 const outText = `${header}// Продолжение ${objName} (${path.basename(src)}): свойства добавляются на тот же
 // объект, \`this\` в методах — он же. Подключается сразу после ${path.basename(src)}.
 Object.assign(${objName}, {
 ${chunks.join('\n')}
 });
-`;
+` + (tailText ? `\n// Запуск — здесь, а не в ${path.basename(src)}: этот файл подключается последним,\n// и к этому моменту все методы уже на объекте.\n${tailText}\n` : '');
 fs.writeFileSync(out, outText);
 fs.writeFileSync(src, rest);
 
@@ -95,8 +132,7 @@ if (re.test(html)) {
 // Код ПОСЛЕ объекта (запуск init(), регистрация) выполняется при загрузке
 // исходника — ДО продолжений. Если он зовёт методы, его надо перенести в
 // последнее продолжение руками: резак этого не решает за тебя.
-const tail = sf.statements.filter(st => st.getStart() > obj.getEnd() && !ts.isFunctionDeclaration(st)
-    && !(ts.isVariableStatement(st)));
+const tail = moveTail ? [] : tailSt;
 if (tail.length) console.log('ВНИМАНИЕ: после объекта есть код, исполняемый при загрузке (строка '
     + (sf.getLineAndCharacterOfPosition(tail[0].getStart()).line + 1) + ') — не зовёт ли он перенесённые методы?');
 const kb = s => (Buffer.byteLength(s) / 1024).toFixed(1) + 'K';

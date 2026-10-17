@@ -4,6 +4,8 @@
 // грепом наугад, и чтобы решить, как его резать (tools/split-object.js).
 //
 //   node tools/outline.js <файл.js> [--min 2000]   — показывать куски от 2 КБ
+//   node tools/outline.js <файл.js> --sections     — только разделы объекта:
+//       первое свойство раздела, строка, суммарный размер (так решают, где резать)
 //
 // Парсер — typescript (он стоит в окружении глобально); сборки он не
 // добавляет: это инструмент, не рантайм.
@@ -32,7 +34,19 @@ function propName(p) {
     if (!p.name) return '?';
     return p.name.getText(sf);
 }
+const SECTIONS = process.argv.includes('--sections');
+function dumpSections(obj, indent) {
+    let cur = null;
+    const flush = () => cur && console.log(`${indent}${String(cur.line).padStart(5)} ${kb(cur.size)}  ${cur.first} …   — ${cur.title}`);
+    for (const p of obj.properties) {
+        const h = header(p);
+        if (h || !cur) { flush(); cur = { title: h || '(начало)', line: line(p.getStart()), size: 0, first: propName(p) }; }
+        cur.size += bytes(p);
+    }
+    flush();
+}
 function dumpObject(obj, indent) {
+    if (SECTIONS) return dumpSections(obj, indent);
     for (const p of obj.properties) {
         const size = bytes(p);
         if (size < MIN) continue;
