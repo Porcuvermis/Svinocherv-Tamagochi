@@ -39,25 +39,13 @@
   const lvl = (k) => state === 'max' ? steps(k) : 3;
   const price = (k) => { const p = U[k].levels[lvl(k)].price; return p[Object.keys(p)[0]]; };
   // Предмет СЛЕДУЮЩЕЙ ступени в чаше — тот же рисунок, что на полке ванной.
-  const item = (L, cx, cy, a, b) => {
-    const next = Math.min(lvl(L === BATH_SOAP ? 'soap' : 'cloth') + 1, L.TIERS ? L.TIERS.length - 1 : 8);
-    const box = L.box(next), k = Math.min(2 * a * 0.78 / box.w, 2 * b * 0.84 / box.h);
-    return `<g transform="translate(${cx} ${cy}) scale(${k.toFixed(3)}) translate(${-(box.x + box.w / 2)} ${-(box.y + box.h / 2)})">${L.draw(next)}</g>`;
+  const item = (L, k) => { const next = Math.min(lvl(k) + 1, 8); return { svg: L.draw(next), box: L.box(next) }; };
+  const data = (k, L) => ({ item: L && item(L, k), bought: lvl(k), price: state === 'max' ? null : price(k), canBuy: state === 'buy' });
+  const windows = {
+    tail:  () => A.shelf('tail', data('tail')),
+    cloth: () => A.shelf('cloth', data('cloth', BATH_CLOTH)),
+    soap:  () => A.shelf('soap', data('soap', BATH_SOAP))
   };
-  // Медальоны новой формы (раунд 2): хвост — овал стоймя, мыло — лёжа,
-  // мочалка — скруглённый прямоугольник. Окна, кроме мыла, — без цены.
-  const tail  = (w, h) => A.medal(100, 90, 46, 62, 'deco') + A.stars('tail', 228, 108, lvl('tail'));
-  const cloth = (w, h) => A.medal(w / 2, 62, 50, 36, 'pearl', item(BATH_CLOTH, w / 2, 62, 50, 36)) + A.stars('cloth', w / 2, 172, lvl('cloth'));
-  const soapMedal = (w) => A.medal(w / 2, 60, 50, 35, 'cart', item(BATH_SOAP, w / 2, 60, 50, 35), { lug: has ? LUG : null });
-  const buy = state === 'buy', has = state !== 'max', p = has ? price('soap') : 0;
-  const seal = (x, y, r, tails, len) => buy ? A.seal(x, y, r, 'soap', tails, len) : '';
-  // Связка «предмет — цена — печать» (выбор игрока, раунд 2): бирка на
-  // шнурке справа под медальоном, ушко шнура — на ободе медальона снизу
-  // справа; печать слева от бирки, в одной строке с ценой.
-  const LUG = 68, ring = A.lug(74, 60, 50, 35, LUG);
-  const soap = (w, h) => soapMedal(w) + A.stars('soap', w / 2, 188, lvl('soap')) +
-                 (has ? seal(38, 132, 24, [20, -20], 1.25) + A.priceTag(132, 134, p, ring) : '');
-  const windows = { tail, cloth, soap };
   document.getElementById('sheet').innerHTML = A.page({ windows });
   document.title = 'ready';
 </script>

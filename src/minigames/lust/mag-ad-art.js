@@ -408,10 +408,21 @@ const MAG_AD = {
     // Ушко для шнура бирки: точка на ободе (параметр овала t, градусы) и
     // наружная нормаль. Одна функция на медальон и на бирку — шнур
     // приходит ровно в отверстие ушка.
-    lug(cx, cy, a, b, deg) {
+    // У скруглённого прямоугольника (мочалка) точка — пересечение луча из
+    // центра под тем же углом с контуром, нормаль — по соседним точкам.
+    lug(cx, cy, a, b, deg, kind) {
         const t = deg * Math.PI / 180, A = a + 4.6, B = b + 4.6, c = Math.cos(t), sn = Math.sin(t);
-        let nx = c / A, ny = sn / B; const l = Math.hypot(nx, ny); nx /= l; ny /= l;
-        const base = [cx + A * c, cy + B * sn], R = 5.6, off = 7.2;
+        let base, nx, ny;
+        if (kind === 'pearl') {
+            const at = (tt) => { const p = this.medalPoints('pearl', cx, cy, a, b, 4.6, 1).reduce((best, q) => {
+                const da = Math.abs(Math.atan2(Math.sin(Math.atan2(q[1] - cy, q[0] - cx) - tt), Math.cos(Math.atan2(q[1] - cy, q[0] - cx) - tt)));
+                return da < best[0] ? [da, q] : best; }, [9, null]); return p[1]; };
+            const q = at(t); base = [q[0], q[1]]; nx = q[2]; ny = q[3];
+        } else {
+            base = [cx + A * c, cy + B * sn]; nx = c / A; ny = sn / B;
+            const l = Math.hypot(nx, ny); nx /= l; ny /= l;
+        }
+        const R = 5.6, off = 7.2;
         return { base, nx, ny, R, hole: [base[0] + nx * off, base[1] + ny * off] };
     },
 
@@ -455,7 +466,7 @@ const MAG_AD = {
         const R = Math.max(a, b);
         let lug = '';
         if (o && o.lug != null) {
-            const L = this.lug(cx, cy, a, b, o.lug), [hx, hy] = L.hole, px = -L.ny, py = L.nx, bw = 2.6;
+            const L = this.lug(cx, cy, a, b, o.lug, kind), [hx, hy] = L.hole, px = -L.ny, py = L.nx, bw = 2.6;
             const b1 = [L.base[0] - L.nx * 2 + px * bw * 1.4, L.base[1] - L.ny * 2 + py * bw * 1.4];
             const b2 = [L.base[0] - L.nx * 2 - px * bw * 1.4, L.base[1] - L.ny * 2 - py * bw * 1.4];
             // Шейка от обода сужается к кольцу плавными дугами, как у литой
@@ -486,6 +497,41 @@ const MAG_AD = {
             ${inner ? `<g clip-path="url(#${gid}-clip)">${inner}</g>` : ''}`;
     }
     ,
+    // ---------- ОКНО-ПОЛКА ЦЕЛИКОМ ----------
+    // Раскладка каждого окна в его точках. Утверждена игроком на мыле
+    // (раунд 2): медальон со следующей ступенью, бирка на шнурке от ушка
+    // медальона, печать рядом с биркой, звёзды. У хвоста окно лежачее, и
+    // связка «бирка — печать» стоит справа от медальона, а не под ним.
+    //   medal: [cx, cy, a, b]; lug — угол ушка на ободе; tag: [правый край,
+    //   середина]; seal: [x, y, r, углы лент, длина лент]; stars: [cx, верх].
+    LAYOUT: {
+        tail:  { kind: 'deco',  medal: [100, 88, 46, 62], lug: 2, tag: [234, 100], seal: [270, 88, 23, [20, -20], 0.9], stars: [228, 134] },
+        cloth: { kind: 'pearl', medal: [74, 60, 50, 36],  lug: 68,  tag: [132, 134], seal: [38, 132, 24, [20, -20], 1.25], stars: [74, 188] },
+        soap:  { kind: 'cart',  medal: [74, 60, 50, 35],  lug: 68,  tag: [132, 134], seal: [38, 132, 24, [20, -20], 1.25], stars: [74, 188] }
+    },
+
+    // d.item — { svg, box } предмета следующей ступени (box — его габарит в
+    //          своих координатах: по нему вещь вписывается в чашу);
+    // d.bought — сколько ступеней куплено (литых звёзд);
+    // d.price — цена следующей ступени, null — ветка выкуплена: ни бирки,
+    //          ни ушка, ни печати, полка остаётся (решение игрока);
+    // d.canBuy — жетонов хватает: только тогда стоит печать.
+    shelf(key, d) {
+        const L = this.LAYOUT[key], [cx, cy, a, b] = L.medal, has = d.price != null;
+        let inner = '';
+        if (d.item && d.item.svg) {
+            const bx = d.item.box, k = Math.min(2 * a * 0.78 / bx.w, 2 * b * 0.84 / bx.h);
+            inner = `<g transform="translate(${cx} ${cy}) scale(${k.toFixed(3)}) translate(${-(bx.x + bx.w / 2)} ${-(bx.y + bx.h / 2)})">${d.item.svg}</g>`;
+        }
+        let s = this.medal(cx, cy, a, b, L.kind, inner, { lug: has ? L.lug : null });
+        s += this.stars(key, L.stars[0], L.stars[1], d.bought);
+        if (has) {
+            if (d.canBuy) s += this.seal(L.seal[0], L.seal[1], L.seal[2], key, L.seal[3], L.seal[4]);
+            s += this.priceTag(L.tag[0], L.tag[1], d.price, this.lug(cx, cy, a, b, L.lug, L.kind));
+        }
+        return s;
+    },
+
     // ---------- ЗВЁЗДЫ-СТУПЕНИ ----------
     // Одна звезда — одна покупка (решение игрока): сколько ступеней в
     // ветке, столько и звёзд, у хвоста 10, у мыла и мочалки по 8. Число
@@ -510,7 +556,7 @@ const MAG_AD = {
     // Ряды звёзд: каждая строка — сколько звёзд в ряду. Сумма = число
     // ступеней ветки; заполняются слева направо, сверху вниз.
     STARS: {
-        tail:  { rows: [5, 5], r: 8.2, gap: 21, dy: 21 },
+        tail:  { rows: [5, 5], r: 8.2, gap: 21, dy: 19 },
         soap:  { rows: [4, 4], r: 7.4, gap: 21, dy: 20 },
         cloth: { rows: [4, 4], r: 7.4, gap: 21, dy: 20 }
     },
