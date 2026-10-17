@@ -19,7 +19,7 @@
 const fs = require('fs');
 const root = __dirname + '/..';
 const src = fs.readFileSync(root + '/src/config/kitchen.js', 'utf8') + '\n'
-          + fs.readFileSync(root + '/src/config/economy.js', 'utf8') + '\n'
+          + require('./economy-src.js') + '\n'
           + 'module.exports = { KITCHEN, ECONOMY };';
 const mod = { exports: {} };
 new Function('module', 'window', src)(mod, {});

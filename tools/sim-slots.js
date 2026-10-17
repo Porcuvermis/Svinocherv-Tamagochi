@@ -37,7 +37,7 @@
 // Запуск из корня:  node tools/sim-slots.js
 
 const fs = require('fs');
-const ECONOMY = eval(fs.readFileSync(__dirname + '/../src/config/economy.js', 'utf8') + '\nECONOMY');
+const ECONOMY = eval(require('./economy-src.js') + '\nECONOMY');
 const CFG = ECONOMY.minigames.greed;
 
 // Картинки символов живут в мини-игре, а не в конфиге (там только числа),

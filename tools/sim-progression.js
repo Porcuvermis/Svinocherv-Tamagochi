@@ -35,7 +35,7 @@ const root = __dirname + '/..';
 const src = fs.readFileSync(root + '/src/config/kitchen.js', 'utf8') + '\n'
           + fs.readFileSync(root + '/src/config/wrath-gear.js', 'utf8') + '\n'
           + fs.readFileSync(root + '/src/config/garden.js', 'utf8') + '\n'
-          + fs.readFileSync(root + '/src/config/economy.js', 'utf8') + '\n'
+          + require('./economy-src.js') + '\n'
           + 'module.exports = { KITCHEN, WRATH_GEAR, GARDEN, ECONOMY };';
 const mod = { exports: {} };
 new Function('module', 'window', src)(mod, {});
