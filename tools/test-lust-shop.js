@@ -203,7 +203,7 @@ const harness = require('./harness');
   await page.mouse.click(seal0.x, seal0.y);
   await page.waitForTimeout(200);
   const after0 = await page.evaluate((k) => ({ lv: GameState.upgradeLevel('lust_' + k), purse: GameState.currency('lust_token'),
-    wallet: +document.querySelector('.bm-wallet b').textContent,
+    wallet: +document.querySelector('.bm-shop .mad-wallet').dataset.num,
     stars: document.querySelectorAll(`.bm-shop .mad-win[data-key="${k}"] .mad-star.on`).length }), seal0.key);
   check(after0.lv === lv0 + 1, `тап по печати покупает (ступень ${lv0} → ${after0.lv})`);
   check(after0.purse < purse0 && after0.wallet === after0.purse,

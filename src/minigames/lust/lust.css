@@ -444,21 +444,6 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     pointer-events: auto;
 }
 #lust-game .bm-shop > .mad-page { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#lust-game .bm-wallet {
-    position: absolute;
-    right: 10px;
-    top: 8px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    background: #ffd33f;
-    border-radius: 14px;
-    transform: rotate(4deg);
-    font: 800 18px/1 system-ui, sans-serif;
-    color: #23101d;
-}
-#lust-game .bm-wallet svg { width: 22px; height: 22px; }
 /* Тап по рекламе без денег мимо печати: печать вздрагивает — «жми сюда». */
 #lust-game .mad-seal { transform-box: fill-box; transform-origin: center; }
 #lust-game .mad-seal.bm-glow { animation: bm-glow 0.6s ease-out; }

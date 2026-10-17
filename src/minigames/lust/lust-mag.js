@@ -307,8 +307,9 @@ const LustMag = {
         if (u.tail) windows.tail = () => { const d = data('tail'); d.item = A.tailItem(d.next, this.host && this.host.tailModel); return A.shelf('tail', d); };
         if (u.cloth && typeof BATH_CLOTH !== 'undefined') windows.cloth = () => A.shelf('cloth', thing(BATH_CLOTH, 'cloth'));
         if (u.soap && typeof BATH_SOAP !== 'undefined') windows.soap = () => A.shelf('soap', thing(BATH_SOAP, 'soap'));
-        el.innerHTML = A.page({ windows }) +
-            `<div class="bm-wallet">${TokenArt.svg('lust_token', 0, { whole: true })}<b>${GameState.currency('lust_token')}</b></div>`;
+        // Кошелёк — своя полка на самом листе (MAG_AD.wallet); лист
+        // перерисовывается после покупки, и число вместе с ним.
+        el.innerHTML = A.page({ windows, wallet: GameState.currency('lust_token') });
         // Попадание считается по экранному прямоугольнику листа и раскладке
         // окон (MAG_AD.zones), а не по цели события: внутри 3d-журнала Chrome
         // отдаёт тап самой странице, а не её детям. В конечной позе журнал

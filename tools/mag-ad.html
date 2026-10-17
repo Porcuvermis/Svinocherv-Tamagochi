@@ -52,10 +52,9 @@
     cloth: () => A.shelf('cloth', data('cloth', BATH_CLOTH)),
     soap:  () => A.shelf('soap', data('soap', BATH_SOAP))
   };
-  // ?w=N — сколько жетонов в кошельке (без параметра кошелька нет);
-  // ?ws=leather|emboss|plain — вариант полки-кошелька.
+  // ?w=N — сколько жетонов в кошельке (без параметра кошелька нет).
   const wallet = Q.get('w') != null ? +Q.get('w') : null;
-  document.getElementById('sheet').innerHTML = A.page({ windows, wallet, walletStyle: Q.get('ws') });
+  document.getElementById('sheet').innerHTML = A.page({ windows, wallet });
   document.title = 'ready';
 </script>
 </body></html>
