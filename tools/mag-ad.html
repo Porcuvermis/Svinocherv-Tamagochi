@@ -11,14 +11,19 @@
 <script src="../src/core/palette.js"></script>
 <script src="../src/config/economy.js"></script>
 <script>
-  // mixColor живёт в worm-paint.js, а тот тянет за собой всего червя.
+  // mixColor и parseCssColor живут в worm-paint.js, а тот тянет за собой всего червя.
   // Предметам ванной нужна только эта смесь — копия здесь.
+  function parseCssColor(c) {
+    const v = c[0] === '#' ? [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) : c.match(/[\d.]+/g).slice(0, 3).map(Number);
+    return { r: v[0], g: v[1], b: v[2] };
+  }
   function mixColor(a, b, t) {
     const p = (c) => c[0] === '#' ? [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) : c.match(/[\d.]+/g).slice(0, 3).map(Number);
     const x = p(a), y = p(b), k = Math.max(0, Math.min(1, t));
     return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * k)).join(',')})`;
   }
 </script>
+<script src="../src/core/skin-tone.js"></script>
 <script src="../src/core/token-art.js"></script>
 <script src="../src/minigames/lust/bath-baked.js"></script>
 <script src="../src/minigames/lust/bath-art.js"></script>
@@ -42,7 +47,7 @@
   const item = (L, k) => { const next = Math.min(lvl(k) + 1, 8); return { svg: L.draw(next), box: L.box(next) }; };
   const data = (k, L) => ({ item: L && item(L, k), bought: lvl(k), price: state === 'max' ? null : price(k), canBuy: state === 'buy' });
   const windows = {
-    tail:  () => A.shelf('tail', data('tail')),
+    tail:  () => A.shelf('tail', Object.assign(data('tail'), { item: A.tailItem(Q.get('tl') != null ? +Q.get('tl') : Math.min(lvl('tail') + 1, 10), null) })),
     cloth: () => A.shelf('cloth', data('cloth', BATH_CLOTH)),
     soap:  () => A.shelf('soap', data('soap', BATH_SOAP))
   };

@@ -532,6 +532,60 @@ const MAG_AD = {
         return s;
     },
 
+    // ---------- ХВОСТ В МЕДАЛЬОНЕ ----------
+    // Хвост следующей ступени — ТОТ ЖЕ, что всплывёт в ванне: разметка
+    // BATH_ART.tail и пути BATH_ART.tailPieces при данном виде ступени
+    // (TAIL_LOOKS). Свой рисунок для журнала разошёлся бы с ванной с первой
+    // же правки хвоста. Разметка ванны рассчитана на живой узел (пути
+    // пустые, их пишет lust.js, drawTail) — здесь они заполняются один раз в
+    // отсоединённом документе, а id переименовываются: живой хвост ванны с
+    // теми же id может стоять в том же документе.
+    //   model — модель червя (тон хвоста от кожи особи), null — палитра.
+    // Возвращает { svg, box }; box — без нижней трети: основание уходит за
+    // край чаши, как в ванне под воду, и хвост встаёт из-под рамки.
+    tailItem(level, model) {
+        if (typeof BATH_ART === 'undefined' || typeof DOMParser === 'undefined') return null;
+        const A = BATH_ART, keep = A.tailLevel;
+        A.setTailLevel(level);
+        try {
+            const bend = 0.42, c = A.tailD(bend, 1).curve, P = A.tailPieces(c, 1), f1 = (v) => v.toFixed(1);
+            const doc = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${A.tail(model, 1)}</svg>`, 'image/svg+xml');
+            const root = doc.documentElement, el = (id) => root.querySelector(`[id="${id}"]`);
+            const set = (id, a, v) => { const e = el(id); if (e && v != null) e.setAttribute(a, v); };
+            set('bt-tail-body', 'd', c.d); set('bt-tail-edge', 'd', c.d);
+            P.segs.forEach((d, i) => set(`bt-tail-seg-${i}`, 'd', d));
+            set('bt-tail-glans', 'd', P.glans); set('bt-tail-clit', 'd', P.clit); set('bt-tail-wrinkle', 'd', P.wrinkles);
+            [['bt-tail-vein-sh', 'veinSh'], ['bt-tail-vein', 'vein'], ['bt-tail-vein-hi', 'veinHi']].forEach(([id, k]) => set(id, 'd', P[k]));
+            P.creases.forEach((q, i) => {
+                set(`bt-tail-cr-${i}`, 'd', q.d); set(`bt-tail-cr-${i}`, 'stroke-opacity', (0.3 * q.k).toFixed(3));
+                set(`bt-tail-crl-${i}`, 'd', q.d); set(`bt-tail-crl-${i}`, 'stroke-opacity', (0.55 * q.k).toFixed(3));
+            });
+            [['bt-tail-sheen', 'sheen'], ['bt-tail-shine', 'shine'], ['bt-tail-stretch', 'stretch'],
+             ['bt-tail-gwet', 'gwet'], ['bt-tail-grim', 'grim'], ['bt-tail-gspark', 'spark']].forEach(([id, k]) => set(id, 'd', P.lights[k]));
+            if (P.piercing) {
+                const Pc = P.piercing;
+                [['bt-tail-ring-back', 'back'], ['bt-tail-ring-back-m', 'back'], ['bt-tail-ring', 'front'],
+                 ['bt-tail-ring-m', 'front'], ['bt-tail-ring-hi', 'front'], ['bt-tail-holes', 'holes']].forEach(([id, k]) => set(id, 'd', Pc[k]));
+                set('bt-tail-bead', 'cx', f1(Pc.bead.x)); set('bt-tail-bead', 'cy', f1(Pc.bead.y)); set('bt-tail-bead', 'r', f1(Pc.bead.r));
+            }
+            if (P.legend) {
+                const Lg = P.legend;
+                [['bt-tail-sweep', 'sweep'], ['bt-tail-glow', 'glow'], ['bt-tail-stars', 'stars']].forEach(([id, k]) => set(id, 'd', Lg[k]));
+                set('bt-tail-halo', 'rx', f1(Lg.halo.rx)); set('bt-tail-halo', 'ry', f1(Lg.halo.ry));
+                set('bt-tail-halo', 'transform', `translate(${f1(Lg.halo.x)} ${f1(Lg.halo.y)}) rotate(${f1(Lg.halo.deg)})`);
+            }
+            const q = P.neck;
+            set('bt-tail-neck', 'rx', f1(q.rx)); set('bt-tail-neck', 'ry', f1(q.ry));
+            set('bt-tail-neck', 'transform', `translate(${f1(q.x)} ${f1(q.y)}) rotate(${f1(q.deg)})`);
+            // Потёки (gooLive) в рекламе не нужны: хвост с витрины чистый.
+            root.querySelectorAll('[id^="bt-tail-goo"]').forEach(e => (e.parentNode.tagName === 'g' && e.parentNode !== root ? e.parentNode : e).remove());
+            const svg = new XMLSerializer().serializeToString(root).replace(/^<svg[^>]*>|<\/svg>$/g, '').replace(/bt-tail-/g, `${this.ID}-tail-`);
+            const xs = c.left.concat(c.right).map(p => p.x), ys = c.left.concat(c.right).map(p => p.y);
+            const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+            return { svg, box: { x: x0 - 6, y: y0 - 8, w: x1 - x0 + 12, h: (y1 - y0) * 0.86 } };
+        } finally { A.setTailLevel(keep); }
+    },
+
     // ---------- ЗВЁЗДЫ-СТУПЕНИ ----------
     // Одна звезда — одна покупка (решение игрока): сколько ступеней в
     // ветке, столько и звёзд, у хвоста 10, у мыла и мочалки по 8. Число
