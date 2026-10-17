@@ -9,6 +9,7 @@
   #sheet svg { width: 100%; height: 100%; display: block; }
 </style>
 <script src="../src/core/palette.js"></script>
+<script src="../src/config/economy.js"></script>
 <script src="../src/minigames/lust/mag-ad-art.js"></script>
 </head><body>
 <div id="sheet"></div>
@@ -21,6 +22,20 @@
     cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl'),
     soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart')
   };
+  // Звёзды: полный набор выкупленных в каждом окне. Число звёзд — длина
+  // лестницы ветки из конфига, а не цифра здесь.
+  const U = ECONOMY.minigames.lust.upgrades, C = A.C();
+  const steps = (k) => U[k].levels.length;
+  // Простые заглушки монеты-цены и печати-корзинки — только чтобы видеть
+  // соседство со звёздами. Чистовик монеты и печати — свой раунд.
+  const coin = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="url(#mad-goldR)" stroke="${C.gold.deep}" stroke-width="${STROKE.hairline}"/>`;
+  const seal = (x, y, r, col) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${col}" stroke="url(#mad-gold)" stroke-width="${STROKE.structure}"/>`;
+  const rule = (x1, x2, y) => `<path d="M${x1} ${y} H${x2}" stroke="${C.gold[500]}" stroke-opacity="0.6" stroke-width="${STROKE.hairline}"/>`;
+  A.bench = { stars: {
+    tail:  (w, h) => A.medal(100, h / 2, 58, 'deco') + coin(205, 50, 16) + seal(252, 50, 18, C.ruby[500]) + rule(184, 274, 82) + A.stars('tail', 228, 108, steps('tail')),
+    cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl') + A.stars('cloth', w / 2, 118, steps('cloth')) + coin(50, 200, 14) + seal(98, 200, 16, C.rose.lo),
+    soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart') + A.stars('soap', w / 2, 118, steps('soap')) + coin(50, 200, 14) + seal(98, 200, 16, C.plum.lo)
+  } };
   document.getElementById('sheet').innerHTML = A.page({ windows: (A.bench && A.bench[step]) || empty });
   document.title = 'ready';
 </script>

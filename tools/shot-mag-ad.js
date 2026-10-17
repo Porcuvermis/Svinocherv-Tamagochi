@@ -8,7 +8,7 @@ const path = require('path');
 (async () => {
     const step = process.argv[2] || 'frames';
     const out = process.argv[3] || '/tmp';
-    const zoom = { tail: [12, 12, 306, 180], cloth: [12, 202, 148, 228], soap: [170, 202, 148, 228], frames: [0, 0, 165, 221] }[step];
+    const zoom = { tail: [12, 12, 306, 180], cloth: [12, 202, 148, 228], soap: [170, 202, 148, 228], frames: [0, 0, 165, 221], stars: [12, 12, 306, 180] }[step];
     const browser = await chromium.launch();
     for (const [scale, name, clip] of [[3, 'page', null], [6, 'zoom', zoom]]) {
         if (!clip && name === 'zoom') continue;

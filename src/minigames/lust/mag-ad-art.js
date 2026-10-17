@@ -391,6 +391,44 @@ const MAG_AD = {
             <circle cx="${cx}" cy="${cy}" r="${n(r - 3.4)}" fill="none" stroke="${C.gold.hi}" stroke-opacity="0.45" stroke-width="${S.hairline}"/>
             ${inner || ''}`;
     }
+    ,
+    // ---------- ЗВЁЗДЫ-СТУПЕНИ ----------
+    // Одна звезда — одна покупка (решение игрока): сколько ступеней в
+    // ветке, столько и звёзд, у хвоста 10, у мыла и мочалки по 8. Число
+    // берётся из конфига (длина лестницы), а раскладка рядов — у каждого
+    // окна своя (STARS ниже), потому что у окон разная ширина.
+    // Купленная — литое золото с фаской и искрой; некупленная — гнездо:
+    // тёмная вдавленная звезда с тонким золотым ободком.
+    star(cx, cy, r, on) {
+        const C = this.C(), S = STROKE, I = this.ID, n = (v) => this.n(v);
+        let d = '';
+        for (let i = 0; i < 10; i++) {
+            const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.46 : r;
+            d += (i ? 'L' : 'M') + n(cx + rr * Math.cos(a)) + ',' + n(cy + rr * Math.sin(a));
+        }
+        d += 'Z';
+        if (!on) return `<path d="${d}" fill="${C.velvet.deep}" fill-opacity="0.55" stroke="${C.gold[500]}" stroke-opacity="0.75" stroke-width="${S.hairline}" stroke-linejoin="round"/>`;
+        return `<path d="${d}" fill="${C.velvet.deep}" opacity="0.6" transform="translate(0.5 0.8)"/>
+            <path d="${d}" fill="url(#${I}-goldR)" stroke="${C.gold.deep}" stroke-width="${S.hairline}" stroke-linejoin="round"/>
+            <path d="M${n(cx)},${n(cy - r * 0.78)} L${n(cx)},${n(cy - r * 0.1)}" stroke="${C.gold.glint}" stroke-opacity="0.7" stroke-width="${S.hairline}" stroke-linecap="round"/>`;
+    },
+
+    // Ряды звёзд: каждая строка — сколько звёзд в ряду. Сумма = число
+    // ступеней ветки; заполняются слева направо, сверху вниз.
+    STARS: {
+        tail:  { rows: [5, 5], r: 8.2, gap: 21, dy: 21 },
+        soap:  { rows: [4, 4], r: 7.4, gap: 21, dy: 20 },
+        cloth: { rows: [4, 4], r: 7.4, gap: 21, dy: 20 }
+    },
+    stars(key, cx, top, bought) {
+        const L = this.STARS[key];
+        let s = '', k = 0;
+        L.rows.forEach((cnt, row) => {
+            const x0 = cx - (cnt - 1) * L.gap / 2, y = top + row * L.dy;
+            for (let i = 0; i < cnt; i++, k++) s += this.star(x0 + i * L.gap, y, L.r, k < bought);
+        });
+        return s;
+    }
 };
 
 if (typeof window !== 'undefined') window.MAG_AD = MAG_AD;
