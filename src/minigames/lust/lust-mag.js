@@ -288,44 +288,46 @@ const LustMag = {
     },
 
     // ---------- ПРИЛАВОК НА СТРАНИЦЕ ----------
-    // Пока — схема вёрстки (замысел игрока): три рекламных блока лесенкой,
-    // картинка товара — акцент с одной стороны, к другой «размазывается»
-    // поле прокачки; корзинка вшита в рекламу. Рисунок рекламы — следующая
-    // работа художника; механика покупки — уже настоящая.
+    // Страница — рекламный лист (mag-ad-art.js): три окна-полки, в медальоне
+    // следующая ступень, бирка с ценой, сургучная печать-корзинка. Лист
+    // статичный: рисуется на открытие журнала и после покупки, не на кадре.
     renderShop() {
         const el = this.$('.bm-shop');
-        if (!el || typeof LustShop === 'undefined') return;
-        const u = LustShop.conf(), keys = (u.order || []);
-        const row = (key, i) => {
+        if (!el || typeof LustShop === 'undefined' || typeof MAG_AD === 'undefined') return;
+        const u = LustShop.conf(), A = MAG_AD;
+        const data = (key) => {
             const b = u[key], lvl = LustShop.level(key), n = b.levels.length;
             const lv = b.levels[lvl], price = lv && lv.price, cur = price && Object.keys(price)[0];
-            const can = price && LustShop.affordable(price);
-            const cells = Array.from({ length: n }, (_, j) => `<i class="${j < lvl ? 'on' : ''}"></i>`).join('');
-            return `<div class="bm-ad bm-ad${i % 2 ? 'r' : 'l'}" data-key="${key}">
-                <span class="bm-pic"><svg viewBox="-34 -34 68 68">${LustShop.art(key)}</svg></span>
-                <span class="bm-field">${cells}</span>
-                ${price ? `<span class="bm-price">${TokenArt.svg('lust_token', 0, { whole: true })}<b>${price[cur]}</b></span>` : '<span class="bm-price bm-max">✓</span>'}
-                ${can ? '<button type="button" class="bm-cart" aria-label="cart">🛒</button>' : ''}
-            </div>`;
+            return { bought: lvl, next: Math.min(lvl + 1, n), price: price ? price[cur] : null,
+                     canBuy: !!price && LustShop.affordable(price) };
         };
-        el.innerHTML = `<div class="bm-wallet">${TokenArt.svg('lust_token', 0, { whole: true })}<b>${GameState.currency('lust_token')}</b></div>` +
-                       keys.map(row).join('');
-        // Попадание считается по экранным прямоугольникам рекламы и корзинки,
-        // а не по цели события: внутри 3d-журнала Chrome отдаёт тап самой
-        // странице, а не её детям. В конечной позе журнал смотрит прямо на
-        // игрока, и прямоугольники точные.
+        // Предмет следующей ступени — тот же рисунок, что в ванне.
+        const thing = (L, key) => { const d = data(key); return Object.assign(d, { item: { svg: L.draw(d.next), box: L.box(d.next) } }); };
+        const windows = {};
+        if (u.tail) windows.tail = () => { const d = data('tail'); d.item = A.tailItem(d.next, this.host && this.host.tailModel); return A.shelf('tail', d); };
+        if (u.cloth && typeof BATH_CLOTH !== 'undefined') windows.cloth = () => A.shelf('cloth', thing(BATH_CLOTH, 'cloth'));
+        if (u.soap && typeof BATH_SOAP !== 'undefined') windows.soap = () => A.shelf('soap', thing(BATH_SOAP, 'soap'));
+        el.innerHTML = A.page({ windows }) +
+            `<div class="bm-wallet">${TokenArt.svg('lust_token', 0, { whole: true })}<b>${GameState.currency('lust_token')}</b></div>`;
+        // Попадание считается по экранному прямоугольнику листа и раскладке
+        // окон (MAG_AD.zones), а не по цели события: внутри 3d-журнала Chrome
+        // отдаёт тап самой странице, а не её детям. В конечной позе журнал
+        // смотрит прямо на игрока, и прямоугольник листа точный.
         el.onpointerdown = (e) => {
             e.stopPropagation();
             if (this.busy) return;
-            const inR = (n) => { if (!n) return false; const r = n.getBoundingClientRect();
-                return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
-            const ad = [...el.querySelectorAll('.bm-ad')].find(inR);
-            if (!ad) return;
-            const c = ad.querySelector('.bm-cart');
-            if (inR(c)) { LustShop.buy(ad.dataset.key); this.renderShop(); return; }
-            // Тап по рекламе не покупает — подсвечивает корзинку.
+            const r = el.querySelector('.mad-page').getBoundingClientRect();
+            const x = (e.clientX - r.left) / r.width * A.W, y = (e.clientY - r.top) / r.height * A.H;
+            const keys = Object.keys(windows), seal = (k) => el.querySelector(`.mad-seal[data-key="${k}"]`);
+            // Печать — с запасом на палец: оттиск на телефоне меньше подушечки.
+            const hitSeal = keys.find(k => { const [cx, cy, sr] = A.zones(k).seal; return seal(k) && Math.hypot(x - cx, y - cy) <= sr * 1.35; });
+            if (hitSeal) { LustShop.buy(hitSeal); this.renderShop(); return; }
+            // Тап по рекламе не покупает — подсвечивает печать. Нет печати —
+            // жетонов не хватает, и купить нечем.
+            const win = keys.find(k => { const [wx, wy, ww, wh] = A.zones(k).win; return x >= wx && x <= wx + ww && y >= wy && y <= wy + wh; });
+            const c = win && seal(win);
             if (!c) return;
-            c.classList.remove('bm-glow'); void c.offsetWidth; c.classList.add('bm-glow');
+            c.classList.remove('bm-glow'); void c.getBoundingClientRect(); c.classList.add('bm-glow');
         };
     },
 

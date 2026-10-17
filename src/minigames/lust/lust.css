@@ -632,21 +632,17 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     background: linear-gradient(90deg, #e7dfc8, #f6f0de 30%, #ece4cf);
 }
 #lust-game .bm-back { background: #ece4cf; transform: translateZ(-2px); border-radius: 3px; }
-/* Прилавок — страница журнала (схема вёрстки, рисунок рекламы — следующий).
+/* Прилавок — страница журнала: рекламный лист (mag-ad-art.js) во всю страницу.
    ПЛОСКАЯ: её содержимое лежит в одной плоскости с ней, и в общем 3d-контексте
    журнала блоки рекламы путались с фоном страницы при сортировке по глубине —
    средний пропадал. */
 #lust-game .bm-mag > .bm-shop { transform-style: flat; }
 #lust-game .bm-shop {
-    background: linear-gradient(180deg, #fff8e8, #f6ecd2);
     border-radius: 3px;
-    padding: 46px 14px 14px;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    overflow: hidden;
     pointer-events: auto;
 }
+#lust-game .bm-shop > .mad-page { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #lust-game .bm-wallet {
     position: absolute;
     right: 10px;
@@ -661,55 +657,15 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     font: 800 18px/1 system-ui, sans-serif;
     color: #23101d;
 }
-#lust-game .bm-wallet svg, #lust-game .bm-price svg { width: 22px; height: 22px; }
-#lust-game .bm-ad {
-    position: relative;
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    border-radius: 10px;
-    background: #fff;
-    box-shadow: 0 2px 0 rgba(35, 16, 29, 0.25);
-}
-#lust-game .bm-adr { flex-direction: row-reverse; }
-#lust-game .bm-pic { width: 92px; height: 92px; flex: none; }
-#lust-game .bm-pic svg { width: 100%; height: 100%; }
-#lust-game .bm-field { flex: 1; display: flex; gap: 3px; height: 26px; }
-#lust-game .bm-adr .bm-field { flex-direction: row-reverse; }
-#lust-game .bm-field i { flex: 1; border-radius: 3px; background: #e9dfc4; }
-#lust-game .bm-field i.on { background: #d93a56; }
-#lust-game .bm-price {
-    position: absolute;
-    bottom: 6px;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    font: 800 16px/1 system-ui, sans-serif;
-    color: #23101d;
-}
-#lust-game .bm-adl .bm-price { right: 54px; }
-#lust-game .bm-adr .bm-price { left: 54px; }
-#lust-game .bm-cart {
-    position: absolute;
-    bottom: 4px;
-    width: 40px;
-    height: 40px;
-    border: 0;
-    border-radius: 50%;
-    background: #fff1cc;
-    font-size: 22px;
-    line-height: 40px;
-    padding: 0;
-}
-#lust-game .bm-adl .bm-cart { right: 8px; }
-#lust-game .bm-adr .bm-cart { left: 8px; }
-#lust-game .bm-cart.bm-glow { animation: bm-glow 1.1s ease-out; }
+#lust-game .bm-wallet svg { width: 22px; height: 22px; }
+/* Тап по рекламе без денег мимо печати: печать вздрагивает — «жми сюда». */
+#lust-game .mad-seal { transform-box: fill-box; transform-origin: center; }
+#lust-game .mad-seal.bm-glow { animation: bm-glow 0.6s ease-out; }
 @keyframes bm-glow {
-    0%   { box-shadow: 0 0 0 0 rgba(80, 220, 120, 0.9); }
-    40%  { box-shadow: 0 0 0 10px rgba(80, 220, 120, 0.45); }
-    100% { box-shadow: 0 0 0 18px rgba(80, 220, 120, 0); }
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.18); }
+    60%  { transform: scale(0.94); }
+    100% { transform: scale(1); }
 }
 
 /* Пока журнал открыт, сцена за ним спит: ни одного css-цикла под затемнением

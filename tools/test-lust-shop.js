@@ -26,7 +26,7 @@ const harness = require('./harness');
 //   8. Журнал на унитазе зовёт, только когда есть что купить и магазин
 //      открыт; зов живёт на холсте размером с журнал, и двигают его
 //      анимации видеокарты — между заходами их нет вовсе. Тап по журналу — он взлетает и раскрывается прилавком во весь
-//      размер; тап по рекламе подсвечивает корзинку, по корзинке — покупает;
+//      размер; тап по рекламе подсвечивает печать-корзинку, по печати — покупает;
 //      мимо — журнал улетает обратно на унитаз.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
@@ -159,10 +159,12 @@ const harness = require('./harness');
   const spread = await page.evaluate(() => {
     const r = document.querySelector('.bm-shop').getBoundingClientRect();
     const st = document.getElementById('bt-stage').getBoundingClientRect();
-    // Реклама на виду: в её середине — страница журнала (тап разбирает она
-    // сама по прямоугольникам), а не затемнение и не пролистанная страница.
-    const ads = [...document.querySelectorAll('.bm-ad')].map(a => {
-      const b = a.getBoundingClientRect(), el = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+    // Окна рекламы на виду: в их середине — страница журнала (тап разбирает
+    // она сама по прямоугольникам), а не затемнение и не пролистанная страница.
+    const pg = document.querySelector('.bm-shop .mad-page').getBoundingClientRect();
+    const ads = ECONOMY.minigames.lust.upgrades.order.map(k => {
+      const [x, y, w, h] = MAG_AD.zones(k).win;
+      const el = document.elementFromPoint(pg.x + (x + w / 2) / MAG_AD.W * pg.width, pg.y + (y + h / 2) / MAG_AD.H * pg.height);
       return !!el && !!el.closest('.bm-shop');
     });
     // Ушедшая за журнал страница гаснет прозрачностью своих сторон.
@@ -174,21 +176,75 @@ const harness = require('./harness');
         `журнал встал по центру во весь размер меню (${(spread.w * 100).toFixed(0)}% ширины)`);
   check(spread.ads.length === 3 && spread.ads.every(Boolean), 'все три рекламы на виду и в них попадает палец');
   check(spread.pages.every(v => v === 'hidden'), 'обложка и пролистанные страницы ушли за журнал');
-  // Тап по рекламе НЕ покупает, а подсвечивает корзинку; тап по корзинке —
-  // покупает. Пальцем по координатам.
-  const adAt = await page.evaluate(() => { const b = document.querySelector('.bm-ad .bm-field').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
-  const lv0 = await page.evaluate(() => GameState.upgradeLevel('lust_' + document.querySelector('.bm-ad').dataset.key));
+  // Тап по рекламе НЕ покупает, а подсвечивает печать-корзинку; тап по
+  // печати — покупает. Пальцем по координатам. Жетонов 3 — по карману
+  // только первая ступень, печать стоит у той ветки, что её продаёт.
+  // Точки — от экранного прямоугольника листа и его раскладки (MAG_AD.zones).
+  const toScreen = (k, part) => page.evaluate(([k, part]) => {
+    const pg = document.querySelector('.bm-shop .mad-page').getBoundingClientRect(), Z = MAG_AD.zones(k);
+    const [x, y] = part === 'seal' ? Z.seal : [Z.win[0] + MAG_AD.LAYOUT[k].medal[0], Z.win[1] + MAG_AD.LAYOUT[k].medal[1]];
+    return { x: pg.x + x / MAG_AD.W * pg.width, y: pg.y + y / MAG_AD.H * pg.height, key: k };
+  }, [k, part]);
+  const sealKey = await page.evaluate(() => { const n = document.querySelector('.bm-shop .mad-seal'); return n && n.dataset.key; });
+  check(!!sealKey, `печать-корзинка стоит там, где жетонов хватает (${sealKey})`);
+  const seal0 = await toScreen(sealKey, 'seal');
+  // Мимо печати — в середину медальона окна той же ветки.
+  const adAt = await toScreen(sealKey, 'medal');
+  const lv0 = await page.evaluate((k) => GameState.upgradeLevel('lust_' + k), seal0.key);
   await page.mouse.click(adAt.x, adAt.y);
   await page.waitForTimeout(120);
-  const glow = await page.evaluate((lv0) => ({ glow: !!document.querySelector('.bm-cart.bm-glow'),
-    same: GameState.upgradeLevel('lust_' + document.querySelector('.bm-ad').dataset.key) === lv0 }), lv0);
-  check(glow.glow && glow.same, 'тап по рекламе подсвечивает корзинку и ничего не покупает');
-  const cartAt = await page.evaluate(() => { const b = document.querySelector('.bm-ad .bm-cart').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
-  await page.mouse.click(cartAt.x, cartAt.y);
+  const glow = await page.evaluate(([k, lv0]) => ({ glow: !!document.querySelector(`.mad-seal.bm-glow[data-key="${k}"]`),
+    same: GameState.upgradeLevel('lust_' + k) === lv0 }), [seal0.key, lv0]);
+  check(glow.glow && glow.same, 'тап по рекламе подсвечивает печать и ничего не покупает');
+  const purse0 = await page.evaluate(() => GameState.currency('lust_token'));
+  await page.mouse.click(seal0.x, seal0.y);
   await page.waitForTimeout(200);
-  const bought = await page.evaluate(() => GameState.upgradeLevel('lust_' + document.querySelector('.bm-ad').dataset.key));
-  check(bought === lv0 + 1, `тап по корзинке покупает (ступень ${lv0} → ${bought})`);
+  const after0 = await page.evaluate((k) => ({ lv: GameState.upgradeLevel('lust_' + k), purse: GameState.currency('lust_token'),
+    wallet: +document.querySelector('.bm-wallet b').textContent,
+    stars: document.querySelectorAll(`.bm-shop .mad-win[data-key="${k}"] .mad-star.on`).length }), seal0.key);
+  check(after0.lv === lv0 + 1, `тап по печати покупает (ступень ${lv0} → ${after0.lv})`);
+  check(after0.purse < purse0 && after0.wallet === after0.purse,
+        `жетоны списаны и кошелёк на развороте перерисован (${purse0} → ${after0.wallet})`);
+  check(after0.stars === after0.lv, `литых звёзд столько, сколько куплено (${after0.stars})`);
   await page.screenshot({ path: out + '2b-spread.png' });
+  // Пустой кошелёк: печатей нет ни у одной ветки — купить нечем, и тап по
+  // рекламе ничего не списывает (docs/traps.md, п. 99).
+  const poorMag = await page.evaluate(() => {
+    GameState.addCurrency('lust_token', -GameState.currency('lust_token')); LustMag.renderShop();
+    return { seals: document.querySelectorAll('.bm-shop .mad-seal').length,
+             tags: document.querySelectorAll('.bm-shop .mad-tag').length };
+  });
+  check(poorMag.seals === 0 && poorMag.tags === 3, `пустой кошелёк: цены видны (${poorMag.tags}), печатей нет (${poorMag.seals})`);
+  const lvPoor = await page.evaluate((k) => GameState.upgradeLevel('lust_' + k), seal0.key);
+  await page.mouse.click(seal0.x, seal0.y);
+  await page.waitForTimeout(150);
+  check(await page.evaluate(([k, l]) => GameState.upgradeLevel('lust_' + k) === l && GameState.currency('lust_token') === 0, [seal0.key, lvPoor]),
+        'тап туда, где стояла печать, без жетонов ничего не покупает');
+  await page.screenshot({ path: out + '2c-poor.png' });
+  // Выкупленная ветка: полка остаётся (решение игрока), но без бирки и
+  // печати, все звёзды литые.
+  const maxMag = await page.evaluate(() => {
+    const u = ECONOMY.minigames.lust.upgrades;
+    GameState.data.upgrades.lust_cloth = u.cloth.levels.length;
+    Backend.grantCurrency('lust_token', 200); LustMag.renderShop();
+    const w = document.querySelector('.bm-shop .mad-win[data-key="cloth"]');
+    return { win: !!w, tag: !!w.querySelector('.mad-tag'), seal: !!w.querySelector('.mad-seal'),
+             on: w.querySelectorAll('.mad-star.on').length, all: u.cloth.levels.length,
+             others: document.querySelectorAll('.bm-shop .mad-seal').length };
+  });
+  check(maxMag.win && !maxMag.tag && !maxMag.seal && maxMag.on === maxMag.all,
+        `выкупленная мочалка: полка на месте, ни бирки, ни печати, звёзд ${maxMag.on} из ${maxMag.all}`);
+  check(maxMag.others === 2, `у остальных двух веток печати стоят (${maxMag.others})`);
+  await page.screenshot({ path: out + '2d-max.png' });
+  // Палец попадает в СВОЮ печать: тап по печати мыла покупает мыло, а не
+  // соседний хвост или мочалку.
+  const lvls = () => page.evaluate(() => ({ tail: GameState.upgradeLevel('lust_tail'), soap: GameState.upgradeLevel('lust_soap'), cloth: GameState.upgradeLevel('lust_cloth') }));
+  const pre = await lvls(), soapAt = await toScreen('soap', 'seal');
+  await page.mouse.click(soapAt.x, soapAt.y);
+  await page.waitForTimeout(150);
+  const post = await lvls();
+  check(post.soap === pre.soap + 1 && post.tail === pre.tail && post.cloth === pre.cloth,
+        `печать мыла покупает мыло и только его (мыло ${pre.soap} → ${post.soap})`);
   // Мимо журнала — закрывается и ложится обратно на унитаз. Точка — от
   // затемнения и журнала, а не числом: в окне не 390×844 холст игры
   // масштабирован и отцентрован, и «x = 8» уходит мимо игры вовсе.
@@ -201,7 +257,7 @@ const harness = require('./harness');
   const back = await page.evaluate(() => ({ open: LustMag.isOpen, scene: document.getElementById('bt-mag-top').style.visibility !== 'hidden' }));
   check(!back.open && back.scene, 'тап мимо журнала — он улетает обратно и снова лежит на унитазе');
   // Покупка выше вернёт ступень: прогон дальше считает от нуля.
-  await page.evaluate(() => { const k = document.querySelector('.bm-ad').dataset.key; GameState.data.upgrades['lust_' + k] = 0; GameState.addCurrency('lust_token', -GameState.currency('lust_token')); GameState.save(); });
+  await page.evaluate(() => { ECONOMY.minigames.lust.upgrades.order.forEach(k => { GameState.data.upgrades['lust_' + k] = 0; }); GameState.addCurrency('lust_token', -GameState.currency('lust_token')); GameState.save(); });
   await page.waitForTimeout(300);
 
   // ================= 3. ПОСРЕДИ ЗАБЕГА МАГАЗИНА НЕТ =================

@@ -43,7 +43,8 @@ const MAG_AD = {
         const B = this.BOX, win = o.windows || {};
         const slot = (key, kind) => {
             const [x, y, w, h] = B[key];
-            return `<g transform="translate(${x} ${y})">${this.frame(kind, w, h)}${win[key] ? win[key](w, h) : ''}</g>`;
+            // class и data-key — для попадания пальцем в журнале (lust-mag.js).
+            return `<g class="mad-win" data-key="${key}" transform="translate(${x} ${y})">${this.frame(kind, w, h)}${win[key] ? win[key](w, h) : ''}</g>`;
         };
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${this.W} ${this.H}" class="mad-page">
             <defs>${this.defs()}</defs>
@@ -528,10 +529,20 @@ const MAG_AD = {
         let s = this.medal(cx, cy, a, b, L.kind, inner, { lug: has ? L.lug : null });
         s += this.stars(key, L.stars[0], L.stars[1], d.bought);
         if (has) {
-            if (d.canBuy) s += this.seal(L.seal[0], L.seal[1], L.seal[2], key, L.seal[3], L.seal[4]);
-            s += this.priceTag(L.tag[0], L.tag[1], d.price, this.lug(cx, cy, a, b, L.lug, L.kind));
+            // Печать — корзинка: в журнале её прямоугольник ищут по классу.
+            if (d.canBuy) s += `<g class="mad-seal" data-key="${key}">${this.seal(L.seal[0], L.seal[1], L.seal[2], key, L.seal[3], L.seal[4])}</g>`;
+            s += `<g class="mad-tag">${this.priceTag(L.tag[0], L.tag[1], d.price, this.lug(cx, cy, a, b, L.lug, L.kind))}</g>`;
         }
         return s;
+    },
+
+    // Где на листе окно и печать — в точках листа, для попадания пальцем.
+    // Считается от раскладки, а не от getBoundingClientRect групп: у групп
+    // габарит раздут фильтрами и тем, что срезано рамкой, и прямоугольник
+    // окна хвоста вылезал за лист и накрывал соседей.
+    zones(key) {
+        const [x, y, w, h] = this.BOX[key], s = this.LAYOUT[key].seal;
+        return { win: [x, y, w, h], seal: [x + s[0], y + s[1], s[2]] };
     },
 
     // ---------- ОДИН КОНТУР У ВСЕХ ТРЁХ ТОВАРОВ ----------
@@ -660,7 +671,7 @@ const MAG_AD = {
         let s = '', k = 0;
         L.rows.forEach((cnt, row) => {
             const x0 = cx - (cnt - 1) * L.gap / 2, y = top + row * L.dy;
-            for (let i = 0; i < cnt; i++, k++) s += this.star(x0 + i * L.gap, y, L.r, k < bought);
+            for (let i = 0; i < cnt; i++, k++) s += `<g class="mad-star${k < bought ? ' on' : ''}">${this.star(x0 + i * L.gap, y, L.r, k < bought)}</g>`;
         });
         return s;
     }
@@ -706,7 +717,10 @@ const MAG_AD = {
     // слов, голое число в кружке — нет (замечание игрока к монете).
     token(x, y, size) {
         if (typeof TokenArt === 'undefined') return '';
-        return TokenArt.svg('lust_token', 0, { whole: true, size }).replace('<svg ', `<svg x="${this.n(x)}" y="${this.n(y - size / 2)}" `);
+        // Класс token-art снят: в игре глобальное .token-art { width: 100% }
+        // (wrath.css) перебивает атрибут size, и значок с бирки раздувался во
+        // весь лист розовым кругом. На стенде этого css нет — там было чисто.
+        return TokenArt.svg('lust_token', 0, { whole: true, size }).replace(/^<svg class="[^"]*"/, `<svg x="${this.n(x)}" y="${this.n(y - size / 2)}"`);
     },
     numW(num, fs) { return String(num).length * fs * 0.62; },   // цифра Georgia ≈ 0.62 кегля
 
