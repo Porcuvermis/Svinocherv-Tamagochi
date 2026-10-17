@@ -258,17 +258,38 @@ def top_mag(te, l, w, t, sa, sc, droop, Ytop, dr=0.0):
     # Взлёт (lust-mag.js): журнал в ПРОСТРАНСТВЕ, в единицах мира и той же
     # камерой, что и картинка. В css-3d камера запекания повторяется точно:
     # перспектива K, начало перспективы — точка (360, 760) сцены, точка мира
-    # (X, Y, Z) ставится в (X, −(Y − 4.2), K − (46 − Z)). Журнал — две
-    # пластины: от стопки до кромки носика (A) и висящая часть (B), каждая —
-    # хордой своего куска; на взлёте B выпрямляется к A.
+    # (X, Y, Z) ставится в (X, −(Y − 4.2), K − (46 − Z)).
+    # Летит ТА ЖЕ толстая модель, что лежит (docs/traps.md, п. 163): базис у
+    # корешка в начале (p0, e1 — вдоль ширины, e2 — касательная), профиль
+    # обложки узлами [v, y, z] (доли длины w: v — по картинке обложки, y и z
+    # — точка верха журнала в базисе), толщина в долях w и тон граней. Две
+    # хорды вместо профиля летели тонким листом с одним переломом — игрок
+    # видел подмену модели в момент тапа.
     def css3(q):
         X_, Y_, Z_ = W(*q)
-        return [round(X_, 5), round(-(Y_ - 4.2), 5), round(K - (46 - Z_), 5)]
-    def plate(s0, s1):
-        a, b, c = css3(pt(s0, 0, t)), css3(pt(s0, l, t)), css3(pt(s1, 0, t))
-        return dict(p0=a, e1=[b[i] - a[i] for i in range(3)], e2=[c[i] - a[i] for i in range(3)])
-    out['fly'] = dict(K=round(K, 4), origin=[360, 760], split=round(sc / w * CH, 2),
-                      A=plate(0.0, sc), B=plate(sc, w))
+        return [X_, -(Y_ - 4.2), K - (46 - Z_)]
+    c0 = css3(pt(0.0, 0, t))
+    e1 = [a_ - b_ for a_, b_ in zip(css3(pt(0.0, l, t)), c0)]
+    e2 = [a_ - b_ for a_, b_ in zip(css3(add(pt(0.0, 0, t), mul(eu, 0.01))), c0)]
+    sig = math.sqrt(dot(e1, e1)) / l                  # css-единиц на единицу модели
+    ux = unit(e1); uy = unit(sub(e2, mul(ux, dot(e2, ux)))); uz = cross(ux, uy)
+    nodes = [0.0, sa] + [sa + (sc - sa) * k / 8 for k in range(1, 9)] + [sc + (w - sc) * k / 6 for k in range(1, 7)]
+    fprof = []
+    for s_ in nodes:
+        d = sub(css3(pt(s_, 0, t)), c0)
+        fprof.append([round(s_ / w, 5), round(dot(d, uy) / (sig * w), 5), round(dot(d, uz) / (sig * w), 5)])
+    seg_tone = []
+    for s0, s1 in zip(nodes, nodes[1:]):
+        pm, nm = frame((s0 + s1) / 2)
+        seg_tone.append(round(tone(add(pm, mul(er, l / 2)), nm), 3))
+    pe, _ = frame(w)
+    out['fly'] = dict(K=round(K, 4), origin=[360, 760], p0=[round(v, 5) for v in c0],
+                      e1=[round(v, 5) for v in e1], e2=[round(v, 5) for v in e2],
+                      prof=fprof, thick=round(t / w, 5), tone=dict(
+                          cover=seg_tone,
+                          near=round(tone(pt(w * 0.5, l, t / 2), er), 3),
+                          far=round(tone(pt(w * 0.5, 0, t / 2), mul(er, -1)), 3),
+                          end=round(tone(add(pe, mul(er, l / 2)), te_), 3)))
     top_mag.pt = pt                                  # для постановки стопки под ним
     return out
 

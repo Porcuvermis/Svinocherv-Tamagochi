@@ -143,13 +143,22 @@ const harness = require('./harness');
   const startAt = await page.evaluate(() => {
     const sc = document.getElementById('bt-mag-top').getBoundingClientRect();
     LustMag.open(); LustMag.stopAnims();
-    const a = document.querySelector('.bm-a').getBoundingClientRect();
+    // Обложка согнутой модели — полосы; габарит — их объединение.
+    const seen = (el) => +getComputedStyle(el).opacity > 0.5;
+    const rs = [...document.querySelectorAll('.bm-bent .bm-sc')].filter(seen).map(e => e.getBoundingClientRect());
+    const a = { x: Math.min(...rs.map(r => r.left)), y: Math.min(...rs.map(r => r.top)) };
+    a.width = Math.max(...rs.map(r => r.right)) - a.x; a.height = Math.max(...rs.map(r => r.bottom)) - a.y;
+    // Толстая: у лежащего журнала виден торец страниц (п. 163).
+    const pages = [...document.querySelectorAll('.bm-bent .bm-sn, .bm-bent .bm-se')].filter(seen).length;
+    const flatHidden = !seen(document.querySelector('.bm-a'));
     LustMag.hide();
     const cx = a.x + a.width / 2, cy = a.y + a.height / 2;
-    return { inside: cx > sc.left && cx < sc.right && cy > sc.top && cy < sc.bottom,
+    return { inside: cx > sc.left && cx < sc.right && cy > sc.top && cy < sc.bottom, pages, flatHidden,
              d: Math.round(Math.hypot(cx - (sc.x + sc.width * 0.55), cy - (sc.y + sc.height * 0.4))) };
   });
-  check(startAt.inside, `начальная поза полёта — на журнале сцены (середина пластины в его габарите, ${startAt.d} точек от центра)`);
+  check(startAt.inside, `начальная поза полёта — на журнале сцены (середина обложки в его габарите, ${startAt.d} точек от центра)`);
+  check(startAt.pages > 0 && startAt.flatHidden,
+        `взлетает та же ТОЛСТАЯ модель: торец страниц виден (${startAt.pages} граней), плоской обложки нет (docs/traps.md, п. 163)`);
   await page.mouse.click(magAt.x, magAt.y);
   await page.waitForTimeout(150);
   const flying = await page.evaluate(() => ({ open: LustMag.isOpen, busy: LustMag.busy, phase: LustMinigame.phase,

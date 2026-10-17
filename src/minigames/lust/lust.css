@@ -383,7 +383,8 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
 }
 /* Обложке и пролистанным страницам пальцы не нужны: погасшая прозрачностью
    страница остаётся за журналом и ловила тап «мимо» как тап по журналу. */
-#lust-game .bm-cover, #lust-game .bm-page, #lust-game .bm-back { pointer-events: none; }
+#lust-game .bm-cover, #lust-game .bm-page, #lust-game .bm-back,
+#lust-game .bm-block, #lust-game .bm-bent { pointer-events: none; }
 #lust-game .bm-mag > div {
     position: absolute;
     left: 0;
@@ -394,7 +395,7 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     transform-style: preserve-3d;
 }
 /* Обложка: две пластины (на унитазе висящая часть согнута) и изнанка. */
-#lust-game .bm-a, #lust-game .bm-b, #lust-game .bm-in,
+#lust-game .bm-a, #lust-game .bm-in,
 #lust-game .bm-f, #lust-game .bm-r {
     position: absolute;
     left: 0;
@@ -403,29 +404,27 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     -webkit-backface-visibility: hidden;
     transform-origin: 0 0;
 }
-#lust-game .bm-a { top: 0; background-repeat: no-repeat; border-radius: 3px 3px 0 0; }
-#lust-game .bm-b { background-repeat: no-repeat; border-radius: 0 0 3px 3px; }
-/* Контур и тень журнала сцены на летящем (lust-mag.js, shade): цвет и
-   толщина — из палитры в коде, на шве A/B линии нет. */
-#lust-game .bm-shade {
+#lust-game .bm-a { top: 0; background-repeat: no-repeat; }
+/* Толстая модель (lust-mag.js, build): грани блока и полосы согнутого
+   журнала. Положение и видимость — из кода. */
+#lust-game .bm-seg {
     position: absolute;
-    border-style: solid;
-    border-radius: inherit;
-    background: rgba(20, 8, 16, 0.22);
-    pointer-events: none;
+    left: 0;
+    top: 0;
+    transform-style: preserve-3d;
 }
-#lust-game .bm-b > .bm-shade::after {
-    content: '';
+#lust-game .bm-face {
     position: absolute;
-    left: calc(-1 * var(--bw));
-    right: calc(-1 * var(--bw));
-    top: 100%;
-    height: calc(var(--te) + var(--bw));
+    left: 0;
+    top: 0;
     box-sizing: border-box;
-    background: var(--paper);
-    border: var(--bw) solid var(--ink);
-    border-top: 0;
-    border-radius: 0 0 3px 3px;
+    transform-origin: 0 0;
+}
+#lust-game .bm-ln {
+    position: absolute;
+    inset: 0;
+    border-style: solid;
+    box-sizing: border-box;
 }
 #lust-game .bm-in {
     top: 0;

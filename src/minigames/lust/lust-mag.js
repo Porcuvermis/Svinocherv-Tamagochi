@@ -10,11 +10,11 @@
 // Сцена ванной запечена камерой (fov 20°, tools/bake-3d.js), и эта камера в
 // css-3d повторяется ТОЧНО: перспектива K, начало перспективы — точка (360,
 // 760) сцены, точка мира (X, Y, Z) — это (X, −(Y − 4.2), K − (46 − Z)).
-// Генератор (tools/gen-mag-geo.py) отдаёт журнал на унитазе в этих числах —
-// две пластины: от стопки до кромки носика (A) и висящая часть (B). Первый
-// кадр полёта совпадает с картинкой на унитазе, дальше журнал — твёрдое тело
-// ПОСТОЯННОГО размера: к игроку он растёт сам, потому что приближается.
-// Висящая пластина на лету выпрямляется к первой.
+// Генератор (tools/gen-mag-geo.py) отдаёт журнал на унитазе в этих числах:
+// базис у корешка, профиль изгиба обложки и толщину. Первый кадр полёта —
+// ТА ЖЕ толстая модель, что на картинке (см. «Толстая модель»), дальше
+// журнал — твёрдое тело ПОСТОЯННОГО размера: к игроку он растёт сам, потому
+// что приближается. Изгиб на лету выпрямляется.
 //
 // ---------- ПОЧЕМУ ВСЁ НА ВИДЕОКАРТЕ ----------
 // Каждый кадр меняется только transform (полёт, поворот, перелистывание) и
@@ -36,7 +36,7 @@ const LustMag = {
     PAGES: 3,           // сколько страниц пролистывается до прилавка
     BACK: 620,          // обратный полёт
     WIDTH: 330,         // ширина меню в точках холста
-    THICK: 0.12 / 2.05, // толщина журнала к его ширине (top_mag в tools/gen-mag-geo.py)
+    ZTOP: 4,            // обложка лежит на этой глубине журнала; блок страниц — под ней
 
     host: null, root: null, isOpen: false, busy: false, raf: 0,
 
@@ -50,10 +50,12 @@ const LustMag = {
         R.innerHTML = `
             <div class="bm-dim"></div>
             <div class="bm-space"><div class="bm-persp"><div class="bm-mag">
+                <div class="bm-block"></div>
                 <div class="bm-back"></div>
                 <div class="bm-shop"></div>
                 ${Array.from({ length: this.PAGES }, (_, i) => `<div class="bm-page" data-i="${i}"><div class="bm-f"></div><div class="bm-r"></div></div>`).join('')}
-                <div class="bm-cover"><div class="bm-a"><div class="bm-shade"></div></div><div class="bm-b"><div class="bm-shade"></div></div><div class="bm-in"></div></div>
+                <div class="bm-cover"><div class="bm-a"></div><div class="bm-in"></div></div>
+                <div class="bm-bent"></div>
             </div></div><img class="bm-ghost" alt=""></div>`;
         // Внутрь обёртки сцены (#bt-stage), а не экрана мини-игры: точки
         // журнала должны совпадать с точками холстов сцены. Обёртка сдвинута
@@ -80,18 +82,19 @@ const LustMag = {
         const LW = this.WIDTH, LH = LW * CH / CW;
         return { c, M, F, LW, LH, K: F.K * c.s, O: [c.tx + c.s * F.origin[0], c.ty + c.s * F.origin[1]] };
     },
-    // Начальная поза: базис пластины A (x — от корешка, y — к носику, z —
-    // наружу), масштаб «мир на точку журнала», угол выпрямления B.
+    // Начальная поза: базис у корешка в начале журнала (x — вдоль ширины от
+    // корешка, y — касательная к обложке, z — наружу), масштаб «мир на точку
+    // журнала». Изгиб — профилем (bentPose), а не поворотом пластины.
     startPose(G) {
-        const A = G.F.A, B = G.F.B, V = this.vec;
+        const F = G.F, V = this.vec;
         // Глубины в генераторе — для перспективы K; здесь она K·s (камера
         // ванной масштабирует холст): z = K − d сдвигается вместе с ней.
-        const p0 = [A.p0[0], A.p0[1], A.p0[2] - G.F.K + G.K];
-        const x = V.unit(A.e1), y = V.unit(V.sub(A.e2, V.mul(x, V.dot(A.e2, x)))), z = V.cross(x, y);
-        const k = V.len(A.e1) / G.LW;
-        const by = V.unit(B.e2), beta = Math.atan2(V.dot(by, z), V.dot(by, y));
-        const C = V.add(p0, V.add(V.mul(x, k * G.LW / 2), V.mul(y, k * G.LH / 2)));
-        return { R: [x, y, z], k, C, beta };
+        const p0 = [F.p0[0], F.p0[1], F.p0[2] - F.K + G.K];
+        const x = V.unit(F.e1), y = V.unit(V.sub(F.e2, V.mul(x, V.dot(F.e2, x)))), z = V.cross(x, y);
+        const k = V.len(F.e1) / G.LW;
+        // Верх журнала в позе — на z = ZTOP (там лежит обложка), а не на 0.
+        const C = V.add(p0, V.add(V.mul(x, k * G.LW / 2), V.add(V.mul(y, k * G.LH / 2), V.mul(z, -k * this.ZTOP))));
+        return { R: [x, y, z], k, C };
     },
     // Конечная поза: лицом к игроку, по центру холста, той же величины в мире
     // — значит на глубине, где она видна шириной LW.
@@ -99,7 +102,7 @@ const LustMag = {
         const d = G.K * k;                                     // глубина, где 1 точка журнала = 1 точка экрана
         const sx = 195, sy = 430;
         return { R: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], k,
-                 C: [(sx - G.O[0]) * d / G.K, (sy - G.O[1]) * d / G.K, G.K - d], beta: 0 };
+                 C: [(sx - G.O[0]) * d / G.K, (sy - G.O[1]) * d / G.K, G.K - d] };
     },
     matrix(P, G) {
         const [x, y, z] = P.R, k = P.k, V = this.vec;
@@ -116,18 +119,8 @@ const LustMag = {
         const G = this.frame(), P0 = this.startPose(G), P1 = this.endPose(G, P0.k);
         this.G = G; this.P0 = P0; this.P1 = P1;
         const R = this.root, mag = this.$('.bm-mag');
-        // Размеры в точках журнала; обложка — та же картинка, что на унитазе.
-        const url = 'src/minigames/lust/mag-cover.jpg';
         mag.style.width = G.LW + 'px'; mag.style.height = G.LH + 'px';
-        const split = G.F.split / BATH_MAG.GEO.top.size[1] * G.LH;
-        for (const el of [this.$('.bm-a'), this.$('.bm-b')]) {
-            el.style.backgroundImage = `url(${url})`;
-            el.style.backgroundSize = `${G.LW}px ${G.LH}px`;
-        }
-        this.$('.bm-a').style.height = split + 'px';
-        const b = this.$('.bm-b');
-        b.style.top = split + 'px'; b.style.height = (G.LH - split) + 'px';
-        b.style.backgroundPosition = `0 ${-split}px`;
+        this.build(G);
         const sp = this.$('.bm-space');
         sp.style.transform = `translate(${G.M.ox}px, ${G.M.oy}px) scale(${G.M.m})`;
         // Перспектива вписана В САМО преобразование журнала: translate(O)
@@ -138,9 +131,10 @@ const LustMag = {
         this.resetPages();
         this._inner = null; this.inner(false);
         // Призрак — та же запечённая картинка, что лежит в сцене, на её
-        // точном месте: журнал полёта — две плоские пластины, и подмена в
-        // момент тапа была бы видна. Призрак растворяется поверх журнала,
-        // пока тот ещё лежит (GHOST мс), на закрытии — проявляется, когда лёг.
+        // точном месте. Летит та же толстая модель, но картинка сцены
+        // нарисована тоньше css (свет, блик, тень на крышке) — подмена идёт
+        // растворением поверх журнала, пока тот ещё лежит (GHOST мс); на
+        // закрытии картинка проявляется, когда журнал уже лёг.
         const gh = this.$('.bm-ghost'), B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED.top : null;
         if (B) {
             const c = G.c;
@@ -148,24 +142,8 @@ const LustMag = {
             Object.assign(gh.style, { left: (c.tx + c.s * B.x) + 'px', top: (c.ty + c.s * B.y) + 'px',
                                       width: (c.s * B.w) + 'px', height: (c.s * B.h) + 'px' });
         }
-        // Контур и тень журнала сцены — на летящем тоже (см. shade).
-        const sc = P0.k * G.K / (G.K - P0.C[2]);              // точек экрана на точку журнала
-        const bw = (STROKE.contour / (G.c.s * G.M.m) / sc).toFixed(2) + 'px';
-        // Низ висящей части — торец страниц (::after у B): без него картинка
-        // на унитазе свисала на толщину журнала ниже летящего, и на подмене
-        // журнал подпрыгивал.
-        this.$$('.bm-shade').forEach((el, i) => {
-            el.style.borderColor = PALETTE.ink;
-            el.style.borderWidth = i ? `0 ${bw}` : `${bw} ${bw} 0`;
-            el.style.inset = i ? `0 -${bw}` : `-${bw} -${bw} 0`;
-            el.style.setProperty('--bw', bw);
-            el.style.setProperty('--te', (G.LW * this.THICK).toFixed(1) + 'px');
-            el.style.setProperty('--paper', PALETTE.bathScene.magazine.paper[500]);
-            el.style.setProperty('--ink', PALETTE.ink);
-        });
-        this.shade(1);
         this.put(mag, 'transform', this.matrix(P0, G));
-        this.put(b, 'transform', `rotateX(${P0.beta}rad)`);
+        this.model(1, P0);
         this.put(this.$('.bm-dim'), 'opacity', '0');
         R.classList.add('on');
         this.sleepScene(true);
@@ -178,9 +156,7 @@ const LustMag = {
         const H = this.GHOST;
         this.run(H + this.OPEN_AT + this.TURN + this.STAGGER * this.PAGES + 60, (e) => {
             // Сначала подмена НА МЕСТЕ: картинка сцены лежит поверх летящего
-            // журнала в той же позе и растворяется. Пока журнал поднимался
-            // одновременно с растворением, на унитазе оставался полупрозрачный
-            // двойник, а висящая часть выпрямлялась под ним — подмену было видно.
+            // журнала в той же позе и растворяется (docs/traps.md, п. 163).
             this.ghost(1 - Math.min(1, e / H));
             this.openFrame(Math.max(0, e - H));
         }, () => { this.busy = false; });
@@ -195,29 +171,225 @@ const LustMag = {
         // Левитация у места: лёгкое покачивание, гаснущее к концу.
         const wob = f > 0.75 ? Math.sin((e - 0.75 * this.FLY) / 140) * 0.03 * (1 - Math.min(1, (e - this.FLY) / 900)) : 0;
         const Rw = wob ? this.mulR(R, this.rotX(wob)) : R;
-        this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: Rw, k: this.P0.k, C }, G));
-        // Выпрямление — плавно с места: с easeOut висящая часть дёргалась
-        // вверх на первом же кадре.
-        const s = Math.min(1, e / this.STRAIGHT);
-        this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * (1 - this.ease(s))).toFixed(4)}rad)`);
-        this.shade(1 - this.ease(s));
+        const P = { R: Rw, k: this.P0.k, C };
+        this.put(this.$('.bm-mag'), 'transform', this.matrix(P, G));
         this.put(this.$('.bm-dim'), 'opacity', Math.min(1, e / this.FLY).toFixed(2));
-        // Нутро журнала (страницы, прилавок, задник) — плоское во всю длину,
-        // а висящая часть обложки на старте согнута: пока она не выпрямилась,
-        // нутро торчало бы из-под сгиба красной полосой. Видно — после.
+        // Нутро журнала (страницы, прилавок, задник) — плоское во всю длину:
+        // пока журнал согнут, его не видно.
         this.inner(e >= this.STRAIGHT);
         // Обложка и страницы: от 0 до −340° вокруг корешка — открываются и
         // заворачиваются за журнал. До своего начала их не трогают.
         this.turn(this.$('.bm-cover'), e - this.OPEN_AT);
         if (this._inner) this.pages.forEach((p, i) => this.turn(p, e - this.OPEN_AT - this.STAGGER * (i + 1)));
+        // Выпрямление — плавно с места. После обложки: та пишет себе
+        // прозрачность сама, а пока журнал согнут, её место — у полос.
+        this.model(1 - this.ease(Math.min(1, e / this.STRAIGHT)), P);
     },
     // Призрак лежит ПОВЕРХ летящего журнала, а тот под ним непрозрачен.
     // Раньше гасли оба навстречу друг другу, и на середине (0.5 + 0.5)
     // сквозь журнал просвечивала крышка — журнал моргал (docs/traps.md, п. 163).
     ghost(a) { this.put(this.$('.bm-ghost'), 'opacity', a.toFixed(2)); },
-    // Контур и тень, как у картинки на унитазе: без них плоский журнал рядом
-    // с ней светлее и без обводки и читается другой моделью. На лету гаснут.
-    shade(a) { this.$$('.bm-shade').forEach(el => this.put(el, 'opacity', a.toFixed(3))); },
+
+    // ---------- ТОЛСТАЯ МОДЕЛЬ ----------
+    // Летит ТОТ ЖЕ журнал, что лежит на унитазе: блок страниц толщиной
+    // F.thick, обложка изогнута по профилю генератора (плоско на стопке,
+    // плавно через кромку крышки, провис). Две плоские пластины с одним
+    // переломом летели тонким листом — в момент тапа игрок видел, как одну
+    // модель подменяют другой (docs/traps.md, п. 163).
+    //
+    // Модели две, и обе — одно тело. СОГНУТАЯ (.bm-bent): полосы по
+    // профилю, у каждой кусок обложки, торец страниц и корешок; на взлёте
+    // полосы выпрямляются. ПЛОСКАЯ (.bm-block + обложка .bm-a): цельные
+    // грани, на ней листаются страницы — полосы на повороте обложки дали бы
+    // волоски на стыках (п. 160). Смена — в кадре, где полосы уже легли в
+    // одну плоскость и совпадают с цельными гранями.
+    build(G) {
+        if (this._built === G.LW) return;
+        this._built = G.LW;
+        const F = G.F, LW = G.LW, LH = G.LH, zt = this.ZTOP, D = F.thick * LH;
+        const Mg = PALETTE.bathScene.magazine, Pp = Mg.paper, ink = PALETTE.ink;
+        const cl = (v) => Math.max(0, Math.min(1, v));
+        const paper = (t) => mixColor(Pp.lo, Pp[500], cl((t + 0.45) / 0.9));
+        const ic = parseCssColor(ink), shade = (a) => `rgba(${ic.r},${ic.g},${ic.b},${a.toFixed(3)})`;
+        // Линии листов поперёк толщины — как у торца на картинке (bath-mag.js, pages).
+        const leaves = (deg, t) => `linear-gradient(${deg}deg, ${paper(t)} 0 26%, ${Pp.line} 26% 32%, ${paper(t)} 32% 51%, ${Pp.line} 51% 57%, ${paper(t)} 57% 76%, ${Pp.line} 76% 82%, ${paper(t)} 82%)`;
+        const spine = `linear-gradient(90deg, ${Mg.pinup[500]}, ${Mg.pinup.lo})`;
+        const url = 'url(src/minigames/lust/mag-cover.jpg)';
+        const T = F.tone;
+        this.D = D;
+        // Узлы профиля в точках журнала: v — по картинке обложки, y/z — верх.
+        const nd = F.prof.map(([v, y, z]) => ({ v: v * LH, y: y * LH, z: zt + z * LH }));
+        const segs = [];
+        for (let i = 0; i + 1 < nd.length; i++) {
+            const a = nd[i], b = nd[i + 1];
+            segs.push({ v: a.v, flat: b.v - a.v, L: Math.hypot(b.y - a.y, b.z - a.z), phi: Math.atan2(b.z - a.z, b.y - a.y) });
+        }
+        this.segs = segs;
+        // Контур — как у картинки сцены: по силуэту толстый и СНАРУЖИ грани
+        // (на картинке обводка лежит под заливкой и видна внешняя половина),
+        // внутренние рёбра — тонкие. Толщина задана НА ЭКРАНЕ у унитаза и
+        // переведена в точки журнала по проекции позы: журнал лежит в ракурсе,
+        // и одна толщина в его точках вдоль ширины выходила втрое тоньше,
+        // а внутри грани линия съедала узкий торец целиком.
+        const P0 = this.startPose(G), V = this.vec, px = (v) => v.toFixed(2) + 'px';
+        const prj = (p) => {
+            const [x, y, z] = P0.R, k = P0.k;
+            const t = V.sub(P0.C, V.add(V.mul(x, k * LW / 2), V.mul(y, k * LH / 2)));
+            const w = V.add(t, V.mul(V.add(V.add(V.mul(x, p[0]), V.mul(y, p[1])), V.mul(z, p[2])), k));
+            const q = G.K / (G.K - w[2]);
+            return [w[0] * q, w[1] * q];
+        };
+        // Сколько точек журнала по b даёт на экране target поперёк ребра d.
+        const across = (p, d, b, target) => {
+            const a0 = prj(p), ad = prj(V.add(p, d)), ab = prj(V.add(p, b));
+            const dd = [ad[0] - a0[0], ad[1] - a0[1]], db = [ab[0] - a0[0], ab[1] - a0[1]];
+            const per = Math.abs(dd[0] * db[1] - dd[1] * db[0]) / (Math.hypot(dd[0], dd[1]) || 1);
+            return Math.min(30, target / Math.max(per, 1e-3));
+        };
+        const T1 = STROKE.contour * G.c.s, T2 = STROKE.detail * G.c.s, X = [1, 0, 0];
+        // Нахлёст полос: без него на стыках светились волоски фона (п. 160).
+        const OV = 4;
+        // Рамка грани расширена под внешнюю линию (вне рамки слой не рисуется),
+        // заливка грани — только её настоящий размер (no-repeat).
+        const ln = (bwid, bg) => `<i class="bm-ln" style="border-width:${bwid};border-color:${ink};${bg ? `background:${bg};` : ''}"></i>`;
+        const face = (cls, x, w, h, bg, over) =>
+            `<div class="bm-face ${cls}" style="left:${px(x)};width:${px(w)};height:${px(h)};background:${bg}">${over || ''}</div>`;
+        // Боковые линии торца и тонкое ребро — одной толщины на всех полосах,
+        // по середине изгиба: своя у каждой полосы давала лесенку на стыках.
+        // Силуэт слева (корешок) сжат ракурсом сильнее всего и меняется вдоль
+        // журнала вдвое — он клином: толщина в каждом узле своя, полоса
+        // обрезана трапецией (clip-path), и стыки совпадают.
+        const rest = this.bentPose(1), qm = rest[Math.floor(rest.length * 0.6)], gm = segs[Math.floor(rest.length * 0.6)];
+        const cm = Math.cos(qm.phi), smn = Math.sin(qm.phi), aym = [0, cm, smn], azm = [0, -smn, cm];
+        const atm = (x, d) => [x, qm.y + cm * gm.L / 2 + smn * d, qm.z + smn * gm.L / 2 - cm * d];
+        const bR = across(atm(LW, 0), aym, X, T2);
+        const sF = across(atm(0, D), aym, azm, T1), sN = across(atm(LW, D), aym, azm, T1);
+        const wN = rest.map((q, i) => { const c = Math.cos(q.phi), sn = Math.sin(q.phi); return across([0, q.y, q.z], [0, c, sn], X, T1); });
+        { const q = rest[rest.length - 1], c = Math.cos(q.phi), sn = Math.sin(q.phi); wN.push(across([0, q.y + c * q.L, q.z + sn * q.L], [0, c, sn], X, T1)); }
+        const bL = Math.max(...wN);
+        // Клин — svg-фоном полосы: обрезка clip-path в 3d-контексте ломала
+        // порядок граней, и торец страниц лез поверх обложки.
+        const wedge = (x0, x1, hh) => {
+            const W = (bL + 1).toFixed(2), H = hh.toFixed(2);
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+                      + `<polygon points="${x0.toFixed(2)},0 ${W},0 ${W},${H} ${x1.toFixed(2)},${H}" fill="${ink}"/></svg>`;
+            return `url('data:image/svg+xml,${encodeURIComponent(svg)}') 0 0 / ${W}px 100% no-repeat`;
+        };
+        let bent = '';
+        rest.forEach((q, i) => {
+            const g = segs[i], last = i === segs.length - 1, h = g.L + (last ? 0 : OV);
+            const c = Math.cos(q.phi), sn = Math.sin(q.phi), ay = [0, c, sn], az = [0, -sn, c];
+            const at = (x, u, d) => [x, q.y + c * u + sn * d, q.z + sn * u - c * d];   // u — вдоль, d — вглубь
+            const top = i === 0 ? across(at(LW / 2, 0, 0), X, ay, T1) : 0;
+            const bgH = LH * g.L / g.flat;
+            const dk = cl((0.9 - T.cover[i]) * 1.6) * 0.35;
+            const side = (bg) => `${bg} 0 0 / ${px(D)} 100% no-repeat`;
+            let ends = '';
+            if (i === 0) {
+                const e = across(at(0, 0, D / 2), az, X, T2);
+                ends += face('bm-st', -e, LW + 2 * e, D, `${leaves(0, T.end)} ${px(e)} 0 / ${px(LW)} 100% no-repeat`, ln(`0 ${px(e)}`));
+            }
+            if (last) {
+                const eb = across(at(LW / 2, g.L, D), X, az, T1), el = across(at(0, g.L, D / 2), az, X, T1), er = across(at(LW, g.L, D / 2), az, X, T2);
+                this.endShift = el;
+                ends += face('bm-se', -el, LW + el + er, D + eb, `${leaves(180, T.end)} ${px(el)} 0 / ${px(LW)} ${px(D)} no-repeat`,
+                             ln(`0 ${px(er)} ${px(eb)} ${px(el)}`));
+            }
+            bent += `<div class="bm-seg">`
+                + face('bm-sf', 0, D + sF, h, side(spine), ln(`0 ${px(sF)} 0 0`))
+                + face('bm-sn', 0, D + sN, h, side(leaves(90, T.near)), ln(`0 ${px(sN)} 0 0`))
+                + ends
+                + face('bm-sc', -bL, LW + bL + bR, h + top, `${url} ${px(bL)} ${px(top - g.v * bgH / LH)} / ${px(LW)} ${px(bgH)} no-repeat`,
+                       ln(`${px(top)} ${px(bR)} 0 0`, `${wedge(bL - wN[i], bL - wN[i + 1], h + top)}, linear-gradient(90deg, transparent 0 ${px(bL)}, ${shade(dk)} ${px(bL)})`))
+                    .replace('style="', `style="top:${px(-top)};`)
+                + `</div>`;
+        });
+        this.$('.bm-bent').innerHTML = bent;
+        this.lnEls = null;
+        this.$('.bm-block').innerHTML =
+              face('bm-bf', 0, D, LH, spine)
+            + face('bm-bt', 0, LW, D, leaves(0, T.end))
+            + face('bm-bn', 0, D, LH, leaves(90, T.near))
+            + face('bm-be', 0, LW, D, leaves(180, T.end));
+        const a = this.$('.bm-a');
+        a.style.height = LH + 'px';
+        a.style.backgroundImage = url;
+        a.style.backgroundSize = `${LW}px ${LH}px`;
+        this.$('.bm-back').style.transform = `translateZ(${(zt - D).toFixed(2)}px)`;
+        // Цельные грани блока: корешок (x = 0), торец у стопки (y = 0),
+        // торец страниц (x = LW), низ (y = LH). Все уходят от верха вниз на D.
+        const B = this.$('.bm-block');
+        B.querySelector('.bm-bf').style.transform = `translate3d(0, 0, ${zt}px) rotateY(90deg)`;
+        B.querySelector('.bm-bt').style.transform = `translate3d(0, 0, ${zt}px) rotateX(-90deg)`;
+        B.querySelector('.bm-bn').style.transform = `translate3d(${LW}px, 0, ${zt}px) rotateY(90deg)`;
+        B.querySelector('.bm-be').style.transform = `translate3d(0, ${LH}px, ${zt}px) rotateX(-90deg)`;
+        this.blockFaces = [
+            [B.querySelector('.bm-bf'), [-1, 0, 0], [0, LH / 2, zt - D / 2]],
+            [B.querySelector('.bm-bt'), [0, -1, 0], [LW / 2, 0, zt - D / 2]],
+            [B.querySelector('.bm-bn'), [1, 0, 0], [LW, LH / 2, zt - D / 2]],
+            [B.querySelector('.bm-be'), [0, 1, 0], [LW / 2, LH, zt - D / 2]]];
+        this.segEls = this.$$('.bm-seg').map(el => ({
+            f: el.querySelector('.bm-sf'), n: el.querySelector('.bm-sn'), c: el.querySelector('.bm-sc'),
+            t: el.querySelector('.bm-st'), e: el.querySelector('.bm-se') }));
+    },
+    // Изгиб a (1 — как на унитазе, 0 — плоско): узлы заново по хордам с
+    // углами φ·a; длина хорды — от изогнутой к плоской (обложка на изгибе
+    // чуть длиннее своего места на картинке).
+    bentPose(a) {
+        let y = 0, z = this.ZTOP;
+        return this.segs.map(g => {
+            const phi = g.phi * a, L = g.flat + (g.L - g.flat) * a, o = { y, z, phi, L, s: L / g.L };
+            y += L * Math.cos(phi); z += L * Math.sin(phi);
+            return o;
+        });
+    },
+    // Грань видна, если смотрит на камеру. Считает код, а не
+    // backface-visibility: без видеокарты Chrome её не соблюдает (п. 161).
+    seen(P, n, p) {
+        const [x, y, z] = P.R, V = this.vec, G = this.G, k = P.k;
+        const t = V.sub(P.C, V.add(V.mul(x, k * G.LW / 2), V.mul(y, k * G.LH / 2)));
+        const w = (v) => V.add(V.add(V.mul(x, v[0]), V.mul(y, v[1])), V.mul(z, v[2]));
+        const pw = V.add(t, V.mul(w(p), k));
+        return V.dot(w(n), V.sub([0, 0, G.K], pw)) > 0;
+    },
+    model(a, P) {
+        const on = (el, v) => el && this.put(el, 'opacity', v ? '1' : '0');
+        const LW = this.G.LW, D = this.D;
+        if (a <= 0) {
+            this.segEls.forEach(s => ['f', 'n', 'c', 't', 'e'].forEach(k => on(s[k], false)));
+            this.blockFaces.forEach(([el, n, p]) => on(el, this.seen(P, n, p)));
+            // Обложку, пока она закрыта, включает модель; открывает — setTurn.
+            if (this.$('.bm-cover')._a === 0) on(this.$('.bm-a'), true);
+            return;
+        }
+        this.blockFaces.forEach(([el]) => on(el, false));
+        on(this.$('.bm-a'), false);
+        if (!this.lnEls) this.lnEls = this.$$('.bm-bent .bm-ln');
+        // Гаснут к середине выпрямления: линии в ракурсе лежащего журнала
+        // толще в его точках и на развороте раздувались бы серыми полосами,
+        // а тень на нахлёсте полос — точечными швами.
+        const ao = Math.max(0, Math.min(1, (a - 0.5) / 0.5));
+        this.lnEls.forEach(el => this.put(el, 'opacity', ao.toFixed(3)));
+        const pose = this.bentPose(a), f4 = (v) => v.toFixed(3);
+        pose.forEach((q, i) => {
+            const s = this.segEls[i], c = Math.cos(q.phi), sn = Math.sin(q.phi);
+            const base = `translate3d(0, ${f4(q.y)}px, ${f4(q.z)}px) rotateX(${q.phi.toFixed(5)}rad)`;
+            // Ось полосы в журнале: y — вдоль, z — наружу.
+            const ay = [0, c, sn], az = [0, -sn, c], mid = (u, d) => [u, q.y + c * q.L / 2 - sn * -d, q.z + sn * q.L / 2 + c * -d];
+            this.put(s.c, 'transform', `${base} scaleY(${f4(q.s)})`);
+            this.put(s.f, 'transform', `${base} rotateY(90deg) scaleY(${f4(q.s)})`);
+            this.put(s.n, 'transform', `${base} translateX(${LW}px) rotateY(90deg) scaleY(${f4(q.s)})`);
+            on(s.c, this.seen(P, az, mid(LW / 2, 0)));
+            on(s.f, this.seen(P, [-1, 0, 0], mid(0, D / 2)));
+            on(s.n, this.seen(P, [1, 0, 0], mid(LW, D / 2)));
+            if (s.t) { this.put(s.t, 'transform', `${base} rotateX(-90deg)`); on(s.t, this.seen(P, [0, -c, -sn], [LW / 2, q.y - sn * -D / 2, q.z + c * -D / 2])); }
+            if (s.e) {
+                this.put(s.e, 'transform', `${base} translateY(${f4(q.L)}px) rotateX(-90deg)`);
+                const ey = q.y + c * q.L, ez = q.z + sn * q.L;
+                on(s.e, this.seen(P, ay, [LW / 2, ey + sn * D / 2, ez - c * D / 2]));
+            }
+        });
+    },
     inner(on) {
         if (on === this._inner) return;
         this._inner = on;
@@ -268,15 +440,14 @@ const LustMag = {
             const c = Math.min(1, e / 260);
             this.setTurn(this.$('.bm-cover'), -340 * (1 - this.ease(c)));
             const f = Math.max(0, Math.min(1, (e - 160) / T)), u = this.ease(f), V = this.vec;
-            // висящая часть снова сгибается — нутро прячется под обложку
+            // журнал снова сгибается — нутро прячется под обложку
             this.inner(f < 0.5);
             // Картинка сцены проявляется, когда журнал УЖЕ лёг и согнулся.
             this.ghost(Math.max(0, Math.min(1, (e - T - 160) / H)));
             const C = V.add(V.lerp(this.P1.C, this.P0.C, u), [0, -Math.sin(Math.PI * u) * 0.2 * this.P0.k * G.LW, 0]);
-            this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C }, G));
-            const bend = this.ease(Math.max(0, (f - 0.55) / 0.45));
-            this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * bend).toFixed(4)}rad)`);
-            this.shade(bend);
+            const P = { R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C };
+            this.put(this.$('.bm-mag'), 'transform', this.matrix(P, G));
+            this.model(this.ease(Math.max(0, (f - 0.55) / 0.45)), P);
             this.put(this.$('.bm-dim'), 'opacity', (1 - f).toFixed(2));
         }, () => {
             this.root.classList.remove('on');
