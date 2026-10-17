@@ -443,15 +443,22 @@ const LustMag = {
         const leaves = [...this.pages].reverse().concat(this.$('.bm-cover'));
         leaves.forEach(p => { p._a = null; this.setTurn(p, -340); });
         const F0 = SB * this.PAGES + TB * 0.5;              // взлёт — с полузакрытой обложкой
-        this.run(F0 + T + H, (e) => {
+        // Картинка сцены проявляется ещё в полёте: ease кубический, и последние
+        // ~10% времени журнал почти стоит. Раньше подмена начиналась только
+        // после посадки — игрок видел застывший в воздухе журнал, а поверх него
+        // новый, проявляющийся уже на готовом месте.
+        const G0 = F0 + T * 0.9;
+        this.run(G0 + H, (e) => {
             // С −265°, а не с −340°: дальше страница за журналом и не видна,
             // и закрытие начиналось с паузы на её невидимый путь.
             leaves.forEach((p, i) => this.setTurn(p, -265 * (1 - this.ease(Math.max(0, Math.min(1, (e - SB * i) / TB))))));
             const f = Math.max(0, Math.min(1, (e - F0) / T)), u = this.ease(f), V = this.vec;
             // журнал снова сгибается — нутро прячется под обложку
             this.inner(f < 0.5);
-            // Картинка сцены проявляется, когда журнал УЖЕ лёг и согнулся.
-            this.ghost(Math.max(0, Math.min(1, (e - F0 - T) / H)));
+            // Подмена идёт на последних ~10% полёта: журнал уже в позе сцены
+            // (перемещение < 1 точки, изгиб дошёл), различие — только в тонкой
+            // отрисовке, её и растворяем.
+            this.ghost(Math.max(0, Math.min(1, (e - G0) / H)));
             const C = V.add(V.lerp(this.P1.C, this.P0.C, u), [0, -Math.sin(Math.PI * u) * 0.2 * this.P0.k * G.LW, 0]);
             const P = { R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C };
             this.put(this.$('.bm-mag'), 'transform', this.matrix(P, G));
