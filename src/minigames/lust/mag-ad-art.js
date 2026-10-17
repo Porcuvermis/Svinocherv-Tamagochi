@@ -536,12 +536,31 @@ const MAG_AD = {
         const r = 7, box = (d, rr) => `M${n(d + rr)},${n(d)} H${n(w - d - rr)} A${rr},${rr} 0 0 1 ${n(w - d)},${n(d + rr)} V${n(h - d - rr)} A${rr},${rr} 0 0 1 ${n(w - d - rr)},${n(h - d)} H${n(d + rr)} A${rr},${rr} 0 0 1 ${n(d)},${n(h - d - rr)} V${n(d + rr)} A${rr},${rr} 0 0 1 ${n(d + rr)},${n(d)}Z`;
         const gid = `${I}-wallet`;
         const L = C.leather || V;
-        const tone = { leather: [L.hi, L[500], L.lo, L.deep], emboss: [V[500], V.lo, V.deep, V.deep], plain: [C.plum.lo, C.plum.deep, V.deep, V.deep] }[st];
+        // Гибриды раунда 2: тиснение второго варианта + цвет и золото третьего.
+        //   embossGold — бархат листа темнее, в желобке тиснения нить золота;
+        //   darkEmboss — тёмная плашка третьего, край тиснением, без золота;
+        //   inset      — плашка третьего, утопленная в лист: вокруг — ямка
+        //                тиснения в бархате, своей тени на лист нет.
+        const dark = [C.plum.lo, C.plum.deep, V.deep, V.deep], wine = [V[500], V.lo, V.deep, V.deep];
+        const tone = { leather: [L.hi, L[500], L.lo, L.deep], emboss: wine, embossGold: wine,
+                       plain: dark, darkEmboss: dark, inset: dark }[st];
         const plate = `<radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${n(w * 0.3)}" cy="${n(h * 0.2)}" r="${n(w * 0.95)}">
             <stop offset="0" stop-color="${tone[0]}"/><stop offset="0.5" stop-color="${tone[1]}"/><stop offset="0.9" stop-color="${tone[2]}"/><stop offset="1" stop-color="${tone[3]}"/></radialGradient>
             <clipPath id="${gid}-clip"><path d="${box(0.5, r)}"/></clipPath>`;
         let edge = '';
-        if (st === 'leather') {
+        const groove = (lightOp) => `<path d="${box(4.5, r - 3)}" fill="none" stroke="${V.deep}" stroke-opacity="0.9" stroke-width="${S.detail}" transform="translate(-0.5 -0.6)"/>
+                <path d="${box(4.5, r - 3)}" fill="none" stroke="${V.hi}" stroke-opacity="${lightOp}" stroke-width="${S.hairline}" transform="translate(0.5 0.7)"/>
+                <path d="${box(0.8, r)}" fill="none" stroke="${V.deep}" stroke-width="${S.detail}"/>`;
+        if (st === 'embossGold') {
+            edge = groove(0.7) + `<path d="${box(4.5, r - 3)}" fill="none" stroke="${G[500]}" stroke-opacity="0.9" stroke-width="${S.hairline}"/>`;
+        } else if (st === 'darkEmboss') {
+            edge = groove(0.45);
+        } else if (st === 'inset') {
+            // Плашка ниже листа: тень падает на её верхний-левый край изнутри,
+            // золото — тонкой линией по кромке ямки.
+            edge = `<path d="${box(0.5, r)}" fill="none" stroke="${V.deep}" stroke-opacity="0.85" stroke-width="3.2" clip-path="url(#${gid}-clip)" transform="translate(1 1.3)"/>
+                ${this.goldLine(box(0.9, r), S.hairline * 1.6, { join: 'round' })}`;
+        } else if (st === 'leather') {
             // Строчка: светлая нить пунктиром и тень от прокола под ней.
             edge = `<path d="${box(4.2, r - 3)}" fill="none" stroke="${L.deep}" stroke-width="${S.detail}" stroke-dasharray="3.2 2.2" transform="translate(0.4 0.6)"/>
                 <path d="${box(4.2, r - 3)}" fill="none" stroke="${C.cream}" stroke-opacity="0.85" stroke-width="${S.hairline * 1.6}" stroke-dasharray="3.2 2.2"/>
@@ -559,11 +578,16 @@ const MAG_AD = {
         const fs = 23, tk = 19, numW = this.numW(num, fs), gap = 5;
         const x0 = (w - (tk + gap + numW)) / 2, cy = h / 2;
         const t = (dx, dy, fill, op) => `<text x="${n(x0 + tk + gap + dx)}" y="${n(cy + fs * 0.35 + dy)}" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${fs}" fill="${fill}"${op != null ? ` fill-opacity="${op}"` : ''}>${num}</text>`;
-        const digits = st === 'plain' ? t(0.6, 0.9, V.deep, 0.8) + t(0, 0, C.cream)
+        const cream = st === 'plain' || st === 'embossGold' || st === 'darkEmboss' || st === 'inset';
+        const digits = cream ? t(0.6, 0.9, V.deep, 0.8) + t(0, 0, C.cream)
                                       : t(-0.5, -0.6, (st === 'leather' ? L : V).deep, 0.9) + t(0.5, 0.7, G.glint, 0.35) + t(0, 0, `url(#${I}-goldV)`);
         return `<g class="mad-wallet" data-num="${num}" transform="translate(${x} ${y})">
             <defs>${plate}</defs>
-            <path d="${box(0.5, r)}" fill="${V.deep}" opacity="0.6" transform="translate(1.6 2.4)"/>
+            ${st === 'inset'
+                // Ямка в бархате: тень сверху-слева, свет ворса снизу-справа.
+                ? `<path d="${box(-2.2, r + 2.2)}" fill="${V.deep}" opacity="0.55" transform="translate(-0.6 -0.8)"/>
+                   <path d="${box(-2.2, r + 2.2)}" fill="none" stroke="${V.hi}" stroke-opacity="0.55" stroke-width="${S.hairline}" transform="translate(0.7 0.9)"/>`
+                : `<path d="${box(0.5, r)}" fill="${V.deep}" opacity="0.6" transform="translate(1.6 2.4)"/>`}
             <g clip-path="url(#${gid}-clip)">
                 <rect width="${w}" height="${h}" fill="url(#${gid})"/>
                 <rect width="${w}" height="${h}" filter="url(#${I}-pile)" opacity="${st === 'leather' ? 0.35 : 0.8}"/>
