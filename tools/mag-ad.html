@@ -41,7 +41,8 @@
   // Состояние (?state=): buy — по карману, печать стоит; poor — не хватает,
   // печати нет; max — всё выкуплено, ни цены, ни печати, все звёзды литые.
   const state = Q.get('state') || 'buy';
-  const lvl = (k) => state === 'max' ? steps(k) : 3;
+  // ?lv=N — куплено N ступеней во всех ветках (в медальоне ступень N+1).
+  const lvl = (k) => state === 'max' ? steps(k) : Q.get('lv') != null ? Math.min(+Q.get('lv'), steps(k) - 1) : 3;
   const price = (k) => { const p = U[k].levels[lvl(k)].price; return p[Object.keys(p)[0]]; };
   // Предмет СЛЕДУЮЩЕЙ ступени в чаше — тот же рисунок, что на полке ванной.
   const item = (L, k) => { const next = Math.min(lvl(k) + 1, 8); return { svg: L.draw(next), box: L.box(next) }; };

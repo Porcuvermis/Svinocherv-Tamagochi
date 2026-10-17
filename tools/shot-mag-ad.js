@@ -15,10 +15,10 @@ const path = require('path');
         const page = await browser.newPage({ viewport: { width: 330, height: 442 }, deviceScaleFactor: scale });
         const errs = [];
         page.on('pageerror', e => { console.error(e.message); process.exit(1); });
-        await page.goto(`http://localhost:8777/tools/mag-ad.html?state=${state}${process.env.TL ? '&tl=' + process.env.TL : ''}`);
+        await page.goto(`http://localhost:8777/tools/mag-ad.html?state=${state}${process.env.TL ? '&tl=' + process.env.TL : ''}${process.env.LV ? '&lv=' + process.env.LV : ''}`);
         await page.waitForFunction(() => document.title === 'ready');
         if (errs.length) { console.error(errs.join('\n')); process.exit(1); }
-        const file = path.join(out, `ad-${state}${process.env.TL ? '-t' + process.env.TL : ''}-${name === 'zoom' ? win : 'page'}.png`);
+        const file = path.join(out, `ad-${state}${process.env.TL ? '-t' + process.env.TL : ''}${process.env.LV ? '-l' + process.env.LV : ''}-${name === 'zoom' ? win : 'page'}.png`);
         await page.screenshot({ path: file, clip: clip ? { x: clip[0], y: clip[1], width: clip[2], height: clip[3] } : undefined });
         console.log(file);
         await page.close();

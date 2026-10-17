@@ -521,7 +521,9 @@ const MAG_AD = {
         let inner = '';
         if (d.item && d.item.svg) {
             const bx = d.item.box, k = Math.min(2 * a * 0.78 / bx.w, 2 * b * 0.84 / bx.h);
-            inner = `<g transform="translate(${cx} ${cy}) scale(${k.toFixed(3)}) translate(${-(bx.x + bx.w / 2)} ${-(bx.y + bx.h / 2)})">${d.item.svg}</g>`;
+            const ink = this.inkLines(d.item.svg, k, [PALETTE.ink, d.item.ink]);
+            inner = `<g transform="translate(${cx} ${cy}) scale(${k.toFixed(3)}) translate(${-(bx.x + bx.w / 2)} ${-(bx.y + bx.h / 2)})">${ink.svg}</g>`;
+            inner = `<defs>${this.outlineFilter(key)}</defs><g filter="url(#${this.ID}-outline-${key})">${inner}</g>`;
         }
         let s = this.medal(cx, cy, a, b, L.kind, inner, { lug: has ? L.lug : null });
         s += this.stars(key, L.stars[0], L.stars[1], d.bought);
@@ -530,6 +532,45 @@ const MAG_AD = {
             s += this.priceTag(L.tag[0], L.tag[1], d.price, this.lug(cx, cy, a, b, L.lug, L.kind));
         }
         return s;
+    },
+
+    // ---------- ОДИН КОНТУР У ВСЕХ ТРЁХ ТОВАРОВ ----------
+    // Предметы приходят из ванны каждый со своим контуром в СВОИХ
+    // координатах, а в чашу ужимаются каждый в своё число раз: у флакона
+    // контур выходил обычным, у хвоста — жирным, у морской губки его нет
+    // вовсе. Три товара читались тремя разными стилями (замечание игрока).
+    // Поэтому контур рисуется ОДИН на всех — фильтром по силуэту, снаружи
+    // вещи, одной толщины на листе. Свои чернильные линии предмета
+    // ужимаются так, чтобы самая толстая легла на листе INK_OWN — тонкой
+    // линией под общим контуром, а внутренние сохранили своё соотношение с
+    // ней. Одного выравнивания чернил мало: у бруска, губки, перчатки
+    // контур своего тёмного тона, не чернильного, — по цвету его не
+    // распознать, а силуэт есть у всех.
+    INK_W: 1.5,
+    INK_OWN: 0.7,
+    inkLines(svg, k, inks) {
+        const set = inks.filter(Boolean).map(c => String(c).toLowerCase());
+        const isInk = (tag) => { const m = tag.match(/\sstroke="([^"]+)"/); return m && set.includes(m[1].toLowerCase()); };
+        let W = 0;
+        svg.replace(/<[a-z][^>]*>/gi, (t) => { if (isInk(t)) { const m = t.match(/stroke-width="([\d.]+)"/); if (m) W = Math.max(W, +m[1]); } return t; });
+        if (!W) return { svg, found: false };
+        const f = this.INK_OWN / (W * k);
+        return { found: true, svg: svg.replace(/<[a-z][^>]*>/gi, (t) => isInk(t)
+            ? t.replace(/stroke-width="([\d.]+)"/, (m0, v) => `stroke-width="${(+v * f).toFixed(3)}"`) : t) };
+    },
+    // Силуэт по непрозрачности, раздутый и залитый чернилами, — под вещью.
+    // Перед порогом силуэт размывается: иначе пух по краю губки давал
+    // рваный, зубчатый контур. Раздутие — INK_W минус половина своей линии
+    // предмета (она тоже выходит наружу): контур один на глаз.
+    outlineFilter(key) {
+        return `<filter id="${this.ID}-outline-${key}" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="1.1"/>
+            <feComponentTransfer result="a"><feFuncA type="discrete" tableValues="0 0 0 1"/></feComponentTransfer>
+            <feMorphology in="a" operator="dilate" radius="${this.n(this.INK_W - this.INK_OWN / 2)}" result="d"/>
+            <feFlood flood-color="${PALETTE.ink}"/>
+            <feComposite in2="d" operator="in"/>
+            <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>`;
     },
 
     // ---------- ХВОСТ В МЕДАЛЬОНЕ ----------
@@ -582,7 +623,7 @@ const MAG_AD = {
             const svg = new XMLSerializer().serializeToString(root).replace(/^<svg[^>]*>|<\/svg>$/g, '').replace(/bt-tail-/g, `${this.ID}-tail-`);
             const xs = c.left.concat(c.right).map(p => p.x), ys = c.left.concat(c.right).map(p => p.y);
             const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-            return { svg, box: { x: x0 - 6, y: y0 - 8, w: x1 - x0 + 12, h: (y1 - y0) * 0.86 } };
+            return { svg, ink: A.tailTone(model, 1, 0).ink, box: { x: x0 - 6, y: y0 - 8, w: x1 - x0 + 12, h: (y1 - y0) * 0.86 } };
         } finally { A.setTailLevel(keep); }
     },
 
