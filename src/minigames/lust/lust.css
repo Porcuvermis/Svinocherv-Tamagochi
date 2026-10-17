@@ -405,6 +405,28 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
 }
 #lust-game .bm-a { top: 0; background-repeat: no-repeat; border-radius: 3px 3px 0 0; }
 #lust-game .bm-b { background-repeat: no-repeat; border-radius: 0 0 3px 3px; }
+/* Контур и тень журнала сцены на летящем (lust-mag.js, shade): цвет и
+   толщина — из палитры в коде, на шве A/B линии нет. */
+#lust-game .bm-shade {
+    position: absolute;
+    border-style: solid;
+    border-radius: inherit;
+    background: rgba(20, 8, 16, 0.22);
+    pointer-events: none;
+}
+#lust-game .bm-b > .bm-shade::after {
+    content: '';
+    position: absolute;
+    left: calc(-1 * var(--bw));
+    right: calc(-1 * var(--bw));
+    top: 100%;
+    height: calc(var(--te) + var(--bw));
+    box-sizing: border-box;
+    background: var(--paper);
+    border: var(--bw) solid var(--ink);
+    border-top: 0;
+    border-radius: 0 0 3px 3px;
+}
 #lust-game .bm-in {
     top: 0;
     height: 100%;

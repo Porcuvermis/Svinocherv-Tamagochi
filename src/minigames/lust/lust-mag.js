@@ -29,13 +29,14 @@
 const LustMag = {
     FLY: 1000,          // полёт до места меню, мс
     STRAIGHT: 420,      // висящая часть выпрямляется
-    GHOST: 150,         // подмена журнала сцены журналом полёта
+    GHOST: 120,         // подмена журнала сцены журналом полёта — на месте, до взлёта
     OPEN_AT: 780,       // обложка начинает открываться — чуть раньше остановки
     TURN: 680,          // одна страница от закрытой до «за журналом»
     STAGGER: 115,       // следующая страница — вдогонку
     PAGES: 3,           // сколько страниц пролистывается до прилавка
     BACK: 620,          // обратный полёт
     WIDTH: 330,         // ширина меню в точках холста
+    THICK: 0.12 / 2.05, // толщина журнала к его ширине (top_mag в tools/gen-mag-geo.py)
 
     host: null, root: null, isOpen: false, busy: false, raf: 0,
 
@@ -48,12 +49,12 @@ const LustMag = {
         R.className = 'bm-fly';
         R.innerHTML = `
             <div class="bm-dim"></div>
-            <div class="bm-space"><img class="bm-ghost" alt=""><div class="bm-persp"><div class="bm-mag">
+            <div class="bm-space"><div class="bm-persp"><div class="bm-mag">
                 <div class="bm-back"></div>
                 <div class="bm-shop"></div>
                 ${Array.from({ length: this.PAGES }, (_, i) => `<div class="bm-page" data-i="${i}"><div class="bm-f"></div><div class="bm-r"></div></div>`).join('')}
-                <div class="bm-cover"><div class="bm-a"></div><div class="bm-b"></div><div class="bm-in"></div></div>
-            </div></div></div>`;
+                <div class="bm-cover"><div class="bm-a"><div class="bm-shade"></div></div><div class="bm-b"><div class="bm-shade"></div></div><div class="bm-in"></div></div>
+            </div></div><img class="bm-ghost" alt=""></div>`;
         // Внутрь обёртки сцены (#bt-stage), а не экрана мини-игры: точки
         // журнала должны совпадать с точками холстов сцены. Обёртка сдвинута
         // рамкой окна, и на экране мини-игры журнал взлетал не с унитаза, а
@@ -138,8 +139,8 @@ const LustMag = {
         this._inner = null; this.inner(false);
         // Призрак — та же запечённая картинка, что лежит в сцене, на её
         // точном месте: журнал полёта — две плоские пластины, и подмена в
-        // момент тапа была бы видна. Призрак растворяется, пока журнал
-        // только отрывается (GHOST мс), на закрытии — проявляется.
+        // момент тапа была бы видна. Призрак растворяется поверх журнала,
+        // пока тот ещё лежит (GHOST мс), на закрытии — проявляется, когда лёг.
         const gh = this.$('.bm-ghost'), B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED.top : null;
         if (B) {
             const c = G.c;
@@ -147,6 +148,22 @@ const LustMag = {
             Object.assign(gh.style, { left: (c.tx + c.s * B.x) + 'px', top: (c.ty + c.s * B.y) + 'px',
                                       width: (c.s * B.w) + 'px', height: (c.s * B.h) + 'px' });
         }
+        // Контур и тень журнала сцены — на летящем тоже (см. shade).
+        const sc = P0.k * G.K / (G.K - P0.C[2]);              // точек экрана на точку журнала
+        const bw = (STROKE.contour / (G.c.s * G.M.m) / sc).toFixed(2) + 'px';
+        // Низ висящей части — торец страниц (::after у B): без него картинка
+        // на унитазе свисала на толщину журнала ниже летящего, и на подмене
+        // журнал подпрыгивал.
+        this.$$('.bm-shade').forEach((el, i) => {
+            el.style.borderColor = PALETTE.ink;
+            el.style.borderWidth = i ? `0 ${bw}` : `${bw} ${bw} 0`;
+            el.style.inset = i ? `0 -${bw}` : `-${bw} -${bw} 0`;
+            el.style.setProperty('--bw', bw);
+            el.style.setProperty('--te', (G.LW * this.THICK).toFixed(1) + 'px');
+            el.style.setProperty('--paper', PALETTE.bathScene.magazine.paper[500]);
+            el.style.setProperty('--ink', PALETTE.ink);
+        });
+        this.shade(1);
         this.put(mag, 'transform', this.matrix(P0, G));
         this.put(b, 'transform', `rotateX(${P0.beta}rad)`);
         this.put(this.$('.bm-dim'), 'opacity', '0');
@@ -158,7 +175,15 @@ const LustMag = {
         this.sceneMag(false);
         if (typeof BATH_MAG !== 'undefined') BATH_MAG.call.reset();
         if (typeof Haptics !== 'undefined') Haptics.impact('light');
-        this.run(this.OPEN_AT + this.TURN + this.STAGGER * this.PAGES + 60, (e) => this.openFrame(e), () => { this.busy = false; });
+        const H = this.GHOST;
+        this.run(H + this.OPEN_AT + this.TURN + this.STAGGER * this.PAGES + 60, (e) => {
+            // Сначала подмена НА МЕСТЕ: картинка сцены лежит поверх летящего
+            // журнала в той же позе и растворяется. Пока журнал поднимался
+            // одновременно с растворением, на унитазе оставался полупрозрачный
+            // двойник, а висящая часть выпрямлялась под ним — подмену было видно.
+            this.ghost(1 - Math.min(1, e / H));
+            this.openFrame(Math.max(0, e - H));
+        }, () => { this.busy = false; });
     },
     openFrame(e) {
         const G = this.G, f = Math.min(1, e / this.FLY);
@@ -171,10 +196,12 @@ const LustMag = {
         const wob = f > 0.75 ? Math.sin((e - 0.75 * this.FLY) / 140) * 0.03 * (1 - Math.min(1, (e - this.FLY) / 900)) : 0;
         const Rw = wob ? this.mulR(R, this.rotX(wob)) : R;
         this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: Rw, k: this.P0.k, C }, G));
+        // Выпрямление — плавно с места: с easeOut висящая часть дёргалась
+        // вверх на первом же кадре.
         const s = Math.min(1, e / this.STRAIGHT);
-        this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * (1 - this.easeOut(s))).toFixed(4)}rad)`);
+        this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * (1 - this.ease(s))).toFixed(4)}rad)`);
+        this.shade(1 - this.ease(s));
         this.put(this.$('.bm-dim'), 'opacity', Math.min(1, e / this.FLY).toFixed(2));
-        this.ghost(1 - Math.min(1, e / this.GHOST));
         // Нутро журнала (страницы, прилавок, задник) — плоское во всю длину,
         // а висящая часть обложки на старте согнута: пока она не выпрямилась,
         // нутро торчало бы из-под сгиба красной полосой. Видно — после.
@@ -184,14 +211,13 @@ const LustMag = {
         this.turn(this.$('.bm-cover'), e - this.OPEN_AT);
         if (this._inner) this.pages.forEach((p, i) => this.turn(p, e - this.OPEN_AT - this.STAGGER * (i + 1)));
     },
-    // Призрак виден на a (0…1), лицо обложки — на 1 − a. Обложку гасит её
-    // лицо, а не журнал целиком: прозрачность на .bm-mag сплющила бы его 3d.
-    ghost(a) {
-        const v = a.toFixed(2), w = (1 - a).toFixed(2);
-        this.put(this.$('.bm-ghost'), 'opacity', v);
-        if (!this._faceA) this._faceA = [this.$('.bm-a'), this.$('.bm-b')];
-        if (this.$('.bm-cover')._a === 0) this._faceA.forEach(f => this.put(f, 'opacity', w));
-    },
+    // Призрак лежит ПОВЕРХ летящего журнала, а тот под ним непрозрачен.
+    // Раньше гасли оба навстречу друг другу, и на середине (0.5 + 0.5)
+    // сквозь журнал просвечивала крышка — журнал моргал (docs/traps.md, п. 163).
+    ghost(a) { this.put(this.$('.bm-ghost'), 'opacity', a.toFixed(2)); },
+    // Контур и тень, как у картинки на унитазе: без них плоский журнал рядом
+    // с ней светлее и без обводки и читается другой моделью. На лету гаснут.
+    shade(a) { this.$$('.bm-shade').forEach(el => this.put(el, 'opacity', a.toFixed(3))); },
     inner(on) {
         if (on === this._inner) return;
         this._inner = on;
@@ -236,17 +262,21 @@ const LustMag = {
         this.busy = true;
         const G = this.G, T = this.BACK;
         this.pages.forEach(p => { p._a = null; this.setTurn(p, -340); });
-        this.run(T + 260, (e) => {
+        const H = this.GHOST;
+        this.run(T + 160 + H, (e) => {
             // Обложка возвращается на место, журнал летит обратно и ложится.
             const c = Math.min(1, e / 260);
             this.setTurn(this.$('.bm-cover'), -340 * (1 - this.ease(c)));
             const f = Math.max(0, Math.min(1, (e - 160) / T)), u = this.ease(f), V = this.vec;
             // висящая часть снова сгибается — нутро прячется под обложку
             this.inner(f < 0.5);
-            this.ghost(Math.max(0, Math.min(1, (e - (T + 260 - this.GHOST)) / this.GHOST)));
+            // Картинка сцены проявляется, когда журнал УЖЕ лёг и согнулся.
+            this.ghost(Math.max(0, Math.min(1, (e - T - 160) / H)));
             const C = V.add(V.lerp(this.P1.C, this.P0.C, u), [0, -Math.sin(Math.PI * u) * 0.2 * this.P0.k * G.LW, 0]);
             this.put(this.$('.bm-mag'), 'transform', this.matrix({ R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C }, G));
-            this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * Math.max(0, (f - 0.55) / 0.45)).toFixed(4)}rad)`);
+            const bend = this.ease(Math.max(0, (f - 0.55) / 0.45));
+            this.put(this.$('.bm-b'), 'transform', `rotateX(${(this.P0.beta * bend).toFixed(4)}rad)`);
+            this.shade(bend);
             this.put(this.$('.bm-dim'), 'opacity', (1 - f).toFixed(2));
         }, () => {
             this.root.classList.remove('on');
