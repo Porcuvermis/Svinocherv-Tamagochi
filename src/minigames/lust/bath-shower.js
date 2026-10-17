@@ -371,7 +371,7 @@ const BATH_SHOWER = {
     glintInit() {
         if (this.glintEl) return this.glintEl;
         const g = document.getElementById('bt-shower');
-        const host = document.getElementById('bt-mag-call');
+        const host = document.getElementById('bt-back');
         if (!g || !host || !this.sils) return null;
         const b = g.getBBox(), P = 14;
         if (!b.width) return null;                          // экран ещё скрыт — замера нет
@@ -380,7 +380,7 @@ const BATH_SHOWER = {
         const sh = BATH_ART.slots().showerHead;
         const layer = (cls, w, col) => `<div class="bt-sg-layer ${cls}" style="left:${B.x}px;top:${B.y}px;width:${B.w}px;height:${B.h}px;
             -webkit-mask-image:url(${this.rimURL(w)});mask-image:url(${this.rimURL(w)});-webkit-mask-size:100% 100%;mask-size:100% 100%">
-            <div class="bt-sg-band" style="background:linear-gradient(90deg,transparent,${col} 42%,${col} 58%,transparent)"></div></div>`;
+            <div class="bt-sg-band" style="background:linear-gradient(90deg,transparent,${K.cool} 22%,${col} 40%,${col} 47%,transparent 52%,${col} 57%,${K.warm} 70%,transparent)"></div></div>`;
         const r = 9, star = `M0 ${-r}Q1 -1 ${r} 0Q1 1 0 ${r}Q-1 1 ${-r} 0Q-1 -1 0 ${-r}Z`;
         const div = document.createElement('div');
         div.id = 'bt-shower-glint';
@@ -390,7 +390,7 @@ const BATH_SHOWER = {
             <div class="bt-sg-spark" style="left:${sh.x}px;top:${sh.y}px">
                 <svg viewBox="-12 -12 24 24" width="24" height="24" style="position:absolute;left:-12px;top:-12px;overflow:visible">
                     <circle r="${r * 1.5}" fill="${K.halo}" fill-opacity="0.45"/><path d="${star}" fill="${K.core}"/></svg></div></div>`;
-        host.parentNode.insertBefore(div, host);
+        host.parentNode.insertBefore(div, host.nextSibling);
         return (this.glintEl = div);
     },
     glint(on) {

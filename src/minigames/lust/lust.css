@@ -231,8 +231,8 @@
    маска слоя, полоса внутри движется transform'ом (WAAPI, lust → glint()). */
 #lust-game #bt-shower-glint { display: none; }
 #lust-game #bt-shower-glint.bt-sg-on { display: block; }
-#lust-game .bt-sg-layer { position: absolute; overflow: hidden; }
-#lust-game .bt-sg-band { position: absolute; left: 0; top: -60px; width: 56px; height: 1200px;
+#lust-game .bt-sg-layer { position: absolute; overflow: hidden; mix-blend-mode: screen; }
+#lust-game .bt-sg-band { position: absolute; left: 0; top: -60px; width: 64px; height: 1200px;
     transform-origin: 0 0; opacity: 0; will-change: transform, opacity; }
 #lust-game .bt-sg-spark { position: absolute; width: 0; height: 0; opacity: 0; }
 
