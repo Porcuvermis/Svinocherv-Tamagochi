@@ -336,50 +336,98 @@ const BATH_SHOWER = {
         </g>`;
     },
 
-    // ---------- ПОДСКАЗКА НА СТАРТЕ: БЛЕСК ПО КОНТУРУ ----------
-    // Раньше душ мигал прозрачностью — в общем кадре не читалось. Теперь по
-    // внешнему контуру бегут два штриха света навстречу друг другу. Живёт на
-    // СВОЁМ маленьком холсте поверх сцены (docs/traps.md, пп. 37, 73, 156):
-    // анимация внутри svg сцены перерисовывала бы весь экран. Маска вырезает
-    // всё внутри силуэта — светится только кромка снаружи, а стыки частей
-    // внутри стойки не вспыхивают. Те же силуэты, расплывшиеся обводкой,
-    // служат зоной касания: просветы между трубками и лейкой закрыты.
-    box: null,
+    // ---------- ПОДСКАЗКА НА СТАРТЕ: БЛИК ПО ХРОМУ ----------
+    // Раньше душ мигал прозрачностью, потом по контуру бежал штрих — оба
+    // раза не читалось: штрих шёл по склейке силуэтов и вспыхивал где
+    // попало, а бледный блик терялся на светлом кафеле. Теперь по стойке
+    // проходит узкая диагональная полоса света, видная только на кромке
+    // вокруг неё (как блик на хроме), и в конце вспыхивает искрой на лейке.
+    // Кромка — статичная маска, один раз нарисованная на canvas; движется
+    // лишь transform полосы, его считает видеокарта (docs/traps.md, пп. 37,
+    // 73, 156). Свечение — два слоя разной толщины, а не blur-фильтр: фильтр
+    // на айфоне дорог. Холст свой, поверх сцены; место ему ставит placeShelf.
+    box: null, glintEl: null, anims: [],
+    PERIOD: 2400, SWEEP: 0.5, PHASE: 600,      // проход — половина периода, пауза — вторая (1:1)
+    RIM: { halo: 13, core: 4.5 },              // толщина кромки, единицы сцены
+    // Контуры частей и шланг как Path2D: общий вид для маски и для касания.
+    parts() {
+        if (!this._parts && this.sils) this._parts = this.sils.concat(this.hoseD).map(d => new Path2D(d));
+        return this._parts || [];
+    },
+    // Кромка шириной w снаружи силуэта — картинка-маска. Стойку и шланг
+    // сначала утолщаем обводкой, потом вычитаем саму стойку: остаётся
+    // сплошной внешний контур без внутренних швов.
+    rimURL(w) {
+        const B = this.box, S = 2, parts = this.parts();
+        const cv = document.createElement('canvas');
+        cv.width = Math.ceil(B.w * S); cv.height = Math.ceil(B.h * S);
+        const c = cv.getContext('2d');
+        c.scale(S, S); c.translate(-B.x, -B.y);
+        c.fillStyle = c.strokeStyle = '#000';
+        c.lineJoin = c.lineCap = 'round';
+        c.lineWidth = 2 * w;
+        for (const q of parts) { c.fill(q); c.stroke(q); }
+        c.globalCompositeOperation = 'destination-out';
+        for (const q of parts) c.fill(q);
+        c.lineWidth = 7.4;                       // шланг: вычитаем его тело
+        c.stroke(parts[parts.length - 1]);
+        return cv.toDataURL();
+    },
     glintInit() {
+        if (this.glintEl) return this.glintEl;
         const g = document.getElementById('bt-shower');
         const host = document.getElementById('bt-mag-call');
         if (!g || !host || !this.sils) return null;
-        if (this.glintEl) return this.glintEl;
         const b = g.getBBox(), P = 14;
         if (!b.width) return null;                          // экран ещё скрыт — замера нет
         this.box = { x: b.x - P, y: b.y - P, w: b.width + 2 * P, h: b.height + 2 * P };
-        const B = this.box, K = PALETTE.bathScene.magazine.call;
-        const ns = 'http://www.w3.org/2000/svg';
-        const svg = document.createElementNS(ns, 'svg');
-        svg.id = 'bt-shower-glint';
-        svg.setAttribute('class', 'bt-svg bt-box');
-        svg.setAttribute('preserveAspectRatio', 'none');
-        const dash = (cls, w, op, len, col) => `<path class="${cls}" d="${this.outline}" pathLength="100" fill="none" stroke="${col}" stroke-width="${w}" stroke-opacity="${op}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${len} ${100 - len}"/>`;
-        svg.innerHTML = `
-            <defs><mask id="bt-sg-mask" maskUnits="userSpaceOnUse" x="${B.x}" y="${B.y}" width="${B.w}" height="${B.h}">
-                <rect x="${B.x}" y="${B.y}" width="${B.w}" height="${B.h}" fill="#fff"/>
-                ${this.sils.map(d => `<path d="${d}" fill="#000"/>`).join('')}</mask></defs>
-            <g mask="url(#bt-sg-mask)">
-                ${dash('bt-sg-a', 12, 0.6, 16, K.halo)}${dash('bt-sg-a', 4, 1, 9, K.glint)}
-                ${dash('bt-sg-b', 12, 0.6, 16, K.halo)}${dash('bt-sg-b', 4, 1, 9, K.glint)}
-            </g>
-            <g class="bt-sg-hit">${this.sils.concat(this.hoseD).map(d => `<path d="${d}" fill="#000" fill-opacity="0" stroke="#000" stroke-opacity="0" stroke-width="30" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}</g>`;
-        host.parentNode.insertBefore(svg, host);
-        return (this.glintEl = svg);
+        const B = this.box, K = PALETTE.bathScene.showerGlint;
+        const sh = BATH_ART.slots().showerHead;
+        const layer = (cls, w, col) => `<div class="bt-sg-layer ${cls}" style="left:${B.x}px;top:${B.y}px;width:${B.w}px;height:${B.h}px;
+            -webkit-mask-image:url(${this.rimURL(w)});mask-image:url(${this.rimURL(w)});-webkit-mask-size:100% 100%;mask-size:100% 100%">
+            <div class="bt-sg-band" style="background:linear-gradient(90deg,transparent,${col} 50%,transparent)"></div></div>`;
+        const r = 9, star = `M0 ${-r}Q1 -1 ${r} 0Q1 1 0 ${r}Q-1 1 ${-r} 0Q-1 -1 0 ${-r}Z`;
+        const div = document.createElement('div');
+        div.id = 'bt-shower-glint';
+        div.className = 'bt-box bmc';
+        div.innerHTML = `<div class="bmc-in">
+            ${layer('bt-sg-halo', this.RIM.halo, K.halo)}${layer('bt-sg-core', this.RIM.core, K.core)}
+            <div class="bt-sg-spark" style="left:${sh.x}px;top:${sh.y}px">
+                <svg viewBox="-12 -12 24 24" width="24" height="24" style="position:absolute;left:-12px;top:-12px;overflow:visible">
+                    <circle r="${r * 1.5}" fill="${K.halo}" fill-opacity="0.45"/><path d="${star}" fill="${K.core}"/></svg></div></div>`;
+        host.parentNode.insertBefore(div, host);
+        return (this.glintEl = div);
     },
     glint(on) {
-        const svg = on ? this.glintInit() : this.glintEl;
-        if (svg) svg.classList.toggle('bt-sg-on', !!on);
+        const el = on ? this.glintInit() : this.glintEl;
+        for (const a of this.anims) a.cancel();
+        this.anims = [];
+        if (!el) return;
+        el.classList.toggle('bt-sg-on', !!on);
+        if (!on) return;
+        const B = this.box, X0 = -120, X1 = B.w + 260;
+        const T = this.PERIOD, U = this.SWEEP, opt = { duration: T, iterations: Infinity, delay: this.PHASE, easing: 'linear' };
+        // Полоса идёт первую половину периода, вторую — стоит погашенной.
+        const band = [{ offset: 0, transform: `translateX(${X0}px) rotate(18deg)`, opacity: 0 },
+                      { offset: 0.03, opacity: 1 },
+                      { offset: U - 0.03, opacity: 1 },
+                      { offset: U, transform: `translateX(${X1}px) rotate(18deg)`, opacity: 0 },
+                      { offset: 1, transform: `translateX(${X1}px) rotate(18deg)`, opacity: 0 }];
+        for (const n of el.querySelectorAll('.bt-sg-band')) this.anims.push(n.animate(band, opt));
+        // Искра на лейке — когда полоса доходит до неё, и чуть дольше.
+        const sp = el.querySelector('.bt-sg-spark'), us = U * 0.55;
+        this.anims.push(sp.animate([
+            { offset: 0, opacity: 0, transform: 'scale(0) rotate(0deg)' },
+            { offset: us, opacity: 0, transform: 'scale(0) rotate(0deg)' },
+            { offset: us + 0.07, opacity: 1, transform: 'scale(2) rotate(45deg)' },
+            { offset: us + 0.16, opacity: 0, transform: 'scale(0) rotate(90deg)' },
+            { offset: 1, opacity: 0, transform: 'scale(0) rotate(90deg)' }], opt));
     },
-    // Попал ли палец в силуэт стойки целиком (p — в единицах сцены).
+    // Попал ли палец в силуэт стойки целиком (p — в единицах сцены): части
+    // и шланг утолщены, просветы между трубками и лейкой закрыты.
     hit(p) {
-        if (!this.glintEl) return false;
-        const pt = new DOMPoint(p.x, p.y);
-        return [...this.glintEl.querySelectorAll('.bt-sg-hit path')].some(n => n.isPointInFill(pt) || n.isPointInStroke(pt));
+        const c = (this._hitCtx = this._hitCtx || document.createElement('canvas').getContext('2d'));
+        c.lineWidth = 30; c.lineJoin = c.lineCap = 'round';
+        return this.parts().some(q => c.isPointInPath(q, p.x, p.y) || c.isPointInStroke(q, p.x, p.y));
     },
 };
