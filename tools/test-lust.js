@@ -1027,7 +1027,7 @@ const harness = require('./harness');
     return {
       ...w0, phase: L.phase,
       tail: +(document.getElementById('bt-tail').style.opacity || 0),
-      shop: document.getElementById('bt-shop-btn').classList.contains('on'),
+      shop: LustMinigame.shopAllowed(),
       sin: Math.round(GameState.sinValue('lust')),
       shard: GameState.currency('lust_shard'), token: GameState.currency('lust_token'),
       paidAt: GameState.data.sins.lust.paid_at,

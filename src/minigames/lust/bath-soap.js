@@ -984,9 +984,10 @@ onmessage = async (e) => {
                 // работу ровно тогда, когда кадр и так тяжелее всего.
                 // И флакон за кадром не крутится: в финале камера смотрит на
                 // хвост, полка далеко за краем, а анимация шла бы вхолостую.
-                // Под открытым магазином полку не видно — анимирует только
-                // иконка (docs/traps.md, п. 68).
-                const shop = typeof LustShop !== 'undefined' && LustShop.open;
+                // Под открытым журналом полку не видно — анимирует только
+                // лист (docs/traps.md, п. 68); закрытый журнал не анимирует
+                // ничего: его лист остаётся в дереве, но спрятан.
+                const shop = typeof LustMag !== 'undefined' && LustMag.isOpen;
                 // Пока трут, живая мочалка стоит целиком (BATH_CLOTH.liveTick),
                 // и если флакона нет, искать видимые незачем: трение — самый
                 // тяжёлый кадр ванной, и цикл в нём только сверяет часы.
@@ -1043,10 +1044,10 @@ onmessage = async (e) => {
                 }
                 const hiddenFl = [], mats = new Map();
                 const vis = Lv.roots.filter(r => {
-                    // Живая мочалка и колба на иконке магазина стоят.
-                    const kj = cloth(r), fl = isFlask(r);
-                    if ((kj || fl) && r.closest('#bt-shop')) return false;
-                    if (shop && !r.closest('#bt-shop')) return false;
+                    // Живая мочалка и колба на листе журнала стоят.
+                    const kj = cloth(r), fl = isFlask(r), onMag = !!r.closest('.bm-shop');
+                    if ((kj || fl) && onMag) return false;
+                    if (shop !== onMag) return false;
                     const h = r.closest('#bt-soap-home, #bt-cloth-home');
                     if (h && h.style.opacity === '0') { if (fl) hiddenFl.push(r); else if (!kj) this.unlit(r); return false; }
                     // Спит (см. выше) только флакон — когда догас. Живые
@@ -1059,7 +1060,7 @@ onmessage = async (e) => {
                     }
                     const m = this.worldMatrix(r);
                     if (fl) mats.set(r, m);
-                    if (!m || !r.closest('.bt-svg')) return true;       // иконка магазина
+                    if (!m || !r.closest('.bt-svg')) return true;       // лист журнала
                     // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
                     // с лучами полка в финале считалась видимой. У мочалки —
                     // вещь вокруг своей середины (от гнезда +16, −10).

@@ -414,7 +414,7 @@ const BATH_MAG = {
             const h = this.host;
             if (!h || !h.screenElement || !h.screenElement.classList.contains('active')) return false;
             if (!h.shopAllowed || !h.shopAllowed()) return false;
-            if (typeof LustShop === 'undefined' || LustShop.open || !LustShop.anyAffordable()) return false;
+            if (typeof LustShop === 'undefined' || !LustShop.anyAffordable()) return false;
             if (typeof LustMag !== 'undefined' && LustMag.isOpen) return false;
             return BATH_MAG.inView(h.cam);
         },

@@ -29,7 +29,7 @@ const harness = require('./harness');
 //      двух жидкостей) — в ту же сторону; после рывка граница качается
 //      реже и стихает позже поверхности и не выходит за неё; ватерлинии в
 //      покое прямые, после рывка волнятся, верх выпрямляется раньше; в
-//      покое ни одной записи, на иконке стоит.
+//      покое ни одной записи, в медальоне журнала стоит.
 //
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-soap.js /tmp/soap-
@@ -77,7 +77,7 @@ const harness = require('./harness');
   };
 
   // ================= 1. КАЖДАЯ СТУПЕНЬ НА ПОЛКЕ И В МАГАЗИНЕ =================
-  say('\n======== ДЕВЯТЬ СТУПЕНЕЙ: ПОЛКА И ИКОНКА ========');
+  say('\n======== ДЕВЯТЬ СТУПЕНЕЙ: ПОЛКА И ЖУРНАЛ ========');
   const tiers = await page.evaluate(() => BATH_SOAP.TIERS.length);
   // Что НЕ тело предмета: помеченное в рисунке .bs-over (ореол свечения,
   // волос, свисающий с обмылка), небо внутри флакона (обрезано полостью, но
@@ -111,29 +111,33 @@ const harness = require('./harness');
           `${n} ${r.kind}: на полке, центр предмета в ${off.toFixed(0)} ед. от объявленного, заполняет ${(fill * 100).toFixed(0)}% габарита`);
   }
 
-  // Иконка — СЛЕДУЮЩАЯ ступень; клетка 68×68, предмет ужат до 56.
+  // В медальоне журнала — СЛЕДУЮЩАЯ ступень, вписанная в чашу по box().
+  // Лист собирается отдельно, вне журнала: закрытый журнал спрятан, и
+  // габаритов у его листа нет.
   for (let n = 0; n < tiers - 1; n++) {
-    await setTier(n);
-    const r = await page.evaluate((NOT_BODY) => {
-      LustShop.show();
-      const row = document.querySelector('.ls-row[data-key="soap"]');
-      const svg = row && row.querySelector('svg');
-      const g = svg && svg.querySelector('g');
-      if (!g) { LustShop.close(); return null; }
+    const r = await page.evaluate(([n, NOT_BODY]) => {
+      const A = MAG_AD, next = n + 1;
+      const tmp = document.createElement('div');
+      tmp.style.cssText = 'position:fixed;left:0;top:0;width:330px;height:442px';
+      tmp.innerHTML = A.page({ windows: { soap: () => A.shelf('soap',
+        { item: { svg: BATH_SOAP.draw(next), box: BATH_SOAP.box(next) }, bought: n, next, price: null }) } });
+      document.body.appendChild(tmp);
+      const svg = tmp.querySelector('.mad-page'), g = svg.querySelector('.mad-win[data-key="soap"] g[clip-path] g[filter] > g');
+      if (!g) { tmp.remove(); return null; }
       // Тело предмета — как на полке.
-      const hide = g.querySelectorAll(NOT_BODY);
-      hide.forEach(el => el.style.display = 'none');
-      const a = g.getBoundingClientRect(), s = svg.getBoundingClientRect();
-      hide.forEach(el => el.style.display = '');
-      LustShop.close();
-      return { a: { x: a.x, y: a.y, w: a.width, h: a.height }, s: { x: s.x, y: s.y, w: s.width, h: s.height } };
-    }, NOT_BODY);
-    if (!r) { check(false, `иконка ступени ${n + 1} есть в магазине`); continue; }
+      g.querySelectorAll(NOT_BODY).forEach(el => el.style.display = 'none');
+      const a = g.getBoundingClientRect(), P = svg.getBoundingClientRect(), k = P.width / A.W;
+      const [bx, by] = A.BOX.soap, [cx, cy, ma, mb] = A.LAYOUT.soap.medal;
+      tmp.remove();
+      return { a: { x: a.x, y: a.y, w: a.width, h: a.height },
+               s: { x: P.x + (bx + cx - ma) * k, y: P.y + (by + cy - mb) * k, w: 2 * ma * k, h: 2 * mb * k } };
+    }, [n, NOT_BODY]);
+    if (!r) { check(false, `ступень ${n + 1} есть в медальоне журнала`); continue; }
     const pad = 0.08 * r.s.w;
     const inside = r.a.x >= r.s.x - pad && r.a.y >= r.s.y - pad
                 && r.a.x + r.a.w <= r.s.x + r.s.w + pad && r.a.y + r.a.h <= r.s.y + r.s.h + pad;
-    const big = Math.max(r.a.w, r.a.h) / r.s.w;
-    check(inside && big > 0.5, `иконка ступени ${n + 1} в клетке и не мелкая (${(big * 100).toFixed(0)}% клетки)`);
+    const big = Math.max(r.a.w / r.s.w, r.a.h / r.s.h);
+    check(inside && big > 0.5, `ступень ${n + 1} в медальоне журнала и не мелкая (${(big * 100).toFixed(0)}% чаши)`);
   }
 
   // ================= 2. СЛОЙ КОМПОЗИТОРА — ТОЛЬКО ПОКА ЖИВЁТ =================
@@ -147,19 +151,18 @@ const harness = require('./harness');
   check(lyF.ok, `флакон на полке — слоем только его холст, размером с него (${lyF.text})`);
   await page.screenshot({ path: out + '1-shelf.png' });
 
-  // Под магазином полку не видно — и анимировать её незачем. На верхней
-  // ступени строки мыла в магазине нет, живых флаконов под ним не остаётся.
-  await page.evaluate(() => LustShop.show());
-  await page.waitForTimeout(300);
+  // Под журналом полку не видно — и анимировать её незачем.
+  await page.evaluate(() => LustMag.open());
+  await page.waitForTimeout(2400);
   const underShop = await page.evaluate(() => {
     const t = document.querySelector('#bt-soap-home .bsm-far');
     const a = t && t.getAttribute('transform');
     return new Promise(res => setTimeout(() => res({ same: a === (t && t.getAttribute('transform')) }), 400));
   });
-  check(underShop.same, 'под открытым магазином флакон на полке стоит');
+  check(underShop.same, 'под открытым журналом флакон на полке стоит');
   check((await liveLayers()).length === 0, 'и слой полки снят');
-  await page.evaluate(() => LustShop.close());
-  await page.waitForTimeout(300);
+  await page.evaluate(() => LustMag.close());
+  await page.waitForTimeout(1300);
 
   // ================= 3. ЗАМЕР И ПЕРЕЕЗД КАМЕРЫ =================
   say('\n======== ФЛАКОН СТОИТ: ЗАМЕР И ПЕРЕЕЗД КАМЕРЫ ========');
@@ -408,14 +411,15 @@ const harness = require('./harness');
   check(Math.abs(settled) < 0.04 && rest.n === 0,
         `и успокаивается: снова ровно (${settled.toFixed(2)}), записей нет — ни поворотов, ни линий (${rest.n})`);
   await page.evaluate(() => { document.getElementById('bt-hand').style.animation = ''; LustMinigame.finishStage = window.__fin; LustMinigame.returnTool(); });
-  // Иконка магазина (колба — следующая ступень после эликсира) стоит.
+  // В медальоне журнала (колба — следующая ступень после эликсира) стоит.
   await setTier(6);
-  await page.evaluate(() => LustShop.show());
-  await page.waitForTimeout(300);
+  await page.evaluate(() => LustMag.open());
+  await page.waitForTimeout(2400);
   await heldF(0, 45, 30, 800);
-  const icon = await writesIn('#bt-shop .bsf-liq', 600);
-  await page.evaluate(() => LustShop.close());
-  check(icon.els === 1 && icon.n === 0, `на иконке магазина колба стоит (${icon.els} иконка, записей ${icon.n})`);
+  const icon = await writesIn('.bm-shop .bsf-liq', 600);
+  await page.evaluate(() => LustMag.close());
+  await page.waitForTimeout(1300);
+  check(icon.els === 1 && icon.n === 0, `в медальоне журнала колба стоит (${icon.els} колба, записей ${icon.n})`);
   await heldF(0, 45, 0, 300);
   // Закрыли ванную — цикл встал.
   await setTier(7);

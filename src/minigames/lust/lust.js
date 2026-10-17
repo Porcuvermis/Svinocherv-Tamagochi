@@ -211,7 +211,6 @@ const LustMinigame = {
         if (typeof BATH_MAG !== 'undefined') this.el('bt-mag-call').innerHTML = BATH_MAG.callArt();
 
         if (typeof LustGoo !== 'undefined') LustGoo.init(this);
-        if (typeof LustShop !== 'undefined') LustShop.init(this);
         if (typeof LustMag !== 'undefined') LustMag.init(this);
         if (typeof LustDebug !== 'undefined') LustDebug.init(this.screenElement);
 
@@ -221,15 +220,6 @@ const LustMinigame = {
         if (typeof SinsMenu !== 'undefined' && typeof Backend !== 'undefined') {
             SinsMenu.readers.lust = () => Backend.rewardReady('lust');
         }
-        // Вход в магазин — ПОКА кнопка. Потом он переедет в предмет сцены
-        // (нарративный вход — отдельная работа); до тех пор главное, чтобы он
-        // был доступен ровно тогда, когда положено: до забега и после него.
-        this.shopBtn = document.getElementById('bt-shop-btn');
-        if (this.shopBtn) this.shopBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (this.shopAllowed() && typeof LustShop !== 'undefined') LustShop.show();
-        });
-
         this.svgEl.addEventListener('pointerdown', (e) => this.onDown(e));
         window.addEventListener('pointermove', (e) => this.onMove(e));
         window.addEventListener('pointerup', () => this.onUp());
@@ -246,7 +236,6 @@ const LustMinigame = {
         this.drag = null;
         this.loose = null;
         this.floatTool(false);
-        if (typeof LustShop !== 'undefined') LustShop.close();
         if (typeof LustDebug !== 'undefined') LustDebug.render();
         // Сцена собрана один раз, а ступень мыла могла смениться, пока
         // ванная была закрыта (сейв подтянулся позже сборки, покупка в
@@ -304,9 +293,6 @@ const LustMinigame = {
 
     close() {
         this.screenElement.classList.remove('active');
-        // Прилавок закрывается ВМЕСТЕ с игрой. Иначе он встретит игрока
-        // открытым в следующий заход — поверх ещё не начавшегося забега.
-        if (typeof LustShop !== 'undefined') LustShop.close();
         this.stopClocks();
         this.stopPanting();
         // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
@@ -3998,8 +3984,8 @@ const LustMinigame = {
 
     // ---------- ВХОД В МАГАЗИН ----------
     // Только до забега и после него: «готовятся до, тратят после»
-    // (docs/plan/21-lust-bath.md, разд. 6). Кнопка не просто глохнет, а
-    // УХОДИТ с экрана — неживая кнопка посреди мытья читалась бы поломкой.
+    // (docs/plan/21-lust-bath.md, разд. 6). Вход — журнал на унитазе
+    // (onDown → LustMag.open); посреди мытья он не открывается и не зовёт.
     shopAllowed() {
         return this.phase === 'idle' || this.phase === 'done';
     },
@@ -4007,8 +3993,6 @@ const LustMinigame = {
     syncShopButton() {
         // Магазин закрылся (забег начался) — зов журнала гаснет сразу.
         if (!this.shopAllowed() && typeof BATH_MAG !== 'undefined') BATH_MAG.call.reset();
-        if (!this.shopBtn) this.shopBtn = document.getElementById('bt-shop-btn');
-        if (this.shopBtn) this.shopBtn.classList.toggle('on', this.shopAllowed());
     },
 
     // ---------- КУПЛЕННЫЕ СТУПЕНИ ----------

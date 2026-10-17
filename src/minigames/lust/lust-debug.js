@@ -82,8 +82,8 @@ const LustDebug = {
         else if (cmd === 'finale') this.jumpToFinale();
         GameState.save();
 
-        // Прилавок, если открыт, обязан показать новые ступени и кошелёк.
-        if (typeof LustShop !== 'undefined' && LustShop.open) LustShop.render();
+        // Журнал, если открыт, обязан показать новые ступени и кошелёк.
+        if (typeof LustMag !== 'undefined' && LustMag.isOpen) LustMag.renderShop();
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.refresh();
         if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.refresh();
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
@@ -98,7 +98,7 @@ const LustDebug = {
     jumpToFinale() {
         const L = (typeof LustMinigame !== 'undefined') ? LustMinigame : null;
         if (!L || !L.screenElement || !L.screenElement.classList.contains('active')) return;
-        if (typeof LustShop !== 'undefined') LustShop.close();
+        if (typeof LustMag !== 'undefined') LustMag.hide();
         L.stopClocks();
         L.stopPanting();
         L.drag = null;
