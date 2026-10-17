@@ -27,12 +27,18 @@
 // Цены, списание, потолок — LustShop / Backend (инвариант 2). Здесь показ.
 
 const LustMag = {
-    FLY: 1000,          // полёт до места меню, мс
-    STRAIGHT: 420,      // висящая часть выпрямляется
-    GHOST: 120,         // подмена журнала сцены журналом полёта — на месте, до взлёта
-    OPEN_AT: 780,       // обложка начинает открываться — чуть раньше остановки
-    TURN: 680,          // одна страница от закрытой до «за журналом»
-    STAGGER: 115,       // следующая страница — вдогонку
+    // Открытие ужато на 30% от первого чистовика по просьбе игрока: на
+    // полной длине вход в магазин тянулся.
+    FLY: 700,           // полёт до места меню, мс
+    STRAIGHT: 295,      // журнал выпрямляется
+    GHOST: 85,          // подмена журнала сцены журналом полёта — на месте, до взлёта
+    OPEN_AT: 545,       // обложка начинает открываться — чуть раньше остановки
+    TURN: 475,          // одна страница от закрытой до «за журналом»
+    STAGGER: 80,        // следующая страница — вдогонку
+    // Закрытие — то же пролистывание назад, быстрее открытия: уходят из
+    // магазина, ждать там нечего.
+    TURN_BACK: 300,     // страница из-за журнала обратно на место
+    STAGGER_BACK: 70,
     PAGES: 3,           // сколько страниц пролистывается до прилавка
     BACK: 620,          // обратный полёт
     WIDTH: 330,         // ширина меню в точках холста
@@ -170,7 +176,7 @@ const LustMag = {
         const C = V.add(V.lerp(this.P0.C, this.P1.C, u), [0, -Math.sin(Math.PI * u) * 0.35 * this.P0.k * G.LW, 0]);
         const R = this.slerpR(this.P0.R, u);
         // Левитация у места: лёгкое покачивание, гаснущее к концу.
-        const wob = f > 0.75 ? Math.sin((e - 0.75 * this.FLY) / 140) * 0.03 * (1 - Math.min(1, (e - this.FLY) / 900)) : 0;
+        const wob = f > 0.75 ? Math.sin((e - 0.75 * this.FLY) / 100) * 0.03 * (1 - Math.min(1, (e - this.FLY) / 630)) : 0;
         const Rw = wob ? this.mulR(R, this.rotX(wob)) : R;
         const P = { R: Rw, k: this.P0.k, C };
         this.put(this.$('.bm-mag'), 'transform', this.matrix(P, G));
@@ -427,21 +433,25 @@ const LustMag = {
     },
 
     // ---------- ЗАКРЫТЬ ----------
+    // Открытие задом наперёд: страницы возвращаются из-за журнала по одной —
+    // первой та, что ушла последней, обложка закрывает журнал последней, —
+    // и, пока она закрывается, журнал уже летит обратно и ложится.
     close() {
         if (this.busy || !this.isOpen) return;
         this.busy = true;
-        const G = this.G, T = this.BACK;
-        this.pages.forEach(p => { p._a = null; this.setTurn(p, -340); });
-        const H = this.GHOST;
-        this.run(T + 160 + H, (e) => {
-            // Обложка возвращается на место, журнал летит обратно и ложится.
-            const c = Math.min(1, e / 260);
-            this.setTurn(this.$('.bm-cover'), -340 * (1 - this.ease(c)));
-            const f = Math.max(0, Math.min(1, (e - 160) / T)), u = this.ease(f), V = this.vec;
+        const G = this.G, T = this.BACK, TB = this.TURN_BACK, SB = this.STAGGER_BACK, H = this.GHOST;
+        const leaves = [...this.pages].reverse().concat(this.$('.bm-cover'));
+        leaves.forEach(p => { p._a = null; this.setTurn(p, -340); });
+        const F0 = SB * this.PAGES + TB * 0.5;              // взлёт — с полузакрытой обложкой
+        this.run(F0 + T + H, (e) => {
+            // С −265°, а не с −340°: дальше страница за журналом и не видна,
+            // и закрытие начиналось с паузы на её невидимый путь.
+            leaves.forEach((p, i) => this.setTurn(p, -265 * (1 - this.ease(Math.max(0, Math.min(1, (e - SB * i) / TB))))));
+            const f = Math.max(0, Math.min(1, (e - F0) / T)), u = this.ease(f), V = this.vec;
             // журнал снова сгибается — нутро прячется под обложку
             this.inner(f < 0.5);
             // Картинка сцены проявляется, когда журнал УЖЕ лёг и согнулся.
-            this.ghost(Math.max(0, Math.min(1, (e - T - 160) / H)));
+            this.ghost(Math.max(0, Math.min(1, (e - F0 - T) / H)));
             const C = V.add(V.lerp(this.P1.C, this.P0.C, u), [0, -Math.sin(Math.PI * u) * 0.2 * this.P0.k * G.LW, 0]);
             const P = { R: this.slerpR(this.P0.R, 1 - u), k: this.P0.k, C };
             this.put(this.$('.bm-mag'), 'transform', this.matrix(P, G));
