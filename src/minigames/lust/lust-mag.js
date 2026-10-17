@@ -132,9 +132,10 @@ const LustMag = {
         this._inner = null; this.inner(false);
         // Призрак — та же запечённая картинка, что лежит в сцене, на её
         // точном месте. Летит та же толстая модель, но картинка сцены
-        // нарисована тоньше css (свет, блик, тень на крышке) — подмена идёт
+        // нарисована тоньше css (скругления, тень на крышке) — подмена идёт
         // растворением поверх журнала, пока тот ещё лежит (GHOST мс); на
-        // закрытии картинка проявляется, когда журнал уже лёг.
+        // закрытии картинка проявляется, когда журнал уже лёг. Света на
+        // верхнем журнале нет ни там, ни там (bath-mag.js, drawVector).
         const gh = this.$('.bm-ghost'), B = typeof BATH_MAG_BAKED !== 'undefined' ? BATH_MAG_BAKED.top : null;
         if (B) {
             const c = G.c;
@@ -210,7 +211,6 @@ const LustMag = {
         const Mg = PALETTE.bathScene.magazine, Pp = Mg.paper, ink = PALETTE.ink;
         const cl = (v) => Math.max(0, Math.min(1, v));
         const paper = (t) => mixColor(Pp.lo, Pp[500], cl((t + 0.45) / 0.9));
-        const ic = parseCssColor(ink), shade = (a) => `rgba(${ic.r},${ic.g},${ic.b},${a.toFixed(3)})`;
         // Линии листов поперёк толщины — как у торца на картинке (bath-mag.js, pages).
         const leaves = (deg, t) => `linear-gradient(${deg}deg, ${paper(t)} 0 26%, ${Pp.line} 26% 32%, ${paper(t)} 32% 51%, ${Pp.line} 51% 57%, ${paper(t)} 57% 76%, ${Pp.line} 76% 82%, ${paper(t)} 82%)`;
         const spine = `linear-gradient(90deg, ${Mg.pinup[500]}, ${Mg.pinup.lo})`;
@@ -282,7 +282,6 @@ const LustMag = {
             const at = (x, u, d) => [x, q.y + c * u + sn * d, q.z + sn * u - c * d];   // u — вдоль, d — вглубь
             const top = i === 0 ? across(at(LW / 2, 0, 0), X, ay, T1) : 0;
             const bgH = LH * g.L / g.flat;
-            const dk = cl((0.9 - T.cover[i]) * 1.6) * 0.35;
             const side = (bg) => `${bg} 0 0 / ${px(D)} 100% no-repeat`;
             let ends = '';
             if (i === 0) {
@@ -300,7 +299,7 @@ const LustMag = {
                 + face('bm-sn', 0, D + sN, h, side(leaves(90, T.near)), ln(`0 ${px(sN)} 0 0`))
                 + ends
                 + face('bm-sc', -bL, LW + bL + bR, h + top, `${url} ${px(bL)} ${px(top - g.v * bgH / LH)} / ${px(LW)} ${px(bgH)} no-repeat`,
-                       ln(`${px(top)} ${px(bR)} 0 0`, `${wedge(bL - wN[i], bL - wN[i + 1], h + top)}, linear-gradient(90deg, transparent 0 ${px(bL)}, ${shade(dk)} ${px(bL)})`))
+                       ln(`${px(top)} ${px(bR)} 0 0`, wedge(bL - wN[i], bL - wN[i + 1], h + top)))
                     .replace('style="', `style="top:${px(-top)};`)
                 + `</div>`;
         });
@@ -366,8 +365,7 @@ const LustMag = {
         on(this.$('.bm-a'), false);
         if (!this.lnEls) this.lnEls = this.$$('.bm-bent .bm-ln');
         // Гаснут к середине выпрямления: линии в ракурсе лежащего журнала
-        // толще в его точках и на развороте раздувались бы серыми полосами,
-        // а тень на нахлёсте полос — точечными швами.
+        // толще в его точках и на развороте раздувались бы серыми полосами.
         const ao = Math.max(0, Math.min(1, (a - 0.5) / 0.5));
         this.lnEls.forEach(el => this.put(el, 'opacity', ao.toFixed(3)));
         const pose = this.bentPose(a), f4 = (v) => v.toFixed(3);

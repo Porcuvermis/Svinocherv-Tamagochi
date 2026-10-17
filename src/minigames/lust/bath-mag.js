@@ -245,11 +245,12 @@ const BATH_MAG = {
         const [TW, TH] = G.top.size, [SW, SH] = [210, 280];
         const T = G.top;
         const names = ['teal', 'mustard'], ramps = [Mg.teal, Mg.mustard];
-        // Тон кусков верхнего вдоль v: по середине каждого треугольника.
-        const tones = [];
-        T.strips.forEach(s => { const vs = s.uv.map(q => q[1]); tones.push([(Math.min(...vs) + Math.max(...vs)) / 2, s.tone]); });
-        tones.sort((a, b) => a[0] - b[0]);
-        let defs = this.pattern('btm-lit-top', TW, TH, this.covers.top(TW, TH) + this.light('btm-l-top', TW, TH, tones));
+        // Верхний — БЕЗ света (тени по провису и блика на перегибе): он
+        // взлетает, а на посадке поверх css-журнала проявлялась картинка
+        // сцены, и блик с тенью вырастали на уже лёгшем журнале из ниоткуда —
+        // игрок просил их убрать (docs/traps.md, п. 163). Летящий журнал
+        // тоже без них, и подмена в обе стороны — одна и та же картинка.
+        let defs = this.pattern('btm-lit-top', TW, TH, this.covers.top(TW, TH));
         G.stack.forEach((m, i) => {
             defs += this.pattern(`btm-lit-${names[i]}`, SW, SH, this.covers[names[i]](SW, SH)
                 + this.light(`btm-l-${names[i]}`, SW, SH, [[0, m.top.tone], [SH, m.top.tone]]));
