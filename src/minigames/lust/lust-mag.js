@@ -451,7 +451,12 @@ const LustMag = {
         this.run(G0 + H, (e) => {
             // С −265°, а не с −340°: дальше страница за журналом и не видна,
             // и закрытие начиналось с паузы на её невидимый путь.
-            leaves.forEach((p, i) => this.setTurn(p, -265 * (1 - this.ease(Math.max(0, Math.min(1, (e - SB * i) / TB))))));
+            // Страницы листаются, только пока нутро открыто: inner(false)
+            // гасит их и сбрасывает угол, и setTurn на следующем кадре
+            // зажигал их снова. Плоский лист торчал из согнутого журнала
+            // красной полосой до самой посадки.
+            leaves.forEach((p, i) => (this._inner || !this.pages.includes(p)) &&
+                this.setTurn(p, -265 * (1 - this.ease(Math.max(0, Math.min(1, (e - SB * i) / TB))))));
             const f = Math.max(0, Math.min(1, (e - F0) / T)), u = this.ease(f), V = this.vec;
             // журнал снова сгибается — нутро прячется под обложку
             this.inner(f < 0.5);
