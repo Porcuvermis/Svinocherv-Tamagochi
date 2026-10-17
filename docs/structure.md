@@ -22,7 +22,8 @@ src/core/           ядро, общее для всех экранов:
   events.js           шина событий (мини-игра → ядро)
   time.js             серверное время и ленивый расчёт шкал
   state.js            состояние игрока, форма повторяет будущую схему БД
-  backend.js          переходник к «правде»: форма будущего API. ЕДИНСТВЕННОЕ
+  backend.js          (+ backend-garden/-wrath/-rogue/-sins.js — продолжения)
+                      переходник к «правде»: форма будущего API. ЕДИНСТВЕННОЕ
                       место, где что-то начисляется
   worm-*.js           модель персонажа, палитра, отметины, наряд
 
@@ -37,19 +38,36 @@ src/core/           ядро, общее для всех экранов:
   worm-paint.js       setAttr (не пишет то, что уже стоит), смешивание цвета,
                       детерминированный шум, ориентация тела
   worm-anatomy.js     слои под кожей (docs/worm-anatomy-layers.md)
+  worm-ribs.js        грудная клетка: ось и рёбра в ракурсе
+  worm-skin.js        мышцы, тон кожи, покров, поверхность
   worm-head.js        череп, уши, глаза, пасть, поворот головы. Всё, что
                       зависит от ракурса, собирается ОДНОЙ функцией на вещь
                       (applyBrowTransform, applyHeadEarDepth, applyBrowFit) и
                       зовётся И на сборке, И при живом повороте: голова
                       пересобирается уже повёрнутой, и живой путь тогда не
                       срабатывает ни разу
+  worm-head-build.js  buildHeadNode: сборка черепа, морды, ушей, пятачка
+  worm-eye.js         глаз: склера, радужка, зрачок, веко
+  worm-mouth.js       рот: процедурная форма и её кадр
+  worm-head-live.js   голова на кадре: брови, уши, наряд и шрамы при
+                      повороте, applyHeadYaw, морда
+  worm-segment.js     узел звена тела и хвост
   worm-marks-art.js   картинка отметины; ГДЕ она лежит — worm-marks.js
   worm-slime.js       след слизи на полу. Отдельная механика: знает только,
                       где червь и идёт ли он
   worm-hull.js        единый силуэт, кольца, кишечный тракт — всё, что
                       принадлежит телу целиком, а не отдельному звену
   worm-build.js       сборка червя в один узел, без покадровой жизни
-  worm-renderer.js    монтаж на экран, ходьба, камера, tick, handle
+  worm-chain.js       кадр: раскладка цепочки, дыхание, раздутие живота;
+                      отдаёт круги силуэта
+  worm-wear-live.js   кадр: наряд повторяет тело, ракурс, качание висящего
+  worm-face-live.js   кадр: рот, поворот головы, уши, взгляд, моргание
+  worm-state.js       createWormState: все поля экземпляра с пояснениями
+  worm-walk.js        где стоять, камера, свайп/тап, walkTo
+  worm-body-live.js   истощение в цвета, еда в кишке, рёбра
+  worm-frames.js      видимость сцены, частота кадров, лестница деформации
+  worm-handle.js      createWormHandle: публичный API экземпляра
+  worm-renderer.js    mount (собирает всё выше) и tick
   worm-silhouette.js  контур частей тела и разметка лица. ОДНО описание: по
                       нему рендерер строит путь, а размещение отметин
                       спрашивает «точка внутри?». Пока описаний было два
@@ -115,6 +133,19 @@ src/core/           ядро, общее для всех экранов:
   debug.js            debug-режим и машина времени
 
 src/minigames/<грех>/   каждая мини-игра в своей папке: js + css
+
+  ---- ПРОДОЛЖЕНИЯ ОБЪЕКТА ----
+  Большой объект-модуль (LustMinigame, LocalBackend, KITCHEN_OBJECTS…) живёт
+  в нескольких файлах: основной объявляет `const X = {…}` с состоянием и
+  жизненным циклом, продолжения `X-<тема>.js` делают Object.assign(X, {…}).
+  Подключаются сразу за основным; запуск init() — в конце ПОСЛЕДНЕГО
+  продолжения. Режется инструментом (tools/split-object.js), карта —
+  tools/outline.js. Новый метод кладётся в продолжение своей темы.
+  lust/ — lust-wash, lust-tail, lust-finale; gluttony/ — gluttony-cook,
+  gluttony-input, gluttony-feed, kitchen-counter, kitchen-table;
+  pride/ — pride-show, pride-store; sloth/ — sloth-work, garden-art-bed,
+  garden-art-ui; kitchen-art-food; bath-art-wash; envy/ — envy-play;
+  wrath/ — wrath-rogue-screens; core — worm-studio-panel.
   greed/                автомат: экран НИЧЕГО не решает — просит крутку у
                         Backend.greedSpin() и показывает три символа с
                         выплатой; веса и таблица выплат в конфиге

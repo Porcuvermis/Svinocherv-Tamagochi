@@ -1055,6 +1055,10 @@
 <script src="src/core/time.js?v=__BUILD__"></script>
 <script src="src/core/state.js?v=__BUILD__"></script>
 <script src="src/core/backend.js?v=__BUILD__"></script>
+<script src="src/core/backend-garden.js?v=__BUILD__"></script>
+<script src="src/core/backend-wrath.js?v=__BUILD__"></script>
+<script src="src/core/backend-rogue.js?v=__BUILD__"></script>
+<script src="src/core/backend-sins.js?v=__BUILD__"></script>
 
 <script src="src/core/palette.js?v=__BUILD__"></script>
 <!-- Отдача в палец: один слой на всю игру. До мини-игр — они зовут её из
@@ -1097,11 +1101,26 @@
 <script src="src/core/worm-room.js?v=__BUILD__"></script>
 <script src="src/core/worm-paint.js?v=__BUILD__"></script>
 <script src="src/core/worm-anatomy.js?v=__BUILD__"></script>
+<script src="src/core/worm-skin.js?v=__BUILD__"></script>
+<script src="src/core/worm-ribs.js?v=__BUILD__"></script>
 <script src="src/core/worm-head.js?v=__BUILD__"></script>
+<script src="src/core/worm-head-build.js?v=__BUILD__"></script>
+<script src="src/core/worm-eye.js?v=__BUILD__"></script>
+<script src="src/core/worm-mouth.js?v=__BUILD__"></script>
+<script src="src/core/worm-head-live.js?v=__BUILD__"></script>
+<script src="src/core/worm-segment.js?v=__BUILD__"></script>
 <script src="src/core/worm-marks-art.js?v=__BUILD__"></script>
 <script src="src/core/worm-slime.js?v=__BUILD__"></script>
 <script src="src/core/worm-hull.js?v=__BUILD__"></script>
 <script src="src/core/worm-build.js?v=__BUILD__"></script>
+<script src="src/core/worm-chain.js?v=__BUILD__"></script>
+<script src="src/core/worm-wear-live.js?v=__BUILD__"></script>
+<script src="src/core/worm-face-live.js?v=__BUILD__"></script>
+<script src="src/core/worm-state.js?v=__BUILD__"></script>
+<script src="src/core/worm-walk.js?v=__BUILD__"></script>
+<script src="src/core/worm-body-live.js?v=__BUILD__"></script>
+<script src="src/core/worm-frames.js?v=__BUILD__"></script>
+<script src="src/core/worm-handle.js?v=__BUILD__"></script>
 <script src="src/core/worm-renderer.js?v=__BUILD__"></script>
 <!-- Таблица визуальных сущностей: имена для человека и агента. Рендерер о
      ней не знает — это слой поверх, и убрать его можно без последствий. -->
@@ -1115,6 +1134,7 @@
 <script src="src/core/worm-presets.js?v=__BUILD__"></script>
 <script src="src/core/worm-inspect.js?v=__BUILD__"></script>
 <script src="src/core/worm-studio.js?v=__BUILD__"></script>
+<script src="src/core/worm-studio-panel.js?v=__BUILD__"></script>
 <script src="src/core/worm.js?v=__BUILD__"></script>
 <script src="src/core/debug.js?v=__BUILD__"></script>
 <script src="src/core/sins-menu.js?v=__BUILD__"></script>
@@ -1133,19 +1153,24 @@
 <script src="src/minigames/wrath/wrath-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/wrath/wrath-boost.js?v=__BUILD__"></script>
 <script src="src/minigames/wrath/wrath-rogue.js?v=__BUILD__"></script>
+<script src="src/minigames/wrath/wrath-rogue-screens.js?v=__BUILD__"></script>
 <script src="src/minigames/wrath/wrath-lobby.js?v=__BUILD__"></script>
 <script src="src/minigames/wrath/wrath-duel.js?v=__BUILD__"></script>
 <script src="src/minigames/wrath/wrath.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/plant-model.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/garden-art.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/garden-art-bed.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/garden-art-ui.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/sloth-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/garden-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/sloth/sloth.js?v=__BUILD__"></script>
+<script src="src/minigames/sloth/sloth-work.js?v=__BUILD__"></script>
 <!-- Запечённая графика ванной: сгенерирована из 3д-моделей
      (tools/bake-3d.js), в рантайме это обычный SVG. -->
 <script src="src/minigames/lust/bath-baked.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-shot.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-art.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/bath-art-wash.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-room.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-shower.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/bath-shelf.js?v=__BUILD__"></script>
@@ -1154,16 +1179,27 @@
 <script src="src/minigames/lust/lust-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust-goo.js?v=__BUILD__"></script>
 <script src="src/minigames/lust/lust.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-wash.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-tail.js?v=__BUILD__"></script>
+<script src="src/minigames/lust/lust-finale.js?v=__BUILD__"></script>
 <!-- Графика кухни: сцена и продукты, всё своё. До gluttony.js — он её
      вызывает при сборке экрана. -->
 <script src="src/minigames/gluttony/kitchen-objects.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/kitchen-counter.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/kitchen-table.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/kitchen-art.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/kitchen-art-food.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/kitchen-shop.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/kitchen-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/gluttony.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/gluttony-cook.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/gluttony-input.js?v=__BUILD__"></script>
+<script src="src/minigames/gluttony/gluttony-feed.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-art.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-show.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-store.js?v=__BUILD__"></script>
 <!-- three.js ЗДЕСЬ НЕ ПОДКЛЮЧЁН, и это осознанно.
      Библиотека нужна ровно одной мини-игре из семи (зависть), а весит
      145 КБ gzip — 22% всей загрузки. Подключённая обычным <script>, она
@@ -1180,6 +1216,7 @@
 <script src="src/minigames/envy/envy-images.js?v=__BUILD__"></script>
 <script src="src/minigames/envy/envy-packing.js?v=__BUILD__"></script>
 <script src="src/minigames/envy/envy.js?v=__BUILD__"></script>
+<script src="src/minigames/envy/envy-play.js?v=__BUILD__"></script>
 
 </body>
 </html>

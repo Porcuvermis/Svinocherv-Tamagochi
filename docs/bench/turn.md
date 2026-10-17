@@ -153,5 +153,5 @@
 | ракурс головы, проекция черт, запреты | `src/core/worm-silhouette.js` |
 | черты лица и уши при повороте | `applyHeadYaw` в `src/core/worm-head.js` |
 | отметины при повороте | `applyHeadScars` там же, размещение — `src/core/worm-marks.js` |
-| обшивка / лицо / подол | `src/core/worm-garment.js`, применение ракурса — в tick `src/core/worm-renderer.js` |
+| обшивка / лицо / подол | `src/core/worm-garment.js`, применение ракурса — `src/core/worm-wear-live.js` (кадр) |
 | ракурс тела (откуда берётся число) | `state.livePose.bodyYaw`, иначе выводится из угла цепочки |
