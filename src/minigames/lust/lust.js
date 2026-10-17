@@ -323,8 +323,7 @@ const LustMinigame = {
     // дышит, остальные стоят смирно (инвариант 9). Мыло и мочалка зовут
     // иначе — сами поднимаются с полки и парят (liftTool); здесь только душ.
     ready(what) {
-        const n = this.el('bt-shower');
-        if (n) n.classList.toggle('bt-ready', what === 'shower');
+        if (typeof BATH_SHOWER !== 'undefined') BATH_SHOWER.glint(what === 'shower');
     },
 
     // ---------- КАМЕРА ----------
@@ -388,6 +387,7 @@ const LustMinigame = {
         const boxes = [['bt-soap-box', BATH_SOAP.paint()], ['bt-cloth-box', BATH_CLOTH.paint()],
                        ['bt-shelf-front', BATH_ART.shelfFrontBox()]];
         if (typeof BATH_MAG !== 'undefined') boxes.push(['bt-mag-call', BATH_MAG.callBox()]);
+        if (typeof BATH_SHOWER !== 'undefined' && BATH_SHOWER.box) boxes.push(['bt-shower-glint', BATH_SHOWER.box]);
         for (const [id, R] of boxes) {
             const svg = this.el(id);
             if (!svg) continue;

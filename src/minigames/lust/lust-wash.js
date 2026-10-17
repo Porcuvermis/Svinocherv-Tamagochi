@@ -1202,7 +1202,10 @@ Object.assign(LustMinigame, {
 
         if (this.phase === 'idle') {
             // Душ включает воду — это и есть старт забега.
-            if (Math.hypot(p.x - A.showerHead.x, p.y - A.showerHead.y) < 96)
+            // Душ — вся стойка целиком, а не одна лейка: палец целится туда,
+            // где кран, и просветы между трубками не должны быть мёртвыми.
+            if (Math.hypot(p.x - A.showerHead.x, p.y - A.showerHead.y) < 96
+                || (typeof BATH_SHOWER !== 'undefined' && BATH_SHOWER.hit(p)))
                 this.startWater();
             return;
         }

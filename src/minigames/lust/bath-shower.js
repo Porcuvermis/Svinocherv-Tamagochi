@@ -303,6 +303,11 @@ const BATH_SHOWER = {
         const head = [neckCollar, dome, rim];
         const all = parts.concat(hand, head);
         const halo = all.map(p => p.sil).join('') + rimLo;
+        // Для блеска и попадания пальцем (glintInit, hit): контуры частей
+        // по отдельности — в одном path встречные обходы вычли бы друг друга.
+        this.sils = all.map(p => p.sil).concat(rimLo);
+        this.outline = halo;
+        this.hoseD = hoseD;
         const seam = (p) => p.bare ? '' : `<path d="${p.sil}" fill="none" stroke="${inner}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
         const paint = (list) => list.map(p => p.fill + seam(p)
             + (p.line ? `<path d="${p.line}" fill="none" stroke="${inner}" stroke-width="${STROKE.hairline}"/>` : '')).join('');
@@ -329,5 +334,52 @@ const BATH_SHOWER = {
             <path d="${lime}" fill="${T.scale}"/>
             <path d="${drip}" fill="${Wt.surfHi}" stroke="${Wt.edge}" stroke-width="0.8"/>
         </g>`;
-    }
+    },
+
+    // ---------- ПОДСКАЗКА НА СТАРТЕ: БЛЕСК ПО КОНТУРУ ----------
+    // Раньше душ мигал прозрачностью — в общем кадре не читалось. Теперь по
+    // внешнему контуру бегут два штриха света навстречу друг другу. Живёт на
+    // СВОЁМ маленьком холсте поверх сцены (docs/traps.md, пп. 37, 73, 156):
+    // анимация внутри svg сцены перерисовывала бы весь экран. Маска вырезает
+    // всё внутри силуэта — светится только кромка снаружи, а стыки частей
+    // внутри стойки не вспыхивают. Те же силуэты, расплывшиеся обводкой,
+    // служат зоной касания: просветы между трубками и лейкой закрыты.
+    box: null,
+    glintInit() {
+        const g = document.getElementById('bt-shower');
+        const host = document.getElementById('bt-mag-call');
+        if (!g || !host || !this.sils) return null;
+        if (this.glintEl) return this.glintEl;
+        const b = g.getBBox(), P = 14;
+        if (!b.width) return null;                          // экран ещё скрыт — замера нет
+        this.box = { x: b.x - P, y: b.y - P, w: b.width + 2 * P, h: b.height + 2 * P };
+        const B = this.box, K = PALETTE.bathScene.magazine.call;
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.id = 'bt-shower-glint';
+        svg.setAttribute('class', 'bt-svg bt-box');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        const dash = (cls, w, op, len, col) => `<path class="${cls}" d="${this.outline}" pathLength="100" fill="none" stroke="${col}" stroke-width="${w}" stroke-opacity="${op}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${len} ${100 - len}"/>`;
+        svg.innerHTML = `
+            <defs><mask id="bt-sg-mask" maskUnits="userSpaceOnUse" x="${B.x}" y="${B.y}" width="${B.w}" height="${B.h}">
+                <rect x="${B.x}" y="${B.y}" width="${B.w}" height="${B.h}" fill="#fff"/>
+                ${this.sils.map(d => `<path d="${d}" fill="#000"/>`).join('')}</mask></defs>
+            <g mask="url(#bt-sg-mask)">
+                ${dash('bt-sg-a', 12, 0.6, 16, K.halo)}${dash('bt-sg-a', 4, 1, 9, K.glint)}
+                ${dash('bt-sg-b', 12, 0.6, 16, K.halo)}${dash('bt-sg-b', 4, 1, 9, K.glint)}
+            </g>
+            <g class="bt-sg-hit">${this.sils.concat(this.hoseD).map(d => `<path d="${d}" fill="#000" fill-opacity="0" stroke="#000" stroke-opacity="0" stroke-width="30" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}</g>`;
+        host.parentNode.insertBefore(svg, host);
+        return (this.glintEl = svg);
+    },
+    glint(on) {
+        const svg = on ? this.glintInit() : this.glintEl;
+        if (svg) svg.classList.toggle('bt-sg-on', !!on);
+    },
+    // Попал ли палец в силуэт стойки целиком (p — в единицах сцены).
+    hit(p) {
+        if (!this.glintEl) return false;
+        const pt = new DOMPoint(p.x, p.y);
+        return [...this.glintEl.querySelectorAll('.bt-sg-hit path')].some(n => n.isPointInFill(pt) || n.isPointInStroke(pt));
+    },
 };

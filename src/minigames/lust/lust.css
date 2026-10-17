@@ -227,9 +227,12 @@
     transition: opacity 0.25s ease;
 }
 
-#lust-game .bt-ready {
-    animation: bt-ready 1.6s ease-in-out infinite;
-}
+/* Подсказка душа — блеск по контуру на своём холсте (BATH_SHOWER.glintInit).
+   Заход: штрихи бегут навстречу, потом пауза во столько же. */
+#lust-game #bt-shower-glint { pointer-events: none; visibility: hidden; }
+#lust-game #bt-shower-glint.bt-sg-on { visibility: visible; }
+#lust-game #bt-shower-glint .bt-sg-a { animation: bt-sg-fwd 3.6s linear infinite; }
+#lust-game #bt-shower-glint .bt-sg-b { animation: bt-sg-back 3.6s linear infinite; stroke-dashoffset: -50; }
 
 /* Мыло и мочалка зовут не миганием, а сами: поднимаются с полки и парят,
    светясь по контуру (lust.js, liftTool и floatTool). Качается холст руки
@@ -255,9 +258,17 @@
     50%      { transform: translateY(-5px); }
 }
 
-@keyframes bt-ready {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.62; }
+@keyframes bt-sg-fwd {
+    0%   { stroke-dashoffset: 0;    opacity: 0; }
+    6%   { opacity: 1; }
+    44%  { opacity: 1; }
+    50%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+@keyframes bt-sg-back {
+    0%   { stroke-dashoffset: -50;  opacity: 0; }
+    6%   { opacity: 1; }
+    44%  { opacity: 1; }
+    50%, 100% { stroke-dashoffset: 50; opacity: 0; }
 }
 
 
