@@ -26,8 +26,13 @@ const MAG_AD = {
     BOX: {
         tail:  [12, 12, 306, 180],
         cloth: [12, 202, 148, 228],
-        soap:  [170, 202, 148, 228]
+        soap:  [170, 202, 148, 228],
+        // Кошелёк игрока — своя полка в правом верхнем углу. Она отъедает
+        // угол окна хвоста (замысел игрока): окно хвоста становится буквой Г,
+        // а между ними та же полоса бархата, что между остальными окнами.
+        wallet: [232, 12, 86, 40]
     },
+    GAP: 10,    // бархат между окнами
     // Префикс id: лист может стоять на экране дважды (журнал и стенд), а id
     // градиентов в документе общие.
     ID: 'mad',
@@ -38,9 +43,16 @@ const MAG_AD = {
     // ---------- ЛИСТ ЦЕЛИКОМ ----------
     // o.windows — что рисовать в окнах (по ключу: функция (w, h) → разметка).
     // Без o — пустые рамки: каркас для оценки раскладки.
+    // o.wallet — сколько жетонов у игрока; null — кошелька на листе нет
+    // (каркас для оценки раскладки), и окно хвоста целое.
     page(o) {
         o = o || {};
-        const B = this.BOX, win = o.windows || {};
+        const B = this.BOX, win = o.windows || {}, hasW = o.wallet != null;
+        // Вырез под кошелёк в окне хвоста. Полем, а не параметром: контур
+        // рамки строят path(), frame(), innerShade() и trim_deco(), и
+        // протаскивать вырез через все четыре ради одного окна — шум.
+        this.notch = hasW ? { w: B.tail[0] + B.tail[2] - B.wallet[0] + this.GAP,
+                              h: B.wallet[1] + B.wallet[3] - B.tail[1] + this.GAP } : null;
         const slot = (key, kind) => {
             const [x, y, w, h] = B[key];
             // class и data-key — для попадания пальцем в журнале (lust-mag.js).
@@ -50,6 +62,7 @@ const MAG_AD = {
             <defs>${this.defs()}</defs>
             ${this.velvet()}
             ${slot('tail', 'deco')}${slot('cloth', 'pearl')}${slot('soap', 'cart')}
+            ${hasW ? this.wallet(o.wallet, o.walletStyle) : ''}
         </svg>`;
     },
 
@@ -150,10 +163,18 @@ const MAG_AD = {
         const n = (v) => this.n(v);
         if (kind === 'deco') {
             // Двойная ступень на каждом углу: c — глубина выреза, ступени по c/2.
-            const c = 18, s = c / 2, L = d, T = d, R = w - d, B = h - d;
+            const c = 18, s = c / 2, L = d, T = d, R = w - d, B = h - d, nt = this.notch;
+            // Вырез под кошелёк: правый верхний угол уходит ступенью внутрь,
+            // у внутреннего угла выреза — простой угол (ступень там читалась
+            // бы зубцом), у двух новых наружных — та же двойная ступень.
+            const X = nt ? w - nt.w - d : 0, Y = nt ? nt.h + d : 0;
+            const tr = nt ? [
+                [X - c, T], [X - c, T + s], [X - s, T + s], [X - s, T + c], [X, T + c], [X, Y],
+                [R - c, Y], [R - c, Y + s], [R - s, Y + s], [R - s, Y + c], [R, Y + c]
+            ] : [[R - c, T], [R - c, T + s], [R - s, T + s], [R - s, T + c], [R, T + c]];
             const p = [
                 [L, T + c], [L + s, T + c], [L + s, T + s], [L + c, T + s], [L + c, T],
-                [R - c, T], [R - c, T + s], [R - s, T + s], [R - s, T + c], [R, T + c],
+                ...tr,
                 [R, B - c], [R - s, B - c], [R - s, B - s], [R - c, B - s], [R - c, B],
                 [L + c, B], [L + c, B - s], [L + s, B - s], [L + s, B - c], [L, B - c]
             ];
@@ -246,9 +267,12 @@ const MAG_AD = {
         s += this.goldLine(this.path('deco', w, h, 8), S.detail);
         // Три «скоростные» линии от веера к углам — подпись ар-деко. Они
         // идут ВДОЛЬ кромки и обрываются ступенью, а не точкой.
+        // Сверху справа линии упираются в вырез кошелька — обрываются у его
+        // ступени, как у угла.
+        const stop = this.notch ? w - this.notch.w - 30 : w;
         const lines = (y, dir) => [0, 1, 2].map(k => {
-            const yy = y + dir * k * 2.2, len = 62 - k * 14;
-            return `<path d="M${n(mid - 24)},${n(yy)} H${n(mid - 24 - len)} M${n(mid + 24)},${n(yy)} H${n(mid + 24 + len)}" stroke="${C.gold[500]}" stroke-opacity="${0.75 - k * 0.18}" stroke-width="${S.hairline}"/>`;
+            const yy = y + dir * k * 2.2, len = 62 - k * 14, right = dir > 0 ? Math.min(mid + 24 + len, stop) : mid + 24 + len;
+            return `<path d="M${n(mid - 24)},${n(yy)} H${n(mid - 24 - len)} M${n(mid + 24)},${n(yy)} H${n(right)}" stroke="${C.gold[500]}" stroke-opacity="${0.75 - k * 0.18}" stroke-width="${S.hairline}"/>`;
         }).join('');
         s += lines(12.5, 1) + lines(h - 12.5, -1);
         s += this.fan(mid, 1.2, 1) + this.fan(mid, h - 1.2, -1);
@@ -498,6 +522,58 @@ const MAG_AD = {
             ${inner ? `<g clip-path="url(#${gid}-clip)">${inner}</g>` : ''}`;
     }
     ,
+    // ---------- КОШЕЛЁК ИГРОКА ----------
+    // Своя полка в углу листа: в стиле листа, но заметно иная, чем реклама, —
+    // это не товар, а свои деньги на той же странице. Без слов: значок
+    // жетона и число. data-num — для проверок (сколько показано).
+    // style — вариант на выбор игрока (стенд, раунд 1):
+    //   leather — тёмная кожа со строчкой, без золота;
+    //   emboss  — бархат листа темнее, рамка и число тиснением;
+    //   plain   — простая золотая рамка без витрины, чёрный бархат.
+    wallet(num, style) {
+        const C = this.C(), S = STROKE, G = C.gold, V = C.velvet, I = this.ID, n = (v) => this.n(v);
+        const [x, y, w, h] = this.BOX.wallet, st = style || 'leather';
+        const r = 7, box = (d, rr) => `M${n(d + rr)},${n(d)} H${n(w - d - rr)} A${rr},${rr} 0 0 1 ${n(w - d)},${n(d + rr)} V${n(h - d - rr)} A${rr},${rr} 0 0 1 ${n(w - d - rr)},${n(h - d)} H${n(d + rr)} A${rr},${rr} 0 0 1 ${n(d)},${n(h - d - rr)} V${n(d + rr)} A${rr},${rr} 0 0 1 ${n(d + rr)},${n(d)}Z`;
+        const gid = `${I}-wallet`;
+        const L = C.leather || V;
+        const tone = { leather: [L.hi, L[500], L.lo, L.deep], emboss: [V[500], V.lo, V.deep, V.deep], plain: [C.plum.lo, C.plum.deep, V.deep, V.deep] }[st];
+        const plate = `<radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${n(w * 0.3)}" cy="${n(h * 0.2)}" r="${n(w * 0.95)}">
+            <stop offset="0" stop-color="${tone[0]}"/><stop offset="0.5" stop-color="${tone[1]}"/><stop offset="0.9" stop-color="${tone[2]}"/><stop offset="1" stop-color="${tone[3]}"/></radialGradient>
+            <clipPath id="${gid}-clip"><path d="${box(0.5, r)}"/></clipPath>`;
+        let edge = '';
+        if (st === 'leather') {
+            // Строчка: светлая нить пунктиром и тень от прокола под ней.
+            edge = `<path d="${box(4.2, r - 3)}" fill="none" stroke="${L.deep}" stroke-width="${S.detail}" stroke-dasharray="3.2 2.2" transform="translate(0.4 0.6)"/>
+                <path d="${box(4.2, r - 3)}" fill="none" stroke="${C.cream}" stroke-opacity="0.85" stroke-width="${S.hairline * 1.6}" stroke-dasharray="3.2 2.2"/>
+                <path d="${box(0.8, r)}" fill="none" stroke="${L.deep}" stroke-width="${S.detail}"/>`;
+        } else if (st === 'emboss') {
+            // Тиснение: желобок — тень на верхней-левой стенке, свет на нижней-правой.
+            edge = `<path d="${box(4.5, r - 3)}" fill="none" stroke="${V.deep}" stroke-opacity="0.9" stroke-width="${S.detail}" transform="translate(-0.5 -0.6)"/>
+                <path d="${box(4.5, r - 3)}" fill="none" stroke="${V.hi}" stroke-opacity="0.7" stroke-width="${S.hairline}" transform="translate(0.5 0.7)"/>
+                <path d="${box(0.8, r)}" fill="none" stroke="${V.deep}" stroke-width="${S.detail}"/>`;
+        } else {
+            edge = this.goldLine(box(1.2, r), S.detail, { join: 'round' });
+        }
+        // Число: у кожи и тиснения — вдавленное золото (тень сверху-слева,
+        // свет снизу-справа), у простой рамки — сливки.
+        const fs = 23, tk = 19, numW = this.numW(num, fs), gap = 5;
+        const x0 = (w - (tk + gap + numW)) / 2, cy = h / 2;
+        const t = (dx, dy, fill, op) => `<text x="${n(x0 + tk + gap + dx)}" y="${n(cy + fs * 0.35 + dy)}" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${fs}" fill="${fill}"${op != null ? ` fill-opacity="${op}"` : ''}>${num}</text>`;
+        const digits = st === 'plain' ? t(0.6, 0.9, V.deep, 0.8) + t(0, 0, C.cream)
+                                      : t(-0.5, -0.6, (st === 'leather' ? L : V).deep, 0.9) + t(0.5, 0.7, G.glint, 0.35) + t(0, 0, `url(#${I}-goldV)`);
+        return `<g class="mad-wallet" data-num="${num}" transform="translate(${x} ${y})">
+            <defs>${plate}</defs>
+            <path d="${box(0.5, r)}" fill="${V.deep}" opacity="0.6" transform="translate(1.6 2.4)"/>
+            <g clip-path="url(#${gid}-clip)">
+                <rect width="${w}" height="${h}" fill="url(#${gid})"/>
+                <rect width="${w}" height="${h}" filter="url(#${I}-pile)" opacity="${st === 'leather' ? 0.35 : 0.8}"/>
+            </g>
+            ${edge}
+            ${this.token(x0, cy, tk)}
+            ${digits}
+        </g>`;
+    },
+
     // ---------- ОКНО-ПОЛКА ЦЕЛИКОМ ----------
     // Раскладка каждого окна в его точках. Утверждена игроком на мыле
     // (раунд 2): медальон со следующей ступенью, бирка на шнурке от ушка
