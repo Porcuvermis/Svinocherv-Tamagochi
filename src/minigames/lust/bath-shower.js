@@ -348,16 +348,14 @@ const BATH_SHOWER = {
     // на айфоне дорог. Холст свой, поверх сцены; место ему ставит placeShelf.
     box: null, glintEl: null, anims: [],
     PERIOD: 2400, SWEEP: 0.5, PHASE: 600,      // проход — половина периода, пауза — вторая (1:1)
-    RIM: { halo: 13, core: 4.5 },              // толщина кромки, единицы сцены
     // Контуры частей и шланг как Path2D: общий вид для маски и для касания.
     parts() {
         if (!this._parts && this.sils) this._parts = this.sils.concat(this.hoseD).map(d => new Path2D(d));
         return this._parts || [];
     },
-    // Кромка шириной w снаружи силуэта — картинка-маска. Стойку и шланг
-    // сначала утолщаем обводкой, потом вычитаем саму стойку: остаётся
-    // сплошной внешний контур без внутренних швов.
-    rimURL(w) {
+    // Тело стойки — картинка-маска: блик ложится на сам хром, а не рисует
+    // вокруг него контур (цветная обводка выглядела маркером).
+    rimURL() {
         const B = this.box, S = 2, parts = this.parts();
         const cv = document.createElement('canvas');
         cv.width = Math.ceil(B.w * S); cv.height = Math.ceil(B.h * S);
@@ -365,11 +363,8 @@ const BATH_SHOWER = {
         c.scale(S, S); c.translate(-B.x, -B.y);
         c.fillStyle = c.strokeStyle = '#000';
         c.lineJoin = c.lineCap = 'round';
-        c.lineWidth = 2 * w;
-        for (const q of parts) { c.fill(q); c.stroke(q); }
-        c.globalCompositeOperation = 'destination-out';
         for (const q of parts) c.fill(q);
-        c.lineWidth = 7.4;                       // шланг: вычитаем его тело
+        c.lineWidth = 6.5;                       // шланг
         c.stroke(parts[parts.length - 1]);
         return cv.toDataURL();
     },
@@ -385,13 +380,13 @@ const BATH_SHOWER = {
         const sh = BATH_ART.slots().showerHead;
         const layer = (cls, w, col) => `<div class="bt-sg-layer ${cls}" style="left:${B.x}px;top:${B.y}px;width:${B.w}px;height:${B.h}px;
             -webkit-mask-image:url(${this.rimURL(w)});mask-image:url(${this.rimURL(w)});-webkit-mask-size:100% 100%;mask-size:100% 100%">
-            <div class="bt-sg-band" style="background:linear-gradient(90deg,transparent,${col} 50%,transparent)"></div></div>`;
+            <div class="bt-sg-band" style="background:linear-gradient(90deg,transparent,${col} 42%,${col} 58%,transparent)"></div></div>`;
         const r = 9, star = `M0 ${-r}Q1 -1 ${r} 0Q1 1 0 ${r}Q-1 1 ${-r} 0Q-1 -1 0 ${-r}Z`;
         const div = document.createElement('div');
         div.id = 'bt-shower-glint';
         div.className = 'bt-box bmc';
         div.innerHTML = `<div class="bmc-in">
-            ${layer('bt-sg-halo', this.RIM.halo, K.halo)}${layer('bt-sg-core', this.RIM.core, K.core)}
+            ${layer('bt-sg-core', 0, K.core)}
             <div class="bt-sg-spark" style="left:${sh.x}px;top:${sh.y}px">
                 <svg viewBox="-12 -12 24 24" width="24" height="24" style="position:absolute;left:-12px;top:-12px;overflow:visible">
                     <circle r="${r * 1.5}" fill="${K.halo}" fill-opacity="0.45"/><path d="${star}" fill="${K.core}"/></svg></div></div>`;
