@@ -25,6 +25,8 @@ const load = (f) => fs.readFileSync(f, 'utf8');
 const scope = eval(
     load('src/core/palette.js') + '\n' +
     load('src/minigames/gluttony/kitchen-objects.js') + '\n' +
+    load('src/minigames/gluttony/kitchen-counter.js') + '\n' +
+    load('src/minigames/gluttony/kitchen-table.js') + '\n' +
     load('src/config/kitchen.js') + '\n' +
     load('src/minigames/gluttony/kitchen-art.js') + '\n' +
     '({ KO: KITCHEN_OBJECTS, ART: KITCHEN_ART, CFG: KITCHEN, PAL: PALETTE })');
