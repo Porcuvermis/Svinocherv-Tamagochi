@@ -48,13 +48,13 @@
   // мочалка — скруглённый прямоугольник. Окна, кроме мыла, — без цены.
   const tail  = (w, h) => A.medal(100, 90, 46, 62, 'deco') + A.stars('tail', 228, 108, lvl('tail'));
   const cloth = (w, h) => A.medal(w / 2, 62, 50, 36, 'pearl', item(BATH_CLOTH, w / 2, 62, 50, 36)) + A.stars('cloth', w / 2, 172, lvl('cloth'));
-  const soapMedal = (w) => A.medal(w / 2, 60, 50, 35, 'cart', item(BATH_SOAP, w / 2, 60, 50, 35));
+  const soapMedal = (w) => A.medal(w / 2, 60, 50, 35, 'cart', item(BATH_SOAP, w / 2, 60, 50, 35), { lug: has ? LUG : null });
   const buy = state === 'buy', has = state !== 'max', p = has ? price('soap') : 0;
   const seal = (x, y, r, tails, len) => buy ? A.seal(x, y, r, 'soap', tails, len) : '';
   // Связка «предмет — цена — печать» (выбор игрока, раунд 2): бирка на
   // шнурке справа под медальоном, ушко шнура — на ободе медальона снизу
   // справа; печать слева от бирки, в одной строке с ценой.
-  const ring = (() => { const t = 70 * Math.PI / 180; return [74 + 54.6 * Math.cos(t), 60 + 39.6 * Math.sin(t)]; })();
+  const LUG = 68, ring = A.lug(74, 60, 50, 35, LUG);
   const soap = (w, h) => soapMedal(w) + A.stars('soap', w / 2, 188, lvl('soap')) +
                  (has ? seal(38, 132, 24, [20, -20], 1.25) + A.priceTag(132, 134, p, ring) : '');
   const windows = { tail, cloth, soap };

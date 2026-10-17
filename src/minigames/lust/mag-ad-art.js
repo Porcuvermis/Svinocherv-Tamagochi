@@ -405,7 +405,21 @@ const MAG_AD = {
         return out;
     },
 
-    medal(cx, cy, a, b, kind, inner) {
+    // Ушко для шнура бирки: точка на ободе (параметр овала t, градусы) и
+    // наружная нормаль. Одна функция на медальон и на бирку — шнур
+    // приходит ровно в отверстие ушка.
+    lug(cx, cy, a, b, deg) {
+        const t = deg * Math.PI / 180, A = a + 4.6, B = b + 4.6, c = Math.cos(t), sn = Math.sin(t);
+        let nx = c / A, ny = sn / B; const l = Math.hypot(nx, ny); nx /= l; ny /= l;
+        const base = [cx + A * c, cy + B * sn], R = 5.6, off = 7.2;
+        return { base, nx, ny, R, hole: [base[0] + nx * off, base[1] + ny * off] };
+    },
+
+    // o.lug — градусы на овале, где у обода ушко. Ушко ОТЛИТО заодно с
+    // ободом: тот же градиент металла, основание уходит под ленту обода, и
+    // венец (фестоны) под ним прерывается. Отдельное колечко поверх рамки
+    // читалось прилипшей чужой деталью (замечание игрока).
+    medal(cx, cy, a, b, kind, inner, o) {
         const C = this.C(), S = STROKE, I = this.ID, n = (v) => this.n(v);
         const col = { deco: C.petrol, cart: C.plum, pearl: C.rose }[kind];
         const gid = `${I}-medal-${kind}`, P = (d) => this.medalPath(kind, cx, cy, a, b, d);
@@ -439,11 +453,31 @@ const MAG_AD = {
             crown = c;
         }
         const R = Math.max(a, b);
+        let lug = '';
+        if (o && o.lug != null) {
+            const L = this.lug(cx, cy, a, b, o.lug), [hx, hy] = L.hole, px = -L.ny, py = L.nx, bw = 2.6;
+            const b1 = [L.base[0] - L.nx * 2 + px * bw * 1.4, L.base[1] - L.ny * 2 + py * bw * 1.4];
+            const b2 = [L.base[0] - L.nx * 2 - px * bw * 1.4, L.base[1] - L.ny * 2 - py * bw * 1.4];
+            // Шейка от обода сужается к кольцу плавными дугами, как у литой
+            // подвески; кольцо — целый круг поверх шейки, поэтому переход
+            // без ступеньки, а контур кольца замкнут при любом угле ушка.
+            const s1 = [hx + px * L.R * 0.55, hy + py * L.R * 0.55], s2 = [hx - px * L.R * 0.55, hy - py * L.R * 0.55];
+            const neck = `M${n(b1[0])},${n(b1[1])} Q${n(L.base[0] + L.nx * 2 + px * bw * 0.45)},${n(L.base[1] + L.ny * 2 + py * bw * 0.45)} ${n(s1[0])},${n(s1[1])}`
+                + ` L${n(s2[0])},${n(s2[1])} Q${n(L.base[0] + L.nx * 2 - px * bw * 0.45)},${n(L.base[1] + L.ny * 2 - py * bw * 0.45)} ${n(b2[0])},${n(b2[1])}Z`;
+            const body = neck + ` M${n(hx + L.R)},${n(hy)} a${L.R},${L.R} 0 1,0 ${-2 * L.R},0 a${L.R},${L.R} 0 1,0 ${2 * L.R},0Z`;
+            lug = `<path d="${body}" fill="${C.velvet.deep}" opacity="0.5" transform="translate(0.9 1.4)"/>
+                <path d="${neck}" fill="url(#${I}-goldR)" stroke="${C.gold.deep}" stroke-opacity="0.7" stroke-width="${S.hairline}"/>
+                <circle cx="${n(hx)}" cy="${n(hy)}" r="${L.R}" fill="url(#${I}-goldR)" stroke="${C.gold.deep}" stroke-opacity="0.7" stroke-width="${S.hairline}"/>
+                <circle cx="${n(hx)}" cy="${n(hy)}" r="2.9" fill="${C.velvet.deep}" stroke="${C.gold.deep}" stroke-width="${S.hairline}"/>
+                <path d="M${n(hx - 2)},${n(hy + 2.2)} A3,3 0 0 0 ${n(hx + 2.8)},${n(hy + 0.8)}" fill="none" stroke="${C.gold.hi}" stroke-opacity="0.7" stroke-width="${S.hairline}"/>
+                <path d="M${n(hx - L.R * 0.75)},${n(hy - L.R * 0.35)} A${n(L.R * 0.8)},${n(L.R * 0.8)} 0 0 1 ${n(hx + L.R * 0.1)},${n(hy - L.R * 0.8)}" fill="none" stroke="${C.gold.glint}" stroke-opacity="0.7" stroke-width="${S.hairline}"/>`;
+        }
         return `<defs><radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${n(cx - a * 0.3)}" cy="${n(cy - b * 0.35)}" r="${n(R * 1.35)}">
                 <stop offset="0" stop-color="${col.hi}"/><stop offset="0.55" stop-color="${col[500]}"/><stop offset="1" stop-color="${col.deep}"/></radialGradient>
                 <clipPath id="${gid}-clip"><path d="${P(0)}"/></clipPath></defs>
             <path d="${P(5)}" fill="${C.velvet.deep}" opacity="0.5" transform="translate(1.4 2.2)"/>
             ${crown}
+            ${lug}
             <path d="${P(4.6)}${P(0)}" fill="url(#${I}-gold)" fill-rule="evenodd"/>
             <path d="${P(4.6)}" fill="none" stroke="${C.gold.deep}" stroke-opacity="0.6" stroke-width="${S.hairline}"/>
             <path d="${P(2.3)}" fill="none" stroke="${C.gold.glint}" stroke-opacity="0.4" stroke-width="${S.hairline}"/>
@@ -552,9 +586,11 @@ const MAG_AD = {
     // медальона, проходит в люверс бирки и обнимает её острие — две пряди
     // сходятся в узел над биркой. У наброска шнур обрывался в воздухе:
     // начинался под фестонами и ни на чём не висел.
-    //   xR, y — правый край и середина бирки; ring — точка ушка на ободе.
+    //   xR, y — правый край и середина бирки; L — ушко на ободе
+    //   медальона (MAG_AD.lug(...)): шнур захлёстнут за его нижнюю
+    //   перемычку — две пряди из отверстия сходятся в обмотку под кольцом.
     // Бумага — самое светлое пятно окна, поэтому цена заметна без отделки.
-    priceTag(xR, y, num, ring) {
+    priceTag(xR, y, num, L) {
         const C = this.C(), S = STROKE, G = C.gold, I = this.ID, n = (v) => this.n(v);
         const fs = 21, tk = 16, h = 30, w = this.numW(num, fs) + tk + 30;
         const ang = -6 * Math.PI / 180, ca = Math.cos(ang), sa = Math.sin(ang);
@@ -563,16 +599,25 @@ const MAG_AD = {
         const hx = xR - (w - 9), hy = y;
         const W = ([x, yy]) => [hx + x * ca - yy * sa, hy + x * sa + yy * ca];
         const body = this.roundPoly(pts, 2.6);
-        // Узел: выше и правее люверса, на прямой к ушку — туда тянет шнур.
-        const hole = W([0, 0]), tipTop = W([-6.5, -2.4]), tipBot = W([-6.5, 2.4]);
-        const kx = hole[0] + (ring[0] - hole[0]) * 0.34, ky = hole[1] + (ring[1] - hole[1]) * 0.34;
+        // Узел — у самого люверса, на прямой к ушку, и того же шнура: лишь
+        // утолщение, где сходятся пряди. Блестящий шарик посреди шнура
+        // перетягивал взгляд с цены на себя (замечание игрока).
+        const hole = W([0, 0]), tipTop = W([-6.5, -2.4]);
+        const H = L.hole, px = -L.ny, py = L.nx, wr = L.R + 2.6;
+        const ring = [H[0] + L.nx * wr, H[1] + L.ny * wr];
+        const dl = Math.hypot(ring[0] - hole[0], ring[1] - hole[1]);
+        const kx = hole[0] + (ring[0] - hole[0]) / dl * 6, ky = hole[1] + (ring[1] - hole[1]) / dl * 6;
         // Прядь из люверса — прямо к узлу; вторая огибает острие: от острия
         // сзади бирки (её часть за бумагой не видна) и вверх к узлу.
         const strandA = `M${n(hole[0])},${n(hole[1] - 0.6)} Q${n(hole[0] + 1)},${n((hole[1] + ky) / 2)} ${n(kx)},${n(ky)}`;
-        const strandB = `M${n(tipTop[0])},${n(tipTop[1])} Q${n(tipTop[0] - 1.5)},${n((tipTop[1] + ky) / 2 - 1)} ${n(kx)},${n(ky)}`;
-        // Провис к ушку: шнур тяжёлый, середина ниже прямой.
+        const strandB = `M${n(tipTop[0])},${n(tipTop[1])} Q${n(tipTop[0] + 0.5)},${n(ky - 0.5)} ${n(kx)},${n(ky)}`;
+        // Провис к ушку: шнур тяжёлый, середина ниже прямой. Кончается
+        // обмоткой под кольцом, от неё две пряди уходят в отверстие —
+        // захлёст за перемычку, как вешают ярлык.
         const mx = (kx + ring[0]) / 2, my = (ky + ring[1]) / 2 + 4;
-        const hang = `M${n(kx)},${n(ky)} Q${n(mx - 3)},${n(my)} ${n(ring[0])},${n(ring[1] + 2.2)}`;
+        const hang = `M${n(kx)},${n(ky)} Q${n(mx - 3)},${n(my)} ${n(ring[0])},${n(ring[1])}`;
+        const pair = [1, -1].map(k => `M${n(ring[0] + px * k * 1.3)},${n(ring[1] + py * k * 1.3)} L${n(H[0] + px * k * 1.5)},${n(H[1] + py * k * 1.5)}`).join(' ');
+        const wrap = `M${n(ring[0] - px * 1.3 - L.nx * 0.6)},${n(ring[1] - py * 1.3 - L.ny * 0.6)} L${n(ring[0] + px * 1.3 + L.nx * 0.6)},${n(ring[1] + py * 1.3 + L.ny * 0.6)}`;
         const tagG = `transform="translate(${n(hx)} ${n(hy)}) rotate(-6)"`;
         const paper = `${I}-paper`;
         return `<defs><linearGradient id="${paper}" x1="0" y1="0" x2="0.35" y2="1">
@@ -592,18 +637,10 @@ const MAG_AD = {
             </g>
             ${this.cord(strandB, 1.5)}
             ${this.cord(hang, 1.6)}
+            ${this.cord(pair, 1.3)}
+            ${this.cord(wrap, 1.9)}
             ${this.cord(strandA, 1.5)}
-            <ellipse cx="${n(kx)}" cy="${n(ky)}" rx="2" ry="1.6" fill="url(#${I}-goldR)" stroke="${G.deep}" stroke-width="${S.hairline}"/>
-            ${this.bail(ring[0], ring[1])}`;
-    },
-
-    // Ушко: золотое колечко, продетое в обод медальона. Рисуется ПОСЛЕ
-    // шнура: шнур уходит в кольцо, а не лежит на нём.
-    bail(x, y) {
-        const C = this.C(), S = STROKE, G = C.gold, I = this.ID, n = (v) => this.n(v);
-        return `<ellipse cx="${n(x + 0.4)}" cy="${n(y + 0.7)}" rx="2.7" ry="3.3" fill="none" stroke="${C.velvet.deep}" stroke-opacity="0.6" stroke-width="1.8"/>
-            <ellipse cx="${n(x)}" cy="${n(y)}" rx="2.7" ry="3.3" fill="none" stroke="url(#${I}-gold)" stroke-width="1.6"/>
-            <path d="M${n(x - 2)},${n(y - 1.6)} A2.4,3 0 0 1 ${n(x + 0.8)},${n(y - 3)}" fill="none" stroke="${G.glint}" stroke-opacity="0.85" stroke-width="${S.hairline}"/>`;
+            ${this.cord(`M${n(kx - (kx - hole[0]) * 0.2)},${n(ky - (ky - hole[1]) * 0.2)} L${n(kx + (ring[0] - kx) * 0.06)},${n(ky + (ring[1] - ky) * 0.06)}`, 2.3)}`;
     },
 
     // ---------- ПЕЧАТЬ-КОРЗИНКА ----------
@@ -627,7 +664,9 @@ const MAG_AD = {
         // Край натёка: две гармоники и три наплыва — капли сургуча, которые
         // успели растечься до штампа. Наплывы — колоколом по углу, а не
         // острым зубом.
-        const bumps = [[0.5, 0.11], [2.35, 0.08], [4.1, 0.1]];
+        // Через 120°: иначе натёк смещает «центр тяжести» печати, и оттиск
+        // с корзинкой кажется съехавшим с середины (замечание игрока).
+        const bumps = [[0.5, 0.1], [2.6, 0.1], [4.7, 0.1]];
         const edge = (k) => {
             let d = '';
             for (let i = 0; i <= 160; i++) {
@@ -664,7 +703,7 @@ const MAG_AD = {
                 <circle r="${n(ri)}" fill="none" stroke="url(#${g}-wall)" stroke-width="${n(r * 0.07)}"/>
                 <path d="${beadsLo}" stroke="${W.deep}" stroke-opacity="0.8" stroke-width="${n(r * 0.075)}" stroke-linecap="round"/>
                 <path d="${beadsHi}" stroke="${W.hi}" stroke-width="${n(r * 0.06)}" stroke-linecap="round"/>
-                ${this.basket(0, r * 0.06, ri * 0.78)}
+                ${this.basket(0, 0, ri * 0.78)}
                 <path d="M${n(-r * 0.78)},${n(-r * 0.32)} C${n(-r * 0.74)},${n(-r * 0.62)} ${n(-r * 0.5)},${n(-r * 0.82)} ${n(-r * 0.2)},${n(-r * 0.86)} C${n(-r * 0.46)},${n(-r * 0.72)} ${n(-r * 0.66)},${n(-r * 0.55)} ${n(-r * 0.78)},${n(-r * 0.32)}Z" fill="${C.pearl.hi}" fill-opacity="0.38"/>
                 <ellipse cx="${n(-r * 0.5)}" cy="${n(-r * 0.66)}" rx="${n(r * 0.07)}" ry="${n(r * 0.04)}" transform="rotate(-38 ${n(-r * 0.5)} ${n(-r * 0.66)})" fill="${C.pearl.hi}" fill-opacity="0.85"/>
             </g>`;
@@ -703,7 +742,9 @@ const MAG_AD = {
     // Рельеф: тень вниз-вправо, свет по верхним кромкам.
     basket(cx, cy, s) {
         const C = this.C(), S = STROKE, I = this.ID, G = C.gold, n = (v) => this.n(v);
-        const X = (v) => n(cx + v * s), Y = (v) => n(cy + v * s);
+        // Габарит корзинки по y — от верха ручки (−0.72) до дна (0.84):
+        // середина габарита ставится в (cx, cy), а не начало координат.
+        const X = (v) => n(cx + v * s), Y = (v) => n(cy + (v - 0.06) * s);
         const body = `M${X(-0.74)},${Y(0.02)} L${X(0.74)},${Y(0.02)} L${X(0.56)},${Y(0.74)} Q${X(0.53)},${Y(0.84)} ${X(0.43)},${Y(0.84)} L${X(-0.43)},${Y(0.84)} Q${X(-0.53)},${Y(0.84)} ${X(-0.56)},${Y(0.74)}Z`;
         const clipId = `${I}-bk-${Math.round(cx * 10)}-${Math.round(cy * 10)}-${Math.round(s * 10)}`;
         const handle = `M${X(-0.5)},${Y(-0.02)} C${X(-0.52)},${Y(-0.95)} ${X(0.52)},${Y(-0.95)} ${X(0.5)},${Y(-0.02)}`;
