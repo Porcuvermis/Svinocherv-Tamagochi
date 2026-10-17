@@ -25,7 +25,7 @@
 // Запуск:  node tools/sim-pride.js
 
 const fs = require('fs');
-const ECONOMY = eval(fs.readFileSync(__dirname + '/../src/config/economy.js', 'utf8') + '\nECONOMY');
+const ECONOMY = eval(require('./economy-src.js') + '\nECONOMY');
 const CFG = ECONOMY.minigames.pride;
 const UP = CFG.upgrades;
 // Выходов на клетку. Было двадцать тысяч, пока выход считался одним проходом

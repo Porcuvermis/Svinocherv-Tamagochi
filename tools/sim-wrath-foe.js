@@ -20,8 +20,8 @@
 const fs = require('fs');
 const root = __dirname + '/..';
 const src = fs.readFileSync(root + '/src/config/wrath-gear.js', 'utf8') + '\n'
-          + fs.readFileSync(root + '/src/config/economy.js', 'utf8') + '\n'
-          + fs.readFileSync(root + '/src/core/backend.js', 'utf8') + '\n'
+          + require('./economy-src.js') + '\n'
+          + require('./src-parts.js')('src/core/backend.js') + '\n'
           + 'module.exports = { WRATH_GEAR, ECONOMY, LocalBackend, wrathRandom };';
 const mod = { exports: {} };
 

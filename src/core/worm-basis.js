@@ -14,11 +14,23 @@
 //   worm-room       комната и пол
 //   worm-paint      запись атрибутов, цвет, шум, ориентация тела
 //   worm-anatomy    слои под кожей
-//   worm-head       голова, глаза, пасть, поворот
+//   worm-head       поворот, посадка и контур уха
+//   worm-head-build сборка головы (buildHeadNode)
+//   worm-eye, worm-mouth   глаз и рот
+//   worm-head-live  голова на кадре (applyHeadYaw и прочее)
+//   worm-segment    звено тела и хвост
 //   worm-marks-art  отметины на коже и какашки
 //   worm-slime      след слизи на полу (своя механика)
 //   worm-hull       единый силуэт, кольца, кишечный тракт
 //   worm-build      сборка всего червя в один узел
+//   worm-chain      кадр: раскладка цепочки и круги силуэта
+//   worm-wear-live  кадр: наряд на теле
+//   worm-face-live  кадр: мимика головы
+//   worm-state      поля экземпляра (createWormState)
+//   worm-walk       где стоять, камера, ходьба
+//   worm-body-live  истощение, еда в кишке, рёбра
+//   worm-frames     видимость и частота кадров
+//   worm-handle     публичный API экземпляра (createWormHandle)
 //   worm-renderer   монтаж на экран, покадровый цикл, публичный API
 //
 // Все они — обычные скрипты в общей области видимости: порядок в index.html

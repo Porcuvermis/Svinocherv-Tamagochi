@@ -15,6 +15,7 @@
 | **сами вещи** (только картинка) | `src/core/worm-cosmetics.js` |
 | каталог: слот, цена, заявленная посадка | `src/config/pride-wardrobe.js` |
 | куда цепляется слот | `WormMarks.SLOTS` в `src/core/worm-marks.js` |
+| посадка на кадре: ракурс, вырез по животу, качание | `src/core/worm-wear-live.js` |
 | проверка | `tools/test-wardrobe.js` |
 | цвета гардероба | `PALETTE.redCarpet` в `src/core/palette.js` |
 
