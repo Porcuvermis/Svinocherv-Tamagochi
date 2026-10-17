@@ -131,7 +131,7 @@ const MAG_AD = {
     // параллельны везде, в том числе на углах: у наброска внутренняя линия
     // повторяла внешнюю масштабом, и на ступенях и вогнутостях линии
     // сходились и расходились.
-    path(kind, w, h, d) {
+    path(kind, w, h, d, rc) {
         const n = (v) => this.n(v);
         if (kind === 'deco') {
             // Двойная ступень на каждом углу: c — глубина выреза, ступени по c/2.
@@ -151,7 +151,7 @@ const MAG_AD = {
             // Вогнутый угол — четверть окружности с центром В углу листа.
             // Сдвинутая внутрь линия — окружность того же центра радиусом
             // r + d, пересечённая с краями, сдвинутыми на d.
-            const r = 15, rr = r + d, e = Math.sqrt(rr * rr - d * d);
+            const r = rc || 15, rr = r + d, e = Math.sqrt(rr * rr - d * d);
             const a = `A${n(rr)},${n(rr)} 0 0 0`;
             return `M${n(e)},${n(d)} H${n(w - e)} ${a} ${n(w - d)},${n(e)} V${n(h - e)} ${a} ${n(w - e)},${n(h - d)} H${n(e)} ${a} ${n(d)},${n(h - e)} V${n(e)} ${a} ${n(e)},${n(d)}Z`;
         }
@@ -340,56 +340,102 @@ const MAG_AD = {
 
     // ---------- МЕДАЛЬОН ----------
     // Общая часть семейства: тёмная чаша своего цвета, золотой обод с
-    // фаской, волосок внутри. Своё у каждого окна — внешний венец: лучи у
-    // хвоста, фестоны у мыла, жемчуг у мочалки.
-    medal(cx, cy, r, kind, inner) {
+    // фаской, волосок внутри. Своё у каждого окна — форма и внешний венец
+    // (решение игрока): хвост — овал стоймя с лучами, мыло — овал лёжа с
+    // фестонами, мочалка — скруглённый прямоугольник в жемчуге.
+    // В чаше — СЛЕДУЮЩАЯ ступень товара: реклама того, что купишь.
+    //   a, b — полуоси чаши по x и y.
+    MEDAL_R: 16,   // радиус скругления чаши мочалки
+
+    // Контур чаши, раздутый наружу на d (d < 0 — внутрь). Для овала это
+    // овал с полуосями a + d, b + d: настоящий эквидистант овала — не овал,
+    // но на сдвиге в пару точек глаз разницы не видит.
+    medalPath(kind, cx, cy, a, b, d) {
+        const n = (v) => this.n(v), A = a + d, B = b + d;
+        if (kind !== 'pearl') return `M${n(cx - A)},${n(cy)} a${n(A)},${n(B)} 0 1,0 ${n(2 * A)},0 a${n(A)},${n(B)} 0 1,0 ${n(-2 * A)},0Z`;
+        const r = Math.max(2, this.MEDAL_R + d), L = cx - A, T = cy - B, R = cx + A, Bo = cy + B, q = `A${n(r)},${n(r)} 0 0 1`;
+        return `M${n(L + r)},${n(T)} H${n(R - r)} ${q} ${n(R)},${n(T + r)} V${n(Bo - r)} ${q} ${n(R - r)},${n(Bo)} H${n(L + r)} ${q} ${n(L)},${n(Bo - r)} V${n(T + r)} ${q} ${n(L + r)},${n(T)}Z`;
+    },
+
+    // Точки с равным шагом по контуру (сдвиг d) и наружные нормали к ним:
+    // по ним стоят лучи, фестоны и бусины. Шаг — по длине дуги, а не по
+    // углу: на овале по углу лучи густели на узких концах.
+    medalPoints(kind, cx, cy, a, b, d, step) {
+        const A = a + d, B = b + d, r = Math.max(2, this.MEDAL_R + d), M = 720, dense = [];
+        for (let i = 0; i < M; i++) {
+            const t = i / M * Math.PI * 2, c = Math.cos(t), s = Math.sin(t);
+            if (kind !== 'pearl') { dense.push([cx + A * c, cy + B * s]); continue; }
+            // Скруглённый прямоугольник по углу: луч из центра до контура.
+            const ax = A - r, by = B - r;
+            let x, y;
+            const k = Math.min(Math.abs(c) > 1e-9 ? A / Math.abs(c) : 1e9, Math.abs(s) > 1e-9 ? B / Math.abs(s) : 1e9);
+            x = c * k; y = s * k;
+            if (Math.abs(x) > ax && Math.abs(y) > by) {
+                // угол: пересечение луча с четвертью окружности
+                const ox = Math.sign(x) * ax, oy = Math.sign(y) * by;
+                const pb = -(c * ox + s * oy), pc = ox * ox + oy * oy - r * r, kk = -pb + Math.sqrt(pb * pb - pc);
+                x = c * kk; y = s * kk;
+            }
+            dense.push([cx + x, cy + y]);
+        }
+        const len = [0];
+        for (let i = 1; i <= M; i++) { const p = dense[i % M], q = dense[i - 1]; len.push(len[i - 1] + Math.hypot(p[0] - q[0], p[1] - q[1])); }
+        const total = len[M], N = Math.max(8, Math.round(total / step)), out = [];
+        for (let k = 0, j = 0; k < N; k++) {
+            const L = k * total / N;
+            while (len[j + 1] < L) j++;
+            const p = dense[j], q = dense[(j + 1) % M], f = (L - len[j]) / (len[j + 1] - len[j] || 1);
+            const tx = q[0] - p[0], ty = q[1] - p[1], tl = Math.hypot(tx, ty) || 1;
+            out.push([p[0] + tx * f, p[1] + ty * f, ty / tl, -tx / tl]);
+        }
+        return out;
+    },
+
+    medal(cx, cy, a, b, kind, inner) {
         const C = this.C(), S = STROKE, I = this.ID, n = (v) => this.n(v);
         const col = { deco: C.petrol, cart: C.plum, pearl: C.rose }[kind];
-        const gid = `${I}-medal-${kind}`;
-        const circ = (rr) => `M${n(cx - rr)},${n(cy)} a${rr},${rr} 0 1,0 ${n(2 * rr)},0 a${rr},${rr} 0 1,0 ${n(-2 * rr)},0Z`;
+        const gid = `${I}-medal-${kind}`, P = (d) => this.medalPath(kind, cx, cy, a, b, d);
         let crown = '';
         if (kind === 'deco') {
             // Ореол ар-деко: тонкие лучи, длинный через короткий, внутри
             // волоска-ограды. Треугольные клинья наброска читались пилой.
-            const p = (rr, aa) => `${n(cx + Math.cos(aa) * rr)},${n(cy + Math.sin(aa) * rr)}`;
             let lng = '', sht = '';
-            for (let i = 0; i < 72; i++) {
-                const a = i * Math.PI * 2 / 72;
-                if (i % 2) sht += `M${p(r + 6, a)} L${p(r + 9.5, a)} `;
-                else lng += `M${p(r + 6, a)} L${p(r + 13, a)} `;
-            }
+            this.medalPoints(kind, cx, cy, a, b, 6, 2.9).forEach(([x, y, nx, ny], i) => {
+                const L = i % 2 ? 3.5 : 7, seg = `M${n(x)},${n(y)} L${n(x + nx * L)},${n(y + ny * L)} `;
+                if (i % 2) sht += seg; else lng += seg;
+            });
             crown = `<path d="${lng}" stroke="url(#${I}-gold)" stroke-width="${S.detail}"/>
                 <path d="${sht}" stroke="${C.gold[500]}" stroke-opacity="0.8" stroke-width="${S.hairline}"/>
-                <circle cx="${cx}" cy="${cy}" r="${n(r + 14.6)}" fill="none" stroke="${C.gold[500]}" stroke-opacity="0.7" stroke-width="${S.hairline}"/>`;
+                <path d="${P(14.6)}" fill="none" stroke="${C.gold[500]}" stroke-opacity="0.7" stroke-width="${S.hairline}"/>`;
         } else if (kind === 'cart') {
             // Фестоны: полукруглые лепестки встык.
+            const pts = this.medalPoints(kind, cx, cy, a, b, 4.4, 10);
             let d = '';
-            const N = 22, rr = r + 4.4;
-            for (let i = 0; i < N; i++) {
-                const a1 = i * Math.PI * 2 / N, a2 = (i + 1) * Math.PI * 2 / N, am = (a1 + a2) / 2;
-                const p = (R, a) => `${n(cx + Math.cos(a) * R)},${n(cy + Math.sin(a) * R)}`;
-                d += `M${p(rr, a1)} Q${p(rr + 6.4, am)} ${p(rr, a2)}`;
-            }
+            pts.forEach(([x, y], i) => {
+                const [x2, y2] = pts[(i + 1) % pts.length], mx = (x + x2) / 2, my = (y + y2) / 2;
+                const nx = (pts[i][2] + pts[(i + 1) % pts.length][2]) / 2, ny = (pts[i][3] + pts[(i + 1) % pts.length][3]) / 2;
+                d += `M${n(x)},${n(y)} Q${n(mx + nx * 6.4)},${n(my + ny * 6.4)} ${n(x2)},${n(y2)}`;
+            });
             crown = `<path d="${d}" fill="${col.lo}" stroke="url(#${I}-goldV)" stroke-width="${S.detail}"/>`;
         } else {
-            const N = 34, rr = r + 6.6, P = C.pearl;
-            let c = `<circle cx="${cx}" cy="${cy}" r="${rr}" fill="none" stroke="${col.deep}" stroke-opacity="0.7" stroke-width="5.4"/>`;
-            for (let i = 0; i < N; i++) {
-                const a = i * Math.PI * 2 / N;
-                c += `<circle cx="${n(cx + Math.cos(a) * rr)}" cy="${n(cy + Math.sin(a) * rr)}" r="2.35" fill="url(#${I}-pearl)"/>`;
-            }
+            let c = `<path d="${P(6.6)}" fill="none" stroke="${col.deep}" stroke-opacity="0.7" stroke-width="5.4"/>`;
+            const pts = this.medalPoints(kind, cx, cy, a, b, 6.6, 5.4);
+            c += pts.map(([x, y]) => `<circle cx="${n(x)}" cy="${n(y)}" r="2.35" fill="url(#${I}-pearl)"/>`).join('');
+            c += `<path d="${pts.map(([x, y]) => `M${n(x - 0.8)},${n(y - 0.85)} h0.01`).join(' ')}" stroke="${C.pearl.hi}" stroke-width="1.05" stroke-linecap="round"/>`;
             crown = c;
         }
-        return `<defs><radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${n(cx - r * 0.3)}" cy="${n(cy - r * 0.35)}" r="${n(r * 1.35)}">
-                <stop offset="0" stop-color="${col.hi}"/><stop offset="0.55" stop-color="${col[500]}"/><stop offset="1" stop-color="${col.deep}"/></radialGradient></defs>
-            <circle cx="${n(cx + 1.4)}" cy="${n(cy + 2.2)}" r="${n(r + 5)}" fill="${C.velvet.deep}" opacity="0.5"/>
+        const R = Math.max(a, b);
+        return `<defs><radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${n(cx - a * 0.3)}" cy="${n(cy - b * 0.35)}" r="${n(R * 1.35)}">
+                <stop offset="0" stop-color="${col.hi}"/><stop offset="0.55" stop-color="${col[500]}"/><stop offset="1" stop-color="${col.deep}"/></radialGradient>
+                <clipPath id="${gid}-clip"><path d="${P(0)}"/></clipPath></defs>
+            <path d="${P(5)}" fill="${C.velvet.deep}" opacity="0.5" transform="translate(1.4 2.2)"/>
             ${crown}
-            <path d="${circ(r + 4.6)}${circ(r)}" fill="url(#${I}-gold)" fill-rule="evenodd"/>
-            <circle cx="${cx}" cy="${cy}" r="${r + 4.6}" fill="none" stroke="${C.gold.deep}" stroke-opacity="0.6" stroke-width="${S.hairline}"/>
-            <circle cx="${cx}" cy="${cy}" r="${n(r + 2.3)}" fill="none" stroke="${C.gold.glint}" stroke-opacity="0.4" stroke-width="${S.hairline}"/>
-            <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${gid})" stroke="${C.gold.deep}" stroke-width="${S.hairline}"/>
-            <circle cx="${cx}" cy="${cy}" r="${n(r - 3.4)}" fill="none" stroke="${C.gold.hi}" stroke-opacity="0.45" stroke-width="${S.hairline}"/>
-            ${inner || ''}`;
+            <path d="${P(4.6)}${P(0)}" fill="url(#${I}-gold)" fill-rule="evenodd"/>
+            <path d="${P(4.6)}" fill="none" stroke="${C.gold.deep}" stroke-opacity="0.6" stroke-width="${S.hairline}"/>
+            <path d="${P(2.3)}" fill="none" stroke="${C.gold.glint}" stroke-opacity="0.4" stroke-width="${S.hairline}"/>
+            <path d="${P(0)}" fill="url(#${gid})" stroke="${C.gold.deep}" stroke-width="${S.hairline}"/>
+            <path d="${P(-3.4)}" fill="none" stroke="${C.gold.hi}" stroke-opacity="0.45" stroke-width="${S.hairline}"/>
+            ${inner ? `<g clip-path="url(#${gid}-clip)">${inner}</g>` : ''}`;
     }
     ,
     // ---------- ЗВЁЗДЫ-СТУПЕНИ ----------
@@ -450,6 +496,70 @@ const MAG_AD = {
             <circle cx="${cx}" cy="${cy}" r="${n(r - 2.2)}" fill="url(#${I}-gold)" stroke="${G.deep}" stroke-opacity="0.55" stroke-width="${S.hairline}"/>
             <circle cx="${cx}" cy="${cy}" r="${n(r - 3.6)}" fill="url(#${I}-goldR)"/>
             ${txt(0.5, 0.6, G.glint, 0.75)}${txt(0, 0, G.deep)}`;
+    },
+
+    // ---------- ЦЕНА: ВАРИАНТЫ НА ВЫБОР (раунд 2) ----------
+    // Монету игрок отклонил: круг с цифрой не читается ценой, и стоит не
+    // там. Цена — ПОД предметом, справа, и обязательно рядом со значком
+    // валюты: «значок + число» читается ценой без единого слова, голое
+    // число в кружке — нет. Три подачи; после выбора две уйдут.
+    //   x, y — правый край и середина строки цены.
+    token(x, y, size) {
+        if (typeof TokenArt === 'undefined') return '';
+        return TokenArt.svg('lust_token', 0, { whole: true, size }).replace('<svg ', `<svg x="${this.n(x)}" y="${this.n(y - size / 2)}" `);
+    },
+    priceText(xR, y, num, fs, fill, shadow) {
+        const n = (v) => this.n(v);
+        const t = (dx, dy, f, op) => `<text x="${n(xR + dx)}" y="${n(y + fs * 0.35 + dy)}" text-anchor="end" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${fs}" fill="${f}"${op != null ? ` fill-opacity="${op}"` : ''}>${num}</text>`;
+        return (shadow ? t(0.7, 1, shadow, 0.7) : '') + t(0, 0, fill);
+    },
+    // Ширина числа на глаз: у Georgia цифра ≈ 0.62 кегля.
+    numW(num, fs) { return String(num).length * fs * 0.62; },
+
+    // А. Бумажная бирка на шнурке, подвязанная к ободу медальона: так цена
+    // ПРИВЯЗАНА к вещи буквально, как ярлык в лавке. Бумага — светлое
+    // пятно на тёмном бархате: самое заметное место окна, без лишней
+    // отделки.
+    priceTag(xR, y, num, anchor) {
+        const C = this.C(), S = STROKE, G = C.gold, n = (v) => this.n(v);
+        const fs = 21, tk = 17, w = this.numW(num, fs) + tk + 26, h = 30, L = xR - w, T = y - h / 2;
+        const hole = [L + 8, y];
+        const body = `M${n(L)},${n(y)} L${n(L + 11)},${n(T)} H${n(xR - 3)} Q${n(xR)},${n(T)} ${n(xR)},${n(T + 3)} V${n(T + h - 3)} Q${n(xR)},${n(T + h)} ${n(xR - 3)},${n(T + h)} H${n(L + 11)}Z`;
+        const cord = anchor ? `<path d="M${n(anchor[0])},${n(anchor[1])} C${n(anchor[0] - 6)},${n(anchor[1] + 10)} ${n(hole[0] - 10)},${n(hole[1] - 14)} ${n(hole[0])},${n(hole[1])}" fill="none" stroke="url(#${this.ID}-goldV)" stroke-width="${S.detail}" stroke-linecap="round"/>` : '';
+        return `<g transform="rotate(-6 ${n(hole[0])} ${n(hole[1])})">
+            <path d="${body}" fill="${C.velvet.deep}" opacity="0.5" transform="translate(1.2 1.8)"/>
+            <path d="${body}" fill="${C.cream}" stroke="${C.pearl.lo}" stroke-width="${S.hairline}"/>
+            <path d="${body}" fill="none" stroke="${G[500]}" stroke-opacity="0.7" stroke-width="${S.hairline}" transform="translate(${n(xR)} ${n(y)}) scale(0.88 0.78) translate(${n(-xR - 2)} ${n(-y)})"/>
+            <circle cx="${n(hole[0])}" cy="${n(hole[1])}" r="2.4" fill="${C.velvet.lo}" stroke="${G.lo}" stroke-width="${S.hairline}"/>
+            ${this.token(xR - 7 - this.numW(num, fs) - tk - 3, y, tk)}
+            ${this.priceText(xR - 7, y, num, fs, C.velvet.deep)}
+        </g>${cord}`;
+    },
+
+    // Б. Золотая табличка-картуш (вогнутые углы, как рамка мыла), цифра
+    // выбита тёмным. Строже бирки, держится в языке рамок.
+    pricePlate(xR, y, num) {
+        const C = this.C(), S = STROKE, I = this.ID, G = C.gold, n = (v) => this.n(v);
+        const fs = 20, tk = 17, w = this.numW(num, fs) + tk + 22, h = 28;
+        const box = (d) => this.path('cart', w, h, d, 5);
+        return `<g transform="translate(${n(xR - w)} ${n(y - h / 2)})">
+            <path d="${box(0)}" fill="${C.velvet.deep}" opacity="0.55" transform="translate(1.2 1.8)"/>
+            <path d="${box(0.5)}" fill="url(#${I}-gold)"/>
+            <path d="${box(3)}" fill="url(#${I}-goldR)" stroke="${G.deep}" stroke-opacity="0.6" stroke-width="${S.hairline}"/>
+            ${this.token(8, h / 2, tk)}
+            ${this.priceText(w - 7, h / 2, num, fs, G.deep, G.glint)}
+        </g>`;
+    },
+
+    // В. Без подложки: крупная золотая цифра со значком и волосок-линейка
+    // под ней — как цена в журнальной рекламе. Проще всего, заметна
+    // размером.
+    priceBare(xR, y, num, ruleL) {
+        const C = this.C(), S = STROKE, G = C.gold, n = (v) => this.n(v);
+        const fs = 30, tk = 22;
+        return `${this.token(xR - this.numW(num, fs) - tk - 4, y, tk)}
+            ${this.priceText(xR, y, num, fs, G.hi, C.velvet.deep)}
+            <path d="M${n(ruleL)},${n(y + fs * 0.62)} H${n(xR)}" stroke="${G[500]}" stroke-opacity="0.8" stroke-width="${S.hairline}"/>`;
     },
 
     // ---------- ПЕЧАТЬ-КОРЗИНКА ----------

@@ -1,59 +1,67 @@
 <!doctype html>
 <!-- Стенд рекламного листа журнала (src/minigames/lust/mag-ad-art.js).
      Открывается без игры: только палитра и рисунок листа. Режим —
-     параметром ?step=frames|tail|soap|cloth|full, снимает tools/shot-mag-ad.js. -->
+     параметрами ?var=a|b|c&state=buy|poor|max, снимает tools/shot-mag-ad.js. -->
 <html><head><meta charset="utf-8">
 <style>
   html, body { margin: 0; background: #111; }
   #sheet { width: 330px; height: 442px; }
-  #sheet svg { width: 100%; height: 100%; display: block; }
+  #sheet > svg { width: 100%; height: 100%; display: block; }
 </style>
 <script src="../src/core/palette.js"></script>
 <script src="../src/config/economy.js"></script>
+<script>
+  // mixColor живёт в worm-paint.js, а тот тянет за собой всего червя.
+  // Предметам ванной нужна только эта смесь — копия здесь.
+  function mixColor(a, b, t) {
+    const p = (c) => c[0] === '#' ? [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) : c.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const x = p(a), y = p(b), k = Math.max(0, Math.min(1, t));
+    return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * k)).join(',')})`;
+  }
+</script>
+<script src="../src/core/token-art.js"></script>
+<script src="../src/minigames/lust/bath-baked.js"></script>
+<script src="../src/minigames/lust/bath-art.js"></script>
+<script src="../src/minigames/lust/bath-soap.js"></script>
+<script src="../src/minigames/lust/bath-cloth.js"></script>
 <script src="../src/minigames/lust/mag-ad-art.js"></script>
 </head><body>
 <div id="sheet"></div>
 <script>
-  const step = new URLSearchParams(location.search).get('step') || 'frames';
-  const A = MAG_AD;
-  // Каркас: пустые медальоны на своих местах — чтобы оценить раскладку и рамки.
-  const empty = {
-    tail:  (w, h) => A.medal(100, h / 2, 58, 'deco'),
-    cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl'),
-    soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart')
-  };
-  // Звёзды: полный набор выкупленных в каждом окне. Число звёзд — длина
-  // лестницы ветки из конфига, а не цифра здесь.
-  const U = ECONOMY.minigames.lust.upgrades, C = A.C();
+  const Q = new URLSearchParams(location.search);
+  // На стенде нет простоя, который доводит тяжёлые ступени (bath-cloth.js, warm).
+  BATH_CLOTH.deferHeavy = false;
+  const A = MAG_AD, C = A.C(), U = ECONOMY.minigames.lust.upgrades;
   const steps = (k) => U[k].levels.length;
-  // Простые заглушки монеты-цены и печати-корзинки — только чтобы видеть
-  // соседство со звёздами. Чистовик монеты и печати — свой раунд.
-  const coin = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="url(#mad-goldR)" stroke="${C.gold.deep}" stroke-width="${STROKE.hairline}"/>`;
-  const seal = (x, y, r, col) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${col}" stroke="url(#mad-gold)" stroke-width="${STROKE.structure}"/>`;
-  const rule = (x1, x2, y) => `<path d="M${x1} ${y} H${x2}" stroke="${C.gold[500]}" stroke-opacity="0.6" stroke-width="${STROKE.hairline}"/>`;
-  A.bench = { stars: {
-    tail:  (w, h) => A.medal(100, h / 2, 58, 'deco') + coin(205, 50, 16) + seal(252, 50, 18, C.ruby[500]) + rule(184, 274, 82) + A.stars('tail', 228, 108, steps('tail')),
-    cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl') + A.stars('cloth', w / 2, 118, steps('cloth')) + coin(50, 200, 14) + seal(98, 200, 16, C.rose.lo),
-    soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart') + A.stars('soap', w / 2, 118, steps('soap')) + coin(50, 200, 14) + seal(98, 200, 16, C.plum.lo)
-  } };
-  // Монета и печать в трёх состояниях (?state=): buy — по карману, печать
-  // стоит; poor — не хватает, печати нет; max — всё выкуплено, ни цены, ни
-  // печати, все звёзды литые. В медальоне будет СЛЕДУЮЩАЯ ступень товара —
-  // здесь он пока пуст.
-  const state = new URLSearchParams(location.search).get('state') || 'buy';
+  // Состояние (?state=): buy — по карману, печать стоит; poor — не хватает,
+  // печати нет; max — всё выкуплено, ни цены, ни печати, все звёзды литые.
+  const state = Q.get('state') || 'buy';
   const lvl = (k) => state === 'max' ? steps(k) : 3;
   const price = (k) => { const p = U[k].levels[lvl(k)].price; return p[Object.keys(p)[0]]; };
-  const shop = (k, cx, cy, sx, sy, r, sealArgs) => state === 'max' ? '' :
-      A.coin(cx, cy, r, price(k)) + (state === 'buy' ? A.seal(sx, sy, r + 2, k, ...sealArgs) : '');
-  A.bench.cart = {
-    tail:  (w, h) => A.medal(100, h / 2, 58, 'deco') + rule(184, 274, 84) + A.stars('tail', 228, 108, lvl('tail')) +
-                     shop('tail', 204, 50, 258, 18, 17, [[26, -26], 1.9]),
-    cloth: (w, h) => A.medal(w / 2, 56, 31, 'pearl') + A.stars('cloth', w / 2, 118, lvl('cloth')) +
-                     shop('cloth', 46, 204, 100, 204, 14, [[22, -22], 1.6]),
-    soap:  (w, h) => A.medal(w / 2, 56, 31, 'cart') + A.stars('soap', w / 2, 118, lvl('soap')) +
-                     shop('soap', 46, 204, 100, 204, 14, [[22, -22], 1.6])
+  // Предмет СЛЕДУЮЩЕЙ ступени в чаше — тот же рисунок, что на полке ванной.
+  const item = (L, cx, cy, a, b) => {
+    const next = Math.min(lvl(L === BATH_SOAP ? 'soap' : 'cloth') + 1, L.TIERS ? L.TIERS.length - 1 : 8);
+    const box = L.box(next), k = Math.min(2 * a * 0.78 / box.w, 2 * b * 0.84 / box.h);
+    return `<g transform="translate(${cx} ${cy}) scale(${k.toFixed(3)}) translate(${-(box.x + box.w / 2)} ${-(box.y + box.h / 2)})">${L.draw(next)}</g>`;
   };
-  document.getElementById('sheet').innerHTML = A.page({ windows: (A.bench && A.bench[step]) || empty });
+  // Медальоны новой формы (раунд 2): хвост — овал стоймя, мыло — лёжа,
+  // мочалка — скруглённый прямоугольник. Окна, кроме мыла, — без цены.
+  const tail  = (w, h) => A.medal(100, 90, 46, 62, 'deco') + A.stars('tail', 228, 108, lvl('tail'));
+  const cloth = (w, h) => A.medal(w / 2, 62, 50, 36, 'pearl', item(BATH_CLOTH, w / 2, 62, 50, 36)) + A.stars('cloth', w / 2, 172, lvl('cloth'));
+  const soapMedal = (w) => A.medal(w / 2, 60, 50, 35, 'cart', item(BATH_SOAP, w / 2, 60, 50, 35));
+  const buy = state === 'buy', has = state !== 'max', p = price('soap');
+  const seal = (x, y, r, tails, len) => buy ? A.seal(x, y, r, 'soap', tails, len) : '';
+  // Три подачи связки «предмет — цена — печать» на окне мыла (?var=a|b|c).
+  const soap = {
+    a: (w, h) => soapMedal(w) + A.stars('soap', w / 2, 176, lvl('soap')) +
+                 (has ? seal(36, 134, 21, [18, -18], 1.7) + A.priceTag(132, 134, p, [104, 99]) : ''),
+    b: (w, h) => soapMedal(w) + A.stars('soap', w / 2, 176, lvl('soap')) +
+                 (has ? A.pricePlate(132, 128, p) + seal(32, 102, 23, [28, -12], 2.0) : ''),
+    c: (w, h) => soapMedal(w) + A.stars('soap', w / 2, 180, lvl('soap')) +
+                 (has ? A.priceBare(132, 130, p, 72) + seal(38, 130, 24, [20, -20], 1.5) : '')
+  }[Q.get('var') || 'a'];
+  const windows = { tail, cloth, soap };
+  document.getElementById('sheet').innerHTML = A.page({ windows });
   document.title = 'ready';
 </script>
 </body></html>
