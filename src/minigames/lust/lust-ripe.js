@@ -128,4 +128,73 @@ Object.assign(LustMinigame, {
             st.transform = `${this._wormT || ''} translate(${(Z.x - half).toFixed(2)}px, ${(Z.y - half).toFixed(2)}px)`;
         }
     },
+
+    // ---------- ХВОСТ: ВАЛИК ПО ОСИ ----------
+    // Этап «поглаживание» водят пальцем вдоль хвоста, и в финале под пальцем
+    // уже есть сжимающее кольцо с валиком (stepRing). Подсказка — оно же,
+    // только пальца нет: после ripeMs без движения кольцо само прокатывается
+    // от корня к кончику, пауза, и снова. Игрок видит то, что почувствует под
+    // пальцем, и направление хода. Заряд оно НЕ даёт: ringFinger лишь рисует
+    // кольцо, заряд копит rubMove от настоящего пальца.
+    //
+    // Сам по себе кольцо тонкое (сжатие на 9% — оно рассчитано на палец,
+    // который закрывает место), поэтому поверх него рисуется светлая
+    // перетяжка-обруч, идущая тем же ходом (ripeBand).
+    //
+    // Зовётся каждый кадр из цикла startRub. Время — от кадра рендерера, а
+    // не таймером: подсказка сама замолкает вместе с циклом этапа.
+    ripeTail(now) {
+        const C = this.cfg(), idle = !this.drag && now - this.rubMoved > (C.ripeMs || 3000);
+        if (!idle) {
+            // Палец вернулся (или водят) — кольцо отдаём ему.
+            if (this._tailHint && !this.drag) this.ringFinger = null;
+            if (this._tailHint) this.ripeBand(null);
+            this._tailHint = false; this._tailHint0 = 0;
+            return;
+        }
+        if (!this._tailHint0) this._tailHint0 = now;
+        const sweep = C.ripeSweepMs || 1300, k = (now - this._tailHint0) % (sweep + (C.ripePauseMs || 1400));
+        if (k < sweep) {
+            const u = k / sweep, e = u * u * (3 - 2 * u);
+            this.ringFinger = { t: 0.04 + 0.92 * e, on: true };
+            this._tailHint = true;
+            this.ripeBand(0.04 + 0.92 * e, Math.sin(Math.PI * u));
+        } else if (this._tailHint) {
+            this.ripeBand(null);
+            // Дошло до кончика — кольцо отпускает, и плоть расправляется.
+            this.ringFinger = { t: 0.96, on: false };
+            this._tailHint = false;
+        }
+    },
+
+    // Обруч на оси хвоста: эллипс поперёк ствола на доле t, шире ствола.
+    // Живёт в группе хвоста (его координаты, борт режет его так же, как
+    // хвост), создаётся один раз и только двигается.
+    ripeBand(t, k) {
+        let g = this.el('bt-tail-hint');
+        if (t == null) { if (g) g.setAttribute('opacity', '0'); return; }
+        const pivot = this.el('bt-tail-pivot');
+        if (!pivot) return;
+        if (!g || !g.isConnected) {
+            const col = BATH_ART.latherColors(BATH_ART.latherLook(null, 'cloth'), 'cloth');
+            pivot.insertAdjacentHTML('beforeend',
+                `<g id="bt-tail-hint" opacity="0" pointer-events="none">`
+                + `<ellipse id="bt-tail-hint-fill" cx="0" cy="0" rx="1" ry="1" fill="${col.hi}" fill-opacity="0.28"/>`
+                + `<ellipse id="bt-tail-hint-rim" cx="0" cy="0" rx="1" ry="1" fill="none" stroke="${col.hi}" stroke-width="2.2" stroke-opacity="0.9"/>`
+                + `</g>`);
+            g = this.el('bt-tail-hint');
+        }
+        const grow = this.tailGrow(), T = BATH_ART.TAIL;
+        const pts = BATH_ART.tailSpine(this.bend, grow), p = BATH_ART.tailAt(pts, t);
+        const w = (BATH_ART.tailHalfSide(t, grow, -1) + BATH_ART.tailHalfSide(t, grow, 1)) / 2;
+        // Поперёк оси: нормаль к стволу в его же системе (см. tailD).
+        const deg = Math.atan2(Math.sin(p.a), (T.side || 1) * Math.cos(p.a)) * 180 / Math.PI;
+        g.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${deg.toFixed(1)})`);
+        g.setAttribute('opacity', Math.min(1, k * 1.6).toFixed(2));
+        for (const id of ['bt-tail-hint-fill', 'bt-tail-hint-rim']) {
+            const e = this.el(id);
+            e.setAttribute('rx', (w * 1.3).toFixed(1));
+            e.setAttribute('ry', (w * 0.32).toFixed(1));
+        }
+    },
 });

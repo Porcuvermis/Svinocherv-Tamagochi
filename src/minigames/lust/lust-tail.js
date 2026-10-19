@@ -390,6 +390,7 @@ Object.assign(LustMinigame, {
         this.glintStop();
         this.rubLast = performance.now();
         this.rubMoved = this.rubLast;
+        this._tailHint = false; this._tailHint0 = 0;
         const tick = (now) => {
             const dt = Math.min(0.05, (now - this.rubLast) / 1000);
             this.rubLast = now;
@@ -399,6 +400,7 @@ Object.assign(LustMinigame, {
             // прирост за ход мелкий — мгновенный спад не давал набрать вовсе.
             if ((now - this.rubMoved) / 1000 > (C.rubIdle || 1.1))
                 this.charge = Math.max(0, this.charge - (C.rubRelax || 0.06) * dt);
+            this.ripeTail(now);
             this.stepRing(dt);
             this.drawTail();
             this.drawRubGauge();
