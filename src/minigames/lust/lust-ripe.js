@@ -25,6 +25,9 @@ Object.assign(LustMinigame, {
         this._ripeTimer = 0;
         if (this._ripe && this._ripe.node) this._ripe.node.remove();
         this._ripe = null;
+        // Отблеск на хвосте — тоже: вышли посреди прохода, а в следующий
+        // забег хвост всплыл бы с застрявшим светом.
+        if (typeof BATH_ART !== 'undefined' && BATH_ART.gleam && BATH_ART.gleam.a) this.ripeGleam(0, 0);
     },
 
     // Где вырастить пузырь: горка — крупнейший пузырь верхней группы (она
@@ -131,10 +134,14 @@ Object.assign(LustMinigame, {
 
     // ---------- ХВОСТ: БЛЕСК ПО МАТЕРИАЛУ ----------
     // Этап «поглаживание» водят пальцем вдоль хвоста вверх-вниз. Подсказка —
-    // отблеск, который сам проходит по хвосту тем же ходом: от корня к
-    // кончику и обратно, пауза, и снова. Он лежит НА коже и обрезан по
-    // силуэту хвоста, поэтому читается блеском материала, а не наклейкой.
-    // Первая версия — светлый обруч-кольцо — игроку показалась топорной.
+    // отблеск света, который сам проходит по хвосту тем же ходом: от корня к
+    // кончику и обратно, пауза, и снова.
+    //
+    // Рисует его сам хвост (BATH_ART.tailLights, gleam): те же линзы со
+    // стороны света, что и постоянный блик, — поэтому отблеск повторяет
+    // вздутия звеньев, изгиб и купол головки и читается блеском кожи.
+    // Были до него: светлый обруч поперёк (топорно) и полоса-градиент,
+    // обрезанная по силуэту (плоская наклейка, не материал).
     // Заряд подсказка НЕ даёт: его копит rubMove от настоящего пальца.
     //
     // Зовётся каждый кадр из цикла startRub. Время — от кадра рендерера, а
@@ -142,76 +149,29 @@ Object.assign(LustMinigame, {
     ripeTail(now) {
         const C = this.cfg(), idle = !this.drag && now - this.rubMoved > (C.ripeMs || 3000);
         if (!idle) {
-            if (this._tailHint) this.ripeGloss(null);
+            if (this._tailHint) this.ripeGleam(0, 0);
             this._tailHint = false; this._tailHint0 = 0;
             return;
         }
         if (!this._tailHint0) this._tailHint0 = now;
-        const sweep = C.ripeSweepMs || 1000, k = (now - this._tailHint0) % (2 * sweep + (C.ripePauseMs || 1400));
+        const sweep = C.ripeSweepMs || 1100, k = (now - this._tailHint0) % (2 * sweep + (C.ripePauseMs || 1400));
         if (k < 2 * sweep) {
-            // Вверх, потом вниз: у каждого хода свой плавный разгон.
-            const up = k < sweep, u = (up ? k : k - sweep) / sweep, e = u * u * (3 - 2 * u);
+            // Вверх, потом вниз — одним плавным ходом туда-обратно (косинус):
+            // у кончика свет на миг задерживается и вспыхивает ярче, как
+            // блик на вершине выпуклости.
+            const u = k / (2 * sweep), t = 0.06 + 0.88 * (1 - Math.cos(2 * Math.PI * u)) / 2;
+            const fade = Math.min(1, u * 6, (1 - u) * 6);
             this._tailHint = true;
-            this.ripeGloss(up ? e : 1 - e, Math.sin(Math.PI * u));
+            this.ripeGleam(t, fade * (0.75 + 0.25 * t));
         } else if (this._tailHint) {
-            this.ripeGloss(null);
+            this.ripeGleam(0, 0);
             this._tailHint = false;
         }
     },
 
-    // Полоса блеска на доле t оси (0 — корень, 1 — кончик), яркость k.
-    // Живёт в группе хвоста (его координаты, борт режет её так же, как
-    // хвост), создаётся один раз и только двигается. Форма — прямоугольник
-    // поперёк ствола с градиентом ВДОЛЬ оси: ярко посередине, к краям в
-    // ноль; поверх него узкая белая жилка — как у глянца. Обрезка — по
-    // силуэту хвоста с запасом на изгиб (clip пересобирается только когда
-    // хвост изменился).
-    ripeGloss(t, k) {
-        let g = this.el('bt-tail-gloss');
-        if (t == null) { if (g) g.setAttribute('opacity', '0'); return; }
-        const pivot = this.el('bt-tail-pivot');
-        if (!pivot) return;
-        if (!g || !g.isConnected) {
-            const col = BATH_ART.latherColors(BATH_ART.latherLook(null, 'cloth'), 'cloth');
-            pivot.insertAdjacentHTML('beforeend',
-                `<defs>`
-                + `<clipPath id="bt-tail-gloss-clip"><path id="bt-tail-gloss-body" d=""/></clipPath>`
-                + `<linearGradient id="bt-tail-gloss-glow" x1="0" y1="0" x2="0" y2="1">`
-                + `<stop offset="0" stop-color="${col.hi}" stop-opacity="0"/>`
-                + `<stop offset="0.5" stop-color="${col.hi}" stop-opacity="0.7"/>`
-                + `<stop offset="1" stop-color="${col.hi}" stop-opacity="0"/></linearGradient>`
-                + `<linearGradient id="bt-tail-gloss-vein" x1="0" y1="0" x2="0" y2="1">`
-                + `<stop offset="0" stop-color="${col.hi}" stop-opacity="0"/>`
-                + `<stop offset="0.5" stop-color="${col.hi}" stop-opacity="0.95"/>`
-                + `<stop offset="1" stop-color="${col.hi}" stop-opacity="0"/></linearGradient>`
-                + `</defs>`
-                + `<g id="bt-tail-gloss" opacity="0" pointer-events="none" clip-path="url(#bt-tail-gloss-clip)">`
-                + `<g id="bt-tail-gloss-band">`
-                + `<rect id="bt-tail-gloss-a" fill="url(#bt-tail-gloss-glow)"/>`
-                + `<rect id="bt-tail-gloss-b" fill="url(#bt-tail-gloss-vein)"/></g></g>`);
-            g = this.el('bt-tail-gloss');
-        }
-        const grow = this.tailGrow(), T = BATH_ART.TAIL;
-        const key = this.bend.toFixed(3) + '|' + grow.toFixed(3);
-        if (key !== this._glossKey) {
-            this._glossKey = key;
-            this.el('bt-tail-gloss-body').setAttribute('d', BATH_ART.tailD(this.bend, grow).body);
-        }
-        const pts = BATH_ART.tailSpine(this.bend, grow), p = BATH_ART.tailAt(pts, t);
-        const w = (BATH_ART.tailHalfSide(t, grow, -1) + BATH_ART.tailHalfSide(t, grow, 1)) / 2;
-        // Поперёк оси — в системе ствола (см. tailD): поворот полосы на угол
-        // оси; по краям полоса шире ствола, лишнее срежет clip.
-        const deg = Math.atan2(Math.sin(p.a), (T.side || 1) * Math.cos(p.a)) * 180 / Math.PI;
-        const len = T.len * grow * 0.3, W = Math.max(w, T.base * 0.4) * 2.6;
-        const band = this.el('bt-tail-gloss-band');
-        band.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${deg.toFixed(1)})`);
-        const a = this.el('bt-tail-gloss-a'), b = this.el('bt-tail-gloss-b');
-        // Полоса лежит вдоль оси (x — поперёк, y — вдоль) и чуть скошена к
-        // ходу, как блик на цилиндре.
-        a.setAttribute('x', (-W / 2).toFixed(1)); a.setAttribute('width', W.toFixed(1));
-        a.setAttribute('y', (-len / 2).toFixed(1)); a.setAttribute('height', len.toFixed(1));
-        b.setAttribute('x', (-W / 2).toFixed(1)); b.setAttribute('width', W.toFixed(1));
-        b.setAttribute('y', (-len * 0.09).toFixed(1)); b.setAttribute('height', (len * 0.18).toFixed(1));
-        g.setAttribute('opacity', Math.min(1, k * 1.5).toFixed(2));
+    ripeGleam(t, a) {
+        BATH_ART.setGleam(t, a);
+        const g = this.el('bt-tail-gleam');
+        if (g) g.setAttribute('opacity', Math.min(1, a * 1.3).toFixed(2));
     },
 });

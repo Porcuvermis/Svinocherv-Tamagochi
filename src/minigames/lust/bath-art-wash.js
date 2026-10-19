@@ -803,6 +803,10 @@ Object.assign(BATH_ART, {
     PULSE: { width: 0.1, swell: 0.12, wake: 0.3, throb: 0.018, after: 0.03 },
     pulse: { t: 0, a: 0, throb: 0, after: 0 },
     setPulse(t, a, after, throb) { this.pulse = { t, a, after: after || 0, throb: throb || 0 }; },
+    // Отблеск-подсказка этапа поглаживания (lust-ripe.js, ripeTail): где на
+    // оси (t, 0 — корень, 1 — кончик) и насколько ярок (a, 0 — нет).
+    gleam: { t: 0, a: 0 },
+    setGleam(t, a) { this.gleam = { t, a }; },
     guardAt(t, span) {
         const G = this.look().glansAt, u = Math.max(0, Math.min(1, (G - t) / span));
         return u * u * (3 - 2 * u);
@@ -981,7 +985,11 @@ Object.assign(BATH_ART, {
             set(`bt-tail-crl-${i}`, 'stroke', tone.inner);
         }
         for (const id of ['bt-tail-sheen', 'bt-tail-shine', 'bt-tail-stretch', 'bt-tail-gwet', 'bt-tail-grim']) set(id, 'fill', tone.shine);
-        set('bt-tail-gspark', 'fill', tone.spark);
+        for (const id of ['bt-tail-gspark', 'bt-tail-gspec']) set(id, 'fill', tone.spark);
+        for (let i = 0; i < 3; i++) {
+            set(`bt-tail-gleam-g${i}`, 'stop-color', tone.spark);
+            set(`bt-tail-gleam-c${i}`, 'stop-color', tone.spark);
+        }
         set('bt-tail-sweep', 'fill', tone.star);
         set('bt-tail-stars', 'fill', tone.star);
         set('bt-tail-glow', 'fill', tone.glow);
@@ -1068,6 +1076,22 @@ Object.assign(BATH_ART, {
         <path id="bt-tail-grim" d="" fill="${C.shine}" fill-opacity="${(0.22 * Math.min(1, K.wet)).toFixed(2)}"/>
         <path id="bt-tail-gwet" d="" fill="${C.shine}" fill-opacity="${(0.28 * Math.min(1, K.wet)).toFixed(2)}"/>
         <path id="bt-tail-gspark" d="" fill="${C.spark}" fill-opacity="${(0.9 * Math.min(1, K.wet)).toFixed(2)}"/>
+        <!-- Отблеск-подсказка поглаживания (tailLights, gleam): прозрачность
+             всей группы ведёт lust-ripe.js, слои внутри — спад от ядра. -->
+        <defs>
+        <linearGradient id="bt-tail-gleam-g" gradientUnits="userSpaceOnUse">
+        <stop id="bt-tail-gleam-g0" offset="0" stop-color="${C.spark}" stop-opacity="0"/>
+        <stop id="bt-tail-gleam-g1" offset="0.5" stop-color="${C.spark}" stop-opacity="1"/>
+        <stop id="bt-tail-gleam-g2" offset="1" stop-color="${C.spark}" stop-opacity="0"/></linearGradient>
+        <linearGradient id="bt-tail-gleam-c" gradientUnits="userSpaceOnUse">
+        <stop id="bt-tail-gleam-c0" offset="0.1" stop-color="${C.spark}" stop-opacity="0"/>
+        <stop id="bt-tail-gleam-c1" offset="0.5" stop-color="${C.spark}" stop-opacity="1"/>
+        <stop id="bt-tail-gleam-c2" offset="0.9" stop-color="${C.spark}" stop-opacity="0"/></linearGradient></defs>
+        <g id="bt-tail-gleam" opacity="0">
+        <path id="bt-tail-gwide" d="" fill="url(#bt-tail-gleam-g)" fill-opacity="0.4"/>
+        ${[0, 1, 2, 3, 4].map(i => `<path id="bt-tail-gleam${i}" d="" fill="url(#bt-tail-gleam-g)" fill-opacity="0.3"/>`).join('')}
+        <path id="bt-tail-gcore" d="" fill="url(#bt-tail-gleam-c)" fill-opacity="1"/>
+        <path id="bt-tail-gspec" d="" fill="${C.spark}" fill-opacity="0.95"/></g>
         ${K.legend ? `<!-- Блеск-проход легенды: светлое кольцо бежит от корня к головке. -->
         <path id="bt-tail-sweep" d="" fill="${C.star}" fill-opacity="0.2"/>` : ''}
         <!-- Внешний контур ПОВЕРХ кусков: их обводки лежат по краю и иначе
@@ -1286,7 +1310,36 @@ Object.assign(BATH_ART, {
             const w = this.PULSE.width * 1.5;
             stretch = soft(Math.max(0, Pu.t - w), Math.min(G - 0.01, Pu.t + w), 0.32, 0.1 * Pu.a, 0.6, 5).join('');
         }
-        return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark, stretch };
+        // Отблеск-подсказка: свет, проходящий по хвосту вдоль оси. Строится
+        // ТЕМИ ЖЕ линзами со стороны света, что и постоянный блик, поэтому
+        // повторяет вздутия звеньев и изгиб, — это блеск самой кожи, а не
+        // наклейка поверх. На головке линзы те же и доходят до купола.
+        //   * мягкость поперёк — НАЛОЖЕНИЕМ пяти вложенных линз со слабой
+        //     прозрачностью (три давали видимые ступени-кольца);
+        //   * мягкость вдоль — ГРАДИЕНТОМ по оси (gleamAxis): концы линз
+        //     уходят в ноль, а не обрываются;
+        //   * поверх — узкое ядро и искра в его середине; под всем — свет,
+        //     охвативший ствол почти во всю ширину: без него ядро читалось
+        //     царапиной, а не светом, прошедшим по коже.
+        const Gl = this.gleam, gleam = [];
+        let gcore = '', gspec = '', gwide = '', gaxis = null;
+        if (Gl.a > 0.02) {
+            const w = 0.19, t0 = Math.max(0.01, Gl.t - w), t1 = Math.min(0.975, Gl.t + w);
+            const s0 = 0.6 + 0.4 * Gl.a;
+            gwide = lens(t0, t1, 0.42, 0.42, 0.5, 17);
+            for (const k of [1, 0.8, 0.6, 0.42, 0.25]) gleam.push(lens(t0, t1, 0.33, 0.27 * s0 * k, 0.6 * (2 - k), 11));
+            gcore = lens(Math.max(0.01, Gl.t - w * 0.6), Math.min(0.97, Gl.t + w * 0.6), 0.28, 0.06 * s0, 1.3, 13);
+            const ia = Math.round(t0 * M), ib = Math.round(t1 * M);
+            const A0 = across(ia, 0.33), B0 = across(ib, 0.33);
+            gaxis = { x1: +A0.x.toFixed(1), y1: +A0.y.toFixed(1), x2: +B0.x.toFixed(1), y2: +B0.y.toFixed(1) };
+            const si = Math.max(1, Math.min(M - 1, Math.round(Gl.t * M))), sc = across(si, 0.28);
+            const sr = Math.hypot(R[si].x - L[si].x, R[si].y - L[si].y) * 0.07 * Gl.a;
+            if (sr > 0.2) gspec = `M${(sc.x - sr).toFixed(1)} ${sc.y.toFixed(1)}a${sr.toFixed(1)} ${(sr * 1.7).toFixed(1)} 0 1 0 ${(2 * sr).toFixed(1)} 0a${sr.toFixed(1)} ${(sr * 1.7).toFixed(1)} 0 1 0 ${(-2 * sr).toFixed(1)} 0Z`;
+        }
+        while (gleam.length < 5) gleam.push('');
+        return { sheen: sheen.join(''), shine: shine.join(''), gwet: gw.join(''), grim, spark, stretch,
+                 gwide, gleam0: gleam[0], gleam1: gleam[1], gleam2: gleam[2], gleam3: gleam[3], gleam4: gleam[4],
+                 gcore, gspec, gaxis };
     },
 
     // ---------- ЛЕГЕНДА (ступень 10) ----------

@@ -619,6 +619,7 @@ Object.assign(LustMinigame, {
         const Pu = BATH_ART.pulse;
         const key = `${this.bend.toFixed(4)}|${this.charge.toFixed(4)}|${R.t.toFixed(3)}|${R.s.toFixed(3)}|${R.v.toFixed(2)}`
                   + `|${Pu.t.toFixed(3)}|${Pu.a.toFixed(3)}|${Pu.after.toFixed(3)}|${Pu.throb.toFixed(3)}`
+                  + `|${BATH_ART.gleam.t.toFixed(3)}|${BATH_ART.gleam.a.toFixed(2)}`
                   // Легенда живёт и в покое: блеск, искорки, ореол — от времени.
                   + (BATH_ART.look().legend ? `|${Math.floor(performance.now() / 33)}` : '');
         if (key === this._tailKey) return;
@@ -668,9 +669,19 @@ Object.assign(LustMinigame, {
             if (b) { b.setAttribute('d', c.d); b.setAttribute('stroke-opacity', (0.55 * c.k).toFixed(3)); }
         });
         for (const [id, k] of [['bt-tail-sheen', 'sheen'], ['bt-tail-shine', 'shine'], ['bt-tail-stretch', 'stretch'],
-                               ['bt-tail-gwet', 'gwet'], ['bt-tail-grim', 'grim'], ['bt-tail-gspark', 'spark']]) {
+                               ['bt-tail-gwet', 'gwet'], ['bt-tail-grim', 'grim'], ['bt-tail-gspark', 'spark'],
+                               ['bt-tail-gwide', 'gwide'], ['bt-tail-gleam0', 'gleam0'], ['bt-tail-gleam1', 'gleam1'], ['bt-tail-gleam2', 'gleam2'],
+                               ['bt-tail-gleam3', 'gleam3'], ['bt-tail-gleam4', 'gleam4'],
+                               ['bt-tail-gcore', 'gcore'], ['bt-tail-gspec', 'gspec']]) {
             const e = this.el(id);
             if (e) e.setAttribute('d', P.lights[k]);
+        }
+        // Градиент отблеска — вдоль оси, от начала его линз до конца
+        // (tailLights, gaxis): концы уходят в ноль, а не обрываются.
+        const ga = P.lights.gaxis;
+        if (ga) for (const id of ['bt-tail-gleam-g', 'bt-tail-gleam-c']) {
+            const e = this.el(id);
+            if (e) for (const k of ['x1', 'y1', 'x2', 'y2']) e.setAttribute(k, ga[k]);
         }
         if (P.piercing) {
             const Pc = P.piercing;

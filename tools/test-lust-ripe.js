@@ -88,27 +88,31 @@ const harness = require('./harness');
   await reach(true);
   await page.evaluate(() => LustMinigame.startRub());
   // Высота полосы вдоль оси (в координатах хвоста: вверх — меньше y) и яркость.
+  // Где отблеск на оси (t: 0 — корень, 1 — кончик), насколько ярок, и
+  // что он правда нарисован на хвосте (путь ядра не пустой).
   const gloss = () => page.evaluate(() => {
-    const g = document.getElementById('bt-tail-gloss'), b = document.getElementById('bt-tail-gloss-band');
-    if (!g || !b) return { op: 0, y: null, charge: LustMinigame.charge };
-    const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(b.getAttribute('transform') || '');
-    return { op: +g.getAttribute('opacity'), y: m ? +m[2] : null, charge: LustMinigame.charge };
+    const g = document.getElementById('bt-tail-gleam'), c = document.getElementById('bt-tail-gcore');
+    return { op: g ? +g.getAttribute('opacity') : 0, y: BATH_ART.gleam.a > 0.02 ? BATH_ART.gleam.t : null,
+             drawn: !!(c && (c.getAttribute('d') || '').length > 20), charge: LustMinigame.charge };
   });
   await page.waitForTimeout(1500);
   ok((await gloss()).op < 0.05, 'до тишины блеска нет');
-  const seen = []; let shot = false;
-  for (let i = 0; i < 60; i++) {
+  const seen = []; let shot = false, drawnSeen = false;
+  for (let i = 0; i < 80; i++) {
     await page.waitForTimeout(50);
     const r = await gloss();
     if (r.op > 0.3 && r.y != null) seen.push(r.y);
-    if (r.op > 0.7 && !shot) { shot = true; await page.screenshot({ path: out + 'хвост.png' }); }
+    if (r.drawn) drawnSeen = true;
+    if (r.op > 0.7 && r.y > 0.3 && r.y < 0.6 && !shot) { shot = true; await page.screenshot({ path: out + 'хвост.png' }); }
+    if (r.op > 0.7 && r.y > 0.88 && shot !== 2) { shot = 2; await page.screenshot({ path: out + 'хвост-верх.png' }); }
   }
   const ymin = Math.min(...seen), ymax = Math.max(...seen);
-  const peak = seen.indexOf(ymin);
-  ok(seen.length > 8 && ymax - ymin > 30, 'после 3 с блеск ходит по всей длине хвоста',
-     `${seen.length} кадров, ход ${(ymax - ymin).toFixed(0)}`);
+  const peak = seen.indexOf(ymax);
+  ok(seen.length > 8 && ymin < 0.35 && ymax > 0.85, 'после 3 с блеск ходит по всей длине хвоста',
+     `${seen.length} кадров, t ${ymin.toFixed(2)}–${ymax.toFixed(2)}`);
   ok(peak > 0 && peak < seen.length - 1, 'идёт вверх, у кончика разворачивается и идёт вниз',
      `верх на ${peak} из ${seen.length}`);
+  ok(drawnSeen, 'отблеск нарисован на самом хвосте');
   ok((await gloss()).charge === 0, 'подсказка заряд не даёт');
   // Палец на хвосте: блеск гаснет.
   const tp = await toMouse(await page.evaluate(() => {
