@@ -83,37 +83,42 @@ const harness = require('./harness');
     ok(!(await ripe()), 'выход убирает подсказку');
   }
 
-  // ---------- ХВОСТ: валик по оси, пока палец не водит ----------
+  // ---------- ХВОСТ: блеск по материалу вверх-вниз, пока палец не водит ----------
   console.log('— хвост');
   await reach(true);
   await page.evaluate(() => LustMinigame.startRub());
-  const ring = () => page.evaluate(() => ({ s: BATH_ART.ring.s, t: BATH_ART.ring.t, ph: LustMinigame.phase,
-                                            charge: LustMinigame.charge }));
+  // Высота полосы вдоль оси (в координатах хвоста: вверх — меньше y) и яркость.
+  const gloss = () => page.evaluate(() => {
+    const g = document.getElementById('bt-tail-gloss'), b = document.getElementById('bt-tail-gloss-band');
+    if (!g || !b) return { op: 0, y: null, charge: LustMinigame.charge };
+    const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(b.getAttribute('transform') || '');
+    return { op: +g.getAttribute('opacity'), y: m ? +m[2] : null, charge: LustMinigame.charge };
+  });
   await page.waitForTimeout(1500);
-  ok((await ring()).s < 0.1, 'до тишины валика нет');
-  // Ловим валик в движении: он обязан пройти и корень, и кончик.
+  ok((await gloss()).op < 0.05, 'до тишины блеска нет');
   const seen = []; let shot = false;
   for (let i = 0; i < 60; i++) {
-    await page.waitForTimeout(100);
-    const r = await ring();
-    if (r.s > 0.5) seen.push(r.t);
-    if (r.s > 0.5 && r.t > 0.45 && !shot) { shot = true; await page.screenshot({ path: out + 'хвост.png' }); }
+    await page.waitForTimeout(50);
+    const r = await gloss();
+    if (r.op > 0.3 && r.y != null) seen.push(r.y);
+    if (r.op > 0.7 && !shot) { shot = true; await page.screenshot({ path: out + 'хвост.png' }); }
   }
-  ok(seen.length > 5 && Math.min(...seen) < 0.3 && Math.max(...seen) > 0.7,
-     'после 3 с валик идёт от корня к кончику', `${seen.length} кадров, t ${Math.min(...seen).toFixed(2)}–${Math.max(...seen).toFixed(2)}`);
-  ok((await ring()).charge === 0, 'подсказка заряд не даёт');
-  // Палец на хвосте: валик отдан ему.
+  const ymin = Math.min(...seen), ymax = Math.max(...seen);
+  const peak = seen.indexOf(ymin);
+  ok(seen.length > 8 && ymax - ymin > 30, 'после 3 с блеск ходит по всей длине хвоста',
+     `${seen.length} кадров, ход ${(ymax - ymin).toFixed(0)}`);
+  ok(peak > 0 && peak < seen.length - 1, 'идёт вверх, у кончика разворачивается и идёт вниз',
+     `верх на ${peak} из ${seen.length}`);
+  ok((await gloss()).charge === 0, 'подсказка заряд не даёт');
+  // Палец на хвосте: блеск гаснет.
   const tp = await toMouse(await page.evaluate(() => {
     const A = BATH_ART.slots(), sp = BATH_ART.tailSpine(LustMinigame.bend, LustMinigame.tailGrow());
     const q = sp[Math.floor(sp.length * 0.4)];
     return { x: A.tail.x + q.x, y: A.tail.y + q.y };
   }));
   await page.mouse.move(tp.x, tp.y); await page.mouse.down();
-  await page.waitForTimeout(400);
-  const seen2 = [];
-  for (let i = 0; i < 20; i++) { await page.waitForTimeout(100); seen2.push((await ring()).t); }
-  ok(Math.max(...seen2) - Math.min(...seen2) < 0.08, 'под пальцем валик стоит у пальца, а не бегает сам',
-     `разброс ${(Math.max(...seen2) - Math.min(...seen2)).toFixed(2)}`);
+  await page.waitForTimeout(500);
+  ok((await gloss()).op < 0.05, 'под пальцем блеск гаснет и не мешает');
   await page.mouse.up();
   await page.evaluate(() => LustMinigame.close());
 
