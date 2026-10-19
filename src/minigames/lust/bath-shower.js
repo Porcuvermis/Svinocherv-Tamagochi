@@ -303,6 +303,11 @@ const BATH_SHOWER = {
         const head = [neckCollar, dome, rim];
         const all = parts.concat(hand, head);
         const halo = all.map(p => p.sil).join('') + rimLo;
+        // Для блеска и попадания пальцем (glintInit, hit): контуры частей
+        // по отдельности — в одном path встречные обходы вычли бы друг друга.
+        this.sils = all.map(p => p.sil).concat(rimLo);
+        this.outline = halo;
+        this.hoseD = hoseD;
         const seam = (p) => p.bare ? '' : `<path d="${p.sil}" fill="none" stroke="${inner}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
         const paint = (list) => list.map(p => p.fill + seam(p)
             + (p.line ? `<path d="${p.line}" fill="none" stroke="${inner}" stroke-width="${STROKE.hairline}"/>` : '')).join('');
@@ -329,5 +334,95 @@ const BATH_SHOWER = {
             <path d="${lime}" fill="${T.scale}"/>
             <path d="${drip}" fill="${Wt.surfHi}" stroke="${Wt.edge}" stroke-width="0.8"/>
         </g>`;
-    }
+    },
+
+    // ---------- ПОДСКАЗКА НА СТАРТЕ: БЛИК ПО ХРОМУ ----------
+    // Раньше душ мигал прозрачностью, потом по контуру бежал штрих — оба
+    // раза не читалось: штрих шёл по склейке силуэтов и вспыхивал где
+    // попало, а бледный блик терялся на светлом кафеле. Теперь по стойке
+    // проходит узкая диагональная полоса света, видная только на кромке
+    // вокруг неё (как блик на хроме), и в конце вспыхивает искрой на лейке.
+    // Кромка — статичная маска, один раз нарисованная на canvas; движется
+    // лишь transform полосы, его считает видеокарта (docs/traps.md, пп. 37,
+    // 73, 156). Свечение — два слоя разной толщины, а не blur-фильтр: фильтр
+    // на айфоне дорог. Холст свой, поверх сцены; место ему ставит placeShelf.
+    box: null, glintEl: null, anims: [],
+    PERIOD: 2400, SWEEP: 0.5, PHASE: 600,      // проход — половина периода, пауза — вторая (1:1)
+    // Контуры частей и шланг как Path2D: общий вид для маски и для касания.
+    parts() {
+        if (!this._parts && this.sils) this._parts = this.sils.concat(this.hoseD).map(d => new Path2D(d));
+        return this._parts || [];
+    },
+    // Тело стойки — картинка-маска: блик ложится на сам хром, а не рисует
+    // вокруг него контур (цветная обводка выглядела маркером).
+    rimURL() {
+        const B = this.box, S = 2, parts = this.parts();
+        const cv = document.createElement('canvas');
+        cv.width = Math.ceil(B.w * S); cv.height = Math.ceil(B.h * S);
+        const c = cv.getContext('2d');
+        c.scale(S, S); c.translate(-B.x, -B.y);
+        c.fillStyle = c.strokeStyle = '#000';
+        c.lineJoin = c.lineCap = 'round';
+        for (const q of parts) c.fill(q);
+        c.lineWidth = 6.5;                       // шланг
+        c.stroke(parts[parts.length - 1]);
+        return cv.toDataURL();
+    },
+    glintInit() {
+        if (this.glintEl) return this.glintEl;
+        const g = document.getElementById('bt-shower');
+        const host = document.getElementById('bt-back');
+        if (!g || !host || !this.sils) return null;
+        const b = g.getBBox(), P = 14;
+        if (!b.width) return null;                          // экран ещё скрыт — замера нет
+        this.box = { x: b.x - P, y: b.y - P, w: b.width + 2 * P, h: b.height + 2 * P };
+        const B = this.box, K = PALETTE.bathScene.showerGlint;
+        const sh = BATH_ART.slots().showerHead;
+        const layer = (cls, w, col) => `<div class="bt-sg-layer ${cls}" style="left:${B.x}px;top:${B.y}px;width:${B.w}px;height:${B.h}px;
+            -webkit-mask-image:url(${this.rimURL(w)});mask-image:url(${this.rimURL(w)});-webkit-mask-size:100% 100%;mask-size:100% 100%">
+            <div class="bt-sg-band" style="background:linear-gradient(90deg,transparent,${K.cool} 22%,${col} 40%,${col} 47%,transparent 52%,${col} 57%,${K.warm} 70%,transparent)"></div></div>`;
+        const r = 9, star = `M0 ${-r}Q1 -1 ${r} 0Q1 1 0 ${r}Q-1 1 ${-r} 0Q-1 -1 0 ${-r}Z`;
+        const div = document.createElement('div');
+        div.id = 'bt-shower-glint';
+        div.className = 'bt-box bmc';
+        div.innerHTML = `<div class="bmc-in">
+            ${layer('bt-sg-core', 0, K.core)}
+            <div class="bt-sg-spark" style="left:${sh.x}px;top:${sh.y}px">
+                <svg viewBox="-12 -12 24 24" width="24" height="24" style="position:absolute;left:-12px;top:-12px;overflow:visible">
+                    <circle r="${r * 1.5}" fill="${K.halo}" fill-opacity="0.45"/><path d="${star}" fill="${K.core}"/></svg></div></div>`;
+        host.parentNode.insertBefore(div, host.nextSibling);
+        return (this.glintEl = div);
+    },
+    glint(on) {
+        const el = on ? this.glintInit() : this.glintEl;
+        for (const a of this.anims) a.cancel();
+        this.anims = [];
+        if (!el) return;
+        el.classList.toggle('bt-sg-on', !!on);
+        if (!on) return;
+        const B = this.box, X0 = -120, X1 = B.w + 260;
+        const T = this.PERIOD, U = this.SWEEP, opt = { duration: T, iterations: Infinity, delay: this.PHASE, easing: 'linear' };
+        // Полоса идёт первую половину периода, вторую — стоит погашенной.
+        const band = [{ offset: 0, transform: `translateX(${X0}px) rotate(18deg)`, opacity: 0 },
+                      { offset: 0.03, opacity: 1 },
+                      { offset: U - 0.03, opacity: 1 },
+                      { offset: U, transform: `translateX(${X1}px) rotate(18deg)`, opacity: 0 },
+                      { offset: 1, transform: `translateX(${X1}px) rotate(18deg)`, opacity: 0 }];
+        for (const n of el.querySelectorAll('.bt-sg-band')) this.anims.push(n.animate(band, opt));
+        // Искра на лейке — когда полоса доходит до неё, и чуть дольше.
+        const sp = el.querySelector('.bt-sg-spark'), us = U * 0.55;
+        this.anims.push(sp.animate([
+            { offset: 0, opacity: 0, transform: 'scale(0) rotate(0deg)' },
+            { offset: us, opacity: 0, transform: 'scale(0) rotate(0deg)' },
+            { offset: us + 0.07, opacity: 1, transform: 'scale(2) rotate(45deg)' },
+            { offset: us + 0.16, opacity: 0, transform: 'scale(0) rotate(90deg)' },
+            { offset: 1, opacity: 0, transform: 'scale(0) rotate(90deg)' }], opt));
+    },
+    // Попал ли палец в силуэт стойки целиком (p — в единицах сцены): части
+    // и шланг утолщены, просветы между трубками и лейкой закрыты.
+    hit(p) {
+        const c = (this._hitCtx = this._hitCtx || document.createElement('canvas').getContext('2d'));
+        c.lineWidth = 30; c.lineJoin = c.lineCap = 'round';
+        return this.parts().some(q => c.isPointInPath(q, p.x, p.y) || c.isPointInStroke(q, p.x, p.y));
+    },
 };

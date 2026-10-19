@@ -227,9 +227,14 @@
     transition: opacity 0.25s ease;
 }
 
-#lust-game .bt-ready {
-    animation: bt-ready 1.6s ease-in-out infinite;
-}
+/* Подсказка душа: блик по кромке стойки (BATH_SHOWER.glintInit). Кромка —
+   маска слоя, полоса внутри движется transform'ом (WAAPI, lust → glint()). */
+#lust-game #bt-shower-glint { display: none; }
+#lust-game #bt-shower-glint.bt-sg-on { display: block; }
+#lust-game .bt-sg-layer { position: absolute; overflow: hidden; mix-blend-mode: screen; }
+#lust-game .bt-sg-band { position: absolute; left: 0; top: -60px; width: 64px; height: 1200px;
+    transform-origin: 0 0; opacity: 0; will-change: transform, opacity; }
+#lust-game .bt-sg-spark { position: absolute; width: 0; height: 0; opacity: 0; }
 
 /* Мыло и мочалка зовут не миганием, а сами: поднимаются с полки и парят,
    светясь по контуру (lust.js, liftTool и floatTool). Качается холст руки
@@ -255,10 +260,6 @@
     50%      { transform: translateY(-5px); }
 }
 
-@keyframes bt-ready {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.62; }
-}
 
 
 /* ================= ГАШЕНИЕ СЛОЁВ ДЛЯ ЗАМЕРА ================= */

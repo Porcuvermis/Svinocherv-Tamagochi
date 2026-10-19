@@ -350,7 +350,6 @@ const BATH_MAG = {
             + `<path d="${this.poly(fr.edge)}" fill="none" stroke="${ink}" stroke-width="${STROKE.contour}" stroke-linejoin="round"/>`);
         const under = `
                 <path d="${this.poly(F.page)}" fill="${P[500]}" stroke="${inner}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
-                <path d="${F.rows.map(r => this.line(r)).join('')}" fill="none" stroke="${P.line}" stroke-width="1.4" stroke-linecap="round"/>
                 <path d="${this.poly(F.shadow)}" fill="${ink}" fill-opacity="0.22"/>
                 <path d="${this.line(F.fold)}" fill="none" stroke="${P.lo}" stroke-width="2.2" stroke-linecap="round"/>`;
         return { defs: this.pattern('btmc-art', TW, TH, this.covers.top(TW, TH)), under, frames };
@@ -394,9 +393,9 @@ const BATH_MAG = {
     call: {
         // Расписание захода, мс от его начала: блик по контуру → вспышка на
         // уголке → уголок взмывает, парит с лёгкой дрожью и ложится, коротко
-        // подпрыгнув. Пауза между заходами — PAUSE + до PAUSE_RND.
+        // подпрыгнув. Пауза между заходами — PAUSE + до PAUSE_RND (сейчас равна длине захода).
         GLINT: [0, 900], SPARK: [650, 1250], UP: [1350, 2050], HOLD: 3150, DOWN: 3650, BOUNCE: 3950,
-        PAUSE: 7000, PAUSE_RND: 3000, FIRST: 2500,
+        PAUSE: 4000, PAUSE_RND: 0, FIRST: 2500,         // пауза ≈ длине захода (1:1)
         host: null, svg: null, timer: 0, k: 0, anims: [],
 
         start(host) {
