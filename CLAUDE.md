@@ -92,6 +92,7 @@
 | Показать трату или начисление | `src/core/wallet-fx.js` — само, сообщений не заводить |
 | Убрать слова из экрана | `docs/plan/11-no-words.md` |
 | Деплой, iPhone, Telegram | `docs/deploy-iphone.md` |
+| Мёртвые ветки (не вливать, не брать за основу) | `.github/dead-branches.txt` |
 | Почему сделано так | `docs/progress-log.md` — архив, не читать (запрещено) |
 
 Подробные описания строк — `docs/invariants-and-router.md`, раздел 2.

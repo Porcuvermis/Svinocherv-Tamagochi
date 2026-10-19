@@ -100,6 +100,15 @@ jobs:
                         --format='%(refname)' refs/remotes/origin \
                       | grep -vE '/HEAD$')"
 
+          # Мёртвые ветки (.github/dead-branches.txt) не собираются вовсе:
+          # тупиковые, от них отказались, и в списке превью они только мешают.
+          if [ -f .github/dead-branches.txt ]; then
+            while read -r dead; do
+              case "$dead" in ''|'#'*) continue ;; esac
+              BRANCHES="$(echo "$BRANCHES" | grep -vxF "refs/remotes/origin/$dead" || true)"
+            done < .github/dead-branches.txt
+          fi
+
           # В корень — та ветка, в которую коммитили последней. Именно её
           # открывает иконка с домашнего экрана.
           echo "=== свежая ветка → / ==="
