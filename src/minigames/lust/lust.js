@@ -250,6 +250,7 @@ const LustMinigame = {
         this.resetCover();
         this.wipeLather();
         this.pileClear();
+        this.ripeHide();
         this.el('bt-cam-rain-far').innerHTML = BATH_ART.rain(false);
         this.el('bt-cam-rain-near').innerHTML = BATH_ART.rain(true);
         // bt-splats здесь НЕТ: там разметка слоя потёков, её чистит
@@ -295,6 +296,7 @@ const LustMinigame = {
         this.screenElement.classList.remove('active');
         this.stopClocks();
         this.stopPanting();
+        this.ripeHide();
         // Живой флакон мыла не крутится за закрытой дверью (docs/traps.md,
         // пп. 37–38: закрытые мини-игры продолжали крутить украшения).
         if (typeof BATH_SOAP !== 'undefined') BATH_SOAP.stop();
@@ -821,6 +823,7 @@ const LustMinigame = {
         const gl = this.el('bt-glint');
         if (gl) gl.style.transform = t;
         this.layoutPile((c.x - a.x) / 100 || 1);
+        this.ripeLayout((c.x - a.x) / 100 || 1);
         // Потёки на стене — в единицах СЦЕНЫ: холст лежит от её начала.
         const wall = this.el('bt-goo-wall');
         if (wall) {

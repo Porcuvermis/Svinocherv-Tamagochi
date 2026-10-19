@@ -214,6 +214,37 @@
     pointer-events: none;
 }
 
+/* «Созревший» пузырь (lust-ripe.js): подсказка, что пену можно лопнуть.
+   Дышит и пускает кольцо css-анимацией — композитор, ни одной перерисовки.
+   Слой сам позиционируется в js, поэтому анимация висит на дочерних
+   холстах, а не на нём: иначе она затёрла бы transform положения. */
+#lust-game .bt-ripe {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    pointer-events: none;
+    animation: bt-ripe-in 0.35s ease-out both;
+}
+#lust-game .bt-ripe canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: none;
+    z-index: auto;
+    transform-origin: 50% 50%;
+}
+#lust-game .bt-ripe-body { animation: bt-ripe-breathe 1.2s ease-in-out infinite; }
+#lust-game .bt-ripe-ring { animation: bt-ripe-ring 1.2s ease-out infinite; }
+@keyframes bt-ripe-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bt-ripe-breathe {
+    0%, 100% { transform: scale(0.92); }
+    50%      { transform: scale(1.22); }
+}
+@keyframes bt-ripe-ring {
+    0%   { transform: scale(0.95); opacity: 0.9; }
+    100% { transform: scale(1.9);  opacity: 0; }
+}
+
 /* Предмет в руке кликов не ловит: под пальцем должно оказываться тело, а
    не мыло, которое этим же пальцем держат. */
 #lust-game #bt-fg {

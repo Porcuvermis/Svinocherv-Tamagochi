@@ -720,6 +720,7 @@ Object.assign(LustMinigame, {
         const H = this.pile;
         if (H) { H.shown = H.N; H.fade = 1; this.pileDraw(); }
         this.washChunks();
+        this.ripeArm();
     },
 
     pop(p) {

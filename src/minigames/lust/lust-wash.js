@@ -1166,6 +1166,7 @@ Object.assign(LustMinigame, {
         this._glintTop = null;
         this.washChunks();
         if (!this.washLeft()) this.finishWash();
+        else this.ripeArm();
     },
 
     wipeAt(p) {
@@ -1222,8 +1223,8 @@ Object.assign(LustMinigame, {
             if (inBox || Math.hypot(p.x - A[kind].x, p.y - A[kind].y) < 70) this.takeTool(kind, e);
             return;
         }
-        if (this.phase === 'pop') { this.pop(p); return; }
-        if (this.phase === 'wipe') { this.wipeAt(p); return; }
+        if (this.phase === 'pop') { this.pop(p); this.ripeArm(); return; }
+        if (this.phase === 'wipe') { this.wipeAt(p); this.ripeArm(); return; }
         if (this.phase === 'rub') {
             this.drag = { kind: 'rub', t: null };
             this.rubMove(p);
