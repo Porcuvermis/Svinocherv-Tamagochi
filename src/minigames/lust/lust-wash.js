@@ -1259,6 +1259,8 @@ Object.assign(LustMinigame, {
         // Мыло и мочалка — трение: прогресс от пути по телу, пена растёт
         // заготовкой (lather-grow.js). Клеток и подсказки больше нет.
         if (!this.soapRub(p, e.timeStamp || performance.now(), kind)) return;
+        // Тёрли именно тело — флакон сыплет искры втрое (bath-soap-trail.js).
+        this.rubBodyAt = performance.now();
         this.growTo(kind, this.rub);
         // Пена копится НЕ ТОЛЬКО на черве: над будущим хвостом растёт горка —
         // по той же доле натёртого, чтобы было видно, что она от работы

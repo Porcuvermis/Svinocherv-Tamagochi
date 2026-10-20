@@ -91,6 +91,18 @@
     will-change: transform;
 }
 
+/* Шлейф искр волшебного флакона (bath-soap-trail.js): холст во всю сцену
+   поверх руки. Спрятан, пока искр нет. Фон и растяжку общего правила
+   canvas (style.css) снять, как у .bt-lather. */
+#lust-game .bt-trail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: none;
+    z-index: auto;
+    pointer-events: none;
+}
+
 /* Червь. Размер и положение выставляет lust.js по якорю запекания, поэтому
    здесь только то, что от раскладки не зависит. */
 #lust-game .bt-worm-host {

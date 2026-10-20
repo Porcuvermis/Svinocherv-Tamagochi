@@ -270,27 +270,31 @@ const BATH_SOAP = {
         BUBS: 6, TWINKLE: 12,
         TWINKLERS: 40,                   // мерцающих звёзд по всему небу
         // ---- убранство вокруг ----
-        // Всё живое, и живёт только сдвигом и прозрачностью отдельных узлов.
-        // Всё — ПРИВЯЗАНО к флакону. Два вращающихся веера лучей и радужные
-        // зайчики на кафеле были здесь раньше и читались мусором вокруг вещи,
-        // а не сиянием (замечание игрока): веер крутился сам по себе, а
-        // зайчики висели на стене оторванными полосками — и в руке над
-        // червём тоже. Сияние теперь — круглое, дышит, и огоньки, бегущие
-        // по кромке хрусталя.
-        // Ореола по силуэту (три полупрозрачные обводки пуза с горлом) больше
-        // нет: без размытия он читался плотной каймой — графическим
-        // артефактом, а не свечением (замечание игрока). Свечение держат
-        // круглое сияние (aura), огоньки по кромке и орбита.
-        // Огоньки по кромке: два, на противоположных сторонах силуэта, с
-        // хвостиком из двух точек; скорость — единиц силуэта в секунду.
-        // Штрих обводки вместо них (пробовали) ломался углом на горле и
-        // читался неоновой рамкой выделения.
-        BEADS: { n: 2, speed: 22, tail: 5 },
-        FADE: [0.25, 0.4],               // убранство гаснет под пальцем и загорается, отпущенное (с)
-        MOTES: 8,                        // огоньков на орбите
-        ORBIT: { rx: 42, ry: 9, cy: 4, tilt: -12 },
-        GLINTS: 6,                       // одновременных вспышек на контуре
-        DUST: 16                         // пылинок, поднимающихся от плеч
+        // Сияние — круглое, дышит, привязано к флакону. Всё прежнее убранство
+        // жило по кругу вокруг вещи и повторяло один узор: два веера лучей,
+        // радужные зайчики на кафеле, ореол по силуэту, огоньки по кромке,
+        // орбита огоньков, вспышки на контуре, пыль от плеч — читалось
+        // мусором или заставкой, а не волшебством (замечания игрока). Вместо
+        // них — шлейф искр, высекаемых движением (bath-soap-trail.js).
+        FADE: [0.25, 0.4],               // сияние гаснет под пальцем и загорается, отпущенное (с)
+        // Шлейф: флакон «чиркает о воздух», как спичка, и из-под него
+        // летят искры. Размеры и скорости — в единицах ФЛАКОНА (на экране
+        // они растут с ним: на полке под камерой и в руке одинаково). Это
+        // вид, а не баланс, поэтому не в src/config/.
+        TRAIL: {
+            PER: 0.07,                   // искр на единицу пути низа флакона
+            IDLE: 0.35,                  // в покое — изредка одна (в секунду)
+            MAX: 10,                     // предел на экране в обычном движении
+            RUB: 3,                      // натирают червя — частота и предел ×3
+            LIFE: [0.3, 0.7],            // жизнь, с
+            R: [2.1, 3.4],               // радиус ядра
+            V: [70, 140],                // толчок рождения, единиц в секунду
+            SPREAD: 1.1,                 // разброс толчка вокруг «назад», рад
+            DRAG: 2.4,                   // затухание скорости, 1/с
+            TURN: 14,                    // наибольший поворот пути, рад/с
+            END: 0.3,                    // доля размера в конце — дальше гаснет разом
+            TAIL: 4                      // точек хвостика за искрой
+        }
     },
 
     // ---------- космос на весь экран ----------
@@ -477,7 +481,7 @@ onmessage = async (e) => {
             .map(([x, y]) => [x * 0.9, M.CY + (y - M.CY) * 0.9])
             .map(([x, y]) => [x, Math.min(y, 15)]);
         // Силуэт целиком — пузо и горло с воротником и венчиком одним
-        // контуром: по нему бегут огоньки (раньше по нему лежал и ореол).
+        // контуром (по нему бегали огоньки, раньше лежал и ореол).
         const K = M.NECK, [k0, k1] = K.collar;
         const neckL = [[-K.r, k0], [-6.8, k0], [-6.8, k1], [-7.8, k1 - 1.2], [-7, K.top]];
         const sil = [...outline, ...neckL, ...neckL.slice().reverse().map(([x, y]) => [-x, y])];
@@ -535,57 +539,6 @@ onmessage = async (e) => {
         out.aura = `translate(0 ${M.CY}) scale(${(1 + 0.07 * Math.sin(t * 1.1)).toFixed(3)})`;
         // Числа рядом со строками — их рисует холст убранства (bath-soap-rig.js),
         // строки — svg вне ванной (журнал) и первый кадр.
-        // Огоньки по кромке: голова и хвостик — точки силуэта позади неё.
-        const SHb = this.magicShape(), B = M.BEADS;
-        out.beads = [];
-        for (let i = 0; i < B.n; i++) {
-            const d0 = t * B.speed + i * SHb.silLen / B.n;
-            [0, 1, 2].forEach(j => { const p = SHb.silAt(d0 - j * B.tail); out.beads.push({ x: f2(p[0]), y: f2(p[1]), s: [1, 0.62, 0.38][j] }); });
-        }
-        // Огоньки по наклонной орбите: сзади флакона — в заднем слое, спереди
-        // — в переднем. Каждый в обоих, видимость решает сторона орбиты.
-        const O = M.ORBIT, ca = Math.cos(O.tilt * Math.PI / 180), sa = Math.sin(O.tilt * Math.PI / 180);
-        const orb = (a) => { const x = O.rx * Math.cos(a), y = O.ry * Math.sin(a); return [x * ca - y * sa, O.cy + x * sa + y * ca, Math.sin(a)]; };
-        // Каждый огонёк — ОДИН узел (голова и два шлейфа), который
-        // перекладывается между задним и передним слоем в момент, когда
-        // уходит за флакон. Две копии с переключаемой прозрачностью писали
-        // вдвое больше атрибутов на каждом кадре.
-        out.motes = [];
-        for (let i = 0; i < M.MOTES; i++) {
-            const a0 = t * 0.75 + i * 2 * Math.PI / M.MOTES + (i % 2) * 0.35;
-            const pts = [0, 0.14, 0.28].map(d => orb(a0 - d));
-            const k = 0.75 + 0.35 * pts[0][2];
-            out.motes.push({ front: pts[0][2] > 0,
-                pts: pts.map(([x, y], j) => `translate(${f2(x)} ${f2(y)}) scale(${(k * (1 - j * 0.22)).toFixed(3)})`),
-                p: pts.map(([x, y], j) => [x, y, k * (1 - j * 0.22)]) });
-        }
-        // Вспышки: у каждой своё окно жизни, место берётся по номеру окна —
-        // каждый раз новое, но детерминированно (без Math.random).
-        const SH = this.magicShape(), ol = SH.outline, NG = M.GLINTS;
-        out.glints = [];
-        for (let i = 0; i < NG; i++) {
-            const per = 2.3 + i * 0.37, tt = t + i * 0.9, cyc = Math.floor(tt / per), u = (tt % per) / per;
-            const p = ol[(cyc * 7 + i * 11) % ol.length], life = u < 0.4 ? Math.sin(u / 0.4 * Math.PI) : 0;
-            const nx = p[0], ny = p[1] - M.CY, nl = Math.hypot(nx, ny) || 1;
-            out.glints.push({
-                // На самом стекле (чуть внутрь контура): снаружи вспышка
-                // висела в воздухе.
-                tr: `translate(${f2(p[0] - nx / nl * 1.2)} ${f2(p[1] - ny / nl * 1.2)}) rotate(${f2(u * 40)}) scale(${(0.05 + life).toFixed(3)})`,
-                o: f2(life),
-                n: [p[0] - nx / nl * 1.2, p[1] - ny / nl * 1.2, u * 40, 0.05 + life, life]
-            });
-        }
-        // Звёздная пыль поднимается от плеч вверх, покачиваясь.
-        out.dust = [];
-        for (let i = 0; i < M.DUST; i++) {
-            const u = (t * 0.16 + i / M.DUST) % 1, side = i % 2 ? 1 : -1;
-            const x0 = side * (12 + (i * 7) % 16), y0 = -14 - (i * 5) % 12;
-            out.dust.push({
-                tr: `translate(${f2(x0 + side * u * 10 + Math.sin(u * 9 + i) * 2.2)} ${f2(y0 - u * 62)}) scale(${(1 - u * 0.5).toFixed(3)})`,
-                o: f2(Math.sin(u * Math.PI) * (0.55 + 0.45 * Math.abs(Math.sin(t * 5 + i)))),
-                n: [x0 + side * u * 10 + Math.sin(u * 9 + i) * 2.2, y0 - u * 62, 1 - u * 0.5, Math.sin(u * Math.PI) * (0.55 + 0.45 * Math.abs(Math.sin(t * 5 + i)))]
-            });
-        }
         return out;
     },
 
@@ -695,28 +648,6 @@ onmessage = async (e) => {
         const layer0 = (k) => this.layerTr(this.worldMatrix(null), k);
 
         // ---------- убранство вокруг ----------
-        // Огоньки, бегущие по кромке хрусталя: мягкая точка света, а не
-        // штрих — гаснет ко всем краям.
-        const beads = `<g class="bsm-beads bsm-inl">` + Fr.beads.map((q, j) => `<g transform="translate(${q.x} ${q.y}) scale(${q.s})">`
-            + `<circle r="5" fill="url(#${id}-mote)"/>${j % 3 ? '' : '<circle r="0.9" fill="#ffffff"/>'}</g>`).join('') + `</g>`;
-        // Огонёк и три точки шлейфа, в заднем ('b') и переднем ('f') слое.
-        const moteSvg = (m, i) => {
-            const g = ['mote', 'moteP', 'moteG'][i % 3];
-            return `<g class="bsm-mote" data-i="${i}" fill-opacity="${m.front ? 1 : 0.8}">`
-                + m.pts.map((tr, j) => `<g transform="${tr}" fill-opacity="${[1, 0.7, 0.42][j]}">`
-                    + (j === 0 ? `<circle r="5.5" fill="url(#${id}-${g})"/><circle r="1" fill="#ffffff"/>` : `<circle r="${(3 - j * 0.6).toFixed(1)}" fill="url(#${id}-${g})"/>`)
-                    + `</g>`).join('') + `</g>`;
-        };
-        const motes = (side) => `<g class="bsm-motes-${side} bsm-inl">`
-            + Fr.motes.map((m, i) => ((side === 'f') === m.front ? moteSvg(m, i) : '')).join('') + `</g>`;
-        const glints = Fr.glints.map(g => `<g class="bsm-glint" transform="${g.tr}" fill-opacity="${g.o}">
-                <circle r="4.5" fill="url(#${id}-mote)"/>
-                ${flare(7)}
-                <circle r="0.9" fill="#ffffff"/>
-            </g>`).join('');
-        const dust = Fr.dust.map((d, i) => `<g class="bsm-dust" transform="${d.tr}" fill-opacity="${d.o}">
-                <circle r="2.6" fill="url(#${id}-${['mote', 'moteP', 'moteG'][i % 3]})"/><circle r="0.6" fill="#ffffff"/>
-            </g>`).join('');
         const lensZ = `translate(${LN.cx} ${LN.cy}) scale(${LN.zoom}) translate(${-LN.cx} ${-LN.cy})`;
 
         // ---------- горло, воротник, пробка ----------
@@ -842,24 +773,6 @@ onmessage = async (e) => {
                     <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.55"/>
                     <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
                 </radialGradient>
-                <radialGradient id="${id}-mote" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
-                    <stop offset="0.22" stop-color="${C.cyan}" stop-opacity="0.95"/>
-                    <stop offset="0.55" stop-color="${Am[1]}" stop-opacity="0.4"/>
-                    <stop offset="1" stop-color="${Am[1]}" stop-opacity="0"/>
-                </radialGradient>
-                <radialGradient id="${id}-moteP" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
-                    <stop offset="0.22" stop-color="${C.pink}" stop-opacity="0.95"/>
-                    <stop offset="0.55" stop-color="${Am[1]}" stop-opacity="0.4"/>
-                    <stop offset="1" stop-color="${Am[1]}" stop-opacity="0"/>
-                </radialGradient>
-                <radialGradient id="${id}-moteG" gradientUnits="objectBoundingBox">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
-                    <stop offset="0.22" stop-color="${Au[3]}" stop-opacity="0.95"/>
-                    <stop offset="0.55" stop-color="${Au[1]}" stop-opacity="0.4"/>
-                    <stop offset="1" stop-color="${Au[1]}" stop-opacity="0"/>
-                </radialGradient>
                 <radialGradient id="${id}-bubG" gradientUnits="objectBoundingBox">
                     <stop offset="0" stop-color="${C.cyan}" stop-opacity="0.04"/>
                     <stop offset="0.72" stop-color="${C.cyan}" stop-opacity="0.14"/>
@@ -874,12 +787,11 @@ onmessage = async (e) => {
                 <clipPath id="${id}-body"><path d="${body}"/></clipPath>
             </defs>
 
-            <!-- УБРАНСТВО СЗАДИ: сияние и задняя половина орбиты огоньков. -->
+            <!-- УБРАНСТВО СЗАДИ: сияние. -->
             <!-- bsm-inl — то, что на живых холстах ванной рисуют слои
-                 (bath-soap-rig.js): небо, сияние, огоньки, блик. В журнале
+                 (bath-soap-rig.js): небо, сияние, блик. В журнале
                  и до первого кадра слоёв флакон целиком свой. -->
             <circle class="bsm-aura bsm-inl" r="74" fill="url(#${id}-aura)" transform="${Fr.aura}"/>
-            ${motes('b')}
             <!-- ТЕЛО. -->
             <path d="${neck}${lip}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
             <path d="${body}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
@@ -947,11 +859,6 @@ onmessage = async (e) => {
             <path d="${lip}" fill="url(#${id}-neckV)" stroke="${C.glow}" stroke-width="0.5"/>
             <path d="M-6.4 ${NK.top + 1}H5.5" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round"/>
 
-            <!-- УБРАНСТВО СПЕРЕДИ: огоньки по кромке, передняя половина
-                 орбиты, вспышки на контуре, звёздная пыль. -->
-            ${beads}
-            ${motes('f')}
-            <g class="bsm-fx bsm-inl">${glints}${dust}</g>
             <!-- ЛЕВИТАЦИЯ: пар из горла, кольцо с бегущими точками, пузыри. -->
             <ellipse class="bsm-vapor bsm-inl" cx="0" cy="${NK.top - 7}" rx="9" ry="11" fill="url(#${id}-vapor)" fill-opacity="${Fr.vapor}"/>
             <g class="bsm-ring bsm-inl" transform="${Fr.ringScale}">
@@ -1087,7 +994,7 @@ onmessage = async (e) => {
                 const work = L0 && (L0.phase === 'soap' || L0.phase === 'cloth') ? L0.phase : null;
                 Lv.away = work ? (work === 'soap' ? '#bt-cloth-home' : '#bt-soap-home') : null;
                 // Флакон на слоях (bath-soap-rig.js) НЕ спит: svg его не
-                // правится, кадр — холст огоньков и сдвиг неба, длинных кадров
+                // правится, кадр — холст у горла и сдвиг неба, длинных кадров
                 // он больше не даёт. А замерший на полке флакон — с застывшими
                 // искрами, пока в руке живое облако, — читался недоделкой
                 // (замечание игрока).
@@ -1135,7 +1042,7 @@ onmessage = async (e) => {
                     const m = this.worldMatrix(r, true);
                     if (fl) mats.set(r, m);
                     if (!m || !r.closest('.bt-svg')) return true;       // лист журнала
-                    // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
+                    // Запас — сам флакон с сиянием (±50 единиц), без лучей:
                     // с лучами полка в финале считалась видимой. У мочалки —
                     // вещь вокруг своей середины (от гнезда +16, −10).
                     // У колбы — центр шара.
@@ -1169,6 +1076,9 @@ onmessage = async (e) => {
                     if (Lv.frT !== Lv.mt || !Lv.fr) { Lv.fr = this.magicFrame(Lv.mt); Lv.frT = Lv.mt; }
                     mag.forEach(r => this.applyFrame(r, Lv.fr, dt));
                 }
+                // Шлейф искр — своим циклом (bath-soap-trail.js); отсюда — только
+                // какие флаконы видны в самой ванной (не на листе журнала).
+                if (this.trailWatch) this.trailWatch(mag.filter(r => !r.closest('.bm-shop')), now);
             }
             Lv.raf = requestAnimationFrame(step);
         };
@@ -1216,31 +1126,23 @@ onmessage = async (e) => {
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
                   vapor: one('.bsm-vapor'),
                   far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
-                  aura: one('.bsm-aura'), beadG: one('.bsm-beads'),
-                  motes: all('.bsm-mote'), motesF: one('.bsm-motes-f'), motesB: one('.bsm-motes-b'), fx: one('.bsm-fx'),
-                  glints: all('.bsm-glint'), dust: all('.bsm-dust'),
+                  aura: one('.bsm-aura'),
                   tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
             c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);   // пузырь (масштаб) и искра
-            // Огоньки — в порядке номера (разметка раскладывает их по двум
-            // слоям, а кадр перечисляет по номеру).
-            c.motes.sort((a, b) => +a.dataset.i - +b.dataset.i);
-            c.moteParts = c.motes.map(g => Array.from(g.children));
-            c.beads = c.beadG ? Array.from(c.beadG.children) : [];
-            c.deco = [c.aura, c.beadG, c.motesF, c.motesB, c.fx].filter(Boolean);
+            c.deco = [c.aura].filter(Boolean);
             this.live.cache.set(root, c);
         }
         const M = this.MAGIC;
         // На живом холсте ванной флакон — на слоях (bath-soap-rig.js): небо,
-        // сияние и огоньки там, в svg — только то, что у горла.
+        // сияние там, в svg — только то, что у горла.
         const rig = this.rigFollow ? this.rigFollow(root.ownerSVGElement) : null;
-        // Под пальцем убранство не нужно: флакон едет за пальцем и
-        // перерисовывается целиком на каждом кадре, а сияние, огоньки и пыль
-        // — самое дорогое в этой перерисовке. По замыслу игрока вещь в руке и
+        // Под пальцем сияние не нужно: флакон едет за пальцем и
+        // перерисовывается целиком на каждом кадре, а сияние — самое дорогое
+        // в этой перерисовке. По замыслу игрока вещь в руке и
         // не светится — светится оставленная: парящий флакон (холст руки с
         // .bt-float) возвращает убранство, это и есть его свечение (lust.js,
         // floatTool). Гаснет и загорается оно ПЛАВНО (c.pres, FADE):
-        // сияние — прозрачностью, огоньки и пыль собираются к
-        // флакону масштабом. Разом появлявшееся убранство читалось рывком.
+        // прозрачностью. Разом появлявшееся сияние читалось рывком.
         // «Под пальцем» — и летящий домой (он тоже не светится), но не
         // поднимающийся с полки: тот уже зовёт «бери меня».
         const L0 = typeof LustMinigame !== 'undefined' ? LustMinigame : null;
@@ -1287,17 +1189,6 @@ onmessage = async (e) => {
                 set(c.aura, 'transform', Fr.aura);
                 set(c.aura, 'fill-opacity', e.toFixed(2));
             }
-            const gather = `translate(0 ${M.CY}) scale(${(0.5 + 0.5 * e).toFixed(3)}) translate(0 ${-M.CY})`;
-            [c.motesF, c.motesB, c.fx].forEach(el => set(el, 'transform', gather));
-            // Огоньки на кромке гаснут и загораются размером.
-            c.beads.forEach((el, i) => { const q = Fr.beads[i]; set(el, 'transform', `translate(${q.x} ${q.y}) scale(${(q.s * e).toFixed(3)})`); });
-            c.motes.forEach((g, i) => {
-                const mo = Fr.motes[i], box = mo.front ? c.motesF : c.motesB;
-                if (g.parentNode !== box) { box.appendChild(g); set(g, 'fill-opacity', mo.front ? '1' : '0.8'); }
-                c.moteParts[i].forEach((el, j) => set(el, 'transform', mo.pts[j]));
-            });
-            c.glints.forEach((el, i) => { set(el, 'transform', Fr.glints[i].tr); set(el, 'fill-opacity', Fr.glints[i].o); });
-            c.dust.forEach((el, i) => { set(el, 'transform', Fr.dust[i].tr); set(el, 'fill-opacity', Fr.dust[i].o); });
         }
         this.live.lastPres = c.pres;
         // Мерцающих звёзд десятки в двух копиях — каждая переписывается раз в
@@ -1324,7 +1215,7 @@ onmessage = async (e) => {
         this.rigSky(R);
         const e = c.pres * c.pres * (3 - 2 * c.pres), o = show ? e.toFixed(2) : '0';
         if (R.aura.style.opacity !== o) R.aura.style.opacity = o;
-        this.rigDraw(R, Fr, c.pres);
+        this.rigDraw(R, Fr);
         this.live.lastPres = c.pres;
     },
 

@@ -83,7 +83,7 @@ const harness = require('./harness');
   // волос, свисающий с обмылка), небо внутри флакона (обрезано полостью, но
   // getBBox обрезки не знает) и убранство вокруг. Всё это выходит за
   // предмет намеренно, box() описывает сам предмет.
-  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura, .bsm-beads, .bsm-motes-f, .bsm-motes-b, .bsm-dust, .bsm-glint';
+  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura';
   for (let n = 0; n < tiers; n++) {
     await setTier(n);
     await page.waitForTimeout(150);
@@ -750,6 +750,7 @@ const harness = require('./harness');
   check(!(await page.evaluate(() => document.getElementById('bt-spot'))),
         'кольца-подсказки «где не домыл» у мыла нет');
 
+
   // ================= 10а. ГЛАЗА ЧИСТЫЕ, КРАЙ МЯГКИЙ =================
   // Пены на глазах нет (просьба игрока), и сделано это как у настоящей пены:
   // пузырь с центром на глазу не рождается вовсе (лопнут), соседние целые;
@@ -1287,6 +1288,38 @@ const harness = require('./harness');
     check(pts.length > 20 && sp(2) > 3 && sp(1) < 0.8, `облако качается (${sp(2).toFixed(1)} px), а небо в нём стоит (${sp(1).toFixed(2)} px)`);
   }
 
+  // ================= 11. ШЛЕЙФ ИСКР ВОЛШЕБНОГО ФЛАКОНА =================
+  // docs/plan/24-soap-trail.md: искры высекает движение, а не таймер; в покое
+  // — изредка одна; трут червя — втрое больше; кончились искры — холст спрятан.
+  say('\n======== ШЛЕЙФ ИСКР ФЛАКОНА ========');
+  await page.evaluate(() => { LustMinigame.close(); LustMinigame.open();
+    LustDebug.setLevel('soap', 8); BATH_SOAP.refresh(); LustMinigame.startWater(); });
+  for (let i = 0; i < 40 && await page.evaluate(() => LustMinigame.phase) !== 'soap'; i++) await page.waitForTimeout(250);
+  await page.waitForTimeout(1500);
+  const sparks = () => page.evaluate(() => BATH_SOAP.trail.ps.length);
+  const TR = await page.evaluate(() => BATH_SOAP.MAGIC.TRAIL);
+  let idleMax = 0;
+  for (let i = 0; i < 20; i++) { idleMax = Math.max(idleMax, await sparks()); await page.waitForTimeout(100); }
+  check(idleMax <= 2, `флакон парит неподвижно — искр не больше пары (${idleMax})`);
+  const trAt = await page.evaluate(() => { const L = LustMinigame, o = L.loose; return SvgSpace.toClient(L.svgEl, o.pos.x, o.pos.y); });
+  await page.mouse.move(trAt.x, trAt.y); await page.mouse.down();
+  const air = await bodyC(1.3, 0.3);
+  await page.mouse.move(air.x, air.y, { steps: 6 });
+  let airMax = 0;
+  for (let i = 0; i < 30; i++) {
+    await page.mouse.move(air.x + Math.cos(i * 0.35) * 70, air.y + 120 + Math.sin(i * 0.35) * 90, { steps: 2 });
+    await page.waitForTimeout(16);
+    airMax = Math.max(airMax, await sparks());
+  }
+  check(airMax > 2 && airMax <= TR.MAX, `флакон ведут по воздуху — искры есть, не больше предела (${airMax} из ${TR.MAX})`);
+  let rubMax = 0;
+  for (let i = 0; i < 30; i++) { await page.mouse.move(...Object.values(i % 2 ? a : b2), { steps: 4 }); rubMax = Math.max(rubMax, await sparks()); }
+  check(rubMax > TR.MAX * 1.5 && rubMax <= TR.MAX * TR.RUB, `флаконом трут червя — искр втрое больше (${rubMax}, в воздухе ${airMax})`);
+  await page.waitForTimeout(900);
+  const trEnd = await page.evaluate(() => ({ n: BATH_SOAP.trail.ps.length, el: BATH_SOAP.trail.el && BATH_SOAP.trail.el.style.display }));
+  check(trEnd.n === 0 && trEnd.el === 'none', `палец замер — через 0,9 с искр нет, холст шлейфа спрятан (${trEnd.n}, ${trEnd.el})`);
+  await page.mouse.up();
+
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);
@@ -1294,6 +1327,8 @@ const harness = require('./harness');
     float: document.getElementById('bt-hand').classList.contains('bt-float') }));
   const afterL = await liveLayers();
   check(!after.raf && !afterL.length && !after.float, `ванная закрыта — цикл стоит, слоёв нет, ничего не парит (${afterL.join() || 'слоёв нет'})`);
+  await page.waitForTimeout(800);
+  check(await page.evaluate(() => !BATH_SOAP.trail.raf && !BATH_SOAP.trail.shown), 'ванная закрыта — цикл шлейфа стоит, холст спрятан');
 
   say('');
   errors.forEach(e => say('  ' + e));

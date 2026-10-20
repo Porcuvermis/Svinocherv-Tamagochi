@@ -9,8 +9,10 @@
 //   svg    (сам холст)  — стекло, огранка, золото: не меняются вовсе. Живы
 //                         в нём только пробка, пар, кольцо и пузыри у горла
 //                         — маленький участок;
-//   спереди (.bsm-rig-f) — холст canvas: огоньки, вспышки, пыль и блик по
-//                         огранке заранее нарисованными спрайтами.
+//   спереди (.bsm-rig-f) — холст canvas: блик по огранке и живое у горла
+//                         заранее нарисованными спрайтами. Шлейф искр —
+//                         не здесь: искры улетают за край вещи
+//                         (bath-soap-trail.js).
 //
 // ПОЧЕМУ. Пока всё жило в одном svg, ~75 правок за кадр перерисовывали весь
 // холст вещи вместе с двумя картинками неба, сиянием во весь холст и
@@ -29,7 +31,7 @@
 // кадра слоёв флакон рисует всё сам (разметка .bsm-inl в magic()).
 Object.assign(BATH_SOAP, {
     RIG_BOXES: ['bt-soap-box', 'bt-hand', 'bt-hand-home'],
-    // Огоньки — мягкие пятна света: плотности 2 им хватает, а холст во всю
+    // Пар, пузыри, блик — мягкое: плотности 2 им хватает, а холст во всю
     // вещь при плотности 3 стоил бы видеопамяти вдвое (п. 152).
     RIG_DPR: 2,
     // Мерцание: две картинки звёзд в противофазе (css, lust.css).
@@ -101,11 +103,8 @@ Object.assign(BATH_SOAP, {
         win.style.background = deep(`${((LN.cx - cb.x) / cb.w * 100).toFixed(1)}%`, `${((LN.cy - cb.y) / cb.h * 100).toFixed(1)}%`);
         lens.style.background = deep('50%', '50%');
         const body = new Path2D('M' + SH.outline.map(p => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join('L') + 'Z');
-        const outside = new Path2D();
-        outside.rect(-400, -400, 800, 800);
-        outside.addPath(body);
         const R = { svg, back, front, aura, win, lens, far, near, lfar, lnear, cv, ctx: cv.getContext('2d'),
-                    cb, body, outside, root: null, key: '', shown: true };
+                    cb, body, root: null, key: '', shown: true };
         svg._bsmRig = R;
         this.rigTex(R);
         return R;
@@ -279,7 +278,7 @@ Object.assign(BATH_SOAP, {
     // маленьких холстах, дальше только drawImage.
     sprites() {
         if (this._spr) return this._spr;
-        const P = btPal(), C = P.soapCosmos, Am = C.amethyst, Au = P.soapGold, Z = 64;
+        const C = btPal().soapCosmos, Z = 64;
         const mk = (stops) => {
             const c = document.createElement('canvas');
             c.width = c.height = Z;
@@ -290,9 +289,6 @@ Object.assign(BATH_SOAP, {
         };
         const W = '#ffffff';
         return (this._spr = {
-            mote: mk([[0, W, 1], [0.22, C.cyan, 0.95], [0.55, Am[1], 0.4], [1, Am[1], 0]]),
-            moteP: mk([[0, W, 1], [0.22, C.pink, 0.95], [0.55, Am[1], 0.4], [1, Am[1], 0]]),
-            moteG: mk([[0, W, 1], [0.22, Au[3], 0.95], [0.55, Au[1], 0.4], [1, Au[1], 0]]),
             soft: mk([[0, W, 1], [0.35, W, 0.55], [1, W, 0]]),
             vapor: mk([[0, C.glow, 0.9], [0.5, C.cyan, 0.35], [1, C.cyan, 0]]),
             bub: (() => {
@@ -340,23 +336,19 @@ Object.assign(BATH_SOAP, {
         return null;
     },
 
-    // Кадр убранства на холсте спереди. pres — проявление (0 — под пальцем,
-    // 1 — отпущен), как у svg-убранства: сияние гаснет, огоньки и пыль
-    // собираются к флакону.
-    rigDraw(R, Fr, pres) {
+    // Кадр холста спереди: блик по огранке и живое у горла.
+    rigDraw(R, Fr) {
         const g = R.ctx, cv = R.cv;
         if (!g || !cv.width) return;
-        const show = pres > 0, sweep = Fr.sweepX != null;
+        const sweep = Fr.sweepX != null;
         const ST = this.stopperSprites(R.root);
         if (ST && !R.root.classList.contains('bsm-stopok')) R.root.classList.add('bsm-stopok');
-        const S = this.sprites(), M = this.MAGIC, k = R.dpr, T = R.T, C = btPal().soapCosmos;
-        const e = pres * pres * (3 - 2 * pres), GR = ['mote', 'moteP', 'moteG'];
+        const S = this.sprites(), k = R.dpr, T = R.T, C = btPal().soapCosmos;
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.clearRect(0, 0, cv.width, cv.height);
         g.setTransform(k * T.a, k * T.b, k * T.c, k * T.d, k * T.e, k * T.f);
         R.drawn = true;
         const spr = (im, x, y, r) => g.drawImage(im, x - r, y - r, 2 * r, 2 * r);
-        const dot = (x, y, r) => { g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI); g.fill(); };
         const flare = (L) => { const w = Math.max(0.35, L * 0.1); g.drawImage(S.soft, -L, -w, 2 * L, 2 * w); g.drawImage(S.soft, -w, -L, 2 * w, 2 * L); };
         // Блик по огранке — под пузом, в силуэте.
         if (sweep) {
@@ -370,49 +362,7 @@ Object.assign(BATH_SOAP, {
             g.fillRect(-5, -70, 10, 120);
             g.restore();
         }
-        const mote = (mo, i) => {
-            const im = S[GR[i % 3]], base = mo.front ? 1 : 0.8;
-            mo.p.forEach(([x, y, s], j) => {
-                g.globalAlpha = base * [1, 0.7, 0.42][j];
-                if (j === 0) { spr(im, x, y, 5.5 * s); dot(x, y, s); } else spr(im, x, y, (3 - j * 0.6) * s);
-            });
-        };
-        const gather = () => { g.translate(0, M.CY); g.scale(0.5 + 0.5 * e, 0.5 + 0.5 * e); g.translate(0, -M.CY); };
-        if (show) this.rigDeco(g, R, Fr, e, S, spr, dot, flare, mote, gather);
         this.rigNeck(g, Fr, S, ST, spr, flare);
-        g.globalAlpha = 1;
-    },
-
-    // Убранство: орбита, огоньки по кромке, вспышки, пыль.
-    rigDeco(g, R, Fr, e, S, spr, dot, flare, mote, gather) {
-        // Задняя половина орбиты — за стеклом: только вне силуэта.
-        g.save(); g.clip(R.outside, 'evenodd'); gather();
-        Fr.motes.forEach((mo, i) => { if (!mo.front) mote(mo, i); });
-        g.restore();
-        // Огоньки по кромке.
-        Fr.beads.forEach((q, j) => {
-            const s = q.s * e, x = +q.x, y = +q.y;
-            g.globalAlpha = 1;
-            spr(S.mote, x, y, 5 * s);
-            if (j % 3 === 0) dot(x, y, 0.9 * s);
-        });
-        g.save(); gather();
-        Fr.motes.forEach((mo, i) => { if (mo.front) mote(mo, i); });
-        Fr.glints.forEach(q => {
-            const [x, y, rot, sc, life] = q.n;
-            if (life <= 0.001) return;
-            g.save(); g.globalAlpha = life;
-            g.translate(x, y); g.rotate(rot * Math.PI / 180); g.scale(sc, sc);
-            spr(S.mote, 0, 0, 4.5); flare(7); dot(0, 0, 0.9);
-            g.restore();
-        });
-        Fr.dust.forEach((q, i) => {
-            const [x, y, sc, o] = q.n;
-            if (o <= 0.001) return;
-            g.globalAlpha = o;
-            spr(S[['mote', 'moteP', 'moteG'][i % 3]], x, y, 2.6 * sc); dot(x, y, 0.6 * sc);
-        });
-        g.restore();
         g.globalAlpha = 1;
     },
 
