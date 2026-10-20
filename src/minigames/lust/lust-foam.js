@@ -51,10 +51,10 @@
 // мельче, чтобы штрих читался линией. Цвет в тон пене, сдвинут в синеву.
 //
 // ---------- ОДНА РАСКЛАДКА НА ВЕСЬ ЭКРАН ----------
-// Глубокий слой разложен так, что середину экрана потом можно досыпать
-// вокруг стоящих пузырей (сетка соседей общая) — переход (этапы 3–4)
-// заливает экран этой же раскладкой и раскрывает её до рамки. Раскладка
-// выводится из сида и одинакова при каждом заходе.
+// Рамка — край раскладки, середина досыпается вокруг неё (сетка соседей
+// общая) — переход (lust-foam-veil.js) заливает экран этой же раскладкой и
+// раскрывает её до рамки. Раскладка выводится из сида и одинакова при
+// каждом заходе.
 //
 // ---------- КАК ДЁШЕВО ----------
 // Пузырь — готовый спрайт (вид × целый радиус), рамка — четыре тысячи
@@ -95,6 +95,9 @@ const LustFoam = {
     get bg() { return this.pal().foam[500]; },
 
     pal() { return PALETTE.bathScene; },
+
+    // Цвет массы между пузырями — пена в тени.
+    massColor() { return mixColor(this.pal().foam[500], this.pal().foam.lo, 0.6); },
 
     // ---------- ГЕОМЕТРИЯ ----------
     // Прямоугольник уменьшенной сцены — тем же счётом, что у окна
@@ -183,7 +186,10 @@ const LustFoam = {
             for (let n = 0; n < tries; n++) {
                 if (++step % this.YIELD === 0) yield;
                 const x = x0 + rng() * (x1 - x0), y = y0 + rng() * (y1 - y0);
-                let r = (P.rMin + Math.pow(rng(), 1.4) * (P.rMax - P.rMin)) * this.sizeAt(x, y, rng);
+                // Середина экрана (layer.even) — без правила глубины: там нет
+                // ни внешнего края, ни внутреннего, пена ровная.
+                let r = (P.rMin + Math.pow(rng(), 1.4) * (P.rMax - P.rMin))
+                    * (layer.even ? 0.8 + rng() * 0.6 : this.sizeAt(x, y, rng));
                 // В квадрате крестика пузыри мельче: штрих в два-три пузыря
                 // шириной читается линией, крупный пузырь рвал бы его.
                 if (this.inCross(x, y)) r = Math.min(r, 2.6 + rng() * 2.4);
@@ -240,6 +246,7 @@ const LustFoam = {
             // рамки, а полупрозрачная бахрома его почти не меняет.
             b.core = b.d > -b.r * 0.1 || (b.bold && b.rim);
             b.cross = this.crossHit(b, mr);
+            b.nz = mr() * 2 - 1;       // шум очерёдности в переходе (lust-foam-veil.js)
         }
         for (const b of top.list) {
             if (++k % 400 === 0) yield;
@@ -247,12 +254,18 @@ const LustFoam = {
             // Верхний слой — только по массе, не на бахроме.
             b.rim = b.d > b.r * 0.4;
             b.cross = this.crossHit(b, mr);
+            b.nz = mr() * 2 - 1;
         }
         this.satellites(deep.list.filter(b => b.bold && b.rim), deep.list, mr);
         yield;
         const byY = (a, b) => (a.y + a.r) - (b.y + b.r);
         this._deep = deep.list.filter(b => b.rim).sort(byY);
         this._top = top.list.filter(b => b.rim).sort(byY);
+        // Всё рассыпанное, включая не попавшее в рамку, и сетки соседей —
+        // середина экрана досыпается вокруг них (lust-foam-veil.js).
+        this._deepAll = deep.list;
+        this._topAll = top.list;
+        this._grids = { deep: deep.grid, top: top.grid };
     },
 
     // Гроздь у наглого пузыря: 1–3 мелких пузырька прилипают к нему со
@@ -272,6 +285,7 @@ const LustFoam = {
                 const s = { x: b.x + Math.cos(a) * dist, y: b.y + Math.sin(a) * dist, r, rim: true, core: false };
                 s.d = this.edge(s.x, s.y) + this.bulge(s.x, s.y);
                 s.cross = false;
+                s.nz = rng() * 2 - 1;
                 list.push(s);
             }
         }
@@ -352,19 +366,6 @@ const LustFoam = {
         return (this._sprites = out);
     },
 
-    // ---------- ПЕРЕХОД (покров, src/core/mg-veil.js) ----------
-    // ВРЕМЕННО (этап 3): покров — ровная пена, проявляется и тает
-    // прозрачностью. Это проверка порядка входа и выхода; заливка из очагов,
-    // раскрытие до рамки и лопание — этапы 4–5.
-    VEIL_MS: { cover: 200, reveal: 350, close: 200, clear: 300 },
-    veil(ctx, mode, p) {
-        const a = mode === 'cover' || mode === 'close' ? p : 1 - p;
-        ctx.globalAlpha = a * a * (3 - 2 * a);
-        ctx.fillStyle = this.pal().foam[500];
-        ctx.fillRect(0, 0, STAGE_W, STAGE_H);
-        ctx.globalAlpha = 1;
-    },
-
     // Как далеко рисунок заходит внутрь прямоугольника сцены (единицы):
     // окно выводит рамку на экран полосами такой ширины. Запас — на тень.
     reach() {
@@ -433,7 +434,7 @@ const LustFoam = {
         yield* this.layersGen();
         const L = this.layers(), S = this.sprites(scale), P = this.pal();
         yield;
-        const mass = mixColor(P.foam[500], P.foam.lo, 0.6);
+        const mass = this.massColor();
         ctx.save();
         // Страховка от дыр в массе — заливка по форме рамки, но ГЛУБЖЕ края
         // массы на 4 единицы (выпуклости края только добавляют пены): наружу

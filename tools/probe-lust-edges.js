@@ -7,8 +7,8 @@
 //    Рамка из пены съест полосу у края; всё, что ближе её толщины, уйдёт
 //    под пену. Печатает таблицу и помечает ближе RIM единиц.
 // 2. ВХОД. Под замедлением процессора (по умолчанию 4×): сколько главный
-//    поток занят самим LustMinigame.open() и когда занавес загрузки
-//    решил, что всё дозрело. Это то, что пена должна спрятать.
+//    поток занят самим LustMinigame.open() и когда готовность
+//    (LustLoading.wait) решила, что всё дозрело. Это то, что пена должна спрятать.
 //
 // Снимки камер — <префикс>edge-<камера>.png, склеить: python3 tools/sheet.py.
 //
@@ -104,28 +104,21 @@ const TARGETS = [
     await page.close();
 
     // ---------- 2. ВХОД ----------
-    // Занавес в автотестах выключен; SVINO_CURTAIN = 1 просит его, чтобы
-    // замерить, когда готовность сочла сцену дозревшей.
+    // Готовность — та же, что ждёт покров перехода (LustLoading.wait).
     const p2 = await browser.newPage(harness.viewport());
-    await p2.addInitScript(() => { window.SVINO_CURTAIN = 1; });
     await p2.goto('http://127.0.0.1:8777/index.html');
     await p2.waitForTimeout(1500);
     const cdp = await p2.context().newCDPSession(p2);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOW });
     for (const pass of ['первый вход', 'повторный']) {
-        const t = await p2.evaluate(() => new Promise((done) => {
+        const t = await p2.evaluate(async () => {
             const t0 = performance.now();
             LustMinigame.open();
             const tOpen = performance.now() - t0;
-            const c = document.getElementById('bt-curtain');
-            const tick = () => {
-                if (!c || c.classList.contains('bt-curtain-off')) return done({ open: tOpen, ready: performance.now() - t0 });
-                if (performance.now() - t0 > 10000) return done({ open: tOpen, ready: -1 });
-                requestAnimationFrame(tick);
-            };
-            requestAnimationFrame(tick);
-        }));
-        console.log(`\n${pass} (×${SLOW}): open() ${Math.round(t.open)} мс, занавес снят через ${Math.round(t.ready)} мс`);
+            await LustMinigame.veilReady();
+            return { open: tOpen, ready: performance.now() - t0 };
+        });
+        console.log(`\n${pass} (×${SLOW}): open() ${Math.round(t.open)} мс, готово через ${Math.round(t.ready)} мс`);
         await p2.evaluate(() => LustMinigame.close());
         await p2.waitForTimeout(800);
     }

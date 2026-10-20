@@ -538,32 +538,6 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
 #lust-game .bmc-spark { position: absolute; width: 0; height: 0; opacity: 0; }
 
 
-/* ================= ЗАНАВЕС ЗАГРУЗКИ ================= */
-/* Закрывает сцену, пока не дозрело нужное (lust-loading.js), и плавно
-   растворяется. Цвета — от акцента окна (--mg-accent, ставит окно из
-   ECONOMY.sins), своих hex здесь нет. Крестик окна лежит над занавесом. */
-#lust-game .bt-curtain {
-    position: absolute; inset: 0; z-index: 150;
-    display: flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, var(--mg-accent, #c0392b) 14%, var(--mg-bg, #10161a));
-    opacity: 1;
-    transition: opacity 520ms ease-in-out;
-}
-#lust-game .bt-curtain.bt-curtain-off { opacity: 0; pointer-events: none; }
-#lust-game .bt-curtain.bt-curtain-gone { display: none; }
-#lust-game .bt-curtain-glow {
-    position: absolute; inset: 0;
-    background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--mg-accent, #c0392b) 38%, transparent), transparent 62%);
-    animation: bt-curtain-breath 2.6s ease-in-out infinite;
-}
-#lust-game .bt-curtain-core { position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; }
-#lust-game .bt-curtain-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-#lust-game .bt-curtain-track, #lust-game .bt-curtain-fill { fill: none; stroke-width: 3; stroke-linecap: round; }
-#lust-game .bt-curtain-track { stroke: color-mix(in srgb, var(--mg-accent, #c0392b) 28%, transparent); }
-#lust-game .bt-curtain-fill { stroke: var(--mg-accent, #c0392b); transition: stroke-dashoffset 260ms ease-out; }
-#lust-game .bt-curtain-sign { font-size: 46px; line-height: 1; animation: bt-curtain-pulse 1.8s ease-in-out infinite; }
-@keyframes bt-curtain-breath { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-@keyframes bt-curtain-pulse { 0%, 100% { transform: scale(0.92); } 50% { transform: scale(1.08); } }
 
 
 /* ================= ВОЛШЕБНЫЙ ФЛАКОН НА СЛОЯХ ================= */

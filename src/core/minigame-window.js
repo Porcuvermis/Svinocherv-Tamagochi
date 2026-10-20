@@ -261,7 +261,13 @@ const MinigameWindow = {
             const ctx = full.getContext('2d');
             ctx.setTransform(scale, 0, 0, scale, 0, 0);
             const draw = skin.drawGen ? skin.drawGen(ctx, scale) : (function* () { skin.draw(ctx, scale); })();
-            handle._skinJob = (function* () { yield* draw; blit(full, scale); })();
+            // Следом за рамкой — то, что шкурке нужно для перехода (у пены —
+            // полная пена во весь экран), в том же простое.
+            handle._skinJob = (function* () {
+                yield* draw;
+                blit(full, scale);
+                if (skin.prepareGen) yield* skin.prepareGen(scale);
+            })();
         };
         handle.ensureSkin = () => {
             begin();

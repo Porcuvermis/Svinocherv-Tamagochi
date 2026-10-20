@@ -292,9 +292,6 @@ const LustMinigame = {
         // меряет его размер один раз, при монтаже.
         this.setCamera('overview');
         this.mountWorm();
-        // Вход закрыт занавесом, пока небо, картинки и червь не дозрели
-        // (lust-loading.js): раньше куски сцены выпрыгивали по одному.
-        if (typeof LustLoading !== 'undefined') LustLoading.begin();
     },
 
     // Готовность сцены для покрова перехода (src/core/mg-veil.js).

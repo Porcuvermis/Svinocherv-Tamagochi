@@ -12,9 +12,9 @@
 //   reveal  — уходит, остаётся рамка      clear — покров уходит целиком
 //
 // Покров не знает, ЧТО рисует. Вид — у шкурки окна (MinigameWindow, опция
-// skin): skin.veil(ctx, mode, p) рисует кадр перехода mode на доле p ∈ [0, 1]
-// в единицах холста 390×844 (холст перед кадром чистый). Длительности —
-// skin.VEIL_MS[mode]. У окна без шкурки (или шкурки без veil) перехода нет:
+// skin): skin.veilStart(ctx, mode) — начало хода, skin.veil(ctx, mode, p) —
+// кадр на доле p ∈ [0, 1] в единицах холста 390×844. Холст между кадрами
+// не чистится (см. frame). Длительности — skin.VEIL_MS[mode]. У окна без шкурки (или шкурки без veil) перехода нет:
 // игра открывается и закрывается как раньше.
 //
 // Время — только для картинки (rAF и performance.now): состояние игры покров
@@ -56,12 +56,30 @@ const MgVeil = {
         const host = document.getElementById('game-container') || document.body;
         if (this.el.parentNode !== host) host.appendChild(this.el);
         const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale')) || 1;
-        const scale = Math.min(2, (window.devicePixelRatio || 1) * st);
-        const W = Math.round(STAGE_W * scale), H = Math.round(STAGE_H * scale);
-        if (this.cv.width !== W || this.cv.height !== H) { this.cv.width = W; this.cv.height = H; }
-        this.scale = scale;
+        this.hiScale = Math.min(2, (window.devicePixelRatio || 1) * st);
+        this.loScale = Math.min(this.MOTION_SCALE, this.hiScale);
         this.skin = skin;
+        this.setScale(this.loScale);
         this.el.style.display = '';
+    },
+
+    // ---------- РАЗРЕШЕНИЕ ----------
+    // Пока покров ДВИЖЕТСЯ — холст в MOTION_SCALE (точка холста на единицу
+    // сцены): на пене ванной в полном разрешении кадр перехода стоил 50–90 мс
+    // под 4× замедлением, в единичном — 21–30, почти как без покрова. В
+    // движении мягкость не видна. Пока покров СТОИТ (игра дозревает под ним
+    // полсекунды-две) — он один раз перерисовывается в полном разрешении
+    // (skin.veilStill): неподвижную мыльную пену уже видно.
+    MOTION_SCALE: 1,
+    setScale(s) {
+        const W = Math.round(STAGE_W * s), H = Math.round(STAGE_H * s);
+        if (this.cv.width !== W || this.cv.height !== H) { this.cv.width = W; this.cv.height = H; }
+        this.scale = s;
+    },
+    still() {
+        if (!this.skin.veilStill) return;
+        this.setScale(this.hiScale);
+        this.skin.veilStill(this.ctx());
     },
 
     hide() {
@@ -69,18 +87,27 @@ const MgVeil = {
         if (this.cv) this.cv.getContext('2d').clearRect(0, 0, this.cv.width, this.cv.height);
     },
 
-    frame(mode, p) {
+    // Холст между кадрами НЕ чистится: шкурка дорисовывает и стирает только
+    // то, что изменилось за кадр (пена ванной — тысячи пузырей, целиком их
+    // каждый кадр не перерисовать). Начало хода — skin.veilStart.
+    ctx() {
         const ctx = this.cv.getContext('2d');
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, this.cv.width, this.cv.height);
         ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
-        this.skin.veil(ctx, mode, p, this.scale);
+        return ctx;
+    },
+
+    frame(mode, p) {
+        this.skin.veil(this.ctx(), mode, p, this.scale);
     },
 
     // Один ход перехода: кадры от 0 до 1 за VEIL_MS[mode]. Последний кадр —
     // ровно p = 1, даже если вкладку усыпили посреди хода.
     play(mode, run) {
         const ms = (this.skin.VEIL_MS && this.skin.VEIL_MS[mode]) || 300;
+        // Смена размера холста стирает его — шкурка в veilStart рисует
+        // начальное состояние хода заново, в той же задаче, без пустого кадра.
+        this.setScale(this.loScale);
+        if (this.skin.veilStart) this.skin.veilStart(this.ctx(), mode);
         return new Promise((done) => {
             const t0 = performance.now();
             const tick = () => {
@@ -116,6 +143,7 @@ const MgVeil = {
         this.show(skin);
         try {
             if (!await this.play('cover', run)) return;
+            this.still();
             // Открываем ПОД покровом, а не одновременно с заливкой: сборка
             // сцены держит поток сотни миллисекунд, и ход заливки съела бы.
             minigame.open();
