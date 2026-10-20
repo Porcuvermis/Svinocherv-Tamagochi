@@ -274,7 +274,6 @@ const LustMinigame = {
         this.setOpacity('bt-rain-veil', 0);
         this.clearHoming();
         this.dropHeld();
-        this.wormHost.classList.remove('bt-soft');
         this.drops = [];
         this.splats = [];
         this.setFly('', '');
