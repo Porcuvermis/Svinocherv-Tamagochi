@@ -9,7 +9,7 @@
 //   svg    (сам холст)  — стекло, огранка, золото: не меняются вовсе. Живы
 //                         в нём только пробка, пар, кольцо и пузыри у горла
 //                         — маленький участок;
-//   спереди (.bsm-rig-f) — холст canvas: блик по огранке и живое у горла
+//   спереди (.bsm-rig-f) — холст canvas: живое у горла
 //                         заранее нарисованными спрайтами. Шлейф искр —
 //                         не здесь: искры улетают за край вещи
 //                         (bath-soap-trail.js).
@@ -336,11 +336,10 @@ Object.assign(BATH_SOAP, {
         return null;
     },
 
-    // Кадр холста спереди: блик по огранке и живое у горла.
+    // Кадр холста спереди: живое у горла.
     rigDraw(R, Fr) {
         const g = R.ctx, cv = R.cv;
         if (!g || !cv.width) return;
-        const sweep = Fr.sweepX != null;
         const ST = this.stopperSprites(R.root);
         if (ST && !R.root.classList.contains('bsm-stopok')) R.root.classList.add('bsm-stopok');
         const S = this.sprites(), k = R.dpr, T = R.T, C = btPal().soapCosmos;
@@ -350,18 +349,6 @@ Object.assign(BATH_SOAP, {
         R.drawn = true;
         const spr = (im, x, y, r) => g.drawImage(im, x - r, y - r, 2 * r, 2 * r);
         const flare = (L) => { const w = Math.max(0.35, L * 0.1); g.drawImage(S.soft, -L, -w, 2 * L, 2 * w); g.drawImage(S.soft, -w, -L, 2 * w, 2 * L); };
-        // Блик по огранке — под пузом, в силуэте.
-        if (sweep) {
-            g.save();
-            g.clip(R.body);
-            g.translate(Fr.sweepX, 0);
-            g.rotate(22 * Math.PI / 180);
-            const lg = g.createLinearGradient(-5, 0, 5, 0);
-            lg.addColorStop(0, this.rgba(C.glow, 0)); lg.addColorStop(0.5, this.rgba(C.glow, 0.7)); lg.addColorStop(1, this.rgba(C.glow, 0));
-            g.fillStyle = lg;
-            g.fillRect(-5, -70, 10, 120);
-            g.restore();
-        }
         this.rigNeck(g, Fr, S, ST, spr, flare);
         g.globalAlpha = 1;
     },

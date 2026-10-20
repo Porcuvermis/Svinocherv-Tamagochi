@@ -17,7 +17,6 @@ Object.assign(LustMinigame, {
         // геометрии — это перерисовка всей этой площади. Замер на айфоне:
         // живой персонаж 24 кадра, замерший 60.
         if (this.wormHandle && this.wormHandle.setFrameHz) this.wormHandle.setFrameHz(5);
-        this.wormHost.classList.add('bt-soft');
         this.blurFar(BATH_ART.FAR_BLUR, 900);
         // Пена с тела НЕ сходит разом (docs/plan/21-lust-bath.md, 5г): её
         // смывают тапы по горке, кусок за группой (pop). К поглаживанию тело
@@ -383,8 +382,6 @@ Object.assign(LustMinigame, {
         // этап идёт и к чему ведёт (инвариант 9: сказано позой, не подписью).
         if (this.wormHandle && this.wormHandle.setLivePose)
             this.wormHandle.setLivePose({ mouthOpenness: 0.3, eyelidLevel: 0.55 });
-        // Червь уходит в расфокус: главный в кадре — хвост.
-        this.wormHost.classList.add('bt-soft');
         // Горка разобрана, тело чистое — блеска больше нечему давать.
         this.pileClear();
         this.glintStop();

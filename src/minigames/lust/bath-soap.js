@@ -515,10 +515,9 @@ onmessage = async (e) => {
         out.ringN = [1 + 0.05 * Math.sin(t * 3), -(t * 9) % 40];
         out.twinkle = [];
         for (let i = 0; i < M.TWINKLE; i++) out.twinkle.push((0.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + i * 2.1))).toFixed(2));
-        // Вспышка по огранке: раз в 5 с проходит слева направо за 1.2 с.
-        const ph = (t % 5) / 1.2;
-        out.sweep = `translate(${ph < 1 ? f2(-46 + ph * 92) : 90} 0)`;
-        out.sweepX = ph < 1 ? -46 + ph * 92 : null;
+        // Бегущего блика по огранке нет нарочно: в этой игре блеск значит
+        // «на это можно нажать» (душ, журнал), а флакон трогать нельзя — он
+        // сам летит с полки и левитирует. Тот же блеск на нём обманывал игрока.
         // Пузыри пара: из горла, обтекают камень, наверху лопаются искрой.
         // (Строки — для svg; холст убранства читает те же числа через +.)
         out.bubs = [];
@@ -752,11 +751,6 @@ onmessage = async (e) => {
                     <stop offset="0.88" stop-color="${Au[3]}"/>
                     <stop offset="1" stop-color="${Au[0]}"/>
                 </linearGradient>
-                <linearGradient id="${id}-sweep" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0" stop-color="${C.glow}" stop-opacity="0"/>
-                    <stop offset="0.5" stop-color="${C.glow}" stop-opacity="0.7"/>
-                    <stop offset="1" stop-color="${C.glow}" stop-opacity="0"/>
-                </linearGradient>
                 <radialGradient id="${id}-vapor" gradientUnits="objectBoundingBox">
                     <stop offset="0" stop-color="${C.glow}" stop-opacity="0.9"/>
                     <stop offset="0.5" stop-color="${C.cyan}" stop-opacity="0.35"/>
@@ -832,9 +826,6 @@ onmessage = async (e) => {
                 ${facets}
                 <path d="${edges}" fill="none" stroke="${C.glow}" stroke-width="0.55" stroke-opacity="0.4" stroke-linejoin="round"/>
                 <rect x="-32" y="-34" width="64" height="52" fill="url(#${id}-shadeR)"/>
-                <g class="bsm-sweep bsm-inl" transform="${Fr.sweep}">
-                    <rect x="-5" y="-70" width="10" height="120" fill="url(#${id}-sweep)" transform="rotate(22)"/>
-                </g>
                 <path d="${bellyHi}" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.55" stroke-linecap="round"/>
                 <path d="M-8 -30L-17.5 -25.5L-25.5 -15.8" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>
             </g>
@@ -1125,7 +1116,7 @@ onmessage = async (e) => {
             // Слои космоса — в двух копиях (окно и линза), поэтому списками.
             c = { stopper: one('.bsm-stopper'), gem: one('.bsm-gem'), ring: one('.bsm-ring'), ringd: one('.bsm-ringd'),
                   vapor: one('.bsm-vapor'),
-                  far: all('.bsm-far'), near: all('.bsm-near'), sweep: one('.bsm-sweep'),
+                  far: all('.bsm-far'), near: all('.bsm-near'),
                   aura: one('.bsm-aura'),
                   tw: all('.bsm-tw'), bubs: all('.bsm-bub') };
             c.bubParts = c.bubs.map(g => [g.children[0], g.children[1]]);   // пузырь (масштаб) и искра
@@ -1176,7 +1167,6 @@ onmessage = async (e) => {
         // Через кадр — только на полке (там трение не двигает окно); в руке
         // небо едет событием пальца (skyNow), цикл лишь подтверждает.
         if (!(this.live.rub && (this.live.n || 0) % 2 && !root.closest('#bt-held'))) this.setSky(root, c);
-        set(c.sweep, 'transform', Fr.sweep);
         // Убранство. fill-opacity и stroke-opacity — у самих фигур или
         // наследуемым атрибутом, а не прозрачность группы: отдельного буфера
         // нет (docs/traps.md, п. 73).
