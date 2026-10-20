@@ -242,3 +242,43 @@
 }
 
 .mg-confirm-btn:active { transform: scale(0.95); }
+
+/* ---------- ШКУРКА: РАМКА ИЗ МАТЕРИАЛА ГРЕХА ----------
+   minigame-window.js, wearSkin. Плоская рамка цветом греха снимается, тело
+   окна уменьшено transform'ом (его ставит сборка — числа у шкурки), поверх
+   лежит холст рамки во весь холст. Шапка остаётся в потоке (тело под ней,
+   как раньше), но невидима: знак греха говорит сам материал, а крестик
+   нарисован на рамке — кнопка над ним только ловит палец. */
+.mg-skin .mg-frame {
+    border: none;
+    box-shadow: none;
+}
+.mg-skin .mg-titlebar {
+    border-bottom: none;
+    background: none;
+}
+.mg-skin .mg-title { visibility: hidden; }
+.mg-skin .mg-rim {
+    position: absolute;
+    left: 0; top: 0;
+    width: var(--stage-w, 390px);
+    height: var(--stage-h, 844px);
+    /* Рваный внутренний край заходит в сцену на несколько единиц —
+       касания там идут в игру, а не в пену. */
+    pointer-events: none;
+    z-index: 20;
+    /* Общее правило canvas в style.css заливает фон тёмным — у рамки он
+       закрыл бы всю сцену. */
+    background: none;
+}
+.mg-skin .mg-close {
+    position: absolute;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: transparent;
+    font-size: 0;
+    z-index: 31;
+    -webkit-tap-highlight-color: transparent;
+}
+.mg-skin .mg-close:active { transform: none; }

@@ -141,12 +141,75 @@ const MinigameWindow = {
             }
         };
 
+        if (options.skin) this.wearSkin(handle, options.skin);
+
         closeBtn.onclick = (e) => { e.stopPropagation(); handle.requestClose(); };
         confirm.querySelector('.stay').onclick = (e) => { e.stopPropagation(); handle.hideConfirm(); };
         confirm.querySelector('.leave').onclick = (e) => { e.stopPropagation(); handle.leave(); };
 
         screenEl._mgWindow = handle;
         return handle;
+    },
+
+    // ---------- ШКУРКА: РАМКА ИЗ МАТЕРИАЛА ГРЕХА ----------
+    // Цель для всех семи игр (CLAUDE.md, инвариант 8; docs/plan/
+    // 25-lust-foam-transition.md): рамка не плоская полоска цветом греха, а
+    // его материал — у похоти пена, — и крестик выложен этим же материалом.
+    // Окно даёт механизм, шкурка — только вид:
+    //   skin.rim   { side, top } — толщина боков и верха, единицы холста;
+    //   skin.cross { x, y, size } — где нарисован крестик (сюда ляжет зона
+    //              нажатия, сама кнопка становится невидимой);
+    //   skin.draw(ctx, scale) — нарисовать рамку на холсте 390×844.
+    //
+    // Под рамку ничего не уходит: тело окна УМЕНЬШАЕТСЯ css-масштабом и
+    // встаёт во внутренний прямоугольник. Раскладка игры внутри остаётся
+    // прежней (390×800), касания переводятся через CTM (SvgSpace) и масштаб
+    // переживают — координат в мини-игре переписывать не надо. Низ рамки
+    // не задаётся, а выходит сам: что осталось под уменьшенной сценой.
+    TITLE_H: 44,
+
+    skinGeometry(skin) {
+        const R = skin.rim, bodyH = STAGE_H - this.TITLE_H;
+        const k = (STAGE_W - 2 * R.side) / STAGE_W;
+        const inner = { x0: R.side, y0: R.top, x1: STAGE_W - R.side, y1: R.top + bodyH * k };
+        return { k, inner, bottom: STAGE_H - inner.y1 };
+    },
+
+    wearSkin(handle, skin) {
+        const G = this.skinGeometry(skin);
+        handle.screen.classList.add('mg-skin');
+        handle.skin = skin;
+        const b = handle.body.style;
+        b.transformOrigin = '0 0';
+        b.transform = `translate(${G.inner.x0}px, ${(G.inner.y0 - this.TITLE_H).toFixed(2)}px) scale(${G.k.toFixed(4)})`;
+
+        const cv = document.createElement('canvas');
+        cv.className = 'mg-rim';
+        handle.frame.insertBefore(cv, handle.confirmEl);
+        handle.rimEl = cv;
+
+        // Зона нажатия — квадрат нарисованного крестика с запасом: в пузыри
+        // пальцем не целятся.
+        const C = skin.cross, hit = Math.max(48, C.size + 12);
+        const btn = handle.frame.querySelector('.mg-close');
+        Object.assign(btn.style, { left: (C.x - hit / 2) + 'px', top: (C.y - hit / 2) + 'px',
+                                   width: hit + 'px', height: hit + 'px' });
+
+        // Рамка рисуется при первом показе, а не при сборке окна: окна
+        // собираются на старте игры, и тысяча пузырей там ни к чему.
+        // Перерисовка — только если разрешение холста поменялось (повернули
+        // телефон, другой масштаб сцены).
+        handle.ensureSkin = () => {
+            const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale')) || 1;
+            const scale = Math.min(2, (window.devicePixelRatio || 1) * st);
+            if (handle._rimScale === scale) return;
+            handle._rimScale = scale;
+            cv.width = Math.round(STAGE_W * scale);
+            cv.height = Math.round(STAGE_H * scale);
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(scale, 0, 0, scale, 0, 0);
+            skin.draw(ctx, scale);
+        };
     },
 
     // ---------- КОМНАТА ПОД ОКНОМ ----------

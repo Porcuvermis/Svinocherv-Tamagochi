@@ -139,6 +139,8 @@ const LustMinigame = {
         if (typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'lust',
+                // Рамка из пены и крестик из её пузырей (lust-foam.js).
+                skin: typeof LustFoam !== 'undefined' ? LustFoam : null,
                 onLeave: () => this.close(),
                 // Спрашивать не о чем, пока вода не включена: забег ещё не
                 // начинался и терять нечего.
@@ -230,6 +232,7 @@ const LustMinigame = {
         if (!this.screenElement) this.init();
         if (!this.screenElement || !this.svgEl) return;
         this.screenElement.classList.add('active');
+        if (this.win && this.win.ensureSkin) this.win.ensureSkin();
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
 
         this.phase = 'idle';
