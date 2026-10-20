@@ -391,7 +391,52 @@ onmessage = async (e) => {
                 m = new DOMMatrix([q.a, q.b, q.c, q.d, q.e, q.f]).multiply(m);
             }
         }
-        return W ? new DOMMatrix(W).multiply(m) : m;
+        if (!W) return m;
+        // Качание парящей вещи — CSS-анимация холста руки: в _btWorld её нет,
+        // и небо ехало бы вместе с флаконом вверх-вниз (замечание игрока:
+        // небо — за стеклом и стоять должно, качается только окно).
+        let dy = 0;
+        if (svg.id === 'bt-hand' && typeof LustMinigame !== 'undefined' && LustMinigame.bobY) dy = LustMinigame.bobY();
+        return new DOMMatrix(dy ? [W[0], W[1], W[2], W[3], W[4], W[5] + dy] : W).multiply(m);
+    },
+
+    // Небо флакона в руке — СРАЗУ вслед за обёрткой (lust-wash.js, moveTool),
+    // в том же событии пальца. Раньше его правил цикл кадров, а обёртку
+    // двигало событие: небо отставало на кадр-два и, пока трут, обновлялось
+    // через кадр — окно ехало плавно, а космос внутри дёргался ступеньками.
+    skyNow(svg) {
+        if (!svg || typeof svg.querySelectorAll !== 'function') return;
+        svg.querySelectorAll('.bt-soap-magic').forEach(r => {
+            const c = this.live.cache.get(r);
+            if (c) this.setSky(r, c);
+        });
+        this.skyPatterns(svg);
+    },
+    // Облако (ступень 8) — такое же окно в то же небо: его тело залито узором
+    // из этих же двух картинок, и узор ставится обратной матрицей «тело →
+    // холст» (с учётом осадки и качания), так же, как слои флакона.
+    skyPatterns(scope) {
+        if (!scope || typeof scope.querySelectorAll !== 'function') return;
+        const P = this.MAGIC.PLX;
+        scope.querySelectorAll('pattern[data-sky]').forEach(pt => {
+            const body = pt.ownerSVGElement && pt.ownerSVGElement.querySelector(`[data-j="body"][fill="url(#${pt.id})"]`);
+            if (!body) return;
+            // Узор целиком ложится на небо экрана (patternTransform — как
+            // transform слоя у флакона); ближняя картинка сдвигается ещё на
+            // разницу глубин внутри узора — порознь с дальней.
+            const m = this.worldMatrix(body), tf = this.layerTr(m, P.far);
+            if (pt.getAttribute('patternTransform') !== tf) pt.setAttribute('patternTransform', tf);
+            const L = this.live, im = pt.querySelectorAll('image'), d = P.near - P.far;
+            const tn = `translate(${(-L.px * d).toFixed(2)} ${(-L.py * d).toFixed(2)})`;
+            if (im[1] && im[1].getAttribute('transform') !== tn) im[1].setAttribute('transform', tn);
+        });
+    },
+    setSky(root, c) {
+        const m = this.worldMatrix(root), P = this.MAGIC.PLX;
+        const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
+        const set = (el, v) => { if (el.getAttribute('transform') !== v) el.setAttribute('transform', v); };
+        c.far.forEach(el => set(el, tf));
+        c.near.forEach(el => set(el, tn));
     },
 
     // Слой неба в координатах флакона: обратное к «флакон → холст», плюс
@@ -1085,6 +1130,7 @@ onmessage = async (e) => {
                 // вместе с пальцем всегда — стоявшее небо потом «доезжало» на
                 // место, и это тоже читалось рывком.
                 if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(vis.filter(cloth), now, rub);
+                vis.filter(r => r.classList.contains('bt-cloth-cloud')).forEach(r => this.skyPatterns(r));
                 const fls = vis.filter(isFlask);
                 if (fls.length || hiddenFl.length) this.flaskTick(fls, hiddenFl, now, dt, mats);
                 const mag = vis.filter(isMagic);
@@ -1190,12 +1236,9 @@ onmessage = async (e) => {
         // звёздами, а трение — самый тяжёлый кадр ванной. Так трение стоит
         // столько же, сколько с замершим флаконом (замер, 4×); палец в это
         // время смотрит на пену, ступенька неба мала, а догоняния нет.
-        if (!(this.live.rub && (this.live.n || 0) % 2)) {
-            const m = this.worldMatrix(root), P = M.PLX;
-            const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
-            c.far.forEach(el => set(el, 'transform', tf));
-            c.near.forEach(el => set(el, 'transform', tn));
-        }
+        // Через кадр — только на полке (там трение не двигает окно); в руке
+        // небо едет событием пальца (skyNow), цикл лишь подтверждает.
+        if (!(this.live.rub && (this.live.n || 0) % 2 && !root.closest('#bt-held'))) this.setSky(root, c);
         set(c.sweep, 'transform', Fr.sweep);
         // Убранство. fill-opacity и stroke-opacity — у самих фигур или
         // наследуемым атрибутом, а не прозрачность группы: отдельного буфера

@@ -1741,7 +1741,10 @@ Object.assign(LustMinigame, {
     // обёртки): перетаскивание делает видеокарта.
     moveTool(p) {
         if (this.drag) this.drag.pos = p;
-        if (this.el('bt-held')) this.placeCarry(this.el('bt-hand'), p);
+        if (this.el('bt-held')) {
+            this.placeCarry(this.el('bt-hand'), p);
+            if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.skyNow) BATH_SOAP.skyNow(this.el('bt-hand'));
+        }
     },
 
     showTools(show, except) {
