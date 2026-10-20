@@ -70,8 +70,28 @@ const LustLoading = {
         return N;
     },
 
+    // Готовность без занавеса — для покрова перехода (src/core/mg-veil.js):
+    // то же «всё нужное дозрело» и тот же MAX. MIN не нужен: он держал
+    // кольцо занавеса, чтобы оно не мелькнуло, а покров ждёт только дела.
+    wait() {
+        const run = ++this._run, t0 = performance.now(), min = 0;
+        this._seen = true;
+        const N = this.needs();
+        return new Promise((done) => {
+            const step = () => {
+                if (run !== this._run) return done(false);
+                const age = performance.now() - t0;
+                if ((N.every(f => f()) && age >= min) || age >= this.MAX) return done(true);
+                requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
+        });
+    },
+
     begin() {
         if (typeof document === 'undefined') return;
+        // Вход идёт под покровом — он и ждёт готовности (wait), занавес не нужен.
+        if (typeof MgVeil !== 'undefined' && MgVeil.busy) return;
         if (typeof navigator !== 'undefined' && navigator.webdriver && !window.SVINO_CURTAIN) return;
         const c = this.el();
         if (!c) return;

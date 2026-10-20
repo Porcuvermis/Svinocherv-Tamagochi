@@ -118,9 +118,14 @@ const MinigameWindow = {
                 this.showConfirm();
             },
 
+            // Выход — через покров (src/core/mg-veil.js): у окна со шкуркой
+            // рамка нарастает внутрь, игра закрывается под ней, покров уходит.
+            // Без шкурки покров сразу зовёт onLeave, как раньше.
             leave() {
                 this.hideConfirm();
-                if (typeof options.onLeave === 'function') options.onLeave();
+                const go = () => { if (typeof options.onLeave === 'function') options.onLeave(); };
+                if (typeof MgVeil !== 'undefined') MgVeil.leave(this, go);
+                else go();
             },
 
             showConfirm() {

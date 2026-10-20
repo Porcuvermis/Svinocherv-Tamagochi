@@ -352,6 +352,19 @@ const LustFoam = {
         return (this._sprites = out);
     },
 
+    // ---------- ПЕРЕХОД (покров, src/core/mg-veil.js) ----------
+    // ВРЕМЕННО (этап 3): покров — ровная пена, проявляется и тает
+    // прозрачностью. Это проверка порядка входа и выхода; заливка из очагов,
+    // раскрытие до рамки и лопание — этапы 4–5.
+    VEIL_MS: { cover: 200, reveal: 350, close: 200, clear: 300 },
+    veil(ctx, mode, p) {
+        const a = mode === 'cover' || mode === 'close' ? p : 1 - p;
+        ctx.globalAlpha = a * a * (3 - 2 * a);
+        ctx.fillStyle = this.pal().foam[500];
+        ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+        ctx.globalAlpha = 1;
+    },
+
     // Как далеко рисунок заходит внутрь прямоугольника сцены (единицы):
     // окно выводит рамку на экран полосами такой ширины. Запас — на тень.
     reach() {

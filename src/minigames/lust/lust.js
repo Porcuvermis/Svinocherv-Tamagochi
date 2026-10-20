@@ -297,6 +297,11 @@ const LustMinigame = {
         if (typeof LustLoading !== 'undefined') LustLoading.begin();
     },
 
+    // Готовность сцены для покрова перехода (src/core/mg-veil.js).
+    veilReady() {
+        return typeof LustLoading !== 'undefined' ? LustLoading.wait() : Promise.resolve(true);
+    },
+
     close() {
         this.screenElement.classList.remove('active');
         if (typeof LustLoading !== 'undefined') LustLoading.cancel();

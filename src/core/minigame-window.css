@@ -286,3 +286,27 @@
     -webkit-tap-highlight-color: transparent;
 }
 .mg-skin .mg-close:active { transform: none; }
+
+/* Окно со шкуркой открывается и закрывается ПОКРОВОМ (src/core/mg-veil.js):
+   его собственные переходы — проявление прозрачностью и подрастание рамки —
+   под покровом не видны, а без покрова (автотесты) только мешают снимкам. */
+.minigame-screen.mg-window.mg-skin { transition: none; }
+.mg-skin .mg-frame,
+.mg-window.active.mg-skin .mg-frame { transform: none; transition: none; }
+
+/* ---------- ПОКРОВ ПЕРЕХОДА ----------
+   Во весь холст сцены, поверх окон мини-игр (у них 999999). Холст внутри
+   растянут правилом canvas из style.css; тёмный фон того же правила здесь
+   снят — покров прозрачен везде, где шкурка не рисует. */
+#mg-veil {
+    position: absolute;
+    left: 0; top: 0;
+    width: var(--stage-w, 390px);
+    height: var(--stage-h, 844px);
+    z-index: 1000000;
+    touch-action: none;
+}
+#mg-veil canvas {
+    background: none;
+    z-index: auto;
+}
