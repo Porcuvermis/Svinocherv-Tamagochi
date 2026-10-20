@@ -14,22 +14,23 @@
 // нельзя. Поэтому вся пена рисуется ОДИН раз — «полная пена» во весь экран
 // (fullGen, в простое после рамки), — а переход только показывает и прячет
 // её кругами пузырей:
-//   * заливка: клякс кадра (см. ниже) — маска clip, внутри неё полная пена
-//     drawImage;
-//   * раскрытие и уход: внутри маски лопнувших — clearRect.
+//   * заливка: грозди кадра (см. ниже) ложатся копиями из атласа;
+//   * раскрытие и уход: лопнувшие стираются по своей форме.
 // Холст покрова между кадрами не чистится — за кадр работы ровно столько,
 // сколько появилось или лопнуло.
 //
-// Показывают и прячут не сами пузыри, а КЛЯКСЫ (blobs): ~1000 кругов
-// радиусом 12–16 по сетке со сдвигом. Внутри кляксы видна настоящая полная
-// пена, фронт — волнистый из её кругов.
+// Показывают и прячут не сами пузыри, а ГРОЗДИ (groupsGen): ~860 групп по
+// ~13 соседних пузырей, каждая — одна картинка в атласе. Фронт поэтому из
+// целых пузырей. До гроздей были «кляксы» — круги, вырезанные из полной
+// пены: их край резал пузыри пополам, и фронт читался круглыми клочками
+// (замечание игрока).
 //
 // Что стоило кадров (4× замедление, кадр без покрова ~21 мс): по пузырям
-// (~900 кругов за кадр) — 100–250 мс; узор из полной пены (createPattern с
-// масштабом) — ~60 мс, он пересчитывал всю картинку на каждой заливке;
-// главное — РАЗРЕШЕНИЕ холста покрова: в полном 50–90 мс, в единичном
-// 21–30. Поэтому в движении покров в единичном разрешении
-// (MgVeil.MOTION_SCALE), а неподвижный — в полном (veilStill).
+// (~900 кругов за кадр) — 100–250 мс; кляксы через clip — ~60; узор из
+// полной пены (createPattern с масштабом) — ~60 мс, он пересчитывал всю
+// картинку на каждой заливке; главное — РАЗРЕШЕНИЕ холста покрова: в
+// полном 50–90 мс, в единичном 21–30. Поэтому в движении покров в
+// единичном разрешении (MgVeil.MOTION_SCALE), а неподвижный — в полном (veilStill).
 //
 // ---------- ПОДМЕНЫ НЕ ВИДНО ----------
 // Под покровом при раскрытии уже стоит окно со своей рамкой — той же
@@ -100,27 +101,92 @@ Object.assign(LustFoam, {
     },
 
     // Окно гонит это в простое следом за рамкой (MinigameWindow.wearSkin).
-    *prepareGen(scale) { yield* this.fullGen(scale); },
+    *prepareGen(scale) { yield* this.fullGen(scale); yield* this.groupsGen(); },
 
-    // ---------- КЛЯКСЫ ----------
-    BLOB: { cell: 18, r: 12, rnd: 4 },
-    blobs() {
-        if (this._blobs) return this._blobs;
-        const B = this.BLOB, rng = btRng(this.SEED ^ 0x6b33), out = [];
-        for (let y = -B.cell / 2; y < STAGE_H + B.cell; y += B.cell) {
-            for (let x = -B.cell / 2; x < STAGE_W + B.cell; x += B.cell) {
-                out.push({ x: x + (rng() - 0.5) * B.cell * 0.8, y: y + (rng() - 0.5) * B.cell * 0.8,
-                           r: B.r + rng() * B.rnd, nz: rng() * 2 - 1 });
-            }
+    // ---------- ГРОЗДИ ----------
+    // Пена делится на грозди по ~13 соседних пузырей (ячейка GROUP_CELL со
+    // сдвигом, пузырь — к ближайшему центру). Рамка и середина — порознь:
+    // раскрытие трогает только середину. Картинка грозди — полная пена,
+    // вырезанная по объединению кругов её пузырей (×GROUP_K, с массой между
+    // ними), — лежит в общем атласе. На перекрытиях у соседних гроздей
+    // одни и те же пиксели полной пены, поэтому собранные в любом порядке
+    // они дают ровно полную пену: ни шва, ни подмены в конце заливки.
+    GROUP_CELL: 20,
+    GROUP_K: 1.2,
+    ATLAS_W: 2048,
+
+    *groupsGen() {
+        if (this._groups) return;
+        yield* this.fullGen(this._fullScale || 1);
+        const C = this.GROUP_CELL, rng = btRng(this.SEED ^ 0x6b33);
+        const gw = Math.ceil(STAGE_W / C) + 2, gh = Math.ceil(STAGE_H / C) + 2;
+        // Центры гроздей: по одному на ячейку, со сдвигом.
+        const seeds = [];
+        for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+            seeds.push({ x: (i - 0.5 + rng()) * C, y: (j - 0.5 + rng()) * C });
         }
-        return (this._blobs = out);
-    },
-    // Кляксы, задевающие крестик, в ход не идут: там покров тает долями
-    // прозрачности (veil), и клякса, стёртая целиком, открыла бы синий
-    // крестик рывком.
-    blobsOffCross() {
-        const C = this.cross, h = C.size / 2 + 8;
-        return this.blobs().filter(b => Math.abs(b.x - C.x) > h + b.r || Math.abs(b.y - C.y) > h + b.r);
+        const near = (b) => {
+            const ci = Math.floor(b.x / C), cj = Math.floor(b.y / C);
+            let best = 0, bd = Infinity;
+            for (let j = cj - 1; j <= cj + 2; j++) for (let i = ci - 1; i <= ci + 2; i++) {
+                if (i < 0 || j < 0 || i >= gw || j >= gh) continue;
+                const s = seeds[j * gw + i], d = (s.x - b.x) ** 2 + (s.y - b.y) ** 2;
+                if (d < bd) { bd = d; best = j * gw + i; }
+            }
+            return best;
+        };
+        const L = this.layers(), In = this._inside, map = new Map();
+        const put = (b, rim) => {
+            const key = near(b) * 2 + (rim ? 1 : 0);
+            let g = map.get(key);
+            if (!g) map.set(key, g = { rim, list: [] });
+            g.list.push(b);
+        };
+        for (const b of L.deep.concat(L.top)) put(b, true);
+        for (const b of In.deep.concat(In.top)) put(b, false);
+        yield;
+        const groups = [...map.values()], K = this.GROUP_K;
+        const nz = btRng(this.SEED ^ 0x1d07);
+        for (const g of groups) {
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, sx = 0, sy = 0;
+            for (const b of g.list) {
+                const R = b.r * K;
+                x0 = Math.min(x0, b.x - R); y0 = Math.min(y0, b.y - R);
+                x1 = Math.max(x1, b.x + R); y1 = Math.max(y1, b.y + R);
+                sx += b.x; sy += b.y;
+            }
+            Object.assign(g, { x0: Math.floor(x0), y0: Math.floor(y0), w: Math.ceil(x1 - Math.floor(x0)) + 1,
+                               h: Math.ceil(y1 - Math.floor(y0)) + 1,
+                               x: sx / g.list.length, y: sy / g.list.length, nz: nz() * 2 - 1 });
+        }
+        // Атлас: полки по высоте, единица сцены — точка атласа (как покров в
+        // движении, MgVeil.MOTION_SCALE).
+        const order = groups.slice().sort((a, b) => b.h - a.h);
+        let ax = 0, ay = 0, row = 0;
+        for (const g of order) {
+            if (ax + g.w > this.ATLAS_W) { ax = 0; ay += row + 1; row = 0; }
+            g.ax = ax; g.ay = ay; ax += g.w + 1; row = Math.max(row, g.h);
+        }
+        const atlas = document.createElement('canvas');
+        atlas.width = this.ATLAS_W; atlas.height = ay + row + 1;
+        const a = atlas.getContext('2d'), full = this._full, fs = full.width / STAGE_W;
+        let n = 0;
+        for (const g of groups) {
+            a.save();
+            a.translate(g.ax - g.x0, g.ay - g.y0);
+            a.beginPath();
+            for (const b of g.list) {
+                const R = b.r * K;
+                a.moveTo(b.x + R, b.y);
+                a.arc(b.x, b.y, R, 0, Math.PI * 2);
+            }
+            a.clip();
+            a.drawImage(full, g.x0 * fs, g.y0 * fs, g.w * fs, g.h * fs, g.x0, g.y0, g.w, g.h);
+            a.restore();
+            if (++n % 60 === 0) yield;
+        }
+        this._atlas = atlas;
+        this._groups = groups;
     },
 
     // ---------- ОЧЕРЁДНОСТЬ ----------
@@ -166,18 +232,20 @@ Object.assign(LustFoam, {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         ctx.restore();
-        // Раскрытие и закрытие идут кляксами и по рамке тоже: под покровом
-        // окно со своей рамкой, нарисованной так же, — смена там не видна.
+        // Раскрытие и закрытие — только грозди середины: рамка под покровом
+        // уже стоит в окне (на последнем кадре раскрытия покров снимается
+        // целиком, и под ним та же рамка).
+        const G = this._groups, mid = G.filter(g => !g.rim);
         let list;
         if (mode === 'cover') {
             const F = this.foci();
-            list = this.order(this.blobs(), b => Math.min(...F.map(f => Math.hypot(b.x - f.x, b.y - f.y))));
+            list = this.order(G, g => Math.min(...F.map(f => Math.hypot(g.x - f.x, g.y - f.y))));
         } else if (mode === 'reveal') {
-            list = this.order(this.blobsOffCross(), this.fromCenter());
+            list = this.order(mid, this.fromCenter());
         } else if (mode === 'close') {
-            list = this.order(this.blobsOffCross(), this.fromCenter(), true);
+            list = this.order(mid, this.fromCenter(), true);
         } else {
-            list = this.order(this.blobs(), this.fromCenter());
+            list = this.order(G, this.fromCenter());
         }
         if (mode === 'reveal' || mode === 'clear') ctx.drawImage(full, 0, 0, STAGE_W, STAGE_H);
         const L = this.layers();
@@ -188,13 +256,13 @@ Object.assign(LustFoam, {
                     crossList: L.deep.concat(L.top).filter(b => b.cross) };
     },
 
-    // Путь из кругов. s — множитель координат: 1 в единицах сцены, scale —
-    // в пикселях холста (при тождественном преобразовании).
     // Покров стоит, пока игра дозревает: полная пена в полном разрешении.
     veilStill(ctx) {
         if (this._full) ctx.drawImage(this._full, 0, 0, STAGE_W, STAGE_H);
     },
 
+    // Путь из кругов. s — множитель координат: 1 в единицах сцены, scale —
+    // в пикселях холста (при тождественном преобразовании).
     discs(ctx, list, k, s) {
         s = s || 1;
         ctx.beginPath();
@@ -207,21 +275,20 @@ Object.assign(LustFoam, {
 
     veil(ctx, mode, p) {
         const V = this._v, full = this._full;
-        if (!V || V.mode !== mode || !full) return;
+        if (!V || V.mode !== mode || !full || !this._atlas) return;
         const upto = p >= 1 ? V.list.length : Math.floor(p * V.list.length);
         const fresh = V.list.slice(V.i, upto);
         V.i = upto;
         const add = mode === 'cover' || mode === 'close';
         if (fresh.length) {
-            // Маска из клякс кадра — clip; внутри неё: появились — полная
-            // пена (drawImage), лопнули — clearRect. Оба дешевле узора и
-            // destination-out (замер в шапке).
+            // Гроздь — одна копия из атласа: появилась — кладётся, лопнула —
+            // стирается по своей же форме (destination-out берёт альфу
+            // картинки: уходят ровно её пузыри).
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            this.discs(ctx, fresh, 1, V.s);
-            ctx.clip();
-            if (add) ctx.drawImage(full, 0, 0, ctx.canvas.width, ctx.canvas.height);
-            else ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            if (!add) ctx.globalCompositeOperation = 'destination-out';
+            const s = V.s, A = this._atlas;
+            for (const g of fresh) ctx.drawImage(A, g.ax, g.ay, g.w, g.h, g.x0 * s, g.y0 * s, g.w * s, g.h * s);
             ctx.restore();
         }
         // Крестик: при раскрытии покров над ним тает (под ним синий крестик
