@@ -102,6 +102,14 @@ const LustDebug = {
         L.stopClocks();
         L.stopPanting();
         L.drag = null;
+        // Мыло или мочалка могли быть в руке или в полёте домой: в обычном
+        // забеге к хвосту они уже лежат на полке (finishStage ждёт посадки).
+        // Перескок ждать не умеет, и вещь оставалась висеть в слое руки поверх
+        // финала — теперь рука пустеет, а вещи возвращаются на полку.
+        L.liftPending = null;
+        L.clearHoming();
+        L.dropHeld();
+        L.showTools(true);
         L.startWater();
         // startWater через секунду переводит забег к мылу — здесь это лишнее.
         if (L.fillRaf) { cancelAnimationFrame(L.fillRaf); L.fillRaf = 0; }
