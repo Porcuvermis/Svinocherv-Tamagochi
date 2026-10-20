@@ -57,8 +57,11 @@
 // выводится из сида и одинакова при каждом заходе.
 //
 // ---------- КАК ДЁШЕВО ----------
-// Пузырь — готовый спрайт (вид × целый радиус), рамка — пара тысяч
+// Пузырь — готовый спрайт (вид × целый радиус), рамка — четыре тысячи
 // drawImage один раз. В игре холст неподвижен и в кадре ничего не стоит.
+// Но один раз — это ~1 с под 4× замедлением, поэтому рамка строится
+// генератором (drawGen) кусками в простое после старта игры, а не при
+// входе в ванную; тень массы — на холсте в четверть разрешения.
 const LustFoam = {
     SEED: 7331,
     // Толщина рамки в единицах холста. Верх толще: в нём лежит крестик.
@@ -153,7 +156,11 @@ const LustFoam = {
     // встаёт, если не утонул в соседях глубже доли радиуса. Перекрытие
     // разрешено нарочно — пена держится гроздьями, а не плиткой. Бросать по
     // всему холсту и отсеивать середину было втрое дороже.
-    scatter(passes, rects, rng, layer) {
+    // Генератор: отдаёт управление каждые YIELD попыток — раскладка строится
+    // кусками в простое (см. «КАК ДЁШЕВО»), а не одним рывком.
+    YIELD: 1500,
+    *scatter(passes, rects, rng, layer) {
+        let step = 0;
         const C = this.CELL, grid = layer.grid, list = layer.list;
         const fits = (x, y, r, k) => {
             const ci = Math.floor(x / C) + 1, cj = Math.floor(y / C) + 1;
@@ -174,6 +181,7 @@ const LustFoam = {
         for (const P of passes) for (const [x0, y0, x1, y1] of rects) {
             const tries = Math.round((x1 - x0) * (y1 - y0) * P.density);
             for (let n = 0; n < tries; n++) {
+                if (++step % this.YIELD === 0) yield;
                 const x = x0 + rng() * (x1 - x0), y = y0 + rng() * (y1 - y0);
                 let r = (P.rMin + Math.pow(rng(), 1.4) * (P.rMax - P.rMin)) * this.sizeAt(x, y, rng);
                 // В квадрате крестика пузыри мельче: штрих в два-три пузыря
@@ -209,12 +217,19 @@ const LustFoam = {
     // Оба слоя рамки с метками. Порядок рисования внутри слоя — сверху
     // вниз: нижний пузырь ложится на верхний, пена «оседает».
     layers() {
-        if (this._deep) return { deep: this._deep, top: this._top };
+        if (!this._deep) for (const _ of this.layersGen()) { /* до конца */ }
+        return { deep: this._deep, top: this._top };
+    },
+
+    *layersGen() {
+        if (this._deep) return;
         const deep = { list: [], grid: [], bold: true }, top = { list: [], grid: [] };
-        this.scatter(this.DEEP, this.bands(), btRng(this.SEED), deep);
-        this.scatter(this.TOP, this.bands(), btRng(this.SEED ^ 0x2f17), top);
+        yield* this.scatter(this.DEEP, this.bands(), btRng(this.SEED), deep);
+        yield* this.scatter(this.TOP, this.bands(), btRng(this.SEED ^ 0x2f17), top);
         const mr = btRng(this.SEED ^ 0x5bd1);
+        let k = 0;
         for (const b of deep.list) {
+            if (++k % 400 === 0) yield;
             // d — где пузырь относительно края пены с учётом выпуклостей.
             b.d = this.edge(b.x, b.y) + this.bulge(b.x, b.y);
             // Внутрь сцены глубокий пузырь выступает на 0,2–1,0 радиуса,
@@ -227,16 +242,17 @@ const LustFoam = {
             b.cross = this.crossHit(b, mr);
         }
         for (const b of top.list) {
+            if (++k % 400 === 0) yield;
             b.d = this.edge(b.x, b.y) + this.bulge(b.x, b.y);
             // Верхний слой — только по массе, не на бахроме.
             b.rim = b.d > b.r * 0.4;
             b.cross = this.crossHit(b, mr);
         }
         this.satellites(deep.list.filter(b => b.bold && b.rim), deep.list, mr);
+        yield;
         const byY = (a, b) => (a.y + a.r) - (b.y + b.r);
         this._deep = deep.list.filter(b => b.rim).sort(byY);
         this._top = top.list.filter(b => b.rim).sort(byY);
-        return { deep: this._deep, top: this._top };
     },
 
     // Гроздь у наглого пузыря: 1–3 мелких пузырька прилипают к нему со
@@ -336,6 +352,18 @@ const LustFoam = {
         return (this._sprites = out);
     },
 
+    // Как далеко рисунок заходит внутрь прямоугольника сцены (единицы):
+    // окно выводит рамку на экран полосами такой ширины. Запас — на тень.
+    reach() {
+        const I = this.inner(), L = this.layers();
+        let m = 0;
+        for (const b of L.deep.concat(L.top)) {
+            const inside = Math.min(b.x - I.x0, I.x1 - b.x, b.y - I.y0, I.y1 - b.y);
+            m = Math.max(m, inside + b.r * 1.12);
+        }
+        return Math.ceil(m + 8);
+    },
+
     stamp(ctx, sp, b, alpha) {
         const r = Math.max(1, Math.round(b.r));
         const s = sp[r], k = b.r / r;          // радиус дробный, спрайт — целый
@@ -346,8 +374,52 @@ const LustFoam = {
 
     // ---------- РАМКА ----------
     // Холст окна уже в единицах 390×844 (масштаб на нём выставлен окном).
+    //
+    // Тень массы на сцену. shadowBlur по пути из трёх тысяч кругов в полном
+    // разрешении стоил 0,23 с под 4× замедлением. css-фильтр drop-shadow на
+    // холсте рамки был бы бесплатным, будь он посчитан один раз, — но
+    // браузер пересчитывал его каждый кадр, пока под рамкой что-то
+    // двигалось: кадров становилось меньше, и блеск хвоста не успевал пройти
+    // свою длину (test-lust-ripe). Поэтому тень — на маленьком холсте
+    // (SHADOW_RES от разрешения рамки), где размытие дёшево, и растянута на
+    // рамку: размытой тени резкость не нужна.
+    SHADOW_RES: 0.25,
+    shadowLayer(core, scale) {
+        const P = this.pal(), k = Math.max(0.25, scale * this.SHADOW_RES);
+        const c = document.createElement('canvas');
+        c.width = Math.ceil(STAGE_W * k); c.height = Math.ceil(STAGE_H * k);
+        const g = c.getContext('2d');
+        // Сама фигура уезжает за холст, на месте остаётся только её тень.
+        const off = STAGE_W * 2;
+        g.setTransform(k, 0, 0, k, -off * k, 0);
+        g.shadowColor = P.foamShade;
+        g.shadowBlur = 6 * k;
+        g.shadowOffsetX = off * k;
+        g.shadowOffsetY = 1.5 * k;
+        g.fillStyle = P.foam.lo;
+        g.beginPath();
+        for (const b of core) {
+            const Rr = b.r * 1.12;
+            g.moveTo(b.x + Rr, b.y);
+            g.arc(b.x, b.y, Rr, 0, Math.PI * 2);
+        }
+        g.fill();
+        return c;
+    },
+
     draw(ctx, scale) {
+        for (const _ of this.drawGen(ctx, scale)) { /* до конца */ }
+    },
+
+    // Рамка по кускам: раскладка, спрайты, масса, штампы пачками. Окно гонит
+    // её в простое после старта игры (MinigameWindow.wearSkin): под 4×
+    // замедлением целиком это ~1 с, и при входе в ванную такая пауза
+    // стояла бы перед каждым первым кадром.
+    STAMPS_PER_STEP: 300,
+    *drawGen(ctx, scale) {
+        yield* this.layersGen();
         const L = this.layers(), S = this.sprites(scale), P = this.pal();
+        yield;
         const mass = mixColor(P.foam[500], P.foam.lo, 0.6);
         ctx.save();
         // Страховка от дыр в массе — заливка по форме рамки, но ГЛУБЖЕ края
@@ -361,33 +433,41 @@ const LustFoam = {
         if (ctx.roundRect) ctx.roundRect(I.x0 - e, I.y0 - e, I.x1 - I.x0 + 2 * e, I.y1 - I.y0 + 2 * e, this.CORNER + e);
         else ctx.rect(I.x0 - e, I.y0 - e, I.x1 - I.x0 + 2 * e, I.y1 - I.y0 + 2 * e);
         ctx.fill('evenodd');
-        // Масса — объединение кругов глубоких пузырей с мягкой тенью на
-        // сцену: по ней пена лежит ПОВЕРХ картинки.
-        ctx.shadowColor = P.foamShade;
-        ctx.shadowBlur = 6 * scale;
-        ctx.shadowOffsetY = 1.5 * scale;
-        ctx.beginPath();
-        for (const b of L.deep) {
-            if (!b.core) continue;
-            const Rr = b.r * 1.12;
-            ctx.moveTo(b.x + Rr, b.y);
-            ctx.arc(b.x, b.y, Rr, 0, Math.PI * 2);
-        }
-        ctx.fill();
         ctx.restore();
+        yield;
+        // Масса — объединение кругов глубоких пузырей. Заливка пачками: цвет
+        // один и непрозрачный, так что сумма пачек — то же объединение, а
+        // один путь из трёх тысяч кругов заливался одним куском в 0,15 с.
+        ctx.fillStyle = mass;
+        const core = L.deep.filter(b => b.core);
+        ctx.drawImage(this.shadowLayer(core, scale), 0, 0, STAGE_W, STAGE_H);
+        yield;
+        for (let i = 0; i < core.length; i += 500) {
+            ctx.beginPath();
+            for (const b of core.slice(i, i + 500)) {
+                const Rr = b.r * 1.12;
+                ctx.moveTo(b.x + Rr, b.y);
+                ctx.arc(b.x, b.y, Rr, 0, Math.PI * 2);
+            }
+            ctx.fill();
+            yield;
+        }
         // Бахрома глубокого слоя (выступает в сцену) — прозрачнее, чем ближе
         // к краю сцены: пена истончается.
         const fringe = (b) => b.d >= b.r * 0.6 || b.bold ? 1
             : 0.6 + 0.4 * Math.max(0, (b.d + b.r * 0.9) / (b.r * 1.5));
         // Подкрашенные — после своих соседей по слою, иначе соседи, упавшие
         // ниже по порядку, закрывали половину штриха.
-        const pass = (list, kind) => {
-            const a = (b) => kind === 'deep' ? fringe(b) : 1;
-            for (const b of list) if (!b.cross) this.stamp(ctx, S[kind], b, a(b));
-            for (const b of list) if (b.cross) this.stamp(ctx, S[kind + 'X'], b, a(b));
-        };
-        pass(L.deep, 'deep');
-        pass(L.top, 'top');
+        const order = [];
+        for (const [list, kind] of [[L.deep, 'deep'], [L.top, 'top']]) {
+            for (const b of list) if (!b.cross) order.push([b, S[kind], kind]);
+            for (const b of list) if (b.cross) order.push([b, S[kind + 'X'], kind]);
+        }
+        let n = 0;
+        for (const [b, sp, kind] of order) {
+            this.stamp(ctx, sp, b, kind === 'deep' ? fringe(b) : 1);
+            if (++n % this.STAMPS_PER_STEP === 0) yield;
+        }
         ctx.globalAlpha = 1;
     }
 };

@@ -14,6 +14,10 @@
 //
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/probe-lust-edges.js /tmp/edge-
 //
+// С пенной рамкой (lust-foam.js) печатает ещё, какая доля габарита вещи под
+// пеной: ≥ FOAM_WARN процентов помечено «!» (по умолчанию 15). Крестик
+// окна лежит в пене нарочно — он из неё и нарисован.
+//
 // Переменные: RIM (толщина рамки для пометки, по умолчанию 24),
 //             SLOW (замедление процессора для замера входа, по умолчанию 4).
 const { chromium } = require('playwright');
@@ -21,6 +25,8 @@ const harness = require('./harness');
 
 const RIM = +(process.env.RIM || 24);
 const SLOW = +(process.env.SLOW || 4);
+// Сколько процентов вещи под пенной рамкой — уже повод посмотреть глазами.
+const FOAM_WARN = +(process.env.FOAM_WARN || 15);
 
 // Что в ванной нажимают или водят пальцем. Габарит меряется по экрану и
 // переводится в единицы холста через масштаб сцены (--stage-scale).
@@ -70,7 +76,17 @@ const TARGETS = [
                 const x1 = (r.right - st.left) / k, y1 = (r.bottom - st.top) / k;
                 // Ушедшее за край целиком — не видно, не в счёт.
                 if (x1 < 0 || y1 < 0 || x0 > 390 || y0 > 844) return [name, 'за кадром'];
-                return [name, { x0, y0, x1, y1,
+                // Под пеной: доля точек габарита, накрытых массой рамки —
+                // кругами глубоких пузырей (как их заливает LustFoam.draw).
+                // Пены нет (окно без шкурки) — ноль.
+                let foam = 0, n = 0;
+                const deep = typeof LustFoam !== 'undefined' && LustMinigame.win && LustMinigame.win.skin
+                    ? LustFoam.layers().deep.filter(b => b.core) : [];
+                for (let y = y0; y <= y1; y += 2) for (let x = x0; x <= x1; x += 2) {
+                    n++;
+                    if (deep.some(b => (b.x - x) ** 2 + (b.y - y) ** 2 < (b.r * 1.12) ** 2)) foam++;
+                }
+                return [name, { x0, y0, x1, y1, foam: n ? foam / n : 0,
                     left: x0, right: 390 - x1, top: y0, bottom: 844 - y1 }];
             });
         }, TARGETS);
@@ -78,7 +94,9 @@ const TARGETS = [
         for (const [name, r] of rows) {
             if (!r || typeof r === 'string') { console.log(`  ${name.padEnd(18)} ${r || '—'}`); continue; }
             const f = (v) => (v < RIM ? '!' : ' ') + Math.round(v).toString().padStart(4);
+            const pf = Math.round(r.foam * 100);
             console.log(`  ${name.padEnd(18)} слева${f(r.left)}  справа${f(r.right)}  сверху${f(r.top)}  снизу${f(r.bottom)}`
+                + `   под пеной ${(pf + '%').padStart(4)}${pf >= FOAM_WARN ? ' !' : '  '}`
                 + `   [${Math.round(r.x0)},${Math.round(r.y0)} – ${Math.round(r.x1)},${Math.round(r.y1)}]`);
         }
         await page.screenshot({ path: `${out}edge-${cam}.png` });

@@ -168,6 +168,8 @@ const MinigameWindow = {
     // переживают — координат в мини-игре переписывать не надо. Низ рамки
     // не задаётся, а выходит сам: что осталось под уменьшенной сценой.
     TITLE_H: 44,
+    SKIN_DELAY: 2500,   // после сборки окна: стартовый экран успевает уйти
+    SKIN_SLICE: 6,      // мс работы за раз — кадр комнаты не теряется
 
     skinGeometry(skin) {
         const R = skin.rim, bodyH = STAGE_H - this.TITLE_H;
@@ -187,10 +189,17 @@ const MinigameWindow = {
         b.transformOrigin = '0 0';
         b.transform = `translate(${G.inner.x0}px, ${(G.inner.y0 - this.TITLE_H).toFixed(2)}px) scale(${G.k.toFixed(4)})`;
 
-        const cv = document.createElement('canvas');
-        cv.className = 'mg-rim';
-        handle.frame.insertBefore(cv, handle.confirmEl);
-        handle.rimEl = cv;
+        // ---------- ЧЕТЫРЕ ПОЛОСЫ, А НЕ ХОЛСТ ВО ВЕСЬ ЭКРАН ----------
+        // Рамка рисуется на холсте во весь экран (так шкурке проще), но на
+        // экран выходит четырьмя полосами по краям: прозрачный слой во весь
+        // экран смешивается со сценой КАЖДЫЙ КАДР, хотя пена занимает только
+        // края. Замер на финале ванной (4× замедление): холст во весь экран —
+        // 23 кадра, без него — 30. Ширину полос шкурка знает сама
+        // (skin.reach() — как далеко рисунок заходит внутрь сцены).
+        const rim = document.createElement('div');
+        rim.className = 'mg-rim';
+        handle.frame.insertBefore(rim, handle.confirmEl);
+        handle.rimEl = rim;
 
         // Зона нажатия — квадрат нарисованного крестика с запасом: в пузыри
         // пальцем не целятся.
@@ -199,21 +208,72 @@ const MinigameWindow = {
         Object.assign(btn.style, { left: (C.x - hit / 2) + 'px', top: (C.y - hit / 2) + 'px',
                                    width: hit + 'px', height: hit + 'px' });
 
-        // Рамка рисуется при первом показе, а не при сборке окна: окна
-        // собираются на старте игры, и тысяча пузырей там ни к чему.
-        // Перерисовка — только если разрешение холста поменялось (повернули
-        // телефон, другой масштаб сцены).
-        handle.ensureSkin = () => {
+        // Тени css-фильтром (drop-shadow) у холста шкурки НЕТ и быть не
+        // должно: браузер пересчитывает фильтр каждый кадр, пока под рамкой
+        // что-то движется, — ванная теряла кадры (docs/traps.md, п. 164).
+        // Тень шкурка печёт в свой холст сама.
+
+        // ---------- КОГДА РИСУЕТСЯ ----------
+        // Рамка из тысяч пузырей — это ~1 с работы под 4× замедлением
+        // (замер на пене ванной). При входе в игру такая пауза стояла бы
+        // перед первым кадром, на старте игры — дёрнула бы комнату. Поэтому
+        // шкурка рисуется ГЕНЕРАТОРОМ (skin.drawGen) кусками по SKIN_SLICE мс
+        // в простое, начиная через SKIN_DELAY после сборки окна. Открыли
+        // игру раньше — ensureSkin() дорисовывает остаток сразу.
+        // Перерисовка с нуля — только если разрешение холста поменялось
+        // (повернули телефон, другой масштаб сцены).
+        const blit = (full, scale) => {
+            const I = G.inner, reach = skin.reach ? skin.reach() : STAGE_W;
+            const y0 = I.y0 + reach, y1 = I.y1 - reach;
+            const rects = [
+                [0, 0, STAGE_W, y0], [0, y1, STAGE_W, STAGE_H],
+                [0, y0, I.x0 + reach, y1], [I.x1 - reach, y0, STAGE_W, y1]
+            ];
+            rim.textContent = '';
+            for (const [ux0, uy0, ux1, uy1] of rects) {
+                // Края полос — по целым пикселям холста: иначе на стыке
+                // полос пиксель делился бы надвое и шов был бы виден.
+                const px0 = Math.max(0, Math.round(ux0 * scale)), py0 = Math.max(0, Math.round(uy0 * scale));
+                const px1 = Math.min(full.width, Math.round(ux1 * scale)), py1 = Math.min(full.height, Math.round(uy1 * scale));
+                if (px1 <= px0 || py1 <= py0) continue;
+                const c = document.createElement('canvas');
+                c.width = px1 - px0; c.height = py1 - py0;
+                c.getContext('2d').drawImage(full, px0, py0, c.width, c.height, 0, 0, c.width, c.height);
+                Object.assign(c.style, { left: px0 / scale + 'px', top: py0 / scale + 'px',
+                                         width: c.width / scale + 'px', height: c.height / scale + 'px' });
+                rim.appendChild(c);
+            }
+            full.width = full.height = 0;   // полноэкранный буфер больше не нужен
+        };
+        const begin = () => {
             const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale')) || 1;
             const scale = Math.min(2, (window.devicePixelRatio || 1) * st);
             if (handle._rimScale === scale) return;
             handle._rimScale = scale;
-            cv.width = Math.round(STAGE_W * scale);
-            cv.height = Math.round(STAGE_H * scale);
-            const ctx = cv.getContext('2d');
+            const full = document.createElement('canvas');
+            full.width = Math.round(STAGE_W * scale);
+            full.height = Math.round(STAGE_H * scale);
+            const ctx = full.getContext('2d');
             ctx.setTransform(scale, 0, 0, scale, 0, 0);
-            skin.draw(ctx, scale);
+            const draw = skin.drawGen ? skin.drawGen(ctx, scale) : (function* () { skin.draw(ctx, scale); })();
+            handle._skinJob = (function* () { yield* draw; blit(full, scale); })();
         };
+        handle.ensureSkin = () => {
+            begin();
+            const job = handle._skinJob;
+            handle._skinJob = null;
+            if (job) for (const _ of job) { /* до конца */ }
+        };
+        const slice = () => {
+            const job = handle._skinJob;
+            if (!job) return;
+            const t0 = performance.now();
+            while (performance.now() - t0 < this.SKIN_SLICE) {
+                if (job.next().done) { if (handle._skinJob === job) handle._skinJob = null; return; }
+            }
+            setTimeout(slice, 16);
+        };
+        setTimeout(() => { begin(); slice(); }, this.SKIN_DELAY);
     },
 
     // ---------- КОМНАТА ПОД ОКНОМ ----------

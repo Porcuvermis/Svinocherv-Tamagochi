@@ -261,15 +261,19 @@
 .mg-skin .mg-rim {
     position: absolute;
     left: 0; top: 0;
-    width: var(--stage-w, 390px);
-    height: var(--stage-h, 844px);
+    width: 0; height: 0;
     /* Рваный внутренний край заходит в сцену на несколько единиц —
        касания там идут в игру, а не в пену. */
     pointer-events: none;
     z-index: 20;
-    /* Общее правило canvas в style.css заливает фон тёмным — у рамки он
-       закрыл бы всю сцену. */
+}
+/* Четыре полосы рамки (размер и место ставит сборка). Общее правило canvas
+   в style.css растягивает холст на 100% и заливает фон тёмным — у полос
+   это закрыло бы всю сцену. */
+.mg-skin .mg-rim canvas {
+    position: absolute;
     background: none;
+    z-index: auto;
 }
 .mg-skin .mg-close {
     position: absolute;
