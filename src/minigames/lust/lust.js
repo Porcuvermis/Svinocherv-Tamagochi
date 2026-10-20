@@ -290,10 +290,14 @@ const LustMinigame = {
         // меряет его размер один раз, при монтаже.
         this.setCamera('overview');
         this.mountWorm();
+        // Вход закрыт занавесом, пока небо, картинки и червь не дозрели
+        // (lust-loading.js): раньше куски сцены выпрыгивали по одному.
+        if (typeof LustLoading !== 'undefined') LustLoading.begin();
     },
 
     close() {
         this.screenElement.classList.remove('active');
+        if (typeof LustLoading !== 'undefined') LustLoading.cancel();
         this.stopClocks();
         this.stopPanting();
         this.ripeHide();
@@ -410,6 +414,8 @@ const LustMinigame = {
             const st = svg.style;
             st.left = L + 'px'; st.top = T + 'px'; st.width = W + 'px'; st.height = H + 'px';
             svg._btWorld = [c.s, 0, 0, c.s, c.tx, c.ty];
+            if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigFollow) BATH_SOAP.rigFollow(svg);
+            if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccFollow) BATH_CLOTH.ccFollow(svg);
         }
     },
 
@@ -430,6 +436,8 @@ const LustMinigame = {
         // Точка хвата в холсте — в точках от его угла (опора подъёма).
         svg._btO = { x: -L, y: -T };
         svg.parentNode.classList.add('bt-on');
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigFollow) BATH_SOAP.rigFollow(svg);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccFollow) BATH_CLOTH.ccFollow(svg);
     },
     // Поставить точку хвата в p (единицы холста ванной) с масштабом k
     // (полёт домой ужимает вещь). Только transform обёртки — без
@@ -443,6 +451,10 @@ const LustMinigame = {
         const X = Math.round((M.ox + M.m * p.x) * g) / g, Y = Math.round((M.oy + M.m * p.y) * g) / g;
         svg.parentNode.style.transform = `translate(${X.toFixed(3)}px, ${Y.toFixed(3)}px)` + (q !== 1 ? ` scale(${q.toFixed(4)})` : '');
         svg._btWorld = [q, 0, 0, q, p.x, p.y];
+        // Небо флакона — СРАЗУ вслед за обёрткой, в том же событии пальца или
+        // кадре полёта: в цикле кадров оно отставало бы и шло ступеньками.
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.skyNow) BATH_SOAP.skyNow(svg);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccKick) BATH_CLOTH.ccKick(svg);
     },
     // Холст пуст — слой снят, размер ноль.
     emptyCarry(svg) {
@@ -453,6 +465,8 @@ const LustMinigame = {
         svg._btR = svg._btO = svg._btWorld = null;
         svg.parentNode.classList.remove('bt-on');
         svg.parentNode.style.transform = '';
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigFollow) BATH_SOAP.rigFollow(svg);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccFollow) BATH_CLOTH.ccFollow(svg);
     },
     // Вещь из руки убрана целиком (сброс, вход, уход).
     dropHeld() {

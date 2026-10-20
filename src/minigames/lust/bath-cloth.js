@@ -2097,18 +2097,9 @@ const BATH_CLOTH = {
         };
 
         const id = '@ID-', q = rng(17);
-        const inCore = (x, y, m) => Math.pow((x - CORE.x) / (CORE.rx - m), 2) + Math.pow((y - CORE.y) / (CORE.ry - m), 2) <= 1;
-        // Дальние звёзды — по цвету тремя путями (точка — крошечный круг из двух дуг).
-        const cols = ['', '', ''];
-        for (let k = 0; k < 90; k++) {
-            const x = 545 + q() * 100, y = 432 + q() * 96, r = 0.3 + q() * q() * 0.55, c = q() < 0.16 ? 1 : q() < 0.22 ? 2 : 0;
-            cols[c] += `M${f(x - r)} ${f(y)}a${f(r)} ${f(r)} 0 1 0 ${f(2 * r)} 0a${f(r)} ${f(r)} 0 1 0 ${f(-2 * r)} 0`;
-        }
-        const far = cols.map((d, i) => `<path d="${d}" fill="${SC[i]}" fill-opacity="${[0.75, 0.6, 0.55][i]}"/>`).join('');
-        // Ближние звёзды — только в ядре (видны всегда), мерцают на месте.
-        const NS = [[582, 492, 1.25], [604, 480, 0.85], [570, 482, 0.6], [605, 496, 0.6], [592, 472, 0.5]]
-            .map(([x, y, s]) => ({ x, y, s, n: 1 + Math.floor(q() * 2), p: TAU * q() }))
-            .filter(s => inCore(s.x, s.y, 4));
+                // Ближние звёзды — только в ядре (видны всегда), мерцают на месте.
+        // Своих звёзд у облака больше нет — небо общее (см. узор ниже).
+        const NS = [];
         // Поры на макушке клуба — в единицах клуба (круг r = 1), левый верх.
         // В наброске пора — <use> из двух эллипсов, девять на клуб: сотня
         // узлов, едущих каждый кадр. Здесь те же эллипсы под той же матрицей
@@ -2133,12 +2124,20 @@ const BATH_CLOTH = {
             + rg(id + 'au', 0.5, 0.5, 0.5, [[0, a0, 0.38], [0.55, a1, 0.16], [1, a1, 0]])
             + rg(id + 'n1', 0.5, 0.5, 0.5, [[0, nb1, 0.42], [1, nb1, 0]]) + rg(id + 'n2', 0.5, 0.5, 0.5, [[0, nb2, 0.3], [1, nb2, 0]])
             + rg(id + 'mo', 0.5, 0.5, 0.5, [[0, m0], [0.4, m1, 0.75], [1, m1, 0]])
-            // Космос узором: начало плитки — её левый верхний угол, поэтому
-            // содержимое сдвинуто на (−530, −420); плитка больше тела с
-            // запасом, повтор не виден.
-            + `<pattern id="${id}u" patternUnits="userSpaceOnUse" x="530" y="420" width="125" height="112"><g transform="translate(-530 -420)">`
-            + `<rect x="530" y="420" width="125" height="112" fill="url(#${id}m)"/>`
-            + `<ellipse cx="582" cy="494" rx="22" ry="13" fill="url(#${id}n1)"/><ellipse cx="604" cy="480" rx="17" ry="12" fill="url(#${id}n2)"/>${far}</g></pattern>`;
+            // Космос — НЕ свой, а общий: тот же холст неба, что за волшебным
+            // флаконом (BATH_SOAP.cosmosTex). Облако — такое же окно в него:
+            // картинки неба лежат в координатах экрана (их transform каждый
+            // кадр — обратная матрица «тело → холст», BATH_SOAP.skyPatterns),
+            // а тело их только обрезает. Своя нарисованная туманность и
+            // звёзды были вторым космосом на игру (решение игрока). Объём
+            // остался на теле: ободок света и блики клубов лежат сверху.
+            // Обрезка путём, а НЕ узор (pattern): узор размером с небо
+            // браузер перерастрирует целиком на каждой правке тела — растр
+            // выходил в двадцать раз дороже (замер: tools/prof-bath-live.js).
+            // Ободок света по телу: прозрачный в середине, к краю — светлые
+            // тона прежней массы (раньше они были залиты в узор).
+            + rg(id + 'ms', 0, 0, 1, [[0, MASS[3], 0], [0.42, MASS[3], 0], [0.66, MASS[3], 0.16], [0.84, MASS[4], 0.34], [0.95, MASS[5], 0.52], [1, MASS[5], 0.6]],
+                 `gradientUnits="userSpaceOnUse" gradientTransform="translate(590 484) scale(54 52)" fx="-0.08" fy="-0.06"`);
         const FZ = 2.4, w = TAU / T;
         // Искры поднимаются над облаком и гаснут.
         const sparks = [0, 1, 2, 3].map(i => ({ x: 574 + i * 11, ph: i * 0.27 + 0.1, sp: [3, 4, 5, 6][i] }));
@@ -2161,20 +2160,26 @@ const BATH_CLOTH = {
             const Q = pose(t);
             let o = `<defs>${defs}</defs>`;
             o += `<ellipse cx="590" cy="484" rx="64" ry="60" fill="url(#${id}au)"/>`;
-            o += `<g data-j="sag" transform="${sagStr(s)}">`;
-            o += `<g fill="url(#${id}fz)"><ellipse cx="${CORE.x}" cy="${CORE.y}" rx="${CORE.rx + FZ}" ry="${CORE.ry + FZ}"/>${Q.fz.map((tr, i) => `<circle data-fz="${i}" r="1" transform="${tr}"/>`).join('')}</g>`;
-            // Космос неподвижен — плывут только окна. В наброске это клип
-            // тела над группой космоса, и клип из двадцати пяти кругов,
-            // меняясь каждый кадр, стоил больше всей остальной вещи (замер:
-            // PrePaint вчетверо против конняку, кадр в руке 37 против 50).
-            // Здесь космос — узор в координатах сцены (userSpaceOnUse), а
-            // тело — один путь, залитый этим узором: путь едет, узор стоит —
-            // то же «окно в небо», одна запись `d` за кадр. Космос
-            // непрозрачен, поэтому нахлёст кругов шва не даёт. Ближние
-            // звёзды мерцают — они не в узоре (иначе узор растрировался бы
-            // заново), а поверх тела: живут в ядре, и тело их всегда
-            // закрывает собой.
-            o += `<path data-j="body" d="${Q.body}" fill="url(#${id}u)"/>`
+            // Слоёв с осадкой три: пух (за небом), обрезка неба и тело со
+            // светом (над ним). Небо — НЕ внутри группы осадки: картинки
+            // неба больше вещи, и габарит группы (по нему squashOf ставит
+            // точку осадки) раздувался бы до размеров неба.
+            o += `<g data-sag="1" transform="${sagStr(s)}">`;
+            o += `<g fill="url(#${id}fz)"><ellipse cx="${CORE.x}" cy="${CORE.y}" rx="${CORE.rx + FZ}" ry="${CORE.ry + FZ}"/>${Q.fz.map((tr, i) => `<circle data-fz="${i}" r="1" transform="${tr}"/>`).join('')}</g></g>`;
+            // Космос неподвижен — плывут только окна: тело одним путём
+            // обрезает общее небо (картинки в координатах экрана, см. defs
+            // выше), путь едет, небо стоит — одна запись `d` за кадр (в
+            // наброске клип из двадцати пяти кругов стоил дороже всей вещи).
+            // Небо непрозрачно, поэтому нахлёст кругов шва не даёт.
+            o += (() => {
+                const TX = typeof BATH_SOAP !== 'undefined' ? BATH_SOAP.TEX : { x: -80, y: -80, w: 550, h: 1004 };
+                const sk = typeof BATH_SOAP !== 'undefined' ? BATH_SOAP.cosmosTex() : null;
+                const im = (cls, u) => `<image class="${cls}"${u ? ` href="${u}"` : ''} x="${TX.x}" y="${TX.y}" width="${TX.w}" height="${TX.h}" preserveAspectRatio="none"/>`;
+                // Основа под небом — пока картинки пекутся, тело не пустое.
+                return `<defs><clipPath id="${id}cb" data-sag="1" transform="${sagStr(s)}"><path data-j="body" d="${Q.body}"/></clipPath></defs>`
+                    + `<g data-sky="1" clip-path="url(#${id}cb)"><rect x="${TX.x}" y="${TX.y}" width="${TX.w}" height="${TX.h}" fill="${MASS[2]}"/>${im('bsm-tf', sk && sk.far)}${im('bsm-tn', sk && sk.near)}</g>`;
+            })();
+            o += `<g data-j="sag" transform="${sagStr(s)}"><path data-j="body" d="${Q.body}" fill="url(#${id}ms)"/>`
                 + NS.map((st_, j) => `<use data-star="${j}" href="#${id}st" transform="${Q.stars[j]}"/>`).join('');
             // Свет клуба едет с клубом; макушка гаснет масштабом к своему
             // верхнему-левому краю, когда клуб уходит на теневую сторону.
@@ -2186,7 +2191,7 @@ const BATH_CLOTH = {
         const nodes = (r) => {
             const all = (k) => Array.from(r.querySelectorAll(`[data-${k}]`));
             return { body: Array.from(r.querySelectorAll('[data-j="body"]')), fz: all('fz'), club: all('club'), cap: all('cap'),
-                     star: all('star'), spark: all('spark'), sag: Array.from(r.querySelectorAll('[data-j="sag"]')) };
+                     star: all('star'), spark: all('spark'), sag: Array.from(r.querySelectorAll('[data-j="sag"], [data-sag]')) };
         };
         const put = (c, Q, set) => {
             c.body.forEach(n => set(n, 'd', Q.body));
@@ -2197,7 +2202,81 @@ const BATH_CLOTH = {
             c.spark.forEach(n => set(n, 'transform', Q.sparks[+n.dataset.spark]));
         };
         const sag = (c, s, set) => c.sag.forEach(n => set(n, 'transform', sagStr(s)));
-        return { frag, pose, nodes, put, sag, clubs, CORE, FZ, sagM: (s) => ({ a: 1 + 0.06 * s, d: 1 - 0.08 * s, e: AX * (1 - (1 + 0.06 * s)), f: AY * (1 - (1 - 0.08 * s)) }) };
+        // ---- то же облако на холсте (bath-cloth-rig.js) ----
+        // Рисунок тот же, что у frag, только мазками холста: заливки — один
+        // раз нарисованные спрайты, тело — путь из кругов, небо — картинки
+        // под обрезкой телом. g стоит в единицах сцены; sky(g) рисует небо
+        // в своих единицах (обрезка при этом остаётся).
+        let SPR = null;
+        const sprites = () => {
+            if (SPR) return SPR;
+            const Z = 64, rgba = BATH_SOAP.rgba.bind(BATH_SOAP);
+            const mk = (stops, fx = 0.5, fy = 0.5, r = 0.5) => {
+                const c = document.createElement('canvas'); c.width = c.height = Z;
+                const g = c.getContext('2d'), gr = g.createRadialGradient(fx * Z, fy * Z, 0, fx * Z, fy * Z, r * Z);
+                stops.forEach(([o, col, al = 1]) => gr.addColorStop(o, rgba(col, al)));
+                g.fillStyle = gr; g.fillRect(0, 0, Z, Z);
+                return c;
+            };
+            // Макушка клуба: свет (cap) и поры (те же пути, что в pz) в круге r = 1.
+            const cap = (() => {
+                const c = document.createElement('canvas'); c.width = c.height = Z;
+                const g = c.getContext('2d');
+                g.setTransform(Z / 2, 0, 0, Z / 2, Z / 2, Z / 2);
+                g.beginPath(); g.arc(0, 0, 1, 0, 2 * Math.PI); g.clip();
+                const gr = g.createRadialGradient(-0.12, -0.64, 0, -0.12, -0.64, 1.52);
+                [[0, c0, 0.78], [0.34, c1, 0.42], [0.6, c2, 0.12], [0.84, c2, 0]].forEach(([o, col, al]) => gr.addColorStop(o, rgba(col, al)));
+                g.fillStyle = gr; g.fillRect(-1, -1, 2, 2);
+                dk.forEach((d, k) => { g.globalAlpha = PORE[k][0]; g.fillStyle = pd; g.fill(new Path2D(d)); });
+                li.forEach((d, k) => { g.globalAlpha = PORE[k][1]; g.fillStyle = pl; g.fill(new Path2D(d)); });
+                return c;
+            })();
+            return (SPR = {
+                aura: mk([[0, a0, 0.38], [0.55, a1, 0.16], [1, a1, 0]]),
+                fz: mk([[0, fzC, 0.36], [0.86, fzC, 0.36], [1, fzC, 0]]),
+                mo: mk([[0, m0], [0.4, m1, 0.75], [1, m1, 0]]),
+                cap
+            });
+        };
+        const paint = (g, t, s, sky) => {
+            const S = sprites(), C = clubs(t), M = { a: 1 + 0.06 * s, d: 1 - 0.08 * s };
+            const sagIn = () => g.transform(M.a, 0, 0, M.d, AX * (1 - M.a), AY * (1 - M.d));
+            const im = (sp, x, y, rx, ry) => g.drawImage(sp, x - rx, y - ry, 2 * rx, 2 * ry);
+            im(S.aura, 590, 484, 64, 60);
+            g.save(); sagIn();
+            im(S.fz, CORE.x, CORE.y, CORE.rx + FZ, CORE.ry + FZ);
+            C.forEach(c => im(S.fz, c.x, c.y, c.r + FZ, c.r + FZ));
+            // Тело: ядро и круги одним путём (ненулевое правило — объединение).
+            const body = new Path2D();
+            body.ellipse(CORE.x, CORE.y, CORE.rx, CORE.ry, 0, 0, 2 * Math.PI);
+            C.forEach(c => { body.moveTo(c.x + c.r, c.y); body.arc(c.x, c.y, c.r, 0, 2 * Math.PI); });
+            g.save();
+            g.clip(body);
+            g.fillStyle = MASS[2];
+            g.fill(body);
+            if (sky) sky(g);
+            g.restore();
+            // Ободок света — как ms: радиальная заливка тела, прозрачная в середине.
+            const gr = g.createRadialGradient(590 - 0.08 * 54, 484 - 0.06 * 52, 0, 590, 484, 53);
+            [[0, MASS[3], 0], [0.42, MASS[3], 0], [0.66, MASS[3], 0.16], [0.84, MASS[4], 0.34], [0.95, MASS[5], 0.52], [1, MASS[5], 0.6]]
+                .forEach(([o, col, al]) => gr.addColorStop(o, BATH_SOAP.rgba(col, al)));
+            g.fillStyle = gr; g.fill(body);
+            // Макушки: свет клуба едет с клубом и гаснет масштабом к верхнему-левому краю.
+            C.forEach(c => {
+                if (c.fill || !(c.lit > 0.001)) return;
+                g.save();
+                g.translate(c.x, c.y); g.scale(c.r, c.r);
+                g.translate(-0.55, -0.75); g.scale(c.lit, c.lit); g.translate(0.55, 0.75);
+                g.drawImage(S.cap, -1, -1, 2, 2);
+                g.restore();
+            });
+            g.restore();
+            sparks.forEach((sp, i) => {
+                const u = ((t / T) * sp.sp + sp.ph) % 1, k = Math.sin(u * Math.PI) * 0.9;
+                if (k > 0.01) im(S.mo, sp.x + 3 * Math.sin(u * 6.3 + i), 508 - u * 70, 1.4 * k, 1.4 * k);
+            });
+        };
+        return { frag, pose, nodes, put, sag, clubs, paint, CORE, FZ, sagM: (s) => ({ a: 1 + 0.06 * s, d: 1 - 0.08 * s, e: AX * (1 - (1 + 0.06 * s)), f: AY * (1 - (1 - 0.08 * s)) }) };
     },
 
     // Эллипс (cx, cy, rx, ry) под матрицей m = [a b c d e f] — путём: образ
@@ -2261,6 +2340,17 @@ const BATH_CLOTH = {
         const run = roots.filter(r => this.liveArt(r) && !r.closest('.bt-float:not(.bt-float-magic)'));
         if (!run.length) return;
         this.kt = (this.kt + dt) % this.LIVE_T;
+        // Облако на живом холсте ванной — на своём слое-холсте (bath-cloth-rig.js):
+        // кадр там дешёвый, поэтому чаще, и svg не трогается.
+        if (this.ccFollow) {
+            const cc = run.filter(r => r.classList.contains('bt-cloth-cloud') && this.ccFollow(r.ownerSVGElement));
+            if (cc.length && now - (this._ccDrew || 0) >= this.CC_MS[rub ? 1 : 0]) {
+                this._ccDrew = now;
+                this.ktShown = this.kt;
+                cc.forEach(r => this.ccDraw(r.ownerSVGElement._bccRig));
+            }
+            if (cc.length) { run.splice(0, run.length, ...run.filter(r => cc.indexOf(r) < 0)); if (!run.length) return; }
+        }
         // 15 кадров хватает: движение медленное (комочек проплывает пару
         // единиц за секунду), а каждая запись — перерисовка всей вещи
         // (замер: с 30 кадрами полка рисовалась вдвое дольше, чем с рукавицей).
@@ -2286,6 +2376,8 @@ const BATH_CLOTH = {
     syncPose(root) {
         const r = this.liveRoot(root), art = r && this.liveArt(r);
         if (art) art.put(this.liveNodes(r, art), art.pose(this.ktShown), this.liveSet);
+        const R = r && r.ownerSVGElement && r.ownerSVGElement._bccRig;
+        if (R && R.root === r) this.ccDraw(R);
     },
 
     // Осадка мягкой мочалки в руке и в полёте — масштабом холста, а не

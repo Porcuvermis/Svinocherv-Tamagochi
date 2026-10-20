@@ -91,6 +91,18 @@
     will-change: transform;
 }
 
+/* Шлейф искр волшебного флакона (bath-soap-trail.js): холст во всю сцену
+   поверх руки. Спрятан, пока искр нет. Фон и растяжку общего правила
+   canvas (style.css) снять, как у .bt-lather. */
+#lust-game .bt-trail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: none;
+    z-index: auto;
+    pointer-events: none;
+}
+
 /* Червь. Размер и положение выставляет lust.js по якорю запекания, поэтому
    здесь только то, что от раскладки не зависит. */
 #lust-game .bt-worm-host {
@@ -527,3 +539,83 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
     border-radius: 3px; opacity: 0; transform-origin: 11px 2.5px;
 }
 #lust-game .bmc-spark { position: absolute; width: 0; height: 0; opacity: 0; }
+
+
+/* ================= ЗАНАВЕС ЗАГРУЗКИ ================= */
+/* Закрывает сцену, пока не дозрело нужное (lust-loading.js), и плавно
+   растворяется. Цвета — от акцента окна (--mg-accent, ставит окно из
+   ECONOMY.sins), своих hex здесь нет. Крестик окна лежит над занавесом. */
+#lust-game .bt-curtain {
+    position: absolute; inset: 0; z-index: 150;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--mg-accent, #c0392b) 14%, var(--mg-bg, #10161a));
+    opacity: 1;
+    transition: opacity 520ms ease-in-out;
+}
+#lust-game .bt-curtain.bt-curtain-off { opacity: 0; pointer-events: none; }
+#lust-game .bt-curtain.bt-curtain-gone { display: none; }
+#lust-game .bt-curtain-glow {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--mg-accent, #c0392b) 38%, transparent), transparent 62%);
+    animation: bt-curtain-breath 2.6s ease-in-out infinite;
+}
+#lust-game .bt-curtain-core { position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; }
+#lust-game .bt-curtain-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+#lust-game .bt-curtain-track, #lust-game .bt-curtain-fill { fill: none; stroke-width: 3; stroke-linecap: round; }
+#lust-game .bt-curtain-track { stroke: color-mix(in srgb, var(--mg-accent, #c0392b) 28%, transparent); }
+#lust-game .bt-curtain-fill { stroke: var(--mg-accent, #c0392b); transition: stroke-dashoffset 260ms ease-out; }
+#lust-game .bt-curtain-sign { font-size: 46px; line-height: 1; animation: bt-curtain-pulse 1.8s ease-in-out infinite; }
+@keyframes bt-curtain-breath { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes bt-curtain-pulse { 0%, 100% { transform: scale(0.92); } 50% { transform: scale(1.08); } }
+
+
+/* ================= ВОЛШЕБНЫЙ ФЛАКОН НА СЛОЯХ ================= */
+/* bath-soap-rig.js. Соседи холста вещи с тем же местом и размером: сзади —
+   сияние и небо (окно с неподвижной маской полости, линза), спереди — холст
+   огоньков. Двигает их только видеокарта: небо — transform картинок,
+   мерцание и сияние — css-анимации прозрачности и масштаба. */
+#lust-game .bsm-rig {
+    position: absolute;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+#lust-game .bsm-win, #lust-game .bsm-lensw, #lust-game .bsm-aur { position: absolute; }
+#lust-game .bsm-win {
+    overflow: hidden;
+    -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+#lust-game .bsm-lensw { overflow: hidden; border-radius: 50%; }
+#lust-game .bsm-sk {
+    position: absolute; left: 0; top: 0;
+    width: 550px; height: 1004px;            /* BATH_SOAP.TEX */
+    transform-origin: 0 0;
+    will-change: transform;
+}
+#lust-game .bsm-ski { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#lust-game .bsm-twa { animation: bsm-tw 2.6s ease-in-out infinite; }
+#lust-game .bsm-twb { animation: bsm-tw 2.6s ease-in-out -1.3s infinite; }
+@keyframes bsm-tw { 0%, 100% { opacity: 0.15; } 50% { opacity: 1; } }
+/* Сияние дышит: scale 0.93 ↔ 1.07, период 2π/1.1 с (как было в magicFrame). */
+#lust-game .bsm-aur { border-radius: 50%; will-change: transform, opacity; animation: bsm-breath 5.71s ease-in-out infinite; }
+@keyframes bsm-breath { 0%, 100% { transform: scale(0.93); } 50% { transform: scale(1.07); } }
+/* Общее правило canvas (style.css) даёт холсту тёмный фон комнаты. */
+#lust-game .bsm-cv { position: absolute; left: 0; top: 0; background: none; z-index: auto; }
+/* Парение холста руки — и его слоёв (lust-wash.js, floatTool). */
+#lust-game .bt-carry.bt-rig-float > .bsm-rig { animation: bt-float 2.8s ease-in-out infinite; }
+/* Небо за стеклом стоит: внутри окна то же качание наоборот (те же
+   длительность и кривая, старт в том же пересчёте стиля). */
+#lust-game .bsm-unbob { position: absolute; left: 0; top: 0; }
+#lust-game .bt-carry.bt-rig-float > .bsm-rig .bsm-unbob { animation: bt-unfloat 2.8s ease-in-out infinite; }
+@keyframes bt-unfloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(5px); }
+}
+/* В svg флакона на слоях — только стекло и то, что у горла. */
+#lust-game .bsm-rigged .bsm-inl { display: none !important; }
+#lust-game .bsm-rigged .bsm-rigonly { display: inline !important; }
+#lust-game .bsm-rigged.bsm-stopok .bsm-inls { display: none !important; }
+
+/* Облако на холсте (bath-cloth-rig.js): его svg невидим, но в дереве — по
+   габарту группы осадки ставится точка осадки (squashOf). */
+#lust-game .bt-cloth-cloud.bcc-rigged { visibility: hidden; }

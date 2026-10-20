@@ -83,7 +83,7 @@ const harness = require('./harness');
   // волос, свисающий с обмылка), небо внутри флакона (обрезано полостью, но
   // getBBox обрезки не знает) и убранство вокруг. Всё это выходит за
   // предмет намеренно, box() описывает сам предмет.
-  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura, .bsm-beads, .bsm-motes-f, .bsm-motes-b, .bsm-dust, .bsm-glint';
+  const NOT_BODY = '.bs-over, [clip-path], .bsm-aura';
   for (let n = 0; n < tiers; n++) {
     await setTier(n);
     await page.waitForTimeout(150);
@@ -155,9 +155,11 @@ const harness = require('./harness');
   await page.evaluate(() => LustMag.open());
   await page.waitForTimeout(2400);
   const underShop = await page.evaluate(() => {
-    const t = document.querySelector('#bt-soap-home .bsm-far');
-    const a = t && t.getAttribute('transform');
-    return new Promise(res => setTimeout(() => res({ same: a === (t && t.getAttribute('transform')) }), 400));
+    // Флакон на слоях (bath-soap-rig.js): небо — transform слоя, а не атрибут в svg.
+    const R = document.getElementById('bt-soap-box')._bsmRig, t = R ? R.far.box : document.querySelector('#bt-soap-home .bsm-far');
+    const get = () => R ? t.style.transform : t && t.getAttribute('transform');
+    const a = get();
+    return new Promise(res => setTimeout(() => res({ same: a === get() }), 400));
   });
   check(underShop.same, 'под открытым журналом флакон на полке стоит');
   check((await liveLayers()).length === 0, 'и слой полки снят');
@@ -167,12 +169,15 @@ const harness = require('./harness');
   // ================= 3. ЗАМЕР И ПЕРЕЕЗД КАМЕРЫ =================
   say('\n======== ФЛАКОН СТОИТ: ЗАМЕР И ПЕРЕЕЗД КАМЕРЫ ========');
   const stillWhile = (arm, disarm) => page.evaluate(([arm, disarm]) => {
-    const t = document.querySelector('#bt-soap-home .bsm-stop, #bt-soap-home .bsm-far');
+    const R = document.getElementById('bt-soap-box')._bsmRig;
+    const t = R ? R.far.box : document.querySelector('#bt-soap-home .bsm-stop, #bt-soap-home .bsm-far');
+    // На слоях живое — небо (style) и холст огоньков (его картинка).
+    const get = () => R ? t.style.transform + '|' + R.cv.toDataURL().length : t.getAttribute('transform');
     new Function(arm)();
     return new Promise(res => setTimeout(() => {
-      const a = t.getAttribute('transform');
+      const a = get();
       setTimeout(() => {
-        const b = t.getAttribute('transform');
+        const b = get();
         new Function(disarm)();
         res(a === b);
       }, 400);
@@ -181,14 +186,16 @@ const harness = require('./harness');
   check(await stillWhile('BATH_SOAP.frozen = true', 'BATH_SOAP.frozen = false'), '«мыло замерло» — флакон не меняется');
   check(await stillWhile('window.__ct = LustMinigame.camTimer; LustMinigame.camTimer = 1',
                          'LustMinigame.camTimer = window.__ct'), 'на переезде камеры флакон не меняется');
-  // Пока в работе мочалка, флакон на полке СПИТ (bath-soap.js, wake): его
-  // правки на айфоне давали длинный кадр через кадр, и облако в руке
-  // тряслось. Засыпает плавно — меряется после угасания, — и просыпается
-  // с концом этапа. Спрашивается сам факт правок, а не один атрибут.
+  // Пока в работе мочалка, флакон на полке ЖИВЁТ. Раньше он спал (его
+  // правки в svg давали на айфоне длинный кадр через кадр), но замерший
+  // флакон с застывшими искрами читался недоделкой (игрок). На слоях
+  // (bath-soap-rig.js) он дёшев: живёт слоями, svg не трогает.
   const shelfWrites = (ms) => page.evaluate((ms) => new Promise(res => {
     let n = 0;
     const mo = new MutationObserver(m => { n += m.length; });
-    mo.observe(document.getElementById('bt-soap-box'), { attributes: true, subtree: true });
+    const box = document.getElementById('bt-soap-box'), R = box._bsmRig;
+    // Флакон на слоях правит не svg, а слои рядом (небо, сияние).
+    for (const el of R ? [box, R.back, R.front] : [box]) mo.observe(el, { attributes: true, subtree: true });
     setTimeout(() => { mo.disconnect(); res(n); }, ms);
   }), ms);
   const ph0 = await page.evaluate(() => { const p = LustMinigame.phase; LustMinigame.phase = 'cloth'; return p; });
@@ -197,8 +204,17 @@ const harness = require('./harness');
   await page.evaluate((p) => { LustMinigame.phase = p; }, ph0);
   await page.waitForTimeout(500);
   const woke = await shelfWrites(800);
-  check(zzz === 0 && zzzL === 0 && woke > 50,
-    `в этапе мочалки флакон на полке спит (правок ${zzz}, слоёв ${zzzL}) и просыпается после (${woke})`);
+  check(zzz > 50 && woke > 50,
+    `в этапе мочалки флакон на полке не замирает (правок слоёв ${zzz}) и после этапа тоже (${woke})`);
+  // Живой флакон на слоях не правит svg ВОВСЕ: любая правка в нём
+  // перезаписывала картинку всего стекла с огранкой (bath-soap-rig.js).
+  const svgWrites = await page.evaluate(() => new Promise(res => {
+    let n = 0;
+    const mo = new MutationObserver(m => { n += m.filter(x => x.attributeName !== 'class').length; });
+    mo.observe(document.getElementById('bt-soap-box'), { attributes: true, subtree: true });
+    setTimeout(() => { mo.disconnect(); res(n); }, 800);
+  }));
+  check(svgWrites === 0, `живой флакон не правит свой svg (правок ${svgWrites}) — живёт слоями`);
 
   // ================= 4. НЕБО ПОЛУЧИЛО КАРТИНКУ =================
   const hrefs = await page.evaluate(() => Array.from(document.querySelectorAll('#bt-soap-home .bsm-tf, #bt-soap-home .bsm-tn'))
@@ -215,8 +231,9 @@ const harness = require('./harness');
     await page.evaluate(([x, y]) => { window.__lean = { live: true, x, y }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; }, [x, y]);
     await page.waitForTimeout(900);
     return page.evaluate(() => {
-      const r = (s) => { const b = document.querySelector('#bt-soap-home ' + s).getBoundingClientRect(); return { x: b.x, y: b.y }; };
-      return { far: r('.bsm-tf'), near: r('.bsm-tn') };
+      const R = document.getElementById('bt-soap-box')._bsmRig;
+      const r = (s) => { const b = (R ? R[s].box : document.querySelector('#bt-soap-home .bsm-t' + s[0])).getBoundingClientRect(); return { x: b.x, y: b.y }; };
+      return { far: r('far'), near: r('near') };
     });
   };
   const L = await skyAt(-0.3, 0), R = await skyAt(0.3, 0);
@@ -444,9 +461,10 @@ const harness = require('./harness');
     return { x: r.x + r.width / 2, y: r.y + r.height / 2, h: r.height };
   }, sel);
   const floatState = () => page.evaluate(() => {
-    const h = document.getElementById('bt-hand'), aura = document.querySelector('#bt-held .bsm-aura');
+    const h = document.getElementById('bt-hand'), aura = document.querySelector('#bt-held .bsm-aura'), R = h._bsmRig;
     return { float: h.classList.contains('bt-float'), filter: getComputedStyle(h).filter,
-             aura: !!aura && aura.getAttribute('display') !== 'none',
+             // На слоях сияние — свой слой, гаснет прозрачностью.
+             aura: R && R.root ? +(R.aura.style.opacity || 1) > 0.01 : !!aura && aura.getAttribute('display') !== 'none',
              home: document.getElementById('bt-soap-home').style.opacity, loose: !!LustMinigame.loose };
   });
   const up = await floatState();
@@ -454,6 +472,43 @@ const harness = require('./harness');
   check(up.loose && up.home === '0' && airC.y < shelfC.y - 5,
         `флакон снят с полки и висит над ней (выше на ${(shelfC.y - airC.y).toFixed(0)} px)`);
   check(up.float, 'парит');
+  // Небо за стеклом стоит, пока флакон качается (замечание игрока: небо
+  // качалось вместе с флаконом). Наклон закреплён — мерится только качание.
+  await page.evaluate(() => { window.__lean = { live: true, x: 0, y: 0 }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; });
+  await page.waitForTimeout(700);
+  const bobSky = await page.evaluate(() => new Promise(res => {
+    const R = document.getElementById('bt-hand')._bsmRig, out = [];
+    const t0 = performance.now();
+    const st = () => {
+      const s = R.far.box.getBoundingClientRect(), c = document.querySelector('#bt-held .bsm-collar').getBoundingClientRect();
+      out.push([s.y, c.y]);
+      if (performance.now() - t0 < 1500) requestAnimationFrame(st); else res(out);
+    };
+    requestAnimationFrame(st);
+  }));
+  await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
+  const span = (k) => Math.max(...bobSky.map(p => p[k])) - Math.min(...bobSky.map(p => p[k]));
+  check(span(1) > 3 && span(0) < 0.8, `флакон качается (${span(1).toFixed(1)} px), а небо за стеклом стоит (${span(0).toFixed(2)} px)`);
+  // И под пальцем: окно едет за пальцем, небо — на месте в каждом шаге
+  // (раньше его правил цикл кадров, и оно догоняло окно ступеньками).
+  {
+    await page.evaluate(() => { window.__lean = { live: true, x: 0, y: 0 }; Tilt.lean = () => window.__lean; });
+    await page.waitForTimeout(500);
+    const g0 = await page.evaluate(() => { const b = document.querySelector('#bt-held .bsm-collar').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+    await page.mouse.move(g0.x, g0.y); await page.mouse.down();
+    await page.waitForTimeout(150);
+    const pts = [];
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(g0.x - 9 * i, g0.y + 4 * i);
+      pts.push(await page.evaluate(() => { const b = document.getElementById('bt-hand')._bsmRig.far.box.getBoundingClientRect(), c = document.querySelector('#bt-held .bsm-collar').getBoundingClientRect(); return [b.x, b.y, c.x]; }));
+    }
+    await page.mouse.up();
+    await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
+    const dx = Math.max(...pts.map(p => p[0])) - Math.min(...pts.map(p => p[0])), dy = Math.max(...pts.map(p => p[1])) - Math.min(...pts.map(p => p[1]));
+    const moved = pts[0][2] - pts[pts.length - 1][2];
+    check(moved > 50 && dx < 0.8 && dy < 0.8, `флакон уехал за пальцем на ${moved.toFixed(0)} px, а небо стоит на каждом шаге (${dx.toFixed(2)} × ${dy.toFixed(2)} px)`);
+    await page.waitForTimeout(400);
+  }
   check(up.aura && (up.filter === 'none' || !up.filter), 'светится своим сиянием — без тени поверх живого холста');
   // Качание — ВВЕРХ от места, где вещь висит, и заметное глазу.
   const bobs = [];
@@ -694,6 +749,7 @@ const harness = require('./harness');
   // Кольца «где не домыл» нет вовсе — нет и его слоя.
   check(!(await page.evaluate(() => document.getElementById('bt-spot'))),
         'кольца-подсказки «где не домыл» у мыла нет');
+
 
   // ================= 10а. ГЛАЗА ЧИСТЫЕ, КРАЙ МЯГКИЙ =================
   // Пены на глазах нет (просьба игрока), и сделано это как у настоящей пены:
@@ -1180,8 +1236,11 @@ const harness = require('./harness');
       L.liftGo = (...a) => { go(...a); L.liftGo = go; L.liftAnim.pause(); L.liftAnim.currentTime = 0;
         start = rect(document.getElementById('bt-hand')); L.liftAnim.play(); };
       L.liftTool('cloth');
+      setTimeout(() => { const R0 = document.getElementById('bt-hand')._bccRig; window.__ccD0 = R0 ? R0.draws : 0; }, 0);
       setTimeout(() => { const h = document.getElementById('bt-hand'), g = h.querySelector('.bt-own-glow');
-        floatF = { filter: getComputedStyle(h).filter, glow: !g || getComputedStyle(g).display !== 'none', live };
+        // Облако на холсте (bath-cloth-rig.js) живёт перерисовками слоя, а не правками svg.
+        const R = h._bccRig, d0 = window.__ccD0 || 0;
+        floatF = { filter: getComputedStyle(h).filter, glow: !g || getComputedStyle(g).display !== 'none', live: live + (R && R.root ? R.draws - d0 : 0) };
         L.flyHome(() => {}); setTimeout(() => { mo.disconnect();
         const f = (b) => ({ cx: (b.left + b.right) / 2, bottom: b.bottom, w: b.width, h: b.height });
         res({ kind, shape, floatF, shelf: f(shelf), start: start && f(start) }); }, 1300); }, 1600);
@@ -1198,6 +1257,69 @@ const harness = require('./harness');
       `мочалка ${lv}: подъём начинается на месте полочной — середина и низ в пределах 2 точек, размер в пределах 6%`);
   }
 
+  // ОБЛАКО НА ХОЛСТЕ (bath-cloth-rig.js): svg облака живым не правится, а
+  // небо в нём стоит, пока облако парит (как у флакона: небо — за окном).
+  {
+    await resetCloth(8);
+    await page.waitForTimeout(600);
+    const cw = await page.evaluate(() => new Promise(res => {
+      const box = document.getElementById('bt-cloth-box'), R = box._bccRig, d0 = R ? R.draws : 0;
+      let n = 0;
+      const mo = new MutationObserver(m => { n += m.filter(x => x.attributeName !== 'class').length; });
+      mo.observe(box, { attributes: true, subtree: true });
+      setTimeout(() => { mo.disconnect(); res({ n, draws: R ? R.draws - d0 : 0 }); }, 800);
+    }));
+    check(cw.n === 0 && cw.draws > 10, `облако на полке живёт холстом (перерисовок ${cw.draws}), а svg не правит (правок ${cw.n})`);
+    await page.evaluate(() => { LustMinigame.phase = 'cloth'; LustMinigame.liftTool('cloth');
+      window.__lean = { live: true, x: 0, y: 0 }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; });
+    await page.waitForTimeout(1600);
+    const pts = await page.evaluate(() => new Promise(res => {
+      const R = document.getElementById('bt-hand')._bccRig, out = [], t0 = performance.now();
+      const st = () => {
+        // skyAt — в точках слоя от его угла (до плотности холста).
+        const b = R.back.getBoundingClientRect(), sc = b.width / parseFloat(R.back.style.width);
+        if (R.skyAt) out.push([b.left + R.skyAt[0] * sc, b.top + R.skyAt[1] * sc, b.top]);
+        if (performance.now() - t0 < 1500) requestAnimationFrame(st); else res(out);
+      };
+      requestAnimationFrame(st);
+    }));
+    await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
+    const sp = (k) => Math.max(...pts.map(p => p[k])) - Math.min(...pts.map(p => p[k]));
+    check(pts.length > 20 && sp(2) > 3 && sp(1) < 0.8, `облако качается (${sp(2).toFixed(1)} px), а небо в нём стоит (${sp(1).toFixed(2)} px)`);
+  }
+
+  // ================= 11. ШЛЕЙФ ИСКР ВОЛШЕБНОГО ФЛАКОНА =================
+  // docs/plan/24-soap-trail.md: искры высекает движение, а не таймер; в покое
+  // — изредка одна; трут червя — втрое больше; кончились искры — холст спрятан.
+  say('\n======== ШЛЕЙФ ИСКР ФЛАКОНА ========');
+  await page.evaluate(() => { LustMinigame.close(); LustMinigame.open();
+    LustDebug.setLevel('soap', 8); BATH_SOAP.refresh(); LustMinigame.startWater(); });
+  for (let i = 0; i < 40 && await page.evaluate(() => LustMinigame.phase) !== 'soap'; i++) await page.waitForTimeout(250);
+  await page.waitForTimeout(1500);
+  const sparks = () => page.evaluate(() => BATH_SOAP.trail.ps.length);
+  const TR = await page.evaluate(() => BATH_SOAP.MAGIC.TRAIL);
+  let idleMax = 0;
+  for (let i = 0; i < 20; i++) { idleMax = Math.max(idleMax, await sparks()); await page.waitForTimeout(100); }
+  check(idleMax <= 2, `флакон парит неподвижно — искр не больше пары (${idleMax})`);
+  const trAt = await page.evaluate(() => { const L = LustMinigame, o = L.loose; return SvgSpace.toClient(L.svgEl, o.pos.x, o.pos.y); });
+  await page.mouse.move(trAt.x, trAt.y); await page.mouse.down();
+  const air = await bodyC(1.3, 0.3);
+  await page.mouse.move(air.x, air.y, { steps: 6 });
+  let airMax = 0;
+  for (let i = 0; i < 30; i++) {
+    await page.mouse.move(air.x + Math.cos(i * 0.35) * 70, air.y + 120 + Math.sin(i * 0.35) * 90, { steps: 2 });
+    await page.waitForTimeout(16);
+    airMax = Math.max(airMax, await sparks());
+  }
+  check(airMax > 2 && airMax <= TR.MAX, `флакон ведут по воздуху — искры есть, не больше предела (${airMax} из ${TR.MAX})`);
+  let rubMax = 0;
+  for (let i = 0; i < 30; i++) { await page.mouse.move(...Object.values(i % 2 ? a : b2), { steps: 4 }); rubMax = Math.max(rubMax, await sparks()); }
+  check(rubMax > TR.MAX * 1.5 && rubMax <= TR.MAX * TR.RUB, `флаконом трут червя — искр втрое больше (${rubMax}, в воздухе ${airMax})`);
+  await page.waitForTimeout(900);
+  const trEnd = await page.evaluate(() => ({ n: BATH_SOAP.trail.ps.length, el: BATH_SOAP.trail.el && BATH_SOAP.trail.el.style.display }));
+  check(trEnd.n === 0 && trEnd.el === 'none', `палец замер — через 0,9 с искр нет, холст шлейфа спрятан (${trEnd.n}, ${trEnd.el})`);
+  await page.mouse.up();
+
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================
   await page.evaluate(() => LustMinigame.close());
   await page.waitForTimeout(300);
@@ -1205,6 +1327,8 @@ const harness = require('./harness');
     float: document.getElementById('bt-hand').classList.contains('bt-float') }));
   const afterL = await liveLayers();
   check(!after.raf && !afterL.length && !after.float, `ванная закрыта — цикл стоит, слоёв нет, ничего не парит (${afterL.join() || 'слоёв нет'})`);
+  await page.waitForTimeout(800);
+  check(await page.evaluate(() => !BATH_SOAP.trail.raf && !BATH_SOAP.trail.shown), 'ванная закрыта — цикл шлейфа стоит, холст спрятан');
 
   say('');
   errors.forEach(e => say('  ' + e));
