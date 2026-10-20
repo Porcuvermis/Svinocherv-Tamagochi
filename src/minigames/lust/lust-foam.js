@@ -125,7 +125,7 @@ const LustFoam = {
     // Плавный шум края: два слоя сглаженного шума по сетке, от 0 до amp.
     // Только ВНУТРЬ сцены: отступить пена не может — за краем сцены не
     // картинка, а плоский фон окна, и отступ открывал ровную полосу.
-    BULGE: [{ cell: 64, amp: 11 }, { cell: 19, amp: 4 }],
+    BULGE: [{ cell: 70, amp: 13 }, { cell: 26, amp: 9 }, { cell: 11, amp: 4 }],
     bulge(x, y) {
         const h = (i, j) => {
             const s = Math.sin(i * 127.1 + j * 311.7 + this.SEED * 0.013) * 43758.5453;
@@ -181,8 +181,8 @@ const LustFoam = {
                 if (this.inCross(x, y)) r = Math.min(r, 2.6 + rng() * 2.4);
                 // «Наглый» пузырь у внутреннего края: крупный, вопреки
                 // правилу «к сцене мельче», и вылезает дальше соседей.
-                const bold = layer.bold && this.depth(x, y) > 0.7 && !this.inCross(x, y) && rng() < 0.14;
-                if (bold) r = 5.5 + rng() * 5.5;
+                const bold = layer.bold && this.depth(x, y) > 0.7 && !this.inCross(x, y) && rng() < 0.2;
+                if (bold) r = 5.5 + rng() * 6.5;
                 r = Math.min(this.R_MAX, r);
                 if (!fits(x, y, r, P.k)) continue;
                 const b = { x, y, r, bold };
@@ -197,7 +197,7 @@ const LustFoam = {
     // Полосы рамки с запасом m внутрь сцены (рваный край, скруглённые углы).
     bands() {
         // m — запас внутрь сцены: выпуклость края (BULGE) плюс наглый пузырь.
-        const W = STAGE_W + 8, H = STAGE_H + 8, I = this.inner(), m = 30;
+        const W = STAGE_W + 8, H = STAGE_H + 8, I = this.inner(), m = 42;
         return [
             [-8, -8, W, I.y0 + m],
             [-8, I.y1 - m, W, H],
@@ -217,11 +217,13 @@ const LustFoam = {
         for (const b of deep.list) {
             // d — где пузырь относительно края пены с учётом выпуклостей.
             b.d = this.edge(b.x, b.y) + this.bulge(b.x, b.y);
-            // Внутрь сцены глубокий пузырь выступает на 0,2–0,7 радиуса,
-            // наглый — на 0,6–1,3. Выступающие — бахрома.
-            const out = b.bold ? 0.6 + mr() * 0.7 : 0.2 + mr() * 0.5;
+            // Внутрь сцены глубокий пузырь выступает на 0,2–1,0 радиуса,
+            // наглый — на 0,6–1,5. Выступающие — бахрома.
+            const out = b.bold ? 0.6 + mr() * 0.9 : 0.2 + mr() * 0.8;
             b.rim = b.d > -b.r * out;
-            b.core = b.d > b.r * 0.25 || (b.bold && b.rim);
+            // В массу входят и слегка выступающие: силуэт массы и есть край
+            // рамки, а полупрозрачная бахрома его почти не меняет.
+            b.core = b.d > -b.r * 0.1 || (b.bold && b.rim);
             b.cross = this.crossHit(b, mr);
         }
         for (const b of top.list) {
@@ -230,10 +232,33 @@ const LustFoam = {
             b.rim = b.d > b.r * 0.4;
             b.cross = this.crossHit(b, mr);
         }
+        this.satellites(deep.list.filter(b => b.bold && b.rim), deep.list, mr);
         const byY = (a, b) => (a.y + a.r) - (b.y + b.r);
         this._deep = deep.list.filter(b => b.rim).sort(byY);
         this._top = top.list.filter(b => b.rim).sort(byY);
         return { deep: this._deep, top: this._top };
+    },
+
+    // Гроздь у наглого пузыря: 1–3 мелких пузырька прилипают к нему со
+    // стороны сцены — край пены рассыпается крошками, а не обрывается
+    // одиночным шаром. Сторона сцены — против роста edge (численная
+    // производная). В массу они не входят: бахрома, прозрачность по d.
+    satellites(bold, list, rng) {
+        for (const b of bold) {
+            const gx = this.edge(b.x + 1, b.y) - this.edge(b.x - 1, b.y);
+            const gy = this.edge(b.x, b.y + 1) - this.edge(b.x, b.y - 1);
+            const base = Math.atan2(-gy, -gx);
+            const n = 1 + Math.floor(rng() * 3);
+            for (let i = 0; i < n; i++) {
+                const a = base + (rng() - 0.5) * 2.2;
+                const r = 1.6 + rng() * 2.2;
+                const dist = b.r + r * (0.55 + rng() * 0.35);
+                const s = { x: b.x + Math.cos(a) * dist, y: b.y + Math.sin(a) * dist, r, rim: true, core: false };
+                s.d = this.edge(s.x, s.y) + this.bulge(s.x, s.y);
+                s.cross = false;
+                list.push(s);
+            }
+        }
     },
 
     // Крестик: близость к одной из диагоналей квадрата, ширина штриха шумит
@@ -353,7 +378,7 @@ const LustFoam = {
         // Бахрома глубокого слоя (выступает в сцену) — прозрачнее, чем ближе
         // к краю сцены: пена истончается.
         const fringe = (b) => b.d >= b.r * 0.6 || b.bold ? 1
-            : 0.35 + 0.65 * Math.max(0, (b.d + b.r * 0.7) / (b.r * 1.3));
+            : 0.6 + 0.4 * Math.max(0, (b.d + b.r * 0.9) / (b.r * 1.5));
         // Подкрашенные — после своих соседей по слою, иначе соседи, упавшие
         // ниже по порядку, закрывали половину штриха.
         const pass = (list, kind) => {
