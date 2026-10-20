@@ -603,3 +603,7 @@ html.dbg-no-decor #lust-game .bsm-glint { display: none !important; }
 #lust-game .bsm-rigged .bsm-inl { display: none !important; }
 #lust-game .bsm-rigged .bsm-rigonly { display: inline !important; }
 #lust-game .bsm-rigged.bsm-stopok .bsm-inls { display: none !important; }
+
+/* Облако на холсте (bath-cloth-rig.js): его svg невидим, но в дереве — по
+   габарту группы осадки ставится точка осадки (squashOf). */
+#lust-game .bt-cloth-cloud.bcc-rigged { visibility: hidden; }

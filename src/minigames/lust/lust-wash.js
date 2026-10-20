@@ -1443,7 +1443,16 @@ Object.assign(LustMinigame, {
             const u = i / N, v = Math.max(0, (u - 0.5) / 0.5);
             keys.push({ transform: this.squashTf(Q, O, dir === 'up' ? this.squashQ(u) : 1 - this.squashQ(v)).trim() });
         }
-        return svg.animate(keys, { duration: ms, easing: 'linear', fill: 'forwards' });
+        const opt = { duration: ms, easing: 'linear', fill: 'forwards' };
+        // Слой облака (bath-cloth-rig.js) оседает той же анимацией; снимают
+        // её вместе с осадкой холста (homeSqStop).
+        if (svg._rigSquash) svg._rigSquash.forEach(a => a.cancel());
+        const A = svg.animate(keys, opt);
+        A.rigs = svg._rigSquash = Array.from(svg.parentNode.querySelectorAll(':scope > .bsm-rig')).map(r => {
+            r.style.transformOrigin = svg.style.transformOrigin;
+            return r.animate(keys, opt);
+        });
+        return A;
     },
 
     // Снять подъём: сторож и анимацию холста руки. Без этого вещь, взятая
@@ -1674,6 +1683,7 @@ Object.assign(LustMinigame, {
         }
         // Слои волшебного флакона (небо, сияние, огоньки) — вместе с гнездом.
         if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigSweep) BATH_SOAP.rigSweep(instant);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccSweep) BATH_CLOTH.ccSweep(instant);
     },
 
     // ---------- ДОМОЙ ПО ДУГЕ ----------
@@ -1764,7 +1774,7 @@ Object.assign(LustMinigame, {
 
     // Снять осадку летевшей домой: холст полёта общий и служит следующей.
     homeSqStop() {
-        if (this.homeSq) { this.homeSq.cancel(); this.homeSq = null; }
+        if (this.homeSq) { this.homeSq.cancel(); (this.homeSq.rigs || []).forEach(x => x.cancel()); this.homeSq = null; }
         const home = this.el('bt-hand-home');
         if (home) home.style.transformOrigin = '';
     },
@@ -1796,6 +1806,7 @@ Object.assign(LustMinigame, {
             if (n) n.style.opacity = (show || k !== except) ? '1' : '0';
         }
         if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigSweep) BATH_SOAP.rigSweep();
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccSweep) BATH_CLOTH.ccSweep();
     },
 
     finishStage(kind) {

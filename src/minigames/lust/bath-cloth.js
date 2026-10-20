@@ -2202,7 +2202,81 @@ const BATH_CLOTH = {
             c.spark.forEach(n => set(n, 'transform', Q.sparks[+n.dataset.spark]));
         };
         const sag = (c, s, set) => c.sag.forEach(n => set(n, 'transform', sagStr(s)));
-        return { frag, pose, nodes, put, sag, clubs, CORE, FZ, sagM: (s) => ({ a: 1 + 0.06 * s, d: 1 - 0.08 * s, e: AX * (1 - (1 + 0.06 * s)), f: AY * (1 - (1 - 0.08 * s)) }) };
+        // ---- то же облако на холсте (bath-cloth-rig.js) ----
+        // Рисунок тот же, что у frag, только мазками холста: заливки — один
+        // раз нарисованные спрайты, тело — путь из кругов, небо — картинки
+        // под обрезкой телом. g стоит в единицах сцены; sky(g) рисует небо
+        // в своих единицах (обрезка при этом остаётся).
+        let SPR = null;
+        const sprites = () => {
+            if (SPR) return SPR;
+            const Z = 64, rgba = BATH_SOAP.rgba.bind(BATH_SOAP);
+            const mk = (stops, fx = 0.5, fy = 0.5, r = 0.5) => {
+                const c = document.createElement('canvas'); c.width = c.height = Z;
+                const g = c.getContext('2d'), gr = g.createRadialGradient(fx * Z, fy * Z, 0, fx * Z, fy * Z, r * Z);
+                stops.forEach(([o, col, al = 1]) => gr.addColorStop(o, rgba(col, al)));
+                g.fillStyle = gr; g.fillRect(0, 0, Z, Z);
+                return c;
+            };
+            // Макушка клуба: свет (cap) и поры (те же пути, что в pz) в круге r = 1.
+            const cap = (() => {
+                const c = document.createElement('canvas'); c.width = c.height = Z;
+                const g = c.getContext('2d');
+                g.setTransform(Z / 2, 0, 0, Z / 2, Z / 2, Z / 2);
+                g.beginPath(); g.arc(0, 0, 1, 0, 2 * Math.PI); g.clip();
+                const gr = g.createRadialGradient(-0.12, -0.64, 0, -0.12, -0.64, 1.52);
+                [[0, c0, 0.78], [0.34, c1, 0.42], [0.6, c2, 0.12], [0.84, c2, 0]].forEach(([o, col, al]) => gr.addColorStop(o, rgba(col, al)));
+                g.fillStyle = gr; g.fillRect(-1, -1, 2, 2);
+                dk.forEach((d, k) => { g.globalAlpha = PORE[k][0]; g.fillStyle = pd; g.fill(new Path2D(d)); });
+                li.forEach((d, k) => { g.globalAlpha = PORE[k][1]; g.fillStyle = pl; g.fill(new Path2D(d)); });
+                return c;
+            })();
+            return (SPR = {
+                aura: mk([[0, a0, 0.38], [0.55, a1, 0.16], [1, a1, 0]]),
+                fz: mk([[0, fzC, 0.36], [0.86, fzC, 0.36], [1, fzC, 0]]),
+                mo: mk([[0, m0], [0.4, m1, 0.75], [1, m1, 0]]),
+                cap
+            });
+        };
+        const paint = (g, t, s, sky) => {
+            const S = sprites(), C = clubs(t), M = { a: 1 + 0.06 * s, d: 1 - 0.08 * s };
+            const sagIn = () => g.transform(M.a, 0, 0, M.d, AX * (1 - M.a), AY * (1 - M.d));
+            const im = (sp, x, y, rx, ry) => g.drawImage(sp, x - rx, y - ry, 2 * rx, 2 * ry);
+            im(S.aura, 590, 484, 64, 60);
+            g.save(); sagIn();
+            im(S.fz, CORE.x, CORE.y, CORE.rx + FZ, CORE.ry + FZ);
+            C.forEach(c => im(S.fz, c.x, c.y, c.r + FZ, c.r + FZ));
+            // Тело: ядро и круги одним путём (ненулевое правило — объединение).
+            const body = new Path2D();
+            body.ellipse(CORE.x, CORE.y, CORE.rx, CORE.ry, 0, 0, 2 * Math.PI);
+            C.forEach(c => { body.moveTo(c.x + c.r, c.y); body.arc(c.x, c.y, c.r, 0, 2 * Math.PI); });
+            g.save();
+            g.clip(body);
+            g.fillStyle = MASS[2];
+            g.fill(body);
+            if (sky) sky(g);
+            g.restore();
+            // Ободок света — как ms: радиальная заливка тела, прозрачная в середине.
+            const gr = g.createRadialGradient(590 - 0.08 * 54, 484 - 0.06 * 52, 0, 590, 484, 53);
+            [[0, MASS[3], 0], [0.42, MASS[3], 0], [0.66, MASS[3], 0.16], [0.84, MASS[4], 0.34], [0.95, MASS[5], 0.52], [1, MASS[5], 0.6]]
+                .forEach(([o, col, al]) => gr.addColorStop(o, BATH_SOAP.rgba(col, al)));
+            g.fillStyle = gr; g.fill(body);
+            // Макушки: свет клуба едет с клубом и гаснет масштабом к верхнему-левому краю.
+            C.forEach(c => {
+                if (c.fill || !(c.lit > 0.001)) return;
+                g.save();
+                g.translate(c.x, c.y); g.scale(c.r, c.r);
+                g.translate(-0.55, -0.75); g.scale(c.lit, c.lit); g.translate(0.55, 0.75);
+                g.drawImage(S.cap, -1, -1, 2, 2);
+                g.restore();
+            });
+            g.restore();
+            sparks.forEach((sp, i) => {
+                const u = ((t / T) * sp.sp + sp.ph) % 1, k = Math.sin(u * Math.PI) * 0.9;
+                if (k > 0.01) im(S.mo, sp.x + 3 * Math.sin(u * 6.3 + i), 508 - u * 70, 1.4 * k, 1.4 * k);
+            });
+        };
+        return { frag, pose, nodes, put, sag, clubs, paint, CORE, FZ, sagM: (s) => ({ a: 1 + 0.06 * s, d: 1 - 0.08 * s, e: AX * (1 - (1 + 0.06 * s)), f: AY * (1 - (1 - 0.08 * s)) }) };
     },
 
     // Эллипс (cx, cy, rx, ry) под матрицей m = [a b c d e f] — путём: образ
@@ -2266,6 +2340,17 @@ const BATH_CLOTH = {
         const run = roots.filter(r => this.liveArt(r) && !r.closest('.bt-float:not(.bt-float-magic)'));
         if (!run.length) return;
         this.kt = (this.kt + dt) % this.LIVE_T;
+        // Облако на живом холсте ванной — на своём слое-холсте (bath-cloth-rig.js):
+        // кадр там дешёвый, поэтому чаще, и svg не трогается.
+        if (this.ccFollow) {
+            const cc = run.filter(r => r.classList.contains('bt-cloth-cloud') && this.ccFollow(r.ownerSVGElement));
+            if (cc.length && now - (this._ccDrew || 0) >= this.CC_MS[rub ? 1 : 0]) {
+                this._ccDrew = now;
+                this.ktShown = this.kt;
+                cc.forEach(r => this.ccDraw(r.ownerSVGElement._bccRig));
+            }
+            if (cc.length) { run.splice(0, run.length, ...run.filter(r => cc.indexOf(r) < 0)); if (!run.length) return; }
+        }
         // 15 кадров хватает: движение медленное (комочек проплывает пару
         // единиц за секунду), а каждая запись — перерисовка всей вещи
         // (замер: с 30 кадрами полка рисовалась вдвое дольше, чем с рукавицей).
@@ -2291,6 +2376,8 @@ const BATH_CLOTH = {
     syncPose(root) {
         const r = this.liveRoot(root), art = r && this.liveArt(r);
         if (art) art.put(this.liveNodes(r, art), art.pose(this.ktShown), this.liveSet);
+        const R = r && r.ownerSVGElement && r.ownerSVGElement._bccRig;
+        if (R && R.root === r) this.ccDraw(R);
     },
 
     // Осадка мягкой мочалки в руке и в полёте — масштабом холста, а не

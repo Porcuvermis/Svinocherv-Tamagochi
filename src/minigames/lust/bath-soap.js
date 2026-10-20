@@ -1153,7 +1153,7 @@ onmessage = async (e) => {
                 // вместе с пальцем всегда — стоявшее небо потом «доезжало» на
                 // место, и это тоже читалось рывком.
                 if (typeof BATH_CLOTH !== 'undefined') BATH_CLOTH.liveTick(vis.filter(cloth), now, rub);
-                vis.filter(r => r.classList.contains('bt-cloth-cloud')).forEach(r => this.skyPatterns(r));
+                vis.filter(r => r.classList.contains('bt-cloth-cloud') && !r.classList.contains('bcc-rigged')).forEach(r => this.skyPatterns(r));
                 const fls = vis.filter(isFlask);
                 if (fls.length || hiddenFl.length) this.flaskTick(fls, hiddenFl, now, dt, mats);
                 if (this.rigSweep) this.rigSweep();

@@ -1235,8 +1235,11 @@ const harness = require('./harness');
       L.liftGo = (...a) => { go(...a); L.liftGo = go; L.liftAnim.pause(); L.liftAnim.currentTime = 0;
         start = rect(document.getElementById('bt-hand')); L.liftAnim.play(); };
       L.liftTool('cloth');
+      setTimeout(() => { const R0 = document.getElementById('bt-hand')._bccRig; window.__ccD0 = R0 ? R0.draws : 0; }, 0);
       setTimeout(() => { const h = document.getElementById('bt-hand'), g = h.querySelector('.bt-own-glow');
-        floatF = { filter: getComputedStyle(h).filter, glow: !g || getComputedStyle(g).display !== 'none', live };
+        // Облако на холсте (bath-cloth-rig.js) живёт перерисовками слоя, а не правками svg.
+        const R = h._bccRig, d0 = window.__ccD0 || 0;
+        floatF = { filter: getComputedStyle(h).filter, glow: !g || getComputedStyle(g).display !== 'none', live: live + (R && R.root ? R.draws - d0 : 0) };
         L.flyHome(() => {}); setTimeout(() => { mo.disconnect();
         const f = (b) => ({ cx: (b.left + b.right) / 2, bottom: b.bottom, w: b.width, h: b.height });
         res({ kind, shape, floatF, shelf: f(shelf), start: start && f(start) }); }, 1300); }, 1600);
@@ -1251,6 +1254,37 @@ const harness = require('./harness');
       `мочалка ${lv}: парит живой (правок ${r.floatF.live}), без тени-фильтра (${r.floatF.filter}), со своим свечением`);
     check(T && Math.abs(T.cx - S.cx) < 2 && Math.abs(T.bottom - S.bottom) < 2 && Math.abs(T.w / S.w - 1) < 0.06 && Math.abs(T.h / S.h - 1) < 0.06,
       `мочалка ${lv}: подъём начинается на месте полочной — середина и низ в пределах 2 точек, размер в пределах 6%`);
+  }
+
+  // ОБЛАКО НА ХОЛСТЕ (bath-cloth-rig.js): svg облака живым не правится, а
+  // небо в нём стоит, пока облако парит (как у флакона: небо — за окном).
+  {
+    await resetCloth(8);
+    await page.waitForTimeout(600);
+    const cw = await page.evaluate(() => new Promise(res => {
+      const box = document.getElementById('bt-cloth-box'), R = box._bccRig, d0 = R ? R.draws : 0;
+      let n = 0;
+      const mo = new MutationObserver(m => { n += m.filter(x => x.attributeName !== 'class').length; });
+      mo.observe(box, { attributes: true, subtree: true });
+      setTimeout(() => { mo.disconnect(); res({ n, draws: R ? R.draws - d0 : 0 }); }, 800);
+    }));
+    check(cw.n === 0 && cw.draws > 10, `облако на полке живёт холстом (перерисовок ${cw.draws}), а svg не правит (правок ${cw.n})`);
+    await page.evaluate(() => { LustMinigame.phase = 'cloth'; LustMinigame.liftTool('cloth');
+      window.__lean = { live: true, x: 0, y: 0 }; Tilt.__orig = Tilt.__orig || Tilt.lean; Tilt.lean = () => window.__lean; });
+    await page.waitForTimeout(1600);
+    const pts = await page.evaluate(() => new Promise(res => {
+      const R = document.getElementById('bt-hand')._bccRig, out = [], t0 = performance.now();
+      const st = () => {
+        // skyAt — в точках слоя от его угла (до плотности холста).
+        const b = R.back.getBoundingClientRect(), sc = b.width / parseFloat(R.back.style.width);
+        if (R.skyAt) out.push([b.left + R.skyAt[0] * sc, b.top + R.skyAt[1] * sc, b.top]);
+        if (performance.now() - t0 < 1500) requestAnimationFrame(st); else res(out);
+      };
+      requestAnimationFrame(st);
+    }));
+    await page.evaluate(() => { if (Tilt.__orig) Tilt.lean = Tilt.__orig; });
+    const sp = (k) => Math.max(...pts.map(p => p[k])) - Math.min(...pts.map(p => p[k]));
+    check(pts.length > 20 && sp(2) > 3 && sp(1) < 0.8, `облако качается (${sp(2).toFixed(1)} px), а небо в нём стоит (${sp(1).toFixed(2)} px)`);
   }
 
   // ================= 8. ЗАКРЫЛИ ВАННУЮ — ЦИКЛ ВСТАЛ =================

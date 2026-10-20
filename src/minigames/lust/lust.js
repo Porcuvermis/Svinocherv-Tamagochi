@@ -415,6 +415,7 @@ const LustMinigame = {
             st.left = L + 'px'; st.top = T + 'px'; st.width = W + 'px'; st.height = H + 'px';
             svg._btWorld = [c.s, 0, 0, c.s, c.tx, c.ty];
             if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigFollow) BATH_SOAP.rigFollow(svg);
+            if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccFollow) BATH_CLOTH.ccFollow(svg);
         }
     },
 
@@ -436,6 +437,7 @@ const LustMinigame = {
         svg._btO = { x: -L, y: -T };
         svg.parentNode.classList.add('bt-on');
         if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigFollow) BATH_SOAP.rigFollow(svg);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccFollow) BATH_CLOTH.ccFollow(svg);
     },
     // Поставить точку хвата в p (единицы холста ванной) с масштабом k
     // (полёт домой ужимает вещь). Только transform обёртки — без
@@ -452,6 +454,7 @@ const LustMinigame = {
         // Небо флакона — СРАЗУ вслед за обёрткой, в том же событии пальца или
         // кадре полёта: в цикле кадров оно отставало бы и шло ступеньками.
         if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.skyNow) BATH_SOAP.skyNow(svg);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccKick) BATH_CLOTH.ccKick(svg);
     },
     // Холст пуст — слой снят, размер ноль.
     emptyCarry(svg) {
@@ -463,6 +466,7 @@ const LustMinigame = {
         svg.parentNode.classList.remove('bt-on');
         svg.parentNode.style.transform = '';
         if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigFollow) BATH_SOAP.rigFollow(svg);
+        if (typeof BATH_CLOTH !== 'undefined' && BATH_CLOTH.ccFollow) BATH_CLOTH.ccFollow(svg);
     },
     // Вещь из руки убрана целиком (сброс, вход, уход).
     dropHeld() {
