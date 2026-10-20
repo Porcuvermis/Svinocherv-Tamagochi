@@ -12,8 +12,9 @@
 //   reveal  — уходит, остаётся рамка      clear — покров уходит целиком
 //
 // Покров не знает, ЧТО рисует. Вид — у шкурки окна (MinigameWindow, опция
-// skin): skin.veilStart(ctx, mode) — начало хода, skin.veil(ctx, mode, p) —
-// кадр на доле p ∈ [0, 1] в единицах холста 390×844. Холст между кадрами
+// skin): skin.veilStart(ctx, mode) — начало хода, skin.veil(ctx, mode, p,
+// scale, fx) — кадр на доле p ∈ [0, 1] в единицах холста 390×844; fx — слой
+// мгновенных украшений, чистится каждый кадр. Холст между кадрами
 // не чистится (см. frame). Длительности — skin.VEIL_MS[mode]. У окна без шкурки (или шкурки без veil) перехода нет:
 // игра открывается и закрывается как раньше.
 //
@@ -51,6 +52,10 @@ const MgVeil = {
             this.el.id = 'mg-veil';
             this.cv = document.createElement('canvas');
             this.el.appendChild(this.cv);
+            // Слой мгновенных украшений хода (кольца лопнувших пузырей):
+            // чистится каждый кадр, в отличие от холста покрова.
+            this.fx = document.createElement('canvas');
+            this.el.appendChild(this.fx);
             // Тап по покрову гасится: под ним либо собирается игра, либо
             // уже закрывается — ни туда, ни туда пальцу нельзя. Кроме места,
             // где нарисован крестик: на входе это отмена (cancelEnter).
@@ -77,9 +82,11 @@ const MgVeil = {
     // полсекунды-две) — он один раз перерисовывается в полном разрешении
     // (skin.veilStill): неподвижную мыльную пену уже видно.
     MOTION_SCALE: 1,
+    MIN_HOLD: 300,
     setScale(s) {
         const W = Math.round(STAGE_W * s), H = Math.round(STAGE_H * s);
         if (this.cv.width !== W || this.cv.height !== H) { this.cv.width = W; this.cv.height = H; }
+        if (this.fx.width !== W || this.fx.height !== H) { this.fx.width = W; this.fx.height = H; }
         this.scale = s;
     },
     still() {
@@ -91,6 +98,7 @@ const MgVeil = {
     hide() {
         if (this.el) { this.el.style.display = 'none'; this.el.classList.remove('mg-veil-thru'); }
         if (this.cv) this.cv.getContext('2d').clearRect(0, 0, this.cv.width, this.cv.height);
+        if (this.fx) this.fx.getContext('2d').clearRect(0, 0, this.fx.width, this.fx.height);
         this.state = null;
     },
 
@@ -114,7 +122,11 @@ const MgVeil = {
     },
 
     frame(mode, p) {
-        this.skin.veil(this.ctx(), mode, p, this.scale);
+        const fx = this.fx.getContext('2d');
+        fx.setTransform(1, 0, 0, 1, 0, 0);
+        fx.clearRect(0, 0, this.fx.width, this.fx.height);
+        fx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
+        this.skin.veil(this.ctx(), mode, p, this.scale, fx);
     },
 
     // Один ход перехода: кадры от 0 до 1 за VEIL_MS[mode]. Последний кадр —
@@ -169,7 +181,10 @@ const MgVeil = {
             // сцены держит поток сотни миллисекунд, и ход заливки съела бы.
             minigame.open();
             this._entering.opened = true;
-            await (minigame.veilReady ? minigame.veilReady() : this.nextFrames(2));
+            // Пена стоит хотя бы MIN_HOLD, даже если игра дозрела мигом: иначе
+            // заливка и раскрытие сливались в одно мигание.
+            await Promise.all([minigame.veilReady ? minigame.veilReady() : this.nextFrames(2),
+                               new Promise(r => setTimeout(r, this.MIN_HOLD))]);
             if (run !== this._run) return;
             if (!await this.play('reveal', run)) return;
         } finally {

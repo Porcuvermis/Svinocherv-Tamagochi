@@ -18,7 +18,11 @@
 // (fullGen, в простое после рамки), — а переход только показывает и прячет
 // её кругами пузырей:
 //   * заливка: грозди кадра (см. ниже) ложатся копиями из атласа;
-//   * раскрытие и уход: лопнувшие стираются по своей форме.
+//   * раскрытие и уход: лопнувшие стираются по своей форме, а живые соседи,
+//     чьи края задела маска, тут же ложатся поверх целыми (popped); на месте
+//     лопнувших пузырей раздаются и гаснут кольца, как у горки над хвостом.
+//     Без этого пузыри исчезали «вырезанными» — с выкушенными полукругами
+//     (замечание игрока).
 // Холст покрова между кадрами не чистится — за кадр работы ровно столько,
 // сколько появилось или лопнуло.
 //
@@ -43,7 +47,18 @@
 // пене он белый (его не видно в общей массе), в рамке — синий. Покров над
 // ним тает долями прозрачности, и синий проступает плавно.
 Object.assign(LustFoam, {
-    VEIL_MS: { cover: 220, reveal: 420, close: 240, clear: 380, burst: 180, pop: 260, finish: 220 },
+    // Длительности ходов. Заливка — всегда одной длины и не мигом (игрок:
+    // «экран моргнул пузырями — и уже готово»): игра под пеной всё равно
+    // собирается ПОСЛЕ неё, а сама заливка должна успеть прочитаться.
+    // Лопание — с запасом на кольца (POP_END).
+    VEIL_MS: { cover: 480, reveal: 620, close: 380, clear: 560, burst: 220, pop: 340, finish: 320 },
+    // Ходы лопания укладываются в эту долю хода: остаток — догорают кольца
+    // последних лопнувших пузырей.
+    POP_END: 0.85,
+    // Кольцо лопнувшего пузыря (как у горки над хвостом, BATH_ART.BURST):
+    // раздаётся в GROW раз и гаснет за MS. Не мельче MIN_R, одновременно не
+    // больше CAP — пузырей тысячи, кольцо у каждого было бы рябью.
+    RING: { ms: 260, grow: 0.55, minR: 4.5, cap: 220 },
 
     // Нажатия крестика в забеге (MgVeil.knock): первое — горсть маленьких
     // гроздей, второе — крупные, вместе с рамкой ~60% экрана. Центры
@@ -153,10 +168,13 @@ Object.assign(LustFoam, {
             if (!g) map.set(key, g = { rim, list: [] });
             g.list.push(b);
         };
-        for (const b of L.deep.concat(L.top)) put(b, true);
-        for (const b of In.deep.concat(In.top)) put(b, false);
+        for (const b of L.deep) { b.layer = 'deep'; put(b, true); }
+        for (const b of L.top) { b.layer = 'top'; put(b, true); }
+        for (const b of In.deep) { b.layer = 'deep'; put(b, false); }
+        for (const b of In.top) { b.layer = 'top'; put(b, false); }
         yield;
         const groups = [...map.values()], K = this.GROUP_K;
+        for (const g of groups) for (const b of g.list) b.grp = g;
         const nz = btRng(this.SEED ^ 0x1d07);
         for (const g of groups) {
             let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, sx = 0, sy = 0;
@@ -195,6 +213,32 @@ Object.assign(LustFoam, {
             a.drawImage(full, g.x0 * fs, g.y0 * fs, g.w * fs, g.h * fs, g.x0, g.y0, g.w, g.h);
             a.restore();
             if (++n % 60 === 0) yield;
+        }
+        // Соседи грозди — чужие пузыри, которые её маска задевает. Когда
+        // гроздь лопается, её маска стирает и их края; живых соседей покров
+        // тут же дорисовывает целыми (veil) — иначе оставались пузыри с
+        // выкушенным полукругом (замечание игрока).
+        const NC = 24, hash = new Map(), hk = (i, j) => i * 4096 + j;
+        for (const g of groups) for (const b of g.list) {
+            const k = hk(Math.floor(b.x / NC), Math.floor(b.y / NC));
+            (hash.get(k) || hash.set(k, []).get(k)).push(b);
+        }
+        n = 0;
+        for (const g of groups) {
+            const seen = new Set();
+            for (const b of g.list) {
+                const ci = Math.floor(b.x / NC), cj = Math.floor(b.y / NC);
+                for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
+                    for (const q of hash.get(hk(i, j)) || []) {
+                        if (q.grp === g || seen.has(q)) continue;
+                        // Задет заметно, а не краешком: краешек под соседней
+                        // массой не виден, а дорисовка стоит кадров.
+                        if (Math.hypot(q.x - b.x, q.y - b.y) < b.r * K + q.r * 0.6) seen.add(q);
+                    }
+                }
+            }
+            g.near = [...seen].sort((a, c) => (a.layer === c.layer ? (a.y + a.r) - (c.y + c.r) : a.layer === 'deep' ? -1 : 1));
+            if (++n % 80 === 0) yield;
         }
         this._atlas = atlas;
         this._groups = groups;
@@ -290,13 +334,68 @@ Object.assign(LustFoam, {
         // s — точек покрова на единицу сцены: круги кладутся в точках холста
         // при тождественном преобразовании (покров бывает мельче полной пены —
         // MgVeil.MOTION_SCALE).
-        this._v = { mode, list, i: 0, cross: 0, s: ctx.canvas.width / STAGE_W,
+        const s = ctx.canvas.width / STAGE_W;
+        const rank = new Map();
+        list.forEach((g, i) => rank.set(g, i));
+        this._v = { mode, list, rank, i: 0, cross: 0, s, sp: this.sprites(s), popped: new Set(),
+                    rings: (this._v && this._v.rings) || [],
                     crossList: L.deep.concat(L.top).filter(b => b.cross) };
     },
 
     // Покров стоит, пока игра дозревает: полная пена в полном разрешении.
     veilStill(ctx) {
         if (this._full) ctx.drawImage(this._full, 0, 0, STAGE_W, STAGE_H);
+    },
+
+    // ---------- ЛОПАНИЕ ----------
+    // Гроздь лопнула: живые соседи, чьи края задела её маска, ложатся
+    // поверх целыми пузырями, а на месте её пузырей вспыхивают кольца.
+    // Живой — тот, чья гроздь ещё на покрове: в ходе 'pop' это брошенные
+    // нажатием (_shown), в остальных — не лопнувшие в этом ходе.
+    // Сосед, чья гроздь сама лопнет в ближайшие POP_AHEAD хода, не
+    // дорисовывается: он исчезнет через кадр-другой, а дорисовка всех
+    // соседей подряд стоила 30–40 мс кадра под 4× замедлением.
+    POP_AHEAD: 0.1,
+    RESTAMP_CAP: 150,
+    popped(ctx, fresh, V, mode) {
+        const soon = V.i + V.list.length * this.POP_AHEAD;
+        const alive = (g) => {
+            if (mode === 'pop' ? !this._shown.has(g) : V.popped.has(g)) return false;
+            const r = V.rank.get(g);
+            return r == null || r > soon;
+        };
+        const seen = new Set();
+        for (const g of fresh) for (const b of g.near) if (!seen.has(b) && alive(b.grp)) seen.add(b);
+        // Не больше RESTAMP_CAP за кадр, крупные первыми: у мелкого пузыря
+        // выкушенный край почти не виден. Порядок рисования — как в полной
+        // пене: глубокий слой под верхним, сверху вниз.
+        let todo = [...seen];
+        if (todo.length > this.RESTAMP_CAP) todo = todo.sort((a, c) => c.r - a.r).slice(0, this.RESTAMP_CAP);
+        todo.sort((a, c) => (a.layer === c.layer ? (a.y + a.r) - (c.y + c.r) : a.layer === 'deep' ? -1 : 1));
+        for (const b of todo) this.stamp(ctx, b.layer === 'top' ? V.sp.top : V.sp.deep, b, 1);
+        ctx.globalAlpha = 1;
+        const now = performance.now(), R = this.RING;
+        for (const g of fresh) for (const b of g.list) {
+            if (b.r < R.minR || V.rings.length >= R.cap) continue;
+            V.rings.push({ x: b.x, y: b.y, r: b.r, t0: now + Math.random() * 60 });
+        }
+    },
+
+    // Кольца — на своём слое покрова (fx), он чистится каждый кадр.
+    rings(fx, V) {
+        if (!fx || !V.rings.length) return;
+        const now = performance.now(), R = this.RING;
+        fx.strokeStyle = this.pal().foam.hi;
+        V.rings = V.rings.filter(k => now - k.t0 < R.ms);
+        for (const k of V.rings) {
+            const u = (now - k.t0) / R.ms;
+            if (u < 0) continue;
+            const e = 1 - (1 - u) * (1 - u);
+            fx.globalAlpha = 0.85 * (1 - u) * (1 - u);
+            fx.lineWidth = Math.max(0.5, k.r * 0.16 * (1 - u));
+            fx.beginPath(); fx.arc(k.x, k.y, k.r * (1 + R.grow * e), 0, Math.PI * 2); fx.stroke();
+        }
+        fx.globalAlpha = 1;
     },
 
     // Путь из кругов. s — множитель координат: 1 в единицах сцены, scale —
@@ -311,14 +410,16 @@ Object.assign(LustFoam, {
         }
     },
 
-    veil(ctx, mode, p) {
+    veil(ctx, mode, p, scale, fx) {
         const V = this._v, full = this._full;
         if (!V || V.mode !== mode || !full || !this._atlas) return;
-        const upto = p >= 1 ? V.list.length : Math.floor(p * V.list.length);
+        const add = mode === 'cover' || mode === 'close' || mode === 'burst' || mode === 'finish';
+        const q = add ? p : Math.min(1, p / this.POP_END);
+        const upto = q >= 1 ? V.list.length : Math.floor(q * V.list.length);
         const fresh = V.list.slice(V.i, upto);
         V.i = upto;
-        const add = mode === 'cover' || mode === 'close' || mode === 'burst' || mode === 'finish';
         if (mode === 'pop') for (const g of fresh) this._shown.delete(g);
+        for (const g of fresh) V.popped.add(g);
         if (fresh.length) {
             // Гроздь — одна копия из атласа: появилась — кладётся, лопнула —
             // стирается по своей же форме (destination-out берёт альфу
@@ -329,7 +430,9 @@ Object.assign(LustFoam, {
             const s = V.s, A = this._atlas;
             for (const g of fresh) ctx.drawImage(A, g.ax, g.ay, g.w, g.h, g.x0 * s, g.y0 * s, g.w * s, g.h * s);
             ctx.restore();
+            if (!add) this.popped(ctx, fresh, V, mode);
         }
+        this.rings(fx, V);
         // Крестик: при раскрытии покров над ним тает (под ним синий крестик
         // рамки), при закрытии белая пена ложится на него обратно. Доля
         // прозрачности за кадр — такая, чтобы в сумме вышло ровно p.

@@ -89,8 +89,7 @@ const LustFoam = {
     ],
     _deep: null,
     _top: null,
-    _sprites: null,
-    _spriteScale: 0,
+    _sprites: null,     // { [разрешение]: спрайты } — рамке и покрову нужны разные
 
     get bg() { return this.pal().foam[500]; },
 
@@ -314,7 +313,8 @@ const LustFoam = {
     },
 
     sprites(scale) {
-        if (this._sprites && this._spriteScale === scale) return this._sprites;
+        this._sprites = this._sprites || {};
+        if (this._sprites[scale]) return this._sprites[scale];
         const P = this.pal();
         const make = (r, F, L) => {
             const pad = 1, s = Math.ceil((r + pad) * 2 * scale);
@@ -362,8 +362,7 @@ const LustFoam = {
                 out[kind + 'X'][r] = make(r, P.foamCross, this.LOOK[kind]);
             }
         }
-        this._spriteScale = scale;
-        return (this._sprites = out);
+        return (this._sprites[scale] = out);
     },
 
     // Как далеко рисунок заходит внутрь прямоугольника сцены (единицы):
