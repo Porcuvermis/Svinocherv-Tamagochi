@@ -417,22 +417,16 @@ onmessage = async (e) => {
         });
         this.skyPatterns(svg);
     },
-    // Облако (ступень 8) — такое же окно в то же небо: его тело залито узором
-    // из этих же двух картинок, и узор ставится обратной матрицей «тело →
-    // холст» (с учётом осадки и качания), так же, как слои флакона.
+    // Облако (ступень 8) — такое же окно в то же небо: его тело обрезает
+    // эти же две картинки, и они ставятся обратной матрицей «тело → холст»
+    // (с учётом осадки и качания), так же, как слои флакона.
     skyPatterns(scope) {
         if (!scope || typeof scope.querySelectorAll !== 'function') return;
         const P = this.MAGIC.PLX;
-        scope.querySelectorAll('pattern[data-sky]').forEach(pt => {
-            const body = pt.ownerSVGElement && pt.ownerSVGElement.querySelector(`[data-j="body"][fill="url(#${pt.id})"]`);
-            if (!body) return;
-            // Узор целиком ложится на небо экрана (patternTransform — как
-            // transform слоя у флакона); ближняя картинка сдвигается ещё на
-            // разницу глубин внутри узора — порознь с дальней.
-            const m = this.worldMatrix(body), tf = this.layerTr(m, P.far);
-            if (pt.getAttribute('patternTransform') !== tf) pt.setAttribute('patternTransform', tf);
-            const L = this.live, im = pt.querySelectorAll('image'), d = P.near - P.far;
-            const tn = `translate(${(-L.px * d).toFixed(2)} ${(-L.py * d).toFixed(2)})`;
+        scope.querySelectorAll('g[data-sky]').forEach(g => {
+            const m = this.worldMatrix(g), im = g.querySelectorAll('image');
+            const tf = this.layerTr(m, P.far), tn = this.layerTr(m, P.near);
+            if (im[0] && im[0].getAttribute('transform') !== tf) im[0].setAttribute('transform', tf);
             if (im[1] && im[1].getAttribute('transform') !== tn) im[1].setAttribute('transform', tn);
         });
     },
