@@ -159,7 +159,8 @@ const MinigameWindow = {
     //   skin.rim   { side, top } — толщина боков и верха, единицы холста;
     //   skin.cross { x, y, size } — где нарисован крестик (сюда ляжет зона
     //              нажатия, сама кнопка становится невидимой);
-    //   skin.draw(ctx, scale) — нарисовать рамку на холсте 390×844.
+    //   skin.draw(ctx, scale) — нарисовать рамку на холсте 390×844;
+    //   skin.bg    — цвет фона окна под рамкой (необязательно).
     //
     // Под рамку ничего не уходит: тело окна УМЕНЬШАЕТСЯ css-масштабом и
     // встаёт во внутренний прямоугольник. Раскладка игры внутри остаётся
@@ -179,6 +180,9 @@ const MinigameWindow = {
         const G = this.skinGeometry(skin);
         handle.screen.classList.add('mg-skin');
         handle.skin = skin;
+        // Фон окна под рамкой — цвет материала: точка у края, где пузыря не
+        // хватило, не должна светиться тёмным.
+        if (skin.bg) handle.frame.style.background = skin.bg;
         const b = handle.body.style;
         b.transformOrigin = '0 0';
         b.transform = `translate(${G.inner.x0}px, ${(G.inner.y0 - this.TITLE_H).toFixed(2)}px) scale(${G.k.toFixed(4)})`;

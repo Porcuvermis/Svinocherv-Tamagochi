@@ -1,39 +1,67 @@
 // ================= ВАННАЯ: ПЕНА ВОКРУГ ОКНА =================
 // Шкурка окна похоти (docs/plan/25-lust-foam-transition.md): рамка из плотной
-// мультяшной пены по краю холста и крестик, выложенный пузырями той же пены.
-// Пена здесь та, что ПРЯЧЕТ, — непрозрачная, матовая, с тёмными складками
-// между пузырями, а не стеклянные шарики с бликами, как на черве.
+// мультяшной пены по краю холста и крестик, проступающий в этой же пене.
+// Пена здесь та, что ПРЯЧЕТ, — непрозрачная, мягкая, одной массой, а не
+// стеклянные шарики с бликами, как на черве.
 //
 // Механизм окна общий (MinigameWindow.attach, опция skin), здесь только вид:
 //   rim        — толщина рамки: бока и верх (низ окно выводит само из
 //                уменьшения сцены);
 //   cross      — где крестик и какого он размера (окно кладёт туда зону
 //                нажатия);
-//   draw(ctx, inner) — нарисовать рамку на холсте 390×844, inner — край
-//                уменьшенной сцены, внутрь которого пена не лезет.
+//   bg         — цвет фона окна под рамкой;
+//   draw(ctx, scale) — нарисовать рамку на холсте 390×844.
+//
+// ---------- ПЕНА — МАССА, А НЕ ГОРСТЬ ШАРИКОВ ----------
+// Первый вариант (решение игрока — провал): крупные пузыри по отдельности
+// поверх сплошной полосы цвета складки. Полоса читалась серой рамкой «под
+// пеной», а пузыри — россыпью бусин. Теперь:
+//   * никакой полосы нет. Масса — это объединение кругов всех пузырей
+//     рамки, чуть увеличенных, залитое СВЕТЛЫМ цветом пены. Щелей между
+//     пузырями поэтому нет, а внутренний край массы сам выходит волнистым;
+//   * пузыри мелкие и тесные, контраст у них слабый: складка только по
+//     нижней дуге, блик — маленькое матовое пятно. Глаз видит одну
+//     пушистую массу, а уже в ней — пузырьки;
+//   * фон окна под рамкой — тоже цвет пены (bg): если где-то у края
+//     останется точка без пузыря, сквозь неё не проглянет тёмное.
+//
+// ---------- КРЕСТИК — ЧАСТЬ ПЕНЫ ----------
+// Не выложенный по линейке ряд шариков (тоже провал первого варианта:
+// читался кнопкой интерфейса), а ПОДКРАШЕННЫЕ пузыри из той же случайной
+// массы: те, чей центр у одной из двух диагоналей, с шумом ширины. Размеры у
+// них разные, стоят они неровно, и цвет — мягкий, в тон пене, сдвинутый в
+// синеву, а не насыщенная синяя заливка.
 //
 // ---------- ОДНА РАСКЛАДКА НА ВЕСЬ ЭКРАН ----------
-// Пузыри разложены по ВСЕМУ холсту, а рамка — только те из них, что у края
-// (метка rim). Остальные нужны переходу: он заливает экран этой же
+// Пузыри раскладываются от края; рамка — те, что у края (метка rim).
+// Остальное понадобится переходу (этапы 3–4): он заливает экран этой же
 // раскладкой и раскрывает её до рамки, поэтому последний кадр раскрытия и
-// есть рамка — подменять картинку не придётся. Раскладка выводится из сида и
-// одинакова при каждом заходе.
+// есть рамка. Середина экрана досыпается лениво (fillAll) — рамке она не
+// нужна, а тысячи лишних пузырей при входе — лишнее время. Раскладка
+// выводится из сида и одинакова при каждом заходе.
 //
 // ---------- КАК ДЁШЕВО ----------
-// Пузырь — готовый спрайт своего радиуса (радиусы целые, спрайтов десяток),
-// рамка — тысяча с лишним drawImage один раз. В игре холст неподвижен и в
-// кадре ничего не стоит.
+// Пузырь — готовый спрайт своего радиуса (радиусы целые, спрайтов десяток на
+// цвет), рамка — полторы тысячи drawImage один раз. В игре холст неподвижен
+// и в кадре ничего не стоит.
 const LustFoam = {
     SEED: 7331,
     // Толщина рамки в единицах холста. Верх толще: в нём лежит крестик.
     rim: { side: 16, top: 54 },
     // Крестик: центр там же, где была кнопка окна, но крупнее — пена даёт место.
-    cross: { x: 360, y: 28, size: 42 },
-    R_MIN: 5,
-    R_MAX: 16,
-    _bubbles: null,
+    cross: { x: 360, y: 28, size: 40 },
+    R_MIN: 3,
+    R_MAX: 9,
+    // Клетка сетки соседей не меньше дальности касания (2·R_MAX·k ≈ 14,4):
+    // тогда проверять только 3×3 клетки, а не 5×5.
+    CELL: 16,
+    _list: null,
+    _grid: null,
+    _rng: null,
     _sprites: null,
     _spriteScale: 0,
+
+    get bg() { return this.pal().foam[500]; },
 
     pal() { return PALETTE.bathScene; },
 
@@ -42,113 +70,147 @@ const LustFoam = {
     // соседях глубже, чем на долю радиуса. Перекрытие разрешено нарочно —
     // пена держится гроздьями, а не выложена плиткой. Крупные идут первыми,
     // мелкие потом добивают щели.
-    bubbles() {
-        if (this._bubbles) return this._bubbles;
-        const rng = btRng(this.SEED);
-        const W = STAGE_W, H = STAGE_H, CELL = 24;
-        const gw = Math.ceil(W / CELL) + 1, gh = Math.ceil(H / CELL) + 1;
-        const grid = Array.from({ length: gw * gh }, () => []);
-        const list = [];
+    PASSES: [
+        { density: 0.10, rMin: 6.5, rMax: 9, k: 0.8 },
+        { density: 0.30, rMin: 4.5, rMax: 6.5, k: 0.76 },
+        { density: 0.50, rMin: 3, rMax: 4.5, k: 0.72 }
+    ],
+
+    // Насколько точка ВНЕ прямоугольника сцены (меньше нуля — внутри).
+    outside(x, y) {
+        const I = this.inner();
+        return Math.max(I.x0 - x, x - I.x1, I.y0 - y, y - I.y1);
+    },
+
+    // Сыплет пузыри в прямоугольники rects ([x0, y0, x1, y1]). Площадь задаёт
+    // число попыток: плотность у прохода — попыток на единицу площади.
+    // Бросать по всему холсту и отсеивать середину было втрое дороже:
+    // раскладка стоила 110 мс на компьютере — полсекунды на телефоне.
+    scatter(rects) {
+        const C = this.CELL, rng = this._rng;
+        const grid = this._grid;
+        const reach = Math.ceil(this.R_MAX * 2 * 0.8 / C);
         const fits = (x, y, r, k) => {
-            const i0 = Math.max(0, ((x - this.R_MAX * 2) / CELL) | 0), i1 = Math.min(gw - 1, ((x + this.R_MAX * 2) / CELL) | 0);
-            const j0 = Math.max(0, ((y - this.R_MAX * 2) / CELL) | 0), j1 = Math.min(gh - 1, ((y + this.R_MAX * 2) / CELL) | 0);
-            for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-                for (const b of grid[j * gw + i]) {
-                    const dx = b.x - x, dy = b.y - y, m = (b.r + r) * k;
-                    if (dx * dx + dy * dy < m * m) return false;
+            const ci = Math.floor(x / C) + 1, cj = Math.floor(y / C) + 1;
+            for (let j = cj - reach; j <= cj + reach; j++) {
+                const row = grid[j];
+                if (!row) continue;
+                for (let i = ci - reach; i <= ci + reach; i++) {
+                    const cell = row[i];
+                    if (!cell) continue;
+                    for (const b of cell) {
+                        const dx = b.x - x, dy = b.y - y, m = (b.r + r) * k;
+                        if (dx * dx + dy * dy < m * m) return false;
+                    }
                 }
             }
             return true;
         };
         const put = (b) => {
-            list.push(b);
-            const i = Math.max(0, Math.min(gw - 1, (b.x / CELL) | 0)), j = Math.max(0, Math.min(gh - 1, (b.y / CELL) | 0));
-            grid[j * gw + i].push(b);
+            this._list.push(b);
+            const i = Math.floor(b.x / C) + 1, j = Math.floor(b.y / C) + 1;
+            const row = grid[j] || (grid[j] = []);
+            (row[i] || (row[i] = [])).push(b);
         };
-        // Крестик — первым: пена складывается вокруг него, а не он поверх
-        // неё. Две диагонали, пузыри внахлёст, чтобы линия читалась
-        // сплошной, к концам чуть мельче — как мазок.
-        const C = this.cross, half = C.size / 2;
-        for (const [sx, sy] of [[1, 1], [1, -1]]) {
-            const n = 7;
-            for (let i = 0; i < n; i++) {
-                const t = i / (n - 1) * 2 - 1;
-                const r = 6 - Math.abs(t) * 1.2;
-                if (sy < 0 && i === (n - 1) / 2) continue;   // центр уже лёг первой линией
-                put({ x: C.x + t * half * sx, y: C.y + t * half * sy, r, cross: true });
+        for (const P of this.PASSES) for (const [x0, y0, x1, y1] of rects) {
+            const tries = Math.round((x1 - x0) * (y1 - y0) * P.density);
+            for (let n = 0; n < tries; n++) {
+                const x = x0 + rng() * (x1 - x0), y = y0 + rng() * (y1 - y0);
+                let r = P.rMin + Math.pow(rng(), 1.4) * (P.rMax - P.rMin);
+                // В квадрате крестика пузыри мельче: штрих в два-три пузыря
+                // шириной читается линией, крупный пузырь рвал бы его.
+                if (this.inCross(x, y)) r = Math.min(r, 3 + rng() * 2.4);
+                if (fits(x, y, r, P.k)) put({ x, y, r });
             }
         }
-        // Три прохода от крупных к мелким. k — насколько можно утонуть в
-        // соседе: у крупных меньше (держат форму), мелкие лезут в щели.
-        const passes = [
-            { tries: 9000, rMin: 11, rMax: this.R_MAX, k: 0.78 },
-            { tries: 14000, rMin: 7, rMax: 11, k: 0.74 },
-            { tries: 18000, rMin: this.R_MIN, rMax: 7, k: 0.7 }
-        ];
-        for (const P of passes) {
-            for (let n = 0; n < P.tries; n++) {
-                const r = P.rMin + Math.pow(rng(), 1.6) * (P.rMax - P.rMin);
-                const x = -4 + rng() * (W + 8), y = -4 + rng() * (H + 8);
-                if (fits(x, y, r, P.k)) put({ x, y, r, cross: false });
-            }
-        }
-        // Порядок рисования: сверху вниз, поэтому нижний пузырь ложится на
-        // верхний — пена «оседает», тени падают вниз, как у пены на черве.
-        list.sort((a, b) => (a.y + a.r) - (b.y + b.r));
-        this.markRim(list, rng);
-        return (this._bubbles = list);
     },
 
-    // Рамка — пузыри, чей центр у края. Внутрь сцены пузырь выступает не
-    // больше чем на половину радиуса (±шум), поэтому внутренний край рваный,
-    // но заходит в сцену лишь на 3–8 единиц, а не на целый пузырь.
-    markRim(list, rng) {
-        const I = this.inner();
-        for (const b of list) {
-            // Насколько центр ВНЕ прямоугольника сцены (меньше нуля — внутри).
-            const d = Math.max(I.x0 - b.x, b.x - I.x1, I.y0 - b.y, b.y - I.y1);
-            b.rim = b.cross || d > b.r * (0.35 + rng() * 0.3);
+    inCross(x, y) {
+        const C = this.cross, h = C.size / 2 + 6;
+        return Math.abs(x - C.x) < h && Math.abs(y - C.y) < h;
+    },
+
+    // Пузыри полосы рамки (с запасом внутрь — для рваного края). Порядок
+    // рисования — сверху вниз: нижний пузырь ложится на верхний, пена
+    // «оседает», складки смотрят вниз.
+    bubbles() {
+        if (this._list) return this._list;
+        this._list = [];
+        this._grid = [];
+        this._rng = btRng(this.SEED);
+        const W = STAGE_W + 6, H = STAGE_H + 6, I = this.inner(), m = 12;
+        // Четыре полосы рамки с запасом m внутрь. Середина досыпается потом
+        // вокруг уже стоящих пузырей (сетка соседей общая) — без шва.
+        this.scatter([
+            [-6, -6, W, I.y0 + m],
+            [-6, I.y1 - m, W, H],
+            [-6, I.y0 + m, I.x0 + m, I.y1 - m],
+            [I.x1 - m, I.y0 + m, W, I.y1 - m]
+        ]);
+        this.mark();
+        return this._list;
+    },
+
+    // Метки: рамка и крестик. Внутрь сцены пузырь рамки выступает на
+    // 0–0,6 радиуса — край рваный, но неглубокий.
+    mark() {
+        const rng = btRng(this.SEED ^ 0x5bd1);
+        const C = this.cross, h = C.size / 2;
+        for (const b of this._list) {
+            if (b.rim == null) {
+                const d = this.outside(b.x, b.y);
+                b.rim = d > b.r * (-0.6 + rng() * 0.6);
+            }
+            // Крестик: близость к одной из диагоналей квадрата, ширина
+            // полосы шумит у каждого пузыря, к концам сужается.
+            const u = (b.x - C.x) / h, v = (b.y - C.y) / h;
+            if (Math.abs(u) > 1.05 || Math.abs(v) > 1.05) { b.cross = false; continue; }
+            const along = Math.max(Math.abs(u), Math.abs(v));
+            const dist = Math.min(Math.abs(u - v), Math.abs(u + v)) / Math.SQRT2 * h;
+            const w = (6.6 - along * 2) * (0.75 + rng() * 0.5);
+            b.cross = b.rim && dist < w;
         }
+        this._list.sort((a, b) => (a.y + a.r) - (b.y + b.r));
     },
 
     // Прямоугольник уменьшенной сцены — тем же счётом, что у окна
     // (MinigameWindow.skinGeometry): числа одни, расходиться им нельзя.
     inner() {
-        return MinigameWindow.skinGeometry(this).inner;
+        return this._inner || (this._inner = MinigameWindow.skinGeometry(this).inner);
     },
 
     // ---------- СПРАЙТЫ ----------
-    // Один пузырь на каждый целый радиус, в разрешении холста. Тело плотное,
-    // книзу темнеет к цвету складки; обводка тонкая; блик маленький и
-    // матовый — «не супер блестючие».
+    // Один пузырь на каждый целый радиус, в разрешении холста. Мягкий:
+    // светлый центр, к краю едва темнеет; складка — только по нижней дуге,
+    // полупрозрачная; блик — маленькое матовое пятно.
     sprites(scale) {
         if (this._sprites && this._spriteScale === scale) return this._sprites;
         const P = this.pal();
         const make = (r, F) => {
-            const pad = 2, s = Math.ceil((r + pad) * 2 * scale);
+            const pad = 1.5, s = Math.ceil((r + pad) * 2 * scale);
             const c = document.createElement('canvas');
             c.width = c.height = s;
             const g = c.getContext('2d');
             g.scale(scale, scale);
             const o = r + pad;
-            const body = g.createRadialGradient(o - r * 0.3, o - r * 0.35, r * 0.1, o, o, r);
-            // Почти плоская заливка, темнеет только у самого края: шар с
-            // объёмной растяжкой читался жемчугом, а пена — мультяшная.
-            body.addColorStop(0, F[500]);
-            body.addColorStop(0.72, F[500]);
+            const body = g.createRadialGradient(o - r * 0.3, o - r * 0.35, r * 0.05, o, o, r);
+            body.addColorStop(0, F.hi);
+            body.addColorStop(0.62, F[500]);
             body.addColorStop(1, F.lo);
             g.fillStyle = body;
             g.beginPath(); g.arc(o, o, r, 0, Math.PI * 2); g.fill();
-            g.lineWidth = Math.max(0.6, STROKE.hairline * (r / 8));
+            // Складка — снизу и справа, где пузырь упирается в соседа.
+            g.globalAlpha = 0.4;
+            g.lineWidth = Math.max(0.5, r * 0.11);
+            g.lineCap = 'round';
             g.strokeStyle = F.rim;
-            g.stroke();
-            // Блик: одно матовое пятнышко, не звезда и не кольцо.
-            g.globalAlpha = 0.75;
+            g.beginPath(); g.arc(o, o, r * 0.94, -0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+            g.globalAlpha = 0.85;
             g.fillStyle = F.hi;
             g.beginPath();
-            g.ellipse(o - r * 0.36, o - r * 0.4, r * 0.26, r * 0.17, -0.6, 0, Math.PI * 2);
+            g.ellipse(o - r * 0.38, o - r * 0.42, r * 0.24, r * 0.16, -0.6, 0, Math.PI * 2);
             g.fill();
-            return { c, o: o };
+            return { c, o };
         };
         const out = { foam: [], cross: [] };
         for (let r = 1; r <= this.R_MAX + 1; r++) {
@@ -161,33 +223,29 @@ const LustFoam = {
 
     // ---------- РАМКА ----------
     // Холст окна уже в единицах 390×844 (масштаб на нём выставлен окном).
-    // Сначала подложка — тёмные складки, по увеличенному кругу на каждый
-    // пузырь: без неё между кругами просвечивала бы сцена. Потом пузыри.
+    // Сначала масса — объединение увеличенных кругов светлым цветом пены, с
+    // мягкой тенью на сцену: по ней пена и лежит ПОВЕРХ картинки, а не
+    // вырезана в ней. Потом пузыри.
     draw(ctx, scale) {
         const B = this.bubbles().filter(b => b.rim);
         const S = this.sprites(scale), P = this.pal();
-        // Полоса рамки целиком — цветом складки: у самого края холста
-        // пузыри стоят реже, и между ними просвечивала бы сцена.
-        const I = this.inner();
-        ctx.fillStyle = P.foam.rim;
-        ctx.beginPath();
-        ctx.rect(0, 0, STAGE_W, STAGE_H);
-        // Подложка кончается РОВНО по краю сцены: там её прямой край совпадает
-        // с краем картинки и не виден, а рваный край рисуют пузыри поверх.
-        // Заход внутрь давал прямую светлую полосу по сцене, недоход —
-        // тёмную щель фона окна.
-        ctx.rect(I.x0, I.y0, I.x1 - I.x0, I.y1 - I.y0);
-        ctx.fill('evenodd');
+        ctx.save();
+        ctx.fillStyle = P.foam[500];
+        ctx.shadowColor = P.foamShade;
+        ctx.shadowBlur = 6 * scale;
+        ctx.shadowOffsetY = 1.5 * scale;
         ctx.beginPath();
         for (const b of B) {
-            ctx.moveTo(b.x + b.r * 1.08, b.y);
-            ctx.arc(b.x, b.y, b.r * 1.08, 0, Math.PI * 2);
+            const R = b.r * 1.15;
+            ctx.moveTo(b.x + R, b.y);
+            ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
         }
         ctx.fill();
-        // Крестик — последним: соседи, отсортированные по высоте, иначе
-        // ложились бы на его пузыри и рвали линию.
-        B.sort((a, b) => (a.cross ? 1 : 0) - (b.cross ? 1 : 0));
-        for (const b of B) {
+        ctx.restore();
+        // Подкрашенные — вторым проходом, поверх соседей: иначе соседи,
+        // упавшие ниже по порядку, закрывали половину штриха. Места и
+        // размеры у них те же случайные, что у всей пены.
+        for (const b of B.filter(q => !q.cross).concat(B.filter(q => q.cross))) {
             const r = Math.max(1, Math.round(b.r));
             const sp = (b.cross ? S.cross : S.foam)[r];
             const k = b.r / r;          // радиус дробный, спрайт — целый
