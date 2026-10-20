@@ -315,7 +315,7 @@ const BATH_SOAP = {
         // В blob-URL, а не в data-URL: мегабайтная строка в атрибуте
         // копировалась бы в каждую перерисовку полки и руки.
         const done = (bf, bn) => {
-            if (!bf || !bn) return;
+            if (!bf || !bn) { this._texFail = true; return; }
             this._tex = { far: URL.createObjectURL(bf), near: URL.createObjectURL(bn) };
             this.applyTex();
         };
@@ -323,7 +323,7 @@ const BATH_SOAP = {
             try {
                 const r = bathSkyPaint((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }, args);
                 r.far.toBlob((bf) => r.near.toBlob((bn) => done(bf, bn), 'image/png'), 'image/jpeg', 0.9);
-            } catch (e) { /* нет canvas — флакон живёт на своей основе космоса */ }
+            } catch (e) { this._texFail = true; /* нет canvas — флакон живёт на своей основе космоса */ }
         };
         // Главный путь — фоновый поток: кадр не ждёт растра неба вовсе.
         if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
@@ -359,6 +359,11 @@ onmessage = async (e) => {
             setTimeout(() => this.buildTex(), 30);
         }
         return null;
+    },
+
+    // Небо готово — или рисовать его нечем (нет canvas): ждать тогда нечего.
+    skyReady() {
+        return !!this._tex || (typeof document === 'undefined') || !!this._texFail;
     },
 
     applyTex() {
