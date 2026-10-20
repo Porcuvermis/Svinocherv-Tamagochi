@@ -101,6 +101,7 @@ const MinigameWindow = {
         frame.appendChild(confirm);
         screenEl.appendChild(frame);
 
+        const go = () => { if (typeof options.onLeave === 'function') options.onLeave(); };
         const handle = {
             screen: screenEl,
             frame,
@@ -110,9 +111,17 @@ const MinigameWindow = {
 
             // Нажали крестик. Спрашивать или нет — решает сама игра через
             // canLeave: посреди боя вопрос уместен, после его конца — нет.
+            // Посреди забега у окна со шкуркой вопроса нет: нажатия
+            // считает покров (MgVeil.knock), каждое бросает на экран
+            // материал греха, последнее — выход. Без покрова (окна без
+            // шкурки, автотесты) — прежний вопрос.
             requestClose() {
                 if (typeof options.canLeave === 'function' && options.canLeave()) {
                     this.leave();
+                    return;
+                }
+                if (typeof MgVeil !== 'undefined' && MgVeil.skinOf(this) && MgVeil.enabled()) {
+                    MgVeil.knock(this, go);
                     return;
                 }
                 this.showConfirm();
@@ -123,7 +132,6 @@ const MinigameWindow = {
             // Без шкурки покров сразу зовёт onLeave, как раньше.
             leave() {
                 this.hideConfirm();
-                const go = () => { if (typeof options.onLeave === 'function') options.onLeave(); };
                 if (typeof MgVeil !== 'undefined') MgVeil.leave(this, go);
                 else go();
             },

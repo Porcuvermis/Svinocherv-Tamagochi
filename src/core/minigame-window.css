@@ -310,3 +310,6 @@
     background: none;
     z-index: auto;
 }
+/* Грозди нажатий (MgVeil.knock) висят над игрой, а игра идёт: касания
+   проходят сквозь покров. */
+#mg-veil.mg-veil-thru { pointer-events: none; }

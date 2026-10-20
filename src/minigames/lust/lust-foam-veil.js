@@ -7,7 +7,10 @@
 //   reveal — пузыри лопаются от середины к краям, у краёв остаётся рамка;
 //            крестик в это время наливается синим;
 //   close  — рамка нарастает внутрь, крестик белеет обратно;
-//   clear  — пена лопается от середины целиком, вместе с рамкой.
+//   clear  — пена лопается от середины целиком, вместе с рамкой;
+//   burst  — нажатие крестика посреди забега: горсть гроздей по экрану
+//            (MgVeil.knock), pop — брошенное лопается, finish — третье
+//            нажатие: пена дорастает от брошенного до полной.
 //
 // ---------- КАК ДЁШЕВО ----------
 // Пузырей на весь экран — тысяч десять; перерисовывать их каждый кадр
@@ -40,7 +43,15 @@
 // пене он белый (его не видно в общей массе), в рамке — синий. Покров над
 // ним тает долями прозрачности, и синий проступает плавно.
 Object.assign(LustFoam, {
-    VEIL_MS: { cover: 220, reveal: 420, close: 240, clear: 380 },
+    VEIL_MS: { cover: 220, reveal: 420, close: 240, clear: 380, burst: 180, pop: 260, finish: 220 },
+
+    // Нажатия крестика в забеге (MgVeil.knock): первое — горсть маленьких
+    // гроздей, второе — крупные, вместе с рамкой ~60% экрана. Центры
+    // случайные, радиус — в единицах сцены.
+    BURST: [
+        { n: 7, r: [26, 38] },
+        { n: 14, r: [44, 64] }
+    ],
 
     // Середина экрана тем же сыпанием, но ровная (без правила глубины) и
     // реже мелочью: пене под покровом жить полсекунды, а штампов и так
@@ -228,10 +239,16 @@ Object.assign(LustFoam, {
     // ---------- КАДРЫ ----------
     veilStart(ctx, mode) {
         const full = this._full;
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        ctx.restore();
+        // Ходы нажатий продолжают то, что уже на покрове; остальные — с нуля.
+        const keep = mode === 'burst' || mode === 'pop' || mode === 'finish';
+        if (!keep) {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.restore();
+            this._shown = new Set();
+        }
+        this._shown = this._shown || new Set();
         // Раскрытие и закрытие — только грозди середины: рамка под покровом
         // уже стоит в окне (на последнем кадре раскрытия покров снимается
         // целиком, и под ним та же рамка).
@@ -244,6 +261,27 @@ Object.assign(LustFoam, {
             list = this.order(mid, this.fromCenter());
         } else if (mode === 'close') {
             list = this.order(mid, this.fromCenter(), true);
+        } else if (mode === 'burst') {
+            // Грозди вокруг случайных центров в середине; уже брошенные не
+            // повторяются. Очередь — от центра своей горсти.
+            const B = this.BURST[Math.min(this.BURST.length - 1, Math.max(0, (MgVeil.knocks || 1) - 1))];
+            const I = this.inner(), P = [];
+            for (let i = 0; i < B.n; i++) {
+                P.push({ x: I.x0 + 20 + Math.random() * (I.x1 - I.x0 - 40),
+                         y: I.y0 + 20 + Math.random() * (I.y1 - I.y0 - 40),
+                         r: B.r[0] + Math.random() * (B.r[1] - B.r[0]) });
+            }
+            const hit = (g) => P.some(c => Math.hypot(g.x - c.x, g.y - c.y) < c.r * (1 + 0.25 * g.nz));
+            list = this.order(mid.filter(g => !this._shown.has(g) && hit(g)),
+                g => Math.min(...P.map(c => Math.hypot(g.x - c.x, g.y - c.y) / c.r)));
+            for (const g of list) this._shown.add(g);
+        } else if (mode === 'pop') {
+            list = this.order([...this._shown], () => 1);
+        } else if (mode === 'finish') {
+            // Пена дорастает от уже брошенных гроздей.
+            const S = [...this._shown];
+            list = this.order(mid.filter(g => !this._shown.has(g)),
+                S.length ? g => Math.min(...S.map(q => Math.hypot(g.x - q.x, g.y - q.y))) : this.fromCenter(), false);
         } else {
             list = this.order(G, this.fromCenter());
         }
@@ -279,7 +317,8 @@ Object.assign(LustFoam, {
         const upto = p >= 1 ? V.list.length : Math.floor(p * V.list.length);
         const fresh = V.list.slice(V.i, upto);
         V.i = upto;
-        const add = mode === 'cover' || mode === 'close';
+        const add = mode === 'cover' || mode === 'close' || mode === 'burst' || mode === 'finish';
+        if (mode === 'pop') for (const g of fresh) this._shown.delete(g);
         if (fresh.length) {
             // Гроздь — одна копия из атласа: появилась — кладётся, лопнула —
             // стирается по своей же форме (destination-out берёт альфу
@@ -294,7 +333,7 @@ Object.assign(LustFoam, {
         // Крестик: при раскрытии покров над ним тает (под ним синий крестик
         // рамки), при закрытии белая пена ложится на него обратно. Доля
         // прозрачности за кадр — такая, чтобы в сумме вышло ровно p.
-        if ((mode === 'reveal' || mode === 'close') && V.crossList.length && p > V.cross) {
+        if ((mode === 'reveal' || mode === 'close' || mode === 'finish') && V.crossList.length && p > V.cross) {
             const a = (p - V.cross) / Math.max(1e-6, 1 - V.cross);
             V.cross = p;
             ctx.save();
@@ -307,8 +346,11 @@ Object.assign(LustFoam, {
         }
         if (p >= 1) {
             // Последний кадр — без дыр, что бы ни недорисовали круги.
-            if (add) ctx.drawImage(full, 0, 0, STAGE_W, STAGE_H);
-            if (mode === 'clear' || mode === 'reveal') {
+            if (mode === 'cover' || mode === 'close' || mode === 'finish') {
+                ctx.drawImage(full, 0, 0, STAGE_W, STAGE_H);
+                this._shown.clear();
+            }
+            if (mode === 'clear' || mode === 'reveal' || (mode === 'pop' && !this._shown.size)) {
                 ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
                 ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
                 ctx.restore();
