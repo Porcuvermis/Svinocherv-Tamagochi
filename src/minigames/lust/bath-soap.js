@@ -371,6 +371,7 @@ onmessage = async (e) => {
         if (!T || typeof document === 'undefined') return;
         document.querySelectorAll('.bsm-tf').forEach(el => el.setAttribute('href', T.far));
         document.querySelectorAll('.bsm-tn').forEach(el => el.setAttribute('href', T.near));
+        if (this.rigAll) this.rigAll(R => this.rigTex(R));
     },
 
     // Как локальные единицы флакона ложатся на холст ванной (390×844):
@@ -381,7 +382,9 @@ onmessage = async (e) => {
     // сцены, рука — в единицах вещи, docs/traps.md, п. 156): как единицы
     // такого холста ложатся на холст ванной, знает сам холст (_btWorld —
     // ставят lust.js, placeShelf и placeCarry; там же, где его двигают).
-    worldMatrix(root) {
+    // noBob — без качания парящего холста: слоям флакона его гасит css
+    // (bath-soap-rig.js, bsm-unbob).
+    worldMatrix(root, noBob) {
         const svg = root && root.ownerSVGElement;
         const vb = svg && svg.viewBox && svg.viewBox.baseVal;
         const W = svg && svg._btWorld;
@@ -401,7 +404,7 @@ onmessage = async (e) => {
         // и небо ехало бы вместе с флаконом вверх-вниз (замечание игрока:
         // небо — за стеклом и стоять должно, качается только окно).
         let dy = 0;
-        if (svg.id === 'bt-hand' && typeof LustMinigame !== 'undefined' && LustMinigame.bobY) dy = LustMinigame.bobY();
+        if (!noBob && svg.id === 'bt-hand' && typeof LustMinigame !== 'undefined' && LustMinigame.bobFast) dy = LustMinigame.bobFast();
         return new DOMMatrix(dy ? [W[0], W[1], W[2], W[3], W[4], W[5] + dy] : W).multiply(m);
     },
 
@@ -411,7 +414,8 @@ onmessage = async (e) => {
     // через кадр — окно ехало плавно, а космос внутри дёргался ступеньками.
     skyNow(svg) {
         if (!svg || typeof svg.querySelectorAll !== 'function') return;
-        svg.querySelectorAll('.bt-soap-magic').forEach(r => {
+        if (svg._bsmRig && svg._bsmRig.root) { this.rigSky(svg._bsmRig); }
+        else svg.querySelectorAll('.bt-soap-magic').forEach(r => {
             const c = this.live.cache.get(r);
             if (c) this.setSky(r, c);
         });
@@ -502,12 +506,17 @@ onmessage = async (e) => {
         out.ringDash = f2(-(t * 9) % 40);
         out.ringScale = `translate(0 ${M.STOP + 3}) scale(${(1 + 0.05 * Math.sin(t * 3)).toFixed(3)}) translate(0 ${-(M.STOP + 3)})`;
         out.vapor = (0.55 + 0.25 * Math.sin(t * 2.2)).toFixed(2);
+        // Числа для холста убранства (bath-soap-rig.js).
+        out.stopN = [bob, Math.sin(t * 0.8) * 4, 0.78 + 0.22 * Math.abs(Math.cos(t * 0.9))];
+        out.ringN = [1 + 0.05 * Math.sin(t * 3), -(t * 9) % 40];
         out.twinkle = [];
         for (let i = 0; i < M.TWINKLE; i++) out.twinkle.push((0.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + i * 2.1))).toFixed(2));
         // Вспышка по огранке: раз в 5 с проходит слева направо за 1.2 с.
         const ph = (t % 5) / 1.2;
         out.sweep = `translate(${ph < 1 ? f2(-46 + ph * 92) : 90} 0)`;
+        out.sweepX = ph < 1 ? -46 + ph * 92 : null;
         // Пузыри пара: из горла, обтекают камень, наверху лопаются искрой.
+        // (Строки — для svg; холст убранства читает те же числа через +.)
         out.bubs = [];
         for (let i = 0; i < M.BUBS; i++) {
             const u = (t * 0.26 + i / M.BUBS) % 1, side = i % 2 ? 1 : -1;
@@ -524,6 +533,8 @@ onmessage = async (e) => {
         // ---- убранство ----
         // Сияние дышит.
         out.aura = `translate(0 ${M.CY}) scale(${(1 + 0.07 * Math.sin(t * 1.1)).toFixed(3)})`;
+        // Числа рядом со строками — их рисует холст убранства (bath-soap-rig.js),
+        // строки — svg вне ванной (журнал) и первый кадр.
         // Огоньки по кромке: голова и хвостик — точки силуэта позади неё.
         const SHb = this.magicShape(), B = M.BEADS;
         out.beads = [];
@@ -545,7 +556,8 @@ onmessage = async (e) => {
             const pts = [0, 0.14, 0.28].map(d => orb(a0 - d));
             const k = 0.75 + 0.35 * pts[0][2];
             out.motes.push({ front: pts[0][2] > 0,
-                pts: pts.map(([x, y], j) => `translate(${f2(x)} ${f2(y)}) scale(${(k * (1 - j * 0.22)).toFixed(3)})`) });
+                pts: pts.map(([x, y], j) => `translate(${f2(x)} ${f2(y)}) scale(${(k * (1 - j * 0.22)).toFixed(3)})`),
+                p: pts.map(([x, y], j) => [x, y, k * (1 - j * 0.22)]) });
         }
         // Вспышки: у каждой своё окно жизни, место берётся по номеру окна —
         // каждый раз новое, но детерминированно (без Math.random).
@@ -559,7 +571,8 @@ onmessage = async (e) => {
                 // На самом стекле (чуть внутрь контура): снаружи вспышка
                 // висела в воздухе.
                 tr: `translate(${f2(p[0] - nx / nl * 1.2)} ${f2(p[1] - ny / nl * 1.2)}) rotate(${f2(u * 40)}) scale(${(0.05 + life).toFixed(3)})`,
-                o: f2(life)
+                o: f2(life),
+                n: [p[0] - nx / nl * 1.2, p[1] - ny / nl * 1.2, u * 40, 0.05 + life, life]
             });
         }
         // Звёздная пыль поднимается от плеч вверх, покачиваясь.
@@ -569,7 +582,8 @@ onmessage = async (e) => {
             const x0 = side * (12 + (i * 7) % 16), y0 = -14 - (i * 5) % 12;
             out.dust.push({
                 tr: `translate(${f2(x0 + side * u * 10 + Math.sin(u * 9 + i) * 2.2)} ${f2(y0 - u * 62)}) scale(${(1 - u * 0.5).toFixed(3)})`,
-                o: f2(Math.sin(u * Math.PI) * (0.55 + 0.45 * Math.abs(Math.sin(t * 5 + i))))
+                o: f2(Math.sin(u * Math.PI) * (0.55 + 0.45 * Math.abs(Math.sin(t * 5 + i)))),
+                n: [x0 + side * u * 10 + Math.sin(u * 9 + i) * 2.2, y0 - u * 62, 1 - u * 0.5, Math.sin(u * Math.PI) * (0.55 + 0.45 * Math.abs(Math.sin(t * 5 + i)))]
             });
         }
         return out;
@@ -683,7 +697,7 @@ onmessage = async (e) => {
         // ---------- убранство вокруг ----------
         // Огоньки, бегущие по кромке хрусталя: мягкая точка света, а не
         // штрих — гаснет ко всем краям.
-        const beads = `<g class="bsm-beads">` + Fr.beads.map((q, j) => `<g transform="translate(${q.x} ${q.y}) scale(${q.s})">`
+        const beads = `<g class="bsm-beads bsm-inl">` + Fr.beads.map((q, j) => `<g transform="translate(${q.x} ${q.y}) scale(${q.s})">`
             + `<circle r="5" fill="url(#${id}-mote)"/>${j % 3 ? '' : '<circle r="0.9" fill="#ffffff"/>'}</g>`).join('') + `</g>`;
         // Огонёк и три точки шлейфа, в заднем ('b') и переднем ('f') слое.
         const moteSvg = (m, i) => {
@@ -693,7 +707,7 @@ onmessage = async (e) => {
                     + (j === 0 ? `<circle r="5.5" fill="url(#${id}-${g})"/><circle r="1" fill="#ffffff"/>` : `<circle r="${(3 - j * 0.6).toFixed(1)}" fill="url(#${id}-${g})"/>`)
                     + `</g>`).join('') + `</g>`;
         };
-        const motes = (side) => `<g class="bsm-motes-${side}">`
+        const motes = (side) => `<g class="bsm-motes-${side} bsm-inl">`
             + Fr.motes.map((m, i) => ((side === 'f') === m.front ? moteSvg(m, i) : '')).join('') + `</g>`;
         const glints = Fr.glints.map(g => `<g class="bsm-glint" transform="${g.tr}" fill-opacity="${g.o}">
                 <circle r="4.5" fill="url(#${id}-mote)"/>
@@ -724,7 +738,7 @@ onmessage = async (e) => {
         const bubs = Fr.bubs.map(b =>
             // Пузырь как мыльный: прозрачная середина, радужная кромка, блик.
             // Рисуется единичным и масштабируется — размер растёт на подъёме.
-            `<g class="bsm-bub" transform="translate(${b.x} ${b.y})"><g transform="scale(${b.r})" fill-opacity="${b.o}" stroke-opacity="${b.o}">`
+            `<g class="bsm-bub bsm-inl" transform="translate(${b.x} ${b.y})"><g transform="scale(${b.r})" fill-opacity="${b.o}" stroke-opacity="${b.o}">`
           + `<circle r="1" fill="url(#${id}-bubG)"/><circle r="0.94" fill="none" stroke="url(#${id}-bubRim)" stroke-width="0.14"/>`
           + `<ellipse cx="-0.38" cy="-0.42" rx="0.3" ry="0.16" fill="#ffffff" transform="rotate(-35 -0.38 -0.42)"/></g>`
           + `<g fill-opacity="${b.pop}">${flare(3.4)}</g></g>`).join('');
@@ -861,24 +875,32 @@ onmessage = async (e) => {
             </defs>
 
             <!-- УБРАНСТВО СЗАДИ: сияние и задняя половина орбиты огоньков. -->
-            <circle class="bsm-aura" r="74" fill="url(#${id}-aura)" transform="${Fr.aura}"/>
+            <!-- bsm-inl — то, что на живых холстах ванной рисуют слои
+                 (bath-soap-rig.js): небо, сияние, огоньки, блик. В журнале
+                 и до первого кадра слоёв флакон целиком свой. -->
+            <circle class="bsm-aura bsm-inl" r="74" fill="url(#${id}-aura)" transform="${Fr.aura}"/>
             ${motes('b')}
             <!-- ТЕЛО. -->
             <path d="${neck}${lip}${collar}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
             <path d="${body}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.contour}" stroke-linejoin="round"/>
-            <path d="${body}" fill="${C.crystal}" fill-opacity="0.6"/>
+            <path class="bsm-inl" d="${body}" fill="${C.crystal}" fill-opacity="0.6"/>
+            <!-- На слоях небо лежит ЗА холстом, и стекло над полостью его бы
+                 мутило: хрусталь — только кольцом вокруг полости. -->
+            <path class="bsm-rigonly" display="none" d="${body}${cav}" fill-rule="evenodd" fill="${C.crystal}" fill-opacity="0.6"/>
             <path d="${ped}" fill="url(#${id}-ped)"/>
             <path d="${cuts}" fill="none" stroke="${C.glow}" stroke-width="0.9" stroke-opacity="0.8" stroke-linecap="round"/>
             <path d="${cuts}" fill="none" stroke="${Am[2]}" stroke-width="0.6" stroke-opacity="0.6" transform="translate(1 0)"/>
-            <path d="${cav}" fill="url(#${id}-deep)"/>
+            <path class="bsm-inl" d="${cav}" fill="url(#${id}-deep)"/>
             <g clip-path="url(#${id}-cav)">
                 <!-- Космос за стеклом: два слоя глубины. -->
+                <g class="bsm-inl">
                 <g class="bsm-far" transform="${layer0(M.PLX.far)}">${far}</g>
                 <g class="bsm-near" transform="${layer0(M.PLX.near)}">${near}</g>
+                </g>
                 <!-- Линза: те же слои, крупнее — увеличительное стекло. -->
                 <g clip-path="url(#${id}-lens)">
-                    <ellipse cx="${LN.cx}" cy="${LN.cy}" rx="${LN.rx}" ry="${LN.ry}" fill="url(#${id}-deep)"/>
-                    <g transform="${lensZ}">
+                    <ellipse class="bsm-inl" cx="${LN.cx}" cy="${LN.cy}" rx="${LN.rx}" ry="${LN.ry}" fill="url(#${id}-deep)"/>
+                    <g class="bsm-inl" transform="${lensZ}">
                         <g class="bsm-far" transform="${layer0(M.PLX.far)}">${far}</g>
                         <g class="bsm-near" transform="${layer0(M.PLX.near)}">${near}</g>
                     </g>
@@ -898,7 +920,7 @@ onmessage = async (e) => {
                 ${facets}
                 <path d="${edges}" fill="none" stroke="${C.glow}" stroke-width="0.55" stroke-opacity="0.4" stroke-linejoin="round"/>
                 <rect x="-32" y="-34" width="64" height="52" fill="url(#${id}-shadeR)"/>
-                <g class="bsm-sweep" transform="${Fr.sweep}">
+                <g class="bsm-sweep bsm-inl" transform="${Fr.sweep}">
                     <rect x="-5" y="-70" width="10" height="120" fill="url(#${id}-sweep)" transform="rotate(22)"/>
                 </g>
                 <path d="${bellyHi}" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.55" stroke-linecap="round"/>
@@ -929,17 +951,19 @@ onmessage = async (e) => {
                  орбиты, вспышки на контуре, звёздная пыль. -->
             ${beads}
             ${motes('f')}
-            <g class="bsm-fx">${glints}${dust}</g>
+            <g class="bsm-fx bsm-inl">${glints}${dust}</g>
             <!-- ЛЕВИТАЦИЯ: пар из горла, кольцо с бегущими точками, пузыри. -->
-            <ellipse class="bsm-vapor" cx="0" cy="${NK.top - 7}" rx="9" ry="11" fill="url(#${id}-vapor)" fill-opacity="${Fr.vapor}"/>
-            <g class="bsm-ring" transform="${Fr.ringScale}">
+            <ellipse class="bsm-vapor bsm-inl" cx="0" cy="${NK.top - 7}" rx="9" ry="11" fill="url(#${id}-vapor)" fill-opacity="${Fr.vapor}"/>
+            <g class="bsm-ring bsm-inl" transform="${Fr.ringScale}">
                 <ellipse cx="0" cy="${S + 3}" rx="10.5" ry="2.6" fill="none" stroke="${C.cyan}" stroke-width="2.2" stroke-opacity="0.35"/>
                 <ellipse class="bsm-ringd" cx="0" cy="${S + 3}" rx="10.5" ry="2.6" fill="none" stroke="${C.glow}" stroke-width="0.9"
                          stroke-dasharray="0.6 3.4" stroke-dashoffset="${Fr.ringDash}" stroke-linecap="round"/>
             </g>
             ${bubs}
             <!-- ПРОБКА парит. -->
-            <g class="bsm-stopper" transform="${Fr.stopper}">
+            <!-- Пробку на слоях рисует холст убранства картинками (снятыми с
+                 этой же разметки), а пока картинок нет — она здесь. -->
+            <g class="bsm-stopper bsm-inls" transform="${Fr.stopper}">
                 <path d="${stem}" fill="none" stroke="${ink}" stroke-width="${2 * STROKE.structure}" stroke-linejoin="round"/>
                 <path d="${stem}" fill="url(#${id}-stemV)"/>
                 <path d="M-1.9 ${S - 1}L-2.9 ${S - 7}" stroke="#ffffff" stroke-width="0.7" stroke-linecap="round"/>
@@ -1102,7 +1126,7 @@ onmessage = async (e) => {
                         const lc = this.live.cache.get(r);
                         if (Lv.sp === 0 && lc && lc.pres === 0) return false;
                     }
-                    const m = this.worldMatrix(r);
+                    const m = this.worldMatrix(r, true);
                     if (fl) mats.set(r, m);
                     if (!m || !r.closest('.bt-svg')) return true;       // лист журнала
                     // Запас — сам флакон с орбитой огоньков (±50 единиц), без лучей:
@@ -1132,6 +1156,7 @@ onmessage = async (e) => {
                 vis.filter(r => r.classList.contains('bt-cloth-cloud')).forEach(r => this.skyPatterns(r));
                 const fls = vis.filter(isFlask);
                 if (fls.length || hiddenFl.length) this.flaskTick(fls, hiddenFl, now, dt, mats);
+                if (this.rigSweep) this.rigSweep();
                 const mag = vis.filter(isMagic);
                 if (mag.length) {
                     // Кадр — от часов флакона; стоят часы — кадр тот же.
@@ -1148,6 +1173,7 @@ onmessage = async (e) => {
         if (this.live.raf) cancelAnimationFrame(this.live.raf);
         this.live.raf = 0;
         this.layers([]);
+        if (this.rigAll) this.rigAll(R => this.rigShow(R, false));
     },
 
     // Холсты живых вещей на полке — слоем композитора ТОЛЬКО пока на них
@@ -1198,6 +1224,9 @@ onmessage = async (e) => {
             this.live.cache.set(root, c);
         }
         const M = this.MAGIC;
+        // На живом холсте ванной флакон — на слоях (bath-soap-rig.js): небо,
+        // сияние и огоньки там, в svg — только то, что у горла.
+        const rig = this.rigFollow ? this.rigFollow(root.ownerSVGElement) : null;
         // Под пальцем убранство не нужно: флакон едет за пальцем и
         // перерисовывается целиком на каждом кадре, а сияние, огоньки и пыль
         // — самое дорогое в этой перерисовке. По замыслу игрока вещь в руке и
@@ -1218,6 +1247,7 @@ onmessage = async (e) => {
         const [fOut, fIn] = M.FADE;
         c.pres = Math.max(0, Math.min(1, c.pres + (held ? -(dt || 0) / fOut : (dt || 0) / fIn)));
         const show = c.pres > 0;
+        if (rig) return this.applyRig(root, c, rig, Fr, show);
         if (c.shown !== show) {
             c.shown = show;
             c.deco.forEach(el => show ? el.removeAttribute('display') : el.setAttribute('display', 'none'));
@@ -1276,6 +1306,20 @@ onmessage = async (e) => {
             set(ci, 'stroke-opacity', b.o);
             set(st, 'fill-opacity', b.pop);
         });
+    },
+
+    // Кадр флакона на слоях: в svg — пробка, камень, кольцо, пар и пузыри
+    // (маленький участок у горла), небо — transform слоёв, убранство — холст.
+    // Кадр флакона на слоях: svg не трогается ВОВСЕ — любая его правка, даже
+    // пробка у горла, перезаписывала бы картинку всего стекла с огранкой
+    // (замер: замороженный флакон — 72 кадра, с живой пробкой и пузырями в
+    // svg — 57–63). Небо — transform слоёв, всё живое — холст спереди.
+    applyRig(root, c, R, Fr, show) {
+        this.rigSky(R);
+        const e = c.pres * c.pres * (3 - 2 * c.pres), o = show ? e.toFixed(2) : '0';
+        if (R.aura.style.opacity !== o) R.aura.style.opacity = o;
+        this.rigDraw(R, Fr, c.pres);
+        this.live.lastPres = c.pres;
     },
 
     // ---------- 7. КОЛБА ----------

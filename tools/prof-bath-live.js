@@ -24,7 +24,7 @@ const FREEZE = !!process.env.FREEZE;
     const cdp = await page.context().newCDPSession(page);
     const errs = [];
     page.on('pageerror', e => errs.push(e.message));
-    await page.goto('http://127.0.0.1:8777/index.html');
+    await page.goto(`http://127.0.0.1:${process.env.PORT || 8777}/index.html`);
     await page.waitForTimeout(2600);
     await page.evaluate(() => GameManager.handleSinAction('lust'));
     await page.waitForTimeout(800);
@@ -61,16 +61,33 @@ const FREEZE = !!process.env.FREEZE;
         await page.evaluate(() => { window.__c = {}; window.__f = 0; window.__g = (window.__g || 0) + 1; const my = window.__g, d = [];
             window.__d = d; let t = performance.now();
             const st = (n) => { if (window.__g !== my) return; window.__f++; d.push(n - t); t = n; requestAnimationFrame(st); }; requestAnimationFrame(st); });
+        if (process.env.CPU) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
         await cdp.send('Tracing.start', { categories: 'devtools.timeline,disabled-by-default-devtools.timeline,cc,viz', transferMode: 'ReportEvents' });
         await page.waitForTimeout(MS);
         const done = new Promise(r => cdp.once('Tracing.tracingComplete', r));
         await cdp.send('Tracing.end'); await done; cdp.off('Tracing.dataCollected', on);
+        let cpu = '';
+        if (process.env.CPU) {
+            const { profile } = await cdp.send('Profiler.stop');
+            const self = {}, dtv = profile.timeDeltas, byId = new Map(profile.nodes.map(n => [n.id, n]));
+            profile.samples.forEach((id, i) => { const n = byId.get(id), f = n.callFrame;
+                const k = (f.functionName || '(anon)') + ' ' + (f.url.split('/').pop() || '') + ':' + (f.lineNumber + 1);
+                self[k] = (self[k] || 0) + (dtv[i] || 0) / 1000; });
+            cpu = '\n    CPU: ' + Object.entries(self).filter(([k]) => !/^\((idle|program|garbage)/.test(k)).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k} ${Math.round(v)}`).join(' · ');
+        }
         const sum = {};
         for (const e of ev) if (e.ph === 'X' && e.dur) sum[e.name] = (sum[e.name] || 0) + e.dur / 1000;
+        // Главный поток — то, что на айфоне не отдать видеокарте: скрипт,
+        // стиль, раскладка, перерисовка. Сведение кадра здесь делает
+        // процессор (браузер без видеокарты), и общий счёт его завышает.
+        const ms = (n) => sum[n] || 0;
+        const main = { js: ms('FireAnimationFrame') + ms('EventDispatch'), style: ms('UpdateLayoutTree'), lay: ms('Layout'),
+                       paint: ms('Paint') + ms('PrePaint') + ms('Layerize'), detail: ['Paint', 'PrePaint', 'Layerize', 'UpdateLayer', 'CompositeLayers', 'Commit'].map(n => n + ' ' + Math.round(ms(n))).join(' · ') };
         const r = await page.evaluate(() => { const d = window.__d.slice(1).sort((a, b) => a - b); return { f: window.__f, attr: window.__c.attr || 0, p95: d[Math.floor(d.length * 0.95)] || 0 }; });
         const top = Object.entries(sum).filter(([k]) => !/^(ThreadControllerImpl|RunTask|TaskGraphRunner|ThreadPool|SequenceManager|Scheduler|MessageLoop)/.test(k))
             .sort((a, b) => b[1] - a[1]).slice(0, 9).map(([k, v]) => `${k} ${Math.round(v)}`).join(' · ');
-        return { fps: Math.round(r.f / (MS / 1000)), p95: Math.round(r.p95), attr: Math.round(r.attr / Math.max(1, r.f)), top };
+        const mainS = `главный поток: скрипт ${Math.round(main.js)} · стиль ${Math.round(main.style)} · раскладка ${Math.round(main.lay)} · перерисовка ${Math.round(main.paint)} = ${Math.round(main.js + main.style + main.lay + main.paint)} мс (${main.detail})`;
+        return { fps: Math.round(r.f / (MS / 1000)), p95: Math.round(r.p95), attr: Math.round(r.attr / Math.max(1, r.f)), top: mainS + (process.env.TOP ? '\n    ' + top : '') + cpu };
     };
     const run = async (name, setup, teardown) => {
         if (ONLY && !name.includes(ONLY)) return;

@@ -1397,7 +1397,15 @@ Object.assign(LustMinigame, {
                 + (Q ? this.squashTf(Q, O, this.squashQ(u)) : '') });
         }
         // Без мягкой мочалки — два кадра и та же кривая замедления.
-        this.liftAnim = hand.animate(keys, { duration: this.LIFT_MS, easing: Q ? 'linear' : 'cubic-bezier(0.33, 1, 0.68, 1)' });
+        const opt = { duration: this.LIFT_MS, easing: Q ? 'linear' : 'cubic-bezier(0.33, 1, 0.68, 1)' };
+        this.liftAnim = hand.animate(keys, opt);
+        // Слои волшебного флакона — соседи холста в той же обёртке
+        // (bath-soap-rig.js): та же анимация с тем же стартом, иначе небо и
+        // огоньки отстали бы от стекла.
+        this.liftRig = Array.from(hand.parentNode.querySelectorAll(':scope > .bsm-rig')).map(r => {
+            r.style.transformOrigin = hand.style.transformOrigin;
+            return r.animate(keys, opt);
+        });
     },
 
     // ОСАДКА МЯГКОЙ МОЧАЛКИ — ВИДЕОКАРТОЙ. Конняку и облако на полке осели
@@ -1446,6 +1454,7 @@ Object.assign(LustMinigame, {
         cancelAnimationFrame(this.liftRaf);
         this.liftRaf = 0;
         if (this.liftAnim) { this.liftAnim.cancel(); this.liftAnim = null; }
+        if (this.liftRig) { this.liftRig.forEach(a => a.cancel()); this.liftRig = null; }
         const hand = this.el('bt-hand');
         if (hand) { hand.style.transformOrigin = ''; hand.parentNode.style.opacity = ''; }
         if (this.liftPending) { this.homeShown(this.liftPending, false, true); this.liftPending = null; }
@@ -1473,8 +1482,12 @@ Object.assign(LustMinigame, {
         const magic = on && this.loose && (this.loose.kind === 'soap'
                     ? typeof BATH_SOAP !== 'undefined' && BATH_SOAP.TIERS[BATH_SOAP.tier()] === 'magic'
                     : T === 'cloud' || T === 'konjac');
+        // Старт качания — для его расчёта без чтения стиля (bobFast).
+        if (on && !n.classList.contains('bt-float')) this.floatAt = performance.now();
         n.classList.toggle('bt-float', !!on);
         n.classList.toggle('bt-float-magic', !!magic);
+        // Слои флакона качаются вместе с холстом (lust.css, .bt-rig-float).
+        n.parentNode.classList.toggle('bt-rig-float', !!on);
     },
 
     // Где сейчас качание по высоте. В единицах холста: качание — в точках
@@ -1484,6 +1497,35 @@ Object.assign(LustMinigame, {
         if (!n || !n.classList.contains('bt-float')) return 0;
         const t = getComputedStyle(n).transform;
         return t && t !== 'none' ? new DOMMatrixReadOnly(t).f / this.stageMap().m : 0;
+    },
+
+    // То же качание — расчётом, а не чтением стиля: bobY спрашивает
+    // getComputedStyle, и на каждом кадре (небо облака, видимость вещей) это
+    // был пересчёт стиля всей ванной — самое дорогое в кадре парящей вещи.
+    // Кривая — та же, что у @keyframes bt-float (lust.css): 2.8 с, 0 → −5 → 0,
+    // ease-in-out на каждой половине. Старт css-анимации — в ближайшем
+    // пересчёте стиля после floatTool, ошибка — доли точки. Где нужна точность
+    // до точки (хват, полёт домой), — bobY.
+    BOB: { ms: 2800, px: 5 },
+    bobFast() {
+        const n = this.el('bt-hand');
+        if (!n || !n.classList.contains('bt-float') || this.floatAt == null) return 0;
+        const ph = ((performance.now() - this.floatAt) % this.BOB.ms) / this.BOB.ms;
+        const u = ph < 0.5 ? ph * 2 : (ph - 0.5) * 2, e = this.easeInOut(u);
+        return -this.BOB.px * (ph < 0.5 ? e : 1 - e) / this.stageMap().m;
+    },
+    // cubic-bezier(0.42, 0, 0.58, 1): x(t) решается Ньютоном, y(t) — ответ.
+    easeInOut(x) {
+        const bx = (t) => 3 * (1 - t) * (1 - t) * t * 0.42 + 3 * (1 - t) * t * t * 0.58 + t * t * t;
+        const by = (t) => 3 * (1 - t) * t * t + t * t * t;
+        let t = x;
+        for (let i = 0; i < 6; i++) {
+            const d = 3 * (1 - t) * (1 - t) * 0.42 + 6 * (1 - t) * t * (0.58 - 0.42) + 3 * t * t * (1 - 0.58);
+            if (Math.abs(d) < 1e-6) break;
+            t -= (bx(t) - x) / d;
+            t = Math.max(0, Math.min(1, t));
+        }
+        return by(t);
     },
 
     // Всё сразу на полку, без полёта: сброс забега и проверки. Конец этапа
@@ -1630,6 +1672,8 @@ Object.assign(LustMinigame, {
             n.style.opacity = on ? '1' : '0';
             if (instant) { void n.getBoundingClientRect(); n.style.transition = ''; }
         }
+        // Слои волшебного флакона (небо, сияние, огоньки) — вместе с гнездом.
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigSweep) BATH_SOAP.rigSweep(instant);
     },
 
     // ---------- ДОМОЙ ПО ДУГЕ ----------
@@ -1743,7 +1787,6 @@ Object.assign(LustMinigame, {
         if (this.drag) this.drag.pos = p;
         if (this.el('bt-held')) {
             this.placeCarry(this.el('bt-hand'), p);
-            if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.skyNow) BATH_SOAP.skyNow(this.el('bt-hand'));
         }
     },
 
@@ -1752,6 +1795,7 @@ Object.assign(LustMinigame, {
             const n = this.el(id);
             if (n) n.style.opacity = (show || k !== except) ? '1' : '0';
         }
+        if (typeof BATH_SOAP !== 'undefined' && BATH_SOAP.rigSweep) BATH_SOAP.rigSweep();
     },
 
     finishStage(kind) {
