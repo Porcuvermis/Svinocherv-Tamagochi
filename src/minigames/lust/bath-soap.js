@@ -1086,6 +1086,12 @@ onmessage = async (e) => {
                 // телефону, а не часам, и в покое не пишет ничего.
                 const work = L0 && (L0.phase === 'soap' || L0.phase === 'cloth') ? L0.phase : null;
                 Lv.away = work ? (work === 'soap' ? '#bt-cloth-home' : '#bt-soap-home') : null;
+                // Флакон на слоях (bath-soap-rig.js) НЕ спит: svg его не
+                // правится, кадр — холст огоньков и сдвиг неба, длинных кадров
+                // он больше не даёт. А замерший на полке флакон — с застывшими
+                // искрами, пока в руке живое облако, — читался недоделкой
+                // (замечание игрока).
+                if (Lv.away && Lv.roots.some(r => r.classList.contains('bt-soap-magic') && r.classList.contains('bsm-rigged') && r.closest(Lv.away))) Lv.away = null;
                 const doze = !!Lv.away && Lv.roots.some(r => r.classList.contains('bt-soap-magic') && r.closest(Lv.away));
                 Lv.rub = rub;
                 Lv.sp = Math.max(0, Math.min(1, (Lv.sp == null ? 1 : Lv.sp) + (rub || doze ? -dt : dt) / 0.4));

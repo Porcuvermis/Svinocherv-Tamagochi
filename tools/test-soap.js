@@ -186,10 +186,10 @@ const harness = require('./harness');
   check(await stillWhile('BATH_SOAP.frozen = true', 'BATH_SOAP.frozen = false'), '«мыло замерло» — флакон не меняется');
   check(await stillWhile('window.__ct = LustMinigame.camTimer; LustMinigame.camTimer = 1',
                          'LustMinigame.camTimer = window.__ct'), 'на переезде камеры флакон не меняется');
-  // Пока в работе мочалка, флакон на полке СПИТ (bath-soap.js, wake): его
-  // правки на айфоне давали длинный кадр через кадр, и облако в руке
-  // тряслось. Засыпает плавно — меряется после угасания, — и просыпается
-  // с концом этапа. Спрашивается сам факт правок, а не один атрибут.
+  // Пока в работе мочалка, флакон на полке ЖИВЁТ. Раньше он спал (его
+  // правки в svg давали на айфоне длинный кадр через кадр), но замерший
+  // флакон с застывшими искрами читался недоделкой (игрок). На слоях
+  // (bath-soap-rig.js) он дёшев: живёт слоями, svg не трогает.
   const shelfWrites = (ms) => page.evaluate((ms) => new Promise(res => {
     let n = 0;
     const mo = new MutationObserver(m => { n += m.length; });
@@ -204,8 +204,8 @@ const harness = require('./harness');
   await page.evaluate((p) => { LustMinigame.phase = p; }, ph0);
   await page.waitForTimeout(500);
   const woke = await shelfWrites(800);
-  check(zzz === 0 && zzzL === 0 && woke > 50,
-    `в этапе мочалки флакон на полке спит (правок ${zzz}, слоёв ${zzzL}) и просыпается после (${woke})`);
+  check(zzz > 50 && woke > 50,
+    `в этапе мочалки флакон на полке не замирает (правок слоёв ${zzz}) и после этапа тоже (${woke})`);
   // Живой флакон на слоях не правит svg ВОВСЕ: любая правка в нём
   // перезаписывала картинку всего стекла с огранкой (bath-soap-rig.js).
   const svgWrites = await page.evaluate(() => new Promise(res => {
