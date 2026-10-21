@@ -224,6 +224,13 @@ Object.assign(LustFoam, {
         c.width = Math.round(STAGE_W * scale); c.height = Math.round(STAGE_H * scale);
         const g = c.getContext('2d');
         g.setTransform(scale, 0, 0, scale, 0, 0);
+        // Подложка цветом массы под всей пеной: неподвижная пена закрывает
+        // экран, пока под ней сменяется сцена, и не смеет иметь ни одной
+        // дырки. Без неё по шву рамки и середины (у бахромы рамки массы
+        // нет) сквозь пену было видно, как комната становится ванной
+        // (замечание игрока).
+        g.fillStyle = this.massColor();
+        g.fillRect(-2, -2, STAGE_W + 4, STAGE_H + 4);
         let n = 0;
         for (const q of this._groups) { this.paintDeep(g, q, S); if (++n % 40 === 0) yield; }
         for (const q of this._groups) { this.paintTop(g, q, S); if (++n % 40 === 0) yield; }
@@ -325,6 +332,14 @@ Object.assign(LustFoam, {
         }
     },
 
+    // Прозрачность всего покрова. В конце раскрытия, когда середина
+    // лопнула (POP_END), остаток — рамка с подложкой — растворяется: под ним
+    // рамка окна, и стык с ней (резкость, подложка, бахрома) не виден.
+    veilOpacity(mode, p) {
+        if (mode !== 'reveal' || p <= this.POP_END) return 1;
+        return Math.max(0, 1 - (p - this.POP_END) / (1 - this.POP_END));
+    },
+
     // Прозрачность гроздей с крестиком: тают при раскрытии, проявляются при
     // закрытии; в остальных ходах — как все (null).
     crossAlpha(mode, p) {
@@ -422,6 +437,10 @@ Object.assign(LustFoam, {
             instant = this._groups.filter(g => !V.present.has(g) && !g.cross && !fresh.includes(g) && !V.grow.some(k => k.g === g));
             this._shown.clear();
         }
+        // Закрылись целиком (всё доросло) — на покров неподвижная пена с
+        // подложкой: под ним сейчас закроется игра и оживёт комната, и
+        // дырок между гроздьями быть не должно.
+        const sealed = p >= 1 && (mode === 'close' || mode === 'finish') && !V.grow.length && V.i >= V.list.length;
         if (p >= 1 && mode === 'cover') this._shown.clear();
         if (add) {
             const now = performance.now();
@@ -432,6 +451,12 @@ Object.assign(LustFoam, {
             V.grow = V.grow.filter(k => now - k.t0 < this.GROW.ms);
             this.settle(ctx, V, done, crossA);
             this.growing(fx, V, now, crossA);
+            if (sealed && this._full && !V.sealed) {
+                V.sealed = true;
+                ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.drawImage(this._full, 0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.restore();
+            }
         } else {
             for (const g of fresh) { V.present.delete(g); if (mode === 'pop') this._shown.delete(g); }
             this.compose(ctx, V, crossA, fresh.map(g => this.rectOf(g)));

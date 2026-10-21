@@ -119,6 +119,7 @@ const MgVeil = {
 
     hide() {
         if (this.el) { this.el.style.display = 'none'; this.el.classList.remove('mg-veil-thru'); }
+        if (this.cv) this.cv.style.opacity = '';
         if (this.cv) this.cv.getContext('2d').clearRect(0, 0, this.cv.width, this.cv.height);
         if (this.fx) this.fx.getContext('2d').clearRect(0, 0, this.fx.width, this.fx.height);
         this.state = null;
@@ -149,6 +150,10 @@ const MgVeil = {
         fx.clearRect(0, 0, this.fx.width, this.fx.height);
         fx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
         this.skin.veil(this.ctx(), mode, p, this.scale, fx);
+        // Растворение покрова целиком — прозрачностью элемента (видеокарта),
+        // а не перерисовкой холста.
+        const o = this.skin.veilOpacity ? this.skin.veilOpacity(mode, p) : 1;
+        this.cv.style.opacity = o < 1 ? o.toFixed(3) : '';
     },
 
     // Один ход перехода: кадры от 0 до 1 за VEIL_MS[mode]. Последний кадр —
