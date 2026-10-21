@@ -190,10 +190,12 @@ const MgVeil = {
     // ---------- ВХОД ----------
     // minigame — объект мини-игры (open(), win). Готовность — minigame.veilReady():
     // обещание «всё нужное дозрело»; нет такого — ждём два кадра.
-    async enter(minigame) {
+    // beforeOpen — что убрать со сцены прямо перед open() (колесо грехов):
+    // у игры со шкуркой это случается уже под сплошной пеной.
+    async enter(minigame, beforeOpen) {
         const win = minigame && minigame.win, skin = this.skinOf(win);
         if (this.busy) return;                       // двойной тап посреди перехода
-        if (!skin || !this.enabled()) { minigame.open(); return; }
+        if (!skin || !this.enabled()) { if (beforeOpen) beforeOpen(); minigame.open(); return; }
         const run = ++this._run;
         this.busy = true;
         this.stopKnock();
@@ -209,6 +211,7 @@ const MgVeil = {
             this.still();
             // Открываем ПОД покровом, а не одновременно с заливкой: сборка
             // сцены держит поток сотни миллисекунд, и ход заливки съела бы.
+            if (beforeOpen) beforeOpen();
             minigame.open();
             this._entering.opened = true;
             // Пена стоит хотя бы MIN_HOLD, даже если игра дозрела мигом: иначе
