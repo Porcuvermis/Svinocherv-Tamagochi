@@ -437,10 +437,6 @@ Object.assign(LustFoam, {
             instant = this._groups.filter(g => !V.present.has(g) && !g.cross && !fresh.includes(g) && !V.grow.some(k => k.g === g));
             this._shown.clear();
         }
-        // Закрылись целиком (всё доросло) — на покров неподвижная пена с
-        // подложкой: под ним сейчас закроется игра и оживёт комната, и
-        // дырок между гроздьями быть не должно.
-        const sealed = p >= 1 && (mode === 'close' || mode === 'finish') && !V.grow.length && V.i >= V.list.length;
         if (p >= 1 && mode === 'cover') this._shown.clear();
         if (add) {
             const now = performance.now();
@@ -451,12 +447,6 @@ Object.assign(LustFoam, {
             V.grow = V.grow.filter(k => now - k.t0 < this.GROW.ms);
             this.settle(ctx, V, done, crossA);
             this.growing(fx, V, now, crossA);
-            if (sealed && this._full && !V.sealed) {
-                V.sealed = true;
-                ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.drawImage(this._full, 0, 0, ctx.canvas.width, ctx.canvas.height);
-                ctx.restore();
-            }
         } else {
             for (const g of fresh) { V.present.delete(g); if (mode === 'pop') this._shown.delete(g); }
             this.compose(ctx, V, crossA, fresh.map(g => this.rectOf(g)));
@@ -464,6 +454,20 @@ Object.assign(LustFoam, {
         }
         // Грозди крестика меняют прозрачность — их участок пересобирается.
         if (crossA != null) this.compose(ctx, V, crossA, this.crossRect());
+        // Закрылись целиком — на покров неподвижная пена с подложкой: под ним
+        // сейчас закроется игра и оживёт комната, дыр между гроздьями быть
+        // не должно. Проверка — ПОСЛЕ дорастания и всех пересборок этого
+        // кадра: раньше она шла до них — в последнем кадре ещё видела
+        // растущие грозди (а следующего кадра уже не было), потом участок
+        // крестика пересобирался без подложки поверх; комната оживала под
+        // покровом с тысячами дыр (проблески у игрока).
+        const sealed = p >= 1 && (mode === 'close' || mode === 'finish') && !V.grow.length && V.i >= V.list.length;
+        if (sealed && this._full && !V.sealed) {
+            V.sealed = true;
+            ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.drawImage(this._full, 0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.restore();
+        }
         this.rings(fx, V);
     },
 
