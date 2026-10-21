@@ -275,6 +275,7 @@ const MinigameWindow = {
                 yield* draw;
                 blit(full, scale);
                 if (skin.prepareGen) yield* skin.prepareGen(scale);
+                if (typeof MgVeil !== 'undefined') MgVeil.prewarm(skin);
             })();
         };
         handle.ensureSkin = () => {

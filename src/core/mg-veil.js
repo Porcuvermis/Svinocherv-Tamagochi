@@ -47,23 +47,7 @@ const MgVeil = {
     // на время перехода: прозрачный слой во весь экран смешивается со сценой
     // каждый кадр (замер на рамке ванной), держать его просто так нельзя.
     show(skin) {
-        if (!this.el) {
-            this.el = document.createElement('div');
-            this.el.id = 'mg-veil';
-            this.cv = document.createElement('canvas');
-            this.el.appendChild(this.cv);
-            // Слой мгновенных украшений хода (кольца лопнувших пузырей):
-            // чистится каждый кадр, в отличие от холста покрова.
-            this.fx = document.createElement('canvas');
-            this.el.appendChild(this.fx);
-            // Тап по покрову гасится: под ним либо собирается игра, либо
-            // уже закрывается — ни туда, ни туда пальцу нельзя. Кроме места,
-            // где нарисован крестик: на входе это отмена (cancelEnter).
-            this.el.addEventListener('pointerdown', (e) => {
-                e.stopPropagation(); e.preventDefault();
-                if (this.state === 'enter' && this.onCross(e)) this.cancelEnter();
-            });
-        }
+        this.make();
         const host = document.getElementById('game-container') || document.body;
         if (this.el.parentNode !== host) host.appendChild(this.el);
         const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale')) || 1;
@@ -93,6 +77,44 @@ const MgVeil = {
         if (!this.skin.veilStill) return;
         this.setScale(this.hiScale);
         this.skin.veilStill(this.ctx());
+    },
+
+    // Элемент покрова и его холсты — один раз; прогрев и показ берут их
+    // отсюда.
+    make() {
+        if (this.el) return;
+        this.el = document.createElement('div');
+        this.el.id = 'mg-veil';
+        this.cv = document.createElement('canvas');
+        this.el.appendChild(this.cv);
+        // Слой мгновенного хода (вспухающие грозди, кольца лопнувших):
+        // чистится каждый кадр, в отличие от холста покрова.
+        this.fx = document.createElement('canvas');
+        this.el.appendChild(this.fx);
+        // Тап по покрову гасится: под ним либо собирается игра, либо
+        // уже закрывается — ни туда, ни туда пальцу нельзя. Кроме места,
+        // где нарисован крестик: на входе это отмена (cancelEnter).
+        this.el.addEventListener('pointerdown', (e) => {
+            e.stopPropagation(); e.preventDefault();
+            if (this.state === 'enter' && this.onCross(e)) this.cancelEnter();
+        });
+    },
+
+    // ---------- ПРОГРЕВ ----------
+    // Окно зовёт, когда шкурка дорисовала всё в простое: холсты покрова
+    // создаются заранее, и шкурка один раз рисует из своих картинок
+    // (skin.veilWarm) — загрузка в видеокарту случается сейчас, а не в миг
+    // нажатия. На iPhone перед первой заливкой была заметна пауза.
+    prewarm(skin) {
+        if (!this.enabled() || !skin || !skin.veilWarm) return;
+        this.make();
+        const host = document.getElementById('game-container') || document.body;
+        if (this.el.parentNode !== host) { this.el.style.display = 'none'; host.appendChild(this.el); }
+        const st = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--stage-scale')) || 1;
+        this.hiScale = Math.min(2, (window.devicePixelRatio || 1) * st);
+        this.loScale = Math.min(this.MOTION_SCALE, this.hiScale);
+        this.setScale(this.loScale);
+        skin.veilWarm(this.cv.getContext('2d'));
     },
 
     hide() {

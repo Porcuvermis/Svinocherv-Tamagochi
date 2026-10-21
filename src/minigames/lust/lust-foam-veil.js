@@ -58,7 +58,7 @@ Object.assign(LustFoam, {
     // Ход ещё не кончен: не всё лопнуло (потолок за кадр) или горят кольца.
     veilPending() {
         const V = this._v;
-        return !!V && V.i < V.list.length;
+        return !!V && (V.i < V.list.length || V.grow.length > 0);
     },
     // Кольцо лопнувшего пузыря (как у горки над хвостом, BATH_ART.BURST):
     // раздаётся в GROW раз и гаснет за MS. Не мельче MIN_R, одновременно не
@@ -310,7 +310,7 @@ Object.assign(LustFoam, {
             list = this.order(mid.filter(g => !this._shown.has(g)),
                 S.length ? g => Math.min(...S.map(q => Math.hypot(g.x - q.x, g.y - q.y))) : this.fromCenter(), false);
         }
-        this._v = { mode, list, present, i: 0, s: ctx.canvas.width / STAGE_W,
+        this._v = { mode, list, present, i: 0, s: ctx.canvas.width / STAGE_W, grow: [],
                     rings: (this._v && this._v.rings) || [] };
         // Вся пена на покрове — это неподвижная пена, она уже собрана теми
         // же гроздьями в том же порядке: одна картинка вместо двух тысяч
@@ -400,7 +400,9 @@ Object.assign(LustFoam, {
         const V = this._v;
         if (!V || V.mode !== mode || !this._atlas) return;
         const add = mode === 'cover' || mode === 'close' || mode === 'burst' || mode === 'finish';
-        const q = add ? p : Math.min(1, p / this.POP_END);
+        // Появление — с мягким разгоном и торможением: первые кадры заливки
+        // почти пустые и дешёвые, вход не начинается рывком.
+        const q = add ? 0.5 - 0.5 * Math.cos(Math.PI * p) : Math.min(1, p / this.POP_END);
         let upto = q >= 1 ? V.list.length : Math.floor(q * V.list.length);
         // Лопается не больше POP_PER_FRAME гроздей за кадр. Под 4×
         // замедлением кадр медленный, за него «положено» лопнуть сотне
@@ -413,23 +415,23 @@ Object.assign(LustFoam, {
         V.i = upto;
         const crossA = this.crossAlpha(mode, p);
         // Закрылись — рамка тоже на покрове: под ним окно сейчас закроется.
+        // Её грозди ложатся сразу, без вспухания: в окне под покровом та же
+        // рамка уже стоит, вспухающая копия поверх неё мигнула бы.
+        let instant = [];
         if (p >= 1 && (mode === 'close' || mode === 'finish')) {
-            for (const g of this._groups) if (!V.present.has(g) && !g.cross) fresh.push(g);
+            instant = this._groups.filter(g => !V.present.has(g) && !g.cross && !fresh.includes(g) && !V.grow.some(k => k.g === g));
             this._shown.clear();
         }
         if (p >= 1 && mode === 'cover') this._shown.clear();
         if (add) {
-            // Появились — поверх того, что есть: целые пузыри ничего не режут.
-            const s = V.s, A = this._atlas;
-            ctx.save();
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            for (const pass of ['d', 't']) for (const g of fresh) {
-                const sl = g[pass];
-                if (!sl || (g.cross && crossA != null)) continue;
-                ctx.drawImage(A, sl.ax, sl.ay, sl.w, sl.h, sl.x0 * s, sl.y0 * s, sl.w * s, sl.h * s);
-            }
-            ctx.restore();
-            for (const g of fresh) V.present.add(g);
+            const now = performance.now();
+            for (const g of fresh) V.grow.push({ g, t0: now });
+            // Доросшие — на холст покрова, как есть: целые пузыри поверх того,
+            // что уже лежит, ничего не режут.
+            const done = instant.concat(V.grow.filter(k => now - k.t0 >= this.GROW.ms).map(k => k.g));
+            V.grow = V.grow.filter(k => now - k.t0 < this.GROW.ms);
+            this.settle(ctx, V, done, crossA);
+            this.growing(fx, V, now, crossA);
         } else {
             for (const g of fresh) { V.present.delete(g); if (mode === 'pop') this._shown.delete(g); }
             this.compose(ctx, V, crossA, fresh.map(g => this.rectOf(g)));
@@ -438,6 +440,58 @@ Object.assign(LustFoam, {
         // Грозди крестика меняют прозрачность — их участок пересобирается.
         if (crossA != null) this.compose(ctx, V, crossA, this.crossRect());
         this.rings(fx, V);
+    },
+
+    // ---------- ВСПУХАНИЕ ----------
+    // Гроздь не выскакивает целиком, а за GROW.ms вырастает из GROW.from
+    // размера и проявляется. Пока растёт, она на слое fx (он чистится каждый
+    // кадр — прозрачность не копится), доросла — один раз ложится на холст
+    // покрова. Выскакивание целиком давало рывки (замечание игрока): за
+    // задержавшийся кадр выпрыгивало вдвое больше гроздей. Теперь грозди
+    // просто растут дальше, сколько бы их ни пришло за кадр.
+    GROW: { ms: 140, from: 0.75 },
+    settle(ctx, V, list, crossA) {
+        if (!list.length) return;
+        const s = V.s, A = this._atlas;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        for (const pass of ['d', 't']) for (const g of list) {
+            const sl = g[pass];
+            if (!sl || (g.cross && crossA != null)) continue;
+            ctx.drawImage(A, sl.ax, sl.ay, sl.w, sl.h, sl.x0 * s, sl.y0 * s, sl.w * s, sl.h * s);
+        }
+        ctx.restore();
+        for (const g of list) V.present.add(g);
+    },
+    growing(fx, V, now, crossA) {
+        if (!fx || !V.grow.length) return;
+        const s = V.s, A = this._atlas, G = this.GROW;
+        fx.save();
+        fx.setTransform(1, 0, 0, 1, 0, 0);
+        for (const pass of ['d', 't']) for (const k of V.grow) {
+            const g = k.g, sl = g[pass];
+            if (!sl || (g.cross && crossA != null)) continue;
+            const u = Math.min(1, (now - k.t0) / G.ms), e = 1 - (1 - u) * (1 - u);
+            const z = G.from + (1 - G.from) * e;
+            fx.globalAlpha = Math.min(1, e * 1.4);
+            fx.drawImage(A, sl.ax, sl.ay, sl.w, sl.h,
+                (g.x + (sl.x0 - g.x) * z) * s, (g.y + (sl.y0 - g.y) * z) * s, sl.w * z * s, sl.h * z * s);
+        }
+        fx.restore();
+    },
+
+    // Прогрев (MgVeil.prewarm): по точке из атласа и неподвижной пены — чтобы
+    // их загрузка в видеокарту случилась в простое, а не в миг нажатия
+    // (на iPhone перед первой заливкой была заметна пауза).
+    veilWarm(ctx) {
+        if (!this._atlas || !this._full) return false;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(this._atlas, 0, 0, 1, 1, 0, 0, 1, 1);
+        ctx.drawImage(this._full, 0, 0, 1, 1, 1, 0, 1, 1);
+        ctx.clearRect(0, 0, 4, 4);
+        ctx.restore();
+        return true;
     },
 
     // ---------- КОЛЬЦА ЛОПНУВШИХ ----------
