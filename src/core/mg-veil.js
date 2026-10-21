@@ -143,7 +143,10 @@ const MgVeil = {
                 if (run !== this._run) return done(false);
                 const p = Math.min(1, (performance.now() - t0) / ms);
                 this.frame(mode, p);
-                if (p >= 1) return done(true);
+                // Ход кончается, когда кончилось время И шкурка дорисовала всё:
+                // на медленном телефоне лопание растягивается (veilPending),
+                // а не сваливается в один тяжёлый кадр.
+                if (p >= 1 && !(this.skin.veilPending && this.skin.veilPending())) return done(true);
                 requestAnimationFrame(tick);
             };
             tick();

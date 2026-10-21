@@ -54,6 +54,12 @@ Object.assign(LustFoam, {
     // Лопания укладываются в эту долю хода: остаток — догорают кольца
     // последних лопнувших пузырей.
     POP_END: 0.85,
+    POP_PER_FRAME: 40,
+    // Ход ещё не кончен: не всё лопнуло (потолок за кадр) или горят кольца.
+    veilPending() {
+        const V = this._v;
+        return !!V && V.i < V.list.length;
+    },
     // Кольцо лопнувшего пузыря (как у горки над хвостом, BATH_ART.BURST):
     // раздаётся в GROW раз и гаснет за MS. Не мельче MIN_R, одновременно не
     // больше CAP — пузырей тысячи, кольцо у каждого было бы рябью.
@@ -306,7 +312,17 @@ Object.assign(LustFoam, {
         }
         this._v = { mode, list, present, i: 0, s: ctx.canvas.width / STAGE_W,
                     rings: (this._v && this._v.rings) || [] };
-        this.compose(ctx, this._v, this.crossAlpha(mode, 0));
+        // Вся пена на покрове — это неподвижная пена, она уже собрана теми
+        // же гроздьями в том же порядке: одна картинка вместо двух тысяч
+        // (первый кадр раскрытия стоил 130–170 мс под 4× замедлением).
+        if (present.size === G.length && this._full && this.crossAlpha(mode, 0) !== 0) {
+            ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.drawImage(this._full, 0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.restore();
+        } else {
+            this.compose(ctx, this._v, this.crossAlpha(mode, 0));
+        }
     },
 
     // Прозрачность гроздей с крестиком: тают при раскрытии, проявляются при
@@ -333,11 +349,16 @@ Object.assign(LustFoam, {
         if (rects) {
             if (!rects.length) { ctx.restore(); return; }
             ctx.beginPath();
-            for (const r of rects) ctx.rect(r[0] * s, r[1] * s, (r[2] - r[0]) * s, (r[3] - r[1]) * s);
+            // Края — по целым точкам холста: дробный край даёт сглаженную
+            // маску обрезки, целый — простой прямоугольный регион.
+            for (const r of rects) {
+                const x0 = Math.floor(r[0] * s), y0 = Math.floor(r[1] * s);
+                ctx.rect(x0, y0, Math.ceil(r[2] * s) - x0, Math.ceil(r[3] * s) - y0);
+            }
             ctx.clip();
             const u = rects.reduce((m, r) => [Math.min(m[0], r[0]), Math.min(m[1], r[1]), Math.max(m[2], r[2]), Math.max(m[3], r[3])],
                 [Infinity, Infinity, -Infinity, -Infinity]);
-            ctx.clearRect(u[0] * s, u[1] * s, (u[2] - u[0]) * s, (u[3] - u[1]) * s);
+            ctx.clearRect(Math.floor(u[0] * s), Math.floor(u[1] * s), Math.ceil((u[2] - u[0]) * s) + 2, Math.ceil((u[3] - u[1]) * s) + 2);
             hit = (sl) => sl.x0 < u[2] && sl.x0 + sl.w > u[0] && sl.y0 < u[3] && sl.y0 + sl.h > u[1]
                 && rects.some(r => sl.x0 < r[2] && sl.x0 + sl.w > r[0] && sl.y0 < r[3] && sl.y0 + sl.h > r[1]);
         } else {
@@ -380,7 +401,14 @@ Object.assign(LustFoam, {
         if (!V || V.mode !== mode || !this._atlas) return;
         const add = mode === 'cover' || mode === 'close' || mode === 'burst' || mode === 'finish';
         const q = add ? p : Math.min(1, p / this.POP_END);
-        const upto = q >= 1 ? V.list.length : Math.floor(q * V.list.length);
+        let upto = q >= 1 ? V.list.length : Math.floor(q * V.list.length);
+        // Лопается не больше POP_PER_FRAME гроздей за кадр. Под 4×
+        // замедлением кадр медленный, за него «положено» лопнуть сотне
+        // гроздей, участок пересборки растёт, кадр ещё медленнее — замкнутый
+        // круг (100+ мс на кадр). С потолком медленный телефон растягивает
+        // лопание на пару кадров (veilPending держит ход), а на живой
+        // частоте за кадр лопается ~30 — потолок не мешает.
+        if (!add) upto = Math.min(upto, V.i + this.POP_PER_FRAME);
         const fresh = V.list.slice(V.i, upto);
         V.i = upto;
         const crossA = this.crossAlpha(mode, p);
