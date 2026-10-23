@@ -88,6 +88,7 @@
 | Кухня: предметы, проверки, магазин | `docs/kitchen-objects.md`, `docs/kitchen-checks.md`, `gluttony/kitchen-shop.js` |
 | Лень: грядки, камера, зум, магазин | `docs/plan/19-sloth-garden.md`, `sloth/sloth-shop.js` |
 | Меню грехов, ворота награды | `docs/sins-menu.md` |
+| Рамка окна, вход/выход через материал греха, выход нажатиями | `docs/minigame-window.md`, `docs/plan/25-lust-foam-transition.md` (разд. 0) |
 | Жетон и осколок | `docs/token-art.md` |
 | Шрамы и наряд не видны | `loadWormModel()` / `refreshWormMarks()` (traps, п. 98) |
 | Имена частей червя для человека | `src/core/worm-parts.js` |
