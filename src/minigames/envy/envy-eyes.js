@@ -39,12 +39,12 @@ const EnvyEyes = {
     // кромке (наименьший и разброс), diag — доля диагональных.
     SIDES: {
         h: { L: [64, 150], Ls: [24, 52], off: [-1.0, 0.3] },
-        // Низ — полоса ~56 единиц под шкалой. Глаза средние и почти
-        // вдоль, каждый ЦЕЛИКОМ в полосе (whole) и верхним веком на шве. Были
-        // крупные, ушедшие за край экрана: с закрытым зрачком от них
-        // оставались огромные пустые обведённые листья, а шов добирали
-        // крошечные, чьи обводки резали друг друга (оценка игрока: «трэш»).
-        b: { L: [58, 104], Ls: [40, 58], off: [-0.8, -0.25], flat: 0.42, whole: true, noTiny: true },
+        // Низ — как бока и верх, но каждый глаз ЦЕЛИКОМ на экране (whole) и
+        // без крошечных: крупные, ушедшие за край экрана, с закрытым зрачком
+        // оставались огромными пустыми обведёнными листьями, а крошечные
+        // резали друг другу обводки (оценка игрока: «трэш»). Середину низа
+        // занимает веер индикаторов (indicatorEyes), цепочка его обходит.
+        b: { L: [64, 150], Ls: [26, 52], off: [-1.0, 0.3], whole: true, noTiny: true },
         v: { L: [54, 140], Ls: [22, 50], off: [-0.9, 0.4] }
     },
     // Сколько кромки можно оставить открытой подряд, если ни один глаз не
@@ -53,11 +53,10 @@ const EnvyEyes = {
     TRIES: 200,
     PICK: 8,          // сколько подходящих глаз сравнивать на каждом шаге
     RUN_K: 0.45,
-    // Шкалу зависти перекрывать нельзя (оценка игрока). Прямоугольник шкалы
-    // в координатах тела окна (390×800) — тот же, что в envy.css
-    // (.envy-gauge-wrap: left/right 7%, bottom 18px, height 18px), с запасом
-    // KEEP_PAD. Поменял шкалу там — поменяй и здесь.
-    KEEP: [{ x0: 27.3, y0: 764, x1: 362.7, y1: 782 }],
+    // Прямоугольники, на которые глаза рамки не заходят (в координатах тела
+    // окна 390×800, с запасом KEEP_PAD). Была шкала зависти; её больше нет —
+    // деления показывают глаза-индикаторы внизу рамки (indicatorEyes).
+    KEEP: [],
     KEEP_PAD: 5,
     // Мелкие глаза в чёрных просветах рамки — после цепочки.
     // Мелкие в глубине рамки — редко: только в заметных чёрных пустотах.
@@ -148,6 +147,15 @@ const EnvyEyes = {
         const at = (i) => path[((i % N) + N) % N];
         const covered = (eye, i) => { const q = at(i); return this.inAlmond(eye, q.x, q.y); };
         const chain = [];
+        // Веер индикаторов — первым: цепочка кромки обходит их зрачки и
+        // считает их кромку закрытой.
+        const inds = this.indicatorEyes();
+        for (const e of inds) {
+            chain.push(e);
+            const kk = key(Math.floor(e.x / this.CELL), Math.floor(e.y / this.CELL));
+            if (!grid.has(kk)) grid.set(kk, []);
+            grid.get(kk).push(e);
+        }
         const coveredAny = (i) => chain.some(e => covered(e, i));
         // соседи — глаза кромки, что стоят вплотную к новому (центры ближе
         // NEAR_K от суммы длин): с ними новый не должен быть схож
@@ -202,6 +210,8 @@ const EnvyEyes = {
                     if (P.whole && !self.onScreen(eye)) continue;
                     if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : tiny ? self.IRIS_GAP_TINY : self.IRIS_GAP_SMALL)) continue;
                     if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
+                    // на веер индикаторов не садиться: он читается сам по себе
+                    if (inds.some(d => self.inAlmond(d, x, y) || self.inAlmond(eye, d.x, d.y) || Math.hypot(d.x - x, d.y - y) < 0.35 * (d.w + L))) continue;
                     let run = 0;
                     while (run < 300 && covered(eye, cur + run)) run++;
                     let tier = 2;
@@ -257,6 +267,8 @@ const EnvyEyes = {
             if (!grid.has(kk)) grid.set(kk, []);
             grid.get(kk).push(eye);
         }
+        // индикаторы рисуются последними — поверх соседей, обводка целая
+        for (const e of inds) eyes.push(e);
         let reach = 0;
         for (const e of eyes) reach = Math.max(reach, this.intoScene(e));
         this._reach = Math.ceil(reach) + 2;
@@ -264,6 +276,38 @@ const EnvyEyes = {
         this.pickInverted(eyes);
         yield;
         return eyes;
+    },
+
+    // ---------- ИНДИКАТОРЫ ----------
+    // Шкалы зависти нет: деления — глаза веером по центру низа рамки
+    // (замысел игрока). Сколько делений — из конфига (rounds), при прокачке
+    // веер перестраивается сам. Веер — как карты в руке: глаза на дуге с
+    // осью ниже экрана, крайние наклонены в свою сторону сильнее;
+    // нечётное — средний стоит прямо, чётное — середина пустая. Виды
+    // чередуются: чёрный с зелёным зрачком и обратный (зелёный миндаль).
+    // Деление заполнено — глаз открыт (зелёный), нет — закрыт (чёрное тело
+    // с обводкой). Открывает и закрывает их EnvyEyes.setFill.
+    IND_Y: 790,       // центр среднего места веера: на шве, веки закрывают кромку
+    IND_L: 74,        // длина глаза, пока веер умещается в IND_SPAN
+    IND_SPAN: 300,
+    IND_R: 230,       // радиус дуги веера
+    IND_TILT: 2.2,    // во сколько раз наклон глаза больше его места на дуге
+    indicatorEyes() {
+        if (this._inds) return this._inds;
+        const N = (typeof ECONOMY !== 'undefined' && ECONOMY.minigames.envy) ? ECONOMY.minigames.envy.rounds : 3;
+        const odd = N % 2 === 1, slots = odd ? N : N + 1;
+        const L = Math.min(this.IND_L, this.IND_SPAN / (slots * 0.92));
+        const R = this.IND_R, step = L * 0.92 / R, cx = STAGE_W / 2, cy = this.IND_Y + R;
+        const js = [];
+        if (odd) for (let j = -(N - 1) / 2; j <= (N - 1) / 2; j++) js.push(j);
+        else for (let j = 1; j <= N / 2; j++) js.push(-j, j);
+        js.sort((a, b) => a - b);
+        this._inds = js.map((j, i) => {
+            const phi = j * step;
+            return { x: cx + R * Math.sin(phi), y: cy - R * Math.cos(phi), w: L, r: L * this.IRIS,
+                     ang: phi * this.IND_TILT, ind: i, kind: i % 2 ? 'inv' : undefined };
+        });
+        return this._inds;
     },
 
     // ---------- ДВА ВИДА ГЛАЗ ----------
@@ -274,7 +318,8 @@ const EnvyEyes = {
     // чередуются и форма видна. И обратный не ложится на чужой зелёный
     // зрачок: зелёное на зелёном сливается.
     pickInverted(eyes) {
-        const list = eyes.filter(e => e.r);
+        const all = eyes.filter(e => e.r);
+        const list = all.filter(e => e.ind == null);
         const cx = STAGE_W / 2, cy = STAGE_H / 2;
         list.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
         const touch = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < this.NEAR_K * (a.w + b.w);
@@ -291,12 +336,15 @@ const EnvyEyes = {
             for (const e of list) {
                 if (e.kind === 'inv' || !e.r) continue;
                 if (inv.some(o => touch(o, e))) continue;
+                // обратный индикатор рядом — тоже «обратный сосед»
+                if (all.some(o => o.ind != null && o.kind === 'inv' && touch(o, e))) continue;
                 // свой чёрный зрачок — не под чужим обратным
                 if (inv.some(o => coversIris(o, e))) continue;
                 // ни на чей зелёный зрачок; во втором проходе (низ, где глаза
                 // мелкие и плотные — иначе там не встал ни один обратный)
                 // можно накрыть один: у того соседа зрачка больше нет, он
                 // просто чёрное тело, прикрытое обратным.
+                if (all.some(o => o.ind != null && coversIris(e, o))) continue;
                 const under = list.filter(o => o !== e && o.r && o.kind !== 'inv' && coversIris(e, o));
                 if (under.length > (allowHide ? 1 : 0)) continue;
                 for (const o of under) o.r = 0;
@@ -488,7 +536,8 @@ const EnvyEyes = {
     // листьев; теперь только у чёрных, рядом с зелёными обратными.
     RIM_LINE: 1.6,
     rimLine(ctx, e) {
-        if (!e.rim || e.kind === 'inv' || e.kind === 'x') return;
+        // индикаторы — всегда с обводкой: закрытый обратный иначе исчез бы
+        if (!e.rim || e.kind === 'x' || (e.kind === 'inv' && e.ind == null)) return;
         ctx.strokeStyle = this.pal().iris;
         ctx.lineWidth = this.RIM_LINE;
         ctx.stroke();

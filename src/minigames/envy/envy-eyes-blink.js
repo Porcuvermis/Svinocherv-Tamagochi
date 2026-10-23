@@ -41,7 +41,8 @@ Object.assign(EnvyEyes, {
 
     // Набор глаз одного вида по обходу периметра.
     pool(kind) {
-        return this.liveEyes().filter(e => (e.kind === 'inv' ? 'inv' : 'k') === kind);
+        // индикаторы не моргают сами — ими правит заполнение (setFill)
+        return this.liveEyes().filter(e => e.ind == null && (e.kind === 'inv' ? 'inv' : 'k') === kind);
     },
 
     // Начальный набор: в каждом виде открыт каждый n-й по обходу со
@@ -108,6 +109,17 @@ Object.assign(EnvyEyes, {
         g.rotate(-e.ang);
         this.pupil(g, e, 0, 0);
         g.restore();
+    },
+
+    // ---------- ИНДИКАТОРЫ ----------
+    // Заполнено n делений: первые n глаз веера слева открыты, остальные
+    // закрыты. Меняются только те, у кого цель другая, — моргая.
+    setFill(n) {
+        for (const e of this.liveEyes()) {
+            if (e.ind == null || !e.live) continue;
+            const to = e.ind < n ? 1 : 0;
+            if (e.live.to !== to) this.blinkTo(e, to);
+        }
     },
 
     // ---------- РАСПИСАНИЕ ----------

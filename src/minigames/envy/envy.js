@@ -132,7 +132,6 @@ const EnvyMinigame = {
     // ---------- DOM ----------
     screenElement: null,
     canvas: null,
-    gaugeBar: null,
     winOverlay: null,
     win: null,
 
@@ -208,7 +207,6 @@ const EnvyMinigame = {
         }
 
         this.canvas = document.getElementById('envy-canvas');
-        this.gaugeBar = document.getElementById('envy-gauge-bar');
         this.winOverlay = document.getElementById('envy-win-overlay');
         this.flashEl = document.getElementById('envy-win-flash');
 
@@ -313,10 +311,9 @@ const EnvyMinigame = {
         if (this.win) this.win.hideConfirm();
     },
 
+    // Шкалы нет: деления — глаза-индикаторы внизу рамки (envy-eyes.js).
     updateGauge() {
-        const rounds = this.balance().rounds;
-        const pct = Math.min(100, (this.fillThirds / rounds) * 100);
-        if (this.gaugeBar) this.gaugeBar.style.width = `${pct}%`;
+        if (typeof EnvyEyes !== 'undefined' && EnvyEyes.setFill) EnvyEyes.setFill(this.fillThirds);
     },
 
     // ================= СЦЕНА =================
