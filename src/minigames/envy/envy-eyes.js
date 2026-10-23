@@ -156,8 +156,8 @@ const EnvyEyes = {
             if (!grid.has(kk)) grid.set(kk, []);
             grid.get(kk).push(e);
         }
-        const fan = { x0: Math.min(...inds.map(d => d.x - d.w * 0.45)), x1: Math.max(...inds.map(d => d.x + d.w * 0.45)),
-                      y0: Math.min(...inds.map(d => d.y)) - 26 };
+        const fan = { x0: Math.min(...inds.map(d => d.x)) - 22, x1: Math.max(...inds.map(d => d.x)) + 22,
+                      y0: this.inner().y1 - 30 };
         const coveredAny = (i) => chain.some(e => covered(e, i));
         // соседи — глаза кромки, что стоят вплотную к новому (центры ближе
         // NEAR_K от суммы длин): с ними новый не должен быть схож
@@ -212,10 +212,11 @@ const EnvyEyes = {
                     if (P.whole && !self.onScreen(eye)) continue;
                     if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : tiny ? self.IRIS_GAP_TINY : self.IRIS_GAP_SMALL)) continue;
                     if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
-                    // Середина низа — только веер: обычные глаза между
-                    // индикаторами делали из него кашу (на 4–6 делениях веер
-                    // не читался). Зона — по ширине веера, от шва вниз.
+                    // Веер читается сам по себе: обычные глаза между лучами
+                    // делали из него кашу. В зоне веера обычных глаз нет
+                    // совсем, и ни один снаружи не задевает лучей.
                     if (x > fan.x0 && x < fan.x1 && y > fan.y0) continue;
+                    if (inds.some(d => self.overlaps(d, eye))) continue;
                     if (inds.some(d => self.inAlmond(eye, d.x, d.y))) continue;
                     let run = 0;
                     while (run < 300 && covered(eye, cur + run)) run++;
@@ -285,36 +286,47 @@ const EnvyEyes = {
 
     // ---------- ИНДИКАТОРЫ ----------
     // Шкалы зависти нет: деления — глаза веером по центру низа рамки
-    // (замысел игрока). Сколько делений — из конфига (rounds), при прокачке
-    // веер перестраивается сам. Веер — как карты в руке: глаза на дуге с
-    // осью ниже экрана, крайние наклонены в свою сторону сильнее;
-    // нечётное — средний стоит прямо, чётное — середина пустая. Виды
-    // чередуются: чёрный с зелёным зрачком и обратный (зелёный миндаль).
-    // Деление заполнено — глаз открыт (зелёный), нет — закрыт (чёрное тело
-    // с обводкой). Открывает и закрывает их EnvyEyes.setFill.
-    IND_Y: 790,       // центр среднего места веера: на шве, веки закрывают кромку
-    IND_L: 74,        // длина глаза, пока веер умещается в IND_SPAN
-    IND_SPAN: 300,
-    IND_R: 230,       // радиус дуги веера
-    IND_TILT: 2.2,    // во сколько раз наклон глаза больше его места на дуге
+    // (замысел и набросок игрока). Веер — лучами из точки под экраном:
+    // каждый глаз вытянут ВДОЛЬ своего луча, средний стоит вертикально,
+    // крайние почти легли; нечётное — средний луч есть, чётное — посередине
+    // пусто. Сколько делений — из конфига (rounds), при прокачке веер
+    // перестраивается сам. Виды чередуются: чёрный с зелёным зрачком и
+    // обратный (зелёный миндаль). Деление заполнено — глаз открыт, нет —
+    // закрыт (тело с обводкой). Открывает и закрывает их EnvyEyes.setFill.
+    // (Первая версия — глаза поперёк дуги, как карты, — читалась рядом.)
+    IND_PIVOT: 872,   // точка, откуда расходятся лучи (под экраном)
+    IND_RX: 118,      // до центров глаз: по горизонтали
+    IND_RY: 74,       // и по вертикали — дуга приплюснута, крайние ниже
+    IND_STEP: 0.56,   // наибольший шаг между лучами, рад (~32°)
+    IND_SPREAD: 1.15, // наибольший раствор в одну сторону, рад (~65°)
+    IND_L: 64,
     indicatorEyes() {
         if (this._inds) return this._inds;
         const N = (typeof ECONOMY !== 'undefined' && ECONOMY.minigames.envy) ? ECONOMY.minigames.envy.rounds : 3;
-        // чётное: места на ±0,5, ±1,5… — посередине глаза нет, но и дыры
-        // в целый шаг нет (в неё садился чужой глаз и ломал веер)
-        const odd = N % 2 === 1, slots = N;
-        const L = Math.min(this.IND_L, this.IND_SPAN / (slots * 0.92));
-        const R = this.IND_R, step = L * 0.92 / R, cx = STAGE_W / 2, cy = this.IND_Y + R;
-        const js = [];
-        if (odd) for (let j = -(N - 1) / 2; j <= (N - 1) / 2; j++) js.push(j);
-        else for (let j = 1; j <= N / 2; j++) js.push(-(j - 0.5), j - 0.5);
-        js.sort((a, b) => a - b);
-        this._inds = js.map((j, i) => {
-            const phi = j * step;
-            return { x: cx + R * Math.sin(phi), y: cy - R * Math.cos(phi), w: L, r: L * this.IRIS,
-                     ang: phi * this.IND_TILT, ind: i, kind: i % 2 ? 'inv' : undefined };
-        });
+        const step = N > 1 ? Math.min(this.IND_STEP, 2 * this.IND_SPREAD / (N - 1)) : 0;
+        // лучи теснее — глаза уже: соседние не налезают друг на друга
+        const L = Math.min(this.IND_L, 30 + step * 70);
+        const cx = STAGE_W / 2;
+        this._inds = [];
+        for (let i = 0; i < N; i++) {
+            const phi = (i - (N - 1) / 2) * step;     // чётное — само без среднего луча
+            this._inds.push({ x: cx + this.IND_RX * Math.sin(phi), y: this.IND_PIVOT - this.IND_RY * Math.cos(phi) - L * 0.2,
+                              w: L, r: L * this.IRIS, ang: phi - Math.PI / 2, ind: i, kind: i % 2 ? 'inv' : undefined });
+        }
         return this._inds;
+    },
+
+    // Налезают ли два миндаля (по контурам эллипсов и центрам).
+    overlaps(a, b) {
+        if (this.inAlmond(a, b.x, b.y) || this.inAlmond(b, a.x, a.y)) return true;
+        for (const [p, q] of [[a, b], [b, a]]) {
+            const c = Math.cos(p.ang), s = Math.sin(p.ang), A = p.w * 0.48, B = p.w * 0.22;
+            for (let i = 0; i < 16; i++) {
+                const t = i / 16 * Math.PI * 2, ex = Math.cos(t) * A, ey = Math.sin(t) * B;
+                if (this.inAlmond(q, p.x + ex * c - ey * s, p.y + ex * s + ey * c)) return true;
+            }
+        }
+        return false;
     },
 
     // ---------- ДВА ВИДА ГЛАЗ ----------
