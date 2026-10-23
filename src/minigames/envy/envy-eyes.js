@@ -361,18 +361,15 @@ const EnvyEyes = {
         return dx > dy ? Math.PI / 2 : 0;
     },
 
-    // Глаза крестика: два ряда вдоль диагоналей, каждый глаз повёрнут по
-    // своему штриху, чтобы штрих читался линией.
+    // Крестик — один глаз, у которого зрачок — зелёный крестик (замысел
+    // игрока). Раньше был выложен десятью мелкими зрачками по диагоналям.
+    // r — полуразмер крестика: по нему же держат расстояние чужие зрачки.
+    CROSS_W: 66,
+    CROSS_R: 12,
     crossEyes() {
-        const C = this.cross, out = [], n = 5, half = C.size * 0.42;
-        for (const dir of [1, -1]) {
-            for (let i = 0; i < n; i++) {
-                const t = (i / (n - 1)) * 2 - 1;
-                out.push({ x: C.x + t * half, y: C.y + dir * t * half,
-                           w: C.size * 0.5, r: C.size * 0.125, ang: dir > 0 ? Math.PI / 4 : -Math.PI / 4 });
-            }
-        }
-        return out;
+        const C = this.cross;
+        if (!this._cross) this._cross = [{ x: C.x, y: C.y, w: this.CROSS_W, r: this.CROSS_R, ang: 0, kind: 'x' }];
+        return this._cross;
     },
 
     // ---------- ГЛАЗ ----------
@@ -410,9 +407,28 @@ const EnvyEyes = {
     // (оценка игрока: только чёрное тело и плоский зелёный зрачок).
     iris(ctx, e) {
         if (!e.r) return;
-        ctx.fillStyle = this.pal().iris;
+        this.pupil(ctx, e, e.x, e.y);
+    },
+
+    // Зрачок в точке (x, y): круг или, у глаза крестика, зелёный крестик.
+    pupil(ctx, e, x, y) {
+        const P = this.pal();
+        if (e.kind === 'x') {
+            const h = e.r;
+            ctx.save();
+            ctx.strokeStyle = P.iris;
+            ctx.lineWidth = h * 0.5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y + h);
+            ctx.moveTo(x + h, y - h); ctx.lineTo(x - h, y + h);
+            ctx.stroke();
+            ctx.restore();
+            return;
+        }
+        ctx.fillStyle = P.iris;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+        ctx.arc(x, y, e.r, 0, Math.PI * 2);
         ctx.fill();
     },
 
@@ -444,10 +460,13 @@ const EnvyEyes = {
         yield;
         // Сначала все чёрные формы, потом все радужки: чёрное на чёрном
         // сливается, а радужку чужой глаз закрыть не может.
+        // Зрачки глаз рамки здесь НЕ рисуются: они моргают и живут на своих
+        // маленьких холстах поверх рамки (envy-eyes-blink.js, mountLive).
+        // Неподвижен только крестик.
         const cross = this.crossEyes();
         for (const eye of eyes) this.body(ctx, eye);
+        for (const eye of cross) this.body(ctx, eye);
         yield;
-        for (const eye of eyes) this.iris(ctx, eye);
         for (const eye of cross) this.iris(ctx, eye);
     }
 };

@@ -231,6 +231,8 @@ const EnvyMinigame = {
         if (!this.canvas) return;
 
         this.screenElement.classList.add('active');
+        // глаза рамки моргают, пока игра открыта (envy-eyes-blink.js)
+        if (typeof EnvyEyes !== 'undefined' && EnvyEyes.blinkStart) EnvyEyes.blinkStart();
 
         this.fillThirds = 0;
         this.hasWon = false;
@@ -285,6 +287,7 @@ const EnvyMinigame = {
 
     close() {
         if (this.screenElement) this.screenElement.classList.remove('active');
+        if (typeof EnvyEyes !== 'undefined' && EnvyEyes.blinkStop) EnvyEyes.blinkStop();
         if (this.rafId) {
             cancelAnimationFrame(this.rafId);
             this.rafId = null;
