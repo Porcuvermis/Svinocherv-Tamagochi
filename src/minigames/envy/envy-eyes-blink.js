@@ -18,7 +18,13 @@
 // только пока кто-то моргает; расписание — setTimeout, и только пока игра
 // открыта (инвариант 1: таймер — для картинки, не для состояния).
 Object.assign(EnvyEyes, {
-    BLINK_OPEN: 1 / 3,          // доля открытых зрачков
+    // Два набора, моргают независимо: чёрные глаза (зелёный зрачок) —
+    // открыта треть; обратные (зелёный миндаль, EnvyEyes.pickInverted) —
+    // открыты почти все: закрытый обратный не виден вовсе, а форму рамке
+    // дают как раз они. Общий ритм «через один» у обоих наборов совпадал с
+    // чередованием видов — и на целых сторонах обратные оказывались закрыты.
+    BLINK_OPEN: { k: 1 / 3, inv: 0.75 },
+    BLINK_INV_CHANCE: 0.4,      // как часто смена задевает и обратные
     BLINK_EVERY: [2000, 3000],  // мс между сменами
     BLINK_MS: { open: 420, close: 340 },
     _live: null,
@@ -33,16 +39,22 @@ Object.assign(EnvyEyes, {
         return (this._liveList = list);
     },
 
-    // Начальный набор: каждый третий по обходу со случайным сдвигом.
+    // Набор глаз одного вида по обходу периметра.
+    pool(kind) {
+        return this.liveEyes().filter(e => (e.kind === 'inv' ? 'inv' : 'k') === kind);
+    },
+
+    // Начальный набор: в каждом виде открыт каждый n-й по обходу со
+    // случайным сдвигом.
     blinkInit() {
-        const list = this.liveEyes(), step = 1 / this.BLINK_OPEN;
-        const off = Math.random() * step;
-        for (const e of list) e.live = { open: false, from: 0, to: 0, t0: 0, dur: 1 };
-        for (let k = off; k < list.length; k += step) {
-            const e = list[Math.floor(k)];
-            e.live.open = true; e.live.from = e.live.to = 1;
+        for (const e of this.liveEyes()) e.live = { from: 0, to: 0, t0: 0, dur: 1 };
+        for (const kind of ['k', 'inv']) {
+            const list = this.pool(kind), step = 1 / this.BLINK_OPEN[kind];
+            for (let k = Math.random() * step; k < list.length; k += step) {
+                const L = list[Math.floor(k)].live;
+                L.from = L.to = 1;
+            }
         }
-        for (const e of list) if (!e.live.open) e.live.from = e.live.to = 0;
     },
 
     // Раскрытие зрачка глаза рамки сейчас (0 — под веками, 1 — открыт).
@@ -64,7 +76,8 @@ Object.assign(EnvyEyes, {
         if (!this.liveEyes()[0] || !this.liveEyes()[0].live) this.blinkInit();
         this._liveScale = scale;
         for (const e of this.liveEyes()) {
-            const pad = 2, half = e.r + pad;
+            // обратный глаз — весь миндаль зелёный, холстик под длину глаза
+            const pad = 2, half = (e.kind === 'inv' ? e.w / 2 : e.r) + pad;
             const c = document.createElement('canvas');
             c.width = Math.ceil(half * 2 * scale); c.height = c.width;
             Object.assign(c.style, { left: (e.x - half) + 'px', top: (e.y - half) + 'px',
@@ -105,7 +118,8 @@ Object.assign(EnvyEyes, {
         this._blinkOn = true;
         const next = () => {
             if (!this._blinkOn) return;
-            this.blinkSwap();
+            this.blinkSwap(this.pool('k'));
+            if (Math.random() < this.BLINK_INV_CHANCE) this.blinkSwap(this.pool('inv'));
             const [a, b] = this.BLINK_EVERY;
             this._blinkT = setTimeout(next, a + Math.random() * (b - a));
         };
@@ -124,8 +138,9 @@ Object.assign(EnvyEyes, {
 
     // Один открытый закрывается, открывается середина самого длинного ряда
     // закрытых (по кругу периметра).
-    blinkSwap() {
-        const list = this.liveEyes(), n = list.length;
+    blinkSwap(list) {
+        const n = list.length;
+        if (n < 2) return;
         const open = list.map((e, i) => e.live.to ? i : -1).filter(i => i >= 0);
         if (!open.length) return;
         const shut = open[Math.floor(Math.random() * open.length)];

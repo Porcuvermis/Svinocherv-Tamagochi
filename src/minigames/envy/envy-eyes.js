@@ -238,8 +238,42 @@ const EnvyEyes = {
         let reach = 0;
         for (const e of eyes) reach = Math.max(reach, this.intoScene(e));
         this._reach = Math.ceil(reach) + 2;
+        this.pickInverted(eyes);
         yield;
         return eyes;
+    },
+
+    // ---------- ДВА ВИДА ГЛАЗ ----------
+    // Чёрный глаз на чёрной рамке виден только зрачком — рамка читалась
+    // россыпью зелёных точек, миндаля не разглядеть (оценка игрока). Поэтому
+    // часть глаз — наоборот: зелёный миндаль с чёрным зрачком (kind 'inv').
+    // Обратные не касаются друг друга — каждый окружён чёрными, виды
+    // чередуются и форма видна. И обратный не ложится на чужой зелёный
+    // зрачок: зелёное на зелёном сливается.
+    pickInverted(eyes) {
+        const list = eyes.filter(e => e.r);
+        const cx = STAGE_W / 2, cy = STAGE_H / 2;
+        list.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+        const touch = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < this.NEAR_K * (a.w + b.w);
+        const coversIris = (inv, o) => {
+            if (this.inAlmond(inv, o.x, o.y)) return true;
+            for (let i = 0; i < 8; i++) {
+                const t = i / 8 * Math.PI * 2;
+                if (this.inAlmond(inv, o.x + Math.cos(t) * o.r * 1.2, o.y + Math.sin(t) * o.r * 1.2)) return true;
+            }
+            return false;
+        };
+        const inv = [];
+        for (const e of list) {
+            if (inv.some(o => touch(o, e))) continue;
+            // ни на чей зелёный зрачок, и свой чёрный — не под чужим обратным
+            if (list.some(o => o !== e && o.kind !== 'inv' && coversIris(e, o))) continue;
+            if (inv.some(o => coversIris(o, e))) continue;
+            e.kind = 'inv';
+            inv.push(e);
+        }
+        // крестик — тоже зелёный миндаль: соседние зрачки под ним уже
+        // не лежат (раскладка держит их поодаль)
     },
 
     // Шов, который надо закрыть: кромка видимой сцены (скруглённый
@@ -415,6 +449,20 @@ const EnvyEyes = {
     // Зрачок в точке (x, y): круг или, у глаза крестика, зелёный крестик.
     pupil(ctx, e, x, y) {
         const P = this.pal();
+        if (e.kind === 'inv') {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(e.ang);
+            this.almond(ctx, e.w * 0.92);
+            ctx.fillStyle = P.iris;
+            ctx.fill();
+            ctx.fillStyle = P.base;
+            ctx.beginPath();
+            ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            return;
+        }
         if (e.kind === 'x') {
             const h = e.r;
             ctx.save();
