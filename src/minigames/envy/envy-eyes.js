@@ -42,6 +42,8 @@ const EnvyEyes = {
         h: { big: 0.7, L: [56, 100], Ls: [24, 36], off: [-0.5, 0.25], jit: 0.4, diag: 0.3, step: 0.42 },
         v: { big: 0.25, L: [50, 66],  Ls: [32, 48], off: [-0.2, 0.9],   jit: 0.6,  diag: 0.2,  step: 0.47 }
     },
+    // Чёрные наплывы по шву рамки и сцены: шаг, длины, сдвиг в полувысотах.
+    SEAM: { step: [12, 22], L: [26, 46], off: [-0.3, 0.8] },
     // Мелкие глаза в чёрных просветах рамки — после цепочки.
     FILL: { tries: 250, L: [20, 28] },
     IRIS: 0.16,       // радиус радужки в долях длины глаза (рисунок игрока)
@@ -145,6 +147,22 @@ const EnvyEyes = {
             yield;
         }
 
+        // Шов: ровная кромка сцены не должна читаться между глазами. Вдоль
+        // неё — чёрные миндали без радужки (глаза, закрытые соседями), центр
+        // то в рамке, то на сцене: край массы становится бугристым.
+        const SM = this.SEAM;
+        for (const S of sides) {
+            const tang = Math.atan2(S.uy, S.ux);
+            for (let s = -6; s < S.len + 6; s += lerp(SM.step, rng())) {
+                const L = lerp(SM.L, rng()), halfH = L * 0.26;
+                const off = lerp(SM.off, rng()) * halfH;
+                eyes.unshift({ x: S.x + S.ux * s + S.nx * off, y: S.y + S.uy * s + S.ny * off,
+                               w: L, r: 0, ang: tang + (rng() - 0.5) * 0.7 });
+                reach = Math.max(reach, off + halfH * 1.3);
+            }
+        }
+        yield;
+
         // Мелкие в просветах: радужка целиком в рамке.
         const F = this.FILL;
         for (let n = 0; n < F.tries; n++) {
@@ -204,37 +222,17 @@ const EnvyEyes = {
         this.almond(ctx, e.w);
         ctx.fillStyle = this.pal().base;
         ctx.fill();
-        // Дымка: чуть светлее чёрного у зрачка, к краям — в ноль. Края
-        // формы от этого растворяются в массе, а не режутся линией.
-        ctx.clip();
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.w * 0.5);
-        g.addColorStop(0, this.pal().haze);
-        g.addColorStop(1, this.pal().base);
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = g;
-        ctx.fillRect(-e.w / 2, -e.w / 2, e.w, e.w);
         ctx.restore();
     },
 
-    // Радужка: металлический градиент «светлее сверху-слева» и блик.
+    // Радужка — плоский зелёный круг: без градиента, блика и свечения
+    // (оценка игрока: только чёрное тело и плоский зелёный зрачок).
     iris(ctx, e) {
-        const P = this.pal(), r = e.r;
-        ctx.save();
-        ctx.translate(e.x, e.y);
-        const g = ctx.createLinearGradient(-r, -r, r, r);
-        g.addColorStop(0, P.irisHi);
-        g.addColorStop(0.45, P.iris);
-        g.addColorStop(1, P.irisLo);
-        ctx.fillStyle = g;
+        if (!e.r) return;
+        ctx.fillStyle = this.pal().iris;
         ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = P.glint;
-        ctx.globalAlpha = 0.7;
-        ctx.beginPath();
-        ctx.arc(-r * 0.35, -r * 0.4, r * 0.18, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
     },
 
     draw(ctx, scale) {
