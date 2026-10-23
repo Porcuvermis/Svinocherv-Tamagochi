@@ -258,7 +258,7 @@ const EnvyMinigame = {
         // Векторные образы грузятся картинками, поэтому пул готовится
         // асинхронно. Первый заход ждёт его доли секунды, дальше и пул, и
         // библиотека уже на месте, и промис отдаёт готовое немедленно.
-        this.ensureThree().then(images => {
+        this._readyP = this.ensureThree().then(images => {
             if (!this.screenElement.classList.contains('active')) return;
             this.imagePool = images;
             this.state = 'play';
@@ -267,12 +267,20 @@ const EnvyMinigame = {
             this.lastTs = null;
             if (this.rafId) cancelAnimationFrame(this.rafId);
             this.rafId = requestAnimationFrame((ts) => this.loop(ts));
+            // первый кадр облака — тогда покров может раскрываться
+            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         }).catch(err => {
             // Без библиотеки играть нечем: честно закрываем экран, а не
             // оставляем игрока перед чёрным прямоугольником.
             console.error('Зависть: сцена не собралась', err);
             this.close();
         });
+    },
+
+    // Готовность для покрова перехода (src/core/mg-veil.js): облако
+    // построено и нарисовано — глаза могут закрываться.
+    veilReady() {
+        return this._readyP || Promise.resolve();
     },
 
     close() {
