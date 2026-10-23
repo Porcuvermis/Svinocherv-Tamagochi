@@ -82,6 +82,11 @@ Object.assign(EnvyEyes, {
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.clearRect(0, 0, c.width, c.height);
         if (io < 0.02) return;
+        // Обрезка веками — только внутри save/restore. Без них обрезка
+        // копилась от кадра к кадру, а clearRect стирает лишь внутри
+        // текущей обрезки: от прежних кадров оставались зелёные щёлочки и
+        // штриховка на закрытых глазах (нашёл игрок на iPhone).
+        g.save();
         g.setTransform(s, 0, 0, s, 0, 0);
         g.translate(half, half);
         g.rotate(e.ang);
@@ -89,6 +94,7 @@ Object.assign(EnvyEyes, {
         g.clip();
         g.rotate(-e.ang);
         this.pupil(g, e, 0, 0);
+        g.restore();
     },
 
     // ---------- РАСПИСАНИЕ ----------

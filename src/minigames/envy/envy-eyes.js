@@ -361,11 +361,13 @@ const EnvyEyes = {
         return dx > dy ? Math.PI / 2 : 0;
     },
 
-    // Крестик — один глаз, у которого зрачок — зелёный крестик (замысел
-    // игрока). Раньше был выложен десятью мелкими зрачками по диагоналям.
+    // Крестик — один глаз наоборот: зелёный миндаль с чёрным зрачком-
+    // крестиком (набросок игрока). Раньше был выложен десятью мелкими
+    // зрачками по диагоналям, потом — зелёный крестик на чёрном глазу
+    // (тело сливалось с тьмой, глаза не было видно).
     // r — полуразмер крестика: по нему же держат расстояние чужие зрачки.
-    CROSS_W: 66,
-    CROSS_R: 12,
+    CROSS_W: 68,
+    CROSS_R: 10,
     crossEyes() {
         const C = this.cross;
         if (!this._cross) this._cross = [{ x: C.x, y: C.y, w: this.CROSS_W, r: this.CROSS_R, ang: 0, kind: 'x' }];
@@ -416,12 +418,19 @@ const EnvyEyes = {
         if (e.kind === 'x') {
             const h = e.r;
             ctx.save();
-            ctx.strokeStyle = P.iris;
-            ctx.lineWidth = h * 0.5;
+            ctx.translate(x, y);
+            ctx.rotate(e.ang);
+            // зелёный «белок» чуть меньше чёрного тела — по краю тонкая тьма
+            this.almond(ctx, e.w * 0.9);
+            ctx.fillStyle = P.iris;
+            ctx.fill();
+            ctx.rotate(-e.ang);
+            ctx.strokeStyle = P.base;
+            ctx.lineWidth = h * 0.42;
             ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y + h);
-            ctx.moveTo(x + h, y - h); ctx.lineTo(x - h, y + h);
+            ctx.moveTo(-h, -h); ctx.lineTo(h, h);
+            ctx.moveTo(h, -h); ctx.lineTo(-h, h);
             ctx.stroke();
             ctx.restore();
             return;
