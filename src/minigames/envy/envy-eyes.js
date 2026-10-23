@@ -156,6 +156,8 @@ const EnvyEyes = {
             if (!grid.has(kk)) grid.set(kk, []);
             grid.get(kk).push(e);
         }
+        const fan = { x0: Math.min(...inds.map(d => d.x - d.w * 0.45)), x1: Math.max(...inds.map(d => d.x + d.w * 0.45)),
+                      y0: Math.min(...inds.map(d => d.y)) - 26 };
         const coveredAny = (i) => chain.some(e => covered(e, i));
         // соседи — глаза кромки, что стоят вплотную к новому (центры ближе
         // NEAR_K от суммы длин): с ними новый не должен быть схож
@@ -210,8 +212,11 @@ const EnvyEyes = {
                     if (P.whole && !self.onScreen(eye)) continue;
                     if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : tiny ? self.IRIS_GAP_TINY : self.IRIS_GAP_SMALL)) continue;
                     if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
-                    // на веер индикаторов не садиться: он читается сам по себе
-                    if (inds.some(d => self.inAlmond(d, x, y) || self.inAlmond(eye, d.x, d.y) || Math.hypot(d.x - x, d.y - y) < 0.35 * (d.w + L))) continue;
+                    // Середина низа — только веер: обычные глаза между
+                    // индикаторами делали из него кашу (на 4–6 делениях веер
+                    // не читался). Зона — по ширине веера, от шва вниз.
+                    if (x > fan.x0 && x < fan.x1 && y > fan.y0) continue;
+                    if (inds.some(d => self.inAlmond(eye, d.x, d.y))) continue;
                     let run = 0;
                     while (run < 300 && covered(eye, cur + run)) run++;
                     let tier = 2;
@@ -295,12 +300,14 @@ const EnvyEyes = {
     indicatorEyes() {
         if (this._inds) return this._inds;
         const N = (typeof ECONOMY !== 'undefined' && ECONOMY.minigames.envy) ? ECONOMY.minigames.envy.rounds : 3;
-        const odd = N % 2 === 1, slots = odd ? N : N + 1;
+        // чётное: места на ±0,5, ±1,5… — посередине глаза нет, но и дыры
+        // в целый шаг нет (в неё садился чужой глаз и ломал веер)
+        const odd = N % 2 === 1, slots = N;
         const L = Math.min(this.IND_L, this.IND_SPAN / (slots * 0.92));
         const R = this.IND_R, step = L * 0.92 / R, cx = STAGE_W / 2, cy = this.IND_Y + R;
         const js = [];
         if (odd) for (let j = -(N - 1) / 2; j <= (N - 1) / 2; j++) js.push(j);
-        else for (let j = 1; j <= N / 2; j++) js.push(-j, j);
+        else for (let j = 1; j <= N / 2; j++) js.push(-(j - 0.5), j - 0.5);
         js.sort((a, b) => a - b);
         this._inds = js.map((j, i) => {
             const phi = j * step;
