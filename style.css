@@ -137,10 +137,14 @@ canvas {
    Анимация персонажа при этом ещё и останавливается — за это отвечает
    MainWormHandle.setPaused() из main.js, там же и вешается класс.
 
+   Покров перехода (#mg-veil, src/core/mg-veil.js) — тоже: он лежит поверх
+   окна игры на входе и выходе, спрятать его вместе с комнатой — открыть
+   недособранную сцену.
+
    Слой кошелька (#wallet-fx) в исключениях по той же причине, что и кнопка
    🐞: это не обстановка комнаты, а надпись поверх ВСЕЙ игры. Кошельки есть
    и внутри мини-игр (шапка гнева), и цифра обязана вылетать из них тоже. */
-#game-container.mg-open > *:not(.minigame-screen):not(.debug-toggle-btn):not(#debug-state-panel):not(#wallet-fx):not(#fr-root) {
+#game-container.mg-open > *:not(.minigame-screen):not(.debug-toggle-btn):not(#debug-state-panel):not(#wallet-fx):not(#fr-root):not(#mg-veil) {
     visibility: hidden;
 }
 

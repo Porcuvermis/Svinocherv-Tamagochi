@@ -228,8 +228,13 @@ const GameManager = {
             return;
         }
 
-        this.closeMenuBeforeMinigame();
-        minigame.open();
+        // Вход через покров материала греха (src/core/mg-veil.js): у игры
+        // со шкуркой окна — заливка, сборка под ней, раскрытие до рамки; у
+        // остальных — просто open(), как раньше. Колесо закрывается прямо
+        // перед open(): у игры со шкуркой — уже под сплошной пеной, иначе
+        // его исчезновение было видно сквозь пену, пока она заливала экран.
+        if (typeof MgVeil !== 'undefined') MgVeil.enter(minigame, () => this.closeMenuBeforeMinigame());
+        else { this.closeMenuBeforeMinigame(); minigame.open(); }
     }
 };
 

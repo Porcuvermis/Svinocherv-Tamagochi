@@ -242,3 +242,74 @@
 }
 
 .mg-confirm-btn:active { transform: scale(0.95); }
+
+/* ---------- ШКУРКА: РАМКА ИЗ МАТЕРИАЛА ГРЕХА ----------
+   minigame-window.js, wearSkin. Плоская рамка цветом греха снимается, тело
+   окна уменьшено transform'ом (его ставит сборка — числа у шкурки), поверх
+   лежит холст рамки во весь холст. Шапка остаётся в потоке (тело под ней,
+   как раньше), но невидима: знак греха говорит сам материал, а крестик
+   нарисован на рамке — кнопка над ним только ловит палец. */
+.mg-skin .mg-frame {
+    border: none;
+    box-shadow: none;
+}
+.mg-skin .mg-titlebar {
+    border-bottom: none;
+    background: none;
+}
+.mg-skin .mg-title { visibility: hidden; }
+.mg-skin .mg-rim {
+    position: absolute;
+    left: 0; top: 0;
+    width: 0; height: 0;
+    /* Рваный внутренний край заходит в сцену на несколько единиц —
+       касания там идут в игру, а не в пену. */
+    pointer-events: none;
+    z-index: 20;
+}
+/* Четыре полосы рамки (размер и место ставит сборка). Общее правило canvas
+   в style.css растягивает холст на 100% и заливает фон тёмным — у полос
+   это закрыло бы всю сцену. */
+.mg-skin .mg-rim canvas {
+    position: absolute;
+    background: none;
+    z-index: auto;
+}
+.mg-skin .mg-close {
+    position: absolute;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: transparent;
+    font-size: 0;
+    z-index: 31;
+    -webkit-tap-highlight-color: transparent;
+}
+.mg-skin .mg-close:active { transform: none; }
+
+/* Окно со шкуркой открывается и закрывается ПОКРОВОМ (src/core/mg-veil.js):
+   его собственные переходы — проявление прозрачностью и подрастание рамки —
+   под покровом не видны, а без покрова (автотесты) только мешают снимкам. */
+.minigame-screen.mg-window.mg-skin { transition: none; }
+.mg-skin .mg-frame,
+.mg-window.active.mg-skin .mg-frame { transform: none; transition: none; }
+
+/* ---------- ПОКРОВ ПЕРЕХОДА ----------
+   Во весь холст сцены, поверх окон мини-игр (у них 999999). Холст внутри
+   растянут правилом canvas из style.css; тёмный фон того же правила здесь
+   снят — покров прозрачен везде, где шкурка не рисует. */
+#mg-veil {
+    position: absolute;
+    left: 0; top: 0;
+    width: var(--stage-w, 390px);
+    height: var(--stage-h, 844px);
+    z-index: 1000000;
+    touch-action: none;
+}
+#mg-veil canvas {
+    background: none;
+    z-index: auto;
+}
+/* Грозди нажатий (MgVeil.knock) висят над игрой, а игра идёт: касания
+   проходят сквозь покров. */
+#mg-veil.mg-veil-thru { pointer-events: none; }
