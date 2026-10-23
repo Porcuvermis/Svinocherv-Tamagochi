@@ -39,9 +39,12 @@ const EnvyEyes = {
     // кромке (наименьший и разброс), diag — доля диагональных.
     SIDES: {
         h: { L: [64, 150], Ls: [24, 52], off: [-1.0, 0.3] },
-        // Низ — над шкалой всего ~11 единиц: глаза глубже в рамке, чтобы
-        // наклон не доставал до шкалы (иначе внизу шли одинаковые плоские).
-        b: { L: [60, 150], Ls: [24, 52], off: [-1.3, -0.3] },
+        // Низ — полоса ~56 единиц под шкалой. Глаза средние и почти
+        // вдоль, каждый ЦЕЛИКОМ в полосе (whole) и верхним веком на шве. Были
+        // крупные, ушедшие за край экрана: с закрытым зрачком от них
+        // оставались огромные пустые обведённые листья, а шов добирали
+        // крошечные, чьи обводки резали друг друга (оценка игрока: «трэш»).
+        b: { L: [58, 104], Ls: [40, 58], off: [-0.8, -0.25], flat: 0.42, whole: true, noTiny: true },
         v: { L: [54, 140], Ls: [22, 50], off: [-0.9, 0.4] }
     },
     // Сколько кромки можно оставить открытой подряд, если ни один глаз не
@@ -167,6 +170,7 @@ const EnvyEyes = {
                 if (coveredAny(cur)) { cur++; continue; }
                 const q = at(cur);
                 const P = self.SIDES[Math.abs(q.tx) > Math.abs(q.ty) ? (q.ny < 0 ? 'b' : 'h') : 'v'];
+                if (tiny && P.noTiny) { cur++; continue; }
                 const tang = Math.atan2(q.ty, q.tx);
                 // Соседи не похожи (оценка игрока: одинаковые глаза подряд
                 // бросаются в глаза). Уровни: 2 — со всеми соседями различие и
@@ -184,7 +188,8 @@ const EnvyEyes = {
                     // Было по сути два — «/» и «\» под одним углом, и когда
                     // обводка сделала глаза видными, рамка читалась узором.
                     const fam = rng();
-                    const mag = fam < 0.4 ? 0.12 + rng() * 0.38 : fam < 0.75 ? 0.5 + rng() * 0.4 : 0.9 + rng() * 0.55;
+                    const mag = P.flat ? rng() * P.flat
+                        : fam < 0.4 ? 0.12 + rng() * 0.38 : fam < 0.75 ? 0.5 + rng() * 0.4 : 0.9 + rng() * 0.55;
                     const rel = (rng() < 0.5 ? -1 : 1) * mag;
                     const halfH = L * 0.26, off = lerp(P.off, rng()) * halfH;
                     // центр впереди курсора: глаз накрывает курсор задним краем
@@ -193,6 +198,8 @@ const EnvyEyes = {
                     const eye = { x, y, w: L, r: L * self.IRIS, ang: tang + rel };
                     // зрачок целиком на экране: обрезанный краем холста — не глаз, а пятно
                     if (x - eye.r < 1 || y - eye.r < 1 || x + eye.r > STAGE_W - 1 || y + eye.r > STAGE_H - 1) continue;
+                    // весь миндаль на экране
+                    if (P.whole && !self.onScreen(eye)) continue;
                     if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : tiny ? self.IRIS_GAP_TINY : self.IRIS_GAP_SMALL)) continue;
                     if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
                     let run = 0;
@@ -415,6 +422,13 @@ const EnvyEyes = {
     angDiff(a, b) {
         let d = Math.abs(a.ang - b.ang) % Math.PI;
         return Math.min(d, Math.PI - d) >= this.ANG_K;
+    },
+
+    // Миндаль целиком на холсте (по эллипсу с теми же осями).
+    onScreen(e) {
+        const a = e.w / 2, b = e.w * 0.27, c = Math.cos(e.ang), s = Math.sin(e.ang);
+        const hx = Math.abs(a * c) + Math.abs(b * s), hy = Math.abs(a * s) + Math.abs(b * c);
+        return e.x - hx >= 0 && e.x + hx <= STAGE_W && e.y - hy >= 0 && e.y + hy <= STAGE_H + 2;
     },
 
     tangent(x, y) {
