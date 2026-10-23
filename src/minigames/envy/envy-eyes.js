@@ -61,7 +61,9 @@ const EnvyEyes = {
     FILL: { tries: 120, L: [20, 34] },
     IRIS: 0.16,       // радиус радужки в долях длины глаза (рисунок игрока)
     IRIS_GAP: 2.1,    // центры радужек не ближе этого × сумма радиусов
-    IRIS_GAP_SMALL: 1.7,  // мелкие в щелях — ближе: иначе щель не закрыть
+    IRIS_GAP_SMALL: 1.7,
+    IRIS_GAP_TINY: 1.25,
+    TINY: [16, 28],  // мелкие в щелях — ближе: иначе щель не закрыть
     FILL_GAP: 4,      // у мелких в глубине рамки — реже
     CELL: 40,
     YIELD: 1500,
@@ -156,7 +158,10 @@ const EnvyEyes = {
         // радужка), кромка пока остаётся открытой. Второй — мелкие, только в
         // эти щели.
         const self = this;
-        function* walk(big) {
+        // mode: 'big' — крупные, 'small' — мелкие в щели, 'tiny' — крошечные
+        // в остатки, куда мелкий не влез (иначе там светила сцена).
+        function* walk(mode) {
+            const big = mode === 'big', tiny = mode === 'tiny';
             let cur = 0, guard = 0;
             while (cur < N && guard++ < 6000) {
                 if (coveredAny(cur)) { cur++; continue; }
@@ -170,7 +175,7 @@ const EnvyEyes = {
                 const cands = [];
                 let found = 0;
                 for (let k = 0; k < self.TRIES && found < self.PICK; k++) {
-                    const L = lerp(big ? P.L : P.Ls, rng());
+                    const L = lerp(big ? P.L : tiny ? self.TINY : P.Ls, rng());
                     // Не вдоль кромки, а с наклоном: один уголок острым выходит
                     // на сцену, другой прячется в рамке. Глаз, лежащий ровно
                     // вдоль, показывал только круглый бок — гребешок пены.
@@ -183,7 +188,7 @@ const EnvyEyes = {
                     const eye = { x, y, w: L, r: L * self.IRIS, ang: tang + rel };
                     // зрачок целиком на экране: обрезанный краем холста — не глаз, а пятно
                     if (x - eye.r < 1 || y - eye.r < 1 || x + eye.r > STAGE_W - 1 || y + eye.r > STAGE_H - 1) continue;
-                    if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : self.IRIS_GAP_SMALL)) continue;
+                    if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : tiny ? self.IRIS_GAP_TINY : self.IRIS_GAP_SMALL)) continue;
                     if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
                     let run = 0;
                     while (run < 300 && covered(eye, cur + run)) run++;
@@ -210,8 +215,9 @@ const EnvyEyes = {
                 if (guard % 8 === 0) yield;
             }
         }
-        yield* walk(true);
-        yield* walk(false);
+        yield* walk('big');
+        yield* walk('small');
+        yield* walk('tiny');
 
         // Мелкие в глубине рамки: радужка целиком в рамке.
         const F = this.FILL;
@@ -240,6 +246,9 @@ const EnvyEyes = {
     // прямоугольник, как у edge()) на SEAM_IN единицы внутрь сцены, точками
     // через 1 единицу. tx, ty — направление обхода, nx, ny — нормаль В сцену.
     // Обход по часовой, от середины верха.
+    // Подложка рамки заходит на сцену на OVERLAP, шов проверяется на
+    // полединицы глубже её края (см. drawGen).
+    OVERLAP: 1.5,
     SEAM_IN: 2,
     seamPath() {
         const I = this.inner(), d = this.SEAM_IN, R = this.CORNER - d;
@@ -386,6 +395,12 @@ const EnvyEyes = {
         this.almond(ctx, e.w);
         ctx.fillStyle = this.pal().base;
         ctx.fill();
+        // Чёрная обводка в единицу — не контур (на чёрном её не видно), а
+        // нахлёст: два сглаженных края встык (глаз и глаз, глаз и подложка)
+        // складывались не до полной непрозрачности, и сцена светила точками.
+        ctx.strokeStyle = this.pal().base;
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.restore();
     },
 
@@ -409,13 +424,17 @@ const EnvyEyes = {
         let r = job.next();
         while (!r.done) { yield; r = job.next(); }
         const eyes = this._eyes || (this._eyes = r.value);
-        // Тьма под глазами: всё вне сцены, но на 4 единицы глубже её края —
-        // там, где глаза не легли, рамка не должна светиться сценой.
+        // Тьма под глазами: всё вне сцены и ещё OVERLAP единиц на сцену. Было
+        // на 4 единицы глубже края — в углах между подложкой и проверяемым
+        // швом светилась сцена. Ровно край в край — тоже нельзя: по линии
+        // стыка, где сходятся дуги глаз, сглаживание оставляло светящиеся
+        // точки. Подложка заходит на сцену на полторы единицы, шов проверяется
+        // ещё на полединицы глубже (SEAM_IN).
         ctx.save();
         ctx.fillStyle = P.base;
         ctx.beginPath();
         ctx.rect(-2, -2, STAGE_W + 4, STAGE_H + 4);
-        const I = this.inner(), e = 4;
+        const I = this.inner(), e = -this.OVERLAP;
         if (ctx.roundRect) ctx.roundRect(I.x0 - e, I.y0 - e, I.x1 - I.x0 + 2 * e, I.y1 - I.y0 + 2 * e, this.CORNER + e);
         else ctx.rect(I.x0 - e, I.y0 - e, I.x1 - I.x0 + 2 * e, I.y1 - I.y0 + 2 * e);
         ctx.fill('evenodd');
