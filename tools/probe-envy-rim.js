@@ -39,10 +39,10 @@ const { chromium } = require('playwright');
       else if (cur) { runs.push(cur); cur = 0; }
     }
     runs.sort((a, b) => b - a);
-    return { n: path.length, k: open.filter(Boolean).length, runs, eyes: eyes.length, reach: EnvyEyes.reach() };
+    return { at: JSON.stringify(EnvyEyes._alikeAt), alike: EnvyEyes._alike || 0, n: path.length, k: open.filter(Boolean).length, runs, eyes: eyes.length, reach: EnvyEyes.reach() };
   });
   await page.screenshot({ path: out + 'rim.png' });
-  console.log(`глаз ${r.eyes}, заход на сцену ${r.reach} ед.`);
+  console.log(`глаз ${r.eyes}, заход на сцену ${r.reach} ед., похожих соседей ${r.alike} ${r.at}`);
   console.log(`шов ${r.n} ед., открыто ${r.k} (${(100 * r.k / r.n).toFixed(1)}%), кусков ${r.runs.length}, длиннейшие ${r.runs.slice(0, 8).join(', ')}`);
   if (errors.length) console.log(errors.join('\n'));
   await browser.close();

@@ -40,12 +40,15 @@ const EnvyEyes = {
     // диагональных.
     SIDES: {
         h: { big: 0.55, L: [70, 110], Ls: [36, 56], off: [-0.5, 0.5], tilt: 0.12, jit: 0.4, diag: 0.25 },
+        // Низ — над шкалой всего ~11 единиц: глаза глубже в рамке, чтобы
+        // наклон не доставал до шкалы (иначе внизу шли одинаковые плоские).
+        b: { big: 0.5, L: [64, 110], Ls: [34, 54], off: [-1.2, -0.3], tilt: 0.1, jit: 0.55, diag: 0.1 },
         v: { big: 0.4, L: [58, 84], Ls: [36, 56], off: [-0.3, 0.6], tilt: 0.18, jit: 0.45, diag: 0.25 }
     },
     // Сколько кромки можно оставить открытой подряд, если ни один глаз не
     // встал (единиц холста). Цель — почти нигде.
     GAP_STEP: 4,
-    TRIES: 80,
+    TRIES: 200,
     PICK: 8,          // сколько подходящих глаз сравнивать на каждом шаге
     // Шкалу зависти перекрывать нельзя (оценка игрока). Прямоугольник шкалы
     // в координатах тела окна (390×800) — тот же, что в envy.css
@@ -139,15 +142,25 @@ const EnvyEyes = {
         const covered = (eye, i) => { const q = at(i); return this.inAlmond(eye, q.x, q.y); };
         // Начинаем с середины верха: там крупные глаза, шов на углу не нужен.
         let cur = 0, guard = 0;
+        const chain = [];
+        // счёт похожих соседей — для tools/probe-envy-rim.js
+        this._alike = 0; this._alikeAt = [];
         const recent = [];
         while (cur < N && guard++ < 5000) {
             const q = at(cur);
-            const P = this.SIDES[Math.abs(q.tx) > Math.abs(q.ty) ? 'h' : 'v'];
+            const P = this.SIDES[Math.abs(q.tx) > Math.abs(q.ty) ? (q.ny < 0 ? 'b' : 'h') : 'v'];
             const tang = Math.atan2(q.ty, q.tx);
             // Из подходящих — тот, что накрывает кромку дальше всех: глаза
             // встают уголок к уголку, а не наползают друг на друга (сильный
             // нахлёст прятал уголки, и кромка выходила гребешком пены).
-            let best = null, bestRun = 0, found = 0;
+            // Соседи не похожи (оценка игрока: одинаковые глаза подряд
+            // бросаются в глаза). Уровни: 2 — с предыдущим различие и размером,
+            // и углом; 1 — только размером (угол «старается», размер —
+            // обязательно); 0 — похож, это исключение, считается. С тем, что
+            // через один, — хотя бы одно различие, иначе уровень 0. Берётся
+            // высший уровень, в нём — кто дальше накрыл кромку.
+            const p1 = chain[chain.length - 1], p2 = chain[chain.length - 2];
+            let best = null, bestRun = 0, bestTier = -1, found = 0;
             for (let k = 0; k < this.TRIES && found < this.PICK; k++) {
                 const L = lerp(rng() < P.big ? P.L : P.Ls, rng());
                 // Не вдоль кромки, а с наклоном: один уголок острым выходит на
@@ -162,13 +175,19 @@ const EnvyEyes = {
                 const eye = { x, y, w: L, r: L * this.IRIS, ang: tang + rel };
                 if (!covered(eye, cur) || !fits(x, y, eye.r, this.IRIS_GAP)) continue;
                 if (this.hitsKeep(x, y, L, eye.ang) || this.intoScene(eye) > this.REACH_MAX) continue;
-                found++;
                 let run = 0;
                 while (run < 200 && covered(eye, cur + run)) run++;
-                if (run > bestRun) { best = eye; bestRun = run; }
+                let tier = 2;
+                if (p1 && !this.sizeDiff(eye, p1)) tier = 0;
+                else if (p1 && !this.angDiff(eye, p1)) tier = 1;
+                if (p2 && !this.sizeDiff(eye, p2) && !this.angDiff(eye, p2)) tier = 0;
+                if (tier === 2) found++;
+                if (tier > bestTier || (tier === bestTier && run > bestRun)) { best = eye; bestRun = run; bestTier = tier; }
             }
             if (!best) { cur += this.GAP_STEP; continue; }
+            if (bestTier === 0) { this._alike++; this._alikeAt.push([Math.round(best.x), Math.round(best.y)]); }
             put(best);
+            chain.push(best);
             recent.push(best);
             if (recent.length > 6) recent.shift();
             // курсор — на первую точку, которую не накрыл никто из последних
@@ -298,6 +317,16 @@ const EnvyEyes = {
 
     // Направление кромки сцены рядом с точкой: у верха и низа горизонталь, у
     // боков вертикаль.
+    // Различие соседей: длины — не ближе SIZE_K раз, углы (миндаль
+    // симметричен, сравнение по модулю π) — не ближе ANG_K.
+    SIZE_K: 1.3,
+    ANG_K: 0.35,
+    sizeDiff(a, b) { return Math.max(a.w, b.w) / Math.min(a.w, b.w) >= this.SIZE_K; },
+    angDiff(a, b) {
+        let d = Math.abs(a.ang - b.ang) % Math.PI;
+        return Math.min(d, Math.PI - d) >= this.ANG_K;
+    },
+
     tangent(x, y) {
         const I = this.inner();
         const dx = Math.max(I.x0 - x, x - I.x1, 0), dy = Math.max(I.y0 - y, y - I.y1, 0);
