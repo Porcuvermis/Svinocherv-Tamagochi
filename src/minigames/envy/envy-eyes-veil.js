@@ -331,6 +331,8 @@ Object.assign(EnvyEyes, {
             this.almond(ctx, e.w, o);
             ctx.fill();
             ctx.stroke();
+            // у глаз рамки — та же зелёная обводка, что на окне
+            if (e.rim) { this.rimLine(ctx, e); ctx.strokeStyle = P.base; ctx.lineWidth = 1; }
             ctx.restore();
         }
         ctx.fillStyle = P.iris;

@@ -238,6 +238,7 @@ const EnvyEyes = {
         let reach = 0;
         for (const e of eyes) reach = Math.max(reach, this.intoScene(e));
         this._reach = Math.ceil(reach) + 2;
+        for (const e of eyes) e.rim = true;
         this.pickInverted(eyes);
         yield;
         return eyes;
@@ -264,14 +265,25 @@ const EnvyEyes = {
             return false;
         };
         const inv = [];
-        for (const e of list) {
-            if (inv.some(o => touch(o, e))) continue;
-            // ни на чей зелёный зрачок, и свой чёрный — не под чужим обратным
-            if (list.some(o => o !== e && o.kind !== 'inv' && coversIris(e, o))) continue;
-            if (inv.some(o => coversIris(o, e))) continue;
-            e.kind = 'inv';
-            inv.push(e);
-        }
+        const pass = (allowHide) => {
+            for (const e of list) {
+                if (e.kind === 'inv' || !e.r) continue;
+                if (inv.some(o => touch(o, e))) continue;
+                // свой чёрный зрачок — не под чужим обратным
+                if (inv.some(o => coversIris(o, e))) continue;
+                // ни на чей зелёный зрачок; во втором проходе (низ, где глаза
+                // мелкие и плотные — иначе там не встал ни один обратный)
+                // можно накрыть один: у того соседа зрачка больше нет, он
+                // просто чёрное тело, прикрытое обратным.
+                const under = list.filter(o => o !== e && o.r && o.kind !== 'inv' && coversIris(e, o));
+                if (under.length > (allowHide ? 1 : 0)) continue;
+                for (const o of under) o.r = 0;
+                e.kind = 'inv';
+                inv.push(e);
+            }
+        };
+        pass(false);
+        pass(true);
         // крестик — тоже зелёный миндаль: соседние зрачки под ним уже
         // не лежат (раскладка держит их поодаль)
     },
@@ -436,7 +448,20 @@ const EnvyEyes = {
         ctx.strokeStyle = this.pal().base;
         ctx.lineWidth = 1;
         ctx.stroke();
+        this.rimLine(ctx, e);
         ctx.restore();
+    },
+
+    // Зелёная обводка чёрных глаз рамки (просьба игрока — для контраста:
+    // чёрный миндаль на чёрной рамке иначе не виден). Раньше обводки не было
+    // ни у кого — когда она была у всех глаз, рамка выходила россыпью
+    // листьев; теперь только у чёрных, рядом с зелёными обратными.
+    RIM_LINE: 1.6,
+    rimLine(ctx, e) {
+        if (!e.rim || e.kind === 'inv' || e.kind === 'x') return;
+        ctx.strokeStyle = this.pal().iris;
+        ctx.lineWidth = this.RIM_LINE;
+        ctx.stroke();
     },
 
     // Радужка — плоский зелёный круг: без градиента, блика и свечения
