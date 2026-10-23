@@ -5,33 +5,44 @@
 // такими же глазами. Материал греха: за тобой наблюдают отовсюду.
 //
 // Глаз — чёрный миндаль с зелёной радужкой. Чёрный тот же, что фон окна,
-// поэтому соседние глаза сливаются в одну тьму, а читаются радужки и тонкий
-// зелёный контур, который у каждого следующего глаза перекрывает контур
-// предыдущего. Без контура рамка превращалась в россыпь зелёных точек.
+// поэтому глаза сливаются друг с другом и с тьмой: где начинается и кончается
+// форма, видно не всегда, и так задумано (оценка игрока). Контура у глаз НЕТ
+// — зелёная обводка превращала рамку в россыпь листьев.
+//
+// Правила раскладки (оценка игрока):
+//   * миндали могут налезать друг на друга только чёрным на чёрное: сначала
+//     рисуются ВСЕ миндали, потом ВСЕ радужки — ни один глаз не закрывает
+//     чужую радужку;
+//   * радужки не ставятся близко друг к другу (IRIS_GAP — доля от суммы
+//     радиусов), а радужка целиком лежит в рамке: ни на сцену, ни за край
+//     холста она не выходит, поэтому в узких боках глаза мельче, наверху и
+//     внизу крупнее.
 //
 // Механизм окна общий (MinigameWindow.attach, опция skin), здесь только вид:
 //   rim, cross, bg, reach(), drawGen(ctx, scale) — как у LustFoam.
 // Переход (veil*) — следующий этап: пока его нет, окно спрашивает «выйти?».
 //
-// Как дёшево: глаз — один путь и один градиент, их ~250. Рисуются один раз
-// генератором в простое (MinigameWindow.wearSkin), в кадре рамка неподвижна.
+// Как дёшево: глаз — один путь и один градиент, их несколько десятков.
+// Рисуются один раз генератором в простое (MinigameWindow.wearSkin), в кадре
+// рамка неподвижна.
 const EnvyEyes = {
     SEED: 4217,
     rim: { side: 16, top: 54 },
     cross: { x: 358, y: 28, size: 46 },
     CORNER: 26,
-    // Глаза заходят в сцену не дальше этого (половина длины самого крупного):
-    // по нему окно нарезает рамку на полосы.
-    REACH: 24,
-    // Проходы раскладки от крупных к мелким. w — длина глаза, gap — во
-    // сколько раз (от суммы длин) можно сблизить центры: чем меньше, тем
-    // плотнее нахлёст.
+    // Миндали заходят в сцену не дальше половины длины самого крупного:
+    // по этому числу окно нарезает рамку на полосы.
+    REACH: 36,
+    // Проходы раскладки от крупных к мелким: длина глаза w, попыток tries.
     PASSES: [
-        { tries: 700,  wMin: 30, wMax: 46, gap: 0.34 },
-        { tries: 1400, wMin: 20, wMax: 30, gap: 0.32 },
-        { tries: 2400, wMin: 11, wMax: 18, gap: 0.30 }
+        { tries: 500, wMin: 46, wMax: 66 },
+        { tries: 900, wMin: 34, wMax: 46 },
+        { tries: 900, wMin: 26, wMax: 34 },
+        { tries: 1500, wMin: 19, wMax: 26 }
     ],
-    CELL: 30,
+    IRIS: 0.17,       // радиус радужки в долях длины глаза
+    IRIS_GAP: 2.4,    // центры радужек не ближе этого × сумма радиусов
+    CELL: 40,
     YIELD: 1500,
     _eyes: null,
 
@@ -67,9 +78,8 @@ const EnvyEyes = {
     },
 
     // ---------- РАСКЛАДКА ----------
-    // Дротики по всему холсту, в рамку попадает центр, что не дальше
-    // небольшого захода в сцену. Сосед проверяется по сетке; нахлёст
-    // разрешён нарочно — глаза должны громоздиться друг на друга.
+    // Дротики по рамке. Радужка целиком внутри рамки и на расстоянии от
+    // соседних радужек; миндали при этом налезают друг на друга как угодно.
     *layoutGen() {
         const rng = this.rng(), eyes = [], grid = new Map();
         const key = (i, j) => i * 1000 + j;
@@ -77,24 +87,28 @@ const EnvyEyes = {
         for (const P of this.PASSES) {
             for (let n = 0; n < P.tries; n++) {
                 if (++step % this.YIELD === 0) yield;
-                const x = -8 + rng() * (STAGE_W + 16), y = -8 + rng() * (STAGE_H + 16);
+                const x = rng() * STAGE_W, y = rng() * STAGE_H;
                 const e = this.edge(x, y);
-                // центр — в рамке или чуть заходит в сцену (бахрома)
-                if (e < -6 || this.inCross(x, y)) continue;
-                // у внешнего края крупнее, к внутреннему мельче
-                const w = P.wMin + rng() * (P.wMax - P.wMin);
-                const ang = rng() * Math.PI * 2;
+                if (e <= 0 || this.inCross(x, y)) continue;
+                const w = P.wMin + rng() * (P.wMax - P.wMin), r = w * this.IRIS;
+                // свободное место для радужки: до сцены и до края холста
+                const room = Math.min(e, x, y, STAGE_W - x, STAGE_H - y) - 2;
+                if (r > room) continue;
                 const ci = Math.floor(x / this.CELL), cj = Math.floor(y / this.CELL);
                 let ok = true;
                 for (let i = ci - 1; i <= ci + 1 && ok; i++) {
                     for (let j = cj - 1; j <= cj + 1 && ok; j++) {
                         for (const o of grid.get(key(i, j)) || []) {
-                            if (Math.hypot(o.x - x, o.y - y) < P.gap * (o.w + w)) { ok = false; break; }
+                            if (Math.hypot(o.x - x, o.y - y) < this.IRIS_GAP * (o.r + r)) { ok = false; break; }
                         }
                     }
                 }
                 if (!ok) continue;
-                const eye = { x, y, w, ang, k: rng() };
+                // Вдоль кромки с разбросом: так рамка выглядит выложенной, а не
+                // насыпанной; четверть глаз — под любым углом, для хаоса.
+                const tang = this.tangent(x, y);
+                const ang = rng() < 0.25 ? rng() * Math.PI : tang + (rng() - 0.5) * 1.3;
+                const eye = { x, y, w, r, ang };
                 eyes.push(eye);
                 const kk = key(ci, cj);
                 if (!grid.has(kk)) grid.set(kk, []);
@@ -105,6 +119,14 @@ const EnvyEyes = {
         return eyes;
     },
 
+    // Направление кромки сцены рядом с точкой: у верха и низа горизонталь, у
+    // боков вертикаль.
+    tangent(x, y) {
+        const I = this.inner();
+        const dx = Math.max(I.x0 - x, x - I.x1, 0), dy = Math.max(I.y0 - y, y - I.y1, 0);
+        return dx > dy ? Math.PI / 2 : 0;
+    },
+
     // Глаза крестика: два ряда вдоль диагоналей, каждый глаз повёрнут по
     // своему штриху, чтобы штрих читался линией.
     crossEyes() {
@@ -113,7 +135,7 @@ const EnvyEyes = {
             for (let i = 0; i < n; i++) {
                 const t = (i / (n - 1)) * 2 - 1;
                 out.push({ x: C.x + t * half, y: C.y + dir * t * half,
-                           w: C.size * 0.5, ang: dir > 0 ? Math.PI / 4 : -Math.PI / 4, cross: true });
+                           w: C.size * 0.5, r: C.size * 0.125, ang: dir > 0 ? Math.PI / 4 : -Math.PI / 4 });
             }
         }
         return out;
@@ -131,22 +153,33 @@ const EnvyEyes = {
         ctx.closePath();
     },
 
-    eye(ctx, e) {
-        const P = this.pal(), w = e.w;
+    // Миндаль — только чёрная заливка, без контура.
+    body(ctx, e) {
         ctx.save();
         ctx.translate(e.x, e.y);
         ctx.rotate(e.ang);
-        this.almond(ctx, w);
-        ctx.fillStyle = P.base;
+        this.almond(ctx, e.w);
+        ctx.fillStyle = this.pal().base;
         ctx.fill();
-        ctx.lineWidth = e.cross ? 1.4 : Math.max(0.7, w * 0.035);
-        // глаза крестика обведены яркой зелёной: на фоне хаоса он должен читаться
-        ctx.strokeStyle = e.cross ? P.iris : P.contour;
-        ctx.globalAlpha = e.cross ? 0.95 : 0.55 + 0.35 * e.k;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        // радужка: металлический градиент «светлее сверху-слева»
-        const r = w * (e.cross ? 0.2 : 0.165);
+        if (!e.noHaze) {
+            // Дымка: чуть светлее чёрного у зрачка, к краям — в ноль. Края
+            // формы от этого растворяются в массе, а не режутся линией.
+            ctx.clip();
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.w * 0.5);
+            g.addColorStop(0, this.pal().haze);
+            g.addColorStop(1, this.pal().base);
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = g;
+            ctx.fillRect(-e.w / 2, -e.w / 2, e.w, e.w);
+        }
+        ctx.restore();
+    },
+
+    // Радужка: металлический градиент «светлее сверху-слева» и блик.
+    iris(ctx, e) {
+        const P = this.pal(), r = e.r;
+        ctx.save();
+        ctx.translate(e.x, e.y);
         const g = ctx.createLinearGradient(-r, -r, r, r);
         g.addColorStop(0, P.irisHi);
         g.addColorStop(0.45, P.iris);
@@ -185,11 +218,12 @@ const EnvyEyes = {
         ctx.fill('evenodd');
         ctx.restore();
         yield;
-        let n = 0;
-        for (const eye of eyes) {
-            this.eye(ctx, eye);
-            if (++n % 60 === 0) yield;
-        }
-        for (const eye of this.crossEyes()) this.eye(ctx, eye);
+        // Сначала все чёрные формы, потом все радужки: чёрное на чёрном
+        // сливается, а радужку чужой глаз закрыть не может.
+        const cross = this.crossEyes();
+        for (const eye of eyes) this.body(ctx, eye);
+        yield;
+        for (const eye of eyes) this.iris(ctx, eye);
+        for (const eye of cross) this.iris(ctx, eye);
     }
 };
