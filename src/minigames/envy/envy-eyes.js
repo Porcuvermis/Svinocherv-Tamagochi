@@ -38,18 +38,18 @@ const EnvyEyes = {
     // кромки в долях полувысоты (минус — в рамку), tilt + jit — наклон к
     // кромке (наименьший и разброс), diag — доля диагональных.
     SIDES: {
-        h: { L: [70, 140], Ls: [28, 50], off: [-1.0, 0.3], tilt: 0.26, jit: 0.62, diag: 0.2 },
+        h: { L: [64, 150], Ls: [24, 52], off: [-1.0, 0.3] },
         // Низ — над шкалой всего ~11 единиц: глаза глубже в рамке, чтобы
         // наклон не доставал до шкалы (иначе внизу шли одинаковые плоские).
-        b: { L: [64, 140], Ls: [28, 50], off: [-1.3, -0.3], tilt: 0.2, jit: 0.5, diag: 0.1 },
-        v: { L: [64, 128], Ls: [26, 46], off: [-0.9, 0.4], tilt: 0.26, jit: 0.62, diag: 0.2 }
+        b: { L: [60, 150], Ls: [24, 52], off: [-1.3, -0.3] },
+        v: { L: [54, 140], Ls: [22, 50], off: [-0.9, 0.4] }
     },
     // Сколько кромки можно оставить открытой подряд, если ни один глаз не
     // встал (единиц холста). Цель — почти нигде.
     GAP_STEP: 4,
     TRIES: 200,
     PICK: 8,          // сколько подходящих глаз сравнивать на каждом шаге
-    RUN_K: 0.6,
+    RUN_K: 0.45,
     // Шкалу зависти перекрывать нельзя (оценка игрока). Прямоугольник шкалы
     // в координатах тела окна (390×800) — тот же, что в envy.css
     // (.envy-gauge-wrap: left/right 7%, bottom 18px, height 18px), с запасом
@@ -179,8 +179,13 @@ const EnvyEyes = {
                     // Не вдоль кромки, а с наклоном: один уголок острым выходит
                     // на сцену, другой прячется в рамке. Глаз, лежащий ровно
                     // вдоль, показывал только круглый бок — гребешок пены.
-                    let rel = (rng() < 0.5 ? -1 : 1) * (P.tilt + rng() * P.jit);
-                    if (rng() < P.diag) rel = (rng() < 0.5 ? -1 : 1) * (0.55 + rng() * 0.45);
+                    // Три семейства наклона — пологий, средний, крутой (крутые
+                    // встают только мелкими: крупный упёрся бы в REACH_MAX).
+                    // Было по сути два — «/» и «\» под одним углом, и когда
+                    // обводка сделала глаза видными, рамка читалась узором.
+                    const fam = rng();
+                    const mag = fam < 0.4 ? 0.12 + rng() * 0.38 : fam < 0.75 ? 0.5 + rng() * 0.4 : 0.9 + rng() * 0.55;
+                    const rel = (rng() < 0.5 ? -1 : 1) * mag;
                     const halfH = L * 0.26, off = lerp(P.off, rng()) * halfH;
                     // центр впереди курсора: глаз накрывает курсор задним краем
                     const ahead = L * 0.5 * Math.abs(Math.cos(rel)) * (0.55 + rng() * 0.45);
@@ -197,15 +202,25 @@ const EnvyEyes = {
                         if (!self.sizeDiff(eye, n)) { tier = 0; break; }
                         if (!self.angDiff(eye, n)) tier = 1;
                     }
-                    if (tier === 2) found++;
-                    cands.push({ eye, run, tier });
+                    // Ритм: похожий на глаз через одного (не касается, но рядом)
+                    // — это «А-Б-А», ровное чередование. Штраф, а не запрет.
+                    let echo = 0;
+                    for (const n of chain) {
+                        const d = Math.hypot(n.x - eye.x, n.y - eye.y);
+                        if (d < self.NEAR_K * (n.w + eye.w) || d > self.ECHO_K * (n.w + eye.w)) continue;
+                        if (!self.sizeDiff(eye, n) && !self.angDiff(eye, n)) echo++;
+                    }
+                    if (tier === 2 && !echo) found++;
+                    cands.push({ eye, run, tier, echo });
                 }
                 if (!cands.length) { cur += self.GAP_STEP; continue; }
                 // Высший уровень; в нём не самый дальний, а случайный из тех,
                 // кто накрывает не меньше RUN_K от лучшего: «всегда самый
                 // дальний» давал ровное чередование крупный–мелкий–крупный.
                 const bestTier = Math.max(...cands.map(c => c.tier));
-                const top = cands.filter(c => c.tier === bestTier);
+                const tierC = cands.filter(c => c.tier === bestTier);
+                const minEcho = Math.min(...tierC.map(c => c.echo));
+                const top = tierC.filter(c => c.echo === minEcho);
                 const maxRun = Math.max(...top.map(c => c.run));
                 const pool = top.filter(c => c.run >= maxRun * self.RUN_K);
                 const best = pool[Math.floor(rng() * pool.length)].eye;
@@ -394,6 +409,7 @@ const EnvyEyes = {
     // симметричен, сравнение по модулю π) — не ближе ANG_K.
     SIZE_K: 1.3,
     NEAR_K: 0.5,
+    ECHO_K: 1.1,      // «через одного» — центры дальше касания, но ближе этого
     ANG_K: 0.35,
     sizeDiff(a, b) { return Math.max(a.w, b.w) / Math.min(a.w, b.w) >= this.SIZE_K; },
     angDiff(a, b) {
