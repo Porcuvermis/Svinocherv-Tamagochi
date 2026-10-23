@@ -42,6 +42,12 @@ const EnvyEyes = {
         h: { big: 0.7, L: [56, 100], Ls: [24, 36], off: [-0.5, 0.25], jit: 0.4, diag: 0.3, step: 0.42 },
         v: { big: 0.25, L: [50, 66],  Ls: [32, 48], off: [-0.2, 0.9],   jit: 0.6,  diag: 0.2,  step: 0.47 }
     },
+    // Шкалу зависти перекрывать нельзя (оценка игрока). Прямоугольник шкалы
+    // в координатах тела окна (390×800) — тот же, что в envy.css
+    // (.envy-gauge-wrap: left/right 7%, bottom 18px, height 18px), с запасом
+    // KEEP_PAD. Поменял шкалу там — поменяй и здесь.
+    KEEP: [{ x0: 27.3, y0: 764, x1: 362.7, y1: 782 }],
+    KEEP_PAD: 5,
     // Чёрные наплывы по шву рамки и сцены: шаг, длины, сдвиг в полувысотах.
     SEAM: { step: [12, 22], L: [26, 46], off: [-0.3, 0.8] },
     // Мелкие глаза в чёрных просветах рамки — после цепочки.
@@ -140,6 +146,9 @@ const EnvyEyes = {
                 const into = off + Math.abs(Math.sin(rel)) * L / 2 + Math.abs(Math.cos(rel)) * halfH;
                 if (into > this.REACH_MAX || this.inCross(x, y) || !fits(x, y, r)) continue;
                 const eye = { x, y, w: L, r, ang: tang + rel };
+                // Задел шкалу — не выбрасываем, а уводим глубже в рамку:
+                // иначе низ оставался без крупных глаз.
+                if (!this.pushOut(eye, S, halfH * 2) || !fits(eye.x, eye.y, r)) continue;
                 eyes.push(eye);
                 put(eye);
                 reach = Math.max(reach, into);
@@ -156,8 +165,10 @@ const EnvyEyes = {
             for (let s = -6; s < S.len + 6; s += lerp(SM.step, rng())) {
                 const L = lerp(SM.L, rng()), halfH = L * 0.26;
                 const off = lerp(SM.off, rng()) * halfH;
-                eyes.unshift({ x: S.x + S.ux * s + S.nx * off, y: S.y + S.uy * s + S.ny * off,
-                               w: L, r: 0, ang: tang + (rng() - 0.5) * 0.7 });
+                const lump = { x: S.x + S.ux * s + S.nx * off, y: S.y + S.uy * s + S.ny * off,
+                               w: L, r: 0, ang: tang + (rng() - 0.5) * 0.7 };
+                if (!this.pushOut(lump, S, halfH * 2)) continue;
+                eyes.unshift(lump);
                 reach = Math.max(reach, off + halfH * 1.3);
             }
         }
@@ -173,6 +184,7 @@ const EnvyEyes = {
             const w = lerp(F.L, rng()), r = w * this.IRIS;
             if (r > Math.min(e, x, y, STAGE_W - x, STAGE_H - y) - 2 || !fits(x, y, r)) continue;
             const eye = { x, y, w, r, ang: this.tangent(x, y) + (rng() - 0.5) * 1.4 };
+            if (this.hitsKeep(x, y, w, eye.ang)) continue;
             eyes.push(eye);
             put(eye);
         }
@@ -182,6 +194,42 @@ const EnvyEyes = {
 
     // Направление кромки сцены рядом с точкой: у верха и низа горизонталь, у
     // боков вертикаль.
+    // Те же прямоугольники в координатах холста: тело окна уменьшено в k
+    // и сдвинуто в угол сцены (MinigameWindow.skinGeometry).
+    keepRects() {
+        if (this._keep) return this._keep;
+        const G = MinigameWindow.skinGeometry(this), I = G.inner, p = this.KEEP_PAD;
+        return (this._keep = this.KEEP.map(r => ({
+            x0: I.x0 + r.x0 * G.k - p, y0: I.y0 + r.y0 * G.k - p,
+            x1: I.x0 + r.x1 * G.k + p, y1: I.y0 + r.y1 * G.k + p })));
+    },
+
+    // Заходит ли глаз на шкалу. Миндаль лежит внутри эллипса с теми же
+    // осями — проверка по эллипсу с запасом и дешёвая.
+    hitsKeep(x, y, w, ang) {
+        const a = w / 2, b = w * 0.27, c = Math.cos(ang), sn = Math.sin(ang);
+        for (const R of this.keepRects()) {
+            if (x + a < R.x0 || x - a > R.x1 || y + a < R.y0 || y - a > R.y1) continue;
+            for (let i = 0; i < 20; i++) {
+                const t = i / 20 * Math.PI * 2, ex = Math.cos(t) * a, ey = Math.sin(t) * b;
+                const px = x + ex * c - ey * sn, py = y + ex * sn + ey * c;
+                if (px > R.x0 && px < R.x1 && py > R.y0 && py < R.y1) return true;
+            }
+            if (x > R.x0 && x < R.x1 && y > R.y0 && y < R.y1) return true;
+        }
+        return false;
+    },
+
+    // Сдвиг глаза от сцены в рамку (против нормали стороны S), пока он
+    // задевает шкалу; не дальше max. false — так и не освободил.
+    pushOut(e, S, max) {
+        for (let d = 0; d <= max; d += 2) {
+            if (!this.hitsKeep(e.x, e.y, e.w, e.ang)) return true;
+            e.x -= S.nx * 2; e.y -= S.ny * 2;
+        }
+        return false;
+    },
+
     tangent(x, y) {
         const I = this.inner();
         const dx = Math.max(I.x0 - x, x - I.x1, 0), dy = Math.max(I.y0 - y, y - I.y1, 0);
