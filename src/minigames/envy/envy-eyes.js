@@ -30,17 +30,21 @@ const EnvyEyes = {
     rim: { side: 16, top: 54 },
     cross: { x: 358, y: 28, size: 46 },
     CORNER: 26,
-    // Миндали заходят в сцену не дальше половины длины самого крупного:
-    // по этому числу окно нарезает рамку на полосы.
-    REACH: 36,
-    // Проходы раскладки от крупных к мелким: длина глаза w, попыток tries.
-    PASSES: [
-        { tries: 500, wMin: 46, wMax: 66 },
-        { tries: 900, wMin: 34, wMax: 46 },
-        { tries: 900, wMin: 26, wMax: 34 },
-        { tries: 1500, wMin: 19, wMax: 26 }
-    ],
-    IRIS: 0.17,       // радиус радужки в долях длины глаза
+    // Миндали заходят в сцену не дальше этого: по числу окно нарезает рамку
+    // на полосы (reach). Настоящий заход считается раскладкой.
+    REACH_MAX: 60,
+    // Цепочка вдоль кромки, по стороне (рисунок игрока): сверху и снизу —
+    // несколько очень крупных глаз внахлёст и мелкие между ними, по бокам —
+    // средние, почти вертикальные, впритык. big — доля крупных, L — длины,
+    // off — сдвиг центра от кромки в долях полувысоты глаза (минус — в
+    // рамку), jit — разброс угла от кромки, diag — доля диагональных.
+    SIDES: {
+        h: { big: 0.7, L: [56, 100], Ls: [24, 36], off: [-0.5, 0.25], jit: 0.4, diag: 0.3, step: 0.42 },
+        v: { big: 0.25, L: [50, 66],  Ls: [32, 48], off: [-0.2, 0.9],   jit: 0.6,  diag: 0.2,  step: 0.47 }
+    },
+    // Мелкие глаза в чёрных просветах рамки — после цепочки.
+    FILL: { tries: 250, L: [20, 28] },
+    IRIS: 0.16,       // радиус радужки в долях длины глаза (рисунок игрока)
     IRIS_GAP: 2.4,    // центры радужек не ближе этого × сумма радиусов
     CELL: 40,
     YIELD: 1500,
@@ -48,7 +52,7 @@ const EnvyEyes = {
 
     get bg() { return this.pal().base; },
     pal() { return PALETTE.envyEyes; },
-    reach() { return this.REACH; },
+    reach() { return this._reach || this.REACH_MAX; },
 
     inner() {
         return this._inner || (this._inner = MinigameWindow.skinGeometry(this).inner);
@@ -78,44 +82,83 @@ const EnvyEyes = {
     },
 
     // ---------- РАСКЛАДКА ----------
-    // Дротики по рамке. Радужка целиком внутри рамки и на расстоянии от
-    // соседних радужек; миндали при этом налезают друг на друга как угодно.
+    // Не дротики по всей рамке (вышло ровной россыпью — оценка игрока), а
+    // цепочка вдоль каждой стороны сцены: глаз за глазом, повёрнутые по
+    // кромке с разбросом, центр у самой кромки — миндаль заходит и в рамку,
+    // и на сцену. Потом мелкие в чёрных просветах. Радужки не ближе
+    // IRIS_GAP × сумма радиусов, и в крестик чужие радужки не лезут.
     *layoutGen() {
         const rng = this.rng(), eyes = [], grid = new Map();
         const key = (i, j) => i * 1000 + j;
-        let step = 0;
-        for (const P of this.PASSES) {
-            for (let n = 0; n < P.tries; n++) {
-                if (++step % this.YIELD === 0) yield;
-                const x = rng() * STAGE_W, y = rng() * STAGE_H;
-                const e = this.edge(x, y);
-                if (e <= 0 || this.inCross(x, y)) continue;
-                const w = P.wMin + rng() * (P.wMax - P.wMin), r = w * this.IRIS;
-                // свободное место для радужки: до сцены и до края холста
-                const room = Math.min(e, x, y, STAGE_W - x, STAGE_H - y) - 2;
-                if (r > room) continue;
-                const ci = Math.floor(x / this.CELL), cj = Math.floor(y / this.CELL);
-                let ok = true;
-                for (let i = ci - 1; i <= ci + 1 && ok; i++) {
-                    for (let j = cj - 1; j <= cj + 1 && ok; j++) {
-                        for (const o of grid.get(key(i, j)) || []) {
-                            if (Math.hypot(o.x - x, o.y - y) < this.IRIS_GAP * (o.r + r)) { ok = false; break; }
-                        }
+        const fits = (x, y, r) => {
+            const ci = Math.floor(x / this.CELL), cj = Math.floor(y / this.CELL);
+            for (let i = ci - 2; i <= ci + 2; i++) {
+                for (let j = cj - 2; j <= cj + 2; j++) {
+                    for (const o of grid.get(key(i, j)) || []) {
+                        if (Math.hypot(o.x - x, o.y - y) < this.IRIS_GAP * (o.r + r)) return false;
                     }
                 }
-                if (!ok) continue;
-                // Вдоль кромки с разбросом: так рамка выглядит выложенной, а не
-                // насыпанной; четверть глаз — под любым углом, для хаоса.
-                const tang = this.tangent(x, y);
-                const ang = rng() < 0.25 ? rng() * Math.PI : tang + (rng() - 0.5) * 1.3;
-                const eye = { x, y, w, r, ang };
+            }
+            return true;
+        };
+        const put = (eye) => {
+            const kk = key(Math.floor(eye.x / this.CELL), Math.floor(eye.y / this.CELL));
+            if (!grid.has(kk)) grid.set(kk, []);
+            grid.get(kk).push(eye);
+        };
+        const lerp = (a, t) => a[0] + (a[1] - a[0]) * t;
+        for (const e of this.crossEyes()) put(e);
+
+        // Стороны: начало, направление вдоль, нормаль В СЦЕНУ, длина пути.
+        const I = this.inner();
+        const sides = [
+            { k: 'h', x: 0, y: I.y0, ux: 1, uy: 0, nx: 0, ny: 1, len: STAGE_W },
+            { k: 'v', x: I.x1, y: I.y0 + 14, ux: 0, uy: 1, nx: -1, ny: 0, len: I.y1 - I.y0 - 28 },
+            { k: 'h', x: STAGE_W, y: I.y1, ux: -1, uy: 0, nx: 0, ny: -1, len: STAGE_W },
+            { k: 'v', x: I.x0, y: I.y1 - 14, ux: 0, uy: -1, nx: 1, ny: 0, len: I.y1 - I.y0 - 28 }
+        ];
+        let reach = 0;
+        for (const S of sides) {
+            const P = this.SIDES[S.k], tang = Math.atan2(S.uy, S.ux);
+            let s = rng() * 10, prevL = 0;
+            while (s < S.len) {
+                const big = rng() < P.big;
+                const L = lerp(big ? P.L : P.Ls, rng());
+                s += prevL ? P.step * (prevL + L) : 0;
+                if (s >= S.len) break;
+                prevL = L;
+                // угол от кромки: обычно вдоль с разбросом, иногда диагональ
+                let rel = (rng() - 0.5) * 2 * P.jit;
+                if (rng() < P.diag) rel = (rng() < 0.5 ? -1 : 1) * (0.55 + rng() * 0.4);
+                const halfH = L * 0.26;
+                const off = lerp(P.off, rng()) * halfH;
+                const x = S.x + S.ux * s + S.nx * off, y = S.y + S.uy * s + S.ny * off;
+                const r = L * this.IRIS;
+                // сколько миндаль заходит в сцену поперёк кромки
+                const into = off + Math.abs(Math.sin(rel)) * L / 2 + Math.abs(Math.cos(rel)) * halfH;
+                if (into > this.REACH_MAX || this.inCross(x, y) || !fits(x, y, r)) continue;
+                const eye = { x, y, w: L, r, ang: tang + rel };
                 eyes.push(eye);
-                const kk = key(ci, cj);
-                if (!grid.has(kk)) grid.set(kk, []);
-                grid.get(kk).push(eye);
+                put(eye);
+                reach = Math.max(reach, into);
             }
             yield;
         }
+
+        // Мелкие в просветах: радужка целиком в рамке.
+        const F = this.FILL;
+        for (let n = 0; n < F.tries; n++) {
+            if (n % this.YIELD === this.YIELD - 1) yield;
+            const x = rng() * STAGE_W, y = rng() * STAGE_H;
+            const e = this.edge(x, y);
+            if (e <= 0 || this.inCross(x, y)) continue;
+            const w = lerp(F.L, rng()), r = w * this.IRIS;
+            if (r > Math.min(e, x, y, STAGE_W - x, STAGE_H - y) - 2 || !fits(x, y, r)) continue;
+            const eye = { x, y, w, r, ang: this.tangent(x, y) + (rng() - 0.5) * 1.4 };
+            eyes.push(eye);
+            put(eye);
+        }
+        this._reach = Math.ceil(reach) + 2;
         return eyes;
     },
 
@@ -161,17 +204,15 @@ const EnvyEyes = {
         this.almond(ctx, e.w);
         ctx.fillStyle = this.pal().base;
         ctx.fill();
-        if (!e.noHaze) {
-            // Дымка: чуть светлее чёрного у зрачка, к краям — в ноль. Края
-            // формы от этого растворяются в массе, а не режутся линией.
-            ctx.clip();
-            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.w * 0.5);
-            g.addColorStop(0, this.pal().haze);
-            g.addColorStop(1, this.pal().base);
-            ctx.globalAlpha = 0.5;
-            ctx.fillStyle = g;
-            ctx.fillRect(-e.w / 2, -e.w / 2, e.w, e.w);
-        }
+        // Дымка: чуть светлее чёрного у зрачка, к краям — в ноль. Края
+        // формы от этого растворяются в массе, а не режутся линией.
+        ctx.clip();
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.w * 0.5);
+        g.addColorStop(0, this.pal().haze);
+        g.addColorStop(1, this.pal().base);
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = g;
+        ctx.fillRect(-e.w / 2, -e.w / 2, e.w, e.w);
         ctx.restore();
     },
 
