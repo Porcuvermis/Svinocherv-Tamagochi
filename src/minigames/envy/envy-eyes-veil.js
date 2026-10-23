@@ -31,15 +31,15 @@
 // в единичном разрешении (MgVeil.MOTION_SCALE). Раскладка — в простое
 // (prepareGen), не при нажатии.
 Object.assign(EnvyEyes, {
-    VEIL_MS: { cover: 650, reveal: 620, close: 520, clear: 600, burst: 280, pop: 340, finish: 420 },
-    // Каждый глаз открывается за OPEN_DUR доли хода, начиная со своей
-    // задержки (до STAGGER): экран моргает вразнобой, а не разом.
-    STAGGER: 0.42,
-    OPEN_DUR: 0.58,
+    VEIL_MS: { cover: 1000, reveal: 900, close: 800, clear: 900, burst: 380, pop: 420, finish: 600 },
+    // Доля хода, за которую моргает один глаз (своя у каждого).
+    BLINK: [0.28, 0.5],
     VEIL_SEED: 9137,
-    VEIL_L: [80, 210],      // длины глаз середины: крупные
-    VEIL_LS: [40, 80],      // и средние — где крупный не встал
-    VEIL_GRID: 10,          // шаг сетки точек, на которые ставятся глаза
+    // Крупные середины: доли экрана по x и y, длина, знак наклона.
+    VEIL_BIG: [[0.36, 0.2, 320, 1], [0.66, 0.44, 235, -1], [0.33, 0.67, 310, 1], [0.66, 0.88, 230, -1]],
+    VEIL_L_MAX: 200,        // дальше — не длиннее этого
+    VEIL_MIN: 7,            // дыры мельче (радиус, ед.) глазами не закрываются
+    VEIL_GRID: 6,           // шаг сетки дыр
     VEIL_IRIS_GAP: 1.9,
     KNOCK_BATCHES: 3,
     _veil: null,
@@ -82,61 +82,123 @@ Object.assign(EnvyEyes, {
         for (const e of cross) add(Object.assign(e, { cross: true }));
 
         const eyes = [];
-        // Ставит глаз, накрывающий точку: сначала крупный, не встал —
-        // средний, не встал и он — точку оставляет подложке.
-        const place = (px, py) => {
-            for (const range of [this.VEIL_L, this.VEIL_LS]) {
-                const cands = [];
-                for (let k = 0; k < 40 && cands.length < 8; k++) {
-                    const L = lerp(range, rng()), ang = rng() * Math.PI;
-                    const d = rng() * L * 0.3, t = rng() * Math.PI * 2;
-                    const e = { x: px + Math.cos(t) * d, y: py + Math.sin(t) * d, w: L, r: L * this.IRIS, ang };
-                    if (!this.inAlmond(e, px, py)) continue;
-                    // зрачок целиком на экране
-                    if (e.x - e.r < 1 || e.y - e.r < 1 || e.x + e.r > STAGE_W - 1 || e.y + e.r > STAGE_H - 1) continue;
-                    if (!irisFree(e, this.VEIL_IRIS_GAP)) continue;
-                    let tier = 2;
-                    for (const n of touching(e)) {
-                        if (!this.sizeDiff(e, n)) { tier = 0; break; }
-                        if (!this.angDiff(e, n)) tier = 1;
-                    }
-                    cands.push({ e, tier });
-                }
-                if (!cands.length) continue;
-                const top = Math.max(...cands.map(c => c.tier));
-                const pool = cands.filter(c => c.tier === top);
-                const best = pool[Math.floor(rng() * pool.length)].e;
-                eyes.push(best);
-                add(best);
-                return;
+        const fitsScreen = (e) => e.x - e.r >= 1 && e.y - e.r >= 1 && e.x + e.r <= STAGE_W - 1 && e.y + e.r <= STAGE_H - 1;
+        const tierOf = (e) => {
+            let tier = 2;
+            for (const n of touching(e)) {
+                if (!this.sizeDiff(e, n)) return 0;
+                if (!this.angDiff(e, n)) tier = 1;
             }
+            return tier;
         };
 
-        // Точки сетки в случайном порядке: глаза ложатся вразброс, а не рядами.
-        const G = this.VEIL_GRID, pts = [];
-        for (let y = 0; y <= STAGE_H; y += G) for (let x = 0; x <= STAGE_W; x += G) pts.push([x, y]);
-        for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
-        let n = 0;
-        for (const [x, y] of pts) {
-            if (++n % 200 === 0) yield;
-            if (!covered(x, y)) place(x, y);
+        // 1. Несколько крупных — большая часть экрана (замысел игрока).
+        // Зигзагом сверху вниз, а не один гигант по центру; соседние
+        // различаются размером, углы — в разные стороны.
+        for (const [fx, fy, L, sign] of this.VEIL_BIG) {
+            const e = { x: STAGE_W * fx + (rng() - 0.5) * 30, y: STAGE_H * fy + (rng() - 0.5) * 40,
+                        w: L * (0.95 + rng() * 0.1), ang: sign * (0.35 + rng() * 0.75) };
+            e.r = e.w * this.IRIS;
+            if (!fitsScreen(e) || !irisFree(e, this.VEIL_IRIS_GAP)) continue;
+            eyes.push(e);
+            add(e);
         }
-        // Доля экрана, закрытая глазами (остальное — подложке).
+        yield;
+
+        // 2. По убыванию: следующий глаз — в самую большую оставшуюся дыру
+        // сцены и по её размеру. Дыра меряется расстоянием до закрытого
+        // (двухпроходная карта расстояний по сетке). Дыры мельче VEIL_MIN —
+        // подложке.
+        const G = this.VEIL_GRID, NX = Math.floor(STAGE_W / G) + 1, NY = Math.floor(STAGE_H / G) + 1;
+        const inScene = new Uint8Array(NX * NY), done = new Uint8Array(NX * NY);
+        for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+            const x = i * G, y = j * G;
+            inScene[j * NX + i] = this.edge(x, y) < -2 ? 1 : 0;
+        }
+        const refresh = () => {
+            for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+                const k = j * NX + i;
+                if (!done[k] && (!inScene[k] || covered(i * G, j * G))) done[k] = 1;
+            }
+        };
+        const dist = new Float32Array(NX * NY);
+        const distMap = () => {
+            const D1 = 1, D2 = Math.SQRT2;
+            for (let k = 0; k < NX * NY; k++) dist[k] = done[k] ? 0 : 1e9;
+            for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+                const k = j * NX + i; let d = dist[k];
+                if (i > 0) d = Math.min(d, dist[k - 1] + D1);
+                if (j > 0) d = Math.min(d, dist[k - NX] + D1);
+                if (i > 0 && j > 0) d = Math.min(d, dist[k - NX - 1] + D2);
+                if (i < NX - 1 && j > 0) d = Math.min(d, dist[k - NX + 1] + D2);
+                dist[k] = d;
+            }
+            for (let j = NY - 1; j >= 0; j--) for (let i = NX - 1; i >= 0; i--) {
+                const k = j * NX + i; let d = dist[k];
+                if (i < NX - 1) d = Math.min(d, dist[k + 1] + D1);
+                if (j < NY - 1) d = Math.min(d, dist[k + NX] + D1);
+                if (i < NX - 1 && j < NY - 1) d = Math.min(d, dist[k + NX + 1] + D2);
+                if (i > 0 && j < NY - 1) d = Math.min(d, dist[k + NX - 1] + D2);
+                dist[k] = d;
+            }
+        };
+        // сколько ещё открытых точек сетки закроет глаз
+        const gain = (e) => {
+            const h = e.w / 2;
+            let n = 0;
+            for (let j = Math.max(0, Math.floor((e.y - h) / G)); j <= Math.min(NY - 1, Math.ceil((e.y + h) / G)); j++) {
+                for (let i = Math.max(0, Math.floor((e.x - h) / G)); i <= Math.min(NX - 1, Math.ceil((e.x + h) / G)); i++) {
+                    if (!done[j * NX + i] && this.inAlmond(e, i * G, j * G)) n++;
+                }
+            }
+            return n;
+        };
+        refresh();
+        for (let step = 0; step < 300; step++) {
+            distMap();
+            let best = -1, bk = -1;
+            for (let k = 0; k < NX * NY; k++) if (dist[k] > best) { best = dist[k]; bk = k; }
+            const clear = best * G;
+            if (clear < this.VEIL_MIN) break;
+            const px = (bk % NX) * G, py = Math.floor(bk / NX) * G;
+            // длина — по дыре: полувысота миндаля чуть больше радиуса дыры
+            const L0 = Math.min(this.VEIL_L_MAX, Math.max(26, clear * 4.4));
+            let pick = null, pickTier = -1, pickGain = 0;
+            for (let k = 0; k < 36; k++) {
+                const L = L0 * (0.85 + rng() * 0.4);
+                const t = rng() * Math.PI * 2, d = rng() * L * 0.15;
+                const e = { x: px + Math.cos(t) * d, y: py + Math.sin(t) * d, w: L, r: L * this.IRIS, ang: rng() * Math.PI };
+                if (!this.inAlmond(e, px, py) || !fitsScreen(e) || !irisFree(e, this.VEIL_IRIS_GAP)) continue;
+                const tier = tierOf(e), g = gain(e);
+                if (tier > pickTier || (tier === pickTier && g > pickGain)) { pick = e; pickTier = tier; pickGain = g; }
+            }
+            if (pick) { eyes.push(pick); add(pick); refresh(); }
+            else done[bk] = 1;      // сюда глаз не встаёт — точку отдаём подложке
+            if (step % 6 === 0) yield;
+        }
+        // Доля сцены, закрытая глазами (остальное — подложке).
         let hit = 0, all = 0;
-        for (let y = 1; y < STAGE_H; y += 4) for (let x = 1; x < STAGE_W; x += 4) { all++; if (covered(x, y)) hit++; }
+        for (let k = 0; k < NX * NY; k++) if (inScene[k]) { all++; if (covered((k % NX) * G, Math.floor(k / NX) * G)) hit++; }
         this._veilCover = hit / all;
 
         // Задержки моргания и пачки нажатий.
-        for (const e of frame) e.d = rng() * this.STAGGER;
-        for (const e of cross) e.d = rng() * this.STAGGER;
-        for (const e of eyes) { e.d = rng() * this.STAGGER; e.batch = Math.floor(rng() * this.KNOCK_BATCHES); }
+        // Каждому глазу — своя длительность и своя задержка в пределах хода:
+        // моргают вразнобой по всему экрану, как живые, а не волной и не
+        // разом. Крупные — медленнее.
+        const time = (e) => {
+            e.du = this.BLINK[0] + rng() * (this.BLINK[1] - this.BLINK[0]) + Math.min(0.12, e.w / 2500);
+            e.d = rng() * (1 - e.du);
+        };
+        for (const e of frame) time(e);
+        for (const e of cross) time(e);
+        for (const e of eyes) { time(e); e.batch = Math.floor(rng() * this.KNOCK_BATCHES); }
         this._veil = { frame, cross, mid: eyes };
     },
 
     // ---------- КАДР ----------
     ease(t) { return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); },
     // Раскрытие глаза на доле хода p: своя задержка, плавный ход.
-    openAt(e, p) { return this.ease((p - e.d) / this.OPEN_DUR); },
+    openAt(e, p) { return this.ease((p - e.d) / e.du); },
 
     // Раскрытие каждой группы на ходе mode, доле p. f — глаза рамки, m —
     // середина (функция от глаза: пачки нажатий).
