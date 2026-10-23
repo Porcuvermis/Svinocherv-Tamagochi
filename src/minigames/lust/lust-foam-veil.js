@@ -144,7 +144,7 @@ Object.assign(LustFoam, {
             b.massR = layer !== 'deep' ? 0 : b.r * (rim && !b.core ? 1.15 : this.MASS_K);
             const key = near(b) * 2 + (rim ? 1 : 0);
             let g = map.get(key);
-            if (!g) map.set(key, g = { rim, deep: [], top: [] });
+            if (!g) map.set(key, g = { rim, deep: [], top: [], si: key >> 1 });
             g[layer].push(b);
         };
         for (const b of L.deep) put(b, 'deep', true);
@@ -153,13 +153,42 @@ Object.assign(LustFoam, {
         for (const b of In.top) put(b, 'top', false);
         yield;
         const byY = (a, b) => (a.y + a.r) - (b.y + b.r), nz = btRng(this.SEED ^ 0x1d07);
-        const box = (list, withMass) => {
-            if (!list.length) return null;
+        // Ячейка грозди — точки, к которым её центр ближе всех соседних
+        // (многоугольник: квадрат, обрезанный серединными перпендикулярами).
+        // Ячейки вместе покрывают экран без зазоров — по ним масса закрывает
+        // щели между гроздьями (fillCell).
+        const cellOf = (si) => {
+            const s = seeds[si], ci = si % gw, cj = Math.floor(si / gw);
+            let poly = [[s.x - 2 * C, s.y - 2 * C], [s.x + 2 * C, s.y - 2 * C], [s.x + 2 * C, s.y + 2 * C], [s.x - 2 * C, s.y + 2 * C]];
+            for (let j = cj - 2; j <= cj + 2; j++) for (let i = ci - 2; i <= ci + 2; i++) {
+                if ((i === ci && j === cj) || i < 0 || j < 0 || i >= gw || j >= gh) continue;
+                const n = seeds[j * gw + i], nx = n.x - s.x, ny = n.y - s.y, mx = (n.x + s.x) / 2, my = (n.y + s.y) / 2;
+                const side = (q) => (q[0] - mx) * nx + (q[1] - my) * ny;
+                const out = [];
+                for (let k = 0; k < poly.length; k++) {
+                    const A = poly[k], B = poly[(k + 1) % poly.length], a = side(A), b = side(B);
+                    if (a <= 0) out.push(A);
+                    if ((a <= 0) !== (b <= 0)) { const t = a / (a - b); out.push([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t]); }
+                }
+                poly = out;
+                if (!poly.length) break;
+            }
+            // Чуть шире ячейки — на точку: стык двух ячеек сглаживается с обеих
+            // сторон, и посередине оставалась недокрытая точка.
+            return poly.map(q => { const dx = q[0] - s.x, dy = q[1] - s.y, l = Math.hypot(dx, dy) || 1;
+                                   return [q[0] + dx / l, q[1] + dy / l]; });
+        };
+        const box = (list, withMass, cell) => {
+            if (!list.length && !cell) return null;
             let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
             for (const b of list) {
                 const R = Math.max(b.r + 1, withMass ? b.massR : 0);
                 x0 = Math.min(x0, b.x - R); y0 = Math.min(y0, b.y - R);
                 x1 = Math.max(x1, b.x + R); y1 = Math.max(y1, b.y + R);
+            }
+            if (cell) {
+                x0 = Math.min(x0, cell.x0); y0 = Math.min(y0, cell.y0);
+                x1 = Math.max(x1, cell.x1); y1 = Math.max(y1, cell.y1);
             }
             x0 = Math.floor(x0); y0 = Math.floor(y0);
             return { x0, y0, w: Math.ceil(x1 - x0) + 1, h: Math.ceil(y1 - y0) + 1 };
@@ -173,7 +202,20 @@ Object.assign(LustFoam, {
             g.bottom = Math.max(...all.map(b => b.y + b.r));
             g.nz = nz() * 2 - 1;
             g.cross = all.some(b => b.cross);
-            g.d = box(g.deep, true);
+            // Заливка ячейки — только в пределах раздутых кругов своих
+            // пузырей: на фронте заливки край остаётся пузырчатым, без прямых
+            // граней ячейки. Рамка ячейки для картинки — пересечение рамок.
+            g.cell = cellOf(g.si);
+            if (g.cell.length) {
+                const K = this.CELL_K;
+                let cx0 = Infinity, cy0 = Infinity, cx1 = -Infinity, cy1 = -Infinity;
+                for (const q of g.cell) { cx0 = Math.min(cx0, q[0]); cy0 = Math.min(cy0, q[1]); cx1 = Math.max(cx1, q[0]); cy1 = Math.max(cy1, q[1]); }
+                let dx0 = Infinity, dy0 = Infinity, dx1 = -Infinity, dy1 = -Infinity;
+                for (const b of all) { dx0 = Math.min(dx0, b.x - b.r * K); dy0 = Math.min(dy0, b.y - b.r * K); dx1 = Math.max(dx1, b.x + b.r * K); dy1 = Math.max(dy1, b.y + b.r * K); }
+                g.cellBox = { x0: Math.max(cx0, dx0), y0: Math.max(cy0, dy0), x1: Math.min(cx1, dx1), y1: Math.min(cy1, dy1) };
+                if (g.cellBox.x1 <= g.cellBox.x0 || g.cellBox.y1 <= g.cellBox.y0) g.cellBox = null;
+            }
+            g.d = box(g.deep, true, g.cellBox);
             g.t = box(g.top, false);
         }
         // Порядок рисования — по нижнему краю грозди (как пузыри — сверху
@@ -202,7 +244,29 @@ Object.assign(LustFoam, {
 
     // Гроздь в координатах сцены: масса, затем свои пузыри. Крестик здесь
     // белый (спрайты пены), бахрома рамки — со своей прозрачностью.
+    // Щели между гроздьями: у снимка игрока сквозь залитую пену проступали
+    // точки сцены — места, куда не дотягивалась масса ни одного пузыря
+    // (~300 точек даже при массе ×1,4). Ячейки гроздей покрывают экран без
+    // зазоров, поэтому масса, залитая по ячейке, щелей не оставляет; а
+    // обрезка раздутыми кругами (CELL_K) держит фронт заливки пузырчатым.
+    CELL_K: 2.4,
+    fillCell(ctx, g) {
+        if (!g.cellBox) return;
+        const K = this.CELL_K;
+        ctx.save();
+        ctx.beginPath();
+        g.cell.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+        ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle = this.massColor();
+        ctx.beginPath();
+        for (const b of g.deep.concat(g.top)) { const R = b.r * K; ctx.moveTo(b.x + R, b.y); ctx.arc(b.x, b.y, R, 0, Math.PI * 2); }
+        ctx.fill();
+        ctx.restore();
+    },
+
     paintDeep(ctx, g, S) {
+        this.fillCell(ctx, g);
         const mass = g.deep.filter(b => b.massR);
         if (mass.length) {
             ctx.fillStyle = this.massColor();
