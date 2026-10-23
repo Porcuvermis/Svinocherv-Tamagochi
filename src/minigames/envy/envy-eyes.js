@@ -38,11 +38,11 @@ const EnvyEyes = {
     // кромки в долях полувысоты (минус — в рамку), tilt + jit — наклон к
     // кромке (наименьший и разброс), diag — доля диагональных.
     SIDES: {
-        h: { L: [70, 140], Ls: [28, 50], off: [-0.6, 0.4], tilt: 0.08, jit: 0.35, diag: 0.2 },
+        h: { L: [70, 140], Ls: [28, 50], off: [-1.0, 0.3], tilt: 0.26, jit: 0.62, diag: 0.2 },
         // Низ — над шкалой всего ~11 единиц: глаза глубже в рамке, чтобы
         // наклон не доставал до шкалы (иначе внизу шли одинаковые плоские).
-        b: { L: [64, 140], Ls: [28, 50], off: [-1.2, -0.3], tilt: 0.06, jit: 0.45, diag: 0.1 },
-        v: { L: [64, 128], Ls: [26, 46], off: [-0.3, 0.5], tilt: 0.08, jit: 0.4, diag: 0.2 }
+        b: { L: [64, 140], Ls: [28, 50], off: [-1.3, -0.3], tilt: 0.2, jit: 0.5, diag: 0.1 },
+        v: { L: [64, 128], Ls: [26, 46], off: [-0.9, 0.4], tilt: 0.26, jit: 0.62, diag: 0.2 }
     },
     // Сколько кромки можно оставить открытой подряд, если ни один глаз не
     // встал (единиц холста). Цель — почти нигде.
@@ -181,6 +181,8 @@ const EnvyEyes = {
                     const ahead = L * 0.5 * Math.abs(Math.cos(rel)) * (0.55 + rng() * 0.45);
                     const x = q.x + q.tx * ahead + q.nx * off, y = q.y + q.ty * ahead + q.ny * off;
                     const eye = { x, y, w: L, r: L * self.IRIS, ang: tang + rel };
+                    // зрачок целиком на экране: обрезанный краем холста — не глаз, а пятно
+                    if (x - eye.r < 1 || y - eye.r < 1 || x + eye.r > STAGE_W - 1 || y + eye.r > STAGE_H - 1) continue;
                     if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : self.IRIS_GAP_SMALL)) continue;
                     if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
                     let run = 0;
