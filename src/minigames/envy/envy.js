@@ -200,6 +200,8 @@ const EnvyMinigame = {
         if (!this.win && typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'envy',
+                // Рамка из глаз и крестик из глаз (envy-eyes.js).
+                skin: typeof EnvyEyes !== 'undefined' ? EnvyEyes : null,
                 onLeave: () => this.close(),
                 canLeave: () => this.hasWon
             });
