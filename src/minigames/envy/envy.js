@@ -131,13 +131,10 @@ const ENVY_SQRT3_2 = Math.sqrt(3) / 2;
 const EnvyMinigame = {
     // ---------- DOM ----------
     screenElement: null,
-    closeBtn: null,
     canvas: null,
     gaugeBar: null,
     winOverlay: null,
-    confirmOverlay: null,
-    confirmStayBtn: null,
-    confirmLeaveBtn: null,
+    win: null,
 
     // ---------- THREE ----------
     threeLoading: null,   // промис загрузки библиотеки
@@ -195,30 +192,25 @@ const EnvyMinigame = {
     // ================= ЖИЗНЕННЫЙ ЦИКЛ =================
     init() {
         this.screenElement = document.getElementById('envy-game');
-        this.closeBtn = document.getElementById('envy-close-btn');
+
+        // Окно (рамка, значок греха, крестик, вопрос при выходе) — общее на
+        // все грехи. Вешается ДО поиска остальных узлов: сборка переносит
+        // содержимое экрана внутрь рамки. После победы терять нечего —
+        // выходим без вопроса.
+        if (!this.win && typeof MinigameWindow !== 'undefined') {
+            this.win = MinigameWindow.attach(this.screenElement, {
+                sin: 'envy',
+                onLeave: () => this.close(),
+                canLeave: () => this.hasWon
+            });
+        }
+
         this.canvas = document.getElementById('envy-canvas');
         this.gaugeBar = document.getElementById('envy-gauge-bar');
         this.winOverlay = document.getElementById('envy-win-overlay');
         this.flashEl = document.getElementById('envy-win-flash');
-        this.confirmOverlay = document.getElementById('envy-confirm-overlay');
-        this.confirmStayBtn = document.getElementById('envy-confirm-stay');
-        this.confirmLeaveBtn = document.getElementById('envy-confirm-leave');
 
         if (!this.canvas) return;
-
-        if (this.closeBtn) {
-            this.closeBtn.onclick = (e) => {
-                e.stopPropagation();
-                if (this.hasWon) this.close();
-                else this.showConfirm();
-            };
-        }
-        if (this.confirmStayBtn) {
-            this.confirmStayBtn.onclick = (e) => { e.stopPropagation(); this.hideConfirm(); };
-        }
-        if (this.confirmLeaveBtn) {
-            this.confirmLeaveBtn.onclick = (e) => { e.stopPropagation(); this.close(); };
-        }
 
         this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
         this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -303,14 +295,9 @@ const EnvyMinigame = {
         // (src/core/sins-menu.js).
     },
 
-    showConfirm() {
-        this.pointerDown = false;
-        this.clearTouch();
-        if (this.confirmOverlay) this.confirmOverlay.classList.add('show');
-    },
-
+    // Вопрос «выйти?» рисует общее окно; тут только сброс пальца.
     hideConfirm() {
-        if (this.confirmOverlay) this.confirmOverlay.classList.remove('show');
+        if (this.win) this.win.hideConfirm();
     },
 
     updateGauge() {

@@ -1041,10 +1041,8 @@
         </svg>
     </div>
 
-    <div id="envy-game" class="minigame-screen">
+    <div id="envy-game" class="minigame-screen mg-window" data-sin="envy">
         <div class="envy-modal">
-            <button id="envy-close-btn" class="envy-close-btn">&times;</button>
-
             <canvas id="envy-canvas"></canvas>
 
             <div class="envy-gauge-wrap">
@@ -1056,14 +1054,6 @@
 
             <div class="envy-win-overlay" id="envy-win-overlay">
                 <div class="envy-win-text">Назавидовал</div>
-            </div>
-
-            <div class="envy-confirm-overlay" id="envy-confirm-overlay">
-                <div class="envy-confirm-text">Выйти из мини-игры? Прогресс не сохранится.</div>
-                <div class="envy-confirm-buttons">
-                    <button id="envy-confirm-stay" class="envy-confirm-btn stay">Остаться</button>
-                    <button id="envy-confirm-leave" class="envy-confirm-btn leave">Выйти</button>
-                </div>
             </div>
         </div>
     </div>

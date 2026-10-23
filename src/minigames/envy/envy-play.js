@@ -259,7 +259,7 @@ Object.assign(EnvyMinigame, {
 
     onPointerDown(e) {
         if (this.state !== 'play') return;
-        if (this.confirmOverlay && this.confirmOverlay.classList.contains('show')) return;
+        if (this.win && this.win.isConfirmOpen()) return;
         e.preventDefault();
         const p = this.localPos(e);
         this.pointerDown = true;
