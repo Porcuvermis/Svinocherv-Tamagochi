@@ -32,24 +32,24 @@ const EnvyEyes = {
     CORNER: 26,
     // Миндали заходят в сцену не дальше этого: по числу окно нарезает рамку
     // на полосы (reach). Настоящий заход считается раскладкой.
-    REACH_MAX: 60,
-    // Глаза кромки по стороне: сверху и снизу — крупнее, по бокам — средние
-    // и почти вдоль. big — доля крупных, L / Ls — длины крупных и мелких,
-    // off — сдвиг центра от кромки в долях полувысоты (минус — в рамку),
-    // tilt + jit — наклон к кромке (наименьший и разброс), diag — доля
-    // диагональных.
+    REACH_MAX: 40,
+    // Глаза кромки по стороне. L — длины крупных (первый проход), Ls —
+    // мелких (второй, только в щели между крупными). off — сдвиг центра от
+    // кромки в долях полувысоты (минус — в рамку), tilt + jit — наклон к
+    // кромке (наименьший и разброс), diag — доля диагональных.
     SIDES: {
-        h: { big: 0.55, L: [70, 110], Ls: [36, 56], off: [-0.5, 0.5], tilt: 0.12, jit: 0.4, diag: 0.25 },
+        h: { L: [70, 140], Ls: [28, 50], off: [-0.6, 0.4], tilt: 0.08, jit: 0.35, diag: 0.2 },
         // Низ — над шкалой всего ~11 единиц: глаза глубже в рамке, чтобы
         // наклон не доставал до шкалы (иначе внизу шли одинаковые плоские).
-        b: { big: 0.5, L: [64, 110], Ls: [34, 54], off: [-1.2, -0.3], tilt: 0.1, jit: 0.55, diag: 0.1 },
-        v: { big: 0.4, L: [58, 84], Ls: [36, 56], off: [-0.3, 0.6], tilt: 0.18, jit: 0.45, diag: 0.25 }
+        b: { L: [64, 140], Ls: [28, 50], off: [-1.2, -0.3], tilt: 0.06, jit: 0.45, diag: 0.1 },
+        v: { L: [64, 128], Ls: [26, 46], off: [-0.3, 0.5], tilt: 0.08, jit: 0.4, diag: 0.2 }
     },
     // Сколько кромки можно оставить открытой подряд, если ни один глаз не
     // встал (единиц холста). Цель — почти нигде.
     GAP_STEP: 4,
     TRIES: 200,
     PICK: 8,          // сколько подходящих глаз сравнивать на каждом шаге
+    RUN_K: 0.6,
     // Шкалу зависти перекрывать нельзя (оценка игрока). Прямоугольник шкалы
     // в координатах тела окна (390×800) — тот же, что в envy.css
     // (.envy-gauge-wrap: left/right 7%, bottom 18px, height 18px), с запасом
@@ -57,10 +57,12 @@ const EnvyEyes = {
     KEEP: [{ x0: 27.3, y0: 764, x1: 362.7, y1: 782 }],
     KEEP_PAD: 5,
     // Мелкие глаза в чёрных просветах рамки — после цепочки.
-    FILL: { tries: 400, L: [20, 34] },
+    // Мелкие в глубине рамки — редко: только в заметных чёрных пустотах.
+    FILL: { tries: 120, L: [20, 34] },
     IRIS: 0.16,       // радиус радужки в долях длины глаза (рисунок игрока)
     IRIS_GAP: 2.1,    // центры радужек не ближе этого × сумма радиусов
-    FILL_GAP: 2.6,    // у мелких в глубине рамки — реже
+    IRIS_GAP_SMALL: 1.7,  // мелкие в щелях — ближе: иначе щель не закрыть
+    FILL_GAP: 4,      // у мелких в глубине рамки — реже
     CELL: 40,
     YIELD: 1500,
     _eyes: null,
@@ -140,60 +142,74 @@ const EnvyEyes = {
         const path = this.seamPath(), N = path.length;
         const at = (i) => path[((i % N) + N) % N];
         const covered = (eye, i) => { const q = at(i); return this.inAlmond(eye, q.x, q.y); };
-        // Начинаем с середины верха: там крупные глаза, шов на углу не нужен.
-        let cur = 0, guard = 0;
         const chain = [];
+        const coveredAny = (i) => chain.some(e => covered(e, i));
+        // соседи — глаза кромки, что стоят вплотную к новому (центры ближе
+        // NEAR_K от суммы длин): с ними новый не должен быть схож
+        const neighbours = (eye) => chain.filter(e => Math.hypot(e.x - eye.x, e.y - eye.y) < this.NEAR_K * (e.w + eye.w));
         // счёт похожих соседей — для tools/probe-envy-rim.js
         this._alike = 0; this._alikeAt = [];
-        const recent = [];
-        while (cur < N && guard++ < 5000) {
-            const q = at(cur);
-            const P = this.SIDES[Math.abs(q.tx) > Math.abs(q.ty) ? (q.ny < 0 ? 'b' : 'h') : 'v'];
-            const tang = Math.atan2(q.ty, q.tx);
-            // Из подходящих — тот, что накрывает кромку дальше всех: глаза
-            // встают уголок к уголку, а не наползают друг на друга (сильный
-            // нахлёст прятал уголки, и кромка выходила гребешком пены).
-            // Соседи не похожи (оценка игрока: одинаковые глаза подряд
-            // бросаются в глаза). Уровни: 2 — с предыдущим различие и размером,
-            // и углом; 1 — только размером (угол «старается», размер —
-            // обязательно); 0 — похож, это исключение, считается. С тем, что
-            // через один, — хотя бы одно различие, иначе уровень 0. Берётся
-            // высший уровень, в нём — кто дальше накрыл кромку.
-            const p1 = chain[chain.length - 1], p2 = chain[chain.length - 2];
-            let best = null, bestRun = 0, bestTier = -1, found = 0;
-            for (let k = 0; k < this.TRIES && found < this.PICK; k++) {
-                const L = lerp(rng() < P.big ? P.L : P.Ls, rng());
-                // Не вдоль кромки, а с наклоном: один уголок острым выходит на
-                // сцену, другой прячется в рамке. Глаз, лежащий ровно вдоль,
-                // показывал из-под кромки только круглый бок — гребешок пены.
-                let rel = (rng() < 0.5 ? -1 : 1) * (P.tilt + rng() * P.jit);
-                if (rng() < P.diag) rel = (rng() < 0.5 ? -1 : 1) * (0.55 + rng() * 0.45);
-                const halfH = L * 0.26, off = lerp(P.off, rng()) * halfH;
-                // центр впереди курсора: глаз накрывает курсор своим задним краем
-                const ahead = L * 0.5 * Math.abs(Math.cos(rel)) * (0.55 + rng() * 0.45);
-                const x = q.x + q.tx * ahead + q.nx * off, y = q.y + q.ty * ahead + q.ny * off;
-                const eye = { x, y, w: L, r: L * this.IRIS, ang: tang + rel };
-                if (!covered(eye, cur) || !fits(x, y, eye.r, this.IRIS_GAP)) continue;
-                if (this.hitsKeep(x, y, L, eye.ang) || this.intoScene(eye) > this.REACH_MAX) continue;
-                let run = 0;
-                while (run < 200 && covered(eye, cur + run)) run++;
-                let tier = 2;
-                if (p1 && !this.sizeDiff(eye, p1)) tier = 0;
-                else if (p1 && !this.angDiff(eye, p1)) tier = 1;
-                if (p2 && !this.sizeDiff(eye, p2) && !this.angDiff(eye, p2)) tier = 0;
-                if (tier === 2) found++;
-                if (tier > bestTier || (tier === bestTier && run > bestRun)) { best = eye; bestRun = run; bestTier = tier; }
+
+        // Два прохода (оценка игрока: не засыпать экран мелкими, где хватит
+        // одного крупного). Первый — только крупные: каждый накрывает кромку
+        // как можно дальше; где крупный не встаёт (шкала, крестик, соседняя
+        // радужка), кромка пока остаётся открытой. Второй — мелкие, только в
+        // эти щели.
+        const self = this;
+        function* walk(big) {
+            let cur = 0, guard = 0;
+            while (cur < N && guard++ < 6000) {
+                if (coveredAny(cur)) { cur++; continue; }
+                const q = at(cur);
+                const P = self.SIDES[Math.abs(q.tx) > Math.abs(q.ty) ? (q.ny < 0 ? 'b' : 'h') : 'v'];
+                const tang = Math.atan2(q.ty, q.tx);
+                // Соседи не похожи (оценка игрока: одинаковые глаза подряд
+                // бросаются в глаза). Уровни: 2 — со всеми соседями различие и
+                // размером, и углом; 1 — только размером (угол «старается»,
+                // размер — обязательно); 0 — похож, это исключение, считается.
+                const cands = [];
+                let found = 0;
+                for (let k = 0; k < self.TRIES && found < self.PICK; k++) {
+                    const L = lerp(big ? P.L : P.Ls, rng());
+                    // Не вдоль кромки, а с наклоном: один уголок острым выходит
+                    // на сцену, другой прячется в рамке. Глаз, лежащий ровно
+                    // вдоль, показывал только круглый бок — гребешок пены.
+                    let rel = (rng() < 0.5 ? -1 : 1) * (P.tilt + rng() * P.jit);
+                    if (rng() < P.diag) rel = (rng() < 0.5 ? -1 : 1) * (0.55 + rng() * 0.45);
+                    const halfH = L * 0.26, off = lerp(P.off, rng()) * halfH;
+                    // центр впереди курсора: глаз накрывает курсор задним краем
+                    const ahead = L * 0.5 * Math.abs(Math.cos(rel)) * (0.55 + rng() * 0.45);
+                    const x = q.x + q.tx * ahead + q.nx * off, y = q.y + q.ty * ahead + q.ny * off;
+                    const eye = { x, y, w: L, r: L * self.IRIS, ang: tang + rel };
+                    if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : self.IRIS_GAP_SMALL)) continue;
+                    if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
+                    let run = 0;
+                    while (run < 300 && covered(eye, cur + run)) run++;
+                    let tier = 2;
+                    for (const n of neighbours(eye)) {
+                        if (!self.sizeDiff(eye, n)) { tier = 0; break; }
+                        if (!self.angDiff(eye, n)) tier = 1;
+                    }
+                    if (tier === 2) found++;
+                    cands.push({ eye, run, tier });
+                }
+                if (!cands.length) { cur += self.GAP_STEP; continue; }
+                // Высший уровень; в нём не самый дальний, а случайный из тех,
+                // кто накрывает не меньше RUN_K от лучшего: «всегда самый
+                // дальний» давал ровное чередование крупный–мелкий–крупный.
+                const bestTier = Math.max(...cands.map(c => c.tier));
+                const top = cands.filter(c => c.tier === bestTier);
+                const maxRun = Math.max(...top.map(c => c.run));
+                const pool = top.filter(c => c.run >= maxRun * self.RUN_K);
+                const best = pool[Math.floor(rng() * pool.length)].eye;
+                if (bestTier === 0) { self._alike++; self._alikeAt.push([Math.round(best.x), Math.round(best.y)]); }
+                put(best);
+                chain.push(best);
+                if (guard % 8 === 0) yield;
             }
-            if (!best) { cur += this.GAP_STEP; continue; }
-            if (bestTier === 0) { this._alike++; this._alikeAt.push([Math.round(best.x), Math.round(best.y)]); }
-            put(best);
-            chain.push(best);
-            recent.push(best);
-            if (recent.length > 6) recent.shift();
-            // курсор — на первую точку, которую не накрыл никто из последних
-            while (cur < N && recent.some(e => covered(e, cur))) cur++;
-            if (guard % 8 === 0) yield;
         }
+        yield* walk(true);
+        yield* walk(false);
 
         // Мелкие в глубине рамки: радужка целиком в рамке.
         const F = this.FILL;
@@ -320,6 +336,7 @@ const EnvyEyes = {
     // Различие соседей: длины — не ближе SIZE_K раз, углы (миндаль
     // симметричен, сравнение по модулю π) — не ближе ANG_K.
     SIZE_K: 1.3,
+    NEAR_K: 0.5,
     ANG_K: 0.35,
     sizeDiff(a, b) { return Math.max(a.w, b.w) / Math.min(a.w, b.w) >= this.SIZE_K; },
     angDiff(a, b) {
