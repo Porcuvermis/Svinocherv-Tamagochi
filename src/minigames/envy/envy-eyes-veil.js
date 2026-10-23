@@ -198,6 +198,9 @@ Object.assign(EnvyEyes, {
         const time = (e) => {
             e.du = this.BLINK[0] + rng() * (this.BLINK[1] - this.BLINK[0]) + Math.min(0.12, e.w / 2500);
             e.d = rng() * (1 - e.du);
+            // свой размах перелёта и своя сторона взгляда
+            e.over = 0.9 + rng() * 0.8;
+            e.look = (rng() < 0.5 ? -1 : 1) * (0.5 + rng() * 0.5);
         };
         for (const e of frame) time(e);
         for (const e of cross) time(e);
@@ -207,25 +210,48 @@ Object.assign(EnvyEyes, {
 
     // ---------- КАДР ----------
     ease(t) { return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); },
-    // Раскрытие глаза на доле хода p: своя задержка, плавный ход.
-    openAt(e, p) { return this.ease((p - e.d) / e.du); },
+    clamp01(t) { return t < 0 ? 0 : t > 1 ? 1 : t; },
+
+    // ---------- ДВИЖЕНИЕ ВЕК ----------
+    // Не ровный ход, а приёмы анимации (живее и плавнее):
+    //   * открытие — с перелётом: веки распахиваются чуть шире нормы и
+    //     мягко оседают (ease-out-back, размах у каждого глаза свой — over);
+    //   * закрытие — с замахом: глаз сперва чуть расширяется, потом веки
+    //     разгоняются и схлопываются (ease-in-back) — моргание, а не
+    //     гаснущая лампа;
+    //   * вторичное движение — взгляд: открываясь, зрачок сдвинут вдоль
+    //     глаза и доводится в центр, закрываясь — уводится в сторону (look);
+    //   * у каждого глаза своя длительность и задержка (prepareGen).
+    // К концу хода всё ровно в покое (o = 1 или 0, зрачок в центре):
+    // открытый покров без шва подменяется рамкой окна.
+    up(e, p) {
+        const t = this.clamp01((p - e.d) / e.du), u = t - 1, c = 1.1 * e.over;
+        const o = t <= 0 ? 0 : t >= 1 ? 1 : 1 + (c + 1) * u * u * u + c * u * u;
+        return { o, lk: e.look * 0.09 * (1 - t) * (1 - t) * (t > 0 ? 1 : 0) };
+    },
+    down(e, p) {
+        const t = this.clamp01((p - e.d) / e.du), c = 0.7 * e.over;
+        const o = t <= 0 ? 1 : t >= 1 ? 0 : 1 - ((c + 1) * t * t * t - c * t * t);
+        return { o, lk: -e.look * 0.06 * t };
+    },
 
     // Раскрытие каждой группы на ходе mode, доле p. f — глаза рамки, m —
     // середина (функция от глаза: пачки нажатий).
     levels(mode, p) {
-        const up = (e) => this.openAt(e, p), down = (e) => 1 - this.openAt(e, p);
+        const up = (e) => this.up(e, p), down = (e) => this.down(e, p);
+        const ONE = () => 1, NONE = () => 0;
         const k = this._knocks || 0;
         switch (mode) {
             case 'cover':  return { f: up, m: up };
-            case 'reveal': return { f: () => 1, m: down };
-            case 'close':  return { f: () => 1, m: up };
+            case 'reveal': return { f: ONE, m: down };
+            case 'close':  return { f: ONE, m: up };
             case 'clear':  return { f: down, m: down };
             // нажатия: рамку на покрове не рисуем — под ним настоящая
-            case 'burst':  return { f: () => 0, m: (e) => e.batch < k - 1 ? 1 : e.batch === k - 1 ? up(e) : 0 };
-            case 'pop':    return { f: () => 0, m: (e) => e.batch < k ? down(e) : 0 };
-            case 'finish': return { f: () => 1, m: (e) => e.batch < k ? 1 : up(e) };
+            case 'burst':  return { f: NONE, m: (e) => e.batch < k - 1 ? 1 : e.batch === k - 1 ? up(e) : 0 };
+            case 'pop':    return { f: NONE, m: (e) => e.batch < k ? down(e) : 0 };
+            case 'finish': return { f: ONE, m: (e) => e.batch < k ? 1 : up(e) };
         }
-        return { f: () => 1, m: () => 1 };
+        return { f: ONE, m: ONE };
     },
 
     veilStart(ctx, mode) {
@@ -279,12 +305,16 @@ Object.assign(EnvyEyes, {
     // Сначала все тела, потом все радужки (как у рамки): чужая радужка под
     // веком не пропадает. Радужка обрезается своими веками, пока глаз
     // открыт не настолько, чтобы она помещалась целиком.
+    // Состояние глаза — число (раскрытие) или { o, lk }: lk — сдвиг зрачка
+    // вдоль глаза в долях длины (взгляд).
     drawOpen(ctx, list, cross) {
         const P = this.pal();
+        const st = (s) => typeof s === 'number' ? { o: s, lk: 0 } : s;
         ctx.fillStyle = P.base;
         ctx.strokeStyle = P.base;
         ctx.lineWidth = 1;
-        for (const [e, o] of list) {
+        for (const [e, s] of list) {
+            const o = st(s).o;
             if (o < 0.02) continue;
             ctx.save();
             ctx.translate(e.x, e.y);
@@ -295,16 +325,18 @@ Object.assign(EnvyEyes, {
             ctx.restore();
         }
         ctx.fillStyle = P.iris;
-        for (const [e, o] of list.concat(cross)) {
+        for (const [e, s] of list.concat(cross)) {
+            const { o, lk } = st(s);
             if (!e.r || o < 0.02) continue;
-            if (o > 0.85) { ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill(); continue; }
+            // открыт и смотрит прямо — радужка целиком в веках, без обрезки
+            if (o > 0.85 && Math.abs(lk) < 0.005) { ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill(); continue; }
             ctx.save();
             ctx.translate(e.x, e.y);
             ctx.rotate(e.ang);
             this.almond(ctx, e.w, o);
             ctx.clip();
             ctx.beginPath();
-            ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+            ctx.arc(lk * e.w, 0, e.r, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
         }
