@@ -48,8 +48,16 @@ const EnvyEyes = {
     // KEEP_PAD. Поменял шкалу там — поменяй и здесь.
     KEEP: [{ x0: 27.3, y0: 764, x1: 362.7, y1: 782 }],
     KEEP_PAD: 5,
-    // Чёрные наплывы по шву рамки и сцены: шаг, длины, сдвиг в полувысотах.
-    SEAM: { step: [12, 22], L: [26, 46], off: [-0.3, 0.8] },
+    // Неровность края — не наплывы без зрачков (выходила искусственная
+    // бугристость пены, оценка игрока), а несколько крупных глаз, поставленных
+    // руками: они заходят на сцену и ломают ровную кромку. Ставятся первыми,
+    // цепочка обходит их радужки. x, y — центр, L — длина, ang — угол.
+    ACCENTS: [
+        { x: 118, y: 50,  L: 96, ang: 0.38 },
+        { x: 376, y: 262, L: 86, ang: 1.95 },
+        { x: 14,  y: 512, L: 90, ang: 1.15 },
+        { x: 292, y: 806, L: 94, ang: -0.32 }
+    ],
     // Мелкие глаза в чёрных просветах рамки — после цепочки.
     FILL: { tries: 250, L: [20, 28] },
     IRIS: 0.16,       // радиус радужки в долях длины глаза (рисунок игрока)
@@ -116,6 +124,14 @@ const EnvyEyes = {
         };
         const lerp = (a, t) => a[0] + (a[1] - a[0]) * t;
         for (const e of this.crossEyes()) put(e);
+        let reach = 0;
+        for (const A of this.ACCENTS) {
+            const eye = { x: A.x, y: A.y, w: A.L, r: A.L * this.IRIS, ang: A.ang };
+            if (this.hitsKeep(eye.x, eye.y, eye.w, eye.ang)) continue;
+            eyes.push(eye);
+            put(eye);
+            reach = Math.max(reach, this.intoScene(eye));
+        }
 
         // Стороны: начало, направление вдоль, нормаль В СЦЕНУ, длина пути.
         const I = this.inner();
@@ -125,7 +141,6 @@ const EnvyEyes = {
             { k: 'h', x: STAGE_W, y: I.y1, ux: -1, uy: 0, nx: 0, ny: -1, len: STAGE_W },
             { k: 'v', x: I.x0, y: I.y1 - 14, ux: 0, uy: -1, nx: 1, ny: 0, len: I.y1 - I.y0 - 28 }
         ];
-        let reach = 0;
         for (const S of sides) {
             const P = this.SIDES[S.k], tang = Math.atan2(S.uy, S.ux);
             let s = rng() * 10, prevL = 0;
@@ -155,24 +170,6 @@ const EnvyEyes = {
             }
             yield;
         }
-
-        // Шов: ровная кромка сцены не должна читаться между глазами. Вдоль
-        // неё — чёрные миндали без радужки (глаза, закрытые соседями), центр
-        // то в рамке, то на сцене: край массы становится бугристым.
-        const SM = this.SEAM;
-        for (const S of sides) {
-            const tang = Math.atan2(S.uy, S.ux);
-            for (let s = -6; s < S.len + 6; s += lerp(SM.step, rng())) {
-                const L = lerp(SM.L, rng()), halfH = L * 0.26;
-                const off = lerp(SM.off, rng()) * halfH;
-                const lump = { x: S.x + S.ux * s + S.nx * off, y: S.y + S.uy * s + S.ny * off,
-                               w: L, r: 0, ang: tang + (rng() - 0.5) * 0.7 };
-                if (!this.pushOut(lump, S, halfH * 2)) continue;
-                eyes.unshift(lump);
-                reach = Math.max(reach, off + halfH * 1.3);
-            }
-        }
-        yield;
 
         // Мелкие в просветах: радужка целиком в рамке.
         const F = this.FILL;
@@ -228,6 +225,18 @@ const EnvyEyes = {
             e.x -= S.nx * 2; e.y -= S.ny * 2;
         }
         return false;
+    },
+
+    // Насколько глубоко миндаль заходит в сцену (по эллипсу).
+    intoScene(e) {
+        const I = this.inner(), a = e.w / 2, b = e.w * 0.27, c = Math.cos(e.ang), sn = Math.sin(e.ang);
+        let m = 0;
+        for (let i = 0; i < 24; i++) {
+            const t = i / 24 * Math.PI * 2, ex = Math.cos(t) * a, ey = Math.sin(t) * b;
+            const px = e.x + ex * c - ey * sn, py = e.y + ex * sn + ey * c;
+            m = Math.max(m, Math.min(px - I.x0, I.x1 - px, py - I.y0, I.y1 - py));
+        }
+        return m;
     },
 
     tangent(x, y) {
