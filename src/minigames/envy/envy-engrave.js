@@ -170,9 +170,17 @@ Object.assign(ENVY_IMAGE_POOL, {
                     float broad = 0.5 + 0.5 * sin(v * 0.22);
                     vec3 metal = uGreen * (0.30 + 0.22 * broad)
                                + mix(uGreen, vec3(1.0), uWhite) * glow * uGain;
-                    vec3 col = metal * foil;
-                    // подсветка волной (правильный / неправильный)
-                    col += uTint * (0.35 + 0.65 * foil);
+                    // Подсветка волной (правильный / неправильный). Тон волны
+                    // НЕ прибавляется к зелёной фольге, а вытесняет её: красный
+                    // поверх зелёного давал грязно-коричневый (оценка игрока).
+                    // Линия берёт цвет волны при своей яркости и блеске,
+                    // доля вытеснения — сила волны, поэтому к краю волны
+                    // переход мягкий. Чёрная основа светится тоном поверх.
+                    float tk = clamp(max(uTint.r, max(uTint.g, uTint.b)) * 1.15, 0.0, 1.0);
+                    vec3 hue = uTint / max(max(uTint.r, max(uTint.g, uTint.b)), 0.001);
+                    float lum = dot(metal, vec3(0.3, 0.59, 0.11));
+                    vec3 foilCol = mix(metal, hue * (lum * 1.6 + 0.55), tk);
+                    vec3 col = foilCol * foil + hue * tk * 0.32 * (1.0 - foil);
                     gl_FragColor = vec4(col, 1.0);
                 }
             `,
