@@ -17,7 +17,10 @@
 // Свой холст видеокарты лежит внутри покрова поверх его 2D-холста; щели —
 // отдельный слой цвета глубины кучи, его прозрачность меняет видеокарта.
 Object.assign(GreedCoins, {
-    FLOW: { cover: 900, reveal: 800, close: 800, clear: 900 },
+    // Поток вспышек — как на показе (FULL_DEMO.flow). Сжатый до 0,9 с (была
+    // такая версия) монеты вспыхивали и проступали почти разом — игрок увидел
+    // «чешую» вместо отработанного перехода.
+    FLOW_MS: 2200,
 
     // Монеты сцены: обычная куча, но только над сценой и не в кресте —
     // на стоящем покрове крест должен читаться, его зона — отмена входа.
@@ -69,12 +72,13 @@ Object.assign(GreedCoins, {
         // общий порядок рисования — по слоям: монеты сцены и рамки вперемешку
         const all = rim.map(c => Object.assign(c, { inner: false })).concat(inner.map(c => Object.assign(c, { inner: true })))
             .sort((a, b) => a.layer - b.layer);
-        const F = this.FLIP, run = F.toPeak + F.fromPeak, ms = {};
-        const plan = (mode, list, seed) => { ms[mode] = this.flowPlan(list, this.FLOW[mode], 'd_' + mode, seed) + run; };
-        plan('cover', all, 11); yield;
-        plan('reveal', inner, 12); yield;
-        plan('close', inner, 13); yield;
-        plan('clear', all, 14); yield;
+        // ОДНО расписание на все ходы — показа: рамка и сцена одна куча,
+        // появляются вместе. Уходящие ходы — оно же задом наперёд; в reveal
+        // и close двигаются только монеты сцены, рамка стоит.
+        const F = this.FLIP, run = F.toPeak + F.fromPeak;
+        const last = this.flowPlan(all, this.FLOW_MS, 'd', 99);
+        yield;
+        const total = last + run, ms = { cover: total, reveal: total, close: total, clear: total };
         this._veil = { all, ms };
     },
 
@@ -84,7 +88,8 @@ Object.assign(GreedCoins, {
         const A = this.loadAtlas();
         if (!A.ready || typeof MgVeil === 'undefined' || !MgVeil.el) return null;
         const gap = document.createElement('div');
-        Object.assign(gap.style, { position: 'absolute', inset: '0', background: PALETTE.greedCoin.gap, opacity: '0', pointerEvents: 'none' });
+        // фон показа: холст там лежал на тёмном фоне холстов игры (style.css, --bg-color)
+        Object.assign(gap.style, { position: 'absolute', inset: '0', background: 'var(--bg-color)', opacity: '0', pointerEvents: 'none' });
         const cv = document.createElement('canvas'); cv.width = this.W; cv.height = this.H;
         const B = this.batchRenderer(cv, A.fa, A.fn, A.alb, A.nor);
         if (!B) return null;
@@ -122,29 +127,35 @@ Object.assign(GreedCoins, {
         if (!V) return;
         const F = this.FLIP, run = F.toPeak + F.fromPeak, total = this._veil.ms[mode], t = p * total;
         const into = mode === 'cover' || mode === 'close', anim = (c) => mode === 'cover' || mode === 'clear' || c.inner;
-        const key = 'd_' + mode, last = total - run;
+        const key = 'd', last = total - run;
         V.B.begin(this.followTilt());
+        let shown = 0, moving = 0;
         for (const c of this._veil.all) {
             if (!anim(c)) { V.B.add(c, this.SETTLED(c)); continue; }
+            moving++;
             let s;
             const quiet = c[key + 'Q'];
             if (into) {
                 const ti = t - c[key];
                 if (ti < 0) continue;
+                shown++;
                 c.quiet = quiet;
                 s = ti < run ? this.flipState(c, ti, 'in') : this.SETTLED(c);
             } else {
                 const to = t - (last - c[key]);
                 if (to >= run) continue;
+                shown++;
                 c.outC.quiet = quiet;
                 s = to < 0 ? this.SETTLED(c) : this.flipState(c.outC, to, 'out');
             }
             V.B.add(c, s);
         }
         V.B.flush();
-        // щели: проявляются вместе с монетами, уходят вместе с ними
-        const sm = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
-        V.gap.style.opacity = (into ? sm(0.15, 0.65, p) : 1 - sm(0.35, 0.85, p)).toFixed(3);
+        this._shown = moving ? shown / moving : 1;
+        // Фон под монетами — как на показе: на входящих ходах тёмный с первого
+        // кадра (на нём видны только искры и вспышки); на уходящих редеет
+        // вместе с монетами — доля ещё не ушедших, втрое быстрее.
+        V.gap.style.opacity = into ? '1' : Math.min(1, 3 * this._shown).toFixed(3);
     },
 
     // Покров стоит, пока игра дозревает: всё на месте.
