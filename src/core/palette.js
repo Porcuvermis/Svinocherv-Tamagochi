@@ -933,7 +933,9 @@ const PALETTE = {
     // уходит в синеву, свет в белое). Запекается в tools/coin-bake.html.
     greedCoin: {
         gold:   { deep: '#4f3008', lo: '#91600f', 500: '#cc9422', hi: '#f0cf72', glint: '#fff4d2' },
-        silver: { deep: '#2f383e', lo: '#5f6b72', 500: '#9aa5ab', hi: '#d5dde0', glint: '#ffffff' }
+        silver: { deep: '#2f383e', lo: '#5f6b72', 500: '#9aa5ab', hi: '#d5dde0', glint: '#ffffff' },
+        // щели между монетами рамки и покрова — глубина кучи, почти без света
+        gap: '#24170a'
     },
 
     // ---------- БЕЛОК ГЛАЗА ----------

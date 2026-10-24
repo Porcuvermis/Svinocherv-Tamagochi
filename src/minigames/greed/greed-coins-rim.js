@@ -83,24 +83,46 @@ Object.assign(GreedCoins, {
         const o = this.CROSS_GAP + r * (0.86 + rng() * 0.16);
         return { x: C.x + dx * u - dy * side * o, y: C.y + dy * u + dx * side * o };
     },
+    // Залить фон рамки текущим цветом: всё вне сцены (с заходом OVERLAP).
     rimBg(g) {
         const I = this.inner(), e = this.OVERLAP;
+        g.beginPath();
         g.rect(-2, -2, 394, 848);
         if (g.roundRect) g.roundRect(I.x0 + e, I.y0 + e, I.x1 - I.x0 - 2 * e, I.y1 - I.y0 - 2 * e, this.CORNER - e);
         else g.rect(I.x0 + e, I.y0 + e, I.x1 - I.x0 - 2 * e, I.y1 - I.y0 - 2 * e);
+        g.fill('evenodd');
     },
 
-    // ---------- атласы грузятся сразу при подключении файла ----------
+    // ---------- картинки грузятся сразу при подключении файла ----------
+    // атлас поз кучи (вставшие монеты) и плоская монета (монета в повороте)
     atlas: null,
     loadAtlas() {
         if (this.atlas) return this.atlas;
-        const A = this.atlas = { ready: false, alb: new Image(), nor: new Image(), wait: [] };
+        const A = this.atlas = { ready: false, alb: new Image(), nor: new Image(), fa: new Image(), fn: new Image(), wait: [] };
         let n = 0;
-        const done = () => { if (++n === 2) { A.ready = true; A.wait.splice(0).forEach(f => f()); } };
-        A.alb.onload = A.nor.onload = done;
-        A.alb.src = 'src/minigames/greed/coins-albedo.png';
-        A.nor.src = 'src/minigames/greed/coins-normal.png';
+        const done = () => { if (++n === 4) { A.ready = true; A.wait.splice(0).forEach(f => f()); } };
+        const d = 'src/minigames/greed/';
+        [['alb', 'coins-albedo'], ['nor', 'coins-normal'], ['fa', 'coin-flat-albedo'], ['fn', 'coin-flat-normal']].forEach(([k, f]) => {
+            A[k].onload = done; A[k].src = d + f + '.png';
+        });
         return A;
+    },
+
+    // Слои раскладки → монеты для пакетного рисовальщика (greed-coins-batch.js).
+    // Порядок — по слоям, как раскладка их рисует.
+    coinsOf(layers) {
+        const D = Math.PI / 180, P = this.poses(), out = [];
+        layers.forEach((L, li) => L.forEach(c => out.push({
+            x: c.x, y: c.y, kind: c.kind, layer: li, rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao,
+            pose: P[c.pose].n, roll: P[c.pose].roll * D, ci: this.KINDS.indexOf(c.kind) * P.length + c.pose,
+            side: ((c.x * 7 + c.y * 13) % 100) / 100
+        })));
+        return out;
+    },
+    rimCoins() {
+        if (!this._rimCoins) this._rimCoins = this.coinsOf(this.layout(this.SEED + 1,
+            (x, y, r, rng, L) => this.rimKeep(x, y, r, rng, L), { sample: (rng, r) => this.crossSample(rng, r) }));
+        return this._rimCoins;
     },
 
     draw(ctx, scale) { for (const _ of this.drawGen(ctx, scale)) { /* до конца */ } },
@@ -109,27 +131,29 @@ Object.assign(GreedCoins, {
     // монет, а монеты дорисует mountLive, когда атласы придут.
     *drawGen(ctx) {
         const A = this.loadAtlas();
-        if (!A.ready) {
-            ctx.save(); ctx.fillStyle = this.bg; ctx.beginPath(); this.rimBg(ctx); ctx.fill('evenodd'); ctx.restore();
-            return;
-        }
+        ctx.save(); ctx.fillStyle = PALETTE.greedCoin.gap; this.rimBg(ctx); ctx.restore();
+        if (!A.ready) return;
         yield* this.lightRim();
-        ctx.drawImage(this._glCv, 0, 0, 390, 844);
+        if (this._rimDraw) ctx.drawImage(this._glCv, 0, 0, 390, 844);
     },
+    // Рамка рисуется ТЕМ ЖЕ пакетным рисовальщиком, что и монеты покрова
+    // (вставшие — позами из атласа): покров уходит, а под ним те же монеты
+    // в том же свете. Прежний рисовальщик кучи (lighter) давал другой свет —
+    // на стыке с движением полотно менялось рывком (игрок).
     *lightRim() {
         if (this._rimDraw) return;
         const A = this.loadAtlas();
-        const pile = yield* this.pileGen(A.alb, A.nor, {
-            seed: this.SEED + 1, keep: (x, y, r, rng, L) => this.rimKeep(x, y, r, rng, L), bg: (g) => this.rimBg(g),
-            zone: { sample: (rng, r) => this.crossSample(rng, r) }
-        });
+        const coins = this.rimCoins();
         yield;
         const cv = document.createElement('canvas'); cv.width = this.W; cv.height = this.H;
         this._glCv = cv;
-        this._rimDraw = this.lighter(cv, pile);
-        this._tilt = { x: 0, y: 0 };
-        if (this._rimDraw) this._rimDraw(this._tilt);
+        const B = this.batchRenderer(cv, A.fa, A.fn, A.alb, A.nor);
+        if (!B) return;
+        this._tilt = this._tilt || { x: 0, y: 0 };
+        this._rimDraw = (t) => { B.begin(t); for (const c of coins) B.add(c, this.SETTLED(c)); B.flush(); };
+        this._rimDraw(this._tilt);
     },
+    SETTLED(c) { return { n: c.pose, m: 1, flash: 0, settled: true }; },
 
     // ---------- ЖИВОЙ БЛЕСК В ПОЛОСАХ ----------
     mountLive(rimEl) {
@@ -145,13 +169,20 @@ Object.assign(GreedCoins, {
             return;
         }
         const strips = Array.from(rimEl.querySelectorAll('canvas')).map(c => ({
-            c, g: c.getContext('2d'),
+            c, g: c.getContext('2d'), left: parseFloat(c.style.left), top: parseFloat(c.style.top),
             sx: parseFloat(c.style.left) * 2, sy: parseFloat(c.style.top) * 2,
             sw: parseFloat(c.style.width) * 2, sh: parseFloat(c.style.height) * 2
         }));
         const paint = () => {
             this._rimDraw(this._tilt);
-            for (const s of strips) { s.g.clearRect(0, 0, s.c.width, s.c.height); s.g.drawImage(this._glCv, s.sx, s.sy, s.sw, s.sh, 0, 0, s.c.width, s.c.height); }
+            for (const s of strips) {
+                const k = s.c.width / (s.sw / 2);
+                s.g.setTransform(1, 0, 0, 1, 0, 0); s.g.clearRect(0, 0, s.c.width, s.c.height);
+                // щели — тёмная глубина кучи, только вне сцены (на сцене — сцена)
+                s.g.setTransform(k, 0, 0, k, -s.left * k, -s.top * k); s.g.fillStyle = PALETTE.greedCoin.gap; this.rimBg(s.g);
+                s.g.setTransform(1, 0, 0, 1, 0, 0);
+                s.g.drawImage(this._glCv, s.sx, s.sy, s.sw, s.sh, 0, 0, s.c.width, s.c.height);
+            }
         };
         paint();
         const run = ++this._liveRun || (this._liveRun = 1);
@@ -161,14 +192,19 @@ Object.assign(GreedCoins, {
             if (this._liveRun !== run || !rimEl.isConnected) return;
             // Окно скрыто — не крутимся каждый кадр, заглядываем изредка.
             if (rimEl.offsetParent === null) { setTimeout(loop, 400); return; }
-            const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
-            const want = T.live ? T : { x: 0, y: 0 };
-            // датчик дрожит: без сглаживания монеты мерцают
-            tilt.x += (want.x - tilt.x) * 0.15; tilt.y += (want.y - tilt.y) * 0.15;
+            this.followTilt();
             if (Math.abs(last.x - tilt.x) > 0.002 || Math.abs(last.y - tilt.y) > 0.002) { last = { x: tilt.x, y: tilt.y }; paint(); }
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
+    },
+    // наклон телефона, сглаженный: датчик дрожит, без сглаживания монеты мерцают
+    followTilt() {
+        const tilt = this._tilt || (this._tilt = { x: 0, y: 0 });
+        const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
+        const want = T.live ? T : { x: 0, y: 0 };
+        tilt.x += (want.x - tilt.x) * 0.15; tilt.y += (want.y - tilt.y) * 0.15;
+        return tilt;
     }
 });
 GreedCoins.loadAtlas();
