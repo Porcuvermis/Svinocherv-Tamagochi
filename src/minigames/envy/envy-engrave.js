@@ -101,14 +101,7 @@ Object.assign(ENVY_IMAGE_POOL, {
             uGlow: { value: new THREE.Vector4(0, 0, this.GLOW.width, 0) },   // центр x, y, ширина, круглость
             uDir: { value: new THREE.Vector2(1, 0) },
             uGain: { value: this.GLOW.gain },
-            uWhite: { value: this.GLOW.white },
-            // Волна-подсказка — тоже общая на всё поле, как блик: центр x, y
-            // и радиусы переднего и заднего края — в долях высоты экрана,
-            // по экранной точке (кольцо одно, где бы ни стояли наклейки).
-            uWave: { value: new THREE.Vector4(0, 0, -1, -1) },
-            uWaveCol: { value: new THREE.Color(0x000000) },
-            uWaveEdge: { value: 0.02 },
-            uScreenH: { value: 844 }
+            uWhite: { value: this.GLOW.white }
         };
         this.glowBase = { x: 0, y: 0 };
         return this.glowU;
@@ -141,8 +134,7 @@ Object.assign(ENVY_IMAGE_POOL, {
                 map: { value: texture },
                 uTint: { value: tint },
                 uGreen: { value: new THREE.Color(P.iris) },
-                uGlow: U.uGlow, uDir: U.uDir, uGain: U.uGain, uWhite: U.uWhite,
-                uWave: U.uWave, uWaveCol: U.uWaveCol, uWaveEdge: U.uWaveEdge, uScreenH: U.uScreenH
+                uGlow: U.uGlow, uDir: U.uDir, uGain: U.uGain, uWhite: U.uWhite
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -162,10 +154,6 @@ Object.assign(ENVY_IMAGE_POOL, {
                 uniform vec2 uDir;
                 uniform float uGain;
                 uniform float uWhite;
-                uniform vec4 uWave;
-                uniform vec3 uWaveCol;
-                uniform float uWaveEdge;
-                uniform float uScreenH;
                 varying vec2 vUv;
                 varying vec2 vWorld;
                 void main() {
@@ -182,37 +170,13 @@ Object.assign(ENVY_IMAGE_POOL, {
                     float broad = 0.5 + 0.5 * sin(v * 0.22);
                     vec3 metal = uGreen * (0.30 + 0.22 * broad)
                                + mix(uGreen, vec3(1.0), uWhite) * glow * uGain;
-                    // Подсветка волной (правильный / неправильный) — свечение
-                    // ВНУТРИ линий фольги, общее на всё поле, как блик: кольцо
-                    // по экранной точке, граница идёт сквозь наклейки, а не
-                    // красит их по одной (так было, когда цвет задавался на
-                    // наклейку). Край кольца узкий (uWaveEdge): мягкий, но
-                    // промежуточных оттенков между зелёным и красным почти
-                    // нет — внутри кольца чисто цвет волны, снаружи чисто
-                    // зелёный (оценка игрока: оранжевый и жёлто-зелёный не
-                    // нужны).
-                    vec2 sp = gl_FragCoord.xy / uScreenH;
-                    float dw = length(sp - uWave.xy), e = uWaveEdge * 0.5;
-                    float amt = (1.0 - smoothstep(uWave.z - e, uWave.z + e, dw))
-                              * smoothstep(uWave.w - e, uWave.w + e, dw);
-                    vec3 wcol = uWaveCol;
-                    // подсказка на удерживаемой наклейке — её собственный тон
-                    float tk = max(uTint.r, max(uTint.g, uTint.b));
-                    if (tk > amt) { amt = tk; wcol = uTint / max(tk, 0.001); }
-                    float same = smoothstep(0.75, 0.92, dot(normalize(wcol + 1e-4), normalize(uGreen)));
-                    float lum = max(metal.r, max(metal.g, metal.b));
-                    // Свой цвет (зелёный) — линии разгораются. Чужой (красный)
-                    // — замещает зелёный, но переход идёт НЕ по прямой между
-                    // цветами (на середине прямой — бурый), а через светлую
-                    // вспышку: зелёный → белёсый блеск → красный. Так край
-                    // кольца снова может быть широким и мягким — свечение
-                    // плавно нарастает и уходит, а бурого нет.
-                    vec3 flash = mix(vec3(1.0), wcol, 0.25) * (lum + 0.35);
-                    vec3 other = wcol * (lum + 0.25);
-                    float a1 = smoothstep(0.0, 0.5, amt), a2 = smoothstep(0.5, 1.0, amt);
-                    vec3 rep = mix(mix(metal, flash, a1), other, a2);
-                    vec3 col = mix(metal, rep, 1.0 - same) + wcol * amt * 0.9 * same;
-                    col *= foil;
+                    vec3 col = metal * foil;
+                    // Подсветка волной (правильный / неправильный) — только
+                    // чёрный материал наклейки, линии рисунка не трогает:
+                    // красный свет поверх зелёных линий смешивался в бурый
+                    // (оценка игрока; пять попыток лечить смесь на самих
+                    // линиях вышли хуже исходной волны).
+                    col += uTint * 0.35 * (1.0 - foil);
                     gl_FragColor = vec4(col, 1.0);
                 }
             `,
