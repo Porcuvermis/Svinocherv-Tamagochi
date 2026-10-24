@@ -78,28 +78,63 @@ Object.assign(ENVY_IMAGE_POOL, {
     },
 
     // ---------- МАТЕРИАЛ НАКЛЕЙКИ ----------
-    // Проблесковая полоса — общая на все наклейки, в мировых единицах сцены:
-    // band.x — где она сейчас (вдоль своей оси), band.y — её полуширина.
-    // Двигает её EnvyMinigame.updateLight (наклон телефона).
-    band: null,
-    // Полоса широкая и мягкая (просьба игрока): узкая и яркая — 2,4 ед. и
-    // почти белая — читалась вспышкой, а не переливом металла.
-    BAND: { width: 6, reach: 16, angle: -0.55, gain: 0.6, white: 0.35 },
+    // Блик — общий на все наклейки, в мировых единицах сцены. Он ГЕНЕРИРУЕТСЯ
+    // заново на каждый стол (замысел игрока: так внешний вид каждый раз
+    // свежий) — от эталона GLOW, на котором и сошлись:
+    //   место  — где угодно, хоть в углу;
+    //   угол   — любой;
+    //   ширина — от узкой до широкой вокруг эталона;
+    //   сила   — вокруг эталона;
+    //   форма  — от длинного прямого луча (0) до круглого свечения (1),
+    //            плавно; чаще промежуточная.
+    // Наклон телефона ведёт блик по полю в обе стороны — до краёв и за них
+    // (EnvyMinigame.updateLight). Раньше полоса ездила только вдоль своей
+    // оси и на треть поля: игрок не мог довести её до края.
+    GLOW: { width: 6, gain: 0.6, white: 0.35, widthK: [0.5, 1.8], gainK: [0.6, 1.5] },
+    glowU: null,
+
+    // Общие формы (uniform) блика — одни объекты на все материалы: меняются
+    // один раз за кадр, а не у сотни наклеек.
+    glowUniforms(THREE) {
+        if (this.glowU) return this.glowU;
+        this.glowU = {
+            uGlow: { value: new THREE.Vector4(0, 0, this.GLOW.width, 0) },   // центр x, y, ширина, круглость
+            uDir: { value: new THREE.Vector2(1, 0) },
+            uGain: { value: this.GLOW.gain },
+            uWhite: { value: this.GLOW.white }
+        };
+        this.glowBase = { x: 0, y: 0 };
+        return this.glowU;
+    },
+
+    // Новый блик на новый стол. halfW, halfH — полуразмеры поля в мире.
+    newGlow(halfW, halfH) {
+        if (!this.glowU) return;
+        const G = this.GLOW, U = this.glowU, R = Math.random;
+        // место — по всему полю и чуть за край
+        this.glowBase = { x: (R() * 2 - 1) * halfW * 1.1, y: (R() * 2 - 1) * halfH * 1.1 };
+        const ang = R() * Math.PI;
+        U.uDir.value.set(Math.cos(ang), Math.sin(ang));
+        // ширина и сила — в разы от эталона, равномерно по логарифму
+        const logK = (k) => Math.exp(Math.log(k[0]) + R() * (Math.log(k[1]) - Math.log(k[0])));
+        U.uGlow.value.z = G.width * logK(G.widthK);
+        U.uGain.value = G.gain * logK(G.gainK);
+        // круглость: среднее двух случайных — чаще середина, края реже
+        U.uGlow.value.w = (R() + R()) / 2;
+        U.uGlow.value.x = this.glowBase.x;
+        U.uGlow.value.y = this.glowBase.y;
+    },
 
     material(THREE, texture) {
-        if (!this.band) this.band = new THREE.Vector2(0, this.BAND.width);
+        const U = this.glowUniforms(THREE);
         const P = (typeof PALETTE !== 'undefined' && PALETTE.envyEyes) ? PALETTE.envyEyes : { iris: '#4cdc3a' };
         const tint = new THREE.Color(0x000000);
-        const a = this.BAND.angle;
         const mat = new THREE.ShaderMaterial({
             uniforms: {
                 map: { value: texture },
                 uTint: { value: tint },
-                uBand: { value: this.band },
-                uDir: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) },
                 uGreen: { value: new THREE.Color(P.iris) },
-                uGain: { value: this.BAND.gain },
-                uWhite: { value: this.BAND.white }
+                uGlow: U.uGlow, uDir: U.uDir, uGain: U.uGain, uWhite: U.uWhite
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -114,9 +149,9 @@ Object.assign(ENVY_IMAGE_POOL, {
             fragmentShader: `
                 uniform sampler2D map;
                 uniform vec3 uTint;
-                uniform vec2 uBand;
-                uniform vec2 uDir;
                 uniform vec3 uGreen;
+                uniform vec4 uGlow;
+                uniform vec2 uDir;
                 uniform float uGain;
                 uniform float uWhite;
                 varying vec2 vUv;
@@ -125,13 +160,16 @@ Object.assign(ENVY_IMAGE_POOL, {
                     vec4 t = texture2D(map, vUv);
                     if (t.a < 0.5) discard;
                     float foil = t.r;
-                    // положение точки поперёк полосы
-                    float s = dot(vWorld, uDir) - uBand.x;
-                    float band = exp(-s * s / (uBand.y * uBand.y));
-                    // широкий мягкий перелив — фольга и вне полосы не плоская краска
-                    float broad = 0.5 + 0.5 * sin(s * 0.22);
+                    // поперёк луча (v) и вдоль него (u); круглость сжимает
+                    // луч вдоль оси: 0 — бесконечная полоса, 1 — круг
+                    vec2 d = vWorld - uGlow.xy;
+                    float v = dot(d, uDir), u = dot(d, vec2(-uDir.y, uDir.x));
+                    float r2 = (v * v + uGlow.w * uGlow.w * u * u) / (uGlow.z * uGlow.z);
+                    float glow = exp(-r2);
+                    // широкий мягкий перелив — фольга и вне блика не плоская краска
+                    float broad = 0.5 + 0.5 * sin(v * 0.22);
                     vec3 metal = uGreen * (0.30 + 0.22 * broad)
-                               + mix(uGreen, vec3(1.0), uWhite) * band * uGain;
+                               + mix(uGreen, vec3(1.0), uWhite) * glow * uGain;
                     vec3 col = metal * foil;
                     // подсветка волной (правильный / неправильный)
                     col += uTint * (0.35 + 0.65 * foil);

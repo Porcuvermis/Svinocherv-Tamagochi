@@ -20,6 +20,7 @@ Object.assign(EnvyMinigame, {
         this.clouds.next = this.buildCloud(-s, this.wrongCountFor(this.fillThirds + 1));
         this.clouds.prev = this.buildCloud(s, this.wrongCountFor(this.fillThirds - 1));
         this.hideNeighbours();
+        this.newGlow();     // после сборки: общие формы блика заводит первый материал
 
         this.camera.position.z = ENVY_SCENE.CAM_DIST;
         this.activeTile = null;
@@ -487,6 +488,7 @@ Object.assign(EnvyMinigame, {
 
         const s = this.layout.spacing;
         this.clouds.cur = keep;
+        this.newGlow();
         this.clouds.next = this.buildCloud(-s, this.wrongCountFor(this.fillThirds + 1));
         this.clouds.prev = this.buildCloud(s, this.wrongCountFor(this.fillThirds - 1));
         this.hideNeighbours();
@@ -593,18 +595,44 @@ Object.assign(EnvyMinigame, {
         }
     },
 
-    // Проблесковая полоса по фольге наклеек (envy-engrave.js) плывёт от
-    // наклона телефона: берётся поворот от позы хвата (Tilt.turn — держишь
-    // как держал, через пару секунд снова ноль), как у эффекта глубины.
-    // Сглаживание своё: turn() отдаётся сырым. Без датчика полоса сама
-    // медленно проходит через стол туда и обратно.
+    // Полуразмеры поля в мировых единицах (на плоскости переднего облака).
+    fieldHalf() {
+        const halfH = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180) * ENVY_SCENE.CAM_DIST;
+        const aspect = this.camera ? this.camera.aspect : 0.46;
+        return { w: halfH * aspect, h: halfH };
+    },
+
+    // Новый стол — новый блик (envy-engrave.js, newGlow).
+    newGlow() {
+        if (!ENVY_IMAGE_POOL.glowU) return;
+        const F = this.fieldHalf();
+        ENVY_IMAGE_POOL.newGlow(F.w, F.h);
+    },
+
+    // Блик по фольге наклеек ведётся наклоном телефона по ОБЕИМ осям поля:
+    // берётся поворот от позы хвата (Tilt.turn — держишь как держал, через
+    // пару секунд снова ноль), как у эффекта глубины. Наклона на ~15°
+    // (TILT_FULL) хватает, чтобы довести блик от его места до края поля и
+    // за край. Сглаживание своё: turn() отдаётся сырым. Без датчика блик
+    // сам медленно гуляет вокруг своего места.
+    TILT_FULL: 0.45,
     updateLight(dt, sec) {
-        const P = ENVY_IMAGE_POOL, B = P.band, C = P.BAND;
-        if (!B) return;
+        const P = ENVY_IMAGE_POOL, U = P.glowU;
+        if (!U) return;
+        const F = this.fieldHalf(), base = P.glowBase, g = U.uGlow.value;
         const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false, x: 0, y: 0 };
-        const t = T.live ? Math.max(-1, Math.min(1, T.x * 0.8 - T.y * 0.6)) : Math.sin(sec * 0.35);
+        let tx, ty;
+        if (T.live) {
+            tx = Math.max(-1.5, Math.min(1.5, T.x / this.TILT_FULL));
+            ty = Math.max(-1.5, Math.min(1.5, T.y / this.TILT_FULL));
+        } else {
+            tx = Math.sin(sec * 0.31) * 0.35;
+            ty = Math.cos(sec * 0.23) * 0.3;
+        }
+        // полный наклон — через всё поле: от места блика до края и дальше
         const k = 1 - Math.exp(-dt / 120);
-        B.x += (t * C.reach - B.x) * k;
+        g.x += (base.x + tx * F.w * 2 - g.x) * k;
+        g.y += (base.y + ty * F.h * 2 - g.y) * k;
     },
 
     // ================= ЦИКЛ И ОТРИСОВКА =================
