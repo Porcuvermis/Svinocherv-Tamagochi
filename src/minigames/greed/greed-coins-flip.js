@@ -18,7 +18,7 @@
 // это проекция диска (эллипс) и поворот нормалей, без перепекания поз.
 // Толщины ребра нет: на ребре монета и так невидима.
 Object.assign(GreedCoins, {
-    FLIP: { toPeak: 520, fromPeak: 680, flash: 70, glow: 0.9, spark: 230, seen: 0.06 },
+    FLIP: { toPeak: 520, fromPeak: 680, flash: 70, glow: 0.9, spark: 260, almond: 0.28, ghost: 0.32 },
 
     // ---------- векторы ----------
     v3: {
@@ -74,14 +74,16 @@ Object.assign(GreedCoins, {
 
     // Состояние монеты в момент t (мс от начала хода). dir: 'in' | 'out'.
     // → { n, m (0 — бесплотна, 1 — настоящая), flash (0..1) }
-    // Когда бесплотная монета впервые видна (её блик ярче F.seen): ищется по
-    // дуге ребро → пик. Тот же расчёт, что у блика в шейдере.
+    // Когда загорается искра: монета ещё почти на ребре, её проекция —
+    // миндалина шириной F.almond от круга. Раньше искра стояла на первом
+    // заметном кадре блика по свету — а это монета уже почти лицом к экрану:
+    // вместо «искра взрывается в миндалину» из пустоты выскакивал круг (игрок).
     firstSeen(c) {
-        const F = this.FLIP, V = this.v3, k = this.LIGHT.shin * 0.35;
+        const F = this.FLIP, V = this.v3;
         const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
         for (let t = 0; t <= F.toPeak; t += 4) {
             const n = V.slerp(c.edge, c.H, ease(t / F.toPeak));
-            if (Math.pow(Math.max(0, V.dot(n, c.H)), k) * 0.5 > F.seen) return t;
+            if (Math.abs(n[2]) > F.almond) return t;
         }
         return F.toPeak;
     },
@@ -115,7 +117,7 @@ Object.assign(GreedCoins, {
         p = Math.max(0, Math.min(1, p));
         const reveal = p <= 0 ? 0 : 1.15 * (1 - Math.pow(1 - p, 3));
         const star = p <= 0 || p >= 1 ? 0 : Math.sin(Math.PI * Math.min(1, p * 1.6)) * (1 - p * 0.6);
-        return { n, m, flash: Math.exp(-dt * dt), reveal: m ? 9 : reveal, star, starP: p };
+        return { n, m, flash: Math.exp(-dt * dt), reveal: m ? 9 : reveal, star, starP: p, ghost: F.ghost };
     },
 
     // ---------- рисование ----------
@@ -123,7 +125,7 @@ Object.assign(GreedCoins, {
     FLIP_FS: [
         'precision mediump float;',
         'uniform sampler2D tA,tN;uniform vec2 C,res;uniform float rad,m,flash,glow,cellX;',
-        'uniform mat3 R,T;uniform float ao,reveal,star,starP;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
+        'uniform mat3 R,T;uniform float ao,reveal,star,starP,gbase;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
         'void main(){',
         ' vec2 q=vec2(gl_FragCoord.x-C.x, gl_FragCoord.y-C.y)/rad;',      // y вверх
         ' vec3 e1=R*vec3(1.,0.,0.), e2=R*vec3(0.,1.,0.);',
@@ -155,7 +157,9 @@ Object.assign(GreedCoins, {
         // цифра и насечка, монета «спойлерила» себя до вспышки (игрок).
         // Рисунок поверхности работает только у настоящей монеты.
         '   vec3 n0=normalize(T*(R*vec3(0.,0.,1.)));float c0=max(dot(n0,hv),0.);',
-        '   vec3 ghost=glint*(sharp*pow(c0,shin)*1.1+pow(c0,shin*.35)*.5);',
+        // gbase — ровное стеклянное свечение бесплотной монеты: после искры
+        // она видна миндалиной ещё до того, как поймает свет
+        '   vec3 ghost=glint*(sharp*pow(c0,shin)*1.1+pow(c0,shin*.35)*.5+gbase);',
         '   float k=A.a;',
         // ao — затенение глубины кучи; бесплотный блик и вспышка от него не гаснут:
         // свет на монету падает и в глубине
@@ -230,6 +234,7 @@ Object.assign(GreedCoins, {
                 const S = this.LIGHT, l = this.v3.norm(S.L);
                 gl.uniform2f(U('C'), x, cv.height - y); gl.uniform1f(U('rad'), rad);
                 gl.uniform1f(U('reveal'), st.reveal === undefined ? 9 : st.reveal);
+                gl.uniform1f(U('gbase'), st.ghost || 0);
                 gl.uniform1f(U('star'), st.star || 0); gl.uniform1f(U('starP'), st.starP || 0);
                 gl.uniform1f(U('m'), st.m); gl.uniform1f(U('flash'), st.flash); gl.uniform1f(U('glow'), this.FLIP.glow);
                 gl.uniform1f(U('cellX'), kind === 'euro' ? 0.5 : 0);
@@ -425,7 +430,7 @@ Object.assign(GreedCoins, {
     // «искра…вспышка» с соседством 2,6 радиуса — 8 с на весь экран.
     // Нижние слои стартуют раньше верхних — куча нарастает; монета не
     // ложится поверх той, что выше неё, уже вставшей.
-    FULL_DEMO: { near: 1.9, layerLag: 220, spread: 800, bright: [-90, 140], hold: 2200, gap: 600 },
+    FULL_DEMO: { near: 1.5, layerLag: 120, spread: 500, bright: [-70, 100], hold: 2200, gap: 600 },
     flipFullDemo(host) {
         if (this._pv) return;
         const root = document.createElement('div');
