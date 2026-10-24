@@ -170,9 +170,27 @@ Object.assign(ENVY_IMAGE_POOL, {
                     float broad = 0.5 + 0.5 * sin(v * 0.22);
                     vec3 metal = uGreen * (0.30 + 0.22 * broad)
                                + mix(uGreen, vec3(1.0), uWhite) * glow * uGain;
-                    vec3 col = metal * foil;
-                    // подсветка волной (правильный / неправильный)
-                    col += uTint * (0.35 + 0.65 * foil);
+                    // Подсветка волной (правильный / неправильный) — только
+                    // по линиям фольги, чёрная основа не красится.
+                    // Свет волны своего цвета, как зелёный, — прибавляется:
+                    // линии разгораются. Чужого (красный) — ЗАМЕЩАЕТ зелёный,
+                    // мягко: чем плотнее волна в этом месте (середина кольца),
+                    // тем больше линия её цвета и меньше зелёного. Смесь
+                    // держит яркость: переход светлый, без бурого и без
+                    // тёмной полосы. Красный при этом тоже светится — не
+                    // тусклее, чем светился бы прибавкой.
+                    float tk = clamp(max(uTint.r, max(uTint.g, uTint.b)) * 1.15, 0.0, 1.0);
+                    vec3 hue = uTint / max(max(uTint.r, max(uTint.g, uTint.b)), 0.001);
+                    float same = smoothstep(0.75, 0.92, dot(normalize(hue), normalize(uGreen)));
+                    float rep = smoothstep(0.03, 0.4, tk) * (1.0 - same);
+                    float lum = max(metal.r, max(metal.g, metal.b));
+                    vec3 lit = hue * (lum + tk * 0.75);
+                    vec3 mixed = mix(metal, lit, rep);
+                    // на середине перехода — ярче: тусклый оранжевый и есть
+                    // бурый, яркий читается свечением
+                    float want = mix(lum, max(lit.r, max(lit.g, lit.b)), rep) * (1.0 + 1.6 * rep * (1.0 - rep));
+                    mixed *= want / max(max(mixed.r, max(mixed.g, mixed.b)), 0.001);
+                    vec3 col = (mixed + hue * tk * 0.9 * same) * foil;
                     gl_FragColor = vec4(col, 1.0);
                 }
             `,
