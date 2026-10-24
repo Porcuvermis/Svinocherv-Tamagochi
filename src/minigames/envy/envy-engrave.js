@@ -168,26 +168,11 @@ Object.assign(ENVY_IMAGE_POOL, {
                     float glow = exp(-r2);
                     // широкий мягкий перелив — фольга и вне блика не плоская краска
                     float broad = 0.5 + 0.5 * sin(v * 0.22);
-                    // Подсветка волной (правильный / неправильный), только по
-                    // линиям фольги. uTint: оттенок волны, длина (макс. канал)
-                    // — сколько её здесь, 0..1.
-                    float tk = clamp(max(uTint.r, max(uTint.g, uTint.b)), 0.0, 1.0);
-                    vec3 hue = uTint / max(tk, 0.001);
-                    float same = smoothstep(0.75, 0.92, dot(normalize(hue), normalize(uGreen)));
-                    // Зелёная волна — линии разгораются (прибавка).
-                    // Красная — ПЕРЕКРАСКА: металл тот же (перелив, блик), но
-                    // его основной цвет — красный вместо зелёного. Смесь
-                    // цветов идёт только в узкой полосе края волны и держит
-                    // яркость: середина перехода — светлая, а не бурая и не
-                    // чёрная (была тёмная полоса между зелёным и красным —
-                    // оценка игрока).
-                    vec3 baseRaw = mix(uGreen, hue, tk * (1.0 - same));
-                    float keep = mix(max(uGreen.r, max(uGreen.g, uGreen.b)), max(hue.r, max(hue.g, hue.b)), tk * (1.0 - same));
-                    vec3 base = baseRaw * keep / max(max(baseRaw.r, max(baseRaw.g, baseRaw.b)), 0.001);
-                    vec3 metal = base * (0.30 + 0.22 * broad)
-                               + mix(base, vec3(1.0), uWhite) * glow * uGain;
-                    metal += hue * tk * 0.9 * same;
+                    vec3 metal = uGreen * (0.30 + 0.22 * broad)
+                               + mix(uGreen, vec3(1.0), uWhite) * glow * uGain;
                     vec3 col = metal * foil;
+                    // подсветка волной (правильный / неправильный)
+                    col += uTint * (0.35 + 0.65 * foil);
                     gl_FragColor = vec4(col, 1.0);
                 }
             `,
