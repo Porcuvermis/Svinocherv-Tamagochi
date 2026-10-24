@@ -48,6 +48,15 @@ const EnvyEyes = {
     // с рамкой почти все выглядели крошечными (оценка игрока).
     ACTIVE_L: [[[60, 82], 0.3], [[82, 112], 0.45], [[112, 140], 0.25]],
     ACTIVE_REACH: 58,        // активным можно заходить на сцену, как индикаторам
+    // Семейства наклона к кромке (rel — наклон, рад; cap — наибольшая длина:
+    // смелый наклон у крупного не помещается на экран).
+    ACTIVE_FAM: [
+        { rel: [0, 0.3], cap: 140 },        // вдоль
+        { rel: [0.45, 0.85], cap: 120 },    // средний
+        { rel: [0.95, 1.35], cap: 95 }      // смелый, почти поперёк
+    ],
+    ACTIVE_NEAR: 0.9,        // «рядом» — центры ближе этого × сумма длин
+    ACTIVE_ANG_K: 0.5,       // рядом стоящие различаются углом хотя бы на ~29°
     ACTIVE_OFF: [-0.6, 0.7],
     ACTIVE_GAP: 2.6,         // зрачки активных — не ближе этого × сумма радиусов
     INV_N: 3,                // обратных на всю рамку
@@ -143,49 +152,56 @@ const EnvyEyes = {
         yield;
 
         // 2. АКТИВНЫЕ
+        // Сравниваются только с активными (и индикаторами, крестиком):
+        // подложка глазом не читается и в правилах не участвует.
         const act = [];
-        const irisOwners = () => act.concat(inds, cross);
+        const owners = () => act.concat(inds, cross);
         const mean = N / this.ACTIVE_N;
-        let pos = rng() * mean;
-        const pickL = () => {
-            let t = rng();
-            for (const [r, w] of this.ACTIVE_L) { if (t < w) return lerp(r, rng()); t -= w; }
-            return lerp(this.ACTIVE_L[1][0], rng());
+        const pickL = (cap) => {
+            let t = rng(), L = null;
+            for (const [r, w] of this.ACTIVE_L) { if (t < w) { L = lerp(r, rng()); break; } t -= w; }
+            if (L == null) L = lerp(this.ACTIVE_L[1][0], rng());
+            return Math.min(L, cap);
         };
+        // Семейства наклона к кромке: вдоль, средний, смелый (почти поперёк).
+        // Поровну и без двух одинаковых подряд — иначе рамка снова
+        // выстраивалась вдоль линии (оценка игрока).
+        const F = this.ACTIVE_FAM;
+        const fams = [];
+        while (fams.length < this.ACTIVE_N + 4) {
+            const trio = [0, 1, 2].sort(() => rng() - 0.5);
+            if (fams.length && trio[0] === fams[fams.length - 1]) trio.push(trio.shift());
+            fams.push(...trio);
+        }
+        let pos = rng() * mean, slot = 0;
         while (pos < N) {
             const q = at(Math.round(pos)), tang = Math.atan2(q.ty, q.tx);
-            const p1 = act[act.length - 1], p2 = act[act.length - 2];
+            const fam = F[fams[slot++]];
             let best = null, bestScore = -1;
-            for (let k = 0; k < 140; k++) {
-                const L = pickL(), halfH = L * 0.26;
-                const fam = rng();
-                const mag = fam < 0.35 ? rng() * 0.45 : fam < 0.7 ? 0.45 + rng() * 0.5 : 0.95 + rng() * 0.6;
-                const rel = (rng() < 0.5 ? -1 : 1) * mag;
+            for (let k = 0; k < 160; k++) {
+                const L = pickL(fam.cap), halfH = L * 0.26;
+                const rel = (rng() < 0.5 ? -1 : 1) * lerp(fam.rel, rng());
                 const off = lerp(this.ACTIVE_OFF, rng()) * halfH;
                 const slide = (rng() - 0.5) * mean * 0.3;
                 const e = { x: q.x + q.tx * slide + q.nx * off, y: q.y + q.ty * slide + q.ny * off,
-                            w: L, r: L * this.IRIS, ang: tang + rel };
-                // активный виден целиком: за краем экрана он — обрубок
+                            w: L, r: L * this.IRIS, ang: tang + rel, fam: fams[slot - 1] };
+                // Активный виден целиком: за краем экрана он — обрубок.
+                // Вылез — сдвигаем к сцене, пока не поместится (отказ на
+                // этом месте съедал почти все кандидаты, и рамка пустела).
+                for (let d = 0; d < 40 && !this.onScreen(e); d += 2) { e.x += q.nx * 2; e.y += q.ny * 2; }
                 if (!this.onScreen(e) || this.intoScene(e) > this.ACTIVE_REACH || this.hitsKeep(e.x, e.y, L, e.ang)) continue;
                 if (inFan(e.x, e.y) || inds.some(d => this.overlaps(d, e)) || cross.some(c => this.overlaps(c, e))) continue;
-                if (irisOwners().some(o => Math.hypot(o.x - e.x, o.y - e.y) < this.ACTIVE_GAP * (o.r + e.r))) continue;
-                // непохож на соседей по периметру: размер и угол
-                let score = 0;
-                for (const n of [p1, p2]) {
-                    if (!n) { score += 2; continue; }
-                    score += (this.sizeDiff(e, n) ? 1 : 0) + (this.angDiff(e, n) ? 1 : 0);
-                }
-                // крупным — перевес: на экран они встают реже мелких, и без
-                // него рамка снова мельчала
-                score += rng() * 0.5 + L / 100;
+                if (owners().some(o => Math.hypot(o.x - e.x, o.y - e.y) < this.ACTIVE_GAP * (o.r + e.r))) continue;
+                // Рядом стоящие — непохожи И размером, И углом. Это условие,
+                // а не балл: баллом его перебивал перевес крупным, и наверху
+                // встали два одинаковых глаза рядом.
+                const near = owners().filter(o => Math.hypot(o.x - e.x, o.y - e.y) < this.ACTIVE_NEAR * (o.w + e.w));
+                if (near.some(o => !this.sizeDiff(e, o) || !this.angDiffK(e, o, this.ACTIVE_ANG_K))) continue;
+                // крупным — перевес: на экран они встают реже мелких
+                const score = rng() * 0.5 + L / 100;
                 if (score > bestScore) { best = e; bestScore = score; }
             }
-            if (best) {
-                act.push(best);
-                if (p1 && !this.sizeDiff(best, p1) && !this.angDiff(best, p1)) {
-                    this._alike++; this._alikeAt.push([Math.round(best.x), Math.round(best.y)]);
-                }
-            }
+            if (best) act.push(best);   // не нашлось непохожего — место пустует
             pos += mean * (1 + (rng() - 0.5) * 2 * this.ACTIVE_JIT);
             yield;
         }
@@ -388,6 +404,10 @@ const EnvyEyes = {
     NEAR_K: 0.5,
     ANG_K: 0.35,
     sizeDiff(a, b) { return Math.max(a.w, b.w) / Math.min(a.w, b.w) >= this.SIZE_K; },
+    angDiffK(a, b, k) {
+        let d = Math.abs(a.ang - b.ang) % Math.PI;
+        return Math.min(d, Math.PI - d) >= k;
+    },
     angDiff(a, b) {
         let d = Math.abs(a.ang - b.ang) % Math.PI;
         return Math.min(d, Math.PI - d) >= this.ANG_K;
