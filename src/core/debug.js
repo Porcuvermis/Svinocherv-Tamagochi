@@ -59,6 +59,7 @@ const DebugState = {
             <button data-act="feed">Покормить</button>
             <button data-act="room">Комната</button>
             <button data-act="gear">Жетоны</button>
+            <button data-act="coins">Монеты</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -304,6 +305,18 @@ const DebugState = {
         // три осколка = жетон), но копить их ради проверки магазина долго.
         // Выдаётся через Backend, а не записью в состояние: когда появится
         // рогалик, он пойдёт тем же путём.
+        // Куча монет алчности на весь экран — проверка блеска от наклона
+        // телефона, пока шкурка не встала в окно (docs/plan/27-greed-skin.md).
+        // Модуль грузится только здесь: в игре его пока никто не зовёт.
+        if (act === 'coins') {
+            const go = () => GreedCoins.preview(document.getElementById('game-container') || document.body);
+            if (typeof GreedCoins !== 'undefined') { go(); return; }
+            const sc = document.createElement('script');
+            sc.src = 'src/minigames/greed/greed-coins.js?v=' + Date.now();
+            sc.onload = go; document.head.appendChild(sc);
+            return;
+        }
+
         if (act === 'gear') {
             Backend.grantCurrency('wrath_token', 5);
             Backend.grantCurrency('gold', 100);

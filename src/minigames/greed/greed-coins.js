@@ -184,5 +184,49 @@ const GreedCoins = {
             ['diff', 'amb', 'broad', 'sharp', 'shin'].forEach(k => gl.uniform1f(U(k), S[k]));
             gl.drawArrays(gl.TRIANGLES, 0, 3);
         };
+    },
+
+    // ---------- ПРОСМОТР ИЗ 🐞 ----------
+    // Куча на весь холст, блеск — только наклоном телефона (Tilt.turn, как в
+    // зависти). Без датчика — ведёшь пальцем. Закрыть — двойное касание.
+    preview(host) {
+        if (this._pv) return;
+        const root = document.createElement('div');
+        Object.assign(root.style, { position: 'absolute', inset: '0', zIndex: 9999, background: PALETTE.greedCoin.gold.deep, touchAction: 'none' });
+        const cv = document.createElement('canvas'); cv.width = this.W; cv.height = this.H;
+        Object.assign(cv.style, { width: '100%', height: '100%', display: 'block' });
+        root.appendChild(cv); host.appendChild(root);
+        this._pv = root;
+        const load = (u) => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = u; });
+        const dir = 'src/minigames/greed/';
+        let alive = true, lastTap = 0;
+        const close = () => { alive = false; root.remove(); this._pv = null; };
+        Promise.all([load(dir + 'coins-albedo.png'), load(dir + 'coins-normal.png')]).then(([a, n]) => {
+            if (!alive) return;
+            const draw = this.lighter(cv, this.buildPile(a, n));
+            if (!draw) { close(); return; }
+            const tilt = { x: 0, y: 0 }; let finger = null, last = null;
+            const at = (e) => { const r = root.getBoundingClientRect(); return { x: Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width - 0.5) * 2)), y: Math.max(-1, Math.min(1, -((e.clientY - r.top) / r.height - 0.5) * 2)) }; };
+            root.addEventListener('pointerdown', (e) => {
+                const now = performance.now();
+                if (now - lastTap < 350) { close(); return; }
+                lastTap = now; finger = at(e);
+                try { Tilt.ask && Tilt.ask(); } catch (_) {}
+            });
+            root.addEventListener('pointermove', (e) => { if (finger) finger = at(e); });
+            root.addEventListener('pointerup', () => { finger = null; });
+            const loop = () => {
+                if (!alive) return;
+                const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
+                const want = finger || (T.live ? T : { x: 0, y: 0 });
+                // датчик дрожит: без сглаживания монеты мерцают
+                tilt.x += (want.x - tilt.x) * 0.15; tilt.y += (want.y - tilt.y) * 0.15;
+                if (!last || Math.abs(last.x - tilt.x) > 0.002 || Math.abs(last.y - tilt.y) > 0.002) {
+                    last = { x: tilt.x, y: tilt.y }; draw(tilt);
+                }
+                requestAnimationFrame(loop);
+            };
+            loop();
+        });
     }
 };
