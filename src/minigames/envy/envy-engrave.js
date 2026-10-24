@@ -82,7 +82,9 @@ Object.assign(ENVY_IMAGE_POOL, {
     // band.x — где она сейчас (вдоль своей оси), band.y — её полуширина.
     // Двигает её EnvyMinigame.updateLight (наклон телефона).
     band: null,
-    BAND: { width: 2.4, reach: 16, angle: -0.55 },
+    // Полоса широкая и мягкая (просьба игрока): узкая и яркая — 2,4 ед. и
+    // почти белая — читалась вспышкой, а не переливом металла.
+    BAND: { width: 6, reach: 16, angle: -0.55, gain: 0.6, white: 0.35 },
 
     material(THREE, texture) {
         if (!this.band) this.band = new THREE.Vector2(0, this.BAND.width);
@@ -95,7 +97,9 @@ Object.assign(ENVY_IMAGE_POOL, {
                 uTint: { value: tint },
                 uBand: { value: this.band },
                 uDir: { value: new THREE.Vector2(Math.cos(a), Math.sin(a)) },
-                uGreen: { value: new THREE.Color(P.iris) }
+                uGreen: { value: new THREE.Color(P.iris) },
+                uGain: { value: this.BAND.gain },
+                uWhite: { value: this.BAND.white }
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -113,6 +117,8 @@ Object.assign(ENVY_IMAGE_POOL, {
                 uniform vec2 uBand;
                 uniform vec2 uDir;
                 uniform vec3 uGreen;
+                uniform float uGain;
+                uniform float uWhite;
                 varying vec2 vUv;
                 varying vec2 vWorld;
                 void main() {
@@ -125,7 +131,7 @@ Object.assign(ENVY_IMAGE_POOL, {
                     // широкий мягкий перелив — фольга и вне полосы не плоская краска
                     float broad = 0.5 + 0.5 * sin(s * 0.22);
                     vec3 metal = uGreen * (0.30 + 0.22 * broad)
-                               + mix(uGreen, vec3(1.0), 0.6) * band * 1.25;
+                               + mix(uGreen, vec3(1.0), uWhite) * band * uGain;
                     vec3 col = metal * foil;
                     // подсветка волной (правильный / неправильный)
                     col += uTint * (0.35 + 0.65 * foil);
