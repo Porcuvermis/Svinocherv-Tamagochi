@@ -565,19 +565,23 @@ Object.assign(GreedCoins, {
                     stored = 0;
                 }
                 // куча стоит целиком — показываем настоящую кучу с живым блеском
-                // Стык с вставшей кучей — наплывом FADE мс, а не сменой кадра:
-                // два способа рисования совпадают не до пикселя, и мгновенная
-                // смена читалась рывком (игрок). Пока идёт наплыв, рисуются оба.
-                const FADE = 300, sIn = lastIn + run;
-                const fade = Math.max(0, Math.min(1, (t - sIn) / FADE, (outAt - t) / FADE));
-                const settled = fade >= 1;
-                cvPile.style.visibility = fade > 0 ? 'visible' : 'hidden';
-                cvPile.style.opacity = fade;
-                cv.style.visibility = settled ? 'hidden' : 'visible';
-                if (fade > 0) drawPile(tilt);
-                if (settled) { done(); return; }
+                // Вставшая куча рисуется ТЕМ ЖЕ пакетным способом, что и монеты в
+                // движении: никакого стыка. Было: в покое — другой рисовальщик
+                // (lighter по запечённым позам), и при смене освещение всего
+                // полотна менялось рывком — ни полное разрешение, ни наплыв
+                // 0,3 с этого не прятали (игрок).
+                if (!B) {
+                    const settled = t >= lastIn + run && t < outAt;
+                    cvPile.style.visibility = settled ? 'visible' : 'hidden';
+                    cv.style.visibility = settled ? 'hidden' : 'visible';
+                    if (settled) { drawPile(tilt); done(); return; }
+                } else cvPile.style.visibility = 'hidden';
                 const leaving = t >= outAt;
                 if (B) {
+                    // в покое (никто не крутится) — перерисовка только при наклоне
+                    const still = t >= lastIn + run && t < outAt;
+                    if (still && B.last && Math.abs(B.last.x - tilt.x) < 0.002 && Math.abs(B.last.y - tilt.y) < 0.002) { done(); return; }
+                    B.last = still ? { x: tilt.x, y: tilt.y } : null;
                     B.begin(tilt);
                     for (const c of coins) {
                         let s;
