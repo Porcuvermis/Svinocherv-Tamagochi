@@ -25,7 +25,7 @@
 const EnvyEyes = {
     SEED: 4217,
     rim: { side: 16, top: 54 },
-    cross: { x: 358, y: 28, size: 46 },
+    cross: { x: 350, y: 32, size: 46 },
     CORNER: 26,
     // Миндали заходят в сцену не дальше этого: по числу окно нарезает рамку
     // на полосы (reach). Настоящий заход считается раскладкой.
@@ -408,9 +408,12 @@ const EnvyEyes = {
     // r — полуразмер крестика: по нему же держат расстояние чужие зрачки.
     CROSS_W: 68,
     CROSS_R: 10,
+    CROSS_ANG: 0.42,
     crossEyes() {
         const C = this.cross;
-        if (!this._cross) this._cross = [{ x: C.x, y: C.y, w: this.CROSS_W, r: this.CROSS_R, ang: 0, kind: 'x' }];
+        // чуть повёрнут вместе с крестиком — в углу так приятнее (набросок
+        // игрока); крестиком читается и под углом
+        if (!this._cross) this._cross = [{ x: C.x, y: C.y, w: this.CROSS_W, r: this.CROSS_R, ang: this.CROSS_ANG, kind: 'x' }];
         return this._cross;
     },
 
@@ -491,7 +494,6 @@ const EnvyEyes = {
             this.almond(ctx, e.w * 0.9);
             ctx.fillStyle = P.iris;
             ctx.fill();
-            ctx.rotate(-e.ang);
             ctx.strokeStyle = P.base;
             ctx.lineWidth = h * 0.42;
             ctx.lineCap = 'round';
