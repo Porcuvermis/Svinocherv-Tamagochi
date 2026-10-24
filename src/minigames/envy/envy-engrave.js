@@ -168,28 +168,26 @@ Object.assign(ENVY_IMAGE_POOL, {
                     float glow = exp(-r2);
                     // широкий мягкий перелив — фольга и вне блика не плоская краска
                     float broad = 0.5 + 0.5 * sin(v * 0.22);
-                    vec3 metal = uGreen * (0.30 + 0.22 * broad)
-                               + mix(uGreen, vec3(1.0), uWhite) * glow * uGain;
-                    // Подсветка волной (правильный / неправильный) — только
-                    // линии фольги, как световой блик; чёрная основа не красится.
-                    //
-                    // Зелёная волна на зелёной фольге — прибавляется: линии
-                    // разгораются (так и задумано, оценка игрока).
-                    // Красная — не смешивается с зелёным по оттенку (любая
-                    // доля даёт коричневый): зелень гаснет на СЛАБОЙ части
-                    // волны, красный проявляется на СИЛЬНОЙ, между ними линия
-                    // просто темнеет. Переход гладкий по силе волны. Был
-                    // резкий порог — сила волны качается (swing), и на
-                    // затухании наклейка мигала то красным, то зелёным
-                    // полосами, а кольцо волны выходило жёстким.
-                    float tk = clamp(max(uTint.r, max(uTint.g, uTint.b)) * 1.15, 0.0, 1.0);
-                    vec3 hue = uTint / max(max(uTint.r, max(uTint.g, uTint.b)), 0.001);
+                    // Подсветка волной (правильный / неправильный), только по
+                    // линиям фольги. uTint: оттенок волны, длина (макс. канал)
+                    // — сколько её здесь, 0..1.
+                    float tk = clamp(max(uTint.r, max(uTint.g, uTint.b)), 0.0, 1.0);
+                    vec3 hue = uTint / max(tk, 0.001);
                     float same = smoothstep(0.75, 0.92, dot(normalize(hue), normalize(uGreen)));
-                    float lum = dot(metal, vec3(0.3, 0.59, 0.11));
-                    vec3 addCol = metal + hue * tk * 0.9;
-                    vec3 swapCol = metal * (1.0 - smoothstep(0.0, 0.35, tk))
-                                 + hue * (lum * 1.6 + 0.25 + 0.45 * tk) * smoothstep(0.2, 0.9, tk);
-                    vec3 col = mix(swapCol, addCol, same) * foil;
+                    // Зелёная волна — линии разгораются (прибавка).
+                    // Красная — ПЕРЕКРАСКА: металл тот же (перелив, блик), но
+                    // его основной цвет — красный вместо зелёного. Смесь
+                    // цветов идёт только в узкой полосе края волны и держит
+                    // яркость: середина перехода — светлая, а не бурая и не
+                    // чёрная (была тёмная полоса между зелёным и красным —
+                    // оценка игрока).
+                    vec3 baseRaw = mix(uGreen, hue, tk * (1.0 - same));
+                    float keep = mix(max(uGreen.r, max(uGreen.g, uGreen.b)), max(hue.r, max(hue.g, hue.b)), tk * (1.0 - same));
+                    vec3 base = baseRaw * keep / max(max(baseRaw.r, max(baseRaw.g, baseRaw.b)), 0.001);
+                    vec3 metal = base * (0.30 + 0.22 * broad)
+                               + mix(base, vec3(1.0), uWhite) * glow * uGain;
+                    metal += hue * tk * 0.9 * same;
+                    vec3 col = metal * foil;
                     gl_FragColor = vec4(col, 1.0);
                 }
             `,

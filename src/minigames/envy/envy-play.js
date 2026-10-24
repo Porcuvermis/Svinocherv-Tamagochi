@@ -546,10 +546,23 @@ Object.assign(EnvyMinigame, {
                 const dy = t.by - w.y;
                 const dist = Math.hypot(dx, dy);
                 const tau = w.age / 1000 - dist / ENVY_SCENE.WAVE_SPEED;
+
+                // Цвет — не от качания, а ФРОНТОМ (оценка игрока): передний
+                // край волны идёт по всему полю и перекрашивает наклейки,
+                // задний — на WAVE_HOLD_MS позже — возвращает их. Края мягкие
+                // (WAVE_EDGE клеток). Раньше цвет жил огибающей качания и
+                // затухал с расстоянием: красный не доходил до краёв поля,
+                // а на затухании наклейки мигали.
+                const W = ENVY_SCENE.WAVE_EDGE * cell;
+                const front = (w.age / 1000) * ENVY_SCENE.WAVE_SPEED;
+                const back = ((w.age - ENVY_SCENE.WAVE_HOLD_MS) / 1000) * ENVY_SCENE.WAVE_SPEED;
+                const ss = (x) => { const q = Math.max(0, Math.min(1, x)); return q * q * (3 - 2 * q); };
+                const k = ss((front - dist) / W + 0.5) * (1 - ss((back - dist) / W + 0.5));
+                if (k > tint) { tint = k; tintColor = w.color; }
+
                 if (tau <= 0) continue;
 
                 const decay = Math.exp(-tau * 1000 / ENVY_SCENE.WAVE_DECAY_MS);
-                if (decay < 0.008) continue;
 
                 const falloff = 1 / (1 + dist * dist * ENVY_SCENE.WAVE_FALLOFF);
                 const swing = Math.sin(tau * ENVY_SCENE.WAVE_FREQ);
@@ -562,16 +575,6 @@ Object.assign(EnvyMinigame, {
                 rot += (amp / cell) * 0.4;
                 scale += (amp / cell) * 0.06;
 
-                // Подсветка живёт огибающей волны, а не её гребнем: на чистом
-                // гребне цвет мигал слишком коротко, чтобы успеть прочитаться
-                // как ответ «правильный/неправильный». Качания (swing) в цвете
-                // нет — оно двигает наклейку, а в цвете давало рывки четыре
-                // раза в секунду, и на затухании наклейки мигали красным и
-                // зелёным полосами. И фронт нарастает за WAVE_ATTACK_MS, а не
-                // за кадр: иначе кольцо волны выходило жёстким.
-                const attack = 1 - Math.exp(-tau * 1000 / ENVY_SCENE.WAVE_ATTACK_MS);
-                const k = Math.min(1, w.strength * falloff * decay * attack);
-                if (k > tint) { tint = k; tintColor = w.color; }
             }
 
             // Дрожь удерживаемого образа: чем дольше держишь, тем сильнее.
@@ -584,7 +587,7 @@ Object.assign(EnvyMinigame, {
                 // После подсказки образ ещё и держит свой цвет, чтобы не
                 // гадать, что именно ты сейчас додерживаешь.
                 if (t.hinted) {
-                    tint = Math.max(tint, 0.55);
+                    tint = Math.max(tint, 0.9);
                     tintColor = t.kind === 'right' ? this.hintColors.right : this.hintColors.wrong;
                 }
             }
@@ -594,7 +597,7 @@ Object.assign(EnvyMinigame, {
             t.swayRot = rot;
             t.swayScale = scale;
 
-            if (tintColor) t.mat.color.copy(t.baseColor).lerp(tintColor, Math.min(0.85, tint));
+            if (tintColor) t.mat.color.copy(tintColor).multiplyScalar(Math.min(1, tint));
             else if (t.tinted) t.mat.color.copy(t.baseColor);
             t.tinted = !!tintColor;
         }
