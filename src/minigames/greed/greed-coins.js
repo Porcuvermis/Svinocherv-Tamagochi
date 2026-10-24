@@ -57,6 +57,10 @@ const GreedCoins = {
     // ao — светлота слоя (верх кучи светлее низа).
     // only: 'rim' / 'cross' — слой только у рамки (в просмотре кучи его нет).
     LAYERS: [
+        // Дно под крестом рамки: монеты в глубине, почти без света. Без них
+        // пустота креста была ровной чернотой и выглядела искусственно
+        // (игрок). Размер обычный, глубину даёт только темнота.
+        { s: 1.0, gap: 0.5, ao: 0.13, only: 'abyss' },
         // Подсыпка рамки: плотная и тёмная, закрывает щели между монетами.
         // Без неё щелей в рамке было столько, что пустота-крестик терялась
         // среди них.
@@ -82,12 +86,16 @@ const GreedCoins = {
     // всему экрану редко попадали между лучами, и крест то был, то нет.
     layout(seed, keep, zone) {
         let st = (seed || this.SEED) >>> 0;
-        const rng = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+        const mkRng = (v) => () => { v = (v * 1664525 + 1013904223) >>> 0; return v / 4294967296; };
+        const main = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
         const P = this.poses().length, W = this.W, H = this.H;
         return this.LAYERS.map((L) => {
             if (L.only && !keep) return [];
+            // Дно креста — на своём зерне: слой добавили поверх принятой
+            // игроком раскладки, и общий поток случайностей не должен сдвинуться.
+            const rng = L.only === 'abyss' ? mkRng(((seed || this.SEED) + 7919) >>> 0) : main;
             const pts = [], cell = 40 * L.s, grid = {}, minD = 2 * this.RAD * L.s * L.gap;
-            const Z = L.only === 'cross' && zone;
+            const Z = (L.only === 'cross' || L.only === 'abyss') && zone;
             for (let t = 0; t < 30000; t++) {
                 let x, y;
                 if (Z) { const q = Z.sample(rng, this.RAD * L.s / 2); x = q.x * 2; y = q.y * 2; }

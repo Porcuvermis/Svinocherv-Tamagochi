@@ -55,7 +55,9 @@ Object.assign(GreedCoins, {
         const nearCross = Math.hypot(x - this.cross.x, y - this.cross.y) < this.cross.size * this.CROSS_ZONE;
         // Но не глубже радиуса: глубже — бугор на сцену (забраковал игрок).
         if (this.edgeDist(x, y) < -r * (nearCross ? 1 : this.HANG)) return false;
-        if (L && L.only === 'cross' && !nearCross) return false;
+        if (L && (L.only === 'cross' || L.only === 'abyss') && !nearCross) return false;
+        // дно лежит и под самим крестом — его и видно в пустоте
+        if (L && L.only === 'abyss') return true;
         // запас у каждой монеты свой — край пустоты неровный, как у упавших
         return this.crossDist(x, y) > this.CROSS_GAP + r * (0.85 + rng() * 0.15);
     },
