@@ -41,10 +41,13 @@ const EnvyEyes = {
     // Раньше вся рамка была из активных: чтобы закрыть кромку, их ставили
     // плотно, и рамка читалась узором одинаковых глаз.
     BASE: { L: [34, 130], off: [-0.9, 0.5], jit: 0.7 },
-    ACTIVE_N: 15,            // сколько активных на периметр
+    ACTIVE_N: 11,            // сколько активных на периметр
     ACTIVE_JIT: 0.35,        // разброс шага между ними (доля среднего)
-    // длины активных: мелкие / средние / крупные и их доли
-    ACTIVE_L: [[[28, 46], 0.25], [[46, 76], 0.45], [[76, 116], 0.3]],
+    // Длины активных — от эталона, глаза-индикатора (IND_L = 100):
+    // ступень ниже / вровень / ступень выше и их доли. Были 28–116 — рядом
+    // с рамкой почти все выглядели крошечными (оценка игрока).
+    ACTIVE_L: [[[60, 82], 0.3], [[82, 112], 0.45], [[112, 140], 0.25]],
+    ACTIVE_REACH: 58,        // активным можно заходить на сцену, как индикаторам
     ACTIVE_OFF: [-0.6, 0.7],
     ACTIVE_GAP: 2.6,         // зрачки активных — не ближе этого × сумма радиусов
     INV_N: 3,                // обратных на всю рамку
@@ -153,7 +156,7 @@ const EnvyEyes = {
             const q = at(Math.round(pos)), tang = Math.atan2(q.ty, q.tx);
             const p1 = act[act.length - 1], p2 = act[act.length - 2];
             let best = null, bestScore = -1;
-            for (let k = 0; k < 50; k++) {
+            for (let k = 0; k < 140; k++) {
                 const L = pickL(), halfH = L * 0.26;
                 const fam = rng();
                 const mag = fam < 0.35 ? rng() * 0.45 : fam < 0.7 ? 0.45 + rng() * 0.5 : 0.95 + rng() * 0.6;
@@ -163,7 +166,7 @@ const EnvyEyes = {
                 const e = { x: q.x + q.tx * slide + q.nx * off, y: q.y + q.ty * slide + q.ny * off,
                             w: L, r: L * this.IRIS, ang: tang + rel };
                 // активный виден целиком: за краем экрана он — обрубок
-                if (!this.onScreen(e) || this.intoScene(e) > this.REACH_MAX || this.hitsKeep(e.x, e.y, L, e.ang)) continue;
+                if (!this.onScreen(e) || this.intoScene(e) > this.ACTIVE_REACH || this.hitsKeep(e.x, e.y, L, e.ang)) continue;
                 if (inFan(e.x, e.y) || inds.some(d => this.overlaps(d, e)) || cross.some(c => this.overlaps(c, e))) continue;
                 if (irisOwners().some(o => Math.hypot(o.x - e.x, o.y - e.y) < this.ACTIVE_GAP * (o.r + e.r))) continue;
                 // непохож на соседей по периметру: размер и угол
@@ -172,7 +175,9 @@ const EnvyEyes = {
                     if (!n) { score += 2; continue; }
                     score += (this.sizeDiff(e, n) ? 1 : 0) + (this.angDiff(e, n) ? 1 : 0);
                 }
-                score += rng() * 0.5;
+                // крупным — перевес: на экран они встают реже мелких, и без
+                // него рамка снова мельчала
+                score += rng() * 0.5 + L / 100;
                 if (score > bestScore) { best = e; bestScore = score; }
             }
             if (best) {
