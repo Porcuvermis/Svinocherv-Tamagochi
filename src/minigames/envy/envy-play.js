@@ -649,8 +649,8 @@ Object.assign(EnvyMinigame, {
         const aspect = this.camera.aspect;
         const halfH = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180) * ENVY_SCENE.CAM_DIST;
         const toH = 1 / (2 * halfH);            // мировые единицы → доли высоты
-        const front = (w.age / 1000) * ENVY_SCENE.WAVE_SPEED * toH;
-        const back = ((w.age - ENVY_SCENE.WAVE_HOLD_MS) / 1000) * ENVY_SCENE.WAVE_SPEED * toH;
+        const front = (w.age / 1000) * ENVY_SCENE.WAVE_COLOR_SPEED * toH;
+        const back = ((w.age - ENVY_SCENE.WAVE_HOLD_MS) / 1000) * ENVY_SCENE.WAVE_COLOR_SPEED * toH;
         U.uWave.value.set((v.x + 1) / 2 * aspect, (v.y + 1) / 2, front, back);
         U.uWaveCol.value.copy(w.color);
         U.uWaveEdge.value = ENVY_SCENE.WAVE_EDGE;
