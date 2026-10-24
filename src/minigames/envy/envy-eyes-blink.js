@@ -26,7 +26,11 @@ Object.assign(EnvyEyes, {
     // нет, набор больше не открывался никогда, и глаза вымирали.
     BLINK_OPEN: 0.35,
     BLINK_MIN: 4,
-    BLINK_EVERY: [2000, 3000],  // мс между сменами
+    // Каждый открытый горит свой срок — не дольше 5 с (просьба игрока: один
+    // глаз открылся и не закрывался, пока остальные моргали; смена «раз в
+    // 2–3 с закрыть случайный» могла обходить его сколько угодно).
+    BLINK_LIFE: [2500, 5000],
+    BLINK_TICK: 400,            // мс между проверками сроков
     BLINK_MS: { open: 420, close: 340 },
     _live: null,
 
@@ -135,14 +139,15 @@ Object.assign(EnvyEyes, {
         if (!this.liveEyes().length) return;
         if (!this.liveEyes()[0].live) this.blinkInit();
         this._blinkOn = true;
+        // Уже открытым — случайный остаток срока, чтобы не закрылись разом.
+        const now = performance.now(), [a, b] = this.BLINK_LIFE;
+        for (const e of this.pool()) if (e.live.to) e.live.until = now + 1600 + Math.random() * (b - 1600);
         const next = () => {
             if (!this._blinkOn) return;
-            this.blinkSwap(this.pool());
-            const [a, b] = this.BLINK_EVERY;
-            this._blinkT = setTimeout(next, a + Math.random() * (b - a));
+            this.blinkTick(this.pool());
+            this._blinkT = setTimeout(next, this.BLINK_TICK);
         };
-        // первая смена — когда покров входа уже ушёл
-        this._blinkT = setTimeout(next, 1600);
+        this._blinkT = setTimeout(next, this.BLINK_TICK);
     },
 
     blinkStop() {
@@ -154,13 +159,28 @@ Object.assign(EnvyEyes, {
         for (const e of this.liveEyes()) if (e.live) { e.live.from = e.live.to; this.paintLive(e, e.live.to); }
     },
 
+    // Проверка: у кого вышел срок — смена (сначала замена, потом закрытие);
+    // открытых меньше цели — добрать.
+    blinkTick(list) {
+        const now = performance.now();
+        for (const e of list) {
+            if (e.live.to && e.live.until && now >= e.live.until) this.blinkSwap(list, e);
+        }
+        const open = list.filter(e => e.live.to).length;
+        if (open < this.openTarget(list.length)) this.blinkSwap(list, null);
+    },
+
     // Смена: СНАЧАЛА открывается середина самого длинного ряда закрытых
     // (по кругу периметра; открытых нет — любой), ПОТОМ, если открытых
     // больше цели, закрывается один из прежних открытых. Открытых не
     // бывает меньше цели дольше, чем длится одно моргание.
-    blinkSwap(list) {
+    // shut — кого закрыть (вышел срок); нет — только добрать открытых.
+    blinkSwap(list, shutEye) {
         const n = list.length;
         if (n < 2) return;
+        // закрываемый в поиске ряда считается закрытым — замена встаёт не
+        // на его место, а в середину пустоты
+        if (shutEye) shutEye.live.to = 0;
         const isOpen = (i) => list[(i + n) % n].live.to === 1;
         const openBefore = list.map((e, i) => e.live.to ? i : -1).filter(i => i >= 0);
         let best = -1, bestLen = 0;
@@ -169,15 +189,12 @@ Object.assign(EnvyEyes, {
             if (isOpen(i) || !isOpen(i - 1)) continue;      // начало ряда закрытых
             let len = 0;
             while (len < n && !isOpen(i + len)) len++;
-            const mid = (i + Math.floor(len / 2)) % n;
-            if (len > bestLen) { best = mid; bestLen = len; }
+            let mid = (i + Math.floor(len / 2)) % n;
+            if (list[mid] === shutEye) mid = (mid + 1) % n;     // не он же снова
+            if (len > bestLen && !isOpen(mid)) { best = mid; bestLen = len; }
         }
         if (best >= 0) this.blinkTo(list[best], 1);
-        const want = this.openTarget(n);
-        // открыто и так меньше цели — только добираем, не закрываем
-        if (openBefore.length + (best >= 0 ? 1 : 0) <= want) return;
-        const shut = openBefore[Math.floor(Math.random() * openBefore.length)];
-        this.blinkTo(list[shut], 0);
+        if (shutEye) { shutEye.live.to = 1; this.blinkTo(shutEye, 0); }
     },
 
     blinkTo(e, to) {
@@ -186,6 +203,7 @@ Object.assign(EnvyEyes, {
         e.live.to = to;
         e.live.t0 = now;
         e.live.dur = to ? this.BLINK_MS.open : this.BLINK_MS.close;
+        if (to) { const [a, b] = this.BLINK_LIFE; e.live.until = now + a + Math.random() * (b - a); }
         if (!this._blinkRaf) this._blinkRaf = requestAnimationFrame(() => this.blinkFrame());
     },
 
