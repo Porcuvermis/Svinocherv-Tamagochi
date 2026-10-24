@@ -18,7 +18,7 @@
 // это проекция диска (эллипс) и поворот нормалей, без перепекания поз.
 // Толщины ребра нет: на ребре монета и так невидима.
 Object.assign(GreedCoins, {
-    FLIP: { toPeak: 520, fromPeak: 680, flash: 70, glow: 0.9 },
+    FLIP: { toPeak: 520, fromPeak: 680, flash: 70, glow: 0.9, spark: 230, seen: 0.06 },
 
     // ---------- векторы ----------
     v3: {
@@ -74,9 +74,29 @@ Object.assign(GreedCoins, {
 
     // Состояние монеты в момент t (мс от начала хода). dir: 'in' | 'out'.
     // → { n, m (0 — бесплотна, 1 — настоящая), flash (0..1) }
+    // Когда бесплотная монета впервые видна (её блик ярче F.seen): ищется по
+    // дуге ребро → пик. Тот же расчёт, что у блика в шейдере.
+    firstSeen(c) {
+        const F = this.FLIP, V = this.v3, k = this.LIGHT.shin * 0.35;
+        const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+        for (let t = 0; t <= F.toPeak; t += 4) {
+            const n = V.slerp(c.edge, c.H, ease(t / F.toPeak));
+            if (Math.pow(Math.max(0, V.dot(n, c.H)), k) * 0.5 > F.seen) return t;
+        }
+        return F.toPeak;
+    },
+
+    // Состояние монеты в момент t (мс от начала хода). dir: 'in' | 'out'.
+    // → { n, m (0 — бесплотна, 1 — настоящая), flash (0..1),
+    //     reveal (докуда от центра виден бесплотный блик, доли радиуса),
+    //     star (0..1 — звёздочка в центре) }
+    // Звёздочка (замысел игрока): пока монету ещё не видно, в её центре
+    // вспыхивает искра в несколько пикселей и взрывается в форму первого
+    // кадра блика. Блик проявляется от центра кругом в плоскости монеты —
+    // на экране это эллипс самой монеты. На исчезновении — наоборот: блик
+    // стягивается в искру, искра гаснет.
     flipState(c, t, dir) {
-        const F = this.FLIP, V = this.v3, T = F.toPeak + F.fromPeak;
-        const p = Math.max(0, Math.min(1, t / T));
+        const F = this.FLIP, V = this.v3;
         const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
         let n, m;
         if (dir === 'in') {
@@ -87,8 +107,15 @@ Object.assign(GreedCoins, {
             else { n = V.slerp(c.H, c.edge, ease(Math.min(1, (t - F.fromPeak) / F.toPeak))); m = 0; }
         }
         const tp = dir === 'in' ? F.toPeak : F.fromPeak, dt = (t - tp) / F.flash;
-        void p;
-        return { n, m, flash: Math.exp(-dt * dt) };
+        if (c.seen === undefined) c.seen = this.firstSeen(c);
+        // искра стоит вокруг первого видимого кадра блика
+        const ts = dir === 'in' ? c.seen : F.fromPeak + (F.toPeak - c.seen);
+        let p = (t - ts) / F.spark;
+        if (dir === 'out') p = 1 - p;                 // время назад
+        p = Math.max(0, Math.min(1, p));
+        const reveal = p <= 0 ? 0 : 1.15 * (1 - Math.pow(1 - p, 3));
+        const star = p <= 0 || p >= 1 ? 0 : Math.sin(Math.PI * Math.min(1, p * 1.6)) * (1 - p * 0.6);
+        return { n, m, flash: Math.exp(-dt * dt), reveal: m ? 9 : reveal, star, starP: p };
     },
 
     // ---------- рисование ----------
@@ -96,7 +123,7 @@ Object.assign(GreedCoins, {
     FLIP_FS: [
         'precision mediump float;',
         'uniform sampler2D tA,tN;uniform vec2 C,res;uniform float rad,m,flash,glow,cellX;',
-        'uniform mat3 R,T;uniform float ao;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
+        'uniform mat3 R,T;uniform float ao,reveal,star,starP;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
         'void main(){',
         ' vec2 q=vec2(gl_FragCoord.x-C.x, gl_FragCoord.y-C.y)/rad;',      // y вверх
         ' vec3 e1=R*vec3(1.,0.,0.), e2=R*vec3(0.,1.,0.);',
@@ -105,6 +132,14 @@ Object.assign(GreedCoins, {
         ' float h=length(q);',
         // ореол вспышки — за пределами диска тоже
         ' outc.rgb+=glint*flash*glow*exp(-h*h*1.6)*.55;',
+        // искра: яркое ядро в несколько пикселей и четыре луча; растёт с starP
+        ' if(star>0.){',
+        '  float sz=.04+.5*starP;',
+        '  vec2 a=abs(q)/sz;',
+        '  float core=exp(-dot(a,a)*6.);',
+        '  float rays=exp(-a.y*a.y*60.)*exp(-a.x*.7)+exp(-a.x*a.x*60.)*exp(-a.y*.7);',
+        '  outc.rgb+=mix(vec3(1.),glint,.3)*star*(core*1.4+rays*.8);',
+        ' }',
         ' if(abs(det)>.002){',
         '  vec2 uv=vec2((q.x*e2.y-q.y*e2.x)/det,(e1.x*q.y-e1.y*q.x)/det);',
         '  if(dot(uv,uv)<1.){',
@@ -124,7 +159,9 @@ Object.assign(GreedCoins, {
         '   float k=A.a;',
         // ao — затенение глубины кучи; бесплотный блик и вспышка от него не гаснут:
         // свет на монету падает и в глубине
-        '   outc.rgb+=k*(m*full*ao+(1.-m)*ghost)+k*glint*flash*glow;',
+        // бесплотный блик виден только внутри круга reveal (от центра монеты)
+        '   float rv=1.-smoothstep(reveal-.18,reveal,length(uv));',
+        '   outc.rgb+=k*(m*full*ao+(1.-m)*ghost*rv)+k*glint*flash*glow;',
         '   outc.a=max(outc.a,k*m);',
         '  }',
         ' }',
@@ -164,6 +201,8 @@ Object.assign(GreedCoins, {
             coin: (x, y, rad, st, kind, tilt, roll, ao) => {
                 const S = this.LIGHT, l = this.v3.norm(S.L);
                 gl.uniform2f(U('C'), x, cv.height - y); gl.uniform1f(U('rad'), rad);
+                gl.uniform1f(U('reveal'), st.reveal === undefined ? 9 : st.reveal);
+                gl.uniform1f(U('star'), st.star || 0); gl.uniform1f(U('starP'), st.starP || 0);
                 gl.uniform1f(U('m'), st.m); gl.uniform1f(U('flash'), st.flash); gl.uniform1f(U('glow'), this.FLIP.glow);
                 gl.uniform1f(U('cellX'), kind === 'euro' ? 0.5 : 0);
                 gl.uniformMatrix3fv(U('R'), false, this.withRoll(this.axisTo(st.n), roll || 0));
@@ -302,6 +341,7 @@ Object.assign(GreedCoins, {
                         c.H = H;
                         c.edge = this.edgeAxis(H, c.pose, c.side);
                         c.edgeOut = [-c.edge[0], -c.edge[1], 0];
+                        c.seen = undefined;          // пик сменился — первый кадр блика тоже
                     }
                 }
                 const outAt = P.stagger + run + P.hold;
