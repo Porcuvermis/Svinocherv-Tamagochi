@@ -9,14 +9,11 @@
 // форма, видно не всегда, и так задумано (оценка игрока). Контура у глаз НЕТ
 // — зелёная обводка превращала рамку в россыпь листьев.
 //
-// Правила раскладки (оценка игрока):
-//   * миндали могут налезать друг на друга только чёрным на чёрное: сначала
-//     рисуются ВСЕ миндали, потом ВСЕ радужки — ни один глаз не закрывает
-//     чужую радужку;
-//   * радужки не ставятся близко друг к другу (IRIS_GAP — доля от суммы
-//     радиусов), а радужка целиком лежит в рамке: ни на сцену, ни за край
-//     холста она не выходит, поэтому в узких боках глаза мельче, наверху и
-//     внизу крупнее.
+// Рамка в два слоя (замысел игрока): подложка из чёрных миндалей без
+// зрачков сливается в массу и делает неровный край, поверх — немного
+// активных глаз с зелёной обводкой и моргающим зрачком, расставленных
+// свободно (см. «ДВА СЛОЯ» ниже). Сначала рисуются все тела, потом зрачки:
+// чужой глаз зрачок не закрывает.
 //
 // Механизм окна общий (MinigameWindow.attach, опция skin), здесь только вид:
 //   rim, cross, bg, reach(), drawGen(ctx, scale) — как у LustFoam.
@@ -33,40 +30,33 @@ const EnvyEyes = {
     // Миндали заходят в сцену не дальше этого: по числу окно нарезает рамку
     // на полосы (reach). Настоящий заход считается раскладкой.
     REACH_MAX: 40,
-    // Глаза кромки по стороне. L — длины крупных (первый проход), Ls —
-    // мелких (второй, только в щели между крупными). off — сдвиг центра от
-    // кромки в долях полувысоты (минус — в рамку), tilt + jit — наклон к
-    // кромке (наименьший и разброс), diag — доля диагональных.
-    SIDES: {
-        h: { L: [64, 150], Ls: [24, 52], off: [-1.0, 0.3] },
-        // Низ — как бока и верх, но каждый глаз ЦЕЛИКОМ на экране (whole) и
-        // без крошечных: крупные, ушедшие за край экрана, с закрытым зрачком
-        // оставались огромными пустыми обведёнными листьями, а крошечные
-        // резали друг другу обводки (оценка игрока: «трэш»). Середину низа
-        // занимает веер индикаторов (indicatorEyes), цепочка его обходит.
-        b: { L: [64, 150], Ls: [26, 52], off: [-1.0, 0.3], whole: true, noTiny: true },
-        v: { L: [54, 140], Ls: [22, 50], off: [-0.9, 0.4] }
-    },
-    // Сколько кромки можно оставить открытой подряд, если ни один глаз не
-    // встал (единиц холста). Цель — почти нигде.
+    // ---------- ДВА СЛОЯ (замысел игрока) ----------
+    // ПОДЛОЖКА — чёрные миндали без зрачка и без обводки: сливаются в одну
+    // массу, налезают как угодно и ни с кем не спорят. Ими закрыт шов рамки
+    // и сделан неровный край.
+    // АКТИВНЫЕ — чёрные с зелёной обводкой и моргающим зрачком: их немного,
+    // и они больше не обязаны закрывать кромку, поэтому стоят свободно —
+    // поодаль друг от друга, разного размера и угла, без повторов рядом.
+    // Обратных (зелёный миндаль) — единицы.
+    // Раньше вся рамка была из активных: чтобы закрыть кромку, их ставили
+    // плотно, и рамка читалась узором одинаковых глаз.
+    BASE: { L: [34, 130], off: [-0.9, 0.5], jit: 0.7 },
+    ACTIVE_N: 15,            // сколько активных на периметр
+    ACTIVE_JIT: 0.35,        // разброс шага между ними (доля среднего)
+    // длины активных: мелкие / средние / крупные и их доли
+    ACTIVE_L: [[[28, 46], 0.25], [[46, 76], 0.45], [[76, 116], 0.3]],
+    ACTIVE_OFF: [-0.6, 0.7],
+    ACTIVE_GAP: 2.6,         // зрачки активных — не ближе этого × сумма радиусов
+    INV_N: 3,                // обратных на всю рамку
     GAP_STEP: 4,
-    TRIES: 200,
-    PICK: 8,          // сколько подходящих глаз сравнивать на каждом шаге
-    RUN_K: 0.45,
+    TRIES: 60,
+    PICK: 8,
     // Прямоугольники, на которые глаза рамки не заходят (в координатах тела
     // окна 390×800, с запасом KEEP_PAD). Была шкала зависти; её больше нет —
     // деления показывают глаза-индикаторы внизу рамки (indicatorEyes).
     KEEP: [],
     KEEP_PAD: 5,
-    // Мелкие глаза в чёрных просветах рамки — после цепочки.
-    // Мелкие в глубине рамки — редко: только в заметных чёрных пустотах.
-    FILL: { tries: 120, L: [20, 34] },
     IRIS: 0.16,       // радиус радужки в долях длины глаза (рисунок игрока)
-    IRIS_GAP: 2.1,    // центры радужек не ближе этого × сумма радиусов
-    IRIS_GAP_SMALL: 1.7,
-    IRIS_GAP_TINY: 1.25,
-    TINY: [16, 28],  // мелкие в щелях — ближе: иначе щель не закрыть
-    FILL_GAP: 4,      // у мелких в глубине рамки — реже
     CELL: 40,
     YIELD: 1500,
     _eyes: null,
@@ -103,183 +93,105 @@ const EnvyEyes = {
     },
 
     // ---------- РАСКЛАДКА ----------
-    // Кромка сцены должна быть закрыта глазами почти везде (оценка игрока:
-    // ровная рамка не должна читаться), но без наплывов без зрачков — край
-    // ломают только сами глаза. Поэтому раскладка — обход кромки: курсор
-    // стоит на первой открытой точке, подбирается глаз (длина, угол, сдвиг —
-    // случайно), который накрывает эту точку и уходит дальше; курсор
-    // переезжает на конец накрытого. Не встал ни один из TRIES — кромка
-    // остаётся открытой на GAP_STEP. Радужки — не ближе IRIS_GAP × сумма
-    // радиусов, шкалу и крестик не трогают.
-    // Потом мелкие глаза в глубине рамки, чтобы чёрное не пустовало.
+    // 1. Подложка — обход кромки: курсор на первой открытой точке шва,
+    //    глаз без зрачка накрывает её и уходит дальше (из подходящих —
+    //    случайный среди накрывающих дальше всех). Правил соседства нет.
+    // 2. Активные — вдоль периметра с неравным шагом, каждый — лучший из
+    //    кандидатов: зрачок на экране и поодаль от чужих, соседний по
+    //    периметру не похож размером и углом, веер и крестик не задеты.
+    // 3. Обратные — несколько активных, как можно дальше друг от друга.
     *layoutGen() {
-        const rng = this.rng(), eyes = [], grid = new Map();
-        const key = (i, j) => i * 1000 + j;
-        const fits = (x, y, r, gap) => {
-            const ci = Math.floor(x / this.CELL), cj = Math.floor(y / this.CELL);
-            for (let i = ci - 2; i <= ci + 2; i++) {
-                for (let j = cj - 2; j <= cj + 2; j++) {
-                    for (const o of grid.get(key(i, j)) || []) {
-                        // к мелким зрачкам крестика можно ближе: иначе у угла
-                        // оставалась открытая полоса кромки
-                        const g = o.cross ? Math.min(gap, 1.5) : gap;
-                        if (Math.hypot(o.x - x, o.y - y) < g * (o.r + r)) return false;
-                    }
-                }
-            }
-            return true;
-        };
-        const put = (eye) => {
-            eyes.push(eye);
-            const kk = key(Math.floor(eye.x / this.CELL), Math.floor(eye.y / this.CELL));
-            if (!grid.has(kk)) grid.set(kk, []);
-            grid.get(kk).push(eye);
-        };
-        const lerp = (a, t) => a[0] + (a[1] - a[0]) * t;
-        for (const e of this.crossEyes()) {
-            e.cross = true;
-            const kk = key(Math.floor(e.x / this.CELL), Math.floor(e.y / this.CELL));
-            if (!grid.has(kk)) grid.set(kk, []);
-            grid.get(kk).push(e);
-        }
-
+        const rng = this.rng(), lerp = (a, t) => a[0] + (a[1] - a[0]) * t;
+        const inds = this.indicatorEyes(), cross = this.crossEyes();
+        for (const e of cross) e.cross = true;
         const path = this.seamPath(), N = path.length;
         const at = (i) => path[((i % N) + N) % N];
         const covered = (eye, i) => { const q = at(i); return this.inAlmond(eye, q.x, q.y); };
-        const chain = [];
-        // Веер индикаторов — первым: цепочка кромки обходит их зрачки и
-        // считает их кромку закрытой.
-        const inds = this.indicatorEyes();
-        for (const e of inds) {
-            chain.push(e);
-            const kk = key(Math.floor(e.x / this.CELL), Math.floor(e.y / this.CELL));
-            if (!grid.has(kk)) grid.set(kk, []);
-            grid.get(kk).push(e);
-        }
+        this._alike = 0; this._alikeAt = [];
         const fan = { x0: Math.min(...inds.map(d => d.x)) - 22, x1: Math.max(...inds.map(d => d.x)) + 22,
                       y0: this.inner().y1 - 30 };
-        const coveredAny = (i) => chain.some(e => covered(e, i));
-        // соседи — глаза кромки, что стоят вплотную к новому (центры ближе
-        // NEAR_K от суммы длин): с ними новый не должен быть схож
-        const neighbours = (eye) => chain.filter(e => Math.hypot(e.x - eye.x, e.y - eye.y) < this.NEAR_K * (e.w + eye.w));
-        // счёт похожих соседей — для tools/probe-envy-rim.js
-        this._alike = 0; this._alikeAt = [];
+        const inFan = (x, y) => x > fan.x0 && x < fan.x1 && y > fan.y0;
+        const onScreenIris = (e) => e.x - e.r >= 1 && e.y - e.r >= 1 && e.x + e.r <= STAGE_W - 1 && e.y + e.r <= STAGE_H - 1;
 
-        // Два прохода (оценка игрока: не засыпать экран мелкими, где хватит
-        // одного крупного). Первый — только крупные: каждый накрывает кромку
-        // как можно дальше; где крупный не встаёт (шкала, крестик, соседняя
-        // радужка), кромка пока остаётся открытой. Второй — мелкие, только в
-        // эти щели.
-        const self = this;
-        // mode: 'big' — крупные, 'small' — мелкие в щели, 'tiny' — крошечные
-        // в остатки, куда мелкий не влез (иначе там светила сцена).
-        function* walk(mode) {
-            const big = mode === 'big', tiny = mode === 'tiny';
-            let cur = 0, guard = 0;
-            while (cur < N && guard++ < 6000) {
-                if (coveredAny(cur)) { cur++; continue; }
-                const q = at(cur);
-                const P = self.SIDES[Math.abs(q.tx) > Math.abs(q.ty) ? (q.ny < 0 ? 'b' : 'h') : 'v'];
-                if (tiny && P.noTiny) { cur++; continue; }
-                const tang = Math.atan2(q.ty, q.tx);
-                // Соседи не похожи (оценка игрока: одинаковые глаза подряд
-                // бросаются в глаза). Уровни: 2 — со всеми соседями различие и
-                // размером, и углом; 1 — только размером (угол «старается»,
-                // размер — обязательно); 0 — похож, это исключение, считается.
-                const cands = [];
-                let found = 0;
-                for (let k = 0; k < self.TRIES && found < self.PICK; k++) {
-                    const L = lerp(big ? P.L : tiny ? self.TINY : P.Ls, rng());
-                    // Не вдоль кромки, а с наклоном: один уголок острым выходит
-                    // на сцену, другой прячется в рамке. Глаз, лежащий ровно
-                    // вдоль, показывал только круглый бок — гребешок пены.
-                    // Три семейства наклона — пологий, средний, крутой (крутые
-                    // встают только мелкими: крупный упёрся бы в REACH_MAX).
-                    // Было по сути два — «/» и «\» под одним углом, и когда
-                    // обводка сделала глаза видными, рамка читалась узором.
-                    const fam = rng();
-                    const mag = P.flat ? rng() * P.flat
-                        : fam < 0.4 ? 0.12 + rng() * 0.38 : fam < 0.75 ? 0.5 + rng() * 0.4 : 0.9 + rng() * 0.55;
-                    const rel = (rng() < 0.5 ? -1 : 1) * mag;
-                    const halfH = L * 0.26, off = lerp(P.off, rng()) * halfH;
-                    // центр впереди курсора: глаз накрывает курсор задним краем
-                    const ahead = L * 0.5 * Math.abs(Math.cos(rel)) * (0.55 + rng() * 0.45);
-                    const x = q.x + q.tx * ahead + q.nx * off, y = q.y + q.ty * ahead + q.ny * off;
-                    const eye = { x, y, w: L, r: L * self.IRIS, ang: tang + rel };
-                    // зрачок целиком на экране: обрезанный краем холста — не глаз, а пятно
-                    if (x - eye.r < 1 || y - eye.r < 1 || x + eye.r > STAGE_W - 1 || y + eye.r > STAGE_H - 1) continue;
-                    // весь миндаль на экране
-                    if (P.whole && !self.onScreen(eye)) continue;
-                    if (!covered(eye, cur) || !fits(x, y, eye.r, big ? self.IRIS_GAP : tiny ? self.IRIS_GAP_TINY : self.IRIS_GAP_SMALL)) continue;
-                    if (self.hitsKeep(x, y, L, eye.ang) || self.intoScene(eye) > self.REACH_MAX) continue;
-                    // Веер читается сам по себе: обычные глаза между лучами
-                    // делали из него кашу. В зоне веера обычных глаз нет
-                    // совсем, и ни один снаружи не задевает лучей.
-                    if (x > fan.x0 && x < fan.x1 && y > fan.y0) continue;
-                    if (inds.some(d => self.overlaps(d, eye))) continue;
-                    if (inds.some(d => self.inAlmond(eye, d.x, d.y))) continue;
-                    let run = 0;
-                    while (run < 300 && covered(eye, cur + run)) run++;
-                    let tier = 2;
-                    for (const n of neighbours(eye)) {
-                        if (!self.sizeDiff(eye, n)) { tier = 0; break; }
-                        if (!self.angDiff(eye, n)) tier = 1;
-                    }
-                    // Ритм: похожий на глаз через одного (не касается, но рядом)
-                    // — это «А-Б-А», ровное чередование. Штраф, а не запрет.
-                    let echo = 0;
-                    for (const n of chain) {
-                        const d = Math.hypot(n.x - eye.x, n.y - eye.y);
-                        if (d < self.NEAR_K * (n.w + eye.w) || d > self.ECHO_K * (n.w + eye.w)) continue;
-                        if (!self.sizeDiff(eye, n) && !self.angDiff(eye, n)) echo++;
-                    }
-                    if (tier === 2 && !echo) found++;
-                    cands.push({ eye, run, tier, echo });
-                }
-                if (!cands.length) { cur += self.GAP_STEP; continue; }
-                // Высший уровень; в нём не самый дальний, а случайный из тех,
-                // кто накрывает не меньше RUN_K от лучшего: «всегда самый
-                // дальний» давал ровное чередование крупный–мелкий–крупный.
-                const bestTier = Math.max(...cands.map(c => c.tier));
-                const tierC = cands.filter(c => c.tier === bestTier);
-                const minEcho = Math.min(...tierC.map(c => c.echo));
-                const top = tierC.filter(c => c.echo === minEcho);
-                const maxRun = Math.max(...top.map(c => c.run));
-                const pool = top.filter(c => c.run >= maxRun * self.RUN_K);
-                const best = pool[Math.floor(rng() * pool.length)].eye;
-                if (bestTier === 0) { self._alike++; self._alikeAt.push([Math.round(best.x), Math.round(best.y)]); }
-                put(best);
-                chain.push(best);
-                if (guard % 8 === 0) yield;
+        // 1. ПОДЛОЖКА
+        const base = [];
+        const B = this.BASE;
+        let cur = 0, guard = 0;
+        while (cur < N && guard++ < 4000) {
+            if (base.some(e => covered(e, cur))) { cur++; continue; }
+            const q = at(cur), tang = Math.atan2(q.ty, q.tx);
+            const cands = [];
+            for (let k = 0; k < this.TRIES && cands.length < this.PICK; k++) {
+                const L = lerp(B.L, rng()), rel = (rng() - 0.5) * 2 * B.jit;
+                const halfH = L * 0.26, off = lerp(B.off, rng()) * halfH;
+                const ahead = L * 0.5 * Math.abs(Math.cos(rel)) * (0.3 + rng() * 0.6);
+                const e = { x: q.x + q.tx * ahead + q.nx * off, y: q.y + q.ty * ahead + q.ny * off, w: L, r: 0, ang: tang + rel, base: true };
+                if (!covered(e, cur) || this.intoScene(e) > this.REACH_MAX || this.hitsKeep(e.x, e.y, L, e.ang)) continue;
+                let run = 0;
+                while (run < 300 && covered(e, cur + run)) run++;
+                cands.push({ e, run });
             }
+            if (!cands.length) { cur += this.GAP_STEP; continue; }
+            const max = Math.max(...cands.map(c => c.run));
+            const pool = cands.filter(c => c.run >= max * 0.5);
+            base.push(pool[Math.floor(rng() * pool.length)].e);
+            if (guard % 10 === 0) yield;
         }
-        yield* walk('big');
-        yield* walk('small');
-        yield* walk('tiny');
+        yield;
 
-        // Мелкие в глубине рамки: радужка целиком в рамке.
-        const F = this.FILL;
-        for (let n = 0; n < F.tries; n++) {
-            const x = rng() * STAGE_W, y = rng() * STAGE_H;
-            const e = this.edge(x, y);
-            if (e <= 0 || this.inCross(x, y)) continue;
-            const w = lerp(F.L, rng()), r = w * this.IRIS;
-            if (r > Math.min(e, x, y, STAGE_W - x, STAGE_H - y) - 2 || !fits(x, y, r, this.FILL_GAP)) continue;
-            const eye = { x, y, w, r, ang: this.tangent(x, y) + (rng() - 0.5) * 1.4 };
-            if (this.hitsKeep(x, y, w, eye.ang)) continue;
-            // мелкие — под крупными: в списке первыми, рисуются раньше
-            eyes.unshift(eye);
-            const kk = key(Math.floor(x / this.CELL), Math.floor(y / this.CELL));
-            if (!grid.has(kk)) grid.set(kk, []);
-            grid.get(kk).push(eye);
+        // 2. АКТИВНЫЕ
+        const act = [];
+        const irisOwners = () => act.concat(inds, cross);
+        const mean = N / this.ACTIVE_N;
+        let pos = rng() * mean;
+        const pickL = () => {
+            let t = rng();
+            for (const [r, w] of this.ACTIVE_L) { if (t < w) return lerp(r, rng()); t -= w; }
+            return lerp(this.ACTIVE_L[1][0], rng());
+        };
+        while (pos < N) {
+            const q = at(Math.round(pos)), tang = Math.atan2(q.ty, q.tx);
+            const p1 = act[act.length - 1], p2 = act[act.length - 2];
+            let best = null, bestScore = -1;
+            for (let k = 0; k < 50; k++) {
+                const L = pickL(), halfH = L * 0.26;
+                const fam = rng();
+                const mag = fam < 0.35 ? rng() * 0.45 : fam < 0.7 ? 0.45 + rng() * 0.5 : 0.95 + rng() * 0.6;
+                const rel = (rng() < 0.5 ? -1 : 1) * mag;
+                const off = lerp(this.ACTIVE_OFF, rng()) * halfH;
+                const slide = (rng() - 0.5) * mean * 0.3;
+                const e = { x: q.x + q.tx * slide + q.nx * off, y: q.y + q.ty * slide + q.ny * off,
+                            w: L, r: L * this.IRIS, ang: tang + rel };
+                // активный виден целиком: за краем экрана он — обрубок
+                if (!this.onScreen(e) || this.intoScene(e) > this.REACH_MAX || this.hitsKeep(e.x, e.y, L, e.ang)) continue;
+                if (inFan(e.x, e.y) || inds.some(d => this.overlaps(d, e)) || cross.some(c => this.overlaps(c, e))) continue;
+                if (irisOwners().some(o => Math.hypot(o.x - e.x, o.y - e.y) < this.ACTIVE_GAP * (o.r + e.r))) continue;
+                // непохож на соседей по периметру: размер и угол
+                let score = 0;
+                for (const n of [p1, p2]) {
+                    if (!n) { score += 2; continue; }
+                    score += (this.sizeDiff(e, n) ? 1 : 0) + (this.angDiff(e, n) ? 1 : 0);
+                }
+                score += rng() * 0.5;
+                if (score > bestScore) { best = e; bestScore = score; }
+            }
+            if (best) {
+                act.push(best);
+                if (p1 && !this.sizeDiff(best, p1) && !this.angDiff(best, p1)) {
+                    this._alike++; this._alikeAt.push([Math.round(best.x), Math.round(best.y)]);
+                }
+            }
+            pos += mean * (1 + (rng() - 0.5) * 2 * this.ACTIVE_JIT);
+            yield;
         }
-        // индикаторы рисуются последними — поверх соседей, обводка целая
-        for (const e of inds) eyes.push(e);
+
+        // 3. ОБРАТНЫЕ — выбираются в pickInverted.
+        const eyes = base.concat(act, inds);
         let reach = 0;
         for (const e of eyes) reach = Math.max(reach, this.intoScene(e));
         this._reach = Math.ceil(reach) + 2;
         for (const e of eyes) e.rim = true;
-        this.pickInverted(eyes);
+        this.pickInverted(act, inds);
         yield;
         return eyes;
     },
@@ -329,19 +241,13 @@ const EnvyEyes = {
         return false;
     },
 
-    // ---------- ДВА ВИДА ГЛАЗ ----------
-    // Чёрный глаз на чёрной рамке виден только зрачком — рамка читалась
-    // россыпью зелёных точек, миндаля не разглядеть (оценка игрока). Поэтому
-    // часть глаз — наоборот: зелёный миндаль с чёрным зрачком (kind 'inv').
-    // Обратные не касаются друг друга — каждый окружён чёрными, виды
-    // чередуются и форма видна. И обратный не ложится на чужой зелёный
-    // зрачок: зелёное на зелёном сливается.
-    pickInverted(eyes) {
-        const all = eyes.filter(e => e.r);
-        const list = all.filter(e => e.ind == null);
-        const cx = STAGE_W / 2, cy = STAGE_H / 2;
-        list.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
-        const touch = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < this.NEAR_K * (a.w + b.w);
+    // ---------- ОБРАТНЫЕ ГЛАЗА ----------
+    // Зелёный миндаль с чёрным зрачком (kind 'inv') — редкость (замысел
+    // игрока): INV_N на всю рамку, как можно дальше друг от друга, и только
+    // те, чей миндаль не ложится на чужой зелёный зрачок (зелёное на
+    // зелёном сливается).
+    pickInverted(act, inds) {
+        const owners = act.concat(inds);
         const coversIris = (inv, o) => {
             if (this.inAlmond(inv, o.x, o.y)) return true;
             for (let i = 0; i < 8; i++) {
@@ -350,31 +256,19 @@ const EnvyEyes = {
             }
             return false;
         };
-        const inv = [];
-        const pass = (allowHide) => {
-            for (const e of list) {
-                if (e.kind === 'inv' || !e.r) continue;
-                if (inv.some(o => touch(o, e))) continue;
-                // обратный индикатор рядом — тоже «обратный сосед»
-                if (all.some(o => o.ind != null && o.kind === 'inv' && touch(o, e))) continue;
-                // свой чёрный зрачок — не под чужим обратным
-                if (inv.some(o => coversIris(o, e))) continue;
-                // ни на чей зелёный зрачок; во втором проходе (низ, где глаза
-                // мелкие и плотные — иначе там не встал ни один обратный)
-                // можно накрыть один: у того соседа зрачка больше нет, он
-                // просто чёрное тело, прикрытое обратным.
-                if (all.some(o => o.ind != null && coversIris(e, o))) continue;
-                const under = list.filter(o => o !== e && o.r && o.kind !== 'inv' && coversIris(e, o));
-                if (under.length > (allowHide ? 1 : 0)) continue;
-                for (const o of under) o.r = 0;
-                e.kind = 'inv';
-                inv.push(e);
+        const ok = act.filter(e => !owners.some(o => o !== e && o.r && coversIris(e, o)));
+        const chosen = [];
+        while (chosen.length < this.INV_N && ok.length) {
+            let best = null, bestD = -1;
+            for (const e of ok) {
+                if (chosen.includes(e)) continue;
+                const d = chosen.length ? Math.min(...chosen.map(c => Math.hypot(c.x - e.x, c.y - e.y))) : Math.random();
+                if (d > bestD) { best = e; bestD = d; }
             }
-        };
-        pass(false);
-        pass(true);
-        // крестик — тоже зелёный миндаль: соседние зрачки под ним уже
-        // не лежат (раскладка держит их поодаль)
+            if (!best) break;
+            best.kind = 'inv';
+            chosen.push(best);
+        }
     },
 
     // Шов, который надо закрыть: кромка видимой сцены (скруглённый
@@ -483,7 +377,6 @@ const EnvyEyes = {
     // симметричен, сравнение по модулю π) — не ближе ANG_K.
     SIZE_K: 1.3,
     NEAR_K: 0.5,
-    ECHO_K: 1.1,      // «через одного» — центры дальше касания, но ближе этого
     ANG_K: 0.35,
     sizeDiff(a, b) { return Math.max(a.w, b.w) / Math.min(a.w, b.w) >= this.SIZE_K; },
     angDiff(a, b) {
@@ -556,7 +449,7 @@ const EnvyEyes = {
     RIM_LINE: 1.6,
     rimLine(ctx, e) {
         // индикаторы — всегда с обводкой: закрытый обратный иначе исчез бы
-        if (!e.rim || e.kind === 'x' || (e.kind === 'inv' && e.ind == null)) return;
+        if (!e.rim || e.base || e.kind === 'x' || (e.kind === 'inv' && e.ind == null)) return;
         ctx.strokeStyle = this.pal().iris;
         ctx.lineWidth = this.RIM_LINE;
         ctx.stroke();
