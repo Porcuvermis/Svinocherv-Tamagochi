@@ -201,10 +201,17 @@ Object.assign(ENVY_IMAGE_POOL, {
                     if (tk > amt) { amt = tk; wcol = uTint / max(tk, 0.001); }
                     float same = smoothstep(0.75, 0.92, dot(normalize(wcol + 1e-4), normalize(uGreen)));
                     float lum = max(metal.r, max(metal.g, metal.b));
-                    // свой цвет (зелёный) — линии разгораются; чужой — замещает
-                    // зелёный, с той же игрой блика и чуть ярче
+                    // Свой цвет (зелёный) — линии разгораются. Чужой (красный)
+                    // — замещает зелёный, но переход идёт НЕ по прямой между
+                    // цветами (на середине прямой — бурый), а через светлую
+                    // вспышку: зелёный → белёсый блеск → красный. Так край
+                    // кольца снова может быть широким и мягким — свечение
+                    // плавно нарастает и уходит, а бурого нет.
+                    vec3 flash = mix(vec3(1.0), wcol, 0.25) * (lum + 0.35);
                     vec3 other = wcol * (lum + 0.25);
-                    vec3 col = mix(metal, other, amt * (1.0 - same)) + wcol * amt * 0.9 * same;
+                    float a1 = smoothstep(0.0, 0.5, amt), a2 = smoothstep(0.5, 1.0, amt);
+                    vec3 rep = mix(mix(metal, flash, a1), other, a2);
+                    vec3 col = mix(metal, rep, 1.0 - same) + wcol * amt * 0.9 * same;
                     col *= foil;
                     gl_FragColor = vec4(col, 1.0);
                 }
