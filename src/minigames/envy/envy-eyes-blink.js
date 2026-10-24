@@ -18,13 +18,14 @@
 // только пока кто-то моргает; расписание — setTimeout, и только пока игра
 // открыта (инвариант 1: таймер — для картинки, не для состояния).
 Object.assign(EnvyEyes, {
-    // Два набора, моргают независимо: чёрные глаза (зелёный зрачок) —
-    // открыта треть; обратные (зелёный миндаль, EnvyEyes.pickInverted) —
-    // открыты почти все: закрытый обратный не виден вовсе, а форму рамке
-    // дают как раз они. Общий ритм «через один» у обоих наборов совпадал с
-    // чередованием видов — и на целых сторонах обратные оказывались закрыты.
-    BLINK_OPEN: { k: 0.3, inv: 0.5 },
-    BLINK_INV_CHANCE: 0.4,      // как часто смена задевает и обратные
+    // Один набор на все активные глаза рамки (индикаторы — не рамка, ими
+    // правит заполнение). Открыто около BLINK_OPEN, но НЕ МЕНЬШЕ BLINK_MIN
+    // (просьба игрока: бывало по пять секунд ни одного открытого глаза).
+    // Было два набора по видам, и в каждом «закрыть один, открыть середину
+    // ряда закрытых»: закрылся последний открытый — рядов после открытого
+    // нет, набор больше не открывался никогда, и глаза вымирали.
+    BLINK_OPEN: 0.35,
+    BLINK_MIN: 4,
     BLINK_EVERY: [2000, 3000],  // мс между сменами
     BLINK_MS: { open: 420, close: 340 },
     _live: null,
@@ -39,22 +40,23 @@ Object.assign(EnvyEyes, {
         return (this._liveList = list);
     },
 
-    // Набор глаз одного вида по обходу периметра.
-    pool(kind) {
-        // индикаторы не моргают сами — ими правит заполнение (setFill)
-        return this.liveEyes().filter(e => e.ind == null && (e.kind === 'inv' ? 'inv' : 'k') === kind);
+    // Активные глаза рамки по обходу периметра (без индикаторов).
+    pool() {
+        return this.liveEyes().filter(e => e.ind == null);
+    },
+    openTarget(n) {
+        return Math.min(n, Math.max(this.BLINK_MIN, Math.round(n * this.BLINK_OPEN)));
     },
 
-    // Начальный набор: в каждом виде открыт каждый n-й по обходу со
-    // случайным сдвигом.
+    // Начальный набор: открыт каждый n-й по обходу со случайным сдвигом.
     blinkInit() {
         for (const e of this.liveEyes()) e.live = { from: 0, to: 0, t0: 0, dur: 1 };
-        for (const kind of ['k', 'inv']) {
-            const list = this.pool(kind), step = 1 / this.BLINK_OPEN[kind];
-            for (let k = Math.random() * step; k < list.length; k += step) {
-                const L = list[Math.floor(k)].live;
-                L.from = L.to = 1;
-            }
+        const list = this.pool(), want = this.openTarget(list.length);
+        if (!want) return;
+        const step = list.length / want;
+        for (let k = Math.random() * step, c = 0; c < want; k += step, c++) {
+            const L = list[Math.floor(k) % list.length].live;
+            L.from = L.to = 1;
         }
     },
 
@@ -135,8 +137,7 @@ Object.assign(EnvyEyes, {
         this._blinkOn = true;
         const next = () => {
             if (!this._blinkOn) return;
-            this.blinkSwap(this.pool('k'));
-            if (Math.random() < this.BLINK_INV_CHANCE) this.blinkSwap(this.pool('inv'));
+            this.blinkSwap(this.pool());
             const [a, b] = this.BLINK_EVERY;
             this._blinkT = setTimeout(next, a + Math.random() * (b - a));
         };
@@ -153,26 +154,30 @@ Object.assign(EnvyEyes, {
         for (const e of this.liveEyes()) if (e.live) { e.live.from = e.live.to; this.paintLive(e, e.live.to); }
     },
 
-    // Один открытый закрывается, открывается середина самого длинного ряда
-    // закрытых (по кругу периметра).
+    // Смена: СНАЧАЛА открывается середина самого длинного ряда закрытых
+    // (по кругу периметра; открытых нет — любой), ПОТОМ, если открытых
+    // больше цели, закрывается один из прежних открытых. Открытых не
+    // бывает меньше цели дольше, чем длится одно моргание.
     blinkSwap(list) {
         const n = list.length;
         if (n < 2) return;
-        const open = list.map((e, i) => e.live.to ? i : -1).filter(i => i >= 0);
-        if (!open.length) return;
-        const shut = open[Math.floor(Math.random() * open.length)];
-        this.blinkTo(list[shut], 0);
         const isOpen = (i) => list[(i + n) % n].live.to === 1;
+        const openBefore = list.map((e, i) => e.live.to ? i : -1).filter(i => i >= 0);
         let best = -1, bestLen = 0;
-        for (let i = 0; i < n; i++) {
+        if (!openBefore.length) best = Math.floor(Math.random() * n);
+        for (let i = 0; i < n && openBefore.length; i++) {
             if (isOpen(i) || !isOpen(i - 1)) continue;      // начало ряда закрытых
             let len = 0;
             while (len < n && !isOpen(i + len)) len++;
             const mid = (i + Math.floor(len / 2)) % n;
-            // только что закрытый не открываем сразу же
-            if (len > bestLen && mid !== shut) { best = mid; bestLen = len; }
+            if (len > bestLen) { best = mid; bestLen = len; }
         }
         if (best >= 0) this.blinkTo(list[best], 1);
+        const want = this.openTarget(n);
+        // открыто и так меньше цели — только добираем, не закрываем
+        if (openBefore.length + (best >= 0 ? 1 : 0) <= want) return;
+        const shut = openBefore[Math.floor(Math.random() * openBefore.length)];
+        this.blinkTo(list[shut], 0);
     },
 
     blinkTo(e, to) {
