@@ -932,7 +932,7 @@ const PALETTE = {
     // плюс серебро середины двуцветной монеты (холоднее стали: у серебра тень
     // уходит в синеву, свет в белое). Запекается в tools/coin-bake.html.
     greedCoin: {
-        gold:   { deep: '#4f3410', lo: '#8a6424', 500: '#c3953f', hi: '#ecd08b', glint: '#fff4d2' },
+        gold:   { deep: '#4f3008', lo: '#91600f', 500: '#cc9422', hi: '#f0cf72', glint: '#fff4d2' },
         silver: { deep: '#2f383e', lo: '#5f6b72', 500: '#9aa5ab', hi: '#d5dde0', glint: '#ffffff' }
     },
 
