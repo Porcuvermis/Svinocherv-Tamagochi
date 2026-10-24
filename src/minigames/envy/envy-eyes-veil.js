@@ -342,7 +342,7 @@ Object.assign(EnvyEyes, {
             const o = Math.min(S.o, S.io == null ? S.o : S.io);
             if (!e.r || o < 0.02) continue;
             // открыт и смотрит прямо — радужка целиком в веках, без обрезки
-            if (o > 0.85 && Math.abs(lk) < 0.005) { this.pupil(ctx, e, e.x, e.y); continue; }
+            if (o > 0.85 && Math.abs(lk) < 0.005) { this.pupil(ctx, e, e.x, e.y); if (e.rim) this.lidLine(ctx, e, o); continue; }
             ctx.save();
             ctx.translate(e.x, e.y);
             ctx.rotate(e.ang);
@@ -352,6 +352,7 @@ Object.assign(EnvyEyes, {
             const c = Math.cos(e.ang), sn = Math.sin(e.ang);
             this.pupil(ctx, e, lk * e.w * c, lk * e.w * sn);
             ctx.restore();
+            if (e.rim) this.lidLine(ctx, e, o);
         }
     },
 

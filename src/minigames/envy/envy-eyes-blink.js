@@ -23,7 +23,7 @@ Object.assign(EnvyEyes, {
     // открыты почти все: закрытый обратный не виден вовсе, а форму рамке
     // дают как раз они. Общий ритм «через один» у обоих наборов совпадал с
     // чередованием видов — и на целых сторонах обратные оказывались закрыты.
-    BLINK_OPEN: { k: 0.5, inv: 0.75 },
+    BLINK_OPEN: { k: 0.3, inv: 0.5 },
     BLINK_INV_CHANCE: 0.4,      // как часто смена задевает и обратные
     BLINK_EVERY: [2000, 3000],  // мс между сменами
     BLINK_MS: { open: 420, close: 340 },
@@ -77,8 +77,8 @@ Object.assign(EnvyEyes, {
         if (!this.liveEyes()[0] || !this.liveEyes()[0].live) this.blinkInit();
         this._liveScale = scale;
         for (const e of this.liveEyes()) {
-            // обратный глаз — весь миндаль зелёный, холстик под длину глаза
-            const pad = 2, half = (e.kind === 'inv' ? e.w / 2 : e.r) + pad;
+            // холстик под длину глаза: на нём и зрачок, и край век
+            const pad = 2, half = e.w / 2 + pad;
             const c = document.createElement('canvas');
             c.width = Math.ceil(half * 2 * scale); c.height = c.width;
             Object.assign(c.style, { left: (e.x - half) + 'px', top: (e.y - half) + 'px',
@@ -108,6 +108,11 @@ Object.assign(EnvyEyes, {
         g.clip();
         g.rotate(-e.ang);
         this.pupil(g, e, 0, 0);
+        g.restore();
+        // край век — зелёная обводка открытого глаза, сужается с веками
+        g.save();
+        g.setTransform(s, 0, 0, s, 0, 0);
+        this.lidLine(g, Object.assign({}, e, { x: half, y: half }), io);
         g.restore();
     },
 
