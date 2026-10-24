@@ -307,13 +307,9 @@ const DebugState = {
         // рогалик, он пойдёт тем же путём.
         // Куча монет алчности на весь экран — проверка блеска от наклона
         // телефона, пока шкурка не встала в окно (docs/plan/27-greed-skin.md).
-        // Модуль грузится только здесь: в игре его пока никто не зовёт.
         if (act === 'coins') {
             const go = () => GreedCoins.preview(document.getElementById('game-container') || document.body);
-            if (typeof GreedCoins !== 'undefined') { go(); return; }
-            const sc = document.createElement('script');
-            sc.src = 'src/minigames/greed/greed-coins.js?v=' + Date.now();
-            sc.onload = go; document.head.appendChild(sc);
+            if (typeof GreedCoins !== 'undefined') go();
             return;
         }
 

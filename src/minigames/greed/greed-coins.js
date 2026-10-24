@@ -54,21 +54,34 @@ const GreedCoins = {
     // Слои: s — масштаб, gap — доля диаметра между центрами (меньше — плотнее),
     // dark — затемнение слоя, gain — сила блика на слое. Числа подобраны
     // на tools/coin-pile.js и приняты игроком (смесь 50/50, плотность «хорошая»).
+    // ao — светлота слоя (верх кучи светлее низа).
+    // only: 'rim' / 'cross' — слой только у рамки (в просмотре кучи его нет).
     LAYERS: [
-        { s: 0.82, gap: 0.8, dark: 0.5, gain: 0.35 },
-        { s: 1.0, gap: 0.72, dark: 0.18, gain: 0.8 },
-        { s: 1.0, gap: 0.95, dark: 0, gain: 1 }
+        // Подсыпка рамки: плотная и тёмная, закрывает щели между монетами.
+        // Без неё щелей в рамке было столько, что пустота-крестик терялась
+        // среди них.
+        { s: 0.9, gap: 0.55, ao: 0.4, only: 'rim' },
+        { s: 0.82, gap: 0.8, ao: 0.45 },
+        { s: 1.0, gap: 0.72, ao: 0.78 },
+        { s: 1.0, gap: 0.95, ao: 1.0 },
+        // Мелочь только у крестика рамки: крупные монеты не помещаются между
+        // лучами креста, и пустота читалась пятном, а не крестом.
+        { s: 0.6, gap: 0.75, ao: 1.0, only: 'cross' }
     ],
+
     SEED: 4242,
     W: 780, H: 1688,        // холст куч в 2×; логические 390×844
     MIX: 0.5,               // доля евро
 
     // Возвращает три списка монет. Детерминированно от seed.
-    layout(seed) {
+    // keep(x, y, r, rng) — оставить ли монету (в единицах сцены 390×844, r —
+    // её радиус); у рамки — только полоса по краю и не в крестике.
+    layout(seed, keep) {
         let st = (seed || this.SEED) >>> 0;
         const rng = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
         const P = this.poses().length, W = this.W, H = this.H;
         return this.LAYERS.map((L) => {
+            if (L.only && !keep) return [];
             const pts = [], cell = 40 * L.s, grid = {}, minD = 2 * this.RAD * L.s * L.gap;
             for (let t = 0; t < 30000; t++) {
                 const x = rng() * (W + 40) - 20, y = rng() * (H + 40) - 20;
@@ -79,6 +92,7 @@ const GreedCoins = {
                     if (q) for (const o of q) if (Math.hypot(o.x - x, o.y - y) < minD) { ok = false; break; }
                 }
                 if (!ok) continue;
+                if (keep && !keep(x / 2, y / 2, this.RAD * L.s / 2, rng, L)) continue;
                 const pose = Math.floor(rng() * P), p = this.poses()[pose];
                 // Ось у каждой монеты чуть своя: спрайт тот же, а блеск наступает в свой момент.
                 const jx = (rng() - 0.5) * 0.12, jy = (rng() - 0.5) * 0.12;
@@ -96,35 +110,53 @@ const GreedCoins = {
     // ---------- раскладка в три картинки ----------
     // Все три рисуются в одном порядке теми же спрайтами — сверху всегда та
     // монета, что лежит выше. ao: светлота слоя (верх кучи светлее) и тени.
-    AO: [0.45, 0.78, 1.0],
-    buildPile(albedoA, normalA, seed) {
-        const W = this.W, H = this.H, C = this.CELL, layers = this.layout(seed);
+    // opt: seed, keep (см. layout), bg(ctx) — путь фона в единицах сцены
+    // (по умолчанию весь холст; вне фона — прозрачно, там видна сцена).
+    // Генератор: рамку окно рисует кусками в простое (MinigameWindow.wearSkin).
+    *pileGen(albedoA, normalA, opt) {
+        opt = opt || {};
+        const W = this.W, H = this.H, C = this.CELL, layers = this.layout(opt.seed, opt.keep);
+        yield;
         const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
         const alb = mk(), nor = mk(), ao = mk();
         const ga = alb.getContext('2d'), gn = nor.getContext('2d'), go = ao.getContext('2d');
-        ga.fillStyle = PALETTE.greedCoin.gold.deep; ga.fillRect(0, 0, W, H);
+        const bg = (g, style) => {
+            g.save(); g.setTransform(W / 390, 0, 0, H / 844, 0, 0); g.fillStyle = style; g.beginPath();
+            if (opt.bg) { opt.bg(g); g.fill('evenodd'); } else g.fillRect(0, 0, 390, 844);
+            g.restore();
+        };
+        bg(ga, PALETTE.greedCoin.gold.deep);
         gn.fillStyle = 'rgb(128,128,255)'; gn.fillRect(0, 0, W, H);
         go.fillStyle = 'rgb(40,40,40)'; go.fillRect(0, 0, W, H);
         // силуэты атласа, залитые светлотой слоя, — для картинки затенения
-        const masks = this.AO.map(v => {
+        const masks = this.LAYERS.map(({ ao: v }) => {
             const m = document.createElement('canvas'); m.width = albedoA.width; m.height = albedoA.height;
             const g = m.getContext('2d'); g.drawImage(albedoA, 0, 0);
             g.globalCompositeOperation = 'source-in'; const k = Math.round(v * 255);
             g.fillStyle = 'rgb(' + k + ',' + k + ',' + k + ')'; g.fillRect(0, 0, m.width, m.height);
             return m;
         });
-        layers.forEach((coins, li) => {
+        yield;
+        for (let li = 0; li < layers.length; li++) {
             const s = this.LAYERS[li].s;
-            for (const c of coins) {
+            let n = 0;
+            for (const c of layers[li]) {
                 const { sx, sy } = this.cell(c.kind, c.pose);
                 const dx = c.x - C / 2 * s, dy = c.y - C / 2 * s, d = C * s;
                 go.save(); go.shadowColor = 'rgba(0,0,0,0.6)'; go.shadowBlur = 6 * s; go.shadowOffsetY = 3 * s;
                 go.drawImage(masks[li], sx, sy, C, C, dx, dy, d, d); go.restore();
                 ga.drawImage(albedoA, sx, sy, C, C, dx, dy, d, d);
                 gn.drawImage(normalA, sx, sy, C, C, dx, dy, d, d);
+                if (++n % 40 === 0) yield;
             }
-        });
+        }
         return { albedo: alb, normal: nor, ao, layers };
+    },
+    buildPile(albedoA, normalA, opt) {
+        const g = this.pileGen(albedoA, normalA, opt);
+        let r = g.next();
+        while (!r.done) r = g.next();
+        return r.value;
     },
 
     // ---------- свет на видеокарте ----------
@@ -138,18 +170,18 @@ const GreedCoins = {
         'uniform sampler2D tA,tN,tO;uniform mat3 R;uniform vec3 L;',
         'uniform float diff,amb,broad,sharp,shin;',
         'void main(){',
-        ' vec3 a=texture2D(tA,uv).rgb;float o=texture2D(tO,uv).r;',
+        ' vec4 A=texture2D(tA,uv);vec3 a=A.rgb;float o=texture2D(tO,uv).r;',
         ' vec3 n=normalize(R*(texture2D(tN,uv).rgb*2.-1.));',
         ' vec3 h=normalize(L+vec3(0.,0.,1.));',
         ' float d=max(dot(n,L),0.),c=max(dot(n,h),0.);',
         // металл: отражение окрашено своим цветом (золото — золотом, серебро — почти белым)
         ' vec3 col=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
-        ' gl_FragColor=vec4(col*o,1.);}'
+        ' gl_FragColor=vec4(col*o*A.a,A.a);}'
     ].join('\n'),
 
     // Создаёт освещатель на холсте cv (размер W×H). Возвращает draw(tilt).
     lighter(cv, pile) {
-        const gl = cv.getContext('webgl', { premultipliedAlpha: false, antialias: false });
+        const gl = cv.getContext('webgl', { antialias: false });
         if (!gl) return null;
         const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
         const pr = gl.createProgram();
@@ -160,7 +192,7 @@ const GreedCoins = {
         const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
         [['tA', pile.albedo], ['tN', pile.normal], ['tO', pile.ao]].forEach(([name, img], i) => {
             const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);   // у цвета альфа: вне фона прозрачно
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

@@ -66,6 +66,8 @@ const GreedMinigame = {
         if (!this.win && typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'greed',
+                // рамка из монет (greed-coins-rim.js), docs/plan/27-greed-skin.md
+                skin: typeof GreedCoins !== 'undefined' && GreedCoins.rim ? GreedCoins : null,
                 onLeave: () => this.close(),
                 canLeave: () => true
             });
