@@ -451,7 +451,7 @@ Object.assign(GreedCoins, {
     // «искра…вспышка» с соседством 2,6 радиуса — 8 с на весь экран.
     // Нижние слои стартуют раньше верхних — куча нарастает; монета не
     // ложится поверх той, что выше неё, уже вставшей.
-    FULL_DEMO: { near: 1.5, spread: 600, quietLead: 250, bright: [-70, 100], hold: 2200, gap: 600 },
+    FULL_DEMO: { near: 1.5, flow: 2200, apart: 170, hold: 2200, gap: 600 },
     flipFullDemo(host) {
         if (this._pv) return;
         const root = document.createElement('div');
@@ -486,52 +486,49 @@ Object.assign(GreedCoins, {
             })));
             let st = 99;
             const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
-            // ---------- ТРИ ВОЛНЫ (замысел игрока) ----------
-            //   1. половина нижнего слоя — со вспышками, на почти пустом
-            //      экране: видно только эффект;
-            //   2. когда они вспыхнули, остальной нижний и средние слои тихо
-            //      проступают из темноты;
-            //   3. одновременно со второй — верхний слой, со вспышками.
-            // Уход — те же волны в обратном порядке.
+            // ---------- ЕДИНЫЙ ПОТОК ВСПЫШЕК (замысел игрока) ----------
+            // Вспыхивают половина нижнего слоя и верхний слой; остальные
+            // проступают тихо. Пики вспышек идут РОВНЫМ потоком от начала до
+            // конца — сперва нижние (на пустом экране видно только эффект),
+            // потом верхние, без шва между ними. Тихие начинают, когда
+            // вспыхнула половина нижних, и равномерно идут до конца потока.
+            // Было: три волны отдельными пачками — между ними паузы без
+            // вспышек, этапы бросались в глаза (игрок).
             const layersUsed = [...new Set(coins.map(c => c.layer))].sort((a, b) => a - b);
             const bottom = layersUsed[0], top = layersUsed[layersUsed.length - 1];
             for (const c of coins) {
                 c.wave = c.layer === top ? 3 : (c.layer === bottom && rnd() < 0.5 ? 1 : 2);
                 c.quiet = c.wave === 2;
             }
-            // расписать группу: старт base + случайно в spread; вспыхивающим
-            // соседям нельзя совпасть пиком вспышки
-            const sched = (group, key, base, spread, rev) => {
-                const bright = [F.toPeak + P.bright[0], F.toPeak + P.bright[1]];
-                const win = rev ? [run - bright[1], run - bright[0]] : bright;
-                const cell = 64, grid = new Map(), near = this.RAD * P.near;
-                let last = 0;
-                for (const c of group.slice().sort(() => rnd() - 0.5)) {
-                    let t = Math.round(base + rnd() * spread);
-                    const gx = Math.floor(c.x / cell), gy = Math.floor(c.y / cell), nb = [];
-                    if (!c.quiet) for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
-                        const q = grid.get((gy + j) * 1000 + gx + i);
-                        if (q) for (const o of q) if (Math.hypot(o.x - c.x, o.y - c.y) < near) nb.push(o);
-                    }
-                    const busy = (t) => nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
-                    while (busy(t)) t += 30;
-                    c[key] = t; last = Math.max(last, t);
-                    const k = gy * 1000 + gx;
-                    if (!c.quiet) { if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c); }
+            const shuffle = (a) => a.sort(() => rnd() - 0.5);
+            const first = shuffle(coins.filter(c => c.wave === 1)), last = shuffle(coins.filter(c => c.wave === 3));
+            const flashers = first.concat(last), quiet = coins.filter(c => c.quiet);
+            const N = flashers.length, step = P.flow / N;
+            // слот i — пик вспышки; соседи не вспыхивают ближе P.apart мс.
+            // Из ближайших по очереди берём первую монету без занятых соседей.
+            const near = this.RAD * P.near, peaks = [];
+            const pool = flashers.slice();
+            for (let i = 0; i < N; i++) {
+                const tp = i * step + (rnd() - 0.5) * step;
+                let pick = 0;
+                for (let j = 0; j < Math.min(pool.length, 40); j++) {
+                    const c = pool[j];
+                    if (!peaks.some(o => Math.abs(o.tp - tp) < P.apart && Math.hypot(o.x - c.x, o.y - c.y) < near)) { pick = j; break; }
                 }
-                return last;
-            };
-            const W = [1, 2, 3].map(w => coins.filter(c => c.wave === w));
-            // вход
-            const end1 = sched(W[0], 'delayIn', 0, P.spread, false) + F.toPeak;     // все первые вспыхнули
-            const end2 = sched(W[1], 'delayIn', end1 - P.quietLead, P.spread, false);
-            const end3 = sched(W[2], 'delayIn', end1, P.spread, false);
-            const lastIn = Math.max(end1, end2, end3);
-            // уход: верх со вспышками и тихие вместе, последними — первые
-            const o3 = sched(W[2], 'delayOut', 0, P.spread, true);
-            const o2 = sched(W[1], 'delayOut', 0, P.spread, true);
-            const lastOut = sched(W[0], 'delayOut', Math.max(o3, o2) + F.fromPeak - P.quietLead, P.spread, true);
-            this._fullStats = { coins: coins.length, inMs: lastIn + run, outMs: lastOut + run };
+                const c = pool.splice(pick, 1)[0];
+                c.tp = tp; peaks.push(c);
+            }
+            for (const c of flashers) c.delayIn = Math.max(0, Math.round(c.tp));   // пик — в tp + toPeak
+            const halfFirst = first.length ? first.map(c => c.tp).sort((a, b) => a - b)[Math.floor(first.length / 2)] : 0;
+            const qEnd = P.flow - run * 0.5;
+            for (const c of shuffle(quiet)) c.delayIn = Math.round(halfFirst + rnd() * Math.max(0, qEnd - halfFirst));
+            const lastIn = Math.max(...coins.map(c => c.delayIn));
+            // уход — тот же поток задом наперёд: последняя вставшая уходит первой
+            for (const c of coins) c.delayOut = lastIn - c.delayIn;
+            const lastOut = lastIn;
+            const hist = (arr) => { const h = []; for (const v of arr) { const k = Math.floor(v / 200); h[k] = (h[k] || 0) + 1; } return Array.from(h, v => v || 0).join(' '); };
+            this._fullStats = { coins: coins.length, inMs: lastIn + run, outMs: lastOut + run,
+                flashPer200: hist(flashers.map(c => c.delayIn + F.toPeak)), quietPer200: hist(quiet.map(c => c.delayIn)) };
             const outAt = lastIn + run + P.hold, CYCLE = outAt + lastOut + run + P.gap;
             const tilt = { x: 0, y: 0 };
             let cycle = null, stored = 0, lastRebuild = -1e9;
