@@ -13,23 +13,68 @@
 // во весь экран). Свет считает видеокарта на своём холсте вне страницы,
 // а в полосы при наклоне копируется готовая картинка (mountLive).
 Object.assign(GreedCoins, {
-    rim: { side: 18, top: 72 },
-    // Крест крупнее монеты втрое: при меньшем монеты не помещаются между его
-    // лучами, и пустота читается ромбом, а не крестом.
-    cross: { x: 338, y: 40, size: 56 },
-    CROSS_GAP: 2,       // полуширина пустоты сверх радиуса монеты, единицы сцены
+    // Верх равен низу: низ выходит сам (что осталось под уменьшенной сценой).
+    rim: { side: 18, top: 59 },
+    // Крест — пустота между обычными монетами. Мелочь между лучами (первая
+    // версия) игрок забраковал: смешные монетки другого размера. Поэтому
+    // монеты вдоль лучей кладутся НАРОЧНО (crossPins) — по одной в каждом
+    // углу между лучами и по паре дальше вдоль лучей, с небольшим разбросом,
+    // а остальное досыпается случайно и в пустоту не лезет.
+    cross: { x: 336, y: 46, size: 44 },
+    CROSS_GAP: 4,       // полуширина пустоты, единицы сцены
     CORNER: 26,
     OVERLAP: 1.5,       // тьма под монетами заходит на сцену — без светлой щели на стыке
     HANG: 0.45,         // насколько центр монеты может зайти за край сцены, доли радиуса
 
     get bg() { return PALETTE.greedCoin.gold.deep; },
     // Как далеко монеты заходят на сцену: обычный край — на полмонеты, у
-    // креста — глубже (см. rimKeep).
+    // креста — до низа нижней монеты креста.
     reach() {
-        const r = this.RAD / 2, C = this.cross;
-        return Math.ceil(Math.max(r * (1 + this.HANG), C.y + C.size * this.CROSS_ZONE + r - this.inner().y0)) + 2;
+        const r = this.RAD / 2, P = this.crossPins();
+        const low = Math.max(this.cross.y + this.crossZone(), ...P.top.concat(P.under).map(p => p.y)) + r;
+        return Math.ceil(Math.max(r * (1 + this.HANG), low - this.inner().y0)) + 2;
     },
-    CROSS_ZONE: 0.8,    // радиус окрестности креста, доли size
+
+    // Монеты вокруг креста (замысел игрока: монеты «случайно» упали так, что
+    // между ними пустота крестом; все монеты обычного размера). Каждый луч с
+    // обеих сторон выложен рядом монет вплотную к нему: в углах между лучами —
+    // по монете (она общая для двух соседних рядов), дальше вдоль луча — ещё
+    // по одной с каждой стороны, на конце — монета-заглушка.
+    // Что было до: мелочь между лучами — «смешные монетки» (игрок); только
+    // четыре монеты вокруг центра — выходила толстая звёздочка с короткими
+    // лучами: у одинаковых кругов щель между соседями длится не дольше
+    // радиуса, дальше раскрывается клином.
+    crossPins() {
+        if (this._pins) return this._pins;
+        const C = this.cross, r = this.RAD / 2, S2 = Math.SQRT1_2;
+        let st = 977;
+        const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296 - 0.5; };
+        const off = () => r + this.CROSS_GAP + Math.abs(rnd()) * 1.5;
+        const top = [];
+        [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([dx, dy]) => {
+            const t = (r + this.CROSS_GAP) / S2 + 0.5;
+            top.push({ x: C.x + dx * t + rnd(), y: C.y + dy * t + rnd() });
+        });
+        const u1 = (r + this.CROSS_GAP) + 0.5, u2 = u1 + 2 * r * 0.93;
+        [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([ax, ay]) => {
+            const dx = ax * S2, dy = ay * S2;
+            [1, -1].forEach(side => {
+                const o = off();
+                top.push({ x: C.x + dx * u2 - dy * side * o, y: C.y + dy * u2 + dx * side * o });
+            });
+            const T = this.capLen();
+            top.push({ x: C.x + dx * T + rnd() * 2, y: C.y + dy * T + rnd() * 2 });
+        });
+        return (this._pins = { top, under: [] });
+    },
+    // монета-заглушка вплотную к последней паре вдоль луча
+    capLen() {
+        const r = this.RAD / 2, o = r + this.CROSS_GAP + 0.7, u2 = r + this.CROSS_GAP + 0.5 + 2 * r * 0.93;
+        return u2 + Math.sqrt(Math.max(0, (2 * r * 0.95) ** 2 - o * o));
+    },
+    // Длина луча — до монеты на его конце.
+    armLen() { return this.capLen() - this.RAD / 2 * 0.95; },
+    crossZone() { return this.capLen() * 0.9; },
 
     inner() { return MinigameWindow.skinGeometry(this).inner; },
 
@@ -42,26 +87,48 @@ Object.assign(GreedCoins, {
         return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - R;
     },
     crossDist(x, y) {
-        const C = this.cross, a = C.size / 2, seg = (x0, y0, x1, y1) => {
+        const C = this.cross, a = this.armLen() * Math.SQRT1_2, seg = (x0, y0, x1, y1) => {
             const dx = x1 - x0, dy = y1 - y0, t = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)));
             return Math.hypot(x - x0 - dx * t, y - y0 - dy * t);
         };
         return Math.min(seg(C.x - a, C.y - a, C.x + a, C.y + a), seg(C.x - a, C.y + a, C.x + a, C.y - a));
     },
-    rimKeep(x, y, r, rng, L) {
-        // Вокруг креста монеты лежат и над углом сцены: иначе нижние лучи
-        // креста упирались в край сцены, где монет нет, и крест читался «V».
-        const nearCross = Math.hypot(x - this.cross.x, y - this.cross.y) < this.cross.size * this.CROSS_ZONE;
+    rimKeep(x, y, r, rng) {
+        // Вокруг креста монеты лежат и над углом сцены: иначе нижний луч
+        // креста упирался в край сцены, где монет нет, и крест читался «V».
+        const nearCross = Math.hypot(x - this.cross.x, y - this.cross.y) < this.crossZone();
         if (!nearCross && this.edgeDist(x, y) < -r * this.HANG) return false;
-        if (L && L.only === 'cross' && !nearCross) return false;
         // запас у каждой монеты свой — край пустоты неровный, как у упавших
-        return this.crossDist(x, y) > this.CROSS_GAP + r * (0.75 + rng() * 0.2);
+        // Случайные монеты (и нижних слоёв тоже) — дальше от луча, чем монеты
+        // креста: иначе нижние слои подходили к лучу вплотную и закрывали
+        // пустоту, крест исчезал.
+        return this.crossDist(x, y) > this.CROSS_GAP + r + 3 + rng() * 2;
     },
+    // Щели между монетами рамки — тёмное золото (глубина кучи), и только
+    // пустота креста — чёрная. Пока все щели были одинаково чёрными, крест
+    // терялся среди них: на обычном размере экрана его было не найти.
+    rimUnder(g) {
+        g.fillStyle = 'rgb(215,215,215)'; g.fillRect(0, 0, 390, 844);
+        const C = this.cross, a = this.armLen() * Math.SQRT1_2;
+        g.strokeStyle = '#000'; g.lineCap = 'round'; g.lineWidth = 2 * this.CROSS_GAP + 12;
+        g.beginPath();
+        g.moveTo(C.x - a, C.y - a); g.lineTo(C.x + a, C.y + a);
+        g.moveTo(C.x - a, C.y + a); g.lineTo(C.x + a, C.y - a);
+        g.stroke();
+    },
+    // Заливает фон рамки текущим цветом: всё вне сцены и пятно под монетами
+    // креста — там они лежат над углом сцены, и без подложки нижние лучи
+    // креста терялись на тёмном фоне сцены.
     rimBg(g) {
         const I = this.inner(), e = this.OVERLAP;
+        g.beginPath();
         g.rect(-2, -2, 394, 848);
         if (g.roundRect) g.roundRect(I.x0 + e, I.y0 + e, I.x1 - I.x0 - 2 * e, I.y1 - I.y0 - 2 * e, this.CORNER - e);
         else g.rect(I.x0 + e, I.y0 + e, I.x1 - I.x0 - 2 * e, I.y1 - I.y0 - 2 * e);
+        g.fill('evenodd');
+        g.beginPath();
+        g.arc(this.cross.x, this.cross.y, this.capLen(), 0, Math.PI * 2);
+        g.fill();
     },
 
     // ---------- атласы грузятся сразу при подключении файла ----------
@@ -84,7 +151,7 @@ Object.assign(GreedCoins, {
     *drawGen(ctx) {
         const A = this.loadAtlas();
         if (!A.ready) {
-            ctx.save(); ctx.fillStyle = this.bg; ctx.beginPath(); this.rimBg(ctx); ctx.fill('evenodd'); ctx.restore();
+            ctx.save(); ctx.fillStyle = this.bg; this.rimBg(ctx); ctx.restore();
             return;
         }
         yield* this.lightRim();
@@ -94,7 +161,11 @@ Object.assign(GreedCoins, {
         if (this._rimDraw) return;
         const A = this.loadAtlas();
         const pile = yield* this.pileGen(A.alb, A.nor, {
-            seed: this.SEED + 1, keep: (x, y, r, rng, L) => this.rimKeep(x, y, r, rng, L), bg: (g) => this.rimBg(g)
+            seed: this.SEED + 1, keep: (x, y, r, rng) => this.rimKeep(x, y, r, rng), bg: (g) => this.rimBg(g),
+            pins: this.crossPins(), under: (g) => this.rimUnder(g), bgColor: PALETTE.greedCoin.gold.lo,
+            // тени слабее, чем в куче: иначе щели темнели до черноты и
+            // спорили с пустотой креста
+            shadow: 0.2
         });
         yield;
         const cv = document.createElement('canvas'); cv.width = this.W; cv.height = this.H;
