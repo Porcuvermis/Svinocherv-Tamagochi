@@ -565,8 +565,8 @@ Object.assign(EnvyMinigame, {
                 // Подсветка живёт огибающей волны, а не только её гребнем: на
                 // чистом гребне цвет мигал слишком коротко, чтобы успеть
                 // прочитаться как ответ «правильный/неправильный».
-                const k = Math.min(1, w.strength * falloff * decay * (0.55 + 0.45 * Math.abs(swing)));
-                if (k > tint) { tint = k; tintColor = w.color; }
+                // Цвет волны — не здесь, а общим кольцом в шейдере фольги
+                // (updateWaveColor): по наклейке он красил их по одной.
             }
 
             // Дрожь удерживаемого образа: чем дольше держишь, тем сильнее.
@@ -579,7 +579,7 @@ Object.assign(EnvyMinigame, {
                 // После подсказки образ ещё и держит свой цвет, чтобы не
                 // гадать, что именно ты сейчас додерживаешь.
                 if (t.hinted) {
-                    tint = Math.max(tint, 0.55);
+                    tint = Math.max(tint, 0.9);
                     tintColor = t.kind === 'right' ? this.hintColors.right : this.hintColors.wrong;
                 }
             }
@@ -589,7 +589,7 @@ Object.assign(EnvyMinigame, {
             t.swayRot = rot;
             t.swayScale = scale;
 
-            if (tintColor) t.mat.color.copy(t.baseColor).lerp(tintColor, Math.min(0.85, tint));
+            if (tintColor) t.mat.color.copy(tintColor).multiplyScalar(Math.min(1, tint));
             else if (t.tinted) t.mat.color.copy(t.baseColor);
             t.tinted = !!tintColor;
         }
@@ -635,6 +635,27 @@ Object.assign(EnvyMinigame, {
         g.y += (base.y + ty * F.h * 2 - g.y) * k;
     },
 
+    // Кольцо цвета волны для шейдера фольги (envy-engrave.js): центр — точка
+    // наклейки на экране, передний край идёт со скоростью волны, задний — на
+    // WAVE_HOLD_MS позже. Всё в долях высоты экрана.
+    updateWaveColor() {
+        const U = ENVY_IMAGE_POOL.glowU;
+        if (!U || !this.renderer) return;
+        const w = this.waves[this.waves.length - 1];
+        const H = this.renderer.domElement.height;
+        U.uScreenH.value = H;
+        if (!w) { U.uWave.value.set(0, 0, -1, -1); return; }
+        const v = this.scratchVec.set(w.x, w.y, 0).project(this.camera);
+        const aspect = this.camera.aspect;
+        const halfH = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180) * ENVY_SCENE.CAM_DIST;
+        const toH = 1 / (2 * halfH);            // мировые единицы → доли высоты
+        const front = (w.age / 1000) * ENVY_SCENE.WAVE_SPEED * toH;
+        const back = ((w.age - ENVY_SCENE.WAVE_HOLD_MS) / 1000) * ENVY_SCENE.WAVE_SPEED * toH;
+        U.uWave.value.set((v.x + 1) / 2 * aspect, (v.y + 1) / 2, front, back);
+        U.uWaveCol.value.copy(w.color);
+        U.uWaveEdge.value = ENVY_SCENE.WAVE_EDGE;
+    },
+
     // ================= ЦИКЛ И ОТРИСОВКА =================
     loop(ts) {
         if (!this.lastTs) this.lastTs = ts;
@@ -655,6 +676,7 @@ Object.assign(EnvyMinigame, {
         this.updateWaves(dt);
         this.updateDisturbance(ts / 1000);
         this.updateLight(dt, ts / 1000);
+        this.updateWaveColor();
 
         if (this.clouds.cur) this.cloudCompensate(this.clouds.cur, true);
         if (this.clouds.next) this.cloudCompensate(this.clouds.next, false);
