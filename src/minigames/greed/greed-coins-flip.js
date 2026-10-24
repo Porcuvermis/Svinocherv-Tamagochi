@@ -451,7 +451,7 @@ Object.assign(GreedCoins, {
     // «искра…вспышка» с соседством 2,6 радиуса — 8 с на весь экран.
     // Нижние слои стартуют раньше верхних — куча нарастает; монета не
     // ложится поверх той, что выше неё, уже вставшей.
-    FULL_DEMO: { near: 1.5, layerLag: 120, spread: 500, bright: [-70, 100], hold: 2200, gap: 600 },
+    FULL_DEMO: { near: 1.5, spread: 600, quietLead: 250, bright: [-70, 100], hold: 2200, gap: 600 },
     flipFullDemo(host) {
         if (this._pv) return;
         const root = document.createElement('div');
@@ -484,30 +484,36 @@ Object.assign(GreedCoins, {
                 x: c.x, y: c.y, kind: c.kind, pose: c.n, roll: this.poses()[c.pose].roll * D,
                 rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao, layer: li, side: ((c.x * 7 + c.y * 13) % 100) / 100
             })));
-            // вспыхивает только верхний слой кучи
-            const topLayer = Math.max(...coins.map(c => c.layer));
-            for (const c of coins) c.quiet = c.layer !== topLayer;
             let st = 99;
             const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
-            // старт: случайно в пределах spread, со сдвигом на слой; затем
-            // соседей разводят по яркому окну
-            const sched = (key, rev) => {
+            // ---------- ТРИ ВОЛНЫ (замысел игрока) ----------
+            //   1. половина нижнего слоя — со вспышками, на почти пустом
+            //      экране: видно только эффект;
+            //   2. когда они вспыхнули, остальной нижний и средние слои тихо
+            //      проступают из темноты;
+            //   3. одновременно со второй — верхний слой, со вспышками.
+            // Уход — те же волны в обратном порядке.
+            const layersUsed = [...new Set(coins.map(c => c.layer))].sort((a, b) => a - b);
+            const bottom = layersUsed[0], top = layersUsed[layersUsed.length - 1];
+            for (const c of coins) {
+                c.wave = c.layer === top ? 3 : (c.layer === bottom && rnd() < 0.5 ? 1 : 2);
+                c.quiet = c.wave === 2;
+            }
+            // расписать группу: старт base + случайно в spread; вспыхивающим
+            // соседям нельзя совпасть пиком вспышки
+            const sched = (group, key, base, spread, rev) => {
                 const bright = [F.toPeak + P.bright[0], F.toPeak + P.bright[1]];
                 const win = rev ? [run - bright[1], run - bright[0]] : bright;
                 const cell = 64, grid = new Map(), near = this.RAD * P.near;
                 let last = 0;
-                const nL = this.LAYERS.length;
-                const order = coins.slice().sort((a, b) => (rev ? b.layer - a.layer : a.layer - b.layer) || rnd() - 0.5);
-                for (const c of order) {
-                    const li = rev ? nL - 1 - c.layer : c.layer;
-                    let t = Math.round(li * P.layerLag + rnd() * P.spread);
+                for (const c of group.slice().sort(() => rnd() - 0.5)) {
+                    let t = Math.round(base + rnd() * spread);
                     const gx = Math.floor(c.x / cell), gy = Math.floor(c.y / cell), nb = [];
-                    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+                    if (!c.quiet) for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
                         const q = grid.get((gy + j) * 1000 + gx + i);
                         if (q) for (const o of q) if (Math.hypot(o.x - c.x, o.y - c.y) < near) nb.push(o);
                     }
-                    // правило соседства — только между вспыхивающими
-                    const busy = (t) => !c.quiet && nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
+                    const busy = (t) => nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
                     while (busy(t)) t += 30;
                     c[key] = t; last = Math.max(last, t);
                     const k = gy * 1000 + gx;
@@ -515,7 +521,16 @@ Object.assign(GreedCoins, {
                 }
                 return last;
             };
-            const lastIn = sched('delayIn', false), lastOut = sched('delayOut', true);
+            const W = [1, 2, 3].map(w => coins.filter(c => c.wave === w));
+            // вход
+            const end1 = sched(W[0], 'delayIn', 0, P.spread, false) + F.toPeak;     // все первые вспыхнули
+            const end2 = sched(W[1], 'delayIn', end1 - P.quietLead, P.spread, false);
+            const end3 = sched(W[2], 'delayIn', end1, P.spread, false);
+            const lastIn = Math.max(end1, end2, end3);
+            // уход: верх со вспышками и тихие вместе, последними — первые
+            const o3 = sched(W[2], 'delayOut', 0, P.spread, true);
+            const o2 = sched(W[1], 'delayOut', 0, P.spread, true);
+            const lastOut = sched(W[0], 'delayOut', Math.max(o3, o2) + F.fromPeak - P.quietLead, P.spread, true);
             this._fullStats = { coins: coins.length, inMs: lastIn + run, outMs: lastOut + run };
             const outAt = lastIn + run + P.hold, CYCLE = outAt + lastOut + run + P.gap;
             const tilt = { x: 0, y: 0 };
