@@ -57,13 +57,17 @@ const GreedCoins = {
     // ao — светлота слоя (верх кучи светлее низа).
     // only: 'rim' / 'cross' — слой только у рамки (в просмотре кучи его нет).
     LAYERS: [
-        // Подсыпка рамки: плотная, закрывает щели между монетами. Без неё
-        // щелей в рамке было столько, что пустота-крестик терялась среди них.
-        // Не слишком тёмная (ao): тёмная подсыпка сама читалась пустотой.
-        { s: 1.0, gap: 0.55, ao: 0.62, only: 'rim', pins: 'under' },
-        { s: 0.82, gap: 0.8, ao: 0.45 },
+        // Подсыпка рамки: плотная и тёмная, закрывает щели между монетами.
+        // Без неё щелей в рамке было столько, что пустота-крестик терялась
+        // среди них.
+        { s: 1.0, gap: 0.55, ao: 0.4, only: 'rim' },
+        { s: 1.0, gap: 0.8, ao: 0.45 },
         { s: 1.0, gap: 0.72, ao: 0.78 },
-        { s: 1.0, gap: 0.95, ao: 1.0, pins: 'top' }
+        { s: 1.0, gap: 0.95, ao: 1.0 },
+        // Досыпка у крестика рамки — плотнее, чтобы монеты легли и между
+        // лучами креста (иначе пустота читалась пятном). Размер обычный:
+        // мелочь здесь игрок забраковал — «смешные монетки».
+        { s: 1.0, gap: 0.38, ao: 1.0, only: 'cross' }
     ],
 
     SEED: 4242,
@@ -73,33 +77,30 @@ const GreedCoins = {
     // Возвращает три списка монет. Детерминированно от seed.
     // keep(x, y, r, rng) — оставить ли монету (в единицах сцены 390×844, r —
     // её радиус); у рамки — только полоса по краю и не в крестике.
-    // pins — монеты, положенные нарочно (у рамки — вокруг креста), в
-    // единицах сцены: { top: [...], under: [...] } — в слой с таким флагом
-    // pins, раньше случайных.
-    layout(seed, keep, pins) {
+    // zone.sample(rng, r) → {x, y} (единицы сцены) — куда бросать монеты слоя only: 'cross':
+    // только в окрестность креста и много раз, иначе случайные броски по
+    // всему экрану редко попадали между лучами, и крест то был, то нет.
+    layout(seed, keep, zone) {
         let st = (seed || this.SEED) >>> 0;
         const rng = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
         const P = this.poses().length, W = this.W, H = this.H;
         return this.LAYERS.map((L) => {
             if (L.only && !keep) return [];
             const pts = [], cell = 40 * L.s, grid = {}, minD = 2 * this.RAD * L.s * L.gap;
-            const pinned = (L.pins && pins && pins[L.pins]) ? pins[L.pins].slice() : [];
-            for (let t = 0; t < 30000 + pinned.length; t++) {
-                const pin = pinned.shift();
-                const x = pin ? pin.x * 2 : rng() * (W + 40) - 20, y = pin ? pin.y * 2 : rng() * (H + 40) - 20;
+            const Z = L.only === 'cross' && zone;
+            for (let t = 0; t < 30000; t++) {
+                let x, y;
+                if (Z) { const q = Z.sample(rng, this.RAD * L.s / 2); x = q.x * 2; y = q.y * 2; }
+                else { x = rng() * (W + 40) - 20; y = rng() * (H + 40) - 20; }
                 const gx = Math.floor(x / cell), gy = Math.floor(y / cell);
                 let ok = true;
                 for (let i = -2; i <= 2 && ok; i++) for (let j = -2; j <= 2 && ok; j++) {
                     const q = grid[(gy + j) * 1000 + gx + i];
                     if (q) for (const o of q) if (Math.hypot(o.x - x, o.y - y) < minD) { ok = false; break; }
                 }
-                if (!ok && !pin) continue;
-                if (!pin && keep && !keep(x / 2, y / 2, this.RAD * L.s / 2, rng, L)) continue;
-                // Монеты креста — почти плашмя: наклонённая монета на экране
-                // овал, щель рядом с ней шире расчётной, и крест расплывался.
-                let pose = Math.floor(rng() * P);
-                if (pin) pose = Math.floor(rng() * this.ROLLS * (1 + this.AZ));    // плашмя и 12°
-                const p = this.poses()[pose];
+                if (!ok) continue;
+                if (keep && !keep(x / 2, y / 2, this.RAD * L.s / 2, rng, L)) continue;
+                const pose = Math.floor(rng() * P), p = this.poses()[pose];
                 // Ось у каждой монеты чуть своя: спрайт тот же, а блеск наступает в свой момент.
                 const jx = (rng() - 0.5) * 0.12, jy = (rng() - 0.5) * 0.12;
                 const nn = Math.hypot(p.n[0] + jx, p.n[1] + jy, p.n[2]);
@@ -116,26 +117,26 @@ const GreedCoins = {
     // ---------- раскладка в три картинки ----------
     // Все три рисуются в одном порядке теми же спрайтами — сверху всегда та
     // монета, что лежит выше. ao: светлота слоя (верх кучи светлее) и тени.
-    // opt: seed, keep, pins (см. layout), under(ctx) — затенение фона под
-    // монетами (картинка ao, единицы сцены), bg(ctx) — путь фона в единицах сцены
+    // opt: seed, keep, zone (см. layout), under(ctx) — затенение фона под
+    // монетами (единицы сцены), bgColor, shadow — сила теней, bg(ctx) — путь фона в единицах сцены
     // (по умолчанию весь холст; вне фона — прозрачно, там видна сцена).
     // Генератор: рамку окно рисует кусками в простое (MinigameWindow.wearSkin).
     *pileGen(albedoA, normalA, opt) {
         opt = opt || {};
-        const W = this.W, H = this.H, C = this.CELL, layers = this.layout(opt.seed, opt.keep, opt.pins);
+        const W = this.W, H = this.H, C = this.CELL, layers = this.layout(opt.seed, opt.keep, opt.zone);
         yield;
         const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
         const alb = mk(), nor = mk(), ao = mk();
         const ga = alb.getContext('2d'), gn = nor.getContext('2d'), go = ao.getContext('2d');
         const bg = (g, style) => {
             g.save(); g.setTransform(W / 390, 0, 0, H / 844, 0, 0); g.fillStyle = style; g.beginPath();
-            if (opt.bg) opt.bg(g); else g.fillRect(0, 0, 390, 844);
+            if (opt.bg) { opt.bg(g); g.fill('evenodd'); } else g.fillRect(0, 0, 390, 844);
             g.restore();
         };
         bg(ga, opt.bgColor || PALETTE.greedCoin.gold.deep);
         gn.fillStyle = 'rgb(128,128,255)'; gn.fillRect(0, 0, W, H);
         go.fillStyle = 'rgb(40,40,40)'; go.fillRect(0, 0, W, H);
-        // Под монетами — своё затенение фона (у рамки: щели светлее пустоты креста).
+        // Своё затенение фона под монетами (у рамки: щели светлее пустоты креста).
         if (opt.under) { go.save(); go.setTransform(W / 390, 0, 0, H / 844, 0, 0); opt.under(go); go.restore(); }
         // силуэты атласа, залитые светлотой слоя, — для картинки затенения
         const masks = this.LAYERS.map(({ ao: v }) => {
@@ -184,9 +185,7 @@ const GreedCoins = {
         ' vec3 h=normalize(L+vec3(0.,0.,1.));',
         ' float d=max(dot(n,L),0.),c=max(dot(n,h),0.);',
         // металл: отражение окрашено своим цветом (золото — золотом, серебро — почти белым)
-        // блик гаснет в тени (o): глубина кучи и подложка рамки не бликуют
-        ' float sh=smoothstep(.5,.8,o);',
-        ' vec3 col=a*(amb+diff*d)+sh*((a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin));',
+        ' vec3 col=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
         ' gl_FragColor=vec4(col*o*A.a,A.a);}'
     ].join('\n'),
 
