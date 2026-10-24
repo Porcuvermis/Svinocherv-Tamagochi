@@ -18,7 +18,7 @@
 // это проекция диска (эллипс) и поворот нормалей, без перепекания поз.
 // Толщины ребра нет: на ребре монета и так невидима.
 Object.assign(GreedCoins, {
-    FLIP: { toPeak: 520, fromPeak: 680, flash: 70, glow: 0.9, spark: 260, almond: 0.28, ghost: 0.32 },
+    FLIP: { toPeak: 520, fromPeak: 680, flash: 45, glow: 0.75, spark: 260, almond: 0.28, ghost: 0.32 },
 
     // ---------- векторы ----------
     v3: {
@@ -80,9 +80,12 @@ Object.assign(GreedCoins, {
     // вместо «искра взрывается в миндалину» из пустоты выскакивал круг (игрок).
     firstSeen(c) {
         const F = this.FLIP, V = this.v3;
-        const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+        // К пику — разгоном, от пика — торможением: монета проносится через
+        // пик на полной скорости. С плавным входом-выходом она замедлялась у
+        // самого пика, и белая фаза тянулась (игрок: «укороти белую фазу»).
+        const toP = (x) => 1 - Math.cos(x * Math.PI / 2), fromP = (x) => Math.sin(x * Math.PI / 2);
         for (let t = 0; t <= F.toPeak; t += 4) {
-            const n = V.slerp(c.edge, c.H, ease(t / F.toPeak));
+            const n = V.slerp(c.edge, c.H, toP(t / F.toPeak));
             if (Math.abs(n[2]) > F.almond) return t;
         }
         return F.toPeak;
@@ -99,14 +102,17 @@ Object.assign(GreedCoins, {
     // стягивается в искру, искра гаснет.
     flipState(c, t, dir) {
         const F = this.FLIP, V = this.v3;
-        const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+        // К пику — разгоном, от пика — торможением: монета проносится через
+        // пик на полной скорости. С плавным входом-выходом она замедлялась у
+        // самого пика, и белая фаза тянулась (игрок: «укороти белую фазу»).
+        const toP = (x) => 1 - Math.cos(x * Math.PI / 2), fromP = (x) => Math.sin(x * Math.PI / 2);
         let n, m;
         if (dir === 'in') {
-            if (t < F.toPeak) { n = V.slerp(c.edge, c.H, ease(t / F.toPeak)); m = 0; }
-            else { n = V.slerp(c.H, c.pose, ease(Math.min(1, (t - F.toPeak) / F.fromPeak))); m = 1; }
+            if (t < F.toPeak) { n = V.slerp(c.edge, c.H, toP(t / F.toPeak)); m = 0; }
+            else { n = V.slerp(c.H, c.pose, fromP(Math.min(1, (t - F.toPeak) / F.fromPeak))); m = 1; }
         } else {
-            if (t < F.fromPeak) { n = V.slerp(c.pose, c.H, ease(t / F.fromPeak)); m = 1; }
-            else { n = V.slerp(c.H, c.edge, ease(Math.min(1, (t - F.fromPeak) / F.toPeak))); m = 0; }
+            if (t < F.fromPeak) { n = V.slerp(c.pose, c.H, toP(t / F.fromPeak)); m = 1; }
+            else { n = V.slerp(c.H, c.edge, fromP(Math.min(1, (t - F.fromPeak) / F.toPeak))); m = 0; }
         }
         const tp = dir === 'in' ? F.toPeak : F.fromPeak, dt = (t - tp) / F.flash;
         if (c.seen === undefined) c.seen = this.firstSeen(c);
@@ -159,7 +165,9 @@ Object.assign(GreedCoins, {
         '   vec3 n0=normalize(T*(R*vec3(0.,0.,1.)));float c0=max(dot(n0,hv),0.);',
         // gbase — ровное стеклянное свечение бесплотной монеты: после искры
         // она видна миндалиной ещё до того, как поймает свет
-        '   vec3 ghost=glint*(sharp*pow(c0,shin)*1.1+pow(c0,shin*.35)*.5+gbase);',
+        // блик бесплотной монеты узкий (степени ×3 и ×1): с прежними (×1 и
+        // ×0.35) он белел за ~15° до пика, и весь экран заливало белым (игрок)
+        '   vec3 ghost=glint*(sharp*pow(c0,shin*3.)*1.1+pow(c0,shin)*.35+gbase);',
         '   float k=A.a;',
         // ao — затенение глубины кучи; бесплотный блик и вспышка от него не гаснут:
         // свет на монету падает и в глубине
