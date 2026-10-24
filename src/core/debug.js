@@ -59,7 +59,6 @@ const DebugState = {
             <button data-act="feed">Покормить</button>
             <button data-act="room">Комната</button>
             <button data-act="gear">Жетоны</button>
-            <button data-act="coins">Монеты</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -305,15 +304,6 @@ const DebugState = {
         // три осколка = жетон), но копить их ради проверки магазина долго.
         // Выдаётся через Backend, а не записью в состояние: когда появится
         // рогалик, он пойдёт тем же путём.
-        // Монеты алчности: весь экран монет, появляются и исчезают в блике
-        // (greed-coins-flip.js). Раньше тут были кучка (flipPileDemo), одна
-        // монета (flipDemo) и куча для проверки блеска (preview).
-        if (act === 'coins') {
-            const go = () => GreedCoins.flipFullDemo(document.getElementById('game-container') || document.body);
-            if (typeof GreedCoins !== 'undefined') go();
-            return;
-        }
-
         if (act === 'gear') {
             Backend.grantCurrency('wrath_token', 5);
             Backend.grantCurrency('gold', 100);

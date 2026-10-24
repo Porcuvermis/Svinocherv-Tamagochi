@@ -137,10 +137,25 @@ const GreedMinigame = {
         // позиционируется в % от контейнера и обязана совпасть с окном,
         // нарисованным ВНУТРИ svg (viewBox 350×480). Меряем на следующем
         // кадре — сразу после .active сцена может иметь нулевой размер.
-        requestAnimationFrame(() => {
-            this.fitMachineStage();
-            this.resetReelsVisual();
+        // Готовность для покрова (src/core/mg-veil.js, veilReady): монеты
+        // уходят с экрана только когда автомат собран и уже нарисован —
+        // размер посчитан, барабаны выставлены, кадр с ними показан, — и
+        // картинки монет рамки загружены. Сюда же потом встанет загрузка
+        // ассетов прокачки: покров стоит, пока всё это не готово.
+        this._readyP = new Promise((ready) => {
+            requestAnimationFrame(() => {
+                this.fitMachineStage();
+                this.resetReelsVisual();
+                const shown = () => requestAnimationFrame(() => ready());
+                const A = typeof GreedCoins !== 'undefined' && GreedCoins.loadAtlas ? GreedCoins.loadAtlas() : null;
+                if (A && !A.ready) A.wait.push(shown); else shown();
+            });
         });
+    },
+
+    // Готовность для покрова перехода: см. open().
+    veilReady() {
+        return this._readyP || Promise.resolve();
     },
 
     close() {
