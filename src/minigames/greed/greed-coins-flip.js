@@ -100,6 +100,7 @@ Object.assign(GreedCoins, {
     // стягивается в искру, искра гаснет.
     flipState(c, t, dir) {
         const F = this.FLIP, V = this.v3;
+        if (c.quiet) return this.quietState(c, t, dir);
         // К пику — разгоном, от пика — торможением: монета проносится через
         // пик на полной скорости. С плавным входом-выходом она замедлялась у
         // самого пика, и белая фаза тянулась (игрок: «укороти белую фазу»).
@@ -124,12 +125,25 @@ Object.assign(GreedCoins, {
         return { n, m, flash: Math.exp(-dt * dt), reveal: m ? 9 : reveal, star, starP: p, ghost: F.ghost };
     },
 
+    // Тихая монета: без искры, блика бесплотной монеты и вспышки — просто
+    // поворачивается с ребра в позу, проступая из темноты (m растёт с
+    // поворотом). Так появляются нижние слои кучи: вспыхивает только верх.
+    // Когда вспыхивали все, в разгар появления экран заливало белым (игрок),
+    // а нижние монеты всё равно закрыты верхними — их вспышки только слепили.
+    quietState(c, t, dir) {
+        const F = this.FLIP, run = F.toPeak + F.fromPeak;
+        let p = Math.max(0, Math.min(1, t / run));
+        if (dir === 'out') p = 1 - p;
+        const e = Math.sin(p * Math.PI / 2);
+        return { n: this.v3.slerp(c.edge, c.pose, e), m: p * p, flash: 0, reveal: 9, star: 0, starP: 0, quiet: true };
+    },
+
     // ---------- рисование ----------
     FLIP_VS: 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}',
     FLIP_FS: [
         'precision mediump float;',
         'uniform sampler2D tA,tN;uniform vec2 C,res;uniform float rad,m,flash,glow,cellX;',
-        'uniform mat3 R,T;uniform float ao,reveal,star,starP,gbase;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
+        'uniform mat3 R,T;uniform float ao,reveal,star,starP,gbase,gmul;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
         'void main(){',
         ' vec2 q=vec2(gl_FragCoord.x-C.x, gl_FragCoord.y-C.y)/rad;',      // y вверх
         ' vec3 e1=R*vec3(1.,0.,0.), e2=R*vec3(0.,1.,0.);',
@@ -171,7 +185,7 @@ Object.assign(GreedCoins, {
         // свет на монету падает и в глубине
         // бесплотный блик виден только внутри круга reveal (от центра монеты)
         '   float rv=1.-smoothstep(reveal-.18,reveal,length(uv));',
-        '   outc.rgb+=k*(m*full*ao+(1.-m)*ghost*rv)+k*glint*flash*glow;',
+        '   outc.rgb+=k*(m*full*ao+(1.-m)*ghost*rv*gmul)+k*glint*flash*glow;',
         '   outc.a=max(outc.a,k*m);',
         '  }',
         ' }',
@@ -241,6 +255,7 @@ Object.assign(GreedCoins, {
                 gl.uniform2f(U('C'), x, cv.height - y); gl.uniform1f(U('rad'), rad);
                 gl.uniform1f(U('reveal'), st.reveal === undefined ? 9 : st.reveal);
                 gl.uniform1f(U('gbase'), st.ghost || 0);
+                gl.uniform1f(U('gmul'), st.quiet ? 0 : 1);
                 gl.uniform1f(U('star'), st.star || 0); gl.uniform1f(U('starP'), st.starP || 0);
                 gl.uniform1f(U('m'), st.m); gl.uniform1f(U('flash'), st.flash); gl.uniform1f(U('glow'), this.FLIP.glow);
                 gl.uniform1f(U('cellX'), kind === 'euro' ? 0.5 : 0);
@@ -469,6 +484,9 @@ Object.assign(GreedCoins, {
                 x: c.x, y: c.y, kind: c.kind, pose: c.n, roll: this.poses()[c.pose].roll * D,
                 rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao, layer: li, side: ((c.x * 7 + c.y * 13) % 100) / 100
             })));
+            // вспыхивает только верхний слой кучи
+            const topLayer = Math.max(...coins.map(c => c.layer));
+            for (const c of coins) c.quiet = c.layer !== topLayer;
             let st = 99;
             const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
             // старт: случайно в пределах spread, со сдвигом на слой; затем
@@ -488,10 +506,12 @@ Object.assign(GreedCoins, {
                         const q = grid.get((gy + j) * 1000 + gx + i);
                         if (q) for (const o of q) if (Math.hypot(o.x - c.x, o.y - c.y) < near) nb.push(o);
                     }
-                    const busy = (t) => nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
+                    // правило соседства — только между вспыхивающими
+                    const busy = (t) => !c.quiet && nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
                     while (busy(t)) t += 30;
                     c[key] = t; last = Math.max(last, t);
-                    const k = gy * 1000 + gx; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
+                    const k = gy * 1000 + gx;
+                    if (!c.quiet) { if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c); }
                 }
                 return last;
             };
@@ -547,7 +567,7 @@ Object.assign(GreedCoins, {
                     } else {
                         const to = t - outAt - c.delayOut;
                         if (to < 0 || to >= run) continue;
-                        s = this.flipState({ pose: c.pose, H: c.H, edge: c.edgeOut, seen: c.seen }, to, 'out');
+                        s = this.flipState({ pose: c.pose, H: c.H, edge: c.edgeOut, seen: c.seen, quiet: c.quiet }, to, 'out');
                     }
                     R.coin(c.x, c.y, c.rad, s, c.kind, tilt, c.roll, c.ao);
                 }
