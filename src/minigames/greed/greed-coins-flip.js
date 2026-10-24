@@ -460,8 +460,9 @@ Object.assign(GreedCoins, {
             Object.assign(c.style, { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'block' }); root.appendChild(c); return c; };
         // опции замера (tools: window.__opt): batch — все монеты одним
         // вызовом (greed-coins-batch.js), lo — разрешение холста в движении
-        const O = Object.assign({ batch: true, lo: 0.5 }, (typeof window !== 'undefined' && window.__opt) || {});
-        const cvPile = mkCv(), cv = mkCv();
+        const O = Object.assign({ batch: true, lo: 1 }, (typeof window !== 'undefined' && window.__opt) || {});
+        // куча — поверх: на стыке она наплывает на монеты в движении
+        const cv = mkCv(), cvPile = mkCv();
         if (O.batch) { cv.width = Math.round(this.W * O.lo); cv.height = Math.round(this.H * O.lo); }
         host.appendChild(root);
         this._pv = root;
@@ -486,7 +487,10 @@ Object.assign(GreedCoins, {
             const F = this.FLIP, run = F.toPeak + F.fromPeak, P = this.FULL_DEMO, D = Math.PI / 180;
             const coins = [];
             pile.layers.forEach((L, li) => L.forEach(c => coins.push({
-                x: c.x, y: c.y, kind: c.kind, pose: c.n, roll: this.poses()[c.pose].roll * D,
+                // поза — ось запечённого спрайта, без личного разброса оси (c.n):
+                // вставшая куча рисуется этими спрайтами, и с разбросом свет на
+                // монете при переходе к ней менялся рывком
+                x: c.x, y: c.y, kind: c.kind, pose: this.poses()[c.pose].n, roll: this.poses()[c.pose].roll * D,
                 rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao, layer: li, side: ((c.x * 7 + c.y * 13) % 100) / 100
             })));
             let st = 99;
@@ -561,10 +565,17 @@ Object.assign(GreedCoins, {
                     stored = 0;
                 }
                 // куча стоит целиком — показываем настоящую кучу с живым блеском
-                const settled = t >= lastIn + run && t < outAt;
-                cvPile.style.visibility = settled ? 'visible' : 'hidden';
+                // Стык с вставшей кучей — наплывом FADE мс, а не сменой кадра:
+                // два способа рисования совпадают не до пикселя, и мгновенная
+                // смена читалась рывком (игрок). Пока идёт наплыв, рисуются оба.
+                const FADE = 300, sIn = lastIn + run;
+                const fade = Math.max(0, Math.min(1, (t - sIn) / FADE, (outAt - t) / FADE));
+                const settled = fade >= 1;
+                cvPile.style.visibility = fade > 0 ? 'visible' : 'hidden';
+                cvPile.style.opacity = fade;
                 cv.style.visibility = settled ? 'hidden' : 'visible';
-                if (settled) { drawPile(tilt); requestAnimationFrame(loop); return; }
+                if (fade > 0) drawPile(tilt);
+                if (settled) { done(); return; }
                 const leaving = t >= outAt;
                 if (B) {
                     B.begin(tilt);

@@ -9,8 +9,9 @@
 // одна заливка буфера и один вызов; поворот (axisTo · roll) считается в
 // вершинном шейдере, не в JS.
 //
-// Монета — квадрат вокруг себя: box — полуширина в радиусах (1.02 у тихой и
-// вставшей, 2.2 у вспыхивающей — под ореол и лучи искры).
+// Монета — квадрат вокруг себя: box — полуширина в радиусах (1.25 у тихой и
+// вставшей —
+// 1.25 — под тень; 2.2 у вспыхивающей — под ореол и лучи искры).
 Object.assign(GreedCoins, {
     BATCH_VS: [
         'attribute vec2 corner;',
@@ -34,7 +35,7 @@ Object.assign(GreedCoins, {
     BATCH_FS: [
         'precision mediump float;',
         'uniform sampler2D tA,tN;uniform mat3 T;uniform vec3 L,glint;',
-        'uniform float diff,amb,broad,sharp,shin,glow;',
+        'uniform float diff,amb,broad,sharp,shin,glow;const float SH=.6;',
         'varying vec2 q;varying vec3 r0,r1,r2;varying vec4 v2,v3;varying float vao;',
         'void main(){',
         ' mat3 R=mat3(r0,r1,r2);',
@@ -72,6 +73,12 @@ Object.assign(GreedCoins, {
         '   outc.a=max(outc.a,kk*m);',
         '  }',
         ' }',
+        // тень под монетой — как у кучи (pileGen: тень 0.6, сдвиг 3, размытие 6
+        // при радиусе 29 → 0.1 и 0.2 радиуса). Без неё монеты в движении
+        // светлее и площе вставшей кучи, и на переходе к ней был рывок.
+        ' float sd=length(q-vec2(0.,-.1));',
+        ' float sa=SH*m*(1.-smoothstep(.85,1.2,sd));',
+        ' outc.a=outc.a+sa*(1.-outc.a);',
         ' gl_FragColor=vec4(min(outc.rgb,vec3(1.)),outc.a);',
         '}'
     ].join('\n'),
@@ -132,7 +139,7 @@ Object.assign(GreedCoins, {
                 data[o + 4] = N[0]; data[o + 5] = N[1]; data[o + 6] = N[2]; data[o + 7] = c.roll || 0;
                 data[o + 8] = st.m; data[o + 9] = st.flash || 0; data[o + 10] = st.reveal === undefined ? 9 : st.reveal; data[o + 11] = st.quiet ? 0 : 1;
                 data[o + 12] = st.star || 0; data[o + 13] = st.starP || 0; data[o + 14] = c.kind === 'euro' ? 0.5 : 0;
-                data[o + 15] = box || ((st.flash > 0.01 || st.star > 0) ? 2.2 : 1.02);
+                data[o + 15] = box || ((st.flash > 0.01 || st.star > 0) ? 2.2 : 1.25);
                 n++;
             },
             flush() {
