@@ -3,6 +3,7 @@
 // Позы и раскладка клеток — из GreedCoins (greed-coins.js), чтобы игра и
 // запекатель не разошлись.
 //     NODE_PATH=/opt/node22/lib/node_modules node tools/coin-atlas.js
+// затем без потерь пережать: python3 tools/png-squeeze.py src/minigames/greed/*.png
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');

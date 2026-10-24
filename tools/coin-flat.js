@@ -1,6 +1,7 @@
 // Монета плашмя в высоком разрешении — для крупного плана поворота
 // (greed-coins-flip.js). Две клетки 256×256 рядом: gold, euro.
 //     NODE_PATH=/opt/node22/lib/node_modules node tools/coin-flat.js
+// затем без потерь пережать: python3 tools/png-squeeze.py src/minigames/greed/*.png
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
