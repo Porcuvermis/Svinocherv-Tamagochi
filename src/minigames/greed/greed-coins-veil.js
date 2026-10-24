@@ -26,7 +26,10 @@ Object.assign(GreedCoins, {
     // на стоящем покрове крест должен читаться, его зона — отмена входа.
     innerCoins() {
         if (this._inner) return this._inner;
-        const keep = (x, y, r) => this.edgeDist(x, y) < -r * 0.3 && this.crossDist(x, y) > this.CROSS_GAP + r * 0.9;
+        // Служебные слои рамки (дно креста, плотная подсыпка — only) сюда НЕ
+        // идут: с ними под сценой ложилась тёмная плотная масса — игрок увидел
+        // «чешую», ничем не похожую на кучу показа.
+        const keep = (x, y, r, rng, L) => !(L && L.only) && this.edgeDist(x, y) < -r * 0.3 && this.crossDist(x, y) > this.CROSS_GAP + r * 0.9;
         return (this._inner = this.coinsOf(this.layout(this.SEED, keep)));
     },
 
