@@ -15,66 +15,63 @@
 Object.assign(GreedCoins, {
     // Верх равен низу: низ выходит сам (что осталось под уменьшенной сценой).
     rim: { side: 18, top: 59 },
-    // Крест — пустота между обычными монетами. Мелочь между лучами (первая
-    // версия) игрок забраковал: смешные монетки другого размера. Поэтому
-    // монеты вдоль лучей кладутся НАРОЧНО (crossPins) — по одной в каждом
-    // углу между лучами и по паре дальше вдоль лучей, с небольшим разбросом,
-    // а остальное досыпается случайно и в пустоту не лезет.
-    cross: { x: 336, y: 46, size: 44 },
-    CROSS_GAP: 4,       // полуширина пустоты, единицы сцены
+    // Крест — пустота между обычными монетами (замысел игрока: монеты
+    // «случайно» упали так, что между ними осталось место крестом).
+    // Четыре монеты обычного размера, по одной в каждом углу между лучами;
+    // щели между соседними — лучи. Крест чуть повёрнут, у каждого луча свой
+    // угол и своя ширина, монеты сдвинуты — читается, но не выверен.
+    // Что было до (всё забраковано игроком): мелочь между лучами — «смешные
+    // монетки»; ряды монет вдоль лучей с заглушками на концах — крест
+    // огромный, идеально симметричный, выпирал бугром в угол сцены.
+    cross: { x: 338, y: 38, size: 40 },
+    CROSS_GAP: 1.6,     // полуширина пустоты (у каждого луча своя, ±0.6)
+    CROSS_TURN: 0.12,   // поворот креста целиком, радианы
     CORNER: 26,
     OVERLAP: 1.5,       // тьма под монетами заходит на сцену — без светлой щели на стыке
     HANG: 0.45,         // насколько центр монеты может зайти за край сцены, доли радиуса
 
     get bg() { return PALETTE.greedCoin.gold.deep; },
-    // Как далеко монеты заходят на сцену: обычный край — на полмонеты, у
-    // креста — до низа нижней монеты креста.
-    reach() {
-        const r = this.RAD / 2, P = this.crossPins();
-        const low = Math.max(this.cross.y + this.crossZone(), ...P.top.concat(P.under).map(p => p.y)) + r;
-        return Math.ceil(Math.max(r * (1 + this.HANG), low - this.inner().y0)) + 2;
-    },
+    reach() { return Math.ceil(this.RAD / 2 * (1 + this.HANG)) + 2; },
 
-    // Монеты вокруг креста (замысел игрока: монеты «случайно» упали так, что
-    // между ними пустота крестом; все монеты обычного размера). Каждый луч с
-    // обеих сторон выложен рядом монет вплотную к нему: в углах между лучами —
-    // по монете (она общая для двух соседних рядов), дальше вдоль луча — ещё
-    // по одной с каждой стороны, на конце — монета-заглушка.
-    // Что было до: мелочь между лучами — «смешные монетки» (игрок); только
-    // четыре монеты вокруг центра — выходила толстая звёздочка с короткими
-    // лучами: у одинаковых кругов щель между соседями длится не дольше
-    // радиуса, дальше раскрывается клином.
+    // Лучи и четыре монеты между ними. Всё от своего зерна — крест одинаков
+    // при каждом входе.
     crossPins() {
         if (this._pins) return this._pins;
-        const C = this.cross, r = this.RAD / 2, S2 = Math.SQRT1_2;
+        const C = this.cross, r = this.RAD / 2;
         let st = 977;
         const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296 - 0.5; };
-        const off = () => r + this.CROSS_GAP + Math.abs(rnd()) * 1.5;
+        const arms = [0, 1, 2, 3].map(k => ({
+            a: Math.PI / 4 + k * Math.PI / 2 + this.CROSS_TURN + rnd() * 0.14,
+            g: this.CROSS_GAP + rnd() * 1.2
+        }));
         const top = [];
-        [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([dx, dy]) => {
-            const t = (r + this.CROSS_GAP) / S2 + 0.5;
-            top.push({ x: C.x + dx * t + rnd(), y: C.y + dy * t + rnd() });
-        });
-        const u1 = (r + this.CROSS_GAP) + 0.5, u2 = u1 + 2 * r * 0.93;
-        [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([ax, ay]) => {
-            const dx = ax * S2, dy = ay * S2;
+        for (let k = 0; k < 4; k++) {
+            const A = arms[k], B = arms[(k + 1) % 4];
+            let b = B.a; if (b < A.a) b += Math.PI * 2;
+            const mid = (A.a + b) / 2, half = (b - A.a) / 2;
+            // вплотную к обоим лучам: от центра на (r + щель) / sin(полуугла)
+            const t = (r + Math.max(A.g, B.g)) / Math.sin(half) + Math.abs(rnd()) * 0.8;
+            top.push({ x: C.x + Math.cos(mid) * t, y: C.y + Math.sin(mid) * t });
+        }
+        // Верхние лучи длиннее: вдоль них по монете с каждой стороны,
+        // внахлёст на угловые (в куче монеты лежат друг на друге). Нижние
+        // лучи — только угловые монеты: крест несимметричен и не лезет на
+        // сцену бугром.
+        for (const A of arms) {
+            const dx = Math.cos(A.a), dy = Math.sin(A.a);
+            A.len = (r + A.g) + 6;
+            if (dy > 0) continue;
+            const u = (r + A.g) + 2 * r * 0.68 + rnd() * 3;
             [1, -1].forEach(side => {
-                const o = off();
-                top.push({ x: C.x + dx * u2 - dy * side * o, y: C.y + dy * u2 + dx * side * o });
+                if (rnd() > 0.38 && side === -1 && A.len > 30) return;    // иногда без пары
+                const o = r + A.g + 0.4 + Math.abs(rnd()) * 1.2, uu = u + rnd() * 4;
+                top.push({ x: C.x + dx * uu - dy * side * o, y: C.y + dy * uu + dx * side * o });
+                A.len = Math.max(A.len, uu);
             });
-            const T = this.capLen();
-            top.push({ x: C.x + dx * T + rnd() * 2, y: C.y + dy * T + rnd() * 2 });
-        });
+        }
+        this._arms = arms;
         return (this._pins = { top, under: [] });
     },
-    // монета-заглушка вплотную к последней паре вдоль луча
-    capLen() {
-        const r = this.RAD / 2, o = r + this.CROSS_GAP + 0.7, u2 = r + this.CROSS_GAP + 0.5 + 2 * r * 0.93;
-        return u2 + Math.sqrt(Math.max(0, (2 * r * 0.95) ** 2 - o * o));
-    },
-    // Длина луча — до монеты на его конце.
-    armLen() { return this.capLen() - this.RAD / 2 * 0.95; },
-    crossZone() { return this.capLen() * 0.9; },
 
     inner() { return MinigameWindow.skinGeometry(this).inner; },
 
@@ -86,39 +83,44 @@ Object.assign(GreedCoins, {
         const qx = Math.abs(x - cx) - ((I.x1 - I.x0) / 2 - R), qy = Math.abs(y - cy) - ((I.y1 - I.y0) / 2 - R);
         return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - R;
     },
+    // Расстояние до ближайшего луча за вычетом его полуширины.
     crossDist(x, y) {
-        const C = this.cross, a = this.armLen() * Math.SQRT1_2, seg = (x0, y0, x1, y1) => {
-            const dx = x1 - x0, dy = y1 - y0, t = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)));
-            return Math.hypot(x - x0 - dx * t, y - y0 - dy * t);
-        };
-        return Math.min(seg(C.x - a, C.y - a, C.x + a, C.y + a), seg(C.x - a, C.y + a, C.x + a, C.y - a));
+        this.crossPins();
+        const C = this.cross;
+        let best = Infinity;
+        for (const A of this._arms) {
+            const dx = Math.cos(A.a), dy = Math.sin(A.a);
+            const t = Math.max(0, Math.min(A.len, (x - C.x) * dx + (y - C.y) * dy));
+            best = Math.min(best, Math.hypot(x - C.x - dx * t, y - C.y - dy * t) - A.g);
+        }
+        return best;
     },
     rimKeep(x, y, r, rng) {
-        // Вокруг креста монеты лежат и над углом сцены: иначе нижний луч
-        // креста упирался в край сцены, где монет нет, и крест читался «V».
-        const nearCross = Math.hypot(x - this.cross.x, y - this.cross.y) < this.crossZone();
-        if (!nearCross && this.edgeDist(x, y) < -r * this.HANG) return false;
-        // запас у каждой монеты свой — край пустоты неровный, как у упавших
-        // Случайные монеты (и нижних слоёв тоже) — дальше от луча, чем монеты
-        // креста: иначе нижние слои подходили к лучу вплотную и закрывали
-        // пустоту, крест исчезал.
-        return this.crossDist(x, y) > this.CROSS_GAP + r + 3 + rng() * 2;
+        if (this.edgeDist(x, y) < -r * this.HANG) return false;
+        // Монеты всех слоёв не заходят на луч (и нижние тоже — иначе они
+        // закрывали пустоту). Запас у каждой свой — край неровный.
+        return this.crossDist(x, y) > r * (0.97 + rng() * 0.1);
     },
     // Щели между монетами рамки — тёмное золото (глубина кучи), и только
     // пустота креста — чёрная. Пока все щели были одинаково чёрными, крест
     // терялся среди них: на обычном размере экрана его было не найти.
+    // Под лучами — узкая трещина темноты (не шире самой щели) и только там,
+    // где луч с обеих сторон закрыт монетами. Широкая или длинная полоса
+    // вылезала за монеты и читалась намалёванным крестом, тёмное пятно
+    // вокруг центра — пятном.
     rimUnder(g) {
-        g.fillStyle = 'rgb(215,215,215)'; g.fillRect(0, 0, 390, 844);
-        const C = this.cross, a = this.armLen() * Math.SQRT1_2;
-        g.strokeStyle = '#000'; g.lineCap = 'round'; g.lineWidth = 2 * this.CROSS_GAP + 12;
-        g.beginPath();
-        g.moveTo(C.x - a, C.y - a); g.lineTo(C.x + a, C.y + a);
-        g.moveTo(C.x - a, C.y + a); g.lineTo(C.x + a, C.y - a);
-        g.stroke();
+        g.fillStyle = 'rgb(175,175,175)'; g.fillRect(0, 0, 390, 844);
+        this.crossPins();
+        const C = this.cross;
+        g.strokeStyle = '#000'; g.lineCap = 'round';
+        for (const A of this._arms) {
+            // луч — докуда его с обеих сторон закрывают монеты
+            const len = A.len - 4;
+            g.lineWidth = 2 * A.g + 5;   // шире щели: края уходят под монеты, золота между лучом и монетой не видно
+            g.beginPath(); g.moveTo(C.x, C.y); g.lineTo(C.x + Math.cos(A.a) * len, C.y + Math.sin(A.a) * len); g.stroke();
+        }
     },
-    // Заливает фон рамки текущим цветом: всё вне сцены и пятно под монетами
-    // креста — там они лежат над углом сцены, и без подложки нижние лучи
-    // креста терялись на тёмном фоне сцены.
+    // Заливает фон рамки текущим цветом: всё вне сцены.
     rimBg(g) {
         const I = this.inner(), e = this.OVERLAP;
         g.beginPath();
@@ -126,9 +128,6 @@ Object.assign(GreedCoins, {
         if (g.roundRect) g.roundRect(I.x0 + e, I.y0 + e, I.x1 - I.x0 - 2 * e, I.y1 - I.y0 - 2 * e, this.CORNER - e);
         else g.rect(I.x0 + e, I.y0 + e, I.x1 - I.x0 - 2 * e, I.y1 - I.y0 - 2 * e);
         g.fill('evenodd');
-        g.beginPath();
-        g.arc(this.cross.x, this.cross.y, this.capLen(), 0, Math.PI * 2);
-        g.fill();
     },
 
     // ---------- атласы грузятся сразу при подключении файла ----------
