@@ -96,7 +96,7 @@ const COIN = {
         const ramps = { gold: this.ramp(pal.gold), silver: this.ramp(pal.silver) };
         const L = this.norm(this.LIGHT);
         const n0 = [R[0][2], R[1][2], R[2][2]];                    // ось монеты в виде
-        const base = new ImageData(N, N), shine = new ImageData(N, N);
+        const base = new ImageData(N, N), shine = new ImageData(N, N), albedo = new ImageData(N, N), normal = new ImageData(N, N);
         const half = this.T / 2, DT = 0.012;
         const toC = (v) => [R[0][0] * v[0] + R[1][0] * v[1] + R[2][0] * v[2],
                             R[0][1] * v[0] + R[1][1] * v[1] + R[2][1] * v[2],
@@ -111,7 +111,7 @@ const COIN = {
             return j * n + i;
         };
         for (let py = 0; py < N; py++) for (let px = 0; px < N; px++) {
-            let aR = 0, aG = 0, aB = 0, aA = 0, sR = 0, sG = 0, sB = 0;
+            let aR = 0, aG = 0, aB = 0, aA = 0, sR = 0, sG = 0, sB = 0, cR = 0, cG = 0, cB = 0, nX = 0, nY = 0, nZ = 0;
             for (let sy = 0; sy < ss; sy++) for (let sx = 0; sx < ss; sx++) {
                 const X = (px + (sx + 0.5) / ss - N / 2) / rad, Y = -(py + (sy + 0.5) / ss - N / 2) / rad;
                 if (X * X + Y * Y > 1.5) continue;
@@ -164,6 +164,11 @@ const COIN = {
                 const spBase = Math.pow(Math.max(0, nv[0] * Hh[0] + nv[1] * Hh[1] + nv[2] * Hh[2]), 90) * (matI ? 0.85 : 0.6);
                 const c2 = (matI ? ramps.silver : ramps.gold)(Math.min(1, I + spBase * 0.5));
                 aR += c2[0]; aG += c2[1]; aB += c2[2]; aA += 1;
+                // Для игры: цвет без света (впадины темнее) и нормаль в виде —
+                // свет считает видеокарта по наклону телефона (greed-coins.js).
+                const alb = (matI ? ramps.silver : ramps.gold)(Math.min(0.75, Math.max(0.2, 0.62 + (side ? cav * 20 : Math.max(-0.4, Math.min(0.1, cav * 9))))));
+                cR += alb[0]; cG += alb[1]; cB += alb[2];
+                nX += nv[0]; nY += nv[1]; nZ += Math.max(0, nv[2]);
                 // блик при свете вдоль оси: n·n0
                 const al = Math.max(0, nv[0] * n0[0] + nv[1] * n0[1] + nv[2] * n0[2]);
                 const sp = 0.5 * Math.pow(al, 70) * (matI ? 1 : 0.85) * (cav < -0.01 ? 0.5 : 1) * (side ? 0.6 : 1);
@@ -174,6 +179,10 @@ const COIN = {
             }
             const q = ss * ss, o4 = (py * N + px) * 4;
             if (aA > 0) {
+                const nl = Math.hypot(nX, nY, nZ) || 1;
+                albedo.data[o4] = cR / aA; albedo.data[o4 + 1] = cG / aA; albedo.data[o4 + 2] = cB / aA; albedo.data[o4 + 3] = 255 * aA / q;
+                normal.data[o4] = (nX / nl * 0.5 + 0.5) * 255; normal.data[o4 + 1] = (nY / nl * 0.5 + 0.5) * 255;
+                normal.data[o4 + 2] = (nZ / nl * 0.5 + 0.5) * 255; normal.data[o4 + 3] = 255 * aA / q;
                 base.data[o4] = aR / aA; base.data[o4 + 1] = aG / aA; base.data[o4 + 2] = aB / aA; base.data[o4 + 3] = 255 * aA / q;
                 // Блик хранится как «цвет + сила в альфе»: пустое место прозрачно, а не чёрно,
                 // иначе при lighter на прозрачном холсте остаётся непрозрачный чёрный силуэт монеты.
@@ -184,7 +193,7 @@ const COIN = {
                 }
             }
         }
-        return { base, shine };
+        return { base, shine, albedo, normal };
     },
     hexc(h) { return this.hex(h); },
     norm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; },

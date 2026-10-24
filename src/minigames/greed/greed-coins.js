@@ -1,20 +1,25 @@
 // ================= АЛЧНОСТЬ: КУЧА МОНЕТ (шкурка окна) =================
-// docs/plan/27-greed-skin.md. Монеты — готовые спрайты из двух атласов
-// (coins-base.png, coins-shine.png), которые печёт tools/coin-atlas.js:
-//   base  — монета в своей позе при обычном свете;
-//   shine — только блик «монета поймала луч» (свет вдоль её оси).
+// docs/plan/27-greed-skin.md. Монеты — готовые спрайты из двух атласов,
+// которые печёт tools/coin-atlas.js:
+//   coins-albedo.png — цвет монеты БЕЗ света (впадины темнее);
+//   coins-normal.png — куда смотрит каждая точка поверхности (xyz → rgb).
 // Два вида (gold, euro), в каждом — одни и те же позы: плашмя и наклоны.
 //
-// ---------- БЛЕСК ОТ НАКЛОНА, КАК ЭТО ДЁШЕВО ----------
-// Свет один. Монеты лежат под разными углами; поворот телефона сдвигает
-// «полувектор» H, и блестит та, чья ось n смотрит вдоль H: яркость =
-// сглаженная ступенька от n·H. Перерисовывать все монеты нельзя (их тысячи),
-// поэтому база рисуется ОДИН раз, а блик — отдельным холстом поверх, куда
-// каждый раз попадают только монеты, которые сейчас ловят луч (десятки, не
-// тысячи), режимом `lighter`. Холст блика перерисовывается, только когда
-// наклон сдвинулся.
-// Слоёв три (глубокий, средний, верхний), у каждого свой холст базы и блика,
-// иначе блик нижней монеты просвечивал бы сквозь верхнюю.
+// ---------- СВЕТ: СОЛНЦЕ НАД БЛЮДОМ ----------
+// Замысел игрока: свет неподвижен, как солнце над головой; куча — блюдо с
+// монетами под разными углами. Наклон телефона поворачивает блюдо ЦЕЛИКОМ:
+// все монеты сразу меняют угол к солнцу, одинаково повёрнутые блестят
+// одинаково, верх кучи светлее низа.
+//
+// Первая версия так не умела и была выброшена: свет был запечён в картинку,
+// а «блик» лишь добавлялся поверх отдельным холстом. На ярких верхних
+// монетах прибавка тонула, на тёмных нижних вылезала — блестела глубина
+// кучи, а поверхность игнорировала наклон.
+//
+// Теперь кучу раскладывают ОДИН раз в три картинки (цвет, нормаль, затенение
+// глубины), а свет считает видеокарта одним проходом по экрану: поворачивает
+// нормаль на наклон блюда и освещает. Перерисовка = смена двух чисел и один
+// треугольник на весь холст — дешевле любой canvas-отрисовки монет.
 const GreedCoins = {
     // ---------- позы: общий язык запекателя и игры ----------
     MAGS: [12, 22, 32],     // наклоны оси от вертикали, градусы
@@ -88,56 +93,96 @@ const GreedCoins = {
         });
     },
 
-    // ---------- рисование ----------
-    // База слоя: монеты с тенью, затем затемнение всего слоя одним мазком
-    // (source-atop красит только нарисованное).
-    paintLayer(ctx, coins, L, atlas) {
-        const C = this.CELL, s = L.s;
-        for (const c of coins) {
-            const { sx, sy } = this.cell(c.kind, c.pose);
-            ctx.save();
-            ctx.shadowColor = 'rgba(20,10,0,0.55)'; ctx.shadowBlur = 6 * s; ctx.shadowOffsetY = 3 * s;
-            ctx.drawImage(atlas, sx, sy, C, C, c.x - C / 2 * s, c.y - C / 2 * s, C * s, C * s);
-            ctx.restore();
-        }
-        if (L.dark > 0) {
-            ctx.save(); ctx.globalCompositeOperation = 'source-atop';
-            ctx.fillStyle = 'rgba(40,20,0,' + L.dark + ')'; ctx.fillRect(0, 0, this.W, this.H);
-            ctx.restore();
-        }
+    // ---------- раскладка в три картинки ----------
+    // Все три рисуются в одном порядке теми же спрайтами — сверху всегда та
+    // монета, что лежит выше. ao: светлота слоя (верх кучи светлее) и тени.
+    AO: [0.45, 0.78, 1.0],
+    buildPile(albedoA, normalA, seed) {
+        const W = this.W, H = this.H, C = this.CELL, layers = this.layout(seed);
+        const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+        const alb = mk(), nor = mk(), ao = mk();
+        const ga = alb.getContext('2d'), gn = nor.getContext('2d'), go = ao.getContext('2d');
+        ga.fillStyle = PALETTE.greedCoin.gold.deep; ga.fillRect(0, 0, W, H);
+        gn.fillStyle = 'rgb(128,128,255)'; gn.fillRect(0, 0, W, H);
+        go.fillStyle = 'rgb(40,40,40)'; go.fillRect(0, 0, W, H);
+        // силуэты атласа, залитые светлотой слоя, — для картинки затенения
+        const masks = this.AO.map(v => {
+            const m = document.createElement('canvas'); m.width = albedoA.width; m.height = albedoA.height;
+            const g = m.getContext('2d'); g.drawImage(albedoA, 0, 0);
+            g.globalCompositeOperation = 'source-in'; const k = Math.round(v * 255);
+            g.fillStyle = 'rgb(' + k + ',' + k + ',' + k + ')'; g.fillRect(0, 0, m.width, m.height);
+            return m;
+        });
+        layers.forEach((coins, li) => {
+            const s = this.LAYERS[li].s;
+            for (const c of coins) {
+                const { sx, sy } = this.cell(c.kind, c.pose);
+                const dx = c.x - C / 2 * s, dy = c.y - C / 2 * s, d = C * s;
+                go.save(); go.shadowColor = 'rgba(0,0,0,0.6)'; go.shadowBlur = 6 * s; go.shadowOffsetY = 3 * s;
+                go.drawImage(masks[li], sx, sy, C, C, dx, dy, d, d); go.restore();
+                ga.drawImage(albedoA, sx, sy, C, C, dx, dy, d, d);
+                gn.drawImage(normalA, sx, sy, C, C, dx, dy, d, d);
+            }
+        });
+        return { albedo: alb, normal: nor, ao, layers };
     },
 
-    // Свет по наклону телефона. t = {x, y} в −1..1 (Tilt.turn()).
-    // Базовый сдвиг — свет чуть сверху-слева; K — как сильно поворот телефона
-    // сдвигает луч. Яркость монеты — колокол по углу между её осью и лучом
-    // (sigma, градусы), а не окно «горит / не горит»: первая версия с узким
-    // окном заставляла монеты мигать на месте при малейшем дрожании, а игрок
-    // ждёт ЛЕЖАЩИЙ блеск, который при наклоне плавно перетекает с монеты на
-    // монету. Широкий колокол даёт каждой монете свой постоянный уровень блеска.
-    SHINE: { hx0: -0.1, hy0: 0.16, K: 0.45, sigma: 13 },
-    halfVector(t) {
-        const S = this.SHINE, x = S.hx0 + t.x * S.K, y = S.hy0 - t.y * S.K, z = 1;
-        const l = Math.hypot(x, y, z);
-        return [x / l, y / l, z / l];
-    },
-    // Блик слоя: чистим холст и кладём только те монеты, что ловят луч.
-    // Возвращает число зажжённых — для замеров.
-    paintShine(ctx, coins, L, atlas, t, gain) {
-        const S = this.SHINE, H = this.halfVector(t), C = this.CELL, s = L.s;
-        const sg = S.sigma * Math.PI / 180, cut = Math.cos(2 * sg), inv = 1 / (sg * sg);
-        ctx.clearRect(0, 0, this.W, this.H);
-        ctx.globalCompositeOperation = 'lighter';
-        let lit = 0;
-        for (const c of coins) {
-            const a = c.n[0] * H[0] + c.n[1] * H[1] + c.n[2] * H[2];
-            if (a <= cut) continue;
-            const th = Math.acos(a > 1 ? 1 : a), k = Math.exp(-th * th * inv);
-            ctx.globalAlpha = k * L.gain * (gain === undefined ? 1 : gain);
-            const { sx, sy } = this.cell(c.kind, c.pose);
-            ctx.drawImage(atlas, sx, sy, C, C, c.x - C / 2 * s, c.y - C / 2 * s, C * s, C * s);
-            lit++;
-        }
-        ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-        return lit;
+    // ---------- свет на видеокарте ----------
+    // L — на солнце (почти над головой, чуть сверху-слева), V — на глаз.
+    // tiltMax — на сколько градусов поворачивается блюдо при полном наклоне
+    // телефона (единица Tilt.turn() — 35°).
+    LIGHT: { L: [-0.25, 0.35, 1], tiltMax: 30, diff: 0.75, amb: 0.3, broad: 0.35, sharp: 1.3, shin: 60 },
+    VS: 'attribute vec2 p;varying vec2 uv;void main(){uv=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}',
+    FS: [
+        'precision mediump float;varying vec2 uv;',
+        'uniform sampler2D tA,tN,tO;uniform mat3 R;uniform vec3 L;',
+        'uniform float diff,amb,broad,sharp,shin;',
+        'void main(){',
+        ' vec3 a=texture2D(tA,uv).rgb;float o=texture2D(tO,uv).r;',
+        ' vec3 n=normalize(R*(texture2D(tN,uv).rgb*2.-1.));',
+        ' vec3 h=normalize(L+vec3(0.,0.,1.));',
+        ' float d=max(dot(n,L),0.),c=max(dot(n,h),0.);',
+        // металл: отражение окрашено своим цветом (золото — золотом, серебро — почти белым)
+        ' vec3 col=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
+        ' gl_FragColor=vec4(col*o,1.);}'
+    ].join('\n'),
+
+    // Создаёт освещатель на холсте cv (размер W×H). Возвращает draw(tilt).
+    lighter(cv, pile) {
+        const gl = cv.getContext('webgl', { premultipliedAlpha: false, antialias: false });
+        if (!gl) return null;
+        const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+        const pr = gl.createProgram();
+        gl.attachShader(pr, sh(gl.VERTEX_SHADER, this.VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, this.FS));
+        gl.linkProgram(pr); gl.useProgram(pr);
+        const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+        const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        [['tA', pile.albedo], ['tN', pile.normal], ['tO', pile.ao]].forEach(([name, img], i) => {
+            const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.uniform1i(gl.getUniformLocation(pr, name), i);
+        });
+        const U = (n) => gl.getUniformLocation(pr, n);
+        gl.viewport(0, 0, cv.width, cv.height);
+        return (t) => {
+            const S = this.LIGHT, D = Math.PI / 180;
+            // Блюдо поворачивается вместе с телефоном. x > 0 — правый край ушёл
+            // вниз: нормали клонятся вправо (поворот вокруг оси y).
+            // y > 0 — верх телефона к игроку: нормали клонятся вниз экрана.
+            const ay = t.x * S.tiltMax * D, ax = t.y * S.tiltMax * D;
+            const cy = Math.cos(ay), sy = Math.sin(ay), cx = Math.cos(ax), sx = Math.sin(ax);
+            // R = Rx(ax) · Ry(ay), столбцами (как ждёт uniformMatrix3fv)
+            const R = [cy, sx * sy, -cx * sy, 0, cx, sx, sy, -sx * cy, cx * cy];
+            gl.uniformMatrix3fv(U('R'), false, R);
+            const l = Math.hypot(S.L[0], S.L[1], S.L[2]);
+            gl.uniform3f(U('L'), S.L[0] / l, S.L[1] / l, S.L[2] / l);
+            ['diff', 'amb', 'broad', 'sharp', 'shin'].forEach(k => gl.uniform1f(U(k), S[k]));
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        };
     }
 };
