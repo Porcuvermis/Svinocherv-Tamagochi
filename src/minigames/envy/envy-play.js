@@ -20,6 +20,7 @@ Object.assign(EnvyMinigame, {
         this.clouds.next = this.buildCloud(-s, this.wrongCountFor(this.fillThirds + 1));
         this.clouds.prev = this.buildCloud(s, this.wrongCountFor(this.fillThirds - 1));
         this.hideNeighbours();
+        this.newGlow();     // после сборки: общие формы блика заводит первый материал
 
         this.camera.position.z = ENVY_SCENE.CAM_DIST;
         this.activeTile = null;
@@ -141,16 +142,9 @@ Object.assign(EnvyMinigame, {
             // множителем его не покрасить. material.color остаётся белым и
             // работает только на подсветку волной.
             const variant = image.variants[Math.floor(Math.random() * image.variants.length)];
-            const material = new THREE.MeshBasicMaterial({
-                map: variant,
-                color: new THREE.Color(0xffffff),
-                transparent: true,
-                // Отсекает только сглаженную кромку текстуры: образы больше
-                // не растворяются поштучно, их гасит ореол.
-                alphaTest: 0.5,
-                depthTest: true,
-                depthWrite: true
-            });
+            // Гравированная наклейка (envy-engrave.js): чёрная основа,
+            // зелёный металл в ложбинках, общий свет от наклона телефона.
+            const material = ENVY_IMAGE_POOL.material(THREE, variant);
 
             const mesh = new THREE.Mesh(this.tileGeometry, material);
             // Наклейку слегка кренит, но не крутит: перевёрнутая вверх ногами
@@ -162,7 +156,8 @@ Object.assign(EnvyMinigame, {
             tiles.push({
                 mesh,
                 mat: material,
-                baseColor: new THREE.Color(0xffffff),
+                // подсветки нет — чёрный: волна добавляет к нему свой тон
+                baseColor: new THREE.Color(0x000000),
                 bx: spot.x,
                 by: spot.y,
                 size,
@@ -259,7 +254,7 @@ Object.assign(EnvyMinigame, {
 
     onPointerDown(e) {
         if (this.state !== 'play') return;
-        if (this.confirmOverlay && this.confirmOverlay.classList.contains('show')) return;
+        if (this.win && this.win.isConfirmOpen()) return;
         e.preventDefault();
         const p = this.localPos(e);
         this.pointerDown = true;
@@ -493,6 +488,7 @@ Object.assign(EnvyMinigame, {
 
         const s = this.layout.spacing;
         this.clouds.cur = keep;
+        this.newGlow();
         this.clouds.next = this.buildCloud(-s, this.wrongCountFor(this.fillThirds + 1));
         this.clouds.prev = this.buildCloud(s, this.wrongCountFor(this.fillThirds - 1));
         this.hideNeighbours();
@@ -599,6 +595,46 @@ Object.assign(EnvyMinigame, {
         }
     },
 
+    // Полуразмеры поля в мировых единицах (на плоскости переднего облака).
+    fieldHalf() {
+        const halfH = Math.tan((ENVY_SCENE.FOV / 2) * Math.PI / 180) * ENVY_SCENE.CAM_DIST;
+        const aspect = this.camera ? this.camera.aspect : 0.46;
+        return { w: halfH * aspect, h: halfH };
+    },
+
+    // Новый стол — новый блик (envy-engrave.js, newGlow).
+    newGlow() {
+        if (!ENVY_IMAGE_POOL.glowU) return;
+        const F = this.fieldHalf();
+        ENVY_IMAGE_POOL.newGlow(F.w, F.h);
+    },
+
+    // Блик по фольге наклеек ведётся наклоном телефона по ОБЕИМ осям поля:
+    // берётся поворот от позы хвата (Tilt.turn — держишь как держал, через
+    // пару секунд снова ноль), как у эффекта глубины. Наклона на ~15°
+    // (TILT_FULL) хватает, чтобы довести блик от его места до края поля и
+    // за край. Сглаживание своё: turn() отдаётся сырым. Без датчика блик
+    // сам медленно гуляет вокруг своего места.
+    TILT_FULL: 0.45,
+    updateLight(dt, sec) {
+        const P = ENVY_IMAGE_POOL, U = P.glowU;
+        if (!U) return;
+        const F = this.fieldHalf(), base = P.glowBase, g = U.uGlow.value;
+        const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false, x: 0, y: 0 };
+        let tx, ty;
+        if (T.live) {
+            tx = Math.max(-1.5, Math.min(1.5, T.x / this.TILT_FULL));
+            ty = Math.max(-1.5, Math.min(1.5, T.y / this.TILT_FULL));
+        } else {
+            tx = Math.sin(sec * 0.31) * 0.35;
+            ty = Math.cos(sec * 0.23) * 0.3;
+        }
+        // полный наклон — через всё поле: от места блика до края и дальше
+        const k = 1 - Math.exp(-dt / 120);
+        g.x += (base.x + tx * F.w * 2 - g.x) * k;
+        g.y += (base.y + ty * F.h * 2 - g.y) * k;
+    },
+
     // ================= ЦИКЛ И ОТРИСОВКА =================
     loop(ts) {
         if (!this.lastTs) this.lastTs = ts;
@@ -618,6 +654,7 @@ Object.assign(EnvyMinigame, {
         this.updateHalo(dt);
         this.updateWaves(dt);
         this.updateDisturbance(ts / 1000);
+        this.updateLight(dt, ts / 1000);
 
         if (this.clouds.cur) this.cloudCompensate(this.clouds.cur, true);
         if (this.clouds.next) this.cloudCompensate(this.clouds.next, false);

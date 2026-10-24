@@ -131,13 +131,9 @@ const ENVY_SQRT3_2 = Math.sqrt(3) / 2;
 const EnvyMinigame = {
     // ---------- DOM ----------
     screenElement: null,
-    closeBtn: null,
     canvas: null,
-    gaugeBar: null,
     winOverlay: null,
-    confirmOverlay: null,
-    confirmStayBtn: null,
-    confirmLeaveBtn: null,
+    win: null,
 
     // ---------- THREE ----------
     threeLoading: null,   // промис загрузки библиотеки
@@ -195,30 +191,26 @@ const EnvyMinigame = {
     // ================= ЖИЗНЕННЫЙ ЦИКЛ =================
     init() {
         this.screenElement = document.getElementById('envy-game');
-        this.closeBtn = document.getElementById('envy-close-btn');
+
+        // Окно (рамка, значок греха, крестик, вопрос при выходе) — общее на
+        // все грехи. Вешается ДО поиска остальных узлов: сборка переносит
+        // содержимое экрана внутрь рамки. После победы терять нечего —
+        // выходим без вопроса.
+        if (!this.win && typeof MinigameWindow !== 'undefined') {
+            this.win = MinigameWindow.attach(this.screenElement, {
+                sin: 'envy',
+                // Рамка из глаз и крестик из глаз (envy-eyes.js).
+                skin: typeof EnvyEyes !== 'undefined' ? EnvyEyes : null,
+                onLeave: () => this.close(),
+                canLeave: () => this.hasWon
+            });
+        }
+
         this.canvas = document.getElementById('envy-canvas');
-        this.gaugeBar = document.getElementById('envy-gauge-bar');
         this.winOverlay = document.getElementById('envy-win-overlay');
         this.flashEl = document.getElementById('envy-win-flash');
-        this.confirmOverlay = document.getElementById('envy-confirm-overlay');
-        this.confirmStayBtn = document.getElementById('envy-confirm-stay');
-        this.confirmLeaveBtn = document.getElementById('envy-confirm-leave');
 
         if (!this.canvas) return;
-
-        if (this.closeBtn) {
-            this.closeBtn.onclick = (e) => {
-                e.stopPropagation();
-                if (this.hasWon) this.close();
-                else this.showConfirm();
-            };
-        }
-        if (this.confirmStayBtn) {
-            this.confirmStayBtn.onclick = (e) => { e.stopPropagation(); this.hideConfirm(); };
-        }
-        if (this.confirmLeaveBtn) {
-            this.confirmLeaveBtn.onclick = (e) => { e.stopPropagation(); this.close(); };
-        }
 
         this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
         this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -237,6 +229,8 @@ const EnvyMinigame = {
         if (!this.canvas) return;
 
         this.screenElement.classList.add('active');
+        // глаза рамки моргают, пока игра открыта (envy-eyes-blink.js)
+        if (typeof EnvyEyes !== 'undefined' && EnvyEyes.blinkStart) EnvyEyes.blinkStart();
 
         this.fillThirds = 0;
         this.hasWon = false;
@@ -264,7 +258,7 @@ const EnvyMinigame = {
         // Векторные образы грузятся картинками, поэтому пул готовится
         // асинхронно. Первый заход ждёт его доли секунды, дальше и пул, и
         // библиотека уже на месте, и промис отдаёт готовое немедленно.
-        this.ensureThree().then(images => {
+        this._readyP = this.ensureThree().then(images => {
             if (!this.screenElement.classList.contains('active')) return;
             this.imagePool = images;
             this.state = 'play';
@@ -273,6 +267,8 @@ const EnvyMinigame = {
             this.lastTs = null;
             if (this.rafId) cancelAnimationFrame(this.rafId);
             this.rafId = requestAnimationFrame((ts) => this.loop(ts));
+            // первый кадр облака — тогда покров может раскрываться
+            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         }).catch(err => {
             // Без библиотеки играть нечем: честно закрываем экран, а не
             // оставляем игрока перед чёрным прямоугольником.
@@ -281,8 +277,15 @@ const EnvyMinigame = {
         });
     },
 
+    // Готовность для покрова перехода (src/core/mg-veil.js): облако
+    // построено и нарисовано — глаза могут закрываться.
+    veilReady() {
+        return this._readyP || Promise.resolve();
+    },
+
     close() {
         if (this.screenElement) this.screenElement.classList.remove('active');
+        if (typeof EnvyEyes !== 'undefined' && EnvyEyes.blinkStop) EnvyEyes.blinkStop();
         if (this.rafId) {
             cancelAnimationFrame(this.rafId);
             this.rafId = null;
@@ -303,20 +306,14 @@ const EnvyMinigame = {
         // (src/core/sins-menu.js).
     },
 
-    showConfirm() {
-        this.pointerDown = false;
-        this.clearTouch();
-        if (this.confirmOverlay) this.confirmOverlay.classList.add('show');
-    },
-
+    // Вопрос «выйти?» рисует общее окно; тут только сброс пальца.
     hideConfirm() {
-        if (this.confirmOverlay) this.confirmOverlay.classList.remove('show');
+        if (this.win) this.win.hideConfirm();
     },
 
+    // Шкалы нет: деления — глаза-индикаторы внизу рамки (envy-eyes.js).
     updateGauge() {
-        const rounds = this.balance().rounds;
-        const pct = Math.min(100, (this.fillThirds / rounds) * 100);
-        if (this.gaugeBar) this.gaugeBar.style.width = `${pct}%`;
+        if (typeof EnvyEyes !== 'undefined' && EnvyEyes.setFill) EnvyEyes.setFill(this.fillThirds);
     },
 
     // ================= СЦЕНА =================

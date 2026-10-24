@@ -274,6 +274,9 @@ const MinigameWindow = {
             handle._skinJob = (function* () {
                 yield* draw;
                 blit(full, scale);
+                // Живые части рамки (у зависти — моргающие зрачки) — свои
+                // маленькие холсты поверх полос, шкурка кладёт их сама.
+                if (skin.mountLive) skin.mountLive(rim, scale);
                 if (skin.prepareGen) yield* skin.prepareGen(scale);
                 if (typeof MgVeil !== 'undefined') MgVeil.prewarm(skin);
             })();

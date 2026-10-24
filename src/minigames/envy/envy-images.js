@@ -371,15 +371,17 @@ const ENVY_IMAGE_POOL = {
             const vector = !!loaded[def.key];
             const m = this.measure(this.drawArt(def, def.tone || tones[0]));
 
-            // Нарисованному кодом образу цвет задаётся тоном, векторному —
-            // поворотом оттенка: перекрашивать готовую картинку по слоям
-            // нечем, а сдвиг по кругу даёт те же шесть вариантов.
-            const sheets = vector
-                ? tones.map((_, i) => {
-                    const hue = (360 / tones.length) * i;
-                    return this.compose(def, m, this.hueOf(def.tone, hue), hue);
-                })
-                : tones.map(tone => this.compose(def, m, tone));
+            // Наклейка — гравировка по чёрному (envy-engrave.js): цвет в ней
+            // один, зелёный металл, поэтому вариант на образ тоже один.
+            // Раньше было шесть тонов — поворотом оттенка у векторных.
+            const sheets = (typeof this.engrave === 'function')
+                ? [this.engrave(def, m, def.tone || tones[0])]
+                : vector
+                    ? tones.map((_, i) => {
+                        const hue = (360 / tones.length) * i;
+                        return this.compose(def, m, this.hueOf(def.tone, hue), hue);
+                    })
+                    : tones.map(tone => this.compose(def, m, tone));
 
             return {
                 key: def.key,
