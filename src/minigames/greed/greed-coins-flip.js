@@ -480,7 +480,7 @@ Object.assign(GreedCoins, {
                      load(dir + 'coins-albedo.png'), load(dir + 'coins-normal.png')]).then(([fa, fn, aa, an]) => {
             if (!alive) return;
             const R = O.batch ? null : this.flipRenderer(cv, fa, fn);
-            const B = O.batch ? this.batchRenderer(cv, fa, fn) : null;
+            const B = O.batch ? this.batchRenderer(cv, fa, fn, aa, an) : null;
             const pile = this.buildPile(aa, an);
             const drawPile = this.lighter(cvPile, pile);
             if (!(R || B) || !drawPile) { close(); return; }
@@ -491,7 +491,8 @@ Object.assign(GreedCoins, {
                 // вставшая куча рисуется этими спрайтами, и с разбросом свет на
                 // монете при переходе к ней менялся рывком
                 x: c.x, y: c.y, kind: c.kind, pose: this.poses()[c.pose].n, roll: this.poses()[c.pose].roll * D,
-                rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao, layer: li, side: ((c.x * 7 + c.y * 13) % 100) / 100
+                rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao, layer: li, side: ((c.x * 7 + c.y * 13) % 100) / 100,
+                ci: this.KINDS.indexOf(c.kind) * this.poses().length + c.pose
             })));
             let st = 99;
             const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
@@ -588,11 +589,11 @@ Object.assign(GreedCoins, {
                         if (!leaving) {
                             const ti = t - c.delayIn;
                             if (ti < 0) continue;
-                            s = ti < run ? this.flipState(c, ti, 'in') : { n: c.pose, m: 1, flash: 0 };
+                            s = ti < run ? this.flipState(c, ti, 'in') : { n: c.pose, m: 1, flash: 0, settled: true };
                         } else {
                             const to = t - outAt - c.delayOut;
                             if (to >= run) continue;
-                            s = to < 0 ? { n: c.pose, m: 1, flash: 0 } : this.flipState(c.outC, to, 'out');
+                            s = to < 0 ? { n: c.pose, m: 1, flash: 0, settled: true } : this.flipState(c.outC, to, 'out');
                         }
                         B.add(c, s);
                     }

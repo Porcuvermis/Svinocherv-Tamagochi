@@ -34,7 +34,7 @@ Object.assign(GreedCoins, {
     ].join('\n'),
     BATCH_FS: [
         'precision mediump float;',
-        'uniform sampler2D tA,tN;uniform mat3 T;uniform vec3 L,glint;',
+        'uniform sampler2D tA,tN,tP,tQ;uniform mat3 T;uniform vec3 L,glint;uniform float COLS,CELL,RADP,AW,AH;',
         'uniform float diff,amb,broad,sharp,shin,glow;const float SH=.6;',
         'varying vec2 q;varying vec3 r0,r1,r2;varying vec4 v2,v3;varying float vao;',
         'void main(){',
@@ -51,7 +51,21 @@ Object.assign(GreedCoins, {
         '  float rays=exp(-a.y*a.y*60.)*exp(-a.x*.7)+exp(-a.x*a.x*60.)*exp(-a.y*.7);',
         '  outc.rgb+=mix(vec3(1.),glint,.3)*star*(core*1.4+rays*.8);',
         ' }',
-        ' if(abs(det)>.002){',
+        // Вставшая монета — запечённая поза из атласа кучи (cellX < 0: номер
+        // клетки −cellX−1): с толщиной ребра и своим объёмом, как старая куча,
+        // которая игроку нравилась больше плоской монеты под поворотом.
+        ' if(cellX<0.){',
+        '  float idx=-cellX-1.,col=mod(idx,COLS),row=floor(idx/COLS);',
+        '  vec2 tc=vec2((col*CELL+CELL*.5+q.x*RADP)/AW,(row*CELL+CELL*.5-q.y*RADP)/AH);',
+        '  if(abs(q.x)*RADP<CELL*.5&&abs(q.y)*RADP<CELL*.5){',
+        '   vec4 A=texture2D(tP,tc);vec3 a=A.rgb;float kk=A.a;',
+        '   vec3 hv=normalize(L+vec3(0.,0.,1.));',
+        '   vec3 n=normalize(T*(texture2D(tQ,tc).rgb*2.-1.));',
+        '   float d=max(dot(n,L),0.),c=max(dot(n,hv),0.);',
+        '   vec3 full=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
+        '   outc.rgb+=kk*full*vao;outc.a=kk;',
+        '  }',
+        ' } else if(abs(det)>.002){',
         '  vec2 uv=vec2((q.x*e2.y-q.y*e2.x)/det,(e1.x*q.y-e1.y*q.x)/det);',
         '  if(dot(uv,uv)<1.){',
         '   vec2 tc=vec2(cellX+.5*(.5+uv.x*.453),.5-uv.y*.453);',
@@ -84,7 +98,8 @@ Object.assign(GreedCoins, {
     ].join('\n'),
 
     // cv — холст; scale — во сколько раз холст меньше 780×1688 (k ≤ 1).
-    batchRenderer(cv, alb, nor) {
+    // alb/nor — плоская монета (поворот), atA/atN — атлас поз кучи (вставшие)
+    batchRenderer(cv, alb, nor, atA, atN) {
         const gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
         const ext = gl && gl.getExtension('ANGLE_instanced_arrays');
         if (!gl || !ext) return null;
@@ -104,7 +119,7 @@ Object.assign(GreedCoins, {
             gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 4, gl.FLOAT, false, STRIDE * 4, i * 16);
             ext.vertexAttribDivisorANGLE(l, 1);
         });
-        [['tA', alb], ['tN', nor]].forEach(([name, img], i) => {
+        [['tA', alb], ['tN', nor], ['tP', atA], ['tQ', atN]].forEach(([name, img], i) => {
             const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t);
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
@@ -121,6 +136,9 @@ Object.assign(GreedCoins, {
         const g = hex(PALETTE.greedCoin.gold.glint); gl.uniform3f(U.glint, g[0], g[1], g[2]);
         ['diff', 'amb', 'broad', 'sharp', 'shin'].forEach(k => gl.uniform1f(U[k], S[k]));
         gl.uniform1f(U.glow, this.FLIP.glow);
+        ['COLS', 'CELL', 'RADP', 'AW', 'AH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
+        gl.uniform1f(U.COLS, this.COLS); gl.uniform1f(U.CELL, this.CELL); gl.uniform1f(U.RADP, this.RAD);
+        gl.uniform1f(U.AW, atA.width); gl.uniform1f(U.AH, atA.height);
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         // единицы сцены (780×1688) → пиксели холста
         gl.uniform2f(U.res, this.W, this.H);
@@ -131,14 +149,15 @@ Object.assign(GreedCoins, {
                 n = 0;
                 gl.uniformMatrix3fv(U.T, false, GreedCoins.tiltMat(tilt));
             },
-            // c: { x, y, rad, ao, n:[3], roll, kind }, st — из flipState
+            // c: { x, y, rad, ao, n:[3], roll, kind, ci — клетка атласа поз }, st — из flipState;
+            // st.settled — монета встала: рисуется позой из атласа
             add(c, st, box) {
                 if ((n + 1) * STRIDE > data.length) { const d = new Float32Array(data.length * 2); d.set(data); data = d; }
                 const o = n * STRIDE, N = st.n;
                 data[o] = c.x; data[o + 1] = c.y; data[o + 2] = c.rad; data[o + 3] = c.ao === undefined ? 1 : c.ao;
                 data[o + 4] = N[0]; data[o + 5] = N[1]; data[o + 6] = N[2]; data[o + 7] = c.roll || 0;
                 data[o + 8] = st.m; data[o + 9] = st.flash || 0; data[o + 10] = st.reveal === undefined ? 9 : st.reveal; data[o + 11] = st.quiet ? 0 : 1;
-                data[o + 12] = st.star || 0; data[o + 13] = st.starP || 0; data[o + 14] = c.kind === 'euro' ? 0.5 : 0;
+                data[o + 12] = st.star || 0; data[o + 13] = st.starP || 0; data[o + 14] = (st.settled && c.ci !== undefined) ? -1 - c.ci : (c.kind === 'euro' ? 0.5 : 0);
                 data[o + 15] = box || ((st.flash > 0.01 || st.star > 0) ? 2.2 : 1.25);
                 n++;
             },
