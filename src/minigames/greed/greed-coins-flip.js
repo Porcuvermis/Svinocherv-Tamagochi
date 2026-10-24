@@ -45,6 +45,13 @@ Object.assign(GreedCoins, {
         ];
         return [R[0][0], R[1][0], R[2][0], R[0][1], R[1][1], R[2][1], R[0][2], R[1][2], R[2][2]];
     },
+    // M (столбцами) · Rz(roll)
+    withRoll(M, roll) {
+        const c = Math.cos(roll), s = Math.sin(roll);
+        return [M[0] * c + M[3] * s, M[1] * c + M[4] * s, M[2] * c + M[5] * s,
+                -M[0] * s + M[3] * c, -M[1] * s + M[4] * c, -M[2] * s + M[5] * c,
+                M[6], M[7], M[8]];
+    },
     tiltMat(t) {
         const S = this.LIGHT, D = Math.PI / 180, ay = t.x * S.tiltMax * D, ax = t.y * S.tiltMax * D;
         const cy = Math.cos(ay), sy = Math.sin(ay), cx = Math.cos(ax), sx = Math.sin(ax);
@@ -89,7 +96,7 @@ Object.assign(GreedCoins, {
     FLIP_FS: [
         'precision mediump float;',
         'uniform sampler2D tA,tN;uniform vec2 C,res;uniform float rad,m,flash,glow,cellX;',
-        'uniform mat3 R,T;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
+        'uniform mat3 R,T;uniform float ao;uniform vec3 L;uniform float diff,amb,broad,sharp,shin;uniform vec3 glint;',
         'void main(){',
         ' vec2 q=vec2(gl_FragCoord.x-C.x, gl_FragCoord.y-C.y)/rad;',      // y вверх
         ' vec3 e1=R*vec3(1.,0.,0.), e2=R*vec3(0.,1.,0.);',
@@ -115,7 +122,9 @@ Object.assign(GreedCoins, {
         '   vec3 n0=normalize(T*(R*vec3(0.,0.,1.)));float c0=max(dot(n0,hv),0.);',
         '   vec3 ghost=glint*(sharp*pow(c0,shin)*1.1+pow(c0,shin*.35)*.5);',
         '   float k=A.a;',
-        '   outc.rgb+=k*(m*full+(1.-m)*ghost)+k*glint*flash*glow;',
+        // ao — затенение глубины кучи; бесплотный блик и вспышка от него не гаснут:
+        // свет на монету падает и в глубине
+        '   outc.rgb+=k*(m*full*ao+(1.-m)*ghost)+k*glint*flash*glow;',
         '   outc.a=max(outc.a,k*m);',
         '  }',
         ' }',
@@ -146,16 +155,22 @@ Object.assign(GreedCoins, {
         const U = (n) => gl.getUniformLocation(pr, n);
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         gl.viewport(0, 0, cv.width, cv.height);
+        gl.enable(gl.SCISSOR_TEST);
         const gc = PALETTE.greedCoin.gold.glint, hex = (h) => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
         return {
-            clear: () => { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); },
+            clear: () => { gl.disable(gl.SCISSOR_TEST); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.SCISSOR_TEST); },
             // x, y, rad — пиксели холста (y вниз), n — ось монеты, kind — 'gold'/'euro'
-            coin: (x, y, rad, st, kind, tilt) => {
+            // roll — поворот монеты вокруг своей оси (куда смотрит цифра), ao — затенение
+            coin: (x, y, rad, st, kind, tilt, roll, ao) => {
                 const S = this.LIGHT, l = this.v3.norm(S.L);
                 gl.uniform2f(U('C'), x, cv.height - y); gl.uniform1f(U('rad'), rad);
                 gl.uniform1f(U('m'), st.m); gl.uniform1f(U('flash'), st.flash); gl.uniform1f(U('glow'), this.FLIP.glow);
                 gl.uniform1f(U('cellX'), kind === 'euro' ? 0.5 : 0);
-                gl.uniformMatrix3fv(U('R'), false, this.axisTo(st.n));
+                gl.uniformMatrix3fv(U('R'), false, this.withRoll(this.axisTo(st.n), roll || 0));
+                gl.uniform1f(U('ao'), ao === undefined ? 1 : ao);
+                // фрагменты — только в квадрате монеты с ореолом, не во весь экран
+                const b = Math.ceil(rad * 2.2);
+                gl.scissor(Math.max(0, Math.floor(x - b)), Math.max(0, Math.floor(cv.height - y - b)), 2 * b, 2 * b);
                 gl.uniformMatrix3fv(U('T'), false, this.tiltMat(tilt));
                 gl.uniform3f(U('L'), l[0], l[1], l[2]);
                 ['diff', 'amb', 'broad', 'sharp', 'shin'].forEach(k => gl.uniform1f(U(k), S[k]));
@@ -219,6 +234,88 @@ Object.assign(GreedCoins, {
                 R.clear();
                 R.coin(this.W / 2, this.H * 0.42, 180, st, coin.kind, tilt);            // крупно
                 R.coin(this.W / 2, this.H * 0.74, this.RAD, st, coin.kind, tilt);       // как в рамке
+                requestAnimationFrame(loop);
+            };
+            requestAnimationFrame(loop);
+        });
+    },
+
+    // ---------- ПОКАЗ ИЗ 🐞: КУЧКА ----------
+    // Пара десятков монет внахлёст, в разных позах, крупнее рамки (ZOOM).
+    // Каждая появляется на своём месте со своей задержкой, кучка полежит,
+    // и монеты так же вразнобой исчезают. Свет — наклоном телефона.
+    PILE_DEMO: { n: 26, spread: 2.9, zoom: 2.4, stagger: 900, hold: 1600, gap: 700 },
+    flipPileDemo(host) {
+        if (this._pv) return;
+        const root = document.createElement('div');
+        Object.assign(root.style, { position: 'absolute', inset: '0', zIndex: 9999, background: PALETTE.greedCoin.gold.deep, touchAction: 'none' });
+        const cv = document.createElement('canvas'); cv.width = this.W; cv.height = this.H;
+        Object.assign(cv.style, { width: '100%', height: '100%', display: 'block' });
+        root.appendChild(cv); host.appendChild(root);
+        this._pv = root;
+        const load = (u) => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = u; });
+        const dir = 'src/minigames/greed/';
+        let alive = true, lastTap = 0;
+        const close = () => { alive = false; root.remove(); this._pv = null; };
+        root.addEventListener('pointerdown', () => {
+            const now = performance.now();
+            if (now - lastTap < 350) { close(); return; }
+            lastTap = now;
+            try { Tilt.ask && Tilt.ask(); } catch (_) {}
+        });
+        // раскладка: броски в круг с запретом слишком близких центров,
+        // нижние (раньше положенные) темнее
+        const P = this.PILE_DEMO, rad = this.RAD * P.zoom, cx = this.W / 2, cy = this.H * 0.45;
+        let st = 2024;
+        const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+        const coins = [];
+        for (let t = 0; t < 4000 && coins.length < P.n; t++) {
+            const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * P.spread * rad;
+            const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * 0.8;
+            if (coins.some(c => Math.hypot(c.x - x, c.y - y) < rad * 0.75)) continue;
+            const m = (0.15 + rnd() * 0.42), az = rnd() * Math.PI * 2;
+            coins.push({ x, y, kind: rnd() < this.MIX ? 'euro' : 'gold', roll: rnd() * Math.PI * 2,
+                pose: this.v3.norm([Math.sin(m) * Math.cos(az), Math.sin(m) * Math.sin(az), Math.cos(m)]),
+                delayIn: rnd() * P.stagger, delayOut: rnd() * P.stagger, side: rnd() });
+        }
+        coins.forEach((c, i) => { c.ao = 0.55 + 0.45 * (i / (coins.length - 1)); });
+        Promise.all([load(dir + 'coin-flat-albedo.png'), load(dir + 'coin-flat-normal.png')]).then(([a, n]) => {
+            if (!alive) return;
+            const R = this.flipRenderer(cv, a, n);
+            if (!R) { close(); return; }
+            const F = this.FLIP, run = F.toPeak + F.fromPeak;
+            const CYCLE = 2 * (P.stagger + run) + P.hold + P.gap;
+            const tilt = { x: 0, y: 0 };
+            let cycle = null;
+            const t0 = performance.now();
+            const loop = (now) => {
+                if (!alive) return;
+                const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
+                const want = T.live ? T : { x: 0, y: 0 };
+                tilt.x += (want.x - tilt.x) * 0.15; tilt.y += (want.y - tilt.y) * 0.15;
+                const e = Math.max(0, this._flipAt != null ? this._flipAt : now - t0), k = Math.floor(e / CYCLE), t = e - k * CYCLE;
+                if (k !== cycle) {
+                    cycle = k;
+                    // пик — по свету в начале хода: пока монета крутится, он не скачет
+                    const H = this.peakAxis(tilt);
+                    for (const c of coins) {
+                        c.H = H;
+                        c.edge = this.edgeAxis(H, c.pose, c.side);
+                        c.edgeOut = [-c.edge[0], -c.edge[1], 0];
+                    }
+                }
+                const outAt = P.stagger + run + P.hold;
+                R.clear();
+                for (const c of coins) {
+                    let s;
+                    const ti = t - c.delayIn, to = t - outAt - c.delayOut;
+                    if (ti < 0) continue;
+                    if (ti < run) s = this.flipState(c, ti, 'in');
+                    else if (to < 0) s = { n: c.pose, m: 1, flash: 0 };
+                    else if (to < run) s = this.flipState({ pose: c.pose, H: c.H, edge: c.edgeOut }, to, 'out');
+                    else continue;
+                    R.coin(c.x, c.y, rad, s, c.kind, tilt, c.roll, c.ao);
+                }
                 requestAnimationFrame(loop);
             };
             requestAnimationFrame(loop);

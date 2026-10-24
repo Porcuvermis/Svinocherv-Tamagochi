@@ -305,11 +305,11 @@ const DebugState = {
         // три осколка = жетон), но копить их ради проверки магазина долго.
         // Выдаётся через Backend, а не записью в состояние: когда появится
         // рогалик, он пойдёт тем же путём.
-        // Монеты алчности: показ появления/исчезновения монеты в блике
-        // (greed-coins-flip.js; раньше тут была куча для проверки блеска —
-        // GreedCoins.preview).
+        // Монеты алчности: кучка, которая появляется и исчезает в блике
+        // (greed-coins-flip.js). Раньше тут были одна монета (flipDemo) и куча
+        // для проверки блеска (preview).
         if (act === 'coins') {
-            const go = () => GreedCoins.flipDemo(document.getElementById('game-container') || document.body);
+            const go = () => GreedCoins.flipPileDemo(document.getElementById('game-container') || document.body);
             if (typeof GreedCoins !== 'undefined') go();
             return;
         }
