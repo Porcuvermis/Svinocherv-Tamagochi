@@ -593,21 +593,18 @@ Object.assign(EnvyMinigame, {
         }
     },
 
-    // Свет гравировки (envy-engrave.js) плывёт от наклона телефона: берётся
-    // поворот от позы хвата (Tilt.turn — держишь как держал, через пару
-    // секунд снова ноль), как у эффекта глубины. Сглаживание своё: turn()
-    // отдаётся сырым. Без датчика свет чуть гуляет сам — чтобы металл и на
-    // компьютере читался металлом, а не краской.
+    // Проблесковая полоса по фольге наклеек (envy-engrave.js) плывёт от
+    // наклона телефона: берётся поворот от позы хвата (Tilt.turn — держишь
+    // как держал, через пару секунд снова ноль), как у эффекта глубины.
+    // Сглаживание своё: turn() отдаётся сырым. Без датчика полоса сама
+    // медленно проходит через стол туда и обратно.
     updateLight(dt, sec) {
-        const P = ENVY_IMAGE_POOL, L = P.light, C = P.LIGHT;
-        if (!L) return;
+        const P = ENVY_IMAGE_POOL, B = P.band, C = P.BAND;
+        if (!B) return;
         const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false, x: 0, y: 0 };
-        let tx = 0, ty = 0;
-        if (T.live) { tx = T.x; ty = -T.y; }
-        else { tx = Math.sin(sec * 0.31) * 0.25; ty = Math.cos(sec * 0.23) * 0.2; }
+        const t = T.live ? Math.max(-1, Math.min(1, T.x * 0.8 - T.y * 0.6)) : Math.sin(sec * 0.35);
         const k = 1 - Math.exp(-dt / 120);
-        L.x += (C.x + tx * C.reach - L.x) * k;
-        L.y += (C.y + ty * C.reach - L.y) * k;
+        B.x += (t * C.reach - B.x) * k;
     },
 
     // ================= ЦИКЛ И ОТРИСОВКА =================
