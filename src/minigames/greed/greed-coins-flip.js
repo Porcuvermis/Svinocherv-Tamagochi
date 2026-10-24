@@ -283,7 +283,29 @@ Object.assign(GreedCoins, {
     // Пара десятков монет внахлёст, в разных позах, крупнее рамки (ZOOM).
     // Каждая появляется на своём месте со своей задержкой, кучка полежит,
     // и монеты так же вразнобой исчезают. Свет — наклоном телефона.
-    PILE_DEMO: { n: 26, spread: 2.9, zoom: 2.4, stagger: 900, hold: 1600, gap: 700 },
+    PILE_DEMO: { n: 26, spread: 2.9, zoom: 2.4, hold: 1600, gap: 700 },
+
+    // ---------- КТО КОГДА ВСПЫХИВАЕТ ----------
+    // Замысел игрока: пока у монеты идёт появление (от искры до посадки на
+    // место), соседи рядом не начинают — вспышки рассыпаны, а не пачкой.
+    // Когда все стартовали почти разом, искры и вспышки соседей сливались в
+    // белые пятна. Жадно: монеты в случайном порядке, каждой — ближайшее
+    // время, когда её окно не пересекается с окнами соседей ближе near.
+    // win: [от, до] мс от старта монеты — окно, которое занимает её процесс.
+    // → у каждой монеты поле key (мс задержки). Возвращает самую позднюю.
+    scheduleFlips(coins, near, win, key, rnd, step) {
+        const order = coins.slice().sort(() => rnd() - 0.5), done = [];
+        step = step || 40;
+        let last = 0;
+        for (const c of order) {
+            const nb = done.filter(o => Math.hypot(o.x - c.x, o.y - c.y) < near);
+            let t = Math.floor(rnd() * 4) * step;
+            const busy = (t) => nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
+            while (busy(t)) t += step;
+            c[key] = t; done.push(c); last = Math.max(last, t);
+        }
+        return last;
+    },
     flipPileDemo(host) {
         if (this._pv) return;
         const root = document.createElement('div');
@@ -315,7 +337,7 @@ Object.assign(GreedCoins, {
             const m = (0.15 + rnd() * 0.42), az = rnd() * Math.PI * 2;
             coins.push({ x, y, kind: rnd() < this.MIX ? 'euro' : 'gold', roll: rnd() * Math.PI * 2,
                 pose: this.v3.norm([Math.sin(m) * Math.cos(az), Math.sin(m) * Math.sin(az), Math.cos(m)]),
-                delayIn: rnd() * P.stagger, delayOut: rnd() * P.stagger, side: rnd() });
+                side: rnd() });
         }
         coins.forEach((c, i) => { c.ao = 0.55 + 0.45 * (i / (coins.length - 1)); });
         Promise.all([load(dir + 'coin-flat-albedo.png'), load(dir + 'coin-flat-normal.png')]).then(([a, n]) => {
@@ -323,7 +345,12 @@ Object.assign(GreedCoins, {
             const R = this.flipRenderer(cv, a, n);
             if (!R) { close(); return; }
             const F = this.FLIP, run = F.toPeak + F.fromPeak;
-            const CYCLE = 2 * (P.stagger + run) + P.hold + P.gap;
+            // окно процесса: от искры (первый кадр блика — около трети пути
+            // до пика) до посадки; соседи — монеты, что касаются друг друга
+            const win = [Math.round(F.toPeak * 0.6), run], near = rad * 2.1;
+            const lastIn = this.scheduleFlips(coins, near, win, 'delayIn', rnd);
+            const lastOut = this.scheduleFlips(coins, near, [0, run - Math.round(F.toPeak * 0.6)], 'delayOut', rnd);
+            const CYCLE = lastIn + run + P.hold + lastOut + run + P.gap;
             const tilt = { x: 0, y: 0 };
             let cycle = null;
             const t0 = performance.now();
@@ -344,7 +371,7 @@ Object.assign(GreedCoins, {
                         c.seen = undefined;          // пик сменился — первый кадр блика тоже
                     }
                 }
-                const outAt = P.stagger + run + P.hold;
+                const outAt = lastIn + run + P.hold;
                 R.clear();
                 for (const c of coins) {
                     let s;
