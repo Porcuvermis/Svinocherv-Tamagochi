@@ -109,8 +109,12 @@ const GreedCoins = {
 
     // Свет по наклону телефона. t = {x, y} в −1..1 (Tilt.turn()).
     // Базовый сдвиг — свет чуть сверху-слева; K — как сильно поворот телефона
-    // сдвигает луч: на полном наклоне (35°) луч проходит все наклоны монет.
-    SHINE: { hx0: -0.1, hy0: 0.16, K: 0.62, inDeg: 4, outDeg: 11 },
+    // сдвигает луч. Яркость монеты — колокол по углу между её осью и лучом
+    // (sigma, градусы), а не окно «горит / не горит»: первая версия с узким
+    // окном заставляла монеты мигать на месте при малейшем дрожании, а игрок
+    // ждёт ЛЕЖАЩИЙ блеск, который при наклоне плавно перетекает с монеты на
+    // монету. Широкий колокол даёт каждой монете свой постоянный уровень блеска.
+    SHINE: { hx0: -0.1, hy0: 0.16, K: 0.45, sigma: 13 },
     halfVector(t) {
         const S = this.SHINE, x = S.hx0 + t.x * S.K, y = S.hy0 - t.y * S.K, z = 1;
         const l = Math.hypot(x, y, z);
@@ -120,14 +124,14 @@ const GreedCoins = {
     // Возвращает число зажжённых — для замеров.
     paintShine(ctx, coins, L, atlas, t, gain) {
         const S = this.SHINE, H = this.halfVector(t), C = this.CELL, s = L.s;
-        const cIn = Math.cos(S.inDeg * Math.PI / 180), cOut = Math.cos(S.outDeg * Math.PI / 180);
+        const sg = S.sigma * Math.PI / 180, cut = Math.cos(2 * sg), inv = 1 / (sg * sg);
         ctx.clearRect(0, 0, this.W, this.H);
         ctx.globalCompositeOperation = 'lighter';
         let lit = 0;
         for (const c of coins) {
             const a = c.n[0] * H[0] + c.n[1] * H[1] + c.n[2] * H[2];
-            if (a <= cOut) continue;
-            let k = (a - cOut) / (cIn - cOut); k = k >= 1 ? 1 : k * k * (3 - 2 * k);
+            if (a <= cut) continue;
+            const th = Math.acos(a > 1 ? 1 : a), k = Math.exp(-th * th * inv);
             ctx.globalAlpha = k * L.gain * (gain === undefined ? 1 : gain);
             const { sx, sy } = this.cell(c.kind, c.pose);
             ctx.drawImage(atlas, sx, sy, C, C, c.x - C / 2 * s, c.y - C / 2 * s, C * s, C * s);

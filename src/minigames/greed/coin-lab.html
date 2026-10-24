@@ -15,10 +15,10 @@
 <div id="stage"></div>
 <div id="hud">
  <div id="info"></div>
- <div>внутр.° <input id="in" type="range" min="1" max="15" step="0.5" value="4"></div>
- <div>внеш.° <input id="out" type="range" min="6" max="40" step="1" value="11"></div>
+ <div>ширина° <input id="sig" type="range" min="5" max="30" step="1" value="13"></div>
+ <div>чувствит. <input id="kk" type="range" min="0.1" max="1.2" step="0.05" value="0.45"></div>
  <div>яркость <input id="gain" type="range" min="0" max="1.5" step="0.05" value="1"></div>
- <div><label><input id="idle" type="checkbox" checked> сам качает</label></div>
+ <div><label><input id="idle" type="checkbox"> сам качает (медленно)</label></div>
 </div>
 <script src="../../core/palette.js"></script>
 <script src="../../core/tilt.js"></script>
@@ -38,22 +38,22 @@
     const tilt = { x: 0, y: 0 };
     let last = null, lit = 0, userAt = -1e9;
     function draw(force) {
-        if (!force && last && Math.abs(last.x - tilt.x) < 0.004 && Math.abs(last.y - tilt.y) < 0.004) return;
+        if (!force && last && Math.abs(last.x - tilt.x) < 0.008 && Math.abs(last.y - tilt.y) < 0.008) return;
         last = { x: tilt.x, y: tilt.y };
-        G.SHINE.inDeg = +q('in').value; G.SHINE.outDeg = +q('out').value;
+        G.SHINE.sigma = +q('sig').value; G.SHINE.K = +q('kk').value;
         const t = performance.now(); lit = 0;
         layers.forEach((c, i) => { lit += G.paintShine(shineCtx[i].canvas.getContext('2d'), c, G.LAYERS[i], shineA, tilt, +q('gain').value); });
         info.textContent = 'монет ' + layers.reduce((a, c) => a + c.length, 0) + ' · блестит ' + lit + ' · блик ' + (performance.now() - t).toFixed(1) + ' мс · куча ' + buildMs + ' мс · датчик ' + (Tilt.turn().live ? 'есть' : 'нет');
     }
     function setFromPointer(e) { tilt.x = Math.max(-1, Math.min(1, (e.clientX / innerWidth - 0.5) * 2)); tilt.y = Math.max(-1, Math.min(1, -(e.clientY / innerHeight - 0.5) * 2)); userAt = performance.now(); }
-    addEventListener('pointermove', setFromPointer);
+    addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' || e.buttons) setFromPointer(e); });
     addEventListener('pointerdown', (e) => { setFromPointer(e); try { Tilt.ask && Tilt.ask(); } catch (_) {} });
     window.labSetTilt = (x, y) => { tilt.x = x; tilt.y = y; userAt = performance.now(); q('idle').checked = false; draw(true); return lit; };
     window.labLit = () => lit;
     (function loop(now) {
         const sensor = Tilt.turn();
-        if (sensor.live) { tilt.x = sensor.x; tilt.y = sensor.y; }
-        else if (q('idle').checked && now - userAt > 2500) { tilt.x = 0.9 * Math.sin(now / 1900); tilt.y = 0.6 * Math.sin(now / 1300 + 1); }
+        if (sensor.live) { tilt.x += (sensor.x - tilt.x) * 0.08; tilt.y += (sensor.y - tilt.y) * 0.08; }   // датчик дрожит — без сглаживания монеты мерцают
+        else if (q('idle').checked && now - userAt > 2500) { tilt.x = 0.7 * Math.sin(now / 4500); tilt.y = 0.5 * Math.sin(now / 3100 + 1); }
         draw();
         requestAnimationFrame(loop);
     })(0);
