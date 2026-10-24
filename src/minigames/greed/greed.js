@@ -61,15 +61,17 @@ const GreedMinigame = {
         if (!this.screenElement) return;
 
         // Окно (рамка, значок греха, крестик, вопрос при выходе) — общее на
-        // все грехи. Вопроса при выходе тут не бывает: крутка рассчитывается
-        // сразу, незавершённого прогресса на экране нет, терять нечего.
+        // все грехи. Выход посреди крутки — нажатиями (canLeave ниже).
         if (!this.win && typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'greed',
                 // рамка из монет (greed-coins-rim.js), docs/plan/27-greed-skin.md
                 skin: typeof GreedCoins !== 'undefined' && GreedCoins.rim ? GreedCoins : null,
                 onLeave: () => this.close(),
-                canLeave: () => true
+                // Пока крутятся барабаны или идёт выплата — выход в три нажатия
+                // крестика (покров: каждое проявляет треть монет), иначе в одно
+                // (CLAUDE.md, инвариант 8; решение игрока).
+                canLeave: () => !this.busy()
             });
         }
 
@@ -151,6 +153,11 @@ const GreedMinigame = {
                 if (A && !A.ready) A.wait.push(shown); else shown();
             });
         });
+    },
+
+    // Идёт крутка или выплата: барабаны, табло выплаты на экране.
+    busy() {
+        return !!(this.isSpinning || (this.winOverlay && this.winOverlay.classList.contains('show')));
     },
 
     // Готовность для покрова перехода: см. open().

@@ -90,7 +90,12 @@ Object.assign(GreedCoins, {
         const total = last + run, play = Math.round(total / this.VEIL_SPEED);
         const ms = { cover: play, reveal: play, close: play, clear: play };
         this._veilTotal = total;
-        this._veil = { all, ms };
+        // Нажатия крестика посреди крутки (MgVeil.knock): монеты сцены — тремя
+        // долями в порядке того же потока; каждое нажатие проявляет следующую.
+        const byD = inner.slice().sort((a, b) => a.d - b.d), n3 = Math.ceil(byD.length / 3);
+        const groups = [0, 1, 2].map(j => byD.slice(j * n3, (j + 1) * n3));
+        groups.forEach((g, j) => g.forEach(c => { c.g = j; }));
+        this._veil = { all, ms, groups, innerN: inner.length };
     },
 
     // ---------- холст видеокарты внутри покрова ----------
@@ -117,11 +122,65 @@ Object.assign(GreedCoins, {
         if (this._vl) this._vl.gap.style.display = this._vl.cv.style.display = 'none';
     },
 
+    // Сколько долей сцены проявлено нажатиями (для pop и finish: MgVeil
+    // обнуляет свой счёт до хода pop).
+    _kn: 0,
+    knockCount(mode) {
+        if (mode === 'burst') return Math.min(2, (typeof MgVeil !== 'undefined' && MgVeil.knocks) || 1);
+        return this._kn;
+    },
+
+    // План хода: у каждой монеты роль c.r — null (не рисуется), 's' (стоит),
+    // 'i' (появляется), 'o' (исчезает) — и c.off, задержка в мс показа.
+    // Возвращает длительность хода в мс показа. dry — только посчитать.
+    //   cover  — все появляются;       reveal — сцена уходит, рамка стоит;
+    //   close  — сцена появляется;     clear  — все уходят;
+    //   burst  — проявляется очередная доля сцены (рамку рисует окно);
+    //   pop    — проявленные доли уходят (не нажал вовремя);
+    //   finish — третье нажатие: рамка и проявленное стоят, остальное — сюда.
+    planFor(mode, dry) {
+        const V = this._veil, F = this.FLIP, run = F.toPeak + F.fromPeak, dmax = this._veilTotal - run;
+        const n = this.knockCount(mode);
+        let maxOff = 0;
+        const set = (c, r, off) => {
+            if (r === 'i' || r === 'o') maxOff = Math.max(maxOff, off);
+            if (!dry) { c.r = r; c.off = off; }
+        };
+        const gmin = V.groups.map(g => g.length ? Math.min(...g.map(c => c.d)) : 0);
+        const shownMax = Math.max(0, ...V.groups.slice(0, n).flat().map(c => c.d));
+        for (const c of V.all) {
+            const inner = c.inner;
+            switch (mode) {
+                case 'cover': set(c, 'i', c.d); break;
+                case 'clear': set(c, 'o', dmax - c.d); break;
+                case 'reveal': inner ? set(c, 'o', dmax - c.d) : set(c, 's', 0); break;
+                case 'close': inner ? set(c, 'i', c.d) : set(c, 's', 0); break;
+                case 'burst':
+                    if (!inner || c.g > n - 1) set(c, null, 0);
+                    else if (c.g < n - 1) set(c, 's', 0);
+                    else set(c, 'i', c.d - gmin[c.g]);
+                    break;
+                case 'pop':
+                    if (!inner || c.g >= n) set(c, null, 0);
+                    else set(c, 'o', shownMax - c.d);
+                    break;
+                case 'finish':
+                    if (!inner || c.g < n) set(c, 's', 0);
+                    else set(c, 'i', c.d - gmin[Math.min(2, n)]);
+                    break;
+            }
+        }
+        return maxOff + run;
+    },
+
     veilStart(ctx, mode) {
         if (!this._veil) for (const _ of this.prepareGen()) { /* до конца */ }
         // свой 2D-холст покрова не нужен — он пуст
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore();
         this._mode = mode;
+        this._modeTotal = this.planFor(mode, false);
+        if (mode === 'burst') this._kn = this.knockCount('burst');
+        if (mode === 'cover' || mode === 'close' || mode === 'clear') this._kn = 0;
         // пик блика — по свету в начале хода, пока монеты крутятся, он не скачет
         const H = this.peakAxis(this.followTilt());
         for (const c of this._veil.all) {
@@ -131,46 +190,43 @@ Object.assign(GreedCoins, {
         this.veilMount();
     },
 
-    // Кадр хода. Входящие ходы (cover, close) — по своему плану; уходящие
-    // (reveal, clear) — тот же поток задом наперёд.
+    // Кадр хода по плану (planFor). Время — в мс показа: покров идёт быстрее
+    // (VEIL_SPEED), но расписание и повороты те же.
     veil(ctx, mode, p) {
         const V = this.veilMount();
         if (!V) return;
-        // время хода — в мс показа: покров идёт быстрее (VEIL_SPEED), но
-        // расписание и повороты те же
-        const F = this.FLIP, run = F.toPeak + F.fromPeak, total = this._veilTotal, t = p * total;
-        const into = mode === 'cover' || mode === 'close', anim = (c) => mode === 'cover' || mode === 'clear' || c.inner;
-        const key = 'd', last = total - run;
+        const F = this.FLIP, run = F.toPeak + F.fromPeak, t = p * this._modeTotal;
+        const whole = mode === 'cover' || mode === 'clear';
         V.B.begin(this.followTilt());
-        let shown = 0, moving = 0;
+        let shown = 0;
         for (const c of this._veil.all) {
-            if (!anim(c)) { V.B.add(c, this.SETTLED(c)); continue; }
-            moving++;
+            if (!c.r) continue;
             let s;
-            const quiet = c[key + 'Q'];
-            if (into) {
-                const ti = t - c[key];
+            if (c.r === 's') s = this.SETTLED(c);
+            else if (c.r === 'i') {
+                const ti = t - c.off;
                 if (ti < 0) continue;
-                shown++;
-                c.quiet = quiet;
+                c.quiet = c.dQ;
                 s = ti < run ? this.flipState(c, ti, 'in') : this.SETTLED(c);
             } else {
-                const to = t - (last - c[key]);
+                const to = t - c.off;
                 if (to >= run) continue;
-                shown++;
-                c.outC.quiet = quiet;
+                c.outC.quiet = c.dQ;
                 s = to < 0 ? this.SETTLED(c) : this.flipState(c.outC, to, 'out');
             }
+            if (whole || c.inner) shown++;
             V.B.add(c, s);
         }
         V.B.flush();
-        this._shown = moving ? shown / moving : 1;
+        if (mode === 'pop' && p >= 1) this._kn = 0;
+        this._shown = shown / (whole ? this._veil.all.length : this._veil.innerN);
         // Фон под монетами густеет и редеет ТОЛЬКО вместе с монетами: тёмным
         // он становится, когда почти все монеты уже на экране, и уходит, как
         // только монеты начинают уходить. Было: на входящих ходах фон тёмный
         // с первого кадра, на уходящих держался до последней трети — автомат
         // на выходе пропадал раньше, чем появлялись монеты, а на входе
-        // проявлялся уже после их ухода (игрок: «критически тупо»).
+        // проявлялся уже после их ухода (игрок: «критически тупо»). На
+        // нажатиях проявлено не больше двух третей — фона нет, игра видна.
         const k = Math.max(0, Math.min(1, (this._shown - 0.6) / 0.4));
         V.gap.style.opacity = (k * k * (3 - 2 * k)).toFixed(3);
     },
@@ -195,11 +251,14 @@ Object.assign(GreedCoins, {
         this.veilHide();
     }
 });
-// Длительности ходов берутся из расписания — getter, а не поле: Object.assign
-// вызвал бы его сразу при загрузке файла, до сцены и окна.
+// Длительности ходов — из плана хода (planFor): getter, а не поле —
+// Object.assign вызвал бы его сразу при загрузке файла, до сцены и окна; и у
+// нажатий длительность зависит от того, сколько их уже было.
 Object.defineProperty(GreedCoins, 'VEIL_MS', {
     get() {
         if (!this._veil) for (const _ of this.prepareGen()) { /* до конца */ }
-        return this._veil.ms;
+        const out = {};
+        for (const m of ['cover', 'reveal', 'close', 'clear', 'burst', 'pop', 'finish']) out[m] = Math.round(this.planFor(m, true) / this.VEIL_SPEED);
+        return out;
     }
 });
