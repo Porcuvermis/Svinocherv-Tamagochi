@@ -194,8 +194,36 @@ Object.assign(GreedCoins, {
         gl.viewport(0, 0, cv.width, cv.height);
         gl.enable(gl.SCISSOR_TEST);
         const gc = PALETTE.greedCoin.gold.glint, hex = (h) => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
+        // ---------- запас встающих монет ----------
+        // Тысяча монет каждый кадр — это тысяча проходов. Поэтому монета,
+        // которая уже встала, один раз дорисовывается в отдельную текстуру
+        // (store), и в кадре рисуются только она и монеты в движении.
+        const tex = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cv.width, cv.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        const bp = gl.createProgram();
+        gl.attachShader(bp, sh(gl.VERTEX_SHADER, this.FLIP_VS));
+        gl.attachShader(bp, sh(gl.FRAGMENT_SHADER, 'precision mediump float;uniform sampler2D t;uniform vec2 res;void main(){gl_FragColor=texture2D(t,gl_FragCoord.xy/res);}'));
+        gl.linkProgram(bp);
+        const blit = () => {
+            gl.useProgram(bp); gl.disable(gl.SCISSOR_TEST);
+            gl.uniform1i(gl.getUniformLocation(bp, 't'), 2); gl.uniform2f(gl.getUniformLocation(bp, 'res'), cv.width, cv.height);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+            gl.enable(gl.SCISSOR_TEST); gl.useProgram(pr);
+        };
         return {
             clear: () => { gl.disable(gl.SCISSOR_TEST); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.SCISSOR_TEST); },
+            // рисовать в запас (true) или на экран (false)
+            toStore: (on) => { gl.bindFramebuffer(gl.FRAMEBUFFER, on ? fbo : null); },
+            blit,
             // x, y, rad — пиксели холста (y вниз), n — ось монеты, kind — 'gold'/'euro'
             // roll — поворот монеты вокруг своей оси (куда смотрит цифра), ao — затенение
             coin: (x, y, rad, st, kind, tilt, roll, ao) => {
@@ -382,6 +410,135 @@ Object.assign(GreedCoins, {
                     else if (to < run) s = this.flipState({ pose: c.pose, H: c.H, edge: c.edgeOut }, to, 'out');
                     else continue;
                     R.coin(c.x, c.y, rad, s, c.kind, tilt, c.roll, c.ao);
+                }
+                requestAnimationFrame(loop);
+            };
+            requestAnimationFrame(loop);
+        });
+    },
+
+    // ---------- ПОКАЗ ИЗ 🐞: ВЕСЬ ЭКРАН ----------
+    // Та же раскладка, что у кучи (layout), в настоящем размере. Расписание
+    // мягче, чем у кучки: соседям нельзя только одновременно ПИК вспышки
+    // (bright, мс от пика); искры и повороты пусть идут у всех сразу. Иначе
+    // куча собиралась мучительно долго: правило «весь путь» — у кучки, окно
+    // «искра…вспышка» с соседством 2,6 радиуса — 8 с на весь экран.
+    // Нижние слои стартуют раньше верхних — куча нарастает; монета не
+    // ложится поверх той, что выше неё, уже вставшей.
+    FULL_DEMO: { near: 1.9, layerLag: 220, spread: 800, bright: [-90, 140], hold: 2200, gap: 600 },
+    flipFullDemo(host) {
+        if (this._pv) return;
+        const root = document.createElement('div');
+        Object.assign(root.style, { position: 'absolute', inset: '0', zIndex: 9999, background: PALETTE.greedCoin.gold.deep, touchAction: 'none' });
+        const mkCv = () => { const c = document.createElement('canvas'); c.width = this.W; c.height = this.H;
+            Object.assign(c.style, { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'block' }); root.appendChild(c); return c; };
+        const cvPile = mkCv(), cv = mkCv();
+        host.appendChild(root);
+        this._pv = root;
+        const load = (u) => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = u; });
+        const dir = 'src/minigames/greed/';
+        let alive = true, lastTap = 0;
+        const close = () => { alive = false; root.remove(); this._pv = null; };
+        root.addEventListener('pointerdown', () => {
+            const now = performance.now();
+            if (now - lastTap < 350) { close(); return; }
+            lastTap = now;
+            try { Tilt.ask && Tilt.ask(); } catch (_) {}
+        });
+        Promise.all([load(dir + 'coin-flat-albedo.png'), load(dir + 'coin-flat-normal.png'),
+                     load(dir + 'coins-albedo.png'), load(dir + 'coins-normal.png')]).then(([fa, fn, aa, an]) => {
+            if (!alive) return;
+            const R = this.flipRenderer(cv, fa, fn);
+            const pile = this.buildPile(aa, an);
+            const drawPile = this.lighter(cvPile, pile);
+            if (!R || !drawPile) { close(); return; }
+            const F = this.FLIP, run = F.toPeak + F.fromPeak, P = this.FULL_DEMO, D = Math.PI / 180;
+            const coins = [];
+            pile.layers.forEach((L, li) => L.forEach(c => coins.push({
+                x: c.x, y: c.y, kind: c.kind, pose: c.n, roll: this.poses()[c.pose].roll * D,
+                rad: this.RAD * this.LAYERS[li].s, ao: this.LAYERS[li].ao, layer: li, side: ((c.x * 7 + c.y * 13) % 100) / 100
+            })));
+            let st = 99;
+            const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+            // старт: случайно в пределах spread, со сдвигом на слой; затем
+            // соседей разводят по яркому окну
+            const sched = (key, rev) => {
+                const bright = [F.toPeak + P.bright[0], F.toPeak + P.bright[1]];
+                const win = rev ? [run - bright[1], run - bright[0]] : bright;
+                const cell = 64, grid = new Map(), near = this.RAD * P.near;
+                let last = 0;
+                const nL = this.LAYERS.length;
+                const order = coins.slice().sort((a, b) => (rev ? b.layer - a.layer : a.layer - b.layer) || rnd() - 0.5);
+                for (const c of order) {
+                    const li = rev ? nL - 1 - c.layer : c.layer;
+                    let t = Math.round(li * P.layerLag + rnd() * P.spread);
+                    const gx = Math.floor(c.x / cell), gy = Math.floor(c.y / cell), nb = [];
+                    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+                        const q = grid.get((gy + j) * 1000 + gx + i);
+                        if (q) for (const o of q) if (Math.hypot(o.x - c.x, o.y - c.y) < near) nb.push(o);
+                    }
+                    const busy = (t) => nb.some(o => t + win[0] < o[key] + win[1] && o[key] + win[0] < t + win[1]);
+                    while (busy(t)) t += 30;
+                    c[key] = t; last = Math.max(last, t);
+                    const k = gy * 1000 + gx; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
+                }
+                return last;
+            };
+            const lastIn = sched('delayIn', false), lastOut = sched('delayOut', true);
+            this._fullStats = { coins: coins.length, inMs: lastIn + run, outMs: lastOut + run };
+            const outAt = lastIn + run + P.hold, CYCLE = outAt + lastOut + run + P.gap;
+            const tilt = { x: 0, y: 0 };
+            let cycle = null, stored = 0, lastRebuild = -1e9;
+            // порядок рисования — как в куче: по слоям, внутри слоя как разложено
+            const t0 = performance.now();
+            const loop = (now) => {
+                if (!alive) return;
+                const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
+                const want = T.live ? T : { x: 0, y: 0 };
+                tilt.x += (want.x - tilt.x) * 0.15; tilt.y += (want.y - tilt.y) * 0.15;
+                const e = Math.max(0, this._flipAt != null ? this._flipAt : now - t0), k = Math.floor(e / CYCLE), t = e - k * CYCLE;
+                if (k !== cycle) {
+                    cycle = k;
+                    const H = this.peakAxis(tilt);
+                    for (const c of coins) {
+                        c.H = H; c.edge = this.edgeAxis(H, c.pose, c.side); c.edgeOut = [-c.edge[0], -c.edge[1], 0];
+                        c.seen = undefined; c.in = false;
+                    }
+                    R.toStore(true); R.clear(); R.toStore(false);
+                    stored = 0;
+                }
+                // куча стоит целиком — показываем настоящую кучу с живым блеском
+                const settled = t >= lastIn + run && t < outAt;
+                cvPile.style.visibility = settled ? 'visible' : 'hidden';
+                cv.style.visibility = settled ? 'hidden' : 'visible';
+                if (settled) { drawPile(tilt); requestAnimationFrame(loop); return; }
+                const leaving = t >= outAt;
+                // уход: запас пересобирается из оставшихся раз в 120 мс
+                if (leaving && now - lastRebuild > 120) {
+                    lastRebuild = now;
+                    R.toStore(true); R.clear();
+                    for (const c of coins) if (t - outAt - c.delayOut < 0) R.coin(c.x, c.y, c.rad, { n: c.pose, m: 1, flash: 0 }, c.kind, tilt, c.roll, c.ao);
+                    R.toStore(false);
+                }
+                // встали — в запас
+                if (!leaving) for (const c of coins) if (!c.in && t - c.delayIn >= run) {
+                    c.in = true; R.toStore(true);
+                    R.coin(c.x, c.y, c.rad, { n: c.pose, m: 1, flash: 0 }, c.kind, tilt, c.roll, c.ao);
+                    R.toStore(false); stored++;
+                }
+                R.clear(); R.blit();
+                for (const c of coins) {
+                    let s;
+                    if (!leaving) {
+                        const ti = t - c.delayIn;
+                        if (ti < 0 || ti >= run) continue;
+                        s = this.flipState(c, ti, 'in');
+                    } else {
+                        const to = t - outAt - c.delayOut;
+                        if (to < 0 || to >= run) continue;
+                        s = this.flipState({ pose: c.pose, H: c.H, edge: c.edgeOut, seen: c.seen }, to, 'out');
+                    }
+                    R.coin(c.x, c.y, c.rad, s, c.kind, tilt, c.roll, c.ao);
                 }
                 requestAnimationFrame(loop);
             };
