@@ -141,16 +141,9 @@ Object.assign(EnvyMinigame, {
             // множителем его не покрасить. material.color остаётся белым и
             // работает только на подсветку волной.
             const variant = image.variants[Math.floor(Math.random() * image.variants.length)];
-            const material = new THREE.MeshBasicMaterial({
-                map: variant,
-                color: new THREE.Color(0xffffff),
-                transparent: true,
-                // Отсекает только сглаженную кромку текстуры: образы больше
-                // не растворяются поштучно, их гасит ореол.
-                alphaTest: 0.5,
-                depthTest: true,
-                depthWrite: true
-            });
+            // Гравированная наклейка (envy-engrave.js): чёрная основа,
+            // зелёный металл в ложбинках, общий свет от наклона телефона.
+            const material = ENVY_IMAGE_POOL.material(THREE, variant);
 
             const mesh = new THREE.Mesh(this.tileGeometry, material);
             // Наклейку слегка кренит, но не крутит: перевёрнутая вверх ногами
@@ -162,7 +155,8 @@ Object.assign(EnvyMinigame, {
             tiles.push({
                 mesh,
                 mat: material,
-                baseColor: new THREE.Color(0xffffff),
+                // подсветки нет — чёрный: волна добавляет к нему свой тон
+                baseColor: new THREE.Color(0x000000),
                 bx: spot.x,
                 by: spot.y,
                 size,
@@ -599,6 +593,23 @@ Object.assign(EnvyMinigame, {
         }
     },
 
+    // Свет гравировки (envy-engrave.js) плывёт от наклона телефона: берётся
+    // поворот от позы хвата (Tilt.turn — держишь как держал, через пару
+    // секунд снова ноль), как у эффекта глубины. Сглаживание своё: turn()
+    // отдаётся сырым. Без датчика свет чуть гуляет сам — чтобы металл и на
+    // компьютере читался металлом, а не краской.
+    updateLight(dt, sec) {
+        const P = ENVY_IMAGE_POOL, L = P.light, C = P.LIGHT;
+        if (!L) return;
+        const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false, x: 0, y: 0 };
+        let tx = 0, ty = 0;
+        if (T.live) { tx = T.x; ty = -T.y; }
+        else { tx = Math.sin(sec * 0.31) * 0.25; ty = Math.cos(sec * 0.23) * 0.2; }
+        const k = 1 - Math.exp(-dt / 120);
+        L.x += (C.x + tx * C.reach - L.x) * k;
+        L.y += (C.y + ty * C.reach - L.y) * k;
+    },
+
     // ================= ЦИКЛ И ОТРИСОВКА =================
     loop(ts) {
         if (!this.lastTs) this.lastTs = ts;
@@ -618,6 +629,7 @@ Object.assign(EnvyMinigame, {
         this.updateHalo(dt);
         this.updateWaves(dt);
         this.updateDisturbance(ts / 1000);
+        this.updateLight(dt, ts / 1000);
 
         if (this.clouds.cur) this.cloudCompensate(this.clouds.cur, true);
         if (this.clouds.next) this.cloudCompensate(this.clouds.next, false);
