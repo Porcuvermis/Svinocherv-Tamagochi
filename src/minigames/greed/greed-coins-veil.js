@@ -21,6 +21,10 @@ Object.assign(GreedCoins, {
     // такая версия) монеты вспыхивали и проступали почти разом — игрок увидел
     // «чешую» вместо отработанного перехода.
     FLOW_MS: 2200,
+    // Скорость покрова: весь ход проигрывается быстрее во столько раз —
+    // и поток вспышек, и поворот каждой монеты, — рисунок движения тот же,
+    // что принят на показе. 1 — как на показе (вход ≈ 7 с), 1.45 — ≈ 5 с.
+    VEIL_SPEED: 1.45,
 
     // Монеты сцены: обычная куча, но только над сценой и не в кресте —
     // на стоящем покрове крест должен читаться, его зона — отмена входа.
@@ -81,7 +85,9 @@ Object.assign(GreedCoins, {
         const F = this.FLIP, run = F.toPeak + F.fromPeak;
         const last = this.flowPlan(all, this.FLOW_MS, 'd', 99);
         yield;
-        const total = last + run, ms = { cover: total, reveal: total, close: total, clear: total };
+        const total = last + run, play = Math.round(total / this.VEIL_SPEED);
+        const ms = { cover: play, reveal: play, close: play, clear: play };
+        this._veilTotal = total;
         this._veil = { all, ms };
     },
 
@@ -128,7 +134,9 @@ Object.assign(GreedCoins, {
     veil(ctx, mode, p) {
         const V = this.veilMount();
         if (!V) return;
-        const F = this.FLIP, run = F.toPeak + F.fromPeak, total = this._veil.ms[mode], t = p * total;
+        // время хода — в мс показа: покров идёт быстрее (VEIL_SPEED), но
+        // расписание и повороты те же
+        const F = this.FLIP, run = F.toPeak + F.fromPeak, total = this._veilTotal, t = p * total;
         const into = mode === 'cover' || mode === 'close', anim = (c) => mode === 'cover' || mode === 'clear' || c.inner;
         const key = 'd', last = total - run;
         V.B.begin(this.followTilt());
