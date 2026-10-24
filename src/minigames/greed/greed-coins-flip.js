@@ -458,7 +458,11 @@ Object.assign(GreedCoins, {
         Object.assign(root.style, { position: 'absolute', inset: '0', zIndex: 9999, background: PALETTE.greedCoin.gold.deep, touchAction: 'none' });
         const mkCv = () => { const c = document.createElement('canvas'); c.width = this.W; c.height = this.H;
             Object.assign(c.style, { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'block' }); root.appendChild(c); return c; };
+        // опции замера (tools: window.__opt): batch — все монеты одним
+        // вызовом (greed-coins-batch.js), lo — разрешение холста в движении
+        const O = Object.assign({ batch: true, lo: 0.5 }, (typeof window !== 'undefined' && window.__opt) || {});
         const cvPile = mkCv(), cv = mkCv();
+        if (O.batch) { cv.width = Math.round(this.W * O.lo); cv.height = Math.round(this.H * O.lo); }
         host.appendChild(root);
         this._pv = root;
         const load = (u) => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = u; });
@@ -474,10 +478,11 @@ Object.assign(GreedCoins, {
         Promise.all([load(dir + 'coin-flat-albedo.png'), load(dir + 'coin-flat-normal.png'),
                      load(dir + 'coins-albedo.png'), load(dir + 'coins-normal.png')]).then(([fa, fn, aa, an]) => {
             if (!alive) return;
-            const R = this.flipRenderer(cv, fa, fn);
+            const R = O.batch ? null : this.flipRenderer(cv, fa, fn);
+            const B = O.batch ? this.batchRenderer(cv, fa, fn) : null;
             const pile = this.buildPile(aa, an);
             const drawPile = this.lighter(cvPile, pile);
-            if (!R || !drawPile) { close(); return; }
+            if (!(R || B) || !drawPile) { close(); return; }
             const F = this.FLIP, run = F.toPeak + F.fromPeak, P = this.FULL_DEMO, D = Math.PI / 180;
             const coins = [];
             pile.layers.forEach((L, li) => L.forEach(c => coins.push({
@@ -534,8 +539,11 @@ Object.assign(GreedCoins, {
             let cycle = null, stored = 0, lastRebuild = -1e9;
             // порядок рисования — как в куче: по слоям, внутри слоя как разложено
             const t0 = performance.now();
+            const prof = this._prof = { js: 0, frames: 0, px: 0 };
             const loop = (now) => {
                 if (!alive) return;
+                const j0 = performance.now();
+                const done = () => { prof.js += performance.now() - j0; prof.frames++; requestAnimationFrame(loop); };
                 const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
                 const want = T.live ? T : { x: 0, y: 0 };
                 tilt.x += (want.x - tilt.x) * 0.15; tilt.y += (want.y - tilt.y) * 0.15;
@@ -546,8 +554,10 @@ Object.assign(GreedCoins, {
                     for (const c of coins) {
                         c.H = H; c.edge = this.edgeAxis(H, c.pose, c.side); c.edgeOut = [-c.edge[0], -c.edge[1], 0];
                         c.seen = undefined; c.in = false;
+                        // объект ухода — один на цикл: в нём кешируется момент искры
+                        c.outC = { pose: c.pose, H: c.H, edge: c.edgeOut, quiet: c.quiet };
                     }
-                    R.toStore(true); R.clear(); R.toStore(false);
+                    if (R) { R.toStore(true); R.clear(); R.toStore(false); }
                     stored = 0;
                 }
                 // куча стоит целиком — показываем настоящую кучу с живым блеском
@@ -556,6 +566,26 @@ Object.assign(GreedCoins, {
                 cv.style.visibility = settled ? 'hidden' : 'visible';
                 if (settled) { drawPile(tilt); requestAnimationFrame(loop); return; }
                 const leaving = t >= outAt;
+                if (B) {
+                    B.begin(tilt);
+                    for (const c of coins) {
+                        let s;
+                        if (!leaving) {
+                            const ti = t - c.delayIn;
+                            if (ti < 0) continue;
+                            s = ti < run ? this.flipState(c, ti, 'in') : { n: c.pose, m: 1, flash: 0 };
+                        } else {
+                            const to = t - outAt - c.delayOut;
+                            if (to >= run) continue;
+                            s = to < 0 ? { n: c.pose, m: 1, flash: 0 } : this.flipState(c.outC, to, 'out');
+                        }
+                        B.add(c, s);
+                    }
+                    prof.px += B.pixels();
+                    B.flush();
+                    done();
+                    return;
+                }
                 // уход: запас пересобирается из оставшихся раз в 120 мс
                 if (leaving && now - lastRebuild > 120) {
                     lastRebuild = now;
@@ -579,7 +609,7 @@ Object.assign(GreedCoins, {
                     } else {
                         const to = t - outAt - c.delayOut;
                         if (to < 0 || to >= run) continue;
-                        s = this.flipState({ pose: c.pose, H: c.H, edge: c.edgeOut, seen: c.seen, quiet: c.quiet }, to, 'out');
+                        s = this.flipState(c.outC, to, 'out');
                     }
                     R.coin(c.x, c.y, c.rad, s, c.kind, tilt, c.roll, c.ao);
                 }
