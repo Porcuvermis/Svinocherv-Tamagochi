@@ -17,7 +17,7 @@ Object.assign(GreedCoins, {
     rim: { side: 18, top: 59 },
     // Крест крупнее монеты втрое: при меньшем монеты не помещаются между его
     // лучами, и пустота читается ромбом, а не крестом.
-    cross: { x: 338, y: 30, size: 56 },
+    cross: { x: 336, y: 31, size: 60 },
     CROSS_GAP: 2.5,       // полуширина пустоты сверх радиуса монеты, единицы сцены
     CORNER: 26,
     OVERLAP: 1.5,       // тьма под монетами заходит на сцену — без светлой щели на стыке
@@ -81,15 +81,6 @@ Object.assign(GreedCoins, {
         const o = this.CROSS_GAP + r * (0.86 + rng() * 0.16);
         return { x: C.x + dx * u - dy * side * o, y: C.y + dy * u + dx * side * o };
     },
-    rimUnder(g) {
-        g.fillStyle = 'rgb(150,150,150)'; g.fillRect(0, 0, 390, 844);
-        const C = this.cross, a = C.size / 2;
-        g.strokeStyle = '#000'; g.lineCap = 'round'; g.lineWidth = 2 * this.CROSS_GAP + 4;
-        g.beginPath();
-        g.moveTo(C.x - a, C.y - a); g.lineTo(C.x + a, C.y + a);
-        g.moveTo(C.x - a, C.y + a); g.lineTo(C.x + a, C.y - a);
-        g.stroke();
-    },
     rimBg(g) {
         const I = this.inner(), e = this.OVERLAP;
         g.rect(-2, -2, 394, 848);
@@ -128,11 +119,7 @@ Object.assign(GreedCoins, {
         const A = this.loadAtlas();
         const pile = yield* this.pileGen(A.alb, A.nor, {
             seed: this.SEED + 1, keep: (x, y, r, rng, L) => this.rimKeep(x, y, r, rng, L), bg: (g) => this.rimBg(g),
-            zone: { sample: (rng, r) => this.crossSample(rng, r) },
-            // Щели рамки — тёмное золото с лёгкими тенями, чёрная только
-            // пустота креста: пока все щели были одинаково чёрными, крест
-            // терялся среди них.
-            under: (g) => this.rimUnder(g), bgColor: PALETTE.greedCoin.gold.lo, shadow: 0.25
+            zone: { sample: (rng, r) => this.crossSample(rng, r) }
         });
         yield;
         const cv = document.createElement('canvas'); cv.width = this.W; cv.height = this.H;
