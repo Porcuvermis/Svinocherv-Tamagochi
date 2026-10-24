@@ -108,8 +108,12 @@ Object.assign(GreedCoins, {
         '   float d=max(dot(n,L),0.),c=max(dot(n,hv),0.);',
         '   vec3 spec=mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
         '   vec3 full=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+spec;',
-        // бесплотная монета: только блик, без своего цвета (прозрачный материал)
-        '   vec3 ghost=spec*1.4+glint*pow(c,shin*.35)*.5;',
+        // бесплотная монета: только блик, без своего цвета (прозрачный материал).
+        // Блик — по оси монеты, а не по рельефу: с рельефом в блике проступали
+        // цифра и насечка, монета «спойлерила» себя до вспышки (игрок).
+        // Рисунок поверхности работает только у настоящей монеты.
+        '   vec3 n0=normalize(T*(R*vec3(0.,0.,1.)));float c0=max(dot(n0,hv),0.);',
+        '   vec3 ghost=glint*(sharp*pow(c0,shin)*1.1+pow(c0,shin*.35)*.5);',
         '   float k=A.a;',
         '   outc.rgb+=k*(m*full+(1.-m)*ghost)+k*glint*flash*glow;',
         '   outc.a=max(outc.a,k*m);',
