@@ -407,15 +407,65 @@ Object.assign(GreedJunk, {
             face += `<path d="M${f(px)} ${f(py)} q${f(4 * k)} ${f(-3 * k)} ${f(8 * k)} 0 q${f(2 * k)} ${f(4 * k)} ${f(-2 * k)} ${f(6 * k)} q${f(-5 * k)} ${f(k)} ${f(-6 * k)} ${f(-6 * k)} z" fill="${J.tin[300]}" ` +
                 `stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
         }
+        // ---- окно утоплено в корпус ----
+        // Полосатое поле — это СКОС, уходящий от листа вглубь к окну. Свет
+        // сверху-слева: верхний скос смотрит вниз и в тени, левый тоже
+        // отвёрнут, нижний смотрит вверх и ловит свет, правый — чуть. Без
+        // этого скос читался плоской наклейкой.
+        const O = [62, 312, 298, 460], I = [78, 332, 282, 444];
+        const quad = (pts, fill, op) => `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" fill="${fill}" opacity="${op}" clip-path="url(#gj-face)"/>`;
+        // нарисованный свет скоса — только для запасного вида (fx)
+        face += '<g class="fx">' +
+            quad([[O[0], O[1]], [O[2], O[1]], [I[2], I[1]], [I[0], I[1]]], J.hole, 0.5) +
+            quad([[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], J.hole, 0.3) +
+            quad([[I[0], I[3]], [I[2], I[3]], [O[2], O[3]], [O[0], O[3]]], J.paint.cream, 0.28) +
+            quad([[I[2], I[1]], [O[2], O[1]], [O[2], O[3]], [I[2], I[3]]], J.paint.cream, 0.12) + '</g>';
+        // Высота скоса — плавным уклоном от листа (9) вниз к окну (−10):
+        // четыре трапеции, у каждой свой градиент серого поперёк скоса.
+        // Ступенями (как было) скос выходил полосатым — шейдер ловил края
+        // ступеней, а сам уклон почти не читался. Градиент пишется в карту
+        // высот как есть: inline-стиль с !important сильнее общего правила
+        // прохода, которое красит всё по --h. Обводка тем же градиентом
+        // закрывает шов на диагоналях углов: без неё сглаживание краёв
+        // оставляло там тёмную щель, и шейдер штриховал углы.
+        {
+            const g = (v) => { const c = Math.round(this.hv(v) * 255); return `rgb(${c},${c},${c})`; };
+            const hi = g(9), lo = g(-10);
+            const sides = [
+                ['t', [[O[0], O[1]], [O[2], O[1]], [I[2], I[1]], [I[0], I[1]]], [0, O[1], 0, I[1]]],
+                ['b', [[O[0], O[3]], [O[2], O[3]], [I[2], I[3]], [I[0], I[3]]], [0, O[3], 0, I[3]]],
+                ['l', [[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], [O[0], 0, I[0], 0]],
+                ['r', [[O[2], O[1]], [I[2], I[1]], [I[2], I[3]], [O[2], O[3]]], [O[2], 0, I[2], 0]]
+            ];
+            // Размытие в полтора тексела скругляет рёбра скоса: острое
+            // ребро на растре выходило лесенкой, и шейдер рисовал по
+            // диагоналям пилу.
+            face += `<filter id="gj-hblur" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.4"/></filter>`;
+            face += '<g class="hpass" filter="url(#gj-hblur)">' + sides.map(([k, pts, v]) =>
+                `<linearGradient id="gj-bev-${k}" gradientUnits="userSpaceOnUse" x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}">` +
+                `<stop offset="0" stop-color="${hi}"/><stop offset="1" stop-color="${lo}"/></linearGradient>` +
+                `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" style="fill:url(#gj-bev-${k}) !important;stroke:url(#gj-bev-${k}) !important;stroke-width:1.2px;stroke-linejoin:round"/>`
+            ).join('') + '</g>';
+        }
+        // рёбра скоса — линии от углов листа к углам окна
+        // концы — чуть не доходя до углов: иначе линия вылезала за угол рамки
+        [[O[0], O[1], I[0], I[1]], [O[2], O[1], I[2], I[1]], [O[0], O[3], I[0], I[3]], [O[2], O[3], I[2], I[3]]].forEach(e => {
+            const k = 0.06, x1 = e[0] + (e[2] - e[0]) * k, y1 = e[1] + (e[3] - e[1]) * k;
+            const x2 = e[2] - (e[2] - e[0]) * k, y2 = e[3] - (e[3] - e[1]) * k;
+            face += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linecap="round" opacity="0.5"/>`;
+        });
+        // кромка листа над скосом ловит свет
+        face += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         out += this.T(9, 'paint', face);
-        // ---- окно барабанов: глубоко в корпусе ----
+        // рамка окна барабанов — на дне скоса
+        // Углы окна и проёма — почти острые: трапеции скоса сходятся в них
+        // по диагоналям, а скругления разной кривизны ломали углы.
         let win = `<rect x="78" y="332" width="204" height="112" rx="2" fill="${J.paint.blueLo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         win += `<line x1="84" y1="335" x2="276" y2="335" stroke="${J.paint.blue}" stroke-width="${STROKE.detail}"/>`;
         S.reels.forEach(r => {
             win += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         });
         out += this.T(-10, 'paint', win);
-        out += this.tvBezel();
         // кнопки на полке-пульте под табло: разные, как собранные с разных пультов
         [[136, J.paint.orange, 6.5], [168, J.paint.red, 5.5], [196, J.paint.orange, 6.5], [226, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
             out += this.T(9, 'steel', `<circle cx="${bx + 0.8}" cy="${477.8}" r="${r + 2}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
@@ -425,36 +475,6 @@ Object.assign(GreedJunk, {
                 this.domeH(bx, 475, r, 2.5));
         });
         return out;
-    },
-
-    // ---------- РАМКА ОКНА: ОТ СТАРОГО ТЕЛЕВИЗОРА ----------
-    // Окно барабанов обрамляет пластиковая рамка от старого телевизора,
-    // прикрученная к табло четырьмя винтами. Сечение у неё круглое — валик
-    // по скруглённому прямоугольнику, — поэтому рёбер и углов-изломов нет
-    // вовсе: свет обходит рамку плавно, а с её внутренней кромки в глубину
-    // окна падает тень.
-    // Было: скос из четырёх трапеций, сходившихся по диагоналям; на растре
-    // диагонали выходили небрежными, сколько их ни чинили.
-    tvBezel() {
-        const J = PALETTE.greedJunk, f = this.f, B = J.bezel;
-        const x0 = 72, y0 = 326, x1 = 288, y1 = 450, r = 9, W = 13;
-        const d = `M${x0 + r} ${y0} H${x1 - r} A${r} ${r} 0 0 1 ${x1} ${y0 + r} V${y1 - r} A${r} ${r} 0 0 1 ${x1 - r} ${y1} ` +
-            `H${x0 + r} A${r} ${r} 0 0 1 ${x0} ${y1 - r} V${y0 + r} A${r} ${r} 0 0 1 ${x0 + r} ${y0} Z`;
-        let g = `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${W + STROKE.structure * 2}"/>` +
-            `<path d="${d}" fill="none" stroke="${B.base}" stroke-width="${W}"/>` +
-            // нарисованный блик и тень — только для запасного вида
-            `<path d="${d}" fill="none" class="hl" stroke="${B.hi}" stroke-width="3" transform="translate(-1.5 -1.5)"/>` +
-            `<path d="${d}" fill="none" class="fx" stroke="${B.lo}" stroke-width="3" transform="translate(1.5 1.5)"/>` +
-            // профиль валика размыт: ступени профиля на крупной рамке иначе
-            // читаются полосами
-            `<filter id="gj-hblur" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="0.9"/></filter>` +
-            `<g filter="url(#gj-hblur)">${this.rodH(d, W, 5)}</g>`;
-        // винты по углам — в утолщениях-бобышках
-        [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].forEach(([cx, cy]) => {
-            g += `<circle cx="${cx}" cy="${cy}" r="6" fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-                this.domeH(cx, cy, 6, 5.5) + this.bolt(cx, cy, 2.4);
-        });
-        return this.T(9, 'plastic', g);
     },
 
     // Полка под табло и нижний ящик: низкий, на нём только табличка и лоток.

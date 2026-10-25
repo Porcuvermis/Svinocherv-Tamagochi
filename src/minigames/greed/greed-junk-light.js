@@ -81,29 +81,16 @@ Object.assign(GreedJunk, {
     // обводками того же пути всё уже. rise — подъём вершины в единицах.
     dh(units) { return (units / this.HMAX).toFixed(3); },
 
-    // Профиль — круглое сечение (высота √(1−x²)) в N ступенях. Мелкие
-    // детали обходятся четырьмя; крупные (рамка окна шириной 13) при
-    // четырёх выходили полосатыми — каждая ступень ловила свой свет, —
-    // поэтому число ступеней растёт с размером.
-    profile(size) {
-        const n = Math.max(4, Math.min(14, Math.round(size)));
-        const out = [];
-        for (let i = 0; i < n; i++) {
-            const k = 1 - i / n;                         // доля ширины
-            out.push([k, Math.sqrt(Math.max(0, 1 - k * k)) * 0.85 + 0.15]);
-        }
-        return out;
-    },
-
     domeH(cx, cy, r, rise) {
         rise = rise == null ? r * 0.8 : rise;
         const f = this.f;
-        return '<g class="hpass">' + this.profile(r * 1.5).map(([k, u]) =>
+        return '<g class="hpass">' + [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]].map(([k, u]) =>
             `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * k)}" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
     },
+
     rodH(d, width, rise) {
         rise = rise == null ? width * 0.5 : rise;
-        return '<g class="hpass">' + this.profile(width).map(([k, u]) =>
+        return '<g class="hpass">' + [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]].map(([k, u]) =>
             `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${(width * k).toFixed(2)}" stroke-linecap="round" ` +
             `stroke-linejoin="round" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
     },
