@@ -150,12 +150,12 @@ Object.assign(GreedJunk, {
     // ---------- ПОДВЕС ПАЧИНКО ----------
     // Пластина между рельсами — не «пластина с дырами», а подвес: рельсы
     // только направляют короб, а вес его держат два крюка, приваренных к
-    // толстой пластине и торчащих к нам. Внизу два продолговатых паза под
+    // толстой пластине, загибом чашкой вверх. Внизу два продолговатых паза под
     // стопорные винты — короб прижмут, когда повесят. Пазы, а не круглые
     // дыры: круглые парами складывались в рожицу.
     //
     // Рисуется уже под свет шейдером: цвет ровный, объём — высотами
-    // (пластина 2, отогнутая кромка 3, крюк 9, его загнутый кончик 11).
+    // (пластина 2, отогнутая кромка 3, площадка 4, крюк 7).
     hanger(x, y, w, h) {
         const J = PALETTE.greedJunk, f = this.f;
         let out = this.T(2, 'steel', this.tin(x, y, w, h, 44, { bolts: false, tilt: 0, dent: false, scratches: 2 }));
@@ -166,18 +166,25 @@ Object.assign(GreedJunk, {
         // крепёж пластины к стенке — по углам под кромкой и внизу
         out += this.T(2, 'steel', this.bolt(x + 4.5, y + 10, 1.8) + this.bolt(x + w - 4.5, y + 10, 1.8) +
             this.bolt(x + 4.5, y + h - 5, 1.8) + this.bolt(x + w - 4.5, y + h - 5, 1.8));
-        // крюки: сварной шов у основания, стержень, загнутый к нам кончик
-        [x + w * 0.3, x + w * 0.7].forEach(hx => {
-            out += this.T(2, 'steel', `<ellipse cx="${f(hx)}" cy="${f(y + 34)}" rx="5" ry="3" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-                [-3, -1, 1, 3].map(dx => `<circle cx="${f(hx + dx)}" cy="${f(y + 34)}" r="0.9" fill="${J.tin[900]}"/>`).join(''));
-            out += this.T(9, 'steel', `<rect x="${f(hx - 2.6)}" y="${f(y + 16)}" width="5.2" height="18" rx="2.6" ` +
-                `fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-                `<line x1="${f(hx - 1)}" y1="${f(y + 19)}" x2="${f(hx - 1)}" y2="${f(y + 31)}" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}"/>`);
-            out += this.T(11, 'steel', `<ellipse cx="${f(hx)}" cy="${f(y + 15)}" rx="3.6" ry="3" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
+        // Крюки — J-образные, в плоскости пластины: сверху приваренная
+        // площадка, стержень вниз, внизу загиб чашкой вверх — на неё садится
+        // короб. Торчащие прямо на нас крюки в анфас читались тумблерами.
+        [x + w * 0.2, x + w * 0.6].forEach(hx => {
+            const top = y + 13, bot = y + 34, cup = 6;
+            const d = `M${f(hx)} ${f(top)} L${f(hx)} ${f(bot - 4)} Q${f(hx)} ${f(bot + 3)} ${f(hx + cup / 2)} ${f(bot + 3)} ` +
+                `Q${f(hx + cup)} ${f(bot + 3)} ${f(hx + cup)} ${f(bot - 5)}`;
+            out += this.T(7, 'steel',
+                `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>` +
+                `<path d="${d}" fill="none" stroke="${J.tin[500]}" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>` +
+                `<path d="${d}" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="1" stroke-linecap="round" transform="translate(-0.9 -0.6)"/>`);
+            // площадка со сварным швом
+            out += this.T(4, 'steel', `<rect x="${f(hx - 4.5)}" y="${f(top - 5)}" width="9" height="7" rx="1.5" ` +
+                `fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                [-3, -1, 1, 3].map(dx => `<circle cx="${f(hx + dx)}" cy="${f(top + 2.4)}" r="0.9" fill="${J.tin[900]}"/>`).join(''));
         });
         // пазы под стопорные винты
         [x + w * 0.3, x + w * 0.7].forEach(sx => {
-            out += this.T(2, 'steel', `<rect x="${f(sx - 1.8)}" y="${f(y + h - 26)}" width="3.6" height="13" rx="1.8" ` +
+            out += this.T(2, 'steel', `<rect x="${f(sx - 1.8)}" y="${f(y + h - 22)}" width="3.6" height="11" rx="1.8" ` +
                 `class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`);
         });
         return out;
