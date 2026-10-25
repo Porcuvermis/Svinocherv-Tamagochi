@@ -179,19 +179,17 @@ const GreedJunkLit = {
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
     run(canvas) {
         const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
-        // кончик нитки — маятник: тянется к отвесу по тяжести (Tilt.down),
-        // с инерцией и затуханием, изгиб — от скорости раскачки
-        const tail = { a: 0, v: 0, shown: null };
+        // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
+        // а не весь хвостик целиком; тяжесть — по наклону телефона
+        const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
         const loop = () => {
             if (!canvas.isConnected) return;
             if (this.live) {
-                const D = (typeof Tilt !== 'undefined' && Tilt.down) ? Tilt.down() : { live: false, x: 0, y: 1 };
-                const want = Math.atan2(D.x, Math.max(0.2, D.y));
-                tail.v += (want - tail.a) * 0.06; tail.v *= 0.9; tail.a += tail.v;
-                const key = tail.a.toFixed(3) + '|' + tail.v.toFixed(3);
+                Hang.step(tail.s, Hang.down());
+                const key = tail.s.th.map(v => v.toFixed(3)).join(',');
                 if (key !== tail.shown) {
                     tail.shown = key;
-                    this.live.innerHTML = GreedJunk.threadTail(tail.a, -tail.v * 40);
+                    this.live.innerHTML = GreedJunk.threadTail(tail.s);
                 }
             }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };

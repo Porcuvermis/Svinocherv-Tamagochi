@@ -525,7 +525,7 @@ Object.assign(GreedJunk, {
         th += [T.x0, T.x1].map((x, i) => this.knot(x, T.y, i ? 1 : -1)).join('');
         out += this.T(-8, 'thread', th);
         // без живого слоя (запасной вид, карты света) кончик висит отвесно
-        if (this.pass === 'baked') out += this.threadTail(0);
+        if (this.pass === 'baked') out += this.threadTail();
         return out;
     },
 
@@ -584,19 +584,41 @@ Object.assign(GreedJunk, {
         return out;
     },
 
-    // Свисающий кончик нитки из узла у правого болтика. ang — отклонение
-    // от отвеса в радианах (+ — вправо), bend — изгиб от раскачки: кончик
-    // отстаёт от середины, нитка выгибается дугой.
-    threadTail(ang, bend) {
+    // Свисающий кончик нитки из узла у правого болтика. Изгиб считает
+    // Hang (src/core/hang.js): хвостик короткий, поэтому у узла он держит
+    // направление, а под тяжестью гнётся только кончик. hang — состояние
+    // цепочки; без него (запасной вид) — покой под отвесной тяжестью.
+    TAIL: { len: 14, root: 1.0 },                // выходит из узла вправо-вниз
+    threadTail(hang) {
         const J = PALETTE.greedJunk, f = this.f, T = this.thread();
-        const L = 14, sx = T.x1 + 4.2, sy = T.y + 4;
-        const ex = sx + Math.sin(ang) * L, ey = sy + Math.cos(ang) * L;
-        const b = bend || 0;
-        const mx = sx + Math.sin(ang) * L * 0.5 - Math.cos(ang) * b, my = sy + Math.cos(ang) * L * 0.5 + Math.sin(ang) * b;
-        return this.strand([[sx, sy], [mx, my], [ex, ey]], 1.3) +
+        const h = hang || Hang.create(this.TAIL.len, this.TAIL.root, 'thread');
+        const pts = Hang.points(h, T.x1 + 4.2, T.y + 4);
+        const e = pts[pts.length - 1], p = pts[pts.length - 2];
+        const ang = Math.atan2(e[0] - p[0], e[1] - p[1]);
+        return this.strandPts(pts, 1.3) +
             // растрёпанный кончик: жилки разошлись
-            `<path d="M${f(ex)} ${f(ey)} l${f(Math.sin(ang - 0.45) * 2.2)} ${f(Math.cos(ang - 0.45) * 2.2)} M${f(ex)} ${f(ey)} l${f(Math.sin(ang + 0.1) * 2.6)} ${f(Math.cos(ang + 0.1) * 2.6)} M${f(ex)} ${f(ey)} l${f(Math.sin(ang + 0.55) * 2)} ${f(Math.cos(ang + 0.55) * 2)}" ` +
-            `stroke="${J.paint.red}" stroke-width="0.5" stroke-linecap="round"/>`;
+            [-0.45, 0.1, 0.55].map(da => `<path d="M${f(e[0])} ${f(e[1])} l${f(Math.sin(ang + da) * 2.2)} ${f(Math.cos(ang + da) * 2.2)}" ` +
+                `stroke="${J.paint.red}" stroke-width="0.5" stroke-linecap="round"/>`).join('');
+    },
+
+    // Та же кручёная нитка, что strand, но по ломаной точек (сглаженной).
+    strandPts(pts, w) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const d = this.smooth(pts);
+        let ticks = '';
+        for (let i = 0; i < pts.length - 1; i++) {
+            const a = pts[i], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            const ang = Math.atan2(b[1] - a[1], b[0] - a[0]) + 0.75;
+            const dx = Math.cos(ang) * w * 0.55, dy = Math.sin(ang) * w * 0.55;
+            for (let t = 0.5; t < len; t += 1.5) {
+                const x = a[0] + (b[0] - a[0]) * t / len, y = a[1] + (b[1] - a[1]) * t / len;
+                ticks += `M${f(x - dx)} ${f(y - dy)} L${f(x + dx)} ${f(y + dy)} `;
+            }
+        }
+        return `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${w + 0.9}" stroke-linecap="round" stroke-linejoin="round"/>` +
+            `<path d="${d}" fill="none" stroke="${J.paint.red}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>` +
+            `<path d="${ticks}" stroke="${J.primer.lo}" stroke-width="0.45" stroke-linecap="round" opacity="0.85"/>` +
+            `<path d="${d}" fill="none" class="hl" stroke="${J.primer.hi}" stroke-width="0.35" transform="translate(0 -0.35)" opacity="0.8"/>`;
     },
 
     // Полка под табло и нижний ящик: низкий, на нём только табличка и лоток.
