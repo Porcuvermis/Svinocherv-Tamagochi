@@ -515,7 +515,23 @@ Object.assign(GreedJunk, {
     // лампы стояли плоскими прямоугольниками «наперекор» скосу за ними.
     VP: { x: 180, y: 388 },
     // Сжатие эллипса круга, лежащего горизонтально на высоте y.
-    flat(y) { return Math.max(0.06, Math.min(0.4, (y - this.VP.y) / 230)); },
+    // _lean — прибавка, пока рисуется наклонённая к зрителю вещь (lamp):
+    // её кольца повёрнуты к нам и видны шире.
+    _lean: 0,
+    flat(y) { return Math.max(0.06, Math.min(0.75, (y - this.VP.y) / 230 + this._lean)); },
+
+    // Наклонённая вещь на опоре (x, yb): верх к зрителю на pitch рад и вбок
+    // на roll град. В анфас наклон к зрителю — это укорочение по высоте
+    // (cos pitch) и кольца шире (flat + sin pitch); рисующий внутри draw()
+    // рисует вещь как стоящую прямо. Так посажены лампы — небрежно, кто как
+    // вкрутил.
+    leaned(x, yb, pitch, roll, draw) {
+        const f = this.f, was = this._lean;
+        this._lean = Math.sin(pitch) / Math.cos(pitch);
+        const inner = draw();
+        this._lean = was;
+        return `<g transform="translate(${f(x)} ${f(yb)}) rotate(${roll}) scale(1 ${Math.cos(pitch).toFixed(3)}) translate(${f(-x)} ${f(-yb)})">${inner}</g>`;
+    },
 
     // Верхняя грань полки: от передней кромки назад к VP.
     shelfTop() {
@@ -547,17 +563,18 @@ Object.assign(GreedJunk, {
     holder(x, base, w) {
         const J = PALETTE.greedJunk, B = J.bakelite, Br = J.brass, f = this.f;
         const fw = w + 9, yb = base - 1;              // диск чуть за кромкой полки
-        let s = this.cyl(x, yb, fw, 1.8, B.base, B.hi);
+        const disk = this.T(10, 'plastic', this.cyl(x, yb, fw, 1.8, B.base, B.hi));
         const y1 = yb - 1.8;
-        s += this.cyl(x, y1, w + 2, 6, B.base, B.lo, w);
+        let s = this.cyl(x, y1, w + 2, 6, B.base, B.lo, w);
         s += `<path d="M${f(x - w / 2 - 0.4)} ${f(y1 - 1)} L${f(x - w / 2 + 0.5)} ${f(y1 - 5.4)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>`;
         s += this.rodH(`M${x} ${f(y1 - 5.6)} L${x} ${f(y1 - 0.4)}`, w + 1, w * 0.4);
         const y2 = y1 - 6;
         s += this.cyl(x, y2, w, 1.6, Br.base, Br.hi);
-        let out = this.T(10, 'plastic', s);
         // шурупы на диске — на его верхней грани, слева и справа
-        out += this.bolt(x - fw / 2 + 1.9, yb - 1.8, 0.85) + this.bolt(x + fw / 2 - 1.9, yb - 1.8, 0.85);
-        return { svg: out, top: y2 - 1.6 };
+        const screws = this.bolt(x - fw / 2 + 1.9, yb - 1.8, 0.85) + this.bolt(x + fw / 2 - 1.9, yb - 1.8, 0.85);
+        // диск лежит на полке ровно; чашку с лампой вкрутили криво — она
+        // отдельно (cup), чтобы наклон начинался от диска
+        return { disk: disk + screws, cup: this.T(12, 'plastic', s), base: y1, top: y2 - 1.6 };
     },
 
     // Цоколь лампы: латунный цилиндр, витки резьбы — дугами, провисающими
@@ -607,13 +624,21 @@ Object.assign(GreedJunk, {
         } else if (kind === 'pear') {
             // груша: патрон на полке, в нём латунный цоколь с резьбой,
             // горлышко, круглое тело
-            const h = this.holder(x, base, 7.5);
-            out += h.svg + this.socketBrass(x, h.top, 6.6, 5.4);
-            const t = h.top - 5.4, cy = t - 11.5, r = 7.4;
-            const d = `M${x - 3} ${t} C${x - 3.3} ${t - 3} ${x - r} ${cy + 4} ${x - r} ${cy} A${r} ${r} 0 1 1 ${x + r} ${cy} ` +
-                `C${x + r} ${cy + 4} ${x + 3.3} ${t - 3} ${x + 3} ${t} Z`;
-            out += this.T(18, 'glass', this.filament(x, cy - 0.5, t - 1, 3.6) +
-                this.glassBulb(d, L.clear, 0.42, `M${x - 5} ${cy + 1.6} A5.4 5.4 0 0 1 ${x - 1.6} ${cy - 5.2}`, this.domeH(x, cy, r, 3.4)));
+            // посадка: верхом к зрителю на 32°, вбок на −9° — вкрутили кое-как
+            let h0 = null;
+            const lamp = this.leaned(x, base - 2.8, 0.56, -9, () => {
+                const h = this.holder(x, base, 7.5);
+                h0 = h;
+                let o = h.cup + this.socketBrass(x, h.top, 6.6, 5.4);
+                const t = h.top - 5.4, cy = t - 11.5, r = 7.4;
+                const d = `M${x - 3} ${t} C${x - 3.3} ${t - 3} ${x - r} ${cy + 4} ${x - r} ${cy} A${r} ${r} 0 1 1 ${x + r} ${cy} ` +
+                    `C${x + r} ${cy + 4} ${x + 3.3} ${t - 3} ${x + 3} ${t} Z`;
+                // верх колбы к нам ближе — выше на карте высот
+                o += this.T(22, 'glass', this.filament(x, cy - 0.5, t - 1, 3.6) +
+                    this.glassBulb(d, L.clear, 0.42, `M${x - 5} ${cy + 1.6} A5.4 5.4 0 0 1 ${x - 1.6} ${cy - 5.2}`, this.domeH(x, cy, r, 3.4)));
+                return o;
+            });
+            out += h0.disk + lamp;
         } else if (kind === 'globe') {
             // маленький янтарный шарик на коротком цоколе
             out += this.socketBrass(x, base, 5.6, 5);
