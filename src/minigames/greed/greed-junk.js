@@ -194,6 +194,82 @@ const GreedJunk = {
         return out;
     },
 
+    // ---------- ЗАДНЯЯ СТЕНКА ----------
+    // Доски, собранные с разных ящиков: разной ширины, с щелями между ними,
+    // в которые видно темноту. Тон гуляет НЕМНОГО и плавно — одна заливка и
+    // полупрозрачный слой светлее/темнее поверх, а не три разных градиента
+    // вперемешку (одна доска выскакивала светлым пятном). Волокно — волнами
+    // вдоль доски, огибает сучок. Гвозди — тёмное железо парами, на высоте
+    // скрытых за стенкой брусков, а не блестящие кнопки по одному.
+    backPlanks(x, y, w, h, seed) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const rnd = this.rng(seed);
+        // ширины: случайные доли, сумма — вся стенка
+        const parts = [];
+        let total = 0;
+        while (total < w - 30) {
+            const pw = 30 + Math.floor(rnd() * 26);
+            parts.push(pw); total += pw;
+        }
+        const k = w / total;
+        let out = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${J.hole}"/>`;   // темнота в щелях
+        let px = x;
+        parts.forEach((pw0, i) => {
+            const pw = pw0 * k;
+            const gap = 1.2 + rnd() * 1.8;
+            const bx = px + (i ? gap / 2 : 0), bw = pw - (i ? gap / 2 : 0) - (i < parts.length - 1 ? gap / 2 : 0);
+            const path = this.wob(bx, y - 2, bw, h + 4, seed + i * 13, 1);
+            out += `<path d="${path}" fill="url(#gj-wood)"/>`;
+            // тон доски: чуть темнее или чуть светлее соседей
+            const tone = rnd();
+            out += tone < 0.5
+                ? `<path d="${path}" fill="${J.wood[900]}" opacity="${f(0.05 + tone * 0.3)}"/>`
+                : `<path d="${path}" fill="${J.wood[100]}" opacity="${f((tone - 0.5) * 0.25)}"/>`;
+            // сучок (не на каждой) и волокно, огибающее его
+            const knot = rnd() < 0.5 ? { x: bx + bw * (0.3 + rnd() * 0.4), y: y + h * (0.15 + rnd() * 0.7) } : null;
+            const lines = 4 + Math.floor(rnd() * 4);
+            for (let l = 0; l < lines; l++) {
+                const gx = bx + bw * ((l + 0.5) / lines) + (rnd() - 0.5) * 3;
+                const pts = [];
+                const steps = 6;
+                const phase = rnd() * 6, amp = 0.6 + rnd() * 1.2;
+                for (let st = 0; st <= steps; st++) {
+                    const yy = y + (h * st) / steps;
+                    let xx = gx + Math.sin(phase + st * 1.3) * amp;
+                    if (knot) {
+                        const dy = yy - knot.y, dx = xx - knot.x;
+                        const d = Math.hypot(dx, dy);
+                        if (d < 22) xx += Math.sign(dx || 1) * (22 - d) * 0.35;
+                    }
+                    pts.push([xx, yy]);
+                }
+                out += `<path d="${this.smooth(pts)}" fill="none" stroke="${J.wood[700]}" ` +
+                    `stroke-width="${l % 3 === 0 ? STROKE.detail : STROKE.hairline}" opacity="${f(0.45 + rnd() * 0.35)}"/>`;
+            }
+            if (knot) {
+                out += `<ellipse cx="${f(knot.x)}" cy="${f(knot.y)}" rx="3" ry="5.5" fill="${J.wood[700]}" stroke="${J.wood[900]}" stroke-width="${STROKE.detail}"/>` +
+                    `<ellipse cx="${f(knot.x)}" cy="${f(knot.y)}" rx="5.5" ry="9" fill="none" stroke="${J.wood[700]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`;
+            }
+            // светлая кромка слева (свет сверху-слева), тёмная справа
+            out += `<line x1="${f(bx + 1.2)}" y1="${y}" x2="${f(bx + 1.2)}" y2="${y + h}" stroke="${J.wood[100]}" stroke-width="${STROKE.hairline}" opacity="0.5"/>`;
+            out += `<line x1="${f(bx + bw - 1)}" y1="${y}" x2="${f(bx + bw - 1)}" y2="${y + h}" stroke="${J.wood[900]}" stroke-width="${STROKE.detail}" opacity="0.5"/>`;
+            // гвозди парами на высоте брусков за стенкой
+            [y + 18, y + h * 0.48, y + h - 16].forEach(ny => {
+                [bx + bw * 0.3, bx + bw * 0.7].forEach(nx => { out += this.ironNail(nx, ny + (rnd() - 0.5) * 3); });
+            });
+            px += pw;
+        });
+        return out;
+    },
+
+    // Железный гвоздь: тёмная шляпка, рыжий ободок, светлая точка блика.
+    ironNail(x, y) {
+        const J = PALETTE.greedJunk, f = this.f;
+        return `<circle cx="${f(x)}" cy="${f(y)}" r="2.1" fill="${J.rust[700]}" opacity="0.5"/>` +
+            `<circle cx="${f(x)}" cy="${f(y)}" r="1.4" fill="${J.tin[900]}"/>` +
+            `<circle cx="${f(x - 0.4)}" cy="${f(y - 0.4)}" r="0.5" fill="${J.tin[300]}"/>`;
+    },
+
     nail(x, y) {
         const J = PALETTE.greedJunk, f = this.f;
         return `<circle cx="${f(x)}" cy="${f(y)}" r="1.6" fill="${J.tin[300]}" stroke="${J.wood[900]}" stroke-width="${STROKE.hairline}"/>`;
@@ -396,7 +472,7 @@ const GreedJunk = {
         const J = PALETTE.greedJunk, S = this.SLOTS, f = this.f;
         // Задняя стенка ящика: она в глубине, поэтому темнее рамки — свет до
         // неё доходит хуже.
-        let out = this.planks(28, 24, 288, 270, 6, 11, 'v');
+        let out = this.backPlanks(28, 24, 288, 270, 211);
         out += `<rect x="28" y="24" width="288" height="270" fill="${J.hole}" opacity="0.28"/>`;
         out += `<rect x="28" y="24" width="288" height="270" fill="url(#gj-vign)"/>`;
         // поперечина-перекладина, на которой всё висит
