@@ -292,7 +292,19 @@ Object.assign(GreedJunk, {
     psu(x, y) {
         const J = PALETTE.greedJunk, f = this.f;
         const w = 52, h = 40, fx = x + 34, fy = y + 20, fr = 14;
-        let box = this.tin(x, y, w, h, 39, { bolts: false, tilt: 0, dent: false, scratches: 2, z: this.Z.fan });
+        // оцинковка: холодный светлый металл с узором кристаллов цинка
+        let box = this.tin(x, y, w, h, 39, { bolts: false, tilt: 0, dent: false, scratches: 2, z: this.Z.fan, fill: 'gj-zinc' });
+        {
+            const J2 = J.zinc, rr = this.rng(391);
+            for (let i = 0; i < 9; i++) {
+                const sx = x + 4 + rr() * (w - 8), sy = y + 4 + rr() * (h - 8), r = 2.5 + rr() * 3.5;
+                const pts = [0, 1, 2, 3, 4, 5].map(k => {
+                    const a = k * Math.PI / 3 + rr() * 0.6;
+                    return f(sx + Math.cos(a) * r * (0.6 + rr() * 0.5)) + ',' + f(sy + Math.sin(a) * r * (0.6 + rr() * 0.5));
+                }).join(' ');
+                box += `<polygon points="${pts}" fill="${i % 2 ? J2.spangle : J2.lo}" opacity="0.45"/>`;
+            }
+        }
         // штампованные прорези слева
         for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
             box += `<rect x="${f(x + 4 + c * 6)}" y="${f(y + 6 + r * 7)}" width="4" height="4.4" rx="1" class="pit" fill="${J.hole}"/>`;

@@ -89,10 +89,16 @@ Object.assign(GreedJunk, {
         // тень: уголок стоит на ребре второй полки, приподнят
         g += `<rect x="1.5" y="${f(-W / 2 + 3)}" width="${f(len)}" height="${W + lip}" class="fx" fill="${J.hole}" opacity="0.32"/>`;
         // вторая полка ребром — тёмная
-        g += `<rect x="0" y="${f(W / 2 - 0.5)}" width="${f(len)}" height="${lip}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-        // лицевая полка
-        g += `<rect x="0" y="${f(-W / 2)}" width="${f(len)}" height="${W}" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        g += `<line x1="1" y1="${f(-W / 2 + 1)}" x2="${f(len - 1)}" y2="${f(-W / 2 + 1)}" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        g += `<rect x="0" y="${f(W / 2 - 0.5)}" width="${f(len)}" height="${lip}" fill="${J.primer.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        // лицевая полка — в красном грунте-сурике: уголок купили крашеным
+        g += `<rect x="0" y="${f(-W / 2)}" width="${f(len)}" height="${W}" fill="url(#gj-primer)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        g += `<line x1="1" y1="${f(-W / 2 + 1)}" x2="${f(len - 1)}" y2="${f(-W / 2 + 1)}" class="hl" stroke="${J.primer.hi}" stroke-width="${STROKE.detail}" opacity="0.8"/>`;
+        // сколы грунта до серого железа
+        const rr = this.rng(seed);
+        for (let i = 0; i < 4; i++) {
+            const t = 10 + rr() * (len - 20), yy = (rr() - 0.5) * (W - 4);
+            g += `<ellipse cx="${f(t)}" cy="${f(yy)}" rx="${f(1.5 + rr() * 2.5)}" ry="${f(1 + rr())}" fill="${J.tin[500]}" opacity="0.85"/>`;
+        }
         // перфорация
         let k = 0;
         for (let t = 14; t < len - 12; t += 9, k++) {
@@ -132,7 +138,8 @@ Object.assign(GreedJunk, {
         }
         const d = 'M' + pts.join(' L') + ' Z';
         let out = `<path d="${d}" class="fx" fill="${J.hole}" opacity="0.3" transform="translate(1.2 1.8)"/>`;
-        out += `<path d="${d}" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        // сырая сталь, тёмная, в синеву окалины — пластину резали из листа
+        out += `<path d="${d}" fill="url(#gj-raw)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
         out += `<path d="${d}" class="fx" fill="url(#gj-dirt)"/>`;
         // Отверстия у каждого угла: пластину сверлили под крепёж «с запасом»,
         // а прикрутили на три болта — остальные дыры пустые, с блестящей

@@ -103,6 +103,9 @@ const GreedJunk = {
             lin('gj-tin', J.tin[300], J.tin[700], 0.6, 1) +
             lin('gj-tin-dark', J.tin[500], J.tin[700], 0.6, 1) +
             lin('gj-blue', J.paint.blue, J.paint.blueLo, 0.3, 1) +
+            lin('gj-primer', J.primer.hi, J.primer.lo, 0.4, 1) +
+            lin('gj-zinc', J.zinc.hi, J.zinc.lo, 0.5, 1) +
+            lin('gj-raw', J.raw.hi, J.raw.lo, 0.4, 1) +
             `<linearGradient id="gj-shade" x1="0" y1="0" x2="0" y2="1">` +
             `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.55"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0"/></linearGradient>` +
             // грязь: тёмное пятно, гуще к низу детали — там копится пыль
@@ -419,7 +422,7 @@ const GreedJunk = {
                 `opacity="${f(Math.min(0.5, 0.12 + z * 0.035))}"/>`;
         }
         out += `<path d="${this.wob(x, y, w, h, seed + 5)}" ` +
-            `fill="url(#${o.dark ? 'gj-tin-dark' : 'gj-tin'})" stroke="${PALETTE.ink}" stroke-width="${o.stroke || STROKE.structure}"/>`;
+            `fill="url(#${o.fill || (o.dark ? 'gj-tin-dark' : 'gj-tin')})" stroke="${PALETTE.ink}" stroke-width="${o.stroke || STROKE.structure}"/>`;
         out += `<path d="${this.wob(x, y, w, h, seed + 5)}" class="fx" fill="url(#gj-dirt)"/>`;
         // вмятина: светлая дуга над тёмной
         if (w > 30 && h > 30 && o.dent !== false) {

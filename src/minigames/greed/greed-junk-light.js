@@ -150,7 +150,7 @@ Object.assign(GreedJunk, {
         junctionBox: [6, 'plastic'],
         harness: [3, 'plastic'],
         powerCable: [2.5, 'rubber'],
-        angleIron: [3, 'steel'],
+        angleIron: [3, 'paint'],
         cutPlate: [5, 'steel'],
         brakeDisc: [9, 'polished'],
         cornerBracket: [17, 'steel']
