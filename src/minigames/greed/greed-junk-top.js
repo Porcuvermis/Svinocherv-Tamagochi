@@ -558,8 +558,9 @@ Object.assign(GreedJunk, {
         wt = wt == null ? w : wt;
         const rb = w / 2, rt = wt / 2, eb = rb * this.flat(yb), et = rt * this.flat(yt);
         const side = `M${f(x - rt)} ${f(yt)} L${f(x - rb)} ${f(yb)} A${f(rb)} ${f(eb)} 0 0 0 ${f(x + rb)} ${f(yb)} L${f(x + rt)} ${f(yt)} Z`;
+        // top === 'none' — верх закрыт куполом (трубка лампы): шва нет
         return `<path d="${side}" fill="${fill}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
-            `<ellipse cx="${f(x)}" cy="${f(yt)}" rx="${f(rt)}" ry="${f(et)}" fill="${top || fill}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+            (top === 'none' ? '' : `<ellipse cx="${f(x)}" cy="${f(yt)}" rx="${f(rt)}" ry="${f(et)}" fill="${top || fill}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`);
     },
 
     // Патрон на полке: бакелитовый фланец-диск на двух шурупах, на нём
@@ -632,12 +633,17 @@ Object.assign(GreedJunk, {
                 h0 = h;
                 let o = h.cup + this.socketBrass(x, h.top, 5.2, 4.6);
                 const w = 5.6, t = h.top - this.ax(4.6), len = 24, yt = t - this.ax(len);
-                let g = this.cyl(x, t, w, len, L.red, L.red);
+                let g = this.cyl(x, t, w, len, L.red, 'none');
                 g = g.replace(`fill="${L.red}"`, `fill="${L.red}" opacity="0.82"`);
                 // нить — прямая жилка вдоль оси, держатели снизу
                 g += `<path d="M${x - 0.8} ${f(t - 1)} L${x - 0.8} ${f(yt + 3)} M${x + 0.8} ${f(t - 1)} L${x + 0.8} ${f(yt + 3)}" stroke="${L.wire}" stroke-width="0.5" opacity="0.8"/>`;
-                // полусфера верха
-                g += `<circle cx="${x}" cy="${f(yt)}" r="${w / 2}" fill="${L.red}" opacity="0.9" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+                // Полусфера верха: заливка кругом, а обводка — только верхней
+                // половиной. Нижняя половина круга лежит на самой трубке, и её
+                // линия резала трубку поперёк, как надетый колпачок.
+                // заливка тоже полукругом: полный круг ложился вторым слоем
+                // стекла на трубку и темнел пятном
+                g += `<path d="M${x - w / 2} ${f(yt)} A${w / 2} ${w / 2} 0 0 1 ${x + w / 2} ${f(yt)} Z" fill="${L.red}" opacity="0.82"/>` +
+                    `<path d="M${x - w / 2} ${f(yt)} A${w / 2} ${w / 2} 0 0 1 ${x + w / 2} ${f(yt)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
                 // контур боков поверх, чтобы стык с полусферой не рвал линию
                 g += `<path d="M${x - w / 2} ${f(t)} L${x - w / 2} ${f(yt)} M${x + w / 2} ${f(t)} L${x + w / 2} ${f(yt)}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
                 g += `<path d="M${x - 1.5} ${f(t - 1.5)} L${x - 1.5} ${f(yt + 0.5)}" class="hl" stroke="${J.alu[100]}" stroke-width="0.9" stroke-linecap="round" opacity="0.75"/>`;
