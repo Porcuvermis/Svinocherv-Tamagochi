@@ -91,10 +91,12 @@ Object.assign(GreedCoins, {
         const ms = { cover: play, reveal: play, close: play, clear: play };
         this._veilTotal = total;
         // Нажатия крестика посреди крутки (MgVeil.knock): монеты сцены — тремя
-        // долями в порядке того же потока; каждое нажатие проявляет следующую.
-        const byD = inner.slice().sort((a, b) => a.d - b.d), n3 = Math.ceil(byD.length / 3);
-        const groups = [0, 1, 2].map(j => byD.slice(j * n3, (j + 1) * n3));
-        groups.forEach((g, j) => g.forEach(c => { c.g = j; }));
+        // долями ОБЛАКАМИ (игрок: «не ровными слоями, а кучками»; ровные доли
+        // по потоку засыпали весь экран редкой сыпью). Первое нажатие — кучи
+        // вокруг одних центров, второе — новые кучи и разрастание первых,
+        // третье — остальное. Внутри кучи монеты появляются от центра к краю
+        // (c.kd), край облака рваный.
+        const groups = this.knockClouds(inner);
         this._veil = { all, ms, groups, innerN: inner.length };
     },
 
@@ -122,6 +124,42 @@ Object.assign(GreedCoins, {
         if (this._vl) this._vl.gap.style.display = this._vl.cv.style.display = 'none';
     },
 
+    KNOCK: { clouds: 5, rMin: 45, rMax: 85, spread: 650 },
+    knockClouds(inner) {
+        const K = this.KNOCK, I = this.inner();
+        let st = 31337;
+        const rnd = () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+        const cloud = () => ({ x: (I.x0 + 25 + rnd() * (I.x1 - I.x0 - 50)) * 2, y: (I.y0 + 25 + rnd() * (I.y1 - I.y0 - 50)) * 2,
+            r: (K.rMin + rnd() * (K.rMax - K.rMin)) * 2, a: rnd() * 6.28, b: rnd() * 6.28 });
+        // расстояние до облака в его радиусах, с рваным краем
+        const dist = (c, o) => {
+            const dx = c.x - o.x, dy = c.y - o.y, th = Math.atan2(dy, dx);
+            const r = o.r * (1 + 0.3 * Math.sin(3 * th + o.a) + 0.15 * Math.sin(5 * th + o.b));
+            return Math.hypot(dx, dy) / r;
+        };
+        const A = Array.from({ length: K.clouds }, cloud), B = Array.from({ length: K.clouds }, cloud);
+        for (const c of inner) c._j = (rnd() - 0.5) * 0.35;           // своя дрожь края у каждой монеты
+        const n3 = Math.ceil(inner.length / 3);
+        // 1: ближе всего к облакам A
+        for (const c of inner) c._s = Math.min(...A.map(o => dist(c, o))) + c._j;
+        const g1 = inner.slice().sort((a, b) => a._s - b._s).slice(0, n3);
+        g1.forEach(c => { c.g = 0; });
+        // 2: облака B и разросшиеся A (их край дальше — множитель)
+        const rest = inner.filter(c => c.g !== 0);
+        for (const c of rest) c._s = Math.min(...B.map(o => dist(c, o)), ...A.map(o => dist(c, o) * 0.8)) + c._j;
+        const g2 = rest.sort((a, b) => a._s - b._s).slice(0, n3);
+        g2.forEach(c => { c.g = 1; });
+        // 3: остальное — от ближайшего к уже насыпанному
+        const g3 = inner.filter(c => c.g !== 0 && c.g !== 1);
+        for (const c of g3) { c.g = 2; c._s = Math.min(...A.concat(B).map(o => dist(c, o))) + c._j; }
+        // задержка внутри доли: от центра облака к краю
+        for (const g of [g1, g2, g3]) {
+            const lo = Math.min(...g.map(c => c._s)), hi = Math.max(...g.map(c => c._s));
+            for (const c of g) c.kd = Math.round((c._s - lo) / Math.max(1e-6, hi - lo) * K.spread + rnd() * 60);
+        }
+        return [g1, g2, g3];
+    },
+
     // Сколько долей сцены проявлено нажатиями (для pop и finish: MgVeil
     // обнуляет свой счёт до хода pop).
     _kn: 0,
@@ -146,8 +184,7 @@ Object.assign(GreedCoins, {
             if (r === 'i' || r === 'o') maxOff = Math.max(maxOff, off);
             if (!dry) { c.r = r; c.off = off; }
         };
-        const gmin = V.groups.map(g => g.length ? Math.min(...g.map(c => c.d)) : 0);
-        const shownMax = Math.max(0, ...V.groups.slice(0, n).flat().map(c => c.d));
+        const shownMax = Math.max(0, ...V.groups.slice(0, n).flat().map(c => c.kd));
         for (const c of V.all) {
             const inner = c.inner;
             switch (mode) {
@@ -158,15 +195,15 @@ Object.assign(GreedCoins, {
                 case 'burst':
                     if (!inner || c.g > n - 1) set(c, null, 0);
                     else if (c.g < n - 1) set(c, 's', 0);
-                    else set(c, 'i', c.d - gmin[c.g]);
+                    else set(c, 'i', c.kd);
                     break;
                 case 'pop':
                     if (!inner || c.g >= n) set(c, null, 0);
-                    else set(c, 'o', shownMax - c.d);
+                    else set(c, 'o', shownMax - c.kd);
                     break;
                 case 'finish':
                     if (!inner || c.g < n) set(c, 's', 0);
-                    else set(c, 'i', c.d - gmin[Math.min(2, n)]);
+                    else set(c, 'i', c.kd);
                     break;
             }
         }
