@@ -71,11 +71,12 @@ Object.assign(GreedJunk, {
     conduit(pts) {
         const J = PALETTE.greedJunk;
         const d = this.smooth(pts);
-        return `<path d="${d}" fill="none" stroke="${J.hole}" stroke-width="6" stroke-linecap="round" opacity="0.3" transform="translate(1.2 2)"/>` +
+        return `<path d="${d}" fill="none" class="fx" stroke="${J.hole}" stroke-width="6" stroke-linecap="round" opacity="0.3" transform="translate(1.2 2)"/>` +
             `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="7" stroke-linecap="round"/>` +
             `<path d="${d}" fill="none" stroke="${J.tin[700]}" stroke-width="5"/>` +
             `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="5" stroke-dasharray="1.2 1.6"/>` +
-            `<path d="${d}" fill="none" stroke="${J.tin[300]}" stroke-width="0.8" opacity="0.6" transform="translate(-1 -0.6)"/>`;
+            `<path d="${d}" fill="none" class="hl" stroke="${J.tin[300]}" stroke-width="0.8" opacity="0.6" transform="translate(-1 -0.6)"/>` +
+            this.rodH(d, 7);
     },
 
     // Шпилька с резьбой, торчащая из фланца: на неё наденут крепление.
@@ -176,7 +177,8 @@ Object.assign(GreedJunk, {
             out += this.T(7, 'steel',
                 `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>` +
                 `<path d="${d}" fill="none" stroke="${J.tin[500]}" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>` +
-                `<path d="${d}" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="1" stroke-linecap="round" transform="translate(-0.9 -0.6)"/>`);
+                `<path d="${d}" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="1" stroke-linecap="round" transform="translate(-0.9 -0.6)"/>` +
+                this.rodH(d, 6));
             // площадка со сварным швом
             out += this.T(4, 'steel', `<rect x="${f(hx - 4.5)}" y="${f(top - 5)}" width="9" height="7" rx="1.5" ` +
                 `fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
@@ -241,11 +243,11 @@ Object.assign(GreedJunk, {
         });
         // сначала тени всех жил, потом сами жилы — тень не ложится на соседку
         wires.forEach(w => {
-            out += `<path d="${this.smooth(w.pts)}" fill="none" stroke="${J.hole}" stroke-width="3" stroke-linecap="round" opacity="0.3" transform="translate(1 1.6)"/>`;
+            out += `<path d="${this.smooth(w.pts)}" fill="none" class="fx" stroke="${J.hole}" stroke-width="3" stroke-linecap="round" opacity="0.3" transform="translate(1 1.6)"/>`;
         });
         wires.forEach(w => {
             const d = this.smooth(w.pts);
-            out += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="3.4" stroke-linecap="round"/>` +
+            out += this.rodH(d, 3.2) + `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="3.4" stroke-linecap="round"/>` +
                 `<path d="${d}" fill="none" stroke="${w.c}" stroke-width="2" stroke-linecap="round"/>` +
                 `<path d="${d}" fill="none" class="hl" stroke="${J.plastic.hi}" stroke-width="0.5" stroke-linecap="round" opacity="0.55" transform="translate(-0.5 -0.3)"/>`;
             out += this.wireEnd(w.end, w.pts[w.pts.length - 1], w.pts[w.pts.length - 2], w.c);
@@ -263,6 +265,7 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f;
         let out = `<circle cx="${f(x + 1.6)}" cy="${f(y + 2.6)}" r="10" class="fx" fill="${J.hole}" opacity="0.35"/>`;
         out += `<circle cx="${f(x)}" cy="${f(y)}" r="10" fill="url(#gj-plastic)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        out += this.domeH(x, y, 10, 2.5);
         out += `<circle cx="${f(x)}" cy="${f(y)}" r="7" fill="none" stroke="${J.plastic.lo}" stroke-width="${STROKE.detail}"/>`;
         out += `<path d="M${f(x - 6)} ${f(y - 3)} a7 7 0 0 1 8 -4" fill="none" class="hl" stroke="${J.plastic.hi}" stroke-width="${STROKE.detail}"/>`;
         // Один винт по центру и литые рёбра крышки. Два винта рядом

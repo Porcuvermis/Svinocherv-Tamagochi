@@ -54,10 +54,15 @@ Object.assign(GreedJunk, {
     },
 
     // <style> прохода. baked — пусто.
+    // --dh — прибавка к высоте детали для профиля внутри неё (купол болта,
+    // цилиндр кабеля): задаётся ОТНОСИТЕЛЬНО --h предка, поэтому болт на
+    // любой детали выпуклый от её поверхности, не зная, на какой высоте она.
     passStyle(pass) {
-        if (pass === 'albedo') return `<style>.fx,.hl{display:none}</style>`;
+        if (pass === 'baked') return `<style>.hpass{display:none}</style>`;
+        if (pass === 'albedo') return `<style>.fx,.hl,.hpass{display:none}</style>`;
         if (pass === 'height') {
-            const g = (d) => `rgb(calc((var(--h,0.17) + ${d}) * 255),calc((var(--h,0.17) + ${d}) * 255),calc((var(--h,0.17) + ${d}) * 255))`;
+            const v = (d) => `calc((var(--h,0.17) + var(--dh,0) + ${d}) * 255)`;
+            const g = (d) => `rgb(${v(d)},${v(d)},${v(d)})`;
             return `<style>` +
                 `*{fill:${g(0)}!important;stroke:${g(0)}!important}` +
                 `.bump,.bump *{fill:${g(0.06)}!important;stroke:${g(0.06)}!important}` +
@@ -66,12 +71,39 @@ Object.assign(GreedJunk, {
                 `.fx,.hl{display:none}</style>`;
         }
         if (pass === 'mat') {
-            return `<style>*{fill:var(--m,rgb(0,0,0))!important;stroke:var(--m,rgb(0,0,0))!important}` +
-                `.pit,.pit *{fill:rgb(0,0,0)!important;stroke:rgb(0,0,0)!important}` +
-                `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
-                `.fx,.hl{display:none}</style>`;
+            // профиль высот в карте материалов не нужен — он того же материала
+            return this.passStyleMat();
         }
         return '';
+    },
+
+    passStyleMat() {
+        return `<style>*{fill:var(--m,rgb(0,0,0))!important;stroke:var(--m,rgb(0,0,0))!important}` +
+                `.pit,.pit *{fill:rgb(0,0,0)!important;stroke:rgb(0,0,0)!important}` +
+                `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
+                `.fx,.hl,.hpass{display:none}</style>`;
+    },
+
+    // ---------- ПРОФИЛЬ ВЫСОТ ----------
+    // Ровная площадка на всю деталь годится доске и пластине, но круглое
+    // так выходит плоским: пруток крюка, кабель, шляпка болта не ловили ни
+    // света, ни блика. Профиль рисуется ТОЛЬКО в проходе высот (класс hpass)
+    // стопкой слоёв, каждый выше предыдущего: купол — кругами, цилиндр —
+    // обводками того же пути всё уже. rise — подъём вершины в единицах.
+    dh(units) { return (units / this.HMAX).toFixed(3); },
+
+    domeH(cx, cy, r, rise) {
+        rise = rise == null ? r * 0.8 : rise;
+        const f = this.f;
+        return '<g class="hpass">' + [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]].map(([k, u]) =>
+            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * k)}" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
+    },
+
+    rodH(d, width, rise) {
+        rise = rise == null ? width * 0.5 : rise;
+        return '<g class="hpass">' + [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]].map(([k, u]) =>
+            `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${(width * k).toFixed(2)}" stroke-linecap="round" ` +
+            `stroke-linejoin="round" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
     },
 
     // Цвет посередине градиента — им градиент заменяется в проходе albedo.
@@ -92,9 +124,20 @@ Object.assign(GreedJunk, {
 // последним, и рисующий код не обрастает разметкой там, где хватает одной
 // строки в таблице.
 (function () {
-    ['bolt', 'nail', 'ironNail', 'stud', 'lagBolt'].forEach(k => {
+    // шляпка — куполом (радиус как у нарисованной, подъём — свой)
+    const heads = {
+        bolt: (x, y, r) => [x, y, r || 2.6, null],
+        nail: (x, y) => [x, y, 1.6, null],
+        ironNail: (x, y) => [x, y, 1.4, null],
+        stud: (x, y) => [x, y, 3.6, 3],
+        lagBolt: (x, y) => [x, y, 3.6, 2]
+    };
+    Object.keys(heads).forEach(k => {
         const fn = GreedJunk[k];
-        GreedJunk[k] = function () { return '<g class="bump">' + fn.apply(this, arguments) + '</g>'; };
+        GreedJunk[k] = function () {
+            const [x, y, r, rise] = heads[k].apply(null, arguments);
+            return '<g class="bump">' + fn.apply(this, arguments) + this.domeH(x, y, r, rise) + '</g>';
+        };
     });
     const table = {
         // метод: [высота над стенкой, материал]

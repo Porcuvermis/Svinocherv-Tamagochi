@@ -189,6 +189,7 @@ Object.assign(GreedJunk, {
         out += `<circle cx="${cx + 1.6}" cy="${cy + 2.6}" r="17" class="fx" fill="${J.hole}" opacity="0.4"/>`;
         out += `<circle cx="${cx}" cy="${cy}" r="17" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         out += `<circle cx="${cx}" cy="${cy}" r="17" fill="none" stroke="${J.rust[700]}" stroke-width="2" opacity="0.5"/>`;
+        out += this.domeH(cx, cy, 17, 2);
         // колёсные шпильки
         for (let i = 0; i < 5; i++) {
             const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
@@ -221,11 +222,12 @@ Object.assign(GreedJunk, {
         const d = this.smooth(pts);
         let out = '';
         // тень: кабель лежит на стенке почти вплотную
-        out += `<path d="${d}" fill="none" stroke="${J.hole}" stroke-width="5" stroke-linecap="round" opacity="0.32" transform="translate(1.2 2)"/>`;
+        out += `<path d="${d}" fill="none" class="fx" stroke="${J.hole}" stroke-width="5" stroke-linecap="round" opacity="0.32" transform="translate(1.2 2)"/>`;
         out += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="5.4" stroke-linecap="round"/>`;
         out += `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="3.4" stroke-linecap="round"/>`;
         // блик по кабелю: он круглый, свет ложится узкой линией слева-сверху
-        out += `<path d="${d}" fill="none" stroke="${J.tin[500]}" stroke-width="0.8" stroke-linecap="round" opacity="0.8" transform="translate(-0.9 -0.4)"/>`;
+        out += `<path d="${d}" fill="none" class="hl" stroke="${J.tin[500]}" stroke-width="0.8" stroke-linecap="round" opacity="0.8" transform="translate(-0.9 -0.4)"/>`;
+        out += this.rodH(d, 5.4);
         // сальник на коробке розетки: короткий рифлёный хвостовик
         out += `<path d="M61.5 67 L68.5 67 L67.5 74 L62.5 74 Z" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
         [69.4, 71.6].forEach(y => { out += `<line x1="62.4" y1="${y}" x2="67.6" y2="${y}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`; });
