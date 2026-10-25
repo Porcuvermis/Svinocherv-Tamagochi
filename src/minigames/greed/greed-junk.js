@@ -578,11 +578,6 @@ const GreedJunk = {
         // ---- крепление колеса: ступица от машины на перфоуголке ----
         const w = S.wheel;
         out += this.wheelMount(w.cx, w.cy);
-        // пустые отверстия по кругу — под будущую стойку колеса
-        for (let i = 0; i < 6; i++) {
-            const a = (i / 6) * Math.PI * 2 + 0.5;
-            out += this.hole(w.cx + Math.cos(a) * (w.r - 8), w.cy + Math.sin(a) * (w.r - 8));
-        }
         out += this.socket(36, 40, -8);
         // Кабель от розетки провисает к фланцу: питание уже подведено, ждёт
         // колесо. Провисание — дугой вниз, кабель тяжелее, чем кажется.
@@ -693,19 +688,33 @@ const GreedJunk = {
     cutPlate(cx, cy, seed) {
         const J = PALETTE.greedJunk, f = this.f;
         const rnd = this.rng(seed);
-        const pts = [];
+        const pts = [], radii = [];
         for (let i = 0; i < 7; i++) {
-            const a = (i / 7) * Math.PI * 2 + 0.2, r = 40 + rnd() * 8;
+            const a = (i / 7) * Math.PI * 2 + 0.2, r = 45 + rnd() * 7;
+            radii.push(r);
             pts.push(f(cx + Math.cos(a) * r) + ' ' + f(cy + Math.sin(a) * r));
         }
         const d = 'M' + pts.join(' L') + ' Z';
         let out = `<path d="${d}" fill="${J.hole}" opacity="0.3" transform="translate(1.2 1.8)"/>`;
         out += `<path d="${d}" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
         out += `<path d="${d}" fill="url(#gj-dirt)"/>`;
+        // Отверстия у каждого угла: пластину сверлили под крепёж «с запасом»,
+        // а прикрутили на три болта — остальные дыры пустые, с блестящей
+        // заусеницей по нижней кромке (металл свежий, не успел потемнеть).
+        // Раньше пустые дыры были разбросаны по доскам кругом — ни к чему
+        // не относились и висели в воздухе.
+        const used = [0, 3, 5];
+        for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2 + 0.2;
+            const hx = cx + Math.cos(a) * (radii[i] - 8), hy = cy + Math.sin(a) * (radii[i] - 8);
+            if (used.indexOf(i) !== -1) { out += this.bolt(hx, hy, 2.6); continue; }
+            out += `<circle cx="${f(hx)}" cy="${f(hy)}" r="2.7" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<path d="M${f(hx - 2.7)} ${f(hy + 0.4)} a2.7 2.7 0 0 0 5.4 0" fill="none" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.8"/>`;
+        }
         // следы болгарки по краю — короткие светлые чёрточки
         for (let i = 0; i < 7; i++) {
             const a = (i / 7) * Math.PI * 2 + 0.6;
-            out += `<line x1="${f(cx + Math.cos(a) * 36)}" y1="${f(cy + Math.sin(a) * 36)}" x2="${f(cx + Math.cos(a) * 40)}" y2="${f(cy + Math.sin(a) * 40)}" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>`;
+            out += `<line x1="${f(cx + Math.cos(a) * 39)}" y1="${f(cy + Math.sin(a) * 39)}" x2="${f(cx + Math.cos(a) * 43)}" y2="${f(cy + Math.sin(a) * 43)}" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>`;
         }
         return out;
     },
