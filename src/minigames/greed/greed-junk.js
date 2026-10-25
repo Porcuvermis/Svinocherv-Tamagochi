@@ -107,6 +107,8 @@ const GreedJunk = {
             `<linearGradient id="gj-reel-shade" x1="0" y1="0" x2="0" y2="1">` +
             `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.75"/><stop offset="0.3" stop-color="${J.hole}" stop-opacity="0"/>` +
             `<stop offset="0.85" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.35"/></linearGradient>` +
+            `<linearGradient id="gj-shade-x" x1="0" y1="0" x2="1" y2="0">` +
+            `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.5"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0"/></linearGradient>` +
             `<radialGradient id="gj-vign" cx="0.5" cy="0.45" r="0.7">` +
             `<stop offset="0.55" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.5"/></radialGradient>` +
             `<radialGradient id="gj-dirt" cx="0.5" cy="1" r="0.9">` +
@@ -388,12 +390,14 @@ const GreedJunk = {
     // провода, и только на него — аппаратура (референс docs/ref/greed-machine-junk-empty.jpg).
     topBox() {
         const J = PALETTE.greedJunk, S = this.SLOTS, f = this.f;
-        let out = this.planks(28, 24, 288, 270, 6, 11, 'v', 14);
-        // углы щита темнее середины: свет лампы падает в центр, а не ровно
+        // Задняя стенка ящика: она в глубине, поэтому темнее рамки — свет до
+        // неё доходит хуже.
+        let out = this.planks(28, 24, 288, 270, 6, 11, 'v');
+        out += `<rect x="28" y="24" width="288" height="270" fill="${J.hole}" opacity="0.28"/>`;
         out += `<rect x="28" y="24" width="288" height="270" fill="url(#gj-vign)"/>`;
         // поперечина-перекладина, на которой всё висит
-        out += this.shade(30, 168, 284, 10);
-        out += this.planks(22, 150, 300, 18, 1, 12, 'h');
+        out += this.shade(42, 168, 260, 10);
+        out += this.planks(42, 150, 260, 18, 1, 12, 'h');
         // жестяная решётка внизу щита
         out += this.tin(34, 270, 276, 20, 21, { bolts: false, scratches: 2, tilt: 0, z: this.Z.strap });
         for (let i = 0; i < 17; i++) {
@@ -472,6 +476,38 @@ const GreedJunk = {
         // «странное место» — это неудобное место, а не место за краем.
         out += this.socket(p.x + 36, p.y + 132, -6);
         out += this.harness(p.x + 50, p.y + 168, 44, 45);
+        out += this.topFrame();
+        return out;
+    },
+
+    // ---------- РАМКА ЯЩИКА ----------
+    // Верх — не щит, а ЯЩИК без передней стенки: в анфас его толщину видно
+    // только по рамке из толстых досок (крышка и две боковины) и по теням,
+    // которые рамка бросает внутрь на заднюю стенку — сверху и слева, от
+    // света сверху-слева. Крышка шире боковин и нависает: её положили
+    // сверху, а не вставили между ними.
+    topFrame() {
+        const J = PALETTE.greedJunk, f = this.f;
+        const IN = { x: 42, y: 36, w: 260, h: 254 };     // проём ящика
+        let out = '';
+        // тени от рамки на заднюю стенку
+        out += `<rect x="${IN.x}" y="${IN.y}" width="${IN.w}" height="22" fill="url(#gj-shade)"/>`;
+        out += `<rect x="${IN.x}" y="${IN.y}" width="16" height="${IN.h}" fill="url(#gj-shade-x)"/>`;
+        // боковины: толстые доски, торцом к нам
+        out += this.planks(24, 30, 18, 262, 1, 13, 'v');
+        out += this.planks(302, 30, 18, 262, 1, 14, 'v');
+        // освещённая кромка левой боковины, тёмная — правой (её грань
+        // отвёрнута от света)
+        out += `<line x1="26" y1="36" x2="26" y2="288" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.6"/>`;
+        out += `<line x1="317" y1="36" x2="317" y2="288" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
+        // тень крышки на боковины
+        out += this.shade(24, 34, 18, 8) + this.shade(302, 34, 18, 8);
+        // крышка, нависает над боковинами
+        out += this.planks(16, 14, 312, 22, 1, 15, 'h');
+        out += `<line x1="20" y1="16.5" x2="324" y2="16.5" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        // жестяные уголки на стыках крышки и боковин — так сколачивают ящики
+        out += this.tin(20, 26, 26, 22, 16, { bolts: false, scratches: 1, tilt: 0, z: this.Z.plate }) + this.bolt(29, 37, 2);
+        out += this.tin(298, 26, 26, 22, 17, { bolts: false, scratches: 1, tilt: 0, z: this.Z.plate }) + this.bolt(315, 37, 2);
         return out;
     },
 
