@@ -182,14 +182,18 @@ const GreedJunkLit = {
         // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
         // а не весь хвостик целиком; тяжесть — по наклону телефона
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
+        // красная лампа на проводах — тоже подвес, с тяжёлым грузом
+        const lamp = GreedJunk.lampHang();
         const loop = () => {
             if (!canvas.isConnected) return;
             if (this.live) {
-                Hang.step(tail.s, Hang.down());
-                const key = tail.s.th.map(v => v.toFixed(3)).join(',');
+                const g = Hang.down();
+                Hang.step(tail.s, g);
+                Hang.step(lamp, g);
+                const key = tail.s.th.concat(lamp.th).map(v => v.toFixed(3)).join(',');
                 if (key !== tail.shown) {
                     tail.shown = key;
-                    this.live.innerHTML = GreedJunk.threadTail(tail.s);
+                    this.live.innerHTML = GreedJunk.threadTail(tail.s) + GreedJunk.hangLamp(lamp);
                 }
             }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };

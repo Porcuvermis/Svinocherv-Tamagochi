@@ -978,6 +978,8 @@ const PALETTE = {
         bulb:  { red: '#a8392c', clear: '#ddd5bd', amber: '#c99a45', smoke: '#8e8a7d',
                  wire: '#6e5b40', glow: '#ffcf7a' },
         brass: { hi: '#d6b56a', base: '#a8843a', lo: '#6e5422' },
+        // Фарфор патрона: белый с желтизной, глазурь.
+        ceramic: { hi: '#f4efe2', base: '#d8d0bc', lo: '#9f977f' },
         zinc:   { hi: '#d9e2e6', base: '#aebcc3', lo: '#86959d', spangle: '#c4d0d6' },
         raw:    { hi: '#8a9198', base: '#646c74', lo: '#454c54' },
         // Алюминий направляющих: светлее и холоднее жести, окисел белёсый.

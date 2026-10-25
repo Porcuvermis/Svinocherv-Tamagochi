@@ -18,15 +18,21 @@
 // Tilt.down() — тяжесть в плоскости экрана; без датчика — просто вниз.
 //
 // Свойства материала (MATERIALS.<m>.hang): stiff — жёсткость на изгиб,
-// weight — вес единицы длины. Числа на глаз; задача — правильное поведение:
+// weight — вес единицы длины, damp — затухание за кадр (по умолчанию 0.86;
+// ближе к 1 — дольше пружинит). Числа на глаз; задача — правильное поведение:
 // короче или жёстче — меньше гнётся.
 const Hang = {
     // len — длина в единицах сцены, root — угол крепления (рад), mat — имя
     // материала из MATERIALS (там свойства hang), n — сколько звеньев.
-    create(len, root, mat, n) {
+    // load — груз на кончике (лампа на проводах): { mass, arm }, arm — от
+    // кончика до центра тяжести груза. Груз жёсткий и смотрит вдоль
+    // последнего звена; его вес гнёт все сгибы выше, а инерция замедляет
+    // качание — тяжёлая вещь на упругом подвесе пружинит, а не дрожит.
+    create(len, root, mat, n, load) {
         n = n || 8;
         const m = (typeof MATERIALS !== 'undefined' && MATERIALS[mat] && MATERIALS[mat].hang) || { stiff: 1, weight: 1 };
-        const s = { len, n, seg: len / n, root, stiff: m.stiff, weight: m.weight, th: [], v: [] };
+        const L = load || { mass: 0, arm: 0 };
+        const s = { len, n, seg: len / n, root, stiff: m.stiff, weight: m.weight, damp: m.damp || 0.86, mass: L.mass, arm: L.arm, th: [], v: [] };
         for (let i = 0; i < n; i++) { s.th.push(root); s.v.push(0); }
         // встать в покой под отвесной тяжестью, чтобы не дёргаться на старте
         for (let k = 0; k < 400; k++) this.step(s, 0);
@@ -49,15 +55,16 @@ const Hang = {
             const prev = i === 0 ? s.root : s.th[i - 1];
             const tail = (n - i) * seg;                          // что висит дальше сгиба
             const k = this.kAt(s, i) / seg, k2 = i < n - 1 ? this.kAt(s, i + 1) / seg : 0;
-            const grav = s.weight * tail * tail * 0.5 * Math.sin(g - s.th[i]);
+            const lever = tail + s.arm;                          // плечо груза от сгиба
+            const grav = (s.weight * tail * tail * 0.5 + s.mass * lever) * Math.sin(g - s.th[i]);
             const spring = k * (prev - s.th[i]);
             // следующий сгиб тянет назад (его пружина сжата нашим поворотом)
             const back = i < n - 1 ? k2 * (s.th[i + 1] - s.th[i]) : 0;
             // «масса» с запасом на жёсткость: иначе тонкий кончик с жёсткой
             // пружиной раскачивался до бесконечности
-            const inertia = s.weight * tail * tail * tail / 3 + (k + k2) * 0.04;
+            const inertia = s.weight * tail * tail * tail / 3 + s.mass * lever * lever + (k + k2) * 0.04;
             s.v[i] += (grav + spring + back) / inertia * 0.02;
-            s.v[i] *= 0.86;                                      // затухание: воздух и трение волокон
+            s.v[i] *= s.damp;                                    // затухание: воздух и трение волокон
         }
         for (let i = 0; i < n; i++) s.th[i] += s.v[i];
     },
