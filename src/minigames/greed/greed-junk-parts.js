@@ -284,9 +284,13 @@ Object.assign(GreedJunk, {
 
     // ---------- ЛАТКА ИЗ КРЫШКИ БАНКИ ----------
     // Доска треснула вокруг сучка; дыру закрыли крышкой от консервной банки
-    // на четырёх гвоздях. Чтобы это читалось латкой, а не монетой: край
-    // крышки закатан зубчиками, в ней вмятина, от этикетки осталось
-    // полустёртое кольцо краски, а трещина расходится по доске из-под краёв.
+    // на четырёх гвоздях. Крышка устроена как настоящая и строго по центру:
+    // закатанный обод по краю (самый высокий), канавка за ним, плоское поле
+    // с двумя кольцевыми рёбрами жёсткости, ровная серединка. Короткий
+    // рваный участок — след консервного ножа. Трещина в доске расходится
+    // из-под краёв — видно, что крышка что-то закрывает.
+    // Было: смещённая «вмятина» и красная дуга этикетки — читались съехавшим
+    // рисунком, а не крышкой.
     canLid(cx, cy) {
         const J = PALETTE.greedJunk, f = this.f;
         const r = 15;
@@ -298,28 +302,27 @@ Object.assign(GreedJunk, {
             crack += `<path d="M${f(p0[0])} ${f(p0[1])} L${f(p1[0])} ${f(p1[1])} L${f(p2[0])} ${f(p2[1])}" fill="none" ` +
                 `class="pit" stroke="${J.hole}" stroke-width="1.2" stroke-linecap="round"/>`;
         });
-        // край гладкий, закатанный; только на коротком участке рваный след
-        // консервного ножа. Зубчики по всему кругу делали из крышки пивную пробку.
+        // контур: круг, на коротком участке — рваный след ножа
         const pts = [];
         for (let i = 0; i < 48; i++) {
             const a = (i / 48) * Math.PI * 2;
-            const cut = a > 3.7 && a < 4.5;
-            const rr = cut ? r + (i % 2 ? 0.9 : -0.6) : r;
-            pts.push(f(cx + Math.cos(a) * rr * 1.04) + ' ' + f(cy + Math.sin(a) * rr));
+            const cut = a > 3.9 && a < 4.4;
+            const rr = cut ? r + (i % 2 ? 0.7 : -0.5) : r;
+            pts.push(f(cx + Math.cos(a) * rr) + ' ' + f(cy + Math.sin(a) * rr));
         }
         const rim = 'M' + pts.join(' L') + ' Z';
+        const ring = (rad, col, w) => `<circle cx="${f(cx)}" cy="${f(cy)}" r="${rad}" fill="none" stroke="${col}" stroke-width="${w}"/>`;
         let lid = `<path d="${rim}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
-        // кольцо краски от этикетки — стёрто наполовину
-        lid += `<path d="M${f(cx - 11)} ${f(cy + 3)} A11.5 11 0 0 1 ${f(cx + 9)} ${f(cy - 7)}" fill="none" stroke="${J.paint.red}" stroke-width="2.2" opacity="0.55"/>`;
-        // двойной ободок закатки
-        lid += `<ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f((r - 2) * 1.04)}" ry="${r - 2}" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}"/>`;
-        lid += `<ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f((r - 3.6) * 1.04)}" ry="${r - 3.6}" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
-        // профиль: закатка по краю выше, середина с вмятиной
+        lid += ring(r - 2.4, J.tin[700], STROKE.detail);      // канавка за ободом
+        lid += ring(r - 6, J.tin[500], STROKE.hairline);      // рёбра жёсткости
+        lid += ring(r - 9, J.tin[500], STROKE.hairline);
+        // профиль высот: обод, канавка, поле, два ребра, серединка
+        const c = (rad, u) => `<circle cx="${f(cx)}" cy="${f(cy)}" r="${rad}" style="--dh:${this.dh(u)}"/>`;
+        const rib = (rad) => `<circle cx="${f(cx)}" cy="${f(cy)}" r="${rad}" fill="none" stroke="${PALETTE.ink}" stroke-width="1.6" style="--dh:${this.dh(1)}"/>`;
         lid += '<g class="hpass">' +
-            `<path d="${rim}" style="--dh:${this.dh(1.4)}"/>` +
-            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${r - 3}" style="--dh:${this.dh(0.6)}"/>` +
-            `<circle cx="${f(cx + 3)}" cy="${f(cy + 2)}" r="4" style="--dh:${this.dh(0)}"/>` + '</g>';
-        const nails = [0.6, 2.2, 3.6, 5.2].map(a => this.nail(cx + Math.cos(a) * (r - 2.2), cy + Math.sin(a) * (r - 2.2))).join('');
+            `<path d="${rim}" style="--dh:${this.dh(1.6)}"/>` + c(r - 1.6, 0.9) + c(r - 3, 0.1) + c(r - 3.8, 0.5) +
+            rib(r - 6) + rib(r - 9) + '</g>';
+        const nails = [0.6, 2.2, 3.6, 5.2].map(a => this.nail(cx + Math.cos(a) * (r - 4.5), cy + Math.sin(a) * (r - 4.5))).join('');
         return this.T(0, 'pine', crack) + this.T(1, 'steel', lid + nails);
     },
 
