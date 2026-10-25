@@ -505,7 +505,12 @@ Object.assign(GreedJunk, {
         plate += this.bolt(x0 + 6, cy, 1.8) + this.bolt(x1 - 6, cy, 1.8);
         let out = this.T(10, 'plastic', plate);
         // красная висит на проводах (hangLamp), на полке от неё — след
-        this.bulbList().forEach(b => { out += b.kind === 'red' ? this.lostHolder(b.x, this.SHELF_TOP) : this.bulb(b.kind, b.x, this.SHELF_TOP); });
+        // след считается в том же ракурсе, что диски соседних патронов
+        this.bulbList().forEach(b => {
+            out += b.kind === 'red'
+                ? this.leaned(b.x, this.SHELF_TOP - 2.8, 1.45, 0, () => this.lostHolder(b.x, this.SHELF_TOP))
+                : this.bulb(b.kind, b.x, this.SHELF_TOP);
+        });
         if (this.pass === 'baked') out += this.hangLamp();
         return out;
     },
@@ -574,14 +579,17 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, B = J.bakelite, Br = J.brass, f = this.f;
         const fw = w + 9, yb = base - 1;              // диск чуть за кромкой полки
         const disk = this.T(10, 'plastic', this.cyl(x, yb, fw, 1.8, B.base, B.hi));
+        // Шурупы — на горизонтальном диаметре лицевой грани диска, в одну
+        // линию с её центром. Было: на 1.8 выше центра (высота диска без
+        // ax), у верхнего края круга, и смотрелись криво.
+        const yt = yb - this.ax(1.8);
+        const screws = this.bolt(x - fw / 2 + 2, yt, 0.95) + this.bolt(x + fw / 2 - 2, yt, 0.95);
         const y1 = yb - 1.8, c = this.ax(6);
         let s = this.cyl(x, y1, w + 2, 6, B.base, B.lo, w);
         s += `<path d="M${f(x - w / 2 - 0.4)} ${f(y1 - 1)} L${f(x - w / 2 + 0.5)} ${f(y1 - c + 0.6)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>`;
         s += this.rodH(`M${x} ${f(y1 - c + 0.4)} L${x} ${f(y1 - 0.4)}`, w + 1, w * 0.4);
         const y2 = y1 - c;
         s += this.cyl(x, y2, w, 1.6, Br.base, Br.hi);
-        // шурупы на диске — на его верхней грани, слева и справа
-        const screws = this.bolt(x - fw / 2 + 1.9, yb - 1.8, 0.85) + this.bolt(x + fw / 2 - 1.9, yb - 1.8, 0.85);
         // диск лежит на полке ровно; чашку с лампой вкрутили криво — она
         // отдельно (cup), чтобы наклон начинался от диска
         return { disk: disk + screws, cup: this.T(12, 'plastic', s), base: y1, top: y2 - this.ax(1.6) };
@@ -745,14 +753,25 @@ Object.assign(GreedJunk, {
     },
 
     // След потерянного патрона на полке: невыцветший круг на месте
-    // фланца, две дырки от шурупов и посередине дыра, из которой провода.
+    // фланца и сквозная дыра под его чашку. В глубине дыры — стальная
+    // перекладина под полкой с двумя резьбовыми дырками: к ней патрон и
+    // прикручивался. Провода лезут из дыры мимо перекладины.
     lostHolder(x, base) {
-        const J = PALETTE.greedJunk, f = this.f;
-        const yb = base - 1, rx = 7.5, ry = rx * this.flat(yb), ry2 = 0.8 * this.flat(yb) * 2.2;
-        let g = `<ellipse cx="${x}" cy="${f(yb)}" rx="${rx}" ry="${f(ry)}" fill="${PALETTE.ink}" opacity="0.28"/>`;
-        g += [-5.6, 5.6].map(dx => `<ellipse cx="${x + dx}" cy="${f(yb)}" rx="0.8" ry="${f(Math.max(0.4, ry2 / 2))}" fill="${J.hole}"/>`).join('');
-        g += `<ellipse cx="${x}" cy="${f(yb)}" rx="2" ry="${f(Math.max(0.6, 2 * this.flat(yb)))}" class="pit" fill="${J.hole}"/>`;
-        return this.T(9, 'pine', g);
+        const J = PALETTE.greedJunk, R = J.raw, f = this.f;
+        const yb = base - 1, k = this.flat(yb), rx = 8, hr = 6, hy = hr * k;
+        let out = this.T(9, 'pine', `<ellipse cx="${x}" cy="${f(yb)}" rx="${rx}" ry="${f(rx * k)}" fill="${PALETTE.ink}" opacity="0.22"/>`);
+        // дыра: тёмный эллипс; дальняя стенка (верх) освещена, ближняя в тени
+        let g = `<ellipse cx="${x}" cy="${f(yb)}" rx="${hr}" ry="${f(hy)}" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        // перекладина видна в дыре полосой, ниже края на толщину полки —
+        // поэтому сдвинута вниз; концы обрезаны контуром дыры
+        const y1 = yb - hy * 0.05, y2 = yb + hy * 0.6;
+        const xe = (y) => hr * Math.sqrt(Math.max(0, 1 - ((y - yb) / hy) ** 2)) - 0.3;
+        const bar = `M${f(x - xe(y1))} ${f(y1)} L${f(x + xe(y1))} ${f(y1)} L${f(x + xe(y2))} ${f(y2)} L${f(x - xe(y2))} ${f(y2)} Z`;
+        g += `<path d="${bar}" fill="${R.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        g += `<line x1="${f(x - xe(y1))}" y1="${f(y1 + 0.2)}" x2="${f(x + xe(y1))}" y2="${f(y1 + 0.2)}" class="hl" stroke="${R.base}" stroke-width="0.4"/>`;
+        g += [-3.6, 3.6].map(dx => `<ellipse cx="${f(x + dx)}" cy="${f((y1 + y2) / 2)}" rx="0.9" ry="${f(Math.max(0.3, (y2 - y1) * 0.3))}" fill="${J.hole}"/>`).join('');
+        out += this.T(2, 'raw', g);
+        return out;
     },
 
     // Сама лампа с проводами. hang — состояние подвеса (Hang); без него —
