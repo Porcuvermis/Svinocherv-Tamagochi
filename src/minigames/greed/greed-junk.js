@@ -113,6 +113,7 @@ const GreedJunk = {
             `<stop offset="0" stop-color="${J.rust[500]}" stop-opacity="0.85"/><stop offset="1" stop-color="${J.rust[300]}" stop-opacity="0"/></linearGradient>` +
             lin('gj-pine', J.pine[100], J.pine[300], 0.4, 1) +
             lin('gj-plastic', J.plastic.hi, J.plastic.lo, 0.4, 1) +
+            lin('gj-yellowed', J.paint.cream, J.plastic.base, 0.4, 1) +
             lin('gj-slab-face', J.slab.face, J.slab.faceLo, 0.2, 1) +
             `<linearGradient id="gj-sheen" x1="0" y1="0" x2="0.4" y2="1">` +
             `<stop offset="0" stop-color="${J.painted.hi}" stop-opacity="0.35"/><stop offset="1" stop-color="${J.painted.lo}" stop-opacity="0.3"/></linearGradient>` +
@@ -476,6 +477,61 @@ const GreedJunk = {
             `</g>`;
     },
 
+    // Бытовая накладная розетка: пожелтевшая пластмасса, круглый корпус,
+    // в углублении два гнезда и металлические усики заземления. Повёрнута
+    // как прикрутили — под углом: ровно стоящие две дырки с винтом между
+    // ними читались рожицей.
+    socketHome(cx, cy) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const z = this.Z.rail;
+        let g = `<circle cx="${f(z * 0.45)}" cy="${f(z * 0.7)}" r="13" fill="${J.hole}" opacity="0.32"/>`;
+        g += `<circle r="13" fill="url(#gj-yellowed)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        g += `<path d="M-10 -5 a11 11 0 0 1 9 -6" fill="none" stroke="${J.plastic.hi}" stroke-width="${STROKE.detail}" opacity="0.9"/>`;
+        // углубление: тёмный верх (стенка закрыта от света), светлая нижняя кромка
+        g += `<circle r="8" fill="${J.plastic.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        g += `<path d="M-7.6 1.5 a8 8 0 0 0 15.2 0" fill="none" stroke="${J.plastic.hi}" stroke-width="${STROKE.detail}" opacity="0.8"/>`;
+        g += `<circle cx="-3.4" cy="0" r="1.5" fill="${J.hole}"/><circle cx="3.4" cy="0" r="1.5" fill="${J.hole}"/>`;
+        // усики заземления сверху и снизу
+        g += `<rect x="-1.6" y="-8" width="3.2" height="2" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+            `<rect x="-1.6" y="6" width="3.2" height="2" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        // крепёжный винт на ободе и трещина в пластмассе
+        g += `<path d="M9 7 l2.6 2.8" stroke="${J.plastic.lo}" stroke-width="${STROKE.hairline}"/>`;
+        let out = `<g transform="translate(${cx} ${cy}) rotate(-24)">${g}</g>`;
+        out += this.bolt(cx - 10.5, cy - 2.5, 1.5);
+        return out;
+    },
+
+    // Промышленное гнездо в железной коробке: коробка прикручена к
+    // сосновому бруску (своя толщина — своя тень), в лицевой стенке
+    // колодка со срезанными углами и три гнезда.
+    socketPanel(x, y) {
+        const J = PALETTE.greedJunk, f = this.f;
+        let out = this.material('pine', x - 4, y - 5, 36, 34, 731, false);
+        out += `<path d="${this.wob(x - 4, y - 5, 36, 34, 731, 1)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        out = `<path d="${this.wob(x - 1, y, 36, 34, 731, 1)}" fill="${J.hole}" opacity="0.35"/>` + out;
+        out += this.ironNail(x - 1, y - 2) + this.ironNail(x + 29, y + 26);
+        out += this.tin(x, y, 28, 24, 732, { bolts: false, scratches: 1, tilt: 0, z: this.Z.box });
+        out += `<path d="M${f(x + 7)} ${f(y + 4)} h14 l3 3 v10 l-3 3 h-14 l-3 -3 v-10 z" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        out += `<path d="M${f(x + 5)} ${f(y + 16)} l2 3 h14 l2 -3" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
+        [[x + 9.5, y + 10.5], [x + 17.5, y + 10.5], [x + 13.5, y + 6.5]].forEach(([hx, hy], i) => {
+            out += `<rect x="${f(hx)}" y="${f(hy)}" width="2" height="${i === 2 ? 2.5 : 4}" fill="${J.tin[300]}"/>`;
+        });
+        out += this.bolt(x + 3, y + 12, 1.6) + this.bolt(x + 25, y + 12, 1.6);
+        return out;
+    },
+
+    // Гофра — рифлёная трубка, в которой идёт провод: тёмный шланг с
+    // поперечными рёбрами.
+    conduit(pts) {
+        const J = PALETTE.greedJunk;
+        const d = this.smooth(pts);
+        return `<path d="${d}" fill="none" stroke="${J.hole}" stroke-width="6" stroke-linecap="round" opacity="0.3" transform="translate(1.2 2)"/>` +
+            `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="7" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" stroke="${J.tin[700]}" stroke-width="5"/>` +
+            `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="5" stroke-dasharray="1.2 1.6"/>` +
+            `<path d="${d}" fill="none" stroke="${J.tin[300]}" stroke-width="0.8" opacity="0.6" transform="translate(-1 -0.6)"/>`;
+    },
+
     // Шпилька с резьбой, торчащая из фланца: на неё наденут крепление.
     stud(x, y) {
         const J = PALETTE.greedJunk, f = this.f;
@@ -638,7 +694,7 @@ const GreedJunk = {
         // ---- крепление колеса: ступица от машины на перфоуголке ----
         const w = S.wheel;
         out += this.wheelMount(w.cx, w.cy);
-        out += this.socket(52, 48, -8);
+        out += this.socketHome(65, 58);
         out += this.powerCable();
         out += this.harness(w.cx + 72, w.cy - 70, 52, 34);
         // крышка от консервной банки на дыре в доске — латка
@@ -670,10 +726,11 @@ const GreedJunk = {
         for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
             out += this.hole(p.x + 40 + c * 12, p.y + 75 + r * 16, 2);
         }
-        // Розетка целиком на щите, между рельсами под монтажной пластиной:
-        // «странное место» — это неудобное место, а не место за краем.
-        out += this.socket(p.x + 36, p.y + 132, -6);
-        out += this.harness(p.x + 64, p.y + 178, 30, 45);
+        // Промышленное гнездо на бруске между рельсами; от него гофра к
+        // распаечной коробке жгута — подводка видна, гнездо не висит само по себе.
+        out += this.conduit([[p.x + 46, p.y + 156], [p.x + 47, p.y + 170], [p.x + 54, p.y + 182], [p.x + 66, p.y + 185]]);
+        out += this.socketPanel(p.x + 34, p.y + 130);
+        out += this.harness(p.x + 76, p.y + 197, 22, 45);
         out += this.topFrame();
         return out;
     },
