@@ -480,12 +480,11 @@ const GreedJunk = {
     // вверх, а шестерни декоративные, сбоку снизу, где их не задевает шток.
     leverMount() {
         const J = PALETTE.greedJunk, P = this.SLOTS.pivot, f = this.f;
-        let out = this.tin(314, 384, 42, 84, 131, { boltR: 2.4, z: this.Z.box, tilt: 0 });
-        out += this.gear(324, 450, 10, 8, 0.2);
-        out += this.gear(342, 446, 8, 7, 0.5);
+        let out = this.T(7, 'steel', this.tin(314, 384, 42, 84, 131, { boltR: 2.4, z: this.Z.box, tilt: 0 }));
+        out += this.T(9, 'steel', this.gear(324, 450, 10, 8, 0.2) + this.gear(342, 446, 8, 7, 0.5));
         // фланец под юбкой
-        out += `<rect x="${P.x - 18}" y="${P.y - 3}" width="36" height="8" rx="3" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        out += this.bolt(P.x - 13, P.y + 1, 1.8) + this.bolt(P.x + 13, P.y + 1, 1.8);
+        out += this.T(10, 'steel', `<rect x="${P.x - 18}" y="${P.y - 3}" width="36" height="8" rx="3" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            this.bolt(P.x - 13, P.y + 1, 1.8) + this.bolt(P.x + 13, P.y + 1, 1.8));
         return out;
     },
 
@@ -518,20 +517,26 @@ const GreedJunk = {
         [-8, 0, 8].forEach(dx => [-8, 8].forEach(dy => {
             dots += `<circle cx="${K.x + dx}" cy="${K.y + dy}" r="1.3"/>`;
         }));
+        // профиль гофр юбки: каждое кольцо — валик
+        for (let i = 0; i < rings; i++) {
+            const t = i / rings, w = 30 - t * 16, y = P.y - (i + 0.5) * (h0 / rings);
+            boot += this.rodH(`M${f(P.x - w / 2 + 3)} ${f(y)} L${f(P.x + w / 2 - 3)} ${f(y)}`, h0 / rings + 1, 2);
+        }
         return `<g class="gj-lever">` +
-            `<g class="gj-boot">${boot}</g>` +
-            `<g class="gj-shaft">` +
+            `<g class="gj-boot">${this.T(11, 'rubber', boot)}</g>` +
+            `<g class="gj-shaft">` + this.T(13, 'polished',
             `<rect x="${P.x - 3.5}" y="${top}" width="7" height="${bootTop - top + 2}" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             `<line x1="${P.x - 1.2}" y1="${top + 4}" x2="${P.x - 1.2}" y2="${bootTop - 2}" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}"/>` +
+            this.rodH(`M${P.x} ${top} L${P.x} ${bootTop}`, 7, 3)) +
             `</g>` +
-            `<g class="gj-knob">` +
+            `<g class="gj-knob">` + `<g style="--h:${this.hv(16).toFixed(3)};--m:rgb(${MATERIALS.plastic.shine.map(v => Math.round(v * 255)).join(',')})">` + this.domeH(K.x, K.y, K.r, 5) +
             `<circle cx="${K.x + 1.5}" cy="${K.y + 2.5}" r="${K.r}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
             `<circle cx="${K.x}" cy="${K.y}" r="${K.r}" fill="url(#gj-knob)" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}"/>` +
             `<circle cx="${K.x}" cy="${K.y}" r="${K.r - 4}" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
             `<g stroke="${J.paint.cream}" stroke-width="${STROKE.structure}" stroke-linecap="round">${pattern}</g>` +
             `<g fill="${J.paint.cream}">${dots}</g>` +
-            `<ellipse cx="${K.x - 7}" cy="${K.y - 9}" rx="5" ry="3" fill="${J.tin[300]}" opacity="0.5"/>` +
-            `</g>` +
+            `<ellipse cx="${K.x - 7}" cy="${K.y - 9}" rx="5" ry="3" class="hl" fill="${J.tin[300]}" opacity="0.5"/>` +
+            `</g></g>` +
             `</g>`;
     },
 

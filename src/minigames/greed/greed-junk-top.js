@@ -381,19 +381,21 @@ Object.assign(GreedJunk, {
     head() {
         const J = PALETTE.greedJunk, S = this.SLOTS, f = this.f;
         let out = '';
-        // боковые доски, на которых держится табло
-        out += this.planks(36, 290, 18, 182, 1, 51, 'v');
-        out += this.planks(306, 290, 18, 182, 1, 52, 'v');
+        // Боковые стойки табло — из разного, как всё в гараже: слева доска
+        // от лакированной мебели, справа сосна.
+        out += this.T(6, 'lacquer', this.planks(34, 290, 20, 182, 1, 51, 'v', 0, 'painted'));
+        out += this.T(6, 'pine', this.planks(306, 290, 20, 182, 1, 52, 'v', 0, 'pine'));
         // жестяной лист
-        out += this.tin(50, 296, 260, 172, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap });
+        out += this.T(3, 'steel', this.tin(50, 296, 260, 172, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         // крашеное поле: синяя рамка и лучи
-        out += `<rect x="62" y="312" width="236" height="148" rx="10" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        let face = '';
+        face += `<rect x="62" y="312" width="236" height="148" rx="10" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         const cx = 180, cy = 388;
         const rays = [J.paint.orange, J.paint.yellow, J.paint.red, J.paint.yellow];
         for (let i = 0; i < 12; i++) {
             const a0 = (i / 12) * Math.PI * 2, a1 = ((i + 0.5) / 12) * Math.PI * 2;
             const R = 170;
-            out += `<path d="M${cx} ${cy} L${f(cx + Math.cos(a0) * R)} ${f(cy + Math.sin(a0) * R)} ` +
+            face += `<path d="M${cx} ${cy} L${f(cx + Math.cos(a0) * R)} ${f(cy + Math.sin(a0) * R)} ` +
                 `L${f(cx + Math.cos(a1) * R)} ${f(cy + Math.sin(a1) * R)} z" fill="${rays[i % 4]}" clip-path="url(#gj-face)"/>`;
         }
         // облезлая краска: пятна голой жести
@@ -402,7 +404,7 @@ Object.assign(GreedJunk, {
             const px = 66 + rnd() * 226, py = 310 + rnd() * 136;
             if (px > 72 && px < 284 && py > 326 && py < 446) continue;   // не на окне
             const k = 0.6 + rnd() * 0.8;
-            out += `<path d="M${f(px)} ${f(py)} q${f(4 * k)} ${f(-3 * k)} ${f(8 * k)} 0 q${f(2 * k)} ${f(4 * k)} ${f(-2 * k)} ${f(6 * k)} q${f(-5 * k)} ${f(k)} ${f(-6 * k)} ${f(-6 * k)} z" fill="${J.tin[300]}" ` +
+            face += `<path d="M${f(px)} ${f(py)} q${f(4 * k)} ${f(-3 * k)} ${f(8 * k)} 0 q${f(2 * k)} ${f(4 * k)} ${f(-2 * k)} ${f(6 * k)} q${f(-5 * k)} ${f(k)} ${f(-6 * k)} ${f(-6 * k)} z" fill="${J.tin[300]}" ` +
                 `stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
         }
         // ---- окно утоплено в корпус ----
@@ -412,28 +414,41 @@ Object.assign(GreedJunk, {
         // этого скос читался плоской наклейкой.
         const O = [62, 312, 298, 460], I = [78, 332, 282, 444];
         const quad = (pts, fill, op) => `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" fill="${fill}" opacity="${op}" clip-path="url(#gj-face)"/>`;
-        out += quad([[O[0], O[1]], [O[2], O[1]], [I[2], I[1]], [I[0], I[1]]], J.hole, 0.5);
-        out += quad([[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], J.hole, 0.3);
-        out += quad([[I[0], I[3]], [I[2], I[3]], [O[2], O[3]], [O[0], O[3]]], J.paint.cream, 0.28);
-        out += quad([[I[2], I[1]], [O[2], O[1]], [O[2], O[3]], [I[2], I[3]]], J.paint.cream, 0.12);
+        // нарисованный свет скоса — только для запасного вида (fx)
+        face += '<g class="fx">' +
+            quad([[O[0], O[1]], [O[2], O[1]], [I[2], I[1]], [I[0], I[1]]], J.hole, 0.5) +
+            quad([[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], J.hole, 0.3) +
+            quad([[I[0], I[3]], [I[2], I[3]], [O[2], O[3]], [O[0], O[3]]], J.paint.cream, 0.28) +
+            quad([[I[2], I[1]], [O[2], O[1]], [O[2], O[3]], [I[2], I[3]]], J.paint.cream, 0.12) + '</g>';
+        // Высота скоса — ступенями от листа вниз к окну: шейдер сам кладёт
+        // на верхний скос тень, на нижний свет.
+        face += '<g class="hpass">' + Array.from({ length: 16 }, (_, i) => i).map(i => {
+            const t = i / 16;
+            const x0 = O[0] + (I[0] - O[0]) * t, y0 = O[1] + (I[1] - O[1]) * t;
+            const x1 = O[2] + (I[2] - O[2]) * t, y1 = O[3] + (I[3] - O[3]) * t;
+            return `<rect x="${f(x0)}" y="${f(y0)}" width="${f(x1 - x0)}" height="${f(y1 - y0)}" rx="${f(10 - t * 2)}" style="--dh:${this.dh(-t * 6)}"/>`;
+        }).join('') + '</g>';
         // рёбра скоса — линии от углов листа к углам окна
         [[O[0], O[1], I[0], I[1]], [O[2], O[1], I[2], I[1]], [O[0], O[3], I[0], I[3]], [O[2], O[3], I[2], I[3]]].forEach(e => {
-            out += `<line x1="${e[0]}" y1="${e[1]}" x2="${e[2]}" y2="${e[3]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" opacity="0.6" clip-path="url(#gj-face)"/>`;
+            face += `<line x1="${e[0]}" y1="${e[1]}" x2="${e[2]}" y2="${e[3]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" opacity="0.6" clip-path="url(#gj-face)"/>`;
         });
         // кромка листа над скосом ловит свет
-        out += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
-        // рамка окна барабанов
-        out += `<rect x="78" y="332" width="204" height="112" rx="8" fill="${J.paint.blueLo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        out += `<line x1="84" y1="335" x2="276" y2="335" stroke="${J.paint.blue}" stroke-width="${STROKE.detail}"/>`;
+        face += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        out += this.T(3, 'paint', face);
+        // рамка окна барабанов — на дне скоса
+        let win = `<rect x="78" y="332" width="204" height="112" rx="8" fill="${J.paint.blueLo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        win += `<line x1="84" y1="335" x2="276" y2="335" stroke="${J.paint.blue}" stroke-width="${STROKE.detail}"/>`;
         S.reels.forEach(r => {
-            out += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+            win += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         });
+        out += this.T(-0.5, 'paint', win);
         // кнопки на полке-пульте под табло: разные, как собранные с разных пультов
         [[136, J.paint.orange, 6.5], [168, J.paint.red, 5.5], [196, J.paint.orange, 6.5], [226, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
-            out += `<circle cx="${bx + 0.8}" cy="${477.8}" r="${r + 2}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
-                `<circle cx="${bx}" cy="476" r="${r + 2}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-                `<circle cx="${bx}" cy="475" r="${r}" fill="${c}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-                `<circle cx="${bx - r * 0.3}" cy="${475 - r * 0.35}" r="${r * 0.32}" fill="${J.paint.cream}" opacity="0.8"/>`;
+            out += this.T(9, 'steel', `<circle cx="${bx + 0.8}" cy="${477.8}" r="${r + 2}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
+                `<circle cx="${bx}" cy="476" r="${r + 2}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`);
+            out += this.T(10, 'plastic', `<circle cx="${bx}" cy="475" r="${r}" fill="${c}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+                `<circle cx="${bx - r * 0.3}" cy="${475 - r * 0.35}" r="${r * 0.32}" class="hl" fill="${J.paint.cream}" opacity="0.8"/>` +
+                this.domeH(bx, 475, r, 2.5));
         });
         return out;
     },
@@ -460,7 +475,7 @@ Object.assign(GreedJunk, {
         // латка изолентой на углу
         out += `<path d="${this.wob(268, 548, 40, 10, 153, 0.8)}" fill="${J.tin[900]}" opacity="0.92" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" transform="rotate(-18 288 553)"/>`;
         // полка поверх стыка табло и ящика — торчит за края
-        out += this.planks(24, 466, 312, 20, 1, 111, 'h');
+        out += this.T(8, 'pine', this.planks(24, 466, 312, 20, 1, 111, 'h', 0, 'pine'));
         return out;
     },
 
