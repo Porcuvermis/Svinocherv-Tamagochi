@@ -518,7 +518,7 @@ Object.assign(GreedJunk, {
     // _lean — прибавка, пока рисуется наклонённая к зрителю вещь (lamp):
     // её кольца повёрнуты к нам и видны шире.
     _lean: 0,
-    flat(y) { return Math.max(0.06, Math.min(0.75, (y - this.VP.y) / 230 + this._lean)); },
+    flat(y) { return Math.max(0.06, Math.min(0.95, (y - this.VP.y) / 230 + this._lean)); },
 
     // Наклонённая вещь на опоре (x, yb): верх к зрителю на pitch рад и вбок
     // на roll град. В анфас наклон к зрителю — это укорочение ДЛИН вдоль
@@ -630,9 +630,9 @@ Object.assign(GreedJunk, {
         } else if (kind === 'pear') {
             // груша: патрон на полке, в нём латунный цоколь с резьбой,
             // горлышко, круглое тело
-            // посадка: верхом к зрителю на 50°, вбок на −16° — вкрутили кое-как
+            // посадка: верхом почти на зрителя, на 70°, вбок на −22° — вкрутили кое-как
             let h0 = null;
-            const lamp = this.leaned(x, base - 2.8, 0.87, -16, () => {
+            const lamp = this.leaned(x, base - 2.8, 1.22, -22, () => {
                 const h = this.holder(x, base, 7.5);
                 h0 = h;
                 let o = h.cup + this.socketBrass(x, h.top, 6.6, 5.4);
