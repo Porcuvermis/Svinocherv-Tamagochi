@@ -1096,36 +1096,47 @@ Object.assign(GreedJunk, {
     },
 
     // Полка под табло и нижний ящик: низкий, на нём только табличка и лоток.
+    // Ящик сколочен как всё в гараже: лицо — лист ДСП, по краям стойки из
+    // того, что было (слева сосна, справа доска от лакированной мебели —
+    // наоборот, чем у табло). Табличка — светлая сосна, лоток — жесть.
     body() {
         const J = PALETTE.greedJunk, S = this.SLOTS;
         let out = '';
-        out += this.planks(40, 484, 280, 98, 2, 81, 'h');
-        out += this.tin(40, 484, 22, 22, 91, { bolts: false, scratches: 1 }) + this.bolt(49, 493);
-        out += this.tin(298, 484, 22, 22, 92, { bolts: false, scratches: 1 }) + this.bolt(311, 493);
-        // тень от полки на ящик
+        // лицо ящика: лист ДСП
+        out += this.T(3, 'chip', this.material('chip', 54, 484, 252, 98, 811, false) +
+            `<path d="${this.wob(54, 484, 252, 98, 811, 1.8)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
+        // стойки по краям
+        out += this.T(5, 'pine', this.planks(40, 484, 16, 98, 1, 82, 'v', 0, 'pine'));
+        out += this.T(5, 'lacquer', this.planks(304, 484, 16, 98, 1, 83, 'v', 0, 'painted'));
+        out += this.T(7, 'steel', this.tin(40, 484, 22, 22, 91, { bolts: false, scratches: 1 }) + this.bolt(49, 493) +
+            this.tin(298, 484, 22, 22, 92, { bolts: false, scratches: 1 }) + this.bolt(311, 493));
+        // тень от полки на ящик — только запасной вид, шейдер даёт свою
         out += this.shade(40, 486, 280, 14);
-        // пустая табличка выплат: светлая доска на гвоздях
+        // пустая табличка выплат: светлая сосновая доска на гвоздях
         const p = S.plate;
-        out += `<path d="${this.wob(p.x, p.y, p.w, p.h, 151, 1)}" fill="url(#gj-wood-light)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        out += `<line x1="${p.x + 4}" y1="${p.y + 2.5}" x2="${p.x + p.w - 4}" y2="${p.y + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        let plate = this.material('pine', p.x, p.y, p.w, p.h, 151, false) +
+            `<path d="${this.wob(p.x, p.y, p.w, p.h, 151, 1)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<line x1="${p.x + 4}" y1="${p.y + 2.5}" x2="${p.x + p.w - 4}" y2="${p.y + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         [[p.x + 6, p.y + 6], [p.x + p.w - 6, p.y + 6], [p.x + 6, p.y + p.h - 6], [p.x + p.w - 6, p.y + p.h - 6]]
-            .forEach(([x, y]) => { out += this.nail(x, y); });
+            .forEach(([x, y]) => { plate += this.nail(x, y); });
+        out += this.T(6, 'pine', plate);
         // лоток
         const t = S.tray;
-        out += this.tin(t.x - 8, t.y - 5, t.w + 16, t.h + 10, 101, { bolts: false, scratches: 1, tilt: 0, z: this.Z.strap });
-        out += `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="4" class="pit" fill="url(#gj-hole)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        out += this.T(6, 'steel', this.tin(t.x - 8, t.y - 5, t.w + 16, t.h + 10, 101, { bolts: false, scratches: 1, tilt: 0, z: this.Z.strap }) +
+            `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="4" class="pit" fill="url(#gj-hole)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
         // латка изолентой на углу
-        out += `<path d="${this.wob(268, 548, 40, 10, 153, 0.8)}" fill="${J.tin[900]}" opacity="0.92" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" transform="rotate(-18 288 553)"/>`;
+        out += this.T(5, 'plastic', `<path d="${this.wob(268, 548, 40, 10, 153, 0.8)}" fill="${J.tin[900]}" opacity="0.92" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" transform="rotate(-18 288 553)"/>`);
         // полка поверх стыка табло и ящика — торчит за края; справа
         // длиннее — под кулису, она стоит на полке
         out += this.T(8, 'pine', this.planks(24, 466, 334, 20, 1, 111, 'h', 0, 'pine'));
         return out;
     },
 
-    // Цоколь: толстая тёмная доска на двух брусках.
+    // Цоколь: толстая доска (горбыль без коры — тёмная, выветренная) на
+    // двух брусках из ДСП. Доска выступает вперёд ящика — она выше.
     plinth() {
-        let out = this.planks(34, 598, 64, 22, 1, 121, 'h') + this.planks(262, 598, 64, 22, 1, 122, 'h');
-        out += this.planks(20, 580, 320, 20, 1, 123, 'h');
+        let out = this.T(2, 'chip', this.planks(34, 598, 64, 22, 1, 121, 'v', 0, 'chip') + this.planks(262, 598, 64, 22, 1, 122, 'v', 0, 'chip'));
+        out += this.T(8, 'lacquer', this.planks(20, 580, 320, 20, 1, 123, 'h', 0, 'painted'));
         return out;
     },
 });
