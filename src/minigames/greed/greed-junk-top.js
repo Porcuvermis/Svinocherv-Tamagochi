@@ -437,15 +437,22 @@ Object.assign(GreedJunk, {
                 ['l', [[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], [O[0], 0, I[0], 0]],
                 ['r', [[O[2], O[1]], [I[2], I[1]], [I[2], I[3]], [O[2], O[3]]], [O[2], 0, I[2], 0]]
             ];
-            face += '<g class="hpass">' + sides.map(([k, pts, v]) =>
+            // Размытие в полтора тексела скругляет рёбра скоса: острое
+            // ребро на растре выходило лесенкой, и шейдер рисовал по
+            // диагоналям пилу.
+            face += `<filter id="gj-hblur" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.4"/></filter>`;
+            face += '<g class="hpass" filter="url(#gj-hblur)">' + sides.map(([k, pts, v]) =>
                 `<linearGradient id="gj-bev-${k}" gradientUnits="userSpaceOnUse" x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}">` +
                 `<stop offset="0" stop-color="${hi}"/><stop offset="1" stop-color="${lo}"/></linearGradient>` +
                 `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" style="fill:url(#gj-bev-${k}) !important;stroke:url(#gj-bev-${k}) !important;stroke-width:1.2px;stroke-linejoin:round"/>`
             ).join('') + '</g>';
         }
         // рёбра скоса — линии от углов листа к углам окна
+        // концы — чуть не доходя до углов: иначе линия вылезала за угол рамки
         [[O[0], O[1], I[0], I[1]], [O[2], O[1], I[2], I[1]], [O[0], O[3], I[0], I[3]], [O[2], O[3], I[2], I[3]]].forEach(e => {
-            face += `<line x1="${e[0]}" y1="${e[1]}" x2="${e[2]}" y2="${e[3]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" opacity="0.6" clip-path="url(#gj-face)"/>`;
+            const k = 0.06, x1 = e[0] + (e[2] - e[0]) * k, y1 = e[1] + (e[3] - e[1]) * k;
+            const x2 = e[2] - (e[2] - e[0]) * k, y2 = e[3] - (e[3] - e[1]) * k;
+            face += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linecap="round" opacity="0.5"/>`;
         });
         // кромка листа над скосом ловит свет
         face += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
