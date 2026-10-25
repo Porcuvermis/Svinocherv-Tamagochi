@@ -68,15 +68,32 @@ Object.assign(GreedJunk, {
 
     // Гофра — рифлёная трубка, в которой идёт провод: тёмный шланг с
     // поперечными рёбрами.
-    conduit(pts) {
+    // ends — на концах резьбовые сальники-гайки: гофра входит в деталь через
+    // них, а не утыкается в неё (без сальников концы читались торчащими
+    // из ниоткуда толстыми проводами).
+    conduit(pts, ends) {
         const J = PALETTE.greedJunk;
         const d = this.smooth(pts);
+        const tail = ends ? this.fitting(pts[0], pts[1]) + this.fitting(pts[pts.length - 1], pts[pts.length - 2]) : '';
         return `<path d="${d}" fill="none" class="fx" stroke="${J.hole}" stroke-width="6" stroke-linecap="round" opacity="0.3" transform="translate(1.2 2)"/>` +
             `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="7" stroke-linecap="round"/>` +
             `<path d="${d}" fill="none" stroke="${J.tin[700]}" stroke-width="5"/>` +
             `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="5" stroke-dasharray="1.2 1.6"/>` +
             `<path d="${d}" fill="none" class="hl" stroke="${J.tin[300]}" stroke-width="0.8" opacity="0.6" transform="translate(-1 -0.6)"/>` +
-            this.rodH(d, 7);
+            this.rodH(d, 7) + tail;
+    },
+
+    // Сальник: шестигранная гайка на конце гофры, ось — вдоль гофры
+    // (от точки p к соседней q).
+    fitting(p, q) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const ang = Math.atan2(q[1] - p[1], q[0] - p[0]) * 180 / Math.PI;
+        const g = `<rect x="-1" y="-4.4" width="5.5" height="8.8" rx="1" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="-1" y1="-1.5" x2="4.5" y2="-1.5" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
+            `<line x1="-1" y1="1.5" x2="4.5" y2="1.5" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
+            `<rect x="4.5" y="-3.2" width="2.5" height="6.4" rx="0.8" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+            this.rodH('M-1 0 L7 0', 8.8, 1.6);
+        return this.T(4, 'steel', `<g transform="translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})">${g}</g>`);
     },
 
     // Шпилька с резьбой, торчащая из фланца: на неё наденут крепление.
