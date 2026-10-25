@@ -540,6 +540,7 @@ Object.assign(GreedJunk, {
     leaned(x, yb, pitch, roll, draw) {
         const f = this.f, was = [this._lean, this._axis];
         this._lean = Math.tan(pitch); this._axis = Math.cos(pitch);
+        this._pivot = { x, y: yb, roll };
         const inner = draw();
         [this._lean, this._axis] = was;
         return `<g transform="rotate(${roll} ${f(x)} ${f(yb)})">${inner}</g>`;
@@ -679,6 +680,7 @@ Object.assign(GreedJunk, {
                 h0 = h;
                 let o = h.cup + this.socketBrass(x, h.top, 6.6, 5.4);
                 const t = h.top - this.ax(5.4), cy = t - this.ax(8.5) - 3, r = 7.4;
+                this.markBulb('pear', x, cy, r);
                 // Горлышко — только пока оно видно. Когда лампа смотрит на нас,
                 // шар колбы накрывает цоколь, и контур горлышка выворачивался
                 // внутрь шара тёмной «линзой» — тогда колба просто круг.
@@ -705,6 +707,7 @@ Object.assign(GreedJunk, {
                 h0 = h;
                 let o = h.cup + this.socketBrass(x, h.top, 4.8, 4);
                 const t = h.top - this.ax(4), r = 6, cy = t - this.ax(2.2) - r * 0.85;
+                this.markBulb('globe', x, cy, r);
                 // короткое горлышко + шар; контур без горлышка, если шар его накрыл
                 const d = cy + r * 0.8 >= t
                     ? `M${x - r} ${f(cy)} A${r} ${r} 0 1 1 ${x + r} ${f(cy)} A${r} ${r} 0 1 1 ${x - r} ${f(cy)} Z`
@@ -725,6 +728,7 @@ Object.assign(GreedJunk, {
                 h0 = h;
                 let o = h.cup + this.socketBrass(x, h.top, 5.4, 5);
                 const t = h.top - this.ax(5), r = 5, cy = t - this.ax(8) - 3, tip = cy - r - this.ax(12) - 0.6;
+                this.markBulb('flame', x, cy - 0.6, r);
                 const d = `M${x - r} ${f(cy)} C${x - r} ${f(cy - r * 0.9)} ${x - 1.6} ${f(tip + 1.6)} ${x + 0.4} ${f(tip)} ` +
                     `C${x + 1.6} ${f(tip + 1.4)} ${x + r} ${f(cy - r * 0.85)} ${x + r} ${f(cy)} A${r} ${r} 0 0 1 ${x - r} ${f(cy)} Z`;
                 // носик-завиток: стеклянный хвостик оттяжки, закрученный набок
@@ -738,6 +742,35 @@ Object.assign(GreedJunk, {
             out += h0.disk + lamp;
         }
         return out;
+    },
+
+    // ---------- СВЕЧЕНИЕ ЛАМП ----------
+    // Горящая лампа — живой слой поверх освещённого корпуса: колба налита
+    // светом своего стекла, нить в середине добела, вокруг ореол. Ореол
+    // кладётся режимом «экран» — он высветляет то, что под ним, а не
+    // закрашивает: так дверца и полка вокруг лампы подсвечиваются
+    // одной картинкой, без пересчёта шейдера.
+    // Центры колб (в координатах поля, с учётом завала лампы) пишет сам
+    // рисунок лампы — markBulb; живой слой берёт их отсюда.
+    bulbAt: {},
+    markBulb(kind, x, y, r) {
+        const P = this._pivot || { x, y, roll: 0 }, a = P.roll * Math.PI / 180;
+        const dx = x - P.x, dy = y - P.y;
+        this.bulbAt[kind] = { x: P.x + dx * Math.cos(a) - dy * Math.sin(a), y: P.y + dx * Math.sin(a) + dy * Math.cos(a), r };
+    },
+    haloDefs() {
+        const G = PALETTE.greedJunk.bulb.lit;
+        return '<defs>' + ['pear', 'flame', 'globe', 'red'].map(k =>
+            `<radialGradient id="gj-halo-${k}"><stop offset="0" stop-color="${G[k]}" stop-opacity="0.9"/>` +
+            `<stop offset="0.3" stop-color="${G[k]}" stop-opacity="0.4"/><stop offset="1" stop-color="${G[k]}" stop-opacity="0"/></radialGradient>`).join('') + '</defs>';
+    },
+    // v — накал 0..1
+    bulbGlow(kind, v) {
+        const b = this.bulbAt[kind], G = PALETTE.greedJunk.bulb.lit, f = this.f;
+        if (!b || v < 0.02) return '';
+        return `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(b.r * 4.2)}" fill="url(#gj-halo-${kind})" opacity="${f(v)}" style="mix-blend-mode:screen"/>` +
+            `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(b.r - 0.6)}" fill="${G[kind]}" opacity="${f(0.85 * v)}"/>` +
+            `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(b.r * 0.42)}" fill="${G.core}" opacity="${f(v * v)}"/>`;
     },
 
     // ---------- ЛАМПА НА ПРОВОДАХ ----------
@@ -775,8 +808,8 @@ Object.assign(GreedJunk, {
     },
 
     // Сама лампа с проводами. hang — состояние подвеса (Hang); без него —
-    // покой, отвесно вниз.
-    hangLamp(hang) {
+    // покой, отвесно вниз. v — накал 0..1 (свечение при выигрыше).
+    hangLamp(hang, v) {
         const J = PALETTE.greedJunk, L = J.bulb, C = J.ceramic, Br = J.brass, f = this.f, H = this.HANG_LAMP;
         const s = hang || this.lampHang();
         const pts = Hang.points(s, H.x, H.y);
@@ -822,6 +855,12 @@ Object.assign(GreedJunk, {
         g += `<path d="M-3.4 2.2 L3.4 2.2" stroke="${C.lo}" stroke-width="0.6"/>`;
         g += `<rect x="-2.6" y="0.2" width="1.1" height="6" rx="0.5" class="hl" fill="${C.hi}"/>`;
         g += [-0.9, 0.9].map(dx => `<circle cx="${dx}" cy="-0.5" r="0.95" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`).join('');
+        if (v > 0.02) {
+            const G = L.lit;
+            g += `<path d="M-2.2 11.8 L-2.2 33 A2.2 2.2 0 0 0 2.2 33 L2.2 11.8 Z" fill="${G.red}" opacity="${f(0.85 * v)}"/>` +
+                `<path d="M0 13 L0 31" stroke="${G.core}" stroke-width="1.2" stroke-linecap="round" opacity="${f(v * v)}"/>`;
+            g = `<ellipse cx="0" cy="22" rx="11" ry="22" fill="url(#gj-halo-red)" opacity="${f(v)}" style="mix-blend-mode:screen"/>` + g;
+        }
         return sh + wire(-1.1, J.paint.blue) + wire(1.1, J.paint.red) + `<g transform="${rot}">${g}</g>`;
     },
 

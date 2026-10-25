@@ -184,16 +184,19 @@ const GreedJunkLit = {
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
         // красная лампа на проводах — тоже подвес, с тяжёлым грузом
         const lamp = GreedJunk.lampHang();
-        const loop = () => {
+        const loop = (now) => {
             if (!canvas.isConnected) return;
             if (this.live) {
                 const g = Hang.down();
                 Hang.step(tail.s, g);
                 Hang.step(lamp, g);
-                const key = tail.s.th.concat(lamp.th).map(v => v.toFixed(3)).join(',');
+                const glow = this.glowStep(now);
+                const key = tail.s.th.concat(lamp.th).map(v => v.toFixed(3)).join(',') + this.GLOW_ORDER.map(k => glow[k].toFixed(2)).join(',');
                 if (key !== tail.shown) {
                     tail.shown = key;
-                    this.live.innerHTML = GreedJunk.threadTail(tail.s) + GreedJunk.hangLamp(lamp);
+                    this.live.innerHTML = GreedJunk.haloDefs() +
+                        ['pear', 'flame', 'globe'].map(k => GreedJunk.bulbGlow(k, glow[k])).join('') +
+                        GreedJunk.threadTail(tail.s) + GreedJunk.hangLamp(lamp, glow.red);
                 }
             }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
@@ -208,6 +211,30 @@ const GreedJunkLit = {
         requestAnimationFrame(loop);
     },
 
+    // ---------- МИГАНИЕ ПРИ ВЫИГРЫШЕ ----------
+    // blink() — выигрыш: огонёк бежит по лампам слева направо три круга,
+    // потом все разом мигают дважды. Накал не прыгает: нить разгорается
+    // быстро, а гаснет медленнее (остывает, краснея), — по этому лампа
+    // накаливания и отличается от светодиода. Часы — отметка кадра
+    // requestAnimationFrame: это анимация, а не состояние игры.
+    GLOW_ORDER: ['pear', 'flame', 'red', 'globe'],
+    CHASE: { step: 110, rounds: 3, flash: 220, flashes: 2 },
+    glow: { pear: 0, flame: 0, red: 0, globe: 0 },
+    blink() { this._blinkAt = -1; },
+    glowStep(now) {
+        if (this._blinkAt === -1) this._blinkAt = now;
+        const C = this.CHASE, O = this.GLOW_ORDER, t = this._blinkAt == null ? Infinity : now - this._blinkAt;
+        const chase = C.step * O.length * C.rounds;
+        O.forEach((k, i) => {
+            let on = false;
+            if (t < chase) on = Math.floor(t / C.step) % O.length === i;
+            else if (t < chase + C.flash * 2 * C.flashes) on = Math.floor((t - chase) / C.flash) % 2 === 0;
+            const v = this.glow[k];
+            this.glow[k] = on ? v + (1 - v) * 0.55 : (v < 0.01 ? 0 : v * 0.82);
+        });
+        return this.glow;
+    },
+
     // ---------- ПРЕВЬЮ ИЗ ОТЛАДКИ ----------
     // 🐞 → «Аппарат»: корпус на весь экран, свет от наклона. Тап — закрыть.
     // Корпус в игру ещё не встроен, а свет надо проверить на телефоне.
@@ -220,7 +247,13 @@ const GreedJunkLit = {
         box.id = 'gj-preview';
         box.style.cssText = 'position:absolute;inset:0;z-index:100001;display:flex;align-items:center;' +
             'justify-content:center;background:' + PALETTE.greedJunk.hole;
-        box.addEventListener('click', () => box.remove());
+        // тап по полке с лампами — показать мигание выигрыша, в любом
+        // другом месте — закрыть
+        box.addEventListener('click', (e) => {
+            const r = (this.live && this.live.getBoundingClientRect()) || { top: 0, height: 1 };
+            const y = (e.clientY - r.top) / r.height * GreedJunk.H;
+            if (y > 440 && y < 520) this.blink(); else box.remove();
+        });
         host.appendChild(box);
         // корпус и живой слой поверх — в одной обёртке с пропорцией корпуса
         const wrap = document.createElement('div');

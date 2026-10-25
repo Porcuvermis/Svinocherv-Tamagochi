@@ -976,7 +976,10 @@ const PALETTE = {
         bakelite: { hi: '#6b4a36', base: '#3e2a1f', lo: '#241812' },
         // Старые лампы накаливания: колбы тусклые, латунные цоколи.
         bulb:  { red: '#a8392c', clear: '#ddd5bd', amber: '#c99a45', smoke: '#8e8a7d',
-                 wire: '#6e5b40', glow: '#ffcf7a' },
+                 wire: '#6e5b40', glow: '#ffcf7a',
+                 // горящие: колба налита светом своего стекла, в середине
+                 // нить добела
+                 lit: { pear: '#fff0c4', flame: '#ffae55', globe: '#ffc040', red: '#ff5236', core: '#fffaf0' } },
         brass: { hi: '#d6b56a', base: '#a8843a', lo: '#6e5422' },
         // Фарфор патрона: белый с желтизной, глазурь.
         ceramic: { hi: '#f4efe2', base: '#d8d0bc', lo: '#9f977f' },
