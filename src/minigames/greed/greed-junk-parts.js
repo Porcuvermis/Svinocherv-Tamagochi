@@ -347,7 +347,7 @@ Object.assign(GreedJunk, {
                 `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>` + this.rodH(d, 2.6);
         });
         return this.T(3, 'plastic', wires) + this.hole(x + 6, y + h + 13, 4.4) +
-            this.T(7, 'steel', box + screws) + this.T(9, 'steel', grill) + sw;
+            this.T(7, 'zinc', box + screws) + this.T(9, 'steel', grill) + sw;
     },
 
     // ---------- ЛАТКА ИЗ КРЫШКИ БАНКИ ----------

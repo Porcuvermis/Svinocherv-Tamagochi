@@ -11,6 +11,7 @@
 |---|---|
 | **цвет и толщины линий** | `src/core/palette.js` (`PALETTE`, `STROKE`) |
 | **правила стиля** | `docs/art-direction.md` |
+| **материалы и свет шейдером** | `docs/materials.md`, `src/core/materials.js` |
 | твёрдый предмет в перспективе (3д → SVG) | `docs/bake-3d.md`, `tools/bake-3d.js` |
 | склад предметов кухни | `docs/kitchen-objects.md`, `src/minigames/gluttony/kitchen-objects.js` |
 | запечённая ванная | `src/minigames/lust/bath-baked.js` (генерируется, правятся модели в `tools/`) |

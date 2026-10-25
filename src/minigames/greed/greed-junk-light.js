@@ -24,23 +24,8 @@ Object.assign(GreedJunk, {
 
     pass: 'baked',
 
-    // Материалы: [сила блика, острота, металл]. Числа на глаз, без физики:
-    // задача — чтобы всё было освещено ОДНИМ светом, а не правдоподобие.
-    MAT: {
-        pine:     [0.06, 0.15, 0],
-        chip:     [0.03, 0.10, 0],
-        lacquer:  [0.55, 0.70, 0],
-        slab:     [0.03, 0.10, 0],
-        steel:    [0.35, 0.45, 1],
-        alu:      [0.60, 0.60, 1],
-        polished: [0.90, 0.90, 1],
-        plastic:  [0.25, 0.50, 0],
-        rubber:   [0.12, 0.30, 0],
-        paint:    [0.30, 0.50, 0],
-        lens:     [0.80, 0.85, 0],
-        graphite: [0.45, 0.55, 1],     // карандаш блестит на свету, как металл     // стекло-пластик лампы: острый яркий блик
-        hole:     [0, 0, 0]
-    },
+    // Материалы — общий справочник src/core/materials.js (MATERIALS):
+    // здесь только имя материала на детали, свойства берутся оттуда.
 
     // Высота детали в единицах каталога (задняя стенка — 0) → доля 0..1
     // карты высот. Ниже стенки бывают только щели и дыры (класс pit).
@@ -50,7 +35,7 @@ Object.assign(GreedJunk, {
 
     // Обёртка детали: высота h и материал mat.
     T(h, mat, inner) {
-        const m = this.MAT[mat] || this.MAT.steel;
+        const m = (MATERIALS[mat] || MATERIALS.steel).shine;
         const c = m.map(v => Math.round(v * 255)).join(',');
         return `<g style="--h:${this.hv(h).toFixed(3)};--m:rgb(${c})">${inner}</g>`;
     },
@@ -151,7 +136,7 @@ Object.assign(GreedJunk, {
         harness: [3, 'plastic'],
         powerCable: [2.5, 'rubber'],
         angleIron: [3, 'paint'],
-        cutPlate: [5, 'steel'],
+        cutPlate: [5, 'raw'],
         brakeDisc: [9, 'polished'],
         cornerBracket: [17, 'steel']
     };
