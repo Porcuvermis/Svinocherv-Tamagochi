@@ -483,11 +483,15 @@ Object.assign(GreedJunk, {
     //   pear  — обычная грушевидная лампочка, самая «современная»;
     //   globe — маленький янтарный шарик;
     //   flame — дымчатая «свеча» с закрученным носиком.
+    // Лампы стоят на ВЕРХНЕЙ кромке полки (y = SHELF_TOP), каждая в
+    // своём патроне, прикрученном к полке: полка выступает вперёд табло,
+    // и лампы ближе к нам, чем дверца, — тень от них падает назад, на
+    // неё. Было: лампы торчали из середины лицевой стороны планки, цоколь
+    // ни на что не опирался, и они висели в воздухе.
+    // Делаются по одной; пока готова груша.
+    SHELF_TOP: 466,
     bulbList() {
-        return [
-            { kind: 'red', x: 134 }, { kind: 'pear', x: 164 },
-            { kind: 'globe', x: 199 }, { kind: 'flame', x: 227 }
-        ];
+        return [{ kind: 'pear', x: 150 }];
     },
 
     buttonPanel() {
@@ -498,8 +502,27 @@ Object.assign(GreedJunk, {
             this.rodH(`M${x0 + 6} ${cy} L${x1 - 6} ${cy}`, y1 - y0 - 2, 1.2);
         plate += this.bolt(x0 + 6, cy, 1.8) + this.bolt(x1 - 6, cy, 1.8);
         let out = this.T(10, 'plastic', plate);
-        this.bulbList().forEach(b => { out += this.bulb(b.kind, b.x, cy + 2); });
+        this.bulbList().forEach(b => { out += this.bulb(b.kind, b.x, this.SHELF_TOP); });
         return out;
+    },
+
+    // Патрон на полке: бакелитовая чашка с фланцем, прикрученным к полке
+    // двумя шурупами, сверху латунное кольцо, в которое ввёрнута лампа.
+    // Стоит на кромке полки (base) — низ фланца ровно по ней. Возвращает
+    // y верха кольца — оттуда начинается цоколь лампы.
+    holder(x, base, w) {
+        const J = PALETTE.greedJunk, B = J.bakelite, Br = J.brass, f = this.f;
+        const fw = w + 8, ch = 6;
+        let s = `<rect x="${f(x - fw / 2)}" y="${f(base - 2.2)}" width="${fw}" height="2.2" rx="0.8" fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<path d="M${f(x - w / 2 - 1)} ${f(base - 2.2)} L${f(x - w / 2 + 0.4)} ${f(base - 2.2 - ch)} L${f(x + w / 2 - 0.4)} ${f(base - 2.2 - ch)} L${f(x + w / 2 + 1)} ${f(base - 2.2)} Z" ` +
+            `fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="${f(x - w / 2 + 0.6)}" y1="${f(base - 3)}" x2="${f(x - w / 2 + 1.2)}" y2="${f(base - 2.2 - ch + 0.8)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>` +
+            this.rodH(`M${x} ${f(base - 2.2 - ch + 0.5)} L${x} ${f(base - 2.4)}`, w + 1, w * 0.4);
+        const ry = base - 2.2 - ch;
+        s += `<rect x="${f(x - w / 2)}" y="${f(ry - 1.6)}" width="${w}" height="1.8" rx="0.6" fill="${Br.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        let out = this.T(10, 'plastic', s);
+        out += this.bolt(x - fw / 2 + 1.8, base - 1.1, 0.9) + this.bolt(x + fw / 2 - 1.8, base - 1.1, 0.9);
+        return { svg: out, top: ry - 1.6 };
     },
 
     // Цоколь: латунный цилиндр с витками резьбы и чёрным изолятором внизу.
@@ -514,7 +537,7 @@ Object.assign(GreedJunk, {
         s += `<rect x="${f(x - w / 2 + 0.8)}" y="${f(top + 0.6)}" width="1.1" height="${f(h - 3)}" class="hl" fill="${Br.hi}" opacity="0.8"/>` +
             `<rect x="${f(x - w / 2 + 1)}" y="${f(base - 2.2)}" width="${f(w - 2)}" height="2.2" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
         s += this.rodH(`M${x} ${f(top + 0.5)} L${x} ${f(base - 0.5)}`, w, w * 0.45);
-        return this.T(12, 'brass', s);
+        return this.T(15, 'brass', s);
     },
 
     // Нить накала: держатели и зигзаг спирали — тёмные, лампа не горит.
@@ -547,13 +570,15 @@ Object.assign(GreedJunk, {
             out += this.T(14, 'glass', this.filament(x, top + 6, t - 1, 2.4) +
                 this.glassBulb(d, L.red, 0.75, `M${x - 1.4} ${t - 3} V${top + 4}`, this.rodH(`M${x} ${top + 2} L${x} ${t}`, w, 2.6)));
         } else if (kind === 'pear') {
-            // груша: широкий цоколь с резьбой, горлышко, круглое тело
-            out += this.socketBrass(x, base, 8, 7);
-            const t = base - 7, cy = t - 15, r = 9.5;
-            const d = `M${x - 3.6} ${t} C${x - 4} ${t - 4} ${x - r} ${cy + 5} ${x - r} ${cy} A${r} ${r} 0 1 1 ${x + r} ${cy} ` +
-                `C${x + r} ${cy + 5} ${x + 4} ${t - 4} ${x + 3.6} ${t} Z`;
-            out += this.T(14, 'glass', this.filament(x, cy - 1, t - 1, 4.6) +
-                this.glassBulb(d, L.clear, 0.42, `M${x - 6.5} ${cy + 2} A7 7 0 0 1 ${x - 2} ${cy - 6.6}`, this.domeH(x, cy, r, 4)));
+            // груша: патрон на полке, в нём латунный цоколь с резьбой,
+            // горлышко, круглое тело
+            const h = this.holder(x, base, 7.5);
+            out += h.svg + this.socketBrass(x, h.top, 6.6, 5.4);
+            const t = h.top - 5.4, cy = t - 11.5, r = 7.4;
+            const d = `M${x - 3} ${t} C${x - 3.3} ${t - 3} ${x - r} ${cy + 4} ${x - r} ${cy} A${r} ${r} 0 1 1 ${x + r} ${cy} ` +
+                `C${x + r} ${cy + 4} ${x + 3.3} ${t - 3} ${x + 3} ${t} Z`;
+            out += this.T(18, 'glass', this.filament(x, cy - 0.5, t - 1, 3.6) +
+                this.glassBulb(d, L.clear, 0.42, `M${x - 5} ${cy + 1.6} A5.4 5.4 0 0 1 ${x - 1.6} ${cy - 5.2}`, this.domeH(x, cy, r, 3.4)));
         } else if (kind === 'globe') {
             // маленький янтарный шарик на коротком цоколе
             out += this.socketBrass(x, base, 5.6, 5);
