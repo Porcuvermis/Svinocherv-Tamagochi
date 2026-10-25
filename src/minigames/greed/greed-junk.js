@@ -114,6 +114,9 @@ const GreedJunk = {
             lin('gj-pine', J.pine[100], J.pine[300], 0.4, 1) +
             lin('gj-plastic', J.plastic.hi, J.plastic.lo, 0.4, 1) +
             lin('gj-alu', J.alu[300], J.alu[500], 1, 0.15) +
+            `<linearGradient id="gj-wrap" x1="0" y1="0" x2="1" y2="0">` +
+            `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.5"/><stop offset="0.25" stop-color="${J.hole}" stop-opacity="0"/>` +
+            `<stop offset="0.75" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.5"/></linearGradient>` +
             lin('gj-yellowed', J.paint.cream, J.plastic.base, 0.4, 1) +
             lin('gj-slab-face', J.slab.face, J.slab.faceLo, 0.2, 1) +
             `<linearGradient id="gj-sheen" x1="0" y1="0" x2="0.4" y2="1">` +
@@ -414,7 +417,7 @@ const GreedJunk = {
             `fill="url(#${o.dark ? 'gj-tin-dark' : 'gj-tin'})" stroke="${PALETTE.ink}" stroke-width="${o.stroke || STROKE.structure}"/>`;
         out += `<path d="${this.wob(x, y, w, h, seed + 5)}" fill="url(#gj-dirt)"/>`;
         // вмятина: светлая дуга над тёмной
-        if (w > 30 && h > 30) {
+        if (w > 30 && h > 30 && o.dent !== false) {
             const dx = x + w * (0.25 + rnd() * 0.5), dy = y + h * (0.25 + rnd() * 0.5);
             out += `<path d="M${f(dx - 7)} ${f(dy)} q7 -5 14 0" fill="none" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>` +
                 `<path d="M${f(dx - 6)} ${f(dy + 2)} q6 4 12 0" fill="none" stroke="${J.tin[900]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`;
@@ -573,16 +576,28 @@ const GreedJunk = {
         // губы: освещённая кромка слева, тёмная справа
         out += `<line x1="${f(x + 1)}" y1="${f(y + flare)}" x2="${f(x + 1)}" y2="${f(y + h - 1)}" stroke="${A[100]}" stroke-width="${STROKE.detail}"/>`;
         out += `<line x1="${f(x + w - 1)}" y1="${f(y + flare)}" x2="${f(x + w - 1)}" y2="${f(y + h - 1)}" stroke="${A[700]}" stroke-width="${STROKE.detail}"/>`;
-        // пятна окисла
-        for (let i = 0; i < 5; i++) {
-            const ox = x + 1 + rnd() * 2.2 + (rnd() < 0.5 ? 0 : w - 4.5), oy = y + flare + rnd() * (h - flare - 6);
-            out += `<ellipse cx="${f(ox)}" cy="${f(oy)}" rx="1.1" ry="${f(2 + rnd() * 3)}" fill="${A.oxide}" opacity="0.7"/>`;
+        // окисел — тонкие белёсые потёки вдоль губ (пятнами он читался брызгами)
+        for (let i = 0; i < 4; i++) {
+            const ox = (i % 2 ? x + w - 2.2 : x + 2.2), oy = y + flare + 8 + rnd() * (h - flare - 40);
+            out += `<line x1="${f(ox)}" y1="${f(oy)}" x2="${f(ox)}" y2="${f(oy + 14 + rnd() * 18)}" stroke="${A.oxide}" stroke-width="0.9" opacity="0.45" stroke-linecap="round"/>`;
         }
+        // шурупы в дне паза: рельс прикручен к стенке сквозь стенку швеллера
+        for (let yy = y + flare + 26; yy < y + h - 14; yy += 46) {
+            out += `<circle cx="${f(x + w / 2)}" cy="${f(yy)}" r="2.1" fill="${A[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+                `<line x1="${f(x + w / 2 - 1.3)}" y1="${f(yy - 0.8)}" x2="${f(x + w / 2 + 1.3)}" y2="${f(yy + 0.8)}" stroke="${A[700]}" stroke-width="${STROKE.hairline}"/>`;
+        }
+        // раструб: завальцованная кромка и стопорный палец поперёк паза
+        out += `<path d="M${f(x - 2.6)} ${f(y + 0.8)} L${f(x + w + 2.6)} ${f(y + 0.8)}" stroke="${A[100]}" stroke-width="${STROKE.structure}" stroke-linecap="round"/>`;
+        out += `<rect x="${f(x - 1)}" y="${f(y + flare + 3)}" width="${f(w + 2)}" height="3" rx="1.5" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<circle cx="${f(x - 1)}" cy="${f(y + flare + 4.5)}" r="2" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+            `<circle cx="${f(x + w + 1)}" cy="${f(y + flare + 4.5)}" r="2" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
         // одноухие скобы
         [0.22, 0.55, 0.86].forEach((t, i) => {
             const yy = y + flare + (h - flare) * t + (rnd() - 0.5) * 4;
             const ex = side < 0 ? x - 9 : x + w + 1;
+            // края скобы темнее середины: она огибает рельс, а не лежит плашмя
             out += `<rect x="${f(x - 1.5)}" y="${f(yy - 2.5)}" width="${f(w + 3)}" height="5" rx="1.6" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<rect x="${f(x - 1.5)}" y="${f(yy - 2.5)}" width="${f(w + 3)}" height="5" rx="1.6" fill="url(#gj-wrap)"/>` +
                 `<line x1="${f(x)}" y1="${f(yy - 1.4)}" x2="${f(x + w)}" y2="${f(yy - 1.4)}" stroke="${J.tin[100]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>` +
                 `<rect x="${f(ex)}" y="${f(yy - 3)}" width="8" height="6" rx="2" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
                 this.bolt(ex + 4, yy, 1.6);
@@ -755,9 +770,13 @@ const GreedJunk = {
         out += this.tin(p.x - 4, p.y + p.h - 22, p.w + 8, 14, 43, { boltR: 2, tilt: 0, z: this.Z.shelf });
         out += `<line x1="${p.x}" y1="${p.y + p.h - 9}" x2="${p.x + p.w}" y2="${p.y + p.h - 9}" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>`;
         // монтажная пластина между рельсами с рядами дыр
-        out += this.tin(p.x + 32, p.y + 50, p.w - 70, 70, 44, { boltR: 2, tilt: 2 });
-        for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
-            out += this.hole(p.x + 40 + c * 12, p.y + 75 + r * 16, 2);
+        out += this.tin(p.x + 32, p.y + 50, p.w - 70, 70, 44, { boltR: 2, tilt: 2, dent: false });
+        // дыры — по центру пластины, сеткой 2×2: считаются от её размера,
+        // а не своими числами (раньше пластину сузили, а дыры остались на
+        // старых местах и съехали на кромку)
+        const pcx = p.x + 32 + (p.w - 70) / 2;
+        for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+            out += this.hole(pcx - 7 + c * 14, p.y + 76 + r * 16, 2.2);
         }
         // Промышленное гнездо на бруске между рельсами; от него гофра к
         // распаечной коробке жгута — подводка видна, гнездо не висит само по себе.
