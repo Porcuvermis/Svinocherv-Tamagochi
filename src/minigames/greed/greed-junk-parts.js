@@ -83,6 +83,45 @@ Object.assign(GreedJunk, {
             this.rodH(d, 7) + tail;
     },
 
+    // ---------- ШТУЦЕРЫ ГОФР ----------
+    // Гофра не может кончаться рядом с деталью: она входит в штуцер,
+    // который стоит НА детали. Штуцеры заданы точками вместе с направлением
+    // наружу (d), и путь гофры строится от них: выходит из штуцера прямо по
+    // его оси, а конец прячется под гайкой. Раньше концы гофр подбирались
+    // на глаз и обрывались рядом с пазами.
+    //   psuA, psuB — на верхней кромке блока питания, вверх;
+    //   hub — на пластине ступицы, наружу вправо-вниз;
+    //   brick — в нижней кромке бруска правой розетки, вниз.
+    PORTS: {
+        psuA:  { x: 158, y: 205, d: [0, -1] },
+        psuB:  { x: 186, y: 205, d: [0, -1] },
+        hub:   { x: 129, y: 177, d: [0.6, 0.8] },
+        brick: { x: 246, y: 191, d: [0, 1] }
+    },
+
+    // Точки гофры от штуцера a к штуцеру b через via: конец под гайкой,
+    // два отрезка по оси штуцера — чтобы гофра выходила из него прямо.
+    feedPath(a, b, via) {
+        const at = (p, k) => [p.x + p.d[0] * k, p.y + p.d[1] * k];
+        return [at(a, 4), at(a, 10), at(a, 17)].concat(via || [], [at(b, 17), at(b, 10), at(b, 4)]);
+    },
+
+    // Штуцер: фланец на детали, шестигранная гайка, короткий носик, из
+    // которого выходит гофра. Ось — по d.
+    port(P) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const ang = Math.atan2(P.d[1], P.d[0]) * 180 / Math.PI;
+        const g = `<rect x="-1.5" y="-6" width="3" height="12" rx="1.2" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<rect x="1.5" y="-4.8" width="5.5" height="9.6" rx="1" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="1.5" y1="-1.6" x2="7" y2="-1.6" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
+            `<line x1="1.5" y1="1.6" x2="7" y2="1.6" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
+            `<rect x="7" y="-3.9" width="3" height="7.8" rx="1" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            '<g class="hpass">' +
+            `<rect x="-1.5" y="-6" width="3" height="12" style="--dh:${this.dh(1)}"/>` +
+            this.rodH('M1.5 0 L7 0', 9.6, 2.6) + this.rodH('M7 0 L10 0', 7.8, 2) + '</g>';
+        return this.T(4, 'steel', `<g transform="translate(${f(P.x)} ${f(P.y)}) rotate(${f(ang)})">${g}</g>`);
+    },
+
     // Сальник: шестигранная гайка на конце гофры, ось — вдоль гофры
     // (от точки p к соседней q).
     fitting(p, q) {

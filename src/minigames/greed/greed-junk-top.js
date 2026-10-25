@@ -33,7 +33,7 @@ Object.assign(GreedJunk, {
         out += this.psu(146, 204);
         // от блока питания — к ступице колеса (питание мотора): из сальника
         // на верхней кромке блока в сальник на пластине
-        out += this.T(3, 'rubber', this.conduit([[156, 205], [155, 199], [150, 195], [143, 193]], true));
+        out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuA, this.PORTS.hub, [[160, 186]])));
 
         // ---- крепление пачинко: два рельса, полка-упор и розетка сбоку ----
         const p = S.pachinko;
@@ -42,7 +42,7 @@ Object.assign(GreedJunk, {
         // поверх рельса гофра мешала бы коробу пачинко.
         // Была ещё распаечная коробка с отводом обратно к розетке — две гофры
         // рядом в одну коробку и петля питания читались путаницей.
-        out += this.T(3, 'rubber', this.conduit([[188, 205], [189, 195], [202, 190], [224, 196], [238, 210], [p.x + 43, p.y + 174], [p.x + 45, p.y + 161]], true));
+        out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuB, this.PORTS.brick, [[196, 182], [218, 186], [232, 204]])));
         out += this.rail(p.x + 8, p.y + 6, 14, p.h - 24, -1, 41);
         out += this.rail(p.x + p.w - 34, p.y + 6, 14, p.h - 24, 1, 42);
         // полка-упор, на которую встанет короб (greed-junk-parts.js, shelfAngle)
@@ -53,6 +53,9 @@ Object.assign(GreedJunk, {
         // выходят из втулки в том же бруске — отвод от питания розетки.
         out += this.socketPanel(p.x + 34, p.y + 130);
         out += this.harness(p.x + 58, p.y + 158.5, 28, 45, false);
+        // штуцеры гофр — ПОСЛЕ всех деталей: конец гофры уходит под гайку
+        // штуцера, а штуцер сидит на своей детали поверх неё
+        out += ['psuA', 'psuB', 'hub', 'brick'].map(k => this.port(this.PORTS[k])).join('');
         out += this.topFrame();
         return out;
     },
