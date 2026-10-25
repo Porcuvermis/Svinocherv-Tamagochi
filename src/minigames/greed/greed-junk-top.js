@@ -57,16 +57,15 @@ Object.assign(GreedJunk, {
         const p = S.pachinko;
         out += this.rail(p.x + 8, p.y + 6, 14, p.h - 24, -1, 41);
         out += this.rail(p.x + p.w - 34, p.y + 6, 14, p.h - 24, 1, 42);
-        // уголок-полка, на которую встанет короб
-        out += this.T(9, 'steel', this.tin(p.x - 4, p.y + p.h - 22, p.w + 8, 14, 43, { boltR: 2, tilt: 0, z: this.Z.shelf }));
-        out += `<line x1="${p.x}" y1="${p.y + p.h - 9}" x2="${p.x + p.w}" y2="${p.y + p.h - 9}" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>`;
+        // полка-упор, на которую встанет короб (greed-junk-parts.js, shelfAngle)
+        out += this.shelfAngle(p.x - 2, p.y + p.h - 38, 96);
         // подвес короба пачинко между рельсами (greed-junk-parts.js, hanger)
         out += this.hanger(p.x + 32, p.y + 50, p.w - 70, 70);
         // Промышленное гнездо на бруске между рельсами; от него гофра к
         // распаечной коробке жгута — подводка видна, гнездо не висит само по себе.
-        out += this.conduit([[p.x + 38, p.y + 156], [p.x + 37, p.y + 172], [p.x + 41, p.y + 184], [p.x + 48, p.y + 187]]);
+        out += this.conduit([[p.x + 38, p.y + 156], [p.x + 37, p.y + 168], [p.x + 41, p.y + 177], [p.x + 48, p.y + 180]]);
         out += this.socketPanel(p.x + 34, p.y + 130);
-        out += this.harness(p.x + 58, p.y + 197, 22, 45);
+        out += this.harness(p.x + 58, p.y + 190, 26, 45);
         out += this.topFrame();
         return out;
     },

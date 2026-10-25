@@ -192,6 +192,41 @@ Object.assign(GreedJunk, {
         return out;
     },
 
+    // ---------- ПОЛКА-УПОР ПАЧИНКО ----------
+    // Железный уголок: вертикальная полка прикручена к стенке, горизонтальная
+    // торчит к нам — в анфас от неё видна только передняя кромка, и выступ
+    // показывают высоты: кромка много выше стенки, шейдер кладёт от неё
+    // длинную тень вниз. Снизу две косынки-подпорки (высота сходит на нет к
+    // стенке), сверху на кромке две резиновые подушки — на них встанет короб.
+    // Раньше полка была плоской полосой и не читалась выступающей.
+    shelfAngle(x, y, w) {
+        const J = PALETTE.greedJunk, f = this.f;
+        let out = '';
+        // косынки: треугольник ребром к нам, высота убывает книзу
+        [x + 12, x + w - 16].forEach(gx => {
+            let g = `<path d="M${f(gx)} ${f(y + 14)} L${f(gx + 4)} ${f(y + 14)} L${f(gx + 4)} ${f(y + 30)} L${f(gx)} ${f(y + 22)} Z" ` +
+                `fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+            g += '<g class="hpass">' + [0, 1, 2, 3].map(i =>
+                `<rect x="${f(gx)}" y="${f(y + 14 + i * 4)}" width="4" height="4" style="--dh:${this.dh(10 - i * 2.8)}"/>`).join('') + '</g>';
+            out += this.T(2, 'steel', g);
+        });
+        // вертикальная полка на стенке
+        out += this.T(2, 'steel', `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="10" rx="1" fill="${J.tin[500]}" ` +
+            `stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            [0.12, 0.5, 0.88].map(t => this.bolt(x + w * t, y + 5, 1.8)).join(''));
+        // передняя кромка горизонтальной полки — высоко над стенкой
+        out += this.T(12, 'steel', `<rect x="${f(x - 1)}" y="${f(y + 9)}" width="${f(w + 2)}" height="6" rx="1.2" fill="${J.tin[500]}" ` +
+            `stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<line x1="${f(x + 1)}" y1="${f(y + 10.4)}" x2="${f(x + w - 1)}" y2="${f(y + 10.4)}" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="${f(x + w * 0.2)}" y1="${f(y + 14)}" x2="${f(x + w * 0.6)}" y2="${f(y + 14)}" stroke="${J.rust[500]}" stroke-width="1.4" opacity="0.5"/>`);
+        // резиновые подушки на кромке
+        [x + w * 0.3, x + w * 0.7].forEach(px => {
+            out += this.T(13, 'rubber', `<rect x="${f(px - 6)}" y="${f(y + 6.5)}" width="12" height="4" rx="2" fill="${J.tin[900]}" ` +
+                `stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` + this.rodH(`M${f(px - 4)} ${f(y + 8.5)} L${f(px + 4)} ${f(y + 8.5)}`, 4, 1.2));
+        });
+        return out;
+    },
+
     // Отверстие под болт: тёмная дырка с ободком — «здесь что-то прикрутят».
     hole(x, y, r) {
         const J = PALETTE.greedJunk, f = this.f;
