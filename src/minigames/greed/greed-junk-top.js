@@ -1144,25 +1144,42 @@ Object.assign(GreedJunk, {
         return this.T(10, 'steel', g);
     },
 
-    // Трещина в листе ДСП у правой стойки, заклеенная изолентой в два
-    // витка; край верхнего витка отклеился и загнулся. Было: чёрный
-    // косой прямоугольник ни на чём — не было видно, что он заклеивает.
+    // Трещина в листе ДСП у правой стойки, заклеенная двумя полосками
+    // серебристого армированного скотча поперёк. Скотч рвали руками: концы
+    // рваные, бахромой, по ленте — квадратная сетка нитей. Было: чёрная
+    // изолента под разными углами с загнутым концом — читалась не
+    // лентой, а брусками непонятно из чего.
     tapedCrack() {
-        const J = PALETTE.greedJunk, f = this.f;
+        const J = PALETTE.greedJunk, A = J.alu, f = this.f;
         // трещина: от стойки вниз-влево, ломаная, с отщепом
         const crack = `M303 538 L296 543 L292 542 L285 549 L279 551 L272 559 L266 561`;
         let out = this.T(3, 'chip', `<path d="${crack}" class="pit" fill="none" stroke="${J.hole}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>` +
             `<path d="M285 549 L281 545" stroke="${J.hole}" stroke-width="0.8" stroke-linecap="round"/>`);
-        // Две полоски поперёк трещины, каждая своим углом: клеили по
-        // одной. Конец второй отклеился и завернулся — светлая изнанка.
-        const strip = (cx, cy, rot, curl) => {
-            let g = `<rect x="${cx - 11}" y="${cy - 3}" width="22" height="6" rx="0.6" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-                `<line x1="${cx - 10}" y1="${cy - 2}" x2="${cx + 10}" y2="${cy - 2}" class="hl" stroke="${J.tin[500]}" stroke-width="0.5"/>`;
-            if (curl) g += `<path d="M${cx - 11} ${cy - 3} Q${cx - 15} ${cy - 2} ${cx - 14} ${cy + 1.5} Q${cx - 12.5} ${cy + 3.4} ${cx - 11} ${cy + 3} Z" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
-            return `<g transform="rotate(${rot} ${cx} ${cy})">${g}</g>`;
+        // полоска: x0..x1 вдоль, высота h; концы рваные зубцами
+        const strip = (x0, x1, cy, h, rot, seed) => {
+            const rnd = this.rng(seed), y0 = cy - h / 2, y1 = cy + h / 2;
+            const torn = (x, dir) => {
+                const pts = [];
+                for (let y = y0; y <= y1 + 0.01; y += h / 6) pts.push([x + dir * rnd() * 1.6, y]);
+                return pts;
+            };
+            const L = torn(x0, -1), R = torn(x1, 1).reverse();
+            const d = 'M' + L.map(q => `${f(q[0])} ${f(q[1])}`).join(' L') + ' L' + R.map(q => `${f(q[0])} ${f(q[1])}`).join(' L') + ' Z';
+            const id = 'gj-tape' + seed;
+            let g = `<clipPath id="${id}"><path d="${d}"/></clipPath>`;
+            g += `<path d="${d}" fill="${A[300]}"/>`;
+            // сетка нитей: вдоль и поперёк
+            let mesh = '';
+            for (let y = y0 + 0.9; y < y1; y += 1.3) mesh += `M${x0 - 2} ${f(y)} L${x1 + 2} ${f(y)} `;
+            for (let x = x0 + 0.6; x < x1 + 2; x += 1.3) mesh += `M${f(x)} ${y0} L${f(x)} ${y1} `;
+            g += `<path d="${mesh}" stroke="${A[700]}" stroke-width="0.25" opacity="0.55" clip-path="url(#${id})"/>`;
+            g += `<path d="M${x0 + 1} ${f(y0 + 0.7)} L${x1 - 1} ${f(y0 + 0.7)}" class="hl" stroke="${A[100]}" stroke-width="0.6" clip-path="url(#${id})"/>`;
+            g += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+            return `<g transform="rotate(${rot} ${(x0 + x1) / 2} ${cy})">${g}</g>`;
         };
-        let tape = strip(279, 553, 64, false) + strip(293, 543, 46, true);
-        out += this.T(5, 'plastic', tape);
+        // клеили ровно, поперёк трещины, по горизонтали; вторая — чуть косо
+        const tape = strip(265, 291, 557, 7, 0, 41) + strip(280, 303, 546.5, 7, -2, 42);
+        out += this.T(5, 'alu', tape);
         return out;
     },
 
