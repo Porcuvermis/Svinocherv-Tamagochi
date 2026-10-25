@@ -496,11 +496,12 @@ const GreedJunk = {
         const J = PALETTE.greedJunk, C = J.car, P = this.SLOTS.pivot, f = this.f;
         const rnd = this.rng(77);
         const x0 = 314, y0 = 384, x1 = 356, y1 = 468;
-        // нижний край — рез от руки, чуть гуляет
-        const cut = [];
-        for (let x = x1 - 1; x >= x0 + 1; x -= 3) cut.push([x, y1 - 1 + Math.sin(x * 0.7) * 0.7 + rnd() * 0.8]);
-        const cutD = cut.map(p => `L${f(p[0])} ${f(p[1])}`).join(' ');
-        const body = `M${x0} ${y0 + 5} Q${x0} ${y0} ${x0 + 5} ${y0} L${x1 - 4} ${y0} Q${x1} ${y0} ${x1} ${y0 + 4} L${x1 + 0.6} ${y1 - 2} ${cutD} L${x0} ${y1 - 1} Z`;
+        // Нижний край — рез болгаркой: прямой, чуть наискось (резали по
+        // разметке на глаз). Было: зубчатая «пила» — так режут ножницами
+        // по жести, а не диском, и смотрелось это неряшливой каймой.
+        const yl = y1 - 1, yr = y1 - 3;                // рез слева и справа
+        const at = (x) => yl + (yr - yl) * (x - x0) / (x1 + 0.6 - x0);
+        const body = `M${x0} ${y0 + 5} Q${x0} ${y0} ${x0 + 5} ${y0} L${x1 - 4} ${y0} Q${x1} ${y0} ${x1} ${y0 + 4} L${x1 + 0.6} ${yr} L${x0} ${yl} Z`;
         let g = `<path d="${body}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.6 2.4)"/>` +
             `<path d="${body}" fill="${C.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
         // завальцовка правого края: светлая кромка
@@ -522,13 +523,14 @@ const GreedJunk = {
             g += `<path d="M${pts.join(' L')} Z" fill="${J.primer.base}"/>` +
                 `<circle cx="${f(cx + 0.3)}" cy="${f(cy + 0.4)}" r="${f(r * 0.35)}" fill="${J.rust[500]}"/>`;
         });
-        // рыжие потёки из-под реза вверх не идут — ржа копится у кромки
-        g += `<path d="M${x0 + 2} ${y1 - 3.5} ${cutD.replace(/L/g, 'L')}" fill="none" stroke="${J.rust[500]}" stroke-width="1.6" opacity="0.4" transform="translate(0 -1.6)"/>`;
-        // рез: побежалость, окалина, полоска свежего металла
-        const yc = y1 - 5;
-        g += `<g transform="rotate(90 ${(x0 + x1) / 2} ${yc})"><rect x="${(x0 + x1) / 2 - 4}" y="${yc - (x1 - x0) / 2}" width="8" height="${x1 - x0}" fill="url(#gj-temper)" opacity="0.4"/></g>`;
-        g += `<path d="M${x1 + 0.4} ${y1 - 3.2} ${cut.map(p => `L${f(p[0])} ${f(p[1] - 2.2)}`).join(' ')} L${x0} ${y1 - 3.2} L${x0} ${y1 - 1} ${cut.slice().reverse().map(p => `L${f(p[0])} ${f(p[1])}`).join(' ')} Z" fill="${J.tin[900]}"/>`;
-        g += `<path d="M${x1 + 0.4} ${y1 - 2} ${cut.map(p => `L${f(p[0])} ${f(p[1] - 1)}`).join(' ')} L${x0} ${y1 - 2} L${x0} ${y1 - 1} ${cut.slice().reverse().map(p => `L${f(p[0])} ${f(p[1])}`).join(' ')} Z" fill="${J.tin[100]}"/>`;
+        // рез: над кромкой полоса побежалости (лист грелся от диска), под
+        // ней тонкая окалина и ровная полоска свежего металла по кромке
+        const band = (h0, h1) => `M${x0 + 0.6} ${f(yl - h1)} L${x1 + 0.2} ${f(yr - h1)} L${x1 + 0.2} ${f(yr - h0)} L${x0 + 0.6} ${f(yl - h0)} Z`;
+        const xm = (x0 + x1) / 2, ym = at(xm);
+        g += `<g transform="rotate(90 ${f(xm)} ${f(ym - 3)}) rotate(${f(Math.atan2(yr - yl, x1 - x0) * 180 / Math.PI)} ${f(xm)} ${f(ym - 3)})">` +
+            `<rect x="${f(xm - 3.5)}" y="${f(ym - 3 - (x1 - x0) / 2)}" width="7" height="${x1 - x0}" fill="url(#gj-temper)" opacity="0.35"/></g>`;
+        g += `<path d="${band(0.4, 1.9)}" fill="${J.tin[900]}" opacity="0.85"/>`;
+        g += `<path d="${band(0.4, 1.2)}" fill="${J.tin[100]}"/>`;
         // заглушка дренажной дырки: резиновая шляпка с пояском
         g += this.T(2, 'rubber', `<circle cx="345" cy="454" r="3.8" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             `<circle cx="345" cy="454" r="2.2" fill="none" stroke="${J.wood[900]}" stroke-width="0.6"/>` + this.domeH(345, 454, 3.8, 1.4));
@@ -562,12 +564,16 @@ const GreedJunk = {
             const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), c = Math.cos(ang), s = Math.sin(ang);
             const e = [a[0] + c * 5, a[1] + s * 5];
             const dd = `M${f(a[0])} ${f(a[1])} L${f(e[0])} ${f(e[1])}`;
-            return this.rodH(dd, 4.6, 2) + `<path d="${dd}" stroke="${PALETTE.ink}" stroke-width="5.4"/>` +
-                `<path d="${dd}" stroke="${J.tin[300]}" stroke-width="4"/>` +
+            // гильза выходит из дыры на нас: у дыры её торец скруглён
+            return this.rodH(dd, 4.6, 2) + `<path d="${dd}" stroke="${PALETTE.ink}" stroke-width="5.4" stroke-linecap="round"/>` +
+                `<path d="${dd}" stroke="${J.tin[500]}" stroke-width="4" stroke-linecap="round"/>` +
                 `<path d="M${f(a[0] + c * 2.5 - s * 2)} ${f(a[1] + s * 2.5 + c * 2)} L${f(a[0] + c * 2.5 + s * 2)} ${f(a[1] + s * 2.5 - c * 2)}" stroke="${J.tin[700]}" stroke-width="0.6"/>`;
         };
         out += ferrule(pts[0], pts[1]) + ferrule(pts[4], pts[3]);
-        return this.grommet(pts[4][0], pts[4][1]) + this.T(6, 'rubber', out) + this.grommet(pts[0][0], pts[0][1] - 1.5);
+        // Обе втулки — ПОД тросом: трос выходит из самой дыры втулки и в
+        // дыру же уходит. Было: верхняя втулка лежала поверх, и трос
+        // вылезал из-под её края, а дыра оставалась пустой.
+        return this.grommet(pts[0][0], pts[0][1]) + this.grommet(pts[4][0], pts[4][1]) + this.T(6, 'rubber', out);
     },
 
     // Шток и рукоять — отдельно: при рывке шток укорачивается (уходит на
