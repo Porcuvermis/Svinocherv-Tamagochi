@@ -32,26 +32,9 @@ Object.assign(GreedJunk, {
         out += this.socketHome(65, 58);
         out += this.powerCable();
         out += this.harness(w.cx + 72, w.cy - 70, 52, 34);
-        // крышка от консервной банки на дыре в доске — латка
-        out += this.T(1, 'steel', ''
-            + `<circle cx="64.5" cy="246.8" r="15" class="fx" fill="${J.hole}" opacity="0.18"/>` +
-            `<circle cx="64" cy="246" r="15" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<circle cx="64" cy="246" r="11" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="64" cy="246" r="7" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
-            `<path d="M52 240 a13 13 0 0 1 10 -8" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}"/>`);
-        [0, 1, 2].forEach(i => { out += this.nail(64 + Math.cos(i * 2.1) * 13, 246 + Math.sin(i * 2.1) * 13); });
-
-        // коробка-вентилятор от чьего-то блока питания между креплениями
-        let fan = '';
-        fan += this.tin(160, 222, 30, 30, 39, { boltR: 1.8, tilt: -4, z: this.Z.fan });
-        fan += `<circle cx="175" cy="237" r="10" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-        for (let i = 0; i < 4; i++) {
-            const a = i * Math.PI / 2 + 0.4;
-            fan += `<path d="M175 237 q${f(Math.cos(a) * 6 - Math.sin(a) * 3)} ${f(Math.sin(a) * 6 + Math.cos(a) * 3)} ${f(Math.cos(a) * 9)} ${f(Math.sin(a) * 9)}" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" fill="none"/>`;
-        }
-        fan += `<circle cx="175" cy="237" r="2.4" fill="${J.tin[300]}"/>`;
-
-        out += this.T(7, 'steel', fan);
+        // латка из крышки банки и блок питания (greed-junk-parts.js)
+        out += this.canLid(64, 244);
+        out += this.psu(146, 204);
 
         // ---- крепление пачинко: два рельса, полка-упор и розетка сбоку ----
         const p = S.pachinko;

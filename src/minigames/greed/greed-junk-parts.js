@@ -227,6 +227,102 @@ Object.assign(GreedJunk, {
         return out;
     },
 
+    // ---------- БЛОК ПИТАНИЯ ----------
+    // Старый компьютерный блок питания, прикрученный к стенке: от него вся
+    // самодельная проводка. Жестяная коробка со штампованными прорезями,
+    // вентилятор под проволочной решёткой, клавишный выключатель и пучок
+    // цветных проводов, уходящий в стену. Раньше на этом месте висела
+    // «коробка с вентилятором» без назначения — заполняла пустоту.
+    psu(x, y) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const w = 52, h = 40, fx = x + 34, fy = y + 20, fr = 14;
+        let box = this.tin(x, y, w, h, 39, { bolts: false, tilt: 0, dent: false, scratches: 2, z: this.Z.fan });
+        // штампованные прорези слева
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
+            box += `<rect x="${f(x + 4 + c * 6)}" y="${f(y + 6 + r * 7)}" width="4" height="4.4" rx="1" class="pit" fill="${J.hole}"/>`;
+        }
+        // окно вентилятора: тёмная глубина, лопасти, ступица
+        box += `<circle cx="${f(fx)}" cy="${f(fy)}" r="${fr}" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        let blades = '';
+        for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2;
+            const p1 = [fx + Math.cos(a) * 4, fy + Math.sin(a) * 4], p2 = [fx + Math.cos(a + 0.5) * 12, fy + Math.sin(a + 0.5) * 12];
+            blades += `<path d="M${f(p1[0])} ${f(p1[1])} Q${f(fx + Math.cos(a + 0.1) * 11)} ${f(fy + Math.sin(a + 0.1) * 11)} ${f(p2[0])} ${f(p2[1])}" ` +
+                `fill="none" stroke="${J.tin[700]}" stroke-width="3" stroke-linecap="round"/>`;
+        }
+        box += `<g class="pit">${blades}</g>`;
+        box += `<circle cx="${f(fx)}" cy="${f(fy)}" r="4" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        // проволочная решётка: кольца и спицы — круглая проволока
+        let grill = '';
+        [5, 9, 13].forEach(r => {
+            const d = `M${f(fx - r)} ${f(fy)} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0`;
+            grill += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="2"/>` +
+                `<path d="${d}" fill="none" stroke="${J.tin[300]}" stroke-width="1"/>` + this.rodH(d, 2, 0.8);
+        });
+        [0, 1, 2, 3].forEach(i => {
+            const a = i * Math.PI / 2 + Math.PI / 4;
+            const d = `M${f(fx + Math.cos(a) * 3)} ${f(fy + Math.sin(a) * 3)} L${f(fx + Math.cos(a) * 13)} ${f(fy + Math.sin(a) * 13)}`;
+            grill += `<path d="${d}" stroke="${PALETTE.ink}" stroke-width="2"/><path d="${d}" stroke="${J.tin[300]}" stroke-width="1"/>` + this.rodH(d, 2, 0.8);
+        });
+        // крепёж коробки к стенке
+        const screws = [[x + 3.5, y + 3.5], [x + w - 3.5, y + 3.5], [x + 3.5, y + h - 3.5], [x + w - 3.5, y + h - 3.5]]
+            .map(([sx, sy]) => this.bolt(sx, sy, 1.6)).join('');
+        // клавишный выключатель: чёрная клавиша, нажатая половина ниже
+        const sw = this.T(10, 'plastic', `<rect x="${f(x + 15)}" y="${f(y + 31)}" width="7" height="6" rx="1" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="${f(x + 15.5)}" y1="${f(y + 34)}" x2="${f(x + 21.5)}" y2="${f(y + 34)}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
+            `<g class="hpass"><rect x="${f(x + 15)}" y="${f(y + 31)}" width="7" height="3" style="--dh:${this.dh(1.5)}"/></g>`);
+        // пучок проводов вниз в дыру в стене
+        let wires = '';
+        [J.paint.yellow, J.paint.red, J.tin[900], J.paint.orange].forEach((c, i) => {
+            const d = this.smooth([[x + 6 + i * 2.4, y + h], [x + 5 + i * 2, y + h + 6], [x + 2 + i * 1.6, y + h + 12]]);
+            wires += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="3" stroke-linecap="round"/>` +
+                `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>` + this.rodH(d, 2.6);
+        });
+        return this.T(3, 'plastic', wires) + this.hole(x + 6, y + h + 13, 4.4) +
+            this.T(7, 'steel', box + screws) + this.T(9, 'steel', grill) + sw;
+    },
+
+    // ---------- ЛАТКА ИЗ КРЫШКИ БАНКИ ----------
+    // Доска треснула вокруг сучка; дыру закрыли крышкой от консервной банки
+    // на четырёх гвоздях. Чтобы это читалось латкой, а не монетой: край
+    // крышки закатан зубчиками, в ней вмятина, от этикетки осталось
+    // полустёртое кольцо краски, а трещина расходится по доске из-под краёв.
+    canLid(cx, cy) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const r = 15;
+        let crack = '';
+        [[-0.4, 22], [2.7, 18], [1.5, 14]].forEach(([a, len]) => {
+            const p0 = [cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1)];
+            const p1 = [cx + Math.cos(a + 0.12) * (r + len * 0.5), cy + Math.sin(a + 0.12) * (r + len * 0.5)];
+            const p2 = [cx + Math.cos(a - 0.05) * (r + len), cy + Math.sin(a - 0.05) * (r + len)];
+            crack += `<path d="M${f(p0[0])} ${f(p0[1])} L${f(p1[0])} ${f(p1[1])} L${f(p2[0])} ${f(p2[1])}" fill="none" ` +
+                `class="pit" stroke="${J.hole}" stroke-width="1.2" stroke-linecap="round"/>`;
+        });
+        // край гладкий, закатанный; только на коротком участке рваный след
+        // консервного ножа. Зубчики по всему кругу делали из крышки пивную пробку.
+        const pts = [];
+        for (let i = 0; i < 48; i++) {
+            const a = (i / 48) * Math.PI * 2;
+            const cut = a > 3.7 && a < 4.5;
+            const rr = cut ? r + (i % 2 ? 0.9 : -0.6) : r;
+            pts.push(f(cx + Math.cos(a) * rr * 1.04) + ' ' + f(cy + Math.sin(a) * rr));
+        }
+        const rim = 'M' + pts.join(' L') + ' Z';
+        let lid = `<path d="${rim}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        // кольцо краски от этикетки — стёрто наполовину
+        lid += `<path d="M${f(cx - 11)} ${f(cy + 3)} A11.5 11 0 0 1 ${f(cx + 9)} ${f(cy - 7)}" fill="none" stroke="${J.paint.red}" stroke-width="2.2" opacity="0.55"/>`;
+        // двойной ободок закатки
+        lid += `<ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f((r - 2) * 1.04)}" ry="${r - 2}" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}"/>`;
+        lid += `<ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f((r - 3.6) * 1.04)}" ry="${r - 3.6}" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
+        // профиль: закатка по краю выше, середина с вмятиной
+        lid += '<g class="hpass">' +
+            `<path d="${rim}" style="--dh:${this.dh(1.4)}"/>` +
+            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${r - 3}" style="--dh:${this.dh(0.6)}"/>` +
+            `<circle cx="${f(cx + 3)}" cy="${f(cy + 2)}" r="4" style="--dh:${this.dh(0)}"/>` + '</g>';
+        const nails = [0.6, 2.2, 3.6, 5.2].map(a => this.nail(cx + Math.cos(a) * (r - 2.2), cy + Math.sin(a) * (r - 2.2))).join('');
+        return this.T(0, 'pine', crack) + this.T(1, 'steel', lid + nails);
+    },
+
     // Отверстие под болт: тёмная дырка с ободком — «здесь что-то прикрутят».
     hole(x, y, r) {
         const J = PALETTE.greedJunk, f = this.f;
