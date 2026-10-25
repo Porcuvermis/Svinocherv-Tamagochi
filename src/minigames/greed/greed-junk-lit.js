@@ -89,10 +89,14 @@ const GreedJunkLit = {
                 // Нормаль по соседям в четырёх текселях, а не в одном: фаска
                 // шире чёрного контура, иначе контур её целиком закрывает
                 vec2 d = uTex * 4.0;
-                float hl = hh(vUv - vec2(d.x, 0.0)), hr = hh(vUv + vec2(d.x, 0.0));
-                float hu = hh(vUv - vec2(0.0, d.y)), hd = hh(vUv + vec2(0.0, d.y));
-                vec3 n = normalize(vec3((hl - hr) * uRelief, (hu - hd) * uRelief, 1.0));
                 float h0 = hh(vUv);
+                // Соседи не выше самой точки: фаска ложится только на ВЕРХНЮЮ
+                // деталь. Без этого подножие ступеньки на стенке тоже получало
+                // наклонную нормаль, смотрящую на свет, — вокруг деталей
+                // светился ореол на поверхности, на которой они лежат.
+                float hl = min(hh(vUv - vec2(d.x, 0.0)), h0), hr = min(hh(vUv + vec2(d.x, 0.0)), h0);
+                float hu = min(hh(vUv - vec2(0.0, d.y)), h0), hd = min(hh(vUv + vec2(0.0, d.y)), h0);
+                vec3 n = normalize(vec3((hl - hr) * uRelief, (hu - hd) * uRelief, 1.0));
 
                 // рассеянный: ровная поверхность = свой цвет
                 float amb = 0.42;
