@@ -61,13 +61,17 @@ const GreedMinigame = {
         if (!this.screenElement) return;
 
         // Окно (рамка, значок греха, крестик, вопрос при выходе) — общее на
-        // все грехи. Вопроса при выходе тут не бывает: крутка рассчитывается
-        // сразу, незавершённого прогресса на экране нет, терять нечего.
+        // все грехи. Выход посреди крутки — нажатиями (canLeave ниже).
         if (!this.win && typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'greed',
+                // рамка из монет (greed-coins-rim.js), docs/plan/27-greed-skin.md
+                skin: typeof GreedCoins !== 'undefined' && GreedCoins.rim ? GreedCoins : null,
                 onLeave: () => this.close(),
-                canLeave: () => true
+                // Пока крутятся барабаны или идёт выплата — выход в три нажатия
+                // крестика (покров: каждое проявляет треть монет), иначе в одно
+                // (CLAUDE.md, инвариант 8; решение игрока).
+                canLeave: () => !this.busy()
             });
         }
 
@@ -135,10 +139,30 @@ const GreedMinigame = {
         // позиционируется в % от контейнера и обязана совпасть с окном,
         // нарисованным ВНУТРИ svg (viewBox 350×480). Меряем на следующем
         // кадре — сразу после .active сцена может иметь нулевой размер.
-        requestAnimationFrame(() => {
-            this.fitMachineStage();
-            this.resetReelsVisual();
+        // Готовность для покрова (src/core/mg-veil.js, veilReady): монеты
+        // уходят с экрана только когда автомат собран и уже нарисован —
+        // размер посчитан, барабаны выставлены, кадр с ними показан, — и
+        // картинки монет рамки загружены. Сюда же потом встанет загрузка
+        // ассетов прокачки: покров стоит, пока всё это не готово.
+        this._readyP = new Promise((ready) => {
+            requestAnimationFrame(() => {
+                this.fitMachineStage();
+                this.resetReelsVisual();
+                const shown = () => requestAnimationFrame(() => ready());
+                const A = typeof GreedCoins !== 'undefined' && GreedCoins.loadAtlas ? GreedCoins.loadAtlas() : null;
+                if (A && !A.ready) A.wait.push(shown); else shown();
+            });
         });
+    },
+
+    // Идёт крутка или выплата: барабаны, табло выплаты на экране.
+    busy() {
+        return !!(this.isSpinning || (this.winOverlay && this.winOverlay.classList.contains('show')));
+    },
+
+    // Готовность для покрова перехода: см. open().
+    veilReady() {
+        return this._readyP || Promise.resolve();
     },
 
     close() {

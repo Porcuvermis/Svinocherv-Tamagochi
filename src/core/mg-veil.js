@@ -119,6 +119,9 @@ const MgVeil = {
     },
 
     hide() {
+        // Шкурка со своими слоями внутри покрова (у алчности — холст
+        // видеокарты) убирает их сама: следующий покров может быть чужим.
+        if (this.skin && this.skin.veilHide) this.skin.veilHide();
         if (this.el) { this.el.style.display = 'none'; this.el.classList.remove('mg-veil-thru'); }
         if (this.cv) this.cv.style.opacity = '';
         if (this.cv) this.cv.getContext('2d').clearRect(0, 0, this.cv.width, this.cv.height);

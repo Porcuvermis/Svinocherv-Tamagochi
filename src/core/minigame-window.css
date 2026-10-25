@@ -291,6 +291,13 @@
    его собственные переходы — проявление прозрачностью и подрастание рамки —
    под покровом не видны, а без покрова (автотесты) только мешают снимкам. */
 .minigame-screen.mg-window.mg-skin { transition: none; }
+/* Общее правило окон (style.css: .minigame-screen.active / :not(.active))
+   ставит проявление и угасание 0,3 с с !important и перебивало строку выше:
+   окно со шкуркой открывается и закрывается под сплошным покровом, а его
+   угасание продолжалось уже на глазах — автомат алчности дотаивал, когда
+   монеты начинали уходить (игрок). Под покровом — мгновенно. */
+.minigame-screen.mg-window.mg-skin.active,
+.minigame-screen.mg-window.mg-skin:not(.active) { transition: none !important; }
 .mg-skin .mg-frame,
 .mg-window.active.mg-skin .mg-frame { transform: none; transition: none; }
 
