@@ -545,11 +545,7 @@ const GreedJunk = {
             `<line x1="${x0}" y1="${y0 - 3.6}" x2="${x1}" y2="${y0 - 3.6}" class="hl" stroke="${C.hi}" stroke-width="0.9"/>` +
             this.rodH(`M${x0} ${y0 - 1} L${x1} ${y0 - 1}`, 7, 1.6) +
             this.bolt(x0 + 2.4, y0 - 1, 1.5) + this.bolt(x1 - 2.4, y0 - 1, 1.5));
-        // рамка юбки из салона: чёрное пластиковое кольцо на двух саморезах
-        out += this.T(11, 'plastic', `<rect x="${P.x - 17}" y="${y0 - 10}" width="34" height="6" rx="3" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<line x1="${P.x - 14}" y1="${y0 - 8.8}" x2="${P.x + 14}" y2="${y0 - 8.8}" class="hl" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}"/>` +
-            this.rodH(`M${P.x - 14} ${y0 - 7} L${P.x + 14} ${y0 - 7}`, 5, 1.4) +
-            this.bolt(P.x - 13.5, y0 - 7, 1.2) + this.bolt(P.x + 13.5, y0 - 7, 1.2));
+        // рамка юбки — в leverSvg: она прижимает низ юбки и рисуется поверх
         out += this.shiftCable();
         return out;
     },
@@ -654,9 +650,25 @@ const GreedJunk = {
             `<ellipse cx="${K.x - 6}" cy="${K.y - 7.5}" rx="4.6" ry="2.6" class="hl" fill="${J.tin[300]}" opacity="0.55" transform="rotate(-35 ${K.x - 6} ${K.y - 7.5})"/>`;
         return `<g class="gj-lever">` +
             `<g class="gj-boot">${this.T(10, 'rubber', boot + bootH)}</g>` +
+            this.bootFrame() +
             `<g class="gj-shaft">${this.T(9, 'polished', shaft)}${this.T(11, 'steel', clamp)}</g>` +
             `<g class="gj-knob">${this.T(8, 'bakelite', knob)}</g>` +
             `</g>`;
+    },
+
+    // Рамка юбки из салона: чёрное пластиковое кольцо на двух саморезах
+    // в крышку кулисы. Лежит ПОВЕРХ низа юбки и прижимает его — юбка
+    // заправлена под рамку. Было: рамка рисовалась с корпусом, юбка
+    // закрывала её целиком и просто стояла на крышке, ни к чему не
+    // прикреплённая.
+    bootFrame() {
+        const J = PALETTE.greedJunk, P = this.SLOTS.pivot;
+        const y = P.y - 19, w = 38, h = 6;
+        return this.T(12, 'plastic', `<rect x="${P.x - w / 2 + 1}" y="${y - 1.6}" width="${w - 2}" height="2" class="fx" fill="${J.hole}" opacity="0.5"/>` +
+            `<rect x="${P.x - w / 2}" y="${y}" width="${w}" height="${h}" rx="2.6" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<line x1="${P.x - w / 2 + 3}" y1="${y + 1.2}" x2="${P.x + w / 2 - 3}" y2="${y + 1.2}" class="hl" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}"/>` +
+            this.rodH(`M${P.x - w / 2 + 3} ${y + h / 2} L${P.x + w / 2 - 3} ${y + h / 2}`, h - 1, 1.4) +
+            this.bolt(P.x - w / 2 + 3.6, y + h / 2, 1.3) + this.bolt(P.x + w / 2 - 3.6, y + h / 2, 1.3));
     },
 
     // Тень на барабанах от верхней и левой кромки окна. Отдельным слоем:
