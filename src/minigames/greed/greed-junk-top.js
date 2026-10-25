@@ -468,6 +468,7 @@ Object.assign(GreedJunk, {
         });
         out += this.T(-10, 'paint', win);
         out += this.reelWindows();
+        out += this.shelfTop();
         out += this.buttonPanel();
         return out;
     },
@@ -506,36 +507,70 @@ Object.assign(GreedJunk, {
         return out;
     },
 
-    // Патрон на полке: бакелитовая чашка с фланцем, прикрученным к полке
-    // двумя шурупами, сверху латунное кольцо, в которое ввёрнута лампа.
-    // Стоит на кромке полки (base) — низ фланца ровно по ней. Возвращает
-    // y верха кольца — оттуда начинается цоколь лампы.
-    holder(x, base, w) {
-        const J = PALETTE.greedJunk, B = J.bakelite, Br = J.brass, f = this.f;
-        const fw = w + 8, ch = 6;
-        let s = `<rect x="${f(x - fw / 2)}" y="${f(base - 2.2)}" width="${fw}" height="2.2" rx="0.8" fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<path d="M${f(x - w / 2 - 1)} ${f(base - 2.2)} L${f(x - w / 2 + 0.4)} ${f(base - 2.2 - ch)} L${f(x + w / 2 - 0.4)} ${f(base - 2.2 - ch)} L${f(x + w / 2 + 1)} ${f(base - 2.2)} Z" ` +
-            `fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<line x1="${f(x - w / 2 + 0.6)}" y1="${f(base - 3)}" x2="${f(x - w / 2 + 1.2)}" y2="${f(base - 2.2 - ch + 0.8)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>` +
-            this.rodH(`M${x} ${f(base - 2.2 - ch + 0.5)} L${x} ${f(base - 2.4)}`, w + 1, w * 0.4);
-        const ry = base - 2.2 - ch;
-        s += `<rect x="${f(x - w / 2)}" y="${f(ry - 1.6)}" width="${w}" height="1.8" rx="0.6" fill="${Br.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
-        let out = this.T(10, 'plastic', s);
-        out += this.bolt(x - fw / 2 + 1.8, base - 1.1, 0.9) + this.bolt(x + fw / 2 - 1.8, base - 1.1, 0.9);
-        return { svg: out, top: ry - 1.6 };
+    // ---------- ПЕРСПЕКТИВА ЯРУСА ----------
+    // Сцена — с одной точкой схода в центре окна (VP): из неё расходятся
+    // лучи скоса, на её высоте глаз. Всё, что ниже глаза, видно чуть
+    // сверху: у полки — узкая верхняя грань, уходящая к VP, у круглого —
+    // верхние кромки эллипсами, и чем ниже вещь, тем эллипс шире. Без этого
+    // лампы стояли плоскими прямоугольниками «наперекор» скосу за ними.
+    VP: { x: 180, y: 388 },
+    // Сжатие эллипса круга, лежащего горизонтально на высоте y.
+    flat(y) { return Math.max(0.06, Math.min(0.4, (y - this.VP.y) / 230)); },
+
+    // Верхняя грань полки: от передней кромки назад к VP.
+    shelfTop() {
+        const J = PALETTE.greedJunk, f = this.f, V = this.VP;
+        const y0 = this.SHELF_TOP, k = 0.05;
+        const back = (x, y) => [x + (V.x - x) * k, y + (V.y - y) * k];
+        const a = back(24, y0), b = back(336, y0);
+        const d = `M24 ${y0} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L336 ${y0} Z`;
+        return this.T(8, 'pine', `<path d="${d}" fill="${J.pine[100]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<line x1="${f(a[0] + 2)}" y1="${f(a[1] + 0.8)}" x2="${f(b[0] - 2)}" y2="${f(b[1] + 0.8)}" stroke="${J.pine[500]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`);
     },
 
-    // Цоколь: латунный цилиндр с витками резьбы и чёрным изолятором внизу.
-    // (x, base) — середина низа цоколя на планке; w, h — размеры.
+    // Цилиндр с осью вверх, видимый чуть сверху: передняя стенка и верхний
+    // эллипс. (x, yb) — середина низа, w — ширина, h — высота, wt — ширина
+    // верха (конус, если отличается). Низ — передняя дуга эллипса.
+    cyl(x, yb, w, h, fill, top, wt) {
+        const f = this.f, yt = yb - h;
+        wt = wt == null ? w : wt;
+        const rb = w / 2, rt = wt / 2, eb = rb * this.flat(yb), et = rt * this.flat(yt);
+        const side = `M${f(x - rt)} ${f(yt)} L${f(x - rb)} ${f(yb)} A${f(rb)} ${f(eb)} 0 0 0 ${f(x + rb)} ${f(yb)} L${f(x + rt)} ${f(yt)} Z`;
+        return `<path d="${side}" fill="${fill}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<ellipse cx="${f(x)}" cy="${f(yt)}" rx="${f(rt)}" ry="${f(et)}" fill="${top || fill}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+    },
+
+    // Патрон на полке: бакелитовый фланец-диск на двух шурупах, на нём
+    // чашка конусом, сверху латунное кольцо, в которое ввёрнута лампа.
+    // Стоит на верхней грани полки (base — передняя кромка его низа).
+    // Возвращает y верха кольца — оттуда начинается цоколь лампы.
+    holder(x, base, w) {
+        const J = PALETTE.greedJunk, B = J.bakelite, Br = J.brass, f = this.f;
+        const fw = w + 9, yb = base - 1;              // диск чуть за кромкой полки
+        let s = this.cyl(x, yb, fw, 1.8, B.base, B.hi);
+        const y1 = yb - 1.8;
+        s += this.cyl(x, y1, w + 2, 6, B.base, B.lo, w);
+        s += `<path d="M${f(x - w / 2 - 0.4)} ${f(y1 - 1)} L${f(x - w / 2 + 0.5)} ${f(y1 - 5.4)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>`;
+        s += this.rodH(`M${x} ${f(y1 - 5.6)} L${x} ${f(y1 - 0.4)}`, w + 1, w * 0.4);
+        const y2 = y1 - 6;
+        s += this.cyl(x, y2, w, 1.6, Br.base, Br.hi);
+        let out = this.T(10, 'plastic', s);
+        // шурупы на диске — на его верхней грани, слева и справа
+        out += this.bolt(x - fw / 2 + 1.9, yb - 1.8, 0.85) + this.bolt(x + fw / 2 - 1.9, yb - 1.8, 0.85);
+        return { svg: out, top: y2 - 1.6 };
+    },
+
+    // Цоколь лампы: латунный цилиндр, витки резьбы — дугами, провисающими
+    // вниз (кольца видны чуть сверху), снизу чёрный изолятор.
     socketBrass(x, base, w, h) {
         const J = PALETTE.greedJunk, Br = J.brass, f = this.f;
+        let s = this.cyl(x, base, w, h, Br.base, Br.base);
         const top = base - h;
-        let s = `<rect x="${f(x - w / 2)}" y="${f(top)}" width="${w}" height="${h}" rx="1.2" fill="${Br.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-        for (let y = top + 1.8; y < base - 2.4; y += 1.8) {
-            s += `<line x1="${f(x - w / 2 + 0.6)}" y1="${f(y)}" x2="${f(x + w / 2 - 0.6)}" y2="${f(y + 0.6)}" stroke="${Br.lo}" stroke-width="0.5"/>`;
+        for (let y = top + 1.6; y < base - 0.8; y += 1.6) {
+            const e = (w / 2) * this.flat(y);
+            s += `<path d="M${f(x - w / 2 + 0.3)} ${f(y)} A${f(w / 2)} ${f(e)} 0 0 0 ${f(x + w / 2 - 0.3)} ${f(y)}" fill="none" stroke="${Br.lo}" stroke-width="0.55"/>`;
         }
-        s += `<rect x="${f(x - w / 2 + 0.8)}" y="${f(top + 0.6)}" width="1.1" height="${f(h - 3)}" class="hl" fill="${Br.hi}" opacity="0.8"/>` +
-            `<rect x="${f(x - w / 2 + 1)}" y="${f(base - 2.2)}" width="${f(w - 2)}" height="2.2" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        s += `<rect x="${f(x - w / 2 + 0.7)}" y="${f(top + 0.6)}" width="1" height="${f(h - 1.6)}" class="hl" fill="${Br.hi}" opacity="0.8"/>`;
         s += this.rodH(`M${x} ${f(top + 0.5)} L${x} ${f(base - 0.5)}`, w, w * 0.45);
         return this.T(15, 'brass', s);
     },
