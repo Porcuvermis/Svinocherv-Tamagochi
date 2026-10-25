@@ -147,6 +147,42 @@ Object.assign(GreedJunk, {
         return out;
     },
 
+    // ---------- ПОДВЕС ПАЧИНКО ----------
+    // Пластина между рельсами — не «пластина с дырами», а подвес: рельсы
+    // только направляют короб, а вес его держат два крюка, приваренных к
+    // толстой пластине и торчащих к нам. Внизу два продолговатых паза под
+    // стопорные винты — короб прижмут, когда повесят. Пазы, а не круглые
+    // дыры: круглые парами складывались в рожицу.
+    //
+    // Рисуется уже под свет шейдером: цвет ровный, объём — высотами
+    // (пластина 2, отогнутая кромка 3, крюк 9, его загнутый кончик 11).
+    hanger(x, y, w, h) {
+        const J = PALETTE.greedJunk, f = this.f;
+        let out = this.T(2, 'steel', this.tin(x, y, w, h, 44, { bolts: false, tilt: 0, dent: false, scratches: 2 }));
+        // отогнутая верхняя кромка — пластину гнули в тисках
+        out += this.T(3, 'steel', `<rect x="${f(x - 1)}" y="${f(y - 1)}" width="${f(w + 2)}" height="6" rx="1.5" ` +
+            `fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<line x1="${f(x + 1)}" y1="${f(y + 0.6)}" x2="${f(x + w - 1)}" y2="${f(y + 0.6)}" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}"/>`);
+        // крепёж пластины к стенке — по углам под кромкой и внизу
+        out += this.T(2, 'steel', this.bolt(x + 4.5, y + 10, 1.8) + this.bolt(x + w - 4.5, y + 10, 1.8) +
+            this.bolt(x + 4.5, y + h - 5, 1.8) + this.bolt(x + w - 4.5, y + h - 5, 1.8));
+        // крюки: сварной шов у основания, стержень, загнутый к нам кончик
+        [x + w * 0.3, x + w * 0.7].forEach(hx => {
+            out += this.T(2, 'steel', `<ellipse cx="${f(hx)}" cy="${f(y + 34)}" rx="5" ry="3" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                [-3, -1, 1, 3].map(dx => `<circle cx="${f(hx + dx)}" cy="${f(y + 34)}" r="0.9" fill="${J.tin[900]}"/>`).join(''));
+            out += this.T(9, 'steel', `<rect x="${f(hx - 2.6)}" y="${f(y + 16)}" width="5.2" height="18" rx="2.6" ` +
+                `fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+                `<line x1="${f(hx - 1)}" y1="${f(y + 19)}" x2="${f(hx - 1)}" y2="${f(y + 31)}" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}"/>`);
+            out += this.T(11, 'steel', `<ellipse cx="${f(hx)}" cy="${f(y + 15)}" rx="3.6" ry="3" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
+        });
+        // пазы под стопорные винты
+        [x + w * 0.3, x + w * 0.7].forEach(sx => {
+            out += this.T(2, 'steel', `<rect x="${f(sx - 1.8)}" y="${f(y + h - 26)}" width="3.6" height="13" rx="1.8" ` +
+                `class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`);
+        });
+        return out;
+    },
+
     // Отверстие под болт: тёмная дырка с ободком — «здесь что-то прикрутят».
     hole(x, y, r) {
         const J = PALETTE.greedJunk, f = this.f;
