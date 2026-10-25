@@ -112,6 +112,7 @@ const GreedJunk = {
             `<linearGradient id="gj-rust" x1="0" y1="0" x2="0" y2="1">` +
             `<stop offset="0" stop-color="${J.rust[500]}" stop-opacity="0.85"/><stop offset="1" stop-color="${J.rust[300]}" stop-opacity="0"/></linearGradient>` +
             lin('gj-pine', J.pine[100], J.pine[300], 0.4, 1) +
+            lin('gj-plastic', J.plastic.hi, J.plastic.lo, 0.4, 1) +
             lin('gj-slab-face', J.slab.face, J.slab.faceLo, 0.2, 1) +
             `<linearGradient id="gj-sheen" x1="0" y1="0" x2="0.4" y2="1">` +
             `<stop offset="0" stop-color="${J.painted.hi}" stop-opacity="0.35"/><stop offset="1" stop-color="${J.painted.lo}" stop-opacity="0.3"/></linearGradient>` +
@@ -520,36 +521,95 @@ const GreedJunk = {
         return d;
     },
 
-    // Жгут проводов, торчащий из дыры: жилы выходят вместе, провисают под
-    // своим весом и к концу расходятся, каждая со своим загибом. Жила —
-    // три мазка: тёмный контур, цвет изоляции и светлая полоска сверху
-    // (провод круглый, свет ложится узкой линией).
+    // ---------- ЖГУТ ПРОВОДОВ ----------
+    // Провода к будущим играм: выходят из круглой распаечной коробки через
+    // сальник, первые сантиметры стянуты пластиковой стяжкой и скручены
+    // между собой, дальше жилы расходятся под своим весом, каждая своей
+    // длины. Концы разные — кто-то уже готовил подключение: кольцевая
+    // клемма, колпачок-скрутка, голая медь, конец загнут и примотан.
+    // Раньше жилы торчали из ниоткуда, висели коротко и параллельно, а
+    // концы были оранжевыми точками.
     harness(x, y, len, seed) {
         const J = PALETTE.greedJunk, f = this.f;
         const rnd = this.rng(seed);
-        const colors = [J.paint.red, J.paint.blue, J.paint.yellow];
-        let out = this.hole(x, y, 4.2);
-        colors.forEach((c, i) => {
-            const spread = (i - 1) * (6 + rnd() * 5);
-            const drift = (rnd() - 0.3) * 12;
-            const pts = [
-                [x + (i - 1) * 1.6, y],
-                [x + (i - 1) * 1.8 + drift * 0.3, y + len * 0.35],
-                [x + spread * 0.6 + drift, y + len * 0.7],
-                [x + spread + drift * 1.2, y + len * (0.92 + rnd() * 0.12)],
-                // загиб на конце: оборванная жила не висит отвесно
-                [x + spread + drift * 1.2 + (rnd() - 0.5) * 8, y + len * (1.02 + rnd() * 0.1) - 4]
-            ];
-            const d = this.smooth(pts);
-            out += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="3.8" stroke-linecap="round"/>` +
-                `<path d="${d}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>` +
-                `<path d="${d}" fill="none" stroke="${J.paint.cream}" stroke-width="0.6" stroke-linecap="round" opacity="0.6" transform="translate(-0.6 -0.4)"/>`;
-            const e = pts[pts.length - 1];
-            out += `<circle cx="${f(e[0])}" cy="${f(e[1])}" r="1.3" fill="${J.rust[300]}" stroke="${PALETTE.ink}" stroke-width="0.4"/>`;
+        let out = this.junctionBox(x, y - 12, seed);
+        const colors = [J.paint.red, J.paint.blue, J.paint.yellow, J.tin[900]];
+        const ends = ['ring', 'cap', 'bare', 'loop'];
+        const top = y, tie = y + len * 0.28;
+        // концы жил вразнобой
+        const wires = colors.map((c, i) => {
+            const side = (i - 1.5);
+            const ex = x + side * (5 + rnd() * 4) + (rnd() - 0.5) * 6;
+            const ey = y + len * (0.75 + rnd() * 0.45);
+            return { c, end: ends[(i + seed) % 4], pts: [
+                [x + side * 1.3, top],
+                // скрутка: жилы меняются местами, пока стянуты
+                [x + Math.sin(i * 1.7) * 1.6, top + len * 0.14],
+                [x + side * 1.2, tie],
+                [x + side * 3 + (rnd() - 0.5) * 3, y + len * 0.5],
+                [ex, ey]
+            ] };
         });
-        // кусок изоленты, стягивающий жилы у выхода
-        out += `<rect x="${f(x - 4.5)}" y="${f(y + len * 0.18)}" width="9" height="6" rx="1.5" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        // сначала тени всех жил, потом сами жилы — тень не ложится на соседку
+        wires.forEach(w => {
+            out += `<path d="${this.smooth(w.pts)}" fill="none" stroke="${J.hole}" stroke-width="3" stroke-linecap="round" opacity="0.3" transform="translate(1 1.6)"/>`;
+        });
+        wires.forEach(w => {
+            const d = this.smooth(w.pts);
+            out += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="3.4" stroke-linecap="round"/>` +
+                `<path d="${d}" fill="none" stroke="${w.c}" stroke-width="2" stroke-linecap="round"/>` +
+                `<path d="${d}" fill="none" stroke="${J.plastic.hi}" stroke-width="0.5" stroke-linecap="round" opacity="0.55" transform="translate(-0.5 -0.3)"/>`;
+            out += this.wireEnd(w.end, w.pts[w.pts.length - 1], w.pts[w.pts.length - 2], w.c);
+        });
+        // стяжка: тонкий хомут поперёк жгута, замок сбоку, обрезанный хвост
+        out += `<rect x="${f(x - 6)}" y="${f(tie - 1.4)}" width="12" height="2.8" rx="1.2" fill="${J.plastic.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<rect x="${f(x + 5)}" y="${f(tie - 2.6)}" width="4" height="5.2" rx="0.8" fill="${J.plastic.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="${f(x + 9)}" y1="${f(tie)}" x2="${f(x + 12)}" y2="${f(tie + 1.2)}" stroke="${J.plastic.base}" stroke-width="1.6" stroke-linecap="square"/>`;
         return out;
+    },
+
+    // Круглая серая распаечная коробка: крышка на винте, выпуклый
+    // обод, снизу сальник, из которого выходит жгут.
+    junctionBox(x, y, seed) {
+        const J = PALETTE.greedJunk, f = this.f;
+        let out = `<circle cx="${f(x + 1.6)}" cy="${f(y + 2.6)}" r="10" fill="${J.hole}" opacity="0.35"/>`;
+        out += `<circle cx="${f(x)}" cy="${f(y)}" r="10" fill="url(#gj-plastic)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        out += `<circle cx="${f(x)}" cy="${f(y)}" r="7" fill="none" stroke="${J.plastic.lo}" stroke-width="${STROKE.detail}"/>`;
+        out += `<path d="M${f(x - 6)} ${f(y - 3)} a7 7 0 0 1 8 -4" fill="none" stroke="${J.plastic.hi}" stroke-width="${STROKE.detail}"/>`;
+        // Один винт по центру и литые рёбра крышки. Два винта рядом
+        // складывались с сальником в рожицу.
+        out += `<path d="M${f(x - 6.5)} ${f(y + 3.5)} L${f(x + 6.5)} ${f(y - 3.5)}" stroke="${J.plastic.lo}" stroke-width="${STROKE.detail}" opacity="0.8"/>`;
+        out += this.bolt(x, y, 1.8);
+        // сальник снизу
+        out += `<rect x="${f(x - 4)}" y="${f(y + 8.5)}" width="8" height="5" rx="1.2" fill="${J.plastic.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        return out;
+    },
+
+    // Конец жилы. dir — откуда жила пришла, чтобы клемма и колпачок
+    // смотрели вдоль провода, а не все строго вниз.
+    wireEnd(kind, e, prev, color) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const ang = Math.atan2(e[1] - prev[1], e[0] - prev[0]) * 180 / Math.PI;
+        const g = (inner) => `<g transform="translate(${f(e[0])} ${f(e[1])}) rotate(${f(ang)})">${inner}</g>`;
+        if (kind === 'ring') {
+            // кольцевая клемма: гильза и плоское кольцо
+            return g(`<rect x="-1" y="-2" width="5" height="4" rx="1" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<circle cx="7" cy="0" r="3.2" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<circle cx="7" cy="0" r="1.3" fill="${J.hole}"/>`);
+        }
+        if (kind === 'cap') {
+            // колпачок-скрутка: оранжевый конус
+            return g(`<path d="M-1 -2.6 L6 -1.6 Q8 0 6 1.6 L-1 2.6 Z" fill="${J.paint.orange}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<line x1="1.5" y1="-2" x2="1.5" y2="2" stroke="${J.rust[700]}" stroke-width="${STROKE.hairline}"/>`);
+        }
+        if (kind === 'bare') {
+            // голая медь: изоляция снята, жилки чуть растопырены
+            return g(`<path d="M0 -0.8 l5 -1.2 M0 0 l5.4 0.2 M0 0.8 l4.6 1.4" stroke="${J.copper}" stroke-width="0.9" stroke-linecap="round"/>`);
+        }
+        // загнут обратно и примотан изолентой
+        return g(`<path d="M0 0 q4 0 4 -3 q0 -3 -3 -3" fill="none" stroke="${PALETTE.ink}" stroke-width="3.4" stroke-linecap="round"/>` +
+            `<path d="M0 0 q4 0 4 -3 q0 -3 -3 -3" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>` +
+            `<rect x="-2" y="-4.5" width="4" height="6" rx="1" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`);
     },
 
     // ---------- ЧАСТИ КОРПУСА ----------
@@ -613,7 +673,7 @@ const GreedJunk = {
         // Розетка целиком на щите, между рельсами под монтажной пластиной:
         // «странное место» — это неудобное место, а не место за краем.
         out += this.socket(p.x + 36, p.y + 132, -6);
-        out += this.harness(p.x + 50, p.y + 168, 44, 45);
+        out += this.harness(p.x + 64, p.y + 178, 30, 45);
         out += this.topFrame();
         return out;
     },
