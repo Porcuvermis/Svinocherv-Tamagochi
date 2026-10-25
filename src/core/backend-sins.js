@@ -106,11 +106,16 @@ Object.assign(LocalBackend, {
     // прямой отъём монет за нажатие рычага. Поэтому порог тут не при чём, а
     // сток обеспечен другим: возврат заведомо меньше сотни, и в минус
     // уходит кошелёк всегда, играй хоть сытым, хоть голодным.
-    greedSpin() {
+    //
+    // bet — ставка из ECONOMY.minigames.greed.bets; без неё первая. Множит
+    // цену и каждую награду, шансов не трогает (docs/plan/28-greed-machine.md).
+    greedSpin(bet) {
         const cfg = (ECONOMY.minigames && ECONOMY.minigames.greed) || null;
         if (!cfg) return { ok: false, error: 'no_config' };
+        bet = bet || this.greedBets('slots')[0] || 1;
+        if (this.greedBets('slots').indexOf(bet) === -1) return { ok: false, error: 'bet_locked', bet };
 
-        const cost = cfg.spinCost || 0;
+        const cost = (cfg.spinCost || 0) * bet;
         const balance = GameState.currency('gold');
         // Крутка не уходит в минус. Особого режима для пустого кошелька нет
         // сознательно: золото дают почти все грехи, монета находится за
@@ -135,19 +140,31 @@ Object.assign(LocalBackend, {
         // пустых барабанах, читаются как поломка, а не как подарок.
         const dry = Math.max(0, Math.floor(GameState.data.greed.dry || 0));
         const pity = dry >= ((cfg.pity && cfg.pity.spins) || Infinity) - 1;
-        const reels = pity
+        let reels = pity
             ? [cfg.pity.key, cfg.pity.key, cfg.pity.key]
             : [this.greedRoll(cfg), this.greedRoll(cfg), this.greedRoll(cfg)];
 
-        const pay = this.greedPay(cfg, reels);
-        if (pay > 0) {
-            GameState.addCurrency('gold', pay);
-            GameState.pushLedger({
-                currency: 'gold', delta: pay,
-                reason: 'greed.slots.win', client_request_id: requestId
+        let pay = this.greedPay(cfg, reels);
+        const won = pay > 0;
+
+        // ---------- ВТОРОЙ ПУЛ ТРОЙКИ ----------
+        // Тройка уже выбрана, теперь решается, чем она платит. Гарантия
+        // всегда платит монетами: это утешение, а не лотерея.
+        const awarded = { currencies: {} };
+        const sym = (cfg.reel || []).find(x => x.key === reels[0]);
+        const alt = !pity && won && reels[0] === reels[1] && reels[1] === reels[2] && sym && sym.alt;
+        if (alt && Math.random() < alt.chance) {
+            reels = [alt.altKey, alt.altKey, alt.altKey];
+            pay = 0;
+            Object.keys(alt.give).forEach(k => {
+                this.award(awarded, k, alt.give[k] * bet, 'greed.slots.win', requestId);
             });
+            this.settleExchange(awarded, requestId);
         }
-        GameState.data.greed.dry = pay > 0 ? 0 : dry + 1;
+
+        pay *= bet;
+        if (pay > 0) this.award(awarded, 'gold', pay, 'greed.slots.win', requestId);
+        GameState.data.greed.dry = won ? 0 : dry + 1;
 
         // ---------- ШКАЛУ НАЛИВАЕТ КАЖДАЯ КРУТКА ----------
         // Независимо от исхода — в этом вся механика: любое действие
@@ -163,6 +180,10 @@ Object.assign(LocalBackend, {
             reels,
             pay,
             cost,
+            bet,
+            // Всё, что пришло, кроме золота тоже: жетонная тройка платит
+            // осколком или жетоном, и экрану надо знать, чем шуметь.
+            currencies: awarded.currencies,
             pity,
             // Джекпот — не отдельная запись в конфиге, а просто самая дорогая
             // тройка: экрану надо знать, когда шуметь громче обычного.

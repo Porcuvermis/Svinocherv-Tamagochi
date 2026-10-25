@@ -60,13 +60,30 @@ function payOf(a, b, c) {
     return 0;
 }
 
-let hit = 0, expectedPay = 0;
+// Монетная цена набора валют — по курсу из конфига (CFG.tokenValue).
+const VALUE = CFG.tokenValue || {};
+const valueOf = give => Object.keys(give || {})
+    .reduce((s, k) => s + (k === 'gold' ? 1 : (VALUE[k] || 0)) * give[k], 0);
+// Сколько жетонов в наборе: осколок — треть жетона.
+const tokensOf = give => Object.keys(give || {}).filter(k => k !== 'gold')
+    .reduce((s, k) => s + give[k] * (/_shard$/.test(k) ? 1 / 3 : 1), 0);
+
+// Второй пул тройки (alt) делит её выплату: с шансом chance вместо монет
+// идёт give. Тройка при этом остаётся выигрышем — гарантию она сбрасывает.
+let hit = 0, expectedPay = 0, expectedAlt = 0, expectedTokens = 0;
 REEL.forEach(a => REEL.forEach(b => REEL.forEach(c => {
     const p = (a.weight / TOTAL) * (b.weight / TOTAL) * (c.weight / TOTAL);
     const pay = payOf(a, b, c);
     if (pay <= 0) return;
     hit += p;
-    expectedPay += p * pay;
+    const triple = a.key === b.key && b.key === c.key;
+    const alt = triple && a.alt;
+    const share = alt ? alt.chance : 0;
+    expectedPay += p * pay * (1 - share);
+    if (alt) {
+        expectedAlt += p * share * valueOf(alt.give);
+        expectedTokens += p * share * tokensOf(alt.give);
+    }
 })));
 
 // ---------- ГАРАНТИЯ: ТОЖЕ ТОЧНО, А НЕ СИМУЛЯЦИЕЙ ----------
@@ -84,15 +101,20 @@ const q = 1 - hit;
 const pi0 = (1 - q) / (1 - Math.pow(q, PITY));
 const share = d => pi0 * Math.pow(q, d);
 
-let rtpPay = 0, hitRate = 0;
+let rtpPay = 0, hitRate = 0, altPay = 0, tokensPerSpin = 0;
 for (let d = 0; d < PITY - 1; d++) {
     rtpPay += share(d) * expectedPay;
+    altPay += share(d) * expectedAlt;
+    tokensPerSpin += share(d) * expectedTokens;
     hitRate += share(d) * hit;
 }
 const pityShare = share(PITY - 1);
 rtpPay += pityShare * PITY_PAY;
 hitRate += pityShare;
 
+// Коридор держит ЗОЛОТО: жетон — не возврат денег, а покупка прогресса
+// алчности, и считать его в возврат значило бы прятать сток за курсом,
+// который пока заглушка.
 const rtp = rtpPay / CFG.spinCost;
 
 // ---------- ОТЧЁТ ----------
@@ -122,6 +144,47 @@ console.log('выигрышных круток: ' + (hitRate * 100).toFixed(1) +
 console.log('дольше всего без выигрыша: ' + (PITY - 1) + ' круток подряд');
 console.log('одна шкала алчности (' + Math.ceil(100 / CFG.fillPerSpin) + ' круток) стоит игроку '
     + (Math.ceil(100 / CFG.fillPerSpin) * CFG.spinCost * (1 - rtp)).toFixed(1) + ' монет');
+
+if (tokensPerSpin > 0) {
+    console.log('\nвторой пул (жетоны вместо монет):');
+    console.log('  жетон алчности раз в ' + (1 / tokensPerSpin).toFixed(0) + ' круток'
+        + ' (' + (1 / tokensPerSpin / Math.ceil(100 / CFG.fillPerSpin)).toFixed(1) + ' шкалы)');
+    console.log('  цена жетона: ' + ((CFG.spinCost - rtpPay) / tokensPerSpin).toFixed(1)
+        + ' монет чистой потери');
+    console.log('  возврат с жетонами по курсу: ' + ((rtpPay + altPay) / CFG.spinCost * 100).toFixed(1) + '%');
+}
+
+// ---------- КОЛЕСО И ПАЧИНКО ----------
+// Одна крутка — один взвешенный исход, без гарантии: возврат считается
+// прямо суммой. Вещь (продукт, семечка) идёт по своей монетной цене value.
+// Ставка тут не нужна: она множит и цену, и награду, проценты не меняются.
+function table(name, list) {
+    if (!list) return;
+    const total = list.reduce((s, x) => s + x.weight, 0);
+    let gold = 0, tokens = 0, all = 0;
+    console.log('\n' + name + ':');
+    list.forEach(x => {
+        const p = x.weight / total;
+        const v = x.give ? valueOf(x.give) : (x.value || 0) * (x.n || 1);
+        gold += p * ((x.give && x.give.gold) || 0);
+        tokens += p * tokensOf(x.give);
+        all += p * v;
+        console.log('  ' + x.key.padEnd(7) + ' шанс ' + (p * 100).toFixed(1).padStart(5) + '%'
+            + '   стоит ' + v.toFixed(1).padStart(5));
+    });
+    const r = all / CFG.spinCost;
+    console.log('  возврат всем по курсу: ' + (r * 100).toFixed(1) + '%'
+        + (r >= 1 ? '   ⚠ ПЕЧАТНЫЙ СТАНОК' : r > CFG.rtpMax ? '   ⚠ великовато' : ''));
+    if (tokens > 0) {
+        // Цена жетона — всё, что крутка не вернула ЗОЛОТОМ, делённое на
+        // жетоны. У колеса она завышена: часть потери уходит в вещи.
+        console.log('  жетон раз в ' + (1 / tokens).toFixed(0) + ' круток, цена жетона '
+            + ((CFG.spinCost - gold) / tokens).toFixed(1) + ' монет');
+    }
+    if (r >= 1) process.exitCode = 1;
+}
+table('колесо фортуны', CFG.wheel && CFG.wheel.sectors);
+table('пачинко', CFG.pachinko && CFG.pachinko.pockets);
 
 // Если выплаты уехали из коридора — сразу сказать, во сколько раз их двигать.
 // Порядок настройки: СНАЧАЛА возврат, ПОТОМ выплаты под него, а не наоборот

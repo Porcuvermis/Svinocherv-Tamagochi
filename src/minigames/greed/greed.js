@@ -43,7 +43,11 @@ const GreedMinigame = {
     // Монеты среди значков нет намеренно: системная эмодзи-монета на айфоне
     // СЕРЕБРЯНАЯ, а это игра про золото. Монета рисуется (currencyMark →
     // .coin-gold в style.css), остальные символы — обычные значки.
-    GLYPH: { skull: '💀', meat: '🍖', bone: '🦴', blank: '▫️' },
+    //
+    // token и shard на ленте не крутятся: барабаны встают на них, только
+    // когда тройка заплатила вторым пулом — жетоном вместо монет
+    // (docs/plan/28-greed-machine.md, разд. 5).
+    GLYPH: { skull: '💀', meat: '🍖', bone: '🦴', blank: '▫️', token: '🎰', shard: '🔸' },
 
     table: null,             // ставка, кошелёк и выплаты — с той стороны
     isSpinning: false,
@@ -403,7 +407,7 @@ const GreedMinigame = {
     // Барабаны встали — показываем итог. Шкала алчности налилась в любом
     // случае, поэтому заряд обновляется всегда, а шум — только за выплату.
     settle(res, gen) {
-        if (res.pay > 0) {
+        if (res.pay > 0 || this.altGain(res)) {
             this.showWin(res, gen);
             // Кошелёк пополняется не в момент остановки, а когда монеты
             // ДОЛЕТЕЛИ до лотка: иначе число прибавляется раньше, чем
@@ -584,9 +588,17 @@ const GreedMinigame = {
     // различать их ему больше нечем — слов в игре нет.
     showWin(res, gen) {
         if (!this.winOverlay) return;
-        const tier = res.jackpot ? 'jackpot' : (res.pay > (this.table ? this.table.cost : 1) ? 'win' : 'back');
+        const alt = this.altGain(res);
+        const tier = res.jackpot ? 'jackpot'
+            : (alt || res.pay > (res.cost || 1)) ? 'win' : 'back';
 
-        if (this.payEl) this.payEl.textContent = '+' + res.pay;
+        // Жетон показывается своим значком рядом с числом: «+1» без него
+        // читалось бы как монета (слов нет, инвариант 9).
+        if (this.payEl) {
+            this.payEl.textContent = alt
+                ? '+' + alt.amount + this.glyph(alt.key)
+                : '+' + res.pay;
+        }
         this.winOverlay.classList.remove('back', 'win', 'jackpot');
         this.winOverlay.classList.add(tier);
 
@@ -602,7 +614,8 @@ const GreedMinigame = {
 
         // Монет столько, сколько заплатили, но не больше горсти: сорок монет
         // за джекпот в кадре не читаются, а стоят сорока анимаций.
-        this.spawnCoinRain(tier === 'back' ? 1 : Math.max(5, Math.min(res.pay, 22)));
+        // Дождь монет — только за монеты: под жетоном он соврал бы о выплате.
+        if (!alt) this.spawnCoinRain(tier === 'back' ? 1 : Math.max(5, Math.min(res.pay, 22)));
         if (tier === 'jackpot') this.spawnFireworks();
 
         this.winOverlay.classList.remove('fade-out');
@@ -621,6 +634,14 @@ const GreedMinigame = {
             }
         }, hold + 700);
         this.spinTimers.push(t1, t2);
+    },
+
+    // Чем заплатил второй пул, если заплатил: ключ символа и сколько.
+    altGain(res) {
+        const cur = res.currencies || {};
+        if (cur.greed_token) return { key: 'token', amount: cur.greed_token };
+        if (cur.greed_shard) return { key: 'shard', amount: cur.greed_shard };
+        return null;
     },
 
     spawnFireworks() {

@@ -38,8 +38,8 @@ const { chromium } = require('playwright');
     // сверять надо именно с ними.
     window.__spins = [];
     const orig = Backend.greedSpin.bind(Backend);
-    Backend.greedSpin = function () {
-      const r = orig();
+    Backend.greedSpin = function (bet) {
+      const r = orig(bet);
       if (r.ok) window.__spins.push(r);
       return r;
     };
@@ -202,7 +202,10 @@ const { chromium } = require('playwright');
     for (let i = 0; i < n; i++) {
       const r = Backend.greedSpin();
       if (!r.ok) break;
-      if (r.pay > 0) { worstRun = Math.max(worstRun, dry); dry = 0; } else dry++;
+      // Выигрыш — не только монеты: жетонная тройка платит жетоном вместо
+      // них (docs/plan/28-greed-machine.md, разд. 5) и гарантию сбрасывает.
+      const won = r.pay > 0 || Object.keys(r.currencies || {}).length > 0;
+      if (won) { worstRun = Math.max(worstRun, dry); dry = 0; } else dry++;
     }
     return Math.max(worstRun, dry);
   }, 3000);
@@ -229,6 +232,50 @@ const { chromium } = require('playwright');
   check(drain.end < drain.start, 'на длинной дистанции кошелёк тает: автомат — сток');
   check(drain.rtp > cfg.rtpMin && drain.rtp < cfg.rtpMax,
         'возврат в коридоре: ' + (drain.rtp * 100).toFixed(1) + '%');
+
+  // ---------- 6а. АППАРАТ: ЖЕТОНЫ, СТАВКИ, КОЛЕСО, ПАЧИНКО ----------
+  // Числа здесь не проверяются — их держит sim-slots.js. Здесь проверяется
+  // устройство: замки, множитель ставки, полный склад.
+  const machine = await page.evaluate(() => {
+    const o = {};
+    Backend.grantCurrency('gold', 200000);
+    o.bet3Locked = Backend.greedSpin(3).error === 'bet_locked';
+    o.wheelLocked = Backend.greedPlay('wheel').error === 'locked';
+    const t0 = GameState.currency('greed_token') * 3 + GameState.currency('greed_shard');
+    let alt = 0;
+    for (let i = 0; i < 6000; i++) {
+      const r = Backend.greedSpin();
+      if (r.reels[0] === 'token' || r.reels[0] === 'shard') { alt++; if (r.pay !== 0) o.altPaidGold = true; }
+    }
+    o.alt = alt;
+    o.shardsGrew = GameState.currency('greed_token') * 3 + GameState.currency('greed_shard') > t0;
+    ['greed', 'wrath', 'glut', 'sloth', 'lust', 'envy', 'pride'].forEach(k => Backend.grantCurrency(k + '_token', 100));
+    o.wheelBought = Backend.buyUpgrade('wheel', 'greed').ok;
+    o.slots2 = Backend.buyUpgrade('slots', 'greed').ok;
+    const r100 = Backend.greedSpin(100);
+    o.bet100 = r100.ok && r100.cost === 100;
+    GameState.data.pantry.rib = Backend.pantryCap();
+    let full = 0, fullGold = 0;
+    for (let i = 0; i < 3000; i++) {
+      const r = Backend.greedPlay('wheel');
+      if (r.items && r.items.rest > 0) { full++; fullGold += r.currencies.gold || 0; }
+    }
+    o.full = full; o.fullGold = fullGold;
+    o.pachBought = Backend.buyUpgrade('pachinko', 'greed').ok;
+    const before = GameState.currency('envy_token') + GameState.currency('pride_token');
+    for (let i = 0; i < 3000; i++) Backend.greedPlay('pachinko');
+    o.foreign = GameState.currency('envy_token') + GameState.currency('pride_token') > before;
+    return o;
+  });
+  check(machine.bet3Locked, 'до апгрейда большие ставки закрыты');
+  check(machine.wheelLocked, 'колесо закрыто до покупки');
+  check(machine.alt > 0 && !machine.altPaidGold, 'жетонная тройка выпадает и монет при ней нет');
+  check(machine.shardsGrew, 'жетоны алчности копятся');
+  check(machine.wheelBought && machine.slots2, 'открытие и апгрейд покупаются жетонами всех грехов');
+  check(machine.bet100, 'после апгрейда ставка 100 работает и стоит 100');
+  check(machine.full > 0 && machine.fullGold >= machine.full,
+        'мясо в полную кладовую платится монетами (' + machine.full + ' раз)');
+  check(machine.pachBought && machine.foreign, 'пачинко платит жетонами чужих грехов');
 
   // ---------- 7. ПУСТОЙ КОШЕЛЁК ----------
   await page.evaluate(() => {
