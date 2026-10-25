@@ -492,7 +492,7 @@ Object.assign(GreedJunk, {
     // Делаются по одной; пока готова груша.
     SHELF_TOP: 466,
     bulbList() {
-        return [{ kind: 'pear', x: 150 }, { kind: 'red', x: 200 }];
+        return [{ kind: 'pear', x: 150 }, { kind: 'red', x: 200 }, { kind: 'globe', x: 231 }];
     },
 
     buttonPanel() {
@@ -679,12 +679,25 @@ Object.assign(GreedJunk, {
             });
             out += h0.disk + lamp;
         } else if (kind === 'globe') {
-            // маленький янтарный шарик на коротком цоколе
-            out += this.socketBrass(x, base, 5.6, 5);
-            const t = base - 5, cy = t - 6.5, r = 6.6;
-            const d = `M${x - 2.4} ${t} A${r} ${r} 0 1 1 ${x + 2.4} ${t} Z`;
-            out += this.T(14, 'glass', this.filament(x, cy, t - 1, 2.6) +
-                this.glassBulb(d, L.amber, 0.7, `M${x - 4.4} ${cy + 1} A4.6 4.6 0 0 1 ${x - 1} ${cy - 4.2}`, this.domeH(x, cy, r, 3)));
+            // Маленький янтарный шарик на коротком цоколе. Посадка: почти
+            // прямо, лишь чуть к зрителю (25°) и влево (−12°), к середине
+            // полки — рядом с заваленной трубкой ровная лампа смотрится
+            // небрежнее, чем три кривых подряд. Шар — круг при любом повороте.
+            let h0 = null;
+            const lamp = this.leaned(x, base - 2.8, 0.44, -12, () => {
+                const h = this.holder(x, base, 5.6);
+                h0 = h;
+                let o = h.cup + this.socketBrass(x, h.top, 4.8, 4);
+                const t = h.top - this.ax(4), r = 6, cy = t - this.ax(2.2) - r * 0.85;
+                // короткое горлышко + шар; контур без горлышка, если шар его накрыл
+                const d = cy + r * 0.8 >= t
+                    ? `M${x - r} ${f(cy)} A${r} ${r} 0 1 1 ${x + r} ${f(cy)} A${r} ${r} 0 1 1 ${x - r} ${f(cy)} Z`
+                    : `M${x - 2} ${f(t)} L${x - 2.4} ${f(cy + r * 0.75)} A${r} ${r} 0 1 1 ${x + 2.4} ${f(cy + r * 0.75)} L${x + 2} ${f(t)} Z`;
+                o += this.T(19, 'glass', this.filament(x, cy, t - 0.8, 2.4) +
+                    this.glassBulb(d, L.amber, 0.72, `M${x - 3.8} ${f(cy + 1)} A4 4 0 0 1 ${x - 0.8} ${f(cy - 3.6)}`, this.domeH(x, cy, r, 3)));
+                return o;
+            });
+            out += h0.disk + lamp;
         } else {
             // «свеча»: дымчатое стекло, вытянутое пламенем, носик закручен
             out += this.socketBrass(x, base, 6, 6);
