@@ -490,10 +490,15 @@ Object.assign(GreedJunk, {
     //   * сверху — ряд пустых дыр, где на дверце была табличка.
     doorScars() {
         const J = PALETTE.greedJunk, f = this.f;
+        const rnd = this.rng(611);
         let out = '';
-        // спиленные петли
+        // спиленные петли: вокруг лепестка — грязь и ржавчина двадцати лет,
+        // сам лепесток в ржавых потёках
         [322, 434].forEach(y => {
-            let leaf = `<rect x="51" y="${y - 7}" width="11" height="14" rx="1.5" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            let leaf = `<rect x="49.5" y="${y - 9}" width="15" height="18" rx="3" class="fx" fill="${J.wood[900]}" opacity="0.25"/>` +
+                `<rect x="51" y="${y - 7}" width="11" height="14" rx="1.5" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<rect x="51" y="${y - 7}" width="11" height="14" rx="1.5" fill="url(#gj-rust)" opacity="0.45"/>` +
+                `<path d="M53 ${y + 7} l0.8 5 M59 ${y + 7} l-0.6 4" stroke="${J.rust[500]}" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/>` +
                 this.bolt(57, y - 3, 1.4) + this.bolt(57, y + 3.5, 1.4);
             out += this.T(10, 'steel', leaf);
             // обрубок шарнира: половина цилиндра срезана наискось болгаркой —
@@ -504,13 +509,35 @@ Object.assign(GreedJunk, {
                 this.rodH(`M49.5 ${y} L49.5 ${y + 5}`, 5, 2.4);
             out += this.T(11, 'steel', knuckle);
         });
-        // отпиленный правый край: свежий металл, заусенец, побежалость
-        let cut = `<rect x="306.5" y="300" width="3" height="164" fill="${J.tin[100]}" opacity="0.85"/>` +
-            `<path d="M309.6 302 l0.9 4 l-0.9 3 l1 5 l-1 4 l0.8 6 l-0.8 3 M309.6 400 l1 3 l-1 4 l0.9 5 l-0.9 2" fill="none" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}"/>` +
-            `<rect x="300" y="300" width="7" height="164" fill="url(#gj-temper)" opacity="0.55"/>`;
-        out += this.T(9, 'steel', cut);
-        // пустые дыры от таблички над окном
-        [150, 166, 194, 210].forEach(x => { out += this.T(9, 'steel', this.hole(x, 304, 1.6)); });
+        // Отпиленный правый край — в повороте самого листа (tin поворачивает
+        // лист на 0.4°), иначе полоса расходилась с кромкой. Рез от руки:
+        // кромка свежего металла неровной ширины, у неё — чёрная окалина,
+        // дальше — побежалость полосой, заусенец по самому краю.
+        let edge = [], burnt = [];
+        for (let y = 298; y <= 466; y += 3) {
+            const w = 1.2 + rnd() * 1.8;
+            edge.push([310 - w, y]); burnt.push([310 - w - 1.2 - rnd() * 0.8, y]);
+        }
+        const line = pts => pts.map(p => f(p[0]) + ' ' + f(p[1])).join(' L');
+        let cut = `<rect x="300" y="308" width="9" height="148" fill="url(#gj-temper)" opacity="0.45"/>` +
+            `<path d="M${line(burnt)} L310 466 L310 298 Z" fill="${J.tin[900]}"/>` +
+            `<path d="M${line(edge)} L310 466 L310 298 Z" fill="${J.tin[100]}"/>`;
+        // заусенец: мелкие зубчики за кромку
+        let burr = '';
+        for (let y = 300; y < 464; y += 4 + rnd() * 5) burr += `M310 ${f(y)} l${f(0.8 + rnd())} ${f(1 + rnd())} `;
+        cut += `<path d="${burr}" stroke="${J.tin[300]}" stroke-width="0.6" stroke-linecap="round"/>`;
+        out += `<g transform="rotate(0.4 180 382)">` + this.T(9, 'steel', cut) + `</g>`;
+        // Отпечаток таблички над окном: под ней краска не выцвела и грязь не
+        // легла — остался яркий прямоугольник с тёмной каймой грязи по
+        // контуру и пустыми дырами по углам.
+        const px = 138, py = 298.5, pw = 84, ph = 12;
+        let ghost = `<rect x="${px - 1}" y="${py - 1}" width="${pw + 2}" height="${ph + 2}" rx="1.5" fill="none" stroke="${J.wood[900]}" stroke-width="1" opacity="0.22"/>` +
+            `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="1" fill="${J.tin[300]}" opacity="0.5"/>` +
+            `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="1" fill="${J.tin[100]}" opacity="0.12"/>`;
+        [[px + 3, py + 3], [px + pw - 3, py + 3], [px + 3, py + ph - 3], [px + pw - 3, py + ph - 3]].forEach(([x, y]) => {
+            ghost += this.hole(x, y, 1.3) + this.rustRun(x, y + 1.4, 3, Math.round(x));
+        });
+        out += `<g transform="rotate(0.4 180 382)">` + this.T(9, 'steel', ghost) + `</g>`;
         return out;
     },
 
