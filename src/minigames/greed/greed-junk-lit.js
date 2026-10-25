@@ -213,6 +213,7 @@ const GreedJunkLit = {
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
             const want = T.live ? T : { x: 0, y: 0 };
             t.x += (want.x - t.x) * 0.15; t.y += (want.y - t.y) * 0.15;
+            this._tilt = t;
             const moved = this.leverStep(now);
             if (moved || Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
                 last.x = t.x; last.y = t.y;
@@ -224,56 +225,129 @@ const GreedJunkLit = {
     },
 
     // ---------- РЫЧАГ ----------
-    // Рычаг на общем свете, как весь корпус, но двигается. Растрировать
-    // весь корпус на каждый кадр дорого, поэтому заранее (после первого
-    // кадра, не задерживая его) готовятся положения рычага — только его
-    // участок поля, во всех трёх картах. На рывке участок текстур
-    // подменяется нужным положением, и шейдер перерисовывает свет: тень от
-    // рычага ходит вместе с ним.
+    // Рычаг на общем свете, как весь корпус, но двигается — и плавно.
+    // Растрировать корпус на каждый кадр дорого, поэтому один раз (после
+    // первого кадра, не задерживая его) каждая часть рычага — юбка, рамка,
+    // шток, хомут, рукоять — освещается шейдером отдельно, на прозрачном
+    // фоне, и запоминается картинкой. На рывке участок рычага в текстурах
+    // подменяется корпусом без рычага, а части рисуются поверх своим
+    // холстом и непрерывно двигаются по геометрии GreedJunk.leverGeom:
+    // шток сжимается ракурсом, рукоять едет вниз и растёт, юбка
+    // сминается. Тени частей — их же силуэты, сдвинутые от света; чем
+    // ближе к игроку часть, тем дальше тень. После рывка участок
+    // возвращается в текстуры с рычагом — в покое он снова на шейдере
+    // целиком, с настоящей тенью.
+    // Было: тринадцать заранее снятых положений, подменяемых по очереди, —
+    // движение шло ступеньками.
     LEVER_CROP: { x: 300, y: 262, w: 60, h: 124 },
-    LEVER_STEPS: [-0.15, -0.05, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
     async prepareLever() {
-        const S = this.SCALE, C = this.LEVER_CROP, frames = [];
+        const S = this.SCALE, C = this.LEVER_CROP;
+        const sized = (svg) => svg.replace('<svg ', `<svg width="${C.w * S}" height="${C.h * S}" `);
+        const maps = (make) => Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(sized(make(ps)))));
         try {
-            for (const p of this.LEVER_STEPS) {
-                GreedJunk.leverPull = p;
-                const svgs = ['albedo', 'height', 'mat'].map(ps =>
-                    GreedJunk.bodySvg(ps, C).replace('<svg ', `<svg width="${C.w * S}" height="${C.h * S}" `));
-                frames.push(await Promise.all(svgs.map(v => this.image(v))));
+            const rest = await maps(ps => GreedJunk.bodySvg(ps, C));
+            const bare = await maps(ps => GreedJunk.bodySvg(ps, C, false));
+            const parts = {};
+            for (const k of GreedJunk.LEVER_ORDER) parts[k] = await maps(ps => GreedJunk.leverPartSvg(ps, C, k));
+            GreedJunk.pass = 'baked';
+            // освещённые части и их тени
+            const sprites = {}, shadows = {};
+            const light = this.lightFor(this._tilt || { x: 0, y: 0 });
+            for (const k of GreedJunk.LEVER_ORDER) {
+                this.upload(parts[k]);
+                this.draw(light);
+                const c = document.createElement('canvas');
+                c.width = C.w * S; c.height = C.h * S;
+                c.getContext('2d').drawImage(this.gl.canvas, C.x * S, C.y * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
+                sprites[k] = c;
+                // тень: силуэт части, чёрный, размытый несколькими сдвигами
+                const sc = document.createElement('canvas');
+                sc.width = c.width; sc.height = c.height;
+                const g = sc.getContext('2d');
+                for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
+                    g.globalAlpha = 0.06; g.drawImage(c, dx * S, dy * S);
+                }
+                g.globalAlpha = 1; g.globalCompositeOperation = 'source-in';
+                g.fillStyle = PALETTE.greedJunk.hole; g.fillRect(0, 0, sc.width, sc.height);
+                shadows[k] = sc;
             }
-            this.leverFrames = frames;
-        } catch (e) { console.warn('[Аппарат] кадры рычага не собрались', e); }
-        GreedJunk.leverPull = 0;
+            this.upload(rest);
+            this.draw(light);
+            this.lever = { rest, bare, sprites, shadows };
+        } catch (e) { console.warn('[Аппарат] части рычага не собрались', e); }
         GreedJunk.pass = 'baked';
     },
-    // рывок: рычаг на игрока, короткая пауза, пружина возвращает его с
-    // откатом назад и затуханием
-    pull() { if (this.leverFrames) this._leverAt = -1; },
-    leverAt(t) {
-        if (t < 140) return (t / 140) * (t / 140);
-        if (t < 200) return 1;
-        const u = t - 200;
-        return u > 520 ? 0 : Math.exp(-u / 120) * Math.cos(u / 80 * Math.PI / 2);
-    },
-    // true — участок текстур сменился, нужен кадр
-    leverStep(now) {
-        if (this._leverAt == null || !this.leverFrames) return false;
-        if (this._leverAt === -1) this._leverAt = now;
-        const t = now - this._leverAt, p = this.leverAt(t);
-        if (t > 720) this._leverAt = null;
-        const st = this.LEVER_STEPS;
-        let k = 0;
-        st.forEach((v, i) => { if (Math.abs(v - p) < Math.abs(st[k] - p)) k = i; });
-        if (k === this._leverK) return false;
-        this._leverK = k;
+    // участок рычага в трёх текстурах
+    upload(imgs) {
         const gl = this.gl, C = this.LEVER_CROP, S = this.SCALE;
-        this.leverFrames[k].forEach((img, u) => {
+        imgs.forEach((img, u) => {
             gl.activeTexture(gl.TEXTURE0 + u);
             gl.bindTexture(gl.TEXTURE_2D, this.tex[u]);
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, C.x * S, C.y * S, gl.RGBA, gl.UNSIGNED_BYTE, img);
         });
-        return true;
+    },
+    // рывок: рычаг на игрока, короткая пауза, пружина возвращает его с
+    // откатом назад и затуханием
+    pull() { if (this.lever && this.leverCanvas) this._leverAt = -1; },
+    leverAt(t) {
+        if (t < 140) { const u = t / 140; return u * u; }
+        if (t < 200) return 1;
+        const u = t - 200;
+        return Math.exp(-u / 120) * Math.cos(u / 80 * Math.PI / 2);
+    },
+    // Кадр рывка. true — текстуры сменились, нужен проход шейдера.
+    leverStep(now) {
+        if (this._leverAt == null || !this.lever) return false;
+        let swap = false;
+        if (this._leverAt === -1) {
+            this._leverAt = now;
+            this.upload(this.lever.bare);
+            this.leverCanvas.style.display = 'block';
+            swap = true;
+        }
+        const t = now - this._leverAt;
+        if (t > 760) {
+            this._leverAt = null;
+            this.upload(this.lever.rest);
+            this.leverCanvas.style.display = 'none';
+            return true;
+        }
+        this.drawLever(this.leverAt(t));
+        return swap;
+    },
+    // части по геометрии рывка: каждая — масштаб вокруг своей точки
+    drawLever(p) {
+        const L = this.lever, C = this.LEVER_CROP, S = this.SCALE;
+        const G0 = GreedJunk.leverGeom(0), G = GreedJunk.leverGeom(p), kx = G0.K.x;
+        const ctx = this.leverCanvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, this.leverCanvas.width, this.leverCanvas.height);
+        // (x0, y0) части в покое → (x1, y1) сейчас, масштаб sx, sy
+        const place = (x0, y0, x1, y1, sx, sy, dx, dy) => ctx.setTransform(sx, 0, 0, sy,
+            ((x1 - C.x) - (x0 - C.x) * sx + (dx || 0)) * S, ((y1 - C.y) - (y0 - C.y) * sy + (dy || 0)) * S);
+        const kb = G.h0 / G0.h0, ks = (G.top - G.s0) / (G0.top - G0.s0), kk = G.K.r / G0.K.r;
+        const pose = {
+            boot: [kx, G0.base, kx, G.base, 1, kb],
+            frame: [kx, 0, kx, 0, 1, 1],
+            shaft: [kx, G0.top, kx, G.top, 1, ks],
+            clamp: [kx, G0.top, kx, G.top, 1, 1],
+            knob: [kx, G0.K.y, kx, G.K.y, kk, kk]
+        };
+        // тени: от света вправо-вниз, дальше у того, что ближе к игроку
+        const lift = { boot: 1, frame: 0.6, shaft: 2 + 3 * G.sn, clamp: 1.5 + 2 * G.sn, knob: 3 + 5 * G.sn };
+        ctx.globalAlpha = 0.3;
+        GreedJunk.LEVER_ORDER.forEach(k => {
+            const a = pose[k], d = Math.max(0.5, lift[k]);
+            place(a[0], a[1], a[2], a[3], a[4], a[5], d * 0.63, d * 0.77);
+            ctx.drawImage(L.shadows[k], 0, 0);
+        });
+        ctx.globalAlpha = 1;
+        GreedJunk.LEVER_ORDER.forEach(k => {
+            const a = pose[k];
+            place(a[0], a[1], a[2], a[3], a[4], a[5]);
+            ctx.drawImage(L.sprites[k], 0, 0);
+        });
     },
 
     // ---------- МИГАНИЕ ПРИ ВЫИГРЫШЕ ----------
@@ -331,6 +405,13 @@ const GreedJunkLit = {
         const canvas = document.createElement('canvas');
         canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0';
         wrap.appendChild(canvas);
+        // холст движущегося рычага — над его участком корпуса
+        const C = this.LEVER_CROP, lv = document.createElement('canvas');
+        lv.width = C.w * this.SCALE; lv.height = C.h * this.SCALE;
+        lv.style.cssText = `position:absolute;left:${C.x / GreedJunk.W * 100}%;top:${C.y / GreedJunk.H * 100}%;` +
+            `width:${C.w / GreedJunk.W * 100}%;height:${C.h / GreedJunk.H * 100}%;z-index:1;display:none;pointer-events:none`;
+        wrap.appendChild(lv);
+        this.leverCanvas = lv;
         const live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         live.setAttribute('viewBox', `0 0 ${GreedJunk.W} ${GreedJunk.H}`);
         live.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';

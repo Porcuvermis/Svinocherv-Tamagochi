@@ -596,16 +596,24 @@ const GreedJunk = {
     //   * хром — полосами отражения вдоль (тёмная и светлая), так он и
     //     читается хромом, а не крашеной трубкой;
     //   * рукоять — шар бакелита с гравировкой схемы, на хромовой втулке.
-    // Рывок: pull 0..1 — рычаг заваливается НА ИГРОКА до 55°. Спереди это
-    // видно так: шток короче (ракурс), рукоять ниже и чуть крупнее (ближе),
-    // юбка сминается; на карте высот рукоять выше — тень от неё длиннее.
-    // Отрицательный pull — откат назад при возврате пружиной.
-    leverPull: 0,
+    // Геометрия рычага при рывке pull (0 — покой, 1 — до упора, меньше
+    // нуля — откат назад): рычаг заваливается НА ИГРОКА до 55°. Спереди
+    // это видно так: шток короче (ракурс), рукоять ниже и чуть крупнее
+    // (ближе), юбка сминается. Рисунок — в покое; рывок двигает готовые
+    // освещённые части по этой геометрии (GreedJunkLit, «Рычаг»).
     LEVER_TILT: 55,
-    leverSvg() {
+    leverGeom(pull) {
+        const P = this.SLOTS.pivot;
+        const th = pull * this.LEVER_TILT * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
+        const base = P.y - 16, h0 = 40 * (1 - 0.3 * Math.max(0, sn)), top = base - h0;
+        const K = { x: P.x, y: top - 50 * cs, r: 15 * (1 + 0.1 * sn) };
+        return { base, h0, top, K, s0: K.y + K.r - 2, cs, sn };
+    },
+    // Части рычага отдельно — для рывка. Вместе — leverSvg.
+    leverParts() {
         const J = PALETTE.greedJunk, P = this.SLOTS.pivot, V = this.VP || { y: 388 }, f = this.f;
-        const th = this.leverPull * this.LEVER_TILT * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
-        const base = P.y - 16, rings = 6, h0 = 40 * (1 - 0.3 * Math.max(0, sn)), top = base - h0;
+        const G = this.leverGeom(0);
+        const base = G.base, rings = 6, h0 = G.h0, top = G.top;
         const wAt = (t) => 30 - t * 19;                  // ширина юбки по высоте 0..1
         const bow = (y, w) => w * Math.max(0, (V.y - y) / 230) * 0.5;
         // силуэт: валик шире, впадина уже
@@ -632,8 +640,8 @@ const GreedJunk = {
             `<rect x="${f(P.x + cw / 2 - 1)}" y="${f(top - 1.6)}" width="3.4" height="4.8" rx="0.8" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             this.rodH(`M${f(P.x - cw / 2 + 1)} ${f(top + 0.8)} L${f(P.x + cw / 2 - 1)} ${f(top + 0.8)}`, 3.4, 1.4);
         // шток
-        const K = { x: P.x, y: top - 50 * cs, r: 15 * (1 + 0.1 * sn) };
-        const s0 = K.y + K.r - 2, sw = 6;
+        const K = G.K;
+        const s0 = G.s0, sw = 6;
         let shaft = `<rect x="${P.x - sw / 2}" y="${f(s0)}" width="${sw}" height="${f(top - s0 + 1)}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             // отражение окружения: светлое небо слева, тёмный пол посередине,
             // светлый рефлекс у правого края
@@ -642,7 +650,7 @@ const GreedJunk = {
             `<rect x="${P.x + 1.9}" y="${f(s0 + 1)}" width="0.6" height="${f(top - s0 - 1)}" fill="${J.tin[100]}" opacity="0.7"/>` +
             this.rodH(`M${P.x} ${f(s0)} L${P.x} ${f(top)}`, sw, 3);
         // втулка рукояти: хромовый стакан, в который вкручен шар
-        shaft += `<rect x="${P.x - 4.6}" y="${f(s0 - 1)}" width="9.2" height="6" rx="1.4" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+        const cup = `<rect x="${P.x - 4.6}" y="${f(s0 - 1)}" width="9.2" height="6" rx="1.4" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             `<rect x="${P.x - 3}" y="${f(s0)}" width="1.2" height="4" fill="${J.tin[100]}"/><rect x="${P.x + 0.6}" y="${f(s0)}" width="1.6" height="4" fill="${J.tin[700]}"/>` +
             this.rodH(`M${P.x} ${f(s0)} L${P.x} ${f(s0 + 4)}`, 9, 3.4);
         // схема передач гравировкой: три вертикали через поперечину,
@@ -660,12 +668,24 @@ const GreedJunk = {
             `<g stroke="${J.paint.cream}" stroke-width="${STROKE.structure}" stroke-linecap="round">${pattern}</g>` +
             `<g fill="${J.paint.cream}">${dots}</g></g>` +
             `<ellipse cx="${K.x - 6}" cy="${K.y - 7.5}" rx="4.6" ry="2.6" class="hl" fill="${J.tin[300]}" opacity="0.55" transform="rotate(-35 ${K.x - 6} ${K.y - 7.5})"/>`;
-        return `<g class="gj-lever">` +
-            `<g class="gj-boot">${this.T(10 + sn * 2, 'rubber', boot + bootH)}</g>` +
-            this.bootFrame() +
-            `<g class="gj-shaft">${this.T(9 + sn * 5, 'polished', shaft)}${this.T(11 + sn * 3, 'steel', clamp)}</g>` +
-            `<g class="gj-knob">${this.T(5 + sn * 3, 'bakelite', knob)}</g>` +
-            `</g>`;
+        return {
+            boot: this.T(10, 'rubber', boot + bootH),
+            frame: this.bootFrame(),
+            shaft: this.T(9, 'polished', shaft),
+            clamp: this.T(11, 'steel', clamp),
+            knob: this.T(9, 'polished', cup) + this.T(8, 'bakelite', knob)
+        };
+    },
+    LEVER_ORDER: ['boot', 'frame', 'shaft', 'clamp', 'knob'],
+    leverSvg() {
+        const L = this.leverParts();
+        return '<g class="gj-lever">' + this.LEVER_ORDER.map(k => L[k]).join('') + '</g>';
+    },
+    // Одна часть рычага на прозрачном фоне, участком crop — для рывка.
+    leverPartSvg(pass, crop, part) {
+        this.pass = pass;
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${crop.x} ${crop.y} ${crop.w} ${crop.h}">` +
+            this.passStyle(pass) + this.defs() + this.leverParts()[part] + '</svg>';
     },
 
     // Рамка юбки из салона: чёрное пластиковое кольцо на двух саморезах
