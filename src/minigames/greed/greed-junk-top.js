@@ -26,10 +26,13 @@ Object.assign(GreedJunk, {
         out += this.wheelMount(w.cx, w.cy);
         out += this.socketHome(65, 58);
         out += this.powerCable();
-        out += this.harness(w.cx + 72, w.cy - 70, 52, 34);
+        // провода будущего мотора колеса — из втулки в пластине ступицы
+        out += this.harness(w.cx + 40, w.cy - 28, 28, 34, false);
         // латка из крышки банки и блок питания (greed-junk-parts.js)
         out += this.canLid(64, 244);
         out += this.psu(146, 204);
+        // от блока питания — к ступице колеса (питание мотора)
+        out += this.T(3, 'rubber', this.conduit([[166, 205], [164, 199], [156, 195], [146, 192]]));
 
         // ---- крепление пачинко: два рельса, полка-упор и розетка сбоку ----
         const p = S.pachinko;
@@ -42,6 +45,8 @@ Object.assign(GreedJunk, {
         // Промышленное гнездо на бруске между рельсами; от него гофра к
         // распаечной коробке жгута — подводка видна, гнездо не висит само по себе.
         out += this.conduit([[p.x + 38, p.y + 156], [p.x + 37, p.y + 168], [p.x + 41, p.y + 177], [p.x + 48, p.y + 180]]);
+        // от блока питания — к правой розетке
+        out += this.T(3, 'rubber', this.conduit([[197, 216], [210, 214], [226, 208], [p.x + 36, p.y + 158]]));
         out += this.socketPanel(p.x + 34, p.y + 130);
         out += this.harness(p.x + 58, p.y + 190, 26, 45);
         out += this.topFrame();
@@ -191,11 +196,12 @@ Object.assign(GreedJunk, {
     // Розетка СВОБОДНА: в неё включат колесо, когда его купят, и занятая
     // вилкой она обещала бы, что колесо уже есть. Кабель — это подводка
     // самой розетки: выходит снизу из её коробки через сальник, спускается
-    // по стенке на двух клипсах с провисом и уходит в дыру в доске, внутрь
-    // автомата, к общему питанию.
+    // вдоль боковины в обход ступицы на клипсах и уходит в блок питания —
+    // от него вся проводка ящика (обе розетки и мотор колеса).
     powerCable() {
         const J = PALETTE.greedJunk, f = this.f;
-        const pts = [[65, 71], [64, 88], [57, 104], [53, 120], [54, 136]];
+        // от розетки вниз вдоль боковины, в обход ступицы, к блоку питания
+        const pts = [[65, 71], [64, 88], [57, 104], [52, 124], [50, 160], [51, 196], [60, 214], [90, 222], [120, 224], [148, 226]];
         const d = this.smooth(pts);
         let out = '';
         // тень: кабель лежит на стенке почти вплотную
@@ -209,16 +215,12 @@ Object.assign(GreedJunk, {
         out += `<path d="M61.5 67 L68.5 67 L67.5 74 L62.5 74 Z" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
         [69.4, 71.6].forEach(y => { out += `<line x1="62.4" y1="${y}" x2="67.6" y2="${y}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`; });
         // клипсы: белая пластиковая скоба поперёк кабеля и гвоздик
-        [[64, 90, 4], [53.5, 121, -6]].forEach(([x, y, a]) => {
+        [[64, 90, 4], [50.5, 168, -2], [104, 223.5, 92]].forEach(([x, y, a]) => {
             out += this.T(4, 'plastic', `<g transform="rotate(${a} ${x} ${y})">` +
                 `<rect x="${x - 6.5}" y="${y - 3}" width="13" height="6" rx="2.6" fill="${J.paint.cream}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
                 `<line x1="${x - 4}" y1="${y - 1.6}" x2="${x + 4}" y2="${y - 1.6}" class="hl" stroke="${J.tin[100]}" stroke-opacity="0.8" stroke-width="${STROKE.hairline}"/>` +
                 `</g>` + this.ironNail(x + (a > 0 ? 4 : -4), y));
         });
-        // дыра в доске с резиновой втулкой: кабель уходит внутрь автомата
-        out += this.T(1, 'rubber', `<ellipse cx="54" cy="138" rx="5.6" ry="5" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<ellipse cx="54" cy="138" rx="3.4" ry="3" class="pit" fill="${J.hole}"/>` +
-            `<path d="M49.5 136.1 a5 4.6 0 0 1 6 -3.2" fill="none" class="hl" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`);
         return out;
     },
 

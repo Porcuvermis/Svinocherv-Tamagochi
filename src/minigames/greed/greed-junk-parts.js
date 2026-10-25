@@ -441,10 +441,12 @@ Object.assign(GreedJunk, {
     // клемма, колпачок-скрутка, голая медь, конец загнут и примотан.
     // Раньше жилы торчали из ниоткуда, висели коротко и параллельно, а
     // концы были оранжевыми точками.
-    harness(x, y, len, seed) {
+    // box: false — жгут выходит не из распаечной коробки, а из втулки в
+    // детали (провода мотора колеса из пластины ступицы).
+    harness(x, y, len, seed, box) {
         const J = PALETTE.greedJunk, f = this.f;
         const rnd = this.rng(seed);
-        let out = this.junctionBox(x, y - 12, seed);
+        let out = box === false ? this.grommet(x, y - 1.5) : this.junctionBox(x, y - 12, seed);
         const colors = [J.paint.red, J.paint.blue, J.paint.yellow, J.tin[900]];
         const ends = ['ring', 'cap', 'bare', 'loop'];
         const top = y, tie = y + len * 0.28;
@@ -478,6 +480,13 @@ Object.assign(GreedJunk, {
             `<rect x="${f(x + 5)}" y="${f(tie - 2.6)}" width="4" height="5.2" rx="0.8" fill="${J.plastic.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             `<line x1="${f(x + 9)}" y1="${f(tie)}" x2="${f(x + 12)}" y2="${f(tie + 1.2)}" stroke="${J.plastic.base}" stroke-width="1.6" stroke-linecap="square"/>`;
         return out;
+    },
+
+    // Резиновая втулка в металле: через неё провода выходят из детали.
+    grommet(x, y) {
+        const J = PALETTE.greedJunk, f = this.f;
+        return this.T(1, 'rubber', `<ellipse cx="${f(x)}" cy="${f(y)}" rx="5" ry="4.4" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<ellipse cx="${f(x)}" cy="${f(y)}" rx="2.8" ry="2.4" class="pit" fill="${J.hole}"/>` + this.domeH(x, y, 5, 1));
     },
 
     // Круглая серая распаечная коробка: крышка на винте, выпуклый
