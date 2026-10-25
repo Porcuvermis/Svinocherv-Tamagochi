@@ -389,7 +389,7 @@ Object.assign(GreedJunk, {
         out += this.T(9, 'steel', this.tin(50, 296, 260, 172, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         // крашеное поле: синяя рамка и лучи
         let face = '';
-        face += `<rect x="62" y="312" width="236" height="148" rx="10" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        face += `<rect x="62" y="312" width="236" height="148" rx="2" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         const cx = 180, cy = 388;
         const rays = [J.paint.orange, J.paint.yellow, J.paint.red, J.paint.yellow];
         for (let i = 0; i < 12; i++) {
@@ -420,15 +420,17 @@ Object.assign(GreedJunk, {
             quad([[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], J.hole, 0.3) +
             quad([[I[0], I[3]], [I[2], I[3]], [O[2], O[3]], [O[0], O[3]]], J.paint.cream, 0.28) +
             quad([[I[2], I[1]], [O[2], O[1]], [O[2], O[3]], [I[2], I[3]]], J.paint.cream, 0.12) + '</g>';
-        // Высота скоса — плавным уклоном от листа (9) вниз к окну (−3.5):
+        // Высота скоса — плавным уклоном от листа (9) вниз к окну (−10):
         // четыре трапеции, у каждой свой градиент серого поперёк скоса.
         // Ступенями (как было) скос выходил полосатым — шейдер ловил края
         // ступеней, а сам уклон почти не читался. Градиент пишется в карту
         // высот как есть: inline-стиль с !important сильнее общего правила
-        // прохода, которое красит всё по --h.
+        // прохода, которое красит всё по --h. Обводка тем же градиентом
+        // закрывает шов на диагоналях углов: без неё сглаживание краёв
+        // оставляло там тёмную щель, и шейдер штриховал углы.
         {
             const g = (v) => { const c = Math.round(this.hv(v) * 255); return `rgb(${c},${c},${c})`; };
-            const hi = g(9), lo = g(-3.5);
+            const hi = g(9), lo = g(-10);
             const sides = [
                 ['t', [[O[0], O[1]], [O[2], O[1]], [I[2], I[1]], [I[0], I[1]]], [0, O[1], 0, I[1]]],
                 ['b', [[O[0], O[3]], [O[2], O[3]], [I[2], I[3]], [I[0], I[3]]], [0, O[3], 0, I[3]]],
@@ -438,7 +440,7 @@ Object.assign(GreedJunk, {
             face += '<g class="hpass">' + sides.map(([k, pts, v]) =>
                 `<linearGradient id="gj-bev-${k}" gradientUnits="userSpaceOnUse" x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}">` +
                 `<stop offset="0" stop-color="${hi}"/><stop offset="1" stop-color="${lo}"/></linearGradient>` +
-                `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" style="fill:url(#gj-bev-${k}) !important;stroke:none !important"/>`
+                `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" style="fill:url(#gj-bev-${k}) !important;stroke:url(#gj-bev-${k}) !important;stroke-width:1.2px;stroke-linejoin:round"/>`
             ).join('') + '</g>';
         }
         // рёбра скоса — линии от углов листа к углам окна
@@ -449,12 +451,14 @@ Object.assign(GreedJunk, {
         face += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         out += this.T(9, 'paint', face);
         // рамка окна барабанов — на дне скоса
-        let win = `<rect x="78" y="332" width="204" height="112" rx="8" fill="${J.paint.blueLo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        // Углы окна и проёма — почти острые: трапеции скоса сходятся в них
+        // по диагоналям, а скругления разной кривизны ломали углы.
+        let win = `<rect x="78" y="332" width="204" height="112" rx="2" fill="${J.paint.blueLo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         win += `<line x1="84" y1="335" x2="276" y2="335" stroke="${J.paint.blue}" stroke-width="${STROKE.detail}"/>`;
         S.reels.forEach(r => {
             win += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         });
-        out += this.T(-3.5, 'paint', win);
+        out += this.T(-10, 'paint', win);
         // кнопки на полке-пульте под табло: разные, как собранные с разных пультов
         [[136, J.paint.orange, 6.5], [168, J.paint.red, 5.5], [196, J.paint.orange, 6.5], [226, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
             out += this.T(9, 'steel', `<circle cx="${bx + 0.8}" cy="${477.8}" r="${r + 2}" class="fx" fill="${J.hole}" opacity="0.3"/>` +

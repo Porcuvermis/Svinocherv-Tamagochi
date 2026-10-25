@@ -81,6 +81,7 @@ const GreedJunkLit = {
             uniform vec3 uL;          // на источник, нормирован
             uniform float uRelief;    // крутизна рельефа для нормали
             uniform float uPxPerH;    // текселей на единицу карты высот
+            uniform vec2 uHMap;       // карта высот: (H0, HMAX) — h = v * HMAX − H0
             varying vec2 vUv;
             float hh(vec2 p) { return texture2D(uH, p).r; }
             void main() {
@@ -106,10 +107,13 @@ const GreedJunkLit = {
                 vec2 dir = normalize(uL.xy);
                 float rise = uL.z / length(uL.xy) / uPxPerH;   // подъём луча на тексел
                 float occ = 0.0;
-                for (int i = 1; i <= 20; i++) {
-                    float t = float(i) * 3.0;
+                // Шаг 1.5 тексела и мягкий порог: на крутом уклоне (скос окна)
+                // тень ложится сама на себя, и при шаге 3 с резким порогом
+                // каждый шаг давал свою полосу — углы скоса штриховало.
+                for (int i = 1; i <= 40; i++) {
+                    float t = float(i) * 1.5;
                     float hs = hh(vUv + dir * uTex * t);
-                    occ = max(occ, clamp((hs - (h0 + t * rise)) * 14.0, 0.0, 1.0));
+                    occ = max(occ, clamp((hs - (h0 + t * rise) - 0.01) * 5.0, 0.0, 1.0));
                 }
                 float sh = 1.0 - 0.55 * occ;
 
@@ -123,7 +127,8 @@ const GreedJunkLit = {
                 vec3 spc = mix(vec3(1.0), a.rgb / max(a.a, 0.01) * 1.5, m.b);
 
                 // глубина: ниже — темнее
-                float depth = mix(0.72, 1.0, clamp((h0 - 0.1) / 0.5, 0.0, 1.0));
+                float hu0 = h0 * uHMap.y - uHMap.x;      // высота в единицах сцены
+                float depth = mix(0.72, 1.0, clamp((hu0 + 1.6) / 12.0, 0.0, 1.0));
 
                 vec3 col = a.rgb * lit * sh * depth + spc * sp * sh * a.a;
                 gl_FragColor = vec4(col, a.a);
@@ -220,7 +225,9 @@ const GreedJunkLit = {
         ['uA', 'uH', 'uM'].forEach((u, i) => gl.uniform1i(gl.getUniformLocation(p, u), i));
         gl.uniform2f(gl.getUniformLocation(p, 'uTex'), 1 / this.size[0], 1 / this.size[1]);
         gl.uniform3f(gl.getUniformLocation(p, 'uL'), L[0] / n, L[1] / n, L[2] / n);
-        gl.uniform1f(gl.getUniformLocation(p, 'uRelief'), 9.0);
+        // крутизна — под шкалу карты высот: при шкале 24 было 9
+        gl.uniform1f(gl.getUniformLocation(p, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
+        gl.uniform2f(gl.getUniformLocation(p, 'uHMap'), GreedJunk.H0, GreedJunk.HMAX);
         gl.uniform1f(gl.getUniformLocation(p, 'uPxPerH'), GreedJunk.HMAX * this.SCALE);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);

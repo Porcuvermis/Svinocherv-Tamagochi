@@ -29,8 +29,10 @@ Object.assign(GreedJunk, {
 
     // Высота детали в единицах каталога (задняя стенка — 0) → доля 0..1
     // карты высот. Ниже стенки бывают только щели и дыры (класс pit).
-    H0: 4,
-    HMAX: 24,
+    // Запас вниз — 12 единиц: окно табло утоплено глубоко, а при 4 его
+    // дно упиралось в ноль карты и глубина не читалась.
+    H0: 12,
+    HMAX: 32,
     hv(h) { return Math.max(0, Math.min(1, (h + this.H0) / this.HMAX)); },
 
     // Обёртка детали: высота h и материал mat.
@@ -48,7 +50,7 @@ Object.assign(GreedJunk, {
         if (pass === 'baked') return `<style>.hpass{display:none}</style>`;
         if (pass === 'albedo') return `<style>.fx,.hl,.hpass{display:none}</style>`;
         if (pass === 'height') {
-            const v = (d) => `calc((var(--h,0.17) + var(--dh,0) + ${d}) * 255)`;
+            const v = (d) => `calc((var(--h,${this.hv(0).toFixed(3)}) + var(--dh,0) + ${d}) * 255)`;
             const g = (d) => `rgb(${v(d)},${v(d)},${v(d)})`;
             return `<style>` +
                 `*{fill:${g(0)}!important;stroke:${g(0)}!important}` +
