@@ -492,7 +492,7 @@ Object.assign(GreedJunk, {
     // Делаются по одной; пока готова груша.
     SHELF_TOP: 466,
     bulbList() {
-        return [{ kind: 'pear', x: 150 }];
+        return [{ kind: 'pear', x: 150 }, { kind: 'red', x: 200 }];
     },
 
     buttonPanel() {
@@ -621,12 +621,31 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, L = J.bulb, f = this.f;
         let out = '';
         if (kind === 'red') {
-            // длинная трубка: узкий цоколь, цилиндр с закруглённым верхом
-            out += this.socketBrass(x, base, 6.4, 6);
-            const t = base - 6, top = t - 26, w = 6;
-            const d = `M${x - w / 2} ${t} V${top + w / 2} A${w / 2} ${w / 2} 0 0 1 ${x + w / 2} ${top + w / 2} V${t} Z`;
-            out += this.T(14, 'glass', this.filament(x, top + 6, t - 1, 2.4) +
-                this.glassBulb(d, L.red, 0.75, `M${x - 1.4} ${t - 3} V${top + 4}`, this.rodH(`M${x} ${top + 2} L${x} ${t}`, w, 2.6)));
+            // Длинная красная трубка-индикатор, вытащенная из чего-то
+            // специального. Посадка своя: сильно завалена вправо (32°) и к
+            // зрителю умеренно (40°) — так видна её длина; у груши наоборот.
+            // Трубка — цилиндр по оси (длина укорочена наклоном), верх —
+            // полусфера: круг, который с любой стороны круг.
+            let h0 = null;
+            const lamp = this.leaned(x, base - 2.8, 0.7, 32, () => {
+                const h = this.holder(x, base, 6);
+                h0 = h;
+                let o = h.cup + this.socketBrass(x, h.top, 5.2, 4.6);
+                const w = 5.6, t = h.top - this.ax(4.6), len = 24, yt = t - this.ax(len);
+                let g = this.cyl(x, t, w, len, L.red, L.red);
+                g = g.replace(`fill="${L.red}"`, `fill="${L.red}" opacity="0.82"`);
+                // нить — прямая жилка вдоль оси, держатели снизу
+                g += `<path d="M${x - 0.8} ${f(t - 1)} L${x - 0.8} ${f(yt + 3)} M${x + 0.8} ${f(t - 1)} L${x + 0.8} ${f(yt + 3)}" stroke="${L.wire}" stroke-width="0.5" opacity="0.8"/>`;
+                // полусфера верха
+                g += `<circle cx="${x}" cy="${f(yt)}" r="${w / 2}" fill="${L.red}" opacity="0.9" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+                // контур боков поверх, чтобы стык с полусферой не рвал линию
+                g += `<path d="M${x - w / 2} ${f(t)} L${x - w / 2} ${f(yt)} M${x + w / 2} ${f(t)} L${x + w / 2} ${f(yt)}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+                g += `<path d="M${x - 1.5} ${f(t - 1.5)} L${x - 1.5} ${f(yt + 0.5)}" class="hl" stroke="${J.alu[100]}" stroke-width="0.9" stroke-linecap="round" opacity="0.75"/>`;
+                g += this.rodH(`M${x} ${f(yt)} L${x} ${f(t)}`, w, 2.6) + this.domeH(x, yt, w / 2, 2.6);
+                o += this.T(20, 'glass', g);
+                return o;
+            });
+            out += h0.disk + lamp;
         } else if (kind === 'pear') {
             // груша: патрон на полке, в нём латунный цоколь с резьбой,
             // горлышко, круглое тело
