@@ -103,6 +103,10 @@ const GreedJunk = {
             lin('gj-tin', J.tin[300], J.tin[700], 0.6, 1) +
             lin('gj-tin-dark', J.tin[500], J.tin[700], 0.6, 1) +
             lin('gj-blue', J.paint.blue, J.paint.blueLo, 0.3, 1) +
+            // цвета побежалости у отпиленного края: от соломенного к синему
+            `<linearGradient id="gj-temper" x1="1" y1="0" x2="0" y2="0">` +
+            `<stop offset="0" stop-color="${J.paint.yellow}"/><stop offset="0.5" stop-color="${J.rust[300]}"/>` +
+            `<stop offset="1" stop-color="${J.paint.blueLo}" stop-opacity="0"/></linearGradient>` +
             // барабан: темнее к верху и низу — лента уходит от глаза
             `<linearGradient id="gj-drum" x1="0" y1="0" x2="0" y2="1">` +
             `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.75"/><stop offset="0.28" stop-color="${J.hole}" stop-opacity="0"/>` +

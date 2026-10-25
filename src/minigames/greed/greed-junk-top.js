@@ -387,6 +387,7 @@ Object.assign(GreedJunk, {
         out += this.T(6, 'pine', this.planks(306, 290, 20, 182, 1, 52, 'v', 0, 'pine'));
         // жестяной лист
         out += this.T(9, 'steel', this.tin(50, 296, 260, 172, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
+        out += this.doorScars();
         // крашеное поле: синяя рамка и лучи
         let face = '';
         face += `<rect x="62" y="312" width="236" height="148" rx="2" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
@@ -475,6 +476,41 @@ Object.assign(GreedJunk, {
                 `<circle cx="${bx - r * 0.3}" cy="${475 - r * 0.35}" r="${r * 0.32}" class="hl" fill="${J.paint.cream}" opacity="0.8"/>` +
                 this.domeH(bx, 475, r, 2.5));
         });
+        return out;
+    },
+
+    // ---------- ИСТОРИЯ ТАБЛО ----------
+    // Табло — дверца от старого игрового автомата из парка аттракционов:
+    // эмаль с лучами и окно под барабаны у неё свои. Её сняли с петель,
+    // отпилили по размеру ящика и прикрутили к стойкам. Следы этого:
+    //   * слева — две петли, спиленные болгаркой: лепесток на дверце и
+    //     обрубок шарнира со срезом;
+    //   * справа — край отпилен: светлая полоса свежего реза с заусенцем и
+    //     цвета побежалости от нагрева;
+    //   * сверху — ряд пустых дыр, где на дверце была табличка.
+    doorScars() {
+        const J = PALETTE.greedJunk, f = this.f;
+        let out = '';
+        // спиленные петли
+        [322, 434].forEach(y => {
+            let leaf = `<rect x="51" y="${y - 7}" width="11" height="14" rx="1.5" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                this.bolt(57, y - 3, 1.4) + this.bolt(57, y + 3.5, 1.4);
+            out += this.T(10, 'steel', leaf);
+            // обрубок шарнира: половина цилиндра срезана наискось болгаркой —
+            // светлый косой срез сверху, а снизу шарнир просто кончается
+            let knuckle = `<path d="M47 ${y - 1} L52 ${y - 4} L52 ${y + 6} Q49.5 ${y + 7.4} 47 ${y + 6} Z" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<path d="M47 ${y - 1} L52 ${y - 4} L52 ${y - 2.6} L47 ${y + 0.4} Z" fill="${J.tin[100]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+                `<circle cx="49.5" cy="${y - 1.6}" r="0.8" class="pit" fill="${J.hole}"/>` +
+                this.rodH(`M49.5 ${y} L49.5 ${y + 5}`, 5, 2.4);
+            out += this.T(11, 'steel', knuckle);
+        });
+        // отпиленный правый край: свежий металл, заусенец, побежалость
+        let cut = `<rect x="306.5" y="300" width="3" height="164" fill="${J.tin[100]}" opacity="0.85"/>` +
+            `<path d="M309.6 302 l0.9 4 l-0.9 3 l1 5 l-1 4 l0.8 6 l-0.8 3 M309.6 400 l1 3 l-1 4 l0.9 5 l-0.9 2" fill="none" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}"/>` +
+            `<rect x="300" y="300" width="7" height="164" fill="url(#gj-temper)" opacity="0.55"/>`;
+        out += this.T(9, 'steel', cut);
+        // пустые дыры от таблички над окном
+        [150, 166, 194, 210].forEach(x => { out += this.T(9, 'steel', this.hole(x, 304, 1.6)); });
         return out;
     },
 
