@@ -360,6 +360,59 @@ Object.assign(GreedJunk, {
         return this.T(2, 'steel', strip) + this.T(3, 'steel', bezel) + this.T(4, 'lens', lens);
     },
 
+    // ---------- КАРАНДАШНАЯ РАЗМЕТКА ----------
+    // Пока игры не куплены, крепления — просто железо. Разметка на стенке
+    // объясняет его: строитель обвёл, где встанет колесо (круг в настоящий
+    // размер, с засечками по сторонам света) и где повиснет короб пачинко
+    // (прямоугольник с перехлёстом линий в углах — так размечают плотники).
+    // Линии от руки: два чуть разъехавшихся прохода карандаша. Слов нет —
+    // только линии (инвариант 9). Графит лежит на дереве: на карте высот
+    // его нет, свет его не лепит.
+    pencilMarks() {
+        const J = PALETTE.greedJunk, f = this.f, S = this.SLOTS;
+        const rnd = this.rng(977);
+        const line = (d, op) => `<path d="${d}" fill="none" stroke="${J.pencil}" stroke-width="${STROKE.structure}" ` +
+            `stroke-linecap="round" opacity="${op}"/>`;
+        let out = '';
+        // круг колеса: дуги с разрывами, два прохода
+        const w = S.wheel;
+        [[0, 0.9], [1, 0.55]].forEach(([k, op]) => {
+            const r = w.r + k * 1.2, dx = k * 0.8, dy = -k * 0.6;
+            let a0 = 0.1 + rnd() * 0.2;
+            while (a0 < Math.PI * 2) {
+                const a1 = Math.min(Math.PI * 2, a0 + 0.9 + rnd() * 0.8);
+                const p0 = [w.cx + dx + Math.cos(a0) * r, w.cy + dy + Math.sin(a0) * r];
+                const p1 = [w.cx + dx + Math.cos(a1) * r, w.cy + dy + Math.sin(a1) * r];
+                out += line(`M${f(p0[0])} ${f(p0[1])} A${f(r)} ${f(r)} 0 0 1 ${f(p1[0])} ${f(p1[1])}`, op);
+                a0 = a1 + 0.05 + rnd() * 0.08;
+            }
+        });
+        // засечки по сторонам света
+        [0, 1, 2, 3].forEach(i => {
+            const a = i * Math.PI / 2;
+            const p0 = [w.cx + Math.cos(a) * (w.r - 5), w.cy + Math.sin(a) * (w.r - 5)];
+            const p1 = [w.cx + Math.cos(a) * (w.r + 5), w.cy + Math.sin(a) * (w.r + 5)];
+            out += line(`M${f(p0[0])} ${f(p0[1])} L${f(p1[0])} ${f(p1[1])}`, 0.75);
+        });
+        // прямоугольник короба: стороны с перехлёстом в углах
+        const p = S.pachinko, o = 5;
+        // габарит короба — снаружи рельсов: между рельсами линии бы под ними и пропали
+        const x0 = p.x - 3, x1 = p.x + p.w - 9, y0 = p.y + 3, y1 = p.y + p.h - 40;
+        [[x0 - o, y0, x1 + o, y0], [x0 - o, y1, x1 + o, y1], [x0, y0 - o, x0, y1 + o], [x1, y0 - o, x1, y1 + o]].forEach(([ax, ay, bx, by]) => {
+            const j = () => (rnd() - 0.5) * 1.2;
+            out += line(`M${f(ax + j())} ${f(ay + j())} L${f(bx + j())} ${f(by + j())}`, 0.7);
+        });
+        // галочки в углах прямоугольника — «здесь угол короба»
+        [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]].forEach(([cx, cy, sx, sy]) => {
+            out += line(`M${f(cx + sx * 7)} ${f(cy + sy * 2)} L${f(cx + sx * 2)} ${f(cy + sy * 2)} L${f(cx + sx * 2)} ${f(cy + sy * 7)}`, 0.6);
+        });
+        // плотницкий крест «здесь» в свободном месте между рельсами
+        const kx = p.x + 26, ky = p.y + 10, kw = 40, kh = 32;
+        out += line(`M${f(kx)} ${f(ky)} L${f(kx + kw)} ${f(ky + kh)}`, 0.8) +
+            line(`M${f(kx + kw)} ${f(ky)} L${f(kx)} ${f(ky + kh)}`, 0.8);
+        return this.T(0, 'graphite', out);
+    },
+
     // Отверстие под болт: тёмная дырка с ободком — «здесь что-то прикрутят».
     hole(x, y, r) {
         const J = PALETTE.greedJunk, f = this.f;

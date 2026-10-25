@@ -14,6 +14,8 @@ Object.assign(GreedJunk, {
         let out = this.backPlanks(28, 24, 288, 270, 211);
         out += `<rect x="28" y="24" width="288" height="270" class="fx" fill="${J.hole}" opacity="0.28"/>`;
         out += `<rect x="28" y="24" width="288" height="270" class="fx" fill="url(#gj-vign)"/>`;
+        // карандашная разметка будущих игр — на стенке, под креплениями
+        out += this.pencilMarks();
         // поперечина-перекладина, на которой всё висит
         out += this.slabBar();
         // жалюзи и лампа питания внизу ящика (greed-junk-parts.js, louverStrip)
