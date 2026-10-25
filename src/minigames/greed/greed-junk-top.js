@@ -879,7 +879,7 @@ Object.assign(GreedJunk, {
     doorJoint() {
         const J = PALETTE.greedJunk, Z = J.zinc, f = this.f;
         let out = '';
-        [[89, 0.6], [257, -0.8]].forEach(([x, tilt]) => {
+        [[83, 0.6], [261, -0.8]].forEach(([x, tilt]) => {
             // шире 5 нельзя: просвет между щелями жалюзи 6, лента ещё и перекошена
             const w = 5, y0 = 275, y1 = 310, gap0 = 290, gap1 = 296;
             let g = `<rect x="${f(x - w / 2 + 1)}" y="${y0 + 1.6}" width="${w}" height="${y1 - y0}" rx="0.6" class="fx" fill="${J.hole}" opacity="0.35"/>` +
@@ -920,7 +920,11 @@ Object.assign(GreedJunk, {
             let leaf = `<rect x="49.5" y="${y - 9}" width="15" height="18" rx="3" class="fx" fill="${J.wood[900]}" opacity="0.25"/>` +
                 `<rect x="51" y="${y - 7}" width="11" height="14" rx="1.5" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
                 `<rect x="51" y="${y - 7}" width="11" height="14" rx="1.5" fill="url(#gj-rust)" opacity="0.45"/>` +
-                `<path d="M53 ${y + 7} l0.8 5 M59 ${y + 7} l-0.6 4" stroke="${J.rust[500]}" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/>` +
+                // потёки ржавчины: узкая струйка от кромки с каплей на конце,
+                // длинная и короткая рядом. Было: две ровные палочки —
+                // читались ножками.
+                `<path d="M52.8 ${y + 6.6} C53 ${y + 9} 53.2 ${y + 11} 53.4 ${y + 12.6} A0.9 0.9 0 0 0 55 ${y + 12.4} C54.8 ${y + 10.5} 54.6 ${y + 8.5} 54.6 ${y + 6.6} Z" fill="${J.rust[500]}" opacity="0.4"/>` +
+                `<path d="M58.4 ${y + 6.6} C58.5 ${y + 7.8} 58.6 ${y + 8.6} 58.7 ${y + 9.4} A0.7 0.7 0 0 0 59.9 ${y + 9.3} C59.8 ${y + 8.4} 59.7 ${y + 7.6} 59.7 ${y + 6.6} Z" fill="${J.rust[300]}" opacity="0.35"/>` +
                 this.bolt(57, y - 3, 1.4) + this.bolt(57, y + 3.5, 1.4);
             out += this.T(10, 'steel', leaf);
             // обрубок шарнира: половина цилиндра срезана наискось болгаркой —
@@ -948,7 +952,9 @@ Object.assign(GreedJunk, {
             `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="1" fill="${J.tin[300]}" opacity="0.5"/>` +
             `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="1" fill="${J.tin[100]}" opacity="0.12"/>`;
         [[px + 3, py + 3], [px + pw - 3, py + 3], [px + 3, py + ph - 3], [px + pw - 3, py + ph - 3]].forEach(([x, y]) => {
-            ghost += this.hole(x, y, 1.3) + this.rustRun(x, y + 1.4, 3, Math.round(x));
+            // дыра без провала на карте высот: с ним под каждой — своя тень,
+            // и дыры двоились
+            ghost += `<circle cx="${f(x)}" cy="${f(y)}" r="1.3" fill="${J.hole}" stroke="${J.wood[900]}" stroke-width="${STROKE.hairline}"/>` + this.rustRun(x, y + 1.4, 3, Math.round(x));
         });
         out += `<g transform="rotate(0.4 180 382)">` + this.T(9, 'steel', ghost) + `</g>`;
         return out;

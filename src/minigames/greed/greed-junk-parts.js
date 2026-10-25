@@ -405,9 +405,17 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f;
         let strip = this.tin(x, y, w, h, 21, { bolts: false, scratches: 2, tilt: 0, z: this.Z.strap });
         const cx = x + w / 2;
+        // Щели — симметрично от лампы в середине, с полями по 20 с краёв:
+        // края полосы закрывают стойки ящика. Было: ряд шёл от левого края,
+        // и справа крайние щели уходили под стойку обрезанными.
+        const slots = [];
+        for (let k = 0; ; k++) {
+            const l = cx - 38 - k * 24, r = cx + 20 + k * 24;
+            if (l < x + 20 || r + 18 > x + w - 20) break;
+            slots.push(l, r);
+        }
         for (let row = 0; row < 2; row++) {
-            for (let lx = x + 10; lx + 18 < x + w - 6; lx += 24) {
-                if (lx + 18 > cx - 16 && lx < cx + 16) continue;     // место лампы
+            for (const lx of slots) {
                 const ly = y + 6 + row * 8;
                 // козырёк: выпуклая дуга над щелью
                 strip += `<path d="M${f(lx)} ${f(ly + 1.6)} Q${f(lx + 9)} ${f(ly - 2.2)} ${f(lx + 18)} ${f(ly + 1.6)} Z" ` +

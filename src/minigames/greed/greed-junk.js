@@ -283,18 +283,23 @@ const GreedJunk = {
                 const [x1, y1] = at(rnd() * long * 0.3, b), [x2, y2] = at(long * (0.6 + rnd() * 0.4), b + (rnd() - 0.5) * 2);
                 g += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${i % 2 ? J.painted.hi : J.painted.lo}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
             }
-            // стёртые места: светлый шпон с волокном, кромка лака по краю
+            // Стёртые места: светлый шпон с волокном. Вытерты вдоль доски
+            // (руками, тряпкой), края мягкие: вокруг — лак истончён и
+            // темнее, без контура. Было: многоугольники с обводкой —
+            // читались наклейками.
             const peels = 2 + Math.floor(rnd() * 3);
             for (let i = 0; i < peels; i++) {
-                const ca = long * (0.1 + rnd() * 0.8), cb = short * (rnd() < 0.5 ? 0.15 : 0.85);
-                const ra = 6 + rnd() * long * 0.08, rb = 3 + rnd() * short * 0.35;
-                const pts = [];
+                const ca = long * (0.1 + rnd() * 0.8), cb = short * (rnd() < 0.5 ? 0.2 : 0.8);
+                const ra = 6 + rnd() * long * 0.08, rb = 1.6 + rnd() * short * 0.2;
+                const pts = [], rim = [];
                 for (let k = 0; k < 9; k++) {
                     const t = (k / 9) * Math.PI * 2, j = 0.6 + rnd() * 0.5;
                     pts.push(at(ca + Math.cos(t) * ra * j, cb + Math.sin(t) * rb * j));
+                    rim.push(at(ca + Math.cos(t) * (ra * j + 1.6), cb + Math.sin(t) * (rb * j + 1)));
                 }
-                const d = 'M' + pts.map(q => f(q[0]) + ' ' + f(q[1])).join(' L') + ' Z';
-                g += `<path d="${d}" fill="${J.painted.bare}" stroke="${J.painted.hi}" stroke-width="${STROKE.detail}"/>`;
+                const loop = (q) => this.smooth(q.concat([q[0], q[1]])) + ' Z';
+                g += `<path d="${loop(rim)}" fill="${J.painted.lo}" opacity="0.35"/>`;
+                g += `<path d="${loop(pts)}" fill="${J.painted.bare}" opacity="0.85"/>`;
                 const [lx1, ly1] = at(ca - ra * 0.7, cb), [lx2, ly2] = at(ca + ra * 0.7, cb + 0.6);
                 g += `<line x1="${f(lx1)}" y1="${f(ly1)}" x2="${f(lx2)}" y2="${f(ly2)}" stroke="${J.painted.bareLo}" stroke-width="${STROKE.hairline}"/>`;
             }

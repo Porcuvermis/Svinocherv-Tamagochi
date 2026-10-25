@@ -84,6 +84,15 @@ const GreedJunkLit = {
             uniform vec2 uHMap;       // карта высот: (H0, HMAX) — h = v * HMAX − H0
             varying vec2 vUv;
             float hh(vec2 p) { return texture2D(uH, p).r; }
+            // Для нормали — высота, усреднённая крестом в пять текселей.
+            // Карта высот 8-битная: на пологом длинном уклоне (скос окна)
+            // высота растёт ступеньками в один уровень, и нормаль по ним
+            // дёргалась — скос шёл полосами. Среднее соседей превращает
+            // ступеньки обратно в уклон.
+            float hs(vec2 p) {
+                return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
+                        hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
+            }
             void main() {
                 vec4 a = texture2D(uA, vUv);
                 if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
@@ -95,8 +104,9 @@ const GreedJunkLit = {
                 // деталь. Без этого подножие ступеньки на стенке тоже получало
                 // наклонную нормаль, смотрящую на свет, — вокруг деталей
                 // светился ореол на поверхности, на которой они лежат.
-                float hl = min(hh(vUv - vec2(d.x, 0.0)), h0), hr = min(hh(vUv + vec2(d.x, 0.0)), h0);
-                float hu = min(hh(vUv - vec2(0.0, d.y)), h0), hd = min(hh(vUv + vec2(0.0, d.y)), h0);
+                float h0s = hs(vUv);
+                float hl = min(hs(vUv - vec2(d.x, 0.0)), h0s), hr = min(hs(vUv + vec2(d.x, 0.0)), h0s);
+                float hu = min(hs(vUv - vec2(0.0, d.y)), h0s), hd = min(hs(vUv + vec2(0.0, d.y)), h0s);
                 vec3 n = normalize(vec3((hl - hr) * uRelief, (hu - hd) * uRelief, 1.0));
 
                 // рассеянный: ровная поверхность = свой цвет
