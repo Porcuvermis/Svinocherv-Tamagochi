@@ -513,13 +513,54 @@ Object.assign(GreedJunk, {
             out += this.T(-9, 'lens', `<g class="nh"><path d="M${r.x + 6} ${r.y + 40} L${r.x + 30} ${r.y + 4} L${r.x + 38} ${r.y + 4} L${r.x + 10} ${r.y + 48} Z" fill="${J.alu[100]}" opacity="0.16"/>` +
                 `<path d="M${r.x + 14} ${r.y + 54} L${r.x + 44} ${r.y + 10} L${r.x + 47} ${r.y + 10} L${r.x + 17} ${r.y + 58} Z" fill="${J.alu[100]}" opacity="0.1"/></g>`);
         });
-        // струна линии выигрыша
-        const ly = R[0].y + R[0].h / 2, x0 = R[0].x - 4, x1 = R[2].x + R[2].w + 4;
-        out += this.T(-8, 'paint', `<line x1="${x0}" y1="${ly}" x2="${x1}" y2="${ly}" stroke="${PALETTE.ink}" stroke-width="2.6"/>` +
-            `<line x1="${x0}" y1="${ly}" x2="${x1}" y2="${ly}" stroke="${J.paint.red}" stroke-width="1.3"/>` +
-            this.rodH(`M${x0} ${ly} L${x1} ${ly}`, 2.6, 0.6) +
-            [x0, x1].map(x => this.bolt(x, ly, 2)).join(''));
+        // Линия выигрыша — красная нитка, натянутая между двумя болтиками и
+        // завязанная на них узелками. Лишний кончик у правого узелка
+        // свисает и болтается от наклона телефона — он живой и рисуется
+        // поверх корпуса (threadTail, GreedJunkLit.run); здесь — только
+        // нитка и узелки.
+        const T = this.thread();
+        let th = `<line x1="${T.x0}" y1="${T.y}" x2="${T.x1}" y2="${T.y}" stroke="${PALETTE.ink}" stroke-width="1.9"/>` +
+            `<line x1="${T.x0}" y1="${T.y}" x2="${T.x1}" y2="${T.y}" stroke="${J.paint.red}" stroke-width="1"/>`;
+        th += [T.x0, T.x1].map(x => this.bolt(x, T.y, 2.2) + this.knot(x, T.y)).join('');
+        out += this.T(-8, 'thread', th);
+        // без живого слоя (запасной вид, карты света) кончик висит отвесно
+        if (this.pass === 'baked') out += this.threadTail(0);
         return out;
+    },
+
+    // Где нитка: от левого болтика к правому, по середине окон. Метод, а
+    // не геттер: Object.assign вычислил бы геттер сразу при подключении.
+    thread() {
+        const R = this.SLOTS.reels, y = R[0].y + R[0].h / 2;
+        return { x0: R[0].x - 5, x1: R[2].x + R[2].w + 5, y };
+    },
+
+    // Узелок на болтике: нитка обмотана вокруг и затянута — два витка и
+    // комочек узла снизу справа.
+    knot(x, y) {
+        const J = PALETTE.greedJunk, f = this.f;
+        return `<ellipse cx="${x}" cy="${y}" rx="3.2" ry="1.4" fill="none" stroke="${PALETTE.ink}" stroke-width="1.9" transform="rotate(-25 ${x} ${y})"/>` +
+            `<ellipse cx="${x}" cy="${y}" rx="3.2" ry="1.4" fill="none" stroke="${J.paint.red}" stroke-width="1" transform="rotate(-25 ${x} ${y})"/>` +
+            `<ellipse cx="${x}" cy="${y}" rx="3" ry="1.3" fill="none" stroke="${PALETTE.ink}" stroke-width="1.9" transform="rotate(35 ${x} ${y})"/>` +
+            `<ellipse cx="${x}" cy="${y}" rx="3" ry="1.3" fill="none" stroke="${J.paint.red}" stroke-width="1" transform="rotate(35 ${x} ${y})"/>` +
+            `<circle cx="${f(x + 2.4)}" cy="${f(y + 1.8)}" r="1.4" fill="${J.paint.red}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+    },
+
+    // Свисающий кончик нитки от узла правого болтика. ang — отклонение от
+    // отвеса в радианах (+ — вправо), bend — изгиб от раскачки: кончик
+    // отстаёт от середины, нитка выгибается дугой.
+    threadTail(ang, bend) {
+        const J = PALETTE.greedJunk, f = this.f, T = this.thread();
+        const L = 15, sx = T.x1 + 2.4, sy = T.y + 1.8;
+        const ex = sx + Math.sin(ang) * L, ey = sy + Math.cos(ang) * L;
+        const b = bend || 0;
+        const mx = sx + Math.sin(ang) * L * 0.5 - Math.cos(ang) * b, my = sy + Math.cos(ang) * L * 0.5 + Math.sin(ang) * b;
+        const d = `M${f(sx)} ${f(sy)} Q${f(mx)} ${f(my)} ${f(ex)} ${f(ey)}`;
+        return `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="1.9" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" stroke="${J.paint.red}" stroke-width="1" stroke-linecap="round"/>` +
+            // растрёпанный кончик
+            `<path d="M${f(ex)} ${f(ey)} l${f(Math.sin(ang - 0.4) * 2)} ${f(Math.cos(ang - 0.4) * 2)} M${f(ex)} ${f(ey)} l${f(Math.sin(ang + 0.5) * 2)} ${f(Math.cos(ang + 0.5) * 2)}" ` +
+            `stroke="${J.paint.red}" stroke-width="0.6" stroke-linecap="round"/>`;
     },
 
     // Полка под табло и нижний ящик: низкий, на нём только табличка и лоток.

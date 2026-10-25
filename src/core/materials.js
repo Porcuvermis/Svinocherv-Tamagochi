@@ -85,6 +85,11 @@ const MATERIALS = {
         colors: 'greedJunk.paint.red',
         note: 'Стекло и прозрачный пластик лампы: острый яркий белый блик.'
     },
+    thread: {
+        shine: [0.04, 0.10, 0],
+        colors: 'greedJunk.paint.red',
+        note: 'Нитка: матовая, тонкая, почти без рельефа; узелки — комочки.'
+    },
     graphite: {
         shine: [0.45, 0.55, 1],
         colors: 'greedJunk.pencil',

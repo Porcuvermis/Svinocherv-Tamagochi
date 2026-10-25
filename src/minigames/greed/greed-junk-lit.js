@@ -179,8 +179,21 @@ const GreedJunkLit = {
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
     run(canvas) {
         const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
+        // кончик нитки — маятник: тянется к отвесу по тяжести (Tilt.down),
+        // с инерцией и затуханием, изгиб — от скорости раскачки
+        const tail = { a: 0, v: 0, shown: null };
         const loop = () => {
             if (!canvas.isConnected) return;
+            if (this.live) {
+                const D = (typeof Tilt !== 'undefined' && Tilt.down) ? Tilt.down() : { live: false, x: 0, y: 1 };
+                const want = Math.atan2(D.x, Math.max(0.2, D.y));
+                tail.v += (want - tail.a) * 0.06; tail.v *= 0.9; tail.a += tail.v;
+                const key = tail.a.toFixed(3) + '|' + tail.v.toFixed(3);
+                if (key !== tail.shown) {
+                    tail.shown = key;
+                    this.live.innerHTML = GreedJunk.threadTail(tail.a, -tail.v * 40);
+                }
+            }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
             const want = T.live ? T : { x: 0, y: 0 };
             t.x += (want.x - t.x) * 0.15; t.y += (want.y - t.y) * 0.15;
@@ -207,13 +220,23 @@ const GreedJunkLit = {
             'justify-content:center;background:' + PALETTE.greedJunk.hole;
         box.addEventListener('click', () => box.remove());
         host.appendChild(box);
+        // корпус и живой слой поверх — в одной обёртке с пропорцией корпуса
+        const wrap = document.createElement('div');
+        wrap.style.cssText = `position:relative;width:min(100%, calc(100vh * ${GreedJunk.W} / ${GreedJunk.H}));` +
+            `aspect-ratio:${GreedJunk.W}/${GreedJunk.H}`;
+        box.appendChild(wrap);
         const canvas = document.createElement('canvas');
-        canvas.style.cssText = 'width:100%;height:auto;max-height:100%;object-fit:contain';
-        box.appendChild(canvas);
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0';
+        wrap.appendChild(canvas);
+        const live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        live.setAttribute('viewBox', `0 0 ${GreedJunk.W} ${GreedJunk.H}`);
+        live.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';
+        wrap.appendChild(live);
+        this.live = live;
         let ok = false;
         try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
         if (!ok) {
-            box.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="width:100%;height:auto" ');
+            wrap.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="position:absolute;inset:0;width:100%;height:100%" ');
             return;
         }
         this.draw();
