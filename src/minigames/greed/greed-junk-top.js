@@ -875,7 +875,8 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, Z = J.zinc, f = this.f;
         let out = '';
         [[89, 0.6], [257, -0.8]].forEach(([x, tilt]) => {
-            const w = 6.2, y0 = 275, y1 = 310, gap0 = 290, gap1 = 296;
+            // шире 5 нельзя: просвет между щелями жалюзи 6, лента ещё и перекошена
+            const w = 5, y0 = 275, y1 = 310, gap0 = 290, gap1 = 296;
             let g = `<rect x="${f(x - w / 2 + 1)}" y="${y0 + 1.6}" width="${w}" height="${y1 - y0}" rx="0.6" class="fx" fill="${J.hole}" opacity="0.35"/>` +
                 `<rect x="${f(x - w / 2)}" y="${y0}" width="${w}" height="${y1 - y0}" rx="0.6" fill="url(#gj-zinc)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
             // перегиб над щелью: лента уходит назад и снова выходит — тёмная
@@ -884,11 +885,13 @@ Object.assign(GreedJunk, {
                 `<line x1="${f(x - w / 2 + 0.3)}" y1="${gap1 - 0.4}" x2="${f(x + w / 2 - 0.3)}" y2="${gap1 - 0.4}" class="hl" stroke="${Z.hi}" stroke-width="0.6"/>`;
             // ряд дыр; там, где болт, дыры нет — болт сидит в ней
             const bolts = [280, 304];
-            for (let y = y0 + 2.2; y < y1 - 1; y += 3.3) {
-                if (bolts.some(b => Math.abs(b - y) < 1.8) || (y > gap0 - 1 && y < gap1 + 1)) continue;
-                g += `<circle cx="${f(x)}" cy="${f(y)}" r="0.85" class="pit" fill="${J.hole}"/>`;
+            // Дыры без провала на карте высот: с ним шейдер добавлял под
+            // каждой дырой свою тень, и они читались сдвоенными точками.
+            for (let y = y0 + 2.4; y < y1 - 1; y += 2.8) {
+                if (bolts.some(b => Math.abs(b - y) < 2) || (y > gap0 - 1 && y < gap1 + 1)) continue;
+                g += `<circle cx="${f(x)}" cy="${f(y)}" r="0.55" fill="${J.hole}"/>`;
             }
-            g += bolts.map(y => this.bolt(x, y, 2)).join('');
+            g += bolts.map(y => this.bolt(x, y, 1.8)).join('');
             out += `<g transform="rotate(${tilt} ${x} ${gap0})">` + this.T(11, 'zinc', g) + `</g>`;
         });
         return out;
