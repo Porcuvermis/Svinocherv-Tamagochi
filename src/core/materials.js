@@ -77,6 +77,11 @@ const MATERIALS = {
         colors: 'greedJunk.plastic',
         note: 'Пластик коробок и клипс, пожелтевшая пластмасса розеток.'
     },
+    bakelite: {
+        shine: [0.85, 0.93, 0],
+        colors: 'greedJunk.tin[900], greedJunk.bakelite',
+        note: 'Бакелит рукоятей и пультов: тёмный, глянцевый, острый белый блик — по нему шар и читается шаром.'
+    },
     rubber: {
         shine: [0.12, 0.30, 0],
         colors: 'greedJunk.tin[900]',
