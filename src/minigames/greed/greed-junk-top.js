@@ -466,6 +466,7 @@ Object.assign(GreedJunk, {
             win += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         });
         out += this.T(-10, 'paint', win);
+        out += this.reelWindows();
         // кнопки на полке-пульте под табло: разные, как собранные с разных пультов
         [[136, J.paint.orange, 6.5], [168, J.paint.red, 5.5], [196, J.paint.orange, 6.5], [226, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
             out += this.T(9, 'steel', `<circle cx="${bx + 0.8}" cy="${477.8}" r="${r + 2}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
@@ -474,6 +475,50 @@ Object.assign(GreedJunk, {
                 `<circle cx="${bx - r * 0.3}" cy="${475 - r * 0.35}" r="${r * 0.32}" class="hl" fill="${J.paint.cream}" opacity="0.8"/>` +
                 this.domeH(bx, 475, r, 2.5));
         });
+        return out;
+    },
+
+    // ---------- ОКНА БАРАБАНОВ ----------
+    // В каждом окне — барабан: кремовый цилиндр, лежащий осью вбок. Его
+    // форма — затемнение к верху и низу окна, где лента уходит от глаза,
+    // и тень от кромки окна сверху — барабан виден
+    // и до того, как на нём появятся символы (в игре ленты с символами
+    // крутятся поверх корпуса). Через все три окна — натянутая красная
+    // струна линии выигрыша, у каждого окна — хромированная окантовка, сверху
+    // — стекло: на карте высот его нет, есть только блик по материалу.
+    // Было: три чёрные ямы, окно читалось провалом.
+    reelWindows() {
+        const J = PALETTE.greedJunk, f = this.f, R = this.SLOTS.reels;
+        let out = '';
+        R.forEach(r => {
+            const cy = r.y + r.h / 2;
+            let drum = `<rect x="${r.x + 1}" y="${r.y + 1}" width="${r.w - 2}" height="${r.h - 2}" rx="4" fill="${J.paint.cream}"/>`;
+            // Барабан уходит от глаза к верху и низу окна — затемнение там
+            // это его форма, а не нарисованный свет, поэтому оно в цвете,
+            // а не в тени (fx). Высотами такой большой цилиндр в узком
+            // окне не вылепить: перепада глубины не хватает, а ступени
+            // профиля полосили.
+            drum += `<rect x="${r.x + 1}" y="${r.y + 1}" width="${r.w - 2}" height="${r.h - 2}" rx="4" fill="url(#gj-drum)"/>`;
+            // разделительные риски ячеек барабана
+            [-1, 1].forEach(k => {
+                const ly = cy + k * r.h / 3;
+                drum += `<line x1="${r.x + 3}" y1="${f(ly)}" x2="${r.x + r.w - 3}" y2="${f(ly)}" stroke="${J.plastic.lo}" stroke-width="${STROKE.hairline}"/>`;
+            });
+            out += this.T(-12, 'plastic', drum);
+            // хромированная окантовка окна
+            out += this.T(-9, 'polished', `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" fill="none" ` +
+                `stroke="${PALETTE.ink}" stroke-width="4.4"/><rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" fill="none" ` +
+                `stroke="${J.tin[300]}" stroke-width="2.4"/>` + this.rodH(`M${r.x} ${r.y + 5} V${r.y + r.h - 5} M${r.x + r.w} ${r.y + 5} V${r.y + r.h - 5} M${r.x + 5} ${r.y} H${r.x + r.w - 5} M${r.x + 5} ${r.y + r.h} H${r.x + r.w - 5}`, 3, 1));
+            // стекло: два косых блика
+            out += this.T(-9, 'lens', `<g class="nh"><path d="M${r.x + 6} ${r.y + 40} L${r.x + 30} ${r.y + 4} L${r.x + 38} ${r.y + 4} L${r.x + 10} ${r.y + 48} Z" fill="${J.alu[100]}" opacity="0.16"/>` +
+                `<path d="M${r.x + 14} ${r.y + 54} L${r.x + 44} ${r.y + 10} L${r.x + 47} ${r.y + 10} L${r.x + 17} ${r.y + 58} Z" fill="${J.alu[100]}" opacity="0.1"/></g>`);
+        });
+        // струна линии выигрыша
+        const ly = R[0].y + R[0].h / 2, x0 = R[0].x - 4, x1 = R[2].x + R[2].w + 4;
+        out += this.T(-8, 'paint', `<line x1="${x0}" y1="${ly}" x2="${x1}" y2="${ly}" stroke="${PALETTE.ink}" stroke-width="2.6"/>` +
+            `<line x1="${x0}" y1="${ly}" x2="${x1}" y2="${ly}" stroke="${J.paint.red}" stroke-width="1.3"/>` +
+            this.rodH(`M${x0} ${ly} L${x1} ${ly}`, 2.6, 0.6) +
+            [x0, x1].map(x => this.bolt(x, ly, 2)).join(''));
         return out;
     },
 

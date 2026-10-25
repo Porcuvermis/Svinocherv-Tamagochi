@@ -57,7 +57,7 @@ Object.assign(GreedJunk, {
                 `.bump,.bump *{fill:${g(0.06)}!important;stroke:${g(0.06)}!important}` +
                 `.pit,.pit *{fill:${g(-0.12)}!important;stroke:${g(-0.12)}!important}` +
                 `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
-                `.fx,.hl{display:none}</style>`;
+                `.fx,.hl,.nh{display:none}</style>`;
         }
         if (pass === 'mat') {
             // профиль высот в карте материалов не нужен — он того же материала
@@ -80,6 +80,17 @@ Object.assign(GreedJunk, {
     // стопкой слоёв, каждый выше предыдущего: купол — кругами, цилиндр —
     // обводками того же пути всё уже. rise — подъём вершины в единицах.
     dh(units) { return (units / this.HMAX).toFixed(3); },
+
+    // Круглое сечение (высота √(1−x²)) в n ступенях — для крупных
+    // выпуклых деталей, где четырёх ступеней мало (барабан окна).
+    profile(n) {
+        const out = [];
+        for (let i = 0; i < n; i++) {
+            const k = 1 - i / n;
+            out.push([k, Math.sqrt(Math.max(0, 1 - k * k)) * 0.85 + 0.15]);
+        }
+        return out;
+    },
 
     domeH(cx, cy, r, rise) {
         rise = rise == null ? r * 0.8 : rise;
