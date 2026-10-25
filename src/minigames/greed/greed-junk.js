@@ -112,6 +112,7 @@ const GreedJunk = {
             `<linearGradient id="gj-rust" x1="0" y1="0" x2="0" y2="1">` +
             `<stop offset="0" stop-color="${J.rust[500]}" stop-opacity="0.85"/><stop offset="1" stop-color="${J.rust[300]}" stop-opacity="0"/></linearGradient>` +
             lin('gj-pine', J.pine[100], J.pine[300], 0.4, 1) +
+            lin('gj-slab-face', J.slab.face, J.slab.faceLo, 0.2, 1) +
             `<linearGradient id="gj-sheen" x1="0" y1="0" x2="0.4" y2="1">` +
             `<stop offset="0" stop-color="${J.painted.hi}" stop-opacity="0.35"/><stop offset="1" stop-color="${J.painted.lo}" stop-opacity="0.3"/></linearGradient>` +
             `<linearGradient id="gj-chip-light" x1="0" y1="0" x2="0.4" y2="1">` +
@@ -563,8 +564,7 @@ const GreedJunk = {
         out += `<rect x="28" y="24" width="288" height="270" fill="${J.hole}" opacity="0.28"/>`;
         out += `<rect x="28" y="24" width="288" height="270" fill="url(#gj-vign)"/>`;
         // поперечина-перекладина, на которой всё висит
-        out += this.shade(42, 168, 260, 10);
-        out += this.planks(42, 150, 260, 18, 1, 12, 'h');
+        out += this.slabBar();
         // жестяная решётка внизу щита
         out += this.tin(34, 270, 276, 20, 21, { bolts: false, scratches: 2, tilt: 0, z: this.Z.strap });
         for (let i = 0; i < 17; i++) {
@@ -645,6 +645,81 @@ const GreedJunk = {
         out += this.harness(p.x + 50, p.y + 168, 44, 45);
         out += this.topFrame();
         return out;
+    },
+
+    // ---------- ПЕРЕКЛАДИНА: ГОРБЫЛЬ ----------
+    // Своя история у перекладины: это горбыль — боковой обрезок бревна, его
+    // на лесопилке отдают даром. Пиленая грань в дугах от циркулярки,
+    // верхний край — в коре, брусок сужается к одному концу и прибит криво,
+    // на глаз. Концы заведены за боковины ящика: доски не хватило бы
+    // вплотную, и её просто положили поверх с запасом.
+    slabBar() {
+        const J = PALETTE.greedJunk, f = this.f;
+        const rnd = this.rng(313);
+        const X0 = 30, X1 = 314, CY = 160, TILT = -2.6;
+        const N = 18;
+        const top = [], bot = [], bark = [];
+        for (let i = 0; i <= N; i++) {
+            const t = i / N, x = X0 + (X1 - X0) * t;
+            const half = 16 - t * 6;                       // сужается вправо
+            const ty = CY - half + (rnd() - 0.5) * 5 - (rnd() < 0.15 ? 3 : 0);    // кора — край рваный, с выбоинами
+            top.push([x, ty]);
+            bark.push([x, ty + 4.5 + rnd() * 4]);          // толщина коры гуляет
+            bot.push([x, CY + half * 0.8 + (rnd() - 0.5) * 0.8]);  // пропил — почти ровный
+        }
+        const line = pts => pts.map(p => f(p[0]) + ' ' + f(p[1])).join(' L');
+        const body = `M${line(top)} L${line(bot.slice().reverse())} Z`;
+        const barkBand = `M${line(top)} L${line(bark.slice().reverse())} Z`;
+        let g = '';
+        // тень на заднюю стенку: горбыль толстый
+        g += `<path d="${body}" fill="${J.hole}" opacity="0.4" transform="translate(2.5 4.5)"/>`;
+        g += `<clipPath id="gj-slab"><path d="${body}"/></clipPath>`;
+        g += `<path d="${body}" fill="url(#gj-slab-face)"/>`;
+        // дуги циркулярки: большие радиусы, шаг неровный — пилу вели рукой
+        let arcs = '';
+        for (let x = X0 + 4; x < X1; x += 6 + rnd() * 5) {
+            const r = 60 + rnd() * 30;
+            arcs += `<path d="M${f(x)} ${CY - 16} A${f(r)} ${f(r)} 0 0 1 ${f(x + 4)} ${CY + 14}" fill="none" ` +
+                `stroke="${J.slab.saw}" stroke-width="${STROKE.hairline}" opacity="${f(0.35 + rnd() * 0.35)}"/>`;
+        }
+        // продольные трещины выветренной древесины
+        for (let i = 0; i < 4; i++) {
+            const x = X0 + 20 + rnd() * (X1 - X0 - 60), y = CY - 2 + (rnd() - 0.3) * 8;
+            arcs += `<path d="M${f(x)} ${f(y)} q${f(10 + rnd() * 10)} ${f((rnd() - 0.5) * 2)} ${f(24 + rnd() * 20)} ${f((rnd() - 0.5) * 2)}" ` +
+                `fill="none" stroke="${J.slab.faceLo}" stroke-width="${STROKE.detail}" opacity="0.8"/>`;
+        }
+        g += `<g clip-path="url(#gj-slab)">${arcs}`;
+        // луб — рыжая полоска под корой
+        g += `<path d="M${line(bark)}" fill="none" stroke="${J.slab.bast}" stroke-width="2" opacity="0.9"/>`;
+        // кора: тёмная подложка и поверх светлые чешуйки-пластины разной
+        // ширины, разделённые трещинами. Сплошной тёмной полосой кора
+        // читалась тенью.
+        g += `<path d="${barkBand}" fill="${J.slab.bark}"/>`;
+        for (let i = 0; i < top.length - 1; i++) {
+            const a = top[i], b = top[i + 1], c = bark[i + 1], d = bark[i];
+            let u = 0;
+            while (u < 0.95) {
+                const v = Math.min(1, u + 0.18 + rnd() * 0.3);
+                const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+                const p1 = lerp(a, b, u + 0.04), p2 = lerp(a, b, v - 0.04), p3 = lerp(d, c, v - 0.06), p4 = lerp(d, c, u + 0.06);
+                g += `<path d="M${f(p1[0])} ${f(p1[1] + 0.8)} L${f(p2[0])} ${f(p2[1] + 0.8)} L${f(p3[0])} ${f(p3[1] - 0.8)} L${f(p4[0])} ${f(p4[1] - 0.8)} Z" ` +
+                    `fill="${J.slab.barkHi}" opacity="${f(0.55 + rnd() * 0.4)}"/>`;
+                u = v;
+            }
+        }
+        g += `</g>`;
+        // нижняя кромка пропила ловит меньше света — тёмная линия
+        g += `<path d="M${line(bot)}" fill="none" stroke="${J.slab.saw}" stroke-width="${STROKE.detail}" opacity="0.8" transform="translate(0 -1.2)"/>`;
+        g += `<path d="${body}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}" stroke-linejoin="round"/>`;
+        // гнутые гвозди: забили, согнулись, добили боком
+        [[58, 1], [176, -1], [282, 1]].forEach(([x, dir]) => {
+            const y = CY + 2 - (x - X0) / (X1 - X0) * 2;
+            g += `<path d="M${x} ${y} q${dir * 4} -1 ${dir * 7} 3" fill="none" stroke="${PALETTE.ink}" stroke-width="2.6" stroke-linecap="round"/>` +
+                `<path d="M${x} ${y} q${dir * 4} -1 ${dir * 7} 3" fill="none" stroke="${J.tin[500]}" stroke-width="1.3" stroke-linecap="round"/>` +
+                `<circle cx="${x + dir * 7}" cy="${y + 3}" r="1.8" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+                this.rustRun(x, y + 2, 7, x);
+        });
+        return `<g transform="rotate(${TILT} ${(X0 + X1) / 2} ${CY})">${g}</g>`;
     },
 
     // ---------- РАМКА ЯЩИКА ----------
