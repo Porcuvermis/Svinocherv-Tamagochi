@@ -16,15 +16,8 @@ Object.assign(GreedJunk, {
         out += `<rect x="28" y="24" width="288" height="270" class="fx" fill="url(#gj-vign)"/>`;
         // поперечина-перекладина, на которой всё висит
         out += this.slabBar();
-        // жестяная решётка внизу щита
-        out += this.T(2, 'steel', this.tin(34, 270, 276, 20, 21, { bolts: false, scratches: 2, tilt: 0, z: this.Z.strap }));
-        for (let i = 0; i < 17; i++) {
-            const vx = 46 + i * 15;
-            if (vx > 140 && vx < 200) continue;
-            out += `<rect style="--h:${this.hv(2).toFixed(3)}"  x="${f(vx)}" y="275" width="7" height="10" rx="1.6" class="pit" fill="${J.hole}"/>`;
-        }
-        out += this.T(3, 'paint', `<rect x="146" y="273" width="48" height="14" rx="2" fill="${J.paint.red}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<rect x="150" y="276" width="16" height="3" class="hl" fill="${J.paint.cream}" opacity="0.5"/>`);
+        // жалюзи и лампа питания внизу ящика (greed-junk-parts.js, louverStrip)
+        out += this.louverStrip(34, 270, 276, 20);
 
         // ---- крепление колеса: ступица от машины на перфоуголке ----
         const w = S.wheel;
