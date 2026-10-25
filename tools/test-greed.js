@@ -305,11 +305,16 @@ const { chromium } = require('playwright');
   const full = await page.evaluate(() => {
     Backend.grantCurrency('gold', 3000);
     GameState.setSinValue('greed', GameState.maxValue('greed'));
+    // Выплата — золото и жетоны по курсу из конфига: часть троек платит
+    // жетоном вместо монет (docs/plan/28-greed-machine.md), и одно золото на
+    // 1500 крутках иногда случайно проседало ниже коридора.
+    const V = ECONOMY.minigames.greed.tokenValue || {};
     let paid = 0, spent = 0;
     for (let i = 0; i < 1500; i++) {
       const r = Backend.greedSpin();
       if (!r.ok) break;
       spent += r.cost; paid += r.pay;
+      Object.keys(r.currencies || {}).forEach(k => { if (k !== 'gold') paid += (V[k] || 0) * r.currencies[k]; });
     }
     return { rtp: paid / spent, sin: GameState.sinValue('greed') };
   });

@@ -82,6 +82,16 @@ const MATERIALS = {
         colors: 'greedJunk.tin[900]',
         note: 'Резина: изоляция кабелей, гофра, втулки, подушки. Почти матовая.'
     },
+    glass: {
+        shine: [0.85, 0.92, 0],
+        colors: 'greedJunk.bulb',
+        note: 'Стекло колб: прозрачное, тонированное, острый белый блик; сквозь него видна нить накала.'
+    },
+    brass: {
+        shine: [0.55, 0.55, 1],
+        colors: 'greedJunk.brass',
+        note: 'Латунь цоколей: тёплый жёлтый металл, рифлёная резьба.'
+    },
     lens: {
         shine: [0.80, 0.85, 0],
         colors: 'greedJunk.paint.red',

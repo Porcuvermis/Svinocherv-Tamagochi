@@ -472,32 +472,105 @@ Object.assign(GreedJunk, {
         return out;
     },
 
-    // ---------- ПУЛЬТ С КНОПКАМИ ----------
-    // Кнопки стоят не на голой кромке полки, а на бакелитовой планке от
-    // старого пульта, прикрученной к полке двумя шурупами. Каждая кнопка —
-    // в хромированной обойме, колпачок выпуклый, кнопки разные (собраны с
-    // разных пультов). Было: кнопки висели на кромке, как бусины, а между
-    // ними читался непонятный сучок полки.
+    // ---------- ЛАМПЫ НА ПЛАНКЕ ----------
+    // На бакелитовой планке от старого пульта вкручены лампы накаливания,
+    // собранные отовсюду: все разные по форме, размеру и цвету, старые и
+    // тусклые. При выигрыше они будут мигать (SLOTS.bulbs — где какая; сам
+    // свет — живым слоем поверх, как кончик нитки). Были кнопки — ни для
+    // чего, а лампы при выигрыше и есть смысл.
+    //   red   — длинная красная трубка-индикатор, вытащенная из чего-то
+    //           специального;
+    //   pear  — обычная грушевидная лампочка, самая «современная»;
+    //   globe — маленький янтарный шарик;
+    //   flame — дымчатая «свеча» с закрученным носиком.
+    bulbList() {
+        return [
+            { kind: 'red', x: 134 }, { kind: 'pear', x: 164 },
+            { kind: 'globe', x: 199 }, { kind: 'flame', x: 227 }
+        ];
+    },
+
     buttonPanel() {
         const J = PALETTE.greedJunk, B = J.bakelite, f = this.f;
         const x0 = 118, x1 = 244, y0 = 467, y1 = 485, cy = 476;
         let plate = `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="5" fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             `<line x1="${x0 + 4}" y1="${y0 + 1.6}" x2="${x1 - 4}" y2="${y0 + 1.6}" class="hl" stroke="${B.hi}" stroke-width="${STROKE.detail}"/>` +
-            // потёртость там, где жмут пальцем
-            `<ellipse cx="${(x0 + x1) / 2}" cy="${cy}" rx="44" ry="5" fill="${B.hi}" opacity="0.25"/>` +
             this.rodH(`M${x0 + 6} ${cy} L${x1 - 6} ${cy}`, y1 - y0 - 2, 1.2);
         plate += this.bolt(x0 + 6, cy, 1.8) + this.bolt(x1 - 6, cy, 1.8);
         let out = this.T(10, 'plastic', plate);
-        [[140, J.paint.orange, 6], [166, J.paint.red, 5.2], [194, J.paint.orange, 6], [220, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
-            // обойма: хромированное кольцо, утопленное в планку
-            out += this.T(11, 'polished', `<circle cx="${bx}" cy="${cy}" r="${r + 2}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-                `<circle cx="${bx}" cy="${cy}" r="${r + 0.6}" class="pit" fill="${J.hole}"/>` +
-                this.domeH(bx, cy, r + 2, 1));
-            // колпачок
-            out += this.T(11, 'plastic', `<circle cx="${bx}" cy="${cy - 0.4}" r="${r}" fill="${c}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-                `<circle cx="${f(bx - r * 0.3)}" cy="${f(cy - 0.4 - r * 0.35)}" r="${f(r * 0.3)}" class="hl" fill="${J.paint.cream}" opacity="0.8"/>` +
-                this.domeH(bx, cy - 0.4, r, 2.6));
-        });
+        this.bulbList().forEach(b => { out += this.bulb(b.kind, b.x, cy + 2); });
+        return out;
+    },
+
+    // Цоколь: латунный цилиндр с витками резьбы и чёрным изолятором внизу.
+    // (x, base) — середина низа цоколя на планке; w, h — размеры.
+    socketBrass(x, base, w, h) {
+        const J = PALETTE.greedJunk, Br = J.brass, f = this.f;
+        const top = base - h;
+        let s = `<rect x="${f(x - w / 2)}" y="${f(top)}" width="${w}" height="${h}" rx="1.2" fill="${Br.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        for (let y = top + 1.8; y < base - 2.4; y += 1.8) {
+            s += `<line x1="${f(x - w / 2 + 0.6)}" y1="${f(y)}" x2="${f(x + w / 2 - 0.6)}" y2="${f(y + 0.6)}" stroke="${Br.lo}" stroke-width="0.5"/>`;
+        }
+        s += `<rect x="${f(x - w / 2 + 0.8)}" y="${f(top + 0.6)}" width="1.1" height="${f(h - 3)}" class="hl" fill="${Br.hi}" opacity="0.8"/>` +
+            `<rect x="${f(x - w / 2 + 1)}" y="${f(base - 2.2)}" width="${f(w - 2)}" height="2.2" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        s += this.rodH(`M${x} ${f(top + 0.5)} L${x} ${f(base - 0.5)}`, w, w * 0.45);
+        return this.T(12, 'brass', s);
+    },
+
+    // Нить накала: держатели и зигзаг спирали — тёмные, лампа не горит.
+    filament(x, y0, y1, w) {
+        const J = PALETTE.greedJunk, f = this.f;
+        let zig = `M${f(x - w / 2)} ${f(y0)}`;
+        for (let i = 1; i <= 6; i++) zig += ` L${f(x - w / 2 + (w * i) / 6)} ${f(y0 + (i % 2 ? -1.2 : 0))}`;
+        return `<path d="M${f(x - w / 2)} ${f(y1)} L${f(x - w / 2)} ${f(y0)} M${f(x + w / 2)} ${f(y1)} L${f(x + w / 2)} ${f(y0)}" stroke="${J.bulb.wire}" stroke-width="0.5"/>` +
+            `<path d="${zig}" fill="none" stroke="${J.bulb.wire}" stroke-width="0.6" stroke-linejoin="round"/>`;
+    },
+
+    // Колба по контуру d: тонированное стекло (сквозь видно планку и нить),
+    // блик полоской слева, выпуклость куполом/валиком на карте высот.
+    glassBulb(d, color, op, hi, hpath) {
+        const J = PALETTE.greedJunk;
+        return `<path d="${d}" fill="${color}" opacity="${op}"/>` +
+            `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<path d="${hi}" fill="none" class="hl" stroke="${J.alu[100]}" stroke-width="1.1" stroke-linecap="round" opacity="0.8"/>` +
+            hpath;
+    },
+
+    bulb(kind, x, base) {
+        const J = PALETTE.greedJunk, L = J.bulb, f = this.f;
+        let out = '';
+        if (kind === 'red') {
+            // длинная трубка: узкий цоколь, цилиндр с закруглённым верхом
+            out += this.socketBrass(x, base, 6.4, 6);
+            const t = base - 6, top = t - 26, w = 6;
+            const d = `M${x - w / 2} ${t} V${top + w / 2} A${w / 2} ${w / 2} 0 0 1 ${x + w / 2} ${top + w / 2} V${t} Z`;
+            out += this.T(14, 'glass', this.filament(x, top + 6, t - 1, 2.4) +
+                this.glassBulb(d, L.red, 0.75, `M${x - 1.4} ${t - 3} V${top + 4}`, this.rodH(`M${x} ${top + 2} L${x} ${t}`, w, 2.6)));
+        } else if (kind === 'pear') {
+            // груша: широкий цоколь с резьбой, горлышко, круглое тело
+            out += this.socketBrass(x, base, 8, 7);
+            const t = base - 7, cy = t - 15, r = 9.5;
+            const d = `M${x - 3.6} ${t} C${x - 4} ${t - 4} ${x - r} ${cy + 5} ${x - r} ${cy} A${r} ${r} 0 1 1 ${x + r} ${cy} ` +
+                `C${x + r} ${cy + 5} ${x + 4} ${t - 4} ${x + 3.6} ${t} Z`;
+            out += this.T(14, 'glass', this.filament(x, cy - 1, t - 1, 4.6) +
+                this.glassBulb(d, L.clear, 0.42, `M${x - 6.5} ${cy + 2} A7 7 0 0 1 ${x - 2} ${cy - 6.6}`, this.domeH(x, cy, r, 4)));
+        } else if (kind === 'globe') {
+            // маленький янтарный шарик на коротком цоколе
+            out += this.socketBrass(x, base, 5.6, 5);
+            const t = base - 5, cy = t - 6.5, r = 6.6;
+            const d = `M${x - 2.4} ${t} A${r} ${r} 0 1 1 ${x + 2.4} ${t} Z`;
+            out += this.T(14, 'glass', this.filament(x, cy, t - 1, 2.6) +
+                this.glassBulb(d, L.amber, 0.7, `M${x - 4.4} ${cy + 1} A4.6 4.6 0 0 1 ${x - 1} ${cy - 4.2}`, this.domeH(x, cy, r, 3)));
+        } else {
+            // «свеча»: дымчатое стекло, вытянутое пламенем, носик закручен
+            out += this.socketBrass(x, base, 6, 6);
+            const t = base - 6, top = t - 20;
+            const d = `M${x - 3} ${t} C${x - 6.5} ${t - 6} ${x - 5} ${top + 8} ${x} ${top + 2} C${x + 1.5} ${top} ${x + 3} ${top - 1} ${x + 2} ${top - 2.4} ` +
+                `C${x + 3.4} ${top + 1} ${x + 6.5} ${top + 9} ${x + 3} ${t} Z`;
+            out += this.T(14, 'glass', this.filament(x, top + 9, t - 1, 2.4) +
+                this.glassBulb(d, L.smoke, 0.62, `M${x - 3.4} ${t - 3} C${x - 4.4} ${t - 8} ${x - 3} ${top + 9} ${x - 1} ${top + 6}`,
+                    this.domeH(x, top + 12, 4.6, 3)));
+        }
         return out;
     },
 
