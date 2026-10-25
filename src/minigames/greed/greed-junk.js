@@ -109,6 +109,8 @@ const GreedJunk = {
             `<stop offset="0.85" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.35"/></linearGradient>` +
             `<linearGradient id="gj-shade-x" x1="0" y1="0" x2="1" y2="0">` +
             `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.5"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0"/></linearGradient>` +
+            `<linearGradient id="gj-rust" x1="0" y1="0" x2="0" y2="1">` +
+            `<stop offset="0" stop-color="${J.rust[500]}" stop-opacity="0.85"/><stop offset="1" stop-color="${J.rust[300]}" stop-opacity="0"/></linearGradient>` +
             `<radialGradient id="gj-vign" cx="0.5" cy="0.45" r="0.7">` +
             `<stop offset="0.55" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.5"/></radialGradient>` +
             `<radialGradient id="gj-dirt" cx="0.5" cy="1" r="0.9">` +
@@ -214,12 +216,14 @@ const GreedJunk = {
             `<line x1="${f(x - c)}" y1="${f(y - s)}" x2="${f(x + c)}" y2="${f(y + s)}" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>`;
     },
 
+    // Ржавый потёк под болтом: узкая полоска, тающая книзу. Раньше это был
+    // сплошной треугольник одного тона — читался оранжевой морковкой.
     rustRun(x, y, len, seed) {
-        const J = PALETTE.greedJunk, f = this.f;
+        const f = this.f;
         const rnd = this.rng(seed);
-        const w = 1.6 + rnd() * 1.6;
-        return `<path d="M${f(x - w)} ${f(y)} q${f(w * 0.4)} ${f(len * 0.6)} ${f(w)} ${f(len)} q${f(w * 0.6)} ${f(-len * 0.4)} ${f(w)} ${f(-len)} z" ` +
-            `fill="${J.rust[500]}" opacity="0.75"/>`;
+        const w = 0.9 + rnd() * 0.8, bend = (rnd() - 0.5) * 2;
+        return `<path d="M${f(x - w)} ${f(y)} q${f(bend)} ${f(len * 0.6)} ${f(w * 0.7 + bend)} ${f(len)} ` +
+            `q${f(w * 0.3)} ${f(-len * 0.4)} ${f(w * 1.3 - bend)} ${f(-len)} z" fill="url(#gj-rust)"/>`;
     },
 
     tin(x, y, w, h, seed, opts) {
@@ -505,9 +509,42 @@ const GreedJunk = {
         // крышка, нависает над боковинами
         out += this.planks(16, 14, 312, 22, 1, 15, 'h');
         out += `<line x1="20" y1="16.5" x2="324" y2="16.5" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
-        // жестяные уголки на стыках крышки и боковин — так сколачивают ящики
-        out += this.tin(20, 26, 26, 22, 16, { bolts: false, scratches: 1, tilt: 0, z: this.Z.plate }) + this.bolt(29, 37, 2);
-        out += this.tin(298, 26, 26, 22, 17, { bolts: false, scratches: 1, tilt: 0, z: this.Z.plate }) + this.bolt(315, 37, 2);
+        out += this.cornerBracket(1) + this.cornerBracket(-1);
+        return out;
+    },
+
+    // Уголок на стыке крышки и боковины: гнутая Г-образная пластина,
+    // одно плечо на крышке, другое на боковине. Выдавленное ребро
+    // жёсткости по диагонали угла, три шурупа, рыжая кромка там, где
+    // стоит вода. side: 1 — левый, −1 — правый (зеркально по оси ящика).
+    cornerBracket(side) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const AX = 172;                                   // ось симметрии ящика
+        const X = x => side > 0 ? x : AX * 2 - x;
+        const pt = (x, y) => f(X(x)) + ' ' + f(y);
+        // контур Г: скруглённый внешний угол, мягкая галтель внутри
+        const d = `M${pt(20, 20)} Q${pt(20, 15)} ${pt(25, 15)} L${pt(60, 15)} Q${pt(62, 15)} ${pt(62, 17)} ` +
+            `L${pt(62, 32)} Q${pt(62, 34)} ${pt(60, 34)} L${pt(48, 34)} Q${pt(45, 34)} ${pt(45, 37)} ` +
+            `L${pt(45, 62)} Q${pt(45, 64)} ${pt(43, 64)} L${pt(22, 64)} Q${pt(20, 64)} ${pt(20, 62)} Z`;
+        let out = `<path d="${d}" fill="${J.hole}" opacity="0.2" transform="translate(0.6 0.9)"/>`;
+        out += `<path d="${d}" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        out += `<path d="${d}" fill="url(#gj-dirt)"/>`;
+        // фаска: верхние кромки ловят свет, нижние в тени
+        out += `<path d="M${pt(23, 16.6)} L${pt(60, 16.6)}" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.85"/>`;
+        out += `<path d="M${pt(60, 32.6)} L${pt(48, 32.6)} M${pt(43.6, 38)} L${pt(43.6, 62.6)} L${pt(22, 62.6)}" ` +
+            `fill="none" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        out += `<path d="M${pt(21.5, 21)} L${pt(21.5, 61)}" stroke="${side > 0 ? J.tin[100] : J.tin[900]}" ` +
+            `stroke-width="${STROKE.detail}" opacity="${side > 0 ? 0.7 : 0.6}"/>`;
+        // ребро жёсткости: светлая и тёмная дуга рядом — выдавлено наружу
+        out += `<path d="M${pt(27, 25)} L${pt(37, 36)}" stroke="${J.tin[100]}" stroke-width="${STROKE.structure}" stroke-linecap="round" opacity="0.8"/>` +
+            `<path d="M${pt(28.4, 26.6)} L${pt(38.4, 37.6)}" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}" stroke-linecap="round" opacity="0.7"/>`;
+        // ржавая кромка по низу плеч
+        out += `<path d="M${pt(46, 33)} L${pt(60, 33)} M${pt(22, 63)} L${pt(43, 63)}" stroke="${J.rust[500]}" stroke-width="2" opacity="0.45"/>`;
+        // шурупы и потёки под ними
+        [[54, 24.5], [32.5, 48], [32.5, 58]].forEach(([x, y], i) => {
+            if (i !== 1) out += this.rustRun(X(x), y + 2, 5 + i * 2, 160 + i + side);
+            out += this.bolt(X(x), y, 2);
+        });
         return out;
     },
 
