@@ -468,13 +468,35 @@ Object.assign(GreedJunk, {
         });
         out += this.T(-10, 'paint', win);
         out += this.reelWindows();
-        // кнопки на полке-пульте под табло: разные, как собранные с разных пультов
-        [[136, J.paint.orange, 6.5], [168, J.paint.red, 5.5], [196, J.paint.orange, 6.5], [226, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
-            out += this.T(9, 'steel', `<circle cx="${bx + 0.8}" cy="${477.8}" r="${r + 2}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
-                `<circle cx="${bx}" cy="476" r="${r + 2}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`);
-            out += this.T(10, 'plastic', `<circle cx="${bx}" cy="475" r="${r}" fill="${c}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-                `<circle cx="${bx - r * 0.3}" cy="${475 - r * 0.35}" r="${r * 0.32}" class="hl" fill="${J.paint.cream}" opacity="0.8"/>` +
-                this.domeH(bx, 475, r, 2.5));
+        out += this.buttonPanel();
+        return out;
+    },
+
+    // ---------- ПУЛЬТ С КНОПКАМИ ----------
+    // Кнопки стоят не на голой кромке полки, а на бакелитовой планке от
+    // старого пульта, прикрученной к полке двумя шурупами. Каждая кнопка —
+    // в хромированной обойме, колпачок выпуклый, кнопки разные (собраны с
+    // разных пультов). Было: кнопки висели на кромке, как бусины, а между
+    // ними читался непонятный сучок полки.
+    buttonPanel() {
+        const J = PALETTE.greedJunk, B = J.bakelite, f = this.f;
+        const x0 = 118, x1 = 244, y0 = 467, y1 = 485, cy = 476;
+        let plate = `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="5" fill="${B.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<line x1="${x0 + 4}" y1="${y0 + 1.6}" x2="${x1 - 4}" y2="${y0 + 1.6}" class="hl" stroke="${B.hi}" stroke-width="${STROKE.detail}"/>` +
+            // потёртость там, где жмут пальцем
+            `<ellipse cx="${(x0 + x1) / 2}" cy="${cy}" rx="44" ry="5" fill="${B.hi}" opacity="0.25"/>` +
+            this.rodH(`M${x0 + 6} ${cy} L${x1 - 6} ${cy}`, y1 - y0 - 2, 1.2);
+        plate += this.bolt(x0 + 6, cy, 1.8) + this.bolt(x1 - 6, cy, 1.8);
+        let out = this.T(10, 'plastic', plate);
+        [[140, J.paint.orange, 6], [166, J.paint.red, 5.2], [194, J.paint.orange, 6], [220, J.paint.yellow, 5]].forEach(([bx, c, r]) => {
+            // обойма: хромированное кольцо, утопленное в планку
+            out += this.T(11, 'polished', `<circle cx="${bx}" cy="${cy}" r="${r + 2}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<circle cx="${bx}" cy="${cy}" r="${r + 0.6}" class="pit" fill="${J.hole}"/>` +
+                this.domeH(bx, cy, r + 2, 1));
+            // колпачок
+            out += this.T(11, 'plastic', `<circle cx="${bx}" cy="${cy - 0.4}" r="${r}" fill="${c}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+                `<circle cx="${f(bx - r * 0.3)}" cy="${f(cy - 0.4 - r * 0.35)}" r="${f(r * 0.3)}" class="hl" fill="${J.paint.cream}" opacity="0.8"/>` +
+                this.domeH(bx, cy - 0.4, r, 2.6));
         });
         return out;
     },

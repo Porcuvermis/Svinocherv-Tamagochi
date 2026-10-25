@@ -95,7 +95,10 @@ Object.assign(GreedJunk, {
     domeH(cx, cy, r, rise) {
         rise = rise == null ? r * 0.8 : rise;
         const f = this.f;
-        return '<g class="hpass">' + [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]].map(([k, u]) =>
+        // крупный купол (колпачок кнопки) четырьмя ступенями выходил мишенью
+        // из колец — ему ступеней больше
+        const steps = r > 4 ? this.profile(Math.round(r * 1.6)) : [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]];
+        return '<g class="hpass">' + steps.map(([k, u]) =>
             `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * k)}" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
     },
 
