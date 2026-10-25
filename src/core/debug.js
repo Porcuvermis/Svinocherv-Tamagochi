@@ -300,12 +300,14 @@ const DebugState = {
 
         if (!GameState.data) return;
 
-        // Жетоны гнева. Честный источник — победы в бою (осколок за победу,
-        // три осколка = жетон), но копить их ради проверки магазина долго.
-        // Выдаётся через Backend, а не записью в состояние: когда появится
-        // рогалик, он пойдёт тем же путём.
+        // Жетоны ВСЕХ грехов по пять. Честный источник у каждого свой, и у
+        // зависти с тщеславием его пока нет вовсе, а аппарат алчности берёт
+        // плату жетонами всех грехов разом — без кнопки его не проверить.
+        // Выдаётся через Backend, а не записью в состояние: тем же путём
+        // пойдёт настоящая награда.
         if (act === 'gear') {
-            Backend.grantCurrency('wrath_token', 5);
+            Object.keys(ECONOMY.currencies).filter(k => /_token$/.test(k))
+                .forEach(k => Backend.grantCurrency(k, 5));
             Backend.grantCurrency('gold', 100);
             if (typeof WrathLobby !== 'undefined' && WrathLobby.root) WrathLobby.refresh();
             if (typeof WrathShop !== 'undefined' && WrathShop.root) WrathShop.render();

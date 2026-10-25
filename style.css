@@ -242,6 +242,26 @@ canvas {
 
 .wallet-coin { font-size: 13px; }
 
+/* Копилки в кошельке: золото и жетоны всех грехов в одну строку. Жетон —
+   пока кружок цвета греха (--tok ставит main.js из ECONOMY.sins), рисунок
+   придёт позже. Отступы тесные: восемь копилок на ширине телефона. */
+.wallet-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+#wallet .wallet-tok { margin-left: 4px; }
+.wallet-dot {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 28%,
+        rgba(255, 255, 255, 0.55) 0%, var(--tok) 45%, rgba(0, 0, 0, 0.35) 140%);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+    flex: none;
+}
+
 /* Обесцвечивания при истощении здесь НЕТ и быть не должно. Оно делается
    родным SVG-фильтром внутри рендерера (см. applyWither в worm-renderer.js).
    Стояло тут CSS-свойством filter и на айфоне молча не работало: WebKit не

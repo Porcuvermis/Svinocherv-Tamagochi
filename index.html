@@ -238,8 +238,11 @@
     <!-- data-cur на ВСЁМ чипе, а не на числе: по этой метке WalletFx находит
          счётчик и ставит вылетающую цифру рядом с ним. На одном числе цифра
          вставала бы поверх монеты слева от него. -->
-    <div id="wallet" data-cur="gold">
-        <i class="coin-gold wallet-coin"></i><span id="wallet-gold">0</span>
+    <!-- Метка data-cur теперь у каждой копилки, а не у всего кошелька: в нём
+         рядом с золотом лежат жетоны грехов, и цифра должна вылетать из
+         своей копилки. Жетоны дописывает GameManager.cacheElements. -->
+    <div id="wallet">
+        <span class="wallet-chip" data-cur="gold"><i class="coin-gold wallet-coin"></i><span id="wallet-gold">0</span></span>
     </div>
 
     <button id="debug-toggle-btn" class="debug-toggle-btn" title="Debug-режим">🐞</button>

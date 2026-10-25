@@ -90,10 +90,39 @@ const GameManager = {
     _shownGold: null,
     _cached: false,
 
+    // ---------- КОПИЛКИ ЖЕТОНОВ В КОШЕЛЬКЕ ----------
+    // Жетоны всех грехов в одну строку с золотом: аппарат алчности берёт
+    // плату жетонами всех грехов, и без них в комнате не видно, хватает ли
+    // (docs/plan/28-greed-machine.md, разд. 3). Пока это кружки цвета греха
+    // с числом — рисунок жетона придёт позже.
+    //
+    // Порядок — ECONOMY.sinOrder, валюта греха — по этой таблице: имена
+    // жетонов исторически короче имён грехов (glut_token, а не gluttony_).
+    WALLET_TOKENS: {
+        pride: 'pride_token', greed: 'greed_token', envy: 'envy_token', wrath: 'wrath_token',
+        lust: 'lust_token', gluttony: 'glut_token', sloth: 'sloth_token'
+    },
+    _tokens: null,       // [{ key, el, shown }]
+
     cacheElements() {
         this._cached = true;
         this._gold = document.getElementById('wallet-gold');
         this._shownGold = null;
+        this._tokens = [];
+        const wallet = document.getElementById('wallet');
+        if (!wallet || typeof ECONOMY === 'undefined') return;
+        wallet.querySelectorAll('.wallet-tok').forEach(el => el.remove());
+        (ECONOMY.sinOrder || []).forEach(sin => {
+            const key = this.WALLET_TOKENS[sin];
+            if (!key || !ECONOMY.currencies[key]) return;
+            const chip = document.createElement('span');
+            chip.className = 'wallet-chip wallet-tok';
+            chip.dataset.cur = key;
+            chip.style.setProperty('--tok', (ECONOMY.sins[sin] || {}).color || '#888');
+            chip.innerHTML = '<i class="wallet-dot"></i><span>0</span>';
+            wallet.appendChild(chip);
+            this._tokens.push({ key, el: chip.lastChild, shown: null });
+        });
     },
 
     // Показывает то, что в состоянии. Источник данных — GameState, а не поле
@@ -114,6 +143,10 @@ const GameManager = {
                 this._shownGold = gold;
             }
         }
+        (this._tokens || []).forEach(t => {
+            const n = GameState.currency(t.key);
+            if (force || t.shown !== n) { t.el.textContent = n; t.shown = n; }
+        });
 
         // Меню само решит, есть ли смысл рисовать: закрытое оно не трогает
         // ни одного узла.
