@@ -578,14 +578,8 @@ const GreedJunk = {
         // ---- крепление колеса: ступица от машины на перфоуголке ----
         const w = S.wheel;
         out += this.wheelMount(w.cx, w.cy);
-        out += this.socket(36, 40, -8);
-        // Кабель от розетки провисает к фланцу: питание уже подведено, ждёт
-        // колесо. Провисание — дугой вниз, кабель тяжелее, чем кажется.
-        out += `<path d="M58 60 C 70 120, 84 150, ${w.cx - 40} ${w.cy + 8}" fill="none" stroke="${PALETTE.ink}" stroke-width="5.2" stroke-linecap="round"/>` +
-            `<path d="M58 60 C 70 120, 84 150, ${w.cx - 40} ${w.cy + 8}" fill="none" stroke="${J.tin[900]}" stroke-width="3" stroke-linecap="round"/>` +
-            `<path d="M59 64 C 70 118, 83 146, ${w.cx - 41} ${w.cy + 4}" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}" stroke-linecap="round"/>`;
-        // хомут на кабеле
-        out += this.tin(66, 98, 14, 8, 36, { bolts: false, scratches: 0, tilt: 70, shadow: false });
+        out += this.socket(52, 48, -8);
+        out += this.powerCable();
         out += this.harness(w.cx + 72, w.cy - 70, 52, 34);
         // крышка от консервной банки на дыре в доске — латка
         out += `<circle cx="64.5" cy="246.8" r="15" fill="${J.hole}" opacity="0.18"/>` +
@@ -757,6 +751,46 @@ const GreedJunk = {
             `<circle cx="${cx}" cy="${cy}" r="2.4" fill="${J.tin[900]}"/>` +
             `<path d="M${cx - 3.5} ${cy - 0.5} q3.5 -2 7 0" fill="none" stroke="${J.paint.yellow}" stroke-width="1.1" opacity="0.8"/>` +
             `<circle cx="${cx - 1.6}" cy="${cy - 2}" r="1" fill="${J.tin[100]}"/>`;
+        return out;
+    },
+
+    // ---------- КАБЕЛЬ ПИТАНИЯ КОЛЕСА ----------
+    // Вилка воткнута в левую розетку, кабель спускается по стенке, прибит
+    // двумя скобами-клипсами, между ними провисает, и уходит в резиновую
+    // втулку на пластине ступицы — питание к колесу подведено заранее.
+    // Раньше это была прямая серая трубка, воткнутая в фланец, и хомут,
+    // висящий в воздухе.
+    powerCable() {
+        const J = PALETTE.greedJunk, f = this.f;
+        const pts = [[65, 70], [64, 88], [57, 104], [53, 120], [56, 134], [62, 144], [67, 150]];
+        const d = this.smooth(pts);
+        let out = '';
+        // тень: кабель лежит на стенке почти вплотную
+        out += `<path d="${d}" fill="none" stroke="${J.hole}" stroke-width="5" stroke-linecap="round" opacity="0.32" transform="translate(1.2 2)"/>`;
+        out += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="5.4" stroke-linecap="round"/>`;
+        out += `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="3.4" stroke-linecap="round"/>`;
+        // блик по кабелю: он круглый, свет ложится узкой линией слева-сверху
+        out += `<path d="${d}" fill="none" stroke="${J.tin[500]}" stroke-width="0.8" stroke-linecap="round" opacity="0.8" transform="translate(-0.9 -0.4)"/>`;
+        // вилка в розетке: корпус и гибкий хвостовик, сужающийся к кабелю
+        // (нарисованы у x≈49 и сдвинуты к розетке целиком)
+        out += `<g transform="translate(16 2)">`;
+        out += `<path d="M42 50 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 h-14 a2 2 0 0 1 -2 -2 v-10 a2 2 0 0 1 2 -2 z" ` +
+            `fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" transform="rotate(-8 49 57)"/>`;
+        out += `<line x1="44" y1="53" x2="44" y2="61" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" opacity="0.7" transform="rotate(-8 49 57)"/>`;
+        out += `<path d="M45 63 L53 63 L51 70 L47 70 Z" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        [64.8, 66.8].forEach(y => { out += `<line x1="${f(45.6)}" y1="${y}" x2="${f(52.4)}" y2="${y}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`; });
+        out += `</g>`;
+        // клипсы: белая пластиковая скоба поперёк кабеля и гвоздик
+        [[64, 90, 4], [53.5, 121, -6]].forEach(([x, y, a]) => {
+            out += `<g transform="rotate(${a} ${x} ${y})">` +
+                `<rect x="${x - 6.5}" y="${y - 3}" width="13" height="6" rx="2.6" fill="${J.paint.cream}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<line x1="${x - 4}" y1="${y - 1.6}" x2="${x + 4}" y2="${y - 1.6}" stroke="${J.tin[100]}" stroke-opacity="0.8" stroke-width="${STROKE.hairline}"/>` +
+                `</g>` + this.ironNail(x + (a > 0 ? 4 : -4), y);
+        });
+        // резиновая втулка на пластине, в которую уходит кабель
+        out += `<ellipse cx="67" cy="150.5" rx="5.6" ry="5" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<ellipse cx="67" cy="150.5" rx="3.4" ry="3" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
+            `<path d="M62.5 148.6 a5 4.6 0 0 1 6 -3.2" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         return out;
     },
 
