@@ -493,7 +493,7 @@ Object.assign(GreedJunk, {
     // заваливаются каждая по-своему. Делаются по одной.
     SHELF_TOP: 466,
     bulbList() {
-        return [{ kind: 'pear', x: 150 }, { kind: 'red', x: 200 }, { kind: 'globe', x: 231 }];
+        return [{ kind: 'pear', x: 150 }, { kind: 'flame', x: 175 }, { kind: 'red', x: 200 }, { kind: 'globe', x: 231 }];
     },
 
     buttonPanel() {
@@ -705,14 +705,27 @@ Object.assign(GreedJunk, {
             });
             out += h0.disk + lamp;
         } else {
-            // «свеча»: дымчатое стекло, вытянутое пламенем, носик закручен
-            out += this.socketBrass(x, base, 6, 6);
-            const t = base - 6, top = t - 20;
-            const d = `M${x - 3} ${t} C${x - 6.5} ${t - 6} ${x - 5} ${top + 8} ${x} ${top + 2} C${x + 1.5} ${top} ${x + 3} ${top - 1} ${x + 2} ${top - 2.4} ` +
-                `C${x + 3.4} ${top + 1} ${x + 6.5} ${top + 9} ${x + 3} ${t} Z`;
-            out += this.T(14, 'glass', this.filament(x, top + 9, t - 1, 2.4) +
-                this.glassBulb(d, L.smoke, 0.62, `M${x - 3.4} ${t - 3} C${x - 4.4} ${t - 8} ${x - 3} ${top + 9} ${x - 1} ${top + 6}`,
-                    this.domeH(x, top + 12, 4.6, 3)));
+            // «Свеча»: дымчатое стекло, вытянутое пламенем, носик закручен.
+            // Посадка: как все — на зрителя (84°), вбок вправо (18°). Почти
+            // в торец свеча — это круг пузатой части, из которого вверх
+            // выглядывает кончик пламени с завитком носика.
+            let h0 = null;
+            const lamp = this.leaned(x, base - 2.8, 1.466, 18, () => {
+                const h = this.holder(x, base, 6);
+                h0 = h;
+                let o = h.cup + this.socketBrass(x, h.top, 5.4, 5);
+                const t = h.top - this.ax(5), r = 5, cy = t - this.ax(8) - 3, tip = cy - r - this.ax(12) - 0.6;
+                const d = `M${x - r} ${f(cy)} C${x - r} ${f(cy - r * 0.9)} ${x - 1.6} ${f(tip + 1.6)} ${x + 0.4} ${f(tip)} ` +
+                    `C${x + 1.6} ${f(tip + 1.4)} ${x + r} ${f(cy - r * 0.85)} ${x + r} ${f(cy)} A${r} ${r} 0 0 1 ${x - r} ${f(cy)} Z`;
+                // носик-завиток: стеклянный хвостик оттяжки, закрученный набок
+                const curl = `<path d="M${x + 0.4} ${f(tip)} C${x + 1.8} ${f(tip - 1)} ${x + 2.8} ${f(tip + 0.2)} ${x + 1.8} ${f(tip + 1.1)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linecap="round"/>`;
+                // Стекло плотнее, чем было (0.62): в торец сквозь прозрачное
+                // дымчатое просвечивали кольца патрона — как у груши.
+                o += this.T(21, 'glass', this.glassBulb(d, L.smoke, 0.86, `M${x - 3.6} ${f(cy + 0.6)} A3.8 3.8 0 0 1 ${x - 1.2} ${f(cy - 3.4)}`, this.domeH(x, cy, r, 3.2)) +
+                    `<g opacity="0.5">${this.filament(x, cy - 0.4, cy + 2.4, 2.6)}</g>` + curl);
+                return o;
+            });
+            out += h0.disk + lamp;
         }
         return out;
     },
