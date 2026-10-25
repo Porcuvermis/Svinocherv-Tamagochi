@@ -575,27 +575,9 @@ const GreedJunk = {
         out += `<rect x="146" y="273" width="48" height="14" rx="2" fill="${J.paint.red}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             `<rect x="150" y="276" width="16" height="3" fill="${J.paint.cream}" opacity="0.5"/>`;
 
-        // ---- крепление колеса: крестовина и фланец со шпильками ----
+        // ---- крепление колеса: ступица от машины на перфоуголке ----
         const w = S.wheel;
-        // Плечи разной длины и под разными углами: крестовину собрали из двух
-        // обрезков полосы, а не купили. Продольные прорези — чтобы подвинуть
-        // стойку колеса, не сверля новых дыр.
-        const strap = (x0, y0, len, ang, seed) => {
-            let g = `<g transform="rotate(${ang} ${x0} ${y0})">` +
-                this.tin(x0 - len / 2, y0 - 9, len, 18, seed, { dark: true, boltR: 2.2, tilt: 0, z: this.Z.strap });
-            [-1, 1].forEach(side => {
-                const sx = x0 + side * len * 0.3;
-                g += `<rect x="${f(sx - 9)}" y="${f(y0 - 2)}" width="18" height="4" rx="2" fill="${J.hole}"/>`;
-            });
-            return g + '</g>';
-        };
-        out += strap(w.cx + 4, w.cy, 160, 6, 31);
-        out += strap(w.cx, w.cy + 6, 138, 93, 32);
-        out += this.tin(w.cx - 24, w.cy - 24, 48, 48, 33, { boltR: 2.4, tilt: -3, z: this.Z.rail });
-        out += `<circle cx="${w.cx}" cy="${w.cy}" r="14" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        out += `<circle cx="${w.cx}" cy="${w.cy}" r="7" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        out += `<circle cx="${w.cx - 2}" cy="${w.cy - 2}" r="2.2" fill="${J.tin[100]}"/>`;
-        [[-16, -16], [16, -16], [-16, 16], [16, 16]].forEach(([dx, dy]) => { out += this.stud(w.cx + dx, w.cy + dy); });
+        out += this.wheelMount(w.cx, w.cy);
         // пустые отверстия по кругу — под будущую стойку колеса
         for (let i = 0; i < 6; i++) {
             const a = (i / 6) * Math.PI * 2 + 0.5;
@@ -604,12 +586,12 @@ const GreedJunk = {
         out += this.socket(36, 40, -8);
         // Кабель от розетки провисает к фланцу: питание уже подведено, ждёт
         // колесо. Провисание — дугой вниз, кабель тяжелее, чем кажется.
-        out += `<path d="M58 60 C 70 120, 84 150, ${w.cx - 12} ${w.cy + 10}" fill="none" stroke="${PALETTE.ink}" stroke-width="5.2" stroke-linecap="round"/>` +
-            `<path d="M58 60 C 70 120, 84 150, ${w.cx - 12} ${w.cy + 10}" fill="none" stroke="${J.tin[900]}" stroke-width="3" stroke-linecap="round"/>` +
-            `<path d="M59 64 C 70 118, 83 146, ${w.cx - 14} ${w.cy + 6}" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}" stroke-linecap="round"/>`;
+        out += `<path d="M58 60 C 70 120, 84 150, ${w.cx - 40} ${w.cy + 8}" fill="none" stroke="${PALETTE.ink}" stroke-width="5.2" stroke-linecap="round"/>` +
+            `<path d="M58 60 C 70 120, 84 150, ${w.cx - 40} ${w.cy + 8}" fill="none" stroke="${J.tin[900]}" stroke-width="3" stroke-linecap="round"/>` +
+            `<path d="M59 64 C 70 118, 83 146, ${w.cx - 41} ${w.cy + 4}" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}" stroke-linecap="round"/>`;
         // хомут на кабеле
         out += this.tin(66, 98, 14, 8, 36, { bolts: false, scratches: 0, tilt: 70, shadow: false });
-        out += this.harness(w.cx + 40, w.cy - 70, 52, 34);
+        out += this.harness(w.cx + 72, w.cy - 70, 52, 34);
         // крышка от консервной банки на дыре в доске — латка
         out += `<circle cx="64.5" cy="246.8" r="15" fill="${J.hole}" opacity="0.18"/>` +
             `<circle cx="64" cy="246" r="15" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
@@ -644,6 +626,128 @@ const GreedJunk = {
         out += this.socket(p.x + 36, p.y + 132, -6);
         out += this.harness(p.x + 50, p.y + 168, 44, 45);
         out += this.topFrame();
+        return out;
+    },
+
+    // ---------- КРЕПЛЕНИЕ КОЛЕСА ----------
+    // Ось колеса — ступица с тормозным диском от старой машины: колесо
+    // фортуны сядет на её колёсные шпильки, как автомобильное. Держат
+    // ступицу три куска перфорированного уголка, сходящиеся к ней с разных
+    // сторон и разной длины, — из чего было. Концы уголков посажены на
+    // глухари с широкими шайбами: в доску по-другому не прикрутишь.
+    // Раньше тут была крестовина из двух полос — читалась знаком «плюс».
+    wheelMount(cx, cy) {
+        let out = '';
+        out += this.angleIron(156, 54, cx + 4, cy - 8, 511);
+        out += this.angleIron(118, 262, cx + 2, cy + 8, 512);
+        out += this.angleIron(cx + 10, cy + 2, 196, cy + 6, 513);
+        // переходная пластина под ступицей: вырезана болгаркой, углы косые
+        out += this.cutPlate(cx, cy, 514);
+        out += this.brakeDisc(cx, cy);
+        return out;
+    },
+
+    // Перфорированный уголок от (x1,y1) до (x2,y2): лицевая полка с рядом
+    // дыр — круглые через одну с продолговатыми, — и вторая полка, видимая
+    // ребром узкой тёмной полосой снизу. На концах — глухари с шайбами.
+    angleIron(x1, y1, x2, y2, seed) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const len = Math.hypot(x2 - x1, y2 - y1), ang = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+        const W = 12, lip = 3.2;
+        let g = '';
+        // тень: уголок стоит на ребре второй полки, приподнят
+        g += `<rect x="1.5" y="${f(-W / 2 + 3)}" width="${f(len)}" height="${W + lip}" fill="${J.hole}" opacity="0.32"/>`;
+        // вторая полка ребром — тёмная
+        g += `<rect x="0" y="${f(W / 2 - 0.5)}" width="${f(len)}" height="${lip}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        // лицевая полка
+        g += `<rect x="0" y="${f(-W / 2)}" width="${f(len)}" height="${W}" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        g += `<line x1="1" y1="${f(-W / 2 + 1)}" x2="${f(len - 1)}" y2="${f(-W / 2 + 1)}" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        // перфорация
+        let k = 0;
+        for (let t = 14; t < len - 12; t += 9, k++) {
+            g += k % 2
+                ? `<rect x="${f(t - 3)}" y="-1.5" width="6" height="3" rx="1.5" fill="${J.hole}"/>`
+                : `<circle cx="${f(t)}" cy="0" r="1.7" fill="${J.hole}"/>`;
+        }
+        // ржавчина по кромке
+        g += `<line x1="${f(len * 0.2)}" y1="${f(W / 2 - 1)}" x2="${f(len * 0.55)}" y2="${f(W / 2 - 1)}" stroke="${J.rust[500]}" stroke-width="1.6" opacity="0.5"/>`;
+        let out = `<g transform="translate(${f(x1)} ${f(y1)}) rotate(${f(ang)})">${g}</g>`;
+        out += this.lagBolt(x1 + (x2 - x1) * 6 / len, y1 + (y2 - y1) * 6 / len);
+        return out;
+    },
+
+    // Глухарь с шайбой: широкая шайба, шестигранная головка, блик слева сверху.
+    lagBolt(x, y) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const hex = [0, 1, 2, 3, 4, 5].map(i => {
+            const a = i * Math.PI / 3 + 0.3;
+            return f(x + Math.cos(a) * 3.6) + ',' + f(y + Math.sin(a) * 3.6);
+        }).join(' ');
+        return `<circle cx="${f(x + 0.8)}" cy="${f(y + 1.3)}" r="6" fill="${J.hole}" opacity="0.35"/>` +
+            `<circle cx="${f(x)}" cy="${f(y)}" r="6" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<polygon points="${hex}" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<circle cx="${f(x - 1)}" cy="${f(y - 1)}" r="1.2" fill="${J.tin[100]}" opacity="0.8"/>`;
+    },
+
+    // Пластина-переходник: неровный многоугольник с косыми углами.
+    cutPlate(cx, cy, seed) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const rnd = this.rng(seed);
+        const pts = [];
+        for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2 + 0.2, r = 40 + rnd() * 8;
+            pts.push(f(cx + Math.cos(a) * r) + ' ' + f(cy + Math.sin(a) * r));
+        }
+        const d = 'M' + pts.join(' L') + ' Z';
+        let out = `<path d="${d}" fill="${J.hole}" opacity="0.3" transform="translate(1.2 1.8)"/>`;
+        out += `<path d="${d}" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        out += `<path d="${d}" fill="url(#gj-dirt)"/>`;
+        // следы болгарки по краю — короткие светлые чёрточки
+        for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2 + 0.6;
+            out += `<line x1="${f(cx + Math.cos(a) * 36)}" y1="${f(cy + Math.sin(a) * 36)}" x2="${f(cx + Math.cos(a) * 40)}" y2="${f(cy + Math.sin(a) * 40)}" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>`;
+        }
+        return out;
+    },
+
+    // Тормозной диск со ступицей. Рабочая полоса диска блестит (по ней
+    // ходили колодки — концентрические риски), кромка и центр ржавые.
+    // Колпак ступицы выступает выше диска — своя тень. Пять колёсных
+    // шпилек и гайка оси со шплинтом.
+    brakeDisc(cx, cy) {
+        const J = PALETTE.greedJunk, f = this.f;
+        let out = '';
+        out += `<circle cx="${cx + 2.4}" cy="${cy + 3.8}" r="31" fill="${J.hole}" opacity="0.38"/>`;
+        out += `<circle cx="${cx}" cy="${cy}" r="31" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}"/>`;
+        // риски от колодок
+        for (let r = 20; r <= 28; r += 1.6) {
+            out += `<circle cx="${cx}" cy="${cy}" r="${f(r)}" fill="none" stroke="${r % 3.2 < 1.6 ? J.tin[100] : J.tin[700]}" stroke-width="${STROKE.hairline}" opacity="0.55"/>`;
+        }
+        // ржавая кромка
+        out += `<circle cx="${cx}" cy="${cy}" r="29.6" fill="none" stroke="${J.rust[500]}" stroke-width="2.4" opacity="0.6"/>`;
+        // блик на рабочей полосе — сверху слева
+        out += `<path d="M${f(cx - 24)} ${f(cy - 8)} A25 25 0 0 1 ${f(cx - 6)} ${f(cy - 24)}" fill="none" stroke="${J.tin[100]}" stroke-width="3" stroke-linecap="round" opacity="0.6"/>`;
+        // колпак ступицы
+        out += `<circle cx="${cx + 1.6}" cy="${cy + 2.6}" r="17" fill="${J.hole}" opacity="0.4"/>`;
+        out += `<circle cx="${cx}" cy="${cy}" r="17" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        out += `<circle cx="${cx}" cy="${cy}" r="17" fill="none" stroke="${J.rust[700]}" stroke-width="2" opacity="0.5"/>`;
+        // колёсные шпильки
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+            const sx = cx + Math.cos(a) * 11.5, sy = cy + Math.sin(a) * 11.5;
+            out += `<circle cx="${f(sx + 1.2)}" cy="${f(sy + 1.8)}" r="2.6" fill="${J.hole}" opacity="0.45"/>` +
+                `<circle cx="${f(sx)}" cy="${f(sy)}" r="2.6" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<circle cx="${f(sx)}" cy="${f(sy)}" r="1.4" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
+        }
+        // гайка оси со шплинтом
+        const hex = [0, 1, 2, 3, 4, 5].map(i => {
+            const a = i * Math.PI / 3;
+            return f(cx + Math.cos(a) * 5.6) + ',' + f(cy + Math.sin(a) * 5.6);
+        }).join(' ');
+        out += `<polygon points="${hex}" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<circle cx="${cx}" cy="${cy}" r="2.4" fill="${J.tin[900]}"/>` +
+            `<path d="M${cx - 3.5} ${cy - 0.5} q3.5 -2 7 0" fill="none" stroke="${J.paint.yellow}" stroke-width="1.1" opacity="0.8"/>` +
+            `<circle cx="${cx - 1.6}" cy="${cy - 2}" r="1" fill="${J.tin[100]}"/>`;
         return out;
     },
 
