@@ -426,39 +426,31 @@ Object.assign(GreedJunk, {
             quad([[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], J.hole, 0.3) +
             quad([[I[0], I[3]], [I[2], I[3]], [O[2], O[3]], [O[0], O[3]]], J.paint.cream, 0.28) +
             quad([[I[2], I[1]], [O[2], O[1]], [O[2], O[3]], [I[2], I[3]]], J.paint.cream, 0.12) + '</g>';
-        // Высота скоса — плавным уклоном от листа (9) вниз к окну (−10):
-        // четыре трапеции, у каждой свой градиент серого поперёк скоса.
-        // Ступенями (как было) скос выходил полосатым — шейдер ловил края
-        // ступеней, а сам уклон почти не читался. Градиент пишется в карту
-        // высот как есть: inline-стиль с !important сильнее общего правила
-        // прохода, которое красит всё по --h. Обводка тем же градиентом
-        // закрывает шов на диагоналях углов: без неё сглаживание краёв
-        // оставляло там тёмную щель, и шейдер штриховал углы.
+        // Высота скоса — одна гладкая воронка от листа (9) вниз к окну (−10).
+        // Рисуется ступенью «лист — окно» по средней линии скоса, размытой
+        // по Гауссу: уклон выходит S-кривой, а углы — скруглёнными, без
+        // складки. Было: четыре трапеции с градиентами, сходившиеся по
+        // диагоналям углов; на стыке двух уклонов нормаль ломалась, и
+        // шейдер рисовал в углах тёмные и светлые полосы гармошкой.
+        // Средняя линия — посередине каждого скоса (верхний шире), размытие
+        // таково, что к кромке листа и к окну уклон почти сходит на нет.
         {
             const g = (v) => { const c = Math.round(this.hv(v) * 255); return `rgb(${c},${c},${c})`; };
-            const hi = g(9), lo = g(-10);
-            const sides = [
-                ['t', [[O[0], O[1]], [O[2], O[1]], [I[2], I[1]], [I[0], I[1]]], [0, O[1], 0, I[1]]],
-                ['b', [[O[0], O[3]], [O[2], O[3]], [I[2], I[3]], [I[0], I[3]]], [0, O[3], 0, I[3]]],
-                ['l', [[O[0], O[1]], [I[0], I[1]], [I[0], I[3]], [O[0], O[3]]], [O[0], 0, I[0], 0]],
-                ['r', [[O[2], O[1]], [I[2], I[1]], [I[2], I[3]], [O[2], O[3]]], [O[2], 0, I[2], 0]]
-            ];
-            // Размытие в полтора тексела скругляет рёбра скоса: острое
-            // ребро на растре выходило лесенкой, и шейдер рисовал по
-            // диагоналям пилу.
-            face += `<filter id="gj-hblur" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.4"/></filter>`;
-            face += '<g class="hpass" filter="url(#gj-hblur)">' + sides.map(([k, pts, v]) =>
-                `<linearGradient id="gj-bev-${k}" gradientUnits="userSpaceOnUse" x1="${v[0]}" y1="${v[1]}" x2="${v[2]}" y2="${v[3]}">` +
-                `<stop offset="0" stop-color="${hi}"/><stop offset="1" stop-color="${lo}"/></linearGradient>` +
-                `<path d="M${pts.map(q => q.join(' ')).join(' L')} Z" style="fill:url(#gj-bev-${k}) !important;stroke:url(#gj-bev-${k}) !important;stroke-width:1.2px;stroke-linejoin:round"/>`
-            ).join('') + '</g>';
+            const M = O.map((v, k) => (v + I[k]) / 2);
+            face += `<clipPath id="gj-bev-clip"><rect x="${O[0]}" y="${O[1]}" width="${O[2] - O[0]}" height="${O[3] - O[1]}" rx="2"/></clipPath>` +
+                `<filter id="gj-hblur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3.4"/></filter>`;
+            face += `<g class="hpass" clip-path="url(#gj-bev-clip)"><g filter="url(#gj-hblur)">` +
+                `<rect x="${O[0] - 20}" y="${O[1] - 20}" width="${O[2] - O[0] + 40}" height="${O[3] - O[1] + 40}" style="fill:${g(9)} !important;stroke:none !important"/>` +
+                `<rect x="${M[0]}" y="${M[1]}" width="${M[2] - M[0]}" height="${M[3] - M[1]}" style="fill:${g(-10)} !important;stroke:none !important"/>` +
+                `</g></g>`;
         }
-        // рёбра скоса — линии от углов листа к углам окна
+        // рёбра скоса — линии от углов листа к углам окна; только в запасном
+        // виде (fx): у шейдера углы скоса скруглены, складки там нет
         // концы — чуть не доходя до углов: иначе линия вылезала за угол рамки
         [[O[0], O[1], I[0], I[1]], [O[2], O[1], I[2], I[1]], [O[0], O[3], I[0], I[3]], [O[2], O[3], I[2], I[3]]].forEach(e => {
             const k = 0.06, x1 = e[0] + (e[2] - e[0]) * k, y1 = e[1] + (e[3] - e[1]) * k;
             const x2 = e[2] - (e[2] - e[0]) * k, y2 = e[3] - (e[3] - e[1]) * k;
-            face += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linecap="round" opacity="0.5"/>`;
+            face += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" class="fx" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linecap="round" opacity="0.5"/>`;
         });
         // кромка листа над скосом ловит свет
         face += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
