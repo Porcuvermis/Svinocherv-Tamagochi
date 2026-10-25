@@ -1108,8 +1108,6 @@ Object.assign(GreedJunk, {
         // стойки по краям
         out += this.T(5, 'pine', this.planks(40, 484, 16, 98, 1, 82, 'v', 0, 'pine'));
         out += this.T(5, 'lacquer', this.planks(304, 484, 16, 98, 1, 83, 'v', 0, 'painted'));
-        out += this.T(7, 'steel', this.tin(40, 484, 22, 22, 91, { bolts: false, scratches: 1 }) + this.bolt(49, 493) +
-            this.tin(298, 484, 22, 22, 92, { bolts: false, scratches: 1 }) + this.bolt(311, 493));
         // тень от полки на ящик — только запасной вид, шейдер даёт свою
         out += this.shade(40, 486, 280, 14);
         // пустая табличка выплат: светлая сосновая доска на гвоздях
@@ -1121,11 +1119,50 @@ Object.assign(GreedJunk, {
             .forEach(([x, y]) => { plate += this.nail(x, y); });
         out += this.T(6, 'pine', plate);
         out += this.coinTray();
-        // латка изолентой на углу
-        out += this.T(5, 'plastic', `<path d="${this.wob(268, 548, 40, 10, 153, 0.8)}" fill="${J.tin[900]}" opacity="0.92" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" transform="rotate(-18 288 553)"/>`);
+        out += this.tapedCrack();
         // полка поверх стыка табло и ящика — торчит за края; справа
         // длиннее — под кулису, она стоит на полке
         out += this.T(8, 'pine', this.planks(24, 466, 334, 20, 1, 111, 'h', 0, 'pine'));
+        out += this.shelfBracket(42, 1) + this.shelfBracket(318, -1);
+        return out;
+    },
+
+    // Плоский уголок: стягивает полку с ящиком. Верхняя полка уголка — на
+    // передней доске полки, нижняя — на стойке ящика, по два самореза.
+    // Было: серые квадраты с болтом под полкой — не было видно, что они
+    // держат. side: 1 — левый (полка уголка вправо), −1 — правый.
+    shelfBracket(x, side) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const X = (d) => x + side * d;
+        const d = `M${f(X(0))} 474 L${f(X(26))} 474 L${f(X(26))} 482 L${f(X(8))} 482 L${f(X(8))} 510 L${f(X(0))} 510 Z`;
+        let g = `<path d="${d}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.2 1.8)"/>` +
+            `<path d="${d}" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
+            `<path d="M${f(X(1.4))} 475.4 L${f(X(24.6))} 475.4" class="hl" stroke="${J.tin[300]}" stroke-width="0.8"/>`;
+        // ржавчина в углу сгиба, где копится сырость
+        g += `<path d="M${f(X(1))} 480 Q${f(X(6))} 479 ${f(X(7))} 484 L${f(X(7))} 490 Q${f(X(3))} 488 ${f(X(1))} 490 Z" fill="${J.rust[500]}" opacity="0.4"/>`;
+        g += this.bolt(X(13), 478, 1.5) + this.bolt(X(21), 478, 1.5) + this.bolt(X(4), 494, 1.5) + this.bolt(X(4), 504, 1.5);
+        return this.T(10, 'steel', g);
+    },
+
+    // Трещина в листе ДСП у правой стойки, заклеенная изолентой в два
+    // витка; край верхнего витка отклеился и загнулся. Было: чёрный
+    // косой прямоугольник ни на чём — не было видно, что он заклеивает.
+    tapedCrack() {
+        const J = PALETTE.greedJunk, f = this.f;
+        // трещина: от стойки вниз-влево, ломаная, с отщепом
+        const crack = `M303 538 L296 543 L292 542 L285 549 L279 551 L272 559 L266 561`;
+        let out = this.T(3, 'chip', `<path d="${crack}" class="pit" fill="none" stroke="${J.hole}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>` +
+            `<path d="M285 549 L281 545" stroke="${J.hole}" stroke-width="0.8" stroke-linecap="round"/>`);
+        // Две полоски поперёк трещины, каждая своим углом: клеили по
+        // одной. Конец второй отклеился и завернулся — светлая изнанка.
+        const strip = (cx, cy, rot, curl) => {
+            let g = `<rect x="${cx - 11}" y="${cy - 3}" width="22" height="6" rx="0.6" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<line x1="${cx - 10}" y1="${cy - 2}" x2="${cx + 10}" y2="${cy - 2}" class="hl" stroke="${J.tin[500]}" stroke-width="0.5"/>`;
+            if (curl) g += `<path d="M${cx - 11} ${cy - 3} Q${cx - 15} ${cy - 2} ${cx - 14} ${cy + 1.5} Q${cx - 12.5} ${cy + 3.4} ${cx - 11} ${cy + 3} Z" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+            return `<g transform="rotate(${rot} ${cx} ${cy})">${g}</g>`;
+        };
+        let tape = strip(279, 553, 64, false) + strip(293, 543, 46, true);
+        out += this.T(5, 'plastic', tape);
         return out;
     },
 
