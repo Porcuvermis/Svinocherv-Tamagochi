@@ -142,6 +142,70 @@ const GreedJunkLit = {
     // palette.js): x влево, y вверх, и довольно высоко над сценой.
     LIGHT: [-0.45, -0.55, 0.70],
 
+    // ---------- НАКЛОН ТЕЛЕФОНА ----------
+    // Свет стоит в мире, а наклон поворачивает под ним корпус — так же, как
+    // кучу монет рамки алчности (GreedCoins.tiltMat, та же матрица и тот же
+    // предельный угол): оба места ведут себя одинаково, и направление
+    // проверено там на телефоне. Здесь свет переводится в систему корпуса:
+    // Mᵀ·L. Экранная y у корпуса смотрит вниз, у монет вверх — отсюда
+    // переворот y туда и обратно.
+    TILT_MAX: 30,
+    lightFor(t) {
+        const D = Math.PI / 180, ay = t.x * this.TILT_MAX * D, ax = t.y * this.TILT_MAX * D;
+        const cy = Math.cos(ay), sy = Math.sin(ay), cx = Math.cos(ax), sx = Math.sin(ax);
+        const M = [cy, sx * sy, -cx * sy, 0, cx, sx, sy, -sx * cy, cx * cy];
+        const L = [this.LIGHT[0], -this.LIGHT[1], this.LIGHT[2]];
+        const r = [M[0] * L[0] + M[1] * L[1] + M[2] * L[2],
+                   M[3] * L[0] + M[4] * L[1] + M[5] * L[2],
+                   M[6] * L[0] + M[7] * L[1] + M[8] * L[2]];
+        return [r[0], -r[1], Math.max(0.15, r[2])];
+    },
+
+    // Перерисовка, пока холст на экране: только когда наклон заметно
+    // сдвинулся — неподвижный телефон не жжёт видеокарту.
+    run(canvas) {
+        const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
+        const loop = () => {
+            if (!canvas.isConnected) return;
+            const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
+            const want = T.live ? T : { x: 0, y: 0 };
+            t.x += (want.x - t.x) * 0.15; t.y += (want.y - t.y) * 0.15;
+            if (Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
+                last.x = t.x; last.y = t.y;
+                this.draw(this.lightFor(t));
+            }
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    },
+
+    // ---------- ПРЕВЬЮ ИЗ ОТЛАДКИ ----------
+    // 🐞 → «Аппарат»: корпус на весь экран, свет от наклона. Тап — закрыть.
+    // Корпус в игру ещё не встроен, а свет надо проверить на телефоне.
+    // Без видеокарты показывается рисунок с нарисованным светом.
+    async preview() {
+        const old = document.getElementById('gj-preview');
+        if (old) { old.remove(); return; }
+        const host = document.getElementById('game-container') || document.body;
+        const box = document.createElement('div');
+        box.id = 'gj-preview';
+        box.style.cssText = 'position:absolute;inset:0;z-index:100001;display:flex;align-items:center;' +
+            'justify-content:center;background:' + PALETTE.greedJunk.hole;
+        box.addEventListener('click', () => box.remove());
+        host.appendChild(box);
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'width:100%;height:auto;max-height:100%;object-fit:contain';
+        box.appendChild(canvas);
+        let ok = false;
+        try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
+        if (!ok) {
+            box.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="width:100%;height:auto" ');
+            return;
+        }
+        this.draw();
+        this.run(canvas);
+    },
+
     draw(light) {
         const gl = this.gl, p = this.prog;
         if (!gl) return;

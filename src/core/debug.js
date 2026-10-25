@@ -59,6 +59,7 @@ const DebugState = {
             <button data-act="feed">Покормить</button>
             <button data-act="room">Комната</button>
             <button data-act="gear">Жетоны</button>
+            <button data-act="greed-machine">Аппарат</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -305,6 +306,13 @@ const DebugState = {
         // плату жетонами всех грехов разом — без кнопки его не проверить.
         // Выдаётся через Backend, а не записью в состояние: тем же путём
         // пойдёт настоящая награда.
+        // Корпус аппарата алчности со светом от наклона — проверить на
+        // телефоне, пока он не встроен в игру (greed-junk-lit.js).
+        if (act === 'greed-machine') {
+            if (typeof GreedJunkLit !== 'undefined') GreedJunkLit.preview();
+            return;
+        }
+
         if (act === 'gear') {
             Object.keys(ECONOMY.currencies).filter(k => /_token$/.test(k))
                 .forEach(k => Backend.grantCurrency(k, 5));
