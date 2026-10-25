@@ -113,6 +113,7 @@ const GreedJunk = {
             `<stop offset="0" stop-color="${J.rust[500]}" stop-opacity="0.85"/><stop offset="1" stop-color="${J.rust[300]}" stop-opacity="0"/></linearGradient>` +
             lin('gj-pine', J.pine[100], J.pine[300], 0.4, 1) +
             lin('gj-plastic', J.plastic.hi, J.plastic.lo, 0.4, 1) +
+            lin('gj-alu', J.alu[300], J.alu[500], 1, 0.15) +
             lin('gj-yellowed', J.paint.cream, J.plastic.base, 0.4, 1) +
             lin('gj-slab-face', J.slab.face, J.slab.faceLo, 0.2, 1) +
             `<linearGradient id="gj-sheen" x1="0" y1="0" x2="0.4" y2="1">` +
@@ -543,17 +544,49 @@ const GreedJunk = {
             `<circle cx="${f(x - 1)}" cy="${f(y - 1)}" r="0.9" fill="${J.tin[100]}"/>`;
     },
 
-    // Рельс-швеллер с пазами: в такие направляющие сверху задвигают
-    // крепление. Тёмная прорезь посередине и поперечные зарубки-фиксаторы.
-    rail(x, y, w, h, seed) {
+    // ---------- НАПРАВЛЯЮЩАЯ ПАЧИНКО ----------
+    // Алюминиевый швеллер пазом к нам: в него сверху задвинут короб
+    // пачинко. Анфас показывает паз глубоким: левая стенка паза в тени
+    // (закрыта от света сверху-слева), правая освещена, дно тёмное. Сверху
+    // губы отогнуты раструбом — чтобы короб попадал в пазы. Держат рельс три
+    // одноухие скобы на шурупах (ухо наружу). Алюминий белёсый в пятнах
+    // окисла — не ржавеет, этим и отличается от железного уголка рядом.
+    // Раньше это были серые полосы с лесенкой зарубок — линейки.
+    rail(x, y, w, h, side, seed) {
         const J = PALETTE.greedJunk, f = this.f;
-        let out = this.tin(x, y, w, h, seed, { bolts: false, scratches: 1, tilt: 0, dark: true, z: this.Z.rail });
-        out += `<rect x="${f(x + w / 2 - 2)}" y="${f(y + 6)}" width="4" height="${f(h - 12)}" rx="2" fill="${J.hole}"/>`;
-        for (let yy = y + 20; yy < y + h - 14; yy += 22) {
-            out += `<line x1="${f(x + 2)}" y1="${f(yy)}" x2="${f(x + w - 2)}" y2="${f(yy)}" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>` +
-                `<line x1="${f(x + 2)}" y1="${f(yy + 1.4)}" x2="${f(x + w - 2)}" y2="${f(yy + 1.4)}" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}"/>`;
+        const A = J.alu;
+        const rnd = this.rng(seed);
+        const z = this.Z.rail;
+        let out = '';
+        const flare = 10;
+        const body = `M${f(x - 3)} ${f(y)} L${f(x + w + 3)} ${f(y)} L${f(x + w)} ${f(y + flare)} L${f(x + w)} ${f(y + h)} ` +
+            `L${f(x)} ${f(y + h)} L${f(x)} ${f(y + flare)} Z`;
+        out += `<path d="${body}" fill="${J.hole}" opacity="0.34" transform="translate(${f(z * 0.45)} ${f(z * 0.7)})"/>`;
+        out += `<path d="${body}" fill="url(#gj-alu)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        // паз
+        const sx = x + 3.6, sw = w - 7.2;
+        const slot = `M${f(sx - 2)} ${f(y + 1.5)} L${f(sx + sw + 2)} ${f(y + 1.5)} L${f(sx + sw)} ${f(y + flare)} L${f(sx + sw)} ${f(y + h - 3)} ` +
+            `L${f(sx)} ${f(y + h - 3)} L${f(sx)} ${f(y + flare)} Z`;
+        out += `<path d="${slot}" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        out += `<rect x="${f(sx)}" y="${f(y + flare)}" width="2" height="${f(h - flare - 3)}" fill="${A[700]}" opacity="0.5"/>`;
+        out += `<line x1="${f(sx + sw - 0.6)}" y1="${f(y + flare)}" x2="${f(sx + sw - 0.6)}" y2="${f(y + h - 3)}" stroke="${A[300]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        // губы: освещённая кромка слева, тёмная справа
+        out += `<line x1="${f(x + 1)}" y1="${f(y + flare)}" x2="${f(x + 1)}" y2="${f(y + h - 1)}" stroke="${A[100]}" stroke-width="${STROKE.detail}"/>`;
+        out += `<line x1="${f(x + w - 1)}" y1="${f(y + flare)}" x2="${f(x + w - 1)}" y2="${f(y + h - 1)}" stroke="${A[700]}" stroke-width="${STROKE.detail}"/>`;
+        // пятна окисла
+        for (let i = 0; i < 5; i++) {
+            const ox = x + 1 + rnd() * 2.2 + (rnd() < 0.5 ? 0 : w - 4.5), oy = y + flare + rnd() * (h - flare - 6);
+            out += `<ellipse cx="${f(ox)}" cy="${f(oy)}" rx="1.1" ry="${f(2 + rnd() * 3)}" fill="${A.oxide}" opacity="0.7"/>`;
         }
-        out += this.bolt(x + w / 2, y + 3.5, 1.8) + this.bolt(x + w / 2, y + h - 3.5, 1.8);
+        // одноухие скобы
+        [0.22, 0.55, 0.86].forEach((t, i) => {
+            const yy = y + flare + (h - flare) * t + (rnd() - 0.5) * 4;
+            const ex = side < 0 ? x - 9 : x + w + 1;
+            out += `<rect x="${f(x - 1.5)}" y="${f(yy - 2.5)}" width="${f(w + 3)}" height="5" rx="1.6" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                `<line x1="${f(x)}" y1="${f(yy - 1.4)}" x2="${f(x + w)}" y2="${f(yy - 1.4)}" stroke="${J.tin[100]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>` +
+                `<rect x="${f(ex)}" y="${f(yy - 3)}" width="8" height="6" rx="2" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+                this.bolt(ex + 4, yy, 1.6);
+        });
         return out;
     },
 
@@ -716,21 +749,21 @@ const GreedJunk = {
 
         // ---- крепление пачинко: два рельса, полка-упор и розетка сбоку ----
         const p = S.pachinko;
-        out += this.rail(p.x + 2, p.y + 6, 14, p.h - 24, 41);
-        out += this.rail(p.x + p.w - 16, p.y + 6, 14, p.h - 24, 42);
+        out += this.rail(p.x + 8, p.y + 6, 14, p.h - 24, -1, 41);
+        out += this.rail(p.x + p.w - 34, p.y + 6, 14, p.h - 24, 1, 42);
         // уголок-полка, на которую встанет короб
         out += this.tin(p.x - 4, p.y + p.h - 22, p.w + 8, 14, 43, { boltR: 2, tilt: 0, z: this.Z.shelf });
         out += `<line x1="${p.x}" y1="${p.y + p.h - 9}" x2="${p.x + p.w}" y2="${p.y + p.h - 9}" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>`;
         // монтажная пластина между рельсами с рядами дыр
-        out += this.tin(p.x + 30, p.y + 50, p.w - 60, 70, 44, { boltR: 2, tilt: 2 });
+        out += this.tin(p.x + 32, p.y + 50, p.w - 70, 70, 44, { boltR: 2, tilt: 2 });
         for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
             out += this.hole(p.x + 40 + c * 12, p.y + 75 + r * 16, 2);
         }
         // Промышленное гнездо на бруске между рельсами; от него гофра к
         // распаечной коробке жгута — подводка видна, гнездо не висит само по себе.
-        out += this.conduit([[p.x + 46, p.y + 156], [p.x + 47, p.y + 170], [p.x + 54, p.y + 182], [p.x + 66, p.y + 185]]);
+        out += this.conduit([[p.x + 38, p.y + 156], [p.x + 37, p.y + 172], [p.x + 41, p.y + 184], [p.x + 48, p.y + 187]]);
         out += this.socketPanel(p.x + 34, p.y + 130);
-        out += this.harness(p.x + 76, p.y + 197, 22, 45);
+        out += this.harness(p.x + 58, p.y + 197, 22, 45);
         out += this.topFrame();
         return out;
     },
