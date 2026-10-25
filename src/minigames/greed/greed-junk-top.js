@@ -521,16 +521,20 @@ Object.assign(GreedJunk, {
     flat(y) { return Math.max(0.06, Math.min(0.75, (y - this.VP.y) / 230 + this._lean)); },
 
     // Наклонённая вещь на опоре (x, yb): верх к зрителю на pitch рад и вбок
-    // на roll град. В анфас наклон к зрителю — это укорочение по высоте
-    // (cos pitch) и кольца шире (flat + sin pitch); рисующий внутри draw()
-    // рисует вещь как стоящую прямо. Так посажены лампы — небрежно, кто как
-    // вкрутил.
+    // на roll град. В анфас наклон к зрителю — это укорочение ДЛИН вдоль
+    // оси (ax(), cos pitch) и кольца шире (flat + tg pitch); круглое (шар
+    // колбы) остаётся кругом — шар с любой стороны круглый. Сжимать всю
+    // вещь по высоте нельзя: колба сплющивалась в лепёшку. Рисующий внутри
+    // draw() рисует вещь стоящей прямо, длины по оси — через ax().
+    // Так посажены лампы — небрежно, кто как вкрутил.
+    _axis: 1,
+    ax(v) { return v * this._axis; },
     leaned(x, yb, pitch, roll, draw) {
-        const f = this.f, was = this._lean;
-        this._lean = Math.sin(pitch) / Math.cos(pitch);
+        const f = this.f, was = [this._lean, this._axis];
+        this._lean = Math.tan(pitch); this._axis = Math.cos(pitch);
         const inner = draw();
-        this._lean = was;
-        return `<g transform="translate(${f(x)} ${f(yb)}) rotate(${roll}) scale(1 ${Math.cos(pitch).toFixed(3)}) translate(${f(-x)} ${f(-yb)})">${inner}</g>`;
+        [this._lean, this._axis] = was;
+        return `<g transform="rotate(${roll} ${f(x)} ${f(yb)})">${inner}</g>`;
     },
 
     // Верхняя грань полки: от передней кромки назад к VP.
@@ -548,7 +552,9 @@ Object.assign(GreedJunk, {
     // эллипс. (x, yb) — середина низа, w — ширина, h — высота, wt — ширина
     // верха (конус, если отличается). Низ — передняя дуга эллипса.
     cyl(x, yb, w, h, fill, top, wt) {
-        const f = this.f, yt = yb - h;
+        const f = this.f;
+        h = this.ax(h);
+        const yt = yb - h;
         wt = wt == null ? w : wt;
         const rb = w / 2, rt = wt / 2, eb = rb * this.flat(yb), et = rt * this.flat(yt);
         const side = `M${f(x - rt)} ${f(yt)} L${f(x - rb)} ${f(yb)} A${f(rb)} ${f(eb)} 0 0 0 ${f(x + rb)} ${f(yb)} L${f(x + rt)} ${f(yt)} Z`;
@@ -564,17 +570,17 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, B = J.bakelite, Br = J.brass, f = this.f;
         const fw = w + 9, yb = base - 1;              // диск чуть за кромкой полки
         const disk = this.T(10, 'plastic', this.cyl(x, yb, fw, 1.8, B.base, B.hi));
-        const y1 = yb - 1.8;
+        const y1 = yb - 1.8, c = this.ax(6);
         let s = this.cyl(x, y1, w + 2, 6, B.base, B.lo, w);
-        s += `<path d="M${f(x - w / 2 - 0.4)} ${f(y1 - 1)} L${f(x - w / 2 + 0.5)} ${f(y1 - 5.4)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>`;
-        s += this.rodH(`M${x} ${f(y1 - 5.6)} L${x} ${f(y1 - 0.4)}`, w + 1, w * 0.4);
-        const y2 = y1 - 6;
+        s += `<path d="M${f(x - w / 2 - 0.4)} ${f(y1 - 1)} L${f(x - w / 2 + 0.5)} ${f(y1 - c + 0.6)}" class="hl" stroke="${B.hi}" stroke-width="0.8"/>`;
+        s += this.rodH(`M${x} ${f(y1 - c + 0.4)} L${x} ${f(y1 - 0.4)}`, w + 1, w * 0.4);
+        const y2 = y1 - c;
         s += this.cyl(x, y2, w, 1.6, Br.base, Br.hi);
         // шурупы на диске — на его верхней грани, слева и справа
         const screws = this.bolt(x - fw / 2 + 1.9, yb - 1.8, 0.85) + this.bolt(x + fw / 2 - 1.9, yb - 1.8, 0.85);
         // диск лежит на полке ровно; чашку с лампой вкрутили криво — она
         // отдельно (cup), чтобы наклон начинался от диска
-        return { disk: disk + screws, cup: this.T(12, 'plastic', s), base: y1, top: y2 - 1.6 };
+        return { disk: disk + screws, cup: this.T(12, 'plastic', s), base: y1, top: y2 - this.ax(1.6) };
     },
 
     // Цоколь лампы: латунный цилиндр, витки резьбы — дугами, провисающими
@@ -582,12 +588,12 @@ Object.assign(GreedJunk, {
     socketBrass(x, base, w, h) {
         const J = PALETTE.greedJunk, Br = J.brass, f = this.f;
         let s = this.cyl(x, base, w, h, Br.base, Br.base);
-        const top = base - h;
-        for (let y = top + 1.6; y < base - 0.8; y += 1.6) {
+        const top = base - this.ax(h), step = this.ax(1.6);
+        for (let y = top + step; y < base - step * 0.5; y += step) {
             const e = (w / 2) * this.flat(y);
             s += `<path d="M${f(x - w / 2 + 0.3)} ${f(y)} A${f(w / 2)} ${f(e)} 0 0 0 ${f(x + w / 2 - 0.3)} ${f(y)}" fill="none" stroke="${Br.lo}" stroke-width="0.55"/>`;
         }
-        s += `<rect x="${f(x - w / 2 + 0.7)}" y="${f(top + 0.6)}" width="1" height="${f(h - 1.6)}" class="hl" fill="${Br.hi}" opacity="0.8"/>`;
+        s += `<rect x="${f(x - w / 2 + 0.7)}" y="${f(top + 0.6)}" width="1" height="${f(base - top - 1.6)}" class="hl" fill="${Br.hi}" opacity="0.8"/>`;
         s += this.rodH(`M${x} ${f(top + 0.5)} L${x} ${f(base - 0.5)}`, w, w * 0.45);
         return this.T(15, 'brass', s);
     },
@@ -624,13 +630,13 @@ Object.assign(GreedJunk, {
         } else if (kind === 'pear') {
             // груша: патрон на полке, в нём латунный цоколь с резьбой,
             // горлышко, круглое тело
-            // посадка: верхом к зрителю на 32°, вбок на −9° — вкрутили кое-как
+            // посадка: верхом к зрителю на 50°, вбок на −16° — вкрутили кое-как
             let h0 = null;
-            const lamp = this.leaned(x, base - 2.8, 0.56, -9, () => {
+            const lamp = this.leaned(x, base - 2.8, 0.87, -16, () => {
                 const h = this.holder(x, base, 7.5);
                 h0 = h;
                 let o = h.cup + this.socketBrass(x, h.top, 6.6, 5.4);
-                const t = h.top - 5.4, cy = t - 11.5, r = 7.4;
+                const t = h.top - this.ax(5.4), cy = t - this.ax(8.5) - 3, r = 7.4;
                 const d = `M${x - 3} ${t} C${x - 3.3} ${t - 3} ${x - r} ${cy + 4} ${x - r} ${cy} A${r} ${r} 0 1 1 ${x + r} ${cy} ` +
                     `C${x + r} ${cy + 4} ${x + 3.3} ${t - 3} ${x + 3} ${t} Z`;
                 // верх колбы к нам ближе — выше на карте высот
