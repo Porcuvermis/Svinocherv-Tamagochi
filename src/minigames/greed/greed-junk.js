@@ -754,15 +754,15 @@ const GreedJunk = {
         return out;
     },
 
-    // ---------- КАБЕЛЬ ПИТАНИЯ КОЛЕСА ----------
-    // Вилка воткнута в левую розетку, кабель спускается по стенке, прибит
-    // двумя скобами-клипсами, между ними провисает, и уходит в резиновую
-    // втулку на пластине ступицы — питание к колесу подведено заранее.
-    // Раньше это была прямая серая трубка, воткнутая в фланец, и хомут,
-    // висящий в воздухе.
+    // ---------- КАБЕЛЬ ПИТАНИЯ РОЗЕТКИ ----------
+    // Розетка СВОБОДНА: в неё включат колесо, когда его купят, и занятая
+    // вилкой она обещала бы, что колесо уже есть. Кабель — это подводка
+    // самой розетки: выходит снизу из её коробки через сальник, спускается
+    // по стенке на двух клипсах с провисом и уходит в дыру в доске, внутрь
+    // автомата, к общему питанию.
     powerCable() {
         const J = PALETTE.greedJunk, f = this.f;
-        const pts = [[65, 70], [64, 88], [57, 104], [53, 120], [56, 134], [62, 144], [67, 150]];
+        const pts = [[65, 71], [64, 88], [57, 104], [53, 120], [54, 136]];
         const d = this.smooth(pts);
         let out = '';
         // тень: кабель лежит на стенке почти вплотную
@@ -771,15 +771,9 @@ const GreedJunk = {
         out += `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="3.4" stroke-linecap="round"/>`;
         // блик по кабелю: он круглый, свет ложится узкой линией слева-сверху
         out += `<path d="${d}" fill="none" stroke="${J.tin[500]}" stroke-width="0.8" stroke-linecap="round" opacity="0.8" transform="translate(-0.9 -0.4)"/>`;
-        // вилка в розетке: корпус и гибкий хвостовик, сужающийся к кабелю
-        // (нарисованы у x≈49 и сдвинуты к розетке целиком)
-        out += `<g transform="translate(16 2)">`;
-        out += `<path d="M42 50 h14 a2 2 0 0 1 2 2 v10 a2 2 0 0 1 -2 2 h-14 a2 2 0 0 1 -2 -2 v-10 a2 2 0 0 1 2 -2 z" ` +
-            `fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" transform="rotate(-8 49 57)"/>`;
-        out += `<line x1="44" y1="53" x2="44" y2="61" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" opacity="0.7" transform="rotate(-8 49 57)"/>`;
-        out += `<path d="M45 63 L53 63 L51 70 L47 70 Z" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-        [64.8, 66.8].forEach(y => { out += `<line x1="${f(45.6)}" y1="${y}" x2="${f(52.4)}" y2="${y}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`; });
-        out += `</g>`;
+        // сальник на коробке розетки: короткий рифлёный хвостовик
+        out += `<path d="M61.5 67 L68.5 67 L67.5 74 L62.5 74 Z" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+        [69.4, 71.6].forEach(y => { out += `<line x1="62.4" y1="${y}" x2="67.6" y2="${y}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`; });
         // клипсы: белая пластиковая скоба поперёк кабеля и гвоздик
         [[64, 90, 4], [53.5, 121, -6]].forEach(([x, y, a]) => {
             out += `<g transform="rotate(${a} ${x} ${y})">` +
@@ -787,10 +781,10 @@ const GreedJunk = {
                 `<line x1="${x - 4}" y1="${y - 1.6}" x2="${x + 4}" y2="${y - 1.6}" stroke="${J.tin[100]}" stroke-opacity="0.8" stroke-width="${STROKE.hairline}"/>` +
                 `</g>` + this.ironNail(x + (a > 0 ? 4 : -4), y);
         });
-        // резиновая втулка на пластине, в которую уходит кабель
-        out += `<ellipse cx="67" cy="150.5" rx="5.6" ry="5" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<ellipse cx="67" cy="150.5" rx="3.4" ry="3" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
-            `<path d="M62.5 148.6 a5 4.6 0 0 1 6 -3.2" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        // дыра в доске с резиновой втулкой: кабель уходит внутрь автомата
+        out += `<ellipse cx="54" cy="138" rx="5.6" ry="5" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<ellipse cx="54" cy="138" rx="3.4" ry="3" fill="${J.hole}"/>` +
+            `<path d="M49.5 136.1 a5 4.6 0 0 1 6 -3.2" fill="none" stroke="${J.tin[500]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         return out;
     },
 
