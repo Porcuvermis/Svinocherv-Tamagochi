@@ -388,6 +388,7 @@ Object.assign(GreedJunk, {
         // жестяной лист
         out += this.T(9, 'steel', this.tin(50, 296, 260, 172, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         out += this.doorScars();
+        out += this.doorJoint();
         // крашеное поле: синяя рамка и лучи
         let face = '';
         face += `<rect x="62" y="312" width="236" height="148" rx="2" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
@@ -862,6 +863,35 @@ Object.assign(GreedJunk, {
             g = `<ellipse cx="0" cy="22" rx="11" ry="22" fill="url(#gj-halo-red)" opacity="${f(v)}" style="mix-blend-mode:screen"/>` + g;
         }
         return sh + wire(-1.1, J.paint.blue) + wire(1.1, J.paint.red) + `<g transform="${rot}">${g}</g>`;
+    },
+
+    // ---------- СТЫК ВЕРХА И ТАБЛО ----------
+    // Табло подвешено к верхнему ящику двумя кусками перфоленты
+    // (оцинкованная монтажная лента с рядом дыр): верх ленты привёрнут к
+    // полосе жалюзи, низ — к дверце, на стыке лента перегибается через
+    // щель. Ленты — в просветах между щелями жалюзи и мимо отпечатка
+    // таблички. Было: табло просто подсунуто под верх, без крепежа.
+    doorJoint() {
+        const J = PALETTE.greedJunk, Z = J.zinc, f = this.f;
+        let out = '';
+        [[89, 0.6], [257, -0.8]].forEach(([x, tilt]) => {
+            const w = 6.2, y0 = 275, y1 = 310, gap0 = 290, gap1 = 296;
+            let g = `<rect x="${f(x - w / 2 + 1)}" y="${y0 + 1.6}" width="${w}" height="${y1 - y0}" rx="0.6" class="fx" fill="${J.hole}" opacity="0.35"/>` +
+                `<rect x="${f(x - w / 2)}" y="${y0}" width="${w}" height="${y1 - y0}" rx="0.6" fill="url(#gj-zinc)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
+            // перегиб над щелью: лента уходит назад и снова выходит — тёмная
+            // полоса сгиба и светлая кромка под ним
+            g += `<rect x="${f(x - w / 2 + 0.3)}" y="${gap0}" width="${f(w - 0.6)}" height="${gap1 - gap0}" fill="${Z.lo}"/>` +
+                `<line x1="${f(x - w / 2 + 0.3)}" y1="${gap1 - 0.4}" x2="${f(x + w / 2 - 0.3)}" y2="${gap1 - 0.4}" class="hl" stroke="${Z.hi}" stroke-width="0.6"/>`;
+            // ряд дыр; там, где болт, дыры нет — болт сидит в ней
+            const bolts = [280, 304];
+            for (let y = y0 + 2.2; y < y1 - 1; y += 3.3) {
+                if (bolts.some(b => Math.abs(b - y) < 1.8) || (y > gap0 - 1 && y < gap1 + 1)) continue;
+                g += `<circle cx="${f(x)}" cy="${f(y)}" r="0.85" class="pit" fill="${J.hole}"/>`;
+            }
+            g += bolts.map(y => this.bolt(x, y, 2)).join('');
+            out += `<g transform="rotate(${tilt} ${x} ${gap0})">` + this.T(11, 'zinc', g) + `</g>`;
+        });
+        return out;
     },
 
     // ---------- ИСТОРИЯ ТАБЛО ----------
