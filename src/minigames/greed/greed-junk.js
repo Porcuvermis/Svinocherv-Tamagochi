@@ -495,7 +495,7 @@ const GreedJunk = {
     leverMount() {
         const J = PALETTE.greedJunk, C = J.car, P = this.SLOTS.pivot, f = this.f;
         const rnd = this.rng(77);
-        const x0 = 314, y0 = 384, x1 = 356, y1 = 468;
+        const x0 = 314, y0 = 384, x1 = 356, y1 = 464;      // низ стоит на верхней грани полки
         // Нижний край — рез болгаркой: прямой, чуть наискось (резали по
         // разметке на глаз). Было: зубчатая «пила» — так режут ножницами
         // по жести, а не диском, и смотрелось это неряшливой каймой.
@@ -532,12 +532,12 @@ const GreedJunk = {
         g += `<path d="${band(0.4, 1.9)}" fill="${J.tin[900]}" opacity="0.85"/>`;
         g += `<path d="${band(0.4, 1.2)}" fill="${J.tin[100]}"/>`;
         // заглушка дренажной дырки: резиновая шляпка с пояском
-        g += this.T(2, 'rubber', `<circle cx="345" cy="454" r="3.8" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="345" cy="454" r="2.2" fill="none" stroke="${J.wood[900]}" stroke-width="0.6"/>` + this.domeH(345, 454, 3.8, 1.4));
+        g += this.T(2, 'rubber', `<circle cx="345" cy="450" r="3.8" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<circle cx="345" cy="450" r="2.2" fill="none" stroke="${J.wood[900]}" stroke-width="0.6"/>` + this.domeH(345, 450, 3.8, 1.4));
         let out = this.T(7, 'paint', g);
         // фланец слева отогнут к ящику: узкая полоса в тени и три болта
         out += this.T(8, 'paint', `<path d="M${x0} ${y0 + 5} L${x0 + 4} ${y0 + 3} L${x0 + 4} ${y1 - 1.5} L${x0} ${y1 - 1} Z" fill="${C.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            [402, 432, 458].map(y => this.bolt(x0 + 2, y, 1.6)).join(''));
+            [402, 430, 454].map(y => this.bolt(x0 + 2, y, 1.6)).join(''));
         // Крышка корпуса: толстый загнутый край листа, на нём рамка юбки.
         // Юбка выходит из корпуса сквозь крышку, а не стоит на кромке, как
         // на полке. Корпус почти на уровне глаз — верх крышки виден ребром.
@@ -555,7 +555,7 @@ const GreedJunk = {
     // наконечники оболочки.
     shiftCable() {
         const J = PALETTE.greedJunk, f = this.f;
-        const pts = [[326, 458], [327, 474], [322, 492], [311, 508], [300, 516]];
+        const pts = [[326, 454], [327, 472], [322, 492], [311, 508], [300, 516]];
         const d = this.smooth(pts);
         let out = `<path d="${d}" class="fx" fill="none" stroke="${J.hole}" stroke-width="4" stroke-linecap="round" opacity="0.3" transform="translate(1.4 2)"/>` +
             this.rodH(d, 3.6) +

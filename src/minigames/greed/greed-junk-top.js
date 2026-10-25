@@ -383,10 +383,14 @@ Object.assign(GreedJunk, {
         let out = '';
         // Боковые стойки табло — из разного, как всё в гараже: слева доска
         // от лакированной мебели, справа сосна.
-        out += this.T(6, 'lacquer', this.planks(34, 290, 20, 182, 1, 51, 'v', 0, 'painted'));
-        out += this.T(6, 'pine', this.planks(306, 290, 20, 182, 1, 52, 'v', 0, 'pine'));
+        // Стойки и дверца стоят НА полке: низ — на задней кромке её верхней
+        // грани (y 462). Было: уходили до 472 и 468, рисовались поверх
+        // передней доски полки — у концов полки торчали прямоугольники
+        // досок, а нижние болты дверцы резала верхняя грань полки.
+        out += this.T(6, 'lacquer', this.planks(34, 290, 20, 172, 1, 51, 'v', 0, 'painted'));
+        out += this.T(6, 'pine', this.planks(306, 290, 20, 172, 1, 52, 'v', 0, 'pine'));
         // жестяной лист
-        out += this.T(9, 'steel', this.tin(50, 296, 260, 172, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
+        out += this.T(9, 'steel', this.tin(50, 296, 260, 166, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         out += this.doorScars();
         out += this.doorJoint();
         // крашеное поле: синяя рамка и лучи
@@ -552,8 +556,9 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f, V = this.VP;
         const y0 = this.SHELF_TOP, k = 0.05;
         const back = (x, y) => [x + (V.x - x) * k, y + (V.y - y) * k];
-        const a = back(24, y0), b = back(336, y0);
-        const d = `M24 ${y0} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L336 ${y0} Z`;
+        // справа полка длиннее: на ней стоит кулиса
+        const a = back(24, y0), b = back(358, y0);
+        const d = `M24 ${y0} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L358 ${y0} Z`;
         return this.T(8, 'pine', `<path d="${d}" fill="${J.pine[100]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<line x1="${f(a[0] + 2)}" y1="${f(a[1] + 0.8)}" x2="${f(b[0] - 2)}" y2="${f(b[1] + 0.8)}" stroke="${J.pine[500]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`);
     },
@@ -1113,8 +1118,9 @@ Object.assign(GreedJunk, {
         out += `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="4" class="pit" fill="url(#gj-hole)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         // латка изолентой на углу
         out += `<path d="${this.wob(268, 548, 40, 10, 153, 0.8)}" fill="${J.tin[900]}" opacity="0.92" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" transform="rotate(-18 288 553)"/>`;
-        // полка поверх стыка табло и ящика — торчит за края
-        out += this.T(8, 'pine', this.planks(24, 466, 312, 20, 1, 111, 'h', 0, 'pine'));
+        // полка поверх стыка табло и ящика — торчит за края; справа
+        // длиннее — под кулису, она стоит на полке
+        out += this.T(8, 'pine', this.planks(24, 466, 334, 20, 1, 111, 'h', 0, 'pine'));
         return out;
     },
 
