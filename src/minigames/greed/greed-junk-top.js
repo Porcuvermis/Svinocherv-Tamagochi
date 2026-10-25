@@ -1120,15 +1120,69 @@ Object.assign(GreedJunk, {
         [[p.x + 6, p.y + 6], [p.x + p.w - 6, p.y + 6], [p.x + 6, p.y + p.h - 6], [p.x + p.w - 6, p.y + p.h - 6]]
             .forEach(([x, y]) => { plate += this.nail(x, y); });
         out += this.T(6, 'pine', plate);
-        // лоток
-        const t = S.tray;
-        out += this.T(6, 'steel', this.tin(t.x - 8, t.y - 5, t.w + 16, t.h + 10, 101, { bolts: false, scratches: 1, tilt: 0, z: this.Z.strap }) +
-            `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="4" class="pit" fill="url(#gj-hole)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
+        out += this.coinTray();
         // латка изолентой на углу
         out += this.T(5, 'plastic', `<path d="${this.wob(268, 548, 40, 10, 153, 0.8)}" fill="${J.tin[900]}" opacity="0.92" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" transform="rotate(-18 288 553)"/>`);
         // полка поверх стыка табло и ящика — торчит за края; справа
         // длиннее — под кулису, она стоит на полке
         out += this.T(8, 'pine', this.planks(24, 466, 334, 20, 1, 111, 'h', 0, 'pine'));
+        return out;
+    },
+
+    // Лоток для монет — старая форма для хлеба, привёрнутая к ящику двумя
+    // саморезами через задний борт. Торчит вперёд и низом опирается на
+    // цоколь. Лоток ниже глаз — видно, что внутри: задняя стенка, боковые,
+    // дно (там и лягут монеты — SLOTS.tray). Передняя стенка видна снаружи,
+    // под завальцованным бортом. Внутри — пригар: тёмные пятна от
+    // выпечки. Было: жестяная рамка с тёмной щелью, читалась почтовым
+    // ящиком.
+    coinTray() {
+        const J = PALETTE.greedJunk, T = this.SLOTS.tray, f = this.f;
+        const P = (pts) => 'M' + pts.map(q => `${f(q[0])} ${f(q[1])}`).join(' L') + ' Z';
+        // борт: задняя кромка на ящике, передняя ближе к нам — ниже и шире
+        const rb = [[116, 545], [244, 545]], rf = [[109, 576], [251, 576]];
+        // проём внутри борта
+        const ob = [[121, 548.4], [239, 548.4]], of = [[115.5, 572], [244.5, 572]];
+        // дно — прямоугольник монет
+        const bb = [[T.x, T.y], [T.x + T.w, T.y]], bf = [[T.x - 2, T.y + T.h], [T.x + T.w + 2, T.y + T.h]];
+        let out = `<path d="${P([rb[0], rb[1], rf[1], [249, 588], [111, 588], rf[0]])}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(2 3)"/>`;
+        // передняя стенка снаружи: сужается книзу, в тени
+        let wall = `<path d="${P([rf[0], rf[1], [247, 587], [113, 587]])}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
+            `<path d="M118 580 L242 580" stroke="${J.tin[900]}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
+        out += this.T(10, 'steel', wall);
+        // борт
+        let rim = `<path d="${P([rb[0], rb[1], rf[1], rf[0]])}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
+            `<path d="M${f(rf[0][0] + 2)} ${f(rf[0][1] - 0.8)} L${f(rf[1][0] - 2)} ${f(rf[1][1] - 0.8)}" class="hl" stroke="${J.tin[100]}" stroke-width="1"/>` +
+            this.rodH(`M${rf[0][0] + 1} ${rf[0][1] - 1.2} L${rf[1][0] - 1} ${rf[1][1] - 1.2}`, 2.6, 1.2);
+        // саморезы через задний борт
+        rim += this.bolt(130, 546.6, 1.6) + this.bolt(230, 546.6, 1.6);
+        out += this.T(12, 'steel', rim);
+        // внутри: стенки и дно ниже борта; задняя смотрит на нас и светлее,
+        // боковые — в полутени, дно темнее и в пригаре
+        let inner = `<path d="${P([ob[0], ob[1], of[1], of[0]])}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<path d="${P([ob[0], ob[1], bb[1], bb[0]])}" fill="${J.tin[300]}"/>` +
+            `<path d="${P([ob[0], bb[0], bf[0], of[0]])}" fill="${J.tin[900]}" opacity="0.85"/>` +
+            `<path d="${P([ob[1], of[1], bf[1], bb[1]])}" fill="${J.tin[500]}"/>` +
+            `<path d="${P([bb[0], bb[1], bf[1], bf[0]])}" fill="${J.tin[500]}"/>` +
+            // рёбра между стенками и дном
+            `<path d="M${f(ob[0][0])} ${f(ob[0][1])} L${f(bb[0][0])} ${f(bb[0][1])} M${f(ob[1][0])} ${f(ob[1][1])} L${f(bb[1][0])} ${f(bb[1][1])} ` +
+            `M${f(bb[0][0])} ${f(bb[0][1])} L${f(bb[1][0])} ${f(bb[1][1])} M${f(bb[0][0])} ${f(bb[0][1])} L${f(bf[0][0])} ${f(bf[0][1])} M${f(bb[1][0])} ${f(bb[1][1])} L${f(bf[1][0])} ${f(bf[1][1])}" ` +
+            `stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
+        // Пригар: копится в углах и вдоль стенок, где масло стекало и
+        // горело, — рваные мазки, а не кружки (кружки читались монетами).
+        const rnd = this.rng(907);
+        const smear = (cx, cy, rx, ry) => {
+            const pts = [];
+            for (let k = 0; k < 8; k++) {
+                const a = k / 8 * Math.PI * 2, j = 0.55 + rnd() * 0.6;
+                pts.push([cx + Math.cos(a) * rx * j, cy + Math.sin(a) * ry * j]);
+            }
+            return `<path d="${this.smooth(pts.concat([pts[0], pts[1]]))} Z" fill="${J.wood[900]}" opacity="${f(0.3 + rnd() * 0.25)}"/>`;
+        };
+        inner += smear(T.x + 5, T.y + T.h - 4, 9, 4) + smear(T.x + T.w - 6, T.y + T.h - 3, 11, 3.6) +
+            smear(T.x + 30, T.y + 1.6, 16, 2) + smear(T.x + T.w - 26, T.y + 1.4, 10, 1.8) +
+            smear(T.x + 58, T.y + T.h - 2, 7, 2.4);
+        out += this.T(5, 'steel', inner);
         return out;
     },
 
