@@ -111,6 +111,12 @@ const GreedJunk = {
             `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.5"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0"/></linearGradient>` +
             `<linearGradient id="gj-rust" x1="0" y1="0" x2="0" y2="1">` +
             `<stop offset="0" stop-color="${J.rust[500]}" stop-opacity="0.85"/><stop offset="1" stop-color="${J.rust[300]}" stop-opacity="0"/></linearGradient>` +
+            lin('gj-pine', J.pine[100], J.pine[300], 0.4, 1) +
+            `<linearGradient id="gj-sheen" x1="0" y1="0" x2="0.4" y2="1">` +
+            `<stop offset="0" stop-color="${J.painted.hi}" stop-opacity="0.35"/><stop offset="1" stop-color="${J.painted.lo}" stop-opacity="0.3"/></linearGradient>` +
+            `<linearGradient id="gj-chip-light" x1="0" y1="0" x2="0.4" y2="1">` +
+            `<stop offset="0" stop-color="${J.chip.hi}" stop-opacity="0.3"/><stop offset="1" stop-color="${J.chip.dark}" stop-opacity="0.25"/></linearGradient>` +
+            this.chipPattern() +
             `<radialGradient id="gj-vign" cx="0.5" cy="0.45" r="0.7">` +
             `<stop offset="0.55" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.5"/></radialGradient>` +
             `<radialGradient id="gj-dirt" cx="0.5" cy="1" r="0.9">` +
@@ -118,6 +124,22 @@ const GreedJunk = {
             `<radialGradient id="gj-hole" cx="0.5" cy="0.42" r="0.6">` +
             `<stop offset="0" stop-color="${J.wood[900]}"/><stop offset="1" stop-color="${J.hole}"/></radialGradient>` +
             '</defs>';
+    },
+
+    // Узор ДСП: плитка из хлопьев трёх тонов на бежевом. Одна плитка на весь
+    // корпус — браузер растрирует её один раз (узор неподвижен).
+    chipPattern() {
+        const J = PALETTE.greedJunk, f = this.f;
+        const rnd = this.rng(907);
+        const T = 26;
+        let g = `<rect width="${T}" height="${T}" fill="${J.chip.base}"/>`;
+        const tones = [J.chip.hi, J.chip.lo, J.chip.hi, J.chip.dark, J.chip.lo];
+        for (let i = 0; i < 70; i++) {
+            const cx = rnd() * T, cy = rnd() * T, r = 0.6 + rnd() * 1.6, a = rnd() * 6;
+            const pts = [0, 2.1, 4.2].map(t => f(cx + Math.cos(a + t) * r * (0.6 + rnd() * 0.6)) + ',' + f(cy + Math.sin(a + t) * r * (0.6 + rnd() * 0.6)));
+            g += `<polygon points="${pts.join(' ')}" fill="${tones[i % tones.length]}" opacity="${f(0.5 + rnd() * 0.5)}"/>`;
+        }
+        return `<pattern id="gj-chip" width="${T}" height="${T}" patternUnits="userSpaceOnUse">${g}</pattern>`;
     },
 
     // ---------- ДОСКИ ----------
@@ -128,7 +150,7 @@ const GreedJunk = {
     // jag — на сколько доски щита могут не доставать до верхнего края:
     // отпиленные на глаз, они торчат лесенкой, и силуэт перестаёт быть
     // заводским прямоугольником.
-    planks(x, y, w, h, n, seed, dir, jag) {
+    planks(x, y, w, h, n, seed, dir, jag, mat) {
         const J = PALETTE.greedJunk;
         const rnd = this.rng(seed);
         const f = this.f;
@@ -145,6 +167,13 @@ const GreedJunk = {
             const pw = vertical ? step : w;
             const ph = (vertical ? h : step) - dy;
             const g = grads[Math.floor(rnd() * 3) % 3];
+            if (mat) {
+                // доска из материала: своя фактура вместо общей заливки и волокна
+                out += this.material(mat, px, py, pw, ph, seed * 31 + i, vertical);
+                const top = vertical ? `M${f(px + 2)} ${f(py + 3)} L${f(px + 2)} ${f(py + ph - 3)}` : `M${f(px + 3)} ${f(py + 2)} L${f(px + pw - 3)} ${f(py + 2)}`;
+                out += `<path d="${top}" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.5"/>`;
+                continue;
+            }
             out += `<path d="${this.wob(px, py, pw, ph, seed * 31 + i, 1.2)}" fill="url(#${g})" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}"/>`;
             // волокно: две-три дуги вдоль доски
             const lines = 2 + Math.floor(rnd() * 2);
@@ -194,66 +223,124 @@ const GreedJunk = {
         return out;
     },
 
+    // ---------- МАТЕРИАЛЫ ДЕРЕВА ----------
+    // Деревянные детали собраны из трёх материалов (PALETTE.greedJunk):
+    //   pine    — сосна необработанная: светлая, волокно волнами, смоляные
+    //             тёмные слои, сучки;
+    //   chip    — ДСП: крошка без волокна (узор из хлопьев), рыхлый край;
+    //   painted — старая крашеная доска: серо-голубая краска с мазками кисти,
+    //             местами облезла до серого дерева.
+    // Один материал на всё выглядел пластиком: доски отличались только тоном.
+    // Возвращает заливку и фактуру детали, без внешнего контура.
+    material(mat, x, y, w, h, seed, vertical) {
+        const J = PALETTE.greedJunk, f = this.f;
+        const rnd = this.rng(seed);
+        const path = this.wob(x, y, w, h, seed, mat === 'chip' ? 1.8 : 1);
+        const id = 'gj-c' + seed;
+        let out = `<clipPath id="${id}"><path d="${path}"/></clipPath>`;
+        const long = vertical ? h : w, short = vertical ? w : h;
+        // точка вдоль (a — по длине, b — поперёк) в координаты поля
+        const at = (a, b) => vertical ? [x + b, y + a] : [x + a, y + b];
+
+        if (mat === 'chip') {
+            out += `<path d="${path}" fill="url(#gj-chip)"/>`;
+            out += `<path d="${path}" fill="url(#gj-chip-light)"/>`;
+            // пятно от сырости — ДСП разбухает и темнеет
+            const [sx, sy] = at(long * (0.3 + rnd() * 0.4), short * 0.5);
+            out += `<ellipse cx="${f(sx)}" cy="${f(sy)}" rx="${f(short * 0.45)}" ry="${f(short * 0.6)}" fill="${J.chip.dark}" opacity="0.18" clip-path="url(#${id})"/>`;
+            return out;
+        }
+
+        if (mat === 'painted') {
+            out += `<path d="${path}" fill="${J.painted.base}"/>`;
+            let g = '';
+            // мазки кисти вдоль доски
+            for (let i = 0; i < 6; i++) {
+                const b = short * (0.1 + rnd() * 0.8);
+                const [x1, y1] = at(rnd() * long * 0.3, b), [x2, y2] = at(long * (0.6 + rnd() * 0.4), b + (rnd() - 0.5) * 2);
+                g += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${i % 2 ? J.painted.hi : J.painted.lo}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
+            }
+            // облезлые места: серое дерево с волокном, светлый скол краски по краю
+            const peels = 2 + Math.floor(rnd() * 3);
+            for (let i = 0; i < peels; i++) {
+                const ca = long * (0.1 + rnd() * 0.8), cb = short * (rnd() < 0.5 ? 0.15 : 0.85);
+                const ra = 6 + rnd() * long * 0.08, rb = 3 + rnd() * short * 0.35;
+                const pts = [];
+                for (let k = 0; k < 9; k++) {
+                    const t = (k / 9) * Math.PI * 2, j = 0.6 + rnd() * 0.5;
+                    pts.push(at(ca + Math.cos(t) * ra * j, cb + Math.sin(t) * rb * j));
+                }
+                const d = 'M' + pts.map(q => f(q[0]) + ' ' + f(q[1])).join(' L') + ' Z';
+                g += `<path d="${d}" fill="${J.painted.bare}" stroke="${J.painted.hi}" stroke-width="${STROKE.detail}"/>`;
+                const [lx1, ly1] = at(ca - ra * 0.7, cb), [lx2, ly2] = at(ca + ra * 0.7, cb + 0.6);
+                g += `<line x1="${f(lx1)}" y1="${f(ly1)}" x2="${f(lx2)}" y2="${f(ly2)}" stroke="${J.painted.bareLo}" stroke-width="${STROKE.hairline}"/>`;
+            }
+            out += `<g clip-path="url(#${id})">${g}</g>`;
+            out += `<path d="${path}" fill="url(#gj-sheen)"/>`;
+            return out;
+        }
+
+        // сосна
+        out += `<path d="${path}" fill="url(#gj-pine)"/>`;
+        let g = '';
+        const knot = rnd() < 0.6 ? at(long * (0.15 + rnd() * 0.7), short * (0.3 + rnd() * 0.4)) : null;
+        const lines = Math.max(3, Math.round(short / 6));
+        for (let l = 0; l < lines; l++) {
+            const b0 = short * ((l + 0.5) / lines) + (rnd() - 0.5) * 3;
+            const pts = [];
+            const phase = rnd() * 6, amp = 0.8 + rnd() * 1.6;
+            for (let st = 0; st <= 7; st++) {
+                let [px, py] = at(long * st / 7, b0 + Math.sin(phase + st * 1.2) * amp);
+                if (knot) {
+                    const dx = px - knot[0], dy = py - knot[1], d = Math.hypot(dx, dy);
+                    if (d < 20) {
+                        if (vertical) px += Math.sign(dx || 1) * (20 - d) * 0.4;
+                        else py += Math.sign(dy || 1) * (20 - d) * 0.4;
+                    }
+                }
+                pts.push([px, py]);
+            }
+            // каждый третий слой — смоляной: темнее и толще
+            const resin = l % 3 === 1;
+            g += `<path d="${this.smooth(pts)}" fill="none" stroke="${resin ? J.pine.resin : J.pine[700]}" ` +
+                `stroke-width="${resin ? STROKE.detail : STROKE.hairline}" opacity="${f(resin ? 0.55 : 0.5 + rnd() * 0.3)}"/>`;
+        }
+        if (knot) {
+            const [rx, ry] = vertical ? [3, 5.5] : [5.5, 3];
+            g += `<ellipse cx="${f(knot[0])}" cy="${f(knot[1])}" rx="${rx * 1.8}" ry="${ry * 1.8}" fill="none" stroke="${J.pine.resin}" stroke-width="${STROKE.hairline}" opacity="0.6"/>` +
+                `<ellipse cx="${f(knot[0])}" cy="${f(knot[1])}" rx="${rx}" ry="${ry}" fill="${J.pine.knot}" stroke="${J.pine.resin}" stroke-width="${STROKE.detail}"/>`;
+        }
+        out += `<g clip-path="url(#${id})">${g}</g>`;
+        return out;
+    },
+
     // ---------- ЗАДНЯЯ СТЕНКА ----------
-    // Доски, собранные с разных ящиков: разной ширины, с щелями между ними,
-    // в которые видно темноту. Тон гуляет НЕМНОГО и плавно — одна заливка и
-    // полупрозрачный слой светлее/темнее поверх, а не три разных градиента
-    // вперемешку (одна доска выскакивала светлым пятном). Волокно — волнами
-    // вдоль доски, огибает сучок. Гвозди — тёмное железо парами, на высоте
-    // скрытых за стенкой брусков, а не блестящие кнопки по одному.
+    // Доски с разных ящиков и кусок ДСП: разной ширины и материала, с
+    // щелями, в которые видно темноту. Гвозди — тёмное железо парами на
+    // высоте скрытых за стенкой брусков.
+    BACK_MATS: ['pine', 'chip', 'pine', 'painted', 'pine', 'chip', 'painted', 'pine'],
     backPlanks(x, y, w, h, seed) {
         const J = PALETTE.greedJunk, f = this.f;
         const rnd = this.rng(seed);
-        // ширины: случайные доли, сумма — вся стенка
+        const WIDTH = { pine: [32, 14], chip: [56, 18], painted: [30, 10] };
         const parts = [];
-        let total = 0;
-        while (total < w - 30) {
-            const pw = 30 + Math.floor(rnd() * 26);
-            parts.push(pw); total += pw;
+        let total = 0, i = 0;
+        while (total < w - 24) {
+            const mat = this.BACK_MATS[i % this.BACK_MATS.length];
+            const pw = WIDTH[mat][0] + Math.floor(rnd() * WIDTH[mat][1]);
+            parts.push({ mat, pw }); total += pw; i++;
         }
         const k = w / total;
         let out = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${J.hole}"/>`;   // темнота в щелях
         let px = x;
-        parts.forEach((pw0, i) => {
-            const pw = pw0 * k;
+        parts.forEach((p, i) => {
+            const pw = p.pw * k;
             const gap = 1.2 + rnd() * 1.8;
             const bx = px + (i ? gap / 2 : 0), bw = pw - (i ? gap / 2 : 0) - (i < parts.length - 1 ? gap / 2 : 0);
-            const path = this.wob(bx, y - 2, bw, h + 4, seed + i * 13, 1);
-            out += `<path d="${path}" fill="url(#gj-wood)"/>`;
-            // тон доски: чуть темнее или чуть светлее соседей
-            const tone = rnd();
-            out += tone < 0.5
-                ? `<path d="${path}" fill="${J.wood[900]}" opacity="${f(0.05 + tone * 0.3)}"/>`
-                : `<path d="${path}" fill="${J.wood[100]}" opacity="${f((tone - 0.5) * 0.25)}"/>`;
-            // сучок (не на каждой) и волокно, огибающее его
-            const knot = rnd() < 0.5 ? { x: bx + bw * (0.3 + rnd() * 0.4), y: y + h * (0.15 + rnd() * 0.7) } : null;
-            const lines = 4 + Math.floor(rnd() * 4);
-            for (let l = 0; l < lines; l++) {
-                const gx = bx + bw * ((l + 0.5) / lines) + (rnd() - 0.5) * 3;
-                const pts = [];
-                const steps = 6;
-                const phase = rnd() * 6, amp = 0.6 + rnd() * 1.2;
-                for (let st = 0; st <= steps; st++) {
-                    const yy = y + (h * st) / steps;
-                    let xx = gx + Math.sin(phase + st * 1.3) * amp;
-                    if (knot) {
-                        const dy = yy - knot.y, dx = xx - knot.x;
-                        const d = Math.hypot(dx, dy);
-                        if (d < 22) xx += Math.sign(dx || 1) * (22 - d) * 0.35;
-                    }
-                    pts.push([xx, yy]);
-                }
-                out += `<path d="${this.smooth(pts)}" fill="none" stroke="${J.wood[700]}" ` +
-                    `stroke-width="${l % 3 === 0 ? STROKE.detail : STROKE.hairline}" opacity="${f(0.45 + rnd() * 0.35)}"/>`;
-            }
-            if (knot) {
-                out += `<ellipse cx="${f(knot.x)}" cy="${f(knot.y)}" rx="3" ry="5.5" fill="${J.wood[700]}" stroke="${J.wood[900]}" stroke-width="${STROKE.detail}"/>` +
-                    `<ellipse cx="${f(knot.x)}" cy="${f(knot.y)}" rx="5.5" ry="9" fill="none" stroke="${J.wood[700]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`;
-            }
+            out += this.material(p.mat, bx, y - 2, bw, h + 4, seed * 7 + i * 13, true);
             // светлая кромка слева (свет сверху-слева), тёмная справа
-            out += `<line x1="${f(bx + 1.2)}" y1="${y}" x2="${f(bx + 1.2)}" y2="${y + h}" stroke="${J.wood[100]}" stroke-width="${STROKE.hairline}" opacity="0.5"/>`;
-            out += `<line x1="${f(bx + bw - 1)}" y1="${y}" x2="${f(bx + bw - 1)}" y2="${y + h}" stroke="${J.wood[900]}" stroke-width="${STROKE.detail}" opacity="0.5"/>`;
-            // гвозди парами на высоте брусков за стенкой
+            out += `<line x1="${f(bx + 1.2)}" y1="${y}" x2="${f(bx + 1.2)}" y2="${y + h}" stroke="${J.wood[100]}" stroke-width="${STROKE.hairline}" opacity="0.45"/>`;
+            out += `<line x1="${f(bx + bw - 1)}" y1="${y}" x2="${f(bx + bw - 1)}" y2="${y + h}" stroke="${J.wood[900]}" stroke-width="${STROKE.detail}" opacity="0.55"/>`;
             [y + 18, y + h * 0.48, y + h - 16].forEach(ny => {
                 [bx + bw * 0.3, bx + bw * 0.7].forEach(nx => { out += this.ironNail(nx, ny + (rnd() - 0.5) * 3); });
             });
@@ -574,8 +661,8 @@ const GreedJunk = {
         out += `<rect x="${IN.x}" y="${IN.y}" width="${IN.w}" height="22" fill="url(#gj-shade)"/>`;
         out += `<rect x="${IN.x}" y="${IN.y}" width="16" height="${IN.h}" fill="url(#gj-shade-x)"/>`;
         // боковины: толстые доски, торцом к нам
-        out += this.planks(24, 30, 18, 262, 1, 13, 'v');
-        out += this.planks(302, 30, 18, 262, 1, 14, 'v');
+        out += this.planks(24, 30, 18, 262, 1, 13, 'v', 0, 'pine');
+        out += this.planks(302, 30, 18, 262, 1, 14, 'v', 0, 'pine');
         // освещённая кромка левой боковины, тёмная — правой (её грань
         // отвёрнута от света)
         out += `<line x1="26" y1="36" x2="26" y2="288" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.6"/>`;
@@ -583,7 +670,7 @@ const GreedJunk = {
         // тень крышки на боковины
         out += this.shade(24, 34, 18, 8) + this.shade(302, 34, 18, 8);
         // крышка, нависает над боковинами
-        out += this.planks(16, 14, 312, 22, 1, 15, 'h');
+        out += this.planks(16, 14, 312, 22, 1, 15, 'h', 0, 'painted');
         out += `<line x1="20" y1="16.5" x2="324" y2="16.5" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         out += this.cornerBracket(1) + this.cornerBracket(-1);
         return out;
