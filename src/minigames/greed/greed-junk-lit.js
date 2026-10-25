@@ -189,6 +189,7 @@ const GreedJunkLit = {
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
     run(canvas) {
         const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
+        this.prepareLever();
         // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
         // а не весь хвостик целиком; тяжесть — по наклону телефона
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
@@ -212,13 +213,67 @@ const GreedJunkLit = {
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
             const want = T.live ? T : { x: 0, y: 0 };
             t.x += (want.x - t.x) * 0.15; t.y += (want.y - t.y) * 0.15;
-            if (Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
+            const moved = this.leverStep(now);
+            if (moved || Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
                 last.x = t.x; last.y = t.y;
                 this.draw(this.lightFor(t));
             }
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
+    },
+
+    // ---------- РЫЧАГ ----------
+    // Рычаг на общем свете, как весь корпус, но двигается. Растрировать
+    // весь корпус на каждый кадр дорого, поэтому заранее (после первого
+    // кадра, не задерживая его) готовятся положения рычага — только его
+    // участок поля, во всех трёх картах. На рывке участок текстур
+    // подменяется нужным положением, и шейдер перерисовывает свет: тень от
+    // рычага ходит вместе с ним.
+    LEVER_CROP: { x: 300, y: 262, w: 60, h: 124 },
+    LEVER_STEPS: [-0.15, -0.05, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+    async prepareLever() {
+        const S = this.SCALE, C = this.LEVER_CROP, frames = [];
+        try {
+            for (const p of this.LEVER_STEPS) {
+                GreedJunk.leverPull = p;
+                const svgs = ['albedo', 'height', 'mat'].map(ps =>
+                    GreedJunk.bodySvg(ps, C).replace('<svg ', `<svg width="${C.w * S}" height="${C.h * S}" `));
+                frames.push(await Promise.all(svgs.map(v => this.image(v))));
+            }
+            this.leverFrames = frames;
+        } catch (e) { console.warn('[Аппарат] кадры рычага не собрались', e); }
+        GreedJunk.leverPull = 0;
+        GreedJunk.pass = 'baked';
+    },
+    // рывок: рычаг на игрока, короткая пауза, пружина возвращает его с
+    // откатом назад и затуханием
+    pull() { if (this.leverFrames) this._leverAt = -1; },
+    leverAt(t) {
+        if (t < 140) return (t / 140) * (t / 140);
+        if (t < 200) return 1;
+        const u = t - 200;
+        return u > 520 ? 0 : Math.exp(-u / 120) * Math.cos(u / 80 * Math.PI / 2);
+    },
+    // true — участок текстур сменился, нужен кадр
+    leverStep(now) {
+        if (this._leverAt == null || !this.leverFrames) return false;
+        if (this._leverAt === -1) this._leverAt = now;
+        const t = now - this._leverAt, p = this.leverAt(t);
+        if (t > 720) this._leverAt = null;
+        const st = this.LEVER_STEPS;
+        let k = 0;
+        st.forEach((v, i) => { if (Math.abs(v - p) < Math.abs(st[k] - p)) k = i; });
+        if (k === this._leverK) return false;
+        this._leverK = k;
+        const gl = this.gl, C = this.LEVER_CROP, S = this.SCALE;
+        this.leverFrames[k].forEach((img, u) => {
+            gl.activeTexture(gl.TEXTURE0 + u);
+            gl.bindTexture(gl.TEXTURE_2D, this.tex[u]);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, C.x * S, C.y * S, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        });
+        return true;
     },
 
     // ---------- МИГАНИЕ ПРИ ВЫИГРЫШЕ ----------
@@ -257,12 +312,15 @@ const GreedJunkLit = {
         box.id = 'gj-preview';
         box.style.cssText = 'position:absolute;inset:0;z-index:100001;display:flex;align-items:center;' +
             'justify-content:center;background:' + PALETTE.greedJunk.hole;
-        // тап по полке с лампами — показать мигание выигрыша, в любом
-        // другом месте — закрыть
+        // тап по полке с лампами — мигание выигрыша, по рычагу — рывок,
+        // в любом другом месте — закрыть
         box.addEventListener('click', (e) => {
-            const r = (this.live && this.live.getBoundingClientRect()) || { top: 0, height: 1 };
+            const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
             const y = (e.clientY - r.top) / r.height * GreedJunk.H;
-            if (y > 440 && y < 520) this.blink(); else box.remove();
+            const x = (e.clientX - r.left) / r.width * GreedJunk.W;
+            if (y > 440 && y < 520) this.blink();
+            else if (x > 300 && y > 262 && y < 400) this.pull();
+            else box.remove();
         });
         host.appendChild(box);
         // корпус и живой слой поверх — в одной обёртке с пропорцией корпуса
