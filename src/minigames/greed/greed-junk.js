@@ -483,17 +483,91 @@ const GreedJunk = {
     // ---------- КУЛИСА ----------
     // Рычаг — кулиса старой коробки передач: гофрированная резиновая юбка,
     // хромированный шток и круглая рукоять со схемой шести передач. Ходит
-    // НА ИГРОКА, а не вбок: вбок на экране телефона места нет. Поэтому
-    // корпус кулисы — коробка на боку автомата, из которой юбка смотрит
-    // вверх, а шестерни декоративные, сбоку снизу, где их не задевает шток.
+    // НА ИГРОКА, а не вбок: вбок на экране телефона места нет.
+    // Корпус — кусок пола старой машины, вырезанный болгаркой вместе с
+    // кулисой: заводская краска хаки, выштампованные рёбра жёсткости,
+    // резиновая заглушка дренажной дырки, рамка юбки из салона. Сверху и
+    // справа края заводские (скруглённая штамповка, завальцовка), снизу —
+    // свежий рез с побежалостью, слева отогнут фланец и привёрнут к
+    // ящику. Из кулисы трос переключения уходит в нижний ящик — это и
+    // есть связь рычага с барабанами. Было: ровная серая пластина с
+    // «улыбкой»-вмятиной и две шестерни сбоку ни к чему.
     leverMount() {
-        const J = PALETTE.greedJunk, P = this.SLOTS.pivot, f = this.f;
-        let out = this.T(7, 'steel', this.tin(314, 384, 42, 84, 131, { boltR: 2.4, z: this.Z.box, tilt: 0 }));
-        out += this.T(9, 'steel', this.gear(324, 450, 10, 8, 0.2) + this.gear(342, 446, 8, 7, 0.5));
-        // фланец под юбкой
-        out += this.T(10, 'steel', `<rect x="${P.x - 18}" y="${P.y - 3}" width="36" height="8" rx="3" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            this.bolt(P.x - 13, P.y + 1, 1.8) + this.bolt(P.x + 13, P.y + 1, 1.8));
+        const J = PALETTE.greedJunk, C = J.car, P = this.SLOTS.pivot, f = this.f;
+        const rnd = this.rng(77);
+        const x0 = 314, y0 = 384, x1 = 356, y1 = 468;
+        // нижний край — рез от руки, чуть гуляет
+        const cut = [];
+        for (let x = x1 - 1; x >= x0 + 1; x -= 3) cut.push([x, y1 - 1 + Math.sin(x * 0.7) * 0.7 + rnd() * 0.8]);
+        const cutD = cut.map(p => `L${f(p[0])} ${f(p[1])}`).join(' ');
+        const body = `M${x0} ${y0 + 5} Q${x0} ${y0} ${x0 + 5} ${y0} L${x1 - 4} ${y0} Q${x1} ${y0} ${x1} ${y0 + 4} L${x1 + 0.6} ${y1 - 2} ${cutD} L${x0} ${y1 - 1} Z`;
+        let g = `<path d="${body}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.6 2.4)"/>` +
+            `<path d="${body}" fill="${C.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        // завальцовка правого края: светлая кромка
+        g += `<path d="M${x1 - 1.6} ${y0 + 4} L${x1 - 1.2} ${y1 - 3}" class="hl" stroke="${C.hi}" stroke-width="1.2"/>`;
+        // рёбра жёсткости — выштамповка: вытянутые валики
+        const rib = (y) => {
+            const d = `M${x0 + 9} ${y} L${x1 - 7} ${y}`;
+            // Без обводки: выштамповка — это изгиб того же листа, а не
+            // накладка; с контуром рёбра читались прорезями-кнопками.
+            return `<path d="M${x0 + 9} ${y + 1.6} L${x1 - 7} ${y + 1.6}" stroke="${C.lo}" stroke-width="1.2" stroke-linecap="round" opacity="0.8"/>` +
+                `<path d="M${x0 + 9} ${y - 1.4} L${x1 - 7} ${y - 1.4}" class="hl" stroke="${C.hi}" stroke-width="1.2" stroke-linecap="round"/>` +
+                this.rodH(d, 4.4, 1.6);
+        };
+        g += rib(424) + rib(438);
+        // сколы краски до грунта и ржавчины — по краям и у реза
+        [[x1 - 3, y0 + 14, 2.4], [x0 + 6, y1 - 7, 3], [x1 - 6, y1 - 6, 2.2], [x0 + 20, y0 + 2.4, 1.8]].forEach(([cx, cy, r]) => {
+            const pts = [];
+            for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.6); pts.push(`${f(cx + Math.cos(a) * rr)} ${f(cy + Math.sin(a) * rr * 0.8)}`); }
+            g += `<path d="M${pts.join(' L')} Z" fill="${J.primer.base}"/>` +
+                `<circle cx="${f(cx + 0.3)}" cy="${f(cy + 0.4)}" r="${f(r * 0.35)}" fill="${J.rust[500]}"/>`;
+        });
+        // рыжие потёки из-под реза вверх не идут — ржа копится у кромки
+        g += `<path d="M${x0 + 2} ${y1 - 3.5} ${cutD.replace(/L/g, 'L')}" fill="none" stroke="${J.rust[500]}" stroke-width="1.6" opacity="0.4" transform="translate(0 -1.6)"/>`;
+        // рез: побежалость, окалина, полоска свежего металла
+        const yc = y1 - 5;
+        g += `<g transform="rotate(90 ${(x0 + x1) / 2} ${yc})"><rect x="${(x0 + x1) / 2 - 4}" y="${yc - (x1 - x0) / 2}" width="8" height="${x1 - x0}" fill="url(#gj-temper)" opacity="0.4"/></g>`;
+        g += `<path d="M${x1 + 0.4} ${y1 - 3.2} ${cut.map(p => `L${f(p[0])} ${f(p[1] - 2.2)}`).join(' ')} L${x0} ${y1 - 3.2} L${x0} ${y1 - 1} ${cut.slice().reverse().map(p => `L${f(p[0])} ${f(p[1])}`).join(' ')} Z" fill="${J.tin[900]}"/>`;
+        g += `<path d="M${x1 + 0.4} ${y1 - 2} ${cut.map(p => `L${f(p[0])} ${f(p[1] - 1)}`).join(' ')} L${x0} ${y1 - 2} L${x0} ${y1 - 1} ${cut.slice().reverse().map(p => `L${f(p[0])} ${f(p[1])}`).join(' ')} Z" fill="${J.tin[100]}"/>`;
+        // заглушка дренажной дырки: резиновая шляпка с пояском
+        g += this.T(2, 'rubber', `<circle cx="345" cy="454" r="3.8" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<circle cx="345" cy="454" r="2.2" fill="none" stroke="${J.wood[900]}" stroke-width="0.6"/>` + this.domeH(345, 454, 3.8, 1.4));
+        let out = this.T(7, 'paint', g);
+        // фланец слева отогнут к ящику: узкая полоса в тени и три болта
+        out += this.T(8, 'paint', `<path d="M${x0} ${y0 + 5} L${x0 + 4} ${y0 + 3} L${x0 + 4} ${y1 - 1.5} L${x0} ${y1 - 1} Z" fill="${C.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            [402, 432, 458].map(y => this.bolt(x0 + 2, y, 1.6)).join(''));
+        // рамка юбки из салона: чёрный пластик на четырёх саморезах
+        out += this.T(10, 'plastic', `<rect x="${P.x - 18}" y="${P.y - 3}" width="36" height="9" rx="3" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<line x1="${P.x - 15}" y1="${P.y - 1.6}" x2="${P.x + 15}" y2="${P.y - 1.6}" class="hl" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}"/>` +
+            this.rodH(`M${P.x - 15} ${P.y + 1.5} L${P.x + 15} ${P.y + 1.5}`, 8, 1.2) +
+            this.bolt(P.x - 14, P.y + 1.5, 1.4) + this.bolt(P.x + 14, P.y + 1.5, 1.4));
+        out += this.shiftCable();
         return out;
+    },
+
+    // Трос переключения: чёрная оболочка из втулки внизу кулисы, дугой
+    // вниз и в нижний ящик через втулку. На концах — обжатые стальные
+    // наконечники оболочки.
+    shiftCable() {
+        const J = PALETTE.greedJunk, f = this.f;
+        const pts = [[326, 458], [327, 474], [322, 492], [311, 508], [300, 516]];
+        const d = this.smooth(pts);
+        let out = `<path d="${d}" class="fx" fill="none" stroke="${J.hole}" stroke-width="4" stroke-linecap="round" opacity="0.3" transform="translate(1.4 2)"/>` +
+            this.rodH(d, 3.6) +
+            `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="4.4" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="3" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" class="hl" stroke="${J.tin[500]}" stroke-width="0.6" opacity="0.7" transform="translate(-0.6 -0.2)"/>`;
+        // наконечники: короткие стальные гильзы с насечкой обжима
+        const ferrule = (a, b) => {
+            const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), c = Math.cos(ang), s = Math.sin(ang);
+            const e = [a[0] + c * 5, a[1] + s * 5];
+            const dd = `M${f(a[0])} ${f(a[1])} L${f(e[0])} ${f(e[1])}`;
+            return this.rodH(dd, 4.6, 2) + `<path d="${dd}" stroke="${PALETTE.ink}" stroke-width="5.4"/>` +
+                `<path d="${dd}" stroke="${J.tin[300]}" stroke-width="4"/>` +
+                `<path d="M${f(a[0] + c * 2.5 - s * 2)} ${f(a[1] + s * 2.5 + c * 2)} L${f(a[0] + c * 2.5 + s * 2)} ${f(a[1] + s * 2.5 - c * 2)}" stroke="${J.tin[700]}" stroke-width="0.6"/>`;
+        };
+        out += ferrule(pts[0], pts[1]) + ferrule(pts[4], pts[3]);
+        return this.grommet(pts[4][0], pts[4][1]) + this.T(6, 'rubber', out) + this.grommet(pts[0][0], pts[0][1] - 1.5);
     },
 
     // Шток и рукоять — отдельно: при рывке шток укорачивается (уходит на
