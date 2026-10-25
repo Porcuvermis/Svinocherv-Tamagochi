@@ -1103,11 +1103,11 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, S = this.SLOTS;
         let out = '';
         // лицо ящика: лист ДСП
-        out += this.T(3, 'chip', this.material('chip', 54, 484, 252, 98, 811, false) +
-            `<path d="${this.wob(54, 484, 252, 98, 811, 1.8)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
+        out += this.T(3, 'chip', this.material('chip', 54, 484, 252, 90, 811, false) +
+            `<path d="${this.wob(54, 484, 252, 90, 811, 1.8)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
         // стойки по краям
-        out += this.T(5, 'pine', this.planks(40, 484, 16, 98, 1, 82, 'v', 0, 'pine'));
-        out += this.T(5, 'lacquer', this.planks(304, 484, 16, 98, 1, 83, 'v', 0, 'painted'));
+        out += this.T(5, 'pine', this.planks(40, 484, 16, 90, 1, 82, 'v', 0, 'pine'));
+        out += this.T(5, 'lacquer', this.planks(304, 484, 16, 90, 1, 83, 'v', 0, 'painted'));
         // тень от полки на ящик — только запасной вид, шейдер даёт свою
         out += this.shade(40, 486, 280, 14);
         // пустая табличка выплат: светлая сосновая доска на гвоздях
@@ -1242,9 +1242,22 @@ Object.assign(GreedJunk, {
 
     // Цоколь: толстая доска (горбыль без коры — тёмная, выветренная) на
     // двух брусках из ДСП. Доска выступает вперёд ящика — она выше.
+    // Ящик стоит НА доске: её верхняя грань видна полоской (доска ниже
+    // глаз), низ ящика — на задней кромке этой грани. Было: ящик уходил
+    // за переднюю кромку доски, и не было видно, на чём он стоит. Под
+    // правый брусок подбит клин из обрезка — пол в гараже кривой.
     plinth() {
+        const J = PALETTE.greedJunk, V = this.VP, f = this.f;
         let out = this.T(2, 'chip', this.planks(34, 598, 64, 22, 1, 121, 'v', 0, 'chip') + this.planks(262, 598, 64, 22, 1, 122, 'v', 0, 'chip'));
+        // клин под правым бруском
+        out += this.T(3, 'pine', `<path d="M286 620.6 L336 616.4 L336 621.4 L286 621.4 Z" fill="${J.pine[100]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<path d="M296 620 L330 617.4" stroke="${J.pine[500]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`);
         out += this.T(8, 'lacquer', this.planks(20, 580, 320, 20, 1, 123, 'h', 0, 'painted'));
+        // верхняя грань доски
+        const k = 0.03, back = (x, y) => [x + (V.x - x) * k, y + (V.y - y) * k];
+        const a = back(20, 580), b = back(340, 580);
+        out += this.T(8, 'lacquer', `<path d="M20 580 L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L340 580 Z" fill="${J.painted.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<line x1="${f(a[0] + 3)}" y1="${f(a[1] + 1.2)}" x2="${f(b[0] - 3)}" y2="${f(b[1] + 1.2)}" class="hl" stroke="${J.painted.hi}" stroke-width="0.6" opacity="0.8"/>`);
         return out;
     },
 });
