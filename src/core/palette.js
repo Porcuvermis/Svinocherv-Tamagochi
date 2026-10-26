@@ -986,7 +986,9 @@ const PALETTE = {
             // шприц: прозрачный пластик, ядовито-зелёная жидкость,
             // чёрный резиновый поршень, стальная игла
             syringe: { glass: '#e4ece9', glassLo: '#b3c3bf', glassHi: '#fbfdfc', liquid: '#93c95f',
-                       liquidLo: '#5e9638', rubber: '#2d2930', plastic: '#eef0ec', steel: '#c8ced1', steelLo: '#868d92' }
+                       liquidLo: '#5e9638', rubber: '#2d2930', plastic: '#eef0ec', steel: '#c8ced1', steelLo: '#868d92' },
+            // рыбий скелет: кость цвета слоновой кости
+            bone: { hi: '#f8f2e2', base: '#ece2c6', lo: '#c4b48f', hole: '#2a2125' }
         },
         // Индикатор готовности рычага: тусклая лампочка под затёртым
         // колпачком из мутной серо-зелёной резины. Свет через колпачок —

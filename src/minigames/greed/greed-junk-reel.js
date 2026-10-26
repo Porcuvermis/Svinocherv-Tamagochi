@@ -245,13 +245,68 @@ Object.assign(GreedJunk, {
         return `<g transform="translate(${ox} ${cy}) rotate(${rot}) scale(${k})">${g}</g>` + drop;
     },
 
+    // ---------- РЫБИЙ СКЕЛЕТ ----------
+    // Обглоданная рыба (референсы игрока), кость цвета слоновой кости с
+    // тушевым контуром. Голова справа — сплошной череп: глазница-дыра,
+    // приоткрытая пасть с мелкими зубами, дуга жабры. Хребет слегка выгнут,
+    // рёбра парами вверх и вниз, изогнуты назад и сужаются к концу; к
+    // хвосту короче. Хвост — раздвоенный плавник с лучами.
+    reelFish(cx, cy) {
+        const B = PALETTE.greedJunk.reel.bone, f = this.f, ink = PALETTE.ink, sw = STROKE.detail;
+        const P = (x, y) => [cx + x, cy + y];
+        // хребет — от хвоста к голове, слегка выгнут вверх
+        const spineAt = (t) => { const x = -19 + t * 29; return [x, -1.6 * Math.sin(t * Math.PI)]; };
+        const bone = (pts, w0, w1) => this.tube(pts, (t) => w0 + (w1 - w0) * t, true);
+        let back = '', front = '';
+        // рёбра: пары, дуга назад; длина растёт к голове
+        // кости толстые, контур тонкий: тонкие кости тушь съедала целиком
+        const bw = STROKE.hairline;
+        for (let i = 0; i < 6; i++) {
+            const t = 0.14 + i * 0.15, s0 = spineAt(t), L = 4.6 + i * 0.9;
+            [-1, 1].forEach(d => {
+                const tip = [s0[0] - 3.6, s0[1] + d * L], mid = [s0[0] + 0.2, s0[1] + d * L * 0.6];
+                const pts = this.spline([P(s0[0], s0[1]), P(mid[0], mid[1]), P(tip[0], tip[1])], 6);
+                const path = `<path d="${bone(pts, 2.3, 0.8)}" fill="${d > 0 ? B.lo : B.base}" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
+                if (d > 0) back += path; else front += path;
+            });
+        }
+        // хвост: две лопасти с лучами
+        const tail = (d) => {
+            const a = P(-19, 0), b = P(-26, d * 7), c = P(-23.5, d * 1.2);
+            return `<path d="M${f(a[0])} ${f(a[1] + d * 0.6)} Q${f(cx - 22)} ${f(cy + d * 3)} ${f(b[0])} ${f(b[1])} Q${f(cx - 23.5)} ${f(cy + d * 2.6)} ${f(c[0])} ${f(c[1])} Z" fill="${B.base}" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>` +
+                `<path d="M${f(cx - 20.5)} ${f(cy + d * 0.8)} L${f(cx - 24.5)} ${f(cy + d * 5.2)} M${f(cx - 20.5)} ${f(cy + d * 0.5)} L${f(cx - 23.5)} ${f(cy + d * 3)}" stroke="${B.lo}" stroke-width="0.4"/>`;
+        };
+        // хребет
+        const spine = [];
+        for (let k = 0; k <= 12; k++) spine.push(P(...spineAt(k / 12)));
+        const spinePath = `<path d="${bone(spine, 2.2, 3)}" fill="${B.base}" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
+        // позвонки — риски поперёк хребта
+        let verts = '';
+        for (let k = 1; k < 12; k++) { const q = P(...spineAt(k / 12)); verts += `M${f(q[0])} ${f(q[1] - 0.8)} L${f(q[0])} ${f(q[1] + 0.8)} `; }
+        // череп: затылок-дуга у хребта, лоб, нос, пасть с зубами, подбородок
+        const hx = cx + 9, hy = cy;
+        const skull = `M${f(hx)} ${f(hy - 6.5)} Q${f(hx + 9)} ${f(hy - 8.5)} ${f(hx + 15.5)} ${f(hy - 1.2)} ` +
+            `L${f(hx + 11)} ${f(hy + 0.4)} L${f(hx + 15)} ${f(hy + 2.2)} ` +
+            `Q${f(hx + 9)} ${f(hy + 7.5)} ${f(hx)} ${f(hy + 6.5)} Q${f(hx + 2.6)} ${f(hy)} ${f(hx)} ${f(hy - 6.5)} Z`;
+        let head = `<path d="${skull}" fill="${B.base}" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+        head += `<path d="M${f(hx + 2)} ${f(hy - 5)} Q${f(hx + 9)} ${f(hy - 6.8)} ${f(hx + 13.5)} ${f(hy - 1.8)}" fill="none" stroke="${B.hi}" stroke-width="0.8" stroke-linecap="round"/>`;
+        // дуга жабры
+        head += `<path d="M${f(hx + 3.4)} ${f(hy - 5.2)} Q${f(hx + 6)} ${f(hy)} ${f(hx + 3.4)} ${f(hy + 5.2)}" fill="none" stroke="${B.lo}" stroke-width="0.7"/>`;
+        // зубы по краям пасти
+        head += `<path d="M${f(hx + 11.6)} ${f(hy + 0.2)} l0.7 0.9 l0.6 -0.7 l0.7 0.9 l0.6 -0.7 M${f(hx + 11.6)} ${f(hy + 0.6)} l0.7 -0.6 l0.7 0.7 l0.7 -0.6" fill="none" stroke="${ink}" stroke-width="0.35"/>`;
+        // глазница
+        head += `<circle cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="2" fill="${B.hole}" stroke="${ink}" stroke-width="${sw}"/>` +
+            `<circle cx="${f(hx + 8.4)}" cy="${f(hy - 3.6)}" r="0.5" fill="${B.hi}"/>`;
+        return back + tail(1) + tail(-1) + spinePath + `<path d="${verts}" stroke="${B.lo}" stroke-width="0.4"/>` + front + head;
+    },
+
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
     reelCell(key, x, y) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;
         const rnd = this.rng(x * 7 + y * 13 + key.length);
         let out = `<rect x="${x}" y="${y}" width="${C.w}" height="${C.h}" fill="${R.paper}"/>`;
         for (let i = 0; i < 14; i++) out += `<circle cx="${f(x + rnd() * C.w)}" cy="${f(y + rnd() * C.h)}" r="${f(0.2 + rnd() * 0.4)}" fill="${R.speck}" opacity="0.5"/>`;
-        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe' }[key];
+        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish' }[key];
         if (draw) out += this[draw](x + C.w / 2, y + C.h / 2);
         return out;
     }
