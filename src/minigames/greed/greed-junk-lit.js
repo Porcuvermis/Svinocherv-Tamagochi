@@ -330,8 +330,18 @@ const GreedJunkLit = {
     },
     // тап по рычагу
     pull() { if (this.leverState('free', 0)) this.leverBreak(); },
+    // ---- отдача в палец ----
+    // Рисунок по ходу рычага, а не одна отдача на всё: в натяжении — тихие
+    // щелчки, проскок зубца — чёткий удар, нарастающий к последним зубцам;
+    // срыв — главное: два тяжёлых удара вплотную, рука слышит один большой
+    // толчок; падение — тишина (на контрасте срыв громче); упор — глухо и
+    // слабо. Было: пять одинаковых тихих щелчков и один удар — отдача
+    // казалась ровной по силе и частоте.
     leverBreak() {
-        if (typeof Haptics !== 'undefined') Haptics.impact('heavy', true);
+        if (typeof Haptics !== 'undefined') {
+            Haptics.impact('heavy', true);
+            setTimeout(() => Haptics.impact('heavy', true), 45);
+        }
         if (this.onPull) this.onPull();
     },
     // dy — сколько палец прошёл вниз, в единицах поля
@@ -347,8 +357,13 @@ const GreedJunkLit = {
         // Храповик: внутри зубца рычаг почти стоит и только в конце
         // проскакивает на следующий — упирается, а не ползёт за пальцем.
         const n = Math.floor(x), fr = x - n, e = fr * fr * fr * fr;
+        // натяжение: два тихих щелчка внутри зубца
+        const sub = n * 3 + Math.floor(fr * 3);
+        if (sub > (v.sub || 0) && n === (v.n || 0) && typeof Haptics !== 'undefined') Haptics.tick();
+        v.sub = Math.max(v.sub || 0, sub);
         if (n > (v.n || 0)) {
-            if (typeof Haptics !== 'undefined') Haptics.tick();
+            // проскок зубца: жёстко и коротко, к концу — тяжелее
+            if (typeof Haptics !== 'undefined') Haptics.impact(n >= 3 ? 'medium' : 'rigid', true);
             v.kickAt = performance.now();         // проскок зубца — рывок вперёд
             this.shake(v.kickAt, 1);              // и корпус вздрагивает
         }
@@ -360,7 +375,7 @@ const GreedJunkLit = {
         const v = this._lv;
         if (v && v.st === 'drag') {
             this._lv = { st: 'back', p0: v.p, at: -1, p: v.p };
-            if (typeof Haptics !== 'undefined' && v.p > 0.02) Haptics.impact('light');
+            if (typeof Haptics !== 'undefined' && v.p > 0.02) Haptics.impact('soft', true);
         }
     },
     // Кадр. true — текстуры сменились, нужен проход шейдера.
@@ -439,6 +454,7 @@ const GreedJunkLit = {
     // из-под юбки выдыхает облачко пыли.
     leverImpact(now) {
         this.shake(now, 4.5);
+        if (typeof Haptics !== 'undefined') Haptics.impact('soft', true);    // упор — глухо
         (this._hangs || []).forEach((h, j) => h.v.forEach((_, i) => { h.v[i] += (j ? -0.05 : 0.09) * (i + 1) / h.n; }));
         this.GLOW_ORDER.forEach(k => { this.glow[k] = Math.max(this.glow[k], 0.9); });
         const rnd = GreedJunk.rng(Math.floor(now));
@@ -612,7 +628,7 @@ const GreedJunkLit = {
             wrap.setPointerCapture(e.pointerId);
             grab = { y, at: Date.now(), moved: 0 };
             this.leverState('drag', 0);
-            if (typeof Haptics !== 'undefined') Haptics.impact('light', true);
+            if (typeof Haptics !== 'undefined') Haptics.impact('soft', true);
         });
         wrap.addEventListener('pointermove', (e) => {
             if (!grab) return;
