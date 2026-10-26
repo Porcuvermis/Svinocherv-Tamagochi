@@ -291,9 +291,52 @@ const GreedJunkLit = {
             });
             this.draw(light);
             this.lever = { bare, sprites, shadows };
+            this.diag(bareFull[0], bare, sprites.knob);
         } catch (e) { console.warn('[Аппарат] части рычага не собрались', e); }
         GreedJunk.pass = 'baked';
     },
+    // ВРЕМЕННО: отладочная полоска в превью — где на iPhone теряется корпус
+    // без рычага. Картинки и цветные точки, без слов: синяя — картинка не
+    // пустая, красная — пустая, оранжевая — браузер не дал её прочитать.
+    // 1 — основной корпус картинкой, 2 — корпус без рычага картинкой,
+    // 3 — шейдер с комплектом без рычага, 4 — рукоять рычага.
+    diag(bareImg, bareSet, knob) {
+        if (!this.diagHost) return;
+        const P = PALETTE.greedJunk.paint, S = this.SCALE, C = this.LEVER_CROP;
+        const strip = document.createElement('div');
+        strip.style.cssText = 'position:absolute;left:0;right:0;top:0;height:74px;display:flex;align-items:flex-start;gap:10px;padding:4px 70px;z-index:100002;pointer-events:none;background:' + PALETTE.greedJunk.hole;
+        const cell = (src, sx, sy, sw, sh) => {
+            const c = document.createElement('canvas');
+            c.width = 90; c.height = Math.round(90 * sh / sw);
+            const g = c.getContext('2d');
+            let mark = P.red;
+            try {
+                g.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+                const d = g.getImageData(0, 0, c.width, c.height).data;
+                let a = 0;
+                for (let i = 3; i < d.length; i += 4) a += d[i];
+                mark = a > 0 ? P.blue : P.red;
+            } catch (e) { mark = P.orange; }
+            const w = document.createElement('div');
+            w.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:4px';
+            c.style.cssText = `position:static;display:block;height:64px;width:${Math.round(64 * c.width / c.height)}px;border:1px solid ${P.cream}`;
+            const dot = document.createElement('div');
+            dot.style.cssText = `width:14px;height:14px;border-radius:7px;background:${mark}`;
+            w.appendChild(c); w.appendChild(dot);
+            strip.appendChild(w);
+        };
+        const W = GreedJunk.W * S, H = GreedJunk.H * S;
+        cell(this.maps[0], 0, 0, W, H);
+        cell(bareImg, 0, 0, W, H);
+        this.bindSet(bareSet);
+        this.draw(this.lightFor(this._tilt || { x: 0, y: 0 }));
+        cell(this.gl.canvas, 0, 0, W, H);
+        this.bindSet(this.tex);
+        this.draw(this.lightFor(this._tilt || { x: 0, y: 0 }));
+        cell(knob, 0, 0, C.w * S, C.h * S);
+        this.diagHost.appendChild(strip);
+    },
+
     // какой комплект текстур читает шейдер
     bindSet(set) {
         const gl = this.gl;
@@ -454,6 +497,7 @@ const GreedJunkLit = {
             'justify-content:center;background:' + PALETTE.greedJunk.hole;
         // тап по полке с лампами — мигание выигрыша, по рычагу — рывок,
         // в любом другом месте — закрыть
+        this.diagHost = box;
         box.addEventListener('click', (e) => {
             const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
             const y = (e.clientY - r.top) / r.height * GreedJunk.H;
