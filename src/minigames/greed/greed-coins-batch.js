@@ -98,7 +98,9 @@ Object.assign(GreedCoins, {
 
     // cv — холст; scale — во сколько раз холст меньше 780×1688 (k ≤ 1).
     // alb/nor — плоская монета (поворот), atA/atN — атлас поз кучи (вставшие)
-    batchRenderer(cv, alb, nor, atA, atN) {
+    // res — размер сцены в единицах, если холст — не куча окна (лоток
+    // аппарата алчности рисует монеты на своём участке)
+    batchRenderer(cv, alb, nor, atA, atN, res) {
         const gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
         const ext = gl && gl.getExtension('ANGLE_instanced_arrays');
         if (!gl || !ext) return null;
@@ -140,7 +142,7 @@ Object.assign(GreedCoins, {
         gl.uniform1f(U.AW, atA.width); gl.uniform1f(U.AH, atA.height);
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         // единицы сцены (780×1688) → пиксели холста
-        gl.uniform2f(U.res, this.W, this.H);
+        gl.uniform2f(U.res, res ? res[0] : this.W, res ? res[1] : this.H);
         gl.viewport(0, 0, cv.width, cv.height);
         let n = 0;
         return {

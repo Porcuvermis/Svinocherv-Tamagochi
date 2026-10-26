@@ -1199,7 +1199,16 @@ Object.assign(GreedJunk, {
         const ob = [[121, 548.4], [239, 548.4]], of = [[115.5, 572], [244.5, 572]];
         // дно — прямоугольник монет
         const bb = [[T.x, T.y], [T.x + T.w, T.y]], bf = [[T.x - 2, T.y + T.h], [T.x + T.w + 2, T.y + T.h]];
-        let out = `<path d="${P([rb[0], rb[1], rf[1], [249, 588], [111, 588], rf[0]])}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(2 3)"/>`;
+        // Выход монет над лотком: щель в ДСП с жестяной губой — отсюда
+        // выигрыш сыплется в форму (GreedJunkLit, «Лоток»). Иначе монетам
+        // неоткуда браться.
+        const CH = this.CHUTE;
+        let chute = `<rect x="${CH.x - 1.5}" y="${CH.y - 2.2}" width="${CH.w + 3}" height="4.4" rx="1.2" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            `<rect x="${CH.x}" y="${CH.y - 1}" width="${CH.w}" height="1.8" rx="0.8" class="pit" fill="${J.hole}"/>` +
+            `<line x1="${CH.x}" y1="${CH.y + 1.5}" x2="${CH.x + CH.w}" y2="${CH.y + 1.5}" class="hl" stroke="${J.tin[100]}" stroke-width="0.5"/>` +
+            this.bolt(CH.x - 4, CH.y, 1.1) + this.bolt(CH.x + CH.w + 4, CH.y, 1.1);
+        let out = this.T(5, 'steel', chute);
+        out += `<path d="${P([rb[0], rb[1], rf[1], [249, 588], [111, 588], rf[0]])}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(2 3)"/>`;
         // передняя стенка снаружи: сужается книзу, в тени
         let wall = `<path d="${P([rf[0], rf[1], [247, 587], [113, 587]])}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
             `<path d="M118 580 L242 580" stroke="${J.tin[900]}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;

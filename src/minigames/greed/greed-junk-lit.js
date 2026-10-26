@@ -267,6 +267,7 @@ const GreedJunkLit = {
             const moved = this.leverStep(now);
             this.shakeStep(now);
             const reels = this.spinStep(now);
+            if (this.trayStep) this.trayStep(now);
             if (moved || Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
                 last.x = t.x; last.y = t.y;
                 this.draw(this.lightFor(t));
@@ -726,7 +727,10 @@ const GreedJunkLit = {
     spinDone() {
         const G = GreedJunk, S = G.REEL_STRIP, C = G.CELL;
         const keys = this.reels.map(r => S[Math.round((r.s - C.h / 2) / C.h) % S.length]);
-        if (keys[0] === keys[1] && keys[1] === keys[2] && keys[0] !== 'blank') this.blink();
+        if (keys[0] === keys[1] && keys[1] === keys[2] && keys[0] !== 'blank') {
+            this.blink();
+            if (this.trayPour) this.trayPour((this.TRAY_PAY || {})[keys[0]] || 5);
+        }
         if (this.autoReady && this._leverIdle !== false) this.setReady(true);
     },
 
@@ -796,7 +800,8 @@ const GreedJunkLit = {
             `width:${C.w / GreedJunk.W * 100}%;height:${C.h / GreedJunk.H * 100}%;z-index:1;display:none;pointer-events:none;background:none`;
         wrap.appendChild(lv);
         this.leverCanvas = lv;
-        this.autoReady = true;        // в превью крутки нет — изображаем паузой
+        this.autoReady = true;        // в превью исход крутки — свой, случайный
+        if (this.trayMount) this.trayMount(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();
