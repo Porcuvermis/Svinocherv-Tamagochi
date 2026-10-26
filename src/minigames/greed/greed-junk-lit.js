@@ -335,11 +335,12 @@ const GreedJunkLit = {
     // удара по силе почти не различаются (проверено рукой: «разница
     // неощутима»), поэтому сила здесь — ДЛИТЕЛЬНОСТЬ, число ударов подряд:
     // натяжение — самый тихий щелчок выбора; зубец — один удар, последние
-    // зубцы — два; срыв — очередь из пяти тяжёлых и тройной импульс
-    // «ошибка», длинный мощный толчок; падение и упор — без своей отдачи
-    // (упор приходит, пока ещё идёт очередь срыва).
+    // зубцы — два; срыв — очередь из шести тяжёлых, длинный мощный
+    // толчок; падение и упор — без своей отдачи (упор приходит, пока ещё
+    // идёт очередь срыва). Тройной импульс «ошибка» в конце очереди
+    // убран: он длинный, и его хвост доставал до подъёма рычага.
     leverBreak() {
-        if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 5, 40, 'error');
+        if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 6, 40);
         if (this.onPull) this.onPull();
     },
     // dy — сколько палец прошёл вниз, в единицах поля
@@ -411,7 +412,8 @@ const GreedJunkLit = {
                 if (!v.hit) { v.hit = now; this.leverImpact(now); }
             }
             show = v.p;
-            if (t > L.fall + L.hold) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
+            // Палец ещё на экране — рычаг стоит внизу, пока его не отпустят.
+            if (t > L.fall + L.hold && !this._held) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
         } else if (v.st === 'back') {
             // пружина: медленнее, с перелётом назад и парой качаний
             // к концу качание гаснет в ноль плавно: иначе на переходе к
@@ -626,6 +628,7 @@ const GreedJunkLit = {
             e.preventDefault();
             wrap.setPointerCapture(e.pointerId);
             grab = { y, at: Date.now(), moved: 0 };
+            this._held = true;
             this.leverState('drag', 0);
             if (typeof Haptics !== 'undefined') Haptics.tick();
         });
@@ -639,6 +642,7 @@ const GreedJunkLit = {
             if (!grab) return;
             const tap = grab.moved < 4 && Date.now() - grab.at < 350;
             grab = null;
+            this._held = false;
             if (tap && this._lv && this._lv.st === 'drag') { this._lv = null; this.pull(); }
             else this.leverRelease();
         };
