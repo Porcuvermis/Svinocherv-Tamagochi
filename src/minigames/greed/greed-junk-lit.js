@@ -204,12 +204,15 @@ const GreedJunkLit = {
                 Hang.step(tail.s, g);
                 Hang.step(lamp, g);
                 const glow = this.glowStep(now);
-                const key = tail.s.th.concat(lamp.th).map(v => v.toFixed(3)).join(',') + this.GLOW_ORDER.map(k => glow[k].toFixed(2)).join(',');
+                const ind = this.readyStep(now);
+                const key = tail.s.th.concat(lamp.th).map(v => v.toFixed(3)).join(',') + this.GLOW_ORDER.map(k => glow[k].toFixed(2)).join(',') +
+                    ind.red.toFixed(2) + ind.green.toFixed(2);
                 if (key !== tail.shown) {
                     tail.shown = key;
                     this.live.innerHTML = GreedJunk.haloDefs() +
                         ['pear', 'flame', 'globe'].map(k => GreedJunk.bulbGlow(k, glow[k])).join('') +
-                        GreedJunk.threadTail(tail.s) + GreedJunk.hangLamp(lamp, glow.red);
+                        GreedJunk.threadTail(tail.s) + GreedJunk.hangLamp(lamp, glow.red) +
+                        GreedJunk.readyLampGlow(ind.red, ind.green);
                 }
             }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
@@ -328,8 +331,27 @@ const GreedJunkLit = {
         this._lv = { st, p0: p || 0, at: -1, p: p || 0 };
         return true;
     },
+    // ---- готовность рычага ----
+    // Дёргать можно, только когда прошлая крутка кончилась: от срыва до
+    // её конца лампа на кулисе красная и рычаг не берётся, потом — зелёная.
+    // Игра сообщает конец крутки setReady(true); превью без барабанов
+    // изображает крутку паузой PREVIEW_SPIN после возврата рычага.
+    ready: true,
+    PREVIEW_SPIN: 1000,
+    ind: { red: 0, green: 1 },
+    setReady(on) { this.ready = !!on; this._readyAt = null; },
+    // накал лампы — как у нити: разгорается быстро, гаснет медленнее
+    readyStep(now) {
+        if (this._readyAt != null && now >= this._readyAt) this.setReady(true);
+        const want = { red: this.ready ? 0 : 1, green: this.ready ? 1 : 0 };
+        ['red', 'green'].forEach(k => {
+            const v = this.ind[k];
+            this.ind[k] = want[k] > v ? v + (want[k] - v) * 0.3 : (v < 0.01 ? 0 : v * 0.8);
+        });
+        return this.ind;
+    },
     // тап по рычагу
-    pull() { if (this.leverState('free', 0)) this.leverBreak(); },
+    pull() { if (this.ready && this.leverState('free', 0)) this.leverBreak(); },
     // ---- отдача в палец ----
     // Рисунок по ходу рычага, а не одна отдача на всё. На iPhone виды
     // удара по силе почти не различаются (проверено рукой: «разница
@@ -340,6 +362,7 @@ const GreedJunkLit = {
     // идёт очередь срыва). Тройной импульс «ошибка» в конце очереди
     // убран: он длинный, и его хвост доставал до подъёма рычага.
     leverBreak() {
+        this.setReady(false);
         if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 6, 40);
         if (this.onPull) this.onPull();
     },
@@ -430,6 +453,7 @@ const GreedJunkLit = {
             show = v.p;
             if (t > 900) {
                 this._lv = null;
+                if (this.autoReady && !this.ready) this._readyAt = now + this.PREVIEW_SPIN;
                 this.bindSet(this.tex);
                 this.leverCanvas.style.display = 'none';
                 return true;
@@ -623,6 +647,7 @@ const GreedJunkLit = {
             `width:${C.w / GreedJunk.W * 100}%;height:${C.h / GreedJunk.H * 100}%;z-index:1;display:none;pointer-events:none;background:none`;
         wrap.appendChild(lv);
         this.leverCanvas = lv;
+        this.autoReady = true;        // в превью крутки нет — изображаем паузой
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();
@@ -631,7 +656,7 @@ const GreedJunkLit = {
         let grab = null;
         wrap.addEventListener('pointerdown', (e) => {
             const [x, y] = field(e);
-            if (!(x > 300 && y > 262 && y < 400) || this._lv) return;
+            if (!(x > 300 && y > 262 && y < 400) || this._lv || !this.ready) return;
             e.preventDefault();
             wrap.setPointerCapture(e.pointerId);
             grab = { y, at: Date.now(), moved: 0 };

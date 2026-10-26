@@ -760,7 +760,8 @@ Object.assign(GreedJunk, {
         const G = PALETTE.greedJunk.bulb.lit;
         return '<defs>' + ['pear', 'flame', 'globe', 'red'].map(k =>
             `<radialGradient id="gj-halo-${k}"><stop offset="0" stop-color="${G[k]}" stop-opacity="0.9"/>` +
-            `<stop offset="0.3" stop-color="${G[k]}" stop-opacity="0.4"/><stop offset="1" stop-color="${G[k]}" stop-opacity="0"/></radialGradient>`).join('') + '</defs>';
+            `<stop offset="0.3" stop-color="${G[k]}" stop-opacity="0.4"/><stop offset="1" stop-color="${G[k]}" stop-opacity="0"/></radialGradient>`).join('') +
+            this.readyLampDefs() + '</defs>';
     },
     // v — накал 0..1
     bulbGlow(kind, v) {

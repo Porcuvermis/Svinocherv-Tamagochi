@@ -491,7 +491,7 @@ const GreedJunk = {
     // НА ИГРОКА, а не вбок: вбок на экране телефона места нет.
     // Корпус — кусок пола старой машины, вырезанный болгаркой вместе с
     // кулисой: заводская краска хаки, выштампованные рёбра жёсткости,
-    // резиновая заглушка дренажной дырки, рамка юбки из салона. Сверху и
+    // индикатор готовности в бывшей дренажной дырке, рамка юбки из салона. Сверху и
     // справа края заводские (скруглённая штамповка, завальцовка), снизу —
     // свежий рез с побежалостью, слева отогнут фланец и привёрнут к
     // ящику. Из кулисы трос переключения уходит в нижний ящик — это и
@@ -536,9 +536,7 @@ const GreedJunk = {
             `<rect x="${f(xm - 3.5)}" y="${f(ym - 3 - (x1 - x0) / 2)}" width="7" height="${x1 - x0}" fill="url(#gj-temper)" opacity="0.35"/></g>`;
         g += `<path d="${band(0.4, 1.9)}" fill="${J.tin[900]}" opacity="0.85"/>`;
         g += `<path d="${band(0.4, 1.2)}" fill="${J.tin[100]}"/>`;
-        // заглушка дренажной дырки: резиновая шляпка с пояском
-        g += this.T(2, 'rubber', `<circle cx="345" cy="450" r="3.8" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="345" cy="450" r="2.2" fill="none" stroke="${J.wood[900]}" stroke-width="0.6"/>` + this.domeH(345, 450, 3.8, 1.4));
+        g += this.readyLampBody();
         let out = this.T(7, 'paint', g);
         // фланец слева отогнут к ящику: узкая полоса в тени и три болта
         out += this.T(8, 'paint', `<path d="M${x0} ${y0 + 5} L${x0 + 4} ${y0 + 3} L${x0 + 4} ${y1 - 1.5} L${x0} ${y1 - 1} Z" fill="${C.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
@@ -552,6 +550,48 @@ const GreedJunk = {
             this.bolt(x0 + 2.4, y0 - 1, 1.5) + this.bolt(x1 - 2.4, y0 - 1, 1.5));
         // рамка юбки — в leverSvg: она прижимает низ юбки и рисуется поверх
         out += this.shiftCable();
+        return out;
+    },
+
+    // Индикатор готовности рычага — в бывшей дренажной дырке: резиновое
+    // кольцо и в нём затёртый мутный колпачок из серо-зелёной резины, как
+    // на старых военных приборах. Под ним тусклая лампочка: горит красным,
+    // пока рычаг дёргать нельзя (идёт крутка), зелёным — когда можно. Свет
+    // живой, рисуется поверх корпуса (readyLampGlow, GreedJunkLit).
+    READY_LAMP: { x: 345, y: 450, r: 4.2 },
+    readyLampBody() {
+        const J = PALETTE.greedJunk, Lm = J.lamp, R = this.READY_LAMP, f = this.f;
+        let g = `<circle cx="${R.x}" cy="${R.y}" r="${R.r + 1.6}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+            this.domeH(R.x, R.y, R.r + 1.6, 1);
+        let cap = `<circle cx="${R.x}" cy="${R.y}" r="${R.r}" fill="${Lm.cap}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
+            // затёртость: матовые царапины и тёмный ободок у края
+            `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.6)}" fill="none" stroke="${Lm.capLo}" stroke-width="0.6" opacity="0.6"/>` +
+            `<path d="M${f(R.x - 2.4)} ${f(R.y + 1.2)} L${f(R.x + 0.6)} ${f(R.y - 1.8)} M${f(R.x - 0.4)} ${f(R.y + 2.4)} L${f(R.x + 2)} ${f(R.y + 0.2)}" stroke="${Lm.capLo}" stroke-width="0.3" opacity="0.7"/>` +
+            this.domeH(R.x, R.y, R.r, 2);
+        return this.T(2, 'rubber', g) + this.T(3, 'plastic', cap);
+    },
+    // Свет индикатора: red и green — накал 0..1. Колпачок рассеивает:
+    // тусклая заливка его цветом, мягкое пятно нити посередине и слабый
+    // ореол на краске вокруг — без резких краёв.
+    readyLampDefs() {
+        const Lm = PALETTE.greedJunk.lamp;
+        return ['red', 'green'].map(k =>
+            `<radialGradient id="gj-ind-${k}"><stop offset="0" stop-color="${Lm[k + 'Core']}" stop-opacity="0.95"/>` +
+            `<stop offset="0.55" stop-color="${Lm[k]}" stop-opacity="0.55"/><stop offset="1" stop-color="${Lm[k]}" stop-opacity="0"/></radialGradient>`).join('');
+    },
+    readyLampGlow(red, green) {
+        const R = this.READY_LAMP, f = this.f, Lm = PALETTE.greedJunk.lamp;
+        let out = '';
+        [['red', red], ['green', green]].forEach(([k, v]) => {
+            if (v < 0.02) return;
+            out += `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r * 3)}" fill="url(#gj-ind-${k})" opacity="${f(0.35 * v)}" style="mix-blend-mode:screen"/>` +
+                `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.3)}" fill="${Lm[k]}" opacity="${f(0.6 * v)}"/>` +
+                `<circle cx="${R.x}" cy="${f(R.y + 0.3)}" r="${f(R.r * 0.85)}" fill="url(#gj-ind-${k})" opacity="${f(0.9 * v)}" style="mix-blend-mode:screen"/>`;
+        });
+        // затёртость колпачка видна и на горящей лампе: свет идёт сквозь
+        // царапины, они темнее
+        if (out) out += `<path d="M${f(R.x - 2.4)} ${f(R.y + 1.2)} L${f(R.x + 0.6)} ${f(R.y - 1.8)} M${f(R.x - 0.4)} ${f(R.y + 2.4)} L${f(R.x + 2)} ${f(R.y + 0.2)}" stroke="${Lm.capLo}" stroke-width="0.3" opacity="0.6"/>` +
+            `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.6)}" fill="none" stroke="${Lm.capLo}" stroke-width="0.6" opacity="0.45"/>`;
         return out;
     },
 
