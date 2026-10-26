@@ -137,7 +137,11 @@ Object.assign(GreedJunk, {
         g += `<path d="${body}" fill="${K.silver}" transform="translate(${M.x} ${M.y})"/>`;
         // этикетка на прямой части
         const lt = sh + 0.6, lb = bt - 0.4;
-        let lab = `<rect x="${f(cx - hw - 1)}" y="${f(lt)}" width="${w + 2}" height="${f(lb - lt)}" fill="${K.label}"/>`;
+        // Края этикетки — дуги цилиндра, видимого чуть сверху; сама этикетка
+        // той же формой. Было: прямоугольник, а по краю — дуга, и между ними
+        // светлая щель полосой.
+        const arc = (y) => `${f(cx - hw - 1)} ${f(y)} Q${f(cx)} ${f(y + 2)} ${f(cx + hw + 1)} ${f(y)}`;
+        let lab = `<path d="M${arc(lt)} L${f(cx + hw + 1)} ${f(lb)} Q${f(cx)} ${f(lb + 2)} ${f(cx - hw - 1)} ${f(lb)} Z" fill="${K.label}"/>`;
         const R = hw, X = (u) => cx + R * Math.sin(Math.max(-1.5, Math.min(1.5, u / R)));
         // знак пивоварни, по центру этикетки; червячки обходят его
         const L = BREW_LOGO.box, sz = 10.5, sc = sz / L.h, my = (lt + lb) / 2, lw = L.w * sc;
@@ -157,7 +161,7 @@ Object.assign(GreedJunk, {
             `<rect x="${f(cx + hw * 0.4)}" y="${f(yT - 2)}" width="${f(hw * 0.6)}" height="${h + 4}" fill="${K.silverLo}" opacity="0.3"/>` +
             `<rect x="${f(cx - hw * 0.55)}" y="${f(yT - 2)}" width="0.9" height="${h + 4}" fill="${K.silverHi}" opacity="0.35"/></g>`;
         // края этикетки — тонкие дуги (цилиндр видно чуть сверху)
-        [lt, lb].forEach(y => { g += `<path d="M${f(cx - hw)} ${f(y)} Q${f(cx)} ${f(y + 1)} ${f(cx + hw)} ${f(y)}" fill="none" stroke="${K.silverLo}" stroke-width="0.35"/>`; });
+        [lt, lb].forEach(y => { g += `<path d="M${arc(y)}" fill="none" stroke="${K.silverLo}" stroke-width="0.35" clip-path="url(#${id})"/>`; });
         // крышка: обод, утопленное донышко, ключ
         g += `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rim)}" ry="${ry}" fill="${K.silverHi}"/>` +
             `<ellipse cx="${cx}" cy="${f(yT + 0.2)}" rx="${f(rim - 1)}" ry="${f(ry - 0.5)}" fill="${K.silver}" stroke="${K.silverLo}" stroke-width="0.35"/>` +
