@@ -110,61 +110,62 @@ Object.assign(GreedJunk, {
     },
 
     // ---------- БАНКА ПИВА ----------
-    // Алюминиевая банка, чуть наклонена. Сверху видна крышка: серебряный
-    // обод, утопленное донышко и ключ-кольцо; горлышко сужается к крышке,
-    // дно скруглено. Этикетка чёрная, по ней ровная сетка розовых
-    // червячков — к краям банки они сжимаются (уходят за изгиб); в центре
-    // белый знак пивоварни (BREW_LOGO, от игрока). Блик — вертикальной
-    // полосой по металлу и этикетке.
+    // Алюминиевая банка по референсу игрока: стоит ровно, бока прямые,
+    // плечи плавно и выпукло сходят к короткому горлышку, обод крышки —
+    // тонкий эллипс уже корпуса; снизу бока мягко загибаются внутрь к
+    // узкому кольцу донышка. Крышка: обод, утопленное донышко, ключ.
+    // Этикетка на прямой части: чёрная, ровная сетка розовых червячков (к
+    // краям сжимаются — уходят за изгиб), в центре белый знак пивоварни
+    // (BREW_LOGO, от игрока). Было: наклонённая банка с ломаными плечами —
+    // читалась коробкой.
     reelCan(cx, cy) {
         const K = PALETTE.greedJunk.reel.can, f = this.f, M = this.MISPRINT;
-        const w = 15, h = 26, x0 = cx - w / 2, yT = cy - h / 2 + 2.6, yB = cy + h / 2;
-        const ry = 2.2;                                   // сплющенность верха и низа
-        const neck = 2.2;                                 // сужение к крышке
+        const w = 17, h = 27, hw = w / 2, rim = hw * 0.8;
+        const yT = cy - h / 2 + 1.6, yB = cy + h / 2 - 1.2;    // обод и низ донышка
+        const sh = yT + 4.6, bt = yB - 2.8;                     // конец плеч, начало низа
+        const ry = 1.5, base = hw * 0.78;
         const id = 'gj-can' + Math.round(cx * 10 + cy);
-        // силуэт: крышка-эллипс, плечи сужаются, низ — полуэллипс
-        const body = `M${f(x0 + neck)} ${f(yT)} L${f(x0)} ${f(yT + 3.2)} L${f(x0)} ${f(yB - 2.6)} ` +
-            `Q${f(x0)} ${f(yB - 1)} ${f(x0 + 1.4)} ${f(yB - 0.6)} A${f(w / 2 - 1.4)} ${ry} 0 0 0 ${f(x0 + w - 1.4)} ${f(yB - 0.6)} ` +
-            `Q${f(x0 + w)} ${f(yB - 1)} ${f(x0 + w)} ${f(yB - 2.6)} L${f(x0 + w)} ${f(yT + 3.2)} L${f(x0 + w - neck)} ${f(yT)} ` +
-            // верх силуэта — дальняя половина обода, а не прямая через крышку
-            `A${f(w / 2 - neck)} ${ry} 0 0 0 ${f(x0 + neck)} ${f(yT)} Z`;
+        // силуэт по часовой: обод справа → плечо → бок → низ → донышко → левый бок → плечо → дальний обод
+        const body = `M${f(cx + rim)} ${f(yT)} L${f(cx + rim)} ${f(yT + 0.9)} ` +
+            `C${f(cx + rim + 0.6)} ${f(yT + 2.2)} ${f(cx + hw)} ${f(yT + 2.4)} ${f(cx + hw)} ${f(sh)} ` +
+            `L${f(cx + hw)} ${f(bt)} C${f(cx + hw)} ${f(bt + 2)} ${f(cx + base + 0.8)} ${f(yB - 0.4)} ${f(cx + base)} ${f(yB)} ` +
+            `A${f(base)} ${ry} 0 0 1 ${f(cx - base)} ${f(yB)} ` +
+            `C${f(cx - base - 0.8)} ${f(yB - 0.4)} ${f(cx - hw)} ${f(bt + 2)} ${f(cx - hw)} ${f(bt)} ` +
+            `L${f(cx - hw)} ${f(sh)} C${f(cx - hw)} ${f(yT + 2.4)} ${f(cx - rim - 0.6)} ${f(yT + 2.2)} ${f(cx - rim)} ${f(yT + 0.9)} ` +
+            `L${f(cx - rim)} ${f(yT)} A${f(rim)} ${ry} 0 0 1 ${f(cx + rim)} ${f(yT)} Z`;
         let g = `<clipPath id="${id}"><path d="${body}"/></clipPath>`;
         g += `<path d="${body}" fill="${K.silver}" transform="translate(${M.x} ${M.y})"/>`;
-        // этикетка между плечами и низом
-        const lt = yT + 4.2, lb = yB - 3.4;
-        let lab = `<rect x="${x0 - 1}" y="${f(lt)}" width="${w + 2}" height="${f(lb - lt)}" fill="${K.label}"/>`;
-        // червячки: ровная сетка со сдвигом рядов; x — по цилиндру
-        const R = w / 2, X = (u) => cx + R * Math.sin(Math.max(-1.5, Math.min(1.5, u / R)));
+        // этикетка на прямой части
+        const lt = sh + 0.6, lb = bt - 0.4;
+        let lab = `<rect x="${f(cx - hw - 1)}" y="${f(lt)}" width="${w + 2}" height="${f(lb - lt)}" fill="${K.label}"/>`;
+        const R = hw, X = (u) => cx + R * Math.sin(Math.max(-1.5, Math.min(1.5, u / R)));
+        // знак пивоварни, по центру этикетки; червячки обходят его
+        const L = BREW_LOGO.box, sz = 10.5, sc = sz / L.h, my = (lt + lb) / 2, lw = L.w * sc;
         let worms = '';
         for (let r = 0, y = lt + 1.6; y < lb - 0.8; r++, y += 2.6) {
             for (let u = -R - 2 + (r % 2) * 1.7; u < R + 2; u += 3.4) {
                 const a = X(u - 0.9), b = X(u), c = X(u + 0.9), k = Math.cos(Math.max(-1.5, Math.min(1.5, u / R)));
                 if (k < 0.2) continue;
+                if (Math.abs(b - cx) < lw / 2 + 1.2 && Math.abs(y - my) < sz / 2 + 1) continue;
                 worms += `<path d="M${f(a)} ${f(y + 0.35)} Q${f((a + b) / 2)} ${f(y - 0.6)} ${f(b)} ${f(y)} T${f(c)} ${f(y - 0.35)}" stroke-width="${f(0.45 * (0.5 + 0.5 * k))}"/>`;
             }
         }
         lab += `<g fill="none" stroke="${K.worm}" stroke-linecap="round">${worms}</g>`;
-        // знак пивоварни, белый, по центру этикетки
-        const L = BREW_LOGO.box, sz = 10.5, sc = sz / L.h;
-        const lx = cx - L.w * sc / 2 - L.x * sc, ly = (lt + lb) / 2 - sz / 2 - L.y * sc;
-        lab += `<rect x="${f(cx - L.w * sc / 2 - 0.8)}" y="${f((lt + lb) / 2 - sz / 2 - 0.6)}" width="${f(L.w * sc + 1.6)}" height="${f(sz + 1.2)}" rx="1" fill="${K.label}"/>`;
-        lab += `<path d="${BREW_LOGO.d}" fill="${K.logo}" transform="translate(${f(lx)} ${f(ly)}) scale(${sc.toFixed(5)})"/>`;
+        lab += `<path d="${BREW_LOGO.d}" fill="${K.logo}" transform="translate(${f(cx - L.w * sc / 2 - L.x * sc)} ${f(my - sz / 2 - L.y * sc)}) scale(${sc.toFixed(5)})"/>`;
         g += `<g clip-path="url(#${id})">${lab}` +
-            // объём: тень к правому краю, блик полосой слева
-            `<rect x="${f(x0 + w * 0.7)}" y="${f(yT)}" width="${f(w * 0.3)}" height="${h}" fill="${K.silverLo}" opacity="0.3"/>` +
-            `<rect x="${f(x0 + w * 0.22)}" y="${f(yT)}" width="0.8" height="${h}" fill="${K.silverHi}" opacity="0.3"/></g>`;
-        // ободки этикетки
-        g += `<path d="M${x0} ${f(lt)} L${x0 + w} ${f(lt)} M${x0} ${f(lb)} L${x0 + w} ${f(lb)}" stroke="${K.silverLo}" stroke-width="0.4"/>`;
+            // объём цилиндра: тень к правому краю, узкий блик слева
+            `<rect x="${f(cx + hw * 0.4)}" y="${f(yT - 2)}" width="${f(hw * 0.6)}" height="${h + 4}" fill="${K.silverLo}" opacity="0.3"/>` +
+            `<rect x="${f(cx - hw * 0.55)}" y="${f(yT - 2)}" width="0.9" height="${h + 4}" fill="${K.silverHi}" opacity="0.35"/></g>`;
+        // края этикетки — тонкие дуги (цилиндр видно чуть сверху)
+        [lt, lb].forEach(y => { g += `<path d="M${f(cx - hw)} ${f(y)} Q${f(cx)} ${f(y + 1)} ${f(cx + hw)} ${f(y)}" fill="none" stroke="${K.silverLo}" stroke-width="0.35"/>`; });
         // крышка: обод, утопленное донышко, ключ
-        // обод ровно по горлышку; внутри — утопленное донышко и ключ
-        const rr = w / 2 - neck;
-        g += `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rr)}" ry="${ry}" fill="${K.silverHi}"/>` +
-            `<ellipse cx="${cx}" cy="${f(yT + 0.25)}" rx="${f(rr - 1)}" ry="${f(ry - 0.55)}" fill="${K.silver}" stroke="${K.silverLo}" stroke-width="0.35"/>` +
-            `<rect x="${f(cx - 0.6)}" y="${f(yT - 0.5)}" width="3.4" height="1.4" rx="0.7" fill="none" stroke="${K.silverLo}" stroke-width="0.4"/>` +
-            `<circle cx="${f(cx - 0.6)}" cy="${f(yT + 0.2)}" r="0.4" fill="${K.silverLo}"/>` +
-            `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rr)}" ry="${ry}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        g += `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rim)}" ry="${ry}" fill="${K.silverHi}"/>` +
+            `<ellipse cx="${cx}" cy="${f(yT + 0.2)}" rx="${f(rim - 1)}" ry="${f(ry - 0.5)}" fill="${K.silver}" stroke="${K.silverLo}" stroke-width="0.35"/>` +
+            `<rect x="${f(cx - 0.8)}" y="${f(yT - 0.45)}" width="3.6" height="1.3" rx="0.65" fill="none" stroke="${K.silverLo}" stroke-width="0.4"/>` +
+            `<circle cx="${f(cx - 0.8)}" cy="${f(yT + 0.2)}" r="0.4" fill="${K.silverLo}"/>` +
+            `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rim)}" ry="${ry}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
         g += `<path d="${body}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
-        return `<g transform="rotate(-14 ${cx} ${cy})">${g}</g>`;
+        return g;
     },
 
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
