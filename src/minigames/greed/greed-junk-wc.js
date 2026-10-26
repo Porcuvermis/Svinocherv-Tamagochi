@@ -58,24 +58,38 @@ Object.assign(GreedJunk, {
         const sq = (qx, qy) => `<rect x="${f(qx - 1.6)}" y="${f(qy - 1.6)}" width="3.2" height="3.2" class="pit" fill="${J.tin[900]}"/>` +
             `<path d="M${f(qx - 1.6)} ${f(qy + 1.6)} H${f(qx + 1.6)} V${f(qy - 1.6)}" stroke="${J.tin[100]}" stroke-width="0.4" fill="none"/>`;
         const cs = [[x + 5.5, y + 5.5], [x + w - 5.5, y + 5.5], [x + 5.5, y + h - 5.5], [x + w - 5.5, y + h - 5.5]];
-        cs.forEach(([qx, qy]) => { g += sq(qx, qy); });
+        cs.slice(1).forEach(([qx, qy]) => { g += sq(qx, qy); });
         g += this.bolt(cs[2][0], cs[2][1], 1.5) + this.bolt(cs[3][0], cs[3][1], 1.5) + this.nail(cs[1][0], cs[1][1]);
-        g += `<path d="M${f(cs[0][0] - 1.6)} ${f(cs[0][1] + 1.6)} l-1.2 1.6 l1.8 -0.2 Z" class="pit" fill="${J.hole}"/>`;
+        // Четвёртый угол выдран вместе с саморезом: на месте гнезда рваная
+        // дыра, сквозь неё видна дверь, края загнуты наружу заусенцами.
+        // Было: тёмный квадрат с трещинами — читался битым пикселем.
+        {
+            const [hx, hy] = cs[0];
+            const hd = `M${f(hx - 2)} ${f(hy - 1)} L${f(hx - 0.6)} ${f(hy - 2.2)} L${f(hx + 1.8)} ${f(hy - 1.6)} L${f(hx + 1.2)} ${f(hy + 0.2)} L${f(hx + 2.2)} ${f(hy + 1.6)} L${f(hx - 0.4)} ${f(hy + 2)} L${f(hx - 1.6)} ${f(hy + 1)} Z`;
+            g += `<path d="${hd}" fill="${W.doorLo}" stroke="${J.tin[900]}" stroke-width="0.4" stroke-linejoin="round"/>` +
+                `<path d="M${f(hx - 0.6)} ${f(hy - 2.2)} l-0.4 -1 M${f(hx + 2.2)} ${f(hy + 1.6)} l1 0.4 M${f(hx - 1.6)} ${f(hy + 1)} l-0.9 0.7" stroke="${J.tin[100]}" stroke-width="0.5" stroke-linecap="round"/>`;
+        }
         out += this.T(6, 'polished', g);
         // купол приёма: полированный диск, щель через него сверху вниз
         const dy0 = y + 19, R = 9.5;
-        let c = `<circle cx="${cx + 0.6}" cy="${dy0 + 1}" r="${R + 0.4}" class="fx" fill="${J.hole}" opacity="0.4"/>` +
-            `<circle cx="${cx}" cy="${dy0}" r="${R + 0.8}" fill="${J.tin[700]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
-            `<circle cx="${cx}" cy="${dy0}" r="${R}" fill="${J.tin[300]}"/>` +
-            // хром: тёмный серп снизу-справа, светлый сверху-слева, отражение
-            // полосой поперёк — по ним купол и читается полированным
-            `<path d="M${cx + R * 0.95} ${dy0 - R * 0.1} A${R * 0.95} ${R * 0.95} 0 0 1 ${cx - R * 0.5} ${dy0 + R * 0.8}" fill="none" stroke="${J.tin[700]}" stroke-width="3.2" stroke-linecap="round" opacity="0.55"/>` +
-            `<path d="M${cx - R * 0.85} ${dy0 + R * 0.1} A${R * 0.9} ${R * 0.9} 0 0 1 ${cx + R * 0.35} ${dy0 - R * 0.85}" class="hl" fill="none" stroke="${J.tin[100]}" stroke-width="2.6" stroke-linecap="round"/>` +
-            `<path d="M${cx - R * 0.75} ${dy0 + R * 0.35} Q${cx} ${dy0 + R * 0.1} ${cx + R * 0.75} ${dy0 + R * 0.35}" fill="none" stroke="${J.tin[500]}" stroke-width="1.2" opacity="0.6"/>` +
+        // Хром купола: ступени светлеют к блику сверху-слева и размыты —
+        // переход мягкий, как у полированной полусферы. Было: плоский
+        // светлый диск с дугами-чёрточками и толстой чёрной щелью.
+        const dc = `gj-wc-dome`;
+        let c = `<clipPath id="${dc}"><circle cx="${cx}" cy="${dy0}" r="${R}"/></clipPath>` +
+            `<filter id="${dc}-b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.3"/></filter>` +
+            `<circle cx="${cx + 0.6}" cy="${dy0 + 1}" r="${R + 0.4}" class="fx" fill="${J.hole}" opacity="0.4"/>` +
+            `<circle cx="${cx}" cy="${dy0}" r="${R + 0.9}" fill="${J.tin[700]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
+            `<g clip-path="url(#${dc})"><circle cx="${cx}" cy="${dy0}" r="${R}" fill="${J.tin[500]}"/>` +
+            `<g filter="url(#${dc}-b)"><circle cx="${cx - 1}" cy="${dy0 - 1}" r="${R * 0.82}" fill="${J.tin[300]}"/>` +
+            `<circle cx="${cx - 2.6}" cy="${dy0 - 2.8}" r="${R * 0.42}" fill="${J.tin[100]}"/>` +
+            `<circle cx="${cx + 4.5}" cy="${dy0 + 5}" r="${R * 0.4}" fill="${J.tin[700]}" opacity="0.6"/></g></g>` +
+            `<circle cx="${cx}" cy="${dy0}" r="${R}" fill="none" stroke="${J.tin[100]}" stroke-width="0.4" opacity="0.6"/>` +
             this.domeH(cx, dy0, R, 2) +
-            // щель: тёмная, с бликом по правой кромке; сверху засалена пальцами
-            `<rect x="${cx - 1}" y="${dy0 - R + 2.6}" width="2" height="${R * 1.55}" rx="0.9" class="pit" fill="${J.hole}" stroke="${J.tin[900]}" stroke-width="0.4"/>` +
-            `<path d="M${cx + 1.3} ${dy0 - R + 3} V${dy0 + R * 0.45}" class="hl" stroke="${J.tin[100]}" stroke-width="0.5"/>`;
+            // щель: узкая, с фаской — тёмная полоса и светлая кромка справа
+            `<rect x="${cx - 0.85}" y="${dy0 - R * 0.72}" width="1.7" height="${R * 1.44}" rx="0.85" class="pit" fill="${J.hole}"/>` +
+            `<path d="M${cx + 1.15} ${dy0 - R * 0.66} V${dy0 + R * 0.66}" class="hl" stroke="${J.tin[100]}" stroke-width="0.45" stroke-linecap="round"/>` +
+            `<path d="M${cx - 1.2} ${dy0 - R * 0.66} V${dy0 + R * 0.66}" stroke="${J.tin[700]}" stroke-width="0.45" stroke-linecap="round"/>`;
         out += this.T(8, 'polished', c);
         // окошко таблички: чёрная пластиковая рамка, внутри — заводская синяя
         // табличка с «WC»; цену справа заклеили стикером
@@ -100,17 +114,26 @@ Object.assign(GreedJunk, {
             `<path d="M${kx - 1} ${ky - 1.8} L${kx + 4.6} ${ky + 3.6} Q${kx + 6.6} ${ky + 5} ${kx + 6.2} ${ky + 6.8}" class="hl" fill="none" stroke="${J.tin[100]}" stroke-width="0.9" stroke-linecap="round"/>` +
             `<path d="M${kx + 3} ${ky + 7} Q${kx + 4.6} ${ky + 8.8} ${kx + 6.4} ${ky + 7.8}" fill="none" stroke="${J.tin[700]}" stroke-width="0.8"/>` +
             this.rodH(`M${kx - 1.2} ${ky - 1.4} L${kx + 4.4} ${ky + 4.4}`, 3, 1.4) + this.domeH(kx + 5, ky + 6, 2.6, 1.2));
-        // щель возврата и чашечка под ней
-        const ry = y + 47;
-        out += this.T(6, 'steel', `<rect x="${cx - 4.6}" y="${ry}" width="3.2" height="12" rx="1.3" class="pit" fill="${J.hole}" stroke="${J.tin[900]}" stroke-width="0.4"/>`);
-        // чашечка: хромовый ковш, верх — тёмный зев, бока скруглены
-        const cup = `M${cx - 8.4} ${y + 59.4} Q${cx - 3} ${y + 57.8} ${cx + 2.4} ${y + 59.4} L${cx + 1.6} ${y + 65} Q${cx - 3} ${y + 69} ${cx - 7.6} ${y + 65} Z`;
-        out += this.T(10, 'polished', `<path d="${cup}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(0.8 1.4)"/>` +
-            `<path d="${cup}" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
-            `<path d="M${cx - 7.4} ${y + 59.9} Q${cx - 3} ${y + 58.6} ${cx + 1.4} ${y + 59.9} Q${cx - 3} ${y + 62} ${cx - 7.4} ${y + 59.9} Z" class="pit" fill="${J.hole}"/>` +
-            `<path d="M${cx + 1.2} ${y + 61} L${cx + 0.6} ${y + 64.8} Q${cx - 1.4} ${y + 66.8} ${cx - 3} ${y + 67}" fill="none" stroke="${J.tin[700]}" stroke-width="1.4" opacity="0.7"/>` +
-            `<path d="M${cx - 6.6} ${y + 61.4} Q${cx - 6.2} ${y + 65} ${cx - 4} ${y + 66.2}" class="hl" fill="none" stroke="${J.tin[100]}" stroke-width="1.1" stroke-linecap="round"/>` +
-            this.rodH(`M${cx - 6} ${y + 63} H${cx}`, 6, 2));
+        // Щель возврата и ковш под ней. Ковш — хромовый носик, торчит на
+        // игрока: спереди видна его передняя стенка (скруглена книзу), сверху
+        // — тёмный зев, куда щель и выходит. Было: белая чашка-ложка.
+        const ry = y + 46, sx = cx - 3.2;
+        out += this.T(6, 'steel', `<rect x="${sx - 1.4}" y="${ry}" width="2.8" height="12.6" rx="1.2" class="pit" fill="${J.hole}"/>` +
+            `<path d="M${sx + 1.7} ${ry + 0.8} V${ry + 12}" class="hl" stroke="${J.tin[100]}" stroke-width="0.4"/>`);
+        // ковш сверху открыт: внутри хромовое дно (светлее), щель выходит в
+        // его заднюю стенку; спереди — невысокий бортик со скруглённым низом
+        const ty = y + 58, cw = 12, chh = 7;
+        const inner = `M${sx - cw / 2} ${ty + 2.4} L${sx - 2} ${ty - 1} H${sx + 2} L${sx + cw / 2} ${ty + 2.4} Z`;
+        const front = `M${sx - cw / 2} ${ty + 2.4} H${sx + cw / 2} V${ty + chh - 2.6} Q${sx + cw / 2} ${ty + chh} ${sx + cw / 2 - 3} ${ty + chh} H${sx - cw / 2 + 3} Q${sx - cw / 2} ${ty + chh} ${sx - cw / 2} ${ty + chh - 2.6} Z`;
+        out += this.T(10, 'polished', `<path d="${front}" class="fx" fill="${J.hole}" opacity="0.45" transform="translate(0.9 1.6)"/>` +
+            `<path d="${inner}" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<path d="M${sx - 1.4} ${ty - 0.8} H${sx + 1.4} L${sx + 1} ${ty + 1.2} H${sx - 1} Z" fill="${J.hole}"/>` +
+            `<path d="M${sx - cw / 2 + 1.6} ${ty + 2} L${sx - 1.6} ${ty - 0.4}" class="hl" stroke="${J.tin[100]}" stroke-width="0.6"/>` +
+            `<path d="${front}" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<path d="M${sx - cw / 2 + 1.4} ${ty + 3.4} V${ty + chh - 2.2}" class="hl" stroke="${J.tin[100]}" stroke-width="1.2" stroke-linecap="round"/>` +
+            `<path d="M${sx + cw / 2 - 1.2} ${ty + 3.4} V${ty + chh - 2.4}" stroke="${J.tin[500]}" stroke-width="1.1" stroke-linecap="round"/>` +
+            `<path d="M${sx - cw / 2 + 0.4} ${ty + 2.7} H${sx + cw / 2 - 0.4}" class="hl" stroke="${J.tin[100]}" stroke-width="0.5"/>` +
+            this.rodH(`M${sx - 3} ${ty + 4.6} H${sx + 3}`, 5, 2));
         return out;
     },
 
