@@ -89,6 +89,20 @@ const Haptics = {
         this._buzz(ms);
     },
 
+    // ОЧЕРЕДЬ: count ударов kind подряд через gap мс. На iPhone виды
+    // удара по силе почти не различаются — сильное событие от слабого рука
+    // отличает по ДЛИТЕЛЬНОСТИ, по числу ударов подряд. На Android — одно
+    // жужжание той же длины. then — ещё одно известие в конце очереди
+    // ('error' на iPhone — тройной сильный импульс).
+    burst(kind, count, gap, then) {
+        if (!this.enabled) return;
+        gap = gap || 40;
+        const h = this.tg();
+        if (!h) { if (this._gate(true)) this._buzz(count * gap); return; }
+        for (let i = 0; i < count; i++) setTimeout(() => this.impact(kind, true), i * gap);
+        if (then) setTimeout(() => this.notify(then, true), count * gap);
+    },
+
     // ИЗВЕСТИЕ: получилось или нет. kind: 'success' | 'warning' | 'error'.
     notify(kind, force) {
         if (!this._gate(force)) return;
