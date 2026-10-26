@@ -83,15 +83,28 @@ Object.assign(GreedJunkLit, {
     // wk, wc — колыхание мениска: жёсткость и затухание
     METER_SPRING: { k: 0.00002, c: 0.008, wk: 0.0006, wc: 0.012 },
 
+    // Три холста, а не один: стекло (деления, блики) рисуется ОДИН раз;
+    // жидкость — только когда сдвинулся уровень или мениск; каждый кадр —
+    // только пузырьки, и каждый — готовой картинкой (bubbleSprite). Было:
+    // всё с нуля каждый кадр, с градиентами и вырезами, — дорого ради
+    // полоски у окна.
     meterMount(wrap) {
-        const B = this.METER_BOX, G = GreedJunk, cv = document.createElement('canvas');
-        cv.width = B.w * this.SCALE; cv.height = B.h * this.SCALE;
-        cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
-            `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
-        wrap.appendChild(cv);
-        this.meterCv = cv;
+        const B = this.METER_BOX, G = GreedJunk;
+        const layer = () => {
+            const cv = document.createElement('canvas');
+            cv.width = B.w * this.SCALE; cv.height = B.h * this.SCALE;
+            cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
+                `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
+            wrap.appendChild(cv);
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(this.SCALE, 0, 0, this.SCALE, -B.x * this.SCALE, -B.y * this.SCALE);
+            return ctx;
+        };
+        this.meterCv = layer().canvas;
+        this.meterBub = layer();
+        this.meterGlassTop(layer());
         const v = this.meterValue();
-        this._meter = { L: v, T: v, v: 0, w: 0, wv: 0, bubbles: [], foam: [], fizz: 0, sites: this.meterSites(), at: 0 };
+        this._meter = { L: v, T: v, v: 0, w: 0, wv: 0, bubbles: [], foam: [], fizz: 0, sites: this.meterSites(), at: 0, shown: '' };
     },
     // насыщение греха 0..1 из состояния игры (в превью без игры — половина)
     meterValue() {
@@ -123,17 +136,15 @@ Object.assign(GreedJunkLit, {
     // собираются в тонкую пенку и лопаются. Центры — на дне шара и на
     // стенках трубки; у каждого свой темп и свой размер пузырьков.
     // Было: одиночный пузырь раз в пару секунд — читался воздухом в трубке.
-    BUBBLE: { a: 0.000045, vmax: 0.06, grow: 0.012, rmax: 0.95, foamMs: 1400, foamMax: 34 },
+    BUBBLE: { a: 0.000045, vmax: 0.06, grow: 0.012, rmax: 0.95, foamMs: 1200, foamMax: 16 },
     meterSites() {
         const R = GreedJunk.METER, x = R.bx, ri = R.r - R.wall;
         return [
             // дно шара: две нитки, частые и мелкие
-            { x: x - 2.6, y: R.by + 6.2, every: 80, r0: 0.3 },
-            { x: x + 1.8, y: R.by + 6.8, every: 110, r0: 0.34 },
+            { x: x - 1.6, y: R.by + 6.4, every: 110, r0: 0.32 },
             // царапины на стенках трубки: реже, пузырьки крупнее
-            { x: x - ri + 0.6, y: GreedJunk.meterY(0.12), every: 180, r0: 0.38 },
-            { x: x + ri - 0.6, y: GreedJunk.meterY(0.34), every: 230, r0: 0.4 },
-            { x: x - ri + 0.7, y: GreedJunk.meterY(0.58), every: 280, r0: 0.36 }
+            { x: x + ri - 0.6, y: GreedJunk.meterY(0.2), every: 240, r0: 0.38 },
+            { x: x - ri + 0.7, y: GreedJunk.meterY(0.52), every: 320, r0: 0.36 }
         ].map(s => Object.assign(s, { next: Math.random() * s.every }));
     },
     // dt — мс; top — y поверхности
@@ -176,18 +187,25 @@ Object.assign(GreedJunkLit, {
     },
     // пузырёк: прозрачный шарик в янтаре — светлее середина, тёмная кромка
     // по краю, белая искра сверху-слева (так пузырёк в пиве и блестит)
-    bubbleDraw(ctx, x, y, r, a, C) {
-        ctx.globalAlpha = 0.35 * a; ctx.fillStyle = C.liquidHi;
-        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 0.55 * a; ctx.strokeStyle = C.liquidLo; ctx.lineWidth = Math.max(0.12, r * 0.28);
-        ctx.beginPath(); ctx.arc(x, y, r, Math.PI * 0.1, Math.PI * 1.1); ctx.stroke();
-        ctx.globalAlpha = 0.95 * a; ctx.fillStyle = C.glassHi;
-        ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.38, Math.max(0.12, r * 0.32), 0, Math.PI * 2); ctx.fill();
+    // картинка пузырька, рисуется один раз: светлая середина, тёмная кромка
+    // снизу, белая искра сверху-слева (так пузырёк в пиве и блестит)
+    bubbleSprite(foam) {
+        const k = foam ? '_foamSpr' : '_bubSpr';
+        if (this[k]) return this[k];
+        const C = PALETTE.greedJunk.reel.meter, n = 24, cv = document.createElement('canvas');
+        cv.width = cv.height = n;
+        const c = cv.getContext('2d'), m = n / 2, r = n / 2 - 1.5;
+        c.globalAlpha = foam ? 0.75 : 0.35; c.fillStyle = foam ? C.glassHi : C.liquidHi;
+        c.beginPath(); c.arc(m, m, r, 0, Math.PI * 2); c.fill();
+        c.globalAlpha = 0.55; c.strokeStyle = C.liquidLo; c.lineWidth = r * 0.28;
+        c.beginPath(); c.arc(m, m, r, Math.PI * 0.1, Math.PI * 1.1); c.stroke();
+        c.globalAlpha = 0.95; c.fillStyle = C.glassHi;
+        c.beginPath(); c.arc(m - r * 0.35, m - r * 0.38, r * 0.32, 0, Math.PI * 2); c.fill();
+        return (this[k] = cv);
     },
 
-
     meterStep(now) {
-        const M = this._meter, P = this.METER_SPRING;
+        const M = this._meter, P = this.METER_SPRING, G = GreedJunk, R = G.METER;
         if (!M) return;
         const dt = Math.min(40, M.at ? now - M.at : 16);
         M.at = now;
@@ -197,21 +215,36 @@ Object.assign(GreedJunkLit, {
         const want = Hang.down() * 1.2;
         M.wv += ((want - M.w) * P.wk - P.wc * M.wv) * dt;
         M.w += M.wv * dt;
-        // пузырьки идут всегда — холст перерисовывается каждый кадр; он
-        // маленький (полоса у окна), это дёшево
-        this.bubbleStep(M, now, dt, GreedJunk.meterY(Math.max(0, Math.min(1, M.L))));
-        this.meterDraw(now);
+        const top = G.meterY(Math.max(0, Math.min(1, M.L)));
+        // жидкость — только когда сдвинулась заметно глазу
+        const key = top.toFixed(1) + ',' + M.w.toFixed(2);
+        if (key !== M.shown) { M.shown = key; this.meterDraw(top, M.w); }
+        // пузырьки — каждый кадр, готовыми картинками; под хомутами не видны
+        this.bubbleStep(M, now, dt, top);
+        const ctx = this.meterBub, B = this.METER_BOX, bs = this.bubbleSprite(false), fs = this.bubbleSprite(true);
+        ctx.clearRect(B.x, B.y, B.w, B.h);
+        const hid = (y) => R.clamps.some(c => Math.abs(c - y) < 3.6);
+        M.bubbles.forEach(b => { if (!hid(b.y)) ctx.drawImage(bs, b.x - b.r, b.y - b.r, b.r * 2, b.r * 2); });
+        const ri = R.r - R.wall;
+        M.foam.forEach(fo => {
+            const u = (now - fo.at) / fo.life, k = (fo.x - R.bx) / ri, fy = top + 1.1 + (1 - k * k) * 0.9 - k * M.w - fo.r * 0.4;
+            if (hid(fy)) return;
+            ctx.globalAlpha = u > 0.85 ? (1 - u) / 0.15 : 1;
+            ctx.drawImage(fs, fo.x - fo.r, fy - fo.r, fo.r * 2, fo.r * 2);
+        });
+        ctx.globalAlpha = 1;
     },
 
-    meterDraw(now) {
-        const M = this._meter, G = GreedJunk, R = G.METER, B = this.METER_BOX, S = this.SCALE, C = PALETTE.greedJunk.reel.meter;
+    // жидкость: колба полная, столбик до top; поверхность — мениск,
+    // перекошенный наклоном и колыханием (w)
+    meterDraw(top, w) {
+        const G = GreedJunk, R = G.METER, B = this.METER_BOX, S = this.SCALE, C = PALETTE.greedJunk.reel.meter;
         const ctx = this.meterCv.getContext('2d');
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, this.meterCv.width, this.meterCv.height);
         ctx.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
         if (!this._meterIn) this._meterIn = new Path2D(G.meterPath(R.wall));
         const x = R.bx, ri = R.r - R.wall;
-        const top = G.meterY(Math.max(0, Math.min(1, M.L)));
         ctx.save();
         // хомуты в корпусе — поверх стекла; жидкость под ними не рисуется,
         // иначе холст поверх корпуса закрывал бы их
@@ -219,42 +252,31 @@ Object.assign(GreedJunkLit, {
         ctx.rect(B.x, B.y, B.w, B.h);
         R.clamps.forEach(y => ctx.rect(B.x, y + 3.5, B.w, -7));
         ctx.clip('evenodd');
-        // жидкость налита внутри стенок (inset — толщина стекла); поверхность —
-        // мениск, перекошенный наклоном и колыханием
         ctx.clip(this._meterIn);
         ctx.beginPath();
-        ctx.moveTo(x - ri - 1, top + M.w);
-        ctx.quadraticCurveTo(x, top + 2, x + ri + 1, top - M.w);
+        ctx.moveTo(x - ri - 1, top + w);
+        ctx.quadraticCurveTo(x, top + 2, x + ri + 1, top - w);
         ctx.lineTo(x + R.br + 1, R.by + R.br + 1);
         ctx.lineTo(x - R.br - 1, R.by + R.br + 1);
         ctx.closePath();
-        // в трубке поперечный градиент цилиндра; у краёв темнее — стекло
-        // преломляет, середина светлее
+        // поперечный градиент цилиндра: у краёв темнее — стекло преломляет
         const gr = ctx.createLinearGradient(x - ri, 0, x + ri, 0);
         gr.addColorStop(0, C.liquidLo); gr.addColorStop(0.3, C.liquidHi); gr.addColorStop(0.55, C.liquid); gr.addColorStop(1, C.liquidLo);
         ctx.fillStyle = gr;
         ctx.fill();
-        // шар колбы — свой круговой градиент, светлее к блику
         const rg = ctx.createRadialGradient(x - 3, R.by - 3, 1, x, R.by, R.br);
         rg.addColorStop(0, C.liquidHi); rg.addColorStop(0.5, C.liquid); rg.addColorStop(1, C.liquidLo);
         ctx.fillStyle = rg;
         ctx.beginPath(); ctx.arc(x, R.by, R.br, 0, Math.PI * 2); ctx.fill();
-        // мениск: светлая кромка по поверхности
         ctx.strokeStyle = C.liquidHi; ctx.lineWidth = 0.6; ctx.globalAlpha = 0.9;
-        ctx.beginPath(); ctx.moveTo(x - ri, top + M.w + 0.4); ctx.quadraticCurveTo(x, top + 2.4, x + ri, top - M.w + 0.4); ctx.stroke();
-        // пузырьки цепочками; пенка — у поверхности, по мениску, тает и лопается
-        M.bubbles.forEach(b => this.bubbleDraw(ctx, b.x, b.y, b.r, 1, C));
-        M.foam.forEach(fo => {
-            const u = (now - fo.at) / fo.life, k = (fo.x - x) / ri;
-            const fy = top + 1.1 + (1 - k * k) * 0.9 - k * M.w;
-            // пена светлее пузырьков в толще: кремовая, почти белая
-            const fa = u > 0.85 ? (1 - u) / 0.15 : 1, fr = fo.r * (1 + u * 0.2);
-            ctx.globalAlpha = 0.6 * fa; ctx.fillStyle = C.glassHi;
-            ctx.beginPath(); ctx.arc(fo.x, fy - fo.r * 0.4, fr, 0, Math.PI * 2); ctx.fill();
-            this.bubbleDraw(ctx, fo.x, fy - fo.r * 0.4, fr, fa, C);
-        });
+        ctx.beginPath(); ctx.moveTo(x - ri, top + w + 0.4); ctx.quadraticCurveTo(x, top + 2.4, x + ri, top - w + 0.4); ctx.stroke();
         ctx.restore();
-        // деления — на стекле, поверх жидкости
+    },
+
+    // стекло поверх жидкости и пузырьков: деления и блики — один раз;
+    // иначе столбик лежал бы на стекле, а не в нём
+    meterGlassTop(ctx) {
+        const G = GreedJunk, R = G.METER, C = PALETTE.greedJunk.reel.meter, x = R.bx;
         ctx.strokeStyle = PALETTE.greedJunk.tin[900]; ctx.lineWidth = 0.7; ctx.lineCap = 'round'; ctx.globalAlpha = 0.8;
         ctx.beginPath();
         for (let i = 1; i < 10; i++) {
@@ -263,12 +285,10 @@ Object.assign(GreedJunkLit, {
             ctx.moveTo(x - R.r + 0.8, y); ctx.lineTo(x - R.r + 0.8 + L, y);
         }
         ctx.stroke();
-        // блики стекла поверх жидкости: яркий справа, слабый слева, окно на
-        // шаре — иначе столбик лежал бы на стекле, а не в нём
         ctx.strokeStyle = C.glassHi;
-        const seg = (xx, w, a) => {
+        const seg = (xx, wd, a) => {
             const ys = [R.y1 + R.r].concat(...R.clamps.map(c => [c - 4.4, c + 4.4]), [R.y0 - 3]);
-            ctx.globalAlpha = a; ctx.lineWidth = w;
+            ctx.globalAlpha = a; ctx.lineWidth = wd;
             ctx.beginPath();
             for (let i = 0; i < ys.length; i += 2) { ctx.moveTo(xx, ys[i]); ctx.lineTo(xx, ys[i + 1]); }
             ctx.stroke();
