@@ -6,6 +6,8 @@
 //
 //   node tools/split-object.js <исходник.js> <Obj> <новый.js> <выбор> [--title "строка"]...
 //
+// Исходник — `const Obj = { ... }` или продолжение `Object.assign(Obj, { ... })`.
+//
 // <выбор> — имена через запятую; «a..b» — все свойства подряд от a до b
 // включительно. «@РАЗДЕЛ» — весь раздел (заголовок «// ---- РАЗДЕЛ ----» над
 // свойством, как их печатает outline.js --sections), «@А..@Б» — разделы от А
@@ -47,6 +49,14 @@ for (const st of TOP ? [] : sf.statements) {
     for (const d of st.declarationList.declarations) {
         if (d.name.getText(sf) === objName && d.initializer && ts.isObjectLiteralExpression(d.initializer)) obj = d.initializer;
     }
+}
+// Продолжение объекта: `Object.assign(Obj, { ... })` — режется так же,
+// новый файл встаёт следующим продолжением того же объекта.
+for (const st of (TOP || obj) ? [] : sf.statements) {
+    if (obj || !ts.isExpressionStatement(st) || !ts.isCallExpression(st.expression)) continue;
+    const c = st.expression;
+    if (c.expression.getText(sf) === 'Object.assign' && c.arguments.length === 2 && c.arguments[0].getText(sf) === objName
+        && ts.isObjectLiteralExpression(c.arguments[1])) obj = c.arguments[1];
 }
 if (!obj) { console.error(`нет объекта ${objName} в ${src}`); process.exit(1); }
 
