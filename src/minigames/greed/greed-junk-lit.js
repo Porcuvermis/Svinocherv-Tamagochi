@@ -499,6 +499,22 @@ const GreedJunkLit = {
             place(a[0], a[1], a[2], a[3], a[4], a[5]);
             ctx.drawImage(L.sprites[k], 0, 0);
         });
+        // Схема передач — поверх шара, по углу его поворота: картинка шара
+        // для рывка снята без неё (схема крутится, блик света — нет).
+        {
+            const J = PALETTE.greedJunk, cy = G.K.y;
+            const KP = GreedJunk.knobPattern(kx, cy, G.K.r, GreedJunk.KNOB_PHI + p * GreedJunk.LEVER_TILT);
+            const X = (q) => kx + (q[0] - kx) * fx.sx, Y = (q) => cy + (q[1] - cy) * fx.sy;
+            ctx.setTransform(S, 0, 0, S, -C.x * S, -C.y * S);
+            ctx.strokeStyle = J.paint.cream; ctx.fillStyle = J.paint.cream;
+            ctx.lineWidth = STROKE.structure; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            KP.lines.forEach(l => {
+                ctx.beginPath();
+                l.forEach((q, i) => i ? ctx.lineTo(X(q), Y(q)) : ctx.moveTo(X(q), Y(q)));
+                ctx.stroke();
+            });
+            KP.dots.forEach(d => { ctx.beginPath(); ctx.arc(X(d), Y(d), d[2], 0, Math.PI * 2); ctx.fill(); });
+        }
         // облачко пыли из-под юбки: разлетается в стороны, тает
         const D = fx.dust;
         if (D) {

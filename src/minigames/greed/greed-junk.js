@@ -612,7 +612,7 @@ const GreedJunk = {
         return { base, h0, top, K, s0: K.y + K.r - 2, cs, sn, bootW: 1 + 0.12 * squash };
     },
     // Части рычага отдельно — для рывка. Вместе — leverSvg.
-    leverParts() {
+    leverParts(noPattern) {
         const J = PALETTE.greedJunk, P = this.SLOTS.pivot, V = this.VP || { y: 388 }, f = this.f;
         const G = this.leverGeom(0);
         const base = G.base, rings = 6, h0 = G.h0, top = G.top;
@@ -657,18 +657,16 @@ const GreedJunk = {
             this.rodH(`M${P.x} ${f(s0)} L${P.x} ${f(s0 + 4)}`, 9, 3.4);
         // схема передач гравировкой: три вертикали через поперечину,
         // точки на концах; лежит на шаре чуть ниже его поверхности
-        const g = 7;
-        let pattern = `<line x1="${K.x - g}" y1="${K.y}" x2="${K.x + g}" y2="${K.y}"/>`;
-        [-g, 0, g].forEach(dx => { pattern += `<line x1="${K.x + dx}" y1="${K.y - g}" x2="${K.x + dx}" y2="${K.y + g}"/>`; });
-        let dots = '';
-        [-g, 0, g].forEach(dx => [-g, g].forEach(dy => { dots += `<circle cx="${K.x + dx}" cy="${K.y + dy}" r="1.2"/>`; }));
+        const KP = this.knobPattern(K.x, K.y, K.r, this.KNOB_PHI);
+        let pattern = KP.lines.map(l => `<polyline points="${l.map(q => `${f(q[0])},${f(q[1])}`).join(' ')}" fill="none"/>`).join('');
+        let dots = KP.dots.map(d => `<circle cx="${f(d[0])}" cy="${f(d[1])}" r="${f(d[2])}"/>`).join('');
         const rise = 12;
         const knob = `<circle cx="${K.x + 1.5}" cy="${K.y + 2.5}" r="${K.r}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
             `<circle cx="${K.x}" cy="${K.y}" r="${K.r}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}"/>` +
             this.domeH(K.x, K.y, K.r, rise) +
-            `<g style="--dh:${this.dh(rise * 0.9)}">` +
-            `<g stroke="${J.paint.cream}" stroke-width="${STROKE.structure}" stroke-linecap="round">${pattern}</g>` +
-            `<g fill="${J.paint.cream}">${dots}</g></g>` +
+            (noPattern ? '' : `<g style="--dh:${this.dh(rise * 0.9)}">` +
+            `<g stroke="${J.paint.cream}" stroke-width="${STROKE.structure}" stroke-linecap="round" stroke-linejoin="round">${pattern}</g>` +
+            `<g fill="${J.paint.cream}">${dots}</g></g>`) +
             `<ellipse cx="${K.x - 6}" cy="${K.y - 7.5}" rx="4.6" ry="2.6" class="hl" fill="${J.tin[300]}" opacity="0.55" transform="rotate(-35 ${K.x - 6} ${K.y - 7.5})"/>`;
         return {
             boot: this.T(10, 'rubber', boot + bootH),
@@ -683,11 +681,45 @@ const GreedJunk = {
         const L = this.leverParts();
         return '<g class="gj-lever">' + this.LEVER_ORDER.map(k => L[k]).join('') + '</g>';
     },
+    // Схема передач на рукояти — на её «макушке», полюсе шара, который
+    // смотрит туда же, куда шток. В покое полюс отклонён к игроку на
+    // KNOB_PHI: схема на верхней части шара, сжата по высоте. На рывке
+    // шар поворачивается вместе со штоком, и схема сползает через центр
+    // вниз — по ней и видно, что рукоять наклоняется, а не раздувается.
+    // Было: схема всегда смотрела прямо на нас, и при рывке казалось,
+    // что шар просто растёт.
+    // Точка схемы (u, v) лежит на сфере: от полюса p вдоль осей x и t
+    // (t — вниз и к нам); на экран — проекция, обратная сторона скрыта.
+    KNOB_PHI: 50,
+    knobPattern(cx, cy, r, phiDeg) {
+        const ph = phiDeg * Math.PI / 180, g = 7 * r / 15, R = r;
+        const p = [0, -Math.cos(ph), Math.sin(ph)], t = [0, Math.sin(ph), Math.cos(ph)];
+        const at = (u, v) => {
+            const d = [u / R, p[1] + (v / R) * t[1], p[2] + (v / R) * t[2]];
+            const n = Math.hypot(d[0], d[1], d[2]);
+            return [cx + R * d[0] / n, cy + R * d[1] / n, d[2] / n];
+        };
+        const seg = (u0, v0, u1, v1) => {
+            const pts = [];
+            for (let i = 0; i <= 8; i++) {
+                const q = at(u0 + (u1 - u0) * i / 8, v0 + (v1 - v0) * i / 8);
+                if (q[2] > 0.08) pts.push(q);
+            }
+            return pts;
+        };
+        const lines = [seg(-g, 0, g, 0)].concat([-g, 0, g].map(u => seg(u, -g, u, g))).filter(l => l.length > 1);
+        const dots = [];
+        [-g, 0, g].forEach(u => [-g, g].forEach(v => {
+            const q = at(u, v);
+            if (q[2] > 0.08) dots.push([q[0], q[1], 1.2 * r / 15 * (0.55 + 0.45 * q[2])]);
+        }));
+        return { lines, dots };
+    },
     // Одна часть рычага на прозрачном фоне, участком crop — для рывка.
     leverPartSvg(pass, crop, part) {
         this.pass = pass;
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${crop.x} ${crop.y} ${crop.w} ${crop.h}">` +
-            this.passStyle(pass) + this.defs() + this.leverParts()[part] + '</svg>';
+            this.passStyle(pass) + this.defs() + this.leverParts(true)[part] + '</svg>';
     },
 
     // Рамка юбки из салона: чёрное пластиковое кольцо на двух саморезах
