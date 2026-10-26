@@ -95,9 +95,12 @@ Object.assign(GreedJunkLit, {
         }
         const moving = T.falling.length > 0 || T.queue > 0;
         const tilt = this._tilt || { x: 0, y: 0 };
-        const tiltMoved = !T.lt || Math.abs(T.lt.x - tilt.x) > 0.003 || Math.abs(T.lt.y - tilt.y) > 0.003;
+        // блеск куч от наклона — не чаще, чем свет корпуса (LIGHT_MS):
+        // каждый раз это все монеты лотка видеокартой
+        const tiltMoved = (!T.lt || Math.abs(T.lt.x - tilt.x) > 0.003 || Math.abs(T.lt.y - tilt.y) > 0.003) &&
+            now - (T.paintAt || 0) >= this.LIGHT_MS;
         if (!moving && !landed.length && !tiltMoved && !T.dirty) return false;
-        T.lt = { x: tilt.x, y: tilt.y }; T.dirty = false;
+        T.lt = { x: tilt.x, y: tilt.y }; T.dirty = false; T.paintAt = now;
         this.trayPaint(tilt);
         return true;
     },

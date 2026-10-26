@@ -156,6 +156,7 @@ Object.assign(GreedCoins, {
     SETTLED(c) { return { n: c.pose, m: 1, flash: 0, settled: true }; },
 
     // ---------- ЖИВОЙ БЛЕСК В ПОЛОСАХ ----------
+    LIVE_MS: 60,
     mountLive(rimEl) {
         const A = this.loadAtlas();
         if (!A.ready || !this._rimDraw) {
@@ -187,13 +188,18 @@ Object.assign(GreedCoins, {
         paint();
         const run = ++this._liveRun || (this._liveRun = 1);
         const tilt = this._tilt;
-        let last = { x: tilt.x, y: tilt.y };
-        const loop = () => {
+        let last = { x: tilt.x, y: tilt.y }, at = 0;
+        const loop = (now) => {
             if (this._liveRun !== run || !rimEl.isConnected) return;
             // Окно скрыто — не крутимся каждый кадр, заглядываем изредка.
             if (rimEl.offsetParent === null) { setTimeout(loop, 400); return; }
             this.followTilt();
-            if (Math.abs(last.x - tilt.x) > 0.002 || Math.abs(last.y - tilt.y) > 0.002) { last = { x: tilt.x, y: tilt.y }; paint(); }
+            // Блеск от наклона — не чаще LIVE_MS: каждый раз это вся рамка
+            // монет видеокартой и перенос в четыре полосы, а датчик в руке
+            // дрожит всегда. Сдвиг блеска за 1/16 с глазу не виден.
+            if ((Math.abs(last.x - tilt.x) > 0.002 || Math.abs(last.y - tilt.y) > 0.002) && now - at >= this.LIVE_MS) {
+                last = { x: tilt.x, y: tilt.y }; at = now; paint();
+            }
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
