@@ -78,8 +78,8 @@ Object.assign(GreedJunkLit, {
         set.forEach((t, u) => { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, t); });
     },
     // участок рычага в трёх текстурах
-    upload(imgs) {
-        const gl = this.gl, C = this.LEVER_CROP, S = this.SCALE;
+    upload(imgs, crop) {
+        const gl = this.gl, C = crop || this.LEVER_CROP, S = this.SCALE;
         imgs.forEach((img, u) => {
             gl.activeTexture(gl.TEXTURE0 + u);
             gl.bindTexture(gl.TEXTURE_2D, this.tex[u]);

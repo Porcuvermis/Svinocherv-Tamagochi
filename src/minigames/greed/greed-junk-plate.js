@@ -207,6 +207,13 @@ Object.assign(GreedJunk, {
         return `<g class="nh"><g filter="url(#gj-rag-s)" opacity="0.3">${out}</g>${out}</g>`;
     },
 
+    // Тряпка одна, на своём участке — для отдельной картинки на свету.
+    ragSvg(pass, crop) {
+        this.pass = pass;
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${crop.x} ${crop.y} ${crop.w} ${crop.h}">` +
+            this.passStyle(pass) + this.defs() + this.payPlate(this.SLOTS.plate) + '</svg>';
+    },
+
     payPlate(p) {
         const f = this.f, R = PALETTE.greedJunk.reel.rag, J = PALETTE.greedJunk;
         const S = this.ragShape(p), rnd = S.rnd, id = 'gj-rag';

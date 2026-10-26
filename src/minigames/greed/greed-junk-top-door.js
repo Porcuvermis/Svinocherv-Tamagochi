@@ -259,7 +259,8 @@ Object.assign(GreedJunk, {
         [[p.x + 6, p.y + 6], [p.x + p.w - 6, p.y + 6], [p.x + 6, p.y + p.h - 6], [p.x + p.w - 6, p.y + p.h - 6]]
             .forEach(([x, y]) => { plate += this.nail(x, y); });
         // таблица выплат краской по доске (greed-junk-plate.js)
-        if (this.payPlate) plate += this.payPlate(p);
+        // на свету тряпка отдельной картинкой качается поверх (ragApart)
+        if (this.payPlate && !this.ragApart) plate += this.payPlate(p);
         out += this.T(6, 'pine', plate);
         out += this.coinTray();
         out += this.tapedCrack();

@@ -235,7 +235,8 @@ const GreedJunkLit = {
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
     run(canvas) {
         const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
-        this.prepareLever();
+        // тряпка — первой: пока её нет, доска под табло пустая
+        (this.prepareRag ? this.prepareRag() : Promise.resolve()).then(() => this.prepareLever());
         // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
         // а не весь хвостик целиком; тяжесть — по наклону телефона
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
@@ -274,6 +275,7 @@ const GreedJunkLit = {
             } else if (reels) {
                 this.draw(this.lightFor(t), this.REEL_BOX);   // только окна
             }
+            if (this.ragStep) this.ragStep(now);
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -465,6 +467,7 @@ const GreedJunkLit = {
         // упор без своей отдачи: в это время ещё идёт очередь срыва, и
         // лишний удар смазывал бы её
         (this._hangs || []).forEach((h, j) => h.v.forEach((_, i) => { h.v[i] += (j ? -0.05 : 0.09) * (i + 1) / h.n; }));
+        if (this.ragKick) this.ragKick(1);
         this.GLOW_ORDER.forEach(k => { this.glow[k] = Math.max(this.glow[k], 0.9); });
         const rnd = GreedJunk.rng(Math.floor(now));
         this._dust = { at: now, parts: Array.from({ length: 10 }, (_, i) => {
@@ -626,6 +629,7 @@ const GreedJunkLit = {
         this.leverCanvas = lv;
         this.autoReady = true;        // в превью исход крутки — свой, случайный
         if (this.trayMount) this.trayMount(wrap);
+        if (this.ragMount) this.ragMount(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();
@@ -665,8 +669,11 @@ const GreedJunkLit = {
         wrap.appendChild(live);
         this.live = live;
         let ok = false;
+        // тряпка на свету — своя картинка поверх корпуса (greed-junk-lit-rag.js)
+        GreedJunk.ragApart = !!this.ragMount;
         try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
         if (!ok) {
+            GreedJunk.ragApart = false;
             wrap.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="position:absolute;inset:0;width:100%;height:100%" ');
             return;
         }
