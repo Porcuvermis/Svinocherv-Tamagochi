@@ -981,7 +981,7 @@ const PALETTE = {
             paper: '#eadcb8', paperLo: '#d2bf93', speck: '#b9a477',
             // тряпка с таблицей выплат: светлый лён, грязь, маркер
             // градусник насыщения греха: янтарная жидкость, «жидкое золото»
-            meter: { liquid: '#e2a12b', liquidLo: '#9c5a10', liquidHi: '#ffdc84', glass: '#e8eee9', glassHi: '#ffffff' },
+            meter: { liquid: '#e2a12b', liquidLo: '#9c5a10', liquidHi: '#ffdc84', glass: '#e8eee9', glassIn: '#c9d4d2', glassHi: '#ffffff' },
             // монетоприёмник из двери туалета: обломки двери, жёлтый стикер
             wc: { door: '#5f8f99', doorLo: '#45707a', doorEdge: '#c9b48c', sticker: '#f4dc4c', stickerLo: '#d6b92a', stickerHi: '#fbec8c',
                   label: '#2f78c0', labelHi: '#5b9fdc', labelInk: '#f2f6fa', bezel: '#26242a' },

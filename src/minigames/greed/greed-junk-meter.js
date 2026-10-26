@@ -12,30 +12,52 @@
 Object.assign(GreedJunk, {
     // bx, by — центр колбы, br — её радиус; трубка по x = bx от y0 (низ, у
     // колбы) до y1 (верх), радиус r; clamps — y хомутов
-    METER: { bx: 70, by: 446, br: 10, y0: 437, y1: 316, r: 6.4, clamps: [352, 410] },
+    METER: { bx: 70, by: 446, br: 10, y0: 437, y1: 318, r: 6.4, wall: 1.8, clamps: [352, 410] },
+
+    // Контур стекла одной линией: трубка плечами переходит в шар колбы
+    // (было: шар просто приставлен к трубке). inset — внутрь на толщину
+    // стенки: по нему налита жидкость.
+    meterPath(inset) {
+        const M = this.METER, f = this.f, x = M.bx, r = M.r - inset, br = M.br - inset;
+        const a = 50 * Math.PI / 180, sx = br * Math.sin(a), sy = M.by - br * Math.cos(a);
+        const sh = M.y0 - 3;   // где трубка начинает раздаваться в плечи
+        return `M${f(x - r)} ${f(M.y1 + M.r)} A${f(r)} ${f(r)} 0 0 1 ${f(x + r)} ${f(M.y1 + M.r)} V${f(sh)} ` +
+            `Q${f(x + r)} ${f(sy - 1)} ${f(x + sx)} ${f(sy)} A${f(br)} ${f(br)} 0 1 1 ${f(x - sx)} ${f(sy)} Q${f(x - r)} ${f(sy - 1)} ${f(x - r)} ${f(sh)} Z`;
+    },
 
     meterGlass() {
         const J = PALETTE.greedJunk, M = this.METER, Mc = J.reel.meter, f = this.f, ink = PALETTE.ink;
-        const x = M.bx, r = M.r;
-        const tube = `M${f(x - r)} ${M.y0 + 2} V${M.y1 + r} A${r} ${r} 0 0 1 ${f(x + r)} ${M.y1 + r} V${M.y0 + 2} Z`;
-        let g = `<path d="${tube}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.4 1.8)"/>` +
-            `<circle cx="${x + 1.4}" cy="${M.by + 1.8}" r="${M.br}" class="fx" fill="${J.hole}" opacity="0.35"/>`;
-        // стекло: чуть тонированное, сквозь него видна рамка
-        g += `<path d="${tube}" fill="${Mc.glass}" fill-opacity="0.35" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="${x}" cy="${M.by}" r="${M.br}" fill="${Mc.glass}" fill-opacity="0.35" stroke="${ink}" stroke-width="${STROKE.structure}"/>`;
-        // деления: каждые 10% — короткое, на половине — длинное (цифр нет)
+        const x = M.bx, r = M.r, P = this.meterPath(0), Pin = this.meterPath(M.wall);
+        let g = `<path d="${P}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(1.6 2)"/>`;
+        // Стекло — молочно-светлое и плотнее: сквозь прозрачное просвечивали
+        // полосы скоса, и пустая трубка читалась покраской, а не стеклом.
+        g += `<path d="${P}" fill="${Mc.glass}" fill-opacity="0.72" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
+            // толщина стенки: внутренний контур — тёмная тонкая линия
+            `<path d="${Pin}" fill="${Mc.glassIn}" fill-opacity="0.5" stroke="${J.tin[500]}" stroke-width="0.5"/>`;
+        // деления: каждые 10% — короткое, на половине — длинное (цифр нет);
+        // вытравлены на стекле слева
         let ticks = '';
         for (let i = 1; i < 10; i++) {
-            const y = this.meterY(i / 10), L = i === 5 ? r * 1.4 : r * 0.8;
+            const y = this.meterY(i / 10), L = i === 5 ? r * 1.2 : r * 0.7;
             if (M.clamps.some(c => Math.abs(c - y) < 4)) continue;
-            ticks += `M${f(x - r + 0.3)} ${f(y)} H${f(x - r + 0.3 + L)} `;
+            ticks += `M${f(x - r + 0.8)} ${f(y)} H${f(x - r + 0.8 + L)} `;
         }
-        g += `<path d="${ticks}" stroke="${J.tin[900]}" stroke-width="0.9" stroke-linecap="round" opacity="0.85"/>`;
-        // скол на стекле у колбы
-        g += `<path d="M${f(x + r)} ${M.y0 - 6} l-1.8 2.4 l1.8 2" fill="none" stroke="${J.tin[900]}" stroke-width="0.45"/>`;
+        g += `<path d="${ticks}" stroke="${J.tin[900]}" stroke-width="0.7" stroke-linecap="round" opacity="0.8"/>`;
         // рельеф цилиндра трубки и шара колбы
-        g += this.rodH(`M${x} ${M.y0 + 2} V${M.y1 + r}`, r * 2, r * 0.9) + this.domeH(x, M.by, M.br, M.br * 0.8);
+        g += this.rodH(`M${x} ${M.y0} V${M.y1 + r}`, r * 2, r * 0.9) + this.domeH(x, M.by, M.br, M.br * 0.8);
         let out = this.T(13, 'glass', g);
+        // колпачок сверху: латунная гильза с рубчиками и ушком
+        const cy = M.y1 + 1.5, cw = r * 2 + 1.6;
+        const Br = { 300: J.brass.hi, 500: J.brass.base, 700: J.brass.lo };
+        let cap = `<circle cx="${x}" cy="${M.y1 - 3.4}" r="2.4" fill="none" stroke="${ink}" stroke-width="1.6"/>` +
+            `<circle cx="${x}" cy="${M.y1 - 3.4}" r="2.4" fill="none" stroke="${Br[500]}" stroke-width="0.9"/>` +
+            `<rect x="${f(x - cw / 2)}" y="${f(cy - 3)}" width="${f(cw)}" height="7" rx="1.4" fill="${Br[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            `<path d="M${f(x - cw / 2 + 0.6)} ${f(cy - 0.6)} H${f(x + cw / 2 - 0.6)} M${f(x - cw / 2 + 0.6)} ${f(cy + 1.6)} H${f(x + cw / 2 - 0.6)}" stroke="${Br[700]}" stroke-width="0.5"/>` +
+            `<path d="M${f(x - cw / 2 + 1.2)} ${f(cy - 2.3)} V${f(cy + 3.2)}" class="hl" stroke="${Br[300]}" stroke-width="0.8"/>` +
+            `<path d="M${f(x + cw / 2 - 1.2)} ${f(cy - 2.3)} V${f(cy + 3.2)}" stroke="${Br[700]}" stroke-width="0.8"/>`;
+        // рельефа валиком (rodH) у гильзы нет: круглые концы валика шире её
+        // высоты и вылезали светлым кругом над колпачком
+        out += this.T(14, 'brass', cap);
         // хомуты: жестяная лента вокруг трубки и ушко с саморезом влево,
         // в лист дверцы (между петлями)
         M.clamps.forEach(y => {
@@ -116,7 +138,8 @@ Object.assign(GreedJunkLit, {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, this.meterCv.width, this.meterCv.height);
         ctx.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
-        const x = R.bx, ri = R.r - 0.9;
+        if (!this._meterIn) this._meterIn = new Path2D(G.meterPath(R.wall));
+        const x = R.bx, ri = R.r - R.wall;
         const top = G.meterY(Math.max(0, Math.min(1, M.L)));
         ctx.save();
         // хомуты в корпусе — поверх стекла; жидкость под ними не рисуется,
@@ -125,47 +148,64 @@ Object.assign(GreedJunkLit, {
         ctx.rect(B.x, B.y, B.w, B.h);
         R.clamps.forEach(y => ctx.rect(B.x, y + 3.5, B.w, -7));
         ctx.clip('evenodd');
-        // жидкость: колба полная, столбик до уровня; поверхность — мениск,
-        // перекошенный наклоном и колыханием
+        // жидкость налита внутри стенок (inset — толщина стекла); поверхность —
+        // мениск, перекошенный наклоном и колыханием
+        ctx.clip(this._meterIn);
         ctx.beginPath();
-        ctx.arc(x, R.by, R.br - 1, 0, Math.PI * 2);
-        ctx.moveTo(x - ri, R.y0 + 3);
-        ctx.lineTo(x - ri, top + M.w);
-        ctx.quadraticCurveTo(x, top + 2.2, x + ri, top - M.w);
-        ctx.lineTo(x + ri, R.y0 + 3);
+        ctx.moveTo(x - ri - 1, top + M.w);
+        ctx.quadraticCurveTo(x, top + 2, x + ri + 1, top - M.w);
+        ctx.lineTo(x + R.br + 1, R.by + R.br + 1);
+        ctx.lineTo(x - R.br - 1, R.by + R.br + 1);
         ctx.closePath();
-        const gr = ctx.createLinearGradient(x - R.br, 0, x + R.br, 0);
-        gr.addColorStop(0, C.liquidLo); gr.addColorStop(0.32, C.liquidHi); gr.addColorStop(0.55, C.liquid); gr.addColorStop(1, C.liquidLo);
+        // в трубке поперечный градиент цилиндра; у краёв темнее — стекло
+        // преломляет, середина светлее
+        const gr = ctx.createLinearGradient(x - ri, 0, x + ri, 0);
+        gr.addColorStop(0, C.liquidLo); gr.addColorStop(0.3, C.liquidHi); gr.addColorStop(0.55, C.liquid); gr.addColorStop(1, C.liquidLo);
         ctx.fillStyle = gr;
         ctx.fill();
-        ctx.clip();
+        // шар колбы — свой круговой градиент, светлее к блику
+        const rg = ctx.createRadialGradient(x - 3, R.by - 3, 1, x, R.by, R.br);
+        rg.addColorStop(0, C.liquidHi); rg.addColorStop(0.5, C.liquid); rg.addColorStop(1, C.liquidLo);
+        ctx.fillStyle = rg;
+        ctx.beginPath(); ctx.arc(x, R.by, R.br, 0, Math.PI * 2); ctx.fill();
+        // мениск: светлая кромка по поверхности
+        ctx.strokeStyle = C.liquidHi; ctx.lineWidth = 0.6; ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.moveTo(x - ri, top + M.w + 0.4); ctx.quadraticCurveTo(x, top + 2.4, x + ri, top - M.w + 0.4); ctx.stroke();
         // пузырьки: всплывают из колбы вверх и тают
-        ctx.strokeStyle = C.liquidHi; ctx.lineWidth = 0.45;
+        ctx.lineWidth = 0.45;
         M.bubbles.forEach(b => {
             const u = (now - b.at) / 1100;
             ctx.globalAlpha = 0.9 * (1 - u * 0.7);
             ctx.beginPath();
-            ctx.arc(x + b.x * (1 - u * 0.6), R.by + R.br * 0.7 - u * (R.br * 1.7 + 10), b.r, 0, Math.PI * 2);
+            ctx.arc(x + b.x * 0.6 * (1 - u * 0.6), R.by + R.br * 0.6 - u * (R.br * 1.6 + 10), b.r, 0, Math.PI * 2);
             ctx.stroke();
         });
         ctx.restore();
         // деления — на стекле, поверх жидкости
-        ctx.strokeStyle = PALETTE.greedJunk.tin[900]; ctx.lineWidth = 0.9; ctx.lineCap = 'round'; ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = PALETTE.greedJunk.tin[900]; ctx.lineWidth = 0.7; ctx.lineCap = 'round'; ctx.globalAlpha = 0.8;
         ctx.beginPath();
         for (let i = 1; i < 10; i++) {
-            const y = G.meterY(i / 10), L = i === 5 ? R.r * 1.4 : R.r * 0.8;
+            const y = G.meterY(i / 10), L = i === 5 ? R.r * 1.2 : R.r * 0.7;
             if (R.clamps.some(c => Math.abs(c - y) < 4)) continue;
-            ctx.moveTo(x - R.r + 0.3, y); ctx.lineTo(x - R.r + 0.3 + L, y);
+            ctx.moveTo(x - R.r + 0.8, y); ctx.lineTo(x - R.r + 0.8 + L, y);
         }
         ctx.stroke();
-        // блик стекла поверх жидкости — иначе столбик лежал бы на стекле, а не в нём
-        ctx.globalAlpha = 0.8;
-        ctx.strokeStyle = C.glassHi; ctx.lineWidth = 1.1;
-        const ys = [R.y1 + R.r].concat(...R.clamps.map(c => [c - 4.4, c + 4.4]), [R.y0]);
-        ctx.beginPath();
-        for (let i = 0; i < ys.length; i += 2) { ctx.moveTo(x + R.r - 1.8, ys[i]); ctx.lineTo(x + R.r - 1.8, ys[i + 1]); }
-        ctx.stroke();
-        ctx.beginPath(); ctx.arc(x, R.by, R.br - 2.6, Math.PI * 1.55, Math.PI * 1.9); ctx.stroke();
+        // блики стекла поверх жидкости: яркий справа, слабый слева, окно на
+        // шаре — иначе столбик лежал бы на стекле, а не в нём
+        ctx.strokeStyle = C.glassHi;
+        const seg = (xx, w, a) => {
+            const ys = [R.y1 + R.r].concat(...R.clamps.map(c => [c - 4.4, c + 4.4]), [R.y0 - 3]);
+            ctx.globalAlpha = a; ctx.lineWidth = w;
+            ctx.beginPath();
+            for (let i = 0; i < ys.length; i += 2) { ctx.moveTo(xx, ys[i]); ctx.lineTo(xx, ys[i + 1]); }
+            ctx.stroke();
+        };
+        seg(x + R.r - 2, 1.3, 0.85);
+        seg(x - R.r + 1.4, 0.5, 0.45);
+        ctx.globalAlpha = 0.85; ctx.fillStyle = C.glassHi;
+        ctx.save(); ctx.translate(x - 3.6, R.by - 3.4); ctx.rotate(-0.7);
+        ctx.beginPath(); ctx.ellipse(0, 0, 2.6, 1.3, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        ctx.beginPath(); ctx.arc(x + 4.2, R.by + 4.6, 0.8, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
     }
 });
