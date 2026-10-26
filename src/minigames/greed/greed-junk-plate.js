@@ -74,7 +74,9 @@ Object.assign(GreedJunk, {
             // короткая строка пары встаёт сверху, до сучка, длинная — в самый низ, под ним.
             const c = i < 3 ? 0 : 1, row = i < 3 ? i : (i === rows.length - 1 ? 0 : 2), x = col[c] + rnd() * 3, cy = top + row * rh + J(1.6);
             for (let k = 0; k < r.n; k++) sym(r.key, x + 9 + k * SW, cy);
-            const ax = x + 9 + 3 * SW - 7;
+            // стрелка — сразу за последним символом строки: у пары она стояла
+            // на месте третьего, и шприцы с числом разъезжались в разные стороны
+            const ax = x + 9 + r.n * SW - 7;
             arrow(ax, cy);
             const nx = ax + 8 + J(1), ny = cy - 3.5 + J(1.4);
             const num = this.stencilNumber(r.pay, nx, ny);
