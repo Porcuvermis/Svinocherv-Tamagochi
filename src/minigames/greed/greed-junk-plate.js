@@ -51,26 +51,35 @@ Object.assign(GreedJunk, {
             `.gj-sil *:not([stroke]){stroke:none!important}.gj-sil .tone,.gj-sil .mono-only{display:none}</style>`;
         let paint = '', cut = '';
         const drips = [];
-        const sym = (key, cx, cy) => {
+        // Каждый трафарет подставлен рукой: свой сдвиг и наклон. Символ, стрелка
+        // и число — разные трафареты, поэтому и сбиты друг от друга отдельно.
+        const J = (v) => (rnd() - 0.5) * 2 * v;
+        const tilt = (a, cx, cy, svg) => `<g transform="rotate(${f(a)} ${f(cx)} ${f(cy)})">${svg}</g>`;
+        const sym = (key, cx0, cy0) => {
+            const cx = cx0 + J(1.2), cy = cy0 + J(1.3), a = J(7);
             const art = this.REEL_ART[key] || key, F = this.REEL_FIT[art] || { rot: 0, k: 1, m: [0, 0] };
             const fn = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard', token: 'reelToken' }[art];
             if (!fn) return;
-            paint += `<g class="gj-sil" transform="translate(${f(cx)} ${f(cy)}) scale(${f(F.k * SC)}) translate(${f(-F.m[0])} ${f(-F.m[1])}) rotate(${F.rot})">${this[fn](0, 0)}</g>`;
-            // перемычки: две тонкие косые через символ
-            [-3, 3].forEach(dx => { cut += `<path d="M${f(cx + dx - 1.2)} ${f(cy - 5)} L${f(cx + dx + 1.2)} ${f(cy + 5)}" stroke="#000" stroke-width="0.55"/>`; });
+            paint += tilt(a, cx, cy, `<g class="gj-sil" transform="translate(${f(cx)} ${f(cy)}) scale(${f(F.k * SC)}) translate(${f(-F.m[0])} ${f(-F.m[1])}) rotate(${F.rot})">${this[fn](0, 0)}</g>`);
+            // перемычки: две тонкие косые через символ, в наклоне его трафарета
+            let c = '';
+            [-3, 3].forEach(dx => { c += `<path d="M${f(cx + dx - 1.2)} ${f(cy - 5)} L${f(cx + dx + 1.2)} ${f(cy + 5)}" stroke="#000" stroke-width="0.55"/>`; });
+            cut += tilt(a, cx, cy, c);
             if (rnd() < 0.3) drips.push([cx - 4 + rnd() * 8, cy + 3.2]);
         };
-        const arrow = (x, y) => { paint += `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`; };
+        const arrow = (x0, y0) => { const x = x0 + J(0.8), y = y0 + J(1.2); paint += tilt(J(9), x + 2.7, y, `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`); };
         const col = [p.x + 6, p.x + p.w / 2 + 4], top = p.y + 9;
         rows.forEach((r, i) => {
-            const c = i < 3 ? 0 : 1, row = i < 3 ? i : i - 3, x = col[c], cy = top + row * rh;
+            // строка сбита целиком: не по сетке
+            const c = i < 3 ? 0 : 1, row = i < 3 ? i : i - 3, x = col[c] + rnd() * 3, cy = top + row * rh + J(1.6);
             for (let k = 0; k < r.n; k++) sym(r.key, x + 9 + k * SW, cy);
             const ax = x + 9 + 3 * SW - 7;
             arrow(ax, cy);
-            const num = this.stencilNumber(r.pay, ax + 8, cy - 3.5);
-            paint += `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>`;
+            const nx = ax + 8 + J(1), ny = cy - 3.5 + J(1.4);
+            const num = this.stencilNumber(r.pay, nx, ny);
+            paint += tilt(J(6), nx + num.w / 2, ny + 3.5, `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>`);
             // под цифрой подтёк короткий: длинный сливался с цифрой ряда ниже
-            if (rnd() < 0.6) drips.push([ax + 8 + rnd() * num.w, cy + 4, 0.4]);
+            if (rnd() < 0.6) drips.push([nx + rnd() * num.w, ny + 7.5, 0.4]);
             // значка монеты нет: число после стрелки и так читается выплатой
             const rx = ax + 8 + num.w - 2;
             if (r.alt) {
