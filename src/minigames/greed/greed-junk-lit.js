@@ -196,6 +196,7 @@ const GreedJunkLit = {
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
         // красная лампа на проводах — тоже подвес, с тяжёлым грузом
         const lamp = GreedJunk.lampHang();
+        this._hangs = [tail.s, lamp];          // удар рычага их раскачивает
         const loop = (now) => {
             if (!canvas.isConnected) return;
             if (this.live) {
@@ -216,6 +217,7 @@ const GreedJunkLit = {
             t.x += (want.x - t.x) * 0.15; t.y += (want.y - t.y) * 0.15;
             this._tilt = t;
             const moved = this.leverStep(now);
+            this.shakeStep(now);
             if (moved || Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
                 last.x = t.x; last.y = t.y;
                 this.draw(this.lightFor(t));
@@ -348,6 +350,7 @@ const GreedJunkLit = {
         if (n > (v.n || 0)) {
             if (typeof Haptics !== 'undefined') Haptics.tick();
             v.kickAt = performance.now();         // проскок зубца — рывок вперёд
+            this.shake(v.kickAt, 1);              // и корпус вздрагивает
         }
         v.n = Math.max(v.n || 0, n);
         v.fr = fr;                                // натяжение внутри зубца
@@ -378,10 +381,10 @@ const GreedJunkLit = {
             // сильнее, чем ближе конец зубца. Проскочив зубец, дёргается
             // вперёд и сразу гасит рывок.
             const fr = v.fr || 0;
-            show += 0.012 * fr * fr * Math.sin(now / 18);
+            show += 0.018 * fr * fr * Math.sin(now / 18);
             if (v.kickAt) {
                 const d = now - v.kickAt;
-                show += 0.035 * Math.exp(-d / 50) * Math.sin(d / 25);
+                show += 0.07 * Math.exp(-d / 50) * Math.sin(d / 25);
             }
         } else if (v.st === 'free') {
             // Падает с разгоном, как под своим весом, проскакивает упор и
@@ -392,6 +395,7 @@ const GreedJunkLit = {
             } else {
                 const b = t - L.fall;
                 v.p = 1 + L.over * Math.exp(-b / 45) * Math.cos(b / 28 * Math.PI);
+                if (!v.hit) { v.hit = now; this.leverImpact(now); }
             }
             show = v.p;
             if (t > L.fall + L.hold) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
@@ -409,11 +413,54 @@ const GreedJunkLit = {
                 return true;
             }
         }
-        this.drawLever(show);
+        // Рукоять живая: на падении вытягивается по ходу и тащит за собой
+        // смазанный след, на ударе сплющивается и качается, в пальцах — чуть
+        // набухает. Скорость — по разнице кадров.
+        const fx = { sx: 1, sy: 1, trail: [], dust: this._dust };
+        const vel = v.prevAt != null && now > v.prevAt ? (show - v.prevShow) / (now - v.prevAt) : 0;
+        v.prevShow = show; v.prevAt = now;
+        if (v.st === 'drag') { fx.sx = fx.sy = 1.05; }
+        if (v.st === 'free' && !v.hit && vel > 0) {
+            const st = Math.min(0.22, vel * 50);
+            fx.sy = 1 + st; fx.sx = 1 - st * 0.45;
+            v.hist = (v.hist || []).concat([show]).slice(-4);
+            fx.trail = v.hist.slice(0, -1);
+        }
+        if (v.hit) {
+            const b = now - v.hit, q = 0.24 * Math.exp(-b / 70) * Math.cos(b / 45 * Math.PI);
+            fx.sx = 1 + q; fx.sy = 1 - q;
+        }
+        this.drawLever(show, fx);
         return swap;
     },
+    // Удар о нижний упор. Отдаётся всему аппарату: корпус трясёт, висящая
+    // лампа и кончик нитки получают толчок и раскачиваются по своей
+    // физике, лампы на полке разом вспыхивают — скачок тока от рычага, —
+    // из-под юбки выдыхает облачко пыли.
+    leverImpact(now) {
+        this.shake(now, 4.5);
+        (this._hangs || []).forEach((h, j) => h.v.forEach((_, i) => { h.v[i] += (j ? -0.05 : 0.09) * (i + 1) / h.n; }));
+        this.GLOW_ORDER.forEach(k => { this.glow[k] = Math.max(this.glow[k], 0.9); });
+        const rnd = GreedJunk.rng(Math.floor(now));
+        this._dust = { at: now, parts: Array.from({ length: 10 }, (_, i) => {
+            const side = i % 2 ? 1 : -1;
+            return { vx: side * (0.015 + rnd() * 0.02), vy: -(0.005 + rnd() * 0.02), r: 1.2 + rnd() * 1.8, x: side * (8 + rnd() * 6) };
+        }) };
+    },
+    // тряска корпуса: amp — в пикселях экрана, затухает за треть секунды
+    shake(now, amp) { this._shake = { at: now, amp }; },
+    shakeStep(now) {
+        const S = this._shake;
+        if (!S || !this.wrapEl) return;
+        const d = now - S.at;
+        if (d > 360) { this._shake = null; this.wrapEl.style.transform = ''; return; }
+        const a = S.amp * Math.exp(-d / 80);
+        this.wrapEl.style.transform = `translate(${(a * Math.sin(d / 14)).toFixed(2)}px, ${(a * 0.7 * Math.cos(d / 11)).toFixed(2)}px)`;
+    },
+
     // части по геометрии рывка: каждая — масштаб вокруг своей точки
-    drawLever(p) {
+    drawLever(p, fx) {
+        fx = fx || { sx: 1, sy: 1, trail: [] };
         const L = this.lever, C = this.LEVER_CROP, S = this.SCALE;
         const G0 = GreedJunk.leverGeom(0), G = GreedJunk.leverGeom(p), kx = G0.K.x;
         const ctx = this.leverCanvas.getContext('2d');
@@ -428,8 +475,16 @@ const GreedJunkLit = {
             frame: [kx, 0, kx, 0, 1, 1],
             shaft: [kx, G0.top, kx, G.top, 1, ks],
             clamp: [kx, G0.top, kx, G.top, 1, 1],
-            knob: [kx, G0.K.y, kx, G.K.y, kk, kk]
+            knob: [kx, G0.K.y, kx, G.K.y, kk * fx.sx, kk * fx.sy]
         };
+        // смазанный след рукояти — её прошлые положения, бледнее и бледнее
+        fx.trail.forEach((tp, i) => {
+            const T = GreedJunk.leverGeom(tp), k = T.K.r / G0.K.r;
+            ctx.globalAlpha = 0.12 + 0.1 * i;
+            place(kx, G0.K.y, kx, T.K.y, k, k);
+            ctx.drawImage(L.sprites.knob, 0, 0);
+        });
+        ctx.globalAlpha = 1;
         // тени: от света вправо-вниз, дальше у того, что ближе к игроку
         const lift = { boot: 1, frame: 0.6, shaft: 2 + 3 * G.sn, clamp: 1.5 + 2 * G.sn, knob: 3 + 5 * G.sn };
         ctx.globalAlpha = 0.3;
@@ -444,6 +499,22 @@ const GreedJunkLit = {
             place(a[0], a[1], a[2], a[3], a[4], a[5]);
             ctx.drawImage(L.sprites[k], 0, 0);
         });
+        // облачко пыли из-под юбки: разлетается в стороны, тает
+        const D = fx.dust;
+        if (D) {
+            const d = performance.now() - D.at;
+            if (d < 520) {
+                ctx.setTransform(S, 0, 0, S, -C.x * S, -C.y * S);
+                ctx.fillStyle = PALETTE.greedJunk.chip.hi;
+                D.parts.forEach(q => {
+                    ctx.globalAlpha = 0.55 * (1 - d / 520);
+                    ctx.beginPath();
+                    ctx.arc(kx + q.x + q.vx * d, G.base - 1 + q.vy * d, q.r * (1 + d / 260), 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.globalAlpha = 1;
+            } else this._dust = null;
+        }
     },
 
     // ---------- МИГАНИЕ ПРИ ВЫИГРЫШЕ ----------
@@ -495,6 +566,7 @@ const GreedJunkLit = {
         host.appendChild(box);
         // корпус и живой слой поверх — в одной обёртке с пропорцией корпуса
         const wrap = document.createElement('div');
+        this.wrapEl = wrap;
         wrap.style.cssText = `position:relative;width:min(100%, calc(100vh * ${GreedJunk.W} / ${GreedJunk.H}));` +
             `aspect-ratio:${GreedJunk.W}/${GreedJunk.H}`;
         box.appendChild(wrap);
