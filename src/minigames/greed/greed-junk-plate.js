@@ -14,7 +14,7 @@ Object.assign(GreedJunk, {
         const worth = s => s.give ? Object.keys(s.give).reduce((v, k) => v + (V[k] || 0) * s.give[k], 0) : (s.pay || 0);
         const rows = G.reel.filter(s => s.pay > 0 || s.give).sort((a, b) => worth(b) - worth(a))
             .map(s => ({ key: s.key, n: 3, pay: s.pay || 0, give: !!s.give }));
-        if (G.pair) rows.push({ key: G.pair.key, n: 2, pay: G.pair.pay, alt: null });
+        if (G.pair) rows.push({ key: G.pair.key, n: 2, pay: G.pair.pay });
         return rows;
     },
 
@@ -46,7 +46,9 @@ Object.assign(GreedJunk, {
         const lower = pts.map(([x, y]) => ` L${f(x)} ${f(y)}`).join('') + ` L${f(A[0] - 1)} ${f(bot - 0.5)}`;
         const left = ` Q${f(A[0] - 5)} ${f(p.y + p.h * 0.5)} ${f(A[0] - 4)} ${f(A[1] - 3.5)} Z`;
         // дыры: неровные многоугольники
-        const holes = [[p.x + p.w * 0.36, p.y + p.h * 0.78, 2.2], [p.x + p.w * 0.83, p.y + p.h * 0.42, 1.5]].map(([cx, cy, r]) => {
+        // дыра — в промежутке под лампой, где значков нет
+        const lx = (this.HANG_LAMP && this.HANG_LAMP.x) || p.x + p.w / 2;
+        const holes = [[lx + 1, p.y + p.h * 0.62, 2]].map(([cx, cy, r]) => {
             let d = '';
             for (let k = 0; k < 7; k++) {
                 const a = k / 7 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.7);
@@ -55,6 +57,154 @@ Object.assign(GreedJunk, {
             return d + ' Z';
         });
         return { d: top + right + lower + left + ' ' + holes.join(' '), A, B, bot, pts, holes, rnd };
+    },
+
+    // ---------- МАРКЕР ОТ РУКИ ----------
+    // Каждый значок рисуется заново своей «рукой» (своим зерном): точки
+    // штрихов дрожат, концы недотянуты или с перелётом, пропорции и наклон
+    // плавают, у рыбы разное число рёбер, червь изогнут по-своему. Одинаковых
+    // значков на тряпке нет (решение игрока: «прям человеческой рукой»).
+    // Штрих — сглаженная кривая через дрожащие точки (Катмулл-Ром → Безье).
+    handPath(pts, rnd, closed, j = 0.35) {
+        const f = this.f;
+        let P = pts.map(([x, y]) => [x + (rnd() - 0.5) * 2 * j, y + (rnd() - 0.5) * 2 * j]);
+        if (closed) {
+            // замыкание внахлёст: рука проводит чуть дальше начала
+            P = P.concat([[P[0][0] + (rnd() - 0.5) * 0.8, P[0][1] + (rnd() - 0.5) * 0.8]]);
+            const a = P[1], b = P[0];
+            P.push([b[0] + (a[0] - b[0]) * (0.2 + rnd() * 0.25), b[1] + (a[1] - b[1]) * (0.2 + rnd() * 0.25)]);
+        } else if (P.length > 1) {
+            // конец штриха: недотянут или с перелётом
+            const n = P.length, a = P[n - 2], b = P[n - 1], k = (rnd() - 0.35) * 0.3;
+            P[n - 1] = [b[0] + (b[0] - a[0]) * k, b[1] + (b[1] - a[1]) * k];
+        }
+        if (P.length === 2) return `M${f(P[0][0])} ${f(P[0][1])} L${f(P[1][0])} ${f(P[1][1])}`;
+        let d = `M${f(P[0][0])} ${f(P[0][1])}`;
+        for (let i = 0; i < P.length - 1; i++) {
+            const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2;
+            d += ` C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ` +
+                `${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+        }
+        return d;
+    },
+    // Овал от руки: точки по кругу с дрожью радиуса.
+    handOval(cx, cy, rx, ry, rnd, n = 7) {
+        const a0 = rnd() * Math.PI * 2, pts = [];
+        for (let k = 0; k < n; k++) {
+            const a = a0 + k / n * Math.PI * 2, w = 1 + (rnd() - 0.5) * 0.16;
+            pts.push([cx + Math.cos(a) * rx * w, cy + Math.sin(a) * ry * w]);
+        }
+        return this.handPath(pts, rnd, true, 0.15);
+    },
+    // Значок в коробке ~22×8 с центром (0,0): список путей и точек-клякс.
+    markerArt(art, rnd) {
+        const r = (a, b) => a + rnd() * (b - a);
+        const L = [], dots = [];
+        const line = (pts, closed, j) => L.push(this.handPath(pts, rnd, closed, j));
+        switch (art) {
+        case 'worm': {
+            // тело — две волны разной высоты, голова — овал с глазом
+            const a = r(1.6, 2.8), ph = rnd() < 0.5 ? 1 : -1;
+            line([[-10, ph * a * 0.4], [-6.5, -ph * a], [-2.5, ph * a * 0.6], [1.5, -ph * a * 0.8], [5, 0]], false, 0.25);
+            line([[-10, ph * a * 0.4 + 2], [-6.5, -ph * a + 2], [-2.5, ph * a * 0.6 + 2], [1.5, -ph * a * 0.8 + 2], [5, 2.2]], false, 0.25);
+            line([[-10, ph * a * 0.4], [-11.3, ph * a * 0.4 + 1], [-10, ph * a * 0.4 + 2]], false, 0.1);   // хвост
+            L.push(this.handOval(7.6, 0.6, r(2.6, 3.2), r(2.4, 2.9), rnd));
+            dots.push([8.4, -0.3, 0.6]);
+            if (rnd() < 0.6) line([[9.4, 2.2], [8.2, 2.6]], false, 0.1);   // ухмылка
+            break;
+        }
+        case 'syringe': {
+            const h = r(1.9, 2.4), x0 = r(-7, -6), x1 = r(4, 5.2);   // ниже: соседи в столбике слипались
+            line([[x0, -h], [x1, -h], [x1, h], [x0, h]], true, 0.25);
+            line([[x0, 0], [x0 - 4, r(-0.3, 0.3)]], false, 0.15);
+            line([[x0 - 4.2, -2], [x0 - 4, 2]], false, 0.15);
+            line([[x0 + 0.4, -3.2], [x0 + 0.6, 3.2]], false, 0.15);
+            line([[x1, 0], [x1 + r(5, 6.5), r(-0.4, 0.4)]], false, 0.1);
+            const t = 2 + Math.floor(rnd() * 2);
+            for (let k = 0; k < t; k++) { const x = x0 + 2.5 + k * r(2.2, 2.8); line([[x, -h], [x, -h + r(1.2, 1.8)]], false, 0.1); }
+            break;
+        }
+        case 'beer': {
+            // банка стоя: овал крышки, бока, донышко дугой, червячок на этикетке
+            const w = r(3.2, 3.8), h = r(2.6, 3), tl = r(-0.5, 0.5);
+            L.push(this.handOval(tl, -h, w, 0.8, rnd, 6));
+            line([[-w + tl, -h], [-w, h - 0.6]], false, 0.15);
+            line([[w + tl, -h], [w, h - 0.6]], false, 0.15);
+            line([[-w, h - 0.8], [0, h + 0.5], [w, h - 0.8]], false, 0.15);
+            line([[-2, 0.6], [-0.8, -0.6], [0.6, 0.8], [2, -0.4]], false, 0.15);
+            break;
+        }
+        case 'fish': {
+            const n = 3 + Math.floor(rnd() * 3), x0 = r(-6.5, -5.5), x1 = r(3.5, 4.5);
+            line([[x0, 0], [x1, r(-0.4, 0.4)]], false, 0.2);
+            for (let k = 0; k < n; k++) {
+                const x = x0 + 1.6 + k * (x1 - x0 - 2.4) / n, hh = r(2, 2.8);
+                line([[x - 0.6, -hh], [x + 0.8, 0], [x - 0.6, hh]], false, 0.15);
+            }
+            line([[x1, -2.5], [x1 + r(4, 5), -1], [x1 + r(5, 6), 0.4], [x1 + r(3.5, 4.5), 2.2], [x1, 2.5]], false, 0.2);
+            line([[x1, -2.5], [x1 - 0.3, 2.5]], false, 0.1);
+            dots.push([x1 + 2.6, -0.7, 0.55]);
+            line([[x0, 0], [x0 - 3.8, -r(2, 2.7)], [x0 - 2.8, 0], [x0 - 3.8, r(2, 2.7)], [x0, 0]], false, 0.15);
+            break;
+        }
+        case 'token': {
+            const R = r(3.6, 4.2);
+            L.push(this.handOval(0, 0, R, R * r(0.92, 1.02), rnd, 8));
+            L.push(this.handOval(0, 0, R * 0.55, R * 0.55, rnd, 6));
+            dots.push([r(-0.3, 0.3), r(-0.3, 0.3), 0.6]);
+            break;
+        }
+        case 'shard': {
+            const p = [[-5, 3], [r(-2.2, -1.2), -3.2], [r(0.2, 1), -0.8], [r(2.6, 3.4), -3.2], [5.2, 2.8]];
+            line(p, true, 0.2);
+            line([[p[1][0], p[1][1]], [0.2, 0.6], [1.2, 2.9]], false, 0.15);
+            break;
+        }
+        case 'any': {
+            // «что угодно» в паре: жирная загогулина-прочерк
+            line([[-3, 0.5], [-1, -0.8], [1, 0.8], [3, -0.4]], false, 0.2);
+            break;
+        }
+        }
+        return { L, dots };
+    },
+    // Один значок от руки: свой масштаб, наклон и нажим.
+    markerSym(art, cx, cy, k, seed) {
+        const f = this.f, rnd = this.rng(seed), ink = PALETTE.greedJunk.reel.rag.marker;
+        const A = this.markerArt(art, rnd);
+        const s = k * (0.92 + rnd() * 0.16), a = (rnd() - 0.5) * 12, sk = (rnd() - 0.5) * 8;
+        const w = (0.85 + rnd() * 0.3) / s;          // нажим маркера, в единицах значка
+        const tr = `translate(${f(cx + (rnd() - 0.5) * 1.4)} ${f(cy + (rnd() - 0.5) * 1.2)}) rotate(${f(a)}) skewX(${f(sk)}) scale(${f(s)})`;
+        const g = `<path d="${A.L.join(' ')}" fill="none" stroke="${ink}" stroke-width="${f(w * 100) / 100}" stroke-linecap="round" stroke-linejoin="round"/>` +
+            A.dots.map(([x, y, rr]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(rr)}" fill="${ink}"/>`).join('');
+        return `<g transform="${tr}" opacity="${f(0.82 + rnd() * 0.14)}">${g}</g>`;
+    },
+    // Комбинации столбиками: три значка сверху вниз = тройка (как на
+    // барабанах, только стопкой — места по высоте у тряпки мало, а по
+    // ширине — на все семь). Порядок слева направо — от дорогой к дешёвой.
+    // Под висячей лампой (HANG_LAMP.x) — промежуток между столбиками.
+    payMarks(p, S) {
+        const rows = this.payRows();
+        if (!rows.length) return '';
+        const lampX = (this.HANG_LAMP && this.HANG_LAMP.x) || p.x + p.w / 2;
+        const x0 = S.A[0] + 3, x1 = S.B[0] - 3, gap = 14;
+        const nl = Math.ceil(rows.length / 2) + (rows.length > 4 ? 0 : 0);
+        const wl = (lampX - gap / 2 - x0) / nl, wr = (x1 - lampX - gap / 2) / (rows.length - nl);
+        const ys = [S.bot - 26.5, S.bot - 18.5, S.bot - 10.5];   // выше рваного низа: он срезал нижний ряд
+        let out = '', seed = 5101;
+        rows.forEach((r, i) => {
+            const left = i < nl, cw = left ? wl : wr;
+            const cx = left ? x0 + cw * (i + 0.5) : lampX + gap / 2 + cw * (i - nl + 0.5);
+            const k = Math.min(1, (cw - 3) / 22);
+            const art = this.REEL_ART[r.key] || r.key;
+            ys.forEach((y, j) => {
+                const a = j < r.n ? art : 'any';
+                out += this.markerSym(a, cx + (rnd0() - 0.5) * 1.5, y, k, seed += 37);
+            });
+        });
+        function rnd0() { seed = (seed * 1103515245 + 12345) >>> 0; return (seed >>> 8) / 16777216; }
+        // чернила чуть впитались в ткань: под чёткими штрихами — размытая копия
+        return `<g class="nh"><g filter="url(#gj-rag-s)" opacity="0.3">${out}</g>${out}</g>`;
     },
 
     payPlate(p) {
@@ -108,7 +258,7 @@ Object.assign(GreedJunk, {
                 fringe += `M${f(x)} ${f(y - 0.3)} q${f(dx * 0.3)} ${f(L * 0.6)} ${f(dx)} ${f(L)} `;
             }
         });
-        cloth += `<g clip-path="url(#${id}-c)">${inner}</g>` +
+        cloth += `<g clip-path="url(#${id}-c)">${inner}${this.payMarks(p, S)}</g>` +
             `<path d="${fringe}" fill="none" stroke="${R.lo}" stroke-width="0.45" stroke-linecap="round"/>`;
         // гвозди поверх ткани, ткань вокруг собрана морщинками
         [S.A, S.B].forEach(([x, y]) => {
