@@ -247,57 +247,67 @@ Object.assign(GreedJunk, {
 
     // ---------- РЫБИЙ СКЕЛЕТ ----------
     // Обглоданная рыба (референсы игрока), кость цвета слоновой кости с
-    // тушевым контуром. Голова справа — сплошной череп: глазница-дыра,
-    // приоткрытая пасть с мелкими зубами, дуга жабры. Хребет слегка выгнут,
-    // рёбра парами вверх и вниз, изогнуты назад и сужаются к концу; к
-    // хвосту короче. Хвост — раздвоенный плавник с лучами.
+    // тушевым контуром. Голова справа — сплошной череп: пустая глазница,
+    // приоткрытая пасть с зубами, дуга жабры. Хребет слегка выгнут, рёбра
+    // парами вверх и вниз — плавной дугой назад, сужаются к концу, к хвосту
+    // короче; все рёбра выходят ИЗ-ПОД хребта. Хвост — раздвоенный
+    // плавник с лучами. Кости толстые, контур тонкий: тонкие кости тушь
+    // съедала целиком.
+    // Было (разбор): рёбра крючками и половина поверх хребта буграми,
+    // живой блик в глазнице, зубов не видно, хвост жидкий, без сдвига
+    // печати.
     reelFish(cx, cy) {
-        const B = PALETTE.greedJunk.reel.bone, f = this.f, ink = PALETTE.ink, sw = STROKE.detail;
+        const B = PALETTE.greedJunk.reel.bone, f = this.f, ink = PALETTE.ink, sw = STROKE.detail, bw = STROKE.hairline;
+        const M = this.MISPRINT, shift = `transform="translate(${M.x} ${M.y})"`;
         const P = (x, y) => [cx + x, cy + y];
-        // хребет — от хвоста к голове, слегка выгнут вверх
-        const spineAt = (t) => { const x = -19 + t * 29; return [x, -1.6 * Math.sin(t * Math.PI)]; };
+        const spineAt = (t) => { const x = -18 + t * 28; return [x, -1.6 * Math.sin(t * Math.PI)]; };
         const bone = (pts, w0, w1) => this.tube(pts, (t) => w0 + (w1 - w0) * t, true);
-        let back = '', front = '';
-        // рёбра: пары, дуга назад; длина растёт к голове
-        // кости толстые, контур тонкий: тонкие кости тушь съедала целиком
-        const bw = STROKE.hairline;
+        // деталь: заливка со сдвигом печати, контур на месте
+        const part = (d, fill) => `<path d="${d}" fill="${fill}" ${shift}/><path d="${d}" fill="none" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
+        // рёбра — плавная дуга назад по всей длине
+        let ribs = '';
         for (let i = 0; i < 6; i++) {
-            const t = 0.14 + i * 0.15, s0 = spineAt(t), L = 4.6 + i * 0.9;
+            const t = 0.16 + i * 0.145, s0 = spineAt(t), L = 4.8 + i * 0.85;
             [-1, 1].forEach(d => {
-                const tip = [s0[0] - 3.6, s0[1] + d * L], mid = [s0[0] + 0.2, s0[1] + d * L * 0.6];
-                const pts = this.spline([P(s0[0], s0[1]), P(mid[0], mid[1]), P(tip[0], tip[1])], 6);
-                const path = `<path d="${bone(pts, 2.3, 0.8)}" fill="${d > 0 ? B.lo : B.base}" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
-                if (d > 0) back += path; else front += path;
+                const pts = this.spline([P(s0[0], s0[1]), P(s0[0] - 1.1, s0[1] + d * L * 0.52), P(s0[0] - 3.4, s0[1] + d * L)], 6);
+                ribs += part(bone(pts, 2.1, 0.75), d > 0 ? B.lo : B.base);
             });
         }
-        // хвост: две лопасти с лучами
-        const tail = (d) => {
-            const a = P(-19, 0), b = P(-26, d * 7), c = P(-23.5, d * 1.2);
-            return `<path d="M${f(a[0])} ${f(a[1] + d * 0.6)} Q${f(cx - 22)} ${f(cy + d * 3)} ${f(b[0])} ${f(b[1])} Q${f(cx - 23.5)} ${f(cy + d * 2.6)} ${f(c[0])} ${f(c[1])} Z" fill="${B.base}" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>` +
-                `<path d="M${f(cx - 20.5)} ${f(cy + d * 0.8)} L${f(cx - 24.5)} ${f(cy + d * 5.2)} M${f(cx - 20.5)} ${f(cy + d * 0.5)} L${f(cx - 23.5)} ${f(cy + d * 3)}" stroke="${B.lo}" stroke-width="0.4"/>`;
-        };
-        // хребет
+        // хвост: две лопасти одной фигурой, выемка посередине; лучи
+        const tl = `M${f(cx - 18)} ${f(cy - 1.2)} Q${f(cx - 22)} ${f(cy - 3)} ${f(cx - 27.5)} ${f(cy - 8.5)} ` +
+            `Q${f(cx - 25)} ${f(cy - 3)} ${f(cx - 23.6)} ${f(cy)} Q${f(cx - 25)} ${f(cy + 3)} ${f(cx - 27.5)} ${f(cy + 8.5)} ` +
+            `Q${f(cx - 22)} ${f(cy + 3)} ${f(cx - 18)} ${f(cy + 1.2)} Z`;
+        let tail = part(tl, B.base);
+        tail += `<path d="M${f(cx - 19)} ${f(cy + 0.6)} Q${f(cx - 23)} ${f(cy + 3.4)} ${f(cx - 26.4)} ${f(cy + 7.4)} L${f(cx - 24)} ${f(cy + 0.6)} Z" fill="${B.lo}" opacity="0.7"/>`;
+        [[-1, 0.5], [-1, 0.8], [1, 0.5], [1, 0.8]].forEach(([d, k]) => {
+            tail += `<path d="M${f(cx - 19.5)} ${f(cy + d * 0.6)} L${f(cx - 19.5 - 7 * k)} ${f(cy + d * 7.2 * k)}" stroke="${B.lo}" stroke-width="0.35"/>`;
+        });
+        // хребет поверх рёбер
         const spine = [];
         for (let k = 0; k <= 12; k++) spine.push(P(...spineAt(k / 12)));
-        const spinePath = `<path d="${bone(spine, 2.2, 3)}" fill="${B.base}" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
-        // позвонки — риски поперёк хребта
+        let back = part(bone(spine, 2.2, 3), B.base);
         let verts = '';
-        for (let k = 1; k < 12; k++) { const q = P(...spineAt(k / 12)); verts += `M${f(q[0])} ${f(q[1] - 0.8)} L${f(q[0])} ${f(q[1] + 0.8)} `; }
-        // череп: затылок-дуга у хребта, лоб, нос, пасть с зубами, подбородок
+        for (let k = 1; k < 12; k++) { const q = P(...spineAt(k / 12)); verts += `M${f(q[0])} ${f(q[1] - 0.9)} L${f(q[0])} ${f(q[1] + 0.9)} `; }
+        back += `<path d="${verts}" stroke="${B.lo}" stroke-width="0.45"/>` +
+            `<path d="M${spine.map(q => `${f(q[0])} ${f(q[1] - 0.6)}`).join(' L')}" fill="none" stroke="${B.hi}" stroke-width="0.5" opacity="0.9"/>`;
+        // череп
         const hx = cx + 9, hy = cy;
         const skull = `M${f(hx)} ${f(hy - 6.5)} Q${f(hx + 9)} ${f(hy - 8.5)} ${f(hx + 15.5)} ${f(hy - 1.2)} ` +
             `L${f(hx + 11)} ${f(hy + 0.4)} L${f(hx + 15)} ${f(hy + 2.2)} ` +
             `Q${f(hx + 9)} ${f(hy + 7.5)} ${f(hx)} ${f(hy + 6.5)} Q${f(hx + 2.6)} ${f(hy)} ${f(hx)} ${f(hy - 6.5)} Z`;
-        let head = `<path d="${skull}" fill="${B.base}" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+        let head = `<path d="${skull}" fill="${B.base}" ${shift}/>`;
+        head += `<path d="M${f(hx + 1)} ${f(hy + 3)} Q${f(hx + 8)} ${f(hy + 7.6)} ${f(hx + 14)} ${f(hy + 2.4)} L${f(hx + 11.4)} ${f(hy + 1)} Z" fill="${B.lo}" opacity="0.55"/>`;
         head += `<path d="M${f(hx + 2)} ${f(hy - 5)} Q${f(hx + 9)} ${f(hy - 6.8)} ${f(hx + 13.5)} ${f(hy - 1.8)}" fill="none" stroke="${B.hi}" stroke-width="0.8" stroke-linecap="round"/>`;
-        // дуга жабры
         head += `<path d="M${f(hx + 3.4)} ${f(hy - 5.2)} Q${f(hx + 6)} ${f(hy)} ${f(hx + 3.4)} ${f(hy + 5.2)}" fill="none" stroke="${B.lo}" stroke-width="0.7"/>`;
-        // зубы по краям пасти
-        head += `<path d="M${f(hx + 11.6)} ${f(hy + 0.2)} l0.7 0.9 l0.6 -0.7 l0.7 0.9 l0.6 -0.7 M${f(hx + 11.6)} ${f(hy + 0.6)} l0.7 -0.6 l0.7 0.7 l0.7 -0.6" fill="none" stroke="${ink}" stroke-width="0.35"/>`;
-        // глазница
-        head += `<circle cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="2" fill="${B.hole}" stroke="${ink}" stroke-width="${sw}"/>` +
-            `<circle cx="${f(hx + 8.4)}" cy="${f(hy - 3.6)}" r="0.5" fill="${B.hi}"/>`;
-        return back + tail(1) + tail(-1) + spinePath + `<path d="${verts}" stroke="${B.lo}" stroke-width="0.4"/>` + front + head;
+        // зубы: сверху три вниз, снизу два вверх — треугольниками по краю пасти
+        const tooth = (x, y, dy) => `<path d="M${f(x - 0.55)} ${f(y)} L${f(x)} ${f(y + dy)} L${f(x + 0.55)} ${f(y)} Z" fill="${B.hi}" stroke="${ink}" stroke-width="0.3" stroke-linejoin="round"/>`;
+        [12, 13.2, 14.4].forEach((x, k) => { head += tooth(hx + x, hy - 0.95 + (x - 11) * -0.05 + 0.6 + k * 0.05, 1.3); });
+        [12.4, 13.7].forEach(x => { head += tooth(hx + x, hy + 1.4 + (x - 11) * 0.4, -1.2); });
+        // пустая глазница: тёмная дыра со светлым ободком кости, без блика
+        head += `<circle cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="2.6" fill="${B.hi}"/>` +
+            `<circle cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="1.9" fill="${B.hole}" stroke="${ink}" stroke-width="${bw}"/>`;
+        head += `<path d="${skull}" fill="none" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+        return ribs + tail + back + head;
     },
 
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
