@@ -46,9 +46,8 @@ Object.assign(GreedJunk, {
         const lower = pts.map(([x, y]) => ` L${f(x)} ${f(y)}`).join('') + ` L${f(A[0] - 1)} ${f(bot - 0.5)}`;
         const left = ` Q${f(A[0] - 5)} ${f(p.y + p.h * 0.5)} ${f(A[0] - 4)} ${f(A[1] - 3.5)} Z`;
         // дыры: неровные многоугольники
-        // дыра — в промежутке под лампой, где значков нет
-        const lx = (this.HANG_LAMP && this.HANG_LAMP.x) || p.x + p.w / 2;
-        const holes = [[lx + 1, p.y + p.h * 0.62, 2]].map(([cx, cy, r]) => {
+        // дыра — у самого края, где значков нет
+        const holes = [[p.x + 7, p.y + p.h * 0.6, 1.6]].map(([cx, cy, r]) => {
             let d = '';
             for (let k = 0; k < 7; k++) {
                 const a = k / 7 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.7);
@@ -182,20 +181,18 @@ Object.assign(GreedJunk, {
     // Комбинации столбиками: три значка сверху вниз = тройка (как на
     // барабанах, только стопкой — места по высоте у тряпки мало, а по
     // ширине — на все семь). Порядок слева направо — от дорогой к дешёвой.
-    // Под висячей лампой (HANG_LAMP.x) — промежуток между столбиками.
     payMarks(p, S) {
         const rows = this.payRows();
         if (!rows.length) return '';
-        const lampX = (this.HANG_LAMP && this.HANG_LAMP.x) || p.x + p.w / 2;
-        const x0 = S.A[0] + 3, x1 = S.B[0] - 3, gap = 14;
-        const nl = Math.ceil(rows.length / 2) + (rows.length > 4 ? 0 : 0);
-        const wl = (lampX - gap / 2 - x0) / nl, wr = (x1 - lampX - gap / 2) / (rows.length - nl);
+        // Промежутка под лампой больше нет: доску укоротили под монетоприёмник,
+        // и значки остались своего размера (решение игрока) — лампа качается,
+        // заслонённое подсматривается наклоном.
+        const x0 = S.A[0] + 3, x1 = S.B[0] - 3, cw = (x1 - x0) / rows.length;
         const ys = [S.bot - 26.5, S.bot - 18.5, S.bot - 10.5];   // выше рваного низа: он срезал нижний ряд
         let out = '', seed = 5101;
         rows.forEach((r, i) => {
-            const left = i < nl, cw = left ? wl : wr;
-            const cx = left ? x0 + cw * (i + 0.5) : lampX + gap / 2 + cw * (i - nl + 0.5);
-            const k = Math.min(1, (cw - 3) / 22);
+            const cx = x0 + cw * (i + 0.5);
+            const k = Math.min(1, (cw - 1) / 22);
             const art = this.REEL_ART[r.key] || r.key;
             ys.forEach((y, j) => {
                 const a = j < r.n ? art : 'any';

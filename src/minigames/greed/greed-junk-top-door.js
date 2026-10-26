@@ -261,9 +261,14 @@ Object.assign(GreedJunk, {
         // таблица выплат краской по доске (greed-junk-plate.js)
         // на свету тряпка отдельной картинкой качается поверх (ragApart)
         if (this.payPlate && !this.ragApart) plate += this.payPlate(p);
+        // правый конец доски отпилен: свежий светлый торец и следы пилы
+        const ex = p.x + p.w;
+        plate += `<rect x="${ex - 2.2}" y="${p.y + 1}" width="1.6" height="${p.h - 2}" fill="${J.pine[100]}" opacity="0.85"/>` +
+            `<path d="M${ex - 2} ${p.y + 9} l1.2 -2 M${ex - 2} ${p.y + 21} l1.2 -2 M${ex - 2} ${p.y + 33} l1.2 -2" stroke="${J.pine[500]}" stroke-width="0.4"/>`;
         out += this.T(6, 'pine', plate);
         out += this.coinTray();
-        out += this.tapedCrack();
+        // монетоприёмник из двери туалета — на месте старой трещины со скотчем
+        if (this.wcSlot) out += this.wcSlot();
         // полка поверх стыка табло и ящика — торчит за края; справа
         // длиннее — под кулису, она стоит на полке
         out += this.T(8, 'pine', this.planks(24, 466, 334, 20, 1, 111, 'h', 0, 'pine'));
@@ -286,45 +291,6 @@ Object.assign(GreedJunk, {
         g += `<path d="M${f(X(1))} 480 Q${f(X(6))} 479 ${f(X(7))} 484 L${f(X(7))} 490 Q${f(X(3))} 488 ${f(X(1))} 490 Z" fill="${J.rust[500]}" opacity="0.4"/>`;
         g += this.bolt(X(13), 478, 1.5) + this.bolt(X(21), 478, 1.5) + this.bolt(X(4), 494, 1.5) + this.bolt(X(4), 504, 1.5);
         return this.T(10, 'steel', g);
-    },
-
-    // Трещина в листе ДСП у правой стойки, заклеенная двумя полосками
-    // серебристого армированного скотча поперёк. Скотч рвали руками: концы
-    // рваные, бахромой, по ленте — квадратная сетка нитей. Было: чёрная
-    // изолента под разными углами с загнутым концом — читалась не
-    // лентой, а брусками непонятно из чего.
-    tapedCrack() {
-        const J = PALETTE.greedJunk, A = J.alu, f = this.f;
-        // трещина: от стойки вниз-влево, ломаная, с отщепом
-        const crack = `M303 538 L296 543 L292 542 L285 549 L279 551 L272 559 L266 561`;
-        let out = this.T(3, 'chip', `<path d="${crack}" class="pit" fill="none" stroke="${J.hole}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>` +
-            `<path d="M285 549 L281 545" stroke="${J.hole}" stroke-width="0.8" stroke-linecap="round"/>`);
-        // полоска: x0..x1 вдоль, высота h; концы рваные зубцами
-        const strip = (x0, x1, cy, h, rot, seed) => {
-            const rnd = this.rng(seed), y0 = cy - h / 2, y1 = cy + h / 2;
-            const torn = (x, dir) => {
-                const pts = [];
-                for (let y = y0; y <= y1 + 0.01; y += h / 6) pts.push([x + dir * rnd() * 1.6, y]);
-                return pts;
-            };
-            const L = torn(x0, -1), R = torn(x1, 1).reverse();
-            const d = 'M' + L.map(q => `${f(q[0])} ${f(q[1])}`).join(' L') + ' L' + R.map(q => `${f(q[0])} ${f(q[1])}`).join(' L') + ' Z';
-            const id = 'gj-tape' + seed;
-            let g = `<clipPath id="${id}"><path d="${d}"/></clipPath>`;
-            g += `<path d="${d}" fill="${A[300]}"/>`;
-            // сетка нитей: вдоль и поперёк
-            let mesh = '';
-            for (let y = y0 + 0.9; y < y1; y += 1.3) mesh += `M${x0 - 2} ${f(y)} L${x1 + 2} ${f(y)} `;
-            for (let x = x0 + 0.6; x < x1 + 2; x += 1.3) mesh += `M${f(x)} ${y0} L${f(x)} ${y1} `;
-            g += `<path d="${mesh}" stroke="${A[700]}" stroke-width="0.25" opacity="0.55" clip-path="url(#${id})"/>`;
-            g += `<path d="M${x0 + 1} ${f(y0 + 0.7)} L${x1 - 1} ${f(y0 + 0.7)}" class="hl" stroke="${A[100]}" stroke-width="0.6" clip-path="url(#${id})"/>`;
-            g += `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
-            return `<g transform="rotate(${rot} ${(x0 + x1) / 2} ${cy})">${g}</g>`;
-        };
-        // клеили ровно, поперёк трещины, по горизонтали; вторая — чуть косо
-        const tape = strip(265, 291, 557, 7, 0, 41) + strip(280, 303, 546.5, 7, -2, 42);
-        out += this.T(5, 'alu', tape);
-        return out;
     },
 
     // Лоток для монет — старая форма для хлеба, привёрнутая к ящику двумя

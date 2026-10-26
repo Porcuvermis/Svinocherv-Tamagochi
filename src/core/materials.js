@@ -109,6 +109,11 @@ const MATERIALS = {
         hang: { stiff: 1, weight: 0.0006 },
         note: 'Нитка: матовая, тонкая, почти без рельефа; узелки — комочки.'
     },
+    paper: {
+        shine: [0.03, 0.08, 0],
+        colors: 'greedJunk.reel.wc',
+        note: 'Бумага (стикер): матовая, плоская, загнутый уголок — единственный рельеф.'
+    },
     cloth: {
         shine: [0.02, 0.06, 0],
         colors: 'greedJunk.reel.rag',

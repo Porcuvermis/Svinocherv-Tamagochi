@@ -980,6 +980,8 @@ const PALETTE = {
         reel: {
             paper: '#eadcb8', paperLo: '#d2bf93', speck: '#b9a477',
             // тряпка с таблицей выплат: светлый лён, грязь, маркер
+            // монетоприёмник из двери туалета: обломки двери, жёлтый стикер
+            wc: { door: '#5f8f99', doorLo: '#45707a', doorEdge: '#c9b48c', sticker: '#f4dc4c', stickerLo: '#d6b92a', stickerHi: '#fbec8c' },
             rag: { hi: '#f6f0e2', base: '#e8dec8', lo: '#c9b994', dirt: '#8e7a57', grime: '#5e4c33', marker: '#1d1a24' },
             worm: { hi: '#f0a59f', base: '#cf6a70', lo: '#8c3a4a', back: '#a44a5a', belt: '#e7a08f' },
             // банка пива: чёрная этикетка в розовых червячках, белый знак
