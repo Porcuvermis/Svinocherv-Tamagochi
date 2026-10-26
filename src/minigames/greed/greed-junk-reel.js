@@ -367,6 +367,29 @@ Object.assign(GreedJunk, {
     // ключи конфига — от прежнего автомата, рисунки — новые (решение игрока).
     REEL_ART: { skull: 'worm', coin: 'syringe', meat: 'beer', bone: 'fish', blank: 'blank', token: 'token', shard: 'shard' },
 
+    // Лента барабана: какие символы (ключи конфига) идут подряд по кругу.
+    // Одна лента на все три барабана, у каждого своё смещение. Червяк
+    // (самая крупная тройка) — один раз; жетон и осколок — по разу: на них
+    // барабаны встают только при жетонном исходе.
+    REEL_STRIP: ['coin', 'bone', 'meat', 'blank', 'bone', 'coin', 'skull', 'bone', 'meat', 'blank',
+        'coin', 'bone', 'token', 'meat', 'blank', 'bone', 'coin', 'shard', 'meat', 'blank'],
+    // Ячейка ленты на её позиции i.
+    reelIndexOf(key, from) {
+        const S = this.REEL_STRIP, n = S.length;
+        for (let k = 0; k < n; k++) { const i = (from + k) % n; if (S[i] === key) return i; }
+        return 0;
+    },
+    reelStripSvg(scale) {
+        const C = this.CELL, S = this.REEL_STRIP, H = C.h * S.length;
+        let out = '';
+        S.forEach((key, i) => {
+            out += this.reelCell(this.REEL_ART[key] || key, 0, i * C.h);
+            // граница ячеек — тонкая риска печати
+            out += `<line x1="2" y1="${i * C.h + 0.2}" x2="${C.w - 2}" y2="${i * C.h + 0.2}" stroke="${PALETTE.greedJunk.reel.paperLo}" stroke-width="0.4"/>`;
+        });
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${C.w} ${H}" width="${C.w * scale}" height="${H * scale}">${out}</svg>`;
+    },
+
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
     reelCell(key, x, y) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;

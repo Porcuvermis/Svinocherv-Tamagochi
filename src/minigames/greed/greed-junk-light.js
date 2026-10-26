@@ -59,6 +59,15 @@ Object.assign(GreedJunk, {
                 `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
                 `.fx,.hl,.nh{display:none}</style>`;
         }
+        // Маска барабанов: белым — открытая поверхность ленты (класс drum),
+        // чёрным — всё, что лежит поверх (нитка, узелки, окантовка). Блики
+        // стекла (nh) и нарисованный свет маску не перекрывают: лента видна
+        // и под ними. По маске шейдер решает, где рисовать ленту барабана.
+        if (pass === 'mask') {
+            return `<style>*{fill:#000!important;stroke:#000!important}` +
+                `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
+                `.drum,.drum *{fill:#fff!important;stroke:none!important}.fx,.hl,.hpass,.nh{display:none}</style>`;
+        }
         if (pass === 'mat') {
             // профиль высот в карте материалов не нужен — он того же материала
             return this.passStyleMat();

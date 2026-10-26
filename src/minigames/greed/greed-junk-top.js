@@ -967,18 +967,17 @@ Object.assign(GreedJunk, {
         let out = '';
         R.forEach(r => {
             const cy = r.y + r.h / 2;
-            let drum = `<rect x="${r.x + 1}" y="${r.y + 1}" width="${r.w - 2}" height="${r.h - 2}" rx="4" fill="${J.paint.cream}"/>`;
+            let drum = `<rect class="drum" x="${r.x + 1}" y="${r.y + 1}" width="${r.w - 2}" height="${r.h - 2}" rx="4" fill="${J.paint.cream}"/>`;
             // Барабан уходит от глаза к верху и низу окна — затемнение там
             // это его форма, а не нарисованный свет, поэтому оно в цвете,
             // а не в тени (fx). Высотами такой большой цилиндр в узком
             // окне не вылепить: перепада глубины не хватает, а ступени
             // профиля полосили.
-            drum += `<rect x="${r.x + 1}" y="${r.y + 1}" width="${r.w - 2}" height="${r.h - 2}" rx="4" fill="url(#gj-drum)"/>`;
-            // разделительные риски ячеек барабана
-            [-1, 1].forEach(k => {
-                const ly = cy + k * r.h / 3;
-                drum += `<line x1="${r.x + 3}" y1="${f(ly)}" x2="${r.x + r.w - 3}" y2="${f(ly)}" stroke="${J.plastic.lo}" stroke-width="${STROKE.hairline}"/>`;
-            });
+            drum += `<rect class="drum" x="${r.x + 1}" y="${r.y + 1}" width="${r.w - 2}" height="${r.h - 2}" rx="4" fill="url(#gj-drum)"/>`;
+            // Символы на барабане — лента (greed-junk-reel.js), её кладёт шейдер
+            // по маске drum; цвет барабана — её освещённость: затемнение к
+            // краям окна умножается на ленту. Было: пустой барабан с двумя
+            // неподвижными рисками ячеек.
             out += this.T(-12, 'plastic', drum);
             // хромированная окантовка окна
             out += this.T(-9, 'polished', `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" fill="none" ` +

@@ -48,6 +48,16 @@ const GreedJunkLit = {
         this.prog = this.program(gl);
         this.maps = [a, h, m];
         this.tex = [a, h, m].map((img, i) => this.texture(gl, img, i));
+        // лента барабанов (3) и маска их поверхности (4)
+        const [strip, mask] = await Promise.all([
+            this.image(GreedJunk.reelStripSvg(this.SCALE)),
+            this.image(sized(GreedJunk.bodySvg('mask')))]);
+        GreedJunk.pass = 'baked';
+        this.texture(gl, strip, 3);
+        this.texture(gl, mask, 4);
+        // барабаны стоят на случайных ячейках
+        const n = GreedJunk.REEL_STRIP.length;
+        this.reelPos = [0, 1, 2].map(() => Math.floor(Math.random() * n));
         const buf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -77,7 +87,13 @@ const GreedJunkLit = {
         // Координаты экранные: x вправо, y ВНИЗ, z к зрителю. Свет uL —
         // направление НА источник.
         const fs = `precision mediump float;
-            uniform sampler2D uA, uH, uM;
+            uniform sampler2D uA, uH, uM, uS, uK;
+            // барабаны: окно (x, y, w, h в uv поля), смещение ленты в
+            // единицах поля; лента — uLen единиц по кругу, радиус барабана
+            uniform vec4 uReel0, uReel1, uReel2;
+            uniform vec3 uOff;
+            uniform float uLen, uDrumR, uFieldH;
+            uniform vec3 uCream;
             uniform vec2 uTex;        // размер тексела в uv
             uniform vec3 uL;          // на источник, нормирован
             uniform float uRelief;    // крутизна рельефа для нормали
@@ -94,9 +110,27 @@ const GreedJunkLit = {
                 return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
                         hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
             }
+            // Лента барабана в точке окна r со смещением off: высота точки
+            // переводится в угол на цилиндре, по углу — место на ленте; у
+            // краёв окна ячейки сжимаются (уходят за изгиб). Цвет барабана
+            // в рисунке — его освещённость (затемнение к краям, блики стекла):
+            // делится на цвет бумаги барабана и умножается на ленту.
+            vec3 reelAt(vec4 r, float off, vec3 base) {
+                float u = (vUv.x - r.x) / r.z;
+                float y = (vUv.y - (r.y + r.w * 0.5)) * uFieldH;
+                float s = off + asin(clamp(y / uDrumR, -1.0, 1.0)) * uDrumR;
+                vec3 st = texture2D(uS, vec2(u, fract(s / uLen))).rgb;
+                return st * base / uCream;
+            }
             void main() {
                 vec4 a = texture2D(uA, vUv);
                 if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
+                // поверхность барабана — лента вместо пустой бумаги
+                if (texture2D(uK, vUv).r > 0.5) {
+                    if (vUv.x > uReel0.x && vUv.x < uReel0.x + uReel0.z && vUv.y > uReel0.y && vUv.y < uReel0.y + uReel0.w) a.rgb = reelAt(uReel0, uOff.x, a.rgb);
+                    else if (vUv.x > uReel1.x && vUv.x < uReel1.x + uReel1.z && vUv.y > uReel1.y && vUv.y < uReel1.y + uReel1.w) a.rgb = reelAt(uReel1, uOff.y, a.rgb);
+                    else if (vUv.x > uReel2.x && vUv.x < uReel2.x + uReel2.z && vUv.y > uReel2.y && vUv.y < uReel2.y + uReel2.w) a.rgb = reelAt(uReel2, uOff.z, a.rgb);
+                }
                 // Нормаль по соседям в четырёх текселях, а не в одном: фаска
                 // шире чёрного контура, иначе контур её целиком закрывает
                 vec2 d = uTex * 4.0;
@@ -714,7 +748,19 @@ const GreedJunkLit = {
         const n = Math.hypot(L[0], L[1], L[2]) || 1;
         gl.viewport(0, 0, this.size[0], this.size[1]);
         gl.useProgram(p);
-        ['uA', 'uH', 'uM'].forEach((u, i) => gl.uniform1i(gl.getUniformLocation(p, u), i));
+        ['uA', 'uH', 'uM', 'uS', 'uK'].forEach((u, i) => gl.uniform1i(gl.getUniformLocation(p, u), i));
+        // барабаны: окна по поверхности ленты (drum в рисунке — на 1 внутри
+        // окна), смещение — чтобы ячейка reelPos встала серединой под нитку
+        const G = GreedJunk, C = G.CELL, W = G.W, H = G.H;
+        G.SLOTS.reels.forEach((r, i) => gl.uniform4f(gl.getUniformLocation(p, 'uReel' + i), (r.x + 1) / W, (r.y + 1) / H, (r.w - 2) / W, (r.h - 2) / H));
+        const pos = this.reelPos || [0, 0, 0];
+        gl.uniform3f(gl.getUniformLocation(p, 'uOff'), ...pos.map(k => k * C.h + C.h / 2));
+        gl.uniform1f(gl.getUniformLocation(p, 'uLen'), G.REEL_STRIP.length * C.h);
+        // радиус барабана: в окне видна дуга ±60° — 47 единиц половины окна
+        gl.uniform1f(gl.getUniformLocation(p, 'uDrumR'), 47 / Math.sin(Math.PI / 3));
+        gl.uniform1f(gl.getUniformLocation(p, 'uFieldH'), H);
+        const cr = PALETTE.greedJunk.paint.cream;
+        gl.uniform3f(gl.getUniformLocation(p, 'uCream'), ...[1, 3, 5].map(k => parseInt(cr.slice(k, k + 2), 16) / 255));
         gl.uniform2f(gl.getUniformLocation(p, 'uTex'), 1 / this.size[0], 1 / this.size[1]);
         gl.uniform3f(gl.getUniformLocation(p, 'uL'), L[0] / n, L[1] / n, L[2] / n);
         // крутизна — под шкалу карты высот: при шкале 24 было 9
