@@ -339,6 +339,34 @@ Object.assign(GreedJunk, {
             `<path d="${d}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
     },
 
+    // ---------- ЖЕТОН АЛЧНОСТИ (заглушка) ----------
+    // Целое кольцо из трёх осколков (как жетон в кошельке, TokenArt):
+    // заливка в цвет алчности, перемычки-разломы по границам третей
+    // выходят чуть за обод. Заглушка до настоящего рисунка жетона.
+    reelToken(cx, cy) {
+        const f = this.f, ink = PALETTE.ink, M = this.MISPRINT;
+        const col = (typeof ECONOMY !== 'undefined' && ECONOMY.sins && ECONOMY.sins.greed && ECONOMY.sins.greed.color) || PALETTE.greedJunk.paint.yellow;
+        const Ro = 13, Ri = 6.4;
+        const ring = `M${f(cx - Ro)} ${cy} A${Ro} ${Ro} 0 1 1 ${f(cx + Ro)} ${cy} A${Ro} ${Ro} 0 1 1 ${f(cx - Ro)} ${cy} Z ` +
+            `M${f(cx - Ri)} ${cy} A${Ri} ${Ri} 0 1 0 ${f(cx + Ri)} ${cy} A${Ri} ${Ri} 0 1 0 ${f(cx - Ri)} ${cy} Z`;
+        let out = `<path d="${ring}" fill="${col}" fill-rule="evenodd" transform="translate(${M.x} ${M.y})"/>`;
+        out += `<path d="M${f(cx - Ro + 1.8)} ${f(cy - 1)} A${Ro - 1.8} ${Ro - 1.8} 0 0 1 ${f(cx + 2)} ${f(cy - Ro + 1.9)}" fill="none" stroke="${PALETTE.greedJunk.paint.cream}" stroke-width="0.8" opacity="0.6" stroke-linecap="round"/>`;
+        out += `<path d="${ring}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" fill-rule="evenodd"/>`;
+        // перемычки по границам третей: чернильная линия, по ней — цвет
+        for (let t = 0; t < 3; t++) {
+            const a = (t * 120 - 90) * Math.PI / 180;
+            const x1 = cx + (Ri - 0.5) * Math.cos(a), y1 = cy + (Ri - 0.5) * Math.sin(a);
+            const x2 = cx + (Ro + 1.6) * Math.cos(a), y2 = cy + (Ro + 1.6) * Math.sin(a);
+            out += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"/>` +
+                `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${col}" stroke-width="0.7" stroke-linecap="round"/>`;
+        }
+        return out;
+    },
+
+    // Какой рисунок у символа барабана из конфига (ECONOMY_GREED.reel):
+    // ключи конфига — от прежнего автомата, рисунки — новые (решение игрока).
+    REEL_ART: { skull: 'worm', coin: 'syringe', meat: 'beer', bone: 'fish', blank: 'blank', token: 'token', shard: 'shard' },
+
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
     reelCell(key, x, y) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;
@@ -346,7 +374,7 @@ Object.assign(GreedJunk, {
         let out = `<rect x="${x}" y="${y}" width="${C.w}" height="${C.h}" fill="${R.paper}"/>`;
         for (let i = 0; i < 14; i++) out += `<circle cx="${f(x + rnd() * C.w)}" cy="${f(y + rnd() * C.h)}" r="${f(0.2 + rnd() * 0.4)}" fill="${R.speck}" opacity="0.5"/>`;
         // blank — пустышка: только бумага, совсем без рисунка (решение игрока)
-        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard' }[key];
+        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard', token: 'reelToken' }[key];
         if (draw) out += this[draw](x + C.w / 2, y + C.h / 2);
         return out;
     }
