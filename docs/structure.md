@@ -144,13 +144,17 @@ src/minigames/<грех>/   каждая мини-игра в своей пап�
   в нескольких файлах: основной объявляет `const X = {…}` с состоянием и
   жизненным циклом, продолжения `X-<тема>.js` делают Object.assign(X, {…}).
   Подключаются сразу за основным; запуск init() — в конце ПОСЛЕДНЕГО
-  продолжения. Режется инструментом (tools/split-object.js), карта —
+  продолжения. Режется инструментом (tools/split-object.js; режет и само
+  продолжение `Object.assign(X, {…})`), карта —
   tools/outline.js. Новый метод кладётся в продолжение своей темы.
   lust/ — lust-wash, lust-tail, lust-finale; gluttony/ — gluttony-cook,
   gluttony-input, gluttony-feed, kitchen-counter, kitchen-table;
   pride/ — pride-show, pride-store; sloth/ — sloth-work, garden-art-bed,
   garden-art-ui; kitchen-art-food; bath-art-wash; envy/ — envy-play;
-  wrath/ — wrath-rogue-screens; core — worm-studio-panel.
+  wrath/ — wrath-rogue-screens; core — worm-studio-panel;
+  greed/ аппарат: GreedJunk (greed-junk) — +lever, +parts, +top, +top-lamps,
+  +top-door, +light, +reel; GreedJunkLit (greed-junk-lit) — +lit-lever,
+  +lit-reels, +tray.
   greed/                автомат: экран НИЧЕГО не решает — просит крутку у
                         Backend.greedSpin() и показывает три символа с
                         выплатой; веса и таблица выплат в конфиге
