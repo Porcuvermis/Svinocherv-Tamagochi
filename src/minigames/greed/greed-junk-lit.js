@@ -276,6 +276,7 @@ const GreedJunkLit = {
                 this.draw(this.lightFor(t), this.REEL_BOX);   // только окна
             }
             if (this.ragStep) this.ragStep(now);
+            if (this.coinStep) this.coinStep(now);
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -341,6 +342,8 @@ const GreedJunkLit = {
         this.setReady(false);
         if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 6, 40);
         this._leverIdle = false;
+        // монета в щель — на рывке, сама; не прошла ли, решает игра (coinOk)
+        if (this.coinIn) this.coinIn(this.coinOk !== false);
         if (this.onPull) this.onPull();
         else if (this.autoReady) this.spin(this.previewOutcome());
     },
@@ -630,6 +633,7 @@ const GreedJunkLit = {
         this.autoReady = true;        // в превью исход крутки — свой, случайный
         if (this.trayMount) this.trayMount(wrap);
         if (this.ragMount) this.ragMount(wrap);
+        if (this.coinMount) this.coinMount(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();

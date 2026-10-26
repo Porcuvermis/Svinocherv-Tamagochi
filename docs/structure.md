@@ -153,8 +153,9 @@ src/minigames/<грех>/   каждая мини-игра в своей пап�
   garden-art-ui; kitchen-art-food; bath-art-wash; envy/ — envy-play;
   wrath/ — wrath-rogue-screens; core — worm-studio-panel;
   greed/ аппарат: GreedJunk (greed-junk) — +lever, +parts, +top, +top-lamps,
-  +top-door, +light, +reel; GreedJunkLit (greed-junk-lit) — +lit-lever,
-  +lit-reels, +tray.
+  +top-door, +light, +logo, +reel, +plate (тряпка с комбинациями), +wc
+  (монетоприёмник); GreedJunkLit (greed-junk-lit) — +lit-lever, +lit-reels,
+  +tray, +lit-rag (тряпка качается), +coin-in (монета в щель).
   greed/                автомат: экран НИЧЕГО не решает — просит крутку у
                         Backend.greedSpin() и показывает три символа с
                         выплатой; веса и таблица выплат в конфиге
