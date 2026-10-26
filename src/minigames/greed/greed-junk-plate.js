@@ -70,8 +70,9 @@ Object.assign(GreedJunk, {
         const arrow = (x0, y0) => { const x = x0 + J(0.8), y = y0 + J(1.2); paint += tilt(J(9), x + 2.7, y, `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`); };
         const col = [p.x + 6, p.x + p.w / 2 + 4], top = p.y + 9;
         rows.forEach((r, i) => {
-            // строка сбита целиком: не по сетке
-            const c = i < 3 ? 0 : 1, row = i < 3 ? i : i - 3, x = col[c] + rnd() * 3, cy = top + row * rh + J(1.6);
+            // строка сбита целиком: не по сетке. Правая колонка снизу вверх:
+            // короткая строка пары встаёт сверху, до сучка, длинная — в самый низ, под ним.
+            const c = i < 3 ? 0 : 1, row = i < 3 ? i : (i === rows.length - 1 ? 0 : 2), x = col[c] + rnd() * 3, cy = top + row * rh + J(1.6);
             for (let k = 0; k < r.n; k++) sym(r.key, x + 9 + k * SW, cy);
             const ax = x + 9 + 3 * SW - 7;
             arrow(ax, cy);
