@@ -171,8 +171,13 @@ const GreedJunkLit = {
                 float gx = (hh(vUv + vec2(d.x, 0.0)) - hh(vUv - vec2(d.x, 0.0))) / 8.0;
                 float gy = (hh(vUv + vec2(0.0, d.y)) - hh(vUv - vec2(0.0, d.y))) / 8.0;
                 float plane = max(rise, dot(vec2(gx, gy), dir));
-                for (int i = 1; i <= 40; i++) {
-                    float t = float(i) * 1.5;
+                // 20 шагов по 3 текселя (тот же охват, что 40 по 1,5 — тень не
+                // короче), начало сдвинуто на долю шага по месту точки: рябь
+                // от крупного шага рассыпается в незаметный шум. Было 40 —
+                // вдвое больше чтений на каждую точку экрана.
+                float jit = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
+                for (int i = 1; i <= 20; i++) {
+                    float t = (float(i) - jit) * 3.0;
                     float hs = hh(vUv + dir * uTex * t);
                     occ = max(occ, clamp((hs - (h0 + t * plane) - 0.01) * 5.0, 0.0, 1.0));
                 }
@@ -233,10 +238,12 @@ const GreedJunkLit = {
 
     // Перерисовка, пока холст на экране: только когда наклон заметно
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
+    LIGHT_MS: 60,
     run(canvas) {
         if (this._running) return;
         this._running = true;
         const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
+        let lastFull = 0;
         // тряпка — первой: пока её нет, доска под табло пустая. Готовится один
         // раз: аппарат потом только переезжает (mount), а не собирается заново
         if (!this._prepared) {
@@ -276,8 +283,13 @@ const GreedJunkLit = {
             this.shakeStep(now);
             const reels = this.spinStep(now);
             if (this.trayStep) this.trayStep(now);
-            if (moved || Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
-                last.x = t.x; last.y = t.y;
+            // Свет от наклона — не чаще LIGHT_MS: каждая перерисовка — весь
+            // корпус шейдером с поиском тени, а датчик в руке дрожит всегда.
+            // Сдвиг света за 1/16 с глазу не виден, а видеокарта отдыхает.
+            // Рычаг (moved) рисуется каждый кадр — он движется сам.
+            const tilted = Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002;
+            if (moved || (tilted && now - lastFull >= this.LIGHT_MS)) {
+                last.x = t.x; last.y = t.y; lastFull = now;
                 this.draw(this.lightFor(t));
             } else if (reels) {
                 this.draw(this.lightFor(t), this.REEL_BOX);   // только окна
