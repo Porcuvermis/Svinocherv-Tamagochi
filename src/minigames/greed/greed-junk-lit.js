@@ -38,7 +38,9 @@ const GreedJunkLit = {
     async init(canvas) {
         const W = GreedJunk.W * this.SCALE, H = GreedJunk.H * this.SCALE;
         canvas.width = W; canvas.height = H;
-        const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true });
+        // preserveDrawingBuffer: пока крутятся барабаны, кадр перерисовывает
+        // только окна (scissor), остальное должно остаться с прошлого кадра
+        const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, preserveDrawingBuffer: true });
         if (!gl) return false;
         this.gl = gl;
         this.size = [W, H];
@@ -60,7 +62,9 @@ const GreedJunkLit = {
         this.texture(gl, mask, 4);
         // барабаны стоят на случайных ячейках
         const n = GreedJunk.REEL_STRIP.length;
-        this.reelPos = [0, 1, 2].map(() => Math.floor(Math.random() * n));
+        // барабаны: s — смещение ленты (единицы поля), v — скорость
+        const C = GreedJunk.CELL;
+        this.reels = [0, 1, 2].map(() => ({ s: Math.floor(Math.random() * n) * C.h + C.h / 2, v: 0, blur: 0 }));
         const buf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -94,7 +98,7 @@ const GreedJunkLit = {
             // барабаны: окно (x, y, w, h в uv поля), смещение ленты в
             // единицах поля; лента — uLen единиц по кругу, радиус барабана
             uniform vec4 uReel0, uReel1, uReel2;
-            uniform vec3 uOff;
+            uniform vec3 uOff, uBlur;
             uniform float uLen, uDrumR, uFieldH;
             uniform vec3 uCream;
             uniform vec2 uTex;        // размер тексела в uv
@@ -118,21 +122,25 @@ const GreedJunkLit = {
             // краёв окна ячейки сжимаются (уходят за изгиб). Цвет барабана
             // в рисунке — его освещённость (затемнение к краям, блики стекла):
             // делится на цвет бумаги барабана и умножается на ленту.
-            vec3 reelAt(vec4 r, float off, vec3 base) {
+            // На ходу лента смазана вдоль хода: девять проб вдоль ленты на
+            // длину blur (сколько лента проезжает за выдержку кадра).
+            vec3 reelAt(vec4 r, float off, float blur, vec3 base) {
                 float u = (vUv.x - r.x) / r.z;
                 float y = (vUv.y - (r.y + r.w * 0.5)) * uFieldH;
                 float s = off + asin(clamp(y / uDrumR, -1.0, 1.0)) * uDrumR;
-                vec3 st = texture2D(uS, vec2(u, fract(s / uLen))).rgb;
-                return st * base / uCream;
+                vec3 st = vec3(0.0);
+                for (int k = 0; k < 9; k++)
+                    st += texture2D(uS, vec2(u, fract((s + (float(k) / 8.0 - 0.5) * blur) / uLen))).rgb;
+                return st / 9.0 * base / uCream;
             }
             void main() {
                 vec4 a = texture2D(uA, vUv);
                 if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
                 // поверхность барабана — лента вместо пустой бумаги
                 if (texture2D(uK, vUv).r > 0.5) {
-                    if (vUv.x > uReel0.x && vUv.x < uReel0.x + uReel0.z && vUv.y > uReel0.y && vUv.y < uReel0.y + uReel0.w) a.rgb = reelAt(uReel0, uOff.x, a.rgb);
-                    else if (vUv.x > uReel1.x && vUv.x < uReel1.x + uReel1.z && vUv.y > uReel1.y && vUv.y < uReel1.y + uReel1.w) a.rgb = reelAt(uReel1, uOff.y, a.rgb);
-                    else if (vUv.x > uReel2.x && vUv.x < uReel2.x + uReel2.z && vUv.y > uReel2.y && vUv.y < uReel2.y + uReel2.w) a.rgb = reelAt(uReel2, uOff.z, a.rgb);
+                    if (vUv.x > uReel0.x && vUv.x < uReel0.x + uReel0.z && vUv.y > uReel0.y && vUv.y < uReel0.y + uReel0.w) a.rgb = reelAt(uReel0, uOff.x, uBlur.x, a.rgb);
+                    else if (vUv.x > uReel1.x && vUv.x < uReel1.x + uReel1.z && vUv.y > uReel1.y && vUv.y < uReel1.y + uReel1.w) a.rgb = reelAt(uReel1, uOff.y, uBlur.y, a.rgb);
+                    else if (vUv.x > uReel2.x && vUv.x < uReel2.x + uReel2.z && vUv.y > uReel2.y && vUv.y < uReel2.y + uReel2.w) a.rgb = reelAt(uReel2, uOff.z, uBlur.z, a.rgb);
                 }
                 // Нормаль по соседям в четырёх текселях, а не в одном: фаска
                 // шире чёрного контура, иначе контур её целиком закрывает
@@ -258,9 +266,12 @@ const GreedJunkLit = {
             this._tilt = t;
             const moved = this.leverStep(now);
             this.shakeStep(now);
+            const reels = this.spinStep(now);
             if (moved || Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002) {
                 last.x = t.x; last.y = t.y;
                 this.draw(this.lightFor(t));
+            } else if (reels) {
+                this.draw(this.lightFor(t), this.REEL_BOX);   // только окна
             }
             requestAnimationFrame(loop);
         };
@@ -371,10 +382,9 @@ const GreedJunkLit = {
     // ---- готовность рычага ----
     // Дёргать можно, только когда прошлая крутка кончилась: от срыва до
     // её конца лампа на кулисе красная и рычаг не берётся, потом — зелёная.
-    // Игра сообщает конец крутки setReady(true); превью без барабанов
-    // изображает крутку паузой PREVIEW_SPIN после возврата рычага.
+    // Игра сообщает конец крутки setReady(true); превью — само, когда
+    // встал последний барабан и рычаг вернулся.
     ready: true,
-    PREVIEW_SPIN: 1000,
     ind: { red: 0, green: 1 },
     _indOn: 'green',
     IND_PAUSE: 70,             // мс темноты между цветами
@@ -412,7 +422,9 @@ const GreedJunkLit = {
     leverBreak() {
         this.setReady(false);
         if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 6, 40);
+        this._leverIdle = false;
         if (this.onPull) this.onPull();
+        else if (this.autoReady) this.spin(this.previewOutcome());
     },
     // dy — сколько палец прошёл вниз, в единицах поля
     leverDrag(dy) {
@@ -501,7 +513,8 @@ const GreedJunkLit = {
             show = v.p;
             if (t > 900) {
                 this._lv = null;
-                if (this.autoReady && !this.ready) this._readyAt = now + this.PREVIEW_SPIN;
+                this._leverIdle = true;
+                if (this.autoReady && !this.ready && !this.spinning()) this.setReady(true);
                 this.bindSet(this.tex);
                 this.leverCanvas.style.display = 'none';
                 return true;
@@ -629,6 +642,94 @@ const GreedJunkLit = {
         }
     },
 
+    // ---------- ВРАЩЕНИЕ БАРАБАНОВ ----------
+    // Срыв рычага → барабаны трогаются: короткий замах назад, разгон вниз
+    // (лента едет вниз — смещение убывает), ход с размытием, остановка по
+    // очереди слева направо: тормозят ровно к заранее известной ячейке
+    // (исход решён в момент рывка, как у настоящего автомата), чуть
+    // проскакивают и возвращаются, щелчок в палец. Пока крутятся,
+    // перерисовываются только окна (REEL_BOX).
+    REEL_BOX: { x: 84, y: 338, w: 192, h: 100 },
+    SPIN: { back: 0.25, backMs: 110, vmax: 0.95, accelMs: 220, firstMs: 700, stepMs: 320, brakeCells: 2.5, over: 0.22, settleMs: 170 },
+    spinning() { return !!(this.reels && this.reels.some(r => r.st)); },
+    // targets — индексы ячеек ленты, которые встанут под нитку
+    spin(targets) {
+        if (!this.reels) return;
+        this._spinAt = -1;
+        this.reels.forEach((r, i) => Object.assign(r, { st: 'start', target: targets[i], s0: r.s, v: 0, i }));
+    },
+    // Исход превью: случайные ячейки; иногда нарочно тройка — проверить
+    // мигание выигрыша. В игре исход даёт крутка (Backend).
+    previewOutcome() {
+        const G = GreedJunk, n = G.REEL_STRIP.length;
+        if (Math.random() < 0.3) {
+            const key = ['coin', 'bone', 'meat', 'skull'][Math.floor(Math.random() * 4)];
+            return [0, 1, 2].map(i => G.reelIndexOf(key, Math.floor(Math.random() * n)));
+        }
+        return [0, 1, 2].map(() => Math.floor(Math.random() * n));
+    },
+    // кадр вращения; true — барабаны двигались
+    spinStep(now) {
+        if (!this.spinning()) return false;
+        if (this._spinAt === -1) { this._spinAt = now; this._spinLast = now; }
+        const P = this.SPIN, C = GreedJunk.CELL, L = GreedJunk.REEL_STRIP.length * C.h;
+        const t = now - this._spinAt, dt = Math.min(50, now - this._spinLast);
+        this._spinLast = now;
+        let landed = 0;
+        this.reels.forEach(r => {
+            if (!r.st) { r.blur = 0; return; }
+            if (r.st === 'start') {
+                // замах: лента подаётся вверх, потом разгон вниз
+                if (t < P.backMs) r.s = r.s0 + P.back * C.h * Math.sin(t / P.backMs * Math.PI);
+                else {
+                    r.v = P.vmax * Math.min(1, (t - P.backMs) / P.accelMs);
+                    r.s -= r.v * dt;
+                    // Слева направо: не раньше своего срока и не раньше, чем
+                    // начал тормозить левый сосед (цель подъезжает к месту
+                    // тормоза в своё время — порядок иначе мог сбиться).
+                    const left = this.reels[r.i - 1];
+                    const leftOk = !left || (left.st !== 'start' && now - (left.at || now) >= P.stepMs * 0.6);
+                    if (t >= P.firstMs + r.i * P.stepMs && leftOk) {
+                        // Тормоз — когда цель подъехала на brakeCells: ровное
+                        // торможение за ~0.3 с. Было: тормозил сразу и мог
+                        // ехать до цели почти оборот ленты — до 2.5 с.
+                        const want = r.target * C.h + C.h / 2;
+                        const fin = want + Math.floor((r.s - want) / L) * L;
+                        const d = r.s - fin, D = P.brakeCells * C.h;
+                        if (d <= D && d >= D * 0.6)
+                            Object.assign(r, { st: 'brake', from: r.s, fin, dist: d + P.over * C.h, at: now, dur: 2 * (d + P.over * C.h) / r.v });
+                    }
+                }
+            } else if (r.st === 'brake') {
+                const u = Math.min(1, (now - r.at) / r.dur);
+                r.s = r.from - r.dist * (1 - (1 - u) * (1 - u));
+                r.v = P.vmax * (1 - u);
+                if (u >= 1) {
+                    r.st = 'settle'; r.at = now;
+                    if (typeof Haptics !== 'undefined') Haptics.impact('rigid', true);
+                }
+            } else if (r.st === 'settle') {
+                // проскочил на over — пружиной назад на ячейку
+                const u = Math.min(1, (now - r.at) / P.settleMs), e = 1 - Math.pow(1 - u, 3);
+                r.s = r.fin - P.over * C.h * (1 - e);
+                r.v = 0;
+                if (u >= 1) { r.s = ((r.fin % L) + L) % L; r.st = null; landed++; }
+            }
+            // размытие — путь ленты за выдержку ~30 мс
+            r.blur = Math.min(C.h * 1.2, Math.abs(r.v) * 30);
+        });
+        if (landed && !this.spinning()) this.spinDone();
+        return true;
+    },
+    // все встали: тройка под ниткой — мигание; готовность — когда и рычаг
+    // вернулся
+    spinDone() {
+        const G = GreedJunk, S = G.REEL_STRIP, C = G.CELL;
+        const keys = this.reels.map(r => S[Math.round((r.s - C.h / 2) / C.h) % S.length]);
+        if (keys[0] === keys[1] && keys[1] === keys[2] && keys[0] !== 'blank') this.blink();
+        if (this.autoReady && this._leverIdle !== false) this.setReady(true);
+    },
+
     // ---------- МИГАНИЕ ПРИ ВЫИГРЫШЕ ----------
     // blink() — выигрыш: огонёк бежит по лампам слева направо три круга,
     // потом все разом мигают дважды. Накал не прыгает: нить разгорается
@@ -744,20 +845,27 @@ const GreedJunkLit = {
         this.run(canvas);
     },
 
-    draw(light) {
+    // region — перерисовать только участок поля {x, y, w, h} (барабаны на ходу)
+    draw(light, region) {
         const gl = this.gl, p = this.prog;
         if (!gl) return;
+        if (region) {
+            const S = this.SCALE;
+            gl.enable(gl.SCISSOR_TEST);
+            gl.scissor(region.x * S, (GreedJunk.H - region.y - region.h) * S, region.w * S, region.h * S);
+        } else gl.disable(gl.SCISSOR_TEST);
         const L = light || this.LIGHT;
         const n = Math.hypot(L[0], L[1], L[2]) || 1;
         gl.viewport(0, 0, this.size[0], this.size[1]);
         gl.useProgram(p);
         ['uA', 'uH', 'uM', 'uS', 'uK'].forEach((u, i) => gl.uniform1i(gl.getUniformLocation(p, u), i));
         // барабаны: окна по поверхности ленты (drum в рисунке — на 1 внутри
-        // окна), смещение — чтобы ячейка reelPos встала серединой под нитку
+        // окна), смещение ленты каждого барабана, размытие на ходу
         const G = GreedJunk, C = G.CELL, W = G.W, H = G.H;
         G.SLOTS.reels.forEach((r, i) => gl.uniform4f(gl.getUniformLocation(p, 'uReel' + i), (r.x + 1) / W, (r.y + 1) / H, (r.w - 2) / W, (r.h - 2) / H));
-        const pos = this.reelPos || [0, 0, 0];
-        gl.uniform3f(gl.getUniformLocation(p, 'uOff'), ...pos.map(k => k * C.h + C.h / 2));
+        const R = this.reels || [0, 1, 2].map(() => ({ s: C.h / 2, blur: 0 }));
+        gl.uniform3f(gl.getUniformLocation(p, 'uOff'), ...R.map(r => r.s));
+        gl.uniform3f(gl.getUniformLocation(p, 'uBlur'), ...R.map(r => r.blur));
         gl.uniform1f(gl.getUniformLocation(p, 'uLen'), G.REEL_STRIP.length * C.h);
         // радиус барабана: в окне видна дуга ±60° — 47 единиц половины окна
         gl.uniform1f(gl.getUniformLocation(p, 'uDrumR'), 47 / Math.sin(Math.PI / 3));
