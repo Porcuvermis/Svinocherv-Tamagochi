@@ -339,16 +339,27 @@ const GreedJunkLit = {
     ready: true,
     PREVIEW_SPIN: 1000,
     ind: { red: 0, green: 1 },
+    _indOn: 'green',
+    IND_PAUSE: 70,             // мс темноты между цветами
     setReady(on) { this.ready = !!on; this._readyAt = null; },
-    // накал лампы — как у нити: разгорается быстро, гаснет медленнее
+    // Смена цвета — не перетеканием, а как у прибора: горевший цвет гаснет,
+    // едва заметная пауза темноты, загорается другой. Нить разгорается и
+    // остывает быстро, но не мгновенно.
     readyStep(now) {
         if (this._readyAt != null && now >= this._readyAt) this.setReady(true);
-        const want = { red: this.ready ? 0 : 1, green: this.ready ? 1 : 0 };
-        ['red', 'green'].forEach(k => {
-            const v = this.ind[k];
-            this.ind[k] = want[k] > v ? v + (want[k] - v) * 0.3 : (v < 0.01 ? 0 : v * 0.8);
-        });
-        return this.ind;
+        const want = this.ready ? 'green' : 'red', I = this.ind;
+        if (want !== this._indOn) {
+            const v = I[this._indOn];
+            I[this._indOn] = v < 0.04 ? 0 : v * 0.4;
+            if (I[this._indOn] === 0) {
+                if (this._indDark == null) this._indDark = now;
+                if (now - this._indDark >= this.IND_PAUSE) { this._indOn = want; this._indDark = null; }
+            }
+        } else {
+            const v = I[want];
+            I[want] = v > 0.99 ? 1 : v + (1 - v) * 0.45;
+        }
+        return I;
     },
     // тап по рычагу
     pull() { if (this.ready && this.leverState('free', 0)) this.leverBreak(); },

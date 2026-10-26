@@ -577,7 +577,10 @@ const GreedJunk = {
         const Lm = PALETTE.greedJunk.lamp;
         return ['red', 'green'].map(k =>
             `<radialGradient id="gj-ind-${k}"><stop offset="0" stop-color="${Lm[k + 'Core']}" stop-opacity="0.95"/>` +
-            `<stop offset="0.55" stop-color="${Lm[k]}" stop-opacity="0.55"/><stop offset="1" stop-color="${Lm[k]}" stop-opacity="0"/></radialGradient>`).join('');
+            `<stop offset="0.55" stop-color="${Lm[k]}" stop-opacity="0.55"/><stop offset="1" stop-color="${Lm[k]}" stop-opacity="0"/></radialGradient>` +
+            // нить в самой середине — ярче всего колпачка
+            `<radialGradient id="gj-ind-${k}-hot"><stop offset="0" stop-color="${Lm.hot}" stop-opacity="1"/>` +
+            `<stop offset="0.45" stop-color="${Lm[k + 'Core']}" stop-opacity="0.85"/><stop offset="1" stop-color="${Lm[k + 'Core']}" stop-opacity="0"/></radialGradient>`).join('');
     },
     readyLampGlow(red, green) {
         const R = this.READY_LAMP, f = this.f, Lm = PALETTE.greedJunk.lamp;
@@ -586,12 +589,13 @@ const GreedJunk = {
             if (v < 0.02) return;
             out += `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r * 3)}" fill="url(#gj-ind-${k})" opacity="${f(0.35 * v)}" style="mix-blend-mode:screen"/>` +
                 `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.3)}" fill="${Lm[k]}" opacity="${f(0.6 * v)}"/>` +
-                `<circle cx="${R.x}" cy="${f(R.y + 0.3)}" r="${f(R.r * 0.85)}" fill="url(#gj-ind-${k})" opacity="${f(0.9 * v)}" style="mix-blend-mode:screen"/>`;
+                `<circle cx="${R.x}" cy="${f(R.y + 0.3)}" r="${f(R.r * 0.85)}" fill="url(#gj-ind-${k})" opacity="${f(0.9 * v)}" style="mix-blend-mode:screen"/>` +
+                `<circle cx="${R.x}" cy="${f(R.y + 0.2)}" r="${f(R.r * 0.62)}" fill="url(#gj-ind-${k}-hot)" opacity="${f(v)}"/>`;
         });
         // затёртость колпачка видна и на горящей лампе: свет идёт сквозь
         // царапины, они темнее
         if (out) out += `<path d="M${f(R.x - 2.4)} ${f(R.y + 1.2)} L${f(R.x + 0.6)} ${f(R.y - 1.8)} M${f(R.x - 0.4)} ${f(R.y + 2.4)} L${f(R.x + 2)} ${f(R.y + 0.2)}" stroke="${Lm.capLo}" stroke-width="0.3" opacity="0.6"/>` +
-            `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.6)}" fill="none" stroke="${Lm.capLo}" stroke-width="0.6" opacity="0.45"/>`;
+            `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.6)}" fill="none" stroke="${Lm.capLo}" stroke-width="0.6" opacity="0.25"/>`;
         return out;
     },
 
