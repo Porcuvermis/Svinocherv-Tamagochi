@@ -420,6 +420,13 @@ const GreedJunkLit = {
             // рычагу на шейдере он прыгал на последние градусы
             const fade = t < 700 ? 1 : Math.max(0, 1 - (t - 700) / 200);
             v.p = v.p0 * Math.exp(-t / L.back) * Math.cos(t / 115 * Math.PI / 2) * fade * fade;
+            // Встал на место: пружина с разгону проходит точку покоя (первый
+            // ноль косинуса) — удар покороче срыва, два удара вместо шести.
+            // Только после полного рывка: недотянутый рычаг возвращается тихо.
+            if (!v.home && t >= 115 && v.p0 > 0.5) {
+                v.home = true;
+                if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 2, 40);
+            }
             show = v.p;
             if (t > 900) {
                 this._lv = null;
