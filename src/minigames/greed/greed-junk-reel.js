@@ -310,13 +310,43 @@ Object.assign(GreedJunk, {
         return ribs + tail + back + head;
     },
 
+    // ---------- ОСКОЛОК ЖЕТОНА АЛЧНОСТИ (заглушка) ----------
+    // Треть жетона (жетон — кольцо из трёх таких частей, TokenArt): дуга
+    // кольца в цвет алчности, края разлома рваные. Заглушка до настоящего
+    // рисунка осколка.
+    reelShard(cx, cy) {
+        const f = this.f, ink = PALETTE.ink, M = this.MISPRINT;
+        const col = (typeof ECONOMY !== 'undefined' && ECONOMY.sins && ECONOMY.sins.greed && ECONOMY.sins.greed.color) || PALETTE.greedJunk.paint.yellow;
+        const Ro = 15, Ri = 8, oy = cy + 9.5;              // кольцо ниже центра: дуга сверху, по центру ячейки
+        const at = (r, deg) => [cx + r * Math.cos(deg * Math.PI / 180), oy + r * Math.sin(deg * Math.PI / 180)];
+        const a0 = -150, a1 = -30;
+        // рваный край разлома: зигзаг от внешнего края к внутреннему
+        const tear = (deg, dir) => {
+            const pts = [];
+            for (let k = 0; k <= 4; k++) {
+                const r = Ro - (Ro - Ri) * k / 4, j = (k % 2 ? 1 : -1) * 3 * dir;
+                pts.push(at(r, deg + (k === 0 || k === 4 ? 0 : j)));
+            }
+            return pts;
+        };
+        const P = (q) => `${f(q[0])} ${f(q[1])}`;
+        const o0 = at(Ro, a0), o1 = at(Ro, a1);
+        const right = tear(a1, 1), left = tear(a0, -1).reverse();
+        const d = `M${P(o0)} A${Ro} ${Ro} 0 0 1 ${P(o1)} L${right.slice(1).map(P).join(' L')} ` +
+            `A${Ri} ${Ri} 0 0 0 ${P(left[0])} L${left.slice(1).map(P).join(' L')} Z`;
+        return `<path d="${d}" fill="${col}" transform="translate(${M.x} ${M.y})"/>` +
+            `<path d="M${P(at(Ro - 1.6, a0 + 8))} A${Ro - 1.6} ${Ro - 1.6} 0 0 1 ${P(at(Ro - 1.6, a1 - 8))}" fill="none" stroke="${PALETTE.greedJunk.paint.cream}" stroke-width="0.8" opacity="0.6" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+    },
+
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
     reelCell(key, x, y) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;
         const rnd = this.rng(x * 7 + y * 13 + key.length);
         let out = `<rect x="${x}" y="${y}" width="${C.w}" height="${C.h}" fill="${R.paper}"/>`;
         for (let i = 0; i < 14; i++) out += `<circle cx="${f(x + rnd() * C.w)}" cy="${f(y + rnd() * C.h)}" r="${f(0.2 + rnd() * 0.4)}" fill="${R.speck}" opacity="0.5"/>`;
-        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish' }[key];
+        // blank — пустышка: только бумага, совсем без рисунка (решение игрока)
+        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard' }[key];
         if (draw) out += this[draw](x + C.w / 2, y + C.h / 2);
         return out;
     }
