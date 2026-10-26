@@ -98,8 +98,8 @@ Object.assign(GreedJunk, {
         const gid = 'gj-wc-grime';
         g += `<filter id="${gid}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>` +
             `<g filter="url(#${gid})" opacity="0.75">` +
-            `<ellipse cx="${cx}" cy="${y + 19}" rx="12" ry="12" fill="none" stroke="${J.tin[900]}" stroke-width="2"/>` +
-            `<ellipse cx="${cx + 4}" cy="${y + 54}" rx="5" ry="6" fill="${J.tin[900]}" opacity="0.6"/>` +
+            `<ellipse cx="${cx}" cy="${y + 15}" rx="11" ry="11" fill="none" stroke="${J.tin[900]}" stroke-width="2"/>` +
+            `<ellipse cx="${cx + 4}" cy="${y + 61}" rx="5" ry="6" fill="${J.tin[900]}" opacity="0.6"/>` +
             `<path d="M${X0 + 1} ${Y1 - 1} H${X1 - 1} M${X0 + 1} ${Y0 + 1} V${Y1 - 1}" stroke="${J.tin[900]}" stroke-width="1.6" opacity="0.7"/></g>`;
         let sc = '';
         for (let i = 0; i < 9; i++) {
@@ -141,7 +141,7 @@ Object.assign(GreedJunk, {
         }
         out += this.T(9, 'polished', g);
         // купол приёма: полированный диск, щель через него сверху вниз
-        const dy0 = y + 19, R = 9.5;
+        const dy0 = y + 15, R = 8.5;
         // Хром купола: ступени светлеют к блику сверху-слева и размыты —
         // переход мягкий, как у полированной полусферы. Было: плоский
         // светлый диск с дугами-чёрточками и толстой чёрной щелью.
@@ -168,7 +168,7 @@ Object.assign(GreedJunk, {
         out += this.T(11, 'polished', c);
         // окошко таблички: чёрная пластиковая рамка, внутри — заводская синяя
         // табличка с «WC»; цену справа заклеили стикером
-        const ly = y + 32, lw = 34, lh = 11;
+        const ly = y + 27, lw = 34, lh = 11;
         let l = `<rect x="${cx - lw / 2}" y="${ly}" width="${lw}" height="${lh}" rx="1.2" fill="${W.bezel}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             `<rect x="${cx - lw / 2 + 1.4}" y="${ly + 1.4}" width="${lw - 2.8}" height="${lh - 2.8}" fill="${W.label}"/>` +
             `<path d="M${cx - lw / 2 + 1.6} ${ly + 1.8} H${cx + lw / 2 - 1.6}" stroke="${W.labelHi}" stroke-width="0.5"/>` +
@@ -182,10 +182,14 @@ Object.assign(GreedJunk, {
         l += `<path d="${wd}" fill="none" stroke="${W.labelInk}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>` +
             `<path d="M${wx + 2.4} ${wy + 1.6} l0.5 -0.9" stroke="${W.label}" stroke-width="0.7"/>`;
         out += this.T(9.5, 'plastic', l);
-        out += this.wcSticker(cx + 9.4, ly + lh / 2 + 0.4);
+        // Стикер — маленький из блока, 51×38 мм: по шару рукояти (≈50 мм = 30
+        // единиц) это ≈ 31×23. Был 14×13 — втрое меньше настоящего. Клеили
+        // широко, не по окошку: правая половина таблички и за край плашки на
+        // коробку механизма; «WC» слева открыто.
+        out += this.wcSticker(x + 23 + 15.5, ly + 2 + 11.5);
         // лопатка возврата: хромовый язычок наискось
         // лопатка: узкая у оси, к низу раздаётся каплей (как у фабричной)
-        const kx = cx + 3.6, ky = y + 49;
+        const kx = cx + 3.6, ky = y + 56;   // ниже стикера: на подвижное его не клеили
         const kd = `M${kx - 1.2} ${ky - 2.4} L${kx + 4} ${ky + 2.6} Q${kx + 8.4} ${ky + 5.4} ${kx + 6.6} ${ky + 8.2} Q${kx + 4.4} ${ky + 9.8} ${kx + 2.2} ${ky + 6.6} L${kx - 2.4} ${ky - 0.6} Q${kx - 2.8} ${ky - 3.2} ${kx - 1.2} ${ky - 2.4} Z`;
         out += this.T(12, 'polished', `<path d="${kd}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(0.8 1.2)"/>` +
             `<path d="${kd}" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
@@ -199,14 +203,14 @@ Object.assign(GreedJunk, {
         // Щель возврата и ковш под ней. Ковш — хромовый носик, торчит на
         // игрока: спереди видна его передняя стенка (скруглена книзу), сверху
         // — тёмный зев, куда щель и выходит. Было: белая чашка-ложка.
-        const ry = y + 45, sx = cx - 3.2;
+        const ry = y + 51, sx = cx - 3.2;
         out += this.T(9, 'steel', `<rect x="${sx - 1.4}" y="${ry}" width="2.8" height="12.6" rx="1.2" class="pit" fill="${J.hole}"/>` +
             `<path d="M${sx + 1.7} ${ry + 0.8} V${ry + 12}" class="hl" stroke="${J.tin[100]}" stroke-width="0.4"/>`);
         // Ковш — хромовый жёлоб, торчит на игрока и раздаётся книзу (щит):
         // сверху виден тёмный зев, щель возврата выходит в его заднюю стенку,
         // по нижнему краю зева — светлая губа. Было: столбик со шляпкой —
         // читался штампом-печатью.
-        const ty = y + 57;
+        const ty = y + 60;
         const outer = `M${sx - 4.4} ${ty} H${sx + 4.4} L${sx + 6} ${ty + 5} Q${sx + 6} ${ty + 8.4} ${sx + 3} ${ty + 8.4} H${sx - 3} Q${sx - 6} ${ty + 8.4} ${sx - 6} ${ty + 5} Z`;
         const mouth = `M${sx - 3.6} ${ty + 0.7} H${sx + 3.6} L${sx + 4.6} ${ty + 3.8} Q${sx} ${ty + 5.2} ${sx - 4.6} ${ty + 3.8} Z`;
         out += this.T(13, 'polished', `<path d="${outer}" class="fx" fill="${J.hole}" opacity="0.45" transform="translate(1 1.8)"/>` +
@@ -229,52 +233,53 @@ Object.assign(GreedJunk, {
     // Цена от руки маркером: «1» и монетка — тем же почерком, что тряпка.
     wcSticker(cx, cy) {
         const J = PALETTE.greedJunk, W = J.reel.wc, f = this.f, ink = J.reel.rag.marker;
-        const rnd = this.rng(4242), sw = 14, sh = 13, x = cx - sw / 2, y = cy - sh / 2;
-        const X1 = x + sw, Y1 = y + sh;
+        const rnd = this.rng(4242), sw = 31, sh = 22, x = cx - sw / 2, y = cy - sh / 2;
+        const X1 = x + sw, Y1 = y + sh, c = 8, gl = 5;   // c — отогнутый угол, gl — клеевая полоса
         // контур: верх прямой, бока чуть выгнуты, низ провис, угол — дугой вверх
-        const out = `M${f(x)} ${f(y)} H${f(X1)} Q${f(X1 + 0.25)} ${f(y + sh * 0.5)} ${f(X1)} ${f(Y1 - 4.6)} ` +
-            `C${f(X1 - 0.3)} ${f(Y1 - 1.8)} ${f(X1 - 2)} ${f(Y1 - 0.6)} ${f(X1 - 4.6)} ${f(Y1 - 0.3)} ` +
-            `Q${f(x + sw * 0.45)} ${f(Y1 + 0.5)} ${f(x + 0.3)} ${f(Y1 + 0.1)} Q${f(x - 0.25)} ${f(y + sh * 0.5)} ${f(x)} ${f(y)} Z`;
+        const out = `M${f(x)} ${f(y)} H${f(X1)} Q${f(X1 + 0.4)} ${f(y + sh * 0.5)} ${f(X1)} ${f(Y1 - c)} ` +
+            `C${f(X1 - 0.5)} ${f(Y1 - c * 0.38)} ${f(X1 - c * 0.42)} ${f(Y1 - 1)} ${f(X1 - c)} ${f(Y1 - 0.5)} ` +
+            `Q${f(x + sw * 0.45)} ${f(Y1 + 0.9)} ${f(x + 0.4)} ${f(Y1 + 0.2)} Q${f(x - 0.4)} ${f(y + sh * 0.5)} ${f(x)} ${f(y)} Z`;
         const id = 'gj-wc-st';
-        let g = `<filter id="${id}" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="0.7"/></filter>` +
+        let g = `<filter id="${id}" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1"/></filter>` +
             // тень: у приклеенного верха — никакой, под отошедшим низом и углом — гуще
-            `<path d="M${f(x + 1)} ${f(Y1 - 2)} Q${f(x + sw * 0.5)} ${f(Y1 + 1.2)} ${f(X1 - 2)} ${f(Y1)} L${f(X1 + 0.6)} ${f(Y1 - 3)} L${f(X1 + 1.2)} ${f(Y1 + 1)} L${f(x + 1)} ${f(Y1 + 1.4)} Z" ` +
-            `class="fx" fill="${J.hole}" opacity="0.6" filter="url(#${id})" transform="translate(0.5 0.9)"/>` +
-            `<path d="${out}" fill="${W.sticker}" stroke="${W.stickerLo}" stroke-width="0.35" stroke-linejoin="round"/>` +
+            `<path d="M${f(x + 2)} ${f(Y1 - 3)} Q${f(x + sw * 0.5)} ${f(Y1 + 1.6)} ${f(X1 - 3)} ${f(Y1)} L${f(X1 + 1)} ${f(Y1 - c * 0.7)} L${f(X1 + 2)} ${f(Y1 + 1.6)} L${f(x + 2)} ${f(Y1 + 2)} Z" ` +
+            `class="fx" fill="${J.hole}" opacity="0.6" filter="url(#${id})" transform="translate(0.7 1.2)"/>` +
+            `<path d="${out}" fill="${W.sticker}" stroke="${W.stickerLo}" stroke-width="0.4" stroke-linejoin="round"/>` +
             // клеевая полоса: чуть плотнее цветом, нижняя граница едва видна
-            `<path d="M${f(x + 0.2)} ${f(y + 3.4)} H${f(X1 - 0.2)}" stroke="${W.stickerLo}" stroke-width="0.25" opacity="0.5"/>` +
-            `<rect x="${f(x)}" y="${f(y)}" width="${sw}" height="3.4" fill="${W.stickerLo}" opacity="0.14"/>` +
+            `<path d="M${f(x + 0.3)} ${f(y + gl)} H${f(X1 - 0.3)}" stroke="${W.stickerLo}" stroke-width="0.3" opacity="0.5"/>` +
+            `<rect x="${f(x)}" y="${f(y)}" width="${sw}" height="${gl}" fill="${W.stickerLo}" opacity="0.14"/>` +
             // приподнятый низ: светлая полоса, сильнее к углу
-            `<path d="M${f(x + 1.2)} ${f(Y1 - 1.2)} Q${f(x + sw * 0.5)} ${f(Y1 - 0.5)} ${f(X1 - 3.6)} ${f(Y1 - 1)}" fill="none" stroke="${W.stickerHi}" stroke-width="1" stroke-linecap="round" opacity="0.7"/>` +
-            `<path d="M${f(X1 - 5.4)} ${f(Y1 - 1.3)} C${f(X1 - 2.6)} ${f(Y1 - 1.8)} ${f(X1 - 1)} ${f(Y1 - 3.2)} ${f(X1 - 0.7)} ${f(Y1 - 5.2)}" fill="none" stroke="${W.stickerHi}" stroke-width="2" stroke-linecap="round"/>` +
+            `<path d="M${f(x + 2)} ${f(Y1 - 1.6)} Q${f(x + sw * 0.5)} ${f(Y1 - 0.7)} ${f(X1 - c * 0.8)} ${f(Y1 - 1.4)}" fill="none" stroke="${W.stickerHi}" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>` +
+            `<path d="M${f(X1 - c * 1.15)} ${f(Y1 - 1.8)} C${f(X1 - c * 0.55)} ${f(Y1 - 2.4)} ${f(X1 - 1.4)} ${f(Y1 - c * 0.6)} ${f(X1 - 1)} ${f(Y1 - c * 1.1)}" fill="none" stroke="${W.stickerHi}" stroke-width="3" stroke-linecap="round"/>` +
             // сгиб, от которого угол пошёл вверх
-            `<path d="M${f(X1 - 7)} ${f(Y1 - 0.5)} Q${f(X1 - 4.4)} ${f(Y1 - 3.8)} ${f(X1 - 0.1)} ${f(Y1 - 6.8)}" fill="none" stroke="${W.stickerLo}" stroke-width="0.35" opacity="0.8"/>` +
+            `<path d="M${f(X1 - c * 1.5)} ${f(Y1 - 0.6)} Q${f(X1 - c * 0.9)} ${f(Y1 - c * 0.8)} ${f(X1 - 0.1)} ${f(Y1 - c * 1.45)}" fill="none" stroke="${W.stickerLo}" stroke-width="0.4" opacity="0.8"/>` +
             // рельеф: низ и угол выше плоскости
-            `<g class="hpass"><path d="M${f(x + 1)} ${f(Y1 - 2)} H${f(X1 - 2)}" stroke="#000" stroke-width="2" style="--dh:${this.dh(0.25)}"/>` +
-            `<circle cx="${f(X1 - 1.6)}" cy="${f(Y1 - 1.6)}" r="2" style="--dh:${this.dh(0.6)}"/></g>`;
-        // «1»: носик, палка, подставка — крупно, во всю высоту под полосой
-        const one = this.handPath([[x + 1.4, y + 5.6], [x + 3.2, y + 3.9]], rnd, false, 0.12) + ' ' +
-            this.handPath([[x + 3.2, y + 3.9], [x + 3.1, y + 10.6]], rnd, false, 0.12) + ' ' +
-            this.handPath([[x + 1.8, y + 10.7], [x + 4.4, y + 10.5]], rnd, false, 0.1);
+            `<g class="hpass"><path d="M${f(x + 2)} ${f(Y1 - 3)} H${f(X1 - 3)}" stroke="#000" stroke-width="3" style="--dh:${this.dh(0.3)}"/>` +
+            `<circle cx="${f(X1 - 2.6)}" cy="${f(Y1 - 2.6)}" r="3.4" style="--dh:${this.dh(0.9)}"/></g>`;
+        // Надпись — в своей коробке 14×13 и растянута на листок: почерк тот
+        // же, что был, только крупно, как пишут маркером на стикере.
+        const k = 2, tx = x + 1.6, ty = y + gl - 6.6;
+        const one = this.handPath([[1.4, 5.6], [3.2, 3.9]], rnd, false, 0.1) + ' ' +
+            this.handPath([[3.2, 3.9], [3.1, 10.6]], rnd, false, 0.1) + ' ' +
+            this.handPath([[1.8, 10.7], [4.4, 10.5]], rnd, false, 0.08);
         // «×» между числом и монетой: без него «1» и монета читались «10»
-        const times = this.handPath([[x + 5.3, y + 6.3], [x + 6.9, y + 8.1]], rnd, false, 0.08) + ' ' +
-            this.handPath([[x + 6.9, y + 6.3], [x + 5.3, y + 8.1]], rnd, false, 0.08);
-        // монета в ракурсе, с ребром и насечками: плоский кружок рядом с «1»
-        // читался как «10»
-        const mx = x + 10.4, my = y + 6.6;
+        const times = this.handPath([[5.3, 6.3], [6.9, 8.1]], rnd, false, 0.06) + ' ' +
+            this.handPath([[6.9, 6.3], [5.3, 8.1]], rnd, false, 0.06);
+        // монета в ракурсе, с ребром и насечками, с блеском
+        const mx = 10.4, my = 7.4;
         const coin = this.handOval(mx, my, 2.7, 1.8, rnd, 8) + ' ' +
-            this.handPath([[mx - 2.7, my], [mx - 2.6, my + 1.2], [mx - 1.4, my + 2.6], [mx, my + 3], [mx + 1.4, my + 2.6], [mx + 2.6, my + 1.2], [mx + 2.7, my]], rnd, false, 0.08) + ' ' +
-            [-1.6, -0.5, 0.5, 1.6].map(dx => this.handPath([[mx + dx, my + 2.1 - Math.abs(dx) * 0.2], [mx + dx, my + 3 - Math.abs(dx) * 0.3]], rnd, false, 0.03)).join(' ') + ' ' +
+            this.handPath([[mx - 2.7, my], [mx - 2.6, my + 1.2], [mx - 1.4, my + 2.6], [mx, my + 3], [mx + 1.4, my + 2.6], [mx + 2.6, my + 1.2], [mx + 2.7, my]], rnd, false, 0.06) + ' ' +
+            [-1.6, -0.5, 0.5, 1.6].map(dx => this.handPath([[mx + dx, my + 2.1 - Math.abs(dx) * 0.2], [mx + dx, my + 3 - Math.abs(dx) * 0.3]], rnd, false, 0.02)).join(' ') + ' ' +
             this.handOval(mx, my, 1.3, 0.8, rnd, 6) + ' ' +
-            // блеск: две чёрточки над монетой — так её рисуют от руки
-            this.handPath([[mx + 1.4, my - 2.6], [mx + 2.2, my - 3.6]], rnd, false, 0.04) + ' ' + this.handPath([[mx + 2.6, my - 2], [mx + 3.4, my - 2.6]], rnd, false, 0.04);
+            this.handPath([[mx + 1.4, my - 2.6], [mx + 2.2, my - 3.6]], rnd, false, 0.03) + ' ' + this.handPath([[mx + 2.6, my - 2], [mx + 3.4, my - 2.6]], rnd, false, 0.03);
         // маркер подсыхал: поверх основного штриха — тот же, тоньше и светлее
         // с разрывами, будто перо скребло
-        g += `<path d="${one} ${times} ${coin}" fill="none" stroke="${ink}" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>` +
-            `<path d="${one} ${coin}" fill="none" stroke="${W.sticker}" stroke-width="0.22" stroke-dasharray="0.6 1.4" opacity="0.6"/>`;
+        g += `<g transform="translate(${f(tx)} ${f(ty)}) scale(${k})">` +
+            `<path d="${one} ${times} ${coin}" fill="none" stroke="${ink}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>` +
+            `<path d="${one} ${coin}" fill="none" stroke="${W.sticker}" stroke-width="0.14" stroke-dasharray="0.4 1" opacity="0.6"/></g>`;
         // захватан: серый отпечаток у правого края и затёртая левая кромка
-        g += `<ellipse cx="${f(X1 - 2.6)}" cy="${f(y + 5)}" rx="2" ry="2.6" fill="${J.tin[700]}" opacity="0.13" filter="url(#${id})"/>` +
-            `<path d="M${f(x + 0.4)} ${f(y + 4)} V${f(Y1 - 1)}" stroke="${W.stickerHi}" stroke-width="0.6" opacity="0.7"/>`;
-        return this.T(10, 'paper', `<g transform="rotate(-6 ${f(cx)} ${f(cy)})">${g}</g>`);
+        g += `<ellipse cx="${f(X1 - 4.6)}" cy="${f(y + 8)}" rx="3.4" ry="4.4" fill="${J.tin[700]}" opacity="0.13" filter="url(#${id})"/>` +
+            `<path d="M${f(x + 0.5)} ${f(y + gl + 1)} V${f(Y1 - 1.5)}" stroke="${W.stickerHi}" stroke-width="0.8" opacity="0.7"/>`;
+        return this.T(10, 'paper', `<g transform="rotate(-5 ${f(cx)} ${f(cy)})">${g}</g>`);
     }
 });
