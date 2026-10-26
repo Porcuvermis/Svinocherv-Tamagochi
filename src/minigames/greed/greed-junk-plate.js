@@ -23,72 +23,124 @@ Object.assign(GreedJunk, {
     SEG: { a: [[0.5, 0], [3.5, 0]], b: [[4, 0.5], [4, 3]], c: [[4, 4], [4, 6.5]], d: [[0.5, 7], [3.5, 7]],
         e: [[0, 4], [0, 6.5]], f: [[0, 0.5], [0, 3]], g: [[0.6, 3.5], [3.4, 3.5]] },
     DIGIT: ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'],
-    // число n с левым верхним углом (x, y), высота цифры 7; возвращает
+    // число n с левым верхним углом (x, y), высота цифры 7·k; возвращает
     // { d: путь сегментов, w: ширина }
-    stencilNumber(n, x, y) {
+    stencilNumber(n, x, y, k = 1) {
         const f = this.f;
         let d = '', cx = x;
         String(n).split('').forEach(ch => {
             this.DIGIT[+ch].split('').forEach(sg => {
                 const [[x1, y1], [x2, y2]] = this.SEG[sg];
-                d += `M${f(cx + x1)} ${f(y + y1)} L${f(cx + x2)} ${f(y + y2)} `;
+                d += `M${f(cx + x1 * k)} ${f(y + y1 * k)} L${f(cx + x2 * k)} ${f(y + y2 * k)} `;
             });
-            cx += 6;
+            cx += 6 * k;
         });
-        return { d, w: cx - x - 2 };
+        return { d, w: cx - x - 2 * k };
+    },
+
+    // ---------- ТРАФАРЕТЫ СИМВОЛОВ ----------
+    // Свои упрощённые фигуры, а не силуэты ленты барабана: у тех рёбра рыбы и
+    // игла шприца — тонкие линии, и в размере таблички трафарет их съедал
+    // (на iPhone значки не читались). Здесь толстые формы в коробке 22×12
+    // с центром в (0,0); paint — краска, cut — перемычки (вырезаются маской).
+    stencilArt(art, ink) {
+        const F = `fill="${ink}"`, S = (w) => `fill="none" stroke="${ink}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+        const C = (w) => `fill="none" stroke="#000" stroke-width="${w}"`;
+        switch (art) {
+        case 'worm': return {
+            paint: `<path d="M-10 3 C-7 -4 -3 -4 -1 0 S5 4 7.5 -0.5" ${S(4)}/><circle cx="8.6" cy="-1.6" r="3.2" ${F}/>`,
+            cut: `<circle cx="9.4" cy="-2.4" r="0.95" fill="#000"/><path d="M-6 -3.5 L-4.6 1.5 M2.4 -1.5 L3.6 3.6" ${C(0.7)}/>` };
+        case 'syringe': return {
+            paint: `<rect x="-7" y="-3" width="12" height="6" rx="0.8" ${F}/><rect x="-11" y="-0.9" width="4.5" height="1.8" ${F}/>` +
+                `<rect x="-12.4" y="-3.6" width="1.6" height="7.2" rx="0.5" ${F}/><rect x="-8.2" y="-4.8" width="1.3" height="9.6" rx="0.5" ${F}/>` +
+                `<rect x="4.6" y="-1.3" width="2.2" height="2.6" ${F}/><path d="M6.5 0 L11.4 0" ${S(1.1)}/>`,
+            cut: `<path d="M-4 -3.2 L-4 -0.6 M-1.5 -3.2 L-1.5 -0.6 M1 -3.2 L1 -0.6 M3.4 -3.2 L3.4 -0.6" ${C(0.6)}/>` };
+        case 'beer': return {
+            paint: `<rect x="-4.6" y="-6" width="9.2" height="12" rx="1.6" ${F}/>`,
+            cut: `<path d="M-5 -4 L5 -4 M-5 4.2 L5 4.2" ${C(0.6)}/><path d="M-1.8 1.4 C-1.2 -1.6 1.2 1.6 1.8 -1.4" ${C(0.8)}/>` };
+        case 'fish': return {
+            paint: `<path d="M-7.5 0 L5 0" ${S(1.6)}/>` +
+                [-4.4, -1.6, 1.2].map(x => `<path d="M${x} -4.2 L${x + 1.4} 0 L${x} 4.2" ${S(1.3)}/>`).join('') +
+                `<path d="M4 -4.2 Q11 -4.4 11 0 Q11 4.4 4 4.2 Z" ${F}/><path d="M-7 0 L-11 -4.5 L-9.8 0 L-11 4.5 Z" ${F}/>`,
+            cut: `<circle cx="7.6" cy="-1.3" r="0.95" fill="#000"/><path d="M8.6 1.8 L11.5 1.8" ${C(0.6)}/>` };
+        case 'token': return {
+            paint: `<circle r="6" ${F}/>`,
+            cut: `<circle r="4" ${C(0.7)} stroke-dasharray="7.4 1.0"/><circle r="1.3" fill="#000"/>` };
+        case 'shard': return {
+            paint: `<path d="M-5.5 5 L-2 -6 L0.8 -2 L3.6 -5 L6 4.6 Z" ${F}/>`,
+            cut: `<path d="M-2 -6 L-1 -1 L2.5 1.5 L1.5 5" ${C(0.6)}/>` };
+        }
+        return null;
     },
 
     // ---------- ТАБЛИЧКА ----------
-    // Перемычки трафарета вырезаются маской (cut): у символов — две тонкие
-    // косые, у монеты — кольцо. Подтёки — от нижних краёв нарисованного.
+    // Строка: один символ, «×n», стрелка, выплата (и «/ жетон» при жетонном
+    // исходе). Три символа в строке съедали ширину, и каждый выходил втрое
+    // мельче. Под каждой строкой — пятно светлого грунта: волокна доски и
+    // сучок рисунок больше не перебивают. Левая колонка — три строки, правая
+    // — две; между ними промежуток под висячей лампой (HANG_LAMP.x), чтобы
+    // её кабель не ложился на значки.
     payPlate(p) {
         const f = this.f, R = PALETTE.greedJunk.reel, ink = R.spray;
         const rows = this.payRows();
         if (!rows.length) return '';
         const rnd = this.rng(4711);
-        const SC = 0.33, SW = 17.5, rh = 13;           // масштаб символа, шаг символов, шаг строк
-        const sil = `<style>.gj-sil *{fill:${ink}!important;stroke:${ink}!important}.gj-sil [fill="none"]{fill:none!important}` +
-            `.gj-sil *:not([stroke]){stroke:none!important}.gj-sil .tone,.gj-sil .mono-only{display:none}</style>`;
-        let paint = '', cut = '';
+        const SC = 1.1, NK = 1.3, rh = 14;            // масштаб символа, масштаб цифр, шаг строк
+        const lampX = (this.HANG_LAMP && this.HANG_LAMP.x) || p.x + p.w / 2;
+        let paint = '', cut = '', primer = '';
         const drips = [];
-        // Каждый трафарет подставлен рукой: свой сдвиг и наклон. Символ, стрелка
-        // и число — разные трафареты, поэтому и сбиты друг от друга отдельно.
+        // Каждый трафарет подставлен рукой: свой сдвиг и наклон. Символ, «×n»,
+        // стрелка и число — разные трафареты, поэтому и сбиты друг от друга.
         const J = (v) => (rnd() - 0.5) * 2 * v;
         const tilt = (a, cx, cy, svg) => `<g transform="rotate(${f(a)} ${f(cx)} ${f(cy)})">${svg}</g>`;
-        const sym = (key, cx0, cy0) => {
-            const cx = cx0 + J(1.2), cy = cy0 + J(1.3), a = J(7);
-            const art = this.REEL_ART[key] || key, F = this.REEL_FIT[art] || { rot: 0, k: 1, m: [0, 0] };
-            const fn = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard', token: 'reelToken' }[art];
-            if (!fn) return;
-            paint += tilt(a, cx, cy, `<g class="gj-sil" transform="translate(${f(cx)} ${f(cy)}) scale(${f(F.k * SC)}) translate(${f(-F.m[0])} ${f(-F.m[1])}) rotate(${F.rot})">${this[fn](0, 0)}</g>`);
-            // перемычки: две тонкие косые через символ, в наклоне его трафарета
-            let c = '';
-            [-3, 3].forEach(dx => { c += `<path d="M${f(cx + dx - 1.2)} ${f(cy - 5)} L${f(cx + dx + 1.2)} ${f(cy + 5)}" stroke="#000" stroke-width="0.55"/>`; });
-            cut += tilt(a, cx, cy, c);
-            if (rnd() < 0.3) drips.push([cx - 4 + rnd() * 8, cy + 3.2]);
+        const artOf = (key) => this.REEL_ART[key] || key;
+        const sym = (key, cx0, cy0, k = SC) => {
+            const A = this.stencilArt(artOf(key), ink);
+            if (!A) return;
+            const cx = cx0 + J(0.6), cy = cy0 + J(0.8), a = J(5);
+            const tr = `translate(${f(cx)} ${f(cy)}) rotate(${f(a)}) scale(${f(k)})`;
+            paint += `<g transform="${tr}">${A.paint}</g>`;
+            cut += `<g transform="${tr}">${A.cut}</g>`;
+            if (rnd() < 0.35) drips.push([cx - 4 + rnd() * 8, cy + 5 * k]);
         };
-        const arrow = (x0, y0) => { const x = x0 + J(0.8), y = y0 + J(1.2); paint += tilt(J(9), x + 2.7, y, `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`); };
-        const col = [p.x + 6, p.x + p.w / 2 + 4], top = p.y + 9;
-        rows.forEach((r, i) => {
-            // строка сбита целиком: не по сетке. Правая колонка снизу вверх:
-            // короткая строка пары встаёт сверху, до сучка, длинная — в самый низ, под ним.
-            const c = i < 3 ? 0 : 1, row = i < 3 ? i : (i === rows.length - 1 ? 0 : 2), x = col[c] + rnd() * 3, cy = top + row * rh + J(1.6);
-            for (let k = 0; k < r.n; k++) sym(r.key, x + 9 + k * SW, cy);
-            // стрелка — сразу за последним символом строки: у пары она стояла
-            // на месте третьего, и шприцы с числом разъезжались в разные стороны
-            const ax = x + 9 + r.n * SW - 7;
-            arrow(ax, cy);
-            const nx = ax + 8 + J(1), ny = cy - 3.5 + J(1.4);
-            const num = this.stencilNumber(r.pay, nx, ny);
-            paint += tilt(J(6), nx + num.w / 2, ny + 3.5, `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>`);
-            // под цифрой подтёк короткий: длинный сливался с цифрой ряда ниже
-            if (rnd() < 0.6) drips.push([nx + rnd() * num.w, ny + 7.5, 0.4]);
-            // значка монеты нет: число после стрелки и так читается выплатой
-            const rx = ax + 8 + num.w - 2;
+        const times = (x0, y0, n) => {
+            const x = x0 + J(0.5), y = y0 + J(0.8);
+            const num = this.stencilNumber(n, x + 3.4, y - 3.2, 0.9);
+            paint += tilt(J(7), x + 4, y, `<path d="M${f(x)} ${f(y - 1.2)} L${f(x + 2.4)} ${f(y + 1.2)} M${f(x + 2.4)} ${f(y - 1.2)} L${f(x)} ${f(y + 1.2)}" ${''}fill="none" stroke="${ink}" stroke-width="1" stroke-linecap="round"/>` +
+                `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.2" stroke-linecap="round"/>`);
+            return 3.4 + num.w;
+        };
+        const arrow = (x0, y0) => { const x = x0 + J(0.6), y = y0 + J(0.8); paint += tilt(J(8), x + 2.7, y, `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`); };
+        // колонки: слева от лампы и справа от неё, с отступом от гвоздей
+        const L0 = p.x + 14, R0 = lampX + 10;
+        const left = rows.filter((r, i) => i < 3), right = rows.filter((r, i) => i >= 3);
+        // правая: пара сверху (короткая строка), тройки — под ней
+        right.sort((a, b) => a.n - b.n);
+        const place = (list, x0, n) => list.map((r, j) => [r, x0, p.y + p.h / 2 + (j - (n - 1) / 2) * rh]);
+        const cells = place(left, L0, 3).concat(place(right, R0, right.length));
+        // полуширина фигуры: банка и жетон узкие — без неё за ними зияла дыра
+        const half = (key) => ({ beer: 5, token: 6, shard: 6 }[artOf(key)] || 11) * SC;
+        cells.forEach(([r, x0, cy0]) => {
+            const x = x0 + rnd() * 2, cy = cy0 + J(1);
+            let cx = x + half(r.key);
+            sym(r.key, cx, cy);
+            cx += half(r.key) + 2;
+            cx += times(cx, cy + 1, r.n) + 3;
+            arrow(cx, cy);
+            cx += 8.5;
+            const nx = cx + J(0.6), ny = cy - 3.5 * NK + J(0.8);
+            const num = this.stencilNumber(r.pay, nx, ny, NK);
+            paint += tilt(J(5), nx + num.w / 2, cy, `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"/>`);
+            if (rnd() < 0.6) drips.push([nx + rnd() * num.w, ny + 7 * NK + 0.5, 0.4]);
+            cx += num.w;
             if (r.alt) {
-                paint += `<path d="M${f(rx + 5)} ${f(cy + 3.5)} L${f(rx + 8)} ${f(cy - 3.5)}" stroke="${ink}" stroke-width="1.2" stroke-linecap="round"/>`;
-                sym(r.alt, rx + 15, cy);
+                paint += `<path d="M${f(cx + 2)} ${f(cy + 3.8)} L${f(cx + 4.6)} ${f(cy - 3.8)}" stroke="${ink}" stroke-width="1.2" stroke-linecap="round"/>`;
+                sym(r.alt, cx + 10.5, cy, 0.85);
+                cx += 16;
             }
+            // грунт: неровное пятно чуть шире строки, края — мягким напылом
+            const gx = x - 1.5 + J(0.8), gw = cx - x + 5 + J(1), gy = cy - 6.8 + J(0.5), gh = 13.6 + J(0.6);
+            primer += tilt(J(1.5), gx + gw / 2, cy, `<rect x="${f(gx)}" y="${f(gy)}" width="${f(gw)}" height="${f(gh)}" rx="2.5" fill="${R.primer}"/>`);
         });
         // подтёки: струйка вниз с каплей
         drips.forEach(([x, y, s = 1]) => {
@@ -98,20 +150,21 @@ Object.assign(GreedJunk, {
         });
         // брызги напыла
         let specks = '';
-        for (let i = 0; i < 90; i++) {
+        for (let i = 0; i < 70; i++) {
             const x = p.x + 4 + rnd() * (p.w - 8), y = p.y + 3 + rnd() * (p.h - 6);
             specks += `<circle cx="${f(x)}" cy="${f(y)}" r="${f(0.12 + rnd() * 0.25)}" fill="${ink}" opacity="${f(0.25 + rnd() * 0.45)}"/>`;
         }
         const id = 'gj-spray';
-        return sil +
-            `<mask id="${id}-m" maskUnits="userSpaceOnUse" x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}">` +
+        return `<mask id="${id}-m" maskUnits="userSpaceOnUse" x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}">` +
             `<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="#fff"/>${cut}</mask>` +
             `<filter id="${id}" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="1.6"/></filter>` +
-            // напыл — та же краска, широко размытая и слабая; поверх — чёткая
+            `<filter id="${id}-g" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="0.7"/></filter>` +
             // Класс nh: краска плоская и в карту высот не попадает. Иначе она
             // ложилась туда на своей высоте, а не на высоте доски, — шейдер
             // видел ступеньку и отбрасывал от рисунка тень.
-            `<g class="nh"><g mask="url(#${id}-m)"><g filter="url(#${id})" opacity="0.14">${paint}</g>` +
-            `<g opacity="0.9">${paint}</g></g>${specks}</g>`;
+            `<g class="nh"><g filter="url(#${id}-g)" opacity="0.93">${primer}</g>` +
+            // напыл — та же краска, широко размытая и слабая; поверх — чёткая
+            `<g mask="url(#${id}-m)"><g filter="url(#${id})" opacity="0.14">${paint}</g>` +
+            `<g opacity="0.92">${paint}</g></g>${specks}</g>`;
     }
 });
