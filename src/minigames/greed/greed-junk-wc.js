@@ -28,7 +28,8 @@ Object.assign(GreedJunk, {
         }
         d += ' Z';
         // слева обломки срезаны по краю доски с тряпкой — на неё не лезут
-        out += `<clipPath id="gj-wc-door"><rect x="${x - 2}" y="${y - 20}" width="${w + 30}" height="${h + 40}"/></clipPath>`;
+        // снизу — по верху цоколя (y 574): на него обломки не лезут
+        out += `<clipPath id="gj-wc-door"><rect x="${x - 2}" y="${y - 20}" width="${w + 30}" height="${574 - y + 20}"/></clipPath>`;
         out += `<g clip-path="url(#gj-wc-door)"><path d="${d}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.2 1.8)"/>`;
         out += this.T(4, 'plastic', `<path d="${d}" fill="${W.doorEdge}" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
             `<path d="${d}" fill="${W.door}" transform="translate(${f(cx * 0.04)} ${f((y + h / 2) * 0.04)}) scale(0.96)"/>` +
@@ -98,8 +99,8 @@ Object.assign(GreedJunk, {
         const gid = 'gj-wc-grime';
         g += `<filter id="${gid}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>` +
             `<g filter="url(#${gid})" opacity="0.75">` +
-            `<ellipse cx="${cx}" cy="${y + 15}" rx="11" ry="11" fill="none" stroke="${J.tin[900]}" stroke-width="2"/>` +
-            `<ellipse cx="${cx + 4}" cy="${y + 61}" rx="5" ry="6" fill="${J.tin[900]}" opacity="0.6"/>` +
+            `<ellipse cx="${cx}" cy="${y + 25}" rx="10.5" ry="10.5" fill="none" stroke="${J.tin[900]}" stroke-width="2"/>` +
+            `<ellipse cx="${cx + 4}" cy="${y + 66}" rx="5" ry="6" fill="${J.tin[900]}" opacity="0.6"/>` +
             `<path d="M${X0 + 1} ${Y1 - 1} H${X1 - 1} M${X0 + 1} ${Y0 + 1} V${Y1 - 1}" stroke="${J.tin[900]}" stroke-width="1.6" opacity="0.7"/></g>`;
         let sc = '';
         for (let i = 0; i < 9; i++) {
@@ -141,7 +142,7 @@ Object.assign(GreedJunk, {
         }
         out += this.T(9, 'polished', g);
         // купол приёма: полированный диск, щель через него сверху вниз
-        const dy0 = y + 15, R = 8.5;
+        const dy0 = y + 25, R = 8;
         // Хром купола: ступени светлеют к блику сверху-слева и размыты —
         // переход мягкий, как у полированной полусферы. Было: плоский
         // светлый диск с дугами-чёрточками и толстой чёрной щелью.
@@ -167,29 +168,33 @@ Object.assign(GreedJunk, {
             `<path d="M${cx - 1.2} ${dy0 - R * 0.66} V${dy0 + R * 0.66}" stroke="${J.tin[700]}" stroke-width="0.45" stroke-linecap="round"/>`;
         out += this.T(11, 'polished', c);
         // окошко таблички: чёрная пластиковая рамка, внутри — заводская синяя
-        // табличка с «WC»; цену справа заклеили стикером
-        const ly = y + 27, lw = 34, lh = 11;
+        // табличка с ценой; цену целиком заклеили стикером
+        const ly = y + 38, lw = 34, lh = 11;
         let l = `<rect x="${cx - lw / 2}" y="${ly}" width="${lw}" height="${lh}" rx="1.2" fill="${W.bezel}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             `<rect x="${cx - lw / 2 + 1.4}" y="${ly + 1.4}" width="${lw - 2.8}" height="${lh - 2.8}" fill="${W.label}"/>` +
             `<path d="M${cx - lw / 2 + 1.6} ${ly + 1.8} H${cx + lw / 2 - 1.6}" stroke="${W.labelHi}" stroke-width="0.5"/>` +
             // заводская белая окантовка таблички, левый нижний угол облез
             `<rect x="${cx - lw / 2 + 2.2}" y="${ly + 2.2}" width="${lw - 4.4}" height="${lh - 4.4}" rx="0.6" fill="none" stroke="${W.labelInk}" stroke-width="0.35" opacity="0.85"/>` +
             `<path d="M${cx - lw / 2 + 1.4} ${ly + lh - 3.6} Q${cx - lw / 2 + 3} ${ly + lh - 3.4} ${cx - lw / 2 + 4.4} ${ly + lh - 1.4} L${cx - lw / 2 + 1.4} ${ly + lh - 1.4} Z" fill="${W.labelHi}" opacity="0.8"/>`;
-        // «WC» — белая заводская печать; эмаль местами стёрлась
-        const wx = cx - lw / 2 + 3.4, wy = ly + lh / 2;
-        const wd = `M${wx} ${wy - 2.6} L${wx + 1.5} ${wy + 2.6} L${wx + 3} ${wy - 0.8} L${wx + 4.5} ${wy + 2.6} L${wx + 6} ${wy - 2.6}` +
-            ` M${wx + 11.4} ${wy - 1.8} A2.9 2.9 0 1 0 ${wx + 11.4} ${wy + 1.8}`;
-        l += `<path d="${wd}" fill="none" stroke="${W.labelInk}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>` +
-            `<path d="M${wx + 2.4} ${wy + 1.6} l0.5 -0.9" stroke="${W.label}" stroke-width="0.7"/>`;
         out += this.T(9.5, 'plastic', l);
         // Стикер — маленький из блока, 51×38 мм: по шару рукояти (≈50 мм = 30
-        // единиц) это ≈ 31×23. Был 14×13 — втрое меньше настоящего. Клеили
-        // широко, не по окошку: правая половина таблички и за край плашки на
-        // коробку механизма; «WC» слева открыто.
-        out += this.wcSticker(x + 23 + 15.5, ly + 2 + 11.5);
+        // единиц) это ≈ 31×22. Был 14×13 — втрое меньше настоящего; потом
+        // свисал за край плашки — «наклеен мимо». Теперь — ровно на окошке
+        // цены, целиком на лице, края окошка выглядывают из-под него.
+        out += this.wcSticker(cx, ly + lh / 2 + 2);
+        // «WC» — заводская штамповка вверху лица, залита чёрной эмалью,
+        // эмаль местами стёрлась. В окошке её больше нет: окошко — под цену.
+        {
+            const wy = y + 8.6, wd = `M${cx - 10} ${wy - 3.4} L${cx - 8} ${wy + 3.4} L${cx - 6} ${wy - 1} L${cx - 4} ${wy + 3.4} L${cx - 2} ${wy - 3.4}` +
+                ` M${cx + 8} ${wy - 2.3} A3.8 3.8 0 1 0 ${cx + 8} ${wy + 2.3}`;
+            out += this.T(9.2, 'polished', this.rodH(wd, 2.2, 0.7) +
+                `<path d="${wd}" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(0.4 0.5)"/>` +
+                `<path d="${wd}" fill="none" stroke="${J.tin[900]}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>` +
+                `<path d="M${cx - 7.2} ${wy + 1.6} l0.6 -1.2 M${cx + 4.6} ${wy - 1.2} l0.7 0.5" stroke="${J.tin[500]}" stroke-width="0.7" stroke-linecap="round"/>`);
+        }
         // лопатка возврата: хромовый язычок наискось
         // лопатка: узкая у оси, к низу раздаётся каплей (как у фабричной)
-        const kx = cx + 3.6, ky = y + 56;   // ниже стикера: на подвижное его не клеили
+        const kx = cx + 3.6, ky = y + 61;   // ниже стикера: на подвижное его не клеили
         const kd = `M${kx - 1.2} ${ky - 2.4} L${kx + 4} ${ky + 2.6} Q${kx + 8.4} ${ky + 5.4} ${kx + 6.6} ${ky + 8.2} Q${kx + 4.4} ${ky + 9.8} ${kx + 2.2} ${ky + 6.6} L${kx - 2.4} ${ky - 0.6} Q${kx - 2.8} ${ky - 3.2} ${kx - 1.2} ${ky - 2.4} Z`;
         out += this.T(12, 'polished', `<path d="${kd}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(0.8 1.2)"/>` +
             `<path d="${kd}" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
@@ -203,14 +208,14 @@ Object.assign(GreedJunk, {
         // Щель возврата и ковш под ней. Ковш — хромовый носик, торчит на
         // игрока: спереди видна его передняя стенка (скруглена книзу), сверху
         // — тёмный зев, куда щель и выходит. Было: белая чашка-ложка.
-        const ry = y + 51, sx = cx - 3.2;
+        const ry = y + 57, sx = cx - 3.2;
         out += this.T(9, 'steel', `<rect x="${sx - 1.4}" y="${ry}" width="2.8" height="12.6" rx="1.2" class="pit" fill="${J.hole}"/>` +
             `<path d="M${sx + 1.7} ${ry + 0.8} V${ry + 12}" class="hl" stroke="${J.tin[100]}" stroke-width="0.4"/>`);
         // Ковш — хромовый жёлоб, торчит на игрока и раздаётся книзу (щит):
         // сверху виден тёмный зев, щель возврата выходит в его заднюю стенку,
         // по нижнему краю зева — светлая губа. Было: столбик со шляпкой —
         // читался штампом-печатью.
-        const ty = y + 60;
+        const ty = y + 67;
         const outer = `M${sx - 4.4} ${ty} H${sx + 4.4} L${sx + 6} ${ty + 5} Q${sx + 6} ${ty + 8.4} ${sx + 3} ${ty + 8.4} H${sx - 3} Q${sx - 6} ${ty + 8.4} ${sx - 6} ${ty + 5} Z`;
         const mouth = `M${sx - 3.6} ${ty + 0.7} H${sx + 3.6} L${sx + 4.6} ${ty + 3.8} Q${sx} ${ty + 5.2} ${sx - 4.6} ${ty + 3.8} Z`;
         out += this.T(13, 'polished', `<path d="${outer}" class="fx" fill="${J.hole}" opacity="0.45" transform="translate(1 1.8)"/>` +
