@@ -89,10 +89,15 @@ const { chromium } = require('playwright');
   check(room.debug === 'visible', 'кнопка 🐞 остаётся поверх мини-игры');
   await page.screenshot({ path: out + 'greed-0-open.png' });
 
-  // Точка на автомате: тап по нему и есть рывок рычага.
-  const spot = await page.evaluate(() => {
-    const r = document.getElementById('machine-container').getBoundingClientRect();
-    return { x: r.x + r.width * 0.5, y: r.y + r.height * 0.45 };
+  // Аппарат собирается шейдером (секунды) — ждём, пока нарисован.
+  await page.evaluate(() => GreedMinigame.veilReady());
+  const mounted = await page.evaluate(() => !!document.querySelector('#gj-stage canvas'));
+  check(mounted, 'аппарат стоит в окне алчности');
+
+  // Где рукоять рычага на экране: поле аппарата → экран.
+  const knob = await page.evaluate(() => {
+    const r = GreedJunkLit.wrapEl.getBoundingClientRect(), G = GreedJunk, K = G.leverGeom(0).K;
+    return { x: r.x + K.x / G.W * r.width, y: r.y + K.y / G.H * r.height, unit: r.height / G.H };
   });
 
   const state = () => page.evaluate(() => ({
@@ -100,15 +105,18 @@ const { chromium } = require('playwright');
     sin: Math.round(GameState.sinValue('greed'))
   }));
   const lastSpin = () => page.evaluate(() => window.__spins[window.__spins.length - 1] || null);
-
-  // Одна крутка пальцем: тап и ожидание остановки всех трёх барабанов.
-  const spin = async () => {
-    await page.mouse.click(spot.x, spot.y);
-    for (let i = 0; i < 60; i++) {
+  // Крутка и выплата закончились, лампа готовности снова зелёная.
+  const settled = async () => {
+    for (let i = 0; i < 300; i++) {
       await page.waitForTimeout(100);
-      if (!(await page.evaluate(() => GreedMinigame.isSpinning))) return true;
+      if (await page.evaluate(() => !GreedMinigame.busy() && GreedJunkLit.ready && !GreedJunkLit.spinning())) return true;
     }
     return false;
+  };
+  // Одна крутка пальцем: тап по рукояти — рывок целиком.
+  const spin = async () => {
+    await page.mouse.click(knob.x, knob.y);
+    return settled();
   };
 
   // ---------- 2–3. СТАВКА И ШКАЛА ----------
@@ -116,7 +124,7 @@ const { chromium } = require('playwright');
   const stopped = await spin();
   const after = await state();
   const res = await lastSpin();
-  check(stopped, 'барабаны остановились сами');
+  check(stopped, 'барабаны остановились, готовность вернулась');
   check(!!res, 'крутка дошла до переходника');
   check(after.gold === before.gold - cfg.spinCost + (res ? res.pay : -1),
         'кошелёк изменился ровно на ставку и выплату');
@@ -124,28 +132,14 @@ const { chromium } = require('playwright');
   await page.screenshot({ path: out + 'greed-1-spin.png' });
 
   // ---------- 4. НА БАРАБАНАХ ТО, ЧТО ВЕРНУЛ ПЕРЕХОДНИК ----------
-  const shown = await page.evaluate(() => [0, 1, 2].map(i => {
-    const cells = document.querySelectorAll('#strip-' + i + ' .reel-cell');
-    return cells.length >= 3 ? cells[1].dataset.key : null;
-  }));
+  const shown = await page.evaluate(() => GreedJunkLit.reelKeys());
   check(!!res && shown.join(',') === res.reels.join(','),
-        'на золотой линии стоит ровно то, что вернул переходник');
-
-  // Выплата показана цифрой, а не словом (инвариант 9).
-  if (res && res.pay > 0) {
-    const shownPay = await page.evaluate(() => document.getElementById('win-pay').textContent);
-    check(/^\+\d+$/.test(shownPay), 'выплата показана числом: ' + shownPay);
-  }
+        'под ниткой стоит ровно то, что вернул переходник (' + shown.join(',') + ')');
 
   // ---------- 4а. РЫЧАГ ТЯНЕТСЯ ПАЛЬЦЕМ ----------
   // Автомат с рычагом, который нельзя дёрнуть, — это картинка рычага.
   // Проверяется ровно так, как делает палец: нажали на ручку, потянули
-  // вниз, отпустили.
-  const lever = await page.evaluate(() => {
-    const r = document.getElementById('lever-grab').getBoundingClientRect();
-    const m = document.getElementById('machine-container').getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, pull: m.height * 0.18 };
-  });
+  // вниз — храповик, срыв, крутка.
   // Отдача в палец: считаем не «завибрировало ли» (в браузере это не
   // проверить), а что игра её ЗАПРОСИЛА — храповик по ходу и удар на срыве.
   await page.evaluate(() => {
@@ -154,42 +148,37 @@ const { chromium } = require('playwright');
     const impact = Haptics.impact.bind(Haptics);
     Haptics.tick = () => { window.__haptics.push('tick'); tick(); };
     Haptics.impact = (kind, force) => { window.__haptics.push('impact:' + (kind || '')); impact(kind, force); };
+    // очередь ударов (зубцы, срыв): вне Telegram она идёт жужжанием, а не
+    // impact, — пишется сама очередь
+    const burst = Haptics.burst.bind(Haptics);
+    Haptics.burst = (kind, n, gap, then) => { window.__haptics.push('burst:' + kind); burst(kind, n, gap, then); };
   });
   const spinsBefore = await page.evaluate(() => window.__spins.length);
-  await page.mouse.move(lever.x, lever.y);
+  const travel = await page.evaluate(() => GreedJunkLit.LEVER.travel);
+  await page.mouse.move(knob.x, knob.y);
   await page.mouse.down();
-  for (let i = 1; i <= 6; i++) {
-    await page.mouse.move(lever.x, lever.y + lever.pull * i / 6);
-    await page.waitForTimeout(20);
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(knob.x, knob.y + travel * knob.unit * 1.15 * i / 12);
+    await page.waitForTimeout(30);
   }
-  const angle = await page.evaluate(() => {
-    const t = document.getElementById('lever-arm').style.transform;
-    const m = /rotate\(([\d.]+)deg\)/.exec(t);
-    return m ? Number(m[1]) : 0;
-  });
   await page.mouse.up();
-  await page.waitForTimeout(200);
-  check(angle > 30, 'рычаг идёт за пальцем (угол ' + angle.toFixed(0) + '°)');
   const feel = await page.evaluate(() => window.__haptics.slice());
-  check(feel[0] === 'impact:light', 'взялись за ручку — тихая отдача');
   check(feel.filter(x => x === 'tick').length >= 3,
-        'храповик щёлкает по ходу (' + feel.filter(x => x === 'tick').length + ' зубцов)');
-  check(feel.includes('impact:heavy'), 'срыв рычага бьёт в палец');
+        'храповик щёлкает по ходу (' + feel.filter(x => x === 'tick').length + ' щелчков)');
+  check(feel.includes('burst:rigid'), 'зубцы проскакивают с отдачей');
+  check(feel.includes('burst:heavy'), 'срыв рычага бьёт в палец');
   const spinsAfter = await page.evaluate(() => window.__spins.length);
   check(spinsAfter === spinsBefore + 1, 'дотянутый рычаг запускает крутку');
-  for (let i = 0; i < 40; i++) {
-    await page.waitForTimeout(100);
-    if (!(await page.evaluate(() => GreedMinigame.isSpinning))) break;
-  }
+  await settled();
 
   // Недотянутый рычаг возвращается сам и ничего не запускает.
   const shortBefore = await page.evaluate(() => window.__spins.length);
-  await page.mouse.move(lever.x, lever.y);
+  await page.mouse.move(knob.x, knob.y);
   await page.mouse.down();
-  await page.mouse.move(lever.x, lever.y + lever.pull * 0.25);
-  await page.waitForTimeout(60);
+  await page.mouse.move(knob.x, knob.y + travel * knob.unit * 0.3);
+  await page.waitForTimeout(80);
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(1500);
   const shortAfter = await page.evaluate(() => window.__spins.length);
   check(shortAfter === shortBefore, 'недотянутый рычаг крутку не запускает');
 
@@ -285,19 +274,21 @@ const { chromium } = require('playwright');
     GameState.save();
     GreedMinigame.open();
   });
-  await page.waitForTimeout(300);
+  await page.evaluate(() => GreedMinigame.veilReady());
+  await settled();
   const sinBefore = (await state()).sin;
-  await page.mouse.click(spot.x, spot.y);
-  await page.waitForTimeout(200);
+  await page.mouse.click(knob.x, knob.y);
+  await page.waitForTimeout(300);
   const broke = await page.evaluate(() => ({
     gold: GameState.currency('gold'),
-    spinning: GreedMinigame.isSpinning,
+    spinning: GreedJunkLit.spinning(),
     sin: Math.round(GameState.sinValue('greed')),
-    shaken: document.getElementById('machine-container').classList.contains('broke')
+    // монета не прошла — летит в ковш возврата (coinIn(false))
+    rejected: (GreedJunkLit._coins || []).some(c => !c.ok)
   }));
   check(broke.gold === 0 && !broke.spinning, 'без монет крутка не идёт и баланс не уходит в минус');
   check(broke.sin === sinBefore, 'несостоявшаяся крутка не наливает шкалу');
-  check(broke.shaken, 'отказ показан самим автоматом, а не окошком со словами');
+  check(broke.rejected, 'отказ показан самим автоматом: монета вываливается в ковш');
   await page.screenshot({ path: out + 'greed-2-broke.png' });
 
   // ---------- 8. СЫТЫЙ ЧЕРВЬ ПОЛУЧАЕТ ВЫПЛАТУ ----------

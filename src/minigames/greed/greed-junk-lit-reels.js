@@ -84,9 +84,13 @@ Object.assign(GreedJunkLit, {
     },
     // все встали: тройка под ниткой — мигание; готовность — когда и рычаг
     // вернулся
-    spinDone() {
+    // символы под ниткой сейчас (ключи конфига)
+    reelKeys() {
         const G = GreedJunk, S = G.REEL_STRIP, C = G.CELL;
-        const keys = this.reels.map(r => S[Math.round((r.s - C.h / 2) / C.h) % S.length]);
+        return this.reels.map(r => S[((Math.round((r.s - C.h / 2) / C.h) % S.length) + S.length) % S.length]);
+    },
+    spinDone() {
+        const keys = this.reelKeys();
         // в игре выплату показывает она сама (onSpinDone) — по настоящей
         // выплате, а не по картинке
         if (this.onSpinDone) this.onSpinDone(keys);

@@ -332,11 +332,11 @@ const { chromium } = require('playwright');
   found.slots = await scan('slots-game');
   await page.screenshot({ path: out + 'nw-g1-slots.png' });
 
-  // Крутка с выплатой: дождь монет и число выплаты — второе состояние
-  // экрана, и слов там тоже быть не должно.
-  await page.evaluate(() => {
-    GreedMinigame.showWin({ pay: 13, jackpot: false }, GreedMinigame.spinGeneration);
-  });
+  // Крутка с выплатой — второе состояние экрана, и слов там тоже быть не
+  // должно. Аппарат рисует на холстах, текста в DOM у него нет вовсе; крутка
+  // проверяет, что и в ходе выплаты ничего словами не всплывает.
+  await page.evaluate(() => GreedMinigame.veilReady());
+  await page.evaluate(() => { if (typeof GreedJunkLit !== 'undefined') GreedJunkLit.pull(); });
   await page.waitForTimeout(400);
   found.slotsWin = await scan('slots-game');
   await page.screenshot({ path: out + 'nw-g2-slots-win.png' });

@@ -4,746 +4,142 @@
 // выпало и сколько за это вернули, решает переходник по PAR-листу из конфига
 // (docs/plan/16-greed-slots.md, tools/sim-slots.js).
 //
-// ---------- ЧТО ЗДЕСЬ БЫЛО РАНЬШЕ ----------
-// Автомат был декорацией: победа назначалась на третью-пятую крутку
-// (`targetWinSpin`), символы выбирались из пяти равновероятных, ставки не
-// было вовсе, а закрытие шкалы приходило одним разом за «победу». То есть
-// грех про жадность НИЧЕГО не стоил, а барабаны показывали заранее решённый
-// исход — самая дорогая часть картинки не значила ничего.
+// Экран не решает ни-че-го (инвариант 2): он просит крутку у Backend и
+// показывает то, что пришло, — на гаражном аппарате (GreedJunk на свету
+// GreedJunkLit, docs/plan/28-greed-machine.md). Аппарат сам по себе умеет
+// рычаг, барабаны, монету в щель, лоток, градусник; этот файл только
+// связывает его с игрой: рывок → крутка → барабаны встают на исход →
+// выплата в лоток → готовность.
 //
-// Теперь наоборот: экран не решает ни-че-го. Он просит крутку у Backend и
-// показывает то, что оттуда пришло, — три символа и выплату. Ни весов, ни
-// таблицы выплат, ни гарантии против тильта на этой стороне нет (инвариант
-// 2): на сервере их у экрана не будет тем более.
+// Было: свой SVG-автомат с DOM-барабанами, css-рычагом, табличкой и
+// колбой — заменён аппаратом целиком (решение игрока).
 const GreedMinigame = {
     screenElement: null,
+    stageEl: null,
     win: null,               // хэндл общего окна мини-игры
-    stageElement: null,
-    machineContainer: null,
-    leverTrigger: null,
-    leverArm: null,
-    reelWindows: [],
-    reelStrips: [],
-    winOverlay: null,
-    fireworksEl: null,
-    coinRainEl: null,
-    payEl: null,
-    tableEl: null,
-    chargeEl: null,
-    goldEl: null,
-    costEl: null,
-    feedEl: null,
-
-    // ---------- КАРТИНКИ СИМВОЛОВ ----------
-    // Ключи приходят из конфига, а глифы живут здесь: конфиг — это ЧИСЛА
-    // (инвариант 3), а чем нарисован символ — дело картинки. Незнакомый ключ
-    // рисуется точкой, а не ломает экран: барабан обязан крутиться и после
-    // того, как в PAR-лист добавят шестой символ.
-    //
-    // Монеты среди значков нет намеренно: системная эмодзи-монета на айфоне
-    // СЕРЕБРЯНАЯ, а это игра про золото. Монета рисуется (currencyMark →
-    // .coin-gold в style.css), остальные символы — обычные значки.
-    //
-    // token и shard на ленте не крутятся: барабаны встают на них, только
-    // когда тройка заплатила вторым пулом — жетоном вместо монет
-    // (docs/plan/28-greed-machine.md, разд. 5).
-    GLYPH: { skull: '💀', meat: '🍖', bone: '🦴', blank: '▫️', token: '🎰', shard: '🔸' },
-
-    table: null,             // ставка, кошелёк и выплаты — с той стороны
-    isSpinning: false,
-    spinTimers: [],          // id всех текущих setTimeout
-    spinGeneration: 0,       // токен-поколение: растёт при close(), чтобы
-                             // просроченные колбэки прошлой сессии не трогали
-                             // уже новое состояние
-
-    FILLER_COUNT: 30,
-    REEL_BASE_MS: 700,
-    REEL_STEP_MS: 300,
+    busy_: false,            // идёт крутка или выплата
+    spinGeneration: 0,       // растёт при close(): просроченные колбэки молчат
+    timers: [],
 
     init() {
         this.screenElement = document.getElementById('slots-game');
         if (!this.screenElement) return;
+        this.stageEl = document.getElementById('gj-stage');
 
-        // Окно (рамка, значок греха, крестик, вопрос при выходе) — общее на
-        // все грехи. Выход посреди крутки — нажатиями (canLeave ниже).
+        // Окно (рамка из монет, крестик) — общее на все грехи. Выход посреди
+        // крутки — нажатиями (canLeave).
         if (!this.win && typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'greed',
                 // рамка из монет (greed-coins-rim.js), docs/plan/27-greed-skin.md
                 skin: typeof GreedCoins !== 'undefined' && GreedCoins.rim ? GreedCoins : null,
                 onLeave: () => this.close(),
-                // Пока крутятся барабаны или идёт выплата — выход в три нажатия
-                // крестика (покров: каждое проявляет треть монет), иначе в одно
-                // (CLAUDE.md, инвариант 8; решение игрока).
                 canLeave: () => !this.busy()
             });
         }
 
-        this.stageElement = document.getElementById('machine-stage');
-        this.machineContainer = document.getElementById('machine-container');
-        this.leverTrigger = document.getElementById('lever-trigger');
-        this.leverArm = document.getElementById('lever-arm');
-        this.winOverlay = document.getElementById('win-overlay');
-        this.fireworksEl = document.getElementById('fireworks');
-        this.coinRainEl = document.getElementById('coin-rain');
-        this.payEl = document.getElementById('win-pay');
-        this.tableEl = document.getElementById('pay-table');
-        this.chargeEl = document.getElementById('greed-charge');
-        this.goldEl = document.getElementById('slot-gold');
-        this.costEl = document.getElementById('slot-cost');
-        this.feedEl = document.getElementById('coin-feed');
-
-        this.reelWindows = [0, 1, 2].map(i => document.getElementById('reel-' + i));
-        this.reelStrips = [0, 1, 2].map(i => document.getElementById('strip-' + i));
-
-        if (this.leverTrigger) {
-            this.leverTrigger.onclick = (e) => {
-                e.stopPropagation();
-                this.pullLever();
-            };
-        }
-
-        this.attachLeverDrag();
-
         // ---------- УЗЕЛ АЛЧНОСТИ В КОЛЕСЕ ГРЕХОВ ----------
-        // Читалка живёт рядом со своей мини-игрой (docs/sins-menu.md): что
-        // считать готовностью, знает грех, а не колесо. У автомата к общему
-        // правилу добавлено второе условие — монета в кошельке, иначе узел
-        // звал бы туда, где крутка не состоится.
+        // Что считать готовностью, знает грех, а не колесо (docs/sins-menu.md):
+        // к общему правилу добавлена монета в кошельке.
         if (typeof SinsMenu !== 'undefined' && typeof Backend !== 'undefined') {
             SinsMenu.readers.greed = () => Backend.greedReady();
         }
 
         window.addEventListener('resize', () => {
-            if (!this.screenElement || !this.screenElement.classList.contains('active')) return;
-            this.fitMachineStage();
+            if (this.isOpen() && typeof GreedJunkLit !== 'undefined') GreedJunkLit.fit(this.stageEl);
         });
     },
+
+    isOpen() { return !!(this.screenElement && this.screenElement.classList.contains('active')); },
 
     open() {
         if (!this.screenElement) this.init();
         if (!this.screenElement) return;
-
         this.screenElement.classList.add('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
-
-        this.clearSpinTimers();
-        this.isSpinning = false;
-        this.clearWinFx();
-        if (this.machineContainer) {
-            this.machineContainer.classList.remove('spin-lights', 'win-lights', 'broke');
-        }
-        if (this.leverArm) this.leverArm.classList.remove('pulled');
-
-        this.table = Backend.greedTable();
-        this.buildPayTable();
-        this.refreshMeters(this.table.balance);
-
-        // Размер автомата считает JS, а не проценты в css: .reels-overlay
-        // позиционируется в % от контейнера и обязана совпасть с окном,
-        // нарисованным ВНУТРИ svg (viewBox 350×480). Меряем на следующем
-        // кадре — сразу после .active сцена может иметь нулевой размер.
-        // Готовность для покрова (src/core/mg-veil.js, veilReady): монеты
-        // уходят с экрана только когда автомат собран и уже нарисован —
-        // размер посчитан, барабаны выставлены, кадр с ними показан, — и
-        // картинки монет рамки загружены. Сюда же потом встанет загрузка
-        // ассетов прокачки: покров стоит, пока всё это не готово.
-        this._readyP = new Promise((ready) => {
-            requestAnimationFrame(() => {
-                this.fitMachineStage();
-                this.resetReelsVisual();
+        this.busy_ = false;
+        // Аппарат ставится на следующем кадре: сразу после .active сцена
+        // может иметь нулевой размер. Готовность для покрова (veilReady) —
+        // аппарат нарисован и атлас монет пришёл.
+        this._readyP = new Promise((ready) => requestAnimationFrame(() => {
+            const L = GreedJunkLit;
+            const drawn = L.mount(this.stageEl, {
+                onPull: () => this.onPull(),
+                onSpinDone: (keys) => this.onSpinDone(keys),
+                canReady: () => this.isOpen() && !this.busy_
+            });
+            if (L.meterSet) L.meterSet(L.meterValue());
+            const A = typeof GreedCoins !== 'undefined' && GreedCoins.loadAtlas ? GreedCoins.loadAtlas() : null;
+            Promise.resolve(drawn).then(() => {
                 const shown = () => requestAnimationFrame(() => ready());
-                const A = typeof GreedCoins !== 'undefined' && GreedCoins.loadAtlas ? GreedCoins.loadAtlas() : null;
                 if (A && !A.ready) A.wait.push(shown); else shown();
             });
-        });
+        }));
     },
 
-    // Идёт крутка или выплата: барабаны, табло выплаты на экране.
-    busy() {
-        return !!(this.isSpinning || (this.winOverlay && this.winOverlay.classList.contains('show')));
-    },
+    // Идёт крутка или выплата.
+    busy() { return this.busy_; },
 
     // Готовность для покрова перехода: см. open().
-    veilReady() {
-        return this._readyP || Promise.resolve();
-    },
+    veilReady() { return this._readyP || Promise.resolve(); },
 
     close() {
-        this.spinGeneration++;   // гасим все ещё не сработавшие колбэки
-        this.clearSpinTimers();
-        this.isSpinning = false;
-
+        this.spinGeneration++;
+        this.timers.forEach(clearTimeout);
+        this.timers = [];
+        this.busy_ = false;
         if (this.screenElement) this.screenElement.classList.remove('active');
-        if (this.leverArm) this.leverArm.classList.remove('pulled');
-        if (this.machineContainer) {
-            this.machineContainer.classList.remove('spin-lights', 'win-lights', 'broke');
-        }
-        this.clearWinFx();
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.resumeRoom();
     },
 
-    clearSpinTimers() {
-        this.spinTimers.forEach(id => clearTimeout(id));
-        this.spinTimers = [];
-    },
-
-    clearWinFx() {
-        if (this.winOverlay) this.winOverlay.classList.remove('show', 'fade-out', 'back', 'win', 'jackpot');
-        if (this.fireworksEl) this.fireworksEl.innerHTML = '';
-        if (this.coinRainEl) this.coinRainEl.innerHTML = '';
-        if (this.payEl) this.payEl.textContent = '';
-    },
-
-    glyph(key) {
-        return this.GLYPH[key] || '·';
-    },
-
-    // Разметка символа: монета — нарисованный кружок, остальное — значок.
-    // Возвращается именно разметка, а не текст: монета собирается из
-    // элемента с градиентом, текстом её не выразить.
-    symbolHtml(key, times) {
-        const one = (key === 'coin')
-            ? (typeof currencyMark === 'function' ? currencyMark('gold') : '')
-            : this.glyph(key);
-        return one.repeat ? one.repeat(times || 1) : one;
-    },
-
-    // ---------- ТАБЛИЦА ВЫПЛАТ ----------
-    // Строится из конфига, а не пишется в разметке: правка выплат обязана
-    // быть видна игроку в тот же момент, что и калькулятору. Слов в ней нет —
-    // три значка и число (инвариант 9).
-    buildPayTable() {
-        if (!this.tableEl || !this.table) return;
-        this.tableEl.innerHTML = '';
-        const rows = this.table.symbols
-            .filter(s => s.pay > 0)
-            .sort((a, b) => b.pay - a.pay);
-        rows.forEach(s => this.tableEl.appendChild(this.payRow(this.symbolHtml(s.key, 3), s.pay)));
-        if (this.table.pair && this.table.pair.key) {
-            this.tableEl.appendChild(this.payRow(this.symbolHtml(this.table.pair.key, 2),
-                                                 this.table.pair.pay));
-        }
-        // Цифра у монеты — только если ставка не одна монета. Одна монета
-        // и так одна: «1» рядом с ней объясняет ровно ничего.
-        if (this.costEl) this.costEl.textContent = this.table.cost > 1 ? this.table.cost : '';
-    },
-
-    payRow(signs, pay) {
-        const row = document.createElement('div');
-        row.className = 'pay-row';
-        const left = document.createElement('span');
-        left.className = 'pay-signs';
-        left.innerHTML = signs;
-        const right = document.createElement('b');
-        right.className = 'pay-value';
-        right.textContent = pay;
-        row.appendChild(left);
-        row.appendChild(right);
-        return row;
-    },
-
-    // Кошелёк и заряд (шкала алчности). Кошелёк показывается ТЕМ числом,
-    // которое передали: во время крутки это баланс уже без ставки, но ещё без
-    // выплаты — иначе выигрыш виден раньше, чем встали барабаны.
-    refreshMeters(gold) {
-        if (this.goldEl) {
-            const value = (typeof gold === 'number') ? gold : GameState.currency('gold');
-            this.goldEl.textContent = value;
-        }
-        if (this.chargeEl) {
-            const bar = this.chargeEl.querySelector('i');
-            const max = GameState.maxValue('greed') || 100;
-            const share = Math.max(0, Math.min(1, GameState.sinValue('greed') / max));
-            if (bar) bar.style.height = (share * 100).toFixed(1) + '%';
-        }
-    },
-
-    fitMachineStage() {
-        if (!this.stageElement || !this.machineContainer) return;
-        const stageW = this.stageElement.clientWidth;
-        const stageH = this.stageElement.clientHeight;
-        if (stageW < 4 || stageH < 4) return;
-
-        const RATIO = 350 / 620;   // совпадает с viewBox корпуса (с тумбой)
-        let w = stageW;
-        let h = w / RATIO;
-        if (h > stageH) {
-            h = stageH;
-            w = h * RATIO;
-        }
-        this.machineContainer.style.width = w + 'px';
-        this.machineContainer.style.height = h + 'px';
-    },
-
-    // ---------- БАРАБАНЫ ----------
-    // Символы для ленты берутся из таблицы выплат, то есть из конфига: своего
-    // списка у экрана нет. Вес при этом НЕ учитывается — лента мелькает и
-    // размыта, её дело быть похожей на барабан, а не быть честной выборкой.
-    // Честна только остановка, и она приходит с той стороны.
-    randomSymbol() {
-        const keys = (this.table && this.table.symbols.map(s => s.key)) || Object.keys(this.GLYPH);
-        return keys[Math.floor(Math.random() * keys.length)];
-    },
-
-    resetReelsVisual() {
-        const [topRow, midRow, bottomRow] = [this.decorRow(), this.decorRow(), this.decorRow()];
-        this.reelStrips.forEach((strip, i) => {
-            if (!strip) return;
-            this.collapseStripToTriple(i, { top: topRow[i], mid: midRow[i], bottom: bottomRow[i] });
-        });
-    },
-
-    // Декоративный ряд: три символа, которые ГАРАНТИРОВАННО не сложатся в
-    // тройку. Верхний и нижний ряды не играют, и тройка в них читалась бы как
-    // выигрыш, за который не заплатили.
-    decorRow() {
-        const row = [this.randomSymbol(), this.randomSymbol(), this.randomSymbol()];
-        if (row[0] === row[1] && row[1] === row[2]) {
-            const keys = this.table ? this.table.symbols.map(s => s.key) : Object.keys(this.GLYPH);
-            row[2] = keys.find(k => k !== row[2]) || row[2];
-        }
-        return row;
-    },
-
-    collapseStripToTriple(index, { top, mid, bottom }) {
-        const windowEl = this.reelWindows[index];
-        const strip = this.reelStrips[index];
-        if (!strip || !windowEl) return null;
-        const cellH = (windowEl.clientHeight || 180) / 3;
-        strip.style.transition = 'none';
-        strip.classList.remove('blur');
-        strip.innerHTML = '';
-        const topEl = this.makeCell(top, cellH, 'side');
-        const midEl = this.makeCell(mid, cellH, 'mid');
-        const bottomEl = this.makeCell(bottom, cellH, 'side');
-        strip.appendChild(topEl);
-        strip.appendChild(midEl);
-        strip.appendChild(bottomEl);
-        strip.style.transform = 'translateY(0px)';
-        void strip.offsetHeight;   // рефлоу: иначе сброс склеится со следующим transition
-        return { topEl, midEl, bottomEl };
-    },
-
-    readCurrentTriple(index) {
-        const strip = this.reelStrips[index];
-        const cells = strip ? strip.querySelectorAll('.reel-cell') : [];
-        if (cells.length >= 3) {
-            return [cells[0].dataset.key, cells[1].dataset.key, cells[2].dataset.key];
-        }
-        return [this.randomSymbol(), this.randomSymbol(), this.randomSymbol()];
-    },
-
-    // Размер символа считается от высоты ячейки, а не задан в css долями
-    // ЭКРАНА: игра живёт в холсте постоянного размера, который масштабируется
-    // целиком (инвариант 11), и vw внутри него означает не то, что кажется.
-    makeCell(key, cellH, role) {
-        const cell = document.createElement('div');
-        cell.className = 'reel-cell' + (role ? ' reel-cell-' + role : '');
-        cell.style.height = cellH + 'px';
-        cell.style.fontSize = (cellH * (role === 'mid' ? 0.62 : 0.5)).toFixed(1) + 'px';
-        cell.dataset.key = key;
-        cell.innerHTML = this.symbolHtml(key, 1);
-        return cell;
-    },
-
-    // ---------- РЫЧАГ ----------
-    // Одна крутка = один поход в переходник. Ответ приходит СРАЗУ, а барабаны
-    // едут уже к известному результату: так работает и настоящий автомат
-    // (исход решается в момент нажатия), и так это переживёт сервер — ответ
-    // придёт по сети раньше, чем доедет анимация.
-    // byHand — крутку запустили, дотянув рычаг пальцем: тогда своя анимация
-    // рывка не нужна, рычаг уже отыграл движение рукой.
-    pullLever(byHand) {
-        if (this.isSpinning) return;
-        if (!this.reelWindows[0] || this.reelWindows[0].clientHeight < 4) {
-            // Сцена ещё не измерена — пробуем на следующем кадре.
-            requestAnimationFrame(() => this.pullLever(byHand));
-            return;
-        }
-
+    // ---------- РЫВОК → КРУТКА ----------
+    // Аппарат спрашивает на срыве рычага; false — крутки нет (денег нет):
+    // монета вываливается в ковш возврата, барабаны стоят. Отказ отдаёт и
+    // в палец — иначе дотянутый рычаг, за которым ничего не случилось,
+    // читается как несработавшее касание.
+    onPull() {
         const res = Backend.greedSpin();
         if (!res.ok) {
-            // Денег нет. Крутка не уходит в минус, а отказ показывается тем
-            // же, чем он вызван: пустеющим лотком (docs/plan/16, раздел 6).
-            // В палец он тоже отдаёт — иначе дотянутый рычаг, за которым
-            // ничего не случилось, читается как несработавшее касание.
             if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
-            this.showBroke();
-            return;
+            return false;
         }
-
-        this.isSpinning = true;
-        const gen = this.spinGeneration;
-        this.clearWinFx();
-
-        // Кошелёк проседает СРАЗУ: монету автомат забрал в момент рывка, а не
-        // после остановки барабанов. Выплата прибавится, когда будет видно, за что.
-        this.refreshMeters(res.balance - res.pay);
-
-        if (!byHand) this.animateLever();
-        this.feedCoin();
-        if (this.machineContainer) this.machineContainer.classList.add('spin-lights');
-
-        const mid = res.reels;
-        const top = this.decorRow();
-        const bottom = this.decorRow();
-
-        let stopped = 0;
-        this.reelWindows.forEach((windowEl, index) => {
-            const duration = this.REEL_BASE_MS + index * this.REEL_STEP_MS;
-            const final = { top: top[index], mid: mid[index], bottom: bottom[index] };
-            this.spinReel(index, final, duration, gen, () => {
-                stopped++;
-                if (stopped < this.reelWindows.length) return;
-                if (gen !== this.spinGeneration) return;
-                this.isSpinning = false;
-                if (this.machineContainer) this.machineContainer.classList.remove('spin-lights');
-                this.settle(res, gen);
-            });
-        });
-    },
-
-    // Барабаны встали — показываем итог. Шкала алчности налилась в любом
-    // случае, поэтому заряд обновляется всегда, а шум — только за выплату.
-    settle(res, gen) {
-        if (res.pay > 0 || this.altGain(res)) {
-            this.showWin(res, gen);
-            // Кошелёк пополняется не в момент остановки, а когда монеты
-            // ДОЛЕТЕЛИ до лотка: иначе число прибавляется раньше, чем
-            // становится понятно за что, и выплата читается как случайность.
-            const t = setTimeout(() => {
-                if (gen !== this.spinGeneration) return;
-                this.refreshMeters(res.balance);
-            }, 380);
-            this.spinTimers.push(t);
-        } else {
-            this.refreshMeters(res.balance);
-        }
-        // Кошелёк в комнате считает то же состояние: пусть перерисуется сразу,
-        // а не через секунду на общем таймере.
+        this.busy_ = true;
+        this.res = res;
+        this.gen = this.spinGeneration;
+        // Барабаны встают на символы исхода: под ниткой — res.reels.
+        // Ячейку каждого берём на ленте с случайного места — один и тот же
+        // символ встречается на ленте несколько раз.
+        const G = GreedJunk, n = G.REEL_STRIP.length;
+        GreedJunkLit.spin(res.reels.map(k => G.reelIndexOf(k, Math.floor(Math.random() * n))));
+        // кошелёк в комнате считает то же состояние
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+        return true;
     },
 
-    // Ставка уходит в монетоприёмник: монета поднимается от кучки к щели и
-    // исчезает в ней. Единственное место, где видно, что крутка чего-то
-    // стоит: число в кошельке меняется молча, и на него не смотрят.
-    feedCoin() {
-        if (!this.feedEl) return;
-        this.feedEl.classList.remove('go');
-        void this.feedEl.getBoundingClientRect().width;
-        this.feedEl.classList.add('go');
-        const t = setTimeout(() => this.feedEl.classList.remove('go'), 700);
-        this.spinTimers.push(t);
-    },
-
-    // ---------- РЫЧАГ, КОТОРЫЙ ТЯНУТ ПАЛЬЦЕМ ----------
-    // Тап по автомату крутит и так — но автомат с рычагом, который нельзя
-    // дёрнуть, это картинка рычага. Палец тянет ручку вниз, рычаг идёт за
-    // ним, и на отпускании: дотянул до порога — крутка, не дотянул — рычаг
-    // возвращается сам, как пружина.
-    //
-    // Угол ставится СТИЛЕМ, а не атрибутом, и перед автоматической анимацией
-    // снимается: css-анимация transform стирает атрибут transform у
-    // svg-узла (docs/traps.md, п. 50), и жить им обоим одновременно нельзя.
-    //
-    // ---------- ОТДАЧА В ПАЛЕЦ ----------
-    // Рычаг — единственное место игры, где палец ВЕДЁТ железо, а не тыкает
-    // в картинку, и без отдачи это чувствуется ватой. Отдача повторяет
-    // устройство настоящего рычага: храповик щёлкает зубцами по ходу, на
-    // срыве бьёт один раз посильнее, пружина на возврате отзывается тихо.
-    // Ход в 58° разбит на семь зубцов — по щелчку каждые восемь градусов:
-    // чаще палец уже не различает, реже — тянешь по гладкому.
-    LEVER_NOTCH_DEG: 8,
-    LEVER_MAX_DEG: 58,       // столько же, сколько в keyframes автоматического рывка
-    LEVER_FIRE_DEG: 40,      // с этого угла рычаг «сорвался» и крутка идёт
-    dragging: false,
-
-    attachLeverDrag() {
-        const grab = document.getElementById('lever-grab');
-        if (!grab || !this.leverArm) return;
-
-        let startY = 0;
-        let travel = 1;
-        let angle = 0;
-        let startAt = 0;
-        let notch = 0;
-
-        const setAngle = (deg) => {
-            angle = Math.max(0, Math.min(this.LEVER_MAX_DEG, deg));
-            this.leverArm.style.transform = 'rotate(' + angle.toFixed(1) + 'deg)';
-
-            // Зубец храповика. Считается по пройденным ступеням, а не по
-            // каждому движению пальца: иначе отдача сливается в жужжание.
-            // Ступени только ВПЕРЁД — отпуская рычаг назад, храповик молчит,
-            // как и положено храповику.
-            const step = Math.floor(angle / this.LEVER_NOTCH_DEG);
-            if (step > notch && typeof Haptics !== 'undefined') Haptics.tick();
-            if (step > notch) notch = step;
-        };
-
-        // fire — рычаг дотянут до срыва. tap — по ручке просто ткнули: она
-        // лежит поверх общей зоны тапа, и без этой ветки тап по самому
-        // рычагу оказался бы единственным местом автомата, которое не
-        // крутит.
-        const release = (fire, tap) => {
-            if (!this.dragging) return;
-            this.dragging = false;
-            grab.style.cursor = 'grab';
-            // Возврат пружиной: рычагу дают доиграть самому, а крутка
-            // запускается сразу — ждать анимацию незачем.
-            this.leverArm.style.transition = 'transform 0.45s cubic-bezier(0.34, 1.4, 0.64, 1)';
-            this.leverArm.style.transform = 'rotate(0deg)';
-            const t = setTimeout(() => {
-                if (!this.leverArm) return;
-                this.leverArm.style.transition = '';
-                this.leverArm.style.transform = '';
-            }, 500);
-            this.spinTimers.push(t);
-            if (typeof Haptics !== 'undefined') {
-                // Срыв — один сильный удар: рычаг ушёл, крутка пошла.
-                // Недотянутый рычаг отзывается тихо: пружина, а не событие.
-                if (fire) Haptics.impact('heavy', true);
-                else if (!tap) Haptics.impact('light');
-            }
-            if (fire) this.pullLever(true);
-            else if (tap) this.pullLever(false);
-        };
-
-        grab.addEventListener('pointerdown', (e) => {
-            if (this.isSpinning) return;
-            e.preventDefault();
-            e.stopPropagation();
-            this.dragging = true;
-            startY = e.clientY;
-            grab.setPointerCapture(e.pointerId);
-            grab.style.cursor = 'grabbing';
-            startAt = Date.now();
-            this.leverArm.style.transition = '';
-            this.leverArm.classList.remove('pulled');
-            // Полный ход рычага — седьмая часть высоты автомата: столько
-            // палец проходит одним движением, не отрывая его от стекла.
-            const box = this.machineContainer
-                ? this.machineContainer.getBoundingClientRect() : null;
-            travel = Math.max(40, (box ? box.height : 480) * 0.14);
-            notch = 0;
-            setAngle(0);
-            // Взялись за ручку. Самая тихая отдача из всех: это ещё не
-            // действие, а «железо в руке».
-            if (typeof Haptics !== 'undefined') Haptics.impact('light', true);
-        });
-
-        grab.addEventListener('pointermove', (e) => {
-            if (!this.dragging) return;
-            e.preventDefault();
-            setAngle((e.clientY - startY) / travel * this.LEVER_MAX_DEG);
-        });
-
-        const end = () => release(angle >= this.LEVER_FIRE_DEG,
-                                  angle < 4 && Date.now() - startAt < 350);
-        grab.addEventListener('pointerup', end);
-        grab.addEventListener('pointercancel', () => release(false, false));
-    },
-
-    animateLever() {
-        if (!this.leverArm) return;
-        // Инлайновый угол от перетаскивания снимается: css-анимация и
-        // собственный transform в одном узле не уживаются (traps, п. 50).
-        this.leverArm.style.transform = '';
-        this.leverArm.style.transition = '';
-        this.leverArm.classList.remove('pulled');
-        void this.leverArm.getBoundingClientRect().width;
-        this.leverArm.classList.add('pulled');
-        const onEnd = () => {
-            this.leverArm.classList.remove('pulled');
-            this.leverArm.removeEventListener('animationend', onEnd);
-        };
-        this.leverArm.addEventListener('animationend', onEnd);
-    },
-
-    // Пустой кошелёк. Без слов и без окошка «недостаточно средств»: автомат
-    // дёргается, лоток вспыхивает красным — и всё понятно.
-    showBroke() {
-        if (!this.machineContainer) return;
-        this.machineContainer.classList.remove('broke');
-        void this.machineContainer.getBoundingClientRect().width;
-        this.machineContainer.classList.add('broke');
-        const t = setTimeout(() => {
-            if (this.machineContainer) this.machineContainer.classList.remove('broke');
-        }, 600);
-        this.spinTimers.push(t);
-    },
-
-    // ---------- ВЫПЛАТА ----------
-    // Шума ровно столько, сколько заплатили. Ступени три, и они не выдуманы,
-    // а взяты из самой таблицы выплат:
-    //
-    //   • ВОЗВРАТ СТАВКИ (pay ≤ цена крутки) — не выигрыш, а «не проиграл»:
-    //     одна монета падает в лоток, и всё;
-    //   • ВЫИГРЫШ — дождь монет по размеру выплаты и бегущие огни;
-    //   • ДЖЕКПОТ (самая дорогая тройка) — вспышка, искры и тряска корпуса.
-    //
-    // Иначе выплата в одну монету празднуется так же, как тройка черепов, и
-    // цена джекпота обесценивается: игрок перестаёт различать исходы, а
-    // различать их ему больше нечем — слов в игре нет.
-    showWin(res, gen) {
-        if (!this.winOverlay) return;
-        const alt = this.altGain(res);
-        const tier = res.jackpot ? 'jackpot'
-            : (alt || res.pay > (res.cost || 1)) ? 'win' : 'back';
-
-        // Жетон показывается своим значком рядом с числом: «+1» без него
-        // читалось бы как монета (слов нет, инвариант 9).
-        if (this.payEl) {
-            this.payEl.textContent = alt
-                ? '+' + alt.amount + this.glyph(alt.key)
-                : '+' + res.pay;
-        }
-        this.winOverlay.classList.remove('back', 'win', 'jackpot');
-        this.winOverlay.classList.add(tier);
-
-        if (this.machineContainer) {
-            this.machineContainer.classList.remove('spin-lights');
-            if (tier !== 'back') this.machineContainer.classList.add('win-lights');
-            if (tier === 'jackpot') {
-                this.machineContainer.classList.remove('jackpot-hit');
-                void this.machineContainer.getBoundingClientRect().width;
-                this.machineContainer.classList.add('jackpot-hit');
-            }
-        }
-
-        // Монет столько, сколько заплатили, но не больше горсти: сорок монет
-        // за джекпот в кадре не читаются, а стоят сорока анимаций.
-        // Дождь монет — только за монеты: под жетоном он соврал бы о выплате.
-        if (!alt) this.spawnCoinRain(tier === 'back' ? 1 : Math.max(5, Math.min(res.pay, 22)));
-        if (tier === 'jackpot') this.spawnFireworks();
-
-        this.winOverlay.classList.remove('fade-out');
-        this.winOverlay.classList.add('show');
-
-        const hold = tier === 'jackpot' ? 2000 : tier === 'win' ? 1200 : 650;
-        const t1 = setTimeout(() => {
+    // ---------- БАРАБАНЫ ВСТАЛИ → ВЫПЛАТА ----------
+    // Монет в лоток — сколько заплатили, но не больше горсти: сорок монет за
+    // джекпот в лотке не читаются, а стоят сорока падений. Жетон и осколок
+    // в лоток не сыплются (там монеты): за них — мигание ламп, а начисление
+    // покажет общий кошелёк (wallet-fx). Джекпот мигает дважды.
+    POUR_MAX: 40,
+    onSpinDone() {
+        const res = this.res, L = GreedJunkLit;
+        if (!res || this.gen !== this.spinGeneration) { this.busy_ = false; return; }
+        this.res = null;
+        const got = Object.keys(res.currencies || {}).some(k => k !== 'gold' && res.currencies[k] > 0);
+        if (res.pay > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, res.pay));
+        if (res.pay > (res.cost || 1) || got) L.blink();
+        if (res.jackpot) this.timers.push(setTimeout(() => L.blink(), 1600));
+        if (L.meterSet) L.meterSet(L.meterValue());
+        // выплата досыпалась — готов к следующей крутке
+        const pourMs = res.pay > 0 ? 700 + Math.min(this.POUR_MAX, res.pay) / L.TRAY.rate * 1000 : 0;
+        const gen = this.gen;
+        this.timers.push(setTimeout(() => {
             if (gen !== this.spinGeneration) return;
-            this.winOverlay.classList.add('fade-out');
-        }, hold);
-        const t2 = setTimeout(() => {
-            if (gen !== this.spinGeneration) return;
-            this.clearWinFx();
-            if (this.machineContainer) {
-                this.machineContainer.classList.remove('win-lights', 'jackpot-hit');
-            }
-        }, hold + 700);
-        this.spinTimers.push(t1, t2);
-    },
-
-    // Чем заплатил второй пул, если заплатил: ключ символа и сколько.
-    altGain(res) {
-        const cur = res.currencies || {};
-        if (cur.greed_token) return { key: 'token', amount: cur.greed_token };
-        if (cur.greed_shard) return { key: 'shard', amount: cur.greed_shard };
-        return null;
-    },
-
-    spawnFireworks() {
-        if (!this.fireworksEl) return;
-        this.fireworksEl.innerHTML = '';
-        const colors = ['#ffd700', '#ff6b3d', '#f5b041', '#4CAF50', '#00e5ff', '#ff4d9d'];
-        for (let i = 0; i < 24; i++) {
-            const spark = document.createElement('div');
-            spark.className = 'spark';
-            const angle = (Math.PI * 2 * i) / 24;
-            const dist = 70 + Math.random() * 70;
-            spark.style.setProperty('--tx', (Math.cos(angle) * dist).toFixed(0) + 'px');
-            spark.style.setProperty('--ty', (Math.sin(angle) * dist).toFixed(0) + 'px');
-            spark.style.background = colors[Math.floor(Math.random() * colors.length)];
-            spark.style.animationDelay = (Math.random() * 0.15).toFixed(2) + 's';
-            this.fireworksEl.appendChild(spark);
-        }
-    },
-
-    spawnCoinRain(count) {
-        if (!this.coinRainEl) return;
-        this.coinRainEl.innerHTML = '';
-        for (let i = 0; i < count; i++) {
-            const coin = document.createElement('div');
-            coin.className = 'coin';
-            coin.style.left = (4 + Math.random() * 92).toFixed(0) + '%';
-            coin.style.setProperty('--drift', (Math.random() * 60 - 30).toFixed(0) + 'px');
-            coin.style.animationDuration = (0.9 + Math.random() * 0.7).toFixed(2) + 's';
-            coin.style.animationDelay = (Math.random() * 0.35).toFixed(2) + 's';
-            this.coinRainEl.appendChild(coin);
-        }
-    },
-
-    // Крутит один барабан лентой символов. Лента: [текущая тройка] +
-    // [заполнители] + [финальная тройка], и прокрутка останавливается ровно
-    // на последних трёх — тогда в окне финал, а на золотой линии final.mid.
-    spinReel(index, final, duration, gen, onStopped) {
-        const windowEl = this.reelWindows[index];
-        const strip = this.reelStrips[index];
-        if (!windowEl || !strip) { onStopped(); return; }
-
-        const cellH = (windowEl.clientHeight || 180) / 3;
-        const [curTop, curMid, curBottom] = this.readCurrentTriple(index);
-
-        strip.style.transition = 'none';
-        strip.innerHTML = '';
-        strip.appendChild(this.makeCell(curTop, cellH, 'side'));
-        strip.appendChild(this.makeCell(curMid, cellH, 'mid'));
-        strip.appendChild(this.makeCell(curBottom, cellH, 'side'));
-        for (let i = 0; i < this.FILLER_COUNT; i++) {
-            strip.appendChild(this.makeCell(this.randomSymbol(), cellH));
-        }
-        strip.appendChild(this.makeCell(final.top, cellH, 'side'));
-        strip.appendChild(this.makeCell(final.mid, cellH, 'mid'));
-        strip.appendChild(this.makeCell(final.bottom, cellH, 'side'));
-        strip.style.transform = 'translateY(0px)';
-        void strip.offsetHeight;   // рефлоу: иначе старт и финиш склеятся в один кадр
-
-        const distance = (3 + this.FILLER_COUNT) * cellH;
-        strip.classList.add('blur');
-        strip.style.transition = 'transform ' + duration + 'ms cubic-bezier(0.12, 0.75, 0.18, 1)';
-        strip.style.transform = 'translateY(-' + distance + 'px)';
-
-        let resolved = false;
-        const finish = () => {
-            if (resolved) return;
-            resolved = true;
-            if (gen !== this.spinGeneration) return;
-            strip.classList.remove('blur');
-            const cells = this.collapseStripToTriple(index, final);
-            // Отскок вешается на сам СИМВОЛ, а не на рамку окна: рамка,
-            // сжимающаяся вместе с содержимым, читается как глюк.
-            if (cells) {
-                [cells.topEl, cells.midEl, cells.bottomEl].forEach(cell => {
-                    if (!cell) return;
-                    cell.classList.add('stop-bounce');
-                });
-                const bounce = setTimeout(() => {
-                    [cells.topEl, cells.midEl, cells.bottomEl]
-                        .forEach(cell => cell && cell.classList.remove('stop-bounce'));
-                }, 400);
-                this.spinTimers.push(bounce);
-            }
-            onStopped();
-        };
-
-        const onTransitionEnd = (e) => {
-            if (e.propertyName !== 'transform') return;
-            strip.removeEventListener('transitionend', onTransitionEnd);
-            finish();
-        };
-        strip.addEventListener('transitionend', onTransitionEnd);
-
-        const unblur = setTimeout(() => strip.classList.remove('blur'), Math.max(0, duration * 0.72));
-        // Подстраховка: во вкладке в фоне transitionend не приходит вовсе, и
-        // барабан остался бы крутиться навсегда — вместе с ним замерла бы и
-        // возможность дёрнуть рычаг ещё раз.
-        const fallback = setTimeout(() => {
-            strip.removeEventListener('transitionend', onTransitionEnd);
-            finish();
-        }, duration + 250);
-        this.spinTimers.push(unblur, fallback);
+            this.busy_ = false;
+            L.tryReady();
+            if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+        }, pourMs + (res.jackpot ? 1600 : 0)));
     }
 };
 
