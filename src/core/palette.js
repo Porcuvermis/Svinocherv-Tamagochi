@@ -979,7 +979,10 @@ const PALETTE = {
         // печать, тусклая, с тушевым контуром.
         reel: {
             paper: '#eadcb8', paperLo: '#d2bf93', speck: '#b9a477',
-            worm: { hi: '#f0a59f', base: '#cf6a70', lo: '#8c3a4a', back: '#a44a5a', belt: '#e7a08f' }
+            worm: { hi: '#f0a59f', base: '#cf6a70', lo: '#8c3a4a', back: '#a44a5a', belt: '#e7a08f' },
+            // банка пива: чёрная этикетка в розовых червячках, белый знак
+            can: { label: '#1e1b21', labelHi: '#3b3640', silver: '#c7ccd0', silverLo: '#8b9297',
+                   silverHi: '#eef1f2', worm: '#e48a99', logo: '#f3eee4' }
         },
         // Индикатор готовности рычага: тусклая лампочка под затёртым
         // колпачком из мутной серо-зелёной резины. Свет через колпачок —

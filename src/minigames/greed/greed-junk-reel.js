@@ -109,13 +109,71 @@ Object.assign(GreedJunk, {
         return out;
     },
 
+    // ---------- БАНКА ПИВА ----------
+    // Алюминиевая банка, чуть наклонена. Сверху видна крышка: серебряный
+    // обод, утопленное донышко и ключ-кольцо; горлышко сужается к крышке,
+    // дно скруглено. Этикетка чёрная, по ней ровная сетка розовых
+    // червячков — к краям банки они сжимаются (уходят за изгиб); в центре
+    // белый знак пивоварни (BREW_LOGO, от игрока). Блик — вертикальной
+    // полосой по металлу и этикетке.
+    reelCan(cx, cy) {
+        const K = PALETTE.greedJunk.reel.can, f = this.f, M = this.MISPRINT;
+        const w = 15, h = 26, x0 = cx - w / 2, yT = cy - h / 2 + 2.6, yB = cy + h / 2;
+        const ry = 2.2;                                   // сплющенность верха и низа
+        const neck = 2.2;                                 // сужение к крышке
+        const id = 'gj-can' + Math.round(cx * 10 + cy);
+        // силуэт: крышка-эллипс, плечи сужаются, низ — полуэллипс
+        const body = `M${f(x0 + neck)} ${f(yT)} L${f(x0)} ${f(yT + 3.2)} L${f(x0)} ${f(yB - 2.6)} ` +
+            `Q${f(x0)} ${f(yB - 1)} ${f(x0 + 1.4)} ${f(yB - 0.6)} A${f(w / 2 - 1.4)} ${ry} 0 0 0 ${f(x0 + w - 1.4)} ${f(yB - 0.6)} ` +
+            `Q${f(x0 + w)} ${f(yB - 1)} ${f(x0 + w)} ${f(yB - 2.6)} L${f(x0 + w)} ${f(yT + 3.2)} L${f(x0 + w - neck)} ${f(yT)} ` +
+            // верх силуэта — дальняя половина обода, а не прямая через крышку
+            `A${f(w / 2 - neck)} ${ry} 0 0 0 ${f(x0 + neck)} ${f(yT)} Z`;
+        let g = `<clipPath id="${id}"><path d="${body}"/></clipPath>`;
+        g += `<path d="${body}" fill="${K.silver}" transform="translate(${M.x} ${M.y})"/>`;
+        // этикетка между плечами и низом
+        const lt = yT + 4.2, lb = yB - 3.4;
+        let lab = `<rect x="${x0 - 1}" y="${f(lt)}" width="${w + 2}" height="${f(lb - lt)}" fill="${K.label}"/>`;
+        // червячки: ровная сетка со сдвигом рядов; x — по цилиндру
+        const R = w / 2, X = (u) => cx + R * Math.sin(Math.max(-1.5, Math.min(1.5, u / R)));
+        let worms = '';
+        for (let r = 0, y = lt + 1.6; y < lb - 0.8; r++, y += 2.6) {
+            for (let u = -R - 2 + (r % 2) * 1.7; u < R + 2; u += 3.4) {
+                const a = X(u - 0.9), b = X(u), c = X(u + 0.9), k = Math.cos(Math.max(-1.5, Math.min(1.5, u / R)));
+                if (k < 0.2) continue;
+                worms += `<path d="M${f(a)} ${f(y + 0.35)} Q${f((a + b) / 2)} ${f(y - 0.6)} ${f(b)} ${f(y)} T${f(c)} ${f(y - 0.35)}" stroke-width="${f(0.45 * (0.5 + 0.5 * k))}"/>`;
+            }
+        }
+        lab += `<g fill="none" stroke="${K.worm}" stroke-linecap="round">${worms}</g>`;
+        // знак пивоварни, белый, по центру этикетки
+        const L = BREW_LOGO.box, sz = 10.5, sc = sz / L.h;
+        const lx = cx - L.w * sc / 2 - L.x * sc, ly = (lt + lb) / 2 - sz / 2 - L.y * sc;
+        lab += `<rect x="${f(cx - L.w * sc / 2 - 0.8)}" y="${f((lt + lb) / 2 - sz / 2 - 0.6)}" width="${f(L.w * sc + 1.6)}" height="${f(sz + 1.2)}" rx="1" fill="${K.label}"/>`;
+        lab += `<path d="${BREW_LOGO.d}" fill="${K.logo}" transform="translate(${f(lx)} ${f(ly)}) scale(${sc.toFixed(5)})"/>`;
+        g += `<g clip-path="url(#${id})">${lab}` +
+            // объём: тень к правому краю, блик полосой слева
+            `<rect x="${f(x0 + w * 0.7)}" y="${f(yT)}" width="${f(w * 0.3)}" height="${h}" fill="${K.silverLo}" opacity="0.3"/>` +
+            `<rect x="${f(x0 + w * 0.22)}" y="${f(yT)}" width="0.8" height="${h}" fill="${K.silverHi}" opacity="0.3"/></g>`;
+        // ободки этикетки
+        g += `<path d="M${x0} ${f(lt)} L${x0 + w} ${f(lt)} M${x0} ${f(lb)} L${x0 + w} ${f(lb)}" stroke="${K.silverLo}" stroke-width="0.4"/>`;
+        // крышка: обод, утопленное донышко, ключ
+        // обод ровно по горлышку; внутри — утопленное донышко и ключ
+        const rr = w / 2 - neck;
+        g += `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rr)}" ry="${ry}" fill="${K.silverHi}"/>` +
+            `<ellipse cx="${cx}" cy="${f(yT + 0.25)}" rx="${f(rr - 1)}" ry="${f(ry - 0.55)}" fill="${K.silver}" stroke="${K.silverLo}" stroke-width="0.35"/>` +
+            `<rect x="${f(cx - 0.6)}" y="${f(yT - 0.5)}" width="3.4" height="1.4" rx="0.7" fill="none" stroke="${K.silverLo}" stroke-width="0.4"/>` +
+            `<circle cx="${f(cx - 0.6)}" cy="${f(yT + 0.2)}" r="0.4" fill="${K.silverLo}"/>` +
+            `<ellipse cx="${cx}" cy="${f(yT)}" rx="${f(rr)}" ry="${ry}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
+        g += `<path d="${body}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+        return `<g transform="rotate(-14 ${cx} ${cy})">${g}</g>`;
+    },
+
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
     reelCell(key, x, y) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;
         const rnd = this.rng(x * 7 + y * 13 + key.length);
         let out = `<rect x="${x}" y="${y}" width="${C.w}" height="${C.h}" fill="${R.paper}"/>`;
         for (let i = 0; i < 14; i++) out += `<circle cx="${f(x + rnd() * C.w)}" cy="${f(y + rnd() * C.h)}" r="${f(0.2 + rnd() * 0.4)}" fill="${R.speck}" opacity="0.5"/>`;
-        const draw = { worm: 'reelWorm' }[key];
+        const draw = { worm: 'reelWorm', beer: 'reelCan' }[key];
         if (draw) out += this[draw](x + C.w / 2, y + C.h / 2);
         return out;
     }
