@@ -124,7 +124,7 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f;
         // уходит в монетоприёмник (wcSlot): провод связывает рычаг и щель —
         // два органа управления одного аппарата (решение игрока)
-        const pts = [[326, 454], [329, 470], [325, 484], [312, 492], [299, 499]];
+        const pts = [[326, 454], [330, 472], [326, 492], [313, 506], [303, 507.6]];
         const d = this.smooth(pts);
         let out = `<path d="${d}" class="fx" fill="none" stroke="${J.hole}" stroke-width="4" stroke-linecap="round" opacity="0.3" transform="translate(1.4 2)"/>` +
             this.rodH(d, 3.6) +
@@ -142,10 +142,12 @@ Object.assign(GreedJunk, {
                 `<path d="M${f(a[0] + c * 2.5 - s * 2)} ${f(a[1] + s * 2.5 + c * 2)} L${f(a[0] + c * 2.5 + s * 2)} ${f(a[1] + s * 2.5 - c * 2)}" stroke="${J.tin[700]}" stroke-width="0.6"/>`;
         };
         out += ferrule(pts[0], pts[1]) + ferrule(pts[4], pts[3]);
+        // Нижний конец — в разъём коробки монетоприёмника (greed-junk-wc.js),
+        // втулки там нет.
         // Обе втулки — ПОД тросом: трос выходит из самой дыры втулки и в
         // дыру же уходит. Было: верхняя втулка лежала поверх, и трос
         // вылезал из-под её края, а дыра оставалась пустой.
-        return this.grommet(pts[0][0], pts[0][1]) + this.grommet(pts[4][0], pts[4][1]) + this.T(6, 'rubber', out);
+        return this.grommet(pts[0][0], pts[0][1]) + this.T(8, 'rubber', out);
     },
 
     // Шток и рукоять — отдельно: при рывке шток укорачивается (уходит на
