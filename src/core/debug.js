@@ -60,6 +60,7 @@ const DebugState = {
             <button data-act="room">Комната</button>
             <button data-act="gear">Жетоны</button>
             <button data-act="greed-machine">Аппарат</button>
+            <button data-act="fps-badge">Кадры</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -85,6 +86,40 @@ const DebugState = {
 
         DebugMode.onChange(() => this.render());
         this.render();
+    },
+
+    // ---------- ЗНАЧОК КАДРОВ ПОВЕРХ ИГРЫ ----------
+    // Счётчик в панели виден, только пока панель открыта, а панель
+    // закрывает игру. Значок — маленький, в углу, остаётся и при закрытой
+    // панели: замерить кадры в самой мини-игре (удешевление аппарата
+    // алчности). Рядом с fps — худший кадр за две секунды: средние 50 fps
+    // прячут рывки, а рывки и видно глазом. Debug — не игра, слова можно.
+    toggleFpsBadge() {
+        if (this.badgeEl) {
+            cancelAnimationFrame(this.badgeRaf);
+            this.badgeEl.remove();
+            this.badgeEl = null;
+            return;
+        }
+        const el = document.createElement('div');
+        el.style.cssText = 'position:absolute;left:4px;top:4px;z-index:2147483000;pointer-events:none;' +
+            'font:11px/1.2 monospace;color:#fff;background:rgba(0,0,0,.65);padding:2px 5px;border-radius:4px';
+        (document.getElementById('game-container') || document.body).appendChild(el);
+        this.badgeEl = el;
+        let frames = 0, from = performance.now(), prev = from, worst = [];
+        const tick = (now) => {
+            this.badgeRaf = requestAnimationFrame(tick);
+            frames++;
+            worst.push([now, now - prev]);
+            prev = now;
+            worst = worst.filter(w => now - w[0] < 2000);
+            if (now - from < 500) return;
+            const fps = Math.round(frames * 1000 / (now - from));
+            const w = Math.round(Math.max(...worst.map(x => x[1])));
+            el.textContent = fps + ' fps · худший ' + w + ' мс';
+            frames = 0; from = now;
+        };
+        this.badgeRaf = requestAnimationFrame(tick);
     },
 
     // ---------- СЧЁТЧИК КАДРОВ ----------
@@ -308,6 +343,7 @@ const DebugState = {
         // пойдёт настоящая награда.
         // Корпус аппарата алчности со светом от наклона — проверить на
         // телефоне, пока он не встроен в игру (greed-junk-lit.js).
+        if (act === 'fps-badge') { this.toggleFpsBadge(); return; }
         if (act === 'greed-machine') {
             if (typeof GreedJunkLit !== 'undefined') GreedJunkLit.preview();
             return;
