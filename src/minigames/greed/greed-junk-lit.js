@@ -316,7 +316,10 @@ const GreedJunkLit = {
     // зубцами, по щелчку на каждый зубец; на последнем зубце он срывается,
     // отдаёт одним сильным толчком и дальше падает до низа сам. Отпустил
     // раньше срыва — пружина возвращает, крутки нет. Тап — сразу срыв.
-    LEVER: { teeth: 5, breakAt: 0.28, travel: 44, fall: 130, hold: 70 },
+    // Ход: храповик — зубцы до срыва; fall — падение после срыва, мс;
+    // over — насколько рычаг проскакивает упор и отскакивает; hold — сколько
+    // стоит внизу после удара; back — затухание пружины на возврате, мс.
+    LEVER: { teeth: 5, breakAt: 0.28, travel: 44, fall: 190, over: 0.06, hold: 240, back: 170 },
     onPull: null,              // срыв рычага — крутка (игра подставит своё)
     leverState(st, p) {
         if (!this.lever || !this.leverCanvas) return false;
@@ -342,8 +345,12 @@ const GreedJunkLit = {
         // Храповик: внутри зубца рычаг почти стоит и только в конце
         // проскакивает на следующий — упирается, а не ползёт за пальцем.
         const n = Math.floor(x), fr = x - n, e = fr * fr * fr * fr;
-        if (n > (v.n || 0) && typeof Haptics !== 'undefined') Haptics.tick();
+        if (n > (v.n || 0)) {
+            if (typeof Haptics !== 'undefined') Haptics.tick();
+            v.kickAt = performance.now();         // проскок зубца — рывок вперёд
+        }
         v.n = Math.max(v.n || 0, n);
+        v.fr = fr;                                // натяжение внутри зубца
         v.p = L.breakAt * (n + e) / L.teeth;
     },
     leverRelease() {
@@ -365,21 +372,44 @@ const GreedJunkLit = {
         }
         if (v.at === -1) v.at = now;
         const t = now - v.at, L = this.LEVER;
-        if (v.st === 'free') {
-            // падает с ускорением, как под своим весом
-            const u = Math.min(1, t / L.fall);
-            v.p = v.p0 + (1 - v.p0) * u * u;
+        let show = v.p;
+        if (v.st === 'drag') {
+            // Упирается: внутри зубца рычаг мелко дрожит от натяжения, тем
+            // сильнее, чем ближе конец зубца. Проскочив зубец, дёргается
+            // вперёд и сразу гасит рывок.
+            const fr = v.fr || 0;
+            show += 0.012 * fr * fr * Math.sin(now / 18);
+            if (v.kickAt) {
+                const d = now - v.kickAt;
+                show += 0.035 * Math.exp(-d / 50) * Math.sin(d / 25);
+            }
+        } else if (v.st === 'free') {
+            // Падает с разгоном, как под своим весом, проскакивает упор и
+            // отскакивает от него — удар железа о железо.
+            if (t < L.fall) {
+                const u = t / L.fall;
+                v.p = v.p0 + (1 + L.over - v.p0) * Math.pow(u, 2.2);
+            } else {
+                const b = t - L.fall;
+                v.p = 1 + L.over * Math.exp(-b / 45) * Math.cos(b / 28 * Math.PI);
+            }
+            show = v.p;
             if (t > L.fall + L.hold) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
         } else if (v.st === 'back') {
-            v.p = v.p0 * Math.exp(-t / 120) * Math.cos(t / 80 * Math.PI / 2);
-            if (t > 560) {
+            // пружина: медленнее, с перелётом назад и парой качаний
+            // к концу качание гаснет в ноль плавно: иначе на переходе к
+            // рычагу на шейдере он прыгал на последние градусы
+            const fade = t < 700 ? 1 : Math.max(0, 1 - (t - 700) / 200);
+            v.p = v.p0 * Math.exp(-t / L.back) * Math.cos(t / 115 * Math.PI / 2) * fade * fade;
+            show = v.p;
+            if (t > 900) {
                 this._lv = null;
                 this.bindSet(this.tex);
                 this.leverCanvas.style.display = 'none';
                 return true;
             }
         }
-        this.drawLever(v.p);
+        this.drawLever(show);
         return swap;
     },
     // части по геометрии рывка: каждая — масштаб вокруг своей точки
@@ -394,7 +424,7 @@ const GreedJunkLit = {
             ((x1 - C.x) - (x0 - C.x) * sx + (dx || 0)) * S, ((y1 - C.y) - (y0 - C.y) * sy + (dy || 0)) * S);
         const kb = G.h0 / G0.h0, ks = (G.top - G.s0) / (G0.top - G0.s0), kk = G.K.r / G0.K.r;
         const pose = {
-            boot: [kx, G0.base, kx, G.base, 1, kb],
+            boot: [kx, G0.base, kx, G.base, G.bootW, kb],
             frame: [kx, 0, kx, 0, 1, 1],
             shaft: [kx, G0.top, kx, G.top, 1, ks],
             clamp: [kx, G0.top, kx, G.top, 1, 1],
