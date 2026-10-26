@@ -982,7 +982,11 @@ const PALETTE = {
             worm: { hi: '#f0a59f', base: '#cf6a70', lo: '#8c3a4a', back: '#a44a5a', belt: '#e7a08f' },
             // банка пива: чёрная этикетка в розовых червячках, белый знак
             can: { label: '#1e1b21', labelHi: '#3b3640', silver: '#c7ccd0', silverLo: '#8b9297',
-                   silverHi: '#eef1f2', worm: '#e48a99', logo: '#f3eee4' }
+                   silverHi: '#eef1f2', worm: '#e48a99', logo: '#f3eee4' },
+            // шприц: прозрачный пластик, ядовито-зелёная жидкость,
+            // чёрный резиновый поршень, стальная игла
+            syringe: { glass: '#e4ece9', glassLo: '#b3c3bf', glassHi: '#fbfdfc', liquid: '#93c95f',
+                       liquidLo: '#5e9638', rubber: '#2d2930', plastic: '#eef0ec', steel: '#c8ced1', steelLo: '#868d92' }
         },
         // Индикатор готовности рычага: тусклая лампочка под затёртым
         // колпачком из мутной серо-зелёной резины. Свет через колпачок —

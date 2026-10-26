@@ -172,13 +172,67 @@ Object.assign(GreedJunk, {
         return g;
     },
 
+    // ---------- ШПРИЦ ----------
+    // Лежит наискось (референс игрока): упор поршня слева вверху, игла
+    // справа внизу, с кончика срывается капля. Цилиндр — прозрачный
+    // пластик со шкалой делений, внутри ядовито-зелёная жидкость до
+    // чёрного резинового поршня; впереди конус, втулка, стальная игла.
+    // Рисуется вдоль оси x, потом поворачивается.
+    reelSyringe(cx, cy) {
+        const Y = PALETTE.greedJunk.reel.syringe, f = this.f, ink = PALETTE.ink, M = this.MISPRINT;
+        const r = 3.6;                               // радиус цилиндра
+        const xP = -26, xF = -11, xB = 12, xC = 15, xH = 18, xN = 28, xPis = -2;
+        let g = '';
+        // шток поршня: крестовина — две продольные линии и рёбра
+        g += `<rect x="${xP + 1}" y="-1.3" width="${xF - xP - 1}" height="2.6" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            `<line x1="${xP + 1.5}" y1="0" x2="${xF}" y2="0" stroke="${Y.glassLo}" stroke-width="0.5"/>`;
+        // упор поршня — диск, видимый сбоку
+        g += `<ellipse cx="${xP}" cy="0" rx="1.3" ry="4.2" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`;
+        // цилиндр: стекло, жидкость, поршень, деления
+        const id = 'gj-syr' + Math.round(cx * 10 + cy);
+        const barrel = `M${xF} ${-r} L${xB} ${-r} Q${xB + 1.2} ${-r} ${xB + 1.2} ${-r + 1.2} L${xB + 1.2} ${r - 1.2} Q${xB + 1.2} ${r} ${xB} ${r} L${xF} ${r} Z`;
+        g += `<clipPath id="${id}"><path d="${barrel}"/></clipPath>`;
+        g += `<path d="${barrel}" fill="${Y.glass}"/>`;
+        g += `<g clip-path="url(#${id})">` +
+            // жидкость от поршня до носика, мениск у поршня
+            `<path d="M${xPis + 1} ${-r} Q${xPis + 2.2} 0 ${xPis + 1} ${r} L${xB + 2} ${r} L${xB + 2} ${-r} Z" fill="${Y.liquid}" transform="translate(${M.x} ${M.y})"/>` +
+            `<rect x="${xPis + 1}" y="${f(r * 0.35)}" width="${xB - xPis + 2}" height="${f(r * 0.65)}" fill="${Y.liquidLo}" opacity="0.45"/>` +
+            // шток внутри цилиндра до поршня
+            `<rect x="${xF}" y="-1.3" width="${xPis - xF}" height="2.6" fill="${Y.plastic}" opacity="0.8"/>` +
+            // резиновый поршень с двумя рёбрами
+            `<rect x="${xPis - 1.6}" y="${-r}" width="2.8" height="${2 * r}" fill="${Y.rubber}"/>` +
+            `<line x1="${xPis - 0.2}" y1="${-r}" x2="${xPis - 0.2}" y2="${r}" stroke="${Y.steelLo}" stroke-width="0.3"/>` +
+            // блик по стеклу
+            `<rect x="${xF}" y="${f(-r + 0.8)}" width="${xB - xF}" height="0.9" fill="${Y.glassHi}" opacity="0.8"/>` +
+            `</g>`;
+        // деления шкалы сверху цилиндра
+        let ticks = '';
+        for (let i = 0, x = xF + 2.5; x < xB - 1; i++, x += 2.2)
+            ticks += `M${f(x)} ${-r} L${f(x)} ${f(-r + (i % 2 ? 1.1 : 1.9))} `;
+        g += `<path d="${ticks}" stroke="${ink}" stroke-width="0.35"/>`;
+        g += `<path d="${barrel}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+        // упор для пальцев — диск сбоку
+        g += `<ellipse cx="${xF}" cy="0" rx="1.4" ry="5.8" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`;
+        // конус и втулка
+        g += `<path d="M${xB + 1.2} ${-r + 1} L${xC} -1.2 L${xC} 1.2 L${xB + 1.2} ${r - 1} Z" fill="${Y.glass}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<path d="M${xC} -1.3 L${xH} -0.7 L${xH} 0.7 L${xC} 1.3 Z" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+        // игла — тонкая сталь с косым срезом
+        g += `<path d="M${xH} -0.35 L${xN} -0.1 L${xN + 0.8} 0.35 L${xH} 0.35 Z" fill="${Y.steel}" stroke="${ink}" stroke-width="0.35" stroke-linejoin="round"/>`;
+        // наискось и чуть мельче, чтобы упор и капля влезли в ячейку
+        const rot = 18, a = rot * Math.PI / 180, k = 0.8, ox = cx - 1.5;
+        // капля на кончике — висит вниз по экрану, а не по оси шприца
+        const tx = ox + (xN + 0.6) * k * Math.cos(a), ty = cy + (xN + 0.6) * k * Math.sin(a);
+        const drop = `<path d="M${f(tx)} ${f(ty + 0.6)} Q${f(tx + 1.3)} ${f(ty + 2.8)} ${f(tx)} ${f(ty + 3.4)} Q${f(tx - 1.3)} ${f(ty + 2.8)} ${f(tx)} ${f(ty + 0.6)} Z" fill="${Y.liquid}" stroke="${ink}" stroke-width="0.4"/>`;
+        return `<g transform="translate(${ox} ${cy}) rotate(${rot}) scale(${k})">${g}</g>` + drop;
+    },
+
     // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
     reelCell(key, x, y) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;
         const rnd = this.rng(x * 7 + y * 13 + key.length);
         let out = `<rect x="${x}" y="${y}" width="${C.w}" height="${C.h}" fill="${R.paper}"/>`;
         for (let i = 0; i < 14; i++) out += `<circle cx="${f(x + rnd() * C.w)}" cy="${f(y + rnd() * C.h)}" r="${f(0.2 + rnd() * 0.4)}" fill="${R.speck}" opacity="0.5"/>`;
-        const draw = { worm: 'reelWorm', beer: 'reelCan' }[key];
+        const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe' }[key];
         if (draw) out += this[draw](x + C.w / 2, y + C.h / 2);
         return out;
     }
