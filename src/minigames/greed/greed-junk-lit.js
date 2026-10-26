@@ -245,23 +245,18 @@ const GreedJunkLit = {
         const S = this.SCALE, C = this.LEVER_CROP;
         const sized = (svg) => svg.replace('<svg ', `<svg width="${C.w * S}" height="${C.h * S}" `);
         const maps = (make) => Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(sized(make(ps)))));
-        // Участок корпуса — вырезом из ПОЛНОГО рисунка через обычный холст.
-        // Было: корпус растрировался сразу участком (viewBox по участку), и
-        // на iPhone такая картинка выходила пустой — за движущимся рычагом
-        // пропадал весь корпус. Полный рисунок iPhone растрирует верно (им
-        // же собраны текстуры).
-        const cut = (img) => {
-            const c = document.createElement('canvas');
-            c.width = C.w * S; c.height = C.h * S;
-            c.getContext('2d').drawImage(img, C.x * S, C.y * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
-            return c;
-        };
-        const W = GreedJunk.W * S, H = GreedJunk.H * S;
+        // Корпус без рычага — ВТОРОЙ ПОЛНЫЙ комплект текстур, собранный так
+        // же, как основной; на рывке шейдер просто читает его. Участками
+        // корпус больше не собирается: на iPhone и растр участком, и вырез
+        // из полного рисунка через холст выходили пустыми — за рычагом
+        // пропадал весь корпус. Полная картинка прямо в текстуру — тот же
+        // путь, которым собран основной корпус, и на iPhone он верный.
+        const W = GreedJunk.W * S, H = GreedJunk.H * S, gl = this.gl;
         try {
-            const rest = this.maps.map(cut);
             const bareFull = await Promise.all(['albedo', 'height', 'mat'].map(ps =>
                 this.image(GreedJunk.bodySvg(ps, null, false).replace('<svg ', `<svg width="${W}" height="${H}" `))));
-            const bare = bareFull.map(cut);
+            const bare = bareFull.map((img, i) => this.texture(gl, img, i));
+            this.bindSet(this.tex);
             const parts = {};
             for (const k of GreedJunk.LEVER_ORDER) parts[k] = await maps(ps => GreedJunk.leverPartSvg(ps, C, k));
             GreedJunk.pass = 'baked';
@@ -286,11 +281,23 @@ const GreedJunkLit = {
                 g.fillStyle = PALETTE.greedJunk.hole; g.fillRect(0, 0, sc.width, sc.height);
                 shadows[k] = sc;
             }
-            this.upload(rest);
+            // основной комплект — заново целиком из полных картинок: части
+            // писались в него участками
+            this.maps.forEach((img, u) => {
+                gl.activeTexture(gl.TEXTURE0 + u);
+                gl.bindTexture(gl.TEXTURE_2D, this.tex[u]);
+                gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            });
             this.draw(light);
-            this.lever = { rest, bare, sprites, shadows };
+            this.lever = { bare, sprites, shadows };
         } catch (e) { console.warn('[Аппарат] части рычага не собрались', e); }
         GreedJunk.pass = 'baked';
+    },
+    // какой комплект текстур читает шейдер
+    bindSet(set) {
+        const gl = this.gl;
+        set.forEach((t, u) => { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, t); });
     },
     // участок рычага в трёх текстурах
     upload(imgs) {
@@ -352,7 +359,7 @@ const GreedJunkLit = {
         if (!v || !this.lever) return false;
         let swap = false;
         if (!this.leverCanvas.style.display || this.leverCanvas.style.display === 'none') {
-            this.upload(this.lever.bare);
+            this.bindSet(this.lever.bare);
             this.leverCanvas.style.display = 'block';
             swap = true;
         }
@@ -367,7 +374,7 @@ const GreedJunkLit = {
             v.p = v.p0 * Math.exp(-t / 120) * Math.cos(t / 80 * Math.PI / 2);
             if (t > 560) {
                 this._lv = null;
-                this.upload(this.lever.rest);
+                this.bindSet(this.tex);
                 this.leverCanvas.style.display = 'none';
                 return true;
             }
