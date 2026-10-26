@@ -267,14 +267,17 @@ Object.assign(GreedJunk, {
         const spineAt = (t) => { const x = -18 + t * 28; return [x, -1.6 * Math.sin(t * Math.PI)]; };
         const bone = (pts, w0, w1) => this.tube(pts, (t) => w0 + (w1 - w0) * t, true);
         // деталь: заливка со сдвигом печати, контур на месте
-        const part = (d, fill) => `<path d="${d}" fill="${fill}" ${shift}/><path d="${d}" fill="none" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
+        const part = (d, fill) => `<path d="${d}" fill="${fill}" ${shift}/><path class="edge" d="${d}" fill="none" stroke="${ink}" stroke-width="${bw}" stroke-linejoin="round"/>`;
         // рёбра — плавная дуга назад по всей длине
         let ribs = '';
         for (let i = 0; i < 6; i++) {
             const t = 0.16 + i * 0.145, s0 = spineAt(t), L = 4.8 + i * 0.85;
             [-1, 1].forEach(d => {
                 const pts = this.spline([P(s0[0], s0[1]), P(s0[0] - 1.1, s0[1] + d * L * 0.52), P(s0[0] - 3.4, s0[1] + d * L)], 6);
-                ribs += part(bone(pts, 2.1, 0.75), d > 0 ? B.lo : B.base);
+                ribs += `<g class="color-only">${part(bone(pts, 2.1, 0.75), d > 0 ? B.lo : B.base)}</g>`;
+                // контурная лента: кость — одна линия (обводка тонкой кости
+                // заливала её тушью целиком)
+                ribs += `<path class="mono-only edge" d="M${pts.map(q => `${f(q[0])} ${f(q[1])}`).join(' L')}" fill="none" stroke="${ink}" stroke-width="1" stroke-linecap="round"/>`;
             });
         }
         // хвост: две лопасти одной фигурой, выемка посередине; лучи
@@ -289,10 +292,11 @@ Object.assign(GreedJunk, {
         // хребет поверх рёбер
         const spine = [];
         for (let k = 0; k <= 12; k++) spine.push(P(...spineAt(k / 12)));
-        let back = part(bone(spine, 2.2, 3), B.base);
+        let back = `<g class="color-only">${part(bone(spine, 2.2, 3), B.base)}</g>` +
+            `<path class="mono-only edge" d="M${spine.map(q => `${f(q[0])} ${f(q[1])}`).join(' L')}" fill="none" stroke="${ink}" stroke-width="1" stroke-linecap="round"/>`;
         let verts = '';
         for (let k = 1; k < 12; k++) { const q = P(...spineAt(k / 12)); verts += `M${f(q[0])} ${f(q[1] - 0.9)} L${f(q[0])} ${f(q[1] + 0.9)} `; }
-        back += `<path d="${verts}" stroke="${B.lo}" stroke-width="0.45"/>` +
+        back += `<path class="color-only" d="${verts}" stroke="${B.lo}" stroke-width="0.45"/>` +
             `<path class="tone" d="M${spine.map(q => `${f(q[0])} ${f(q[1] - 0.6)}`).join(' L')}" fill="none" stroke="${B.hi}" stroke-width="0.5" opacity="0.9"/>`;
         // череп
         const hx = cx + 9, hy = cy;
@@ -406,7 +410,7 @@ Object.assign(GreedJunk, {
         return `<style>.mono-only{display:none}` +
             `.mono *{fill:${R.paper}!important;stroke:${ink}!important}` +
             `.mono [fill="none"]{fill:none!important}.mono *:not([stroke]){stroke:none!important}` +
-            `.mono .tone{display:none}.mono .mono-only{display:inline}` +
+            `.mono .tone,.mono .color-only{display:none}.mono .mono-only{display:inline}` +
             `.mono .solid,.mono .solid *{fill:${ink}!important}</style>`;
     },
 
@@ -419,6 +423,8 @@ Object.assign(GreedJunk, {
     // рыба вышла огромной, банка — мелкой.
     // rot — наклон, k — масштаб, m — середина повёрнутого символа.
     FIT_BOX: { w: 50, h: 28 },
+    // толщины линий контурной ленты в единицах ячейки (после посадки)
+    MONO_LINE: { edge: 1.1, detail: 0.45 },
     // Наклон общий: все символы лежат по одной диагонали (−15°, подъём
     // вправо), вытянутые поперёк — тем же наклоном на боку (±75…105°).
     // Жетон круглый — без наклона.
@@ -441,8 +447,18 @@ Object.assign(GreedJunk, {
         const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard', token: 'reelToken' }[key];
         if (!draw) return out;
         const F = this.REEL_FIT[key] || { rot: 0, k: 1, m: [0, 0] };
+        let sym = this[draw](0, 0);
+        // Контурная лента: линии двух толщин, одинаковых у всех символов
+        // ПОСЛЕ посадки. Толстые линии рисунка (≥ 0.65) — контур предмета,
+        // тонкие — внутренние (кольца, рёбра, деления, узор); делится на
+        // масштаб посадки, чтобы мелкий осколок и крупная рыба вышли одной
+        // толщиной. Было: у каждого символа своя толщина, да ещё ×0.8…×1.5.
+        // Класс edge — контур предмета независимо от толщины в цветном
+        // рисунке (кости рыбы обведены тонко, иначе тушь их заливала).
+        if (mono) sym = sym.replace(/<[^>]+>/g, tag => tag.replace(/stroke-width="([\d.]+)"/, (m, v) =>
+            `stroke-width="${f((+v >= 0.65 || / class="[^"]*edge/.test(tag) ? this.MONO_LINE.edge : this.MONO_LINE.detail) / F.k)}"`));
         out += `<g class="${mono ? 'mono' : ''}" transform="translate(${f(x + C.w / 2)} ${f(y + C.h / 2)}) scale(${F.k}) translate(${f(-F.m[0])} ${f(-F.m[1])}) rotate(${F.rot})">` +
-            this[draw](0, 0) + '</g>';
+            sym + '</g>';
         return out;
     }
 });
