@@ -239,6 +239,13 @@ const GreedJunkLit = {
     // Перерисовка, пока холст на экране: только когда наклон заметно
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
     LIGHT_MS: 60,
+    // группы живого слоя: определения свечений — один раз
+    liveParts() {
+        const ns = 'http://www.w3.org/2000/svg', P = { keys: {} };
+        this.live.innerHTML = GreedJunk.haloDefs();
+        ['glows', 'thread', 'lamp', 'ind'].forEach(k => { P[k] = document.createElementNS(ns, 'g'); this.live.appendChild(P[k]); });
+        return P;
+    },
     run(canvas) {
         if (this._running) return;
         this._running = true;
@@ -265,15 +272,19 @@ const GreedJunkLit = {
                 Hang.step(lamp, g);
                 const glow = this.glowStep(now);
                 const ind = this.readyStep(now);
-                const key = tail.s.th.concat(lamp.th).map(v => v.toFixed(3)).join(',') + this.GLOW_ORDER.map(k => glow[k].toFixed(2)).join(',') +
-                    ind.red.toFixed(2) + ind.green.toFixed(2);
-                if (key !== tail.shown) {
-                    tail.shown = key;
-                    this.live.innerHTML = GreedJunk.haloDefs() +
-                        ['pear', 'flame', 'globe'].map(k => GreedJunk.bulbGlow(k, glow[k])).join('') +
-                        GreedJunk.threadTail(tail.s) + GreedJunk.hangLamp(lamp, glow.red) +
-                        GreedJunk.readyLampGlow(ind.red, ind.green);
-                }
+                // Живой слой — четыре группы, и пересобирается только та, что
+                // изменилась. Было: весь слой (определения свечений, три лампы,
+                // нитка, висячая лампа, индикатор) заново из текста каждый
+                // кадр, пока хоть что-то качалось, — а от дрожи датчика
+                // качается всегда. Углы подвесов — до сотых: тысячные ловили
+                // шум, сдвиг на сотую радиана — меньше точки экрана.
+                const P = this._liveParts || (this._liveParts = this.liveParts());
+                const put = (k, key, html) => { if (P.keys[k] !== key) { P.keys[k] = key; P[k].innerHTML = html(); } };
+                put('glows', this.GLOW_ORDER.map(k => glow[k].toFixed(2)).join(','),
+                    () => ['pear', 'flame', 'globe'].map(k => GreedJunk.bulbGlow(k, glow[k])).join(''));
+                put('thread', tail.s.th.map(v => v.toFixed(2)).join(','), () => GreedJunk.threadTail(tail.s));
+                put('lamp', lamp.th.map(v => v.toFixed(2)).join(',') + glow.red.toFixed(2), () => GreedJunk.hangLamp(lamp, glow.red));
+                put('ind', ind.red.toFixed(2) + ind.green.toFixed(2), () => GreedJunk.readyLampGlow(ind.red, ind.green));
             }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
             const want = T.live ? T : { x: 0, y: 0 };
