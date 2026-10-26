@@ -124,7 +124,7 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f;
         // уходит в монетоприёмник (wcSlot): провод связывает рычаг и щель —
         // два органа управления одного аппарата (решение игрока)
-        const pts = [[326, 454], [328, 470], [322, 486], [306, 496], [291, 502]];
+        const pts = [[326, 454], [328, 470], [322, 482], [306, 488], [289, 490]];
         const d = this.smooth(pts);
         let out = `<path d="${d}" class="fx" fill="none" stroke="${J.hole}" stroke-width="4" stroke-linecap="round" opacity="0.3" transform="translate(1.4 2)"/>` +
             this.rodH(d, 3.6) +
