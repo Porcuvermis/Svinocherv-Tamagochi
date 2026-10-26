@@ -46,6 +46,7 @@ const GreedJunkLit = {
         GreedJunk.pass = 'baked';
 
         this.prog = this.program(gl);
+        this.maps = [a, h, m];
         this.tex = [a, h, m].map((img, i) => this.texture(gl, img, i));
         const buf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -244,9 +245,23 @@ const GreedJunkLit = {
         const S = this.SCALE, C = this.LEVER_CROP;
         const sized = (svg) => svg.replace('<svg ', `<svg width="${C.w * S}" height="${C.h * S}" `);
         const maps = (make) => Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(sized(make(ps)))));
+        // Участок корпуса — вырезом из ПОЛНОГО рисунка через обычный холст.
+        // Было: корпус растрировался сразу участком (viewBox по участку), и
+        // на iPhone такая картинка выходила пустой — за движущимся рычагом
+        // пропадал весь корпус. Полный рисунок iPhone растрирует верно (им
+        // же собраны текстуры).
+        const cut = (img) => {
+            const c = document.createElement('canvas');
+            c.width = C.w * S; c.height = C.h * S;
+            c.getContext('2d').drawImage(img, C.x * S, C.y * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
+            return c;
+        };
+        const W = GreedJunk.W * S, H = GreedJunk.H * S;
         try {
-            const rest = await maps(ps => GreedJunk.bodySvg(ps, C));
-            const bare = await maps(ps => GreedJunk.bodySvg(ps, C, false));
+            const rest = this.maps.map(cut);
+            const bareFull = await Promise.all(['albedo', 'height', 'mat'].map(ps =>
+                this.image(GreedJunk.bodySvg(ps, null, false).replace('<svg ', `<svg width="${W}" height="${H}" `))));
+            const bare = bareFull.map(cut);
             const parts = {};
             for (const k of GreedJunk.LEVER_ORDER) parts[k] = await maps(ps => GreedJunk.leverPartSvg(ps, C, k));
             GreedJunk.pass = 'baked';
@@ -287,33 +302,77 @@ const GreedJunkLit = {
             gl.texSubImage2D(gl.TEXTURE_2D, 0, C.x * S, C.y * S, gl.RGBA, gl.UNSIGNED_BYTE, img);
         });
     },
-    // рывок: рычаг на игрока, короткая пауза, пружина возвращает его с
-    // откатом назад и затуханием
-    pull() { if (this.lever && this.leverCanvas) this._leverAt = -1; },
-    leverAt(t) {
-        if (t < 140) { const u = t / 140; return u * u; }
-        if (t < 200) return 1;
-        const u = t - 200;
-        return Math.exp(-u / 120) * Math.cos(u / 80 * Math.PI / 2);
+    // ---- ход рычага ----
+    // Состояния: drag — рычаг идёт за пальцем; free — сорвался и сам падает
+    // до упора; back — пружина возвращает его с откатом и затуханием.
+    // Тянуть пальцем: сначала храповик — рычаг упирается и проскакивает
+    // зубцами, по щелчку на каждый зубец; на последнем зубце он срывается,
+    // отдаёт одним сильным толчком и дальше падает до низа сам. Отпустил
+    // раньше срыва — пружина возвращает, крутки нет. Тап — сразу срыв.
+    LEVER: { teeth: 5, breakAt: 0.28, travel: 44, fall: 130, hold: 70 },
+    onPull: null,              // срыв рычага — крутка (игра подставит своё)
+    leverState(st, p) {
+        if (!this.lever || !this.leverCanvas) return false;
+        this._lv = { st, p0: p || 0, at: -1, p: p || 0 };
+        return true;
     },
-    // Кадр рывка. true — текстуры сменились, нужен проход шейдера.
+    // тап по рычагу
+    pull() { if (this.leverState('free', 0)) this.leverBreak(); },
+    leverBreak() {
+        if (typeof Haptics !== 'undefined') Haptics.impact('heavy', true);
+        if (this.onPull) this.onPull();
+    },
+    // dy — сколько палец прошёл вниз, в единицах поля
+    leverDrag(dy) {
+        const L = this.LEVER, v = this._lv;
+        if (!v || v.st !== 'drag') return;
+        const x = Math.max(0, dy / L.travel) * L.teeth;
+        if (x >= L.teeth) {                       // последний зубец — срыв
+            this._lv = { st: 'free', p0: v.p, at: -1, p: v.p };
+            this.leverBreak();
+            return;
+        }
+        // Храповик: внутри зубца рычаг почти стоит и только в конце
+        // проскакивает на следующий — упирается, а не ползёт за пальцем.
+        const n = Math.floor(x), fr = x - n, e = fr * fr * fr * fr;
+        if (n > (v.n || 0) && typeof Haptics !== 'undefined') Haptics.tick();
+        v.n = Math.max(v.n || 0, n);
+        v.p = L.breakAt * (n + e) / L.teeth;
+    },
+    leverRelease() {
+        const v = this._lv;
+        if (v && v.st === 'drag') {
+            this._lv = { st: 'back', p0: v.p, at: -1, p: v.p };
+            if (typeof Haptics !== 'undefined' && v.p > 0.02) Haptics.impact('light');
+        }
+    },
+    // Кадр. true — текстуры сменились, нужен проход шейдера.
     leverStep(now) {
-        if (this._leverAt == null || !this.lever) return false;
+        const v = this._lv;
+        if (!v || !this.lever) return false;
         let swap = false;
-        if (this._leverAt === -1) {
-            this._leverAt = now;
+        if (!this.leverCanvas.style.display || this.leverCanvas.style.display === 'none') {
             this.upload(this.lever.bare);
             this.leverCanvas.style.display = 'block';
             swap = true;
         }
-        const t = now - this._leverAt;
-        if (t > 760) {
-            this._leverAt = null;
-            this.upload(this.lever.rest);
-            this.leverCanvas.style.display = 'none';
-            return true;
+        if (v.at === -1) v.at = now;
+        const t = now - v.at, L = this.LEVER;
+        if (v.st === 'free') {
+            // падает с ускорением, как под своим весом
+            const u = Math.min(1, t / L.fall);
+            v.p = v.p0 + (1 - v.p0) * u * u;
+            if (t > L.fall + L.hold) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
+        } else if (v.st === 'back') {
+            v.p = v.p0 * Math.exp(-t / 120) * Math.cos(t / 80 * Math.PI / 2);
+            if (t > 560) {
+                this._lv = null;
+                this.upload(this.lever.rest);
+                this.leverCanvas.style.display = 'none';
+                return true;
+            }
         }
-        this.drawLever(this.leverAt(t));
+        this.drawLever(v.p);
         return swap;
     },
     // части по геометрии рывка: каждая — масштаб вокруг своей точки
@@ -393,7 +452,7 @@ const GreedJunkLit = {
             const y = (e.clientY - r.top) / r.height * GreedJunk.H;
             const x = (e.clientX - r.left) / r.width * GreedJunk.W;
             if (y > 440 && y < 520) this.blink();
-            else if (x > 300 && y > 262 && y < 400) this.pull();
+            else if (x > 300 && y > 262 && y < 400) { /* рычаг — своими событиями ниже */ }
             else box.remove();
         });
         host.appendChild(box);
@@ -412,6 +471,37 @@ const GreedJunkLit = {
             `width:${C.w / GreedJunk.W * 100}%;height:${C.h / GreedJunk.H * 100}%;z-index:1;display:none;pointer-events:none`;
         wrap.appendChild(lv);
         this.leverCanvas = lv;
+        // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
+        const field = (e) => {
+            const r = wrap.getBoundingClientRect();
+            return [(e.clientX - r.left) / r.width * GreedJunk.W, (e.clientY - r.top) / r.height * GreedJunk.H];
+        };
+        let grab = null;
+        wrap.addEventListener('pointerdown', (e) => {
+            const [x, y] = field(e);
+            if (!(x > 300 && y > 262 && y < 400) || this._lv) return;
+            e.preventDefault();
+            wrap.setPointerCapture(e.pointerId);
+            grab = { y, at: Date.now(), moved: 0 };
+            this.leverState('drag', 0);
+            if (typeof Haptics !== 'undefined') Haptics.impact('light', true);
+        });
+        wrap.addEventListener('pointermove', (e) => {
+            if (!grab) return;
+            const dy = field(e)[1] - grab.y;
+            grab.moved = Math.max(grab.moved, Math.abs(dy));
+            this.leverDrag(dy);
+        });
+        const up = () => {
+            if (!grab) return;
+            const tap = grab.moved < 4 && Date.now() - grab.at < 350;
+            grab = null;
+            if (tap && this._lv && this._lv.st === 'drag') { this._lv = null; this.pull(); }
+            else this.leverRelease();
+        };
+        wrap.addEventListener('pointerup', up);
+        wrap.addEventListener('pointercancel', up);
+        wrap.style.touchAction = 'none';
         const live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         live.setAttribute('viewBox', `0 0 ${GreedJunk.W} ${GreedJunk.H}`);
         live.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';
