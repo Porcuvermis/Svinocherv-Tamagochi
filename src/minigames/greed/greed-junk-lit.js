@@ -17,7 +17,10 @@
 // Карты растрируются один раз; дальше на кадр — один проход шейдера. Это
 // тот же приём, что у монет рамки алчности (greed-coins-batch.js).
 const GreedJunkLit = {
-    SCALE: 3,              // текселей на единицу поля: экран айфона — три точки на пиксель
+    SCALE: 3,
+    // Лента старого аппарата — контурная, одной тушью; цветная — у
+    // прокачанного (решение игрока: цвет на барабане читается плохо).
+    REEL_MONO: true,              // текселей на единицу поля: экран айфона — три точки на пиксель
 
     // SVG-строка → картинка.
     image(svg) {
@@ -50,7 +53,7 @@ const GreedJunkLit = {
         this.tex = [a, h, m].map((img, i) => this.texture(gl, img, i));
         // лента барабанов (3) и маска их поверхности (4)
         const [strip, mask] = await Promise.all([
-            this.image(GreedJunk.reelStripSvg(this.SCALE)),
+            this.image(GreedJunk.reelStripSvg(this.SCALE, this.REEL_MONO)),
             this.image(sized(GreedJunk.bodySvg('mask')))]);
         GreedJunk.pass = 'baked';
         this.texture(gl, strip, 3);

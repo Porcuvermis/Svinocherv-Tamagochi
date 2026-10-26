@@ -83,9 +83,9 @@ Object.assign(GreedJunk, {
         // спина (одна сторона тела) темнее, брюхо светлее, блик по спине
         const side = (k, dw) => pts.map((q, i) => { const N = nrm(i); return `${f(q[0] + N[0] * N[2] * k + M.x)} ${f(q[1] + N[1] * N[2] * k + M.y)}`; }).join(' L');
         out += `<g clip-path="url(#${id})">` +
-            `<path d="M${side(0.55)}" fill="none" stroke="${W.back}" stroke-width="2.6" stroke-linecap="round" opacity="0.85"/>` +
-            `<path d="M${side(-0.6)}" fill="none" stroke="${W.hi}" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>` +
-            `<path d="M${side(0.2)}" fill="none" stroke="${W.hi}" stroke-width="0.6" stroke-linecap="round" opacity="0.9"/>`;
+            `<path class="tone" d="M${side(0.55)}" fill="none" stroke="${W.back}" stroke-width="2.6" stroke-linecap="round" opacity="0.85"/>` +
+            `<path class="tone" d="M${side(-0.6)}" fill="none" stroke="${W.hi}" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>` +
+            `<path class="tone" d="M${side(0.2)}" fill="none" stroke="${W.hi}" stroke-width="0.6" stroke-linecap="round" opacity="0.9"/>`;
         // поясок: гладкая светлая полоса поверх
         const i0 = Math.round(B0 * (n - 1)), i1 = Math.round(B1 * (n - 1));
         out += `<path d="${this.tube(pts.slice(i0, i1 + 1), (t) => w(B0 + t * (B1 - B0)) + 0.3)}" fill="${W.belt}" ${shift}/>`;
@@ -151,15 +151,15 @@ Object.assign(GreedJunk, {
                 const a = X(u - 0.9), b = X(u), c = X(u + 0.9), k = Math.cos(Math.max(-1.5, Math.min(1.5, u / R)));
                 if (k < 0.2) continue;
                 if (Math.abs(b - cx) < lw / 2 + 1.2 && Math.abs(y - my) < sz / 2 + 1) continue;
-                worms += `<path d="M${f(a)} ${f(y + 0.35)} Q${f((a + b) / 2)} ${f(y - 0.6)} ${f(b)} ${f(y)} T${f(c)} ${f(y - 0.35)}" stroke-width="${f(0.45 * (0.5 + 0.5 * k))}"/>`;
+                worms += `<path d="M${f(a)} ${f(y + 0.35)} Q${f((a + b) / 2)} ${f(y - 0.6)} ${f(b)} ${f(y)} T${f(c)} ${f(y - 0.35)}" stroke="${K.worm}" stroke-width="${f(0.45 * (0.5 + 0.5 * k))}"/>`;
             }
         }
         lab += `<g fill="none" stroke="${K.worm}" stroke-linecap="round">${worms}</g>`;
-        lab += `<path d="${BREW_LOGO.d}" fill="${K.logo}" transform="translate(${f(cx - L.w * sc / 2 - L.x * sc)} ${f(my - sz / 2 - L.y * sc)}) scale(${sc.toFixed(5)})"/>`;
+        lab += `<path class="solid" d="${BREW_LOGO.d}" fill="${K.logo}" transform="translate(${f(cx - L.w * sc / 2 - L.x * sc)} ${f(my - sz / 2 - L.y * sc)}) scale(${sc.toFixed(5)})"/>`;
         g += `<g clip-path="url(#${id})">${lab}` +
             // объём цилиндра: тень к правому краю, узкий блик слева
-            `<rect x="${f(cx + hw * 0.4)}" y="${f(yT - 2)}" width="${f(hw * 0.6)}" height="${h + 4}" fill="${K.silverLo}" opacity="0.3"/>` +
-            `<rect x="${f(cx - hw * 0.55)}" y="${f(yT - 2)}" width="0.9" height="${h + 4}" fill="${K.silverHi}" opacity="0.35"/></g>`;
+            `<rect class="tone" x="${f(cx + hw * 0.4)}" y="${f(yT - 2)}" width="${f(hw * 0.6)}" height="${h + 4}" fill="${K.silverLo}" opacity="0.3"/>` +
+            `<rect class="tone" x="${f(cx - hw * 0.55)}" y="${f(yT - 2)}" width="0.9" height="${h + 4}" fill="${K.silverHi}" opacity="0.35"/></g>`;
         // края этикетки — тонкие дуги (цилиндр видно чуть сверху)
         [lt, lb].forEach(y => { g += `<path d="M${arc(y)}" fill="none" stroke="${K.silverLo}" stroke-width="0.35" clip-path="url(#${id})"/>`; });
         // крышка: обод, утопленное донышко, ключ
@@ -190,13 +190,13 @@ Object.assign(GreedJunk, {
         const disc = (x, ry, rx, t) =>
             `<path d="M${f(x)} ${-ry} L${f(x + t)} ${-ry} A${rx} ${ry} 0 0 1 ${f(x + t)} ${ry} L${f(x)} ${ry} Z" fill="${Y.glassLo}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<ellipse cx="${f(x)}" cy="0" rx="${rx}" ry="${ry}" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-            `<path d="M${f(x - rx * 0.5)} ${f(-ry * 0.75)} A${rx * 0.6} ${ry * 0.8} 0 0 0 ${f(x - rx * 0.5)} ${f(ry * 0.75)}" fill="none" stroke="${Y.glassHi}" stroke-width="0.6"/>` +
+            `<path d="M${f(x - rx * 0.5)} ${f(-ry * 0.75)} A${rx * 0.6} ${ry * 0.8} 0 0 0 ${f(x - rx * 0.5)} ${f(ry * 0.75)}" class="tone" fill="none" stroke="${Y.glassHi}" stroke-width="0.6"/>` +
             `<ellipse cx="${f(x)}" cy="0" rx="${f(rx * 0.35)}" ry="${f(ry * 0.35)}" fill="none" stroke="${Y.glassLo}" stroke-width="0.4"/>`;
         // шток: крестовина — светлое верхнее ребро, тёмная середина; у концов
         // утолщения, где шток входит в диски
         g += `<rect x="${xP + 1}" y="-1.9" width="${xF - xP - 1}" height="3.8" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             `<rect x="${xP + 1.4}" y="-0.5" width="${xF - xP - 1.8}" height="1.3" fill="${Y.glassLo}"/>` +
-            `<line x1="${xP + 1.4}" y1="-1.3" x2="${xF}" y2="-1.3" stroke="${Y.glassHi}" stroke-width="0.5"/>` +
+            `<line class="tone" x1="${xP + 1.4}" y1="-1.3" x2="${xF}" y2="-1.3" stroke="${Y.glassHi}" stroke-width="0.5"/>` +
             `<rect x="${xP + 1.2}" y="-2.3" width="1.6" height="4.6" rx="0.5" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
         // упор поршня — толстый диск
         g += disc(xP, 4.4, 1.5, 1.4);
@@ -208,14 +208,18 @@ Object.assign(GreedJunk, {
         g += `<g clip-path="url(#${id})">` +
             // жидкость от поршня до носика, мениск у поршня
             `<path d="M${xPis + 1} ${-r} Q${xPis + 2.2} 0 ${xPis + 1} ${r} L${xB + 2} ${r} L${xB + 2} ${-r} Z" fill="${Y.liquid}" transform="translate(${M.x} ${M.y})"/>` +
-            `<rect x="${xPis + 1}" y="${f(r * 0.35)}" width="${xB - xPis + 2}" height="${f(r * 0.65)}" fill="${Y.liquidLo}" opacity="0.45"/>` +
+            `<rect class="tone" x="${xPis + 1}" y="${f(r * 0.35)}" width="${xB - xPis + 2}" height="${f(r * 0.65)}" fill="${Y.liquidLo}" opacity="0.45"/>` +
             // шток внутри цилиндра до поршня
             `<rect x="${xF}" y="-1.3" width="${xPis - xF}" height="2.6" fill="${Y.plastic}" opacity="0.8"/>` +
             // резиновый поршень с двумя рёбрами
-            `<rect x="${xPis - 1.6}" y="${-r}" width="2.8" height="${2 * r}" fill="${Y.rubber}"/>` +
+            `<rect class="solid" x="${xPis - 1.6}" y="${-r}" width="2.8" height="${2 * r}" fill="${Y.rubber}"/>` +
             `<line x1="${xPis - 0.2}" y1="${-r}" x2="${xPis - 0.2}" y2="${r}" stroke="${Y.steelLo}" stroke-width="0.3"/>` +
+            // в монохроме жидкости нет цвета — граница мениска и косая
+            // штриховка (только в контурной ленте)
+            `<path class="mono-only" d="M${xPis + 1} ${-r} Q${xPis + 2.2} 0 ${xPis + 1} ${r}" fill="none" stroke="${ink}" stroke-width="0.45"/>` +
+            `<path class="mono-only" d="${Array.from({ length: 8 }, (_, k) => { const x = xPis + 2.6 + k * 1.8; return `M${f(x)} ${r} L${f(x + 2.4)} ${-r}`; }).join(' ')}" stroke="${ink}" stroke-width="0.3"/>` +
             // блик по стеклу
-            `<rect x="${xF}" y="${f(-r + 0.8)}" width="${xB - xF}" height="0.9" fill="${Y.glassHi}" opacity="0.8"/>` +
+            `<rect class="tone" x="${xF}" y="${f(-r + 0.8)}" width="${xB - xF}" height="0.9" fill="${Y.glassHi}" opacity="0.8"/>` +
             `</g>`;
         // деления шкалы сверху цилиндра
         let ticks = '';
@@ -228,7 +232,7 @@ Object.assign(GreedJunk, {
             `L${xF + 2.1} ${r + 2.6} Q${xF + 2.1} ${r + 3.4} ${xF + 1.3} ${r + 3.4} L${xF + 0.3} ${r + 3.4} Q${xF - 0.7} ${r + 3.4} ${xF - 0.7} ${r + 2.6} Z" ` +
             `fill="${Y.glassLo}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<path d="M${xF - 0.7} ${-r - 2.6} L${xF + 0.8} ${-r - 2.6} L${xF + 0.8} ${r + 2.6} L${xF - 0.7} ${r + 2.6} Z" fill="${Y.plastic}"/>` +
-            `<line x1="${xF - 0.1}" y1="${-r - 2}" x2="${xF - 0.1}" y2="${r + 2}" stroke="${Y.glassHi}" stroke-width="0.5"/>` +
+            `<line class="tone" x1="${xF - 0.1}" y1="${-r - 2}" x2="${xF - 0.1}" y2="${r + 2}" stroke="${Y.glassHi}" stroke-width="0.5"/>` +
             `<path d="M${xF - 0.7} ${-r - 2.6} Q${xF - 0.7} ${-r - 3.4} ${xF + 0.3} ${-r - 3.4} L${xF + 1.3} ${-r - 3.4} Q${xF + 2.1} ${-r - 3.4} ${xF + 2.1} ${-r - 2.6} ` +
             `L${xF + 2.1} ${r + 2.6} Q${xF + 2.1} ${r + 3.4} ${xF + 1.3} ${r + 3.4} L${xF + 0.3} ${r + 3.4} Q${xF - 0.7} ${r + 3.4} ${xF - 0.7} ${r + 2.6} Z" ` +
             `fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
@@ -238,7 +242,7 @@ Object.assign(GreedJunk, {
         // игла — тонкая сталь с косым срезом
         g += `<path d="M${xH} -0.35 L${xN} -0.1 L${xN + 0.8} 0.35 L${xH} 0.35 Z" fill="${Y.steel}" stroke="${ink}" stroke-width="0.35" stroke-linejoin="round"/>`;
         // наискось и чуть мельче, чтобы упор и капля влезли в ячейку
-        const rot = 18, a = rot * Math.PI / 180, k = 0.8, ox = cx - 1.5;
+        const rot = 0, a = rot * Math.PI / 180, k = 0.8, ox = cx - 1.5;
         // капля на кончике — висит вниз по экрану, а не по оси шприца
         const tx = ox + (xN + 0.6) * k * Math.cos(a), ty = cy + (xN + 0.6) * k * Math.sin(a);
         const drop = `<path d="M${f(tx)} ${f(ty + 0.6)} Q${f(tx + 1.3)} ${f(ty + 2.8)} ${f(tx)} ${f(ty + 3.4)} Q${f(tx - 1.3)} ${f(ty + 2.8)} ${f(tx)} ${f(ty + 0.6)} Z" fill="${Y.liquid}" stroke="${ink}" stroke-width="0.4"/>`;
@@ -278,7 +282,7 @@ Object.assign(GreedJunk, {
             `Q${f(cx - 25)} ${f(cy - 3)} ${f(cx - 23.6)} ${f(cy)} Q${f(cx - 25)} ${f(cy + 3)} ${f(cx - 27.5)} ${f(cy + 8.5)} ` +
             `Q${f(cx - 22)} ${f(cy + 3)} ${f(cx - 18)} ${f(cy + 1.2)} Z`;
         let tail = part(tl, B.base);
-        tail += `<path d="M${f(cx - 19)} ${f(cy + 0.6)} Q${f(cx - 23)} ${f(cy + 3.4)} ${f(cx - 26.4)} ${f(cy + 7.4)} L${f(cx - 24)} ${f(cy + 0.6)} Z" fill="${B.lo}" opacity="0.7"/>`;
+        tail += `<path class="tone" d="M${f(cx - 19)} ${f(cy + 0.6)} Q${f(cx - 23)} ${f(cy + 3.4)} ${f(cx - 26.4)} ${f(cy + 7.4)} L${f(cx - 24)} ${f(cy + 0.6)} Z" fill="${B.lo}" opacity="0.7"/>`;
         [[-1, 0.5], [-1, 0.8], [1, 0.5], [1, 0.8]].forEach(([d, k]) => {
             tail += `<path d="M${f(cx - 19.5)} ${f(cy + d * 0.6)} L${f(cx - 19.5 - 7 * k)} ${f(cy + d * 7.2 * k)}" stroke="${B.lo}" stroke-width="0.35"/>`;
         });
@@ -289,15 +293,15 @@ Object.assign(GreedJunk, {
         let verts = '';
         for (let k = 1; k < 12; k++) { const q = P(...spineAt(k / 12)); verts += `M${f(q[0])} ${f(q[1] - 0.9)} L${f(q[0])} ${f(q[1] + 0.9)} `; }
         back += `<path d="${verts}" stroke="${B.lo}" stroke-width="0.45"/>` +
-            `<path d="M${spine.map(q => `${f(q[0])} ${f(q[1] - 0.6)}`).join(' L')}" fill="none" stroke="${B.hi}" stroke-width="0.5" opacity="0.9"/>`;
+            `<path class="tone" d="M${spine.map(q => `${f(q[0])} ${f(q[1] - 0.6)}`).join(' L')}" fill="none" stroke="${B.hi}" stroke-width="0.5" opacity="0.9"/>`;
         // череп
         const hx = cx + 9, hy = cy;
         const skull = `M${f(hx)} ${f(hy - 6.5)} Q${f(hx + 9)} ${f(hy - 8.5)} ${f(hx + 15.5)} ${f(hy - 1.2)} ` +
             `L${f(hx + 11)} ${f(hy + 0.4)} L${f(hx + 15)} ${f(hy + 2.2)} ` +
             `Q${f(hx + 9)} ${f(hy + 7.5)} ${f(hx)} ${f(hy + 6.5)} Q${f(hx + 2.6)} ${f(hy)} ${f(hx)} ${f(hy - 6.5)} Z`;
         let head = `<path d="${skull}" fill="${B.base}" ${shift}/>`;
-        head += `<path d="M${f(hx + 1)} ${f(hy + 3)} Q${f(hx + 8)} ${f(hy + 7.6)} ${f(hx + 14)} ${f(hy + 2.4)} L${f(hx + 11.4)} ${f(hy + 1)} Z" fill="${B.lo}" opacity="0.55"/>`;
-        head += `<path d="M${f(hx + 2)} ${f(hy - 5)} Q${f(hx + 9)} ${f(hy - 6.8)} ${f(hx + 13.5)} ${f(hy - 1.8)}" fill="none" stroke="${B.hi}" stroke-width="0.8" stroke-linecap="round"/>`;
+        head += `<path class="tone" d="M${f(hx + 1)} ${f(hy + 3)} Q${f(hx + 8)} ${f(hy + 7.6)} ${f(hx + 14)} ${f(hy + 2.4)} L${f(hx + 11.4)} ${f(hy + 1)} Z" fill="${B.lo}" opacity="0.55"/>`;
+        head += `<path class="tone" d="M${f(hx + 2)} ${f(hy - 5)} Q${f(hx + 9)} ${f(hy - 6.8)} ${f(hx + 13.5)} ${f(hy - 1.8)}" fill="none" stroke="${B.hi}" stroke-width="0.8" stroke-linecap="round"/>`;
         head += `<path d="M${f(hx + 3.4)} ${f(hy - 5.2)} Q${f(hx + 6)} ${f(hy)} ${f(hx + 3.4)} ${f(hy + 5.2)}" fill="none" stroke="${B.lo}" stroke-width="0.7"/>`;
         // зубы: сверху три вниз, снизу два вверх — треугольниками по краю пасти
         const tooth = (x, y, dy) => `<path d="M${f(x - 0.55)} ${f(y)} L${f(x)} ${f(y + dy)} L${f(x + 0.55)} ${f(y)} Z" fill="${B.hi}" stroke="${ink}" stroke-width="0.3" stroke-linejoin="round"/>`;
@@ -305,7 +309,7 @@ Object.assign(GreedJunk, {
         [12.4, 13.7].forEach(x => { head += tooth(hx + x, hy + 1.4 + (x - 11) * 0.4, -1.2); });
         // пустая глазница: тёмная дыра со светлым ободком кости, без блика
         head += `<circle cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="2.6" fill="${B.hi}"/>` +
-            `<circle cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="1.9" fill="${B.hole}" stroke="${ink}" stroke-width="${bw}"/>`;
+            `<circle class="solid" cx="${f(hx + 9)}" cy="${f(hy - 3)}" r="1.9" fill="${B.hole}" stroke="${ink}" stroke-width="${bw}"/>`;
         head += `<path d="${skull}" fill="none" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>`;
         return ribs + tail + back + head;
     },
@@ -335,7 +339,7 @@ Object.assign(GreedJunk, {
         const d = `M${P(o0)} A${Ro} ${Ro} 0 0 1 ${P(o1)} L${right.slice(1).map(P).join(' L')} ` +
             `A${Ri} ${Ri} 0 0 0 ${P(left[0])} L${left.slice(1).map(P).join(' L')} Z`;
         return `<path d="${d}" fill="${col}" transform="translate(${M.x} ${M.y})"/>` +
-            `<path d="M${P(at(Ro - 1.6, a0 + 8))} A${Ro - 1.6} ${Ro - 1.6} 0 0 1 ${P(at(Ro - 1.6, a1 - 8))}" fill="none" stroke="${PALETTE.greedJunk.paint.cream}" stroke-width="0.8" opacity="0.6" stroke-linecap="round"/>` +
+            `<path d="M${P(at(Ro - 1.6, a0 + 8))} A${Ro - 1.6} ${Ro - 1.6} 0 0 1 ${P(at(Ro - 1.6, a1 - 8))}" fill="none" class="tone" stroke="${PALETTE.greedJunk.paint.cream}" stroke-width="0.8" opacity="0.6" stroke-linecap="round"/>` +
             `<path d="${d}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
     },
 
@@ -350,7 +354,7 @@ Object.assign(GreedJunk, {
         const ring = `M${f(cx - Ro)} ${cy} A${Ro} ${Ro} 0 1 1 ${f(cx + Ro)} ${cy} A${Ro} ${Ro} 0 1 1 ${f(cx - Ro)} ${cy} Z ` +
             `M${f(cx - Ri)} ${cy} A${Ri} ${Ri} 0 1 0 ${f(cx + Ri)} ${cy} A${Ri} ${Ri} 0 1 0 ${f(cx - Ri)} ${cy} Z`;
         let out = `<path d="${ring}" fill="${col}" fill-rule="evenodd" transform="translate(${M.x} ${M.y})"/>`;
-        out += `<path d="M${f(cx - Ro + 1.8)} ${f(cy - 1)} A${Ro - 1.8} ${Ro - 1.8} 0 0 1 ${f(cx + 2)} ${f(cy - Ro + 1.9)}" fill="none" stroke="${PALETTE.greedJunk.paint.cream}" stroke-width="0.8" opacity="0.6" stroke-linecap="round"/>`;
+        out += `<path d="M${f(cx - Ro + 1.8)} ${f(cy - 1)} A${Ro - 1.8} ${Ro - 1.8} 0 0 1 ${f(cx + 2)} ${f(cy - Ro + 1.9)}" fill="none" class="tone" stroke="${PALETTE.greedJunk.paint.cream}" stroke-width="0.8" opacity="0.6" stroke-linecap="round"/>`;
         out += `<path d="${ring}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" fill-rule="evenodd"/>`;
         // перемычки по границам третей: чернильная линия, по ней — цвет
         for (let t = 0; t < 3; t++) {
@@ -379,26 +383,66 @@ Object.assign(GreedJunk, {
         for (let k = 0; k < n; k++) { const i = (from + k) % n; if (S[i] === key) return i; }
         return 0;
     },
-    reelStripSvg(scale) {
+    reelStripSvg(scale, mono) {
         const C = this.CELL, S = this.REEL_STRIP, H = C.h * S.length;
-        let out = '';
+        let out = this.reelStyle();
         S.forEach((key, i) => {
-            out += this.reelCell(this.REEL_ART[key] || key, 0, i * C.h);
+            out += this.reelCell(this.REEL_ART[key] || key, 0, i * C.h, mono);
             // граница ячеек — тонкая риска печати
             out += `<line x1="2" y1="${i * C.h + 0.2}" x2="${C.w - 2}" y2="${i * C.h + 0.2}" stroke="${PALETTE.greedJunk.reel.paperLo}" stroke-width="0.4"/>`;
         });
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${C.w} ${H}" width="${C.w * scale}" height="${H * scale}">${out}</svg>`;
     },
 
-    // Ячейка ленты: бумага с крапом и символ. Для показа и для ленты.
-    reelCell(key, x, y) {
+    // ---------- МОНОХРОМ ----------
+    // Старый аппарат печатает ленту одной тушью, контуром: на барабане цвет
+    // читается плохо (решение игрока). Цветная лента — для прокачанного
+    // аппарата. Символы рисуются одинаково, контур задаёт стиль: заливки —
+    // бумагой, линии — тушью; tone (тени, блики) прячется, solid (глазница,
+    // поршень, знак) — сплошная тушь, mono-only (штриховка жидкости) — только
+    // в контурной ленте.
+    reelStyle() {
+        const R = PALETTE.greedJunk.reel, ink = PALETTE.ink;
+        return `<style>.mono-only{display:none}` +
+            `.mono *{fill:${R.paper}!important;stroke:${ink}!important}` +
+            `.mono [fill="none"]{fill:none!important}.mono *:not([stroke]){stroke:none!important}` +
+            `.mono .tone{display:none}.mono .mono-only{display:inline}` +
+            `.mono .solid,.mono .solid *{fill:${ink}!important}</style>`;
+    },
+
+    // ---------- ПОСАДКА В ЯЧЕЙКУ ----------
+    // Видимая ячейка барабана — 56×32 (ширина ленты в окне × шаг ячеек);
+    // по бокам её срезает хром окантовки, сверху и снизу — соседи. Символ
+    // вписан в рамку FIT_BOX: каждый повёрнут и отмасштабирован так, чтобы
+    // занять её максимально и не выйти. Числа — ЗАМЕР (tools: перебор угла
+    // с шагом 3° по рамке нарисованного контура), а не на глаз: на глаз
+    // рыба вышла огромной, банка — мелкой.
+    // rot — наклон, k — масштаб, m — середина повёрнутого символа.
+    FIT_BOX: { w: 50, h: 28 },
+    // Наклон общий: все символы лежат по одной диагонали (−15°, подъём
+    // вправо), вытянутые поперёк — тем же наклоном на боку (±75…105°).
+    // Жетон круглый — без наклона.
+    REEL_FIT: {
+        worm: { rot: -15, k: 0.787, m: [0.33, 0.17] },
+        beer: { rot: 75, k: 1.05, m: [-0.07, 0.02] },
+        syringe: { rot: -15, k: 1.04, m: [-0.7, 0.19] },
+        fish: { rot: -15, k: 0.849, m: [-1.45, -0.31] },
+        shard: { rot: -15, k: 1.481, m: [0.13, -0.17] },
+        token: { rot: 0, k: 0.972, m: [0.18, -0.8] },
+    },
+
+    // Ячейка ленты: бумага с крапом и символ, вписанный в рамку.
+    reelCell(key, x, y, mono) {
         const R = PALETTE.greedJunk.reel, C = this.CELL, f = this.f;
         const rnd = this.rng(x * 7 + y * 13 + key.length);
         let out = `<rect x="${x}" y="${y}" width="${C.w}" height="${C.h}" fill="${R.paper}"/>`;
         for (let i = 0; i < 14; i++) out += `<circle cx="${f(x + rnd() * C.w)}" cy="${f(y + rnd() * C.h)}" r="${f(0.2 + rnd() * 0.4)}" fill="${R.speck}" opacity="0.5"/>`;
         // blank — пустышка: только бумага, совсем без рисунка (решение игрока)
         const draw = { worm: 'reelWorm', beer: 'reelCan', syringe: 'reelSyringe', fish: 'reelFish', shard: 'reelShard', token: 'reelToken' }[key];
-        if (draw) out += this[draw](x + C.w / 2, y + C.h / 2);
+        if (!draw) return out;
+        const F = this.REEL_FIT[key] || { rot: 0, k: 1, m: [0, 0] };
+        out += `<g class="${mono ? 'mono' : ''}" transform="translate(${f(x + C.w / 2)} ${f(y + C.h / 2)}) scale(${F.k}) translate(${f(-F.m[0])} ${f(-F.m[1])}) rotate(${F.rot})">` +
+            this[draw](0, 0) + '</g>';
         return out;
     }
 });
