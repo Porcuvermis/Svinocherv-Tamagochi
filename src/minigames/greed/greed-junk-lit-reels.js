@@ -87,10 +87,13 @@ Object.assign(GreedJunkLit, {
     spinDone() {
         const G = GreedJunk, S = G.REEL_STRIP, C = G.CELL;
         const keys = this.reels.map(r => S[Math.round((r.s - C.h / 2) / C.h) % S.length]);
-        if (keys[0] === keys[1] && keys[1] === keys[2] && keys[0] !== 'blank') {
+        // в игре выплату показывает она сама (onSpinDone) — по настоящей
+        // выплате, а не по картинке
+        if (this.onSpinDone) this.onSpinDone(keys);
+        else if (keys[0] === keys[1] && keys[1] === keys[2] && keys[0] !== 'blank') {
             this.blink();
             if (this.trayPour) this.trayPour((this.TRAY_PAY || {})[keys[0]] || 5);
         }
-        if (this.autoReady && this._leverIdle !== false) this.setReady(true);
+        this.tryReady();
     },
 });

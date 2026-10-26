@@ -234,9 +234,15 @@ const GreedJunkLit = {
     // Перерисовка, пока холст на экране: только когда наклон заметно
     // сдвинулся — неподвижный телефон не жжёт видеокарту.
     run(canvas) {
+        if (this._running) return;
+        this._running = true;
         const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
-        // тряпка — первой: пока её нет, доска под табло пустая
-        (this.prepareRag ? this.prepareRag() : Promise.resolve()).then(() => this.prepareLever());
+        // тряпка — первой: пока её нет, доска под табло пустая. Готовится один
+        // раз: аппарат потом только переезжает (mount), а не собирается заново
+        if (!this._prepared) {
+            this._prepared = true;
+            (this.prepareRag ? this.prepareRag() : Promise.resolve()).then(() => this.prepareLever());
+        }
         // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
         // а не весь хвостик целиком; тяжесть — по наклону телефона
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
@@ -244,7 +250,8 @@ const GreedJunkLit = {
         const lamp = GreedJunk.lampHang();
         this._hangs = [tail.s, lamp];          // удар рычага их раскачивает
         const loop = (now) => {
-            if (!canvas.isConnected) return;
+            // аппарат сняли со страницы — цикл стоит; mount в новое место запустит
+            if (!canvas.isConnected) { this._running = false; return; }
             if (this.live) {
                 const g = Hang.down();
                 Hang.step(tail.s, g);
@@ -343,14 +350,16 @@ const GreedJunkLit = {
         this.setReady(false);
         if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 6, 40);
         this._leverIdle = false;
-        // монета в щель — на рывке, сама; не прошла ли, решает игра (coinOk)
-        if (this.coinIn) this.coinIn(this.coinOk !== false);
-        if (this.onPull) this.onPull();
-        else if (this.autoReady) {
+        // Сначала решает игра (onPull: false — крутки нет, денег нет), потом
+        // монета: прошла в щель или вывалилась в ковш возврата.
+        let ok = true;
+        if (this.onPull) ok = this.onPull() !== false;
+        else {
             this.spin(this.previewOutcome());
             // в превью шкалы игры не трогаем — градусник подрастает сам, как от крутки
             if (this.meterBump) this.meterBump();
         }
+        if (this.coinIn) this.coinIn(ok);
     },
     // dy — сколько палец прошёл вниз, в единицах поля
     leverDrag(dy) {
@@ -440,7 +449,7 @@ const GreedJunkLit = {
             if (t > 900) {
                 this._lv = null;
                 this._leverIdle = true;
-                if (this.autoReady && !this.ready && !this.spinning()) this.setReady(true);
+                this.tryReady();
                 this.bindSet(this.tex);
                 this.leverCanvas.style.display = 'none';
                 return true;
@@ -598,34 +607,43 @@ const GreedJunkLit = {
     // 🐞 → «Аппарат»: корпус на весь экран, свет от наклона. Тап — закрыть.
     // Корпус в игру ещё не встроен, а свет надо проверить на телефоне.
     // Без видеокарты показывается рисунок с нарисованным светом.
-    async preview() {
-        const old = document.getElementById('gj-preview');
-        if (old) { old.remove(); return; }
-        const host = document.getElementById('game-container') || document.body;
-        const box = document.createElement('div');
-        box.id = 'gj-preview';
-        box.style.cssText = 'position:absolute;inset:0;z-index:100001;display:flex;align-items:center;' +
-            'justify-content:center;background:' + PALETTE.greedJunk.hole;
-        // тап по полке с лампами — мигание выигрыша, по рычагу — рывок,
-        // в любом другом месте — закрыть
-        box.addEventListener('click', (e) => {
-            const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
-            const y = (e.clientY - r.top) / r.height * GreedJunk.H;
-            const x = (e.clientX - r.left) / r.width * GreedJunk.W;
-            if (y > 440 && y < 520) this.blink();
-            else if (x > 300 && y > 262 && y < 400) { /* рычаг — своими событиями ниже */ }
-            else box.remove();
-        });
-        host.appendChild(box);
-        // корпус и живой слой поверх — в одной обёртке с пропорцией корпуса
+    // Готовность (зелёная лампа): рычаг вернулся, барабаны стоят и игра не
+    // занята выплатой (canReady). Зовётся и рычагом, и барабанами, и игрой.
+    canReady: null,
+    tryReady() {
+        if (this.ready || this._lv || this.spinning()) return;
+        if (this.canReady && !this.canReady()) return;
+        this.setReady(true);
+    },
+
+    // ---------- АППАРАТ В КОНТЕЙНЕР ----------
+    // Собирается ОДИН раз (растр корпуса шейдером — секунды), дальше обёртка
+    // просто переезжает в новый контейнер: превью из отладки и экран игры —
+    // один и тот же аппарат. opts.onPull — игра решает исход рывка (вернуть
+    // false — крутки нет); без него превью крутит случайно. opts.onSpinDone
+    // — барабаны встали (keys — символы под ниткой); opts.canReady — можно ли
+    // зажечь готовность. Возвращает обещание: аппарат нарисован.
+    mount(container, opts) {
+        opts = opts || {};
+        this.onPull = opts.onPull || null;
+        this.onSpinDone = opts.onSpinDone || null;
+        this.canReady = opts.canReady || null;
+        if (this.wrapEl) {
+            container.appendChild(this.wrapEl);
+            this.fit(container);
+            if (this.gl && this._glCanvas) this.run(this._glCanvas);
+            this.tryReady();
+            return this._mountP;
+        }
         const wrap = document.createElement('div');
         this.wrapEl = wrap;
-        wrap.style.cssText = `position:relative;width:min(100%, calc(100vh * ${GreedJunk.W} / ${GreedJunk.H}));` +
-            `aspect-ratio:${GreedJunk.W}/${GreedJunk.H}`;
-        box.appendChild(wrap);
+        wrap.style.cssText = 'position:relative;flex:none';
+        container.appendChild(wrap);
+        this.fit(container);
         const canvas = document.createElement('canvas');
         canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0';
         wrap.appendChild(canvas);
+        this._glCanvas = canvas;
         // Холст движущегося рычага — над его участком корпуса. Фон снят
         // явно: общий style.css красит ВСЕ canvas непрозрачным цветом, и
         // холст закрывал участок сплошным прямоугольником — за рычагом
@@ -636,7 +654,6 @@ const GreedJunkLit = {
             `width:${C.w / GreedJunk.W * 100}%;height:${C.h / GreedJunk.H * 100}%;z-index:1;display:none;pointer-events:none;background:none`;
         wrap.appendChild(lv);
         this.leverCanvas = lv;
-        this.autoReady = true;        // в превью исход крутки — свой, случайный
         if (this.trayMount) this.trayMount(wrap);
         if (this.ragMount) this.ragMount(wrap);
         if (this.coinMount) this.coinMount(wrap);
@@ -651,6 +668,7 @@ const GreedJunkLit = {
             const [x, y] = field(e);
             if (!(x > 300 && y > 262 && y < 400) || this._lv || !this.ready) return;
             e.preventDefault();
+            e.stopPropagation();
             wrap.setPointerCapture(e.pointerId);
             grab = { y, at: Date.now(), moved: 0 };
             this._held = true;
@@ -679,17 +697,55 @@ const GreedJunkLit = {
         live.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';
         wrap.appendChild(live);
         this.live = live;
-        let ok = false;
-        // тряпка на свету — своя картинка поверх корпуса (greed-junk-lit-rag.js)
-        GreedJunk.ragApart = !!this.ragMount;
-        try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
-        if (!ok) {
-            GreedJunk.ragApart = false;
-            wrap.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="position:absolute;inset:0;width:100%;height:100%" ');
-            return;
-        }
-        this.draw();
-        this.run(canvas);
+        this._mountP = (async () => {
+            let ok = false;
+            // тряпка на свету — своя картинка поверх корпуса (greed-junk-lit-rag.js)
+            GreedJunk.ragApart = !!this.ragMount;
+            try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
+            if (!ok) {
+                GreedJunk.ragApart = false;
+                wrap.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="position:absolute;inset:0;width:100%;height:100%" ');
+                return false;
+            }
+            this.draw();
+            this.run(canvas);
+            return true;
+        })();
+        return this._mountP;
+    },
+    // Размер по контейнеру с пропорцией корпуса. clientWidth, а не
+    // getBoundingClientRect: окно мини-игры масштабирует тело трансформом,
+    // и видимый размер уже уменьшен — мерили бы дважды.
+    fit(container) {
+        const W = GreedJunk.W, H = GreedJunk.H, cw = container.clientWidth, ch = container.clientHeight;
+        if (!cw || !ch || !this.wrapEl) return;
+        const k = Math.min(cw / W, ch / H);
+        this.wrapEl.style.width = (W * k).toFixed(1) + 'px';
+        this.wrapEl.style.height = (H * k).toFixed(1) + 'px';
+    },
+
+    // ---------- ПРЕВЬЮ ИЗ ОТЛАДКИ ----------
+    // Тот же аппарат, что в игре, во весь экран; исход крутки — случайный.
+    async preview() {
+        const old = document.getElementById('gj-preview');
+        if (old) { old.remove(); return; }
+        const host = document.getElementById('game-container') || document.body;
+        const box = document.createElement('div');
+        box.id = 'gj-preview';
+        box.style.cssText = 'position:absolute;inset:0;z-index:100001;display:flex;align-items:center;' +
+            'justify-content:center;background:' + PALETTE.greedJunk.hole;
+        // тап по полке с лампами — мигание выигрыша, по рычагу — рывок,
+        // в любом другом месте — закрыть
+        box.addEventListener('click', (e) => {
+            const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
+            const y = (e.clientY - r.top) / r.height * GreedJunk.H;
+            const x = (e.clientX - r.left) / r.width * GreedJunk.W;
+            if (y > 440 && y < 520) this.blink();
+            else if (x > 300 && y > 262 && y < 400) { /* рычаг — своими событиями */ }
+            else box.remove();
+        });
+        host.appendChild(box);
+        return this.mount(box);
     },
 
     // region — перерисовать только участок поля {x, y, w, h} (барабаны на ходу)
