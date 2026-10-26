@@ -183,11 +183,23 @@ Object.assign(GreedJunk, {
         const r = 3.6;                               // радиус цилиндра
         const xP = -26, xF = -11, xB = 12, xC = 15, xH = 18, xN = 28, xPis = -2;
         let g = '';
-        // шток поршня: крестовина — две продольные линии и рёбра
-        g += `<rect x="${xP + 1}" y="-1.3" width="${xF - xP - 1}" height="2.6" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-            `<line x1="${xP + 1.5}" y1="0" x2="${xF}" y2="0" stroke="${Y.glassLo}" stroke-width="0.5"/>`;
-        // упор поршня — диск, видимый сбоку
-        g += `<ellipse cx="${xP}" cy="0" rx="1.3" ry="4.2" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`;
+        // Толстый диск, видимый почти с ребра: задняя сторона, торцевой
+        // обод в тени и лицевая сторона с бликом по краю. ry — полувысота
+        // (поперёк оси), rx — сплющенность, t — толщина вдоль оси. Было:
+        // плоские кружки — читались бумажными.
+        const disc = (x, ry, rx, t) =>
+            `<path d="M${f(x)} ${-ry} L${f(x + t)} ${-ry} A${rx} ${ry} 0 0 1 ${f(x + t)} ${ry} L${f(x)} ${ry} Z" fill="${Y.glassLo}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<ellipse cx="${f(x)}" cy="0" rx="${rx}" ry="${ry}" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            `<path d="M${f(x - rx * 0.5)} ${f(-ry * 0.75)} A${rx * 0.6} ${ry * 0.8} 0 0 0 ${f(x - rx * 0.5)} ${f(ry * 0.75)}" fill="none" stroke="${Y.glassHi}" stroke-width="0.6"/>` +
+            `<ellipse cx="${f(x)}" cy="0" rx="${f(rx * 0.35)}" ry="${f(ry * 0.35)}" fill="none" stroke="${Y.glassLo}" stroke-width="0.4"/>`;
+        // шток: крестовина — светлое верхнее ребро, тёмная середина; у концов
+        // утолщения, где шток входит в диски
+        g += `<rect x="${xP + 1}" y="-1.9" width="${xF - xP - 1}" height="3.8" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            `<rect x="${xP + 1.4}" y="-0.5" width="${xF - xP - 1.8}" height="1.3" fill="${Y.glassLo}"/>` +
+            `<line x1="${xP + 1.4}" y1="-1.3" x2="${xF}" y2="-1.3" stroke="${Y.glassHi}" stroke-width="0.5"/>` +
+            `<rect x="${xP + 1.2}" y="-2.3" width="1.6" height="4.6" rx="0.5" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
+        // упор поршня — толстый диск
+        g += disc(xP, 4.4, 1.5, 1.4);
         // цилиндр: стекло, жидкость, поршень, деления
         const id = 'gj-syr' + Math.round(cx * 10 + cy);
         const barrel = `M${xF} ${-r} L${xB} ${-r} Q${xB + 1.2} ${-r} ${xB + 1.2} ${-r + 1.2} L${xB + 1.2} ${r - 1.2} Q${xB + 1.2} ${r} ${xB} ${r} L${xF} ${r} Z`;
@@ -211,8 +223,15 @@ Object.assign(GreedJunk, {
             ticks += `M${f(x)} ${-r} L${f(x)} ${f(-r + (i % 2 ? 1.1 : 1.9))} `;
         g += `<path d="${ticks}" stroke="${ink}" stroke-width="0.35"/>`;
         g += `<path d="${barrel}" fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
-        // упор для пальцев — диск сбоку
-        g += `<ellipse cx="${xF}" cy="0" rx="1.4" ry="5.8" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`;
+        // упор для пальцев — вытянутая пластина с крыльями, с толщиной
+        g += `<path d="M${xF - 0.7} ${-r - 2.6} Q${xF - 0.7} ${-r - 3.4} ${xF + 0.3} ${-r - 3.4} L${xF + 1.3} ${-r - 3.4} Q${xF + 2.1} ${-r - 3.4} ${xF + 2.1} ${-r - 2.6} ` +
+            `L${xF + 2.1} ${r + 2.6} Q${xF + 2.1} ${r + 3.4} ${xF + 1.3} ${r + 3.4} L${xF + 0.3} ${r + 3.4} Q${xF - 0.7} ${r + 3.4} ${xF - 0.7} ${r + 2.6} Z" ` +
+            `fill="${Y.glassLo}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<path d="M${xF - 0.7} ${-r - 2.6} L${xF + 0.8} ${-r - 2.6} L${xF + 0.8} ${r + 2.6} L${xF - 0.7} ${r + 2.6} Z" fill="${Y.plastic}"/>` +
+            `<line x1="${xF - 0.1}" y1="${-r - 2}" x2="${xF - 0.1}" y2="${r + 2}" stroke="${Y.glassHi}" stroke-width="0.5"/>` +
+            `<path d="M${xF - 0.7} ${-r - 2.6} Q${xF - 0.7} ${-r - 3.4} ${xF + 0.3} ${-r - 3.4} L${xF + 1.3} ${-r - 3.4} Q${xF + 2.1} ${-r - 3.4} ${xF + 2.1} ${-r - 2.6} ` +
+            `L${xF + 2.1} ${r + 2.6} Q${xF + 2.1} ${r + 3.4} ${xF + 1.3} ${r + 3.4} L${xF + 0.3} ${r + 3.4} Q${xF - 0.7} ${r + 3.4} ${xF - 0.7} ${r + 2.6} Z" ` +
+            `fill="none" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
         // конус и втулка
         g += `<path d="M${xB + 1.2} ${-r + 1} L${xC} -1.2 L${xC} 1.2 L${xB + 1.2} ${r - 1} Z" fill="${Y.glass}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<path d="M${xC} -1.3 L${xH} -0.7 L${xH} 0.7 L${xC} 1.3 Z" fill="${Y.plastic}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
