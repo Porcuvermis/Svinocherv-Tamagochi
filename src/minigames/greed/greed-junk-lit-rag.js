@@ -12,8 +12,10 @@ Object.assign(GreedJunkLit, {
     RAG_CROP: { x: 64, y: 494, w: 232, h: 58 },     // где лежит тряпка
     RAG_VIEW: { x: 54, y: 490, w: 252, h: 72 },     // её холст: с запасом на качание и тень
     // качание: K — жёсткость, C — затухание (на мс); slap — сколько скорости
-    // остаётся после шлепка о доску; kick — толчок от удара рычага
-    RAG_SWING: { K: 0.00006, C: 0.0035, Ks: 0.00003, Cs: 0.0032, slap: 0.35, kick: 0.0042, maxSway: 0.28 },
+    // остаётся после шлепка о доску; kick — толчок от удара рычага.
+    // Ткань плотная и тяжёлая: отходит градусов на шесть и ложится почти
+    // без отскока. Было вдвое мягче — игрок: «слишком болтается».
+    RAG_SWING: { K: 0.00012, C: 0.008, Ks: 0.00006, Cs: 0.008, slap: 0.2, kick: 0.0022, maxSway: 0.12, sway: 0.4, lift: 0.008 },
 
     ragMount(wrap) {
         const V = this.RAG_VIEW, G = GreedJunk, cv = document.createElement('canvas');
@@ -65,7 +67,7 @@ Object.assign(GreedJunkLit, {
         const R = this._rag;
         if (!R) return;
         R.tv += this.RAG_SWING.kick * k;
-        R.pv += (Math.random() - 0.5) * 0.002 * k;
+        R.pv += (Math.random() - 0.5) * 0.0008 * k;
     },
 
     ragStep(now) {
@@ -75,8 +77,8 @@ Object.assign(GreedJunkLit, {
         R.at = now;
         // вбок — за тяжестью в плоскости экрана; резкий наклон ещё и отрывает
         // тряпку от доски
-        const want = Math.max(-W.maxSway, Math.min(W.maxSway, Hang.down() * 0.8));
-        if (R.last !== null) R.tv += Math.min(0.002, Math.abs(want - R.last) * 0.02);
+        const want = Math.max(-W.maxSway, Math.min(W.maxSway, Hang.down() * W.sway));
+        if (R.last !== null) R.tv += Math.min(0.0008, Math.abs(want - R.last) * W.lift);
         R.last = want;
         R.pv += (W.Ks * (want - R.ph) - W.Cs * R.pv) * dt;
         R.ph += R.pv * dt;
@@ -88,8 +90,10 @@ Object.assign(GreedJunkLit, {
         if (key !== R.shown) { R.shown = key; this.ragDraw(R.th, R.ph); }
     },
 
-    // th — отход от доски: по высоте тряпка короче (cos), низ темнее (смотрит
-    // вниз, от света), тень отходит дальше; ph — перекос вбок от гвоздей
+    // th — отход от доски: по высоте тряпка короче (cos), тень отходит дальше,
+    // низ чуть темнеет — от гвоздей к низу, ровно. Было: темнела вся тряпка
+    // разом, и это читалось как мигание света, а не как движение ткани.
+    // ph — перекос вбок от гвоздей
     ragDraw(th, ph) {
         const S = this.SCALE, C = this.RAG_CROP, V = this.RAG_VIEW, cv = this.ragCanvas, ctx = cv.getContext('2d');
         const y0 = GreedJunk.SLOTS.plate.y + 6;           // линия гвоздей
@@ -102,8 +106,11 @@ Object.assign(GreedJunkLit, {
         ctx.drawImage(this.rag.sprite, 0, 0);
         if (th > 0.01) {
             ctx.globalCompositeOperation = 'source-atop';
-            ctx.globalAlpha = Math.min(0.4, th * 0.6);
-            ctx.fillStyle = PALETTE.greedJunk.hole;
+            ctx.globalAlpha = Math.min(0.18, th * 0.8);
+            const top = (y0 - C.y) * S, gr = ctx.createLinearGradient(0, top, 0, C.h * S);
+            gr.addColorStop(0, 'rgba(0,0,0,0)');
+            gr.addColorStop(1, PALETTE.greedJunk.hole);
+            ctx.fillStyle = gr;
             ctx.fillRect(0, 0, C.w * S, C.h * S);
         }
         ctx.globalCompositeOperation = 'destination-over';
