@@ -393,6 +393,8 @@ Object.assign(GreedJunk, {
         out += this.T(9, 'steel', this.tin(50, 296, 260, 166, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         out += this.doorScars();
         out += this.doorJoint();
+        // градусник насыщения — по верху дверцы (greed-junk-meter.js)
+        if (this.meterGlass) out += this.meterGlass();
         // крашеное поле: синяя рамка и лучи
         let face = '';
         face += `<rect x="62" y="312" width="236" height="148" rx="2" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;

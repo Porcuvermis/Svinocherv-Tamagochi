@@ -277,6 +277,7 @@ const GreedJunkLit = {
             }
             if (this.ragStep) this.ragStep(now);
             if (this.coinStep) this.coinStep(now);
+            if (this.meterStep) this.meterStep(now);
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -345,7 +346,11 @@ const GreedJunkLit = {
         // монета в щель — на рывке, сама; не прошла ли, решает игра (coinOk)
         if (this.coinIn) this.coinIn(this.coinOk !== false);
         if (this.onPull) this.onPull();
-        else if (this.autoReady) this.spin(this.previewOutcome());
+        else if (this.autoReady) {
+            this.spin(this.previewOutcome());
+            // в превью шкалы игры не трогаем — градусник подрастает сам, как от крутки
+            if (this.meterBump) this.meterBump();
+        }
     },
     // dy — сколько палец прошёл вниз, в единицах поля
     leverDrag(dy) {
@@ -471,6 +476,7 @@ const GreedJunkLit = {
         // лишний удар смазывал бы её
         (this._hangs || []).forEach((h, j) => h.v.forEach((_, i) => { h.v[i] += (j ? -0.05 : 0.09) * (i + 1) / h.n; }));
         if (this.ragKick) this.ragKick(1);
+        if (this.meterKick) this.meterKick(1);
         this.GLOW_ORDER.forEach(k => { this.glow[k] = Math.max(this.glow[k], 0.9); });
         const rnd = GreedJunk.rng(Math.floor(now));
         this._dust = { at: now, parts: Array.from({ length: 10 }, (_, i) => {
@@ -634,6 +640,7 @@ const GreedJunkLit = {
         if (this.trayMount) this.trayMount(wrap);
         if (this.ragMount) this.ragMount(wrap);
         if (this.coinMount) this.coinMount(wrap);
+        if (this.meterMount) this.meterMount(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();

@@ -155,7 +155,8 @@ src/minigames/<грех>/   каждая мини-игра в своей пап�
   greed/ аппарат: GreedJunk (greed-junk) — +lever, +parts, +top, +top-lamps,
   +top-door, +light, +logo, +reel, +plate (тряпка с комбинациями), +wc
   (монетоприёмник); GreedJunkLit (greed-junk-lit) — +lit-lever, +lit-reels,
-  +tray, +lit-rag (тряпка качается), +coin-in (монета в щель).
+  +tray, +lit-rag (тряпка качается), +coin-in (монета в щель), +meter
+  (градусник насыщения: стекло в GreedJunk, жидкость в GreedJunkLit).
   greed/                автомат: экран НИЧЕГО не решает — просит крутку у
                         Backend.greedSpin() и показывает три символа с
                         выплатой; веса и таблица выплат в конфиге
