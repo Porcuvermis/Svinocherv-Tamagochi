@@ -60,16 +60,6 @@ Object.assign(GreedJunk, {
             [-3, 3].forEach(dx => { cut += `<path d="M${f(cx + dx - 1.2)} ${f(cy - 5)} L${f(cx + dx + 1.2)} ${f(cy + 5)}" stroke="#000" stroke-width="0.55"/>`; });
             if (rnd() < 0.3) drips.push([cx - 4 + rnd() * 8, cy + 3.2]);
         };
-        // Монеты — стопка из трёх, сбоку: однозначно деньги, промежутки между
-        // монетами — естественные перемычки трафарета. Было: диск с кольцом —
-        // читался буквой «©», а рядом с «1» — как «10».
-        const coin = (cx, cy) => {
-            [2.6, 0, -2.6].forEach((dy, k) => {
-                const x = cx + (k === 1 ? 0.5 : 0);
-                paint += `<rect x="${f(x - 3.4)}" y="${f(cy + dy - 1)}" width="6.8" height="2" rx="1" fill="${ink}"/>`;
-            });
-            if (rnd() < 0.5) drips.push([cx + (rnd() - 0.5) * 4, cy + 3.8]);
-        };
         const arrow = (x, y) => { paint += `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`; };
         const col = [p.x + 6, p.x + p.w / 2 + 4], top = p.y + 9;
         rows.forEach((r, i) => {
@@ -79,18 +69,19 @@ Object.assign(GreedJunk, {
             arrow(ax, cy);
             const num = this.stencilNumber(r.pay, ax + 8, cy - 3.5);
             paint += `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>`;
-            drips.push([ax + 8 + rnd() * num.w, cy + 4]);
-            const rx = ax + 8 + num.w + 5.5;
-            coin(rx, cy);
+            // под цифрой подтёк короткий: длинный сливался с цифрой ряда ниже
+            if (rnd() < 0.6) drips.push([ax + 8 + rnd() * num.w, cy + 4, 0.4]);
+            // значка монеты нет: число после стрелки и так читается выплатой
+            const rx = ax + 8 + num.w - 2;
             if (r.alt) {
                 paint += `<path d="M${f(rx + 5)} ${f(cy + 3.5)} L${f(rx + 8)} ${f(cy - 3.5)}" stroke="${ink}" stroke-width="1.2" stroke-linecap="round"/>`;
                 sym(r.alt, rx + 15, cy);
             }
         });
         // подтёки: струйка вниз с каплей
-        drips.forEach(([x, y]) => {
+        drips.forEach(([x, y, s = 1]) => {
             // сужается книзу, капля на конце; короткие и разные
-            const L = 1 + rnd() * 3.2, w = 0.6 + rnd() * 0.3, cw = w * 0.35;
+            const L = (1 + rnd() * 3.2) * s, w = 0.6 + rnd() * 0.3, cw = w * 0.35;
             paint += `<path d="M${f(x - w)} ${f(y - 1.2)} Q${f(x - cw)} ${f(y + L * 0.4)} ${f(x - cw)} ${f(y + L)} A${f(cw * 1.6)} ${f(cw * 1.6)} 0 1 0 ${f(x + cw)} ${f(y + L)} Q${f(x + cw)} ${f(y + L * 0.4)} ${f(x + w)} ${f(y - 1.2)} Z" fill="${ink}"/>`;
         });
         // брызги напыла
