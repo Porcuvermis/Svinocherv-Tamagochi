@@ -91,7 +91,7 @@ Object.assign(GreedJunkLit, {
         wrap.appendChild(cv);
         this.meterCv = cv;
         const v = this.meterValue();
-        this._meter = { L: v, T: v, v: 0, w: 0, wv: 0, bubbles: [], next: 0, at: 0, shown: '' };
+        this._meter = { L: v, T: v, v: 0, w: 0, wv: 0, bubbles: [], foam: [], fizz: 0, sites: this.meterSites(), at: 0 };
     },
     // насыщение греха 0..1 из состояния игры (в превью без игры — половина)
     meterValue() {
@@ -107,7 +107,84 @@ Object.assign(GreedJunkLit, {
         // превью: полная шкала начинается заново, чтобы рост было видно всегда
         M.T = M.T >= 0.999 ? 0.1 : Math.min(1, M.T + cfg.fillPerSpin / 100);
     },
-    meterKick(k) { if (this._meter) this._meter.wv += 0.03 * k; },
+    // удар рычага: мениск колышется, а жидкость вскипает, как встряхнутое
+    // пиво, — центры кипения на время работают вчетверо чаще
+    meterKick(k) {
+        if (!this._meter) return;
+        this._meter.wv += 0.03 * k;
+        this._meter.fizz = Math.min(1, this._meter.fizz + 0.9 * k);
+    },
+
+    // ---------- ПУЗЫРЬКИ, КАК В ПИВЕ ----------
+    // В пиве пузырьки идут не по одному откуда попало, а ЦЕПОЧКАМИ из
+    // центров кипения — царапин и соринок на стекле: из одной точки ровной
+    // ниткой, один за другим. Поднимаясь, каждый растёт (газ выходит в
+    // него по пути) и разгоняется; большие чуть виляют. У поверхности
+    // собираются в тонкую пенку и лопаются. Центры — на дне шара и на
+    // стенках трубки; у каждого свой темп и свой размер пузырьков.
+    // Было: одиночный пузырь раз в пару секунд — читался воздухом в трубке.
+    BUBBLE: { a: 0.000045, vmax: 0.06, grow: 0.012, rmax: 0.95, foamMs: 1400, foamMax: 34 },
+    meterSites() {
+        const R = GreedJunk.METER, x = R.bx, ri = R.r - R.wall;
+        return [
+            // дно шара: две нитки, частые и мелкие
+            { x: x - 2.6, y: R.by + 6.2, every: 80, r0: 0.3 },
+            { x: x + 1.8, y: R.by + 6.8, every: 110, r0: 0.34 },
+            // царапины на стенках трубки: реже, пузырьки крупнее
+            { x: x - ri + 0.6, y: GreedJunk.meterY(0.12), every: 180, r0: 0.38 },
+            { x: x + ri - 0.6, y: GreedJunk.meterY(0.34), every: 230, r0: 0.4 },
+            { x: x - ri + 0.7, y: GreedJunk.meterY(0.58), every: 280, r0: 0.36 }
+        ].map(s => Object.assign(s, { next: Math.random() * s.every }));
+    },
+    // dt — мс; top — y поверхности
+    bubbleStep(M, now, dt, top) {
+        const B = this.BUBBLE, R = GreedJunk.METER, x = R.bx, ri = R.r - R.wall;
+        M.fizz = Math.max(0, M.fizz - dt / 2600);
+        const rate = 1 + M.fizz * 3;
+        M.sites.forEach(s => {
+            if (s.y < top + 2) return;                // точка над жидкостью — молчит
+            s.next -= dt * rate;
+            while (s.next <= 0) {
+                s.next += s.every * (0.7 + Math.random() * 0.6);
+                M.bubbles.push({ x: s.x, x0: s.x, y: s.y, v: 0.004 + Math.random() * 0.004, r: s.r0 * (0.8 + Math.random() * 0.4),
+                    ph: Math.random() * 6.3, wob: 0.15 + Math.random() * 0.25 });
+            }
+        });
+        // при встряске — ещё и россыпь из ниоткуда по всему столбику
+        if (M.fizz > 0.2 && Math.random() < M.fizz * 0.5) {
+            const yy = top + 3 + Math.random() * (R.by - top);
+            const half = yy > R.y0 ? Math.sqrt(Math.max(0, R.br * R.br - (yy - R.by) * (yy - R.by))) - 1.2 : ri - 0.6;
+            M.bubbles.push({ x: x + (Math.random() * 2 - 1) * half, x0: 0, y: yy, v: 0.01, r: 0.3 + Math.random() * 0.3, ph: Math.random() * 6.3, wob: 0.3 });
+            M.bubbles[M.bubbles.length - 1].x0 = M.bubbles[M.bubbles.length - 1].x;
+        }
+        M.bubbles = M.bubbles.filter(b => {
+            b.v = Math.min(B.vmax, b.v + B.a * dt);
+            b.y -= b.v * dt;
+            b.r = Math.min(B.rmax, b.r + B.grow * b.v * dt);
+            b.ph += dt * 0.012;
+            // в шаре пузырёк тянется к горлу трубки, в трубке — не шире стенок
+            if (b.y < R.y0) b.x0 += (x - b.x0) * Math.min(1, dt * 0.004) * (Math.abs(b.x0 - x) > ri - 0.6 - b.r ? 1 : 0.15);
+            b.x = b.x0 + Math.sin(b.ph) * b.wob * b.r;
+            if (b.y <= top + b.r + 0.4) {
+                // поднялся — в пенку у поверхности
+                if (M.foam.length < B.foamMax) M.foam.push({ x: Math.max(x - ri + 0.6, Math.min(x + ri - 0.6, b.x)), r: b.r * 0.8, at: now, life: B.foamMs * (0.5 + Math.random()) });
+                return false;
+            }
+            return true;
+        });
+        M.foam = M.foam.filter(f => now - f.at < f.life);
+    },
+    // пузырёк: прозрачный шарик в янтаре — светлее середина, тёмная кромка
+    // по краю, белая искра сверху-слева (так пузырёк в пиве и блестит)
+    bubbleDraw(ctx, x, y, r, a, C) {
+        ctx.globalAlpha = 0.35 * a; ctx.fillStyle = C.liquidHi;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.55 * a; ctx.strokeStyle = C.liquidLo; ctx.lineWidth = Math.max(0.12, r * 0.28);
+        ctx.beginPath(); ctx.arc(x, y, r, Math.PI * 0.1, Math.PI * 1.1); ctx.stroke();
+        ctx.globalAlpha = 0.95 * a; ctx.fillStyle = C.glassHi;
+        ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.38, Math.max(0.12, r * 0.32), 0, Math.PI * 2); ctx.fill();
+    },
+
 
     meterStep(now) {
         const M = this._meter, P = this.METER_SPRING;
@@ -120,15 +197,9 @@ Object.assign(GreedJunkLit, {
         const want = Hang.down() * 1.2;
         M.wv += ((want - M.w) * P.wk - P.wc * M.wv) * dt;
         M.w += M.wv * dt;
-        // пузырёк в колбе — раз в пару секунд
-        if (now > M.next) {
-            M.next = now + 1800 + Math.random() * 2600;
-            M.bubbles.push({ at: now, x: (Math.random() - 0.5) * 8, r: 0.7 + Math.random() * 0.8 });
-        }
-        M.bubbles = M.bubbles.filter(b => now - b.at < 1100);
-        const key = M.L.toFixed(4) + ',' + M.w.toFixed(3) + ',' + M.bubbles.map(b => Math.round((now - b.at) / 30)).join('.');
-        if (key === M.shown) return;
-        M.shown = key;
+        // пузырьки идут всегда — холст перерисовывается каждый кадр; он
+        // маленький (полоса у окна), это дёшево
+        this.bubbleStep(M, now, dt, GreedJunk.meterY(Math.max(0, Math.min(1, M.L))));
         this.meterDraw(now);
     },
 
@@ -171,14 +242,16 @@ Object.assign(GreedJunkLit, {
         // мениск: светлая кромка по поверхности
         ctx.strokeStyle = C.liquidHi; ctx.lineWidth = 0.6; ctx.globalAlpha = 0.9;
         ctx.beginPath(); ctx.moveTo(x - ri, top + M.w + 0.4); ctx.quadraticCurveTo(x, top + 2.4, x + ri, top - M.w + 0.4); ctx.stroke();
-        // пузырьки: всплывают из колбы вверх и тают
-        ctx.lineWidth = 0.45;
-        M.bubbles.forEach(b => {
-            const u = (now - b.at) / 1100;
-            ctx.globalAlpha = 0.9 * (1 - u * 0.7);
-            ctx.beginPath();
-            ctx.arc(x + b.x * 0.6 * (1 - u * 0.6), R.by + R.br * 0.6 - u * (R.br * 1.6 + 10), b.r, 0, Math.PI * 2);
-            ctx.stroke();
+        // пузырьки цепочками; пенка — у поверхности, по мениску, тает и лопается
+        M.bubbles.forEach(b => this.bubbleDraw(ctx, b.x, b.y, b.r, 1, C));
+        M.foam.forEach(fo => {
+            const u = (now - fo.at) / fo.life, k = (fo.x - x) / ri;
+            const fy = top + 1.1 + (1 - k * k) * 0.9 - k * M.w;
+            // пена светлее пузырьков в толще: кремовая, почти белая
+            const fa = u > 0.85 ? (1 - u) / 0.15 : 1, fr = fo.r * (1 + u * 0.2);
+            ctx.globalAlpha = 0.6 * fa; ctx.fillStyle = C.glassHi;
+            ctx.beginPath(); ctx.arc(fo.x, fy - fo.r * 0.4, fr, 0, Math.PI * 2); ctx.fill();
+            this.bubbleDraw(ctx, fo.x, fy - fo.r * 0.4, fr, fa, C);
         });
         ctx.restore();
         // деления — на стекле, поверх жидкости
