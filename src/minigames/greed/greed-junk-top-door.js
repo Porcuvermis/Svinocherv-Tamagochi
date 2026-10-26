@@ -258,6 +258,8 @@ Object.assign(GreedJunk, {
             `<line x1="${p.x + 4}" y1="${p.y + 2.5}" x2="${p.x + p.w - 4}" y2="${p.y + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         [[p.x + 6, p.y + 6], [p.x + p.w - 6, p.y + 6], [p.x + 6, p.y + p.h - 6], [p.x + p.w - 6, p.y + p.h - 6]]
             .forEach(([x, y]) => { plate += this.nail(x, y); });
+        // таблица выплат краской по доске (greed-junk-plate.js)
+        if (this.payPlate) plate += this.payPlate(p);
         out += this.T(6, 'pine', plate);
         out += this.coinTray();
         out += this.tapedCrack();
