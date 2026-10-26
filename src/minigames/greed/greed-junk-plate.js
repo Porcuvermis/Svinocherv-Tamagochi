@@ -7,13 +7,15 @@
 // поменяется и табличка. Цифры — свои, сегментами трафарета, а не
 // шрифтом: шрифт внутри картинки на iPhone может подмениться.
 Object.assign(GreedJunk, {
-    // Строки таблицы из конфига: тройки по убыванию выплаты, затем пара.
-    // give — что вместо монет при жетонном исходе (alt).
+    // Строки таблицы из конфига: тройки по убыванию ценности, затем пара.
+    // Жетонная тройка (give) встаёт по цене награды в монетах (tokenValue).
     payRows() {
         const G = (typeof ECONOMY !== 'undefined' && ECONOMY.minigames && ECONOMY.minigames.greed) || null;
         if (!G) return [];
-        const rows = G.reel.filter(s => s.pay > 0).sort((a, b) => b.pay - a.pay)
-            .map(s => ({ key: s.key, n: 3, pay: s.pay, alt: s.alt ? s.alt.altKey : null }));
+        const V = G.tokenValue || {};
+        const worth = s => s.give ? Object.keys(s.give).reduce((v, k) => v + (V[k] || 0) * s.give[k], 0) : (s.pay || 0);
+        const rows = G.reel.filter(s => s.pay > 0 || s.give).sort((a, b) => worth(b) - worth(a))
+            .map(s => ({ key: s.key, n: 3, pay: s.pay || 0, give: !!s.give }));
         if (G.pair) rows.push({ key: G.pair.key, n: 2, pay: G.pair.pay, alt: null });
         return rows;
     },
@@ -85,7 +87,7 @@ Object.assign(GreedJunk, {
         const rows = this.payRows();
         if (!rows.length) return '';
         const rnd = this.rng(4711);
-        const SC = 1.1, NK = 1.3, rh = 14;            // масштаб символа, масштаб цифр, шаг строк
+        const rh = Math.min(14, (p.h - 4) / Math.ceil(rows.length / 2)), SC = 1.1 * rh / 14, NK = 1.3 * rh / 14;            // масштаб символа, масштаб цифр, шаг строк
         const lampX = (this.HANG_LAMP && this.HANG_LAMP.x) || p.x + p.w / 2;
         let paint = '', cut = '', primer = '';
         const drips = [];
@@ -113,11 +115,11 @@ Object.assign(GreedJunk, {
         const arrow = (x0, y0) => { const x = x0 + J(0.6), y = y0 + J(0.8); paint += tilt(J(8), x + 2.7, y, `<path d="M${f(x)} ${f(y)} L${f(x + 5)} ${f(y)} M${f(x + 3)} ${f(y - 2)} L${f(x + 5.4)} ${f(y)} L${f(x + 3)} ${f(y + 2)}" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`); };
         // колонки: слева от лампы и справа от неё, с отступом от гвоздей
         const L0 = p.x + 14, R0 = lampX + 10;
-        const left = rows.filter((r, i) => i < 3), right = rows.filter((r, i) => i >= 3);
+        const nl = Math.ceil(rows.length / 2), left = rows.slice(0, nl), right = rows.slice(nl);
         // правая: пара сверху (короткая строка), тройки — под ней
         right.sort((a, b) => a.n - b.n);
         const place = (list, x0, n) => list.map((r, j) => [r, x0, p.y + p.h / 2 + (j - (n - 1) / 2) * rh]);
-        const cells = place(left, L0, 3).concat(place(right, R0, right.length));
+        const cells = place(left, L0, left.length).concat(place(right, R0, right.length));
         // полуширина фигуры: банка и жетон узкие — без неё за ними зияла дыра
         const half = (key) => ({ beer: 5, token: 6, shard: 6 }[artOf(key)] || 11) * SC;
         cells.forEach(([r, x0, cy0]) => {
@@ -128,10 +130,12 @@ Object.assign(GreedJunk, {
             cx += times(cx, cy + 1, r.n) + 3;
             arrow(cx, cy);
             cx += 8.5;
+            // жетонная тройка платит самим жетоном: после стрелки — он же
+            if (r.give) { sym(r.key, cx + 6, cy, 0.85); cx += 12; }
             const nx = cx + J(0.6), ny = cy - 3.5 * NK + J(0.8);
-            const num = this.stencilNumber(r.pay, nx, ny, NK);
-            paint += tilt(J(5), nx + num.w / 2, cy, `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"/>`);
-            if (rnd() < 0.6) drips.push([nx + rnd() * num.w, ny + 7 * NK + 0.5, 0.4]);
+            const num = r.give ? { d: '', w: 0 } : this.stencilNumber(r.pay, nx, ny, NK);
+            if (num.d) paint += tilt(J(5), nx + num.w / 2, cy, `<path d="${num.d}" fill="none" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"/>`);
+            if (num.d && rnd() < 0.6) drips.push([nx + rnd() * num.w, ny + 7 * NK + 0.5, 0.4]);
             cx += num.w;
             if (r.alt) {
                 paint += `<path d="M${f(cx + 2)} ${f(cy + 3.8)} L${f(cx + 4.6)} ${f(cy - 3.8)}" stroke="${ink}" stroke-width="1.2" stroke-linecap="round"/>`;

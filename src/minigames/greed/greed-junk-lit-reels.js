@@ -24,7 +24,7 @@ Object.assign(GreedJunkLit, {
     previewOutcome() {
         const G = GreedJunk, n = G.REEL_STRIP.length;
         if (Math.random() < 0.3) {
-            const key = ['coin', 'bone', 'meat', 'skull'][Math.floor(Math.random() * 4)];
+            const key = ['coin', 'bone', 'meat', 'skull', 'token', 'shard'][Math.floor(Math.random() * 6)];
             return [0, 1, 2].map(i => G.reelIndexOf(key, Math.floor(Math.random() * n)));
         }
         return [0, 1, 2].map(() => Math.floor(Math.random() * n));

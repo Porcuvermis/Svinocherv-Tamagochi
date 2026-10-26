@@ -145,22 +145,21 @@ Object.assign(LocalBackend, {
             : [this.greedRoll(cfg), this.greedRoll(cfg), this.greedRoll(cfg)];
 
         let pay = this.greedPay(cfg, reels);
-        const won = pay > 0;
 
-        // ---------- ВТОРОЙ ПУЛ ТРОЙКИ ----------
-        // Тройка уже выбрана, теперь решается, чем она платит. Гарантия
-        // всегда платит монетами: это утешение, а не лотерея.
+        // ---------- ЖЕТОННАЯ ТРОЙКА ----------
+        // Тройка символа с give платит им, а не монетами. Своя картинка —
+        // своя награда: игрок видит на барабанах, чем ему заплатили.
         const awarded = { currencies: {} };
-        const sym = (cfg.reel || []).find(x => x.key === reels[0]);
-        const alt = !pity && won && reels[0] === reels[1] && reels[1] === reels[2] && sym && sym.alt;
-        if (alt && Math.random() < alt.chance) {
-            reels = [alt.altKey, alt.altKey, alt.altKey];
-            pay = 0;
-            Object.keys(alt.give).forEach(k => {
-                this.award(awarded, k, alt.give[k] * bet, 'greed.slots.win', requestId);
+        const triple = reels[0] === reels[1] && reels[1] === reels[2];
+        const sym = triple && (cfg.reel || []).find(x => x.key === reels[0]);
+        const give = sym && sym.give;
+        if (give) {
+            Object.keys(give).forEach(k => {
+                this.award(awarded, k, give[k] * bet, 'greed.slots.win', requestId);
             });
             this.settleExchange(awarded, requestId);
         }
+        const won = pay > 0 || !!give;
 
         pay *= bet;
         if (pay > 0) this.award(awarded, 'gold', pay, 'greed.slots.win', requestId);

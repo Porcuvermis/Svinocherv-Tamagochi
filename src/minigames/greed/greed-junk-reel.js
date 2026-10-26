@@ -377,10 +377,11 @@ Object.assign(GreedJunk, {
 
     // Лента барабана: какие символы (ключи конфига) идут подряд по кругу.
     // Одна лента на все три барабана, у каждого своё смещение. Червяк
-    // (самая крупная тройка) — один раз; жетон и осколок — по разу: на них
-    // барабаны встают только при жетонном исходе.
-    REEL_STRIP: ['coin', 'bone', 'meat', 'blank', 'bone', 'coin', 'skull', 'bone', 'meat', 'blank',
-        'coin', 'bone', 'token', 'meat', 'blank', 'bone', 'coin', 'shard', 'meat', 'blank'],
+    // (самая крупная тройка) — один раз; жетон и осколок — полноправные
+    // символы со своим весом, поэтому на ленте их столько же, сколько
+    // их денежных двойников (мяса и кости).
+    REEL_STRIP: ['coin', 'bone', 'token', 'blank', 'meat', 'shard', 'skull', 'coin', 'bone', 'blank',
+        'token', 'meat', 'shard', 'coin', 'blank', 'bone', 'token', 'meat', 'shard', 'blank'],
     // Ячейка ленты на её позиции i.
     reelIndexOf(key, from) {
         const S = this.REEL_STRIP, n = S.length;

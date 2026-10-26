@@ -43,7 +43,7 @@ const CFG = ECONOMY.minigames.greed;
 // Картинки символов живут в мини-игре, а не в конфиге (там только числа),
 // поэтому для отчёта они лежат здесь — калькулятору нужно чем-то печатать
 // строки таблицы.
-const GLYPH = { skull: '💀', coin: '🪙', meat: '🍖', bone: '🦴', blank: '▫️' };
+const GLYPH = { skull: '💀', coin: '🪙', meat: '🍖', bone: '🦴', token: '🪬', shard: '🔸', blank: '▫️' };
 const glyph = key => GLYPH[key] || key;
 
 const REEL = CFG.reel;
@@ -54,7 +54,7 @@ const P = key => REEL.find(s => s.key === key).weight / TOTAL;
 // Все сочетания трёх барабанов с их вероятностями. Символов пять, значит
 // исходов 125 — перебор дешевле и честнее любой симуляции: погрешности нет.
 function payOf(a, b, c) {
-    if (a.key === b.key && b.key === c.key) return a.pay;
+    if (a.key === b.key && b.key === c.key) return a.pay || 0;
     const pairs = [a, b, c].filter(s => s.key === CFG.pair.key).length;
     if (pairs === 2) return CFG.pair.pay;
     return 0;
@@ -68,21 +68,19 @@ const valueOf = give => Object.keys(give || {})
 const tokensOf = give => Object.keys(give || {}).filter(k => k !== 'gold')
     .reduce((s, k) => s + give[k] * (/_shard$/.test(k) ? 1 / 3 : 1), 0);
 
-// Второй пул тройки (alt) делит её выплату: с шансом chance вместо монет
-// идёт give. Тройка при этом остаётся выигрышем — гарантию она сбрасывает.
+// Тройка символа с give платит им вместо монет (жетон, осколок). Она —
+// выигрыш: гарантию сбрасывает так же, как монетная.
 let hit = 0, expectedPay = 0, expectedAlt = 0, expectedTokens = 0;
 REEL.forEach(a => REEL.forEach(b => REEL.forEach(c => {
     const p = (a.weight / TOTAL) * (b.weight / TOTAL) * (c.weight / TOTAL);
     const pay = payOf(a, b, c);
-    if (pay <= 0) return;
+    const give = a.key === b.key && b.key === c.key && a.give;
+    if (pay <= 0 && !give) return;
     hit += p;
-    const triple = a.key === b.key && b.key === c.key;
-    const alt = triple && a.alt;
-    const share = alt ? alt.chance : 0;
-    expectedPay += p * pay * (1 - share);
-    if (alt) {
-        expectedAlt += p * share * valueOf(alt.give);
-        expectedTokens += p * share * tokensOf(alt.give);
+    expectedPay += p * pay;
+    if (give) {
+        expectedAlt += p * valueOf(give);
+        expectedTokens += p * tokensOf(give);
     }
 })));
 
@@ -123,10 +121,10 @@ REEL.forEach(s => console.log('  ' + glyph(s.key) + '  вес ' + String(s.weigh
     + '   шанс на барабане ' + (s.weight / TOTAL * 100).toFixed(1) + '%'));
 
 console.log('\nвыплаты:');
-REEL.filter(s => s.pay > 0).forEach(s => {
+REEL.filter(s => s.pay > 0 || s.give).forEach(s => {
     const p = Math.pow(s.weight / TOTAL, 3);
     console.log('  ' + glyph(s.key).repeat(3) + '  шанс ' + (p * 100).toFixed(3).padStart(7) + '%'
-        + '   платит ' + String(s.pay).padStart(3));
+        + '   платит ' + (s.give ? Object.keys(s.give).map(k => s.give[k] + ' ' + k).join(', ') : String(s.pay).padStart(3)));
 });
 const pairP = 3 * Math.pow(P(CFG.pair.key), 2) * (1 - P(CFG.pair.key));
 console.log('  ' + glyph(CFG.pair.key).repeat(2) + '·  шанс ' + (pairP * 100).toFixed(3).padStart(7) + '%'
@@ -146,7 +144,7 @@ console.log('одна шкала алчности (' + Math.ceil(100 / CFG.fillP
     + (Math.ceil(100 / CFG.fillPerSpin) * CFG.spinCost * (1 - rtp)).toFixed(1) + ' монет');
 
 if (tokensPerSpin > 0) {
-    console.log('\nвторой пул (жетоны вместо монет):');
+    console.log('\nжетонные тройки:');
     console.log('  жетон алчности раз в ' + (1 / tokensPerSpin).toFixed(0) + ' круток'
         + ' (' + (1 / tokensPerSpin / Math.ceil(100 / CFG.fillPerSpin)).toFixed(1) + ' шкалы)');
     console.log('  цена жетона: ' + ((CFG.spinCost - rtpPay) / tokensPerSpin).toFixed(1)

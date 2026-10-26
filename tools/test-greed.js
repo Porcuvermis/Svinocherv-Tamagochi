@@ -245,7 +245,9 @@ const { chromium } = require('playwright');
     let alt = 0;
     for (let i = 0; i < 6000; i++) {
       const r = Backend.greedSpin();
-      if (r.reels[0] === 'token' || r.reels[0] === 'shard') { alt++; if (r.pay !== 0) o.altPaidGold = true; }
+      // жетон и осколок теперь символы барабана: считается только их тройка
+      const tri = r.reels[0] === r.reels[1] && r.reels[1] === r.reels[2];
+      if (tri && (r.reels[0] === 'token' || r.reels[0] === 'shard')) { alt++; if (r.pay !== 0) o.altPaidGold = true; }
     }
     o.alt = alt;
     o.shardsGrew = GameState.currency('greed_token') * 3 + GameState.currency('greed_shard') > t0;
