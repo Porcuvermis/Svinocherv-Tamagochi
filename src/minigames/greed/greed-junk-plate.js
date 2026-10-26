@@ -105,7 +105,10 @@ Object.assign(GreedJunk, {
             `<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="#fff"/>${cut}</mask>` +
             `<filter id="${id}" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="1.6"/></filter>` +
             // напыл — та же краска, широко размытая и слабая; поверх — чёткая
-            `<g mask="url(#${id}-m)"><g filter="url(#${id})" opacity="0.14">${paint}</g>` +
-            `<g opacity="0.9">${paint}</g></g>` + specks;
+            // Класс nh: краска плоская и в карту высот не попадает. Иначе она
+            // ложилась туда на своей высоте, а не на высоте доски, — шейдер
+            // видел ступеньку и отбрасывал от рисунка тень.
+            `<g class="nh"><g mask="url(#${id}-m)"><g filter="url(#${id})" opacity="0.14">${paint}</g>` +
+            `<g opacity="0.9">${paint}</g></g>${specks}</g>`;
     }
 });
