@@ -263,8 +263,19 @@ const GreedJunkLit = {
         ['glows', 'thread', 'lamp', 'ind'].forEach(k => { P[k] = document.createElementNS(ns, 'g'); this.live.appendChild(P[k]); });
         return P;
     },
+    // Окно мини-игры закрыто — аппарат спит. Закрытое окно не уходит со
+    // страницы (visibility: hidden, style.css), и проверка «холст на
+    // странице» его не ловила: после первого входа в алчность аппарат
+    // крутился в комнате каждый кадр до перезапуска игры — подвесы, пузыри,
+    // колесо и от наклона весь корпус шейдером. Вне окна (превью 🐞) — живёт.
+    hidden(el) {
+        const scr = el.closest('.minigame-screen');
+        return scr ? !scr.classList.contains('active') : el.offsetParent === null;
+    },
+    SLEEP_MS: 400,
     run(canvas) {
-        if (this._running) return;
+        // спящий цикл будится сразу: mount при открытии зовёт run
+        if (this._running) { if (this._wake) this._wake(); return; }
         this._running = true;
         const t = { x: 0, y: 0 }, lt = { x: 0, y: 0 }, last = { x: 9, y: 9 };
         let lastFull = 0;
@@ -283,6 +294,11 @@ const GreedJunkLit = {
         const loop = (now) => {
             // аппарат сняли со страницы — цикл стоит; mount в новое место запустит
             if (!canvas.isConnected) { this._running = false; return; }
+            if (this.hidden(canvas)) {
+                const id = setTimeout(() => { this._wake = null; requestAnimationFrame(loop); }, this.SLEEP_MS);
+                this._wake = () => { clearTimeout(id); this._wake = null; requestAnimationFrame(loop); };
+                return;
+            }
             if (this.live) {
                 const g = Hang.down();
                 Hang.step(tail.s, g);

@@ -195,7 +195,11 @@ Object.assign(GreedCoins, {
         const loop = (now) => {
             if (this._liveRun !== run || !rimEl.isConnected) return;
             // Окно скрыто — не крутимся каждый кадр, заглядываем изредка.
-            if (rimEl.offsetParent === null) { setTimeout(loop, 400); return; }
+            // Закрытое окно — visibility: hidden (style.css), offsetParent у
+            // него не пустой: проверка по нему не срабатывала, и рамка
+            // жила в комнате, перерисовываясь от наклона. Смотрим на окно.
+            const scr = rimEl.closest('.minigame-screen');
+            if (scr ? !scr.classList.contains('active') : rimEl.offsetParent === null) { setTimeout(loop, 400); return; }
             this.followTilt();
             // Блеск от наклона — не чаще LIVE_MS: каждый раз это вся рамка
             // монет видеокартой и перенос в четыре полосы, а датчик в руке
