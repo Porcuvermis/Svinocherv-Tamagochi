@@ -225,6 +225,8 @@ const GreedJunkLit = {
     // Mᵀ·L. Экранная y у корпуса смотрит вниз, у монет вверх — отсюда
     // переворот y туда и обратно.
     TILT_MAX: 30,
+    // мёртвая зона света: 0.02 наклона — 0.6°, больше дрожи руки
+    TILT_DEAD: 0.02,
     lightFor(t) {
         const D = Math.PI / 180, ay = t.x * this.TILT_MAX * D, ax = t.y * this.TILT_MAX * D;
         const cy = Math.cos(ay), sy = Math.sin(ay), cx = Math.cos(ax), sx = Math.sin(ax);
@@ -264,7 +266,7 @@ const GreedJunkLit = {
     run(canvas) {
         if (this._running) return;
         this._running = true;
-        const t = { x: 0, y: 0 }, last = { x: 9, y: 9 };
+        const t = { x: 0, y: 0 }, lt = { x: 0, y: 0 }, last = { x: 9, y: 9 };
         let lastFull = 0;
         // тряпка — первой: пока её нет, доска под табло пустая. Готовится один
         // раз: аппарат потом только переезжает (mount), а не собирается заново
@@ -304,7 +306,14 @@ const GreedJunkLit = {
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
             const want = T.live ? T : { x: 0, y: 0 };
             t.x += (want.x - t.x) * 0.15; t.y += (want.y - t.y) * 0.15;
-            this._tilt = t;
+            // Свет берёт наклон с мёртвой зоной: _tilt сдвигается, только
+            // когда сглаженный наклон ушёл от него дальше TILT_DEAD. Было —
+            // свет шёл за каждой сотой градуса, а датчик в руке дрожит
+            // всегда: корпус, колесо и лоток пересчитывались шейдером ~16 раз
+            // в секунду без остановки, телефон грелся сразу. Ступенька в
+            // полградуса на свету не видна.
+            if (Math.abs(t.x - lt.x) > this.TILT_DEAD || Math.abs(t.y - lt.y) > this.TILT_DEAD) { lt.x = t.x; lt.y = t.y; }
+            this._tilt = lt;
             const moved = this.leverStep(now);
             this.shakeStep(now);
             const reels = this.spinStep(now);
@@ -313,12 +322,12 @@ const GreedJunkLit = {
             // корпус шейдером с поиском тени, а датчик в руке дрожит всегда.
             // Сдвиг света за 1/16 с глазу не виден, а видеокарта отдыхает.
             // Рычаг (moved) рисуется каждый кадр — он движется сам.
-            const tilted = Math.abs(t.x - last.x) > 0.002 || Math.abs(t.y - last.y) > 0.002;
+            const tilted = lt.x !== last.x || lt.y !== last.y;
             if (moved || (tilted && now - lastFull >= this.LIGHT_MS)) {
-                last.x = t.x; last.y = t.y; lastFull = now;
-                this.draw(this.lightFor(t));
+                last.x = lt.x; last.y = lt.y; lastFull = now;
+                this.draw(this.lightFor(lt));
             } else if (reels) {
-                this.draw(this.lightFor(t), this.REEL_BOX);   // только окна
+                this.draw(this.lightFor(lt), this.REEL_BOX);   // только окна
             }
             if (this.ragStep) this.ragStep(now);
             if (this.coinStep) this.coinStep(now);

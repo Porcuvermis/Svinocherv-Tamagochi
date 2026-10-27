@@ -189,6 +189,9 @@ Object.assign(GreedCoins, {
         const run = ++this._liveRun || (this._liveRun = 1);
         const tilt = this._tilt;
         let last = { x: tilt.x, y: tilt.y }, at = 0;
+        // мёртвая зона — та же, что у света аппарата (GreedJunkLit.TILT_DEAD):
+        // дрожь руки не перерисовывает рамку; рисуется — по сглаженному
+        const dead = typeof GreedJunkLit !== 'undefined' ? GreedJunkLit.TILT_DEAD : 0.02;
         const loop = (now) => {
             if (this._liveRun !== run || !rimEl.isConnected) return;
             // Окно скрыто — не крутимся каждый кадр, заглядываем изредка.
@@ -197,7 +200,7 @@ Object.assign(GreedCoins, {
             // Блеск от наклона — не чаще LIVE_MS: каждый раз это вся рамка
             // монет видеокартой и перенос в четыре полосы, а датчик в руке
             // дрожит всегда. Сдвиг блеска за 1/16 с глазу не виден.
-            if ((Math.abs(last.x - tilt.x) > 0.002 || Math.abs(last.y - tilt.y) > 0.002) && now - at >= this.LIVE_MS) {
+            if ((Math.abs(last.x - tilt.x) > dead || Math.abs(last.y - tilt.y) > dead) && now - at >= this.LIVE_MS) {
                 last = { x: tilt.x, y: tilt.y }; at = now; paint();
             }
             requestAnimationFrame(loop);
