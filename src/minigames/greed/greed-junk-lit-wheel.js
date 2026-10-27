@@ -42,8 +42,9 @@ Object.assign(GreedJunkLit, {
             wrap.appendChild(cv);
             return cv;
         };
-        // тень диска на щит — неподвижная, рисуется один раз; сам диск и
-        // язычок — своим шейдером поверх
+        // тень диска на щит — рисуется один раз, от света сдвигается
+        // переносом холста (wheelShadowAt); сам диск и язычок — своим
+        // шейдером поверх
         this.wheelShadowCv = layer();
         this.wheelCv = layer();
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
@@ -147,6 +148,7 @@ Object.assign(GreedJunkLit, {
         const t = this._tilt || { x: 0, y: 0 };
         if (!M.lt || ((Math.abs(t.x - M.lt.x) > 0.002 || Math.abs(t.y - M.lt.y) > 0.002) && now - (M.ltAt || 0) >= this.LIGHT_MS)) {
             M.lt = { x: t.x, y: t.y }; M.ltAt = now; M.shown = null;
+            this.wheelShadowAt(this.lightFor(M.lt));
         }
         const key = M.rot.toFixed(4) + ',' + M.flap.toFixed(3);
         if (key === M.shown) return;
@@ -340,15 +342,32 @@ Object.assign(GreedJunkLit, {
         return true;
     },
 
-    // тень диска на щит: круг от света вниз-вправо, мягкий — один раз
+    // Тень диска на щит: мягкий круг ровно под диском — один раз. Куда она
+    // ляжет, решает wheelShadowAt. Было: сдвиг вниз-вправо зашит в рисунок,
+    // и при наклоне телефона свет на колесе ходил, а тень стояла.
     wheelShadow() {
         const B = this.wheelBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge;
         const c = this.wheelShadowCv.getContext('2d');
         c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
         c.filter = 'blur(' + (2 * S) + 'px)';
         c.globalAlpha = 0.45; c.fillStyle = PALETTE.greedJunk.hole;
-        c.beginPath(); c.arc(W.cx + 3.5, W.cy + 5.5, R, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(W.cx, W.cy, R, 0, Math.PI * 2); c.fill();
         c.filter = 'none'; c.globalAlpha = 1;
+        this.wheelShadowAt(this.lightFor((this._wheel && this._wheel.lt) || { x: 0, y: 0 }));
+    },
+
+    // Сдвиг тени от света: диск висит над щитом на gap, тень уходит
+    // от света на gap·L.xy/L.z. Переносом холста на видеокарте — без
+    // перерисовки. Свет у края наклона почти лежит (L.z до 0.15), тень
+    // улетала бы на полколеса — потолок max.
+    WHEEL_SHADOW: { gap: 7, max: 10 },
+    wheelShadowAt(L) {
+        const cv = this.wheelShadowCv, P = this.WHEEL_SHADOW, B = this.wheelBox();
+        if (!cv) return;
+        let dx = -L[0] / L[2] * P.gap, dy = -L[1] / L[2] * P.gap;
+        const d = Math.hypot(dx, dy);
+        if (d > P.max) { dx *= P.max / d; dy *= P.max / d; }
+        cv.style.transform = `translate(${(dx / B.w * 100).toFixed(2)}%, ${(dy / B.h * 100).toFixed(2)}%)`;
     },
 
     wheelDraw() {
