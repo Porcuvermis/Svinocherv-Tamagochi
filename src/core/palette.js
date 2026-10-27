@@ -980,6 +980,8 @@ const PALETTE = {
         reel: {
             paper: '#eadcb8', paperLo: '#d2bf93', speck: '#b9a477',
             // тряпка с таблицей выплат: светлый лён, грязь, маркер
+            // банка-кошелёк: стекло из-под солений, малярный скотч с числом
+            jar: { glass: '#dfe8e2', glassLo: '#9fb3aa', glassHi: '#ffffff', tape: '#e6d6a8', tapeLo: '#c4b07a', tapeEdge: '#b39c63' },
             // градусник насыщения греха: янтарная жидкость, «жидкое золото»
             meter: { liquid: '#e2a12b', liquidLo: '#9c5a10', liquidHi: '#ffdc84', glass: '#e8eee9', glassIn: '#c9d4d2', glassHi: '#ffffff' },
             // монетоприёмник из двери туалета: обломки двери, жёлтый стикер

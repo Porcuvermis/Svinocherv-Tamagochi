@@ -1,9 +1,11 @@
 // ================= АППАРАТ АЛЧНОСТИ: МОНЕТА В ЩЕЛЬ =================
 // Продолжение GreedJunkLit. На рывке рычага монета сама влетает в
-// монетоприёмник (решение игрока: один жест): из-за нижнего края экрана,
-// где у игрока кошелёк, по дуге к куполу, кувыркаясь, на подлёте встаёт
-// ребром по щели и уходит внутрь — звяк в палец, глухой стук ниже.
-// Монета не прошла (coinIn(false)) — выпадает в ковш возврата.
+// монетоприёмник (решение игрока: один жест): выпрыгивает из горла
+// банки-кошелька (greed-junk-jar.js) под монетоприёмником, дугой влево и
+// вверх к куполу, кувыркаясь, на подлёте встаёт ребром по щели и уходит
+// внутрь — звяк в палец, глухой стук ниже. Денег нет — банка пуста, и
+// монете взяться неоткуда: не летит ничего (был полёт в ковш возврата —
+// пока монеты летели из-за края экрана).
 //
 // Дёшево: монета освещается ОДИН раз тем же движком, что лоток
 // (GreedCoins, плашмя), и запоминается картинкой; кувырок — сжатие
@@ -12,7 +14,7 @@
 // дорого.
 Object.assign(GreedJunkLit, {
     COIN_BOX: { x: 196, y: 486, w: 120, h: 144 },   // от купола до низа поля
-    COIN_FLY: { ms: 460, inMs: 130, turns: 2, rad: 5.2, dropMs: 520 },
+    COIN_FLY: { ms: 460, inMs: 130, turns: 2, rad: 5.2 },
 
     coinMount(wrap) {
         const B = this.COIN_BOX, G = GreedJunk, cv = document.createElement('canvas');
@@ -45,11 +47,11 @@ Object.assign(GreedJunkLit, {
         return (this._coinSpr = out);
     },
 
-    // ok — монета принята; false — выпадет в ковш возврата
-    coinIn(ok) {
+    // монета из банки в щель
+    coinIn() {
         if (!this.coinCv) return;
-        const W = GreedJunk.SLOTS.wc, cx = W.x + W.w / 2;
-        this._coins.push({ at: performance.now(), ok: ok !== false, x0: cx - 34, y0: GreedJunk.H + 8, x1: cx, y1: W.y + 25, sx: cx - 3.2, sy: W.y + 69 });   // sy — зев ковша (wcSlot: ty = y + 67)
+        const W = GreedJunk.SLOTS.wc, cx = W.x + W.w / 2, J = this.JAR || { cx, y0: GreedJunk.H };
+        this._coins.push({ at: performance.now(), x0: J.cx, y0: J.y0 + 5, x1: cx, y1: W.y + 25, rim: J.y0 + 1 });
     },
 
     coinStep(now) {
@@ -66,7 +68,7 @@ Object.assign(GreedJunkLit, {
         const coin = (x, y, k, s, rot, a, clipY) => {
             ctx.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
             ctx.save();
-            // в ковше монету спереди закрывает его бортик
+            // пока монета в горле банки, ниже края горла её не видно
             if (clipY) { ctx.beginPath(); ctx.rect(B.x, B.y, B.w, clipY - B.y); ctx.clip(); }
             ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
             ctx.globalAlpha = a;
@@ -84,14 +86,16 @@ Object.assign(GreedJunkLit, {
         this._coins = this._coins.filter(c => {
             const t = now - c.at;
             if (t < F.ms) {
-                // полёт: дуга снизу-слева к куполу, кувырок затухает к ребру
+                // полёт: из горла вверх-влево и дугой к куполу, кувырок
+                // затухает к ребру
                 const u = t / F.ms, e = 1 - Math.pow(1 - u, 2.2);
-                const mx = c.x0 - 18, my = c.y1 + 30;
+                const mx = c.x0 - 34, my = c.y0 - 40;
                 const x = (1 - e) * (1 - e) * c.x0 + 2 * (1 - e) * e * mx + e * e * c.x1;
                 const y = (1 - e) * (1 - e) * c.y0 + 2 * (1 - e) * e * my + e * e * c.y1;
                 // к прилёту — ровно ребром (cos = 0): целые обороты плюс четверть
                 const k = Math.cos(e * Math.PI * (F.turns * 2 + 0.5));
-                coin(x, y, k, 1.6 - 0.6 * e, (1 - e) * 1.2, 1);
+                // в середине пути ближе к игроку (подброшена) — крупнее
+                coin(x, y, k, 1 + Math.sin(e * Math.PI) * 0.35, (1 - e) * 1.2, 1, u < 0.25 ? c.rim : 0);
                 return true;
             }
             if (t < F.ms + F.inMs) {
@@ -105,22 +109,12 @@ Object.assign(GreedJunkLit, {
                 coin(c.x1, c.y1 + u * 1.5, 0.06, 1 - u * 0.45, 0, 1 - u);
                 return true;
             }
-            if (c.ok) {
-                // принята: глухой стук, когда упала в механизм
-                if (!c.thud && t > F.ms + F.inMs + 160) {
-                    c.thud = true;
-                    if (typeof Haptics !== 'undefined') Haptics.impact('soft');
-                }
-                return t < F.ms + F.inMs + 200;
+            // принята: глухой стук, когда упала в механизм
+            if (!c.thud && t > F.ms + F.inMs + 160) {
+                c.thud = true;
+                if (typeof Haptics !== 'undefined') Haptics.impact('soft');
             }
-            // не прошла: вываливается из щели возврата в ковш и там лежит
-            const u = Math.min(1, (t - F.ms - F.inMs - 180) / F.dropMs);
-            if (u < 0) return true;
-            if (!c.rattle) { c.rattle = true; if (typeof Haptics !== 'undefined') Haptics.burst('rigid', 3, 50); }
-            // из щели вниз, в зев ковша, подскок и лежит; ниже губы ковша не видна
-            const by = c.sy - 12 + (u < 0.6 ? u / 0.6 * 12 : 12 - Math.sin((u - 0.6) / 0.4 * Math.PI) * 1.6);
-            coin(c.sx, by, 0.35 + u * 0.3, 0.75, 0.3, Math.min(1, u * 4) * (t > F.ms + F.inMs + 2400 ? 0 : 1), c.sy + 1.2);
-            return t < F.ms + F.inMs + 2400;
+            return t < F.ms + F.inMs + 200;
         });
     }
 });

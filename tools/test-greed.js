@@ -283,12 +283,13 @@ const { chromium } = require('playwright');
     gold: GameState.currency('gold'),
     spinning: GreedJunkLit.spinning(),
     sin: Math.round(GameState.sinValue('greed')),
-    // монета не прошла — летит в ковш возврата (coinIn(false))
-    rejected: (GreedJunkLit._coins || []).some(c => !c.ok)
+    // денег нет — банка пуста: монета не летит, на скотче ноль
+    flying: (GreedJunkLit._coins || []).length,
+    jar: GreedJunkLit._jar && GreedJunkLit._jar.to
   }));
   check(broke.gold === 0 && !broke.spinning, 'без монет крутка не идёт и баланс не уходит в минус');
   check(broke.sin === sinBefore, 'несостоявшаяся крутка не наливает шкалу');
-  check(broke.rejected, 'отказ показан самим автоматом: монета вываливается в ковш');
+  check(broke.flying === 0 && broke.jar === 0, 'отказ показан самим автоматом: банка пуста, монете взяться неоткуда');
   await page.screenshot({ path: out + 'greed-2-broke.png' });
 
   // ---------- 8. СЫТЫЙ ЧЕРВЬ ПОЛУЧАЕТ ВЫПЛАТУ ----------

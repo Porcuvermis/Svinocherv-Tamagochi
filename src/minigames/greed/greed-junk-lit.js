@@ -308,6 +308,7 @@ const GreedJunkLit = {
             if (this.ragStep) this.ragStep(now);
             if (this.coinStep) this.coinStep(now);
             if (this.meterStep) this.meterStep(now);
+            if (this.jarStep) this.jarStep(now);
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -374,7 +375,7 @@ const GreedJunkLit = {
         if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 6, 40);
         this._leverIdle = false;
         // Сначала решает игра (onPull: false — крутки нет, денег нет), потом
-        // монета: прошла в щель или вывалилась в ковш возврата.
+        // монета из банки в щель; без денег банка пуста — монеты нет.
         let ok = true;
         if (this.onPull) ok = this.onPull() !== false;
         else {
@@ -382,7 +383,7 @@ const GreedJunkLit = {
             // в превью шкалы игры не трогаем — градусник подрастает сам, как от крутки
             if (this.meterBump) this.meterBump();
         }
-        if (this.coinIn) this.coinIn(ok);
+        if (this.coinIn && ok) this.coinIn();
     },
     // dy — сколько палец прошёл вниз, в единицах поля
     leverDrag(dy) {
@@ -681,6 +682,7 @@ const GreedJunkLit = {
         if (this.ragMount) this.ragMount(wrap);
         if (this.coinMount) this.coinMount(wrap);
         if (this.meterMount) this.meterMount(wrap);
+        if (this.jarMount) this.jarMount(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();
