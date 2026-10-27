@@ -49,6 +49,24 @@ Object.assign(GreedJunk, {
         { key: 'greed', x: 223, y: 178 }, { key: 'gold1', x: 284.5, y: 178 }
     ],
 
+    // Щит за коробом — как у колеса (wheelShield): сосновые доски на
+    // саморезах прячут правую половину ящика с рельсами, подвесом, розеткой и
+    // проводами (решение игрока). Тоньше щита колеса (8 против 15): на нём
+    // стоит полка с коробом, и полке нужен запас карты высот (потолок — 20).
+    PACH_SHIELD: { x: 208, y: 36, w: 94, h: 236, boards: 3 },
+    pachShield() {
+        const J = PALETTE.greedJunk, Sh = this.PACH_SHIELD;
+        let out = `<rect x="${Sh.x + 2}" y="${Sh.y + 3}" width="${Sh.w}" height="${Sh.h}" class="fx" fill="${J.hole}" opacity="0.35"/>`;
+        out += this.planks(Sh.x, Sh.y, Sh.w, Sh.h, Sh.boards, 4420, 'v', 0, 'pine');
+        const bw = Sh.w / Sh.boards;
+        for (let i = 0; i < Sh.boards; i++) {
+            const x = Sh.x + bw * (i + 0.5);
+            out += this.bolt(x - 5, Sh.y + 6, 1.8) + this.bolt(x + 5, Sh.y + 6, 1.8) +
+                this.bolt(x - 5, Sh.y + Sh.h - 6, 1.8) + this.bolt(x + 5, Sh.y + Sh.h - 6, 1.8);
+        }
+        return this.T(8, 'pine', out);
+    },
+
     // на аппарате: куплено — или включено в отладке (🐞 → «Пачинко»)
     pachinkoShown() {
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('pachinko') > 0) return true;
