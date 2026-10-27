@@ -211,13 +211,17 @@ Object.assign(GreedJunkLit, {
         const G = GreedJunk, W = G.WHEEL, S = this.SCALE, R = W.rEdge + 4;
         try {
             const F = () => G.wheelFace();
-            // части диска на своих высотах и материалах — как в wheelDisc
+            // Части диска на своих высотах и материалах. Карта у колеса своя,
+            // важна только разница высот — диск опущен к 8: карта кончается
+            // на 20 (HMAX − H0), а в корпусе краска колеса стоит на 17.6, и
+            // торчащему гвоздю там некуда расти — он обрезался до кнопки.
+            const h0 = 8;
             const discFull = (pass) => {
                 G.pass = pass;
                 const f = F();
                 return `<svg xmlns="http://www.w3.org/2000/svg" width="${R * 2 * S}" height="${R * 2 * S}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
-                    G.passStyle(pass) + G.defs() + G.T(17, 'raw', f.edge) + G.T(17.6, 'paint', f.sec + f.chip + f.icons) +
-                    G.T(19, 'steel', f.pegs) + G.T(19.5, 'steel', f.hub) + '</svg>';
+                    G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip + f.icons) +
+                    G.T(h0 + W.pegUp, 'steel', f.pegs) + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
             };
             const Wc = G.SLOTS.wheel, px = Wc.cx, py = Wc.cy - W.rEdge - 16;
             const ptr = (pass) => {
@@ -282,10 +286,18 @@ Object.assign(GreedJunkLit, {
                 vec2 lw = normalize(uL.xy);
                 vec2 dir = vec2(c * lw.x + s * lw.y, -s * lw.x + c * lw.y);
                 float rise = uL.z / length(uL.xy) / uPxPerH, occ = 0.0;
-                for (int i = 1; i <= 10; i++) {
-                    float t = float(i) * 2.0;
+                // Как у корпуса: уклон своей плоскости вдоль луча (купол
+                // шляпки не штрихует сам себя), шаг 3 текселя с дрожью начала.
+                // Охват 16×3 = 48 текселей = 16 единиц: тень гвоздя высотой
+                // 7 единиц при свете сверху-сбоку ложится целиком. Было 10×2 —
+                // 7 единиц, и тень обрезалась.
+                vec2 gq = vec2(hh(vUv + vec2(d.x, 0.0)) - hh(vUv - vec2(d.x, 0.0)), hh(vUv + vec2(0.0, d.y)) - hh(vUv - vec2(0.0, d.y))) / 8.0;
+                float plane = max(rise, dot(gq, dir));
+                float jit = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
+                for (int i = 1; i <= 16; i++) {
+                    float t = (float(i) - jit) * 3.0;
                     float hq = hh(vUv + dir * uTex * t);
-                    occ = max(occ, clamp((hq - (h0 + t * rise) - 0.01) * 5.0, 0.0, 1.0));
+                    occ = max(occ, clamp((hq - (h0 + t * plane) - 0.01) * 5.0, 0.0, 1.0));
                 }
                 float sh = 1.0 - 0.55 * occ;
                 vec4 m = texture2D(uM, vUv);

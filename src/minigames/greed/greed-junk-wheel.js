@@ -15,7 +15,11 @@
 Object.assign(GreedJunk, {
     WHEEL_SECTORS: ['blank', 'gold1', 'blank', 'seed', 'blank', 'gold1', 'meat', 'blank',
         'gold3', 'blank', 'gold1', 'seed', 'blank', 'shard', 'gold1', 'blank'],
-    WHEEL: { rFace: 114, rEdge: 118, rPeg: 110.5, rIcon: 80, hole: 7.5, icon: 1.85 },
+    // pegUp — на сколько шляпка гвоздя выше краски: гвоздь вбит не по
+    // шляпку, а торчит стержнем, об него бьёт язычок (на свету —
+    // greed-junk-lit-wheel.js, wheelSprites). Было 1.4 — кнопка вровень с
+    // краской, тени от неё не было вовсе.
+    WHEEL: { rFace: 114, rEdge: 118, rPeg: 110.5, rIcon: 80, hole: 7.5, icon: 1.85, pegUp: 9 },
     // колесо на аппарате: куплено — или включено в отладке (🐞 → «Колесо»)
     wheelShown() {
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('wheel') > 0) return true;
