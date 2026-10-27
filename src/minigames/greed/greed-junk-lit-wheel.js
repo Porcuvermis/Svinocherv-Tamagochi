@@ -25,16 +25,18 @@ Object.assign(GreedJunkLit, {
     WHEEL_SPIN: { a: 0.0000028, maxW: 0.011, minW: 0.0035, turns: 2, drag: 0.3, settle: 0.035, settleMs: 380,
         flap: 0.42, fw: 0.05, fz: 0.22 },
 
-    wheelBox() {
-        const W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge + 6;
+    // pad — запас вокруг диска: колесу хватает 6, тени — своего (она
+    // размыта и уезжает от света, а край холста резал её прямой линией)
+    wheelBox(pad = 6) {
+        const W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge + pad;
         const x0 = Math.max(0, W.cx - R), y0 = Math.max(0, W.cy - R - 16);
         return { x: x0, y: y0, w: W.cx + R - x0, h: W.cy + R - y0 };
     },
 
     wheelMountLit(wrap) {
         if (!GreedJunk.wheelShown || !GreedJunk.wheelShown()) return;
-        const B = this.wheelBox(), G = GreedJunk, S = this.SCALE;
-        const layer = () => {
+        const G = GreedJunk, S = this.SCALE;
+        const layer = (B) => {
             const cv = document.createElement('canvas');
             cv.width = Math.round(B.w * S); cv.height = Math.round(B.h * S);
             cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
@@ -45,8 +47,8 @@ Object.assign(GreedJunkLit, {
         // тень диска на щит — рисуется один раз, от света сдвигается
         // переносом холста (wheelShadowAt); сам диск и язычок — своим
         // шейдером поверх
-        this.wheelShadowCv = layer();
-        this.wheelCv = layer();
+        this.wheelShadowCv = layer(this.wheelShadowBox());
+        this.wheelCv = layer(this.wheelBox());
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this.wheelSprites();
         // палец: схватил диск — крутишь
@@ -346,11 +348,11 @@ Object.assign(GreedJunkLit, {
     // ляжет, решает wheelShadowAt. Было: сдвиг вниз-вправо зашит в рисунок,
     // и при наклоне телефона свет на колесе ходил, а тень стояла.
     wheelShadow() {
-        const B = this.wheelBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge;
+        const B = this.wheelShadowBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge, P = this.WHEEL_SHADOW;
         const c = this.wheelShadowCv.getContext('2d');
         c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
-        c.filter = 'blur(' + (2 * S) + 'px)';
-        c.globalAlpha = 0.45; c.fillStyle = PALETTE.greedJunk.hole;
+        c.filter = 'blur(' + (P.blur * S) + 'px)';
+        c.globalAlpha = P.a; c.fillStyle = PALETTE.greedJunk.hole;
         c.beginPath(); c.arc(W.cx, W.cy, R, 0, Math.PI * 2); c.fill();
         c.filter = 'none'; c.globalAlpha = 1;
         this.wheelShadowAt(this.lightFor((this._wheel && this._wheel.lt) || { x: 0, y: 0 }));
@@ -360,9 +362,13 @@ Object.assign(GreedJunkLit, {
     // от света на gap·L.xy/L.z. Переносом холста на видеокарте — без
     // перерисовки. Свет у края наклона почти лежит (L.z до 0.15), тень
     // улетала бы на полколеса — потолок max.
-    WHEEL_SHADOW: { gap: 7, max: 10 },
+    // Зазор 13: колесо стоит на ступице далеко от щита. Было 7 — тень
+    // полоской в 5 единиц, колесо казалось приклеенным к доскам. Чем дальше
+    // от щита, тем шире полутень — blur вырос вместе с зазором.
+    WHEEL_SHADOW: { gap: 13, max: 18, blur: 4, a: 0.42 },
+    wheelShadowBox() { return this.wheelBox(this.WHEEL_SHADOW.blur * 3); },
     wheelShadowAt(L) {
-        const cv = this.wheelShadowCv, P = this.WHEEL_SHADOW, B = this.wheelBox();
+        const cv = this.wheelShadowCv, P = this.WHEEL_SHADOW, B = this.wheelShadowBox();
         if (!cv) return;
         let dx = -L[0] / L[2] * P.gap, dy = -L[1] / L[2] * P.gap;
         const d = Math.hypot(dx, dy);
