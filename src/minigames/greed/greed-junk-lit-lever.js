@@ -34,6 +34,8 @@ Object.assign(GreedJunkLit, {
             const bareFull = await Promise.all(['albedo', 'height', 'mat'].map(ps =>
                 this.image(GreedJunk.bodySvg(ps, null, false).replace('<svg ', `<svg width="${W}" height="${H}" `))));
             const bare = bareFull.map((img, i) => this.texture(gl, img, i));
+            // нормали голого корпуса — сейчас, а не на первом рывке (заминка)
+            this.normalsFor(bare[1]);
             this.bindSet(this.tex);
             const parts = {};
             for (const k of GreedJunk.LEVER_ORDER) parts[k] = await maps(ps => GreedJunk.leverPartSvg(ps, C, k));
@@ -67,6 +69,7 @@ Object.assign(GreedJunkLit, {
                 gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
             });
+            this.heightDirty(this.tex[1]);
             this.draw(light);
             this.lever = { bare, sprites, shadows };
         } catch (e) { console.warn('[Аппарат] части рычага не собрались', e); }
@@ -76,6 +79,7 @@ Object.assign(GreedJunkLit, {
     bindSet(set) {
         const gl = this.gl;
         set.forEach((t, u) => { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, t); });
+        this._boundH = set[1];      // нормали к ней — normalsFor в draw
     },
     // участок рычага в трёх текстурах
     upload(imgs, crop) {
@@ -86,5 +90,6 @@ Object.assign(GreedJunkLit, {
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, C.x * S, C.y * S, gl.RGBA, gl.UNSIGNED_BYTE, img);
         });
+        this.heightDirty(this.tex[1]);
     },
 });

@@ -267,14 +267,10 @@ Object.assign(GreedJunkLit, {
         // Свет — как в шейдере корпуса (greed-junk-lit.js, program): рассеянный
         // с тем же ambient, блик по материалу, тень шагами по карте высот.
         const fs = `precision mediump float;
-            uniform sampler2D uA, uH, uM;
-            uniform vec2 uTex; uniform vec3 uL; uniform float uRelief, uPxPerH, uRotF, uShade;
+            uniform sampler2D uA, uH, uM, uN;
+            uniform vec2 uTex; uniform vec3 uL; uniform float uPxPerH, uRotF, uShade;
             varying vec2 vUv;
             float hh(vec2 p) { return texture2D(uH, p).r; }
-            float hs(vec2 p) {
-                return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
-                        hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
-            }
             void main() {
                 // режим тени: силуэт резинки, размытый пятью отсчётами, —
                 // только прозрачность (смешение затемняет диск под ним)
@@ -287,14 +283,15 @@ Object.assign(GreedJunkLit, {
                 }
                 vec4 a = texture2D(uA, vUv);
                 if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
-                vec2 d = uTex * 4.0;
-                float h0 = hh(vUv), h0s = hs(vUv);
-                float hl = min(hs(vUv - vec2(d.x, 0.0)), h0s), hr = min(hs(vUv + vec2(d.x, 0.0)), h0s);
-                float hu = min(hs(vUv - vec2(0.0, d.y)), h0s), hd = min(hs(vUv + vec2(0.0, d.y)), h0s);
-                vec2 nt = vec2((hl - hr) * uRelief, (hu - hd) * uRelief);
+                // Нормаль и уклон в координатах карты — готовые, из uN (тот же
+                // счёт, что у корпуса: GreedJunkLit.normProgram, один раз при
+                // сборке). Было — 30 чтений карты высот на точку каждого кадра.
+                vec4 nq = texture2D(uN, vUv);
+                vec2 nm = nq.xy * 2.0 - 1.0;
+                float h0 = hh(vUv);
                 // нормаль поворачивается вместе с колесом, свет — нет
                 float c = cos(uRotF), s = sin(uRotF);
-                vec3 n = normalize(vec3(c * nt.x - s * nt.y, s * nt.x + c * nt.y, 1.0));
+                vec3 n = vec3(c * nm.x - s * nm.y, s * nm.x + c * nm.y, sqrt(max(0.0, 1.0 - dot(nm, nm))));
                 float amb = 0.42;
                 float lit = (amb + (1.0 - amb) * max(dot(n, uL), 0.0)) / (amb + (1.0 - amb) * uL.z);
                 // тень: направление на свет — в координатах карты (обратный поворот)
@@ -306,7 +303,7 @@ Object.assign(GreedJunkLit, {
                 // Охват 16×3 = 48 текселей = 16 единиц: тень гвоздя высотой
                 // 7 единиц при свете сверху-сбоку ложится целиком. Было 10×2 —
                 // 7 единиц, и тень обрезалась.
-                vec2 gq = vec2(hh(vUv + vec2(d.x, 0.0)) - hh(vUv - vec2(d.x, 0.0)), hh(vUv + vec2(0.0, d.y)) - hh(vUv - vec2(0.0, d.y))) / 8.0;
+                vec2 gq = (nq.zw - 0.5) / 4.0;
                 float plane = max(rise, dot(gq, dir));
                 float jit = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
                 for (int i = 1; i <= 16; i++) {
@@ -325,6 +322,7 @@ Object.assign(GreedJunkLit, {
         const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
         const pr = gl.createProgram();
         gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
+        gl.bindAttribLocation(pr, 0, 'aPos');      // как у программы нормалей: буфер один
         // uRot у вершинного и фрагментного — разной точности (highp/mediump), с
         // одним именем программа не линкуется; во фрагмент угол идёт как uRotF.
         gl.linkProgram(pr);
@@ -343,15 +341,42 @@ Object.assign(GreedJunkLit, {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             return t;
         };
+        // Нормали карты высот (t[1]) — один раз, в четвёртую текстуру
+        // комплекта: программа корпуса (normProgram) в кадровый буфер.
+        // Смешение ещё выключено — оно испортило бы b,a (уклон).
+        const np = this.normProgram(gl), fb = gl.createFramebuffer();
+        const normals = (st) => {
+            const nt = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, nt);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, st.w, st.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, nt, 0);
+            gl.viewport(0, 0, st.w, st.h);
+            gl.useProgram(np);
+            gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, st.t[1]);
+            gl.uniform1i(gl.getUniformLocation(np, 'uH'), 1);
+            gl.uniform2f(gl.getUniformLocation(np, 'uTex'), 1 / st.w, 1 / st.h);
+            gl.uniform1f(gl.getUniformLocation(np, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            st.t.push(nt);
+            return st;
+        };
         const set = (maps) => ({ t: maps.map((img, i) => tex(img, i === 0)), w: maps[0].width, h: maps[0].height });
+        const disc = normals(set(dm)), ptr = normals(set(pm));
+        gl.useProgram(pr);
         const U = {};
-        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uShade', 'uA', 'uH', 'uM', 'uTex', 'uL', 'uRelief', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
-        gl.uniform1i(U.uA, 0); gl.uniform1i(U.uH, 1); gl.uniform1i(U.uM, 2);
-        gl.uniform1f(U.uRelief, 9.0 * GreedJunk.HMAX / 24);
+        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uShade', 'uA', 'uH', 'uM', 'uN', 'uTex', 'uL', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
+        gl.uniform1i(U.uA, 0); gl.uniform1i(U.uH, 1); gl.uniform1i(U.uM, 2); gl.uniform1i(U.uN, 3);
         gl.uniform1f(U.uPxPerH, GreedJunk.HMAX * this.SCALE);
         gl.uniform2f(U.uCanvas, cv.width, cv.height);
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        this._wgl = { gl, U, disc: set(dm), ptr: set(pm), brk: set([bm]) };
+        this._wgl = { gl, U, disc, ptr, brk: set([bm]) };
         return true;
     },
 

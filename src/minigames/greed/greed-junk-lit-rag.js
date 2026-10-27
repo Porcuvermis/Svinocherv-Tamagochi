@@ -55,6 +55,7 @@ Object.assign(GreedJunkLit, {
                 gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
             });
+            this.heightDirty(this.tex[1]);
             this.draw(this.lightFor(this._tilt || { x: 0, y: 0 }));
             this.rag = { sprite: c, shadow: sh };
             this._rag.shown = '';

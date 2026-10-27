@@ -85,8 +85,81 @@ const GreedJunkLit = {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if (unit === 1) { this.heightDirty(t); this._boundH = t; }
         return t;
     },
+
+    // Нормаль и уклон корпуса — один раз на карту высот, в текстуру uN
+    // (unit 5): r,g — нормаль xy (−1..1 → 0..1), b,a — уклон вдоль x и y
+    // для тени (−⅛..⅛ → 0..1). Счёт тот же, что был в шейдере корпуса:
+    // Нормаль по соседям в четырёх текселях, а не в одном: фаска шире
+    // чёрного контура, иначе контур её целиком закрывает. Высота для неё
+    // усреднена крестом в пять текселей: карта 8-битная, на пологом длинном
+    // уклоне (скос окна) высота растёт ступеньками, и нормаль по ним
+    // дёргалась полосами. Соседи не выше самой точки: фаска ложится только
+    // на ВЕРХНЮЮ деталь, иначе вокруг деталей светился ореол на поверхности,
+    // на которой они лежат.
+    normProgram(gl) {
+        const vs = `attribute vec2 aPos; varying vec2 vUv;
+            void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+        const fs = `precision highp float;
+            uniform sampler2D uH; uniform vec2 uTex; uniform float uRelief;
+            varying vec2 vUv;
+            float hh(vec2 p) { return texture2D(uH, p).r; }
+            float hs(vec2 p) {
+                return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
+                        hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
+            }
+            void main() {
+                vec2 d = uTex * 4.0;
+                float h0s = hs(vUv);
+                float hl = min(hs(vUv - vec2(d.x, 0.0)), h0s), hr = min(hs(vUv + vec2(d.x, 0.0)), h0s);
+                float hu = min(hs(vUv - vec2(0.0, d.y)), h0s), hd = min(hs(vUv + vec2(0.0, d.y)), h0s);
+                vec3 n = normalize(vec3((hl - hr) * uRelief, (hu - hd) * uRelief, 1.0));
+                float gx = (hh(vUv + vec2(d.x, 0.0)) - hh(vUv - vec2(d.x, 0.0))) / 8.0;
+                float gy = (hh(vUv + vec2(0.0, d.y)) - hh(vUv - vec2(0.0, d.y))) / 8.0;
+                gl_FragColor = vec4(n.xy * 0.5 + 0.5, gx * 4.0 + 0.5, gy * 4.0 + 0.5);
+            }`;
+        return this.link(gl, vs, fs);
+    },
+    // Нормали карты высот ht: посчитать, если её нет или она переписана.
+    // Карту переписывают сборка (texture), рычаг и тряпка (upload и
+    // возврат полной картинки) — они помечают её в _nDirty.
+    normalsFor(ht) {
+        const gl = this.gl;
+        this._nrm = this._nrm || new Map();
+        this._nDirty = this._nDirty || new Set();
+        let nt = this._nrm.get(ht);
+        if (nt && !this._nDirty.has(ht)) return nt;
+        if (!this._nprog) { this._nprog = this.normProgram(gl); this._fb = gl.createFramebuffer(); }
+        gl.activeTexture(gl.TEXTURE5);
+        if (!nt) {
+            nt = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, nt);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.size[0], this.size[1], 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            this._nrm.set(ht, nt);
+        }
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, nt, 0);
+        gl.disable(gl.SCISSOR_TEST);
+        gl.viewport(0, 0, this.size[0], this.size[1]);
+        const p = this._nprog;
+        gl.useProgram(p);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ht);
+        gl.uniform1i(gl.getUniformLocation(p, 'uH'), 1);
+        gl.uniform2f(gl.getUniformLocation(p, 'uTex'), 1 / this.size[0], 1 / this.size[1]);
+        gl.uniform1f(gl.getUniformLocation(p, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        this._nDirty.delete(ht);
+        return nt;
+    },
+    heightDirty(ht) { (this._nDirty = this._nDirty || new Set()).add(ht); },
 
     program(gl) {
         const vs = `attribute vec2 aPos; varying vec2 vUv;
@@ -94,7 +167,7 @@ const GreedJunkLit = {
         // Координаты экранные: x вправо, y ВНИЗ, z к зрителю. Свет uL —
         // направление НА источник.
         const fs = `precision mediump float;
-            uniform sampler2D uA, uH, uM, uS, uK;
+            uniform sampler2D uA, uH, uM, uS, uK, uN;
             // барабаны: окно (x, y, w, h в uv поля), смещение ленты в
             // единицах поля; лента — uLen единиц по кругу, радиус барабана
             uniform vec4 uReel0, uReel1, uReel2;
@@ -108,15 +181,6 @@ const GreedJunkLit = {
             uniform vec2 uHMap;       // карта высот: (H0, HMAX) — h = v * HMAX − H0
             varying vec2 vUv;
             float hh(vec2 p) { return texture2D(uH, p).r; }
-            // Для нормали — высота, усреднённая крестом в пять текселей.
-            // Карта высот 8-битная: на пологом длинном уклоне (скос окна)
-            // высота растёт ступеньками в один уровень, и нормаль по ним
-            // дёргалась — скос шёл полосами. Среднее соседей превращает
-            // ступеньки обратно в уклон.
-            float hs(vec2 p) {
-                return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
-                        hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
-            }
             // Лента барабана в точке окна r со смещением off: высота точки
             // переводится в угол на цилиндре, по углу — место на ленте; у
             // краёв окна ячейки сжимаются (уходят за изгиб). Цвет барабана
@@ -142,18 +206,14 @@ const GreedJunkLit = {
                     else if (vUv.x > uReel1.x && vUv.x < uReel1.x + uReel1.z && vUv.y > uReel1.y && vUv.y < uReel1.y + uReel1.w) a.rgb = reelAt(uReel1, uOff.y, uBlur.y, a.rgb);
                     else if (vUv.x > uReel2.x && vUv.x < uReel2.x + uReel2.z && vUv.y > uReel2.y && vUv.y < uReel2.y + uReel2.w) a.rgb = reelAt(uReel2, uOff.z, uBlur.z, a.rgb);
                 }
-                // Нормаль по соседям в четырёх текселях, а не в одном: фаска
-                // шире чёрного контура, иначе контур её целиком закрывает
-                vec2 d = uTex * 4.0;
+                // Нормаль и уклон своей плоскости — готовые, из uN (normProgram):
+                // они зависят только от карты высот, а она не меняется. Было —
+                // считались здесь на каждую точку каждой перерисовки: 30 чтений
+                // карты высот из ~53 на точку, больше, чем вся тень.
+                vec4 nq = texture2D(uN, vUv);
+                vec2 nxy = nq.xy * 2.0 - 1.0;
+                vec3 n = vec3(nxy, sqrt(max(0.0, 1.0 - dot(nxy, nxy))));
                 float h0 = hh(vUv);
-                // Соседи не выше самой точки: фаска ложится только на ВЕРХНЮЮ
-                // деталь. Без этого подножие ступеньки на стенке тоже получало
-                // наклонную нормаль, смотрящую на свет, — вокруг деталей
-                // светился ореол на поверхности, на которой они лежат.
-                float h0s = hs(vUv);
-                float hl = min(hs(vUv - vec2(d.x, 0.0)), h0s), hr = min(hs(vUv + vec2(d.x, 0.0)), h0s);
-                float hu = min(hs(vUv - vec2(0.0, d.y)), h0s), hd = min(hs(vUv + vec2(0.0, d.y)), h0s);
-                vec3 n = normalize(vec3((hl - hr) * uRelief, (hu - hd) * uRelief, 1.0));
 
                 // рассеянный: ровная поверхность = свой цвет
                 float amb = 0.42;
@@ -168,8 +228,7 @@ const GreedJunkLit = {
                 // Иначе ровный крутой уклон (скос окна) затенял сам себя, и
                 // шаги луча штриховали его полосами. Свою отвёрнутость от
                 // света плоскость и так получает рассеянным светом.
-                float gx = (hh(vUv + vec2(d.x, 0.0)) - hh(vUv - vec2(d.x, 0.0))) / 8.0;
-                float gy = (hh(vUv + vec2(0.0, d.y)) - hh(vUv - vec2(0.0, d.y))) / 8.0;
+                float gx = (nq.z - 0.5) / 4.0, gy = (nq.w - 0.5) / 4.0;
                 float plane = max(rise, dot(vec2(gx, gy), dir));
                 // 20 шагов по 3 текселя (тот же охват, что 40 по 1,5 — тень не
                 // короче), начало сдвинуто на долю шага по месту точки: рябь
@@ -199,6 +258,10 @@ const GreedJunkLit = {
                 vec3 col = a.rgb * lit * sh * depth + spc * sp * sh * a.a;
                 gl_FragColor = vec4(col, a.a);
             }`;
+        return this.link(gl, vs, fs);
+    },
+    // aPos — всегда атрибут 0: у корпуса и нормалей один буфер вершин
+    link(gl, vs, fs) {
         const sh = (type, src) => {
             const s = gl.createShader(type);
             gl.shaderSource(s, src); gl.compileShader(s);
@@ -208,6 +271,7 @@ const GreedJunkLit = {
         const p = gl.createProgram();
         gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
         gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+        gl.bindAttribLocation(p, 0, 'aPos');
         gl.linkProgram(p);
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
         return p;
@@ -831,8 +895,13 @@ const GreedJunkLit = {
         const L = light || this.LIGHT;
         const n = Math.hypot(L[0], L[1], L[2]) || 1;
         gl.viewport(0, 0, this.size[0], this.size[1]);
+        // нормали той карты высот, что сейчас в unit 1 (свежие)
+        const nt = this.normalsFor(this._boundH || this.tex[1]);
+        gl.viewport(0, 0, this.size[0], this.size[1]);
+        if (region) gl.enable(gl.SCISSOR_TEST);
+        gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, nt);
         gl.useProgram(p);
-        ['uA', 'uH', 'uM', 'uS', 'uK'].forEach((u, i) => gl.uniform1i(gl.getUniformLocation(p, u), i));
+        ['uA', 'uH', 'uM', 'uS', 'uK', 'uN'].forEach((u, i) => gl.uniform1i(gl.getUniformLocation(p, u), i));
         // барабаны: окна по поверхности ленты (drum в рисунке — на 1 внутри
         // окна), смещение ленты каждого барабана, размытие на ходу
         const G = GreedJunk, C = G.CELL, W = G.W, H = G.H;
