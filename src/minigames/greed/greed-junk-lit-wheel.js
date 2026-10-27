@@ -155,7 +155,11 @@ Object.assign(GreedJunkLit, {
             const [d, p] = await Promise.all([this.image(disc), this.image(ptr)]);
             this._wheelSpr = { disc: d, ptr: p, R, px, py };
             this._wheel.shown = null;
-        } catch (e) { console.warn('[Аппарат] колесо не собралось', e); }
+        } catch (e) {
+            // видно в 🐞 на кнопке «Колесо»: на iPhone консоли нет
+            this.wheelError = String((e && e.message) || e || 'картинка').slice(0, 40);
+            console.warn('[Аппарат] колесо не собралось', e);
+        }
     },
 
     wheelDraw() {

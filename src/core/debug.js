@@ -438,6 +438,14 @@ const DebugState = {
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
         if (DebugMode.enabled) this.startFps(); else this.stopFps();
+        // колесо аппарата: включено ли (✓) и не сломалась ли его картинка (✗)
+        const wb = this.panel && this.panel.querySelector('[data-act="greed-wheel"]');
+        if (wb) {
+            let on = false;
+            try { on = localStorage.getItem('gj-wheel') === '1'; } catch (e) { /* нет хранилища */ }
+            const err = typeof GreedJunkLit !== 'undefined' && GreedJunkLit.wheelError;
+            wb.textContent = 'Колесо' + (err ? ' ✗ ' + err : on ? ' ✓' : '');
+        }
     }
 };
 
