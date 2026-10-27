@@ -266,7 +266,7 @@ Object.assign(GreedJunkLit, {
         // с тем же ambient, блик по материалу, тень шагами по карте высот.
         const fs = `precision mediump float;
             uniform sampler2D uA, uH, uM;
-            uniform vec2 uTex; uniform vec3 uL; uniform float uRelief, uPxPerH, uRotF;
+            uniform vec2 uTex; uniform vec3 uL; uniform float uRelief, uPxPerH, uRotF, uShade;
             varying vec2 vUv;
             float hh(vec2 p) { return texture2D(uH, p).r; }
             float hs(vec2 p) {
@@ -274,6 +274,15 @@ Object.assign(GreedJunkLit, {
                         hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
             }
             void main() {
+                // режим тени: силуэт резинки, размытый пятью отсчётами, —
+                // только прозрачность (смешение затемняет диск под ним)
+                if (uShade > 0.0) {
+                    vec2 q = uTex * 4.5;
+                    float s = (texture2D(uA, vUv).a * 2.0 + texture2D(uA, vUv + vec2(q.x, 0.0)).a + texture2D(uA, vUv - vec2(q.x, 0.0)).a +
+                               texture2D(uA, vUv + vec2(0.0, q.y)).a + texture2D(uA, vUv - vec2(0.0, q.y)).a) / 6.0;
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, s * uShade);
+                    return;
+                }
                 vec4 a = texture2D(uA, vUv);
                 if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
                 vec2 d = uTex * 4.0;
@@ -334,7 +343,7 @@ Object.assign(GreedJunkLit, {
         };
         const set = (maps) => ({ t: maps.map((img, i) => tex(img, i === 0)), w: maps[0].width, h: maps[0].height });
         const U = {};
-        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uA', 'uH', 'uM', 'uTex', 'uL', 'uRelief', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
+        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uShade', 'uA', 'uH', 'uM', 'uTex', 'uL', 'uRelief', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
         gl.uniform1i(U.uA, 0); gl.uniform1i(U.uH, 1); gl.uniform1i(U.uM, 2);
         gl.uniform1f(U.uRelief, 9.0 * GreedJunk.HMAX / 24);
         gl.uniform1f(U.uPxPerH, GreedJunk.HMAX * this.SCALE);
@@ -376,6 +385,10 @@ Object.assign(GreedJunkLit, {
         cv.style.transform = `translate(${(dx / B.w * 100).toFixed(2)}%, ${(dy / B.h * 100).toFixed(2)}%)`;
     },
 
+    // высота резинки язычка над краской диска: чуть выше шляпок гвоздей
+    // (WHEEL.pegUp), об которые она бьёт
+    WHEEL_FLAP_UP: 11,
+
     wheelDraw() {
         const M = this._wheel, Sp = this._wheelSpr, Q = this._wgl, B = this.wheelBox(), S = this.SCALE, G = GreedJunk, W = G.SLOTS.wheel, R = G.WHEEL.rEdge;
         if (!Q) return;
@@ -398,6 +411,17 @@ Object.assign(GreedJunkLit, {
         draw(Q.disc, W.cx, W.cy, Sp.R, Sp.R, M.rot, 0, 0);
         // резинка: квадрат 30×36 вокруг своей середины, поворот вокруг болта
         const pcx = Sp.px, pcy = Sp.py - 2 + 18, pivX = W.cx, pivY = W.cy - R - 16 + 9.6;
+        // Тень резинки на диск: тот же квадрат с тем же поворотом, сдвинутый
+        // от света на высоту резинки над краской (она перед шляпками
+        // гвоздей). Смешение только темнит цвет и не трогает прозрачность:
+        // где диска нет (щит над ободом), тень не рисуется — там она легла
+        // бы дальше, и её место — в корпусе. Было: тени у язычка не было.
+        const ux = L[0] / n, uy = L[1] / n, uz = Math.max(0.15, L[2] / n), up = this.WHEEL_FLAP_UP;
+        gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+        gl.uniform1f(U.uShade, 0.5);
+        draw(Q.ptr, pcx - ux / uz * up, pcy - uy / uz * up, 15, 18, M.flap, pivX - pcx, pivY - pcy);
+        gl.uniform1f(U.uShade, 0);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         draw(Q.ptr, pcx, pcy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
     }
 });
