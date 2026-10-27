@@ -150,10 +150,15 @@ Object.assign(GreedJunkLit, {
         const M = this._wheel, P = this.WHEEL_SPIN, n = GreedJunk.WHEEL_SECTORS.length, sec = Math.PI * 2 / n;
         if (d) M.mdir = Math.sign(d);
         const dir = M.mdir || 1;
-        // ближайший гвоздь к язычку: −sec/2..sec/2, 0 — под язычком
-        const off = ((M.rot + sec / 2) % sec + sec) % sec - sec / 2;
+        // Ближайший гвоздь к язычку: −sec/2..sec/2, 0 — гвоздь под язычком.
+        // Гвоздь i стоит на (i − ½)·sec от верха; под язычком он, когда
+        // rot ≡ sec/2 по модулю сектора. Было: сдвиг на полсектора не в ту
+        // сторону — язычок отгибался в пустом промежутке между гвоздями.
+        let off = ((M.rot - sec / 2) % sec + sec) % sec;
+        if (off > sec / 2) off -= sec;
         const c = sec * 0.3, along = dir * off;     // < 0 — гвоздь ещё подходит
-        const pegIdx = Math.round((M.rot + sec / 2) / sec);
+        // номер промежутка между гвоздями: меняется ровно на гвозде
+        const pegIdx = Math.floor((M.rot - sec / 2) / sec);
         // canvas: поворот + — по часовой; кончик ниже оси уходит по ходу
         // вращения колеса — значит язычок поворачивается против
         if (d && along > -c && along < c * 0.6) {
@@ -191,7 +196,7 @@ Object.assign(GreedJunkLit, {
                 G.passStyle('baked') + G.defs() + `<style>.fx{display:none}</style>` + F.edge + F.sec + F.chip + F.icons + F.pegs + F.hub + '</svg>';
             const Wc = G.SLOTS.wheel, px = Wc.cx, py = Wc.cy - W.rEdge - 16;
             const ptr = `<svg xmlns="http://www.w3.org/2000/svg" width="${30 * S}" height="${36 * S}" viewBox="${px - 15} ${py - 2} 30 36">` +
-                G.passStyle('baked') + G.defs() + G.wheelPointer() + '</svg>';
+                G.passStyle('baked') + G.defs() + G.wheelPointer('strip') + '</svg>';
             const [d, p] = await Promise.all([this.image(disc), this.image(ptr)]);
             this._wheelSpr = { disc: d, ptr: p, R, px, py };
             this._wheel.shown = null;

@@ -63,7 +63,7 @@ Object.assign(GreedJunk, {
         if (this.wheelShown && this.wheelShown()) {
             // на свету колесо крутится своей картинкой (wheelApart,
             // greed-junk-lit-wheel.js) — в корпусе только щит
-            out += this.wheelShield() + (this.wheelApart ? '' : this.wheelDisc());
+            out += this.wheelShield() + (this.wheelApart ? this.wheelPointer('bracket') : this.wheelDisc());
         }
         return out;
     },

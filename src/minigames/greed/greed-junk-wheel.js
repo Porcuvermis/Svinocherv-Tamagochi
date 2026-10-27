@@ -156,7 +156,9 @@ Object.assign(GreedJunk, {
 
     // Язычок: резиновая полоса на стальном уголке, прикрученном к перекладине
     // над колесом; свисает до гвоздей обода.
-    wheelPointer() {
+    // part: 'bracket' — только уголок, 'strip' — только резинка (на свету
+    // резинка качается отдельной картинкой, уголок стоит в корпусе)
+    wheelPointer(part) {
         const J = PALETTE.greedJunk, W = J.reel.wheel, S = this.SLOTS.wheel, ink = PALETTE.ink, f = this.f;
         const x = S.cx, yTop = S.cy - this.WHEEL.rEdge - 14, yTip = S.cy - this.WHEEL.rPeg + 3.5;
         let br = `<path d="M${x - 9} ${yTop} H${x + 9} V${yTop + 6} H${x + 2.8} V${yTop + 10} H${x - 2.8} V${yTop + 6} H${x - 9} Z" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(1 1.6)"/>` +
@@ -167,6 +169,6 @@ Object.assign(GreedJunk, {
             `<path d="${strip}" fill="${W.rubber}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<path d="M${f(x - 1.4)} ${yTop + 9} L${f(x - 0.9)} ${yTip - 1}" class="hl" stroke="${J.tin[500]}" stroke-width="0.6"/>` +
             this.bolt(x, yTop + 9.6, 1.1);
-        return this.T(20, 'steel', br) + this.T(20.5, 'rubber', rub);
+        return (part === 'strip' ? '' : this.T(20, 'steel', br)) + (part === 'bracket' ? '' : this.T(20.5, 'rubber', rub));
     }
 });
