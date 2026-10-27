@@ -36,6 +36,19 @@ Object.assign(GreedJunkLit, {
         // шарик — между коробом и стеклом: стекло поверх него
         this.pachBallCv = layer(this.pachBox());
         this.pachGlassCv = layer(this.pachBox());
+        // блики стекла — свой слой больше листа, обрезанный по листу:
+        // сдвигается за светом (pachGlareAt)
+        const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
+        const clip = document.createElement('div');
+        clip.style.cssText = `position:absolute;left:${R.x0 / G.W * 100}%;top:${R.y0 / G.H * 100}%;` +
+            `width:${(R.x1 - R.x0) / G.W * 100}%;height:${(R.y1 - R.y0) / G.H * 100}%;overflow:hidden;z-index:1;pointer-events:none`;
+        const gc = document.createElement('canvas');
+        gc.width = Math.round((R.x1 - R.x0 + 2 * m) * S); gc.height = Math.round((R.y1 - R.y0 + 2 * m) * S);
+        gc.style.cssText = `position:absolute;left:${-m / (R.x1 - R.x0) * 100}%;top:${-m / (R.y1 - R.y0) * 100}%;` +
+            `width:${(R.x1 - R.x0 + 2 * m) / (R.x1 - R.x0) * 100}%;height:${(R.y1 - R.y0 + 2 * m) / (R.y1 - R.y0) * 100}%;background:none`;
+        clip.appendChild(gc);
+        wrap.appendChild(clip);
+        this.pachGlareCv = gc;
         this._pach = { shown: null, ball: null, acc: 0, at: 0, press: 0 };
         this.pachSprites();
         // кнопка запуска — тап по ней
@@ -129,7 +142,7 @@ Object.assign(GreedJunkLit, {
         const M = this._pach;
         M.seek = null;
         M.ball = GreedJunk.pachBall(v0);
-        M.acc = 0; M.at = 0;
+        M.acc = 0; M.bat = 0;
         if (typeof Haptics !== 'undefined') Haptics.impact('rigid', true);
     },
 
@@ -156,8 +169,11 @@ Object.assign(GreedJunkLit, {
     // рисуется только пока шарик летит или кнопка нажата.
     pachBallStep(now) {
         const M = this._pach, G = GreedJunk, K = G.PACH_PHYS;
-        const dt = Math.min(0.05, M.at ? (now - M.at) / 1000 : 1 / 60);
-        M.at = now;
+        // свои часы у полёта (bat), свои у света (at): были одни — полёт
+        // переводил их каждый кадр, и пауза перед перерисовкой света не
+        // проходила никогда, короб не перекрашивался от наклона вовсе
+        const dt = Math.min(0.05, M.bat ? (now - M.bat) / 1000 : 1 / 60);
+        M.bat = now;
         const pressed = now - M.press < 140;
         if (!M.ball && !pressed && !M.dirty) return;
         if (M.ball && M.ball.hold) M.press = now;          // ищется запуск — кнопка вдавлена
@@ -221,6 +237,11 @@ Object.assign(GreedJunkLit, {
             this._pgl = Q;
             const g = this.pachGlassCv.getContext('2d');
             g.drawImage(glass, 0, 0, this.pachGlassCv.width, this.pachGlassCv.height);
+            const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
+            const glare = await this.image(`<svg xmlns="http://www.w3.org/2000/svg" width="${this.pachGlareCv.width}" height="${this.pachGlareCv.height}" ` +
+                `viewBox="${R.x0 - m} ${R.y0 - m} ${R.x1 - R.x0 + 2 * m} ${R.y1 - R.y0 + 2 * m}">${G.pachGlare(m)}</svg>`);
+            this.pachGlareCv.getContext('2d').drawImage(glare, 0, 0);
+            this.pachGlareAt(this.lightFor(this._tilt || { x: 0, y: 0 }));
             this.pachShadow();
             this._pach.shown = null;
         } catch (e) {
@@ -243,6 +264,18 @@ Object.assign(GreedJunkLit, {
         c.filter = 'none'; c.globalAlpha = 1;
         this.pachShadowAt(this.lightFor(this._tilt || { x: 0, y: 0 }));
     },
+    // Блик стекла идёт за светом: сдвиг — разница направления света с
+    // исходным (без наклона), умноженная на k; не дальше запаса слоя m.
+    PACH_GLARE: { m: 40, k: 70 },
+    pachGlareAt(L) {
+        const cv = this.pachGlareCv, K = this.PACH_GLARE, R = GreedJunk.pachGlassRect();
+        if (!cv) return;
+        const n = Math.hypot(L[0], L[1], L[2]) || 1, L0 = this.lightFor({ x: 0, y: 0 }), n0 = Math.hypot(L0[0], L0[1], L0[2]) || 1;
+        const cl = (v) => Math.max(-K.m, Math.min(K.m, v));
+        const dx = cl((L[0] / n - L0[0] / n0) * K.k), dy = cl((L[1] / n - L0[1] / n0) * K.k);
+        cv.style.transform = `translate(${(dx / (R.x1 - R.x0 + 2 * K.m) * 100).toFixed(2)}%, ${(dy / (R.y1 - R.y0 + 2 * K.m) * 100).toFixed(2)}%)`;
+    },
+
     pachShadowAt(L) {
         const cv = this.pachShadowCv, K = this.PACH_SHADOW, B = this.pachBox(K.blur * 3);
         if (!cv) return;
@@ -267,5 +300,6 @@ Object.assign(GreedJunkLit, {
         this.deviceBegin(Q, L);
         this.deviceDraw(Q, B, Q.box, B.x + B.w / 2, B.y + B.h / 2, B.w / 2, B.h / 2);
         this.pachShadowAt(L);
+        this.pachGlareAt(L);
     }
 });

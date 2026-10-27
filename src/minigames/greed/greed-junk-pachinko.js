@@ -261,17 +261,35 @@ Object.assign(GreedJunk, {
     // сверху-слева, царапины, трещина из угла, заклеенная малярным скотчем.
     // Рисуется готовым видом (baked) поверх освещённого короба: у стекла нет
     // объёма, а блик на нём от наклона не ходит — он и так нарисован светом.
+    // лист стекла: поверх поля, заходит на рамку на 2
+    pachGlassRect() {
+        const P = this.PACH;
+        return { x0: P.x0 + P.wall - 2, x1: P.x1 - P.wall + 2, y0: P.y0 + P.top - 2, y1: P.y1 - P.panel + 2 };
+    },
+    // Блики стекла — отражение лампы: косые полосы, своим слоем больше листа
+    // на m со всех сторон. На свету слой сдвигается вслед за светом
+    // (greed-junk-lit-pachinko.js, pachGlareAt) — отражение ползёт по стеклу
+    // при наклоне телефона. Было: нарисованы на стекле намертво, а всё
+    // вокруг от наклона меняло свет.
+    pachGlare(m) {
+        const G = PALETTE.greedJunk.reel.jar, f = this.f, R = this.pachGlassRect();
+        const x0 = R.x0 - m, x1 = R.x1 + m, y0 = R.y0 - m, y1 = R.y1 + m, H = y1 - y0, run = H * 0.58;
+        // полоса от верхнего края до нижнего, наклон — как был (70 на 120)
+        const band = (u, w, op) => {
+            const a = R.x0 + (R.x1 - R.x0) * u + (R.y0 - y0) * 0.58, b = a + w;
+            return `<path d="M${f(a)} ${y0} L${f(b)} ${y0} L${f(b - run)} ${y1} L${f(a - run)} ${y1} Z" fill="${G.glassHi}" opacity="${op}"/>`;
+        };
+        // к низу полосы гаснут: лампа отражается в верхней части листа
+        return `<defs><linearGradient id="gj-pgf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${G.glassHi}"/>` +
+            `<stop offset="${f((R.y0 - y0 + 130) / H)}" stop-color="${G.glassHi}" stop-opacity="0"/></linearGradient>` +
+            `<mask id="gj-pgm"><rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${H}" fill="url(#gj-pgf)"/></mask></defs>` +
+            `<g mask="url(#gj-pgm)">` + band(0.22, 14, 0.13) + band(0.42, 5, 0.1) + band(0.86, 9, 0.07) + '</g>';
+    },
     pachGlass() {
         const J = PALETTE.greedJunk, G = J.reel.jar, P = this.PACH, f = this.f, rnd = this.rng(4403);
-        const x0 = P.x0 + P.wall - 2, x1 = P.x1 - P.wall + 2, y0 = P.y0 + P.top - 2, y1 = P.y1 - P.panel + 2;
+        const { x0, x1, y0, y1 } = this.pachGlassRect();
         let out = `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="${G.glass}" opacity="0.07"/>`;
-        // блики: две косые полосы от верхнего левого угла
-        const band = (u, w, op) => {
-            const a = x0 + (x1 - x0) * u, b = a + w;
-            return `<path d="M${f(a)} ${y0} L${f(b)} ${y0} L${f(b - 70)} ${f(y0 + 120)} L${f(a - 70)} ${f(y0 + 120)} Z" fill="${G.glassHi}" opacity="${op}"/>`;
-        };
-        out += `<clipPath id="gj-pg"><rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}"/></clipPath><g clip-path="url(#gj-pg)">` +
-            band(0.22, 14, 0.13) + band(0.42, 5, 0.1) + band(0.86, 9, 0.07);
+        out += `<clipPath id="gj-pg"><rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}"/></clipPath><g clip-path="url(#gj-pg)">`;
         // царапины: тонкие светлые штрихи
         for (let k = 0; k < 9; k++) {
             const x = x0 + 6 + rnd() * (x1 - x0 - 12), y = y0 + 10 + rnd() * (y1 - y0 - 20), L = 5 + rnd() * 14, a = rnd() * Math.PI;
