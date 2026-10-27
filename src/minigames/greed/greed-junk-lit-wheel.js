@@ -12,10 +12,18 @@
 // торможение подбирается так, чтобы колесо замерло ровно на нужном
 // секторе (onWheel — игра; без неё превью берёт случайный).
 Object.assign(GreedJunkLit, {
-    // a — торможение трением (рад/мс²) для слабого качания; minW — скорость
-    // броска (рад/мс), с которой начинается крутка; turns — сколько оборотов
-    // минимум, чтобы крутка читалась круткой
-    WHEEL_SPIN: { a: 0.000012, minW: 0.0035, turns: 1.6, flap: 0.5, flapK: 0.02, flapC: 0.012 },
+    // Колесо тяжёлое: a — торможение (рад/мс²; меньше — дольше катится),
+    // maxW — предельная скорость броска: тяжёлое колесо рукой сильно не
+    // раскрутить, и между гвоздями при ней не меньше 35 мс — каждый сектор
+    // успевает отдать свой толчок в палец. minW — бросок, с которого
+    // начинается крутка; turns — минимум оборотов; drag — запаздывание за
+    // пальцем (доля пути за кадр); settle — откат назад на остановке:
+    // язычок упирается в гвоздь. Язычок: flap — наибольший отгиб (рад),
+    // fw/fz — частота и затухание его пружины.
+    // Было: легче вдвое, без предела скорости, пружина язычка одним шагом
+    // на кадр — на медленном кадре её разносило, язычок бесился и пропадал.
+    WHEEL_SPIN: { a: 0.0000028, maxW: 0.011, minW: 0.0035, turns: 2, drag: 0.3, settle: 0.035, settleMs: 380,
+        flap: 0.42, fw: 0.05, fz: 0.22 },
 
     wheelBox() {
         const W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge + 6;
@@ -31,7 +39,7 @@ Object.assign(GreedJunkLit, {
             `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
         wrap.appendChild(cv);
         this.wheelCv = cv;
-        this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null };
+        this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this.wheelSprites();
         // палец: схватил диск — крутишь
         const field = (e) => {
@@ -42,11 +50,11 @@ Object.assign(GreedJunkLit, {
         let grab = null;
         wrap.addEventListener('pointerdown', (e) => {
             const p = field(e), M = this._wheel;
-            if (Math.hypot(p[0] - W.cx, p[1] - W.cy) > G.WHEEL.rEdge || M.st === 'spin') return;
+            if (Math.hypot(p[0] - W.cx, p[1] - W.cy) > G.WHEEL.rEdge || M.st === 'spin' || M.st === 'settle') return;
             e.preventDefault(); e.stopPropagation();
             wrap.setPointerCapture(e.pointerId);
-            grab = { a: ang(p), rot: M.rot, hist: [[performance.now(), M.rot]] };
-            M.st = 'drag'; M.w = 0;
+            grab = { a: ang(p), hist: [[performance.now(), M.rot]] };
+            M.st = 'drag'; M.w = 0; M.target = M.rot;
         });
         wrap.addEventListener('pointermove', (e) => {
             if (!grab) return;
@@ -54,9 +62,10 @@ Object.assign(GreedJunkLit, {
             let d = a - grab.a;
             d = Math.atan2(Math.sin(d), Math.cos(d));
             grab.a = a;
-            M.rot += d;
+            // тяжёлое колесо идёт за пальцем с запаздыванием (wheelStep)
+            M.target += d;
             const now = performance.now();
-            grab.hist.push([now, M.rot]);
+            grab.hist.push([now, M.target]);
             grab.hist = grab.hist.filter(h => now - h[0] < 90);
         });
         const up = () => {
@@ -74,24 +83,24 @@ Object.assign(GreedJunkLit, {
     // заранее выбранной остановкой
     wheelThrow(w, now) {
         const M = this._wheel, P = this.WHEEL_SPIN;
-        M.w = w; M.at = now;
+        w = Math.max(-P.maxW, Math.min(P.maxW, w));
+        M.w = w;
         if (Math.abs(w) < P.minW) { M.st = 'coast'; return; }
         const n = GreedJunk.WHEEL_SECTORS.length;
         // какой сектор: игра (onWheel → индекс) или случайный в превью
         const idx = this.onWheel ? this.onWheel() : Math.floor(Math.random() * n);
         if (idx === false) { M.st = 'coast'; return; }      // крутка не состоялась
         // угол, при котором сектор idx под язычком: сектор i вверху при rot = −i·2π/n
-        const dir = Math.sign(w), sec = Math.PI * 2 / n;
+        const dir = Math.sign(w), sec = Math.PI * 2 / n, T = Math.PI * 2;
         const want = -idx * sec + (Math.random() - 0.5) * sec * 0.6;
-        // путь: не меньше turns оборотов и не меньше, чем докатилось бы само
-        const natural = w * w / (2 * P.a);
-        const dist = Math.max(P.turns * Math.PI * 2, natural * 0.6), T = Math.PI * 2;
+        // путь: не меньше turns оборотов и почти столько, сколько докатилось бы само
+        const dist = Math.max(P.turns * T, w * w / (2 * P.a) * 0.85);
         // первый угол want (по модулю оборота) дальше пути dist по ходу вращения
         const end = dir > 0 ? want + T * Math.ceil((M.rot + dist - want) / T)
                             : want - T * Math.ceil((want - (M.rot - dist)) / T);
-        M.st = 'spin'; M.from = M.rot; M.to = end; M.w0 = Math.abs(w);
-        // равнозамедленно: путь L при начальной скорости w0 — время 2L/w0
-        M.dur = 2 * Math.abs(end - M.rot) / M.w0;
+        // равнозамедленно с той же начальной скоростью, что бросок: время 2L/w0
+        M.st = 'spin'; M.from = M.rot; M.to = end; M.dir = dir;
+        M.dur = 2 * Math.abs(end - M.rot) / Math.abs(w);
         M.t0 = now;
     },
 
@@ -101,44 +110,75 @@ Object.assign(GreedJunkLit, {
         const dt = Math.min(40, M.at0 ? now - M.at0 : 16);
         M.at0 = now;
         const prev = M.rot;
-        if (M.st === 'spin') {
+        if (M.st === 'drag') {
+            // за пальцем — с запаздыванием, на любой частоте кадров одинаково
+            M.rot += (M.target - M.rot) * (1 - Math.pow(1 - P.drag, dt / 16));
+        } else if (M.st === 'spin') {
             const u = Math.min(1, (now - M.t0) / M.dur);
             // равнозамедленно: s = L·(2u − u²)
             M.rot = M.from + (M.to - M.from) * (2 * u - u * u);
             if (u >= 1) {
+                M.st = 'settle'; M.rot = M.to; M.t0 = now;
+                if (typeof Haptics !== 'undefined') Haptics.impact('heavy', true);
+            }
+        } else if (M.st === 'settle') {
+            // откат: язычок упёрся в гвоздь — колесо подаётся назад и встаёт
+            const v = Math.min(1, (now - M.t0) / P.settleMs);
+            M.rot = M.to - M.dir * P.settle * Math.sin(v * Math.PI) * (1 - v * 0.4);
+            if (v >= 1) {
                 M.st = 'idle'; M.rot = M.to;
-                if (typeof Haptics !== 'undefined') Haptics.impact('heavy');
                 if (this.onWheelDone) this.onWheelDone();
             }
         } else if (M.st === 'coast') {
-            const s = Math.sign(M.w);
-            M.w -= s * P.a * dt * 4;
-            if (Math.sign(M.w) !== s) { M.w = 0; M.st = 'idle'; }
+            const sg = Math.sign(M.w);
+            M.w -= sg * P.a * dt * 3;
+            if (Math.sign(M.w) !== sg) { M.w = 0; M.st = 'idle'; }
             M.rot += M.w * dt;
         }
-        // язычок: гвоздь, проходящий под ним, отгибает его по ходу вращения
-        const n = GreedJunk.WHEEL_SECTORS.length, sec = Math.PI * 2 / n;
-        // угол ближайшего гвоздя к верху: гвозди на границах, (i − ½)·sec + rot
-        const off = ((M.rot + sec / 2) % sec + sec) % sec - sec / 2;   // −sec/2..sec/2, 0 — гвоздь под язычком
-        const contact = Math.abs(off) < sec * 0.32;
-        const pegIdx = Math.round((M.rot + sec / 2) / sec);
-        if (contact) {
-            // гвоздь толкает кончик в сторону, пока не проскочит
-            M.flap = -off / (sec * 0.32) * P.flap;
-            M.fv = 0;
-        } else {
-            M.fv += (-P.flapK * M.flap - P.flapC * M.fv) * dt;
-            M.flap += M.fv * dt;
-        }
-        if (M.lastPeg !== null && pegIdx !== M.lastPeg && M.rot !== prev) {
-            // проскочил гвоздь — щелчок (не чаще 30 мс: на полном ходу сливаются)
-            if (typeof Haptics !== 'undefined' && now - (M.tickAt || 0) > 30) { Haptics.tick(); M.tickAt = now; }
-        }
-        M.lastPeg = pegIdx;
+        this.wheelFlap(now, dt, M.rot - prev);
         const key = M.rot.toFixed(4) + ',' + M.flap.toFixed(3);
         if (key === M.shown) return;
         M.shown = key;
         this.wheelDraw();
+    },
+
+    // Язычок. Гвоздь, подходящий к нему, плавно отгибает кончик по ходу
+    // вращения; проскочив, отпускает — дальше язычок качается пружиной и
+    // затухает. Пружина — мелкими шагами по 4 мс: одним шагом на кадр на
+    // медленном кадре счёт разносило (язычок бесился и пропадал).
+    wheelFlap(now, dt, d) {
+        const M = this._wheel, P = this.WHEEL_SPIN, n = GreedJunk.WHEEL_SECTORS.length, sec = Math.PI * 2 / n;
+        if (d) M.mdir = Math.sign(d);
+        const dir = M.mdir || 1;
+        // ближайший гвоздь к язычку: −sec/2..sec/2, 0 — под язычком
+        const off = ((M.rot + sec / 2) % sec + sec) % sec - sec / 2;
+        const c = sec * 0.3, along = dir * off;     // < 0 — гвоздь ещё подходит
+        const pegIdx = Math.round((M.rot + sec / 2) / sec);
+        // canvas: поворот + — по часовой; кончик ниже оси уходит по ходу
+        // вращения колеса — значит язычок поворачивается против
+        if (d && along > -c && along < c * 0.6) {
+            const s = (along + c) / (1.6 * c);
+            const f = -dir * P.flap * s * s;
+            M.fv = (f - M.flap) / Math.max(4, dt);
+            M.flap = f;
+        } else {
+            for (let t = 0; t < dt; t += 4) {
+                const h = Math.min(4, dt - t);
+                M.fv += (-P.fw * P.fw * M.flap - 2 * P.fz * P.fw * M.fv) * h;
+                M.flap += M.fv * h;
+            }
+        }
+        if (!isFinite(M.flap)) { M.flap = 0; M.fv = 0; }
+        M.flap = Math.max(-0.8, Math.min(0.8, M.flap));
+        // Каждый гвоздь — свой толчок в палец. Проскочило за кадр два —
+        // второй встаёт в очередь и отдаётся следом: сектор не теряется.
+        if (M.lastPeg !== null && M.lastPeg !== undefined) M.ticks = (M.ticks || 0) + Math.abs(pegIdx - M.lastPeg);
+        M.lastPeg = pegIdx;
+        if (M.ticks > 0 && now - (M.tickAt || 0) >= 25) {
+            M.ticks = Math.min(M.ticks - 1, 3);
+            M.tickAt = now;
+            if (typeof Haptics !== 'undefined') Haptics.impact('light', true);
+        }
     },
 
     // ---------- КАРТИНКИ: ОДИН РАЗ ----------
