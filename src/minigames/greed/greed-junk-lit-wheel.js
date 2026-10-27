@@ -33,12 +33,19 @@ Object.assign(GreedJunkLit, {
 
     wheelMountLit(wrap) {
         if (!GreedJunk.wheelShown || !GreedJunk.wheelShown()) return;
-        const B = this.wheelBox(), G = GreedJunk, S = this.SCALE, cv = document.createElement('canvas');
-        cv.width = Math.round(B.w * S); cv.height = Math.round(B.h * S);
-        cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
-            `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
-        wrap.appendChild(cv);
-        this.wheelCv = cv;
+        const B = this.wheelBox(), G = GreedJunk, S = this.SCALE;
+        const layer = () => {
+            const cv = document.createElement('canvas');
+            cv.width = Math.round(B.w * S); cv.height = Math.round(B.h * S);
+            cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
+                `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
+            wrap.appendChild(cv);
+            return cv;
+        };
+        // тень диска на щит — неподвижная, рисуется один раз; сам диск и
+        // язычок — своим шейдером поверх
+        this.wheelShadowCv = layer();
+        this.wheelCv = layer();
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this.wheelSprites();
         // палец: схватил диск — крутишь
@@ -136,6 +143,11 @@ Object.assign(GreedJunkLit, {
             M.rot += M.w * dt;
         }
         this.wheelFlap(now, dt, M.rot - prev);
+        // свет от наклона — не чаще LIGHT_MS, как у корпуса
+        const t = this._tilt || { x: 0, y: 0 };
+        if (!M.lt || ((Math.abs(t.x - M.lt.x) > 0.002 || Math.abs(t.y - M.lt.y) > 0.002) && now - (M.ltAt || 0) >= this.LIGHT_MS)) {
+            M.lt = { x: t.x, y: t.y }; M.ltAt = now; M.shown = null;
+        }
         const key = M.rot.toFixed(4) + ',' + M.flap.toFixed(3);
         if (key === M.shown) return;
         M.shown = key;
@@ -186,56 +198,169 @@ Object.assign(GreedJunkLit, {
         }
     },
 
-    // ---------- КАРТИНКИ: ОДИН РАЗ ----------
+    // ---------- НА СВЕТУ: КАРТЫ И СВОЙ ШЕЙДЕР ----------
+    // Колесо — в той же системе материалов и высот, что корпус: диск и
+    // резинка язычка рисуются в три карты (цвет, высоты, материал) один раз,
+    // а свет считает маленький шейдер на холсте колеса каждый кадр, пока оно
+    // движется. Квадрат карты поворачивается вместе с колесом, нормали из
+    // карты высот поворачиваются с ним, а свет — нет: блик гвоздей и гаек
+    // остаётся сверху-слева, тени от них ложатся от света. Тени — короткий
+    // поиск по карте высот (гвозди и гайки низкие). Было: диск — плоская
+    // картинка без шейдера, блики крутились вместе с ним.
     async wheelSprites() {
         const G = GreedJunk, W = G.WHEEL, S = this.SCALE, R = W.rEdge + 4;
         try {
-            G.pass = 'baked';
-            const F = G.wheelFace();
-            const disc = `<svg xmlns="http://www.w3.org/2000/svg" width="${R * 2 * S}" height="${R * 2 * S}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
-                G.passStyle('baked') + G.defs() + `<style>.fx{display:none}</style>` + F.edge + F.sec + F.chip + F.icons + F.pegs + F.hub + '</svg>';
+            const F = () => G.wheelFace();
+            // части диска на своих высотах и материалах — как в wheelDisc
+            const discFull = (pass) => {
+                G.pass = pass;
+                const f = F();
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="${R * 2 * S}" height="${R * 2 * S}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
+                    G.passStyle(pass) + G.defs() + G.T(17, 'raw', f.edge) + G.T(17.6, 'paint', f.sec + f.chip + f.icons) +
+                    G.T(19, 'steel', f.pegs) + G.T(19.5, 'steel', f.hub) + '</svg>';
+            };
             const Wc = G.SLOTS.wheel, px = Wc.cx, py = Wc.cy - W.rEdge - 16;
-            const ptr = `<svg xmlns="http://www.w3.org/2000/svg" width="${30 * S}" height="${36 * S}" viewBox="${px - 15} ${py - 2} 30 36">` +
-                G.passStyle('baked') + G.defs() + G.wheelPointer('strip') + '</svg>';
-            const [d, p] = await Promise.all([this.image(disc), this.image(ptr)]);
-            this._wheelSpr = { disc: d, ptr: p, R, px, py };
+            const ptr = (pass) => {
+                G.pass = pass;
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="${30 * S}" height="${36 * S}" viewBox="${px - 15} ${py - 2} 30 36">` +
+                    G.passStyle(pass) + G.defs() + G.wheelPointer('strip') + '</svg>';
+            };
+            const passes = ['albedo', 'height', 'mat'];
+            const dm = await Promise.all(passes.map(ps => this.image(discFull(ps))));
+            const pm = await Promise.all(passes.map(ps => this.image(ptr(ps))));
+            G.pass = 'baked';
+            if (!this.wheelGL(dm, pm)) throw new Error('нет WebGL');
+            this._wheelSpr = { R, px, py };
+            this.wheelShadow();
             this._wheel.shown = null;
         } catch (e) {
+            G.pass = 'baked';
             // видно в 🐞 на кнопке «Колесо»: на iPhone консоли нет
             this.wheelError = String((e && e.message) || e || 'картинка').slice(0, 40);
             console.warn('[Аппарат] колесо не собралось', e);
         }
     },
 
-    wheelDraw() {
-        const M = this._wheel, Sp = this._wheelSpr, B = this.wheelBox(), S = this.SCALE, G = GreedJunk, W = G.SLOTS.wheel, R = G.WHEEL.rEdge;
-        const c = this.wheelCv.getContext('2d');
-        c.setTransform(1, 0, 0, 1, 0, 0);
-        c.clearRect(0, 0, this.wheelCv.width, this.wheelCv.height);
+    wheelGL(dm, pm) {
+        const cv = this.wheelCv, gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true });
+        if (!gl) return false;
+        const vs = `attribute vec2 aPos;
+            uniform vec2 uC, uHalf, uPiv, uCanvas; uniform float uRot;
+            varying vec2 vUv;
+            void main() {
+                vUv = aPos * 0.5 + 0.5;
+                vec2 p = aPos * uHalf - uPiv;
+                float c = cos(uRot), s = sin(uRot);
+                vec2 w = uC + uPiv + vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+                gl_Position = vec4(w.x / uCanvas.x * 2.0 - 1.0, 1.0 - w.y / uCanvas.y * 2.0, 0.0, 1.0);
+            }`;
+        // Свет — как в шейдере корпуса (greed-junk-lit.js, program): рассеянный
+        // с тем же ambient, блик по материалу, тень шагами по карте высот.
+        const fs = `precision mediump float;
+            uniform sampler2D uA, uH, uM;
+            uniform vec2 uTex; uniform vec3 uL; uniform float uRelief, uPxPerH, uRotF;
+            varying vec2 vUv;
+            float hh(vec2 p) { return texture2D(uH, p).r; }
+            float hs(vec2 p) {
+                return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
+                        hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
+            }
+            void main() {
+                vec4 a = texture2D(uA, vUv);
+                if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
+                vec2 d = uTex * 4.0;
+                float h0 = hh(vUv), h0s = hs(vUv);
+                float hl = min(hs(vUv - vec2(d.x, 0.0)), h0s), hr = min(hs(vUv + vec2(d.x, 0.0)), h0s);
+                float hu = min(hs(vUv - vec2(0.0, d.y)), h0s), hd = min(hs(vUv + vec2(0.0, d.y)), h0s);
+                vec2 nt = vec2((hl - hr) * uRelief, (hu - hd) * uRelief);
+                // нормаль поворачивается вместе с колесом, свет — нет
+                float c = cos(uRotF), s = sin(uRotF);
+                vec3 n = normalize(vec3(c * nt.x - s * nt.y, s * nt.x + c * nt.y, 1.0));
+                float amb = 0.42;
+                float lit = (amb + (1.0 - amb) * max(dot(n, uL), 0.0)) / (amb + (1.0 - amb) * uL.z);
+                // тень: направление на свет — в координатах карты (обратный поворот)
+                vec2 lw = normalize(uL.xy);
+                vec2 dir = vec2(c * lw.x + s * lw.y, -s * lw.x + c * lw.y);
+                float rise = uL.z / length(uL.xy) / uPxPerH, occ = 0.0;
+                for (int i = 1; i <= 10; i++) {
+                    float t = float(i) * 2.0;
+                    float hq = hh(vUv + dir * uTex * t);
+                    occ = max(occ, clamp((hq - (h0 + t * rise) - 0.01) * 5.0, 0.0, 1.0));
+                }
+                float sh = 1.0 - 0.55 * occ;
+                vec4 m = texture2D(uM, vUv);
+                vec3 hv = normalize(uL + vec3(0.0, 0.0, 1.0));
+                float nh = max(dot(n, hv), 0.0);
+                float sp = m.r * (pow(nh, mix(6.0, 90.0, m.g)) + 0.35 * m.g * pow(nh, 3.0) - 0.35 * m.g * pow(uL.z * 0.5 + 0.5, 3.0) * 0.6);
+                vec3 spc = mix(vec3(1.0), a.rgb / max(a.a, 0.01) * 1.5, m.b);
+                gl_FragColor = vec4(a.rgb * lit * sh + spc * sp * sh * a.a, a.a);
+            }`;
+        const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+        const pr = gl.createProgram();
+        gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
+        // uRot у вершинного и фрагментного — разной точности (highp/mediump), с
+        // одним именем программа не линкуется; во фрагмент угол идёт как uRotF.
+        gl.linkProgram(pr);
+        if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+        gl.useProgram(pr);
+        const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const loc = gl.getAttribLocation(pr, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        const tex = (img, premul) => {
+            const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premul);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return t;
+        };
+        const set = (maps) => ({ t: maps.map((img, i) => tex(img, i === 0)), w: maps[0].width, h: maps[0].height });
+        const U = {};
+        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uA', 'uH', 'uM', 'uTex', 'uL', 'uRelief', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
+        gl.uniform1i(U.uA, 0); gl.uniform1i(U.uH, 1); gl.uniform1i(U.uM, 2);
+        gl.uniform1f(U.uRelief, 9.0 * GreedJunk.HMAX / 24);
+        gl.uniform1f(U.uPxPerH, GreedJunk.HMAX * this.SCALE);
+        gl.uniform2f(U.uCanvas, cv.width, cv.height);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        this._wgl = { gl, U, disc: set(dm), ptr: set(pm) };
+        return true;
+    },
+
+    // тень диска на щит: круг от света вниз-вправо, мягкий — один раз
+    wheelShadow() {
+        const B = this.wheelBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge;
+        const c = this.wheelShadowCv.getContext('2d');
         c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
-        // тень диска на щит — неподвижна
-        c.globalAlpha = 0.4; c.fillStyle = PALETTE.greedJunk.hole;
+        c.filter = 'blur(' + (2 * S) + 'px)';
+        c.globalAlpha = 0.45; c.fillStyle = PALETTE.greedJunk.hole;
         c.beginPath(); c.arc(W.cx + 3.5, W.cy + 5.5, R, 0, Math.PI * 2); c.fill();
-        c.globalAlpha = 1;
-        c.save();
-        c.translate(W.cx, W.cy); c.rotate(M.rot);
-        c.drawImage(Sp.disc, -Sp.R, -Sp.R, Sp.R * 2, Sp.R * 2);
-        c.restore();
-        // свет не крутится: блик сверху-слева, край снизу-справа в тени
-        if (!this._wheelLight) {
-            const hi = PALETTE.greedJunk.reel.jar.glassHi, lo = PALETTE.greedJunk.hole;
-            const rgba = (h, a) => 'rgba(' + [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(',') + ',' + a + ')';
-            const g = c.createRadialGradient(W.cx - R * 0.45, W.cy - R * 0.5, R * 0.1, W.cx, W.cy, R * 1.05);
-            g.addColorStop(0, rgba(hi, 0.16)); g.addColorStop(0.55, rgba(hi, 0)); g.addColorStop(1, rgba(lo, 0.25));
-            this._wheelLight = g;
-        }
-        c.fillStyle = this._wheelLight;
-        c.beginPath(); c.arc(W.cx, W.cy, R, 0, Math.PI * 2); c.fill();
-        // язычок: поворачивается вокруг болта на уголке
-        const pivX = W.cx, pivY = W.cy - R - 16 + 9.6;
-        c.save();
-        c.translate(pivX, pivY); c.rotate(M.flap); c.translate(-pivX, -pivY);
-        c.drawImage(Sp.ptr, Sp.px - 15, Sp.py - 2, 30, 36);
-        c.restore();
+        c.filter = 'none'; c.globalAlpha = 1;
+    },
+
+    wheelDraw() {
+        const M = this._wheel, Sp = this._wheelSpr, Q = this._wgl, B = this.wheelBox(), S = this.SCALE, G = GreedJunk, W = G.SLOTS.wheel, R = G.WHEEL.rEdge;
+        if (!Q) return;
+        const gl = Q.gl, U = Q.U, L = this.lightFor(M.lt || { x: 0, y: 0 }), n = Math.hypot(L[0], L[1], L[2]) || 1;
+        gl.viewport(0, 0, this.wheelCv.width, this.wheelCv.height);
+        gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform3f(U.uL, L[0] / n, L[1] / n, L[2] / n);
+        const draw = (set, cx, cy, hw, hh, rot, pivX, pivY) => {
+            set.t.forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
+            gl.uniform2f(U.uTex, 1 / set.w, 1 / set.h);
+            gl.uniform2f(U.uC, (cx - B.x) * S, (cy - B.y) * S);
+            gl.uniform2f(U.uHalf, hw * S, hh * S);
+            gl.uniform2f(U.uPiv, pivX * S, pivY * S);
+            // угол копится оборотами; mediump во фрагменте его не удержит — в 0..2π
+            const r = rot - Math.floor(rot / (2 * Math.PI)) * 2 * Math.PI;
+            gl.uniform1f(U.uRot, r); gl.uniform1f(U.uRotF, r);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        };
+        // диск: квадрат карты вокруг центра, поворот вокруг центра
+        draw(Q.disc, W.cx, W.cy, Sp.R, Sp.R, M.rot, 0, 0);
+        // резинка: квадрат 30×36 вокруг своей середины, поворот вокруг болта
+        const pcx = Sp.px, pcy = Sp.py - 2 + 18, pivX = W.cx, pivY = W.cy - R - 16 + 9.6;
+        draw(Q.ptr, pcx, pcy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
     }
 });
