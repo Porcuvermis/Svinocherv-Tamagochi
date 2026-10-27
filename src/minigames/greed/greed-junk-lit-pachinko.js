@@ -48,17 +48,86 @@ Object.assign(GreedJunkLit, {
         });
     },
 
-    // Кнопка: шарик ложится на пружину и тут же вылетает. Сила — разброс
-    // пружины (PACH_PHYS.v0). Пока шарик летит, кнопка не работает.
-    // onPach (шаг «исход») подберёт запуск под решённую лунку; пока — как
-    // пружина бросит.
+    // ---------- ИСХОД: ЗАПУСК ПОД РЕШЁННУЮ ЛУНКУ ----------
+    // Куда упадёт шарик, решает игра заранее (onPach → ключ лунки,
+    // инвариант 2), а летит он по честной физике. Физика детерминирована:
+    // скорость запуска v0 всегда ведёт в одну лунку. Значит, нужен v0 под
+    // ключ — его ищут прогоном физики без рисования.
+    //
+    // Прогон — ~2.5 мс на сервере, на телефоне ~10, а редкой лунке нужно в
+    // среднем ~80 прогонов: искать по нажатию — секунда ожидания. Поэтому
+    // запас: пока короб стоит без дела, в паузах кадров (POOL_MS за кадр)
+    // набирается по POOL запусков на каждый исход; нажатие берёт из запаса,
+    // на его место ищется новый. Запуск расходуется один раз — пути не
+    // повторяются. Запас хранится на телефоне (ключ — устройство поля:
+    // поменялись гвозди или лунки — запас пересчитывается).
+    POOL: 2, POOL_MS: 4,
+    pachKey(done) { return done === 'drain' ? 'blank' : String(done).replace(/^cup:/, ''); },
+    pachPoolId() {
+        const G = GreedJunk, K = G.PACH_PHYS;
+        return 'gj-pach-pool:' + G.pachNails().length + ':' + G.PACH_CUPS.map(c => c.key + c.x + c.y).join('') +
+            ':' + [K.g, K.r, K.eNail, K.eWall, K.lip, K.v0.join('-')].join(',');
+    },
+    pachPool() {
+        if (this._pool) return this._pool;
+        let p = {};
+        try { p = JSON.parse(localStorage.getItem(this.pachPoolId()) || '{}') || {}; } catch (e) { p = {}; }
+        return (this._pool = p);
+    },
+    pachPoolSave() {
+        try { localStorage.setItem(this.pachPoolId(), JSON.stringify(this._pool || {})); } catch (e) { /* нет хранилища */ }
+    },
+    // один прогон: случайный v0 → в запас, если там под его исход есть место
+    pachTry() {
+        const G = GreedJunk, K = G.PACH_PHYS, pool = this.pachPool();
+        const v0 = K.v0[0] + Math.random() * (K.v0[1] - K.v0[0]);
+        const b = G.pachBall(v0);
+        while (!b.done) G.pachStepBall(b);
+        const key = this.pachKey(b.done), list = pool[key] || (pool[key] = []);
+        if (list.length < this.POOL) { list.push(v0); this._poolDirty = true; }
+        return key;
+    },
+    pachKeys() { return Array.from(new Set(GreedJunk.PACH_CUPS.map(c => c.key).concat('blank'))); },
+    // Добор запаса в паузе кадра. Короб занят шариком — не добирает (кадры
+    // нужны полёту); всё набрано — стоит.
+    pachFill(now) {
+        const M = this._pach;
+        if (M.ball && !M.seek) return;
+        const pool = this.pachPool(), keys = this.pachKeys();
+        const want = M.seek || null;
+        if (!want && keys.every(k => (pool[k] || []).length >= this.POOL)) {
+            if (this._poolDirty) { this._poolDirty = false; this.pachPoolSave(); }
+            return;
+        }
+        const t0 = performance.now(), budget = want ? 10 : this.POOL_MS;
+        while (performance.now() - t0 < budget) {
+            this.pachTry();
+            if (want && (pool[want] || []).length) break;
+        }
+        if (want && (pool[want] || []).length) this.pachFire(pool[want].shift());
+    },
+
+    // Кнопка. Пока шарик летит — только щелчок. Игра решает исход (onPach);
+    // без игры (превью) — как пружина бросит.
     pachLaunch() {
         const M = this._pach, K = GreedJunk.PACH_PHYS;
         if (!M || !this._pgl) return;
         M.press = performance.now();
-        if (M.ball) { if (typeof Haptics !== 'undefined') Haptics.tick(); return; }
-        const v0 = this.onPach ? this.onPach() : K.v0[0] + Math.random() * (K.v0[1] - K.v0[0]);
-        if (v0 === false) { if (typeof Haptics !== 'undefined') Haptics.notify('error', true); return; }
+        if (M.ball || M.seek) { if (typeof Haptics !== 'undefined') Haptics.tick(); return; }
+        if (!this.onPach) { this.pachFire(K.v0[0] + Math.random() * (K.v0[1] - K.v0[0])); return; }
+        const key = this.onPach();
+        if (key === false || key == null) { if (typeof Haptics !== 'undefined') Haptics.notify('error', true); return; }
+        const list = this.pachPool()[key] || [];
+        if (list.length) { this.pachFire(list.shift()); this._poolDirty = true; return; }
+        // Запаса нет (первый раз): шарик лежит на пружине, пока ищется
+        // запуск — кусками по кадрам (pachFill)
+        M.seek = key;
+        M.ball = GreedJunk.pachBall(0);
+        M.ball.hold = true;
+    },
+    pachFire(v0) {
+        const M = this._pach;
+        M.seek = null;
         M.ball = GreedJunk.pachBall(v0);
         M.acc = 0; M.at = 0;
         if (typeof Haptics !== 'undefined') Haptics.impact('rigid', true);
@@ -91,7 +160,8 @@ Object.assign(GreedJunkLit, {
         M.at = now;
         const pressed = now - M.press < 140;
         if (!M.ball && !pressed && !M.dirty) return;
-        if (M.ball) {
+        if (M.ball && M.ball.hold) M.press = now;          // ищется запуск — кнопка вдавлена
+        if (M.ball && !M.ball.hold) {
             M.acc += dt;
             while (M.acc >= K.STEP && M.ball) {
                 M.acc -= K.STEP;
@@ -188,6 +258,7 @@ Object.assign(GreedJunkLit, {
         const M = this._pach;
         if (!M || !this._pgl) return;
         this.pachBallStep(now);
+        this.pachFill(now);
         const t = this._tilt || { x: 0, y: 0 };
         if (M.shown && M.lt && M.lt.x === t.x && M.lt.y === t.y) return;
         if (M.shown && now - (M.at || 0) < this.LIGHT_MS) return;

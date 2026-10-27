@@ -66,6 +66,8 @@ const GreedMinigame = {
             const drawn = L.mount(this.stageEl, {
                 onPull: () => this.onPull(),
                 onSpinDone: (keys) => this.onSpinDone(keys),
+                onPach: () => this.onPach(),
+                onPachDone: (where) => this.onPachDone(where),
                 canReady: () => this.isOpen() && !this.busy_
             });
             if (L.meterSet) L.meterSet(L.meterValue());
@@ -142,6 +144,49 @@ const GreedMinigame = {
         }, pourMs + (res.jackpot ? 1600 : 0)));
     }
 };
+
+// ================= ПАЧИНКО =================
+// Кнопка короба → onPach: шарик за монету (Backend.greedPlay('pachinko')
+// решает лунку по весам конфига, инвариант 2). Аппарат подбирает запуск,
+// который по честной физике приводит в эту лунку
+// (greed-junk-lit-pachinko.js). Одна игра за раз: пока крутятся барабаны
+// или летит шарик, вторая не начинается.
+Object.assign(GreedMinigame, {
+    onPach() {
+        if (this.busy_) return false;
+        const res = Backend.greedPlay('pachinko');
+        if (!res.ok) return false;          // нет денег или пачинко не куплено
+        this.busy_ = true;
+        this.pres = res;
+        this.pgen = this.spinGeneration;
+        const L = GreedJunkLit;
+        if (L.setReady) L.setReady(false);
+        if (L.coinIn) L.coinIn();
+        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+        return res.key;
+    },
+
+    // Шарик пойман. Монеты — в лоток; осколок и жетон — мигание ламп, их
+    // начисление покажет общий кошелёк (wallet-fx). Градусник — к новой шкале.
+    onPachDone() {
+        const res = this.pres, L = GreedJunkLit;
+        if (!res || this.pgen !== this.spinGeneration) { this.busy_ = false; return; }
+        this.pres = null;
+        const cur = res.currencies || {}, gold = cur.gold || 0;
+        const got = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0);
+        if (gold > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, gold));
+        if (gold > 0 || got) L.blink();
+        if (L.meterSet) L.meterSet(L.meterValue());
+        const pourMs = gold > 0 ? 700 + Math.min(this.POUR_MAX, gold) / L.TRAY.rate * 1000 : 0;
+        const gen = this.pgen;
+        this.timers.push(setTimeout(() => {
+            if (gen !== this.spinGeneration) return;
+            this.busy_ = false;
+            L.tryReady();
+            if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+        }, pourMs));
+    }
+});
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => GreedMinigame.init());

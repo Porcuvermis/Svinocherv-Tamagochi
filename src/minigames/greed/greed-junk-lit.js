@@ -752,11 +752,15 @@ const GreedJunkLit = {
     // один и тот же аппарат. opts.onPull — игра решает исход рывка (вернуть
     // false — крутки нет); без него превью крутит случайно. opts.onSpinDone
     // — барабаны встали (keys — символы под ниткой); opts.canReady — можно ли
-    // зажечь готовность. Возвращает обещание: аппарат нарисован.
+    // зажечь готовность. opts.onPach — игра решает исход шарика пачинко
+    // (ключ лунки или false), opts.onPachDone — шарик пойман.
+    // Возвращает обещание: аппарат нарисован.
     mount(container, opts) {
         opts = opts || {};
         this.onPull = opts.onPull || null;
         this.onSpinDone = opts.onSpinDone || null;
+        this.onPach = opts.onPach || null;
+        this.onPachDone = opts.onPachDone || null;
         this.canReady = opts.canReady || null;
         if (this.wrapEl) {
             container.appendChild(this.wrapEl);
