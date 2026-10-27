@@ -162,7 +162,9 @@ Object.assign(GreedJunkLit, {
             }
         });
         // при встряске — ещё и россыпь из ниоткуда по всему столбику
-        if (M.fizz > 0.2 && Math.random() < M.fizz * 0.5) {
+        // шанс — на 16 мс, а не на вызов: шаг пузырей стал 33 мс, россыпь не
+        // должна от этого редеть
+        if (M.fizz > 0.2 && Math.random() < M.fizz * 0.5 * dt / 16) {
             const yy = top + 3 + Math.random() * (R.by - top);
             const half = yy > R.y0 ? Math.sqrt(Math.max(0, R.br * R.br - (yy - R.by) * (yy - R.by))) - 1.2 : ri - 0.6;
             M.bubbles.push({ x: x + (Math.random() * 2 - 1) * half, x0: 0, y: yy, v: 0.01, r: 0.3 + Math.random() * 0.3, ph: Math.random() * 6.3, wob: 0.3 });
@@ -204,6 +206,7 @@ Object.assign(GreedJunkLit, {
         return (this[k] = cv);
     },
 
+    BUBBLE_MS: 33,
     meterStep(now) {
         const M = this._meter, P = this.METER_SPRING, G = GreedJunk, R = G.METER;
         if (!M) return;
@@ -219,8 +222,18 @@ Object.assign(GreedJunkLit, {
         // жидкость — только когда сдвинулась заметно глазу
         const key = top.toFixed(1) + ',' + M.w.toFixed(2);
         if (key !== M.shown) { M.shown = key; this.meterDraw(top, M.w); }
-        // пузырьки — каждый кадр, готовыми картинками; под хомутами не видны
-        this.bubbleStep(M, now, dt, top);
+        // Пузырьки — BUBBLE_MS (30 к/с), готовыми картинками; под хомутами не
+        // видны. Было — каждый кадр экрана, на iPhone 120 раз в секунду: сам
+        // холст крошечный, но из-за него экран пересобирался каждый кадр, и
+        // видеокарта не отдыхала ни мига. Пузырю в пиве 30 кадров хватает.
+        const bdt = now - (M.bubAt || 0);
+        if (bdt < this.BUBBLE_MS) return;
+        M.bubAt = now;
+        this.bubbleStep(M, now, Math.min(80, bdt), top);
+        // пусто и было пусто — холст не трогаем вовсе
+        const empty = !M.bubbles.length && !M.foam.length;
+        if (empty && M.bubEmpty) return;
+        M.bubEmpty = empty;
         const ctx = this.meterBub, B = this.METER_BOX, bs = this.bubbleSprite(false), fs = this.bubbleSprite(true);
         ctx.clearRect(B.x, B.y, B.w, B.h);
         const hid = (y) => R.clamps.some(c => Math.abs(c - y) < 3.6);
