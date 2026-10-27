@@ -252,132 +252,12 @@ Object.assign(GreedJunkLit, {
         }
     },
 
+    // свет колеса — общий прибор (greed-junk-lit-device.js)
     wheelGL(dm, pm, bm) {
-        const cv = this.wheelCv, gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true });
-        if (!gl) return false;
-        const vs = `attribute vec2 aPos;
-            uniform vec2 uC, uHalf, uPiv, uCanvas; uniform float uRot;
-            varying vec2 vUv;
-            void main() {
-                vUv = aPos * 0.5 + 0.5;
-                vec2 p = aPos * uHalf - uPiv;
-                float c = cos(uRot), s = sin(uRot);
-                vec2 w = uC + uPiv + vec2(c * p.x - s * p.y, s * p.x + c * p.y);
-                gl_Position = vec4(w.x / uCanvas.x * 2.0 - 1.0, 1.0 - w.y / uCanvas.y * 2.0, 0.0, 1.0);
-            }`;
-        // Свет — как в шейдере корпуса (greed-junk-lit.js, program): рассеянный
-        // с тем же ambient, блик по материалу, тень шагами по карте высот.
-        const fs = `precision mediump float;
-            uniform sampler2D uA, uH, uM, uN;
-            uniform vec2 uTex; uniform vec3 uL; uniform float uPxPerH, uRotF, uShade;
-            varying vec2 vUv;
-            float hh(vec2 p) { return texture2D(uH, p).r; }
-            void main() {
-                // режим тени: силуэт резинки, размытый пятью отсчётами, —
-                // только прозрачность (смешение затемняет диск под ним)
-                if (uShade > 0.0) {
-                    vec2 q = uTex * 4.5;
-                    float s = (texture2D(uA, vUv).a * 2.0 + texture2D(uA, vUv + vec2(q.x, 0.0)).a + texture2D(uA, vUv - vec2(q.x, 0.0)).a +
-                               texture2D(uA, vUv + vec2(0.0, q.y)).a + texture2D(uA, vUv - vec2(0.0, q.y)).a) / 6.0;
-                    gl_FragColor = vec4(0.0, 0.0, 0.0, s * uShade);
-                    return;
-                }
-                vec4 a = texture2D(uA, vUv);
-                if (a.a < 0.004) { gl_FragColor = vec4(0.0); return; }
-                // Нормаль и уклон в координатах карты — готовые, из uN (тот же
-                // счёт, что у корпуса: GreedJunkLit.normProgram, один раз при
-                // сборке). Было — 30 чтений карты высот на точку каждого кадра.
-                vec4 nq = texture2D(uN, vUv);
-                vec2 nm = nq.xy * 2.0 - 1.0;
-                float h0 = hh(vUv);
-                // нормаль поворачивается вместе с колесом, свет — нет
-                float c = cos(uRotF), s = sin(uRotF);
-                vec3 n = vec3(c * nm.x - s * nm.y, s * nm.x + c * nm.y, sqrt(max(0.0, 1.0 - dot(nm, nm))));
-                float amb = 0.42;
-                float lit = (amb + (1.0 - amb) * max(dot(n, uL), 0.0)) / (amb + (1.0 - amb) * uL.z);
-                // тень: направление на свет — в координатах карты (обратный поворот)
-                vec2 lw = normalize(uL.xy);
-                vec2 dir = vec2(c * lw.x + s * lw.y, -s * lw.x + c * lw.y);
-                float rise = uL.z / length(uL.xy) / uPxPerH, occ = 0.0;
-                // Как у корпуса: уклон своей плоскости вдоль луча (купол
-                // шляпки не штрихует сам себя), шаг 3 текселя с дрожью начала.
-                // Охват 16×3 = 48 текселей = 16 единиц: тень гвоздя высотой
-                // 7 единиц при свете сверху-сбоку ложится целиком. Было 10×2 —
-                // 7 единиц, и тень обрезалась.
-                vec2 gq = (nq.zw - 0.5) / 4.0;
-                float plane = max(rise, dot(gq, dir));
-                float jit = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
-                for (int i = 1; i <= 16; i++) {
-                    float t = (float(i) - jit) * 3.0;
-                    float hq = hh(vUv + dir * uTex * t);
-                    occ = max(occ, clamp((hq - (h0 + t * plane) - 0.01) * 5.0, 0.0, 1.0));
-                }
-                float sh = 1.0 - 0.55 * occ;
-                vec4 m = texture2D(uM, vUv);
-                vec3 hv = normalize(uL + vec3(0.0, 0.0, 1.0));
-                float nh = max(dot(n, hv), 0.0);
-                float sp = m.r * (pow(nh, mix(6.0, 90.0, m.g)) + 0.35 * m.g * pow(nh, 3.0) - 0.35 * m.g * pow(uL.z * 0.5 + 0.5, 3.0) * 0.6);
-                vec3 spc = mix(vec3(1.0), a.rgb / max(a.a, 0.01) * 1.5, m.b);
-                gl_FragColor = vec4(a.rgb * lit * sh + spc * sp * sh * a.a, a.a);
-            }`;
-        const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
-        const pr = gl.createProgram();
-        gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
-        gl.bindAttribLocation(pr, 0, 'aPos');      // как у программы нормалей: буфер один
-        // uRot у вершинного и фрагментного — разной точности (highp/mediump), с
-        // одним именем программа не линкуется; во фрагмент угол идёт как uRotF.
-        gl.linkProgram(pr);
-        if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
-        gl.useProgram(pr);
-        const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-        const loc = gl.getAttribLocation(pr, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-        const tex = (img, premul) => {
-            const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premul);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            return t;
-        };
-        // Нормали карты высот (t[1]) — один раз, в четвёртую текстуру
-        // комплекта: программа корпуса (normProgram) в кадровый буфер.
-        // Смешение ещё выключено — оно испортило бы b,a (уклон).
-        const np = this.normProgram(gl), fb = gl.createFramebuffer();
-        const normals = (st) => {
-            const nt = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, nt);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, st.w, st.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.bindTexture(gl.TEXTURE_2D, null);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, nt, 0);
-            gl.viewport(0, 0, st.w, st.h);
-            gl.useProgram(np);
-            gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, st.t[1]);
-            gl.uniform1i(gl.getUniformLocation(np, 'uH'), 1);
-            gl.uniform2f(gl.getUniformLocation(np, 'uTex'), 1 / st.w, 1 / st.h);
-            gl.uniform1f(gl.getUniformLocation(np, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            st.t.push(nt);
-            return st;
-        };
-        const set = (maps) => ({ t: maps.map((img, i) => tex(img, i === 0)), w: maps[0].width, h: maps[0].height });
-        const disc = normals(set(dm)), ptr = normals(set(pm));
-        gl.useProgram(pr);
-        const U = {};
-        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uShade', 'uA', 'uH', 'uM', 'uN', 'uTex', 'uL', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
-        gl.uniform1i(U.uA, 0); gl.uniform1i(U.uH, 1); gl.uniform1i(U.uM, 2); gl.uniform1i(U.uN, 3);
-        gl.uniform1f(U.uPxPerH, GreedJunk.HMAX * this.SCALE);
-        gl.uniform2f(U.uCanvas, cv.width, cv.height);
-        gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        this._wgl = { gl, U, disc, ptr, brk: set([bm]) };
+        const Q = this.deviceGL(this.wheelCv);
+        if (!Q) return false;
+        Object.assign(Q, { disc: this.deviceSet(Q, dm), ptr: this.deviceSet(Q, pm), brk: this.deviceSet(Q, [bm]) });
+        this._wgl = Q;
         return true;
     },
 
@@ -418,23 +298,11 @@ Object.assign(GreedJunkLit, {
     WHEEL_FLAP_UP: 11,
 
     wheelDraw() {
-        const M = this._wheel, Sp = this._wheelSpr, Q = this._wgl, B = this.wheelBox(), S = this.SCALE, G = GreedJunk, W = G.SLOTS.wheel, R = G.WHEEL.rEdge;
+        const M = this._wheel, Sp = this._wheelSpr, Q = this._wgl, B = this.wheelBox(), G = GreedJunk, W = G.SLOTS.wheel, R = G.WHEEL.rEdge;
         if (!Q) return;
-        const gl = Q.gl, U = Q.U, L = this.lightFor(M.lt || { x: 0, y: 0 }), n = Math.hypot(L[0], L[1], L[2]) || 1;
-        gl.viewport(0, 0, this.wheelCv.width, this.wheelCv.height);
-        gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.uniform3f(U.uL, L[0] / n, L[1] / n, L[2] / n);
-        const draw = (set, cx, cy, hw, hh, rot, pivX, pivY) => {
-            set.t.forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
-            gl.uniform2f(U.uTex, 1 / set.w, 1 / set.h);
-            gl.uniform2f(U.uC, (cx - B.x) * S, (cy - B.y) * S);
-            gl.uniform2f(U.uHalf, hw * S, hh * S);
-            gl.uniform2f(U.uPiv, pivX * S, pivY * S);
-            // угол копится оборотами; mediump во фрагменте его не удержит — в 0..2π
-            const r = rot - Math.floor(rot / (2 * Math.PI)) * 2 * Math.PI;
-            gl.uniform1f(U.uRot, r); gl.uniform1f(U.uRotF, r);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        };
+        const L = this.lightFor(M.lt || { x: 0, y: 0 }), n = Math.hypot(L[0], L[1], L[2]) || 1;
+        this.deviceBegin(Q, L);
+        const draw = (set, cx, cy, hw, hh, rot, pivX, pivY) => this.deviceDraw(Q, B, set, cx, cy, hw, hh, rot, pivX, pivY);
         // диск: квадрат карты вокруг центра, поворот вокруг центра
         draw(Q.disc, W.cx, W.cy, Sp.R, Sp.R, M.rot, 0, 0);
         // резинка: квадрат 30×36 вокруг своей середины, поворот вокруг болта
@@ -453,12 +321,10 @@ Object.assign(GreedJunkLit, {
         let sx = -ux / uz * up, sy = -uy / uz * up;
         const sd = Math.hypot(sx, sy);
         if (sd > 16) { sx *= 16 / sd; sy *= 16 / sd; }
-        gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
-        gl.uniform1f(U.uShade, 0.5);
+        this.deviceShade(Q, 0.5);
         draw(Q.brk, pcx + sx, pcy + sy, 15, 18, 0, 0, 0);
         draw(Q.ptr, pcx + sx, pcy + sy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
-        gl.uniform1f(U.uShade, 0);
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        this.deviceShade(Q, 0);
         draw(Q.ptr, pcx, pcy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
     }
 });
