@@ -1,6 +1,7 @@
 // ================= АППАРАТ АЛЧНОСТИ: КОЛЕСО ФОРТУНЫ =================
 // Продолжение GreedJunk. Колесо — покупка (Backend.greedLevel('wheel')),
-// садится на ступицу с тормозным диском в верхнем ящике (wheelMount).
+// садится на ступицу с тормозным диском в верхнем ящике (wheelMount) и
+// стоит на переднем плане: крупное, прячет под собой левую половину ящика.
 // Гаражное, как весь аппарат: круглая фанерная столешница, крашенная
 // кистью в красный и кремовый (референс игрока), надета на колёсные
 // шпильки ступицы и затянута пятью гайками. По ободу на границах секторов
@@ -14,7 +15,7 @@
 Object.assign(GreedJunk, {
     WHEEL_SECTORS: ['blank', 'gold1', 'blank', 'seed', 'blank', 'gold1', 'meat', 'blank',
         'gold3', 'blank', 'gold1', 'seed', 'blank', 'shard', 'gold1', 'blank'],
-    WHEEL: { rFace: 82, rEdge: 86, rPeg: 79.5, rIcon: 58, hole: 7.5 },
+    WHEEL: { rFace: 100, rEdge: 104, rPeg: 97, rIcon: 70, hole: 7.5, icon: 1.6 },
     // колесо на аппарате: куплено — или включено в отладке (🐞 → «Колесо»)
     wheelShown() {
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('wheel') > 0) return true;
@@ -31,7 +32,7 @@ Object.assign(GreedJunk, {
         out += `<circle cx="3.5" cy="5.5" r="${G.rEdge}" class="fx" fill="${J.hole}" opacity="0.45"/>`;
         // торец фанеры: слоистый край
         let edge = `<circle r="${G.rEdge}" fill="${W.plyEdge}" stroke="${ink}" stroke-width="${STROKE.contour}"/>`;
-        [84.6, 83.4].forEach(r => { edge += `<circle r="${r}" fill="none" stroke="${W.ply}" stroke-width="0.5" opacity="0.8"/>`; });
+        [102.6, 101.4].forEach(r => { edge += `<circle r="${r}" fill="none" stroke="${W.ply}" stroke-width="0.5" opacity="0.8"/>`; });
         // сектора: краска кистью — у каждого чуть свой тон, мазки вдоль радиуса
         let sec = '';
         for (let i = 0; i < n; i++) {
@@ -40,8 +41,8 @@ Object.assign(GreedJunk, {
             sec += `<path d="M0 0 L${f(Math.cos(a0) * r)} ${f(Math.sin(a0) * r)} A${r} ${r} 0 0 1 ${f(Math.cos(a1) * r)} ${f(Math.sin(a1) * r)} Z" fill="${col}"/>`;
             // мазки
             let br = '';
-            for (let k = 0; k < 9; k++) {
-                const a = a0 + (a1 - a0) * (0.08 + rnd() * 0.84), r0 = 14 + rnd() * 30, r1 = r0 + 20 + rnd() * 30;
+            for (let k = 0; k < 11; k++) {
+                const a = a0 + (a1 - a0) * (0.08 + rnd() * 0.84), r0 = 18 + rnd() * 40, r1 = r0 + 24 + rnd() * 36;
                 br += `M${f(Math.cos(a) * r0)} ${f(Math.sin(a) * r0)} L${f(Math.cos(a) * Math.min(r1, r - 1))} ${f(Math.sin(a) * Math.min(r1, r - 1))} `;
             }
             sec += `<path d="${br}" stroke="${lo}" stroke-width="0.7" opacity="0.35" stroke-linecap="round"/>`;
@@ -51,7 +52,7 @@ Object.assign(GreedJunk, {
         }
         // сколы краски у обода и пара царапин: под краской фанера
         let chip = '';
-        for (let k = 0; k < 14; k++) {
+        for (let k = 0; k < 18; k++) {
             const a = rnd() * Math.PI * 2, r = G.rFace - 2 - rnd() * 18, s = 1 + rnd() * 2.6;
             let d = '';
             for (let q = 0; q < 6; q++) {
@@ -61,7 +62,7 @@ Object.assign(GreedJunk, {
             chip += `<path d="${d}Z" fill="${W.ply}" stroke="${W.plyLo}" stroke-width="0.3"/>`;
         }
         for (let k = 0; k < 6; k++) {
-            const a = rnd() * Math.PI * 2, r = 20 + rnd() * 55, L = 4 + rnd() * 9, t = a + 1.2 + rnd();
+            const a = rnd() * Math.PI * 2, r = 22 + rnd() * 70, L = 5 + rnd() * 11, t = a + 1.2 + rnd();
             chip += `<path d="M${f(Math.cos(a) * r)} ${f(Math.sin(a) * r)} l${f(Math.cos(t) * L)} ${f(Math.sin(t) * L)}" stroke="${W.ply}" stroke-width="0.4" opacity="0.8"/>`;
         }
         // значки — по середине сектора, «верхом» к ободу
@@ -69,20 +70,20 @@ Object.assign(GreedJunk, {
         this.WHEEL_SECTORS.forEach((key, i) => {
             const a = i / n * Math.PI * 2 - Math.PI / 2, x = Math.cos(a) * G.rIcon, y = Math.sin(a) * G.rIcon;
             const svg = this.wheelIcon(key, i % 2 === 0);
-            if (svg) icons += `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(a * 180 / Math.PI + 90)}) scale(1.3)">${svg}</g>`;
+            if (svg) icons += `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(a * 180 / Math.PI + 90)}) scale(${G.icon})">${svg}</g>`;
         });
         // гвозди на границах секторов: шляпка и тень вбок
         let pegs = '';
         for (let i = 0; i < n; i++) {
             const a = (i - 0.5) / n * Math.PI * 2 - Math.PI / 2, x = Math.cos(a) * G.rPeg, y = Math.sin(a) * G.rPeg;
-            pegs += `<circle cx="${f(x + 1)}" cy="${f(y + 1.4)}" r="1.9" class="fx" fill="${J.hole}" opacity="0.5"/>` +
-                `<circle cx="${f(x)}" cy="${f(y)}" r="1.9" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            pegs += `<circle cx="${f(x + 1)}" cy="${f(y + 1.4)}" r="2.2" class="fx" fill="${J.hole}" opacity="0.5"/>` +
+                `<circle cx="${f(x)}" cy="${f(y)}" r="2.2" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
                 `<circle cx="${f(x - 0.5)}" cy="${f(y - 0.5)}" r="0.6" class="hl" fill="${J.tin[100]}"/>` +
-                this.domeH(x, y, 1.9, 1.6);
+                this.domeH(x, y, 2.2, 1.8);
         }
         // середина: дыра в фанере под ступицу, в ней колпак ступицы; пять
         // колёсных гаек на шпильках с шайбами
-        let hub = `<circle r="17" fill="${W.ply}" stroke="${W.plyLo}" stroke-width="0.5"/>` +
+        let hub = `<circle r="19" fill="${W.ply}" stroke="${W.plyLo}" stroke-width="0.5"/>` +
             `<circle r="${G.hole}" fill="${J.tin[700]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             `<circle r="3.4" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/><circle r="1.3" fill="${J.tin[900]}"/>`;
         for (let i = 0; i < 5; i++) {
@@ -126,7 +127,7 @@ Object.assign(GreedJunk, {
     wheelDisc() {
         const S = this.SLOTS.wheel, F = this.wheelFace();
         const g = (h, mat, inner) => this.T(h, mat, `<g transform="translate(${S.cx} ${S.cy})">${inner}</g>`);
-        return g(15, 'raw', F.edge) + g(15.6, 'paint', F.sec + F.chip + F.icons) + g(17, 'steel', F.pegs) + g(17.5, 'steel', F.hub) + this.wheelPointer();
+        return g(17, 'raw', F.edge) + g(17.6, 'paint', F.sec + F.chip + F.icons) + g(19, 'steel', F.pegs) + g(19.5, 'steel', F.hub) + this.wheelPointer();
     },
 
     // Язычок: резиновая полоса на стальном уголке, прикрученном к перекладине
@@ -142,6 +143,6 @@ Object.assign(GreedJunk, {
             `<path d="${strip}" fill="${W.rubber}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<path d="M${f(x - 1.4)} ${yTop + 9} L${f(x - 0.9)} ${yTip - 1}" class="hl" stroke="${J.tin[500]}" stroke-width="0.6"/>` +
             this.bolt(x, yTop + 9.6, 1.1);
-        return this.T(18, 'steel', br) + this.T(18.5, 'rubber', rub);
+        return this.T(20, 'steel', br) + this.T(20.5, 'rubber', rub);
     }
 });
