@@ -980,6 +980,9 @@ const PALETTE = {
         reel: {
             paper: '#eadcb8', paperLo: '#d2bf93', speck: '#b9a477',
             // тряпка с таблицей выплат: светлый лён, грязь, маркер
+            // колесо фортуны: красный и кремовый сектора, значки кистью
+            wheel: { red: '#bf3328', redLo: '#8e2219', cream: '#efe2c0', creamLo: '#cdbb92', ply: '#d9b98a', plyLo: '#a7845a', plyEdge: '#7d5b37',
+                     meat: '#8a3b2a', bone: '#f2ead6', potato: '#b38449', potatoLo: '#7d5a2e', shard: '#3fa38a', shardLo: '#1f6656', rubber: '#2d2930' },
             // банка-кошелёк: стекло из-под солений, малярный скотч с числом
             jar: { glass: '#dfe8e2', glassLo: '#9fb3aa', glassHi: '#ffffff', tape: '#e6d6a8', tapeLo: '#c4b07a', tapeEdge: '#b39c63' },
             // градусник насыщения греха: янтарная жидкость, «жидкое золото»

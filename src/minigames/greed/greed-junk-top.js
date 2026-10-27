@@ -56,6 +56,10 @@ Object.assign(GreedJunk, {
         // штуцеры гофр — ПОСЛЕ всех деталей: конец гофры уходит под гайку
         // штуцера, а штуцер сидит на своей детали поверх неё
         out += ['psuA', 'psuB', 'hub', 'brick'].map(k => this.port(this.PORTS[k])).join('');
+        // колесо фортуны — на ступице поверх всего левого крепления и штуцеров
+        // гофр, но за стойкой рамки (оно внутри ящика), когда куплено
+        // (greed-junk-wheel.js)
+        if (this.wheelShown && this.wheelShown()) out += this.wheelDisc();
         out += this.topFrame();
         return out;
     },

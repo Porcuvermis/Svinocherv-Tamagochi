@@ -61,6 +61,7 @@ const DebugState = {
             <button data-act="gear">Жетоны</button>
             <button data-act="greed-machine">Аппарат</button>
             <button data-act="fps-badge">Кадры</button>
+            <button data-act="greed-wheel">Колесо</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -344,6 +345,13 @@ const DebugState = {
         // Корпус аппарата алчности со светом от наклона — проверить на
         // телефоне, пока он не встроен в игру (greed-junk-lit.js).
         if (act === 'fps-badge') { this.toggleFpsBadge(); return; }
+        // Колесо фортуны на аппарате без покупки — посмотреть рисунок. Аппарат
+        // собирается один раз, поэтому смена — с перезагрузкой страницы.
+        if (act === 'greed-wheel') {
+            try { localStorage.setItem('gj-wheel', localStorage.getItem('gj-wheel') === '1' ? '0' : '1'); } catch (e) { /* нет хранилища */ }
+            location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
+            return;
+        }
         if (act === 'greed-machine') {
             if (typeof GreedJunkLit !== 'undefined') GreedJunkLit.preview();
             return;
