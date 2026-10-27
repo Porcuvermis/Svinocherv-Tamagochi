@@ -4,22 +4,6 @@
 Object.assign(GreedJunk, {
 
     // ---------- КРЕПЁЖ ----------
-    // Розетка питания «мама»: жестяная коробка, в ней чёрная колодка со
-    // срезанными углами и три гнезда. Стоит в странных местах нарочно —
-    // её ставили туда, где было удобно сверлить, а не красиво.
-    socket(x, y, rot) {
-        const J = PALETTE.greedJunk, f = this.f;
-        const w = 26, h = 22;
-        return `<g transform="rotate(${rot || 0} ${f(x + w / 2)} ${f(y + h / 2)})">` +
-            this.tin(x, y, w, h, Math.round(x * 3 + y), { bolts: false, scratches: 0, tilt: 0, z: this.Z.box }) +
-            `<path d="M${f(x + 7)} ${f(y + 4)} h12 l3 3 v8 l-3 3 h-12 l-3 -3 v-8 z" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<rect x="${f(x + 8.5)}" y="${f(y + 9)}" width="2" height="4" fill="${J.tin[300]}"/>` +
-            `<rect x="${f(x + 15.5)}" y="${f(y + 9)}" width="2" height="4" fill="${J.tin[300]}"/>` +
-            `<rect x="${f(x + 12)}" y="${f(y + 6)}" width="2" height="2.5" fill="${J.tin[300]}"/>` +
-            this.bolt(x + 2.8, y + h / 2, 1.6) + this.bolt(x + w - 2.8, y + h / 2, 1.6) +
-            `</g>`;
-    },
-
     // Бытовая накладная розетка: пожелтевшая пластмасса, круглый корпус,
     // в углублении два гнезда и металлические усики заземления. Повёрнута
     // как прикрутили — под углом: ровно стоящие две дырки с винтом между
@@ -133,17 +117,6 @@ Object.assign(GreedJunk, {
             `<rect x="4.5" y="-3.2" width="2.5" height="6.4" rx="0.8" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
             this.rodH('M-1 0 L7 0', 8.8, 1.6);
         return this.T(4, 'steel', `<g transform="translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})">${g}</g>`);
-    },
-
-    // Шпилька с резьбой, торчащая из фланца: на неё наденут крепление.
-    stud(x, y) {
-        const J = PALETTE.greedJunk, f = this.f;
-        const z = this.Z.shelf;
-        return `<ellipse cx="${f(x + z * 0.35)}" cy="${f(y + z * 0.55)}" rx="4" ry="5" class="fx" fill="${J.hole}" opacity="0.4" ` +
-            `transform="rotate(-33 ${f(x + z * 0.35)} ${f(y + z * 0.55)})"/>` +
-            `<circle cx="${f(x)}" cy="${f(y)}" r="3.6" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="${f(x)}" cy="${f(y)}" r="2" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>` +
-            `<circle cx="${f(x - 1)}" cy="${f(y - 1)}" r="0.9" fill="${J.tin[100]}"/>`;
     },
 
     // ---------- НАПРАВЛЯЮЩАЯ ПАЧИНКО ----------
@@ -449,9 +422,12 @@ Object.assign(GreedJunk, {
         const rnd = this.rng(977);
         const line = (d, op) => `<path d="${d}" fill="none" stroke="${J.pencil}" stroke-width="${STROKE.structure}" ` +
             `stroke-linecap="round" opacity="${op}"/>`;
-        let out = '';
-        // круг колеса: дуги с разрывами, два прохода
-        const w = S.wheel;
+        let out = '', ring = '';
+        // круг колеса: дуги с разрывами, два прохода. Колесо стоит — круг
+        // и засечки не рисуются (под колесом и щитом их не видно, а засечка
+        // справа торчала из-за щита); случайные числа тянутся всё равно,
+        // чтобы разметка пачинко не сдвигалась.
+        const w = S.wheel, wheel = this.wheelShown && this.wheelShown();
         [[0, 0.9], [1, 0.55]].forEach(([k, op]) => {
             const r = w.r + k * 1.2, dx = k * 0.8, dy = -k * 0.6;
             let a0 = 0.1 + rnd() * 0.2;
@@ -459,7 +435,7 @@ Object.assign(GreedJunk, {
                 const a1 = Math.min(Math.PI * 2, a0 + 0.9 + rnd() * 0.8);
                 const p0 = [w.cx + dx + Math.cos(a0) * r, w.cy + dy + Math.sin(a0) * r];
                 const p1 = [w.cx + dx + Math.cos(a1) * r, w.cy + dy + Math.sin(a1) * r];
-                out += line(`M${f(p0[0])} ${f(p0[1])} A${f(r)} ${f(r)} 0 0 1 ${f(p1[0])} ${f(p1[1])}`, op);
+                ring += line(`M${f(p0[0])} ${f(p0[1])} A${f(r)} ${f(r)} 0 0 1 ${f(p1[0])} ${f(p1[1])}`, op);
                 a0 = a1 + 0.05 + rnd() * 0.08;
             }
         });
@@ -468,8 +444,9 @@ Object.assign(GreedJunk, {
             const a = i * Math.PI / 2;
             const p0 = [w.cx + Math.cos(a) * (w.r - 5), w.cy + Math.sin(a) * (w.r - 5)];
             const p1 = [w.cx + Math.cos(a) * (w.r + 5), w.cy + Math.sin(a) * (w.r + 5)];
-            out += line(`M${f(p0[0])} ${f(p0[1])} L${f(p1[0])} ${f(p1[1])}`, 0.75);
+            ring += line(`M${f(p0[0])} ${f(p0[1])} L${f(p1[0])} ${f(p1[1])}`, 0.75);
         });
+        if (!wheel) out += ring;
         // прямоугольник короба: стороны с перехлёстом в углах
         const p = S.pachinko, o = 5;
         // габарит короба — снаружи рельсов: между рельсами линии бы под ними и пропали

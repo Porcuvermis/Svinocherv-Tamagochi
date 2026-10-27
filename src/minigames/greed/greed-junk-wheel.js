@@ -31,9 +31,6 @@ Object.assign(GreedJunk, {
     wheelFace() {
         const J = PALETTE.greedJunk, W = J.reel.wheel, f = this.f, ink = PALETTE.ink, G = this.WHEEL;
         const n = this.WHEEL_SECTORS.length, rnd = this.rng(808);
-        let out = '';
-        // тень диска на заднюю стенку и крепления
-        out += `<circle cx="3.5" cy="5.5" r="${G.rEdge}" class="fx" fill="${J.hole}" opacity="0.45"/>`;
         // торец фанеры: слоистый край
         let edge = `<circle r="${G.rEdge}" fill="${W.plyEdge}" stroke="${ink}" stroke-width="${STROKE.contour}"/>`;
         [G.rEdge - 1.4, G.rEdge - 2.6].forEach(r => { edge += `<circle r="${r}" fill="none" stroke="${W.ply}" stroke-width="0.5" opacity="0.8"/>`; });
@@ -150,8 +147,9 @@ Object.assign(GreedJunk, {
         return this.T(15, 'pine', out);
     },
 
-    // Колесо на месте, неподвижно — в корпусе со светом шейдера (пункт 1:
-    // рисунок; крутиться будет картинкой своим холстом).
+    // Колесо неподвижно, целиком в корпусе — запасной путь, когда своего
+    // холста у колеса нет (wheelApart выключен: нет WebGL или превью без
+    // GreedJunkLit). На свету диск крутится сам (greed-junk-lit-wheel.js).
     wheelDisc() {
         const S = this.SLOTS.wheel, F = this.wheelFace();
         const g = (h, mat, inner) => this.T(h, mat, `<g transform="translate(${S.cx} ${S.cy})">${inner}</g>`);

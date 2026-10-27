@@ -303,17 +303,6 @@ Object.assign(GreedJunk, {
             this.bolt(P.x - w / 2 + 3.6, y + h / 2, 1.3) + this.bolt(P.x + w / 2 - 3.6, y + h / 2, 1.3));
     },
 
-    // Тень на барабанах от верхней и левой кромки окна. Отдельным слоем:
-    // в игре барабаны крутятся ПОВЕРХ корпуса, и тень должна лечь поверх
-    // них, иначе окно снова станет плоским.
-    reelShadeSvg() {
-        const J = PALETTE.greedJunk;
-        return this.SLOTS.reels.map(r =>
-            `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="fx" fill="url(#gj-reel-shade)"/>` +
-            `<rect x="${r.x}" y="${r.y}" width="8" height="${r.h}" rx="4" class="fx" fill="${J.hole}" opacity="0.25"/>`
-        ).join('');
-    },
-
     // Тень от верхнего щита на табло.
     topShade() {
         return this.shade(54, 290, 252, 14);

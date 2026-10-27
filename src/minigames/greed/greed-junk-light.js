@@ -141,7 +141,6 @@ Object.assign(GreedJunk, {
         bolt: (x, y, r) => [x, y, r || 2.6, null],
         nail: (x, y) => [x, y, 1.6, null],
         ironNail: (x, y) => [x, y, 1.4, null],
-        stud: (x, y) => [x, y, 3.6, 3],
         lagBolt: (x, y) => [x, y, 3.6, 2]
     };
     Object.keys(heads).forEach(k => {

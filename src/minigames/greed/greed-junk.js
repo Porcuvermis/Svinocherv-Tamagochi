@@ -124,9 +124,6 @@ const GreedJunk = {
             // рукоять кулисы: чёрный бакелит, свет сверху-слева
             `<radialGradient id="gj-knob" cx="0.35" cy="0.3" r="0.8">` +
             `<stop offset="0" stop-color="${J.tin[700]}"/><stop offset="1" stop-color="${J.hole}"/></radialGradient>` +
-            `<linearGradient id="gj-reel-shade" x1="0" y1="0" x2="0" y2="1">` +
-            `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.75"/><stop offset="0.3" stop-color="${J.hole}" stop-opacity="0"/>` +
-            `<stop offset="0.85" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.35"/></linearGradient>` +
             `<linearGradient id="gj-shade-x" x1="0" y1="0" x2="1" y2="0">` +
             `<stop offset="0" stop-color="${J.hole}" stop-opacity="0.5"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0"/></linearGradient>` +
             `<linearGradient id="gj-rust" x1="0" y1="0" x2="0" y2="1">` +
@@ -462,31 +459,6 @@ const GreedJunk = {
             });
         }
         return out + '</g>';
-    },
-
-    // ---------- ШЕСТЕРНЯ ----------
-    gear(cx, cy, r, teeth, rot) {
-        const J = PALETTE.greedJunk, f = this.f;
-        const pts = [];
-        const inner = r * 0.8;
-        for (let i = 0; i < teeth * 4; i++) {
-            const a = (i / (teeth * 4)) * Math.PI * 2 + (rot || 0);
-            const rr = (i % 4 === 1 || i % 4 === 2) ? r : inner;
-            pts.push(f(cx + Math.cos(a) * rr) + ',' + f(cy + Math.sin(a) * rr));
-        }
-        return `<polygon points="${pts.join(' ')}" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * 0.52)}" fill="none" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * 0.2)}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-    },
-
-    // Провод, торчащий из пустого гнезда: «отсюда что-то вынули».
-    wire(x, y, dx, dy, color) {
-        const f = this.f;
-        return `<path d="M${f(x)} ${f(y)} q${f(dx * 0.2)} ${f(dy * 0.9)} ${f(dx)} ${f(dy)}" fill="none" ` +
-            `stroke="${PALETTE.ink}" stroke-width="3.4" stroke-linecap="round"/>` +
-            `<path d="M${f(x)} ${f(y)} q${f(dx * 0.2)} ${f(dy * 0.9)} ${f(dx)} ${f(dy)}" fill="none" ` +
-            `stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>` +
-            `<circle cx="${f(x + dx)}" cy="${f(y + dy)}" r="1.3" fill="${PALETTE.greedJunk.rust[300]}"/>`;
     },
 
 };
