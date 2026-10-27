@@ -309,6 +309,7 @@ const GreedJunkLit = {
             if (this.coinStep) this.coinStep(now);
             if (this.meterStep) this.meterStep(now);
             if (this.jarStep) this.jarStep(now);
+            if (this.wheelStep) this.wheelStep(now);
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -683,6 +684,7 @@ const GreedJunkLit = {
         if (this.coinMount) this.coinMount(wrap);
         if (this.meterMount) this.meterMount(wrap);
         if (this.jarMount) this.jarMount(wrap);
+        if (this.wheelMountLit) this.wheelMountLit(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
             const r = wrap.getBoundingClientRect();
@@ -726,9 +728,11 @@ const GreedJunkLit = {
             let ok = false;
             // тряпка на свету — своя картинка поверх корпуса (greed-junk-lit-rag.js)
             GreedJunk.ragApart = !!this.ragMount;
+            GreedJunk.wheelApart = !!this.wheelMountLit;
             try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
             if (!ok) {
                 GreedJunk.ragApart = false;
+                GreedJunk.wheelApart = false;
                 wrap.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="position:absolute;inset:0;width:100%;height:100%" ');
                 return false;
             }
@@ -765,8 +769,10 @@ const GreedJunkLit = {
             const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
             const y = (e.clientY - r.top) / r.height * GreedJunk.H;
             const x = (e.clientX - r.left) / r.width * GreedJunk.W;
+            const Wh = GreedJunk.SLOTS.wheel, onWheel = this._wheel && Math.hypot(x - Wh.cx, y - Wh.cy) < GreedJunk.WHEEL.rEdge;
             if (y > 440 && y < 520) this.blink();
             else if (x > 300 && y > 262 && y < 400) { /* рычаг — своими событиями */ }
+            else if (onWheel) { /* колесо — своими событиями */ }
             else box.remove();
         });
         host.appendChild(box);

@@ -60,7 +60,11 @@ Object.assign(GreedJunk, {
         // Колесо фортуны — на переднем плане, поверх рамки: крупное, прячет
         // под собой всю левую половину ящика с креплением, проводами и
         // досками (решение игрока; было меньше и за стойкой рамки).
-        if (this.wheelShown && this.wheelShown()) out += this.wheelShield() + this.wheelDisc();
+        if (this.wheelShown && this.wheelShown()) {
+            // на свету колесо крутится своей картинкой (wheelApart,
+            // greed-junk-lit-wheel.js) — в корпусе только щит
+            out += this.wheelShield() + (this.wheelApart ? '' : this.wheelDisc());
+        }
         return out;
     },
 
