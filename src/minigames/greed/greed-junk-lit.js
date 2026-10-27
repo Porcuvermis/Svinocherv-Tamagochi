@@ -414,6 +414,7 @@ const GreedJunkLit = {
             if (this.meterStep) this.meterStep(now);
             if (this.jarStep) this.jarStep(now);
             if (this.wheelStep) this.wheelStep(now);
+            if (this.pachStep) this.pachStep(now);
             requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -788,6 +789,8 @@ const GreedJunkLit = {
         if (this.coinMount) this.coinMount(wrap);
         if (this.meterMount) this.meterMount(wrap);
         if (this.jarMount) this.jarMount(wrap);
+        // пачинко — до колеса: колесо на переднем плане, его холсты поверх
+        if (this.pachMountLit) this.pachMountLit(wrap);
         if (this.wheelMountLit) this.wheelMountLit(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
         const field = (e) => {
@@ -852,9 +855,13 @@ const GreedJunkLit = {
     fit(container) {
         const W = GreedJunk.W, H = GreedJunk.H, cw = container.clientWidth, ch = container.clientHeight;
         if (!cw || !ch || !this.wrapEl) return;
-        const k = Math.min(cw / W, ch / H);
+        // Пачинко стоит — короб торчит над рамкой (PACH_TOP): аппарат
+        // опускается в окне отступом сверху, а не уменьшается.
+        const top = GreedJunk.pachinkoShown && GreedJunk.pachinkoShown() ? (this.PACH_TOP || 0) : 0;
+        const k = Math.min(cw / W, ch / (H + top));
         this.wrapEl.style.width = (W * k).toFixed(1) + 'px';
         this.wrapEl.style.height = (H * k).toFixed(1) + 'px';
+        this.wrapEl.style.marginTop = (top * k).toFixed(1) + 'px';
     },
 
     // ---------- ПРЕВЬЮ ИЗ ОТЛАДКИ ----------

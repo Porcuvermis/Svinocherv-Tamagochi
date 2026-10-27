@@ -62,6 +62,7 @@ const DebugState = {
             <button data-act="greed-machine">Аппарат</button>
             <button data-act="fps-badge">Кадры</button>
             <button data-act="greed-wheel">Колесо</button>
+            <button data-act="greed-pachinko">Пачинко</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -347,8 +348,9 @@ const DebugState = {
         if (act === 'fps-badge') { this.toggleFpsBadge(); return; }
         // Колесо фортуны на аппарате без покупки — посмотреть рисунок. Аппарат
         // собирается один раз, поэтому смена — с перезагрузкой страницы.
-        if (act === 'greed-wheel') {
-            try { localStorage.setItem('gj-wheel', localStorage.getItem('gj-wheel') === '1' ? '0' : '1'); } catch (e) { /* нет хранилища */ }
+        if (act === 'greed-wheel' || act === 'greed-pachinko') {
+            const key = act === 'greed-wheel' ? 'gj-wheel' : 'gj-pachinko';
+            try { localStorage.setItem(key, localStorage.getItem(key) === '1' ? '0' : '1'); } catch (e) { /* нет хранилища */ }
             location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
             return;
         }
@@ -438,14 +440,15 @@ const DebugState = {
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
         if (DebugMode.enabled) this.startFps(); else this.stopFps();
-        // колесо аппарата: включено ли (✓) и не сломалась ли его картинка (✗)
-        const wb = this.panel && this.panel.querySelector('[data-act="greed-wheel"]');
-        if (wb) {
+        // колесо и пачинко аппарата: включены ли (✓) и не сломалась ли картинка (✗)
+        [['greed-wheel', 'gj-wheel', 'Колесо', 'wheelError'], ['greed-pachinko', 'gj-pachinko', 'Пачинко', 'pachError']].forEach(([act, key, name, errKey]) => {
+            const wb = this.panel && this.panel.querySelector(`[data-act="${act}"]`);
+            if (!wb) return;
             let on = false;
-            try { on = localStorage.getItem('gj-wheel') === '1'; } catch (e) { /* нет хранилища */ }
-            const err = typeof GreedJunkLit !== 'undefined' && GreedJunkLit.wheelError;
-            wb.textContent = 'Колесо' + (err ? ' ✗ ' + err : on ? ' ✓' : '');
-        }
+            try { on = localStorage.getItem(key) === '1'; } catch (e) { /* нет хранилища */ }
+            const err = typeof GreedJunkLit !== 'undefined' && GreedJunkLit[errKey];
+            wb.textContent = name + (err ? ' ✗ ' + err : on ? ' ✓' : '');
+        });
     }
 };
 
