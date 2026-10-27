@@ -123,32 +123,27 @@ Object.assign(GreedJunk, {
     },
 
     // ---------- ЩИТ ЗА КОЛЕСОМ ----------
-    // Лист жести на саморезах закрывает левую часть ящика — от левой
+    // Щит из ровных сосновых досок закрывает левую часть ящика — от левой
     // боковины до пачинко (его половина остаётся открытой): крепления,
-    // провода и доски за колесом не видны и между секторами не мелькают
-    // (решение игрока). В листе прорезана дыра под ступицу. Правый край
-    // резан ножницами по металлу — неровный, с заусенцами.
-    SHIELD: { x: 38, y: 33, w: 170, h: 240 },
+    // провода и доски задней стенки за колесом не видны и между секторами
+    // не мелькают (решение игрока). Доски вертикальные, прибиты к рамке
+    // саморезами сверху и снизу; в середине выпилена дыра под ступицу.
+    // Было: лист жести, перекошенный, — игрок попросил дерево и ровнее.
+    SHIELD: { x: 40, y: 34, w: 168, h: 238, boards: 5 },
     wheelShield() {
-        const J = PALETTE.greedJunk, Sh = this.SHIELD, W = this.SLOTS.wheel, f = this.f, ink = PALETTE.ink;
-        let out = this.tin(Sh.x, Sh.y, Sh.w, Sh.h, 731, { tilt: 0.3, boltR: 2.2, scratches: 6, z: 6, dent: true });
-        // дыра под ступицу: тёмная, с рваной кромкой
-        let hole = '';
-        const rnd = this.rng(732);
-        for (let k = 0; k < 18; k++) {
-            const a = k / 18 * Math.PI * 2, r = 21 + (rnd() - 0.5) * 2.4;
-            hole += (k ? 'L' : 'M') + f(W.cx + Math.cos(a) * r) + ' ' + f(W.cy + Math.sin(a) * r) + ' ';
+        const J = PALETTE.greedJunk, Sh = this.SHIELD, W = this.SLOTS.wheel, f = this.f;
+        let out = `<rect x="${Sh.x + 2.5}" y="${Sh.y + 3.5}" width="${Sh.w}" height="${Sh.h}" class="fx" fill="${J.hole}" opacity="0.4"/>`;
+        out += this.planks(Sh.x, Sh.y, Sh.w, Sh.h, Sh.boards, 741, 'v', 0, 'pine');
+        // саморезы: по два на доску сверху и снизу
+        const bw = Sh.w / Sh.boards;
+        for (let i = 0; i < Sh.boards; i++) {
+            const x = Sh.x + bw * (i + 0.5);
+            out += this.bolt(x - 5, Sh.y + 6, 1.8) + this.bolt(x + 5, Sh.y + 6, 1.8) +
+                this.bolt(x - 5, Sh.y + Sh.h - 6, 1.8) + this.bolt(x + 5, Sh.y + Sh.h - 6, 1.8);
         }
-        out += `<path d="${hole}Z" class="pit" fill="${J.hole}" stroke="${J.tin[700]}" stroke-width="0.8"/>`;
-        // саморезы по длинным краям — лист держится не на четырёх углах
-        [0.33, 0.66].forEach(t => {
-            out += this.bolt(Sh.x + 5, Sh.y + Sh.h * t, 2) + this.bolt(Sh.x + Sh.w - 5, Sh.y + Sh.h * t, 2);
-        });
-        // неровный рез правого края: заусенцы
-        let burr = '';
-        for (let y = Sh.y + 6; y < Sh.y + Sh.h - 6; y += 9 + rnd() * 8) burr += `M${f(Sh.x + Sh.w - 0.4)} ${f(y)} l${f(1 + rnd() * 1.4)} ${f(0.6 + rnd())} `;
-        out += `<path d="${burr}" stroke="${J.tin[300]}" stroke-width="0.6" stroke-linecap="round"/>`;
-        return this.T(15, 'steel', out);
+        // дыра под ступицу — выпилена лобзиком, торец светлее
+        out += `<circle cx="${W.cx}" cy="${W.cy}" r="21" class="pit" fill="${J.hole}" stroke="${J.pine[100]}" stroke-width="1.2"/>`;
+        return this.T(15, 'pine', out);
     },
 
     // Колесо на месте, неподвижно — в корпусе со светом шейдера (пункт 1:
