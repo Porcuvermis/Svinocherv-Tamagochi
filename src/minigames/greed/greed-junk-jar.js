@@ -5,10 +5,9 @@
 // три четверти банки — уровень ничего не значит, сколько монет, написано
 // маркером на малярном скотче на боку (цифры — не слова, инвариант 9).
 //
-// Дёшево: банка — один холст. Стекло спереди (тон, рёбра, блики) рисуется
-// один раз в картинку; монеты внутри — тем же движком, что лоток (GreedCoins,
-// свет и блеск видеокартой), но собираются в картинку и перерисовываются
-// только от наклона (не чаще LIGHT_MS) и когда меняется число на скотче.
+// Дёшево: банка — один холст, перерисовывается, только когда меняется
+// число на скотче. Стекло (тон, рёбра, блики) и куча монет собираются в
+// картинки один раз; монета — та же освещённая, что летит в щель.
 Object.assign(GreedJunkLit, {
     // cx — середина, y0 — верх горла, y1 — дно; w — ширина тела, nw — горла
     JAR: { cx: 273, y0: 577, y1: 625, w: 36, nw: 27, sh: 586 },
@@ -43,7 +42,7 @@ Object.assign(GreedJunkLit, {
             `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
         wrap.appendChild(cv);
         this.jarCv = cv;
-        this._jar = { shown: null, val: null, from: 0, to: 0, at: 0, paintAt: 0, lt: null };
+        this._jar = { shown: null, val: null, from: 0, to: 0, at: 0 };
     },
 
     // кошелёк из состояния игры; в превью без игры — горсть
@@ -53,27 +52,71 @@ Object.assign(GreedJunkLit, {
     },
 
     // ---------- МОНЕТЫ ВНУТРИ ----------
-    // Раскладка — один раз: ряды снизу вверх до трёх четвертей, в каждом
-    // монеты вплотную со случайным сдвигом; дальние темнее (ao), верхний
-    // слой лежит плашмя, нижние видны сквозь стекло боком и наискось.
+    // Банка стоит на полу ниже глаз — смотрим сверху-спереди, градусов под
+    // 20. Монеты в куче лежат почти плашмя друг на друге, поэтому видны
+    // сплюснутыми овалами (k — во сколько раз ниже, чем шире) с ребром
+    // снизу. Было: позы из атласа лотка — у них наклон не круче 32° от
+    // взгляда, и нижние монеты стояли торчком под невозможными углами.
+    // Куча — слои снизу вверх; в слое монеты по кругу дна банки, глубина z
+    // (−1 у задней стенки, +1 у стекла перед нами) поднимает дальние выше.
+    // Рисуются слой за слоем, в слое — от задних к передним: верхняя монета
+    // ложится на нижнюю, передняя закрывает заднюю.
+    JAR_PILE: { k: 0.34, layer: 1.7, depth: 5.6, per: 11 },
     jarCoins() {
         if (this._jarCoins) return this._jarCoins;
-        const J = this.JAR, B = this.JAR_BOX, r = this.JAR_COIN, rnd = GreedJunk.rng(5150);
-        const top = J.y1 - (J.y1 - J.sh) * 0.75, out = [];
-        const P = GreedCoins.poses(), any = () => Math.floor(rnd() * P.length);
-        for (let y = J.y1 - r * 0.6, row = 0; y > top + r * 0.4; y -= r * 0.8, row++) {
-            for (let x = J.cx - J.w / 2 + r * 0.4 + (row % 2) * r * 0.8; x < J.cx + J.w / 2 - r * 0.2; x += r * 1.55) {
-                // у стекла монеты прижаты как попало — любые наклоны
-                out.push({ x: x + (rnd() - 0.5) * 2.4 - B.x, y: y + (rnd() - 0.5) * 2 - B.y, ao: 0.55 + rnd() * 0.3, pose: any() });
+        const J = this.JAR, P = this.JAR_PILE, r = this.JAR_COIN, rnd = GreedJunk.rng(5150);
+        const R = J.w / 2 - 1.2, top = J.y1 - (J.y1 - J.sh) * 0.75, out = [];
+        const nL = Math.ceil((J.y1 - 2 - top) / P.layer);
+        for (let L = 0; L < nL; L++) {
+            const layer = [];
+            for (let n = 0; n < P.per; n++) {
+                // точка на дне банки (круг): x — поперёк, z — вглубь
+                const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
+                const x = Math.cos(a) * d * (R - r * 0.6), z = Math.sin(a) * d;
+                // верхний слой — горкой к середине
+                const hump = L === nL - 1 ? (1 - Math.abs(x) / R) * 1.6 : 0;
+                layer.push({
+                    x: J.cx + x, y: J.y1 - 2.2 - L * P.layer - hump + z * P.depth * 0.5 - P.depth * 0.5, z,
+                    k: P.k * (0.75 + rnd() * 0.5), rot: (rnd() - 0.5) * 0.35,
+                    // глубже в куче и дальше от нас — темнее
+                    ao: Math.min(1, 0.5 + 0.5 * L / nL + z * 0.15)
+                });
             }
+            out.push(...layer.sort((a, b) => a.z - b.z));
         }
-        // верх кучи — горкой к середине: монеты сверху плашмя или чуть
-        // наклонены, ярче (на них свет)
-        for (let k = 0; k < 7; k++) {
-            const x = J.cx - 13.5 + k * 4.5 + (rnd() - 0.5) * 1.6;
-            out.push({ x: x - B.x, y: top + 0.6 + Math.pow(Math.abs(x - J.cx) / 14, 2) * 2.6 + (rnd() - 0.5) - B.y, ao: 0.95, pose: this.trayPose(rnd) });
+        return (this._jarCoins = out);
+    },
+    // монета плашмя в ракурсе: ребро — тот же овал чуть ниже, тёмное золото;
+    // лицо — освещённая картинка монеты (coinSprite), сплюснутая по высоте
+    jarCoin(c, spr, m) {
+        const r = this.JAR_COIN, G = PALETTE.greedCoin.gold, th = 1.1;
+        c.save();
+        c.translate(m.x, m.y); c.rotate(m.rot);
+        c.fillStyle = G.deep;
+        c.beginPath(); c.ellipse(0, th, r, r * m.k, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = G.lo;
+        c.beginPath(); c.ellipse(0, th * 0.5, r, r * m.k, 0, 0, Math.PI); c.fill();
+        // спрайт: монета радиусом COIN_FLY.rad в квадрате 14
+        const s = 14 * r / this.COIN_FLY.rad;
+        c.drawImage(spr, -s / 2, -s / 2 * m.k, s, s * m.k);
+        if (m.ao < 1) {
+            c.globalAlpha = 1 - m.ao; c.fillStyle = PALETTE.greedCoin.gap;
+            c.beginPath(); c.ellipse(0, th * 0.4, r + 0.1, r * m.k + th * 0.5, 0, 0, Math.PI * 2); c.fill();
+            c.globalAlpha = 1;
         }
-        return (this._jarCoins = out.sort((a, b) => a.y - b.y));
+        c.restore();
+    },
+    // куча целиком — в картинку один раз: монеты не меняются
+    jarPile() {
+        if (this._jarPile) return this._jarPile;
+        const spr = this.coinSprite && this.coinSprite();
+        if (!spr) return null;
+        const B = this.JAR_BOX, S = this.SCALE, cv = document.createElement('canvas');
+        cv.width = B.w * S; cv.height = B.h * S;
+        const c = cv.getContext('2d');
+        c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
+        this.jarCoins().forEach(m => this.jarCoin(c, spr, m));
+        return (this._jarPile = cv);
     },
 
     // ---------- СТЕКЛО: ОДИН РАЗ ----------
@@ -175,32 +218,16 @@ Object.assign(GreedJunkLit, {
             const u = Math.min(1, (now - M.at) / 600);
             M.val = Math.round(M.from + (M.to - M.from) * (1 - Math.pow(1 - u, 3)));
         }
-        const tilt = this._tilt || { x: 0, y: 0 };
-        const tiltMoved = !M.lt || Math.abs(M.lt.x - tilt.x) > 0.003 || Math.abs(M.lt.y - tilt.y) > 0.003;
-        if (M.shown === M.val && !(tiltMoved && now - M.paintAt >= this.LIGHT_MS * 2)) return;
-        if (!this.jarPaint(tilt)) return;
-        M.shown = M.val; M.lt = { x: tilt.x, y: tilt.y }; M.paintAt = now;
+        // перерисовка — только когда меняется число: куча монет неподвижна
+        if (M.shown === M.val) return;
+        if (!this.jarPaint()) return;
+        M.shown = M.val;
     },
 
-    jarPaint(tilt) {
-        const A = GreedCoins.loadAtlas();
-        if (!A.ready) return false;
+    jarPaint() {
+        const pile = this.jarPile();
+        if (!pile) return false;
         const B = this.JAR_BOX, S = this.SCALE, J = this.JAR, M = this._jar;
-        if (!this.jarDraw) {
-            const gl = document.createElement('canvas');
-            gl.width = B.w * S; gl.height = B.h * S;
-            this.jarDraw = GreedCoins.batchRenderer(gl, A.fa, A.fn, A.alb, A.nor, [B.w, B.h]);
-            this.jarGl = gl;
-            if (!this.jarDraw) return false;
-        }
-        const D = this.jarDraw, P = GreedCoins.poses();
-        D.begin(tilt);
-        this.jarCoins().forEach(c => {
-            const k = this.coinOf(c.x, c.y, 0, c.ao);
-            k.rad = this.JAR_COIN; k.pose = P[c.pose].n; k.roll = P[c.pose].roll * Math.PI / 180; k.ci = c.pose;
-            D.add(k, { n: k.pose, m: 1, flash: 0, settled: true });
-        });
-        D.flush();
         const c = this.jarCv.getContext('2d');
         c.setTransform(1, 0, 0, 1, 0, 0);
         c.clearRect(0, 0, this.jarCv.width, this.jarCv.height);
@@ -223,7 +250,7 @@ Object.assign(GreedJunkLit, {
         c.lineTo(B.x + B.w, J.y1 + 2); c.closePath(); c.fill();
         // монеты внутри, по стеклу
         c.setTransform(1, 0, 0, 1, 0, 0);
-        c.drawImage(this.jarGl, 0, 0);
+        c.drawImage(pile, 0, 0);
         c.restore();
         c.setTransform(1, 0, 0, 1, 0, 0);
         c.drawImage(this.jarGlass(), 0, 0);
