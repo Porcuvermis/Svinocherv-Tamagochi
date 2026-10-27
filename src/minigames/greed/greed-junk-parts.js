@@ -447,22 +447,29 @@ Object.assign(GreedJunk, {
             ring += line(`M${f(p0[0])} ${f(p0[1])} L${f(p1[0])} ${f(p1[1])}`, 0.75);
         });
         if (!wheel) out += ring;
+        // Разметка короба: стоят короб и колесо — её не видно, не рисуется
+        // (как круг колеса). Один короб её не прячет: левая линия и уголки
+        // выходят за него на 8 единиц — их закрывает только щит колеса.
+        // Случайные числа тянутся всё равно.
+        const box = this.pachinkoShown && this.pachinkoShown();
+        let mark = '';
         // прямоугольник короба: стороны с перехлёстом в углах
         const p = S.pachinko, o = 5;
         // габарит короба — снаружи рельсов: между рельсами линии бы под ними и пропали
         const x0 = p.x - 3, x1 = p.x + p.w - 9, y0 = p.y + 3, y1 = p.y + p.h - 40;
         [[x0 - o, y0, x1 + o, y0], [x0 - o, y1, x1 + o, y1], [x0, y0 - o, x0, y1 + o], [x1, y0 - o, x1, y1 + o]].forEach(([ax, ay, bx, by]) => {
             const j = () => (rnd() - 0.5) * 1.2;
-            out += line(`M${f(ax + j())} ${f(ay + j())} L${f(bx + j())} ${f(by + j())}`, 0.7);
+            mark += line(`M${f(ax + j())} ${f(ay + j())} L${f(bx + j())} ${f(by + j())}`, 0.7);
         });
         // галочки в углах прямоугольника — «здесь угол короба»
         [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]].forEach(([cx, cy, sx, sy]) => {
-            out += line(`M${f(cx + sx * 7)} ${f(cy + sy * 2)} L${f(cx + sx * 2)} ${f(cy + sy * 2)} L${f(cx + sx * 2)} ${f(cy + sy * 7)}`, 0.6);
+            mark += line(`M${f(cx + sx * 7)} ${f(cy + sy * 2)} L${f(cx + sx * 2)} ${f(cy + sy * 2)} L${f(cx + sx * 2)} ${f(cy + sy * 7)}`, 0.6);
         });
         // плотницкий крест «здесь» в свободном месте между рельсами
         const kx = p.x + 26, ky = p.y + 10, kw = 40, kh = 32;
-        out += line(`M${f(kx)} ${f(ky)} L${f(kx + kw)} ${f(ky + kh)}`, 0.8) +
+        mark += line(`M${f(kx)} ${f(ky)} L${f(kx + kw)} ${f(ky + kh)}`, 0.8) +
             line(`M${f(kx + kw)} ${f(ky)} L${f(kx)} ${f(ky + kh)}`, 0.8);
+        if (!(box && wheel)) out += mark;
         return this.T(0, 'graphite', out);
     },
 

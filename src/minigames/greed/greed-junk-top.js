@@ -16,8 +16,13 @@ Object.assign(GreedJunk, {
         out += `<rect x="28" y="24" width="288" height="270" class="fx" fill="url(#gj-vign)"/>`;
         // карандашная разметка будущих игр — на стенке, под креплениями
         out += this.pencilMarks();
-        // поперечина-перекладина, на которой всё висит
-        out += this.slabBar();
+        // Что под колесом и коробом спрятано целиком — не рисуется (ниже,
+        // по каждой детали). Списки проверены по пикселям: деталь
+        // выключается по одной, ноль видимых точек — спрятана.
+        const wheel = this.wheelShown && this.wheelShown(), box = this.pachinkoShown && this.pachinkoShown();
+        // поперечина-перекладина, на которой всё висит: колесо и короб
+        // вместе закрывают её целиком
+        if (!(wheel && box)) out += this.slabBar();
         // жалюзи и лампа питания внизу ящика (greed-junk-parts.js, louverStrip)
         out += this.louverStrip(34, 270, 276, 20);
 
@@ -28,7 +33,7 @@ Object.assign(GreedJunk, {
         // ноль видимых точек): крепление, розетка, кабель, жгут мотора,
         // латка, блок питания, гофра к ступице, штуцеры блока и ступицы.
         // Колеса нет — видно всё. С пачинко — так же, когда его нарисуем.
-        const w = S.wheel, wheel = this.wheelShown && this.wheelShown();
+        const w = S.wheel;
         if (!wheel) {
             out += this.wheelMount(w.cx, w.cy);
             out += this.socketHome(65, 58);
@@ -50,20 +55,24 @@ Object.assign(GreedJunk, {
         // поверх рельса гофра мешала бы коробу пачинко.
         // Была ещё распаечная коробка с отводом обратно к розетке — две гофры
         // рядом в одну коробку и петля питания читались путаницей.
-        out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuB, this.PORTS.brick, [[196, 182], [218, 186], [232, 204]])));
+        // под колесом и коробом вместе спрятана целиком
+        if (!(wheel && box)) out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuB, this.PORTS.brick, [[196, 182], [218, 186], [232, 204]])));
         out += this.rail(p.x + 8, p.y + 6, 14, p.h - 24, -1, 41);
         out += this.rail(p.x + p.w - 34, p.y + 6, 14, p.h - 24, 1, 42);
         // полка-упор, на которую встанет короб (greed-junk-parts.js, shelfAngle)
         out += this.shelfAngle(p.x - 2, p.y + p.h - 38, 96);
-        // подвес короба пачинко между рельсами (greed-junk-parts.js, hanger)
-        out += this.hanger(p.x + 32, p.y + 50, p.w - 70, 70);
-        // Промышленное гнездо на бруске между рельсами; провода пачинко
-        // выходят из втулки в том же бруске — отвод от питания розетки.
-        out += this.socketPanel(p.x + 34, p.y + 130);
+        // Подвес короба пачинко между рельсами (greed-junk-parts.js, hanger)
+        // и промышленное гнездо на бруске; провода пачинко выходят из втулки
+        // в том же бруске — отвод от питания розетки. Короб стоит — подвес
+        // и гнездо под ним целиком, не рисуются; жгут торчит — рисуется.
+        if (!box) {
+            out += this.hanger(p.x + 32, p.y + 50, p.w - 70, 70);
+            out += this.socketPanel(p.x + 34, p.y + 130);
+        }
         out += this.harness(p.x + 58, p.y + 158.5, 28, 45, false);
         // штуцеры гофр — ПОСЛЕ всех деталей: конец гофры уходит под гайку
         // штуцера, а штуцер сидит на своей детали поверх неё
-        out += (wheel ? ['brick'] : ['psuA', 'psuB', 'hub', 'brick']).map(k => this.port(this.PORTS[k])).join('');
+        out += (wheel ? [] : ['psuA', 'psuB', 'hub']).concat(box ? [] : ['brick']).map(k => this.port(this.PORTS[k])).join('');
         out += this.topFrame();
         // Колесо фортуны — на переднем плане, поверх рамки: крупное, прячет
         // под собой всю левую половину ящика с креплением, проводами и
