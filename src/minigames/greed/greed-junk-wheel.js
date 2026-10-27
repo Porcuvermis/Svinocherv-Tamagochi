@@ -15,7 +15,7 @@
 Object.assign(GreedJunk, {
     WHEEL_SECTORS: ['blank', 'gold1', 'blank', 'seed', 'blank', 'gold1', 'meat', 'blank',
         'gold3', 'blank', 'gold1', 'seed', 'blank', 'shard', 'gold1', 'blank'],
-    WHEEL: { rFace: 100, rEdge: 104, rPeg: 97, rIcon: 70, hole: 7.5, icon: 1.6 },
+    WHEEL: { rFace: 114, rEdge: 118, rPeg: 110.5, rIcon: 80, hole: 7.5, icon: 1.85 },
     // колесо на аппарате: куплено — или включено в отладке (🐞 → «Колесо»)
     wheelShown() {
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('wheel') > 0) return true;
@@ -32,7 +32,7 @@ Object.assign(GreedJunk, {
         out += `<circle cx="3.5" cy="5.5" r="${G.rEdge}" class="fx" fill="${J.hole}" opacity="0.45"/>`;
         // торец фанеры: слоистый край
         let edge = `<circle r="${G.rEdge}" fill="${W.plyEdge}" stroke="${ink}" stroke-width="${STROKE.contour}"/>`;
-        [102.6, 101.4].forEach(r => { edge += `<circle r="${r}" fill="none" stroke="${W.ply}" stroke-width="0.5" opacity="0.8"/>`; });
+        [G.rEdge - 1.4, G.rEdge - 2.6].forEach(r => { edge += `<circle r="${r}" fill="none" stroke="${W.ply}" stroke-width="0.5" opacity="0.8"/>`; });
         // сектора: краска кистью — у каждого чуть свой тон, мазки вдоль радиуса
         let sec = '';
         for (let i = 0; i < n; i++) {
