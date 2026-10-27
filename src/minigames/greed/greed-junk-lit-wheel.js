@@ -228,16 +228,18 @@ Object.assign(GreedJunkLit, {
                     G.T(h0 + W.pegUp, 'steel', f.pegs) + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
             };
             const Wc = G.SLOTS.wheel, px = Wc.cx, py = Wc.cy - W.rEdge - 16;
-            const ptr = (pass) => {
+            const ptr = (pass, part = 'strip') => {
                 G.pass = pass;
                 return `<svg xmlns="http://www.w3.org/2000/svg" width="${30 * S}" height="${36 * S}" viewBox="${px - 15} ${py - 2} 30 36">` +
-                    G.passStyle(pass) + G.defs() + G.wheelPointer('strip') + '</svg>';
+                    G.passStyle(pass) + G.defs() + G.wheelPointer(part) + '</svg>';
             };
             const passes = ['albedo', 'height', 'mat'];
             const dm = await Promise.all(passes.map(ps => this.image(discFull(ps))));
             const pm = await Promise.all(passes.map(ps => this.image(ptr(ps))));
+            // уголок-держатель — только силуэт для тени (сам он в корпусе)
+            const bm = await this.image(ptr('albedo', 'bracket'));
             G.pass = 'baked';
-            if (!this.wheelGL(dm, pm)) throw new Error('нет WebGL');
+            if (!this.wheelGL(dm, pm, bm)) throw new Error('нет WebGL');
             this._wheelSpr = { R, px, py };
             this.wheelShadow();
             this._wheel.shown = null;
@@ -249,7 +251,7 @@ Object.assign(GreedJunkLit, {
         }
     },
 
-    wheelGL(dm, pm) {
+    wheelGL(dm, pm, bm) {
         const cv = this.wheelCv, gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true });
         if (!gl) return false;
         const vs = `attribute vec2 aPos;
@@ -349,7 +351,7 @@ Object.assign(GreedJunkLit, {
         gl.uniform1f(U.uPxPerH, GreedJunk.HMAX * this.SCALE);
         gl.uniform2f(U.uCanvas, cv.width, cv.height);
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        this._wgl = { gl, U, disc: set(dm), ptr: set(pm) };
+        this._wgl = { gl, U, disc: set(dm), ptr: set(pm), brk: set([bm]) };
         return true;
     },
 
@@ -415,11 +417,20 @@ Object.assign(GreedJunkLit, {
         // от света на высоту резинки над краской (она перед шляпками
         // гвоздей). Смешение только темнит цвет и не трогает прозрачность:
         // где диска нет (щит над ободом), тень не рисуется — там она легла
-        // бы дальше, и её место — в корпусе. Было: тени у язычка не было.
+        // бы дальше, и её место — в корпусе.
+        // Вместе с ней — тень уголка-держателя: без неё тень резинки висела
+        // на диске сама по себе, оторванной полоской (на iPhone при наклоне
+        // уезжала на 20–30 единиц). Сдвиг — не дальше, чем ищутся тени
+        // гвоздей в шейдере (16×3 текселя = 16 единиц): иначе у пологого
+        // света гвозди дают полосу до 16, а резинка улетает вдвое дальше.
         const ux = L[0] / n, uy = L[1] / n, uz = Math.max(0.15, L[2] / n), up = this.WHEEL_FLAP_UP;
+        let sx = -ux / uz * up, sy = -uy / uz * up;
+        const sd = Math.hypot(sx, sy);
+        if (sd > 16) { sx *= 16 / sd; sy *= 16 / sd; }
         gl.blendFuncSeparate(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
         gl.uniform1f(U.uShade, 0.5);
-        draw(Q.ptr, pcx - ux / uz * up, pcy - uy / uz * up, 15, 18, M.flap, pivX - pcx, pivY - pcy);
+        draw(Q.brk, pcx + sx, pcy + sy, 15, 18, 0, 0, 0);
+        draw(Q.ptr, pcx + sx, pcy + sy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
         gl.uniform1f(U.uShade, 0);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         draw(Q.ptr, pcx, pcy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
