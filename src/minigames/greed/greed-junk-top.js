@@ -22,18 +22,26 @@ Object.assign(GreedJunk, {
         out += this.louverStrip(34, 270, 276, 20);
 
         // ---- крепление колеса: ступица от машины на перфоуголке ----
-        const w = S.wheel;
-        out += this.wheelMount(w.cx, w.cy);
-        out += this.socketHome(65, 58);
-        out += this.powerCable();
-        // провода будущего мотора колеса — из втулки в пластине ступицы
-        out += this.harness(w.cx + 40, w.cy - 28, 28, 34, false);
-        // латка из крышки банки и блок питания (greed-junk-parts.js)
-        out += this.canLid(64, 244);
-        out += this.psu(146, 204);
-        // от блока питания — к ступице колеса (питание мотора): из сальника
-        // на верхней кромке блока в сальник на пластине
-        out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuA, this.PORTS.hub, [[160, 186]])));
+        // Колесо стоит — всё, что под ним и щитом спрятано ЦЕЛИКОМ, не
+        // рисуется (решение игрока): невидимое тоже стоит растра и шейдера.
+        // Список проверен по пикселям (каждая деталь выключена по одной —
+        // ноль видимых точек): крепление, розетка, кабель, жгут мотора,
+        // латка, блок питания, гофра к ступице, штуцеры блока и ступицы.
+        // Колеса нет — видно всё. С пачинко — так же, когда его нарисуем.
+        const w = S.wheel, wheel = this.wheelShown && this.wheelShown();
+        if (!wheel) {
+            out += this.wheelMount(w.cx, w.cy);
+            out += this.socketHome(65, 58);
+            out += this.powerCable();
+            // провода будущего мотора колеса — из втулки в пластине ступицы
+            out += this.harness(w.cx + 40, w.cy - 28, 28, 34, false);
+            // латка из крышки банки и блок питания (greed-junk-parts.js)
+            out += this.canLid(64, 244);
+            out += this.psu(146, 204);
+            // от блока питания — к ступице колеса (питание мотора): из сальника
+            // на верхней кромке блока в сальник на пластине
+            out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuA, this.PORTS.hub, [[160, 186]])));
+        }
 
         // ---- крепление пачинко: два рельса, полка-упор и розетка сбоку ----
         const p = S.pachinko;
@@ -55,7 +63,7 @@ Object.assign(GreedJunk, {
         out += this.harness(p.x + 58, p.y + 158.5, 28, 45, false);
         // штуцеры гофр — ПОСЛЕ всех деталей: конец гофры уходит под гайку
         // штуцера, а штуцер сидит на своей детали поверх неё
-        out += ['psuA', 'psuB', 'hub', 'brick'].map(k => this.port(this.PORTS[k])).join('');
+        out += (wheel ? ['brick'] : ['psuA', 'psuB', 'hub', 'brick']).map(k => this.port(this.PORTS[k])).join('');
         out += this.topFrame();
         // Колесо фортуны — на переднем плане, поверх рамки: крупное, прячет
         // под собой всю левую половину ящика с креплением, проводами и
