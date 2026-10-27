@@ -33,9 +33,97 @@ Object.assign(GreedJunkLit, {
         };
         this.pachShadowCv = layer(this.pachBox(this.PACH_SHADOW.blur * 3));
         this.pachCv = layer(this.pachBox());
+        // шарик — между коробом и стеклом: стекло поверх него
+        this.pachBallCv = layer(this.pachBox());
         this.pachGlassCv = layer(this.pachBox());
-        this._pach = { shown: null };
+        this._pach = { shown: null, ball: null, acc: 0, at: 0, press: 0 };
         this.pachSprites();
+        // кнопка запуска — тап по ней
+        wrap.addEventListener('pointerdown', (e) => {
+            const r = wrap.getBoundingClientRect(), B = G.PACH.button;
+            const x = (e.clientX - r.left) / r.width * G.W, y = (e.clientY - r.top) / r.height * G.H;
+            if (Math.hypot(x - B.x, y - B.y) > B.r + 4) return;
+            e.preventDefault(); e.stopPropagation();
+            this.pachLaunch();
+        });
+    },
+
+    // Кнопка: шарик ложится на пружину и тут же вылетает. Сила — разброс
+    // пружины (PACH_PHYS.v0). Пока шарик летит, кнопка не работает.
+    // onPach (шаг «исход») подберёт запуск под решённую лунку; пока — как
+    // пружина бросит.
+    pachLaunch() {
+        const M = this._pach, K = GreedJunk.PACH_PHYS;
+        if (!M || !this._pgl) return;
+        M.press = performance.now();
+        if (M.ball) { if (typeof Haptics !== 'undefined') Haptics.tick(); return; }
+        const v0 = this.onPach ? this.onPach() : K.v0[0] + Math.random() * (K.v0[1] - K.v0[0]);
+        if (v0 === false) { if (typeof Haptics !== 'undefined') Haptics.notify('error', true); return; }
+        M.ball = GreedJunk.pachBall(v0);
+        M.acc = 0; M.at = 0;
+        if (typeof Haptics !== 'undefined') Haptics.impact('rigid', true);
+    },
+
+    // Шарик: стальной, блик сверху-слева — один раз картинкой.
+    pachBallSprite() {
+        if (this._pachSpr) return this._pachSpr;
+        const S = this.SCALE * 2, r = GreedJunk.PACH_PHYS.r, J = PALETTE.greedJunk, n = Math.ceil((r + 1) * 2 * S);
+        const cv = document.createElement('canvas'); cv.width = cv.height = n;
+        const g = cv.getContext('2d'), c = n / 2;
+        const gr = g.createRadialGradient(c - r * 0.4 * S, c - r * 0.45 * S, r * 0.1 * S, c, c, r * S);
+        gr.addColorStop(0, J.tin[100]); gr.addColorStop(0.45, J.tin[300]); gr.addColorStop(1, J.tin[700]);
+        g.beginPath(); g.arc(c, c, r * S, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
+        g.lineWidth = 0.5 * S; g.strokeStyle = PALETTE.ink; g.stroke();
+        // отражение: светлая полоса снизу (пол) и точка блика
+        g.globalAlpha = 0.5; g.fillStyle = J.tin[100];
+        g.beginPath(); g.ellipse(c + r * 0.15 * S, c + r * 0.55 * S, r * 0.5 * S, r * 0.18 * S, 0, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1; g.fillStyle = J.reel.jar.glassHi;
+        g.beginPath(); g.arc(c - r * 0.38 * S, c - r * 0.4 * S, r * 0.22 * S, 0, Math.PI * 2); g.fill();
+        return (this._pachSpr = cv);
+    },
+
+    // Полёт: физика фиксированным шагом (на любом кадре путь один), удар о
+    // гвоздь — щелчок в палец, лунка — удар, сток — мягкий. Холст шарика
+    // рисуется только пока шарик летит или кнопка нажата.
+    pachBallStep(now) {
+        const M = this._pach, G = GreedJunk, K = G.PACH_PHYS;
+        const dt = Math.min(0.05, M.at ? (now - M.at) / 1000 : 1 / 60);
+        M.at = now;
+        const pressed = now - M.press < 140;
+        if (!M.ball && !pressed && !M.dirty) return;
+        if (M.ball) {
+            M.acc += dt;
+            while (M.acc >= K.STEP && M.ball) {
+                M.acc -= K.STEP;
+                const ev = G.pachStepBall(M.ball);
+                if (ev === 'nail' && typeof Haptics !== 'undefined') Haptics.tick();
+                if (M.ball.done) {
+                    const res = M.ball.done;
+                    if (typeof Haptics !== 'undefined') Haptics.impact(res === 'drain' ? 'soft' : 'medium', true);
+                    M.ball = null;
+                    if (this.onPachDone) this.onPachDone(res);
+                }
+            }
+        }
+        const S = this.SCALE, B = this.pachBox(), c = this.pachBallCv.getContext('2d');
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.clearRect(0, 0, this.pachBallCv.width, this.pachBallCv.height);
+        c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
+        if (pressed) {
+            // кнопка вдавлена: колпак темнеет
+            const Bt = G.PACH.button;
+            c.globalAlpha = 0.3; c.fillStyle = PALETTE.greedJunk.hole;
+            c.beginPath(); c.arc(Bt.x, Bt.y, Bt.r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+        }
+        if (M.ball) {
+            const b = M.ball, r = K.r, spr = this.pachBallSprite(), L = this.lightFor(this._tilt || { x: 0, y: 0 });
+            // тень шарика на поле: от света, шарик над краской на свой радиус
+            c.globalAlpha = 0.35; c.fillStyle = PALETTE.greedJunk.hole;
+            c.beginPath(); c.arc(b.x - L[0] / L[2] * r, b.y - L[1] / L[2] * r, r * 0.95, 0, Math.PI * 2); c.fill();
+            c.globalAlpha = 1;
+            c.drawImage(spr, b.x - r - 1, b.y - r - 1, (r + 1) * 2, (r + 1) * 2);
+        }
+        M.dirty = !!M.ball || pressed;
     },
 
     // Карты короба — один раз. Высоты в своей карте (важна разница):
@@ -99,6 +187,7 @@ Object.assign(GreedJunkLit, {
     pachStep(now) {
         const M = this._pach;
         if (!M || !this._pgl) return;
+        this.pachBallStep(now);
         const t = this._tilt || { x: 0, y: 0 };
         if (M.shown && M.lt && M.lt.x === t.x && M.lt.y === t.y) return;
         if (M.shown && now - (M.at || 0) < this.LIGHT_MS) return;

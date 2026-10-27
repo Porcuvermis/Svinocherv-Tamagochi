@@ -884,6 +884,7 @@ const GreedJunkLit = {
             if (y > 440 && y < 520) this.blink();
             else if (x > 300 && y > 262 && y < 400) { /* рычаг — своими событиями */ }
             else if (onWheel) { /* колесо — своими событиями */ }
+            else if (this._pach && x > GreedJunk.PACH.x0 && x < GreedJunk.PACH.x1 && y > GreedJunk.PACH.y0 && y < GreedJunk.PACH.y1) { /* пачинко — своими событиями */ }
             else box.remove();
         });
         host.appendChild(box);

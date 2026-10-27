@@ -39,11 +39,14 @@ Object.assign(GreedJunk, {
     // Лунки: ряды по 2–3 вперемешку (центр верха лунки) и что в них. Ряды
     // разведены по высоте и сдвинуты через один — шарик, падающий прямо,
     // не проходит одну колонку насквозь. Ключи — как в конфиге пачинко.
+    // Крайние в рядах по три — вплотную к стенкам: щель между банкой и
+    // стенкой уже шарика его зажимала. Верхний ряд опущен под дугу на
+    // несколько рядов гвоздей — иначе он ловил половину шариков сразу с дуги.
     PACH_CUPS: [
-        { key: 'wrath', x: 241, y: 50 }, { key: 'glut', x: 267, y: 50 },
-        { key: 'lust', x: 228, y: 94 }, { key: 'gold1', x: 254, y: 94 }, { key: 'sloth', x: 280, y: 94 },
-        { key: 'envy', x: 241, y: 138 }, { key: 'pride', x: 267, y: 138 },
-        { key: 'greed', x: 228, y: 176 }, { key: 'gold1', x: 280, y: 176 }
+        { key: 'wrath', x: 241, y: 62 }, { key: 'glut', x: 267, y: 62 },
+        { key: 'lust', x: 223, y: 104 }, { key: 'gold1', x: 253.75, y: 104 }, { key: 'sloth', x: 284.5, y: 104 },
+        { key: 'envy', x: 241, y: 144 }, { key: 'pride', x: 267, y: 144 },
+        { key: 'greed', x: 223, y: 178 }, { key: 'gold1', x: 284.5, y: 178 }
     ],
 
     // на аппарате: куплено — или включено в отладке (🐞 → «Пачинко»)
@@ -54,18 +57,37 @@ Object.assign(GreedJunk, {
 
     // Гвозди: шахматкой с шагом ~12.6 по полю под дугой, мимо лунок,
     // перегородки и стенок. Ряды чуть гуляют — прибивали на глаз.
+    // От стен, дуги и банок — просвет не уже шарика с запасом (gap): в щель
+    // уже шарика его зажимало, и он висел там до конца (физика пачинко,
+    // greed-junk-pachinko-sim.js: так застревала половина шариков).
     pachNails() {
         const P = this.PACH, A = P.arc, C = P.cup, rnd = this.rng(4401), pts = [];
-        const left = P.x0 + P.wall + 4, right = P.sep - 4;
+        const gap = 2 * 2.5 + 1.7 + 0.9;      // диаметр шарика + шляпка + запас
+        // пристенные гвозди (ниже) и крайние ряды поля — на полный шарик
+        // друг от друга: в развилке уже шарика он ложился
+        const wl = P.x0 + P.wall + 1.9, wr = P.sep - 1 - 1.9;
+        const left = wl + 1.7 + gap, right = wr - 1.7 - gap;
         for (let row = 0, y = 4; y < P.drain - 6; row++, y += 11) {
             for (let x = left + (row % 2 ? 6.3 : 0); x <= right; x += 12.6) {
                 const px = x + (rnd() - 0.5) * 1.2, py = y + (rnd() - 0.5) * 1.2;
                 // под дугой
-                if (py < A.cy && Math.hypot(px - A.cx, py - A.cy) > A.r - 6) continue;
-                // мимо лунок: над лункой шире — шарику нужен вход
-                if (this.PACH_CUPS.some(c => px > c.x - C.w / 2 - 4 && px < c.x + C.w / 2 + 4 && py > c.y - 8 && py < c.y + C.h + 4)) continue;
+                if (py < A.cy && Math.hypot(px - A.cx, py - A.cy) > A.r - 1.2 - gap) continue;
+                if (px < left - 0.7 || px > right + 0.7) continue;
+                // мимо лунок, с просветом со всех сторон
+                if (this.PACH_CUPS.some(c => px > c.x - C.w / 2 - gap && px < c.x + C.w / 2 + gap && py > c.y - gap && py < c.y + C.h + gap)) continue;
                 pts.push([px, py]);
             }
+        }
+        // Гвозди вплотную к стенкам — без щели, зажать шарик им нечем: падая
+        // вдоль стены по коридору, он отбивается в поле. Без них шарик со
+        // дуги стекал по левой стенке прямо в левую лунку, почти не задев
+        // гвоздей (70% запусков — в одну и ту же).
+        // справа — ниже торца перегородки: под ним шарик балансировал на шляпке
+        for (let y = A.cy + 4, k = 0; y < P.drain - 8; y += 11, k++) {
+            const x = k % 2 ? wr : wl;
+            if (x === wr && y < A.cy + 22) continue;
+            if (this.PACH_CUPS.some(c => x > c.x - C.w / 2 - gap && x < c.x + C.w / 2 + gap && y > c.y - gap && y < c.y + C.h + gap)) continue;
+            pts.push([x, y + (rnd() - 0.5) * 1.2]);
         }
         return pts;
     },
@@ -157,6 +179,11 @@ Object.assign(GreedJunk, {
         const sepD = `M${P.sep + 1} ${A.cy + 12} L${P.sep + 1} ${P.drain}`;
         steel += `<path d="${sepD}" fill="none" stroke="${ink}" stroke-width="3" stroke-linecap="round"/>` +
             `<path d="${sepD}" fill="none" stroke="${J.tin[300]}" stroke-width="1.6" stroke-linecap="round"/>` + this.rodH(sepD, 2.2, 1.4);
+        // клапан наверху дорожки: жестяной язычок на заклёпке — шарик
+        // выпускает на дугу, назад в дорожку не пускает (физика — PACH_PHYS)
+        const vy = A.cy + 12 - 2.4, vx0 = P.sep + 1, vx1 = A.cx + A.r - 1;
+        steel += `<path d="M${f(vx0)} ${f(vy + 1.6)} L${f(vx1)} ${f(vy - 0.6)} L${f(vx1)} ${f(vy + 1.2)} L${f(vx0)} ${f(vy + 3)} Z" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<circle cx="${f(vx1 - 1.2)}" cy="${f(vy + 0.4)}" r="0.8" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
         // пружина толкателя на дне дорожки: шарик ляжет на неё
         const lx = (P.sep + 2 + fx1) / 2, sy0 = fy1 - 12;
         let spring = `M${f(lx - 3.4)} ${f(sy0)}`;
