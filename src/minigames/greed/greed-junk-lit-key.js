@@ -44,8 +44,9 @@ Object.assign(GreedJunkLit, {
         pach: { k: -0.2, cool: 0.62, coolLow: 0.12, feather: 5, edge: 16 },
         // кнопка запуска — с подсветкой изнутри, как у игровых автоматов
         button: { r: 11, warm: 0.55 },
-        // колба лампы над рычагом светится сама
-        leverLamp: { x: 314, y: 286, rx: 6.5, ry: 4.5, warm: 1.6, halo: { rx: 18, ry: 8, warm: 0.4 } },
+        // ореол лампы над рычагом на корпусе и коробе (сама лампа с колбой —
+        // рисунком поверх, GreedJunk.leverLampSvg)
+        leverLamp: { x: 314, y: 283, rx: 22, ry: 12, warm: 0.45 },
         // «отрицательная заливка» за рычагом: доска справа и полоса над
         // коробом гуще, чтобы освещённый рычаг читался силуэтом
         leverFlag: { x: 315, y: 335, rx: 42, ry: 72, k: -0.3 },
@@ -76,7 +77,7 @@ Object.assign(GreedJunkLit, {
         // свет на них почти не виден, а стену за ними заливал ярче самого
         // рычага — рычаг выходил тёмной вырезкой на светлом. Тёмную
         // глянцевую вещь показывают бликами: рассеянного мало, блика много.
-        { x: 314, y: 287, z: 30, r: 110, rgb: [3.0, 2.1, 1.25], at: [314, 372, 6], inner: 20, outer: 42,
+        { x: 314, y: 284, z: 30, r: 110, rgb: [3.0, 2.1, 1.25], at: [314, 372, 6], inner: 20, outer: 42,
           barn: [314, 350, 24, 74], dif: 0.22, spec: 2.4 },
         // 1. Лампа с абажуром над верхним ящиком: круг света на колесе,
         // края круга уходят на доски и на кожух пачинко — не по контуру
@@ -106,9 +107,7 @@ Object.assign(GreedJunkLit, {
         });
         const Lf = K.leverFlag, Ll = K.leverLamp;
         k += Lf.k * ss(1 - Math.hypot((x - Lf.x) / Lf.rx, (y - Lf.y) / Lf.ry));
-        // колба и ореол вокруг неё: лампа светит на кромку плафона и полку
-        w += Ll.warm * ss(1 - Math.hypot((x - Ll.x) / Ll.rx, (y - Ll.y) / Ll.ry)) +
-            Ll.halo.warm * ss(1 - Math.hypot((x - Ll.x) / Ll.halo.rx, (y - Ll.y) / Ll.halo.ry));
+        w += Ll.warm * ss(1 - Math.hypot((x - Ll.x) / Ll.rx, (y - Ll.y) / Ll.ry));
         if (G.pachinkoShown && G.pachinkoShown()) {
             const R = G.pachGlassRect(), [x0, y0] = G.pachPt(R.x0, R.y0), [x1, y1] = G.pachPt(R.x1, R.y1);
             const f = K.pach.feather, e = Math.min(x - x0, x1 - x, y - y0, y1 - y);

@@ -16,46 +16,96 @@ Object.assign(GreedJunk, {
     // есть связь рычага с барабанами. Было: ровная серая пластина с
     // «улыбкой»-вмятиной и две шестерни сбоку ни к чему.
     // ---------- ЛАМПА НАД РЫЧАГОМ ----------
-    // Источник света рычага (решение игрока): маленький прямоугольный
-    // металлический плафон под коробом пачинко, прямо над шаром; плафон не
-    // закрывает колбу целиком — она выглядывает снизу. Привинчен двумя
-    // лапками к кромке полки, провод уходит вправо под монеты. Свет от неё —
-    // GreedJunkLit.LIGHTS[0]. Было: свет на рычаге из ниоткуда — «источник
-    // должен быть близко, а его нет, выглядит странно». Кнопка пачинко ради
-    // места ушла влево-вверх по панели короба.
-    LEVER_LAMP: { x: 314, y0: 274, y1: 284.5, w0: 20, w1: 28, bulb: 5.2 },
-    leverLamp() {
-        // эмаль плафона — тот же старый хаки, что короб рычага: одна вещь
-        const J = PALETTE.greedJunk, R = J.carOld, L = this.LEVER_LAMP, f = this.f, ink = PALETTE.ink;
-        const x = L.x, a0 = x - L.w0 / 2, b0 = x + L.w0 / 2, a1 = x - L.w1 / 2, b1 = x + L.w1 / 2;
-        // провод: из торца плафона вправо, провисает, уходит под монеты
-        let out = this.T(17, 'rubber', `<path d="M${f(b1 - 2)} ${f(L.y0 + 3)} C${f(b1 + 5)} ${f(L.y0 + 2)} ${f(b1 + 7)} ${f(L.y0 + 9)} 342 ${f(L.y0 + 7)}" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linecap="round"/>` +
-            `<path d="M${f(b1 - 2)} ${f(L.y0 + 3)} C${f(b1 + 5)} ${f(L.y0 + 2)} ${f(b1 + 7)} ${f(L.y0 + 9)} 342 ${f(L.y0 + 7)}" fill="none" stroke="${J.tin[900]}" stroke-width="1.3" stroke-linecap="round"/>`);
-        // лапки к кромке полки: жесть с саморезом
-        let tabs = '';
-        [a0 + 3, b0 - 3].forEach(tx => {
-            tabs += `<rect x="${f(tx - 2.2)}" y="${f(L.y0 - 4)}" width="4.4" height="5" rx="0.6" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>` +
-                `<circle cx="${f(tx)}" cy="${f(L.y0 - 2)}" r="0.9" fill="${J.tin[300]}" stroke="${ink}" stroke-width="0.4"/>`;
+    // Источник света рычага (решение игрока): маленький металлический
+    // плафон прямо над шаром, колба выглядывает из-под него. Свет от неё —
+    // GreedJunkLit.LIGHTS[0], ореол на корпусе — KEY.leverLamp.
+    //
+    // Рисуется не в корпусе, а живым слоем поверх всего (GreedJunkLit.liveParts):
+    // под коробом пачинко до шара всего ~18 единиц, и плафон, влезающий
+    // туда целиком, на телефоне выходил ~28×15 точек — плоской трапецией,
+    // «наброском» (игрок). Поверх короба он заходит на низ его панели —
+    // туда, откуда ушла кнопка, — и становится вещью: колокол с выпуклыми
+    // боками, закатанная кромка, горловина с патроном, шнур, лапка на
+    // винтах. Свет на нём нарисован (шейдер его не видит): эмаль светлее
+    // сверху, изнутри плафон горит отражением колбы — так и читается, что
+    // светит именно он.
+    LEVER_LAMP: { x: 314, top: 260, rim: 280, wTop: 20, wRim: 30, bulb: 6 },
+    leverLampSvg() {
+        const J = PALETTE.greedJunk, E = J.carOld, Lb = J.bulb, L = this.LEVER_LAMP, f = this.f, ink = PALETTE.ink;
+        const x = L.x, t = L.top, r = L.rim, ht = L.wTop / 2, hr = L.wRim / 2;
+        const defs = `<defs>` +
+            // эмаль: сверху светлее (общий свет гаража), к кромке темнее
+            `<linearGradient id="gj-ll-enamel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${E.hi}"/><stop offset="0.55" stop-color="${E.base}"/><stop offset="1" stop-color="${E.lo}"/></linearGradient>` +
+            // бока колокола уходят от света — темнее к краям
+            `<linearGradient id="gj-ll-side" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${PALETTE.ink}" stop-opacity="0.5"/><stop offset="0.3" stop-color="${PALETTE.ink}" stop-opacity="0"/>` +
+            `<stop offset="0.65" stop-color="${PALETTE.ink}" stop-opacity="0"/><stop offset="1" stop-color="${PALETTE.ink}" stop-opacity="0.6"/></linearGradient>` +
+            // нутро плафона, освещённое колбой
+            `<radialGradient id="gj-ll-inside" cx="0.5" cy="0.9" r="0.7"><stop offset="0" stop-color="${Lb.lit.core}"/><stop offset="0.45" stop-color="${Lb.glow}"/><stop offset="1" stop-color="${Lb.amber}"/></radialGradient>` +
+            // колба: накал в середине, к краю янтарь
+            `<radialGradient id="gj-ll-bulb" cx="0.45" cy="0.35" r="0.65"><stop offset="0" stop-color="${Lb.lit.core}"/><stop offset="0.5" stop-color="${Lb.lit.pear}"/><stop offset="1" stop-color="${Lb.glow}"/></radialGradient>` +
+            // ореол вокруг колбы и вниз, на шар
+            `<radialGradient id="gj-ll-halo"><stop offset="0" stop-color="${Lb.lit.core}" stop-opacity="0.95"/><stop offset="0.3" stop-color="${Lb.lit.pear}" stop-opacity="0.5"/><stop offset="0.6" stop-color="${Lb.glow}" stop-opacity="0.18"/><stop offset="1" stop-color="${Lb.glow}" stop-opacity="0"/></radialGradient>` +
+            `<filter id="gj-ll-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.2"/></filter>` +
+            `</defs>`;
+        // силуэт колокола: плечи скруглены, бока выпуклые, низ шире
+        const bell = `M${f(x - ht + 2.5)} ${f(t)} L${f(x + ht - 2.5)} ${f(t)} Q${f(x + ht)} ${f(t)} ${f(x + ht + 0.6)} ${f(t + 3)} ` +
+            `Q${f(x + hr - 1.5)} ${f(r - 7)} ${f(x + hr)} ${f(r)} L${f(x - hr)} ${f(r)} Q${f(x - hr + 1.5)} ${f(r - 7)} ${f(x - ht - 0.6)} ${f(t + 3)} ` +
+            `Q${f(x - ht)} ${f(t)} ${f(x - ht + 2.5)} ${f(t)} Z`;
+        let o = defs;
+        // тень плафона на то, что за ним: свет гаража сверху-слева
+        o += `<path d="${bell}" fill="${ink}" opacity="0.35" filter="url(#gj-ll-blur)" transform="translate(1.6 2.2)"/>`;
+        // лапка: стальная полоса от горловины вверх, на двух винтах к панели
+        const ty = t - 9;
+        o += `<rect x="${f(x - 3)}" y="${f(ty)}" width="6" height="${f(t - ty + 1)}" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            `<path d="M${f(x - 2.2)} ${f(ty + 1)} L${f(x - 2.2)} ${f(t)}" stroke="${J.tin[100]}" stroke-width="0.7" opacity="0.7"/>` +
+            [ty + 2.4, ty + 6].map(y => `<circle cx="${x}" cy="${f(y)}" r="1.25" fill="${J.tin[300]}" stroke="${ink}" stroke-width="0.5"/>` +
+                `<path d="M${f(x - 0.8)} ${f(y + 0.5)} L${f(x + 0.8)} ${f(y - 0.5)}" stroke="${ink}" stroke-width="0.45"/>`).join('');
+        // шнур в оплётке: из горловины вправо и вниз, под монеты рамки
+        const cord = `M${f(x + 4)} ${f(t - 1.5)} C${f(x + 11)} ${f(t - 4)} ${f(x + 15)} ${f(t + 2)} ${f(x + 19)} ${f(t + 1)} S${f(x + 25)} ${f(t - 3)} 342 ${f(t + 2)}`;
+        o += `<path d="${cord}" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linecap="round"/>` +
+            `<path d="${cord}" fill="none" stroke="${J.wood[700]}" stroke-width="1.5" stroke-linecap="round"/>` +
+            `<path d="${cord}" fill="none" stroke="${J.wood[300]}" stroke-width="0.5" stroke-dasharray="0.8 1.1" opacity="0.8"/>`;
+        // горловина: латунный стакан патрона с накаткой
+        o += `<rect x="${f(x - 4.2)}" y="${f(t - 3.4)}" width="8.4" height="4.2" rx="1" fill="${J.brass.base}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            [-2.4, -0.8, 0.8, 2.4].map(d => `<path d="M${f(x + d)} ${f(t - 2.8)} L${f(x + d)} ${f(t + 0.2)}" stroke="${J.brass.lo}" stroke-width="0.5"/>`).join('') +
+            `<path d="M${f(x - 3.4)} ${f(t - 2.6)} L${f(x + 1)} ${f(t - 2.6)}" stroke="${J.brass.hi}" stroke-width="0.6" stroke-linecap="round"/>`;
+        // ореол — до колбы: колба и кромка лягут поверх
+        o += `<ellipse cx="${x}" cy="${f(r + 3)}" rx="24" ry="15" fill="url(#gj-ll-halo)"/>`;
+        // корпус плафона
+        o += `<path d="${bell}" fill="url(#gj-ll-enamel)"/>` +
+            `<path d="${bell}" fill="url(#gj-ll-side)"/>`;
+        // прорези для жара: три штампованные щели на плече
+        [-5, 0, 5].forEach(d => {
+            o += `<rect x="${f(x + d - 1.6)}" y="${f(t + 2.4)}" width="3.2" height="1.3" rx="0.65" fill="${J.hole}"/>` +
+                `<path d="M${f(x + d - 1.4)} ${f(t + 3.9)} L${f(x + d + 1.4)} ${f(t + 3.9)}" stroke="${E.scratch}" stroke-width="0.4" opacity="0.8"/>`;
         });
-        out += this.T(18, 'steel', tabs);
-        // колба: купол выглядывает из-под плафона
-        const by = L.y1 - 0.6, br = L.bulb, Lb = J.bulb;
-        const dome = `M${f(x - br)} ${f(by)} A${f(br)} ${f(br * 0.95)} 0 0 0 ${f(x + br)} ${f(by)} Z`;
-        out += this.T(18, 'glass', `<path d="${dome}" fill="${Lb.lit.pear}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
-            `<path d="M${f(x - br * 0.45)} ${f(by + 1.2)} q${f(br * 0.45)} ${f(br * 0.5)} ${f(br * 0.9)} 0" fill="none" stroke="${Lb.lit.core}" stroke-width="0.8" opacity="0.9"/>` +
-            this.domeH(x, by, br, 2));
-        // плафон: короткая трапеция ребром к нам, низ шире; кромка снизу
-        // отогнута, изнутри темно — видно, что внутри полость с лампой
-        const hood = `M${f(a0)} ${f(L.y0)} L${f(b0)} ${f(L.y0)} L${f(b1)} ${f(L.y1)} L${f(a1)} ${f(L.y1)} Z`;
-        let h = `<path d="${hood}" fill="${R.base}" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
-            `<path d="M${f(a0 + 1)} ${f(L.y0 + 1.2)} L${f(b0 - 1)} ${f(L.y0 + 1.2)}" class="hl" stroke="${R.hi}" stroke-width="0.9" stroke-linecap="round"/>` +
-            // сколы эмали и потёртость
-            `<path d="M${f(x + 4)} ${f(L.y0 + 4)} l2.2 -0.6 l0.8 1.4 l-2 0.8 z" fill="${J.tin[300]}" opacity="0.7"/>` +
-            `<path d="M${f(a0 + 3)} ${f(L.y0 + 5.5)} l4 -0.4" stroke="${R.hi}" stroke-width="${STROKE.hairline}" opacity="0.6"/>` +
-            // отогнутая кромка
-            `<rect x="${f(a1 - 0.6)}" y="${f(L.y1 - 1.6)}" width="${f(L.w1 + 1.2)}" height="2.2" rx="0.8" fill="${R.lo}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`;
-        out += this.T(19, 'raw', h);
-        return out;
+        // блик эмали по плечу, сколы до металла, ржавый потёк с кромки
+        o += `<path d="M${f(x - ht + 2)} ${f(t + 1)} Q${f(x - 3)} ${f(t + 0.4)} ${f(x + 2)} ${f(t + 0.8)}" fill="none" stroke="${J.alu[100]}" stroke-width="0.9" stroke-linecap="round" opacity="0.55"/>` +
+            `<path d="M${f(x - ht - 0.2)} ${f(t + 5)} Q${f(x - hr + 2)} ${f(r - 6)} ${f(x - hr + 1.2)} ${f(r - 2)}" fill="none" stroke="${E.scratch}" stroke-width="0.6" opacity="0.6"/>` +
+            `<path d="M${f(x + 5.5)} ${f(t + 8)} l2.2 -0.7 l1 1.5 l-1.4 1.2 l-1.6 -0.3 z" fill="${J.tin[300]}" stroke="${E.lo}" stroke-width="0.35"/>` +
+            `<path d="M${f(x - 8)} ${f(r - 5)} l1.6 -0.5 l0.6 1.1 l-1.5 0.6 z" fill="${J.tin[300]}" stroke="${E.lo}" stroke-width="0.35"/>` +
+            `<path d="M${f(x + 9)} ${f(r - 1)} q0.4 2.6 -0.2 4.4" fill="none" stroke="${J.rust[500]}" stroke-width="1" stroke-linecap="round" opacity="0.7"/>`;
+        // контур колокола
+        o += `<path d="${bell}" fill="none" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+        // нутро: из-под кромки видна освещённая изнанка (взгляд чуть снизу)
+        o += `<path d="M${f(x - hr + 1.2)} ${f(r - 0.4)} Q${x} ${f(r - 5.5)} ${f(x + hr - 1.2)} ${f(r - 0.4)} Z" fill="url(#gj-ll-inside)"/>`;
+        // колба — после изнанки: висит из горловины сквозь проём, ниже кромки
+        const by = r + 2.8, br = L.bulb;
+        o += `<circle cx="${x}" cy="${f(by)}" r="${br}" fill="url(#gj-ll-bulb)" stroke="${J.bulb.amber}" stroke-width="${STROKE.detail}"/>`;
+        let zig = `M${f(x - 2.4)} ${f(by + 0.4)}`;
+        for (let i = 1; i <= 6; i++) zig += ` L${f(x - 2.4 + 0.8 * i)} ${f(by + 0.4 + (i % 2 ? 0.9 : 0))}`;
+        o += `<path d="${zig}" fill="none" stroke="${J.bulb.lit.core}" stroke-width="0.9" stroke-linejoin="round"/>` +
+            `<path d="M${f(x - 2.4)} ${f(by - 3)} L${f(x - 2.4)} ${f(by + 0.4)} M${f(x + 2.4)} ${f(by - 3)} L${f(x + 2.4)} ${f(by + 0.4)}" stroke="${J.bulb.wire}" stroke-width="0.45"/>` +
+            `<path d="M${f(x - 3.6)} ${f(by + 1.2)} Q${f(x - 3.2)} ${f(by + 3.6)} ${f(x - 0.8)} ${f(by + 4.4)}" fill="none" stroke="${J.bulb.lit.core}" stroke-width="0.8" stroke-linecap="round" opacity="0.9"/>`;
+        // свечение поверх колбы: накал размывает её край — светит, а не
+        // нарисован кружком
+        o += `<ellipse cx="${x}" cy="${f(by + 0.5)}" rx="${f(br * 1.7)}" ry="${f(br * 1.35)}" fill="url(#gj-ll-halo)" opacity="0.8"/>`;
+        // закатанная кромка: валик, по нему ободранная до стали полоса и
+        // тёплый отсвет снизу от колбы
+        o += `<rect x="${f(x - hr - 0.8)}" y="${f(r - 0.6)}" width="${f(2 * hr + 1.6)}" height="2.4" rx="1.2" fill="${E.lo}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            `<path d="M${f(x - hr + 1)} ${f(r + 0.2)} L${f(x - 3)} ${f(r + 0.2)}" stroke="${J.tin[300]}" stroke-width="0.6" stroke-linecap="round" opacity="0.8"/>` +
+            `<path d="M${f(x - 6)} ${f(r + 1.3)} L${f(x + 6)} ${f(r + 1.3)}" stroke="${Lb.glow}" stroke-width="0.7" stroke-linecap="round" opacity="0.9"/>`;
+        return `<g class="gj-lever-lamp">${o}</g>`;
     },
 
     leverMount() {
@@ -372,7 +422,7 @@ Object.assign(GreedJunk, {
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">` +
             this.passStyle(this.pass) +
             this.defs().replace('</defs>', clip + '</defs>') +
-            this.plinth() + this.body() + this.topBox() + this.head() + this.topShade() + this.leverMount() + this.leverLamp() +
+            this.plinth() + this.body() + this.topBox() + this.head() + this.topShade() + this.leverMount() +
             (lever === false ? '' : this.leverSvg()) +
             `</svg>`;
     },

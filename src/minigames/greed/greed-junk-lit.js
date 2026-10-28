@@ -353,7 +353,8 @@ const GreedJunkLit = {
     // группы живого слоя: определения свечений — один раз
     liveParts() {
         const ns = 'http://www.w3.org/2000/svg', P = { keys: {} };
-        this.live.innerHTML = GreedJunk.haloDefs();
+        // лампа над рычагом — неподвижная, рисуется один раз поверх всего
+        this.live.innerHTML = GreedJunk.haloDefs() + (GreedJunk.leverLampSvg ? GreedJunk.leverLampSvg() : '');
         ['glows', 'thread', 'ind'].forEach(k => { P[k] = document.createElementNS(ns, 'g'); this.live.appendChild(P[k]); });
         return P;
     },
