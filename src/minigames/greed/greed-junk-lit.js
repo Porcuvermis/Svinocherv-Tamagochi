@@ -426,6 +426,8 @@ const GreedJunkLit = {
             if (moved || (tilted && now - lastFull >= this.LIGHT_MS)) {
                 last.x = lt.x; last.y = lt.y; lastFull = now;
                 this.draw(this.lightFor(lt));
+                // блики колбы — за тем же светом (перерисуются, только если сдвинулись)
+                if (this.meterGlareAt) this.meterGlareAt(this.lightFor(lt));
             } else if (reels) {
                 this.draw(this.lightFor(lt), this.REEL_BOX);   // только окна
             }

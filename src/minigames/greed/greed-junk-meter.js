@@ -111,6 +111,8 @@ Object.assign(GreedJunkLit, {
         this.meterCv = layer().canvas;
         this.meterBub = layer();
         this.meterGlassTop(layer());
+        this.meterGlare = layer();
+        this.meterGlareAt(this.lightFor ? this.lightFor({ x: 0, y: 0 }) : [-0.45, -0.55, 0.7]);
         const v = this.meterValue();
         this._meter = { L: v, T: v, v: 0, w: 0, wv: 0, bubbles: [], foam: [], fizz: 0, sites: this.meterSites(), at: 0, shown: '' };
     },
@@ -310,7 +312,8 @@ Object.assign(GreedJunkLit, {
         ctx.restore();
     },
 
-    // стекло поверх жидкости и пузырьков: деления и блики — один раз;
+    // стекло поверх жидкости и пузырьков: деления — один раз (блики —
+    // своим слоем, за светом: meterGlareAt);
     // иначе столбик лежал бы на стекле, а не в нём
     meterGlassTop(ctx) {
         const G = GreedJunk, R = G.METER, C = PALETTE.greedJunk.reel.meter, x = R.bx;
@@ -322,7 +325,29 @@ Object.assign(GreedJunkLit, {
             ctx.moveTo(x - R.r + R.wall + 0.8, y); ctx.lineTo(x - R.r + R.wall + 0.8 + L, y);
         }
         ctx.stroke();
-        ctx.strokeStyle = C.glassHi;
+        ctx.globalAlpha = 1;
+    },
+    // Блики колбы идут за светом, как у стекла пачинко. Было: две полосы
+    // нарисованы намертво, а всё вокруг от наклона телефона меняло свет —
+    // стекло колбы выглядело наклейкой (игрок).
+    // Колба — вертикальный цилиндр: блик на нём — вертикальная полоса там,
+    // где нормаль смотрит между светом и глазом. Её место поперёк колбы —
+    // по x-составляющей этого направления (H = L + глаз); k — усиление,
+    // чтобы ход был виден при наклоне в пару десятков градусов. У края
+    // полоса сужается (ракурс) и гаснет. Рефлекс от стены напротив — слабая
+    // узкая полоса с другой стороны, идёт навстречу.
+    METER_GLARE: { k: 2.6, w: 2.6, glow: 7 },
+    meterGlareAt(L) {
+        const ctx = this.meterGlare;
+        if (!ctx) return;
+        const n = Math.hypot(L[0], L[1], L[2]) || 1, hx = L[0] / n, hz = L[2] / n + 1;
+        const s = Math.max(-0.92, Math.min(0.92, hx / Math.hypot(hx, hz) * this.METER_GLARE.k));
+        const key = s.toFixed(3);
+        if (this._meterGlareKey === key) return;
+        this._meterGlareKey = key;
+        const G = GreedJunk, R = G.METER, C = PALETTE.greedJunk.reel.meter, x = R.bx, ri = R.r - R.wall, B = this.METER_BOX;
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore();
+        ctx.strokeStyle = C.glassHi; ctx.lineCap = 'butt';
         const seg = (xx, wd, a) => {
             const ys = [R.y1 + 4].concat(...R.clamps.map(c => [c - 4.4, c + 4.4]), [R.y0 - 4]);
             ctx.globalAlpha = a; ctx.lineWidth = wd;
@@ -330,9 +355,12 @@ Object.assign(GreedJunkLit, {
             for (let i = 0; i < ys.length; i += 2) { ctx.moveTo(xx, ys[i]); ctx.lineTo(xx, ys[i + 1]); }
             ctx.stroke();
         };
-        // блики цилиндра: широкий слева (свет сверху-слева), узкий рефлекс справа
-        seg(x - R.r + R.wall + 3.2, 2.6, 0.6);
-        seg(x + R.r - R.wall - 2, 1, 0.5);
+        const face = Math.sqrt(1 - s * s), M = this.METER_GLARE;
+        const xm = x + s * (ri - 1.4), xr = x - s * 0.35 * ri + (s < 0 ? 1 : -1) * (ri - 2) * 0.85;
+        // мягкое сияние вокруг блика, сам блик, рефлекс
+        seg(xm, M.glow * face + 1, 0.12 * face);
+        seg(xm, M.w * face + 0.5, 0.25 + 0.4 * face);
+        seg(xr, 1, 0.2 + 0.3 * face);
         ctx.globalAlpha = 1;
     }
 });
