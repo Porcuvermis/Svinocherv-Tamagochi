@@ -357,6 +357,7 @@ const DebugState = {
             // (если её не было), выключение забирает — только выданную здесь.
             // То же у колеса.
             if (typeof GameState !== 'undefined' && GameState.data) {
+                if (on) { this.greedGrantShown(); location.replace(location.pathname + '?fresh=' + Date.now() + location.hash); return; }
                 const up = GameState.data.upgrades || (GameState.data.upgrades = {});
                 const ukey = act === 'greed-wheel' ? 'greed_wheel' : 'greed_pachinko', gkey = key + '-granted';
                 let granted = false;
@@ -451,6 +452,25 @@ const DebugState = {
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI();
     },
 
+    // Колесо и пачинко, включённые здесь, — с первой ступенью. Флажок показа
+    // живёт в localStorage, а ступень — в сохранении, и после сброса
+    // прогресса колесо оставалось на аппарате, но бэкенд говорил «не
+    // куплено»: любой бросок молча тормозил, будто денег нет (игрок: «колесо
+    // не запускается»). Зовётся при включении и при каждом входе в алчность.
+    greedGrantShown() {
+        if (typeof GameState === 'undefined' || !GameState.data) return;
+        const up = GameState.data.upgrades || (GameState.data.upgrades = {});
+        let changed = false;
+        [['gj-wheel', 'greed_wheel'], ['gj-pachinko', 'greed_pachinko']].forEach(([key, ukey]) => {
+            let on = false;
+            try { on = localStorage.getItem(key) === '1'; } catch (e) { /* нет хранилища */ }
+            if (!on || up[ukey]) return;
+            up[ukey] = 1; changed = true;
+            try { localStorage.setItem(key + '-granted', '1'); } catch (e) { /* нет хранилища */ }
+        });
+        if (changed) GameState.save();
+    },
+
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
         if (DebugMode.enabled) this.startFps(); else this.stopFps();
@@ -461,7 +481,16 @@ const DebugState = {
             let on = false;
             try { on = localStorage.getItem(key) === '1'; } catch (e) { /* нет хранилища */ }
             const err = typeof GreedJunkLit !== 'undefined' && GreedJunkLit[errKey];
-            wb.textContent = name + (err ? ' ✗ ' + err : on ? ' ✓' : '');
+            let note = '';
+            // Последний бросок колеса и чем кончился: на телефоне консоли нет,
+            // а «колесо не играет» бывает от трёх разных причин.
+            if (act === 'greed-wheel' && on && typeof GreedJunkLit !== 'undefined' && GreedJunkLit.wheelLast) {
+                const L = GreedJunkLit.wheelLast, min = GreedJunkLit.WHEEL_SPIN.minW;
+                const why = { play: 'играет', weak: 'слабо', held: 'палец замер', refused: 'отказ' }[L.why] || L.why;
+                const ref = typeof GreedMinigame !== 'undefined' && GreedMinigame.refused && GreedMinigame.refused.wheel;
+                note = ` · ${Math.abs(L.w * 1000).toFixed(1)}/${(min * 1000).toFixed(1)} ${why}${L.why === 'refused' && ref ? ' (' + ref + ')' : ''}`;
+            }
+            wb.textContent = name + (err ? ' ✗ ' + err : on ? ' ✓' : '') + note;
         });
     }
 };

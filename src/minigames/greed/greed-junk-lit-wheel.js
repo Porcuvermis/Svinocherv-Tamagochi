@@ -93,7 +93,7 @@ Object.assign(GreedJunkLit, {
             e.preventDefault(); e.stopPropagation();
             wrap.setPointerCapture(e.pointerId);
             grab = { a: ang(p), hist: [[e.timeStamp, M.rot]] };
-            M.st = 'drag'; M.w = 0; M.target = M.rot;
+            M.st = 'drag'; M.w = 0; M.wr = 0; M.target = M.rot;
         });
         // Скорость броска — по времени САМИХ касаний (e.timeStamp), а не по
         // часам в момент обработки. Было: performance.now() в обработчике и
@@ -124,8 +124,20 @@ Object.assign(GreedJunkLit, {
             grab = null;
             const a = h[0], b = h[h.length - 1];
             let w = h.length > 1 ? (b[1] - a[1]) / Math.max(16, b[0] - a[0]) : 0;
-            // палец остановился перед тем, как отпустить, — броска нет
-            if (e && e.timeStamp - b[0] > 120) w = 0;
+            // Палец остановился перед тем, как отпустить, — броска нет.
+            // Остановка — пауза дольше 120 мс И дольше двух обычных
+            // промежутков между касаниями: на медленном кадре касания идут
+            // раз в кадр, и пауза в кадр — это ещё движение. Было: голые
+            // 120 мс — на телефоне с тяжёлым кадром гасили любой бросок.
+            const step = h.length > 1 ? (b[0] - a[0]) / (h.length - 1) : 0;
+            const held = e && e.timeStamp - b[0] > Math.max(120, step * 2.5);
+            if (held) w = 0;
+            // Запасной замер — как крутилось само колесо в последних кадрах
+            // (wheelStep, по часам кадров): события касаний на телефоне могут
+            // прийти слипшимися, а колесо за пальцем шло на самом деле.
+            const wr = held ? 0 : (M.wr || 0);
+            if (Math.abs(wr) > Math.abs(w)) w = wr;
+            this.wheelLast = { w, held, why: '' };
             this.wheelThrow(w, now);
         };
         wrap.addEventListener('pointerup', up);
@@ -138,6 +150,8 @@ Object.assign(GreedJunkLit, {
         const M = this._wheel, P = this.WHEEL_SPIN;
         w = Math.max(-P.maxW, Math.min(P.maxW, w));
         M.w = w;
+        const last = this.wheelLast || (this.wheelLast = {});
+        last.w = w; last.why = Math.abs(w) < P.minW ? (last.held ? 'held' : 'weak') : 'play';
         if (Math.abs(w) < P.minW) { M.st = w ? 'coast' : 'idle'; return; }
         const SEC = GreedJunk.WHEEL_SECTORS, n = SEC.length;
         // Какой сектор: игра решает ключ (onWheel → 'gold1', 'blank'…, по
@@ -152,6 +166,7 @@ Object.assign(GreedJunkLit, {
             // палец. Без этого бесплатный холостой проворот читался как
             // крутка без выигрыша.
             if (key === false || key == null) {
+                last.why = 'refused';
                 M.st = 'coast'; M.brake = true;
                 if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
                 return;
@@ -177,12 +192,17 @@ Object.assign(GreedJunkLit, {
     wheelStep(now) {
         const M = this._wheel, P = this.WHEEL_SPIN;
         if (!M || !this._wheelSpr) return;
-        const dt = Math.min(40, M.at0 ? now - M.at0 : 16);
+        // raw — настоящее время кадра; dt — с потолком для пружин и трения
+        const raw = M.at0 ? Math.min(400, now - M.at0) : 16, dt = Math.min(40, raw);
         M.at0 = now;
         const prev = M.rot;
         if (M.st === 'drag') {
             // за пальцем — с запаздыванием, на любой частоте кадров одинаково
-            M.rot += (M.target - M.rot) * (1 - Math.pow(1 - P.drag, dt / 16));
+            M.rot += (M.target - M.rot) * (1 - Math.pow(1 - P.drag, raw / 16));
+            // скорость колеса за пальцем, сглаженная по кадрам: запасной
+            // замер броска (up), не зависит от того, как пришли касания
+            const v = (M.rot - prev) / Math.max(1, raw);
+            M.wr = (M.wr || 0) * 0.5 + v * 0.5;
         } else if (M.st === 'spin') {
             const u = Math.min(1, (now - M.t0) / M.dur);
             // равнозамедленно: s = L·(2u − u²)

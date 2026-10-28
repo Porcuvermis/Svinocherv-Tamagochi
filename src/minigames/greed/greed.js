@@ -62,6 +62,8 @@ const GreedMinigame = {
         this.screenElement.classList.add('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
         this.play = { slots: null, wheel: null, pachinko: null };
+        // колесо и пачинко, включённые в 🐞, должны быть и куплены
+        if (typeof DebugState !== 'undefined' && DebugState.greedGrantShown) DebugState.greedGrantShown();
         // Аппарат ставится на следующем кадре: сразу после .active сцена
         // может иметь нулевой размер. Готовность для покрова (veilReady) —
         // аппарат собран целиком (GreedJunkLit.settled: корпус, рычаг,
@@ -186,10 +188,14 @@ const GreedMinigame = {
 // и шарик идут одновременно.
 Object.assign(GreedMinigame, {
     // начать игру game; false — не состоялась (занята, нет денег, не куплена)
+    // refused[game] — почему последняя игра не состоялась (видно в 🐞 на
+    // кнопке игры: на телефоне консоли нет)
+    refused: {},
     startPlay(game) {
-        if (this.play[game]) return false;
+        if (this.play[game]) { this.refused[game] = 'busy'; return false; }
         const res = Backend.greedPlay(game);
-        if (!res.ok) return false;
+        if (!res.ok) { this.refused[game] = res.error || 'error'; return false; }
+        this.refused[game] = '';
         this.started(game, res);
         if (GreedJunkLit.coinIn) GreedJunkLit.coinIn();
         return res.key;
