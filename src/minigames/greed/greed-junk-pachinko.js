@@ -218,13 +218,7 @@ Object.assign(GreedJunk, {
         const vy = A.cy + 12 - 2.4, vx0 = P.sep + 1, vx1 = A.cx + A.r - 1;
         steel += `<path d="M${f(vx0)} ${f(vy + 1.6)} L${f(vx1)} ${f(vy - 0.6)} L${f(vx1)} ${f(vy + 1.2)} L${f(vx0)} ${f(vy + 3)} Z" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<circle cx="${f(vx1 - 1.2)}" cy="${f(vy + 0.4)}" r="0.8" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
-        // пружина толкателя на дне дорожки: шарик ляжет на неё
-        const lx = (P.sep + 2 + fx1) / 2, sy0 = fy1 - 12;
-        let spring = `M${f(lx - 3.4)} ${f(sy0)}`;
-        for (let k = 0; k < 6; k++) spring += ` L${f(lx + (k % 2 ? -3.4 : 3.4))} ${f(sy0 + (k + 1) * 2)}`;
-        steel += `<rect x="${f(lx - 4.4)}" y="${f(sy0 - 2)}" width="8.8" height="2" rx="0.6" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>` +
-            `<path d="${spring}" fill="none" stroke="${ink}" stroke-width="1.6" stroke-linejoin="round"/>` +
-            `<path d="${spring}" fill="none" stroke="${J.tin[300]}" stroke-width="0.8" stroke-linejoin="round"/>`;
+        // пружина толкателя — своей деталью (pachSpring): она сжимается
 
         // ---- лунки: стаканчик из банки, крашен, значок, два гвоздика ----
         let cups = '';
@@ -271,6 +265,26 @@ Object.assign(GreedJunk, {
             this.domeH(B.x, B.y, B.r, 3.6);
 
         return { frame, field, drain, steel, cups, nails, corners, button };
+    },
+
+    // Пружина толкателя на дне дорожки: площадка, на которую ложится шарик,
+    // и витки до дна. k — сжатие 0..1: площадка опускается на SPRING_DROP.
+    // Своей деталью, а не в рисунке короба: на выстреле она распрямляется
+    // (greed-junk-lit-pachinko.js), было — нарисована намертво.
+    SPRING_DROP: 5,
+    pachSpringBox() {
+        const P = this.PACH, fx1 = P.x1 - P.wall, fy1 = P.y1 - P.panel, lx = (P.sep + 2 + fx1) / 2;
+        return { x: lx - 6, y: fy1 - 15, w: 12, h: 15 };
+    },
+    pachSpring(k) {
+        const J = PALETTE.greedJunk, ink = PALETTE.ink, f = this.f, B = this.pachSpringBox(), P = this.PACH;
+        const lx = B.x + 6, fy1 = P.y1 - P.panel, sy0 = fy1 - 12 + k * this.SPRING_DROP, n = 6, step = (fy1 - sy0) / n;
+        let spring = `M${f(lx - 3.4)} ${f(sy0)}`;
+        for (let i = 0; i < n; i++) spring += ` L${f(lx + (i % 2 ? -3.4 : 3.4))} ${f(sy0 + (i + 1) * step)}`;
+        return `<path d="${spring}" fill="none" stroke="${ink}" stroke-width="1.6" stroke-linejoin="round"/>` +
+            `<path d="${spring}" fill="none" stroke="${J.tin[300]}" stroke-width="0.8" stroke-linejoin="round"/>` +
+            this.rodH(spring, 1.6, 0.8) +
+            `<rect x="${f(lx - 4.4)}" y="${f(sy0 - 2)}" width="8.8" height="2" rx="0.6" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
     },
 
     // Стекло: мутное оргстекло поверх поля — лёгкий тон, блики полосами

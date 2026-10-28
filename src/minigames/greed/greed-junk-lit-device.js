@@ -172,9 +172,9 @@ Object.assign(GreedJunkLit, {
     // а в полёте рисуется готовая картинка.
     deviceSprite(Q, set, w, h, L) {
         const gl = Q.gl, U = Q.U, n = Math.hypot(L[0], L[1], L[2]) || 1;
-        if (!Q.sfb) {
-            Q.sfb = gl.createFramebuffer();
-            Q.stex = gl.createTexture();
+        if (!Q.sfb) { Q.sfb = gl.createFramebuffer(); Q.stex = gl.createTexture(); }
+        // буфер — под размер картинки: у прибора их бывает несколько разных
+        if (Q.sw !== w || Q.sh !== h) {
             gl.bindTexture(gl.TEXTURE_2D, Q.stex);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);

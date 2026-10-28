@@ -166,6 +166,7 @@ Object.assign(GreedJunkLit, {
         M.seek = null;
         M.ball = GreedJunk.pachBall(v0);
         M.acc = 0; M.bat = 0;
+        M.fireAt = performance.now();
         if (typeof Haptics !== 'undefined') Haptics.impact('rigid', true);
     },
 
@@ -179,7 +180,22 @@ Object.assign(GreedJunkLit, {
         const Q = this._pgl, M = this._pach;
         if (!Q || !Q.ball) return null;
         const S = this.SCALE * 2, r = GreedJunk.PACH_PHYS.r, n = Math.ceil((r + 1) * 2 * S);
-        return (this._pachSpr = this.deviceSprite(Q, Q.ball, n, n, this.lightFor((M && M.lt) || this._tilt || { x: 0, y: 0 })));
+        const L = this.lightFor((M && M.lt) || this._tilt || { x: 0, y: 0 });
+        // пружина — к тому же свету, все сжатия разом
+        if (Q.spring) {
+            const SB = GreedJunk.pachSpringBox();
+            this._springSpr = Q.spring.map(st => this.deviceSprite(Q, st, Math.round(SB.w * S), Math.round(SB.h * S), L));
+        }
+        return (this._pachSpr = this.deviceSprite(Q, Q.ball, n, n, L));
+    },
+    // Сжатие пружины: пока ищется запуск — сжата (шарик на ней), выстрел —
+    // распрямляется за SPRING_MS. Иначе 0.
+    SPRING_K: [0, 0.33, 0.66, 1], SPRING_MS: 110,
+    pachSpringK(now) {
+        const M = this._pach;
+        if (M.seek) return 1;
+        const t = now - (M.fireAt || -1e9);
+        return t < this.SPRING_MS ? 1 - t / this.SPRING_MS : 0;
     },
     // карты шарика: круг, полусфера (подъём = радиус), полированная сталь;
     // тело тёмное — хром в жизни тёмный, с ярким пятном отражения (светлое
@@ -201,7 +217,24 @@ Object.assign(GreedJunkLit, {
         const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(svg(ps))));
         G.pass = 'baked';
         Q.ball = this.deviceSet(Q, maps);
+        // пружина: сжатия SPRING_K, те же три карты, в масштабе шарика
+        const SB = G.pachSpringBox(), sw = Math.round(SB.w * S), sh = Math.round(SB.h * S);
+        const ssvg = (pass, k) => {
+            G.pass = pass;
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="${SB.x} ${SB.y} ${SB.w} ${SB.h}">` +
+                G.passStyle(pass) + G.T(6.5, 'steel', G.pachSpring(k)) + '</svg>';
+        };
+        // набор — целиком и только потом в прибор: картинки шарика
+        // считаются в кадре и брали неполный набор пружины
+        const sets = [];
+        for (const k of this.SPRING_K) {
+            const sm = await Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(ssvg(ps, k))));
+            sets.push(this.deviceSet(Q, sm));
+        }
+        Q.spring = sets;
+        G.pass = 'baked';
         this._pachSpr = null;
+        if (this._pach) this._pach.dirty = true;
     },
 
     // Полёт: физика фиксированным шагом (на любом кадре путь один), удар о
@@ -215,7 +248,8 @@ Object.assign(GreedJunkLit, {
         const dt = Math.min(0.05, M.bat ? (now - M.bat) / 1000 : 1 / 60);
         M.bat = now;
         const pressed = now - M.press < 140;
-        if (!M.ball && !M.sink && !pressed && !M.dirty) return;
+        const springK = this.pachSpringK(now);
+        if (!M.ball && !M.sink && !pressed && !M.dirty && springK === 0 && !M.springWas) return;
         if (M.ball && M.ball.hold) M.press = now;          // ищется запуск — кнопка вдавлена
         if (M.ball && !M.ball.hold) {
             M.acc += dt;
@@ -240,11 +274,27 @@ Object.assign(GreedJunkLit, {
         c.setTransform(1, 0, 0, 1, 0, 0);
         c.clearRect(0, 0, this.pachBallCv.width, this.pachBallCv.height);
         c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
+        // пружина — ближайшее посчитанное сжатие
+        this.pachBallSprite();          // к свету — и шарик, и пружина
+        if (this._springSpr) {
+            const ks = this.SPRING_K, i = ks.reduce((b, k, j) => Math.abs(k - springK) < Math.abs(ks[b] - springK) ? j : b, 0);
+            const SB = G.pachSpringBox();
+            c.drawImage(this._springSpr[i], SB.x, SB.y, SB.w, SB.h);
+        }
+        M.springWas = springK > 0;
         if (pressed) {
-            // кнопка вдавлена: колпак темнеет
-            const Bt = G.PACH.button;
-            c.globalAlpha = 0.3; c.fillStyle = PALETTE.greedJunk.hole;
-            c.beginPath(); c.arc(Bt.x, Bt.y, Bt.r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+            // Кнопка утоплена: колпак уходит в обод — обод кладёт на него
+            // серп тени со стороны света, сам колпак чуть темнеет. Было:
+            // просто темнел.
+            const Bt = G.PACH.button, L = this.lightFor(this._tilt || { x: 0, y: 0 }), n = Math.hypot(L[0], L[1]) || 1;
+            const ox = -L[0] / n * 2.2, oy = -L[1] / n * 2.2;
+            c.save();
+            c.beginPath(); c.arc(Bt.x, Bt.y, Bt.r, 0, Math.PI * 2); c.clip();
+            c.fillStyle = PALETTE.greedJunk.hole;
+            c.globalAlpha = 0.18; c.fillRect(Bt.x - Bt.r, Bt.y - Bt.r, Bt.r * 2, Bt.r * 2);
+            c.globalAlpha = 0.45;
+            c.beginPath(); c.arc(Bt.x, Bt.y, Bt.r, 0, Math.PI * 2); c.arc(Bt.x - ox, Bt.y - oy, Bt.r, 0, Math.PI * 2, true); c.fill('evenodd');
+            c.restore(); c.globalAlpha = 1;
         }
         if (M.sink) {
             // провал: вниз на радиус с хвостиком, выше кромки — видно
@@ -268,9 +318,11 @@ Object.assign(GreedJunkLit, {
             c.globalAlpha = 0.35; c.fillStyle = PALETTE.greedJunk.hole;
             c.beginPath(); c.arc(b.x - L[0] / L[2] * r, b.y - L[1] / L[2] * r, r * 0.95, 0, Math.PI * 2); c.fill();
             c.globalAlpha = 1;
-            c.drawImage(spr, b.x - r - 1, b.y - r - 1, (r + 1) * 2, (r + 1) * 2);
+            // ищется запуск — шарик лежит на сжатой пружине
+            const by = b.y + (b.hold ? G.SPRING_DROP * springK : 0);
+            c.drawImage(spr, b.x - r - 1, by - r - 1, (r + 1) * 2, (r + 1) * 2);
         }
-        M.dirty = !!M.ball || !!M.sink || pressed;
+        M.dirty = !!M.ball || !!M.sink || pressed || springK > 0;
     },
 
     // Карты короба — один раз. Высоты в своей карте (важна разница):
@@ -365,7 +417,8 @@ Object.assign(GreedJunkLit, {
         if (M.shown && M.lt && M.lt.x === t.x && M.lt.y === t.y) return;
         if (M.shown && now - (M.at || 0) < this.LIGHT_MS) return;
         M.lt = { x: t.x, y: t.y }; M.at = now; M.shown = true;
-        this._pachSpr = null;          // шарик — к новому свету
+        this._pachSpr = null;          // шарик и пружина — к новому свету
+        M.dirty = true;
         const L = this.lightFor(M.lt), Q = this._pgl, B = this.pachBox();
         this.deviceBegin(Q, L);
         this.deviceDraw(Q, B, Q.box, B.x + B.w / 2, B.y + B.h / 2, B.w / 2, B.h / 2);
