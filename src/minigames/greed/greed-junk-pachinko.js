@@ -100,10 +100,13 @@ Object.assign(GreedJunk, {
     // дыру щита с резиновой втулкой — к розетке за щитом. Розетка спрятана
     // (короб и щит её закрывают), а без кабеля короб был ни к чему не
     // подключён. Посередине полки — между её косынками.
-    PACH_CABLE: { x: 270, hole: { x: 267, y: 263 } },
+    // Короб на аппарате крупнее (PACH_AT), и дыра (y 263) уехала за верх
+    // табло: кабель прямо вниз и уходит за табло, дыры не видно. Было:
+    // кабель с изгибом к дыре, у верха табло он загибался крюком и обрывался.
+    PACH_CABLE: { x: 270, hole: { x: 270.4, y: 264 } },
     pachCable() {
         const J = PALETTE.greedJunk, f = this.f, P = this.PACH, C = this.PACH_CABLE, H = C.hole;
-        const d = this.smooth([[C.x, P.y1 + 1], [C.x + 0.4, P.y1 + 8], [C.x + 1.6, P.y1 + 16], [C.x + 0.6, P.y1 + 23], [H.x, H.y]]);
+        const d = this.smooth([[C.x, P.y1 + 1], [C.x + 0.5, P.y1 + 10], [C.x + 0.3, P.y1 + 20], [H.x, H.y]]);
         let cable = `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="4.6" stroke-linecap="round"/>` +
             `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="2.8" stroke-linecap="round"/>` +
             `<path d="${d}" fill="none" class="hl" stroke="${J.tin[500]}" stroke-width="0.7" stroke-linecap="round" opacity="0.8" transform="translate(-0.8 -0.3)"/>` +

@@ -20,7 +20,7 @@ Object.assign(GreedJunkLit, {
     PACH_SHADOW: { near: { gap: 6, max: 10, blur: 2.5, a: 0.45 }, far: { gap: 34, max: 44, blur: 9, a: 0.28 } },
     // аппарат там, где ложится ближняя тень: рамка верхнего ящика (поле
     // аппарата; остальные коробки — в пространстве короба, PACH_AT)
-    PACH_NEAR_CLIP: { x: 16, y: -55, w: 304, h: 355 },
+    PACH_NEAR_CLIP: { x: 16, y: -55, w: 324, h: 355 },
 
     pachBox(pad = 0) {
         const P = GreedJunk.PACH;

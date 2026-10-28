@@ -14,9 +14,12 @@ Object.assign(GreedJunk, {
         // Ящик дорос до рамки (TOP_BOX): короб пачинко стоит в нём, а не
         // торчит над крышкой, и над колесом нет пустой полосы.
         const B = this.TOP_BOX, by = B.y + 10, bh = B.y1 + 4 - by;
-        let out = this.backPlanks(28, by, 288, bh, 211);
-        out += `<rect x="28" y="${by}" width="288" height="${bh}" class="fx" fill="${J.hole}" opacity="0.28"/>`;
-        out += `<rect x="28" y="${by}" width="288" height="${bh}" class="fx" fill="url(#gj-vign)"/>`;
+        // Правый край — до края видимой зоны (RIGHT): без короба пачинко
+        // между ящиком и монетами рамки оставалась тёмная щель.
+        const bw = this.TOP_RIGHT + 6 - 28;
+        let out = this.backPlanks(28, by, bw, bh, 211);
+        out += `<rect x="28" y="${by}" width="${bw}" height="${bh}" class="fx" fill="${J.hole}" opacity="0.28"/>`;
+        out += `<rect x="28" y="${by}" width="${bw}" height="${bh}" class="fx" fill="url(#gj-vign)"/>`;
         // карандашная разметка будущих игр — на стенке, под креплениями
         out += this.pencilMarks();
         // Что под колесом и коробом спрятано целиком — не рисуется (ниже,
@@ -288,7 +291,7 @@ Object.assign(GreedJunk, {
     slabBar() {
         const J = PALETTE.greedJunk, f = this.f;
         const rnd = this.rng(313);
-        const X0 = 30, X1 = 314, CY = 160, TILT = -2.6;
+        const X0 = 30, X1 = this.TOP_RIGHT - 6, CY = 160, TILT = -2.6;
         const N = 18;
         const top = [], bot = [], bark = [];
         for (let i = 0; i <= N; i++) {
@@ -362,26 +365,30 @@ Object.assign(GreedJunk, {
     // сверху, а не вставили между ними.
     topFrame() {
         const J = PALETTE.greedJunk, f = this.f;
-        const B = this.TOP_BOX, y0 = B.y, y1 = B.y1;
-        const IN = { x: 42, y: y0 + 22, w: 260, h: y1 - y0 - 22 };     // проём ящика
+        const B = this.TOP_BOX, y0 = B.y, y1 = B.y1, R = this.TOP_RIGHT, dx = R - 320;
+        const IN = { x: 42, y: y0 + 22, w: R - 18 - 42, h: y1 - y0 - 22 };     // проём ящика
         let out = '';
         // тени от рамки на заднюю стенку
         out += `<rect x="${IN.x}" y="${IN.y}" width="${IN.w}" height="22" class="fx" fill="url(#gj-shade)"/>`;
         out += `<rect x="${IN.x}" y="${IN.y}" width="16" height="${IN.h}" class="fx" fill="url(#gj-shade-x)"/>`;
         // боковины: толстые доски, торцом к нам
         out += this.T(14, 'pine', this.planks(24, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 13, 'v', 0, 'pine'));
-        out += this.T(14, 'pine', this.planks(302, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 14, 'v', 0, 'pine'));
+        out += this.T(14, 'pine', this.planks(R - 18, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 14, 'v', 0, 'pine'));
         // освещённая кромка левой боковины, тёмная — правой (её грань
         // отвёрнута от света)
         out += `<line x1="26" y1="${y0 + 22}" x2="26" y2="${y1 - 2}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.6"/>`;
-        out += `<line x1="317" y1="${y0 + 22}" x2="317" y2="${y1 - 2}" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
+        out += `<line x1="${R - 3}" y1="${y0 + 22}" x2="${R - 3}" y2="${y1 - 2}" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
         // тень крышки на боковины
-        out += this.shade(24, y0 + 20, 18, 8) + this.shade(302, y0 + 20, 18, 8);
+        out += this.shade(24, y0 + 20, 18, 8) + this.shade(R - 18, y0 + 20, 18, 8);
         // крышка, нависает над боковинами
-        out += this.T(16, 'lacquer', this.planks(16, y0, 312, 22, 1, 15, 'h', 0, 'painted'));
-        out += `<line x1="20" y1="${y0 + 2.5}" x2="324" y2="${y0 + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        out += this.T(16, 'lacquer', this.planks(16, y0, R + 8 - 16, 22, 1, 15, 'h', 0, 'painted'));
+        out += `<line x1="20" y1="${y0 + 2.5}" x2="${R + 4}" y2="${y0 + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
         // уголки нарисованы под крышку на y 14 — переезжают с ней
-        out += `<g transform="translate(0 ${y0 - 14})">${this.cornerBracket(1) + this.cornerBracket(-1)}</g>`;
+        // Левый уголок колесо закрывает почти целиком — из-за обода торчал
+        // обрывок жести; при колесе его нет.
+        const wheel = this.wheelShown && this.wheelShown();
+        out += `<g transform="translate(0 ${y0 - 14})">${wheel ? '' : this.cornerBracket(1)}</g>` +
+            `<g transform="translate(${dx} ${y0 - 14})">${this.cornerBracket(-1)}</g>`;
         return out;
     },
 

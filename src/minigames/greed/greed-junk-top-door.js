@@ -12,7 +12,8 @@ Object.assign(GreedJunk, {
     doorJoint() {
         const J = PALETTE.greedJunk, Z = J.zinc, f = this.f;
         let out = '';
-        [[83, 0.6], [261, -0.8]].forEach(([x, tilt]) => {
+        // Левая — не у самой колбы: у x 83 она жалась к её верхнему колпаку.
+        [[100, 0.6], [261, -0.8]].forEach(([x, tilt]) => {
             // шире 5 нельзя: просвет между щелями жалюзи 6, лента ещё и перекошена
             const w = 5, y0 = 275, y1 = 310, gap0 = 290, gap1 = 296;
             let g = `<rect x="${f(x - w / 2 + 1)}" y="${y0 + 1.6}" width="${w}" height="${y1 - y0}" rx="0.6" class="fx" fill="${J.hole}" opacity="0.35"/>` +
@@ -259,8 +260,11 @@ Object.assign(GreedJunk, {
         out += this.trayG(this.coinTray());
         // монетоприёмник из двери туалета — лёжа над лотком (greed-junk-wc.js)
         if (this.wcOnBox) out += this.wcOnBox();
-        // полка поверх стыка табло и ящика; на её правом конце — кулиса
-        out += this.T(8, 'pine', this.planks(B.x, 466, B.w, 20, 1, 111, 'h', 0, 'pine'));
+        // Полка поверх стыка табло и ящика; на её правом конце — кулиса.
+        // Концы полки — под монетами рамки (0…360): у видимого конца верхняя
+        // грань срезана перспективой наискось, и кулиса, стоящая у самого
+        // края, нависала над косым срезом — короб «перекашивало».
+        out += this.T(8, 'pine', this.planks(0, 466, this.W, 20, 1, 111, 'h', 0, 'pine'));
         out += this.shelfBracket(B.x + 2, 1) + this.shelfBracket(x1 - 2, -1);
         return out;
     },

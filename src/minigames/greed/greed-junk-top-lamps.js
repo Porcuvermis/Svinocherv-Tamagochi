@@ -77,9 +77,9 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f, V = this.VP;
         const y0 = this.SHELF_TOP, k = 0.05;
         const back = (x, y) => [x + (V.x - x) * k, y + (V.y - y) * k];
-        // полка во всю видимую ширину; кулиса стоит на её правом конце
-        const a = back(22, y0), b = back(338, y0);
-        const d = `M22 ${y0} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L338 ${y0} Z`;
+        // полка во всё поле: косые торцы верхней грани — под монетами рамки
+        const X1 = this.W, a = back(0, y0), b = back(X1, y0);
+        const d = `M0 ${y0} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L${X1} ${y0} Z`;
         return this.T(8, 'pine', `<path d="${d}" fill="${J.pine[100]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<line x1="${f(a[0] + 2)}" y1="${f(a[1] + 0.8)}" x2="${f(b[0] - 2)}" y2="${f(b[1] + 0.8)}" stroke="${J.pine[500]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`);
     },

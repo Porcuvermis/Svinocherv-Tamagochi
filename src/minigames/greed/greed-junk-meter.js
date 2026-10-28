@@ -14,7 +14,13 @@ Object.assign(GreedJunk, {
     // bx — ось колбы, r — радиус стекла, wall — толщина стенки; стекло от
     // y1 (верх) до y0 (низ), колпаки высотой cap заходят на него на 3;
     // clamps — y хомутов
-    METER: { bx: 66, r: 14, wall: 2.4, y1: 313, y0: 600, cap: 14, clamps: [457] },
+    METER: { bx: 63, r: 14, wall: 2.4, y1: 313, y0: 600, cap: 14, clamps: [457] },
+    // Подложка под колбой — лакированная планка на табло: сквозь молочное
+    // стекло просвечивали лучи скоса, петли и болт дверцы — материалы
+    // «проваливались» друг в друга. Ниже табло стекло лежит на ровной ДСП.
+    // Во всю ширину от края видимой зоны: узкая планка рядом со стойкой
+    // табло читалась второй доской встык.
+    METER_BOARD: { x: 22, y: 290, w: 58, h: 174 },
 
     // Контур стекла: прямой цилиндр, концы под колпаками. inset — внутрь на
     // толщину стенки: по нему налита жидкость.
@@ -25,16 +31,21 @@ Object.assign(GreedJunk, {
 
     meterGlass() {
         const J = PALETTE.greedJunk, M = this.METER, Mc = J.reel.meter, f = this.f, ink = PALETTE.ink;
-        const x = M.bx, r = M.r, P = this.meterPath(0), Pin = this.meterPath(M.wall);
+        const x = M.bx, r = M.r, P = this.meterPath(0), Pin = this.meterPath(M.wall), Bd = this.METER_BOARD;
+        let out = this.T(10, 'lacquer', this.planks(Bd.x, Bd.y, Bd.w, Bd.h, 1, 57, 'v', 0, 'painted'));
         let g = `<path d="${P}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(1.6 2)"/>`;
         // Стекло — молочно-светлое и плотное: сквозь прозрачное просвечивали
         // доски стойки, и пустая колба читалась покраской, а не стеклом.
         g += `<path d="${P}" fill="${Mc.glass}" fill-opacity="0.72" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
             // толщина стенки: внутренний контур — тёмная тонкая линия
             `<path d="${Pin}" fill="${Mc.glassIn}" fill-opacity="0.5" stroke="${J.tin[500]}" stroke-width="0.5"/>`;
-        // рельеф цилиндра
-        g += this.rodH(`M${x} ${M.y0} V${M.y1}`, r * 2, r * 0.9);
-        let out = this.T(13, 'glass', g);
+        // Рельеф цилиндра. Валик — с круглыми концами шириной в колбу, и
+        // концы обрезаются по стеклу: иначе они вылезали из-под колпаков
+        // буграми на карте высот, а укороченный валик давал под верхним
+        // колпаком скруглённое «дно пробирки».
+        g += `<clipPath id="gj-meter-clip"><path d="${P}"/></clipPath>` +
+            `<g clip-path="url(#gj-meter-clip)">${this.rodH(`M${x} ${M.y0 + r} V${M.y1 - r}`, r * 2, r * 0.9)}</g>`;
+        out += this.T(13, 'glass', g);
         // ушко к корпусу: жестяная пластина влево, саморез в стойку
         const ear = (y) => `<rect x="${f(x - r - 11)}" y="${f(y - 2.8)}" width="12" height="5.6" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             this.bolt(x - r - 6.5, y, 1.5);
@@ -48,8 +59,10 @@ Object.assign(GreedJunk, {
                 `<path d="M${f(cx0 + 1)} ${f(y + h * 0.35)} H${f(cx0 + cw - 1)} M${f(cx0 + 1)} ${f(y + h * 0.65)} H${f(cx0 + cw - 1)}" stroke="${Br[700]}" stroke-width="0.6"/>` +
                 `<path d="M${f(cx0 + 1.6)} ${f(y + 1.5)} V${f(y + h - 1.5)}" class="hl" stroke="${Br[300]}" stroke-width="1.2"/>` +
                 `<path d="M${f(cx0 + cw - 1.6)} ${f(y + 1.5)} V${f(y + h - 1.5)}" stroke="${Br[700]}" stroke-width="1.2"/>` +
-                `<rect x="${f(x - 4)}" y="${f(up ? y - 3 : y + h - 1)}" width="8" height="4" rx="1" fill="${Br[700]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-                this.rodH(`M${f(cx0 + 1)} ${f(y + h / 2)} H${f(cx0 + cw - 1)}`, h, 1.6));
+                `<rect x="${f(x - 4)}" y="${f(up ? y - 3 : y + h - 1)}" width="8" height="4" rx="1" fill="${Br[700]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`);
+            // рельефа валиком (rodH) у колпака нет: круглые концы валика шире
+            // колпака и вылезали светлым кругом вокруг него (так было и у
+            // колпачка градусника)
         };
         out += cap(M.y1 - M.cap + 3, M.cap, true) + cap(M.y0 - 3, M.cap, false);
         // хомут: жестяная лента вокруг колбы и ушко с саморезом
@@ -257,8 +270,9 @@ Object.assign(GreedJunkLit, {
         ctx.save();
         // хомуты в корпусе — поверх стекла; жидкость под ними не рисуется,
         // иначе холст поверх корпуса закрывал бы их
+        // видно стекло только между колпаками (они заходят на него на 3)
         ctx.beginPath();
-        ctx.rect(B.x, B.y, B.w, B.h);
+        ctx.rect(B.x, R.y1 + 3, B.w, R.y0 - R.y1 - 6);
         R.clamps.forEach(y => ctx.rect(B.x, y + 3.5, B.w, -7));
         ctx.clip('evenodd');
         ctx.clip(this._meterIn);
