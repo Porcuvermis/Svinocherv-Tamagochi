@@ -68,7 +68,7 @@ Object.assign(GreedJunkLit, {
         }
         this.wheelCv = layer(this.wheelBox());
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
-        this.wheelSprites();
+        this._wheelP = this.wheelSprites();
         // палец: схватил диск — крутишь
         const field = (e) => {
             const r = wrap.getBoundingClientRect();

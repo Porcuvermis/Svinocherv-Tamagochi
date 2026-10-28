@@ -73,7 +73,7 @@ Object.assign(GreedJunkLit, {
         wrap.appendChild(clip);
         this.pachGlareCv = gc;
         this._pach = { shown: null, ball: null, acc: 0, at: 0, press: 0 };
-        this.pachSprites();
+        this._pachP = this.pachSprites();
         // кнопка запуска — тап по ней
         wrap.addEventListener('pointerdown', (e) => {
             const r = wrap.getBoundingClientRect(), B = G.PACH.button;
@@ -128,6 +128,8 @@ Object.assign(GreedJunkLit, {
     // нужны полёту); всё набрано — стоит.
     pachFill(now) {
         const M = this._pach;
+        // пока идёт переход (покров монет) — не добирать: кадры нужны ему
+        if (typeof MgVeil !== 'undefined' && MgVeil.busy) return;
         if ((M.ball && !M.seek) || M.sink) return;
         const pool = this.pachPool(), keys = this.pachKeys();
         const want = M.seek || null;
@@ -141,6 +143,26 @@ Object.assign(GreedJunkLit, {
             if (want && (pool[want] || []).length) break;
         }
         if (want && (pool[want] || []).length) this.pachFire(pool[want].shift());
+    },
+
+    // Запас целиком — под покровом входа (GreedJunkLit.settled): порциями
+    // по ~30 мс с отдачей потока, пока не наберётся. Монеты стоят, их кадры
+    // не страдают. Иначе в первый раз на устройстве запас добирался в кадрах
+    // уже после входа: прогон на телефоне дольше порции — подлагивало.
+    // Дальше запас хранится на телефоне, и это мгновенно.
+    pachFillAll() {
+        if (!this._pgl) return Promise.resolve();
+        const pool = this.pachPool(), keys = this.pachKeys();
+        const full = () => keys.every(k => (pool[k] || []).length >= this.POOL);
+        return new Promise((done) => {
+            const chunk = () => {
+                const t0 = performance.now();
+                while (!full() && performance.now() - t0 < 30) this.pachTry();
+                if (full()) { if (this._poolDirty) { this._poolDirty = false; this.pachPoolSave(); } done(); }
+                else setTimeout(chunk, 0);
+            };
+            chunk();
+        });
     },
 
     // Кнопка. Пока шарик летит — только щелчок. Игра решает исход (onPach);

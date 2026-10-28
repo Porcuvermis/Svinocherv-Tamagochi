@@ -347,7 +347,7 @@ const GreedJunkLit = {
         // раз: аппарат потом только переезжает (mount), а не собирается заново
         if (!this._prepared) {
             this._prepared = true;
-            (this.prepareRag ? this.prepareRag() : Promise.resolve()).then(() => this.prepareLever());
+            this._prepP = (this.prepareRag ? this.prepareRag() : Promise.resolve()).then(() => this.prepareLever());
         }
         // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
         // а не весь хвостик целиком; тяжесть — по наклону телефона
@@ -744,6 +744,18 @@ const GreedJunkLit = {
         if (this.ready || this._lv || this.spinning()) return;
         if (this.canReady && !this.canReady()) return;
         this.setReady(true);
+    },
+
+    // Всё ли собрано: корпус, тряпка и кадры рычага, картинки колеса и
+    // короба пачинко, запас запусков пачинко — и два кадра сверху, чтобы первые отрисовки тоже
+    // прошли. Этого ждёт покров перехода (greed.js, veilReady): монеты стоят,
+    // пока сцена не собрана целиком, и тают уже над готовой. Было — покров
+    // ждал один корпус, а тряпка, рычаг, колесо и пачинко собирались уже на
+    // таянии монет: секунды долгих задач, и таяние дёргалось.
+    settled() {
+        const pach = this._pachP && this._pachP.then(() => this.pachFillAll && this.pachFillAll());
+        const all = [this._mountP, this._prepP, this._wheelP, pach].map(p => Promise.resolve(p).catch(() => {}));
+        return Promise.all(all).then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     },
 
     // ---------- АППАРАТ В КОНТЕЙНЕР ----------
