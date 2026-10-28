@@ -63,6 +63,11 @@ Object.assign(GreedJunkLit, {
                 this.draw(light);
                 const c = grab();
                 sprites[k] = c;
+                // Шар — без кадра покоя: в нём схема передач вклеена на угле
+                // покоя, а на рывке схема рисуется поверх по своему углу — на
+                // дотянутом рычаге выходило две схемы. Шар в покое со схемой —
+                // отдельная картинка (knobRest, ниже).
+                if (k === 'knob') { this.leverShadow(c, shadows, k); continue; }
                 // поверх одиночного света — кадр покоя там, где часть видна
                 // (её силуэт минус силуэты частей, лежащих на ней); одиночный
                 // остаётся только под соседями — там, что откроется на рывке
@@ -75,16 +80,7 @@ Object.assign(GreedJunkLit, {
                 mg.globalCompositeOperation = 'source-in';
                 mg.drawImage(rest, 0, 0);
                 c.getContext('2d').drawImage(m, 0, 0);
-                // тень: силуэт части, чёрный, размытый несколькими сдвигами
-                const sc = document.createElement('canvas');
-                sc.width = c.width; sc.height = c.height;
-                const g = sc.getContext('2d');
-                for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
-                    g.globalAlpha = 0.06; g.drawImage(c, dx * S, dy * S);
-                }
-                g.globalAlpha = 1; g.globalCompositeOperation = 'source-in';
-                g.fillStyle = PALETTE.greedJunk.hole; g.fillRect(0, 0, sc.width, sc.height);
-                shadows[k] = sc;
+                this.leverShadow(c, shadows, k);
             }
             // Шар в покое — со схемой передач, как в корпусе: на рывке схема
             // рисуется поверх плоско, по углу поворота, и в покое она шла бы
@@ -120,6 +116,18 @@ Object.assign(GreedJunkLit, {
             this.lever = { bare, sprites, shadows };
         } catch (e) { console.warn('[Аппарат] части рычага не собрались', e); }
         GreedJunk.pass = 'baked';
+    },
+    // тень части: её силуэт, чёрный, размытый несколькими сдвигами
+    leverShadow(c, shadows, k) {
+        const S = this.SCALE, sc = document.createElement('canvas');
+        sc.width = c.width; sc.height = c.height;
+        const g = sc.getContext('2d');
+        for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
+            g.globalAlpha = 0.06; g.drawImage(c, dx * S, dy * S);
+        }
+        g.globalAlpha = 1; g.globalCompositeOperation = 'source-in';
+        g.fillStyle = PALETTE.greedJunk.hole; g.fillRect(0, 0, sc.width, sc.height);
+        shadows[k] = sc;
     },
     // какой комплект текстур читает шейдер
     bindSet(set) {
