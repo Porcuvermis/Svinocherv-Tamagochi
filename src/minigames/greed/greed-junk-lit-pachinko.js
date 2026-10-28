@@ -13,7 +13,15 @@ Object.assign(GreedJunkLit, {
     // аппарат опускается в окне (fit), чтобы короб не ушёл под рамку окна.
     PACH_TOP: 40,
     // тень: короб стоит в рельсах на gap от стенки, полутень — blur
-    PACH_SHADOW: { gap: 9, max: 14, blur: 3, a: 0.4 },
+    // Тень короба — два слоя. near: на то, что сразу за коробом (щит,
+    // полка, стойка рамки) — короткая и чёткая, обрезана по аппарату.
+    // far: на стену гаража за аппаратом (короб торчит над рамкой и правее
+    // неё) — далеко, широко и бледно; лежит ПОД корпусом аппарата, и где
+    // аппарат есть, его закрывает сам корпус. Было: одна тень на всё — на
+    // стене за аппаратом она лежала так же близко, как на щите.
+    PACH_SHADOW: { near: { gap: 6, max: 10, blur: 2.5, a: 0.45 }, far: { gap: 34, max: 44, blur: 9, a: 0.28 } },
+    // аппарат там, где ложится ближняя тень: рамка верхнего ящика
+    PACH_NEAR_CLIP: { x: 16, y: 14, w: 304, h: 286 },
 
     pachBox(pad = 0) {
         const P = GreedJunk.PACH;
@@ -31,7 +39,21 @@ Object.assign(GreedJunkLit, {
             wrap.appendChild(cv);
             return cv;
         };
-        this.pachShadowCv = layer(this.pachBox(this.PACH_SHADOW.blur * 3));
+        // дальняя — под корпусом: вставляется перед его холстом
+        const far = layer(this.pachShadowBox('far'));
+        far.style.zIndex = '0';
+        if (this._glCanvas && this._glCanvas.parentNode === wrap) wrap.insertBefore(far, this._glCanvas);
+        // ближняя — поверх корпуса, в рамке аппарата
+        const C = this.PACH_NEAR_CLIP, nclip = document.createElement('div');
+        nclip.style.cssText = `position:absolute;left:${C.x / G.W * 100}%;top:${C.y / G.H * 100}%;` +
+            `width:${C.w / G.W * 100}%;height:${C.h / G.H * 100}%;overflow:hidden;z-index:1;pointer-events:none`;
+        const near = layer(this.pachShadowBox('near'));
+        const B = this.pachShadowBox('near');
+        near.style.left = `${(B.x - C.x) / C.w * 100}%`; near.style.top = `${(B.y - C.y) / C.h * 100}%`;
+        near.style.width = `${B.w / C.w * 100}%`; near.style.height = `${B.h / C.h * 100}%`;
+        nclip.appendChild(near);
+        wrap.appendChild(nclip);
+        this.pachShadowCv = { near, far };
         this.pachCv = layer(this.pachBox());
         // шарик — между коробом и стеклом: стекло поверх него
         this.pachBallCv = layer(this.pachBox());
@@ -273,14 +295,18 @@ Object.assign(GreedJunkLit, {
 
     // Тень короба на аппарат: мягкий прямоугольник ровно под ним, один раз;
     // куда ляжет — pachShadowAt (как у колеса).
+    pachShadowBox(k) { const K = this.PACH_SHADOW[k]; return this.pachBox(K.blur * 3); },
+    // тени — мягкий прямоугольник ровно под коробом, один раз на слой
     pachShadow() {
-        const B = this.pachBox(this.PACH_SHADOW.blur * 3), S = this.SCALE, P = GreedJunk.PACH, K = this.PACH_SHADOW;
-        const c = this.pachShadowCv.getContext('2d');
-        c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
-        c.filter = 'blur(' + (K.blur * S) + 'px)';
-        c.globalAlpha = K.a; c.fillStyle = PALETTE.greedJunk.hole;
-        c.fillRect(P.x0, P.y0, P.x1 - P.x0, P.y1 - P.y0);
-        c.filter = 'none'; c.globalAlpha = 1;
+        const S = this.SCALE, P = GreedJunk.PACH;
+        ['near', 'far'].forEach(k => {
+            const B = this.pachShadowBox(k), K = this.PACH_SHADOW[k], c = this.pachShadowCv[k].getContext('2d');
+            c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
+            c.filter = 'blur(' + (K.blur * S) + 'px)';
+            c.globalAlpha = K.a; c.fillStyle = PALETTE.greedJunk.hole;
+            c.fillRect(P.x0, P.y0, P.x1 - P.x0, P.y1 - P.y0);
+            c.filter = 'none'; c.globalAlpha = 1;
+        });
         this.pachShadowAt(this.lightFor(this._tilt || { x: 0, y: 0 }));
     },
     // Блик стекла идёт за светом: сдвиг — разница направления света с
@@ -295,13 +321,16 @@ Object.assign(GreedJunkLit, {
         cv.style.transform = `translate(${(dx / (R.x1 - R.x0 + 2 * K.m) * 100).toFixed(2)}%, ${(dy / (R.y1 - R.y0 + 2 * K.m) * 100).toFixed(2)}%)`;
     },
 
+    // сдвиг от света: короб над поверхностью на gap, не дальше max
     pachShadowAt(L) {
-        const cv = this.pachShadowCv, K = this.PACH_SHADOW, B = this.pachBox(K.blur * 3);
-        if (!cv) return;
-        let dx = -L[0] / L[2] * K.gap, dy = -L[1] / L[2] * K.gap;
-        const d = Math.hypot(dx, dy);
-        if (d > K.max) { dx *= K.max / d; dy *= K.max / d; }
-        cv.style.transform = `translate(${(dx / B.w * 100).toFixed(2)}%, ${(dy / B.h * 100).toFixed(2)}%)`;
+        if (!this.pachShadowCv) return;
+        ['near', 'far'].forEach(k => {
+            const cv = this.pachShadowCv[k], K = this.PACH_SHADOW[k], B = this.pachShadowBox(k);
+            let dx = -L[0] / L[2] * K.gap, dy = -L[1] / L[2] * K.gap;
+            const d = Math.hypot(dx, dy);
+            if (d > K.max) { dx *= K.max / d; dy *= K.max / d; }
+            cv.style.transform = `translate(${(dx / B.w * 100).toFixed(2)}%, ${(dy / B.h * 100).toFixed(2)}%)`;
+        });
     },
 
     // Кадр: короб перерисовывается только когда сдвинулся свет (наклон с
