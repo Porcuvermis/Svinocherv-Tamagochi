@@ -271,7 +271,7 @@ Object.assign(GreedJunk, {
         if (this.wcSlot) out += this.wcSlot();
         // полка поверх стыка табло и ящика — торчит за края; справа
         // длиннее — под кулису, она стоит на полке
-        out += this.T(8, 'pine', this.planks(24, 466, 334, 20, 1, 111, 'h', 0, 'pine'));
+        out += this.T(8, 'pine', this.planks(22, 466, 316, 20, 1, 111, 'h', 0, 'pine'));
         out += this.shelfBracket(42, 1) + this.shelfBracket(318, -1);
         return out;
     },

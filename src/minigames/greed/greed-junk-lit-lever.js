@@ -18,7 +18,7 @@ Object.assign(GreedJunkLit, {
     // целиком, с настоящей тенью.
     // Было: тринадцать заранее снятых положений, подменяемых по очереди, —
     // движение шло ступеньками.
-    LEVER_CROP: { x: 300, y: 262, w: 60, h: 124 },
+    LEVER_CROP: { x: 280, y: 282, w: 60, h: 104 },
     async prepareLever() {
         const S = this.SCALE, C = this.LEVER_CROP;
         const sized = (svg) => svg.replace('<svg ', `<svg width="${C.w * S}" height="${C.h * S}" `);

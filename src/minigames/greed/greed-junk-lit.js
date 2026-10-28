@@ -818,7 +818,7 @@ const GreedJunkLit = {
         let grab = null;
         wrap.addEventListener('pointerdown', (e) => {
             const [x, y] = field(e);
-            if (!(x > 300 && y > 262 && y < 400) || this._lv || !this.ready) return;
+            if (!(x > 280 && y > 282 && y < 400) || this._lv || !this.ready) return;
             e.preventDefault();
             e.stopPropagation();
             wrap.setPointerCapture(e.pointerId);

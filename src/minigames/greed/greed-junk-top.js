@@ -430,8 +430,10 @@ Object.assign(GreedJunk, {
         // грани (y 462). Было: уходили до 472 и 468, рисовались поверх
         // передней доски полки — у концов полки торчали прямоугольники
         // досок, а нижние болты дверцы резала верхняя грань полки.
-        out += this.T(6, 'lacquer', this.planks(34, 290, 20, 172, 1, 51, 'v', 0, 'painted'));
-        out += this.T(6, 'pine', this.planks(306, 290, 20, 172, 1, 52, 'v', 0, 'pine'));
+        // Стойки — до краёв видимой зоны (x 22 и 338): между ними и монетами
+        // рамки были пустые щели. Слева её почти целиком закрывает колба.
+        out += this.T(6, 'lacquer', this.planks(22, 290, 32, 172, 1, 51, 'v', 0, 'painted'));
+        out += this.T(6, 'pine', this.planks(306, 290, 32, 172, 1, 52, 'v', 0, 'pine'));
         // жестяной лист
         out += this.T(9, 'steel', this.tin(50, 296, 260, 166, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         out += this.doorScars();
@@ -508,10 +510,11 @@ Object.assign(GreedJunk, {
         });
         out += this.T(-10, 'paint', win);
         out += this.reelWindows();
-        // градусник насыщения — на скосе слева от окна (greed-junk-meter.js)
-        if (this.meterGlass) out += this.meterGlass();
         out += this.shelfTop();
         out += this.buttonPanel();
+        // колба насыщения — поверх стойки, полки и нижнего ящика
+        // (greed-junk-meter.js): последней
+        if (this.meterGlass) out += this.meterGlass();
         return out;
     },
 });

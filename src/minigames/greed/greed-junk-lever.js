@@ -18,7 +18,7 @@ Object.assign(GreedJunk, {
     leverMount() {
         const J = PALETTE.greedJunk, C = J.car, P = this.SLOTS.pivot, f = this.f;
         const rnd = this.rng(77);
-        const x0 = 314, y0 = 384, x1 = 356, y1 = 464;      // низ стоит на верхней грани полки
+        const x0 = P.x - 20, y0 = 384, x1 = P.x + 22, y1 = 464;      // низ стоит на верхней грани полки
         // Нижний край — рез болгаркой: прямой, чуть наискось (резали по
         // разметке на глаз). Было: зубчатая «пила» — так режут ножницами
         // по жести, а не диском, и смотрелось это неряшливой каймой.
@@ -76,7 +76,8 @@ Object.assign(GreedJunk, {
     // на старых военных приборах. Под ним тусклая лампочка: горит красным,
     // пока рычаг дёргать нельзя (идёт крутка), зелёным — когда можно. Свет
     // живой, рисуется поверх корпуса (readyLampGlow, GreedJunkLit).
-    READY_LAMP: { x: 345, y: 450, r: 4.2 },
+    // Крупнее, чем была (4.2): на телефоне лампа читалась точкой в 7 pt.
+    READY_LAMP: { x: 325, y: 449, r: 6 },
     readyLampBody() {
         const J = PALETTE.greedJunk, Lm = J.lamp, R = this.READY_LAMP, f = this.f;
         let g = `<circle cx="${R.x}" cy="${R.y}" r="${R.r + 1.6}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
@@ -124,7 +125,7 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, f = this.f;
         // уходит в монетоприёмник (wcSlot): провод связывает рычаг и щель —
         // два органа управления одного аппарата (решение игрока)
-        const pts = [[326, 454], [330, 472], [326, 492], [313, 503], [303, 503.6]];
+        const pts = [[306, 454], [310, 472], [306, 492], [293, 503], [283, 503.6]];
         const d = this.smooth(pts);
         let out = `<path d="${d}" class="fx" fill="none" stroke="${J.hole}" stroke-width="4" stroke-linecap="round" opacity="0.3" transform="translate(1.4 2)"/>` +
             this.rodH(d, 3.6) +
@@ -169,12 +170,15 @@ Object.assign(GreedJunk, {
     // раздутия юбки — рукоять опускалась на 21 единицу, рывок не читался. Рисунок — в покое; рывок двигает готовые
     // освещённые части по этой геометрии (GreedJunkLit, «Рычаг»).
     LEVER_TILT: 75,
+    // Рукоять над юбкой: шток короче, чем был (50), — рукоять не упирается в
+    // кнопку пачинко над ней, две мишени для пальца не слипаются.
+    LEVER_REACH: 32,
     leverGeom(pull) {
         const P = this.SLOTS.pivot;
         const th = pull * this.LEVER_TILT * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
         const squash = Math.max(0, sn);
         const base = P.y - 16, h0 = 40 * (1 - 0.45 * squash), top = base - h0;
-        const K = { x: P.x, y: top - 50 * cs, r: 15 * (1 + 0.15 * sn) };
+        const K = { x: P.x, y: top - this.LEVER_REACH * cs, r: 15 * (1 + 0.15 * sn) };
         return { base, h0, top, K, s0: K.y + K.r - 2, cs, sn, bootW: 1 + 0.12 * squash };
     },
     // Части рычага отдельно — для рывка. Вместе — leverSvg.
