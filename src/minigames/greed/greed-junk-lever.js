@@ -15,6 +15,49 @@ Object.assign(GreedJunk, {
     // ящику. Из кулисы трос переключения уходит в нижний ящик — это и
     // есть связь рычага с барабанами. Было: ровная серая пластина с
     // «улыбкой»-вмятиной и две шестерни сбоку ни к чему.
+    // ---------- ЛАМПА НАД РЫЧАГОМ ----------
+    // Источник света рычага (решение игрока): маленький прямоугольный
+    // металлический плафон под коробом пачинко, прямо над шаром; плафон не
+    // закрывает колбу целиком — она выглядывает снизу. Привинчен двумя
+    // лапками к кромке полки, провод уходит вправо под монеты. Свет от неё —
+    // GreedJunkLit.LIGHTS[0]. Было: свет на рычаге из ниоткуда — «источник
+    // должен быть близко, а его нет, выглядит странно». Кнопка пачинко ради
+    // места ушла влево-вверх по панели короба.
+    LEVER_LAMP: { x: 314, y0: 274, y1: 284.5, w0: 20, w1: 28, bulb: 5.2 },
+    leverLamp() {
+        // эмаль плафона — тот же старый хаки, что короб рычага: одна вещь
+        const J = PALETTE.greedJunk, R = J.carOld, L = this.LEVER_LAMP, f = this.f, ink = PALETTE.ink;
+        const x = L.x, a0 = x - L.w0 / 2, b0 = x + L.w0 / 2, a1 = x - L.w1 / 2, b1 = x + L.w1 / 2;
+        // провод: из торца плафона вправо, провисает, уходит под монеты
+        let out = this.T(17, 'rubber', `<path d="M${f(b1 - 2)} ${f(L.y0 + 3)} C${f(b1 + 5)} ${f(L.y0 + 2)} ${f(b1 + 7)} ${f(L.y0 + 9)} 342 ${f(L.y0 + 7)}" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linecap="round"/>` +
+            `<path d="M${f(b1 - 2)} ${f(L.y0 + 3)} C${f(b1 + 5)} ${f(L.y0 + 2)} ${f(b1 + 7)} ${f(L.y0 + 9)} 342 ${f(L.y0 + 7)}" fill="none" stroke="${J.tin[900]}" stroke-width="1.3" stroke-linecap="round"/>`);
+        // лапки к кромке полки: жесть с саморезом
+        let tabs = '';
+        [a0 + 3, b0 - 3].forEach(tx => {
+            tabs += `<rect x="${f(tx - 2.2)}" y="${f(L.y0 - 4)}" width="4.4" height="5" rx="0.6" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>` +
+                `<circle cx="${f(tx)}" cy="${f(L.y0 - 2)}" r="0.9" fill="${J.tin[300]}" stroke="${ink}" stroke-width="0.4"/>`;
+        });
+        out += this.T(18, 'steel', tabs);
+        // колба: купол выглядывает из-под плафона
+        const by = L.y1 - 0.6, br = L.bulb, Lb = J.bulb;
+        const dome = `M${f(x - br)} ${f(by)} A${f(br)} ${f(br * 0.95)} 0 0 0 ${f(x + br)} ${f(by)} Z`;
+        out += this.T(18, 'glass', `<path d="${dome}" fill="${Lb.lit.pear}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
+            `<path d="M${f(x - br * 0.45)} ${f(by + 1.2)} q${f(br * 0.45)} ${f(br * 0.5)} ${f(br * 0.9)} 0" fill="none" stroke="${Lb.lit.core}" stroke-width="0.8" opacity="0.9"/>` +
+            this.domeH(x, by, br, 2));
+        // плафон: короткая трапеция ребром к нам, низ шире; кромка снизу
+        // отогнута, изнутри темно — видно, что внутри полость с лампой
+        const hood = `M${f(a0)} ${f(L.y0)} L${f(b0)} ${f(L.y0)} L${f(b1)} ${f(L.y1)} L${f(a1)} ${f(L.y1)} Z`;
+        let h = `<path d="${hood}" fill="${R.base}" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
+            `<path d="M${f(a0 + 1)} ${f(L.y0 + 1.2)} L${f(b0 - 1)} ${f(L.y0 + 1.2)}" class="hl" stroke="${R.hi}" stroke-width="0.9" stroke-linecap="round"/>` +
+            // сколы эмали и потёртость
+            `<path d="M${f(x + 4)} ${f(L.y0 + 4)} l2.2 -0.6 l0.8 1.4 l-2 0.8 z" fill="${J.tin[300]}" opacity="0.7"/>` +
+            `<path d="M${f(a0 + 3)} ${f(L.y0 + 5.5)} l4 -0.4" stroke="${R.hi}" stroke-width="${STROKE.hairline}" opacity="0.6"/>` +
+            // отогнутая кромка
+            `<rect x="${f(a1 - 0.6)}" y="${f(L.y1 - 1.6)}" width="${f(L.w1 + 1.2)}" height="2.2" rx="0.8" fill="${R.lo}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`;
+        out += this.T(19, 'raw', h);
+        return out;
+    },
+
     leverMount() {
         const J = PALETTE.greedJunk, C = J.car, P = this.SLOTS.pivot, f = this.f;
         const rnd = this.rng(77);
@@ -329,7 +372,7 @@ Object.assign(GreedJunk, {
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">` +
             this.passStyle(this.pass) +
             this.defs().replace('</defs>', clip + '</defs>') +
-            this.plinth() + this.body() + this.topBox() + this.head() + this.topShade() + this.leverMount() +
+            this.plinth() + this.body() + this.topBox() + this.head() + this.topShade() + this.leverMount() + this.leverLamp() +
             (lever === false ? '' : this.leverSvg()) +
             `</svg>`;
     },
