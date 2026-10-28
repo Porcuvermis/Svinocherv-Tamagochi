@@ -83,7 +83,7 @@ Object.assign(GreedJunk, {
         // досками (решение игрока; было меньше и за стойкой рамки).
         // Щит пачинко за коробом и полка на нём — до колеса: колесо заходит
         // на левый край щита (greed-junk-pachinko.js, pachShield).
-        if (box) out += this.pachShield() + this.shelfAngle(p.x - 2, p.y + p.h - 38, 96, 6);
+        if (box) out += this.pachShield() + this.shelfAngle(p.x - 2, p.y + p.h - 38, 96, 6) + this.pachCable();
         if (this.wheelShown && this.wheelShown()) {
             // на свету колесо крутится своим холстом (wheelApart,
             // greed-junk-lit-wheel.js) — в корпусе только щит и уголок язычка

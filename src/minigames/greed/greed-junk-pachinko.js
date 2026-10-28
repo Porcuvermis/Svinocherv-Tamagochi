@@ -67,6 +67,26 @@ Object.assign(GreedJunk, {
         return this.T(8, 'pine', out);
     },
 
+    // Кабель короба: из ввода на дне вниз, перед полкой, в просверленную
+    // дыру щита с резиновой втулкой — к розетке за щитом. Розетка спрятана
+    // (короб и щит её закрывают), а без кабеля короб был ни к чему не
+    // подключён. Посередине полки — между её косынками.
+    PACH_CABLE: { x: 270, hole: { x: 267, y: 263 } },
+    pachCable() {
+        const J = PALETTE.greedJunk, f = this.f, P = this.PACH, C = this.PACH_CABLE, H = C.hole;
+        const d = this.smooth([[C.x, P.y1 + 1], [C.x + 0.4, P.y1 + 8], [C.x + 1.6, P.y1 + 16], [C.x + 0.6, P.y1 + 23], [H.x, H.y]]);
+        let cable = `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="4.6" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" stroke="${J.tin[900]}" stroke-width="2.8" stroke-linecap="round"/>` +
+            `<path d="${d}" fill="none" class="hl" stroke="${J.tin[500]}" stroke-width="0.7" stroke-linecap="round" opacity="0.8" transform="translate(-0.8 -0.3)"/>` +
+            this.rodH(d, 4.6);
+        // втулка в щите: резиновое кольцо поверх кабеля — кабель уходит внутрь
+        const ring = `<circle cx="${H.x}" cy="${H.y}" r="3.6" class="pit" fill="${J.hole}"/>` +
+            `<circle cx="${H.x}" cy="${H.y}" r="3.3" fill="none" stroke="${PALETTE.ink}" stroke-width="2.6"/>` +
+            `<circle cx="${H.x}" cy="${H.y}" r="3.3" fill="none" stroke="${J.reel.wheel.rubber}" stroke-width="1.6"/>`;
+        // кабель над полкой (её кромка — 18 над стенкой ящика)
+        return this.T(19, 'rubber', cable) + this.T(8.6, 'rubber', ring);
+    },
+
     // на аппарате: куплено — или включено в отладке (🐞 → «Пачинко»)
     pachinkoShown() {
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('pachinko') > 0) return true;
@@ -255,6 +275,11 @@ Object.assign(GreedJunk, {
         [[fx0 + 1, fy0 + 1], [fx1 - 1, fy0 + 1], [fx0 + 1, fy1 - 1], [fx1 - 1, fy1 - 1]].forEach(([x, y]) => {
             corners += `<circle cx="${x}" cy="${y}" r="2.6" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>` + this.bolt(x, y, 1.5);
         });
+
+        // ---- кабельный ввод на дне короба: стальная гайка, из неё кабель ----
+        const Cb = this.PACH_CABLE;
+        corners += `<path d="M${Cb.x - 3.4} ${P.y1 - 1} L${Cb.x + 3.4} ${P.y1 - 1} L${Cb.x + 2.6} ${P.y1 + 2.4} L${Cb.x - 2.6} ${P.y1 + 2.4} Z" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<line x1="${Cb.x - 2.8}" y1="${P.y1 + 0.7}" x2="${Cb.x + 2.8}" y2="${P.y1 + 0.7}" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
 
         // ---- кнопка: красный колпак в жестяном ободе ----
         const B = P.button;
