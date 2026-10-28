@@ -45,33 +45,60 @@ Object.assign(GreedJunk, {
         // буграми на карте высот, а укороченный валик давал под верхним
         // колпаком скруглённое «дно пробирки».
         g += `<clipPath id="gj-meter-clip"><path d="${P}"/></clipPath>` +
-            `<g clip-path="url(#gj-meter-clip)">${this.rodH(`M${x} ${M.y0 + r} V${M.y1 - r}`, r * 2, r * 0.9)}</g>`;
-        out += this.T(13, 'glass', g);
-        // ушко к корпусу: жестяная пластина влево, саморез в стойку
-        const ear = (y) => `<rect x="${f(x - r - 11)}" y="${f(y - 2.8)}" width="12" height="5.6" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-            this.bolt(x - r - 6.5, y, 1.5);
-        // Колпаки: латунные стаканы шире стекла, с рубчиками; на торце —
-        // пробка-заглушка. Свет сверху-слева: левая кромка светлая.
-        const Br = { 300: J.brass.hi, 500: J.brass.base, 700: J.brass.lo };
+            `<g clip-path="url(#gj-meter-clip)">${this.rodH(`M${x} ${M.y0 + r} V${M.y1 - r}`, r * 2, 11)}</g>`;
+        // Стекло — ниже колпаков и хомута: они надеты на него снаружи. Было:
+        // стекло на 13 с выпуклостью 12.6 упиралось в потолок карты высот
+        // (20), а колпаки лежали плоско на 14 — колба выходила ближе к нам,
+        // чем то, что её держит (игрок: «крепления глубже колбы»).
+        out += this.T(6, 'glass', g);
+        // ушко к корпусу: жестяная пластина влево, саморез в стойку; у стены,
+        // ниже колбы — колбу держит то, что на неё надето, ушко лишь прижато
+        const ear = (y) => this.T(4, 'steel', `<rect x="${f(x - r - 11)}" y="${f(y - 2.8)}" width="12" height="5.6" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+            this.bolt(x - r - 6.5, y, 1.5));
+        // Объём того, что надето на колбу: цилиндр той же оси, шире стекла, —
+        // стопка вертикальных полос всё уже и выше, обрезанная по своему
+        // прямоугольнику. Ступеней — по ширине (profile): четыре ступени
+        // валика (rodH) на широком стакане читались вертикальными полосками.
+        // rise — над стенкой.
+        const sleeveH = (x0, y, w, h, rise, id) =>
+            `<clipPath id="${id}"><rect x="${f(x0)}" y="${f(y)}" width="${f(w)}" height="${f(h)}"/></clipPath>` +
+            `<g clip-path="url(#${id})" class="hpass">` + this.profile(Math.max(6, Math.round(w * 0.9))).map(([k, u]) =>
+                `<path d="M${f(x0 + w / 2)} ${f(y - 1)} V${f(y + h + 1)}" fill="none" stroke="${ink}" stroke-width="${f(w * k)}" style="--dh:${this.dh(rise * u)}"/>`).join('') + `</g>`;
+        // Колпаки — стальные стаканы, надетые на концы колбы. Было: латунный
+        // плоский прямоугольник с двумя поперечными рисками — в полутени
+        // читался деревяшкой, лежал ниже стекла и не охватывал его. Теперь:
+        // стакан шире стекла, со стороны стекла — завальцованная кромка
+        // (стекло уходит внутрь), на торце — гайка; объём — цилиндром.
+        const T = J.tin;
         const cap = (y, h, up) => {
-            const cw = r * 2 + 6, cx0 = x - cw / 2;
-            return this.T(14, 'steel', ear(y + h / 2)) + this.T(14, 'brass',
-                `<rect x="${f(cx0)}" y="${f(y)}" width="${f(cw)}" height="${h}" rx="2" fill="${Br[500]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
-                `<path d="M${f(cx0 + 1)} ${f(y + h * 0.35)} H${f(cx0 + cw - 1)} M${f(cx0 + 1)} ${f(y + h * 0.65)} H${f(cx0 + cw - 1)}" stroke="${Br[700]}" stroke-width="0.6"/>` +
-                `<path d="M${f(cx0 + 1.6)} ${f(y + 1.5)} V${f(y + h - 1.5)}" class="hl" stroke="${Br[300]}" stroke-width="1.2"/>` +
-                `<path d="M${f(cx0 + cw - 1.6)} ${f(y + 1.5)} V${f(y + h - 1.5)}" stroke="${Br[700]}" stroke-width="1.2"/>` +
-                `<rect x="${f(x - 4)}" y="${f(up ? y - 3 : y + h - 1)}" width="8" height="4" rx="1" fill="${Br[700]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>`);
-            // рельефа валиком (rodH) у колпака нет: круглые концы валика шире
-            // колпака и вылезали светлым кругом вокруг него (так было и у
-            // колпачка градусника)
+            const cw = r * 2 + 6, cx0 = x - cw / 2, lipY = up ? y + h - 2.2 : y, endY = up ? y : y + h - 2.6;
+            let c = `<rect x="${f(cx0)}" y="${f(y)}" width="${f(cw)}" height="${h}" rx="2.4" fill="${T[500]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
+                // завальцовка у стекла: валик чуть шире стакана
+                `<rect x="${f(cx0 - 0.8)}" y="${f(lipY)}" width="${f(cw + 1.6)}" height="2.2" rx="1.1" fill="${T[300]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+                // торец: тёмная фаска
+                `<rect x="${f(cx0 + 0.6)}" y="${f(endY)}" width="${f(cw - 1.2)}" height="2.6" rx="1.2" fill="${T[700]}"/>` +
+                // нарисованный свет — для запасного вида: блик слева, тень справа
+                `<path d="M${f(cx0 + 2.4)} ${f(y + 2)} V${f(y + h - 2)}" class="hl" stroke="${T[100]}" stroke-width="1.4" stroke-linecap="round"/>` +
+                `<path d="M${f(cx0 + cw - 2.2)} ${f(y + 2)} V${f(y + h - 2)}" class="fx" stroke="${T[900]}" stroke-width="1.6" opacity="0.6"/>` +
+                // потёк ржавчины из-под завальцовки
+                `<path d="M${f(x + 4)} ${f(up ? y + h - 1 : y + 1)} q0.5 ${up ? -2.5 : 2.5} -0.2 ${up ? -4.2 : 4.2}" fill="none" stroke="${J.rust[500]}" stroke-width="0.9" stroke-linecap="round" opacity="0.6"/>`;
+            c += sleeveH(cx0 - 0.8, y, cw + 1.6, h, (r + 3) * 0.95, up ? 'gj-mcap-t' : 'gj-mcap-b');
+            // гайка на торце: шестигранник, торчит из стакана
+            const ny = up ? y - 3.4 : y + h - 0.6, nw = 9, nh = 4;
+            const nut = `<path d="M${f(x - nw / 2 + 1.2)} ${f(ny)} H${f(x + nw / 2 - 1.2)} L${f(x + nw / 2)} ${f(ny + nh / 2)} L${f(x + nw / 2 - 1.2)} ${f(ny + nh)} H${f(x - nw / 2 + 1.2)} L${f(x - nw / 2)} ${f(ny + nh / 2)} Z" fill="${T[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+                `<path d="M${f(x - 1.6)} ${f(ny + 0.6)} V${f(ny + nh - 0.6)} M${f(x + 1.6)} ${f(ny + 0.6)} V${f(ny + nh - 0.6)}" stroke="${T[700]}" stroke-width="0.5"/>` +
+                sleeveH(x - nw / 2, ny, nw, nh, 3, up ? 'gj-mnut-t' : 'gj-mnut-b');
+            return ear(y + h / 2) + this.T(6, 'steel', c) + this.T(6, 'steel', nut);
         };
         out += cap(M.y1 - M.cap + 3, M.cap, true) + cap(M.y0 - 3, M.cap, false);
-        // хомут: жестяная лента вокруг колбы и ушко с саморезом
+        // хомут: жестяная лента вокруг колбы — тоже надета на неё, выше стекла
         M.clamps.forEach(y => {
-            const c = ear(y) + `<rect x="${f(x - r - 1.4)}" y="${y - 3.6}" width="${f(r * 2 + 2.8)}" height="7.2" rx="1.4" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
+            const w = r * 2 + 2.8, x0 = x - w / 2;
+            const c = `<rect x="${f(x0)}" y="${y - 3.6}" width="${f(w)}" height="7.2" rx="1.4" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
                 `<path d="M${f(x - r - 0.6)} ${y - 2.4} H${f(x + r + 0.6)}" class="hl" stroke="${J.tin[100]}" stroke-width="0.8"/>` +
-                `<path d="M${f(x - r - 0.6)} ${y + 2.4} H${f(x + r + 0.6)}" stroke="${J.tin[700]}" stroke-width="0.7"/>` + this.rodH(`M${f(x - r - 1)} ${y} H${f(x + r + 1)}`, 7.2, 1.2);
-            out += this.T(14, 'steel', c);
+                `<path d="M${f(x - r - 0.6)} ${y + 2.4} H${f(x + r + 0.6)}" stroke="${J.tin[700]}" stroke-width="0.7"/>` +
+                sleeveH(x0, y - 3.6, w, 7.2, (r + 1.4) * 0.95, 'gj-mclamp-' + y);
+            out += ear(y) + this.T(6, 'steel', c);
         });
         return out;
     },
