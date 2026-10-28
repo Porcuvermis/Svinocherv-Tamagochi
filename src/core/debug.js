@@ -355,12 +355,14 @@ const DebugState = {
             // Пачинко без покупки не сыграть: бэкенд скажет «закрыто», а
             // купить его в игре пока негде. Включение выдаёт первую ступень
             // (если её не было), выключение забирает — только выданную здесь.
-            if (act === 'greed-pachinko' && typeof GameState !== 'undefined' && GameState.data) {
+            // То же у колеса.
+            if (typeof GameState !== 'undefined' && GameState.data) {
                 const up = GameState.data.upgrades || (GameState.data.upgrades = {});
+                const ukey = act === 'greed-wheel' ? 'greed_wheel' : 'greed_pachinko', gkey = key + '-granted';
                 let granted = false;
-                try { granted = localStorage.getItem('gj-pachinko-granted') === '1'; } catch (e) { /* нет хранилища */ }
-                if (on && !up.greed_pachinko) { up.greed_pachinko = 1; try { localStorage.setItem('gj-pachinko-granted', '1'); } catch (e) { /* нет */ } }
-                if (!on && granted) { up.greed_pachinko = 0; try { localStorage.removeItem('gj-pachinko-granted'); } catch (e) { /* нет */ } }
+                try { granted = localStorage.getItem(gkey) === '1'; } catch (e) { /* нет хранилища */ }
+                if (on && !up[ukey]) { up[ukey] = 1; try { localStorage.setItem(gkey, '1'); } catch (e) { /* нет */ } }
+                if (!on && granted) { up[ukey] = 0; try { localStorage.removeItem(gkey); } catch (e) { /* нет */ } }
                 GameState.save();
             }
             location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);

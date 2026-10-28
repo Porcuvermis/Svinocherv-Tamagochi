@@ -68,6 +68,8 @@ const GreedMinigame = {
                 onSpinDone: (keys) => this.onSpinDone(keys),
                 onPach: () => this.onPach(),
                 onPachDone: (where) => this.onPachDone(where),
+                onWheel: () => this.onWheel(),
+                onWheelDone: () => this.onWheelDone(),
                 canReady: () => this.isOpen() && !this.busy_
             });
             if (L.meterSet) L.meterSet(L.meterValue());
@@ -173,7 +175,8 @@ Object.assign(GreedMinigame, {
         if (!res || this.pgen !== this.spinGeneration) { this.busy_ = false; return; }
         this.pres = null;
         const cur = res.currencies || {}, gold = cur.gold || 0;
-        const got = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0);
+        const got = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0) ||
+            !!(res.items && res.items.got > 0);       // мясо в кладовую, семечка в мешок (колесо)
         if (gold > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, gold));
         if (gold > 0 || got) L.blink();
         if (L.meterSet) L.meterSet(L.meterValue());
@@ -186,6 +189,30 @@ Object.assign(GreedMinigame, {
             if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
         }, pourMs));
     }
+});
+
+// ================= КОЛЕСО =================
+// Сильный бросок → onWheel: крутка за монету (Backend.greedPlay('wheel')
+// решает сектор по весам конфига). Колесо встаёт на нарисованный сектор с
+// этим ключом (greed-junk-lit-wheel.js). Монеты — в лоток (и мясо,
+// выплаченное деньгами при полной кладовой); мясо, семечка, осколок —
+// мигание ламп, начисление покажет кошелёк. Одна игра за раз.
+Object.assign(GreedMinigame, {
+    onWheel() {
+        if (this.busy_) return false;
+        const res = Backend.greedPlay('wheel');
+        if (!res.ok) return false;          // нет денег или колесо не куплено
+        this.busy_ = true;
+        this.pres = res;
+        this.pgen = this.spinGeneration;
+        const L = GreedJunkLit;
+        if (L.setReady) L.setReady(false);
+        if (L.coinIn) L.coinIn();
+        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+        return res.key;
+    },
+    // выплата — та же, что у пачинко: монеты в лоток, остальное мигает
+    onWheelDone() { this.onPachDone(); }
 });
 
 if (document.readyState === 'loading') {

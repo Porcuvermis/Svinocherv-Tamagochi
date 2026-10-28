@@ -753,7 +753,8 @@ const GreedJunkLit = {
     // false — крутки нет); без него превью крутит случайно. opts.onSpinDone
     // — барабаны встали (keys — символы под ниткой); opts.canReady — можно ли
     // зажечь готовность. opts.onPach — игра решает исход шарика пачинко
-    // (ключ лунки или false), opts.onPachDone — шарик пойман.
+    // (ключ лунки или false), opts.onPachDone — шарик пойман; opts.onWheel
+    // и opts.onWheelDone — то же для колеса (ключ сектора, колесо встало).
     // Возвращает обещание: аппарат нарисован.
     mount(container, opts) {
         opts = opts || {};
@@ -761,6 +762,8 @@ const GreedJunkLit = {
         this.onSpinDone = opts.onSpinDone || null;
         this.onPach = opts.onPach || null;
         this.onPachDone = opts.onPachDone || null;
+        this.onWheel = opts.onWheel || null;
+        this.onWheelDone = opts.onWheelDone || null;
         this.canReady = opts.canReady || null;
         if (this.wrapEl) {
             container.appendChild(this.wrapEl);

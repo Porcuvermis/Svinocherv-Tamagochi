@@ -114,10 +114,26 @@ Object.assign(GreedJunkLit, {
         w = Math.max(-P.maxW, Math.min(P.maxW, w));
         M.w = w;
         if (Math.abs(w) < P.minW) { M.st = 'coast'; return; }
-        const n = GreedJunk.WHEEL_SECTORS.length;
-        // какой сектор: игра (onWheel → индекс) или случайный в превью
-        const idx = this.onWheel ? this.onWheel() : Math.floor(Math.random() * n);
-        if (idx === false) { M.st = 'coast'; return; }      // крутка не состоялась
+        const SEC = GreedJunk.WHEEL_SECTORS, n = SEC.length;
+        // Какой сектор: игра решает ключ (onWheel → 'gold1', 'blank'…, по
+        // весам конфига), колесо встаёт на случайный из нарисованных
+        // секторов с этим ключом — шанс задаёт конфиг, а не ширина сектора.
+        // Без игры (превью) — случайный.
+        let idx = Math.floor(Math.random() * n);
+        if (this.onWheel) {
+            const key = this.onWheel();
+            // Крутки нет (нет денег, не куплено, занято): колесо
+            // проворачивается и тут же тормозит, будто зажато, — и отказ в
+            // палец. Без этого бесплатный холостой проворот читался как
+            // крутка без выигрыша.
+            if (key === false || key == null) {
+                M.st = 'coast'; M.brake = true;
+                if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
+                return;
+            }
+            const at = SEC.map((k, i) => k === key ? i : -1).filter(i => i >= 0);
+            idx = at.length ? at[Math.floor(Math.random() * at.length)] : idx;
+        }
         // угол, при котором сектор idx под язычком: сектор i вверху при rot = −i·2π/n
         const dir = Math.sign(w), sec = Math.PI * 2 / n, T = Math.PI * 2;
         const want = -idx * sec + (Math.random() - 0.5) * sec * 0.6;
@@ -159,8 +175,9 @@ Object.assign(GreedJunkLit, {
             }
         } else if (M.st === 'coast') {
             const sg = Math.sign(M.w);
-            M.w -= sg * P.a * dt * 3;
-            if (Math.sign(M.w) !== sg) { M.w = 0; M.st = 'idle'; }
+            // зажатое (крутка не состоялась) тормозит в разы сильнее
+            M.w -= sg * P.a * dt * (M.brake ? 28 : 3);
+            if (Math.sign(M.w) !== sg) { M.w = 0; M.st = 'idle'; M.brake = false; }
             M.rot += M.w * dt;
         }
         this.wheelFlap(now, dt, M.rot - prev);
