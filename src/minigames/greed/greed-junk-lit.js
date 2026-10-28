@@ -157,9 +157,48 @@ const GreedJunkLit = {
         gl.uniform2f(gl.getUniformLocation(p, 'uTex'), 1 / this.size[0], 1 / this.size[1]);
         gl.uniform1f(gl.getUniformLocation(p, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        this.cylNormals();
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         this._nDirty.delete(ht);
         return nt;
+    },
+    // Цилиндры корпуса (GreedJunk.cylG: колба, её колпаки, хомут) — нормаль
+    // по формуле поверх посчитанной по карте высот. Карта 8-битная: на
+    // плавном скате высота идёт лесенкой из одинаковых пикселей, разности
+    // соседей прыгают, и блестящая сталь рисовала это полосками (игрок:
+    // «ступеньки не ушли, ты сделал их мельче»). Профиль тот же, что у
+    // высоты: base + rise·cos(πx/2); x — поперёк, от −1 до 1. Вызывается
+    // при уже привязанном буфере нормалей.
+    cylNormals() {
+        const C = GreedJunk.CYLS;
+        if (!C || !C.size) return;
+        const gl = this.gl, G = GreedJunk;
+        if (!this._cprog) {
+            const vs = `attribute vec2 aPos; uniform vec4 uR; varying float vT;
+                void main() { vec2 q = aPos * 0.5 + 0.5; vT = q.x;
+                    gl_Position = vec4(mix(uR.xy, uR.zw, q) * 2.0 - 1.0, 0.0, 1.0); }`;
+            const fs = `precision highp float;
+                uniform float uRise, uW, uK, uG; varying float vT;
+                void main() {
+                    float xn = vT * 2.0 - 1.0;
+                    float dhdx = -uRise * sin(xn * 1.5707963) * 1.5707963 * 2.0 / uW;
+                    vec3 n = normalize(vec3(-dhdx * uK, 0.0, 1.0));
+                    gl_FragColor = vec4(n.xy * 0.5 + 0.5, dhdx * uG * 4.0 + 0.5, 0.5);
+                }`;
+            this._cprog = this.link(gl, vs, fs);
+        }
+        const p = this._cprog, S = this.SCALE, relief = 9.0 * G.HMAX / 24;
+        gl.useProgram(p);
+        // те же числа, что в normProgram: разность высот через 8 текселей
+        // (d = 4 в обе стороны) в долях карты, умноженная на крутизну
+        gl.uniform1f(gl.getUniformLocation(p, 'uK'), 8 * relief / (S * G.HMAX));
+        gl.uniform1f(gl.getUniformLocation(p, 'uG'), 1 / (S * G.HMAX));
+        C.forEach(c => {
+            gl.uniform4f(gl.getUniformLocation(p, 'uR'), c.x0 / G.W, (c.y - G.Y0) / G.H, (c.x0 + c.w) / G.W, (c.y + c.h - G.Y0) / G.H);
+            gl.uniform1f(gl.getUniformLocation(p, 'uRise'), c.rise);
+            gl.uniform1f(gl.getUniformLocation(p, 'uW'), c.w);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        });
     },
     heightDirty(ht) { (this._nDirty = this._nDirty || new Set()).add(ht); },
 
