@@ -17,7 +17,11 @@ const GreedMinigame = {
     screenElement: null,
     stageEl: null,
     win: null,               // хэндл общего окна мини-игры
-    busy_: false,            // идёт крутка или выплата
+    // Идущие игры: у каждой своя — бандит, колесо и пачинко играются
+    // параллельно, у каждой свой «кулдаун» (решение игрока). Было: один флаг
+    // на всё — пока досыпалась выплата бандита, сильный бросок колеса
+    // молча превращался в холостой проворот.
+    play: { slots: null, wheel: null, pachinko: null },
     spinGeneration: 0,       // растёт при close(): просроченные колбэки молчат
     timers: [],
 
@@ -57,7 +61,7 @@ const GreedMinigame = {
         if (!this.screenElement) return;
         this.screenElement.classList.add('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
-        this.busy_ = false;
+        this.play = { slots: null, wheel: null, pachinko: null };
         // Аппарат ставится на следующем кадре: сразу после .active сцена
         // может иметь нулевой размер. Готовность для покрова (veilReady) —
         // аппарат собран целиком (GreedJunkLit.settled: корпус, рычаг,
@@ -71,7 +75,7 @@ const GreedMinigame = {
                 onPachDone: (where) => this.onPachDone(where),
                 onWheel: () => this.onWheel(),
                 onWheelDone: () => this.onWheelDone(),
-                canReady: () => this.isOpen() && !this.busy_
+                canReady: () => this.isOpen() && !this.play.slots
             });
             if (L.meterSet) L.meterSet(L.meterValue());
             const A = typeof GreedCoins !== 'undefined' && GreedCoins.loadAtlas ? GreedCoins.loadAtlas() : null;
@@ -82,8 +86,39 @@ const GreedMinigame = {
         }));
     },
 
-    // Идёт крутка или выплата.
-    busy() { return this.busy_; },
+    // Идёт крутка или выплата: game — одной игры, без него — любой.
+    busy(game) {
+        const P = this.play;
+        return game ? !!P[game] : !!(P.slots || P.wheel || P.pachinko);
+    },
+
+    // ---------- КОШЕЛЁК В БАНКЕ ----------
+    // Бэкенд списывает ставку и начисляет выигрыш одним вызовом, в начале
+    // игры. Банка показывает их по отдельности, как видит игрок: ставка
+    // уходит сразу (монета летит из банки в щель), выигрыш приходит, когда
+    // выпал. Пока игра идёт, её выигрыш «придержан» (jarHold) — банка
+    // показывает кошелёк без него. Было: число менялось только на крутке —
+    // выиграл три, а на банке ничего, и следующая крутка давала «+2».
+    goldWon(res) { return (res && res.currencies && res.currencies.gold) || 0; },
+    started(game, res) {
+        this.play[game] = { res, gen: this.spinGeneration };
+        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(this.goldWon(res));
+        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+    },
+    // результат показан: выигрыш — в банку; null — игра устарела (окно закрыто)
+    settled(game) {
+        const p = this.play[game];
+        if (!p || p.gen !== this.spinGeneration) return null;
+        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(-this.goldWon(p.res));
+        return p;
+    },
+    // выплата досыпалась — игра свободна
+    finished(game, gen) {
+        if (gen !== this.spinGeneration) return;
+        this.play[game] = null;
+        if (game === 'slots') GreedJunkLit.tryReady();
+        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+    },
 
     // Готовность для покрова перехода: см. open().
     veilReady() { return this._readyP || Promise.resolve(); },
@@ -92,7 +127,9 @@ const GreedMinigame = {
         this.spinGeneration++;
         this.timers.forEach(clearTimeout);
         this.timers = [];
-        this.busy_ = false;
+        this.play = { slots: null, wheel: null, pachinko: null };
+        // выигрыши уже начислены — придержанное в банке больше не нужно
+        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(null);
         if (this.screenElement) this.screenElement.classList.remove('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.resumeRoom();
     },
@@ -103,21 +140,18 @@ const GreedMinigame = {
     // в палец — иначе дотянутый рычаг, за которым ничего не случилось,
     // читается как несработавшее касание.
     onPull() {
+        if (this.play.slots) return false;
         const res = Backend.greedSpin();
         if (!res.ok) {
             if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
             return false;
         }
-        this.busy_ = true;
-        this.res = res;
-        this.gen = this.spinGeneration;
+        this.started('slots', res);
         // Барабаны встают на символы исхода: под ниткой — res.reels.
         // Ячейку каждого берём на ленте с случайного места — один и тот же
         // символ встречается на ленте несколько раз.
         const G = GreedJunk, n = G.REEL_STRIP.length;
         GreedJunkLit.spin(res.reels.map(k => G.reelIndexOf(k, Math.floor(Math.random() * n))));
-        // кошелёк в комнате считает то же состояние
-        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
         return true;
     },
 
@@ -128,9 +162,9 @@ const GreedMinigame = {
     // покажет общий кошелёк (wallet-fx). Джекпот мигает дважды.
     POUR_MAX: 40,
     onSpinDone() {
-        const res = this.res, L = GreedJunkLit;
-        if (!res || this.gen !== this.spinGeneration) { this.busy_ = false; return; }
-        this.res = null;
+        const p = this.settled('slots'), L = GreedJunkLit;
+        if (!p) { this.play.slots = null; return; }
+        const res = p.res;
         const got = Object.keys(res.currencies || {}).some(k => k !== 'gold' && res.currencies[k] > 0);
         if (res.pay > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, res.pay));
         if (res.pay > (res.cost || 1) || got) L.blink();
@@ -138,82 +172,49 @@ const GreedMinigame = {
         if (L.meterSet) L.meterSet(L.meterValue());
         // выплата досыпалась — готов к следующей крутке
         const pourMs = res.pay > 0 ? 700 + Math.min(this.POUR_MAX, res.pay) / L.TRAY.rate * 1000 : 0;
-        const gen = this.gen;
-        this.timers.push(setTimeout(() => {
-            if (gen !== this.spinGeneration) return;
-            this.busy_ = false;
-            L.tryReady();
-            if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
-        }, pourMs + (res.jackpot ? 1600 : 0)));
+        this.timers.push(setTimeout(() => this.finished('slots', p.gen), pourMs + (res.jackpot ? 1600 : 0)));
     }
 };
 
-// ================= ПАЧИНКО =================
+// ================= ПАЧИНКО И КОЛЕСО =================
 // Кнопка короба → onPach: шарик за монету (Backend.greedPlay('pachinko')
 // решает лунку по весам конфига, инвариант 2). Аппарат подбирает запуск,
 // который по честной физике приводит в эту лунку
-// (greed-junk-lit-pachinko.js). Одна игра за раз: пока крутятся барабаны
-// или летит шарик, вторая не начинается.
+// (greed-junk-lit-pachinko.js). Сильный бросок колеса → onWheel: крутка за
+// монету, колесо встаёт на нарисованный сектор с решённым ключом
+// (greed-junk-lit-wheel.js). Каждая игра ждёт только себя: барабаны, колесо
+// и шарик идут одновременно.
 Object.assign(GreedMinigame, {
-    onPach() {
-        if (this.busy_) return false;
-        const res = Backend.greedPlay('pachinko');
-        if (!res.ok) return false;          // нет денег или пачинко не куплено
-        this.busy_ = true;
-        this.pres = res;
-        this.pgen = this.spinGeneration;
-        const L = GreedJunkLit;
-        if (L.setReady) L.setReady(false);
-        if (L.coinIn) L.coinIn();
-        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
+    // начать игру game; false — не состоялась (занята, нет денег, не куплена)
+    startPlay(game) {
+        if (this.play[game]) return false;
+        const res = Backend.greedPlay(game);
+        if (!res.ok) return false;
+        this.started(game, res);
+        if (GreedJunkLit.coinIn) GreedJunkLit.coinIn();
         return res.key;
     },
+    onPach() { return this.startPlay('pachinko'); },
+    onWheel() { return this.startPlay('wheel'); },
+    onPachDone() { this.playDone('pachinko'); },
+    onWheelDone() { this.playDone('wheel'); },
 
-    // Шарик пойман. Монеты — в лоток; осколок и жетон — мигание ламп, их
-    // начисление покажет общий кошелёк (wallet-fx). Градусник — к новой шкале.
-    onPachDone() {
-        const res = this.pres, L = GreedJunkLit;
-        if (!res || this.pgen !== this.spinGeneration) { this.busy_ = false; return; }
-        this.pres = null;
-        const cur = res.currencies || {}, gold = cur.gold || 0;
+    // Шарик пойман / колесо встало. Монеты — в лоток (и мясо, выплаченное
+    // деньгами при полной кладовой); осколок, жетон, мясо, семечка — мигание
+    // ламп, их начисление покажет общий кошелёк (wallet-fx). Градусник — к
+    // новой шкале.
+    playDone(game) {
+        const p = this.settled(game), L = GreedJunkLit;
+        if (!p) { this.play[game] = null; return; }
+        const res = p.res, cur = res.currencies || {}, gold = cur.gold || 0;
         const got = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0) ||
             !!(res.items && res.items.got > 0);       // мясо в кладовую, семечка в мешок (колесо)
         if (gold > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, gold));
         if (gold > 0 || got) L.blink();
         if (L.meterSet) L.meterSet(L.meterValue());
         const pourMs = gold > 0 ? 700 + Math.min(this.POUR_MAX, gold) / L.TRAY.rate * 1000 : 0;
-        const gen = this.pgen;
-        this.timers.push(setTimeout(() => {
-            if (gen !== this.spinGeneration) return;
-            this.busy_ = false;
-            L.tryReady();
-            if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
-        }, pourMs));
+        this.timers.push(setTimeout(() => this.finished(game, p.gen), pourMs));
     }
-});
-
-// ================= КОЛЕСО =================
-// Сильный бросок → onWheel: крутка за монету (Backend.greedPlay('wheel')
-// решает сектор по весам конфига). Колесо встаёт на нарисованный сектор с
-// этим ключом (greed-junk-lit-wheel.js). Монеты — в лоток (и мясо,
-// выплаченное деньгами при полной кладовой); мясо, семечка, осколок —
-// мигание ламп, начисление покажет кошелёк. Одна игра за раз.
-Object.assign(GreedMinigame, {
-    onWheel() {
-        if (this.busy_) return false;
-        const res = Backend.greedPlay('wheel');
-        if (!res.ok) return false;          // нет денег или колесо не куплено
-        this.busy_ = true;
-        this.pres = res;
-        this.pgen = this.spinGeneration;
-        const L = GreedJunkLit;
-        if (L.setReady) L.setReady(false);
-        if (L.coinIn) L.coinIn();
-        if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
-        return res.key;
-    },
-    // выплата — та же, что у пачинко: монеты в лоток, остальное мигает
-    onWheelDone() { this.onPachDone(); }
 });
 
 if (document.readyState === 'loading') {

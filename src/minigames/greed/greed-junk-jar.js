@@ -54,10 +54,14 @@ Object.assign(GreedJunkLit, {
         this._jar = { shown: null, val: null, from: 0, to: 0, at: 0 };
     },
 
-    // кошелёк из состояния игры; в превью без игры — горсть
+    // Кошелёк из состояния игры минус выигрыши идущих игр — они уже
+    // начислены, но банка покажет их, когда игра закончится (GreedMinigame,
+    // «Кошелёк в банке»). В превью без игры — горсть.
+    _jarHeld: 0,
+    jarHold(d) { this._jarHeld = d === null ? 0 : Math.max(0, this._jarHeld + d); },
     jarValue() {
         if (typeof GameState === 'undefined' || !GameState.currency) return 37;
-        return Math.max(0, Math.floor(GameState.currency('gold')));
+        return Math.max(0, Math.floor(GameState.currency('gold') - this._jarHeld));
     },
 
     // ---------- МОНЕТЫ ВНУТРИ ----------

@@ -92,26 +92,40 @@ Object.assign(GreedJunkLit, {
             if (Math.hypot(p[0] - W.cx, p[1] - W.cy) > W.r || M.st === 'spin' || M.st === 'settle') return;
             e.preventDefault(); e.stopPropagation();
             wrap.setPointerCapture(e.pointerId);
-            grab = { a: ang(p), hist: [[performance.now(), M.rot]] };
+            grab = { a: ang(p), hist: [[e.timeStamp, M.rot]] };
             M.st = 'drag'; M.w = 0; M.target = M.rot;
         });
+        // Скорость броска — по времени САМИХ касаний (e.timeStamp), а не по
+        // часам в момент обработки. Было: performance.now() в обработчике и
+        // окно 90 мс; пока аппарат рисует тяжёлый кадр, касания приходят
+        // пачкой, в окне оставалось одно — и любой бросок выходил нулевым:
+        // колесо только шевелилось за пальцем и не играло. Промежуточные
+        // точки (getCoalescedEvents) — тоже: браузер склеивает их в одно
+        // событие на кадр.
         wrap.addEventListener('pointermove', (e) => {
             if (!grab) return;
-            const M = this._wheel, a = ang(field(e));
-            let d = a - grab.a;
-            d = Math.atan2(Math.sin(d), Math.cos(d));
-            grab.a = a;
-            // тяжёлое колесо идёт за пальцем с запаздыванием (wheelStep)
-            M.target += d;
-            const now = performance.now();
-            grab.hist.push([now, M.target]);
-            grab.hist = grab.hist.filter(h => now - h[0] < 90);
+            const M = this._wheel, list = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+            (list.length ? list : [e]).forEach(ev => {
+                const a = ang(field(ev));
+                let d = a - grab.a;
+                d = Math.atan2(Math.sin(d), Math.cos(d));
+                grab.a = a;
+                // тяжёлое колесо идёт за пальцем с запаздыванием (wheelStep)
+                M.target += d;
+                grab.hist.push([ev.timeStamp, M.target]);
+            });
+            const t = grab.hist[grab.hist.length - 1][0];
+            // окно — последние 100 мс, но не меньше двух точек
+            while (grab.hist.length > 2 && t - grab.hist[0][0] > 100) grab.hist.shift();
         });
-        const up = () => {
+        const up = (e) => {
             if (!grab) return;
             const M = this._wheel, h = grab.hist, now = performance.now();
             grab = null;
-            const w = h.length > 1 ? (h[h.length - 1][1] - h[0][1]) / Math.max(16, h[h.length - 1][0] - h[0][0]) : 0;
+            const a = h[0], b = h[h.length - 1];
+            let w = h.length > 1 ? (b[1] - a[1]) / Math.max(16, b[0] - a[0]) : 0;
+            // палец остановился перед тем, как отпустить, — броска нет
+            if (e && e.timeStamp - b[0] > 120) w = 0;
             this.wheelThrow(w, now);
         };
         wrap.addEventListener('pointerup', up);
@@ -124,7 +138,7 @@ Object.assign(GreedJunkLit, {
         const M = this._wheel, P = this.WHEEL_SPIN;
         w = Math.max(-P.maxW, Math.min(P.maxW, w));
         M.w = w;
-        if (Math.abs(w) < P.minW) { M.st = 'coast'; return; }
+        if (Math.abs(w) < P.minW) { M.st = w ? 'coast' : 'idle'; return; }
         const SEC = GreedJunk.WHEEL_SECTORS, n = SEC.length;
         // Какой сектор: игра решает ключ (onWheel → 'gold1', 'blank'…, по
         // весам конфига), колесо встаёт на случайный из нарисованных
