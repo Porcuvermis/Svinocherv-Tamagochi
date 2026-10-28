@@ -12,6 +12,7 @@ Object.assign(GreedJunkLit, {
     // Сколько короб выше поля аппарата (y0 < 0) плюс запас: на столько
     // аппарат опускается в окне (fit), чтобы короб не ушёл под рамку окна.
     PACH_TOP: 40,
+    PACH_SINK_MS: 180,   // провал шарика в лунку или сток
     // тень: короб стоит в рельсах на gap от стенки, полутень — blur
     // Тень короба — два слоя. near: на то, что сразу за коробом (щит,
     // полка, стойка рамки) — короткая и чёткая, обрезана по аппарату.
@@ -127,7 +128,7 @@ Object.assign(GreedJunkLit, {
     // нужны полёту); всё набрано — стоит.
     pachFill(now) {
         const M = this._pach;
-        if (M.ball && !M.seek) return;
+        if ((M.ball && !M.seek) || M.sink) return;
         const pool = this.pachPool(), keys = this.pachKeys();
         const want = M.seek || null;
         if (!want && keys.every(k => (pool[k] || []).length >= this.POOL)) {
@@ -148,7 +149,7 @@ Object.assign(GreedJunkLit, {
         const M = this._pach, K = GreedJunk.PACH_PHYS;
         if (!M || !this._pgl) return;
         M.press = performance.now();
-        if (M.ball || M.seek) { if (typeof Haptics !== 'undefined') Haptics.tick(); return; }
+        if (M.ball || M.seek || M.sink) { if (typeof Haptics !== 'undefined') Haptics.tick(); return; }
         if (!this.onPach) { this.pachFire(K.v0[0] + Math.random() * (K.v0[1] - K.v0[0])); return; }
         const key = this.onPach();
         if (key === false || key == null) { if (typeof Haptics !== 'undefined') Haptics.notify('error', true); return; }
@@ -214,7 +215,7 @@ Object.assign(GreedJunkLit, {
         const dt = Math.min(0.05, M.bat ? (now - M.bat) / 1000 : 1 / 60);
         M.bat = now;
         const pressed = now - M.press < 140;
-        if (!M.ball && !pressed && !M.dirty) return;
+        if (!M.ball && !M.sink && !pressed && !M.dirty) return;
         if (M.ball && M.ball.hold) M.press = now;          // ищется запуск — кнопка вдавлена
         if (M.ball && !M.ball.hold) {
             M.acc += dt;
@@ -223,10 +224,15 @@ Object.assign(GreedJunkLit, {
                 const ev = G.pachStepBall(M.ball);
                 if (ev === 'nail' && typeof Haptics !== 'undefined') Haptics.tick();
                 if (M.ball.done) {
-                    const res = M.ball.done;
+                    const res = M.ball.done, b = M.ball;
                     if (typeof Haptics !== 'undefined') Haptics.impact(res === 'drain' ? 'soft' : 'medium', true);
+                    // Провал: шарик ещё уходит вниз, обрезанный по кромке —
+                    // за переднюю стенку банки или в щель стока; выплата —
+                    // когда скрылся. Было: шарик исчезал в тот же миг.
+                    const cup = res === 'drain' ? null : G.pachWorld().cups.find(c => b.x >= c.x0 && b.x <= c.x1);
+                    // в стоке — по передней панели: в тёмной щели шарик ещё виден
+                    M.sink = { x: b.x, y: b.y, at: now, cut: cup ? cup.y0 + 0.6 : G.PACH.y1 - G.PACH.panel, res };
                     M.ball = null;
-                    if (this.onPachDone) this.onPachDone(res);
                 }
             }
         }
@@ -240,6 +246,21 @@ Object.assign(GreedJunkLit, {
             c.globalAlpha = 0.3; c.fillStyle = PALETTE.greedJunk.hole;
             c.beginPath(); c.arc(Bt.x, Bt.y, Bt.r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
         }
+        if (M.sink) {
+            // провал: вниз на радиус с хвостиком, выше кромки — видно
+            const k = Math.min(1, (now - M.sink.at) / this.PACH_SINK_MS), r = K.r, spr = this.pachBallSprite();
+            if (spr) {
+                c.save();
+                c.beginPath(); c.rect(M.sink.x - r - 2, M.sink.cut - 40, (r + 2) * 2, 40); c.clip();
+                c.drawImage(spr, M.sink.x - r - 1, M.sink.y + k * (r * 2.4) - r - 1, (r + 1) * 2, (r + 1) * 2);
+                c.restore();
+            }
+            if (k >= 1) {
+                const res = M.sink.res;
+                M.sink = null;
+                if (this.onPachDone) this.onPachDone(res);
+            }
+        }
         if (M.ball) {
             const b = M.ball, r = K.r, spr = this.pachBallSprite(), L = this.lightFor(this._tilt || { x: 0, y: 0 });
             if (!spr) return;
@@ -249,7 +270,7 @@ Object.assign(GreedJunkLit, {
             c.globalAlpha = 1;
             c.drawImage(spr, b.x - r - 1, b.y - r - 1, (r + 1) * 2, (r + 1) * 2);
         }
-        M.dirty = !!M.ball || pressed;
+        M.dirty = !!M.ball || !!M.sink || pressed;
     },
 
     // Карты короба — один раз. Высоты в своей карте (важна разница):
