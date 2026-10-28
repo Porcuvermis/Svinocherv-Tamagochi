@@ -158,11 +158,28 @@ Object.assign(GreedJunkLit, {
             { x: x - ri + 1.1, y: GreedJunk.meterY(0.55), every: 320, r0: 0.8 }
         ].map(s => Object.assign(s, { next: Math.random() * s.every }));
     },
+    // Настроение колбы (решение игрока): в покое почти тихо — пузырёк раз
+    // в пару секунд; пока идёт игра (барабаны, колесо, шарик) — средне; за
+    // выигрыш (мигают лампы) — вовсю, как раньше было всегда. Было: центры
+    // кипения работали в полную силу без перерыва, колба «херачила»
+    // пузырями и в простое. Доли — от полной силы центров (~23 в секунду);
+    // up/down — за сколько мс настроение доходит до нового уровня.
+    BUBBLE_MOOD: { idle: 0.022, play: 0.3, win: 1, winMs: 4000, up: 350, down: 1800 },
+    meterWin() { if (this._meter) this._meter.winUntil = performance.now() + this.BUBBLE_MOOD.winMs; },
+    meterMood(M, now, dt) {
+        const D = this.BUBBLE_MOOD;
+        const busy = typeof GreedMinigame !== 'undefined' && GreedMinigame.busy && GreedMinigame.busy();
+        const target = now < (M.winUntil || 0) ? D.win : busy ? D.play : D.idle;
+        const act = M.act == null ? target : M.act;
+        M.act = act + (target - act) * Math.min(1, dt / (target > act ? D.up : D.down));
+        return M.act;
+    },
     // dt — мс; top — y поверхности
     bubbleStep(M, now, dt, top) {
         const B = this.BUBBLE, R = GreedJunk.METER, x = R.bx, ri = R.r - R.wall;
         M.fizz = Math.max(0, M.fizz - dt / 2600);
-        const rate = 1 + M.fizz * 3;
+        // встряска от удара рычага — сверху настроения, но не выше полной силы
+        const rate = Math.min(1, this.meterMood(M, now, dt) * (1 + M.fizz * 3));
         M.sites.forEach(s => {
             if (s.y < top + 2) return;                // точка над жидкостью — молчит
             s.next -= dt * rate;

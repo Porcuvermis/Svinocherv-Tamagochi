@@ -741,7 +741,7 @@ const GreedJunkLit = {
     GLOW_ORDER: ['pear', 'flame', 'red', 'globe'],
     CHASE: { step: 110, rounds: 3, flash: 220, flashes: 2 },
     glow: { pear: 0, flame: 0, red: 0, globe: 0 },
-    blink() { this._blinkAt = -1; },
+    blink() { this._blinkAt = -1; if (this.meterWin) this.meterWin(); },
     glowStep(now) {
         if (this._blinkAt === -1) this._blinkAt = now;
         const C = this.CHASE, O = this.GLOW_ORDER, t = this._blinkAt == null ? Infinity : now - this._blinkAt;
