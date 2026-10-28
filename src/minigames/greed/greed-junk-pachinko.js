@@ -186,6 +186,22 @@ Object.assign(GreedJunk, {
             field += `<ellipse cx="${f(x)}" cy="${f(y)}" rx="${f(s * 1.3)}" ry="${f(s)}" fill="${W.ply}" stroke="${W.plyLo}" stroke-width="0.3"/>`;
         }
 
+        // ---- затенение углов: куда свет лампы не доходит ----
+        // Вдоль стенок ящика, под стальной дугой, у перегородки дорожки и
+        // под донцами банок — мягкая темнота в самом цвете поля: от
+        // направления света она не зависит, поэтому не шейдером, а один раз.
+        // Без неё поле читалось наклейкой поверх ящика — тень стенок узкая
+        // (5–7 единиц при свете под 45°), а в углах светло, как посередине.
+        let ao = `<rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}" fill="none" stroke="${J.hole}" stroke-width="7"/>`;
+        ao += `<path d="${`M${f(A.cx - A.r)} ${f(A.cy + 8)} L${f(A.cx - A.r)} ${A.cy} A${A.r} ${A.r} 0 0 1 ${f(A.cx + A.r)} ${A.cy}`}" fill="none" stroke="${J.hole}" stroke-width="4"/>`;
+        ao += `<path d="M${P.sep + 1} ${A.cy + 12} L${P.sep + 1} ${P.drain}" stroke="${J.hole}" stroke-width="4"/>`;
+        this.PACH_CUPS.forEach(c => {
+            ao += `<ellipse cx="${c.x}" cy="${c.y + C.h - 0.5}" rx="${C.w / 2 - 1}" ry="2.2" fill="${J.hole}"/>`;
+        });
+        field += `<defs><filter id="gj-pao" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.4"/></filter>` +
+            `<clipPath id="gj-paoc"><rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}"/></clipPath></defs>` +
+            `<g clip-path="url(#gj-paoc)"><g filter="url(#gj-pao)" opacity="0.4">${ao}</g></g>`;
+
         // ---- сток: щель через всю ширину, кромка — жесть ----
         let drain = `<rect x="${fx0}" y="${P.drain}" width="${P.sep - fx0}" height="${fy1 - P.drain}" class="pit" fill="${J.hole}"/>`;
         drain += `<rect x="${fx0}" y="${P.drain - 1.2}" width="${P.sep - fx0}" height="1.8" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
