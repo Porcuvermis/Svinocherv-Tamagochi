@@ -9,9 +9,6 @@
 // Колесо монтируется после — его холсты поверх: колесо на переднем плане и
 // заходит на левую стенку короба.
 Object.assign(GreedJunkLit, {
-    // Сколько короб выше поля аппарата (y0 < 0) плюс запас: на столько
-    // аппарат опускается в окне (fit), чтобы короб не ушёл под рамку окна.
-    PACH_TOP: 40,
     PACH_SINK_MS: 180,   // провал шарика в лунку или сток
     // тень: короб стоит в рельсах на gap от стенки, полутень — blur
     // Тень короба — два слоя. near: на то, что сразу за коробом (щит,
@@ -35,8 +32,7 @@ Object.assign(GreedJunkLit, {
         const layer = (B) => {
             const cv = document.createElement('canvas');
             cv.width = Math.round(B.w * S); cv.height = Math.round(B.h * S);
-            cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
-                `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
+            cv.style.cssText = `position:absolute;${G.css(B)}z-index:1;pointer-events:none;background:none`;
             wrap.appendChild(cv);
             return cv;
         };
@@ -46,8 +42,7 @@ Object.assign(GreedJunkLit, {
         if (this._glCanvas && this._glCanvas.parentNode === wrap) wrap.insertBefore(far, this._glCanvas);
         // ближняя — поверх корпуса, в рамке аппарата
         const C = this.PACH_NEAR_CLIP, nclip = document.createElement('div');
-        nclip.style.cssText = `position:absolute;left:${C.x / G.W * 100}%;top:${C.y / G.H * 100}%;` +
-            `width:${C.w / G.W * 100}%;height:${C.h / G.H * 100}%;overflow:hidden;z-index:1;pointer-events:none`;
+        nclip.style.cssText = `position:absolute;${G.css(C)}overflow:hidden;z-index:1;pointer-events:none`;
         const near = layer(this.pachShadowBox('near'));
         const B = this.pachShadowBox('near');
         near.style.left = `${(B.x - C.x) / C.w * 100}%`; near.style.top = `${(B.y - C.y) / C.h * 100}%`;
@@ -63,8 +58,7 @@ Object.assign(GreedJunkLit, {
         // сдвигается за светом (pachGlareAt)
         const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
         const clip = document.createElement('div');
-        clip.style.cssText = `position:absolute;left:${R.x0 / G.W * 100}%;top:${R.y0 / G.H * 100}%;` +
-            `width:${(R.x1 - R.x0) / G.W * 100}%;height:${(R.y1 - R.y0) / G.H * 100}%;overflow:hidden;z-index:1;pointer-events:none`;
+        clip.style.cssText = `position:absolute;${G.css({ x: R.x0, y: R.y0, w: R.x1 - R.x0, h: R.y1 - R.y0 })}overflow:hidden;z-index:1;pointer-events:none`;
         const gc = document.createElement('canvas');
         gc.width = Math.round((R.x1 - R.x0 + 2 * m) * S); gc.height = Math.round((R.y1 - R.y0 + 2 * m) * S);
         gc.style.cssText = `position:absolute;left:${-m / (R.x1 - R.x0) * 100}%;top:${-m / (R.y1 - R.y0) * 100}%;` +
@@ -76,8 +70,7 @@ Object.assign(GreedJunkLit, {
         this._pachP = this.pachSprites();
         // кнопка запуска — тап по ней
         wrap.addEventListener('pointerdown', (e) => {
-            const r = wrap.getBoundingClientRect(), B = G.PACH.button;
-            const x = (e.clientX - r.left) / r.width * G.W, y = (e.clientY - r.top) / r.height * G.H;
+            const B = G.PACH.button, [x, y] = G.toField(e, wrap);
             if (Math.hypot(x - B.x, y - B.y) > B.r + 4) return;
             e.preventDefault(); e.stopPropagation();
             this.pachLaunch();

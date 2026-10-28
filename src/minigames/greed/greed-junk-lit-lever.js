@@ -48,7 +48,7 @@ Object.assign(GreedJunkLit, {
                 this.draw(light);
                 const c = document.createElement('canvas');
                 c.width = C.w * S; c.height = C.h * S;
-                c.getContext('2d').drawImage(this.gl.canvas, C.x * S, C.y * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
+                c.getContext('2d').drawImage(this.gl.canvas, C.x * S, (C.y - GreedJunk.Y0) * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
                 sprites[k] = c;
                 // тень: силуэт части, чёрный, размытый несколькими сдвигами
                 const sc = document.createElement('canvas');
@@ -88,7 +88,7 @@ Object.assign(GreedJunkLit, {
             gl.activeTexture(gl.TEXTURE0 + u);
             gl.bindTexture(gl.TEXTURE_2D, this.tex[u]);
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, u === 0);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, C.x * S, C.y * S, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, C.x * S, (C.y - GreedJunk.Y0) * S, gl.RGBA, gl.UNSIGNED_BYTE, img);
         });
         this.heightDirty(this.tex[1]);
     },

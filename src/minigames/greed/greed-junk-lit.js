@@ -789,8 +789,11 @@ const GreedJunkLit = {
         wrap.style.cssText = 'position:relative;flex:none';
         container.appendChild(wrap);
         this.fit(container);
+        // Фон снят: общий style.css красит все canvas в #2a2119, и аппарат
+        // стоял в тёмном прямоугольнике на золотисто-коричневом фоне рамки —
+        // над ящиком читался шов.
         const canvas = document.createElement('canvas');
-        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0';
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0;background:none';
         wrap.appendChild(canvas);
         this._glCanvas = canvas;
         // Холст движущегося рычага — над его участком корпуса. Фон снят
@@ -799,8 +802,7 @@ const GreedJunkLit = {
         // «пропадал» корпус (отладкой на iPhone: карты целы, виноват фон).
         const C = this.LEVER_CROP, lv = document.createElement('canvas');
         lv.width = C.w * this.SCALE; lv.height = C.h * this.SCALE;
-        lv.style.cssText = `position:absolute;left:${C.x / GreedJunk.W * 100}%;top:${C.y / GreedJunk.H * 100}%;` +
-            `width:${C.w / GreedJunk.W * 100}%;height:${C.h / GreedJunk.H * 100}%;z-index:1;display:none;pointer-events:none;background:none`;
+        lv.style.cssText = `position:absolute;${GreedJunk.css(C)}z-index:1;display:none;pointer-events:none;background:none`;
         wrap.appendChild(lv);
         this.leverCanvas = lv;
         if (this.trayMount) this.trayMount(wrap);
@@ -812,10 +814,7 @@ const GreedJunkLit = {
         if (this.pachMountLit) this.pachMountLit(wrap);
         if (this.wheelMountLit) this.wheelMountLit(wrap);
         // рычаг пальцем: взялся — тянешь вниз; короткий тап — рывок целиком
-        const field = (e) => {
-            const r = wrap.getBoundingClientRect();
-            return [(e.clientX - r.left) / r.width * GreedJunk.W, (e.clientY - r.top) / r.height * GreedJunk.H];
-        };
+        const field = (e) => GreedJunk.toField(e, wrap);
         let grab = null;
         wrap.addEventListener('pointerdown', (e) => {
             const [x, y] = field(e);
@@ -846,7 +845,7 @@ const GreedJunkLit = {
         wrap.addEventListener('pointercancel', up);
         wrap.style.touchAction = 'none';
         const live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        live.setAttribute('viewBox', `0 0 ${GreedJunk.W} ${GreedJunk.H}`);
+        live.setAttribute('viewBox', `0 ${GreedJunk.Y0} ${GreedJunk.W} ${GreedJunk.H}`);
         live.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';
         wrap.appendChild(live);
         this.live = live;
@@ -874,13 +873,14 @@ const GreedJunkLit = {
     fit(container) {
         const W = GreedJunk.W, H = GreedJunk.H, cw = container.clientWidth, ch = container.clientHeight;
         if (!cw || !ch || !this.wrapEl) return;
-        // Пачинко стоит — короб торчит над рамкой (PACH_TOP): аппарат
-        // опускается в окне отступом сверху, а не уменьшается.
-        const top = GreedJunk.pachinkoShown && GreedJunk.pachinkoShown() ? (this.PACH_TOP || 0) : 0;
-        const k = Math.min(cw / W, ch / (H + top));
+        // Поле по ширине — во весь проём рамки, по высоте — ровно видимая
+        // зона: монеты заходят на сцену на 1,45 радиуса, и поле сшито так,
+        // что всё нужное лежит внутри (docs/plan/29-greed-layout.md). Было:
+        // отступ сверху под короб пачинко (PACH_TOP) — над ящиком оставалась
+        // пустая полоса во всю ширину.
+        const k = Math.min(cw / W, ch / H);
         this.wrapEl.style.width = (W * k).toFixed(1) + 'px';
         this.wrapEl.style.height = (H * k).toFixed(1) + 'px';
-        this.wrapEl.style.marginTop = (top * k).toFixed(1) + 'px';
     },
 
     // ---------- ПРЕВЬЮ ИЗ ОТЛАДКИ ----------
@@ -899,7 +899,7 @@ const GreedJunkLit = {
         // (игрок промахивался мимо колеса или кнопки пачинко).
         box.addEventListener('click', (e) => {
             const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
-            const y = (e.clientY - r.top) / r.height * GreedJunk.H;
+            const y = (e.clientY - r.top) / r.height * GreedJunk.H + GreedJunk.Y0;
             if (y > 440 && y < 520) this.blink();
         });
         // крестик — рисунок, без слов; цвета из палитры
@@ -920,7 +920,7 @@ const GreedJunkLit = {
         if (region) {
             const S = this.SCALE;
             gl.enable(gl.SCISSOR_TEST);
-            gl.scissor(region.x * S, (GreedJunk.H - region.y - region.h) * S, region.w * S, region.h * S);
+            gl.scissor(region.x * S, (GreedJunk.H - (region.y - GreedJunk.Y0) - region.h) * S, region.w * S, region.h * S);
         } else gl.disable(gl.SCISSOR_TEST);
         const L = light || this.LIGHT;
         const n = Math.hypot(L[0], L[1], L[2]) || 1;
@@ -935,7 +935,7 @@ const GreedJunkLit = {
         // барабаны: окна по поверхности ленты (drum в рисунке — на 1 внутри
         // окна), смещение ленты каждого барабана, размытие на ходу
         const G = GreedJunk, C = G.CELL, W = G.W, H = G.H;
-        G.SLOTS.reels.forEach((r, i) => gl.uniform4f(gl.getUniformLocation(p, 'uReel' + i), (r.x + 1) / W, (r.y + 1) / H, (r.w - 2) / W, (r.h - 2) / H));
+        G.SLOTS.reels.forEach((r, i) => gl.uniform4f(gl.getUniformLocation(p, 'uReel' + i), (r.x + 1) / W, (r.y + 1 - G.Y0) / H, (r.w - 2) / W, (r.h - 2) / H));
         const R = this.reels || [0, 1, 2].map(() => ({ s: C.h / 2, blur: 0 }));
         gl.uniform3f(gl.getUniformLocation(p, 'uOff'), ...R.map(r => r.s));
         gl.uniform3f(gl.getUniformLocation(p, 'uBlur'), ...R.map(r => r.blur));

@@ -24,7 +24,7 @@ Object.assign(GreedJunkLit, {
         // проёма — из рисунка лотка, coinTray)
         const CH = G.CHUTE, px = (x) => ((x - B.x) / B.w * 100).toFixed(2) + '%', py = (y) => ((y - B.y) / B.h * 100).toFixed(2) + '%';
         const poly = [[CH.x - 4, B.y], [CH.x + CH.w + 4, B.y], [CH.x + CH.w + 4, 548.4], [239, 548.4], [244.5, 572], [115.5, 572], [121, 548.4], [CH.x - 4, 548.4]];
-        cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;` +
+        cv.style.cssText = `position:absolute;${G.css(B)}` +
             `z-index:1;pointer-events:none;background:none;clip-path:polygon(${poly.map(q => px(q[0]) + ' ' + py(q[1])).join(',')})`;
         wrap.appendChild(cv);
         this.trayCv = cv;

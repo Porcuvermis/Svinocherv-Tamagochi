@@ -97,7 +97,7 @@ const { chromium } = require('playwright');
   // Где рукоять рычага на экране: поле аппарата → экран.
   const knob = await page.evaluate(() => {
     const r = GreedJunkLit.wrapEl.getBoundingClientRect(), G = GreedJunk, K = G.leverGeom(0).K;
-    return { x: r.x + K.x / G.W * r.width, y: r.y + K.y / G.H * r.height, unit: r.height / G.H };
+    return { x: r.x + K.x / G.W * r.width, y: r.y + (K.y - (G.Y0 || 0)) / G.H * r.height, unit: r.height / G.H };
   });
 
   const state = () => page.evaluate(() => ({

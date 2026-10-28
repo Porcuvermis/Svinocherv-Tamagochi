@@ -40,8 +40,7 @@ Object.assign(GreedJunkLit, {
         const layer = (B) => {
             const cv = document.createElement('canvas');
             cv.width = Math.round(B.w * S); cv.height = Math.round(B.h * S);
-            cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
-                `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
+            cv.style.cssText = `position:absolute;${G.css(B)}z-index:1;pointer-events:none;background:none`;
             wrap.appendChild(cv);
             return cv;
         };
@@ -57,8 +56,7 @@ Object.assign(GreedJunkLit, {
             const P = G.PACH, first = this.pachShadowCv.near.parentNode;
             if (first && first.parentNode === wrap) wrap.insertBefore(this.wheelShadowCv, first);
             const clip = document.createElement('div');
-            clip.style.cssText = `position:absolute;left:${P.x0 / G.W * 100}%;top:${P.y0 / G.H * 100}%;` +
-                `width:${(P.x1 - P.x0) / G.W * 100}%;height:${(P.y1 - P.y0) / G.H * 100}%;overflow:hidden;z-index:1;pointer-events:none`;
+            clip.style.cssText = `position:absolute;${G.css({ x: P.x0, y: P.y0, w: P.x1 - P.x0, h: P.y1 - P.y0 })}overflow:hidden;z-index:1;pointer-events:none`;
             const B = this.wheelShadowBox(), cv = layer(B);
             cv.style.left = `${(B.x - P.x0) / (P.x1 - P.x0) * 100}%`; cv.style.top = `${(B.y - P.y0) / (P.y1 - P.y0) * 100}%`;
             cv.style.width = `${B.w / (P.x1 - P.x0) * 100}%`; cv.style.height = `${B.h / (P.y1 - P.y0) * 100}%`;
@@ -70,10 +68,7 @@ Object.assign(GreedJunkLit, {
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this._wheelP = this.wheelSprites();
         // палец: схватил диск — крутишь
-        const field = (e) => {
-            const r = wrap.getBoundingClientRect();
-            return [(e.clientX - r.left) / r.width * G.W, (e.clientY - r.top) / r.height * G.H];
-        };
+        const field = (e) => G.toField(e, wrap);
         const W = G.SLOTS.wheel, ang = (p) => Math.atan2(p[1] - W.cy, p[0] - W.cx);
         let grab = null;
         wrap.addEventListener('pointerdown', (e) => {

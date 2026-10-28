@@ -314,7 +314,7 @@ Object.assign(GreedJunk, {
     bodySvg(pass, crop, lever) {
         this.pass = pass || 'baked';
         const clip = `<clipPath id="gj-face"><rect x="62" y="312" width="236" height="148" rx="2"/></clipPath>`;
-        const vb = crop ? `${crop.x} ${crop.y} ${crop.w} ${crop.h}` : `0 0 ${this.W} ${this.H}`;
+        const vb = crop ? `${crop.x} ${crop.y} ${crop.w} ${crop.h}` : `0 ${this.Y0} ${this.W} ${this.H}`;
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">` +
             this.passStyle(this.pass) +
             this.defs().replace('</defs>', clip + '</defs>') +

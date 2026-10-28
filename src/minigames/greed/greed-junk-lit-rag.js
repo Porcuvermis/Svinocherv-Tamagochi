@@ -21,8 +21,7 @@ Object.assign(GreedJunkLit, {
         const V = this.RAG_VIEW, G = GreedJunk, cv = document.createElement('canvas');
         cv.width = V.w * this.SCALE; cv.height = V.h * this.SCALE;
         // фон снят явно — общий style.css красит все canvas (ловушка рычага)
-        cv.style.cssText = `position:absolute;left:${V.x / G.W * 100}%;top:${V.y / G.H * 100}%;` +
-            `width:${V.w / G.W * 100}%;height:${V.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
+        cv.style.cssText = `position:absolute;${G.css(V)}z-index:1;pointer-events:none;background:none`;
         wrap.appendChild(cv);
         this.ragCanvas = cv;
         this._rag = { th: 0, tv: 0, ph: 0, pv: 0, last: null, at: 0, shown: '' };
@@ -40,7 +39,7 @@ Object.assign(GreedJunkLit, {
             this.draw(this.lightFor(this._tilt || { x: 0, y: 0 }));
             const c = document.createElement('canvas');
             c.width = C.w * S; c.height = C.h * S;
-            c.getContext('2d').drawImage(gl.canvas, C.x * S, C.y * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
+            c.getContext('2d').drawImage(gl.canvas, C.x * S, (C.y - GreedJunk.Y0) * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
             // тень: силуэт, размытый сдвигами, залитый тёмным
             const sh = document.createElement('canvas');
             sh.width = c.width; sh.height = c.height;

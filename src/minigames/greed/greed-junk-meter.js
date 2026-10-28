@@ -93,8 +93,7 @@ Object.assign(GreedJunkLit, {
         const layer = () => {
             const cv = document.createElement('canvas');
             cv.width = B.w * this.SCALE; cv.height = B.h * this.SCALE;
-            cv.style.cssText = `position:absolute;left:${B.x / G.W * 100}%;top:${B.y / G.H * 100}%;` +
-                `width:${B.w / G.W * 100}%;height:${B.h / G.H * 100}%;z-index:1;pointer-events:none;background:none`;
+            cv.style.cssText = `position:absolute;${G.css(B)}z-index:1;pointer-events:none;background:none`;
             wrap.appendChild(cv);
             const ctx = cv.getContext('2d');
             ctx.setTransform(this.SCALE, 0, 0, this.SCALE, -B.x * this.SCALE, -B.y * this.SCALE);
