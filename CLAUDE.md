@@ -85,6 +85,7 @@
 | Замысел греха | `docs/plan/` (см. `docs/plan/README.md`) |
 | Гнев: бой, регенерация, соперник, забег, лавка | `docs/plan/09-wrath-rework.md`, `10-wrath-rogue.md`; покупки — `wrath/wrath-shop.js` |
 | Алчность: автомат | `docs/plan/16-greed-slots.md` |
+| Алчность: деталь аппарата выглядит не так (ореол, полосы, свет) | `docs/bench/greed-audit.md`, съёмка — `tools/greed-part.js` |
 | Зависть: рамка из глаз, переход, индикаторы делений, новое поле — договорённости и порядок работ | `docs/plan/26-envy-eyes.md` |
 | Похоть: ванная, магазин, хвост, шкала-жетон | `docs/plan/21-lust-bath.md`, `lust/lust-shop.js`, `lust/lust-shot.js` |
 | Тщеславие: дорожка, костюмерная | `docs/plan/17-pride.md` |
