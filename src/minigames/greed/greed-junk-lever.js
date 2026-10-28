@@ -333,7 +333,12 @@ Object.assign(GreedJunk, {
         const rise = 12;
         const knob = `<circle cx="${K.x + 1.5}" cy="${K.y + 2.5}" r="${K.r}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
             `<circle cx="${K.x}" cy="${K.y}" r="${K.r}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}"/>` +
-            this.domeH(K.x, K.y, K.r, rise) +
+            // Купол — на всю толщину контура: контур снаружи радиуса лежал на
+            // карте высот плоским кольцом у подножия купола, глянец ловил на
+            // нём свет, и вокруг шара читался резиновый обод (игрок: «такая
+            // окантовка бывает у круга, но не у шара»). Теперь край — склон
+            // сферы.
+            this.domeH(K.x, K.y, K.r + STROKE.contour / 2, rise) +
             (noPattern ? '' : `<g style="--dh:${this.dh(rise * 0.9)}">` +
             `<g stroke="${J.paint.cream}" stroke-width="${STROKE.structure}" stroke-linecap="round" stroke-linejoin="round">${pattern}</g>` +
             `<g fill="${J.paint.cream}">${dots}</g></g>`) +
