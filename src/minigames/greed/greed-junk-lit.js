@@ -112,29 +112,12 @@ const GreedJunkLit = {
                 return (hh(p) * 2.0 + hh(p + vec2(uTex.x, 0.0)) + hh(p - vec2(uTex.x, 0.0)) +
                         hh(p + vec2(0.0, uTex.y)) + hh(p - vec2(0.0, uTex.y))) / 6.0;
             }
-            // столбик и строка из трёх отсчётов через 3 текселя — среднее
-            float wv(vec2 p) { return (hh(p - vec2(0.0, uTex.y * 3.0)) + hh(p) + hh(p + vec2(0.0, uTex.y * 3.0))) / 3.0; }
-            float wh(vec2 p) { return (hh(p - vec2(uTex.x * 3.0, 0.0)) + hh(p) + hh(p + vec2(uTex.x * 3.0, 0.0))) / 3.0; }
             void main() {
                 vec2 d = uTex * 4.0;
                 float h0s = hs(vUv);
                 float hl = min(hs(vUv - vec2(d.x, 0.0)), h0s), hr = min(hs(vUv + vec2(d.x, 0.0)), h0s);
                 float hu = min(hs(vUv - vec2(0.0, d.y)), h0s), hd = min(hs(vUv + vec2(0.0, d.y)), h0s);
                 vec3 n = normalize(vec3((hl - hr) * uRelief, (hu - hd) * uRelief, 1.0));
-                // Гладкое место (скат купола, валика, цилиндра) — нормаль по
-                // широкой окрестности. Карта 8-битная: на плавном скате высота
-                // идёт лесенкой одинаковых пикселей, разности близких соседей
-                // прыгают, и блестящее рисовало это полосками. Гладко ли — по
-                // тому, лежит ли точка на прямой между соседями: на ровном
-                // скате отклонение в уровень-два (лесенка), на уступе — полуступ.
-                // Уступы (края деталей) остаются с чёткой фаской.
-                float wl = wv(vUv - vec2(d.x, 0.0)), wr = wv(vUv + vec2(d.x, 0.0));
-                float wu = wh(vUv - vec2(0.0, d.y)), wd = wh(vUv + vec2(0.0, d.y));
-                float h0 = hh(vUv);
-                float dev = max(abs((wl + wr) * 0.5 - h0), abs((wu + wd) * 0.5 - h0));
-                float sm = 1.0 - smoothstep(2.5 / 255.0, 6.0 / 255.0, dev);
-                vec3 nw = normalize(vec3((wl - wr) * uRelief, (wu - wd) * uRelief, 1.0));
-                n = normalize(mix(n, nw, sm));
                 float gx = (hh(vUv + vec2(d.x, 0.0)) - hh(vUv - vec2(d.x, 0.0))) / 8.0;
                 float gy = (hh(vUv + vec2(0.0, d.y)) - hh(vUv - vec2(0.0, d.y))) / 8.0;
                 gl_FragColor = vec4(n.xy * 0.5 + 0.5, gx * 4.0 + 0.5, gy * 4.0 + 0.5);

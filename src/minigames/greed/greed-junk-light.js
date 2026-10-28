@@ -128,7 +128,7 @@ Object.assign(GreedJunk, {
     // исправление»). Градиент даёт непрерывную высоту. base — высота детали
     // в единицах (как в T), rise — подъём оси. Заливка — инлайн !important:
     // проход высот перекрашивает всё по --h, а тут высота своя.
-    cylG(id, x0, y, w, h, base, rise) {
+    cylG(id, x0, y, w, h, base, rise, rx) {
         // Профиль — косинус, а не дуга круга √(1−x²): у дуги на краю наклон
         // уходит в вертикаль, карта высот (256 уровней) передаёт такой обрыв
         // скачками уровней, и у края всё равно шли полоски. У косинуса наклон
@@ -142,7 +142,7 @@ Object.assign(GreedJunk, {
             st += `<stop offset="${t.toFixed(4)}" stop-color="rgb(${c},${c},${c})"/>`;
         }
         return `<g class="hpass"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">${st}</linearGradient></defs>` +
-            `<rect x="${f(x0)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" style="fill:url(#${id})!important;stroke:none!important"/></g>`;
+            `<rect x="${f(x0)}" y="${f(y)}" width="${f(w)}" height="${f(h)}"${rx ? ` rx="${f(rx)}"` : ''} style="fill:url(#${id})!important;stroke:none!important"/></g>`;
     },
 
     // Валик вдоль любого пути (кабель, шток, ребро): та же полоса, только
