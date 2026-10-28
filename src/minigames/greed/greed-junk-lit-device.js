@@ -38,6 +38,8 @@ Object.assign(GreedJunkLit, {
             uniform vec2 uTex; uniform vec3 uL; uniform float uPxPerH, uRotF, uShade;
             // карта света — общая с корпусом (greed-junk-lit-key.js)
             uniform sampler2D uKey; uniform float uKMax; uniform vec3 uWarm, uCool;
+            uniform vec2 uHMap;       // карта высот: (H0, HMAX)
+            ${this.lightsGlsl ? this.lightsGlsl() : ''}
             varying vec2 vUv, vLm;
             float hh(vec2 p) { return texture2D(uH, p).r; }
             void main() {
@@ -89,7 +91,11 @@ Object.assign(GreedJunkLit, {
                 vec3 kq = texture2D(uKey, vLm).rgb;
                 float key = kq.r * uKMax;
                 vec3 lk = vec3(key) + kq.g * uWarm + kq.b * uCool;
-                gl_FragColor = vec4(a.rgb * lit * sh * lk + spc * sp * sh * a.a * key, a.a);
+                // источники сцены — как у корпуса (тени от них приборам не считаются)
+                vec3 pf = vec3(vLm.x * uField.x, uField.z + vLm.y * uField.y, h0 * uHMap.y - uHMap.x) / 100.0;
+                vec3 ld, ls; float spot;
+                localLights(pf, n, mix(6.0, 90.0, m.g), ld, ls, spot);
+                gl_FragColor = vec4(a.rgb * (lit * sh * lk + ld) + spc * sp * sh * a.a * key + spc * ls * m.r * a.a, a.a);
             }`;
         // uRot у вершинного и фрагментного — разной точности (highp/mediump):
         // с одним именем программа не линкуется, во фрагмент угол идёт uRotF

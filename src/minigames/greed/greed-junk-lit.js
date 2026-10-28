@@ -174,6 +174,7 @@ const GreedJunkLit = {
             uniform sampler2D uKey;
             uniform float uKMax;
             uniform vec3 uWarm, uCool;
+            ${this.lightsGlsl ? this.lightsGlsl() : ''}
             // барабаны: окно (x, y, w, h в uv поля), смещение ленты в
             // единицах поля; лента — uLen единиц по кругу, радиус барабана
             uniform vec4 uReel0, uReel1, uReel2;
@@ -261,12 +262,30 @@ const GreedJunkLit = {
                 float hu0 = h0 * uHMap.y - uHMap.x;      // высота в единицах сцены
                 float depth = mix(0.72, 1.0, clamp((hu0 + 1.6) / 12.0, 0.0, 1.0));
 
-                // свет места: полутень корпуса, лампы барабанов, прожектор
-                // рычага (greed-junk-lit-key.js); блик гаснет вместе с ключом
+                // Свет сцены (greed-junk-lit-key.js): рассеянный гаража и
+                // свечение из карты, источники — по нормали, с бликом.
                 vec3 kq = texture2D(uKey, vUv).rgb;
                 float key = kq.r * uKMax;
                 vec3 lk = vec3(key) + kq.g * uWarm + kq.b * uCool;
-                vec3 col = a.rgb * lit * sh * depth * lk + spc * sp * sh * a.a * key;
+                vec3 pf = vec3(vUv.x * uField.x, uField.z + vUv.y * uField.y, hu0) / 100.0;
+                vec3 ld, ls; float spot;
+                localLights(pf, n, mix(6.0, 90.0, m.g), ld, ls, spot);
+                // Тень от прожектора: шаги к нему по карте высот — рычаг
+                // кладёт тень на короб и доску. Без неё пятно прожектора
+                // читалось наклейкой: свет есть, а предмет его не загораживает.
+                // Считается только в луче.
+                float sh2 = 1.0;
+                if (spot > 0.02) {
+                    vec3 l0 = normalize(uLP[0] - pf);
+                    vec2 d0 = normalize(l0.xy);
+                    float rise0 = l0.z / length(l0.xy) / uPxPerH, o2 = 0.0;
+                    for (int i = 1; i <= 16; i++) {
+                        float t = (float(i) - jit) * 6.0;
+                        o2 = max(o2, clamp((hh(vUv + d0 * uTex * t) - (h0 + t * rise0) - 0.01) * 5.0, 0.0, 1.0));
+                    }
+                    sh2 = 1.0 - 0.85 * o2;
+                }
+                vec3 col = a.rgb * (lit * sh * lk + ld * sh2) * depth + spc * sp * sh * a.a * key + spc * ls * m.r * sh2 * a.a;
                 gl_FragColor = vec4(col, a.a);
             }`;
         return this.link(gl, vs, fs);
