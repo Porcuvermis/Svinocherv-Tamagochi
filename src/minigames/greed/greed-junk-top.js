@@ -11,9 +11,12 @@ Object.assign(GreedJunk, {
         const J = PALETTE.greedJunk, S = this.SLOTS, f = this.f;
         // Задняя стенка ящика: она в глубине, поэтому темнее рамки — свет до
         // неё доходит хуже.
-        let out = this.backPlanks(28, 24, 288, 270, 211);
-        out += `<rect x="28" y="24" width="288" height="270" class="fx" fill="${J.hole}" opacity="0.28"/>`;
-        out += `<rect x="28" y="24" width="288" height="270" class="fx" fill="url(#gj-vign)"/>`;
+        // Ящик дорос до рамки (TOP_BOX): короб пачинко стоит в нём, а не
+        // торчит над крышкой, и над колесом нет пустой полосы.
+        const B = this.TOP_BOX, by = B.y + 10, bh = B.y1 + 4 - by;
+        let out = this.backPlanks(28, by, 288, bh, 211);
+        out += `<rect x="28" y="${by}" width="288" height="${bh}" class="fx" fill="${J.hole}" opacity="0.28"/>`;
+        out += `<rect x="28" y="${by}" width="288" height="${bh}" class="fx" fill="url(#gj-vign)"/>`;
         // карандашная разметка будущих игр — на стенке, под креплениями
         out += this.pencilMarks();
         // Что под колесом и коробом спрятано целиком — не рисуется (ниже,
@@ -23,8 +26,8 @@ Object.assign(GreedJunk, {
         // поперечина-перекладина, на которой всё висит: колесо и короб
         // вместе закрывают её целиком
         if (!(wheel && box)) out += this.slabBar();
-        // жалюзи и лампа питания внизу ящика (greed-junk-parts.js, louverStrip)
-        out += this.louverStrip(34, 270, 276, 20);
+        // Жалюзи с лампой питания внизу ящика убраны: их место заняла полка
+        // под крупным коробом пачинко, а колесо закрывало левую половину.
 
         // ---- крепление колеса: ступица от машины на перфоуголке ----
         // Колесо стоит — всё, что под ним и щитом спрятано ЦЕЛИКОМ, не
@@ -56,38 +59,44 @@ Object.assign(GreedJunk, {
         // Была ещё распаечная коробка с отводом обратно к розетке — две гофры
         // рядом в одну коробку и петля питания читались путаницей.
         // под колесом и коробом вместе спрятана целиком
-        if (!(wheel && box)) out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuB, this.PORTS.brick, [[196, 182], [218, 186], [232, 204]])));
+        // брусок розетки — в пространстве короба (PACH_AT): штуцер ставится
+        // туда, где брусок окажется на аппарате
+        const brick = this.pachPort();
+        if (!(wheel && box)) out += this.T(3, 'rubber', this.conduit(this.feedPath(this.PORTS.psuB, brick, [[196, 182], [218, 186], [232, 204]])));
         // Рельсы: короб стоит — за его щитом; правый спрятан целиком, у
         // левого из-за края щита торчат ушки скоб — их закрывает только
         // колесо.
-        if (!(box && wheel)) out += this.rail(p.x + 8, p.y + 6, 14, p.h - 24, -1, 41);
-        if (!box) out += this.rail(p.x + p.w - 34, p.y + 6, 14, p.h - 24, 1, 42);
+        // Всё ниже до штуцеров — крепёж короба, в его пространстве (pachG).
+        let pk = '';
+        if (!(box && wheel)) pk += this.rail(p.x + 8, p.y + 6, 14, p.h - 24, -1, 41);
+        if (!box) pk += this.rail(p.x + p.w - 34, p.y + 6, 14, p.h - 24, 1, 42);
         // полка-упор, на которую встанет короб (greed-junk-parts.js,
         // shelfAngle); короб стоит — полка на его щите (ниже)
-        if (!box) out += this.shelfAngle(p.x - 2, p.y + p.h - 38, 96);
+        if (!box) pk += this.shelfAngle(p.x - 2, p.y + p.h - 38, 96);
         // Подвес короба пачинко между рельсами (greed-junk-parts.js, hanger)
         // и промышленное гнездо на бруске; провода пачинко выходят из втулки
         // в том же бруске — отвод от питания розетки. Короб стоит — всё это
         // за коробом и его щитом целиком, не рисуется.
         if (!box) {
-            out += this.hanger(p.x + 32, p.y + 50, p.w - 70, 70);
-            out += this.socketPanel(p.x + 34, p.y + 130);
-            out += this.harness(p.x + 58, p.y + 158.5, 28, 45, false);
+            pk += this.hanger(p.x + 32, p.y + 50, p.w - 70, 70);
+            pk += this.socketPanel(p.x + 34, p.y + 130);
+            pk += this.harness(p.x + 58, p.y + 158.5, 28, 45, false);
         }
+        out += this.pachG(pk);
         // штуцеры гофр — ПОСЛЕ всех деталей: конец гофры уходит под гайку
         // штуцера, а штуцер сидит на своей детали поверх неё
-        out += (wheel ? [] : ['psuA', 'psuB', 'hub']).concat(box ? [] : ['brick']).map(k => this.port(this.PORTS[k])).join('');
+        out += (wheel ? [] : ['psuA', 'psuB', 'hub']).map(k => this.port(this.PORTS[k])).join('') + (box ? '' : this.port(brick));
         out += this.topFrame();
         // Колесо фортуны — на переднем плане, поверх рамки: крупное, прячет
         // под собой всю левую половину ящика с креплением, проводами и
         // досками (решение игрока; было меньше и за стойкой рамки).
         // Щит пачинко за коробом и полка на нём — до колеса: колесо заходит
         // на левый край щита (greed-junk-pachinko.js, pachShield).
-        if (box) out += this.pachShield() + this.shelfAngle(p.x - 2, p.y + p.h - 38, 96, 6) + this.pachCable();
+        if (box) out += this.pachG(this.pachShield() + this.shelfAngle(p.x - 2, p.y + p.h - 38, 96, 6) + this.pachCable());
         if (this.wheelShown && this.wheelShown()) {
             // на свету колесо крутится своим холстом (wheelApart,
             // greed-junk-lit-wheel.js) — в корпусе только щит и уголок язычка
-            out += this.wheelShield() + (this.wheelApart ? this.wheelPointer('bracket') : this.wheelDisc());
+            out += this.wheelShield() + (this.wheelApart ? this.wheelPtrG(this.wheelPointer('bracket')) : this.wheelDisc());
         }
         return out;
     },
@@ -353,24 +362,26 @@ Object.assign(GreedJunk, {
     // сверху, а не вставили между ними.
     topFrame() {
         const J = PALETTE.greedJunk, f = this.f;
-        const IN = { x: 42, y: 36, w: 260, h: 254 };     // проём ящика
+        const B = this.TOP_BOX, y0 = B.y, y1 = B.y1;
+        const IN = { x: 42, y: y0 + 22, w: 260, h: y1 - y0 - 22 };     // проём ящика
         let out = '';
         // тени от рамки на заднюю стенку
         out += `<rect x="${IN.x}" y="${IN.y}" width="${IN.w}" height="22" class="fx" fill="url(#gj-shade)"/>`;
         out += `<rect x="${IN.x}" y="${IN.y}" width="16" height="${IN.h}" class="fx" fill="url(#gj-shade-x)"/>`;
         // боковины: толстые доски, торцом к нам
-        out += this.T(14, 'pine', this.planks(24, 30, 18, 262, 1, 13, 'v', 0, 'pine'));
-        out += this.T(14, 'pine', this.planks(302, 30, 18, 262, 1, 14, 'v', 0, 'pine'));
+        out += this.T(14, 'pine', this.planks(24, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 13, 'v', 0, 'pine'));
+        out += this.T(14, 'pine', this.planks(302, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 14, 'v', 0, 'pine'));
         // освещённая кромка левой боковины, тёмная — правой (её грань
         // отвёрнута от света)
-        out += `<line x1="26" y1="36" x2="26" y2="288" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.6"/>`;
-        out += `<line x1="317" y1="36" x2="317" y2="288" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
+        out += `<line x1="26" y1="${y0 + 22}" x2="26" y2="${y1 - 2}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.6"/>`;
+        out += `<line x1="317" y1="${y0 + 22}" x2="317" y2="${y1 - 2}" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
         // тень крышки на боковины
-        out += this.shade(24, 34, 18, 8) + this.shade(302, 34, 18, 8);
+        out += this.shade(24, y0 + 20, 18, 8) + this.shade(302, y0 + 20, 18, 8);
         // крышка, нависает над боковинами
-        out += this.T(16, 'lacquer', this.planks(16, 14, 312, 22, 1, 15, 'h', 0, 'painted'));
-        out += `<line x1="20" y1="16.5" x2="324" y2="16.5" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
-        out += this.cornerBracket(1) + this.cornerBracket(-1);
+        out += this.T(16, 'lacquer', this.planks(16, y0, 312, 22, 1, 15, 'h', 0, 'painted'));
+        out += `<line x1="20" y1="${y0 + 2.5}" x2="324" y2="${y0 + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
+        // уголки нарисованы под крышку на y 14 — переезжают с ней
+        out += `<g transform="translate(0 ${y0 - 14})">${this.cornerBracket(1) + this.cornerBracket(-1)}</g>`;
         return out;
     },
 

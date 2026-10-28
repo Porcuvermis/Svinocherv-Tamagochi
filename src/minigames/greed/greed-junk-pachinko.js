@@ -49,6 +49,35 @@ Object.assign(GreedJunk, {
         { key: 'greed', x: 223, y: 178 }, { key: 'gold1', x: 284.5, y: 178 }
     ],
 
+    // Короб на аппарате крупнее своего рисунка (решение игрока: до рамки
+    // сверху и справа — справа от него была пустая полоса). Рисунок, лунки,
+    // физика шарика и запас запусков живут в прежних координатах короба, а
+    // на аппарат он ставится подобием: угол (ax, ay) — в (x, y), масштаб s.
+    // Всё «пространства короба» (щит, полка, рельсы, разметка, холсты на
+    // свету, кнопка) — через pachPt / pachRect / pachG; обратно — pachInv.
+    PACH_AT: { ax: 206, ay: -38, x: 206, y: -55, s: 1.205 },
+    pachPt(x, y) {
+        const A = this.PACH_AT;
+        return [A.x + (x - A.ax) * A.s, A.y + (y - A.ay) * A.s];
+    },
+    pachRect(B) {
+        const [x, y] = this.pachPt(B.x, B.y), s = this.PACH_AT.s;
+        return { x, y, w: B.w * s, h: B.h * s };
+    },
+    pachInv(x, y) {
+        const A = this.PACH_AT;
+        return [A.ax + (x - A.x) / A.s, A.ay + (y - A.y) / A.s];
+    },
+    // штуцер гофры на бруске розетки короба — там, где брусок на аппарате
+    pachPort() {
+        const P = this.PORTS.brick, [x, y] = this.pachPt(P.x, P.y);
+        return { x, y, d: P.d };
+    },
+    pachG(inner) {
+        const A = this.PACH_AT, f = this.f;
+        return `<g transform="matrix(${A.s} 0 0 ${A.s} ${f(A.x - A.ax * A.s)} ${f(A.y - A.ay * A.s)})">${inner}</g>`;
+    },
+
     // Щит за коробом — как у колеса (wheelShield): сосновые доски на
     // саморезах прячут правую половину ящика с рельсами, подвесом, розеткой и
     // проводами (решение игрока). Тоньше щита колеса (8 против 15): на нём

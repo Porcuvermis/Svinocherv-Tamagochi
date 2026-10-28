@@ -20,6 +20,17 @@ Object.assign(GreedJunk, {
     // greed-junk-lit-wheel.js, wheelSprites). Было 1.4 — кнопка вровень с
     // краской, тени от неё не было вовсе.
     WHEEL: { rFace: 114, rEdge: 118, rPeg: 110.5, rIcon: 80, hole: 7.5, icon: 1.85, pegUp: 9 },
+    // Диск и язычок нарисованы в своих единицах (WHEEL) и ставятся на аппарат
+    // с масштабом: колесо выросло, а рисунок остался прежним.
+    wheelK() { return this.SLOTS.wheel.r / this.WHEEL.rEdge; },
+    // Язычок — на 3 часа, а не сверху: колесо видно наполовину, и выпавший
+    // сектор должен стоять посередине видимой дуги, вплотную к пачинко.
+    // Рисунок язычка — прежний, «сверху»; на место его ставит поворот.
+    POINTER_ANGLE: Math.PI / 2,
+    wheelPtrG(inner) {
+        const S = this.SLOTS.wheel, a = this.POINTER_ANGLE * 180 / Math.PI;
+        return `<g transform="translate(${S.cx} ${S.cy}) rotate(${a}) scale(${this.f(this.wheelK() * 1000) / 1000}) translate(${-S.cx} ${-S.cy})">${inner}</g>`;
+    },
     // колесо на аппарате: куплено — или включено в отладке (🐞 → «Колесо»)
     wheelShown() {
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('wheel') > 0) return true;
@@ -66,12 +77,15 @@ Object.assign(GreedJunk, {
             const a = rnd() * Math.PI * 2, r = 22 + rnd() * 70, L = 5 + rnd() * 11, t = a + 1.2 + rnd();
             chip += `<path d="M${f(Math.cos(a) * r)} ${f(Math.sin(a) * r)} l${f(Math.cos(t) * L)} ${f(Math.sin(t) * L)}" stroke="${W.ply}" stroke-width="0.4" opacity="0.8"/>`;
         }
-        // значки — по середине сектора, «верхом» к ободу
+        // Значки — по середине сектора, «верхом» к язычку: сектор под
+        // язычком стоит прямо. Было «верхом к ободу» — при язычке сверху это
+        // одно и то же, а на 3 часа выпавшее мясо лежало бы на боку.
         let icons = '';
+        const turn = 90 - this.POINTER_ANGLE * 180 / Math.PI;
         this.WHEEL_SECTORS.forEach((key, i) => {
             const a = i / n * Math.PI * 2 - Math.PI / 2, x = Math.cos(a) * G.rIcon, y = Math.sin(a) * G.rIcon;
             const svg = this.wheelIcon(key, i % 2 === 0);
-            if (svg) icons += `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(a * 180 / Math.PI + 90)}) scale(${G.icon})">${svg}</g>`;
+            if (svg) icons += `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(a * 180 / Math.PI + turn)}) scale(${G.icon})">${svg}</g>`;
         });
         // гвозди на границах секторов: шляпка и тень вбок
         let pegs = '';
@@ -130,7 +144,9 @@ Object.assign(GreedJunk, {
     // не мелькают (решение игрока). Доски вертикальные, прибиты к рамке
     // саморезами сверху и снизу; в середине выпилена дыра под ступицу.
     // Было: лист жести, перекошенный, — игрок попросил дерево и ровнее.
-    SHIELD: { x: 40, y: 34, w: 168, h: 238, boards: 5 },
+    // Колесо стало половиной на краю ящика — щит во всю высоту проёма, от
+    // левой боковины до короба пачинко.
+    SHIELD: { x: 42, y: -33, w: 162, h: 323, boards: 5 },
     wheelShield() {
         const J = PALETTE.greedJunk, Sh = this.SHIELD, W = this.SLOTS.wheel, f = this.f;
         let out = `<rect x="${Sh.x + 2.5}" y="${Sh.y + 3.5}" width="${Sh.w}" height="${Sh.h}" class="fx" fill="${J.hole}" opacity="0.4"/>`;
@@ -142,8 +158,9 @@ Object.assign(GreedJunk, {
             out += this.bolt(x - 5, Sh.y + 6, 1.8) + this.bolt(x + 5, Sh.y + 6, 1.8) +
                 this.bolt(x - 5, Sh.y + Sh.h - 6, 1.8) + this.bolt(x + 5, Sh.y + Sh.h - 6, 1.8);
         }
-        // дыра под ступицу — выпилена лобзиком, торец светлее
-        out += `<circle cx="${W.cx}" cy="${W.cy}" r="21" class="pit" fill="${J.hole}" stroke="${J.pine[100]}" stroke-width="1.2"/>`;
+        // дыра под ступицу — выпилена лобзиком, торец светлее (ступица на
+        // краю ящика — дыры в щите нет, ось уходит в боковину)
+        if (W.cx - 21 > Sh.x) out += `<circle cx="${W.cx}" cy="${W.cy}" r="21" class="pit" fill="${J.hole}" stroke="${J.pine[100]}" stroke-width="1.2"/>`;
         return this.T(15, 'pine', out);
     },
 
@@ -151,9 +168,9 @@ Object.assign(GreedJunk, {
     // холста у колеса нет (wheelApart выключен: нет WebGL или превью без
     // GreedJunkLit). На свету диск крутится сам (greed-junk-lit-wheel.js).
     wheelDisc() {
-        const S = this.SLOTS.wheel, F = this.wheelFace();
-        const g = (h, mat, inner) => this.T(h, mat, `<g transform="translate(${S.cx} ${S.cy})">${inner}</g>`);
-        return g(17, 'raw', F.edge) + g(17.6, 'paint', F.sec + F.chip + F.icons) + g(19, 'steel', F.pegs) + g(19.5, 'steel', F.hub) + this.wheelPointer();
+        const S = this.SLOTS.wheel, F = this.wheelFace(), k = this.f(this.wheelK() * 1000) / 1000;
+        const g = (h, mat, inner) => this.T(h, mat, `<g transform="translate(${S.cx} ${S.cy}) scale(${k})">${inner}</g>`);
+        return g(17, 'raw', F.edge) + g(17.6, 'paint', F.sec + F.chip + F.icons) + g(19, 'steel', F.pegs) + g(19.5, 'steel', F.hub) + this.wheelPtrG(this.wheelPointer());
     },
 
     // Язычок: резиновая полоса на стальном уголке, прикрученном к перекладине

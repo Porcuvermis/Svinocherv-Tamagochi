@@ -369,48 +369,6 @@ Object.assign(GreedJunk, {
         return this.T(0, 'pine', crack) + this.T(1, 'steel', lid + nails);
     },
 
-    // ---------- ЖАЛЮЗИ И ЛАМПА ПИТАНИЯ ----------
-    // Полоса внизу ящика — вентиляционная решётка, как на корпусах старой
-    // техники: штампованные жалюзи — узкая тёмная щель и над ней
-    // выдавленный козырёк, который ловит свет. Посередине — сигнальная лампа
-    // питания: хромированный ободок и красная выпуклая линза; потом её можно
-    // зажигать, когда аппарат работает.
-    // Было: прорези-клавиши и красная плашка без смысла.
-    louverStrip(x, y, w, h) {
-        const J = PALETTE.greedJunk, f = this.f;
-        let strip = this.tin(x, y, w, h, 21, { bolts: false, scratches: 2, tilt: 0, z: this.Z.strap });
-        const cx = x + w / 2;
-        // Щели — симметрично от лампы в середине, с полями по 20 с краёв:
-        // края полосы закрывают стойки ящика. Было: ряд шёл от левого края,
-        // и справа крайние щели уходили под стойку обрезанными.
-        const slots = [];
-        for (let k = 0; ; k++) {
-            const l = cx - 38 - k * 24, r = cx + 20 + k * 24;
-            if (l < x + 20 || r + 18 > x + w - 20) break;
-            slots.push(l, r);
-        }
-        for (let row = 0; row < 2; row++) {
-            for (const lx of slots) {
-                const ly = y + 6 + row * 8;
-                // козырёк: выпуклая дуга над щелью
-                strip += `<path d="M${f(lx)} ${f(ly + 1.6)} Q${f(lx + 9)} ${f(ly - 2.2)} ${f(lx + 18)} ${f(ly + 1.6)} Z" ` +
-                    `fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>` +
-                    `<rect x="${f(lx + 1)}" y="${f(ly + 1.4)}" width="16" height="2.2" rx="1.1" class="pit" fill="${J.hole}"/>` +
-                    `<g class="hpass"><path d="M${f(lx + 2)} ${f(ly + 1.4)} Q${f(lx + 9)} ${f(ly - 1.4)} ${f(lx + 16)} ${f(ly + 1.4)} Z" style="--dh:${this.dh(1.2)}"/></g>`;
-            }
-        }
-        strip += [x + 4, x + w - 4].map(bx => this.bolt(bx, y + h / 2, 1.8)).join('');
-        // лампа: ободок и линза куполом
-        const ly = y + h / 2;
-        const bezel = `<circle cx="${f(cx)}" cy="${f(ly)}" r="7.4" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<circle cx="${f(cx)}" cy="${f(ly)}" r="5.2" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.detail}"/>` +
-            this.domeH(cx, ly, 7.4, 1);
-        const lens = `<circle cx="${f(cx)}" cy="${f(ly)}" r="4.6" fill="${J.paint.red}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="${f(cx - 1.4)}" cy="${f(ly - 1.4)}" r="1.6" class="hl" fill="${J.paint.cream}" opacity="0.7"/>` +
-            this.domeH(cx, ly, 4.6, 2.2);
-        return this.T(2, 'steel', strip) + this.T(3, 'steel', bezel) + this.T(4, 'lens', lens);
-    },
-
     // ---------- КАРАНДАШНАЯ РАЗМЕТКА ----------
     // Пока игры не куплены, крепления — просто железо. Разметка на стенке
     // объясняет его: строитель обвёл, где встанет колесо (круг в настоящий
@@ -471,7 +429,8 @@ Object.assign(GreedJunk, {
         const kx = p.x + 26, ky = p.y + 10, kw = 40, kh = 32;
         mark += line(`M${f(kx)} ${f(ky)} L${f(kx + kw)} ${f(ky + kh)}`, 0.8) +
             line(`M${f(kx + kw)} ${f(ky)} L${f(kx)} ${f(ky + kh)}`, 0.8);
-        if (!(box && wheel)) out += mark;
+        // разметка короба — в его пространстве (PACH_AT): короб на аппарате крупнее
+        if (!(box && wheel)) out += this.pachG(mark);
         return this.T(0, 'graphite', out);
     },
 

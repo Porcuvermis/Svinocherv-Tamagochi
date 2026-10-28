@@ -1,7 +1,7 @@
 // ================= АППАРАТ АЛЧНОСТИ: ПАЧИНКО НА СВЕТУ =================
 // Продолжение GreedJunkLit. Короб пачинко (рисунок — greed-junk-pachinko.js)
-// — освещённый прибор своим холстом (greed-junk-lit-device.js): короб выше
-// аппарата и торчит над рамкой, за поле корпуса, — в корпус он не влез бы.
+// — освещённый прибор своим холстом (greed-junk-lit-device.js). Холсты
+// рисуются в координатах короба, а на аппарат ставятся крупнее (PACH_AT).
 // Три холста снизу вверх: мягкая тень короба на аппарат (уходит от света
 // переносом холста, как у колеса), сам короб на свету шейдером (только
 // когда сдвинулся свет), стекло — готовым видом, один раз.
@@ -18,8 +18,9 @@ Object.assign(GreedJunkLit, {
     // аппарат есть, его закрывает сам корпус. Было: одна тень на всё — на
     // стене за аппаратом она лежала так же близко, как на щите.
     PACH_SHADOW: { near: { gap: 6, max: 10, blur: 2.5, a: 0.45 }, far: { gap: 34, max: 44, blur: 9, a: 0.28 } },
-    // аппарат там, где ложится ближняя тень: рамка верхнего ящика
-    PACH_NEAR_CLIP: { x: 16, y: 14, w: 304, h: 286 },
+    // аппарат там, где ложится ближняя тень: рамка верхнего ящика (поле
+    // аппарата; остальные коробки — в пространстве короба, PACH_AT)
+    PACH_NEAR_CLIP: { x: 16, y: -55, w: 304, h: 355 },
 
     pachBox(pad = 0) {
         const P = GreedJunk.PACH;
@@ -29,10 +30,12 @@ Object.assign(GreedJunkLit, {
     pachMountLit(wrap) {
         if (!GreedJunk.pachinkoShown || !GreedJunk.pachinkoShown()) return;
         const G = GreedJunk, S = this.SCALE;
+        // B — в пространстве короба: холст рисуется в его координатах, а на
+        // аппарат ставится увеличенным (G.pachRect)
         const layer = (B) => {
             const cv = document.createElement('canvas');
             cv.width = Math.round(B.w * S); cv.height = Math.round(B.h * S);
-            cv.style.cssText = `position:absolute;${G.css(B)}z-index:1;pointer-events:none;background:none`;
+            cv.style.cssText = `position:absolute;${G.css(G.pachRect(B))}z-index:1;pointer-events:none;background:none`;
             wrap.appendChild(cv);
             return cv;
         };
@@ -44,7 +47,7 @@ Object.assign(GreedJunkLit, {
         const C = this.PACH_NEAR_CLIP, nclip = document.createElement('div');
         nclip.style.cssText = `position:absolute;${G.css(C)}overflow:hidden;z-index:1;pointer-events:none`;
         const near = layer(this.pachShadowBox('near'));
-        const B = this.pachShadowBox('near');
+        const B = G.pachRect(this.pachShadowBox('near'));
         near.style.left = `${(B.x - C.x) / C.w * 100}%`; near.style.top = `${(B.y - C.y) / C.h * 100}%`;
         near.style.width = `${B.w / C.w * 100}%`; near.style.height = `${B.h / C.h * 100}%`;
         nclip.appendChild(near);
@@ -58,7 +61,7 @@ Object.assign(GreedJunkLit, {
         // сдвигается за светом (pachGlareAt)
         const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
         const clip = document.createElement('div');
-        clip.style.cssText = `position:absolute;${G.css({ x: R.x0, y: R.y0, w: R.x1 - R.x0, h: R.y1 - R.y0 })}overflow:hidden;z-index:1;pointer-events:none`;
+        clip.style.cssText = `position:absolute;${G.css(G.pachRect({ x: R.x0, y: R.y0, w: R.x1 - R.x0, h: R.y1 - R.y0 }))}overflow:hidden;z-index:1;pointer-events:none`;
         const gc = document.createElement('canvas');
         gc.width = Math.round((R.x1 - R.x0 + 2 * m) * S); gc.height = Math.round((R.y1 - R.y0 + 2 * m) * S);
         gc.style.cssText = `position:absolute;left:${-m / (R.x1 - R.x0) * 100}%;top:${-m / (R.y1 - R.y0) * 100}%;` +
@@ -70,7 +73,7 @@ Object.assign(GreedJunkLit, {
         this._pachP = this.pachSprites();
         // кнопка запуска — тап по ней
         wrap.addEventListener('pointerdown', (e) => {
-            const B = G.PACH.button, [x, y] = G.toField(e, wrap);
+            const B = G.PACH.button, [x, y] = G.pachInv(...G.toField(e, wrap));
             if (Math.hypot(x - B.x, y - B.y) > B.r + 4) return;
             e.preventDefault(); e.stopPropagation();
             this.pachLaunch();

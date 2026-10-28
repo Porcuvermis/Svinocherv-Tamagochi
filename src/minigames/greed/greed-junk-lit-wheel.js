@@ -28,10 +28,24 @@ Object.assign(GreedJunkLit, {
 
     // pad — запас вокруг диска: колесу хватает 6, тени — своего (она
     // размыта и уезжает от света, а край холста резал её прямой линией)
+    // Слева поле кончается (x 0): за ним монеты рамки, вторая половина
+    // колеса там не рисуется. Язычок торчит за обод — его квадрат (wheelPtr)
+    // входит в участок.
     wheelBox(pad = 6) {
-        const W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge + pad;
-        const x0 = Math.max(0, W.cx - R), y0 = Math.max(0, W.cy - R - 16);
-        return { x: x0, y: y0, w: W.cx + R - x0, h: W.cy + R - y0 };
+        const G = GreedJunk, W = G.SLOTS.wheel, R = W.r + pad, P = this.wheelPtr();
+        const x0 = Math.max(0, Math.min(W.cx - R, P.cx - P.hw)), y0 = Math.min(W.cy - R, P.cy - P.hh);
+        const x1 = Math.max(W.cx + R, P.cx + P.hw), y1 = Math.max(W.cy + R, P.cy + P.hh);
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    },
+    // Квадрат резинки язычка на аппарате: середина и полуразмеры (поле).
+    // Рисунок язычка — «сверху», 30×36 с серединой на ободе; на место его
+    // ставят поворот на POINTER_ANGLE и масштаб колеса (wheelPtrG).
+    wheelPtr() {
+        const G = GreedJunk, W = G.SLOTS.wheel, k = G.wheelK(), a = G.POINTER_ANGLE, R = G.WHEEL.rEdge * k;
+        const side = Math.abs(Math.sin(a)) > 0.5;
+        return { cx: W.cx + Math.sin(a) * R, cy: W.cy - Math.cos(a) * R, hw: (side ? 18 : 15) * k, hh: (side ? 15 : 18) * k,
+            // болт, на котором качается резинка: в рисунке на 6.4 выше середины
+            pivX: Math.sin(a) * 6.4 * k, pivY: -Math.cos(a) * 6.4 * k };
     },
 
     wheelMountLit(wrap) {
@@ -53,13 +67,15 @@ Object.assign(GreedJunkLit, {
         // него, обрезанный по коробу, с малым зазором: короб ближе к колесу,
         // чем щит. Было: одна тень с зазором до щита ложилась и на короб.
         if (this._pach && this.pachShadowCv && this.pachShadowCv.near) {
-            const P = G.PACH, first = this.pachShadowCv.near.parentNode;
+            const P0 = G.PACH, first = this.pachShadowCv.near.parentNode;
             if (first && first.parentNode === wrap) wrap.insertBefore(this.wheelShadowCv, first);
+            // короб на аппарате — увеличенный (PACH_AT): обрезка по нему
+            const P = G.pachRect({ x: P0.x0, y: P0.y0, w: P0.x1 - P0.x0, h: P0.y1 - P0.y0 });
             const clip = document.createElement('div');
-            clip.style.cssText = `position:absolute;${G.css({ x: P.x0, y: P.y0, w: P.x1 - P.x0, h: P.y1 - P.y0 })}overflow:hidden;z-index:1;pointer-events:none`;
+            clip.style.cssText = `position:absolute;${G.css(P)}overflow:hidden;z-index:1;pointer-events:none`;
             const B = this.wheelShadowBox(), cv = layer(B);
-            cv.style.left = `${(B.x - P.x0) / (P.x1 - P.x0) * 100}%`; cv.style.top = `${(B.y - P.y0) / (P.y1 - P.y0) * 100}%`;
-            cv.style.width = `${B.w / (P.x1 - P.x0) * 100}%`; cv.style.height = `${B.h / (P.y1 - P.y0) * 100}%`;
+            cv.style.left = `${(B.x - P.x) / P.w * 100}%`; cv.style.top = `${(B.y - P.y) / P.h * 100}%`;
+            cv.style.width = `${B.w / P.w * 100}%`; cv.style.height = `${B.h / P.h * 100}%`;
             clip.appendChild(cv);
             wrap.appendChild(clip);
             this.wheelShadowBoxCv = cv;
@@ -73,7 +89,7 @@ Object.assign(GreedJunkLit, {
         let grab = null;
         wrap.addEventListener('pointerdown', (e) => {
             const p = field(e), M = this._wheel;
-            if (Math.hypot(p[0] - W.cx, p[1] - W.cy) > G.WHEEL.rEdge || M.st === 'spin' || M.st === 'settle') return;
+            if (Math.hypot(p[0] - W.cx, p[1] - W.cy) > W.r || M.st === 'spin' || M.st === 'settle') return;
             e.preventDefault(); e.stopPropagation();
             wrap.setPointerCapture(e.pointerId);
             grab = { a: ang(p), hist: [[performance.now(), M.rot]] };
@@ -129,9 +145,10 @@ Object.assign(GreedJunkLit, {
             const at = SEC.map((k, i) => k === key ? i : -1).filter(i => i >= 0);
             idx = at.length ? at[Math.floor(Math.random() * at.length)] : idx;
         }
-        // угол, при котором сектор idx под язычком: сектор i вверху при rot = −i·2π/n
+        // угол, при котором сектор idx под язычком: сектор i вверху при
+        // rot = −i·2π/n, язычок — на POINTER_ANGLE от верха по часовой
         const dir = Math.sign(w), sec = Math.PI * 2 / n, T = Math.PI * 2;
-        const want = -idx * sec + (Math.random() - 0.5) * sec * 0.6;
+        const want = GreedJunk.POINTER_ANGLE - idx * sec + (Math.random() - 0.5) * sec * 0.6;
         // путь: не меньше turns оборотов и почти столько, сколько докатилось бы само
         const dist = Math.max(P.turns * T, w * w / (2 * P.a) * 0.85);
         // первый угол want (по модулю оборота) дальше пути dist по ходу вращения
@@ -198,13 +215,15 @@ Object.assign(GreedJunkLit, {
         const dir = M.mdir || 1;
         // Ближайший гвоздь к язычку: −sec/2..sec/2, 0 — гвоздь под язычком.
         // Гвоздь i стоит на (i − ½)·sec от верха; под язычком он, когда
-        // rot ≡ sec/2 по модулю сектора. Было: сдвиг на полсектора не в ту
-        // сторону — язычок отгибался в пустом промежутке между гвоздями.
-        let off = ((M.rot - sec / 2) % sec + sec) % sec;
+        // rot ≡ sec/2 по модулю сектора (язычок на POINTER_ANGLE — плюс он).
+        // Было: сдвиг на полсектора не в ту сторону — язычок отгибался в
+        // пустом промежутке между гвоздями.
+        const base = M.rot - sec / 2 - GreedJunk.POINTER_ANGLE;
+        let off = (base % sec + sec) % sec;
         if (off > sec / 2) off -= sec;
         const c = sec * 0.3, along = dir * off;     // < 0 — гвоздь ещё подходит
         // номер промежутка между гвоздями: меняется ровно на гвозде
-        const pegIdx = Math.floor((M.rot - sec / 2) / sec);
+        const pegIdx = Math.floor(base / sec);
         // canvas: поворот + — по часовой; кончик ниже оси уходит по ходу
         // вращения колеса — значит язычок поворачивается против
         if (d && along > -c && along < c * 0.6) {
@@ -242,7 +261,9 @@ Object.assign(GreedJunkLit, {
     // поиск по карте высот (гвозди и гайки низкие). Было: диск — плоская
     // картинка без шейдера, блики крутились вместе с ним.
     async wheelSprites() {
-        const G = GreedJunk, W = G.WHEEL, S = this.SCALE, R = W.rEdge + 4;
+        // R — в единицах рисунка; на аппарате диск крупнее в k раз, и карты
+        // растрируются сразу в его настоящий размер (иначе мыло)
+        const G = GreedJunk, W = G.WHEEL, S = this.SCALE, R = W.rEdge + 4, k = G.wheelK(), n = Math.round(R * 2 * S * k);
         try {
             const F = () => G.wheelFace();
             // Части диска на своих высотах и материалах. Карта у колеса своя,
@@ -253,15 +274,16 @@ Object.assign(GreedJunkLit, {
             const discFull = (pass) => {
                 G.pass = pass;
                 const f = F();
-                return `<svg xmlns="http://www.w3.org/2000/svg" width="${R * 2 * S}" height="${R * 2 * S}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
                     G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip + f.icons) +
                     G.T(h0 + W.pegUp, 'steel', f.pegs) + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
             };
-            const Wc = G.SLOTS.wheel, px = Wc.cx, py = Wc.cy - W.rEdge - 16;
+            const Pt = this.wheelPtr();
             const ptr = (pass, part = 'strip') => {
                 G.pass = pass;
-                return `<svg xmlns="http://www.w3.org/2000/svg" width="${30 * S}" height="${36 * S}" viewBox="${px - 15} ${py - 2} 30 36">` +
-                    G.passStyle(pass) + G.defs() + G.wheelPointer(part) + '</svg>';
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(Pt.hw * 2 * S)}" height="${Math.round(Pt.hh * 2 * S)}" ` +
+                    `viewBox="${Pt.cx - Pt.hw} ${Pt.cy - Pt.hh} ${Pt.hw * 2} ${Pt.hh * 2}">` +
+                    G.passStyle(pass) + G.defs() + G.wheelPtrG(G.wheelPointer(part)) + '</svg>';
             };
             const passes = ['albedo', 'height', 'mat'];
             const dm = await Promise.all(passes.map(ps => this.image(discFull(ps))));
@@ -270,7 +292,7 @@ Object.assign(GreedJunkLit, {
             const bm = await this.image(ptr('albedo', 'bracket'));
             G.pass = 'baked';
             if (!this.wheelGL(dm, pm, bm)) throw new Error('нет WebGL');
-            this._wheelSpr = { R, px, py };
+            this._wheelSpr = { R: R * k, ptr: Pt };
             this.wheelShadow();
             this._wheel.shown = null;
         } catch (e) {
@@ -294,7 +316,7 @@ Object.assign(GreedJunkLit, {
     // ляжет, решает wheelShadowAt. Было: сдвиг вниз-вправо зашит в рисунок,
     // и при наклоне телефона свет на колесе ходил, а тень стояла.
     wheelShadow() {
-        const B = this.wheelShadowBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge, P = this.WHEEL_SHADOW;
+        const B = this.wheelShadowBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = W.r, P = this.WHEEL_SHADOW;
         [this.wheelShadowCv, this.wheelShadowBoxCv].forEach((cv, i) => {
             if (!cv) return;
             const c = cv.getContext('2d');
@@ -334,15 +356,15 @@ Object.assign(GreedJunkLit, {
     WHEEL_FLAP_UP: 11,
 
     wheelDraw() {
-        const M = this._wheel, Sp = this._wheelSpr, Q = this._wgl, B = this.wheelBox(), G = GreedJunk, W = G.SLOTS.wheel, R = G.WHEEL.rEdge;
+        const M = this._wheel, Sp = this._wheelSpr, Q = this._wgl, B = this.wheelBox(), G = GreedJunk, W = G.SLOTS.wheel;
         if (!Q) return;
         const L = this.lightFor(M.lt || { x: 0, y: 0 }), n = Math.hypot(L[0], L[1], L[2]) || 1;
         this.deviceBegin(Q, L);
         const draw = (set, cx, cy, hw, hh, rot, pivX, pivY) => this.deviceDraw(Q, B, set, cx, cy, hw, hh, rot, pivX, pivY);
         // диск: квадрат карты вокруг центра, поворот вокруг центра
         draw(Q.disc, W.cx, W.cy, Sp.R, Sp.R, M.rot, 0, 0);
-        // резинка: квадрат 30×36 вокруг своей середины, поворот вокруг болта
-        const pcx = Sp.px, pcy = Sp.py - 2 + 18, pivX = W.cx, pivY = W.cy - R - 16 + 9.6;
+        // резинка: свой квадрат (wheelPtr), поворот вокруг болта
+        const Pt = Sp.ptr, pcx = Pt.cx, pcy = Pt.cy;
         // Тень резинки на диск: тот же квадрат с тем же поворотом, сдвинутый
         // от света на высоту резинки над краской (она перед шляпками
         // гвоздей). Смешение только темнит цвет и не трогает прозрачность:
@@ -358,9 +380,9 @@ Object.assign(GreedJunkLit, {
         const sd = Math.hypot(sx, sy);
         if (sd > 16) { sx *= 16 / sd; sy *= 16 / sd; }
         this.deviceShade(Q, 0.5);
-        draw(Q.brk, pcx + sx, pcy + sy, 15, 18, 0, 0, 0);
-        draw(Q.ptr, pcx + sx, pcy + sy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
+        draw(Q.brk, pcx + sx, pcy + sy, Pt.hw, Pt.hh, 0, 0, 0);
+        draw(Q.ptr, pcx + sx, pcy + sy, Pt.hw, Pt.hh, M.flap, Pt.pivX, Pt.pivY);
         this.deviceShade(Q, 0);
-        draw(Q.ptr, pcx, pcy, 15, 18, M.flap, pivX - pcx, pivY - pcy);
+        draw(Q.ptr, pcx, pcy, Pt.hw, Pt.hh, M.flap, Pt.pivX, Pt.pivY);
     }
 });
