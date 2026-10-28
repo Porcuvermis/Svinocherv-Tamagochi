@@ -1,9 +1,10 @@
 // ================= АППАРАТ АЛЧНОСТИ: МОНЕТА В ЩЕЛЬ =================
 // Продолжение GreedJunkLit. На рывке рычага монета сама влетает в
 // монетоприёмник (решение игрока: один жест): выпрыгивает из горла
-// банки-кошелька (greed-junk-jar.js) под монетоприёмником, дугой влево и
-// вверх к куполу, кувыркаясь, на подлёте встаёт ребром по щели и уходит
-// внутрь — звяк в палец, глухой стук ниже. Денег нет — банка пуста, и
+// банки-кошелька (greed-junk-jar.js) справа от монетоприёмника, дугой влево
+// и вверх к куполу, кувыркаясь, на подлёте встаёт ребром по щели (приёмник
+// лежит на боку — щель лёжа, GreedJunk.WC_AT) и уходит внутрь — звяк в
+// палец, глухой стук ниже. Денег нет — банка пуста, и
 // монете взяться неоткуда: не летит ничего (был полёт в ковш возврата —
 // пока монеты летели из-за края экрана).
 //
@@ -13,7 +14,7 @@
 // доходит (наклоны до 32°), а ради полёта на полсекунды заводить новый —
 // дорого.
 Object.assign(GreedJunkLit, {
-    COIN_BOX: { x: 196, y: 486, w: 120, h: 144 },   // от купола до низа поля
+    COIN_BOX: { x: 180, y: 460, w: 160, h: 110 },   // от купола до горла банки, с дугой
     COIN_FLY: { ms: 460, inMs: 130, turns: 2, rad: 5.2 },
 
     coinMount(wrap) {
@@ -49,8 +50,9 @@ Object.assign(GreedJunkLit, {
     // монета из банки в щель
     coinIn() {
         if (!this.coinCv) return;
-        const W = GreedJunk.SLOTS.wc, cx = W.x + W.w / 2, J = this.JAR || { cx, y0: GreedJunk.H };
-        this._coins.push({ at: performance.now(), x0: J.cx, y0: J.y0 + 5, x1: cx, y1: W.y + 25, rim: J.y0 + 1 });
+        const G = GreedJunk, J = this.JAR, [sx, sy] = G.wcSlotAt(), [x1, y1] = G.wcPt(sx, sy);
+        const [x0, y0] = this.jarPt(J.cx, J.y0 + 5), rim = this.jarPt(J.cx, J.y0 + 1)[1];
+        this._coins.push({ at: performance.now(), x0, y0, x1, y1, rim, rot1: G.WC_AT.rot * Math.PI / 180 });
     },
 
     coinStep(now) {
@@ -93,8 +95,9 @@ Object.assign(GreedJunkLit, {
                 const y = (1 - e) * (1 - e) * c.y0 + 2 * (1 - e) * e * my + e * e * c.y1;
                 // к прилёту — ровно ребром (cos = 0): целые обороты плюс четверть
                 const k = Math.cos(e * Math.PI * (F.turns * 2 + 0.5));
-                // в середине пути ближе к игроку (подброшена) — крупнее
-                coin(x, y, k, 1 + Math.sin(e * Math.PI) * 0.35, (1 - e) * 1.2, 1, u < 0.25 ? c.rim : 0);
+                // в середине пути ближе к игроку (подброшена) — крупнее; к щели
+                // доворачивается по ней (rot1 — поворот приёмника)
+                coin(x, y, k, 1 + Math.sin(e * Math.PI) * 0.35, (1 - e) * 1.2 + e * c.rot1, 1, u < 0.25 ? c.rim : 0);
                 return true;
             }
             if (t < F.ms + F.inMs) {
@@ -105,7 +108,7 @@ Object.assign(GreedJunkLit, {
                     // звяк — короткий жёсткий удар; tick тише и читается щелчком выбора
                     if (typeof Haptics !== 'undefined') Haptics.impact('rigid');
                 }
-                coin(c.x1, c.y1 + u * 1.5, 0.06, 1 - u * 0.45, 0, 1 - u);
+                coin(c.x1 - Math.sin(c.rot1) * u * 1.5, c.y1 + Math.cos(c.rot1) * u * 1.5, 0.06, 1 - u * 0.45, c.rot1, 1 - u);
                 return true;
             }
             // принята: глухой стук, когда упала в механизм

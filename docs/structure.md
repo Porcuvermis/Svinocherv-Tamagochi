@@ -153,12 +153,13 @@ src/minigames/<грех>/   каждая мини-игра в своей пап�
   garden-art-ui; kitchen-art-food; bath-art-wash; envy/ — envy-play;
   wrath/ — wrath-rogue-screens; core — worm-studio-panel;
   greed/ аппарат: GreedJunk (greed-junk) — +lever, +parts, +top, +top-lamps,
-  +top-door, +light, +logo, +reel, +plate (тряпка с комбинациями), +wc
-  (монетоприёмник); GreedJunkLit (greed-junk-lit) — +lit-lever, +lit-reels,
-  +tray, +lit-rag (тряпка качается), +coin-in (монета в щель), +meter
-  (градусник насыщения: стекло в GreedJunk, жидкость в GreedJunkLit), +jar
-  (банка-кошелёк под монетоприёмником, число монет на скотче), +wheel
-  (колесо фортуны: рисунок, щит; в GreedJunkLit +lit-wheel — вращение).
+  +top-door, +light, +logo, +reel, +wc (монетоприёмник лёжа, стикер,
+  почерк маркером); GreedJunkLit (greed-junk-lit) — +lit-lever, +lit-reels,
+  +tray, +coin-in (монета в щель), +meter (колба насыщения: стекло в
+  GreedJunk, жидкость в GreedJunkLit), +jar (банка-кошелёк справа от
+  монетоприёмника, число монет на скотче), +wheel (колесо-половина:
+  рисунок, щит; в GreedJunkLit +lit-wheel — вращение). Раскладка в рамке —
+  docs/plan/29-greed-layout.md.
   greed/                автомат: экран (greed.js) НИЧЕГО не решает — на
                         рывке рычага просит крутку у Backend.greedSpin(),
                         ставит гаражный аппарат (GreedJunkLit.mount) и

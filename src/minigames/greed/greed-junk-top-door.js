@@ -236,43 +236,32 @@ Object.assign(GreedJunk, {
             `<path d="${d}" fill="none" class="hl" stroke="${J.primer.hi}" stroke-width="0.35" transform="translate(0 -0.35)" opacity="0.8"/>`;
     },
 
-    // Полка под табло и нижний ящик: низкий, на нём только табличка и лоток.
-    // Ящик сколочен как всё в гараже: лицо — лист ДСП, по краям стойки из
-    // того, что было (слева сосна, справа доска от лакированной мебели —
-    // наоборот, чем у табло). Табличка — светлая сосна, лоток — жесть.
+    // Полка под табло и нижний ящик. Ящик — во всю видимую ширину (между
+    // ним и монетами рамки были пустые щели) и выше прежнего: на нём лоток
+    // по центру, над лотком лежит монетоприёмник, справа на полу — банка.
+    // Таблицы выплат больше нет (решение игрока, docs/plan/29-greed-layout.md):
+    // её значки читались в 6 pt и ничего не объясняли.
+    // Сколочен как всё в гараже: лицо — лист ДСП, по краям стойки из того,
+    // что было (слева сосна, справа доска от лакированной мебели — наоборот,
+    // чем у табло).
+    BOTTOM_BOX: { x: 22, y: 486, w: 316, h: 132 },
     body() {
-        const J = PALETTE.greedJunk, S = this.SLOTS;
+        const B = this.BOTTOM_BOX, x1 = B.x + B.w, y1 = B.y + B.h;
         let out = '';
         // лицо ящика: лист ДСП
-        out += this.T(3, 'chip', this.material('chip', 54, 484, 252, 90, 811, false) +
-            `<path d="${this.wob(54, 484, 252, 90, 811, 1.8)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
+        out += this.T(3, 'chip', this.material('chip', B.x + 14, B.y, B.w - 28, B.h, 811, false) +
+            `<path d="${this.wob(B.x + 14, B.y, B.w - 28, B.h, 811, 1.8)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
         // стойки по краям
-        out += this.T(5, 'pine', this.planks(40, 484, 16, 90, 1, 82, 'v', 0, 'pine'));
-        out += this.T(5, 'lacquer', this.planks(304, 484, 16, 90, 1, 83, 'v', 0, 'painted'));
+        out += this.T(5, 'pine', this.planks(B.x, B.y, 16, B.h, 1, 82, 'v', 0, 'pine'));
+        out += this.T(5, 'lacquer', this.planks(x1 - 16, B.y, 16, B.h, 1, 83, 'v', 0, 'painted'));
         // тень от полки на ящик — только запасной вид, шейдер даёт свою
-        out += this.shade(40, 486, 280, 14);
-        // пустая табличка выплат: светлая сосновая доска на гвоздях
-        const p = S.plate;
-        let plate = this.material('pine', p.x, p.y, p.w, p.h, 151, false) +
-            `<path d="${this.wob(p.x, p.y, p.w, p.h, 151, 1)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<line x1="${p.x + 4}" y1="${p.y + 2.5}" x2="${p.x + p.w - 4}" y2="${p.y + 2.5}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
-        [[p.x + 6, p.y + 6], [p.x + p.w - 6, p.y + 6], [p.x + 6, p.y + p.h - 6], [p.x + p.w - 6, p.y + p.h - 6]]
-            .forEach(([x, y]) => { plate += this.nail(x, y); });
-        // таблица выплат краской по доске (greed-junk-plate.js)
-        // на свету тряпка отдельной картинкой качается поверх (ragApart)
-        if (this.payPlate && !this.ragApart) plate += this.payPlate(p);
-        // правый конец доски отпилен: свежий светлый торец и следы пилы
-        const ex = p.x + p.w;
-        plate += `<rect x="${ex - 2.2}" y="${p.y + 1}" width="1.6" height="${p.h - 2}" fill="${J.pine[100]}" opacity="0.85"/>` +
-            `<path d="M${ex - 2} ${p.y + 9} l1.2 -2 M${ex - 2} ${p.y + 21} l1.2 -2 M${ex - 2} ${p.y + 33} l1.2 -2" stroke="${J.pine[500]}" stroke-width="0.4"/>`;
-        out += this.T(6, 'pine', plate);
-        out += this.coinTray();
-        // монетоприёмник из двери туалета — на месте старой трещины со скотчем
-        if (this.wcSlot) out += this.wcSlot();
-        // полка поверх стыка табло и ящика — торчит за края; справа
-        // длиннее — под кулису, она стоит на полке
-        out += this.T(8, 'pine', this.planks(22, 466, 316, 20, 1, 111, 'h', 0, 'pine'));
-        out += this.shelfBracket(42, 1) + this.shelfBracket(318, -1);
+        out += this.shade(B.x, B.y + 2, B.w, 14);
+        out += this.trayG(this.coinTray());
+        // монетоприёмник из двери туалета — лёжа над лотком (greed-junk-wc.js)
+        if (this.wcOnBox) out += this.wcOnBox();
+        // полка поверх стыка табло и ящика; на её правом конце — кулиса
+        out += this.T(8, 'pine', this.planks(B.x, 466, B.w, 20, 1, 111, 'h', 0, 'pine'));
+        out += this.shelfBracket(B.x + 2, 1) + this.shelfBracket(x1 - 2, -1);
         return out;
     },
 
@@ -291,6 +280,20 @@ Object.assign(GreedJunk, {
         g += `<path d="M${f(X(1))} 480 Q${f(X(6))} 479 ${f(X(7))} 484 L${f(X(7))} 490 Q${f(X(3))} 488 ${f(X(1))} 490 Z" fill="${J.rust[500]}" opacity="0.4"/>`;
         g += this.bolt(X(13), 478, 1.5) + this.bolt(X(21), 478, 1.5) + this.bolt(X(4), 494, 1.5) + this.bolt(X(4), 504, 1.5);
         return this.T(10, 'steel', g);
+    },
+
+    // Лоток на аппарате — крупнее своего рисунка и ниже прежнего места:
+    // нижний ящик вырос, лоток стоит на его полу по центру, под барабанами
+    // (решение игрока). Рисунок формы, щель и падение монет — в прежних
+    // координатах, на место их ставит TRAY_AT (угол растяжки — середина формы).
+    TRAY_AT: { ax: 180, ay: 566.5, x: 180, y: 591, s: 1.12 },
+    trayG(inner) {
+        const A = this.TRAY_AT, f = this.f;
+        return `<g transform="matrix(${A.s} 0 0 ${A.s} ${f(A.x - A.ax * A.s)} ${f(A.y - A.ay * A.s)})">${inner}</g>`;
+    },
+    trayRect(B) {
+        const A = this.TRAY_AT;
+        return { x: A.x + (B.x - A.ax) * A.s, y: A.y + (B.y - A.ay) * A.s, w: B.w * A.s, h: B.h * A.s };
     },
 
     // Лоток для монет — старая форма для хлеба, привёрнутая к ящику двумя
@@ -366,16 +369,14 @@ Object.assign(GreedJunk, {
     // за переднюю кромку доски, и не было видно, на чём он стоит. Под
     // правый брусок подбит клин из обрезка — пол в гараже кривой.
     plinth() {
-        const J = PALETTE.greedJunk, V = this.VP, f = this.f;
-        let out = this.T(2, 'chip', this.planks(34, 598, 64, 22, 1, 121, 'v', 0, 'chip') + this.planks(262, 598, 64, 22, 1, 122, 'v', 0, 'chip'));
-        // клин под правым бруском
-        out += this.T(3, 'pine', `<path d="M286 620.6 L336 616.4 L336 621.4 L286 621.4 Z" fill="${J.pine[100]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
-            `<path d="M296 620 L330 617.4" stroke="${J.pine[500]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`);
-        out += this.T(8, 'lacquer', this.planks(20, 580, 320, 20, 1, 123, 'h', 0, 'painted'));
+        const J = PALETTE.greedJunk, V = this.VP, f = this.f, B = this.BOTTOM_BOX, y = B.y + B.h;
+        // Цоколь — одна доска под ящиком. Были доска и две ножки, а между
+        // ножками — пустота во всю ширину ящика.
+        let out = this.T(8, 'lacquer', this.planks(20, y, 320, 18, 1, 123, 'h', 0, 'painted'));
         // верхняя грань доски
-        const k = 0.03, back = (x, y) => [x + (V.x - x) * k, y + (V.y - y) * k];
-        const a = back(20, 580), b = back(340, 580);
-        out += this.T(8, 'lacquer', `<path d="M20 580 L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L340 580 Z" fill="${J.painted.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+        const k = 0.03, back = (x, yy) => [x + (V.x - x) * k, yy + (V.y - yy) * k];
+        const a = back(20, y), b = back(340, y);
+        out += this.T(8, 'lacquer', `<path d="M20 ${y} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L340 ${y} Z" fill="${J.painted.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
             `<line x1="${f(a[0] + 3)}" y1="${f(a[1] + 1.2)}" x2="${f(b[0] - 3)}" y2="${f(b[1] + 1.2)}" class="hl" stroke="${J.painted.hi}" stroke-width="0.6" opacity="0.8"/>`);
         return out;
     },

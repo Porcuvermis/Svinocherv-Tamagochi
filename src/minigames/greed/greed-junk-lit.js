@@ -324,7 +324,7 @@ const GreedJunkLit = {
     liveParts() {
         const ns = 'http://www.w3.org/2000/svg', P = { keys: {} };
         this.live.innerHTML = GreedJunk.haloDefs();
-        ['glows', 'thread', 'lamp', 'ind'].forEach(k => { P[k] = document.createElementNS(ns, 'g'); this.live.appendChild(P[k]); });
+        ['glows', 'thread', 'ind'].forEach(k => { P[k] = document.createElementNS(ns, 'g'); this.live.appendChild(P[k]); });
         return P;
     },
     // Окно мини-игры закрыто — аппарат спит. Закрытое окно не уходит со
@@ -343,18 +343,17 @@ const GreedJunkLit = {
         this._running = true;
         const t = { x: 0, y: 0 }, lt = { x: 0, y: 0 }, last = { x: 9, y: 9 };
         let lastFull = 0;
-        // тряпка — первой: пока её нет, доска под табло пустая. Готовится один
-        // раз: аппарат потом только переезжает (mount), а не собирается заново
+        // Рычаг готовится один раз: аппарат потом только переезжает (mount),
+        // а не собирается заново. (Тряпки с таблицей выплат больше нет —
+        // игрок убрал её, docs/plan/29-greed-layout.md.)
         if (!this._prepared) {
             this._prepared = true;
-            this._prepP = (this.prepareRag ? this.prepareRag() : Promise.resolve()).then(() => this.prepareLever());
+            this._prepP = this.prepareLever();
         }
         // кончик нитки — упругая цепочка (src/core/hang.js): гнётся кончик,
         // а не весь хвостик целиком; тяжесть — по наклону телефона
         const tail = { s: Hang.create(GreedJunk.TAIL.len, GreedJunk.TAIL.root, 'thread'), shown: null };
-        // красная лампа на проводах — тоже подвес, с тяжёлым грузом
-        const lamp = GreedJunk.lampHang();
-        this._hangs = [tail.s, lamp];          // удар рычага их раскачивает
+        this._hangs = [tail.s];          // удар рычага его раскачивает
         const loop = (now) => {
             // аппарат сняли со страницы — цикл стоит; mount в новое место запустит
             if (!canvas.isConnected) { this._running = false; return; }
@@ -366,7 +365,6 @@ const GreedJunkLit = {
             if (this.live) {
                 const g = Hang.down();
                 Hang.step(tail.s, g);
-                Hang.step(lamp, g);
                 const glow = this.glowStep(now);
                 const ind = this.readyStep(now);
                 // Живой слой — четыре группы, и пересобирается только та, что
@@ -378,9 +376,8 @@ const GreedJunkLit = {
                 const P = this._liveParts || (this._liveParts = this.liveParts());
                 const put = (k, key, html) => { if (P.keys[k] !== key) { P.keys[k] = key; P[k].innerHTML = html(); } };
                 put('glows', this.GLOW_ORDER.map(k => glow[k].toFixed(2)).join(','),
-                    () => ['pear', 'flame', 'globe'].map(k => GreedJunk.bulbGlow(k, glow[k])).join(''));
+                    () => this.GLOW_ORDER.map(k => GreedJunk.bulbGlow(k, glow[k])).join(''));
                 put('thread', tail.s.th.map(v => v.toFixed(2)).join(','), () => GreedJunk.threadTail(tail.s));
-                put('lamp', lamp.th.map(v => v.toFixed(2)).join(',') + glow.red.toFixed(2), () => GreedJunk.hangLamp(lamp, glow.red));
                 put('ind', ind.red.toFixed(2) + ind.green.toFixed(2), () => GreedJunk.readyLampGlow(ind.red, ind.green));
             }
             const T = (typeof Tilt !== 'undefined' && Tilt.turn) ? Tilt.turn() : { live: false };
@@ -409,7 +406,6 @@ const GreedJunkLit = {
             } else if (reels) {
                 this.draw(this.lightFor(lt), this.REEL_BOX);   // только окна
             }
-            if (this.ragStep) this.ragStep(now);
             if (this.coinStep) this.coinStep(now);
             if (this.meterStep) this.meterStep(now);
             if (this.jarStep) this.jarStep(now);
@@ -614,7 +610,6 @@ const GreedJunkLit = {
         // упор без своей отдачи: в это время ещё идёт очередь срыва, и
         // лишний удар смазывал бы её
         (this._hangs || []).forEach((h, j) => h.v.forEach((_, i) => { h.v[i] += (j ? -0.05 : 0.09) * (i + 1) / h.n; }));
-        if (this.ragKick) this.ragKick(1);
         if (this.meterKick) this.meterKick(1);
         this.GLOW_ORDER.forEach(k => { this.glow[k] = Math.max(this.glow[k], 0.9); });
         const rnd = GreedJunk.rng(Math.floor(now));
@@ -806,7 +801,6 @@ const GreedJunkLit = {
         wrap.appendChild(lv);
         this.leverCanvas = lv;
         if (this.trayMount) this.trayMount(wrap);
-        if (this.ragMount) this.ragMount(wrap);
         if (this.coinMount) this.coinMount(wrap);
         if (this.meterMount) this.meterMount(wrap);
         if (this.jarMount) this.jarMount(wrap);
@@ -851,12 +845,9 @@ const GreedJunkLit = {
         this.live = live;
         this._mountP = (async () => {
             let ok = false;
-            // тряпка на свету — своя картинка поверх корпуса (greed-junk-lit-rag.js)
-            GreedJunk.ragApart = !!this.ragMount;
             GreedJunk.wheelApart = !!this.wheelMountLit;
             try { ok = await this.init(canvas); } catch (e) { console.warn('[Аппарат] свет шейдером не собрался', e); }
             if (!ok) {
-                GreedJunk.ragApart = false;
                 GreedJunk.wheelApart = false;
                 wrap.innerHTML = GreedJunk.bodySvg('baked').replace('<svg ', '<svg style="position:absolute;inset:0;width:100%;height:100%" ');
                 return false;

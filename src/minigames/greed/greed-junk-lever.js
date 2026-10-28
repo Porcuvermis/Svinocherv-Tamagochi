@@ -124,8 +124,11 @@ Object.assign(GreedJunk, {
     shiftCable() {
         const J = PALETTE.greedJunk, f = this.f;
         // уходит в монетоприёмник (wcSlot): провод связывает рычаг и щель —
-        // два органа управления одного аппарата (решение игрока)
-        const pts = [[306, 454], [310, 472], [306, 492], [293, 503], [283, 503.6]];
+        // два органа управления одного аппарата (решение игрока). Приёмник
+        // лежит над лотком (WC_AT): трос идёт из кулисы вниз-влево, мимо
+        // горла банки, в разъём коробки механизма — у лежачего она снизу.
+        const B = this.SLOTS.wc, [ex, ey] = this.wcPt(B.x + B.w - 6 + 12 - 2.6, B.y + 8 + 5.6);
+        const pts = [[306, 454], [300, 476], [276, 496], [248, 540], [ex + 9, ey + 0.5], [ex, ey]];
         const d = this.smooth(pts);
         let out = `<path d="${d}" class="fx" fill="none" stroke="${J.hole}" stroke-width="4" stroke-linecap="round" opacity="0.3" transform="translate(1.4 2)"/>` +
             this.rodH(d, 3.6) +
@@ -142,7 +145,7 @@ Object.assign(GreedJunk, {
                 `<path d="${dd}" stroke="${J.tin[500]}" stroke-width="4" stroke-linecap="round"/>` +
                 `<path d="M${f(a[0] + c * 2.5 - s * 2)} ${f(a[1] + s * 2.5 + c * 2)} L${f(a[0] + c * 2.5 + s * 2)} ${f(a[1] + s * 2.5 - c * 2)}" stroke="${J.tin[700]}" stroke-width="0.6"/>`;
         };
-        out += ferrule(pts[0], pts[1]) + ferrule(pts[4], pts[3]);
+        out += ferrule(pts[0], pts[1]) + ferrule(pts[5], pts[4]);
         // Нижний конец — в разъём коробки монетоприёмника (greed-junk-wc.js),
         // втулки там нет.
         // Обе втулки — ПОД тросом: трос выходит из самой дыры втулки и в

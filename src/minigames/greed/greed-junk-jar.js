@@ -1,7 +1,7 @@
 // ================= АППАРАТ АЛЧНОСТИ: БАНКА-КОШЕЛЁК =================
 // Продолжение GreedJunkLit. Кошелёк игрока — банка из-под солений с
-// монетами на полу под монетоприёмником (решение игрока): монеты берутся
-// отсюда, в щель, выигрыш сыплется в лоток. Без крышки. Монет всегда на
+// монетами на полу нижнего ящика, справа от монетоприёмника (решение
+// игрока): монеты берутся отсюда, в щель, выигрыш сыплется в лоток. Без крышки. Монет всегда на
 // три четверти банки — уровень ничего не значит, сколько монет, написано
 // маркером на малярном скотче на боку (цифры — не слова, инвариант 9).
 //
@@ -12,7 +12,17 @@ Object.assign(GreedJunkLit, {
     // cx — середина, y0 — верх горла, y1 — дно; w — ширина тела, nw — горла
     JAR: { cx: 273, y0: 577, y1: 625, w: 36, nw: 27, sh: 586 },
     JAR_BOX: { x: 250, y: 570, w: 46, h: 60 },
-    JAR_COIN: 4.8,
+    // Банка на аппарате вдвое крупнее своего рисунка: справа на полу ящика,
+    // рядом с щелью монетоприёмника (решение игрока: число на скотче мелко
+    // читалось). Рисунок — в прежних координатах (JAR), холсты растрируются
+    // сразу в настоящий размер (jarS), на место их ставит JAR_AT.
+    JAR_AT: { ax: 273, ay: 625, x: 301, y: 615, s: 2 },
+    jarS() { return this.SCALE * this.JAR_AT.s; },
+    jarPt(x, y) { const A = this.JAR_AT; return [A.x + (x - A.ax) * A.s, A.y + (y - A.ay) * A.s]; },
+    jarRect(B) { const [x, y] = this.jarPt(B.x, B.y); return { x, y, w: B.w * this.JAR_AT.s, h: B.h * this.JAR_AT.s }; },
+    // Монета в банке — вдвое мельче, чем была (4.8): банка увеличена вдвое,
+    // а монета в ней должна быть той же, что летит в щель и лежит в лотке.
+    JAR_COIN: 2.8,
 
     // контур банки: горло с венчиком, плечи, тело, скруглённое дно; inset —
     // внутрь на толщину стекла
@@ -36,9 +46,9 @@ Object.assign(GreedJunkLit, {
     },
 
     jarMount(wrap) {
-        const B = this.JAR_BOX, G = GreedJunk, S = this.SCALE, cv = document.createElement('canvas');
+        const B = this.JAR_BOX, G = GreedJunk, S = this.jarS(), cv = document.createElement('canvas');
         cv.width = B.w * S; cv.height = B.h * S;
-        cv.style.cssText = `position:absolute;${G.css(B)}z-index:1;pointer-events:none;background:none`;
+        cv.style.cssText = `position:absolute;${G.css(this.jarRect(B))}z-index:1;pointer-events:none;background:none`;
         wrap.appendChild(cv);
         this.jarCv = cv;
         this._jar = { shown: null, val: null, from: 0, to: 0, at: 0 };
@@ -60,7 +70,7 @@ Object.assign(GreedJunkLit, {
     // (−1 у задней стенки, +1 у стекла перед нами) поднимает дальние выше.
     // Рисуются слой за слоем, в слое — от задних к передним: верхняя монета
     // ложится на нижнюю, передняя закрывает заднюю.
-    JAR_PILE: { k: 0.34, layer: 1.7, depth: 5.6, per: 11 },
+    JAR_PILE: { k: 0.34, layer: 1.05, depth: 5.6, per: 30 },
     jarCoins() {
         if (this._jarCoins) return this._jarCoins;
         const J = this.JAR, P = this.JAR_PILE, r = this.JAR_COIN, rnd = GreedJunk.rng(5150);
@@ -88,7 +98,7 @@ Object.assign(GreedJunkLit, {
     // монета плашмя в ракурсе: ребро — тот же овал чуть ниже, тёмное золото;
     // лицо — освещённая картинка монеты (coinSprite), сплюснутая по высоте
     jarCoin(c, spr, m) {
-        const r = this.JAR_COIN, G = PALETTE.greedCoin.gold, th = 1.1;
+        const r = this.JAR_COIN, G = PALETTE.greedCoin.gold, th = r * 0.23;
         c.save();
         c.translate(m.x, m.y); c.rotate(m.rot);
         c.fillStyle = G.deep;
@@ -110,7 +120,7 @@ Object.assign(GreedJunkLit, {
         if (this._jarPile) return this._jarPile;
         const spr = this.coinSprite && this.coinSprite();
         if (!spr) return null;
-        const B = this.JAR_BOX, S = this.SCALE, cv = document.createElement('canvas');
+        const B = this.JAR_BOX, S = this.jarS(), cv = document.createElement('canvas');
         cv.width = B.w * S; cv.height = B.h * S;
         const c = cv.getContext('2d');
         c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
@@ -121,7 +131,7 @@ Object.assign(GreedJunkLit, {
     // ---------- СТЕКЛО: ОДИН РАЗ ----------
     jarGlass() {
         if (this._jarGlass) return this._jarGlass;
-        const B = this.JAR_BOX, J = this.JAR, S = this.SCALE, C = PALETTE.greedJunk.reel.jar, ink = PALETTE.ink;
+        const B = this.JAR_BOX, J = this.JAR, S = this.jarS(), C = PALETTE.greedJunk.reel.jar, ink = PALETTE.ink;
         const cv = document.createElement('canvas');
         cv.width = B.w * S; cv.height = B.h * S;
         const c = cv.getContext('2d');
@@ -226,7 +236,7 @@ Object.assign(GreedJunkLit, {
     jarPaint() {
         const pile = this.jarPile();
         if (!pile) return false;
-        const B = this.JAR_BOX, S = this.SCALE, J = this.JAR, M = this._jar;
+        const B = this.JAR_BOX, S = this.jarS(), J = this.JAR, M = this._jar;
         const c = this.jarCv.getContext('2d');
         c.setTransform(1, 0, 0, 1, 0, 0);
         c.clearRect(0, 0, this.jarCv.width, this.jarCv.height);

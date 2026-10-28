@@ -71,10 +71,12 @@ Object.assign(GreedJunkLit, {
         this.pachGlareCv = gc;
         this._pach = { shown: null, ball: null, acc: 0, at: 0, press: 0 };
         this._pachP = this.pachSprites();
-        // кнопка запуска — тап по ней
+        // Кнопка запуска — тап по ней. Зона шире нарисованной кнопки: было
+        // +4, на телефоне ~20 pt — мимо пальцем. Ниже — рукоять рычага, их
+        // зоны не сходятся (рычаг ловит с y 282).
         wrap.addEventListener('pointerdown', (e) => {
             const B = G.PACH.button, [x, y] = G.pachInv(...G.toField(e, wrap));
-            if (Math.hypot(x - B.x, y - B.y) > B.r + 4) return;
+            if (Math.hypot(x - B.x, y - B.y) > B.r + 11) return;
             e.preventDefault(); e.stopPropagation();
             this.pachLaunch();
         });

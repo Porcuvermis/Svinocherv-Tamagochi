@@ -61,7 +61,7 @@ const GreedMinigame = {
         // Аппарат ставится на следующем кадре: сразу после .active сцена
         // может иметь нулевой размер. Готовность для покрова (veilReady) —
         // аппарат собран целиком (GreedJunkLit.settled: корпус, рычаг,
-        // тряпка, колесо, пачинко) и атлас монет пришёл.
+        // колесо, пачинко) и атлас монет пришёл.
         this._readyP = new Promise((ready) => requestAnimationFrame(() => {
             const L = GreedJunkLit;
             const drawn = L.mount(this.stageEl, {

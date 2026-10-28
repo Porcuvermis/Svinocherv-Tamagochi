@@ -9,7 +9,34 @@
 // «WC» — третье исключение из правила «ни одного слова в холсте»,
 // объявлено игроком (CLAUDE.md, инвариант 9): это заводская штамповка,
 // часть вещи, а не подпись.
+//
+// На аппарате приёмник ЛЕЖИТ НА БОКУ над лотком, щелью вправо — к банке
+// (решение игрока, docs/plan/29-greed-layout.md); «WC» читается боком, так
+// и задумано. С плашки сняты окошко таблички, лопатка и ковш возврата —
+// осталось то, ради чего он здесь: купол со щелью и «WC». На свободное место
+// наклеен стикер — уже не боком, а ровно (переклеили). Рисунок плашки — в
+// прежних координатах (SLOTS.wc, стоя), на место его ставит WC_AT.
 Object.assign(GreedJunk, {
+    WC_AT: { ax: 273, ay: 530, x: 180, y: 525, s: 1.25, rot: 90 },
+    // точка плашки (стоя) → поле аппарата
+    wcPt(x, y) {
+        const A = this.WC_AT, a = A.rot * Math.PI / 180, dx = (x - A.ax) * A.s, dy = (y - A.ay) * A.s;
+        return [A.x + dx * Math.cos(a) - dy * Math.sin(a), A.y + dx * Math.sin(a) + dy * Math.cos(a)];
+    },
+    wcG(inner) {
+        const A = this.WC_AT;
+        return `<g transform="translate(${A.x} ${A.y}) rotate(${A.rot}) scale(${A.s}) translate(${-A.ax} ${-A.ay})">${inner}</g>`;
+    },
+    // где на плашке купол со щелью и стикер (координаты плашки, стоя)
+    wcSlotAt() { const B = this.SLOTS.wc; return [B.x + B.w / 2, B.y + 25]; },
+    wcStickerAt() { const B = this.SLOTS.wc; return [B.x + B.w / 2, B.y + 57]; },
+    // Приёмник на аппарате: плашка повёрнута, стикер наклеен ровно.
+    wcOnBox() {
+        const A = this.WC_AT, [sx, sy] = this.wcStickerAt(), [px, py] = this.wcPt(sx, sy);
+        return this.wcG(this.wcSlot()) +
+            `<g transform="translate(${this.f(px)} ${this.f(py)}) scale(${A.s}) translate(${-sx} ${-sy})">${this.wcSticker(sx, sy)}</g>`;
+    },
+
     wcSlot() {
         const J = PALETTE.greedJunk, W = J.reel.wc, f = this.f, B = this.SLOTS.wc, ink = PALETTE.ink;
         const rnd = this.rng(377);
@@ -27,10 +54,7 @@ Object.assign(GreedJunk, {
             d += (i ? ' L' : 'M') + f(cx + Math.cos(a) * rx * r * 0.82) + ' ' + f(y + h / 2 + Math.sin(a) * ry * r * 0.82);
         }
         d += ' Z';
-        // слева обломки срезаны по краю доски с тряпкой — на неё не лезут
-        // снизу — по верху цоколя (y 574): на него обломки не лезут
-        out += `<clipPath id="gj-wc-door"><rect x="${x - 2}" y="${y - 20}" width="${w + 30}" height="${574 - y + 20}"/></clipPath>`;
-        out += `<g clip-path="url(#gj-wc-door)"><path d="${d}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.2 1.8)"/>`;
+        out += `<g><path d="${d}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(1.2 1.8)"/>`;
         out += this.T(4, 'plastic', `<path d="${d}" fill="${W.doorEdge}" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
             `<path d="${d}" fill="${W.door}" transform="translate(${f(cx * 0.04)} ${f((y + h / 2) * 0.04)}) scale(0.96)"/>` +
             // царапины и щепа на изломе: светлые волокна ДСП двери
@@ -167,23 +191,8 @@ Object.assign(GreedJunk, {
             `<path d="M${cx + 1.15} ${dy0 - R * 0.66} V${dy0 + R * 0.66}" class="hl" stroke="${J.tin[100]}" stroke-width="0.45" stroke-linecap="round"/>` +
             `<path d="M${cx - 1.2} ${dy0 - R * 0.66} V${dy0 + R * 0.66}" stroke="${J.tin[700]}" stroke-width="0.45" stroke-linecap="round"/>`;
         out += this.T(11, 'polished', c);
-        // окошко таблички: чёрная пластиковая рамка, внутри — заводская синяя
-        // табличка с ценой; цену целиком заклеили стикером
-        const ly = y + 38, lw = 34, lh = 11;
-        let l = `<rect x="${cx - lw / 2}" y="${ly}" width="${lw}" height="${lh}" rx="1.2" fill="${W.bezel}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-            `<rect x="${cx - lw / 2 + 1.4}" y="${ly + 1.4}" width="${lw - 2.8}" height="${lh - 2.8}" fill="${W.label}"/>` +
-            `<path d="M${cx - lw / 2 + 1.6} ${ly + 1.8} H${cx + lw / 2 - 1.6}" stroke="${W.labelHi}" stroke-width="0.5"/>` +
-            // заводская белая окантовка таблички, левый нижний угол облез
-            `<rect x="${cx - lw / 2 + 2.2}" y="${ly + 2.2}" width="${lw - 4.4}" height="${lh - 4.4}" rx="0.6" fill="none" stroke="${W.labelInk}" stroke-width="0.35" opacity="0.85"/>` +
-            `<path d="M${cx - lw / 2 + 1.4} ${ly + lh - 3.6} Q${cx - lw / 2 + 3} ${ly + lh - 3.4} ${cx - lw / 2 + 4.4} ${ly + lh - 1.4} L${cx - lw / 2 + 1.4} ${ly + lh - 1.4} Z" fill="${W.labelHi}" opacity="0.8"/>`;
-        out += this.T(9.5, 'plastic', l);
-        // Стикер — маленький из блока, 51×38 мм: по шару рукояти (≈50 мм = 30
-        // единиц) это ≈ 31×22. Был 14×13 — втрое меньше настоящего; потом
-        // свисал за край плашки — «наклеен мимо». Теперь — ровно на окошке
-        // цены, целиком на лице, края окошка выглядывают из-под него.
-        out += this.wcSticker(cx, ly + lh / 2 + 2);
         // «WC» — заводская штамповка вверху лица, залита чёрной эмалью,
-        // эмаль местами стёрлась. В окошке её больше нет: окошко — под цену.
+        // эмаль местами стёрлась.
         {
             const wy = y + 8.6, wd = `M${cx - 10} ${wy - 3.4} L${cx - 8} ${wy + 3.4} L${cx - 6} ${wy - 1} L${cx - 4} ${wy + 3.4} L${cx - 2} ${wy - 3.4}` +
                 ` M${cx + 8} ${wy - 2.3} A3.8 3.8 0 1 0 ${cx + 8} ${wy + 2.3}`;
@@ -192,44 +201,49 @@ Object.assign(GreedJunk, {
                 `<path d="${wd}" fill="none" stroke="${J.tin[900]}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>` +
                 `<path d="M${cx - 7.2} ${wy + 1.6} l0.6 -1.2 M${cx + 4.6} ${wy - 1.2} l0.7 0.5" stroke="${J.tin[500]}" stroke-width="0.7" stroke-linecap="round"/>`);
         }
-        // лопатка возврата: хромовый язычок наискось
-        // лопатка: узкая у оси, к низу раздаётся каплей (как у фабричной)
-        const kx = cx + 3.6, ky = y + 61;   // ниже стикера: на подвижное его не клеили
-        const kd = `M${kx - 1.2} ${ky - 2.4} L${kx + 4} ${ky + 2.6} Q${kx + 8.4} ${ky + 5.4} ${kx + 6.6} ${ky + 8.2} Q${kx + 4.4} ${ky + 9.8} ${kx + 2.2} ${ky + 6.6} L${kx - 2.4} ${ky - 0.6} Q${kx - 2.8} ${ky - 3.2} ${kx - 1.2} ${ky - 2.4} Z`;
-        out += this.T(12, 'polished', `<path d="${kd}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(0.8 1.2)"/>` +
-            `<path d="${kd}" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
-            `<path d="M${kx - 1} ${ky - 1.8} L${kx + 4.6} ${ky + 3.6} Q${kx + 6.6} ${ky + 5} ${kx + 6.2} ${ky + 6.8}" class="hl" fill="none" stroke="${J.tin[100]}" stroke-width="0.9" stroke-linecap="round"/>` +
-            `<path d="M${kx + 3} ${ky + 7} Q${kx + 4.6} ${ky + 8.8} ${kx + 6.4} ${ky + 7.8}" fill="none" stroke="${J.tin[700]}" stroke-width="0.8"/>` +
-            this.rodH(`M${kx - 1.2} ${ky - 1.4} L${kx + 4.4} ${ky + 4.4}`, 3, 1.4) + this.domeH(kx + 5, ky + 6, 2.6, 1.2) +
-            // ось: круглая бобышка с заклёпкой — лопатка на ней качается
-            `<circle cx="${kx - 1.4}" cy="${ky - 1.6}" r="2.5" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="${kx - 1.4}" cy="${ky - 1.6}" r="1.1" fill="${J.tin[500]}" stroke="${J.tin[700]}" stroke-width="0.3"/>` +
-            `<circle cx="${kx - 1.9}" cy="${ky - 2.1}" r="0.5" fill="${J.tin[100]}"/>` + this.domeH(kx - 1.4, ky - 1.6, 2.5, 1));
-        // Щель возврата и ковш под ней. Ковш — хромовый носик, торчит на
-        // игрока: спереди видна его передняя стенка (скруглена книзу), сверху
-        // — тёмный зев, куда щель и выходит. Было: белая чашка-ложка.
-        const ry = y + 57, sx = cx - 3.2;
-        out += this.T(9, 'steel', `<rect x="${sx - 1.4}" y="${ry}" width="2.8" height="12.6" rx="1.2" class="pit" fill="${J.hole}"/>` +
-            `<path d="M${sx + 1.7} ${ry + 0.8} V${ry + 12}" class="hl" stroke="${J.tin[100]}" stroke-width="0.4"/>`);
-        // Ковш — хромовый жёлоб, торчит на игрока и раздаётся книзу (щит):
-        // сверху виден тёмный зев, щель возврата выходит в его заднюю стенку,
-        // по нижнему краю зева — светлая губа. Было: столбик со шляпкой —
-        // читался штампом-печатью.
-        const ty = y + 67;
-        const outer = `M${sx - 4.4} ${ty} H${sx + 4.4} L${sx + 6} ${ty + 5} Q${sx + 6} ${ty + 8.4} ${sx + 3} ${ty + 8.4} H${sx - 3} Q${sx - 6} ${ty + 8.4} ${sx - 6} ${ty + 5} Z`;
-        const mouth = `M${sx - 3.6} ${ty + 0.7} H${sx + 3.6} L${sx + 4.6} ${ty + 3.8} Q${sx} ${ty + 5.2} ${sx - 4.6} ${ty + 3.8} Z`;
-        out += this.T(13, 'polished', `<path d="${outer}" class="fx" fill="${J.hole}" opacity="0.45" transform="translate(1 1.8)"/>` +
-            `<path d="${outer}" fill="${J.tin[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
-            `<path d="${mouth}" fill="${J.tin[700]}"/>` +
-            `<path d="M${sx - 1.2} ${ty + 0.7} H${sx + 1.2} L${sx + 0.9} ${ty + 2.4} H${sx - 0.9} Z" fill="${J.hole}"/>` +
-            `<path d="M${sx - 4.4} ${ty + 4} Q${sx} ${ty + 5.6} ${sx + 4.4} ${ty + 4}" class="hl" fill="none" stroke="${J.tin[100]}" stroke-width="0.8" stroke-linecap="round"/>` +
-            `<path d="M${sx - 5.1} ${ty + 5} Q${sx - 5} ${ty + 7.4} ${sx - 2.6} ${ty + 7.6}" class="hl" fill="none" stroke="${J.tin[100]}" stroke-width="0.9" stroke-linecap="round"/>` +
-            `<path d="M${sx + 5.1} ${ty + 5.2} Q${sx + 4.8} ${ty + 7.4} ${sx + 2.4} ${ty + 7.6}" fill="none" stroke="${J.tin[500]}" stroke-width="0.9" stroke-linecap="round"/>` +
-            this.rodH(`M${sx - 3} ${ty + 6.2} H${sx + 3}`, 4, 2));
         return out;
     },
 
-    // Жёлтый офисный стикер — квадратный листок из блока: верх приклеен
+    // ---------- МАРКЕР ОТ РУКИ ----------
+    // Каждый значок рисуется заново своей «рукой» (своим зерном): точки
+    // штрихов дрожат, концы недотянуты или с перелётом, пропорции и наклон
+    // плавают. Одинаковых значков нет (решение игрока: «прям человеческой
+    // рукой»). Пишут им стикер монетоприёмника и скотч на банке; был ещё
+    // почерк тряпки с таблицей выплат — тряпку убрали.
+    // Штрих — сглаженная кривая через дрожащие точки (Катмулл-Ром → Безье).
+    handPath(pts, rnd, closed, j = 0.35) {
+        const f = this.f;
+        let P = pts.map(([x, y]) => [x + (rnd() - 0.5) * 2 * j, y + (rnd() - 0.5) * 2 * j]);
+        if (closed) {
+            // замыкание внахлёст: рука проводит чуть дальше начала
+            P = P.concat([[P[0][0] + (rnd() - 0.5) * 0.8, P[0][1] + (rnd() - 0.5) * 0.8]]);
+            const a = P[1], b = P[0];
+            P.push([b[0] + (a[0] - b[0]) * (0.2 + rnd() * 0.25), b[1] + (a[1] - b[1]) * (0.2 + rnd() * 0.25)]);
+        } else if (P.length > 1) {
+            // конец штриха: недотянут или с перелётом
+            const n = P.length, a = P[n - 2], b = P[n - 1], k = (rnd() - 0.35) * 0.3;
+            P[n - 1] = [b[0] + (b[0] - a[0]) * k, b[1] + (b[1] - a[1]) * k];
+        }
+        if (P.length === 2) return `M${f(P[0][0])} ${f(P[0][1])} L${f(P[1][0])} ${f(P[1][1])}`;
+        let d = `M${f(P[0][0])} ${f(P[0][1])}`;
+        for (let i = 0; i < P.length - 1; i++) {
+            const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2;
+            d += ` C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ` +
+                `${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+        }
+        return d;
+    },
+    // Овал от руки: точки по кругу с дрожью радиуса.
+    handOval(cx, cy, rx, ry, rnd, n = 7) {
+        const a0 = rnd() * Math.PI * 2, pts = [];
+        for (let k = 0; k < n; k++) {
+            const a = a0 + k / n * Math.PI * 2, w = 1 + (rnd() - 0.5) * 0.16;
+            pts.push([cx + Math.cos(a) * rx * w, cy + Math.sin(a) * ry * w]);
+        }
+        return this.handPath(pts, rnd, true, 0.15);
+    },
+    // Жёлтый офисный стикер — квадратный листок из блока (игрок: офисные —
+    // квадратные; был 31×22, «как ярлык»): верх приклеен
     // клеевой полосой и лежит ровно, низ отходит — бумага пружинит, правый
     // нижний угол приподнят дугой. Приподнятое светлее (ловит свет), под
     // ним тень на табличку. Наклеен косо, поверх цены на табличке.
@@ -238,7 +252,7 @@ Object.assign(GreedJunk, {
     // Цена от руки маркером: «1» и монетка — тем же почерком, что тряпка.
     wcSticker(cx, cy) {
         const J = PALETTE.greedJunk, W = J.reel.wc, f = this.f, ink = J.reel.rag.marker;
-        const rnd = this.rng(4242), sw = 31, sh = 22, x = cx - sw / 2, y = cy - sh / 2;
+        const rnd = this.rng(4242), sw = 30, sh = 30, x = cx - sw / 2, y = cy - sh / 2;
         const X1 = x + sw, Y1 = y + sh, c = 8, gl = 5;   // c — отогнутый угол, gl — клеевая полоса
         // контур: верх прямой, бока чуть выгнуты, низ провис, угол — дугой вверх
         const out = `M${f(x)} ${f(y)} H${f(X1)} Q${f(X1 + 0.4)} ${f(y + sh * 0.5)} ${f(X1)} ${f(Y1 - c)} ` +
@@ -263,7 +277,7 @@ Object.assign(GreedJunk, {
             `<circle cx="${f(X1 - 2.6)}" cy="${f(Y1 - 2.6)}" r="3.4" style="--dh:${this.dh(0.9)}"/></g>`;
         // Надпись — в своей коробке 14×13 и растянута на листок: почерк тот
         // же, что был, только крупно, как пишут маркером на стикере.
-        const k = 2, tx = x + 1.6, ty = y + gl - 6.6;
+        const k = 2, tx = x + 1.6, ty = y + gl - 2.6;
         const one = this.handPath([[1.4, 5.6], [3.2, 3.9]], rnd, false, 0.1) + ' ' +
             this.handPath([[3.2, 3.9], [3.1, 10.6]], rnd, false, 0.1) + ' ' +
             this.handPath([[1.8, 10.7], [4.4, 10.5]], rnd, false, 0.08);

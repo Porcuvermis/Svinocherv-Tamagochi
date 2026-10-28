@@ -34,14 +34,10 @@ Object.assign(GreedJunk, {
             this.rodH(`M${x0 + 6} ${cy} L${x1 - 6} ${cy}`, y1 - y0 - 2, 1.2);
         plate += this.bolt(x0 + 6, cy, 1.8) + this.bolt(x1 - 6, cy, 1.8);
         let out = this.T(10, 'plastic', plate);
-        // красная висит на проводах (hangLamp), на полке от неё — след
-        // след считается в том же ракурсе, что диски соседних патронов
-        this.bulbList().forEach(b => {
-            out += b.kind === 'red'
-                ? this.leaned(b.x, this.SHELF_TOP - 2.8, 1.45, 0, () => this.lostHolder(b.x, this.SHELF_TOP))
-                : this.bulb(b.kind, b.x, this.SHELF_TOP);
-        });
-        if (this.pass === 'baked') out += this.hangLamp();
+        // Красная трубка стоит в своём патроне, как все. Висела на проводах
+        // над тряпкой; тряпку убрали, на её месте лежит монетоприёмник, и
+        // висячая лампа легла бы прямо на него.
+        this.bulbList().forEach(b => { out += this.bulb(b.kind, b.x, this.SHELF_TOP); });
         return out;
     },
 
@@ -198,6 +194,7 @@ Object.assign(GreedJunk, {
                 g += `<path d="M${x - 1.5} ${f(t - 1.5)} L${x - 1.5} ${f(yt + 0.5)}" class="hl" stroke="${J.alu[100]}" stroke-width="0.9" stroke-linecap="round" opacity="0.75"/>`;
                 g += this.rodH(`M${x} ${f(yt)} L${x} ${f(t)}`, w, 2.6) + this.domeH(x, yt, w / 2, 2.6);
                 o += this.T(20, 'glass', g);
+                this.markBulb('red', x, (t + yt) / 2, w / 2 + 0.6);
                 return o;
             });
             out += h0.disk + lamp;
@@ -303,96 +300,5 @@ Object.assign(GreedJunk, {
         return `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(b.r * 4.2)}" fill="url(#gj-halo-${kind})" opacity="${f(v)}" style="mix-blend-mode:screen"/>` +
             `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(b.r - 0.6)}" fill="${G[kind]}" opacity="${f(0.85 * v)}"/>` +
             `<circle cx="${f(b.x)}" cy="${f(b.y)}" r="${f(b.r * 0.42)}" fill="${G.core}" opacity="${f(v * v)}"/>`;
-    },
-
-    // ---------- ЛАМПА НА ПРОВОДАХ ----------
-    // Красной трубке патрон потеряли: она так и висит, ввёрнутая в свой
-    // фарфоровый цоколь, на двух припаянных проводах (красный и синий),
-    // которые вылезают из дырки в полке и свешиваются через кромку. Провода
-    // жёсткие, фарфор тяжёлый — лампа пружинит от наклона телефона (Hang с
-    // грузом на кончике). Живая, поэтому рисуется слоем поверх освещённой
-    // сцены, как кончик нитки; в корпусе — только след от патрона.
-    HANG_LAMP: { x: 200, y: 468, len: 18 },
-    lampHang() {
-        return Hang.create(this.HANG_LAMP.len, 0, 'wire', 6, { mass: 0.05, arm: 16 });
-    },
-
-    // След потерянного патрона на полке: невыцветший круг на месте
-    // фланца и сквозная дыра под его чашку. В глубине дыры — стальная
-    // перекладина под полкой с двумя резьбовыми дырками: к ней патрон и
-    // прикручивался. Провода лезут из дыры мимо перекладины.
-    lostHolder(x, base) {
-        const J = PALETTE.greedJunk, R = J.raw, f = this.f;
-        const yb = base - 1, k = this.flat(yb), rx = 8, hr = 6, hy = hr * k;
-        let out = this.T(9, 'pine', `<ellipse cx="${x}" cy="${f(yb)}" rx="${rx}" ry="${f(rx * k)}" fill="${PALETTE.ink}" opacity="0.22"/>`);
-        // дыра: тёмный эллипс; дальняя стенка (верх) освещена, ближняя в тени
-        let g = `<ellipse cx="${x}" cy="${f(yb)}" rx="${hr}" ry="${f(hy)}" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-        // перекладина видна в дыре полосой, ниже края на толщину полки —
-        // поэтому сдвинута вниз; концы обрезаны контуром дыры
-        const y1 = yb - hy * 0.05, y2 = yb + hy * 0.6;
-        const xe = (y) => hr * Math.sqrt(Math.max(0, 1 - ((y - yb) / hy) ** 2)) - 0.3;
-        const bar = `M${f(x - xe(y1))} ${f(y1)} L${f(x + xe(y1))} ${f(y1)} L${f(x + xe(y2))} ${f(y2)} L${f(x - xe(y2))} ${f(y2)} Z`;
-        g += `<path d="${bar}" fill="${R.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`;
-        g += `<line x1="${f(x - xe(y1))}" y1="${f(y1 + 0.2)}" x2="${f(x + xe(y1))}" y2="${f(y1 + 0.2)}" class="hl" stroke="${R.base}" stroke-width="0.4"/>`;
-        g += [-3.6, 3.6].map(dx => `<ellipse cx="${f(x + dx)}" cy="${f((y1 + y2) / 2)}" rx="0.9" ry="${f(Math.max(0.3, (y2 - y1) * 0.3))}" fill="${J.hole}"/>`).join('');
-        out += this.T(2, 'raw', g);
-        return out;
-    },
-
-    // Сама лампа с проводами. hang — состояние подвеса (Hang); без него —
-    // покой, отвесно вниз. v — накал 0..1 (свечение при выигрыше).
-    hangLamp(hang, v) {
-        const J = PALETTE.greedJunk, L = J.bulb, C = J.ceramic, Br = J.brass, f = this.f, H = this.HANG_LAMP;
-        const s = hang || this.lampHang();
-        const pts = Hang.points(s, H.x, H.y);
-        const e = pts[pts.length - 1], p = pts[pts.length - 2];
-        const a = Math.atan2(e[0] - p[0], e[1] - p[1]);
-        // провод: из дыры в полке через кромку и вниз по цепочке; второй
-        // провод — рядом, сдвинут поперёк направления
-        const line = (off) => {
-            const q = [[H.x + off * 0.5, H.y - 3.2]].concat(pts.map((pt, i) => {
-                const b = pts[Math.min(i + 1, pts.length - 1)], c = pts[Math.max(i - 1, 0)];
-                const ang = Math.atan2(b[0] - c[0], b[1] - c[1]);
-                return [pt[0] + Math.cos(ang) * off, pt[1] - Math.sin(ang) * off];
-            }));
-            return this.smooth(q);
-        };
-        const wire = (off, col) => {
-            const d = line(off);
-            return `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>` +
-                `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>` +
-                `<path d="${d}" fill="none" class="hl" stroke="${J.alu[100]}" stroke-width="0.3" opacity="0.6" transform="translate(-0.3 0)"/>`;
-        };
-        const rot = `translate(${f(e[0])} ${f(e[1])}) rotate(${f(-a * 180 / Math.PI)}) scale(1.25)`;
-        // Тень на дверцу и планку: та же фигура, сдвинутая от света вправо-
-        // вниз. Шейдер живой слой не видит, а без тени лампа висит в пустоте.
-        const sh = `<g opacity="0.2" transform="translate(2.2 2.6)">` +
-            `<path d="${line(0)}" fill="none" stroke="${PALETTE.ink}" stroke-width="2.6" stroke-linecap="round"/>` +
-            `<g transform="${rot}"><rect x="-3.6" y="-0.5" width="7.2" height="12" rx="1.4" fill="${PALETTE.ink}"/>` +
-            `<path d="M-2.8 11 L-2.8 33 A2.8 2.8 0 0 0 2.8 33 L2.8 11 Z" fill="${PALETTE.ink}"/></g></g>`;
-        // лампа в своей системе: ось вниз от кончика проводов
-        let g = '';
-        // трубка: стекло, нить, купол снизу
-        g += `<path d="M-2.8 11.4 L-2.8 33 A2.8 2.8 0 0 0 2.8 33 L2.8 11.4 Z" fill="${L.red}" opacity="0.86"/>`;
-        g += `<path d="M-0.8 12 L-0.8 30 M0.8 12 L0.8 30" stroke="${L.wire}" stroke-width="0.5" opacity="0.8"/>`;
-        g += `<path d="M-0.8 30 L-0.4 31 L0 30 L0.4 31 L0.8 30" fill="none" stroke="${L.wire}" stroke-width="0.55"/>`;
-        g += `<path d="M-2.8 11.4 L-2.8 33 A2.8 2.8 0 0 0 2.8 33 L2.8 11.4" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        g += `<path d="M-1.6 13 L-1.6 32" class="hl" stroke="${J.alu[100]}" stroke-width="0.9" stroke-linecap="round" opacity="0.75"/>`;
-        // латунный цоколь с резьбой
-        g += `<rect x="-2.6" y="6.8" width="5.2" height="4.8" fill="${Br.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>`;
-        g += [8, 9.4, 10.8].map(y => `<path d="M-2.4 ${y} L2.4 ${y + 0.6}" stroke="${Br.lo}" stroke-width="0.55"/>`).join('');
-        g += `<rect x="-2" y="7.2" width="0.9" height="4" class="hl" fill="${Br.hi}" opacity="0.8"/>`;
-        // фарфоровый патрон: бочонок с пояском, сверху капли припоя
-        g += `<rect x="-3.6" y="-0.6" width="7.2" height="7.6" rx="1.6" fill="${C.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        g += `<path d="M-3.4 2.2 L3.4 2.2" stroke="${C.lo}" stroke-width="0.6"/>`;
-        g += `<rect x="-2.6" y="0.2" width="1.1" height="6" rx="0.5" class="hl" fill="${C.hi}"/>`;
-        g += [-0.9, 0.9].map(dx => `<circle cx="${dx}" cy="-0.5" r="0.95" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}"/>`).join('');
-        if (v > 0.02) {
-            const G = L.lit;
-            g += `<path d="M-2.2 11.8 L-2.2 33 A2.2 2.2 0 0 0 2.2 33 L2.2 11.8 Z" fill="${G.red}" opacity="${f(0.85 * v)}"/>` +
-                `<path d="M0 13 L0 31" stroke="${G.core}" stroke-width="1.2" stroke-linecap="round" opacity="${f(v * v)}"/>`;
-            g = `<ellipse cx="0" cy="22" rx="11" ry="22" fill="url(#gj-halo-red)" opacity="${f(v)}" style="mix-blend-mode:screen"/>` + g;
-        }
-        return sh + wire(-1.1, J.paint.blue) + wire(1.1, J.paint.red) + `<g transform="${rot}">${g}</g>`;
     },
 });

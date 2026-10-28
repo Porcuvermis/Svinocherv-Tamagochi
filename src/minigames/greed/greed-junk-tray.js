@@ -9,7 +9,8 @@
 // вид и свет одни. Рисуются своим холстом над лотком, обрезанным по проёму
 // формы и полосе падения под щелью — внутри формы, за передним бортом.
 Object.assign(GreedJunkLit, {
-    // участок холста монет в единицах поля
+    // участок холста монет — в координатах рисунка лотка (на аппарат его
+    // ставит GreedJunk.TRAY_AT)
     TRAY_BOX: { x: 108, y: 536, w: 144, h: 42 },
     TRAY: { rad: 5.6, g: 0.0011, max: 70, rate: 55, bounce: 0.28 },
     // сколько монет за тройку (превью; в игре — по выплате)
@@ -24,7 +25,7 @@ Object.assign(GreedJunkLit, {
         // проёма — из рисунка лотка, coinTray)
         const CH = G.CHUTE, px = (x) => ((x - B.x) / B.w * 100).toFixed(2) + '%', py = (y) => ((y - B.y) / B.h * 100).toFixed(2) + '%';
         const poly = [[CH.x - 4, B.y], [CH.x + CH.w + 4, B.y], [CH.x + CH.w + 4, 548.4], [239, 548.4], [244.5, 572], [115.5, 572], [121, 548.4], [CH.x - 4, 548.4]];
-        cv.style.cssText = `position:absolute;${G.css(B)}` +
+        cv.style.cssText = `position:absolute;${G.css(G.trayRect(B))}` +
             `z-index:1;pointer-events:none;background:none;clip-path:polygon(${poly.map(q => px(q[0]) + ' ' + py(q[1])).join(',')})`;
         wrap.appendChild(cv);
         this.trayCv = cv;
