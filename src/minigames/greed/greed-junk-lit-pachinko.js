@@ -146,22 +146,39 @@ Object.assign(GreedJunkLit, {
         if (typeof Haptics !== 'undefined') Haptics.impact('rigid', true);
     },
 
-    // Шарик: стальной, блик сверху-слева — один раз картинкой.
+    // Шарик — полированная сталь на свету шейдером, как всё остальное:
+    // полусфера в карте высот, блик и тень от света. Картинка считается
+    // прибором короба (deviceSprite) при смене света; в полёте рисуется
+    // готовая. Было — нарисованный блик сверху-слева: при наклоне гвозди
+    // рядом меняли свет, а шарик — нет.
     pachBallSprite() {
         if (this._pachSpr) return this._pachSpr;
-        const S = this.SCALE * 2, r = GreedJunk.PACH_PHYS.r, J = PALETTE.greedJunk, n = Math.ceil((r + 1) * 2 * S);
-        const cv = document.createElement('canvas'); cv.width = cv.height = n;
-        const g = cv.getContext('2d'), c = n / 2;
-        const gr = g.createRadialGradient(c - r * 0.4 * S, c - r * 0.45 * S, r * 0.1 * S, c, c, r * S);
-        gr.addColorStop(0, J.tin[100]); gr.addColorStop(0.45, J.tin[300]); gr.addColorStop(1, J.tin[700]);
-        g.beginPath(); g.arc(c, c, r * S, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
-        g.lineWidth = 0.5 * S; g.strokeStyle = PALETTE.ink; g.stroke();
-        // отражение: светлая полоса снизу (пол) и точка блика
-        g.globalAlpha = 0.5; g.fillStyle = J.tin[100];
-        g.beginPath(); g.ellipse(c + r * 0.15 * S, c + r * 0.55 * S, r * 0.5 * S, r * 0.18 * S, 0, 0, Math.PI * 2); g.fill();
-        g.globalAlpha = 1; g.fillStyle = J.reel.jar.glassHi;
-        g.beginPath(); g.arc(c - r * 0.38 * S, c - r * 0.4 * S, r * 0.22 * S, 0, Math.PI * 2); g.fill();
-        return (this._pachSpr = cv);
+        const Q = this._pgl, M = this._pach;
+        if (!Q || !Q.ball) return null;
+        const S = this.SCALE * 2, r = GreedJunk.PACH_PHYS.r, n = Math.ceil((r + 1) * 2 * S);
+        return (this._pachSpr = this.deviceSprite(Q, Q.ball, n, n, this.lightFor((M && M.lt) || this._tilt || { x: 0, y: 0 })));
+    },
+    // карты шарика: круг, полусфера (подъём = радиус), полированная сталь;
+    // тело тёмное — хром в жизни тёмный, с ярким пятном отражения (светлое
+    // тело с бликом полированной стали выходило белым шаром без блика)
+    // Подъём купола — два радиуса: картинка шарика вдвое крупнее масштаба
+    // корпуса (S = SCALE·2), а нормаль считается под масштаб корпуса —
+    // склон с подъёмом в радиус выходил вдвое пологим, шар плоским.
+    async pachBallMaps(Q) {
+        const G = GreedJunk, J = PALETTE.greedJunk, S = this.SCALE * 2, r = G.PACH_PHYS.r, R = r + 1, n = Math.ceil(R * 2 * S);
+        // купол в 12 ступеней: у domeH для малого радиуса их 4 — на шарике
+        // крупным планом они читались кольцами
+        const dome = '<g class="hpass">' + G.profile(12).map(([k, u]) =>
+            `<circle r="${(r * k).toFixed(3)}" style="--dh:${G.dh(r * 2 * u)}"/>`).join('') + '</g>';
+        const svg = (pass) => {
+            G.pass = pass;
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` + G.passStyle(pass) +
+                G.T(2, 'chrome', `<circle r="${r}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="0.5"/>` + dome) + '</svg>';
+        };
+        const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(svg(ps))));
+        G.pass = 'baked';
+        Q.ball = this.deviceSet(Q, maps);
+        this._pachSpr = null;
     },
 
     // Полёт: физика фиксированным шагом (на любом кадре путь один), удар о
@@ -203,6 +220,7 @@ Object.assign(GreedJunkLit, {
         }
         if (M.ball) {
             const b = M.ball, r = K.r, spr = this.pachBallSprite(), L = this.lightFor(this._tilt || { x: 0, y: 0 });
+            if (!spr) return;
             // тень шарика на поле: от света, шарик над краской на свой радиус
             c.globalAlpha = 0.35; c.fillStyle = PALETTE.greedJunk.hole;
             c.beginPath(); c.arc(b.x - L[0] / L[2] * r, b.y - L[1] / L[2] * r, r * 0.95, 0, Math.PI * 2); c.fill();
@@ -235,6 +253,7 @@ Object.assign(GreedJunkLit, {
             if (!Q) throw new Error('нет WebGL');
             Q.box = this.deviceSet(Q, maps);
             this._pgl = Q;
+            await this.pachBallMaps(Q);
             const g = this.pachGlassCv.getContext('2d');
             g.drawImage(glass, 0, 0, this.pachGlassCv.width, this.pachGlassCv.height);
             const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
@@ -296,6 +315,7 @@ Object.assign(GreedJunkLit, {
         if (M.shown && M.lt && M.lt.x === t.x && M.lt.y === t.y) return;
         if (M.shown && now - (M.at || 0) < this.LIGHT_MS) return;
         M.lt = { x: t.x, y: t.y }; M.at = now; M.shown = true;
+        this._pachSpr = null;          // шарик — к новому свету
         const L = this.lightFor(M.lt), Q = this._pgl, B = this.pachBox();
         this.deviceBegin(Q, L);
         this.deviceDraw(Q, B, Q.box, B.x + B.w / 2, B.y + B.h / 2, B.w / 2, B.h / 2);

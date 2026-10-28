@@ -166,6 +166,51 @@ Object.assign(GreedJunkLit, {
         gl.uniform1f(Q.U.uShade, k);
     },
 
+    // Деталь в картинку: комплект set, освещённый светом L, в 2D-холст
+    // w×h точек — во внеэкранный буфер прибора, без его холста. Для мелкого
+    // движущегося (шарик пачинко): свет считается шейдером при смене света,
+    // а в полёте рисуется готовая картинка.
+    deviceSprite(Q, set, w, h, L) {
+        const gl = Q.gl, U = Q.U, n = Math.hypot(L[0], L[1], L[2]) || 1;
+        if (!Q.sfb) {
+            Q.sfb = gl.createFramebuffer();
+            Q.stex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, Q.stex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            Q.sw = w; Q.sh = h;
+        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, Q.sfb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, Q.stex, 0);
+        gl.viewport(0, 0, w, h);
+        gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.uniform3f(U.uL, L[0] / n, L[1] / n, L[2] / n);
+        gl.uniform1f(U.uShade, 0);
+        gl.uniform2f(U.uCanvas, w, h);
+        set.t.forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
+        gl.uniform2f(U.uTex, 1 / set.w, 1 / set.h);
+        gl.uniform2f(U.uC, w / 2, h / 2); gl.uniform2f(U.uHalf, w / 2, h / 2); gl.uniform2f(U.uPiv, 0, 0);
+        gl.uniform1f(U.uRot, 0); gl.uniform1f(U.uRotF, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.uniform2f(U.uCanvas, Q.cv.width, Q.cv.height);
+        // буфер — снизу вверх и с умноженной прозрачностью: перевернуть и
+        // разделить, 2D-холст ждёт обычную
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const g = cv.getContext('2d'), im = g.createImageData(w, h);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const s = ((h - 1 - y) * w + x) * 4, d = (y * w + x) * 4, a = px[s + 3];
+            const k = a ? 255 / a : 0;
+            im.data[d] = Math.min(255, px[s] * k); im.data[d + 1] = Math.min(255, px[s + 1] * k); im.data[d + 2] = Math.min(255, px[s + 2] * k); im.data[d + 3] = a;
+        }
+        g.putImageData(im, 0, 0);
+        return cv;
+    },
+
     // Деталь: квадрат карты с серединой (cx, cy) и полуразмерами hw×hh в
     // единицах поля, повёрнутый на rot вокруг точки, смещённой от середины на
     // (pivX, pivY). box — участок поля, который занимает холст прибора.
