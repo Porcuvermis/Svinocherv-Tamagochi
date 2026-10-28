@@ -43,13 +43,38 @@ Object.assign(GreedJunkLit, {
             // освещённые части и их тени
             const sprites = {}, shadows = {};
             const light = this.lightFor(this._tilt || { x: 0, y: 0 });
-            for (const k of GreedJunk.LEVER_ORDER) {
-                this.upload(parts[k]);
-                this.draw(light);
+            const grab = () => {
                 const c = document.createElement('canvas');
                 c.width = C.w * S; c.height = C.h * S;
                 c.getContext('2d').drawImage(this.gl.canvas, C.x * S, (C.y - GreedJunk.Y0) * S, C.w * S, C.h * S, 0, 0, C.w * S, C.h * S);
+                return c;
+            };
+            // Рычаг в покое целиком, на своём месте в корпусе: с него снимается
+            // видимое у каждой части. Было: части освещались только поодиночке
+            // на пустом фоне — у пустоты высота минимальная, края тонких частей
+            // (шток, рёбра юбки) выходили крутым ложным скатом, лампа над
+            // рычагом на нём не светит, — и с первого касания рычаг темнел и
+            // холодел, а встав на место, снова «облеплялся» светом (игрок).
+            this.draw(light);
+            const rest = grab();
+            const order = GreedJunk.LEVER_ORDER;
+            for (const k of order) {
+                this.upload(parts[k]);
+                this.draw(light);
+                const c = grab();
                 sprites[k] = c;
+                // поверх одиночного света — кадр покоя там, где часть видна
+                // (её силуэт минус силуэты частей, лежащих на ней); одиночный
+                // остаётся только под соседями — там, что откроется на рывке
+                const m = document.createElement('canvas');
+                m.width = c.width; m.height = c.height;
+                const mg = m.getContext('2d');
+                mg.drawImage(parts[k][0], 0, 0);
+                mg.globalCompositeOperation = 'destination-out';
+                order.slice(order.indexOf(k) + 1).forEach(j => mg.drawImage(parts[j][0], 0, 0));
+                mg.globalCompositeOperation = 'source-in';
+                mg.drawImage(rest, 0, 0);
+                c.getContext('2d').drawImage(m, 0, 0);
                 // тень: силуэт части, чёрный, размытый несколькими сдвигами
                 const sc = document.createElement('canvas');
                 sc.width = c.width; sc.height = c.height;
@@ -60,6 +85,27 @@ Object.assign(GreedJunkLit, {
                 g.globalAlpha = 1; g.globalCompositeOperation = 'source-in';
                 g.fillStyle = PALETTE.greedJunk.hole; g.fillRect(0, 0, sc.width, sc.height);
                 shadows[k] = sc;
+            }
+            // Шар в покое — со схемой передач, как в корпусе: на рывке схема
+            // рисуется поверх плоско, по углу поворота, и в покое она шла бы
+            // скачком из рельефной и освещённой в плоскую кремовую. Цвет плоской
+            // схемы — снятый с освещённой: среднее по её точкам в кадре покоя.
+            {
+                const K = GreedJunk.leverGeom(0).K, KP = GreedJunk.knobPattern(K.x, K.y, K.r, GreedJunk.KNOB_PHI);
+                const kr = document.createElement('canvas');
+                kr.width = rest.width; kr.height = rest.height;
+                const kg = kr.getContext('2d');
+                kg.drawImage(parts.knob[0], 0, 0);
+                kg.globalCompositeOperation = 'source-in';
+                kg.drawImage(rest, 0, 0);
+                sprites.knobRest = kr;
+                const rd = rest.getContext('2d'), acc = [0, 0, 0];
+                let n = 0;
+                KP.lines.forEach(l => l.forEach(q => {
+                    const d = rd.getImageData(Math.round((q[0] - C.x) * S), Math.round((q[1] - C.y) * S), 1, 1).data;
+                    if (d[3] > 200) { acc[0] += d[0]; acc[1] += d[1]; acc[2] += d[2]; n++; }
+                }));
+                this.leverPatColor = n ? `rgb(${acc.map(v => Math.round(v / n)).join(',')})` : null;
             }
             // основной комплект — заново целиком из полных картинок: части
             // писались в него участками
