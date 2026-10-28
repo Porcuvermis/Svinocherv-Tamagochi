@@ -34,8 +34,9 @@ Object.assign(GreedJunk, {
         const x = M.bx, r = M.r, P = this.meterPath(0), Pin = this.meterPath(M.wall), Bd = this.METER_BOARD;
         let out = this.T(10, 'lacquer', this.planks(Bd.x, Bd.y, Bd.w, Bd.h, 1, 57, 'v', 0, 'painted'));
         let g = `<path d="${P}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(1.6 2)"/>`;
-        // Стекло — молочно-светлое и плотное: сквозь прозрачное просвечивали
-        // доски стойки, и пустая колба читалась покраской, а не стеклом.
+        // Стекло — плотное: сквозь прозрачное просвечивали доски стойки, и
+        // пустая колба читалась покраской, а не стеклом. Цвет — дымчатый, не
+        // молочный: белая колба перебивала барабаны (palette.js).
         g += `<path d="${P}" fill="${Mc.glass}" fill-opacity="0.72" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
             // толщина стенки: внутренний контур — тёмная тонкая линия
             `<path d="${Pin}" fill="${Mc.glassIn}" fill-opacity="0.5" stroke="${J.tin[500]}" stroke-width="0.5"/>`;

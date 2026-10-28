@@ -445,25 +445,30 @@ Object.assign(GreedJunk, {
         out += this.T(9, 'steel', this.tin(50, 296, 260, 166, 61, { boltR: 3, scratches: 0, stroke: STROKE.contour, tilt: 0.4, z: this.Z.strap }));
         out += this.doorScars();
         out += this.doorJoint();
-        // крашеное поле: синяя рамка и лучи
+        // Крашеное поле — старый выгоревший хаки, как короб рычага. Было:
+        // синяя рамка и лучи четырёх цветов — самое пёстрое на табло, вплотную
+        // к барабанам, спорило с их символами (docs/plan/30-greed-light.md).
         let face = '';
-        face += `<rect x="62" y="312" width="236" height="148" rx="2" fill="url(#gj-blue)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        const cx = 180, cy = 388;
-        const rays = [J.paint.orange, J.paint.yellow, J.paint.red, J.paint.yellow];
-        for (let i = 0; i < 12; i++) {
-            const a0 = (i / 12) * Math.PI * 2, a1 = ((i + 0.5) / 12) * Math.PI * 2;
-            const R = 170;
-            face += `<path d="M${cx} ${cy} L${f(cx + Math.cos(a0) * R)} ${f(cy + Math.sin(a0) * R)} ` +
-                `L${f(cx + Math.cos(a1) * R)} ${f(cy + Math.sin(a1) * R)} z" fill="${rays[i % 4]}" clip-path="url(#gj-face)"/>`;
-        }
-        // облезлая краска: пятна голой жести
+        const O0 = J.carOld;
+        face += `<rect x="62" y="312" width="236" height="148" rx="2" fill="url(#gj-olive)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        // сколы до голой жести — по всему полю, на скосе тоже: краска
+        // облезает там, где её задевали
         const rnd = this.rng(71);
-        for (let i = 0; i < 14; i++) {
-            const px = 66 + rnd() * 226, py = 310 + rnd() * 136;
-            if (px > 72 && px < 284 && py > 326 && py < 446) continue;   // не на окне
-            const k = 0.6 + rnd() * 0.8;
-            face += `<path d="M${f(px)} ${f(py)} q${f(4 * k)} ${f(-3 * k)} ${f(8 * k)} 0 q${f(2 * k)} ${f(4 * k)} ${f(-2 * k)} ${f(6 * k)} q${f(-5 * k)} ${f(k)} ${f(-6 * k)} ${f(-6 * k)} z" fill="${J.tin[300]}" ` +
-                `stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
+        for (let i = 0; i < 26; i++) {
+            const px = 64 + rnd() * 230, py = 314 + rnd() * 142;
+            if (px > 80 && px < 280 && py > 334 && py < 442) continue;   // не на окне
+            const k = 0.4 + rnd() * 0.9;
+            face += `<path d="M${f(px)} ${f(py)} q${f(4 * k)} ${f(-3 * k)} ${f(8 * k)} 0 q${f(2 * k)} ${f(4 * k)} ${f(-2 * k)} ${f(6 * k)} q${f(-5 * k)} ${f(k)} ${f(-6 * k)} ${f(-6 * k)} z" fill="${J.tin[500]}" ` +
+                `stroke="${O0.lo}" stroke-width="${STROKE.hairline}" clip-path="url(#gj-face)"/>`;
+        }
+        // царапины: короткие светлые черты, больше по нижнему скосу — там
+        // о него тёрлись руками
+        for (let i = 0; i < 34; i++) {
+            const low = i < 14, px = 66 + rnd() * 226, py = low ? 444 + rnd() * 14 : 314 + rnd() * 142;
+            if (px > 80 && px < 280 && py > 334 && py < 442) continue;
+            const a = (rnd() - 0.5) * 0.9, l = 4 + rnd() * 9;
+            face += `<path d="M${f(px)} ${f(py)} l${f(Math.cos(a) * l)} ${f(Math.sin(a) * l)}" stroke="${O0.scratch}" stroke-width="${STROKE.hairline}" ` +
+                `stroke-linecap="round" opacity="${f(0.35 + rnd() * 0.4)}" clip-path="url(#gj-face)"/>`;
         }
         // ---- окно утоплено в корпус ----
         // Полосатое поле — это СКОС, уходящий от листа вглубь к окну. Свет
@@ -510,8 +515,8 @@ Object.assign(GreedJunk, {
         // рамка окна барабанов — на дне скоса
         // Углы окна и проёма — почти острые: трапеции скоса сходятся в них
         // по диагоналям, а скругления разной кривизны ломали углы.
-        let win = `<rect x="78" y="332" width="204" height="112" rx="2" fill="${J.paint.blueLo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        win += `<line x1="84" y1="335" x2="276" y2="335" stroke="${J.paint.blue}" stroke-width="${STROKE.detail}"/>`;
+        let win = `<rect x="78" y="332" width="204" height="112" rx="2" fill="${J.carOld.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
+        win += `<line x1="84" y1="335" x2="276" y2="335" stroke="${J.carOld.base}" stroke-width="${STROKE.detail}"/>`;
         S.reels.forEach(r => {
             win += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         });

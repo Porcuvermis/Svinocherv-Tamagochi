@@ -34,7 +34,7 @@ Object.assign(GreedCoins, {
     BATCH_FS: [
         'precision mediump float;',
         'uniform sampler2D tA,tN,tP,tQ;uniform mat3 T;uniform vec3 L,glint;uniform float COLS,CELL,RADP,AW,AH;',
-        'uniform float diff,amb,broad,sharp,shin,glow;const float SH=.6;',
+        'uniform float diff,amb,broad,sharp,shin,glow,dim,sat;const float SH=.6;',
         'varying vec2 q;varying vec3 r0,r1,r2;varying vec4 v2,v3;varying float vao;',
         'void main(){',
         ' mat3 R=mat3(r0,r1,r2);',
@@ -61,7 +61,7 @@ Object.assign(GreedCoins, {
         '   vec3 hv=normalize(L+vec3(0.,0.,1.));',
         '   vec3 n=normalize(T*(texture2D(tQ,tc).rgb*2.-1.));',
         '   float d=max(dot(n,L),0.),c=max(dot(n,hv),0.);',
-        '   vec3 full=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
+        '   vec3 ad=mix(vec3(dot(a,vec3(.2126,.7152,.0722))),a,sat)*dim;vec3 full=ad*(amb+diff*d)+(ad*1.2+.12*dim)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
         '   outc.rgb+=kk*full*vao;outc.a=kk;',
         '  }',
         ' } else if(abs(det)>.002){',
@@ -73,7 +73,7 @@ Object.assign(GreedCoins, {
         '   if(m>0.){',
         '    vec3 n=normalize(T*(R*(texture2D(tN,tc).rgb*2.-1.)));',
         '    float d=max(dot(n,L),0.),c=max(dot(n,hv),0.);',
-        '    vec3 full=a*(amb+diff*d)+(a*1.2+.12)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
+        '    vec3 ad=mix(vec3(dot(a,vec3(.2126,.7152,.0722))),a,sat)*dim;vec3 full=ad*(amb+diff*d)+(ad*1.2+.12*dim)*broad*pow(c,8.)+mix(a,vec3(1.),.55)*sharp*pow(c,shin);',
         '    outc.rgb+=kk*m*full*vao;',
         '   }',
         '   if(m<1.&&gmul>0.){',
@@ -131,11 +131,14 @@ Object.assign(GreedCoins, {
             gl.uniform1i(gl.getUniformLocation(pr, name), i);
         });
         // постоянные uniform — один раз
-        const U = {}; ['res', 'T', 'L', 'glint', 'diff', 'amb', 'broad', 'sharp', 'shin', 'glow'].forEach(n => { U[n] = gl.getUniformLocation(pr, n); });
+        const U = {}; ['res', 'T', 'L', 'glint', 'diff', 'amb', 'broad', 'sharp', 'shin', 'glow', 'dim', 'sat'].forEach(n => { U[n] = gl.getUniformLocation(pr, n); });
         const S = this.LIGHT, l = this.v3.norm(S.L), hex = (h) => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
         gl.uniform3f(U.L, l[0], l[1], l[2]);
         const g = hex(PALETTE.greedCoin.gold.glint); gl.uniform3f(U.glint, g[0], g[1], g[2]);
         ['diff', 'amb', 'broad', 'sharp', 'shin'].forEach(k => gl.uniform1f(U[k], S[k]));
+        // Притушена только рамка окна (без res). Монеты аппарата — банка,
+        // лоток, летящая в щель — это выигрыш и кошелёк: полным золотом.
+        gl.uniform1f(U.dim, res ? 1 : S.dim); gl.uniform1f(U.sat, res ? 1 : S.sat);
         gl.uniform1f(U.glow, this.FLIP.glow);
         ['COLS', 'CELL', 'RADP', 'AW', 'AH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
         gl.uniform1f(U.COLS, this.COLS); gl.uniform1f(U.CELL, this.CELL); gl.uniform1f(U.RADP, this.RAD);

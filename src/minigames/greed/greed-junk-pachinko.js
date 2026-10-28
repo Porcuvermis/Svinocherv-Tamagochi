@@ -211,17 +211,31 @@ Object.assign(GreedJunk, {
         const ink = PALETTE.ink, f = this.f, rnd = this.rng(4402);
         const fx0 = P.x0 + P.wall, fx1 = P.x1 - P.wall, fy0 = P.y0 + P.top, fy1 = P.y1 - P.panel;
 
-        // ---- ящик: четыре доски от комода и низ-панель ----
-        let frame = `<rect x="${P.x0}" y="${P.y0}" width="${P.x1 - P.x0}" height="${P.y1 - P.y0}" rx="1.5" fill="${J.painted.lo}"/>`;
-        frame += this.planks(P.x0, P.y0, P.wall, P.y1 - P.y0, 1, 4410, 'v', 0, 'lacquer');
-        frame += this.planks(P.x1 - P.wall, P.y0, P.wall, P.y1 - P.y0, 1, 4411, 'v', 0, 'lacquer');
-        frame += this.planks(fx0, P.y0, fx1 - fx0, P.top, 1, 4412, 'h', 0, 'lacquer');
-        frame += this.planks(fx0, fy1, fx1 - fx0, P.panel, 1, 4413, 'h', 0, 'lacquer');
+        // ---- ящик: старый тёмный металл, низ-панель ----
+        // Было: доски от комода и красное поле за дугой — красный кожух
+        // рядом с красно-кремовым колесом сливался с ним в одно пятно, а поле
+        // не отделялось от короба. Решение игрока: кожух — старый тёмный
+        // металл; светится только поле за стеклом (docs/plan/30-greed-light.md).
+        const Rw = J.raw;
+        let frame = `<rect x="${P.x0}" y="${P.y0}" width="${P.x1 - P.x0}" height="${P.y1 - P.y0}" rx="1.5" fill="${Rw.lo}"/>`;
+        // швы листов: стенки, верх и низ — отдельные полосы
+        frame += `<path d="M${fx0} ${P.y0} V${P.y1} M${fx1} ${P.y0} V${P.y1} M${fx0} ${fy1} H${fx1}" fill="none" stroke="${J.tin[900]}" stroke-width="${STROKE.detail}"/>`;
+        // потёртости до светлого металла и царапины — по кромкам, где хватали
+        for (let i = 0; i < 26; i++) {
+            const onWall = i % 2, x = onWall ? (rnd() < 0.5 ? P.x0 + rnd() * P.wall : fx1 + rnd() * P.wall) : fx0 + rnd() * (fx1 - fx0);
+            const y = onWall ? P.y0 + rnd() * (P.y1 - P.y0) : (rnd() < 0.5 ? P.y0 + rnd() * P.top : fy1 + rnd() * P.panel);
+            const a = onWall ? Math.PI / 2 + (rnd() - 0.5) * 0.7 : (rnd() - 0.5) * 0.7, l = 3 + rnd() * 7;
+            frame += `<path d="M${f(x)} ${f(y)} l${f(Math.cos(a) * l)} ${f(Math.sin(a) * l)}" stroke="${Rw.hi}" stroke-width="${STROKE.hairline}" stroke-linecap="round" opacity="${f(0.3 + rnd() * 0.4)}"/>`;
+        }
+        // ржавые пятна у углов
+        [[P.x0 + 2, P.y1 - 8], [P.x1 - 6, P.y0 + 3], [P.x0 + 3, P.y0 + 30]].forEach(([x, y]) => {
+            frame += `<ellipse cx="${f(x + 2)}" cy="${f(y + 2)}" rx="${f(2 + rnd() * 2)}" ry="${f(1.5 + rnd() * 2)}" fill="${J.rust[700]}" opacity="0.55"/>`;
+        });
         frame += `<rect x="${P.x0}" y="${P.y0}" width="${P.x1 - P.x0}" height="${P.y1 - P.y0}" rx="1.5" fill="none" stroke="${ink}" stroke-width="${STROKE.contour}"/>`;
         frame += `<rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}" fill="none" stroke="${ink}" stroke-width="${STROKE.structure}"/>`;
 
-        // ---- поле: фанера, крашенная кистью; за дугой — красное ----
-        let field = `<rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}" fill="${W.red}"/>`;
+        // ---- поле: фанера, крашенная кистью; за дугой — металл кожуха ----
+        let field = `<rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}" fill="${Rw.base}"/>`;
         // кремовое — внутри дуги и ниже неё, дорожка запуска — тоже красная
         const inner = `M${f(A.cx - A.r)} ${A.cy} A${A.r} ${A.r} 0 0 1 ${f(A.cx + A.r)} ${A.cy} L${P.sep} ${A.cy} L${P.sep} ${P.drain} L${fx0} ${P.drain} L${fx0} ${A.cy} Z`;
         field += `<path d="${inner}" fill="${W.cream}"/>`;

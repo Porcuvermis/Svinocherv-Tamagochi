@@ -21,20 +21,24 @@ Object.assign(GreedJunkLit, {
         if (!gl) return null;
         const vs = `attribute vec2 aPos;
             uniform vec2 uC, uHalf, uPiv, uCanvas; uniform float uRot;
-            varying vec2 vUv;
+            uniform vec4 uLmR;     // холст прибора на карте света (deviceKey)
+            varying vec2 vUv, vLm;
             void main() {
                 vUv = aPos * 0.5 + 0.5;
                 vec2 p = aPos * uHalf - uPiv;
                 float c = cos(uRot), s = sin(uRot);
                 vec2 w = uC + uPiv + vec2(c * p.x - s * p.y, s * p.x + c * p.y);
                 gl_Position = vec4(w.x / uCanvas.x * 2.0 - 1.0, 1.0 - w.y / uCanvas.y * 2.0, 0.0, 1.0);
+                vLm = uLmR.xy + w / uCanvas * uLmR.zw;
             }`;
         // Свет — как в шейдере корпуса (greed-junk-lit.js, program): рассеянный
         // с тем же ambient, блик по материалу, тень шагами по карте высот.
         const fs = `precision mediump float;
             uniform sampler2D uA, uH, uM, uN;
             uniform vec2 uTex; uniform vec3 uL; uniform float uPxPerH, uRotF, uShade;
-            varying vec2 vUv;
+            // карта света — общая с корпусом (greed-junk-lit-key.js)
+            uniform sampler2D uKey; uniform float uKMax; uniform vec3 uWarm, uCool;
+            varying vec2 vUv, vLm;
             float hh(vec2 p) { return texture2D(uH, p).r; }
             void main() {
                 // режим тени: силуэт детали, размытый пятью отсчётами, —
@@ -82,7 +86,10 @@ Object.assign(GreedJunkLit, {
                 float nh = max(dot(n, hv), 0.0);
                 float sp = m.r * (pow(nh, mix(6.0, 90.0, m.g)) + 0.35 * m.g * pow(nh, 3.0) - 0.35 * m.g * pow(uL.z * 0.5 + 0.5, 3.0) * 0.6);
                 vec3 spc = mix(vec3(1.0), a.rgb / max(a.a, 0.01) * 1.5, m.b);
-                gl_FragColor = vec4(a.rgb * lit * sh + spc * sp * sh * a.a, a.a);
+                vec3 kq = texture2D(uKey, vLm).rgb;
+                float key = kq.r * uKMax;
+                vec3 lk = vec3(key) + kq.g * uWarm + kq.b * uCool;
+                gl_FragColor = vec4(a.rgb * lit * sh * lk + spc * sp * sh * a.a * key, a.a);
             }`;
         // uRot у вершинного и фрагментного — разной точности (highp/mediump):
         // с одним именем программа не линкуется, во фрагмент угол идёт uRotF
@@ -92,7 +99,7 @@ Object.assign(GreedJunkLit, {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
         gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
         const U = {};
-        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uShade', 'uA', 'uH', 'uM', 'uN', 'uTex', 'uL', 'uPxPerH'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
+        ['uC', 'uHalf', 'uPiv', 'uCanvas', 'uRot', 'uRotF', 'uShade', 'uA', 'uH', 'uM', 'uN', 'uTex', 'uL', 'uPxPerH', 'uLmR'].forEach(k => { U[k] = gl.getUniformLocation(pr, k); });
         gl.uniform1i(U.uA, 0); gl.uniform1i(U.uH, 1); gl.uniform1i(U.uM, 2); gl.uniform1i(U.uN, 3);
         gl.uniform1f(U.uPxPerH, GreedJunk.HMAX * this.SCALE);
         gl.uniform2f(U.uCanvas, cv.width, cv.height);
@@ -189,6 +196,8 @@ Object.assign(GreedJunkLit, {
         gl.uniform3f(U.uL, L[0] / n, L[1] / n, L[2] / n);
         gl.uniform1f(U.uShade, 0);
         gl.uniform2f(U.uCanvas, w, h);
+        // картинка летает по прибору: свет — какой посреди его холста
+        if (Q.lm) gl.uniform4f(U.uLmR, Q.lm[0] + Q.lm[2] / 2, Q.lm[1] + Q.lm[3] / 2, 0, 0);
         set.t.forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
         gl.uniform2f(U.uTex, 1 / set.w, 1 / set.h);
         gl.uniform2f(U.uC, w / 2, h / 2); gl.uniform2f(U.uHalf, w / 2, h / 2); gl.uniform2f(U.uPiv, 0, 0);
@@ -198,6 +207,7 @@ Object.assign(GreedJunkLit, {
         gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.uniform2f(U.uCanvas, Q.cv.width, Q.cv.height);
+        if (Q.lm) gl.uniform4f(U.uLmR, ...Q.lm);
         // буфер — снизу вверх и с умноженной прозрачностью: перевернуть и
         // разделить, 2D-холст ждёт обычную
         const cv = document.createElement('canvas'); cv.width = w; cv.height = h;

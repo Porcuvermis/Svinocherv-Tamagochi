@@ -341,6 +341,7 @@ Object.assign(GreedJunkLit, {
     wheelGL(dm, pm, bm) {
         const Q = this.deviceGL(this.wheelCv);
         if (!Q) return false;
+        if (this.deviceKey) this.deviceKey(Q, this.wheelBox());
         Object.assign(Q, { disc: this.deviceSet(Q, dm), ptr: this.deviceSet(Q, pm), brk: this.deviceSet(Q, [bm]) });
         this._wgl = Q;
         return true;

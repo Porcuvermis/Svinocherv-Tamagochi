@@ -60,6 +60,8 @@ const GreedJunkLit = {
         GreedJunk.pass = 'baked';
         this.texture(gl, strip, 3);
         this.texture(gl, mask, 4);
+        // карта света — unit 6, один раз: она неподвижна
+        if (this.keyBind) this.keyBind(gl, this.prog, 6);
         // барабаны стоят на случайных ячейках
         const n = GreedJunk.REEL_STRIP.length;
         // барабаны: s — смещение ленты (единицы поля), v — скорость
@@ -168,6 +170,10 @@ const GreedJunkLit = {
         // направление НА источник.
         const fs = `precision mediump float;
             uniform sampler2D uA, uH, uM, uS, uK, uN;
+            // карта света (greed-junk-lit-key.js): ключ, тёплый, холодный
+            uniform sampler2D uKey;
+            uniform float uKMax;
+            uniform vec3 uWarm, uCool;
             // барабаны: окно (x, y, w, h в uv поля), смещение ленты в
             // единицах поля; лента — uLen единиц по кругу, радиус барабана
             uniform vec4 uReel0, uReel1, uReel2;
@@ -255,7 +261,12 @@ const GreedJunkLit = {
                 float hu0 = h0 * uHMap.y - uHMap.x;      // высота в единицах сцены
                 float depth = mix(0.72, 1.0, clamp((hu0 + 1.6) / 12.0, 0.0, 1.0));
 
-                vec3 col = a.rgb * lit * sh * depth + spc * sp * sh * a.a;
+                // свет места: полутень корпуса, лампы барабанов, прожектор
+                // рычага (greed-junk-lit-key.js); блик гаснет вместе с ключом
+                vec3 kq = texture2D(uKey, vUv).rgb;
+                float key = kq.r * uKMax;
+                vec3 lk = vec3(key) + kq.g * uWarm + kq.b * uCool;
+                vec3 col = a.rgb * lit * sh * depth * lk + spc * sp * sh * a.a * key;
                 gl_FragColor = vec4(col, a.a);
             }`;
         return this.link(gl, vs, fs);

@@ -137,6 +137,7 @@ const GreedJunk = {
             lin('gj-tin', J.tin[300], J.tin[700], 0.6, 1) +
             lin('gj-tin-dark', J.tin[500], J.tin[700], 0.6, 1) +
             lin('gj-blue', J.paint.blue, J.paint.blueLo, 0.3, 1) +
+            lin('gj-olive', J.carOld.hi, J.carOld.base, 0.3, 1) +
             // цвета побежалости у отпиленного края: от соломенного к синему
             `<linearGradient id="gj-temper" x1="1" y1="0" x2="0" y2="0">` +
             `<stop offset="0" stop-color="${J.paint.yellow}"/><stop offset="0.5" stop-color="${J.rust[300]}"/>` +

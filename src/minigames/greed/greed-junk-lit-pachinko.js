@@ -356,7 +356,7 @@ Object.assign(GreedJunkLit, {
             const box = (pass) => {
                 G.pass = pass;
                 const p = G.pachParts();
-                return svg(pass, G.T(12, 'lacquer', p.frame) + G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain) +
+                return svg(pass, G.T(12, 'raw', p.frame) + G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain) +
                     G.T(6.5, 'steel', p.steel) + G.T(6, 'paint', p.cups) + G.T(2 + P.nailUp, 'steel', p.nails) +
                     G.T(13, 'steel', p.corners) + G.T(13, 'plastic', p.button));
             };
@@ -366,6 +366,7 @@ Object.assign(GreedJunkLit, {
             G.pass = 'baked';
             const Q = this.deviceGL(this.pachCv);
             if (!Q) throw new Error('нет WebGL');
+            if (this.deviceKey) this.deviceKey(Q, G.pachRect(this.pachBox()));
             Q.box = this.deviceSet(Q, maps);
             this._pgl = Q;
             await this.pachBallMaps(Q);
