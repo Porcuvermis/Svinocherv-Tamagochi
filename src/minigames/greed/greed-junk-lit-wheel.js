@@ -49,6 +49,23 @@ Object.assign(GreedJunkLit, {
         // переносом холста (wheelShadowAt); сам диск и язычок — своим
         // шейдером поверх
         this.wheelShadowCv = layer(this.wheelShadowBox());
+        // Пачинко стоит — тень колеса двумя слоями. На щит — под коробом
+        // (где короб, её закрывает сам короб). На короб — свой слой поверх
+        // него, обрезанный по коробу, с малым зазором: короб ближе к колесу,
+        // чем щит. Было: одна тень с зазором до щита ложилась и на короб.
+        if (this._pach && this.pachShadowCv && this.pachShadowCv.near) {
+            const P = G.PACH, first = this.pachShadowCv.near.parentNode;
+            if (first && first.parentNode === wrap) wrap.insertBefore(this.wheelShadowCv, first);
+            const clip = document.createElement('div');
+            clip.style.cssText = `position:absolute;left:${P.x0 / G.W * 100}%;top:${P.y0 / G.H * 100}%;` +
+                `width:${(P.x1 - P.x0) / G.W * 100}%;height:${(P.y1 - P.y0) / G.H * 100}%;overflow:hidden;z-index:1;pointer-events:none`;
+            const B = this.wheelShadowBox(), cv = layer(B);
+            cv.style.left = `${(B.x - P.x0) / (P.x1 - P.x0) * 100}%`; cv.style.top = `${(B.y - P.y0) / (P.y1 - P.y0) * 100}%`;
+            cv.style.width = `${B.w / (P.x1 - P.x0) * 100}%`; cv.style.height = `${B.h / (P.y1 - P.y0) * 100}%`;
+            clip.appendChild(cv);
+            wrap.appendChild(clip);
+            this.wheelShadowBoxCv = cv;
+        }
         this.wheelCv = layer(this.wheelBox());
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this.wheelSprites();
@@ -266,12 +283,16 @@ Object.assign(GreedJunkLit, {
     // и при наклоне телефона свет на колесе ходил, а тень стояла.
     wheelShadow() {
         const B = this.wheelShadowBox(), S = this.SCALE, W = GreedJunk.SLOTS.wheel, R = GreedJunk.WHEEL.rEdge, P = this.WHEEL_SHADOW;
-        const c = this.wheelShadowCv.getContext('2d');
-        c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
-        c.filter = 'blur(' + (P.blur * S) + 'px)';
-        c.globalAlpha = P.a; c.fillStyle = PALETTE.greedJunk.hole;
-        c.beginPath(); c.arc(W.cx, W.cy, R, 0, Math.PI * 2); c.fill();
-        c.filter = 'none'; c.globalAlpha = 1;
+        [this.wheelShadowCv, this.wheelShadowBoxCv].forEach((cv, i) => {
+            if (!cv) return;
+            const c = cv.getContext('2d');
+            c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
+            // на коробе — ближе, значит чётче
+            c.filter = 'blur(' + ((i ? P.blur * 0.5 : P.blur) * S) + 'px)';
+            c.globalAlpha = P.a; c.fillStyle = PALETTE.greedJunk.hole;
+            c.beginPath(); c.arc(W.cx, W.cy, R, 0, Math.PI * 2); c.fill();
+            c.filter = 'none'; c.globalAlpha = 1;
+        });
         this.wheelShadowAt(this.lightFor((this._wheel && this._wheel.lt) || { x: 0, y: 0 }));
     },
 
@@ -282,15 +303,18 @@ Object.assign(GreedJunkLit, {
     // Зазор 13: колесо стоит на ступице далеко от щита. Было 7 — тень
     // полоской в 5 единиц, колесо казалось приклеенным к доскам. Чем дальше
     // от щита, тем шире полутень — blur вырос вместе с зазором.
-    WHEEL_SHADOW: { gap: 13, max: 18, blur: 4, a: 0.42 },
+    // boxGap — до короба пачинко: он стоит почти вплотную за колесом
+    WHEEL_SHADOW: { gap: 13, max: 18, blur: 4, a: 0.42, boxGap: 3 },
     wheelShadowBox() { return this.wheelBox(this.WHEEL_SHADOW.blur * 3); },
     wheelShadowAt(L) {
-        const cv = this.wheelShadowCv, P = this.WHEEL_SHADOW, B = this.wheelShadowBox();
-        if (!cv) return;
-        let dx = -L[0] / L[2] * P.gap, dy = -L[1] / L[2] * P.gap;
-        const d = Math.hypot(dx, dy);
-        if (d > P.max) { dx *= P.max / d; dy *= P.max / d; }
-        cv.style.transform = `translate(${(dx / B.w * 100).toFixed(2)}%, ${(dy / B.h * 100).toFixed(2)}%)`;
+        const P = this.WHEEL_SHADOW, B = this.wheelShadowBox();
+        [[this.wheelShadowCv, P.gap], [this.wheelShadowBoxCv, P.boxGap]].forEach(([cv, gap]) => {
+            if (!cv) return;
+            let dx = -L[0] / L[2] * gap, dy = -L[1] / L[2] * gap;
+            const d = Math.hypot(dx, dy), max = P.max * gap / P.gap;
+            if (d > max) { dx *= max / d; dy *= max / d; }
+            cv.style.transform = `translate(${(dx / B.w * 100).toFixed(2)}%, ${(dy / B.h * 100).toFixed(2)}%)`;
+        });
     },
 
     // высота резинки язычка над краской диска: чуть выше шляпок гвоздей
