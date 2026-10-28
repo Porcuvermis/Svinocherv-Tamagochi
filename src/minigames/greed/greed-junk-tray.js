@@ -28,7 +28,6 @@ Object.assign(GreedJunkLit, {
         cv.style.cssText = `position:absolute;${G.css(G.trayRect(B))}` +
             `z-index:1;pointer-events:none;background:none;clip-path:polygon(${poly.map(q => px(q[0]) + ' ' + py(q[1])).join(',')})`;
         wrap.appendChild(cv);
-        if (this.keyOverlay) this.keyOverlay(cv, 'tray');
         this.trayCv = cv;
         this.tray = { coins: [], falling: [], queue: 0, nextAt: 0, h: new Array(14).fill(0), dirty: true };
     },

@@ -54,7 +54,7 @@ Object.assign(GreedJunk, {
             const g = (d) => `rgb(${v(d)},${v(d)},${v(d)})`;
             return `<style>` +
                 `*{fill:${g(0)}!important;stroke:${g(0)}!important}` +
-                `.bump,.bump *{fill:${g(0.06)}!important;stroke:${g(0.06)}!important}` +
+                `.bump,.bump *{fill:${g(0.06)}!important;stroke:${g(0.06)}!important}.bump{--bmp:0.06}` +
                 `.pit,.pit *{fill:${g(-0.12)}!important;stroke:${g(-0.12)}!important}` +
                 `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
                 `.fx,.hl,.nh{display:none}</style>`;
@@ -85,30 +85,40 @@ Object.assign(GreedJunk, {
     // ---------- ПРОФИЛЬ ВЫСОТ ----------
     // Ровная площадка на всю деталь годится доске и пластине, но круглое
     // так выходит плоским: пруток крюка, кабель, шляпка болта не ловили ни
-    // света, ни блика. Профиль рисуется ТОЛЬКО в проходе высот (класс hpass)
-    // стопкой слоёв, каждый выше предыдущего: купол — кругами, цилиндр —
-    // обводками того же пути всё уже. rise — подъём вершины в единицах.
+    // света, ни блика. Профиль рисуется ТОЛЬКО в проходе высот (класс hpass).
+    // Круглое — ОДНОЙ плавной формой, а не стопкой плоских слоёв: стопка —
+    // это уступы по определению, и свет рисовал на каждом полоску (кольца на
+    // шаре рычага, полосы на колпаках колбы). Было: купол — кругами, валик —
+    // обводками всё уже, и при жалобах слоёв становилось больше — уступы
+    // мельчали, но оставались (игрок: «круглое — круглым, плоское — плоским»).
+    // rise — подъём вершины в единицах.
     dh(units) { return (units / this.HMAX).toFixed(3); },
-
-    // Круглое сечение (высота √(1−x²)) в n ступенях — для крупных
-    // выпуклых деталей, где четырёх ступеней мало (барабан окна).
-    profile(n) {
-        const out = [];
-        for (let i = 0; i < n; i++) {
-            const k = 1 - i / n;
-            out.push([k, Math.sqrt(Math.max(0, 1 - k * k)) * 0.85 + 0.15]);
-        }
-        return out;
+    _gid: 0,
+    gid(p) { return `gj${p}${++this._gid}`; },
+    // Цвет высоты прохода height для точки на d единиц выше детали — тем же
+    // счётом, что в passStyle, но для градиента: его узлы наследуют --h
+    // детали, потому что лежат внутри неё.
+    hcol(d) {
+        const v = `calc((var(--h,${this.hv(0).toFixed(3)}) + var(--dh,0) + var(--bmp,0) + ${d}) * 255)`;
+        return `rgb(${v},${v},${v})`;
     },
 
+    // Купол (шляпка, шар, колпачок): высота по радиусу — четверть косинуса,
+    // радиальным градиентом. Косинус, а не дуга круга: у дуги на краю наклон
+    // вертикальный, и 8-битная карта передаёт его рваными уровнями.
     domeH(cx, cy, r, rise) {
         rise = rise == null ? r * 0.8 : rise;
-        const f = this.f;
-        // крупный купол (колпачок кнопки) четырьмя ступенями выходил мишенью
-        // из колец — ему ступеней больше
-        const steps = r > 4 ? this.profile(Math.round(r * 1.6)) : [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]];
-        return '<g class="hpass">' + steps.map(([k, u]) =>
-            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r * k)}" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
+        // Узлы — чаще шага карты: между узлами высота линейна. Место узла —
+        // точно (toFixed(4)), не через f(): f() оставляет десятые, и узлы
+        // слипались в десять ступеней — кольца на шаре, полосы на колбе.
+        const f = this.f, id = this.gid('d'), n = Math.max(12, Math.ceil(r * 4));
+        let st = '';
+        for (let i = 0; i <= n; i++) {
+            const t = i / n;
+            st += `<stop offset="${t.toFixed(4)}" style="stop-color:${this.hcol(this.dh(rise * Math.cos(t * Math.PI / 2)))}"/>`;
+        }
+        return `<g class="hpass"><defs><radialGradient id="${id}" cx="${f(cx)}" cy="${f(cy)}" r="${f(r)}" gradientUnits="userSpaceOnUse">${st}</radialGradient></defs>` +
+            `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r)}" style="fill:url(#${id})!important;stroke:none!important"/></g>`;
     },
 
     // Цилиндр с осью по вертикали — высота одной плавной кривой поперёк:
@@ -124,26 +134,51 @@ Object.assign(GreedJunk, {
         // скачками уровней, и у края всё равно шли полоски. У косинуса наклон
         // конечный — край скруглён так же, но гладко. Узлы градиента — не
         // ступени: между ними высота меняется непрерывно.
-        // запомнить: нормаль цилиндра шейдер запишет точной, по формуле
-        // (GreedJunkLit.cylNormals) — карта высот 8-битная, и нормаль по её
-        // разностям на плавном скате прыгала полосками
-        (this.CYLS = this.CYLS || new Map()).set(id, { x0, y, w, h, base, rise });
-        const f = this.f, n = 48;
+        const f = this.f, n = Math.max(24, Math.ceil(w * 4));
         let st = '';
         for (let i = 0; i <= n; i++) {
             const t = i / n, u = Math.cos((2 * t - 1) * Math.PI / 2);
             const c = (this.hv(base + rise * u) * 255).toFixed(1);
-            st += `<stop offset="${f(t)}" stop-color="rgb(${c},${c},${c})"/>`;
+            st += `<stop offset="${t.toFixed(4)}" stop-color="rgb(${c},${c},${c})"/>`;
         }
         return `<g class="hpass"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">${st}</linearGradient></defs>` +
             `<rect x="${f(x0)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" style="fill:url(#${id})!important;stroke:none!important"/></g>`;
     },
 
+    // Валик вдоль любого пути (кабель, шток, ребро): та же полоса, только
+    // уже, размытая и обрезанная по полной ширине. Размытие даёт одну
+    // плавную кривую поперёк — вершина по оси, к краям спадает до детали.
+    // Ядро 0.6 ширины, размытие 0.18 ширины: вершина доходит до 0.9
+    // подъёма (отсюда деление), край — около 0.13. Области маски и размытия
+    // — по рамке пути (pathBox): у прямой линии рамка нулевой толщины, и
+    // область «в долях рамки» вырезала бы всё.
     rodH(d, width, rise) {
         rise = rise == null ? width * 0.5 : rise;
-        return '<g class="hpass">' + [[1, 0.15], [0.78, 0.6], [0.52, 0.85], [0.26, 1]].map(([k, u]) =>
-            `<path d="${d}" fill="none" stroke="${PALETTE.ink}" stroke-width="${(width * k).toFixed(2)}" stroke-linecap="round" ` +
-            `stroke-linejoin="round" style="--dh:${this.dh(rise * u)}"/>`).join('') + '</g>';
+        const f = this.f, m = this.gid('m'), b = this.gid('b'), B = this.pathBox(d), pad = width * 1.5;
+        const reg = `x="${f(B.x - pad)}" y="${f(B.y - pad)}" width="${f(B.w + pad * 2)}" height="${f(B.h + pad * 2)}"`;
+        const line = (w, extra) => `<path d="${d}" fill="none" stroke-width="${f(w)}" stroke-linecap="round" stroke-linejoin="round" ${extra}/>`;
+        return `<g class="hpass"><defs>` +
+            `<mask id="${m}" maskUnits="userSpaceOnUse" ${reg}>${line(width, 'style="stroke:#fff!important;fill:none!important"')}</mask>` +
+            `<filter id="${b}" filterUnits="userSpaceOnUse" ${reg}><feGaussianBlur stdDeviation="${f(width * 0.18)}"/></filter></defs>` +
+            `<g mask="url(#${m})">${line(width * 0.6, `stroke="${PALETTE.ink}" filter="url(#${b})" style="--dh:${this.dh(rise / 0.9)}"`)}</g></g>`;
+    },
+    // Рамка пути в его же координатах — браузер считает сам (getBBox).
+    pathBox(d) {
+        const C = this._pbox || (this._pbox = new Map());
+        if (C.has(d)) return C.get(d);
+        if (!this._pboxSvg) {
+            const ns = 'http://www.w3.org/2000/svg', sv = document.createElementNS(ns, 'svg');
+            sv.setAttribute('style', 'position:absolute;width:0;height:0;visibility:hidden');
+            sv.appendChild(document.createElementNS(ns, 'path'));
+            document.body.appendChild(sv);
+            this._pboxSvg = sv;
+        }
+        const pth = this._pboxSvg.firstChild;
+        pth.setAttribute('d', d);
+        let r;
+        try { const q = pth.getBBox(); r = { x: q.x, y: q.y, w: q.width, h: q.height }; } catch (e) { r = { x: -1e3, y: -1e3, w: 2e3, h: 2e3 }; }
+        C.set(d, r);
+        return r;
     },
 
     // Цвет посередине градиента — им градиент заменяется в проходе albedo.

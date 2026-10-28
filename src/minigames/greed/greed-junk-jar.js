@@ -50,7 +50,6 @@ Object.assign(GreedJunkLit, {
         cv.width = B.w * S; cv.height = B.h * S;
         cv.style.cssText = `position:absolute;${G.css(this.jarRect(B))}z-index:1;pointer-events:none;background:none`;
         wrap.appendChild(cv);
-        if (this.keyOverlay) this.keyOverlay(cv, 'jar');
         this.jarCv = cv;
         this._jar = { shown: null, val: null, from: 0, to: 0, at: 0 };
     },

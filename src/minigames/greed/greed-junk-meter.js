@@ -56,7 +56,7 @@ Object.assign(GreedJunk, {
         const ear = (y) => this.T(4, 'steel', `<rect x="${f(x - r - 11)}" y="${f(y - 2.8)}" width="12" height="5.6" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             this.bolt(x - r - 6.5, y, 1.5));
         // Объём того, что надето на колбу: цилиндр той же оси, шире стекла
-        // (cylG — одной кривой, без ступеней). rise — над стенкой.
+        // (cylG — одной кривой). rise — над стенкой.
         const sleeveH = (x0, y, w, h, rise, id) => this.cylG(id, x0, y, w, h, 6, rise);
         // Колпаки — стальные стаканы, надетые на концы колбы. Было: латунный
         // плоский прямоугольник с двумя поперечными рисками — в полутени

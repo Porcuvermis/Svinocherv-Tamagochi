@@ -225,10 +225,8 @@ Object.assign(GreedJunkLit, {
     // склон с подъёмом в радиус выходил вдвое пологим, шар плоским.
     async pachBallMaps(Q) {
         const G = GreedJunk, J = PALETTE.greedJunk, S = this.SCALE * 2, r = G.PACH_PHYS.r, R = r + 1, n = Math.ceil(R * 2 * S);
-        // купол в 12 ступеней: у domeH для малого радиуса их 4 — на шарике
-        // крупным планом они читались кольцами
-        const dome = '<g class="hpass">' + G.profile(12).map(([k, u]) =>
-            `<circle r="${(r * k).toFixed(3)}" style="--dh:${G.dh(r * 2 * u)}"/>`).join('') + '</g>';
+        // купол — одной плавной формой (domeH), подъём два радиуса
+        const dome = G.domeH(0, 0, r, r * 2);
         const svg = (pass) => {
             G.pass = pass;
             return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` + G.passStyle(pass) +
