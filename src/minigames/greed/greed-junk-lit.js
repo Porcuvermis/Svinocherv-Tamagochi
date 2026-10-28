@@ -878,19 +878,22 @@ const GreedJunkLit = {
         box.id = 'gj-preview';
         box.style.cssText = 'position:absolute;inset:0;z-index:100001;display:flex;align-items:center;' +
             'justify-content:center;background:' + PALETTE.greedJunk.hole;
-        // тап по полке с лампами — мигание выигрыша, по рычагу — рывок,
-        // в любом другом месте — закрыть
+        // Тап по полке с лампами — мигание выигрыша; рычаг, колесо и пачинко
+        // — своими событиями. Мимо — ничего: превью закрывает только свой
+        // крестик. Было: любой тап мимо закрывал превью и выкидывал в комнату
+        // (игрок промахивался мимо колеса или кнопки пачинко).
         box.addEventListener('click', (e) => {
             const r = (this.live && this.live.getBoundingClientRect()) || { left: 0, top: 0, width: 1, height: 1 };
             const y = (e.clientY - r.top) / r.height * GreedJunk.H;
-            const x = (e.clientX - r.left) / r.width * GreedJunk.W;
-            const Wh = GreedJunk.SLOTS.wheel, onWheel = this._wheel && Math.hypot(x - Wh.cx, y - Wh.cy) < GreedJunk.WHEEL.rEdge;
             if (y > 440 && y < 520) this.blink();
-            else if (x > 300 && y > 262 && y < 400) { /* рычаг — своими событиями */ }
-            else if (onWheel) { /* колесо — своими событиями */ }
-            else if (this._pach && x > GreedJunk.PACH.x0 && x < GreedJunk.PACH.x1 && y > GreedJunk.PACH.y0 && y < GreedJunk.PACH.y1) { /* пачинко — своими событиями */ }
-            else box.remove();
         });
+        // крестик — рисунок, без слов; цвета из палитры
+        const J = PALETTE.greedJunk, x = document.createElement('div');
+        x.style.cssText = 'position:absolute;right:10px;top:10px;width:44px;height:44px;z-index:2;cursor:pointer';
+        x.innerHTML = `<svg viewBox="0 0 44 44" width="44" height="44"><circle cx="22" cy="22" r="19" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="3"/>` +
+            `<path d="M14 14 L30 30 M30 14 L14 30" stroke="${J.tin[100]}" stroke-width="4.5" stroke-linecap="round"/></svg>`;
+        x.addEventListener('click', (e) => { e.stopPropagation(); box.remove(); });
+        box.appendChild(x);
         host.appendChild(box);
         return this.mount(box);
     },
