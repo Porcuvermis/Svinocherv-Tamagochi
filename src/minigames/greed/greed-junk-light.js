@@ -49,7 +49,16 @@ Object.assign(GreedJunk, {
     passStyle(pass) {
         if (pass === 'baked') return `<style>.hpass{display:none}</style>`;
         if (pass === 'albedo') return `<style>.fx,.hl,.hpass{display:none}</style>`;
-        if (pass === 'height') {
+        // heightmax — служебный, для проверки (tools/greed-sink.js): в каждой
+        // точке — самая высокая из всех деталей, а не верхняя по порядку
+        // рисования (смешение lighten = максимум). Где он выше обычного прохода
+        // высот, верхняя деталь лежит НИЖЕ того, что под ней: выходит канава
+        // по её контуру, свет даёт тень на освещённой стороне и светлую
+        // кромку на другой — «вдавлено», «ореол» (колба на доске, шар рычага).
+        // Дыры (.pit) и нарочно утопленное (.sunk) — как в обычном проходе.
+        // sunk ставится на обёртку детали целиком (снаружи T): внутри обёртки,
+        // смешанной максимумом, утопленное пропадало бы.
+        if (pass === 'height' || pass === 'heightmax') {
             const v = (d) => `calc((var(--h,${this.hv(0).toFixed(3)}) + var(--dh,0) + ${d}) * 255)`;
             const g = (d) => `rgb(${v(d)},${v(d)},${v(d)})`;
             return `<style>` +
@@ -57,7 +66,9 @@ Object.assign(GreedJunk, {
                 `.bump,.bump *{fill:${g(0.06)}!important;stroke:${g(0.06)}!important}.bump{--bmp:0.06}` +
                 `.pit,.pit *{fill:${g(-0.12)}!important;stroke:${g(-0.12)}!important}` +
                 `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}` +
-                `.fx,.hl,.nh{display:none}</style>`;
+                `.fx,.hl,.nh{display:none}` +
+                (pass === 'heightmax' ? `*{mix-blend-mode:lighten}.pit,.pit *,.sunk,.sunk *{mix-blend-mode:normal}` : '') +
+                `</style>`;
         }
         // Маска барабанов: белым — открытая поверхность ленты (класс drum),
         // чёрным — всё, что лежит поверх (нитка, узелки, окантовка). Блики

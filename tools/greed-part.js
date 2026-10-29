@@ -17,6 +17,12 @@ const fs = require('fs');
 //   d-lever-*        рывок по кадрам (только если деталь рядом с рычагом)
 //   e-diff           разность с прошлой версией (если BASE_PORT задан) —
 //                    белое там, где изменилось; ореол виден сразу
+//   g-term-*         свет корпуса по слагаемым (шейдер с отладочным выводом,
+//                    GreedJunkLit.DBG_TERMS): normal — направление поверхности,
+//                    shade — тень основного света, lit — рассеянный, lamps —
+//                    источники, spec — блики, depth, height, plane — уклон для
+//                    тени, noshade — цвет без теней. Кайма на одном из них —
+//                    подсказка, откуда она (docs/bench/greed-audit.md, разд. 8)
 //   f-map-*          карты корпуса на этом участке: цвет, высота (растянута
 //                    по контрасту), материал — что видит шейдер. Только
 //                    корпус: колесо, короб пачинко и живой слой — не в них.
@@ -156,6 +162,21 @@ const PARTS = {
         }, [a, b]);
         fs.writeFileSync(out + 'e-diff.png', Buffer.from(png, 'base64'));
     }
+
+    // свет корпуса по слагаемым — живой слой и холст рычага убраны: только корпус
+    await page.evaluate(() => { GreedJunkLit.live.style.visibility = 'hidden'; });
+    for (const t of Object.keys(await page.evaluate(() => GreedJunkLit.DBG_TERMS))) {
+        await page.evaluate((t) => {
+            const L = GreedJunkLit, gl = L.gl;
+            L._dbgP = L._dbgP || {};
+            if (!L._dbgP[t]) { L._dbgP[t] = L.program(gl, L.DBG_TERMS[t]); L.keyBind(gl, L._dbgP[t], 6); }
+            L._prog0 = L._prog0 || L.prog; L.prog = L._dbgP[t];
+            L.draw(L.lightFor({ x: 0, y: 0 }));
+        }, t);
+        await page.waitForTimeout(60);
+        await shot('g-term-' + t);
+    }
+    await page.evaluate(() => { const L = GreedJunkLit; L.prog = L._prog0; L.draw(L.lightFor({ x: 0, y: 0 })); L.live.style.visibility = ''; });
 
     const maps = await page.evaluate(async (b) => {
         const C = { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] }, S = 6, G = GreedJunk, out = {};

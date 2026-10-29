@@ -511,7 +511,8 @@ Object.assign(GreedJunk, {
         });
         // кромка листа над скосом ловит свет
         face += `<path d="M66 ${O[3] - 6} L66 318 Q66 314 70 314 L294 314" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>`;
-        out += this.T(9, 'paint', face);
+        // поле со скосом к окну — утоплено нарочно (sunk, tools/greed-sink.js)
+        out += '<g class="sunk">' + this.T(9, 'paint', face) + '</g>';
         // рамка окна барабанов — на дне скоса
         // Углы окна и проёма — почти острые: трапеции скоса сходятся в них
         // по диагоналям, а скругления разной кривизны ломали углы.
@@ -520,8 +521,9 @@ Object.assign(GreedJunk, {
         S.reels.forEach(r => {
             win += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="5" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
         });
-        out += this.T(-10, 'paint', win);
-        out += this.reelWindows();
+        // окно с барабанами утоплено нарочно — sunk: проверка «деталь ниже
+        // того, что под ней» (tools/greed-sink.js) его не считает
+        out += '<g class="sunk">' + this.T(-10, 'paint', win) + this.reelWindows() + '</g>';
         out += this.shelfTop();
         out += this.buttonPanel();
         // колба насыщения — поверх стойки, полки и нижнего ящика

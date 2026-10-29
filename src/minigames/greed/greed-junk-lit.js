@@ -163,12 +163,17 @@ const GreedJunkLit = {
     },
     heightDirty(ht) { (this._nDirty = this._nDirty || new Set()).add(ht); },
 
-    program(gl) {
+    // dbg — отладочный вывод одного слагаемого вместо цвета (ревизия
+    // детали, tools/greed-part.js, docs/bench/greed-audit.md): номера —
+    // DBG_TERMS. Игра собирает программу без него.
+    DBG_TERMS: { normal: 1, shade: 2, lit: 3, lamps: 4, spec: 5, depth: 6, height: 7, plane: 8, noshade: 9 },
+    program(gl, dbg) {
         const vs = `attribute vec2 aPos; varying vec2 vUv;
             void main() { vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); gl_Position = vec4(aPos, 0.0, 1.0); }`;
         // Координаты экранные: x вправо, y ВНИЗ, z к зрителю. Свет uL —
         // направление НА источник.
         const fs = `precision mediump float;
+            ${dbg ? '#define DBG ' + dbg : ''}
             uniform sampler2D uA, uH, uM, uS, uK, uN;
             // карта света (greed-junk-lit-key.js): ключ, тёплый, холодный
             uniform sampler2D uKey;
@@ -279,6 +284,29 @@ const GreedJunkLit = {
                 float sh2 = 1.0;
                 vec3 col = a.rgb * (lit * sh * lk + ld * sh2) * depth + spc * sp * sh * a.a * key + spc * ls * m.r * sh2 * a.a;
                 gl_FragColor = vec4(col, a.a);
+                #ifdef DBG
+                vec3 dv = col;
+                #if DBG == 1
+                dv = vec3(n.xy * 0.5 + 0.5, n.z);
+                #elif DBG == 2
+                dv = vec3(sh);
+                #elif DBG == 3
+                dv = vec3(lit * 0.5);
+                #elif DBG == 4
+                dv = ld * 0.35;
+                #elif DBG == 5
+                dv = spc * sp * sh * key + spc * ls * m.r;
+                #elif DBG == 6
+                dv = vec3(depth);
+                #elif DBG == 7
+                dv = vec3(h0);
+                #elif DBG == 8
+                dv = vec3(0.5 + gx * 40.0, 0.5 + gy * 40.0, plane * 20.0);
+                #elif DBG == 9
+                dv = a.rgb * (lit * lk + ld) * depth;
+                #endif
+                gl_FragColor = vec4(dv * a.a, a.a);
+                #endif
             }`;
         return this.link(gl, vs, fs);
     },

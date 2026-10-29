@@ -21,6 +21,13 @@ Object.assign(GreedJunk, {
     // Во всю ширину от края видимой зоны: узкая планка рядом со стойкой
     // табло читалась второй доской встык.
     METER_BOARD: { x: 22, y: 290, w: 58, h: 174 },
+    // Высоты колбы (единицы карты высот; потолок — 20). Правило: всё, что
+    // лежит на чём-то, выше того, на чём лежит (проверка — tools/greed-sink.js).
+    // Планка — 10; ушки и гайки — на ней; стекло — на ней, выпуклостью до
+    // 18; стаканы и хомут надеты на стекло — выше его, до 19,5 и 19.
+    // Было (28.10): стекло на 2 под планкой на 10 — колба лежала в канаве,
+    // свет рисовал по её краям тень и светлую кромку («вдавлено»).
+    METER_H: { board: 10, ear: 10.5, nut: 10.5, nutRise: 3, glass: 10.5, glassRise: 7.5, cap: 11, capRise: 8.5, clampRise: 8 },
 
     // Контур стекла: прямой цилиндр, концы под колпаками. inset — внутрь на
     // толщину стенки: по нему налита жидкость.
@@ -32,7 +39,8 @@ Object.assign(GreedJunk, {
     meterGlass() {
         const J = PALETTE.greedJunk, M = this.METER, Mc = J.reel.meter, f = this.f, ink = PALETTE.ink;
         const x = M.bx, r = M.r, P = this.meterPath(0), Pin = this.meterPath(M.wall), Bd = this.METER_BOARD;
-        let out = this.T(10, 'lacquer', this.planks(Bd.x, Bd.y, Bd.w, Bd.h, 1, 57, 'v', 0, 'painted'));
+        const MH = this.METER_H;
+        let out = this.T(MH.board, 'lacquer', this.planks(Bd.x, Bd.y, Bd.w, Bd.h, 1, 57, 'v', 0, 'painted'));
         let g = `<path d="${P}" class="fx" fill="${J.hole}" opacity="0.4" transform="translate(1.6 2)"/>`;
         // Стекло — плотное: сквозь прозрачное просвечивали доски стойки, и
         // пустая колба читалась покраской, а не стеклом. Цвет — дымчатый, не
@@ -44,24 +52,16 @@ Object.assign(GreedJunk, {
         // обводкой стекла: обводка снаружи радиуса оставалась на высоте
         // стенки, и между колпаком и стеклом выходила канавка — её склон со
         // стороны стекла горел светлой полосой. Концы — под колпаками.
-        g += this.cylG('gj-meter-cyl', x - r - STROKE.structure / 2, M.y1 - 1, r * 2 + STROKE.structure, M.y0 - M.y1 + 2, 2, 10);
-        // Стекло — ниже колпаков и хомута: они надеты на него снаружи. Было:
-        // стекло на 13 с выпуклостью 12.6 упиралось в потолок карты высот
-        // (20), а колпаки лежали плоско на 14 — колба выходила ближе к нам,
-        // чем то, что её держит (игрок: «крепления глубже колбы»).
-        out += this.T(2, 'glass', g);
-        // ушко к корпусу: жестяная пластина влево, саморез в стойку; у стены,
-        // ниже колбы — колбу держит то, что на неё надето, ушко лишь прижато
-        const ear = (y) => this.T(1, 'steel', `<rect x="${f(x - r - 11)}" y="${f(y - 2.8)}" width="12" height="5.6" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
+        g += this.cylG('gj-meter-cyl', x - r - STROKE.structure / 2, M.y1 - 1, r * 2 + STROKE.structure, M.y0 - M.y1 + 2, MH.glass, MH.glassRise);
+        out += this.T(MH.glass, 'glass', g);
+        // ушко к корпусу: жестяная пластина влево, саморез в стойку; лежит на
+        // планке, под стаканом
+        const ear = (y) => this.T(MH.ear, 'steel', `<rect x="${f(x - r - 11)}" y="${f(y - 2.8)}" width="12" height="5.6" rx="1" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.detail}"/>` +
             this.bolt(x - r - 6.5, y, 1.5));
         // Объём того, что надето на колбу: цилиндр той же оси, шире стекла
-        // (cylG — одной кривой). rise — над стенкой.
-        // Объём — с запасом на обводку: она снаружи прямоугольника и иначе
-        // осталась бы на высоте стенки канавкой, горящей полосой на стекле.
-        // Углы — скруглены, как у самой детали: иначе угол объёма торчал на фон.
-        // Всё от высоты 2: потолок карты — 20, и колпак на 6 с подъёмом 16
-        // срезался сверху плоской площадкой — выходил матовым и плоским.
-        const sleeveH = (x0, y, w, h, rise, id) => this.cylG(id, x0 - 1, y - 1, w + 2, h + 2, 2, rise, 3);
+        // (cylG — одной кривой), с запасом на обводку (иначе обводка — на
+        // высоте стены, канавкой) и скруглёнными углами.
+        const sleeveH = (x0, y, w, h, base, rise, id) => this.cylG(id, x0 - 1, y - 1, w + 2, h + 2, base, rise, 3);
         // Колпаки — стальные стаканы, надетые на концы колбы. Было: латунный
         // плоский прямоугольник с двумя поперечными рисками — в полутени
         // читался деревяшкой, лежал ниже стекла и не охватывал его. Теперь:
@@ -80,15 +80,14 @@ Object.assign(GreedJunk, {
                 `<path d="M${f(cx0 + cw - 2.2)} ${f(y + 2)} V${f(y + h - 2)}" class="fx" stroke="${T[900]}" stroke-width="1.6" opacity="0.6"/>` +
                 // потёк ржавчины из-под завальцовки
                 `<path d="M${f(x + 4)} ${f(up ? y + h - 1 : y + 1)} q0.5 ${up ? -2.5 : 2.5} -0.2 ${up ? -4.2 : 4.2}" fill="none" stroke="${J.rust[500]}" stroke-width="0.9" stroke-linecap="round" opacity="0.6"/>`;
-            c += sleeveH(cx0 - 0.8, y, cw + 1.6, h, (r + 3) * 0.95, up ? 'gj-mcap-t' : 'gj-mcap-b');
+            c += sleeveH(cx0 - 0.8, y, cw + 1.6, h, MH.cap, MH.capRise, up ? 'gj-mcap-t' : 'gj-mcap-b');
             // гайка на торце: шестигранник, торчит из стакана
             const ny = up ? y - 3.4 : y + h - 0.6, nw = 9, nh = 4;
             const nut = `<path d="M${f(x - nw / 2 + 1.2)} ${f(ny)} H${f(x + nw / 2 - 1.2)} L${f(x + nw / 2)} ${f(ny + nh / 2)} L${f(x + nw / 2 - 1.2)} ${f(ny + nh)} H${f(x - nw / 2 + 1.2)} L${f(x - nw / 2)} ${f(ny + nh / 2)} Z" fill="${T[300]}" stroke="${ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
                 `<path d="M${f(x - 1.6)} ${f(ny + 0.6)} V${f(ny + nh - 0.6)} M${f(x + 1.6)} ${f(ny + 0.6)} V${f(ny + nh - 0.6)}" stroke="${T[700]}" stroke-width="0.5"/>` +
-                // гайка — на торце стакана, на его высоте посередине (~17), а
-                // не на стене: с высотой стены вокруг неё выходила ямка
-                this.cylG(up ? 'gj-mnut-t' : 'gj-mnut-b', x - nw / 2 - 0.5, ny - 0.5, nw + 1, nh + 1, 15, 4, 1.5);
-            return ear(y + h / 2) + this.T(2, 'steel', c) + this.T(2, 'steel', nut);
+                this.cylG(up ? 'gj-mnut-t' : 'gj-mnut-b', x - nw / 2 - 0.5, ny - 0.5, nw + 1, nh + 1, MH.nut, MH.nutRise, 1.5);
+            // гайка — до стакана: её край под ним, торчит только головка
+            return ear(y + h / 2) + this.T(MH.nut, 'steel', nut) + this.T(MH.cap, 'steel', c);
         };
         out += cap(M.y1 - M.cap + 3, M.cap, true) + cap(M.y0 - 3, M.cap, false);
         // хомут: жестяная лента вокруг колбы — тоже надета на неё, выше стекла
@@ -97,8 +96,8 @@ Object.assign(GreedJunk, {
             const c = `<rect x="${f(x0)}" y="${y - 3.6}" width="${f(w)}" height="7.2" rx="1.4" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.structure}"/>` +
                 `<path d="M${f(x - r - 0.6)} ${y - 2.4} H${f(x + r + 0.6)}" class="hl" stroke="${J.tin[100]}" stroke-width="0.8"/>` +
                 `<path d="M${f(x - r - 0.6)} ${y + 2.4} H${f(x + r + 0.6)}" stroke="${J.tin[700]}" stroke-width="0.7"/>` +
-                sleeveH(x0, y - 3.6, w, 7.2, (r + 1.4) * 0.95, 'gj-mclamp-' + y);
-            out += ear(y) + this.T(2, 'steel', c);
+                sleeveH(x0, y - 3.6, w, 7.2, MH.cap, MH.clampRise, 'gj-mclamp-' + y);
+            out += ear(y) + this.T(MH.cap, 'steel', c);
         });
         return out;
     },

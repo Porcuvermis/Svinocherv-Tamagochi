@@ -375,7 +375,8 @@ Object.assign(GreedJunk, {
         inner += smear(T.x + 5, T.y + T.h - 4, 9, 4) + smear(T.x + T.w - 6, T.y + T.h - 3, 11, 3.6) +
             smear(T.x + 30, T.y + 1.6, 16, 2) + smear(T.x + T.w - 26, T.y + 1.4, 10, 1.8) +
             smear(T.x + 58, T.y + T.h - 2, 7, 2.4);
-        out += this.T(5, 'steel', inner);
+        // нутро формы ниже борта нарочно — sunk (tools/greed-sink.js)
+        out += '<g class="sunk">' + this.T(5, 'steel', inner) + '</g>';
         return out;
     },
 
