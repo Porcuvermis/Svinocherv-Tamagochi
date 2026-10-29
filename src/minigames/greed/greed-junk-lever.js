@@ -151,14 +151,14 @@ Object.assign(GreedJunk, {
         g += `<path d="${band(0.4, 1.9)}" fill="${J.tin[900]}" opacity="0.85"/>`;
         g += `<path d="${band(0.4, 1.2)}" fill="${J.tin[100]}"/>`;
         g += this.readyLampBody();
-        let out = this.T(7, 'paint', g);
+        let out = this.T(this.LEVER_H.box, 'paint', g);
         // фланец слева отогнут к ящику: узкая полоса в тени и три болта
-        out += this.T(8, 'paint', `<path d="M${x0} ${y0 + 5} L${x0 + 4} ${y0 + 3} L${x0 + 4} ${y1 - 1.5} L${x0} ${y1 - 1} Z" fill="${C.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
+        out += this.T(this.LEVER_H.flange, 'paint', `<path d="M${x0} ${y0 + 5} L${x0 + 4} ${y0 + 3} L${x0 + 4} ${y1 - 1.5} L${x0} ${y1 - 1} Z" fill="${C.lo}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             [402, 430, 454].map(y => this.bolt(x0 + 2, y, 1.6)).join(''));
         // Крышка корпуса: толстый загнутый край листа, на нём рамка юбки.
         // Юбка выходит из корпуса сквозь крышку, а не стоит на кромке, как
         // на полке. Корпус почти на уровне глаз — верх крышки виден ребром.
-        out += this.T(9, 'paint', `<rect x="${x0 - 2}" y="${y0 - 5}" width="${x1 - x0 + 4}" height="8" rx="2.4" fill="${C.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+        out += this.T(this.LEVER_H.lid, 'paint', `<rect x="${x0 - 2}" y="${y0 - 5}" width="${x1 - x0 + 4}" height="8" rx="2.4" fill="${C.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             `<line x1="${x0}" y1="${y0 - 3.6}" x2="${x1}" y2="${y0 - 3.6}" class="hl" stroke="${C.hi}" stroke-width="0.9"/>` +
             this.rodH(`M${x0} ${y0 - 1} L${x1} ${y0 - 1}`, 7, 1.6) +
             this.bolt(x0 + 2.4, y0 - 1, 1.5) + this.bolt(x1 - 2.4, y0 - 1, 1.5));
@@ -183,7 +183,8 @@ Object.assign(GreedJunk, {
             `<circle cx="${R.x}" cy="${R.y}" r="${f(R.r - 0.6)}" fill="none" stroke="${Lm.capLo}" stroke-width="0.6" opacity="0.6"/>` +
             `<path d="M${f(R.x - 2.4)} ${f(R.y + 1.2)} L${f(R.x + 0.6)} ${f(R.y - 1.8)} M${f(R.x - 0.4)} ${f(R.y + 2.4)} L${f(R.x + 2)} ${f(R.y + 0.2)}" stroke="${Lm.capLo}" stroke-width="0.3" opacity="0.7"/>` +
             this.domeH(R.x, R.y, R.r, 2);
-        return this.T(2, 'rubber', g) + this.T(3, 'plastic', cap);
+        // на коробе, а не в яме под ним (было 2 и 3 при коробе 7)
+        return this.T(this.LEVER_H.lampRing, 'rubber', g) + this.T(this.LEVER_H.lampCap, 'plastic', cap);
     },
     // Свет индикатора: red и green — накал 0..1. Колпачок рассеивает:
     // тусклая заливка его цветом, мягкое пятно нити посередине и слабый
@@ -247,7 +248,7 @@ Object.assign(GreedJunk, {
         // Обе втулки — ПОД тросом: трос выходит из самой дыры втулки и в
         // дыру же уходит. Было: верхняя втулка лежала поверх, и трос
         // вылезал из-под её края, а дыра оставалась пустой.
-        return this.grommet(pts[0][0], pts[0][1]) + this.T(8, 'rubber', out);
+        return this.grommet(pts[0][0], pts[0][1], this.LEVER_H.grommet) + this.T(this.LEVER_H.cable, 'rubber', out);
     },
 
     // Шток и рукоять — отдельно: при рывке шток укорачивается (уходит на
@@ -283,7 +284,7 @@ Object.assign(GreedJunk, {
     },
     // Части рычага отдельно — для рывка. Вместе — leverSvg.
     leverParts(noPattern) {
-        const J = PALETTE.greedJunk, P = this.SLOTS.pivot, V = this.VP || { y: 388 }, f = this.f;
+        const J = PALETTE.greedJunk, P = this.SLOTS.pivot, V = this.VP || { y: 388 }, f = this.f, LH = this.LEVER_H;
         const G = this.leverGeom(0);
         const base = G.base, rings = 6, h0 = G.h0, top = G.top;
         const wAt = (t) => 30 - t * 19;                  // ширина юбки по высоте 0..1
@@ -303,8 +304,11 @@ Object.assign(GreedJunk, {
             // гребень: блик сверху валика; складка над ним — тёмная дуга
             boot += `<path d="M${f(P.x - w / 2 + 2)} ${f(y - 1.4)} Q${f(P.x)} ${f(y - 1.4 - b * 2)} ${f(P.x + w / 2 - 2)} ${f(y - 1.4)}" fill="none" class="hl" stroke="${J.tin[500]}" stroke-width="0.9" stroke-linecap="round" opacity="0.8"/>`;
             if (i < rings - 1) boot += `<path d="M${f(P.x - wv / 2)} ${f(yv)} Q${f(P.x)} ${f(yv - bow(yv, wv) * 2)} ${f(P.x + wv / 2)} ${f(yv)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linecap="round" opacity="0.85"/>`;
-            const ry = h0 / rings * 0.62;
-            bootH += `<g transform="translate(${f(P.x)} ${f(y)}) scale(1 ${f(ry / (w / 2))}) translate(${f(-P.x)} ${f(-y)})">${this.domeH(P.x, y, w / 2, 4)}</g>`;
+            // Валики встык, без нахлёста: нахлёст (0.62) клал край следующего
+            // валика поверх склона предыдущего — ниже его, и в складке выходила
+            // канавка (tools/greed-sink.js).
+            const ry = h0 / rings * 0.5;
+            bootH += `<g transform="translate(${f(P.x)} ${f(y)}) scale(1 ${f(ry / (w / 2))}) translate(${f(-P.x)} ${f(-y)})">${this.domeH(P.x, y, w / 2, LH.ribRise)}</g>`;
         }
         // хомут: стальная лента со стяжным винтом сбоку
         const cw = wAt(1) + 1.4;
@@ -320,17 +324,20 @@ Object.assign(GreedJunk, {
             `<rect x="${P.x - 2.2}" y="${f(s0 + 1)}" width="1.1" height="${f(top - s0 - 1)}" fill="${J.tin[100]}"/>` +
             `<rect x="${P.x + 0.2}" y="${f(s0 + 1)}" width="1.4" height="${f(top - s0 - 1)}" fill="${J.tin[700]}"/>` +
             `<rect x="${P.x + 1.9}" y="${f(s0 + 1)}" width="0.6" height="${f(top - s0 - 1)}" fill="${J.tin[100]}" opacity="0.7"/>` +
-            this.rodH(`M${P.x} ${f(s0)} L${P.x} ${f(top)}`, sw, 3);
-        // втулка рукояти: хромовый стакан, в который вкручен шар
-        const cup = `<rect x="${P.x - 4.6}" y="${f(s0 - 1)}" width="9.2" height="6" rx="1.4" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
-            `<rect x="${P.x - 3}" y="${f(s0)}" width="1.2" height="4" fill="${J.tin[100]}"/><rect x="${P.x + 0.6}" y="${f(s0)}" width="1.6" height="4" fill="${J.tin[700]}"/>` +
-            this.rodH(`M${P.x} ${f(s0)} L${P.x} ${f(s0 + 4)}`, 9, 3.4);
+            this.rodH(`M${P.x} ${f(s0)} L${P.x} ${f(top)}`, sw, LH.shaftRise);
+        // Втулка рукояти: хромовый стакан, в который вкручен шар. Своя часть,
+        // ПОВЕРХ низа шара (гнездо): шток уходит под неё. Было — под шаром, и
+        // низ шара, нарисованный поверх, был ниже стакана: канава по низу
+        // шара, светлая кайма в покое (docs/bench/greed-audit.md, разд. 8).
+        const cup = `<rect x="${P.x - 4.6}" y="${f(s0 + 1)}" width="9.2" height="6" rx="1.4" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+            `<rect x="${P.x - 3}" y="${f(s0 + 2)}" width="1.2" height="4" fill="${J.tin[100]}"/><rect x="${P.x + 0.6}" y="${f(s0 + 2)}" width="1.6" height="4" fill="${J.tin[700]}"/>` +
+            this.rodH(`M${P.x} ${f(s0 + 2)} L${P.x} ${f(s0 + 6)}`, 9, LH.cupRise);
         // схема передач гравировкой: три вертикали через поперечину,
         // точки на концах; лежит на шаре чуть ниже его поверхности
         const KP = this.knobPattern(K.x, K.y, K.r, this.KNOB_PHI);
         let pattern = KP.lines.map(l => `<polyline points="${l.map(q => `${f(q[0])},${f(q[1])}`).join(' ')}" fill="none"/>`).join('');
         let dots = KP.dots.map(d => `<circle cx="${f(d[0])}" cy="${f(d[1])}" r="${f(d[2])}"/>`).join('');
-        const rise = 12;
+        const rise = LH.ballRise;
         const knob = `<circle cx="${K.x + 1.5}" cy="${K.y + 2.5}" r="${K.r}" class="fx" fill="${J.hole}" opacity="0.3"/>` +
             `<circle cx="${K.x}" cy="${K.y}" r="${K.r}" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}"/>` +
             // Купол — на всю толщину контура: контур снаружи радиуса лежал на
@@ -344,14 +351,28 @@ Object.assign(GreedJunk, {
             `<g fill="${J.paint.cream}">${dots}</g></g>`) +
             `<ellipse cx="${K.x - 6}" cy="${K.y - 7.5}" rx="4.6" ry="2.6" class="hl" fill="${J.tin[300]}" opacity="0.55" transform="rotate(-35 ${K.x - 6} ${K.y - 7.5})"/>`;
         return {
-            boot: this.T(10, 'rubber', boot + bootH),
+            boot: this.T(LH.boot, 'rubber', boot + bootH),
             frame: this.bootFrame(),
-            shaft: this.T(9, 'polished', shaft),
-            clamp: this.T(11, 'steel', clamp),
-            knob: this.T(9, 'polished', cup) + this.T(8, 'bakelite', knob)
+            shaft: this.T(LH.shaft, 'polished', shaft),
+            clamp: this.T(LH.clamp, 'steel', clamp),
+            knob: this.T(LH.ball, 'bakelite', knob),
+            cup: this.T(LH.cup, 'polished', cup)
         };
     },
-    LEVER_ORDER: ['boot', 'frame', 'shaft', 'clamp', 'knob'],
+    // Высоты рычага (единицы карты высот; потолок 20). Правило: часть выше
+    // того, на чём лежит и что нарисовано под ней (tools/greed-sink.js).
+    // Под рычагом — табло (9) и стойка (6); короб рычага — на табло.
+    //   короб 9.3, фланец 9.6, крышка 10; лампа готовности — на коробе;
+    //   юбка 9.5, валики +3 → 12.5; рамка и хомут поверх юбки — 12.6;
+    //   шток 9.2 (+2.5) — лежит на табло, концы под хомутом и стаканом;
+    //   шар 9.5 (+10.5 → 20) — край выше табло;
+    //   стакан 12 (+2) — поверх низа шара (там шар до 11.8).
+    // Было: шар 8 на табло 9, стакан 9+3.4 под низом шара, короб 7 на табло
+    // 9, лампа 2–3 в коробе — канавы по контурам, светлая кайма в покое.
+    LEVER_H: { box: 9.3, flange: 9.6, lid: 10, lampRing: 9.4, lampCap: 9.9, cable: 10, grommet: 9.4,
+        boot: 9.5, ribRise: 3, frame: 12.6, shaft: 9.2, shaftRise: 2.5, clamp: 12.6, ball: 9.5, ballRise: 10.5, cup: 12, cupRise: 2 },
+    // Стакан — после шара: поверх его низа.
+    LEVER_ORDER: ['boot', 'frame', 'shaft', 'clamp', 'knob', 'cup'],
     leverSvg() {
         const L = this.leverParts();
         return '<g class="gj-lever">' + this.LEVER_ORDER.map(k => L[k]).join('') + '</g>';
@@ -405,7 +426,7 @@ Object.assign(GreedJunk, {
     bootFrame() {
         const J = PALETTE.greedJunk, P = this.SLOTS.pivot;
         const y = P.y - 19, w = 38, h = 6;
-        return this.T(12, 'plastic', `<rect x="${P.x - w / 2 + 1}" y="${y - 1.6}" width="${w - 2}" height="2" class="fx" fill="${J.hole}" opacity="0.5"/>` +
+        return this.T(this.LEVER_H.frame, 'plastic', `<rect x="${P.x - w / 2 + 1}" y="${y - 1.6}" width="${w - 2}" height="2" class="fx" fill="${J.hole}" opacity="0.5"/>` +
             `<rect x="${P.x - w / 2}" y="${y}" width="${w}" height="${h}" rx="2.6" fill="${J.tin[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             `<line x1="${P.x - w / 2 + 3}" y1="${y + 1.2}" x2="${P.x + w / 2 - 3}" y2="${y + 1.2}" class="hl" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}"/>` +
             this.rodH(`M${P.x - w / 2 + 3} ${y + h / 2} L${P.x + w / 2 - 3} ${y + h / 2}`, h - 1, 1.4) +

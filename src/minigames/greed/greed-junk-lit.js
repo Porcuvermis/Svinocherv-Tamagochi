@@ -456,6 +456,10 @@ const GreedJunkLit = {
                 this.draw(this.lightFor(lt));
                 // блики колбы — за тем же светом (перерисуются, только если сдвинулись)
                 if (this.meterGlareAt) this.meterGlareAt(this.lightFor(lt));
+            } else if (this._lvOn) {
+                // рычаг в движении — участок рычага заново, с его картинкой
+                this.draw(this.lightFor(lt), this.LEVER_CROP);
+                if (reels) this.draw(this.lightFor(lt), this.REEL_BOX);
             } else if (reels) {
                 this.draw(this.lightFor(lt), this.REEL_BOX);   // только окна
             }
@@ -579,9 +583,9 @@ const GreedJunkLit = {
         const v = this._lv;
         if (!v || !this.lever) return false;
         let swap = false;
-        if (!this.leverCanvas.style.display || this.leverCanvas.style.display === 'none') {
+        if (!this._lvOn) {
             this.bindSet(this.lever.bare);
-            this.leverCanvas.style.display = 'block';
+            this._lvOn = true;
             swap = true;
         }
         if (v.at === -1) v.at = now;
@@ -630,7 +634,7 @@ const GreedJunkLit = {
                 this._leverIdle = true;
                 this.tryReady();
                 this.bindSet(this.tex);
-                this.leverCanvas.style.display = 'none';
+                this._lvOn = false;
                 return true;
             }
         }
@@ -699,7 +703,9 @@ const GreedJunkLit = {
             frame: [kx, 0, kx, 0, 1, 1],
             shaft: [kx, G0.top, kx, G.top, 1, ks],
             clamp: [kx, G0.top, kx, G.top, 1, 1],
-            knob: [kx, G0.K.y, kx, G.K.y, kk * fx.sx, kk * fx.sy]
+            knob: [kx, G0.K.y, kx, G.K.y, kk * fx.sx, kk * fx.sy],
+            // стакан — на конце штока, жёсткий: шар над ним сплющивается сам
+            cup: [kx, G0.s0, kx, G.s0, 1, 1]
         };
         // смазанный след рукояти — её прошлые положения, бледнее и бледнее
         fx.trail.forEach((tp, i) => {
@@ -710,13 +716,18 @@ const GreedJunkLit = {
         });
         ctx.globalAlpha = 1;
         // тени: от света вправо-вниз, дальше у того, что ближе к игроку
-        const lift = { boot: 1, frame: 0.6, shaft: 2 + 3 * G.sn, clamp: 1.5 + 2 * G.sn, knob: 3 + 5 * G.sn };
-        ctx.globalAlpha = 0.3;
-        GreedJunk.LEVER_ORDER.forEach(k => {
+        const lift = { boot: 1, frame: 0.6, shaft: 2 + 3 * G.sn, clamp: 1.5 + 2 * G.sn, knob: 3 + 5 * G.sn, cup: 2 + 3 * G.sn };
+        // Около покоя — тень, снятая с корпуса (stillShadow, prepareLever):
+        // на подмене картинок корпусом через 0,9 с она совпадает с тенью в
+        // покое. Дальше от покоя — нарисованная тень частей, по их подъёму.
+        const still0 = L.stillShadow ? Math.max(0, Math.min(1, 1 - Math.abs(p) / 0.08)) : 0;
+        ctx.globalAlpha = 0.3 * (1 - still0);
+        if (ctx.globalAlpha > 0.004) GreedJunk.LEVER_ORDER.forEach(k => {
             const a = pose[k], d = Math.max(0.5, lift[k]);
             place(a[0], a[1], a[2], a[3], a[4], a[5], d * 0.63, d * 0.77);
             ctx.drawImage(L.shadows[k], 0, 0);
         });
+        if (still0 > 0) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = still0; ctx.drawImage(L.stillShadow, 0, 0); }
         ctx.globalAlpha = 1;
         // в покое (взялся, но не сдвинул; шар в пальцах только набух) — шар
         // со схемой, как в корпусе: касание не меняет картинку
@@ -1003,5 +1014,48 @@ const GreedJunkLit = {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        // рычаг в движении — его картинка в этот же холст, поверх корпуса
+        if (this._lvOn && (!region || region === this.LEVER_CROP)) this.leverOverlay();
+    },
+
+    // Картинка рычага (2D-холст leverCanvas, собирается drawLever) — в холст
+    // корпуса, точка в точку, квадратом с прозрачностью. Было: 2D-холст
+    // лежал на странице поверх корпуса своим слоем. Браузер ставит такой слой
+    // со сдвигом на долю точки и сглаживает его иначе, чем холст корпуса, —
+    // даже картинка, вырезанная из кадра покоя, на нём выходила мягче и
+    // сдвинутой, и на подмене картинок корпусом через 0,9 с после касания
+    // рычаг «менял освещение» (видео игрока). Теперь сетка точек одна.
+    leverOverlay() {
+        const gl = this.gl, C = this.LEVER_CROP, G = GreedJunk;
+        if (!this._ovP) {
+            const vs = `attribute vec2 aPos; uniform vec4 uR; varying vec2 vUv;
+                void main() { vec2 q = aPos * 0.5 + 0.5; vUv = vec2(q.x, 1.0 - q.y);
+                    gl_Position = vec4(mix(uR.x, uR.z, q.x), mix(uR.w, uR.y, q.y), 0.0, 1.0); }`;
+            const fs = `precision mediump float; uniform sampler2D uT; varying vec2 vUv;
+                void main() { gl_FragColor = texture2D(uT, vUv); }`;
+            this._ovP = this.link(gl, vs, fs);
+            this._ovT = gl.createTexture();
+            gl.activeTexture(gl.TEXTURE7);
+            gl.bindTexture(gl.TEXTURE_2D, this._ovT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        }
+        const p = this._ovP;
+        gl.useProgram(p);
+        gl.activeTexture(gl.TEXTURE7);
+        gl.bindTexture(gl.TEXTURE_2D, this._ovT);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.leverCanvas);
+        gl.uniform1i(gl.getUniformLocation(p, 'uT'), 7);
+        const x0 = C.x / G.W * 2 - 1, x1 = (C.x + C.w) / G.W * 2 - 1;
+        const yT = 1 - (C.y - G.Y0) / G.H * 2, yB = 1 - (C.y + C.h - G.Y0) / G.H * 2;
+        gl.uniform4f(gl.getUniformLocation(p, 'uR'), x0, yT, x1, yB);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.disable(gl.BLEND);
+        gl.useProgram(this.prog);
     }
 };

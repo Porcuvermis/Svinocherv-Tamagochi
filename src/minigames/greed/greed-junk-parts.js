@@ -504,9 +504,10 @@ Object.assign(GreedJunk, {
     },
 
     // Резиновая втулка в металле: через неё провода выходят из детали.
-    grommet(x, y) {
+    // h — высота: втулка вровень с тем, в чём дыра (по умолчанию 1 — как было)
+    grommet(x, y, h = 1) {
         const J = PALETTE.greedJunk, f = this.f;
-        return this.T(1, 'rubber', `<ellipse cx="${f(x)}" cy="${f(y)}" rx="5" ry="4.4" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
+        return this.T(h, 'rubber', `<ellipse cx="${f(x)}" cy="${f(y)}" rx="5" ry="4.4" fill="${J.wood[900]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>` +
             `<ellipse cx="${f(x)}" cy="${f(y)}" rx="2.8" ry="2.4" class="pit" fill="${J.hole}"/>` + this.domeH(x, y, 5, 1));
     },
 

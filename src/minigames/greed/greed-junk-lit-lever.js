@@ -55,12 +55,26 @@ Object.assign(GreedJunkLit, {
             // (шток, рёбра юбки) выходили крутым ложным скатом, лампа над
             // рычагом на нём не светит, — и с первого касания рычаг темнел и
             // холодел, а встав на место, снова «облеплялся» светом (игрок).
-            this.draw(light);
+            // Снимки — только участок рычага (scissor): весь корпус шейдером
+            // перед каждым снимком стоил ~0,6 с (снимок ждёт видеокарту), а
+            // снимков восемь — сборка рычага, которую ждёт вход в алчность.
+            this.draw(light, C);
             const rest = grab();
+            // Тень рычага в покое — какая она в корпусе: кадр с рычагом против
+            // кадра без него, вне силуэта частей. В покое и около него она
+            // лежит под картинками частей вместо нарисованной тени движения:
+            // иначе через 0,9 с после касания, на подмене картинок корпусом,
+            // нарисованная тень (вправо-вниз, гуще) пропадала, шейдерная (узкая)
+            // появлялась — стена у рычага светлела скачком (видео игрока).
+            this.bindSet(bare);
+            this.draw(light, C);
+            const bareImg = grab();
+            this.bindSet(this.tex);
             const order = GreedJunk.LEVER_ORDER;
+            const stillShadow = this.leverStillShadow(rest, bareImg, order.map(k => parts[k][0]));
             for (const k of order) {
                 this.upload(parts[k]);
-                this.draw(light);
+                this.draw(light, C);
                 const c = grab();
                 sprites[k] = c;
                 // Шар — без кадра покоя: в нём схема передач вклеена на угле
@@ -71,15 +85,23 @@ Object.assign(GreedJunkLit, {
                 // поверх одиночного света — кадр покоя там, где часть видна
                 // (её силуэт минус силуэты частей, лежащих на ней); одиночный
                 // остаётся только под соседями — там, что откроется на рывке
+                // Видимое — без полупрозрачного края (hard): на краю маски
+                // иначе просвечивал одиночный свет части с её ложным скатом на
+                // пустоту, и по контуру шла кромка, которой в покое нет.
                 const m = document.createElement('canvas');
                 m.width = c.width; m.height = c.height;
                 const mg = m.getContext('2d');
                 mg.drawImage(parts[k][0], 0, 0);
                 mg.globalCompositeOperation = 'destination-out';
                 order.slice(order.indexOf(k) + 1).forEach(j => mg.drawImage(parts[j][0], 0, 0));
+                this.hardMask(m);
+                const cg = c.getContext('2d');
+                cg.globalCompositeOperation = 'destination-out';
+                cg.drawImage(m, 0, 0);
                 mg.globalCompositeOperation = 'source-in';
                 mg.drawImage(rest, 0, 0);
-                c.getContext('2d').drawImage(m, 0, 0);
+                cg.globalCompositeOperation = 'source-over';
+                cg.drawImage(m, 0, 0);
                 this.leverShadow(c, shadows, k);
             }
             // Шар в покое — со схемой передач, как в корпусе: на рывке схема
@@ -92,6 +114,7 @@ Object.assign(GreedJunkLit, {
                 kr.width = rest.width; kr.height = rest.height;
                 const kg = kr.getContext('2d');
                 kg.drawImage(parts.knob[0], 0, 0);
+                this.hardMask(kr);
                 kg.globalCompositeOperation = 'source-in';
                 kg.drawImage(rest, 0, 0);
                 sprites.knobRest = kr;
@@ -113,9 +136,38 @@ Object.assign(GreedJunkLit, {
             });
             this.heightDirty(this.tex[1]);
             this.draw(light);
-            this.lever = { bare, sprites, shadows };
+            this.lever = { bare, sprites, shadows, stillShadow };
         } catch (e) { console.warn('[Аппарат] части рычага не собрались', e); }
         GreedJunk.pass = 'baked';
+    },
+    // Тень в покое: чёрный с прозрачностью 1 − (с рычагом / без) — поверх
+    // корпуса без рычага даёт ровно корпус с рычагом. Где рычаг стену светлит
+    // (такого быть не должно — это аномалия, docs/bench/greed-audit.md,
+    // разд. 8), прозрачность 0. Под самими частями — 0: там они.
+    leverStillShadow(rest, bare, masks) {
+        const w = rest.width, h = rest.height;
+        const sil = document.createElement('canvas'); sil.width = w; sil.height = h;
+        const sg = sil.getContext('2d');
+        masks.forEach(m => sg.drawImage(m, 0, 0));
+        const A = rest.getContext('2d').getImageData(0, 0, w, h).data, B = bare.getContext('2d').getImageData(0, 0, w, h).data;
+        const M = sg.getImageData(0, 0, w, h).data;
+        const out = document.createElement('canvas'); out.width = w; out.height = h;
+        const og = out.getContext('2d'), im = og.createImageData(w, h);
+        const lum = (d, i) => d[i] * 0.2126 + d[i + 1] * 0.7152 + d[i + 2] * 0.0722;
+        for (let i = 0; i < w * h * 4; i += 4) {
+            const lb = lum(B, i);
+            let a = lb > 2 ? 1 - lum(A, i) / lb : 0;
+            a = Math.max(0, Math.min(1, a)) * (1 - M[i + 3] / 255);
+            im.data[i + 3] = Math.round(a * 255);
+        }
+        og.putImageData(im, 0, 0);
+        return out;
+    },
+    // маска без полупрозрачного края: всё, что хоть чуть закрыто, — целиком
+    hardMask(cv) {
+        const g = cv.getContext('2d'), im = g.getImageData(0, 0, cv.width, cv.height), d = im.data;
+        for (let i = 3; i < d.length; i += 4) d[i] = d[i] > 8 ? 255 : 0;
+        g.putImageData(im, 0, 0);
     },
     // тень части: её силуэт, чёрный, размытый несколькими сдвигами
     leverShadow(c, shadows, k) {
