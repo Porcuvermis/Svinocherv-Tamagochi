@@ -230,7 +230,7 @@ Object.assign(GreedJunk, {
             frame += `<path d="M${f(x)} ${f(y)} l${f(Math.cos(a) * l)} ${f(Math.sin(a) * l)}" stroke="${Rw.hi}" stroke-width="${STROKE.hairline}" stroke-linecap="round" opacity="${f(0.3 + rnd() * 0.4)}"/>`;
         }
         // ржавые пятна у углов
-        [[P.x0 + 2, P.y1 - 8], [P.x1 - 6, P.y0 + 3], [P.x0 + 3, P.y0 + 30]].forEach(([x, y]) => {
+        [].forEach(([x, y]) => {
             frame += `<ellipse cx="${f(x + 2)}" cy="${f(y + 2)}" rx="${f(2 + rnd() * 2)}" ry="${f(1.5 + rnd() * 2)}" fill="${J.rust[700]}" opacity="0.55"/>`;
         });
         frame += `<rect x="${P.x0}" y="${P.y0}" width="${P.x1 - P.x0}" height="${P.y1 - P.y0}" rx="1.5" fill="none" stroke="${ink}" stroke-width="${STROKE.contour}"/>`;
@@ -249,7 +249,7 @@ Object.assign(GreedJunk, {
         }
         field += `<path d="${br}" stroke="${W.creamLo}" stroke-width="0.7" opacity="0.35" stroke-linecap="round" fill="none"/>`;
         // сколы краски до фанеры
-        for (let k = 0; k < 7; k++) {
+        for (let k = 0; k < 0; k++) { // версия 2: без сколов
             const x = fx0 + 3 + rnd() * (P.sep - fx0 - 6), y = A.cy + rnd() * (P.drain - A.cy - 8), s = 0.9 + rnd() * 1.6;
             field += `<ellipse cx="${f(x)}" cy="${f(y)}" rx="${f(s * 1.3)}" ry="${f(s)}" fill="${W.ply}" stroke="${W.plyLo}" stroke-width="0.3"/>`;
         }
@@ -405,6 +405,7 @@ Object.assign(GreedJunk, {
             `<path d="${crD}" fill="none" stroke="${G.glassHi}" stroke-width="0.4" opacity="0.7" transform="translate(-0.6 -0.4)"/>`;
         out += '</g>';
         const tx = x1 - 12, ty = y0 + 27;
+        return out; // версия 2: ни скотча, ни трещины-заплатки
         out += `<g transform="rotate(-38 ${tx} ${ty})">` +
             `<path d="M${tx - 14} ${ty - 4} L${tx + 13} ${ty - 4.4} L${tx + 14} ${ty - 2} L${tx + 13.2} ${ty + 0.6} L${tx + 14.2} ${ty + 3.6} L${tx - 13.6} ${ty + 4} L${tx - 14.6} ${ty + 1} Z" fill="${G.tape}" opacity="0.92" stroke="${G.tapeEdge}" stroke-width="0.4"/>` +
             `<rect x="${tx - 13}" y="${ty - 4}" width="26" height="1.2" fill="${G.tapeLo}" opacity="0.35"/></g>`;

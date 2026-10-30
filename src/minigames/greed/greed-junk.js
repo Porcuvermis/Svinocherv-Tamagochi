@@ -100,7 +100,9 @@ const GreedJunk = {
     // доска отпилена на глаз, жесть отрезана ножницами.
     wob(x, y, w, h, seed, amp) {
         const rnd = this.rng(seed), f = this.f;
-        const a = amp == null ? Math.min(2.2, Math.min(w, h) * 0.06) : amp;
+        // Версия 2 (заводская): края ровные. Гулянье углов делало из
+        // аппарата гараж, а референс — литой корпус (docs/plan/31-greed-premium.md).
+        const a = 0;
         const j = () => (rnd() - 0.5) * 2 * a;
         const pts = [
             [x + j(), y + j()], [x + w / 2 + j(), y + j() * 0.6], [x + w + j(), y + j()],
@@ -175,7 +177,7 @@ const GreedJunk = {
             `<radialGradient id="gj-vign" cx="0.5" cy="0.45" r="0.7">` +
             `<stop offset="0.55" stop-color="${J.hole}" stop-opacity="0"/><stop offset="1" stop-color="${J.hole}" stop-opacity="0.5"/></radialGradient>` +
             `<radialGradient id="gj-dirt" cx="0.5" cy="1" r="0.9">` +
-            `<stop offset="0" stop-color="${J.wood[900]}" stop-opacity="0.45"/><stop offset="1" stop-color="${J.wood[900]}" stop-opacity="0"/></radialGradient>` +
+            `<stop offset="0" stop-color="${J.wood[900]}" stop-opacity="0"/><stop offset="1" stop-color="${J.wood[900]}" stop-opacity="0"/></radialGradient>` +
             `<radialGradient id="gj-hole" cx="0.5" cy="0.42" r="0.6">` +
             `<stop offset="0" stop-color="${J.wood[900]}"/><stop offset="1" stop-color="${J.hole}"/></radialGradient>` +
             '</defs>';
@@ -231,7 +233,7 @@ const GreedJunk = {
             }
             out += `<path d="${this.wob(px, py, pw, ph, seed * 31 + i, 1.2)}" fill="url(#${g})" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}"/>`;
             // волокно: две-три дуги вдоль доски
-            const lines = 2 + Math.floor(rnd() * 2);
+            const lines = 0; // версия 2: без волокна
             for (let k = 0; k < lines; k++) {
                 if (vertical) {
                     const gx = px + pw * (0.2 + rnd() * 0.6);
@@ -250,7 +252,7 @@ const GreedJunk = {
                 ? `<line x1="${f(px + 2)}" y1="${f(py + 3)}" x2="${f(px + 2)}" y2="${f(py + ph - 3)}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.55"/>`
                 : `<line x1="${f(px + 3)}" y1="${f(py + 2)}" x2="${f(px + pw - 3)}" y2="${f(py + 2)}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.55"/>`;
             // сучок — не на каждой доске
-            if (rnd() < 0.45) {
+            if (false) {
                 const kx = px + pw * (0.2 + rnd() * 0.6), ky = py + ph * (0.25 + rnd() * 0.5);
                 out += `<ellipse cx="${f(kx)}" cy="${f(ky)}" rx="${f(vertical ? 2.2 : 4)}" ry="${f(vertical ? 4 : 2.2)}" ` +
                     `fill="${J.wood[700]}" stroke="${J.wood[900]}" stroke-width="${STROKE.hairline}"/>`;
@@ -298,7 +300,7 @@ const GreedJunk = {
         const at = (a, b) => vertical ? [x + b, y + a] : [x + a, y + b];
 
         if (mat === 'chip') {
-            out += `<path d="${path}" fill="url(#gj-chip)"/>`;
+            out += `<path d="${path}" fill="${J.chip.base}"/>`;
             out += `<path d="${path}" class="fx" fill="url(#gj-chip-light)"/>`;
             // пятно от сырости — ДСП разбухает и темнеет
             const [sx, sy] = at(long * (0.3 + rnd() * 0.4), short * 0.5);
@@ -307,70 +309,23 @@ const GreedJunk = {
         }
 
         if (mat === 'painted') {
+            // Чёрный лак: ровный, с блеском градиентом. Потёки и стёртый
+            // шпон были гаражными (версия 1) и убраны.
             out += `<path d="${path}" fill="${J.painted.base}"/>`;
-            let g = '';
-            // потёки лака вдоль доски
-            for (let i = 0; i < 6; i++) {
-                const b = short * (0.1 + rnd() * 0.8);
-                const [x1, y1] = at(rnd() * long * 0.3, b), [x2, y2] = at(long * (0.6 + rnd() * 0.4), b + (rnd() - 0.5) * 2);
-                g += `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${i % 2 ? J.painted.hi : J.painted.lo}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
-            }
-            // Стёртые места: светлый шпон с волокном. Вытерты вдоль доски
-            // (руками, тряпкой), края мягкие: вокруг — лак истончён и
-            // темнее, без контура. Было: многоугольники с обводкой —
-            // читались наклейками.
-            const peels = 2 + Math.floor(rnd() * 3);
-            for (let i = 0; i < peels; i++) {
-                const ca = long * (0.1 + rnd() * 0.8), cb = short * (rnd() < 0.5 ? 0.2 : 0.8);
-                const ra = 6 + rnd() * long * 0.08, rb = 1.6 + rnd() * short * 0.2;
-                const pts = [], rim = [];
-                for (let k = 0; k < 9; k++) {
-                    const t = (k / 9) * Math.PI * 2, j = 0.6 + rnd() * 0.5;
-                    pts.push(at(ca + Math.cos(t) * ra * j, cb + Math.sin(t) * rb * j));
-                    rim.push(at(ca + Math.cos(t) * (ra * j + 1.6), cb + Math.sin(t) * (rb * j + 1)));
-                }
-                const loop = (q) => this.smooth(q.concat([q[0], q[1]])) + ' Z';
-                g += `<path d="${loop(rim)}" fill="${J.painted.lo}" opacity="0.35"/>`;
-                g += `<path d="${loop(pts)}" fill="${J.painted.bare}" opacity="0.85"/>`;
-                const [lx1, ly1] = at(ca - ra * 0.7, cb), [lx2, ly2] = at(ca + ra * 0.7, cb + 0.6);
-                g += `<line x1="${f(lx1)}" y1="${f(ly1)}" x2="${f(lx2)}" y2="${f(ly2)}" stroke="${J.painted.bareLo}" stroke-width="${STROKE.hairline}"/>`;
-            }
-            out += `<g clip-path="url(#${id})">${g}</g>`;
             out += `<path d="${path}" class="fx" fill="url(#gj-sheen)"/>`;
             return out;
         }
 
-        // сосна
+        // Бордовая лаковая панель (бывшая «сосна»): гладкий градиент и тонкий
+        // золотой кант внутри — как вставки на референсе. Волокно и сучки
+        // выброшены вместе с гаражной версией.
         out += `<path d="${path}" fill="url(#gj-pine)"/>`;
-        let g = '';
-        const knot = rnd() < 0.6 ? at(long * (0.15 + rnd() * 0.7), short * (0.3 + rnd() * 0.4)) : null;
-        const lines = Math.max(3, Math.round(short / 6));
-        for (let l = 0; l < lines; l++) {
-            const b0 = short * ((l + 0.5) / lines) + (rnd() - 0.5) * 3;
-            const pts = [];
-            const phase = rnd() * 6, amp = 0.8 + rnd() * 1.6;
-            for (let st = 0; st <= 7; st++) {
-                let [px, py] = at(long * st / 7, b0 + Math.sin(phase + st * 1.2) * amp);
-                if (knot) {
-                    const dx = px - knot[0], dy = py - knot[1], d = Math.hypot(dx, dy);
-                    if (d < 20) {
-                        if (vertical) px += Math.sign(dx || 1) * (20 - d) * 0.4;
-                        else py += Math.sign(dy || 1) * (20 - d) * 0.4;
-                    }
-                }
-                pts.push([px, py]);
-            }
-            // каждый третий слой — смоляной: темнее и толще
-            const resin = l % 3 === 1;
-            g += `<path d="${this.smooth(pts)}" fill="none" stroke="${resin ? J.pine.resin : J.pine[700]}" ` +
-                `stroke-width="${resin ? STROKE.detail : STROKE.hairline}" opacity="${f(resin ? 0.55 : 0.5 + rnd() * 0.3)}"/>`;
+        const m = Math.min(3.2, short * 0.18);
+        if (short > 9) {
+            out += `<rect x="${f(x + m)}" y="${f(y + m)}" width="${f(w - 2 * m)}" height="${f(h - 2 * m)}" rx="2" fill="none" ` +
+                `class="hl" stroke="${J.tin[500]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>`;
         }
-        if (knot) {
-            const [rx, ry] = vertical ? [3, 5.5] : [5.5, 3];
-            g += `<ellipse cx="${f(knot[0])}" cy="${f(knot[1])}" rx="${rx * 1.8}" ry="${ry * 1.8}" fill="none" stroke="${J.pine.resin}" stroke-width="${STROKE.hairline}" opacity="0.6"/>` +
-                `<ellipse cx="${f(knot[0])}" cy="${f(knot[1])}" rx="${rx}" ry="${ry}" fill="${J.pine.knot}" stroke="${J.pine.resin}" stroke-width="${STROKE.detail}"/>`;
-        }
-        out += `<g clip-path="url(#${id})">${g}</g>`;
+        out += `<path d="${path}" class="fx" fill="url(#gj-sheen)"/>`;
         return out;
     },
 
@@ -431,7 +386,7 @@ const GreedJunk = {
         r = r || 2.6;
         // Шлиц повёрнут как попало: болты закручивали по одному, а не
         // выставляли в линию. Блик на шляпке — сверху-слева.
-        const a = ((x * 7.3 + y * 3.1) % 180) * Math.PI / 180;
+        const a = 0;
         const c = Math.cos(a) * r * 0.62, s = Math.sin(a) * r * 0.62;
         return `<circle cx="${f(x + 0.5)}" cy="${f(y + 0.8)}" r="${r}" class="fx" fill="${J.hole}" opacity="0.35"/>` +
             `<circle cx="${f(x)}" cy="${f(y)}" r="${r}" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
@@ -442,6 +397,7 @@ const GreedJunk = {
     // Ржавый потёк под болтом: узкая полоска, тающая книзу. Раньше это был
     // сплошной треугольник одного тона — читался оранжевой морковкой.
     rustRun(x, y, len, seed) {
+        return '';
         const f = this.f;
         const rnd = this.rng(seed);
         const w = 0.9 + rnd() * 0.8, bend = (rnd() - 0.5) * 2;
@@ -455,7 +411,7 @@ const GreedJunk = {
         const rnd = this.rng(seed);
         // Пластина прикручена чуть криво — на глаз. Угол маленький: больше
         // двух градусов уже читается как падающая деталь.
-        const tilt = o.tilt != null ? o.tilt : (rnd() - 0.5) * 3;
+        const tilt = 0;
         let out = `<g transform="rotate(${f(tilt)} ${f(x + w / 2)} ${f(y + h / 2)})">`;
         // Тень от детали на то, к чему она прикручена: вниз-вправо, от света
         // сверху-слева. Смещение и плотность — от ВЫСОТЫ детали над
@@ -470,13 +426,13 @@ const GreedJunk = {
             `fill="url(#${o.fill || (o.dark ? 'gj-tin-dark' : 'gj-tin')})" stroke="${PALETTE.ink}" stroke-width="${o.stroke || STROKE.structure}"/>`;
         out += `<path d="${this.wob(x, y, w, h, seed + 5)}" class="fx" fill="url(#gj-dirt)"/>`;
         // вмятина: светлая дуга над тёмной
-        if (w > 30 && h > 30 && o.dent !== false) {
+        if (false) {
             const dx = x + w * (0.25 + rnd() * 0.5), dy = y + h * (0.25 + rnd() * 0.5);
             out += `<path d="M${f(dx - 7)} ${f(dy)} q7 -5 14 0" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.7"/>` +
                 `<path d="M${f(dx - 6)} ${f(dy + 2)} q6 4 12 0" fill="none" stroke="${J.tin[900]}" stroke-width="${STROKE.hairline}" opacity="0.7"/>`;
         }
         // царапины
-        for (let i = 0; i < (o.scratches == null ? 3 : o.scratches); i++) {
+        for (let i = 0; i < 0; i++) {
             const sx = x + w * (0.15 + rnd() * 0.6), sy = y + h * (0.15 + rnd() * 0.7);
             const len = Math.min(w, h) * (0.15 + rnd() * 0.25);
             out += `<line x1="${f(sx)}" y1="${f(sy)}" x2="${f(sx + len)}" y2="${f(sy - len * 0.35)}" ` +
