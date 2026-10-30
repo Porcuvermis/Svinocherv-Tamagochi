@@ -448,7 +448,7 @@ Object.assign(GreedJunk, {
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">` +
             this.passStyle(this.pass) +
             this.defs().replace('</defs>', clip + '</defs>') +
-            this.plinth() + this.body() + this.topBox() + this.head() + this.topShade() + this.leverMount() +
+            this.plinth() + this.body() + this.topBox() + this.head() + this.topPostEnds() + this.topShade() + this.leverMount() +
             (lever === false ? '' : this.leverSvg()) +
             `</svg>`;
     },

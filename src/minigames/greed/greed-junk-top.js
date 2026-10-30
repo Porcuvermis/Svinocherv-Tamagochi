@@ -291,8 +291,10 @@ Object.assign(GreedJunk, {
         out += `<rect x="${IN.x}" y="${IN.y}" width="${IN.w}" height="22" class="fx" fill="url(#gj-shade)"/>`;
         out += `<rect x="${IN.x}" y="${IN.y}" width="16" height="${IN.h}" class="fx" fill="url(#gj-shade-x)"/>`;
         // боковины: толстые доски, торцом к нам
-        out += this.T(14, 'pine', this.planks(24, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 13, 'v', 0, 'pine'));
-        out += this.T(14, 'pine', this.planks(R - 18, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 14, 'v', 0, 'pine'));
+        // по стык с табло (y1) — ниже их края лежали под стойками табло и
+        // планкой колбы (topPostEnds)
+        out += `<clipPath id="gj-post-cut"><rect x="0" y="${y0}" width="${this.W}" height="${y1 + 0.3 - y0}"/></clipPath>` +
+            `<g clip-path="url(#gj-post-cut)">${this.topPost(1) + this.topPost(-1)}</g>`;
         // освещённая кромка левой боковины, тёмная — правой (её грань
         // отвёрнута от света). Обе — нарисованный свет (hl/fx): тёмная была
         // без класса и вне обёртки высоты, в карте высот ложилась канавой
@@ -311,6 +313,28 @@ Object.assign(GreedJunk, {
         out += `<g transform="translate(0 ${y0 - 14})">${wheel ? '' : this.cornerBracket(1)}</g>` +
             `<g transform="translate(${dx} ${y0 - 14})">${this.cornerBracket(-1)}</g>`;
         return out;
+    },
+
+    // Боковина верхнего ящика: side 1 — левая, −1 — правая.
+    topPost(side) {
+        const B = this.TOP_BOX, y0 = B.y, y1 = B.y1, R = this.TOP_RIGHT;
+        return side > 0 ? this.T(14, 'pine', this.planks(24, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 13, 'v', 0, 'pine'))
+            : this.T(14, 'pine', this.planks(R - 18, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 14, 'v', 0, 'pine'));
+    },
+    // Низ боковин — ещё раз, ПОСЛЕ табло (bodySvg): ящик стоит на табло, и
+    // его боковины (14) лежат на стойках табло (6) и планке колбы (10), а не
+    // под ними. Рисовались только до табло — волнистый верх стоек и планки
+    // ложился на боковины канавой: над колбой и справа у шара рычага
+    // (tools/greed-sink.js, 30.10.2026). Целиком после табло боковины
+    // переносить нельзя: колесо рисуется поверх них (topBox). Рисунок тот
+    // же (тот же посев), обрезан полосой над стыком y1: ниже — нет, иначе
+    // низ боковины вылезал на планку колбы светлым выступом.
+    topPostEnds() {
+        const y1 = this.TOP_BOX.y1, R = this.TOP_RIGHT;
+        const clip = (x, side) => `<clipPath id="gj-post-end-${side}"><rect x="${x - 4}" y="${y1 - 4}" width="26" height="4.3"/></clipPath>` +
+            `<g clip-path="url(#gj-post-end-${side})">${this.topPost(side)}</g>`;
+        // колесо (низ обода — y 281) до полосы не достаёт
+        return clip(24, 1) + clip(R - 18, -1);
     },
 
     // Уголок на стыке крышки и боковины: гнутая Г-образная пластина,
