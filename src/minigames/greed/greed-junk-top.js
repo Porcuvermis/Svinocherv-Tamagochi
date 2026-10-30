@@ -37,15 +37,13 @@ Object.assign(GreedJunk, {
         // рисуется (решение игрока): невидимое тоже стоит растра и шейдера.
         // Список проверен по пикселям (каждая деталь выключена по одной —
         // ноль видимых точек): крепление, розетка, кабель, жгут мотора,
-        // латка, блок питания, гофра к ступице, штуцеры блока и ступицы.
+        // латка, блок питания, гофра, штуцеры.
         // Колеса нет — видно всё. С пачинко — так же, когда его нарисуем.
         const w = S.wheel;
         if (!wheel) {
             out += this.wheelMount(w.cx, w.cy);
             out += this.socketHome(65, 58);
             out += this.powerCable();
-            // провода будущего мотора колеса — из втулки в пластине ступицы
-            out += this.harness(w.cx + 40, w.cy - 28, 28, 34, false);
             // латка из крышки банки и блок питания (greed-junk-parts.js)
             out += this.canLid(64, 244);
             out += this.psu(146, 204);
@@ -105,20 +103,21 @@ Object.assign(GreedJunk, {
     },
 
     // ---------- КРЕПЛЕНИЕ КОЛЕСА ----------
-    // Ось колеса — ступица с тормозным диском от старой машины: колесо
-    // фортуны сядет на её колёсные шпильки, как автомобильное. Держат
-    // ступицу три куска перфорированного уголка, сходящиеся к ней с разных
-    // сторон и разной длины, — из чего было. Концы уголков посажены на
-    // глухари с широкими шайбами: в доску по-другому не прикрутишь.
+    // Три куска перфорированного уголка, сходящиеся к оси колеса с разных
+    // сторон и разной длины, — из чего было. Концы посажены на глухари с
+    // широкими шайбами: в доску по-другому не прикрутишь.
     // Раньше тут была крестовина из двух полос — читалась знаком «плюс».
+    // Ступицы с тормозным диском на переходной пластине и жгута мотора
+    // рядом больше нет (решение игрока, 30.10.2026): лишняя деталь у края.
     wheelMount(cx, cy) {
+        // Концы уголков — под левой боковиной (x 24…42): ось у самого её
+        // края, и без ступицы, что их закрывала, нижний уголок торчал из-за
+        // боковины наружу.
+        const x = cx + 12;
         let out = '';
-        out += this.angleIron(156, 54, cx + 4, cy - 8, 511);
-        out += this.angleIron(118, 262, cx + 2, cy + 8, 512);
-        out += this.angleIron(cx + 10, cy + 2, 196, cy + 6, 513);
-        // переходная пластина под ступицей: вырезана болгаркой, углы косые
-        out += this.cutPlate(cx, cy, 514);
-        out += this.brakeDisc(cx, cy);
+        out += this.angleIron(156, 54, x, cy - 8, 511);
+        out += this.angleIron(118, 262, x, cy + 8, 512);
+        out += this.angleIron(x, cy + 2, 196, cy + 6, 513);
         return out;
     },
 
@@ -168,86 +167,6 @@ Object.assign(GreedJunk, {
             `<circle cx="${f(x)}" cy="${f(y)}" r="6" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             `<polygon points="${hex}" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
             `<circle cx="${f(x - 1)}" cy="${f(y - 1)}" r="1.2" fill="${J.tin[100]}" opacity="0.8"/>`;
-    },
-
-    // Пластина-переходник: неровный многоугольник с косыми углами.
-    cutPlate(cx, cy, seed) {
-        const J = PALETTE.greedJunk, f = this.f;
-        const rnd = this.rng(seed);
-        const pts = [], radii = [];
-        for (let i = 0; i < 7; i++) {
-            const a = (i / 7) * Math.PI * 2 + 0.2, r = 45 + rnd() * 7;
-            radii.push(r);
-            pts.push(f(cx + Math.cos(a) * r) + ' ' + f(cy + Math.sin(a) * r));
-        }
-        const d = 'M' + pts.join(' L') + ' Z';
-        let out = `<path d="${d}" class="fx" fill="${J.hole}" opacity="0.3" transform="translate(1.2 1.8)"/>`;
-        // сырая сталь, тёмная, в синеву окалины — пластину резали из листа
-        out += `<path d="${d}" fill="url(#gj-raw)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
-        out += `<path d="${d}" class="fx" fill="url(#gj-dirt)"/>`;
-        // Отверстия у каждого угла: пластину сверлили под крепёж «с запасом»,
-        // а прикрутили на три болта — остальные дыры пустые, с блестящей
-        // заусеницей по нижней кромке (металл свежий, не успел потемнеть).
-        // Раньше пустые дыры были разбросаны по доскам кругом — ни к чему
-        // не относились и висели в воздухе.
-        const used = [0, 3, 5];
-        for (let i = 0; i < 7; i++) {
-            const a = (i / 7) * Math.PI * 2 + 0.2;
-            const hx = cx + Math.cos(a) * (radii[i] - 8), hy = cy + Math.sin(a) * (radii[i] - 8);
-            if (used.indexOf(i) !== -1) { out += this.bolt(hx, hy, 2.6); continue; }
-            out += `<circle cx="${f(hx)}" cy="${f(hy)}" r="2.7" class="pit" fill="${J.hole}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-                `<path d="M${f(hx - 2.7)} ${f(hy + 0.4)} a2.7 2.7 0 0 0 5.4 0" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="${STROKE.detail}" opacity="0.8"/>`;
-        }
-        // следы болгарки по краю — короткие светлые чёрточки
-        for (let i = 0; i < 7; i++) {
-            const a = (i / 7) * Math.PI * 2 + 0.6;
-            out += `<line x1="${f(cx + Math.cos(a) * 39)}" y1="${f(cy + Math.sin(a) * 39)}" x2="${f(cx + Math.cos(a) * 43)}" y2="${f(cy + Math.sin(a) * 43)}" stroke="${J.tin[300]}" stroke-width="${STROKE.hairline}" opacity="0.8"/>`;
-        }
-        return out;
-    },
-
-    // Тормозной диск со ступицей. Рабочая полоса диска блестит (по ней
-    // ходили колодки — концентрические риски), кромка и центр ржавые.
-    // Колпак ступицы выступает выше диска — своя тень. Пять колёсных
-    // шпилек и гайка оси со шплинтом.
-    brakeDisc(cx, cy) {
-        const J = PALETTE.greedJunk, f = this.f;
-        let out = '';
-        out += `<circle cx="${cx + 2.4}" cy="${cy + 3.8}" r="31" class="fx" fill="${J.hole}" opacity="0.38"/>`;
-        out += `<circle cx="${cx}" cy="${cy}" r="31" fill="url(#gj-tin)" stroke="${PALETTE.ink}" stroke-width="${STROKE.contour}"/>`;
-        // риски от колодок
-        for (let r = 20; r <= 28; r += 1.6) {
-            out += `<circle cx="${cx}" cy="${cy}" r="${f(r)}" fill="none" stroke="${r % 3.2 < 1.6 ? J.tin[100] : J.tin[700]}" stroke-width="${STROKE.hairline}" opacity="0.55"/>`;
-        }
-        // ржавая кромка
-        out += `<circle cx="${cx}" cy="${cy}" r="29.6" fill="none" stroke="${J.rust[500]}" stroke-width="2.4" opacity="0.6"/>`;
-        // блик на рабочей полосе — сверху слева
-        out += `<path d="M${f(cx - 24)} ${f(cy - 8)} A25 25 0 0 1 ${f(cx - 6)} ${f(cy - 24)}" fill="none" class="hl" stroke="${J.tin[100]}" stroke-width="3" stroke-linecap="round" opacity="0.6"/>`;
-        // колпак ступицы — выше диска
-        const disc = out;
-        out = '';
-        out += `<circle cx="${cx + 1.6}" cy="${cy + 2.6}" r="17" class="fx" fill="${J.hole}" opacity="0.4"/>`;
-        out += `<circle cx="${cx}" cy="${cy}" r="17" fill="url(#gj-tin-dark)" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`;
-        out += `<circle cx="${cx}" cy="${cy}" r="17" fill="none" stroke="${J.rust[700]}" stroke-width="2" opacity="0.5"/>`;
-        out += this.domeH(cx, cy, 17, 2);
-        // колёсные шпильки
-        for (let i = 0; i < 5; i++) {
-            const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-            const sx = cx + Math.cos(a) * 11.5, sy = cy + Math.sin(a) * 11.5;
-            out += `<circle cx="${f(sx + 1.2)}" cy="${f(sy + 1.8)}" r="2.6" class="fx" fill="${J.hole}" opacity="0.45"/>` +
-                `<circle cx="${f(sx)}" cy="${f(sy)}" r="2.6" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-                `<circle cx="${f(sx)}" cy="${f(sy)}" r="1.4" fill="none" stroke="${J.tin[700]}" stroke-width="${STROKE.hairline}"/>`;
-        }
-        // гайка оси со шплинтом
-        const hex = [0, 1, 2, 3, 4, 5].map(i => {
-            const a = i * Math.PI / 3;
-            return f(cx + Math.cos(a) * 5.6) + ',' + f(cy + Math.sin(a) * 5.6);
-        }).join(' ');
-        out += `<polygon points="${hex}" fill="${J.tin[500]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}"/>` +
-            `<circle cx="${cx}" cy="${cy}" r="2.4" fill="${J.tin[900]}"/>` +
-            `<path d="M${cx - 3.5} ${cy - 0.5} q3.5 -2 7 0" fill="none" stroke="${J.paint.yellow}" stroke-width="1.1" opacity="0.8"/>` +
-            `<circle cx="${cx - 1.6}" cy="${cy - 2}" r="1" class="hl" fill="${J.tin[100]}"/>`;
-        return disc + this.T(13, 'steel', out);
     },
 
     // ---------- КАБЕЛЬ ПИТАНИЯ РОЗЕТКИ ----------

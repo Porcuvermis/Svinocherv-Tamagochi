@@ -234,8 +234,6 @@ Object.assign(GreedJunk, {
         harness: [3, 'plastic'],
         powerCable: [2.5, 'rubber'],
         angleIron: [3, 'paint'],
-        cutPlate: [5, 'raw'],
-        brakeDisc: [9, 'polished'],
         cornerBracket: [17, 'steel']
     };
     Object.keys(table).forEach(k => {
