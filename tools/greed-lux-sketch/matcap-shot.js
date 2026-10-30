@@ -30,10 +30,10 @@ const TILTS = [['rest', 0, 0], ['left', -0.45, 0], ['right', 0.45, 0], ['near', 
             // полоса горизонта, яркий ободок на скатах. Первая студия (ровный
             // спад к краю) давала ту же горчичную краску, что одна лампа.
             let r = g.createRadialGradient(128, 128, 6, 128, 128, 128);
-            r.addColorStop(0, '#f1c55a'); r.addColorStop(0.3, '#d29a2c'); r.addColorStop(0.45, '#5a3408');
-            r.addColorStop(0.6, '#2a1404'); r.addColorStop(0.78, '#a8701e'); r.addColorStop(0.92, '#ffe08a'); r.addColorStop(1, '#6a420e');
+            r.addColorStop(0, '#f1c55a'); r.addColorStop(0.3, '#d29a2c'); r.addColorStop(0.45, '#8a5a16');
+            r.addColorStop(0.6, '#4a2a08'); r.addColorStop(0.78, '#a8701e'); r.addColorStop(0.92, '#ffe08a'); r.addColorStop(1, '#6a420e');
             g.fillStyle = r; g.fillRect(0, 0, 256, 256);
-            g.fillStyle = 'rgba(16,8,2,0.85)'; g.fillRect(0, 146, 256, 22);
+            g.fillStyle = 'rgba(40,20,4,0.45)'; g.fillRect(0, 146, 256, 22);
             const blob = (x, y, rx, ry, c, a) => { const q = g.createRadialGradient(x, y, 0, x, y, rx); q.addColorStop(0, c); q.addColorStop(1, 'rgba(255,240,200,0)');
                 g.save(); g.translate(x, y); g.scale(1, ry / rx); g.translate(-x, -y); g.globalAlpha = a; g.fillStyle = q; g.beginPath(); g.arc(x, y, rx, 0, 7); g.fill(); g.restore(); };
             blob(84, 70, 46, 30, '#fff6d8', 1); blob(196, 92, 22, 60, '#ffe7a8', 0.8); blob(128, 214, 70, 12, '#ffd27a', 0.5);
@@ -41,7 +41,7 @@ const TILTS = [['rest', 0, 0], ['left', -0.45, 0], ['right', 0.45, 0], ['near', 
         const lacCap = cap(g => {
             g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);
             const soft = (x, y, w, h, a) => { g.save(); g.filter = 'blur(6px)'; g.globalAlpha = a; g.fillStyle = '#fff'; g.fillRect(x, y, w, h); g.restore(); };
-            soft(58, 46, 70, 40, 0.95); soft(190, 60, 12, 120, 0.6); soft(40, 200, 170, 6, 0.25);
+            soft(66, 52, 46, 26, 0.9); soft(190, 60, 8, 110, 0.5);
         });
         const cv = document.getElementById('c'), gl = cv.getContext('webgl', { premultipliedAlpha: false });
         const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(o)); return o; };
@@ -57,8 +57,16 @@ const TILTS = [['rest', 0, 0], ['left', -0.45, 0], ['right', 0.45, 0], ['near', 
                 vec3 n = normalize(vec3(-dx, dy, 1.0));
                 vec3 a = texture2D(uA, v).rgb; vec4 m = texture2D(uM, v);
                 // наклон телефона поворачивает «студию» относительно предмета
+                // Листовое золото: листики ~6 ед. поля чуть разного наклона —
+                // при движении вспыхивают по очереди, а не всё разом.
+                vec2 cell = floor(v / uTex / 12.0);
+                float r1 = fract(sin(dot(cell, vec2(12.99, 78.23))) * 43758.5), r2 = fract(sin(dot(cell, vec2(39.35, 11.13))) * 24634.6);
+                if (m.b > 0.5) n = normalize(n + vec3(r1 - 0.5, r2 - 0.5, 0.0) * 0.035);
                 vec3 nt = normalize(n + vec3(uTilt, 0.0));
-                vec2 uv = vec2(nt.x, -nt.y) * 0.48 + 0.5;
+                // Отражение зависит и от места (близкое окно студии): на
+                // плоском при наклоне по золоту и лаку ПРОХОДИТ светлая полоса,
+                // а не меняется весь цвет разом.
+                vec2 uv = vec2(nt.x, -nt.y) * 0.48 + 0.5 + (v - 0.5) * vec2(0.42, 0.34);
                 // затенение впадин: насколько точка ниже среднего вокруг
                 float hc = h(v), ha = 0.0;
                 for (int i = 0; i < 8; i++) { float t = float(i) * 0.785; ha += h(v + vec2(cos(t), sin(t)) * uTex * 7.0); }
@@ -69,7 +77,7 @@ const TILTS = [['rest', 0, 0], ['left', -0.45, 0], ['right', 0.45, 0], ['near', 
                     c = texture2D(uG, uv).rgb * (a / vec3(0.84, 0.68, 0.32));
                 } else {
                     float dif = 0.55 + 0.45 * n.z;
-                    c = a * dif + texture2D(uL, uv).rgb * m.r * (0.25 + 0.75 * pow(1.0 - n.z, 0.0));
+                    c = a * dif + texture2D(uL, uv).rgb * m.r * 0.32;
                 }
                 gl_FragColor = vec4(c * ao, 1.0);
             }`));

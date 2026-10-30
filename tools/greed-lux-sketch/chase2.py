@@ -76,6 +76,9 @@ def profile(pts, wid, w, h, kind, N=8):
     и лёгким размытием даёт РОВНЫЙ скат, а не ступени (шаг меньше уровня
     карты, ловушка 170)."""
     o = ''
+    if kind == 'leaf':
+        # роспись заподлицо: высота — та, на чём лежит (корпус или вставка)
+        return seg_strokes(pts, wid, w, hv(h))
     if kind in ('v', 'guil'):
         for i in range(N):
             f = 1 - i / N
@@ -94,6 +97,8 @@ def profile(pts, wid, w, h, kind, N=8):
 def snout(pass_, kind):
     cx, cy, rx, ry = 180, 528, 30, 22
     o = ''
+    if pass_ == 'height' and kind == 'leaf':
+        return f'<path d="M177.5 517 H182.5 V539 H177.5 Z" fill="{hv(-6)}"/>'
     if pass_ == 'height':
         if kind == 'flat':
             o += f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}" fill="{hv(1.6)}"/><ellipse cx="{cx}" cy="{cy}" rx="{rx-1.2}" ry="{ry-1.2}" fill="{hv(2.2)}" filter="url(#rb)"/>'
@@ -158,13 +163,18 @@ def svg(pass_, kind):
         return pts + [pts[0]]
     kant = rrect(96, 504, 256, 562, 24)
     # лоток
-    o += f'<path d="M128 566 H232 A8 8 0 0 1 240 574 V610 A8 8 0 0 1 232 618 H128 A8 8 0 0 1 120 610 V574 A8 8 0 0 1 128 566 Z" fill="{col("gold", GOLD, 1.0)}"/>'
+    o += f'<path d="M128 566 H232 A8 8 0 0 1 240 574 V610 A8 8 0 0 1 232 618 H128 A8 8 0 0 1 120 610 V574 A8 8 0 0 1 128 566 Z" fill="{col("gold", GOLD, 0 if kind == "leaf" else 1.0)}"/>'
     o += f'<path d="M130 571 H230 A5 5 0 0 1 235 576 V609 A5 5 0 0 1 230 614 H130 A5 5 0 0 1 125 609 V576 A5 5 0 0 1 130 571 Z" fill="{col("hole", PIT, -8)}"/>'
     allL = lines() + [('kant', kant, [1] * len(kant), 1.6, 1.0)]
     if pass_ == 'height':
         for name, pts, wid, w, h in allL:
+            if kind == 'leaf':
+                # дуги и кант — на бордовой вставке (−1.2) или корпусе (0)
+                continue
             o += profile(pts, wid, w, h, kind)
-            if kind == 'guil' and name == 'arc':
+            if kind == 'leaf':
+                pass
+            elif kind == 'guil' and name == 'arc':
                 # кольца червя — рёбрышки поперёк (выше грани), не желобки
                 n = len(pts) - 1
                 for i in range(1, n, 2):
@@ -197,6 +207,6 @@ def svg(pass_, kind):
     return o + '</svg>'
 
 out = sys.argv[1]
-for kind in ('v', 'flat', 'engr', 'guil'):
+for kind in ('v', 'flat', 'engr', 'guil', 'leaf'):
     for p in ('albedo', 'height', 'mat'):
         open(f'{out}{kind}-{p}.svg', 'w').write(svg(p, kind))
