@@ -294,9 +294,11 @@ Object.assign(GreedJunk, {
         out += this.T(14, 'pine', this.planks(24, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 13, 'v', 0, 'pine'));
         out += this.T(14, 'pine', this.planks(R - 18, y0 + 16, 18, y1 + 2 - y0 - 16, 1, 14, 'v', 0, 'pine'));
         // освещённая кромка левой боковины, тёмная — правой (её грань
-        // отвёрнута от света)
+        // отвёрнута от света). Обе — нарисованный свет (hl/fx): тёмная была
+        // без класса и вне обёртки высоты, в карте высот ложилась канавой
+        // по всей правой боковине (tools/greed-sink.js, 30.10.2026).
         out += `<line x1="26" y1="${y0 + 22}" x2="26" y2="${y1 - 2}" class="hl" stroke="${J.wood[100]}" stroke-width="${STROKE.detail}" opacity="0.6"/>`;
-        out += `<line x1="${R - 3}" y1="${y0 + 22}" x2="${R - 3}" y2="${y1 - 2}" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
+        out += `<line x1="${R - 3}" y1="${y0 + 22}" x2="${R - 3}" y2="${y1 - 2}" class="fx" stroke="${J.wood[900]}" stroke-width="${STROKE.structure}" opacity="0.6"/>`;
         // тень крышки на боковины
         out += this.shade(24, y0 + 20, 18, 8) + this.shade(R - 18, y0 + 20, 18, 8);
         // крышка, нависает над боковинами

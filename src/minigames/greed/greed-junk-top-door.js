@@ -87,9 +87,13 @@ Object.assign(GreedJunk, {
         // захватана руками и закопчена лампой над рычагом. Без неё светлая
         // полоска жести между двумя тёмными краями (короба и листа) обводила
         // шар и шток — читалась вдавленным желобком вокруг рычага (игрок).
+        // Копоть — только на жести (от y 298): эллипс заходил вверх на доску
+        // ящика, и в карте высот прорезал в ней яму высотой жести (9 при 18) —
+        // канава над шаром рычага (tools/greed-sink.js, 30.10.2026).
         cut += `<defs><radialGradient id="gj-soot" cx="0.5" cy="0.42" r="0.5"><stop offset="0" stop-color="${J.wood[900]}" stop-opacity="0.85"/>` +
             `<stop offset="0.65" stop-color="${J.wood[900]}" stop-opacity="0.55"/><stop offset="1" stop-color="${J.wood[900]}" stop-opacity="0"/></radialGradient></defs>` +
-            `<ellipse cx="306" cy="336" rx="16" ry="58" fill="url(#gj-soot)"/>`;
+            `<clipPath id="gj-soot-clip"><rect x="280" y="298" width="60" height="120"/></clipPath>` +
+            `<ellipse cx="306" cy="336" rx="16" ry="58" fill="url(#gj-soot)" clip-path="url(#gj-soot-clip)"/>`;
         out += `<g transform="rotate(0.4 180 382)">` + this.T(9, 'steel', cut) + `</g>`;
         // Отпечаток таблички над окном: под ней краска не выцвела и грязь не
         // легла — остался яркий прямоугольник с тёмной каймой грязи по
