@@ -31,7 +31,16 @@ Object.assign(GreedJunk, {
                 g += `<circle cx="${f(x)}" cy="${f(y)}" r="0.55" fill="${J.hole}"/>`;
             }
             g += bolts.map(y => this.bolt(x, y, 1.8)).join('');
-            out += `<g transform="rotate(${tilt} ${x} ${gap0})">` + this.T(11, 'zinc', g) + `</g>`;
+            // Верх ленты лежит на низу верхнего ящика (15), низ — на жести
+            // табло (9): одна высота на всю ленту (11) топила верх в доску —
+            // канава по контуру (tools/greed-sink.js, 30.10.2026). Половины
+            // — одна лента, разрезанная по перегибу, каждая на своей высоте.
+            const id = `gj-strap-${x}`, top = `${id}-t`, bot = `${id}-b`;
+            const clip = `<clipPath id="${top}"><rect x="${x - 10}" y="${y0 - 10}" width="20" height="${gap0 - y0 + 10}"/></clipPath>` +
+                `<clipPath id="${bot}"><rect x="${x - 10}" y="${gap0}" width="20" height="${y1 - gap0 + 10}"/></clipPath>`;
+            out += `<g transform="rotate(${tilt} ${x} ${gap0})">` + clip +
+                this.T(11, 'zinc', `<g clip-path="url(#${bot})">${g}</g>`) +
+                this.T(16, 'zinc', `<g clip-path="url(#${top})">${g}</g>`) + `</g>`;
         });
         return out;
     },
@@ -265,13 +274,22 @@ Object.assign(GreedJunk, {
     BOTTOM_BOX: { x: 22, y: 486, w: 316, h: 132 },
     body() {
         const B = this.BOTTOM_BOX, x1 = B.x + B.w, y1 = B.y + B.h;
-        let out = '';
+        // Ящик стоит на задней кромке верхней грани цоколя (plinthTop) —
+        // обрезан по ней маской, а не укорочен: другая высота заново
+        // раскладывала узор ДСП и досок. Волнистый низ листа уходил за обе
+        // кромки грани, лист (3) ложился поверх цоколя (8) — канава
+        // (tools/greed-sink.js, 30.10.2026).
+        const yb = y1 + (this.VP.y - y1) * 0.03;
+        let out = `<clipPath id="gj-box-clip"><rect x="0" y="${B.y - 10}" width="${this.W}" height="${this.f(yb - B.y + 10)}"/></clipPath>`;
+        out += '<g clip-path="url(#gj-box-clip)">';
         // лицо ящика: лист ДСП
         out += this.T(3, 'chip', this.material('chip', B.x + 14, B.y, B.w - 28, B.h, 811, false) +
             `<path d="${this.wob(B.x + 14, B.y, B.w - 28, B.h, 811, 1.8)}" fill="none" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}"/>`);
         // стойки по краям
         out += this.T(5, 'pine', this.planks(B.x, B.y, 16, B.h, 1, 82, 'v', 0, 'pine'));
         out += this.T(5, 'lacquer', this.planks(x1 - 16, B.y, 16, B.h, 1, 83, 'v', 0, 'painted'));
+        out += '</g>';
+        out += this.plinthTop();
         // тень от полки на ящик — только запасной вид, шейдер даёт свою
         out += this.shade(B.x, B.y + 2, B.w, 14);
         out += this.trayG(this.coinTray());
@@ -391,11 +409,16 @@ Object.assign(GreedJunk, {
     // за переднюю кромку доски, и не было видно, на чём он стоит. Под
     // правый брусок подбит клин из обрезка — пол в гараже кривой.
     plinth() {
-        const J = PALETTE.greedJunk, V = this.VP, f = this.f, B = this.BOTTOM_BOX, y = B.y + B.h;
+        const B = this.BOTTOM_BOX, y = B.y + B.h;
         // Цоколь — одна доска под ящиком. Были доска и две ножки, а между
         // ножками — пустота во всю ширину ящика.
-        let out = this.T(8, 'lacquer', this.planks(20, y, 320, 18, 1, 123, 'h', 0, 'painted'));
-        // верхняя грань доски
+        return this.T(8, 'lacquer', this.planks(20, y, 320, 18, 1, 123, 'h', 0, 'painted'));
+    },
+    // Верхняя грань цоколя — после ящика (body): ящик стоит на её задней
+    // кромке, грань ближе к нам. Рисовалась до ящика, под его низом.
+    plinthTop() {
+        const J = PALETTE.greedJunk, V = this.VP, f = this.f, B = this.BOTTOM_BOX, y = B.y + B.h;
+        let out = '';
         const k = 0.03, back = (x, yy) => [x + (V.x - x) * k, yy + (V.y - yy) * k];
         const a = back(20, y), b = back(340, y);
         out += this.T(8, 'lacquer', `<path d="M20 ${y} L${f(a[0])} ${f(a[1])} L${f(b[0])} ${f(b[1])} L340 ${y} Z" fill="${J.painted.base}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
