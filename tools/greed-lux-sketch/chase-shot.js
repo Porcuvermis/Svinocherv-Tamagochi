@@ -5,6 +5,7 @@ const fs = require('fs');
 // (greed-junk-lit-device.js) под наклонами телефона. Карта света пока
 // версии 1 — у версии 2 своя будет на шаге света.
 //   python3 chase.py out/ && NODE_PATH=... node chase-shot.js out/ /tmp/ch-
+//   python3 chase2.py out/ && KIND=v NODE_PATH=... node chase-shot.js out/ /tmp/v-   (v, flat, engr, guil)
 const dir = process.argv[2], out = process.argv[3] || '/tmp/ch-';
 const BOX = { x: 90, y: 495, w: 180, h: 145 };
 const TILTS = [['rest', 0, 0], ['left', -0.7, 0], ['right', 0.7, 0], ['near', 0, -0.7], ['far', 0, 0.7], ['corner', 0.5, 0.5]];
@@ -17,7 +18,8 @@ const TILTS = [['rest', 0, 0], ['left', -0.7, 0], ['right', 0.7, 0], ['near', 0,
     await page.waitForTimeout(2500);
     await page.evaluate(() => { GreedMinigame.play = { slots: null, wheel: null, pachinko: null }; GameManager.handleSinAction('greed'); });
     await page.waitForFunction(() => window.GreedJunkLit && GreedJunkLit.lever, null, { timeout: 25000 }).catch(() => {});
-    const maps = ['albedo', 'height', 'mat'].map(p => 'data:image/svg+xml;base64,' + fs.readFileSync(`${dir}chase-${p}.svg`).toString('base64'));
+    const kind = process.env.KIND || 'chase';
+    const maps = ['albedo', 'height', 'mat'].map(p => 'data:image/svg+xml;base64,' + fs.readFileSync(`${dir}${kind}-${p}.svg`).toString('base64'));
     await page.evaluate(async ([maps, B]) => {
         const L = GreedJunkLit, S = L.SCALE;
         const imgs = await Promise.all(maps.map(src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = src; })));
