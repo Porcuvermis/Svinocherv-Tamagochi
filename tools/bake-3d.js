@@ -55,7 +55,7 @@ const ORDER = ['wall', 'floor', 'shower', 'faucet', 'shelf', 'soap', 'cloth',
 
 (async () => {
     const browser = await chromium.launch({
-        executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+        executablePath: require('./chrome-path') });
     const page = await browser.newPage({ viewport: { width: 820, height: 1200 } });
     const errors = [];
     page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));

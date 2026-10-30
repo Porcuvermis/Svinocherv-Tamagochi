@@ -27,7 +27,7 @@ const { viewport, prepare } = require('./harness');
 //     NODE_PATH=/opt/node22/lib/node_modules node tools/test-scars.js /tmp/shot-
 (async () => {
   const out = process.argv[2] || '/tmp/scars-';
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage(viewport({ deviceScaleFactor: 2 }));
   await prepare(page);
 

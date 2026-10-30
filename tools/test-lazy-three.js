@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
 //     node tools/test-lazy-three.js
 (async () => {
   const browser = await chromium.launch({
-      executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+      executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 
   const asked = [];

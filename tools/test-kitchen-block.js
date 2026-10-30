@@ -15,7 +15,7 @@ const harness = require('./harness');
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     node tools/test-kitchen-block.js
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 2 }));
   await harness.prepare(page);
   const errors = []; page.on('pageerror', e => errors.push('ERR '+e.message));

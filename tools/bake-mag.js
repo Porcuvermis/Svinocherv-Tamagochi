@@ -20,7 +20,7 @@ const S = 3, PAD = 6;
 const OUT = path.join(__dirname, '..', 'src', 'minigames', 'lust');
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 1200, height: 1200 }, deviceScaleFactor: 1 });
   await page.goto('http://127.0.0.1:8777/index.html');
   await page.waitForTimeout(2500);

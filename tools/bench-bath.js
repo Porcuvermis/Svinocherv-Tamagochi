@@ -47,7 +47,7 @@ const [KIND, LV] = SCENE.split('-'), L = +LV;
 const env = process.env;
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const cdp = await page.context().newCDPSession(page);
   const errs = [];

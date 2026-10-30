@@ -42,7 +42,7 @@ const SCREENS = [
 
 (async () => {
     const browser = await chromium.launch({
-        executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+        executablePath: require('./chrome-path') });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 },
                                          deviceScaleFactor: 3 });
     const cdp = await page.context().newCDPSession(page);

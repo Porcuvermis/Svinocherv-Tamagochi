@@ -25,6 +25,7 @@
 | Лоток, монета в щель, колба, банка | `greed-junk-tray.js`, `greed-junk-coin-in.js`, `greed-junk-meter.js`, `greed-junk-jar.js` |
 | Рамка окна из монет, покров входа/выхода | `greed-coins*.js` (шкурка `MinigameWindow`) |
 | Палитра аппарата | `src/core/palette.js` → `greedJunk` |
+| Вид игры (гараж 1 / премиум 2) по уровню и отладке | `greed-skin.js` (`GreedSkin.of(игра)`) |
 | Материалы для шейдера (блеск, острота, металл) | `src/core/materials.js`, `docs/materials.md` |
 | Отладка: 🐞 → «Аппарат», «Колесо», «Пачинко», «Монеты», «Нагрузка» | `src/core/debug.js` |
 | Ревизия одной детали, аномалии высот | `docs/bench/greed-audit.md`, `tools/greed-part.js`, `tools/greed-sink.js` |
@@ -180,10 +181,11 @@ SVINO_VIEWPORT=390x700 SVINO_FAKE_CTM=1 NODE_PATH=... node tools/test-greed.js
 * Сравнивать с принятой версией **разностью** (`BASE_PORT`); общую правку
   света — разностью всего кадра.
 * Серый размытый снимок — порядок чтения.
+* Версия 1 не сдвинулась: `BASE_PORT=8778 node tools/greed-v1-same.js /tmp/v1-`
+  (4 сочетания, 0 точек разницы).
 * «Нагрузка» в 🐞 и время сборки — если трогали сборку или шейдер.
-* `test-greed.js` и `test-no-words.js` держат путь к Chromium
-  `/opt/pw-browsers/chromium-1194/…`, которого в облаке нет: запускать
-  копией с `chromium.launch()` без пути.
+* Путь к Chromium у прогонов — `tools/chrome-path.js` (было зашито
+  `chromium-1194`, в облаке не запускался ни один прогон).
 
 ## 8. Грабли
 

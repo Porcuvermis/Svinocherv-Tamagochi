@@ -8,7 +8,7 @@ const path = require('path');
 (async () => {
   const [photo, sketch, out] = process.argv.slice(2);
   const uri = (f) => 'data:image/' + (path.extname(f).slice(1).replace('jpg', 'jpeg')) + ';base64,' + fs.readFileSync(f).toString('base64');
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const b = await chromium.launch({ executablePath: require('./chrome-path') });
   const p = await b.newPage({ viewport: { width: 1000, height: 600 } });
   await p.setContent(`<body style="margin:0;background:#cfd9df;font:0/0 a">
     <div id=w style="display:inline-block;padding:10px">

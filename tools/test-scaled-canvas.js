@@ -23,7 +23,7 @@ const { chromium } = require('playwright');
 // Запуск (из корня, при поднятом `python3 -m http.server 8777`):
 //     NODE_PATH=/opt/node22/lib/node_modules node tools/test-scaled-canvas.js
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, deviceScaleFactor: 2 });
   const fail = [];
   const check = (ok, what) => { console.log((ok ? '  ok  ' : ' FAIL ') + what); if (!ok) fail.push(what); };

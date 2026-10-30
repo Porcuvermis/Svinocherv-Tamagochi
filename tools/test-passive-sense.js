@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
 //     node tools/test-passive-sense.js /tmp/shots-
 (async () => {
   const out = process.argv[2];
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));

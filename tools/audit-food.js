@@ -24,7 +24,7 @@ const fs = require('fs');
 (async () => {
   const out = process.argv[2] || '/tmp/food-';
   const browser = await chromium.launch({
-      executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+      executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));

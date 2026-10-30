@@ -18,7 +18,7 @@ const HIDE = process.env.HIDE || '';
 const FREEZE = !!process.env.FREEZE;
 
 (async () => {
-    const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+    const browser = await chromium.launch({ executablePath: require('./chrome-path') });
     const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 3 }));
     await harness.prepare(page);
     const cdp = await page.context().newCDPSession(page);

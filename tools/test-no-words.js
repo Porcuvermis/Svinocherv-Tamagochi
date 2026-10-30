@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
   // Без аргумента снимки идут во временную папку, а НЕ в корень проекта:
   // из-за `undefined` в пути тринадцать png однажды уехали прямо в репозиторий.
   const out = process.argv[2] || '/tmp/no-words-';
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const errors = [];
   const found = {};

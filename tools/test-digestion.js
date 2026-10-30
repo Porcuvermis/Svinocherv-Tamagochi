@@ -16,7 +16,7 @@ const harness = require('./harness');
 
 (async () => {
   const browser = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+    executablePath: require('./chrome-path') });
   const page = await browser.newPage(harness.viewport());
   await harness.prepare(page);
   const errs = [];

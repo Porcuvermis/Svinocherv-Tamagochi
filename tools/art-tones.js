@@ -11,7 +11,7 @@ const path = require('path');
   const [photo, pre, n0] = process.argv.slice(2);
   const N = +(n0 || 5);
   const uri = 'data:image/' + (path.extname(photo).slice(1).replace('jpg', 'jpeg')) + ';base64,' + fs.readFileSync(photo).toString('base64');
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const b = await chromium.launch({ executablePath: require('./chrome-path') });
   const p = await b.newPage();
   const res = await p.evaluate(async ({ uri, N }) => {
     const img = new Image(); img.src = uri; await img.decode();

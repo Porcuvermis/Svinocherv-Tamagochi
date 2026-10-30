@@ -63,6 +63,9 @@ const DebugState = {
             <button data-act="fps-badge">Кадры</button>
             <button data-act="greed-wheel">Колесо</button>
             <button data-act="greed-pachinko">Пачинко</button>
+            <button data-act="greed-skin-slots">Бандит</button>
+            <button data-act="greed-skin-wheel">Колесо: вид</button>
+            <button data-act="greed-skin-pachinko">Пачинко: вид</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -369,6 +372,13 @@ const DebugState = {
             location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
             return;
         }
+        // Вид игры аппарата: гаражный (1) ↔ премиум (2) без покупки
+        // (docs/plan/31-greed-premium.md, разд. 3.3).
+        if (act.indexOf('greed-skin-') === 0) {
+            if (typeof GreedSkin !== 'undefined') GreedSkin.toggle(act.slice(11));
+            location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
+            return;
+        }
         if (act === 'greed-machine') {
             if (typeof GreedJunkLit !== 'undefined') GreedJunkLit.preview();
             return;
@@ -473,6 +483,12 @@ const DebugState = {
 
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
+        if (this.panel && typeof GreedSkin !== 'undefined') {
+            [['slots', 'Бандит'], ['wheel', 'Колесо'], ['pachinko', 'Пачинко']].forEach(([g, name]) => {
+                const b = this.panel.querySelector(`[data-act="greed-skin-${g}"]`);
+                if (b) b.textContent = name + ': вид ' + GreedSkin.of(g) + (GreedSkin.forced(g) ? '' : ' (покупка)');
+            });
+        }
         if (DebugMode.enabled) this.startFps(); else this.stopFps();
         // колесо и пачинко аппарата: включены ли (✓) и не сломалась ли картинка (✗)
         [['greed-wheel', 'gj-wheel', 'Колесо', 'wheelError'], ['greed-pachinko', 'gj-pachinko', 'Пачинко', 'pachError']].forEach(([act, key, name, errKey]) => {

@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
 //     node tools/test-pride.js 0.85    # нормальный игрок
 (async () => {
   const accuracy = parseFloat(process.argv[2] || '0.85');
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));

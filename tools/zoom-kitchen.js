@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
 (async () => {
   const [phase, sx, sy, half, out] = process.argv.slice(2);
   const browser = await chromium.launch({
-      executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+      executablePath: require('./chrome-path') });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 },
                                        deviceScaleFactor: 3 });
   await page.goto('http://127.0.0.1:8777/index.html');

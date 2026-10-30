@@ -71,7 +71,7 @@ const harness = require('./harness');
                       : 'ни одного env(safe-area-inset) — раскладка не зависит от устройства');
 
   // ---------- Б. ВСЁ ВИДНО ----------
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 2 }));
   await harness.prepare(page);
   const errors = [];

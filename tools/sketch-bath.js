@@ -22,7 +22,7 @@ const harness = require('./harness');
 (async () => {
   const [file, pre] = process.argv.slice(2);
   const frag0 = fs.readFileSync(file, 'utf8');
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const browser = await chromium.launch({ executablePath: require('./chrome-path') });
   const page = await browser.newPage(harness.viewport({ deviceScaleFactor: 3 }));
   await harness.prepare(page);
   const errs = []; page.on('pageerror', e => errs.push(e.message));
