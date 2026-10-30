@@ -362,27 +362,64 @@ Object.assign(GreedJunk, {
         let out = this.T(5, 'steel', chute);
         out += `<path d="${P([rb[0], rb[1], rf[1], [249, 588], [111, 588], rf[0]])}" class="fx" fill="${J.hole}" opacity="0.35" transform="translate(2 3)"/>`;
         // передняя стенка снаружи: сужается книзу, в тени
-        let wall = `<path d="${P([rf[0], rf[1], [247, 587], [113, 587]])}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
+        const wallD = P([rf[0], rf[1], [247, 587], [113, 587]]);
+        let wall = `<path d="${wallD}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
             `<path d="M118 580 L242 580" stroke="${J.tin[900]}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
+        // Высота стенки — выпуклым боком: под бортом почти вровень с ним,
+        // книзу уходит к ящику четвертью косинуса. Была одна высота на всю
+        // стенку — плашка, свет по ней не скользил.
+        {
+            const id = this.gid('tw'), n = 24;
+            let st = '';
+            for (let i = 0; i <= n; i++) {
+                const t = i / n, c = (this.hv(4 + 7 * Math.cos(t * Math.PI / 2)) * 255).toFixed(1);
+                st += `<stop offset="${t.toFixed(4)}" stop-color="rgb(${c},${c},${c})"/>`;
+            }
+            wall += `<g class="hpass"><defs><linearGradient id="${id}" x1="0" y1="${rf[0][1]}" x2="0" y2="587" gradientUnits="userSpaceOnUse">${st}</linearGradient></defs>` +
+                `<path d="${wallD}" style="fill:url(#${id})!important;stroke:none!important"/></g>`;
+        }
         out += this.T(10, 'steel', wall);
         // борт
         let rim = `<path d="${P([rb[0], rb[1], rf[1], rf[0]])}" fill="${J.tin[300]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>` +
             `<path d="M${f(rf[0][0] + 2)} ${f(rf[0][1] - 0.8)} L${f(rf[1][0] - 2)} ${f(rf[1][1] - 0.8)}" class="hl" stroke="${J.tin[100]}" stroke-width="1"/>` +
-            this.rodH(`M${rf[0][0] + 1} ${rf[0][1] - 1.2} L${rf[1][0] - 1} ${rf[1][1] - 1.2}`, 2.6, 1.2);
+            // завальцовка — валиком по всему кольцу борта, а не только спереди:
+            // задний и боковые борта были плоской полосой
+            this.rodH(`M118.5 546.7 L241.5 546.7 L247.75 574 L112.25 574 Z`, 3.2, 1.2);
         // саморезы через задний борт
         rim += this.bolt(130, 546.6, 1.6) + this.bolt(230, 546.6, 1.6);
         out += this.T(12, 'steel', rim);
         // внутри: стенки и дно ниже борта; задняя смотрит на нас и светлее,
         // боковые — в полутени, дно темнее и в пригаре
-        let inner = `<path d="${P([ob[0], ob[1], of[1], of[0]])}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
-            `<path d="${P([ob[0], ob[1], bb[1], bb[0]])}" fill="${J.tin[300]}"/>` +
-            `<path d="${P([ob[0], bb[0], bf[0], of[0]])}" fill="${J.tin[900]}" opacity="0.85"/>` +
-            `<path d="${P([ob[1], of[1], bf[1], bb[1]])}" fill="${J.tin[500]}"/>` +
-            `<path d="${P([bb[0], bb[1], bf[1], bf[0]])}" fill="${J.tin[500]}"/>` +
+        // Было: стенки и дно — разной краской, но одной высотой (T(5) на всё
+        // нутро). Шейдер видел ровную плоскость, и форма читалась плоской
+        // текстурой (игрок). Теперь форму лепит свет по карте высот (ниже),
+        // а краска лишь помогает ему: тона стенок размыты в тон склонам
+        // (резкие трапеции спорили бы со скруглёнными углами рельефа), в
+        // углах дна — копоть, она от света не зависит. Только жестью на
+        // тёмном свет стенки почти не отделял от дна: фронтальный свет,
+        // наклон мал. Рёбра и тень задней стенки — только запасной вид (fx),
+        // как рёбра скоса окна барабанов.
+        const openD = P([ob[0], ob[1], of[1], of[0]]);
+        const cl = this.gid('tc'), ab = this.gid('ta'), gb = this.gid('tg');
+        let inner = `<defs><clipPath id="${cl}"><path d="${openD}"/></clipPath>` +
+            `<filter id="${ab}" filterUnits="userSpaceOnUse" x="100" y="530" width="160" height="65"><feGaussianBlur stdDeviation="1.2 0.6"/></filter>` +
+            `<filter id="${gb}" filterUnits="userSpaceOnUse" x="100" y="530" width="160" height="65"><feGaussianBlur stdDeviation="2.4 1.4"/></filter></defs>` +
+            `<path d="${openD}" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>` +
+            `<g clip-path="url(#${cl})"><g filter="url(#${ab})">` +
+            `<path d="${P([[ob[0][0] - 4, ob[0][1] - 3], [ob[1][0] + 4, ob[1][1] - 3], bb[1], bb[0]])}" fill="${J.tin[300]}"/>` +
+            `<path d="${P([[ob[0][0] - 4, ob[0][1]], bb[0], bf[0], [of[0][0] - 4, of[0][1] + 4]])}" fill="${J.tin[500]}"/>` +
+            `<path d="${P([[ob[1][0] + 4, ob[1][1]], [of[1][0] + 4, of[1][1] + 4], bf[1], bb[1]])}" fill="${J.tin[500]}"/>` +
+            `</g><g filter="url(#${gb})" opacity="0.45">` +
+            // копоть в углах дна: полоса по задней и боковым кромкам дна
+            `<path d="M${f(bf[0][0] + 1)} ${f(bf[0][1] + 2)} L${f(bb[0][0] + 1)} ${f(bb[0][1] + 1)} L${f(bb[1][0] - 1)} ${f(bb[1][1] + 1)} L${f(bf[1][0] - 1)} ${f(bf[1][1] + 2)}" fill="none" stroke="${J.hole}" stroke-width="3"/>` +
+            `</g></g>` +
+            `<g class="fx">` +
+            // тень задней стенки на дне
+            `<path d="${P([bb[0], bb[1], [bb[1][0], bb[1][1] + 3.5], [bb[0][0], bb[0][1] + 3.5]])}" fill="${J.hole}" opacity="0.3"/>` +
             // рёбра между стенками и дном
             `<path d="M${f(ob[0][0])} ${f(ob[0][1])} L${f(bb[0][0])} ${f(bb[0][1])} M${f(ob[1][0])} ${f(ob[1][1])} L${f(bb[1][0])} ${f(bb[1][1])} ` +
             `M${f(bb[0][0])} ${f(bb[0][1])} L${f(bb[1][0])} ${f(bb[1][1])} M${f(bb[0][0])} ${f(bb[0][1])} L${f(bf[0][0])} ${f(bf[0][1])} M${f(bb[1][0])} ${f(bb[1][1])} L${f(bf[1][0])} ${f(bf[1][1])}" ` +
-            `stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}" opacity="0.6"/>`;
+            `stroke="${PALETTE.ink}" stroke-width="${STROKE.hairline}" opacity="0.6"/></g>`;
         // Пригар: копится в углах и вдоль стенок, где масло стекало и
         // горело, — рваные мазки, а не кружки (кружки читались монетами).
         const rnd = this.rng(907);
@@ -397,6 +434,28 @@ Object.assign(GreedJunk, {
         inner += smear(T.x + 5, T.y + T.h - 4, 9, 4) + smear(T.x + T.w - 6, T.y + T.h - 3, 11, 3.6) +
             smear(T.x + 30, T.y + 1.6, 16, 2) + smear(T.x + T.w - 26, T.y + 1.4, 10, 1.8) +
             smear(T.x + 58, T.y + T.h - 2, 7, 2.4);
+        // Чаша в карте высот — тем же приёмом, что скос окна барабанов: всё
+        // в проёме на высоте борта, дно глубоко внизу, и размытие само даёт
+        // склоны стенок и скруглённые углы одной плавной формой (стопка
+        // ступеней свет рисует полосами). Низина — по средним линиям стенок;
+        // размытие по x шире, чем по y: боковые стенки в перспективе вдвое
+        // шире задней. Спереди низина уходит под борт — изнанку передней
+        // стенки сверху не видно, там обрыв к кромке. Дно на −7: стенки
+        // круче — свет сильнее отделяет их от дна; глубина шейдера (depth)
+        // темнит дно сама.
+        {
+            const g = (v) => { const c = Math.round(this.hv(v) * 255); return `rgb(${c},${c},${c})`; };
+            const bl = this.gid('tb');
+            const lo = [[124.5, 550.2], [235.5, 550.2], [240.9, 580], [119.1, 580]];
+            inner += `<g class="hpass"><defs>` +
+                `<filter id="${bl}" filterUnits="userSpaceOnUse" x="100" y="530" width="160" height="65"><feGaussianBlur stdDeviation="2.2 1.1"/></filter></defs>` +
+                `<g clip-path="url(#${cl})"><g filter="url(#${bl})">` +
+                `<rect x="100" y="530" width="160" height="65" style="fill:${g(12)}!important;stroke:none!important"/>` +
+                `<path d="${P(lo)}" style="fill:${g(-7)}!important;stroke:none!important"/>` +
+                // обводка проёма — на высоте борта: половина её ширины лежит
+                // вне обрезки и на высоте нутра давала канавку по контуру
+                `</g></g><path d="${openD}" style="fill:none!important;stroke:${g(12)}!important;stroke-width:${STROKE.detail}"/></g>`;
+        }
         // нутро формы ниже борта нарочно — sunk (tools/greed-sink.js)
         out += '<g class="sunk">' + this.T(5, 'steel', inner) + '</g>';
         return out;
