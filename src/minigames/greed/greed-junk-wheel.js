@@ -64,7 +64,7 @@ Object.assign(GreedJunk, {
         }
         // сколы краски у обода и пара царапин: под краской фанера
         let chip = '';
-        for (let k = 0; k < 0; k++) { // версия 2: без сколов
+        for (let k = 0; k < 18; k++) {
             const a = rnd() * Math.PI * 2, r = G.rFace - 2 - rnd() * 18, s = 1 + rnd() * 2.6;
             let d = '';
             for (let q = 0; q < 6; q++) {
@@ -73,7 +73,7 @@ Object.assign(GreedJunk, {
             }
             chip += `<path d="${d}Z" fill="${W.ply}" stroke="${W.plyLo}" stroke-width="0.3"/>`;
         }
-        for (let k = 0; k < 0; k++) {
+        for (let k = 0; k < 6; k++) {
             const a = rnd() * Math.PI * 2, r = 22 + rnd() * 70, L = 5 + rnd() * 11, t = a + 1.2 + rnd();
             chip += `<path d="M${f(Math.cos(a) * r)} ${f(Math.sin(a) * r)} l${f(Math.cos(t) * L)} ${f(Math.sin(t) * L)}" stroke="${W.ply}" stroke-width="0.4" opacity="0.8"/>`;
         }
