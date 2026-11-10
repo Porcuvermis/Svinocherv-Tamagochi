@@ -19,6 +19,9 @@ LAC, BUR, BUR_D, GOLD, INK = '#141010', '#6c1023', '#3a0812', '#d6ad52', '#0b060
 WOOD, WOOD_L, CREAM, SCR = '#742612', '#a5472a', '#cfc19a', '#060a1a'
 MAT = {'lac': 'rgb(158,0,0)', 'gold': 'rgb(230,0,255)', 'glass': 'rgb(205,255,0)', 'matte': 'rgb(0,0,0)', 'satin': 'rgb(70,0,0)', 'ball': 'rgb(255,0,0)'}
 PASS = 'albedo'
+import os, json
+ICONS_OFF = os.environ.get('ICONS_OFF') == '1'
+ICON_AT = []
 
 def c(alb, m='lac', e='#000'):
     return alb if PASS == 'albedo' else (MAT[m] if PASS == 'mat' else e)
@@ -314,11 +317,20 @@ def wheel():
         if math.cos(a) < 0.1 or not icons[i]:
             continue
         ix, iy = cx + math.cos(a) * R * 0.74, cy + math.sin(a) * R * 0.74
+        # Сектор — экранчик: тёмное стекло в золотой нитке, значок светится
+        # сам (как экран барабанов). Без значков (ICONS_OFF) — подложка для
+        # анимации эффектов дисплея (wheel-fx.py).
+        o += rr(ix - 18.6, iy - 18.6, ix + 18.6, iy + 18.6, 3.6, c(INK)) + rr(ix - 18, iy - 18, ix + 18, iy + 18, 3.2, c(GOLD, 'gold'))
+        o += rr(ix - 17, iy - 17, ix + 17, iy + 17, 2.6, c('#04060d', 'glass', '#03050c'))
+        ICON_AT.append((round(ix, 2), round(iy, 2), icons[i]))
+        if ICONS_OFF:
+            continue
         g = sprite(icons[i]); q = 1.9
         for y in range(16):
             for x in range(16):
                 if g[y][x]:
-                    o += f'<rect x="{ix - 15.2 + x * q:.2f}" y="{iy - 15.2 + y * q:.2f}" width="{q + 0.05}" height="{q + 0.05}" fill="{c(g[y][x], "satin")}"/>'
+                    col = g[y][x]
+                    o += f'<rect x="{ix - 15.2 + x * q:.2f}" y="{iy - 15.2 + y * q:.2f}" width="{q - 0.25}" height="{q - 0.25}" fill="{c("#05070e", "glass", col)}"/>'
     o += f'<circle cx="{cx}" cy="{cy}" r="22.6" fill="{c(INK)}"/><circle cx="{cx}" cy="{cy}" r="22" fill="{c(GOLD, "gold")}"/><circle cx="{cx}" cy="{cy}" r="8" fill="{c("#191212")}"/>'
     o += f'<path d="M204.6 104 L204.6 132 L166.5 118 Z" fill="{c(INK)}"/><path d="M204 105 L204 131 L168 118 Z" fill="{c(GOLD, "gold")}"/>'
     return o
@@ -421,8 +433,10 @@ def svg(pass_):
     o += curls(104, 630 - 13.5, 1, -1, 254)
     return o + '</svg>'
 
-out = sys.argv[1]
-for p in ('albedo', 'mat', 'emit'):
+if __name__ == '__main__':
+  out = sys.argv[1]
+  for p in ('albedo', 'mat', 'emit'):
     open(f'{out}mach-{p}.svg', 'w').write(svg(p))
-build_height().save(f'{out}mach-height.png')
-print('ok', W, H)
+  build_height().save(f'{out}mach-height.png')
+  json.dump(ICON_AT[:len(ICON_AT) // 3], open(f'{out}mach-icons.json', 'w'))
+  print('ok', W, H)
