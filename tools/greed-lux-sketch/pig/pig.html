@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8">
+<!-- Болванка свиньи-копилки (piggy.obj, CC-BY Poly by Google): ракурс из
+     адреса, прозрачный фон. Только для эскизов, в игру не уезжает. -->
+<body style="margin:0;background:transparent">
+<canvas id="c" width="600" height="600"></canvas>
+<script src="../../../vendor/three.min.js"></script>
+<script>
+const q = new URLSearchParams(location.search), num = (k, d) => q.has(k) ? +q.get(k) : d;
+const cv = document.getElementById('c');
+const r = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, preserveDrawingBuffer: true });
+r.setClearColor(0x000000, 0);
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(num('fov', 28), 1, 0.1, 50);
+cam.position.set(0, 0, 4.2);
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x3a2420, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(-2, 3, 3); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffd9a0, 0.5); rim.position.set(3, 1, -2); scene.add(rim);
+fetch('piggy.obj').then(t => t.text()).then(txt => {
+  // OBJ: v, vt (не нужны), f с материалами — тело розовое, детали чёрные
+  const V = [], groups = {}; let cur = 'body';
+  txt.split('\n').forEach(l => {
+    const p = l.trim().split(/\s+/);
+    if (p[0] === 'v') V.push(p.slice(1, 4).map(Number));
+    else if (p[0] === 'usemtl') cur = p[1];
+    else if (p[0] === 'f') {
+      const idx = p.slice(1).map(s => parseInt(s.split('/')[0], 10) - 1);
+      const g = groups[cur] || (groups[cur] = []);
+      for (let i = 1; i < idx.length - 1; i++) g.push(idx[0], idx[i], idx[i + 1]);
+    }
+  });
+  const pig = new THREE.Group();
+  const col = { lambert2SG: 0xd96a74, lambert3SG: 0x1a1214 };
+  Object.entries(groups).forEach(([m, ids]) => {
+    const pos = new Float32Array(ids.length * 3);
+    ids.forEach((v, i) => pos.set(V[v], i * 3));
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    pig.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col[m] || 0x888888, roughness: 0.45, metalness: 0.05, flatShading: q.has('flat') })));
+  });
+  const D = Math.PI / 180;
+  pig.rotation.set(num('pitch', 10) * D, num('yaw', 40) * D, num('roll', 0) * D, 'YXZ');
+  scene.add(pig);
+  r.render(scene, cam);
+  document.title = 'ready';
+});
+</script>
