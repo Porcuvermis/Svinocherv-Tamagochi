@@ -304,7 +304,10 @@ def wheel():
     P = lambda a, r: f'{cx + math.cos(a) * r:.2f} {cy + math.sin(a) * r:.2f}'
     for i in range(n):
         a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
-        o += f'<path d="M{P(a0, 0)} L{P(a0, R - 0.6)} A{R} {R} 0 0 1 {P(a1, R - 0.6)} Z" fill="{c(BUR if i % 2 else "#191212")}"/>'
+        # Сектор целиком — дисплей клином (решение игрока: лопасти колеса и
+        # есть экраны, они же подсвечивают колесо). Фон — светом экрана:
+        # бордовые и чёрные клинья по очереди, спицы — рамки между экранами.
+        o += f'<path d="M{P(a0, 0)} L{P(a0, R - 0.6)} A{R} {R} 0 0 1 {P(a1, R - 0.6)} Z" fill="{c("#140508" if i % 2 else "#06060a", "glass", "#4a0816" if i % 2 else "#07070e")}"/>'
     for i in range(n):
         a = 2 * math.pi * i / n
         pts = [(cx + math.cos(a) * (22 + (R - 23) * k / 10), cy + math.sin(a) * (22 + (R - 23) * k / 10)) for k in range(11)]
@@ -317,11 +320,8 @@ def wheel():
         if math.cos(a) < 0.1 or not icons[i]:
             continue
         ix, iy = cx + math.cos(a) * R * 0.74, cy + math.sin(a) * R * 0.74
-        # Сектор — экранчик: тёмное стекло в золотой нитке, значок светится
-        # сам (как экран барабанов). Без значков (ICONS_OFF) — подложка для
-        # анимации эффектов дисплея (wheel-fx.py).
-        o += rr(ix - 18.6, iy - 18.6, ix + 18.6, iy + 18.6, 3.6, c(INK)) + rr(ix - 18, iy - 18, ix + 18, iy + 18, 3.2, c(GOLD, 'gold'))
-        o += rr(ix - 17, iy - 17, ix + 17, iy + 17, 2.6, c('#04060d', 'glass', '#03050c'))
+        # Значок горит на экране сектора. Без значков (ICONS_OFF) — подложка
+        # для анимации эффектов дисплея (wheel-fx.py).
         ICON_AT.append((round(ix, 2), round(iy, 2), icons[i]))
         if ICONS_OFF:
             continue
@@ -331,6 +331,12 @@ def wheel():
                 if g[y][x]:
                     col = g[y][x]
                     o += f'<rect x="{ix - 15.2 + x * q:.2f}" y="{iy - 15.2 + y * q:.2f}" width="{q - 0.25}" height="{q - 0.25}" fill="{c("#05070e", "glass", col)}"/>'
+    if PASS == 'emit':
+        o += (f'<pattern id="wled" width="1.9" height="1.9" patternUnits="userSpaceOnUse" x="{cx}" y="{cy}"><path d="M0 0 H1.9 M0 0 V1.9" stroke="#000" stroke-width="0.55" opacity="0.7"/></pattern>'
+              f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="url(#wled)"/>')
+        for i in range(n):
+            a = 2 * math.pi * i / n
+            o += f'<line x1="{cx}" y1="{cy}" x2="{cx + math.cos(a) * R:.2f}" y2="{cy + math.sin(a) * R:.2f}" stroke="#000" stroke-width="3.4"/>'
     o += f'<circle cx="{cx}" cy="{cy}" r="22.6" fill="{c(INK)}"/><circle cx="{cx}" cy="{cy}" r="22" fill="{c(GOLD, "gold")}"/><circle cx="{cx}" cy="{cy}" r="8" fill="{c("#191212")}"/>'
     o += f'<path d="M204.6 104 L204.6 132 L166.5 118 Z" fill="{c(INK)}"/><path d="M204 105 L204 131 L168 118 Z" fill="{c(GOLD, "gold")}"/>'
     return o

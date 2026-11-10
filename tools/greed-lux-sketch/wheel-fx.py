@@ -2,7 +2,8 @@
 # сбоит как дисплей — цифровой сбой, рассыпание на пиксели, построчная
 # перерисовка; выпавший при выигрыше — сбой с яркой вспышкой.
 # Значки не перерисовываются: эффект двигает клетки той же сетки 16×16
-# (sprite() из machine.py), в клетке 24×24 — запас для разлёта.
+# (sprite() из machine.py); экран — весь клин сектора, пиксели разлетаются
+# по нему и обрезаются его краем.
 # Эскиз: подложка — кадр аппарата без значков (ICONS_OFF=1), значки и
 # эффекты светятся поверх. Паузы в эскизе укорочены, чтобы видеть всё.
 #   python3 wheel-fx.py <кадр.png> out/mach-icons.json <выход-префикс>
@@ -28,13 +29,26 @@ def cells(kind):
     g = SPR[kind]
     return [(x, y, rgb(g[y][x])) for y in range(16) for x in range(16) if g[y][x]]
 
+WH = (22, 118, 150)
+
+def in_wedge(x, y, ix, iy):
+    # клин сектора, на котором стоит значок: экран — весь клин, не квадрат
+    a0 = math.atan2(iy - WH[1], ix - WH[0])
+    a = math.atan2(y - WH[1], x - WH[0])
+    d = math.hypot(x - WH[0], y - WH[1])
+    da = (a - a0 + math.pi) % (2 * math.pi) - math.pi
+    return abs(da) < math.pi / 16 - 0.012 and 24 < d < WH[2] - 2
+
 def draw(E, ix, iy, pts):
     # pts: (клетка x, клетка y в сетке 24×24, цвет 3, яркость) — квантовано
     for gx, gy, col, br in pts:
-        if not (0 <= gx < 24 and 0 <= gy < 24) or br <= 0:
+        if br <= 0:
             continue
-        px = (ix - CX0 + (gx - 12) * Q) * S
-        py = (iy - CY0 + (gy - 12) * Q) * S
+        fx, fy = ix + (gx - 12) * Q, iy + (gy - 12) * Q
+        if not in_wedge(fx + Q / 2, fy + Q / 2, ix, iy):
+            continue
+        px = (fx - CX0) * S
+        py = (fy - CY0) * S
         x0, y0 = int(round(px)), int(round(py))
         E[y0:y0 + int(PIX), x0:x0 + int(PIX)] += col * br
 
@@ -102,7 +116,17 @@ for fi in range(int(total * FPS)):
             if idx == k and t0 <= t < t0 + DUR[ev]:
                 st, tt = ev, (t - t0) / DUR[ev]
         draw(E, ix, iy, state(st, tt, cells(kind), None))
-    glow = gaussian_filter(E, (5, 5, 0)) * 0.9 + gaussian_filter(E, (14, 14, 0)) * 0.55
+        if st == 'win' and tt > 0.35:
+            k = (tt - 0.35) / 0.65
+            pulse = max(0, math.sin(k * math.pi * 2)) * (1 - k * 0.4)
+            ys, xs = np.mgrid[0:E.shape[0], 0:E.shape[1]]
+            fx, fy = CX0 + (xs + 0.5) / S, CY0 + (ys + 0.5) / S
+            a0 = math.atan2(iy - WH[1], ix - WH[0])
+            da = (np.arctan2(fy - WH[1], fx - WH[0]) - a0 + math.pi) % (2 * math.pi) - math.pi
+            d = np.hypot(fx - WH[0], fy - WH[1])
+            wedge = (np.abs(da) < math.pi / 16 - 0.012) & (d > 24) & (d < WH[2] - 2)
+            E[wedge] += np.array([0.55, 0.32, 0.06], np.float32) * pulse
+    glow = gaussian_filter(E, (5, 5, 0)) * 0.75 + gaussian_filter(E, (14, 14, 0)) * 0.45
     img = np.clip(crop + E * 0.95 + glow, 0, 1)
     frames.append(Image.fromarray((img * 255).astype(np.uint8)).resize((388, 698), Image.LANCZOS))
 frames[0].save(out + 'wheel-fx.gif', save_all=True, append_images=frames[1:], duration=int(1000 / FPS), loop=0)
