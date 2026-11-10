@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8">
+<!-- Болванка банки-кошелька (jar.obj, CC-BY Jarlan Perez): стекло прозрачное,
+     внутри куча монет, крышка отдельной деталью (?lid — подъём, ?lidtilt —
+     наклон). Только для эскизов, в игру не уезжает. -->
+<body style="margin:0;background:transparent">
+<canvas id="c" width="600" height="600"></canvas>
+<script src="../../../vendor/three.min.js"></script>
+<script>
+const q = new URLSearchParams(location.search), num = (k, d) => q.has(k) ? +q.get(k) : d, D = Math.PI / 180;
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), alpha: true, antialias: true, preserveDrawingBuffer: true });
+r.setClearColor(0x000000, 0); r.sortObjects = true;
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(num('fov', 24), 1, 0.1, 50);
+cam.position.set(0, 0, 1.6);
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x302018, 0.8));
+const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(-2, 3, 3); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffe0b0, 0.6); rim.position.set(3, 1, -2); scene.add(rim);
+fetch('jar.obj').then(t => t.text()).then(txt => {
+  const V = [], G = {}; let cur = 'x';
+  txt.split('\n').forEach(l => { const p = l.trim().split(/\s+/);
+    if (p[0] === 'v') V.push(p.slice(1, 4).map(Number));
+    else if (p[0] === 'usemtl') cur = p[1];
+    else if (p[0] === 'f') { const i = p.slice(1).map(s => parseInt(s.split('/')[0], 10) - 1); const g = G[cur] || (G[cur] = []);
+      for (let k = 1; k < i.length - 1; k++) g.push(i[0], i[k], i[k + 1]); } });
+  const mesh = (ids, mat) => { const pos = new Float32Array(ids.length * 3); ids.forEach((v, i) => pos.set(V[v], i * 3));
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals(); return new THREE.Mesh(g, mat); };
+  const jar = new THREE.Group();
+  // монеты внутри — плоские цилиндры кучей до доли высоты coins (0..1)
+  const fill = num('coins', 0.75), gold = new THREE.MeshStandardMaterial({ color: 0xe0a830, metalness: 0.45, roughness: 0.35, emissive: 0x3a2400 });
+  const coin = new THREE.CylinderGeometry(0.028, 0.028, 0.006, 20);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const yb = -0.29, yt = yb + (0.36 * fill);
+  for (let i = 0; i < 260 * fill; i++) { const m = new THREE.Mesh(coin, gold); const a = rnd() * 6.28, rr = Math.sqrt(rnd()) * 0.1;
+    m.position.set(Math.cos(a) * rr, yb + rnd() * (yt - yb), Math.sin(a) * rr); m.rotation.set((rnd() - 0.5) * 1.4, rnd() * 3, (rnd() - 0.5) * 1.4); jar.add(m); }
+  const glass = (c, o) => new THREE.MeshPhysicalMaterial({ color: c, transparent: true, opacity: o, roughness: 0.05, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
+  jar.add(mesh(G.mat24, glass(0xdfeee8, 0.12)));
+  jar.add(mesh(G.mat25, glass(0xe8f4f0, 0.22)));
+  const lid = mesh(G.mat15, new THREE.MeshStandardMaterial({ color: 0xb8bec4, metalness: 0.8, roughness: 0.35 }));
+  // крышка поднимается и наклоняется вокруг заднего края
+  const lidG = new THREE.Group(); lidG.position.set(0, 0.105, -0.14); lid.position.set(0, -0.105, 0.14); lidG.add(lid);
+  lidG.position.y += num('lid', 0); lidG.rotation.x = -num('lidtilt', 0) * D; jar.add(lidG);
+  jar.position.y = 0.1;
+  jar.rotation.set(num('pitch', 12) * D, num('yaw', 0) * D, num('roll', 0) * D, 'YXZ');
+  scene.add(jar);
+  r.render(scene, cam); document.title = 'ready';
+});
+</script>
