@@ -61,11 +61,6 @@ const DebugState = {
             <button data-act="gear">Жетоны</button>
             <button data-act="greed-machine">Аппарат</button>
             <button data-act="fps-badge">Кадры</button>
-            <button data-act="greed-wheel">Колесо</button>
-            <button data-act="greed-pachinko">Пачинко</button>
-            <button data-act="greed-skin-slots">Бандит</button>
-            <button data-act="greed-skin-wheel">Колесо: вид</button>
-            <button data-act="greed-skin-pachinko">Пачинко: вид</button>
             <button data-act="kill">Уморить</button>
             <button data-act="revive">Оживить</button>
             <button data-act="reset">Сброс</button>
@@ -349,36 +344,8 @@ const DebugState = {
         // Корпус аппарата алчности со светом от наклона — проверить на
         // телефоне, пока он не встроен в игру (greed-junk-lit.js).
         if (act === 'fps-badge') { this.toggleFpsBadge(); return; }
-        // Колесо фортуны на аппарате без покупки — посмотреть рисунок. Аппарат
-        // собирается один раз, поэтому смена — с перезагрузкой страницы.
-        if (act === 'greed-wheel' || act === 'greed-pachinko') {
-            const key = act === 'greed-wheel' ? 'gj-wheel' : 'gj-pachinko';
-            let on = false;
-            try { on = localStorage.getItem(key) !== '1'; localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* нет хранилища */ }
-            // Пачинко без покупки не сыграть: бэкенд скажет «закрыто», а
-            // купить его в игре пока негде. Включение выдаёт первую ступень
-            // (если её не было), выключение забирает — только выданную здесь.
-            // То же у колеса.
-            if (typeof GameState !== 'undefined' && GameState.data) {
-                if (on) { this.greedGrantShown(); location.replace(location.pathname + '?fresh=' + Date.now() + location.hash); return; }
-                const up = GameState.data.upgrades || (GameState.data.upgrades = {});
-                const ukey = act === 'greed-wheel' ? 'greed_wheel' : 'greed_pachinko', gkey = key + '-granted';
-                let granted = false;
-                try { granted = localStorage.getItem(gkey) === '1'; } catch (e) { /* нет хранилища */ }
-                if (on && !up[ukey]) { up[ukey] = 1; try { localStorage.setItem(gkey, '1'); } catch (e) { /* нет */ } }
-                if (!on && granted) { up[ukey] = 0; try { localStorage.removeItem(gkey); } catch (e) { /* нет */ } }
-                GameState.save();
-            }
-            location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
-            return;
-        }
-        // Вид игры аппарата: гаражный (1) ↔ премиум (2) без покупки
-        // (docs/plan/31-greed-premium.md, разд. 3.3).
-        if (act.indexOf('greed-skin-') === 0) {
-            if (typeof GreedSkin !== 'undefined') GreedSkin.toggle(act.slice(11));
-            location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
-            return;
-        }
+        // Колесо, пачинко и вид игр аппарата — в панели алчности
+        // (greed-debug.js), без перезагрузки игры.
         if (act === 'greed-machine') {
             if (typeof GreedJunkLit !== 'undefined') GreedJunkLit.preview();
             return;
@@ -483,31 +450,7 @@ const DebugState = {
 
     render() {
         if (this.panel) this.panel.classList.toggle('visible', DebugMode.enabled);
-        if (this.panel && typeof GreedSkin !== 'undefined') {
-            [['slots', 'Бандит'], ['wheel', 'Колесо'], ['pachinko', 'Пачинко']].forEach(([g, name]) => {
-                const b = this.panel.querySelector(`[data-act="greed-skin-${g}"]`);
-                if (b) b.textContent = name + ': вид ' + GreedSkin.of(g) + (GreedSkin.forced(g) ? '' : ' (покупка)');
-            });
-        }
         if (DebugMode.enabled) this.startFps(); else this.stopFps();
-        // колесо и пачинко аппарата: включены ли (✓) и не сломалась ли картинка (✗)
-        [['greed-wheel', 'gj-wheel', 'Колесо', 'wheelError'], ['greed-pachinko', 'gj-pachinko', 'Пачинко', 'pachError']].forEach(([act, key, name, errKey]) => {
-            const wb = this.panel && this.panel.querySelector(`[data-act="${act}"]`);
-            if (!wb) return;
-            let on = false;
-            try { on = localStorage.getItem(key) === '1'; } catch (e) { /* нет хранилища */ }
-            const err = typeof GreedJunkLit !== 'undefined' && GreedJunkLit[errKey];
-            let note = '';
-            // Последний бросок колеса и чем кончился: на телефоне консоли нет,
-            // а «колесо не играет» бывает от трёх разных причин.
-            if (act === 'greed-wheel' && on && typeof GreedJunkLit !== 'undefined' && GreedJunkLit.wheelLast) {
-                const L = GreedJunkLit.wheelLast, min = GreedJunkLit.WHEEL_SPIN.minW;
-                const why = { play: 'играет', weak: 'слабо', held: 'палец замер', refused: 'отказ' }[L.why] || L.why;
-                const ref = typeof GreedMinigame !== 'undefined' && GreedMinigame.refused && GreedMinigame.refused.wheel;
-                note = ` · ${Math.abs(L.w * 1000).toFixed(1)}/${(min * 1000).toFixed(1)} ${why}${L.why === 'refused' && ref ? ' (' + ref + ')' : ''}`;
-            }
-            wb.textContent = name + (err ? ' ✗ ' + err : on ? ' ✓' : '') + note;
-        });
     }
 };
 

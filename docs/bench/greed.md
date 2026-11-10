@@ -27,7 +27,7 @@
 | Палитра аппарата | `src/core/palette.js` → `greedJunk` |
 | Вид игры (гараж 1 / премиум 2) по уровню и отладке | `greed-skin.js` (`GreedSkin.of(игра)`) |
 | Материалы для шейдера (блеск, острота, металл) | `src/core/materials.js`, `docs/materials.md` |
-| Отладка: 🐞 → «Аппарат», «Колесо», «Пачинко», «Монеты», «Нагрузка» | `src/core/debug.js` |
+| Отладка: 🐞 → «Аппарат» (превью); в аппарате — панель алчности: колесо/пачинко, вид 1/2, «Эскиз v2», пересборка без перезагрузки | `src/core/debug.js`, `greed-debug.js`, `greed-lux-preview.js` |
 | Ревизия одной детали, аномалии высот | `docs/bench/greed-audit.md`, `tools/greed-part.js`, `tools/greed-sink.js` |
 
 ## 2. Крепёж: как аппарат связан с игрой

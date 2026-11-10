@@ -12,7 +12,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import gaussian_filter
 
-S, X0, Y0, FW, FH = 3, 0, -57, 360, 696
+import os
+S, X0, Y0, FW, FH = int(os.environ.get('MS', 3)), 0, -57, 360, 696
 W, H = FW * S, FH * S
 HR = 64.0                                    # размах карты высот, единиц
 LAC, BUR, BUR_D, GOLD, INK = '#141010', '#6c1023', '#3a0812', '#d6ad52', '#0b0605'
@@ -445,4 +446,6 @@ if __name__ == '__main__':
     open(f'{out}mach-{p}.svg', 'w').write(svg(p))
   build_height().save(f'{out}mach-height.png')
   json.dump(ICON_AT[:len(ICON_AT) // 3], open(f'{out}mach-icons.json', 'w'))
+  # пиксельные значки — для живых экранчиков колеса в игре (greed-lux-preview.js)
+  json.dump({k: sprite(k) for k in ('coin', 'bone', 'meat', 'skull', 'shard', 'token')}, open(f'{out}mach-sprites.json', 'w'))
   print('ok', W, H)
