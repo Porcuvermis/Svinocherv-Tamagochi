@@ -30,7 +30,7 @@ const clamp = (x) => Math.max(0, Math.min(1, x));
 // ширина, а близость банки к камере (игрок, 17.11).
 // Низ скотча заходит под рамку с запасом: при низе ровно на краю видимой
 // зоны рамка и скотч вставали встык ровной полосой (игрок, 17.11).
-const TAPE = { y0: -0.085, y1: 0.045, arc: 60 * D };
+const TAPE = { y0: -0.212, y1: -0.082, arc: 60 * D };   // на бочонке, высота та же 0,13
 // холст — в пропорции куска скотча (дуга 0,1495 × высота 0,13), иначе рисунок
 // растягивается по вертикали
 function tapeCanvas() { const c = document.createElement('canvas'); c.width = 2048; c.height = 1781; return c; }
@@ -110,26 +110,28 @@ const tokenGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.008, 24);
 const tokenMat = [new THREE.MeshStandardMaterial({ color: 0xd8a43a, metalness: 0.6, roughness: 0.35 }),
                   new THREE.MeshStandardMaterial({ color: 0xc8382c, metalness: 0.2, roughness: 0.4 }),
                   new THREE.MeshStandardMaterial({ color: 0xc8382c, metalness: 0.2, roughness: 0.4 })];
-const ready = fetch('jar.obj').then(t => t.text()).then(txt => {
-  const V = [], G = {}; let cur = 'x';
-  txt.split('\n').forEach(l => { const p = l.trim().split(/\s+/);
-    if (p[0] === 'v') V.push(p.slice(1, 4).map(Number));
-    else if (p[0] === 'usemtl') cur = p[1];
-    else if (p[0] === 'f') { const i = p.slice(1).map(s => parseInt(s.split('/')[0], 10) - 1); const g = G[cur] || (G[cur] = []);
-      for (let k = 1; k < i.length - 1; k++) g.push(i[0], i[k], i[k + 1]); } });
-  const mesh = (ids, mat) => { const pos = new Float32Array(ids.length * 3); ids.forEach((v, i) => pos.set(V[v], i * 3));
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals(); return new THREE.Mesh(g, mat); };
+// Классическая трёхлитровая банка (референс игрока, docs/ref/greed-jar-3l-*.jpg)
+// телом вращения по профилю: скруглённое дно, тело чуть бочонком, плавные
+// плечи, короткое горло с венчиком (два валика под крышку). Ширина к высоте
+// ~0,66, горло ~0,45 ширины тела. Высота 0,45, как у прежней болванки.
+const JH = 0.45, JR = 0.1485, JY0 = -0.32;
+const PROFILE = [[0, 0], [0, 0.80], [0.012, 0.92], [0.035, 0.975], [0.08, 0.995], [0.30, 1.0], [0.45, 1.0], [0.60, 0.99],
+  [0.70, 0.96], [0.78, 0.88], [0.84, 0.74], [0.88, 0.60], [0.905, 0.50], [0.92, 0.462], [0.932, 0.458], [0.942, 0.475],
+  [0.955, 0.475], [0.963, 0.46], [0.973, 0.475], [0.99, 0.475], [1.0, 0.46], [1.0, 0.405]];
+const ready = Promise.resolve().then(() => {
+  const lathe = (prof, k) => new THREE.LatheGeometry(prof.map(([yn, rn]) => new THREE.Vector2(rn * JR * k, JY0 + yn * JH)), 72);
   const gold = new THREE.MeshStandardMaterial({ color: 0xe0a830, metalness: 0.45, roughness: 0.35, emissive: 0x3a2400 });
   const coin = new THREE.CylinderGeometry(0.028, 0.028, 0.006, 20);
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0; i < 300; i++) { const m = new THREE.Mesh(coin, gold); const a = rnd() * 6.28, rr = Math.sqrt(rnd()) * 0.11;
-    // верх кучи ниже верха скотча (0,045)
-    m.position.set(Math.cos(a) * rr, -0.29 + rnd() * 0.30, Math.sin(a) * rr); m.rotation.set((rnd() - 0.5) * 1.4, rnd() * 3, (rnd() - 0.5) * 1.4); coins.add(m); }
+  for (let i = 0; i < 300; i++) { const m = new THREE.Mesh(coin, gold); const a = rnd() * 6.28, rr = Math.sqrt(rnd()) * JR * 0.8;
+    // верх кучи ниже верха скотча (−0,082)
+    m.position.set(Math.cos(a) * rr, -0.30 + rnd() * 0.20, Math.sin(a) * rr); m.rotation.set((rnd() - 0.5) * 1.4, rnd() * 3, (rnd() - 0.5) * 1.4); coins.add(m); }
   const glass = (c, o) => new THREE.MeshPhysicalMaterial({ color: c, transparent: true, opacity: o, roughness: 0.05, side: THREE.DoubleSide, depthWrite: false });
-  const inner = mesh(G.mat24, glass(0xdfeee8, 0.12)); inner.renderOrder = 2; body.add(inner);
-  const outer = mesh(G.mat25, glass(0xe8f4f0, 0.2)); outer.renderOrder = 3; body.add(outer);
-  // скотч поверх стекла: кусок цилиндра, середина — к игроку (u 0.5)
-  const tg = new THREE.CylinderGeometry(0.1428, 0.1428, TAPE.y1 - TAPE.y0, 64, 1, true, Math.PI - TAPE.arc / 2, TAPE.arc);
+  // внутренняя стенка — тот же профиль ужатый (толщина стекла), от дна вверх
+  const inner = new THREE.Mesh(lathe(PROFILE.filter(([yn]) => yn > 0.02), 0.94), glass(0xdfeee8, 0.12)); inner.renderOrder = 2; body.add(inner);
+  const outer = new THREE.Mesh(lathe(PROFILE, 1), glass(0xe8f4f0, 0.2)); outer.renderOrder = 3; body.add(outer);
+  // скотч — на бочонке тела, ниже плеч (на плечах лёг бы криво)
+  const tg = new THREE.CylinderGeometry(JR + 0.0008, JR + 0.0008, TAPE.y1 - TAPE.y0, 64, 1, true, Math.PI - TAPE.arc / 2, TAPE.arc);
   const tape = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.85, side: THREE.FrontSide }));
   tape.position.y = (TAPE.y0 + TAPE.y1) / 2; tape.rotation.y = Math.PI; tape.renderOrder = 4; body.add(tape);
   // Крышки нет: из банки монета вылетает в монетоприёмник на каждой крутке
@@ -145,7 +147,8 @@ const REST = { p: at(313, 694, 5.3), pitch: 8 };
 // 0,10·422/(490·tg20°) = 0,237 от камеры, середина банки на 0,237 + радиус;
 // по высоте — середина скотча на y 545. Без наклона: так видимая часть
 // скотча считается без догадок (x ~584…1464 из 2048 по ширине).
-const NEAR = { p: new THREE.Vector3(0, -0.115, -0.3794), pitch: 0 };
+// (трёхлитровая: скотч ниже на 0,127, радиус больше на 0,006 — поза сдвинута на столько же)
+const NEAR = { p: new THREE.Vector3(0, 0.012, -0.3854), pitch: 0 };
 // ---------- режиссура (сек) ----------
 // подготовка (присед) → отрыв (вытянулась) → полёт дугой с креном, быстрый
 // старт и торможение у камеры, оборот разгоняется и тормозит → прибытие:
