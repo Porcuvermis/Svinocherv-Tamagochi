@@ -6,8 +6,8 @@ import sys, glob, json
 import numpy as np
 from PIL import Image, ImageDraw
 pre, game, fp, out = sys.argv[1:5]
-FPS = 15
-EV = {'tap': 0.6, 'hop': 0.8, 'fly': 1.95, 'taps': [2.5, 3.0, 3.5], 'hold': [4.2, 6.0], 'out': 6.6, 'back': 7.75}
+FPS = 25
+EV = {'tap': 0.45, 'hop': 0.53, 'fly': 1.13, 'taps': [1.95, 2.3, 2.65], 'hold': [3.05, 4.6], 'out': 5.0, 'back': 5.52}
 a = np.asarray(Image.open(fp + 'a.png').convert('RGB'), np.float32)
 b = np.asarray(Image.open(fp + 'b.png').convert('RGB'), np.float32)
 t_ = np.clip(((a[..., 0] - b[..., 0]) + (b[..., 1] - a[..., 1])) / 510, 0, 1)[..., None]
@@ -24,8 +24,8 @@ def dim(t):
 def finger(t):
     if EV['tap'] - 0.05 <= t < EV['tap'] + 0.2: return (313, 690)
     for tt in EV['taps']:
-        if tt - 0.05 <= t < tt + 0.15: return (275, 420)
-    if EV['hold'][0] <= t < EV['hold'][1]: return (275, 610)
+        if tt - 0.05 <= t < tt + 0.15: return (120, 420)
+    if EV['hold'][0] <= t < EV['hold'][1]: return (120, 590)
     if EV['out'] - 0.05 <= t < EV['out'] + 0.2: return (195, 130)
     return None
 frames = []
@@ -49,6 +49,6 @@ for k, im in enumerate(frames): im.save(f'{out}mp4/{k:03d}.png')
 # видео вместо GIF: GIF такой длины весит ~15 МБ
 subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(FPS), '-i', f'{out}mp4/%03d.png', '-vf', 'scale=780:1688:flags=lanczos',
                 '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', out + 'jar-shop.mp4'], check=True)
-for k, ft in enumerate([0.3, 1.3, 2.3, 3.05, 5.2, 7.2]):
+for k, ft in enumerate([0.5, 0.75, 1.0, 1.3, 2.4, 5.3]):
     frames[min(len(frames) - 1, int(ft * FPS))].save(f'{out}js-{k}.png')
 print(len(frames), 'кадров')
