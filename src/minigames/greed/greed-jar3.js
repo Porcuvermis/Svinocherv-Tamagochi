@@ -60,7 +60,8 @@ const GreedJar3 = {
         c.save();
         c.translate(P.cx, P.cy);
         c.rotate(-(P.roll || 0) * Math.PI / 180);
-        c.scale(k, k);
+        // sx, sy — сжатие и вытяжка (присед, отрыв, посадка); от дна банки
+        c.translate(0, 0.5 * k); c.scale(k * (P.sx || 1), k * (P.sy || 1)); c.translate(0, -0.5);
         c.translate(0, 0.5);            // середина банки — в точке позы
         // 1. задняя стенка: лёгкий тон стекла
         this.silhouette(c, v);
@@ -75,6 +76,7 @@ const GreedJar3 = {
         c.restore(); c.globalAlpha = 1;
         // 3. монеты внутри
         if (P.coins !== false) this.coins(c, v, G, P.yaw || 0);
+        if (P.drops) this.drops(c, v, P.drops);
         c.save(); this.silhouette(c, v); c.clip();
         // 4. край силуэта: стекло густеет к краям (видно толщу) — слева светлее
         const gx = c.createLinearGradient(-this.R, 0, this.R, 0);
@@ -236,6 +238,21 @@ const GreedJar3 = {
         c.restore();
     },
 
+    // Жетоны, падающие в горло (вкидывание в магазине): в объёме банки —
+    // за передним стеклом и скотчем, поэтому ниже верха скотча пропадают сами.
+    // d: { y (доля высоты от дна), x, rot, tilt }
+    drops(c, v, list) {
+        const col = TokenArt.color('greed_token'), ink = PALETTE.ink, r = 0.055;
+        list.forEach((d) => {
+            c.save(); c.translate(d.x, -d.y); c.rotate(d.rot);
+            const q = Math.max(0.12, Math.abs(Math.cos(d.tilt)));
+            c.beginPath(); c.ellipse(0, 0, r, r * q, 0, 0, 7); c.ellipse(0, 0, r * 0.43, r * 0.43 * q, 0, 0, 7, true);
+            c.fillStyle = col; c.fill('evenodd');
+            c.lineWidth = 0.006; c.strokeStyle = ink; c.stroke();
+            c.restore();
+        });
+    },
+
     // Скотч — полоса на цилиндре тела: холст делится на узкие полосы, каждая
     // встаёт на свой угол вокруг оси; видны те, что смотрят к игроку. Верх и
     // низ полосы — по эллипсу сечения, к краям полоса темнее (уходит вбок).
@@ -267,9 +284,10 @@ const GreedJar3 = {
     // Холст скотча с числом монет — почти во всю высоту скотча, маркером тем
     // же почерком, что стикер и прежний скотч (GreedJunk.handPath, цифры
     // GreedJunkLit.JAR_DIGIT). Пропорции — как у куска на банке.
-    tapeCoins(n, W = 1200) {
+    tapeCoins(n, W = 1200, cv) {
         const T = this.TAPE, len = this.R * 1.012 * T.arc * Math.PI / 180, H = Math.round(W * (T.y1 - T.y0) / len);
-        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        if (!cv) cv = document.createElement('canvas');
+        if (cv.width !== W) { cv.width = W; cv.height = H; }
         const c = cv.getContext('2d'), C = PALETTE.greedJunk.reel.jar;
         this.paper(c, W, H, C);
         // цифры — почти во всю высоту, но не шире скотча (длинное число — уже)
@@ -294,9 +312,10 @@ const GreedJar3 = {
     // Узел: закрыт (v2, пока не открыты обе ветки) — бледный, пунктир;
     // копится — «вложено/нужно»; готов — обведён, галочка вместо числа.
     // st: { wheel, pach, v2, need:{wheel,pach,v2}, have, press, pop:{узел:сек}, rev 0..1 }
-    tapeShop(st) {
+    tapeShop(st, cv) {
         const Wn = this.SHOP_WIN, W = Wn.w, H = Wn.h;
-        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        if (!cv) cv = document.createElement('canvas');
+        if (cv.width !== W) { cv.width = W; cv.height = H; }
         cv.u0 = Wn.u0; cv.u1 = Wn.u1; cv.shade = false;
         const c = cv.getContext('2d'), C = PALETTE.greedJunk.reel.jar, ink = PALETTE.greedJunk.reel.rag.marker;
         // бумага без рваных концов (концы — на общем куске под этим холстом)

@@ -17,6 +17,43 @@ Object.assign(LocalBackend, {
         return this.upgradeValue('greed', game) || 0;
     },
 
+    // ---------- КОПИЛКИ БАНКИ-МАГАЗИНА ----------
+    // Узел открыт (игра стоит в аппарате) — по уровню, а не по копилке:
+    // ступень могла прийти и из отладки. Версия 2 копится, только когда
+    // открыты обе ветки.
+    greedJar() {
+        const need = (ECONOMY.minigames.greed && ECONOMY.minigames.greed.jar) || {};
+        const jar = (GameState.data.greed && GameState.data.greed.jar) || {};
+        const done = { wheel: this.greedLevel('wheel') >= 1, pachinko: this.greedLevel('pachinko') >= 1, v2: this.greedLevel('slots') >= 2 };
+        const at = (k) => done[k] ? need[k] : Math.min(need[k], jar[k] || 0);
+        return { need, done, have: GameState.currency('greed_token'),
+                 wheel: at('wheel'), pachinko: at('pachinko'), v2: at('v2'), v2open: done.wheel && done.pachinko };
+    },
+
+    // Один жетон алчности в копилку узла. Узел наполнился — ступень
+    // открывается здесь же: колесо/пачинко — первый уровень; версия 2 —
+    // второй всем трём играм (ставки 3/10/100 — по уровню, greedBets).
+    greedDeposit(node) {
+        const J = this.greedJar();
+        if (!(node in J.need)) return { ok: false, error: 'unknown' };
+        if (J.done[node]) return { ok: false, error: 'done' };
+        if (node === 'v2' && !J.v2open) return { ok: false, error: 'closed' };
+        if (J.have < 1) return { ok: false, error: 'not_enough' };
+        GameState.addCurrency('greed_token', -1);
+        GameState.pushLedger({ currency: 'greed_token', delta: -1, reason: 'greed.jar.' + node, client_request_id: newRequestId() });
+        const jar = GameState.data.greed.jar;
+        jar[node] = (jar[node] || 0) + 1;
+        let opened = false;
+        if (jar[node] >= J.need[node]) {
+            opened = true;
+            const up = GameState.data.upgrades || (GameState.data.upgrades = {});
+            if (node === 'v2') { up.greed_slots = 1; up.greed_wheel = 2; up.greed_pachinko = 2; }
+            else up['greed_' + node] = Math.max(1, up['greed_' + node] || 0);
+        }
+        GameState.save();
+        return { ok: true, node, filled: jar[node], need: J.need[node], opened };
+    },
+
     // Какие ставки доступны игре сейчас. До апгрейда — только первая.
     greedBets(game) {
         const cfg = (ECONOMY.minigames && ECONOMY.minigames.greed) || {};

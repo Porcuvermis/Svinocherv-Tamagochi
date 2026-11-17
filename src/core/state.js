@@ -233,6 +233,9 @@ const GameState = {
         if (!d.worm || typeof d.worm !== 'object') d.worm = { revived_at: null };
         if (!d.greed || typeof d.greed !== 'object') d.greed = { dry: 0 };
         if (typeof d.greed.dry !== 'number' || !isFinite(d.greed.dry)) d.greed.dry = 0;
+        // копилки банки-магазина: сколько жетонов вложено в узел (план 31)
+        if (!d.greed.jar || typeof d.greed.jar !== 'object') d.greed.jar = {};
+        ['wheel', 'pachinko', 'v2'].forEach(k => { if (typeof d.greed.jar[k] !== 'number' || !isFinite(d.greed.jar[k])) d.greed.jar[k] = 0; });
         if (!d.room || typeof d.room !== 'object') d.room = {};
         if (!Array.isArray(d.room.poops)) d.room.poops = [];
         // Ключ локации проверяется по реестру, а не просто на «непусто»:
