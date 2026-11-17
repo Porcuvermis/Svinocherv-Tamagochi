@@ -97,8 +97,8 @@ const GreedJar3 = {
         streak(this.R * 0.64, this.R * 0.1, 0.1, 0.64, 0.45);
         // плечо и горло ловят окно — короткие полосы
         streak(-this.R * 0.42, this.R * 0.12, 0.8, 0.9, 0.6);
-        c.globalAlpha = 0.8; c.strokeStyle = J.hi; c.lineWidth = 0.016; c.lineCap = 'round';
-        c.beginPath(); c.ellipse(0, -0.8, this.r(0.8) * 0.82, this.r(0.8) * 0.82 * v + 0.02, 0, Math.PI * 1.08, Math.PI * 1.42); c.stroke();
+        // (была белая дуга поперёк плеч — читалась непонятной полосой, игрок
+        // 17.11; плечо ловит свет вертикальным бликом выше)
         c.globalAlpha = 1;
         c.restore();
         // 6. скотч обегает банку
@@ -173,40 +173,62 @@ const GreedJar3 = {
         c.beginPath(); c.ellipse(0, -top + lip, rt, rt * vv, 0, 0, Math.PI); c.stroke();
     },
 
-    // Куча монет — ТОЛЬКО монеты, никакой заливки под ними (игрок, 17.11:
-    // и жёлтая, и тёмная подложка читались жидкостью). Чтобы между монетами
-    // не просвечивал фон, бок кучи у стекла уложен плотно рядами с
-    // перекрытием (как монеты, прижатые к стенке), а верх — россыпью по
-    // эллипсу поверхности. У каждой монеты видно ребро.
+    // Куча монет — только монеты, никакой заливки под ними. Лежат вразнобой:
+    // случайные места, наклоны и повороты, часть — на ребре, часть боком; два
+    // вида — золотые и биметалл (как в рамке из монет). Плотность такая, что
+    // фон между ними не просвечивает. Было: ровные ряды — читались чешуёй.
+    // Монета — плоскими пятнами без градиентов (дёшево): ребро, лицо, серп
+    // света сверху-слева, тень снизу-справа, рельефный ободок, искра.
     coins(c, v, G) {
         c.save(); this.silhouette(c, v, 0.014); c.clip();
-        const top = this.COIN_TOP, rnd = this._rnd(17), cr = 0.046, vv = Math.max(v, 0.06), list = [];
-        // бок кучи: ряды снизу вверх, сдвиг через ряд, запас за край силуэта
-        const dy = 0.026, dx = 0.066;
-        for (let row = 0, y = 0.008; y < top - 0.01; row++, y += dy) {
-            const rr = this.r(y) + 0.03;
-            for (let x = -rr + (row % 2) * dx / 2; x < rr; x += dx) {
-                const xj = x + (rnd() - 0.5) * 0.02, front = Math.sqrt(Math.max(0, 1 - (xj / (rr - 0.03)) ** 2));
-                list.push({ x: xj, yy: -y + front * this.r(y) * vv, y, tilt: (rnd() - 0.5) * 0.7, sq: 0.32 + rnd() * 0.3, s: 0.9 + rnd() * 0.25 });
-            }
+        const top = this.COIN_TOP, rnd = this._rnd(17), cr = 0.05, vv = Math.max(v, 0.06), list = [];
+        const S = PALETTE.greedCoin.silver;
+        const coin = (x, yy, y) => {
+            const edge = rnd() < 0.12;                       // стоит на ребре
+            list.push({ x, yy, y: y + (rnd() - 0.5) * 0.05, s: 0.8 + rnd() * 0.4,
+                tilt: edge ? (rnd() < 0.5 ? 1 : -1) * (1.2 + rnd() * 0.4) : (rnd() - 0.5) * 2.2,
+                sq: edge ? 0.12 + rnd() * 0.12 : 0.22 + rnd() * 0.6, bi: rnd() < 0.45 });
+        };
+        // бок кучи у стекла: случайно, с запасом за край силуэта
+        for (let i = 0; i < 520; i++) {
+            const y = rnd() * (top - 0.01), rr = this.r(y) + 0.03, x = (rnd() * 2 - 1) * rr;
+            const front = Math.sqrt(Math.max(0, 1 - (x / (rr - 0.03)) ** 2));
+            coin(x, -y + front * this.r(y) * vv, y);
         }
-        // верх кучи: россыпь по эллипсу поверхности, сзади вперёд
+        // верх кучи — россыпь по эллипсу поверхности, с горкой к середине
         const rt = this.r(top);
-        for (let i = 0; i < 70; i++) {
+        for (let i = 0; i < 90; i++) {
             const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
-            const x = Math.cos(a) * d * rt * 0.95, z = Math.sin(a) * d;
-            list.push({ x, yy: -top + z * rt * vv + (rnd() - 0.5) * 0.008, y: top + 0.001 + z * 0.001, tilt: (rnd() - 0.5) * 1.2, sq: 0.25 + rnd() * 0.5, s: 0.85 + rnd() * 0.3 });
+            const x = Math.cos(a) * d * rt * 0.97, z = Math.sin(a) * d;
+            coin(x, -top - (1 - d) * 0.03 + z * rt * vv + (rnd() - 0.5) * 0.01, top + z * 0.02);
         }
         list.sort((a, b) => a.y - b.y);
         list.forEach((m) => {
-            const lit = 0.5 + 0.5 * Math.min(1, m.y / top), r = cr * m.s;
+            const lit = 0.55 + 0.45 * Math.min(1, Math.max(0, m.y / top)), r = cr * m.s, q = r * m.sq;
+            const F = m.bi ? S : G;                          // цвет лица: биметалл — серебряная середина
             c.save(); c.translate(m.x, m.yy); c.rotate(m.tilt);
-            c.beginPath(); c.ellipse(0, r * 0.16, r, r * m.sq, 0, 0, 7); c.fillStyle = G.deep; c.globalAlpha = 1; c.fill();
-            c.beginPath(); c.ellipse(0, r * 0.08, r, r * m.sq, 0, 0, Math.PI); c.fillStyle = G.lo; c.fill();
-            c.beginPath(); c.ellipse(0, 0, r, r * m.sq, 0, 0, 7); c.fillStyle = lit > 0.8 ? G[500] : G.lo; c.fill();
-            c.beginPath(); c.ellipse(0, 0, r * 0.74, r * m.sq * 0.74, 0, 0, 7); c.strokeStyle = G.deep; c.lineWidth = r * 0.07; c.globalAlpha = 0.5; c.stroke();
-            c.beginPath(); c.ellipse(-r * 0.2, -r * m.sq * 0.25, r * 0.55, r * m.sq * 0.35, 0, 0, 7); c.fillStyle = G.hi; c.globalAlpha = lit * 0.6; c.fill();
-            c.beginPath(); c.ellipse(-r * 0.35, -r * m.sq * 0.35, r * 0.18, r * m.sq * 0.12, 0, 0, 7); c.fillStyle = G.glint; c.globalAlpha = lit * 0.8; c.fill();
+            // ребро (толщина) и тушевая обводка — монеты отделяются друг от друга
+            c.beginPath(); c.ellipse(0, r * 0.14, r, q, 0, 0, 7); c.fillStyle = G.deep; c.globalAlpha = 1; c.fill();
+            c.beginPath(); c.ellipse(0, r * 0.07, r * 1.02, q * 1.04 + r * 0.07, 0, 0, 7);
+            c.strokeStyle = PALETTE.ink; c.lineWidth = r * 0.06; c.globalAlpha = 0.45; c.stroke();
+            c.globalAlpha = 1;
+            // лицо: светлое, сверху поверх — основной тон со сдвигом → серп света
+            c.beginPath(); c.ellipse(0, 0, r, q, 0, 0, 7); c.fillStyle = G.hi; c.fill();
+            c.beginPath(); c.ellipse(r * 0.08, q * 0.12, r * 0.97, q * 0.95, 0, 0, 7); c.fillStyle = G[500]; c.fill();
+            c.beginPath(); c.ellipse(r * 0.16, q * 0.3, r * 0.8, q * 0.7, 0, -0.3, Math.PI + 0.3); c.fillStyle = G.lo; c.globalAlpha = 0.55; c.fill();
+            c.globalAlpha = 1;
+            // середина: у биметалла — серебро, у золотой — рельефный ободок
+            if (m.bi) {
+                c.beginPath(); c.ellipse(0, 0, r * 0.58, q * 0.58, 0, 0, 7); c.fillStyle = F.hi; c.fill();
+                c.beginPath(); c.ellipse(r * 0.05, q * 0.08, r * 0.55, q * 0.54, 0, 0, 7); c.fillStyle = F[500]; c.fill();
+            } else {
+                c.beginPath(); c.ellipse(0, 0, r * 0.72, q * 0.72, 0, 0, 7); c.strokeStyle = G.lo; c.lineWidth = r * 0.08; c.globalAlpha = 0.6; c.stroke();
+                c.beginPath(); c.ellipse(0, 0, r * 0.72, q * 0.72, 0, Math.PI * 1.05, Math.PI * 1.6); c.strokeStyle = G.hi; c.globalAlpha = 0.8; c.stroke();
+            }
+            // искра на верхних, освещённых
+            if (lit > 0.85 && m.sq > 0.3) { c.globalAlpha = 0.9; c.fillStyle = G.glint; c.beginPath(); c.ellipse(-r * 0.4, -q * 0.35, r * 0.16, q * 0.14, 0, 0, 7); c.fill(); }
+            // в глубине кучи темнее — тень соседей
+            if (lit < 0.95) { c.globalAlpha = (1 - lit) * 0.9; c.fillStyle = PALETTE.greedCoin.gap; c.beginPath(); c.ellipse(0, r * 0.07, r * 1.02, q * 1.04 + r * 0.07, 0, 0, 7); c.fill(); }
             c.restore();
         });
         c.globalAlpha = 1;
