@@ -115,55 +115,95 @@ const GreedJar3 = {
         c.restore();
     },
 
+    // Горло объёмом, а не плоскими кольцами (игрок, 17.11: «горлышко
+    // плоское»): цилиндр горла со светом слева и тенью справа, валики
+    // выпуклые — блик сверху, тень снизу, кромка — толстый «бублик»,
+    // в отверстии видна внутренняя стенка.
     neck(c, v, J, ink, lw) {
-        const yr = 1, rt = this.r(1), ri = rt * 0.86;
-        // валики под крышку — передние половины эллипсов
+        const y0 = 0.905, rt = this.r(1), ri = rt * 0.84, vv = Math.max(v, 0.02);
+        const band = (ya, yb) => {           // передняя полоса цилиндра между высотами
+            const ra = this.r(ya), rb = this.r(yb);
+            c.beginPath(); c.ellipse(0, -ya, ra, ra * vv, 0, 0, Math.PI, false);
+            c.lineTo(-rb, -yb); c.ellipse(0, -yb, rb, rb * vv, 0, Math.PI, 0, true); c.closePath();
+        };
+        // цилиндр горла: свет слева, к правому краю густеет
+        const gx = c.createLinearGradient(-rt, 0, rt, 0);
+        gx.addColorStop(0, J.rim); gx.addColorStop(0.22, J.hi); gx.addColorStop(0.45, J.tint); gx.addColorStop(0.85, J.edge); gx.addColorStop(1, J.deep);
+        band(y0, 1); c.fillStyle = gx; c.globalAlpha = 0.55; c.fill(); c.globalAlpha = 1;
+        // валики: выпуклые полосы — тень снизу, блик сверху
         [0.948, 0.978].forEach((y) => {
             const r = this.r(y);
-            c.beginPath(); c.ellipse(0, -y, r, r * v, 0, 0, Math.PI);
-            c.strokeStyle = J.edge; c.lineWidth = lw(STROKE.detail); c.globalAlpha = 0.8; c.stroke();
-            c.beginPath(); c.ellipse(0, -y - lw(1.2), r * 0.98, r * v, 0, Math.PI * 0.15, Math.PI * 0.55);
-            c.strokeStyle = J.hi; c.lineWidth = lw(STROKE.detail); c.globalAlpha = 0.7; c.stroke();
+            c.beginPath(); c.ellipse(0, -y + 0.006, r, r * vv, 0, 0.05, Math.PI - 0.05);
+            c.strokeStyle = J.deep; c.globalAlpha = 0.55; c.lineWidth = lw(STROKE.structure); c.stroke();
+            c.beginPath(); c.ellipse(0, -y - 0.002, r * 1.01, r * vv, 0, Math.PI * 0.42, Math.PI * 0.92);
+            c.strokeStyle = J.hi; c.globalAlpha = 0.9; c.lineWidth = lw(STROKE.detail); c.stroke();
+            c.beginPath(); c.ellipse(0, -y, r * 1.01, r * vv, 0, 0, Math.PI);
+            c.strokeStyle = ink; c.globalAlpha = 0.5; c.lineWidth = lw(STROKE.hairline); c.stroke();
         });
         c.globalAlpha = 1;
-        // кромка: толстое кольцо стекла, внутри — тёмный зев
-        c.beginPath(); c.ellipse(0, -yr, rt, rt * v, 0, 0, 7);
-        c.fillStyle = J.rim; c.globalAlpha = 0.9; c.fill(); c.globalAlpha = 1;
-        c.beginPath(); c.ellipse(0, -yr + 0.003, ri, ri * v, 0, 0, 7);
-        c.fillStyle = J.deep; c.globalAlpha = 0.35; c.fill(); c.globalAlpha = 1;
-        c.strokeStyle = ink; c.lineWidth = lw(STROKE.structure); c.stroke();
-        c.beginPath(); c.ellipse(0, -yr, rt, rt * v, 0, 0, 7); c.lineWidth = lw(STROKE.structure); c.stroke();
-        // блик на кромке
-        c.beginPath(); c.ellipse(0, -yr, rt * 0.93, rt * v * 0.8, 0, Math.PI * 1.1, Math.PI * 1.45);
-        c.strokeStyle = J.hi; c.lineWidth = lw(STROKE.detail * 1.4); c.globalAlpha = 0.85; c.stroke(); c.globalAlpha = 1;
+        // кромка — «бублик»: кольцо с толщиной; внутри — зев с задней стенкой
+        const top = 1, lip = 0.012;
+        c.beginPath(); c.ellipse(0, -top + lip, rt, rt * vv, 0, 0, Math.PI); c.lineTo(-rt, -top);
+        c.ellipse(0, -top, rt, rt * vv, 0, Math.PI, 0, true); c.closePath();
+        const gl = c.createLinearGradient(-rt, 0, rt, 0);
+        gl.addColorStop(0, J.hi); gl.addColorStop(0.3, J.rim); gl.addColorStop(1, J.edge);
+        c.fillStyle = gl; c.fill();
+        c.beginPath(); c.ellipse(0, -top, rt, rt * vv, 0, 0, 7); c.ellipse(0, -top, ri, ri * vv, 0, 0, 7, true); c.fillStyle = J.rim; c.fill('evenodd');
+        // Зев — ПУСТОТА: сквозь него видно то, что за банкой. Видна только
+        // полоска задней внутренней стенки горла (серп сверху). Было: зев
+        // залит сплошным тоном — читался крышкой.
+        c.save(); c.beginPath(); c.ellipse(0, -top, ri, ri * vv, 0, 0, 7); c.clip();
+        c.beginPath(); c.ellipse(0, -top, ri, ri * vv, 0, Math.PI, 0); c.ellipse(0, -top + 0.03, ri, ri * vv, 0, 0, Math.PI, true); c.closePath();
+        c.fillStyle = J.edge; c.globalAlpha = 0.5; c.fill();
+        c.beginPath(); c.ellipse(0, -top + 0.03, ri * 0.98, ri * vv, 0, Math.PI * 1.1, Math.PI * 1.9);
+        c.strokeStyle = J.hi; c.lineWidth = lw(STROKE.detail); c.globalAlpha = 0.6; c.stroke();
+        c.restore(); c.globalAlpha = 1;
+        c.beginPath(); c.ellipse(0, -top, ri, ri * vv, 0, 0, 7); c.strokeStyle = ink; c.lineWidth = lw(STROKE.detail); c.stroke();
+        // блик по кромке слева-сзади и тень справа-спереди
+        c.beginPath(); c.ellipse(0, -top, (rt + ri) / 2, (rt + ri) / 2 * vv, 0, Math.PI * 1.05, Math.PI * 1.55);
+        c.strokeStyle = J.hi; c.lineWidth = lw(STROKE.structure); c.globalAlpha = 0.95; c.stroke();
+        c.beginPath(); c.ellipse(0, -top + lip * 0.5, rt * 0.99, rt * vv, 0, Math.PI * 0.05, Math.PI * 0.4);
+        c.strokeStyle = J.deep; c.lineWidth = lw(STROKE.detail); c.globalAlpha = 0.6; c.stroke(); c.globalAlpha = 1;
+        // контур кромки
+        c.beginPath(); c.ellipse(0, -top, rt, rt * vv, 0, Math.PI, 0); c.strokeStyle = ink; c.lineWidth = lw(STROKE.structure); c.stroke();
+        c.beginPath(); c.ellipse(0, -top + lip, rt, rt * vv, 0, 0, Math.PI); c.stroke();
     },
 
-    // Куча монет: верх — эллипс (поверхность кучи), ниже — монеты густо и
-    // темнее к дну. Монеты — эллипсы (лежат плашмя), наклон у каждой свой.
+    // Куча монет — только монеты: в щелях между ними тёмная глубина кучи, у
+    // каждой монеты видно ребро (толщину). Было: сплошная золотая заливка
+    // под монетами — читалась жёлтой жидкостью (игрок, 17.11).
     coins(c, v, G) {
         c.save(); this.silhouette(c, v, 0.016); c.clip();
-        const top = this.COIN_TOP, rnd = this._rnd(17), cr = 0.045;
-        // тело кучи — тёмное золото с переходом к дну
-        const g = c.createLinearGradient(0, -top, 0, 0);
-        g.addColorStop(0, G[500]); g.addColorStop(0.6, G.lo); g.addColorStop(1, G.deep);
-        c.fillStyle = g; c.beginPath();
+        const top = this.COIN_TOP, rnd = this._rnd(17), cr = 0.046, vv = Math.max(v, 0.06);
+        // глубина кучи: щели — почти без света, к дну темнее
         const rt = this.r(top);
-        c.ellipse(0, -top, rt, rt * v + 0.01, 0, Math.PI, 0, false); c.lineTo(rt, 0.05); c.lineTo(-rt, 0.05); c.closePath(); c.fill();
-        // монеты: от дна к верху (верхние поверх), у стекла — видны боком
-        for (let i = 0; i < 170; i++) {
-            const y = Math.pow(rnd(), 0.6) * top, rr = this.r(y) * 0.95;
+        // подложка ниже верха кучи — верхние монеты её перекрывают (иначе над
+        // кучей торчала тёмная полоса)
+        const tb = top - 0.045, rb = this.r(tb);
+        c.beginPath(); c.ellipse(0, -tb, rb, rb * vv + 0.01, 0, Math.PI, 0, false); c.lineTo(rb, 0.05); c.lineTo(-rb, 0.05); c.closePath();
+        c.fillStyle = PALETTE.greedCoin.gap; c.globalAlpha = 0.92; c.fill(); c.globalAlpha = 1;
+        // монеты слоями от дна к верху: верхний слой — поверх, ярче
+        const list = [];
+        for (let i = 0; i < 420; i++) {
+            const y = Math.pow(rnd(), 0.7) * top, rr = this.r(y) * 0.97;
             const x = (rnd() * 2 - 1) * rr, front = Math.sqrt(Math.max(0, 1 - (x / rr) ** 2));
-            const yy = -y + front * rr * v * (rnd() * 0.9);
-            const tilt = (rnd() - 0.5) * 0.9, sq = 0.3 + rnd() * 0.45, shade = 0.55 + 0.45 * (y / top);
-            c.save(); c.translate(x, yy); c.rotate(tilt);
-            c.beginPath(); c.ellipse(0, 0, cr, cr * sq, 0, 0, 7);
-            c.fillStyle = G.deep; c.globalAlpha = 0.9; c.fill();
-            c.beginPath(); c.ellipse(0, -cr * 0.08, cr * 0.92, cr * sq * 0.85, 0, 0, 7);
-            c.fillStyle = shade > 0.85 ? G.hi : G[500]; c.globalAlpha = shade; c.fill();
-            c.beginPath(); c.ellipse(-cr * 0.25, -cr * sq * 0.3, cr * 0.4, cr * sq * 0.25, 0, 0, 7);
-            c.fillStyle = G.glint; c.globalAlpha = shade * 0.55; c.fill();
-            c.restore();
+            list.push({ x, y, yy: -y + front * rr * vv * rnd(), tilt: (rnd() - 0.5) * 1.1, sq: 0.28 + rnd() * 0.5, s: 0.85 + rnd() * 0.3 });
         }
+        list.sort((a, b) => a.y - b.y);
+        list.forEach((m) => {
+            const lit = 0.45 + 0.55 * (m.y / top), r = cr * m.s;
+            c.save(); c.translate(m.x, m.yy); c.rotate(m.tilt);
+            // ребро — толщина монеты вниз
+            c.beginPath(); c.ellipse(0, r * 0.16, r, r * m.sq, 0, 0, 7); c.fillStyle = G.deep; c.globalAlpha = 1; c.fill();
+            c.beginPath(); c.ellipse(0, r * 0.08, r, r * m.sq, 0, 0, Math.PI); c.fillStyle = G.lo; c.globalAlpha = lit; c.fill();
+            // лицо монеты
+            c.beginPath(); c.ellipse(0, 0, r, r * m.sq, 0, 0, 7);
+            c.fillStyle = lit > 0.8 ? G[500] : G.lo; c.globalAlpha = 1; c.fill();
+            c.beginPath(); c.ellipse(0, 0, r * 0.74, r * m.sq * 0.74, 0, 0, 7); c.strokeStyle = G.deep; c.lineWidth = r * 0.07; c.globalAlpha = 0.5; c.stroke();
+            c.beginPath(); c.ellipse(-r * 0.2, -r * m.sq * 0.25, r * 0.55, r * m.sq * 0.35, 0, 0, 7); c.fillStyle = G.hi; c.globalAlpha = lit * 0.6; c.fill();
+            c.beginPath(); c.ellipse(-r * 0.35, -r * m.sq * 0.35, r * 0.18, r * m.sq * 0.12, 0, 0, 7); c.fillStyle = G.glint; c.globalAlpha = lit * 0.8; c.fill();
+            c.restore();
+        });
         c.globalAlpha = 1;
         c.restore();
     },
@@ -200,7 +240,7 @@ const GreedJar3 = {
         const c = cv.getContext('2d'), C = PALETTE.greedJunk.reel.jar;
         this.paper(c, W, H, C);
         // цифры — почти во всю высоту, но не шире скотча (длинное число — уже)
-        const s = String(n), dh = H * 0.78, dw = Math.min(dh * 0.62, W * 0.8 / (s.length * 1.12)), x0 = W / 2 - (s.length * dw * 1.12) / 2 + dw * 0.06;
+        const s = String(n), dh = H * 0.78, dw = Math.min(dh * 0.62, W * 0.7 / (s.length * 1.12)), x0 = W / 2 - (s.length * dw * 1.12) / 2 + dw * 0.06;
         c.strokeStyle = PALETTE.greedJunk.reel.rag.marker; c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = dh * 0.11;
         s.split('').forEach((ch, i) => {
             const rnd = GreedJunk.rng(1000 + i * 31 + +ch * 7);
