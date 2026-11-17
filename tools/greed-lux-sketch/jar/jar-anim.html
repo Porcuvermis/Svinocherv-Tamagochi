@@ -1,0 +1,177 @@
+<!doctype html><meta charset="utf-8">
+<!-- Банка-магазин на болванке (план 31, разд. 00): покой → тап, подскок →
+     подлёт на игрока с полным оборотом (на задней стороне скотч подменяется:
+     число монет → схема магазина) → в упор: скотч на весь экран, сверху
+     пустое горло → вкидывание жетонов тапом и потоком (падают в горло и
+     пропадают за скотчем) → тап вне скотча → обратно с оборотом.
+     Кадр по времени: window.frame(t). Экран 390×844, фон прозрачный — кадр
+     игры и рамка из монет кладутся при сборке (jar-anim.py). Только эскиз. -->
+<body style="margin:0;background:transparent">
+<canvas id="c" width="780" height="1688" style="width:390px;height:844px"></canvas>
+<script src="../../../vendor/three.min.js"></script>
+<script>
+const D = Math.PI / 180, W = 390, H = 844, FOV = 40;
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), alpha: true, antialias: true, preserveDrawingBuffer: true });
+r.setPixelRatio(2); r.setSize(W, H, false); r.setClearColor(0, 0);
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(FOV, W / H, 0.01, 50);
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x302018, 0.85));
+const key = new THREE.DirectionalLight(0xffffff, 0.85); key.position.set(-2, 3, 3); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffe0b0, 0.6); rim.position.set(3, 1, -2); scene.add(rim);
+const T = Math.tan(FOV / 2 * D);
+// точка экрана (точки 390×844) на глубине d → мир
+const at = (sx, sy, d) => new THREE.Vector3((sx / W * 2 - 1) * T * (W / H) * d, -(sy / H * 2 - 1) * T * d, -d);
+const ease = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const clamp = (x) => Math.max(0, Math.min(1, x));
+
+// ---------- скотч: две картинки — число монет и схема магазина ----------
+const TAPE = { y0: -0.27, y1: 0.03, arc: 160 * D };
+function tapeCanvas() { const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; return c; }
+const tapeCv = tapeCanvas(), tapeTex = new THREE.CanvasTexture(tapeCv);
+const INK = '#1d1a24';
+function paper(g) {
+  g.fillStyle = '#e6d6a8'; g.fillRect(0, 0, 1024, 1024);
+  g.fillStyle = 'rgba(160,130,80,0.18)';
+  for (let i = 0; i < 40; i++) g.fillRect(0, i * 26 + (i % 3) * 3, 1024, 2);
+  g.fillStyle = 'rgba(120,95,55,0.35)'; g.fillRect(0, 0, 1024, 14); g.fillRect(0, 1010, 1024, 14);
+}
+function marker(g, w) { g.strokeStyle = INK; g.fillStyle = INK; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; }
+function hand(g, text, x, y, size) { g.save(); g.translate(x, y); g.rotate(-0.03); g.font = `bold ${size}px "DejaVu Sans", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 0, 0); g.restore(); }
+function token(g, x, y, rr) {   // жетон алчности, нарисованный маркером
+  g.save(); g.fillStyle = '#c8382c'; g.beginPath(); g.arc(x, y, rr, 0, 7); g.fill();
+  g.lineWidth = rr * 0.18; g.strokeStyle = '#d8a43a'; g.beginPath(); g.arc(x, y, rr * 0.82, 0, 7); g.stroke();
+  marker(g, rr * 0.12); g.beginPath(); g.arc(x, y, rr, 0, 7); g.stroke(); g.restore();
+}
+function drawCoins(n) {
+  const g = tapeCv.getContext('2d'); paper(g); marker(g, 10);
+  // число монет — крупно по середине передней части (u 0.5 — перед банки)
+  token(g, 360, 512, 0);
+  g.save(); g.fillStyle = '#e0a830'; g.beginPath(); g.arc(380, 512, 70, 0, 7); g.fill(); marker(g, 12); g.stroke(); g.restore();
+  hand(g, String(n), 600, 520, 190);
+  tapeTex.needsUpdate = true;
+}
+const shop = { wheel: 3, pach: 0, v2: 0, have: 11, need: { wheel: 6, pach: 6, v2: 24 }, press: null };
+function drawShop() {
+  const g = tapeCv.getContext('2d'); paper(g);
+  // узлы: колесо и пачинко сверху, линии сходятся в аппарат версии 2 внизу
+  // видимая в упор часть скотча — примерно x 320…704 из 1024 (дальше
+  // закрывает рамка или уходит за изгиб банки): схема собрана к середине
+  const N = { wheel: [405, 330], pach: [619, 330], v2: [512, 740] };
+  marker(g, 9);
+  g.beginPath(); g.moveTo(405, 470); g.bezierCurveTo(405, 560, 512, 540, 512, 630); g.stroke();
+  g.beginPath(); g.moveTo(619, 470); g.bezierCurveTo(619, 560, 512, 540, 512, 630); g.stroke();
+  const ring = (k, x, y, rx, ry) => { if (shop.press !== k) return; g.save(); g.strokeStyle = '#c8382c'; g.lineWidth = 10; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, 7); g.stroke(); g.restore(); };
+  // колесо: круг с секторами
+  let [x, y] = N.wheel; marker(g, 9); g.beginPath(); g.arc(x, y - 20, 62, 0, 7); g.stroke();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(x, y - 20); g.lineTo(x + Math.cos(a) * 62, y - 20 + Math.sin(a) * 62); g.stroke(); }
+  g.beginPath(); g.moveTo(x + 62, y - 20); g.lineTo(x + 86, y - 31); g.lineTo(x + 86, y - 9); g.closePath(); g.fill();
+  hand(g, `${shop.wheel}/${shop.need.wheel}`, x, y + 92, 56); ring('wheel', x, y + 20, 100, 125);
+  // пачинко: короб с аркой и гвоздиками
+  [x, y] = N.pach; marker(g, 9); g.strokeRect(x - 52, y - 95, 104, 150);
+  g.beginPath(); g.moveTo(x - 38, y + 30); g.lineTo(x - 38, y - 45); g.arc(x, y - 45, 38, Math.PI, 0); g.lineTo(x + 38, y + 30); g.stroke();
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) { g.beginPath(); g.arc(x - 24 + j * 24 + (i % 2) * 12, y - 45 + i * 18, 4.5, 0, 7); g.fill(); }
+  hand(g, `${shop.pach}/${shop.need.pach}`, x, y + 92, 56); ring('pach', x, y + 10, 100, 125);
+  // аппарат версии 2: ступенчатая башня; пока не открыты обе ветки — бледный
+  [x, y] = N.v2; g.save(); g.globalAlpha = (shop.wheel >= 6 && shop.pach >= 6) ? 1 : 0.35; marker(g, 9);
+  g.strokeRect(x - 66, y - 90, 132, 60); g.strokeRect(x - 54, y - 30, 108, 46); g.strokeRect(x - 62, y + 16, 124, 38);
+  g.beginPath(); g.arc(x - 32, y - 60, 20, 0, 7); g.stroke(); g.strokeRect(x + 12, y - 80, 36, 40);
+  hand(g, `${shop.v2}/${shop.need.v2}`, x, y + 100, 56); g.restore();
+  // сколько жетонов у игрока — в верхнем углу скотча
+  token(g, 462, 90, 30); hand(g, `×${shop.have}`, 552, 96, 54);
+  tapeTex.needsUpdate = true;
+}
+
+// ---------- банка ----------
+const jar = new THREE.Group(); scene.add(jar);
+const body = new THREE.Group(); jar.add(body);
+let coins = new THREE.Group(); body.add(coins);
+const tokens = new THREE.Group(); body.add(tokens);
+let lidG;
+const tokenGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.008, 24);
+const tokenMat = [new THREE.MeshStandardMaterial({ color: 0xd8a43a, metalness: 0.6, roughness: 0.35 }),
+                  new THREE.MeshStandardMaterial({ color: 0xc8382c, metalness: 0.2, roughness: 0.4 }),
+                  new THREE.MeshStandardMaterial({ color: 0xc8382c, metalness: 0.2, roughness: 0.4 })];
+const ready = fetch('jar.obj').then(t => t.text()).then(txt => {
+  const V = [], G = {}; let cur = 'x';
+  txt.split('\n').forEach(l => { const p = l.trim().split(/\s+/);
+    if (p[0] === 'v') V.push(p.slice(1, 4).map(Number));
+    else if (p[0] === 'usemtl') cur = p[1];
+    else if (p[0] === 'f') { const i = p.slice(1).map(s => parseInt(s.split('/')[0], 10) - 1); const g = G[cur] || (G[cur] = []);
+      for (let k = 1; k < i.length - 1; k++) g.push(i[0], i[k], i[k + 1]); } });
+  const mesh = (ids, mat) => { const pos = new Float32Array(ids.length * 3); ids.forEach((v, i) => pos.set(V[v], i * 3));
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals(); return new THREE.Mesh(g, mat); };
+  const gold = new THREE.MeshStandardMaterial({ color: 0xe0a830, metalness: 0.45, roughness: 0.35, emissive: 0x3a2400 });
+  const coin = new THREE.CylinderGeometry(0.028, 0.028, 0.006, 20);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 300; i++) { const m = new THREE.Mesh(coin, gold); const a = rnd() * 6.28, rr = Math.sqrt(rnd()) * 0.11;
+    m.position.set(Math.cos(a) * rr, -0.29 + rnd() * 0.35, Math.sin(a) * rr); m.rotation.set((rnd() - 0.5) * 1.4, rnd() * 3, (rnd() - 0.5) * 1.4); coins.add(m); }
+  const glass = (c, o) => new THREE.MeshPhysicalMaterial({ color: c, transparent: true, opacity: o, roughness: 0.05, side: THREE.DoubleSide, depthWrite: false });
+  const inner = mesh(G.mat24, glass(0xdfeee8, 0.12)); inner.renderOrder = 2; body.add(inner);
+  const outer = mesh(G.mat25, glass(0xe8f4f0, 0.2)); outer.renderOrder = 3; body.add(outer);
+  // скотч поверх стекла: кусок цилиндра, середина — к игроку (u 0.5)
+  const tg = new THREE.CylinderGeometry(0.1425, 0.1425, TAPE.y1 - TAPE.y0, 64, 1, true, Math.PI - TAPE.arc / 2 + Math.PI / 2 - Math.PI / 2, TAPE.arc);
+  const tape = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.85, side: THREE.FrontSide }));
+  tape.position.y = (TAPE.y0 + TAPE.y1) / 2; tape.rotation.y = Math.PI; tape.renderOrder = 4; body.add(tape);
+  const lid = mesh(G.mat15, new THREE.MeshStandardMaterial({ color: 0xb8bec4, metalness: 0.8, roughness: 0.35 }));
+  lidG = new THREE.Group(); lidG.position.set(0, 0.105, -0.14); lid.position.set(0, -0.105, 0.14); lidG.add(lid); body.add(lidG);
+  body.position.y = 0.095;   // середина банки — в начале координат группы
+});
+
+// ---------- раскадровка ----------
+// позы: покой (на аппарате) и «в упор» (скотч во всю ширину, сверху горло)
+const REST = { p: at(313, 694, 5.3), pitch: 8 };
+const NEAR = { p: new THREE.Vector3(0, 0.0, -0.65), pitch: 10 };
+const EV = { tap: 0.6, hop: 0.8, fly: 1.95, taps: [2.5, 3.0, 3.5], hold: [4.2, 6.0], out: 6.6, back: 7.75, end: 8.6 };
+// тапы по колесу (+1) и удержание пачинко — поток с разгоном
+function deposits() {
+  const list = [];
+  EV.taps.forEach(t => list.push({ t, node: 'wheel' }));
+  let t = EV.hold[0], dt = 0.32;
+  while (t < EV.hold[1]) { list.push({ t, node: 'pach' }); t += dt; dt = Math.max(0.06, dt * 0.8); }
+  return list;
+}
+const DEP = deposits();
+function pose(t) {
+  let p, pitch, yaw = 0, s = 1, lid = 0, shopOn = false;
+  if (t < EV.tap) { p = REST.p.clone(); pitch = REST.pitch; }
+  else if (t < EV.hop) { const k = (t - EV.tap) / (EV.hop - EV.tap); p = REST.p.clone(); p.y += Math.sin(k * Math.PI) * 0.12; pitch = REST.pitch; s = 1 + Math.sin(k * Math.PI) * 0.05; }
+  else if (t < EV.fly) { const k = ease((t - EV.hop) / (EV.fly - EV.hop)); p = REST.p.clone().lerp(NEAR.p, k); p.y += Math.sin(k * Math.PI) * 0.25; pitch = REST.pitch + (NEAR.pitch - REST.pitch) * k;
+    yaw = k * 360; lid = Math.min(1, k * 2.5); shopOn = yaw > 180; }
+  else if (t < EV.out) { p = NEAR.p.clone(); pitch = NEAR.pitch; yaw = 360; lid = 1; shopOn = true; }
+  else if (t < EV.back) { const k = ease((t - EV.out) / (EV.back - EV.out)); p = NEAR.p.clone().lerp(REST.p, k); p.y += Math.sin(k * Math.PI) * 0.25; pitch = NEAR.pitch + (REST.pitch - NEAR.pitch) * k;
+    yaw = 360 - k * 360; lid = Math.max(0, 1 - (k - 0.6) * 2.5); shopOn = yaw > 180; }
+  else { p = REST.p.clone(); pitch = REST.pitch; }
+  return { p, pitch, yaw, s, lid, shopOn };
+}
+window.frame = async (t) => {
+  await ready;
+  const P = pose(t);
+  jar.position.copy(P.p); jar.scale.setScalar(P.s);
+  jar.rotation.set(P.pitch * D, P.yaw * D, 0, 'XYZ');
+  // крышка: вверх и назад, откидывается к игроку из кадра
+  lidG.position.y = 0.105 + P.lid * 0.09; lidG.rotation.x = -P.lid * 100 * D; lidG.visible = P.lid < 0.98;
+  coins.visible = !P.shopOn;              // в магазине банка пустая
+  // скотч: подмена, пока он на задней стороне
+  if (P.shopOn) {
+    let w = 3, pc = 0, press = null;
+    DEP.forEach(d => { if (t >= d.t) { if (d.node === 'wheel') w++; else pc++; } if (t >= d.t && t < d.t + 0.18) press = d.node; });
+    if (t >= EV.hold[0] && t < EV.hold[1]) press = 'pach';
+    shop.wheel = Math.min(6, w); shop.pach = Math.min(6, pc); shop.have = 11 - (shop.wheel - 3) - shop.pach; shop.press = press; drawShop();
+  } else drawCoins(200);
+  // жетоны: падают сверху в горло и пропадают за скотчем
+  tokens.children.slice().forEach(c => tokens.remove(c));
+  if (P.shopOn && t < EV.out) DEP.forEach((d, i) => {
+    const age = t - d.t; if (age < 0 || age > 0.75) return;
+    const m = new THREE.Mesh(tokenGeo, tokenMat);
+    const y = 0.42 - 4.2 * age * age - 0.5 * age;   // от верха экрана — в горло и вниз
+    m.position.set(((i * 37) % 7 - 3) * 0.008, y, 0.01 * ((i % 3) - 1));
+    m.rotation.set(age * 9 + i, age * 4, age * 6 - i);
+    tokens.add(m);
+  });
+  cam.position.set(0, 0, 0); cam.lookAt(0, 0, -1);
+  r.render(scene, cam);
+  return JSON.stringify({ shop: P.shopOn });
+};
+window.EV = EV;
+document.title = 'ready';
+</script>
