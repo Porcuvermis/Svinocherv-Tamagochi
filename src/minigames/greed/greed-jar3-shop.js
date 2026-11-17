@@ -28,6 +28,14 @@ const GreedJarShop = {
     attach(wrap) {
         const host = wrap.parentElement;
         if (!host || typeof GreedJar3 === 'undefined') return;
+        // Аппарат пересобран, пока банка открыта (сборка игры за стеклом):
+        // банка не пересоздаётся — та же, на том же месте, в том же виде.
+        if (this.cv && this.state !== 'rest' && this.cv.parentElement === host) {
+            this.wrap = wrap;
+            wrap.addEventListener('pointerdown', (e) => this.restDown(e), true);
+            if (GreedJunkLit.jarCv) GreedJunkLit.jarCv.style.visibility = 'hidden';
+            return;
+        }
         this.wrap = wrap; this.host = host;
         if (this.cv) this.cv.remove();
         const cv = document.createElement('canvas');
@@ -109,6 +117,7 @@ const GreedJarShop = {
             let rec = 0; this.drops.forEach(d => { const a = (now - d.at) / 1000; if (a >= 0 && a < 0.4) rec += Math.exp(-a * 16); });
             P.y += 2.5 * Math.min(1.5, rec); P.sy = 1 - 0.012 * Math.min(1.5, rec);
             P.shop = true; P.coins = s < 0.05; P.rev = 1;
+            P.y += this.lowAt(now);
             return P;
         }
         if (this.state === 'closing') {
@@ -131,6 +140,21 @@ const GreedJarShop = {
             return P;
         }
         return P;
+    },
+    // Банка опускается на время сборки игры: окно стекла над скотчем растёт,
+    // и игра видна целиком (иначе её низ за скотчем).
+    LOW: 160,
+    lowAt(now) {
+        const Lw = this.low;
+        if (!Lw) return 0;
+        const u = Math.max(0, Math.min(1, (now - Lw.t0) / Lw.ms)), e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+        return Lw.from + (Lw.to - Lw.from) * e;
+    },
+    lowTo(to, ms) {
+        const now = performance.now();
+        this.low = { from: this.lowAt(now), to, t0: now, ms };
+        this.dirty = true;
+        return new Promise(r => setTimeout(r, ms));
     },
     // скотч на задней стороне — магазин (подмена, которой не видно)
     // Угол на открытии растёт от покоя (−14°) до 372°, на закрытии падает
@@ -223,7 +247,7 @@ const GreedJarShop = {
         return [N.x + lx * N.k, N.y + (ly + 0.5) * N.k];
     },
     shopDown(e) {
-        if (this.state !== 'open') return;
+        if (this.state !== 'open' || this.busy) return;
         e.preventDefault();
         const [x, y] = this.toField(e), top = this.shopToField(0.5, 0)[1];
         if (y < top) { this.close(); return; }                      // мимо скотча — выход
@@ -253,15 +277,26 @@ const GreedJarShop = {
         H.timer = setTimeout(() => { if (this.hold === H) { H.dt = Math.max(60, H.dt * 0.8); this.deposit(); } }, H.dt);
     },
     holdStop() { if (this.hold && this.hold.timer) clearTimeout(this.hold.timer); this.hold = null; },
-    // Узел наполнился: галочка, банка возвращается, аппарат собирается
-    // заново уже с игрой. Сборка по запчастям за стеклом — следующий шаг
-    // (план 31, «Открытие игры»).
-    opened(node) {
+    // Узел наполнился: галочка, банка опускается — и сквозь её стекло игра
+    // собирается на своём месте по запчастям (greed-assembly.js); потом банка
+    // поднимается обратно, магазин остаётся открытым. Для пачинко и версии 2
+    // сборки ещё нет — банка возвращается, аппарат пересобирается.
+    async opened(node) {
         if (typeof Haptics !== 'undefined' && Haptics.notify) Haptics.notify('success');
-        setTimeout(() => {
-            this.close();
-            setTimeout(() => { if (typeof GreedDebug !== 'undefined' && GreedDebug.rebuild) GreedDebug.rebuild(); }, this.CLOSE.push + this.CLOSE.fly + this.CLOSE.land + 100);
-        }, 700);
+        this.busy = true;
+        if (node === 'wheel' && typeof GreedAssembly !== 'undefined') {
+            // Пересборка аппарата (секунды на телефоне) идёт сразу — под
+            // стоп-кадром, пока горит галочка и банка опускается: ждать
+            // меньше.
+            const run = GreedAssembly.wheel(() => this.lowTo(this.LOW, 450));
+            try { await run; } catch (e) { console.warn('[Сборка колеса]', e); }
+            await this.lowTo(0, 450);
+            this.busy = false;
+            return;
+        }
+        this.busy = false;
+        this.close();
+        setTimeout(() => { if (typeof GreedDebug !== 'undefined' && GreedDebug.rebuild) GreedDebug.rebuild(); }, this.CLOSE.push + this.CLOSE.fly + this.CLOSE.land + 100);
     },
     close() {
         if (this.state !== 'open') return;

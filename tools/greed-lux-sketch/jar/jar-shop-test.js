@@ -33,12 +33,13 @@ const { chromium } = require('playwright');
   await page.mouse.move(wx, wy); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up();
   await page.waitForTimeout(200); await shot('4-done');
   ok(await page.evaluate(() => Backend.greedLevel('wheel') >= 1), 'удержание — копилка полна, колесо открыто');
-  await page.waitForTimeout(1600); await shot('5-back');
-  ok(await page.evaluate(() => GreedJarShop.state === 'rest'), 'банка вернулась');
-  await page.waitForTimeout(4000); await shot('6-wheel');
-  ok(await page.evaluate(() => !!GreedJunkLit.wheelCv), 'аппарат пересобран с колесом');
+  // колесо собирается за стеклом банки; банка опускается и поднимается, магазин открыт
+  await page.waitForFunction(() => !GreedJarShop.busy, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(600); await shot('5-back');
+  ok(await page.evaluate(() => GreedJarShop.state === 'open' && GreedJarShop.lowAt(performance.now()) === 0), 'после сборки банка поднялась, магазин открыт');
+  ok(await page.evaluate(() => !!GreedJunkLit.wheelCv && !GreedAssembly.ov), 'аппарат с колесом, стоп-кадра нет');
+  await shot('6-wheel');
   // выход тапом по стеклу
-  await page.mouse.click(...await at(305, 590)); await page.waitForTimeout(1200);
   await page.mouse.click(...await at(180, 60)); await page.waitForTimeout(1300);
   ok(await page.evaluate(() => GreedJarShop.state === 'rest'), 'тап по стеклу — выход');
   console.log(errs.length ? 'ошибки:\n' + errs.join('\n') : 'ошибок страницы нет');
