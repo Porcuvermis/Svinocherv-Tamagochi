@@ -16,8 +16,14 @@ const out = process.argv[2] || '/tmp/frame-';
     const r = await page.evaluate(() => { const e = GreedJunkLit.wrapEl.getBoundingClientRect(); return [e.left, e.top, e.width, e.height]; });
     console.log('machine', r.join(' '));
     for (const [n, c] of [['a', '#ff00ff'], ['b', '#00ff00']]) {
+        // Подложка — не только под аппаратом, а под ВСЕЙ сценой окна: иначе
+        // всё ниже края аппарата сборщик принимал за сплошную рамку, и банка
+        // обрезалась ровной линией по краю аппарата, хотя между монетами её
+        // должно быть видно (игрок, 17.11).
         await page.evaluate((c) => { const w = GreedJunkLit.wrapEl; [...w.children].forEach(ch => ch.style.visibility = 'hidden'); w.style.background = c;
-            const s = document.getElementById('gj-stage') || w.parentElement; }, c);
+            for (let e = w.parentElement; e && e !== document.body; e = e.parentElement) {
+                if (e.classList && e.classList.contains('minigame-screen')) break;
+                e.style.background = c; } }, c);
         await page.waitForTimeout(300);
         await page.screenshot({ path: `${out}${n}.png` });
     }

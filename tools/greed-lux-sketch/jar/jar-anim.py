@@ -22,7 +22,7 @@ def dim(t):
     return 0
 # где палец: тап по банке, тапы по колесу, удержание пачинко, тап вне скотча
 def finger(t):
-    if EV['tap'] - 0.05 <= t < EV['tap'] + 0.2: return (306, 712)
+    if EV['tap'] - 0.05 <= t < EV['tap'] + 0.2: return (300, 725)
     for tt in EV['taps']:
         if tt - 0.05 <= t < tt + 0.15: return (120, 420)
     if EV['hold'][0] <= t < EV['hold'][1]: return (120, 590)

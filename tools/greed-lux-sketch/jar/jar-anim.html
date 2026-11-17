@@ -32,7 +32,7 @@ const clamp = (x) => Math.max(0, Math.min(1, x));
 // зоны рамка и скотч вставали встык ровной полосой (игрок, 17.11).
 // Длиннее (95° по кругу — прямоугольник, не квадратик) и чуть выше (0,15);
 // верх на прежнем месте — поза «в упор» та же (игрок, 17.11).
-const TAPE = { y0: -0.232, y1: -0.082, arc: 95 * D };
+const TAPE = { y0: -0.205, y1: -0.055, arc: 95 * D };   // чуть выше на бочонке: в покое низ скотча не уходит под монеты рамки
 // холст — в пропорции куска скотча (дуга 0,1495 × высота 0,13), иначе рисунок
 // растягивается по вертикали
 function tapeCanvas() { const c = document.createElement('canvas'); c.width = 3072; c.height = 1862; return c; }
@@ -64,7 +64,7 @@ function drawCoins(n) {
   // число монет — почти во всю высоту скотча, чтобы читалось на аппарате
   const g = tapeCv.getContext('2d'); paper(g); marker(g, 30);
   // левее середины: банка в покое наклонена, и правый край скотча уходит под рамку
-  g.save(); g.translate(1330, 960); g.scale(0.8, 1); g.rotate(-0.03);
+  g.save(); g.translate(1536, 960); g.scale(0.8, 1); g.rotate(-0.03);
   g.font = 'bold 1500px "DejaVu Sans", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 0, 40);
   g.restore();
   tapeTex.needsUpdate = true;
@@ -153,14 +153,17 @@ const ready = Promise.resolve().then(() => {
 // Покой: банка крупнее и наклонена — низ уходит под рамку в правый нижний
 // угол (не висит в воздухе), верх и середина заходят на свободное место
 // аппарата (игрок, 17.11).
-const REST = { p: at(314, 704, 2.74), pitch: 6, roll: 18 };   // на ~18% мельче: не заходит ни на монетоприёмник, ни на экран бандита
+// Мельче (~160 точек): не заходит ни на монетоприёмник, ни на экран бандита,
+// ни на лоток. Повёрнута скотчем чуть влево (yaw) — скотч с числом целиком
+// внутри рамки, а дно уходит под монеты в правом нижнем углу (игрок, 17.11).
+const REST = { p: at(318, 716, 3.3), pitch: 6, roll: 18, yaw: -32 };
 // В упор: верх скотча — на трети экрана (y ~300), низ — сразу за рамкой
 // (~790): высота скотча 0,10 на экране 490 точек → передняя стенка на
 // 0,10·422/(490·tg20°) = 0,237 от камеры, середина банки на 0,237 + радиус;
 // по высоте — середина скотча на y 545. Без наклона: так видимая часть
 // скотча считается без догадок (x ~584…1464 из 2048 по ширине).
 // (трёхлитровая: скотч ниже на 0,127, радиус больше на 0,006 — поза сдвинута на столько же)
-const NEAR = { p: new THREE.Vector3(0, 0.012, -0.3854), pitch: 0 };
+const NEAR = { p: new THREE.Vector3(0, -0.015, -0.3854), pitch: 0 };
 // ---------- режиссура (сек) ----------
 // подготовка (присед) → отрыв (вытянулась) → полёт дугой с креном, быстрый
 // старт и торможение у камеры, оборот разгоняется и тормозит → прибытие:
@@ -182,7 +185,7 @@ const outCubic = (x) => 1 - Math.pow(1 - x, 3), inCubic = (x) => x * x * x;
 const inOut = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 const spring = (s, f, damp) => Math.exp(-damp * s) * Math.sin(f * s);   // затухающее качание
 function pose(t) {
-  const P = { p: REST.p.clone(), pitch: REST.pitch, yaw: 0, roll: REST.roll, sx: 1, sy: 1, shopOn: false, rev: 0 };
+  const P = { p: REST.p.clone(), pitch: REST.pitch, yaw: REST.yaw, roll: REST.roll, sx: 1, sy: 1, shopOn: false, rev: 0 };
   if (t < EV.tap) return P;
   if (t < EV.launch) {                                   // подготовка: присед
     const k = (t - EV.tap) / (EV.launch - EV.tap), q = Math.sin(k * Math.PI / 2);
@@ -198,7 +201,7 @@ function pose(t) {
     P.sy = 1 + 0.12 * st; P.sx = 1 - 0.06 * st;
     P.roll = REST.roll * (1 - k) - 11 * Math.sin(u * Math.PI);   // выпрямляется + крен в повороте
     P.pitch = REST.pitch * (1 - k) - 10 * Math.sin(u * Math.PI);
-    P.yaw = 372 * inOut(u);                              // оборот с перехлёстом +12°
+    P.yaw = REST.yaw + (372 - REST.yaw) * inOut(u);       // оборот с перехлёстом +12°
     P.shopOn = P.yaw > 180;
     return P;
   }
@@ -228,11 +231,12 @@ function pose(t) {
     P.p.x += Math.sin(u * Math.PI) * 0.05;
     P.roll = REST.roll * k + 9 * Math.sin(u * Math.PI);
     P.pitch = REST.pitch * k - 6 * Math.sin(u * Math.PI);
-    P.yaw = 360 * (1 - inOut(u));
+    P.yaw = 360 + (REST.yaw - 360) * inOut(u);
     P.shopOn = P.yaw > 180; P.rev = 1;
     return P;
   }
   const L = t - EV.land;                                 // посадка: присед и отскок
+  P.yaw = REST.yaw;
   P.sy = 1 - 0.16 * spring(L, 26, 9) - 0.0; P.sx = 1 + 0.08 * spring(L, 26, 9);
   P.p.y += 0.07 * Math.max(0, spring(L + 0.05, 20, 10));
   P.roll = REST.roll - 2 * spring(L, 22, 8);
