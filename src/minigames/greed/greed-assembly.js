@@ -29,7 +29,14 @@ const GreedAssembly = {
         this.paintBase();
         const lowered = new Promise(r => setTimeout(r, 450)).then(() => lower ? lower() : null);
         // Под стоп-кадром — аппарат с колесом. Ждём корпус и колесо, но не
-        // рычаг (его картинки готовятся до 7 с — для сборки не нужны).
+        // рычаг. Подготовка картинок рычага (растр SVG и чтение пикселей —
+        // секунды процессора) отложена до конца сборки: она шла одновременно
+        // с полётом досок, и начало сборки рвалось (игрок, 17.11; замер
+        // assembly-jank.js — задача 2,7 с через 0,8 с после старта).
+        const P = GreedDebug.pristine, prep = P.prepareLever;
+        let release; const after = new Promise(r => { release = r; });
+        P.prepareLever = function () { return after.then(() => prep.call(GreedJunkLit)); };
+        this.release = () => { P.prepareLever = prep; release(); };
         await GreedDebug.rebuild();
         await Promise.all([L._mountP, L._wheelP].map(p => Promise.resolve(p).catch(() => {})));
         const discs = await this.discSets();
@@ -37,6 +44,10 @@ const GreedAssembly = {
         this.parts = this.cut(discs);
         this.mode = 'wheel';
         this.paintBase();
+        // Первая отрисовка слоёв — до старта часов: её тяжёлый кадр приходится
+        // на неподвижную картинку, а не на первые кадры полёта досок.
+        this.t0 = performance.now() + 1e9; this.frame(performance.now());
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         this.t0 = performance.now();
         this.loop();
         const end = this.END + 0.15;
@@ -44,18 +55,24 @@ const GreedAssembly = {
         const f0 = performance.now();
         await new Promise(r => { const st = () => { this.fade = 1 - (performance.now() - f0) / 250; this.base.style.opacity = this.fly.style.opacity = Math.max(0, this.fade); if (this.fade > 0) requestAnimationFrame(st); else r(); }; st(); });
         this.stop = true; this.base.remove(); this.fly.remove(); this.base = this.fly = null;
+        if (this.release) { this.release(); this.release = null; }
     },
 
     setup(host) {
         [this.base, this.fly].forEach(c => c && c.remove());
         const W = host.offsetWidth, H = host.offsetHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
-        const mk = () => {
-            const cv = document.createElement('canvas'); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+        // Верхний холст (летящее) — в точках экрана без умножения: он
+        // перерисовывается каждый кадр, и полноэкранный холст в 4 раза
+        // больше по точкам стоил переноса в видеокарту ~30 мс на кадр при
+        // процессоре ×4 (assembly-jank.js). Летящее размыто движением —
+        // чёткость там не видна.
+        const mk = (q = dpr) => {
+            const cv = document.createElement('canvas'); cv.width = Math.round(W * q); cv.height = Math.round(H * q); cv.q = q;
             // над аппаратом, под банкой (z 6) и под рамкой из монет
             cv.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;z-index:5;pointer-events:none;background:none`;
             host.appendChild(cv); return cv;
         };
-        this.base = mk(); this.fly = mk();
+        this.base = mk(); this.fly = mk(1);
         this.host = host; this.dpr = dpr; this.stop = false;
     },
     scene(x, y) {
@@ -220,6 +237,10 @@ const GreedAssembly = {
     },
     frame(now) {
         const c = this.fly.getContext('2d'), t = (now - this.t0) / 1000, k = this.scene(0, 0)[2];
+        // ничего не летит и не пружинит — холст не трогать (очистить один раз)
+        const busy = this.parts.some(p => { const u = t - p.at; return u >= 0 && u < p.dur + 0.25; }) || (this.spin && t >= this.spin.at) || this.parts.some(p => t >= p.at + p.dur && !p.landed);
+        if (!busy) { if (this.flyDirty) { c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.fly.width, this.fly.height); this.flyDirty = false; } return; }
+        this.flyDirty = true;
         c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.fly.width, this.fly.height);
         const outC = (x) => 1 - Math.pow(1 - x, 3);
         let landedNow = false;
@@ -254,7 +275,7 @@ const GreedAssembly = {
     // Деталь на прогрессе e (0 — у камеры, 1 — на месте); after — сколько
     // секунд как легла (−1 — ещё летит).
     draw(c, p, e, after, k) {
-        const d = this.dpr, [tx, ty] = this.scene(p.x, p.y), w = p.w * k, h = p.h * k, C = this.scene(180, 160);
+        const d = c.canvas.q || this.dpr, [tx, ty] = this.scene(p.x, p.y), w = p.w * k, h = p.h * k, C = this.scene(180, 160);
         let pv = p.pivot ? this.scene(p.pivot[0], p.pivot[1]) : [tx + w / 2, ty + h / 2];
         let s = 1, rot = p.base || 0, ox = 0, oy = 0, cx0 = 0, cy0 = 0;
         if (p.orbit) {                                    // колышек на диске, повёрнутом на D0
@@ -285,27 +306,29 @@ const GreedAssembly = {
         c.globalAlpha = a; c.drawImage(cv, (r.left - hr.left) / q, (r.top - hr.top) / q, r.width / q, r.height / q);
         c.restore();
     },
+    // Прокрут: одна картинка диска поворачивается целиком. Значок сектора
+    // впечатывается в неё один раз — когда сектор побывал слева под
+    // монетами (16 обновлений за прокрут). Было: каждый кадр две большие
+    // картинки и вырезка по секторам — на прокруте кадр стоил ~60 мс при
+    // процессоре ×4.
     drawSpin(c, Sn, rot, k) {
-        const d = this.dpr, [tx, ty] = this.scene(Sn.box.x, Sn.box.y), w = Sn.box.w * k, h = Sn.box.h * k, pv = this.scene(Sn.pivot[0], Sn.pivot[1]);
+        const d = c.canvas.q || this.dpr, [tx, ty] = this.scene(Sn.box.x, Sn.box.y), w = Sn.box.w * k, h = Sn.box.h * k, pv = this.scene(Sn.pivot[0], Sn.pivot[1]);
+        if (!Sn.acc) {
+            Sn.acc = document.createElement('canvas'); Sn.acc.width = Sn.withPegs.width; Sn.acc.height = Sn.withPegs.height;
+            Sn.acc.getContext('2d').drawImage(Sn.withPegs, 0, 0);
+        }
+        const n = Sn.n, A = Sn.acc, g = A.getContext('2d'), cx = A.width / 2, cy = A.height / 2;
+        for (let i = 0; i < n; i++) {
+            const a = i / n * Math.PI * 2 - Math.PI / 2;                    // середина сектора (поворот 0)
+            if (Sn.seen[i] || Math.cos(a + rot) >= -0.35) continue;
+            Sn.seen[i] = true;
+            g.save(); g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, A.width, a - Math.PI / n, a + Math.PI / n); g.closePath(); g.clip();
+            g.drawImage(Sn.icons, 0, 0); g.restore();
+        }
         c.save(); c.setTransform(d, 0, 0, d, 0, 0);
         if (Sn.shadow) this.shadow(c, Sn.shadow, 1, 0, pv);
         c.translate(pv[0], pv[1]); c.rotate(rot); c.translate(-pv[0], -pv[1]);
-        c.drawImage(Sn.withPegs, tx, ty, w, h);
-        // сектор, побывавший за невидимой половиной (слева, под монетами), —
-        // уже со значком
-        const n = Sn.n, R = Math.max(w, h);
-        c.save(); c.beginPath();
-        let any = false;
-        for (let i = 0; i < n; i++) {
-            const a = i / n * Math.PI * 2 - Math.PI / 2;                    // середина сектора на диске (поворот 0)
-            if (!Sn.seen[i] && Math.cos(a + rot) < -0.35) Sn.seen[i] = true;
-            if (!Sn.seen[i]) continue;
-            any = true;
-            const a0 = a - Math.PI / n, a1 = a + Math.PI / n;
-            c.moveTo(pv[0], pv[1]); c.arc(pv[0], pv[1], R, a0, a1); c.closePath();
-        }
-        if (any) { c.clip(); c.drawImage(Sn.icons, tx, ty, w, h); }
-        c.restore();
+        c.drawImage(A, tx, ty, w, h);
         c.restore();
     }
 };

@@ -39,6 +39,9 @@ const { chromium } = require('playwright');
   ok(await page.evaluate(() => GreedJarShop.state === 'open' && GreedJarShop.lowAt(performance.now()) === 0), 'после сборки банка поднялась, магазин открыт');
   ok(await page.evaluate(() => !!GreedJunkLit.wheelCv && !GreedAssembly.ov), 'аппарат с колесом, стоп-кадра нет');
   await shot('6-wheel');
+  // подготовка рычага отложена до конца сборки — потом он готов
+  await page.waitForFunction(() => GreedJunkLit.lever, null, { timeout: 20000 }).catch(() => {});
+  ok(await page.evaluate(() => !!GreedJunkLit.lever), 'рычаг после сборки готов');
   // выход тапом по стеклу
   await page.mouse.click(...await at(180, 60)); await page.waitForTimeout(1300);
   ok(await page.evaluate(() => GreedJarShop.state === 'rest'), 'тап по стеклу — выход');
