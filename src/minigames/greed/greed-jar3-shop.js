@@ -20,7 +20,7 @@
 const GreedJarShop = {
     REST: { x: 305, y: 590, k: 161, roll: 18, yaw: -14, view: 0.16 },
     NEAR: { x: 179.7, y: 281.8, k: 1587, roll: 0, yaw: 0, view: 0.05 },
-    OPEN: { crouch: 80, fly: 600, settle: 420 },     // мс
+    OPEN: { crouch: 80, fly: 1050, settle: 420, turns: 2, spin: 0.62, mid: 0.45 },     // мс; spin — доля полёта на вращение, mid — доля роста к его концу
     CLOSE: { push: 70, fly: 450, land: 450 },
     // узлы на холсте магазина (доли) — для попадания пальцем
     NODES: { wheel: [0.22, 0.33], pachinko: [0.22, 0.69], v2: [0.69, 0.53] },
@@ -78,13 +78,23 @@ const GreedJarShop = {
             if (t < O.crouch) { const q = Math.sin(t / O.crouch * Math.PI / 2); P.sy = 1 - 0.14 * q; P.sx = 1 + 0.08 * q; return P; }
             const u = Math.min(1, (t - O.crouch) / O.fly);
             if (u < 1) {
-                const k = outC(u), b = Math.sin(u * Math.PI);
+                // Два действия по очереди (игрок, 17.11: было резко — скотч
+                // будто срывали, а у экрана натягивали бумажку): сначала банка
+                // поднимается до середины экрана и на глазах раскручивается
+                // (два оборота, плавный разгон и торможение) — она ещё видна
+                // целиком, и ясно, что крутится; потом, уже скотчем к игроку,
+                // подлетает вплотную.
+                const sp = Math.min(1, u / O.spin);
+                const k = u < O.spin ? O.mid * inOut(sp) : O.mid + (1 - O.mid) * inOut((u - O.spin) / (1 - O.spin)), b = Math.sin(u * Math.PI);
                 between(k, R, N);
                 P.y -= b * 70 * (1 - u * 0.4); P.x += b * 20;
                 const st = Math.max(0, 1 - u / 0.22); P.sy = 1 + 0.12 * st; P.sx = 1 - 0.06 * st;
                 P.roll = R.roll * (1 - k) - 11 * b;
-                P.yaw = R.yaw + (372 - R.yaw) * inOut(u);
-                P.shop = this.backSide(P.yaw); P.coins = true; P.rev = 0;
+                const sine = 0.5 - 0.5 * Math.cos(sp * Math.PI);
+                const end = 360 * O.turns + 12;
+                P.yaw = R.yaw + (end - R.yaw) * sine;
+                // подмена — на последнем проходе скотча по задней стороне
+                P.shop = P.yaw > 360 * O.turns - 180; P.coins = true; P.rev = 1;
                 return P;
             }
             this.state = 'open'; this.t0 = now - O.crouch - O.fly;
@@ -98,7 +108,7 @@ const GreedJarShop = {
             P.y += 1.2 * Math.sin(now / 1000 * 3.4);
             let rec = 0; this.drops.forEach(d => { const a = (now - d.at) / 1000; if (a >= 0 && a < 0.4) rec += Math.exp(-a * 16); });
             P.y += 2.5 * Math.min(1.5, rec); P.sy = 1 - 0.012 * Math.min(1.5, rec);
-            P.shop = true; P.coins = s < 0.05; P.rev = Math.min(1, s / 0.4);
+            P.shop = true; P.coins = s < 0.05; P.rev = 1;
             return P;
         }
         if (this.state === 'closing') {
