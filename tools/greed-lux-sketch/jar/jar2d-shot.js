@@ -13,6 +13,7 @@ const { chromium } = require('playwright');
   await page.waitForFunction(() => window.GreedJunkLit && GreedJunkLit.lever, null, {timeout:30000}).catch(()=>{});
   await page.evaluate(() => { Tilt.turn = () => ({ live: true, x: 0, y: 0 }); }); await page.waitForTimeout(2000);
   await page.addScriptTag({ url: '/src/minigames/greed/greed-jar3.js' });
+  await page.addScriptTag({ url: '/src/minigames/greed/greed-jar3-coins.js' });
   const poses = JSON.parse(process.argv[3] || '[]');
   for (const [i, P] of poses.entries()) {
     await page.evaluate((P) => {

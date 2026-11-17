@@ -74,7 +74,7 @@ const GreedJar3 = {
         c.strokeStyle = J.bottom; c.lineWidth = 0.022; c.globalAlpha = 0.85; c.stroke();
         c.restore(); c.globalAlpha = 1;
         // 3. монеты внутри
-        if (P.coins !== false) this.coins(c, v, G);
+        if (P.coins !== false) this.coins(c, v, G, P.yaw || 0);
         c.save(); this.silhouette(c, v); c.clip();
         // 4. край силуэта: стекло густеет к краям (видно толщу) — слева светлее
         const gx = c.createLinearGradient(-this.R, 0, this.R, 0);
@@ -173,62 +173,62 @@ const GreedJar3 = {
         c.beginPath(); c.ellipse(0, -top + lip, rt, rt * vv, 0, 0, Math.PI); c.stroke();
     },
 
-    // Куча монет — только монеты, никакой заливки под ними. Лежат вразнобой:
-    // случайные места, наклоны и повороты, часть — на ребре, часть боком; два
-    // вида — золотые и биметалл (как в рамке из монет). Плотность такая, что
-    // фон между ними не просвечивает. Было: ровные ряды — читались чешуёй.
-    // Монета — плоскими пятнами без градиентов (дёшево): ребро, лицо, серп
-    // света сверху-слева, тень снизу-справа, рельефный ободок, искра.
-    coins(c, v, G) {
+    // Куча монет — настоящие диски в объёме банки (запечены симуляцией
+    // насыпания, greed-jar3-coins.js): все одного размера, у каждой своё
+    // место и наклон; на экран их проецирует этот код — так перспектива
+    // верная сама и монеты поворачиваются вместе с банкой. Было: монеты
+    // рисовались эллипсами случайного размера прямо на экране, и передние
+    // выходили меньше задних (игрок, 17.11).
+    // Проекция — та же, что у силуэта: экран x = X, y = −Y + Z·view.
+    // Монета — плоскими пятнами без градиентов: ребро, лицо со светом по
+    // нормали, серп блика, ободок / серебряная середина, тушевая обводка.
+    coins(c, v, G, yaw = 0) {
+        const D = this.COINS, C = this.COIN;
+        if (!D) return;
         c.save(); this.silhouette(c, v, 0.014); c.clip();
-        const top = this.COIN_TOP, rnd = this._rnd(17), cr = 0.05, vv = Math.max(v, 0.06), list = [];
-        const S = PALETTE.greedCoin.silver;
-        const coin = (x, yy, y) => {
-            const edge = rnd() < 0.12;                       // стоит на ребре
-            list.push({ x, yy, y: y + (rnd() - 0.5) * 0.05, s: 0.8 + rnd() * 0.4,
-                tilt: edge ? (rnd() < 0.5 ? 1 : -1) * (1.2 + rnd() * 0.4) : (rnd() - 0.5) * 2.2,
-                sq: edge ? 0.12 + rnd() * 0.12 : 0.22 + rnd() * 0.6, bi: rnd() < 0.45 });
-        };
-        // бок кучи у стекла: случайно, с запасом за край силуэта
-        for (let i = 0; i < 520; i++) {
-            const y = rnd() * (top - 0.01), rr = this.r(y) + 0.03, x = (rnd() * 2 - 1) * rr;
-            const front = Math.sqrt(Math.max(0, 1 - (x / (rr - 0.03)) ** 2));
-            coin(x, -y + front * this.r(y) * vv, y);
+        const Sv = PALETTE.greedCoin.silver, ca = Math.sqrt(1 - v * v), a = yaw * Math.PI / 180, cy = Math.cos(a), sy = Math.sin(a);
+        const L = [-0.45, 0.8, 0.4], ln = Math.hypot(...L);
+        const list = [];
+        for (let k = 0; k < D.length; k += 6) {
+            const x = D[k] * cy + D[k + 2] * sy, z = -D[k] * sy + D[k + 2] * cy;
+            let nx = D[k + 3] * cy + D[k + 5] * sy, ny = D[k + 4], nz = -D[k + 3] * sy + D[k + 5] * cy;
+            // к зрителю: (0, v, ca); монету видно с той стороны, что к нам
+            if (nx * 0 + ny * v + nz * ca < 0) { nx = -nx; ny = -ny; nz = -nz; }
+            list.push({ x, y: D[k + 1], z, nx, ny, nz, d: D[k + 1] * v + z * ca, bi: ((k / 6) * 7919) % 10 < 4.5 });
         }
-        // верх кучи — россыпь по эллипсу поверхности, с горкой к середине
-        const rt = this.r(top);
-        for (let i = 0; i < 90; i++) {
-            const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
-            const x = Math.cos(a) * d * rt * 0.97, z = Math.sin(a) * d;
-            coin(x, -top - (1 - d) * 0.03 + z * rt * vv + (rnd() - 0.5) * 0.01, top + z * 0.02);
-        }
-        list.sort((a, b) => a.y - b.y);
+        list.sort((p, q) => p.d - q.d);
+        const P = (px, py, pz) => [px, -py + pz * v];
         list.forEach((m) => {
-            const lit = 0.55 + 0.45 * Math.min(1, Math.max(0, m.y / top)), r = cr * m.s, q = r * m.sq;
-            const F = m.bi ? S : G;                          // цвет лица: биметалл — серебряная середина
-            c.save(); c.translate(m.x, m.yy); c.rotate(m.tilt);
-            // ребро (толщина) и тушевая обводка — монеты отделяются друг от друга
-            c.beginPath(); c.ellipse(0, r * 0.14, r, q, 0, 0, 7); c.fillStyle = G.deep; c.globalAlpha = 1; c.fill();
-            c.beginPath(); c.ellipse(0, r * 0.07, r * 1.02, q * 1.04 + r * 0.07, 0, 0, 7);
-            c.strokeStyle = PALETTE.ink; c.lineWidth = r * 0.06; c.globalAlpha = 0.45; c.stroke();
+            // оси диска: u ⟂ n (в горизонтали), w = n × u
+            let ux = -m.nz, uz = m.nx, ul = Math.hypot(ux, uz);
+            if (ul < 1e-4) { ux = 1; uz = 0; ul = 1; }
+            ux /= ul; uz /= ul;
+            const wx = m.ny * uz, wy = m.nz * ux - m.nx * uz, wz = -m.ny * ux;
+            const [ax, ay] = P(ux * C.r, 0, uz * C.r), [bx, by] = P(wx * C.r, wy * C.r, wz * C.r);
+            const [ox, oy] = P(m.x, m.y, m.z), [tx, ty] = P(-m.nx * C.th, -m.ny * C.th, -m.nz * C.th);
+            const lit = Math.max(0, (m.nx * L[0] + m.ny * L[1] + m.nz * L[2]) / ln);
+            const deep = Math.max(0, Math.min(1, (this.COIN_TOP - m.y) / this.COIN_TOP));   // ниже в куче — темнее
+            const face = m.bi ? Sv : G;
+            // ребро — тот же диск, сдвинутый на толщину против нормали
+            c.save(); c.transform(ax, ay, bx, by, ox + tx, oy + ty);
+            c.beginPath(); c.arc(0, 0, 1, 0, 7); c.fillStyle = G.deep; c.globalAlpha = 1; c.fill();
+            c.restore();
+            c.save(); c.transform(ax, ay, bx, by, ox, oy);
+            c.beginPath(); c.arc(0, 0, 1.04, 0, 7); c.fillStyle = PALETTE.ink; c.globalAlpha = 0.5; c.fill();
             c.globalAlpha = 1;
-            // лицо: светлое, сверху поверх — основной тон со сдвигом → серп света
-            c.beginPath(); c.ellipse(0, 0, r, q, 0, 0, 7); c.fillStyle = G.hi; c.fill();
-            c.beginPath(); c.ellipse(r * 0.08, q * 0.12, r * 0.97, q * 0.95, 0, 0, 7); c.fillStyle = G[500]; c.fill();
-            c.beginPath(); c.ellipse(r * 0.16, q * 0.3, r * 0.8, q * 0.7, 0, -0.3, Math.PI + 0.3); c.fillStyle = G.lo; c.globalAlpha = 0.55; c.fill();
+            c.beginPath(); c.arc(0, 0, 1, 0, 7); c.fillStyle = lit > 0.75 ? G.hi : lit > 0.4 ? G[500] : G.lo; c.fill();
+            // серп: основной тон со сдвигом от света — по краю к свету светлее
+            c.beginPath(); c.arc(0.1, 0.12, 0.92, 0, 7); c.fillStyle = lit > 0.75 ? G[500] : G.lo; c.globalAlpha = 0.85; c.fill();
             c.globalAlpha = 1;
-            // середина: у биметалла — серебро, у золотой — рельефный ободок
             if (m.bi) {
-                c.beginPath(); c.ellipse(0, 0, r * 0.58, q * 0.58, 0, 0, 7); c.fillStyle = F.hi; c.fill();
-                c.beginPath(); c.ellipse(r * 0.05, q * 0.08, r * 0.55, q * 0.54, 0, 0, 7); c.fillStyle = F[500]; c.fill();
+                c.beginPath(); c.arc(0, 0, 0.6, 0, 7); c.fillStyle = lit > 0.6 ? face.hi : face[500]; c.fill();
+                c.beginPath(); c.arc(0.05, 0.07, 0.52, 0, 7); c.fillStyle = lit > 0.6 ? face[500] : face.lo; c.fill();
             } else {
-                c.beginPath(); c.ellipse(0, 0, r * 0.72, q * 0.72, 0, 0, 7); c.strokeStyle = G.lo; c.lineWidth = r * 0.08; c.globalAlpha = 0.6; c.stroke();
-                c.beginPath(); c.ellipse(0, 0, r * 0.72, q * 0.72, 0, Math.PI * 1.05, Math.PI * 1.6); c.strokeStyle = G.hi; c.globalAlpha = 0.8; c.stroke();
+                c.beginPath(); c.arc(0, 0, 0.72, 0, 7); c.strokeStyle = G.lo; c.lineWidth = 0.09; c.globalAlpha = 0.7; c.stroke();
+                c.beginPath(); c.arc(0, 0, 0.72, Math.PI * 1.05, Math.PI * 1.6); c.strokeStyle = G.hi; c.globalAlpha = 0.85; c.stroke();
             }
-            // искра на верхних, освещённых
-            if (lit > 0.85 && m.sq > 0.3) { c.globalAlpha = 0.9; c.fillStyle = G.glint; c.beginPath(); c.ellipse(-r * 0.4, -q * 0.35, r * 0.16, q * 0.14, 0, 0, 7); c.fill(); }
-            // в глубине кучи темнее — тень соседей
-            if (lit < 0.95) { c.globalAlpha = (1 - lit) * 0.9; c.fillStyle = PALETTE.greedCoin.gap; c.beginPath(); c.ellipse(0, r * 0.07, r * 1.02, q * 1.04 + r * 0.07, 0, 0, 7); c.fill(); }
+            if (lit > 0.85 && deep < 0.2) { c.globalAlpha = 0.9; c.fillStyle = G.glint; c.beginPath(); c.arc(-0.4, -0.35, 0.15, 0, 7); c.fill(); }
+            if (deep > 0.05) { c.globalAlpha = deep * 0.55; c.fillStyle = PALETTE.greedCoin.gap; c.beginPath(); c.arc(0, 0, 1.04, 0, 7); c.fill(); }
             c.restore();
         });
         c.globalAlpha = 1;
