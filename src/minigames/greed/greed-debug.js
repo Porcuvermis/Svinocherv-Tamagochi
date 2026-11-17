@@ -101,7 +101,8 @@ const GreedDebug = {
             btn('skin-slots', 'Бандит: вид ' + skin('slots')) +
             btn('skin-wheel', 'Колесо: вид ' + skin('wheel')) +
             btn('skin-pachinko', 'Пачинко: вид ' + skin('pachinko')) +
-            btn('lux', 'Эскиз v2');
+            btn('lux', 'Эскиз v2') +
+            (typeof GreedJarShop !== 'undefined' && GreedJarShop.lastTap ? `<span style="color:#eee;padding:6px">банка: ${GreedJarShop.lastTap}</span>` : '');
         this.placeBelowInspector();
     },
 

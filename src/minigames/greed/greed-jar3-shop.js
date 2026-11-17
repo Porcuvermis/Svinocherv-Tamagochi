@@ -161,13 +161,21 @@ const GreedJarShop = {
     },
 
     // ---------- палец ----------
+    // Что стало с последним тапом по банке — в панель 🐞 алчности: на
+    // телефоне консоли нет, а «не открывается» бывает от разного.
+    note(t) { this.lastTap = t; if (typeof GreedDebug !== 'undefined' && GreedDebug.render) GreedDebug.render(); },
     restDown(e) {
-        if (this.state !== 'rest' || !this.map) return;
+        if (this.state !== 'rest') return;
+        if (!this.map) { this.note('нет раскладки'); return; }
         const [x, y] = this.toField(e), R = this.REST;
         // банка наклонена: попадание — в эллипс вокруг её середины
         const dx = (x - R.x) / (R.k * 0.36), dy = (y - R.y) / (R.k * 0.55);
-        if (dx * dx + dy * dy > 1) return;
-        if (typeof GreedSkin !== 'undefined' && GreedSkin.of('slots') === 2) return;   // у версии 2 магазина нет
+        if (dx * dx + dy * dy > 1) { if (dx * dx + dy * dy < 4) this.note(`мимо ${Math.round(x)},${Math.round(y)}`); return; }
+        this.note('открыта');
+        // У версии 2 магазина нет — но только когда версия 2 нарисована.
+        // Было: проверка по виду (GreedSkin), а вид 2 включён в 🐞 и пока
+        // рисует ту же банку версии 1 — тап молча ничего не делал (игрок).
+        if (this.isV2 && this.isV2()) return;
         e.preventDefault(); e.stopPropagation();
         this.state = 'opening'; this.t0 = performance.now(); this.dirty = true;
         this.cv.style.pointerEvents = 'auto';
