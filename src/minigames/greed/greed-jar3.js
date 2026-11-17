@@ -75,7 +75,7 @@ const GreedJar3 = {
         c.strokeStyle = J.bottom; c.lineWidth = 0.022; c.globalAlpha = 0.85; c.stroke();
         c.restore(); c.globalAlpha = 1;
         // 3. монеты внутри
-        if (P.coins !== false) this.coins(c, v, G, P.yaw || 0);
+        if (P.coins !== false) { if (P.coinRes) this.coinsCached(c, v, G, P.coinRes); else this.coins(c, v, G, P.yaw || 0); }
         if (P.drops) this.drops(c, v, P.drops);
         c.save(); this.silhouette(c, v); c.clip();
         // 4. край силуэта: стекло густеет к краям (видно толщу) — слева светлее
@@ -236,6 +236,31 @@ const GreedJar3 = {
         });
         c.globalAlpha = 1;
         c.restore();
+    },
+
+    // Куча монет готовой картинкой — для полёта банки. Рисовать 310 монет
+    // каждый кадр, да ещё крупными (банка летит на камеру), — это и были
+    // лаги (игрок, 17.11). Картинка собирается один раз в позе покоя
+    // (вид сверху 0.16, поворот −14°) и дальше только масштабируется вместе
+    // с банкой; что куча в полёте не вертится вместе со стеклом, на такой
+    // скорости не видно (стекло круглое, вращение видно лишь по скотчу).
+    coinsCached(c, v, G, res) {
+        const cs = this.coinSprite(G, res), B = this.COIN_BOX;
+        c.save(); this.silhouette(c, v, 0.014); c.clip();
+        c.drawImage(cs, B.x0, B.y0, B.x1 - B.x0, B.y1 - B.y0);
+        c.restore();
+    },
+    COIN_BOX: { x0: -0.4, x1: 0.4, y0: -0.56, y1: 0.06 },
+    coinSprite(G, res) {
+        res = Math.round(res);
+        if (this._cs && this._cs.res >= res) return this._cs;
+        const B = this.COIN_BOX, cv = document.createElement('canvas');
+        cv.width = Math.round((B.x1 - B.x0) * res); cv.height = Math.round((B.y1 - B.y0) * res);
+        const g = cv.getContext('2d');
+        g.setTransform(res, 0, 0, res, -B.x0 * res, -B.y0 * res);
+        this.coins(g, 0.16, G || PALETTE.greedCoin.gold, -14);
+        cv.res = res;
+        return (this._cs = cv);
     },
 
     // Жетоны, падающие в горло (вкидывание в магазине): в объёме банки —

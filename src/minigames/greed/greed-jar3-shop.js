@@ -123,7 +123,11 @@ const GreedJarShop = {
         return P;
     },
     // скотч на задней стороне — магазин (подмена, которой не видно)
-    backSide(yaw) { const a = ((yaw % 360) + 360) % 360; return a > 180 && a < 540; },
+    // Угол на открытии растёт от покоя (−14°) до 372°, на закрытии падает
+    // обратно; скотч смотрит назад около 180°. Было: угол по модулю 360 —
+    // в конце оборота (360…372°) снова «к игроку», и в упор на миг
+    // возвращалось число монет, а магазин появлялся на глазах (игрок, 17.11).
+    backSide(yaw) { return yaw > 180; },
 
     // ---------- кадр ----------
     step(now, coins) {
@@ -135,9 +139,19 @@ const GreedJarShop = {
         c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.cv.width, this.cv.height);
         c.setTransform(M.dpr, 0, 0, M.dpr, 0, 0);
         const [sx, sy] = this.toScene(P.x, P.y);
-        this.tapeCv = GreedJar3.tapeCoins(P.shop ? '' : coins, 1200, this.tapeCv || undefined);
+        // Холсты скотча пересобираются, только когда меняется то, что на них
+        // нарисовано: число монет; состояние магазина (счётчики, нажатие,
+        // проявление и подскок числа — по ступенькам). Было: оба холста
+        // (рукописный магазин 960×1520) — каждый кадр полёта.
+        const tn = P.shop ? '' : coins;
+        if (this.tapeN !== tn) { this.tapeCv = GreedJar3.tapeCoins(tn, 1200, this.tapeCv || undefined); this.tapeN = tn; }
         let shop = null;
-        if (P.shop) { this.shopState(now, P.rev); shop = GreedJar3.tapeShop(this.sst, this.shopCv); }
+        if (P.shop) {
+            this.shopState(now, P.rev);
+            const key = JSON.stringify(this.sst);
+            if (key !== this.shopKey) { GreedJar3.tapeShop(this.sst, this.shopCv); this.shopKey = key; }
+            shop = this.shopCv;
+        }
         // жетоны в горле: падают от верха кадра, ниже верха скотча — за ним
         const drops = [];
         this.drops = this.drops.filter(d => {
@@ -148,14 +162,23 @@ const GreedJarShop = {
             drops.push({ y: 0.8 - 0.35 * a - 1.6 * a * a, x: d.x, rot: d.rot + a * 7, tilt: d.tilt + a * 11 });
             return true;
         });
+        // в покое монеты рисуются сами (чётко, один раз); в полёте — готовой
+        // картинкой (coinRes — её разрешение, точек на высоту банки)
         GreedJar3.draw(c, { cx: sx, cy: sy, k: P.k * M.k, roll: P.roll, yaw: P.yaw, view: P.view, sx: P.sx, sy: P.sy,
-            tape: this.tapeCv, shop, coins: P.coins, drops: P.shop ? drops : null });
+            tape: this.tapeCv, shop, coins: P.coins, drops: P.shop ? drops : null,
+            coinRes: this.state === 'rest' ? 0 : this.coinRes() });
         this.pose_ = P;
         this.dirty = this.state !== 'rest';
+        if (this.state === 'rest' && !this._csAt) this._csAt = setTimeout(() => GreedJar3.coinSprite(PALETTE.greedCoin.gold, this.coinRes()), 1500);
     },
+    // разрешение картинки монет: как у банки в середине полёта (крупнее —
+    // монеты уже за скотчем)
+    coinRes() { return Math.min(2400, 900 * this.map.k * this.map.dpr); },
     shopState(now, rev) {
         const J = Backend.greedJar(), pop = {};
-        (this.pops || []).forEach(p => { pop[p.k] = (now - p.at) / 1000; });
+        // подскок числа — 4 ступеньки по 60 мс, потом покой (кэш холста)
+        (this.pops || []).forEach(p => { const a = (now - p.at) / 1000; if (a < 0.24) pop[p.k] = Math.round(a / 0.06) * 0.06; });
+        rev = Math.round(rev * 8) / 8;     // проявление — 8 ступенек за 0,4 с
         this.sst = { wheel: J.wheel, pach: J.pachinko, v2: J.v2, need: { wheel: J.need.wheel, pach: J.need.pachinko, v2: J.need.v2 },
                      have: J.have, press: this.hold ? (this.hold.node === 'pachinko' ? 'pach' : this.hold.node) : null, pop, rev };
     },
