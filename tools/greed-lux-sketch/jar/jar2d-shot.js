@@ -27,8 +27,9 @@ const { chromium } = require('playwright');
       cv.width = W * 3; cv.height = H * 3;
       cv.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;z-index:5;pointer-events:none;background:none`;
       const c = cv.getContext('2d'); c.setTransform(3 / m, 0, 0, 3 / m, -hr.left * 3 / m, -hr.top * 3 / m); c.clearRect(-1e4, -1e4, 2e4, 2e4);
-      const tape = P.shop ? null : GreedJar3.tapeCoins(200);
-      GreedJar3.draw(c, Object.assign({ tape }, P));
+      // st — магазин на скотче (в упор): бумага без числа + холст магазина
+      const tape = GreedJar3.tapeCoins(P.st ? '' : 200), shop = P.st ? GreedJar3.tapeShop(P.st) : null;
+      GreedJar3.draw(c, Object.assign({ tape, shop, coins: !P.st }, P));
     }, P);
     await page.waitForTimeout(150);
     await page.screenshot({ path: `${process.argv[2]}${i}.png` });

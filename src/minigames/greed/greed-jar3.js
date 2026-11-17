@@ -103,6 +103,7 @@ const GreedJar3 = {
         c.restore();
         // 6. скотч обегает банку
         if (P.tape) this.tape(c, v, P.tape, P.yaw || 0);
+        if (P.shop) this.tape(c, v, P.shop, P.yaw || 0);
         // 7. горло: кромка и два валика
         this.neck(c, v, J, ink, lw);
         // 8. толщина стенки: светлая линия внутри контура — по ней стекло и
@@ -238,19 +239,24 @@ const GreedJar3 = {
     // Скотч — полоса на цилиндре тела: холст делится на узкие полосы, каждая
     // встаёт на свой угол вокруг оси; видны те, что смотрят к игроку. Верх и
     // низ полосы — по эллипсу сечения, к краям полоса темнее (уходит вбок).
+    // tex.u0…u1 — какую часть дуги покрывает холст (по умолчанию всю):
+    // магазин рисуется только на той части скотча, что видна «в упор», —
+    // в своём, более подробном холсте поверх бумаги.
     tape(c, v, tex, yaw) {
-        const T = this.TAPE, N = 72, A = T.arc * Math.PI / 180, rr = this.R * 1.012;
+        const T = this.TAPE, A = T.arc * Math.PI / 180, rr = this.R * 1.012;
+        const U0 = tex.u0 == null ? 0 : tex.u0, U1 = tex.u1 == null ? 1 : tex.u1, N = Math.max(24, Math.round(72 * (U1 - U0) * 2));
         for (let i = 0; i < N; i++) {
-            const u0 = i / N, u1 = (i + 1) / N;
+            const f0 = i / N, f1 = (i + 1) / N, u0 = U0 + f0 * (U1 - U0), u1 = U0 + f1 * (U1 - U0);
             const a0 = (yaw * Math.PI / 180) + (u0 - 0.5) * A, a1 = (yaw * Math.PI / 180) + (u1 - 0.5) * A, am = (a0 + a1) / 2;
             if (Math.cos(am) <= 0.02) continue;
             const x0 = rr * Math.sin(a0), x1 = rr * Math.sin(a1);
             const dy = rr * Math.cos(am) * v;
-            const sx = u0 * tex.width, sw = tex.width / N;
+            const sx = f0 * tex.width, sw = tex.width / N;
             c.save();
             c.globalAlpha = 1;
             c.drawImage(tex, sx, 0, sw + 0.5, tex.height, Math.min(x0, x1) - 0.0008, -T.y1 + dy, Math.abs(x1 - x0) + 0.0016, T.y1 - T.y0);
             // к краям — тень (полоса уходит вбок от света и от глаза)
+            if (tex.shade === false) { c.restore(); continue; }
             c.globalAlpha = (1 - Math.cos(am)) * 0.55;
             c.fillStyle = PALETTE.greedJunk.reel.jar.tapeLo;
             c.fillRect(Math.min(x0, x1) - 0.0008, -T.y1 + dy, Math.abs(x1 - x0) + 0.0016, T.y1 - T.y0);
@@ -278,6 +284,142 @@ const GreedJar3 = {
         });
         return cv;
     },
+    // ---------- МАГАЗИН НА СКОТЧЕ ----------
+    // Видимая «в упор» часть скотча (план 31, разд. 00): u 0,31…0,69 по дуге,
+    // по высоте — до рамки снизу. Холст — ровно эта часть, в пропорции куска
+    // (0,21 × 0,333 высоты банки), подробный: на экране он ~318×494 точек.
+    SHOP_WIN: { u0: 0.31, u1: 0.69, w: 960, h: 1520, vMax: 0.92 },
+    // Слева направо (игрок): колесо и пачинко — слева одно над другим, их
+    // ветки сходятся вправо к аппарату версии 2. Сверху — жетоны игрока.
+    // Узел: закрыт (v2, пока не открыты обе ветки) — бледный, пунктир;
+    // копится — «вложено/нужно»; готов — обведён, галочка вместо числа.
+    // st: { wheel, pach, v2, need:{wheel,pach,v2}, have, press, pop:{узел:сек}, rev 0..1 }
+    tapeShop(st) {
+        const Wn = this.SHOP_WIN, W = Wn.w, H = Wn.h;
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        cv.u0 = Wn.u0; cv.u1 = Wn.u1; cv.shade = false;
+        const c = cv.getContext('2d'), C = PALETTE.greedJunk.reel.jar, ink = PALETTE.greedJunk.reel.rag.marker;
+        // бумага без рваных концов (концы — на общем куске под этим холстом)
+        c.fillStyle = C.tape; c.fillRect(0, 0, W, H);
+        const rnd0 = this._rnd(91);
+        c.fillStyle = C.tapeLo; c.globalAlpha = 0.16;
+        for (let y = 0; y < H; y += H / 34) c.fillRect(0, y + rnd0() * 3, W, 2);
+        c.globalAlpha = 0.45; c.fillRect(0, 0, W, H * 0.02); c.globalAlpha = 1;
+        const done = (k) => st[k] >= st.need[k], open2 = done('wheel') && done('pach');
+        const rev = st.rev == null ? 1 : st.rev, part = (a, b) => Math.max(0, Math.min(1, (rev - a) / (b - a)));
+        const popQ = (x) => x <= 0 ? 0 : x >= 1 ? 1 : 1 + 2.7 * Math.pow(x - 1, 3) + 1.7 * Math.pow(x - 1, 2);
+        const lw = W * 0.016;
+        const stroke = (pts, seed, closed, w = lw, col = ink, dash) => {
+            const rnd = GreedJunk.rng(seed);
+            c.save(); c.strokeStyle = col; c.lineWidth = w; c.lineCap = 'round'; c.lineJoin = 'round';
+            if (dash) c.setLineDash(dash);
+            c.stroke(new Path2D(GreedJunk.handPath(pts, rnd, closed, W * 0.004))); c.restore();
+        };
+        const oval = (x, y, rx, ry, seed, w = lw, col = ink, dash) => {
+            const rnd = GreedJunk.rng(seed);
+            c.save(); c.strokeStyle = col; c.lineWidth = w; c.lineCap = 'round'; if (dash) c.setLineDash(dash);
+            c.stroke(new Path2D(GreedJunk.handOval(x, y, rx, ry, rnd, 9))); c.restore();
+        };
+        // цифры и знаки маркером: цифры — JAR_DIGIT (рамка 4×7.4), «/», «×», «✓»
+        const GLYPH = { '/': [[[3.6, 0.2], [0.4, 7.2]]], 'x': [[[0.6, 2.4], [3.4, 6.6]], [[3.4, 2.4], [0.6, 6.6]]] };
+        const write = (txt, x, y, h, seed) => {
+            const dw = h * 0.62, step = dw * 1.12, x0 = x - (txt.length * step) / 2;
+            c.save(); c.strokeStyle = ink; c.lineCap = 'round'; c.lineJoin = 'round';
+            txt.split('').forEach((ch, i) => {
+                const L = GLYPH[ch] || GreedJunkLit.JAR_DIGIT[+ch]; if (!L) return;
+                const rnd = GreedJunk.rng(seed + i * 31 + ch.charCodeAt(0) * 7);
+                c.save(); c.translate(x0 + i * step, y - h / 2 + (rnd() - 0.5) * h * 0.06); c.rotate((rnd() - 0.5) * 0.08); c.scale(dw / 4, h / 7.4);
+                c.lineWidth = h * 0.12 / (dw / 4);
+                c.stroke(new Path2D(L.map(P => GreedJunk.handPath(P, rnd, false, 0.12)).join(' ')));
+                c.restore();
+            });
+            c.restore();
+        };
+        const box = (x0, y0, x1, y1, seed, w = lw, col = ink, dash) => {
+            const o = lw * 0.3;
+            stroke([[x0 - o, y0], [x1 + o, y0]], seed, false, w, col, dash); stroke([[x1, y0 - o], [x1, y1 + o]], seed + 1, false, w, col, dash);
+            stroke([[x1 + o, y1], [x0 - o, y1]], seed + 2, false, w, col, dash); stroke([[x0, y1 + o], [x0, y0 - o]], seed + 3, false, w, col, dash);
+        };
+        const tick = (x, y, h, seed) => stroke([[x - h * 0.45, y], [x - h * 0.1, y + h * 0.35], [x + h * 0.5, y - h * 0.45]], seed, false, lw * 1.4, PALETTE.greedJunk.paint.red);
+        const node = (k, x, y, a, b, draw) => {
+            const q = popQ(part(a, b)); if (q <= 0) return;
+            c.save(); c.translate(x, y); c.scale(q, q); c.translate(-x, -y); draw(); c.restore();
+        };
+        // жетон алчности маркером: кольцо с тремя разломами, залито цветом греха
+        const token = (x, y, r, seed) => {
+            c.save(); c.beginPath(); c.arc(x, y, r, 0, 7); c.arc(x, y, r * 0.43, 0, 7, true);
+            c.fillStyle = TokenArt.color('greed_token'); c.globalAlpha = 0.85; c.fill('evenodd'); c.restore();
+            oval(x, y, r, r, seed, lw * 0.8); oval(x, y, r * 0.43, r * 0.43, seed + 1, lw * 0.7);
+            for (let t = 0; t < 3; t++) { const a = t * Math.PI * 2 / 3 - Math.PI / 2;
+                stroke([[x + Math.cos(a) * r * 0.45, y + Math.sin(a) * r * 0.45], [x + Math.cos(a) * r * 1.05, y + Math.sin(a) * r * 1.05]], seed + 5 + t, false, lw * 0.7); }
+        };
+        const press = (k, x, y, rx, ry) => { if (st.press === k) oval(x, y, rx, ry, 77, lw * 1.3, PALETTE.greedJunk.paint.red); };
+        const count = (k, x, y) => {
+            const age = st.pop && st.pop[k] != null ? st.pop[k] : 9, q = 1 + 0.35 * Math.exp(-age * 14);
+            if (done(k)) { tick(x, y, H * 0.05 * q, 300 + k.length); return; }
+            write(`${st[k]}/${st.need[k]}`, x, y, H * 0.05 * q, 500 + k.length * 13);
+        };
+        // раскладка в долях холста: слева — колесо (верх) и пачинко (низ)
+        const X = (f) => f * W, Y = (f) => f * H;
+        // видно x ~0,06…0,9 (дальше — рамка): аппарат версии 2 не правее 0,68
+        const WH = [X(0.22), Y(0.33)], PA = [X(0.22), Y(0.69)], V2 = [X(0.69), Y(0.53)];
+        // жетоны игрока — сверху
+        node('have', X(0.5), Y(0.09), 0, 0.3, () => { token(X(0.36), Y(0.09), H * 0.035, 11); write(`x${st.have}`, X(0.58), Y(0.095), H * 0.05, 900); });
+        // ветки: маркером от узлов к слиянию; открытая ветка — жирнее
+        const L = part(0.45, 0.8);
+        if (L > 0) {
+            const branch = (from, seed, bold) => {
+                const ex = V2[0] - X(0.2), pts = [[from[0] + X(0.16), from[1]], [X(0.4), from[1] + (V2[1] - from[1]) * 0.2], [X(0.44), V2[1] - (V2[1] - from[1]) * 0.25], [ex, V2[1]]];
+                const n = Math.max(2, Math.round(pts.length * L)), sub = pts.slice(0, n);
+                if (sub.length > 1) stroke(sub, seed, false, bold ? lw * 1.4 : lw, ink, bold ? null : [lw * 2.2, lw * 1.6]);
+            };
+            branch(WH, 41, done('wheel')); branch(PA, 43, done('pach'));
+            if (L > 0.95) { const ax = V2[0] - X(0.2);
+                stroke([[ax - X(0.045), V2[1] - Y(0.02)], [ax, V2[1]]], 47, false, lw * 1.2);
+                stroke([[ax - X(0.045), V2[1] + Y(0.02)], [ax, V2[1]]], 48, false, lw * 1.2); }
+        }
+        // колесо
+        node('wheel', WH[0], WH[1], 0.12, 0.42, () => {
+            const [x, y] = WH, r = X(0.14), cy = y - Y(0.035);
+            oval(x, cy, r, r, 21);
+            for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; stroke([[x, cy], [x + Math.cos(a) * r * 0.95, cy + Math.sin(a) * r * 0.95]], 22 + i, false, lw * 0.75); }
+            stroke([[x + r * 1.05, cy], [x + r * 1.4, cy - r * 0.2], [x + r * 1.4, cy + r * 0.2], [x + r * 1.05, cy]], 31, true, lw * 0.8);
+            count('wheel', x, y + Y(0.1)); press('wheel', x + X(0.02), y + Y(0.02), X(0.24), Y(0.15));
+            if (done('wheel')) oval(x, cy, r * 1.25, r * 1.25, 33, lw * 1.2, PALETTE.greedJunk.paint.red);
+        });
+        // пачинко
+        node('pach', PA[0], PA[1], 0.25, 0.55, () => {
+            const [x, y] = PA, w = X(0.2), h = Y(0.13), top = y - Y(0.04) - h / 2;
+            box(x - w / 2, top, x + w / 2, top + h, 51);
+            const aw = w * 0.36, ab = top + h * 0.92, at = top + h * 0.38, pts = [[x - aw, ab], [x - aw, at]];
+            for (let i = 1; i < 8; i++) { const a = Math.PI + i / 8 * Math.PI; pts.push([x + Math.cos(a) * aw, at + Math.sin(a) * aw * 0.9]); }
+            pts.push([x + aw, at], [x + aw, ab]); stroke(pts, 52, false, lw * 0.8);
+            for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { c.beginPath(); c.arc(x - aw * 0.55 + j * aw * 0.55 + (i % 2) * aw * 0.27, at + i * h * 0.16, lw * 0.6, 0, 7); c.fillStyle = ink; c.fill(); }
+            count('pach', x, y + Y(0.1)); press('pach', x + X(0.02), y + Y(0.02), X(0.24), Y(0.15));
+            if (done('pach')) oval(x, top + h / 2, w * 0.75, h * 0.72, 53, lw * 1.2, PALETTE.greedJunk.paint.red);
+        });
+        // аппарат версии 2 — ступенчатая башня; закрыт — бледный пунктир
+        node('v2', V2[0], V2[1], 0.7, 1, () => {
+            // Аппарат версии 2 — узнаваемо и просто: корпус, сверху колесо
+            // (полукруг со спицами) и короб пачинко, внизу экран с линией.
+            const [x, y] = V2, w = X(0.34), dash = open2 ? null : [lw * 2.2, lw * 1.8];
+            c.save(); c.globalAlpha = open2 ? 1 : 0.4;
+            const top = y - Y(0.15), bot = y + Y(0.05), mid = top + Y(0.09);
+            box(x - w / 2, top, x + w / 2, bot, 61, lw, ink, dash);
+            const wr = w * 0.24, wx = x - w / 2 + wr + w * 0.05, wy = mid - Y(0.012);
+            const arc = []; for (let i = 0; i <= 10; i++) { const a = Math.PI + i / 10 * Math.PI; arc.push([wx + Math.cos(a) * wr, wy + Math.sin(a) * wr]); }
+            stroke(arc.concat([[wx - wr, wy]]), 63, false, lw * 0.8, ink, dash);
+            for (let i = 1; i < 4; i++) { const a = Math.PI + i / 4 * Math.PI; stroke([[wx, wy], [wx + Math.cos(a) * wr * 0.92, wy + Math.sin(a) * wr * 0.92]], 70 + i, false, lw * 0.55, ink, dash); }
+            box(x + w * 0.1, top + Y(0.016), x + w * 0.4, wy, 64, lw * 0.75, ink, dash);
+            box(x - w * 0.36, mid + Y(0.02), x + w * 0.36, bot - Y(0.022), 65, lw * 0.75, ink, dash);
+            stroke([[x - w * 0.3, (mid + bot) / 2], [x + w * 0.3, (mid + bot) / 2]], 66, false, lw * 0.6, open2 ? PALETTE.greedJunk.paint.red : ink, dash);
+            if (open2) count('v2', x, y + Y(0.115)); else write(`${st.v2}/${st.need.v2}`, x, y + Y(0.115), H * 0.05, 700);
+            c.restore();
+            press('v2', x, y + Y(0.02), X(0.25), Y(0.17));
+        });
+        return cv;
+    },
+
     // малярный скотч: рваные концы, полосы волокна, края темнее
     paper(c, W, H, C) {
         const rnd = this._rnd(91);
