@@ -24,8 +24,8 @@ def dim(t):
 def finger(t):
     if EV['tap'] - 0.05 <= t < EV['tap'] + 0.2: return (313, 690)
     for tt in EV['taps']:
-        if tt - 0.05 <= t < tt + 0.15: return (90, 395)
-    if EV['hold'][0] <= t < EV['hold'][1]: return (292, 395)
+        if tt - 0.05 <= t < tt + 0.15: return (275, 420)
+    if EV['hold'][0] <= t < EV['hold'][1]: return (275, 610)
     if EV['out'] - 0.05 <= t < EV['out'] + 0.2: return (195, 130)
     return None
 frames = []

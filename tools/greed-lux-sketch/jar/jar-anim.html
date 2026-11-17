@@ -25,15 +25,27 @@ const ease = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 const clamp = (x) => Math.max(0, Math.min(1, x));
 
 // ---------- скотч: две картинки — число монет и схема магазина ----------
-const TAPE = { y0: -0.27, y1: 0.03, arc: 160 * D };
-function tapeCanvas() { const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; return c; }
+// Скотч — естественная полоса малярного скотча (~четверть высоты банки),
+// оторванный кусок спереди (60° по кругу). Во весь экран его выводит не
+// ширина, а близость банки к камере (игрок, 17.11).
+const TAPE = { y0: -0.055, y1: 0.045, arc: 60 * D };
+function tapeCanvas() { const c = document.createElement('canvas'); c.width = 2048; c.height = 1376; return c; }
 const tapeCv = tapeCanvas(), tapeTex = new THREE.CanvasTexture(tapeCv);
 const INK = '#1d1a24';
 function paper(g) {
-  g.fillStyle = '#e6d6a8'; g.fillRect(0, 0, 1024, 1024);
-  g.fillStyle = 'rgba(160,130,80,0.18)';
-  for (let i = 0; i < 40; i++) g.fillRect(0, i * 26 + (i % 3) * 3, 1024, 2);
-  g.fillStyle = 'rgba(120,95,55,0.35)'; g.fillRect(0, 0, 1024, 14); g.fillRect(0, 1010, 1024, 14);
+  const Wc = 2048, Hc = 1376;
+  g.clearRect(0, 0, Wc, Hc);
+  // рваные концы куска скотча — зубчатый край слева и справа
+  g.beginPath(); g.moveTo(30, 0);
+  for (let y = 0; y <= Hc; y += 40) g.lineTo(18 + ((y * 7) % 23), y);
+  g.lineTo(Wc - 30, Hc);
+  for (let y = Hc; y >= 0; y -= 40) g.lineTo(Wc - 18 - ((y * 11) % 23), y);
+  g.closePath(); g.fillStyle = '#e6d6a8'; g.fill();
+  g.save(); g.clip();
+  g.fillStyle = 'rgba(160,130,80,0.16)';
+  for (let i = 0; i < 52; i++) g.fillRect(0, i * 27 + (i % 3) * 3, Wc, 2);
+  g.fillStyle = 'rgba(120,95,55,0.35)'; g.fillRect(0, 0, Wc, 16); g.fillRect(0, Hc - 16, Wc, 16);
+  g.restore();
 }
 function marker(g, w) { g.strokeStyle = INK; g.fillStyle = INK; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; }
 function hand(g, text, x, y, size) { g.save(); g.translate(x, y); g.rotate(-0.03); g.font = `bold ${size}px "DejaVu Sans", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 0, 0); g.restore(); }
@@ -43,41 +55,41 @@ function token(g, x, y, rr) {   // жетон алчности, нарисова
   marker(g, rr * 0.12); g.beginPath(); g.arc(x, y, rr, 0, 7); g.stroke(); g.restore();
 }
 function drawCoins(n) {
-  const g = tapeCv.getContext('2d'); paper(g); marker(g, 10);
-  // число монет — крупно по середине передней части (u 0.5 — перед банки)
-  token(g, 360, 512, 0);
-  g.save(); g.fillStyle = '#e0a830'; g.beginPath(); g.arc(380, 512, 70, 0, 7); g.fill(); marker(g, 12); g.stroke(); g.restore();
-  hand(g, String(n), 600, 520, 190);
+  const g = tapeCv.getContext('2d'); paper(g);
+  g.save(); g.fillStyle = '#e0a830'; g.beginPath(); g.arc(820, 688, 120, 0, 7); g.fill(); marker(g, 18); g.stroke(); g.restore();
+  marker(g, 18); hand(g, String(n), 1180, 700, 340);
   tapeTex.needsUpdate = true;
 }
 const shop = { wheel: 3, pach: 0, v2: 0, have: 11, need: { wheel: 6, pach: 6, v2: 24 }, press: null };
 function drawShop() {
   const g = tapeCv.getContext('2d'); paper(g);
-  // узлы: колесо и пачинко сверху, линии сходятся в аппарат версии 2 внизу
-  // видимая в упор часть скотча — примерно x 320…704 из 1024 (дальше
-  // закрывает рамка или уходит за изгиб банки): схема собрана к середине
-  const N = { wheel: [405, 330], pach: [619, 330], v2: [512, 740] };
-  marker(g, 9);
-  g.beginPath(); g.moveTo(405, 470); g.bezierCurveTo(405, 560, 512, 540, 512, 630); g.stroke();
-  g.beginPath(); g.moveTo(619, 470); g.bezierCurveTo(619, 560, 512, 540, 512, 630); g.stroke();
-  const ring = (k, x, y, rx, ry) => { if (shop.press !== k) return; g.save(); g.strokeStyle = '#c8382c'; g.lineWidth = 10; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, 7); g.stroke(); g.restore(); };
-  // колесо: круг с секторами
-  let [x, y] = N.wheel; marker(g, 9); g.beginPath(); g.arc(x, y - 20, 62, 0, 7); g.stroke();
-  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(x, y - 20); g.lineTo(x + Math.cos(a) * 62, y - 20 + Math.sin(a) * 62); g.stroke(); }
-  g.beginPath(); g.moveTo(x + 62, y - 20); g.lineTo(x + 86, y - 31); g.lineTo(x + 86, y - 9); g.closePath(); g.fill();
-  hand(g, `${shop.wheel}/${shop.need.wheel}`, x, y + 92, 56); ring('wheel', x, y + 20, 100, 125);
-  // пачинко: короб с аркой и гвоздиками
-  [x, y] = N.pach; marker(g, 9); g.strokeRect(x - 52, y - 95, 104, 150);
-  g.beginPath(); g.moveTo(x - 38, y + 30); g.lineTo(x - 38, y - 45); g.arc(x, y - 45, 38, Math.PI, 0); g.lineTo(x + 38, y + 30); g.stroke();
-  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) { g.beginPath(); g.arc(x - 24 + j * 24 + (i % 2) * 12, y - 45 + i * 18, 4.5, 0, 7); g.fill(); }
-  hand(g, `${shop.pach}/${shop.need.pach}`, x, y + 92, 56); ring('pach', x, y + 10, 100, 125);
-  // аппарат версии 2: ступенчатая башня; пока не открыты обе ветки — бледный
-  [x, y] = N.v2; g.save(); g.globalAlpha = (shop.wheel >= 6 && shop.pach >= 6) ? 1 : 0.35; marker(g, 9);
-  g.strokeRect(x - 66, y - 90, 132, 60); g.strokeRect(x - 54, y - 30, 108, 46); g.strokeRect(x - 62, y + 16, 124, 38);
-  g.beginPath(); g.arc(x - 32, y - 60, 20, 0, 7); g.stroke(); g.strokeRect(x + 12, y - 80, 36, 40);
-  hand(g, `${shop.v2}/${shop.need.v2}`, x, y + 100, 56); g.restore();
-  // сколько жетонов у игрока — в верхнем углу скотча
-  token(g, 462, 90, 30); hand(g, `×${shop.have}`, 552, 96, 54);
+  // В упор видна середина куска: x ~560…1490 из 2048 (края — под рамкой и
+  // за изгибом банки). Схема горизонтальная, справа налево (игрок, 17.11):
+  // колесо и пачинко — справа, ветки сходятся влево к аппарату версии 2.
+  const N = { wheel: [1250, 430], pach: [1250, 960], v2: [780, 700] };
+  marker(g, 14);
+  g.beginPath(); g.moveTo(1100, 430); g.bezierCurveTo(990, 430, 1060, 700, 920, 700); g.stroke();
+  g.beginPath(); g.moveTo(1100, 960); g.bezierCurveTo(990, 960, 1060, 700, 920, 700); g.stroke();
+  // стрелка к аппарату
+  g.beginPath(); g.moveTo(890, 700); g.lineTo(925, 672); g.lineTo(925, 728); g.closePath(); g.fill();
+  const ring = (k, x, y, rx, ry) => { if (shop.press !== k) return; g.save(); g.strokeStyle = '#c8382c'; g.lineWidth = 16; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, 7); g.stroke(); g.restore(); };
+  // колесо
+  let [x, y] = N.wheel; marker(g, 14); g.beginPath(); g.arc(x, y, 110, 0, 7); g.stroke();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 110, y + Math.sin(a) * 110); g.stroke(); }
+  g.beginPath(); g.moveTo(x + 110, y); g.lineTo(x + 152, y - 20); g.lineTo(x + 152, y + 20); g.closePath(); g.fill();
+  hand(g, `${shop.wheel}/${shop.need.wheel}`, x, y + 185, 96); ring('wheel', x + 10, y + 70, 200, 230);
+  // пачинко
+  [x, y] = N.pach; marker(g, 14); g.strokeRect(x - 90, y - 150, 180, 230);
+  g.beginPath(); g.moveTo(x - 66, y + 50); g.lineTo(x - 66, y - 70); g.arc(x, y - 70, 66, Math.PI, 0); g.lineTo(x + 66, y + 50); g.stroke();
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) { g.beginPath(); g.arc(x - 40 + j * 40 + (i % 2) * 20, y - 70 + i * 30, 8, 0, 7); g.fill(); }
+  hand(g, `${shop.pach}/${shop.need.pach}`, x, y + 160, 96); ring('pach', x + 10, y + 30, 200, 240);
+  // аппарат версии 2 — бледный, пока не открыты обе ветки
+  [x, y] = N.v2; g.save(); g.globalAlpha = (shop.wheel >= 6 && shop.pach >= 6) ? 1 : 0.35; marker(g, 14);
+  g.strokeRect(x - 120, y - 170, 240, 110); g.strokeRect(x - 100, y - 60, 200, 90); g.strokeRect(x - 112, y + 30, 224, 70);
+  g.beginPath(); g.arc(x - 60, y - 115, 36, 0, 7); g.stroke(); g.strokeRect(x + 20, y - 150, 66, 72);
+  hand(g, `${shop.v2}/${shop.need.v2}`, x, y + 175, 96); g.restore();
+  // сколько жетонов у игрока — над аппаратом
+  token(g, 700, 230, 46); hand(g, `×${shop.have}`, 830, 238, 88);
   tapeTex.needsUpdate = true;
 }
 
@@ -109,7 +121,7 @@ const ready = fetch('jar.obj').then(t => t.text()).then(txt => {
   const inner = mesh(G.mat24, glass(0xdfeee8, 0.12)); inner.renderOrder = 2; body.add(inner);
   const outer = mesh(G.mat25, glass(0xe8f4f0, 0.2)); outer.renderOrder = 3; body.add(outer);
   // скотч поверх стекла: кусок цилиндра, середина — к игроку (u 0.5)
-  const tg = new THREE.CylinderGeometry(0.1425, 0.1425, TAPE.y1 - TAPE.y0, 64, 1, true, Math.PI - TAPE.arc / 2 + Math.PI / 2 - Math.PI / 2, TAPE.arc);
+  const tg = new THREE.CylinderGeometry(0.1428, 0.1428, TAPE.y1 - TAPE.y0, 64, 1, true, Math.PI - TAPE.arc / 2, TAPE.arc);
   const tape = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.85, side: THREE.FrontSide }));
   tape.position.y = (TAPE.y0 + TAPE.y1) / 2; tape.rotation.y = Math.PI; tape.renderOrder = 4; body.add(tape);
   const lid = mesh(G.mat15, new THREE.MeshStandardMaterial({ color: 0xb8bec4, metalness: 0.8, roughness: 0.35 }));
@@ -120,7 +132,12 @@ const ready = fetch('jar.obj').then(t => t.text()).then(txt => {
 // ---------- раскадровка ----------
 // позы: покой (на аппарате) и «в упор» (скотч во всю ширину, сверху горло)
 const REST = { p: at(313, 694, 5.3), pitch: 8 };
-const NEAR = { p: new THREE.Vector3(0, 0.0, -0.65), pitch: 10 };
+// В упор: верх скотча — на трети экрана (y ~300), низ — сразу за рамкой
+// (~790): высота скотча 0,10 на экране 490 точек → передняя стенка на
+// 0,10·422/(490·tg20°) = 0,237 от камеры, середина банки на 0,237 + радиус;
+// по высоте — середина скотча на y 545. Без наклона: так видимая часть
+// скотча считается без догадок (x ~584…1464 из 2048 по ширине).
+const NEAR = { p: new THREE.Vector3(0, -0.115, -0.3794), pitch: 0 };
 const EV = { tap: 0.6, hop: 0.8, fly: 1.95, taps: [2.5, 3.0, 3.5], hold: [4.2, 6.0], out: 6.6, back: 7.75, end: 8.6 };
 // тапы по колесу (+1) и удержание пачинко — поток с разгоном
 function deposits() {
@@ -163,7 +180,7 @@ window.frame = async (t) => {
   if (P.shopOn && t < EV.out) DEP.forEach((d, i) => {
     const age = t - d.t; if (age < 0 || age > 0.75) return;
     const m = new THREE.Mesh(tokenGeo, tokenMat);
-    const y = 0.42 - 4.2 * age * age - 0.5 * age;   // от верха экрана — в горло и вниз
+    const y = 0.30 - 2.2 * age * age - 0.25 * age;   // от верха экрана — в горло, за скотч и вниз
     m.position.set(((i * 37) % 7 - 3) * 0.008, y, 0.01 * ((i % 3) - 1));
     m.rotation.set(age * 9 + i, age * 4, age * 6 - i);
     tokens.add(m);
