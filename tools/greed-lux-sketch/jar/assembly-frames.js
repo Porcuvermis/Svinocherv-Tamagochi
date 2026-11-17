@@ -17,13 +17,13 @@ const { chromium } = require('playwright');
   await page.evaluate(() => { Tilt.turn = () => ({ live: true, x: 0, y: 0 }); }); await page.waitForTimeout(2500);
   // магазин открыт сразу, банка опущена; последний жетон — в колесо
   await page.evaluate(() => { const S = GreedJarShop; S.state = 'open'; S.t0 = performance.now() - 3000; S.cv.style.pointerEvents = 'auto'; S.dirty = true;
-    const cut = GreedAssembly.cut; GreedAssembly.cut = function () { const r = cut.call(this); this.stop = true; window.__cut = true; const ov = this.ov; window.__ov = ov; ov.remove = () => {}; const J = GreedJarShop; J.low = { from: J.LOW, to: J.LOW, t0: 0, ms: 1 }; J.lowTo = () => new Promise(() => {}); return r; };
+    const cut = GreedAssembly.cut; GreedAssembly.cut = function (d) { const r = cut.call(this, d); this.stop = true; window.__cut = true; const B = this.base, F = this.fly; window.__bf = [B, F]; B.remove = F.remove = () => {}; const J = GreedJarShop; J.low = { from: J.LOW, to: J.LOW, t0: 0, ms: 1 }; J.lowTo = () => new Promise(() => {}); return r; };
     S.hold = { node: 'wheel', dt: 320 }; S.deposit(); });
   await page.waitForFunction(() => window.__cut, null, { timeout: 60000 });
   await page.waitForTimeout(500);
-  const n = +(process.env.N || 105);
+  const n = +(process.env.N || 165);
   for (let i = 0; i < n; i++) {
-    await page.evaluate((t) => { const A = GreedAssembly; A.ov = window.__ov; A.fade = 1; A.parts.forEach(p => { p.landed = false; }); A.frame(A.t0 + t * 1000); GreedJarShop.dirty = true; GreedJarShop.step(performance.now(), 200); }, i / 30);
+    await page.evaluate((t) => { const A = GreedAssembly; [A.base, A.fly] = window.__bf; A.base.style.opacity = A.fly.style.opacity = 1; A.frame(A.t0 + t * 1000); GreedJarShop.dirty = true; GreedJarShop.step(performance.now(), 200); }, i / 30);
     await page.screenshot({ path: `${dir}a${String(i).padStart(3, '0')}.png` });
   }
   await b.close();

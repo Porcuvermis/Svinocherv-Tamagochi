@@ -112,8 +112,9 @@ const GreedJarShop = {
             between(1, R, N);
             P.k *= 1 + 0.03 * spring(s, 22, 7);
             P.yaw = 360 + 12 * Math.exp(-9 * s) * Math.cos(16 * s);
-            P.roll = 2.5 * spring(s, 18, 6) + 0.35 * Math.sin(now / 1000 * 2.3);
-            P.y += 1.2 * Math.sin(now / 1000 * 3.4);
+            const br = this.busy ? 0 : 1;              // на сборке банка не дышит — стоит
+            P.roll = 2.5 * spring(s, 18, 6) + 0.35 * br * Math.sin(now / 1000 * 2.3);
+            P.y += 1.2 * br * Math.sin(now / 1000 * 3.4);
             let rec = 0; this.drops.forEach(d => { const a = (now - d.at) / 1000; if (a >= 0 && a < 0.4) rec += Math.exp(-a * 16); });
             P.y += 2.5 * Math.min(1.5, rec); P.sy = 1 - 0.012 * Math.min(1.5, rec);
             P.shop = true; P.coins = s < 0.05; P.rev = 1;
@@ -170,6 +171,12 @@ const GreedJarShop = {
         this.fit();
         this.shown = coins;
         const P = this.pose(now), c = this.cv.getContext('2d'), M = this.map;
+        // Банка стоит (магазин открыт, никто не жмёт, жетоны не летят) — её
+        // кадр тот же: не перерисовывать. Во время сборки игры за стеклом это
+        // половина работы кадра (игрок, 17.11: «сборка лагает»).
+        const sig = [P.x, P.y, P.k, P.roll, P.yaw, P.sx, P.sy].map(v => Math.round(v * 20)).join() + '|' + P.shop + P.coins + this.drops.length + (this.hold ? this.hold.node : '') + (this.pops || []).length;
+        if (this.state === 'open' && sig === this.sig && !this.drops.length) { this.dirty = true; return; }
+        this.sig = sig;
         c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.cv.width, this.cv.height);
         c.setTransform(M.dpr, 0, 0, M.dpr, 0, 0);
         const [sx, sy] = this.toScene(P.x, P.y);

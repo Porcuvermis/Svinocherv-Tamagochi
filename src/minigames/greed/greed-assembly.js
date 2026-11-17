@@ -2,75 +2,76 @@
 // Колесо открыто в банке-магазине — и на глазах у игрока, сквозь стекло
 // банки, собирается на своём месте (docs/plan/31-greed-premium.md, «Открытие
 // игры»): крепления у гаражного аппарата уже стоят (гнездо с проводами),
-// прилетают доски щита, потом саморезы, которые его держат, потом диск с
-// гвоздями-колышками и последней — резинка язычка. Детали летят из-за
-// экрана — от камеры вглубь, крупными, — и встают на место с отдачей.
+// прилетают доски щита, саморезы, которые его держат, голый диск (краска
+// без значков), в него по одному — гвозди-колышки, резинка язычка; потом
+// колесо крутанётся «на проверку», и значки проявятся на секторах, когда те
+// выходят из-за невидимой половины колеса (под монетами рамки).
 //
 // Как без скачка в конце. Картинки деталей снимаются с УЖЕ собранного
-// аппарата: аппарат пересобирается с колесом под стоп-кадром прежнего
-// (снимок всех его холстов), с нового вырезаются доски, саморезы, диск и
-// язычок — и летят поверх стоп-кадра. Когда всё легло, под ним уже ровно то
-// же самое; стоп-кадр гаснет за четверть секунды (тень щита и мелочи под
-// ним, которых на стоп-кадре не было, проявляются мягко).
+// аппарата: он пересобирается с колесом под стоп-кадром прежнего, с нового
+// вырезаются доски, саморезы, диск и язычок. Диск — тем же шейдером в трёх
+// видах (голый, с колышками, целиком): колышки и значки — разница между
+// ними. Всё нарисовано при повороте колеса, на котором оно встанет, и
+// поворачивается на холсте: в конце поворот ноль — ровно то, что под ним.
+//
+// Дёшево (игрок, 17.11: «тоже лагает»): два холста. Нижний — стоп-кадр и
+// всё, что уже легло; перерисовывается, только когда деталь легла. Верхний —
+// только летящие детали и крутящийся диск.
 const GreedAssembly = {
-    // область колеса на поле аппарата: щит, диск, язычок
-    REGION: { x0: 0, y0: -57, x1: 207, y1: 293 },
+    REGION: { x0: 0, y0: -57, x1: 207, y1: 293 },    // место колеса на поле
 
-    // lower — опустить банку (идёт параллельно с пересборкой); сборка
-    // начинается, когда и банка опустилась, и аппарат готов
     async wheel(lower) {
         const L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement;
         if (!host || !L.gl) { if (GreedDebug && GreedDebug.rebuild) await GreedDebug.rebuild(); return; }
-        const ov = this.overlay(host);
-        this.snap = this.snapshot(host);                 // стоп-кадр прежнего аппарата
-        this.mode = 'full'; this.parts = []; this.fade = 1;
-        this.loop();
+        this.setup(host);
+        this.snap = this.snapshot(host);
+        this.mode = 'full'; this.parts = []; this.fade = 1; this.spin = null;
+        this.paintBase();
         const lowered = new Promise(r => setTimeout(r, 450)).then(() => lower ? lower() : null);
         // Под стоп-кадром — аппарат с колесом. Ждём корпус и колесо, но не
         // рычаг (его картинки готовятся до 7 с — для сборки не нужны).
-        const built = GreedDebug.rebuild();
-        await built;
+        await GreedDebug.rebuild();
         await Promise.all([L._mountP, L._wheelP].map(p => Promise.resolve(p).catch(() => {})));
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const discs = await this.discSets();
         await lowered;
-        this.parts = this.cut();
-        this.mode = 'wheel';                             // стоп-кадр — только на месте колеса
+        this.parts = this.cut(discs);
+        this.mode = 'wheel';
+        this.paintBase();
         this.t0 = performance.now();
-        const end = Math.max(...this.parts.map(p => p.at + p.dur)) + 0.25;
+        this.loop();
+        const end = this.END + 0.15;
         await new Promise(r => setTimeout(r, end * 1000));
-        // всё легло — стоп-кадр гаснет
         const f0 = performance.now();
-        await new Promise(r => { const step = () => { this.fade = 1 - (performance.now() - f0) / 250; if (this.fade > 0) requestAnimationFrame(step); else r(); }; step(); });
-        this.stop = true; ov.remove(); this.ov = null;
+        await new Promise(r => { const st = () => { this.fade = 1 - (performance.now() - f0) / 250; this.base.style.opacity = this.fly.style.opacity = Math.max(0, this.fade); if (this.fade > 0) requestAnimationFrame(st); else r(); }; st(); });
+        this.stop = true; this.base.remove(); this.fly.remove(); this.base = this.fly = null;
     },
 
-    overlay(host) {
-        if (this.ov) this.ov.remove();
-        const cv = document.createElement('canvas'), W = host.offsetWidth, H = host.offsetHeight, dpr = Math.min(3, window.devicePixelRatio || 1);
-        cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-        // над аппаратом, под банкой (z 6) и под рамкой из монет
-        cv.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;z-index:5;pointer-events:none;background:none`;
-        host.appendChild(cv);
-        this.ov = cv; this.host = host; this.dpr = dpr; this.stop = false;
-        return cv;
+    setup(host) {
+        [this.base, this.fly].forEach(c => c && c.remove());
+        const W = host.offsetWidth, H = host.offsetHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+        const mk = () => {
+            const cv = document.createElement('canvas'); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+            // над аппаратом, под банкой (z 6) и под рамкой из монет
+            cv.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;z-index:5;pointer-events:none;background:none`;
+            host.appendChild(cv); return cv;
+        };
+        this.base = mk(); this.fly = mk();
+        this.host = host; this.dpr = dpr; this.stop = false;
     },
-    // поле аппарата → точки сцены (как у банки: по offset, без трансформов окна)
     scene(x, y) {
         const w = GreedJunkLit.wrapEl, k = w.offsetWidth / GreedJunk.W;
         return [w.offsetLeft + x * k, w.offsetTop + (y - GreedJunk.Y0) * k, k];
     },
-    // Все видимые холсты аппарата — в одну картинку, на их местах. Холсты
-    // видеокарты снимаются в той же задаче, что отрисованы (без
-    // preserveDrawingBuffer буфер иначе уже пуст): корпус и колесо/пачинко
-    // перерисовываются здесь же.
+    // Все видимые холсты аппарата — в одну картинку. Холсты видеокарты
+    // снимаются в той же задаче, что отрисованы.
     snapshot(host) {
         const L = GreedJunkLit, cv = document.createElement('canvas');
-        cv.width = this.ov.width; cv.height = this.ov.height;
+        cv.width = this.base.width; cv.height = this.base.height;
         const c = cv.getContext('2d'), hr = host.getBoundingClientRect(), s = hr.width / host.offsetWidth;
         try { if (L.draw) L.draw(L.lightFor({ x: 0, y: 0 })); if (L.wheelDraw && L._wgl) L.wheelDraw(); if (L.pachDraw) L.pachDraw(); } catch (e) { /* что есть */ }
         L.wrapEl.querySelectorAll('canvas').forEach((el) => {
             const st = getComputedStyle(el);
-            if (st.display === 'none' || st.visibility === 'hidden' || el === GreedJarShop.cv) return;
+            if (st.display === 'none' || st.visibility === 'hidden') return;
             const r = el.getBoundingClientRect();
             if (!r.width || !r.height) return;
             c.globalAlpha = +st.opacity || 1;
@@ -80,11 +81,31 @@ const GreedAssembly = {
         return cv;
     },
 
+    // ---------- диск в трёх видах (тем же шейдером колеса) ----------
+    // голый — краска, торец, ступица; с колышками; целиком (значки) — уже есть
+    async discSets() {
+        const L = GreedJunkLit, G = GreedJunk, W = G.WHEEL, S = L.SCALE, R = W.rEdge + 4, k = G.wheelK(), n = Math.round(R * 2 * S * k);
+        const Q = L._wgl;
+        if (!Q) return null;
+        const svg = (pass, pegs) => {
+            G.pass = pass;
+            const f = G.wheelFace(), h0 = 8;
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
+                G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip) +
+                (pegs ? G.T(h0 + W.pegUp, 'steel', f.pegs) : '') + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
+        };
+        const set = async (pegs) => {
+            const maps = await Promise.all(['albedo', 'height', 'mat'].map(p => L.image(svg(p, pegs))));
+            G.pass = 'baked';
+            return L.deviceSet(Q, maps);
+        };
+        return { bare: await set(false), pegs: await set(true) };
+    },
+
     // ---------- детали с собранного аппарата ----------
-    cut() {
+    cut(discs) {
         const L = GreedJunkLit, G = GreedJunk, S = L.SCALE, body = L._glCanvas, Sh = G.SHIELD, parts = [];
         L.draw(L.lightFor({ x: 0, y: 0 }));
-        // кусок корпуса (поле) → свой холст
         const crop = (x, y, w, h) => {
             const cv = document.createElement('canvas'); cv.width = Math.round(w * S); cv.height = Math.round(h * S);
             cv.getContext('2d').drawImage(body, x * S, (y - G.Y0) * S, w * S, h * S, 0, 0, cv.width, cv.height);
@@ -95,16 +116,13 @@ const GreedAssembly = {
             const x = Sh.x + bw * (i + 0.5);
             [[x - 5, Sh.y + 6], [x + 5, Sh.y + 6], [x - 5, Sh.y + Sh.h - 6], [x + 5, Sh.y + Sh.h - 6]].forEach(p => bolts.push(p));
         }
-        // саморезы — кружки со своей тенью
         const br = 3.4, boltCv = bolts.map(([x, y]) => {
             const cv = crop(x - br, y - br, br * 2, br * 2), g = cv.getContext('2d');
             g.globalCompositeOperation = 'destination-in'; g.beginPath(); g.arc(br * S, br * S, (br - 0.4) * S, 0, 7); g.fill();
             return cv;
         });
-        // доски — без саморезов: место самореза заклеено той же доской чуть
-        // ниже (волокно вертикальное, шва не видно)
-        const order = [2, 1, 3, 0, 4];                   // от середины к краям
-        order.forEach((i, n) => {
+        // доски — без саморезов (место самореза заклеено той же доской ниже)
+        [2, 1, 3, 0, 4].forEach((i, n) => {
             const x0 = Sh.x + bw * i, cv = crop(x0, Sh.y - 1, bw, Sh.h + 2), g = cv.getContext('2d');
             bolts.forEach(([bx, by]) => {
                 if (bx < x0 || bx > x0 + bw) return;
@@ -116,24 +134,67 @@ const GreedAssembly = {
         });
         boltCv.forEach((cv, i) => {
             const [x, y] = bolts[i];
-            parts.push({ kind: 'bolt', cv, x: x - br, y: y - br, w: br * 2, h: br * 2, at: 0.85 + i * 0.035, dur: 0.3, s0: 4.5, spin: 9, from: i % 2 ? -1 : 1 });
+            parts.push({ kind: 'bolt', cv, x: x - br, y: y - br, w: br * 2, h: br * 2, at: 0.85 + i * 0.035, dur: 0.3, s0: 4.5, spin: 9, from: i % 2 ? -1 : 1, tick: i % 2 === 0 });
         });
-        // диск и резинка язычка — со своего холста (видеокарта): отдельно
+        // диск: голый, с колышками, целиком — с холста колеса при его повороте
         const Q = L._wgl, Sp = L._wheelSpr, M = L._wheel, B = L.wheelBox(), W = G.SLOTS.wheel;
-        if (Q && Sp && M) {
+        this.END = 2.0;
+        if (Q && Sp && M && discs) {
             const light = L.lightFor(M.lt || { x: 0, y: 0 });
             const grab = (draw) => {
                 L.deviceBegin(Q, light); draw();
                 const cv = document.createElement('canvas'); cv.width = L.wheelCv.width; cv.height = L.wheelCv.height;
                 cv.getContext('2d').drawImage(L.wheelCv, 0, 0); return cv;
             };
-            const disc = grab(() => L.deviceDraw(Q, B, Q.disc, W.cx, W.cy, Sp.R, Sp.R, M.rot, 0, 0));
+            // Диск — ЦЕЛИКОМ (не по видимому участку): его вращают, и
+            // половина за краем поля выезжает на виду. Нарисован при повороте
+            // 0, на холсте поворачивается на нужный угол.
+            const DS = Sp.R * 2, px = Math.round(DS * S);
+            const disc = (set) => L.deviceSprite(Q, set, px, px, light);
+            const bare = disc(discs.bare), withPegs = disc(discs.pegs), full = disc(Q.disc);
             const Pt = Sp.ptr;
             const ptr = grab(() => { L.deviceDraw(Q, B, Q.brk, Pt.cx, Pt.cy, Pt.hw, Pt.hh, 0, 0, 0); L.deviceDraw(Q, B, Q.ptr, Pt.cx, Pt.cy, Pt.hw, Pt.hh, M.flap, Pt.pivX, Pt.pivY); });
             L.wheelDraw();
-            const shadow = L.wheelShadowCv;
-            parts.push({ kind: 'disc', cv: disc, x: B.x, y: B.y, w: B.w, h: B.h, at: 1.75, dur: 0.62, s0: 2.3, spin: -2.2, pivot: [W.cx, W.cy], from: 1, shadow });
-            parts.push({ kind: 'ptr', cv: ptr, x: B.x, y: B.y, w: B.w, h: B.h, at: 2.45, dur: 0.3, s0: 2, from: -1, pivot: [Pt.cx, Pt.cy] });
+            // колышки и значки — разница между видами диска
+            const diff = (a, b, grow) => {
+                const w = a.width, h = a.height, A = a.getContext('2d').getImageData(0, 0, w, h), Bd = b.getContext('2d').getImageData(0, 0, w, h).data;
+                const m = new Uint8Array(w * h);
+                for (let i = 0, p = 0; p < m.length; p++, i += 4) {
+                    const d = Math.abs(A.data[i] - Bd[i]) + Math.abs(A.data[i + 1] - Bd[i + 1]) + Math.abs(A.data[i + 2] - Bd[i + 2]) + Math.abs(A.data[i + 3] - Bd[i + 3]);
+                    m[p] = d > 18 ? 1 : 0;
+                }
+                // расширить на grow (два прохода по осям)
+                const m2 = new Uint8Array(w * h), m3 = new Uint8Array(w * h);
+                for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dx = -grow; dx <= grow && !on; dx++) { const xx = x + dx; if (xx >= 0 && xx < w && m[y * w + xx]) on = 1; } m2[y * w + x] = on; }
+                for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dy = -grow; dy <= grow && !on; dy++) { const yy = y + dy; if (yy >= 0 && yy < h && m2[yy * w + x]) on = 1; } m3[y * w + x] = on; }
+                const out = document.createElement('canvas'); out.width = w; out.height = h;
+                const o = out.getContext('2d'), img = o.createImageData(w, h);
+                for (let p = 0, i = 0; p < m3.length; p++, i += 4) if (m3[p]) { img.data[i] = A.data[i]; img.data[i + 1] = A.data[i + 1]; img.data[i + 2] = A.data[i + 2]; img.data[i + 3] = A.data[i + 3]; }
+                o.putImageData(img, 0, 0);
+                return out;
+            };
+            const pegLayer = diff(withPegs, bare, 2), icons = diff(full, withPegs, 2);
+            const n = G.WHEEL_SECTORS.length, kk = G.wheelK(), rp = G.WHEEL.rPeg * kk, sc = px / DS;
+            const DX = W.cx - Sp.R, DY = W.cy - Sp.R;
+            // диск ляжет на пол-оборота раньше финального угла — проверка докрутит
+            const Rd = M.rot - Math.PI;
+            parts.push({ kind: 'disc', cv: bare, x: DX, y: DY, w: DS, h: DS, at: 1.75, dur: 0.62, s0: 2.3, spin: -2.2, base: Rd, pivot: [W.cx, W.cy], from: 1, shadow: L.wheelShadowCv, heavy: true });
+            const pr = 5.2;
+            for (let i = 0; i < n; i++) {
+                const a = (i - 0.5) / n * Math.PI * 2 - Math.PI / 2, x = W.cx + Math.cos(a) * rp, y = W.cy + Math.sin(a) * rp;
+                const cv = document.createElement('canvas'); cv.width = cv.height = Math.round(pr * 2 * sc);
+                cv.getContext('2d').drawImage(pegLayer, (x - pr - DX) * sc, (y - pr - DY) * sc, pr * 2 * sc, pr * 2 * sc, 0, 0, cv.width, cv.height);
+                // колышек летит в своё место на диске, повёрнутом на Rd; видимые — первыми
+                parts.push({ kind: 'peg', cv, x: x - pr, y: y - pr, w: pr * 2, h: pr * 2, dur: 0.24, s0: 5, from: i % 2 ? -1 : 1, orbit: [W.cx, W.cy, Rd], tick: true, vis: Math.cos(a + Rd) });
+            }
+            parts.filter(p => p.kind === 'peg').sort((a, b) => b.vis - a.vis).forEach((p, j) => { p.at = 2.4 + j * 0.05; });
+            const pegEnd = 2.4 + n * 0.05 + 0.24;
+            parts.push({ kind: 'ptr', cv: ptr, x: B.x, y: B.y, w: B.w, h: B.h, at: pegEnd + 0.05, dur: 0.3, s0: 2, from: -1, pivot: [Pt.cx, Pt.cy] });
+            // Проверка: колесо крутанули — полтора оборота с затуханием; значки
+            // проявляются на секторах, когда те выходят из-за невидимой
+            // половины колеса (под монетами рамки слева).
+            this.spin = { at: pegEnd + 0.45, dur: 1.9, withPegs, icons, box: { x: DX, y: DY, w: DS, h: DS }, pivot: [W.cx, W.cy], from: Rd - 2 * Math.PI, to: M.rot, n, seen: new Array(n).fill(false), shadow: L.wheelShadowCv };
+            this.END = this.spin.at + this.spin.dur;
         }
         return parts;
     },
@@ -141,60 +202,110 @@ const GreedAssembly = {
     // ---------- кадр ----------
     loop() {
         const step = () => {
-            if (this.stop || !this.ov) return;
+            if (this.stop || !this.fly) return;
             this.frame(performance.now());
             requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
     },
+    // нижний слой: стоп-кадр (на месте колеса) и всё, что уже легло
+    paintBase() {
+        const c = this.base.getContext('2d'), d = this.dpr;
+        c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.base.width, this.base.height);
+        if (this.mode === 'full' || !GreedJunkLit.wrapEl) { c.drawImage(this.snap, 0, 0); return; }
+        const R = this.REGION, [ax, ay] = this.scene(R.x0, R.y0), [bx, by] = this.scene(R.x1, R.y1);
+        c.save(); c.beginPath(); c.rect(ax * d, ay * d, (bx - ax) * d, (by - ay) * d); c.clip(); c.drawImage(this.snap, 0, 0); c.restore();
+        const k = this.scene(0, 0)[2], spinning = this.spin && this.spinOn;
+        this.parts.forEach(p => { if (p.landed && !(spinning && (p.kind === 'disc' || p.kind === 'peg'))) this.draw(c, p, 1, 9, k); });
+    },
     frame(now) {
-        const c = this.ov.getContext('2d'), d = this.dpr;
-        c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.ov.width, this.ov.height);
-        c.globalAlpha = Math.max(0, this.fade);
-        if (this.mode === 'full' || !GreedJunkLit.wrapEl) { c.drawImage(this.snap, 0, 0); c.globalAlpha = 1; return; }
-        // стоп-кадр — только на месте колеса
-        const R = this.REGION, [ax, ay, k] = this.scene(R.x0, R.y0), [bx, by] = this.scene(R.x1, R.y1);
-        c.save(); c.beginPath(); c.rect(ax * d, ay * d, (bx - ax) * d, (by - ay) * d); c.clip();
-        c.drawImage(this.snap, 0, 0); c.restore();
-        const t = (now - this.t0) / 1000, C = this.scene(180, 160);
+        const c = this.fly.getContext('2d'), t = (now - this.t0) / 1000, k = this.scene(0, 0)[2];
+        c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.fly.width, this.fly.height);
         const outC = (x) => 1 - Math.pow(1 - x, 3);
-        // лёгшие — снизу, летящие — поверх
-        const flying = [];
+        let landedNow = false;
         this.parts.forEach((p) => {
             const u = (t - p.at) / p.dur;
             if (u < 0) return;
-            if (u >= 1) this.draw(c, p, 1, t - p.at - p.dur, C, k); else flying.push([p, u]);
-            if (u >= 1 && !p.landed) {
+            if (u < 1) { this.draw(c, p, outC(u), -1, k); return; }
+            const after = t - p.at - p.dur;
+            if (!p.landed) {
                 p.landed = true;
-                if (typeof Haptics !== 'undefined' && (p.kind !== 'bolt' || p.x % 2 < 1)) {
-                    if (p.kind === 'disc' && Haptics.impact) Haptics.impact('heavy'); else Haptics.tick();
+                // легла — дорисовать в нижний слой (без полной перерисовки)
+                if (!(this.spinOn && (p.kind === 'disc' || p.kind === 'peg'))) this.draw(this.base.getContext('2d'), p, 1, 9, k);
+                if (typeof Haptics !== 'undefined' && p.tick !== false && (p.kind !== 'bolt' || p.tick)) {
+                    if (p.heavy && Haptics.impact) Haptics.impact('heavy'); else Haptics.tick();
                 }
             }
+            // защёлкивание — короткая пружина поверх нижнего слоя
+            if (after < 0.25) this.draw(c, p, 1, after, k);
         });
-        flying.forEach(([p, u]) => this.draw(c, p, outC(u), -1, C, k));
-        c.globalAlpha = 1;
+        // проверка колеса: диск с колышками крутится, значки проявляются
+        const Sn = this.spin;
+        if (Sn && t >= Sn.at) {
+            if (!this.spinOn) { this.spinOn = true; landedNow = true; }
+            const u = Math.min(1, (t - Sn.at) / Sn.dur), e = 1 - Math.pow(1 - u, 2.6);
+            this.drawSpin(c, Sn, Sn.from + (Sn.to - Sn.from) * e, k);
+            // язычок — поверх крутящегося диска
+            const ptr = this.parts.find(p => p.kind === 'ptr');
+            if (ptr && ptr.landed) this.draw(c, ptr, 1, 9, k);
+        }
+        if (landedNow) this.paintBase();
     },
     // Деталь на прогрессе e (0 — у камеры, 1 — на месте); after — сколько
-    // секунд как легла (−1 — ещё летит): защёлкивание — короткая пружина.
-    draw(c, p, e, after, C, k) {
-        const d = this.dpr, [tx, ty] = this.scene(p.x, p.y), w = p.w * k, h = p.h * k;
-        const pv = p.pivot ? this.scene(p.pivot[0], p.pivot[1]) : [tx + w / 2, ty + h / 2];
-        let s = 1, rot = 0, ox = 0, oy = 0;
+    // секунд как легла (−1 — ещё летит).
+    draw(c, p, e, after, k) {
+        const d = this.dpr, [tx, ty] = this.scene(p.x, p.y), w = p.w * k, h = p.h * k, C = this.scene(180, 160);
+        let pv = p.pivot ? this.scene(p.pivot[0], p.pivot[1]) : [tx + w / 2, ty + h / 2];
+        let s = 1, rot = p.base || 0, ox = 0, oy = 0, cx0 = 0, cy0 = 0;
+        if (p.orbit) {                                    // колышек на диске, повёрнутом на D0
+            const [ox0, oy0] = this.scene(p.orbit[0], p.orbit[1]), a = p.orbit[2];
+            const dx = pv[0] - ox0, dy = pv[1] - oy0;
+            cx0 = ox0 + dx * Math.cos(a) - dy * Math.sin(a) - pv[0]; cy0 = oy0 + dx * Math.sin(a) + dy * Math.cos(a) - pv[1];
+            rot = a;
+        }
         if (after < 0) {
-            // от камеры вглубь: крупная, со стороны экрана, чуть сверху/снизу
             s = p.s0 + (1 - p.s0) * e;
             ox = (pv[0] - C[0]) * (1 - e) * 1.3; oy = ((pv[1] - C[1]) * 1.3 + p.from * 140) * (1 - e);
-            rot = ((p.rot0 || 0) + (p.spin || 0)) * (1 - e);
-        } else {
+            rot += ((p.rot0 || 0) + (p.spin || 0)) * (1 - e);
+        } else if (after < 9) {
             const sp = Math.exp(-after * 18) * Math.sin(after * 40);
-            s = 1 - 0.06 * sp; rot = (p.spin ? 0.05 : 0) * sp;
+            s = 1 - 0.06 * sp;
         }
         c.save();
         c.setTransform(d, 0, 0, d, 0, 0);
-        c.translate(pv[0] + ox, pv[1] + oy); c.rotate(rot); c.scale(s, s); c.translate(-pv[0], -pv[1]);
-        if (p.shadow && after >= 0) { c.globalAlpha = Math.min(1, after / 0.25) * Math.max(0, this.fade); const r = p.shadow.getBoundingClientRect(), hr = this.host.getBoundingClientRect(), q = hr.width / this.host.offsetWidth;
-            c.drawImage(p.shadow, (r.left - hr.left) / q, (r.top - hr.top) / q, r.width / q, r.height / q); c.globalAlpha = Math.max(0, this.fade); }
+        c.translate(pv[0] + cx0 + ox, pv[1] + cy0 + oy); c.rotate(rot); c.scale(s, s); c.translate(-pv[0], -pv[1]);
+        if (p.shadow && after >= 0) this.shadow(c, p.shadow, after >= 9 ? 1 : Math.min(1, after / 0.25), -(p.base || 0), pv);
         c.drawImage(p.cv, tx, ty, w, h);
+        c.restore();
+    },
+    // тень диска лежит на щите и не крутится вместе с ним
+    shadow(c, cv, a, unrot, pv) {
+        const r = cv.getBoundingClientRect(), hr = this.host.getBoundingClientRect(), q = hr.width / this.host.offsetWidth;
+        c.save(); c.translate(pv[0], pv[1]); c.rotate(unrot); c.translate(-pv[0], -pv[1]);
+        c.globalAlpha = a; c.drawImage(cv, (r.left - hr.left) / q, (r.top - hr.top) / q, r.width / q, r.height / q);
+        c.restore();
+    },
+    drawSpin(c, Sn, rot, k) {
+        const d = this.dpr, [tx, ty] = this.scene(Sn.box.x, Sn.box.y), w = Sn.box.w * k, h = Sn.box.h * k, pv = this.scene(Sn.pivot[0], Sn.pivot[1]);
+        c.save(); c.setTransform(d, 0, 0, d, 0, 0);
+        if (Sn.shadow) this.shadow(c, Sn.shadow, 1, 0, pv);
+        c.translate(pv[0], pv[1]); c.rotate(rot); c.translate(-pv[0], -pv[1]);
+        c.drawImage(Sn.withPegs, tx, ty, w, h);
+        // сектор, побывавший за невидимой половиной (слева, под монетами), —
+        // уже со значком
+        const n = Sn.n, R = Math.max(w, h);
+        c.save(); c.beginPath();
+        let any = false;
+        for (let i = 0; i < n; i++) {
+            const a = i / n * Math.PI * 2 - Math.PI / 2;                    // середина сектора на диске (поворот 0)
+            if (!Sn.seen[i] && Math.cos(a + rot) < -0.35) Sn.seen[i] = true;
+            if (!Sn.seen[i]) continue;
+            any = true;
+            const a0 = a - Math.PI / n, a1 = a + Math.PI / n;
+            c.moveTo(pv[0], pv[1]); c.arc(pv[0], pv[1], R, a0, a1); c.closePath();
+        }
+        if (any) { c.clip(); c.drawImage(Sn.icons, tx, ty, w, h); }
+        c.restore();
         c.restore();
     }
 };
