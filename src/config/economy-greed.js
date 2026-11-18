@@ -45,11 +45,18 @@ ECONOMY.minigames.greed = {
     // вторым броском ПОСЛЕ тройки мяса, и одна и та же картинка «три мяса»
     // платила то монетами, то жетоном — игрок решил: одна комбинация — одна
     // награда (docs/plan/28-greed-machine.md, разд. 5).
+    //
+    // Вес жетона — ручка темпа прокачки аппарата (игрок, 18.11): цены
+    // копилок банки высокие, а главная награда приходит ЧАСТО — редкая
+    // фрустрирует. 16 даёт жетон раз в ~78 круток (было 10 — раз в 174);
+    // возврат золотом почти не сдвинулся (67 → 65%), сток остаётся стоком.
+    // Сколько круток в сутки — решает золото всей игры (sim-progression.js,
+    // раздел «алчность»).
     reel: [
         { key: 'skull', weight: 1,  pay: 66 },
         { key: 'coin',  weight: 10, pay: 13 },
         { key: 'meat',  weight: 10, pay: 7 },
-        { key: 'token', weight: 10, give: { greed_token: 1 } },
+        { key: 'token', weight: 16, give: { greed_token: 1 } },
         { key: 'bone',  weight: 12, pay: 4 },
         { key: 'shard', weight: 12, give: { greed_shard: 1 } },
         { key: 'blank', weight: 7,  pay: 0 }
@@ -88,7 +95,7 @@ ECONOMY.minigames.greed = {
     // остальных грехов это ЗАГЛУШКА до общего баланса: сколько стоит жетон в
     // своей игре, ещё никто не мерил.
     tokenValue: {
-        greed_token: 30, greed_shard: 10,
+        greed_token: 27, greed_shard: 9,      // бандит при весе жетона 16 (18.11; было 30/10)
         wrath_token: 30, wrath_shard: 10,
         glut_token: 30,  glut_shard: 10,
         sloth_token: 30, sloth_shard: 10,
@@ -126,12 +133,15 @@ ECONOMY.minigames.greed = {
     // можно ровными, как у настоящего колеса.
     wheel: {
         sectors: [
-            { key: 'blank',  weight: 51 },
+            { key: 'blank',  weight: 47 },
             { key: 'gold1',  weight: 25, give: { gold: 1 } },
             { key: 'gold3',  weight: 5,  give: { gold: 3 } },
             { key: 'meat',   weight: 5,  pantry: 'rib', n: 1, value: 2 },
             { key: 'seed',   weight: 12, seed: 'potato', n: 1, value: 0.5 },
-            { key: 'shard',  weight: 2,  give: { greed_shard: 1 } }
+            // осколок — чаще, чем был (2): колесо даёт жетон алчности так же
+            // часто, как бандит (~раз в 78 круток), — иначе открытая игра
+            // тормозила бы прокачку аппарата (sim-progression.js, 18.11)
+            { key: 'shard',  weight: 4,  give: { greed_shard: 1 } }
         ]
     },
 

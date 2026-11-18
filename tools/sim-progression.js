@@ -76,7 +76,13 @@ const TARGET = {
     // первый жетон нужно три), и каждый пятый заход у среднего игрока
     // попадает на «награда ещё не готова». Выходит четвёртый день — решение
     // автора (docs/plan/21-lust-bath.md, разд. 7а).
-    firstBuyDaysBySin: { lust: 4 }
+    //
+    // Алчность: первая покупка — целая игра аппарата (копилка колеса, 6
+    // жетонов), но жетон в банку у среднего игрока падает почти каждый день
+    // (раз в ~78 круток при ~50 крутках в сутки) — прогресс виден в копилке
+    // ежедневно. Цены высокие, главная награда частая — решение игрока
+    // (18.11, docs/plan/31-greed-premium.md).
+    firstBuyDaysBySin: { lust: 4, greed: 10 }
 };
 
 // Проверки ставятся на СРЕДНЕГО игрока: ленивый и усердный печатаются рядом
@@ -205,7 +211,7 @@ const INCOME = {
     greed(levels) {
         const open = ['slots'].concat(levels.wheel ? ['wheel'] : [], levels.pachinko ? ['pachinko'] : []);
         const avg = (f) => open.reduce((s, g) => s + GREED[g][f], 0) / open.length;
-        const spins = greedNeedSpins(visits) + GREED_GOLD_SHARE * DAY_GOLD / avg('loss');
+        const spins = greedNeedSpins(visits) + GREED_GOLD_SHARE * goldDay() / avg('loss');
         return spins * avg('tok');
     },
 
@@ -281,13 +287,34 @@ function greedNeedSpins(perDay) {
     return (needCache[perDay] = spins / DAYS);
 }
 
-// Азарт сверх нужды — доля суточного бюджета золота всей игры (план 15,
-// разд. 10: 120 за активный день), которую игрок СПУСКАЕТ в аппарат ради
-// жетонов. Это предположение о поведении, а не число конфига: печатается
-// вилкой (GREED_GOLD_SHARES), проверяется по GREED_GOLD_SHARE.
-const DAY_GOLD = 120;
-const GREED_GOLD_SHARES = [0, 0.15, 0.3];
-let GREED_GOLD_SHARE = 0.15;
+// ---------- ЗОЛОТО ИГРОКА ЗА СУТКИ ----------
+// Потолок круток задаёт не конфиг автомата, а кошелёк: сколько золота за
+// сутки игроку приходит из ВСЕЙ игры (игрок, 18.11). Источники и их темп —
+// из профильных калькуляторов, а не выведены заново:
+//   гнев     — дуэли: ~9.3 боя в сутки у среднего (sim-wrath-year.js, 90 мин),
+//              побед ~43% (sim-wrath-regen.js), золото победы — goldBase с
+//              убывающей доходностью по номеру победы за сутки (goldReturns);
+//   гордыня  — goldBase за оплаченный выход, выходов — как в INCOME.pride;
+//   сад      — монетки при копке: ~1.5 в сутки (sim-garden.js).
+// Забег гнева и находки в нём не считаются: он стоит жетон гнева и случается
+// редко. Профиль двигает всё пропорционально присутствию.
+function goldDay() {
+    const k = visits / PROFILES['средний'];
+    const wins = 9.3 * 0.43 * k, win = ECONOMY.rewards.wrath.duel.win.goldBase;
+    const share = (n) => { const t = ECONOMY.goldReturns.tiers.find(x => x.upTo === null || n <= x.upTo); return t ? t.share : 1; };
+    let wrath = 0;
+    for (let i = 1; i <= Math.ceil(wins); i++) wrath += win * share(i) * Math.min(1, wins - (i - 1));
+    const P = ECONOMY.sins.pride, prideRuns = Math.min(visits, 24 / (P.drainHours * (1 - P.payAt / P.max)));
+    const pride = prideRuns * ECONOMY.rewards.pride.parade.win.goldBase;
+    return wrath + pride + 1.5 * k;
+}
+
+// Азарт сверх нужды — доля суточного золота (goldDay), которую игрок
+// спускает в аппарат ради жетонов; остальное — продукты кухни и прочее.
+// Это предположение о поведении, а не число конфига: печатается вилкой
+// (GREED_GOLD_SHARES), проверяется по GREED_GOLD_SHARE.
+const GREED_GOLD_SHARES = [0, 0.25, 0.5];
+let GREED_GOLD_SHARE = 0.25;
 
 // ---------- ЛЕСТНИЦЫ САДА ----------
 // У лени нет записи в ECONOMY.minigames: её ступени живут в GARDEN рядом с
@@ -465,13 +492,13 @@ say('');
 say('======== алчность: жетон за крутку и копилки банки ========');
 ['slots', 'wheel', 'pachinko'].forEach(g => say(`  ${g.padEnd(9)} жетон раз в ${(1 / GREED[g].tok).toFixed(0).padStart(4)} круток, крутка съедает ${GREED[g].loss.toFixed(2)} золота`));
 say(`  копилки: колесо ${ECONOMY.minigames.greed.jar.wheel}, пачинко ${ECONOMY.minigames.greed.jar.pachinko}, версия 2 ${ECONOMY.minigames.greed.jar.v2}`);
-say('  игрок      азарт      круток/сут  колесо  пачинко  версия 2   (день открытия)');
+say('  игрок     золото/сут азарт  круток/сут  колесо  пачинко  версия 2   (день открытия)');
 const keepShare = GREED_GOLD_SHARE;
 Object.keys(PROFILES).forEach(name => GREED_GOLD_SHARES.forEach(sh => {
     visits = PROFILES[name]; GREED_GOLD_SHARE = sh;
     const r = run('greed');
-    const need = greedNeedSpins(visits), extra = sh * DAY_GOLD / GREED.slots.loss;
-    say(`  ${name.padEnd(9)} ${String(Math.round(sh * DAY_GOLD) + ' зол.').padStart(8)}   ${(need + extra).toFixed(0).padStart(8)}   ` +
+    const need = greedNeedSpins(visits), gd = goldDay(), extra = sh * gd / GREED.slots.loss;
+    say(`  ${name.padEnd(9)} ${String(Math.round(gd)).padStart(6)} ${String(Math.round(sh * 100) + '%').padStart(5)}   ${(need + extra).toFixed(0).padStart(8)}   ` +
         r.buys.map(d => String(d).padStart(7)).join('  '));
 }));
 GREED_GOLD_SHARE = keepShare;
