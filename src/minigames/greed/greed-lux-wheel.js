@@ -62,7 +62,12 @@ Object.assign(GreedLux, {
 
     wheelMount(wrap) {
         this._wheel = null;
-        if (!GreedJunk.wheelShown() || !this.sets.disc) return;
+        // Колесо у версии 2 стоит всегда: её покупают, когда открыты обе игры
+        // (план 31, разд. 00), и корпус запечён без него. Было: по флажку
+        // «колесо куплено» — вид 2 из 🐞 без купленного колеса показывал на
+        // месте колеса дыру (игрок, 18.11, iPhone). Не куплено (только в
+        // отладке) — бросок откажет бэкенд, колесо затормозит само.
+        if (!this.sets.disc) return;
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this._wheelSpr = {};
         if (!GreedJunk.wheelNow) GreedJunk.wheelNow = GreedJunk.WHEEL_SECTORS.slice();
