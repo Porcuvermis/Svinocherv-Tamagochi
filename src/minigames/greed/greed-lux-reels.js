@@ -256,6 +256,7 @@ Object.assign(GreedLux, {
     const pop = GreedLux.winPop;
     GreedLux.winPop = function (game, res) {
         if (game === 'slots' && res) this.reelsWin(res);
+        if (game === 'pachinko' && res && this.pachWinShow) this.pachWinShow(res);
         return pop ? pop.apply(this, arguments) : undefined;
     };
 })();

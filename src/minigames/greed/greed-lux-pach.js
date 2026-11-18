@@ -32,7 +32,9 @@ Object.assign(GreedLux, {
     // tickGap — тики в палец не чаще, мс; flash — вспышка гвоздя, мс;
     // lockMs — защёлкивание лунки; plungerMs — возврат толкателя; trail —
     // точек следа шарика
-    PACH_FX: { tickGap: 45, flash: 170, lockMs: 760, plungerMs: 240, trail: 6 },
+    // near — радиус «ожидания» (табло под шариком разгораются), единиц короба;
+    // loseMs — промах в сток; win — длительность показа по ступеням
+    PACH_FX: { tickGap: 45, flash: 170, lockMs: 760, plungerMs: 240, trail: 6, near: { dx: 20, dy: 40 }, loseMs: 650, win: [0, 1100, 1500, 2200] },
 
     pachMount(wrap) {
         this._pach = null;
@@ -142,6 +144,7 @@ Object.assign(GreedLux, {
                     const cup = res === 'drain' ? null : G.pachCupOf(b, res);
                     M.sink = { x: b.x, y: b.y, y0: b.y, at: now, cut: cup ? cup.y0 + 0.6 : G.PACH.y1 - G.PACH.panel, res, cup };
                     if (cup) M.lock = { cup, at: now };
+                    else M.lose = { at: now };
                     M.ball = null;
                 }
             }
@@ -169,7 +172,8 @@ Object.assign(GreedLux, {
         }
         M.pk = pk;
         if (r) this._pachDirtyR = r;
-        const fxOn = M.flashes.length || M.trail.length || (M.lock && now - M.lock.at < F.lockMs) || (now - M.press < 160) || this._pachWin;
+        const fxOn = M.flashes.length || M.trail.length || M.ball || (M.lock && now - M.lock.at < F.lockMs) || (now - M.press < 160) || this._pachWin ||
+            (M.lose && now - M.lose.at < F.loseMs);
         if (fxOn || M.fxWas) this.pfxDraw(now);
         M.fxWas = !!fxOn;
     },
@@ -217,7 +221,34 @@ Object.assign(GreedLux, {
             c.globalAlpha = 0.35 * (1 - (now - M.press) / 160); c.fillStyle = L.wheel.dim;
             c.beginPath(); c.arc(Bt.x, Bt.y, Bt.r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
         }
-        const C = P.cup, cups = G.PACH_CUPS, plate = (cu) => ({ x: cu.x - C.w / 2 + 3, y: cu.y + 3.4, w: C.w - 6, h: C.h - 5 });
+        const C = P.cup, cups = G.PACH_CUPS, plate = (cu) => this.pachPlate(cu);
+        // ожидание: табло лунок под летящим шариком разгораются по близости
+        if (M.ball && !M.ball.hold) {
+            const b = M.ball, N = F.near;
+            c.globalCompositeOperation = 'lighter';
+            cups.forEach(cu => {
+                const dx = Math.abs(cu.x - b.x), dy = cu.y - b.y;
+                if (dx > N.dx || dy < -2 || dy > N.dy) return;
+                const g = (1 - dx / N.dx) * (1 - Math.max(0, dy) / N.dy), q = plate(cu), col = (L.cupLed && L.cupLed[cu.key]) || L.scan;
+                c.globalAlpha = Math.min(1, 1.4 * g); c.fillStyle = col;
+                c.fillRect(q.x, q.y, q.w, q.h);
+                this.pachCupGlow(c, cu, col, Math.min(1, 1.3 * g), 13);
+            });
+            c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+        }
+        // промах в сток: поле на миг тускнеет, по решётке стока — тёмная волна
+        if (M.lose && now - M.lose.at < F.loseMs) {
+            const u = (now - M.lose.at) / F.loseMs, A = P.arc, rd = P.sep - A.cx, fl = A.cx - rd;
+            c.fillStyle = L.wheel.dim;
+            c.globalAlpha = Math.sin(Math.min(1, u * 1.6) * Math.PI);
+            c.beginPath(); c.moveTo(fl, P.drain); c.lineTo(fl, A.cy); c.arc(A.cx, A.cy, rd, Math.PI, 0); c.lineTo(P.sep, P.drain); c.closePath(); c.fill();
+            const fy1 = P.y1 - P.panel, x = fl + (P.sep - fl) * Math.min(1, u * 1.3);
+            const g = c.createLinearGradient(x - 18, 0, x + 4, 0);
+            g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.8, L.wheel.dim); g.addColorStop(1, 'rgba(0,0,0,0)');
+            c.globalAlpha = 1 - u; c.fillStyle = g; c.fillRect(Math.max(fl, x - 18), P.drain - 2, 22, fy1 - P.drain + 2);
+            c.fillRect(Math.max(fl, x - 18), P.drain - 2, 22, fy1 - P.drain + 2);
+            c.globalAlpha = 1;
+        }
         // защёлкивание: остальные табло гаснут, по попавшему — развёртка, потом свечение
         const lock = M.lock && now - M.lock.at < F.lockMs ? (now - M.lock.at) / F.lockMs : -1;
         if (lock >= 0) {
@@ -231,19 +262,19 @@ Object.assign(GreedLux, {
             const cu = cups.find(x => Math.abs(x.x - (M.lock.cup.x0 + C.w / 2)) < 0.5 && Math.abs(x.y - M.lock.cup.y0) < 0.5), q = plate(cu);
             const col = (L.cupLed && L.cupLed[cu.key]) || L.scan;
             if (lock < 0.4) { const y = q.y + q.h * (lock / 0.4); c.globalAlpha = 0.9; c.fillStyle = L.scan; c.fillRect(q.x, y - 0.4, q.w, 0.8); }
-            c.globalAlpha = (lock < 0.4 ? lock / 0.4 : 1 - (lock - 0.4) / 0.6) * (this._pachWin ? 0.9 : 0.55);
+            const la = lock < 0.4 ? lock / 0.4 : 1 - (lock - 0.4) / 0.6;
+            c.globalAlpha = la * 0.95;
             c.fillStyle = col; c.fillRect(q.x, q.y, q.w, q.h);
+            this.pachCupGlow(c, cu, col, la * 0.8, 14);
             c.globalAlpha = 1;
         }
-        // выигрыш (blink игры): табло мигает
+        // выигрыш (blink игры) — ступенями: 1 монета — табло мигает и
+        // загорается солнце купола; 2 осколок — ещё лучи веера вспыхивают от
+        // солнца волной; 3 жетон — ещё огни бегут по кромке купола
         if (this._pachWin) {
-            const u = (now - this._pachWin.at) / 900;
+            const Wn = this._pachWin, dur = F.win[Wn.tier] || 900, u = (now - Wn.at) / dur;
             if (u >= 1) this._pachWin = null;
-            else if (this._pachWin.cup) {
-                const q = plate(this._pachWin.cup), col = (L.cupLed && L.cupLed[this._pachWin.cup.key]) || L.scan;
-                c.globalAlpha = Math.max(0, Math.sin(u * Math.PI * 3)) * (1 - u * 0.5); c.fillStyle = col;
-                c.fillRect(q.x - 1.5, q.y - 1.5, q.w + 3, q.h + 3); c.globalAlpha = 1;
-            }
+            else this.pachWinDraw(c, Wn, u, plate);
         }
         // вспышки гвоздей
         M.flashes = M.flashes.filter(f => now - f.at < F.flash);
@@ -261,14 +292,83 @@ Object.assign(GreedLux, {
         }
         c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
     },
+    // ореол лунки (в «свете»): цвет её табло, радиус r вокруг середины
+    pachCupGlow(c, cu, col, a, r) {
+        if (a <= 0.01) return;
+        const C = GreedJunk.PACH.cup, x = cu.x, y = cu.y + C.h / 2;
+        const g = c.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+        const keep = c.globalAlpha;
+        c.globalAlpha = a * 0.6; c.fillStyle = g; c.fillRect(x - r, y - r, 2 * r, 2 * r);
+        c.globalAlpha = keep;
+    },
+    // табло лунки (вставка зиккурата, machine.py: x+5,6…, y+3…)
+    pachPlate(cu) {
+        const C = GreedJunk.PACH.cup;
+        return { x: cu.x - C.w / 2 + 5.2, y: cu.y + 2.6, w: C.w - 10.4, h: C.h - 4.2 };
+    },
+    pachWinDraw(c, Wn, u, plate) {
+        const G = GreedJunk, P = G.PACH, A = P.arc, rd = P.sep - A.cx, L = PALETTE.greedLux, gold = L.cupLed.gold1;
+        const fade = u < 0.12 ? u / 0.12 : 1 - (u - 0.12) / 0.88, ax = A.cx, ay = A.cy - rd;
+        // табло — мигает (ступень — чаще и ярче)
+        if (Wn.cup) {
+            const q = plate(Wn.cup), col = (L.cupLed && L.cupLed[Wn.cup.key]) || L.scan;
+            const bl = Math.max(0, Math.sin(u * Math.PI * (3 + Wn.tier))) * (1 - u * 0.5);
+            c.globalAlpha = bl * (0.7 + 0.1 * Wn.tier); c.fillStyle = col;
+            c.fillRect(q.x - 1, q.y - 1, q.w + 2, q.h + 2);
+            this.pachCupGlow(c, Wn.cup, col, bl * (0.7 + 0.1 * Wn.tier), 14 + 3 * Wn.tier);
+        }
+        // солнце купола
+        const sg = c.createRadialGradient(ax, ay, 0, ax, ay, 10 + 4 * Wn.tier);
+        sg.addColorStop(0, gold); sg.addColorStop(0.4, L.wheel.sparkHalo); sg.addColorStop(1, 'rgba(0,0,0,0)');
+        c.globalAlpha = fade * (0.5 + 0.2 * Wn.tier); c.fillStyle = sg;
+        c.fillRect(ax - 20, ay - 20, 40, 40);
+        if (Wn.tier >= 2) {
+            // лучи веера — волной от середины к краям, по полю под куполом
+            const fl = A.cx - rd;
+            c.save();
+            c.beginPath(); c.moveTo(fl, P.drain); c.lineTo(fl, A.cy); c.arc(A.cx, A.cy, rd, Math.PI, 0); c.lineTo(P.sep, P.drain); c.closePath(); c.clip();
+            c.strokeStyle = gold; c.lineWidth = 0.9; c.lineCap = 'round';
+            for (let k = 0; k < 17; k++) {
+                const a = Math.PI * (0.04 + 0.92 * k / 16), w = Math.abs(k - 8) / 8, ph = u * 2.2 - w;
+                const on = Math.max(0, Math.sin(Math.min(1, Math.max(0, ph)) * Math.PI));
+                if (on <= 0.01) continue;
+                c.globalAlpha = on * fade * 0.8;
+                c.beginPath(); c.moveTo(ax, ay); c.lineTo(ax + Math.cos(a) * 240, ay + Math.sin(a) * 240); c.stroke();
+            }
+            c.restore();
+        }
+        if (Wn.tier >= 3) {
+            // огни по кромке купола бегут от середины вниз по обе стороны
+            c.fillStyle = gold;
+            for (let i = 0; i < 14; i++) {
+                const t = ((i / 14 + u * 1.5) % 1), a = Math.PI + t * Math.PI;
+                [a, 3 * Math.PI - a].forEach(b => {
+                    c.globalAlpha = fade * (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7 + u * 20)));
+                    c.beginPath(); c.arc(A.cx + Math.cos(b) * rd, A.cy + Math.sin(b) * rd, 0.9, 0, 7); c.fill();
+                });
+            }
+        }
+        c.globalAlpha = 1;
+    },
+    // Ступень выигрыша по награде (экран алчности зовёт winPop до blink):
+    // монеты — 1, осколок — 2, жетон — 3.
+    pachWinShow(res) {
+        const cur = (res && res.currencies) || {}, ks = Object.keys(cur).filter(k => cur[k] > 0);
+        this._pachTier = ks.some(k => /_token$/.test(k)) ? 3 : ks.some(k => /_shard$/.test(k)) ? 2 : ks.length ? 1 : 0;
+    },
     // Выигрыш пачинко: шарик только что в лунке — мигает её табло.
     pachBlink(now) {
         const M = this._pach;
         if (!M || !M.doneAt || now - M.doneAt > 2000 || !M.lock || !M.lock.cup) return false;
         M.doneAt = null;
         const C = GreedJunk.PACH.cup, cu = GreedJunk.PACH_CUPS.find(x => Math.abs(x.x - (M.lock.cup.x0 + C.w / 2)) < 0.5 && Math.abs(x.y - M.lock.cup.y0) < 0.5);
-        this._pachWin = { at: now, cup: cu };
-        if (typeof Haptics !== 'undefined') Haptics.notify('success', true);
+        const tier = Math.max(1, this._pachTier || 1);
+        this._pachWin = { at: now, cup: cu, tier };
+        if (typeof Haptics !== 'undefined') {
+            if (tier === 1) Haptics.notify('success', true);
+            else Haptics.burst(tier === 3 ? 'heavy' : 'medium', tier === 3 ? 3 : 2, 100, 'success');
+        }
         return true;
     }
 });
