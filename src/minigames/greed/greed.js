@@ -140,6 +140,9 @@ const GreedMinigame = {
     },
     M: null,
     PREP_VEIL_MS: 4000,
+    // Ставка (множитель всего, ECONOMY.minigames.greed.bets): выбирает табло
+    // ставки версии 2 (greed-lux-bottom.js); null — первая доступная.
+    bet: null,
 
     close() {
         this.spinGeneration++;
@@ -161,7 +164,7 @@ const GreedMinigame = {
     // читается как несработавшее касание.
     onPull() {
         if (this.play.slots) return false;
-        const res = Backend.greedSpin();
+        const res = Backend.greedSpin(this.bet);
         if (!res.ok) {
             if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
             return false;
@@ -211,7 +214,9 @@ Object.assign(GreedMinigame, {
     refused: {},
     startPlay(game) {
         if (this.play[game]) { this.refused[game] = 'busy'; return false; }
-        const res = Backend.greedPlay(game);
+        // ставка табло — если она этой игре доступна, иначе первая
+        const bet = this.bet && Backend.greedBets && Backend.greedBets(game).indexOf(this.bet) >= 0 ? this.bet : undefined;
+        const res = Backend.greedPlay(game, bet);
         if (!res.ok) { this.refused[game] = res.error || 'error'; return false; }
         this.refused[game] = '';
         this.started(game, res);

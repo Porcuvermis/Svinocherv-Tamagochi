@@ -955,6 +955,8 @@ const PALETTE = {
         wheel: { spark: 'rgba(255,240,200,1)', sparkHalo: 'rgba(255,190,80,0.55)', lock: 'rgba(255,214,140,0.55)', dim: 'rgba(0,0,0,0.45)' },
         // светодиоды табло на лунках пачинко — второй цвет лунки (эмаль —
         // в машинном эскизе, machine.py CUP_COL; держать вместе)
+        // жидкое золото шкалы: мениск и пузырьки (greed-lux-bottom.js)
+        liquid: { top: '#fff0b8', bubble: '#ffe9a8' },
         // блики стекла пачинко (greed-lux-pach.js)
         glass: { glare: '#fff6e8' },
         cupLed: { wrath: '#ff6a5a', glut: '#ffaa62', lust: '#ff92b4', sloth: '#92baff', greed: '#ffd96a', envy: '#7fe8c8', pride: '#c99cff', gold1: '#ffe08a' }

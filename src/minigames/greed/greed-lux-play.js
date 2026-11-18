@@ -48,6 +48,7 @@ Object.assign(GreedLux, {
         // колесо — до рычага: его палец ловит своё (диск), рычаг — своё
         if (this.wheelMount) this.wheelMount(wrap);
         if (this.pachMount) this.pachMount(wrap);
+        if (this.bottomMount) this.bottomMount(wrap);
         this.inputMount(wrap);
     },
 
@@ -123,6 +124,7 @@ Object.assign(GreedLux, {
         const B = this.meta && this.meta.live, set = this.sets && this.sets.ball;
         if (this.paintWheel) this.paintWheel();
         if (this.pachPaint) this.pachPaint();
+        if (this.meterPaint) this.meterPaint();
         if (!B || !set) return;
         const [bx, by, bw] = B.ball, dy = this.ballDy || 0;
         // тень — от света сверху-слева, шар над колонной на свой радиус
@@ -143,6 +145,7 @@ Object.assign(GreedLux, {
         if (moved || this._blink || this._ledDirty || this._lineAt) this.ledDraw(now);
         this.lampStep(now);
         this.shakeStep(now);
+        if (this.bottomStep) this.bottomStep(now);
     },
     // После playStep: корпус не перерисовывался целиком — шар двигался?
     livePaint() {
@@ -150,6 +153,7 @@ Object.assign(GreedLux, {
         this._ballDirty = this._wheelDirty = false; this._pachDirtyR = null;
         if (b) this.paint(this.LEVER_RECT);
         if (pr) this.paint(pr);
+        if (this._metDirty) { this._metDirty = false; this.paint(this.METER_RECT()); }
         // колесо: крутится — облегчённо, только диск; встало — один раз целиком
         if (w && M && M.st !== 'idle') { this.paintWheelFast(); this._wheelFull = true; }
         else if (w || (this._wheelFull && M && M.st === 'idle')) { this._wheelFull = false; this.paint(this.WHEEL_RECT); }

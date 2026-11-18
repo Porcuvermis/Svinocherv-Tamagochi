@@ -152,7 +152,7 @@ def build_height():
     add(sd_rrect(*PIG), 2.2, 2.2)
     add(sd_rrect(267, 535, 333, 611, 8), -7, 1.6)
     # монеты: у каждой свой наклон — отражают по-разному, куча искрится
-    for group, rx, ry in ((COINS, 6.5, 2.7), (TCOINS, 7, 2.8)):
+    for group, rx, ry in ((COINS, 6.5, 2.7), (TCOINS if not LIVE else [], 7, 2.8)):
         for x, y, a, b in group:
             q = np.hypot((PX - x) / rx, (PY - y) / ry)
             HM += (q < 1) * (0.8 + (a - 0.5) * 1.8 * (PX - x) / rx + (b - 0.5) * 1.2 * (PY - y) / ry)
@@ -284,8 +284,20 @@ def sprite(kind):
 DOT = {'0': ['111', '101', '101', '101', '101', '101', '111'], '1': ['010', '110', '010', '010', '010', '010', '111'],
        '2': ['111', '001', '001', '111', '100', '100', '111'], 'x': ['000', '000', '101', '010', '101', '000', '000']}
 
+# Малое табло: точки по сетке шага p (7 рядов). LIVE — все погашены по всей
+# ширине: цифры зажигает игра (greed-lux-bottom.js, та же сетка — DOT_GRID).
+def dot_grid(x0, y0, x1, y1):
+    p = (y1 - y0 - 4) / 7
+    n = int((x1 - x0 - 2) // p)
+    return p, n, (x0 + x1) / 2 - n * p / 2
 def dots(x0, y0, x1, y1, text):
     o = rr(x0, y0, x1, y1, 2, c('#050202', 'glass', '#120303'))
+    if LIVE:
+        p, n, gx = dot_grid(x0, y0, x1, y1)
+        for j in range(7):
+            for i in range(n):
+                o += f'<circle cx="{gx + i * p + p / 2:.2f}" cy="{y0 + 2 + j * p + p / 2:.2f}" r="{p * 0.4:.2f}" fill="{c("#2a0706", "glass", "#1a0303")}"/>'
+        return o
     p = (y1 - y0 - 4) / 7
     tw = len(text) * 4 * p - p
     x = (x0 + x1) / 2 - tw / 2
@@ -772,16 +784,32 @@ def meter():
     x0, y0, x1, y1 = MET
     o += rr(x0, y0, x1, y1, 12, c('#0c0a0a', 'glass'))
     lv = y1 - (y1 - y0) * 0.46
+    if LIVE:
+        return o + meter_ticks()
     o += f'<clipPath id="metc"><rect x="{x0}" y="{y0}" width="{x1-x0}" height="{y1-y0}" rx="12"/></clipPath><g clip-path="url(#metc)">'
     o += rr(x0, lv, x1, y1, 0, c('#c07a12', 'glass', '#3a2002'))
     o += rr(x0, lv, x1, lv + 2.2, 0, c('#f6cf6a', 'glass', '#6a4a10'))
     for bx_, by_, br_ in ((61, 560, 1.6), (70, 520, 1.2), (66, 585, 2.0), (72, 470, 1.0), (60, 500, 1.3)):
         o += f'<circle cx="{bx_}" cy="{by_}" r="{br_}" fill="{c("#ffe9a8", "glass", "#5a4410")}"/>'
     o += '</g>'
+    return o + meter_ticks()
+def meter_ticks():
+    o = ''
+    x0, y0, x1, y1 = MET
     for k in range(1, 10):
         y = y0 + (y1 - y0) * k / 10
         o += f'<line x1="85.5" y1="{y:.1f}" x2="{89 if k % 5 else 91}" y2="{y:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="1"/>'
     return o
+# Жидкое золото шкалы отдельно (LIVE): столб во всю высоту трубки, игра
+# рисует его срезом до уровня (greed-lux-bottom.js) — свет и отражения стекла
+# тем же шейдером. Рельеф — вырезка из рельефа корпуса (та же трубка).
+def liquid():
+    x0, y0, x1, y1 = MET
+    o = rr(x0, y0, x1, y1, 12, c('#c07a12', 'glass', '#3a2002'))
+    return o
+def liquid_box():
+    x0, y0, x1, y1 = MET
+    return x0, y0, x1 - x0, y1 - y0
 
 def plinth():
     o = ink_rr(*INS, BUR) + grect(INS[0], INS[1], INS[2], INS[3], INS[4], 1.5)
@@ -798,7 +826,7 @@ def plinth():
     if PASS == 'emit':
         o += ('<linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0.35" stop-color="#000"/><stop offset="1" stop-color="#8a1008"/></linearGradient>'
               '<rect x="125" y="571" width="110" height="38" rx="6" fill="url(#tg)"/>')
-    for x, y, a, b in TCOINS:
+    for x, y, a, b in ([] if LIVE else TCOINS):
         o += f'<ellipse cx="{x}" cy="{y}" rx="7.5" ry="3.3" fill="{c(INK, "matte")}"/><ellipse cx="{x}" cy="{y}" rx="7" ry="2.8" fill="{c(GOLD, "gold")}"/>'
     o += ink_rr(*PIG, GOLD, 'gold') + rr(267, 535, 333, 611, 8, c('#160708', 'glass'))
     o += '<clipPath id="pigc"><rect x="267" y="535" width="66" height="76" rx="8"/></clipPath><g clip-path="url(#pigc)">'
@@ -834,7 +862,8 @@ if __name__ == '__main__':
   out = sys.argv[1]
   for p in ('albedo', 'mat', 'emit'):
     open(f'{out}mach-{p}.svg', 'w').write(svg(p))
-  build_height().save(f'{out}mach-height.png')
+  hm_img = build_height()
+  hm_img.save(f'{out}mach-height.png')
   json.dump(ICON_AT[:len(ICON_AT) // 3], open(f'{out}mach-icons.json', 'w'))
   # пиксельные значки — для живых экранчиков колеса в игре (greed-lux-preview.js)
   json.dump({k: sprite(k) for k in ('coin', 'bone', 'meat', 'skull', 'shard', 'token', 'coins3', 'potato')}, open(f'{out}mach-sprites.json', 'w'))
@@ -852,8 +881,16 @@ if __name__ == '__main__':
       open(f'{out}pach-{p}.svg', 'w').write(part_svg(p, pach_box(), pach_live))
     part_height(pach_box(), pach_build_live).save(f'{out}pach-height.png')
     S = keepS
+    lb = liquid_box()
+    for p in ('albedo', 'mat', 'emit'):
+      open(f'{out}liquid-{p}.svg', 'w').write(part_svg(p, lb, liquid))
+    px0, py0 = int(round((lb[0] - X0) * S)), int(round((lb[1] - Y0) * S))
+    hm_img.crop((px0, py0, px0 + int(round(lb[2] * S)), py0 + int(round(lb[3] * S)))).save(f'{out}liquid-height.png')
     x, y, w = ball_box()
-    json.dump({'pach': list(pach_box()), 'pachS': PS, 'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404],
+    p_, n_, gx_ = dot_grid(*BET)
+    q_, m_, hx_ = dot_grid(*BAL)
+    json.dump({'liquid': list(lb), 'bet': [BET[0], BET[1], BET[2], BET[3], p_, n_, gx_], 'bal': [BAL[0], BAL[1], BAL[2], BAL[3], q_, m_, hx_],
+               'tray': list(TRAY), 'pig': list(PIG), 'sn': list(SN), 'pach': list(pach_box()), 'pachS': PS, 'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404],
                'disc': list(disc_box()), 'ptr': list(ptr_box()), 'wheel': list(WH),
                'plunger': list(plunger_box()), 'pball': list(pball_box())}, open(f'{out}mach-live.json', 'w'))
   print('ok', W, H)

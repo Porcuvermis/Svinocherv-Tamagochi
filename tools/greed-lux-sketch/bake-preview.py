@@ -58,7 +58,7 @@ if os.path.exists(src + 'mach-live.json'):
         for f in ('albedo', 'mat'):
             Image.open(src + f'pach-{f}.png').convert('RGBA').save(dst + f'pach-{f}.png', optimize=True)
         shutil.copy(src + 'pach-height.png', dst + 'pach-height.png')
-    for part in ('ball', 'disc', 'ptr', 'plunger', 'pball'):
+    for part in ('ball', 'disc', 'ptr', 'plunger', 'pball', 'liquid'):
         for f in ('albedo', 'mat'):
             Image.open(src + f'{part}-{f}.png').convert('RGBA').save(dst + f'{part}-{f}.png', optimize=True)
         pe = np.asarray(Image.open(src + f'{part}-emit.png').convert('RGB'), np.float32) / 255

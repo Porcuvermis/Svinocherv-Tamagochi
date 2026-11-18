@@ -73,6 +73,24 @@ const { chromium } = require('playwright');
   }
   const pr = await page.evaluate(() => ({ want: window.__pr, got: window.__pd }));
   ok(pr.got.length === PN && pr.want.every((k, i) => k === pr.got[i]), `пачинко: шарик в решённую лунку ${pr.want.filter((k, i) => k === pr.got[i]).length}/${PN} (${pr.got.join(' ')})`);
+  // низ: табло копилки — кошелёк; тап по табло ставки — следующая ставка
+  // (если их больше одной); монета летит; выигрыш — в лоток; шкала — к значению
+  await page.waitForFunction(() => !GreedMinigame.busy(), null, { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const b0 = await page.evaluate(() => ({ bal: GreedLux._bot.shown, gold: Math.floor(GameState.currency('gold')), bets: Backend.greedBets('slots'), bet: GreedLux.betNow() }));
+  ok(b0.bal === b0.gold, `табло копилки ${b0.bal} = кошелёк ${b0.gold}`);
+  const [tx, ty] = await page.evaluate(() => { const L = GreedLux.meta.live.bet, w = GreedLux.wrapEl.getBoundingClientRect(); return [w.left + (L[0] + L[2]) / 2 / 360 * w.width, w.top + ((L[1] + L[3]) / 2 + 57) / 696 * w.height]; });
+  await page.mouse.click(tx, ty); await page.waitForTimeout(300);
+  const bet1 = await page.evaluate(() => GreedLux.betNow());
+  ok(b0.bets.length < 2 ? bet1 === b0.bet : bet1 === b0.bets[(b0.bets.indexOf(b0.bet) + 1) % b0.bets.length], `ставка по тапу: ${b0.bet} → ${bet1} (${b0.bets.join('/')})`);
+  await page.evaluate(() => { GreedMinigame.bet = null; GreedLux.coinIn(); GreedLux.trayPour(12); GreedLux.meterSet(0.9); });
+  await page.waitForTimeout(200);
+  const fly = await page.evaluate(() => GreedLux._bot.coins.length);
+  await page.waitForTimeout(3000);
+  const b1 = await page.evaluate(() => ({ fly: GreedLux._bot.coins.length, tray: GreedLux._bot.tray.coins.length, met: GreedLux._bot.met.L }));
+  ok(fly === 1 && b1.fly === 0, `монета в щель: летела ${fly}, долетела`);
+  ok(b1.tray >= 12, `лоток: монет ${b1.tray}`);
+  ok(Math.abs(b1.met - 0.9) < 0.02, `шкала: ${b1.met.toFixed(3)} → 0,9`);
   // вид 1 ↔ 2 на месте
   await page.evaluate(() => { DebugMode.enabled = true; return GreedDebug.run('skin'); });
   await page.waitForFunction(() => GreedMinigame.M === GreedJunkLit && GreedJunkLit.lever, null, { timeout: 30000, polling: 300 }).catch(() => {});

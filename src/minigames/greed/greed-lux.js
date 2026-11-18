@@ -65,7 +65,7 @@ const GreedLux = {
             // корпус и живые части (шар рычага, диск колеса, указатель) —
             // по пять карт каждая
             const names = ['albedo', 'height', 'mat', 'emit', 'shade'];
-            this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr', 'plunger', 'pball'] : [], meta.live && meta.live.pach ? ['pach'] : []);
+            this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr', 'plunger', 'pball'] : [], meta.live && meta.live.pach ? ['pach'] : [], meta.live && meta.live.liquid ? ['liquid'] : []);
             const files = [].concat(...this._setNames.map(k => names.map(n => (k === 'body' ? '' : k + '-') + n)));
             const imgs = await Promise.all(files.map(n => new Promise((res, rej) => {
                 const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = DIR + n + '.png';
@@ -126,15 +126,14 @@ const GreedLux = {
         GreedJunk.pachTidy(false);
         this.reels = null; this._lv = null; this.ledCv = null; this.ledGrid = null; this.lampCv = null; this._wheel = null; this.fx = null;
         this._pach = null; this.pfx = null; this._pgl = null; this.glareCv = null;
+        if (this.trayDraw && this.trayCv) { const g = this.trayCv.getContext('webgl'), x = g && g.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); }
+        this._bot = null; this.trayDraw = null; this.trayCv = null; this.betCv = this.balCv = this.flyCv = this.metCv = null;
     },
 
-    // ---------- то, что версия 2 получит на своих этапах ----------
-    // Пока пустое: экран алчности зовёт их у любого аппарата.
-    jarHold() {},
+    // Заготовки покупок по ходу захода — у версии 2 их нет (покупка — этап 7);
+    // экран алчности зовёт у любого аппарата. Низ (копилка, монета, лоток,
+    // шкала) — greed-lux-bottom.js.
     growDrop() {},
-    coinIn() {},
-    trayPour() {},
-    meterSet() {},
     meterValue() {
         const max = GameState.maxValue('greed') || 100;
         return Math.max(0, Math.min(1, GameState.sinValue('greed') / max));
