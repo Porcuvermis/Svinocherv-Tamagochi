@@ -24,9 +24,6 @@ Object.assign(GreedLux, {
     WHEEL_RARE: GreedJunkLit.WHEEL_RARE,
     WHEEL_TILE: GreedJunkLit.WHEEL_TILE,
     wheelInput: GreedJunkLit.wheelInput,
-    wheelThrow: GreedJunkLit.wheelThrow,
-    wheelStep: GreedJunkLit.wheelStep,
-    wheelFlap: GreedJunkLit.wheelFlap,
     wheelOdds: GreedJunkLit.wheelOdds,
     wheelDeckPlan: GreedJunkLit.wheelDeckPlan,
     wheelHidden: GreedJunkLit.wheelHidden,
@@ -58,6 +55,112 @@ Object.assign(GreedLux, {
         this.quad(this.sets.ptr, px, py, pw, ph);
         gl.disable(gl.SCISSOR_TEST);
         gl.uniform1f(this.U.fast, 0);
+    },
+
+    // ---------- ДВИЖЕНИЕ: «на подшипниках» ----------
+    // Игрок (18.11): гаражное колесо — тяжёлое, с откатом на штырь; это
+    // хорошо для фанеры, а версия 2 — отлаженное премиальное устройство:
+    // легче раскрутить, крутится и встаёт плавнее, без отката, всегда в
+    // середину сектора. Механика та же: исход решает бэкенд на броске,
+    // сектора, колода, минимум оборотов.
+    //   gain — бросок пальца усиливается; minW — с какого взмаха крутка (у
+    //   гаражного 0.0035); drag — как плотно диск идёт за пальцем (0.3);
+    //   durMin/durMax — длина крутки от слабого до сильного броска, мс;
+    //   turnsMin — не меньше оборотов; tickGap — тики в палец не чаще, мс;
+    //   coastA — трение выбега без крутки; snapMs — доводка в центр сектора.
+    WHEEL_LUX: { gain: 1.25, minW: 0.0018, maxW: 0.014, drag: 0.6, durMin: 3000, durMax: 4500, turnsMin: 1.5, tickGap: 45, coastA: 0.0000045, snapMs: 260 },
+
+    // Бросок. Крутка — многочлен по доле времени u: s(u) = v0·u + (6L−3v0)u²
+    // + (3v0−8L)u³ + (3L−v0)u⁴. Скорость в начале — скорость броска (без
+    // скачка из пальца), в конце скорость и ускорение — ноль: диск встаёт,
+    // как на магнитном тормозе. Скорость s' = L(1−u)²(r + (12−4r)u), r = v0/L:
+    // назад не едет при r ≤ 4 (здесь r ≤ 1/0.42 ≈ 2.4); слабый бросок — диск
+    // сам чуть подхватывает (мотор), сильный — сразу катится и замедляется.
+    wheelThrow(w, now) {
+        const M = this._wheel, P = this.WHEEL_LUX;
+        w = Math.max(-P.maxW, Math.min(P.maxW, w * P.gain));
+        M.w = w;
+        const last = this.wheelLast || (this.wheelLast = {});
+        last.w = w; last.why = Math.abs(w) < P.minW ? (last.held ? 'held' : 'weak') : 'play';
+        if (Math.abs(w) < P.minW) { M.st = w ? 'coast' : 'idle'; if (!w) this.wheelSnap(now); return; }
+        let key = null;
+        if (this.onWheel) {
+            key = this.onWheel();
+            if (key === false || key == null) {
+                last.why = 'refused';
+                M.st = 'coast'; M.brake = true;
+                if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
+                return;
+            }
+        }
+        const idx = this.wheelDeckPlan(key);
+        const n = GreedJunk.wheelKeys().length, sec = Math.PI * 2 / n, T2 = Math.PI * 2, dir = Math.sign(w), aw = Math.abs(w);
+        const k = Math.max(0, Math.min(1, (aw - P.minW) / (P.maxW - P.minW))), T = P.durMin + (P.durMax - P.durMin) * k;
+        // ровно середина сектора: язычка-резинки нет, ему некуда «не дотянуть»
+        const want = GreedJunk.POINTER_ANGLE - idx * sec;
+        const Lmin = Math.max(P.turnsMin * T2, aw * T * 0.42);
+        const end = dir > 0 ? want + T2 * Math.ceil((M.rot + Lmin - want) / T2) : want - T2 * Math.ceil((want - (M.rot - Lmin)) / T2);
+        const L = Math.abs(end - M.rot), v0 = aw * T;
+        Object.assign(M, { st: 'spin', from: M.rot, to: end, dir, T, t0: now, poly: [v0, 6 * L - 3 * v0, 3 * v0 - 8 * L, 3 * L - v0] });
+    },
+    // Доводка в середину ближайшего сектора — после выбега и отпускания
+    // без броска: диск всегда стоит ровно, «на щелчке».
+    wheelSnap(now) {
+        const M = this._wheel, n = GreedJunk.wheelKeys().length, sec = Math.PI * 2 / n, base = GreedJunk.POINTER_ANGLE;
+        const to = base + Math.round((M.rot - base) / sec) * sec;
+        if (Math.abs(to - M.rot) < 1e-4) { M.st = 'idle'; return; }
+        Object.assign(M, { st: 'snap', from: M.rot, to, t0: now });
+    },
+    wheelStep(now) {
+        const M = this._wheel, P = this.WHEEL_LUX;
+        if (!M) return;
+        const raw = M.at0 ? Math.min(400, now - M.at0) : 16, dt = Math.min(40, raw);
+        M.at0 = now;
+        const prev = M.rot;
+        if (M.st === 'drag') {
+            if (M.prevSt !== 'drag' && typeof Haptics !== 'undefined') Haptics.tick();     // захват
+            M.rot += (M.target - M.rot) * (1 - Math.pow(1 - P.drag, raw / 16));
+            const v = (M.rot - prev) / Math.max(1, raw);
+            M.wr = (M.wr || 0) * 0.5 + v * 0.5;
+        } else if (M.st === 'spin') {
+            const u = Math.min(1, (now - M.t0) / M.T), [a, b, c, d] = M.poly;
+            M.rot = M.from + M.dir * (a * u + b * u * u + c * u * u * u + d * u * u * u * u);
+            if (u >= 1) {
+                M.rot = M.to; M.st = 'idle';
+                this.wheelDeckEnsure();
+                if (typeof Haptics !== 'undefined') Haptics.impact('soft', true);
+                if (this.onWheelDone) this.onWheelDone();
+            }
+        } else if (M.st === 'coast') {
+            const sg = Math.sign(M.w);
+            M.w -= sg * P.coastA * dt * (M.brake ? 10 : 1);
+            if (Math.sign(M.w) !== sg || Math.abs(M.w) < 0.0003) { M.w = 0; M.brake = false; this.wheelSnap(now); }
+            else M.rot += M.w * dt;
+        } else if (M.st === 'snap') {
+            const u = Math.min(1, (now - M.t0) / P.snapMs), e = 1 - Math.pow(1 - u, 3);
+            M.rot = M.from + (M.to - M.from) * e;
+            if (u >= 1) { M.rot = M.to; M.st = 'idle'; }
+        }
+        M.prevSt = M.st;
+        this.wheelTicks(now);
+        this.wheelDeckStep();
+        const key = M.rot.toFixed(4);
+        if (key !== M.shown) { M.shown = key; this.wheelDraw(); }
+    },
+
+    // ---------- ОТДАЧА: «электронный механизм» ----------
+    // Тик на каждой границе сектора — самый тихий щелчок (как барабан выбора
+    // даты в iPhone, Haptics.tick). Не чаще tickGap: на скорости лишние
+    // пропускаются, а не копятся (у гаражного — очередь, удар за ударом),
+    // выходит ровное жужжание; к концу тики сами расходятся по одному.
+    wheelTicks(now) {
+        const M = this._wheel, P = this.WHEEL_LUX, n = GreedJunk.wheelKeys().length, sec = Math.PI * 2 / n;
+        const idx = Math.floor((M.rot - sec / 2 - GreedJunk.POINTER_ANGLE) / sec);
+        if (M.lastPeg != null && idx !== M.lastPeg && now - (M.tickAt || 0) >= P.tickGap) {
+            M.tickAt = now;
+            if (typeof Haptics !== 'undefined') Haptics.tick();
+        }
+        M.lastPeg = idx;
     },
 
     wheelMount(wrap) {
@@ -248,6 +351,7 @@ Object.assign(GreedLux, {
     wheelBlink(now) {
         if (!this._wheel || !this._wheelStopAt || now - this._wheelStopAt > 2000) return false;
         this._wheelStopAt = null;
+        if (typeof Haptics !== 'undefined') Haptics.notify('success', true);
         this.fx = { i: this._deck.target, kind: 'win', t0: now };
         this._iconsDirty = true;
         return true;
