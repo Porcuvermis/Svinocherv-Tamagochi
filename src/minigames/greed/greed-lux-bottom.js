@@ -80,7 +80,10 @@ Object.assign(GreedLux, {
     },
     betNext() {
         const list = this.bets();
-        if (typeof GreedMinigame === 'undefined' || list.length < 2 || GreedMinigame.busy()) {
+        // Во время игр — тоже: каждая уже идёт за свою ставку (исход и выплата
+        // решены на старте, res), новая ставка — только для следующих
+        // (игрок, 18.11: три игры идут разом, ждать конца всех — нельзя).
+        if (typeof GreedMinigame === 'undefined' || list.length < 2) {
             if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
             this._bot.betFlash = performance.now();
             return;
