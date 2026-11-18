@@ -111,13 +111,16 @@ def build_height():
         add(np.abs(d - 156.5) - 6.5, 3.2, 6.5, 'circ')
         add(d - 22, 6, 22, 'circ')
         add_poly([(204, 105), (204, 131), (168, 118)], 4, 2.2)
-    # пачинко
-    add(sd_rrect(*PB), 4.5, 3.5)
-    add(arch_sd(), -3, 2)
-    for x, y in PINS:
-        add(np.hypot(PX - x, PY - y) - 1.5, 1.4, 1.5, 'circ')
-    add(sd_rrect(222, 220, 324, 266, 7), 1.2, 1.2)
-    add(np.hypot(PX - BTN[0], PY - BTN[1]) - BTN[2], 6, BTN[2], 'circ')
+    # пачинко: эскиз — или поле игры (LIVE)
+    if LIVE:
+        pach_build_live()
+    else:
+        add(sd_rrect(*PB), 4.5, 3.5)
+        add(arch_sd(), -3, 2)
+        for x, y in PINS:
+            add(np.hypot(PX - x, PY - y) - 1.5, 1.4, 1.5, 'circ')
+        add(sd_rrect(222, 220, 324, 266, 7), 1.2, 1.2)
+        add(np.hypot(PX - BTN[0], PY - BTN[1]) - BTN[2], 6, BTN[2], 'circ')
     # экран
     add(sd_rrect(*BEZ), 2.6, 2.2)
     add(sd_rrect(93, 321, 287, 457, 11), -2.2, 1.6)
@@ -480,6 +483,155 @@ def disc_build():
 def ptr_build():
     add_poly([(204, 105), (204, 131), (168, 118)], 4, 2.2)
 
+# ---------------------------------------------------------------- ПАЧИНКО (LIVE)
+# Поле — ТО ЖЕ, что в игре (pach-geom.json, выгрузка pach-geom.js): гвозди,
+# лунки, дуга, дорожка, сток, кнопка — физика шарика и запас запусков не
+# меняются. Рисуется в своих координатах короба, на аппарат — подобием
+# PACH_AT (как в игре). Шарик, лунки, гвозди — физические; электроника —
+# табло на лунках (значок приза светодиодами), подсветка поля.
+PG = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pach-geom.json')))
+PP, PAT = PG['PACH'], PG['AT']
+def pf(x, y):
+    return PAT['x'] + (x - PAT['ax']) * PAT['s'], PAT['y'] + (y - PAT['ay']) * PAT['s']
+def pg(inner):
+    s_ = PAT['s']
+    return f'<g transform="translate({PAT["x"] - PAT["ax"] * s_:.3f} {PAT["y"] - PAT["ay"] * s_:.3f}) scale({s_})">{inner}</g>'
+# Лунки — эмаль приглушённых тонов в лад чёрному, красному и золоту (игрок,
+# 18.11: цвета для узнавания, не акцентные); второй цвет — светодиоды табло.
+CUP_COL = {'wrath': ('#5a1a1f', '#ff6a5a'), 'glut': ('#6b3e22', '#ffaa62'), 'lust': ('#6b3346', '#ff92b4'),
+           'sloth': ('#2b3c54', '#92baff'), 'greed': ('#6b5320', '#ffd96a'), 'envy': ('#1f4a42', '#7fe8c8'),
+           'pride': ('#3f284d', '#c99cff'), 'gold1': ('#a88f55', '#ffe08a')}
+CUP_ICON = {'gold1': 'coin', 'envy': 'token', 'pride': 'token'}
+def led_icon(key):
+    g = sprite(CUP_ICON.get(key, 'shard'))
+    if key == 'gold1':
+        return g
+    led = CUP_COL[key][1]
+    lr, lg, lb = (int(led[i:i + 2], 16) for i in (1, 3, 5))
+    out = [[None] * 16 for _ in range(16)]
+    for y in range(16):
+        for x in range(16):
+            col = g[y][x]
+            if col:
+                v = max(int(col[i:i + 2], 16) for i in (1, 3, 5)) / 255
+                v = 0.35 + 0.65 * v
+                out[y][x] = '#%02x%02x%02x' % (int(lr * v), int(lg * v), int(lb * v))
+    return out
+def pach_live():
+    P, A = PP, PP['arc']
+    fx0, fx1, fy0, fy1 = P['x0'] + P['wall'], P['x1'] - P['wall'], P['y0'] + P['top'], P['y1'] - P['panel']
+    cx, cy, r, sep, drain = A['cx'], A['cy'], A['r'], P['sep'], P['drain']
+    o = ink_rr(P['x0'], P['y0'], P['x1'], P['y1'], 8, LAC) + grect(P['x0'] + 2.6, P['y0'] + 2.6, P['x1'] - 2.6, P['y1'] - 2.6, 6, 1.0)
+    # поле: игровая арка светится за стеклом, дорожка и углы — лак
+    o += rr(fx0, fy0, fx1, fy1, 3, c('#0c0909', 'lac'))
+    o += fan(cx, cy - r - 1, 4, 13, math.pi * 1.1, math.pi * 1.9, 9, 0.8)
+    inner = f'M{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{sep} {cy} L{sep} {drain} L{fx0} {drain} L{fx0} {cy} Z'
+    o += f'<path d="{inner}" fill="{c(CREAM, "glass", "#2e281a")}"/>'
+    # сток — тёмная щель с золотой кромкой
+    o += rr(fx0, drain, sep, fy1, 0, c('#050303', 'matte'))
+    o += rr(fx0, drain - 0.9, sep, drain + 0.9, 0.4, c(GOLD, 'gold'))
+    # рельсы: дуга и перегородка дорожки — золотые прутки
+    arc = f'M{cx - r} {cy + 8} L{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{cx + r} {cy + 4}'
+    o += f'<path d="{arc}" fill="none" stroke="{c(INK)}" stroke-width="3.2" stroke-linejoin="round"/><path d="{arc}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="2.2" stroke-linejoin="round"/>'
+    sd_ = f'M{sep + 1} {cy + 12} L{sep + 1} {drain}'
+    o += f'<path d="{sd_}" stroke="{c(INK)}" stroke-width="2.6" stroke-linecap="round"/><path d="{sd_}" stroke="{c(GOLD, "gold")}" stroke-width="1.6" stroke-linecap="round"/>'
+    # клапан наверху дорожки — золотой язычок
+    vy, vx0, vx1 = cy + 12 - 2.4, sep + 1, cx + r - 1
+    o += f'<path d="M{vx0} {vy + 1.6} L{vx1} {vy - 0.6} L{vx1} {vy + 1.2} L{vx0} {vy + 3} Z" fill="{c(GOLD, "gold")}"/>'
+    # гвозди — золотые купола
+    for x, y in PG['nails']:
+        o += f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{PG["phys"]["nailR"] + 0.4}" fill="{c(INK)}"/><circle cx="{x:.2f}" cy="{y:.2f}" r="{PG["phys"]["nailR"]}" fill="{c(GOLD, "gold")}"/>'
+    # лунки: эмалевый стакан, золотая закатанная кромка, тёмная горловина,
+    # на лицевой стороне — табло со значком приза
+    cw, ch = P['cup']['w'], P['cup']['h']
+    for cu in PG['CUPS']:
+        x, y, key = cu['x'] - cw / 2, cu['y'], cu['key']
+        enamel, led = CUP_COL[key]
+        body = f'M{x} {y} L{x} {y + ch - 4.5} Q{x} {y + ch} {x + 4.5} {y + ch} L{x + cw - 4.5} {y + ch} Q{x + cw} {y + ch} {x + cw} {y + ch - 4.5} L{x + cw} {y} Z'
+        o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(INK)}" stroke-width="1.0"/><path d="{body}" fill="{c(enamel, "lac")}"/>'
+        o += rr(x + 3, y + 3.4, x + cw - 3, y + ch - 1.6, 1.2, c('#040406', 'glass', '#05060c'))
+        g = led_icon(key); q = 0.42; ix, iy = x + cw / 2 - 8 * q, y + 3.4 + (ch - 5.0) / 2 - 8 * q
+        for yy in range(16):
+            for xx in range(16):
+                col = g[yy][xx]
+                if col:
+                    o += f'<rect x="{ix + xx * q:.2f}" y="{iy + yy * q:.2f}" width="{q - 0.06:.2f}" height="{q - 0.06:.2f}" fill="{c("#05060c", "glass", col)}"/>'
+        o += rr(x - 1.2, y - 0.9, x + cw + 1.2, y + 1.9, 1.1, c(GOLD, 'gold'))
+        o += rr(x + 0.8, y - 0.2, x + cw - 0.8, y + 0.9, 0.5, c('#070404', 'matte'))
+    # нижняя панель: золотая плита, красная стеклянная кнопка в чёрном ободе
+    o += ink_rr(fx0 + 1, fy1 + 3, fx1 - 1, P['y1'] - 4, 4, GOLD, 'gold')
+    bx, by, br = P['button']['x'], P['button']['y'], P['button']['r']
+    o += f'<circle cx="{bx}" cy="{by}" r="{br + 2.2}" fill="{c("#191212")}"/><circle cx="{bx}" cy="{by}" r="{br}" fill="{c("#b01410", "glass", "#3a0402")}"/>'
+    return pg(o)
+def pach_build_live():
+    s_ = PAT['s']
+    BX, BY = PAT['ax'] + (PX - PAT['x']) / s_, PAT['ay'] + (PY - PAT['y']) / s_
+    P, A = PP, PP['arc']
+    fx0, fx1, fy0, fy1 = P['x0'] + P['wall'], P['x1'] - P['wall'], P['y0'] + P['top'], P['y1'] - P['panel']
+    def rrect(x0, y0, x1, y1, r):
+        cx_, cy_, hx, hy = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+        r = min(r, hx, hy)
+        qx, qy = np.abs(BX - cx_) - (hx - r), np.abs(BY - cy_) - (hy - r)
+        return (np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - r) * s_
+    def seg(x, y0, y1, hw):
+        return (np.hypot(BX - x, np.maximum(np.maximum(y0 - BY, BY - y1), 0)) - hw) * s_
+    add(rrect(P['x0'], P['y0'], P['x1'], P['y1'], 8), 4.5, 3.5)
+    add(rrect(fx0, fy0, fx1, fy1, 3), -3, 2)
+    cx, cy, r = A['cx'], A['cy'], A['r']
+    d = np.hypot(BX - cx, BY - cy)
+    rail = np.where(BY <= cy, (np.abs(d - r) - 1.1) * s_, 99.0)
+    rail = np.minimum(rail, seg(cx - r, cy, cy + 8, 1.1)); rail = np.minimum(rail, seg(cx + r, cy, cy + 4, 1.1))
+    add(rail, 1.8, 1.1 * s_, 'circ')
+    add(seg(P['sep'] + 1, cy + 12, P['drain'], 0.8), 1.8, 0.8 * s_, 'circ')
+    add(rrect(fx0, P['drain'], P['sep'], fy1, 0.5), -6, 0.8)
+    for x, y in PG['nails']:
+        add(np.hypot(BX - x, BY - y) * s_ - PG['phys']['nailR'] * s_, 1.6, PG['phys']['nailR'] * s_, 'circ')
+    cw, ch = P['cup']['w'], P['cup']['h']
+    for cu in PG['CUPS']:
+        x, y = cu['x'] - cw / 2, cu['y']
+        add(rrect(x, y, x + cw, y + ch, 4.5), 3.2, 2.6, 'circ')
+        add(rrect(x - 1.2, y - 0.9, x + cw + 1.2, y + 1.9, 1.1), 1.0, 0.8)
+        add(rrect(x + 0.8, y - 0.2, x + cw - 0.8, y + 0.9, 0.5), -5, 0.6)
+        add(rrect(x + 3, y + 3.4, x + cw - 3, y + ch - 1.6, 1.2), -0.8, 0.5)
+    add(rrect(fx0 + 1, fy1 + 3, fx1 - 1, P['y1'] - 4, 4), 1.2, 1.0)
+    bx, by, br = P['button']['x'], P['button']['y'], P['button']['r']
+    add(np.hypot(BX - bx, BY - by) * s_ - (br + 2.2) * s_, 1.5, 1.5)
+    add(np.hypot(BX - bx, BY - by) * s_ - br * s_, 5, br * s_, 'circ')
+# Толкатель дорожки — золотой поршень (спрайт: едет вниз на взводе) и
+# шарик — зеркальная сталь (спрайт).
+def plunger():
+    B, P = PG['spring'], PP
+    lx, fy1 = B['x'] + B['w'] / 2, P['y1'] - P['panel']
+    sy0 = fy1 - 12
+    o = rr(lx - 1.1, sy0, lx + 1.1, fy1 + 6, 0.5, c(INK)) + rr(lx - 0.7, sy0, lx + 0.7, fy1 + 6, 0.4, c(GOLD, 'gold'))
+    o += ink_rr(lx - 4.4, sy0 - 2.2, lx + 4.4, sy0 + 0.4, 0.9, GOLD, 'gold')
+    return pg(o)
+def plunger_box():
+    B, P = PG['spring'], PP
+    x0, y0 = pf(B['x'] - 1, B['y'] - 4)
+    x1, y1 = pf(B['x'] + B['w'] + 1, P['y1'] - P['panel'] + 7)
+    return x0, y0, x1 - x0, y1 - y0
+def plunger_build():
+    s_ = PAT['s']
+    BX, BY = PAT['ax'] + (PX - PAT['x']) / s_, PAT['ay'] + (PY - PAT['y']) / s_
+    B, P = PG['spring'], PP
+    lx, sy0 = B['x'] + B['w'] / 2, P['y1'] - P['panel'] - 12
+    d = np.hypot(np.maximum(np.abs(BX - lx) - 3.6, 0), np.maximum(np.abs(BY - (sy0 - 0.9)) - 0.5, 0)) * s_ - 0.8 * s_
+    add(d, 1.6, 0.9, 'circ')
+    rod = (np.hypot(np.maximum(np.abs(BX - lx) - 0.2, 0), np.maximum(np.maximum(sy0 - BY, BY - (sy0 + 20)), 0)) - 0.6) * s_
+    add(rod, 1.2, 0.7, 'circ')
+def pball():
+    r = PG['phys']['r'] * PAT['s']
+    return f'<circle cx="0" cy="0" r="{r + 0.3}" fill="{c(INK)}"/><circle cx="0" cy="0" r="{r}" fill="{c("#c9ced3", "lac")}"/>'
+def pball_box():
+    r = PG['phys']['r'] * PAT['s'] + 1.2
+    return -r, -r, 2 * r, 2 * r
+def pball_build():
+    r = PG['phys']['r'] * PAT['s']
+    d = np.hypot(PX, PY)
+    global HM
+    HM = np.where(d < r, 6 + 6 * np.sqrt(np.clip(1 - (d / r) ** 2, 0, 1)), HM)
+
 # Карты шара отдельно (LIVE): квадрат вокруг шара, вне его — прозрачно.
 BALL_PAD = 3
 def ball_box():
@@ -558,7 +710,7 @@ def svg(pass_):
     o += curls(197, 288 - 13.5, 1, 1, 26)
     # LIVE: колесо (диск с ободом и штырями) и указатель — свои карты
     # (disc_svg, ptr_svg): диск вращается, указатель — поверх него
-    o += (wheel() if not LIVE else '') + pachinko()
+    o += (wheel() + pachinko()) if not LIVE else pach_live()
     # средний ярус
     o += meter() + lever()
     o += ink_rr(*BEZ, GOLD, 'gold') + screen()
@@ -580,11 +732,13 @@ if __name__ == '__main__':
     for p in ('albedo', 'mat', 'emit'):
       open(f'{out}ball-{p}.svg', 'w').write(ball_svg(p))
     ball_height().save(f'{out}ball-height.png')
-    for name, box, draw, build in (('disc', disc_box(), disc, disc_build), ('ptr', ptr_box(), ptr, ptr_build)):
+    for name, box, draw, build in (('disc', disc_box(), disc, disc_build), ('ptr', ptr_box(), ptr, ptr_build),
+                                   ('plunger', plunger_box(), plunger, plunger_build), ('pball', pball_box(), pball, pball_build)):
       for p in ('albedo', 'mat', 'emit'):
         open(f'{out}{name}-{p}.svg', 'w').write(part_svg(p, box, draw))
       part_height(box, build).save(f'{out}{name}-height.png')
     x, y, w = ball_box()
     json.dump({'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404],
-               'disc': list(disc_box()), 'ptr': list(ptr_box()), 'wheel': list(WH)}, open(f'{out}mach-live.json', 'w'))
+               'disc': list(disc_box()), 'ptr': list(ptr_box()), 'wheel': list(WH),
+               'plunger': list(plunger_box()), 'pball': list(pball_box())}, open(f'{out}mach-live.json', 'w'))
   print('ok', W, H)

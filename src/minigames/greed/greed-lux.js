@@ -52,7 +52,7 @@ const GreedLux = {
             // корпус и живые части (шар рычага, диск колеса, указатель) —
             // по пять карт каждая
             const names = ['albedo', 'height', 'mat', 'emit', 'shade'];
-            this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr'] : []);
+            this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr', 'plunger', 'pball'] : []);
             const files = [].concat(...this._setNames.map(k => names.map(n => (k === 'body' ? '' : k + '-') + n)));
             const imgs = await Promise.all(files.map(n => new Promise((res, rej) => {
                 const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = this.DIR + n + '.png';
@@ -87,8 +87,10 @@ const GreedLux = {
         this.raf = requestAnimationFrame(loop);
     },
     // собран и нарисован — покров из монет можно снимать
+    // (и запас запусков пачинко — под покровом, как у гаражного)
     settled() {
-        return Promise.resolve(this._mountP).then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+        return Promise.resolve(this._mountP).then(() => this._pach && this.pachFillAll ? this.pachFillAll() : null)
+            .then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     },
     // Снять со страницы целиком: контекст с текстурами — назад сразу.
     unmount() {
@@ -99,6 +101,7 @@ const GreedLux = {
         if (this.wrapEl) this.wrapEl.remove();
         this.wrapEl = null; this._mountP = null; this.meta = null;
         this.reels = null; this._lv = null; this.ledCv = null; this.ledGrid = null; this.lampCv = null; this._wheel = null; this.fx = null;
+        this._pach = null; this.pfx = null; this._pgl = null;
     },
 
     // ---------- то, что версия 2 получит на своих этапах ----------
@@ -298,7 +301,7 @@ const GreedLux = {
         if (!this.drawn || Math.abs(tx - this.drawn[0]) > 0.004 || Math.abs(ty - this.drawn[1]) > 0.004) {
             this.gl.uniform2f(this.uTilt, tx, ty);
             this.drawn = [tx, ty];
-            this._ballDirty = this._wheelDirty = false;
+            this._ballDirty = this._wheelDirty = false; this._pachDirtyR = null;
             this.paint();
         } else if (this.livePaint) this.livePaint(now);
         // экранчики колеса (greed-lux-wheel.js)
@@ -311,10 +314,25 @@ const GreedLux = {
     paint(r) {
         const gl = this.gl;
         if (!gl) return;
+        this._paintR = r || null;
         if (r) this.scissor(r);
         this.quad(this.sets.body, 0, this.Y0, this.W, this.H);
         if (this.paintLive) this.paintLive();
         if (r) gl.disable(gl.SCISSOR_TEST);
+        this._paintR = null;
+    },
+    // Обрезать рисунок участком r поверх текущего (paint): шарик пачинко
+    // уходит в лунку за её кромку. null — вернуть участок paint.
+    clipTo(r) {
+        const gl = this.gl, base = this._paintR;
+        if (!r) { if (base) this.scissor(base); else gl.disable(gl.SCISSOR_TEST); return; }
+        let q = r;
+        if (base) {
+            const x0 = Math.max(r.x, base.x), y0 = Math.max(r.y, base.y), x1 = Math.min(r.x + r.w, base.x + base.w), y1 = Math.min(r.y + r.h, base.y + base.h);
+            q = { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
+        }
+        if (q.w <= 0 || q.h <= 0) { gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 0, 0); return; }
+        this.scissor(q);
     },
     // рисовать только в участке поля r {x, y, w, h}
     scissor(r) {

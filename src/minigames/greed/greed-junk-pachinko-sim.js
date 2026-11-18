@@ -47,6 +47,16 @@ Object.assign(GreedJunk, {
         });
     },
 
+    // Лунка, в которую упал шарик b с исходом res ('cup:<ключ>'): с этим
+    // ключом, под шариком по x, ближайшая по высоте. Было — первая по x: на
+    // x 284,5 две лунки (лень вверху, монета внизу), и шарик в нижней
+    // обрезался по кромке верхней (версия 2: защёлкивалась не та лунка).
+    pachCupOf(b, res) {
+        const key = String(res).replace(/^cup:/, ''), list = this.pachWorld().cups.filter(c => b.x >= c.x0 - 1 && b.x <= c.x1 + 1);
+        const pool = list.filter(c => c.key === key).length ? list.filter(c => c.key === key) : list;
+        return pool.sort((a, c) => Math.abs(a.y0 - b.y) - Math.abs(c.y0 - b.y))[0] || null;
+    },
+
     // Новый шарик на пружине дорожки, скорость запуска v0 вверх.
     pachBall(v0) {
         const S = this.pachWorld().start;

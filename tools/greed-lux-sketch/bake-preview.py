@@ -42,7 +42,7 @@ if os.path.exists(src + 'mach-live.json'):
     meta['live'] = json.load(open(src + 'mach-live.json'))
     # спрайты: шар рычага, диск колеса, указатель. Свечение диска (экраны
     # секторов) — с ореолом, как у корпуса, но в своём квадрате
-    for part in ('ball', 'disc', 'ptr'):
+    for part in ('ball', 'disc', 'ptr', 'plunger', 'pball'):
         for f in ('albedo', 'mat'):
             Image.open(src + f'{part}-{f}.png').convert('RGBA').save(dst + f'{part}-{f}.png', optimize=True)
         pe = np.asarray(Image.open(src + f'{part}-emit.png').convert('RGB'), np.float32) / 255

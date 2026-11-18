@@ -47,6 +47,7 @@ Object.assign(GreedLux, {
         this.lampMount(wrap);
         // колесо — до рычага: его палец ловит своё (диск), рычаг — своё
         if (this.wheelMount) this.wheelMount(wrap);
+        if (this.pachMount) this.pachMount(wrap);
         this.inputMount(wrap);
     },
 
@@ -121,6 +122,7 @@ Object.assign(GreedLux, {
     paintLive() {
         const B = this.meta && this.meta.live, set = this.sets && this.sets.ball;
         if (this.paintWheel) this.paintWheel();
+        if (this.pachPaint) this.pachPaint();
         if (!B || !set) return;
         const [bx, by, bw] = B.ball, dy = this.ballDy || 0;
         // тень — от света сверху-слева, шар над колонной на свой радиус
@@ -133,6 +135,7 @@ Object.assign(GreedLux, {
     // Зовётся из step (greed-lux.js) ДО решения о перерисовке корпуса.
     playStep(now) {
         if (this._wheel) this.wheelStep(now);
+        if (this._pach) this.pachStep(now);
         const show = this.leverStep(now);
         this.ballDy = show == null ? 0 : show * this.BALL_TRAVEL;
         if (Math.abs(this.ballDy - this._ballShown) > 0.05) { this._ballDirty = true; this._ballShown = this.ballDy; }
@@ -143,9 +146,10 @@ Object.assign(GreedLux, {
     },
     // После playStep: корпус не перерисовывался целиком — шар двигался?
     livePaint() {
-        const b = this._ballDirty, w = this._wheelDirty, M = this._wheel;
-        this._ballDirty = this._wheelDirty = false;
+        const b = this._ballDirty, w = this._wheelDirty, M = this._wheel, pr = this._pachDirtyR;
+        this._ballDirty = this._wheelDirty = false; this._pachDirtyR = null;
         if (b) this.paint(this.LEVER_RECT);
+        if (pr) this.paint(pr);
         // колесо: крутится — облегчённо, только диск; встало — один раз целиком
         if (w && M && M.st !== 'idle') { this.paintWheelFast(); this._wheelFull = true; }
         else if (w || (this._wheelFull && M && M.st === 'idle')) { this._wheelFull = false; this.paint(this.WHEEL_RECT); }
@@ -244,6 +248,7 @@ Object.assign(GreedLux, {
     blink() {
         const now = performance.now();
         if (this.wheelBlink && this.wheelBlink(now)) return;
+        if (this.pachBlink && this.pachBlink(now)) return;
         this._blink = now; this._ledDirty = true;
     },
 

@@ -57,6 +57,22 @@ const { chromium } = require('playwright');
   const forced = await page.evaluate(() => GreedLux._deck.forced);
   ok(under === W, `колесо: выпавший приз под указателем ${under}/${W}`);
   ok(forced === 0, `колесо: подмен значков на виду — ${forced}`);
+  // пачинко: кнопкой пальцем; исход подменён по очереди на каждый приз —
+  // шарик по той же физике и запасу запусков, что у гаражного, в свою лунку
+  await page.evaluate(() => { const u = GameState.data.upgrades; if (!u.greed_pachinko) { u.greed_pachinko = 1; GameState.save(); }
+    const g = Backend.greedPlay; window.__pr = []; window.__pd = []; window.__pk = ['wrath', 'gold1', 'envy', 'greed', 'lust', 'pride', 'sloth', 'glut', 'blank'];
+    Backend.greedPlay = function (game) { const r = g.apply(this, arguments); if (game === 'pachinko' && r.ok) { r.key = window.__pk[window.__pr.length % window.__pk.length]; r.currencies = {}; window.__pr.push(r.key); } return r; };
+    const d = GreedLux.onPachDone; GreedLux.onPachDone = function (res) { window.__pd.push(GreedLux.pachKey(res)); return d.apply(this, arguments); }; });
+  const [px, py] = await page.evaluate(() => { const G = GreedJunk, [x, y] = G.pachPt(G.PACH.button.x, G.PACH.button.y), w = GreedLux.wrapEl.getBoundingClientRect(); return [w.left + x / 360 * w.width, w.top + (y + 57) / 696 * w.height]; });
+  const PN = 9;
+  for (let i = 0; i < PN; i++) {
+    await page.waitForFunction(() => !GreedMinigame.play.pachinko && !GreedLux._pach.ball && !GreedLux._pach.sink, null, { timeout: 20000 }).catch(() => {});
+    await page.mouse.click(px, py);
+    await page.waitForFunction((n) => window.__pd.length > n, i, { timeout: 25000 }).catch(() => {});
+    if (i === 0) await page.screenshot({ path: out + 'pach.png' });
+  }
+  const pr = await page.evaluate(() => ({ want: window.__pr, got: window.__pd }));
+  ok(pr.got.length === PN && pr.want.every((k, i) => k === pr.got[i]), `пачинко: шарик в решённую лунку ${pr.want.filter((k, i) => k === pr.got[i]).length}/${PN} (${pr.got.join(' ')})`);
   // вид 1 ↔ 2 на месте
   await page.evaluate(() => { DebugMode.enabled = true; return GreedDebug.run('skin'); });
   await page.waitForFunction(() => GreedMinigame.M === GreedJunkLit && GreedJunkLit.lever, null, { timeout: 30000, polling: 300 }).catch(() => {});

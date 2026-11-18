@@ -283,7 +283,7 @@ Object.assign(GreedJunkLit, {
                     // Провал: шарик ещё уходит вниз, обрезанный по кромке —
                     // за переднюю стенку банки или в щель стока; выплата —
                     // когда скрылся. Было: шарик исчезал в тот же миг.
-                    const cup = res === 'drain' ? null : G.pachWorld().cups.find(c => b.x >= c.x0 && b.x <= c.x1);
+                    const cup = res === 'drain' ? null : G.pachCupOf(b, res);
                     // в стоке — по передней панели: в тёмной щели шарик ещё виден
                     M.sink = { x: b.x, y: b.y, at: now, cut: cup ? cup.y0 + 0.6 : G.PACH.y1 - G.PACH.panel, res };
                     M.ball = null;

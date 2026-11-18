@@ -952,7 +952,10 @@ const PALETTE = {
         lamp: { core: 'rgba(255,214,170,1)', glass: 'rgba(240,40,20,0.95)', halo: 'rgba(200,20,8,0.45)' },
         // колесо версии 2 (greed-lux-wheel.js): искра на кончике указателя,
         // защёлкнувшийся сектор, приглушение остальных
-        wheel: { spark: 'rgba(255,240,200,1)', sparkHalo: 'rgba(255,190,80,0.55)', lock: 'rgba(255,214,140,0.55)', dim: 'rgba(0,0,0,0.45)' }
+        wheel: { spark: 'rgba(255,240,200,1)', sparkHalo: 'rgba(255,190,80,0.55)', lock: 'rgba(255,214,140,0.55)', dim: 'rgba(0,0,0,0.45)' },
+        // светодиоды табло на лунках пачинко — второй цвет лунки (эмаль —
+        // в машинном эскизе, machine.py CUP_COL; держать вместе)
+        cupLed: { wrath: '#ff6a5a', glut: '#ffaa62', lust: '#ff92b4', sloth: '#92baff', greed: '#ffd96a', envy: '#7fe8c8', pride: '#c99cff', gold1: '#ffe08a' }
     },
 
     greedCoin: {
