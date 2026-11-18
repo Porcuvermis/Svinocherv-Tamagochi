@@ -68,8 +68,11 @@ def set_sphere(cx, cy, r, base, rise):
 
 def add_poly(pts, rise, blur):
     global HM
-    im = Image.new('L', (W, H), 0)
-    ImageDraw.Draw(im).polygon([((x - X0) * S, (y - Y0) * S) for x, y in pts], fill=255)
+    # сетка — текущая (корпус или спрайт, part_height): начало — PX/PY[0,0]
+    hh, ww = HM.shape
+    ox, oy = PX[0, 0] - 0.5 / S, PY[0, 0] - 0.5 / S
+    im = Image.new('L', (ww, hh), 0)
+    ImageDraw.Draw(im).polygon([((x - ox) * S, (y - oy) * S) for x, y in pts], fill=255)
     HM += rise * gaussian_filter(np.asarray(im, np.float32) / 255, blur)
 
 T1, T2, T3 = (4, -55, 356, 292, 34), (6, 296, 354, 498, 30), (6, 502, 354, 634, 30)
@@ -102,11 +105,12 @@ def build_height():
     lift(sd_rrect(*PIL_L), 10, 5)
     add(sd_rrect(*COL_R), 3, 3.5)
     # колесо: диск, обод-валик, ступица
-    d = np.hypot(PX - WH[0], PY - WH[1])
-    add(d - WH[2], 2.5, 2.5)
-    add(np.abs(d - 156.5) - 6.5, 3.2, 6.5, 'circ')
-    add(d - 22, 6, 22, 'circ')
-    add_poly([(204, 105), (204, 131), (168, 118)], 4, 2.2)
+    if not LIVE:
+        d = np.hypot(PX - WH[0], PY - WH[1])
+        add(d - WH[2], 2.5, 2.5)
+        add(np.abs(d - 156.5) - 6.5, 3.2, 6.5, 'circ')
+        add(d - 22, 6, 22, 'circ')
+        add_poly([(204, 105), (204, 131), (168, 118)], 4, 2.2)
     # пачинко
     add(sd_rrect(*PB), 4.5, 3.5)
     add(arch_sd(), -3, 2)
@@ -252,6 +256,20 @@ def sprite(kind):
                 if abs(x - 7.5) <= hw:
                     g[y][x] = '#8ff0d8' if x < 7.5 - hw * 0.25 else ('#35b8a0' if x < 9.5 else '#1c7a6a')
         line(7.5, 1, 7.5, 14, 0.3, '#d8fff4')
+    elif kind == 'coins3':
+        # три монеты горкой — приз колеса «три монеты»
+        for cx, cy in ((4.3, 10.6), (11.2, 10.6), (7.75, 4.9)):
+            disc(cx, cy, 4.1, '#a8700f'); disc(cx, cy, 3.1, '#f4c542'); disc(cx, cy, 3.1, '#ffe98a', lambda x, y, cx=cx, cy=cy: (x - cx) + (y - cy) < -1.2)
+            box(int(round(cx)), int(round(cy)) - 1, int(round(cx)), int(round(cy)) + 1, '#8a5408')
+    elif kind == 'potato':
+        # картофелина — приз колеса «семечка в сад»
+        for y in range(16):
+            for x in range(16):
+                u, v = (x - 7.5) * 0.94 + (y - 8) * 0.34, -(x - 7.5) * 0.34 + (y - 8) * 0.94
+                if (u / 7.0) ** 2 + (v / 5.2) ** 2 <= 1:
+                    g[y][x] = '#7a4a1e' if (u / 7.0) ** 2 + (v / 5.2) ** 2 > 0.72 else ('#e6b46a' if u + v * 1.6 < -4 else '#c48a44')
+        for x, y in ((5, 7), (9, 10), (10, 6), (6, 11)):
+            g[y][x] = '#6a3e16'
     elif kind == 'token':
         for y in range(16):
             for x in range(16):
@@ -395,6 +413,73 @@ def ball():
     o += '</g>'
     return o
 
+# Диск колеса отдельно (LIVE) — с ободом и штырями, повёрнут как в игре:
+# сектор i серединой на угле i/16·2π − π/2 (сектор 0 — вверху), границы
+# секторов (спицы, штыри) — на ±½ сектора (greed-junk-lit-wheel.js, тот же
+# счёт броска и штырей). Значков нет — их рисует игра живыми.
+DISC_R = 165.0
+def disc():
+    cx, cy, R = WH
+    n = 16
+    o = f'<circle cx="{cx}" cy="{cy}" r="163.6" fill="{c(INK)}"/><circle cx="{cx}" cy="{cy}" r="163" fill="{c(GOLD, "gold")}"/>'
+    o += f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="{c(INK)}"/>'
+    P = lambda a, r: f'{cx + math.cos(a) * r:.2f} {cy + math.sin(a) * r:.2f}'
+    edge = lambda i: (i - 0.5) / n * 2 * math.pi - math.pi / 2
+    for i in range(n):
+        a0, a1 = edge(i), edge(i + 1)
+        o += f'<path d="M{P(a0, 0)} L{P(a0, R - 0.6)} A{R} {R} 0 0 1 {P(a1, R - 0.6)} Z" fill="{c("#140508" if i % 2 else "#06060a", "glass", "#4a0816" if i % 2 else "#07070e")}"/>'
+    for i in range(n):
+        a = edge(i)
+        pts = [(cx + math.cos(a) * (22 + (R - 23) * k / 10), cy + math.sin(a) * (22 + (R - 23) * k / 10)) for k in range(11)]
+        o += gline(pts, [0.75 + 0.25 * k / 10 for k in range(11)], 2.2)
+        o += f'<circle cx="{cx + math.cos(a) * 156.5:.2f}" cy="{cy + math.sin(a) * 156.5:.2f}" r="2.1" fill="{c("#8a5a10", "gold")}"/>'
+    if PASS == 'emit':
+        o += (f'<pattern id="wled" width="1.9" height="1.9" patternUnits="userSpaceOnUse" x="{cx}" y="{cy}"><path d="M0 0 H1.9 M0 0 V1.9" stroke="#000" stroke-width="0.55" opacity="0.7"/></pattern>'
+              f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="url(#wled)"/>')
+        for i in range(n):
+            a = edge(i)
+            o += f'<line x1="{cx}" y1="{cy}" x2="{cx + math.cos(a) * R:.2f}" y2="{cy + math.sin(a) * R:.2f}" stroke="#000" stroke-width="3.4"/>'
+    o += f'<circle cx="{cx}" cy="{cy}" r="22.6" fill="{c(INK)}"/><circle cx="{cx}" cy="{cy}" r="22" fill="{c(GOLD, "gold")}"/><circle cx="{cx}" cy="{cy}" r="8" fill="{c("#191212")}"/>'
+    return o
+def disc_box():
+    return WH[0] - DISC_R, WH[1] - DISC_R, 2 * DISC_R, 2 * DISC_R
+def ptr():
+    return f'<path d="M204.6 104 L204.6 132 L166.5 118 Z" fill="{c(INK)}"/><path d="M204 105 L204 131 L168 118 Z" fill="{c(GOLD, "gold")}"/>'
+def ptr_box():
+    return 164.0, 101.0, 43.0, 34.0
+
+# Спрайт: SVG части в своём квадрате (вне рисунка — прозрачно) и рельеф по
+# расстоянию до края на своей сетке — тем же счётом, что у корпуса.
+def part_svg(pass_, box, draw):
+    global PASS
+    PASS = pass_
+    x, y, w, h = box
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x} {y} {w} {h}" width="{int(round(w * S))}" height="{int(round(h * S))}">' + draw() + '</svg>'
+def part_height(box, build):
+    global PX, PY, HM
+    keep = (PX, PY, HM)
+    x, y, w, h = box
+    nw, nh = int(round(w * S)), int(round(h * S))
+    gy, gx = np.mgrid[0:nh, 0:nw]
+    PX, PY = x + (gx + 0.5) / S, y + (gy + 0.5) / S
+    HM = np.zeros((nh, nw), np.float32)
+    build()
+    v = (np.clip((HM + 16) / HR, 0, 1) * 65535).astype(np.uint32)
+    PX, PY, HM = keep
+    out = np.zeros((nh, nw, 3), np.uint8)
+    out[..., 0], out[..., 1] = v >> 8, v & 255
+    return Image.fromarray(out)
+def disc_build():
+    d = np.hypot(PX - WH[0], PY - WH[1])
+    add(d - WH[2], 2.5, 2.5)
+    add(np.abs(d - 156.5) - 6.5, 3.2, 6.5, 'circ')
+    for i in range(16):
+        a = (i - 0.5) / 16 * 2 * math.pi - math.pi / 2
+        add(np.hypot(PX - (WH[0] + math.cos(a) * 156.5), PY - (WH[1] + math.sin(a) * 156.5)) - 2.1, 1.6, 2.1, 'circ')
+    add(d - 22, 6, 22, 'circ')
+def ptr_build():
+    add_poly([(204, 105), (204, 131), (168, 118)], 4, 2.2)
+
 # Карты шара отдельно (LIVE): квадрат вокруг шара, вне его — прозрачно.
 BALL_PAD = 3
 def ball_box():
@@ -471,7 +556,9 @@ def svg(pass_):
     o += f'<clipPath id="t1c"><rect x="4" y="-55" width="203" height="347" rx="34"/></clipPath>'
     o += f'<g clip-path="url(#t1c)">{fan(WH[0], WH[1], 166, 262, -math.pi / 2, math.pi / 2, 23, 1.5)}</g>'
     o += curls(197, 288 - 13.5, 1, 1, 26)
-    o += wheel() + pachinko()
+    # LIVE: колесо (диск с ободом и штырями) и указатель — свои карты
+    # (disc_svg, ptr_svg): диск вращается, указатель — поверх него
+    o += (wheel() if not LIVE else '') + pachinko()
     # средний ярус
     o += meter() + lever()
     o += ink_rr(*BEZ, GOLD, 'gold') + screen()
@@ -488,11 +575,16 @@ if __name__ == '__main__':
   build_height().save(f'{out}mach-height.png')
   json.dump(ICON_AT[:len(ICON_AT) // 3], open(f'{out}mach-icons.json', 'w'))
   # пиксельные значки — для живых экранчиков колеса в игре (greed-lux-preview.js)
-  json.dump({k: sprite(k) for k in ('coin', 'bone', 'meat', 'skull', 'shard', 'token')}, open(f'{out}mach-sprites.json', 'w'))
+  json.dump({k: sprite(k) for k in ('coin', 'bone', 'meat', 'skull', 'shard', 'token', 'coins3', 'potato')}, open(f'{out}mach-sprites.json', 'w'))
   if LIVE:
     for p in ('albedo', 'mat', 'emit'):
       open(f'{out}ball-{p}.svg', 'w').write(ball_svg(p))
     ball_height().save(f'{out}ball-height.png')
+    for name, box, draw, build in (('disc', disc_box(), disc, disc_build), ('ptr', ptr_box(), ptr, ptr_build)):
+      for p in ('albedo', 'mat', 'emit'):
+        open(f'{out}{name}-{p}.svg', 'w').write(part_svg(p, box, draw))
+      part_height(box, build).save(f'{out}{name}-height.png')
     x, y, w = ball_box()
-    json.dump({'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404]}, open(f'{out}mach-live.json', 'w'))
+    json.dump({'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404],
+               'disc': list(disc_box()), 'ptr': list(ptr_box()), 'wheel': list(WH)}, open(f'{out}mach-live.json', 'w'))
   print('ok', W, H)

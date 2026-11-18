@@ -40,6 +40,23 @@ const { chromium } = require('playwright');
   ok(spins === N, `рычаг пальцем: круток ${spins}/${N}`);
   ok(match === N, `экран встал на исход крутки: ${match}/${N}`);
   ok(readyBack === N, `готовность вернулась после выплаты: ${readyBack}/${N}`);
+  // колесо: бросок (сила взмаха — прямо: в браузере без видеокарты касания
+  // идут реже, чем на телефоне), выпавший приз — под указателем
+  await page.evaluate(() => { const u = GameState.data.upgrades || (GameState.data.upgrades = {}); if (!u.greed_wheel) { u.greed_wheel = 1; GameState.save(); }
+    const g = Backend.greedPlay; window.__wres = []; Backend.greedPlay = function (game) { const r = g.apply(this, arguments); if (game === 'wheel') window.__wres.push(r); return r; }; });
+  const W = +(process.env.WHEELS || 4);
+  let under = 0;
+  for (let i = 0; i < W; i++) {
+    await page.waitForFunction(() => GreedLux._wheel && GreedLux._wheel.st === 'idle' && !GreedMinigame.play.wheel, null, { timeout: 15000 }).catch(() => {});
+    await page.evaluate(() => GreedLux.wheelThrow(GreedLux.WHEEL_SPIN.maxW * (0.6 + Math.random() * 0.4), performance.now()));
+    await page.waitForFunction((n) => window.__wres.length > n && GreedLux._wheel.st === 'idle' && !GreedMinigame.play.wheel, i, { timeout: 20000 }).catch(() => {});
+    const r = await page.evaluate(() => ({ want: window.__wres[window.__wres.length - 1].key, got: GreedJunk.wheelNow[GreedLux._deck.target] }));
+    if (r.want === r.got) under++;
+    if (i === 0) await page.screenshot({ path: out + 'wheel.png' });
+  }
+  const forced = await page.evaluate(() => GreedLux._deck.forced);
+  ok(under === W, `колесо: выпавший приз под указателем ${under}/${W}`);
+  ok(forced === 0, `колесо: подмен значков на виду — ${forced}`);
   // вид 1 ↔ 2 на месте
   await page.evaluate(() => { DebugMode.enabled = true; return GreedDebug.run('skin'); });
   await page.waitForFunction(() => GreedMinigame.M === GreedJunkLit && GreedJunkLit.lever, null, { timeout: 30000, polling: 300 }).catch(() => {});

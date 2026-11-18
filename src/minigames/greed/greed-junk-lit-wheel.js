@@ -85,6 +85,12 @@ Object.assign(GreedJunkLit, {
         this.wheelCv = pg ? this.growPut(wrap, pg.cv, this.wheelBox()) : layer(this.wheelBox());
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
         this._wheelP = this.wheelSprites(this.growTake && this.growTake('wheel', 'layer'));
+        this.wheelInput(wrap);
+    },
+    // Палец на колесе — общий для обеих версий аппарата (greed-lux-wheel.js
+    // берёт его же): схватил диск — крутишь, отпустил — бросок.
+    wheelInput(wrap) {
+        const G = GreedJunk;
         // палец: схватил диск — крутишь
         const field = (e) => G.toField(e, wrap);
         const W = G.SLOTS.wheel, ang = (p) => Math.atan2(p[1] - W.cy, p[0] - W.cx);

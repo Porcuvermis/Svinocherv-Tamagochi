@@ -45,6 +45,8 @@ Object.assign(GreedLux, {
         this.ready = true; this._lv = null; this.ballDy = 0; this._ballShown = 0;
         this.ledMount(wrap);
         this.lampMount(wrap);
+        // колесо — до рычага: его палец ловит своё (диск), рычаг — своё
+        if (this.wheelMount) this.wheelMount(wrap);
         this.inputMount(wrap);
     },
 
@@ -118,6 +120,7 @@ Object.assign(GreedLux, {
     // Шар и его тень — поверх корпуса, тем же шейдером (paint в greed-lux.js).
     paintLive() {
         const B = this.meta && this.meta.live, set = this.sets && this.sets.ball;
+        if (this.paintWheel) this.paintWheel();
         if (!B || !set) return;
         const [bx, by, bw] = B.ball, dy = this.ballDy || 0;
         // тень — от света сверху-слева, шар над колонной на свой радиус
@@ -129,6 +132,7 @@ Object.assign(GreedLux, {
     // ---------- кадр игры ----------
     // Зовётся из step (greed-lux.js) ДО решения о перерисовке корпуса.
     playStep(now) {
+        if (this._wheel) this.wheelStep(now);
         const show = this.leverStep(now);
         this.ballDy = show == null ? 0 : show * this.BALL_TRAVEL;
         if (Math.abs(this.ballDy - this._ballShown) > 0.05) { this._ballDirty = true; this._ballShown = this.ballDy; }
@@ -139,9 +143,12 @@ Object.assign(GreedLux, {
     },
     // После playStep: корпус не перерисовывался целиком — шар двигался?
     livePaint() {
-        if (!this._ballDirty) return;
-        this._ballDirty = false;
-        this.paint(this.LEVER_RECT);
+        const b = this._ballDirty, w = this._wheelDirty, M = this._wheel;
+        this._ballDirty = this._wheelDirty = false;
+        if (b) this.paint(this.LEVER_RECT);
+        // колесо: крутится — облегчённо, только диск; встало — один раз целиком
+        if (w && M && M.st !== 'idle') { this.paintWheelFast(); this._wheelFull = true; }
+        else if (w || (this._wheelFull && M && M.st === 'idle')) { this._wheelFull = false; this.paint(this.WHEEL_RECT); }
     },
 
     // ---------- LED-экран барабанов ----------
@@ -234,7 +241,11 @@ Object.assign(GreedLux, {
     },
     // Ленты встали: линия прочерчивает экран. Выигрыш — blink (зовёт игра).
     spinDoneLux() { this._lineAt = performance.now(); this._ledDirty = true; },
-    blink() { this._blink = performance.now(); this._ledDirty = true; },
+    blink() {
+        const now = performance.now();
+        if (this.wheelBlink && this.wheelBlink(now)) return;
+        this._blink = now; this._ledDirty = true;
+    },
 
     // ---------- лампа готовности ----------
     // Горит красным, когда рычаг можно дёргать; гаснет на срыве. Разгорается

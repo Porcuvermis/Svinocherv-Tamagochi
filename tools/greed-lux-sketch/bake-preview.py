@@ -40,10 +40,16 @@ meta = {'icons': json.load(open(src + 'mach-icons.json')), 'sprites': json.load(
 import os
 if os.path.exists(src + 'mach-live.json'):
     meta['live'] = json.load(open(src + 'mach-live.json'))
-    for f in ('albedo', 'mat', 'emit'):
-        Image.open(src + f'ball-{f}.png').convert('RGBA').save(dst + f'ball-{f}.png', optimize=True)
-    shutil.copy(src + 'ball-height.png', dst + 'ball-height.png')
-    a = Image.open(src + 'ball-albedo.png')
-    Image.new('L', a.size, 255).save(dst + 'ball-shade.png', optimize=True)
+    # спрайты: шар рычага, диск колеса, указатель. Свечение диска (экраны
+    # секторов) — с ореолом, как у корпуса, но в своём квадрате
+    for part in ('ball', 'disc', 'ptr'):
+        for f in ('albedo', 'mat'):
+            Image.open(src + f'{part}-{f}.png').convert('RGBA').save(dst + f'{part}-{f}.png', optimize=True)
+        pe = np.asarray(Image.open(src + f'{part}-emit.png').convert('RGB'), np.float32) / 255
+        pb = sum(gaussian_filter(pe, (r * S / 3, r * S / 3, 0)) * w for r, w in ((5, 0.5), (13, 0.32)))
+        Image.fromarray((np.clip(pe * 1.15 + pb * 0.4, 0, 1) * 255).astype(np.uint8)).save(dst + f'{part}-emit.png', optimize=True)
+        shutil.copy(src + f'{part}-height.png', dst + f'{part}-height.png')
+        a = Image.open(src + f'{part}-albedo.png')
+        Image.new('L', a.size, 255).save(dst + f'{part}-shade.png', optimize=True)
 json.dump(meta, open(dst + 'lux.json', 'w'))
 print('ok', emit.shape)
