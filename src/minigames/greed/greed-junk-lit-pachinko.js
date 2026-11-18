@@ -53,7 +53,9 @@ Object.assign(GreedJunkLit, {
         nclip.appendChild(near);
         wrap.appendChild(nclip);
         this.pachShadowCv = { near, far };
-        this.pachCv = layer(this.pachBox());
+        // заготовка покупки принесла холст с готовым прибором (greed-junk-lit-grow.js)
+        const pg = this.growTake && this.growTake('pachinko', 'gl');
+        this.pachCv = pg ? this.growPut(wrap, pg.cv, G.pachRect(this.pachBox())) : layer(this.pachBox());
         // шарик — между коробом и стеклом: стекло поверх него
         this.pachBallCv = layer(this.pachBox());
         this.pachGlassCv = layer(this.pachBox());
@@ -70,7 +72,7 @@ Object.assign(GreedJunkLit, {
         wrap.appendChild(clip);
         this.pachGlareCv = gc;
         this._pach = { shown: null, ball: null, acc: 0, at: 0, press: 0 };
-        this._pachP = this.pachSprites();
+        this._pachP = this.pachSprites(this.growTake && this.growTake('pachinko', 'layer'));
         // Кнопка запуска — тап по ней. Зона шире нарисованной кнопки: было
         // +4, на телефоне ~20 pt — мимо пальцем. Ниже — рукоять рычага, их
         // зоны не сходятся (рычаг ловит с y 282).
@@ -346,33 +348,53 @@ Object.assign(GreedJunkLit, {
     // Карты короба — один раз. Высоты в своей карте (важна разница):
     // поле на 2, стенки ящика на 12 — поле утоплено, стенки кладут на него
     // тень; лунки торчат на 4, гвозди — на nailUp, кнопка — над стенкой.
-    async pachSprites() {
+    // Все SVG короба: карты (три прохода), стекло, блик стекла. Отдельно от
+    // заливки в видеокарту: заготовка покупки (greed-junk-lit-grow.js)
+    // растрирует их заранее. Размер слоя блика — как его холст в pachMountLit.
+    pachSvgs() {
         const G = GreedJunk, S = this.SCALE, B = this.pachBox(), P = G.PACH;
+        const svg = (pass, inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(B.w * S)}" height="${Math.round(B.h * S)}" ` +
+            `viewBox="${B.x} ${B.y} ${B.w} ${B.h}">` + G.passStyle(pass) + G.defs() + inner + '</svg>';
+        const box = (pass) => {
+            G.pass = pass;
+            const p = G.pachParts();
+            return svg(pass, G.T(12, 'raw', p.frame) + G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain) +
+                G.T(6.5, 'steel', p.steel) + G.T(6, 'paint', p.cups) + G.T(2 + P.nailUp, 'steel', p.nails) +
+                G.T(13, 'steel', p.corners) + G.T(13, 'plastic', p.button));
+        };
+        const maps = ['albedo', 'height', 'mat'].map(box);
+        G.pass = 'baked';
+        const glass = svg('baked', G.pachGlass());
+        const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
+        const gw = Math.round((R.x1 - R.x0 + 2 * m) * S), gh = Math.round((R.y1 - R.y0 + 2 * m) * S);
+        const glare = `<svg xmlns="http://www.w3.org/2000/svg" width="${gw}" height="${gh}" ` +
+            `viewBox="${R.x0 - m} ${R.y0 - m} ${R.x1 - R.x0 + 2 * m} ${R.y1 - R.y0 + 2 * m}">${G.pachGlare(m)}</svg>`;
+        G.pass = 'baked';
+        return { maps, glass, glare };
+    },
+    // pre — картинки заготовки (то же, что pachSvgs, уже растрированное).
+    async pachSprites(pre) {
+        const G = GreedJunk, pg = this.growTake && this.growTake('pachinko', 'gl');
         try {
-            const svg = (pass, inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(B.w * S)}" height="${Math.round(B.h * S)}" ` +
-                `viewBox="${B.x} ${B.y} ${B.w} ${B.h}">` + G.passStyle(pass) + G.defs() + inner + '</svg>';
-            const box = (pass) => {
-                G.pass = pass;
-                const p = G.pachParts();
-                return svg(pass, G.T(12, 'raw', p.frame) + G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain) +
-                    G.T(6.5, 'steel', p.steel) + G.T(6, 'paint', p.cups) + G.T(2 + P.nailUp, 'steel', p.nails) +
-                    G.T(13, 'steel', p.corners) + G.T(13, 'plastic', p.button));
-            };
-            const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => this.image(box(ps))));
+            let maps, glass, glare;
+            if (pre) ({ maps, glass, glare } = pre);
+            else {
+                const sv = this.pachSvgs();
+                maps = await Promise.all(sv.maps.map(s => this.image(s)));
+                glass = await this.image(sv.glass);
+                glare = await this.image(sv.glare);
+            }
             G.pass = 'baked';
-            const glass = await this.image(svg('baked', G.pachGlass()));
-            G.pass = 'baked';
-            const Q = this.deviceGL(this.pachCv);
+            // прибор с текстурами (короб, шарик, пружина) собран заготовкой
+            const Q = pg ? pg.Q : this.deviceGL(this.pachCv);
             if (!Q) throw new Error('нет WebGL');
             if (this.deviceKey) this.deviceKey(Q, G.pachRect(this.pachBox()));
-            Q.box = this.deviceSet(Q, maps);
+            if (!pg) Q.box = this.deviceSet(Q, maps);
             this._pgl = Q;
-            await this.pachBallMaps(Q);
+            if (!pg) await this.pachBallMaps(Q);
+            else { this._pachSpr = null; if (this._pach) this._pach.dirty = true; }
             const g = this.pachGlassCv.getContext('2d');
             g.drawImage(glass, 0, 0, this.pachGlassCv.width, this.pachGlassCv.height);
-            const R = G.pachGlassRect(), m = this.PACH_GLARE.m;
-            const glare = await this.image(`<svg xmlns="http://www.w3.org/2000/svg" width="${this.pachGlareCv.width}" height="${this.pachGlareCv.height}" ` +
-                `viewBox="${R.x0 - m} ${R.y0 - m} ${R.x1 - R.x0 + 2 * m} ${R.y1 - R.y0 + 2 * m}">${G.pachGlare(m)}</svg>`);
             this.pachGlareCv.getContext('2d').drawImage(glare, 0, 0);
             this.pachGlareAt(this.lightFor(this._tilt || { x: 0, y: 0 }));
             this.pachShadow();

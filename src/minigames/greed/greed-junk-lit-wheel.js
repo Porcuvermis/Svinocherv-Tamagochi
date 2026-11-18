@@ -80,9 +80,11 @@ Object.assign(GreedJunkLit, {
             wrap.appendChild(clip);
             this.wheelShadowBoxCv = cv;
         }
-        this.wheelCv = layer(this.wheelBox());
+        // заготовка покупки принесла холст с готовым прибором (greed-junk-lit-grow.js)
+        const pg = this.growTake && this.growTake('wheel', 'gl');
+        this.wheelCv = pg ? this.growPut(wrap, pg.cv, this.wheelBox()) : layer(this.wheelBox());
         this._wheel = { rot: 0, w: 0, st: 'idle', flap: 0, fv: 0, at: 0, shown: null, lastPeg: null, target: 0, mdir: 1 };
-        this._wheelP = this.wheelSprites();
+        this._wheelP = this.wheelSprites(this.growTake && this.growTake('wheel', 'layer'));
         // палец: схватил диск — крутишь
         const field = (e) => G.toField(e, wrap);
         const W = G.SLOTS.wheel, ang = (p) => Math.atan2(p[1] - W.cy, p[0] - W.cx);
@@ -296,42 +298,66 @@ Object.assign(GreedJunkLit, {
     // остаётся сверху-слева, тени от них ложатся от света. Тени — короткий
     // поиск по карте высот (гвозди и гайки низкие). Было: диск — плоская
     // картинка без шейдера, блики крутились вместе с ним.
-    async wheelSprites() {
-        // R — в единицах рисунка; на аппарате диск крупнее в k раз, и карты
-        // растрируются сразу в его настоящий размер (иначе мыло)
-        const G = GreedJunk, W = G.WHEEL, S = this.SCALE, R = W.rEdge + 4, k = G.wheelK(), n = Math.round(R * 2 * S * k);
+    // Диск: R — в единицах рисунка; на аппарате диск крупнее в k раз, и
+    // карты растрируются сразу в его настоящий размер (иначе мыло).
+    wheelDiscGeom() {
+        const G = GreedJunk, R = G.WHEEL.rEdge + 4, k = G.wheelK();
+        return { R, k, n: Math.round(R * 2 * this.SCALE * k) };
+    },
+    // SVG диска в проходе pass. keys — раскладка значков (по умолчанию —
+    // текущая); vb — участок диска (единицы рисунка) и его размер в
+    // пикселях: кусок под подмену значка за кадром ложится на ту же сетку
+    // пикселей, что и диск целиком (greed-junk-lit-wheel-deck.js).
+    // Части диска на своих высотах и материалах. Карта у колеса своя, важна
+    // только разница высот — диск опущен к 8: карта кончается на 20
+    // (HMAX − H0), а в корпусе краска колеса стоит на 17.6, и торчащему
+    // гвоздю там некуда расти — он обрезался до кнопки.
+    wheelDiscSvg(pass, keys, vb) {
+        const G = GreedJunk, W = G.WHEEL, { R, n } = this.wheelDiscGeom(), h0 = 8;
+        G.pass = pass;
+        const f = G.wheelFace(keys), v = vb || { x: -R, y: -R, w: R * 2, h: R * 2, pw: n, ph: n };
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${v.pw}" height="${v.ph}" viewBox="${v.x} ${v.y} ${v.w} ${v.h}">` +
+            G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip + f.icons) +
+            G.T(h0 + W.pegUp, 'steel', f.pegs) + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
+    },
+    // Все SVG колеса: диск и резинка в трёх проходах, уголок-держатель —
+    // только силуэт для тени (сам он в корпусе). Отдельно от заливки в
+    // видеокарту: заготовка покупки (greed-junk-lit-grow.js) растрирует их
+    // заранее.
+    wheelSvgs() {
+        const G = GreedJunk, S = this.SCALE, Pt = this.wheelPtr(), passes = ['albedo', 'height', 'mat'];
+        const ptr = (pass, part = 'strip') => {
+            G.pass = pass;
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(Pt.hw * 2 * S)}" height="${Math.round(Pt.hh * 2 * S)}" ` +
+                `viewBox="${Pt.cx - Pt.hw} ${Pt.cy - Pt.hh} ${Pt.hw * 2} ${Pt.hh * 2}">` +
+                G.passStyle(pass) + G.defs() + G.wheelPtrG(G.wheelPointer(part)) + '</svg>';
+        };
+        const out = { disc: passes.map(ps => this.wheelDiscSvg(ps)), ptr: passes.map(ps => ptr(ps)), brk: ptr('albedo', 'bracket') };
+        G.pass = 'baked';
+        return out;
+    },
+    // pre — картинки заготовки (то же, что wheelSvgs, уже растрированное).
+    async wheelSprites(pre) {
+        const G = GreedJunk, { R, k } = this.wheelDiscGeom(), pg = this.growTake && this.growTake('wheel', 'gl');
         try {
-            // Части диска на своих высотах и материалах. Карта у колеса своя,
-            // важна только разница высот — диск опущен к 8: карта кончается
-            // на 20 (HMAX − H0), а в корпусе краска колеса стоит на 17.6, и
-            // торчащему гвоздю там некуда расти — он обрезался до кнопки.
-            const h0 = 8;
-            // vb — участок диска (единицы рисунка) и его размер в пикселях:
-            // кусок под подмену значка за кадром ложится на ту же сетку
-            // пикселей, что и диск целиком (greed-junk-lit-wheel-deck.js)
-            const svgFor = (pass, keys, vb) => {
-                G.pass = pass;
-                const f = G.wheelFace(keys), v = vb || { x: -R, y: -R, w: R * 2, h: R * 2, pw: n, ph: n };
-                return `<svg xmlns="http://www.w3.org/2000/svg" width="${v.pw}" height="${v.ph}" viewBox="${v.x} ${v.y} ${v.w} ${v.h}">` +
-                    G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip + f.icons) +
-                    G.T(h0 + W.pegUp, 'steel', f.pegs) + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
-            };
-            const discFull = (pass) => svgFor(pass);
             const Pt = this.wheelPtr();
-            const ptr = (pass, part = 'strip') => {
-                G.pass = pass;
-                return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(Pt.hw * 2 * S)}" height="${Math.round(Pt.hh * 2 * S)}" ` +
-                    `viewBox="${Pt.cx - Pt.hw} ${Pt.cy - Pt.hh} ${Pt.hw * 2} ${Pt.hh * 2}">` +
-                    G.passStyle(pass) + G.defs() + G.wheelPtrG(G.wheelPointer(part)) + '</svg>';
-            };
-            const passes = ['albedo', 'height', 'mat'];
-            const dm = await Promise.all(passes.map(ps => this.image(discFull(ps))));
-            const pm = await Promise.all(passes.map(ps => this.image(ptr(ps))));
-            // уголок-держатель — только силуэт для тени (сам он в корпусе)
-            const bm = await this.image(ptr('albedo', 'bracket'));
-            G.pass = 'baked';
-            if (!this.wheelGL(dm, pm, bm)) throw new Error('нет WebGL');
-            this._wheelSpr = { R: R * k, Rd: R, ptr: Pt, svg: svgFor };
+            if (pg) {
+                // прибор с текстурами собран заготовкой — только карта света
+                this._wgl = pg.Q;
+                if (this.deviceKey) this.deviceKey(pg.Q, this.wheelBox());
+            } else {
+                let dm, pm, bm;
+                if (pre) ({ disc: dm, ptr: pm, brk: bm } = pre);
+                else {
+                    const sv = this.wheelSvgs();
+                    dm = await Promise.all(sv.disc.map(s => this.image(s)));
+                    pm = await Promise.all(sv.ptr.map(s => this.image(s)));
+                    bm = await this.image(sv.brk);
+                }
+                G.pass = 'baked';
+                if (!this.wheelGL(dm, pm, bm)) throw new Error('нет WebGL');
+            }
+            this._wheelSpr = { R: R * k, Rd: R, ptr: Pt, svg: (pass, keys, vb) => this.wheelDiscSvg(pass, keys, vb) };
             this.wheelDeckReset();
             this.wheelShadow();
             this._wheel.shown = null;
@@ -361,6 +387,9 @@ Object.assign(GreedJunkLit, {
         [this.wheelShadowCv, this.wheelShadowBoxCv].forEach((cv, i) => {
             if (!cv) return;
             const c = cv.getContext('2d');
+            // заново, а не поверх: повторный вызов (короб встал при стоящем
+            // колесе, greed-junk-lit-grow.js) удваивал темноту тени
+            c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
             c.setTransform(S, 0, 0, S, -B.x * S, -B.y * S);
             // на коробе — ближе, значит чётче
             c.filter = 'blur(' + ((i ? P.blur * 0.5 : P.blur) * S) + 'px)';

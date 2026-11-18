@@ -42,10 +42,10 @@ const { chromium } = require('playwright');
   // пачинко СРАЗУ за колесом, в тот же заход (игрок, 18.11: после двух
   // покупок подряд рычаг перестал дёргаться, а после выхода и входа экран
   // остался под монетами — подготовка рычага не выходила из-под отсрочки)
-  // Старт — сразу, пока подготовка рычага колеса ещё отложена (её таймер
-  // 4 с): ровно здесь вторая сборка путала ворота первой.
-  ok(await page.evaluate(() => { Backend.grantCurrency('greed_token', 6); const pend = !!GreedAssembly.release;
-    const S = GreedJarShop; S.hold = { node: 'pachinko', dt: 120 }; S.deposit(); return pend; }), 'пачинко начато, пока рычаг колеса ещё ждёт');
+  // Старт — сразу за колесом (здесь раньше вторая сборка путала ворота
+  // отсрочки рычага первой; теперь сборка аппарат не пересобирает).
+  await page.evaluate(() => { Backend.grantCurrency('greed_token', 6);
+    const S = GreedJarShop; S.hold = { node: 'pachinko', dt: 120 }; S.deposit(); });
   await page.waitForFunction(() => GreedJarShop.busy, null, { timeout: 10000 }).catch(() => {});
   await page.waitForFunction(() => !GreedJarShop.busy, null, { timeout: 40000 }).catch(() => {});
   await page.waitForTimeout(600); await shot('7-pach');

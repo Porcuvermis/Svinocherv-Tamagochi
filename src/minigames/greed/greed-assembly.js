@@ -18,46 +18,37 @@
 // всё, что уже легло; перерисовывается, только когда деталь легла. Верхний —
 // только летящие детали и крутящийся диск.
 const GreedAssembly = {
-    // место игры на поле: под стоп-кадр прежнего аппарата
-    REGIONS: { wheel: { x0: 0, y0: -57, x1: 207, y1: 293 }, pach: { x0: 204, y0: -57, x1: 360, y1: 293 } },
+    // место игры на поле: под стоп-кадр — участок, который игра меняет в
+    // корпусе (GreedJunkLit.GROW_REGION)
+    REGIONS: { get wheel() { return GreedJunkLit.GROW_REGION.wheel; }, get pach() { return GreedJunkLit.GROW_REGION.pachinko; } },
 
     wheel(lower) { return this.run('wheel', lower); },
     pachinko(lower) { return this.run('pach', lower); },
 
     async run(game, lower) {
-        const L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement;
-        if (!host || !L.gl) { if (GreedDebug && GreedDebug.rebuild) await GreedDebug.rebuild(); return; }
+        const L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement, name = game === 'pach' ? 'pachinko' : game;
+        if (!host || !L.gl || !L.growGame) { if (GreedDebug && GreedDebug.rebuild) await GreedDebug.rebuild(); return; }
         this.setup(host);
-        this.snap = this.snapshot(host);
-        this.mode = 'full'; this.parts = []; this.fade = 1; this.spin = null; this.spinOn = false; this.glint = null;
         this.REGION = this.REGIONS[game];
+        // Стоп-кадр — только участка игры: вне его аппарат не меняется —
+        // игра врастает в живой аппарат (greed-junk-lit-grow.js), а не
+        // пересобирает его. Было: пересборка целиком под стоп-кадром всего
+        // экрана — 11–16 с при процессоре ×4, банка замирала, а оставленные
+        // контексты WebGL копили память до вылета (игрок, 18.11).
+        this.snap = this.snapshot(host, this.REGION);
+        this.mode = 'part'; this.parts = []; this.fade = 1; this.spin = null; this.spinOn = false; this.glint = null;
         this.paintBase();
         const lowered = new Promise(r => setTimeout(r, 450)).then(() => lower ? lower() : null);
-        // Под стоп-кадром — аппарат с колесом. Ждём корпус и колесо, но не
-        // рычаг. Подготовка картинок рычага (растр SVG и чтение пикселей —
-        // секунды процессора) отложена до конца сборки: она шла одновременно
-        // с полётом досок, и начало сборки рвалось (игрок, 17.11; замер
-        // assembly-jank.js — задача 2,7 с через 0,8 с после старта).
-        //
-        // Ворота одни на подряд идущие сборки. Было: каждая сборка ставила
-        // свою подмену поверх прежней, а таймер прошлой сборки отпускал ворота
-        // новой — подмена с воротами первой оставалась навсегда: рычаг не
-        // готов, а покров перехода ждёт рычаг (settled), и при новом входе
-        // экран стоял под монетами (игрок, 18.11: колесо и пачинко в один
-        // заход). Теперь вторая сборка ворота не ставит, а снимает таймер.
-        clearTimeout(this.relTimer);
-        if (!this.release) {
-            const P = GreedDebug.pristine, prep = P.prepareLever;
-            let release; const after = new Promise(r => { release = r; });
-            P.prepareLever = function () { return after.then(() => prep.call(GreedJunkLit)); };
-            this.release = () => { P.prepareLever = prep; release(); };
-        }
-        await GreedDebug.rebuild();
-        await Promise.all([L._mountP, game === 'wheel' ? L._wheelP : L._pachP].map(p => Promise.resolve(p).catch(() => {})));
-        const sets = game === 'wheel' ? await this.discSets() : await this.pachSets();
+        const rec = await L.growGame(name);
+        // тени новой игры падают и за участок — до конца сборки их нет
+        const shades = [L.wheelShadowCv, L.wheelShadowBoxCv].concat(name === 'pachinko' && L.pachShadowCv ? [L.pachShadowCv.far, L.pachShadowCv.near] : [])
+            .filter(Boolean).filter(cv => cv.style.visibility !== 'hidden');
+        if (name === 'wheel' || name === 'pachinko') shades.forEach(cv => { cv.style.visibility = 'hidden'; });
+        // виды для деталей уже в приборе (заготовка) — или залить сейчас
+        const sets = rec && rec.gl && rec.gl.asm && Object.keys(rec.gl.asm).length && rec.glTaken
+            ? { sets: rec.gl.asm, masks: rec.asm.masks } : await this.sets(name, rec && rec.asm);
         await lowered;
         this.parts = game === 'wheel' ? this.cut(sets) : this.cutPach(sets);
-        this.mode = 'part';
         this.paintBase();
         // Первая отрисовка слоёв — до старта часов: её тяжёлый кадр приходится
         // на неподвижную картинку, а не на первые кадры полёта досок.
@@ -67,19 +58,19 @@ const GreedAssembly = {
         this.loop();
         const end = this.END + 0.15;
         await new Promise(r => setTimeout(r, end * 1000));
+        shades.forEach(cv => { cv.style.visibility = ''; });
         const f0 = performance.now();
         await new Promise(r => { const st = () => { this.fade = 1 - (performance.now() - f0) / 250; this.base.style.opacity = this.fly.style.opacity = Math.max(0, this.fade); if (this.fade > 0) requestAnimationFrame(st); else r(); }; st(); });
         this.stop = true; this.base.remove(); this.fly.remove(); this.base = this.fly = null;
-        // Рычаг готовится, когда банка села на место (магазин закрыт) или
-        // через 4 с, если игрок остался в магазине: его подготовка — секунды
-        // процессора и роняла кадры подъёма и закрытия банки.
-        if (this.release) this.relTimer = setTimeout(() => this.flushRelease(), 4000);
+        // виды для деталей больше не нужны — память видеокарты назад
+        const Q = name === 'wheel' ? L._wgl : L._pgl;
+        if (sets && Q) Object.values(sets).forEach(st => st.t.forEach(t => Q.gl.deleteTexture(t)));
     },
-    flushRelease() {
-        clearTimeout(this.relTimer);
-        const rel = this.release; this.release = null;
-        if (rel) rel();
-    },
+    // Рычаг при сборке больше не пересобирается (игра врастает, а не
+    // пересобирает аппарат) — откладывать нечего. Вызовы банки и выхода
+    // остаются безвредными.
+    release: null,
+    flushRelease() {},
 
     setup(host) {
         [this.base, this.fly].forEach(c => c && c.remove());
@@ -104,18 +95,25 @@ const GreedAssembly = {
     },
     // Все видимые холсты аппарата — в одну картинку. Холсты видеокарты
     // снимаются в той же задаче, что отрисованы.
-    snapshot(host) {
+    // r — участок поля: снимается только он (вне его аппарат не меняется).
+    snapshot(host, r) {
         const L = GreedJunkLit, cv = document.createElement('canvas');
         cv.width = this.base.width; cv.height = this.base.height;
         const c = cv.getContext('2d'), hr = host.getBoundingClientRect(), s = hr.width / host.offsetWidth;
-        try { if (L.draw) L.draw(L.lightFor({ x: 0, y: 0 })); if (L.wheelDraw && L._wgl) L.wheelDraw(); if (L.pachDraw) L.pachDraw(); } catch (e) { /* что есть */ }
+        // корпус — с preserveDrawingBuffer, его холст и так верен; приборы
+        // колеса и короба — нет: перерисовать в той же задаче, что снимок
+        try { if (L.wheelDraw && L._wgl) L.wheelDraw(); if (L.pachDraw) L.pachDraw(); } catch (e) { /* что есть */ }
+        if (r) {
+            const [ax, ay] = this.scene(r.x0, r.y0), [bx, by] = this.scene(r.x1, r.y1), d = this.dpr;
+            c.beginPath(); c.rect(ax * d, ay * d, (bx - ax) * d, (by - ay) * d); c.clip();
+        }
         L.wrapEl.querySelectorAll('canvas').forEach((el) => {
             const st = getComputedStyle(el);
             if (st.display === 'none' || st.visibility === 'hidden') return;
-            const r = el.getBoundingClientRect();
-            if (!r.width || !r.height) return;
+            const rr = el.getBoundingClientRect();
+            if (!rr.width || !rr.height) return;
             c.globalAlpha = +st.opacity || 1;
-            try { c.drawImage(el, (r.left - hr.left) / s * this.dpr, (r.top - hr.top) / s * this.dpr, r.width / s * this.dpr, r.height / s * this.dpr); } catch (e) { /* пусто */ }
+            try { c.drawImage(el, (rr.left - hr.left) / s * this.dpr, (rr.top - hr.top) / s * this.dpr, rr.width / s * this.dpr, rr.height / s * this.dpr); } catch (e) { /* пусто */ }
         });
         c.globalAlpha = 1;
         return cv;
@@ -123,24 +121,65 @@ const GreedAssembly = {
 
     // ---------- диск в трёх видах (тем же шейдером колеса) ----------
     // голый — краска, торец, ступица; с колышками; целиком (значки) — уже есть
-    async discSets() {
-        const L = GreedJunkLit, G = GreedJunk, W = G.WHEEL, S = L.SCALE, R = W.rEdge + 4, k = G.wheelK(), n = Math.round(R * 2 * S * k);
-        const Q = L._wgl;
-        if (!Q) return null;
+    // SVG видов для деталей сборки — растрирует заготовка покупки
+    // (GreedJunkLit.growPrep), заливает в видеокарту sets() уже в сборке.
+    // Колесо: диск голый (краска, торец, ступица) и с колышками; целиком
+    // (значки) — уже у колеса. Пачинко: короб слоями (pachLayerSvgs).
+    svgs(game) {
+        return game === 'wheel' ? this.discSvgs() : this.pachLayerSvgs();
+    },
+    // Колесо: виды диска (голый, с колышками) и маски слоёв — колышки и
+    // значки поодиночке, только силуэт (проход albedo, прозрачность — маска).
+    // Было: колышки и значки — попиксельная разница освещённых видов циклом
+    // JS по миллиону точек с расширением — 3–4 с одной задачей при ×4.
+    discSvgs() {
+        const L = GreedJunkLit, G = GreedJunk, W = G.WHEEL, S = this.ASM_SCALE, R = W.rEdge + 4, k = G.wheelK(), n = Math.round(R * 2 * S * k);
+        const wrap = (pass, inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
+            G.passStyle(pass) + G.defs() + inner + '</svg>';
+        const h0 = 8;
         const svg = (pass, pegs) => {
             G.pass = pass;
-            const f = G.wheelFace(), h0 = 8;
-            return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
-                G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip) +
-                (pegs ? G.T(h0 + W.pegUp, 'steel', f.pegs) : '') + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
+            const f = G.wheelFace();
+            return wrap(pass, G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip) +
+                (pegs ? G.T(h0 + W.pegUp, 'steel', f.pegs) : '') + G.T(h0 + 1.9, 'steel', f.hub));
         };
-        const set = async (pegs) => {
-            const maps = await Promise.all(['albedo', 'height', 'mat'].map(p => L.image(svg(p, pegs))));
-            G.pass = 'baked';
-            return L.deviceSet(Q, maps);
-        };
-        return { bare: await set(false), pegs: await set(true) };
+        const only = (k) => { G.pass = 'albedo'; const f = G.wheelFace(); return wrap('albedo', f[k]); };
+        const P = ['albedo', 'height', 'mat'];
+        const out = { sets: { bare: P.map(p => svg(p, false)), pegs: P.map(p => svg(p, true)) }, masks: { pegs: only('pegs'), icons: only('icons') } };
+        G.pass = 'baked';
+        return out;
     },
+    // Виды в видеокарту — из готовых холстов заготовки (asm); без неё —
+    // растр сейчас.
+    async sets(game, asm) {
+        const L = GreedJunkLit, Q = game === 'wheel' ? L._wgl : L._pgl;
+        if (!Q) return null;
+        let pre = asm;
+        if (!pre) {
+            const sv = this.svgs(game), walk = async (o) => typeof o === 'string' ? L.raster(o)
+                : Array.isArray(o) ? Promise.all(o.map(walk)) : Object.fromEntries(await Promise.all(Object.entries(o).map(async ([k, v]) => [k, await walk(v)])));
+            pre = await walk(sv);
+            GreedJunk.pass = 'baked';
+        }
+        if (pre.layers) pre = this.stack(pre);
+        const sets = {};
+        Object.keys(pre.sets).forEach(key => { sets[key] = L.deviceSet(Q, pre.sets[key]); });
+        return { sets, masks: pre.masks };
+    },
+    // Освещённая картинка src по маске слоя m (растянутой на её размер).
+    // Без расширения: вид и маска растрированы на одной сетке пикселей.
+    masked(src, m) {
+        const out = document.createElement('canvas'); out.width = src.width; out.height = src.height;
+        const o = out.getContext('2d');
+        o.drawImage(src, 0, 0);
+        o.globalCompositeOperation = 'destination-in';
+        o.drawImage(m, 0, 0, out.width, out.height);
+        return out;
+    },
+    // Масштаб видов для деталей (пикселей на единицу): базовый холст сборки
+    // не плотнее двух точек на точку экрана — растр корпуса (3) тут лишний:
+    // вдвое больше растра, заливки и чтения с видеокарты, а на экране не видно.
+    ASM_SCALE: 2,
 
     // ---------- детали с собранного аппарата ----------
     cut(discs) {
@@ -189,32 +228,15 @@ const GreedAssembly = {
             // Диск — ЦЕЛИКОМ (не по видимому участку): его вращают, и
             // половина за краем поля выезжает на виду. Нарисован при повороте
             // 0, на холсте поворачивается на нужный угол.
-            const DS = Sp.R * 2, px = Math.round(DS * S);
+            const DS = Sp.R * 2, px = Math.round(DS * this.ASM_SCALE);
             const disc = (set) => L.deviceSprite(Q, set, px, px, light);
-            const bare = disc(discs.bare), withPegs = disc(discs.pegs), full = disc(Q.disc);
+            const bare = disc(discs.sets.bare), withPegs = disc(discs.sets.pegs), full = disc(Q.disc);
             const Pt = Sp.ptr;
             const ptr = grab(() => { L.deviceDraw(Q, B, Q.brk, Pt.cx, Pt.cy, Pt.hw, Pt.hh, 0, 0, 0); L.deviceDraw(Q, B, Q.ptr, Pt.cx, Pt.cy, Pt.hw, Pt.hh, M.flap, Pt.pivX, Pt.pivY); });
             L.wheelDraw();
-            // колышки и значки — разница между видами диска
-            const diff = (a, b, grow) => {
-                const w = a.width, h = a.height, A = a.getContext('2d').getImageData(0, 0, w, h), Bd = b.getContext('2d').getImageData(0, 0, w, h).data;
-                const m = new Uint8Array(w * h);
-                for (let i = 0, p = 0; p < m.length; p++, i += 4) {
-                    const d = Math.abs(A.data[i] - Bd[i]) + Math.abs(A.data[i + 1] - Bd[i + 1]) + Math.abs(A.data[i + 2] - Bd[i + 2]) + Math.abs(A.data[i + 3] - Bd[i + 3]);
-                    m[p] = d > 18 ? 1 : 0;
-                }
-                // расширить на grow (два прохода по осям)
-                const m2 = new Uint8Array(w * h), m3 = new Uint8Array(w * h);
-                for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dx = -grow; dx <= grow && !on; dx++) { const xx = x + dx; if (xx >= 0 && xx < w && m[y * w + xx]) on = 1; } m2[y * w + x] = on; }
-                for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dy = -grow; dy <= grow && !on; dy++) { const yy = y + dy; if (yy >= 0 && yy < h && m2[yy * w + x]) on = 1; } m3[y * w + x] = on; }
-                const out = document.createElement('canvas'); out.width = w; out.height = h;
-                const o = out.getContext('2d'), img = o.createImageData(w, h);
-                for (let p = 0, i = 0; p < m3.length; p++, i += 4) if (m3[p]) { img.data[i] = A.data[i]; img.data[i + 1] = A.data[i + 1]; img.data[i + 2] = A.data[i + 2]; img.data[i + 3] = A.data[i + 3]; }
-                o.putImageData(img, 0, 0);
-                return out;
-            };
-            const pegLayer = diff(withPegs, bare, 2), icons = diff(full, withPegs, 2);
-            const n = G.WHEEL_SECTORS.length, kk = G.wheelK(), rp = G.WHEEL.rPeg * kk, sc = px / DS;
+            // колышки и значки — освещённые виды по маскам своих слоёв
+            const pegLayer = this.masked(withPegs, discs.masks.pegs), icons = this.masked(full, discs.masks.icons);
+            const n = G.wheelKeys().length, kk = G.wheelK(), rp = G.WHEEL.rPeg * kk, sc = px / DS;
             const DX = W.cx - Sp.R, DY = W.cy - Sp.R;
             // диск ляжет на пол-оборота раньше финального угла — проверка докрутит
             const Rd = M.rot - Math.PI;
@@ -245,37 +267,45 @@ const GreedAssembly = {
     // саморезы стекла, кнопка). Детали — разница соседних видов, порезанная
     // по местам (игрок, 18.11: «короб — на детали поменьше, не одним куском»).
     PACH_LAYERS: ['frame', 'field', 'steel', 'cups', 'nails', 'corners'],
-    async pachSets() {
-        const L = GreedJunkLit, G = GreedJunk, P = G.PACH, Q = L._pgl, S = L.SCALE, B = L.pachBox();
-        if (!Q) return null;
-        const svg = (pass, n) => {
+    // Пачинко: короб слоями — каждый слой растрирован ОДИН раз поодиночке
+    // (три прохода); накопительный вид (рама; + поле; + сталь …) — наложение
+    // слоёв по порядку (stack), маска слоя — его же проход albedo. Плюс
+    // силуэт кнопки. Было: каждый накопительный вид растрировался целиком,
+    // и маски отдельно — 24 растра вместо 19, каждый тяжелее.
+    pachLayerSvgs() {
+        const L = GreedJunkLit, G = GreedJunk, P = G.PACH, S = this.ASM_SCALE, B = L.pachBox();
+        const wrap = (pass, inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(B.w * S)}" height="${Math.round(B.h * S)}" viewBox="${B.x} ${B.y} ${B.w} ${B.h}">` +
+            G.passStyle(pass) + G.defs() + inner + '</svg>';
+        const layers = (pass) => {
             G.pass = pass;
             const p = G.pachParts();
-            const T = { frame: G.T(12, 'raw', p.frame), field: G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain), steel: G.T(6.5, 'steel', p.steel),
-                cups: G.T(6, 'paint', p.cups), nails: G.T(2 + P.nailUp, 'steel', p.nails), corners: G.T(13, 'steel', p.corners) };
-            return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(B.w * S)}" height="${Math.round(B.h * S)}" viewBox="${B.x} ${B.y} ${B.w} ${B.h}">` +
-                G.passStyle(pass) + G.defs() + this.PACH_LAYERS.slice(0, n).map(k => T[k]).join('') + '</svg>';
+            return { frame: G.T(12, 'raw', p.frame), field: G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain), steel: G.T(6.5, 'steel', p.steel),
+                cups: G.T(6, 'paint', p.cups), nails: G.T(2 + P.nailUp, 'steel', p.nails), corners: G.T(13, 'steel', p.corners),
+                button: G.T(13, 'plastic', p.button) };
         };
-        const sets = {};
-        for (let n = 1; n <= this.PACH_LAYERS.length; n++) {
-            const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => L.image(svg(ps, n))));
-            G.pass = 'baked';
-            sets[this.PACH_LAYERS[n - 1]] = L.deviceSet(Q, maps);
-        }
-        return sets;
-    },
-    // разница двух картинок (что появилось во второй), расширенная на grow
-    diff(a, b, grow) {
-        const w = a.width, h = a.height, A = a.getContext('2d').getImageData(0, 0, w, h), Bd = b.getContext('2d').getImageData(0, 0, w, h).data;
-        const m = new Uint8Array(w * h), m2 = new Uint8Array(w * h), m3 = new Uint8Array(w * h);
-        for (let i = 0, p = 0; p < m.length; p++, i += 4) m[p] = (Math.abs(A.data[i] - Bd[i]) + Math.abs(A.data[i + 1] - Bd[i + 1]) + Math.abs(A.data[i + 2] - Bd[i + 2]) + Math.abs(A.data[i + 3] - Bd[i + 3])) > 18 ? 1 : 0;
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dx = -grow; dx <= grow && !on; dx++) { const xx = x + dx; if (xx >= 0 && xx < w && m[y * w + xx]) on = 1; } m2[y * w + x] = on; }
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dy = -grow; dy <= grow && !on; dy++) { const yy = y + dy; if (yy >= 0 && yy < h && m2[yy * w + x]) on = 1; } m3[y * w + x] = on; }
-        const out = document.createElement('canvas'); out.width = w; out.height = h;
-        const o = out.getContext('2d'), img = o.createImageData(w, h);
-        for (let p = 0, i = 0; p < m3.length; p++, i += 4) if (m3[p]) { img.data[i] = A.data[i]; img.data[i + 1] = A.data[i + 1]; img.data[i + 2] = A.data[i + 2]; img.data[i + 3] = A.data[i + 3]; }
-        o.putImageData(img, 0, 0);
+        const out = { layers: {}, masks: {} };
+        const T = ['albedo', 'height', 'mat'].map(layers);
+        this.PACH_LAYERS.forEach(k => { out.layers[k] = T.map((t, i) => wrap(['albedo', 'height', 'mat'][i], t[k])); });
+        out.masks.button = wrap('albedo', T[0].button);
+        G.pass = 'baked';
         return out;
+    },
+    // Слои пачинко → накопительные виды (по проходу) и маски слоёв.
+    stack(pre) {
+        const sets = {}, masks = Object.assign({}, pre.masks), acc = [];
+        this.PACH_LAYERS.forEach((k, n) => {
+            const ly = pre.layers[k];
+            sets[k] = ly.map((img, i) => {
+                const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+                const g = cv.getContext('2d');
+                if (acc[i]) g.drawImage(acc[i], 0, 0);
+                g.drawImage(img, 0, 0);
+                acc[i] = cv;
+                return cv;
+            });
+            if (n > 0) masks[k] = ly[0];
+        });
+        return { sets, masks };
     },
     // кусок картинки src, покрывающей box поля, → холст участка r поля
     sub(src, box, r) {
@@ -318,24 +348,25 @@ const GreedAssembly = {
         const Q = L._pgl;
         if (!Q || !sets) return parts;
         // короб в четырёх видах — картинками его настоящего размера на аппарате
-        const B0 = L.pachBox(), BX = G.pachRect(B0), px = Math.round(BX.w * S), py = Math.round(BX.h * S);
+        const B0 = L.pachBox(), BX = G.pachRect(B0), px = Math.round(BX.w * this.ASM_SCALE), py = Math.round(BX.h * this.ASM_SCALE);
         const light = L.lightFor((L._tilt) || { x: 0, y: 0 });
         const shot = (set) => L.deviceSprite(Q, set, px, py, light);
         const V = {};
-        this.PACH_LAYERS.forEach(k => { V[k] = shot(sets[k]); });
+        this.PACH_LAYERS.forEach(k => { V[k] = shot(sets.sets[k]); });
         V.full = shot(Q.box);
-        const lay = { field: this.diff(V.field, V.frame, 1), steel: this.diff(V.steel, V.field, 2), cups: this.diff(V.cups, V.steel, 2),
-            nails: this.diff(V.nails, V.cups, 2), corners: this.diff(V.corners, V.nails, 2), button: this.diff(V.full, V.corners, 2) };
+        // слой — накопительный вид по маске своего слоя (без чужих теней)
+        const Mk = sets.masks, mk = (k, src) => this.masked(src, Mk[k]);
+        const lay = { field: mk('field', V.field), steel: mk('steel', V.steel), cups: mk('cups', V.cups),
+            nails: mk('nails', V.nails), corners: mk('corners', V.corners), button: mk('button', V.full) };
         const sh = L.pachShadowCv ? [L.pachShadowCv.far, L.pachShadowCv.near] : null;
         const fx0 = P.x0 + P.wall, fx1 = P.x1 - P.wall, fy0 = P.y0 + P.top, fy1 = P.y1 - P.panel, A = P.arc;
         const piece = (src, r, o) => Object.assign({ cv: this.sub(src, BX, r), x: r.x, y: r.y, w: r.w, h: r.h }, o);
-        // Деталь в полёте — только по своей форме; её тень (шейдер по высоте,
-        // попала в разницу видов) ложится вместе с ней: в нижний слой идёт
-        // полный кусок (landCv). Тень, летящая с деталью и крутящаяся с ней,
+        // Деталь в полёте — только по своей форме; легла — в нижний слой
+        // идёт кусок накопительного вида (land): деталь с её тенью на том,
+        // что уже стоит. Тень, летящая с деталью и крутящаяся с ней,
         // читалась серой подложкой (игрок, 18.11).
-        const shape = (pc, path) => {
-            const full = document.createElement('canvas'); full.width = pc.cv.width; full.height = pc.cv.height;
-            full.getContext('2d').drawImage(pc.cv, 0, 0); pc.landCv = full;
+        const shape = (pc, path, land) => {
+            pc.landCv = this.sub(land, BX, pc);
             const g = pc.cv.getContext('2d'); g.globalCompositeOperation = 'destination-in'; path(g, pc.cv.width / pc.w);
         };
         let t = 1.4;
@@ -360,7 +391,7 @@ const GreedAssembly = {
         G.PACH_CUPS.forEach((cu, i) => {
             const pc = piece(lay.cups, R(cu.x - P.cup.w / 2 - 2.5, cu.y - 3.5, P.cup.w + 5, P.cup.h + 6.5), {});
             // в полёте — по контуру банки (с закатанным краем), тень — когда легла
-            shape(pc, (g, k) => { g.beginPath(); g.rect(1.3 * s * k, 0.6 * s * k, (P.cup.w + 2.4) * s * k, (P.cup.h + 4.3) * s * k); g.fill(); });
+            shape(pc, (g, k) => { g.beginPath(); g.rect(1.3 * s * k, 0.6 * s * k, (P.cup.w + 2.4) * s * k, (P.cup.h + 4.3) * s * k); g.fill(); }, V.cups);
             parts.push(Object.assign(pc, { kind: 'cup', at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 }));
         });
         t += G.PACH_CUPS.length * 0.09 + 0.25;
@@ -369,11 +400,10 @@ const GreedAssembly = {
         nails.forEach(([x, y]) => { const k = Math.round(y / 11); (rows[k] = rows[k] || []).push([x, y]); });
         const keys = Object.keys(rows).map(Number).sort((a, b) => a - b), nr = 3.4;
         keys.forEach((rk, ri) => rows[rk].sort((a, b) => a[0] - b[0]).forEach(([x, y], j) => {
-            // в полёте — по кругу шляпки, тень — когда лёг: разница видов
-            // вокруг гвоздя ловит и тень шейдера на краске, и квадрат поля
-            // летел вместе с гвоздём (игрок, 18.11)
+            // в полёте — по кругу шляпки, тень — когда лёг (квадрат поля
+            // вокруг гвоздя летел вместе с ним, игрок, 18.11)
             const pc = piece(lay.nails, R(x - nr, y - nr, nr * 2, nr * 2), {});
-            shape(pc, (g, k) => { g.beginPath(); g.arc(pc.w / 2 * k, pc.h / 2 * k, 2.25 * s * k, 0, 7); g.fill(); });
+            shape(pc, (g, k) => { g.beginPath(); g.arc(pc.w / 2 * k, pc.h / 2 * k, 2.25 * s * k, 0, 7); g.fill(); }, V.nails);
             parts.push(Object.assign(pc, { kind: 'nail', at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 }));
         }));
         t += keys.length * 0.075 + 0.3;

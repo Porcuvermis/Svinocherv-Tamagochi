@@ -106,6 +106,7 @@ const GreedJarShop = {
                 return P;
             }
             this.state = 'open'; this.t0 = now - O.crouch - O.fly;
+            this.prepGames();
         }
         if (this.state === 'open') {
             const s = (t - O.crouch - O.fly) / 1000;
@@ -134,9 +135,7 @@ const GreedJarShop = {
                 return P;
             }
             const L = (t - C.push - C.fly) / 1000;
-            if (L * 1000 > C.land) { this.state = 'rest'; this.dirty = true; this.cv.style.pointerEvents = 'none';
-                if (typeof GreedAssembly !== 'undefined' && GreedAssembly.release) setTimeout(() => GreedAssembly.flushRelease(), 300);
-                return P; }
+            if (L * 1000 > C.land) { this.state = 'rest'; this.dirty = true; this.cv.style.pointerEvents = 'none'; return P; }
             P.sy = 1 - 0.16 * spring(L, 26, 9); P.sx = 1 + 0.08 * spring(L, 26, 9);
             P.y -= 18 * Math.max(0, spring(L + 0.05, 20, 10));
             P.roll = R.roll - 2 * spring(L, 22, 8);
@@ -290,17 +289,35 @@ const GreedJarShop = {
     // собирается на своём месте по запчастям (greed-assembly.js); потом банка
     // поднимается обратно, магазин остаётся открытым. Для пачинко и версии 2
     // сборки ещё нет — банка возвращается, аппарат пересобирается.
+    // Заготовка покупок (greed-junk-lit-grow.js): игра, на которую жетонов
+    // хватает, растрируется заранее, по одной картинке за кадр, — пока игрок
+    // смотрит магазин и вкидывает жетоны. Покупка тогда только заливает
+    // готовое в видеокарту, а не растрирует (игрок, 18.11: «вся игра
+    // застывает в момент последнего жетона»).
+    // Возвращает обещание (покров при входе ждёт его, greed.js) или null.
+    prepGames() {
+        const L = GreedJunkLit;
+        if (!L.growPrep || !L.gl) return null;
+        if (this._prepping) return this._prepping;
+        const J = Backend.greedJar();
+        const want = ['wheel', 'pachinko'].filter(k => !J.done[k] && J.have + J[k] >= J.need[k]);
+        if (!want.length) return null;
+        const p = want.reduce((p, k) => p.then(() => L.growPrep(k)).catch(() => {}), Promise.resolve());
+        this._prepping = p.then(() => { this._prepping = null; }, () => { this._prepping = null; });
+        return this._prepping;
+    },
     async opened(node) {
         if (typeof Haptics !== 'undefined' && Haptics.notify) Haptics.notify('success');
         this.busy = true;
         if ((node === 'wheel' || node === 'pachinko') && typeof GreedAssembly !== 'undefined') {
-            // Пересборка аппарата (секунды на телефоне) идёт сразу — под
-            // стоп-кадром, пока горит галочка и банка опускается: ждать
-            // меньше.
+            // Игра врастает в аппарат сразу — под стоп-кадром своего участка,
+            // пока горит галочка и банка опускается.
             const run = GreedAssembly[node](() => this.lowTo(this.LOW, 450));
             try { await run; } catch (e) { console.warn('[Сборка колеса]', e); }
             await this.lowTo(0, 450);
             this.busy = false;
+            // заготовки устарели (аппарат стал другим) — для оставшейся игры заново
+            this.prepGames();
             return;
         }
         this.busy = false;

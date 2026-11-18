@@ -81,7 +81,15 @@ const GreedMinigame = {
             });
             if (L.meterSet) L.meterSet(L.meterValue());
             const A = typeof GreedCoins !== 'undefined' && GreedCoins.loadAtlas ? GreedCoins.loadAtlas() : null;
-            Promise.resolve(drawn).then(() => L.settled ? L.settled() : null).then(() => {
+            // Под монетами — и заготовка покупки, если жетонов на игру уже
+            // хватает (идея игрока, 18.11): растр её картинок и прибор — здесь,
+            // а не в момент последнего жетона. Не дольше PREP_VEIL_MS: дальше
+            // доделывается в фоне, монеты не ждут.
+            const prep = () => {
+                const S = typeof GreedJarShop !== 'undefined' && GreedJarShop.prepGames ? GreedJarShop.prepGames() : null;
+                return S ? Promise.race([S, new Promise(r => setTimeout(r, this.PREP_VEIL_MS))]) : null;
+            };
+            Promise.resolve(drawn).then(() => L.settled ? L.settled() : null).then(prep).then(() => {
                 const shown = () => requestAnimationFrame(() => ready());
                 if (A && !A.ready) A.wait.push(shown); else shown();
             });
@@ -124,6 +132,7 @@ const GreedMinigame = {
 
     // Готовность для покрова перехода: см. open().
     veilReady() { return this._readyP || Promise.resolve(); },
+    PREP_VEIL_MS: 4000,
 
     close() {
         this.spinGeneration++;
@@ -132,9 +141,8 @@ const GreedMinigame = {
         this.play = { slots: null, wheel: null, pachinko: null };
         // выигрыши уже начислены — придержанное в банке больше не нужно
         if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(null);
-        // отложенная подготовка рычага (после сборки игры в банке) — сейчас:
-        // иначе новый вход ждал бы её таймер под покровом монет
-        if (typeof GreedAssembly !== 'undefined' && GreedAssembly.release && !GreedAssembly.base) GreedAssembly.flushRelease();
+        // заготовки покупок — по этому заходу: память назад
+        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.growDrop) GreedJunkLit.growDrop();
         if (this.screenElement) this.screenElement.classList.remove('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.resumeRoom();
     },

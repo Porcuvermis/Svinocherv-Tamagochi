@@ -133,6 +133,10 @@ const GreedJunkLit = {
         this._nDirty = this._nDirty || new Set();
         let nt = this._nrm.get(ht);
         if (nt && !this._nDirty.has(ht)) return nt;
+        // переписан только участок (heightDirty с rect) — и пересчёт только
+        // его: врастание игры меняет участок корпуса, а пересчёт всей карты
+        // 1080×2088 — самая тяжёлая работа видеокарты в момент покупки
+        const part = nt && this._nRect && this._nRect.get(ht);
         if (!this._nprog) { this._nprog = this.normProgram(gl); this._fb = gl.createFramebuffer(); }
         gl.activeTexture(gl.TEXTURE5);
         if (!nt) {
@@ -150,6 +154,7 @@ const GreedJunkLit = {
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, nt, 0);
         gl.disable(gl.SCISSOR_TEST);
         gl.viewport(0, 0, this.size[0], this.size[1]);
+        if (part) { gl.enable(gl.SCISSOR_TEST); gl.scissor(part.x, part.y, part.w, part.h); }
         const p = this._nprog;
         gl.useProgram(p);
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ht);
@@ -157,11 +162,25 @@ const GreedJunkLit = {
         gl.uniform2f(gl.getUniformLocation(p, 'uTex'), 1 / this.size[0], 1 / this.size[1]);
         gl.uniform1f(gl.getUniformLocation(p, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        if (part) gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         this._nDirty.delete(ht);
+        if (this._nRect) this._nRect.delete(ht);
         return nt;
     },
-    heightDirty(ht) { (this._nDirty = this._nDirty || new Set()).add(ht); },
+    // rect — переписанный участок карты в пикселях: нормали пересчитаются
+    // только на нём (шире на 5 — шейдер нормалей берёт соседей на 4).
+    // Без rect — вся карта.
+    heightDirty(ht, rect) {
+        this._nDirty = this._nDirty || new Set();
+        this._nRect = this._nRect || new Map();
+        const had = this._nDirty.has(ht), was = this._nRect.get(ht);
+        this._nDirty.add(ht);
+        if (!rect || (had && !was)) { this._nRect.delete(ht); return; }
+        const m = 5, r = { x: Math.max(0, rect.x - m), y: Math.max(0, rect.y - m), x1: rect.x + rect.w + m, y1: rect.y + rect.h + m };
+        if (was) { r.x = Math.min(r.x, was.x); r.y = Math.min(r.y, was.y); r.x1 = Math.max(r.x1, was.x + was.w); r.y1 = Math.max(r.y1, was.y + was.h); }
+        this._nRect.set(ht, { x: r.x, y: r.y, w: r.x1 - r.x, h: r.y1 - r.y });
+    },
 
     // dbg — отладочный вывод одного слагаемого вместо цвета (ревизия
     // детали, tools/greed-part.js, docs/bench/greed-audit.md): номера —

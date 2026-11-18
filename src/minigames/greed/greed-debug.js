@@ -70,7 +70,16 @@ const GreedDebug = {
         const L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement;
         this.render();
         if (!host) return;
-        if (L.gl) { const ext = L.gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); }
+        // Все контексты аппарата — потерять сразу, с текстурами: корпус,
+        // колесо, короб. Было — только корпус; приборы колеса и короба жили до
+        // сборки мусора, и каждая пересборка добавляла их память (tools/
+        // greed-lux-sketch/jar/deposit-prof.js: 3–4 новых контекста, 1 потерян).
+        [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl].forEach(gl => {
+            if (!gl) return;
+            const ext = gl.getExtension('WEBGL_lose_context');
+            if (ext) ext.loseContext();
+        });
+        if (L.growDrop) L.growDrop();
         L.wrapEl.remove();
         const P = this.pristine, opts = L._opts;
         Object.keys(L).forEach(k => { if (!(k in P)) delete L[k]; });

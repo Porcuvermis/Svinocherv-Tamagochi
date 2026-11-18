@@ -123,6 +123,7 @@ Object.assign(GreedJunk, {
 
     // на аппарате: куплено — или включено в отладке (🐞 → «Пачинко»)
     pachinkoShown() {
+        if (this._growAs === 'pachinko') return true;
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('pachinko') > 0) return true;
         try { return localStorage.getItem('gj-pachinko') === '1'; } catch (e) { return false; }
     },

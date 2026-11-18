@@ -42,7 +42,9 @@ Object.assign(GreedJunk, {
         return `<g transform="translate(${S.cx} ${S.cy}) rotate(${a}) scale(${this.f(this.wheelK() * 1000) / 1000}) translate(${-S.cx} ${-S.cy})">${inner}</g>`;
     },
     // колесо на аппарате: куплено — или включено в отладке (🐞 → «Колесо»)
+    // _growAs — заготовка покупки рисует аппарат «как будет» (greed-junk-lit-grow.js)
     wheelShown() {
+        if (this._growAs === 'wheel') return true;
         if (typeof Backend !== 'undefined' && Backend.greedLevel && Backend.greedLevel('wheel') > 0) return true;
         try { return localStorage.getItem('gj-wheel') === '1'; } catch (e) { return false; }
     },
