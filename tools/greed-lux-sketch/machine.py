@@ -520,7 +520,10 @@ def led_icon(key):
 # Варианты вида поля (концепты 18.11 после «1 из 10»: перекраска гаражного
 # — не дизайн). PV=A «ночь под стеклом», B «бордо», C «решётка». Физика та же:
 # места гвоздей, лунок, дуги, дорожки, стока, кнопки — из игры.
-PV = os.environ.get('PV', 'A')
+# PV — две буквы: поле и лунки (игрок, 18.11: поле B «бордо», лунки C
+# «зиккураты»); одна буква — то и другое из одного варианта.
+PV = os.environ.get('PV', 'BC')
+PVF, PVC = PV[0], PV[-1]
 def pach_live():
     P, A = PP, PP['arc']
     fx0, fx1, fy0, fy1 = P['x0'] + P['wall'], P['x1'] - P['wall'], P['y0'] + P['top'], P['y1'] - P['panel']
@@ -529,9 +532,9 @@ def pach_live():
     # колодец поля: всё под дымчатым стеклом (материал стекла — отражения студии)
     o += rr(fx0 - 1, fy0 - 1, fx1 + 1, fy1 + 1, 4, c('#050404', 'glass', '#000'))
     inner = f'M{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{sep} {cy} L{sep} {drain} L{fx0} {drain} L{fx0} {cy} Z'
-    field = {'A': '#0d0a09', 'B': '#3a0a14', 'C': '#0a0909'}[PV]
-    edge = {'A': '#050403', 'B': '#1c040a', 'C': '#040303'}[PV]
-    glow = {'A': '#2a1a08', 'B': '#3a0c10', 'C': '#1e1408'}[PV]
+    field = {'A': '#0d0a09', 'B': '#3a0a14', 'C': '#0a0909'}[PVF]
+    edge = {'A': '#050403', 'B': '#1c040a', 'C': '#040303'}[PVF]
+    glow = {'A': '#2a1a08', 'B': '#3a0c10', 'C': '#1e1408'}[PVF]
     if PASS == 'albedo':
         o += (f'<radialGradient id="pfg" cx="{cx}" cy="{cy - 10}" r="190" gradientUnits="userSpaceOnUse">'
               f'<stop offset="0" stop-color="{field}"/><stop offset="1" stop-color="{edge}"/></radialGradient>')
@@ -543,13 +546,13 @@ def pach_live():
     else:
         o += f'<path d="{inner}" fill="{c("#000", "glass")}"/>'
     o += f'<clipPath id="pfc"><path d="{inner}"/></clipPath><g clip-path="url(#pfc)">'
-    if PV in ('A', 'B'):
+    if PVF in ('A', 'B'):
         # лучи веером от верха арки — тонкая позолота, тихо
         for k in range(23):
             a = math.pi * (0.03 + 0.94 * k / 22)
             x1_, y1_ = cx + math.cos(a) * 260, cy - r + math.sin(a) * 260
-            o += f'<line x1="{cx}" y1="{cy - r}" x2="{x1_:.1f}" y2="{y1_:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="{0.35 if PV == "A" else 0.45}" opacity="{0.45 if PASS == "albedo" else 1}"/>'
-    if PV == 'C':
+            o += f'<line x1="{cx}" y1="{cy - r}" x2="{x1_:.1f}" y2="{y1_:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="{0.35 if PVF == "A" else 0.45}" opacity="{0.45 if PASS == "albedo" else 1}"/>'
+    if PVF == 'C':
         # ромбическая решётка и солнце за серединой поля
         step = 12.6
         for k in range(-20, 21):
@@ -584,14 +587,14 @@ def pach_live():
     for cu in PG['CUPS']:
         x, y, key = cu['x'] - cw / 2, cu['y'], cu['key']
         enamel, led = CUP_COL[key]
-        if PV == 'A':
+        if PVC == 'A':
             # золотой тюльпан: трапеция расширяется вверх, внутри — эмаль
             body = f'M{x - 0.6} {y} L{x + cw + 0.6} {y} L{x + cw - 2.6} {y + ch} L{x + 2.6} {y + ch} Z'
             ins = f'M{x + 1.4} {y + 1.6} L{x + cw - 1.4} {y + 1.6} L{x + cw - 3.6} {y + ch - 1.4} L{x + 3.6} {y + ch - 1.4} Z'
             o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(INK)}" stroke-width="1"/><path d="{body}" fill="{c(GOLD, "gold")}"/><path d="{ins}" fill="{c(enamel, "lac")}"/>'
             o += f'<circle cx="{x + cw / 2}" cy="{y + ch / 2 + 0.6}" r="3.9" fill="{c("#050406", "glass", "#04040a")}"/>'
             icx, icy, q = x + cw / 2, y + ch / 2 + 0.6, 0.4
-        elif PV == 'B':
+        elif PVC == 'B':
             body = f'M{x} {y} L{x} {y + ch - 4} Q{x} {y + ch} {x + 4} {y + ch} L{x + cw - 4} {y + ch} Q{x + cw} {y + ch} {x + cw} {y + ch - 4} L{x + cw} {y} Z'
             o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(GOLD, "gold")}" stroke-width="1.3"/><path d="{body}" fill="{c("#0c0809", "lac")}"/>'
             o += rr(x + 0.8, y + 1.6, x + cw - 0.8, y + 3.6, 0.4, c(enamel, 'lac'))

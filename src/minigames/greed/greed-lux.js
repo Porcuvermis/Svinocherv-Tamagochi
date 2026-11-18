@@ -103,7 +103,7 @@ const GreedLux = {
         if (this.wrapEl) this.wrapEl.remove();
         this.wrapEl = null; this._mountP = null; this.meta = null;
         this.reels = null; this._lv = null; this.ledCv = null; this.ledGrid = null; this.lampCv = null; this._wheel = null; this.fx = null;
-        this._pach = null; this.pfx = null; this._pgl = null;
+        this._pach = null; this.pfx = null; this._pgl = null; this.glareCv = null;
     },
 
     // ---------- то, что версия 2 получит на своих этапах ----------

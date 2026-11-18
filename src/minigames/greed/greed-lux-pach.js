@@ -48,6 +48,7 @@ Object.assign(GreedLux, {
             `width:${R.w / this.W * 100}%;height:${R.h / this.H * 100}%;z-index:2;pointer-events:none;background:none`;
         wrap.appendChild(cv);
         this.pfx = cv; this.pfxK = cv.width / (P.x1 - P.x0);
+        this.pachGlareMount(wrap);
         // кнопка — тап по ней (зона шире кнопки, как у гаражного)
         wrap.addEventListener('pointerdown', (e) => {
             const B = G.PACH.button, [x, y] = G.pachInv(...G.toField(e, wrap));
@@ -55,6 +56,55 @@ Object.assign(GreedLux, {
             e.preventDefault(); e.stopPropagation();
             this.pachLaunch();
         });
+    },
+
+    // ---------- блики стекла ----------
+    // Игрок (18.11): «между ровно и наклон разницы не вижу» — отражение
+    // студии в шейдере на тёмном стекле — узкая полоска, и от наклона она
+    // почти не ходит. Блики — отдельным слоем: широкие мягкие косые полосы
+    // (рисуются один раз), к низу гаснут; наклон телефона двигает слой
+    // переносом (без перерисовки) — отражение заметно ползёт по стеклу.
+    // Слой над шариком: шарик под стеклом. Обрезан колодцем поля.
+    GLARE: { m: 34, kx: 46, ky: 34 },
+    pachGlareMount(wrap) {
+        const G = GreedJunk, P = G.PACH, K = this.GLARE, d = Math.min(3, window.devicePixelRatio || 1);
+        const x0 = P.x0 + P.wall - 1, x1 = P.x1 - P.wall + 1, y0 = P.y0 + P.top - 1, y1 = P.y1 - P.panel + 1;
+        const R = G.pachRect({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+        const clip = document.createElement('div');
+        clip.style.cssText = `position:absolute;left:${R.x / this.W * 100}%;top:${(R.y - this.Y0) / this.H * 100}%;` +
+            `width:${R.w / this.W * 100}%;height:${R.h / this.H * 100}%;overflow:hidden;z-index:2;pointer-events:none;border-radius:3%`;
+        const w = x1 - x0 + 2 * K.m, h = y1 - y0 + 2 * K.m, k = 2.2 * d, cv = document.createElement('canvas');
+        cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        cv.style.cssText = `position:absolute;left:${-K.m / (x1 - x0) * 100}%;top:${-K.m / (y1 - y0) * 100}%;` +
+            `width:${w / (x1 - x0) * 100}%;height:${h / (y1 - y0) * 100}%;background:none;will-change:transform`;
+        clip.appendChild(cv); wrap.appendChild(clip);
+        const c = cv.getContext('2d'), L = PALETTE.greedLux.glass;
+        c.setTransform(k, 0, 0, k, 0, 0);
+        c.filter = `blur(${(1.6 * k).toFixed(1)}px)`;
+        // полосы: середина (доля ширины), ширина, сила
+        [[0.24, 22, 0.13], [0.46, 4.5, 0.16], [0.62, 2.2, 0.12], [0.84, 11, 0.07], [1.12, 18, 0.11], [1.3, 3, 0.13]].forEach(([u, bw, a]) => {
+            const ax = K.m + (x1 - x0) * u, run = h * 0.6;
+            c.globalAlpha = a; c.fillStyle = L.glare;
+            c.beginPath(); c.moveTo(ax, 0); c.lineTo(ax + bw, 0); c.lineTo(ax + bw - run, h); c.lineTo(ax - run, h); c.closePath(); c.fill();
+        });
+        c.filter = 'none'; c.globalAlpha = 1;
+        // к низу гаснут: отражается лампа над аппаратом
+        c.globalCompositeOperation = 'destination-in';
+        const g = c.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.55, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0.1)');
+        c.fillStyle = g; c.fillRect(0, 0, w, h);
+        c.globalCompositeOperation = 'source-over';
+        this.glareCv = cv; this.glareSpan = [x1 - x0, y1 - y0]; this._glareAt = null;
+    },
+    // сдвиг бликов за наклоном (единицы поля → проценты слоя)
+    pachGlareAt() {
+        const cv = this.glareCv, t = this.tilt, K = this.GLARE;
+        if (!cv || !t) return;
+        const dx = Math.max(-K.m, Math.min(K.m, t.x * K.kx)), dy = Math.max(-K.m, Math.min(K.m, -t.y * K.ky));
+        if (this._glareAt && Math.abs(dx - this._glareAt[0]) < 0.15 && Math.abs(dy - this._glareAt[1]) < 0.15) return;
+        this._glareAt = [dx, dy];
+        const [sw, sh] = this.glareSpan, w = sw + 2 * K.m, h = sh + 2 * K.m;
+        cv.style.transform = `translate(${(dx / w * 100).toFixed(2)}%, ${(dy / h * 100).toFixed(2)}%)`;
     },
 
     // Толкатель: взведён на выстреле и плавно, без дрожи, уходит назад.
@@ -74,6 +124,7 @@ Object.assign(GreedLux, {
     pachStep(now) {
         const M = this._pach, G = GreedJunk, K = G.PACH_PHYS, F = this.PACH_FX;
         if (!M) return;
+        this.pachGlareAt();
         this.pachFill(now);
         const dt = Math.min(0.05, M.bat ? (now - M.bat) / 1000 : 1 / 60);
         M.bat = now;
