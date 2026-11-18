@@ -319,6 +319,15 @@ const GreedAssembly = {
         const sh = L.pachShadowCv ? [L.pachShadowCv.far, L.pachShadowCv.near] : null;
         const fx0 = P.x0 + P.wall, fx1 = P.x1 - P.wall, fy0 = P.y0 + P.top, fy1 = P.y1 - P.panel, A = P.arc;
         const piece = (src, r, o) => Object.assign({ cv: this.sub(src, BX, r), x: r.x, y: r.y, w: r.w, h: r.h }, o);
+        // Деталь в полёте — только по своей форме; её тень (шейдер по высоте,
+        // попала в разницу видов) ложится вместе с ней: в нижний слой идёт
+        // полный кусок (landCv). Тень, летящая с деталью и крутящаяся с ней,
+        // читалась серой подложкой (игрок, 18.11).
+        const shape = (pc, path) => {
+            const full = document.createElement('canvas'); full.width = pc.cv.width; full.height = pc.cv.height;
+            full.getContext('2d').drawImage(pc.cv, 0, 0); pc.landCv = full;
+            const g = pc.cv.getContext('2d'); g.globalCompositeOperation = 'destination-in'; path(g, pc.cv.width / pc.w);
+        };
         let t = 1.4;
         // задняя стенка: лист рамы между стенками — первым, с тенью
         parts.push(piece(V.frame, R(fx0, fy0, fx1 - fx0, fy1 - fy0), { kind: 'back', at: t, dur: 0.5, s0: 2.2, rot0: 0.25, from: -1, shadow: sh, heavy: true }));
@@ -339,7 +348,10 @@ const GreedAssembly = {
         t += 0.6;
         // лунки — по одной
         G.PACH_CUPS.forEach((cu, i) => {
-            parts.push(piece(lay.cups, R(cu.x - P.cup.w / 2 - 2.5, cu.y - 2.5, P.cup.w + 5, P.cup.h + 5), { kind: 'cup', at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 }));
+            const pc = piece(lay.cups, R(cu.x - P.cup.w / 2 - 2.5, cu.y - 2.5, P.cup.w + 5, P.cup.h + 5), {});
+            // в полёте — по контуру лунки (с закатанным краем), тень — когда легла
+            shape(pc, (g, k) => { g.beginPath(); g.rect(0.9 * s * k, 0.9 * s * k, (P.cup.w + 3.2) * s * k, (P.cup.h + 2.4) * s * k); g.fill(); });
+            parts.push(Object.assign(pc, { kind: 'cup', at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 }));
         });
         t += G.PACH_CUPS.length * 0.09 + 0.25;
         // гвозди — рядами сверху вниз, как вбивают: в ряду — волной
@@ -347,11 +359,11 @@ const GreedAssembly = {
         nails.forEach(([x, y]) => { const k = Math.round(y / 11); (rows[k] = rows[k] || []).push([x, y]); });
         const keys = Object.keys(rows).map(Number).sort((a, b) => a - b), nr = 3.4;
         keys.forEach((rk, ri) => rows[rk].sort((a, b) => a[0] - b[0]).forEach(([x, y], j) => {
-            // по кругу шляпки: разница видов вокруг гвоздя ловит и его тень
-            // на краске (затенение по высоте) — квадрат поля летел вместе с
-            // гвоздём (игрок, 18.11)
-            const pc = piece(lay.nails, R(x - nr, y - nr, nr * 2, nr * 2), {}), g = pc.cv.getContext('2d'), kk = pc.cv.width / pc.w;
-            g.globalCompositeOperation = 'destination-in'; g.beginPath(); g.arc(pc.w / 2 * kk, pc.h / 2 * kk, 2.25 * s * kk, 0, 7); g.fill();
+            // в полёте — по кругу шляпки, тень — когда лёг: разница видов
+            // вокруг гвоздя ловит и тень шейдера на краске, и квадрат поля
+            // летел вместе с гвоздём (игрок, 18.11)
+            const pc = piece(lay.nails, R(x - nr, y - nr, nr * 2, nr * 2), {});
+            shape(pc, (g, k) => { g.beginPath(); g.arc(pc.w / 2 * k, pc.h / 2 * k, 2.25 * s * k, 0, 7); g.fill(); });
             parts.push(Object.assign(pc, { kind: 'nail', at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 }));
         }));
         t += keys.length * 0.075 + 0.3;
@@ -389,6 +401,8 @@ const GreedAssembly = {
         requestAnimationFrame(step);
     },
     // нижний слой: стоп-кадр (на месте колеса) и всё, что уже легло
+    // легшая деталь — с тенью, если она снята отдельно (shape в cutPach)
+    landed(p) { return p.landCv ? Object.assign({}, p, { cv: p.landCv }) : p; },
     paintBase() {
         const c = this.base.getContext('2d'), d = this.dpr;
         c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.base.width, this.base.height);
@@ -396,7 +410,7 @@ const GreedAssembly = {
         const R = this.REGION, [ax, ay] = this.scene(R.x0, R.y0), [bx, by] = this.scene(R.x1, R.y1);
         c.save(); c.beginPath(); c.rect(ax * d, ay * d, (bx - ax) * d, (by - ay) * d); c.clip(); c.drawImage(this.snap, 0, 0); c.restore();
         const k = this.scene(0, 0)[2], spinning = this.spin && this.spinOn;
-        this.parts.forEach(p => { if (p.landed && !(spinning && (p.kind === 'disc' || p.kind === 'peg'))) this.draw(c, p, 1, 9, k); });
+        this.parts.forEach(p => { if (p.landed && !(spinning && (p.kind === 'disc' || p.kind === 'peg'))) this.draw(c, this.landed(p), 1, 9, k); });
     },
     frame(now) {
         const c = this.fly.getContext('2d'), t = (now - this.t0) / 1000, k = this.scene(0, 0)[2];
@@ -415,7 +429,7 @@ const GreedAssembly = {
             if (!p.landed) {
                 p.landed = true;
                 // легла — дорисовать в нижний слой (без полной перерисовки)
-                if (!(this.spinOn && (p.kind === 'disc' || p.kind === 'peg'))) this.draw(this.base.getContext('2d'), p, 1, 9, k);
+                if (!(this.spinOn && (p.kind === 'disc' || p.kind === 'peg'))) this.draw(this.base.getContext('2d'), this.landed(p), 1, 9, k);
                 if (typeof Haptics !== 'undefined' && p.tick !== false && (p.kind !== 'bolt' || p.tick)) {
                     if (p.heavy && Haptics.impact) Haptics.impact('heavy'); else Haptics.tick();
                 }

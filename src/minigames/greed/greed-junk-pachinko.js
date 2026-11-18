@@ -255,17 +255,14 @@ Object.assign(GreedJunk, {
         }
 
         // ---- затенение углов: куда свет лампы не доходит ----
-        // Вдоль стенок ящика, под стальной дугой, у перегородки дорожки и
-        // под донцами банок — мягкая темнота в самом цвете поля: от
+        // Вдоль стенок ящика — мягкая темнота в самом цвете поля: от
         // направления света она не зависит, поэтому не шейдером, а один раз.
         // Без неё поле читалось наклейкой поверх ящика — тень стенок узкая
         // (5–7 единиц при свете под 45°), а в углах светло, как посередине.
-        let ao = `<rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}" fill="none" stroke="${J.hole}" stroke-width="7"/>`;
-        ao += `<path d="${`M${f(A.cx - A.r)} ${f(A.cy + 8)} L${f(A.cx - A.r)} ${A.cy} A${A.r} ${A.r} 0 0 1 ${f(A.cx + A.r)} ${A.cy}`}" fill="none" stroke="${J.hole}" stroke-width="4"/>`;
-        ao += `<path d="M${P.sep + 1} ${A.cy + 12} L${P.sep + 1} ${P.drain}" stroke="${J.hole}" stroke-width="4"/>`;
-        this.PACH_CUPS.forEach(c => {
-            ao += `<ellipse cx="${c.x}" cy="${c.y + C.h - 0.5}" rx="${C.w / 2 - 1}" ry="2.2" fill="${J.hole}"/>`;
-        });
+        // Под дугой, у перегородки и под лунками запечённой тени нет (игрок,
+        // 18.11): их тень даёт шейдер по высоте, а нарисованная в краске
+        // поля появлялась при сборке раньше самих деталей.
+        const ao = `<rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}" fill="none" stroke="${J.hole}" stroke-width="7"/>`;
         field += `<defs><filter id="gj-pao" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.4"/></filter>` +
             `<clipPath id="gj-paoc"><rect x="${fx0}" y="${fy0}" width="${fx1 - fx0}" height="${fy1 - fy0}"/></clipPath></defs>` +
             `<g clip-path="url(#gj-paoc)"><g filter="url(#gj-pao)" opacity="0.4">${ao}</g></g>`;
