@@ -517,51 +517,110 @@ def led_icon(key):
                 v = 0.35 + 0.65 * v
                 out[y][x] = '#%02x%02x%02x' % (int(lr * v), int(lg * v), int(lb * v))
     return out
+# Варианты вида поля (концепты 18.11 после «1 из 10»: перекраска гаражного
+# — не дизайн). PV=A «ночь под стеклом», B «бордо», C «решётка». Физика та же:
+# места гвоздей, лунок, дуги, дорожки, стока, кнопки — из игры.
+PV = os.environ.get('PV', 'A')
 def pach_live():
     P, A = PP, PP['arc']
     fx0, fx1, fy0, fy1 = P['x0'] + P['wall'], P['x1'] - P['wall'], P['y0'] + P['top'], P['y1'] - P['panel']
     cx, cy, r, sep, drain = A['cx'], A['cy'], A['r'], P['sep'], P['drain']
     o = ink_rr(P['x0'], P['y0'], P['x1'], P['y1'], 8, LAC) + grect(P['x0'] + 2.6, P['y0'] + 2.6, P['x1'] - 2.6, P['y1'] - 2.6, 6, 1.0)
-    # поле: игровая арка светится за стеклом, дорожка и углы — лак
-    o += rr(fx0, fy0, fx1, fy1, 3, c('#0c0909', 'lac'))
-    o += fan(cx, cy - r - 1, 4, 13, math.pi * 1.1, math.pi * 1.9, 9, 0.8)
+    # колодец поля: всё под дымчатым стеклом (материал стекла — отражения студии)
+    o += rr(fx0 - 1, fy0 - 1, fx1 + 1, fy1 + 1, 4, c('#050404', 'glass', '#000'))
     inner = f'M{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{sep} {cy} L{sep} {drain} L{fx0} {drain} L{fx0} {cy} Z'
-    o += f'<path d="{inner}" fill="{c(CREAM, "glass", "#2e281a")}"/>'
-    # сток — тёмная щель с золотой кромкой
-    o += rr(fx0, drain, sep, fy1, 0, c('#050303', 'matte'))
-    o += rr(fx0, drain - 0.9, sep, drain + 0.9, 0.4, c(GOLD, 'gold'))
-    # рельсы: дуга и перегородка дорожки — золотые прутки
+    field = {'A': '#0d0a09', 'B': '#3a0a14', 'C': '#0a0909'}[PV]
+    edge = {'A': '#050403', 'B': '#1c040a', 'C': '#040303'}[PV]
+    glow = {'A': '#2a1a08', 'B': '#3a0c10', 'C': '#1e1408'}[PV]
+    if PASS == 'albedo':
+        o += (f'<radialGradient id="pfg" cx="{cx}" cy="{cy - 10}" r="190" gradientUnits="userSpaceOnUse">'
+              f'<stop offset="0" stop-color="{field}"/><stop offset="1" stop-color="{edge}"/></radialGradient>')
+        o += f'<path d="{inner}" fill="url(#pfg)"/>'
+    elif PASS == 'emit':
+        o += (f'<radialGradient id="pfe" cx="{cx}" cy="{cy - 30}" r="150" gradientUnits="userSpaceOnUse">'
+              f'<stop offset="0" stop-color="{glow}"/><stop offset="1" stop-color="#000"/></radialGradient>')
+        o += f'<path d="{inner}" fill="url(#pfe)"/>'
+    else:
+        o += f'<path d="{inner}" fill="{c("#000", "glass")}"/>'
+    o += f'<clipPath id="pfc"><path d="{inner}"/></clipPath><g clip-path="url(#pfc)">'
+    if PV in ('A', 'B'):
+        # лучи веером от верха арки — тонкая позолота, тихо
+        for k in range(23):
+            a = math.pi * (0.03 + 0.94 * k / 22)
+            x1_, y1_ = cx + math.cos(a) * 260, cy - r + math.sin(a) * 260
+            o += f'<line x1="{cx}" y1="{cy - r}" x2="{x1_:.1f}" y2="{y1_:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="{0.35 if PV == "A" else 0.45}" opacity="{0.45 if PASS == "albedo" else 1}"/>'
+    if PV == 'C':
+        # ромбическая решётка и солнце за серединой поля
+        step = 12.6
+        for k in range(-20, 21):
+            x = fx0 + k * step
+            for sgn in (1, -1):
+                o += f'<line x1="{x}" y1="{fy0}" x2="{x + sgn * 260}" y2="{fy0 + 260}" stroke="{c(GOLD, "gold")}" stroke-width="0.3" opacity="{0.35 if PASS == "albedo" else 1}"/>'
+        for k in range(17):
+            a = 2 * math.pi * k / 17
+            o += f'<line x1="{cx}" y1="122" x2="{cx + math.cos(a) * 40:.1f}" y2="{122 + math.sin(a) * 40:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="0.5" opacity="{0.4 if PASS == "albedo" else 1}"/>'
+    o += '</g>'
+    # дорожка: канал с золотыми кромками
+    o += rr(sep + 2, cy - 4, fx1, fy1, 1.5, c('#070505', 'lac'))
+    # дуга — двойной золотой пруток
     arc = f'M{cx - r} {cy + 8} L{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{cx + r} {cy + 4}'
-    o += f'<path d="{arc}" fill="none" stroke="{c(INK)}" stroke-width="3.2" stroke-linejoin="round"/><path d="{arc}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="2.2" stroke-linejoin="round"/>'
+    o += f'<path d="{arc}" fill="none" stroke="{c(INK)}" stroke-width="4.2" stroke-linejoin="round"/><path d="{arc}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="3.2" stroke-linejoin="round"/>'
+    o += f'<path d="{arc}" fill="none" stroke="{c(INK)}" stroke-width="0.6" stroke-linejoin="round"/>'
     sd_ = f'M{sep + 1} {cy + 12} L{sep + 1} {drain}'
-    o += f'<path d="{sd_}" stroke="{c(INK)}" stroke-width="2.6" stroke-linecap="round"/><path d="{sd_}" stroke="{c(GOLD, "gold")}" stroke-width="1.6" stroke-linecap="round"/>'
-    # клапан наверху дорожки — золотой язычок
+    o += f'<path d="{sd_}" stroke="{c(INK)}" stroke-width="3.2" stroke-linecap="round"/><path d="{sd_}" stroke="{c(GOLD, "gold")}" stroke-width="2.2" stroke-linecap="round"/>'
     vy, vx0, vx1 = cy + 12 - 2.4, sep + 1, cx + r - 1
     o += f'<path d="M{vx0} {vy + 1.6} L{vx1} {vy - 0.6} L{vx1} {vy + 1.2} L{vx0} {vy + 3} Z" fill="{c(GOLD, "gold")}"/>'
-    # гвозди — золотые купола
+    # веер-пятачок над аркой
+    o += fan(cx, cy - r - 1.5, 3, 12, math.pi * 1.08, math.pi * 1.92, 11, 0.9)
+    # сток — золотая решётка ар-деко над тёмной щелью
+    o += rr(fx0, drain - 1, sep, fy1, 0.6, c('#030202', 'matte'))
+    for x in range(int(fx0) + 2, int(sep) - 1, 3):
+        o += rr(x - 0.55, drain - 0.8, x + 0.55, fy1 - 0.5, 0.4, c(GOLD, 'gold'))
+    o += rr(fx0, drain - 1.6, sep, drain - 0.2, 0.5, c(GOLD, 'gold'))
+    # гвозди — золотые штыри в чёрном пояске
     for x, y in PG['nails']:
-        o += f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{PG["phys"]["nailR"] + 0.4}" fill="{c(INK)}"/><circle cx="{x:.2f}" cy="{y:.2f}" r="{PG["phys"]["nailR"]}" fill="{c(GOLD, "gold")}"/>'
-    # лунки: эмалевый стакан, золотая закатанная кромка, тёмная горловина,
-    # на лицевой стороне — табло со значком приза
+        o += f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.45" fill="{c(INK)}"/><circle cx="{x:.2f}" cy="{y:.2f}" r="2.05" fill="{c("#1a120c", "lac")}"/><circle cx="{x:.2f}" cy="{y:.2f}" r="1.45" fill="{c(GOLD, "gold")}"/>'
     cw, ch = P['cup']['w'], P['cup']['h']
     for cu in PG['CUPS']:
         x, y, key = cu['x'] - cw / 2, cu['y'], cu['key']
         enamel, led = CUP_COL[key]
-        body = f'M{x} {y} L{x} {y + ch - 4.5} Q{x} {y + ch} {x + 4.5} {y + ch} L{x + cw - 4.5} {y + ch} Q{x + cw} {y + ch} {x + cw} {y + ch - 4.5} L{x + cw} {y} Z'
-        o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(INK)}" stroke-width="1.0"/><path d="{body}" fill="{c(enamel, "lac")}"/>'
-        o += rr(x + 3, y + 3.4, x + cw - 3, y + ch - 1.6, 1.2, c('#040406', 'glass', '#05060c'))
-        g = led_icon(key); q = 0.42; ix, iy = x + cw / 2 - 8 * q, y + 3.4 + (ch - 5.0) / 2 - 8 * q
+        if PV == 'A':
+            # золотой тюльпан: трапеция расширяется вверх, внутри — эмаль
+            body = f'M{x - 0.6} {y} L{x + cw + 0.6} {y} L{x + cw - 2.6} {y + ch} L{x + 2.6} {y + ch} Z'
+            ins = f'M{x + 1.4} {y + 1.6} L{x + cw - 1.4} {y + 1.6} L{x + cw - 3.6} {y + ch - 1.4} L{x + 3.6} {y + ch - 1.4} Z'
+            o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(INK)}" stroke-width="1"/><path d="{body}" fill="{c(GOLD, "gold")}"/><path d="{ins}" fill="{c(enamel, "lac")}"/>'
+            o += f'<circle cx="{x + cw / 2}" cy="{y + ch / 2 + 0.6}" r="3.9" fill="{c("#050406", "glass", "#04040a")}"/>'
+            icx, icy, q = x + cw / 2, y + ch / 2 + 0.6, 0.4
+        elif PV == 'B':
+            body = f'M{x} {y} L{x} {y + ch - 4} Q{x} {y + ch} {x + 4} {y + ch} L{x + cw - 4} {y + ch} Q{x + cw} {y + ch} {x + cw} {y + ch - 4} L{x + cw} {y} Z'
+            o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(GOLD, "gold")}" stroke-width="1.3"/><path d="{body}" fill="{c("#0c0809", "lac")}"/>'
+            o += rr(x + 0.8, y + 1.6, x + cw - 0.8, y + 3.6, 0.4, c(enamel, 'lac'))
+            o += rr(x + 3.4, y + 4.4, x + cw - 3.4, y + ch - 1.4, 1.1, c('#040406', 'glass', '#04040a'))
+            icx, icy, q = x + cw / 2, y + 4.4 + (ch - 5.8) / 2, 0.42
+        else:
+            # зиккурат: ступени из золота, цветная вставка посередине
+            body = f'M{x} {y} L{x + cw} {y} L{x + cw} {y + 4} L{x + cw - 2} {y + 4} L{x + cw - 2} {y + 8.5} L{x + cw - 4} {y + 8.5} L{x + cw - 4} {y + ch} L{x + 4} {y + ch} L{x + 4} {y + 8.5} L{x + 2} {y + 8.5} L{x + 2} {y + 4} L{x} {y + 4} Z'
+            o += f'<path d="{body}" fill="{c(INK)}" stroke="{c(INK)}" stroke-width="1"/><path d="{body}" fill="{c(GOLD, "gold")}"/>'
+            o += rr(x + 4.8, y + 2.0, x + cw - 4.8, y + ch - 1.0, 1.0, c(enamel, 'lac'))
+            o += rr(x + 5.6, y + 3.0, x + cw - 5.6, y + ch - 2.0, 0.8, c('#040406', 'glass', '#04040a'))
+            icx, icy, q = x + cw / 2, y + 2.5 + (ch - 3.5) / 2, 0.38
+        g = led_icon(key)
         for yy in range(16):
             for xx in range(16):
                 col = g[yy][xx]
                 if col:
-                    o += f'<rect x="{ix + xx * q:.2f}" y="{iy + yy * q:.2f}" width="{q - 0.06:.2f}" height="{q - 0.06:.2f}" fill="{c("#05060c", "glass", col)}"/>'
-        o += rr(x - 1.2, y - 0.9, x + cw + 1.2, y + 1.9, 1.1, c(GOLD, 'gold'))
-        o += rr(x + 0.8, y - 0.2, x + cw - 0.8, y + 0.9, 0.5, c('#070404', 'matte'))
-    # нижняя панель: золотая плита, красная стеклянная кнопка в чёрном ободе
-    o += ink_rr(fx0 + 1, fy1 + 3, fx1 - 1, P['y1'] - 4, 4, GOLD, 'gold')
+                    o += f'<rect x="{icx - 8 * q + xx * q:.2f}" y="{icy - 8 * q + yy * q:.2f}" width="{q - 0.05:.2f}" height="{q - 0.05:.2f}" fill="{c("#05060c", "glass", col)}"/>'
+        # кромка-горловина: золотая губа и тёмный вход
+        o += rr(x - 1.2, y - 1.0, x + cw + 1.2, y + 1.4, 0.9, c(GOLD, 'gold'))
+        o += rr(x + 1.2, y - 0.4, x + cw - 1.2, y + 0.6, 0.4, c('#060303', 'matte'))
+    # низ: чёрная плита, золотые дуги вокруг рубиновой кнопки (как у щели монет)
+    o += ink_rr(fx0 + 1, fy1 + 3, fx1 - 1, P['y1'] - 4, 4, LAC) + grect(fx0 + 2.5, fy1 + 4.5, fx1 - 2.5, P['y1'] - 5.5, 3, 0.8)
     bx, by, br = P['button']['x'], P['button']['y'], P['button']['r']
-    o += f'<circle cx="{bx}" cy="{by}" r="{br + 2.2}" fill="{c("#191212")}"/><circle cx="{bx}" cy="{by}" r="{br}" fill="{c("#b01410", "glass", "#3a0402")}"/>'
+    o += f'<clipPath id="pbc"><rect x="{fx0 + 3}" y="{fy1 + 5}" width="{fx1 - fx0 - 6}" height="{P["y1"] - 9 - fy1 - 5}"/></clipPath><g clip-path="url(#pbc)">'
+    for rr_ in (br + 6.5, br + 10.5, br + 14.5):
+        o += f'<circle cx="{bx}" cy="{by}" r="{rr_}" fill="none" stroke="{c(INK)}" stroke-width="1.9"/><circle cx="{bx}" cy="{by}" r="{rr_}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="1.1"/>'
+    o += '</g>'
+    o += f'<circle cx="{bx}" cy="{by}" r="{br + 2.8}" fill="{c(INK)}"/><circle cx="{bx}" cy="{by}" r="{br + 2.2}" fill="{c(GOLD, "gold")}"/><circle cx="{bx}" cy="{by}" r="{br}" fill="{c("#9a0e14", "glass", "#3a0204")}"/>'
     return pg(o)
 def pach_build_live():
     s_ = PAT['s']
@@ -576,27 +635,36 @@ def pach_build_live():
     def seg(x, y0, y1, hw):
         return (np.hypot(BX - x, np.maximum(np.maximum(y0 - BY, BY - y1), 0)) - hw) * s_
     add(rrect(P['x0'], P['y0'], P['x1'], P['y1'], 8), 4.5, 3.5)
-    add(rrect(fx0, fy0, fx1, fy1, 3), -3, 2)
+    add(rrect(fx0 - 1, fy0 - 1, fx1 + 1, fy1 + 1, 4), -3.5, 2)
     cx, cy, r = A['cx'], A['cy'], A['r']
     d = np.hypot(BX - cx, BY - cy)
-    rail = np.where(BY <= cy, (np.abs(d - r) - 1.1) * s_, 99.0)
-    rail = np.minimum(rail, seg(cx - r, cy, cy + 8, 1.1)); rail = np.minimum(rail, seg(cx + r, cy, cy + 4, 1.1))
-    add(rail, 1.8, 1.1 * s_, 'circ')
-    add(seg(P['sep'] + 1, cy + 12, P['drain'], 0.8), 1.8, 0.8 * s_, 'circ')
-    add(rrect(fx0, P['drain'], P['sep'], fy1, 0.5), -6, 0.8)
+    rail = np.where(BY <= cy, (np.abs(d - r) - 1.6) * s_, 99.0)
+    rail = np.minimum(rail, seg(cx - r, cy, cy + 8, 1.6)); rail = np.minimum(rail, seg(cx + r, cy, cy + 4, 1.6))
+    add(rail, 2.4, 1.6 * s_, 'circ')
+    add(seg(P['sep'] + 1, cy + 12, P['drain'], 1.1), 2.2, 1.1 * s_, 'circ')
+    add(rrect(fx0, P['drain'] - 1, P['sep'], fy1, 0.6), -6, 0.8)
+    for x in range(int(fx0) + 2, int(P['sep']) - 1, 3):
+        add(rrect(x - 0.55, P['drain'] - 0.8, x + 0.55, fy1 - 0.5, 0.4), 6.5, 0.4, 'circ')
+    add(rrect(fx0, P['drain'] - 1.6, P['sep'], P['drain'] - 0.2, 0.5), 1.2, 0.5)
     for x, y in PG['nails']:
-        add(np.hypot(BX - x, BY - y) * s_ - PG['phys']['nailR'] * s_, 1.6, PG['phys']['nailR'] * s_, 'circ')
+        dn = np.hypot(BX - x, BY - y) * s_
+        add(dn - 2.05 * s_, 0.9, 0.7)
+        add(dn - 1.45 * s_, 1.9, 1.45 * s_, 'circ')
     cw, ch = P['cup']['w'], P['cup']['h']
     for cu in PG['CUPS']:
         x, y = cu['x'] - cw / 2, cu['y']
-        add(rrect(x, y, x + cw, y + ch, 4.5), 3.2, 2.6, 'circ')
-        add(rrect(x - 1.2, y - 0.9, x + cw + 1.2, y + 1.9, 1.1), 1.0, 0.8)
-        add(rrect(x + 0.8, y - 0.2, x + cw - 0.8, y + 0.9, 0.5), -5, 0.6)
-        add(rrect(x + 3, y + 3.4, x + cw - 3, y + ch - 1.6, 1.2), -0.8, 0.5)
-    add(rrect(fx0 + 1, fy1 + 3, fx1 - 1, P['y1'] - 4, 4), 1.2, 1.0)
+        add(rrect(x, y, x + cw, y + ch, 2.5), 3.0, 1.6, 'circ')
+        add(rrect(x + 3.5, y + 2.5, x + cw - 3.5, y + ch - 1.2, 1.5), -1.0, 0.6)
+        add(rrect(x - 1.2, y - 1.0, x + cw + 1.2, y + 1.4, 0.9), 1.0, 0.8)
+        add(rrect(x + 1.2, y - 0.4, x + cw - 1.2, y + 0.6, 0.4), -5, 0.6)
+    add(rrect(fx0 + 1, fy1 + 3, fx1 - 1, P['y1'] - 4, 4), 1.4, 1.0)
     bx, by, br = P['button']['x'], P['button']['y'], P['button']['r']
-    add(np.hypot(BX - bx, BY - by) * s_ - (br + 2.2) * s_, 1.5, 1.5)
-    add(np.hypot(BX - bx, BY - by) * s_ - br * s_, 5, br * s_, 'circ')
+    db = np.hypot(BX - bx, BY - by) * s_
+    inpanel = (BY > fy1 + 5) & (BY < P['y1'] - 9)
+    for rr_ in (br + 6.5, br + 10.5, br + 14.5):
+        add(np.where(inpanel, np.abs(db - rr_ * s_) - 0.55 * s_, 99.0), 0.9, 0.55 * s_, 'circ')
+    add(db - (br + 2.8) * s_, 1.8, 1.4)
+    add(db - br * s_, 5, br * s_, 'circ')
 # Толкатель дорожки — золотой поршень (спрайт: едет вниз на взводе) и
 # шарик — зеркальная сталь (спрайт).
 def plunger():

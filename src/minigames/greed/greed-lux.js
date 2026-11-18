@@ -17,6 +17,8 @@
 // Было: «Эскиз v2» — отдельный просмотр во весь экран из 🐞 (10.11).
 const GreedLux = {
     DIR: 'src/minigames/greed/lux/',
+    // отладка: другая папка карт (сравнение вариантов вида, tools/greed-lux-sketch/out/)
+    dir() { try { return localStorage.getItem('gj-lux-dir') || this.DIR; } catch (e) { return this.DIR; } },
     W: 360, Y0: -57, H: 696, Q: 1.9,
     WHEEL: { cx: 22, cy: 118, r: 150 },
     DUR: { glitch: 320, scatter: 750, redraw: 450, win: 1100 },
@@ -43,7 +45,7 @@ const GreedLux = {
         const mk = (z) => { const c = document.createElement('canvas'); c.style.cssText = `position:absolute;inset:0;width:100%;height:100%;z-index:${z};background:none;pointer-events:none`; wrap.appendChild(c); return c; };
         this.cv = mk(0); this.ic = mk(1); this.icx = this.ic.getContext('2d');
         this._mountP = (async () => {
-            const meta = await fetch(this.DIR + 'lux.json').then(r => r.json());
+            const DIR = this.dir(), meta = await fetch(DIR + 'lux.json').then(r => r.json());
             if (this.wrapEl !== wrap) return false;
             this.meta = meta;
             const [w, h] = meta.size;
@@ -55,7 +57,7 @@ const GreedLux = {
             this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr', 'plunger', 'pball'] : []);
             const files = [].concat(...this._setNames.map(k => names.map(n => (k === 'body' ? '' : k + '-') + n)));
             const imgs = await Promise.all(files.map(n => new Promise((res, rej) => {
-                const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = this.DIR + n + '.png';
+                const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = DIR + n + '.png';
             })));
             if (this.wrapEl !== wrap || !this.glInit(imgs)) return false;
             this.tilt = { x: 0, y: 0 }; this.drawn = null;
