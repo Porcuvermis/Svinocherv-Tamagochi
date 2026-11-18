@@ -348,9 +348,9 @@ const GreedAssembly = {
         t += 0.6;
         // лунки — по одной
         G.PACH_CUPS.forEach((cu, i) => {
-            const pc = piece(lay.cups, R(cu.x - P.cup.w / 2 - 2.5, cu.y - 2.5, P.cup.w + 5, P.cup.h + 5), {});
-            // в полёте — по контуру лунки (с закатанным краем), тень — когда легла
-            shape(pc, (g, k) => { g.beginPath(); g.rect(0.9 * s * k, 0.9 * s * k, (P.cup.w + 3.2) * s * k, (P.cup.h + 2.4) * s * k); g.fill(); });
+            const pc = piece(lay.cups, R(cu.x - P.cup.w / 2 - 2.5, cu.y - 3.5, P.cup.w + 5, P.cup.h + 6.5), {});
+            // в полёте — по контуру банки (с закатанным краем), тень — когда легла
+            shape(pc, (g, k) => { g.beginPath(); g.rect(1.3 * s * k, 0.6 * s * k, (P.cup.w + 2.4) * s * k, (P.cup.h + 4.3) * s * k); g.fill(); });
             parts.push(Object.assign(pc, { kind: 'cup', at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 }));
         });
         t += G.PACH_CUPS.length * 0.09 + 0.25;

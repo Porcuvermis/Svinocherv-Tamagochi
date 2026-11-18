@@ -199,7 +199,9 @@ Object.assign(GreedJunk, {
     // ключи пачинко короче ключей грехов: glut — это gluttony
     PACH_SIN: { glut: 'gluttony' },
     pachCupColor(key) {
-        if (key === 'gold1') return PALETTE.greedJunk.tin[300];
+        // монета — на кремовой бумаге: жестяная этикетка на жестяной банке
+        // сливалась с ней
+        if (key === 'gold1') return PALETTE.greedJunk.paint.cream;
         const s = typeof ECONOMY !== 'undefined' && ECONOMY.sins && ECONOMY.sins[this.PACH_SIN[key] || key];
         return (s && s.color) || PALETTE.greedJunk.paint.cream;
     },
@@ -285,19 +287,47 @@ Object.assign(GreedJunk, {
             `<circle cx="${f(vx1 - 1.2)}" cy="${f(vy + 0.4)}" r="0.8" fill="${J.tin[500]}" stroke="${ink}" stroke-width="${STROKE.hairline}"/>`;
         // пружина толкателя — своей деталью (pachSpring): она сжимается
 
-        // ---- лунки: стаканчик из банки, крашен, значок, два гвоздика ----
+        // ---- лунки: консервные банки без крышки, прикручены к полю ----
+        // Игрок (18.11): прежние — плоские крашеные коробочки с жирной
+        // полосой бортика и огромным значком, «некрасивая форма и
+        // исполнение». Теперь банка: жестяной цилиндр (объём — картой высот,
+        // свет даёт шейдер), дно — дугой, сверху — зев с внутренней стенкой и
+        // закатанный край; цвет греха — бумажная этикетка вокруг банки, жесть
+        // видна сверху и снизу; значок — напечатан на этикетке, мельче.
+        // Ловит банка по-прежнему прямоугольником 18×13 (pachWorld) — физика
+        // и запас запусков не меняются.
         let cups = '';
-        this.PACH_CUPS.forEach((c, i) => {
-            const x = c.x - C.w / 2, y = c.y, w = C.w, h = C.h, col = this.pachCupColor(c.key);
-            const body = `M${x} ${y} L${x} ${y + h - 5} Q${x} ${y + h} ${x + 5} ${y + h} L${x + w - 5} ${y + h} Q${x + w} ${y + h} ${x + w} ${y + h - 5} L${x + w} ${y} Z`;
-            cups += `<path d="${body}" fill="${col}" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
-            // рёбра жести банки — две бледные полосы
-            cups += `<path d="M${x + 1} ${f(y + h * 0.42)} H${x + w - 1} M${x + 1} ${f(y + h * 0.78)} H${x + w - 1}" stroke="${ink}" stroke-width="0.4" opacity="0.18"/>`;
-            cups += `<g transform="translate(${c.x} ${f(y + h / 2 + 0.6)})">${this.pachIcon(c.key)}</g>`;
-            // закатанный край сверху — вход шарика
-            const lip = `M${x - 1} ${y + 0.4} H${x + w + 1}`;
-            cups += `<path d="${lip}" stroke="${ink}" stroke-width="2.8" stroke-linecap="round"/>` +
-                `<path d="${lip}" stroke="${J.tin[100]}" stroke-width="1.4" stroke-linecap="round"/>` + this.rodH(lip, 2.4, 1.2);
+        const ry = 1.9;                                   // овал горловины и дна: смотрим чуть сверху
+        this.PACH_CUPS.forEach((c) => {
+            const x0 = c.x - C.w / 2, x1 = c.x + C.w / 2, w = C.w, rx = w / 2, yt = c.y + 0.4, yb = c.y + C.h - ry, col = this.pachCupColor(c.key);
+            const arcDn = (y) => `A${rx} ${ry} 0 0 0 ${f(x1)} ${f(y)}`;      // перёд овала: слева направо, вниз
+            const body = `M${f(x0)} ${f(yt)} L${f(x0)} ${f(yb)} ${arcDn(yb)} L${f(x1)} ${f(yt)} A${rx} ${ry} 0 0 1 ${f(x0)} ${f(yt)} Z`;
+            const band = (y0, y1) => `M${f(x0)} ${f(y0)} L${f(x0)} ${f(y1)} ${arcDn(y1)} L${f(x1)} ${f(y0)} A${rx} ${ry} 0 0 1 ${f(x0)} ${f(y0)} Z`;
+            const clip = this.gid('cc');
+            let o = `<defs><clipPath id="${clip}"><path d="${body}"/></clipPath></defs>`;
+            // жесть банки
+            o += this.T(6, 'steel', `<path d="${body}" fill="${J.tin[300]}"/>`);
+            // этикетка: между рёбрами, цвет греха
+            const l0 = yt + 3.1, l1 = yb - 1.6;
+            o += `<path d="${band(l0, l1)}" fill="${col}"/>` +
+                `<path d="M${f(x0)} ${f(l0)} ${arcDn(l0)} M${f(x0)} ${f(l1)} ${arcDn(l1)}" fill="none" stroke="${ink}" stroke-width="0.45" opacity="0.55"/>`;
+            // рёбра жести над и под этикеткой — валики по кривизне банки
+            const rib = (y) => `M${f(x0 + 0.4)} ${f(y)} A${rx - 0.4} ${ry} 0 0 0 ${f(x1 - 0.4)} ${f(y)}`;
+            o += this.T(6, 'steel', `<path d="${rib(yt + 1.7)} ${rib(yb - 0.5)}" fill="none" stroke="${J.tin[500]}" stroke-width="0.55"/>` + this.rodH(rib(yt + 1.7), 0.9, 0.35) + this.rodH(rib(yb - 0.5), 0.9, 0.35));
+            // значок — печать на этикетке
+            o += `<g transform="translate(${f(c.x)} ${f((l0 + l1) / 2 + ry * 0.55)}) scale(0.68)">${this.pachIcon(c.key)}</g>`;
+            // объём: цилиндр с осью по вертикали, по форме банки
+            o += `<g clip-path="url(#${clip})">${this.cylG(this.gid('cy'), x0, yt - ry, w, yb - yt + ry * 2 + 1, 2.5, 3.5)}</g>`;
+            // контур
+            o += `<path d="${body}" fill="none" stroke="${ink}" stroke-width="${STROKE.structure}" stroke-linejoin="round"/>`;
+            // зев: внутренняя стенка — жесть в тени, к переду темнее
+            o += `<ellipse cx="${f(c.x)}" cy="${f(yt)}" rx="${f(rx - 0.5)}" ry="${f(ry - 0.45)}" class="pit" fill="${J.tin[900]}"/>` +
+                `<path d="M${f(x0 + 0.9)} ${f(yt)} A${rx - 0.9} ${ry - 0.6} 0 0 1 ${f(x1 - 0.9)} ${f(yt)}" class="pit" fill="${J.tin[700]}"/>`;
+            // закатанный край — жестяной валик по всей горловине
+            const lip = `M${f(x0)} ${f(yt)} A${rx} ${ry} 0 1 1 ${f(x1)} ${f(yt)} A${rx} ${ry} 0 1 1 ${f(x0)} ${f(yt)} Z`;
+            o += this.T(6, 'steel', `<path d="${lip}" fill="none" stroke="${ink}" stroke-width="1.9"/>` +
+                `<path d="${lip}" fill="none" stroke="${J.tin[100]}" stroke-width="0.9"/>` + this.rodH(lip, 1.5, 0.9));
+            cups += o;
         });
 
         // ---- гвозди: шляпки, как на колесе ----
