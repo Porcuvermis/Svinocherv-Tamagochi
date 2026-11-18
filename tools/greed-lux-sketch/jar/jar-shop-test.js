@@ -39,20 +39,28 @@ const { chromium } = require('playwright');
   ok(await page.evaluate(() => GreedJarShop.state === 'open' && GreedJarShop.lowAt(performance.now()) === 0), 'после сборки банка поднялась, магазин открыт');
   ok(await page.evaluate(() => !!GreedJunkLit.wheelCv && !GreedAssembly.ov), 'аппарат с колесом, стоп-кадра нет');
   await shot('6-wheel');
-  // подготовка рычага отложена до конца сборки — потом он готов
-  await page.waitForFunction(() => GreedJunkLit.lever, null, { timeout: 20000 }).catch(() => {});
-  ok(await page.evaluate(() => !!GreedJunkLit.lever), 'рычаг после сборки готов');
-  // пачинко: копилка до конца — собирается за стеклом так же
-  await page.evaluate(() => { Backend.grantCurrency('greed_token', 6); });
-  const [qx, qy] = await at(...await node('pachinko'));
-  await page.mouse.move(qx, qy); await page.mouse.down(); await page.waitForTimeout(2200); await page.mouse.up();
-  await page.waitForTimeout(500);
+  // пачинко СРАЗУ за колесом, в тот же заход (игрок, 18.11: после двух
+  // покупок подряд рычаг перестал дёргаться, а после выхода и входа экран
+  // остался под монетами — подготовка рычага не выходила из-под отсрочки)
+  // Старт — сразу, пока подготовка рычага колеса ещё отложена (её таймер
+  // 4 с): ровно здесь вторая сборка путала ворота первой.
+  ok(await page.evaluate(() => { Backend.grantCurrency('greed_token', 6); const pend = !!GreedAssembly.release;
+    const S = GreedJarShop; S.hold = { node: 'pachinko', dt: 120 }; S.deposit(); return pend; }), 'пачинко начато, пока рычаг колеса ещё ждёт');
+  await page.waitForFunction(() => GreedJarShop.busy, null, { timeout: 10000 }).catch(() => {});
   await page.waitForFunction(() => !GreedJarShop.busy, null, { timeout: 40000 }).catch(() => {});
   await page.waitForTimeout(600); await shot('7-pach');
   ok(await page.evaluate(() => Backend.greedLevel('pachinko') >= 1 && !!GreedJunkLit.pachCv && !GreedAssembly.base), 'пачинко открыто и собрано, стоп-кадра нет');
   // выход тапом по стеклу
   await page.mouse.click(...await at(180, 60)); await page.waitForTimeout(1300);
   ok(await page.evaluate(() => GreedJarShop.state === 'rest'), 'тап по стеклу — выход');
+  // рычаг готов: отсрочка его подготовки снята
+  ok(await page.evaluate(() => Promise.race([Promise.resolve(GreedJunkLit._prepP).then(() => true), new Promise(r => setTimeout(() => r(false), 15000))])), 'рычаг после двух сборок подряд готов');
+  // выход из алчности крестиком и вход снова — сцена собирается, монеты тают
+  await page.evaluate(() => GreedMinigame.close());
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { GreedMinigame.play = { slots: null, wheel: null, pachinko: null }; GameManager.handleSinAction('greed'); });
+  ok(await page.evaluate(() => Promise.race([GreedJunkLit.settled().then(() => true), new Promise(r => setTimeout(() => r(false), 20000))])), 'после выхода и входа аппарат собрался');
+  await page.waitForTimeout(1500); await shot('8-reopen');
   console.log(errs.length ? 'ошибки:\n' + errs.join('\n') : 'ошибок страницы нет');
   await b.close();
 })();

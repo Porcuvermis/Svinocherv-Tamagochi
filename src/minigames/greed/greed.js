@@ -132,6 +132,9 @@ const GreedMinigame = {
         this.play = { slots: null, wheel: null, pachinko: null };
         // выигрыши уже начислены — придержанное в банке больше не нужно
         if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(null);
+        // отложенная подготовка рычага (после сборки игры в банке) — сейчас:
+        // иначе новый вход ждал бы её таймер под покровом монет
+        if (typeof GreedAssembly !== 'undefined' && GreedAssembly.release && !GreedAssembly.base) GreedAssembly.flushRelease();
         if (this.screenElement) this.screenElement.classList.remove('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.resumeRoom();
     },

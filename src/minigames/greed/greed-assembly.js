@@ -38,10 +38,20 @@ const GreedAssembly = {
         // секунды процессора) отложена до конца сборки: она шла одновременно
         // с полётом досок, и начало сборки рвалось (игрок, 17.11; замер
         // assembly-jank.js — задача 2,7 с через 0,8 с после старта).
-        const P = GreedDebug.pristine, prep = P.prepareLever;
-        let release; const after = new Promise(r => { release = r; });
-        P.prepareLever = function () { return after.then(() => prep.call(GreedJunkLit)); };
-        this.release = () => { P.prepareLever = prep; release(); };
+        //
+        // Ворота одни на подряд идущие сборки. Было: каждая сборка ставила
+        // свою подмену поверх прежней, а таймер прошлой сборки отпускал ворота
+        // новой — подмена с воротами первой оставалась навсегда: рычаг не
+        // готов, а покров перехода ждёт рычаг (settled), и при новом входе
+        // экран стоял под монетами (игрок, 18.11: колесо и пачинко в один
+        // заход). Теперь вторая сборка ворота не ставит, а снимает таймер.
+        clearTimeout(this.relTimer);
+        if (!this.release) {
+            const P = GreedDebug.pristine, prep = P.prepareLever;
+            let release; const after = new Promise(r => { release = r; });
+            P.prepareLever = function () { return after.then(() => prep.call(GreedJunkLit)); };
+            this.release = () => { P.prepareLever = prep; release(); };
+        }
         await GreedDebug.rebuild();
         await Promise.all([L._mountP, game === 'wheel' ? L._wheelP : L._pachP].map(p => Promise.resolve(p).catch(() => {})));
         const sets = game === 'wheel' ? await this.discSets() : await this.pachSets();
