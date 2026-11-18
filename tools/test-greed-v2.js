@@ -23,6 +23,10 @@ const { chromium } = require('playwright');
   const at = (x, y) => page.evaluate(([x, y]) => { const w = GreedLux.wrapEl.getBoundingClientRect(); return [w.left + x / 360 * w.width, w.top + (y + 57) / 696 * w.height]; }, [x, y]);
   const N = +(process.env.SPINS || 5);
   let match = 0, readyBack = 0;
+  // ленты: ни одного кадра назад и остановка ровно в центре ячейки (план 31, разд. 5б)
+  await page.evaluate(() => { window.__back = 0; const L = GreedLux, st = L.spinStep, n = GreedJunk.REEL_STRIP.length * 32;
+    L.spinStep = function (now) { const prev = (this.reels || []).map(r => r.s), m = st.call(this, now);
+      (this.reels || []).forEach((r, i) => { const d = ((r.s - prev[i]) % n + n * 1.5) % n - n / 2; if (d > 0.01) window.__back++; }); return m; }; });
   for (let i = 0; i < N; i++) {
     await page.waitForFunction(() => GreedLux.ready, null, { timeout: 8000 }).catch(() => {});
     // рывок пальцем: шар вниз по пазу до срыва
@@ -40,6 +44,9 @@ const { chromium } = require('playwright');
   ok(spins === N, `рычаг пальцем: круток ${spins}/${N}`);
   ok(match === N, `экран встал на исход крутки: ${match}/${N}`);
   ok(readyBack === N, `готовность вернулась после выплаты: ${readyBack}/${N}`);
+  const rb = await page.evaluate(() => ({ back: window.__back, off: GreedLux.reels.map(r => Math.abs(((r.s - 16) % 32 + 32) % 32)) }));
+  ok(rb.back === 0, `ленты без отката: кадров назад ${rb.back}`);
+  ok(rb.off.every(o => o < 0.01 || o > 31.99), `ленты встали в центр ячейки (${rb.off.map(o => o.toFixed(3)).join(' ')})`);
   // колесо: бросок (сила взмаха — прямо: в браузере без видеокарты касания
   // идут реже, чем на телефоне), выпавший приз — под указателем
   await page.evaluate(() => { const u = GameState.data.upgrades || (GameState.data.upgrades = {}); if (!u.greed_wheel) { u.greed_wheel = 1; GameState.save(); }
