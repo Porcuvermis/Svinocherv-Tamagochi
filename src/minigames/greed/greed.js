@@ -192,6 +192,7 @@ const GreedMinigame = {
         const res = p.res;
         const got = Object.keys(res.currencies || {}).some(k => k !== 'gold' && res.currencies[k] > 0);
         if (res.pay > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, res.pay));
+        if (L.winPop) L.winPop('slots', res);
         if (res.pay > (res.cost || 1) || got) L.blink();
         if (res.jackpot) this.timers.push(setTimeout(() => L.blink(), 1600));
         if (L.meterSet) L.meterSet(L.meterValue());
@@ -241,6 +242,7 @@ Object.assign(GreedMinigame, {
         const got = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0) ||
             !!(res.items && res.items.got > 0);       // мясо в кладовую, семечка в мешок (колесо)
         if (gold > 0 && L.trayPour) L.trayPour(Math.min(this.POUR_MAX, gold));
+        if (L.winPop) L.winPop(game, res);
         if (gold > 0 || got) L.blink();
         if (L.meterSet) L.meterSet(L.meterValue());
         const pourMs = gold > 0 ? 700 + Math.min(this.POUR_MAX, gold) / L.TRAY.rate * 1000 : 0;

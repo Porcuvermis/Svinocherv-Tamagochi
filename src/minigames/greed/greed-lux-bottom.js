@@ -375,6 +375,32 @@ Object.assign(GreedLux, {
     },
     METER_RECT() { const q = this.meta.live.liquid; return { x: q[0] - 1, y: q[1] - 1, w: q[2] + 2, h: q[3] + 2 }; },
 
+    // ---------- что выпало: всплывашка из места выигрыша ----------
+    // Игрок, 18.11: видеть, сколько выплатилось и чего, — в каждой игре на
+    // своём месте: бандит — середина экрана, колесо — значок выпавшего
+    // сектора у указателя, пачинко — середина поля. Валюты — значком кошелька
+    // (WalletFx.popAt), вещи колеса — значком продукта из кухни. Обмен
+    // осколков на жетон даёт минус осколкам — минусы не показываются.
+    winPop(game, res) {
+        if (!res || typeof WalletFx === 'undefined' || !WalletFx.popAt || !this.wrapEl) return;
+        const list = [], cur = res.currencies || {};
+        Object.keys(cur).forEach(k => { if (cur[k] > 0) list.push({ key: k, delta: cur[k] }); });
+        const it = res.items, ing = it && typeof KITCHEN !== 'undefined' && KITCHEN.ingredients[it.pantry || it.seed];
+        if (it && it.got > 0 && ing) list.push({ mark: ing.emoji, delta: it.got });
+        if (!list.length) return;
+        let x, y;
+        if (game === 'wheel' && this._deck && this._deck.target >= 0) ({ x, y } = this.iconAt(this._deck.target));
+        else if (game === 'pachinko') {
+            const G = GreedJunk, P = G.PACH;
+            [x, y] = G.pachPt(P.arc.cx, (P.y0 + P.top + P.drain) / 2);
+        } else {
+            const R = (this.meta.live && this.meta.live.screen) || [99, 328, 281, 450];
+            x = (R[0] + R[2]) / 2; y = (R[1] + R[3]) / 2;
+        }
+        const w = this.wrapEl.getBoundingClientRect();
+        WalletFx.popAt(w.left + x / this.W * w.width, w.top + (y - this.Y0) / this.H * w.height, list);
+    },
+
     // кадр низа (из playStep)
     bottomStep(now) {
         if (!this._bot) return;

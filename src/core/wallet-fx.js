@@ -173,6 +173,32 @@ const WalletFx = {
         node.innerHTML = `${mark || currencyMark(key)}<b>${delta < 0 ? '−' : '+'}${Math.abs(delta)}</b>`;
         layer.appendChild(node);
         setTimeout(() => node.remove(), this.LIFE_MS);
+    },
+
+    // ---------- ВЫИГРЫШ ИЗ ТОЧКИ ----------
+    // Та же цифра со значком, но не из счётчика, а из места, где выпало:
+    // экран бандита, сектор колеса под указателем, поле пачинко (аппарат
+    // алчности версии 2, игрок 18.11: «видеть, сколько выплатилось» — а
+    // кошелька на экране алчности нет). Всплывает вверх и растворяется;
+    // несколько наград — столбиком, с разбежкой.
+    // x, y — точка на экране; list — [{ key, delta } | { mark, delta }].
+    POP_MS: 1600,
+    popAt(x, y, list) {
+        const layer = this.layer();
+        if (!layer || !list || !list.length) return;
+        const host = layer.getBoundingClientRect();
+        const scale = (host.width / (layer.offsetWidth || 1)) || 1;
+        const lx = (x - host.left) / scale, ly = (y - host.top) / scale;
+        list.forEach((it, i) => {
+            const node = document.createElement('div');
+            node.className = 'wallet-fx-item wallet-fx-pop plus';
+            node.style.left = lx.toFixed(1) + 'px';
+            node.style.top = (ly + (i - (list.length - 1) / 2) * 22).toFixed(1) + 'px';
+            node.style.animationDelay = (i * this.STEP_MS) + 'ms';
+            node.innerHTML = `${it.mark || currencyMark(it.key)}<b>+${Math.abs(it.delta)}</b>`;
+            layer.appendChild(node);
+            setTimeout(() => node.remove(), this.POP_MS + i * this.STEP_MS);
+        });
     }
 };
 
