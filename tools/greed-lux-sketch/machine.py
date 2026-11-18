@@ -22,6 +22,11 @@ MAT = {'lac': 'rgb(158,0,0)', 'gold': 'rgb(230,0,255)', 'glass': 'rgb(205,255,0)
 PASS = 'albedo'
 import os, json
 ICONS_OFF = os.environ.get('ICONS_OFF') == '1'
+# Для игры (greed-lux.js): что там живёт отдельными слоями, в корпус не
+# запекается. LIVE=1 — экран без значков и линии (LED-экран — свой холст),
+# рычаг без шара (шар — свои карты, ball_svg, двигается по пазу), лампа
+# готовности погашена (горит слоем, когда рычаг готов).
+LIVE = os.environ.get('LIVE') == '1'
 ICON_AT = []
 
 def c(alb, m='lac', e='#000'):
@@ -115,7 +120,8 @@ def build_height():
     # рычаг: паз, шток, шар
     add(sd_rrect(303, 300, 325, 404, 11), -4.5, 2.5)
     add(sd_rrect(310.5, 304, 317.5, 394, 3.5), 3, 3.5, 'circ')
-    set_sphere(BALL[0], BALL[1], BALL[2], 9, 15)
+    if not LIVE:
+        set_sphere(BALL[0], BALL[1], BALL[2], 9, 15)
     # лампа готовности
     dl = np.hypot(PX - LAMP[0], PY - LAMP[1])
     add(dl - 9.5, 2, 2)
@@ -283,6 +289,8 @@ def screen():
             cy = y0 + 21.5 + ri * 39.5
             if ri == 1:
                 o += rr(cx - 23, cy - 21, cx + 23, cy + 21, 2, c('#181206', 'glass', '#2a1c04'))
+            if LIVE:
+                continue
             g = sprite(rows[ri][ci])
             dim = 1.0 if ri == 1 else 0.62
             for y in range(16):
@@ -292,7 +300,7 @@ def screen():
                         e = '#' + ''.join(f'{min(255, int(int(col[k:k+2], 16) * dim)):02x}' for k in (1, 3, 5))
                         o += f'<rect x="{cx - 18 + x * px:.2f}" y="{cy - 18 + y * px:.2f}" width="{px + 0.05:.2f}" height="{px + 0.05:.2f}" fill="{c(SCR, "glass", e)}"/>'
     my = y0 + 21.5 + 39.5
-    if PASS == 'emit':
+    if PASS == 'emit' and not LIVE:
         o += f'<rect x="{x0 + 2}" y="{my - 1.1}" width="{x1 - x0 - 4}" height="2.25" fill="#ff2a1c"/>'
         # сетка пикселей: тёмные промежутки между светодиодами
         o += (f'<pattern id="led" width="{px}" height="{px}" patternUnits="userSpaceOnUse"><path d="M0 0 H{px} M0 0 V{px}" stroke="#000" stroke-width="0.5" opacity="0.55"/></pattern>'
@@ -365,8 +373,17 @@ def lever():
     o = ink_rr(*COL_R, BUR) + grect(COL_R[0] + 3, COL_R[1] + 3, COL_R[2] - 3, COL_R[3] - 3, 19, 1.2)
     o += ink_rr(303, 300, 325, 404, 11, '#050404', 'matte')
     o += rr(310.5, 304, 317.5, 394, 3.5, c(GOLD, 'gold'))
+    if not LIVE:
+        o += ball()
+    lx, ly = LAMP
+    lamp_e = '#000' if LIVE else '#7a0a04'
+    o += f'<circle cx="{lx}" cy="{ly}" r="10.1" fill="{c(INK)}"/><circle cx="{lx}" cy="{ly}" r="9.5" fill="{c(GOLD, "gold")}"/><circle cx="{lx}" cy="{ly}" r="6.8" fill="{c("#c01810", "glass", lamp_e)}"/>'
+    return o
+
+# Шар рычага: чёрный лак с поясом красного дерева и золотыми нитями.
+def ball():
     bx, by, br = BALL
-    o += f'<circle cx="{bx}" cy="{by}" r="{br + 0.7}" fill="{c(INK)}"/><circle cx="{bx}" cy="{by}" r="{br}" fill="{c("#1c1516", "ball")}"/>'
+    o = f'<circle cx="{bx}" cy="{by}" r="{br + 0.7}" fill="{c(INK)}"/><circle cx="{bx}" cy="{by}" r="{br}" fill="{c("#1c1516", "ball")}"/>'
     # инкрустация красным деревом: пояс по экватору шара, золотые нити по краям
     band = f'M{bx - br} {by - 2} Q{bx} {by + 5} {bx + br} {by - 2} L{bx + br - 0.6} {by + 5} Q{bx} {by + 12.5} {bx - br + 0.6} {by + 5} Z'
     o += f'<clipPath id="ballc"><circle cx="{bx}" cy="{by}" r="{br}"/></clipPath><g clip-path="url(#ballc)"><path d="{band}" fill="{c(WOOD, "ball")}"/>'
@@ -376,9 +393,31 @@ def lever():
     for dy in (-2, 5):
         o += f'<path d="M{bx - br} {by + dy} Q{bx} {by + dy + 7.3} {bx + br} {by + dy}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="1.1"/>'
     o += '</g>'
-    lx, ly = LAMP
-    o += f'<circle cx="{lx}" cy="{ly}" r="10.1" fill="{c(INK)}"/><circle cx="{lx}" cy="{ly}" r="9.5" fill="{c(GOLD, "gold")}"/><circle cx="{lx}" cy="{ly}" r="6.8" fill="{c("#c01810", "glass", "#7a0a04")}"/>'
     return o
+
+# Карты шара отдельно (LIVE): квадрат вокруг шара, вне его — прозрачно.
+BALL_PAD = 3
+def ball_box():
+    bx, by, br = BALL
+    r = br + BALL_PAD
+    return bx - r, by - r, 2 * r
+def ball_svg(pass_):
+    global PASS
+    PASS = pass_
+    x, y, w = ball_box()
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x} {y} {w} {w}" width="{int(w * S)}" height="{int(w * S)}">' + ball() + '</svg>'
+def ball_height():
+    x, y, w = ball_box()
+    n = int(w * S)
+    gy, gx = np.mgrid[0:n, 0:n]
+    px, py = x + (gx + 0.5) / S, y + (gy + 0.5) / S
+    bx, by, br = BALL
+    d = np.hypot(px - bx, py - by)
+    hm = np.where(d < br, 9 + 15 * np.sqrt(np.clip(1 - (d / br) ** 2, 0, 1)), 0)
+    v = (np.clip((hm + 16) / HR, 0, 1) * 65535).astype(np.uint32)
+    out = np.zeros((n, n, 3), np.uint8)
+    out[..., 0], out[..., 1] = v >> 8, v & 255
+    return Image.fromarray(out)
 
 def meter():
     o = ink_rr(*PIL_L, BUR) + grect(PIL_L[0] + 3, PIL_L[1] + 3, PIL_L[2] - 3, PIL_L[3] - 3, 21, 1.2)
@@ -450,4 +489,10 @@ if __name__ == '__main__':
   json.dump(ICON_AT[:len(ICON_AT) // 3], open(f'{out}mach-icons.json', 'w'))
   # пиксельные значки — для живых экранчиков колеса в игре (greed-lux-preview.js)
   json.dump({k: sprite(k) for k in ('coin', 'bone', 'meat', 'skull', 'shard', 'token')}, open(f'{out}mach-sprites.json', 'w'))
+  if LIVE:
+    for p in ('albedo', 'mat', 'emit'):
+      open(f'{out}ball-{p}.svg', 'w').write(ball_svg(p))
+    ball_height().save(f'{out}ball-height.png')
+    x, y, w = ball_box()
+    json.dump({'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404]}, open(f'{out}mach-live.json', 'w'))
   print('ok', W, H)

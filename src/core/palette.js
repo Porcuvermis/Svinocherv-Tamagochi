@@ -943,7 +943,13 @@ const PALETTE = {
         lacRim: [[0, 'rgba(255,255,255,0)'], [0.75, 'rgba(255,240,220,0.32)'], [1, 'rgba(255,255,255,0)']],
         window: '#ffffff', void: '#000000', back: '#140e0a',
         spark: [1.0, 0.95, 0.8], halo: [1.0, 0.72, 0.3],
-        winFlash: 'rgba(255,170,40,0.55)', scan: '#ffffff'
+        winFlash: 'rgba(255,170,40,0.55)', scan: '#ffffff',
+        // LED-экран барабанов (greed-lux-play.js): фон экрана, окна лент,
+        // подсвеченный средний ряд — цвета эскиза (machine.py, screen),
+        // линия выигрыша, вспышка выигрыша
+        led: { back: '#03050d', window: '#080d20', band: '#181206', line: '#ff2a1c', flash: '#ffcf6a' },
+        // лампа готовности: раскалённая середина, красное стекло, ореол
+        lamp: { core: 'rgba(255,214,170,1)', glass: 'rgba(240,40,20,0.95)', halo: 'rgba(200,20,8,0.45)' }
     },
 
     greedCoin: {
