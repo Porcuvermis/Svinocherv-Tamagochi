@@ -230,22 +230,29 @@ const GreedAssembly = {
     },
 
     // ---------- пачинко ----------
-    // Короб тем же шейдером в четырёх видах: пустой (рама, поле, сток,
-    // дуга с перегородкой, уголки), + лунки, + гвозди, целиком (+ кнопка).
+    // Короб тем же шейдером слоями: каждый следующий вид — плюс одна часть
+    // (рама, поле со стоком, дуга с дорожкой, лунки, гвозди, уголки и
+    // саморезы стекла, кнопка). Детали — разница соседних видов, порезанная
+    // по местам (игрок, 18.11: «короб — на детали поменьше, не одним куском»).
+    PACH_LAYERS: ['frame', 'field', 'steel', 'cups', 'nails', 'corners'],
     async pachSets() {
         const L = GreedJunkLit, G = GreedJunk, P = G.PACH, Q = L._pgl, S = L.SCALE, B = L.pachBox();
         if (!Q) return null;
-        const svg = (pass, parts) => {
+        const svg = (pass, n) => {
             G.pass = pass;
             const p = G.pachParts();
-            const T = { frame: G.T(12, 'raw', p.frame), field: G.T(2, 'paint', p.field), drain: G.T(2, 'raw', p.drain), steel: G.T(6.5, 'steel', p.steel),
+            const T = { frame: G.T(12, 'raw', p.frame), field: G.T(2, 'paint', p.field) + G.T(2, 'raw', p.drain), steel: G.T(6.5, 'steel', p.steel),
                 cups: G.T(6, 'paint', p.cups), nails: G.T(2 + P.nailUp, 'steel', p.nails), corners: G.T(13, 'steel', p.corners) };
             return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(B.w * S)}" height="${Math.round(B.h * S)}" viewBox="${B.x} ${B.y} ${B.w} ${B.h}">` +
-                G.passStyle(pass) + G.defs() + parts.map(k => T[k]).join('') + '</svg>';
+                G.passStyle(pass) + G.defs() + this.PACH_LAYERS.slice(0, n).map(k => T[k]).join('') + '</svg>';
         };
-        const set = async (parts) => { const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => L.image(svg(ps, parts)))); G.pass = 'baked'; return L.deviceSet(Q, maps); };
-        const shell = ['frame', 'field', 'drain', 'steel', 'corners'];
-        return { shell: await set(shell), cups: await set(shell.concat(['cups'])), nails: await set(shell.concat(['cups', 'nails'])) };
+        const sets = {};
+        for (let n = 1; n <= this.PACH_LAYERS.length; n++) {
+            const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => L.image(svg(ps, n))));
+            G.pass = 'baked';
+            sets[this.PACH_LAYERS[n - 1]] = L.deviceSet(Q, maps);
+        }
+        return sets;
     },
     // разница двух картинок (что появилось во второй), расширенная на grow
     diff(a, b, grow) {
@@ -304,15 +311,35 @@ const GreedAssembly = {
         const B0 = L.pachBox(), BX = G.pachRect(B0), px = Math.round(BX.w * S), py = Math.round(BX.h * S);
         const light = L.lightFor((L._tilt) || { x: 0, y: 0 });
         const shot = (set) => L.deviceSprite(Q, set, px, py, light);
-        const shell = shot(sets.shell), withCups = shot(sets.cups), withNails = shot(sets.nails), full = shot(Q.box);
-        const cupsL = this.diff(withCups, shell, 2), nailsL = this.diff(withNails, withCups, 2), btnL = this.diff(full, withNails, 2);
+        const V = {};
+        this.PACH_LAYERS.forEach(k => { V[k] = shot(sets[k]); });
+        V.full = shot(Q.box);
+        const lay = { field: this.diff(V.field, V.frame, 1), steel: this.diff(V.steel, V.field, 2), cups: this.diff(V.cups, V.steel, 2),
+            nails: this.diff(V.nails, V.cups, 2), corners: this.diff(V.corners, V.nails, 2), button: this.diff(V.full, V.corners, 2) };
         const sh = L.pachShadowCv ? [L.pachShadowCv.far, L.pachShadowCv.near] : null;
-        parts.push({ kind: 'box', cv: shell, x: BX.x, y: BX.y, w: BX.w, h: BX.h, at: 1.4, dur: 0.6, s0: 2.2, rot0: 0.3, from: -1, shadow: sh, heavy: true });
-        let t = 2.15;
+        const fx0 = P.x0 + P.wall, fx1 = P.x1 - P.wall, fy0 = P.y0 + P.top, fy1 = P.y1 - P.panel, A = P.arc;
+        const piece = (src, r, o) => Object.assign({ cv: this.sub(src, BX, r), x: r.x, y: r.y, w: r.w, h: r.h }, o);
+        let t = 1.4;
+        // задняя стенка: лист рамы между стенками — первым, с тенью
+        parts.push(piece(V.frame, R(fx0, fy0, fx1 - fx0, fy1 - fy0), { kind: 'back', at: t, dur: 0.5, s0: 2.2, rot0: 0.25, from: -1, shadow: sh, heavy: true }));
+        t += 0.45;
+        // боковины, верх и нижняя панель — с четырёх сторон, по очереди
+        [[R(P.x0 - 1, P.y0 - 1, P.wall + 1, P.y1 - P.y0 + 2), -1, 0.2], [R(fx1, P.y0 - 1, P.wall + 1, P.y1 - P.y0 + 2), 1, -0.2],
+         [R(fx0, P.y0 - 1, fx1 - fx0, P.top + 1), -1, 0.1], [R(fx0, fy1, fx1 - fx0, P.panel + 1), 1, -0.1]].forEach(([r, from, rot0], n) => {
+            parts.push(piece(V.frame, r, { kind: 'wall', at: t + n * 0.12, dur: 0.36, s0: 2.4, rot0, from, tick: true }));
+        });
+        t += 0.6;
+        // поле фанерой со стоком — в заднюю стенку
+        parts.push(piece(lay.field, R(fx0 - 0.5, fy0 - 0.5, fx1 - fx0 + 1, fy1 - fy0 + 1), { kind: 'field', at: t, dur: 0.4, s0: 1.8, from: 1 }));
+        t += 0.45;
+        // игровые элементы: дуга сверху, перегородка с пружиной дорожки
+        const arcR = R(fx0, fy0, fx1 - fx0, A.cy + 4 - fy0), laneR = R(P.sep - 3, A.cy + 4, fx1 - P.sep + 3, fy1 - A.cy - 4);
+        parts.push(piece(lay.steel, arcR, { kind: 'arc', at: t, dur: 0.38, s0: 2.6, rot0: -0.4, from: -1, tick: true }));
+        parts.push(piece(lay.steel, laneR, { kind: 'lane', at: t + 0.15, dur: 0.34, s0: 2.6, rot0: 0.3, from: 1, tick: true }));
+        t += 0.6;
         // лунки — по одной
         G.PACH_CUPS.forEach((cu, i) => {
-            const r = R(cu.x - P.cup.w / 2 - 2.5, cu.y - 2.5, P.cup.w + 5, P.cup.h + 5);
-            parts.push({ kind: 'cup', cv: this.sub(cupsL, BX, r), x: r.x, y: r.y, w: r.w, h: r.h, at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 });
+            parts.push(piece(lay.cups, R(cu.x - P.cup.w / 2 - 2.5, cu.y - 2.5, P.cup.w + 5, P.cup.h + 5), { kind: 'cup', at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 }));
         });
         t += G.PACH_CUPS.length * 0.09 + 0.25;
         // гвозди — рядами сверху вниз, как вбивают: в ряду — волной
@@ -320,21 +347,26 @@ const GreedAssembly = {
         nails.forEach(([x, y]) => { const k = Math.round(y / 11); (rows[k] = rows[k] || []).push([x, y]); });
         const keys = Object.keys(rows).map(Number).sort((a, b) => a - b), nr = 3.4;
         keys.forEach((rk, ri) => rows[rk].sort((a, b) => a[0] - b[0]).forEach(([x, y], j) => {
-            const r = R(x - nr, y - nr, nr * 2, nr * 2);
-            parts.push({ kind: 'nail', cv: this.sub(nailsL, BX, r), x: r.x, y: r.y, w: r.w, h: r.h, at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 });
+            parts.push(piece(lay.nails, R(x - nr, y - nr, nr * 2, nr * 2), { kind: 'nail', at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 }));
         }));
         t += keys.length * 0.075 + 0.3;
-        // кнопка запуска
-        const Bt = P.button, rb = R(Bt.x - Bt.r - 4, Bt.y - Bt.r - 4, Bt.r * 2 + 8, Bt.r * 2 + 8);
-        parts.push({ kind: 'btn', cv: this.sub(btnL, BX, rb), x: rb.x, y: rb.y, w: rb.w, h: rb.h, at: t, dur: 0.32, s0: 3.5, from: 1, heavy: true });
-        t += 0.45;
-        // стекло — вставляется последним, сверху
+        // переднее стекло — сверху
         if (L.pachGlassCv) {
             const gc = document.createElement('canvas'); gc.width = L.pachGlassCv.width; gc.height = L.pachGlassCv.height;
             gc.getContext('2d').drawImage(L.pachGlassCv, 0, 0);
             parts.push({ kind: 'glass', cv: gc, x: BX.x, y: BX.y, w: BX.w, h: BX.h, at: t, dur: 0.5, s0: 1.35, from: -1 });
             t += 0.55;
         }
+        // уголки и саморезы стекла — прижимают его, по углам
+        const mx = (P.x0 + P.x1) / 2, my = (P.y0 + P.y1) / 2, b0 = L.pachBox();
+        [[b0.x, b0.y], [mx, b0.y], [b0.x, my], [mx, my]].forEach(([x, y], n) => {
+            parts.push(piece(lay.corners, R(x, y, mx - b0.x, my - b0.y), { kind: 'corner', at: t + n * 0.1, dur: 0.28, s0: 3, spin: (n % 2 ? 1 : -1) * 1.5, from: n < 2 ? -1 : 1, tick: true }));
+        });
+        t += 0.55;
+        // кнопка запуска — последней
+        const Bt = P.button;
+        parts.push(piece(lay.button, R(Bt.x - Bt.r - 4, Bt.y - Bt.r - 4, Bt.r * 2 + 8, Bt.r * 2 + 8), { kind: 'btn', at: t, dur: 0.32, s0: 3.5, from: 1, heavy: true }));
+        t += 0.45;
         // проверка: блик по стеклу
         const Gr = G.pachGlassRect();
         this.glint = { at: t + 0.1, dur: 0.6, r: R(Gr.x0, Gr.y0, Gr.x1 - Gr.x0, Gr.y1 - Gr.y0) };
