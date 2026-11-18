@@ -347,7 +347,12 @@ const GreedAssembly = {
         nails.forEach(([x, y]) => { const k = Math.round(y / 11); (rows[k] = rows[k] || []).push([x, y]); });
         const keys = Object.keys(rows).map(Number).sort((a, b) => a - b), nr = 3.4;
         keys.forEach((rk, ri) => rows[rk].sort((a, b) => a[0] - b[0]).forEach(([x, y], j) => {
-            parts.push(piece(lay.nails, R(x - nr, y - nr, nr * 2, nr * 2), { kind: 'nail', at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 }));
+            // по кругу шляпки: разница видов вокруг гвоздя ловит и его тень
+            // на краске (затенение по высоте) — квадрат поля летел вместе с
+            // гвоздём (игрок, 18.11)
+            const pc = piece(lay.nails, R(x - nr, y - nr, nr * 2, nr * 2), {}), g = pc.cv.getContext('2d'), kk = pc.cv.width / pc.w;
+            g.globalCompositeOperation = 'destination-in'; g.beginPath(); g.arc(pc.w / 2 * kk, pc.h / 2 * kk, 2.25 * s * kk, 0, 7); g.fill();
+            parts.push(Object.assign(pc, { kind: 'nail', at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 }));
         }));
         t += keys.length * 0.075 + 0.3;
         // переднее стекло — сверху
