@@ -9,12 +9,15 @@ Object.assign(LocalBackend, {
     GREED_GAMES: ['slots', 'wheel', 'pachinko'],
 
     // ---------- УРОВЕНЬ ИГРЫ ----------
-    // 0 — закрыта, 1 — открыта, 2 — апгрейд. Хранится на общем станке
-    // прокачки (upgrades.greed_<игра>): открытие и апгрейд — это просто
-    // ступени ветки, и покупает их общий buyUpgrade(игра, 'greed'). Своей
-    // кассы аппарату не нужно.
+    // 0 — закрыта, 1 — открыта, 2 — апгрейд (версия 2). Ступень лежит в
+    // upgrades.greed_<игра> — там, где её хранил прежний общий станок
+    // прокачки, — а ставит её только банка (greedDeposit). Бандит есть с
+    // начала: его ступень 0 — уровень 1, ступень 1 — версия 2; у колеса и
+    // пачинко ступень и есть уровень.
     greedLevel(game) {
-        return this.upgradeValue('greed', game) || 0;
+        if (this.GREED_GAMES.indexOf(game) === -1) return 0;
+        const up = GameState.data.upgrades || {}, step = up['greed_' + game] || 0;
+        return Math.min(2, game === 'slots' ? 1 + Math.min(1, step) : step);
     },
 
     // ---------- КОПИЛКИ БАНКИ-МАГАЗИНА ----------
@@ -61,25 +64,6 @@ Object.assign(LocalBackend, {
         const level = this.greedLevel(game);
         if (level <= 0) return [];
         return level >= (cfg.betsAtLevel || Infinity) ? bets.slice() : bets.slice(0, 1);
-    },
-
-    // ---------- ЧТО НУЖНО ЭКРАНУ АППАРАТА ----------
-    // Уровни, ставки, следующая цена. Цену экран не считает сам по той же
-    // причине, по которой не считает исход: на сервере конфига у него нет.
-    greedMachine() {
-        const ups = (ECONOMY.minigames.greed && ECONOMY.minigames.greed.upgrades) || {};
-        const games = {};
-        this.GREED_GAMES.forEach(game => {
-            const branch = ups[game];
-            const step = GameState.upgradeLevel(this.upgradeKey('greed', game));
-            const next = branch && branch.levels[step];
-            games[game] = {
-                level: this.greedLevel(game),
-                bets: this.greedBets(game),
-                nextPrice: next ? Object.assign({}, next.price) : null
-            };
-        });
-        return { games, balance: GameState.currency('gold') };
     },
 
     // ---------- КОЛЕСО И ПАЧИНКО ----------

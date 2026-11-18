@@ -240,9 +240,16 @@ const { chromium } = require('playwright');
     }
     o.alt = alt;
     o.shardsGrew = GameState.currency('greed_token') * 3 + GameState.currency('greed_shard') > t0;
-    ['greed', 'wrath', 'glut', 'sloth', 'lust', 'envy', 'pride'].forEach(k => Backend.grantCurrency(k + '_token', 100));
-    o.wheelBought = Backend.buyUpgrade('wheel', 'greed').ok;
-    o.slots2 = Backend.buyUpgrade('slots', 'greed').ok;
+    // прокачка аппарата — только банка: жетоны алчности по одному в копилки
+    // (колесо, пачинко, потом версия 2). Старая покупка за жетоны всех
+    // грехов снята — buyUpgrade про алчность не знает.
+    o.oldPathGone = !Backend.buyUpgrade('wheel', 'greed').ok;
+    Backend.grantCurrency('greed_token', 100);
+    const fill = (node) => { let r; do { r = Backend.greedDeposit(node); } while (r.ok && !r.opened); return !!(r.ok && r.opened); };
+    o.v2Closed = Backend.greedDeposit('v2').error === 'closed';
+    o.wheelBought = fill('wheel') && Backend.greedLevel('wheel') === 1;
+    o.pachBought = fill('pachinko') && Backend.greedLevel('pachinko') === 1;
+    o.slots2 = fill('v2') && Backend.greedLevel('slots') === 2 && Backend.greedLevel('wheel') === 2 && Backend.greedLevel('pachinko') === 2;
     const r100 = Backend.greedSpin(100);
     o.bet100 = r100.ok && r100.cost === 100;
     GameState.data.pantry.rib = Backend.pantryCap();
@@ -252,7 +259,6 @@ const { chromium } = require('playwright');
       if (r.items && r.items.rest > 0) { full++; fullGold += r.currencies.gold || 0; }
     }
     o.full = full; o.fullGold = fullGold;
-    o.pachBought = Backend.buyUpgrade('pachinko', 'greed').ok;
     const before = GameState.currency('envy_token') + GameState.currency('pride_token');
     for (let i = 0; i < 3000; i++) Backend.greedPlay('pachinko');
     o.foreign = GameState.currency('envy_token') + GameState.currency('pride_token') > before;
@@ -262,7 +268,9 @@ const { chromium } = require('playwright');
   check(machine.wheelLocked, 'колесо закрыто до покупки');
   check(machine.alt > 0 && !machine.altPaidGold, 'жетонная тройка выпадает и монет при ней нет');
   check(machine.shardsGrew, 'жетоны алчности копятся');
-  check(machine.wheelBought && machine.slots2, 'открытие и апгрейд покупаются жетонами всех грехов');
+  check(machine.oldPathGone, 'старой покупки игр за жетоны всех грехов нет');
+  check(machine.v2Closed, 'версия 2 не копится, пока не открыты колесо и пачинко');
+  check(machine.wheelBought && machine.slots2, 'колесо, пачинко и версия 2 открываются копилками банки');
   check(machine.bet100, 'после апгрейда ставка 100 работает и стоит 100');
   check(machine.full > 0 && machine.fullGold >= machine.full,
         'мясо в полную кладовую платится монетами (' + machine.full + ' раз)');

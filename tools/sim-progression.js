@@ -197,6 +197,18 @@ const INCOME = {
         return paidVisits(visits, cooldown) * PER_RUN[lvl] / ECONOMY.exchange.lust_shard.per;
     },
 
+    // ---------- АЛЧНОСТЬ ----------
+    // Жетоны алчности за сутки: крутки по нужде плюс азарт сверх неё (выше,
+    // GREED). Крутки делятся поровну между открытыми играми аппарата: колесо
+    // даёт жетон чаще бандита, пачинко — реже (оно платит жетонами всех
+    // грехов вперемешку). Золото азарта тратится по средней потере крутки.
+    greed(levels) {
+        const open = ['slots'].concat(levels.wheel ? ['wheel'] : [], levels.pachinko ? ['pachinko'] : []);
+        const avg = (f) => open.reduce((s, g) => s + GREED[g][f], 0) / open.length;
+        const spins = greedNeedSpins(visits) + GREED_GOLD_SHARE * DAY_GOLD / avg('loss');
+        return spins * avg('tok');
+    },
+
     // ---------- ТЩЕСЛАВИЕ ----------
     // Поцелуи за выход, размена на жетоны нет — валюта прямая. Темп и здесь
     // держит не число заходов, а порог голода: платят только за выход, до
@@ -212,6 +224,70 @@ const INCOME = {
         return Math.min(visits, runsCap) * perRun;
     }
 };
+
+// ---------- АЛЧНОСТЬ: ЖЕТОН ЗА КРУТКУ ----------
+// Сколько жетонов алчности (осколок — треть) приносит одна крутка каждой
+// игры аппарата и сколько ЗОЛОТА она в среднем съедает (ставка минус
+// возврат монетами и вещами по их цене; жетоны в возврат не идут — они и
+// есть доход лестницы). Бандит — та же точная цепь гарантии, что в
+// tools/sim-slots.js (там печатается «жетон алчности раз в N круток» —
+// числа обязаны совпадать).
+const GREED = (() => {
+    const C = ECONOMY.minigames.greed, R = C.reel, T = R.reduce((s, x) => s + x.weight, 0);
+    const tok = (give) => Object.keys(give || {}).filter(k => /^greed_/.test(k))
+        .reduce((s, k) => s + give[k] * (/_shard$/.test(k) ? 1 / 3 : 1), 0);
+    const gold = (it) => (it.give && it.give.gold) || (it.value ? it.value * (it.n || 1) : 0) || it.pay || 0;
+    let hit = 0, pay = 0, tk = 0;
+    R.forEach(a => R.forEach(b => R.forEach(c => {
+        const p = a.weight * b.weight * c.weight / (T * T * T);
+        const tri = a.key === b.key && b.key === c.key;
+        const pr = !tri && [a, b, c].filter(x => x.key === C.pair.key).length === 2 ? C.pair.pay : 0;
+        const pv = tri ? (a.pay || 0) : pr;
+        if (pv <= 0 && !(tri && a.give)) return;
+        hit += p; pay += p * pv; if (tri) tk += p * tok(a.give);
+    })));
+    const q = 1 - hit, n = C.pity.spins, pi0 = (1 - q) / (1 - Math.pow(q, n));
+    let sl = { tok: 0, gold: 0 };
+    for (let d = 0; d < n - 1; d++) { sl.tok += pi0 * Math.pow(q, d) * tk; sl.gold += pi0 * Math.pow(q, d) * pay; }
+    sl.gold += pi0 * Math.pow(q, n - 1) * R.find(x => x.key === C.pity.key).pay;
+    const pool = (list) => {
+        const W = list.reduce((s, x) => s + x.weight, 0);
+        return { tok: list.reduce((s, x) => s + x.weight / W * tok(x.give), 0),
+                 gold: list.reduce((s, x) => s + x.weight / W * gold(x), 0) };
+    };
+    const out = { slots: sl, wheel: pool(C.wheel.sectors), pachinko: pool(C.pachinko.pockets) };
+    Object.keys(out).forEach(k => { out[k].loss = C.spinCost - out[k].gold; });
+    return out;
+})();
+
+// Крутки ПО НУЖДЕ: шкала алчности убывает от полной до нуля за drainHours,
+// игрок заходит `perDay` раз в случайное время бодрствования (8–24) и
+// доливает её до верха — по fillPerSpin за крутку. Сверх нужды не крутит.
+const needCache = {};
+function greedNeedSpins(perDay) {
+    if (needCache[perDay] != null) return needCache[perDay];
+    const S = ECONOMY.sins.greed, fill = ECONOMY.minigames.greed.fillPerSpin;
+    let seed = 11, last = 0, spins = 0;
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const DAYS = 20000;
+    for (let d = 0; d < DAYS; d++) {
+        const n = Math.floor(perDay) + (rnd() < perDay - Math.floor(perDay) ? 1 : 0);
+        const times = Array.from({ length: n }, () => d * 24 + 8 + rnd() * 16).sort((a, b) => a - b);
+        for (const t of times) {
+            const drained = Math.min(S.max, (t - last) / S.drainHours * S.max);
+            spins += Math.ceil(drained / fill); last = t;
+        }
+    }
+    return (needCache[perDay] = spins / DAYS);
+}
+
+// Азарт сверх нужды — доля суточного бюджета золота всей игры (план 15,
+// разд. 10: 120 за активный день), которую игрок СПУСКАЕТ в аппарат ради
+// жетонов. Это предположение о поведении, а не число конфига: печатается
+// вилкой (GREED_GOLD_SHARES), проверяется по GREED_GOLD_SHARE.
+const DAY_GOLD = 120;
+const GREED_GOLD_SHARES = [0, 0.15, 0.3];
+let GREED_GOLD_SHARE = 0.15;
 
 // ---------- ЛЕСТНИЦЫ САДА ----------
 // У лени нет записи в ECONOMY.minigames: её ступени живут в GARDEN рядом с
@@ -255,6 +331,15 @@ function gearLadders() {
     return out;
 }
 
+// ---------- ЛЕСТНИЦА АЛЧНОСТИ: КОПИЛКИ БАНКИ ----------
+// Колесо и пачинко — параллельные ветки, версия 2 копится, только когда
+// открыты обе (requires). Цена — жетоны в копилку узла.
+function greedLadder() {
+    const J = ECONOMY.minigames.greed.jar;
+    const one = (n, requires) => ({ levels: [{ price: { greed_token: n } }], requires });
+    return { order: ['wheel', 'pachinko', 'v2'], wheel: one(J.wheel), pachinko: one(J.pachinko), v2: one(J.v2, ['wheel', 'pachinko']) };
+}
+
 // Худший промежуток БЕЗ финишной прямой: последние 10% покупок отбрасываются.
 const bulkWorst = (gaps) => {
     const keep = gaps.slice(0, Math.max(1, Math.ceil(gaps.length * 0.9)));
@@ -270,6 +355,7 @@ function run(sinKey) {
     const base = (sinKey === 'sloth')
         ? Object.assign({ order: [] }, slothLadders(),
                         { order: Object.keys(slothLadders()) })
+        : (sinKey === 'greed') ? greedLadder()
         : (ECONOMY.minigames[sinKey] && ECONOMY.minigames[sinKey].upgrades);
     if (!base || !INCOME[sinKey]) return null;
 
@@ -297,6 +383,7 @@ function run(sinKey) {
             branches.forEach(k => {
                 const next = conf[k].levels[levels[k]];
                 if (!next) return;
+                if ((conf[k].requires || []).some(r => !levels[r])) return;
                 const price = Object.values(next.price)[0];
                 if (best === null || price < best.price) best = { key: k, price };
             });
@@ -369,6 +456,25 @@ Object.keys(PROFILES).forEach(name => {
     const r = report(name);
     if (name === CHECK_PROFILE) target = r;
 });
+
+// ---------- АЛЧНОСТЬ: ВИЛКА ПО АЗАРТУ ----------
+// Доход алчности держится на предположении «сколько золота игрок спускает в
+// аппарат сверх нужды» — печатается вилкой, чтобы цены копилок было видно не
+// в одной точке.
+say('');
+say('======== алчность: жетон за крутку и копилки банки ========');
+['slots', 'wheel', 'pachinko'].forEach(g => say(`  ${g.padEnd(9)} жетон раз в ${(1 / GREED[g].tok).toFixed(0).padStart(4)} круток, крутка съедает ${GREED[g].loss.toFixed(2)} золота`));
+say(`  копилки: колесо ${ECONOMY.minigames.greed.jar.wheel}, пачинко ${ECONOMY.minigames.greed.jar.pachinko}, версия 2 ${ECONOMY.minigames.greed.jar.v2}`);
+say('  игрок      азарт      круток/сут  колесо  пачинко  версия 2   (день открытия)');
+const keepShare = GREED_GOLD_SHARE;
+Object.keys(PROFILES).forEach(name => GREED_GOLD_SHARES.forEach(sh => {
+    visits = PROFILES[name]; GREED_GOLD_SHARE = sh;
+    const r = run('greed');
+    const need = greedNeedSpins(visits), extra = sh * DAY_GOLD / GREED.slots.loss;
+    say(`  ${name.padEnd(9)} ${String(Math.round(sh * DAY_GOLD) + ' зол.').padStart(8)}   ${(need + extra).toFixed(0).padStart(8)}   ` +
+        r.buys.map(d => String(d).padStart(7)).join('  '));
+}));
+GREED_GOLD_SHARE = keepShare;
 
 say('');
 say(`======== ПРОВЕРКИ (по игроку «${CHECK_PROFILE}») ========`);
