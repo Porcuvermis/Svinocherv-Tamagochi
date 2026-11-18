@@ -31,6 +31,8 @@ const GreedLux = {
         this._opts = opts;
         ['onPull', 'onSpinDone', 'onPach', 'onPachDone', 'onWheel', 'onWheelDone', 'canReady'].forEach(k => { this[k] = opts[k] || null; });
         if (typeof GreedDebug !== 'undefined' && GreedDebug.attach) GreedDebug.attach(container);
+        // гвозди пачинко — ровной раскладкой версии 2 (физика и запас — под неё)
+        GreedJunk.pachTidy(true);
         if (this.wrapEl) {
             container.appendChild(this.wrapEl);
             this.fit(container);
@@ -50,11 +52,20 @@ const GreedLux = {
             this.meta = meta;
             const [w, h] = meta.size;
             this.S = w / this.W;
-            this.cv.width = this.ic.width = w; this.cv.height = this.ic.height = h;
+            // Холст — в точках экрана, а не в текселях корпуса. Был размером
+            // карты (2 текселя на единицу), а у iPhone ~3,25 точки на единицу:
+            // браузер растягивал готовую картинку в 1,6 раза, и мелочь пачинко
+            // (лучи, гвозди, светодиоды табло) рвалась лесенкой — игрок, 18.11:
+            // «больно смотреть». Корпус в шейдере тянется так же мягко, как
+            // раньше, а поле пачинко — своя карта плотнее (комплект pach) —
+            // теперь доходит до экрана без растяжки. Значки (ic) — как были.
+            this.K = this.renderK();
+            this.cv.width = Math.round(this.W * this.K); this.cv.height = Math.round(this.H * this.K);
+            this.ic.width = w; this.ic.height = h;
             // корпус и живые части (шар рычага, диск колеса, указатель) —
             // по пять карт каждая
             const names = ['albedo', 'height', 'mat', 'emit', 'shade'];
-            this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr', 'plunger', 'pball'] : []);
+            this._setNames = ['body'].concat(meta.live ? ['ball', 'disc', 'ptr', 'plunger', 'pball'] : [], meta.live && meta.live.pach ? ['pach'] : []);
             const files = [].concat(...this._setNames.map(k => names.map(n => (k === 'body' ? '' : k + '-') + n)));
             const imgs = await Promise.all(files.map(n => new Promise((res, rej) => {
                 const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = DIR + n + '.png';
@@ -67,6 +78,16 @@ const GreedLux = {
             return true;
         })();
         return this._mountP;
+    },
+    // Точек холста на единицу поля: как у экрана (поле во всю ширину рамки
+    // ~390 точек CSS на 360 единиц), не меньше плотности карт корпуса и не
+    // больше 3,25 (iPhone) — дальше только расход памяти и заливки.
+    // Отладка: localStorage 'gj-lux-k' — число.
+    renderK() {
+        let k = 0;
+        try { k = +localStorage.getItem('gj-lux-k') || 0; } catch (e) { /* нет хранилища */ }
+        if (!k) k = 1.08 * (window.devicePixelRatio || 1);
+        return Math.max(this.S, Math.min(3.25, k));
     },
     // Размер — как у гаражного: поле во весь проём рамки по ширине, по
     // высоте — видимая зона (docs/plan/29-greed-layout.md).
@@ -102,6 +123,7 @@ const GreedLux = {
         this.gl = null;
         if (this.wrapEl) this.wrapEl.remove();
         this.wrapEl = null; this._mountP = null; this.meta = null;
+        GreedJunk.pachTidy(false);
         this.reels = null; this._lv = null; this.ledCv = null; this.ledGrid = null; this.lampCv = null; this._wheel = null; this.fx = null;
         this._pach = null; this.pfx = null; this._pgl = null; this.glareCv = null;
     },
@@ -256,13 +278,15 @@ const GreedLux = {
         };
         // Комплект привязывается к units 0–4 на время своего рисунка (quad):
         // постоянных слотов на все комплекты у видеокарты телефона нет (16).
-        const set = (list) => ({ t: list.map((im, i) => tex(im, 0, i === 1)), w: list[1].width, h: list[1].height });
-        const names = this._setNames || ['body'];
+        // u — текселей на единицу поля (рельеф и узоры шейдера считаются в
+        // текселях): у всех комплектов как у корпуса, у поля пачинко — своя
+        const set = (list, u) => ({ t: list.map((im, i) => tex(im, 0, i === 1)), w: list[1].width, h: list[1].height, u });
+        const names = this._setNames || ['body'], live = this.meta && this.meta.live;
         this.sets = {};
-        names.forEach((k, j) => { this.sets[k] = set(imgs.slice(j * 5, j * 5 + 5)); });
+        names.forEach((k, j) => { this.sets[k] = set(imgs.slice(j * 5, j * 5 + 5), k === 'pach' ? live.pachS : this.S); });
         tex(goldCap, 5); tex(lacCap, 6);
         gl.uniform1i(gl.getUniformLocation(p, 'uG'), 5); gl.uniform1i(gl.getUniformLocation(p, 'uL'), 6);
-        gl.uniform1f(gl.getUniformLocation(p, 'uUnit'), this.S);
+        this.uUnit = gl.getUniformLocation(p, 'uUnit'); gl.uniform1f(this.uUnit, this.S); this._unit = this.S;
         [U.A, U.H, U.M, U.E, U.S].forEach((u, i) => gl.uniform1i(u, i));
         gl.uniform3f(gl.getUniformLocation(p, 'uFld'), this.W, this.H, this.Y0);
         this.U = Object.assign(U, { tex: gl.getUniformLocation(p, 'uTex'), dst: gl.getUniformLocation(p, 'uDst'), shadow: gl.getUniformLocation(p, 'uShadow'),
@@ -282,6 +306,7 @@ const GreedLux = {
         if (this._bound !== set) {
             set.t.forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
             this._bound = set;
+            if (set.u !== this._unit) { gl.uniform1f(this.uUnit, set.u); this._unit = set.u; }
         }
         gl.uniform2f(U.tex, 1 / set.w, 1 / set.h);
         gl.uniform4f(U.dst, x, y, x + w, y + h);
@@ -319,6 +344,9 @@ const GreedLux = {
         this._paintR = r || null;
         if (r) this.scissor(r);
         this.quad(this.sets.body, 0, this.Y0, this.W, this.H);
+        // поле пачинко — своей плотной картой поверх того же в корпусе
+        const pq = this.sets.pach && this.meta.live.pach;
+        if (pq && (!r || (r.x < pq[0] + pq[2] && r.x + r.w > pq[0] && r.y < pq[1] + pq[3] && r.y + r.h > pq[1]))) this.quad(this.sets.pach, pq[0], pq[1], pq[2], pq[3]);
         if (this.paintLive) this.paintLive();
         if (r) gl.disable(gl.SCISSOR_TEST);
         this._paintR = null;

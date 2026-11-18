@@ -531,27 +531,35 @@ def pach_live():
     o = ink_rr(P['x0'], P['y0'], P['x1'], P['y1'], 8, LAC) + grect(P['x0'] + 2.6, P['y0'] + 2.6, P['x1'] - 2.6, P['y1'] - 2.6, 6, 1.0)
     # колодец поля: всё под дымчатым стеклом (материал стекла — отражения студии)
     o += rr(fx0 - 1, fy0 - 1, fx1 + 1, fy1 + 1, 4, c('#050404', 'glass', '#000'))
-    inner = f'M{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{sep} {cy} L{sep} {drain} L{fx0} {drain} L{fx0} {cy} Z'
+    # Поле — между левой стенкой и перегородкой, сверху купол-полукруг той
+    # же середины (fc). Игрок, 18.11: «внутренности съехали» — поле было
+    # куполом дуги (её середина 259,5 — над полем вместе с дорожкой), а
+    # лунки и гвозди стоят по середине поля 253,75. Дуга-пруток физическая и
+    # остаётся где была: между ней и куполом — тёмный жёлоб, он справа
+    # переходит в дорожку (как у настоящих пачинко).
+    fc, rd = (fx0 + sep) / 2, (sep - fx0) / 2
+    inner = f'M{fx0} {drain} L{fx0} {cy} A{rd} {rd} 0 0 1 {sep} {cy} L{sep} {drain} Z'
     field = {'A': '#0d0a09', 'B': '#3a0a14', 'C': '#0a0909'}[PVF]
     edge = {'A': '#050403', 'B': '#1c040a', 'C': '#040303'}[PVF]
     glow = {'A': '#2a1a08', 'B': '#3a0c10', 'C': '#1e1408'}[PVF]
     if PASS == 'albedo':
-        o += (f'<radialGradient id="pfg" cx="{cx}" cy="{cy - 10}" r="190" gradientUnits="userSpaceOnUse">'
+        o += (f'<radialGradient id="pfg" cx="{fc}" cy="{cy - 10}" r="190" gradientUnits="userSpaceOnUse">'
               f'<stop offset="0" stop-color="{field}"/><stop offset="1" stop-color="{edge}"/></radialGradient>')
         o += f'<path d="{inner}" fill="url(#pfg)"/>'
     elif PASS == 'emit':
-        o += (f'<radialGradient id="pfe" cx="{cx}" cy="{cy - 30}" r="150" gradientUnits="userSpaceOnUse">'
+        o += (f'<radialGradient id="pfe" cx="{fc}" cy="{cy - 30}" r="150" gradientUnits="userSpaceOnUse">'
               f'<stop offset="0" stop-color="{glow}"/><stop offset="1" stop-color="#000"/></radialGradient>')
         o += f'<path d="{inner}" fill="url(#pfe)"/>'
     else:
         o += f'<path d="{inner}" fill="{c("#000", "glass")}"/>'
     o += f'<clipPath id="pfc"><path d="{inner}"/></clipPath><g clip-path="url(#pfc)">'
     if PVF in ('A', 'B'):
-        # лучи веером от верха арки — тонкая позолота, тихо
-        for k in range(23):
-            a = math.pi * (0.03 + 0.94 * k / 22)
-            x1_, y1_ = cx + math.cos(a) * 260, cy - r + math.sin(a) * 260
-            o += f'<line x1="{cx}" y1="{cy - r}" x2="{x1_:.1f}" y2="{y1_:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="{0.35 if PVF == "A" else 0.45}" opacity="{0.45 if PASS == "albedo" else 1}"/>'
+        # лучи веером от верха купола — позолота, тихо. Толще волоска: в
+        # 0,45 единицы луч выходил в точку экрана и рвался лесенкой
+        for k in range(17):
+            a = math.pi * (0.04 + 0.92 * k / 16)
+            x1_, y1_ = fc + math.cos(a) * 260, cy - rd + math.sin(a) * 260
+            o += f'<line x1="{fc}" y1="{cy - rd}" x2="{x1_:.1f}" y2="{y1_:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="{0.35 if PVF == "A" else 0.7}" opacity="{0.45 if PASS == "albedo" else 1}"/>'
     if PVF == 'C':
         # ромбическая решётка и солнце за серединой поля
         step = 12.6
@@ -563,6 +571,12 @@ def pach_live():
             a = 2 * math.pi * k / 17
             o += f'<line x1="{cx}" y1="122" x2="{cx + math.cos(a) * 40:.1f}" y2="{122 + math.sin(a) * 40:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="0.5" opacity="{0.4 if PASS == "albedo" else 1}"/>'
     o += '</g>'
+    # кромка поля — позолота по купол и стенкам (роспись, не пруток: шарик
+    # с дуги проходит над ней)
+    o += f'<path d="{inner}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="0.8" opacity="{0.8 if PASS == "albedo" else 1}"/>'
+    # солнце в вершине купола — от него лучи
+    o += fan(fc, cy - rd + 0.4, 2.6, 9.5, math.pi * 0.1, math.pi * 0.9, 11, 0.9)
+    o += f'<path d="M{fc - 3} {cy - rd + 0.4} A3 3 0 0 0 {fc + 3} {cy - rd + 0.4} Z" fill="{c(GOLD, "gold")}"/>'
     # дорожка: канал с золотыми кромками
     o += rr(sep + 2, cy - 4, fx1, fy1, 1.5, c('#070505', 'lac'))
     # дуга — двойной золотой пруток
@@ -573,8 +587,6 @@ def pach_live():
     o += f'<path d="{sd_}" stroke="{c(INK)}" stroke-width="3.2" stroke-linecap="round"/><path d="{sd_}" stroke="{c(GOLD, "gold")}" stroke-width="2.2" stroke-linecap="round"/>'
     vy, vx0, vx1 = cy + 12 - 2.4, sep + 1, cx + r - 1
     o += f'<path d="M{vx0} {vy + 1.6} L{vx1} {vy - 0.6} L{vx1} {vy + 1.2} L{vx0} {vy + 3} Z" fill="{c(GOLD, "gold")}"/>'
-    # веер-пятачок над аркой
-    o += fan(cx, cy - r - 1.5, 3, 12, math.pi * 1.08, math.pi * 1.92, 11, 0.9)
     # сток — золотая решётка ар-деко над тёмной щелью
     o += rr(fx0, drain - 1, sep, fy1, 0.6, c('#030202', 'matte'))
     for x in range(int(fx0) + 2, int(sep) - 1, 3):
@@ -625,6 +637,14 @@ def pach_live():
     o += '</g>'
     o += f'<circle cx="{bx}" cy="{by}" r="{br + 2.8}" fill="{c(INK)}"/><circle cx="{bx}" cy="{by}" r="{br + 2.2}" fill="{c(GOLD, "gold")}"/><circle cx="{bx}" cy="{by}" r="{br}" fill="{c("#9a0e14", "glass", "#3a0204")}"/>'
     return pg(o)
+# Поле пачинко — своими картами плотнее корпуса (PS текселей на единицу
+# против MS): в нём самая мелочь аппарата, на телефоне ~3,25 точки на
+# единицу (greed-lux.js, renderK). Рисунок и рельеф — те же функции.
+PS = float(os.environ.get('PS', 3.25))
+def pach_box():
+    x0, y0 = pf(PP['x0'] - 0.5, PP['y0'] - 0.5)
+    x1, y1 = pf(PP['x1'] + 0.5, PP['y1'] + 0.5)
+    return x0, y0, x1 - x0, y1 - y0
 def pach_build_live():
     s_ = PAT['s']
     BX, BY = PAT['ax'] + (PX - PAT['x']) / s_, PAT['ay'] + (PY - PAT['y']) / s_
@@ -808,8 +828,13 @@ if __name__ == '__main__':
       for p in ('albedo', 'mat', 'emit'):
         open(f'{out}{name}-{p}.svg', 'w').write(part_svg(p, box, draw))
       part_height(box, build).save(f'{out}{name}-height.png')
+    keepS, S = S, PS
+    for p in ('albedo', 'mat', 'emit'):
+      open(f'{out}pach-{p}.svg', 'w').write(part_svg(p, pach_box(), pach_live))
+    part_height(pach_box(), pach_build_live).save(f'{out}pach-height.png')
+    S = keepS
     x, y, w = ball_box()
-    json.dump({'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404],
+    json.dump({'pach': list(pach_box()), 'pachS': PS, 'ball': [x, y, w], 'ballAt': list(BALL), 'lamp': list(LAMP), 'screen': list(SCRR), 'slot': [303, 300, 325, 404],
                'disc': list(disc_box()), 'ptr': list(ptr_box()), 'wheel': list(WH),
                'plunger': list(plunger_box()), 'pball': list(pball_box())}, open(f'{out}mach-live.json', 'w'))
   print('ok', W, H)

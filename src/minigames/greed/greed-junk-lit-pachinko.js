@@ -101,7 +101,7 @@ Object.assign(GreedJunkLit, {
     pachKey(done) { return done === 'drain' ? 'blank' : String(done).replace(/^cup:/, ''); },
     pachPoolId() {
         const G = GreedJunk, K = G.PACH_PHYS;
-        return 'gj-pach-pool:' + G.pachNails().length + ':' + G.PACH_CUPS.map(c => c.key + c.x + c.y).join('') +
+        return 'gj-pach-pool:' + (G.PACH_TIDY ? 't' : '') + G.pachNails().length + ':' + G.PACH_CUPS.map(c => c.key + c.x + c.y).join('') +
             ':' + [K.g, K.r, K.eNail, K.eWall, K.lip, K.v0.join('-')].join(',');
     },
     pachPool() {

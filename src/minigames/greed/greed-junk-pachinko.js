@@ -134,6 +134,7 @@ Object.assign(GreedJunk, {
     // уже шарика его зажимало, и он висел там до конца (физика пачинко,
     // greed-junk-pachinko-sim.js: так застревала половина шариков).
     pachNails() {
+        if (this.PACH_TIDY) return this.pachNailsTidy();
         const P = this.PACH, A = P.arc, C = P.cup, rnd = this.rng(4401), pts = [];
         const gap = 2 * 2.5 + 1.7 + 0.9;      // диаметр шарика + шляпка + запас
         // пристенные гвозди (ниже) и крайние ряды поля — на полный шарик
@@ -161,6 +162,42 @@ Object.assign(GreedJunk, {
             if (x === wr && y < A.cy + 22) continue;
             if (this.PACH_CUPS.some(c => x > c.x - C.w / 2 - gap && x < c.x + C.w / 2 + gap && y > c.y - gap && y < c.y + C.h + gap)) continue;
             pts.push([x, y + (rnd() - 0.5) * 1.2]);
+        }
+        return pts;
+    },
+
+    // Гвозди версии 2 (аппарат-люкс, greed-lux*.js): та же шахматка с тем
+    // же шагом и теми же просветами, но ровная и зеркальная относительно
+    // середины поля (между левой стенкой и перегородкой — там же середина
+    // лунок). Игрок (18.11): «внутренности съехали, не отцентровано» — у
+    // гаражных гвоздей середина ~250,4, у лунок 253,75, у арки 259,5, плюс
+    // разброс «на глаз»: в ар-деко это читается как брак. Под куполом поля
+    // (machine.py: купол — полукруг над полем, середина та же) гвоздь
+    // ставится, только если стоит и его зеркальная пара. Исход шарика решён
+    // заранее (запас запусков пересчитывается под эту раскладку,
+    // pachPoolId), так что игра от раскладки не меняется.
+    // Включает GreedLux.mount (PACH_TIDY), снимает unmount.
+    pachTidy(on) {
+        if (!!this.PACH_TIDY === !!on) return;
+        this.PACH_TIDY = !!on; this._pachWorld = null;
+    },
+    pachNailsTidy() {
+        const P = this.PACH, A = P.arc, C = P.cup, pts = [];
+        const gap = 2 * 2.5 + 1.7 + 0.9;
+        const wl = P.x0 + P.wall + 1.9, fc = (P.x0 + P.wall + P.sep) / 2, wr = 2 * fc - wl;
+        const left = wl + 1.7 + gap, right = 2 * fc - left, rd = (P.sep - P.x0 - P.wall) / 2;
+        const free = (x, y) => (y >= A.cy || (Math.hypot(x - A.cx, y - A.cy) <= A.r - 1.2 - gap && Math.hypot(x - fc, y - A.cy) <= rd - 3.2)) &&
+            !this.PACH_CUPS.some(c => x > c.x - C.w / 2 - gap && x < c.x + C.w / 2 + gap && y > c.y - gap && y < c.y + C.h + gap);
+        for (let row = 0, y = 4; y < P.drain - 6; row++, y += 11) {
+            const odd = row % 2;
+            for (let k = -6; k <= 6; k++) {
+                const x = fc + (odd ? 6.3 : 0) + k * 12.6;
+                if (x < left - 0.01 || x > right + 0.01) continue;
+                if (free(x, y) && free(2 * fc - x, y)) pts.push([x, y]);
+            }
+            // у стенок — парой, в рядах, где шахматка отступает от стен
+            // (под торцом перегородки — нет: шарик балансировал на шляпке)
+            if (odd && y >= A.cy + 22 && y < P.drain - 8 && free(wl, y) && free(wr, y)) pts.push([wl, y], [wr, y]);
         }
         return pts;
     },
