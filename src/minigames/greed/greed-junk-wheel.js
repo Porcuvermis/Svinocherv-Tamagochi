@@ -13,8 +13,18 @@
 // виртуальными позициями. Значки — кистью, без слов: пусто, монета, три
 // монеты, рёбрышко (кухня), картофелина (сад), осколок алчности.
 Object.assign(GreedJunk, {
+    // Раскладка при первом показе — витрина: все призы на виду. Дальше она
+    // живёт в wheelNow и меняется за кадром (greed-junk-lit-wheel-deck.js,
+    // docs/plan/31-greed-premium.md, разд. 0б): выпавший приз встаёт на
+    // сектор под язычком, редкие появляются и просто так.
     WHEEL_SECTORS: ['blank', 'gold1', 'blank', 'seed', 'blank', 'gold1', 'meat', 'blank',
         'gold3', 'blank', 'gold1', 'seed', 'blank', 'shard', 'gold1', 'blank'],
+    // Основа без редких: на неё возвращается сектор, с которого редкий
+    // приз убирают за кадром.
+    WHEEL_BASE: ['blank', 'gold1', 'blank', 'seed', 'blank', 'gold1', 'blank', 'blank',
+        'gold1', 'blank', 'gold1', 'seed', 'blank', 'blank', 'gold1', 'blank'],
+    wheelNow: null,
+    wheelKeys() { return this.wheelNow || this.WHEEL_SECTORS; },
     // pegUp — на сколько шляпка гвоздя выше краски: гвоздь вбит не по
     // шляпку, а торчит стержнем, об него бьёт язычок (на свету —
     // greed-junk-lit-wheel.js, wheelSprites). Было 1.4 — кнопка вровень с
@@ -39,7 +49,8 @@ Object.assign(GreedJunk, {
 
     // Диск целиком в своих координатах: центр (0,0), сектор 0 — вверху.
     // rot — поворот (для картинки, которая потом крутится, rot = 0).
-    wheelFace() {
+    // keys — раскладка значков (по умолчанию — текущая, wheelKeys).
+    wheelFace(keys) {
         const J = PALETTE.greedJunk, W = J.reel.wheel, f = this.f, ink = PALETTE.ink, G = this.WHEEL;
         const n = this.WHEEL_SECTORS.length, rnd = this.rng(808);
         // торец фанеры: слоистый край
@@ -82,7 +93,7 @@ Object.assign(GreedJunk, {
         // одно и то же, а на 3 часа выпавшее мясо лежало бы на боку.
         let icons = '';
         const turn = 90 - this.POINTER_ANGLE * 180 / Math.PI;
-        this.WHEEL_SECTORS.forEach((key, i) => {
+        (keys || this.wheelKeys()).forEach((key, i) => {
             const a = i / n * Math.PI * 2 - Math.PI / 2, x = Math.cos(a) * G.rIcon, y = Math.sin(a) * G.rIcon;
             const svg = this.wheelIcon(key, i % 2 === 0);
             if (svg) icons += `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(a * 180 / Math.PI + turn)}) scale(${G.icon})">${svg}</g>`;

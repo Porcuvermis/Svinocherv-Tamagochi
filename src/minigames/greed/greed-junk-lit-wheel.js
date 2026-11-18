@@ -153,14 +153,15 @@ Object.assign(GreedJunkLit, {
         const last = this.wheelLast || (this.wheelLast = {});
         last.w = w; last.why = Math.abs(w) < P.minW ? (last.held ? 'held' : 'weak') : 'play';
         if (Math.abs(w) < P.minW) { M.st = w ? 'coast' : 'idle'; return; }
-        const SEC = GreedJunk.WHEEL_SECTORS, n = SEC.length;
+        const n = GreedJunk.wheelKeys().length;
         // Какой сектор: игра решает ключ (onWheel → 'gold1', 'blank'…, по
-        // весам конфига), колесо встаёт на случайный из нарисованных
-        // секторов с этим ключом — шанс задаёт конфиг, а не ширина сектора.
-        // Без игры (превью) — случайный.
-        let idx = Math.floor(Math.random() * n);
+        // весам конфига), колода колеса (wheelDeckPlan) выбирает сектор и
+        // раскладку: выпавший приз встанет под язычок, подмены — за кадром.
+        // Шанс задаёт конфиг, а не ширина и не число секторов. Без игры
+        // (превью) — случайный сектор.
+        let key = null;
         if (this.onWheel) {
-            const key = this.onWheel();
+            key = this.onWheel();
             // Крутки нет (нет денег, не куплено, занято): колесо
             // проворачивается и тут же тормозит, будто зажато, — и отказ в
             // палец. Без этого бесплатный холостой проворот читался как
@@ -171,9 +172,8 @@ Object.assign(GreedJunkLit, {
                 if (typeof Haptics !== 'undefined') Haptics.notify('error', true);
                 return;
             }
-            const at = SEC.map((k, i) => k === key ? i : -1).filter(i => i >= 0);
-            idx = at.length ? at[Math.floor(Math.random() * at.length)] : idx;
         }
+        const idx = this.wheelDeckPlan(key);
         // угол, при котором сектор idx под язычком: сектор i вверху при
         // rot = −i·2π/n, язычок — на POINTER_ANGLE от верха по часовой
         const dir = Math.sign(w), sec = Math.PI * 2 / n, T = Math.PI * 2;
@@ -217,6 +217,7 @@ Object.assign(GreedJunkLit, {
             M.rot = M.to - M.dir * P.settle * Math.sin(v * Math.PI) * (1 - v * 0.4);
             if (v >= 1) {
                 M.st = 'idle'; M.rot = M.to;
+                this.wheelDeckEnsure();
                 if (this.onWheelDone) this.onWheelDone();
             }
         } else if (M.st === 'coast') {
@@ -227,6 +228,7 @@ Object.assign(GreedJunkLit, {
             M.rot += M.w * dt;
         }
         this.wheelFlap(now, dt, M.rot - prev);
+        this.wheelDeckStep();
         // свет от наклона — не чаще LIGHT_MS, как у корпуса
         const t = this._tilt || { x: 0, y: 0 };
         if (!M.lt || ((Math.abs(t.x - M.lt.x) > 0.002 || Math.abs(t.y - M.lt.y) > 0.002) && now - (M.ltAt || 0) >= this.LIGHT_MS)) {
@@ -299,19 +301,22 @@ Object.assign(GreedJunkLit, {
         // растрируются сразу в его настоящий размер (иначе мыло)
         const G = GreedJunk, W = G.WHEEL, S = this.SCALE, R = W.rEdge + 4, k = G.wheelK(), n = Math.round(R * 2 * S * k);
         try {
-            const F = () => G.wheelFace();
             // Части диска на своих высотах и материалах. Карта у колеса своя,
             // важна только разница высот — диск опущен к 8: карта кончается
             // на 20 (HMAX − H0), а в корпусе краска колеса стоит на 17.6, и
             // торчащему гвоздю там некуда расти — он обрезался до кнопки.
             const h0 = 8;
-            const discFull = (pass) => {
+            // vb — участок диска (единицы рисунка) и его размер в пикселях:
+            // кусок под подмену значка за кадром ложится на ту же сетку
+            // пикселей, что и диск целиком (greed-junk-lit-wheel-deck.js)
+            const svgFor = (pass, keys, vb) => {
                 G.pass = pass;
-                const f = F();
-                return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="${-R} ${-R} ${R * 2} ${R * 2}">` +
+                const f = G.wheelFace(keys), v = vb || { x: -R, y: -R, w: R * 2, h: R * 2, pw: n, ph: n };
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="${v.pw}" height="${v.ph}" viewBox="${v.x} ${v.y} ${v.w} ${v.h}">` +
                     G.passStyle(pass) + G.defs() + G.T(h0 - 0.6, 'raw', f.edge) + G.T(h0, 'paint', f.sec + f.chip + f.icons) +
                     G.T(h0 + W.pegUp, 'steel', f.pegs) + G.T(h0 + 1.9, 'steel', f.hub) + '</svg>';
             };
+            const discFull = (pass) => svgFor(pass);
             const Pt = this.wheelPtr();
             const ptr = (pass, part = 'strip') => {
                 G.pass = pass;
@@ -326,7 +331,8 @@ Object.assign(GreedJunkLit, {
             const bm = await this.image(ptr('albedo', 'bracket'));
             G.pass = 'baked';
             if (!this.wheelGL(dm, pm, bm)) throw new Error('нет WebGL');
-            this._wheelSpr = { R: R * k, ptr: Pt };
+            this._wheelSpr = { R: R * k, Rd: R, ptr: Pt, svg: svgFor };
+            this.wheelDeckReset();
             this.wheelShadow();
             this._wheel.shown = null;
         } catch (e) {

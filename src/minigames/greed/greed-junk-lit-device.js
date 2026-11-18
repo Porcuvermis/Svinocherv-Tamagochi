@@ -133,7 +133,6 @@ Object.assign(GreedJunkLit, {
         // комплекта: программа корпуса (normProgram) в кадровый буфер.
         // Смешение на это время выключено — оно испортило бы b,a (уклон).
         if (!Q.np) { Q.np = this.normProgram(gl); Q.fb = gl.createFramebuffer(); }
-        const np = Q.np;
         const nt = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, nt);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, st.w, st.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -142,22 +141,50 @@ Object.assign(GreedJunkLit, {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.bindTexture(gl.TEXTURE_2D, null);
+        st.t.push(nt);
+        this.deviceNormals(Q, st);
+        return st;
+    },
+
+    // Нормали комплекта st (в t[3]) из его карты высот (t[1]). r — участок в
+    // пикселях карты: пересчитать только его (кусок карты переписан —
+    // deviceTile); без r — всю карту. Смешение на это время выключено — оно
+    // испортило бы b,a (уклон).
+    deviceNormals(Q, st, r) {
+        const gl = Q.gl, np = Q.np;
         const blend = gl.isEnabled(gl.BLEND);
         gl.disable(gl.BLEND);
         gl.bindFramebuffer(gl.FRAMEBUFFER, Q.fb);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, nt, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, st.t[3], 0);
         gl.viewport(0, 0, st.w, st.h);
+        if (r) { gl.enable(gl.SCISSOR_TEST); gl.scissor(r.x, r.y, r.w, r.h); }
         gl.useProgram(np);
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, st.t[1]);
         gl.uniform1i(gl.getUniformLocation(np, 'uH'), 1);
         gl.uniform2f(gl.getUniformLocation(np, 'uTex'), 1 / st.w, 1 / st.h);
         gl.uniform1f(gl.getUniformLocation(np, 'uRelief'), 9.0 * GreedJunk.HMAX / 24);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        if (r) gl.disable(gl.SCISSOR_TEST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.useProgram(Q.pr);
         if (blend) gl.enable(gl.BLEND);
-        st.t.push(nt);
-        return st;
+    },
+
+    // Кусок комплекта st переписать картинками imgs (цвет, высоты, материал)
+    // с левого верхнего пикселя (x, y) — и пересчитать нормали вокруг: шейдер
+    // нормалей берёт соседей на 4 текселя, поэтому участок шире на 5.
+    // Для подмены значка на секторе колеса за кадром (greed-junk-lit-wheel-deck.js):
+    // целиком диск растрировать заново — десятые доли секунды на телефоне.
+    deviceTile(Q, st, imgs, x, y) {
+        const gl = Q.gl;
+        imgs.forEach((img, i) => {
+            gl.bindTexture(gl.TEXTURE_2D, st.t[i]);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, i === 0);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        });
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        const m = 5, x0 = Math.max(0, x - m), y0 = Math.max(0, y - m);
+        this.deviceNormals(Q, st, { x: x0, y: y0, w: Math.min(st.w, x + imgs[0].width + m) - x0, h: Math.min(st.h, y + imgs[0].height + m) - y0 });
     },
 
     // Начало кадра прибора: чистый холст, свет L (как из lightFor).
