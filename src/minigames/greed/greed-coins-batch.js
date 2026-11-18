@@ -18,7 +18,7 @@ Object.assign(GreedCoins, {
         'uniform vec2 res;',
         'varying vec2 q;varying vec3 r0,r1,r2;varying vec4 v2,v3;varying float vao;',
         'void main(){',
-        ' float box=a3.w;',
+        ' float box=abs(a3.w);',
         ' vec2 pos=a0.xy+corner*box*a0.z;',
         ' gl_Position=vec4(pos.x/res.x*2.-1.,1.-pos.y/res.y*2.,0.,1.);',
         ' q=vec2(corner.x,-corner.y)*box;',
@@ -90,7 +90,7 @@ Object.assign(GreedCoins, {
         // при радиусе 29 → 0.1 и 0.2 радиуса). Без неё монеты в движении
         // светлее и площе вставшей кучи, и на переходе к ней был рывок.
         ' float sd=length(q-vec2(0.,-.1));',
-        ' float sa=SH*m*(1.-smoothstep(.85,1.2,sd));',
+        ' float sa=(v3.w<0.?0.:SH)*m*(1.-smoothstep(.85,1.2,sd));',
         ' outc.a=outc.a+sa*(1.-outc.a);',
         ' gl_FragColor=vec4(min(outc.rgb,vec3(1.)),outc.a);',
         '}'
@@ -162,7 +162,9 @@ Object.assign(GreedCoins, {
                 data[o + 4] = N[0]; data[o + 5] = N[1]; data[o + 6] = N[2]; data[o + 7] = c.roll || 0;
                 data[o + 8] = st.m; data[o + 9] = st.flash || 0; data[o + 10] = st.reveal === undefined ? 9 : st.reveal; data[o + 11] = st.quiet ? 0 : 1;
                 data[o + 12] = st.star || 0; data[o + 13] = st.starP || 0; data[o + 14] = (st.settled && c.ci !== undefined) ? -1 - c.ci : (c.kind === 'euro' ? 0.5 : 0);
-                data[o + 15] = box || ((st.flash > 0.01 || st.star > 0) ? 2.2 : 1.25);
+                // st.air — монета в воздухе (полёт в щель, greed-lux-bottom.js):
+                // без тени под собой; знак — минус у полуширины квадрата
+                data[o + 15] = (box || ((st.flash > 0.01 || st.star > 0) ? 2.2 : 1.25)) * (st.air ? -1 : 1);
                 n++;
             },
             flush() {
@@ -175,7 +177,7 @@ Object.assign(GreedCoins, {
             },
             count: () => n,
             // сколько пикселей холста закрашивают квадраты кадра (оценка работы видеокарты)
-            pixels() { let p = 0; const k = cv.width / GreedCoins.W; for (let i = 0; i < n; i++) { const o = i * STRIDE, d = 2 * data[o + 15] * data[o + 2] * k; p += d * d; } return p; }
+            pixels() { let p = 0; const k = cv.width / GreedCoins.W; for (let i = 0; i < n; i++) { const o = i * STRIDE, d = 2 * Math.abs(data[o + 15]) * data[o + 2] * k; p += d * d; } return p; }
         };
     }
 });

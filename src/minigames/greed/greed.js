@@ -149,6 +149,8 @@ const GreedMinigame = {
         this.timers.forEach(clearTimeout);
         this.timers = [];
         this.play = { slots: null, wheel: null, pachinko: null };
+        // ставка — на заход: снова открыл — снова первая (игрок, 18.11)
+        this.bet = null;
         // выигрыши уже начислены — придержанное в банке больше не нужно
         if (this.M && this.M.jarHold) this.M.jarHold(null);
         // заготовки покупок — по этому заходу: память назад

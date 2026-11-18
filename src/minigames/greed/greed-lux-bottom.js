@@ -13,7 +13,7 @@
 Object.assign(GreedLux, {
     BOT: {
         tray: { rad: 6.2, g: 0.0011, max: 60, bounce: 0.28, cols: 14 },
-        coin: { ms: 520, inMs: 140, rad: 6.2, turns: 2.5, lift: 58 },
+        coin: { ms: 620, inMs: 150, rad: 7, turns: 2, lift: 70 },
         count: 45,                 // мс на шаг счёта табло копилки
         meter: { k: 0.06, bubbleMs: 380 }
     },
@@ -45,8 +45,8 @@ Object.assign(GreedLux, {
         // табло
         this.betCv = this.botCanvas(wrap, L.bet[0], L.bet[1], L.bet[2] - L.bet[0], L.bet[3] - L.bet[1]);
         this.balCv = this.botCanvas(wrap, L.bal[0], L.bal[1], L.bal[2] - L.bal[0], L.bal[3] - L.bal[1]);
-        // монета в полёте: от копилки до пятака, с запасом на дугу
-        this.flyCv = this.botCanvas(wrap, 150, 440, 200, 110, 4);
+        // копилка и монета в полёте — один холст движка монет
+        this.pigMount(wrap);
         // лоток: проём формы (рисунок — plinth, отступ 5 от кромки)
         const T = L.tray;
         this.trayCv = this.botCanvas(wrap, T[0] + 5, T[1] + 5, T[2] - T[0] - 10, T[3] - T[1] - 10, 2);
@@ -138,79 +138,124 @@ Object.assign(GreedLux, {
         if (force || B.balDirty) { this.dotsDraw(this.balCv, L.bal, String(B.shown), 0); B.balDirty = false; }
     },
 
-    // ---------- монета в щель ----------
-    // Картинка монеты — один раз тем же движком, что лоток (освещённая,
-    // плашмя); контекст потом отдаётся — на полёт в полсекунды держать
-    // видеокарту незачем.
-    coinSprite() {
-        if (this._coinSpr) return this._coinSpr;
+    // ---------- копилка: монеты за стеклом и монета в щель ----------
+    // Игрок (18.11): прежняя куча — «сваленная, без характера», монеты
+    // просвечивали друг сквозь друга, передние мельче задних. Теперь —
+    // маленькая история: стопки поставлены тесной группой, одна чуть
+    // поодаль; пока играл, одна стопка завалилась и разъехалась немного,
+    // другая — сильно, крайние монеты укатились. Всё — движком монет игры
+    // (GreedCoins, атлас поз с ребром): стопка — монеты одной позы друг над
+    // другом, снизу вверх, ближние (ниже на полу) — крупнее и позже.
+    // Монета в щель взлетает из-за тесной группы (за стопками её не видно,
+    // пока не поднимется) — куча при этом не меняется.
+    // Один холст на копилку и полёт: монета вылетает из копилки и летит над
+    // аппаратом к пятаку.
+    PIG_BOX: [150, 440, 190, 176],
+    // y — пол (основание стопки), n — монет в стопке
+    PIG_STACKS: [
+        { x: 282, y: 577, n: 9 }, { x: 294.5, y: 575.5, n: 12 }, { x: 307, y: 577.5, n: 10 },
+        { x: 288, y: 586, n: 7 }, { x: 300.5, y: 587, n: 11 },
+        { x: 325, y: 583, n: 8 }                       // поодаль
+    ],
+    PIG_FLY_FROM: [294.5, 566],                        // за самой высокой стопкой
+    pigScene() {
+        if (this._pigScene) return this._pigScene;
+        const P = GreedCoins.poses(), D = Math.PI / 180, out = [];
+        // позы: стоит ровно (видна сверху-спереди) и лёжа с наклоном
+        const flat = [], lean = [];
+        P.forEach((p, i) => {
+            if (p.m === 32 && Math.abs(p.az - 95) <= 16) flat.push(i);
+            else if (p.m >= 22 && p.az > 40 && p.az < 150) lean.push(i);
+        });
+        let seed = 7;
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const sc = (y) => 0.9 + 0.12 * Math.max(0, Math.min(1, (y - 572) / 36));
+        const coin = (x, y, pose, z, ao) => out.push({ x, y, pose, z, rad: 6 * sc(z), ao: ao === undefined ? 0.8 + 0.2 * sc(z) / 1.02 : ao, roll: P[pose].roll * D });
+        // стопки: толщина монеты 1,55; чуть гуляют (ставили руками)
+        this.PIG_STACKS.forEach(S => {
+            const f = flat[Math.floor(rnd() * flat.length)];
+            for (let k = 0; k < S.n; k++) coin(S.x + (rnd() - 0.5) * 0.7, S.y - k * 1.55 * sc(S.y), f, S.y + k * 0.001);
+        });
+        // Завалившаяся стопка ложится черепицей: нижняя монета у места, каждая
+        // следующая съехала дальше и лежит поверх предыдущей.
+        const row = (x0, y0, dx, dy, n, jit) => {
+            for (let k = 0; k < n; k++) {
+                const x = x0 + dx * k + (rnd() - 0.5) * jit, y = y0 + dy * k + (rnd() - 0.5) * jit * 0.4;
+                coin(x, y - 0.5, flat[Math.floor(rnd() * flat.length)], y + k * 0.01);
+            }
+        };
+        row(310, 595, 2.1, 0.75, 7, 0.4);          // разъехалась немного — вправо
+        row(291, 597.5, -3.4, 1.35, 5, 1.6);       // сильно — влево, шире и вразнобой
+        // укатились от сильной
+        [[302, 606.5], [286.5, 609]].forEach(([x, y]) => coin(x, y, flat[Math.floor(rnd() * flat.length)], y));
+        out.sort((a, b) => a.z - b.z);
+        return (this._pigScene = out);
+    },
+    pigMount(wrap) {
+        const [x, y, w, h] = this.PIG_BOX;
+        this.pigCv = this.botCanvas(wrap, x, y, w, h, 4);
+        this._bot.pigDirty = true;
+    },
+    pigRenderer() {
+        if (this.pigDraw !== undefined) return this.pigDraw;
         if (typeof GreedCoins === 'undefined') return null;
         const A = GreedCoins.loadAtlas();
         if (!A.ready) return null;
-        const box = 14, n = Math.round(box * this.K * 1.5), cv = document.createElement('canvas');
-        cv.width = cv.height = n;
-        const D = GreedCoins.batchRenderer(cv, A.fa, A.fn, A.alb, A.nor, [box, box]);
-        if (!D) return null;
-        D.begin({ x: 0, y: 0 });
-        const c = this.trayCoin(box / 2, box / 2, 0, 1);
-        c.rad = this.BOT.coin.rad;
-        D.add(c, { n: c.pose, m: 1, flash: 0, settled: true });
-        D.flush();
-        const out = document.createElement('canvas');
-        out.width = out.height = n;
-        out.getContext('2d').drawImage(cv, 0, 0);
-        const gl = cv.getContext('webgl'), ext = gl && gl.getExtension('WEBGL_lose_context');
-        if (ext) ext.loseContext();
-        return (this._coinSpr = out);
+        return (this.pigDraw = GreedCoins.batchRenderer(this.pigCv, A.fa, A.fn, A.alb, A.nor, [this.PIG_BOX[2], this.PIG_BOX[3]]) || null);
     },
     coinIn() {
         const L = this.meta && this.meta.live;
-        if (!this._bot || !L || !L.pig) return;
-        const P = L.pig, S = L.sn;
-        this._bot.coins.push({ at: performance.now(), x0: (P[0] + P[2]) / 2, y0: P[1] + 6, x1: S[0], y1: S[1] - 4 });
+        if (!this._bot || !L || !L.sn) return;
+        const [x0, y0] = this.PIG_FLY_FROM;
+        this._bot.coins.push({ at: performance.now(), x0, y0, x1: L.sn[0], y1: L.sn[1] - 5 });
     },
-    coinStep(now) {
-        const B = this._bot, F = this.BOT.coin;
-        if (!B || (!B.coins.length && !B.coinDirty)) return;
-        const cv = this.flyCv, c = cv.getContext('2d'), [bx, by, bw] = cv._b, k = cv.width / bw, spr = this.coinSprite();
-        c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
-        B.coinDirty = B.coins.length > 0;
-        if (!spr) return;
-        c.setTransform(k, 0, 0, k, -bx * k, -by * k);
+    // монета в полёте: x, y, ось (поза под поворотом, как у монет рамки),
+    // светлота; null — долетела
+    coinAt(m, now) {
+        const F = this.BOT.coin, t = (now - m.at) / F.ms;
+        if (t >= 1 + F.inMs / F.ms) return null;
+        if (t < 1) {
+            // вверх из-за стопок, дугой влево к пятаку; к концу — ребром
+            const e = 1 - Math.pow(1 - t, 1.7);
+            const x = m.x0 + (m.x1 - m.x0) * e;
+            const y = m.y0 + (m.y1 - m.y0) * t - F.lift * 4 * t * (1 - t) * (1 - 0.3 * t);
+            const a = t * F.turns * 2 * Math.PI, edge = Math.max(0, (t - 0.72) / 0.28);
+            // кувырок вокруг наклонной оси → к щели ось легла вбок (ребро стоймя)
+            // ось к нам (|cos|): монета обратной стороной к зрителю у движка
+            // тёмная, а у настоящей там такой же аверс — переворот через ребро
+            const n0 = [Math.sin(a), 0.3 * Math.sin(a), Math.abs(Math.cos(a))], n1 = [1, 0, 0.06];
+            const n = n0.map((v, i) => v * (1 - edge) + n1[i] * edge), l = Math.hypot(...n);
+            return { x, y, n: n.map(v => v / l), ao: 1, front: y < m.y0 - 16 };
+        }
+        // ребром в щель: уходит вниз и темнеет — в темноте пятака
+        const u = (t - 1) * F.ms / F.inMs;
+        return { x: m.x1, y: m.y1 + u * 7, n: [1, 0, 0.06], ao: 1 - 0.9 * u, front: true };
+    },
+    pigStep(now) {
+        const B = this._bot;
+        if (!B || !this.pigCv) return;
+        const D = this.pigRenderer();
+        if (!D) return;
+        const tl = this.tilt || { x: 0, y: 0 }, flying = B.coins.length > 0;
+        const tiltMoved = (!B.pigT || Math.abs(B.pigT.x - tl.x) > 0.003 || Math.abs(B.pigT.y - tl.y) > 0.003) && now - (B.pigAt || 0) >= 66;
+        if (!flying && !B.coinWas && !tiltMoved && !B.pigDirty) return;
+        B.pigT = { x: tl.x, y: tl.y }; B.pigAt = now; B.pigDirty = false; B.coinWas = flying;
+        const [bx, by] = this.PIG_BOX, gold = GreedCoins.KINDS.indexOf('gold'), NP = GreedCoins.poses().length;
+        const P = GreedCoins.poses(), st = (c) => ({ n: P[c.pose].n, m: 1, flash: 0, settled: true });
+        const fly = [];
         B.coins = B.coins.filter(m => {
-            const t = (now - m.at) / F.ms, r = F.rad;
-            if (t >= 1 + F.inMs / F.ms) {
-                if (typeof Haptics !== 'undefined') Haptics.tick();
-                return false;
-            }
-            let x, y, kw, a = 1, clip = null;
-            if (t < 1) {
-                // дуга: выше середины на lift, к концу — ровно над щелью
-                const e = 1 - Math.pow(1 - t, 2.2);
-                x = m.x0 + (m.x1 - m.x0) * e;
-                y = m.y0 + (m.y1 - m.y0) * t - F.lift * 4 * t * (1 - t) * (1 - 0.35 * t);
-                // кувырок, к щели — ребром
-                const spin = Math.cos(t * F.turns * 2 * Math.PI);
-                kw = t < 0.8 ? spin : spin * (1 - (t - 0.8) / 0.2) + 0.06 * ((t - 0.8) / 0.2);
-            } else {
-                // ребром в щель: уходит вниз за губу
-                const u = (t - 1) * F.ms / F.inMs;
-                x = m.x1; y = m.y1 + u * 9; kw = 0.06; a = 1 - u * 0.4; clip = m.y1 - 1;
-            }
-            c.save();
-            if (clip !== null) { c.beginPath(); c.rect(bx, by, bw, clip - by + r * 0.2); c.clip(); }
-            c.globalAlpha = a;
-            const w = Math.max(0.08, Math.abs(kw));
-            c.drawImage(spr, x - r * w, y - r, 2 * r * w, 2 * r);
-            if (w < 0.45) {
-                // почти ребром — полоса гурта
-                c.fillStyle = PALETTE.greedCoin.gold.lo;
-                c.globalAlpha = a * (1 - w / 0.45);
-                c.fillRect(x - Math.max(0.6, r * w * 0.6), y - r * 0.96, Math.max(1.2, r * w * 1.2), r * 1.92);
-            }
-            c.restore();
-            return true;
+            const c = this.coinAt(m, now);
+            if (!c) { if (typeof Haptics !== 'undefined') Haptics.tick(); return false; }
+            fly.push(c); return true;
         });
+        const flyAdd = (front) => fly.filter(c => c.front === front).forEach(c => D.add(
+            { x: c.x - bx, y: c.y - by, rad: this.BOT.coin.rad, ao: c.ao, roll: 0, kind: 'gold' },
+            { n: c.n, m: 1, flash: 0, reveal: 9, quiet: true, air: true }));
+        D.begin(tl);
+        flyAdd(false);                           // ещё за стопками
+        this.pigScene().forEach(c => D.add({ x: c.x - bx, y: c.y - by, rad: c.rad, ao: c.ao, roll: c.roll, ci: gold * NP + c.pose, kind: 'gold' }, st(c)));
+        flyAdd(true);
+        D.flush();
     },
 
     // ---------- лоток ----------
@@ -331,7 +376,7 @@ Object.assign(GreedLux, {
     bottomStep(now) {
         if (!this._bot) return;
         this.screensDraw(now, false);
-        this.coinStep(now);
+        this.pigStep(now);
         this.trayStep(now);
         this.meterStep(now);
     }

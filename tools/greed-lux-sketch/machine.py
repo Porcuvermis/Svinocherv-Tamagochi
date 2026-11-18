@@ -152,7 +152,7 @@ def build_height():
     add(sd_rrect(*PIG), 2.2, 2.2)
     add(sd_rrect(267, 535, 333, 611, 8), -7, 1.6)
     # монеты: у каждой свой наклон — отражают по-разному, куча искрится
-    for group, rx, ry in ((COINS, 6.5, 2.7), (TCOINS if not LIVE else [], 7, 2.8)):
+    for group, rx, ry in (([], 6.5, 2.7) if LIVE else (COINS, 6.5, 2.7), (TCOINS if not LIVE else [], 7, 2.8)):
         for x, y, a, b in group:
             q = np.hypot((PX - x) / rx, (PY - y) / ry)
             HM += (q < 1) * (0.8 + (a - 0.5) * 1.8 * (PX - x) / rx + (b - 0.5) * 1.2 * (PY - y) / ry)
@@ -830,7 +830,8 @@ def plinth():
         o += f'<ellipse cx="{x}" cy="{y}" rx="7.5" ry="3.3" fill="{c(INK, "matte")}"/><ellipse cx="{x}" cy="{y}" rx="7" ry="2.8" fill="{c(GOLD, "gold")}"/>'
     o += ink_rr(*PIG, GOLD, 'gold') + rr(267, 535, 333, 611, 8, c('#160708', 'glass'))
     o += '<clipPath id="pigc"><rect x="267" y="535" width="66" height="76" rx="8"/></clipPath><g clip-path="url(#pigc)">'
-    for x, y, a, b in COINS:
+    # LIVE: монеты копилки — движком монет игры (greed-lux-bottom.js, pigScene)
+    for x, y, a, b in ([] if LIVE else COINS):
         o += f'<ellipse cx="{x:.1f}" cy="{y:.1f}" rx="7" ry="3.2" fill="{c(INK, "glass")}"/><ellipse cx="{x:.1f}" cy="{y:.1f}" rx="6.5" ry="2.7" fill="{c(GOLD, "gold")}"/>'
     o += '</g>'
     return o

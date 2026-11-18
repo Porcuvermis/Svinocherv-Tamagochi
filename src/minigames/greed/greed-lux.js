@@ -126,8 +126,12 @@ const GreedLux = {
         GreedJunk.pachTidy(false);
         this.reels = null; this._lv = null; this.ledCv = null; this.ledGrid = null; this.lampCv = null; this._wheel = null; this.fx = null;
         this._pach = null; this.pfx = null; this._pgl = null; this.glareCv = null;
-        if (this.trayDraw && this.trayCv) { const g = this.trayCv.getContext('webgl'), x = g && g.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); }
-        this._bot = null; this.trayDraw = null; this.trayCv = null; this.betCv = this.balCv = this.flyCv = this.metCv = null;
+        // контексты движка монет (лоток, копилка) — назад сразу
+        [[this.trayDraw, this.trayCv], [this.pigDraw, this.pigCv]].forEach(([d, cv]) => {
+            const g = d && cv && cv.getContext('webgl'), x = g && g.getExtension('WEBGL_lose_context');
+            if (x) x.loseContext();
+        });
+        this._bot = null; this.trayDraw = this.pigDraw = undefined; this.trayCv = this.pigCv = null; this.betCv = this.balCv = this.metCv = null;
     },
 
     // Заготовки покупок по ходу захода — у версии 2 их нет (покупка — этап 7);
