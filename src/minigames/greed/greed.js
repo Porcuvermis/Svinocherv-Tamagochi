@@ -50,7 +50,7 @@ const GreedMinigame = {
         }
 
         window.addEventListener('resize', () => {
-            if (this.isOpen() && typeof GreedJunkLit !== 'undefined') GreedJunkLit.fit(this.stageEl);
+            if (this.isOpen() && this.M) this.M.fit(this.stageEl);
         });
     },
 
@@ -68,8 +68,9 @@ const GreedMinigame = {
         // может иметь нулевой размер. Готовность для покрова (veilReady) —
         // аппарат собран целиком (GreedJunkLit.settled: корпус, рычаг,
         // колесо, пачинко) и атлас монет пришёл.
+        this.M = this.machine();
         this._readyP = new Promise((ready) => requestAnimationFrame(() => {
-            const L = GreedJunkLit;
+            const L = this.M;
             const drawn = L.mount(this.stageEl, {
                 onPull: () => this.onPull(),
                 onSpinDone: (keys) => this.onSpinDone(keys),
@@ -112,26 +113,32 @@ const GreedMinigame = {
     goldWon(res) { return (res && res.currencies && res.currencies.gold) || 0; },
     started(game, res) {
         this.play[game] = { res, gen: this.spinGeneration };
-        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(this.goldWon(res));
+        if (this.M && this.M.jarHold) this.M.jarHold(this.goldWon(res));
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
     },
     // результат показан: выигрыш — в банку; null — игра устарела (окно закрыто)
     settled(game) {
         const p = this.play[game];
         if (!p || p.gen !== this.spinGeneration) return null;
-        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(-this.goldWon(p.res));
+        if (this.M && this.M.jarHold) this.M.jarHold(-this.goldWon(p.res));
         return p;
     },
     // выплата досыпалась — игра свободна
     finished(game, gen) {
         if (gen !== this.spinGeneration) return;
         this.play[game] = null;
-        if (game === 'slots') GreedJunkLit.tryReady();
+        if (game === 'slots' && this.M) this.M.tryReady();
         if (typeof GameManager !== 'undefined' && GameManager.updateUI) GameManager.updateUI(true);
     },
 
     // Готовность для покрова перехода: см. open().
     veilReady() { return this._readyP || Promise.resolve(); },
+    // Какой аппарат стоит: гаражный (GreedJunkLit) или версия 2 (GreedLux,
+    // greed-lux.js) — по виду (GreedSkin.v2). Интерфейс у них один.
+    machine() {
+        return typeof GreedSkin !== 'undefined' && GreedSkin.v2 && GreedSkin.v2() && typeof GreedLux !== 'undefined' ? GreedLux : GreedJunkLit;
+    },
+    M: null,
     PREP_VEIL_MS: 4000,
 
     close() {
@@ -140,9 +147,9 @@ const GreedMinigame = {
         this.timers = [];
         this.play = { slots: null, wheel: null, pachinko: null };
         // выигрыши уже начислены — придержанное в банке больше не нужно
-        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.jarHold) GreedJunkLit.jarHold(null);
+        if (this.M && this.M.jarHold) this.M.jarHold(null);
         // заготовки покупок — по этому заходу: память назад
-        if (typeof GreedJunkLit !== 'undefined' && GreedJunkLit.growDrop) GreedJunkLit.growDrop();
+        if (this.M && this.M.growDrop) this.M.growDrop();
         if (this.screenElement) this.screenElement.classList.remove('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.resumeRoom();
     },
@@ -164,7 +171,7 @@ const GreedMinigame = {
         // Ячейку каждого берём на ленте с случайного места — один и тот же
         // символ встречается на ленте несколько раз.
         const G = GreedJunk, n = G.REEL_STRIP.length;
-        GreedJunkLit.spin(res.reels.map(k => G.reelIndexOf(k, Math.floor(Math.random() * n))));
+        this.M.spin(res.reels.map(k => G.reelIndexOf(k, Math.floor(Math.random() * n))));
         return true;
     },
 
@@ -175,7 +182,7 @@ const GreedMinigame = {
     // покажет общий кошелёк (wallet-fx). Джекпот мигает дважды.
     POUR_MAX: 40,
     onSpinDone() {
-        const p = this.settled('slots'), L = GreedJunkLit;
+        const p = this.settled('slots'), L = this.M;
         if (!p) { this.play.slots = null; return; }
         const res = p.res;
         const got = Object.keys(res.currencies || {}).some(k => k !== 'gold' && res.currencies[k] > 0);
@@ -208,7 +215,7 @@ Object.assign(GreedMinigame, {
         if (!res.ok) { this.refused[game] = res.error || 'error'; return false; }
         this.refused[game] = '';
         this.started(game, res);
-        if (GreedJunkLit.coinIn) GreedJunkLit.coinIn();
+        if (this.M && this.M.coinIn) this.M.coinIn();
         return res.key;
     },
     onPach() { return this.startPlay('pachinko'); },
@@ -221,7 +228,7 @@ Object.assign(GreedMinigame, {
     // ламп, их начисление покажет общий кошелёк (wallet-fx). Градусник — к
     // новой шкале.
     playDone(game) {
-        const p = this.settled(game), L = GreedJunkLit;
+        const p = this.settled(game), L = this.M;
         if (!p) { this.play[game] = null; return; }
         const res = p.res, cur = res.currencies || {}, gold = cur.gold || 0;
         const got = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0) ||

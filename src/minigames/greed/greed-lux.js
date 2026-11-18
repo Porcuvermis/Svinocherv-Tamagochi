@@ -1,83 +1,113 @@
-// ================= АППАРАТ АЛЧНОСТИ, ВЕРСИЯ 2: ПРОСМОТР ЭСКИЗА =================
-// 🐞 → «Аппарат» → панель алчности → «Эскиз v2». Не игра: живой эскиз
-// версии 2 (docs/plan/31-greed-premium.md), чтобы игрок видел блеск
-// золота и лака от НАСТОЯЩЕГО наклона телефона, а не в GIF.
+// ================= АППАРАТ АЛЧНОСТИ, ВЕРСИЯ 2 =================
+// Литой премиум-аппарат (docs/plan/31-greed-premium.md): стоит в мини-игре
+// вместо гаражного, когда куплена версия 2 (Backend.greedLevel('slots') ≥ 2)
+// или вид 2 включён в 🐞 (GreedSkin.v2). Тот же интерфейс, что у
+// GreedJunkLit: экран алчности (greed.js) не знает, какой аппарат стоит.
 //
-// Карты запечены из эскиза (tools/greed-lux-sketch: machine.py →
-// bake-preview.py) в src/minigames/greed/lux/: цвет, материал (R глянец,
-// G стекло, B золото), свечение с ореолом, тень, рельеф 16 бит. Телефон
-// считает только то, что зависит от наклона: отражения студии, грань
-// золота, искры, сияние. Перерисовка — только когда наклон сдвинулся или
-// идёт эффект экранчика.
+// Перенос идёт этапами (план 31, «Перенос версии 2 в игру»). Этап 1 —
+// каркас: корпус из запечённых карт (tools/greed-lux-sketch: machine.py →
+// bake-preview.py → src/minigames/greed/lux/: цвет, материал — R глянец,
+// G стекло, B золото, — свечение с ореолом, тень, рельеф 16 бит), блеск
+// от настоящего наклона, экранчики колеса. Телефон считает только то, что
+// зависит от наклона: отражения студии, грань золота, искры, сияние.
+// Перерисовка — только когда наклон сдвинулся или идёт эффект экранчика.
 //
 // Экранчики колеса — сами сектора (решение игрока): раз в 6–10 с один
-// видимый значок сбоит — цифровой сбой, рассыпание, перерисовка; тап по
-// значку — эффект выигрыша (сбой + вспышки + свет всего клина).
-const GreedLuxPreview = {
+// видимый значок сбоит — цифровой сбой, рассыпание, перерисовка.
+// Было: «Эскиз v2» — отдельный просмотр во весь экран из 🐞 (10.11).
+const GreedLux = {
     DIR: 'src/minigames/greed/lux/',
     W: 360, Y0: -57, H: 696, Q: 1.9,
     WHEEL: { cx: 22, cy: 118, r: 150 },
     DUR: { glitch: 320, scatter: 750, redraw: 450, win: 1100 },
+    // скорость досыпания лотка (монет в секунду) — её читает экран алчности
+    TRAY: { rate: 30 },
 
-    async open() {
-        if (this.box) { this.close(); return; }
-        const host = document.getElementById('game-container') || document.body;
-        const L = PALETTE.greedLux;
-        const box = document.createElement('div');
-        box.id = 'gl-preview';
-        box.style.cssText = `position:absolute;inset:0;z-index:100003;display:flex;align-items:center;justify-content:center;background:${L.back}`;
-        const x = document.createElement('div');
-        x.style.cssText = 'position:absolute;right:10px;top:10px;width:44px;height:44px;z-index:3;cursor:pointer';
-        const J = PALETTE.greedJunk;
-        x.innerHTML = `<svg viewBox="0 0 44 44" width="44" height="44"><circle cx="22" cy="22" r="19" fill="${J.tin[700]}" stroke="${PALETTE.ink}" stroke-width="3"/>` +
-            `<path d="M14 14 L30 30 M30 14 L14 30" stroke="${J.tin[100]}" stroke-width="4.5" stroke-linecap="round"/></svg>`;
-        x.addEventListener('click', (e) => { e.stopPropagation(); this.close(); });
-        box.appendChild(x);
+    // Аппарат в контейнер. Собирается один раз; дальше обёртка переезжает.
+    mount(container, opts) {
+        opts = opts || {};
+        this._opts = opts;
+        ['onPull', 'onSpinDone', 'onPach', 'onPachDone', 'onWheel', 'onWheelDone', 'canReady'].forEach(k => { this[k] = opts[k] || null; });
+        if (typeof GreedDebug !== 'undefined' && GreedDebug.attach) GreedDebug.attach(container);
+        if (this.wrapEl) {
+            container.appendChild(this.wrapEl);
+            this.fit(container);
+            this.run();
+            return this._mountP;
+        }
         const wrap = document.createElement('div');
         wrap.style.cssText = 'position:relative;flex:none';
-        box.appendChild(wrap);
-        host.appendChild(box);
-        this.box = box; this.wrap = wrap;
-        const k = Math.min(host.clientWidth / this.W, host.clientHeight / this.H);
-        wrap.style.width = (this.W * k).toFixed(1) + 'px';
-        wrap.style.height = (this.H * k).toFixed(1) + 'px';
-        const meta = await fetch(this.DIR + 'lux.json').then(r => r.json());
-        if (!this.box) return;
-        this.meta = meta;
-        const [w, h] = meta.size;
-        this.S = w / this.W;
-        const cv = document.createElement('canvas');
-        cv.width = w; cv.height = h;
-        cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:none';
-        const ic = document.createElement('canvas');
-        ic.width = w; ic.height = h;
-        ic.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:none;pointer-events:none';
-        wrap.appendChild(cv); wrap.appendChild(ic);
-        this.cv = cv; this.ic = ic; this.icx = ic.getContext('2d');
-        wrap.addEventListener('click', (e) => this.tap(e));
-        const imgs = await Promise.all(['albedo', 'height', 'mat', 'emit', 'shade'].map(n => new Promise((res, rej) => {
-            const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = this.DIR + n + '.png';
-        })));
-        if (!this.box) return;
-        if (!this.glInit(imgs)) return;
-        this.fx = null; this.nextFx = performance.now() + 2500;
-        this.tilt = { x: 0, y: 0 }; this.drawn = null;
-        this.drawIcons(performance.now());
+        container.appendChild(wrap);
+        this.wrapEl = wrap;
+        this.fit(container);
+        const mk = (z) => { const c = document.createElement('canvas'); c.style.cssText = `position:absolute;inset:0;width:100%;height:100%;z-index:${z};background:none;pointer-events:none`; wrap.appendChild(c); return c; };
+        this.cv = mk(0); this.ic = mk(1); this.icx = this.ic.getContext('2d');
+        this._mountP = (async () => {
+            const meta = await fetch(this.DIR + 'lux.json').then(r => r.json());
+            if (this.wrapEl !== wrap) return false;
+            this.meta = meta;
+            const [w, h] = meta.size;
+            this.S = w / this.W;
+            this.cv.width = this.ic.width = w; this.cv.height = this.ic.height = h;
+            const imgs = await Promise.all(['albedo', 'height', 'mat', 'emit', 'shade'].map(n => new Promise((res, rej) => {
+                const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = this.DIR + n + '.png';
+            })));
+            if (this.wrapEl !== wrap || !this.glInit(imgs)) return false;
+            this.fx = null; this.nextFx = performance.now() + 2500;
+            this.tilt = { x: 0, y: 0 }; this.drawn = null;
+            this.step(performance.now());
+            this.drawIcons(performance.now());
+            this.run();
+            return true;
+        })();
+        return this._mountP;
+    },
+    // Размер — как у гаражного: поле во весь проём рамки по ширине, по
+    // высоте — видимая зона (docs/plan/29-greed-layout.md).
+    fit(container) {
+        const cw = container.clientWidth, ch = container.clientHeight;
+        if (!cw || !ch || !this.wrapEl) return;
+        const k = Math.min(cw / this.W, ch / this.H);
+        this.wrapEl.style.width = (this.W * k).toFixed(1) + 'px';
+        this.wrapEl.style.height = (this.H * k).toFixed(1) + 'px';
+    },
+    // Цикл кадров: стоит, пока обёртка не на странице.
+    run() {
+        if (this.raf || !this.gl) return;
         const loop = (now) => {
-            if (!this.box) return;
+            if (!this.wrapEl || !this.wrapEl.isConnected || !this.gl) { this.raf = null; return; }
             this.step(now);
             this.raf = requestAnimationFrame(loop);
         };
         this.raf = requestAnimationFrame(loop);
     },
-
-    close() {
+    // собран и нарисован — покров из монет можно снимать
+    settled() {
+        return Promise.resolve(this._mountP).then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    },
+    // Снять со страницы целиком: контекст с текстурами — назад сразу.
+    unmount() {
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = null;
         if (this.gl) { const ext = this.gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); }
         this.gl = null;
-        if (this.box) this.box.remove();
-        this.box = null;
+        if (this.wrapEl) this.wrapEl.remove();
+        this.wrapEl = null; this._mountP = null; this.meta = null;
+    },
+
+    // ---------- то, что версия 2 получит на своих этапах ----------
+    // Пока пустое: экран алчности зовёт их у любого аппарата.
+    tryReady() {},
+    spin() {},
+    jarHold() {},
+    growDrop() {},
+    coinIn() {},
+    trayPour() {},
+    blink() {},
+    meterSet() {},
+    meterValue() {
+        const max = GameState.maxValue('greed') || 100;
+        return Math.max(0, Math.min(1, GameState.sinValue('greed') / max));
     },
 
     // ---------- свет ----------
@@ -216,14 +246,6 @@ const GreedLuxPreview = {
             if (T >= 1) { this.fx = null; this.nextFx = now + 6000 + Math.random() * 4000; }
             this.drawIcons(now);
         }
-    },
-
-    tap(e) {
-        const r = this.wrap.getBoundingClientRect();
-        const fx = (e.clientX - r.left) / r.width * this.W, fy = (e.clientY - r.top) / r.height * this.H + this.Y0;
-        let best = -1, bd = 22;
-        this.meta.icons.forEach(([x, y], i) => { const d = Math.hypot(x - fx, y - fy); if (d < bd) { bd = d; best = i; } });
-        if (best >= 0) this.fx = { i: best, kind: 'win', t0: performance.now() };
     },
 
     // ---------- экранчики колеса ----------

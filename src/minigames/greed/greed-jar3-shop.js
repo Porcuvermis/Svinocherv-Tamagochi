@@ -25,6 +25,13 @@ const GreedJarShop = {
     // узлы на холсте магазина (доли) — для попадания пальцем
     NODES: { wheel: [0.22, 0.33], pachinko: [0.22, 0.69], v2: [0.69, 0.53] },
 
+    // Гаражный аппарат снят (на его месте версия 2, у неё магазина нет):
+    // холст банки живёт рядом с аппаратом, а не в нём, — убрать.
+    detach() {
+        this.holdStop();
+        if (this.cv) this.cv.remove();
+        this.cv = null; this.wrap = null; this.state = 'rest'; this.busy = false;
+    },
     attach(wrap) {
         const host = wrap.parentElement;
         if (!host || typeof GreedJar3 === 'undefined') return;

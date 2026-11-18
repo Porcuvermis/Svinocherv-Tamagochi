@@ -3,8 +3,8 @@
 // превью 🐞 → «Аппарат». Не игра, слова здесь можно (инвариант 9 — о холсте).
 //
 // Здесь всё отладочное, что касается аппарата: колесо и пачинко «есть/нет»
-// (вместе с покупкой первой ступени), вид каждой игры 1/2 (GreedSkin),
-// эскиз версии 2 (GreedLuxPreview), последний бросок колеса.
+// (вместе с покупкой первой ступени), вид аппарата 1/2 (GreedSkin: версия 2
+// — весь аппарат, greed-lux.js), последний бросок колеса.
 // Было: шесть кнопок в общей панели, и каждая ПЕРЕЗАГРУЖАЛА игру
 // (location.replace) — аппарат собирается один раз, и смена вида иначе не
 // доходила. Игрок: «странно; пусть подгружается на глазах, это отладка».
@@ -53,11 +53,11 @@ const GreedDebug = {
             }
             return this.rebuild();
         }
-        if (act.indexOf('skin-') === 0) {
-            if (typeof GreedSkin !== 'undefined') GreedSkin.toggle(act.slice(5));
+        // вид аппарата целиком: версия 2 — весь аппарат разом (план 31, разд. 00)
+        if (act === 'skin') {
+            if (typeof GreedSkin !== 'undefined') GreedSkin.toggle('slots');
             return this.rebuild();
         }
-        if (act === 'lux' && typeof GreedLuxPreview !== 'undefined') GreedLuxPreview.open();
     },
 
     // Пересборка аппарата на месте: снять со страницы (цикл кадров сам
@@ -66,28 +66,40 @@ const GreedDebug = {
     // делается после загрузки всех файлов аппарата (низ этого файла):
     // GreedJunkLit копит холсты, программы видеокарты и кэши, которые
     // нельзя переносить на новый контекст.
+    // Аппаратов два — гаражный (GreedJunkLit) и версия 2 (GreedLux):
+    // снимается тот, что стоит, ставится тот, что выбран видом (GreedSkin).
     async rebuild() {
-        const L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement;
+        const L = GreedJunkLit, X = typeof GreedLux !== 'undefined' ? GreedLux : null;
+        const cur = X && X.wrapEl ? X : L, host = cur.wrapEl && cur.wrapEl.parentElement, opts = cur._opts;
         this.render();
         if (!host) return;
-        // Все контексты аппарата — потерять сразу, с текстурами: корпус,
-        // колесо, короб. Было — только корпус; приборы колеса и короба жили до
-        // сборки мусора, и каждая пересборка добавляла их память (tools/
-        // greed-lux-sketch/jar/deposit-prof.js: 3–4 новых контекста, 1 потерян).
-        [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl].forEach(gl => {
-            if (!gl) return;
-            const ext = gl.getExtension('WEBGL_lose_context');
-            if (ext) ext.loseContext();
-        });
-        if (L.growDrop) L.growDrop();
-        L.wrapEl.remove();
-        const P = this.pristine, opts = L._opts;
-        Object.keys(L).forEach(k => { if (!(k in P)) delete L[k]; });
-        Object.keys(P).forEach(k => { L[k] = P[k]; });
-        GreedJunk.pass = 'baked';
-        if (typeof GreedMinigame !== 'undefined') GreedMinigame.play = { slots: null, wheel: null, pachinko: null };
-        await L.mount(host, opts);
-        if (L.meterSet && L.meterValue) L.meterSet(L.meterValue());
+        if (L.wrapEl) {
+            // Все контексты аппарата — потерять сразу, с текстурами: корпус,
+            // колесо, короб. Было — только корпус; приборы колеса и короба
+            // жили до сборки мусора, и каждая пересборка добавляла их память
+            // (tools/greed-lux-sketch/jar/deposit-prof.js: 3–4 новых
+            // контекста, 1 потерян).
+            [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl].forEach(gl => {
+                if (!gl) return;
+                const ext = gl.getExtension('WEBGL_lose_context');
+                if (ext) ext.loseContext();
+            });
+            if (L.growDrop) L.growDrop();
+            L.wrapEl.remove();
+            // банка-магазин — рядом с аппаратом; ставим версию 2 — убрать
+            const next = typeof GreedMinigame !== 'undefined' && GreedMinigame.machine ? GreedMinigame.machine() : L;
+            if (next !== L && typeof GreedJarShop !== 'undefined' && GreedJarShop.detach) GreedJarShop.detach();
+            const P = this.pristine;
+            Object.keys(L).forEach(k => { if (!(k in P)) delete L[k]; });
+            Object.keys(P).forEach(k => { L[k] = P[k]; });
+            GreedJunk.pass = 'baked';
+        }
+        if (X && X.wrapEl) X.unmount();
+        const G = typeof GreedMinigame !== 'undefined' ? GreedMinigame : null;
+        const M = G && G.machine ? G.machine() : L;
+        if (G) { G.M = M; G.play = { slots: null, wheel: null, pachinko: null }; }
+        await M.mount(host, opts);
+        if (M.meterSet && M.meterValue) M.meterSet(M.meterValue());
         this.render();
     },
 
@@ -107,10 +119,7 @@ const GreedDebug = {
         this.panel.innerHTML =
             btn('wheel', 'Колесо: ' + (this.shown('gj-wheel') ? 'есть' : 'нет') + err('wheelError') + wl) +
             btn('pachinko', 'Пачинко: ' + (this.shown('gj-pachinko') ? 'есть' : 'нет') + err('pachError')) +
-            btn('skin-slots', 'Бандит: вид ' + skin('slots')) +
-            btn('skin-wheel', 'Колесо: вид ' + skin('wheel')) +
-            btn('skin-pachinko', 'Пачинко: вид ' + skin('pachinko')) +
-            btn('lux', 'Эскиз v2') +
+            btn('skin', 'Аппарат: вид ' + skin('slots')) +
             (typeof GreedJarShop !== 'undefined' && GreedJarShop.lastTap ? `<span style="color:#eee;padding:6px">банка: ${GreedJarShop.lastTap}</span>` : '');
         this.placeBelowInspector();
     },

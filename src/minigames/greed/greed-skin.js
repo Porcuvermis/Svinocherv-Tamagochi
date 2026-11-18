@@ -24,8 +24,10 @@ const GreedSkin = {
         const lvl = typeof Backend !== 'undefined' && Backend.greedLevel ? Backend.greedLevel(game) : 1;
         return lvl >= 2 ? 2 : 1;
     },
-    // Аппарат собирается один раз, поэтому смена вида — с перезагрузкой
-    // (как переключатели колеса и пачинко в 🐞).
+    // Версия 2 — весь аппарат и все три игры разом (план 31, разд. 00,
+    // решение игрока 17.11: смешанных уровней больше нет). Её признак —
+    // вторая ступень бандита (её ставит копилка версии 2) или вид 2 в 🐞.
+    v2() { return this.of('slots') === 2; },
     toggle(game) {
         try { localStorage.setItem(this.key(game), String(this.of(game) === 2 ? 1 : 2)); } catch (e) { /* нет хранилища */ }
     }
