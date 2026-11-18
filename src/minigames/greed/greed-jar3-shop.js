@@ -134,7 +134,9 @@ const GreedJarShop = {
                 return P;
             }
             const L = (t - C.push - C.fly) / 1000;
-            if (L * 1000 > C.land) { this.state = 'rest'; this.dirty = true; this.cv.style.pointerEvents = 'none'; return P; }
+            if (L * 1000 > C.land) { this.state = 'rest'; this.dirty = true; this.cv.style.pointerEvents = 'none';
+                if (typeof GreedAssembly !== 'undefined' && GreedAssembly.release) setTimeout(() => GreedAssembly.flushRelease(), 300);
+                return P; }
             P.sy = 1 - 0.16 * spring(L, 26, 9); P.sx = 1 + 0.08 * spring(L, 26, 9);
             P.y -= 18 * Math.max(0, spring(L + 0.05, 20, 10));
             P.roll = R.roll - 2 * spring(L, 22, 8);
@@ -291,11 +293,11 @@ const GreedJarShop = {
     async opened(node) {
         if (typeof Haptics !== 'undefined' && Haptics.notify) Haptics.notify('success');
         this.busy = true;
-        if (node === 'wheel' && typeof GreedAssembly !== 'undefined') {
+        if ((node === 'wheel' || node === 'pachinko') && typeof GreedAssembly !== 'undefined') {
             // Пересборка аппарата (секунды на телефоне) идёт сразу — под
             // стоп-кадром, пока горит галочка и банка опускается: ждать
             // меньше.
-            const run = GreedAssembly.wheel(() => this.lowTo(this.LOW, 450));
+            const run = GreedAssembly[node](() => this.lowTo(this.LOW, 450));
             try { await run; } catch (e) { console.warn('[Сборка колеса]', e); }
             await this.lowTo(0, 450);
             this.busy = false;
@@ -306,7 +308,7 @@ const GreedJarShop = {
         setTimeout(() => { if (typeof GreedDebug !== 'undefined' && GreedDebug.rebuild) GreedDebug.rebuild(); }, this.CLOSE.push + this.CLOSE.fly + this.CLOSE.land + 100);
     },
     close() {
-        if (this.state !== 'open') return;
+        if (this.state !== 'open' || this.busy) return;
         this.holdStop();
         this.state = 'closing'; this.t0 = performance.now(); this.dirty = true;
     },

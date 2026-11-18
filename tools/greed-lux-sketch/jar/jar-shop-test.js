@@ -42,6 +42,14 @@ const { chromium } = require('playwright');
   // подготовка рычага отложена до конца сборки — потом он готов
   await page.waitForFunction(() => GreedJunkLit.lever, null, { timeout: 20000 }).catch(() => {});
   ok(await page.evaluate(() => !!GreedJunkLit.lever), 'рычаг после сборки готов');
+  // пачинко: копилка до конца — собирается за стеклом так же
+  await page.evaluate(() => { Backend.grantCurrency('greed_token', 6); });
+  const [qx, qy] = await at(...await node('pachinko'));
+  await page.mouse.move(qx, qy); await page.mouse.down(); await page.waitForTimeout(2200); await page.mouse.up();
+  await page.waitForTimeout(500);
+  await page.waitForFunction(() => !GreedJarShop.busy, null, { timeout: 40000 }).catch(() => {});
+  await page.waitForTimeout(600); await shot('7-pach');
+  ok(await page.evaluate(() => Backend.greedLevel('pachinko') >= 1 && !!GreedJunkLit.pachCv && !GreedAssembly.base), 'пачинко открыто и собрано, стоп-кадра нет');
   // выход тапом по стеклу
   await page.mouse.click(...await at(180, 60)); await page.waitForTimeout(1300);
   ok(await page.evaluate(() => GreedJarShop.state === 'rest'), 'тап по стеклу — выход');

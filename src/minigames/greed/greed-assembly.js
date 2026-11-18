@@ -18,14 +18,19 @@
 // всё, что уже легло; перерисовывается, только когда деталь легла. Верхний —
 // только летящие детали и крутящийся диск.
 const GreedAssembly = {
-    REGION: { x0: 0, y0: -57, x1: 207, y1: 293 },    // место колеса на поле
+    // место игры на поле: под стоп-кадр прежнего аппарата
+    REGIONS: { wheel: { x0: 0, y0: -57, x1: 207, y1: 293 }, pach: { x0: 204, y0: -57, x1: 360, y1: 293 } },
 
-    async wheel(lower) {
+    wheel(lower) { return this.run('wheel', lower); },
+    pachinko(lower) { return this.run('pach', lower); },
+
+    async run(game, lower) {
         const L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement;
         if (!host || !L.gl) { if (GreedDebug && GreedDebug.rebuild) await GreedDebug.rebuild(); return; }
         this.setup(host);
         this.snap = this.snapshot(host);
-        this.mode = 'full'; this.parts = []; this.fade = 1; this.spin = null;
+        this.mode = 'full'; this.parts = []; this.fade = 1; this.spin = null; this.spinOn = false; this.glint = null;
+        this.REGION = this.REGIONS[game];
         this.paintBase();
         const lowered = new Promise(r => setTimeout(r, 450)).then(() => lower ? lower() : null);
         // Под стоп-кадром — аппарат с колесом. Ждём корпус и колесо, но не
@@ -38,11 +43,11 @@ const GreedAssembly = {
         P.prepareLever = function () { return after.then(() => prep.call(GreedJunkLit)); };
         this.release = () => { P.prepareLever = prep; release(); };
         await GreedDebug.rebuild();
-        await Promise.all([L._mountP, L._wheelP].map(p => Promise.resolve(p).catch(() => {})));
-        const discs = await this.discSets();
+        await Promise.all([L._mountP, game === 'wheel' ? L._wheelP : L._pachP].map(p => Promise.resolve(p).catch(() => {})));
+        const sets = game === 'wheel' ? await this.discSets() : await this.pachSets();
         await lowered;
-        this.parts = this.cut(discs);
-        this.mode = 'wheel';
+        this.parts = game === 'wheel' ? this.cut(sets) : this.cutPach(sets);
+        this.mode = 'part';
         this.paintBase();
         // Первая отрисовка слоёв — до старта часов: её тяжёлый кадр приходится
         // на неподвижную картинку, а не на первые кадры полёта досок.
@@ -55,7 +60,15 @@ const GreedAssembly = {
         const f0 = performance.now();
         await new Promise(r => { const st = () => { this.fade = 1 - (performance.now() - f0) / 250; this.base.style.opacity = this.fly.style.opacity = Math.max(0, this.fade); if (this.fade > 0) requestAnimationFrame(st); else r(); }; st(); });
         this.stop = true; this.base.remove(); this.fly.remove(); this.base = this.fly = null;
-        if (this.release) { this.release(); this.release = null; }
+        // Рычаг готовится, когда банка села на место (магазин закрыт) или
+        // через 4 с, если игрок остался в магазине: его подготовка — секунды
+        // процессора и роняла кадры подъёма и закрытия банки.
+        if (this.release) this.relTimer = setTimeout(() => this.flushRelease(), 4000);
+    },
+    flushRelease() {
+        clearTimeout(this.relTimer);
+        const rel = this.release; this.release = null;
+        if (rel) rel();
     },
 
     setup(host) {
@@ -216,6 +229,119 @@ const GreedAssembly = {
         return parts;
     },
 
+    // ---------- пачинко ----------
+    // Короб тем же шейдером в четырёх видах: пустой (рама, поле, сток,
+    // дуга с перегородкой, уголки), + лунки, + гвозди, целиком (+ кнопка).
+    async pachSets() {
+        const L = GreedJunkLit, G = GreedJunk, P = G.PACH, Q = L._pgl, S = L.SCALE, B = L.pachBox();
+        if (!Q) return null;
+        const svg = (pass, parts) => {
+            G.pass = pass;
+            const p = G.pachParts();
+            const T = { frame: G.T(12, 'raw', p.frame), field: G.T(2, 'paint', p.field), drain: G.T(2, 'raw', p.drain), steel: G.T(6.5, 'steel', p.steel),
+                cups: G.T(6, 'paint', p.cups), nails: G.T(2 + P.nailUp, 'steel', p.nails), corners: G.T(13, 'steel', p.corners) };
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(B.w * S)}" height="${Math.round(B.h * S)}" viewBox="${B.x} ${B.y} ${B.w} ${B.h}">` +
+                G.passStyle(pass) + G.defs() + parts.map(k => T[k]).join('') + '</svg>';
+        };
+        const set = async (parts) => { const maps = await Promise.all(['albedo', 'height', 'mat'].map(ps => L.image(svg(ps, parts)))); G.pass = 'baked'; return L.deviceSet(Q, maps); };
+        const shell = ['frame', 'field', 'drain', 'steel', 'corners'];
+        return { shell: await set(shell), cups: await set(shell.concat(['cups'])), nails: await set(shell.concat(['cups', 'nails'])) };
+    },
+    // разница двух картинок (что появилось во второй), расширенная на grow
+    diff(a, b, grow) {
+        const w = a.width, h = a.height, A = a.getContext('2d').getImageData(0, 0, w, h), Bd = b.getContext('2d').getImageData(0, 0, w, h).data;
+        const m = new Uint8Array(w * h), m2 = new Uint8Array(w * h), m3 = new Uint8Array(w * h);
+        for (let i = 0, p = 0; p < m.length; p++, i += 4) m[p] = (Math.abs(A.data[i] - Bd[i]) + Math.abs(A.data[i + 1] - Bd[i + 1]) + Math.abs(A.data[i + 2] - Bd[i + 2]) + Math.abs(A.data[i + 3] - Bd[i + 3])) > 18 ? 1 : 0;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dx = -grow; dx <= grow && !on; dx++) { const xx = x + dx; if (xx >= 0 && xx < w && m[y * w + xx]) on = 1; } m2[y * w + x] = on; }
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let on = 0; for (let dy = -grow; dy <= grow && !on; dy++) { const yy = y + dy; if (yy >= 0 && yy < h && m2[yy * w + x]) on = 1; } m3[y * w + x] = on; }
+        const out = document.createElement('canvas'); out.width = w; out.height = h;
+        const o = out.getContext('2d'), img = o.createImageData(w, h);
+        for (let p = 0, i = 0; p < m3.length; p++, i += 4) if (m3[p]) { img.data[i] = A.data[i]; img.data[i + 1] = A.data[i + 1]; img.data[i + 2] = A.data[i + 2]; img.data[i + 3] = A.data[i + 3]; }
+        o.putImageData(img, 0, 0);
+        return out;
+    },
+    // кусок картинки src, покрывающей box поля, → холст участка r поля
+    sub(src, box, r) {
+        const sx = src.width / box.w, sy = src.height / box.h, cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(r.w * sx)); cv.height = Math.max(1, Math.round(r.h * sy));
+        cv.getContext('2d').drawImage(src, (r.x - box.x) * sx, (r.y - box.y) * sy, r.w * sx, r.h * sy, 0, 0, cv.width, cv.height);
+        return cv;
+    },
+    cutPach(sets) {
+        const L = GreedJunkLit, G = GreedJunk, S = L.SCALE, body = L._glCanvas, Sh = G.PACH_SHIELD, P = G.PACH, parts = [];
+        L.draw(L.lightFor({ x: 0, y: 0 }));
+        const s = G.PACH_AT.s, R = (x, y, w, h) => G.pachRect({ x, y, w, h });
+        const crop = (r) => this.sub(body, { x: 0, y: G.Y0, w: G.W, h: G.H }, r);
+        // доски щита и саморезы (в пространстве короба → поле)
+        const bw = Sh.w / Sh.boards, bolts = [];
+        for (let i = 0; i < Sh.boards; i++) {
+            const x = Sh.x + bw * (i + 0.5);
+            [[x - 5, Sh.y + 6], [x + 5, Sh.y + 6], [x - 5, Sh.y + Sh.h - 6], [x + 5, Sh.y + Sh.h - 6]].forEach(p => bolts.push(G.pachPt(...p)));
+        }
+        const br = 3.4 * s;
+        [1, 0, 2].forEach((i, n) => {
+            const r = R(Sh.x + bw * i, Sh.y - 1, bw, Sh.h + 2), cv = crop(r), g = cv.getContext('2d'), k = cv.width / r.w;
+            bolts.forEach(([bx, by]) => {
+                if (bx < r.x || bx > r.x + r.w) return;
+                const dy = (by < r.y + r.h / 2 ? 9 : -9) * s * k;
+                g.save(); g.beginPath(); g.arc((bx - r.x) * k, (by - r.y) * k, br * k, 0, 7); g.clip();
+                g.drawImage(cv, 0, dy, cv.width, cv.height, 0, 0, cv.width, cv.height); g.restore();
+            });
+            parts.push({ kind: 'board', cv, x: r.x, y: r.y, w: r.w, h: r.h, at: n * 0.13, dur: 0.42, s0: 2.6, rot0: (n % 2 ? 1 : -1) * 0.35, from: n % 2 ? -1 : 1 });
+        });
+        bolts.forEach(([x, y], i) => {
+            const cv = crop({ x: x - br, y: y - br, w: br * 2, h: br * 2 }), g = cv.getContext('2d'), k = cv.width / (br * 2);
+            g.globalCompositeOperation = 'destination-in'; g.beginPath(); g.arc(br * k, br * k, (br - 0.4) * k, 0, 7); g.fill();
+            parts.push({ kind: 'bolt', cv, x: x - br, y: y - br, w: br * 2, h: br * 2, at: 0.55 + i * 0.035, dur: 0.3, s0: 4.5, spin: 9, from: i % 2 ? -1 : 1, tick: i % 2 === 0 });
+        });
+        // полка под коробом с кабелем — от низа короба до табло
+        const yb = G.pachPt(0, P.y1)[1] - 6, shelf = { x: 204, y: yb, w: 136, h: 292 - yb };
+        parts.push({ kind: 'shelf', cv: crop(shelf), x: shelf.x, y: shelf.y, w: shelf.w, h: shelf.h, at: 1.05, dur: 0.38, s0: 2, from: 1 });
+        this.END = 1.6;
+        const Q = L._pgl;
+        if (!Q || !sets) return parts;
+        // короб в четырёх видах — картинками его настоящего размера на аппарате
+        const B0 = L.pachBox(), BX = G.pachRect(B0), px = Math.round(BX.w * S), py = Math.round(BX.h * S);
+        const light = L.lightFor((L._tilt) || { x: 0, y: 0 });
+        const shot = (set) => L.deviceSprite(Q, set, px, py, light);
+        const shell = shot(sets.shell), withCups = shot(sets.cups), withNails = shot(sets.nails), full = shot(Q.box);
+        const cupsL = this.diff(withCups, shell, 2), nailsL = this.diff(withNails, withCups, 2), btnL = this.diff(full, withNails, 2);
+        const sh = L.pachShadowCv ? [L.pachShadowCv.far, L.pachShadowCv.near] : null;
+        parts.push({ kind: 'box', cv: shell, x: BX.x, y: BX.y, w: BX.w, h: BX.h, at: 1.4, dur: 0.6, s0: 2.2, rot0: 0.3, from: -1, shadow: sh, heavy: true });
+        let t = 2.15;
+        // лунки — по одной
+        G.PACH_CUPS.forEach((cu, i) => {
+            const r = R(cu.x - P.cup.w / 2 - 2.5, cu.y - 2.5, P.cup.w + 5, P.cup.h + 5);
+            parts.push({ kind: 'cup', cv: this.sub(cupsL, BX, r), x: r.x, y: r.y, w: r.w, h: r.h, at: t + i * 0.09, dur: 0.3, s0: 3.2, rot0: (i % 2 ? 0.6 : -0.6), from: i % 2 ? -1 : 1 });
+        });
+        t += G.PACH_CUPS.length * 0.09 + 0.25;
+        // гвозди — рядами сверху вниз, как вбивают: в ряду — волной
+        const nails = G.pachNails(), rows = {};
+        nails.forEach(([x, y]) => { const k = Math.round(y / 11); (rows[k] = rows[k] || []).push([x, y]); });
+        const keys = Object.keys(rows).map(Number).sort((a, b) => a - b), nr = 3.4;
+        keys.forEach((rk, ri) => rows[rk].sort((a, b) => a[0] - b[0]).forEach(([x, y], j) => {
+            const r = R(x - nr, y - nr, nr * 2, nr * 2);
+            parts.push({ kind: 'nail', cv: this.sub(nailsL, BX, r), x: r.x, y: r.y, w: r.w, h: r.h, at: t + ri * 0.075 + j * 0.018, dur: 0.18, s0: 4, from: (ri + j) % 2 ? -1 : 1, tick: j === 0 });
+        }));
+        t += keys.length * 0.075 + 0.3;
+        // кнопка запуска
+        const Bt = P.button, rb = R(Bt.x - Bt.r - 4, Bt.y - Bt.r - 4, Bt.r * 2 + 8, Bt.r * 2 + 8);
+        parts.push({ kind: 'btn', cv: this.sub(btnL, BX, rb), x: rb.x, y: rb.y, w: rb.w, h: rb.h, at: t, dur: 0.32, s0: 3.5, from: 1, heavy: true });
+        t += 0.45;
+        // стекло — вставляется последним, сверху
+        if (L.pachGlassCv) {
+            const gc = document.createElement('canvas'); gc.width = L.pachGlassCv.width; gc.height = L.pachGlassCv.height;
+            gc.getContext('2d').drawImage(L.pachGlassCv, 0, 0);
+            parts.push({ kind: 'glass', cv: gc, x: BX.x, y: BX.y, w: BX.w, h: BX.h, at: t, dur: 0.5, s0: 1.35, from: -1 });
+            t += 0.55;
+        }
+        // проверка: блик по стеклу
+        const Gr = G.pachGlassRect();
+        this.glint = { at: t + 0.1, dur: 0.6, r: R(Gr.x0, Gr.y0, Gr.x1 - Gr.x0, Gr.y1 - Gr.y0) };
+        this.END = this.glint.at + this.glint.dur;
+        return parts;
+    },
+
     // ---------- кадр ----------
     loop() {
         const step = () => {
@@ -238,7 +364,7 @@ const GreedAssembly = {
     frame(now) {
         const c = this.fly.getContext('2d'), t = (now - this.t0) / 1000, k = this.scene(0, 0)[2];
         // ничего не летит и не пружинит — холст не трогать (очистить один раз)
-        const busy = this.parts.some(p => { const u = t - p.at; return u >= 0 && u < p.dur + 0.25; }) || (this.spin && t >= this.spin.at) || this.parts.some(p => t >= p.at + p.dur && !p.landed);
+        const busy = this.parts.some(p => { const u = t - p.at; return u >= 0 && u < p.dur + 0.25; }) || (this.spin && t >= this.spin.at) || (this.glint && t >= this.glint.at && t < this.glint.at + this.glint.dur + 0.05) || this.parts.some(p => t >= p.at + p.dur && !p.landed);
         if (!busy) { if (this.flyDirty) { c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.fly.width, this.fly.height); this.flyDirty = false; } return; }
         this.flyDirty = true;
         c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.fly.width, this.fly.height);
@@ -270,6 +396,15 @@ const GreedAssembly = {
             const ptr = this.parts.find(p => p.kind === 'ptr');
             if (ptr && ptr.landed) this.draw(c, ptr, 1, 9, k);
         }
+        // проверка пачинко: блик проходит по стеклу сверху вниз
+        const Gl = this.glint;
+        if (Gl && t >= Gl.at && t < Gl.at + Gl.dur) {
+            const u = (t - Gl.at) / Gl.dur, d = this.fly.q, [x0, y0] = this.scene(Gl.r.x, Gl.r.y), [x1, y1] = this.scene(Gl.r.x + Gl.r.w, Gl.r.y + Gl.r.h);
+            const yb = y0 + (y1 - y0 + 120) * u - 60, g = c.createLinearGradient(0, (yb - 40) * d, 0, (yb + 40) * d);
+            g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+            c.save(); c.setTransform(d, 0, 0, d, 0, 0); c.beginPath(); c.rect(x0, y0, x1 - x0, y1 - y0); c.clip();
+            c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = g; c.fillRect(x0 * d, (yb - 40) * d, (x1 - x0) * d, 80 * d); c.restore();
+        }
         if (landedNow) this.paintBase();
     },
     // Деталь на прогрессе e (0 — у камеры, 1 — на месте); after — сколько
@@ -295,7 +430,7 @@ const GreedAssembly = {
         c.save();
         c.setTransform(d, 0, 0, d, 0, 0);
         c.translate(pv[0] + cx0 + ox, pv[1] + cy0 + oy); c.rotate(rot); c.scale(s, s); c.translate(-pv[0], -pv[1]);
-        if (p.shadow && after >= 0) this.shadow(c, p.shadow, after >= 9 ? 1 : Math.min(1, after / 0.25), -(p.base || 0), pv);
+        if (p.shadow && after >= 0) [].concat(p.shadow).forEach(sh => sh && this.shadow(c, sh, after >= 9 ? 1 : Math.min(1, after / 0.25), -(p.base || 0), pv));
         c.drawImage(p.cv, tx, ty, w, h);
         c.restore();
     },
