@@ -572,22 +572,30 @@ def pach_live():
             a = 2 * math.pi * k / 17
             o += f'<line x1="{cx}" y1="122" x2="{cx + math.cos(a) * 40:.1f}" y2="{122 + math.sin(a) * 40:.1f}" stroke="{c(GOLD, "gold")}" stroke-width="0.5" opacity="{0.4 if PASS == "albedo" else 1}"/>'
     o += '</g>'
-    # кромка поля — позолота по купол и стенкам (роспись, не пруток: шарик
-    # с дуги проходит над ней)
-    o += f'<path d="{inner}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="0.8" opacity="{0.8 if PASS == "albedo" else 1}"/>'
+    # кромка купола — позолота (роспись, не пруток: шарик с дуги проходит
+    # над ней); по бокам поля — рельсы (ниже)
+    o += f'<path d="M{fl} {cy} A{rd} {rd} 0 0 1 {sep} {cy}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="0.8" opacity="{0.8 if PASS == "albedo" else 1}"/>'
     # солнце в вершине купола — от него лучи
     o += fan(fc, cy - rd + 0.4, 2.6, 9.5, math.pi * 0.1, math.pi * 0.9, 11, 0.9)
     o += f'<path d="M{fc - 3} {cy - rd + 0.4} A3 3 0 0 0 {fc + 3} {cy - rd + 0.4} Z" fill="{c(GOLD, "gold")}"/>'
-    # дорожка: канал с золотыми кромками
+    # дорожка: канал с золотыми кромками; слева — жёлоб, её зеркало
     o += rr(sep + 2, cy - 4, fx1, fy1, 1.5, c('#070505', 'lac'))
+    o += rr(max(fx0, 2 * cx - fx1), cy + 12, 2 * cx - sep - 2, fy1, 1.5, c('#070505', 'lac'))
     # дуга — двойной золотой пруток
     arc = f'M{cx - r} {cy + 8} L{cx - r} {cy} A{r} {r} 0 0 1 {cx + r} {cy} L{cx + r} {cy + 4}'
     o += f'<path d="{arc}" fill="none" stroke="{c(INK)}" stroke-width="4.2" stroke-linejoin="round"/><path d="{arc}" fill="none" stroke="{c(GOLD, "gold")}" stroke-width="3.2" stroke-linejoin="round"/>'
     o += f'<path d="{arc}" fill="none" stroke="{c(INK)}" stroke-width="0.6" stroke-linejoin="round"/>'
-    sd_ = f'M{sep + 1} {cy + 12} L{sep + 1} {drain}'
-    o += f'<path d="{sd_}" stroke="{c(INK)}" stroke-width="3.2" stroke-linecap="round"/><path d="{sd_}" stroke="{c(GOLD, "gold")}" stroke-width="2.2" stroke-linecap="round"/>'
+    # перегородка дорожки и рельс жёлоба (зеркало, физический —
+    # GreedJunk.pachWorld, caps); клапан над дорожкой и полка под концом
+    # дуги (зеркало клапана, физическая: сбрасывает шарик в поле)
     vy, vx0, vx1 = cy + 12 - 2.4, sep + 1, cx + r - 1
+    for X in (sep + 1, 2 * cx - sep - 1):
+        sd_ = f'M{X} {cy + 12} L{X} {drain}'
+        o += f'<path d="{sd_}" stroke="{c(INK)}" stroke-width="3.2" stroke-linecap="round"/><path d="{sd_}" stroke="{c(GOLD, "gold")}" stroke-width="2.2" stroke-linecap="round"/>'
+    m = lambda x: 2 * cx - x
     o += f'<path d="M{vx0} {vy + 1.6} L{vx1} {vy - 0.6} L{vx1} {vy + 1.2} L{vx0} {vy + 3} Z" fill="{c(GOLD, "gold")}"/>'
+    o += f'<path d="M{m(vx0)} {vy + 1.6} L{fx0} {vy - 0.9} L{fx0} {vy + 1.5} L{m(vx0)} {vy + 3} Z" fill="{c(INK)}" stroke="{c(INK)}" stroke-width="0.8"/>'
+    o += f'<path d="M{m(vx0)} {vy + 1.6} L{fx0} {vy - 0.9} L{fx0} {vy + 1.5} L{m(vx0)} {vy + 3} Z" fill="{c(GOLD, "gold")}"/>'
     # сток — золотая решётка ар-деко над тёмной щелью
     o += rr(fx0, drain - 1, sep, fy1, 0.6, c('#030202', 'matte'))
     gx0 = fc - rd
@@ -667,7 +675,13 @@ def pach_build_live():
     rail = np.where(BY <= cy, (np.abs(d - r) - 1.6) * s_, 99.0)
     rail = np.minimum(rail, seg(cx - r, cy, cy + 8, 1.6)); rail = np.minimum(rail, seg(cx + r, cy, cy + 4, 1.6))
     add(rail, 2.4, 1.6 * s_, 'circ')
-    add(seg(P['sep'] + 1, cy + 12, P['drain'], 1.1), 2.2, 1.1 * s_, 'circ')
+    for X in (P['sep'] + 1, 2 * cx - P['sep'] - 1):
+        add(seg(X, cy + 12, P['drain'], 1.1), 2.2, 1.1 * s_, 'circ')
+    # полка жёлоба — капсула (как в физике)
+    vy, x0_, x1_ = cy + 12 - 2.4, fx0, 2 * cx - P['sep'] - 1
+    ex, ey = x1_ - x0_, 2.0
+    t_ = np.clip(((BX - x0_) * ex + (BY - (vy + 0.3)) * ey) / (ex * ex + ey * ey), 0, 1)
+    add((np.hypot(BX - (x0_ + ex * t_), BY - (vy + 0.3 + ey * t_)) - 1.0) * s_, 1.8, 1.0 * s_, 'circ')
     add(rrect(fx0, P['drain'] - 1, P['sep'], fy1, 0.6), -6, 0.8)
     rd = P['sep'] - cx
     for k in range(int(2 * rd // 3)):

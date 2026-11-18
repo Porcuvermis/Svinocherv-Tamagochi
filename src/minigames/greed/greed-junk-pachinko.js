@@ -194,15 +194,15 @@ Object.assign(GreedJunk, {
     // Гвозди версии 2: шахматка с шагом 10,9 (поле уже гаражного: 68 против
     // 79,5) от середины дуги. Справа граница — просвет до перегородки, слева
     // — её зеркало; в нечётных рядах крайние — вплотную к перегородке и
-    // зеркально ей, в жёлобе — пристенные (как у гаражного: без них шарик
-    // стекал по стенке). Под куполом — только внутри него.
+    // зеркально ей. В жёлобе гвоздей нет (игрок, 18.11: «лишние, декоративные,
+    // несимметричные») — шарик с дуги в поле сбрасывает полка, зеркало
+    // клапана дорожки (pachWorld: lux). Под куполом — только внутри него.
     pachNailsTidy() {
         const P = this.PACH, A = P.arc, C = P.cup, pts = [], fc = A.cx, step = 10.9, rd = P.sep - fc;
         const gap = 2 * 2.5 + 1.7 + 0.9;
-        const wl = P.x0 + P.wall + 1.9, wr = P.sep - 1 - 1.9, right = wr - 1.7 - gap, left = 2 * fc - right;
+        const wr = P.sep - 1 - 1.9, right = wr - 1.7 - gap, left = 2 * fc - right;
         const free = (x, y) => (y >= A.cy || Math.hypot(x - fc, y - A.cy) <= rd - 3.2) &&
             !this.PACH_CUPS.some(c => x > c.x - C.w / 2 - gap && x < c.x + C.w / 2 + gap && y > c.y - gap && y < c.y + C.h + gap);
-        const wallFree = (x, y) => !this.PACH_CUPS.some(c => x > c.x - C.w / 2 - gap && x < c.x + C.w / 2 + gap && y > c.y - gap && y < c.y + C.h + gap);
         for (let row = 0, y = 4; y < P.drain - 6; row++, y += 11) {
             const odd = row % 2, xs = [];
             for (let k = -6; k <= 6; k++) {
@@ -213,8 +213,6 @@ Object.assign(GreedJunk, {
             // перегородки — нет: шарик балансировал на шляпке)
             if (odd && y >= A.cy + 22) xs.push(wr, 2 * fc - wr);
             xs.forEach(x => { if (free(x, y) && free(2 * fc - x, y)) pts.push([x, y]); });
-            // жёлоб: пристенный в каждом нечётном ряду ниже дуги
-            if (odd && y >= A.cy + 4 && y < P.drain - 8 && wallFree(wl, y)) pts.push([wl, y]);
         }
         return pts;
     },

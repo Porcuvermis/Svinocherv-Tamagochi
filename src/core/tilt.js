@@ -88,7 +88,13 @@ const Tilt = (function () {
     // углами: у стоящего телефона углы вырождаются (gamma и alpha скачут
     // вместе), а матрица — нет.
     const TURN_TAU = 3000;      // мс: за сколько поза хвата догоняет новую
-    let turnB = null, turnAt = 0, turnX = 0, turnY = 0, turnLive = false;
+    // Поза хвата ползёт, только пока телефон ДВИЖЕТСЯ (сила подстройки — от
+    // скорости поворота, полная с TURN_MOVE °/с). Было — ползла всегда, и
+    // лежащий на столе телефон, которого никто не трогает, ещё секунд десять
+    // «наклонялся»: поза догоняла стол, и блики медленно ехали сами (игрок,
+    // 18.11, аппарат алчности; проверка — съёмка датчика в симуляции).
+    const TURN_MOVE = 20;
+    let turnB = null, turnAt = 0, turnX = 0, turnY = 0, turnLive = false, turnPrev = null;
     function rotm(a, b, g) {
         const r = Math.PI / 180, ca = Math.cos(a * r), sa = Math.sin(a * r), cb = Math.cos(b * r),
               sb = Math.sin(b * r), cg = Math.cos(g * r), sg = Math.sin(g * r);
@@ -113,10 +119,15 @@ const Tilt = (function () {
         const now = Date.now();
         if (!turnB) turnB = R.slice();
         else {
-            const w = 1 - Math.exp(-Math.min(500, now - turnAt) / TURN_TAU);
-            turnB = orth(turnB.map((v, i) => v + (R[i] - v) * w));
+            const dt = Math.min(500, now - turnAt);
+            // угол между прошлой ориентацией и этой: след Pᵀ·R = 1 + 2cos θ
+            const P = turnPrev, tr = P[0] * R[0] + P[1] * R[1] + P[2] * R[2] + P[3] * R[3] + P[4] * R[4] + P[5] * R[5] + P[6] * R[6] + P[7] * R[7] + P[8] * R[8];
+            const deg = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2))) * 180 / Math.PI;
+            const move = dt > 0 ? Math.min(1, deg / (dt / 1000) / TURN_MOVE) : 0;
+            const w = (1 - Math.exp(-dt / TURN_TAU)) * move;
+            if (w > 0) turnB = orth(turnB.map((v, i) => v + (R[i] - v) * w));
         }
-        turnAt = now;
+        turnAt = now; turnPrev = R;
         // D = Bᵀ·R — поворот от позы хвата в осях телефона; при малых углах
         // D ≈ I + [ω]×, отсюда ω.
         const B = turnB, D = (i, j) => B[i] * R[j] + B[3 + i] * R[3 + j] + B[6 + i] * R[6 + j];

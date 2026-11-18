@@ -40,8 +40,18 @@ Object.assign(GreedJunk, {
         });
         const cups = this.PACH_CUPS.map(c => ({ key: c.key, x0: c.x - C.w / 2, x1: c.x + C.w / 2, y0: c.y, y1: c.y + C.h }));
         const laneX = (P.sep + 2 + fx1) / 2;
+        // Версия 2 (PACH_TIDY): левый жёлоб — зеркало дорожки. Полка под
+        // концом дуги (зеркало клапана над дорожкой) сбрасывает шарик в поле,
+        // рельс по краю поля (зеркало перегородки) не пускает его обратно.
+        // Без них шарик с дуги стекал по стенке жёлоба прямо в сток.
+        // Капсулы: отрезок [x0, y0, x1, y1] и полутолщина. Рисунок — machine.py.
+        let caps = null;
+        if (this.PACH_TIDY) {
+            const rx = 2 * A.cx - (P.sep + 1), vy = A.cy + 12 - 2.4;
+            caps = [[fx0, vy + 0.3, rx, vy + 2.3, 0.9], [rx, A.cy + 12, rx, fy1 + 20, 1.1]];
+        }
         return (this._pachWorld = {
-            nails, grid, cell, key, cups,
+            nails, grid, cell, key, cups, caps,
             left: fx0, sep: P.sep + 1, sepTop: A.cy + 12, laneR: A.cx + A.r - 1, drain: P.drain,
             arc: A, start: { x: laneX, y: fy1 - 12 - K.r }
         });
@@ -113,6 +123,15 @@ Object.assign(GreedJunk, {
             // торец перегородки — как гвоздь
             const dx = b.x - Wd.sep, dy = b.y - Wd.sepTop, d = Math.hypot(dx, dy) || 1;
             if (d < r + 1) { b.x = Wd.sep + dx / d * (r + 1); b.y = Wd.sepTop + dy / d * (r + 1); this.pachBounce(b, dx / d, dy / d, K.eNail); }
+        }
+        // полка и рельс жёлоба (версия 2): ближайшая точка отрезка — шарик
+        // отталкивается от неё, как от круга (концы скруглены сами)
+        if (Wd.caps) for (const [x0, y0, x1, y1, hw] of Wd.caps) {
+            const ex = x1 - x0, ey = y1 - y0, t = Math.max(0, Math.min(1, ((b.x - x0) * ex + (b.y - y0) * ey) / (ex * ex + ey * ey)));
+            const qx = x0 + ex * t, qy = y0 + ey * t, dx = b.x - qx, dy = b.y - qy, d = Math.hypot(dx, dy), R = r + hw;
+            if (d >= R || d < 1e-6) continue;
+            b.x = qx + dx / d * R; b.y = qy + dy / d * R;
+            this.pachBounce(b, dx / d, dy / d, K.eWall);
         }
         // гвозди: только в соседних клетках
         const ci = Math.floor(b.x / Wd.cell), cj = Math.floor(b.y / Wd.cell), R = r + K.nailR;
