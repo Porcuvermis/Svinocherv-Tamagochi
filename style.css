@@ -603,14 +603,14 @@ body.fr-on #wi-root { display: none !important; }
    вверх. До старта (разбежка) — невидим. */
 .wallet-fx-item.wallet-fx-pop {
     transform: translate(-50%, -50%);
-    font-size: 20px;
-    gap: 4px;
+    font-size: 34px;
+    gap: 6px;
     opacity: 0;
     animation: wallet-fx-pop 1.6s ease-out forwards;
 }
 .wallet-fx-pop .token-art,
-.wallet-fx-pop .mark-token .token-art { width: 20px; height: 20px; }
-.wallet-fx-pop .coin-gold { width: 18px; height: 18px; }
+.wallet-fx-pop .mark-token .token-art { width: 34px; height: 34px; }
+.wallet-fx-pop .coin-gold { width: 30px; height: 30px; }
 @keyframes wallet-fx-pop {
     0% { transform: translate(-50%, -30%) scale(0.6); opacity: 0; }
     12% { transform: translate(-50%, -60%) scale(1.15); opacity: 1; }

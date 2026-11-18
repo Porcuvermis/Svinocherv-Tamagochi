@@ -193,7 +193,7 @@ const WalletFx = {
             const node = document.createElement('div');
             node.className = 'wallet-fx-item wallet-fx-pop plus';
             node.style.left = lx.toFixed(1) + 'px';
-            node.style.top = (ly + (i - (list.length - 1) / 2) * 22).toFixed(1) + 'px';
+            node.style.top = (ly + (i - (list.length - 1) / 2) * 38).toFixed(1) + 'px';
             node.style.animationDelay = (i * this.STEP_MS) + 'ms';
             node.innerHTML = `${it.mark || currencyMark(it.key)}<b>+${Math.abs(it.delta)}</b>`;
             layer.appendChild(node);
