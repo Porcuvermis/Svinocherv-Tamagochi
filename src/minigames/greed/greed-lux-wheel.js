@@ -50,12 +50,28 @@ Object.assign(GreedLux, {
         const [x, y, w, h] = B.disc, [px, py, pw, ph] = B.ptr;
         gl.uniform1f(this.U.fast, 1);
         this.scissor({ x: 0, y, w: x + w, h });
-        this.quad(this.sets.disc, x, y, w, h, 0, M.rot);
+        // Смаз по дуге: проходы диска с отставанием по углу, i-й — долей
+        // 1/(i+1): выходит среднее (первый непрозрачный — заменяет прошлый
+        // кадр). Отставание — путь за выдержку BLUR_MS, но не больше полсектора.
+        // Экраны секторов на скорости светят ярче — «разогнались».
+        const P = this.WHEEL_FX, sp = Math.abs(M.vel || 0), arc = Math.min(Math.PI / 16, sp * P.blurMs);
+        const nP = arc > 0.01 ? Math.min(P.passes, 1 + Math.ceil(arc / 0.025)) : 1, dir = Math.sign(M.vel || 1);
+        gl.uniform1f(this.U.emit, 1 + P.emitBoost * Math.min(1, sp / P.fastW));
+        for (let i = 0; i < nP; i++) {
+            gl.uniform1f(this.U.alpha, 1 / (i + 1));
+            this.quad(this.sets.disc, x, y, w, h, 0, M.rot - dir * arc * (nP > 1 ? i / (nP - 1) : 0));
+        }
+        gl.uniform1f(this.U.alpha, 1); gl.uniform1f(this.U.emit, 1);
         this.scissor({ x: px, y: py, w: 185 - px, h: ph });
         this.quad(this.sets.ptr, px, py, pw, ph);
         gl.disable(gl.SCISSOR_TEST);
         gl.uniform1f(this.U.fast, 0);
     },
+    // Вид в движении: blurMs — выдержка смаза, passes — проходов не больше;
+    // emitBoost — насколько ярче экраны на полной скорости fastW (рад/мс);
+    // trail — следов у значка (через trailMs); spark — вспышка кончика
+    // указателя на границе сектора, мс; lockMs — защёлкивание результата.
+    WHEEL_FX: { blurMs: 26, passes: 5, emitBoost: 0.55, fastW: 0.01, trail: 3, trailMs: 14, spark: 110, lockMs: 760 },
 
     // ---------- ДВИЖЕНИЕ: «на подшипниках» ----------
     // Игрок (18.11): гаражное колесо — тяжёлое, с откатом на штырь; это
@@ -126,7 +142,7 @@ Object.assign(GreedLux, {
             const u = Math.min(1, (now - M.t0) / M.T), [a, b, c, d] = M.poly;
             M.rot = M.from + M.dir * (a * u + b * u * u + c * u * u * u + d * u * u * u * u);
             if (u >= 1) {
-                M.rot = M.to; M.st = 'idle';
+                M.rot = M.to; M.st = 'idle'; M.lockAt = now;
                 this.wheelDeckEnsure();
                 if (typeof Haptics !== 'undefined') Haptics.impact('soft', true);
                 if (this.onWheelDone) this.onWheelDone();
@@ -142,6 +158,8 @@ Object.assign(GreedLux, {
             if (u >= 1) { M.rot = M.to; M.st = 'idle'; }
         }
         M.prevSt = M.st;
+        // скорость диска по кадрам (рад/мс) — смаз, след, свечение
+        M.vel = (M.rot - prev) / Math.max(1, raw);
         this.wheelTicks(now);
         this.wheelDeckStep();
         const key = M.rot.toFixed(4);
@@ -157,7 +175,7 @@ Object.assign(GreedLux, {
         const M = this._wheel, P = this.WHEEL_LUX, n = GreedJunk.wheelKeys().length, sec = Math.PI * 2 / n;
         const idx = Math.floor((M.rot - sec / 2 - GreedJunk.POINTER_ANGLE) / sec);
         if (M.lastPeg != null && idx !== M.lastPeg && now - (M.tickAt || 0) >= P.tickGap) {
-            M.tickAt = now;
+            M.tickAt = now; M.sparkAt = now; this._iconsDirty = true;
             if (typeof Haptics !== 'undefined') Haptics.tick();
         }
         M.lastPeg = idx;
@@ -254,6 +272,8 @@ Object.assign(GreedLux, {
             if ((now - this.fx.t0) / this.DUR[this.fx.kind] >= 1) { this.fx = null; this.nextFx = now + 6000 + Math.random() * 4000; }
             this._iconsDirty = true;
         }
+        const F = this.WHEEL_FX;
+        if ((M.sparkAt && now - M.sparkAt < F.spark * 3) || (M.lockAt && now - M.lockAt < F.lockMs)) this._iconsDirty = true;
         if (this._iconsDirty) { this._iconsDirty = false; this.drawIcons(now); }
     },
     // клин сектора — рамка эффекта (выигрыш светит весь клин)
@@ -309,9 +329,20 @@ Object.assign(GreedLux, {
         return base;
     },
     drawIcons(now) {
-        const g = this.icx, S = this.S, Q = this.Q, L = PALETTE.greedLux, keys = GreedJunk.wheelKeys();
+        const g = this.icx, S = this.S, Q = this.Q, L = PALETTE.greedLux, keys = GreedJunk.wheelKeys(), M = this._wheel, F = this.WHEEL_FX;
         g.clearRect(0, 0, this.ic.width, this.ic.height);
+        // Защёлкивание: сектор под указателем встал — остальные экраны на миг
+        // гаснут, по нему проходит развёртка и он разгорается (lockDraw ниже)
+        const lock = M && M.lockAt && now - M.lockAt < F.lockMs ? (now - M.lockAt) / F.lockMs : -1;
+        if (lock >= 0) {
+            const k = lock < 0.25 ? lock / 0.25 : 1 - (lock - 0.25) / 0.75;
+            g.fillStyle = L.wheel.dim; g.globalAlpha = Math.max(0, k);
+            keys.forEach((_, i) => { if (i === this._deck.target || this.iconAt(i).x < -24) return; this.wedge(g, i); g.fill(); });
+            g.globalAlpha = 1;
+        }
         g.globalCompositeOperation = 'lighter';
+        // след значков на скорости: копии на угле, где значок был trailMs назад
+        const sp = M ? M.vel || 0 : 0, trail = Math.abs(sp) > 0.0015 ? F.trail : 0;
         keys.forEach((kind, i) => {
             const spr = this.iconSprite(kind), P = this.iconAt(i);
             if (!spr || P.x < -24) return;
@@ -327,6 +358,15 @@ Object.assign(GreedLux, {
                 g.globalAlpha = 1;
             }
             // значок «верхом» к указателю: под ним стоит прямо
+            if (!fx && trail) {
+                const W0 = this.meta.live.wheel;
+                for (let k = trail; k >= 1; k--) {
+                    const a = P.a - sp * F.trailMs * k, tx = (W0[0] + Math.cos(a) * this.ICON_R) * S, ty = (W0[1] + Math.sin(a) * this.ICON_R - this.Y0) * S;
+                    g.save(); g.translate(tx, ty); g.rotate(a); g.globalAlpha = 0.32 / k;
+                    g.drawImage(spr, -spr.width / 2, -spr.height / 2); g.restore();
+                }
+                g.globalAlpha = 1;
+            }
             g.translate(cx, cy); g.rotate(P.a);
             if (!fx) { g.drawImage(spr, -spr.width / 2, -spr.height / 2); g.restore(); return; }
             g.shadowBlur = 5 * S;
@@ -344,7 +384,38 @@ Object.assign(GreedLux, {
             });
             g.restore();
         });
+        if (lock >= 0) this.lockDraw(g, lock);
+        this.sparkDraw(g, now);
         g.globalCompositeOperation = 'source-over';
+    },
+    // защёлкнувшийся сектор: развёртка от ступицы к ободу, потом свечение
+    lockDraw(g, u) {
+        const i = this._deck.target, W = this.meta.live.wheel, S = this.S, L = PALETTE.greedLux;
+        if (i < 0) return;
+        g.save(); this.wedge(g, i); g.clip();
+        const cx = W[0] * S, cy = (W[1] - this.Y0) * S, r0 = 24 * S, r1 = (W[2] - 2) * S;
+        if (u < 0.4) {
+            const r = r0 + (r1 - r0) * (u / 0.4), band = 7 * S;
+            const gr = g.createRadialGradient(cx, cy, Math.max(0, r - band), cx, cy, r + band);
+            gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, L.scan); gr.addColorStop(1, 'rgba(0,0,0,0)');
+            g.globalAlpha = 0.85; g.fillStyle = gr; g.fillRect(0, 0, this.ic.width, this.ic.height);
+        }
+        g.globalAlpha = u < 0.4 ? u / 0.4 * 0.6 : 0.6 * (1 - (u - 0.4) / 0.6);
+        g.fillStyle = L.wheel.lock; g.fillRect(0, 0, this.ic.width, this.ic.height);
+        g.restore(); g.globalAlpha = 1;
+    },
+    // Кончик указателя вспыхивает, когда под ним проходит граница сектора, —
+    // пара тику в пальце; на скорости вспышки сливаются в ровное сияние.
+    sparkDraw(g, now) {
+        const M = this._wheel, F = this.WHEEL_FX, L = PALETTE.greedLux.wheel, S = this.S;
+        if (!M) return;
+        const flash = M.sparkAt ? Math.exp(-(now - M.sparkAt) / (F.spark / 2.5)) : 0;
+        const glow = Math.min(1, Math.abs(M.vel || 0) / F.fastW) * 0.55, k = Math.max(flash, glow);
+        if (k < 0.02) return;
+        const x = 167.5 * S, y = (118 - this.Y0) * S, r = 11 * S;
+        const gr = g.createRadialGradient(x, y, 0, x, y, r);
+        gr.addColorStop(0, L.spark); gr.addColorStop(0.25, L.sparkHalo); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.globalAlpha = k; g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); g.globalAlpha = 1;
     },
     // Выигрыш колеса: колесо только что встало — вспышка выпавшего значка
     // и его клина; иначе — бандит (вспышка экрана, greed-lux-play.js).

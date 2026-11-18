@@ -164,7 +164,7 @@ const GreedLux = {
             #else
             precision mediump float;
             #endif
-            uniform sampler2D uA, uH, uM, uE, uS, uG, uL; uniform vec2 uTex, uTilt; uniform float uUnit, uShadow, uRot, uFast; varying vec2 v, p;
+            uniform sampler2D uA, uH, uM, uE, uS, uG, uL; uniform vec2 uTex, uTilt; uniform float uUnit, uShadow, uRot, uFast, uAlpha, uEmit; varying vec2 v, p;
             // уклон карты — в уклон на поле: карта спрайта повёрнута на uRot
             vec2 rot(vec2 q){ float cs = cos(uRot), sn = sin(uRot); return vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y); }
             float h(vec2 q){ vec4 t = texture2D(uH, q); return (t.r * 65280.0 + t.g * 255.0) / 65535.0 * 64.0; }
@@ -203,10 +203,10 @@ const GreedLux = {
                     c = a * (0.30 + 0.80 * dif) + texture2D(uL, refl(n, p)).rgb * m.r * 0.6 * (0.4 + 1.2 * lum);
                 }
                 c *= texture2D(uS, v).r;
-                c += texture2D(uE, v).rgb;
+                c += texture2D(uE, v).rgb * uEmit;
                 // в движении (крутится диск) — без сияния и искр: в мелькании
                 // их не видно, а это самая дорогая часть кадра
-                if (uFast > 0.5) { gl_FragColor = vec4(c * al, al); return; }
+                if (uFast > 0.5) { gl_FragColor = vec4(c * al, al) * uAlpha; return; }
                 float glow = 0.0;
                 for (int i = 0; i < 10; i++) { float t = float(i) * 0.6283;
                     vec2 q = v + vec2(cos(t), sin(t)) * uTex * 2.3 * uUnit;
@@ -261,7 +261,10 @@ const GreedLux = {
         [U.A, U.H, U.M, U.E, U.S].forEach((u, i) => gl.uniform1i(u, i));
         gl.uniform3f(gl.getUniformLocation(p, 'uFld'), this.W, this.H, this.Y0);
         this.U = Object.assign(U, { tex: gl.getUniformLocation(p, 'uTex'), dst: gl.getUniformLocation(p, 'uDst'), shadow: gl.getUniformLocation(p, 'uShadow'),
-            rot: gl.getUniformLocation(p, 'uRot'), fast: gl.getUniformLocation(p, 'uFast') });
+            rot: gl.getUniformLocation(p, 'uRot'), fast: gl.getUniformLocation(p, 'uFast'),
+            alpha: gl.getUniformLocation(p, 'uAlpha'), emit: gl.getUniformLocation(p, 'uEmit') });
+        // доля прохода (смаз — среднее нескольких) и сила свечения экранов
+        gl.uniform1f(this.U.alpha, 1); gl.uniform1f(this.U.emit, 1);
         this.uTilt = gl.getUniformLocation(p, 'uTilt');
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         return true;
