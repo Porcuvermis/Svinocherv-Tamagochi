@@ -221,6 +221,7 @@ Object.assign(GreedLux, {
                 b.globalAlpha = 0.9 * (1 - wt / 2600); b.fillRect(x, Math.round(y), 2, 2);
             }
         }
+        if (W && this.ledWinDraw) this.ledWinDraw(b, W, wt);
         b.globalAlpha = 1;
         const cv = this.ledCv, c = cv.getContext('2d');
         c.globalCompositeOperation = 'source-over';
