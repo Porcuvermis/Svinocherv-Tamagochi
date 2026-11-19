@@ -34,7 +34,7 @@ Object.assign(GreedLux, {
     // точек следа шарика
     // near — радиус «ожидания» (табло под шариком разгораются), единиц короба;
     // loseMs — промах в сток; win — длительность показа по ступеням
-    PACH_FX: { tickGap: 45, flash: 170, lockMs: 760, plungerMs: 240, trail: 6, near: { dx: 20, dy: 40 }, loseMs: 650, win: [0, 1100, 1500, 2200] },
+    PACH_FX: { tickGap: 45, flash: 170, lockMs: 760, plungerMs: 240, trail: 6, near: { dx: 20, dy: 40 }, loseMs: 650, win: [0, 1400, 1800, 2500] },
 
     pachMount(wrap) {
         this._pach = null;
@@ -307,45 +307,83 @@ Object.assign(GreedLux, {
         const C = GreedJunk.PACH.cup;
         return { x: cu.x - C.w / 2 + 5.2, y: cu.y + 2.6, w: C.w - 10.4, h: C.h - 4.2 };
     },
+    // Выигрыш. Первый вариант светил только табло, солнцем и тонкими лучами —
+    // на телефоне промах (тёмная заливка ВСЕГО поля) читался заметнее победы
+    // (игрок, 19.11). Теперь победа — зеркало промаха, только светом и
+    // сильнее: всё поле вспыхивает цветом лунки, от неё по полю расходится
+    // кольцо, из лунки летят искры; ступень добавляет лучи веера и огни
+    // по кромке купола. Всё — формулой от u, без своего состояния.
     pachWinDraw(c, Wn, u, plate) {
-        const G = GreedJunk, P = G.PACH, A = P.arc, rd = P.sep - A.cx, L = PALETTE.greedLux, gold = L.cupLed.gold1;
-        const fade = u < 0.12 ? u / 0.12 : 1 - (u - 0.12) / 0.88, ax = A.cx, ay = A.cy - rd;
-        // табло — мигает (ступень — чаще и ярче)
+        const G = GreedJunk, P = G.PACH, A = P.arc, rd = P.sep - A.cx, fl = A.cx - rd, L = PALETTE.greedLux, gold = L.cupLed.gold1;
+        const T = Wn.tier, fade = u < 0.08 ? u / 0.08 : 1 - (u - 0.08) / 0.92, ax = A.cx, ay = A.cy - rd;
+        const col = (Wn.cup && L.cupLed && L.cupLed[Wn.cup.key]) || gold;
+        const cx = Wn.cup ? Wn.cup.x : ax, cy = Wn.cup ? Wn.cup.y + P.cup.h / 2 : A.cy;
+        const field = () => { c.beginPath(); c.moveTo(fl, P.drain); c.lineTo(fl, A.cy); c.arc(A.cx, A.cy, rd, Math.PI, 0); c.lineTo(P.sep, P.drain); c.closePath(); };
+        c.save(); field(); c.clip();
+        // поле вспыхивает: пульсы (ступень — больше), первый самый яркий
+        const pulses = 1 + T, pu = Math.max(0, Math.sin(u * Math.PI * 2 * pulses)) * Math.pow(1 - u, 0.7);
+        const wash = c.createRadialGradient(cx, cy, 0, cx, cy, 260);
+        wash.addColorStop(0, col); wash.addColorStop(0.5, gold); wash.addColorStop(1, L.wheel.sparkHalo);
+        c.globalAlpha = Math.min(1, pu * (0.26 + 0.06 * T)); c.fillStyle = wash; c.fillRect(fl, P.y0, P.sep - fl, P.drain + 40 - P.y0);
+        // кольцо от лунки по полю (у ступени 2–3 — второе следом)
+        for (let r = 0; r < (T >= 2 ? 2 : 1); r++) {
+            const v = Math.min(1, Math.max(0, (u - r * 0.18) / 0.55));
+            if (v <= 0 || v >= 1) continue;
+            const R = 6 + v * 230;
+            c.globalAlpha = (1 - v) * 0.9; c.strokeStyle = col; c.lineWidth = 7 * (1 - v) + 1.5;
+            c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();
+            c.globalAlpha = (1 - v); c.strokeStyle = L.wheel.spark; c.lineWidth = 1.2;
+            c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();
+        }
+        // лучи веера от солнца — волной к краям; у монеты — только середина
+        const rays = T >= 2 ? 17 : 7;
+        c.lineCap = 'round';
+        for (let k = 0; k < rays; k++) {
+            const a = T >= 2 ? Math.PI * (0.04 + 0.92 * k / 16) : Math.PI * (0.32 + 0.36 * k / 6);
+            const w = Math.abs(k - (rays - 1) / 2) / ((rays - 1) / 2), ph = u * 2.2 - w * 0.9;
+            const on = Math.max(0, Math.sin(Math.min(1, Math.max(0, ph)) * Math.PI)) * fade;
+            if (on <= 0.01) continue;
+            const ex = ax + Math.cos(a) * 260, ey = ay + Math.sin(a) * 260;
+            c.strokeStyle = gold;
+            c.globalAlpha = on * 0.35; c.lineWidth = 6; c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+            c.globalAlpha = on; c.lineWidth = 1.6; c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+        }
+        c.restore();
+        // табло — мигает ярко, с широким ореолом
         if (Wn.cup) {
-            const q = plate(Wn.cup), col = (L.cupLed && L.cupLed[Wn.cup.key]) || L.scan;
-            const bl = Math.max(0, Math.sin(u * Math.PI * (3 + Wn.tier))) * (1 - u * 0.5);
-            c.globalAlpha = bl * (0.7 + 0.1 * Wn.tier); c.fillStyle = col;
-            c.fillRect(q.x - 1, q.y - 1, q.w + 2, q.h + 2);
-            this.pachCupGlow(c, Wn.cup, col, bl * (0.7 + 0.1 * Wn.tier), 14 + 3 * Wn.tier);
+            const q = plate(Wn.cup), bl = Math.max(0, Math.sin(u * Math.PI * (4 + 2 * T))) * (1 - u * 0.4);
+            c.globalAlpha = bl; c.fillStyle = col; c.fillRect(q.x - 1.5, q.y - 1.5, q.w + 3, q.h + 3);
+            c.fillStyle = L.wheel.spark; c.globalAlpha = bl * 0.3; c.fillRect(q.x + 1, q.y + 1, q.w - 2, q.h - 2);
+            this.pachCupGlow(c, Wn.cup, col, Math.min(1, 0.6 + bl), 30 + 8 * T);
         }
+        // искры из лунки: веером вверх, падают дугой
+        c.save(); field(); c.clip();
+        const n = 10 + 8 * T, dur = this.PACH_FX.win[T] || 1100, t = u * dur / 1000;
+        for (let i = 0; i < n; i++) {
+            const h = Math.sin(i * 12.9898 + T * 78.233) * 43758.5453, f = h - Math.floor(h);
+            const a = -Math.PI / 2 + (f - 0.5) * 2.4, sp = 110 + 120 * ((f * 7.31) % 1), life = 0.5 + 0.5 * ((f * 3.7) % 1);
+            // старт с разбросом — иначе в первый миг все искры в одной точке и сливаются в белое пятно
+            const tt = t * (0.8 + 0.4 * f) + 0.04 * ((f * 5.3) % 1); if (tt > life) continue;
+            const x = cx + Math.cos(a) * sp * tt, y = cy + Math.sin(a) * sp * tt + 160 * tt * tt;
+            const r = 1.8 * (1 - tt / life) + 0.5;
+            const g = c.createRadialGradient(x, y, 0, x, y, r * 2.2);
+            g.addColorStop(0, L.wheel.spark); g.addColorStop(0.3, i % 3 ? gold : col); g.addColorStop(1, 'rgba(0,0,0,0)');
+            c.globalAlpha = 1 - tt / life; c.fillStyle = g; c.fillRect(x - r * 2.2, y - r * 2.2, r * 4.4, r * 4.4);
+        }
+        c.restore();
         // солнце купола
-        const sg = c.createRadialGradient(ax, ay, 0, ax, ay, 10 + 4 * Wn.tier);
-        sg.addColorStop(0, gold); sg.addColorStop(0.4, L.wheel.sparkHalo); sg.addColorStop(1, 'rgba(0,0,0,0)');
-        c.globalAlpha = fade * (0.5 + 0.2 * Wn.tier); c.fillStyle = sg;
-        c.fillRect(ax - 20, ay - 20, 40, 40);
-        if (Wn.tier >= 2) {
-            // лучи веера — волной от середины к краям, по полю под куполом
-            const fl = A.cx - rd;
-            c.save();
-            c.beginPath(); c.moveTo(fl, P.drain); c.lineTo(fl, A.cy); c.arc(A.cx, A.cy, rd, Math.PI, 0); c.lineTo(P.sep, P.drain); c.closePath(); c.clip();
-            c.strokeStyle = gold; c.lineWidth = 0.9; c.lineCap = 'round';
-            for (let k = 0; k < 17; k++) {
-                const a = Math.PI * (0.04 + 0.92 * k / 16), w = Math.abs(k - 8) / 8, ph = u * 2.2 - w;
-                const on = Math.max(0, Math.sin(Math.min(1, Math.max(0, ph)) * Math.PI));
-                if (on <= 0.01) continue;
-                c.globalAlpha = on * fade * 0.8;
-                c.beginPath(); c.moveTo(ax, ay); c.lineTo(ax + Math.cos(a) * 240, ay + Math.sin(a) * 240); c.stroke();
-            }
-            c.restore();
-        }
-        if (Wn.tier >= 3) {
-            // огни по кромке купола бегут от середины вниз по обе стороны
-            c.fillStyle = gold;
-            for (let i = 0; i < 14; i++) {
-                const t = ((i / 14 + u * 1.5) % 1), a = Math.PI + t * Math.PI;
+        const sr = 22 + 10 * T, sg = c.createRadialGradient(ax, ay, 0, ax, ay, sr);
+        sg.addColorStop(0, L.wheel.spark); sg.addColorStop(0.25, gold); sg.addColorStop(0.6, L.wheel.sparkHalo); sg.addColorStop(1, 'rgba(0,0,0,0)');
+        c.globalAlpha = fade; c.fillStyle = sg; c.fillRect(ax - sr, ay - sr, 2 * sr, 2 * sr);
+        if (T >= 3) {
+            // огни бегут по кромке купола от вершины вниз по обе стороны
+            for (let i = 0; i < 16; i++) {
+                const tt = ((i / 16 + u * 1.5) % 1), a = Math.PI + tt * Math.PI;
                 [a, 3 * Math.PI - a].forEach(b => {
-                    c.globalAlpha = fade * (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7 + u * 20)));
-                    c.beginPath(); c.arc(A.cx + Math.cos(b) * rd, A.cy + Math.sin(b) * rd, 0.9, 0, 7); c.fill();
+                    const x = A.cx + Math.cos(b) * rd, y = A.cy + Math.sin(b) * rd;
+                    const g = c.createRadialGradient(x, y, 0, x, y, 5);
+                    g.addColorStop(0, L.wheel.spark); g.addColorStop(0.35, gold); g.addColorStop(1, 'rgba(0,0,0,0)');
+                    c.globalAlpha = fade * (0.5 + 0.5 * Math.abs(Math.sin(i * 1.7 + u * 20))); c.fillStyle = g; c.fillRect(x - 5, y - 5, 10, 10);
                 });
             }
         }
