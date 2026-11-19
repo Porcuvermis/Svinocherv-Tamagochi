@@ -217,6 +217,18 @@ Object.assign(LocalBackend, {
         return 0;
     },
 
+    // Какие места линии составили выигрыш — по тем же правилам, что
+    // greedPay (рядом, чтобы не разъехались): тройка — все три, пара монет —
+    // две монеты, ничего — пусто. Нужно показу: прыгают только они (игрок,
+    // 19.11 — третий значок при паре притворялся частью комбинации).
+    greedWinMask(cfg, reels) {
+        if (!reels || reels.length !== 3) return [false, false, false];
+        if (reels[0] === reels[1] && reels[1] === reels[2]) return this.greedPay(cfg, reels) > 0 || (cfg.reel || []).some(s => s.key === reels[0] && s.give) ? [true, true, true] : [false, false, false];
+        const pairKey = cfg.pair && cfg.pair.key;
+        if (pairKey && reels.filter(k => k === pairKey).length === 2) return reels.map(k => k === pairKey);
+        return [false, false, false];
+    },
+
     // Самый дорогой символ таблицы. Считается, а не записан вторым числом в
     // конфиг: иначе правка выплат разъедет с «что считать джекпотом».
     greedTopKey(cfg) {

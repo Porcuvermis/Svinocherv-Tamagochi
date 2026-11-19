@@ -180,15 +180,31 @@ Object.assign(GreedLux, {
         }
         return (C[key] = out);
     },
+    // Когда прыгает значок места i: только выигравшие места (маска из
+    // reelsWin), по очереди слева направо без пропусков; не выигравшее — null.
+    popStart(W, i) {
+        const m = W.mask || [true, true, true], Pp = this.WINFX.pop;
+        if (!m[i]) return null;
+        let k = 0; for (let j = 0; j < i; j++) if (m[j]) k++;
+        return Pp.t0 + k * Pp.gap;
+    },
+    popEnd(W) {
+        const m = W.mask || [true, true, true], Pp = this.WINFX.pop;
+        return Pp.t0 + (m.filter(Boolean).length - 1) * Pp.gap + Pp.ms;
+    },
     ledPopDraw(b, W, wt) {
         const L = this.LED, P = PALETTE.greedLux.led, Pp = this.WINFX.pop, T = W.tier, dur = this.WINFX.slotMs[T];
-        const keys = this.reelKeys(), end = Pp.t0 + 2 * Pp.gap + Pp.ms, fade = Math.min(1, Math.max(0, (dur - wt) / 300));
+        const keys = this.reelKeys(), end = this.popEnd(W), fade = Math.min(1, Math.max(0, (dur - wt) / 300));
         const hash = (i) => { const h = Math.sin(i * 12.9898) * 43758.5453; return h - Math.floor(h); };
         b.imageSmoothingEnabled = false;
         L.cols.forEach((cx, i) => {
             const spr = this.ledSprites[keys[i]];
             if (!spr) return;
-            const t = wt - (Pp.t0 + i * Pp.gap), u = Math.min(1, Math.max(0, t / Pp.ms));
+            const st = this.popStart(W, i);
+            // не составил выигрыш — стоит на месте и притушен, чтобы читалось,
+            // ЧТО именно выиграло (пара монет — две, а не три)
+            if (st == null) { b.globalAlpha = 0.4; b.drawImage(spr, cx - 8, L.mid - 8); b.globalAlpha = 1; return; }
+            const t = wt - st, u = Math.min(1, Math.max(0, t / Pp.ms));
             // прыжок: рывок вверх с перелётом, затухающее качание к единице
             let sc = 1 + (t > 0 ? Pp.amp[T] * Math.exp(-4 * u) * Math.sin(Math.min(1, u * 1.4) * Math.PI * 1.5 + 0.0) : 0);
             if (t > 0 && u < 0.25) sc = 1 + Pp.amp[T] * (u / 0.25);
@@ -231,9 +247,10 @@ Object.assign(GreedLux, {
         let x = 0, y = 0;
         if (W && Pp.shake[W.tier]) {
             const wt = now - W.at;
-            for (let i = 0; i < 3; i++) {
+            const cnt = (W.mask || [true, true, true]).filter(Boolean).length;
+            for (let i = 0; i < cnt; i++) {
                 const t = wt - (Pp.t0 + i * Pp.gap);
-                if (t > 0 && t < 260) { const k = Math.exp(-t / 70) * Pp.shake[W.tier] * (i === 2 ? 1.4 : 1); x += Math.sin(t / 18 + i) * k; y += Math.cos(t / 23) * k * 0.6; }
+                if (t > 0 && t < 260) { const k = Math.exp(-t / 70) * Pp.shake[W.tier] * (i === cnt - 1 ? 1.4 : 1); x += Math.sin(t / 18 + i) * k; y += Math.cos(t / 23) * k * 0.6; }
             }
         }
         const v = x || y ? `${(x / this.W * 100).toFixed(2)}% ${(y / this.H * 100).toFixed(2)}%` : '';
@@ -264,8 +281,10 @@ Object.assign(GreedLux, {
             L.cols.forEach((cx, ci) => {
                 const r = this.reels[ci], pos = (r.s - C.h / 2) / C.h, base = Math.floor(pos);
                 for (let i = base - 2; i <= base + 3; i++) {
-                    const spr = this.ledSprites[St[((i % n) + n) % n]];
-                    if (spr) q.drawImage(spr, cx - 8, Math.round(L.mid + (i - pos) * L.cell) - 8);
+                    const spr = this.ledSprites[St[((i % n) + n) % n]], yc = L.mid + (i - pos) * L.cell;
+                    // линию волна не трогает — её показывают прыжки (иначе не
+                    // выигравший значок пары вспыхивал бы вместе с ними)
+                    if (spr && Math.abs(yc - L.mid) > 1) q.drawImage(spr, cx - 8, Math.round(yc) - 8);
                 }
             });
             b.globalAlpha = 1; b.drawImage(m, 0, 0); b.drawImage(m, 0, 0);
@@ -282,7 +301,7 @@ Object.assign(GreedLux, {
     GreedLux.winPop = function (game, res) {
         if (game === 'wheel' && res) this.wheelWinShow(res);
         const r = pop ? pop.apply(this, arguments) : undefined;
-        if (game === 'slots' && this._ledWin && performance.now() - this._ledWin.at < 50) { this._slotWin = { tier: this._ledWin.tier, at: this._ledWin.at }; this._iconsDirty = true; }
+        if (game === 'slots' && this._ledWin && performance.now() - this._ledWin.at < 50) { this._slotWin = { tier: this._ledWin.tier, at: this._ledWin.at, mask: this._ledWin.mask }; this._iconsDirty = true; }
         return r;
     };
     const blink = GreedLux.wheelBlink;

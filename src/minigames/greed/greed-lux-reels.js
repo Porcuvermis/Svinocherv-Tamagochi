@@ -109,13 +109,16 @@ Object.assign(GreedLux, {
         const cur = res.currencies || {}, other = Object.keys(cur).some(k => k !== 'gold' && cur[k] > 0);
         const ratio = (res.pay || 0) / Math.max(1, res.cost || 1);
         const tier = res.jackpot || ratio >= T.big ? 3 : ratio >= T.mid || other ? 2 : res.pay > 0 ? 1 : 0;
+        // места выигрыша: прыгают только они (Backend.greedWinMask — те же правила, что выплата)
+        let mask = Backend.greedWinMask ? Backend.greedWinMask(cfg, res.reels || this.reelKeys()) : null;
+        if (!mask || !mask.some(Boolean)) mask = [true, true, true];
         if (tier) {
-            this._ledWin = { tier, at: now };
+            this._ledWin = { tier, at: now, mask };
             // отдача — в такт прыжкам значков линии (greed-lux-winfx.js), в конце — «успех»
             if (typeof Haptics !== 'undefined') {
-                const Pp = this.WINFX.pop, kind = ['', 'light', 'medium', 'heavy'][tier];
-                for (let i = 0; i < 3; i++) setTimeout(() => Haptics.impact(kind, true), Pp.t0 + i * Pp.gap);
-                setTimeout(() => tier === 3 ? Haptics.burst('heavy', 3, 110, 'success') : Haptics.notify('success', true), Pp.t0 + 2 * Pp.gap + 260);
+                const Pp = this.WINFX.pop, kind = ['', 'light', 'medium', 'heavy'][tier], cnt = mask.filter(Boolean).length;
+                for (let i = 0; i < cnt; i++) setTimeout(() => Haptics.impact(kind, true), Pp.t0 + i * Pp.gap);
+                setTimeout(() => tier === 3 ? Haptics.burst('heavy', 3, 110, 'success') : Haptics.notify('success', true), Pp.t0 + (cnt - 1) * Pp.gap + 260);
             }
         } else this._loseAt = now;
         this._ledDirty = true;
