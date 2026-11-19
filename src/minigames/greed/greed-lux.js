@@ -32,7 +32,7 @@ const GreedLux = {
         ['onPull', 'onSpinDone', 'onPach', 'onPachDone', 'onWheel', 'onWheelDone', 'canReady'].forEach(k => { this[k] = opts[k] || null; });
         if (typeof GreedDebug !== 'undefined' && GreedDebug.attach) GreedDebug.attach(container);
         // гвозди пачинко — ровной раскладкой версии 2 (физика и запас — под неё)
-        GreedJunk.pachTidy(true);
+        GreedJunk.pachTidy(true); this._pachNailsC = null;
         if (this.wrapEl) {
             container.appendChild(this.wrapEl);
             this.fit(container);

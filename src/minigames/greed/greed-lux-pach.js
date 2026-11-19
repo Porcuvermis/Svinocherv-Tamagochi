@@ -292,6 +292,16 @@ Object.assign(GreedLux, {
         }
         c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
     },
+    // Свечение гвоздя для волны выигрыша: один раз в спрайт — гвоздей под
+    // фронтом десятки за кадр, градиент на каждый был бы дорог.
+    pachGlowSprite() {
+        if (this._pachSpr) return this._pachSpr;
+        const L = PALETTE.greedLux, n = 32, cv = document.createElement('canvas'); cv.width = cv.height = n;
+        const c = cv.getContext('2d'), g = c.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+        g.addColorStop(0, L.wheel.spark); g.addColorStop(0.18, L.wheel.spark); g.addColorStop(0.35, L.cupLed.gold1); g.addColorStop(0.6, L.wheel.sparkHalo); g.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = g; c.fillRect(0, 0, n, n);
+        return (this._pachSpr = cv);
+    },
     // ореол лунки (в «свете»): цвет её табло, радиус r вокруг середины
     pachCupGlow(c, cu, col, a, r) {
         if (a <= 0.01) return;
@@ -325,15 +335,29 @@ Object.assign(GreedLux, {
         const wash = c.createRadialGradient(cx, cy, 0, cx, cy, 260);
         wash.addColorStop(0, col); wash.addColorStop(0.5, gold); wash.addColorStop(1, L.wheel.sparkHalo);
         c.globalAlpha = Math.min(1, pu * (0.26 + 0.06 * T)); c.fillStyle = wash; c.fillRect(fl, P.y0, P.sep - fl, P.drain + 40 - P.y0);
-        // кольцо от лунки по полю (у ступени 2–3 — второе следом)
-        for (let r = 0; r < (T >= 2 ? 2 : 1); r++) {
-            const v = Math.min(1, Math.max(0, (u - r * 0.18) / 0.55));
-            if (v <= 0 || v >= 1) continue;
-            const R = 6 + v * 230;
-            c.globalAlpha = (1 - v) * 0.9; c.strokeStyle = col; c.lineWidth = 7 * (1 - v) + 1.5;
-            c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();
-            c.globalAlpha = (1 - v); c.strokeStyle = L.wheel.spark; c.lineWidth = 1.2;
-            c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();
+        // Волны от лунки — не нарисованным кольцом, а светом самого поля
+        // (игрок, 19.11): гвозди и табло лунок вспыхивают, когда через них
+        // проходит фронт. Повторяется — у монеты 2 волны, у жетона 4.
+        const waves = 1 + T, band = 12;
+        const fronts = [];
+        for (let r = 0; r < waves; r++) {
+            const v = (u - r * 0.16) / 0.5;
+            if (v > 0 && v < 1) fronts.push([4 + v * 240, 1 - v]);
+        }
+        if (fronts.length) {
+            const lit = (x, y) => { let m = 0; fronts.forEach(([R, s]) => { const d = Math.abs(Math.hypot(x - cx, y - cy) - R); if (d < band) m = Math.max(m, s * (1 - d / band)); }); return m; };
+            const spr = this.pachGlowSprite(), sr = 9;
+            this._pachNailsC = this._pachNailsC || G.pachNails();
+            this._pachNailsC.forEach(([x, y]) => {
+                const m = lit(x, y); if (m <= 0.02) return;
+                c.globalAlpha = m; c.drawImage(spr, x - sr, y - sr, 2 * sr, 2 * sr);
+            });
+            G.PACH_CUPS.forEach(cu => {
+                const m = lit(cu.x, cu.y + P.cup.h / 2); if (m <= 0.02) return;
+                const q = plate(cu), cc = (L.cupLed && L.cupLed[cu.key]) || L.scan;
+                c.globalAlpha = m; c.fillStyle = cc; c.fillRect(q.x, q.y, q.w, q.h);
+                this.pachCupGlow(c, cu, cc, m, 16);
+            });
         }
         // лучи веера от солнца — волной к краям; у монеты — только середина
         const rays = T >= 2 ? 17 : 7;
