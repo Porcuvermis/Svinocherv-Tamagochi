@@ -21,8 +21,6 @@ Object.assign(GreedLux, {
     reelKeys: GreedJunkLit.reelKeys,
     spinDone: GreedJunkLit.spinDone,
     previewOutcome: GreedJunkLit.previewOutcome,
-    leverDrag: GreedJunkLit.leverDrag,
-    leverRelease: GreedJunkLit.leverRelease,
     leverBreak: GreedJunkLit.leverBreak,
     tryReady: GreedJunkLit.tryReady,
     shake: GreedJunkLit.shake,
@@ -85,38 +83,85 @@ Object.assign(GreedLux, {
         wrap.style.touchAction = 'none';
     },
 
-    // Ход рычага — как у гаражного (leverStep там же), без рисунка: доля
-    // хода 0..1 (и чуть за 1 — отскок от упора). null — рычаг в покое.
-    leverStep(now) {
+    // ---------- рычаг: свой ход версии 2 ----------
+    // Первые дни ход был гаражный (LEVER, leverDrag/leverStep там), и игрок
+    // назвал рычаг расхлябанным (19.11). Разбор: гаражный рассчитан на рычаг-
+    // рукоять, а здесь шар в пазу —
+    //   * за пальцем шар шёл на 0,28 хода (палец 44 — шар 23) и внутри
+    //     «зубца» стоял, потом прыгал: не держится за палец;
+    //   * натяжение — синусная дрожь, на зубцах — рывки: трясётся под пальцем;
+    //   * возврат — пружина с перелётом: шар уходил на 21 выше верхнего упора
+    //     (сквозь корпус) и качался — желе.
+    // Теперь: шар — за пальцем один к одному; по ходу защёлки (шар чуть
+    // прилипает к каждой и проскакивает, щелчок в палец) — монотонно, без
+    // дрожи; срыв на breakP — разгон вниз, жёсткий нижний упор, один короткий
+    // отскок; возврат — пружиной до верхнего упора и крошечный отскок от
+    // него, выше упора — никогда. Доля хода 0..1, null — покой.
+    LEVER2: { teeth: 4, breakP: 0.55, snap: 0.3, fall: 140, over: 0.035, hold: 260, up: 200, bounce: 0.06, settle: 230 },
+    leverDrag(dy) {
+        const K = this.LEVER2, v = this._lv;
+        if (!v || v.st !== 'drag') return;
+        const p = Math.max(0, dy / this.BALL_TRAVEL);
+        if (p >= K.breakP) {                      // срыв
+            this._lv = { st: 'free', p0: v.p, at: -1, p: v.p };
+            this.leverBreak();
+            return;
+        }
+        // защёлки: n-я пройдена — щелчок (последние — тяжелее)
+        const step = K.breakP / K.teeth, n = Math.floor(p / step + 0.5);
+        if (n > (v.n || 0) && typeof Haptics !== 'undefined') {
+            if (n >= K.teeth - 1) Haptics.impact('rigid', true); else Haptics.tick();
+        }
+        v.n = Math.max(v.n || 0, n);
+        v.p = p;
+    },
+    leverRelease() {
         const v = this._lv;
+        if (v && v.st === 'drag') {
+            this._lv = { st: 'back', p0: v.p, at: -1, p: v.p };
+            if (typeof Haptics !== 'undefined' && v.p > 0.02) Haptics.impact('soft', true);
+        }
+    },
+    leverStep(now) {
+        const v = this._lv, K = this.LEVER2;
         if (!v) return null;
         if (v.at === -1) v.at = now;
-        const t = now - v.at, L = this.LEVER;
-        let show = v.p;
+        const t = now - v.at;
         if (v.st === 'drag') {
-            const fr = v.fr || 0;
-            show += 0.018 * fr * fr * Math.sin(now / 18);
-            if (v.kickAt) { const d = now - v.kickAt; show += 0.07 * Math.exp(-d / 50) * Math.sin(d / 25); }
-        } else if (v.st === 'free') {
-            if (t < L.fall) v.p = v.p0 + (1 + L.over - v.p0) * Math.pow(t / L.fall, 2.2);
-            else {
-                const b = t - L.fall;
-                v.p = 1 + L.over * Math.exp(-b / 45) * Math.cos(b / 28 * Math.PI);
-                if (!v.hit) { v.hit = now; this.shake(now, 4.5); }
-            }
-            show = v.p;
-            if (t > L.fall + L.hold && !this._held) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
-        } else if (v.st === 'back') {
-            const fade = t < 700 ? 1 : Math.max(0, 1 - (t - 700) / 200);
-            v.p = v.p0 * Math.exp(-t / L.back) * Math.cos(t / 115 * Math.PI / 2) * fade * fade;
-            if (!v.home && t >= 115 && v.p0 > 0.5) {
-                v.home = true;
-                if (typeof Haptics !== 'undefined') Haptics.burst('heavy', 2, 40);
-            }
-            show = v.p;
-            if (t > 900) { this._lv = null; this.tryReady(); return null; }
+            // прилипание к защёлке: у каждой шар чуть задерживается и
+            // проскакивает дальше; наклон 1 − snap·cos ≥ 1 − snap > 0 — шар
+            // всегда идёт за пальцем в ту же сторону, без дрожи
+            const step = K.breakP / K.teeth, x = v.p / step;
+            return Math.max(0, v.p - step * K.snap / (2 * Math.PI) * Math.sin(2 * Math.PI * x));
         }
-        return show;
+        if (v.st === 'free') {
+            if (t < K.fall) v.p = v.p0 + (1 - v.p0) * Math.pow(t / K.fall, 2);
+            else {
+                // нижний упор: один отскок вверх и всё, ниже упора — никогда
+                const b = t - K.fall;
+                v.p = 1 - K.over * Math.exp(-b / 45) * Math.abs(Math.sin(b * Math.PI / 70));
+                if (!v.hit) { v.hit = now; this.shake(now, 2.5); }
+            }
+            if (t > K.fall + K.hold && !this._held) this._lv = { st: 'back', p0: 1, at: now, p: 1 };
+            return v.p;
+        }
+        if (v.st === 'back') {
+            // пружина: трогается мягко, к верху разгоняется (четверть косинуса),
+            // упор — маленький отскок вниз, затухает; выше упора — никогда
+            const up = K.up * Math.sqrt(Math.max(0.15, v.p0));
+            if (t < up) v.p = v.p0 * Math.cos(t / up * Math.PI / 2);
+            else {
+                const b = t - up;
+                v.p = K.bounce * v.p0 * Math.exp(-b / 50) * Math.abs(Math.sin(b * Math.PI / 80));
+                if (!v.home) {
+                    v.home = true;
+                    if (typeof Haptics !== 'undefined') { if (v.p0 > 0.5) Haptics.burst('heavy', 2, 40); else Haptics.impact('light', true); }
+                }
+                if (b > K.settle) { this._lv = null; this.tryReady(); return null; }
+            }
+            return v.p;
+        }
+        return null;
     },
 
     // Шар и его тень — поверх корпуса, тем же шейдером (paint в greed-lux.js).
