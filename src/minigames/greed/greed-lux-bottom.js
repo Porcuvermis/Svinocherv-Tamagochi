@@ -326,9 +326,13 @@ Object.assign(GreedLux, {
     // ---------- шкала ----------
     meterSet(v) { if (this._bot && this._bot.met) this._bot.met.T = Math.max(0, Math.min(1, v)); },
     // уровень жидкости → y поверхности
+    // Полная — до самого верха колбы: раньше верх стоял на 5 ниже, а у
+    // колбы верх круглый — полная шкала оставляла тёмный купол и читалась
+    // «не долито» (игрок, 19.11). Срез — по прямоугольнику, скругление даёт
+    // сама форма жидкости (liquid-*).
     meterY(v) {
         const q = this.meta.live.liquid;
-        return q[1] + q[3] - 3 - (q[3] - 8) * v;
+        return q[1] + q[3] * (1 - v);
     },
     meterStep(now) {
         const M = this._bot && this._bot.met, K = this.BOT.meter;
