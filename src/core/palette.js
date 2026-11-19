@@ -957,6 +957,9 @@ const PALETTE = {
         // в машинном эскизе, machine.py CUP_COL; держать вместе)
         // жидкое золото шкалы: мениск и пузырьки (greed-lux-bottom.js)
         liquid: { top: '#fff0b8', bubble: '#ffe9a8' },
+        // свет канта (greed-lux-kant.js): кривая накала эмали в жилке — тлеет,
+        // янтарь, добела на сильном
+        kant: { ember: '#8a1c06', amber: '#ffa438', hot: '#fff3d6' },
         // блики стекла пачинко (greed-lux-pach.js)
         glass: { glare: '#fff6e8' },
         cupLed: { wrath: '#ff6a5a', glut: '#ffaa62', lust: '#ff92b4', sloth: '#92baff', greed: '#ffd96a', envy: '#7fe8c8', pride: '#c99cff', gold1: '#ffe08a' }

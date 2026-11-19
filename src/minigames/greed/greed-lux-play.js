@@ -47,6 +47,7 @@ Object.assign(GreedLux, {
         if (this.wheelMount) this.wheelMount(wrap);
         if (this.pachMount) this.pachMount(wrap);
         if (this.bottomMount) this.bottomMount(wrap);
+        if (this.kantMount) this.kantMount(wrap);
         this.inputMount(wrap);
     },
 
@@ -191,6 +192,7 @@ Object.assign(GreedLux, {
         this.lampStep(now);
         this.shakeStep(now);
         if (this.bottomStep) this.bottomStep(now);
+        if (this.kantStep) this.kantStep(now);
     },
     // После playStep: корпус не перерисовывался целиком — шар двигался?
     livePaint() {

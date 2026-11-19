@@ -126,6 +126,9 @@ const GreedLux = {
         GreedJunk.pachTidy(false);
         this.reels = null; this._lv = null; this.ledCv = null; this.ledGrid = null; this.lampCv = null; this._wheel = null; this.fx = null;
         this._pach = null; this.pfx = null; this._pgl = null; this.glareCv = null;
+        // свет канта — свой контекст WebGL, назад сразу
+        if (this._kgl) { const x = this._kgl.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); }
+        this._kgl = null; this.kantCv = null; this._kEv = null;
         // контексты движка монет (лоток, копилка) — назад сразу
         [[this.trayDraw, this.trayCv], [this.pigDraw, this.pigCv]].forEach(([d, cv]) => {
             const g = d && cv && cv.getContext('webgl'), x = g && g.getExtension('WEBGL_lose_context');
