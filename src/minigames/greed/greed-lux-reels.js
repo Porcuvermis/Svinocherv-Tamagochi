@@ -111,10 +111,11 @@ Object.assign(GreedLux, {
         const tier = res.jackpot || ratio >= T.big ? 3 : ratio >= T.mid || other ? 2 : res.pay > 0 ? 1 : 0;
         if (tier) {
             this._ledWin = { tier, at: now };
+            // отдача — в такт прыжкам значков линии (greed-lux-winfx.js), в конце — «успех»
             if (typeof Haptics !== 'undefined') {
-                if (tier === 1) Haptics.notify('success', true);
-                else if (tier === 2) Haptics.burst('medium', 2, 90, 'success');
-                else Haptics.burst('heavy', 4, 110, 'success');
+                const Pp = this.WINFX.pop, kind = ['', 'light', 'medium', 'heavy'][tier];
+                for (let i = 0; i < 3; i++) setTimeout(() => Haptics.impact(kind, true), Pp.t0 + i * Pp.gap);
+                setTimeout(() => tier === 3 ? Haptics.burst('heavy', 3, 110, 'success') : Haptics.notify('success', true), Pp.t0 + 2 * Pp.gap + 260);
             }
         } else this._loseAt = now;
         this._ledDirty = true;
@@ -147,6 +148,7 @@ Object.assign(GreedLux, {
         const jump = W && W.tier >= 2 ? pulse : 0;
         const scr = W && W.tier === 3 && wt < 900 ? Math.max(0, Math.sin(wt / 900 * Math.PI * 3)) : 0;
         const lose = this._loseAt ? Math.max(0, 1 - (now - this._loseAt) / K.loseMs) : 0;
+        const popOn = !!(W && this.ledPopDraw && wt < [0, 1300, 1800, 2600][W.tier]);
         b.globalAlpha = 1; b.fillStyle = P.back; b.fillRect(0, 0, L.w, L.h);
         let speed = 0;
         L.cols.forEach((cx, ci) => {
@@ -163,6 +165,7 @@ Object.assign(GreedLux, {
                 const key = S[((i % n) + n) % n], spr = this.ledSprites[key];
                 if (!spr) continue;
                 const yc = L.mid + (i - pos) * L.cell, off = Math.abs(yc - L.mid), onLine = off < 1 && !r.st;
+                if (onLine && popOn) continue;
                 let y = Math.round(yc) - 8;
                 if (onLine && jump) y -= Math.round(jump * 2.5);
                 const a = (1 - 0.38 * Math.min(1, off / L.cell)) * (1 - 0.45 * lose);
@@ -189,6 +192,7 @@ Object.assign(GreedLux, {
                 }
             }
         });
+        if (popOn) this.ledPopDraw(b, W, wt);
         // линия: тихо всегда; встали — развёртка слева направо; выигрыш —
         // горит и пульсирует
         let line = 0.35 * (1 - 0.5 * lose);

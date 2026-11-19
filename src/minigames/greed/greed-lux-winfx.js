@@ -16,7 +16,11 @@ Object.assign(GreedLux, {
         frame: [87, 316, 295, 459, 12],
         // лучи веера на корпусе за колесом (machine.py, fan у t1c)
         rays: { n: 23, r0: 166, r1: 262, short: 0.78, clip: [4, -55, 203, 347] },
-        rivetR: 156.5
+        rivetR: 156.5,
+        // значки линии бандита: прыгают по очереди слева направо (t0, шаг,
+        // длина прыжка); amp — насколько вырастают по ступеням; shake —
+        // сколько вздрагивает аппарат (единицы корпуса)
+        pop: { t0: 120, gap: 150, ms: 420, amp: [0, 0.9, 1.15, 1.4], shake: [0, 0, 1.6, 3.2] }
     },
 
     // ---------- ступени ----------
@@ -159,6 +163,83 @@ Object.assign(GreedLux, {
         if (T >= 2) this.winSparks(g, mx, Y0 + 8 * S, 8 * T, u * F.slotMs[T] / 1000, S, -Math.PI / 2, 2.8, T + 11);
     },
 
+    // ---------- значки линии бандита ----------
+    // Первый вариант (свет и волны по экрану) игрок назвал скучным: всё
+    // светилось, но ничего не ДВИГАЛОСЬ. Теперь главное — сами значки:
+    // по очереди выпрыгивают крупно со вспышкой и брызгами пикселей
+    // (отдача в палец — в такт, reelsWin); средний — потом пляшут; крупный —
+    // рассыпаются на светодиоды по всему экрану и собираются обратно.
+    // Растягивание без сглаживания — значок остаётся пиксельным.
+    ledPix(key) {
+        const C = this._ledPixC || (this._ledPixC = {});
+        if (C[key]) return C[key];
+        const spr = this.ledSprites[key], out = [];
+        if (spr) {
+            const d = spr.getContext('2d').getImageData(0, 0, 16, 16).data;
+            for (let i = 0; i < 256; i++) if (d[i * 4 + 3] > 40) out.push([i % 16, Math.floor(i / 16), `rgb(${d[i * 4]},${d[i * 4 + 1]},${d[i * 4 + 2]})`]);
+        }
+        return (C[key] = out);
+    },
+    ledPopDraw(b, W, wt) {
+        const L = this.LED, P = PALETTE.greedLux.led, Pp = this.WINFX.pop, T = W.tier, dur = this.WINFX.slotMs[T];
+        const keys = this.reelKeys(), end = Pp.t0 + 2 * Pp.gap + Pp.ms, fade = Math.min(1, Math.max(0, (dur - wt) / 300));
+        const hash = (i) => { const h = Math.sin(i * 12.9898) * 43758.5453; return h - Math.floor(h); };
+        b.imageSmoothingEnabled = false;
+        L.cols.forEach((cx, i) => {
+            const spr = this.ledSprites[keys[i]];
+            if (!spr) return;
+            const t = wt - (Pp.t0 + i * Pp.gap), u = Math.min(1, Math.max(0, t / Pp.ms));
+            // прыжок: рывок вверх с перелётом, затухающее качание к единице
+            let sc = 1 + (t > 0 ? Pp.amp[T] * Math.exp(-4 * u) * Math.sin(Math.min(1, u * 1.4) * Math.PI * 1.5 + 0.0) : 0);
+            if (t > 0 && u < 0.25) sc = 1 + Pp.amp[T] * (u / 0.25);
+            let dy = 0;
+            // средний и крупный: после прыжков значки пляшут, каждый в свою фазу
+            if (T >= 2 && wt > end) { const k = (wt - end) / 1000; dy = Math.sin(k * 9 + i * 2.1) * 2.2 * fade; sc *= 1 + 0.12 * Math.abs(Math.sin(k * 9 + i * 2.1)) * fade; }
+            // крупный: рассыпаются на светодиоды и собираются (пока — без самого значка)
+            const ex0 = end + 60, exMs = 900, ex = T === 3 && wt > ex0 && wt < ex0 + exMs ? (wt - ex0) / exMs : -1;
+            if (ex >= 0) {
+                const e = Math.sin(ex * Math.PI), px = this.ledPix(keys[i]);
+                px.forEach(([x, y, col], k) => {
+                    const hx = hash(k + i * 300), hy = hash(k * 7 + i * 300 + 1), ang = hx * Math.PI * 2 + e * 1.6, dist = (4 + 15 * hy) * e;
+                    const X = cx - 8 + x + Math.cos(ang) * dist, Y = L.mid - 8 + y + Math.sin(ang) * dist * 0.8;
+                    b.globalAlpha = 1; b.fillStyle = col; b.fillRect(Math.round(X), Math.round(Y), 1, 1);
+                });
+                return;
+            }
+            const w = Math.round(16 * sc), x = Math.round(cx - w / 2), y = Math.round(L.mid - w / 2 + dy);
+            b.globalAlpha = 1; b.drawImage(spr, x, y, w, w);
+            // вспышка в миг прыжка: тот же значок светом поверх
+            if (t > 0 && u < 1) { b.globalCompositeOperation = 'lighter'; b.globalAlpha = (1 - u) * 0.9; b.drawImage(spr, x, y, w, w); b.drawImage(spr, x, y, w, w); b.globalCompositeOperation = 'source-over'; }
+            // брызги пикселей из значка при прыжке
+            if (t > 0 && t < 650) {
+                const tt = t / 1000, n = 6 + 4 * T;
+                b.fillStyle = P.flash;
+                for (let k = 0; k < n; k++) {
+                    const f = hash(k + i * 50 + T * 7), a = -Math.PI / 2 + (f - 0.5) * 3.2, sp = 40 + 60 * hash(k * 3 + i);
+                    const X = cx + Math.cos(a) * sp * tt, Y = L.mid + Math.sin(a) * sp * tt + 90 * tt * tt;
+                    b.globalAlpha = 1 - t / 650; b.fillRect(Math.round(X), Math.round(Y), 1, 1);
+                }
+            }
+        });
+        b.globalAlpha = 1;
+    },
+    // аппарат вздрагивает на каждом прыжке значка (средний и крупный) —
+    // сдвиг всей обёртки свойством translate: дёшево, на видеокарте
+    slotShake(now) {
+        const W = this._slotWin, el = this.wrapEl, Pp = this.WINFX.pop;
+        if (!el) return;
+        let x = 0, y = 0;
+        if (W && Pp.shake[W.tier]) {
+            const wt = now - W.at;
+            for (let i = 0; i < 3; i++) {
+                const t = wt - (Pp.t0 + i * Pp.gap);
+                if (t > 0 && t < 260) { const k = Math.exp(-t / 70) * Pp.shake[W.tier] * (i === 2 ? 1.4 : 1); x += Math.sin(t / 18 + i) * k; y += Math.cos(t / 23) * k * 0.6; }
+            }
+        }
+        const v = x || y ? `${(x / this.W * 100).toFixed(2)}% ${(y / this.H * 100).toFixed(2)}%` : '';
+        if (el.style.translate !== v) el.style.translate = v;
+    },
+
     // ---------- светодиоды экрана бандита ----------
     // Зовёт ledDraw поверх лент: весь экран вспыхивает пульсами, от середины
     // линии расходятся волны — светом самих светодиодов (дуга по буферу =
@@ -215,8 +296,21 @@ Object.assign(GreedLux, {
     const step = GreedLux.iconsStep, draw = GreedLux.drawIcons;
     GreedLux.iconsStep = function (now) {
         if (this.winFxLive(now) || this._winFxWas) this._iconsDirty = true;
+        this.slotShake(now);
         this._winFxWas = this.winFxLive(now);
         return step.call(this, now);
+    };
+    // лампа у рычага на выигрыше бандита — мигает в такт (потом обычная)
+    const lamp = GreedLux.lampStep;
+    GreedLux.lampStep = function (now) {
+        const W = this._slotWin, t = W ? (now || performance.now()) - W.at : 1e9;
+        if (W && t < this.WINFX.slotMs[W.tier] && this.lampCv) {
+            this.lampOn = Math.sin(t / 1000 * Math.PI * 2 * (3 + W.tier)) > 0 ? 1 : 0.15;
+            this._lampShown = -1;
+            const keep = this.ready; this.ready = this.lampOn > 0.5;
+            lamp.call(this, now); this.ready = keep; return;
+        }
+        return lamp.call(this, now);
     };
     GreedLux.drawIcons = function (now) {
         draw.call(this, now);
