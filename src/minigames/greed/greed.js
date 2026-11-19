@@ -172,6 +172,8 @@ const GreedMinigame = {
             return false;
         }
         this.started('slots', res);
+        // монет в щель — по цене запуска (рычаг зовёт coinIn() сам, без числа)
+        if (this.M) this.M._coinCost = res.cost;
         // Барабаны встают на символы исхода: под ниткой — res.reels.
         // Ячейку каждого берём на ленте с случайного места — один и тот же
         // символ встречается на ленте несколько раз.
@@ -223,7 +225,7 @@ Object.assign(GreedMinigame, {
         if (!res.ok) { this.refused[game] = res.error || 'error'; return false; }
         this.refused[game] = '';
         this.started(game, res);
-        if (this.M && this.M.coinIn) this.M.coinIn();
+        if (this.M && this.M.coinIn) this.M.coinIn(res.cost);
         return res.key;
     },
     onPach() { return this.startPlay('pachinko'); },

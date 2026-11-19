@@ -14,6 +14,12 @@ Object.assign(GreedLux, {
     BOT: {
         tray: { rad: 6.2, g: 0.0011, max: 60, bounce: 0.28, cols: 14 },
         coin: { ms: 620, inMs: 150, rad: 7, turns: 2, lift: 70 },
+        // Монет в щель — сколько стоит запуск (игрок, 19.11). Больше max не
+        // летит: на ставке 100 сотня монет поштучно — запуск ждал бы полёта и
+        // телефон тормозил; тогда каждая несёт свою долю. Очередь учащается:
+        // промежуток gap, каждый следующий ×accel, не меньше minGap; jit —
+        // разброс места взлёта и высоты дуги, чтобы не летели одна в одну.
+        queue: { max: 12, gap: 110, accel: 0.85, minGap: 35, jit: 4 },
         count: 45,                 // мс на шаг счёта табло копилки
         meter: { k: 0.06, bubbleMs: 380 }
     },
@@ -41,7 +47,7 @@ Object.assign(GreedLux, {
     bottomMount(wrap) {
         const L = this.meta.live;
         if (!L || !L.bet) return;
-        this._bot = { held: 0, shown: null, coins: [], tray: null, met: null, betShown: null };
+        this._bot = { held: 0, fly: 0, shown: null, coins: [], tray: null, met: null, betShown: null };
         // табло
         this.betCv = this.botCanvas(wrap, L.bet[0], L.bet[1], L.bet[2] - L.bet[0], L.bet[3] - L.bet[1]);
         this.balCv = this.botCanvas(wrap, L.bal[0], L.bal[1], L.bal[2] - L.bal[0], L.bal[3] - L.bal[1]);
@@ -99,7 +105,10 @@ Object.assign(GreedLux, {
     jarHold(d) { if (this._bot) this._bot.held = d === null ? 0 : Math.max(0, this._bot.held + d); },
     balTarget() {
         if (typeof GameState === 'undefined' || !GameState.currency) return 0;
-        return Math.max(0, Math.floor(GameState.currency('gold') - (this._bot ? this._bot.held : 0)));
+        // fly — монеты ставки ещё в полёте: из кошелька уже списаны, но табло
+        // убывает по мере влёта в щель, а не разом
+        const B = this._bot;
+        return Math.max(0, Math.floor(GameState.currency('gold') - (B ? B.held - B.fly : 0)));
     },
 
     // ---------- табло ----------
@@ -206,22 +215,36 @@ Object.assign(GreedLux, {
         if (!A.ready) return null;
         return (this.pigDraw = GreedCoins.batchRenderer(this.pigCv, A.fa, A.fn, A.alb, A.nor, [this.PIG_BOX[2], this.PIG_BOX[3]]) || null);
     },
-    coinIn() {
-        const L = this.meta && this.meta.live;
-        if (!this._bot || !L || !L.sn) return;
-        const [x0, y0] = this.PIG_FLY_FROM;
-        this._bot.coins.push({ at: performance.now(), x0, y0, x1: L.sn[0], y1: L.sn[1] - 5 });
+    // cost — сколько стоит запуск: столько монет и летит (не больше
+    // queue.max, тогда каждая — своя доля). Без cost — цена последнего
+    // запуска (экран алчности кладёт её в _coinCost: рычаг гаражного зовёт
+    // coinIn() без числа), иначе одна.
+    coinIn(cost) {
+        const L = this.meta && this.meta.live, B = this._bot;
+        cost = Math.max(1, Math.round(cost || this._coinCost || 1)); this._coinCost = 0;
+        if (!B || !L || !L.sn) return;
+        const Q = this.BOT.queue, n = Math.min(Q.max, cost), [fx, fy] = this.PIG_FLY_FROM, now = performance.now();
+        let t = 0, left = cost;
+        for (let i = 0; i < n; i++) {
+            const v = i === n - 1 ? left : Math.floor(cost / n);
+            left -= v;
+            const j = i ? (Math.sin(i * 12.9898) * 43758.5453) % 1 : 0;
+            B.coins.push({ at: now + t, x0: fx + j * Q.jit, y0: fy, x1: L.sn[0], y1: L.sn[1] - 5, lift: 1 + 0.12 * j, v });
+            B.fly += v;
+            t += Math.max(Q.minGap, Q.gap * Math.pow(Q.accel, i));
+        }
     },
     // монета в полёте: x, y, ось (поза под поворотом, как у монет рамки),
     // светлота; null — долетела
     coinAt(m, now) {
         const F = this.BOT.coin, t = (now - m.at) / F.ms;
+        if (t < 0) return 'wait';                  // своя очередь ещё не пришла
         if (t >= 1 + F.inMs / F.ms) return null;
         if (t < 1) {
             // вверх из-за стопок, дугой влево к пятаку; к концу — ребром
             const e = 1 - Math.pow(1 - t, 1.7);
             const x = m.x0 + (m.x1 - m.x0) * e;
-            const y = m.y0 + (m.y1 - m.y0) * t - F.lift * 4 * t * (1 - t) * (1 - 0.3 * t);
+            const y = m.y0 + (m.y1 - m.y0) * t - F.lift * (m.lift || 1) * 4 * t * (1 - t) * (1 - 0.3 * t);
             const a = t * F.turns * 2 * Math.PI, edge = Math.max(0, (t - 0.72) / 0.28);
             // кувырок вокруг наклонной оси → к щели ось легла вбок (ребро стоймя)
             // ось к нам (|cos|): монета обратной стороной к зрителю у движка
@@ -248,7 +271,9 @@ Object.assign(GreedLux, {
         const fly = [];
         B.coins = B.coins.filter(m => {
             const c = this.coinAt(m, now);
-            if (!c) { if (typeof Haptics !== 'undefined') Haptics.tick(); return false; }
+            if (c === 'wait') return true;
+            // влетела: табло копилки убывает на её долю
+            if (!c) { B.fly = Math.max(0, B.fly - (m.v || 0)); if (typeof Haptics !== 'undefined') Haptics.tick(); return false; }
             fly.push(c); return true;
         });
         const flyAdd = (front) => fly.filter(c => c.front === front).forEach(c => D.add(

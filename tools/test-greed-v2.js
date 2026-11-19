@@ -98,6 +98,15 @@ const { chromium } = require('playwright');
   ok(fly === 1 && b1.fly === 0, `монета в щель: летела ${fly}, долетела`);
   ok(b1.tray >= 12, `лоток: монет ${b1.tray}`);
   ok(Math.abs(b1.met - 0.9) < 0.02, `шкала: ${b1.met.toFixed(3)} → 0,9`);
+  // монеты в щель — по цене запуска: 3 — три, 100 — потолок очереди, доли
+  // в сумме — вся цена; табло убывает по мере влёта
+  const q = await page.evaluate(() => { const B = GreedLux._bot; GreedLux.coinIn(3); const n3 = B.coins.length, f3 = B.fly; GreedLux.coinIn(100);
+    return { n3, f3, n100: B.coins.length - n3, f100: B.fly - f3, max: GreedLux.BOT.queue.max }; });
+  ok(q.n3 === 3 && q.f3 === 3, `ставка 3 — монет ${q.n3}, в полёте ${q.f3}`);
+  ok(q.n100 === q.max && q.f100 === 100, `ставка 100 — монет ${q.n100} (потолок ${q.max}), в полёте ${q.f100}`);
+  await page.waitForTimeout(4000);
+  const q2 = await page.evaluate(() => ({ fly: GreedLux._bot.fly, n: GreedLux._bot.coins.length }));
+  ok(q2.fly === 0 && q2.n === 0, `все влетели: в полёте ${q2.fly}, монет ${q2.n}`);
   // вид 1 ↔ 2 на месте
   await page.evaluate(() => { DebugMode.enabled = true; return GreedDebug.run('skin'); });
   await page.waitForFunction(() => GreedMinigame.M === GreedJunkLit && GreedJunkLit.lever, null, { timeout: 30000, polling: 300 }).catch(() => {});
