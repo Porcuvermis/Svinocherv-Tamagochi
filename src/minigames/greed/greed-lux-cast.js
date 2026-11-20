@@ -57,6 +57,8 @@ Object.assign(GreedLux, {
     },
     // мс от начала литья (от удара струи), когда фронт проходит (x, y)
     castPass(x, y) {
+        // фронт — по карте прихода (greed-lux-flow.js); формула ниже — запас
+        if (this._flow) return this.flowAt(this._flow, x, y);
         const C = this.CAST;
         // эллипс от места удара (было — сумма по осям: пятно расходилось
         // ромбом с углами, кадр 20.11)
@@ -69,41 +71,35 @@ Object.assign(GreedLux, {
     // то же для шейдера: uniform'ы uCP (xi, yi), uCV (vh, vu, v, dripW), uDr[8]
     castGLSL() {
         return `
-            uniform vec2 uCP; uniform vec4 uCV; uniform vec4 uDr[14]; uniform vec4 uSp[6]; uniform float uWob;
-            float castSm(float e0, float e1, float v){ return smoothstep(e0, e1, v); }
-            float castWob(float x){ return uWob * (4.0 * sin(x / 23.0 + 1.3) + 2.5 * sin(x / 9.7 + 0.4) + 1.5 * sin(x / 4.1 + 2.1)); }
+            uniform vec2 uCP; uniform vec4 uCV;
+            uniform sampler2D uFlow; uniform vec2 uFlowN; uniform float uFlowSt, uFlowK, uFlowY0;
+            float flowT(vec2 g){ vec3 c = texture2D(uFlow, (g + 0.5) / uFlowN).rgb; return (c.r * 65280.0 + c.g * 255.0) / uFlowK; }
+            float hash(vec2 p);
+            float vnoise(vec2 p);
+            // время прихода — из карты (билинейно руками) + мелкая рябь края,
+            // как у прогорающей бумаги: сетка карты — 1,5 ед., рябь — мельче
+            float castPassS(float x, float y){
+                vec2 g = vec2(x / uFlowSt, (y - uFlowY0) / uFlowSt) - 0.5, i = floor(g), f = g - i;
+                return mix(mix(flowT(i), flowT(i + vec2(1.0, 0.0)), f.x), mix(flowT(i + vec2(0.0, 1.0)), flowT(i + vec2(1.0, 1.0)), f.x), f.y);
+            }
             float castPass(float x, float y){
-                float d = 0.0;
-                for (int i = 0; i < 14; i++) {
-                    vec4 D = uDr[i];
-                    float g = pow(max(0.0, 1.0 - pow((x - D.x) / uCV.w, 2.0)), 0.35);
-                    d += D.w * g * castSm(D.y, D.y + max(80.0, D.w * 1.8), y) * (1.0 - castSm(D.z, D.z + 60.0, y));
-                }
-                float dx = (x - uCP.x) / uCV.x, dy = y > uCP.y ? (y - uCP.y) / uCV.z : (uCP.y - y) / uCV.y;
-                float t = length(vec2(dx, dy)) - (castWob(x) + d) / uCV.z;
-                for (int i = 0; i < 6; i++) {
-                    vec2 q = vec2(x, y) - uSp[i].xy; float a = atan(q.y, q.x), fi = float(i);
-                    t = min(t, uSp[i].z + length(q) * (1.0 + 0.09 * sin(3.0 * a + fi * 1.7) + 0.07 * sin(7.0 * a + fi * 2.3) + 0.05 * sin(11.0 * a + fi)) / uSp[i].w);
-                }
-                return t;
+                float t = castPassS(x, y);
+                // (сильнее — край выходил ворсом, валик расплава размывался)
+                return t + (vnoise(vec2(x, y) / 2.2) - 0.5) * 8.0 + (vnoise(vec2(x, y) / 5.5) - 0.5) * 14.0;
             }
-            // насколько точка в подтёке (0..1): там расплава больше — полоса толще
-            float castDripG(float x){
-                float g = 0.0;
-                for (int i = 0; i < 14; i++) g = max(g, pow(max(0.0, 1.0 - pow((x - uDr[i].x) / uCV.w, 2.0)), 0.35));
-                return g;
-            }
+            float castDripG(float x){ return 0.0; }
             float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
             float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
                 return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }`;
     },
-    castUniforms(gl, U) {
-        const C = this.CAST, D = new Float32Array(14 * 4), Sp = new Float32Array(24);
-        C.drips.forEach((d, i) => D.set(d, i * 4));
-        C.spots.forEach((d, i) => Sp.set(d, i * 4));
+    castUniforms(gl, U, unit) {
+        const C = this.CAST, f = this._flow;
         gl.uniform2f(U('uCP'), C.xi, C.yi);
         gl.uniform4f(U('uCV'), C.vh, C.vu, C.v, C.dripW);
-        gl.uniform4fv(U('uDr'), D); gl.uniform4fv(U('uSp'), Sp); gl.uniform1f(U('uWob'), C.wob);
+        // карта прихода — своей текстурой в этом контексте (unit)
+        gl.uniform1i(U('uFlow'), unit); gl.uniform2f(U('uFlowN'), f.gw, f.gh);
+        gl.uniform1f(U('uFlowSt'), f.step); gl.uniform1f(U('uFlowK'), this.FLOW_K); gl.uniform1f(U('uFlowY0'), this.Y0);
+        return this.flowTexture(gl, unit);
     },
 
     // ---------- жар литого (программа в холсте канта) ----------
@@ -113,7 +109,7 @@ Object.assign(GreedLux, {
     // у аппарата один «жар».
     castHeatInit() {
         const K = this._kgl;
-        if (!K) return Promise.resolve(false);
+        if (!K || !this._flow) return Promise.resolve(false);
         if (this._castH) return Promise.resolve(true);
         if (this._castHP) return this._castHP;
         const DIR = this.dir(), img = (n) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = DIR + n + '.png'; });
@@ -141,8 +137,9 @@ Object.assign(GreedLux, {
                     float gold = step(0.5, m.b), glass = step(0.5, m.g);
                     // остывает пятнами: корка схватывается неровно, одни места
                     // ещё тлеют, когда соседние уже чёрные
-                    float patch = vnoise(P / 11.0) * 0.6 + vnoise(P / 4.3) * 0.4;
-                    float tau = mix(uTauL, uTauG, gold) * (0.55 + 0.9 * patch);
+                    float patch = vnoise(P / 16.0) * 0.7 + vnoise(P / 7.0) * 0.3;
+                    // (сильнее — пятна читались грязью)
+                    float tau = mix(uTauL, uTauG, gold) * (0.8 + 0.4 * patch);
                     float H = exp(-dt / tau);
                     // свечение у самого фронта — расплав светит на всё вокруг
                     float bloom = exp(-dt / 320.0);
@@ -184,7 +181,7 @@ Object.assign(GreedLux, {
             gl.uniform2f(U('uPx'), 1 / m.width, 1 / m.height);
             gl.uniform1f(U('uTauL'), this.CAST.tau.lac); gl.uniform1f(U('uTauG'), this.CAST.tau.gold);
             gl.uniform3fv(U('uC0'), vec(P.ember)); gl.uniform3fv(U('uC1'), vec(P.amber)); gl.uniform3fv(U('uC2'), vec(P.hot));
-            this.castUniforms(gl, U);
+            this._castH_flow = this.castUniforms(gl, U, 5);
             const loc = gl.getAttribLocation(p, 'a');
             gl.useProgram(K.p);
             this._castH = { p, loc, uT: U('uT'), texs };
@@ -199,6 +196,12 @@ Object.assign(GreedLux, {
         gl.enableVertexAttribArray(H.loc); gl.vertexAttribPointer(H.loc, 2, gl.FLOAT, false, 0, 0);
         gl.uniform1f(H.uT, this.castT(now));
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    },
+    // карта прихода — одна на заготовку (своя случайность на каждое литьё)
+    castFlowReady() {
+        if (this._flow) return Promise.resolve(this._flow);
+        if (!this._flowP) { const w = this.wrapEl; this._flowP = this.flowBuild().then(f => { if (this.wrapEl === w) this._flow = f; return f; }); }
+        return this._flowP;
     },
     // замедление для отладки и кадров: localStorage 'gj-cast-slow'
     castSlow() { try { return +localStorage.getItem('gj-cast-slow') || 1; } catch (e) { return 1; } },
@@ -218,7 +221,7 @@ Object.assign(GreedLux, {
 // вниз узором); дальше — прозрачно: под холстом уже литой корпус и его жар.
 // Обычное наложение (не сложение): расплав и гаражный — непрозрачные.
 Object.assign(GreedLux, {
-    CAST_BAND: { molten: 22, fade: 7, scorch: 36, shimmer: 26, crust: 1.8 },
+    CAST_BAND: { molten: 15, fade: 5, scorch: 36, shimmer: 26, crust: 1.6 },
 
     // гаражный — картинкой поля плотности S (у обеих версий поле одно: 360×696, Y0 −57)
     castSnapshot() {
@@ -248,6 +251,7 @@ Object.assign(GreedLux, {
     // (castCanvasSnap). Замер (×4): сборка жара и этого холста в миг покупки
     // — ~0,7 с стоп-кадра, пока горит узел.
     castCanvas(snap) {
+        if (!this._flow) return null;
         const cv = document.createElement('canvas'), S = this.S || 2;
         cv.width = Math.round(this.W * S); cv.height = Math.round(this.H * S);
         cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:5;background:none;pointer-events:none';
@@ -303,9 +307,18 @@ Object.assign(GreedLux, {
                 vec2 P = vec2(v.x * uWH.x, v.y * uWH.y + uY0);
                 // расстояние за фронтом, ед. (+ — уже залито); край живой:
                 // мениск дышит мелкой волной поверх формулы прохода
-                float dd = (uT - castPass(P.x, P.y)) * uCV.z;
+                // расстояние до края в единицах — время до края, делённое на
+                // уклон карты (мс на ед.): скорость теперь своя в каждой точке,
+                // и «время × одна скорость» давало тонкую бахрому там, где
+                // фронт шёл вбок медленно
+                float tp = castPass(P.x, P.y);
+                // уклон — по гладкой карте, шагом в клетку (с рябью и шагом
+                // меньше клетки он скакал, и валик выходил дырявым)
+                float hs = uFlowSt;
+                vec2 gT = vec2(castPassS(P.x + hs, P.y) - castPassS(P.x - hs, P.y), castPassS(P.x, P.y + hs) - castPassS(P.x, P.y - hs)) / (2.0 * hs);
+                float dd = (uT - tp) / max(length(gT), 2.0);
                 dd += 1.4 * sin(P.x / 5.3 + uT / 190.0) + 0.9 * sin(P.x / 2.7 - uT / 120.0);
-                if (dd >= uB.x * 1.6) { gl_FragColor = screens(P, dd / uCV.z); return; }
+                if (dd >= uB.x * 1.6) { gl_FragColor = screens(P, uT - tp); return; }
                 if (dd < 0.0) {
                     // гаражный: марево (строки качаются) и обугливание с отсветом жара
                     float near = 1.0 - smoothstep(0.0, uB.w, -dd);
@@ -330,10 +343,10 @@ Object.assign(GreedLux, {
                 // по самому краю — тонкая светлая кромка; узор течения —
                 // вытянутые вниз струйки.
                 float Bw = uB.x * (1.0 + 0.6 * castDripG(P.x));
-                if (dd >= Bw) { gl_FragColor = screens(P, dd / uCV.z); return; }
+                if (dd >= Bw) { gl_FragColor = screens(P, uT - tp); return; }
                 float u = dd / Bw;
                 float n = vnoise(vec2(P.x / 2.4, (P.y - uT * 0.11) / 7.0)) * 0.65 + vnoise(vec2(P.x / 5.5, (P.y - uT * 0.07) / 3.0)) * 0.35;
-                vec3 c = mix(uHoney, uMol, smoothstep(0.02, 0.45, u) * (0.75 + 0.35 * n));
+                vec3 c = mix(uHoney, uMol, smoothstep(0.02, 0.45, u) * (0.85 + 0.2 * n));
                 float spec = exp(-pow((u - 0.6) / 0.09, 2.0)) * (0.55 + 0.45 * n);
                 c = mix(c, uWhite, spec * 0.75);
                 c = mix(c, uWhite, (1.0 - smoothstep(0.0, 0.07, u)) * 0.45);
@@ -341,7 +354,7 @@ Object.assign(GreedLux, {
                 c *= 0.78 + 0.22 * smoothstep(0.0, 0.25, u);
                 // хвост растушёван: под ним проступает раскалённый литой
                 float a = 1.0 - smoothstep(Bw - uB.y, Bw, dd);
-                vec4 sc = screens(P, dd / uCV.z);
+                vec4 sc = screens(P, uT - tp);
                 gl_FragColor = vec4(c * a, a) + sc * (1.0 - a);
             }`));
         gl.linkProgram(p);
@@ -363,7 +376,7 @@ Object.assign(GreedLux, {
         gl.uniform4f(U('uB'), B.molten, B.fade, B.scorch, B.shimmer); gl.uniform1f(U('uCr'), B.crust);
         gl.uniform3fv(U('uCrust'), vec(P.cast.crust)); gl.uniform3fv(U('uHoney'), vec(P.cast.honey));
         gl.uniform3fv(U('uMol'), vec(P.cast.molten)); gl.uniform3fv(U('uWhite'), vec(P.cast.white)); gl.uniform3fv(U('uEmber'), vec(P.kant.ember));
-        this.castUniforms(gl, U);
+        this.castUniforms(gl, U, 1);
         gl.uniform3fv(U('uGlass'), vec(P.led.back)); gl.uniform3fv(U('uScan'), vec(P.scan));
         this._castC = { cv, gl, uT: U('uT'), tex: t, uOv: U('uOv'), uOp: U('uOp') };
         return this._castC;
@@ -414,6 +427,8 @@ Object.assign(GreedLux, {
         this._castWait = true;
         try {
             await (this._prep ? this._mountP : this.prepare(host));
+            await this._kantP;
+            await this.castFlowReady();
             await this.castHeatInit();
             // идёт выплата (монеты летят, барабаны крутятся) — банка ждёт с
             // расплавом; литьё — когда игры свободны (не дольше 10 с)

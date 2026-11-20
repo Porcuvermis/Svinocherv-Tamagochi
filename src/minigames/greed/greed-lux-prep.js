@@ -21,7 +21,7 @@ Object.assign(GreedLux, {
         st.position = 'absolute'; st.left = st.top = '0'; st.opacity = '0'; st.pointerEvents = 'none';
         // и всё для литья (greed-lux-cast.js): жар литого и холст литья —
         // заранее, чтобы в миг покупки не стоял кадр
-        Promise.resolve(p).then(() => this._kantP).then(() => {
+        Promise.resolve(p).then(() => this._kantP).then(() => this.castFlowReady && this.castFlowReady()).then(() => {
             if (!this._prep) return;
             if (this.castHeatInit) this.castHeatInit();
             if (this.castCanvas && !this._castC) this.castCanvas(null);

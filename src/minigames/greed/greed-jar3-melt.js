@@ -282,7 +282,7 @@ Object.assign(GreedJarShop, {
             c.globalAlpha = 0.85 * (1 - u); c.fillStyle = g; c.beginPath(); c.arc(ix, iy, R, 0, 7); c.fill();
         }
         // капли брызг: из места удара дугой туда, где прожгут дыру
-        CA.spots.forEach(([sx, sy, t0], i) => {
+        (X._flow ? X._flow.spots : CA.spots).forEach(([sx, sy, t0], i) => {
             const t1 = t0 - 360, u = (T - t1) / 360;
             if (u < 0 || u > 1) return;
             const x = CA.xi + (sx - CA.xi) * u, y = CA.yi + (sy - CA.yi) * u - 60 * Math.sin(u * Math.PI) * (0.7 + 0.3 * (i % 2));
