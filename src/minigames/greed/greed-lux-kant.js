@@ -61,6 +61,12 @@ Object.assign(GreedLux, {
             .catch(e => console.warn('[кант]', e));
     },
     kantGl(imA, imF, meta) {
+        // Плотность холста света — как у карт канта (S), а не как у холста
+        // корпуса (K до 3,25): мельче деталей в картах нет, а пикселей в 2,25
+        // раза меньше. Замер (программный GL, три крупных внахлёст): кадр
+        // упирался в этот шейдер, а не в смешение слоёв.
+        const kk = this._kk = Math.min(this.K, this.S || this.K), FW = this.cv.width / this.K, FH = this.cv.height / this.K;
+        this.kantCv.width = Math.round(FW * kk); this.kantCv.height = Math.round(FH * kk);
         const gl = this.kantCv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
         if (!gl) return;
         const P = PALETTE.greedLux.kant, vec = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
@@ -147,7 +153,7 @@ Object.assign(GreedLux, {
         gl.uniform1i(U('uS'), 0); gl.uniform1i(U('uF'), 1);
         gl.uniform4fv(U('uLen'), meta.len.slice(0, 4)); gl.uniform1f(U('uLen4'), meta.len[4] || 1); gl.uniform3fv(U('uC0'), vec(P.ember)); gl.uniform3fv(U('uC1'), vec(P.amber)); gl.uniform3fv(U('uC2'), vec(P.hot));
         this._kgl = { gl, uE: U('uE'), uP: U('uP'), uN: U('uN'), uAll: U('uAll'), uBall: U('uBall'), meta };
-        gl.uniform2f(U('uWH'), this.kantCv.width / this.K, this.kantCv.height / this.K);
+        gl.uniform2f(U('uWH'), FW, FH);
         this._kRing = null;
     },
 
@@ -246,12 +252,12 @@ Object.assign(GreedLux, {
             E.set([e.ring, e.s0, now - e.at, e.kind], i * 4);
             Q.set([e.amp, e.speed, e.reach, e.tau], i * 4);
         });
-        const B = (this.meta.live && this.meta.live.ballAt) || [0, -999, 0], W = cv.width / this.K, H = cv.height / this.K;
+        const B = (this.meta.live && this.meta.live.ballAt) || [0, -999, 0], W = cv.width / this._kk, H = cv.height / this._kk;
         gl.uniform4f(K.uBall, B[0] / W, (B[1] + (this.ballDy || 0) - this.Y0) / H, B[2] + 0.5, 0);
         gl.uniform4fv(K.uE, E); gl.uniform4fv(K.uP, Q); gl.uniform1f(K.uN, n); gl.uniform1f(K.uAll, this.kantAll || 0);
         // только полосы вдоль колец (жилка ± reach): остальное поле — пусто
         gl.enable(gl.SCISSOR_TEST);
-        const k = this.K, R = this.KANT.reach + 1, Hc = cv.height;
+        const k = this._kk, R = this.KANT.reach + 1, Hc = cv.height;
         const rect = (x0, y0, x1, y1) => {
             const X = Math.max(0, Math.floor(x0 * k)), Y = Math.max(0, Math.floor((y0 - this.Y0) * k));
             const X1 = Math.min(cv.width, Math.ceil(x1 * k)), Y1 = Math.min(Hc, Math.ceil((y1 - this.Y0) * k));
