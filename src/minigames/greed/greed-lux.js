@@ -135,6 +135,8 @@ const GreedLux = {
         // свет канта — свой контекст WebGL, назад сразу
         if (this._kgl) { const x = this._kgl.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext(); }
         this._kgl = null; this.kantCv = null; this._kEv = null;
+        if (this.castCanvasDrop) this.castCanvasDrop();
+        this._castH = this._castHP = null; this._cast = null;
         // контексты движка монет (лоток, копилка) — назад сразу
         [[this.trayDraw, this.trayCv], [this.pigDraw, this.pigCv]].forEach(([d, cv]) => {
             const g = d && cv && cv.getContext('webgl'), x = g && g.getExtension('WEBGL_lose_context');

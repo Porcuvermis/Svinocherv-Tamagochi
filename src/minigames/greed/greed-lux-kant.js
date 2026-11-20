@@ -138,7 +138,7 @@ Object.assign(GreedLux, {
         gl.linkProgram(p);
         if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.warn('[кант]', gl.getProgramInfoLog(p)); return; }
         gl.useProgram(p);
-        const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); this._kBuf = buf;
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
         const loc = gl.getAttribLocation(p, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
         const tex = (im, unit, filt) => {
@@ -152,7 +152,7 @@ Object.assign(GreedLux, {
         const U = (n) => gl.getUniformLocation(p, n);
         gl.uniform1i(U('uS'), 0); gl.uniform1i(U('uF'), 1);
         gl.uniform4fv(U('uLen'), meta.len.slice(0, 4)); gl.uniform1f(U('uLen4'), meta.len[4] || 1); gl.uniform3fv(U('uC0'), vec(P.ember)); gl.uniform3fv(U('uC1'), vec(P.amber)); gl.uniform3fv(U('uC2'), vec(P.hot));
-        this._kgl = { gl, uE: U('uE'), uP: U('uP'), uN: U('uN'), uAll: U('uAll'), uBall: U('uBall'), meta };
+        this._kgl = { gl, p, loc, buf, uE: U('uE'), uP: U('uP'), uN: U('uN'), uAll: U('uAll'), uBall: U('uBall'), meta };
         gl.uniform2f(U('uWH'), FW, FH);
         this._kRing = null;
     },
@@ -238,7 +238,9 @@ Object.assign(GreedLux, {
         if (!K || !this._kEv) return;
         this._kEv = this._kEv.filter(e => now - e.at < e.life);
         // события «на потом» (вторые импульсы, маркиза) кадров не требуют
-        const live = this._kEv.some(e => now >= e.at) || this.kantAll > 0;
+        // литьё (greed-lux-cast.js): жар литого рисуется этим же холстом
+        const cast = !!(this._cast && this._castH);
+        const live = this._kEv.some(e => now >= e.at) || this.kantAll > 0 || cast;
         if (!live && !this._kWas) return;
         if (live && now - this._kAt < 1000 / this.KANT.fps - 2) return;
         this._kAt = now; this._kWas = live;
@@ -247,6 +249,12 @@ Object.assign(GreedLux, {
         gl.disable(gl.SCISSOR_TEST);
         gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
         if (!live) return;
+        if (cast) {
+            // жар — на всё поле, кант — поверх сложением (свет к свету)
+            this.castHeatDraw(gl, now);
+            gl.useProgram(K.p); gl.bindBuffer(gl.ARRAY_BUFFER, K.buf); gl.vertexAttribPointer(K.loc, 2, gl.FLOAT, false, 0, 0);
+            gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+        } else gl.disable(gl.BLEND);
         const n = this._kEv.length, E = new Float32Array(this.KANT.max * 4), Q = new Float32Array(this.KANT.max * 4);
         this._kEv.forEach((e, i) => {
             E.set([e.ring, e.s0, now - e.at, e.kind], i * 4);
