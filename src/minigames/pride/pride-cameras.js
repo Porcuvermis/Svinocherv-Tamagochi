@@ -401,7 +401,7 @@ const PrideCameras = {
     // ---------- ПЕРЕХОД: вспышки (pride-flash.js) ----------
     // Шкурка отдаёт покрову окна (core/mg-veil.js) хуки, вся работа — в PrideFlash.
     VEIL_MS: {
-        cover: 950, reveal: 1200, close: 950, clear: 1200, finish: 850, pop: 120,
+        cover: 1050, reveal: 1300, close: 1050, clear: 1300, finish: 950, pop: 120,
         // длина нажатия зависит от его номера; veilPending продлевает до тишины
         get burst() { return typeof MgVeil !== 'undefined' && MgVeil.knocks >= 2 ? 1500 : 900; }
     },
@@ -481,10 +481,10 @@ const PrideCameras = {
         };
         cams.forEach((it, i) => place(i, this.flashAt(it), 'cam'));
         place(cams.length, this.crossFlashAt(), 'cam');
-        // Посреди экрана: сетка 5 × 6 с разбросом, не ближе 40 ед. к кромке окна.
-        const I = this.inner(), R = this.rng(this.SEED + 77), cx = 5, cy = 6;
+        // Посреди экрана: сетка 6 × 9 с разбросом, не ближе 30 ед. к кромке окна.
+        const I = this.inner(), R = this.rng(this.SEED + 77), cx = 6, cy = 9;
         for (let j = 0; j < cy; j++) for (let i = 0; i < cx; i++) {
-            const x0 = I.x0 + 40, y0 = I.y0 + 40, w = (I.x1 - I.x0 - 80) / cx, h = (I.y1 - I.y0 - 80) / cy;
+            const x0 = I.x0 + 30, y0 = I.y0 + 30, w = (I.x1 - I.x0 - 60) / cx, h = (I.y1 - I.y0 - 60) / cy;
             pts.push({ x: x0 + (i + 0.15 + R() * 0.7) * w, y: y0 + (j + 0.15 + R() * 0.7) * h, cam: -1, kind: 'screen' });
         }
         return (this._flashPts = pts);

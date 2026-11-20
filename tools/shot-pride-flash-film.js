@@ -22,7 +22,7 @@ const { chromium } = require('playwright');
   });
   await page.waitForTimeout(500);
   const films = {
-    enter: { steps: [[0, 'cover'], [1250, 'reveal']], at: [60, 180, 300, 420, 540, 660, 780, 900, 1250, 1400, 1550, 1700, 1900, 2150, 2450] },
+    enter: { steps: [[0, 'cover'], [1350, 'reveal']], at: [80, 200, 330, 460, 590, 720, 850, 1000, 1350, 1500, 1650, 1800, 2000, 2250, 2600] },
     knock: { steps: [[0, 'burst', 1], [1100, 'burst', 2], [2700, 'finish']], at: [60, 160, 300, 500, 1180, 1300, 1450, 1700, 2000, 2780, 2950, 3150, 3350, 3550] }
   };
   for (const [name, f] of Object.entries(films)) {

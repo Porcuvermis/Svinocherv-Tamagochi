@@ -13,8 +13,8 @@ const PrideFlash = {
     // r — радиус ореола, star — длина лучей в радиусах ореола (0 — без звезды),
     // rays — сколько лучей, core — радиус горячего ядра.
     SIZES: {
-        S: { r: 46, star: 0, rays: 0, core: 6 },
-        M: { r: 96, star: 1.25, rays: 4, core: 10 },
+        S: { r: 58, star: 0, rays: 0, core: 7 },
+        M: { r: 120, star: 1.25, rays: 4, core: 12 },
         L: { r: 300, star: 0.75, rays: 8, core: 22 }
     },
     sprites: null,
@@ -103,7 +103,7 @@ const PrideFlash = {
     //     сильнее и дольше (светошумовая граната, замысел игрока);
     //   печать — плавная кривая, которая доводит экран до сплошного белого на входе и
     //     выходе и отпускает его на раскрытии.
-    LIFE: { S: 150, M: 300, L: 650 },                 // жизнь пятна, мс
+    LIFE: { S: 230, M: 380, L: 700 },                 // жизнь пятна, мс
     ATTACK: { S: 30, M: 50, L: 90 },                  // нарастание (не в один кадр — без стробоскопа)
     BLIND: {                                          // вклад в белизну экрана
         S: { amp: 0.05, hold: 0, fall: 180 },
@@ -111,7 +111,7 @@ const PrideFlash = {
         L: { amp: 0.70, hold: 260, fall: 1500 }
     },
     // Ходы покрова (имена — у core/mg-veil.js), длительности в мс.
-    T: { cover: 950, reveal: 1200, close: 950, clear: 1200, finish: 850, pop: 120 },
+    T: { cover: 1050, reveal: 1300, close: 1050, clear: 1300, finish: 950, pop: 120 },
     clock: null,                                      // подмена часов для проб
     now() { return this.clock ? this.clock() : performance.now(); },
     st: null,
@@ -153,13 +153,16 @@ const PrideFlash = {
         for (let k = 0; k < o.n; k++) {
             const q = (k + 0.5 + (R() - 0.5) * 0.8) / o.n;
             const x = Math.max(0, Math.min(1, q));
-            const f = o.shape === 'rise' ? Math.sqrt(x) : o.shape === 'fall' ? x * x : x;
+            // rise: плотность растёт к концу, но не с нуля — вспышки видны с первых кадров
+            const f = o.shape === 'rise' ? Math.pow(x, 0.72) : o.shape === 'fall' ? x * x : x;
             const t = t0 + f * o.T;
             let r = R(), size = r < o.mix.S ? 'S' : r < o.mix.S + o.mix.M ? 'M' : 'L';
             if (size === 'L' && (x < (o.lFrom || 0) || nL >= (o.lMax || 0) || t - lastL < 340)) size = 'M';
             if (size === 'L') { lastL = t; nL++; }
             const bk = (o.blindK && o.blindK[size]) || 1;
-            this.st.fl.push({ x: seq[k].x, y: seq[k].y, size, t0: t, spin: R() * Math.PI, bk });
+            // Разброс вокруг точки: повтор той же камеры/места не бьёт в один пиксель.
+            const j = seq[k].cam === -1 ? 34 : 6;
+            this.st.fl.push({ x: seq[k].x + (R() * 2 - 1) * j, y: seq[k].y + (R() * 2 - 1) * j, size, t0: t, spin: R() * Math.PI, bk });
         }
     },
     points() {
@@ -170,14 +173,17 @@ const PrideFlash = {
         for (let i = 0; i < 30; i++) pts.push({ x: 40 + (i % 5) * 75, y: 80 + Math.floor(i / 5) * 120 });
         return pts;
     },
-    sealTo(to, dur) {
+    sealTo(to, dur, out) {
         const t = this.now();
-        this.st.seal = { t0: t, dur, from: this.sealAt(t), to };
+        this.st.seal = { t0: t, dur, from: this.sealAt(t), to, out: !!out };
     },
     sealAt(t) {
         const S = this.st.seal, x = Math.max(0, Math.min(1, (t - S.t0) / S.dur));
         // вверх — плавный разгон (smoothstep), вниз — косинусом: отпускает мягко
-        const e = S.to > S.from ? (S.out ? 1 - (1 - x) * (1 - x) : x * x * (3 - 2 * x)) : 0.5 - 0.5 * Math.cos(Math.PI * x);
+        // вниз: обычный — косинусом; out — сразу и быстро (раскрытие: белое уходит в
+        // первые сотни мс, чтобы редеющие вспышки было видно на рамке, а не на белом)
+        const e = S.to > S.from ? (S.out ? 1 - (1 - x) * (1 - x) : x * x * (3 - 2 * x))
+                                : (S.out ? 1 - (1 - x) * (1 - x) * (1 - x) : 0.5 - 0.5 * Math.cos(Math.PI * x));
         return S.from + (S.to - S.from) * e;
     },
     // Яркость пятна и вклад в белизну одной вспышки в момент t.
@@ -218,7 +224,7 @@ const PrideFlash = {
         this.whiteout(g, W);
         for (const f of this.st.fl) { const a = this.glow(f, t); if (a > 0) this.draw(g, f.x, f.y, f.size, a, f.spin); }
         // отгоревшее выбрасываем, чтобы список не рос
-        if (this.st.fl.length > 160) this.st.fl = this.st.fl.filter(f => t - f.t0 < 2200);
+        if (this.st.fl.length > 400) this.st.fl = this.st.fl.filter(f => t - f.t0 < 2200 || f.t0 > t);
     },
 
     // ---------- ходы покрова ----------
@@ -230,24 +236,24 @@ const PrideFlash = {
         switch (mode) {
             case 'cover': case 'close':
                 // Волна: сначала редко, потом шквал; большие — во второй половине.
-                // Печать с половины хода доводит экран до сплошного белого.
+                // Печать с 62 % хода (сначала экран забивают вспышки — они главное, белое только скрепляет; игрок) доводит экран до сплошного белого.
                 // Мелкие и средние на входе почти не белят экран (blindK): иначе их сотня
                 // складывается в серую пелену раньше, чем видно сами вспышки (проба кадрами).
-                add({ n: 100, T: this.T.cover, shape: 'rise', mix: { S: 0.6, M: 0.28, L: 0.12 }, lFrom: 0.45, lMax: 7, blindK: { S: 0.25, M: 0.45 } });
-                this.st.seal = { t0: t + this.T.cover * 0.5, dur: this.T.cover * 0.5, from: this.sealAt(t), to: 1 };
+                add({ n: 220, T: this.T.cover, shape: 'rise', mix: { S: 0.58, M: 0.32, L: 0.1 }, lFrom: 0.4, lMax: 7, blindK: { S: 0.12, M: 0.25 } });
+                this.st.seal = { t0: t + this.T.cover * 0.62, dur: this.T.cover * 0.38, from: this.sealAt(t), to: 1 };
                 break;
             case 'reveal': case 'clear':
                 // Вспышки редеют (часто → редко), больших нет; белое отпускает плавно.
-                add({ n: 16, T: 700, shape: 'fall', mix: { S: 0.7, M: 0.3, L: 0 }, blindK: { S: 0.3, M: 0.3 } });
-                this.sealTo(0, this.T.reveal);
+                add({ n: 55, T: 1050, shape: 'fall', mix: { S: 0.62, M: 0.38, L: 0 }, blindK: { S: 0.15, M: 0.2 } });
+                this.sealTo(0, 900, true);
                 break;
             case 'burst':
-                if (n >= 2) add({ n: 22, T: 600, shape: 'flat', mix: { S: 0.64, M: 0.36, L: 0 } });
-                else add({ n: 14, T: 450, shape: 'flat', mix: { S: 1, M: 0, L: 0 }, blindK: { S: 1.8 } });
+                if (n >= 2) add({ n: 50, T: 650, shape: 'flat', mix: { S: 0.6, M: 0.4, L: 0 }, blindK: { S: 0.6, M: 0.8 } });
+                else add({ n: 30, T: 500, shape: 'flat', mix: { S: 1, M: 0, L: 0 }, blindK: { S: 0.9 } });
                 if (calm) this.st.fl.push({ x: -999, y: -999, size: n >= 2 ? 'M' : 'S', t0: t, spin: 0 });
                 break;
             case 'finish':
-                add({ n: 90, T: this.T.finish, shape: 'rise', mix: { S: 0.56, M: 0.3, L: 0.14 }, lFrom: 0.3, lMax: 6, blindK: { S: 0.25, M: 0.45 } });
+                add({ n: 200, T: this.T.finish, shape: 'rise', mix: { S: 0.55, M: 0.33, L: 0.12 }, lFrom: 0.3, lMax: 6, blindK: { S: 0.12, M: 0.25 } });
                 // Печать стартует сразу и сразу растёт (out: разгон с первого кадра): экран
                 // после второго нажатия не успевает «отпустить» и снова вспыхнуть — лишняя
                 // смена яркости (замер безопасности ловил четыре за секунду при быстрых
