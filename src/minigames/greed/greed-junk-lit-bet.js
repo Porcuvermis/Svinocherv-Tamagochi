@@ -36,7 +36,7 @@ Object.assign(GreedJunk, {
             `<path d="M${f(X1 - c * 1.5)} ${f(Y1 - 0.6)} Q${f(X1 - c * 0.9)} ${f(Y1 - c * 0.8)} ${f(X1 - 0.1)} ${f(Y1 - c * 1.45)}" fill="none" stroke="${lo}" stroke-width="0.4" opacity="0.8"/>`;
         // Число — цифрами маркера (рамка цифры 4×7.4), крупно и по центру
         // листка под клеевой полосой; чем длиннее число, тем уже цифры.
-        const digs = String(bet).split(''), n = digs.length, ds = n === 1 ? 1.75 : n === 2 ? 1.5 : 1.12;
+        const digs = String(bet).split(''), n = digs.length, ds = n === 1 ? 1.55 : n === 2 ? 1.35 : 1.0;
         const dw = 4 * ds, gap = 1.2 * ds, rowW = n * dw + (n - 1) * gap, dh = 7.4 * ds;
         const nx = cx - rowW / 2, ny = y + gl + 1.6;
         let num = '';
@@ -47,8 +47,9 @@ Object.assign(GreedJunk, {
             num += `<g transform="translate(${f(nx + i * (dw + gap))} ${f(ny + (r2() - 0.5) * 0.6)}) rotate(${f((r2() - 0.5) * 5)}) scale(${f(ds)})">` +
                 `<path d="${L.map(s => this.handPath(s, r2, false, 0.1)).join(' ')}" fill="none" stroke="${ink}" stroke-width="${f(1.1 / ds)}" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/></g>`;
         });
-        // ниже — «×» и монетка (тот же почерк, что у вшитого «1×монета»)
-        const by = ny + dh + 2.6, bx = cx - 5.2;
+        // ниже — «×» и монетка (тот же почерк, что у вшитого «1×монета»);
+        // с зазором от числа: впритык они сливались в одно (игрок, 20.11)
+        const by = ny + dh + 6.2, bx = cx - 5.2;
         const times = this.handPath([[bx, by - 1.4], [bx + 2.6, by + 1.4]], rnd, false, 0.06) + ' ' + this.handPath([[bx + 2.6, by - 1.4], [bx, by + 1.4]], rnd, false, 0.06);
         const mx = cx + 2.6, my = by - 0.3;
         const coin = this.handOval(mx, my, 3.4, 2.2, rnd, 8) + ' ' +
