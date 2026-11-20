@@ -398,6 +398,27 @@ const PrideCameras = {
         rimEl.appendChild(box);
     },
 
+    // ---------- ПЕРЕХОД: вспышки (pride-flash.js) ----------
+    // Шкурка отдаёт покрову окна (core/mg-veil.js) хуки, вся работа — в PrideFlash.
+    VEIL_MS: {
+        cover: 950, reveal: 1200, close: 950, clear: 1200, finish: 850, pop: 120,
+        // длина нажатия зависит от его номера; veilPending продлевает до тишины
+        get burst() { return typeof MgVeil !== 'undefined' && MgVeil.knocks >= 2 ? 1500 : 900; }
+    },
+    veilStart(ctx, mode) {
+        PrideFlash.start(mode, typeof MgVeil !== 'undefined' ? MgVeil.knocks : 1);
+        PrideFlash.render(ctx, PrideFlash.now());       // холст после смены размера пуст — сразу кадр
+    },
+    veil(ctx) { PrideFlash.render(ctx, PrideFlash.now()); },
+    veilStill(ctx) { ctx.clearRect(-2, -2, STAGE_W + 4, STAGE_H + 4); PrideFlash.whiteout(ctx, 1); },
+    veilPending() { return PrideFlash.pending(); },
+    veilWarm(ctx) {
+        PrideFlash.bake();
+        if (!PrideFlash.st) PrideFlash.reset();
+        PrideFlash.draw(ctx, -400, -400, 'L', 1, 0);     // прогрев картинок в видеокарте
+    },
+    veilHide() { PrideFlash.reset(); },
+
     // ---------- ТОЧКИ ВСПЫШЕК (переход, docs/plan/32-pride-cameras.md, задача 4) ----------
     // Где у модели вспыхивает: доли ширины и высоты её рисунка (cameras/*.svg, viewBox
     // обрезан по габариту). Окно вспышки у мыльниц и моментальной, светодиод у

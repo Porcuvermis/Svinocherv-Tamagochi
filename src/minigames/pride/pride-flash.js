@@ -1,6 +1,6 @@
 // ================= ТЩЕСЛАВИЕ: ВСПЫШКИ ФОТОАППАРАТОВ (переход окна) =================
-// docs/plan/32-pride-cameras.md, задачи 4–5. Здесь — вид одной вспышки и белизна
-// экрана; расписание волны и ходы покрова — следующие подзадачи.
+// docs/plan/32-pride-cameras.md, задачи 4–5: вид одной вспышки, белизна экрана,
+// расписание волны и ходы покрова (вход, выход, три нажатия в забеге).
 //
 // Вспышка трёх размеров (решение игрока): маленькая, средняя, большая. Чем больше
 // вспышка, тем сильнее она белит ВЕСЬ экран (как светошумовая граната) — это
@@ -89,6 +89,174 @@ const PrideFlash = {
         const C = Z.core * (0.6 + 0.4 * a);
         g.drawImage(S.core, x - C, y - C, 2 * C, 2 * C);
         g.restore();
+    },
+
+
+    // ================= ДВИЖОК: состояние по часам =================
+    // Покров считает не «кадр от доли хода», а состояние на момент времени: ход
+    // ДОБАВЛЯЕТ вспышки и «печать» белого, кадр рисует то, что живо сейчас. Поэтому
+    // второе нажатие ложится на послесвечение первого, `pop` дорисовывает остаток,
+    // отмена входа не рвёт картинку.
+    //
+    // Белизна экрана W = 1 − (1 − ослепление)(1 − печать):
+    //   ослепление — 1 − Π(1 − aᵢ(t)) по всем вспышкам: чем больше вспышка, тем
+    //     сильнее и дольше (светошумовая граната, замысел игрока);
+    //   печать — плавная кривая, которая доводит экран до сплошного белого на входе и
+    //     выходе и отпускает его на раскрытии.
+    LIFE: { S: 150, M: 300, L: 650 },                 // жизнь пятна, мс
+    ATTACK: { S: 30, M: 50, L: 90 },                  // нарастание (не в один кадр — без стробоскопа)
+    BLIND: {                                          // вклад в белизну экрана
+        S: { amp: 0.05, hold: 0, fall: 180 },
+        M: { amp: 0.22, hold: 60, fall: 450 },
+        L: { amp: 0.70, hold: 260, fall: 1500 }
+    },
+    // Ходы покрова (имена — у core/mg-veil.js), длительности в мс.
+    T: { cover: 950, reveal: 1200, close: 950, clear: 1200, finish: 850, pop: 120 },
+    clock: null,                                      // подмена часов для проб
+    now() { return this.clock ? this.clock() : performance.now(); },
+    st: null,
+    reset() { this.st = { fl: [], seal: { t0: 0, dur: 1, from: 0, to: 0 } }; },
+
+    rng(seed) {
+        let a = seed >>> 0;
+        return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    },
+    calm() { return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; },
+
+    // ---------- порядок: распределённо-случайный ----------
+    // Каждая следующая точка — из восьми случайных кандидатов самая далёкая от трёх
+    // последних. Соседние подряд не вспыхивают, но и «волны по кругу» нет.
+    order(pts, n, R) {
+        const out = [], recent = [];
+        for (let k = 0; k < n; k++) {
+            let best = null, bd = -1;
+            for (let c = 0; c < 8; c++) {
+                const p = pts[Math.floor(R() * pts.length)];
+                if (recent.slice(-10).includes(p) && pts.length > 12) continue;
+                const d = recent.slice(-3).reduce((m, q) => Math.min(m, Math.hypot(p.x - q.x, p.y - q.y)), 1e9);
+                if (d > bd) { bd = d; best = p; }
+            }
+            best = best || pts[k % pts.length];
+            out.push(best); recent.push(best);
+        }
+        return out;
+    },
+    // ---------- волна ----------
+    // o: n — сколько вспышек, T — за сколько мс, shape — 'rise' (редко → шквал) |
+    // 'fall' (часто → редко) | 'flat'; mix — доли S/M/L; lFrom — с какой доли хода
+    // разрешены большие; lMax — сколько больших максимум (не чаще трёх в секунду).
+    wave(t0, o) {
+        const pts = this.points(), R = this.rng((this.seed = (this.seed || 7) + 101));
+        if (!pts.length) return;
+        const seq = this.order(pts, o.n, R);
+        let lastL = -1e9, nL = 0;
+        for (let k = 0; k < o.n; k++) {
+            const q = (k + 0.5 + (R() - 0.5) * 0.8) / o.n;
+            const x = Math.max(0, Math.min(1, q));
+            const f = o.shape === 'rise' ? Math.sqrt(x) : o.shape === 'fall' ? x * x : x;
+            const t = t0 + f * o.T;
+            let r = R(), size = r < o.mix.S ? 'S' : r < o.mix.S + o.mix.M ? 'M' : 'L';
+            if (size === 'L' && (x < (o.lFrom || 0) || nL >= (o.lMax || 0) || t - lastL < 340)) size = 'M';
+            if (size === 'L') { lastL = t; nL++; }
+            const bk = (o.blindK && o.blindK[size]) || 1;
+            this.st.fl.push({ x: seq[k].x, y: seq[k].y, size, t0: t, spin: R() * Math.PI, bk });
+        }
+    },
+    points() {
+        if (typeof PrideCameras !== 'undefined' && PrideCameras.imgs && PrideCameras.imgs.ready) {
+            try { return PrideCameras.flashPoints(); } catch (e) { /* без камер — только экран */ }
+        }
+        const pts = [];
+        for (let i = 0; i < 30; i++) pts.push({ x: 40 + (i % 5) * 75, y: 80 + Math.floor(i / 5) * 120 });
+        return pts;
+    },
+    sealTo(to, dur) {
+        const t = this.now();
+        this.st.seal = { t0: t, dur, from: this.sealAt(t), to };
+    },
+    sealAt(t) {
+        const S = this.st.seal, x = Math.max(0, Math.min(1, (t - S.t0) / S.dur));
+        // вверх — плавный разгон (smoothstep), вниз — косинусом: отпускает мягко
+        const e = S.to > S.from ? (S.out ? 1 - (1 - x) * (1 - x) : x * x * (3 - 2 * x)) : 0.5 - 0.5 * Math.cos(Math.PI * x);
+        return S.from + (S.to - S.from) * e;
+    },
+    // Яркость пятна и вклад в белизну одной вспышки в момент t.
+    glow(f, t) {
+        const d = t - f.t0, A = this.ATTACK[f.size], L = this.LIFE[f.size];
+        if (d < 0 || d > L) return 0;
+        if (d < A) return d / A;
+        const x = (d - A) / (L - A);
+        return (1 - x) * (1 - x);
+    },
+    blind(f, t) {
+        const d = t - f.t0, B = this.BLIND[f.size], A = this.ATTACK[f.size];
+        if (d < 0) return 0;
+        const amp = B.amp * (f.bk || 1);
+        if (d < A) return amp * d / A;
+        if (d < A + B.hold) return amp;
+        const x = (d - A - B.hold) / B.fall;
+        return x >= 1 ? 0 : amp * (1 - x) * (1 - x);
+    },
+    whiteAt(t) {
+        let keep = 1;
+        for (const f of this.st.fl) keep *= 1 - this.blind(f, t);
+        return 1 - keep * (1 - this.sealAt(t));
+    },
+    // Есть ли ещё что дорисовывать (ход не кончается, пока не отгорело). Сплошной
+    // белый на входе/выходе — не «ожидание»: дальше его держит veilStill.
+    pending() {
+        const t = this.now();
+        if (this.sealAt(t) >= 0.999 && this.st.seal.to === 1) return false;
+        if (this.st.seal.to !== this.st.seal.from && t < this.st.seal.t0 + this.st.seal.dur) return true;
+        return this.st.fl.some(f => t - f.t0 < Math.max(this.LIFE[f.size], this.ATTACK[f.size] + this.BLIND[f.size].hold + this.BLIND[f.size].fall));
+    },
+    // Кадр: белизна, поверх — живые вспышки (на молочном экране ядра ещё видны).
+    render(g, t) {
+        g.clearRect(-2, -2, STAGE_W + 4, STAGE_H + 4);
+        const W = this.whiteAt(t);
+        if (W >= 0.999) { this.whiteout(g, 1); return; }
+        this.whiteout(g, W);
+        for (const f of this.st.fl) { const a = this.glow(f, t); if (a > 0) this.draw(g, f.x, f.y, f.size, a, f.spin); }
+        // отгоревшее выбрасываем, чтобы список не рос
+        if (this.st.fl.length > 160) this.st.fl = this.st.fl.filter(f => t - f.t0 < 2200);
+    },
+
+    // ---------- ходы покрова ----------
+    // n — номер нажатия в забеге (MgVeil.knocks) для 'burst'.
+    start(mode, n) {
+        if (!this.st) this.reset();
+        const t = this.now(), calm = this.calm();
+        const add = (o) => { if (!calm) this.wave(t, o); };
+        switch (mode) {
+            case 'cover': case 'close':
+                // Волна: сначала редко, потом шквал; большие — во второй половине.
+                // Печать с половины хода доводит экран до сплошного белого.
+                // Мелкие и средние на входе почти не белят экран (blindK): иначе их сотня
+                // складывается в серую пелену раньше, чем видно сами вспышки (проба кадрами).
+                add({ n: 100, T: this.T.cover, shape: 'rise', mix: { S: 0.6, M: 0.28, L: 0.12 }, lFrom: 0.45, lMax: 7, blindK: { S: 0.25, M: 0.45 } });
+                this.st.seal = { t0: t + this.T.cover * 0.5, dur: this.T.cover * 0.5, from: this.sealAt(t), to: 1 };
+                break;
+            case 'reveal': case 'clear':
+                // Вспышки редеют (часто → редко), больших нет; белое отпускает плавно.
+                add({ n: 16, T: 700, shape: 'fall', mix: { S: 0.7, M: 0.3, L: 0 }, blindK: { S: 0.3, M: 0.3 } });
+                this.sealTo(0, this.T.reveal);
+                break;
+            case 'burst':
+                if (n >= 2) add({ n: 22, T: 600, shape: 'flat', mix: { S: 0.64, M: 0.36, L: 0 } });
+                else add({ n: 14, T: 450, shape: 'flat', mix: { S: 1, M: 0, L: 0 }, blindK: { S: 1.8 } });
+                if (calm) this.st.fl.push({ x: -999, y: -999, size: n >= 2 ? 'M' : 'S', t0: t, spin: 0 });
+                break;
+            case 'finish':
+                add({ n: 90, T: this.T.finish, shape: 'rise', mix: { S: 0.56, M: 0.3, L: 0.14 }, lFrom: 0.3, lMax: 6, blindK: { S: 0.25, M: 0.45 } });
+                // Печать стартует сразу и сразу растёт (out: разгон с первого кадра): экран
+                // после второго нажатия не успевает «отпустить» и снова вспыхнуть — лишняя
+                // смена яркости (замер безопасности ловил четыре за секунду при быстрых
+                // нажатиях). Брать стартом текущую белизну нельзя: она уже включает
+                // ослепление, и выходил скачок 0,24 за кадр.
+                this.st.seal = { t0: t, dur: this.T.finish, from: this.sealAt(t), to: 1, out: true };
+                break;
+            case 'pop': default: break;
+        }
     },
 
     // ---------- белизна всего экрана ----------
