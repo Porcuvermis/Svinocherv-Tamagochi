@@ -236,11 +236,47 @@ const PrideCameras = {
         if (g.roundRect) g.roundRect(I.x0, I.y0, I.x1 - I.x0, I.y1 - I.y0, R); else g.rect(I.x0, I.y0, I.x1 - I.x0, I.y1 - I.y0);
         g.fill('evenodd');
     },
-    putCross(g) {
-        // Камера стоит прямо (крестик читается только так); крышка объектива чуть
-        // ниже середины камеры, поэтому центр камеры выше зоны нажатия.
-        const h = 72, c = this.cross;
-        this.put(g, { id: 'cross', x: c.x, y: c.y - 6, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h }, true);
+    // ---------- КАМЕРА-КРЕСТИК ----------
+    // Как и вся толпа, камера стоит дном к центру экрана — корпус наклонён верхом
+    // в угол (CROSS_TILT, по часовой), — но объектив с колпачком и крестом остаётся
+    // на прежнем месте и прямо: корпус поворачивается вокруг центра объектива, а
+    // круглая часть (оправа колпачка) рисуется поверх без поворота. Круг
+    // симметричен, шва не видно.
+    CROSS_TILT: 24,
+    CROSS_H: 72,
+    CROSS_VB: { x: 22.5, y: 49.5 },        // начало viewBox в cameras/cross.svg
+    CROSS_LENS: { x: 300, y: 240, r: 124 }, // центр и радиус оправы в исходном рисунке
+    // Рисует камеру так, чтобы центр объектива оказался в точке (lx, ly).
+    drawCross(g, lx, ly) {
+        const im = this.imgs.pic.cross;
+        if (!im || !im.complete || !im.naturalWidth) return;
+        const k = this.CROSS_H / this.CROSS.h, L = this.CROSS_LENS, V = this.CROSS_VB;
+        const ox = (L.x - V.x) * k, oy = (L.y - V.y) * k, w = this.CROSS.w * k, h = this.CROSS.h * k;
+        g.save();
+        g.shadowColor = 'rgba(8,6,10,0.6)'; g.shadowBlur = 5; g.shadowOffsetY = 2;
+        g.translate(lx, ly); g.rotate(this.CROSS_TILT * Math.PI / 180);
+        g.drawImage(im, -ox, -oy, w, h);
+        g.restore();
+        g.save();
+        g.translate(lx, ly);
+        g.beginPath(); g.arc(0, 0, L.r * k, 0, Math.PI * 2); g.clip();
+        g.drawImage(im, -ox, -oy, w, h);
+        g.restore();
+    },
+    crossLens() {
+        // Прежнее положение объектива: камера стояла прямо с центром в (x, y − 6).
+        const c = this.cross, k = this.CROSS_H / this.CROSS.h, L = this.CROSS_LENS, V = this.CROSS_VB;
+        return { x: c.x + ((L.x - V.x) - this.CROSS.w / 2) * k, y: c.y - 6 + ((L.y - V.y) - this.CROSS.h / 2) * k };
+    },
+    putCross(g) { const l = this.crossLens(); this.drawCross(g, l.x, l.y); },
+    bakeCross(scale) {
+        const l = this.crossLens(), R = 150, cv = document.createElement('canvas');   // R — запас под повёрнутый корпус
+        cv.width = Math.ceil(2 * R * scale); cv.height = Math.ceil(2 * R * scale);
+        const g = cv.getContext('2d'); g.scale(scale, scale);
+        this.drawCross(g, R, R);
+        cv.style.left = (l.x - R) + 'px'; cv.style.top = (l.y - R) + 'px';
+        cv.style.width = 2 * R + 'px'; cv.style.height = 2 * R + 'px';
+        return cv;
     },
     // ---------- ДЫРЫ ----------
     // Игрок: в рамке не должно быть дыр. Случайная раскладка их оставляет там,
@@ -358,8 +394,7 @@ const PrideCameras = {
         L.mid.forEach(it => add(it, 'mid', -1));
         L.front.forEach(it => add(it, 'front', 1));
         // Камера-крестик — неподвижная, поверх всего.
-        const h = 72, c = this.cross, cr = { id: 'cross', x: c.x, y: c.y - 6, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h };
-        const cv = this.bake(cr, 0, sc); cv.className = 'mg-cam mg-cam-still'; box.appendChild(cv);
+        const cv = this.bakeCross(sc); cv.className = 'mg-cam mg-cam-still'; box.appendChild(cv);
         rimEl.appendChild(box);
     },
 
