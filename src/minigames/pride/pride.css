@@ -265,3 +265,22 @@
     font: 11px/1.6 monospace;
     padding: 0 3px;
 }
+
+
+/* ---------- РАМКА ИЗ КАМЕР: живые слои (pride-cameras.js, mountLive) ----------
+   Каждая камера — свой холст; качает видеокарта (transform), страница ничего не
+   перерисовывает. Передние и задние камеры качаются в противоположные стороны
+   (знак у --dx/--dy), у каждой свои период и сдвиг (задаёт скрипт). */
+.mg-cams { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.mg-cams .mg-cam {
+    position: absolute;
+    background: none;
+    z-index: auto;
+    will-change: transform;
+    animation: mg-cam-sway 4s ease-in-out infinite alternate;
+}
+.mg-cams .mg-cam-still { animation: none; will-change: auto; }
+@keyframes mg-cam-sway {
+    from { transform: translate(calc(var(--dx) * -1), calc(var(--dy) * -1)) rotate(calc(var(--rot) * -1)); }
+    to   { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); }
+}

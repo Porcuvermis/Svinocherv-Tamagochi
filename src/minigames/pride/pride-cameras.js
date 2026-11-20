@@ -64,23 +64,9 @@ const PrideCameras = {
     get bg() { return this.holeTest ? '#ff00ff' : PALETTE.ink; },
     inner() { return MinigameWindow.skinGeometry(this).inner; },
 
-    // Насколько самая выступающая камера зашла за кромку окна на сцену — ровно
-    // столько берут полосы окна, и ни одна камера не обрезается.
-    reach() {
-        const L = this.layout(), I = this.inner();
-        let p = this.CORNER;
-        L.back.concat(L.mid, L.front).forEach(it => {
-            const b = this.bbox(it);
-            // Камера верхней/нижней ленты выступает по вертикали, боковой — по
-            // горизонтали; сравнивать её с чужой стороной нельзя (широкая верхняя
-            // камера «выступает» за левую кромку на сотню единиц, это не выступ).
-            if (it.y < I.y0) p = Math.max(p, b.y1 - I.y0);
-            else if (it.y > I.y1) p = Math.max(p, I.y1 - b.y0);
-            else if (it.x < I.x0) p = Math.max(p, b.x1 - I.x0);
-            else if (it.x > I.x1) p = Math.max(p, I.x1 - b.x0);
-        });
-        return Math.ceil(p) + 2;
-    },
+    // Полосы окна несут только подложку (скруглённый вырез): камеры — отдельные
+    // слои поверх (mountLive), они качаются и полосами не обрезаются.
+    reach() { return this.CORNER; },
 
     // ---------- картинки грузятся сразу при подключении файла ----------
     imgs: null,
@@ -307,35 +293,91 @@ const PrideCameras = {
             });
         }
     },
+    // ---------- РАМКА: подложка ----------
     *drawGen(g) {
-        const I = this.inner();
         this.load();
         g.clearRect(0, 0, STAGE_W, STAGE_H);
-        // Всё вне окна сцены — тёмная подложка (скруглённый вырез), чтобы
-        // между камерами не светила сцена и угол окна был скруглён.
+        // Всё вне окна сцены — тёмная подложка (скруглённый вырез): между камерами
+        // не светит сцена, угол окна скруглён. Камеры — живые слои (mountLive).
         this.paintBg(g, this.bg);
         yield;
-        const handle = (document.getElementById('pride-game') || {})._mgWindow;
-        if (!this.imgs.ready) { if (handle) handle._rimDrewBlank = true; return; }
-        const L = this.layout();
-        // Дальний слой, тёмная вуаль на всё кольцо рамки, средний, ближний.
-        const veil = (a) => {
-            if (this.holeTest) return;
-            g.fillStyle = 'rgba(12,10,14,' + a + ')';
-            g.beginPath();
-            g.rect(-2, -2, STAGE_W + 4, STAGE_H + 4);
-            g.rect(I.x0 + 6, I.y0 + 6, I.x1 - I.x0 - 12, I.y1 - I.y0 - 12);
-            g.fill('evenodd');
+    },
+
+    // ---------- ЖИВЫЕ КАМЕРЫ ----------
+    // Игрок: слои слегка качаются от края к центру — передний и задний в
+    // ПРОТИВОПОЛОЖНУЮ сторону, и не разом: у каждой камеры свой период и свой сдвиг.
+    // Дёшево: камера — готовый холст со своей тенью и затемнением слоя, качает его
+    // видеокарта (css transform), страница каждый кадр ничего не рисует и фильтров нет
+    // (docs/traps.md, пп. 164–167). Состояния игры это не касается (инвариант 1:
+    // анимация — только картинка).
+    SWAY: { front: 5, mid: 3.5, back: 6 },      // размах, единицы сцены
+    DARK: { back: 0.62, mid: 0.25, front: 0 },  // затемнение слоя запечено в камеру
+    bake(it, dark, scale) {
+        const m = 8, b = this.bbox(it), cv = document.createElement('canvas');
+        const w = b.x1 - b.x0 + 2 * m, h = b.y1 - b.y0 + 2 * m;
+        cv.width = Math.max(1, Math.ceil(w * scale)); cv.height = Math.max(1, Math.ceil(h * scale));
+        const g = cv.getContext('2d');
+        g.scale(scale, scale); g.translate(-(b.x0 - m), -(b.y0 - m));
+        this.put(g, it, dark < 0.5);
+        if (dark > 0) {
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.globalCompositeOperation = 'source-atop';
+            g.fillStyle = 'rgba(12,10,14,' + dark + ')';
+            g.fillRect(0, 0, cv.width, cv.height);
+        }
+        cv.style.left = (b.x0 - m) + 'px'; cv.style.top = (b.y0 - m) + 'px';
+        cv.style.width = w + 'px'; cv.style.height = h + 'px';
+        return cv;
+    },
+    mountLive(rimEl, scale) {
+        if (!this.imgs || !this.imgs.ready) {
+            // Картинки не успели: когда придут, загрузчик перерисует рамку (load()).
+            const w = (document.getElementById('pride-game') || {})._mgWindow;
+            if (w) w._rimDrewBlank = true;
+            return;
+        }
+        const sc = Math.min(1.5, scale), L = this.layout();
+        const box = document.createElement('div');
+        box.className = 'mg-cams';
+        const R = this.rng(this.SEED + 31);
+        const calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const add = (it, key, sign) => {
+            const cv = this.bake(it, this.DARK[key], sc);
+            cv.className = 'mg-cam';
+            const dx = STAGE_W / 2 - it.x, dy = STAGE_H / 2 - it.y, n = Math.hypot(dx, dy) || 1;
+            const amp = this.SWAY[key] * sign, dur = 3.4 + R() * 2.2;
+            cv.style.setProperty('--dx', (dx / n * amp).toFixed(2) + 'px');
+            cv.style.setProperty('--dy', (dy / n * amp).toFixed(2) + 'px');
+            cv.style.setProperty('--rot', ((R() * 2 - 1) * 1.4 * sign).toFixed(2) + 'deg');
+            if (!calm) { cv.style.animationDuration = dur.toFixed(2) + 's'; cv.style.animationDelay = (-R() * dur).toFixed(2) + 's'; }
+            else cv.style.animation = 'none';
+            box.appendChild(cv);
         };
-        L.back.forEach(it => this.put(g, it, false));
-        yield;
-        veil(0.5);
-        L.mid.forEach(it => this.put(g, it, true));
-        yield;
-        veil(0.25);
-        L.front.forEach(it => this.put(g, it, true));
-        yield;
+        // К центру качается задний слой, когда передний — к краю: знаки противоположны.
+        L.back.forEach(it => add(it, 'back', -1));
+        L.mid.forEach(it => add(it, 'mid', -1));
+        L.front.forEach(it => add(it, 'front', 1));
+        // Камера-крестик — неподвижная, поверх всего.
+        const h = 72, c = this.cross, cr = { id: 'cross', x: c.x, y: c.y - 6, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h };
+        const cv = this.bake(cr, 0, sc); cv.className = 'mg-cam mg-cam-still'; box.appendChild(cv);
+        rimEl.appendChild(box);
+    },
+
+    // Для проб: сколько щелей в рамке в покое (камеры в исходных местах).
+    holeReport() {
+        const lay = this.layout(), K = 2, cv = document.createElement('canvas');
+        cv.width = STAGE_W * K; cv.height = STAGE_H * K;
+        const g = cv.getContext('2d'); g.scale(K, K);
+        this.paintBg(g, '#ff00ff');
+        lay.back.concat(lay.mid, lay.front).forEach(it => this.put(g, it, false));
         this.putCross(g);
+        const d = g.getImageData(0, 0, STAGE_W * K, STAGE_H * K).data;
+        let bad = 0; const cells = {};
+        for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128 && d[i] > 200 && d[i + 1] < 80 && d[i + 2] > 200) {
+            bad++; const p = i / 4, x = (p % (STAGE_W * K)) / K, y = Math.floor(p / (STAGE_W * K)) / K;
+            const k = Math.floor(x / 20) + ',' + Math.floor(y / 20); cells[k] = (cells[k] || 0) + 1;
+        }
+        return { bad, total: d.length / 4, cells: Object.keys(cells).length, png: cv.toDataURL('image/png') };
     }
 };
 if (typeof window !== 'undefined') PrideCameras.load();
