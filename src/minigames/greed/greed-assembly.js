@@ -64,7 +64,11 @@ const GreedAssembly = {
         this.stop = true; this.base.remove(); this.fly.remove(); this.base = this.fly = null;
         // виды для деталей больше не нужны — память видеокарты назад
         const Q = name === 'wheel' ? L._wgl : L._pgl;
-        if (sets && Q) Object.values(sets).forEach(st => st.t.forEach(t => Q.gl.deleteTexture(t)));
+        // (sets — { sets, masks }: было Object.values(sets) — перебор шёл по
+        // обёртке, падал на первом же шаге, и текстуры видов оставались в
+        // памяти видеокарты; на айфоне в Telegram следом шла заготовка
+        // пачинко, и закрытие банки роняло игру — игрок, 20.11)
+        if (sets && sets.sets && Q) Object.values(sets.sets).forEach(st => (st && st.t || []).forEach(t => Q.gl.deleteTexture(t)));
     },
     // Рычаг при сборке больше не пересобирается (игра врастает, а не
     // пересобирает аппарат) — откладывать нечего. Вызовы банки и выхода
