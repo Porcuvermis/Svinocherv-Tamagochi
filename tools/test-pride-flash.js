@@ -64,6 +64,25 @@ const { viewport } = require('./harness');
   check(Math.max(...sims['нажатие 1']) < Math.max(...sims['нажатия 1 и 2']), 'второе нажатие белит сильнее первого');
   check(Math.max(...sims['нажатие 1']) < 0.5, 'первое нажатие — слегка белесый экран');
 
+  console.log('--- А2. ритм толпы: поток неровный, но плотный ---');
+  // Дисперсия / среднее числа вспышек по окнам 25 мс: ровная сетка ≈ 0,1–0,3,
+  // пуассоновский поток ≈ 1; толпа с сериями и порывами — 1,5–5, и хотя бы одно пустое окно — затишье (задача 4а).
+  const rh = await page.evaluate(() => {
+    const F = PrideFlash; F.clock = () => 0; const out = {};
+    for (const [m, n, a, b] of [['cover', 0, 150, 950], ['burst', 2, 0, 600], ['reveal', 0, 0, 700]]) {
+      F.reset(); F.seed = 7; F.start(m, n);
+      const ts = F.st.fl.map(f => f.t0), bins = new Array(Math.floor((b - a) / 25)).fill(0);
+      ts.forEach(t => { if (t >= a && t < b) bins[Math.floor((t - a) / 25)]++; });
+      const mean = bins.reduce((x, y) => x + y, 0) / bins.length;
+      const vmr = bins.reduce((x, y) => x + (y - mean) ** 2, 0) / bins.length / (mean || 1);
+      out[m] = { n: ts.length, vmr, empty: bins.filter(x => !x).length, max: Math.max(...bins) };
+    }
+    F.clock = null; F.reset(); return out;
+  });
+  for (const [m, r] of Object.entries(rh)) {
+    check(r.vmr >= 1.5 && r.vmr <= 5 && r.empty >= 1, `${m}: неровность потока ${r.vmr.toFixed(2)} (1,5–5), есть затишья, вспышек ${r.n}, пустых окон ${r.empty}, в пике ${r.max} за 25 мс`);
+  }
+
   console.log('--- Б. живая игра с покровом ---');
   const enter = await page.evaluate(() => new Promise(res => {
     const M = PrideMinigame;

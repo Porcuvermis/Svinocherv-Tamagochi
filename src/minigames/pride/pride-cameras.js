@@ -473,10 +473,11 @@ const PrideCameras = {
         };
         const pts = [];
         const place = (i, f, kind) => {
-            if (idAt(f.x, f.y) === i) { pts.push({ x: f.x, y: f.y, cam: i, kind }); return; }
+            const fam = i < cams.length ? this.MODELS[cams[i].id].fam : 'pro';
+            if (idAt(f.x, f.y) === i) { pts.push({ x: f.x, y: f.y, cam: i, kind, fam }); return; }
             for (let r = 1; r <= 14; r++) for (let a = 0; a < 16; a++) {
                 const x = f.x + r * Math.cos(a * Math.PI / 8), y = f.y + r * Math.sin(a * Math.PI / 8);
-                if (idAt(x, y) === i) { pts.push({ x, y, cam: i, kind, moved: true }); return; }
+                if (idAt(x, y) === i) { pts.push({ x, y, cam: i, kind, fam, moved: true }); return; }
             }
         };
         cams.forEach((it, i) => place(i, this.flashAt(it), 'cam'));
@@ -485,7 +486,7 @@ const PrideCameras = {
         const I = this.inner(), R = this.rng(this.SEED + 77), cx = 6, cy = 9;
         for (let j = 0; j < cy; j++) for (let i = 0; i < cx; i++) {
             const x0 = I.x0 + 30, y0 = I.y0 + 30, w = (I.x1 - I.x0 - 60) / cx, h = (I.y1 - I.y0 - 60) / cy;
-            pts.push({ x: x0 + (i + 0.15 + R() * 0.7) * w, y: y0 + (j + 0.15 + R() * 0.7) * h, cam: -1, kind: 'screen' });
+            pts.push({ x: x0 + (i + 0.15 + R() * 0.7) * w, y: y0 + (j + 0.15 + R() * 0.7) * h, cam: -1, kind: 'screen', fam: 'crowd' });
         }
         return (this._flashPts = pts);
     },

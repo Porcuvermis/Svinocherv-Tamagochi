@@ -106,9 +106,12 @@ const PrideFlash = {
     LIFE: { S: 230, M: 380, L: 700 },                 // жизнь пятна, мс
     ATTACK: { S: 30, M: 50, L: 90 },                  // нарастание (не в один кадр — без стробоскопа)
     BLIND: {                                          // вклад в белизну экрана
-        S: { amp: 0.05, hold: 0, fall: 180 },
-        M: { amp: 0.22, hold: 60, fall: 450 },
-        L: { amp: 0.70, hold: 260, fall: 1500 }
+        // rise — нарастание белизны, отдельно от нарастания пятна (ATTACK): пятно
+        // вспыхивает резко, а белизна набирается мягче, — иначе порыв толпы (десяток
+        // средних в одно мгновение) давал скачок белизны больше 0,2 за кадр.
+        S: { amp: 0.05, hold: 0, fall: 180, rise: 60 },
+        M: { amp: 0.22, hold: 60, fall: 450, rise: 110 },
+        L: { amp: 0.70, hold: 260, fall: 1500, rise: 120 }
     },
     // Ходы покрова (имена — у core/mg-veil.js), длительности в мс.
     T: { cover: 1050, reveal: 1300, close: 1050, clear: 1300, finish: 950, pop: 120 },
@@ -123,47 +126,95 @@ const PrideFlash = {
     },
     calm() { return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; },
 
-    // ---------- порядок: распределённо-случайный ----------
-    // Каждая следующая точка — из восьми случайных кандидатов самая далёкая от трёх
-    // последних. Соседние подряд не вспыхивают, но и «волны по кругу» нет.
-    order(pts, n, R) {
-        const out = [], recent = [];
-        for (let k = 0; k < n; k++) {
-            let best = null, bd = -1;
-            for (let c = 0; c < 8; c++) {
-                const p = pts[Math.floor(R() * pts.length)];
-                if (recent.slice(-10).includes(p) && pts.length > 12) continue;
-                const d = recent.slice(-3).reduce((m, q) => Math.min(m, Math.hypot(p.x - q.x, p.y - q.y)), 1e9);
-                if (d > bd) { bd = d; best = p; }
-            }
-            best = best || pts[k % pts.length];
-            out.push(best); recent.push(best);
-        }
-        return out;
+    // ---------- РИТМ ТОЛПЫ (docs/plan/32-pride-cameras.md, задача 4а) ----------
+    // Игрок: в толпе фотографов вспышки не идут ровным потоком — каждый снимает в
+    // своём ритме, никто ни с кем не синхронизирован: то почти залп, то на миг
+    // никто, потом снова по бокам; в среднем — постоянно. Поэтому не сетка
+    // интервалов, а модель:
+    //   фотограф = точка вспышки; у каждого реакция на общий старт, свой темп
+    //     (150–650 мс, каждый кадр ±40 %), иногда серия 2–4 кадра через 70–110 мс,
+    //     иногда пропущенный такт; размер вспышки — его камеры (зеркалка — крупнее,
+    //     смартфон — мелко);
+    //   порывы толпы — общий ступенчатый «пульс» готовности: обычно 0,45–1, иногда
+    //     порыв ~1,5 (почти залп), иногда затишье 0,05–0,15;
+    //   огибающая хода — средняя плотность (на входе растёт, на раскрытии
+    //     фотографы по одному опускают камеры, на нажатиях ровная);
+    //   число вспышек на ход держится прореживанием, а не сеткой.
+    PREF: {                                           // какие вспышки у какой камеры
+        pro: [0.35, 0.4, 0.25], film: [0.45, 0.35, 0.2], compact: [0.6, 0.35, 0.05],
+        phone: [0.9, 0.1, 0], crowd: [0.6, 0.28, 0.12]
     },
-    // ---------- волна ----------
-    // o: n — сколько вспышек, T — за сколько мс, shape — 'rise' (редко → шквал) |
-    // 'fall' (часто → редко) | 'flat'; mix — доли S/M/L; lFrom — с какой доли хода
-    // разрешены большие; lMax — сколько больших максимум (не чаще трёх в секунду).
-    wave(t0, o) {
+    // o: n — сколько вспышек, T — мс, env — 'rise' | 'fall' | 'flat', sizes — какие
+    // размеры разрешены ('S' | 'SM' | 'SML'), react — средняя реакция на старт, мс,
+    // lFrom — с какой доли хода разрешены большие, lMax — сколько больших максимум,
+    // blindK — ослабление вклада в белизну по размерам.
+    crowd(t0, o) {
         const pts = this.points(), R = this.rng((this.seed = (this.seed || 7) + 101));
         if (!pts.length) return;
-        const seq = this.order(pts, o.n, R);
-        let lastL = -1e9, nL = 0;
-        for (let k = 0; k < o.n; k++) {
-            const q = (k + 0.5 + (R() - 0.5) * 0.8) / o.n;
-            const x = Math.max(0, Math.min(1, q));
-            // rise: плотность растёт к концу, но не с нуля — вспышки видны с первых кадров
-            const f = o.shape === 'rise' ? Math.pow(x, 0.72) : o.shape === 'fall' ? x * x : x;
-            const t = t0 + f * o.T;
-            let r = R(), size = r < o.mix.S ? 'S' : r < o.mix.S + o.mix.M ? 'M' : 'L';
-            if (size === 'L' && (x < (o.lFrom || 0) || nL >= (o.lMax || 0) || t - lastL < 340)) size = 'M';
-            if (size === 'L') { lastL = t; nL++; }
-            const bk = (o.blindK && o.blindK[size]) || 1;
-            // Разброс вокруг точки: повтор той же камеры/места не бьёт в один пиксель.
-            const j = seq[k].cam === -1 ? 34 : 6;
-            this.st.fl.push({ x: seq[k].x + (R() * 2 - 1) * j, y: seq[k].y + (R() * 2 - 1) * j, size, t0: t, spin: R() * Math.PI, bk });
+        const end = t0 + o.T;
+        // Пульс толпы: ступени по 100–160 мс — обычная готовность 0,45–1 или порыв
+        // ~1,5 (почти залп). Затишья (на миг никто) ставятся не монеткой, а чередой:
+        // каждые 250–500 мс по 40–80 мс. Монеткой на одном ходе их могло не выпасть
+        // вовсе (проба: на входе ни одного пустого окна), а замысел — что они есть
+        // всегда. В последние 15 % хода затишья нет: там экран уже белеет.
+        const knots = [], lulls = [];
+        for (let t = t0 - 50; t < end + 400;) {
+            const gust = R() < (o.gust == null ? 0.2 : o.gust), d = (100 + R() * 60) * (gust ? 0.6 : 1);
+            knots.push({ t, v: gust ? 1.4 + R() * 0.2 : 0.45 + R() * 0.55, d });
+            t += d;
         }
+        for (let t = t0 + 120 + R() * 200; t < t0 + o.T * 0.85; t += 250 + R() * 250) lulls.push({ t, d: 40 + R() * 40 });
+        const gate = (t) => {
+            for (const l of lulls) if (t >= l.t && t < l.t + l.d) return 0;
+            for (const k of knots) if (t < k.t + k.d) return k.v;
+            return 0.7;
+        };
+        const env = (t) => {
+            const x = (t - t0) / o.T;
+            return o.env === 'rise' ? 0.3 + 0.7 * x : 1;
+        };
+        // кадры каждого фотографа
+        const groups = [];
+        let sumW = 0;
+        pts.forEach((p) => {
+            const period = 150 * Math.pow(650 / 150, R());            // свой темп
+            const stop = o.env === 'fall' ? t0 + o.T * Math.pow(R(), 0.7) : end;
+            const pref = this.PREF[p.fam] || this.PREF.crowd, rs = R();
+            const size = rs < pref[0] ? 'S' : rs < pref[0] + pref[1] ? 'M' : 'L';
+            let t = t0 - Math.log(1 - R() * 0.999) * (o.react || 0);  // реакция на старт
+            while (t < stop) {
+                if (R() < 0.12) { t += period * (0.6 + 0.8 * R()); continue; }   // опустил камеру
+                const shots = [t];
+                if (R() < 0.22) { const k = 1 + Math.floor(R() * 3); for (let i = 0; i < k; i++) shots.push(shots[shots.length - 1] + 70 + R() * 40); }
+                const w = gate(t) * env(t);
+                groups.push({ p, size, shots, w });
+                sumW += w * shots.length;
+                t += period * (0.6 + 0.8 * R()) + (shots.length - 1) * 90;
+            }
+        });
+        // прореживание до заданного числа: решение одно на серию — пачки остаются пачками
+        // c подбирается так, чтобы с учётом потолка вероятности (1) вышло ровно n
+        let c = sumW > 0 ? o.n / sumW : 0;
+        for (let it = 0; it < 6 && c > 0; it++) {
+            let got = 0; groups.forEach(g => { got += Math.min(1, c * g.w) * g.shots.length; });
+            c *= o.n / Math.max(1, got);
+        }
+        const out = [];
+        // В затишье (пульс < 0,05) не снимает никто — даже хвост серии, начатой раньше:
+        // иначе очереди замазывали провалы, и «на миг никто» не было ни разу (проба).
+        groups.forEach(g => { if (R() < c * g.w) g.shots.forEach(t => { if (t < end + 150 && gate(t) >= 0.05) out.push({ t, g }); }); });
+        out.sort((a, b) => a.t - b.t);
+        const allow = o.sizes || 'SML';
+        let lastL = -1e9, nL = 0;
+        out.forEach(({ t, g }) => {
+            let size = g.size;
+            if (size === 'L' && (!allow.includes('L') || (t - t0) / o.T < (o.lFrom || 0) || nL >= (o.lMax || 0) || t - lastL < 340)) size = 'M';
+            if (size === 'M' && !allow.includes('M')) size = 'S';
+            if (size === 'L') { lastL = t; nL++; }
+            const j = g.p.cam === -1 ? 34 : 6;            // повтор места не бьёт в один пиксель
+            const bk = (o.blindK && o.blindK[size]) || 1;
+            this.st.fl.push({ x: g.p.x + (R() * 2 - 1) * j, y: g.p.y + (R() * 2 - 1) * j, size, t0: t, spin: R() * Math.PI, bk });
+        });
     },
     points() {
         if (typeof PrideCameras !== 'undefined' && PrideCameras.imgs && PrideCameras.imgs.ready) {
@@ -195,7 +246,7 @@ const PrideFlash = {
         return (1 - x) * (1 - x);
     },
     blind(f, t) {
-        const d = t - f.t0, B = this.BLIND[f.size], A = this.ATTACK[f.size];
+        const d = t - f.t0, B = this.BLIND[f.size], A = B.rise;
         if (d < 0) return 0;
         const amp = B.amp * (f.bk || 1);
         if (d < A) return amp * d / A;
@@ -214,7 +265,7 @@ const PrideFlash = {
         const t = this.now();
         if (this.sealAt(t) >= 0.999 && this.st.seal.to === 1) return false;
         if (this.st.seal.to !== this.st.seal.from && t < this.st.seal.t0 + this.st.seal.dur) return true;
-        return this.st.fl.some(f => t - f.t0 < Math.max(this.LIFE[f.size], this.ATTACK[f.size] + this.BLIND[f.size].hold + this.BLIND[f.size].fall));
+        return this.st.fl.some(f => t - f.t0 < Math.max(this.LIFE[f.size], this.BLIND[f.size].rise + this.BLIND[f.size].hold + this.BLIND[f.size].fall));
     },
     // Кадр: белизна, поверх — живые вспышки (на молочном экране ядра ещё видны).
     render(g, t) {
@@ -232,28 +283,28 @@ const PrideFlash = {
     start(mode, n) {
         if (!this.st) this.reset();
         const t = this.now(), calm = this.calm();
-        const add = (o) => { if (!calm) this.wave(t, o); };
+        const add = (o) => { if (!calm) this.crowd(t, o); };
         switch (mode) {
             case 'cover': case 'close':
                 // Волна: сначала редко, потом шквал; большие — во второй половине.
                 // Печать с 62 % хода (сначала экран забивают вспышки — они главное, белое только скрепляет; игрок) доводит экран до сплошного белого.
                 // Мелкие и средние на входе почти не белят экран (blindK): иначе их сотня
                 // складывается в серую пелену раньше, чем видно сами вспышки (проба кадрами).
-                add({ n: 220, T: this.T.cover, shape: 'rise', mix: { S: 0.58, M: 0.32, L: 0.1 }, lFrom: 0.4, lMax: 7, blindK: { S: 0.12, M: 0.25 } });
+                add({ n: 240, T: this.T.cover, env: 'rise', sizes: 'SML', react: 160, lFrom: 0.4, lMax: 7, blindK: { S: 0.12, M: 0.25 } });
                 this.st.seal = { t0: t + this.T.cover * 0.62, dur: this.T.cover * 0.38, from: this.sealAt(t), to: 1 };
                 break;
             case 'reveal': case 'clear':
                 // Вспышки редеют (часто → редко), больших нет; белое отпускает плавно.
-                add({ n: 55, T: 1050, shape: 'fall', mix: { S: 0.62, M: 0.38, L: 0 }, blindK: { S: 0.15, M: 0.2 } });
+                add({ n: 65, T: 1050, env: 'fall', sizes: 'SM', react: 140, gust: 0.12, blindK: { S: 0.15, M: 0.2 } });
                 this.sealTo(0, 900, true);
                 break;
             case 'burst':
-                if (n >= 2) add({ n: 50, T: 650, shape: 'flat', mix: { S: 0.6, M: 0.4, L: 0 }, blindK: { S: 0.6, M: 0.8 } });
-                else add({ n: 30, T: 500, shape: 'flat', mix: { S: 1, M: 0, L: 0 }, blindK: { S: 0.9 } });
+                if (n >= 2) add({ n: 50, T: 650, env: 'flat', sizes: 'SM', react: 60, blindK: { S: 0.55, M: 0.6 } });
+                else add({ n: 30, T: 500, env: 'flat', sizes: 'S', react: 60, blindK: { S: 0.9 } });
                 if (calm) this.st.fl.push({ x: -999, y: -999, size: n >= 2 ? 'M' : 'S', t0: t, spin: 0 });
                 break;
             case 'finish':
-                add({ n: 200, T: this.T.finish, shape: 'rise', mix: { S: 0.55, M: 0.33, L: 0.12 }, lFrom: 0.3, lMax: 6, blindK: { S: 0.12, M: 0.25 } });
+                add({ n: 200, T: this.T.finish, env: 'rise', sizes: 'SML', react: 100, lFrom: 0.3, lMax: 6, blindK: { S: 0.12, M: 0.25 } });
                 // Печать стартует сразу и сразу растёт (out: разгон с первого кадра): экран
                 // после второго нажатия не успевает «отпустить» и снова вспыхнуть — лишняя
                 // смена яркости (замер безопасности ловил четыре за секунду при быстрых
