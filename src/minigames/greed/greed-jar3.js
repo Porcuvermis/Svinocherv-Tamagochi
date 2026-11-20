@@ -321,6 +321,7 @@ const GreedJar3 = {
         const s = String(n), dh = H * 0.78, dw = Math.min(dh * 0.62, W * 0.7 / (s.length * 1.12)), x0 = W / 2 - (s.length * dw * 1.12) / 2 + dw * 0.06;
         c.strokeStyle = PALETTE.greedJunk.reel.rag.marker; c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = dh * 0.11;
         s.split('').forEach((ch, i) => {
+            if (!GreedJunkLit.JAR_DIGIT[+ch]) return;      // не цифра — пропустить, а не упасть
             const rnd = GreedJunk.rng(1000 + i * 31 + +ch * 7);
             c.save(); c.translate(x0 + i * dw * 1.12, H * 0.11 + (rnd() - 0.5) * H * 0.03); c.rotate((rnd() - 0.5) * 0.1); c.scale(dw / 4, dh / 7.4);
             c.lineWidth = dh * 0.11 / (dw / 4);

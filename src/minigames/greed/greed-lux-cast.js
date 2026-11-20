@@ -420,20 +420,32 @@ Object.assign(GreedLux, {
     // включения экранов; конец — когда блеск прошёл
     CAST_RUN: { total: 10900, kantAmp: 2.0, kantTau: 3000, shine: 9500, shineMs: 1200, betStep: 200, betGap: 200 },
 
+    // Этап литья — в панель 🐞 алчности: на телефоне консоли нет, а игрок
+    // видит только «экран чернеет» (20.11). Строка говорит, где встало.
+    castLog(s) {
+        this._castInfo = s;
+        if (typeof GreedDebug !== 'undefined' && GreedDebug.render) GreedDebug.render();
+    },
     async castRun() {
         const J = GreedJarShop, L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement, opts = L._opts;
-        if (!host || this._cast || this._castWait) return;
-        const G = GreedMinigame, gen = G.spinGeneration;
+        if (!host) { this.castLog('нет гаражного'); return; }
+        if (this._cast || this._castWait) return;
+        const G = GreedMinigame, gen = G.spinGeneration, t0 = performance.now(), ms = () => Math.round(performance.now() - t0);
         this._castWait = true;
         try {
+            this.castLog('заготовка…');
             await (this._prep ? this._mountP : this.prepare(host));
+            this.castLog('кант… ' + ms());
             await this._kantP;
+            this.castLog('карта течения… ' + ms());
             await this.castFlowReady();
+            this.castLog('жар… ' + ms());
             await this.castHeatInit();
+            if (!this._castH) this.castLog('жар не собрался ' + ms());
             // идёт выплата (монеты летят, барабаны крутятся) — банка ждёт с
             // расплавом; литьё — когда игры свободны (не дольше 10 с)
-            for (let i = 0; i < 100 && G.busy(); i++) await new Promise(r => setTimeout(r, 100));
-        } catch (e) { console.warn('[литьё]', e); }
+            for (let i = 0; i < 100 && G.busy(); i++) { if (i === 0) this.castLog('ждёт выплату…'); await new Promise(r => setTimeout(r, 100)); }
+        } catch (e) { console.warn('[литьё]', e); this.castLog('сбой подготовки: ' + (e && e.message)); }
         this._castWait = false;
         // окно закрыли, пока ждали, — литья нет: версия 2 встанет при входе
         if (G.spinGeneration !== gen) return;
@@ -443,14 +455,30 @@ Object.assign(GreedLux, {
             if (typeof GreedDebug !== 'undefined') setTimeout(() => GreedDebug.rebuild(), 1100);
             return;
         }
-        const snap = this.castSnapshot();
-        GreedDebug.junkDrop();
-        G.M = this; G.play = { slots: null, wheel: null, pachinko: null };
-        this._castPending = true;
-        await this.prepTake(host, opts);
-        this._castPending = false;
-        if (this.meterSet && this.meterValue) this.meterSet(this.meterValue());
-        if (!this.castCanvasSnap(snap)) { this.castEnd(); return; }
+        let snap = null, dropped = false;
+        try {
+            this.castLog('снимок… ' + ms());
+            snap = this.castSnapshot();
+            const empty = this.castSnapEmpty(snap);
+            GreedDebug.junkDrop(); dropped = true;
+            G.M = this; G.play = { slots: null, wheel: null, pachinko: null };
+            this._castPending = true;
+            this.castLog('показ версии 2… ' + ms());
+            await this.prepTake(host, opts);
+            this._castPending = false;
+            if (this.meterSet && this.meterValue) this.meterSet(this.meterValue());
+            if (!this.castCanvasSnap(snap)) { this.castLog('холст литья не собрался'); this.castEnd(); return; }
+            if (empty) this.castLog('снимок гаражного пустой');
+        } catch (e) {
+            // что бы ни сломалось после снятия гаражного — версия 2 на экране,
+            // а не чёрная сцена
+            console.warn('[литьё]', e);
+            this.castLog('сбой: ' + (e && e.message));
+            this._castPending = false;
+            if (dropped && this._prep) try { await this.prepTake(host, opts); } catch (e2) { /* что есть */ }
+            this.castEnd();
+            return;
+        }
         // палец — не в аппарат, пока льётся
         const cv = this._castC.cv;
         cv.style.pointerEvents = 'auto';
@@ -459,10 +487,20 @@ Object.assign(GreedLux, {
         J.wrap = this.wrapEl;
         const now = performance.now(), Q = J.POUR;
         J.pourStart(now);
-        this._cast = { start: now, impact: Q.streamAt + Q.head, coins: J.shown };
-        this.castKant();
-        this.castBootPlan();
-        this.castHaptics();
+        // число монет на скотче: что банка показывала (в превью — ещё ничего)
+        const coins = Number.isFinite(+J.shown) && J.shown !== null ? J.shown : (L.jarValue ? L.jarValue() : 0);
+        this._cast = { start: now, impact: Q.streamAt + Q.head, coins: Number.isFinite(+coins) ? coins : 0 };
+        try { this.castKant(); this.castBootPlan(); this.castHaptics(); } catch (e) { this.castLog('сбой расписания: ' + (e && e.message)); }
+        if (!/пустой/.test(this._castInfo || '')) this.castLog('льётся ' + ms());
+    },
+    // пустой ли снимок (на части телефонов холст WebGL без сохранения буфера
+    // читается чёрным): проверка по 64 точкам
+    castSnapEmpty(snap) {
+        try {
+            const g = snap.getContext('2d'), w = snap.width, h = snap.height; let lit = 0;
+            for (let i = 0; i < 64; i++) { const d = g.getImageData(Math.floor(w * ((i % 8) + 0.5) / 8), Math.floor(h * ((i >> 3) + 0.5) / 8), 1, 1).data; if (d[3] > 10 && d[0] + d[1] + d[2] > 30) lit++; }
+            return lit < 6;
+        } catch (e) { return false; }
     },
     // кант: пояс раскаляется, когда через него проходит фронт, и остывает
     // последним (событие-импульс на всё кольцо из места, где фронт его
@@ -482,6 +520,10 @@ Object.assign(GreedLux, {
     castStep(now) {
         const c = this._cast;
         if (!c || c.t != null) return;
+        // сбой кадра литья не должен останавливать цикл кадров аппарата
+        try { this.castFrame(now, c); } catch (e) { console.warn('[литьё]', e); this.castLog('сбой кадра: ' + (e && e.message)); this.castEnd(); }
+    },
+    castFrame(now, c) {
         const t = (now - c.start) / this.castSlow();
         if (t > this.CAST_RUN.total) { this.castEnd(); return; }
         // отдача в палец — по расписанию (castHaptics)
@@ -544,6 +586,7 @@ Object.assign(GreedLux, {
     // окно закрыли посреди литья: всё снять; версия 2 уже куплена и стоит
     castAbort() { if (this._cast) this.castEnd(); },
     castEnd() {
+        if (this._cast && !/сбой|пуст|не собрал/.test(this._castInfo || '')) this.castLog('прошло');
         this.castCanvasDrop();
         this._cast = null; this._boot = null;
         if (this.screensDraw) this.screensDraw(performance.now(), true);

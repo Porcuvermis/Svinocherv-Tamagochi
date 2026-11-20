@@ -95,16 +95,28 @@ const GreedDebug = {
     },
 
     async castReplay() {
-        if (typeof GreedLux === 'undefined' || GreedLux._cast) return;
+        const X = typeof GreedLux !== 'undefined' ? GreedLux : null;
+        if (!X || X._cast) return;
+        X.castLog && X.castLog('нажато');
         const set = (v) => { try { localStorage.setItem(GreedSkin.key('slots'), v); } catch (e) { /* нет хранилища */ } };
-        if (GreedMinigame.M === GreedLux) { set('1'); await this.rebuild(); }
         const L = GreedJunkLit;
-        if (!L.wrapEl) return;
-        await GreedLux.prepare(L.wrapEl.parentElement);
-        set('2');
-        const J = GreedJarShop;
-        if (J.cv) { J.state = 'open'; J.dirty = true; }
-        return GreedLux.castRun();
+        try {
+            // Гаражный на экране (превью 🐞 → «Аппарат» или игра) — литьё на
+            // нём, а версию 2, если она где-то смонтирована, — снять. Было:
+            // «версия 2 стоит» проверялось по экрану игры — после захода в
+            // игру она оставалась смонтированной в скрытом экране, пересборка
+            // уводила гаражный из превью туда, и игрок видел чёрный экран, а
+            // литьё шло невидимо (20.11).
+            if (L.wrapEl && L.wrapEl.isConnected) {
+                if (X.wrapEl && !X._prep) X.unmount();
+            } else if (X.wrapEl) { set('1'); await this.rebuild(); }
+            if (!L.wrapEl) { X.castLog('нет гаражного'); return; }
+            await X.prepare(L.wrapEl.parentElement);
+            set('2');
+            const J = GreedJarShop;
+            if (J.cv) { J.state = 'open'; J.dirty = true; }
+            return await X.castRun();
+        } catch (e) { X.castLog('сбой повтора: ' + (e && e.message)); }
     },
 
     // Снять гаражный со страницы и вернуть объекту вид «как после загрузки»
@@ -148,7 +160,8 @@ const GreedDebug = {
             btn('pachinko', 'Пачинко: ' + (this.shown('gj-pachinko') ? 'есть' : 'нет') + err('pachError')) +
             btn('skin', 'Аппарат: вид ' + skin('slots')) +
             btn('cast', 'Литьё') +
-            (typeof GreedJarShop !== 'undefined' && GreedJarShop.lastTap ? `<span style="color:#eee;padding:6px">банка: ${GreedJarShop.lastTap}</span>` : '');
+            (typeof GreedJarShop !== 'undefined' && GreedJarShop.lastTap ? `<span style="color:#eee;padding:6px">банка: ${GreedJarShop.lastTap}</span>` : '') +
+            (typeof GreedLux !== 'undefined' && GreedLux._castInfo ? `<span style="color:#fd6;padding:6px">литьё: ${GreedLux._castInfo}</span>` : '');
         this.placeBelowInspector();
     },
 
