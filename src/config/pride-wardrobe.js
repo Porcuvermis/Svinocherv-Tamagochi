@@ -102,6 +102,12 @@ const PRIDE_WARDROBE = {
         // ноль, и требовать от неё большего — значит требовать, чтобы она
         // уехала с уха на череп. За такие вещи отвечает другая проверка:
         // «едет вместе со своей чертой» (tools/test-wardrobe.js).
+        // Второй ряд: у кого в гнезде был один предмет — к блеску одежда и
+        // наоборот. Цены по тому же принципу «чем заметнее, тем дороже».
+        { id: 'crown',     slot: 'hat',   kind: 'glam', price: { pride_kiss: 900 }, sits: 0.24 },
+        { id: 'monocle',   slot: 'eyes',  kind: 'wear', price: { pride_kiss: 320 }, sits: 0 },
+        { id: 'mustache',  slot: 'mouth', kind: 'wear', price: { pride_kiss: 260 }, sits: 0 },
+        { id: 'ear-bow',   slot: 'ears',  kind: 'wear', price: { pride_kiss: 220 }, sits: 0 },
         { id: 'cigar',     slot: 'mouth', kind: 'glam', price: { pride_kiss: 300 }, sits: 0 },
         { id: 'earrings',  slot: 'ears',  kind: 'glam', price: { pride_kiss: 280 }, sits: 0 },
         { id: 'bow-tie',   slot: 'neck',  kind: 'wear', price: { pride_kiss: 400 }, sits: 0.96 },

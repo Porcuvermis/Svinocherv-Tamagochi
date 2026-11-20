@@ -233,6 +233,80 @@ const WormCosmetics = {
             }
         },
 
+        // ---------- ВТОРОЙ РЯД: КОРОНА, МОНОКЛЬ, УСЫ, БАНТ НА УХО ----------
+        // Тем, у кого в гнезде был один предмет, добавлена пара: к блеску —
+        // одежда и наоборот. Рисуются теми же приёмами, что первые: корона
+        // надета на череп как цилиндр, монокль — вещь на ОДИН глаз (data-eye
+        // только у правого, перемычки нет), усы в координатах рта, бант на ухе
+        // в координатах уха. Своих формул посадки у них нет (см. ниже).
+        'crown': {
+            kind: 'rigid', halfW: 0.7,
+            draw(g) {
+                const C = g.C, ry = g.ry, r = g.rx;
+                const baseY = g.eye.y - g.eye.r * 1.7 - ry * 0.1;
+                const w = r * 0.56, h = ry * 0.78, sw = STROKE.structure;
+                const pts = [[-w, baseY], [-w * 1.04, baseY - h * 0.95], [-w * 0.5, baseY - h * 0.5], [0, baseY - h],
+                             [w * 0.5, baseY - h * 0.5], [w * 1.04, baseY - h * 0.95], [w, baseY]];
+                const d = 'M ' + pts.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join(' L ') + ' Z';
+                const gem = (x, y, k) => `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${(ry * k).toFixed(2)}"
+                        fill="${C.kiss[500]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>`;
+                return `<g transform="rotate(-6)">
+                    <path d="${d}" fill="${C.gold[500]}" stroke="${g.ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+                    <rect x="${-w}" y="${(baseY - h * 0.2).toFixed(2)}" width="${w * 2}" height="${(h * 0.2).toFixed(2)}"
+                          fill="${C.gold[700]}"/>
+                    <path d="M ${(-w * 0.78).toFixed(2)} ${(baseY - h * 0.34).toFixed(2)} L ${(-w * 0.2).toFixed(2)} ${(baseY - h * 0.34).toFixed(2)}"
+                          stroke="${C.gold[300]}" stroke-width="${STROKE.detail}" fill="none" opacity="0.85"/>
+                    ${gem(0, baseY - h * 0.86, 0.1)}${gem(-w * 1.0, baseY - h * 0.84, 0.075)}${gem(w * 1.0, baseY - h * 0.84, 0.075)}
+                </g>`;
+            }
+        },
+
+        // Монокль: кольцо на правом глазу и цепочка вниз. Левого куска нет —
+        // посадка на один глаз уже умеет такое (worm-build, «парная черта»).
+        'monocle': {
+            kind: 'rigid', halfW: 0.6,
+            draw(g) {
+                const C = g.C, R = g.eye.r, rr = R * 1.75;
+                return `<g data-eye="right">
+                    <circle cx="0" cy="0" r="${rr.toFixed(2)}" fill="${C.lens[500]}" fill-opacity="0.16"
+                            stroke="${C.gold[500]}" stroke-width="${(STROKE.structure * 1.2).toFixed(2)}"/>
+                    <path d="M ${(-rr * 0.55).toFixed(2)} ${(rr * 0.35).toFixed(2)} L ${(rr * 0.2).toFixed(2)} ${(-rr * 0.5).toFixed(2)}"
+                          stroke="${C.gold[300]}" stroke-width="${STROKE.detail}" opacity="0.7" fill="none"/>
+                    <path d="M ${(rr * 0.72).toFixed(2)} ${(rr * 0.72).toFixed(2)} Q ${(rr * 1.5).toFixed(2)} ${(rr * 1.6).toFixed(2)} ${(rr * 0.9).toFixed(2)} ${(rr * 3.1).toFixed(2)}"
+                          stroke="${C.gold[700]}" stroke-width="${STROKE.detail}" fill="none" stroke-linecap="round"/>
+                </g>`;
+            }
+        },
+
+        // Усы: от середины над ртом к уголкам, кончики загнуты вверх.
+        // Правая половина рисуется в координатах рта, левая — зеркалом.
+        'mustache': {
+            kind: 'rigid', halfW: 0.75,
+            draw(g) {
+                const C = g.C, W = WormSilhouette.face.mouthHalf;
+                const half = `M 0 ${(-W * 0.18).toFixed(2)}
+                    C ${(W * 0.25).toFixed(2)} ${(-W * 0.62).toFixed(2)} ${(W * 0.78).toFixed(2)} ${(-W * 0.5).toFixed(2)} ${(W * 1.02).toFixed(2)} ${(-W * 0.86).toFixed(2)}
+                    C ${(W * 0.96).toFixed(2)} ${(-W * 0.3).toFixed(2)} ${(W * 0.52).toFixed(2)} ${(-W * 0.06).toFixed(2)} 0 ${(-W * 0.02).toFixed(2)} Z`;
+                const one = `<path d="${half}" fill="${C.cloth[700]}" stroke="${g.ink}" stroke-width="${STROKE.detail}" stroke-linejoin="round"/>`;
+                return `<g>${one}<g transform="scale(-1,1)">${one}</g></g>`;
+            }
+        },
+
+        // Бант на ухе: рисуется в координатах уха, как серьга, но не качается.
+        'ear-bow': {
+            kind: 'rigid', halfW: 0.4,
+            draw(g) {
+                const C = g.C, F = WormSilhouette.face, u = F.earUnit * 0.2;
+                const x = F.earJewelX, y = F.earJewelY - u * 1.2;
+                return `<g transform="translate(${x},${y.toFixed(2)})">
+                    <path d="M 0 0 L ${(-u * 1.6).toFixed(2)} ${(-u * 0.9).toFixed(2)} L ${(-u * 1.6).toFixed(2)} ${(u * 0.9).toFixed(2)} Z
+                             M 0 0 L ${(u * 1.6).toFixed(2)} ${(-u * 0.9).toFixed(2)} L ${(u * 1.6).toFixed(2)} ${(u * 0.9).toFixed(2)} Z"
+                          fill="${C.silk[500]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}" stroke-linejoin="round"/>
+                    <circle cx="0" cy="0" r="${(u * 0.55).toFixed(2)}" fill="${C.silk[700]}" stroke="${g.ink}" stroke-width="${STROKE.hairline}"/>
+                </g>`;
+            }
+        },
+
         // ---------- ШЕЯ ----------
         // Бабочка была розовой мошкой на шее и не читалась вовсе. Теперь это
         // ВОРОТНИК — светлая полоса во всю шею — и бабочка НА нём. Светлое
