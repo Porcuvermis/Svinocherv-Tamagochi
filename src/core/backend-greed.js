@@ -97,13 +97,14 @@ Object.assign(LocalBackend, {
             });
         }
 
-        const hit = this.greedPick(list);
+        const hit = this.greedPick(this.greedBetList(game, list, bet));
         const awarded = { currencies: {} };
         const reason = 'greed.' + game + '.win';
         const items = this.greedGiveItem(hit, bet, awarded, reason, requestId);
+        // ставка множит только золото; вещь — одна (шанс её вырос, greedBetList)
         if (hit.give) {
             Object.keys(hit.give).forEach(k => {
-                this.award(awarded, k, hit.give[k] * bet, reason, requestId);
+                this.award(awarded, k, hit.give[k] * (k === 'gold' ? bet : 1), reason, requestId);
             });
         }
         this.settleExchange(awarded, requestId);
@@ -122,6 +123,33 @@ Object.assign(LocalBackend, {
         };
     },
 
+    // ---------- СТАВКА: ШАНС ВЕЩЕЙ ----------
+    // (конфиг betItems) Вещь — сектор с продуктом, семечкой или валютой, кроме
+    // золота. На ставке b её шанс — как за t = b^степень круток (1 − (1 − p)^t),
+    // прибавка — из пустого сектора, и не больше, чем (1 − keepBlank) от него;
+    // золотые сектора не трогаются.
+    greedBetTickets(game, bet) {
+        const B = (ECONOMY.minigames.greed || {}).betItems || {};
+        return Math.pow(Math.max(1, bet || 1), B[game] == null ? 0.5 : B[game]);
+    },
+    greedIsItem(x) { return !!(x.pantry || x.seed || (x.give && Object.keys(x.give).some(k => k !== 'gold'))); },
+    greedBetList(game, list, bet) {
+        if (!bet || bet <= 1) return list;
+        const B = (ECONOMY.minigames.greed || {}).betItems || {}, t = this.greedBetTickets(game, bet);
+        const W = list.reduce((s, x) => s + x.weight, 0), p = list.map(x => x.weight / W);
+        const blank = list.findIndex(x => !this.greedIsItem(x) && !(x.give && x.give.gold));
+        if (blank < 0) return list;
+        let E = 0;
+        const P = list.map((x, i) => { if (!this.greedIsItem(x)) return p[i]; const q = 1 - Math.pow(1 - p[i], t); E += q - p[i]; return q; });
+        const room = p[blank] * (1 - (B.keepBlank == null ? 0.1 : B.keepBlank)), s = E > room ? room / E : 1;
+        return list.map((x, i) => {
+            let w = p[i];
+            if (this.greedIsItem(x)) w = p[i] + (P[i] - p[i]) * s;
+            else if (i === blank) w = p[blank] - E * s;
+            return Object.assign({}, x, { weight: w });
+        });
+    },
+
     greedPick(list) {
         const total = list.reduce((s, x) => s + x.weight, 0);
         let r = Math.random() * total;
@@ -138,7 +166,7 @@ Object.assign(LocalBackend, {
     // обман. Остаток округляется вверх: «недоплатить» полмонеты обиднее,
     // чем переплатить.
     greedGiveItem(hit, bet, awarded, reason, requestId) {
-        const n = (hit.n || 1) * bet;
+        const n = hit.n || 1;                  // по одной: ставка растит шанс, а не число
         if (hit.pantry) {
             const got = this.pantryStore(hit.pantry, n);
             const rest = n - got;

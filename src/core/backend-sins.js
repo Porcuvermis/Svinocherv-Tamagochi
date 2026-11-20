@@ -108,7 +108,9 @@ Object.assign(LocalBackend, {
     // уходит кошелёк всегда, играй хоть сытым, хоть голодным.
     //
     // bet — ставка из ECONOMY.minigames.greed.bets; без неё первая. Множит
-    // цену и каждую награду, шансов не трогает (docs/plan/28-greed-machine.md).
+    // цену и золото выплаты; жетонная тройка платит одним жетоном (осколком),
+    // а её ШАНС растёт со ставкой — за счёт проигрышных линий (конфиг
+    // betItems, greedBetSlots ниже).
     greedSpin(bet) {
         const cfg = (ECONOMY.minigames && ECONOMY.minigames.greed) || null;
         if (!cfg) return { ok: false, error: 'no_config' };
@@ -146,6 +148,16 @@ Object.assign(LocalBackend, {
 
         let pay = this.greedPay(cfg, reels);
 
+        // ---------- СТАВКА: ЧАЩЕ ЖЕТОНЫ ----------
+        // Проигрышная линия на высокой ставке с вероятностью u становится
+        // жетонной (осколочной) тройкой: итог — как за t = ставка^степень
+        // круток, но одним жетоном. Выигрыши золотом не трогаются.
+        if (!pity && bet > 1 && pay <= 0 && !(reels[0] === reels[1] && reels[1] === reels[2])) {
+            const U = this.greedBetSlots(cfg, bet);
+            let r = Math.random();
+            for (const k of Object.keys(U)) { if (r < U[k]) { reels = [k, k, k]; break; } r -= U[k]; }
+        }
+
         // ---------- ЖЕТОННАЯ ТРОЙКА ----------
         // Тройка символа с give платит им, а не монетами. Своя картинка —
         // своя награда: игрок видит на барабанах, чем ему заплатили.
@@ -155,7 +167,7 @@ Object.assign(LocalBackend, {
         const give = sym && sym.give;
         if (give) {
             Object.keys(give).forEach(k => {
-                this.award(awarded, k, give[k] * bet, 'greed.slots.win', requestId);
+                this.award(awarded, k, give[k] * (k === 'gold' ? bet : 1), 'greed.slots.win', requestId);
             });
             this.settleExchange(awarded, requestId);
         }
@@ -192,6 +204,28 @@ Object.assign(LocalBackend, {
             sinValue: GameState.sinValue('greed'),
             balance: GameState.currency('gold')
         };
+    },
+
+    // Для ставки bet: вероятность превратить проигрышную линию в тройку
+    // каждого символа с give (перебор троек — точный, кэш по ставке и весам).
+    greedBetSlots(cfg, bet) {
+        const R = cfg.reel || [], key = bet + '|' + R.map(x => x.key + x.weight).join();
+        if (this._betSlots && this._betSlots.key === key) return this._betSlots.u;
+        const W = R.reduce((s, x) => s + x.weight, 0), item = {};
+        let L = 0;
+        R.forEach(a => R.forEach(b => R.forEach(c => {
+            const pr = a.weight * b.weight * c.weight / (W * W * W), tri = a.key === b.key && b.key === c.key;
+            const pair = !tri && [a, b, c].filter(x => x.key === (cfg.pair && cfg.pair.key)).length === 2;
+            if (tri && a.give) item[a.key] = (item[a.key] || 0) + pr;
+            else if (!(tri && a.pay) && !pair) L += pr;
+        })));
+        const B = cfg.betItems || {}, t = this.greedBetTickets('slots', bet);
+        let E = 0; const ex = {};
+        Object.keys(item).forEach(k => { ex[k] = 1 - Math.pow(1 - item[k], t) - item[k]; E += ex[k]; });
+        const room = L * (1 - (B.keepBlank == null ? 0.1 : B.keepBlank)), s = E > room ? room / E : 1, u = {};
+        Object.keys(ex).forEach(k => { u[k] = L > 0 ? ex[k] * s / L : 0; });
+        this._betSlots = { key, u };
+        return u;
     },
 
     // Один барабан. Веса — ВИРТУАЛЬНЫЕ позиции: шанс задаёт вес, а не число

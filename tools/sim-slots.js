@@ -193,3 +193,63 @@ if (rtp < CFG.rtpMin || rtp > CFG.rtpMax) {
         + ' выплаты нужно умножить на ' + (target / rtp).toFixed(2));
     process.exitCode = 1;
 }
+
+// ---------- СТАВКИ: ШАНС ВЕЩЕЙ (конфиг betItems) ----------
+// Ставка множит только золото; вещи — по одной, растёт их шанс (как за
+// t = ставка^степень круток, прибавка — из пустых исходов, keepBlank пустых
+// остаётся). Те же формулы, что в Backend.greedBetList / greedBetSlots —
+// числа обязаны совпадать. Проверка: вещь на высокой ставке НЕ дешевле в
+// золоте, чем на первой (иначе высокая ставка — способ скупать прокачку).
+(() => {
+    const BI = CFG.betItems;
+    if (!BI) return;
+    const keep = BI.keepBlank == null ? 0.1 : BI.keepBlank, T = (g, b) => Math.pow(b, BI[g] == null ? 0.5 : BI[g]);
+    const isGold = (x) => x.give && Object.keys(x.give).every(k => k === 'gold');
+    const isItem = (x) => !!(x.pantry || x.seed || (x.give && !isGold(x)));
+    console.log('\n======== СТАВКИ: ЗОЛОТО ×СТАВКА, ВЕЩИ — ЧАЩЕ ========');
+    let bad = false;
+    // бандит (без гарантии): проигрышная линия → жетонная/осколочная тройка
+    {
+        const R = CFG.reel, W = R.reduce((s, x) => s + x.weight, 0), item = {};
+        let L = 0, gold = 0;
+        R.forEach(a => R.forEach(b => R.forEach(c => {
+            const pr = a.weight * b.weight * c.weight / W ** 3, tri = a.key === b.key && b.key === c.key;
+            const pair = !tri && [a, b, c].filter(x => x.key === CFG.pair.key).length === 2;
+            if (tri && a.give) item[a.key] = (item[a.key] || 0) + pr;
+            else if (tri && a.pay) gold += pr * a.pay;
+            else if (pair) gold += pr * CFG.pair.pay;
+            else L += pr;
+        })));
+        console.log('бандит (степень ' + BI.slots + ')');
+        let prev = 0;
+        for (const b of CFG.bets) {
+            let E = 0; const ex = {};
+            Object.keys(item).forEach(k => { ex[k] = 1 - Math.pow(1 - item[k], T('slots', b)) - item[k]; E += ex[k]; });
+            const s = Math.min(1, E > 0 ? L * (1 - keep) / E : 1), q = {};
+            Object.keys(item).forEach(k => { q[k] = item[k] + ex[k] * s; });
+            const tok = Object.keys(q).reduce((a, k) => a + q[k] * (/shard/.test(k) ? 1 / 3 : 1), 0), cost = (CFG.spinCost - gold) * b / tok;
+            console.log(`  ставка ${String(b).padStart(3)}: жетонная тройка раз в ${(1 / q.token).toFixed(1)}, осколочная раз в ${(1 / q.shard).toFixed(1)}; жетон — ${cost.toFixed(0)} мон. потери`);
+            if (cost < prev - 1e-6) bad = true; prev = cost;
+        }
+    }
+    const pool = (name, g, list) => {
+        const W = list.reduce((s, x) => s + x.weight, 0), p = list.map(x => x.weight / W);
+        const blank = list.findIndex(x => !isItem(x) && !isGold(x)), val = (x) => (x.give && x.give.gold) || 0;
+        console.log(name + ' (степень ' + BI[g] + ')');
+        let prev = 0;
+        for (const b of CFG.bets) {
+            let E = 0;
+            const P = list.map((x, i) => { if (!isItem(x)) return p[i]; const q = 1 - Math.pow(1 - p[i], T(g, b)); E += q - p[i]; return q; });
+            const s = Math.min(1, E > 0 ? p[blank] * (1 - keep) / E : 1);
+            const N = list.map((x, i) => isItem(x) ? p[i] + (P[i] - p[i]) * s : (i === blank ? p[blank] - E * s : p[i]));
+            const it = N.reduce((a, q, i) => a + (isItem(list[i]) ? q : 0), 0), gold = N.reduce((a, q, i) => a + q * val(list[i]), 0);
+            const cost = (CFG.spinCost - gold) * b / it;
+            console.log(`  ставка ${String(b).padStart(3)}: вещь раз в ${(1 / it).toFixed(1)} круток, пусто ${(N[blank] * 100).toFixed(0)}%, золото назад ${(gold * 100).toFixed(0)}%; вещь — ${cost.toFixed(1)} мон. потери`);
+            if (cost < prev - 1e-6) bad = true; prev = cost;
+        }
+    };
+    pool('колесо', 'wheel', CFG.wheel.sectors);
+    pool('пачинко', 'pachinko', CFG.pachinko.pockets);
+    if (bad) { console.log('  ✗ вещь на высокой ставке дешевле, чем на низкой — высокой ставкой выгодно скупать'); process.exitCode = 1; }
+    else console.log('  ✓ чем выше ставка, тем дороже вещь в золоте — скупать высокой ставкой невыгодно');
+})();
