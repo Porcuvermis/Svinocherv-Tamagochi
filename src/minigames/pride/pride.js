@@ -162,8 +162,6 @@ const PrideMinigame = {
         if (typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'pride',
-                // бархат и лампочки (pride-curtain.js): рамка, крестик, занавес
-                skin: typeof PrideCurtain !== 'undefined' ? PrideCurtain : null,
                 onLeave: () => this.close(),
                 // Пока червь идёт по дорожке — уходить есть откуда: собранное
                 // за выход пропадёт. У машины терять нечего.
