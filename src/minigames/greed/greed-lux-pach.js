@@ -417,7 +417,9 @@ Object.assign(GreedLux, {
     // монеты — 1, осколок — 2, жетон — 3.
     pachWinShow(res) {
         const cur = (res && res.currencies) || {}, ks = Object.keys(cur).filter(k => cur[k] > 0);
-        this._pachTier = ks.some(k => /_token$/.test(k)) ? 3 : ks.some(k => /_shard$/.test(k)) ? 2 : ks.length ? 1 : 0;
+        // жетоны пачинко теперь целые (20.11): обычный — средний, редкие
+        // зависти и тщеславия — крупный, как было (раньше средний — осколок)
+        this._pachTier = ks.some(k => /^(envy|pride)_token$/.test(k)) ? 3 : ks.some(k => /_token$|_shard$/.test(k)) ? 2 : ks.length ? 1 : 0;
     },
     // Выигрыш пачинко: шарик только что в лунке — мигает её табло.
     pachBlink(now) {

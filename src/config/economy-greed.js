@@ -182,20 +182,27 @@ ECONOMY.minigames.greed = {
     // Пул жетонов ВСЕХ грехов вперемешку: нужный не выбить прицельно, зато
     // игра нужна и после того, как ветка алчности закрыта (разд. 7 плана).
     //
+    // 20.11 (игрок): только ЦЕЛЫЕ жетоны, без осколков. Ценность та же:
+    // жетон выпадает втрое реже, чем выпадал осколок (три осколка = жетон).
+    // Веса — на 3000 (было на 1000), чтобы «втрое реже» встало целыми:
+    // жетон греха с осколком — 7 (было 7 осколков из 1000 = 21 из 3000),
+    // алчности — 18 (было 18 осколков — её доля поднята под копилки банки),
+    // зависти и тщеславия — 6, как и было (2 из 1000: у них осколков не было).
+    // Освободившееся ушло в пустую лузу; золото — то же (200 из 1000).
+    //
     // Условие баланса: жетон отсюда в среднем ДОРОЖЕ, чем в своей игре, —
-    // иначе гнев и похоть обесценятся. У зависти и тщеславия осколков нет,
-    // поэтому их лузы платят целым жетоном, но втрое реже.
+    // иначе гнев и похоть обесценятся.
     pachinko: {
         pockets: [
-            { key: 'blank',  weight: 750 },       // 20.11: 761 → 750 — осколку алчности
-            { key: 'gold1',  weight: 200, give: { gold: 1 } },
-            { key: 'wrath',  weight: 7,   give: { wrath_shard: 1 } },
-            { key: 'glut',   weight: 7,   give: { glut_shard: 1 } },
-            { key: 'sloth',  weight: 7,   give: { sloth_shard: 1 } },
-            { key: 'lust',   weight: 7,   give: { lust_shard: 1 } },
-            { key: 'greed',  weight: 18,  give: { greed_shard: 1 } },
-            { key: 'envy',   weight: 2,   give: { envy_token: 1 } },
-            { key: 'pride',  weight: 2,   give: { pride_token: 1 } }
+            { key: 'blank',  weight: 2342 },
+            { key: 'gold1',  weight: 600, give: { gold: 1 } },
+            { key: 'wrath',  weight: 7,   give: { wrath_token: 1 } },
+            { key: 'glut',   weight: 7,   give: { glut_token: 1 } },
+            { key: 'sloth',  weight: 7,   give: { sloth_token: 1 } },
+            { key: 'lust',   weight: 7,   give: { lust_token: 1 } },
+            { key: 'greed',  weight: 18,  give: { greed_token: 1 } },
+            { key: 'envy',   weight: 6,   give: { envy_token: 1 } },
+            { key: 'pride',  weight: 6,   give: { pride_token: 1 } }
         ]
     }
 };

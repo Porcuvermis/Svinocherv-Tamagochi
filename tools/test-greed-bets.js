@@ -39,7 +39,7 @@ const { chromium } = require('playwright');
     return out;
   });
   // ожидаемое — из калькулятора (бандит — тройки с вещью, с гарантией чуть выше)
-  const want = { slots: [1 / 29.5 + 1 / 182, 1 / 3.4 + 1 / 18.7], wheel: [1 / 3.6, 1 / 1.5], pachinko: [1 / 20, 1 / 2.1] };
+  const want = { slots: [1 / 29.5 + 1 / 182, 1 / 3.4 + 1 / 18.7], wheel: [1 / 3.6, 1 / 1.5], pachinko: [1 / 51.7, 1 / 5.3] };
   for (const g of ['slots', 'wheel', 'pachinko']) {
     const x = r[g];
     ok(x.b1.multi === 0 && x.b100.multi === 0, `${g}: вещей больше одной за крутку — ни разу`);
