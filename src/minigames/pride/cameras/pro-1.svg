@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18.5 45 563 346.5" width="563" height="346.5">
+  <!-- Профессиональная №1. Только чёрное и серые, белые насечки и значки. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4a4d"/><stop offset="0.12" stop-color="#363638"/><stop offset="1" stop-color="#1e1e20"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a5a5e"/><stop offset="0.5" stop-color="#3f3f42"/><stop offset="1" stop-color="#2a2a2c"/>
+    </linearGradient>
+    <linearGradient id="prism" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#626266"/><stop offset="1" stop-color="#303033"/>
+    </linearGradient>
+    <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1e1e20"/><stop offset="0.55" stop-color="#3b3b3e"/><stop offset="1" stop-color="#28282a"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9d9dc"/><stop offset="0.45" stop-color="#8e8e92"/><stop offset="1" stop-color="#555558"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#58585c"/><stop offset="1" stop-color="#26262a"/>
+    </linearGradient>
+    <linearGradient id="barrel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#46464a"/><stop offset="0.4" stop-color="#262628"/><stop offset="1" stop-color="#121214"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.42" cy="0.38" r="0.75">
+      <stop offset="0" stop-color="#4a4a50"/><stop offset="0.45" stop-color="#232327"/><stop offset="1" stop-color="#0a0a0c"/>
+    </radialGradient>
+    <radialGradient id="glassEdge" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.7" stop-color="#bbb" stop-opacity="0"/><stop offset="1" stop-color="#dcdcdc" stop-opacity="0.32"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="leather" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="0.7" fill="#0e0e10" opacity="0.6"/><circle cx="4.5" cy="4.5" r="0.7" fill="#0e0e10" opacity="0.6"/>
+    </pattern>
+    <pattern id="ridge" width="6" height="8" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="6" height="3" fill="#101012" opacity="0.7"/>
+    </pattern>
+    <clipPath id="bodyClip"><rect x="38" y="132" width="524" height="252" rx="28"/></clipPath>
+  </defs>
+
+  <!-- проушины ремня -->
+  <g stroke="#17171a" stroke-width="2.2" fill="url(#metal)">
+    <rect x="22" y="168" width="24" height="42" rx="9"/><rect x="554" y="168" width="24" height="42" rx="9"/>
+  </g>
+  <g fill="#17171a"><rect x="29" y="180" width="10" height="18" rx="5"/><rect x="561" y="180" width="10" height="18" rx="5"/></g>
+
+  <!-- призма -->
+  <path d="M196 140 C 200 96 232 64 286 62 L 352 62 C 396 64 420 94 424 140 Z"
+        fill="url(#prism)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M214 132 C 220 102 242 82 280 80 L 346 80 C 380 82 398 102 404 132"
+        fill="none" stroke="#fff" stroke-width="3" opacity="0.28" stroke-linecap="round"/>
+  <!-- башмак -->
+  <rect x="262" y="48" width="96" height="16" rx="4" fill="url(#metal)" stroke="#17171a" stroke-width="1.7"/>
+  <rect x="274" y="53" width="72" height="5" rx="2" fill="#17171a" opacity="0.6"/>
+  <!-- окошко: белые деления, как на табло -->
+  <rect x="270" y="96" width="80" height="22" rx="7" fill="#0c0c0e" stroke="#17171a" stroke-width="1.7"/>
+  <g stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" opacity="0.9">
+    <path d="M282 107h16M304 107h8M318 107h20"/>
+  </g>
+  <circle cx="372" cy="108" r="5.5" fill="#d8d8d8" stroke="#17171a" stroke-width="1.2"/>
+  <circle cx="370.5" cy="106.5" r="1.8" fill="#fff"/>
+
+  <!-- верхняя панель -->
+  <path d="M44 150 C 44 126 60 112 84 112 L 196 112 L 196 150 Z" fill="url(#plate)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M424 112 L 520 112 C 544 112 558 126 558 150 L 424 150 Z" fill="url(#plate)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M60 122 L 186 122 M436 122 L 530 122" stroke="#fff" stroke-width="2.2" opacity="0.2" stroke-linecap="round"/>
+
+  <!-- диск режимов: белые риски -->
+  <g>
+    <rect x="452" y="88" width="76" height="30" rx="8" fill="url(#dark)" stroke="#17171a" stroke-width="2"/>
+    <g stroke="#f2f2f2" stroke-width="1.8" opacity="0.85">
+      <path d="M462 93v20M470 93v20M478 93v20M486 93v20M494 93v20M502 93v20M510 93v20M518 93v20"/>
+    </g>
+    <rect x="456" y="91" width="68" height="5" rx="2.5" fill="#fff" opacity="0.22"/>
+  </g>
+  <!-- спуск -->
+  <g>
+    <ellipse cx="124" cy="102" rx="26" ry="9" fill="#17171a" opacity="0.4"/>
+    <rect x="100" y="86" width="48" height="26" rx="13" fill="url(#metal)" stroke="#17171a" stroke-width="2.2"/>
+    <rect x="108" y="91" width="32" height="16" rx="8" fill="url(#dark)" stroke="#17171a" stroke-width="1.4"/>
+    <ellipse cx="124" cy="94" rx="11" ry="3" fill="#fff" opacity="0.5"/>
+  </g>
+  <!-- малый диск -->
+  <rect x="158" y="96" width="28" height="18" rx="6" fill="url(#dark)" stroke="#17171a" stroke-width="1.7"/>
+  <path d="M166 100v10M172 100v10M178 100v10" stroke="#f2f2f2" stroke-width="1.5" opacity="0.8"/>
+  <!-- экранчик на плече -->
+  <rect x="436" y="124" width="56" height="18" rx="5" fill="#0c0c0e" stroke="#17171a" stroke-width="1.7"/>
+  <g stroke="#f2f2f2" stroke-width="2.2" stroke-linecap="round"><path d="M444 130h26" opacity="0.9"/><path d="M444 136h14" opacity="0.55"/></g>
+  <circle cx="480" cy="133" r="3" fill="none" stroke="#f2f2f2" stroke-width="1.4" opacity="0.8"/>
+
+  <!-- корпус -->
+  <rect x="38" y="132" width="524" height="252" rx="28" fill="url(#body)" stroke="#17171a" stroke-width="2.6"/>
+  <rect x="38" y="154" width="524" height="230" fill="url(#leather)" clip-path="url(#bodyClip)"/>
+  <path d="M60 158 L540 158" stroke="#fff" stroke-width="2.4" opacity="0.2" stroke-linecap="round"/>
+  <path d="M60 372 L540 372" stroke="#0a0a0c" stroke-width="3" opacity="0.5" stroke-linecap="round"/>
+  <rect x="38" y="352" width="524" height="32" fill="#0a0a0c" opacity="0.28" clip-path="url(#bodyClip)"/>
+
+  <!-- рукоятка -->
+  <path d="M38 160 C 38 150 46 144 58 144 L 150 144 C 168 150 176 176 176 230 C 176 300 168 350 150 384 L 66 384 C 46 384 38 372 38 350 Z"
+        fill="url(#grip)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M42 172 C 42 214 42 300 44 360" stroke="#fff" stroke-width="3" opacity="0.22" fill="none" stroke-linecap="round"/>
+  <g clip-path="url(#bodyClip)"><rect x="60" y="214" width="116" height="150" fill="url(#ridge)" opacity="0.9"/></g>
+  <!-- диск под пальцем -->
+  <ellipse cx="118" cy="190" rx="22" ry="14" fill="url(#dark)" stroke="#17171a" stroke-width="2"/>
+  <g stroke="#f2f2f2" stroke-width="1.6" opacity="0.8"><path d="M104 190h8M116 187v6M124 190h8"/></g>
+  <ellipse cx="118" cy="184" rx="13" ry="4" fill="#fff" opacity="0.2"/>
+  <!-- лампочка помощи фокуса -->
+  <circle cx="150" cy="170" r="7" fill="#1a1a1d" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="148" cy="168" r="2.4" fill="#e8e8e8" opacity="0.85"/>
+
+  <!-- правая сторона -->
+  <rect x="496" y="206" width="48" height="16" rx="8" fill="#161618" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="520" cy="262" r="12" fill="url(#dark)" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="520" cy="262" r="4" fill="#f2f2f2" opacity="0.85"/>
+
+  <!-- ===== ОБЪЕКТИВ: центр (320, 264) ===== -->
+  <ellipse cx="322" cy="372" rx="108" ry="10" fill="#0a0a0c" opacity="0.3"/>
+  <circle cx="320" cy="264" r="124" fill="url(#metal)" stroke="#17171a" stroke-width="2.6"/>
+  <circle cx="320" cy="264" r="116" fill="none" stroke="#17171a" stroke-width="1.2" opacity="0.5"/>
+  <g fill="#17171a" opacity="0.8"><circle cx="320" cy="148" r="3.4"/><circle cx="214" cy="326" r="3.4"/><circle cx="426" cy="326" r="3.4"/></g>
+  <!-- кнопка расстыковки: тёмная с белой точкой -->
+  <rect x="418" y="196" width="22" height="30" rx="8" fill="url(#dark)" stroke="#17171a" stroke-width="1.8" transform="rotate(32 429 211)"/>
+  <circle cx="429" cy="211" r="3" fill="#f2f2f2" opacity="0.9"/>
+  <!-- ствол -->
+  <circle cx="320" cy="264" r="108" fill="url(#barrel)" stroke="#17171a" stroke-width="2.6"/>
+  <circle cx="320" cy="264" r="96" fill="none" stroke="#0a0a0c" stroke-width="16"/>
+  <circle cx="320" cy="264" r="96" fill="none" stroke="#77777c" stroke-width="16" stroke-dasharray="2.4 3.88" opacity="0.75"/>
+  <circle cx="320" cy="264" r="104" fill="none" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="320" cy="264" r="88" fill="none" stroke="#17171a" stroke-width="1.7"/>
+  <!-- белая тонкая метка вместо цветного кольца -->
+  <circle cx="320" cy="264" r="80" fill="none" stroke="#f2f2f2" stroke-width="3" opacity="0.9"/>
+  <circle cx="320" cy="264" r="82.6" fill="none" stroke="#17171a" stroke-width="1.2"/>
+  <circle cx="320" cy="264" r="77.4" fill="none" stroke="#17171a" stroke-width="1.2"/>
+  <!-- индексные точки на кольце фокуса -->
+  <g fill="#f2f2f2"><circle cx="320" cy="170" r="3.2"/><circle cx="226" cy="264" r="2.2"/><circle cx="414" cy="264" r="2.2"/></g>
+  <circle cx="320" cy="264" r="72" fill="#0c0c0e" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="320" cy="264" r="66" fill="none" stroke="#7a7a80" stroke-width="3" opacity="0.8"/>
+  <!-- стекло -->
+  <circle cx="320" cy="264" r="58" fill="url(#glass)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="320" cy="264" r="58" fill="url(#glassEdge)"/>
+  <circle cx="320" cy="264" r="38" fill="none" stroke="#c8c8cc" stroke-width="1.4" opacity="0.28"/>
+  <circle cx="320" cy="264" r="20" fill="none" stroke="#c8c8cc" stroke-width="1.2" opacity="0.28"/>
+  <path d="M320 248 l14 8 v16 l-14 8 l-14 -8 v-16 z" fill="#050506" stroke="#bdbdc2" stroke-width="1.2" opacity="0.7"/>
+  <path d="M278 238 C 284 216 310 204 336 208 C 316 214 298 226 290 246 Z" fill="url(#shine)"/>
+  <circle cx="352" cy="294" r="8" fill="#fff" opacity="0.5"/>
+  <circle cx="340" cy="304" r="3.4" fill="#fff" opacity="0.75"/>
+</svg>

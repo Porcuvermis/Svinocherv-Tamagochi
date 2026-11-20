@@ -162,6 +162,8 @@ const PrideMinigame = {
         if (typeof MinigameWindow !== 'undefined') {
             this.win = MinigameWindow.attach(this.screenElement, {
                 sin: 'pride',
+                // рамка из фотоаппаратов (pride-cameras.js), docs/plan/32-pride-cameras.md
+                skin: typeof PrideCameras !== 'undefined' ? PrideCameras : null,
                 onLeave: () => this.close(),
                 // Пока червь идёт по дорожке — уходить есть откуда: собранное
                 // за выход пропадёт. У машины терять нечего.

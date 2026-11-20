@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="206.5 14.5 191.5 411" width="191.5" height="411">
+  <!-- Смартфон №4 (в духе южнокорейского флагмана): отдельные объективы прямо на спинке — колонка из трёх слева, малые и вспышка справа на тех же высотах; плоская титановая рамка, тёмная глянцевая спинка. Серые, чёрное, белые метки. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#48484b"/><stop offset="0.1" stop-color="#343437"/><stop offset="1" stop-color="#1c1c1f"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6a6a6e"/><stop offset="0.5" stop-color="#47474b"/><stop offset="1" stop-color="#2e2e31"/>
+    </linearGradient>
+    <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a3a3d"/><stop offset="0.5" stop-color="#2a2a2d"/><stop offset="1" stop-color="#1a1a1c"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d4d4d8"/><stop offset="0.45" stop-color="#8a8a8f"/><stop offset="1" stop-color="#525256"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#58585c"/><stop offset="1" stop-color="#242427"/>
+    </linearGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c3c40"/><stop offset="1" stop-color="#0e0e10"/>
+    </linearGradient>
+    <linearGradient id="inhood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0c"/><stop offset="1" stop-color="#2c2c30"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.36" r="0.8">
+      <stop offset="0" stop-color="#55555b"/><stop offset="0.45" stop-color="#26262a"/><stop offset="1" stop-color="#08080a"/>
+    </radialGradient>
+    <radialGradient id="glassEdge" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.68" stop-color="#ccc" stop-opacity="0"/><stop offset="1" stop-color="#e0e0e0" stop-opacity="0.34"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="leather" width="5" height="5" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="0.65" fill="#0c0c0e" opacity="0.6"/><circle cx="3.7" cy="3.7" r="0.65" fill="#0c0c0e" opacity="0.6"/>
+    </pattern>
+    
+  
+    <linearGradient id="topmetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b4b4b8"/><stop offset="0.18" stop-color="#8e8e92"/><stop offset="0.7" stop-color="#5e5e62"/><stop offset="1" stop-color="#46464a"/>
+    </linearGradient>
+    <pattern id="stitch" width="10" height="6" patternUnits="userSpaceOnUse">
+      <rect x="1" y="2.2" width="5" height="1.6" rx="0.8" fill="#9a9a9e" opacity="0.28"/>
+    </pattern>
+
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f0f2"/><stop offset="0.3" stop-color="#c2c2c6"/><stop offset="0.55" stop-color="#8a8a90"/><stop offset="0.78" stop-color="#b6b6ba"/><stop offset="1" stop-color="#76767a"/>
+    </linearGradient>
+    <linearGradient id="chromeV" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6e6e72"/><stop offset="0.25" stop-color="#e6e6ea"/><stop offset="0.5" stop-color="#a0a0a6"/><stop offset="0.8" stop-color="#d4d4d8"/><stop offset="1" stop-color="#707074"/>
+    </linearGradient>
+
+    <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8e8ec"/><stop offset="0.35" stop-color="#c6c6cc"/><stop offset="0.8" stop-color="#9a9aa0"/><stop offset="1" stop-color="#7e7e84"/>
+    </linearGradient>
+    <linearGradient id="gripd" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#46464a"/><stop offset="0.5" stop-color="#2e2e32"/><stop offset="1" stop-color="#202023"/>
+    </linearGradient>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1" fill="#0e0e10" opacity="0.55"/></pattern>
+    <pattern id="grid" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M0 0h6M0 0v6" stroke="#17171a" stroke-width="1" opacity="0.3"/></pattern>
+
+    <linearGradient id="wrap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8d8dc"/><stop offset="1" stop-color="#a4a4aa"/>
+    </linearGradient>
+    <pattern id="stripes" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect x="0" y="0" width="7" height="14" fill="#17171a" opacity="0.85"/>
+    </pattern>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a5a5f"/><stop offset="0.12" stop-color="#3a3a3e"/><stop offset="0.6" stop-color="#232326"/><stop offset="1" stop-color="#151517"/>
+    </linearGradient>
+  
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4c4c52"/><stop offset="0.5" stop-color="#2c2c30"/><stop offset="1" stop-color="#18181b"/>
+    </linearGradient>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.2"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.02"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="ph"><rect x="216" y="24" width="168" height="392" rx="22"/></clipPath>
+</defs>
+  <!-- боковые кнопки справа -->
+  <rect x="387" y="120" width="8" height="48" rx="3" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <rect x="387" y="188" width="8" height="76" rx="3" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <!-- плоская титановая рамка с острыми скруглениями и стеклянная спинка -->
+  <rect x="210" y="18" width="180" height="404" rx="28" fill="url(#chrome)" stroke="#17171a" stroke-width="2.6"/>
+  <rect x="215" y="23" width="170" height="394" rx="24" fill="url(#ink)" stroke="#17171a" stroke-width="1.8"/>
+  <g clip-path="url(#ph)"><path d="M215 23 L 385 23 L 215 300 Z" fill="url(#sweep)"/></g>
+  <path d="M236 31 L 364 31" stroke="#fff" stroke-width="2.4" opacity="0.28" stroke-linecap="round"/>
+  <g stroke="#17171a" stroke-width="2.2" opacity="0.6" stroke-linecap="round"><path d="M215 66h10M375 66h10M215 372h10M375 372h10"/></g>
+  <!-- отдельные объективы прямо на спинке: колонка слева, малые справа на тех же высотах -->
+
+  <circle cx="256.5" cy="66" r="25" fill="#0a0a0c" opacity="0.45"/>
+  <circle cx="255" cy="63" r="24" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="255" cy="63" r="22.5" fill="none" stroke="url(#chrome)" stroke-width="2.4"/>
+  <circle cx="255" cy="63" r="18.2" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="255" cy="63" r="14.9" fill="url(#glass)" stroke="#17171a" stroke-width="1.3"/>
+  <circle cx="255" cy="63" r="14.9" fill="url(#glassEdge)"/>
+  <circle cx="255" cy="63" r="8.2" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="255" cy="63" r="2.4" fill="#050506" opacity="0.8"/>
+  <path d="M244.4 58.7 C 246.8 52.0 253.6 49.1 260.3 50.0 C 254.5 52.0 250.2 55.3 247.8 62.0 Z" fill="url(#shine)"/>
+  <circle cx="262.2" cy="70.7" r="2.4" fill="#fff" opacity="0.55"/>
+  <circle cx="256.5" cy="118" r="25" fill="#0a0a0c" opacity="0.45"/>
+  <circle cx="255" cy="115" r="24" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="255" cy="115" r="22.5" fill="none" stroke="url(#chrome)" stroke-width="2.4"/>
+  <circle cx="255" cy="115" r="18.2" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="255" cy="115" r="14.9" fill="url(#glass)" stroke="#17171a" stroke-width="1.3"/>
+  <circle cx="255" cy="115" r="14.9" fill="url(#glassEdge)"/>
+  <circle cx="255" cy="115" r="8.2" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="255" cy="115" r="2.4" fill="#050506" opacity="0.8"/>
+  <path d="M244.4 110.7 C 246.8 104.0 253.6 101.1 260.3 102.0 C 254.5 104.0 250.2 107.3 247.8 114.0 Z" fill="url(#shine)"/>
+  <circle cx="262.2" cy="122.7" r="2.4" fill="#fff" opacity="0.55"/>
+  <circle cx="256.5" cy="170" r="25" fill="#0a0a0c" opacity="0.45"/>
+  <circle cx="255" cy="167" r="24" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="255" cy="167" r="22.5" fill="none" stroke="url(#chrome)" stroke-width="2.4"/>
+  <circle cx="255" cy="167" r="18.2" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="255" cy="167" r="14.9" fill="url(#glass)" stroke="#17171a" stroke-width="1.3"/>
+  <circle cx="255" cy="167" r="14.9" fill="url(#glassEdge)"/>
+  <circle cx="255" cy="167" r="8.2" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="255" cy="167" r="2.4" fill="#050506" opacity="0.8"/>
+  <path d="M244.4 162.7 C 246.8 156.0 253.6 153.1 260.3 154.0 C 254.5 156.0 250.2 159.3 247.8 166.0 Z" fill="url(#shine)"/>
+  <circle cx="262.2" cy="174.7" r="2.4" fill="#fff" opacity="0.55"/>
+  <circle cx="306.5" cy="66" r="16" fill="#0a0a0c" opacity="0.45"/>
+  <circle cx="305" cy="63" r="15" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="305" cy="63" r="13.5" fill="none" stroke="url(#chrome)" stroke-width="2.4"/>
+  <circle cx="305" cy="63" r="11.4" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="305" cy="63" r="9.3" fill="url(#glass)" stroke="#17171a" stroke-width="1.3"/>
+  <circle cx="305" cy="63" r="9.3" fill="url(#glassEdge)"/>
+  <circle cx="305" cy="63" r="5.1" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="305" cy="63" r="1.5" fill="#050506" opacity="0.8"/>
+  <path d="M298.4 60.3 C 299.9 56.1 304.1 54.3 308.3 54.9 C 304.7 56.1 302.0 58.2 300.5 62.4 Z" fill="url(#shine)"/>
+  <circle cx="309.5" cy="67.8" r="1.5" fill="#fff" opacity="0.55"/>
+  <circle cx="306.5" cy="170" r="14" fill="#0a0a0c" opacity="0.45"/>
+  <circle cx="305" cy="167" r="13" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="305" cy="167" r="11.5" fill="none" stroke="url(#chrome)" stroke-width="2.4"/>
+  <circle cx="305" cy="167" r="9.9" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="305" cy="167" r="8.1" fill="url(#glass)" stroke="#17171a" stroke-width="1.3"/>
+  <circle cx="305" cy="167" r="8.1" fill="url(#glassEdge)"/>
+  <circle cx="305" cy="167" r="4.4" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="305" cy="167" r="1.3" fill="#050506" opacity="0.8"/>
+  <path d="M299.3 164.7 C 300.6 161.0 304.2 159.5 307.9 160.0 C 304.7 161.0 302.4 162.8 301.1 166.5 Z" fill="url(#shine)"/>
+  <circle cx="308.9" cy="171.2" r="1.3" fill="#fff" opacity="0.55"/>
+  <!-- вспышка между малыми справа -->
+  <circle cx="305" cy="115" r="9" fill="#17171a" stroke="#17171a" stroke-width="1.4"/><circle cx="305" cy="115" r="6" fill="#ececf0"/><circle cx="303" cy="113" r="2" fill="#fff"/>
+  <circle cx="330" cy="115" r="3" fill="#0a0a0c"/><circle cx="330" cy="167" r="2.4" fill="#0a0a0c"/>
+</svg>

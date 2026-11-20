@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="22.5 49.5 555 330" width="555" height="330">
+  <!-- Камера-крестик: профессиональная камера нового типа — ступенчатая верхняя панель (блок видоискателя слева выше), большое верхнее табло, утопленный спуск, лицевая сатиновая плита со срезанным углом, рукоять с прорезями; широкий объектив закрыт колпачком с крупным белым крестом. Только для крестика окна. Серые, чёрное, белые метки. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#48484b"/><stop offset="0.1" stop-color="#343437"/><stop offset="1" stop-color="#1c1c1f"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6a6a6e"/><stop offset="0.5" stop-color="#47474b"/><stop offset="1" stop-color="#2e2e31"/>
+    </linearGradient>
+    <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a3a3d"/><stop offset="0.5" stop-color="#2a2a2d"/><stop offset="1" stop-color="#1a1a1c"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d4d4d8"/><stop offset="0.45" stop-color="#8a8a8f"/><stop offset="1" stop-color="#525256"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#58585c"/><stop offset="1" stop-color="#242427"/>
+    </linearGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c3c40"/><stop offset="1" stop-color="#0e0e10"/>
+    </linearGradient>
+    <linearGradient id="inhood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0c"/><stop offset="1" stop-color="#2c2c30"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.36" r="0.8">
+      <stop offset="0" stop-color="#55555b"/><stop offset="0.45" stop-color="#26262a"/><stop offset="1" stop-color="#08080a"/>
+    </radialGradient>
+    <radialGradient id="glassEdge" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.68" stop-color="#ccc" stop-opacity="0"/><stop offset="1" stop-color="#e0e0e0" stop-opacity="0.34"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="leather" width="5" height="5" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="0.65" fill="#0c0c0e" opacity="0.6"/><circle cx="3.7" cy="3.7" r="0.65" fill="#0c0c0e" opacity="0.6"/>
+    </pattern>
+    <clipPath id="bodyClip"><rect x="46" y="150" width="508" height="226" rx="16"/></clipPath>
+  
+    <linearGradient id="topmetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b4b4b8"/><stop offset="0.18" stop-color="#8e8e92"/><stop offset="0.7" stop-color="#5e5e62"/><stop offset="1" stop-color="#46464a"/>
+    </linearGradient>
+    <pattern id="stitch" width="10" height="6" patternUnits="userSpaceOnUse">
+      <rect x="1" y="2.2" width="5" height="1.6" rx="0.8" fill="#9a9a9e" opacity="0.28"/>
+    </pattern>
+
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f0f2"/><stop offset="0.3" stop-color="#c2c2c6"/><stop offset="0.55" stop-color="#8a8a90"/><stop offset="0.78" stop-color="#b6b6ba"/><stop offset="1" stop-color="#76767a"/>
+    </linearGradient>
+    <linearGradient id="chromeV" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6e6e72"/><stop offset="0.25" stop-color="#e6e6ea"/><stop offset="0.5" stop-color="#a0a0a6"/><stop offset="0.8" stop-color="#d4d4d8"/><stop offset="1" stop-color="#707074"/>
+    </linearGradient>
+
+    <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8e8ec"/><stop offset="0.35" stop-color="#c6c6cc"/><stop offset="0.8" stop-color="#9a9aa0"/><stop offset="1" stop-color="#7e7e84"/>
+    </linearGradient>
+    <linearGradient id="gripd" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#46464a"/><stop offset="0.5" stop-color="#2e2e32"/><stop offset="1" stop-color="#202023"/>
+    </linearGradient>
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1" fill="#0e0e10" opacity="0.55"/></pattern>
+    <pattern id="grid" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M0 0h6M0 0v6" stroke="#17171a" stroke-width="1" opacity="0.3"/></pattern>
+
+    <linearGradient id="wrap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8d8dc"/><stop offset="1" stop-color="#a4a4aa"/>
+    </linearGradient>
+    <pattern id="stripes" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect x="0" y="0" width="7" height="14" fill="#17171a" opacity="0.85"/>
+    </pattern>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a5a5f"/><stop offset="0.12" stop-color="#3a3a3e"/><stop offset="0.6" stop-color="#232326"/><stop offset="1" stop-color="#151517"/>
+    </linearGradient>
+  
+    <radialGradient id="cap" cx="0.4" cy="0.34" r="0.85">
+      <stop offset="0" stop-color="#5a5a60"/><stop offset="0.55" stop-color="#34343a"/><stop offset="1" stop-color="#1c1c20"/>
+    </radialGradient>
+    <linearGradient id="xwhite" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfcfd4"/>
+    </linearGradient>
+
+    <linearGradient id="topmetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c4c4c8"/><stop offset="0.18" stop-color="#9a9a9e"/><stop offset="0.7" stop-color="#66666a"/><stop offset="1" stop-color="#4a4a4e"/>
+    </linearGradient>
+    <pattern id="stitch" width="10" height="6" patternUnits="userSpaceOnUse"><rect x="1" y="2.2" width="5" height="1.6" rx="0.8" fill="#9a9a9e" opacity="0.3"/></pattern>
+    <linearGradient id="gripd" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3c3c40"/><stop offset="0.5" stop-color="#2a2a2e"/><stop offset="1" stop-color="#1c1c1f"/>
+    </linearGradient>
+
+    <linearGradient id="graphite" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8a8a92"/><stop offset="0.16" stop-color="#5c5c63"/><stop offset="0.7" stop-color="#34343a"/><stop offset="1" stop-color="#26262b"/>
+    </linearGradient>
+    <linearGradient id="satinplate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8e8e94"/><stop offset="0.5" stop-color="#6a6a70"/><stop offset="1" stop-color="#4c4c52"/>
+    </linearGradient>
+    <pattern id="cf" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect x="0" y="0" width="4" height="8" fill="#fff" opacity="0.025"/><rect x="0" y="0" width="8" height="4" fill="#000" opacity="0.1"/>
+    </pattern>
+    <radialGradient id="well" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.7" stop-color="#0a0a0c"/><stop offset="1" stop-color="#2a2a2e"/>
+    </radialGradient>
+</defs>
+  <!-- ушки ремня: скруглённые бруски по бокам -->
+  <g stroke="#17171a" stroke-width="2.2" fill="url(#chrome)">
+    <rect x="26" y="168" width="26" height="40" rx="8"/><rect x="548" y="168" width="26" height="40" rx="8"/>
+  </g>
+  <g fill="#17171a"><rect x="33" y="180" width="12" height="16" rx="6"/><rect x="555" y="180" width="12" height="16" rx="6"/></g>
+
+  <!-- ВЕРХ: ступенчатый. Слева выше — блок видоискателя, справа ниже — панель с табло и спуском -->
+  <path d="M60 158 L 60 104 C 60 90 70 80 84 76 L 300 66 L 336 78 L 352 98 L 352 158 Z"
+        fill="url(#graphite)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M82 88 L 296 79 L 326 88" fill="none" stroke="#fff" stroke-width="2.6" opacity="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M352 98 L 516 98 C 538 98 550 112 550 134 L 550 158 L 352 158 Z"
+        fill="url(#graphite)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M360 106 L 512 106" stroke="#fff" stroke-width="2.4" opacity="0.5" stroke-linecap="round"/>
+  <!-- грань-скос между уровнями -->
+  <path d="M336 78 L 352 98 L 352 158" fill="none" stroke="#fff" stroke-width="1.6" opacity="0.28"/>
+  <!-- окно датчика глаза и щель видоискателя на блоке -->
+  <rect x="226" y="90" width="82" height="16" rx="6" fill="#0b0b0d" stroke="#17171a" stroke-width="1.7"/>
+  <rect x="232" y="93" width="30" height="4" rx="2" fill="#fff" opacity="0.28"/>
+  <circle cx="86" cy="120" r="6" fill="#0b0b0d" stroke="#17171a" stroke-width="1.4"/><circle cx="86" cy="120" r="2.4" fill="#f2f2f2" opacity="0.85"/>
+
+  <g transform="translate(0,9)">
+  <!-- диск режимов на блоке: с замком и белыми метками -->
+  <ellipse cx="148" cy="82" rx="52" ry="5" fill="#17171a" opacity="0.4"/>
+  <rect x="96" y="44" width="104" height="38" rx="9" fill="url(#dark)" stroke="#17171a" stroke-width="2.2"/>
+  <g stroke="#f2f2f2" stroke-width="1.8" opacity="0.85"><path d="M106 49v28M115 49v28M124 49v28M133 49v28M142 49v28M151 49v28M160 49v28M169 49v28M178 49v28M187 49v28"/></g>
+  <rect x="100" y="47" width="96" height="5" rx="2.5" fill="#fff" opacity="0.22"/>
+  <rect x="208" y="58" width="30" height="20" rx="6" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <path d="M218 68h10" stroke="#17171a" stroke-width="2" stroke-linecap="round"/>
+
+  </g>
+  <!-- большое верхнее табло: белые сегменты -->
+  <rect x="372" y="112" width="96" height="34" rx="7" fill="#0b0b0d" stroke="#17171a" stroke-width="1.9"/>
+  <g stroke="#f2f2f2" stroke-linecap="round"><path d="M384 124h22M412 124h8M426 124h30" stroke-width="2.6" opacity="0.92"/><path d="M384 135h14M404 135h26M436 135h16" stroke-width="2" opacity="0.5"/></g>
+  <!-- спуск: утоплен в колодец на самой панели -->
+  <circle cx="504" cy="126" r="26" fill="url(#well)" stroke="#17171a" stroke-width="2.2"/>
+  <circle cx="504" cy="126" r="21" fill="none" stroke="#85858b" stroke-width="6" stroke-dasharray="2 3" opacity="0.7"/>
+  <circle cx="504" cy="126" r="14" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <circle cx="504" cy="126" r="9" fill="url(#dark)" stroke="#17171a" stroke-width="1.4"/>
+  <ellipse cx="501.5" cy="122" rx="5" ry="2.2" fill="#fff" opacity="0.55"/>
+
+  <!-- КОРПУС: тёмный магниевый, текстура «карбон», острые углы -->
+  <rect x="46" y="150" width="508" height="226" rx="16" fill="url(#body)" stroke="#17171a" stroke-width="2.6"/>
+  <rect x="46" y="150" width="508" height="226" rx="16" fill="url(#cf)" clip-path="url(#bodyClip)"/>
+  <path d="M66 158 L 534 158" stroke="#fff" stroke-width="2.4" opacity="0.22" stroke-linecap="round"/>
+  <!-- нижняя планка -->
+  <path d="M50 348 L 550 348 L 550 358 C 550 368 542 376 530 376 L 70 376 C 58 376 50 368 50 358 Z" fill="url(#graphite)" stroke="#17171a" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M72 353 L 528 353" stroke="#fff" stroke-width="2" opacity="0.4" stroke-linecap="round"/>
+
+  <!-- левая лицевая плита: сатин, срезан угол, белая шкала по краю -->
+  <path d="M58 196 L 84 168 L 176 168 L 176 346 L 58 346 Z" fill="url(#satinplate)" stroke="#17171a" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M86 176 L 170 176" stroke="#fff" stroke-width="2.2" opacity="0.5" stroke-linecap="round"/>
+  <g stroke="#17171a" stroke-width="1.4" opacity="0.6"><path d="M66 340h110"/></g>
+  <g stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" opacity="0.9"><path d="M162 196h8M162 212h8M162 228h8M162 244h8M162 260h8M162 276h8M162 292h8M162 308h8"/></g>
+  <circle cx="96" cy="212" r="12" fill="url(#dark)" stroke="#17171a" stroke-width="1.8"/><rect x="90" y="210" width="12" height="4" rx="2" fill="#f2f2f2" opacity="0.9"/>
+  <circle cx="96" cy="248" r="6.5" fill="#17171a"/><circle cx="96" cy="248" r="2.6" fill="#f2f2f2" opacity="0.85"/>
+  <g fill="#17171a" opacity="0.8"><circle cx="82" cy="280" r="2.2"/><circle cx="92" cy="280" r="2.2"/><circle cx="102" cy="280" r="2.2"/><circle cx="112" cy="280" r="2.2"/></g>
+
+  <!-- ремешок: шнур колпачка к скобе на плите -->
+  <path d="M214 330 C 160 372 112 366 92 322" fill="none" stroke="#17171a" stroke-width="7" stroke-linecap="round"/>
+  <path d="M214 330 C 160 372 112 366 92 322" fill="none" stroke="#5a5a60" stroke-width="3.6" stroke-linecap="round"/>
+  <circle cx="90" cy="312" r="11" fill="none" stroke="#17171a" stroke-width="7"/><circle cx="90" cy="312" r="11" fill="none" stroke="url(#chrome)" stroke-width="3.6"/>
+
+  <!-- ПРАВАЯ рукоять: глубокий валик, вентиляционные прорези, колёсико -->
+  <path d="M554 168 C 554 158 548 152 538 152 L 452 152 C 438 184 432 232 432 264 C 432 310 438 348 452 376 L 540 376 C 548 376 554 370 554 362 Z"
+        fill="url(#gripd)" stroke="#17171a" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M548 180 C 550 224 550 300 546 350" stroke="#fff" stroke-width="3" opacity="0.2" fill="none" stroke-linecap="round"/>
+  <g stroke="#0a0a0c" stroke-width="5" stroke-linecap="round" opacity="0.85"><path d="M470 236l44 -14M470 252l44 -14M470 268l44 -14M470 284l44 -14"/></g>
+  <g stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity="0.18"><path d="M470 240l44 -14M470 256l44 -14M470 272l44 -14M470 288l44 -14"/></g>
+  <ellipse cx="494" cy="196" rx="28" ry="15" fill="url(#dark)" stroke="#17171a" stroke-width="2"/>
+  <g stroke="#f2f2f2" stroke-width="1.5" opacity="0.8"><path d="M474 190v12M482 188v16M490 187v18M498 187v18M506 188v16M514 190v12"/></g>
+  <ellipse cx="494" cy="189" rx="19" ry="4" fill="#fff" opacity="0.18"/>
+  <circle cx="452" cy="212" r="8" fill="#1a1a1d" stroke="#17171a" stroke-width="1.6"/><circle cx="450.4" cy="210.4" r="2.6" fill="#e8e8e8" opacity="0.85"/>
+  <rect x="470" y="318" width="64" height="28" rx="7" fill="#0e0e10" stroke="#17171a" stroke-width="1.6"/>
+  <g fill="#f2f2f2" opacity="0.85"><circle cx="490" cy="332" r="2"/><circle cx="502" cy="332" r="2"/><circle cx="514" cy="332" r="2"/></g>
+
+  <!-- ===== КОЛПАЧОК НА ШИРОКОМ ОБЪЕКТИВЕ: центр (300, 240) ===== -->
+  <!-- хромовая оправа объектива -->
+  <circle cx="300" cy="240" r="124" fill="url(#chrome)" stroke="#17171a" stroke-width="2.8"/>
+  <circle cx="300" cy="240" r="116" fill="none" stroke="#17171a" stroke-width="1.4" opacity="0.5"/>
+  <!-- кромка колпачка с накаткой и двумя зажимами -->
+  <circle cx="300" cy="240" r="112" fill="url(#gloss)" stroke="#17171a" stroke-width="2.4"/>
+  <circle cx="300" cy="240" r="105" fill="none" stroke="#85858b" stroke-width="9" stroke-dasharray="3 4.4" opacity="0.65"/>
+  <g stroke="#17171a" stroke-width="2"><rect x="184" y="222" width="22" height="36" rx="7" fill="url(#dark)"/><rect x="394" y="222" width="22" height="36" rx="7" fill="url(#dark)"/></g>
+  <g stroke="#f2f2f2" stroke-width="1.4" opacity="0.75"><path d="M189 230h12M189 240h12M189 250h12M399 230h12M399 240h12M399 250h12"/></g>
+  <!-- лицо колпачка -->
+  <circle cx="300" cy="240" r="96" fill="url(#cap)" stroke="#17171a" stroke-width="2.4"/>
+  <circle cx="300" cy="240" r="96" fill="none" stroke="#fff" stroke-width="2" opacity="0.18"/>
+  <circle cx="300" cy="240" r="84" fill="none" stroke="#17171a" stroke-width="1.6" opacity="0.6"/>
+  <path d="M232 176 C 252 156 290 148 326 154 C 292 160 262 172 242 194 Z" fill="#fff" opacity="0.12"/>
+  <!-- крест: толстый белый с тёмной обводкой -->
+  <g fill="#17171a" stroke="#17171a" stroke-width="9" stroke-linejoin="round"><g transform="rotate(45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g><g transform="rotate(-45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g></g>
+  <g fill="url(#xwhite)"><g transform="rotate(45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g><g transform="rotate(-45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g></g>
+  <g fill="none" stroke="#fff" stroke-width="2" opacity="0.7" stroke-linecap="round">
+    <path d="M258 198 L 286 226"/><path d="M342 198 L 314 226"/>
+  </g>
+</svg>
