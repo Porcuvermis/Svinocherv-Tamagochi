@@ -4,8 +4,14 @@
 # зависит, запекается здесь — на телефоне остаётся только бег импульса.
 #
 #   kant-s.png (без сглаживания): R,G — где точка вдоль жилки (16 бит,
-#     (кольцо + s) / 3, s — доля круга от левого края верха по часовой),
-#     B — номер кольца + 1 (0 — дальше 16 ед. от канта).
+#     (кольцо + s) / NR, s — доля круга от левого края верха по часовой),
+#     B: биты 0–2 — номер кольца + 1 (0 — дальше 16 ед. от канта), биты 3–7 —
+#     завиток: 0 — нет, иначе 1 + путь от стыка по завитку / ESTEP.
+#
+# Кольца: три пояса, рамка экрана и обод колбы (последние два шейдер зажигает
+# только на крупном выигрыше). Завитки у стыков поясов (machine.py: curls) —
+# ответвления: полосы идут вдоль канта и берут его s, спираль — s места
+# примыкания и путь по ней, чтобы свет втекал в неё позже, чем проходит стык.
 #   kant-f.png (со сглаживанием): R — расстояние до оси жилки ×15 (255 —
 #     далеко); G — отражение: насколько поверхность повёрнута к жилке (рельеф
 #     корпуса) × глянец × затенение; B — золото у жилки (маска золота ×
@@ -21,6 +27,15 @@ from PIL import Image
 
 T1, T2, T3 = (4, -55, 356, 292, 34), (6, 296, 354, 498, 30), (6, 502, 354, 634, 30)
 RINGS = [(t[0] + 5, t[1] + 5, t[2] - 5, t[3] - 5, t[4] - 5) for t in (T1, T2, T3)]
+# рамка экрана — середина золотой пластины (machine.py: BEZ, ступень на 8 ед.
+# внутрь); обод колбы — сам обод (machine.py: sd_rrect 37, 312, 71, 604)
+RINGS += [(89, 317, 291, 461, 13), (37, 312, 71, 604, 17)]
+NR = len(RINGS)
+# завитки (machine.py, вызовы curls): кольцо, к которому примыкают, и
+# параметры curls(cx, cyc, y_sign, dirx, x_far)
+CURLS = [(0, (197, 288 - 13.5, 1, 1, 26)), (1, (106, 470 + 13.5, -1, -1, 290)), (2, (104, 630 - 13.5, 1, -1, 254))]
+CREACH = 4.5          # свет завитка — узкий: это роспись, не жилка
+ESTEP = 2.5
 X0, Y0, FW, FH = 0, -57, 360, 696
 PIL_L = (30, 300, 78, 604, 24)   # столб колбы, как в machine.py
 REACH = 16.0          # дальше — света канта нет
@@ -47,6 +62,21 @@ def ring_point(rg, t):
             cx, cy, a0 = {1: (x1 - r, y0 + r, -math.pi / 2), 3: (x1 - r, y1 - r, 0), 5: (x0 + r, y1 - r, math.pi / 2), 7: (x0 + r, y0 + r, math.pi)}[j]
             a = a0 + d[m] / r; x[m], y[m] = cx + np.cos(a) * r, cy + np.sin(a) * r
     return x, y
+
+def curl_lines(cx, cyc, y_sign, dirx, x_far, n=3, gap=4.6, R0=13.5):
+    """Те же полосы, что рисует machine.py: curls(): [(точки, индекс начала спирали)]."""
+    out = []
+    for k in range(n):
+        r = R0 - k * gap
+        y = cyc + y_sign * r
+        pts = [(x_far + (cx - x_far) * i / 30, y) for i in range(31)]
+        turn, shr = [0.7, 0.95, 1.5][k], [0.12, 0.3, 0.7][k]
+        for i in range(1, 41):
+            t = i / 40
+            a = y_sign * math.pi / 2 - y_sign * dirx * t * turn * 2 * math.pi
+            pts.append((cx + math.cos(a) * r * (1 - t * shr), cyc + math.sin(a) * r * (1 - t * shr)))
+        out.append((pts, 30))
+    return out
 
 def nearest(rg, X, Y):
     """Ближайшая точка контура скруглённого прямоугольника: расстояние и s."""
@@ -106,9 +136,21 @@ def main(lux):
     # окне ±VW ед. вдоль кольца: заслон даёт мягкую тень, а не дыру.
     goldm = (M[..., 2] > 0.5).astype(np.float64)
     gm = np.maximum.reduce([np.roll(np.roll(goldm, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
+    # Столб колбы (machine.py: PIL_L) стоит поверх канта целиком: его золотой
+    # обод проходил проверку выше, и на кадрах по ободу бежали блики — будто
+    # кант светит сквозь колбу. Столб вырезается по своей форме (скруглённый
+    # прямоугольник): прямой вырез оставлял на свету тёмные углы-«ступеньки».
+    # Внутри столба пояса в выборе ближайшего не участвуют — там свет даёт
+    # только обод колбы (иначе граница «ближе пояс / ближе обод» резала
+    # обод косыми крестами).
+    px0, py0, px1, py1, pr = PIL_L
+    qx = np.abs(X - (px0 + px1) / 2) - ((px1 - px0) / 2 - pr)
+    qy = np.abs(Y - (py0 + py1) / 2) - ((py1 - py0) / 2 - pr)
+    pillar = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - pr < 0
     D = np.full(X.shape, 1e9); RING = np.full(X.shape, -1); SS = np.zeros(X.shape)
     for i, rg in enumerate(RINGS):
         d, s, px, py = nearest(rg, X, Y)
+        if i < 3: d = np.where(pillar, 1e9, d)
         m = d < D
         D = np.where(m, d, D); RING = np.where(m, i, RING); SS = np.where(m, s, SS)
     VIS = np.zeros(X.shape)
@@ -123,16 +165,39 @@ def main(lux):
         VIS = np.where(m, vs[np.clip((SS * n).astype(int), 0, n - 1)], VIS)
     # где жилка скрыта, сердцевина и ореол гаснут: видимость «отодвигает» точку
     D = D + (1 - VIS) * 10
+    # завитки: штамп вокруг частых точек полос, ближайшая точка — своя
+    DC = np.full(X.shape, 1e9); CS = np.zeros(X.shape); CR = np.full(X.shape, -1); CE = np.zeros(X.shape)
+    rad = int(CREACH * S) + 1
+    for ring, args in CURLS:
+        rg = RINGS[ring]
+        for pts, k0 in curl_lines(*args):
+            P = np.array(pts); seg = np.hypot(*(P[1:] - P[:-1]).T); cum = np.concatenate([[0], np.cumsum(seg)])
+            t = np.arange(0, cum[-1], 0.25)
+            qx, qy = np.interp(t, cum, P[:, 0]), np.interp(t, cum, P[:, 1])
+            # полоса — s канта под ней, спираль — s места примыкания + путь
+            sp = t > cum[k0]
+            _, s_pr, _, _ = nearest(rg, qx, qy)
+            _, s_j, _, _ = nearest(rg, np.array([P[k0, 0]]), np.array([P[k0, 1]]))
+            qs = np.where(sp, s_j[0], s_pr); qe = np.where(sp, t - cum[k0], 0)
+            ix = ((qx - X0) * S).astype(int); iy = ((qy - Y0) * S).astype(int)
+            ok = gm[np.clip(iy, 0, hh - 1), np.clip(ix, 0, ww - 1)] > 0.5
+            for dy in range(-rad, rad + 1):
+                for dx in range(-rad, rad + 1):
+                    jx, jy = ix + dx, iy + dy
+                    m = ok & (jx >= 0) & (jx < ww) & (jy >= 0) & (jy < hh)
+                    jx, jy = jx[m], jy[m]
+                    d = np.hypot(X[jy, jx] - qx[m], Y[jy, jx] - qy[m])
+                    # несколько точек в один пиксель: берётся ближайшая (сортировка по убыванию d)
+                    o = np.argsort(-d); jx, jy, d = jx[o], jy[o], d[o]
+                    better = d < DC[jy, jx]
+                    jx, jy, d = jx[better], jy[better], d[better]
+                    DC[jy, jx] = d; CS[jy, jx] = qs[m][o][better]; CE[jy, jx] = qe[m][o][better]; CR[jy, jx] = ring
+    curl = (DC < CREACH) & (DC < D)
+    D = np.where(curl, DC, D); RING = np.where(curl, CR, RING); SS = np.where(curl, CS, SS)
+    VIS = np.where(curl, 1.0, VIS)
+    ENC = np.where(curl, np.clip(1 + np.round(CE / ESTEP), 1, 31), 0).astype(np.uint32)
     vis = VIS > 0.02
-    # Столб колбы (machine.py: PIL_L) стоит поверх канта целиком: его золотой
-    # обод проходил проверку выше, и на кадрах по ободу бежали блики — будто
-    # кант светит сквозь колбу. Столб вырезается по своей форме (скруглённый
-    # прямоугольник): прямой вырез оставлял на свету тёмные углы-«ступеньки».
-    px0, py0, px1, py1, pr = PIL_L
-    qx = np.abs(X - (px0 + px1) / 2) - ((px1 - px0) / 2 - pr)
-    qy = np.abs(Y - (py0 + py1) / 2) - ((py1 - py0) / 2 - pr)
-    pillar = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - pr < 0
-    near = (D < REACH) & vis & ~pillar
+    near = (D < REACH) & vis
     # нормаль корпуса (как шейдер: шаг 2 текселя)
     gy, gx = np.gradient(h, 1 / S)
     N = np.dstack([-gx, -gy, np.ones_like(h)]); N /= np.linalg.norm(N, axis=2, keepdims=True)
@@ -145,22 +210,29 @@ def main(lux):
     fall = 1 / (1 + (D / 3.5) ** 2)
     gloss = 0.25 + 0.75 * M[..., 0]                          # лак глянцевый, мат — тусклее
     gold = M[..., 2] > 0.5
-    refl = np.where(near & ~gold, facing * fall * gloss * SH * VIS, 0)
+    # у завитков полосы в 4,6 ед. друг от друга: полное отражение сливало их
+    # в одну светящуюся трубку — половина
+    refl = np.where(near & ~gold, facing * fall * gloss * SH * VIS * np.where(ENC > 0, 0.45, 1.0), 0)
     slope = 1 - N[..., 2]
     goldf = np.where(near & gold, np.exp(-D / 1.4) * (0.55 + 3.0 * slope) * (0.6 + 0.4 * SH) * VIS, 0)
     # кодирование
-    u = np.where(near, np.clip((RING + SS) / 3, 0, 1 - 1e-6), 0)
+    u = np.where(near, np.clip((RING + SS) / NR, 0, 1 - 1e-6), 0)
     u16 = (u * 65535).astype(np.uint32)
     A = np.zeros((hh, ww, 3), np.uint8)
     A[..., 0] = np.where(near, u16 >> 8, 0); A[..., 1] = np.where(near, u16 & 255, 0)
-    A[..., 2] = np.where(near, RING + 1, 0)
+    A[..., 2] = np.where(near, (RING + 1) + ENC * 8, 0)
     F = np.zeros((hh, ww, 3), np.uint8)
     F[..., 0] = np.where(near, np.clip(D * 15, 0, 254), 255)
     F[..., 1] = np.clip(refl * 255, 0, 255)
     F[..., 2] = np.clip(goldf / 2 * 255, 0, 255)
     Image.fromarray(A).save(lux + 'kant-s.png', optimize=True)
     Image.fromarray(F).save(lux + 'kant-f.png', optimize=True)
-    json.dump({'rings': RINGS, 'len': [round(ring_len(r), 2) for r in RINGS], 'reach': REACH},
+    # рамки для ножниц: завиток — своим прямоугольником при своём кольце
+    boxes = []
+    for ring, args in CURLS:
+        P = np.array([p for pts, _ in curl_lines(*args) for p in pts])
+        boxes.append([ring] + [round(float(v), 1) for v in (P[:, 0].min() - CREACH, P[:, 1].min() - CREACH, P[:, 0].max() + CREACH, P[:, 1].max() + CREACH)])
+    json.dump({'rings': RINGS, 'len': [round(ring_len(r), 2) for r in RINGS], 'reach': REACH, 'curls': boxes, 'estep': ESTEP},
               open(lux + 'kant.json', 'w'))
     print('ok', ww, hh, 'S', S, 'len', [round(ring_len(r), 1) for r in RINGS])
 

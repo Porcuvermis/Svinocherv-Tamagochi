@@ -41,6 +41,8 @@ Object.assign(GreedLux, {
             { amp: 1.1, speed: 0.45, reach: 0.25, tau: 380 },
             { amp: 1.35, speed: 0.75, reach: 0.5, tau: 450, meet: 0.9, next: { amp: 0.6, delay: 140 } },
             { amp: 1.6, speed: 0.95, reach: 0.5, tau: 600, meet: 1.1, n: 3, gap: 320, next: { amp: 0.95, delay: 110 },
+              // рамка экрана и обод колбы — только здесь: весь аппарат горит
+              frames: { rings: [3, 4], amp: 1.0, delay: 260 },
               marquee: { at: 950, ms: 2700, amp: 0.7, wave: 150, period: 1100 } }
         ]
     },
@@ -72,16 +74,17 @@ Object.assign(GreedLux, {
             precision mediump float;
             #endif
             uniform sampler2D uS, uF; uniform vec4 uE[${this.KANT.max}], uP[${this.KANT.max}];
-            uniform float uN, uAll; uniform vec3 uLen, uC0, uC1, uC2; uniform vec4 uBall; uniform vec2 uWH; varying vec2 v;
-            // накал места жилки: кольцо ring, доля круга s
-            float heat(float ring, float s){
-                float L = ring < 0.5 ? uLen.x : (ring < 1.5 ? uLen.y : uLen.z), e = uAll;
+            uniform float uN, uAll, uLen4; uniform vec4 uLen; uniform vec3 uC0, uC1, uC2; uniform vec4 uBall; uniform vec2 uWH; varying vec2 v;
+            // накал места жилки: кольцо ring, доля круга s, ex — путь по
+            // завитку от стыка (свет втекает в спираль позже, чем проходит стык)
+            float heat(float ring, float s, float ex){
+                float L = ring < 0.5 ? uLen.x : (ring < 1.5 ? uLen.y : (ring < 2.5 ? uLen.z : (ring < 3.5 ? uLen.w : uLen4))), e = uAll;
                 for (int i = 0; i < ${this.KANT.max}; i++) {
                     if (float(i) >= uN) break;
                     vec4 E = uE[i], Q = uP[i];
                     // кольцо −1 — событие на всю жилку (маркиза ступени 3)
                     if ((E.x > -0.5 && abs(E.x - ring) > 0.5) || E.z < 0.0) continue;
-                    float ds = abs(s - E.y); ds = min(ds, 1.0 - ds) * L;
+                    float ds = abs(s - E.y); ds = min(ds, 1.0 - ds) * L + ex;
                     if (E.w < 0.5) {
                         // импульс: фронт (гаусс) и остывание за ним; дальше reach — гаснет
                         float f = E.z * Q.y, front = exp(-pow((ds - f) / 9.0, 2.0));
@@ -94,7 +97,7 @@ Object.assign(GreedLux, {
                     } else {
                         // маркиза: бегущая волна яркости вдоль жилки (не точки);
                         // длина волны в единицах, чтобы на всех поясах одна
-                        float m = 0.5 + 0.5 * sin(6.28318 * (s * L / Q.z - E.z / Q.y));
+                        float m = 0.5 + 0.5 * sin(6.28318 * ((s * L + ex) / Q.z - E.z / Q.y));
                         float env = smoothstep(0.0, 300.0, E.z) * (1.0 - smoothstep(Q.w - 700.0, Q.w, E.z));
                         e += Q.x * (0.3 + 0.7 * m * m) * env;
                     }
@@ -104,20 +107,24 @@ Object.assign(GreedLux, {
             void main(){
                 vec3 a = texture2D(uS, v).rgb;
                 if (a.b < 0.002) { gl_FragColor = vec4(0.0); return; }
-                float ring = floor(a.b * 255.0 + 0.5) - 1.0;
-                float s = (a.r * 65280.0 + a.g * 255.0) / 65535.0 * 3.0 - ring;
+                float b = floor(a.b * 255.0 + 0.5), ring = mod(b, 8.0) - 1.0, cq = floor(b / 8.0);
+                float s = (a.r * 65280.0 + a.g * 255.0) / 65535.0 * ${meta.rings.length.toFixed(1)} - ring;
+                float ex = cq > 0.5 ? (cq - 1.0) * ${(meta.estep || 2.5).toFixed(2)} : 0.0;
                 vec3 f = texture2D(uF, v).rgb;
                 if (f.r > 0.99) { gl_FragColor = vec4(0.0); return; }
                 // шар рычага — живая деталь корпуса поверх канта (кадры: свет
                 // ложился на шар); он ездит, поэтому вырез считается здесь
                 float db = length((v - uBall.xy) * uWH) - uBall.z;
                 if (db < 0.0) { gl_FragColor = vec4(0.0); return; }
-                float H = heat(ring, s) * smoothstep(0.0, 1.5, db);
+                float H = heat(ring, s, ex) * smoothstep(0.0, 1.5, db);
                 if (H < 0.003) { gl_FragColor = vec4(0.0); return; }
                 float d = f.r * 255.0 / 15.0;
                 vec3 col = mix(uC0, uC1, smoothstep(0.0, 0.55, H));
                 col = mix(col, uC2, smoothstep(0.62, 1.0, H));
-                float core = 1.0 - smoothstep(0.2, 0.8, d), halo = exp(-d / 1.7);
+                // завиток — роспись золотом, не эмалевая жилка: сердцевина тише
+                float cf = cq > 0.5 ? 1.0 : 0.0, core = (1.0 - smoothstep(0.2, 0.8, d)) * (1.0 - 0.6 * cf);
+                // и ореол уже: у спирали витки близко, широкий сливал её в пятно
+                float halo = exp(-d / mix(1.7, 0.8, cf)) * (1.0 - 0.5 * cf);
                 vec3 c = col * H * (core * 2.2 + halo * 0.5 + f.b * 2.6 + f.g * 1.7);
                 c = min(c, vec3(1.0));
                 gl_FragColor = vec4(c, max(c.r, max(c.g, c.b)));
@@ -138,7 +145,7 @@ Object.assign(GreedLux, {
         tex(imA, 0, gl.NEAREST); tex(imF, 1, gl.LINEAR);
         const U = (n) => gl.getUniformLocation(p, n);
         gl.uniform1i(U('uS'), 0); gl.uniform1i(U('uF'), 1);
-        gl.uniform3fv(U('uLen'), meta.len); gl.uniform3fv(U('uC0'), vec(P.ember)); gl.uniform3fv(U('uC1'), vec(P.amber)); gl.uniform3fv(U('uC2'), vec(P.hot));
+        gl.uniform4fv(U('uLen'), meta.len.slice(0, 4)); gl.uniform1f(U('uLen4'), meta.len[4] || 1); gl.uniform3fv(U('uC0'), vec(P.ember)); gl.uniform3fv(U('uC1'), vec(P.amber)); gl.uniform3fv(U('uC2'), vec(P.hot));
         this._kgl = { gl, uE: U('uE'), uP: U('uP'), uN: U('uN'), uAll: U('uAll'), uBall: U('uBall'), meta };
         gl.uniform2f(U('uWH'), this.kantCv.width / this.K, this.kantCv.height / this.K);
         this._kRing = null;
@@ -212,6 +219,7 @@ Object.assign(GreedLux, {
             // соседние пояса — через стыки, слабее и позже на каждый пояс
             if (T.next) [0, 1, 2].forEach(j => { if (j !== home) pulse(j, a + T.next.delay * Math.abs(j - home), T.next.amp * (k ? 0.8 : 1), !k && n === 1); });
         }
+        if (T.frames) T.frames.rings.forEach(j => { if (M.len[j]) pulse(j, at + T.frames.delay, T.frames.amp, false); });
         if (T.marquee) {
             const Q = T.marquee;
             this.kantAdd({ game, ring: -1, s0: 0, at: at + Q.at, kind: 2, amp: Q.amp, speed: Q.period, reach: Q.wave, tau: Q.ms, life: Q.ms });
@@ -249,7 +257,10 @@ Object.assign(GreedLux, {
             const X1 = Math.min(cv.width, Math.ceil(x1 * k)), Y1 = Math.min(Hc, Math.ceil((y1 - this.Y0) * k));
             if (X1 > X && Y1 > Y) { gl.scissor(X, Hc - Y1, X1 - X, Y1 - Y); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
         };
-        const rings = new Set(this.kantAll > 0 || this._kEv.some(e => e.ring < 0) ? [0, 1, 2] : this._kEv.map(e => e.ring));
+        const all = K.meta.rings.map((r, i) => i);
+        const rings = new Set(this.kantAll > 0 || this._kEv.some(e => e.ring < 0) ? all : this._kEv.map(e => e.ring));
+        // завитки у стыков — своим прямоугольником при своём кольце
+        (K.meta.curls || []).forEach(c => { if (rings.has(c[0])) rect(c[1], c[2], c[3], c[4]); });
         rings.forEach(i => {
             const [x0, y0, x1, y1] = K.meta.rings[i];
             rect(x0 - R, y0 - R, x1 + R, y0 + R); rect(x0 - R, y1 - R, x1 + R, y1 + R);
