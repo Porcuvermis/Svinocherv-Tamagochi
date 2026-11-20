@@ -1,17 +1,23 @@
 // ================= ТЩЕСЛАВИЕ: РАМКА ОКНА ИЗ ФОТОАППАРАТОВ =================
 // Шкурка окна (MinigameWindow.attach, опция skin; CLAUDE.md, инвариант 8;
-// docs/plan/32-pride-cameras.md). Материал греха — толпа фотографов: рамка
-// собрана из разных камер (профессиональные, плёночные, мыльницы, смартфоны),
-// крестик — отдельная камера с закрытым объективом и крестом на крышке.
+// docs/plan/32-pride-cameras.md). Материал греха — толпа фотографов: экран
+// «снимают» со всех сторон, журналисты и зеваки суют в него объективы, кто
+// какие. Рамка собрана из разных камер (профессиональные, плёночные, мыльницы,
+// смартфоны), крестик — отдельная камера с закрытым объективом и крестом.
 //
-// Камеры нарисованы заранее (cameras/*.svg, лист — docs/cameras/*-sheet.png).
-// Здесь только раскладка и вывод:
-//   * верх и низ — широкие камеры внахлёст, наклон ±6°;
-//   * бока (18 единиц) — смартфоны и «высокие» камеры стоймя, широкие —
-//     лёжа на боку, чтобы влезть в узкую полосу;
-//   * рядом одинаковая модель не ставится, и три камеры одного семейства
-//     подряд тоже (как правило «похожий сосед» у глаз зависти);
-//   * два ряда: дальний придавлен тёмным слоем, ближний с тенью.
+// Камеры нарисованы заранее (cameras/*.svg, листы — docs/cameras/*-sheet.png).
+// Здесь только раскладка и вывод. ПРАВИЛА (решения игрока):
+//   * все камеры повёрнуты ВЕРХОМ К ЦЕНТРУ экрана (радиальный веер), но не
+//     жёстко: угол — смесь радиального и осевого плюс небольшой разброс;
+//   * камеры КРУПНЫЕ и их МАЛО. Там, где можно поставить четыре мелкие, ставится
+//     одна — на всю толщину полосы, а не россыпь. Это важнее всего на боках;
+//   * слои: дальний — подложка, центр камеры на краю экрана, половина за краем;
+//     ближний — камеры видны целиком. В слое камеры лезут друг на друга на
+//     10–20 %. Дыр, сквозь которые видна сцена, быть не должно (fillHoles);
+//   * рядом одинаковая модель не ставится (повтор — не ближе чем через пять);
+//   * КАМЕРУ НЕ ОБРЕЗАЮТ. Если она выступает за кромку окна на сцену — пусть
+//     выступает, выступы придают рамке жизнь. Полосы окна берут столько,
+//     сколько выступила самая выступающая (reach()), ровного среза нет нигде.
 // Всё считается один раз, из зерна: раскладка не меняется от запуска к запуску.
 //
 // ПЕРЕХОД (вспышки) — следующая задача плана; пока шкурка без `veil`, и окно
@@ -22,38 +28,56 @@ const PrideCameras = {
     rim: { side: 24, top: 71 },
     cross: { x: 336, y: 36, size: 60 },
     CORNER: 10,
-    HANG: 18,            // насколько камеры заходят на сцену; полосы окна берут ровно столько
+    // Насколько камера МОЖЕТ выступать за кромку окна на сцену (единицы). Больше —
+    // начинает закрывать кнопки сцены (слоты наряда на боках, счёт сверху).
+    PROT_SIDE: 18, PROT_TB: 14,
     RADIAL: 0.65,        // доля радиального угла (остальное — осевой, «аккуратный»)
     TILT: 7,             // случайный разброс угла, градусы
     SEED: 1717,
     DIR: 'src/minigames/pride/cameras/',
     holeTest: false,     // для проб: подложка малиновая, вуали нет — дыры видны сразу
 
-    // Размеры — из viewBox каждого файла (единицы рисунка). kind: wide — лежат
-    // на верху и низу, tall — стоят на боках, оба — годятся и там и там.
+    // Размеры — из viewBox каждого файла (единицы рисунка).
     MODELS: {
-        'pro-1': { w: 563, h: 346.5, fam: 'pro', kind: 'wide' },
-        'pro-2': { w: 559, h: 298.5, fam: 'pro', kind: 'wide' },
-        'pro-3': { w: 543, h: 397, fam: 'pro', kind: 'wide' },
-        'pro-4': { w: 551, h: 338.5, fam: 'pro', kind: 'wide' },
-        'film-1': { w: 547, h: 332.5, fam: 'film', kind: 'wide' },
-        'film-2': { w: 559, h: 320.5, fam: 'film', kind: 'wide' },
-        'film-3': { w: 386.5, h: 403, fam: 'film', kind: 'both' },
-        'film-4': { w: 489, h: 325, fam: 'film', kind: 'wide' },
-        'compact-1': { w: 495, h: 285, fam: 'compact', kind: 'wide' },
-        'compact-2': { w: 491, h: 289, fam: 'compact', kind: 'wide' },
-        'compact-3': { w: 220.5, h: 332.5, fam: 'compact', kind: 'both' },
-        'compact-4': { w: 486.5, h: 285, fam: 'compact', kind: 'wide' },
-        'phone-1': { w: 190, h: 411, fam: 'phone', kind: 'tall' },
-        'phone-2': { w: 190, h: 411, fam: 'phone', kind: 'tall' },
-        'phone-3': { w: 192, h: 411, fam: 'phone', kind: 'tall' },
-        'phone-4': { w: 191.5, h: 411, fam: 'phone', kind: 'tall' }
+        'pro-1': { w: 563, h: 346.5, fam: 'pro' },
+        'pro-2': { w: 559, h: 298.5, fam: 'pro' },
+        'pro-3': { w: 543, h: 397, fam: 'pro' },
+        'pro-4': { w: 551, h: 338.5, fam: 'pro' },
+        'film-1': { w: 547, h: 332.5, fam: 'film' },
+        'film-2': { w: 559, h: 320.5, fam: 'film' },
+        'film-3': { w: 386.5, h: 403, fam: 'film' },
+        'film-4': { w: 489, h: 325, fam: 'film' },
+        'compact-1': { w: 495, h: 285, fam: 'compact' },
+        'compact-2': { w: 491, h: 289, fam: 'compact' },
+        'compact-3': { w: 220.5, h: 332.5, fam: 'compact' },
+        'compact-4': { w: 486.5, h: 285, fam: 'compact' },
+        'phone-1': { w: 190, h: 411, fam: 'phone' },
+        'phone-2': { w: 190, h: 411, fam: 'phone' },
+        'phone-3': { w: 192, h: 411, fam: 'phone' },
+        'phone-4': { w: 191.5, h: 411, fam: 'phone' }
     },
     CROSS: { w: 555, h: 330 },
 
     get bg() { return this.holeTest ? '#ff00ff' : PALETTE.ink; },
-    reach() { return this.HANG; },
     inner() { return MinigameWindow.skinGeometry(this).inner; },
+
+    // Насколько самая выступающая камера зашла за кромку окна на сцену — ровно
+    // столько берут полосы окна, и ни одна камера не обрезается.
+    reach() {
+        const L = this.layout(), I = this.inner();
+        let p = this.CORNER;
+        L.back.concat(L.mid, L.front).forEach(it => {
+            const b = this.bbox(it);
+            // Камера верхней/нижней ленты выступает по вертикали, боковой — по
+            // горизонтали; сравнивать её с чужой стороной нельзя (широкая верхняя
+            // камера «выступает» за левую кромку на сотню единиц, это не выступ).
+            if (it.y < I.y0) p = Math.max(p, b.y1 - I.y0);
+            else if (it.y > I.y1) p = Math.max(p, I.y1 - b.y0);
+            else if (it.x < I.x0) p = Math.max(p, b.x1 - I.x0);
+            else if (it.x > I.x1) p = Math.max(p, I.x1 - b.x0);
+        });
+        return Math.ceil(p) + 2;
+    },
 
     // ---------- картинки грузятся сразу при подключении файла ----------
     imgs: null,
@@ -78,24 +102,12 @@ const PrideCameras = {
     },
 
     // ---------- раскладка ----------
-    // Замысел игрока: экран фотографируют со всех сторон — журналисты и зеваки
-    // суют в него объективы, кто какие. Поэтому:
-    //   * камеры повёрнуты ВЕРХОМ К ЦЕНТРУ экрана (радиальный веер), но не
-    //     жёстко: угол — смесь радиального и осевого плюс небольшой разброс;
-    //   * камеры КРУПНЫЕ и их мало: толщина по радиусу задана полосой;
-    //   * два слоя. Дальний — подложка: центр камеры на краю экрана, половина
-    //     ушла за край. Ближний — камеры видны целиком, не за край;
-    //   * в слое камеры лезут друг на друга на 10–20 %, без дыр и без кучи;
-    //   * рядом одинаковая модель не ставится (моделей 16, повтор — не ближе
-    //     чем через пять соседей);
-    //   * дыр, сквозь которые видна сцена, быть не должно: проверка —
-    //     tools/probe-pride-rim.js, подложка на тесте ярко-малиновая.
     rng(seed) {
         let a = seed >>> 0;
         return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     },
-    pick(rnd, recent) {
-        const ids = Object.keys(this.MODELS);
+    pick(rnd, recent, minAspect) {
+        const ids = Object.keys(this.MODELS).filter(id => !minAspect || this.MODELS[id].w / this.MODELS[id].h >= minAspect);
         for (let tries = 0; tries < 60; tries++) {
             const id = ids[Math.floor(rnd() * ids.length)];
             if (recent.slice(-5).includes(id)) continue;
@@ -107,46 +119,69 @@ const PrideCameras = {
     },
     // Угол камеры: верх смотрит в центр. axis — «аккуратный» угол полосы
     // (верх 180, низ 0, лево 90, право 270), radial — точно на центр.
-    angle(x, y, axisDeg, rnd) {
+    angle(x, y, axisDeg, rnd, radial) {
         const rad = Math.atan2(STAGE_W / 2 - x, -(STAGE_H / 2 - y)) * 180 / Math.PI;
-        let d = ((rad - axisDeg + 540) % 360) - 180;       // кратчайшая разность
-        return axisDeg + d * this.RADIAL + (rnd() * 2 - 1) * this.TILT;
+        const d = ((rad - axisDeg + 540) % 360) - 180;       // кратчайшая разность
+        return axisDeg + d * (radial == null ? this.RADIAL : radial) + (rnd() * 2 - 1) * this.TILT;
     },
-    // Камера не должна упираться во внутренний обрез полосы (иначе срез ровной
-    // линией по сцене): считаем габарит с поворотом и, если он дальше HANG,
-    // сдвигаем камеру к краю экрана. sides — какие стороны учесть.
-    fit(x, y, rot, W, H, sides) {
-        const r = rot * Math.PI / 180, I = this.inner();
+    // Габарит камеры с учётом поворота.
+    bbox(it) {
+        const r = it.rot * Math.PI / 180, W = it.w * it.s, H = it.h * it.s;
         const ex = (Math.abs(Math.cos(r)) * W + Math.abs(Math.sin(r)) * H) / 2;
         const ey = (Math.abs(Math.sin(r)) * W + Math.abs(Math.cos(r)) * H) / 2;
-        if (sides.includes('left')) x = Math.min(x, I.x0 + this.HANG - 1 - ex);
-        if (sides.includes('right')) x = Math.max(x, I.x1 - this.HANG + 1 + ex);
-        if (sides.includes('top')) y = Math.min(y, I.y0 + this.HANG - 1 - ey);
-        if (sides.includes('bottom')) y = Math.max(y, I.y1 - this.HANG + 1 + ey);
-        return { x, y };
+        return { x0: it.x - ex, x1: it.x + ex, y0: it.y - ey, y1: it.y + ey, ex, ey };
+    },
+    // Сдвинуть камеру так, чтобы она не выступала на сцену дальше предела.
+    // Сдвиг — к краю экрана (камера уходит за край), а не срез. sides — какие
+    // стороны окна учесть.
+    fit(it, sides) {
+        const I = this.inner(), b = this.bbox(it);
+        if (sides.includes('left')) it.x = Math.min(it.x, I.x0 + this.PROT_SIDE - b.ex);
+        if (sides.includes('right')) it.x = Math.max(it.x, I.x1 - this.PROT_SIDE + b.ex);
+        if (sides.includes('top')) it.y = Math.min(it.y, I.y0 + this.PROT_TB - b.ey);
+        if (sides.includes('bottom')) it.y = Math.max(it.y, I.y1 - this.PROT_TB + b.ey);
+        return it;
     },
     // Одна лента вдоль стороны. side: 'top' | 'bottom' | 'left' | 'right'.
-    // depth — расстояние центра камеры от края экрана, thick — толщина по
-    // радиусу, step — доля ширины, на которую камеры НЕ накладываются.
+    //   thick — толщина по радиусу (высота камеры, повёрнутой верхом к центру);
+    //   step  — на сколько длины камеры сдвигается следующая (0,86 — наложение 14 %,
+    //           больше единицы — между камерами промежуток, его закрывает слой под ними);
+    //   whole — камера видна целиком (не за край экрана): толщина урезается по
+    //           месту, выступ на сцену — случайный до предела.
     strip(rnd, o) {
         const out = [], recent = [];
         const axis = { top: 180, bottom: 0, left: 90, right: 270 }[o.side];
         const horiz = o.side === 'top' || o.side === 'bottom';
+        const I = this.inner();
+        const room = { left: I.x0, right: STAGE_W - I.x1, top: I.y0, bottom: STAGE_H - I.y1 }[o.side];
+        const maxProt = horiz ? this.PROT_TB : this.PROT_SIDE;
         let cur = o.from;
         while (cur < o.to) {
-            const id = this.pick(rnd, recent); recent.push(id);
+            const id = this.pick(rnd, recent, o.minAspect); recent.push(id);
             const M = this.MODELS[id];
-            const t = o.thick * (0.92 + rnd() * 0.16);
-            const s = t / M.h, len = M.w * s;               // вдоль ленты — ширина камеры
-            const u = cur + len / 2;
-            let dep = o.depth + (rnd() * 2 - 1) * o.jit;
-            let x = horiz ? u : (o.side === 'left' ? dep : STAGE_W - dep);
-            let y = horiz ? (o.side === 'top' ? dep : STAGE_H - dep) : u;
-            const rot = this.angle(x, y, axis, rnd);
-            const f = this.fit(x, y, rot, M.w * s, M.h * s, [o.side]);
-            x = f.x; y = f.y;
-            out.push({ id, x, y, rot, s, w: M.w, h: M.h });
-            cur += len * (o.step + (rnd() * 2 - 1) * 0.04);
+            let t = o.thick * (0.92 + rnd() * 0.16);
+            const prot = o.whole ? maxProt * (0.35 + rnd() * 0.65) : 0;   // выступ на сцену
+            let it, tries = 0;
+            do {
+                const s = t / M.h, len = M.w * s, u = cur + len / 2;
+                const dep = o.depth || 0;
+                const x = horiz ? u : (o.side === 'left' ? dep : STAGE_W - dep);
+                const y = horiz ? (o.side === 'top' ? dep : STAGE_H - dep) : u;
+                it = { id, x, y, rot: this.angle(x, y, axis, rnd, o.radial), s, w: M.w, h: M.h, len };
+                if (o.whole) {
+                    // внутренний край камеры — на кромке окна плюс выступ
+                    const b = this.bbox(it), edge = room + prot;
+                    if (horiz) it.y = o.side === 'top' ? edge - b.ey : STAGE_H - edge + b.ey;
+                    else it.x = o.side === 'left' ? edge - b.ex : STAGE_W - edge + b.ex;
+                    const bb = this.bbox(it);
+                    // видна целиком: не выходит за край экрана
+                    const out0 = horiz ? (o.side === 'top' ? bb.y0 : STAGE_H - bb.y1) : (o.side === 'left' ? bb.x0 : STAGE_W - bb.x1);
+                    if (out0 < -(o.cut || 0) * t) { t *= 0.94; continue; }
+                } else this.fit(it, [o.side]);
+                break;
+            } while (++tries < 14);
+            out.push(it);
+            cur += it.len * (o.step + (rnd() * 2 - 1) * 0.05);
         }
         return out;
     },
@@ -154,35 +189,28 @@ const PrideCameras = {
         if (this._lay) return this._lay;
         const R = this.rng(this.SEED), cx = this.cross;
         const stop = cx.x - 50;                          // левый край камеры-крестика
-        // Три слоя: дальний — подложка, половина за краем экрана; средний —
-        // глубже ближнего и сдвинут относительно него, закрывает его щели;
-        // ближний — камеры видны целиком.
-        const P = {
-            back:  { depS: 0,  thS: 80, depT: 0,  thT: 92, step: 0.84 },
-            mid:   { depS: 14, thS: 62, depT: 42, thT: 82, step: 0.84 },
-            front: { depS: 21, thS: 42, depT: 54, thT: 66, step: 0.86 }
-        };
-        const strips = (layer) => {
-            const q = P[layer], step = q.step, from = layer === 'mid' ? -60 : -20;
-            return [
-                ...this.strip(R, { side: 'left', from, to: STAGE_H + 20, depth: q.depS, jit: 2, thick: q.thS, step }),
-                ...this.strip(R, { side: 'right', from, to: STAGE_H + 20, depth: q.depS, jit: 2, thick: q.thS, step }),
-                ...this.strip(R, { side: 'top', from, to: stop + 30, depth: q.depT, jit: 2, thick: q.thT, step }),
-                ...this.strip(R, { side: 'bottom', from, to: STAGE_W + 20, depth: q.depT, jit: 2, thick: q.thT, step })
-            ];
-        };
-        const lay = { back: strips('back'), mid: strips('mid'), front: strips('front') };
-        // Углы окна: в скруглении сцены между лентами остаётся клин. Закрываем
-        // его по камере в каждом углу (в среднем слое, под ближним).
-        const I = this.inner(), taken = lay.front.slice(-6).map(i => i.id);
-        [['left', 'top', I.x0, I.y0], ['right', 'top', I.x1, I.y0], ['left', 'bottom', I.x0, I.y1], ['right', 'bottom', I.x1, I.y1]].forEach(([sx, sy, px, py], k) => {
-            const id = this.pick(R, taken); taken.push(id);
-            const M = this.MODELS[id], t = 40, sc = t / M.h;
-            const ax = sy === 'top' ? 180 : 0;
-            const rot = this.angle(px, py, ax, R);
-            const f = this.fit(px + (sx === 'left' ? -6 : 6), py + (sy === 'top' ? -6 : 6), rot, M.w * sc, M.h * sc, [sx, sy]);
-            lay.mid.push({ id, x: f.x, y: f.y, rot, s: sc, w: M.w, h: M.h });
-        });
+        const lay = { back: [], mid: [], front: [] };
+        // Дальний слой — подложка: центр на краю экрана, половина за краем.
+        // Боковые — крупные, по одной вместо россыпи (толщина 88: видно ~44, то есть
+        // вся полоса бока и выступ на сцену).
+        lay.back.push(
+            // бока: ленты идут только между верхней и нижней — углы закрывают верх и низ;
+            // камера крупная, уходит за край; веер мягче (0,3), иначе косые
+            // силуэты оставляют на краю экрана клинья
+            ...this.strip(R, { side: 'left', from: 40, to: STAGE_H - 40, depth: 0, thick: 90, step: 0.8, radial: 0.3 }),
+            ...this.strip(R, { side: 'right', from: 40, to: STAGE_H - 40, depth: 0, thick: 90, step: 0.8, radial: 0.3 }),
+            ...this.strip(R, { side: 'top', from: -40, to: STAGE_W + 40, depth: 0, thick: 96, step: 0.8 }),
+            ...this.strip(R, { side: 'bottom', from: -40, to: STAGE_W + 40, depth: 0, thick: 96, step: 0.8 })
+        );
+        // Ближний слой — камеры видны целиком (чуть-чуть за край экрана можно).
+        // На боках — единицы, только широкие модели (больше в узкую полосу не
+        // влезет, а россыпь мелочи игрок запретил); сверху и снизу — плотнее.
+        lay.front.push(
+            ...this.strip(R, { side: 'left', from: 60, to: STAGE_H - 40, whole: true, cut: 0.12, thick: 46, step: 3.0, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'right', from: 120, to: STAGE_H - 40, whole: true, cut: 0.12, thick: 46, step: 3.0, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'top', from: -10, to: stop + 20, whole: true, cut: 0.1, thick: 70, step: 0.95 }),
+            ...this.strip(R, { side: 'bottom', from: -10, to: STAGE_W + 10, whole: true, cut: 0.1, thick: 70, step: 0.95 })
+        );
         this._lay = lay;
         this.fillHoles(lay);
         return lay;
@@ -200,43 +228,6 @@ const PrideCameras = {
         g.drawImage(im, -w / 2, -h / 2, w, h);
         g.restore();
     },
-    *drawGen(g) {
-        const I = this.inner(), R = this.CORNER;
-        this.load();
-        g.clearRect(0, 0, STAGE_W, STAGE_H);
-        // Всё вне окна сцены — тёмная подложка (скруглённый вырез), чтобы
-        // между камерами не светила сцена и угол окна был скруглён.
-        this.paintBg(g, this.bg);
-        yield;
-        const handle = (document.getElementById('pride-game') || {})._mgWindow;
-        if (!this.imgs.ready) { if (handle) handle._rimDrewBlank = true; return; }
-        const L = this.layout();
-        // Дальний ряд, затем тёмная вуаль на всё кольцо рамки, затем ближний.
-        const veil = (a) => {
-            if (this.holeTest) return;
-            g.fillStyle = 'rgba(12,10,14,' + a + ')';
-            g.beginPath();
-            g.rect(-2, -2, STAGE_W + 4, STAGE_H + 4);
-            g.rect(I.x0 + this.HANG * 0.3, I.y0 + this.HANG * 0.3, I.x1 - I.x0 - this.HANG * 0.6, I.y1 - I.y0 - this.HANG * 0.6);
-            g.fill('evenodd');
-        };
-        L.back.forEach(it => this.put(g, it, false));
-        yield;
-        veil(0.6);
-        L.mid.forEach(it => this.put(g, it, true));
-        yield;
-        veil(0.32);
-        L.front.forEach(it => this.put(g, it, true));
-        yield;
-        // Камера-крестик — поверх всего, в углу. Ширина по высоте полосы.
-        // Камера стоит прямо (крестик читается только так); крышка объектива чуть ниже
-        // середины камеры, поэтому центр камеры выше зоны нажатия.
-        this.putCross(g);
-    },
-    putCross(g) {
-        const h = 62, c = this.cross;
-        this.put(g, { id: 'cross', x: c.x, y: c.y - 5, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h }, true);
-    },
     // Подложка с вырезом под сцену — одним куском.
     paintBg(g, color) {
         const I = this.inner(), R = this.CORNER;
@@ -246,21 +237,26 @@ const PrideCameras = {
         if (g.roundRect) g.roundRect(I.x0, I.y0, I.x1 - I.x0, I.y1 - I.y0, R); else g.rect(I.x0, I.y0, I.x1 - I.x0, I.y1 - I.y0);
         g.fill('evenodd');
     },
+    putCross(g) {
+        // Камера стоит прямо (крестик читается только так); крышка объектива чуть
+        // ниже середины камеры, поэтому центр камеры выше зоны нажатия.
+        const h = 62, c = this.cross;
+        this.put(g, { id: 'cross', x: c.x, y: c.y - 5, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h }, true);
+    },
     // ---------- ДЫРЫ ----------
     // Игрок: в рамке не должно быть дыр. Случайная раскладка их оставляет там,
     // где силуэты соседних камер (диски, горбы, выступы) не сошлись. Поэтому
     // раскладка один раз пробуется на малиновой подложке, и в каждую найденную
-    // дыру ставится ещё камера (средний слой); так до тех пор, пока дыр нет.
-    // Зерно то же — результат тот же при каждом запуске.
+    // дыру ставится ещё камера (средний слой) — крупная, глубже ближних; так до
+    // тех пор, пока дыр нет. Зерно то же — результат тот же при каждом запуске.
     fillHoles(lay) {
         if (!this.imgs.ready) return;
-        const cv = document.createElement('canvas');
-        const K = 2;                                        // пробуем в двойном разрешении: тонкие щели видны
+        const K = 2, cv = document.createElement('canvas');        // двойное разрешение: тонкие щели видны
         cv.width = STAGE_W * K; cv.height = STAGE_H * K;
         const g = cv.getContext('2d'), I = this.inner(), R = this.rng(this.SEED + 5);
         g.scale(K, K);
         const taken = lay.front.slice(-5).map(i => i.id);
-        for (let pass = 0; pass < 24; pass++) {
+        for (let pass = 0; pass < 30; pass++) {
             g.clearRect(0, 0, STAGE_W, STAGE_H);
             this.paintBg(g, '#ff00ff');
             lay.back.forEach(it => this.put(g, it, false));
@@ -277,22 +273,54 @@ const PrideCameras = {
                     c.n++; c.sx += x / K; c.sy += y / K;
                 }
             }
-            const holes = Object.values(cells).filter(c => c.n >= 1).sort((a, b) => b.n - a.n);
+            // Щели в несколько точек глазом не видны — камеру на них не тратим
+            // (лишние камеры — это мелочь и грязь, которую игрок запретил).
+            const holes = Object.values(cells).filter(c => c.n >= 30).sort((a, b) => b.n - a.n);
             if (!holes.length) break;
-            holes.slice(0, 8).forEach(c => {
+            holes.slice(0, 3).forEach(c => {
                 const x = c.sx / c.n, y = c.sy / c.n;
                 const id = this.pick(R, taken); taken.push(id);
-                const M = this.MODELS[id], sc = (38 + R() * 12) / M.h;
+                const M = this.MODELS[id], sc = (84 + R() * 26) / M.h;
                 const sides = [];
-                if (x < I.x0 + this.HANG - 2) sides.push('left'); if (x > I.x1 - this.HANG + 2) sides.push('right');
-                if (y < I.y0 + this.HANG - 2) sides.push('top'); if (y > I.y1 - this.HANG + 2) sides.push('bottom');
+                if (x < I.x0 + this.PROT_SIDE) sides.push('left'); if (x > I.x1 - this.PROT_SIDE) sides.push('right');
+                if (y < I.y0 + this.PROT_TB) sides.push('top'); if (y > I.y1 - this.PROT_TB) sides.push('bottom');
                 const ax = y < STAGE_H / 2 ? 180 : 0, ay = x < STAGE_W / 2 ? 90 : 270;
                 const axis = (sides.includes('left') || sides.includes('right')) && !(sides.includes('top') || sides.includes('bottom')) ? ay : ax;
-                const rot = this.angle(x, y, axis, R);
-                const f = this.fit(x, y, rot, M.w * sc, M.h * sc, sides);
-                lay.mid.push({ id, x: f.x, y: f.y, rot, s: sc, w: M.w, h: M.h });
+                const it = { id, x, y, rot: this.angle(x, y, axis, R, 0.4), s: sc, w: M.w, h: M.h };
+                this.fit(it, sides);
+                lay.mid.push(it);
             });
         }
+    },
+    *drawGen(g) {
+        const I = this.inner();
+        this.load();
+        g.clearRect(0, 0, STAGE_W, STAGE_H);
+        // Всё вне окна сцены — тёмная подложка (скруглённый вырез), чтобы
+        // между камерами не светила сцена и угол окна был скруглён.
+        this.paintBg(g, this.bg);
+        yield;
+        const handle = (document.getElementById('pride-game') || {})._mgWindow;
+        if (!this.imgs.ready) { if (handle) handle._rimDrewBlank = true; return; }
+        const L = this.layout();
+        // Дальний слой, тёмная вуаль на всё кольцо рамки, средний, ближний.
+        const veil = (a) => {
+            if (this.holeTest) return;
+            g.fillStyle = 'rgba(12,10,14,' + a + ')';
+            g.beginPath();
+            g.rect(-2, -2, STAGE_W + 4, STAGE_H + 4);
+            g.rect(I.x0 + 6, I.y0 + 6, I.x1 - I.x0 - 12, I.y1 - I.y0 - 12);
+            g.fill('evenodd');
+        };
+        L.back.forEach(it => this.put(g, it, false));
+        yield;
+        veil(0.5);
+        L.mid.forEach(it => this.put(g, it, true));
+        yield;
+        veil(0.25);
+        L.front.forEach(it => this.put(g, it, true));
+        yield;
+        this.putCross(g);
     }
 };
 if (typeof window !== 'undefined') PrideCameras.load();
