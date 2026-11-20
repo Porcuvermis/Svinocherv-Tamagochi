@@ -214,7 +214,7 @@ const GreedJarShop = {
         // в покое монеты рисуются сами (чётко, один раз); в полёте — готовой
         // картинкой (coinRes — её разрешение, точек на высоту банки)
         // литьё: банка проваливается за стекло копилки — срез по её верху
-        if (P.gone) { this.pose_ = P; this.dirty = true; return; }
+        if (P.gone) { if (this.fxStep) this.fxStep(c, now); this.pose_ = P; this.dirty = true; return; }
         if (P.clipY != null) { c.save(); c.beginPath(); c.rect(0, 0, this.cv.width, this.toScene(0, P.clipY)[1]); c.clip(); }
         GreedJar3.draw(c, { cx: sx, cy: sy, k: P.k * M.k, roll: P.roll, yaw: P.yaw, view: P.view, sx: P.sx, sy: P.sy,
             tape: this.tapeCv, shop, coins: P.coins, drops: P.shop ? drops : null,
@@ -222,6 +222,7 @@ const GreedJarShop = {
         // литьё версии 2 (greed-jar3-melt.js): струя из горла на аппарат
         if (P.clipY != null) c.restore();
         if (this.state === 'pour' && this.streamDraw) { c.setTransform(M.dpr, 0, 0, M.dpr, 0, 0); this.streamDraw(c, P, now); }
+        if (this.state === 'pour' && this.fxStep) this.fxStep(c, now);
         this.pose_ = P;
         this.dirty = this.state !== 'rest';
         if (this.state === 'rest' && !this._csAt) this._csAt = setTimeout(() => GreedJar3.coinSprite(PALETTE.greedCoin.gold, this.coinRes()), 1500);

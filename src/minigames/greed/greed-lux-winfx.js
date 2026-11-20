@@ -253,6 +253,8 @@ Object.assign(GreedLux, {
                 if (t > 0 && t < 260) { const k = Math.exp(-t / 70) * Pp.shake[W.tier] * (i === cnt - 1 ? 1.4 : 1); x += Math.sin(t / 18 + i) * k; y += Math.cos(t / 23) * k * 0.6; }
             }
         }
+        // литьё версии 2 трясёт аппарат своим (greed-lux-cast.js)
+        if (this.castShake) { const [cx, cy] = this.castShake(now); x += cx; y += cy; }
         const v = x || y ? `${(x / this.W * 100).toFixed(2)}% ${(y / this.H * 100).toFixed(2)}%` : '';
         if (el.style.translate !== v) el.style.translate = v;
     },

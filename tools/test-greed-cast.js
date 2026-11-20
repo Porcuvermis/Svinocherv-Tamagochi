@@ -57,7 +57,7 @@ const { chromium } = require('playwright');
   ok(plan.pach < plan.led && plan.led < plan.small, `экраны сверху вниз: пачинко ${plan.pach | 0} → LED ${plan.led | 0} → табло ${plan.small | 0} мс`);
   ok(plan.w1 - plan.w0 > 300, `сектора колеса — по одному: ${plan.w0 | 0}…${plan.w1 | 0} мс`);
   // конец
-  await page.waitForFunction(() => !GreedLux._cast, null, { timeout: 12000 }).catch(() => {});
+  await page.waitForFunction(() => !GreedLux._cast, null, { timeout: 40000 }).catch(() => {});
   const s2 = await page.evaluate(() => ({ cast: !!GreedLux._cast, cv: !!GreedLux._castC, jar: !GreedJarShop.cv, boot: !GreedLux._boot,
     z5: [...GreedLux.wrapEl.querySelectorAll('canvas')].some(c => c.style.zIndex === '5') }));
   ok(!s2.cast && !s2.cv && !s2.z5, 'литьё кончилось: холст литья снят');

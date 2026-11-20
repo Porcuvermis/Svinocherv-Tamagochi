@@ -117,11 +117,14 @@ Object.assign(GreedJar3, {
 Object.assign(GreedJarShop, {
     // мс от вспышки узла; поза литья — по точке губы (mouth, поле) при
     // полном наклоне: банка над стыком колеса и пачинко, верх — под рамкой
-    POUR: { flyAt: 450, fly: 800, meltAt: 600, melt: 750, tiltAt: 1250, tilt: 420, roll: -115, k: 118, view: 0.12,
-            lip: [200, 70], streamAt: 1450, head: 110, end: 3300, tail: 150,
+    // Медленно, чтобы смаковать (игрок, 20.11): монеты плавятся полторы
+    // секунды, банка дрожит, наклон — с заминкой на полпути (жидкость
+    // подкатывает к горлу), первые капли, потом струя толчками.
+    POUR: { flyAt: 500, fly: 1000, meltAt: 700, melt: 1600, tremble: [1900, 2400], tiltAt: 2300, tilt: 1050, roll: -115, k: 118, view: 0.12,
+            lip: [200, 70], drip: 2800, streamAt: 2950, head: 160, end: 7300, tail: 260,
             // пустая банка — в копилку (у версии 2 она там, где у гаражного банка):
             // летит, выпрямляясь и уменьшаясь, и проваливается за её стекло
-            toPig: 3450, pigFly: 700, sink: 260, pigK: 74 },
+            toPig: 7700, pigFly: 900, sink: 420, pigK: 74 },
     // губа банки (кромка горла с нижней стороны) в поле при позе P
     lipAt(P) {
         const th = -P.roll * Math.PI / 180, x = 0.152 * P.k, y = -0.5 * P.k;
@@ -150,10 +153,20 @@ Object.assign(GreedJarShop, {
             P.k = N.k * Math.pow(Q.k / N.k, u); P.view = N.view + (Q.view - N.view) * u;
             P.yaw = 360 - 180 * u; P.shop = false; P.coins = true;
         }
-        // наклон с лёгким перехлёстом и возвратом
+        // дрожь: расплав внутри, банка «не держится»
+        if (t >= Q.tremble[0] && t < Q.tremble[1] + 300) {
+            const a = Math.sin(cl((t - Q.tremble[0]) / (Q.tremble[1] - Q.tremble[0] + 300)) * Math.PI);
+            P.x += Math.sin(t / 19) * 1.3 * a; P.y += Math.cos(t / 27) * 0.8 * a; P.roll += Math.sin(t / 23) * 2.2 * a;
+        }
+        // наклон с заминкой: до 55% — пауза с покачиванием — до конца
         if (t >= Q.tiltAt) {
-            const u = cl((t - Q.tiltAt) / Q.tilt), e = inOut(u), over = Math.sin(Math.min(1, u * 1.15) * Math.PI) * 0.06 * (1 - u);
-            P.roll = Q.roll * (e + over);
+            const u = cl((t - Q.tiltAt) / Q.tilt);
+            let e;
+            if (u < 0.45) e = 0.55 * inOut(u / 0.45);
+            else if (u < 0.62) e = 0.55 + 0.03 * Math.sin((u - 0.45) / 0.17 * Math.PI);
+            else e = 0.55 + 0.45 * inOut((u - 0.62) / 0.38);
+            const over = u > 0.9 ? Math.sin((u - 0.9) / 0.1 * Math.PI) * 0.04 : 0;
+            P.roll += Q.roll * (e + over);
         }
         P.melt = cl((t - Q.meltAt) / Q.melt);
         P.fill = this.pourFill(t);
@@ -179,17 +192,22 @@ Object.assign(GreedJarShop, {
     // месте удара — пятно и брызги.
     streamDraw(c, P, now) {
         const Q = this.POUR, t = P.t, C = PALETTE.greedLux.cast;
-        if (t < Q.streamAt || t > Q.end + Q.tail) return;
+        if (t < Q.drip || t > Q.end + Q.tail) return;
         const Lx = typeof GreedLux !== 'undefined' ? GreedLux.CAST : { xi: 205, yi: 50 };
         const [mx, my] = this.toScene(...this.lipAt(P)), [ix, iy] = this.toScene(Lx.xi, Lx.yi), k = this.map.k;
+        // первые капли до струи
+        if (t >= Q.drip && t < Q.streamAt + Q.head) this.dribble(c, P, t, mx0 => mx0);
+        if (t < Q.streamAt) return;
         const s1 = Math.min(1, (t - Q.streamAt) / Q.head), s0 = t > Q.end ? Math.min(1, (t - Q.end) / Q.tail) : 0;
         if (s1 <= s0) return;
+        // струя толчками (бульканье горла) и тоньше в первые мгновения
+        const glug = (1 + 0.16 * Math.sin(t / 70) + 0.08 * Math.sin(t / 31)) * Math.min(1, 0.35 + (t - Q.streamAt) / 300);
         const pt = (s) => [mx + (ix - mx) * s + 0.7 * k * Math.sin(s * 9 - t / 60) * s, my + (iy - my) * s * s];
         const N = 24, Ls = [], Rs = [];
         for (let i = 0; i <= N; i++) {
             const s = s0 + (s1 - s0) * i / N, [x, y] = pt(s), [x2, y2] = pt(Math.min(1, s + 0.02)), [x0, y0] = pt(Math.max(0, s - 0.02));
             let nx = -(y2 - y0), ny = x2 - x0; const ln = Math.hypot(nx, ny) || 1; nx /= ln; ny /= ln;
-            const w = (2.6 - 0.85 * s) * k;
+            const w = (3.4 - 1.1 * s) * k * glug;
             Ls.push([x + nx * w, y + ny * w]); Rs.push([x - nx * w, y - ny * w]);
         }
         c.save();
@@ -197,22 +215,97 @@ Object.assign(GreedJarShop, {
         c.fillStyle = C.honey; c.fill();
         const path = () => { c.beginPath(); for (let i = 0; i <= N; i++) { const [x, y] = pt(s0 + (s1 - s0) * i / N); if (i) c.lineTo(x, y); else c.moveTo(x, y); } };
         c.lineCap = 'round';
-        path(); c.strokeStyle = C.molten; c.lineWidth = 2.6 * k; c.stroke();
-        path(); c.strokeStyle = C.white; c.lineWidth = 0.9 * k; c.globalAlpha = 0.9; c.stroke();
+        path(); c.strokeStyle = C.molten; c.lineWidth = 3.4 * k * glug; c.stroke();
+        path(); c.strokeStyle = C.white; c.lineWidth = 1.2 * k * glug; c.globalAlpha = 0.9; c.stroke();
         path(); c.setLineDash([3 * k, 5 * k]); c.lineDashOffset = -t * 0.12 * k; c.strokeStyle = C.white; c.lineWidth = 0.6 * k; c.globalAlpha = 0.5; c.stroke();
         c.setLineDash([]);
         // удар: пятно и брызги — пока струя достаёт до места
         if (s1 >= 1) {
-            const g = c.createRadialGradient(ix, iy, 0, ix, iy, 14 * k);
+            const R = (20 + 3 * Math.sin(t / 90)) * k, g = c.createRadialGradient(ix, iy, 0, ix, iy, R);
             g.addColorStop(0, C.white); g.addColorStop(0.25, C.molten); g.addColorStop(1, 'rgba(255,190,60,0)');
-            c.globalAlpha = 0.85; c.fillStyle = g; c.beginPath(); c.arc(ix, iy, 14 * k, 0, 7); c.fill();
+            c.globalAlpha = 0.9; c.fillStyle = g; c.beginPath(); c.arc(ix, iy, R, 0, 7); c.fill();
             c.fillStyle = C.molten;
-            for (let i = 0; i < 9; i++) {
-                const ph = ((t / 320) + i / 9) % 1, sx = Math.sin(i * 12.9898) * 0.9, vy = 0.6 + 0.4 * Math.abs(Math.sin(i * 78.233));
-                const x = ix + sx * 22 * k * ph, y = iy - vy * 26 * k * ph + 40 * k * ph * ph;
-                c.globalAlpha = 1 - ph; c.beginPath(); c.arc(x, y, (1.3 - 0.6 * ph) * k, 0, 7); c.fill();
+            for (let i = 0; i < 18; i++) {
+                const ph = ((t / 380) + i / 18) % 1, sx = Math.sin(i * 12.9898) * 1.1, vy = 0.6 + 0.6 * Math.abs(Math.sin(i * 78.233));
+                const x = ix + sx * 34 * k * ph, y = iy - vy * 34 * k * ph + 52 * k * ph * ph;
+                c.globalAlpha = 1 - ph; c.beginPath(); c.arc(x, y, (1.8 - 0.9 * ph) * k, 0, 7); c.fill();
             }
         }
+        c.restore();
+    }
+});
+
+// ---------- капли, искры, дым, вспышка, капли-брызги ----------
+Object.assign(GreedJarShop, {
+    // первые капли из губы, пока банка ещё не наклонилась до конца
+    dribble(c, P, t) {
+        const Q = this.POUR, C = PALETTE.greedLux.cast, k = this.map.k, [mx, my] = this.toScene(...this.lipAt(P));
+        c.save(); c.fillStyle = C.molten;
+        for (let i = 0; i < 4; i++) {
+            const ph = (t - Q.drip - i * 55) / 260;
+            if (ph < 0 || ph > 1) continue;
+            c.globalAlpha = 1 - ph * 0.3; c.beginPath(); c.ellipse(mx + 1.5 * k * ph, my + 60 * k * ph * ph, 1.6 * k, 2.4 * k, 0, 0, 7); c.fill();
+        }
+        c.restore();
+    },
+    // Частицы литья — на холсте банки (он над всем аппаратом): искры с
+    // фронта, дым над обугленным, вспышка удара, капли брызг, летящие туда,
+    // где прожгут дыры (GreedLux.CAST.spots). Где фронт — по той же
+    // формуле прохода: делением пополам по y.
+    fxStep(c, now) {
+        const X = typeof GreedLux !== 'undefined' ? GreedLux : null;
+        if (!X || !X._cast) return;
+        const T = X.castT(now), C = PALETTE.greedLux.cast, k = this.map.k, CA = X.CAST;
+        const F = this._fx || (this._fx = { p: [], at: now });
+        const dt = Math.min(80, now - F.at); F.at = now;
+        // фронт в столбце x: y, где castPass = T (ниже места удара)
+        const front = (x) => { let lo = CA.yi, hi = 640; if (X.castPass(x, hi) < T) return null; for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (X.castPass(x, m) < T) lo = m; else hi = m; } return lo; };
+        if (T > 0 && T < 4200) {
+            for (let n = 0; n < Math.round(dt * 0.09); n++) {
+                const x = 21 + Math.random() * 318, y = front(x);
+                if (y == null || y < -50) continue;
+                const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6, v = 0.08 + Math.random() * 0.14;
+                F.p.push({ kind: 's', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, at: now, life: 450 + Math.random() * 500, r: 0.7 + Math.random() * 0.9 });
+            }
+            // дым — едва: плотнее — бурая муть поверх литого (кадр 20.11)
+            if (Math.random() < dt * 0.008) {
+                const x = 21 + Math.random() * 318, y = front(x);
+                if (y != null) F.p.push({ kind: 'm', x, y: y + 10, vx: (Math.random() - 0.5) * 0.01, vy: -0.02, at: now, life: 1000, r: 5 + Math.random() * 4 });
+            }
+        }
+        c.save();
+        // вспышка удара
+        if (T > -40 && T < 380) {
+            const [ix, iy] = this.toScene(CA.xi, CA.yi), u = Math.max(0, T + 40) / 420, R = (30 + 120 * u) * k;
+            const g = c.createRadialGradient(ix, iy, 0, ix, iy, R);
+            g.addColorStop(0, C.white); g.addColorStop(0.3, C.molten); g.addColorStop(1, 'rgba(255,190,60,0)');
+            c.globalAlpha = 0.85 * (1 - u); c.fillStyle = g; c.beginPath(); c.arc(ix, iy, R, 0, 7); c.fill();
+        }
+        // капли брызг: из места удара дугой туда, где прожгут дыру
+        CA.spots.forEach(([sx, sy, t0], i) => {
+            const t1 = t0 - 360, u = (T - t1) / 360;
+            if (u < 0 || u > 1) return;
+            const x = CA.xi + (sx - CA.xi) * u, y = CA.yi + (sy - CA.yi) * u - 60 * Math.sin(u * Math.PI) * (0.7 + 0.3 * (i % 2));
+            const [px, py] = this.toScene(x, y);
+            c.globalAlpha = 1; c.fillStyle = C.molten; c.beginPath(); c.arc(px, py, 2.6 * k, 0, 7); c.fill();
+            c.fillStyle = C.white; c.beginPath(); c.arc(px - 0.6 * k, py - 0.6 * k, 1.1 * k, 0, 7); c.fill();
+        });
+        // искры и дым
+        F.p = F.p.filter(q => {
+            const a = (now - q.at) / q.life;
+            if (a >= 1) return false;
+            q.x += q.vx * dt; q.y += q.vy * dt; if (q.kind === 's') q.vy += 0.00035 * dt;
+            const [px, py] = this.toScene(q.x, q.y);
+            if (q.kind === 's') {
+                c.globalAlpha = 1 - a; c.fillStyle = a < 0.4 ? C.white : C.molten;
+                c.beginPath(); c.arc(px, py, q.r * k * (1 - a * 0.5), 0, 7); c.fill();
+            } else {
+                const r = q.r * (1 + a * 1.6) * k, g = c.createRadialGradient(px, py, 0, px, py, r);
+                g.addColorStop(0, 'rgba(30,18,12,0.55)'); g.addColorStop(1, 'rgba(30,18,12,0)');
+                c.globalAlpha = 0.16 * Math.sin(a * Math.PI); c.fillStyle = g; c.beginPath(); c.arc(px, py, r, 0, 7); c.fill();
+            }
+            return true;
+        });
         c.restore();
     }
 });

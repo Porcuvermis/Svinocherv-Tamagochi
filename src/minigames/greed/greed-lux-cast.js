@@ -19,19 +19,29 @@ Object.assign(GreedLux, {
         // банка над краем видимой зоны пряталась под рамкой целиком (кадры
         // 20.11). Выше удара золото разбегается брызгами (vu), ниже — течёт.
         xi: 208, yi: 150,
-        vh: 0.9, vu: 0.5, v: 0.25,         // ед./мс: в стороны, вверх, вниз
+        // Медленно — чтобы смаковать (игрок, 20.11: «скромно, старается не
+        // быть в центре внимания»): весь аппарат за ~3,5 с, не за 2.
+        vh: 0.55, vu: 0.3, v: 0.14,        // ед./мс: в стороны, вверх, вниз
+        wob: 1.8,                          // размах неровного края
         // подтёки: x паза, где паз начинается и кончается по y, на сколько
         // убегает вперёд (ед.). Пазы версии 2: бока поля пачинко, обод
-        // колбы, бока рамки экрана, паз рычага.
-        drips: [[208, -53, 273, 30], [334, -53, 273, 26], [37, 312, 604, 40], [71, 312, 604, 34],
-                [89, 313, 465, 42], [291, 313, 465, 38], [303, 300, 404, 30], [325, 300, 404, 28]],
-        dripW: 6.5,
+        // колбы, бока рамки экрана, паз рычага; и вольные ручьи по лаку.
+        drips: [[208, -53, 273, 48], [334, -53, 273, 42], [37, 312, 604, 66], [71, 312, 604, 56],
+                [89, 313, 465, 70], [291, 313, 465, 62], [303, 300, 404, 48], [325, 300, 404, 44],
+                [150, 170, 300, 58], [262, 290, 500, 52], [120, 470, 640, 50], [232, 470, 640, 44],
+                [178, 300, 460, 36], [56, 120, 300, 40]],
+        dripW: 7.5,
+        // Брызги удара: капли падают впереди фронта и прожигают гаражный
+        // раньше него — дыры растут и сливаются с фронтом. x, y, когда
+        // (мс от удара), скорость роста (ед./мс).
+        spots: [[150, 205, 140, 0.05], [262, 200, 180, 0.05], [118, 262, 300, 0.045],
+                [300, 252, 340, 0.045], [182, 330, 560, 0.04], [246, 362, 680, 0.04]],
         // остывание (мс): лак, золото; стекло почти не греется
-        tau: { lac: 450, gold: 1000 }
+        tau: { lac: 1100, gold: 2400 }
     },
 
     // волна края, ед. (+ — фронт впереди)
-    castWob(x) { return 4 * Math.sin(x / 23 + 1.3) + 2.5 * Math.sin(x / 9.7 + 0.4) + 1.5 * Math.sin(x / 4.1 + 2.1); },
+    castWob(x) { return this.CAST.wob * (4 * Math.sin(x / 23 + 1.3) + 2.5 * Math.sin(x / 9.7 + 0.4) + 1.5 * Math.sin(x / 4.1 + 2.1)); },
     castDrip(x, y) {
         const C = this.CAST, sm = (e0, e1, v) => { const t = Math.min(1, Math.max(0, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
         let d = 0;
@@ -40,7 +50,8 @@ Object.assign(GreedLux, {
             const q = 1 - Math.pow((x - dx) / C.dripW, 2);
             if (q <= 0) continue;
             const g = Math.pow(q, 0.35);
-            d += lead * g * sm(y0, y0 + 80, y) * (1 - sm(y1, y1 + 60, y));
+            // разгон не круче фронта (lead' < 1), иначе край складывается
+            d += lead * g * sm(y0, y0 + Math.max(80, lead * 1.8), y) * (1 - sm(y1, y1 + 60, y));
         }
         return d;
     },
@@ -50,37 +61,49 @@ Object.assign(GreedLux, {
         // эллипс от места удара (было — сумма по осям: пятно расходилось
         // ромбом с углами, кадр 20.11)
         const dx = (x - C.xi) / C.vh, dy = y > C.yi ? (y - C.yi) / C.v : (C.yi - y) / C.vu;
-        return Math.hypot(dx, dy) - (this.castWob(x) + this.castDrip(x, y)) / C.v;
+        let t = Math.hypot(dx, dy) - (this.castWob(x) + this.castDrip(x, y)) / C.v;
+        // край дыры неровный (круг читался наклейкой, пять лучей — звездой; кадры 20.11)
+        C.spots.forEach(([sx, sy, t0, sp], i) => { const a = Math.atan2(y - sy, x - sx); t = Math.min(t, t0 + Math.hypot(x - sx, y - sy) * (1 + 0.09 * Math.sin(3 * a + i * 1.7) + 0.07 * Math.sin(7 * a + i * 2.3) + 0.05 * Math.sin(11 * a + i)) / sp); });
+        return t;
     },
     // то же для шейдера: uniform'ы uCP (xi, yi), uCV (vh, vu, v, dripW), uDr[8]
     castGLSL() {
         return `
-            uniform vec2 uCP; uniform vec4 uCV; uniform vec4 uDr[8];
+            uniform vec2 uCP; uniform vec4 uCV; uniform vec4 uDr[14]; uniform vec4 uSp[6]; uniform float uWob;
             float castSm(float e0, float e1, float v){ return smoothstep(e0, e1, v); }
-            float castWob(float x){ return 4.0 * sin(x / 23.0 + 1.3) + 2.5 * sin(x / 9.7 + 0.4) + 1.5 * sin(x / 4.1 + 2.1); }
+            float castWob(float x){ return uWob * (4.0 * sin(x / 23.0 + 1.3) + 2.5 * sin(x / 9.7 + 0.4) + 1.5 * sin(x / 4.1 + 2.1)); }
             float castPass(float x, float y){
                 float d = 0.0;
-                for (int i = 0; i < 8; i++) {
+                for (int i = 0; i < 14; i++) {
                     vec4 D = uDr[i];
                     float g = pow(max(0.0, 1.0 - pow((x - D.x) / uCV.w, 2.0)), 0.35);
-                    d += D.w * g * castSm(D.y, D.y + 80.0, y) * (1.0 - castSm(D.z, D.z + 60.0, y));
+                    d += D.w * g * castSm(D.y, D.y + max(80.0, D.w * 1.8), y) * (1.0 - castSm(D.z, D.z + 60.0, y));
                 }
                 float dx = (x - uCP.x) / uCV.x, dy = y > uCP.y ? (y - uCP.y) / uCV.z : (uCP.y - y) / uCV.y;
-                return length(vec2(dx, dy)) - (castWob(x) + d) / uCV.z;
+                float t = length(vec2(dx, dy)) - (castWob(x) + d) / uCV.z;
+                for (int i = 0; i < 6; i++) {
+                    vec2 q = vec2(x, y) - uSp[i].xy; float a = atan(q.y, q.x), fi = float(i);
+                    t = min(t, uSp[i].z + length(q) * (1.0 + 0.09 * sin(3.0 * a + fi * 1.7) + 0.07 * sin(7.0 * a + fi * 2.3) + 0.05 * sin(11.0 * a + fi)) / uSp[i].w);
+                }
+                return t;
             }
             // насколько точка в подтёке (0..1): там расплава больше — полоса толще
             float castDripG(float x){
                 float g = 0.0;
-                for (int i = 0; i < 8; i++) g = max(g, pow(max(0.0, 1.0 - pow((x - uDr[i].x) / uCV.w, 2.0)), 0.35));
+                for (int i = 0; i < 14; i++) g = max(g, pow(max(0.0, 1.0 - pow((x - uDr[i].x) / uCV.w, 2.0)), 0.35));
                 return g;
-            }`;
+            }
+            float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+            float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+                return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }`;
     },
     castUniforms(gl, U) {
-        const C = this.CAST, D = new Float32Array(32);
-        C.drips.forEach((d, i) => D.set(d.length === 4 ? [d[0], d[1], d[2], d[3]] : d, i * 4));
+        const C = this.CAST, D = new Float32Array(14 * 4), Sp = new Float32Array(24);
+        C.drips.forEach((d, i) => D.set(d, i * 4));
+        C.spots.forEach((d, i) => Sp.set(d, i * 4));
         gl.uniform2f(U('uCP'), C.xi, C.yi);
         gl.uniform4f(U('uCV'), C.vh, C.vu, C.v, C.dripW);
-        gl.uniform4fv(U('uDr'), D);
+        gl.uniform4fv(U('uDr'), D); gl.uniform4fv(U('uSp'), Sp); gl.uniform1f(U('uWob'), C.wob);
     },
 
     // ---------- жар литого (программа в холсте канта) ----------
@@ -116,9 +139,14 @@ Object.assign(GreedLux, {
                     if (dt < 0.0) { gl_FragColor = vec4(0.0); return; }
                     vec3 m = texture2D(uM, v).rgb;
                     float gold = step(0.5, m.b), glass = step(0.5, m.g);
-                    float tau = mix(uTauL, uTauG, gold);
+                    // остывает пятнами: корка схватывается неровно, одни места
+                    // ещё тлеют, когда соседние уже чёрные
+                    float patch = vnoise(P / 11.0) * 0.6 + vnoise(P / 4.3) * 0.4;
+                    float tau = mix(uTauL, uTauG, gold) * (0.55 + 0.9 * patch);
                     float H = exp(-dt / tau);
-                    if (H < 0.004) { gl_FragColor = vec4(0.0); return; }
+                    // свечение у самого фронта — расплав светит на всё вокруг
+                    float bloom = exp(-dt / 320.0);
+                    if (H < 0.004 && bloom < 0.004) { gl_FragColor = vec4(0.0); return; }
                     // скат: разница высот соседей (шаг — текселе карты)
                     float gx = hgt(v + vec2(uPx.x, 0.0)) - hgt(v - vec2(uPx.x, 0.0));
                     float gy = hgt(v + vec2(0.0, uPx.y)) - hgt(v - vec2(0.0, uPx.y));
@@ -132,7 +160,8 @@ Object.assign(GreedLux, {
                     vec3 col = mix(uC0, uC1, smoothstep(0.0, 0.55, Hc));
                     col = mix(col, uC2, smoothstep(0.7, 1.0, Hc));
                     float k = mix(0.8, 1.2 + 1.6 * slope, gold) * mix(1.0, 0.12, glass) * (0.55 + 0.45 * sd);
-                    vec3 c = min(col * H * k, vec3(1.0));
+                    vec3 c = col * H * k + uC1 * bloom * 0.4;
+                    c = min(c, vec3(1.0));
                     gl_FragColor = vec4(c, max(c.r, max(c.g, c.b)));
                 }`));
             gl.linkProgram(p);
@@ -189,7 +218,7 @@ Object.assign(GreedLux, {
 // вниз узором); дальше — прозрачно: под холстом уже литой корпус и его жар.
 // Обычное наложение (не сложение): расплав и гаражный — непрозрачные.
 Object.assign(GreedLux, {
-    CAST_BAND: { molten: 13, fade: 4, scorch: 20, shimmer: 12, crust: 1.4 },
+    CAST_BAND: { molten: 22, fade: 7, scorch: 36, shimmer: 26, crust: 1.8 },
 
     // гаражный — картинкой поля плотности S (у обеих версий поле одно: 360×696, Y0 −57)
     castSnapshot() {
@@ -242,9 +271,6 @@ Object.assign(GreedLux, {
             // экраны, ещё не включённые (2.1): x0 y0 x1 y1 | радиус, тьма, вид, ход
             uniform vec4 uOv[6], uOp[6]; uniform vec3 uGlass, uScan;
             ${this.castGLSL()}
-            float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-            float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-                return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
             float rbox(vec2 p, vec4 R, float r){ vec2 c = (R.xy + R.zw) * 0.5, h = (R.zw - R.xy) * 0.5 - r, q = abs(p - c) - h; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
             // выключенный экран — тёмное стекло; вид 1 — развёртка: точка
             // растёт в линию, линия раскрывается в кадр; вид 2 — арка (поле пачинко)
@@ -278,16 +304,20 @@ Object.assign(GreedLux, {
                 // расстояние за фронтом, ед. (+ — уже залито); край живой:
                 // мениск дышит мелкой волной поверх формулы прохода
                 float dd = (uT - castPass(P.x, P.y)) * uCV.z;
-                dd += 0.9 * sin(P.x / 5.3 + uT / 190.0) + 0.6 * sin(P.x / 2.7 - uT / 120.0);
+                dd += 1.4 * sin(P.x / 5.3 + uT / 190.0) + 0.9 * sin(P.x / 2.7 - uT / 120.0);
                 if (dd >= uB.x * 1.6) { gl_FragColor = screens(P, dd / uCV.z); return; }
                 if (dd < 0.0) {
                     // гаражный: марево (строки качаются) и обугливание с отсветом жара
                     float near = 1.0 - smoothstep(0.0, uB.w, -dd);
-                    float sy = 0.6 * near * sin(P.y / 2.6 + uT / 55.0) / uWH.y;
-                    vec3 c = texture2D(uSnap, v + vec2(0.0, sy)).rgb;
+                    float sy = 1.1 * near * sin(P.y / 2.6 + uT / 55.0) / uWH.y, sx = 0.5 * near * sin(P.y / 4.1 - uT / 80.0) / uWH.x;
+                    vec3 c = texture2D(uSnap, v + vec2(sx, sy)).rgb;
                     float sc = 1.0 - smoothstep(0.0, uB.z, -dd);
-                    c *= 1.0 - 0.55 * sc;
-                    c += uEmber * pow(sc, 3.0) * 0.55;
+                    c *= 1.0 - 0.6 * sc;
+                    c += uEmber * pow(sc, 3.0) * 0.6;
+                    // расплав светит на гаражный: широкий тёплый отсвет впереди
+                    // (было — только узкое обугливание: свет «ниоткуда»)
+                    float lit = exp(dd / 55.0);
+                    c += c * uHoney * 0.85 * lit + uEmber * 0.18 * lit;
                     // корочка: остывший край расплава — тёмная кромка
                     c = mix(c, uCrust, 1.0 - smoothstep(0.0, uCr, -dd));
                     gl_FragColor = vec4(c, 1.0);
@@ -375,7 +405,7 @@ Object.assign(GreedLux, {
 Object.assign(GreedLux, {
     // мс от вспышки узла: блеск (shine) и ставки на табло (bets) — после
     // включения экранов; конец — когда блеск прошёл
-    CAST_RUN: { total: 5600, kantAmp: 1.5, kantTau: 1600, shine: 4750, shineMs: 750, betStep: 160, betGap: 140 },
+    CAST_RUN: { total: 10900, kantAmp: 2.0, kantTau: 3000, shine: 9500, shineMs: 1200, betStep: 200, betGap: 200 },
 
     async castRun() {
         const J = GreedJarShop, L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement, opts = L._opts;
@@ -458,7 +488,9 @@ Object.assign(GreedLux, {
         const L = [], at = (t, f) => L.push([t, f]);
         for (let t = J.meltAt; t < J.meltAt + J.melt; t += 120) at(t, () => H.tick());
         at(J.streamAt, () => H.impact('medium'));
-        for (let t = c.impact; t < J.end; t += 90) at(t, () => H.impact('light'));
+        at(c.impact, () => H.impact('heavy'));
+        for (let t = J.tremble[0]; t < J.tremble[1]; t += 90) at(t, () => H.tick());
+        for (let t = c.impact; t < J.end; t += 140) at(t, () => H.impact('light'));
         if (this._kgl) this._kgl.meta.rings.slice(0, 3).forEach(rg => at(c.impact + this.castPass(Math.max(rg[0], Math.min(rg[2], this.CAST.xi)), rg[1]), () => H.impact('rigid')));
         at(J.toPig + J.pigFly + J.sink * 0.6, () => H.impact('heavy'));
         const B = this._boot;
@@ -471,6 +503,20 @@ Object.assign(GreedLux, {
         }
         at(R.shine, () => H.notify('success'));
         c.hap = L.sort((a, b) => a[0] - b[0]);
+    },
+    // Аппарат вздрагивает: удар струи, фронт через пояс канта, посадка банки
+    castShake(now) {
+        const c = this._cast;
+        if (!c || c.t != null) return [0, 0];
+        const t = (now - c.start) / this.castSlow(), J = GreedJarShop.POUR;
+        if (!c.shk) {
+            c.shk = [[c.impact, 3.6]];
+            if (this._kgl) this._kgl.meta.rings.slice(0, 3).forEach(rg => c.shk.push([c.impact + this.castPass(Math.max(rg[0], Math.min(rg[2], this.CAST.xi)), rg[1]), 1.8]));
+            c.shk.push([J.toPig + J.pigFly + J.sink * 0.6, 1.6]);
+        }
+        let x = 0, y = 0;
+        c.shk.forEach(([at, amp], i) => { const d = t - at; if (d > 0 && d < 420) { const e = Math.exp(-d / 110) * amp; x += Math.sin(d / 17 + i) * e; y += Math.cos(d / 21 + i) * e * 0.7; } });
+        return [x, y];
     },
     // мнимый наклон: блик бежит по лаку и золоту слева направо
     castTilt(now, t) {
@@ -497,7 +543,7 @@ Object.assign(GreedLux, {
 // поле пачинко — подсветка разгорается с дрожью; LED бандита — развёртка;
 // малые табло — все сегменты «8», потом число; лампа готовности — вспышкой.
 Object.assign(GreedLux, {
-    CAST_BOOT: { cool: 650, wheelGap: 70, dur: { wheel: 280, pach: 650, led: 430, small: 460, lamp: 260 } },
+    CAST_BOOT: { cool: 1400, wheelGap: 120, dur: { wheel: 380, pach: 950, led: 650, small: 640, lamp: 380 } },
     // поле пачинко в поле аппарата: арка (machine.py pach_live, через PACH_AT)
     CAST_PACH: { x0: 229.1, x1: 311.8, cy: 29.1, drain: 240.4, r: 41.4 },
 
