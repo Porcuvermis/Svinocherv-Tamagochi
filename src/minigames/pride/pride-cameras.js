@@ -398,6 +398,77 @@ const PrideCameras = {
         rimEl.appendChild(box);
     },
 
+    // ---------- ТОЧКИ ВСПЫШЕК (переход, docs/plan/32-pride-cameras.md, задача 4) ----------
+    // Где у модели вспыхивает: доли ширины и высоты её рисунка (cameras/*.svg, viewBox
+    // обрезан по габариту). Окно вспышки у мыльниц и моментальной, светодиод у
+    // смартфонов, у зеркалок — башмак на призме (внешняя вспышка встаёт туда),
+    // у pro-3 — её выдвижная вспышка, у двухобъективной — верх шахты.
+    FLASH_UV: {
+        'pro-1': [0.518, 0.012], 'pro-2': [0.461, 0.082], 'pro-3': [0.5, 0.062], 'pro-4': [0.5, 0.012],
+        'film-1': [0.5, 0.012], 'film-2': [0.5, 0.013], 'film-3': [0.454, 0.029], 'film-4': [0.733, 0.226],
+        'compact-1': [0.732, 0.244], 'compact-2': [0.184, 0.299], 'compact-3': [0.760, 0.253], 'compact-4': [0.738, 0.339],
+        'phone-1': [0.742, 0.315], 'phone-2': [0.616, 0.335], 'phone-3': [0.526, 0.099], 'phone-4': [0.514, 0.245],
+        'cross': [0.774, 0.492]
+    },
+    // Точка вспышки камеры в координатах сцены (в покое; покачивание ±6 ед. за
+    // десятую долю секунды жизни вспышки не учитываем).
+    flashAt(it) {
+        const uv = this.FLASH_UV[it.id], W = it.w * it.s, H = it.h * it.s, r = it.rot * Math.PI / 180;
+        const dx = (uv[0] - 0.5) * W, dy = (uv[1] - 0.5) * H;
+        return { x: it.x + dx * Math.cos(r) - dy * Math.sin(r), y: it.y + dx * Math.sin(r) + dy * Math.cos(r) };
+    },
+    crossFlashAt() {
+        const l = this.crossLens(), k = this.CROSS_H / this.CROSS.h, L = this.CROSS_LENS, V = this.CROSS_VB, uv = this.FLASH_UV.cross;
+        const dx = uv[0] * this.CROSS.w * k - (L.x - V.x) * k, dy = uv[1] * this.CROSS.h * k - (L.y - V.y) * k;
+        const r = this.CROSS_TILT * Math.PI / 180;
+        return { x: l.x + dx * Math.cos(r) - dy * Math.sin(r), y: l.y + dx * Math.sin(r) + dy * Math.cos(r) };
+    },
+    // Все точки вспышек: камеры (только видимые — задние закрыты передними) и точки
+    // посреди экрана. Видимость — по служебной карте: камеры рисуются плоскими
+    // цветами-номерами в порядке слоёв; если на точке сверху чужая камера, точка
+    // сдвигается в ближайший видимый пиксель своей (до 14 ед.), не нашлась — камера
+    // не вспыхивает. Считается один раз, вместе с раскладкой.
+    flashPoints() {
+        if (this._flashPts) return this._flashPts;
+        const L = this.layout(), cams = L.back.concat(L.mid, L.front);
+        const map = document.createElement('canvas'), tmp = document.createElement('canvas');
+        map.width = tmp.width = STAGE_W; map.height = tmp.height = STAGE_H;
+        const g = map.getContext('2d'), t = tmp.getContext('2d');
+        const color = (i) => 'rgb(' + ((i + 1) & 255) + ',' + (((i + 1) >> 8) & 255) + ',7)';
+        const stamp = (i, draw) => {
+            t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, STAGE_W, STAGE_H);
+            draw(t);
+            t.globalCompositeOperation = 'source-in'; t.fillStyle = color(i); t.fillRect(0, 0, STAGE_W, STAGE_H);
+            g.drawImage(tmp, 0, 0);
+        };
+        cams.forEach((it, i) => stamp(i, (c) => this.put(c, it, false)));
+        stamp(cams.length, (c) => this.putCross(c));
+        const d = g.getImageData(0, 0, STAGE_W, STAGE_H).data;
+        const idAt = (x, y) => {
+            x = Math.round(x); y = Math.round(y);
+            if (x < 0 || y < 0 || x >= STAGE_W || y >= STAGE_H) return -2;
+            const p = (y * STAGE_W + x) * 4;
+            return d[p + 3] < 250 || d[p + 2] !== 7 ? -1 : d[p] + (d[p + 1] << 8) - 1;
+        };
+        const pts = [];
+        const place = (i, f, kind) => {
+            if (idAt(f.x, f.y) === i) { pts.push({ x: f.x, y: f.y, cam: i, kind }); return; }
+            for (let r = 1; r <= 14; r++) for (let a = 0; a < 16; a++) {
+                const x = f.x + r * Math.cos(a * Math.PI / 8), y = f.y + r * Math.sin(a * Math.PI / 8);
+                if (idAt(x, y) === i) { pts.push({ x, y, cam: i, kind, moved: true }); return; }
+            }
+        };
+        cams.forEach((it, i) => place(i, this.flashAt(it), 'cam'));
+        place(cams.length, this.crossFlashAt(), 'cam');
+        // Посреди экрана: сетка 5 × 6 с разбросом, не ближе 40 ед. к кромке окна.
+        const I = this.inner(), R = this.rng(this.SEED + 77), cx = 5, cy = 6;
+        for (let j = 0; j < cy; j++) for (let i = 0; i < cx; i++) {
+            const x0 = I.x0 + 40, y0 = I.y0 + 40, w = (I.x1 - I.x0 - 80) / cx, h = (I.y1 - I.y0 - 80) / cy;
+            pts.push({ x: x0 + (i + 0.15 + R() * 0.7) * w, y: y0 + (j + 0.15 + R() * 0.7) * h, cam: -1, kind: 'screen' });
+        }
+        return (this._flashPts = pts);
+    },
+
     // Для проб: сколько щелей в рамке в покое (камеры в исходных местах).
     holeReport() {
         const lay = this.layout(), K = 2, cv = document.createElement('canvas');
