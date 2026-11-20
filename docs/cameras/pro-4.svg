@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 440" width="600" height="440">
+  <!-- Профессиональная №4: репортажная с длинным телеобъективом — объектив главный, лапка штатива, низкая призма. Чёрное, серые, белые метки. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#48484b"/><stop offset="0.1" stop-color="#343437"/><stop offset="1" stop-color="#1c1c1f"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6a6a6e"/><stop offset="0.5" stop-color="#47474b"/><stop offset="1" stop-color="#2e2e31"/>
+    </linearGradient>
+    <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a3a3d"/><stop offset="0.5" stop-color="#2a2a2d"/><stop offset="1" stop-color="#1a1a1c"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d4d4d8"/><stop offset="0.45" stop-color="#8a8a8f"/><stop offset="1" stop-color="#525256"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#58585c"/><stop offset="1" stop-color="#242427"/>
+    </linearGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c3c40"/><stop offset="1" stop-color="#0e0e10"/>
+    </linearGradient>
+    <linearGradient id="inhood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0c"/><stop offset="1" stop-color="#2c2c30"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.36" r="0.8">
+      <stop offset="0" stop-color="#55555b"/><stop offset="0.45" stop-color="#26262a"/><stop offset="1" stop-color="#08080a"/>
+    </radialGradient>
+    <radialGradient id="glassEdge" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.68" stop-color="#ccc" stop-opacity="0"/><stop offset="1" stop-color="#e0e0e0" stop-opacity="0.34"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="leather" width="5" height="5" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="0.65" fill="#0c0c0e" opacity="0.6"/><circle cx="3.7" cy="3.7" r="0.65" fill="#0c0c0e" opacity="0.6"/>
+    </pattern>
+    <clipPath id="bodyClip"><rect x="46" y="160" width="508" height="190" rx="22"/></clipPath>
+  </defs>
+  <!-- проушины -->
+  <g stroke="#17171a" stroke-width="2.2" fill="url(#metal)">
+    <rect x="28" y="190" width="22" height="40" rx="8"/><rect x="550" y="190" width="22" height="40" rx="8"/>
+  </g>
+  <g fill="#17171a"><rect x="34" y="201" width="9" height="18" rx="4.5"/><rect x="557" y="201" width="9" height="18" rx="4.5"/></g>
+
+  <!-- низкая призма и башмак: объектив здесь главный -->
+  <path d="M216 168 L 226 112 C 228 104 234 100 244 100 L 356 100 C 366 100 372 104 374 112 L 384 168 Z"
+        fill="url(#plate)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M232 160 L 240 118 L 360 118 L 368 160" fill="none" stroke="#fff" stroke-width="2.2" opacity="0.2" stroke-linejoin="round"/>
+  <rect x="262" y="82" width="76" height="18" rx="4" fill="url(#metal)" stroke="#17171a" stroke-width="1.7"/>
+  <rect x="272" y="88" width="56" height="5" rx="2" fill="#17171a" opacity="0.6"/>
+  <rect x="268" y="124" width="64" height="18" rx="6" fill="#0b0b0d" stroke="#17171a" stroke-width="1.7"/>
+  <path d="M278 133h14M298 133h6M310 133h14" stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- плечи: слева диск режимов, справа спуск -->
+  <path d="M52 176 C 52 150 66 140 88 140 L 216 140 L 216 176 Z" fill="url(#plate)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <rect x="78" y="116" width="86" height="30" rx="8" fill="url(#dark)" stroke="#17171a" stroke-width="2"/>
+  <g stroke="#f2f2f2" stroke-width="1.8" opacity="0.85"><path d="M88 120v22M96 120v22M104 120v22M112 120v22M120 120v22M128 120v22M136 120v22M144 120v22M152 120v22"/></g>
+  <rect x="82" y="119" width="78" height="5" rx="2.5" fill="#fff" opacity="0.2"/>
+  <path d="M384 176 L 384 140 L 512 140 C 534 140 548 150 548 176 Z" fill="url(#plate)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <ellipse cx="450" cy="132" rx="30" ry="9" fill="#17171a" opacity="0.4"/>
+  <rect x="418" y="114" width="64" height="28" rx="14" fill="url(#metal)" stroke="#17171a" stroke-width="2.2"/>
+  <rect x="427" y="119" width="46" height="18" rx="9" fill="url(#dark)" stroke="#17171a" stroke-width="1.4"/>
+  <ellipse cx="450" cy="122" rx="15" ry="3.2" fill="#fff" opacity="0.45"/>
+  <circle cx="508" cy="158" r="8" fill="url(#dark)" stroke="#17171a" stroke-width="1.7"/><circle cx="508" cy="158" r="3" fill="#f2f2f2" opacity="0.9"/>
+  <rect x="398" y="150" width="0" height="0"/>
+
+  <!-- корпус: приземистый и широкий -->
+  <rect x="46" y="160" width="508" height="190" rx="22" fill="url(#body)" stroke="#17171a" stroke-width="2.6"/>
+  <rect x="46" y="176" width="508" height="174" fill="url(#leather)" clip-path="url(#bodyClip)"/>
+  <path d="M68 180 L 532 180" stroke="#fff" stroke-width="2.4" opacity="0.2" stroke-linecap="round"/>
+  <rect x="46" y="324" width="508" height="26" fill="#0a0a0c" opacity="0.3" clip-path="url(#bodyClip)"/>
+  <!-- рукоятка слева -->
+  <path d="M46 182 C 46 172 54 166 66 166 L 132 166 C 142 188 146 224 146 256 C 146 292 142 322 132 350 L 66 350 C 54 350 46 344 46 332 Z"
+        fill="url(#grip)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M50 192 C 50 230 50 290 52 330" stroke="#fff" stroke-width="3" opacity="0.2" fill="none" stroke-linecap="round"/>
+  <g stroke="#0a0a0c" stroke-width="3" opacity="0.5" clip-path="url(#bodyClip)"><path d="M58 262h86M58 276h86M58 290h86M58 304h86"/></g>
+  <circle cx="102" cy="206" r="16" fill="url(#dark)" stroke="#17171a" stroke-width="2"/>
+  <g stroke="#f2f2f2" stroke-width="1.6" opacity="0.8"><path d="M102 195v5M102 212v5M91 206h5M108 206h5"/></g>
+  <circle cx="102" cy="206" r="4" fill="#f2f2f2" opacity="0.85"/>
+  <!-- правый край -->
+  <circle cx="514" cy="210" r="11" fill="url(#dark)" stroke="#17171a" stroke-width="1.7"/><rect x="508" y="208" width="12" height="4" rx="2" fill="#f2f2f2" opacity="0.85"/>
+  <rect x="490" y="250" width="50" height="16" rx="8" fill="#161618" stroke="#17171a" stroke-width="1.7"/>
+  <g fill="#0a0a0c" opacity="0.8"><circle cx="510" cy="296" r="2.4"/><circle cx="522" cy="296" r="2.4"/><circle cx="510" cy="308" r="2.4"/><circle cx="522" cy="308" r="2.4"/></g>
+
+  <!-- лапка штатива под объективом -->
+  <path d="M236 372 L 244 408 C 245 414 250 418 258 418 L 342 418 C 350 418 355 414 356 408 L 364 372 Z"
+        fill="url(#plate)" stroke="#17171a" stroke-width="2.6" stroke-linejoin="round"/>
+  <rect x="268" y="398" width="64" height="10" rx="5" fill="#0b0b0d" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="300" cy="403" r="3" fill="#f2f2f2" opacity="0.85"/>
+
+  <!-- ===== ДЛИННЫЙ ОБЪЕКТИВ: центр (300, 252), радиус 134 ===== -->
+  <!-- опорное кольцо с белой меткой -->
+  <circle cx="300" cy="252" r="134" fill="url(#metal)" stroke="#17171a" stroke-width="2.6"/>
+  <circle cx="300" cy="252" r="126" fill="none" stroke="#17171a" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="300" cy="252" r="120" fill="url(#hood)" stroke="#17171a" stroke-width="2.6"/>
+  <circle cx="300" cy="252" r="120" fill="none" stroke="#fff" stroke-width="2" opacity="0.14"/>
+  <!-- четыре лепестка бленды по диагоналям (светлые срезы кромки) -->
+  <g fill="none" stroke="#9a9aa0" stroke-width="3" stroke-linecap="round" opacity="0.7">
+    <path d="M214 166 A 120 120 0 0 1 240 144"/><path d="M360 144 A 120 120 0 0 1 386 166"/>
+    <path d="M214 338 A 120 120 0 0 0 240 360"/><path d="M360 360 A 120 120 0 0 0 386 338"/>
+  </g>
+  <g fill="#17171a" opacity="0.9">
+    <path d="M268 136 Q 300 128 332 136 Q 300 144 268 136 Z"/><path d="M268 368 Q 300 376 332 368 Q 300 360 268 368 Z"/>
+    <path d="M180 220 Q 172 252 180 284 Q 188 252 180 220 Z"/><path d="M420 220 Q 428 252 420 284 Q 412 252 420 220 Z"/>
+  </g>
+  <circle cx="300" cy="252" r="106" fill="url(#inhood)" stroke="#17171a" stroke-width="2.2"/>
+  <circle cx="300" cy="252" r="106" fill="none" stroke="#fff" stroke-width="1.6" opacity="0.1"/>
+  <!-- кольцо фокуса с широкой насечкой -->
+  <circle cx="300" cy="252" r="88" fill="none" stroke="#0a0a0c" stroke-width="18"/>
+  <circle cx="300" cy="252" r="88" fill="none" stroke="#77777c" stroke-width="18" stroke-dasharray="3 5.2" opacity="0.7"/>
+  <circle cx="300" cy="252" r="97" fill="none" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="300" cy="252" r="79" fill="none" stroke="#17171a" stroke-width="1.7"/>
+  <!-- белые метки: сверху ромб, по бокам риски -->
+  <path d="M300 152l5 6l-5 6l-5 -6z" fill="#f2f2f2"/>
+  <g stroke="#f2f2f2" stroke-width="2.4" stroke-linecap="round" opacity="0.9">
+    <path d="M198 252h10"/><path d="M392 252h10"/><path d="M228 182l7 7"/><path d="M372 182l-7 7"/>
+  </g>
+  <!-- светлая оправа и стекло -->
+  <circle cx="300" cy="252" r="70" fill="#0c0c0e" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="300" cy="252" r="63" fill="none" stroke="#e4e4e6" stroke-width="3" opacity="0.88"/>
+  <circle cx="300" cy="252" r="56" fill="url(#glass)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="300" cy="252" r="56" fill="url(#glassEdge)"/>
+  <circle cx="300" cy="252" r="38" fill="none" stroke="#c8c8cc" stroke-width="1.3" opacity="0.28"/>
+  <circle cx="300" cy="252" r="22" fill="none" stroke="#c8c8cc" stroke-width="1.2" opacity="0.28"/>
+  <circle cx="300" cy="252" r="9" fill="#050506" stroke="#bdbdc2" stroke-width="1.1" opacity="0.7"/>
+  <path d="M254 226 C 262 204 288 192 314 196 C 292 203 274 217 264 238 Z" fill="url(#shine)"/>
+  <circle cx="338" cy="284" r="8" fill="#fff" opacity="0.5"/>
+  <circle cx="326" cy="295" r="3.4" fill="#fff" opacity="0.75"/>
+</svg>
