@@ -107,6 +107,18 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(4000);
   const q2 = await page.evaluate(() => ({ fly: GreedLux._bot.fly, n: GreedLux._bot.coins.length }));
   ok(q2.fly === 0 && q2.n === 0, `все влетели: в полёте ${q2.fly}, монет ${q2.n}`);
+  // свет канта: три выигрыша внахлёст в трёх играх — события всех трёх живы
+  // и через 1,2 с (новое не сбрасывает идущие), слой рисует; без событий — пусто
+  const kq = await page.evaluate(async () => {
+    const L = GreedLux; await L._kantP; if (!L._kgl) return null;
+    L._kEv = []; const t = performance.now();
+    L.kantPulse('wheel', 3); L.kantPulse('slots', 2); L.kantPulse('pachinko', 1);
+    const n0 = L._kEv.length;
+    await new Promise(r => setTimeout(r, 1200));
+    const g = new Set(L._kEv.map(e => e.game)), n1 = L._kEv.length;
+    return { n0, n1, g: [...g].sort().join(','), max: L.KANT.max };
+  });
+  ok(kq && kq.n0 <= kq.max && kq.g === 'pachinko,slots,wheel', kq ? `кант внахлёст: событий ${kq.n0}/${kq.max}, через 1,2 с живы ${kq.g} (${kq.n1})` : 'кант: нет WebGL-слоя');
   // вид 1 ↔ 2 на месте
   await page.evaluate(() => { DebugMode.enabled = true; return GreedDebug.run('skin'); });
   await page.waitForFunction(() => GreedMinigame.M === GreedJunkLit && GreedJunkLit.lever, null, { timeout: 30000, polling: 300 }).catch(() => {});

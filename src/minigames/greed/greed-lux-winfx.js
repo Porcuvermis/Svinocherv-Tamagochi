@@ -20,18 +20,7 @@ Object.assign(GreedLux, {
         // значки линии бандита: прыгают по очереди слева направо (t0, шаг,
         // длина прыжка); amp — насколько вырастают по ступеням; shake —
         // сколько вздрагивает аппарат (единицы корпуса)
-        pop: { t0: 120, gap: 150, ms: 420, amp: [0, 0.9, 1.15, 1.4], shake: [0, 0, 1.6, 3.2] },
-        // Верх и бока канта закрыты рамкой из монет (окно мини-игры) — огни
-        // стартуют с видимых горизонталей между поясами (from в kantStart).
-        // Кант-маркиза (план 31, разд. 0 и 5а, этап 6): золотая линия трёх
-        // поясов корпуса (machine.py: T1–T3, линия — отступ 5). Огни бегут
-        // по ней по ступени выплаты: возврат ставки — тихо (без огней);
-        // мелкий — две кометы от игры по её поясу; средний — два круга и
-        // вспышки соседних поясов; крупный — весь кант маркизой.
-        kant: {
-            rings: [[9, -50, 351, 287, 29], [11, 301, 349, 493, 25], [11, 507, 349, 629, 25]],
-            step: 7, ms: [0, 1500, 2300, 3400], tail: 0.16, bulb: 9.5
-        }
+        pop: { t0: 120, gap: 150, ms: 420, amp: [0, 0.9, 1.15, 1.4], shake: [0, 0, 1.6, 3.2] }
     },
 
     // ---------- ступени ----------
@@ -42,7 +31,7 @@ Object.assign(GreedLux, {
     },
     winFxLive(now) {
         const F = this.WINFX, a = this._wheelWin, b = this._slotWin;
-        return !!((a && now - a.at < F.wheelMs[a.tier]) || (b && now - b.at < F.slotMs[b.tier]) || this._kant);
+        return !!((a && now - a.at < F.wheelMs[a.tier]) || (b && now - b.at < F.slotMs[b.tier]));
     },
 
     // ---------- общее ----------
@@ -79,7 +68,6 @@ Object.assign(GreedLux, {
             const W = this._slotWin, u = (now - W.at) / F.slotMs[W.tier];
             if (u >= 1) this._slotWin = null; else this.slotFrameDraw(g, W, u);
         }
-        if (this._kant) this.kantDraw(g, now);
         g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     },
     wheelWinDraw(g, Wn, u) {
@@ -173,66 +161,6 @@ Object.assign(GreedLux, {
         }
         // средний и крупный: искры вылетают из экрана на корпус
         if (T >= 2) this.winSparks(g, mx, Y0 + 8 * S, 8 * T, u * F.slotMs[T] / 1000, S, -Math.PI / 2, 2.8, T + 11);
-    },
-
-    // ---------- кант-маркиза ----------
-    // Точки линии канта с шагом step: [x, y] и доля пути s (0..1) по кругу.
-    kantRing(i) {
-        const C = this._kantC || (this._kantC = []);
-        if (C[i]) return C[i];
-        const K = this.WINFX.kant, [x0, y0, x1, y1, r] = K.rings[i], w = x1 - x0 - 2 * r, h = y1 - y0 - 2 * r;
-        const segs = [['l', x0 + r, y0, w, 0], ['a', x1 - r, y0 + r, -Math.PI / 2], ['l', x1, y0 + r, 0, h], ['a', x1 - r, y1 - r, 0],
-            ['l', x1 - r, y1, -w, 0], ['a', x0 + r, y1 - r, Math.PI / 2], ['l', x0, y1 - r, 0, -h], ['a', x0 + r, y0 + r, Math.PI]];
-        const len = 2 * (w + h) + 2 * Math.PI * r, n = Math.round(len / K.step), out = [];
-        for (let k = 0; k < n; k++) {
-            let d = k / n * len, pt = null;
-            for (const g of segs) {
-                const L = g[0] === 'l' ? Math.hypot(g[3], g[4]) : Math.PI * r / 2;
-                if (d <= L) { pt = g[0] === 'l' ? [g[1] + g[3] * d / (L || 1), g[2] + g[4] * d / (L || 1)] : [g[1] + Math.cos(g[3] + d / r) * r, g[2] + Math.sin(g[3] + d / r) * r]; break; }
-                d -= L;
-            }
-            out.push([pt[0], pt[1], k / n]);
-        }
-        return (C[i] = out);
-    },
-    // Огни: ступень tier, пояс home (0 — верх: колесо и пачинко, 1 — бандит),
-    // from — откуда бегут (ближайшая точка канта к игре).
-    kantStart(tier, home, from) {
-        if (!tier) return;
-        const P = this.kantRing(home);
-        let best = 0, bd = 1e9;
-        P.forEach((q, k) => { const d = Math.hypot(q[0] - from[0], q[1] - from[1]); if (d < bd) { bd = d; best = k; } });
-        this._kant = { at: performance.now(), tier, home, s0: P[best][2] };
-        this._iconsDirty = true;
-    },
-    kantDraw(g, now) {
-        const W = this._kant, K = this.WINFX.kant, S = this.S, spr = this.pachGlowSprite(), sr = K.bulb * S;
-        const dur = K.ms[W.tier], u = (now - W.at) / dur;
-        if (u >= 1) { this._kant = null; return; }
-        const fade = u < 0.05 ? u / 0.05 : u > 0.8 ? (1 - u) / 0.2 : 1;
-        const bulb = (q, a) => { if (a > 0.02) { g.globalAlpha = Math.min(1, a); g.drawImage(spr, q[0] * S - sr, (q[1] - this.Y0) * S - sr, 2 * sr, 2 * sr); } };
-        // кометы: две головы от s0 в разные стороны, laps кругов за показ
-        const comets = (i, laps, a) => {
-            const head = (u * laps * 1.0) % 1, cd = (x) => ((x % 1) + 1) % 1;
-            this.kantRing(i).forEach(q => {
-                const d1 = cd(W.s0 + head - q[2]), d2 = cd(q[2] - (W.s0 - head));
-                const m = Math.max(d1 < K.tail ? 1 - d1 / K.tail : 0, d2 < K.tail ? 1 - d2 / K.tail : 0);
-                bulb(q, m * m * a * fade);
-            });
-        };
-        if (W.tier === 1) comets(W.home, 0.5, 1);
-        else if (W.tier === 2) {
-            comets(W.home, 1.2, 1);
-            const fl = Math.max(0, Math.sin(u * Math.PI * 4)) * (1 - u);
-            [0, 1, 2].forEach(i => { if (i !== W.home) this.kantRing(i).forEach((q, k) => bulb(q, fl * (k % 2 ? 0.35 : 0.8))); });
-        } else {
-            // весь кант: сначала три общие вспышки, потом маркиза — каждый
-            // третий огонь горит, шаг бегом, — и кометы по своему поясу
-            const ph = Math.floor((now - W.at) / 70);
-            const bl = u < 0.25 ? Math.max(0, Math.sin(u / 0.25 * Math.PI * 3)) : 0;
-            [0, 1, 2].forEach(i => this.kantRing(i).forEach((q, k) => bulb(q, fade * Math.max(bl, (k + ph + i) % 3 === 0 ? 0.85 : 0.12))));
-            comets(W.home, 2, 0.9);
-        }
     },
 
     // ---------- значки линии бандита ----------
@@ -370,7 +298,7 @@ Object.assign(GreedLux, {
 // Ступени — вместе со всплывашкой; рамка бандита — вместе с его ступенью.
 (function () {
     const pop = GreedLux.winPop;
-    // возврат ставки: только монеты и не больше цены запуска — кант молчит
+    // возврат ставки: только монеты и не больше цены запуска — кант лишь теплеет
     const isReturn = (res) => {
         const cur = (res && res.currencies) || {}, ks = Object.keys(cur).filter(k => cur[k] > 0);
         if (ks.some(k => k !== 'gold')) return false;
@@ -384,8 +312,8 @@ Object.assign(GreedLux, {
         const r = pop ? pop.apply(this, arguments) : undefined;
         if (game === 'slots' && this._ledWin && performance.now() - this._ledWin.at < 50) {
             this._slotWin = { tier: this._ledWin.tier, at: this._ledWin.at, mask: this._ledWin.mask }; this._iconsDirty = true;
-            // кант: возврат ставки (пара монет, выплата = цене) — тихо
-            if (!isReturn(res)) this.kantStart(this._ledWin.tier, 1, [190, 493]);
+            // кант: возврат ставки (пара монет, выплата = цене) — только вдох
+            if (this.kantPulse) this.kantPulse('slots', isReturn(res) ? 0 : this._ledWin.tier);
         }
         return r;
     };
@@ -394,14 +322,14 @@ Object.assign(GreedLux, {
         if (!blink.call(this, now)) return false;
         const T = Math.max(1, this._wheelTier || 1);
         this._wheelWin = { at: now, tier: T, i: this._deck.target };
-        if (!(this._kantRet && this._kantRet.wheel)) this.kantStart(T, 0, [100, 287]);
+        if (this.kantPulse) this.kantPulse('wheel', this._kantRet && this._kantRet.wheel ? 0 : T);
         if (T > 1 && typeof Haptics !== 'undefined') Haptics.burst(T === 3 ? 'heavy' : 'medium', T === 3 ? 3 : 2, 100, 'success');
         return true;
     };
     const pblink = GreedLux.pachBlink;
     GreedLux.pachBlink = function (now) {
         if (!pblink.call(this, now)) return false;
-        if (this._pachWin && !(this._kantRet && this._kantRet.pachinko)) this.kantStart(this._pachWin.tier, 0, [273, 287]);
+        if (this._pachWin && this.kantPulse) this.kantPulse('pachinko', this._kantRet && this._kantRet.pachinko ? 0 : this._pachWin.tier);
         return true;
     };
     const step = GreedLux.iconsStep, draw = GreedLux.drawIcons;

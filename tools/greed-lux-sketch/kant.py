@@ -22,12 +22,31 @@ from PIL import Image
 T1, T2, T3 = (4, -55, 356, 292, 34), (6, 296, 354, 498, 30), (6, 502, 354, 634, 30)
 RINGS = [(t[0] + 5, t[1] + 5, t[2] - 5, t[3] - 5, t[4] - 5) for t in (T1, T2, T3)]
 X0, Y0, FW, FH = 0, -57, 360, 696
+PIL_L = (30, 300, 78, 604, 24)   # столб колбы, как в machine.py
 REACH = 16.0          # дальше — света канта нет
+VW = 8.0              # окно видимости вдоль жилки, ед.
 HK = 3.0              # жилка «над» поверхностью: откуда приходит её свет на лак
 
 def ring_len(rg):
     x0, y0, x1, y1, r = rg
     return 2 * ((x1 - x0 - 2 * r) + (y1 - y0 - 2 * r)) + 2 * math.pi * r
+
+def ring_point(rg, t):
+    """Точка контура на расстоянии t по часовой от (x0 + r, y0)."""
+    x0, y0, x1, y1, r = rg
+    w, h, q = x1 - x0 - 2 * r, y1 - y0 - 2 * r, math.pi * r / 2
+    t = np.asarray(t, np.float64); x = np.zeros_like(t); y = np.zeros_like(t)
+    edges = np.cumsum([0, w, q, h, q, w, q, h, q])
+    for j in range(8):
+        m = (t >= edges[j]) & (t < edges[j + 1]); d = t - edges[j]
+        if j == 0: x[m], y[m] = x0 + r + d[m], y0
+        elif j == 2: x[m], y[m] = x1, y0 + r + d[m]
+        elif j == 4: x[m], y[m] = x1 - r - d[m], y1
+        elif j == 6: x[m], y[m] = x0, y1 - r - d[m]
+        else:
+            cx, cy, a0 = {1: (x1 - r, y0 + r, -math.pi / 2), 3: (x1 - r, y1 - r, 0), 5: (x0 + r, y1 - r, math.pi / 2), 7: (x0 + r, y0 + r, math.pi)}[j]
+            a = a0 + d[m] / r; x[m], y[m] = cx + np.cos(a) * r, cy + np.sin(a) * r
+    return x, y
 
 def nearest(rg, X, Y):
     """Ближайшая точка контура скруглённого прямоугольника: расстояние и s."""
@@ -79,20 +98,41 @@ def main(lux):
     h = (H[..., 0] * 256 + H[..., 1]) / 65535 * 64          # как в шейдере корпуса
     ys, xs = np.mgrid[0:hh, 0:ww]
     X = X0 + (xs + 0.5) / S; Y = Y0 + (ys + 0.5) / S
+    # Видна ли жилка: там, где на её линии есть золото. Где кант закрыт
+    # другой деталью (шейка колбы на стыке поясов), он не светит. Первая
+    # проверка была «да/нет» по ближайшей точке — свет над шейкой обрывался
+    # тёмным квадратом с отвесными краями, хотя соседние видимые участки
+    # жилки освещали бы это место. Теперь видимость — доля открытой жилки в
+    # окне ±VW ед. вдоль кольца: заслон даёт мягкую тень, а не дыру.
+    goldm = (M[..., 2] > 0.5).astype(np.float64)
+    gm = np.maximum.reduce([np.roll(np.roll(goldm, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
     D = np.full(X.shape, 1e9); RING = np.full(X.shape, -1); SS = np.zeros(X.shape)
     for i, rg in enumerate(RINGS):
         d, s, px, py = nearest(rg, X, Y)
         m = d < D
         D = np.where(m, d, D); RING = np.where(m, i, RING); SS = np.where(m, s, SS)
-        PXN = np.where(m, px, PXN) if i else px; PYN = np.where(m, py, PYN) if i else py
-    # Видна ли жилка в ближайшей точке: там должно быть золото. Где кант
-    # закрыт другой деталью (столб колбы на стыке поясов), свет не идёт:
-    # иначе он ложился поверх колбы.
-    goldm = (M[..., 2] > 0.5).astype(np.float64)
-    gm = np.maximum.reduce([np.roll(np.roll(goldm, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
-    ix = np.clip(((PXN - X0) * S).astype(int), 0, ww - 1); iy = np.clip(((PYN - Y0) * S).astype(int), 0, hh - 1)
-    vis = gm[iy, ix] > 0.5
-    near = (D < REACH) & vis
+    VIS = np.zeros(X.shape)
+    for i, rg in enumerate(RINGS):
+        L = ring_len(rg); n = int(L * 2)
+        qx, qy = ring_point(rg, np.arange(n) / n * L)
+        ix = np.clip(((qx - X0) * S).astype(int), 0, ww - 1); iy = np.clip(((qy - Y0) * S).astype(int), 0, hh - 1)
+        v = (gm[iy, ix] > 0.5).astype(np.float64)
+        k = int(VW * 2); ker = np.ones(2 * k + 1) / (2 * k + 1)
+        vs = np.convolve(np.concatenate([v[-k:], v, v[:k]]), ker, 'valid')
+        m = RING == i
+        VIS = np.where(m, vs[np.clip((SS * n).astype(int), 0, n - 1)], VIS)
+    # где жилка скрыта, сердцевина и ореол гаснут: видимость «отодвигает» точку
+    D = D + (1 - VIS) * 10
+    vis = VIS > 0.02
+    # Столб колбы (machine.py: PIL_L) стоит поверх канта целиком: его золотой
+    # обод проходил проверку выше, и на кадрах по ободу бежали блики — будто
+    # кант светит сквозь колбу. Столб вырезается по своей форме (скруглённый
+    # прямоугольник): прямой вырез оставлял на свету тёмные углы-«ступеньки».
+    px0, py0, px1, py1, pr = PIL_L
+    qx = np.abs(X - (px0 + px1) / 2) - ((px1 - px0) / 2 - pr)
+    qy = np.abs(Y - (py0 + py1) / 2) - ((py1 - py0) / 2 - pr)
+    pillar = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - pr < 0
+    near = (D < REACH) & vis & ~pillar
     # нормаль корпуса (как шейдер: шаг 2 текселя)
     gy, gx = np.gradient(h, 1 / S)
     N = np.dstack([-gx, -gy, np.ones_like(h)]); N /= np.linalg.norm(N, axis=2, keepdims=True)
@@ -105,9 +145,9 @@ def main(lux):
     fall = 1 / (1 + (D / 3.5) ** 2)
     gloss = 0.25 + 0.75 * M[..., 0]                          # лак глянцевый, мат — тусклее
     gold = M[..., 2] > 0.5
-    refl = np.where(near & ~gold, facing * fall * gloss * SH, 0)
+    refl = np.where(near & ~gold, facing * fall * gloss * SH * VIS, 0)
     slope = 1 - N[..., 2]
-    goldf = np.where(near & gold, np.exp(-D / 1.4) * (0.55 + 3.0 * slope) * (0.6 + 0.4 * SH), 0)
+    goldf = np.where(near & gold, np.exp(-D / 1.4) * (0.55 + 3.0 * slope) * (0.6 + 0.4 * SH) * VIS, 0)
     # кодирование
     u = np.where(near, np.clip((RING + SS) / 3, 0, 1 - 1e-6), 0)
     u16 = (u * 65535).astype(np.uint32)
