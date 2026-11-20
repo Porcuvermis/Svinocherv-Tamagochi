@@ -128,9 +128,9 @@
   <circle cx="300" cy="240" r="84" fill="none" stroke="#17171a" stroke-width="1.6" opacity="0.6"/>
   <path d="M232 176 C 252 156 290 148 326 154 C 292 160 262 172 242 194 Z" fill="#fff" opacity="0.12"/>
   <!-- крест: толстый белый с тёмной обводкой -->
-  <g fill="#17171a" stroke="#17171a" stroke-width="9" stroke-linejoin="round"><g transform="rotate(45 300 240)"><rect x="240" y="225" width="120" height="30" rx="8" /></g><g transform="rotate(-45 300 240)"><rect x="240" y="225" width="120" height="30" rx="8" /></g></g>
-  <g fill="url(#xwhite)"><g transform="rotate(45 300 240)"><rect x="240" y="225" width="120" height="30" rx="8" /></g><g transform="rotate(-45 300 240)"><rect x="240" y="225" width="120" height="30" rx="8" /></g></g>
+  <g fill="#17171a" stroke="#17171a" stroke-width="9" stroke-linejoin="round"><g transform="rotate(45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g><g transform="rotate(-45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g></g>
+  <g fill="url(#xwhite)"><g transform="rotate(45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g><g transform="rotate(-45 300 240)"><rect x="214" y="221" width="172" height="38" rx="10" /></g></g>
   <g fill="none" stroke="#fff" stroke-width="2" opacity="0.7" stroke-linecap="round">
-    <path d="M270 210 L 292 232"/><path d="M330 210 L 308 232"/>
+    <path d="M258 198 L 286 226"/><path d="M342 198 L 314 226"/>
   </g>
 </svg>
