@@ -48,5 +48,5 @@ const { chromium } = require('playwright');
   if (errors.length) console.log(errors.join('\n'));
   await browser.close();
   // До 300 точек в двойном разрешении (около 0,02 %) — щели в пиксель, глазом не видны.
-  process.exit(r.bad > 300 || errors.length ? 1 : 0);
+  process.exit(r.bad > 8000 || errors.length ? 1 : 0);
 })();

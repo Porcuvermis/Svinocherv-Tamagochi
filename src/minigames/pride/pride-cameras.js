@@ -23,14 +23,15 @@
 // ПЕРЕХОД (вспышки) — следующая задача плана; пока шкурка без `veil`, и окно
 // открывается и закрывается как раньше.
 const PrideCameras = {
-    // Бока 24 вместо 18 и верх/низ 71 вместо 59: камеры в 18 единицах не помещаются,
-    // пропорция верх : бок почти прежняя (3,0 против 3,3), окно уменьшается на 4 %.
-    rim: { side: 24, top: 71 },
+    // Бока 40 и верх/низ 71 (было 18 и 59): игрок хочет на боках камеры того же размера,
+    // что сверху и снизу (высота ~70); в 18–24 единицах они не помещались. Окно сцены
+    // уменьшается по ширине на 20 %.
+    rim: { side: 40, top: 71 },
     cross: { x: 336, y: 36, size: 60 },
     CORNER: 10,
     // Насколько камера МОЖЕТ выступать за кромку окна на сцену (единицы). Больше —
     // начинает закрывать кнопки сцены (слоты наряда на боках, счёт сверху).
-    PROT_SIDE: 22, PROT_TB: 14,
+    PROT_SIDE: 30, PROT_TB: 14,
     MAX_FILL: 8,         // сколько камер заделки дыр допускается всего (не «засыпать мелочью»)
     RADIAL: 0.65,        // доля радиального угла (остальное — осевой, «аккуратный»)
     TILT: 7,             // случайный разброс угла, градусы
@@ -206,14 +207,14 @@ const PrideCameras = {
             ...this.strip(R, { side: 'right', from: 10, to: STAGE_H - 10, depth: -14, thick: 120, step: 0.8, radial: 0.2 })
         );
         lay.back.push(
-            ...this.strip(R, { side: 'left', from: 40, to: STAGE_H - 40, depth: 0, thick: 110, step: 0.74, radial: 0.3 }),
-            ...this.strip(R, { side: 'right', from: 40, to: STAGE_H - 40, depth: 0, thick: 110, step: 0.74, radial: 0.3 }),
+            ...this.strip(R, { side: 'left', from: 40, to: STAGE_H - 40, depth: 0, thick: 120, step: 0.74, radial: 0.3 }),
+            ...this.strip(R, { side: 'right', from: 40, to: STAGE_H - 40, depth: 0, thick: 120, step: 0.74, radial: 0.3 }),
             ...this.strip(R, { side: 'top', from: -40, to: STAGE_W + 40, depth: 0, thick: 100, step: 0.8 }),
             ...this.strip(R, { side: 'bottom', from: -40, to: STAGE_W + 40, depth: 0, thick: 100, step: 0.8 })
         );
         lay.front.push(
-            ...this.strip(R, { side: 'left', from: 70, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 50, step: 1.2, minAspect: 1.3, radial: 0.4 }),
-            ...this.strip(R, { side: 'right', from: 90, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 50, step: 1.2, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'left', from: 70, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 70, step: 1.0, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'right', from: 90, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 70, step: 1.0, minAspect: 1.3, radial: 0.4 }),
             ...this.strip(R, { side: 'top', from: -10, to: stop + 20, whole: true, cut: 0.1, thick: 72, step: 0.98 }),
             ...this.strip(R, { side: 'bottom', from: -10, to: STAGE_W + 10, whole: true, cut: 0.1, thick: 72, step: 0.98 })
         );
