@@ -23,15 +23,16 @@
 // ПЕРЕХОД (вспышки) — следующая задача плана; пока шкурка без `veil`, и окно
 // открывается и закрывается как раньше.
 const PrideCameras = {
-    // Бока 40 и верх/низ 71 (было 18 и 59): игрок хочет на боках камеры того же размера,
-    // что сверху и снизу (высота ~70); в 18–24 единицах они не помещались. Окно сцены
-    // уменьшается по ширине на 20 %.
-    rim: { side: 40, top: 71 },
-    cross: { x: 336, y: 36, size: 60 },
+    // Окно уменьшается РАВНОМЕРНО (translate+scale), поэтому верх и низ равны только
+    // когда top = (844 − 800·k) / 2, где k = (390 − 2·side) / 390. Бока 30 → k = 0,846 →
+    // верх = низ = 83. Шире бока (40) дали низ 137 при верхе 71 — игрок велел верх = низу.
+    // Правило при смене side: пересчитать top по формуле.
+    rim: { side: 30, top: 83 },
+    cross: { x: 336, y: 42, size: 60 },
     CORNER: 10,
     // Насколько камера МОЖЕТ выступать за кромку окна на сцену (единицы). Больше —
     // начинает закрывать кнопки сцены (слоты наряда на боках, счёт сверху).
-    PROT_SIDE: 30, PROT_TB: 14,
+    PROT_SIDE: 32, PROT_TB: 14,
     MAX_FILL: 8,         // сколько камер заделки дыр допускается всего (не «засыпать мелочью»)
     RADIAL: 0.65,        // доля радиального угла (остальное — осевой, «аккуратный»)
     TILT: 7,             // случайный разброс угла, градусы
@@ -171,14 +172,19 @@ const PrideCameras = {
                 const y = horiz ? (o.side === 'top' ? dep : STAGE_H - dep) : u;
                 it = { id, x, y, rot: this.angle(x, y, axis, rnd, o.radial), s, w: M.w, h: M.h, len };
                 if (o.whole) {
-                    // внутренний край камеры — на кромке окна плюс выступ
-                    const b = this.bbox(it), edge = room + prot;
+                    // Внутренний край камеры — на кромке окна плюс выступ. Камера НЕ
+                    // уменьшается ради посадки (игрок: микрокамеры поверх больших —
+                    // это брак): если при повороте не влезает целиком, выступ на
+                    // сцену углубляется до предела, и только потом — чуть ужимается
+                    // (не ниже 88 % заказанной толщины).
+                    const b = this.bbox(it), ext = horiz ? b.ey : b.ex;
+                    const want = Math.max(room + prot, 2 * ext * (1 - (o.cut || 0)));
+                    const edge = Math.min(want, room + maxProt);
                     if (horiz) it.y = o.side === 'top' ? edge - b.ey : STAGE_H - edge + b.ey;
                     else it.x = o.side === 'left' ? edge - b.ex : STAGE_W - edge + b.ex;
                     const bb = this.bbox(it);
-                    // видна целиком: не выходит за край экрана
                     const out0 = horiz ? (o.side === 'top' ? bb.y0 : STAGE_H - bb.y1) : (o.side === 'left' ? bb.x0 : STAGE_W - bb.x1);
-                    if (out0 < -(o.cut || 0) * t) { t *= 0.94; continue; }
+                    if (out0 < -(o.cut || 0) * t && t > o.thick * 0.88) { t *= 0.97; continue; }
                 } else this.fit(it, [o.side]);
                 break;
             } while (++tries < 14);
@@ -209,14 +215,14 @@ const PrideCameras = {
         lay.back.push(
             ...this.strip(R, { side: 'left', from: 40, to: STAGE_H - 40, depth: 0, thick: 120, step: 0.74, radial: 0.3 }),
             ...this.strip(R, { side: 'right', from: 40, to: STAGE_H - 40, depth: 0, thick: 120, step: 0.74, radial: 0.3 }),
-            ...this.strip(R, { side: 'top', from: -40, to: STAGE_W + 40, depth: 0, thick: 100, step: 0.8 }),
-            ...this.strip(R, { side: 'bottom', from: -40, to: STAGE_W + 40, depth: 0, thick: 100, step: 0.8 })
+            ...this.strip(R, { side: 'top', from: -40, to: STAGE_W + 40, depth: 0, thick: 112, step: 0.8 }),
+            ...this.strip(R, { side: 'bottom', from: -40, to: STAGE_W + 40, depth: 0, thick: 112, step: 0.8 })
         );
         lay.front.push(
-            ...this.strip(R, { side: 'left', from: 70, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 70, step: 1.0, minAspect: 1.3, radial: 0.4 }),
-            ...this.strip(R, { side: 'right', from: 90, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 70, step: 1.0, minAspect: 1.3, radial: 0.4 }),
-            ...this.strip(R, { side: 'top', from: -10, to: stop + 20, whole: true, cut: 0.1, thick: 72, step: 0.98 }),
-            ...this.strip(R, { side: 'bottom', from: -10, to: STAGE_W + 10, whole: true, cut: 0.1, thick: 72, step: 0.98 })
+            ...this.strip(R, { side: 'left', from: 70, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 62, step: 1.0, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'right', from: 90, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 62, step: 1.0, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'top', from: -10, to: stop + 20, whole: true, cut: 0.1, thick: 80, step: 0.98 }),
+            ...this.strip(R, { side: 'bottom', from: -10, to: STAGE_W + 10, whole: true, cut: 0.1, thick: 80, step: 0.98 })
         );
         this._lay = lay;
         this.fillHoles(lay);
@@ -247,8 +253,8 @@ const PrideCameras = {
     putCross(g) {
         // Камера стоит прямо (крестик читается только так); крышка объектива чуть
         // ниже середины камеры, поэтому центр камеры выше зоны нажатия.
-        const h = 62, c = this.cross;
-        this.put(g, { id: 'cross', x: c.x, y: c.y - 5, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h }, true);
+        const h = 72, c = this.cross;
+        this.put(g, { id: 'cross', x: c.x, y: c.y - 6, rot: 0, s: h / this.CROSS.h, w: this.CROSS.w, h: this.CROSS.h }, true);
     },
     // ---------- ДЫРЫ ----------
     // Игрок: в рамке не должно быть дыр. Случайная раскладка их оставляет там,
