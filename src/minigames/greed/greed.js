@@ -156,6 +156,7 @@ const GreedMinigame = {
         // заготовки покупок — по этому заходу: память назад
         if (this.M && this.M.growDrop) this.M.growDrop();
         if (typeof GreedLux !== 'undefined' && GreedLux.prepDrop) GreedLux.prepDrop();
+        if (typeof GreedLux !== 'undefined' && GreedLux.castAbort) GreedLux.castAbort();
         if (this.screenElement) this.screenElement.classList.remove('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.resumeRoom();
     },

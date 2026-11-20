@@ -159,9 +159,11 @@ Object.assign(GreedJarShop, {
         P.fill = this.pourFill(t);
         if (t >= Q.toPig) {
             const pig = (typeof GreedLux !== 'undefined' && GreedLux.meta && GreedLux.meta.live.pig) || [262, 530, 338, 616];
-            const tx = (pig[0] + pig[2]) / 2, ty = (pig[1] + pig[3]) / 2 - 8;
+            // зависает НАД копилкой (садилась перед ней — читалось «стоит
+            // спереди», кадр 20.11) и уходит вниз сквозь верх её стекла
+            const tx = (pig[0] + pig[2]) / 2, ty = pig[1] - Q.pigK * 0.5 - 4;
             const u = inOut(cl((t - Q.toPig) / Q.pigFly)), b = Math.sin(u * Math.PI), s = cl((t - Q.toPig - Q.pigFly) / Q.sink);
-            P.x = px + (tx - px) * u + 18 * b; P.y = py + (ty - py) * u - 30 * b + 70 * s * s;
+            P.x = px + (tx - px) * u + 18 * b; P.y = py + (ty - py) * u - 30 * b + (Q.pigK + 12) * s * s;
             P.k = Q.k * Math.pow(Q.pigK / Q.k, u); P.roll = Q.roll * (1 - u) + 8 * b;
             // за стекло: всё, что ниже верха копилки, срезается
             P.clipY = s > 0 ? pig[1] + 3 : null;

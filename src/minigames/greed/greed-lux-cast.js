@@ -214,10 +214,15 @@ Object.assign(GreedLux, {
         return cv;
     },
 
+    // Холст и программа собираются заранее — вместе с заготовкой версии 2
+    // (snap = null: холст скрыт); в миг покупки только заливается стоп-кадр
+    // (castCanvasSnap). Замер (×4): сборка жара и этого холста в миг покупки
+    // — ~0,7 с стоп-кадра, пока горит узел.
     castCanvas(snap) {
-        const cv = document.createElement('canvas');
-        cv.width = snap.width; cv.height = snap.height;
+        const cv = document.createElement('canvas'), S = this.S || 2;
+        cv.width = Math.round(this.W * S); cv.height = Math.round(this.H * S);
         cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:5;background:none;pointer-events:none';
+        if (!snap) cv.style.display = 'none';
         this.wrapEl.appendChild(cv);
         const gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
         if (!gl) { cv.remove(); return null; }
@@ -243,8 +248,12 @@ Object.assign(GreedLux, {
             float rbox(vec2 p, vec4 R, float r){ vec2 c = (R.xy + R.zw) * 0.5, h = (R.zw - R.xy) * 0.5 - r, q = abs(p - c) - h; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
             // выключенный экран — тёмное стекло; вид 1 — развёртка: точка
             // растёт в линию, линия раскрывается в кадр; вид 2 — арка (поле пачинко)
-            vec4 screens(vec2 P){
+            vec4 screens(vec2 P, float dt){
                 vec4 o = vec4(0.0);
+                // тёмное стекло отражает жар литого и остывает с ним: без
+                // этого выключенные колесо и поле пачинко на раскалённом
+                // корпусе читались чёрными дырами (кадр 20.11)
+                vec3 glass = mix(uGlass, uEmber * 1.6, 0.55 * exp(-max(dt, 0.0) / 700.0));
                 for (int i = 0; i < 6; i++) {
                     vec4 R = uOv[i], Q = uOp[i];
                     if (Q.y <= 0.0) continue;
@@ -260,7 +269,7 @@ Object.assign(GreedLux, {
                         ln = (1.0 - smoothstep(0.0, 1.3, abs(abs(P.y - yc) - oh))) * step(abs(P.x - xc), lw) * (1.0 - clamp((p - 0.8) / 0.2, 0.0, 1.0));
                     }
                     float A = max(a, ln);
-                    if (A > o.a) o = vec4(uGlass * a * (1.0 - ln) + uScan * ln, A);
+                    if (A > o.a) o = vec4(glass * a * (1.0 - ln) + uScan * ln, A);
                 }
                 return o;
             }
@@ -270,7 +279,7 @@ Object.assign(GreedLux, {
                 // мениск дышит мелкой волной поверх формулы прохода
                 float dd = (uT - castPass(P.x, P.y)) * uCV.z;
                 dd += 0.9 * sin(P.x / 5.3 + uT / 190.0) + 0.6 * sin(P.x / 2.7 - uT / 120.0);
-                if (dd >= uB.x * 1.6) { gl_FragColor = screens(P); return; }
+                if (dd >= uB.x * 1.6) { gl_FragColor = screens(P, dd / uCV.z); return; }
                 if (dd < 0.0) {
                     // гаражный: марево (строки качаются) и обугливание с отсветом жара
                     float near = 1.0 - smoothstep(0.0, uB.w, -dd);
@@ -291,7 +300,7 @@ Object.assign(GreedLux, {
                 // по самому краю — тонкая светлая кромка; узор течения —
                 // вытянутые вниз струйки.
                 float Bw = uB.x * (1.0 + 0.6 * castDripG(P.x));
-                if (dd >= Bw) { gl_FragColor = screens(P); return; }
+                if (dd >= Bw) { gl_FragColor = screens(P, dd / uCV.z); return; }
                 float u = dd / Bw;
                 float n = vnoise(vec2(P.x / 2.4, (P.y - uT * 0.11) / 7.0)) * 0.65 + vnoise(vec2(P.x / 5.5, (P.y - uT * 0.07) / 3.0)) * 0.35;
                 vec3 c = mix(uHoney, uMol, smoothstep(0.02, 0.45, u) * (0.75 + 0.35 * n));
@@ -302,7 +311,7 @@ Object.assign(GreedLux, {
                 c *= 0.78 + 0.22 * smoothstep(0.0, 0.25, u);
                 // хвост растушёван: под ним проступает раскалённый литой
                 float a = 1.0 - smoothstep(Bw - uB.y, Bw, dd);
-                vec4 sc = screens(P);
+                vec4 sc = screens(P, dd / uCV.z);
                 gl_FragColor = vec4(c * a, a) + sc * (1.0 - a);
             }`));
         gl.linkProgram(p);
@@ -313,7 +322,8 @@ Object.assign(GreedLux, {
         const loc = gl.getAttribLocation(p, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
         const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, t);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, snap);
+        if (snap) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, snap);
+        else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
         [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR));
         [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
         const U = (n) => gl.getUniformLocation(p, n), P = PALETTE.greedLux, vec = (x) => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16) / 255);
@@ -327,6 +337,16 @@ Object.assign(GreedLux, {
         gl.uniform3fv(U('uGlass'), vec(P.led.back)); gl.uniform3fv(U('uScan'), vec(P.scan));
         this._castC = { cv, gl, uT: U('uT'), tex: t, uOv: U('uOv'), uOp: U('uOp') };
         return this._castC;
+    },
+    castCanvasSnap(snap) {
+        const C = this._castC;
+        if (!C) return this.castCanvas(snap);
+        const gl = C.gl;
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, C.tex);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, snap);
+        C.cv.style.display = '';
+        return C;
     },
     castDraw(now) {
         const C = this._castC;
@@ -359,11 +379,19 @@ Object.assign(GreedLux, {
 
     async castRun() {
         const J = GreedJarShop, L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement, opts = L._opts;
-        if (!host || this._cast) return;
+        if (!host || this._cast || this._castWait) return;
+        const G = GreedMinigame, gen = G.spinGeneration;
+        this._castWait = true;
         try {
             await (this._prep ? this._mountP : this.prepare(host));
             await this.castHeatInit();
+            // идёт выплата (монеты летят, барабаны крутятся) — банка ждёт с
+            // расплавом; литьё — когда игры свободны (не дольше 10 с)
+            for (let i = 0; i < 100 && G.busy(); i++) await new Promise(r => setTimeout(r, 100));
         } catch (e) { console.warn('[литьё]', e); }
+        this._castWait = false;
+        // окно закрыли, пока ждали, — литья нет: версия 2 встанет при входе
+        if (G.spinGeneration !== gen) return;
         if (!this.gl || !L.wrapEl) {
             // нет заготовки — по-старому: закрыть банку и пересобрать
             J.busy = false; J.close();
@@ -372,11 +400,12 @@ Object.assign(GreedLux, {
         }
         const snap = this.castSnapshot();
         GreedDebug.junkDrop();
-        const G = GreedMinigame;
         G.M = this; G.play = { slots: null, wheel: null, pachinko: null };
+        this._castPending = true;
         await this.prepTake(host, opts);
+        this._castPending = false;
         if (this.meterSet && this.meterValue) this.meterSet(this.meterValue());
-        if (!this.castCanvas(snap)) { this.castEnd(); return; }
+        if (!this.castCanvasSnap(snap)) { this.castEnd(); return; }
         // палец — не в аппарат, пока льётся
         const cv = this._castC.cv;
         cv.style.pointerEvents = 'auto';
@@ -411,7 +440,9 @@ Object.assign(GreedLux, {
         const t = (now - c.start) / this.castSlow();
         if (t > this.CAST_RUN.total) { this.castEnd(); return; }
         // отдача в палец — по расписанию (castHaptics)
-        while (c.hap && c.hap.length && c.hap[0][0] <= t) { const h = c.hap.shift(); try { h[1](); } catch (e) { /* нет отдачи */ } }
+        // после паузы (Telegram в фоне — кадров не было) пропущенная отдача
+        // не выдаётся залпом: только то, что наступило сейчас
+        while (c.hap && c.hap.length && c.hap[0][0] <= t) { const h = c.hap.shift(); if (h[0] > t - 250) try { h[1](); } catch (e) { /* нет отдачи */ } }
         this.castDraw(now);
         // значки колеса и малые табло — каждый кадр, пока включаются
         this._iconsDirty = true; if (this.screensDraw) this.screensDraw(now, true);
@@ -449,6 +480,8 @@ Object.assign(GreedLux, {
         if (u <= 0 || u >= 1) return t;
         return { x: (t.x || 0) + 0.8 * (2 * u - 1) * Math.sin(Math.PI * u), y: t.y || 0 };
     },
+    // окно закрыли посреди литья: всё снять; версия 2 уже куплена и стоит
+    castAbort() { if (this._cast) this.castEnd(); },
     castEnd() {
         this.castCanvasDrop();
         this._cast = null; this._boot = null;
@@ -512,7 +545,7 @@ Object.assign(GreedLux, {
         keys.forEach((k, i) => {
             const b = this.castBoot('wheel', now, i);
             if (b === 2 || this.iconAt(i).x < -24) return;
-            g.globalAlpha = b < 0 ? 0.92 : (1 - b) * (Math.floor(b * 8) % 2 ? 0.2 : 0.9);
+            g.globalAlpha = b < 0 ? 0.8 : (1 - b) * (Math.floor(b * 8) % 2 ? 0.2 : 0.8);
             this.wedge(g, i); g.fill();
         });
         g.restore();

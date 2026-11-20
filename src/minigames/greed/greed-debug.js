@@ -58,6 +58,9 @@ const GreedDebug = {
             if (typeof GreedSkin !== 'undefined') GreedSkin.toggle('slots');
             return this.rebuild();
         }
+        // литьё версии 2 (greed-lux-cast.js) — повтор без покупки: гаражный
+        // (если стоит версия 2 — сначала он), заготовка, банка «в упор», литьё
+        if (act === 'cast') return this.castReplay();
     },
 
     // Пересборка аппарата на месте: снять со страницы (цикл кадров сам
@@ -89,6 +92,19 @@ const GreedDebug = {
         await (M === X && X.prepTake ? X.prepTake(host, opts) : M.mount(host, opts));
         if (M.meterSet && M.meterValue) M.meterSet(M.meterValue());
         this.render();
+    },
+
+    async castReplay() {
+        if (typeof GreedLux === 'undefined' || GreedLux._cast) return;
+        const set = (v) => { try { localStorage.setItem(GreedSkin.key('slots'), v); } catch (e) { /* нет хранилища */ } };
+        if (GreedMinigame.M === GreedLux) { set('1'); await this.rebuild(); }
+        const L = GreedJunkLit;
+        if (!L.wrapEl) return;
+        await GreedLux.prepare(L.wrapEl.parentElement);
+        set('2');
+        const J = GreedJarShop;
+        if (J.cv) { J.state = 'open'; J.dirty = true; }
+        return GreedLux.castRun();
     },
 
     // Снять гаражный со страницы и вернуть объекту вид «как после загрузки»
@@ -131,6 +147,7 @@ const GreedDebug = {
             btn('wheel', 'Колесо: ' + (this.shown('gj-wheel') ? 'есть' : 'нет') + err('wheelError') + wl) +
             btn('pachinko', 'Пачинко: ' + (this.shown('gj-pachinko') ? 'есть' : 'нет') + err('pachError')) +
             btn('skin', 'Аппарат: вид ' + skin('slots')) +
+            btn('cast', 'Литьё') +
             (typeof GreedJarShop !== 'undefined' && GreedJarShop.lastTap ? `<span style="color:#eee;padding:6px">банка: ${GreedJarShop.lastTap}</span>` : '');
         this.placeBelowInspector();
     },
