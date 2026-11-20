@@ -215,7 +215,9 @@ const GreedJarShop = {
         // картинкой (coinRes — её разрешение, точек на высоту банки)
         GreedJar3.draw(c, { cx: sx, cy: sy, k: P.k * M.k, roll: P.roll, yaw: P.yaw, view: P.view, sx: P.sx, sy: P.sy,
             tape: this.tapeCv, shop, coins: P.coins, drops: P.shop ? drops : null,
-            coinRes: this.state === 'rest' ? 0 : this.coinRes() });
+            coinRes: this.state === 'rest' ? 0 : this.coinRes(), melt: P.melt, fill: P.fill, t: P.t });
+        // литьё версии 2 (greed-jar3-melt.js): струя из горла на аппарат
+        if (this.state === 'pour' && this.streamDraw) { c.setTransform(M.dpr, 0, 0, M.dpr, 0, 0); this.streamDraw(c, P, now); }
         this.pose_ = P;
         this.dirty = this.state !== 'rest';
         if (this.state === 'rest' && !this._csAt) this._csAt = setTimeout(() => GreedJar3.coinSprite(PALETTE.greedCoin.gold, this.coinRes()), 1500);
@@ -331,6 +333,8 @@ const GreedJarShop = {
             this.prepGames();
             return;
         }
+        // версия 2 — литьё: банка выливает расплав на аппарат (greed-lux-cast.js)
+        if (node === 'v2' && typeof GreedLux !== 'undefined' && GreedLux.castRun) { GreedLux.castRun(); return; }
         this.busy = false;
         this.close();
         setTimeout(() => { if (typeof GreedDebug !== 'undefined' && GreedDebug.rebuild) GreedDebug.rebuild(); }, this.CLOSE.push + this.CLOSE.fly + this.CLOSE.land + 100);

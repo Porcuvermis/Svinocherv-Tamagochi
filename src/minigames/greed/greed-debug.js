@@ -75,25 +75,10 @@ const GreedDebug = {
         this.render();
         if (!host) return;
         if (L.wrapEl) {
-            // Все контексты аппарата — потерять сразу, с текстурами: корпус,
-            // колесо, короб. Было — только корпус; приборы колеса и короба
-            // жили до сборки мусора, и каждая пересборка добавляла их память
-            // (tools/greed-lux-sketch/jar/deposit-prof.js: 3–4 новых
-            // контекста, 1 потерян).
-            [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl].forEach(gl => {
-                if (!gl) return;
-                const ext = gl.getExtension('WEBGL_lose_context');
-                if (ext) ext.loseContext();
-            });
-            if (L.growDrop) L.growDrop();
-            L.wrapEl.remove();
+            this.junkDrop();
             // банка-магазин — рядом с аппаратом; ставим версию 2 — убрать
             const next = typeof GreedMinigame !== 'undefined' && GreedMinigame.machine ? GreedMinigame.machine() : L;
             if (next !== L && typeof GreedJarShop !== 'undefined' && GreedJarShop.detach) GreedJarShop.detach();
-            const P = this.pristine;
-            Object.keys(L).forEach(k => { if (!(k in P)) delete L[k]; });
-            Object.keys(P).forEach(k => { L[k] = P[k]; });
-            GreedJunk.pass = 'baked';
         }
         // заготовка остаётся, только если ставится она же (покупка версии 2)
         const want = typeof GreedMinigame !== 'undefined' && GreedMinigame.machine ? GreedMinigame.machine() : L;
@@ -104,6 +89,29 @@ const GreedDebug = {
         await (M === X && X.prepTake ? X.prepTake(host, opts) : M.mount(host, opts));
         if (M.meterSet && M.meterValue) M.meterSet(M.meterValue());
         this.render();
+    },
+
+    // Снять гаражный со страницы и вернуть объекту вид «как после загрузки»
+    // (банку-магазин не трогает: литьё версии 2 ещё льёт из неё).
+    junkDrop() {
+        const L = GreedJunkLit;
+        if (!L.wrapEl) return;
+        // Все контексты аппарата — потерять сразу, с текстурами: корпус,
+        // колесо, короб. Было — только корпус; приборы колеса и короба
+        // жили до сборки мусора, и каждая пересборка добавляла их память
+        // (tools/greed-lux-sketch/jar/deposit-prof.js: 3–4 новых
+        // контекста, 1 потерян).
+        [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl].forEach(gl => {
+            if (!gl) return;
+            const ext = gl.getExtension('WEBGL_lose_context');
+            if (ext) ext.loseContext();
+        });
+        if (L.growDrop) L.growDrop();
+        L.wrapEl.remove();
+        const P = this.pristine;
+        Object.keys(L).forEach(k => { if (!(k in P)) delete L[k]; });
+        Object.keys(P).forEach(k => { L[k] = P[k]; });
+        GreedJunk.pass = 'baked';
     },
 
     render() {

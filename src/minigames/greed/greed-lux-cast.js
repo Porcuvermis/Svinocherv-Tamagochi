@@ -15,8 +15,11 @@
 // Монотонно по y — подтёк растёт не быстрее, чем сходит фронт (lead' < 1).
 Object.assign(GreedLux, {
     CAST: {
-        xi: 205, yi: 6,                    // место удара струи (стык колеса и пачинко)
-        vh: 0.9, vu: 0.45, v: 0.3,         // ед./мс: в стороны, вверх, вниз
+        // Место удара — середина стыка колеса и пачинко, а не верхний край:
+        // банка над краем видимой зоны пряталась под рамкой целиком (кадры
+        // 20.11). Выше удара золото разбегается брызгами (vu), ниже — течёт.
+        xi: 208, yi: 150,
+        vh: 0.9, vu: 0.5, v: 0.25,         // ед./мс: в стороны, вверх, вниз
         // подтёки: x паза, где паз начинается и кончается по y, на сколько
         // убегает вперёд (ед.). Пазы версии 2: бока поля пачинко, обод
         // колбы, бока рамки экрана, паз рычага.
@@ -44,8 +47,10 @@ Object.assign(GreedLux, {
     // мс от начала литья (от удара струи), когда фронт проходит (x, y)
     castPass(x, y) {
         const C = this.CAST;
-        return Math.abs(x - C.xi) / C.vh + Math.max(0, y - C.yi) / C.v + Math.max(0, C.yi - y) / C.vu
-            - (this.castWob(x) + this.castDrip(x, y)) / C.v;
+        // эллипс от места удара (было — сумма по осям: пятно расходилось
+        // ромбом с углами, кадр 20.11)
+        const dx = (x - C.xi) / C.vh, dy = y > C.yi ? (y - C.yi) / C.v : (C.yi - y) / C.vu;
+        return Math.hypot(dx, dy) - (this.castWob(x) + this.castDrip(x, y)) / C.v;
     },
     // то же для шейдера: uniform'ы uCP (xi, yi), uCV (vh, vu, v, dripW), uDr[8]
     castGLSL() {
@@ -60,8 +65,8 @@ Object.assign(GreedLux, {
                     float g = pow(max(0.0, 1.0 - pow((x - D.x) / uCV.w, 2.0)), 0.35);
                     d += D.w * g * castSm(D.y, D.y + 80.0, y) * (1.0 - castSm(D.z, D.z + 60.0, y));
                 }
-                return abs(x - uCP.x) / uCV.x + max(0.0, y - uCP.y) / uCV.z + max(0.0, uCP.y - y) / uCV.y
-                    - (castWob(x) + d) / uCV.z;
+                float dx = (x - uCP.x) / uCV.x, dy = y > uCP.y ? (y - uCP.y) / uCV.z : (uCP.y - y) / uCV.y;
+                return length(vec2(dx, dy)) - (castWob(x) + d) / uCV.z;
             }
             // насколько точка в подтёке (0..1): там расплава больше — полоса толще
             float castDripG(float x){
@@ -166,14 +171,14 @@ Object.assign(GreedLux, {
         gl.uniform1f(H.uT, this.castT(now));
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
-    // мс литья (от удара струи); отладка — замедление 'gj-cast-slow'
+    // замедление для отладки и кадров: localStorage 'gj-cast-slow'
+    castSlow() { try { return +localStorage.getItem('gj-cast-slow') || 1; } catch (e) { return 1; } },
+    // мс литья от удара струи (до удара — меньше нуля): часы банки — общие
     castT(now) {
         const c = this._cast;
-        if (!c) return -1;
-        if (c.t != null) return c.t;                   // стоп-кадр (отладка, кадры)
-        let slow = 1;
-        try { slow = +localStorage.getItem('gj-cast-slow') || 1; } catch (e) { /* нет хранилища */ }
-        return (now - c.t0) / slow;
+        if (!c) return -1e9;
+        if (c.t != null) return c.t;                   // стоп-кадр (кадры жара)
+        return (now - c.start) / this.castSlow() - c.impact;
     }
 });
 
@@ -212,7 +217,7 @@ Object.assign(GreedLux, {
     castCanvas(snap) {
         const cv = document.createElement('canvas');
         cv.width = snap.width; cv.height = snap.height;
-        cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:50;background:none;pointer-events:none';
+        cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:5;background:none;pointer-events:none';
         this.wrapEl.appendChild(cv);
         const gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
         if (!gl) { cv.remove(); return null; }
@@ -309,5 +314,73 @@ Object.assign(GreedLux, {
         const x = C.gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext();
         C.cv.remove();
         this._castC = null;
+    }
+});
+
+// ---------- ход литья ----------
+// Банка (greed-jar3-melt.js) и литьё идут по одним часам: начало — вспышка
+// узла (GreedJarShop.t0), удар струи — CAST_RUN.impact. Под банкой, пока
+// она ещё «в упор», гаражный снимается в картинку и уходит со страницы, а
+// под картинкой встаёт заготовка версии 2 — подмены не видно.
+Object.assign(GreedLux, {
+    CAST_RUN: { total: 5400, kantAmp: 1.5, kantTau: 1600 },
+
+    async castRun() {
+        const J = GreedJarShop, L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement, opts = L._opts;
+        if (!host || this._cast) return;
+        try {
+            await (this._prep ? this._mountP : this.prepare(host));
+            await this.castHeatInit();
+        } catch (e) { console.warn('[литьё]', e); }
+        if (!this.gl || !L.wrapEl) {
+            // нет заготовки — по-старому: закрыть банку и пересобрать
+            J.busy = false; J.close();
+            if (typeof GreedDebug !== 'undefined') setTimeout(() => GreedDebug.rebuild(), 1100);
+            return;
+        }
+        const snap = this.castSnapshot();
+        GreedDebug.junkDrop();
+        const G = GreedMinigame;
+        G.M = this; G.play = { slots: null, wheel: null, pachinko: null };
+        await this.prepTake(host, opts);
+        if (this.meterSet && this.meterValue) this.meterSet(this.meterValue());
+        if (!this.castCanvas(snap)) { this.castEnd(); return; }
+        // палец — не в аппарат, пока льётся
+        const cv = this._castC.cv;
+        cv.style.pointerEvents = 'auto';
+        ['pointerdown', 'pointermove', 'pointerup'].forEach(k => cv.addEventListener(k, (e) => { e.stopPropagation(); e.preventDefault(); }));
+        // банка мерила поле по обёртке гаражного (её больше нет) — поле то же у версии 2
+        J.wrap = this.wrapEl;
+        const now = performance.now(), Q = J.POUR;
+        J.pourStart(now);
+        this._cast = { start: now, impact: Q.streamAt + Q.head, coins: J.shown };
+        this.castKant();
+    },
+    // кант: пояс раскаляется, когда через него проходит фронт, и остывает
+    // последним (событие-импульс на всё кольцо из места, где фронт его
+    // пересёк первым — под ударом струи)
+    castKant() {
+        const K = this._kgl, c = this._cast, R = this.CAST_RUN;
+        if (!K || !c) return;
+        const slow = this.castSlow();
+        K.meta.rings.forEach((rg, i) => {
+            const x = Math.max(rg[0], Math.min(rg[2], this.CAST.xi)), y = rg[1];
+            const tp = this.castPass(x, y), at = c.start + (c.impact + tp) * slow, L = K.meta.len[i];
+            this.kantAdd({ game: 'cast', ring: i, s0: this.kantS(i, x, y), at, kind: 0, amp: R.kantAmp, speed: this.CAST.v * 2.2, reach: L / 2 + 20, tau: R.kantTau, life: L / 2 / (this.CAST.v * 2.2) + R.kantTau * 4 });
+        });
+    },
+    castStep(now) {
+        const c = this._cast;
+        if (!c || c.t != null) return;
+        const t = (now - c.start) / this.castSlow();
+        if (t > this.CAST_RUN.total) { this.castEnd(); return; }
+        this.castDraw(now);
+        if (typeof GreedJarShop !== 'undefined') GreedJarShop.step(now, c.coins);
+    },
+    castEnd() {
+        this.castCanvasDrop();
+        this._cast = null;
+        if (typeof GreedJarShop !== 'undefined' && GreedJarShop.detach) GreedJarShop.detach();
+        this._iconsDirty = true;
     }
 });

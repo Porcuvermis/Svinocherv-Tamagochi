@@ -192,6 +192,7 @@ Object.assign(GreedLux, {
         this.lampStep(now);
         this.shakeStep(now);
         if (this.bottomStep) this.bottomStep(now);
+        if (this.castStep) this.castStep(now);
         if (this.kantStep) this.kantStep(now);
     },
     // После playStep: корпус не перерисовывался целиком — шар двигался?

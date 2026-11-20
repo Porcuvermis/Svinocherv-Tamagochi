@@ -75,7 +75,9 @@ const GreedJar3 = {
         c.strokeStyle = J.bottom; c.lineWidth = 0.022; c.globalAlpha = 0.85; c.stroke();
         c.restore(); c.globalAlpha = 1;
         // 3. монеты внутри
-        if (P.coins !== false) { if (P.coinRes) this.coinsCached(c, v, G, P.coinRes); else this.coins(c, v, G, P.yaw || 0); }
+        // литьё версии 2 (greed-jar3-melt.js): монеты плавятся в жидкое золото
+        if (P.melt > 0 && this.meltDraw) this.meltDraw(c, v, G, P);
+        else if (P.coins !== false) { if (P.coinRes) this.coinsCached(c, v, G, P.coinRes); else this.coins(c, v, G, P.yaw || 0); }
         if (P.drops) this.drops(c, v, P.drops);
         c.save(); this.silhouette(c, v); c.clip();
         // 4. край силуэта: стекло густеет к краям (видно толщу) — слева светлее
