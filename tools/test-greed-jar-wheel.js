@@ -5,7 +5,8 @@ const { chromium } = require('playwright');
 // куплено и стоит, ошибок и предупреждений сборки нет, текстуры видов
 // сборки удалены (было: перебор шёл по обёртке { sets, masks }, падал, и
 // память видеокарты не возвращалась), банка закрылась; затем пачинко — и
-// его короб попадает в снимок аппарата (на литье версии 2 он пропадал).
+// его короб попадает в снимок аппарата (на литье версии 2 он пропадал);
+// стикер ставки — тап отрывает его, ставка по кругу 1 → 3 → 10 → 100 → 1.
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/test-greed-jar-wheel.js
 (async () => {
   const b = await chromium.launch({ executablePath: require('./chrome-path') });
@@ -19,6 +20,17 @@ const { chromium } = require('playwright');
   await page.evaluate(() => { GameState.reset(); Backend.grantCurrency('greed_token', 40); Backend.grantCurrency('gold', 300); GameState.save();
     GreedMinigame.play = { slots: null, wheel: null, pachinko: null }; GameManager.handleSinAction('greed'); });
   await page.evaluate(() => GreedMinigame.veilReady()); await page.waitForTimeout(1500);
+  // стикер ставки (20.11): тап — отрывается, под ним следующий; по кругу 1 → 3 → 10 → 100 → 1
+  await page.waitForFunction(() => GreedJunkLit._betShown === 1, null, { timeout: 8000 }).catch(() => {});
+  const seq = [];
+  for (let i = 0; i < 4; i++) {
+    const [hx, hy] = await page.evaluate(() => { const r = GreedJunkLit.betHit.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    await page.mouse.click(hx, hy);
+    await page.waitForFunction(() => !GreedJunkLit._betAnim, null, { timeout: 4000 }).catch(() => {});
+    seq.push(await page.evaluate(() => [GreedMinigame.bet, GreedJunkLit._betShown].join('/')));
+  }
+  ok(seq.join(' ') === '3/3 10/10 100/100 1/1', `стикер ставки по кругу: ${seq.join(' ')}`);
+  ok(await page.evaluate(() => { const r = Backend.greedSpin(GreedMinigame.bet); return r.ok && r.cost === 1; }), 'крутка идёт по ставке со стикера');
   await page.evaluate(() => { const J = GreedJarShop; J.state = 'opening'; J.t0 = performance.now(); J.dirty = true; J.cv.style.pointerEvents = 'auto'; });
   await page.waitForFunction(() => GreedJarShop.state === 'open', null, { timeout: 8000 }).catch(() => {});
   // считать удалённые текстуры прибора колеса

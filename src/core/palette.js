@@ -1039,6 +1039,11 @@ const PALETTE = {
             // (docs/plan/30-greed-light.md).
             meter: { liquid: '#e2a12b', liquidLo: '#9c5a10', liquidHi: '#ffdc84', glass: '#8d9894', glassIn: '#6a7572', glassHi: '#ffffff' },
             // монетоприёмник из двери туалета: обломки двери, жёлтый стикер
+            // стикеры ставки (greed-junk-lit-bet.js): цвет, тень, свет —
+            // жёлтый ×1 (как вшитый), зелёный ×3, синий ×10, фиолетовый ×100;
+            // back — изнанка листка (видна, когда его отрывают)
+            betStickers: { 1: ['#f4dc4c', '#d6b92a', '#fbec8c'], 3: ['#a8dc70', '#7fb84b', '#d0eea6'],
+                10: ['#7fc6ee', '#4f9dcb', '#b8e2f7'], 100: ['#bb9de8', '#8d6fc4', '#dac8f5'], back: '#f3efe2', backLo: '#bdb6a2' },
             wc: { door: '#5f8f99', doorLo: '#45707a', doorEdge: '#c9b48c', sticker: '#f4dc4c', stickerLo: '#d6b92a', stickerHi: '#fbec8c',
                   label: '#2f78c0', labelHi: '#5b9fdc', labelInk: '#f2f6fa', bezel: '#26242a' },
             rag: { hi: '#f6f0e2', base: '#e8dec8', lo: '#c9b994', dirt: '#8e7a57', grime: '#5e4c33', marker: '#1d1a24' },

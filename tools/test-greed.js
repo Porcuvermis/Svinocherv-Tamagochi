@@ -228,7 +228,8 @@ const { chromium } = require('playwright');
   const machine = await page.evaluate(() => {
     const o = {};
     Backend.grantCurrency('gold', 200000);
-    o.bet3Locked = Backend.greedSpin(3).error === 'bet_locked';
+    // ставки — с самого начала, и у гаражного аппарата (20.11)
+    const r3 = Backend.greedSpin(3); o.bet3Open = r3.ok && r3.cost === 3 && Backend.greedBets('slots').length === ECONOMY.minigames.greed.bets.length;
     o.wheelLocked = Backend.greedPlay('wheel').error === 'locked';
     const t0 = GameState.currency('greed_token') * 3 + GameState.currency('greed_shard');
     let alt = 0;
@@ -264,7 +265,7 @@ const { chromium } = require('playwright');
     o.foreign = GameState.currency('envy_token') + GameState.currency('pride_token') > before;
     return o;
   });
-  check(machine.bet3Locked, 'до апгрейда большие ставки закрыты');
+  check(machine.bet3Open, 'ставки открыты с самого начала (стикер гаражного)');
   check(machine.wheelLocked, 'колесо закрыто до покупки');
   check(machine.alt > 0 && !machine.altPaidGold, 'жетонная тройка выпадает и монет при ней нет');
   check(machine.shardsGrew, 'жетоны алчности копятся');
