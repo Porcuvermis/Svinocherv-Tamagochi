@@ -465,5 +465,17 @@ Object.assign(GreedJunkLit, {
         this.deviceDraw(Q, B, Q.box, B.x + B.w / 2, B.y + B.h / 2, B.w / 2, B.h / 2);
         this.pachShadowAt(L);
         this.pachGlareAt(L);
+    },
+    // Перерисовать короб сейчас — для снимков аппарата (литьё версии 2,
+    // сборка игр): холст прибора без сохранения буфера читается пустым,
+    // если не нарисован в той же задаче. Снимки звали pachDraw, а его не
+    // было — пачинко на снимке пропадало, проступали доски под ним (игрок,
+    // 20.11: «на литье исчезает пачинко»).
+    pachDraw() {
+        const M = this._pach, Q = this._pgl;
+        if (!M || !Q || !Q.box) return;
+        const L = this.lightFor(M.lt || this._tilt || { x: 0, y: 0 }), B = this.pachBox();
+        this.deviceBegin(Q, L);
+        this.deviceDraw(Q, B, Q.box, B.x + B.w / 2, B.y + B.h / 2, B.w / 2, B.h / 2);
     }
 });

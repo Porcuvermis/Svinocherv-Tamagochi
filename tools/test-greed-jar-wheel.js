@@ -4,7 +4,8 @@ const { chromium } = require('playwright');
 // банка → колесо (сборка за стеклом) → закрыть банку. Проверяет: колесо
 // куплено и стоит, ошибок и предупреждений сборки нет, текстуры видов
 // сборки удалены (было: перебор шёл по обёртке { sets, masks }, падал, и
-// память видеокарты не возвращалась), банка закрылась.
+// память видеокарты не возвращалась), банка закрылась; затем пачинко — и
+// его короб попадает в снимок аппарата (на литье версии 2 он пропадал).
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/test-greed-jar-wheel.js
 (async () => {
   const b = await chromium.launch({ executablePath: require('./chrome-path') });
@@ -32,6 +33,24 @@ const { chromium } = require('playwright');
   await page.evaluate(() => { clearInterval(window.__wrapT); GreedJarShop.close(); });
   await page.waitForFunction(() => GreedJarShop.state === 'rest', null, { timeout: 8000 }).catch(() => {});
   ok(await page.evaluate(() => GreedJarShop.state === 'rest'), 'банка закрылась');
+  // пачинко из банки — и оно на снимке аппарата (литьё версии 2 начинает
+  // с него): холст прибора без сохранения буфера читался пустым, на литье
+  // пачинко пропадало (игрок, 20.11)
+  await page.evaluate(() => { const J = GreedJarShop; J.state = 'opening'; J.t0 = performance.now(); J.dirty = true; J.cv.style.pointerEvents = 'auto'; });
+  await page.waitForFunction(() => GreedJarShop.state === 'open', null, { timeout: 8000 }).catch(() => {});
+  await page.evaluate(() => { const J = GreedJarShop; J.hold = { node: 'pachinko', next: 0, dt: 100 }; J.deposit(); });
+  await page.waitForFunction(() => Backend.greedLevel('pachinko') >= 1 && !GreedJarShop.busy, null, { timeout: 60000 }).catch(() => {});
+  await page.evaluate(() => GreedJarShop.close()); await page.waitForTimeout(2500);
+  const pc = await page.evaluate(() => {
+    const L = GreedJunkLit, B = L.pachBox(), snap = GreedLux.castSnapshot(), S = snap.width / 360, g = snap.getContext('2d');
+    // середина поля пачинко на снимке — против того же места на корпусе без короба
+    const at = (x, y) => g.getImageData(Math.round(x * S), Math.round((y + 57) * S), 1, 1).data;
+    const cx = B.x + B.w / 2, cy = B.y + B.h * 0.35, p = at(cx, cy);
+    const c2 = document.createElement('canvas'); c2.width = L.pachCv.width; c2.height = L.pachCv.height;
+    L.pachDraw(); c2.getContext('2d').drawImage(L.pachCv, 0, 0); const d = c2.getContext('2d').getImageData(c2.width >> 1, Math.round(c2.height * 0.35), 1, 1).data;
+    return { draw: typeof L.pachDraw === 'function', boxA: d[3], snap: [p[0], p[1], p[2]] };
+  });
+  ok(pc.draw && pc.boxA > 200, `короб пачинко рисуется в той же задаче, что снимок (альфа ${pc.boxA})`);
   ok(!errs.length, errs.length ? 'ошибки:\n' + errs.join('\n') : 'ошибок и предупреждений сборки нет');
   console.log(bad ? `провалов: ${bad}` : 'всё сошлось');
   await b.close();
