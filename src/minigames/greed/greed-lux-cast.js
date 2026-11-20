@@ -353,7 +353,9 @@ Object.assign(GreedLux, {
 // она ещё «в упор», гаражный снимается в картинку и уходит со страницы, а
 // под картинкой встаёт заготовка версии 2 — подмены не видно.
 Object.assign(GreedLux, {
-    CAST_RUN: { total: 5400, kantAmp: 1.5, kantTau: 1600 },
+    // мс от вспышки узла: блеск (shine) и ставки на табло (bets) — после
+    // включения экранов; конец — когда блеск прошёл
+    CAST_RUN: { total: 5600, kantAmp: 1.5, kantTau: 1600, shine: 4750, shineMs: 750, betStep: 160, betGap: 140 },
 
     async castRun() {
         const J = GreedJarShop, L = GreedJunkLit, host = L.wrapEl && L.wrapEl.parentElement, opts = L._opts;
@@ -386,6 +388,7 @@ Object.assign(GreedLux, {
         this._cast = { start: now, impact: Q.streamAt + Q.head, coins: J.shown };
         this.castKant();
         this.castBootPlan();
+        this.castHaptics();
     },
     // кант: пояс раскаляется, когда через него проходит фронт, и остывает
     // последним (событие-импульс на всё кольцо из места, где фронт его
@@ -399,16 +402,52 @@ Object.assign(GreedLux, {
             const tp = this.castPass(x, y), at = c.start + (c.impact + tp) * slow, L = K.meta.len[i];
             this.kantAdd({ game: 'cast', ring: i, s0: this.kantS(i, x, y), at, kind: 0, amp: R.kantAmp, speed: this.CAST.v * 2.2, reach: L / 2 + 20, tau: R.kantTau, life: L / 2 / (this.CAST.v * 2.2) + R.kantTau * 4 });
         });
+        // последний тёплый вдох всего канта — вместе с блеском
+        this.kantAdd({ game: 'cast', ring: -1, s0: 0, at: c.start + R.shine * slow, kind: 1, amp: 0.55, speed: 1, reach: 4000, tau: 800, life: 800 });
     },
     castStep(now) {
         const c = this._cast;
         if (!c || c.t != null) return;
         const t = (now - c.start) / this.castSlow();
         if (t > this.CAST_RUN.total) { this.castEnd(); return; }
+        // отдача в палец — по расписанию (castHaptics)
+        while (c.hap && c.hap.length && c.hap[0][0] <= t) { const h = c.hap.shift(); try { h[1](); } catch (e) { /* нет отдачи */ } }
         this.castDraw(now);
         // значки колеса и малые табло — каждый кадр, пока включаются
         this._iconsDirty = true; if (this.screensDraw) this.screensDraw(now, true);
         if (typeof GreedJarShop !== 'undefined') GreedJarShop.step(now, c.coins);
+    },
+    // Отдача (2.1): плавление — частые тики, жидкость у горла — средний удар,
+    // струя — лёгкие удары по 90 мс, фронт через пояс канта — чёткий щелчок,
+    // посадка банки — тяжёлый, экран включился — тик, цифра ставки — тик,
+    // блеск — успех. Время — мс от вспышки узла.
+    castHaptics() {
+        const c = this._cast, J = GreedJarShop.POUR, R = this.CAST_RUN, H = typeof Haptics !== 'undefined' ? Haptics : null;
+        if (!c || !H) return;
+        const L = [], at = (t, f) => L.push([t, f]);
+        for (let t = J.meltAt; t < J.meltAt + J.melt; t += 120) at(t, () => H.tick());
+        at(J.streamAt, () => H.impact('medium'));
+        for (let t = c.impact; t < J.end; t += 90) at(t, () => H.impact('light'));
+        if (this._kgl) this._kgl.meta.rings.slice(0, 3).forEach(rg => at(c.impact + this.castPass(Math.max(rg[0], Math.min(rg[2], this.CAST.xi)), rg[1]), () => H.impact('rigid')));
+        at(J.toPig + J.pigFly + J.sink * 0.6, () => H.impact('heavy'));
+        const B = this._boot;
+        if (B) {
+            ['pach', 'led', 'small', 'lamp'].forEach(k => at(c.impact + B[k], () => H.tick()));
+            B.wheel.forEach(w => { if (w != null) at(c.impact + w, () => H.tick()); });
+            const b0 = c.impact + B.small + this.CAST_BOOT.dur.small + R.betGap;
+            c.betAt = b0;
+            for (let i = 0; i < 4; i++) at(b0 + i * R.betStep, () => H.tick());
+        }
+        at(R.shine, () => H.notify('success'));
+        c.hap = L.sort((a, b) => a[0] - b[0]);
+    },
+    // мнимый наклон: блик бежит по лаку и золоту слева направо
+    castTilt(now, t) {
+        const c = this._cast;
+        if (!c || c.t != null) return t;
+        const R = this.CAST_RUN, u = ((now - c.start) / this.castSlow() - R.shine) / R.shineMs;
+        if (u <= 0 || u >= 1) return t;
+        return { x: (t.x || 0) + 0.8 * (2 * u - 1) * Math.sin(Math.PI * u), y: t.y || 0 };
     },
     castEnd() {
         this.castCanvasDrop();
@@ -487,7 +526,17 @@ Object.assign(GreedLux, {
         const st = this.castBoot ? this.castBoot('small', now) : 2, M = this.meta && this.meta.live;
         if (st === 2 || !this.betCv || !M) {
             if (this._smallBoot) { this._smallBoot = false; force = true; }
-            return sd.call(this, now, force);
+            const r = sd.call(this, now, force), c = this._cast;
+            // ставки версии 2 открыты: табло пробегает их все и встаёт на первую
+            if (c && c.betAt && this.betCv && M) {
+                const R = this.CAST_RUN, tt = (now - c.start) / this.castSlow() - c.betAt, bets = this.bets();
+                if (tt >= 0 && tt < (bets.length + 1) * R.betStep) {
+                    const i = Math.floor(tt / R.betStep), b = i < bets.length ? bets[i] : this.betNow();
+                    this.dotsDraw(this.betCv, M.bet, b + 'x', 0.7);
+                    this._betShow = true;
+                } else if (this._betShow) { this._betShow = false; sd.call(this, now, true); }
+            }
+            return r;
         }
         this._smallBoot = true;
         // (dotsDraw оставляет свой масштаб — без сброса стиралось не то)

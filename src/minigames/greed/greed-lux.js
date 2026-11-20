@@ -332,7 +332,9 @@ const GreedLux = {
     step(now) {
         // наклон: сглажен здесь (turn() — без сглаживания), мёртвая зона —
         // как у аппарата: дрожь руки не гоняет шейдер
-        const t = typeof Tilt !== 'undefined' ? Tilt.turn() : { x: 0, y: 0 };
+        let t = typeof Tilt !== 'undefined' ? Tilt.turn() : { x: 0, y: 0 };
+        // литьё: первый блеск — мнимый наклон поверх настоящего (greed-lux-cast.js)
+        if (this.castTilt) t = this.castTilt(now, t);
         this.tilt.x += ((t.x || 0) - this.tilt.x) * 0.2;
         this.tilt.y += ((t.y || 0) - this.tilt.y) * 0.2;
         const tx = Math.max(-1, Math.min(1, this.tilt.x)) * 0.42, ty = Math.max(-1, Math.min(1, -this.tilt.y)) * 0.34;
