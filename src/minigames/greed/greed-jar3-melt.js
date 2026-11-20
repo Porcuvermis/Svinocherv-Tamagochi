@@ -256,22 +256,26 @@ Object.assign(GreedJarShop, {
         const X = typeof GreedLux !== 'undefined' ? GreedLux : null;
         if (!X || !X._cast) return;
         const T = X.castT(now), C = PALETTE.greedLux.cast, k = this.map.k, CA = X.CAST;
-        const F = this._fx || (this._fx = { p: [], at: now });
-        const dt = Math.min(80, now - F.at); F.at = now;
-        // фронт в столбце x: y, где castPass = T (ниже места удара)
-        const front = (x) => { let lo = CA.yi, hi = 640; if (X.castPass(x, hi) < T) return null; for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (X.castPass(x, m) < T) lo = m; else hi = m; } return lo; };
-        if (T > 0 && T < 4200) {
-            for (let n = 0; n < Math.round(dt * 0.09); n++) {
-                const x = 21 + Math.random() * 318, y = front(x);
-                if (y == null || y < -50) continue;
-                const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6, v = 0.08 + Math.random() * 0.14;
-                F.p.push({ kind: 's', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, at: now, life: 450 + Math.random() * 500, r: 0.7 + Math.random() * 0.9 });
-            }
-            // дым — едва: плотнее — бурая муть поверх литого (кадр 20.11)
-            if (Math.random() < dt * 0.008) {
-                const x = 21 + Math.random() * 318, y = front(x);
-                if (y != null) F.p.push({ kind: 'm', x, y: y + 10, vx: (Math.random() - 0.5) * 0.01, vy: -0.02, at: now, life: 1000, r: 5 + Math.random() * 4 });
-            }
+        // Искры и дым — не случайные, а расчётные: каждая родится в свой
+        // тик (по номеру — своё зерно) и летит по формуле от времени
+        // рождения. Литьё одно и то же на любом телефоне и при любой частоте
+        // кадров (игрок, 20.11: «анимация должна быть отточена»).
+        const rng = (k, j) => { let n = (k * 374761393 + j * 668265263) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967295; };
+        const front = (x, t) => { let lo = CA.yi, hi = 640; if (X.castPass(x, hi) < t) return null; for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (X.castPass(x, m) < t) lo = m; else hi = m; } return lo; };
+        const SP = 12, SM = 120, sparks = [], smoke = [];
+        for (let k = Math.max(1, Math.ceil((T - 950) / SP)); k * SP <= Math.min(T, 4200); k++) {
+            const tb = k * SP, life = 450 + rng(k, 1) * 500, age = T - tb;
+            if (age > life) continue;
+            const x = 21 + rng(k, 2) * 318, y = front(x, tb);
+            if (y == null || y < -50) continue;
+            const a = -Math.PI / 2 + (rng(k, 3) - 0.5) * 1.6, v = 0.08 + rng(k, 4) * 0.14;
+            sparks.push({ x: x + Math.cos(a) * v * age, y: y + Math.sin(a) * v * age + 0.000175 * age * age, a: age / life, r: 0.7 + rng(k, 5) * 0.9 });
+        }
+        for (let k = Math.max(1, Math.ceil((T - 1000) / SM)); k * SM <= Math.min(T, 4200); k++) {
+            const tb = k * SM, age = T - tb;
+            if (age > 1000 || rng(k, 7) > 0.6) continue;
+            const x = 21 + rng(k, 8) * 318, y = front(x, tb);
+            if (y != null) smoke.push({ x: x + (rng(k, 9) - 0.5) * 0.01 * age, y: y + 10 - 0.02 * age, a: age / 1000, r: 5 + rng(k, 10) * 4 });
         }
         c.save();
         // вспышка удара
@@ -291,20 +295,15 @@ Object.assign(GreedJarShop, {
             c.fillStyle = C.white; c.beginPath(); c.arc(px - 0.6 * k, py - 0.6 * k, 1.1 * k, 0, 7); c.fill();
         });
         // искры и дым
-        F.p = F.p.filter(q => {
-            const a = (now - q.at) / q.life;
-            if (a >= 1) return false;
-            q.x += q.vx * dt; q.y += q.vy * dt; if (q.kind === 's') q.vy += 0.00035 * dt;
+        sparks.forEach(q => {
             const [px, py] = this.toScene(q.x, q.y);
-            if (q.kind === 's') {
-                c.globalAlpha = 1 - a; c.fillStyle = a < 0.4 ? C.white : C.molten;
-                c.beginPath(); c.arc(px, py, q.r * k * (1 - a * 0.5), 0, 7); c.fill();
-            } else {
-                const r = q.r * (1 + a * 1.6) * k, g = c.createRadialGradient(px, py, 0, px, py, r);
-                g.addColorStop(0, 'rgba(30,18,12,0.55)'); g.addColorStop(1, 'rgba(30,18,12,0)');
-                c.globalAlpha = 0.16 * Math.sin(a * Math.PI); c.fillStyle = g; c.beginPath(); c.arc(px, py, r, 0, 7); c.fill();
-            }
-            return true;
+            c.globalAlpha = 1 - q.a; c.fillStyle = q.a < 0.4 ? C.white : C.molten;
+            c.beginPath(); c.arc(px, py, q.r * k * (1 - q.a * 0.5), 0, 7); c.fill();
+        });
+        smoke.forEach(q => {
+            const [px, py] = this.toScene(q.x, q.y), r = q.r * (1 + q.a * 1.6) * k, g = c.createRadialGradient(px, py, 0, px, py, r);
+            g.addColorStop(0, 'rgba(30,18,12,0.55)'); g.addColorStop(1, 'rgba(30,18,12,0)');
+            c.globalAlpha = 0.16 * Math.sin(q.a * Math.PI); c.fillStyle = g; c.beginPath(); c.arc(px, py, r, 0, 7); c.fill();
         });
         c.restore();
     }

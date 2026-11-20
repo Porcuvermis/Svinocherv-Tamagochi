@@ -22,9 +22,13 @@
 //   * стекло — гладкое, чуть быстрее.
 // Источники: место удара — неровное пятно из нескольких точек с разными
 // задержками (асимметрия); капли брызг — свои точки со своим временем.
-// Случайность — своя на каждое литьё (seed).
+// Узор один и тот же всегда (seed): игрок видит литьё один раз за игру,
+// долго к нему копит — оно должно быть выверено, а не выпадать как
+// получится (игрок, 20.11). Зерно выбрано по листу кандидатов; отладка —
+// localStorage 'gj-cast-seed'.
 Object.assign(GreedLux, {
     FLOW: {
+        seed: 8,
         step: 1.5,                           // ед. на клетку
         vd: 0.15, vh: 0.065, vu: 0.025,      // ед./мс: вниз, вбок, вверх (вдали от удара)
         splashUp: 0.15, splashR: 80,         // у места удара вверх быстрее (брызги)
@@ -69,7 +73,7 @@ Object.assign(GreedLux, {
     // Карта прихода: Float32Array gw×gh, мс от удара струи
     async flowBuild(seed) {
         const F = this.FLOW, Mp = await this.flowMaps(), { gw, gh, hgt, gold, glass } = Mp, st = F.step, Y0 = this.Y0;
-        seed = seed == null ? (Math.random() * 1e6) | 0 : seed;
+        if (seed == null) { try { seed = +localStorage.getItem('gj-cast-seed') || F.seed; } catch (e) { seed = F.seed; } }
         const N1 = this.flowNoise(seed), N2 = this.flowNoise(seed + 101), N3 = this.flowNoise(seed + 202), N4 = this.flowNoise(seed + 303);
         const smo = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
         let rnd = seed % 2147483647 || 1; const R = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;
