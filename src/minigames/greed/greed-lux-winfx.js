@@ -310,7 +310,9 @@ Object.assign(GreedLux, {
     };
     GreedLux.winPop = function (game, res) {
         if (game === 'wheel' && res) this.wheelWinShow(res);
-        if (res && (game === 'wheel' || game === 'pachinko')) (this._kantRet || (this._kantRet = {}))[game] = isReturn(res);
+        // пачинко: монета — средняя вспышка и у канта тоже, не «тихий возврат»
+        // (игрок, 20.11); колесо — как было
+        if (res && game === 'wheel') (this._kantRet || (this._kantRet = {})).wheel = isReturn(res);
         const r = pop ? pop.apply(this, arguments) : undefined;
         if (game === 'slots' && this._ledWin && performance.now() - this._ledWin.at < 50) {
             this._slotWin = { tier: this._ledWin.tier, at: this._ledWin.at, mask: this._ledWin.mask }; this._iconsDirty = true;
