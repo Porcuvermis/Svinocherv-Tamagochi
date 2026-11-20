@@ -308,8 +308,12 @@ const GreedJarShop = {
         if (this._prepping) return this._prepping;
         const J = Backend.greedJar();
         const want = ['wheel', 'pachinko'].filter(k => !J.done[k] && J.have + J[k] >= J.need[k]);
-        if (!want.length) return null;
-        const p = want.reduce((p, k) => p.then(() => L.growPrep(k)).catch(() => {}), Promise.resolve());
+        // версия 2: жетонов хватает — собирается целиком, скрытой под гаражным
+        // (greed-lux-prep.js); покупка её только покажет
+        const v2 = J.v2open && !J.done.v2 && J.have + J.v2 >= J.need.v2 && typeof GreedLux !== 'undefined' && GreedLux.prepare && L.wrapEl && L.wrapEl.parentElement;
+        if (!want.length && !v2) return null;
+        let p = want.reduce((p, k) => p.then(() => L.growPrep(k)).catch(() => {}), Promise.resolve());
+        if (v2) p = p.then(() => GreedLux.prepare(L.wrapEl.parentElement)).catch(() => {});
         this._prepping = p.then(() => { this._prepping = null; }, () => { this._prepping = null; });
         return this._prepping;
     },

@@ -70,7 +70,8 @@ const GreedDebug = {
     // снимается тот, что стоит, ставится тот, что выбран видом (GreedSkin).
     async rebuild() {
         const L = GreedJunkLit, X = typeof GreedLux !== 'undefined' ? GreedLux : null;
-        const cur = X && X.wrapEl ? X : L, host = cur.wrapEl && cur.wrapEl.parentElement, opts = cur._opts;
+        // заготовка версии 2 (скрытая, greed-lux-prep.js) — не «стоящий» аппарат
+        const cur = X && X.wrapEl && !X._prep ? X : L, host = cur.wrapEl && cur.wrapEl.parentElement, opts = cur._opts;
         this.render();
         if (!host) return;
         if (L.wrapEl) {
@@ -94,11 +95,13 @@ const GreedDebug = {
             Object.keys(P).forEach(k => { L[k] = P[k]; });
             GreedJunk.pass = 'baked';
         }
-        if (X && X.wrapEl) X.unmount();
+        // заготовка остаётся, только если ставится она же (покупка версии 2)
+        const want = typeof GreedMinigame !== 'undefined' && GreedMinigame.machine ? GreedMinigame.machine() : L;
+        if (X && X.wrapEl && !(X._prep && want === X)) { X._prep = false; X.unmount(); }
         const G = typeof GreedMinigame !== 'undefined' ? GreedMinigame : null;
         const M = G && G.machine ? G.machine() : L;
         if (G) { G.M = M; G.play = { slots: null, wheel: null, pachinko: null }; }
-        await M.mount(host, opts);
+        await (M === X && X.prepTake ? X.prepTake(host, opts) : M.mount(host, opts));
         if (M.meterSet && M.meterValue) M.meterSet(M.meterValue());
         this.render();
     },

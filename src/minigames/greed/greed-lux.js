@@ -30,9 +30,13 @@ const GreedLux = {
         opts = opts || {};
         this._opts = opts;
         ['onPull', 'onSpinDone', 'onPach', 'onPachDone', 'onWheel', 'onWheelDone', 'canReady'].forEach(k => { this[k] = opts[k] || null; });
-        if (typeof GreedDebug !== 'undefined' && GreedDebug.attach) GreedDebug.attach(container);
-        // гвозди пачинко — ровной раскладкой версии 2 (физика и запас — под неё)
-        GreedJunk.pachTidy(true); this._pachNailsC = null;
+        // Заготовка (greed-lux-prep.js) стоит скрытой под гаражным: ни панели
+        // отладки, ни раскладки гвоздей — гаражный ещё играет своими.
+        if (!this._prep) {
+            if (typeof GreedDebug !== 'undefined' && GreedDebug.attach) GreedDebug.attach(container);
+            // гвозди пачинко — ровной раскладкой версии 2 (физика и запас — под неё)
+            GreedJunk.pachTidy(true); this._pachNailsC = null;
+        }
         if (this.wrapEl) {
             container.appendChild(this.wrapEl);
             this.fit(container);
@@ -73,8 +77,10 @@ const GreedLux = {
             if (this.wrapEl !== wrap || !this.glInit(imgs)) return false;
             this.tilt = { x: 0, y: 0 }; this.drawn = null;
             if (this.playInit) this.playInit(wrap);
+            // первый кадр рисуется и у заготовки: карты уходят в видеокарту
+            // сейчас, а не в момент покупки; цикл кадров — только у стоящего
             this.step(performance.now());
-            this.run();
+            if (!this._prep) this.run();
             return true;
         })();
         return this._mountP;
@@ -101,7 +107,7 @@ const GreedLux = {
     },
     // Цикл кадров: стоит, пока обёртка не на странице.
     run() {
-        if (this.raf || !this.gl) return;
+        if (this.raf || !this.gl || this._prep) return;
         const loop = (now) => {
             if (!this.wrapEl || !this.wrapEl.isConnected || !this.gl) { this.raf = null; return; }
             this.step(now);
