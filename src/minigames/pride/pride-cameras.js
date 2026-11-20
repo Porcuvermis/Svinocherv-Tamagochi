@@ -30,7 +30,8 @@ const PrideCameras = {
     CORNER: 10,
     // Насколько камера МОЖЕТ выступать за кромку окна на сцену (единицы). Больше —
     // начинает закрывать кнопки сцены (слоты наряда на боках, счёт сверху).
-    PROT_SIDE: 18, PROT_TB: 14,
+    PROT_SIDE: 22, PROT_TB: 14,
+    MAX_FILL: 8,         // сколько камер заделки дыр допускается всего (не «засыпать мелочью»)
     RADIAL: 0.65,        // доля радиального угла (остальное — осевой, «аккуратный»)
     TILT: 7,             // случайный разброс угла, градусы
     SEED: 1717,
@@ -193,23 +194,28 @@ const PrideCameras = {
         // Дальний слой — подложка: центр на краю экрана, половина за краем.
         // Боковые — крупные, по одной вместо россыпи (толщина 88: видно ~44, то есть
         // вся полоса бока и выступ на сцену).
+        // ГЛАВНОЕ (игрок): видимость камер. Каждая на боках видна целиком и крупно,
+        // как держат в руках, а не россыпь мелочи, которой затыкают дыры.
+        // Смартфон, повёрнутый верхом к центру, в полосу глубиной ~42 влезает только
+        // длинной осью — выходит палочка шириной 19. Поэтому в ближнем слое на боках
+        // только широкие модели, а смартфоны — в подложке, где они наполовину за краем.
+        // Самый дальний слой — тоже крупные камеры, но глубже за краем: закрывает щели
+        // между силуэтами подложки у самого края экрана (вместо мелочи).
         lay.back.push(
-            // бока: ленты идут только между верхней и нижней — углы закрывают верх и низ;
-            // камера крупная, уходит за край; веер мягче (0,3), иначе косые
-            // силуэты оставляют на краю экрана клинья
-            ...this.strip(R, { side: 'left', from: 40, to: STAGE_H - 40, depth: 0, thick: 90, step: 0.8, radial: 0.3 }),
-            ...this.strip(R, { side: 'right', from: 40, to: STAGE_H - 40, depth: 0, thick: 90, step: 0.8, radial: 0.3 }),
-            ...this.strip(R, { side: 'top', from: -40, to: STAGE_W + 40, depth: 0, thick: 96, step: 0.8 }),
-            ...this.strip(R, { side: 'bottom', from: -40, to: STAGE_W + 40, depth: 0, thick: 96, step: 0.8 })
+            ...this.strip(R, { side: 'left', from: 10, to: STAGE_H - 10, depth: -14, thick: 120, step: 0.8, radial: 0.2 }),
+            ...this.strip(R, { side: 'right', from: 10, to: STAGE_H - 10, depth: -14, thick: 120, step: 0.8, radial: 0.2 })
         );
-        // Ближний слой — камеры видны целиком (чуть-чуть за край экрана можно).
-        // На боках — единицы, только широкие модели (больше в узкую полосу не
-        // влезет, а россыпь мелочи игрок запретил); сверху и снизу — плотнее.
+        lay.back.push(
+            ...this.strip(R, { side: 'left', from: 40, to: STAGE_H - 40, depth: 0, thick: 110, step: 0.74, radial: 0.3 }),
+            ...this.strip(R, { side: 'right', from: 40, to: STAGE_H - 40, depth: 0, thick: 110, step: 0.74, radial: 0.3 }),
+            ...this.strip(R, { side: 'top', from: -40, to: STAGE_W + 40, depth: 0, thick: 100, step: 0.8 }),
+            ...this.strip(R, { side: 'bottom', from: -40, to: STAGE_W + 40, depth: 0, thick: 100, step: 0.8 })
+        );
         lay.front.push(
-            ...this.strip(R, { side: 'left', from: 60, to: STAGE_H - 40, whole: true, cut: 0.12, thick: 46, step: 3.0, minAspect: 1.3, radial: 0.4 }),
-            ...this.strip(R, { side: 'right', from: 120, to: STAGE_H - 40, whole: true, cut: 0.12, thick: 46, step: 3.0, minAspect: 1.3, radial: 0.4 }),
-            ...this.strip(R, { side: 'top', from: -10, to: stop + 20, whole: true, cut: 0.1, thick: 70, step: 0.95 }),
-            ...this.strip(R, { side: 'bottom', from: -10, to: STAGE_W + 10, whole: true, cut: 0.1, thick: 70, step: 0.95 })
+            ...this.strip(R, { side: 'left', from: 70, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 50, step: 1.2, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'right', from: 90, to: STAGE_H - 50, whole: true, cut: 0.1, thick: 50, step: 1.2, minAspect: 1.3, radial: 0.4 }),
+            ...this.strip(R, { side: 'top', from: -10, to: stop + 20, whole: true, cut: 0.1, thick: 72, step: 0.98 }),
+            ...this.strip(R, { side: 'bottom', from: -10, to: STAGE_W + 10, whole: true, cut: 0.1, thick: 72, step: 0.98 })
         );
         this._lay = lay;
         this.fillHoles(lay);
@@ -256,7 +262,8 @@ const PrideCameras = {
         const g = cv.getContext('2d'), I = this.inner(), R = this.rng(this.SEED + 5);
         g.scale(K, K);
         const taken = lay.front.slice(-5).map(i => i.id);
-        for (let pass = 0; pass < 30; pass++) {
+        let added = 0;
+        for (let pass = 0; pass < 10 && added < this.MAX_FILL; pass++) {
             g.clearRect(0, 0, STAGE_W, STAGE_H);
             this.paintBg(g, '#ff00ff');
             lay.back.forEach(it => this.put(g, it, false));
@@ -275,9 +282,10 @@ const PrideCameras = {
             }
             // Щели в несколько точек глазом не видны — камеру на них не тратим
             // (лишние камеры — это мелочь и грязь, которую игрок запретил).
-            const holes = Object.values(cells).filter(c => c.n >= 30).sort((a, b) => b.n - a.n);
+            const holes = Object.values(cells).filter(c => c.n >= 60).sort((a, b) => b.n - a.n);
             if (!holes.length) break;
-            holes.slice(0, 3).forEach(c => {
+            holes.slice(0, 2).forEach(c => {
+                if (added++ >= this.MAX_FILL) return;
                 const x = c.sx / c.n, y = c.sy / c.n;
                 const id = this.pick(R, taken); taken.push(id);
                 const M = this.MODELS[id], sc = (84 + R() * 26) / M.h;
