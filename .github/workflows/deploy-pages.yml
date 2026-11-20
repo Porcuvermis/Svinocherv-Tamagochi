@@ -158,5 +158,14 @@ jobs:
         with:
           path: _site
 
+      # Пауза между загрузкой и выкладкой. deploy-pages ищет артефакт через
+      # полсекунды после загрузки, а GitHub показывает его в API не сразу:
+      # «Found 0 artifact(s) … No artifacts named "github-pages"». 20.11 так
+      # упали пять выкладок за день, сайт и бот оставались на старой версии.
+      # Перезапуск упавшего прогона не помогает (в нём уже два артефакта) —
+      # только новый прогон (Actions → Deploy to GitHub Pages → Run workflow).
+      - name: Пауза — артефакт должен проявиться в API
+        run: sleep 15
+
       - id: deployment
         uses: actions/deploy-pages@v4
