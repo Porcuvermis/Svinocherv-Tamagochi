@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 440" width="600" height="440">
+  <!-- Плёночная №4: складная камера с мехами — раздвинутые меха ступенями, лицевая доска с малым объективом, откидные распорки. Чёрное, серые, белые метки. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#48484b"/><stop offset="0.1" stop-color="#343437"/><stop offset="1" stop-color="#1c1c1f"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6a6a6e"/><stop offset="0.5" stop-color="#47474b"/><stop offset="1" stop-color="#2e2e31"/>
+    </linearGradient>
+    <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3a3a3d"/><stop offset="0.5" stop-color="#2a2a2d"/><stop offset="1" stop-color="#1a1a1c"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d4d4d8"/><stop offset="0.45" stop-color="#8a8a8f"/><stop offset="1" stop-color="#525256"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#58585c"/><stop offset="1" stop-color="#242427"/>
+    </linearGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c3c40"/><stop offset="1" stop-color="#0e0e10"/>
+    </linearGradient>
+    <linearGradient id="inhood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0c"/><stop offset="1" stop-color="#2c2c30"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.4" cy="0.36" r="0.8">
+      <stop offset="0" stop-color="#55555b"/><stop offset="0.45" stop-color="#26262a"/><stop offset="1" stop-color="#08080a"/>
+    </radialGradient>
+    <radialGradient id="glassEdge" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.68" stop-color="#ccc" stop-opacity="0"/><stop offset="1" stop-color="#e0e0e0" stop-opacity="0.34"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="leather" width="5" height="5" patternUnits="userSpaceOnUse">
+      <circle cx="1.2" cy="1.2" r="0.65" fill="#0c0c0e" opacity="0.6"/><circle cx="3.7" cy="3.7" r="0.65" fill="#0c0c0e" opacity="0.6"/>
+    </pattern>
+    <clipPath id="bodyClip"><rect x="100" y="100" width="400" height="290" rx="16"/></clipPath>
+  
+    <linearGradient id="topmetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b4b4b8"/><stop offset="0.18" stop-color="#8e8e92"/><stop offset="0.7" stop-color="#5e5e62"/><stop offset="1" stop-color="#46464a"/>
+    </linearGradient>
+    <pattern id="stitch" width="10" height="6" patternUnits="userSpaceOnUse">
+      <rect x="1" y="2.2" width="5" height="1.6" rx="0.8" fill="#9a9a9e" opacity="0.28"/>
+    </pattern>
+
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f0f2"/><stop offset="0.3" stop-color="#c2c2c6"/><stop offset="0.55" stop-color="#8a8a90"/><stop offset="0.78" stop-color="#b6b6ba"/><stop offset="1" stop-color="#76767a"/>
+    </linearGradient>
+    <linearGradient id="chromeV" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6e6e72"/><stop offset="0.25" stop-color="#e6e6ea"/><stop offset="0.5" stop-color="#a0a0a6"/><stop offset="0.8" stop-color="#d4d4d8"/><stop offset="1" stop-color="#707074"/>
+    </linearGradient>
+</defs>
+  <!-- проушины на дверце -->
+  <g stroke="#17171a" stroke-width="2.2" fill="url(#chrome)">
+    <rect x="76" y="132" width="24" height="44" rx="9"/><rect x="500" y="132" width="24" height="44" rx="9"/>
+  </g>
+  <g fill="#17171a"><rect x="83" y="144" width="10" height="20" rx="5"/><rect x="507" y="144" width="10" height="20" rx="5"/></g>
+
+  <!-- видоискатель на кронштейне слева сверху -->
+  <rect x="136" y="64" width="104" height="44" rx="8" fill="url(#chromeV)" stroke="#17171a" stroke-width="2.4"/>
+  <rect x="146" y="72" width="64" height="28" rx="6" fill="url(#glass)" stroke="#17171a" stroke-width="2"/>
+  <rect x="151" y="76" width="26" height="6" rx="3" fill="#fff" opacity="0.5"/>
+  <circle cx="224" cy="86" r="6" fill="#0e0e10" stroke="#17171a" stroke-width="1.6"/><circle cx="222.4" cy="84.4" r="2" fill="#f2f2f2" opacity="0.85"/>
+  <!-- головка взвода справа сверху -->
+  <ellipse cx="440" cy="106" rx="42" ry="6" fill="#17171a" opacity="0.4"/>
+  <rect x="398" y="78" width="84" height="30" rx="10" fill="url(#chromeV)" stroke="#17171a" stroke-width="2.2"/>
+  <g stroke="#17171a" stroke-width="1.4" opacity="0.55"><path d="M408 81v24M416 81v24M424 81v24M432 81v24M440 81v24M448 81v24M456 81v24M464 81v24M472 81v24"/></g>
+  <rect x="402" y="82" width="76" height="5" rx="2.5" fill="#fff" opacity="0.6"/>
+  <!-- спуск по центру сверху -->
+  <ellipse cx="318" cy="106" rx="24" ry="6" fill="#17171a" opacity="0.4"/>
+  <rect x="294" y="82" width="48" height="26" rx="10" fill="url(#chrome)" stroke="#17171a" stroke-width="2.2"/>
+  <rect x="302" y="87" width="32" height="16" rx="7" fill="url(#dark)" stroke="#17171a" stroke-width="1.3"/>
+  <ellipse cx="318" cy="90" rx="11" ry="3" fill="#fff" opacity="0.5"/>
+
+  <!-- дверца корпуса -->
+  <rect x="100" y="100" width="400" height="290" rx="16" fill="url(#body)" stroke="#17171a" stroke-width="2.6"/>
+  <rect x="100" y="112" width="400" height="278" fill="url(#leather)" clip-path="url(#bodyClip)"/>
+  <path d="M118 106 L 482 106" stroke="#fff" stroke-width="2.2" opacity="0.2" stroke-linecap="round"/>
+  <rect x="100" y="372" width="400" height="18" rx="9" fill="url(#chrome)" stroke="#17171a" stroke-width="2.2"/>
+  <rect x="112" y="375" width="376" height="3.4" rx="1.7" fill="#fff" opacity="0.65"/>
+  <!-- хромовые уголки дверцы -->
+  <g fill="url(#chrome)" stroke="#17171a" stroke-width="1.8" stroke-linejoin="round">
+    <path d="M100 116 L 100 150 L 126 116 Z"/><path d="M500 116 L 500 150 L 474 116 Z"/>
+  </g>
+
+  <!-- раздвинутые меха -->
+  <rect x="124" y="128" width="352" height="232" rx="14" fill="#1a1a1d" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M132 130.5 L 468 130.5" stroke="#fff" stroke-width="1.6" opacity="0.28" stroke-linecap="round"/>
+  <path d="M126.5 138 L 126.5 350" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+  <rect x="139" y="139" width="322" height="210" rx="13" fill="#2d2d31" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M147 141.5 L 453 141.5" stroke="#fff" stroke-width="1.6" opacity="0.26" stroke-linecap="round"/>
+  <path d="M141.5 149 L 141.5 339" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+  <rect x="154" y="150" width="292" height="188" rx="12" fill="#1a1a1d" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M162 152.5 L 438 152.5" stroke="#fff" stroke-width="1.6" opacity="0.24" stroke-linecap="round"/>
+  <path d="M156.5 160 L 156.5 328" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+  <rect x="169" y="161" width="262" height="166" rx="11" fill="#2d2d31" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M177 163.5 L 423 163.5" stroke="#fff" stroke-width="1.6" opacity="0.22" stroke-linecap="round"/>
+  <path d="M171.5 171 L 171.5 317" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+  <rect x="184" y="172" width="232" height="144" rx="10" fill="#1a1a1d" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M192 174.5 L 408 174.5" stroke="#fff" stroke-width="1.6" opacity="0.20" stroke-linecap="round"/>
+  <path d="M186.5 182 L 186.5 306" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+  <rect x="199" y="183" width="202" height="122" rx="9" fill="#2d2d31" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M207 185.5 L 393 185.5" stroke="#fff" stroke-width="1.6" opacity="0.18" stroke-linecap="round"/>
+  <path d="M201.5 193 L 201.5 295" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+  <rect x="214" y="194" width="172" height="100" rx="8" fill="#1a1a1d" stroke="#0a0a0c" stroke-width="1.8"/>
+  <path d="M222 196.5 L 378 196.5" stroke="#fff" stroke-width="1.6" opacity="0.16" stroke-linecap="round"/>
+  <path d="M216.5 204 L 216.5 284" stroke="#fff" stroke-width="1.2" opacity="0.14" stroke-linecap="round"/>
+
+  <!-- лицевая доска объектива -->
+  <rect x="206" y="182" width="188" height="116" rx="12" fill="url(#chrome)" stroke="#17171a" stroke-width="2.4"/>
+  <rect x="213" y="189" width="174" height="102" rx="8" fill="#1c1c1f" stroke="#17171a" stroke-width="1.6"/>
+  <g fill="#17171a" opacity="0.8"><circle cx="218" cy="194" r="2.6"/><circle cx="382" cy="194" r="2.6"/><circle cx="218" cy="286" r="2.6"/><circle cx="382" cy="286" r="2.6"/></g>
+  <g fill="#f2f2f2" opacity="0.85"><circle cx="232" cy="198" r="1.8"/><circle cx="368" cy="198" r="1.8"/></g>
+
+  <circle cx="300" cy="240" r="44" fill="url(#chrome)" stroke="#17171a" stroke-width="2.4"/>
+  <circle cx="300" cy="240" r="38.72" fill="url(#barrel)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="300" cy="240" r="36.08" fill="none" stroke="#0a0a0c" stroke-width="5.280000000000001"/>
+  <circle cx="300" cy="240" r="36.08" fill="none" stroke="#85858b" stroke-width="5.280000000000001" stroke-dasharray="1.6 2.4" opacity="0.7"/>
+  <g stroke="#f2f2f2" stroke-width="1.8" stroke-linecap="round" opacity="0.92"><path d="M300 203.9v6" transform="rotate(0 300 240)"/><path d="M300 203.9v6" transform="rotate(-30 300 240)"/><path d="M300 203.9v6" transform="rotate(30 300 240)"/><path d="M300 203.9v6" transform="rotate(-60 300 240)"/><path d="M300 203.9v6" transform="rotate(60 300 240)"/><path d="M300 203.9v6" transform="rotate(-90 300 240)"/><path d="M300 203.9v6" transform="rotate(90 300 240)"/><path d="M300 203.9v6" transform="rotate(180 300 240)"/><path d="M300 203.9v6" transform="rotate(-150 300 240)"/><path d="M300 203.9v6" transform="rotate(150 300 240)"/><path d="M300 203.9v6" transform="rotate(-120 300 240)"/><path d="M300 203.9v6" transform="rotate(120 300 240)"/></g>
+  <circle cx="300" cy="240" r="33.44" fill="none" stroke="#17171a" stroke-width="1.5"/>
+  <circle cx="300" cy="240" r="27.28" fill="url(#chrome)" stroke="#17171a" stroke-width="1.6"/>
+  <circle cx="300" cy="240" r="22.880000000000003" fill="#0c0c0e" stroke="#17171a" stroke-width="1.5"/>
+  <circle cx="300" cy="240" r="19.680000000000003" fill="none" stroke="#f2f2f2" stroke-width="2" opacity="0.88"/>
+  <circle cx="300" cy="240" r="19.36" fill="url(#glass)" stroke="#17171a" stroke-width="1.7"/>
+  <circle cx="300" cy="240" r="19.36" fill="url(#glassEdge)"/>
+  <circle cx="300" cy="240" r="11.6" fill="none" stroke="#c8c8cc" stroke-width="1.1" opacity="0.28"/>
+  <circle cx="300" cy="240" r="5" fill="#050506" stroke="#bdbdc2" stroke-width="1" opacity="0.7"/>
+  <path d="M288.0 234.6 C 290.3 226.4 298.1 222.6 305.8 223.4 C 299.0 226.4 294.2 230.3 291.9 238.1 Z" fill="url(#shine)"/>
+  <circle cx="308.1" cy="248.7" r="2.9" fill="#fff" opacity="0.5"/>
+  <!-- рычаг затвора на доске -->
+  <path d="M356 270 C 372 268 380 276 380 288" stroke="#17171a" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M356 270 C 372 268 380 276 380 288" stroke="url(#chrome)" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+  <circle cx="354" cy="270" r="5" fill="url(#chrome)" stroke="#17171a" stroke-width="1.6"/>
+
+  <!-- боковые распорки (откидные ножки мехов) -->
+  <g stroke-linecap="round">
+    <path d="M118 152 L 214 218" stroke="#17171a" stroke-width="8"/><path d="M118 152 L 214 218" stroke="url(#chrome)" stroke-width="4.4"/>
+    <path d="M118 348 L 214 262" stroke="#17171a" stroke-width="8"/><path d="M118 348 L 214 262" stroke="url(#chrome)" stroke-width="4.4"/>
+    <path d="M482 152 L 386 218" stroke="#17171a" stroke-width="8"/><path d="M482 152 L 386 218" stroke="url(#chrome)" stroke-width="4.4"/>
+    <path d="M482 348 L 386 262" stroke="#17171a" stroke-width="8"/><path d="M482 348 L 386 262" stroke="url(#chrome)" stroke-width="4.4"/>
+  </g>
+  <g fill="url(#chrome)" stroke="#17171a" stroke-width="1.8">
+    <circle cx="118" cy="152" r="7"/><circle cx="118" cy="348" r="7"/><circle cx="482" cy="152" r="7"/><circle cx="482" cy="348" r="7"/>
+    <circle cx="214" cy="218" r="5"/><circle cx="214" cy="262" r="5"/><circle cx="386" cy="218" r="5"/><circle cx="386" cy="262" r="5"/>
+  </g>
+  <g fill="#17171a" opacity="0.7"><circle cx="118" cy="152" r="2.4"/><circle cx="118" cy="348" r="2.4"/><circle cx="482" cy="152" r="2.4"/><circle cx="482" cy="348" r="2.4"/></g>
+</svg>
