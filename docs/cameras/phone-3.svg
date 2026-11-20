@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 440" width="600" height="440">
-  <!-- Смартфон №3: вертикальная колонка из трёх объективов в хромовой капсуле и кольцевая вспышка из восьми светодиодов; плоская брусковая рамка, графитовая спинка с тонкой штриховкой. Серые, чёрное, белые метки. -->
+  <!-- Смартфон №3 (в духе яблочного): квадратный глянцевый остров с тремя объективами треугольником, вспышкой и датчиком глубины, матовая светло-серая спинка, полированная стальная рамка, кнопки слева и справа. Серые, чёрное, белые метки. -->
   <defs>
     <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#48484b"/><stop offset="0.1" stop-color="#343437"/><stop offset="1" stop-color="#1c1c1f"/>
@@ -69,81 +69,70 @@
       <stop offset="0" stop-color="#5a5a5f"/><stop offset="0.12" stop-color="#3a3a3e"/><stop offset="0.6" stop-color="#232326"/><stop offset="1" stop-color="#151517"/>
     </linearGradient>
   
-    <linearGradient id="slab" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#46464b"/><stop offset="0.5" stop-color="#2b2b2f"/><stop offset="1" stop-color="#1a1a1d"/>
+    <linearGradient id="frost" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8d8dd"/><stop offset="0.55" stop-color="#b8b8be"/><stop offset="1" stop-color="#9c9ca3"/>
     </linearGradient>
-    <pattern id="hb" width="4" height="4" patternUnits="userSpaceOnUse"><rect x="0" y="0" width="4" height="1" fill="#fff" opacity="0.06"/></pattern>
+    <linearGradient id="islandg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e6e6ea"/><stop offset="1" stop-color="#b0b0b8"/>
+    </linearGradient>
     <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.18"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.02"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0" stop-color="#fff" stop-opacity="0.4"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
-    <clipPath id="ph"><rect x="216" y="24" width="168" height="392" rx="17"/></clipPath>
+    <pattern id="sat" width="3" height="3" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="0.5" fill="#17171a" opacity="0.07"/></pattern>
+    <clipPath id="ph"><rect x="215" y="23" width="170" height="394" rx="34"/></clipPath>
 </defs>
-  <!-- боковые кнопки -->
-  <rect x="388" y="150" width="8" height="40" rx="3" fill="url(#silver)" stroke="#17171a" stroke-width="1.8"/>
-  <rect x="388" y="206" width="8" height="40" rx="3" fill="url(#silver)" stroke="#17171a" stroke-width="1.8"/>
-  <rect x="388" y="276" width="8" height="22" rx="3" fill="url(#dark)" stroke="#17171a" stroke-width="1.8"/><circle cx="392" cy="287" r="2" fill="#f2f2f2"/>
-  <!-- плоская «брусковая» рамка и спинка -->
-  <rect x="210" y="18" width="180" height="404" rx="22" fill="url(#chrome)" stroke="#17171a" stroke-width="2.6"/>
-  <rect x="216" y="24" width="168" height="392" rx="17" fill="url(#slab)" stroke="#17171a" stroke-width="1.8"/>
-  <rect x="216" y="24" width="168" height="392" rx="17" fill="url(#hb)"/>
-  <g clip-path="url(#ph)"><path d="M216 24 L 384 24 L 216 300 Z" fill="url(#sweep)"/></g>
-  <path d="M228 33 L 372 33" stroke="#fff" stroke-width="2.4" opacity="0.28" stroke-linecap="round"/>
-  <!-- антенные полосы -->
-  <g fill="#0a0a0c" opacity="0.8"><rect x="216" y="368" width="168" height="5"/><rect x="216" y="56" width="0" height="0"/></g>
-  <path d="M216 375 L 384 375" stroke="#fff" stroke-width="1.2" opacity="0.18"/>
-  <!-- вертикальная колонка из трёх объективов -->
-  <rect x="226" y="48" width="64" height="162" rx="32" fill="#0a0a0c" opacity="0.4" transform="translate(3 6)"/>
-  <rect x="224" y="46" width="64" height="162" rx="32" fill="url(#chrome)" stroke="#17171a" stroke-width="2.6"/>
-  <rect x="229" y="51" width="54" height="152" rx="27" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
+  <!-- боковые кнопки: слева переключатель и две качалки, справа питание -->
+  <rect x="207" y="110" width="8" height="22" rx="3.5" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <rect x="207" y="150" width="8" height="44" rx="3.5" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <rect x="207" y="206" width="8" height="44" rx="3.5" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <rect x="385" y="170" width="8" height="74" rx="3.5" fill="url(#chrome)" stroke="#17171a" stroke-width="1.8"/>
+  <!-- полированная стальная рамка и матовая стеклянная спинка -->
+  <rect x="210" y="18" width="180" height="404" rx="40" fill="url(#chrome)" stroke="#17171a" stroke-width="2.6"/>
+  <rect x="215" y="23" width="170" height="394" rx="35" fill="url(#frost)" stroke="#17171a" stroke-width="1.8"/>
+  <rect x="215" y="23" width="170" height="394" rx="35" fill="url(#sat)"/>
+  <g clip-path="url(#ph)"><path d="M215 23 L 385 23 L 215 250 Z" fill="url(#sweep)"/></g>
+  <!-- антенные разрезы -->
+  <g stroke="#17171a" stroke-width="2.2" opacity="0.35" stroke-linecap="round"><path d="M215 64h12M373 64h12M215 372h12M373 372h12"/></g>
+  <!-- квадратный остров: глянцевое стекло со скруглёнными углами -->
+  <rect x="228" y="46" width="100" height="100" rx="24" fill="#17171a" opacity="0.28" transform="translate(3 6)"/>
+  <rect x="226" y="44" width="100" height="100" rx="24" fill="url(#islandg)" stroke="#17171a" stroke-width="2.4"/>
+  <rect x="231" y="49" width="90" height="90" rx="20" fill="none" stroke="#fff" stroke-width="2" opacity="0.6"/>
 
-  <circle cx="256" cy="82" r="22" fill="url(#chrome)" stroke="#17171a" stroke-width="2"/>
-  <circle cx="256" cy="82" r="18.9" fill="url(#barrel)" stroke="#17171a" stroke-width="1.6"/>
-  <circle cx="256" cy="82" r="15.4" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
-  <circle cx="256" cy="82" r="14.1" fill="none" stroke="#f2f2f2" stroke-width="1.6" opacity="0.85"/>
-  <circle cx="256" cy="82" r="12.3" fill="url(#glass)" stroke="#17171a" stroke-width="1.4"/>
-  <circle cx="256" cy="82" r="12.3" fill="url(#glassEdge)"/>
-  <circle cx="256" cy="82" r="6.6" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
-  <circle cx="256" cy="82" r="2.2" fill="#050506" opacity="0.8"/>
-  <path d="M247.6 78.5 C 249.4 72.8 254.9 70.1 260.4 71.0 C 255.6 72.8 252.0 75.4 250.3 81.1 Z" fill="url(#shine)"/>
-  <circle cx="261.7" cy="88.2" r="2.0" fill="#fff" opacity="0.55"/>
-  <circle cx="256" cy="130" r="22" fill="url(#chrome)" stroke="#17171a" stroke-width="2"/>
-  <circle cx="256" cy="130" r="18.9" fill="url(#barrel)" stroke="#17171a" stroke-width="1.6"/>
-  <circle cx="256" cy="130" r="15.4" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
-  <circle cx="256" cy="130" r="14.1" fill="none" stroke="#f2f2f2" stroke-width="1.6" opacity="0.85"/>
-  <circle cx="256" cy="130" r="12.3" fill="url(#glass)" stroke="#17171a" stroke-width="1.4"/>
-  <circle cx="256" cy="130" r="12.3" fill="url(#glassEdge)"/>
-  <circle cx="256" cy="130" r="6.6" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
-  <circle cx="256" cy="130" r="2.2" fill="#050506" opacity="0.8"/>
-  <path d="M247.6 126.5 C 249.4 120.8 254.9 118.1 260.4 119.0 C 255.6 120.8 252.0 123.4 250.3 129.1 Z" fill="url(#shine)"/>
-  <circle cx="261.7" cy="136.2" r="2.0" fill="#fff" opacity="0.55"/>
-  <circle cx="256" cy="176" r="17" fill="url(#chrome)" stroke="#17171a" stroke-width="2"/>
-  <circle cx="256" cy="176" r="14.6" fill="url(#barrel)" stroke="#17171a" stroke-width="1.6"/>
-  <circle cx="256" cy="176" r="11.9" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
-  <circle cx="256" cy="176" r="10.9" fill="none" stroke="#f2f2f2" stroke-width="1.6" opacity="0.85"/>
-  <circle cx="256" cy="176" r="9.5" fill="url(#glass)" stroke="#17171a" stroke-width="1.4"/>
-  <circle cx="256" cy="176" r="9.5" fill="url(#glassEdge)"/>
-  <circle cx="256" cy="176" r="5.1" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
-  <circle cx="256" cy="176" r="1.7" fill="#050506" opacity="0.8"/>
-  <path d="M249.5 173.3 C 250.9 168.9 255.2 166.8 259.4 167.5 C 255.7 168.9 252.9 170.9 251.6 175.3 Z" fill="url(#shine)"/>
-  <circle cx="260.4" cy="180.8" r="1.5" fill="#fff" opacity="0.55"/>
-  <!-- кольцевая вспышка: восемь светодиодов вокруг тёмного стекла -->
-  <circle cx="338" cy="94" r="34" fill="#0a0a0c" opacity="0.4" transform="translate(3 5)"/>
-  <circle cx="336" cy="92" r="34" fill="url(#chrome)" stroke="#17171a" stroke-width="2.6"/>
-  <circle cx="336" cy="92" r="28" fill="url(#gloss)" stroke="#17171a" stroke-width="2"/>
-  <circle cx="353.6" cy="99.3" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="352.6" cy="98.3" r="1.4" fill="#fff"/>
-  <circle cx="343.3" cy="109.6" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="342.3" cy="108.6" r="1.4" fill="#fff"/>
-  <circle cx="328.7" cy="109.6" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="327.7" cy="108.6" r="1.4" fill="#fff"/>
-  <circle cx="318.4" cy="99.3" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="317.4" cy="98.3" r="1.4" fill="#fff"/>
-  <circle cx="318.4" cy="84.7" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="317.4" cy="83.7" r="1.4" fill="#fff"/>
-  <circle cx="328.7" cy="74.4" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="327.7" cy="73.4" r="1.4" fill="#fff"/>
-  <circle cx="343.3" cy="74.4" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="342.3" cy="73.4" r="1.4" fill="#fff"/>
-  <circle cx="353.6" cy="84.7" r="4.6" fill="#eeeef2" stroke="#17171a" stroke-width="1.2"/><circle cx="352.6" cy="83.7" r="1.4" fill="#fff"/>
-
-  <circle cx="336" cy="92" r="10" fill="#0c0c0e" stroke="#17171a" stroke-width="1.6"/><circle cx="336" cy="92" r="5" fill="url(#glass)"/><circle cx="334" cy="90" r="1.6" fill="#fff" opacity="0.85"/>
-  <!-- датчик и микрофон под вспышкой -->
-  <circle cx="336" cy="148" r="5" fill="#0a0a0c"/><circle cx="336" cy="148" r="2" fill="#f2f2f2" opacity="0.8"/>
-  <g fill="#0a0a0c" opacity="0.85"><circle cx="324" cy="168" r="2"/><circle cx="336" cy="168" r="2"/><circle cx="348" cy="168" r="2"/></g>
-  <!-- нижняя часть: пустая плашка с точками -->
-  <rect x="272" y="318" width="76" height="28" rx="8" fill="none" stroke="#f2f2f2" stroke-width="1.4" opacity="0.2"/>
-  <g fill="#f2f2f2" opacity="0.22"><circle cx="296" cy="332" r="2.2"/><circle cx="310" cy="332" r="2.2"/><circle cx="324" cy="332" r="2.2"/></g>
+  <circle cx="256" cy="78" r="23" fill="url(#chrome)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="256" cy="78" r="19.8" fill="url(#barrel)" stroke="#17171a" stroke-width="1.6"/>
+  <circle cx="256" cy="78" r="16.1" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="256" cy="78" r="14.7" fill="none" stroke="#f2f2f2" stroke-width="1.6" opacity="0.85"/>
+  <circle cx="256" cy="78" r="12.9" fill="url(#glass)" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="256" cy="78" r="12.9" fill="url(#glassEdge)"/>
+  <circle cx="256" cy="78" r="6.9" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="256" cy="78" r="2.3" fill="#050506" opacity="0.8"/>
+  <path d="M247.3 74.3 C 249.1 68.3 254.8 65.6 260.6 66.5 C 255.5 68.3 251.9 71.1 250.0 77.1 Z" fill="url(#shine)"/>
+  <circle cx="262.0" cy="84.4" r="2.1" fill="#fff" opacity="0.55"/>
+  <circle cx="256" cy="122" r="23" fill="url(#chrome)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="256" cy="122" r="19.8" fill="url(#barrel)" stroke="#17171a" stroke-width="1.6"/>
+  <circle cx="256" cy="122" r="16.1" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="256" cy="122" r="14.7" fill="none" stroke="#f2f2f2" stroke-width="1.6" opacity="0.85"/>
+  <circle cx="256" cy="122" r="12.9" fill="url(#glass)" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="256" cy="122" r="12.9" fill="url(#glassEdge)"/>
+  <circle cx="256" cy="122" r="6.9" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="256" cy="122" r="2.3" fill="#050506" opacity="0.8"/>
+  <path d="M247.3 118.3 C 249.1 112.3 254.8 109.6 260.6 110.5 C 255.5 112.3 251.9 115.1 250.0 121.1 Z" fill="url(#shine)"/>
+  <circle cx="262.0" cy="128.4" r="2.1" fill="#fff" opacity="0.55"/>
+  <circle cx="302" cy="100" r="23" fill="url(#chrome)" stroke="#17171a" stroke-width="2"/>
+  <circle cx="302" cy="100" r="19.8" fill="url(#barrel)" stroke="#17171a" stroke-width="1.6"/>
+  <circle cx="302" cy="100" r="16.1" fill="#0c0c0e" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="302" cy="100" r="14.7" fill="none" stroke="#f2f2f2" stroke-width="1.6" opacity="0.85"/>
+  <circle cx="302" cy="100" r="12.9" fill="url(#glass)" stroke="#17171a" stroke-width="1.4"/>
+  <circle cx="302" cy="100" r="12.9" fill="url(#glassEdge)"/>
+  <circle cx="302" cy="100" r="6.9" fill="none" stroke="#c8c8cc" stroke-width="1" opacity="0.3"/>
+  <circle cx="302" cy="100" r="2.3" fill="#050506" opacity="0.8"/>
+  <path d="M293.3 96.3 C 295.1 90.3 300.9 87.6 306.6 88.5 C 301.5 90.3 297.9 93.1 296.0 99.1 Z" fill="url(#shine)"/>
+  <circle cx="308.0" cy="106.4" r="2.1" fill="#fff" opacity="0.55"/>
+  <!-- вспышка, датчик глубины, микрофон -->
+  <circle cx="302" cy="64" r="8" fill="#17171a" stroke="#17171a" stroke-width="1.4"/><circle cx="302" cy="64" r="5.4" fill="#f0f0f4"/><circle cx="300.4" cy="62.4" r="1.8" fill="#fff"/>
+  <circle cx="302" cy="132" r="7.5" fill="#101012" stroke="#17171a" stroke-width="1.4"/><circle cx="300.6" cy="130.6" r="1.6" fill="#8a8a92"/>
+  <circle cx="318" cy="128" r="2.2" fill="#17171a" opacity="0.8"/>
+  <!-- на спинке посредине — пустая светлая плашка вместо знака (знака нет) -->
+  <circle cx="300" cy="258" r="30" fill="none" stroke="#fff" stroke-width="3" opacity="0.5"/>
+  <circle cx="300" cy="258" r="30" fill="none" stroke="#17171a" stroke-width="1" opacity="0.18" transform="translate(0.8 0.8)"/>
 </svg>
