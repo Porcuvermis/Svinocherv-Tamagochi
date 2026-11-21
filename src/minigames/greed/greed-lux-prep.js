@@ -16,6 +16,7 @@ Object.assign(GreedLux, {
     prepare(container) {
         if (this.wrapEl) return this._mountP;          // уже стоит или уже заготовлена
         this._prep = true;
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('v2: заготовка…');
         const p = this.mount(container, {});
         const st = this.wrapEl.style;
         st.position = 'absolute'; st.left = st.top = '0'; st.opacity = '0'; st.pointerEvents = 'none';
@@ -23,6 +24,7 @@ Object.assign(GreedLux, {
         // заранее, чтобы в миг покупки не стоял кадр
         Promise.resolve(p).then(() => this._kantP).then(() => this.castFlowReady && this.castFlowReady()).then(() => {
             if (!this._prep) return;
+            if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('v2: заготовка готова');
             if (this.castHeatInit) this.castHeatInit();
             if (this.castCanvas && !this._castC) this.castCanvas(null);
         }).catch(() => {});
@@ -32,6 +34,7 @@ Object.assign(GreedLux, {
     prepTake(container, opts) {
         if (!this._prep || !this.wrapEl) return this.mount(container, opts);
         this._prep = false;
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('v2: заготовка показана');
         // заготовленный холст литья нужен, только если сейчас литьё
         if (!this._castPending && this.castCanvasDrop) this.castCanvasDrop();
         const st = this.wrapEl.style;
@@ -43,6 +46,7 @@ Object.assign(GreedLux, {
     prepDrop() {
         if (!this._prep) return;
         this._prep = false;
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('v2: заготовка снята');
         this.unmount();
     }
 });

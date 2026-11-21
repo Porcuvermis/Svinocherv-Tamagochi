@@ -69,6 +69,7 @@ const GreedMinigame = {
         // аппарат собран целиком (GreedJunkLit.settled: корпус, рычаг,
         // колесо, пачинко) и атлас монет пришёл.
         this.M = this.machine();
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('вход в алчность: ' + (this.M === GreedJunkLit ? 'гаражный' : 'версия 2'));
         this._readyP = new Promise((ready) => requestAnimationFrame(() => {
             const L = this.M;
             const drawn = L.mount(this.stageEl, {
@@ -145,6 +146,7 @@ const GreedMinigame = {
     bet: null,
 
     close() {
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('выход из алчности');
         this.spinGeneration++;
         this.timers.forEach(clearTimeout);
         this.timers = [];

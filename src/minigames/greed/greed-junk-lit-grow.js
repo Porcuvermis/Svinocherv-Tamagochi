@@ -64,6 +64,7 @@ Object.assign(GreedJunkLit, {
         const pre = this.growPre || (this.growPre = {}), had = pre[game];
         if (had) return had.p;
         const rec = pre[game] = { state: 'busy' };
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('заготовка ' + game + '…');
         const t0 = performance.now();
         rec.p = (async () => {
             const sv = this.growSvgs(game);
@@ -87,10 +88,12 @@ Object.assign(GreedJunkLit, {
                 if (out.asm) out.asm.sets = null;
             }
             Object.assign(rec, out, { state: 'ready', ms: Math.round(performance.now() - t0) });
+            if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('заготовка ' + game + ' готова ' + rec.ms + ' мс' + (out.gl ? '' : ', без прибора'));
             return rec;
         })().catch((e) => {
             if (this.growPre && this.growPre[game] === rec) delete this.growPre[game];
             console.warn('[Аппарат] заготовка не собралась', e);
+            if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('заготовка ' + game + ': сбой ' + (e && e.message));
             throw e;
         });
         return rec.p;
@@ -136,6 +139,7 @@ Object.assign(GreedJunkLit, {
     // контекст с текстурами сразу назад.
     growDrop() {
         const pre = this.growPre;
+        if (pre) if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('заготовки сняты: ' + Object.keys(pre).join(', '));
         this.growPre = null;
         if (pre) Object.values(pre).forEach(rec => { if (rec.gl && !rec.glTaken) this.growLose(rec.gl); });
     },
@@ -155,6 +159,7 @@ Object.assign(GreedJunkLit, {
         const rec = await this.growPrep(game);
         this._growing = game;
         try {
+            if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('врастание ' + game + ': участок корпуса');
             this.growBody(game, rec);
             if (game === 'pachinko') this.growKey();
             // что лежало за живым слоем до врастания — там и остаётся
@@ -163,6 +168,7 @@ Object.assign(GreedJunkLit, {
             if (game === 'wheel') this.wheelMountLit(wrap);
             else { this.pachMountLit(wrap); this.growWheelOnTop(); }
             this.growPlace(before);
+            if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('врастание ' + game + ': слой стоит');
             this.draw();
             await (game === 'wheel' ? this._wheelP : this._pachP);
         } finally { this._growing = null; }

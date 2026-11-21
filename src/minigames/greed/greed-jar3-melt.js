@@ -51,20 +51,26 @@ Object.assign(GreedJar3, {
         c = mix(c, hx(K.hot), sm(0.62, 1, h));
         return `rgb(${c.map(Math.round).join(',')})`;
     },
-    // монеты с накалом: картинка кучи, окрашенная жаром (кэш — 8 ступеней)
+    // монеты с накалом: картинка кучи, окрашенная жаром. Один холст на все
+    // ступени — перекрашивается, когда ступень сменилась (жар только растёт,
+    // ступеней 8). Было: кэш всех 8 ступеней — до 8 холстов по ~1560×1209
+    // (≈60 МБ) рождались ровно в миг литья, поверх двух аппаратов в памяти,
+    // и жили после покупки (вылеты на iPhone, 21.11, tools/test-greed-gpu.js).
     meltCoins(G, res, step) {
-        const T = this._meltT || (this._meltT = {});
-        const key = step + '|' + Math.round(res);
-        if (T[key]) return T[key];
-        const src = this.coinSprite(G, res), cv = document.createElement('canvas');
-        cv.width = src.width; cv.height = src.height;
+        const key = step + '|' + Math.round(res), M = this._melt;
+        if (M && M.key === key) return M.cv;
+        const src = this.coinSprite(G, res);
+        const cv = M && M.cv.width === src.width && M.cv.height === src.height ? M.cv : document.createElement('canvas');
+        cv.width = src.width; cv.height = src.height;      // и очистка
+        this._melt = { key, cv };
         // до золотого, не до белого: белая куча читалась снегом (кадр 20.11)
         const g = cv.getContext('2d'), h = step / 7 * 0.72;
         g.drawImage(src, 0, 0);
         g.globalCompositeOperation = 'source-atop';
         g.globalAlpha = 0.2 + 0.65 * h; g.fillStyle = this.heatColor(h); g.fillRect(0, 0, cv.width, cv.height);
         g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.35 * h * h; g.fillRect(0, 0, cv.width, cv.height);
-        return (T[key] = cv);
+        g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+        return cv;
     },
     meltDraw(c, v, G, P) {
         const m = Math.min(1, P.melt), sm = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };

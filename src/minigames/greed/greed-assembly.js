@@ -48,6 +48,7 @@ const GreedAssembly = {
         const sets = rec && rec.gl && rec.gl.asm && Object.keys(rec.gl.asm).length && rec.glTaken
             ? { sets: rec.gl.asm, masks: rec.asm.masks } : await this.sets(name, rec && rec.asm);
         await lowered;
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('сборка ' + name + ': полёт');
         this.parts = game === 'wheel' ? this.cut(sets) : this.cutPach(sets);
         this.paintBase();
         // Первая отрисовка слоёв — до старта часов: её тяжёлый кадр приходится
@@ -69,6 +70,7 @@ const GreedAssembly = {
         // памяти видеокарты; на айфоне в Telegram следом шла заготовка
         // пачинко, и закрытие банки роняло игру — игрок, 20.11)
         if (sets && sets.sets && Q) Object.values(sets.sets).forEach(st => (st && st.t || []).forEach(t => Q.gl.deleteTexture(t)));
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('сборка ' + name + ': конец');
     },
     // Рычаг при сборке больше не пересобирается (игра врастает, а не
     // пересобирает аппарат) — откладывать нечего. Вызовы банки и выхода

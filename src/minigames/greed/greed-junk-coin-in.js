@@ -44,6 +44,10 @@ Object.assign(GreedJunkLit, {
         const out = document.createElement('canvas');
         out.width = out.height = cv.width;
         out.getContext('2d').drawImage(cv, 0, 0);
+        // контекст нужен на один кадр — назад сразу, а не со сборкой мусора:
+        // на iPhone живые контексты и их текстуры копятся до вылета
+        const g = cv.getContext('webgl'), ext = g && g.getExtension('WEBGL_lose_context');
+        if (ext) ext.loseContext();
         return (this._coinSpr = out);
     },
 

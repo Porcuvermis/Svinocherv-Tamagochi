@@ -603,6 +603,7 @@ Object.assign(GreedLux, {
     // видит только «экран чернеет» (20.11). Строка говорит, где встало.
     castLog(s) {
         this._castInfo = s;
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('литьё: ' + s);
         if (typeof GreedDebug !== 'undefined' && GreedDebug.render) GreedDebug.render();
     },
     async castRun() {

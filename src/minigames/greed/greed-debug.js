@@ -61,6 +61,7 @@ const GreedDebug = {
         // литьё версии 2 (greed-lux-cast.js) — повтор без покупки: гаражный
         // (если стоит версия 2 — сначала он), заготовка, банка «в упор», литьё
         if (act === 'cast') return this.castReplay();
+        if (act === 'crumbs') { this.crumbsOpen = !this.crumbsOpen; this.render(); return; }
     },
 
     // Пересборка аппарата на месте: снять со страницы (цикл кадров сам
@@ -124,12 +125,18 @@ const GreedDebug = {
     junkDrop() {
         const L = GreedJunkLit;
         if (!L.wrapEl) return;
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('гаражный снят');
         // Все контексты аппарата — потерять сразу, с текстурами: корпус,
         // колесо, короб. Было — только корпус; приборы колеса и короба
         // жили до сборки мусора, и каждая пересборка добавляла их память
         // (tools/greed-lux-sketch/jar/deposit-prof.js: 3–4 новых
         // контекста, 1 потерян).
-        [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl].forEach(gl => {
+        // И контекст лотка монет (движок монет, свой холст WebGL): его тоже
+        // не теряли — после покупки версии 2 он жил вне страницы со своей
+        // копией атласа монет (замер 21.11: 6 МБ текстур и лишний контекст
+        // ровно в миг литья, tools/test-greed-gpu.js).
+        const trayGl = L.trayDraw && L.trayCv ? L.trayCv.getContext('webgl') : null;
+        [L.gl, L._wgl && L._wgl.gl, L._pgl && L._pgl.gl, trayGl].forEach(gl => {
             if (!gl) return;
             const ext = gl.getExtension('WEBGL_lose_context');
             if (ext) ext.loseContext();
@@ -161,8 +168,20 @@ const GreedDebug = {
             btn('skin', 'Аппарат: вид ' + skin('slots')) +
             btn('cast', 'Литьё') +
             (typeof GreedJarShop !== 'undefined' && GreedJarShop.lastTap ? `<span style="color:#eee;padding:6px">банка: ${GreedJarShop.lastTap}</span>` : '') +
-            (typeof GreedLux !== 'undefined' && GreedLux._castInfo ? `<span style="color:#fd6;padding:6px">литьё: ${GreedLux._castInfo}</span>` : '');
+            (typeof GreedLux !== 'undefined' && GreedLux._castInfo ? `<span style="color:#fd6;padding:6px">литьё: ${GreedLux._castInfo}</span>` : '') +
+            (typeof GreedCrumbs !== 'undefined' ? btn('crumbs', 'Журнал') + (this.crumbsOpen ? this.crumbsHtml() : '') : '');
         this.placeBelowInspector();
+    },
+
+    // Журнал шагов (greed-crumbs.js): прошлый сеанс — тот, что оборвался
+    // вылетом, если последней строкой не стоит «страница закрыта».
+    crumbsHtml() {
+        const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        const prev = GreedCrumbs.prev() || [], cur = GreedCrumbs.list;
+        const cut = prev.length && !/страница закрыта/.test(prev[prev.length - 1]) ? ' (оборвался)' : '';
+        const block = (title, rows) => `<b>${title}</b>\n` + esc(rows.slice(-25).join('\n'));
+        return `<pre style="flex-basis:100%;max-height:50vh;overflow:auto;margin:0;padding:6px;background:#111d;color:#ddd;font:10px/1.3 monospace;white-space:pre-wrap;border-radius:6px">` +
+            block('прошлый сеанс' + cut, prev) + '\n\n' + block('этот сеанс', cur) + '</pre>';
     },
 
     // Инспектор персонажа (#wi-panel) в debug-режиме висит поверх всего у

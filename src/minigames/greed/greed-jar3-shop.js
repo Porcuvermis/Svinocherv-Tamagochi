@@ -31,6 +31,9 @@ const GreedJarShop = {
         this.holdStop();
         if (this.cv) this.cv.remove();
         this.cv = null; this.wrap = null; this.state = 'rest'; this.busy = false;
+        // картинки монет банки (куча и накал литья — по ~7 МБ) — назад: банка
+        // снята (версия 2 встала), понадобятся — нарисуются заново
+        if (typeof GreedJar3 !== 'undefined') { GreedJar3._cs = null; GreedJar3._melt = null; }
     },
     attach(wrap) {
         const host = wrap.parentElement;
@@ -280,7 +283,19 @@ const GreedJarShop = {
         });
         if (!best || bd > 75) return;
         this.hold = { node: best, next: 0, dt: 320 };
+        this.prepFor(best);
         this.deposit();
+    },
+    // Жетоны пошли в игру, для которой нет заготовки (готовилась другая), —
+    // заготовка переезжает на неё, пока жетоны сыплются: к последнему она,
+    // скорее всего, уже готова, а нет — врастание её дождётся (growGame).
+    prepFor(node) {
+        const L = GreedJunkLit, J = Backend.greedJar();
+        if (node !== 'wheel' && node !== 'pachinko') return;
+        if (!L.growPrep || !L.gl || J.done[node] || J.have + J[node] < J.need[node]) return;
+        if (L.growPre && L.growPre[node]) return;
+        if (L.growPre) L.growDrop();
+        L.growPrep(node).catch(() => {});
     },
     deposit() {
         const H = this.hold;
@@ -314,7 +329,15 @@ const GreedJarShop = {
         if (!L.growPrep || !L.gl) return null;
         if (this._prepping) return this._prepping;
         const J = Backend.greedJar();
-        const want = ['wheel', 'pachinko'].filter(k => !J.done[k] && J.have + J[k] >= J.need[k]);
+        let want = ['wheel', 'pachinko'].filter(k => !J.done[k] && J.have + J[k] >= J.need[k]);
+        // Готовится одна игра, а не обе: заготовка — это прибор с контекстом
+        // WebGL и растры участка корпуса, и две сразу поверх живого аппарата
+        // поднимали пик памяти ровно к покупке (вылеты на iPhone, 21.11,
+        // tools/test-greed-gpu.js). Из двух — та, что ближе к покупке; начал
+        // кидать жетоны в другую — заготовка переезжает (prepFor).
+        if (want.length > 1) want = [J.pachinko / J.need.pachinko > J.wheel / J.need.wheel ? 'pachinko' : 'wheel'];
+        const pre = L.growPre;
+        if (pre && want.length && Object.keys(pre).some(k => k !== want[0])) L.growDrop();
         // версия 2: жетонов хватает — собирается целиком, скрытой под гаражным
         // (greed-lux-prep.js); покупка её только покажет
         const v2 = J.v2open && !J.done.v2 && J.have + J.v2 >= J.need.v2 && typeof GreedLux !== 'undefined' && GreedLux.prepare && L.wrapEl && L.wrapEl.parentElement;
@@ -325,13 +348,15 @@ const GreedJarShop = {
         return this._prepping;
     },
     async opened(node) {
+        if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('покупка: ' + node);
         if (typeof Haptics !== 'undefined' && Haptics.notify) Haptics.notify('success');
         this.busy = true;
         if ((node === 'wheel' || node === 'pachinko') && typeof GreedAssembly !== 'undefined') {
             // Игра врастает в аппарат сразу — под стоп-кадром своего участка,
             // пока горит галочка и банка опускается.
             const run = GreedAssembly[node](() => this.lowTo(this.LOW, 450));
-            try { await run; } catch (e) { console.warn('[Сборка колеса]', e); }
+            try { await run; } catch (e) { console.warn('[Сборка колеса]', e); if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('сборка: сбой ' + (e && e.message)); }
+            if (typeof GreedCrumbs !== 'undefined') GreedCrumbs.add('покупка ' + node + ' встала');
             await this.lowTo(0, 450);
             this.busy = false;
             // заготовки устарели (аппарат стал другим) — для оставшейся игры заново
