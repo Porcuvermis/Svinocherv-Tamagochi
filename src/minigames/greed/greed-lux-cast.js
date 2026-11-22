@@ -316,6 +316,17 @@ Object.assign(GreedLux, {
     },
 
     // гаражный — картинкой поля плотности S (у обеих версий поле одно: 360×696, Y0 −57)
+    // Снимок гаражного — на его место, поверх (под банкой, z 6), пока под ним
+    // собирается версия 2: на экране ничего не меняется. Тот же холст потом
+    // уходит текстурой в холст литья — лишней памяти нет. Палец не проходит.
+    castCover(host, wrap, snap) {
+        if (!snap || !wrap) return null;
+        snap.style.cssText = `position:absolute;left:${wrap.offsetLeft}px;top:${wrap.offsetTop}px;` +
+            `width:${wrap.offsetWidth}px;height:${wrap.offsetHeight}px;z-index:5;background:none;pointer-events:auto;touch-action:none`;
+        ['pointerdown', 'pointermove', 'pointerup'].forEach(k => snap.addEventListener(k, (e) => { e.stopPropagation(); e.preventDefault(); }));
+        host.appendChild(snap);
+        return snap;
+    },
     castSnapshot() {
         const L = typeof GreedJunkLit !== 'undefined' ? GreedJunkLit : null, W = L && L.wrapEl;
         if (!W) return null;
@@ -612,9 +623,36 @@ Object.assign(GreedLux, {
         if (this._cast || this._castWait) return;
         const G = GreedMinigame, gen = G.spinGeneration, t0 = performance.now(), ms = () => Math.round(performance.now() - t0);
         this._castWait = true;
+        // идёт выплата (монеты летят, барабаны крутятся) — банка ждёт с
+        // расплавом; литьё — когда игры свободны (не дольше 10 с)
+        for (let i = 0; i < 100 && G.busy(); i++) { if (i === 0) this.castLog('ждёт выплату…'); await new Promise(r => setTimeout(r, 100)); }
+        this._castWait = false;
+        // окно закрыли, пока ждали, — литья нет: версия 2 встанет при входе
+        if (G.spinGeneration !== gen) return;
+        // Версия 2 собирается ЗДЕСЬ, после снятия гаражного, а не заранее
+        // скрытой под ним (игрок, 22.11). Было (план 31, 5г, п. 1): заготовка
+        // — второй аппарат целиком под живым гаражным, как только жетонов
+        // хватало (сразу после покупки пачинко): 10 контекстов WebGL, ~184 МБ
+        // текстур и ~106 МБ холстов 2D на всё время, пока игрок кидает 38
+        // жетонов, — игра вылетала в Telegram на третьем жетоне. Теперь два
+        // аппарата в памяти не бывают никогда: гаражный — в картинку
+        // (castCover, на его месте, под банкой), его контексты — назад,
+        // версия 2 собирается под картинкой. Цена — кадр сборки, пока банка
+        // стоит с расплавом (замер без заготовки: ~1,2 с на десктопе).
+        let snap = null, cover = null, dropped = false;
+        const uncover = () => { if (cover) cover.remove(); cover = null; };
         try {
-            this.castLog('заготовка…');
-            await (this._prep ? this._mountP : this.prepare(host));
+            this.castLog('снимок… ' + ms());
+            snap = this.castSnapshot();
+            const empty = this.castSnapEmpty(snap);
+            cover = this.castCover(host, L.wrapEl, snap);
+            GreedDebug.junkDrop(); dropped = true;
+            G.M = this; G.play = { slots: null, wheel: null, pachinko: null };
+            this._castPending = true;
+            this.castLog('сборка версии 2… ' + ms());
+            // заготовка бывает только у повтора литья из 🐞 (castReplay)
+            await (this._prep ? this.prepTake(host, opts) : this.mount(host, opts));
+            if (!this.gl) throw new Error('версия 2 не собралась');
             this.castLog('кант… ' + ms());
             await this._kantP;
             this.castLog('карта течения… ' + ms());
@@ -622,32 +660,11 @@ Object.assign(GreedLux, {
             this.castLog('жар… ' + ms());
             await this.castHeatInit();
             if (!this._castH) this.castLog('жар не собрался ' + ms());
-            // идёт выплата (монеты летят, барабаны крутятся) — банка ждёт с
-            // расплавом; литьё — когда игры свободны (не дольше 10 с)
-            for (let i = 0; i < 100 && G.busy(); i++) { if (i === 0) this.castLog('ждёт выплату…'); await new Promise(r => setTimeout(r, 100)); }
-        } catch (e) { console.warn('[литьё]', e); this.castLog('сбой подготовки: ' + (e && e.message)); }
-        this._castWait = false;
-        // окно закрыли, пока ждали, — литья нет: версия 2 встанет при входе
-        if (G.spinGeneration !== gen) return;
-        if (!this.gl || !L.wrapEl) {
-            // нет заготовки — по-старому: закрыть банку и пересобрать
-            J.busy = false; J.close();
-            if (typeof GreedDebug !== 'undefined') setTimeout(() => GreedDebug.rebuild(), 1100);
-            return;
-        }
-        let snap = null, dropped = false;
-        try {
-            this.castLog('снимок… ' + ms());
-            snap = this.castSnapshot();
-            const empty = this.castSnapEmpty(snap);
-            GreedDebug.junkDrop(); dropped = true;
-            G.M = this; G.play = { slots: null, wheel: null, pachinko: null };
-            this._castPending = true;
-            this.castLog('показ версии 2… ' + ms());
-            await this.prepTake(host, opts);
             this._castPending = false;
+            // окно закрыли, пока собиралась: версия 2 стоит (встанет при входе), литья нет
+            if (G.spinGeneration !== gen) { uncover(); return; }
             if (this.meterSet && this.meterValue) this.meterSet(this.meterValue());
-            if (!this.castCanvasSnap(snap)) { this.castLog('холст литья не собрался'); this.castEnd(); return; }
+            if (!this.castCanvasSnap(snap)) { this.castLog('холст литья не собрался'); uncover(); this.castEnd(); return; }
             if (empty) this.castLog('снимок гаражного пустой');
         } catch (e) {
             // что бы ни сломалось после снятия гаражного — версия 2 на экране,
@@ -655,10 +672,13 @@ Object.assign(GreedLux, {
             console.warn('[литьё]', e);
             this.castLog('сбой: ' + (e && e.message));
             this._castPending = false;
-            if (dropped && this._prep) try { await this.prepTake(host, opts); } catch (e2) { /* что есть */ }
+            uncover();
+            if (dropped && !this.wrapEl) try { await this.mount(host, opts); } catch (e2) { /* что есть */ }
             this.castEnd();
             return;
         }
+        // картинка гаражного уходит, когда холст литья уже нарисовал снимок
+        requestAnimationFrame(() => requestAnimationFrame(uncover));
         // палец — не в аппарат, пока льётся
         const cv = this._castC.cv;
         cv.style.pointerEvents = 'auto';

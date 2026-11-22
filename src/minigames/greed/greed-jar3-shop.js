@@ -338,12 +338,12 @@ const GreedJarShop = {
         if (want.length > 1) want = [J.pachinko / J.need.pachinko > J.wheel / J.need.wheel ? 'pachinko' : 'wheel'];
         const pre = L.growPre;
         if (pre && want.length && Object.keys(pre).some(k => k !== want[0])) L.growDrop();
-        // версия 2: жетонов хватает — собирается целиком, скрытой под гаражным
-        // (greed-lux-prep.js); покупка её только покажет
-        const v2 = J.v2open && !J.done.v2 && J.have + J.v2 >= J.need.v2 && typeof GreedLux !== 'undefined' && GreedLux.prepare && L.wrapEl && L.wrapEl.parentElement;
-        if (!want.length && !v2) return null;
-        let p = want.reduce((p, k) => p.then(() => L.growPrep(k)).catch(() => {}), Promise.resolve());
-        if (v2) p = p.then(() => GreedLux.prepare(L.wrapEl.parentElement)).catch(() => {});
+        // Версии 2 заготовки нет (игрок, 22.11): она — второй аппарат целиком,
+        // и скрытой под гаражным держала в памяти два аппарата, пока игрок
+        // кидал жетоны, — вылет на третьем. Собирается при покупке, после
+        // снятия гаражного (GreedLux.castRun).
+        if (!want.length) return null;
+        const p = want.reduce((p, k) => p.then(() => L.growPrep(k)).catch(() => {}), Promise.resolve());
         this._prepping = p.then(() => { this._prepping = null; }, () => { this._prepping = null; });
         return this._prepping;
     },

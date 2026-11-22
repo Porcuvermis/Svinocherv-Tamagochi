@@ -27,7 +27,7 @@ const { chromium } = require('playwright');
       GreedMinigame.play = { slots: null, wheel: null, pachinko: null }; GameManager.handleSinAction('greed');
     });
     await page.evaluate(() => GreedMinigame.veilReady());
-    await page.waitForFunction(() => GreedLux._prep && GreedLux.gl && GreedLux._kgl, null, { timeout: 20000 }).catch(() => {});
+    // заготовки версии 2 нет (22.11): она собирается при покупке, после снятия гаражного
     await page.waitForTimeout(800);
     return page;
   };

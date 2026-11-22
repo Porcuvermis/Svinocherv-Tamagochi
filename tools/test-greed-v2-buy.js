@@ -1,10 +1,16 @@
 const { chromium } = require('playwright');
-// ================= АППАРАТ АЛЧНОСТИ: ПОКУПКА ВЕРСИИ 2 =================
-// План 31, разд. 5г, п. 1. Жетонов на версию 2 хватает — она собирается
-// заранее, скрытой под гаражным (greed-lux-prep.js): гаражный играет, его
-// раскладка не сдвинута, заготовка пальцы не ловит и кадров не крутит.
-// Покупка — та же обёртка становится видимой (ничего не собирается заново),
-// гаражный и банка сняты. Ушёл, не купив, — заготовка снята с контекстами.
+// ================= АППАРАТ АЛЧНОСТИ: ПОКУПКА ВЕРСИИ 2 БЕЗ ЗАГОТОВКИ =================
+// Игрок, 22.11: игра вылетала в Telegram на третьем жетоне в версию 2 после
+// покупки колеса и пачинко в той же сессии. Причина — заготовка: версия 2
+// собиралась целиком, скрытой под живым гаражным, как только жетонов
+// хватало, — два аппарата в памяти всё время, пока кидаются жетоны.
+// Теперь заготовки нет: при покупке гаражный — в картинку на его месте,
+// его контексты назад, версия 2 собирается под картинкой (GreedLux.castRun).
+// Проверяет:
+//   * жетонов хватает — версия 2 НЕ собрана, живых контекстов как у гаражного;
+//   * покупка — ни в один кадр гаражный и версия 2 не живут вместе;
+//   * версия 2 стоит, гаражный снят, картинка гаражного убрана, литьё идёт;
+//   * самый долгий кадр от последнего жетона до начала литья (цена сборки).
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/test-greed-v2-buy.js
 (async () => {
   const [vw, vh] = (process.env.SVINO_VIEWPORT || '390x844').split('x').map(Number);
@@ -13,54 +19,52 @@ const { chromium } = require('playwright');
   const errs = []; page.on('pageerror', e => errs.push(e.message));
   let bad = 0;
   const ok = (c, m) => { console.log((c ? '  ok  ' : '  ✗   ') + m); if (!c) bad++; };
-  await page.addInitScript(() => { localStorage.removeItem('gj-skin-slots'); });
-  await page.goto(`http://127.0.0.1:${process.env.PORT || 8777}/index.html`); await page.waitForTimeout(2500);
-  // обе ветки открыты, в копилке v2 не хватает одного жетона, жетон есть
-  const enter = () => page.evaluate(async () => {
-    GreedMinigame.play = { slots: null, wheel: null, pachinko: null }; GameManager.handleSinAction('greed');
-    await GreedMinigame.veilReady();
+  await page.addInitScript(() => {
+    localStorage.removeItem('gj-skin-slots');
+    window.__ctx = [];
+    const g = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (t, o) { const c = g.call(this, t, o); if (c && /webgl/.test(t) && !this.__gl) { this.__gl = c; window.__ctx.push(this); } return c; };
+    window.__live = () => window.__ctx.filter(cv => !cv.__gl.isContextLost()).length;
   });
+  await page.goto(`http://127.0.0.1:${process.env.PORT || 8777}/index.html`); await page.waitForTimeout(2500);
+  // обе ветки открыты, жетонов на версию 2 с запасом
   await page.evaluate(() => {
     const u = GameState.data.upgrades || (GameState.data.upgrades = {});
     u.greed_slots = 0; u.greed_wheel = 1; u.greed_pachinko = 1;
-    const g = GameState.data.greed || (GameState.data.greed = {}); g.jar = { wheel: 6, pachinko: 6, v2: ECONOMY.minigames.greed.jar.v2 - 1 };
-    Backend.grantCurrency('greed_token', 1); Backend.grantCurrency('gold', 200); GameState.save();
+    const g = GameState.data.greed || (GameState.data.greed = {}); g.jar = { wheel: 12, pachinko: 12, v2: ECONOMY.minigames.greed.jar.v2 - 3 };
+    Backend.grantCurrency('greed_token', 10); Backend.grantCurrency('gold', 200); GameState.save();
+    GreedMinigame.play = { slots: null, wheel: null, pachinko: null }; GameManager.handleSinAction('greed');
   });
-  await enter();
-  await page.waitForFunction(() => GreedLux._prep && GreedLux.gl, null, { timeout: 20000 }).catch(() => {});
-  const p1 = await page.evaluate(() => {
-    const W = GreedLux.wrapEl, L = GreedJunkLit.wrapEl, cs = W && getComputedStyle(W);
-    return { m: GreedMinigame.M === GreedJunkLit, prep: !!GreedLux._prep, gl: !!GreedLux.gl, raf: !!GreedLux.raf,
-      hidden: cs && cs.opacity === '0' && cs.position === 'absolute' && cs.pointerEvents === 'none',
-      sameParent: W && L && W.parentElement === L.parentElement, lx: L.getBoundingClientRect().left };
-  });
-  ok(p1.m && p1.prep && p1.gl, `заготовка собрана под гаражным (гаражный стоит: ${p1.m}, корпус: ${p1.gl})`);
-  ok(p1.hidden && p1.sameParent, 'заготовка скрыта, вне раскладки, пальцы не ловит');
-  ok(!p1.raf, 'цикл кадров у заготовки стоит');
-  // ушёл — заготовка снята; вернулся — собрана снова
-  await page.evaluate(() => GreedMinigame.close());
-  ok(await page.evaluate(() => !GreedLux.wrapEl && !GreedLux.gl && !GreedLux._prep), 'закрыл игру — заготовка снята');
-  await enter();
-  await page.waitForFunction(() => GreedLux._prep && GreedLux.gl, null, { timeout: 20000 }).catch(() => {});
-  if (process.env.NOPREP) await page.evaluate(() => { window.NOPREP = 1; });
-  // покупка: последний жетон, затем то, что делает банка после закрытия
+  await page.evaluate(() => GreedMinigame.veilReady());
+  await page.evaluate(() => { const J = GreedJarShop; J.state = 'opening'; J.t0 = performance.now(); J.dirty = true; J.cv.style.pointerEvents = 'auto'; });
+  await page.waitForFunction(() => GreedJarShop.state === 'open', null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+  const p1 = await page.evaluate(() => ({ m: GreedMinigame.M === GreedJunkLit, v2: !!GreedLux.wrapEl || !!GreedLux.gl, live: window.__live() }));
+  ok(p1.m && !p1.v2, 'жетонов хватает, банка открыта — версия 2 не собрана (заготовки нет)');
+  ok(p1.live <= 5, `живых контекстов — только гаражного: ${p1.live}`);
+  // жетоны до заполнения — как тапами; каждый кадр: живут ли оба аппарата
   const r = await page.evaluate(async () => {
-    if (window.NOPREP) GreedLux.prepDrop();
-    const W0 = GreedLux.wrapEl, gl0 = GreedLux.gl;
-    const d = Backend.greedDeposit('v2');
-    let gap = 0, last = performance.now(), run = true;
-    const f = (t) => { gap = Math.max(gap, t - last); last = t; if (run) requestAnimationFrame(f); }; requestAnimationFrame(f);
-    const t0 = performance.now(); await GreedDebug.rebuild(); const ms = performance.now() - t0;
-    await new Promise(r => setTimeout(r, 400)); run = false;
-    const W = GreedLux.wrapEl, cs = getComputedStyle(W);
-    return { opened: d.opened, M: GreedMinigame.M === GreedLux, same: W === W0 && GreedLux.gl === gl0, vis: cs.opacity === '1' && cs.position === 'relative',
-      raf: !!GreedLux.raf, prep: !!GreedLux._prep, junk: !(GreedJunkLit.wrapEl && GreedJunkLit.wrapEl.isConnected), jar: !GreedJarShop.cv, ms: Math.round(ms), gap: Math.round(gap) };
+    let both = 0, gap = 0, last = performance.now(), run = true;
+    const f = (t) => {
+      if (GreedLux.gl && !GreedLux.gl.isContextLost() && GreedJunkLit.gl && !GreedJunkLit.gl.isContextLost()) both++;
+      if (!GreedLux._cast) gap = Math.max(gap, t - last);
+      last = t; if (run) requestAnimationFrame(f);
+    };
+    requestAnimationFrame(f);
+    const J = GreedJarShop;
+    for (let i = 0; i < 3; i++) { J.hold = { node: 'v2', next: 0, dt: 99999 }; J.deposit(); J.holdStop(); await new Promise(r => setTimeout(r, 300)); }
+    const t0 = performance.now();
+    for (let i = 0; i < 300 && !(GreedLux._cast && GreedLux._castC); i++) await new Promise(r => setTimeout(r, 50));
+    const ms = performance.now() - t0;
+    await new Promise(r => setTimeout(r, 600)); run = false;
+    const cover = [...GreedLux.wrapEl.parentElement.children].some(el => el.tagName === 'CANVAS' && el.style.zIndex === '5');
+    return { both, gap: Math.round(gap), ms: Math.round(ms), M: GreedMinigame.M === GreedLux, cast: !!GreedLux._cast,
+      junk: !(GreedJunkLit.wrapEl && GreedJunkLit.wrapEl.isConnected) && !GreedJunkLit.gl, cover, raf: !!GreedLux.raf };
   });
-  ok(r.opened && r.M, 'последний жетон — версия 2 куплена и стоит');
-  ok(r.same, 'стоит та же заготовка: обёртка и контекст не пересозданы');
-  ok(r.vis && r.raf && !r.prep, 'показана, цикл кадров идёт');
-  ok(r.junk && r.jar, 'гаражный и банка сняты');
-  console.log(`  ·   смена аппарата: ${r.ms} мс, самый долгий кадр ${r.gap} мс`);
+  ok(r.M && r.cast, 'последний жетон — версия 2 куплена, стоит, литьё идёт');
+  ok(r.both === 0, `ни в один кадр гаражный и версия 2 не живут вместе (кадров с обоими: ${r.both})`);
+  ok(r.junk && !r.cover && r.raf, 'гаражный снят, его картинка убрана, цикл кадров версии 2 идёт');
+  console.log(`  ·   от последнего жетона до литья: ${r.ms} мс, самый долгий кадр ${r.gap} мс`);
   ok(!errs.length, errs.length ? 'ошибки:\n' + errs.join('\n') : 'ошибок страницы нет');
   console.log(bad ? `провалов: ${bad}` : 'всё сошлось');
   await b.close();

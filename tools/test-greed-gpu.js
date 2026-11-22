@@ -14,10 +14,9 @@ const { chromium } = require('playwright');
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/test-greed-gpu.js
 const BUDGET = {
   games: { ctx: 5, texMB: 140 },       // колесо, потом пачинко (было: 5, 136 до первой покупки)
-  // версия 2 под гаражным: оба аппарата в памяти — так устроена заготовка
-  // (план 31, 5г); кант вплетён в литьё и раньше покупки нужен. Ниже —
-  // только переделкой заготовки; пока защёлка на замере 21.11 (10 и 182)
-  v2: { ctx: 10, texMB: 185 }
+  // версия 2: заготовки нет (22.11) — при покупке живёт один аппарат за раз
+  // (было с заготовкой: 10 контекстов, 182 МБ; стало 6 и 111)
+  v2: { ctx: 7, texMB: 130 }
 };
 (async () => {
   const b = await chromium.launch({ executablePath: require('./chrome-path') });
@@ -106,7 +105,6 @@ const BUDGET = {
       Backend.grantCurrency('greed_token', 5); Backend.grantCurrency('gold', 200); GameState.save();
     });
     await enter(page);
-    await page.waitForFunction(() => GreedLux._prep && GreedLux.gl, null, { timeout: 20000 }).catch(() => {});
     await openJar(page);
     await page.waitForTimeout(2500);
     // все холсты WebGL гаражного — чтобы после покупки проверить, что ни один не живёт
@@ -116,8 +114,7 @@ const BUDGET = {
       window.__junk = window.__ctx.filter(cv => mine.has(cv));
       window.__peak = { ctx: 0, texMB: 0 };
     });
-    // замер пика — когда заготовка уже целиком в видеокарте
-    await page.waitForFunction(() => window.__now().ctx >= 10, null, { timeout: 10000 }).catch(() => {});
+    ok(await page.evaluate(() => !GreedLux.wrapEl && !GreedLux.gl), 'жетонов хватает — версия 2 заранее не собрана');
     await page.evaluate(() => { window.__peak = window.__now(); });
     await buy(page, 'v2');
     await page.waitForFunction(() => GreedMinigame.M === GreedLux, null, { timeout: 30000 }).catch(() => {});
