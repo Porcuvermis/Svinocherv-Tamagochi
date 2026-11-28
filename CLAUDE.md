@@ -73,7 +73,7 @@
 | Цены, награды, скорости, прокачка | `docs/bench/numbers.md` |
 | Сколько ступеней и почём | `docs/plan/15-progression.md`, разд. 4а |
 | Предмет или фон: цвет, объём, перспектива | `docs/bench/art.md` |
-| Материал предмета: блеск, свет и тени шейдером, карта высот | `docs/materials.md`, справочник — `src/core/materials.js` |
+| Материал предмета: блеск, свет и тени шейдером, карта высот | `docs/materials.md`, справочник — `src/core/materials.js`, модуль света — `src/core/lit.js`, `lit-gl.js` |
 | Палец: зоны, жесты, отдача | `docs/bench/input.md` |
 
 Остальное:
@@ -90,7 +90,7 @@
 | Алчность: деталь аппарата выглядит не так (ореол, полосы, свет) | `docs/bench/greed-audit.md`, съёмка — `tools/greed-part.js` |
 | Зависть: рамка из глаз, переход, индикаторы делений, новое поле — договорённости и порядок работ | `docs/plan/26-envy-eyes.md` |
 | Похоть: ванная, магазин, хвост, шкала-жетон | `docs/plan/21-lust-bath.md`, `lust/lust-shop.js`, `lust/lust-shot.js` |
-| Тщеславие: дорожка, костюмерная | `docs/plan/17-pride.md` |
+| Тщеславие: дорожка, гримёрка, ячейки наряда, окно покупок | `docs/plan/17-pride.md` (разд. 8); рисунок гримёрки — `pride/pride-room.js`, свет — `pride-room-lit.js` |
 | Кухня: предметы, проверки, магазин | `docs/kitchen-objects.md`, `docs/kitchen-checks.md`, `gluttony/kitchen-shop.js` |
 | Лень: грядки, камера, зум, магазин | `docs/plan/19-sloth-garden.md`, `sloth/sloth-shop.js` |
 | Меню грехов, ворота награды | `docs/sins-menu.md` |

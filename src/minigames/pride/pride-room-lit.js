@@ -51,7 +51,7 @@ Object.assign(PrideMinigame, {
         const run = this._litRun = (this._litRun || 0) + 1;
         this._litP = (async () => {
             if (typeof LitGL === 'undefined' || typeof PRIDE_ROOM === 'undefined' || !PRIDE_ROOM.K) return false;
-            const R = await LitGL.create(canvas, PRIDE_ROOM.litOptions());
+            const R = await LitGL.create(canvas, PRIDE_ROOM.litOptions(this.litScale()));
             if (!R) return false;
             // Пока собиралось, игру могли закрыть: свет не нужен, контекст —
             // отдать сразу (оставленный жить, он держит видеопамять).
@@ -76,6 +76,20 @@ Object.assign(PrideMinigame, {
             return ok;
         });
         return this._litP;
+    },
+
+    // ---------- СКОЛЬКО ТЕКСЕЛЕЙ НА ЕДИНИЦУ ----------
+    // По экрану: сколько настоящих точек приходится на единицу сцены. На
+    // айфоне это ~2.5 (три точки на пиксель, окно ужато рамкой) — холст
+    // мельче давал мыльную раму и обои; на компьютере хватает и 1.5. Больше
+    // 2.5 не берём: каждый шаг — это вся гримёрка шейдером при наклоне и
+    // по десятку мегабайт видеопамяти на карту.
+    litScale() {
+        const svg = document.getElementById('pr-svg');
+        const r = svg && svg.getBoundingClientRect();
+        if (!r || !r.width) return 2;
+        const k = Math.max(r.width / PRIDE_ART.W, r.height / PRIDE_ART.H) * (window.devicePixelRatio || 1);
+        return Math.max(1.5, Math.min(2.5, Math.round(k * 4) / 4));
     },
 
     // Закрытие игры: свет отдаётся целиком, следующая игра соберёт заново.

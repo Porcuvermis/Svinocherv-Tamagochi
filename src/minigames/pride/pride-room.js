@@ -53,11 +53,11 @@ const PRIDE_ROOM = {
     },
 
     // Опоры для шейдера: где светят лампы, что отражает зеркало.
-    litOptions() {
+    litOptions(scale) {
         const M = this.MIR, G = this.GLASS;
         const warm = (k) => [1.0 * k, 0.8 * k, 0.52 * k];
         return {
-            W: this.W, H: this.H, scale: 2,
+            W: this.W, H: this.H, scale: scale || 2,
             H0: this.K.H0, HMAX: this.K.HMAX,
             svg: (pass) => this.svg(pass),
             // Основной свет ниже обычного (0.6 против 0.7): тени длиннее, и
@@ -92,10 +92,12 @@ const PRIDE_ROOM = {
     },
 
     // Разметка куска для запасного вида (baked) — прямо в группу сцены.
+    // Градиенты и обрезки — один раз, вместе со стеной: все четыре группы
+    // лежат в одном svg, и ссылка по id находит их из любой.
     part(name) {
         const K = this.K;
         K.pass = 'baked';
-        return K.passStyle('baked') + this[name]();
+        return (name === 'back' ? this.defs() + K.passStyle('baked') : '') + this[name]();
     },
 
     // Градиенты нарисованного света — только для baked.
@@ -326,32 +328,27 @@ const PRIDE_ROOM = {
         const K = this.K, D = PALETTE.dressing, P = D.props, f = K.f;
         const top = 392;
         let s = '';
-        // Ваза с розами слева: стекло, стебли, бутоны выше рамы.
-        const vx = 46;
-        const stems = [[vx - 6, 318], [vx + 4, 304], [vx + 13, 326], [vx - 13, 334]];
-        let st = '';
-        stems.forEach(([x, y]) => {
-            st += `<path d="M${vx} ${top - 26} Q${f((vx + x) / 2)} ${f((top - 26 + y) / 2 + 6)} ${x} ${y}"
-                         fill="none" stroke="${P.leaf}" stroke-width="2.2"/>` + K.rodH(`M${vx} ${top - 26} Q${f((vx + x) / 2)} ${f((top - 26 + y) / 2 + 6)} ${x} ${y}`, 2.4, 1.2);
-        });
-        s += K.T(14, 'velvet', st +
-            `<ellipse cx="${vx - 12}" cy="352" rx="8" ry="3.4" transform="rotate(-30 ${vx - 12} 352)" fill="${P.leaf}"/>` +
-            `<ellipse cx="${vx + 11}" cy="346" rx="8" ry="3.4" transform="rotate(35 ${vx + 11} 346)" fill="${P.leafHi}"/>`);
+        // Слева — низкая хрустальная чаша с розами. Низкая нарочно: колбы
+        // нижнего угла рамы светят ПОВЕРХ картинки, и высокий букет уходил
+        // под лампы — розы на столе оказывались за зеркалом.
+        const vx = 44;
+        const leaves = `<ellipse cx="${vx - 15}" cy="${top - 13}" rx="8" ry="3.2" transform="rotate(-24 ${vx - 15} ${top - 13})" fill="${P.leaf}"/>` +
+                       `<ellipse cx="${vx + 16}" cy="${top - 12}" rx="8" ry="3.2" transform="rotate(26 ${vx + 16} ${top - 12})" fill="${P.leafHi}"/>`;
+        s += K.T(14, 'velvet', leaves);
         let roses = '';
-        stems.forEach(([x, y], i) => {
-            const r = 7.5 + (i % 2) * 1.2;
+        [[vx - 9, top - 13, 6.8], [vx + 8, top - 14, 7.2], [vx, top - 18, 7.4], [vx - 15, top - 8, 5.6], [vx + 15, top - 8, 5.8]].forEach(([x, y, r]) => {
             roses += `<circle cx="${x}" cy="${y}" r="${r}" fill="${P.roseRed}" stroke="${D.velvet[700]}" stroke-width="${STROKE.hairline}"/>` +
-                K.domeH(x, y, r, 3.2) +
+                K.domeH(x, y, r, 3) +
                 `<path d="M${f(x - r * 0.5)} ${f(y)} q${f(r * 0.5)} ${f(-r * 0.7)} ${f(r)} 0 q${f(-r * 0.3)} ${f(r * 0.5)} ${f(-r * 0.6)} ${f(r * 0.1)}"
-                       fill="none" stroke="${P.roseHi}" stroke-width="1.2"/>` +
+                       fill="none" stroke="${P.roseHi}" stroke-width="1.1"/>` +
                 `<circle class="hl" cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.35)}" r="${f(r * 0.3)}" fill="${P.roseHi}" opacity="0.6"/>`;
         });
-        s += K.T(17, 'velvet', roses);
+        s += K.T(16, 'velvet', roses);
         s += K.T(13, 'glass',
-            `<path d="M${vx - 9} ${top} Q${vx - 14} ${top - 14} ${vx - 6} ${top - 26} L${vx + 6} ${top - 26} Q${vx + 14} ${top - 14} ${vx + 9} ${top} Z"
+            `<path d="M${vx - 17} ${top - 9} Q${vx - 15} ${top} ${vx - 8} ${top} L${vx + 8} ${top} Q${vx + 15} ${top} ${vx + 17} ${top - 9} Z"
                    fill="${D.glass[300]}" stroke="${D.glass[700]}" stroke-width="${STROKE.hairline}" opacity="0.92"/>` +
-            K.cylH(vx - 12, top - 26, 24, 26, 12, 3) +
-            `<path class="hl" d="M${vx - 6} ${top - 20} q-3 8 0 16" fill="none" stroke="${D.glass[100]}" stroke-width="1.6"/>`);
+            K.cylH(vx - 17, top - 9, 34, 9, 12, 2.4, { vertical: false }) +
+            `<path class="hl" d="M${vx - 12} ${top - 6} h14" fill="none" stroke="${D.glass[100]}" stroke-width="1.4"/>`);
 
         // Справа: флакон духов с грушей, пудреница, помада.
         const px = 232;

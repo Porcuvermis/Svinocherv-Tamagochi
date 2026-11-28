@@ -416,54 +416,6 @@ const PRIDE_ART = {
         <g id="pr-room-r"><g class="pr-room-baked"></g></g>`;
     },
 
-    // Карточка слота: рамка, а в ней либо силуэт того, что сюда ставится,
-    // либо надетый предмет. Без единой буквы — по силуэту видно, что это за
-    // место (тот же приём, что в лобби гнева).
-    slotCard(slot, worn, size) {
-        const C = PALETTE.redCarpet;
-        const s = size || 62;
-        const inner = worn
-            ? `<g transform="translate(0,${(s * 0.16).toFixed(1)})">${worn}</g>`
-            : `<g transform="translate(${(-s * 0.29).toFixed(1)},${(-s * 0.29).toFixed(1)}) scale(${(s * 0.024).toFixed(3)})">
-                   <path d="${slot.shape}" fill="none" stroke="${C.night[500]}"
-                         stroke-width="1.6" stroke-linejoin="round"/></g>`;
-        return `<g class="pr-slot${worn ? ' filled' : ''}" data-slot="${slot.key}">
-            <rect x="${-s / 2}" y="${-s / 2}" width="${s}" height="${s}" rx="14"
-                  fill="${C.night[900]}" fill-opacity="0.82"
-                  stroke="${worn ? C.gold[500] : C.rail[700]}" stroke-width="2"/>
-            ${inner}
-        </g>`;
-    },
-
-    // Кнопка старта: круг с треугольником. Треугольник — знак, а не слово
-    // (инвариант 9), и он же показывает направление: вперёд, на публику.
-    startButton(r) {
-        const C = PALETTE.redCarpet;
-        return `<g id="pr-start-btn" class="pr-start-btn">
-            <circle cx="0" cy="0" r="${r}" fill="${C.carpet[500]}"
-                    stroke="${C.gold[300]}" stroke-width="3"/>
-            <circle cx="0" cy="0" r="${r - 8}" fill="none" stroke="${C.gold[500]}"
-                    stroke-width="1.5" opacity="0.6"/>
-            <path d="M ${-r * 0.24} ${-r * 0.4} L ${r * 0.42} 0 L ${-r * 0.24} ${r * 0.4} Z"
-                  fill="${C.flash[300]}"/>
-        </g>`;
-    },
-
-    // Кнопка магазина: сумка. Тоже без букв.
-    shopButton(r) {
-        const C = PALETTE.redCarpet;
-        return `<g id="pr-shop-btn" class="pr-round-btn">
-            <circle cx="0" cy="0" r="${r}" fill="${C.night[900]}" fill-opacity="0.9"
-                    stroke="${C.gold[500]}" stroke-width="2"/>
-            <path d="M ${-r * 0.42} ${-r * 0.18} L ${r * 0.42} ${-r * 0.18}
-                     L ${r * 0.32} ${r * 0.46} L ${-r * 0.32} ${r * 0.46} Z"
-                  fill="none" stroke="${C.gold[300]}" stroke-width="2.4" stroke-linejoin="round"/>
-            <path d="M ${-r * 0.2} ${-r * 0.18} Q ${-r * 0.2} ${-r * 0.56} 0 ${-r * 0.56}
-                     Q ${r * 0.2} ${-r * 0.56} ${r * 0.2} ${-r * 0.18}"
-                  fill="none" stroke="${C.gold[300]}" stroke-width="2.4"/>
-        </g>`;
-    },
-
     // Детерминированный генератор: одна и та же гроздь толпы должна получаться
     // одинаковой при каждой сборке сцены, иначе толпа «перетасовывается» на
     // каждом открытии игры и кадр мерцает разными людьми.

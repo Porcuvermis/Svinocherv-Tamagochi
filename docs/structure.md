@@ -26,6 +26,9 @@ src/core/           ядро, общее для всех экранов:
                       переходник к «правде»: форма будущего API. ЕДИНСТВЕННОЕ
                       место, где что-то начисляется
   worm-*.js           модель персонажа, палитра, отметины, наряд
+  lit.js, lit-gl.js   свет шейдером: разметка рисунка по проходам (T, купола,
+                      валики, фаски) и видеокарта (нормали, блики, тени по
+                      высотам, лампы сцены, зеркало). docs/materials.md
 
   ---- СТОПКА РЕНДЕРЕРА ----
   Был один файл на 7430 строк, и половину его занимала одна функция. Искать
@@ -149,7 +152,10 @@ src/minigames/<грех>/   каждая мини-игра в своей пап�
   tools/outline.js. Новый метод кладётся в продолжение своей темы.
   lust/ — lust-wash, lust-tail, lust-finale; gluttony/ — gluttony-cook,
   gluttony-input, gluttony-feed, kitchen-counter, kitchen-table;
-  pride/ — pride-show, pride-store; sloth/ — sloth-work, garden-art-bed,
+  pride/ — pride-show, pride-room-lit (свет гримёрки, куски для смены
+  декораций), pride-store (ячейки, список, окно покупок); рисунок — отдельными
+  объектами: PRIDE_ART (дорожка), PRIDE_ROOM (гримёрка, pride-room.js),
+  PRIDE_UI (вид интерфейса гримёрки, pride-ui-art.js); sloth/ — sloth-work, garden-art-bed,
   garden-art-ui; kitchen-art-food; bath-art-wash; envy/ — envy-play;
   wrath/ — wrath-rogue-screens; core — worm-studio-panel;
   greed/ аппарат: GreedJunk (greed-junk) — +lever, +parts, +top, +top-lamps,

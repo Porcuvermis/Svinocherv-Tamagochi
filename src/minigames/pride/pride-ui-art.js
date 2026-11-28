@@ -80,9 +80,9 @@ const PRIDE_UI = {
     },
     // Силуэт гнезда пунктиром — по сетке 24×24 из PRIDE_WARDROBE.slots.
     ghost(shape, s) {
-        const D = PALETTE.dressing, k = s * 0.55 / 24, o = (s - 24 * k) / 2;
+        const D = PALETTE.dressing, k = s * 0.66 / 24, o = (s - 24 * k) / 2;
         return `<g transform="translate(${this.f(o)},${this.f(o)}) scale(${k.toFixed(3)})" fill="none" stroke="${D.brass[300]}"
-                   stroke-width="${(1.5 / (k * 1.6)).toFixed(2)}" stroke-dasharray="2.2 1.8" stroke-linejoin="round" opacity="0.75">
+                   stroke-width="${(1.7 / (k * 1.5)).toFixed(2)}" stroke-dasharray="2.4 1.6" stroke-linejoin="round" opacity="0.85">
                    <path d="${shape}"/></g>`;
     },
     // Галочка «надето»: латунная медалька в углу.
