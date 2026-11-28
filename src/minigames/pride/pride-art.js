@@ -394,96 +394,26 @@ const PRIDE_ART = {
         </g>`;
     },
 
-    // ================= КОСТЮМЕРНАЯ =================
-    // Стартовый экран тщеславия: червь у гримёрного зеркала, вокруг слоты
-    // наряда. Здесь одеваются и покупают, отсюда же уходят на дорожку.
+    // ================= ГРИМЁРКА =================
+    // Стартовый экран тщеславия. Сама комната нарисована в pride-room.js и
+    // освещена видеокартой: её картинка лежит холстом ПОД этим svg
+    // (pride-room-lit.js). Здесь — только то, что живёт поверх света:
+    // колбы ламп с ореолом и тень червя, плюс по пустой группе на каждый кусок
+    // (запасной вид без видеокарты кладёт туда нарисованную гримёрку).
     //
-    // Комната собрана из ЧЕТЫРЁХ кусков, и это не декоративное деление:
-    // занавес уезжает вверх, зеркало влево, вешалка вправо, помост вниз —
-    // так смена декораций читается работой сцены, а не переходом слайдов.
-    // Каждому куску нужна своя группа, иначе двигать их порознь нечем.
+    // Четыре группы — не украшение: на старте стена уезжает вверх, пол вниз,
+    // столик с зеркалом влево, шкаф вправо (pride.js, setDecor), и колбы
+    // обязаны уехать вместе со своим зеркалом.
     room() {
-        const C = PALETTE.redCarpet;
         const P = PALETTE;
-        const W = this.W, H = this.H;
-        // Гримёрное зеркало: рама с лампами. Лампы — единственный источник
-        // света в комнате, поэтому они же и объясняют, почему червь освещён.
-        let bulbs = '';
-        const bx = 54, by = 122, bw = 152, bh = 214;
-        for (let i = 0; i < 8; i++) {
-            const t = i / 7;
-            bulbs += `<circle cx="${(bx - 16).toFixed(0)}" cy="${(by + bh * t).toFixed(0)}" r="9" fill="${C.flash[500]}"/>`;
-            bulbs += `<circle cx="${(bx + bw + 16).toFixed(0)}" cy="${(by + bh * t).toFixed(0)}" r="9" fill="${C.flash[500]}"/>`;
-        }
-        for (let i = 1; i < 7; i++) {
-            const t = i / 7;
-            bulbs += `<circle cx="${(bx + bw * t).toFixed(0)}" cy="${(by - 16).toFixed(0)}" r="9" fill="${C.flash[500]}"/>`;
-        }
         return `
-        <defs>
-            <linearGradient id="pr-curtain" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="${C.carpet[700]}"/>
-                <stop offset="1" stop-color="${C.carpet[500]}"/>
-            </linearGradient>
-            <radialGradient id="pr-mirror" cx="0.5" cy="0.35" r="0.75">
-                <stop offset="0" stop-color="${C.glow[300]}" stop-opacity="0.5"/>
-                <stop offset="1" stop-color="${C.night[700]}" stop-opacity="0.9"/>
-            </radialGradient>
-            <linearGradient id="pr-podium" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="${C.night[500]}"/>
-                <stop offset="1" stop-color="${C.night[900]}"/>
-            </linearGradient>
-        </defs>
-
-        <!-- ЗАНАВЕС. Уезжает вверх. -->
-        <g id="pr-room-back">
-            <rect x="0" y="0" width="${W}" height="${H}" fill="${C.night[900]}"/>
-            <rect x="0" y="0" width="${W}" height="${H * 0.62}" fill="url(#pr-curtain)"/>
-            ${Array.from({ length: 9 }, (_, i) => {
-                const x = (i + 0.5) * (W / 9);
-                return `<path d="M ${x.toFixed(1)} 0 L ${x.toFixed(1)} ${(H * 0.62).toFixed(0)}"
-                              stroke="${C.carpet[700]}" stroke-width="${(7 + (i % 3) * 6)}"/>`;
-            }).join('')}
-            <rect x="0" y="${(H * 0.6).toFixed(0)}" width="${W}" height="26" fill="${C.rail[700]}"/>
-            <rect x="0" y="${(H * 0.6).toFixed(0)}" width="${W}" height="6" fill="${C.rail[500]}"/>
+        <g id="pr-room-back"><g class="pr-room-baked"></g></g>
+        <g id="pr-room-floor"><g class="pr-room-baked"></g>
+            <ellipse id="pr-room-shadow" cx="${PRIDE_ROOM.CX}" cy="${(this.Y_FEET + 4).toFixed(0)}"
+                     rx="0" ry="0" fill="${P.ink}" opacity="0.4"/>
         </g>
-
-        <!-- ЗЕРКАЛО. Уезжает влево. -->
-        <g id="pr-room-l">
-            <rect x="${bx - 30}" y="${by - 30}" width="${bw + 60}" height="${bh + 52}" rx="18"
-                  fill="${C.rail[700]}" stroke="${C.rail[500]}" stroke-width="${STROKE.structure}"/>
-            <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="8" fill="url(#pr-mirror)"/>
-            ${bulbs}
-        </g>
-
-        <!-- ВЕШАЛКА С ЗАПАСНЫМ ТРЯПЬЁМ. Уезжает вправо. Она тут не для
-             красоты: без неё комната не читается костюмерной — зеркало есть
-             и в ванной. -->
-        <g id="pr-room-r">
-            <rect x="${W - 66}" y="112" width="10" height="286" rx="5" fill="${C.rail[700]}"/>
-            <rect x="${W - 172}" y="110" width="128" height="10" rx="5" fill="${C.rail[500]}"/>
-            ${[0, 1, 2].map(i => {
-                const x = W - 162 + i * 40;
-                const col = [C.cloth[700], C.silk[700], C.cloth[500]][i];
-                return `<path d="M ${x} 120 L ${x + 24} 120 L ${x + 32} ${208 + i * 22}
-                                L ${x - 8} ${208 + i * 22} Z"
-                              fill="${col}" stroke="${P.ink}" stroke-width="${STROKE.detail}"/>
-                        <path d="M ${x + 12} 120 L ${x + 12} 112" stroke="${C.rail[500]}"
-                              stroke-width="${STROKE.detail}"/>`;
-            }).join('')}
-        </g>
-
-        <!-- ПОМОСТ, на котором стоит червь. Уезжает вниз. -->
-        <g id="pr-room-floor">
-            <rect x="0" y="${(H * 0.62).toFixed(0)}" width="${W}" height="${(H * 0.38).toFixed(0)}"
-                  fill="url(#pr-podium)"/>
-            <ellipse cx="${this.CX}" cy="${this.Y_FEET}" rx="150" ry="34"
-                     fill="${C.night[500]}" opacity="0.8"/>
-            <ellipse cx="${this.CX}" cy="${this.Y_FEET}" rx="150" ry="34"
-                     fill="none" stroke="${C.rail[700]}" stroke-width="${STROKE.structure}"/>
-            <ellipse id="pr-room-shadow" cx="${this.CX}" cy="${(this.Y_FEET + 4).toFixed(0)}"
-                     rx="0" ry="0" fill="${P.ink}" opacity="0.38"/>
-        </g>`;
+        <g id="pr-room-l"><g class="pr-room-baked"></g>${PRIDE_ROOM.bulbsOverlay()}</g>
+        <g id="pr-room-r"><g class="pr-room-baked"></g></g>`;
     },
 
     // Карточка слота: рамка, а в ней либо силуэт того, что сюда ставится,

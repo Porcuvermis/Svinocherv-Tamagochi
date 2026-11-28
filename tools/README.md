@@ -77,3 +77,4 @@
 | `shot-pride-flash-points.js` | лист точек вспышек (модели и рамка) |
 | `shot-pride-flash-look.js` | неподвижный вид вспышек S/M/L и белизны |
 | `shot-pride-flash-film.js` | ленты кадров входа и нажатий по подменённым часам |
+| `shot-pride-room.js` | гримёрка тщеславия отдельно от игры: проходы (albedo, height, mat, mask, baked) и свет шейдером при наклоне `?tx=…&ty=…` (страница `tools/pride-room.html`) |

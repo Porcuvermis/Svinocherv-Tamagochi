@@ -35,7 +35,9 @@ const { chromium } = require('playwright');
     фаза: PrideMinigame.phase,
     слотов: document.querySelectorAll('#pr-ui .pr-slot').length,
     старт: !!document.querySelector('#pr-start-btn'),
-    магазин: !!document.querySelector('#pr-shop-btn')
+    // Кнопки магазина больше нет: окно покупок открывает тап по червю,
+    // зеркалу или шкафу — одна большая зона (docs/plan/17-pride.md, разд. 8).
+    магазин: document.querySelectorAll('#pr-ui .pr-open-store').length > 0
   }));
   console.log(`костюмерная: ${wardrobe.фаза}, слотов ${wardrobe.слотов}, ` +
               `кнопка старта ${wardrobe.старт ? 'есть' : 'НЕТ'}, ` +
@@ -265,7 +267,7 @@ const { chromium } = require('playwright');
     PrideMinigame.storeTab = 'hat';
     PrideMinigame.renderStore();
     const out = { карточек: document.querySelectorAll('.pr-item').length,
-                  галочка: PrideMinigame.storeEl.innerHTML.includes('✓') };
+                  галочка: !!document.querySelector('.pr-shelf-done') };
     PrideMinigame.storeOpen = false;
     PrideMinigame.renderStore();
     return out;
@@ -285,17 +287,21 @@ const { chromium } = require('playwright');
     PrideMinigame.openSlot = 'hat';
     PrideMinigame.renderStore();
     const rows = [...document.querySelectorAll('.pr-slot-item')].map(e => e.dataset.slotItem);
+    // Сколько строк ждём — из каталога, а не числом: в гнезде макушки было
+    // по одной вещи, потом добавили корону, и проверка «ровно две строки»
+    // молча стала ложной.
+    const ждём = PRIDE_WARDROBE.items.filter(i => i.slot === 'hat' && GameState.data.wardrobe[i.id]).length + 1;
     // Выбор пустой строки = снять.
     PrideMinigame.pickSlotItem('');
     const afterNude = GameState.data.cosmetics.hat || null;
     PrideMinigame.openSlot = null;
     PrideMinigame.renderStore();
-    return { empty, rows, afterNude };
+    return { empty, rows, afterNude, ждём };
   });
   // В гнезде макушки один предмет: очки уехали в своё гнездо, когда голову
   // разделили на четыре точки. Строк в шкафу = купленное плюс пустая.
   const invOk = inv.empty.length === 1 && inv.empty[0] === '' &&
-                inv.rows.length === 2 && inv.rows[inv.rows.length - 1] === '' &&
+                inv.rows.length === inv.ждём && inv.rows[inv.rows.length - 1] === '' &&
                 inv.afterNude === null;
   console.log(`инвентарь гнезда: пустой шкаф — строк ${inv.empty.length}; ` +
               `после покупки — строки [${inv.rows.join(', ')}]; пустая строка снимает ${inv.afterNude === null}   ` +
@@ -318,6 +324,7 @@ const { chromium } = require('playwright');
   if (buy.after.multCap <= buy.before.multCap) bad.push('машина не подняла потолок');
   if (buy.after.radius <= buy.before.radius) bad.push('дорожка не расширила зоны');
   if (accuracy > 0.9 && res.awarded < 8) bad.push('безошибочная игра принесла подозрительно мало');
+  if (!invOk) bad.push('список гнезда: не те строки или «ничего» не последняя');
 
   console.log(bad.length ? 'ПРОВАЛ:\n  ' + bad.join('\n  ') : 'ВСЁ СОШЛОСЬ');
   if (errors.length) { console.log('\nОШИБКИ:'); errors.forEach(e => console.log('  ' + e)); }

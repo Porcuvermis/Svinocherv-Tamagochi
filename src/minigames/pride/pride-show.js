@@ -19,6 +19,9 @@ Object.assign(PrideMinigame, {
         this.phase = 'change';
         this.renderUI();
         this.setDecor('carpet', true);
+        // Червь выходит из-за колонки ячеек на середину дорожки и вырастает в
+        // полный рост — тем же ходом, что едут декорации.
+        this.applyWormPose(false, true);
         setTimeout(() => {
             if (this.phase !== 'change') return;
             this.startCount();
@@ -80,8 +83,9 @@ Object.assign(PrideMinigame, {
         setTimeout(() => {
             if (this.phase !== 'done') return;
             if (!this.screenElement.classList.contains('active')) return;
-            // Обратно в костюмерную — и декорации едут обратно тем же путём.
+            // Обратно в гримёрку — и декорации едут обратно тем же путём.
             this.setDecor('room', true);
+            this.applyWormPose(true, true);
             setTimeout(() => this.enterWardrobe(), PRIDE_VIEW.CHANGE_MS);
         }, PRIDE_VIEW.END_HOLD_MS);
     },
@@ -246,41 +250,43 @@ Object.assign(PrideMinigame, {
         e.preventDefault();
         const hit = (sel) => (e.target.closest ? e.target.closest(sel) : null);
 
-        // Инвентарь слота стоит ПЕРЕД витриной: он открывается тапом по
-        // слоту, витрина при этом закрыта, и оба состояния одновременно
+        // Список гнезда стоит ПЕРЕД окном покупок: он открывается тапом по
+        // ячейке, окно при этом закрыто, и оба состояния одновременно
         // невозможны.
         if (this.openSlot) {
             const pick = hit('.pr-slot-item');
             if (pick) { this.pickSlotItem(pick.dataset.slotItem); return; }
-            // Тап по тому же слоту (он остался кликабельным под затемнением)
-            // или мимо панели — закрываем.
+            // Тап по другой ячейке — её список; по той же или мимо — закрыть.
             const slot = hit('.pr-slot');
             if (slot && slot.dataset.slot !== this.openSlot) { this.tapSlot(slot.dataset.slot); return; }
             this.openSlot = null;
+            this.renderUI();
             this.renderStore();
             return;
         }
 
+        // Окно покупок съедает ввод целиком: под ним гримёрка, и тап мимо
+        // кнопки не должен улетать в неё.
         if (this.storeOpen) {
+            if (hit('.pr-store-close')) { this.closeStore(); return; }
             const tab = hit('.pr-tab');
-            if (tab) { this.storeTab = tab.dataset.tab; this.renderStore(); return; }
+            if (tab) { this.storeTab = tab.dataset.tab === 'boost' ? 'boost' : 'wear'; this.trySel = null; this.renderStore(); return; }
+            const cat = hit('.pr-hanger');
+            if (cat) { this.storeTab = cat.dataset.cat; this.wearCat = cat.dataset.cat; this.trySel = null; this.renderStore(); return; }
             const item = hit('.pr-item');
-            if (item) { this.tapItem(item.dataset.item); return; }
+            if (item) { this.tryOn(item.dataset.item); return; }
+            if (hit('.pr-buy-wear')) { this.buySelected(); return; }
             const boost = hit('.pr-boost');
             if (boost) { this.buyBoost(boost.dataset.boost); return; }
-            // Крестик витрины или тап мимо панели — закрываем.
-            if (hit('.pr-store-close') || hit('.pr-store-back')) {
-                this.storeOpen = false;
-                this.renderStore();
-            }
             return;
         }
 
         if (this.phase === 'wardrobe') {
             const slot = hit('.pr-slot');
             if (slot) { this.tapSlot(slot.dataset.slot); return; }
-            if (hit('#pr-shop-btn')) { this.storeOpen = true; this.renderStore(); return; }
             if (hit('#pr-start-btn')) { this.startShow(); return; }
+            // Червь, зеркало, шкаф — одна зона: окно покупок.
+            if (hit('.pr-open-store')) { this.openStore(); return; }
             return;
         }
         if (this.phase !== 'run') return;
@@ -444,12 +450,16 @@ Object.assign(PrideMinigame, {
         // Строка счёта — от ВИДИМОГО верха, а не от верха холста: иначе на
         // телефоне, где холст обрезан, цифры уезжают под край окна.
         const x = this.safe.x0 + 16, y = this.safe.y0 + 34;
-        const purse = `<text x="${x}" y="${y}" font-size="26">💋</text>` +
-                      `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
+        // В гримёрке кошелёк — латунная плашка той же комнаты, что ячейки и
+        // табличка выхода; на дорожке — значок и число, лёгкие поверх толпы.
         if (this.phase !== 'run' && this.phase !== 'done') {
-            this.hudEl.innerHTML = purse;
+            this.ensureDefs();
+            const L = this.roomLayout();
+            this.hudEl.innerHTML = this.storeOpen ? '' : PRIDE_UI.purse(L.purse.x, L.purse.y, wallet);
             return;
         }
+        const purse = PRIDE_UI.lips(x + 12, y - 8, 1.1) +
+                      `<text x="${x + 30}" y="${y}" font-size="26" fill="${C.kiss[300]}" font-weight="700">${wallet}</text>`;
         // На финише показываем НАЧИСЛЕННОЕ, пока оно не пришло — собранное.
         const done = this.phase === 'done' && this.awardedKisses != null;
         const gain = done ? this.awardedKisses : this.kisses;

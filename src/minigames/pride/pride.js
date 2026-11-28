@@ -200,6 +200,7 @@ const PrideMinigame = {
                 if (!this.screenElement.classList.contains('active')) return;
                 // Изменился размер — изменилась и видимая область, а по ней
                 // расставлен весь интерфейс.
+                this.fitRoomLit();
                 this.layoutWorm();
                 this.renderAll();
             });
@@ -217,6 +218,10 @@ const PrideMinigame = {
         if (!this.screenElement) this.init();
         this.screenElement.classList.add('active');
         if (typeof MinigameWindow !== 'undefined') MinigameWindow.pauseRoom();
+        this.roomPose = true;
+        // Свет гримёрки собирается сразу: покров перехода ждёт его (veilReady,
+        // pride-room-lit.js), а без покрова гримёрка проявится сама.
+        this.roomLitStart();
         this.enterWardrobe();
         if (typeof PrideDebug !== 'undefined') PrideDebug.render();
         this.mountWorm();
@@ -237,6 +242,8 @@ const PrideMinigame = {
         // выйти по крестику в следующий раз.
         this.phase = 'idle';
         if (this.wormHandle && this.wormHandle.setTreadmill) this.wormHandle.setTreadmill(0);
+        this.closeStore();
+        this.roomLitStop();
         this.screenElement.classList.remove('active');
         if (typeof MinigameWindow !== 'undefined') {
             MinigameWindow.resumeRoom();
@@ -252,8 +259,7 @@ const PrideMinigame = {
     enterWardrobe() {
         this.resetRun();
         this.phase = 'wardrobe';
-        this.storeOpen = false;
-        this.openSlot = null;
+        this.closeStore();
         this.setDecor('room');
         // Червя пересобираем: наряд мог смениться, а он живёт в модели.
         this.mountWorm();
@@ -313,6 +319,17 @@ const PrideMinigame = {
     setDecor(which, animated) {
         const room = which === 'room';
         const hide = [], moved = [];
+        // Свет гримёрки едет КУСКАМИ: картинка шейдера одна, и на время
+        // переезда она режется на стену, пол, столик и шкаф (pride-room-lit.js).
+        const litHost = document.getElementById('pr-room-lit');
+        const gl = this.roomMode === 'gl' && this.lit && this.lit.alive;
+        const pieces = gl && animated && this.splitRoom();
+        if (litHost) {
+            litHost.classList.remove('away');
+            // Куски только что показаны: без чтения стиля браузер не знает их
+            // начального положения, и первый переезд прыгнул бы без перехода.
+            if (pieces) void litHost.offsetWidth;
+        }
         const put = (id, x, y, on) => {
             const el = document.getElementById(id);
             if (!el) return;
@@ -338,6 +355,21 @@ const PrideMinigame = {
         put('pr-side-l', -W, 0, !room);
         put('pr-side-r', W, 0, !room);
         put('pr-props', 0, H, !room);
+        if (pieces) {
+            put('pr-lit-back', 0, -H, room);
+            put('pr-lit-floor', 0, H, room);
+            put('pr-lit-l', -W, 0, room);
+            put('pr-lit-r', W, 0, room);
+        } else if (litHost && room) {
+            // Гримёрка на месте без переезда (закрыли посреди выхода, вошли
+            // заново): куски обязаны стоять дома, иначе следующий старт
+            // повёл бы их «из-за края за край» — и их не видно вовсе.
+            litHost.querySelectorAll('.pr-lit-piece').forEach(c => {
+                c.style.transition = 'none';
+                c.style.transform = 'translate(0px, 0px)';
+                c.style.visibility = 'visible';
+            });
+        }
 
         // Уехавшую декорацию ПРЯЧЕМ. Она за краем холста и не видна, но
         // браузер продолжает считать её слоем и растрировать: за экраном
@@ -348,6 +380,10 @@ const PrideMinigame = {
         const apply = () => {
             hide.forEach(el => { el.style.visibility = 'hidden'; });
             moved.forEach(el => { el.style.willChange = ''; });
+            // Переезд кончился: куски не нужны, холст света — целый, а уехавшая
+            // гримёрка не рисуется вовсе.
+            if (this._pieces) this.joinRoom();
+            if (litHost) litHost.classList.toggle('away', !room);
         };
         if (animated) this._hideTimer = setTimeout(apply, PRIDE_VIEW.CHANGE_MS + 40);
         else apply();
@@ -521,15 +557,24 @@ const PrideMinigame = {
         // сдвиги, которые считаются в единицах сцены, надо делить на это
         // число, прежде чем отдавать рендереру.
         const S = PRIDE_VIEW.WORM_SCALE;
-        this.wormHost.style.transform =
-            `translate(${p0.x.toFixed(1)}px, ${p0.y.toFixed(1)}px) scale(${(k * S).toFixed(4)})`;
+        this._wormBase = { x: p0.x, y: p0.y, k, S };
+        // Раскладка — без перехода: замер по середине переезда врал бы.
+        this.wormHost.style.transition = 'none';
+        this.wormHost.style.transform = this.wormTransform(this.roomPose);
 
         const body = this.wormHandle.svgRoot.querySelector('.worm-root');
         if (!body) return;
         const box = body.getBoundingClientRect();
         if (box.width < 1) return;
-        const a = this.fromScreen(box.left, box.top);
-        const b = this.fromScreen(box.right, box.bottom);
+        // ---------- ГАБАРИТ — В ПОЗЕ ДОРОЖКИ ----------
+        // Меряется червь в той позе, в какой стоит сейчас (в гримёрке он левее
+        // и мельче), а запоминается — в позе дорожки: по этому габариту на
+        // выходе кладутся поцелуи. Обратный пересчёт — та же поза наоборот.
+        const P = this.posePoint(this.roomPose);
+        const back = (q) => ({ x: PRIDE_ART.CX + (q.x - P.x) / P.r,
+                               y: PRIDE_ART.Y_FEET + (q.y - PRIDE_ART.Y_FEET) / P.r });
+        const a = back(this.fromScreen(box.left, box.top));
+        const b = back(this.fromScreen(box.right, box.bottom));
         const dx = PRIDE_ART.CX - (a.x + b.x) / 2;
         const dy = PRIDE_ART.Y_FEET - b.y;
         const pos = this.wormHandle.getPosition();
@@ -538,12 +583,53 @@ const PrideMinigame = {
 
         // Тень: по ширине силуэта, а не по числу. Без неё червь не стоит на
         // ковре, а висит над ним — и это первое, что видно в кадре.
-        [this.sceneEl.querySelector('#pr-shadow'),
-         this.roomEl.querySelector('#pr-room-shadow')].forEach(shadow => {
-            if (!shadow) return;
-            shadow.setAttribute('rx', (this.wormBox.w * 0.42).toFixed(1));
-            shadow.setAttribute('ry', (this.wormBox.w * 0.11).toFixed(1));
-        });
+        const sh = this.sceneEl.querySelector('#pr-shadow');
+        if (sh) {
+            sh.setAttribute('rx', (this.wormBox.w * 0.42).toFixed(1));
+            sh.setAttribute('ry', (this.wormBox.w * 0.11).toFixed(1));
+        }
+        const rs = this.roomEl.querySelector('#pr-room-shadow');
+        if (rs) {
+            const r = PRIDE_ROOM.WORM_K;
+            rs.setAttribute('rx', (this.wormBox.w * 0.42 * r).toFixed(1));
+            rs.setAttribute('ry', (this.wormBox.w * 0.11 * r).toFixed(1));
+        }
+    },
+
+    // ---------- ДВЕ ПОЗЫ: ГРИМЁРКА И ДОРОЖКА ----------
+    // В гримёрке червь стоит левее (справа колонка ячеек) и чуть мельче, на
+    // дорожке — по центру и в полный рост. Поза — это только сдвиг и масштаб
+    // вокруг ног, поверх обычной раскладки: внутренняя позиция персонажа одна
+    // на обе, и переезд из позы в позу — один css-переход слоя червя, на
+    // композиторе, ровно за смену декораций.
+    posePoint(room) {
+        return room ? { x: PRIDE_ROOM.CX, r: PRIDE_ROOM.WORM_K } : { x: PRIDE_ART.CX, r: 1 };
+    },
+    wormTransform(room) {
+        const B = this._wormBase;
+        if (!B) return '';
+        const P = this.posePoint(room);
+        const fx = PRIDE_ART.CX / B.S, fy = PRIDE_ART.Y_FEET / B.S, tx = P.x / B.S;
+        // Одинаковый список функций в обеих позах: переход тогда идёт по
+        // каждой функции отдельно, а не через разложение матриц.
+        return `translate(${B.x.toFixed(1)}px, ${B.y.toFixed(1)}px) scale(${(B.k * B.S).toFixed(4)}) ` +
+               `translate(${tx.toFixed(2)}px, ${fy.toFixed(2)}px) scale(${P.r}) ` +
+               `translate(${(-fx).toFixed(2)}px, ${(-fy).toFixed(2)}px)`;
+    },
+    applyWormPose(room, animated) {
+        this.roomPose = room;
+        if (!this.wormHost || !this._wormBase) return;
+        this.wormHost.style.transition = animated
+            ? `transform ${PRIDE_VIEW.CHANGE_MS}ms cubic-bezier(.5,.05,.3,1)` : 'none';
+        this.wormHost.style.transform = this.wormTransform(room);
+    },
+    // Габарит червя в гримёрке — из габарита в позе дорожки.
+    roomWormBox() {
+        const b = this.wormBox;
+        if (!b) return null;
+        const P = this.posePoint(true);
+        return { x: P.x + (b.x - PRIDE_ART.CX) * P.r, y: PRIDE_ART.Y_FEET + (b.y - PRIDE_ART.Y_FEET) * P.r,
+                 w: b.w * P.r, h: b.h * P.r };
     },
 
     // ---------- ПЕРЕВОД КООРДИНАТ ----------
@@ -599,6 +685,7 @@ const PrideMinigame = {
             if (this.car.z >= PRIDE_ART.Z_FAR) this.finishRun();
         }
 
+        this.litStep(now);
         this.rafId = requestAnimationFrame((t) => this.loop(t));
     },
 };

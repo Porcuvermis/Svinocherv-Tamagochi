@@ -120,27 +120,22 @@
     cursor: pointer;
 }
 
-/* Кнопка старта дышит: она единственная, с которой начинается выход, и
-   промахнуться мимо неё игрок не должен. */
-#pride-game .pr-start-btn {
-    animation: pr-pulse 1.8s ease-in-out infinite;
-    transform-box: fill-box;
-    transform-origin: center;
+/* Бесконечных анимаций у кнопок гримёрки НЕТ, хотя кнопка старта раньше
+   дышала, а карточки, на которые хватает поцелуев, мерцали. Это верхний
+   холст целиком: пока что-то в нём дышит, браузер перекрашивает его каждый
+   кадр вместе с семью ячейками и окном покупок (docs/traps.md, п. 37).
+   «Жми сюда» теперь говорят горящие лампы на табличке и яркий билет. */
+
+#pride-game .pr-hanger,
+#pride-game .pr-buy-wear,
+#pride-game .pr-open-store,
+#pride-game .pr-slot-item {
+    cursor: pointer;
 }
 
-@keyframes pr-pulse {
-    0%, 100% { transform: scale(1); }
-    50%      { transform: scale(1.06); }
-}
-
-/* Купленное, но не надетое — приглушено; надетое горит золотом (рамка
-   рисуется в js). Дышит то, на что хватает поцелуев. */
-#pride-game .pr-item.rich,
-#pride-game .pr-boost.rich {
-    animation: pr-breathe 2.4s ease-in-out infinite;
-}
-
-#pride-game .pr-deny rect {
+/* Отказ дёргает саму кнопку (группу без своего transform-атрибута, иначе
+   анимация стёрла бы его, docs/traps.md, п. 50). */
+#pride-game .pr-deny {
     animation: pr-deny 0.32s ease-out;
 }
 
@@ -283,4 +278,69 @@
 @keyframes mg-cam-sway {
     from { transform: translate(calc(var(--dx) * -1), calc(var(--dy) * -1)) rotate(calc(var(--rot) * -1)); }
     to   { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); }
+}
+
+/* ---------- ГРИМЁРКА ПОД СВЕТОМ ВИДЕОКАРТЫ ---------- */
+/* Слой 390×844 px, вписанный в окно тем же правилом, что и svg сцены
+   (pride-room-lit.js, fitRoomLit): внутри него пиксель — это единица сцены.
+   Проявляется прозрачностью, когда свет собран; до того под сценой пусто
+   или лежит нарисованный вид. */
+#pride-game .pr-room-lit {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 390px;
+    height: 844px;
+    transform-origin: 0 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease-out;
+}
+#pride-game .pr-room-lit.on { opacity: 1; }
+/* Фон — прозрачный ЯВНО: общее правило canvas в style.css красит каждый
+   холст тёмным (там это заглушка комнаты до первого кадра). Куски гримёрки
+   прозрачны вне своего силуэта, и с тем фоном верхний кусок закрывал все
+   нижние — из четырёх на экране был виден один (поймано съёмкой). */
+#pride-game .pr-room-lit canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: transparent;
+    z-index: auto;
+}
+/* Куски живут только на время смены декораций; всё остальное время холст
+   один, и лишние слои композитор не держит. */
+#pride-game .pr-lit-piece { display: none; }
+#pride-game .pr-room-lit.split .pr-lit-piece { display: block; }
+#pride-game .pr-room-lit.split .pr-lit-main { visibility: hidden; }
+/* Гримёрка уехала — слой не рисуется вовсе (docs/traps.md, п. 38). */
+#pride-game .pr-room-lit.away { visibility: hidden; }
+
+/* ---------- ЗЕРКАЛО ПРИМЕРКИ ---------- */
+/* Второй червь в окне покупок — html-слой над окном, обрезанный по овалу
+   стекла (pride-store.js, previewShow). Блик стекла — поверх червя: он стоит
+   ЗА стеклом, а не наклеен на него. */
+#pride-game .pr-preview {
+    position: absolute;
+    overflow: hidden;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 3;
+}
+#pride-game .pr-preview-host {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+}
+#pride-game .pr-preview-glare {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: linear-gradient(125deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.16) 38%,
+                rgba(255, 255, 255, 0) 46%, rgba(255, 255, 255, 0.08) 52%, rgba(255, 255, 255, 0) 58%);
+    box-shadow: inset 0 0 18px rgba(40, 24, 12, 0.45);
 }

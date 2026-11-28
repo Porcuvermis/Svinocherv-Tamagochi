@@ -772,6 +772,10 @@
          дорожка, а финишная арка выезжает с горизонта ровно на двадцать
          секунд (docs/plan/17-pride.md, раздел 4). -->
     <div id="pride-game" class="minigame-screen" data-sin="pride">
+        <!-- Гримёрка, освещённая видеокартой (pride-room.js, pride-room-lit.js):
+             холст ПОД сценой. Над ним в сцене лежат только колбы ламп и тень
+             червя, а на время смены декораций — четыре куска этой картинки. -->
+        <div id="pr-room-lit" class="pr-room-lit"></div>
         <svg id="pr-svg" class="pr-svg" viewBox="0 0 390 844"
              preserveAspectRatio="xMidYMid slice">
             <!-- ДВЕ ДЕКОРАЦИИ В ОДНОМ ХОЛСТЕ: костюмерная и дорожка. Они не
@@ -854,6 +858,10 @@
 
 <script src="src/core/palette.js?v=__BUILD__"></script>
 <script src="src/core/materials.js?v=__BUILD__"></script>
+<!-- Свет шейдером: разметка проходов и видеокарта (docs/materials.md). После
+     материалов — обёртка детали берёт блеск из справочника. -->
+<script src="src/core/lit.js?v=__BUILD__"></script>
+<script src="src/core/lit-gl.js?v=__BUILD__"></script>
 <script src="src/core/hang.js?v=__BUILD__"></script>
 <!-- Отдача в палец: один слой на всю игру. До мини-игр — они зовут её из
      обработчиков ввода. -->
@@ -1064,11 +1072,14 @@
 <script src="src/minigames/gluttony/gluttony-input.js?v=__BUILD__"></script>
 <script src="src/minigames/gluttony/gluttony-feed.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-art.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-room.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-ui-art.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-flash.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-cameras.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-debug.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-show.js?v=__BUILD__"></script>
+<script src="src/minigames/pride/pride-room-lit.js?v=__BUILD__"></script>
 <script src="src/minigames/pride/pride-store.js?v=__BUILD__"></script>
 <!-- three.js ЗДЕСЬ НЕ ПОДКЛЮЧЁН, и это осознанно.
      Библиотека нужна ровно одной мини-игре из семи (зависть), а весит
