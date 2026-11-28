@@ -68,13 +68,20 @@ const Lit = {
                 if (pass === 'baked') return `<style>.hpass{display:none}</style>`;
                 if (pass === 'albedo') return `<style>.fx,.hl,.hpass{display:none}</style>`;
                 const off = `[fill="none"]{fill:none!important}*:not([stroke]){stroke:none!important}[stroke="none"]{stroke:none!important}`;
-                if (pass === 'height') {
+                // heightmax — служебный, для ревизии (tools/pride-room-audit.js):
+                // в каждой точке самая высокая из ВСЕХ деталей, а не верхняя по
+                // порядку рисования (смешение lighten). Где он выше обычного —
+                // деталь лежит ниже того, что под ней: канава по контуру,
+                // «кайма», «вдавлено» (docs/bench/greed-audit.md, разд. 8).
+                if (pass === 'height' || pass === 'heightmax') {
                     const v = (d) => `calc((var(--h,${this.hv(0).toFixed(4)}) + var(--dh,0) + ${d}) * 255)`;
                     const g = (d) => `rgb(${v(d)},${v(d)},${v(d)})`;
                     return `<style>*{fill:${g(0)}!important;stroke:${g(0)}!important}` +
                         `.bump,.bump *{fill:${g(0.03)}!important;stroke:${g(0.03)}!important}` +
                         `.pit,.pit *{fill:${g(-0.06)}!important;stroke:${g(-0.06)}!important}` +
-                        off + `.fx,.hl,.nh{display:none}</style>`;
+                        off + `.fx,.hl,.nh{display:none}` +
+                        (pass === 'heightmax' ? `*{mix-blend-mode:lighten}.pit,.pit *,.sunk,.sunk *{mix-blend-mode:normal}` : '') +
+                        `</style>`;
                 }
                 if (pass === 'mat') {
                     return `<style>*{fill:var(--m,rgb(0,0,0))!important;stroke:var(--m,rgb(0,0,0))!important}` +
@@ -164,7 +171,9 @@ const Lit = {
             // на ширине edge — рамы, филёнки, столешницы. Четыре трапеции
             // градиентом, а не обводка: обводка дала бы ровную полку, и свет
             // не нашёл бы на ней ни одного ската.
-            bevelH(x, y, w, h, base, rise, edge) {
+            // hollow — только скаты, без площадки внутри: для рам, у которых
+            // внутри своё (стекло, филёнка) и площадка рамы залила бы его.
+            bevelH(x, y, w, h, base, rise, edge, hollow) {
                 const f = this.f, e = Math.min(edge, w / 2, h / 2);
                 const lo = (this.hv(base) * 255).toFixed(1), hi = (this.hv(base + rise) * 255).toFixed(1);
                 const sides = [
@@ -180,7 +189,7 @@ const Lit = {
                     return `<defs><linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
                         `<stop offset="0" stop-color="rgb(${lo},${lo},${lo})"/><stop offset="1" stop-color="rgb(${hi},${hi},${hi})"/></linearGradient></defs>` +
                         `<path d="${d}" style="fill:url(#${id})!important;stroke:none!important"/>`;
-                }).join('') + `<rect x="${f(x + e)}" y="${f(y + e)}" width="${f(w - 2 * e)}" height="${f(h - 2 * e)}" style="fill:rgb(${hi},${hi},${hi})!important;stroke:none!important"/></g>`;
+                }).join('') + (hollow ? '' : `<rect x="${f(x + e)}" y="${f(y + e)}" width="${f(w - 2 * e)}" height="${f(h - 2 * e)}" style="fill:rgb(${hi},${hi},${hi})!important;stroke:none!important"/>`) + `</g>`;
             },
 
             // Рамка пути в его же координатах — браузер считает сам (getBBox).

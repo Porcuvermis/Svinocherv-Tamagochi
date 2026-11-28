@@ -127,7 +127,7 @@ const LitGL = {
         }
 
         try {
-            R.prog = this.program(gl, !!refl);
+            R.prog = this.program(gl, !!refl, O.dbg ? this.DBG_TERMS[O.dbg] : 0);
             R.tex = maps.map((cv, i) => this.texture(gl, cv, i, i === 0));
             if (refl) R.texR = this.texture(gl, refl, 4, true, true);
             // Холсты карт больше не нужны: пиксели уже в видеокарте, а держать
@@ -236,11 +236,16 @@ const LitGL = {
     // ---------- ОСНОВНОЙ ПРОХОД ----------
     // Координаты экранные: x вправо, y ВНИЗ, z к зрителю. uL — направление
     // НА источник. Точка сцены p — в сотнях единиц (mediump держит).
-    program(gl, mirror) {
+    // Отладочный вывод одного слагаемого вместо цвета — для ревизии
+    // (tools/pride-room-audit.js, тот же приём, что у аппарата алчности).
+    // Игра собирает программу без него.
+    DBG_TERMS: { normal: 1, shade: 2, lit: 3, lamps: 4, spec: 5, depth: 6, height: 7, ao: 8, plane: 9, noshade: 10 },
+    program(gl, mirror, dbg) {
         const vs = `attribute vec2 aPos; varying vec2 vUv;
             void main() { vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); gl_Position = vec4(aPos, 0.0, 1.0); }`;
         const fs = `precision mediump float;
             ${mirror ? '#define MIRROR 1' : ''}
+            ${dbg ? '#define DBG ' + dbg : ''}
             uniform sampler2D uA, uH, uM, uN, uR;
             uniform vec2 uTex;
             uniform vec3 uL;
@@ -371,6 +376,31 @@ const LitGL = {
                 }
                 #endif
                 gl_FragColor = vec4(col, 1.0);
+                #ifdef DBG
+                vec3 dv = col;
+                #if DBG == 1
+                dv = vec3(n.xy * 0.5 + 0.5, n.z);
+                #elif DBG == 2
+                dv = vec3(sh);
+                #elif DBG == 3
+                dv = vec3(lit * 0.5);
+                #elif DBG == 4
+                dv = ld;
+                #elif DBG == 5
+                dv = spc * sp * sh * uKeyC + spc * ls * m.r;
+                #elif DBG == 6
+                dv = vec3(depth);
+                #elif DBG == 7
+                dv = vec3(h0);
+                #elif DBG == 8
+                dv = vec3(occl);
+                #elif DBG == 9
+                dv = vec3(0.5 + gx * 40.0, 0.5 + gy * 40.0, plane * 20.0);
+                #elif DBG == 10
+                dv = a.rgb * (lit * uKeyC + ld) * depth;
+                #endif
+                gl_FragColor = vec4(dv, 1.0);
+                #endif
             }`;
         return this.link(gl, vs, fs);
     },

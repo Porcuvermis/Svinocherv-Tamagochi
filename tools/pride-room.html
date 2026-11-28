@@ -17,7 +17,20 @@ window.T = { x: +(q.get('tx') || 0), y: +(q.get('ty') || 0) };
   document.getElementById('ov').innerHTML = q.get('nobulbs') ? '' : PRIDE_ROOM.bulbsOverlay();
   if (mode === 'lit') {
     const t0 = performance.now();
-    const R = await LitGL.create(document.getElementById('cv'), PRIDE_ROOM.litOptions());
+    // dbg=<слагаемое> — свет по частям (LitGL.DBG_TERMS); off=key,lamps,ao,floor,mirror —
+    // выключить свет по одному: пропало при выключении — виноват он.
+    const O = PRIDE_ROOM.litOptions(+(q.get('scale') || 2));
+    if (q.get('dbg')) O.dbg = q.get('dbg');
+    (q.get('off') || '').split(',').filter(Boolean).forEach(k => {
+      if (k === 'key') O.key = 0;
+      if (k === 'lamps') O.lights = [];
+      if (k === 'ao') O.ao = 0;
+      if (k === 'floor') O.floorY = 0;
+      if (k === 'mirror') O.mirror = null;
+      if (k === 'shadow') O.shadow = 0;
+      if (k === 'vig') O.vignette = 0;
+    });
+    const R = await LitGL.create(document.getElementById('cv'), O);
     window.R = R;
     if (!R) { document.title = 'NOGL'; return; }
     const t1 = performance.now();
@@ -25,9 +38,12 @@ window.T = { x: +(q.get('tx') || 0), y: +(q.get('ty') || 0) };
     window.timing = { build: t1 - t0 };
     document.title = 'READY';
   } else {
-    // проход как картинка
+    // Проход как картинка — растром, а не разметкой в странице: <style> прохода,
+    // вставленный в страницу, перекрасил бы и колбы поверх.
     const svg = PRIDE_ROOM.svg(mode, q.get('parts') ? q.get('parts').split(',') : null);
-    document.getElementById('baked').innerHTML = svg;
+    const cv = await LitGL.raster(svg, 390, 844);
+    cv.style.cssText = 'position:absolute;left:0;top:0;width:390px;height:844px';
+    document.getElementById('baked').appendChild(cv);
     document.title = 'READY';
   }
 })().catch(e => { document.title = 'ERR ' + e.message; console.error(e); });

@@ -163,13 +163,16 @@ const PRIDE_ROOM = {
             let grain = '';
             for (let g = 0; g < 4; g++) {
                 const gx = x + 6 + rnd() * (w - 12);
-                grain += `<path d="M${f(gx)} ${y + 4} q${f(rnd() * 6 - 3)} ${f(h * 0.5)} ${f(rnd() * 4 - 2)} ${h - 8}"
+                grain += `<path class="nh" d="M${f(gx)} ${y + 4} q${f(rnd() * 6 - 3)} ${f(h * 0.5)} ${f(rnd() * 4 - 2)} ${h - 8}"
                                 fill="none" stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}" opacity="0.45"/>`;
             }
-            panels += K.bevelH(x, y, w, h, 1.5, 1.6, 5) +
-                `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${D.walnut[300]}"/>` +
-                `<rect x="${x + 5}" y="${y + 5}" width="${w - 10}" height="${h - 10}" fill="${D.walnut[100]}" opacity="0.35"/>` +
-                grain +
+            // Профиль высот — ПОСЛЕ плоской заливки: в проходе высот заливка
+            // ложится ровной полкой и затирает то, что нарисовано под ней
+            // (ревизия 28.11: фаски филёнок пропадали целиком, и место
+            // читалось вдавленным, tools/pride-room-audit.js).
+            panels += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${D.walnut[300]}"/>` +
+                `<rect class="nh" x="${x + 5}" y="${y + 5}" width="${w - 10}" height="${h - 10}" fill="${D.walnut[100]}" opacity="0.35"/>` +
+                grain + K.bevelH(x, y, w, h, 1.5, 1.6, 5) +
                 `<rect class="hl" x="${x}" y="${y}" width="${w}" height="2" fill="${D.oak[100]}" opacity="0.45"/>` +
                 `<rect class="fx" x="${x}" y="${y + h - 2}" width="${w}" height="2" fill="${D.shade[900]}" opacity="0.4"/>`;
         }
@@ -244,14 +247,16 @@ const PRIDE_ROOM = {
         s += K.T(6, 'enamel',
             `<rect x="${M.x}" y="${M.y}" width="${M.w}" height="${M.h}" rx="${M.r}" fill="${D.ivory[500]}"
                    stroke="${D.ivory[700]}" stroke-width="${STROKE.detail}"/>` +
-            `<g clip-path="url(#prr-frame-clip)">${K.bevelH(M.x, M.y, M.w, M.h, 4.5, 3.5, 7)}</g>` +
+            `<g clip-path="url(#prr-frame-clip)">${K.bevelH(M.x - 1, M.y - 1, M.w + 2, M.h + 2, 6, 2.5, G.x - 7 - M.x + 1, true)}</g>` +
             `<rect class="hl" x="${M.x + 3}" y="${M.y + 2}" width="${M.w - 6}" height="3" rx="1.5" fill="${D.ivory[300]}" opacity="0.8"/>`);
         // Губа вокруг стекла и само стекло — утоплено ниже рамы: рама кладёт на
         // него тень, и стекло читается вставленным, а не наклеенным.
-        s += K.T(6.5, 'enamel', `<rect x="${G.x - 4}" y="${G.y - 4}" width="${G.w + 8}" height="${G.h + 8}" rx="${G.r + 3}"
-                fill="none" stroke="${D.ivory[700]}" stroke-width="3"/>`);
-        s += K.T(3.5, 'mirror', `<rect x="${G.x}" y="${G.y}" width="${G.w}" height="${G.h}" rx="${G.r}"
-                fill="${K.paint('prr-glass', D.glass[300], D.glass[700])}"/>`);
+        s += K.T(6, 'enamel', `<rect class="nh" x="${G.x - 4}" y="${G.y - 4}" width="${G.w + 8}" height="${G.h + 8}" rx="${G.r + 3}"
+                fill="none" stroke="${D.ivory[700]}" stroke-width="3"/>` + K.bevelH(G.x - 7, G.y - 7, G.w + 14, G.h + 14, 8.5, -2.5, 5));
+        // Стекло утоплено в раму НАРОЧНО (sunk): рама кладёт на него тень, и
+        // ревизия вдавленного (tools/pride-room-audit.js) его не считает.
+        s += `<g class="sunk">` + K.T(3.5, 'mirror', `<rect x="${G.x}" y="${G.y}" width="${G.w}" height="${G.h}" rx="${G.r}"
+                fill="${K.paint('prr-glass', D.glass[300], D.glass[700])}"/>`) + `</g>`;
         // В запасном виде отражение лежит прямо в стекле, без сдвига.
         if (K.pass === 'baked') {
             s += `<g clip-path="url(#prr-glass-clip)"><g transform="translate(${G.x - 14},${G.y - 14})" opacity="0.85">${this.reflectionBody()}</g>` +
@@ -287,22 +292,21 @@ const PRIDE_ROOM = {
 
     table() {
         const K = this.K, D = PALETTE.dressing, f = K.f, FY = this.FLOOR_Y;
-        const x0 = 26, x1 = 252, top = 388;
+        const x0 = 26, x1 = 249, top = 388;
         let s = '';
         // Ножки — точёные, сужаются к полу.
         [[34, 46], [232, 244]].forEach(([a, b]) => {
             s += K.T(9, 'walnut',
                 `<path d="M${a} ${top + 70} L${b} ${top + 70} L${b - 2} ${FY - 4} L${a + 2} ${FY - 4} Z" fill="${D.walnut[500]}"
                        stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` +
-                K.cylH(a, top + 70, b - a, FY - 4 - top - 70, 8, 2.2) +
-                `<rect x="${a - 1}" y="${FY - 8}" width="${b - a + 2}" height="6" rx="2" fill="${D.brass[500]}"/>`);
+                K.cylH(a, top + 70, b - a, FY - 4 - top - 70, 9, 1.6)) +
+                K.T(11, 'gilt', `<rect x="${a - 1}" y="${FY - 8}" width="${b - a + 2}" height="6" rx="2" fill="${D.brass[500]}"/>`);
         });
         // Царга с тремя ящиками.
         let drawers = '';
         [[34, 92], [96, 182], [186, 244]].forEach(([a, b]) => {
-            drawers += K.bevelH(a, top + 24, b - a, 44, 11, 1.2, 3) +
-                `<rect x="${a}" y="${top + 24}" width="${b - a}" height="44" rx="2" fill="${D.walnut[300]}"
-                       stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` +
+            drawers += `<rect x="${a}" y="${top + 24}" width="${b - a}" height="44" rx="2" fill="${D.walnut[300]}"
+                       stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` + K.bevelH(a, top + 24, b - a, 44, 10.5, 1.4, 3) +
                 `<rect class="hl" x="${a + 2}" y="${top + 25}" width="${b - a - 4}" height="1.4" fill="${D.oak[100]}" opacity="0.5"/>`;
         });
         let knobs = '';
@@ -317,7 +321,7 @@ const PRIDE_ROOM = {
             `<rect x="${x0 + 2}" y="${top}" width="${x1 - x0 - 4}" height="9" fill="${D.walnut[100]}"/>` +
             `<rect x="${x0}" y="${top + 8}" width="${x1 - x0}" height="11" rx="3" fill="${D.walnut[300]}"
                    stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` +
-            K.cylH(x0, top + 8, x1 - x0, 11, 11.5, 2, { vertical: false, rx: 3 }) +
+            K.cylH(x0, top + 8, x1 - x0, 11, 12.5, 1.6, { vertical: false, rx: 3 }) +
             `<rect class="hl" x="${x0 + 3}" y="${top + 1}" width="${x1 - x0 - 8}" height="2" fill="${D.ivory[300]}" opacity="0.35"/>` +
             `<rect class="fx" x="${x0}" y="${top + 19}" width="${x1 - x0}" height="5" fill="${D.shade[900]}" opacity="0.35"/>`);
         return s;
@@ -335,19 +339,21 @@ const PRIDE_ROOM = {
         const leaves = `<ellipse cx="${vx - 15}" cy="${top - 13}" rx="8" ry="3.2" transform="rotate(-24 ${vx - 15} ${top - 13})" fill="${P.leaf}"/>` +
                        `<ellipse cx="${vx + 16}" cy="${top - 12}" rx="8" ry="3.2" transform="rotate(26 ${vx + 16} ${top - 12})" fill="${P.leafHi}"/>`;
         s += K.T(14, 'velvet', leaves);
-        let roses = '';
-        [[vx - 9, top - 13, 6.8], [vx + 8, top - 14, 7.2], [vx, top - 18, 7.4], [vx - 15, top - 8, 5.6], [vx + 15, top - 8, 5.8]].forEach(([x, y, r]) => {
-            roses += `<circle cx="${x}" cy="${y}" r="${r}" fill="${P.roseRed}" stroke="${D.velvet[700]}" stroke-width="${STROKE.hairline}"/>` +
-                K.domeH(x, y, r, 3) +
-                `<path d="M${f(x - r * 0.5)} ${f(y)} q${f(r * 0.5)} ${f(-r * 0.7)} ${f(r)} 0 q${f(-r * 0.3)} ${f(r * 0.5)} ${f(-r * 0.6)} ${f(r * 0.1)}"
+        // Каждая следующая роза лежит поверх предыдущей — и выше её больше,
+        // чем на подъём купола: иначе край верхней проваливался в купол
+        // нижней (ревизия 28.11, канава по контуру бутона).
+        [[vx, top - 18, 7.4], [vx - 9, top - 13, 6.8], [vx + 8, top - 14, 7.2], [vx - 15, top - 8, 5.6], [vx + 15, top - 8, 5.8]].forEach(([x, y, r], i) => {
+            s += K.T(15 + i * 1.8, 'velvet', `<circle cx="${x}" cy="${y}" r="${r}" fill="${P.roseRed}" stroke="${D.velvet[700]}" stroke-width="${STROKE.hairline}"/>` +
+                K.domeH(x, y, r, 1.6) +
+                `<path class="nh" d="M${f(x - r * 0.5)} ${f(y)} q${f(r * 0.5)} ${f(-r * 0.7)} ${f(r)} 0 q${f(-r * 0.3)} ${f(r * 0.5)} ${f(-r * 0.6)} ${f(r * 0.1)}"
                        fill="none" stroke="${P.roseHi}" stroke-width="1.1"/>` +
-                `<circle class="hl" cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.35)}" r="${f(r * 0.3)}" fill="${P.roseHi}" opacity="0.6"/>`;
+                `<circle class="hl" cx="${f(x - r * 0.35)}" cy="${f(y - r * 0.35)}" r="${f(r * 0.3)}" fill="${P.roseHi}" opacity="0.6"/>`);
         });
-        s += K.T(16, 'velvet', roses);
-        s += K.T(13, 'glass',
+        // Передний борт чаши закрывает низ роз — значит, он выше их.
+        s += K.T(24, 'glass',
             `<path d="M${vx - 17} ${top - 9} Q${vx - 15} ${top} ${vx - 8} ${top} L${vx + 8} ${top} Q${vx + 15} ${top} ${vx + 17} ${top - 9} Z"
                    fill="${D.glass[300]}" stroke="${D.glass[700]}" stroke-width="${STROKE.hairline}" opacity="0.92"/>` +
-            K.cylH(vx - 17, top - 9, 34, 9, 12, 2.4, { vertical: false }) +
+            K.cylH(vx - 17, top - 9, 34, 9, 24, 1.2, { vertical: false }) +
             `<path class="hl" d="M${vx - 12} ${top - 6} h14" fill="none" stroke="${D.glass[100]}" stroke-width="1.4"/>`);
 
         // Справа: флакон духов с грушей, пудреница, помада.
@@ -355,16 +361,16 @@ const PRIDE_ROOM = {
         s += K.T(13, 'glass',
             `<rect x="${px - 8}" y="${top - 22}" width="16" height="22" rx="5" fill="${P.perfume}"
                    stroke="${D.glass[700]}" stroke-width="${STROKE.hairline}"/>` +
-            K.cylH(px - 8, top - 22, 16, 22, 12, 3.5, { rx: 5 }) +
+            K.cylH(px - 8, top - 22, 16, 22, 13, 3, { rx: 5 }) +
             `<rect class="hl" x="${px - 5}" y="${top - 19}" width="2.4" height="15" rx="1.2" fill="${D.glass[100]}" opacity="0.8"/>`);
         s += K.T(15, 'gilt',
             `<rect x="${px - 3.5}" y="${top - 29}" width="7" height="8" rx="1.5" fill="${D.brass[500]}"/>` +
-            K.cylH(px - 3.5, top - 29, 7, 8, 14, 1.5) +
+            K.cylH(px - 3.5, top - 29, 7, 8, 15, 1.2) +
             `<path d="M${px + 3} ${top - 26} q8 -2 10 6" fill="none" stroke="${D.brass[700]}" stroke-width="1"/>`);
         s += K.T(14, 'velvet', `<circle cx="${px + 14}" cy="${top - 18}" r="4.6" fill="${P.perfume}"/>` + K.domeH(px + 14, top - 18, 4.6, 2.4));
-        s += K.T(12.5, 'gilt',
-            `<ellipse cx="${px + 14}" cy="${top - 2}" rx="9" ry="3" fill="${D.brass[300]}" stroke="${D.brass[700]}" stroke-width="${STROKE.hairline}"/>` +
-            K.domeH(px + 14, top - 2, 9, 1.4, 3));
+        s += K.T(13.5, 'gilt',
+            `<ellipse cx="${px + 14}" cy="${top - 2}" rx="6" ry="2.4" fill="${D.brass[300]}" stroke="${D.brass[700]}" stroke-width="${STROKE.hairline}"/>` +
+            K.domeH(px + 14, top - 2, 6, 1.2, 2.4));
         return s;
     },
 
@@ -381,31 +387,34 @@ const PRIDE_ROOM = {
         s += K.T(15, 'walnut',
             `<rect x="${X - 6}" y="${Y - 14}" width="${X1 - X + 6}" height="15" rx="2" fill="${D.walnut[300]}"
                    stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` +
-            K.cylH(X - 6, Y - 14, X1 - X + 6, 15, 14, 2.4, { vertical: false, rx: 2 }) +
+            K.cylH(X - 6, Y - 14, X1 - X + 6, 15, 15, 2, { vertical: false, rx: 2 }) +
             `<rect class="hl" x="${X - 4}" y="${Y - 12}" width="${X1 - X}" height="2" fill="${D.oak[100]}" opacity="0.5"/>`);
         s += K.T(14, 'walnut', `<rect x="${X - 2}" y="${FY - 20}" width="${X1 - X + 2}" height="20" fill="${D.walnut[700]}"/>` +
-            K.cylH(X - 2, FY - 20, X1 - X + 2, 5, 13.5, 1.4, { vertical: false }));
+            K.cylH(X - 2, FY - 20, X1 - X + 2, 5, 14, 1.2, { vertical: false }));
         // Двери: рамка и две утопленные филёнки на каждой. Левая приоткрыта —
         // в щель видно нутро, и оттуда свисает рукав в блёстках.
         const doors = [[X + 12, X + 76], [X + 80, X1 - 4]];
         doors.forEach(([a, b], di) => {
             const top = Y + 8, bot = FY - 24;
+            const pans = [[top + 12, top + (bot - top) * 0.48], [top + (bot - top) * 0.52, bot - 12]];
             let d = `<rect x="${a}" y="${top}" width="${b - a}" height="${bot - top}" fill="${D.walnut[300]}"
-                           stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` +
-                    K.bevelH(a, top, b - a, bot - top, 14, 1.6, 4);
-            [[top + 12, top + (bot - top) * 0.48], [top + (bot - top) * 0.52, bot - 12]].forEach(([y0, y1]) => {
-                d += K.bevelH(a + 9, y0, b - a - 18, y1 - y0, 15.6, -2.4, 6) +
-                     `<rect x="${a + 9}" y="${f(y0)}" width="${b - a - 18}" height="${f(y1 - y0)}" fill="${D.walnut[500]}"
+                           stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>`;
+            pans.forEach(([y0, y1]) => {
+                d += `<rect x="${a + 9}" y="${f(y0)}" width="${b - a - 18}" height="${f(y1 - y0)}" fill="${D.walnut[500]}"
                             stroke="${D.walnut[700]}" stroke-width="${STROKE.hairline}"/>` +
                      `<rect class="fx" x="${a + 9}" y="${f(y0)}" width="${b - a - 18}" height="3" fill="${D.shade[900]}" opacity="0.35"/>`;
             });
+            // Профили — после заливок (иначе заливка их затирает): рама двери
+            // поднимается к краю, филёнки утоплены от рамы внутрь.
+            d += K.bevelH(a, top, b - a, bot - top, 14, 1.6, 4);
+            pans.forEach(([y0, y1]) => { d += K.bevelH(a + 9, y0, b - a - 18, y1 - y0, 15.6, -2.4, 6); });
             s += K.T(14, 'walnut', d);
             // ручка: латунная скоба
             const hx = di === 0 ? b - 7 : a + 7;
-            s += K.T(15.5, 'gilt',
+            s += K.T(16, 'gilt',
                 `<rect x="${hx - 2}" y="${FY * 0.5 + 10}" width="4" height="34" rx="2" fill="${D.brass[300]}"
                        stroke="${D.brass[700]}" stroke-width="${STROKE.hairline}"/>` +
-                K.cylH(hx - 2, FY * 0.5 + 10, 4, 34, 14.5, 1.8, { rx: 2 }));
+                K.cylH(hx - 2, FY * 0.5 + 10, 4, 34, 15.8, 1.6, { rx: 2 }));
         });
         // Щель приоткрытой двери: тёмное нутро.
         s += `<rect class="pit" x="${X + 8}" y="${Y + 8}" width="5" height="${FY - Y - 32}" fill="${D.shade[900]}"/>`;
@@ -437,7 +446,15 @@ const PRIDE_ROOM = {
         const K = this.K, P = PALETTE.dressing.props, f = K.f;
         // Пух — россыпь мелких перьев вокруг извилистой оси, а не бусы из
         // одинаковых шаров: бусы читались гусеницей.
+        // Высота — одним валиком вдоль оси боа, а пушки — только цветом (nh):
+        // купол на каждом пушке ложился на пик соседнего, и между ними шли
+        // канавы (ревизия 28.11) — гроздь из куполов без канав не сложить.
         const rnd = this.rng(77);
+        let axis = '';
+        for (let i = 0; i <= 12; i++) {
+            const t = i / 12;
+            axis += (i ? ' L' : 'M') + f(x - 4 + Math.sin(t * 5.5) * 5 - t * 6) + ' ' + f(y + t * 150);
+        }
         let puffs = '', fluff = '';
         for (let i = 0; i < 64; i++) {
             const t = i / 63;
@@ -445,14 +462,14 @@ const PRIDE_ROOM = {
             const a = rnd() * Math.PI * 2, d = rnd() * 6;
             const xx = ax + Math.cos(a) * d, yy = ay + Math.sin(a) * d * 0.7;
             const r = 3 + rnd() * 3.4;
-            puffs += `<circle cx="${f(xx)}" cy="${f(yy)}" r="${f(r)}" fill="${rnd() < 0.55 ? P.boa : P.boaLo}"/>` +
-                     (i % 3 === 0 ? K.domeH(xx, yy, r, 1.6) : '');
+            puffs += `<circle class="nh" cx="${f(xx)}" cy="${f(yy)}" r="${f(r)}" fill="${rnd() < 0.55 ? P.boa : P.boaLo}"/>`;
             if (i % 2 === 0) {
                 const ex = ax + Math.cos(a) * 8, ey = ay + Math.sin(a) * 6;
-                fluff += `<path d="M${f(ax)} ${f(ay)} L${f(ex)} ${f(ey)}" stroke="${P.boa}" stroke-width="0.9" fill="none" opacity="0.8"/>`;
+                fluff += `<path class="nh" d="M${f(ax)} ${f(ay)} L${f(ex)} ${f(ey)}" stroke="${P.boa}" stroke-width="0.9" fill="none" opacity="0.8"/>`;
             }
         }
-        return K.T(16, 'feather', fluff + puffs);
+        return K.T(16, 'feather', `<path d="${axis}" fill="none" stroke="${P.boaLo}" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.001"/>` +
+            K.rodH(axis, 14, 3) + fluff + puffs);
     },
 
     // Шляпная коробка на шкафу: в полоску, со звездой на крышке.
@@ -461,15 +478,15 @@ const PRIDE_ROOM = {
         const w = 60, h = 40;
         let stripes = '';
         for (let i = 0; i < 6; i++) stripes += `<rect x="${x + 4 + i * 10}" y="${y + 9}" width="5" height="${h - 9}" fill="${D.ivory[500]}" opacity="0.8"/>`;
-        return K.T(14, 'velvet',
+        return K.T(17.5, 'velvet',
             `<rect x="${x}" y="${y + 8}" width="${w}" height="${h - 8}" rx="4" fill="${D.rose[300]}"
                    stroke="${D.rose[700]}" stroke-width="${STROKE.hairline}"/>` + stripes +
-            K.cylH(x, y + 8, w, h - 8, 13, 4, { rx: 4 })) +
-            K.T(15, 'velvet',
+            K.cylH(x, y + 8, w, h - 8, 17.5, 3, { rx: 4 })) +
+            K.T(20.5, 'velvet',
             `<rect x="${x - 3}" y="${y}" width="${w + 6}" height="11" rx="3" fill="${D.rose[500]}"
                    stroke="${D.rose[700]}" stroke-width="${STROKE.hairline}"/>` +
-            K.cylH(x - 3, y, w + 6, 11, 14, 4, { rx: 3 })) +
-            K.T(16.5, 'gilt',
+            K.cylH(x - 3, y, w + 6, 11, 20.5, 2, { rx: 3 })) +
+            K.T(23, 'gilt',
             `<path d="M${x + w / 2} ${y + 14} l3.4 7 7.6 1.1 -5.5 5.3 1.3 7.6 -6.8 -3.6 -6.8 3.6 1.3 -7.6 -5.5 -5.3 7.6 -1.1 Z"
                    fill="${P.star}" stroke="${D.brass[700]}" stroke-width="${STROKE.hairline}"/>` +
             K.domeH(x + w / 2, y + 24, 8, 1.2));
